@@ -493,4 +493,356 @@ theorem stagedLoads_append_formers {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
 
 end Generic
 
+/-! ## The point stage -/
+
+section Point
+
+open IxVM.Consistency
+open IxVM.Refinement.Decl.Point (FormerRec)
+
+/-- The formers as the stage stores them, newest first. -/
+abbrev pointNew (formers : List FormerRec) : List (ConstantInfo .anon) :=
+  (formers.map (·.stored)).reverse
+
+/-- **What the point stage reads of the block record.** The store `E` (decoded, holding at a
+hashed block's projection addresses that block's projections) holds the block `cb` at `B` with
+the members `ms`, all inductive, and their member projection records; the prefix `env` stores
+the references the block uses; every constructor has its position as stored index and a reading
+of its type. The formers are the block's (the former half of `PointReads`), with distinct names,
+each passing its front door at the prefix (`ConstantValRunJ`), at an input key, its annotated
+type a telescope into a sort. -/
+structure PointStageInput (E : Ixon.Env) (env : Ix.Kernel.Env .anon) (t : Ix.Kernel.RoleTable)
+    (B : _root_.Address) (cb : Ixon.Constant) (ms : Array Ixon.MutConst)
+    (formers : List FormerRec) : Prop where
+  check : t.check = .ok ()
+  decoded : L1.EnvDecoded E
+  held : HashedBlockProjectionsHeld E
+  block : recordOf E B = some cb
+  muts : cb.info = .muts ms
+  inds : ∀ (i : Nat) (m : Ixon.MutConst), ms[i]? = some m → ∃ ind : Ixon.Inductive, m = .indc ind
+  formerRec : ∀ (i : Nat) (ind : Ixon.Inductive), ms[i]? = some (.indc ind) →
+    recordOf E (Core.iprjAddr B i) = some (memberProjection B i (.indc ind))
+  used : Decl.UsedRefsStored t env cb
+  ctorRead : ∀ (i : Nat) (ind : Ixon.Inductive), ms[i]? = some (.indc ind) →
+    ∀ (k : Nat) (ct : Ixon.Constructor), ind.ctors[k]? = some ct →
+      ct.cidx.toNat = k ∧ ∃ cty : Ix.Kernel.Expr .anon,
+        blockRead t E B cb ms ct.typ = .ok cty ∧ cty.looseBVarsBounded 0 = true ∧
+        cty.allLevelParamsDefined (List.range ct.lvls.toNat) = true
+  formerOf : ∀ f ∈ formers, ∃ (i : Nat) (ind : Ixon.Inductive) (ty₀ ty' : Ix.Kernel.Expr .anon)
+      (caps : IndCaps .anon),
+    ms[i]? = some (.indc ind) ∧ f = pointFormer t B i ind ty₀ caps ty' ∧
+    FormerRead t E B cb ms i ind ty₀ ty'
+  formerAt : ∀ (i : Nat) (ind : Ixon.Inductive), ms[i]? = some (.indc ind) →
+    ∃ (ty₀ ty' : Ix.Kernel.Expr .anon) (caps : IndCaps .anon),
+      pointFormer t B i ind ty₀ caps ty' ∈ formers ∧ FormerRead t E B cb ms i ind ty₀ ty'
+  nodup : (formers.map (·.cv.name)).Nodup
+  front : ∀ f ∈ formers,
+    Ix.Kernel.Semantics.ConstantValRunJ Ix.Kernel.Model.rulesJ env f.cv f.type'
+  key : ∀ f ∈ formers, ∃ a, f.cv.name = .id a
+  sort : ∀ f ∈ formers, ∃ l, f.type'.resultSort = some l
+
+/-- Two formers of a list with distinct names, of one name, are one. -/
+theorem formerRec_eq_of_name : ∀ {fs : List FormerRec}, (fs.map (·.cv.name)).Nodup →
+    ∀ {f g : FormerRec}, f ∈ fs → g ∈ fs → f.cv.name = g.cv.name → f = g
+  | [], _, _, _, hf, _, _ => nomatch hf
+  | x :: xs, hnd, f, g, hf, hg, h => by
+    have hnd' := List.nodup_cons.mp hnd
+    rcases List.mem_cons.mp hf with rfl | hf'
+    · rcases List.mem_cons.mp hg with rfl | hg'
+      · rfl
+      · exact absurd (List.mem_map.mpr ⟨g, hg', h.symm⟩) hnd'.1
+    · rcases List.mem_cons.mp hg with rfl | hg'
+      · exact absurd (List.mem_map.mpr ⟨f, hf', h⟩) hnd'.1
+      · exact formerRec_eq_of_name hnd'.2 hf' hg' h
+
+section
+variable {E : Ixon.Env} {env : Ix.Kernel.Env .anon} {t : Ix.Kernel.RoleTable}
+  {B : _root_.Address} {cb : Ixon.Constant} {ms : Array Ixon.MutConst}
+  {formers : List FormerRec} {lim : Option Nat}
+
+theorem PointStageInput.wf (hP : PointStageInput E env t B cb ms formers) : t.wf = true := by
+  unfold Ix.Kernel.RoleTable.wf
+  rw [hP.check]
+  rfl
+
+/-- A former's key is fresh in the prefix. -/
+theorem PointStageInput.fresh (hP : PointStageInput E env t B cb ms formers) {f : FormerRec}
+    (hf : f ∈ formers) : env.find? f.cv.name = none :=
+  Option.isNone_iff_eq_none.mp (hP.front f hf).1
+
+/-- **Every former is the former of a member at an index below `2 ^ 64`**: a former of member `i`
+has the key of member `i.toUInt64.toNat`, whose former it therefore is (the names are distinct). -/
+theorem PointStageInput.former_norm (hP : PointStageInput E env t B cb ms formers)
+    {f : FormerRec} (hf : f ∈ formers) :
+    ∃ (i : Nat) (ind : Ixon.Inductive) (ty₀ ty' : Ix.Kernel.Expr .anon) (caps : IndCaps .anon),
+      ms[i]? = some (.indc ind) ∧ i < UInt64.size ∧ f = pointFormer t B i ind ty₀ caps ty' ∧
+      FormerRead t E B cb ms i ind ty₀ ty' := by
+  obtain ⟨i₀, ind₀, ty₀₀, ty'₀, caps₀, hi₀, hf₀, -⟩ := hP.formerOf f hf
+  have hlt : i₀.toUInt64.toNat < ms.size :=
+    Nat.lt_of_le_of_lt (toNat_toUInt64_le i₀) (Array.getElem?_eq_some_iff.mp hi₀).1
+  obtain ⟨ind, hind⟩ := hP.inds _ _ (Array.getElem?_eq_getElem hlt)
+  have hk : ms[i₀.toUInt64.toNat]? = some (.indc ind) := by
+    rw [Array.getElem?_eq_getElem hlt, hind]
+  obtain ⟨ty₀, ty', caps, hmem, hread⟩ := hP.formerAt _ ind hk
+  refine ⟨_, ind, ty₀, ty', caps, hk, (i₀.toUInt64).toNat_lt, ?_, hread⟩
+  refine formerRec_eq_of_name hP.nodup hf hmem ?_
+  rw [hf₀]
+  show Core.keyOf t (Core.iprjAddr B i₀) = Core.keyOf t (Core.iprjAddr B i₀.toUInt64.toNat)
+  rw [iprjAddr_toNat]
+
+/-- **A staged former, as stored**: the former of member `k` (below `2 ^ 64`) at its key, with
+the canonical annotation of its reading and the empty capability record. -/
+theorem PointStageInput.newMem (hP : PointStageInput E env t B cb ms formers)
+    {y : ConstantInfo .anon} (hy : y ∈ pointNew formers) :
+    ∃ (k : Nat) (ind : Ixon.Inductive) (ty₀ ty' : Ix.Kernel.Expr .anon),
+      ms[k]? = some (.indc ind) ∧ k < UInt64.size ∧
+      y = .indInfo ⟨Core.keyOf t (Core.iprjAddr B k), List.range ind.lvls.toNat, ty'⟩ {} ∧
+      FormerRead t E B cb ms k ind ty₀ ty' := by
+  obtain ⟨f, hf, rfl⟩ := List.mem_map.mp (List.mem_reverse.mp hy)
+  obtain ⟨k, ind, ty₀, ty', caps, hk, hlt, rfl, hread⟩ := hP.former_norm hf
+  exact ⟨k, ind, ty₀, ty', hk, hlt, rfl, hread⟩
+
+/-- The references the block uses resolve at the stage as the table keys them, with a projection
+permitted there (the prefix stores them). -/
+theorem PointStageInput.stageUsed (hP : PointStageInput E env t B cb ms formers)
+    (hext : Ix.Kernel.EnvExt env (Decl.Point.stage env formers)) :
+    ∀ i ∈ usedRefIdxs cb, ∀ x, cb.refs.toList[i]? = some x →
+      (formersStage ⟨E, env, t, lim⟩ (pointNew formers)).κ x = Core.keyOf t x ∧
+      Core.ProjPermitted (formersStage ⟨E, env, t, lim⟩ (pointNew formers)).κ x := by
+  intro i hi x hx
+  obtain ⟨ci, hci⟩ := hP.used i hi x hx
+  have hci' : (appCtx ⟨E, env, t, lim⟩ (pointNew formers)).env.find? (Core.keyOf t x) =
+      some ci := hext.find hci
+  exact ⟨Core.Ctx.stagedOver_key_of_find (c := appCtx ⟨E, env, t, lim⟩ (pointNew formers))
+      (pre := env) hci',
+    Core.Ctx.stagedOver_projPermitted_of_find
+      (c := appCtx ⟨E, env, t, lim⟩ (pointNew formers)) (pre := env) hci⟩
+
+/-- The block's member addresses resolve at the stage as the table keys them: every member has
+its former staged. -/
+theorem PointStageInput.stageRecur (hP : PointStageInput E env t B cb ms formers) :
+    ∀ x ∈ L1.blockRecurAddrs B ms.toList,
+      (formersStage ⟨E, env, t, lim⟩ (pointNew formers)).κ x = Core.keyOf t x := by
+  intro x hx
+  obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp hx
+  obtain ⟨m, hm, rfl⟩ := LoadedReads.blockRecurAddrs_get hk
+  obtain ⟨ind, rfl⟩ := hP.inds k m hm
+  rw [LoadedReads.memberAddr_indc]
+  obtain ⟨ty₀, ty', caps, hmemF, -⟩ := hP.formerAt k ind hm
+  have hfind : (appCtx ⟨E, env, t, lim⟩ (pointNew formers)).env.find?
+      (Core.keyOf t (Core.iprjAddr B k)) = some _ := Decl.Point.stage_find hP.nodup hmemF
+  exact Core.Ctx.stagedOver_key_of_find (c := appCtx ⟨E, env, t, lim⟩ (pointNew formers))
+    (pre := env) hfind
+
+/-- **The load facts at the staged formers**, from the block record. A unit-like raw load at a
+former is refuted by the block's shape: at two or more inductives `FewInductives` fails; at one,
+the member's one constructor makes the gate's `struct_is_rec` answer `1`, not the `0` observed. -/
+theorem PointStageInput.formersLoads (hP : PointStageInput E env t B cb ms formers)
+    (hext : Ix.Kernel.EnvExt env (Decl.Point.stage env formers)) (hgate : PointShape E B ms) :
+    FormersLoads ⟨E, env, t, lim⟩ (pointNew formers) := by
+  have htwf := hP.wf
+  refine { getCI := ?_, getIprj := ?_, getCprj := ?_, inductRecord := ?_, inductBlock := ?_,
+    unitLikeRaw := ?_ }
+  · intro addr ptr h h' cs a ev good ha cv caps hmem hkey
+    obtain ⟨k, ind, ty₀, ty', hk, hlt, hy, hread⟩ := hP.newMem hmem
+    obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj hy
+    obtain ⟨hty, hlbb, hdef, hcan⟩ := hread
+    have hx : Core.ixAddr a = Core.iprjAddr B k := Core.keyOf_inj htwf hkey
+    have hrecA : recordOf E (Core.ixAddr a) = some (memberProjection B k (.indc ind)) := by
+      rw [hx]
+      exact hP.formerRec k ind hk
+    have hkk : k.toUInt64.toNat = k := toNat_toUInt64_of_lt hlt
+    have hk' : ms[k.toUInt64.toNat]? = some (.indc ind) := by
+      rw [hkk]
+      exact hk
+    obtain ⟨ty'', hcT, hrep⟩ := LoadedReads.get_ci_iprj_at (p := ⟨k.toUInt64, B⟩) hP.check
+      good.1 good.2 ha ev hrecA rfl hP.block hP.muts hk' hty hlbb hdef
+    have hcT' : LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
+        ((L1.mutsRootOffset ms.toList k.toUInt64.toNat : Nat) : F) ind.typ ty₀ = some ty'' := hcT
+    rw [hkk] at hcT'
+    have e : ty'' = ty' := Option.some.inj (hcT'.symm.trans hcan)
+    subst e
+    have hr := hrep _ (hP.stageUsed (lim := lim) hext) (hP.stageRecur (lim := lim)) {}
+    rw [hx] at hr
+    exact hr
+  · intro bp ptr i h h' cs b ev good hb cv caps hmem hkey
+    obtain ⟨k, ind, ty₀, ty', hk, hlt, hy, hread⟩ := hP.newMem hmem
+    obtain ⟨rfl, rfl⟩ := ConstantInfo.indInfo.inj hy
+    obtain ⟨hty, hlbb, hdef, hcan⟩ := hread
+    have hkey' : Core.keyOf t (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)) =
+        Core.keyOf t (Core.iprjAddr B k) := hkey
+    have hbh := L1.hashedBlockAt_of_get_ci_iprj (c := ⟨E, env, t, lim⟩) good hb ev
+    obtain ⟨hbB, hik⟩ := iprj_key_member htwf hP.decoded hP.held (hP.formerRec k ind hk) hbh hkey'
+    have hik' : ZMod.val i = k := toUInt64_inj_of_lt (val_lt_uint64 i) hlt hik
+    have hblock' : recordOf E (Core.ixAddr b) = some cb := by
+      rw [hbB]
+      exact hP.block
+    have hmem' : ms[ZMod.val i]? = some (.indc ind) := by
+      rw [hik']
+      exact hk
+    have hty' : (exprReader t (fun x => E.blobs.get? x) cb id
+        (blockSelf t (Core.ixAddr b) ms)).read ind.typ = .ok ty₀ := by
+      rw [hbB]
+      exact hty
+    obtain ⟨ty'', hcT, hrep⟩ := LoadedReads.get_ci_iprj_load_at hP.check good.1 good.2 hb ev
+      hblock' hP.muts hmem' hty' hlbb hdef
+    have hcT' : LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
+        ((L1.mutsRootOffset ms.toList (ZMod.val i) : Nat) : F) ind.typ ty₀ = some ty'' := hcT
+    rw [hik'] at hcT'
+    have e : ty'' = ty' := Option.some.inj (hcT'.symm.trans hcan)
+    subst e
+    have hrecur' : ∀ x ∈ L1.blockRecurAddrs (Core.ixAddr b) ms.toList,
+        (formersStage ⟨E, env, t, lim⟩ (pointNew formers)).κ x = Core.keyOf t x := by
+      rw [hbB]
+      exact hP.stageRecur
+    have hr := hrep _ (hP.stageUsed (lim := lim) hext) hrecur' {}
+    rw [hbB, hik'] at hr
+    exact hr
+  · rintro bp ptr i j h h' cs b ev good hb ⟨y, hy, hyn⟩
+    obtain ⟨k, ind, ty₀, ty', hk, hlt, rfl, -⟩ := hP.newMem hy
+    have hkey' : Core.keyOf t (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)) =
+        Core.keyOf t (Core.iprjAddr B k) := hyn.symm
+    have hbh := L1.hashedBlockAt_of_get_ci_cprj (c := ⟨E, env, t, lim⟩) good hb ev
+    obtain ⟨hbB, hik⟩ := iprj_key_member htwf hP.decoded hP.held (hP.formerRec k ind hk) hbh hkey'
+    have hik' : ZMod.val i = k := toUInt64_inj_of_lt (val_lt_uint64 i) hlt hik
+    have hblock' : recordOf E (Core.ixAddr b) = some cb := by
+      rw [hbB]
+      exact hP.block
+    have hmem' : ms[ZMod.val i]? = some (.indc ind) := by
+      rw [hik']
+      exact hk
+    have hctys : ∀ (k' : Nat) (ct : Ixon.Constructor), ind.ctors[k']? = some ct →
+        ct.cidx.toNat = k' ∧ ∃ cty : Ix.Kernel.Expr .anon,
+          (exprReader t (fun x => E.blobs.get? x) cb id
+            (blockSelf t (Core.ixAddr b) ms)).read ct.typ = .ok cty ∧
+          cty.looseBVarsBounded 0 = true ∧
+          cty.allLevelParamsDefined (List.range ct.lvls.toNat) = true := by
+      rw [hbB]
+      exact hP.ctorRead k ind hk
+    have hrecur' : ∀ x ∈ L1.blockRecurAddrs (Core.ixAddr b) ms.toList,
+        (formersStage ⟨E, env, t, lim⟩ (pointNew formers)).κ x = Core.keyOf t x := by
+      rw [hbB]
+      exact hP.stageRecur
+    obtain ⟨ct, ty'', -, hrep⟩ := LoadedReads.get_ci_cprj_load_at hP.check good.1 good.2 hb ev
+      hblock' hP.muts hmem' hctys
+    exact ⟨_, hrep _ (hP.stageUsed (lim := lim) hext) hrecur'⟩
+  · rintro addr ptr h h' cs a nl ty np ni nc u blk idx ev good ha ⟨y, hy, hyn⟩ hld
+    obtain ⟨k, ind, ty₀, ty', hk, hlt, rfl, -⟩ := hP.newMem hy
+    have hx : Core.ixAddr a = Core.iprjAddr B k := Core.keyOf_inj htwf hyn.symm
+    have hrec : recordOf E (Core.ixAddr a) = some (memberProjection B k (.indc ind)) := by
+      rw [hx]
+      exact hP.formerRec k ind hk
+    obtain ⟨b, i, hrecA, hb, hidx, hinfo⟩ :=
+      get_ci_induct_record hP.decoded good.1 good.2 ev ha hld hrec
+    exact ⟨_, b, i, hrecA, hb, hidx, hinfo⟩
+  · rintro addr ptr h h' cs a b nl ty np ni nc u blk i ev good ha ⟨y, hy, hyn⟩ hld hb
+    obtain ⟨k, ind, ty₀, ty', hk, hlt, rfl, -⟩ := hP.newMem hy
+    have hxa : Core.ixAddr a = Core.iprjAddr B k := Core.keyOf_inj htwf hyn.symm
+    have hx := get_ci_induct_addr ev good.2 ha hld hb
+    have hbh := L1.hashedBlockAt_of_get_ci_induct (c := ⟨E, env, t, lim⟩) good ev ha hld hb
+    obtain ⟨hbB, hik⟩ := iprj_key_member (i := ZMod.val i) htwf hP.decoded hP.held
+      (hP.formerRec k ind hk) hbh (by rw [← hx, hxa])
+    have hik' : ZMod.val i = k := toUInt64_inj_of_lt (val_lt_uint64 i) hlt hik
+    refine ⟨cb, ms, ind, ?_, hP.muts, by rw [hik']; exact hk⟩
+    rw [hbB]
+    exact recordAt_of_recordOf hP.decoded hP.block
+  · rintro ap ptr h h' cs a nl ty u blk p i b ev good ha ⟨y, hy, hyn⟩ hld hb hfew hz hn
+    obtain ⟨k, ind, ty₀, ty', hk, hlt, rfl, -⟩ := hP.newMem hy
+    have hxa : Core.ixAddr a = Core.iprjAddr B k := Core.keyOf_inj htwf hyn.symm
+    have hx := get_ci_induct_addr ev good.2 ha hld hb
+    have hbh := L1.hashedBlockAt_of_get_ci_induct (c := ⟨E, env, t, lim⟩) good ev ha hld hb
+    obtain ⟨hbB, -⟩ := iprj_key_member (i := ZMod.val i) htwf hP.decoded hP.held
+      (hP.formerRec k ind hk) hbh (by rw [← hx, hxa])
+    rcases hgate with h2 | ⟨ind₁, hms, hN⟩
+    · exact few_not_multi (c := ⟨E, env, t, lim⟩)
+        ⟨cb, ms, recordAt_of_recordOf hP.decoded hP.block, hP.muts, h2⟩
+        (by rw [← hbB]; exact hfew)
+    · subst hms
+      have hk0 : k = 0 := by
+        have h1 : k < (#[.indc ind₁] : Array Ixon.MutConst).size :=
+          (Array.getElem?_eq_some_iff.mp hk).1
+        have h1' : (#[.indc ind₁] : Array Ixon.MutConst).size = 1 := rfl
+        omega
+      subst hk0
+      have hii : ind = ind₁ := by
+        have e : (Ixon.MutConst.indc ind₁ : Ixon.MutConst) = .indc ind := Option.some.inj hk
+        exact (Ixon.MutConst.indc.inj e).symm
+      subst hii
+      have hrecA : recordOf E (Core.ixAddr a) = some (memberProjection B 0 (.indc ind)) := by
+        rw [hxa]
+        exact hP.formerRec 0 ind hk
+      obtain ⟨tyPtr, blkPtr, hld₀, -, -, hc56⟩ :=
+        former_get_ci_value good.1 good.2 ha ev hrecA hP.block hP.muts
+      rw [hld₀] at hld
+      have hv := Except.ok.inj hld
+      simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at hv
+      obtain ⟨-, -, -, -, hn1, -⟩ := hv
+      have hsz : ind.ctors.size = 1 := by
+        have e := field_count_eq hc56 hn1
+        rw [ZMod.val_one] at e
+        exact e.symm
+      have hv1 := hN.recursive hsz hn.ap _ hn.before hn.after hn.calls a hn.observed hn.good.1
+        hn.good.2 hn.parentRep hxa
+      exact absurd (Value.field.inj hv1) (by decide)
+
+/-- The formers' run from the prefix to the stage, and the extension. -/
+theorem PointStageInput.stageRun (hP : PointStageInput E env t B cb ms formers) :
+    Decl.Point.PointRun (formers.map (·.cv.name)) env (formers.map (·.declared))
+        (Decl.Point.stage env formers) ∧
+      Ix.Kernel.EnvExt env (Decl.Point.stage env formers) :=
+  Decl.Point.formers_run _ formers env (Ix.Kernel.EnvExt.refl env)
+    (fun f hf => ⟨hP.front f hf, hP.key f hf, hP.sort f hf⟩) hP.nodup (fun f hf => hP.fresh hf)
+
+/-- **The environment half of the stage's core facts**: the fold's store invariant along the
+formers' run, and the companions (the stage stores no recursor). -/
+theorem pointStage_envFacts (hinv : Decl.PrefixInv.{u} E t lim env)
+    (hP : PointStageInput E env t B cb ms formers) :
+    Core.CoreEnvFacts ⟨E, Decl.Point.stage env formers, t, lim⟩ := by
+  obtain ⟨hrun, hext⟩ := hP.stageRun
+  have hS : Decl.FoldStoreInv (Decl.Point.stage env formers) :=
+    Decl.Point.foldStoreInv_run _ hrun hinv.store
+  have hno : Ix.Kernel.Model.NewSat env (Decl.Point.stage env formers)
+      Ix.Kernel.Model.NotRec := by
+    intro n x hf
+    rcases find?_append_cases (env := env) (pointNew formers) hf with hm | ho
+    · obtain ⟨f, -, rfl⟩ := List.mem_map.mp (List.mem_reverse.mp hm)
+      exact Or.inr (fun _ _ _ _ hh => nomatch hh)
+    · exact Or.inl ho
+  have hR : Decl.CoreCompanions ⟨E, Decl.Point.stage env formers, t, lim⟩ :=
+    Decl.Point.coreCompanions_of_noRec (c := ⟨E, env, t, lim⟩) hinv.companions
+      hinv.store.store hext hno
+  exact Decl.FoldStoreInv.toCoreEnvFacts (c := ⟨E, Decl.Point.stage env formers, t, lim⟩) hS
+    hinv.tableWf hR
+
+/-- **The load half of the stage's core facts.** -/
+theorem pointStage_loads (hinv : Decl.PrefixInv.{u} E t lim env) (hkeys : HashKeyed t env)
+    (hP : PointStageInput E env t B cb ms formers) (hgate : PointShape E B ms) :
+    Core.ScopedLoadFacts
+      ((⟨E, Decl.Point.stage env formers, t, lim⟩ : Core.Ctx).stagedOver env) := by
+  obtain ⟨-, hext⟩ := hP.stageRun
+  exact stagedLoads_append_formers (c := ⟨E, env, t, lim⟩) hinv.loads hinv.tableWf
+    (fun y hy => by
+      obtain ⟨k, ind, ty₀, ty', -, -, rfl, -⟩ := hP.newMem hy
+      exact ⟨_, _, rfl⟩)
+    (fun y hy => by
+      obtain ⟨k, ind, ty₀, ty', -, -, rfl, -⟩ := hP.newMem hy
+      exact ⟨Core.iprjAddr B k, Core.iprjAddr_not_marker _ _, rfl⟩)
+    (fun y hy => by
+      obtain ⟨f, hf, rfl⟩ := List.mem_map.mp (List.mem_reverse.mp hy)
+      exact hP.fresh hf)
+    (fun f => hkeys.marker_none f) hext hinv.etaStable (hP.formersLoads hext hgate)
+
+/-- **The scoped core facts of the constructor stage of a block on the constructors-only
+route**: at the prefix with the block's formers stored at the empty capability record, keyed
+over the prefix. -/
+theorem pointStage_coreFacts (hinv : Decl.PrefixInv.{u} E t lim env) (hkeys : HashKeyed t env)
+    (hP : PointStageInput E env t B cb ms formers) (hgate : PointShape E B ms) :
+    Core.ScopedCoreFacts
+      ((⟨E, Decl.Point.stage env formers, t, lim⟩ : Core.Ctx).stagedOver env) :=
+  ⟨pointStage_envFacts hinv hP, pointStage_loads hinv hkeys hP hgate⟩
+
+end
+
+end Point
+
 end IxVM.Refinement.Typing
