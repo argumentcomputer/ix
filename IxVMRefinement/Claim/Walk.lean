@@ -1598,8 +1598,8 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
   | ind fuel ih =>
     refine ⟨?_, ?_⟩
     · intro lim x_rc x_addr r addr h h' calls hfuel hrc ha ev
-      obtain ⟨m2, cs12, x_info, w39, x_refs, w40, w41, v539, m540, cs542, cs551, v556, m573, cs581,
-        ev14, sg547, ev583, ev553, hc598⟩ := Obs.«KernelClaim::run_check_transitive».obs ev
+      obtain ⟨m2, cs12, x_info, w39, x_refs, w40, w41, v539, m540, cs542, v548, m549, cs559, cs589, v594, m611, cs619,
+        ev14, sg547, ev561, ev621, ev591, hc636⟩ := Obs.«KernelClaim::run_check_transitive».obs ev
       obtain ⟨ext1, rawBytes, c, hsz, hh_load, hblk, hde, hdeExact, hrep, _⟩ :=
         load_verified_constant_de ha ev14
       have hseg : Heap.Extends m2 m540 ∧
@@ -1632,7 +1632,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
               check_muts_all_spec (hrc.mono ext1) (S0.addr_mono ext1 ha)
                 (membersRep_of_repMutConstList hms_rep) ev93
             have hsub_m : ∀ cl ∈ cs91, cl ∈ calls := fun cl hcl => by
-              rw [hc598, hc133]; simp [hcl]
+              rw [hc636, hc133]; simp [hcl]
             exact ⟨ext_muts,
               .inl ⟨ms, rfl, fun k hk => (hchk_muts k hk).mono hsub_m⟩,
               [], by simp [RecsClosed], by simp,
@@ -1650,7 +1650,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             rw [← hpargs.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev186
             have hlt_calls : cs206.length < calls.length := by
-              rw [hc598, hc225]
+              rw [hc636, hc225]
               simp only [List.length_cons, List.length_append]
               omega
             have hlt_sub : cs206.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
@@ -1658,9 +1658,9 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
               (ih cs206.length hlt_sub).1 (Nat.le_refl _)
                 (hrc.mono (ext1.trans ext_rc)) (S0.addr_mono ext_rc hblk_addr) ev208
             have hsub_b : ∀ cl ∈ cs206, cl ∈ calls := fun cl hcl => by
-              rw [hc598, hc225]; simp [hcl]
+              rw [hc636, hc225]; simp [hcl]
             refine ⟨ext_rc.trans ext_blk,
-              .inr (hchk.mono (fun cl hcl => by rw [hc598, hc225]; simp [hcl])),
+              .inr (hchk.mono (fun cl hcl => by rw [hc636, hc225]; simp [hcl])),
               recs_b.map (WalkedRec.mono hsub_b), hcl_b.mono hsub_b,
               walkedRec_mono_depth_lt hsub_b hdep_b hlt_calls, ?_⟩
             intro _
@@ -1679,7 +1679,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             rw [← hpargs.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev279
             have hlt_calls : cs299.length < calls.length := by
-              rw [hc598, hc318]
+              rw [hc636, hc318]
               simp only [List.length_cons, List.length_append]
               omega
             have hlt_sub : cs299.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
@@ -1687,9 +1687,9 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
               (ih cs299.length hlt_sub).1 (Nat.le_refl _)
                 (hrc.mono (ext1.trans ext_rc)) (S0.addr_mono ext_rc hblk_addr) ev301
             have hsub_b : ∀ cl ∈ cs299, cl ∈ calls := fun cl hcl => by
-              rw [hc598, hc318]; simp [hcl]
+              rw [hc636, hc318]; simp [hcl]
             refine ⟨ext_rc.trans ext_blk,
-              .inr (hchk.mono (fun cl hcl => by rw [hc598, hc318]; simp [hcl])),
+              .inr (hchk.mono (fun cl hcl => by rw [hc636, hc318]; simp [hcl])),
               recs_b.map (WalkedRec.mono hsub_b), hcl_b.mono hsub_b,
               walkedRec_mono_depth_lt hsub_b hdep_b hlt_calls, ?_⟩
             intro _
@@ -1708,7 +1708,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             rw [← hpargs.2.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev378
             have hlt_calls : cs398.length < calls.length := by
-              rw [hc598, hc417]
+              rw [hc636, hc417]
               simp only [List.length_cons, List.length_append]
               omega
             have hlt_sub : cs398.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
@@ -1716,9 +1716,9 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
               (ih cs398.length hlt_sub).1 (Nat.le_refl _)
                 (hrc.mono (ext1.trans ext_rc)) (S0.addr_mono ext_rc hblk_addr) ev400
             have hsub_b : ∀ cl ∈ cs398, cl ∈ calls := fun cl hcl => by
-              rw [hc598, hc417]; simp [hcl]
+              rw [hc636, hc417]; simp [hcl]
             refine ⟨ext_rc.trans ext_blk,
-              .inr (hchk.mono (fun cl hcl => by rw [hc598, hc417]; simp [hcl])),
+              .inr (hchk.mono (fun cl hcl => by rw [hc636, hc417]; simp [hcl])),
               recs_b.map (WalkedRec.mono hsub_b), hcl_b.mono hsub_b,
               walkedRec_mono_depth_lt hsub_b hdep_b hlt_calls, ?_⟩
             intro _
@@ -1737,7 +1737,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             rw [← hpargs.2] at hblk_addr
             obtain ⟨ext_rc, hchk⟩ := run_check_spec (hrc.mono ext1) (S0.addr_mono ext1 ha) ev471
             have hlt_calls : cs491.length < calls.length := by
-              rw [hc598, hc510]
+              rw [hc636, hc510]
               simp only [List.length_cons, List.length_append]
               omega
             have hlt_sub : cs491.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
@@ -1745,9 +1745,9 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
               (ih cs491.length hlt_sub).1 (Nat.le_refl _)
                 (hrc.mono (ext1.trans ext_rc)) (S0.addr_mono ext_rc hblk_addr) ev493
             have hsub_b : ∀ cl ∈ cs491, cl ∈ calls := fun cl hcl => by
-              rw [hc598, hc510]; simp [hcl]
+              rw [hc636, hc510]; simp [hcl]
             refine ⟨ext_rc.trans ext_blk,
-              .inr (hchk.mono (fun cl hcl => by rw [hc598, hc510]; simp [hcl])),
+              .inr (hchk.mono (fun cl hcl => by rw [hc636, hc510]; simp [hcl])),
               recs_b.map (WalkedRec.mono hsub_b), hcl_b.mono hsub_b,
               walkedRec_mono_depth_lt hsub_b hdep_b hlt_calls, ?_⟩
             intro _
@@ -1764,30 +1764,31 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             case rPrj _ => obtain ⟨_, hv', _⟩ := hinfo; exact absurd hv' (hne512 [_] rfl)
             all_goals simp [Ix.Cert.ownerOf, hc_i]
           exact ⟨ext_rc,
-            .inr (hchk.mono (fun cl hcl => by rw [hc598, hc538]; simp [hcl])),
+            .inr (hchk.mono (fun cl hcl => by rw [hc636, hc538]; simp [hcl])),
             [], by simp [RecsClosed], by simp, fun hne => absurd hown_self hne⟩
       obtain ⟨ext_seg, hchk_self, recs_blk, hcl_blk, hdep_blk, hown_blk⟩ := hseg
-      obtain ⟨ext_idx, hidxs⟩ := const_idxs_of_spec (hrep.mono ext_seg) ev583
+      have ext_guard : Heap.Extends m540 m549 := ev561.heap_extends
+      obtain ⟨ext_idx, hidxs⟩ := const_idxs_of_spec (hrep.mono (ext_seg.trans ext_guard)) ev621
       have hrefs_rep :
-          RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem m573 c.refs.toList x_refs := by
+          RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem m611 c.refs.toList x_refs := by
         obtain ⟨_, _, refsPtr, _, _, hv_c, _, _, hr_list, _, _⟩ := hrep
         injection hv_c with _ _ hargs_c
         simp only [List.cons.injEq] at hargs_c
         rw [← hargs_c.2.2.1] at hr_list
-        exact repList_heapMono₂ _ repAddrElem_heapMono₂ (ext_seg.trans ext_idx) hr_list
-      have hlt_r_calls : cs551.length < calls.length := by
-        rw [hc598]
+        exact repList_heapMono₂ _ repAddrElem_heapMono₂ (ext_seg.trans (ext_guard.trans ext_idx)) hr_list
+      have hlt_r_calls : cs589.length < calls.length := by
+        rw [hc636]
         simp only [List.length_cons, List.length_append]
         omega
-      have hlt_walk : cs551.length < fuel := Nat.lt_of_lt_of_le hlt_r_calls hfuel
+      have hlt_walk : cs589.length < fuel := Nat.lt_of_lt_of_le hlt_r_calls hfuel
       have hrefs_bound : 0 + c.refs.toList.length < 8589934592 := by
         rw [Nat.zero_add, Array.length_toList]
         exact refs_size_lt_bound hsz hdeExact
       obtain ⟨ext_walk, recs_r, hmem_r, hcl_r, hdep_r⟩ :=
-        (ih cs551.length hlt_walk).2 (i := 0) (Nat.le_refl _) hrefs_bound
-          (hrc.mono (ext1.trans (ext_seg.trans ext_idx))) hrefs_rep hidxs ev553
-      have hsub_r : ∀ cl ∈ cs551, cl ∈ calls := fun cl hcl => by
-        rw [hc598]; simp [hcl]
+        (ih cs589.length hlt_walk).2 (i := 0) (Nat.le_refl _) hrefs_bound
+          (hrc.mono (ext1.trans (ext_seg.trans (ext_guard.trans ext_idx)))) hrefs_rep hidxs ev591
+      have hsub_r : ∀ cl ∈ cs589, cl ∈ calls := fun cl hcl => by
+        rw [hc636]; simp [hcl]
       have hdep_r_lt : ∀ r ∈ recs_r.map (WalkedRec.mono hsub_r), r.depth < calls.length :=
         walkedRec_mono_depth_lt hsub_r hdep_r hlt_r_calls
       let r₀ : WalkedRec calls bAddr t := {
@@ -1796,14 +1797,14 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
         c := c
         depth := calls.length
         hsz := hsz
-        hhashed := hashed_mono (fun cl hcl => by rw [hc598]; simp [hcl]) hh_load
+        hhashed := hashed_mono (fun cl hcl => by rw [hc636]; simp [hcl]) hh_load
         hblake := hblk
         hde := hde
         hdeExact := hdeExact
         hchecked := hchk_self
       }
       let recs_tail := recs_blk ++ recs_r.map (WalkedRec.mono hsub_r)
-      refine ⟨ext1.trans (ext_seg.trans (ext_idx.trans ext_walk)),
+      refine ⟨ext1.trans (ext_seg.trans (ext_guard.trans (ext_idx.trans ext_walk))),
         r₀ :: recs_tail, List.mem_cons_self,
         RecsClosed.cons (hcl_blk.append (hcl_r.mono hsub_r)) ?_ ?_, ?_⟩
       · intro hne
@@ -2019,8 +2020,8 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
       rw [map_addr_walkedRec_mono]
       exact hmem
     · intro lim x_rc x_addr r addr h h' calls hfuel hrc ha ev
-      obtain ⟨m2, cs12, x_info, w39, x_refs, w40, w41, v699, m700, cs702, cs711, v716, m733, cs741,
-        ev14, sg707, ev743, ev713, hc758⟩ := Obs.«KernelClaim::env_walk_all».obs ev
+      obtain ⟨m2, cs12, x_info, w39, x_refs, w40, w41, v699, m700, cs702, v708, m709, cs719, cs749, v754, m771, cs779,
+        ev14, sg707, ev721, ev781, ev751, hc796⟩ := Obs.«KernelClaim::env_walk_all».obs ev
       obtain ⟨ext1, rawBytes, c, hsz, hh_load, hblk, hde, hdeExact, hrep, _⟩ :=
         load_verified_constant_de ha ev14
       have hseg : V.HashedCollision extra calls ∨
@@ -2058,7 +2059,7 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
               check_muts_all_spec (hrc.mono ext1) (S0.addr_mono ext1 ha)
                 (membersRep_of_repMutConstList hms_rep) ev93
             have hsub_m : ∀ cl ∈ cs91, cl ∈ calls := fun cl hcl => by
-              rw [hc758, hc133]; simp [hcl]
+              rw [hc796, hc133]; simp [hcl]
             exact .inr ⟨ext_muts,
               .inl ⟨ms, rfl, fun k hk => (hchk_muts k hk).mono hsub_m⟩,
               [], by simp [RecsClosed], by simp,
@@ -2080,18 +2081,18 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             obtain ⟨rfl, rfl⟩ := role_ctx_validator_spec (hrc.mono (ext1.trans ext_rc)) ev246
             obtain ⟨d_blk, rfl, hix_blk⟩ := addrVal_of_load (S0.addr_mono ext_rc hblk_addr) ld263
             have hlt_calls : cs206.length < calls.length := by
-              rw [hc758, hc265]
+              rw [hc796, hc265]
               simp only [List.length_cons, List.length_append]
               omega
             have hlt_sub : cs206.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
             rcases (ih cs206.length hlt_sub).1 (Nat.le_refl _) hix_b hix_blk ev208 with
               hcoll | ⟨ext_co, _, recs_b, hmem_b, hcl_b, hdep_b⟩
             · exact .inl (hashedCollision_mono
-                (fun cl hcl => by rw [hc758, hc265]; simp [hcl]) hcoll)
+                (fun cl hcl => by rw [hc796, hc265]; simp [hcl]) hcoll)
             have hsub_b : ∀ cl ∈ cs206, cl ∈ calls := fun cl hcl => by
-              rw [hc758, hc265]; simp [hcl]
+              rw [hc796, hc265]; simp [hcl]
             refine .inr ⟨ext_rc.trans ext_co,
-              .inr (hchk.mono (fun cl hcl => by rw [hc758, hc265]; simp [hcl])),
+              .inr (hchk.mono (fun cl hcl => by rw [hc796, hc265]; simp [hcl])),
               recs_b.map (WalkedRec.mono hsub_b), hcl_b.mono hsub_b,
               walkedRec_mono_depth_lt hsub_b hdep_b hlt_calls, ?_⟩
             intro _
@@ -2114,18 +2115,18 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             obtain ⟨rfl, rfl⟩ := role_ctx_validator_spec (hrc.mono (ext1.trans ext_rc)) ev379
             obtain ⟨d_blk, rfl, hix_blk⟩ := addrVal_of_load (S0.addr_mono ext_rc hblk_addr) ld396
             have hlt_calls : cs339.length < calls.length := by
-              rw [hc758, hc398]
+              rw [hc796, hc398]
               simp only [List.length_cons, List.length_append]
               omega
             have hlt_sub : cs339.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
             rcases (ih cs339.length hlt_sub).1 (Nat.le_refl _) hix_b hix_blk ev341 with
               hcoll | ⟨ext_co, _, recs_b, hmem_b, hcl_b, hdep_b⟩
             · exact .inl (hashedCollision_mono
-                (fun cl hcl => by rw [hc758, hc398]; simp [hcl]) hcoll)
+                (fun cl hcl => by rw [hc796, hc398]; simp [hcl]) hcoll)
             have hsub_b : ∀ cl ∈ cs339, cl ∈ calls := fun cl hcl => by
-              rw [hc758, hc398]; simp [hcl]
+              rw [hc796, hc398]; simp [hcl]
             refine .inr ⟨ext_rc.trans ext_co,
-              .inr (hchk.mono (fun cl hcl => by rw [hc758, hc398]; simp [hcl])),
+              .inr (hchk.mono (fun cl hcl => by rw [hc796, hc398]; simp [hcl])),
               recs_b.map (WalkedRec.mono hsub_b), hcl_b.mono hsub_b,
               walkedRec_mono_depth_lt hsub_b hdep_b hlt_calls, ?_⟩
             intro _
@@ -2148,18 +2149,18 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             obtain ⟨rfl, rfl⟩ := role_ctx_validator_spec (hrc.mono (ext1.trans ext_rc)) ev518
             obtain ⟨d_blk, rfl, hix_blk⟩ := addrVal_of_load (S0.addr_mono ext_rc hblk_addr) ld535
             have hlt_calls : cs478.length < calls.length := by
-              rw [hc758, hc537]
+              rw [hc796, hc537]
               simp only [List.length_cons, List.length_append]
               omega
             have hlt_sub : cs478.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
             rcases (ih cs478.length hlt_sub).1 (Nat.le_refl _) hix_b hix_blk ev480 with
               hcoll | ⟨ext_co, _, recs_b, hmem_b, hcl_b, hdep_b⟩
             · exact .inl (hashedCollision_mono
-                (fun cl hcl => by rw [hc758, hc537]; simp [hcl]) hcoll)
+                (fun cl hcl => by rw [hc796, hc537]; simp [hcl]) hcoll)
             have hsub_b : ∀ cl ∈ cs478, cl ∈ calls := fun cl hcl => by
-              rw [hc758, hc537]; simp [hcl]
+              rw [hc796, hc537]; simp [hcl]
             refine .inr ⟨ext_rc.trans ext_co,
-              .inr (hchk.mono (fun cl hcl => by rw [hc758, hc537]; simp [hcl])),
+              .inr (hchk.mono (fun cl hcl => by rw [hc796, hc537]; simp [hcl])),
               recs_b.map (WalkedRec.mono hsub_b), hcl_b.mono hsub_b,
               walkedRec_mono_depth_lt hsub_b hdep_b hlt_calls, ?_⟩
             intro _
@@ -2182,18 +2183,18 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             obtain ⟨rfl, rfl⟩ := role_ctx_validator_spec (hrc.mono (ext1.trans ext_rc)) ev651
             obtain ⟨d_blk, rfl, hix_blk⟩ := addrVal_of_load (S0.addr_mono ext_rc hblk_addr) ld668
             have hlt_calls : cs611.length < calls.length := by
-              rw [hc758, hc670]
+              rw [hc796, hc670]
               simp only [List.length_cons, List.length_append]
               omega
             have hlt_sub : cs611.length < fuel := Nat.lt_of_lt_of_le hlt_calls hfuel
             rcases (ih cs611.length hlt_sub).1 (Nat.le_refl _) hix_b hix_blk ev613 with
               hcoll | ⟨ext_co, _, recs_b, hmem_b, hcl_b, hdep_b⟩
             · exact .inl (hashedCollision_mono
-                (fun cl hcl => by rw [hc758, hc670]; simp [hcl]) hcoll)
+                (fun cl hcl => by rw [hc796, hc670]; simp [hcl]) hcoll)
             have hsub_b : ∀ cl ∈ cs611, cl ∈ calls := fun cl hcl => by
-              rw [hc758, hc670]; simp [hcl]
+              rw [hc796, hc670]; simp [hcl]
             refine .inr ⟨ext_rc.trans ext_co,
-              .inr (hchk.mono (fun cl hcl => by rw [hc758, hc670]; simp [hcl])),
+              .inr (hchk.mono (fun cl hcl => by rw [hc796, hc670]; simp [hcl])),
               recs_b.map (WalkedRec.mono hsub_b), hcl_b.mono hsub_b,
               walkedRec_mono_depth_lt hsub_b hdep_b hlt_calls, ?_⟩
             intro _
@@ -2210,32 +2211,33 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             case rPrj _ => obtain ⟨_, hv', _⟩ := hinfo; exact absurd hv' (hne672 [_] rfl)
             all_goals simp [Ix.Cert.ownerOf, hc_i]
           exact .inr ⟨ext_rc,
-            .inr (hchk.mono (fun cl hcl => by rw [hc758, hc698]; simp [hcl])),
+            .inr (hchk.mono (fun cl hcl => by rw [hc796, hc698]; simp [hcl])),
             [], by simp [RecsClosed], by simp, fun hne => absurd hown_self hne⟩
       rcases hseg with hcoll | ⟨ext_seg, hchk_self, recs_blk, hcl_blk, hdep_blk, hown_blk⟩
       · exact .inl hcoll
-      obtain ⟨ext_idx, hidxs⟩ := const_idxs_of_spec (hrep.mono ext_seg) ev743
+      have ext_guard : Heap.Extends m700 m709 := ev721.heap_extends
+      obtain ⟨ext_idx, hidxs⟩ := const_idxs_of_spec (hrep.mono (ext_seg.trans ext_guard)) ev781
       have hrefs_rep :
-          RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem m733 c.refs.toList x_refs := by
+          RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem m771 c.refs.toList x_refs := by
         obtain ⟨_, _, refsPtr, _, _, hv_c, _, _, hr_list, _, _⟩ := hrep
         injection hv_c with _ _ hargs_c
         simp only [List.cons.injEq] at hargs_c
         rw [← hargs_c.2.2.1] at hr_list
-        exact repList_heapMono₂ _ repAddrElem_heapMono₂ (ext_seg.trans ext_idx) hr_list
-      have hlt_r_calls : cs711.length < calls.length := by
-        rw [hc758]
+        exact repList_heapMono₂ _ repAddrElem_heapMono₂ (ext_seg.trans (ext_guard.trans ext_idx)) hr_list
+      have hlt_r_calls : cs749.length < calls.length := by
+        rw [hc796]
         simp only [List.length_cons, List.length_append]
         omega
-      have hlt_walk : cs711.length < fuel := Nat.lt_of_lt_of_le hlt_r_calls hfuel
+      have hlt_walk : cs749.length < fuel := Nat.lt_of_lt_of_le hlt_r_calls hfuel
       have hrefs_bound : 0 + c.refs.toList.length < 8589934592 := by
         rw [Nat.zero_add, Array.length_toList]
         exact refs_size_lt_bound hsz hdeExact
-      rcases (ih cs711.length hlt_walk).2.2 (i := 0) (Nat.le_refl _) hrefs_bound
-          (hrc.mono (ext1.trans (ext_seg.trans ext_idx))) hrefs_rep hidxs ev713 with
+      rcases (ih cs749.length hlt_walk).2.2 (i := 0) (Nat.le_refl _) hrefs_bound
+          (hrc.mono (ext1.trans (ext_seg.trans (ext_guard.trans ext_idx)))) hrefs_rep hidxs ev751 with
         hcoll | ⟨ext_walk, recs_r, hmem_r, hcl_r, hdep_r⟩
-      · exact .inl (hashedCollision_mono (fun cl hcl => by rw [hc758]; simp [hcl]) hcoll)
-      have hsub_r : ∀ cl ∈ cs711, cl ∈ calls := fun cl hcl => by
-        rw [hc758]; simp [hcl]
+      · exact .inl (hashedCollision_mono (fun cl hcl => by rw [hc796]; simp [hcl]) hcoll)
+      have hsub_r : ∀ cl ∈ cs749, cl ∈ calls := fun cl hcl => by
+        rw [hc796]; simp [hcl]
       have hdep_r_lt : ∀ r ∈ recs_r.map (WalkedRec.mono hsub_r), r.depth < calls.length :=
         walkedRec_mono_depth_lt hsub_r hdep_r hlt_r_calls
       let r₀ : WalkedRec calls b.address t := {
@@ -2244,14 +2246,14 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
         c := c
         depth := calls.length
         hsz := hsz
-        hhashed := hashed_mono (fun cl hcl => by rw [hc758]; simp [hcl]) hh_load
+        hhashed := hashed_mono (fun cl hcl => by rw [hc796]; simp [hcl]) hh_load
         hblake := hblk
         hde := hde
         hdeExact := hdeExact
         hchecked := hchk_self
       }
       let recs_tail := recs_blk ++ recs_r.map (WalkedRec.mono hsub_r)
-      refine .inr ⟨ext1.trans (ext_seg.trans (ext_idx.trans ext_walk)),
+      refine .inr ⟨ext1.trans (ext_seg.trans (ext_guard.trans (ext_idx.trans ext_walk))),
         r₀ :: recs_tail, List.mem_cons_self,
         RecsClosed.cons (hcl_blk.append (hcl_r.mono hsub_r)) ?_ ?_, ?_⟩
       · intro hne
