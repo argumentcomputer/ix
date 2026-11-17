@@ -945,14 +945,89 @@ def validate_op_equations := aiur_fn⟦
                   () } ,
                 RoleEvidence::Proof(thm) => {
                   match (*(Ingress::get_ci(thm))) {
-                    KernelTypes::KConstantInfo::Thm(nlvls, tty, _) => {
+                    KernelTypes::KConstantInfo::Thm(nlvls, _, pval) => {
                       assert_eq!(nlvls, 0, "certificate theorem has universe parameters");
-                      KernelClaim::run_check_transitive(rc, thm);
-                      assert_type_meets(rc, tty, KernelRoleSpec::op_certificate(tbl, r, k)) } ,
+                      -- the proof with the operation replaced by its value, closed and level-free;
+                      -- the theorem record itself is not walked and its type is not used
+                      let p = KernelSubst::subst_const(pval, a, val);
+                      KernelCheck::validate_expr_well_scoped(p, 0, 0);
+                      -- what the proof names, the theorem's references but the operation, checked
+                      -- with their closures; none of them reaches the operation (the order rule)
+                      let tc = Ingress::load_verified_constant(thm);
+                      match tc {
+                        Ixon::Constant::Mk(_, _, refs, _, _) => {
+                          let used = KernelClaim::const_idxs_of(tc);
+                          walk_refs_except(rc, refs, used, 0, a);
+                          op_order_scan_except(tbl, role_ctx_limit(rc), op_group_needs(r), refs, used, 0, a) } ,
+                      };
+                      -- the certificate opened: its hypotheses are the context, innermost first,
+                      -- its equation the expected type at depth 2 + n, and the proof is applied to
+                      -- x, y and the hypotheses' variables
+                      let (eqn, types) = open_foralls(
+                        KernelSubst::subst_const(KernelRoleSpec::op_certificate(tbl, r, k), a, val),
+                        (&(Lists::Node::Nil)));
+                      let d = Lists::length(types);
+                      KernelInfer::k_check(rc, KernelWhnf::apply_spine(p, KernelModeled::bvars_desc(d, d)),
+                        eqn, types) } ,
                   } } ,
               } } ,
           };
           validate_op_equations(rc, tbl, r, a, val, rest, k + 1) } ,
+      }
+    }
+⟧
+
+  -- A rendered certificate `∀ x y h₁ … hₙ, E`: `E`, open at depth `2 + n`, and the binders'
+  -- types, innermost first.
+
+def open_foralls := aiur_fn⟦
+  fn open_foralls(e: KernelTypes::KExpr, acc: Lists::List<KernelTypes::KExpr>)
+        -> (KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>) {
+      match (*(e)) {
+        KernelTypes::KExprNode::Forall(t, body, _) => {
+          open_foralls(body, (&(Lists::Node::Cons(t, acc)))) } ,
+        _ => {  (e, acc) } ,
+      }
+    }
+⟧
+
+  -- The references `refs` (used at the indices `used`) walked as `KernelClaim::walk_refs_transitive`
+  -- walks them, except `a`.
+
+def walk_refs_except := aiur_fn⟦
+  fn walk_refs_except(rc: RoleCtx, refs: Lists::List<Bytes::AddressRef>, used: Lists::List<Field>,
+                      i: Field, a: Bytes::AddressRef) -> () {
+      match (*(refs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(b, rest) => {
+          match KernelClaim::g_list_has(used, i) * (1 - Bytes::address_eq(b, a)) {
+            1 => {
+              assert_ref_allowed(rc, b);
+              match walk_covered(rc, b) {
+                0 => {  KernelClaim::run_check_transitive(walk_ctx(rc, b), b) } ,
+                _ => {  () } ,
+              } } ,
+            _ => {  () } ,
+          };
+          walk_refs_except(rc, rest, used, i + 1, a) } ,
+      }
+    }
+⟧
+
+  -- `op_order_scan` on the references `refs` (used at the indices `used`), except `a`.
+
+def op_order_scan_except := aiur_fn⟦
+  fn op_order_scan_except(tbl: RoleTable, limit: Field, needs: Lists::List<Field>,
+                          refs: Lists::List<Bytes::AddressRef>, used: Lists::List<Field>, i: Field,
+                          a: Bytes::AddressRef) -> () {
+      match (*(refs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(b, rest) => {
+          match KernelClaim::g_list_has(used, i) * (1 - Bytes::address_eq(b, a)) {
+            1 => {  op_order_scan(tbl, limit, needs, b) } ,
+            _ => {  () } ,
+          };
+          op_order_scan_except(tbl, limit, needs, rest, used, i + 1, a) } ,
       }
     }
 ⟧
