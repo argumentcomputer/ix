@@ -52,7 +52,7 @@ theorem check_advice_records_walk {rc wset : SourceValue F} :
     | Nil _ he21 he22 _ =>
       rw [he21, he22]
       exact ⟨addrSet_mono_imp (Heap.Extends.refl h) (fun _ hp => Or.inl hp) hseen,
-        fun _ hb => nomatch hb, Heap.Extends.refl h⟩
+        (fun _ hb => nomatch hb), Heap.Extends.refl h⟩
     | Cons _ _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ _ =>
       obtain ⟨_, _, he, _, _⟩ := Lib.rep_cons_of_load hadv_rep ld12
       cases he
