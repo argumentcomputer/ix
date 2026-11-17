@@ -191,7 +191,8 @@ private theorem certStmts_all_ok :
 
 /-- The constants of a certificate statement are stored in the prefix of a well-founded
 operation's install. -/
-theorem certKeys_stored {env : Env .anon} {c : KKey} (hp : WfPrefix env c) :
+theorem certKeys_stored {env : Env .anon} {c : KKey} (hS : Ix.Kernel.Open.StoreInv env)
+    (hp : WfPrefix env c) :
     ∀ k ∈ certKeys c, (env.find? k).isSome = true := by
   obtain ⟨cvN, caps, cv0, i0, j0, cv1, i1, j1, hfN, hfZ, hfS, -⟩ :=
     Ix.Kernel.natLitSupported_inv hp.op.natLit
@@ -205,7 +206,7 @@ theorem certKeys_stored {env : Env .anon} {c : KKey} (hp : WfPrefix env c) :
     · simp [hfZ]
     · simp [hfS]
     · simp [hp.eq]
-    · exact hp.boolStored
+    · exact boolStored_of_ctorsTyped hS hp.boolCtorsTyped
     · simp [hT]
     · simp [hF]
   · obtain ⟨hmem, hne⟩ := List.mem_filter.mp hk
@@ -215,7 +216,8 @@ theorem certKeys_stored {env : Env .anon} {c : KKey} (hp : WfPrefix env c) :
 
 /-- The syntactic guards of a certificate on its statement: the hypotheses and the equation, the
 operation replaced by its value, name only stored constants. -/
-theorem certStmts_resolve {env : Env .anon} {c : KKey} {val : KExpr} (hc : c ∈ natDivModNames)
+theorem certStmts_resolve {env : Env .anon} {c : KKey} {val : KExpr}
+    (hS : Ix.Kernel.Open.StoreInv env) (hc : c ∈ natDivModNames)
     (hp : WfPrefix env c) (hv : val.constsResolve env = true) :
     ∀ st ∈ divModCertStmts c,
       (st.1.map (Expr.substConst0 c val)).all (fun h => h.constsResolve env) = true ∧
@@ -227,7 +229,7 @@ theorem certStmts_resolve {env : Env .anon} {c : KKey} {val : KExpr} (hc : c ∈
   have hst' : (st.1.all (stmtOk c (certKeys c)) && stmtOk c (certKeys c) st.2) = true :=
     List.all_eq_true.mp hall st hst
   simp only [Bool.and_eq_true] at hst'
-  have hks := certKeys_stored hp
+  have hks := certKeys_stored hS hp
   refine ⟨List.all_eq_true.mpr ?_, constsResolve_substConst0 hks hv st.2 hst'.2⟩
   intro h hh
   obtain ⟨h₀, hmem, rfl⟩ := List.mem_map.mp hh
@@ -301,7 +303,7 @@ theorem wfOp_run {env : Env .anon} {c : KKey} {ty₀ val₀ ty val : KExpr}
   have hvres : val.constsResolve env = true := hvf.2.2.2.2.1
   obtain ⟨proofs, hrows⟩ := hk.certs
   have hrowsJ : List.Forall₂ (CertRowJ rulesJ env c val) (divModCertStmts c) proofs :=
-    certRows_of_facts hp.op.fresh hrows (certStmts_resolve hc hp hvres)
+    certRows_of_facts hp.op.fresh hrows (certStmts_resolve hS hc hp hvres)
   refine ⟨ty, val, hcv, hvf, rfl, fun hno => ?_,
     fun _ => ⟨divModEnvGuard_installed hp hbase hk.tyShape val hint, proofs,
       certsGuard_of_rows hrowsJ, divModCertsJ_of_rows hrowsJ⟩⟩

@@ -321,13 +321,22 @@ structure OpPrefix (env : Env .anon) (c : KKey) : Prop where
   bool : (c = natBeqName ∨ c = natBleName) → BoolPinned env
 
 /-- **The prefix at the install of a well-founded operation**: `OpPrefix`, the pinned `Eq`
-(the certificates are equations in it), `Bool` stored, and its constructors stored at the type
+(the certificates are equations in it), and the `Bool` constructors stored at the type
 `Bool`. -/
 structure WfPrefix (env : Env .anon) (c : KKey) : Prop where
   op : OpPrefix env c
   eq : env.find? eqName = some eqA
-  boolStored : (env.find? boolName).isSome = true
   boolCtorsTyped : BoolCtorsTyped env
+
+/-- `Bool` is stored where a constructor of type `Bool` is: a stored type names stored
+constants. -/
+theorem boolStored_of_ctorsTyped {env : Env .anon} (hS : Ix.Kernel.Open.StoreInv env)
+    (hb : BoolCtorsTyped env) : (env.find? boolName).isSome = true := by
+  obtain ⟨⟨ciT, hT, htT⟩, -⟩ := hb
+  have hres : ciT.toConstantVal.type.constsResolve env = true :=
+    (hS.wf ciT (Ix.Kernel.Semantics.Env.find?_mem hT)).2.2.1
+  rw [htT] at hres
+  exact hres
 
 /-- `natOpGuard` once the operation is stored. -/
 theorem natOpGuard_installed {env : Env .anon} {c : KKey} (hp : OpPrefix env c)
