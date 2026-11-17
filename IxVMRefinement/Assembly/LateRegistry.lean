@@ -17,9 +17,10 @@ theory, such that
 
 * every registered family is stored and is read off the store as the circuit reads it
   (`LateFamAt`): the former at the key of a projection address whose record in `E` is an
-  inductive projection, the constructors at the keys of that member's constructor projection
-  addresses, as many as the member has; the telescope constant is the stored former; and the
-  family's counts, sort, kinds and level parameters;
+  inductive projection of a block in Lean's logic, the constructors at the keys of that
+  member's constructor projection addresses, as many as the member has, each with its declared
+  field count; the telescope constant is the stored former; and the family's counts, sort,
+  kinds and level parameters (the positions below the member's level count);
 * every stored family the circuit treats as native is registered (`complete`): at a stored
   former whose key is no basis name, whose record in `E` is an inductive projection, and whose
   block a good run of `KernelModeled::block_is_modeled` answered `0` for;
@@ -72,10 +73,12 @@ def NativeAt (E : Ixon.Env) (b : _root_.Address) : Prop :=
 /-- **A registered family as the store `E` and the table `t` read it.** The family is stored
 (`NativeFamStored`); the telescope constant is the stored former; the former's level
 parameters, its telescope into the family's sort, the sort's `Prop` flag and the fields' kinds
-are the family's; the constructors' names are distinct; and the former's key is the key of an address `P` whose record in `E` is the
-inductive projection of member `i` of a block `B` that `E` holds, with the family's parameter
-and index counts, as many constructors as the family, and constructor `j` at the key of the
-constructor projection address `(B, i, j)`. -/
+are the family's; the constructors' names are distinct; each stored constructor has its
+declared constructor's field count (`ctorFields`); and the former's key is the key of an address
+`P` whose record in `E` is the inductive projection of member `i` of a block `B` that `E` holds,
+with the family's parameter and index counts, as many constructors as the family, constructor
+`j` at the key of the constructor projection address `(B, i, j)`, the block in Lean's logic, and
+the family's level parameters the positions below the member's level count. -/
 structure LateFamAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (env : Ix.Kernel.Env .anon)
     (fam : NativeFam .anon) : Prop where
   stored : NativeFamStored env fam
@@ -86,6 +89,9 @@ structure LateFamAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (env : Ix.Kernel.En
   kinds : Ix.Kernel.classifyFixKinds (m := Ix.Kernel.CheckM .anon) fam.p.cvT.name
     fam.p.cvT.levelParams fam.p.nP fam.p.nIdx fam.ctorsA = .ok fam.p.kinds
   nodup : (fam.ctorsA.map (·.1.name)).Nodup
+  /-- Each stored constructor has its declared constructor's field count. -/
+  ctorFields : ∀ (j : Nat) (c cA : ConstantVal .anon × Nat), fam.p.ctors[j]? = some c →
+    fam.ctorsA[j]? = some cA → cA.2 = c.2
   record : ∃ (P : _root_.Address) (cm : Ixon.Constant) (ip : Ixon.InductiveProj)
       (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (ind : Ixon.Inductive),
     fam.p.cvT.name = keyOf t P ∧ Ix.Cert.recordAt E P = some cm ∧ cm.info = .iPrj ip ∧
@@ -93,8 +99,9 @@ structure LateFamAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (env : Ix.Kernel.En
     ms[ip.idx.toNat]? = some (.indc ind) ∧
     fam.p.nP = ind.params.toNat ∧ fam.p.nIdx = ind.indices.toNat ∧
     fam.ctorsA.length = ind.ctors.size ∧
-    ∀ (j : Nat) (cA : ConstantVal .anon × Nat), fam.ctorsA[j]? = some cA →
-      cA.1.name = keyOf t (Core.cprjAddr ip.block ip.idx.toNat j)
+    (∀ (j : Nat) (cA : ConstantVal .anon × Nat), fam.ctorsA[j]? = some cA →
+      cA.1.name = keyOf t (Core.cprjAddr ip.block ip.idx.toNat j)) ∧
+    InLogic cb ∧ fam.p.cvT.levelParams = List.range ind.lvls.toNat
 
 /-- **The registry clause at a given registry** (module docstring). -/
 structure LateRegistryWith (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (env : Ix.Kernel.Env .anon)

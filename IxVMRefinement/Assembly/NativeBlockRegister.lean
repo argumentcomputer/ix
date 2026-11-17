@@ -9,6 +9,8 @@ import IxVMRefinement.Assembly.NativeBlockStage
 * `LateRegistryWith.nativeNoRec`, `LateRegistry.nativeNoRec`: the install registers its family
   (`LateRegistryWith.register` met: the model step is `NativeNoRecFacts.register`, the new-key
   fact is `newInd` with the family's stored former, the family is read off the store, `hat`);
+* `NativeNoRecFacts.ctorFields`, `.levelParams_of_former`: two fields of `hat` from the install
+  (the constructors' field counts; the family's level parameters are the declared former's);
 * `KeepsValuesKeyed`: the rule for the extra clause along a value step that also hands the fact
   that the stored key is the key of a 32-byte address; `KeepsValuesJ` gives it
   (`KeepsValuesJ.keyed`), and so does the store clause `HashKeyed`
@@ -117,6 +119,47 @@ theorem LateRegistry.nativeNoRec' {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
     (hfacts : NativeNoRecFacts env env₂ blk nP p₀ fam) (hat : LateFamAt t E env₂ fam) :
     LateRegistry.{u} t E env₂ :=
   h.nativeNoRec hfacts hfacts.envExt hat
+
+/-! ## Fields of `LateFamAt` the install gives -/
+
+/-- The family's record has the recognised block's former. -/
+theorem NativeNoRecFacts.cvT_eq {env env₂ : Ix.Kernel.Env .anon}
+    {blk : List (ConstantInfo .anon)} {nP : Nat} {p₀ : Ix.Kernel.NativeParts .anon}
+    {fam : NativeFam .anon} (h : NativeNoRecFacts env env₂ blk nP p₀ fam) :
+    fam.p.cvT = p₀.cvT := by
+  obtain ⟨-, -, isRec, cvS, cvTa, caps, p₁, p, ctorsA, sortss, kinds, tfvs, trest, isorts, hfam,
+    hInd, hp, -⟩ := h
+  subst hfam
+  obtain ⟨cvTa₀, s, bs, cvS', -, -, -, -, hp₁, -⟩ := hInd
+  subst hp hp₁
+  simp [Ix.Kernel.NativeParts.withKinds]
+
+/-- **`LateFamAt.ctorFields` from the install**: each stored constructor has its declared
+constructor's field count (the constructors' stage, `SumCtorsRunJ`). -/
+theorem NativeNoRecFacts.ctorFields {env env₂ : Ix.Kernel.Env .anon}
+    {blk : List (ConstantInfo .anon)} {nP : Nat} {p₀ : Ix.Kernel.NativeParts .anon}
+    {fam : NativeFam .anon} (h : NativeNoRecFacts env env₂ blk nP p₀ fam) :
+    ∀ (j : Nat) (c cA : ConstantVal .anon × Nat), fam.p.ctors[j]? = some c →
+      fam.ctorsA[j]? = some cA → cA.2 = c.2 := by
+  obtain ⟨-, -, isRec, cvS, cvTa, caps, p₁, p, ctorsA, sortss, kinds, tfvs, trest, isorts, hfam,
+    -, -, hCtors, -⟩ := h
+  subst hfam
+  obtain ⟨-, -, hall⟩ := hCtors
+  intro j c cA hc hcA
+  exact (hall j c cA hc hcA).1
+
+/-- **The family's level parameters are the declared former's** (for `LateFamAt.record`'s level
+parameters, at a former read with `List.range` of the member's level count). -/
+theorem NativeNoRecFacts.levelParams_of_former {env env₂ : Ix.Kernel.Env .anon}
+    {blk : List (ConstantInfo .anon)} {nP : Nat} {p₀ : Ix.Kernel.NativeParts .anon}
+    {fam : NativeFam .anon} (h : NativeNoRecFacts env env₂ blk nP p₀ fam)
+    {cv : ConstantVal .anon} {caps : IndCaps .anon} {cs : List (ConstantInfo .anon)}
+    (hblk : blk = .indInfo cv caps :: cs) : fam.p.cvT.levelParams = cv.levelParams := by
+  obtain ⟨caps₀, hshape, -⟩ := Decl.nativePartsNoRec?_inv h.recognised
+  rw [hblk] at hshape
+  injection hshape with h1 _
+  injection h1 with hcv _
+  rw [h.cvT_eq, hcv]
 
 /-! ## The invariant after the install, from its load contract and η stability -/
 
