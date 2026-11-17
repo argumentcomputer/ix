@@ -749,7 +749,7 @@ theorem BlockInstall.newUnitLikeRaw (hI : BlockInstall c new B cb ind caps) :
     exact hnf')
   obtain ⟨ty₀, ty'', -, -, -, -, hfT₀⟩ := hI.former
   have hfA : (appCtx c new).env.find? (Core.keyOf c.t (Core.ixAddr a)) =
-      some (.indInfo ⟨Core.keyOf c.t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty''⟩ caps) := by
+      some (.indInfo ⟨Core.keyOf c.t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty''⟩ caps') := by
     rw [hxa]
     exact hfT₀
   refine ⟨hu1, hu2.trans hpv.symm, Or.inl ?_⟩
