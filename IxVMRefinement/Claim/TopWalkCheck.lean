@@ -475,7 +475,7 @@ private theorem run_check_transitive_lim_fuel_aux {t : Ix.Kernel.RoleTable}
                 by simp [TopRecsClosed], by simp⟩
           | .other (ev56 := ev56) (hne217 := hne217) (he224 := he224) .. =>
             obtain ⟨rfl, hiff⟩ := g_list_has_spec idxs hi_lt56 hidxs ev56
-            refine ⟨by rw [he224]; exact Heap.Extends.refl _, [],
+            refine ⟨by subst he224; exact Heap.Extends.refl _, [],
               fun hi_in => absurd (hiff.mpr hi_in) hne217, by simp [TopRecsClosed], by simp⟩
         obtain ⟨ext1, recs₁, hmem₁, hcl₁, hdep₁⟩ := hseg
         simp only [evalBinOp, Except.ok.injEq] at op279
