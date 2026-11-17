@@ -106,6 +106,13 @@ theorem ciRep_recr_rules {κ : _root_.Address → Core.KKey} {h : Heap F} {v : S
       rl'.k = true ∧ rl'.ctorParams = rl.ctorParams) :
     Core.CIRep κ h v (.recInfo cv mI rP rls') := by
   cases hr with
+  | quot hv hk =>
+    refine .quot hv ?_
+    rcases hk with ⟨_, cv', caps', h⟩ | ⟨_, cv', nP', nF', h⟩ | ⟨hk1, -⟩ | ⟨hk1, -⟩
+    · cases h
+    · cases h
+    · exact Or.inr (Or.inr (Or.inl ⟨hk1, cv, mI, rP, rls', rfl⟩))
+    · exact Or.inr (Or.inr (Or.inr ⟨hk1, cv, mI, rP, rls', rfl⟩))
   | recr hv hnp hni hnm hnmi hrP hmI hcounts hrules0 hk0 hkey =>
     refine .recr hv hnp hni hnm hnmi hrP hmI hcounts (rulesRep_congr hrules0 hrules) ?_ hkey
     intro hk1
