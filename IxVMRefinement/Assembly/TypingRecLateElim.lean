@@ -249,7 +249,7 @@ theorem rec_arm_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E
     exact ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
   obtain ⟨parent, pointer, scanHeap, loadedHeap, routedHeap, scanCalls, loadCalls, routeCalls,
     nl, pty, np, ni, nc, pu, blk, idx, lenHeap, lenAfter, kHeap, kAfter, canonHeap, len, kTarget,
-    lenCalls, kCalls, canonCalls, evScan, hsScan, evLoad, hsLoad, hldP, evRoute, hsRoute,
+    lenCalls, kCalls, canonCalls, canonResult, canonFinal, evScan, hsScan, evLoad, hsLoad, hldP, evRoute, hsRoute,
     hnp, hni, eLen, evLen, hsLen, hlenEq, eK, evK, hsK, hkEq, eC, evCanon, hsCanon⟩ :=
     native_rec_member_full evM
   have hsScan' : ∀ x ∈ scanCalls, x ∈ calls := fun x hx => hsub_chk x (hsubM x (hsScan x hx))
