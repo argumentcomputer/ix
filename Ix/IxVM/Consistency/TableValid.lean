@@ -162,6 +162,36 @@ theorem groupOf_lt (r : Ix.Kernel.Role) :
     rw [roleGroup_eq_nil h] at hm
     cases hm
 
+/-- Every group's needs lie in earlier groups (decided over the 77 groups). -/
+theorem groups_needs_earlier :
+    (List.range Ix.SpecDigest.groups.length).all (fun g =>
+      (groupNeeded g).all fun r => decide (Ix.SpecDigest.groupOf r < g)) = true := by
+  decide +kernel
+
+/-- **A group needs only earlier groups.** -/
+theorem groupNeeded_lt {g : Nat} {r : Ix.Kernel.Role} (h : r ∈ groupNeeded g) :
+    Ix.SpecDigest.groupOf r < g := by
+  rcases Nat.lt_or_ge g Ix.SpecDigest.groups.length with hl | hge
+  · have h1 : (groupNeeded g).all (fun r => decide (Ix.SpecDigest.groupOf r < g)) = true :=
+      List.all_eq_true.mp groups_needs_earlier g (List.mem_range.mpr hl)
+    exact of_decide_eq_true (List.all_eq_true.mp h1 r h)
+  · have hnil : groupNeeded g = [] :=
+      (congrArg Ix.SpecDigest.groupNeeds (roleGroup_eq_nil hge)).trans rfl
+    rw [hnil] at h
+    cases h
+
+/-- **The set "below `g`, or `g`" is closed under what its groups need**, for every `g`:
+the `needsClosed` clause of a witness on that set. -/
+theorem needsClosed_upTo (g : Nat) :
+    ∀ g', (g' < g ∨ g' = g) → ∀ r ∈ groupNeeded g',
+      (Ix.SpecDigest.groupOf r < g ∨ Ix.SpecDigest.groupOf r = g) := by
+  intro _ hg _ hr
+  have h1 := groupNeeded_lt hr
+  rcases hg with h | h
+  · exact Or.inl (Nat.lt_trans h1 h)
+  · rw [h] at h1
+    exact Or.inl h1
+
 /-- **The prelude roles** (`Ix.Kernel.preludeShape`): the members of the `Eq`, `Nat`, `PUnit`,
 `Empty` and `False` blocks, the quotient package, `And` and `Bool`. -/
 def preludeRoles : List Ix.Kernel.Role :=
