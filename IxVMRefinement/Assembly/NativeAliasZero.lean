@@ -14,7 +14,7 @@ namespace IxVM.Refinement.Decl
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
-open IxVM.Refinement.KernelLevels
+open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList repKLevel_heapMono₂)
 open Ix.Kernel (Expr Level LevelParam ConstantInfo ConstantVal)
 open Ix.Kernel.Semantics (ctorZeroOk famDomOk famHead pwsAll)
 

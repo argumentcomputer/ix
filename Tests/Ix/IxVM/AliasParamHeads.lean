@@ -1,3 +1,4 @@
+import Aiur.Modules.Function
 import Tests.Ix.IxVM.AliasFormers
 import IxVM.Source
 import Aiur.Generic.Runtime
@@ -66,6 +67,60 @@ private def localRun (expanded correct : Bool) : Except String (SourceValue IxVM
     5000 body (testHeap expanded correct)).mapError reprStr
   return r
 
+
+/-- Test-only copy of the proposed narrow head check; production source is unchanged. -/
+private def headGuard : Aiur.Generic.Function Nat := aiur_fn⟦
+  fn alias_parameter_head(e: KernelTypes::KExpr, t: Bytes::AddressRef) -> () {
+    match (*(e)) {
+      KernelTypes::KExprNode::Forall(_, b, _) => { alias_parameter_head(b, t) },
+      KernelTypes::KExprNode::App(f, _) => { alias_parameter_head(f, t) },
+      KernelTypes::KExprNode::Let(_, v, b) => {
+        alias_parameter_head(KernelSubst::expr_inst1(b, v, 0), t)
+      },
+      KernelTypes::KExprNode::Const(a, _) => {
+        assert_eq!(Bytes::address_eq(a, t), 0,
+          "an alias constructor parameter is headed by its family");
+        ()
+      },
+      _ => { () },
+    }
+  }
+⟧
+
+private def probeSource : Except String (Aiur.Generic.Source IxVM.F) :=
+  let extra : Aiur.Generic.Program Nat := { functions := [headGuard] }
+  Aiur.Generic.prepare { IxVM.program with functions :=
+    IxVM.program.functions ++ (extra.toField IxVM.F).functions }
+
+private def betaHeap (eta : Bool) : Heap IxVM.F :=
+  testHeap false false ++
+    [.construct kexprEnum "Lam" [ep 2, ep 3, lp 1],
+     .construct kexprEnum "App" [ep 6, ep 8],
+     .construct kexprEnum "Lam" [ep 2, ep 12, lp 1],
+     .construct kexprEnum "App" [ep 11, ep (if eta then 13 else 6)],
+     .construct kexprEnum "Forall" [ep 14, ep 6, lp 0]]
+
+private def probeRun (src : Aiur.Generic.Source IxVM.F) (name : String)
+    (ptr : Nat) (heap : Heap IxVM.F) : Except String (SourceValue IxVM.F) := do
+  let args := if name == "KernelCheck::ctor_zero_ok" then [ep ptr, ap, lp 0] else [ep ptr, ap]
+  let (types, locals, body) ← (src.world.prepare name args).mapError reprStr
+  let (r, _) ← (SourceSemantics.evalFunctionWith src.world SourceSemantics.unavailable types locals
+    5000 body heap).mapError reprStr
+  return r
+
+private def headProbeChecks : IO Bool := do
+  let src ← IO.ofExcept probeSource
+  let raw := probeRun src "alias_parameter_head" 9 (testHeap false false)
+  let bare := probeRun src "alias_parameter_head" 14 (betaHeap false)
+  let eta := probeRun src "alias_parameter_head" 14 (betaHeap true)
+  let bareZero := probeRun IxVM.source "KernelCheck::ctor_zero_ok" 15 (betaHeap false)
+  let etaZero := probeRun IxVM.source "KernelCheck::ctor_zero_ok" 15 (betaHeap true)
+  IO.println s!"proposed head check raw-let: {reprStr raw}"
+  IO.println s!"proposed head check beta-erased bare: {reprStr bare}"
+  IO.println s!"proposed head check beta-erased eta: {reprStr eta}"
+  IO.println s!"current zero check beta-erased bare/eta: {reprStr bareZero}; {reprStr etaZero}"
+  return !raw.isOk && bare.isOk && eta.isOk && bareZero.isOk && etaZero.isOk
+
 private def kernelZero (correct : Bool) : Bool :=
   let T : Ix.Kernel.Key .anon := .role .false
   let inner : Ix.Kernel.Expr .anon := .forallE (.sort .zero) (.const T [])
@@ -85,6 +140,7 @@ private def localChecks : IO Bool := do
 
 def run : IO UInt32 := do
   let localOk ← localChecks
+  let headsOk ← headProbeChecks
   let some path ← IO.getEnv "IX_ALIAS_IXE" | throw (IO.userError "set IX_ALIAS_IXE")
   let env ← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile path))
   IO.println s!"corpus {path}: records={env.consts.size}; names={env.named.size}"
@@ -143,6 +199,6 @@ def run : IO UInt32 := do
   IO.println s!"raw self-occurrences={mentions}; zeta-read family heads={heads}; parameter lets={lets}; errors={errors}"
   IO.println s!"affected blocks={badBlocks.size}"
   if badBlocks.isEmpty then IO.println "affected dependent names=0 (the affected block set is empty)"
-  return if localOk && aliases == 31 && errors == 0 && heads == 0 then 0 else 1
+  return if localOk && headsOk && aliases == 31 && errors == 0 && heads == 0 then 0 else 1
 
 end Tests.Ix.IxVM.AliasParamHeads
