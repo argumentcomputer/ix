@@ -293,7 +293,11 @@ def proj_guard := aiur_fn⟦
   fn proj_guard(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, idx: Field, fidx: Field) -> KernelTypes::KLevel {
       let KernelTypes::KConstantInfo::Ctor(_, cty, _, _, _, np, _, _) = (*(Ingress::get_ci_cprj(block, idx, 0)));
       let (after, ctx) = KernelCheck::peel_n_foralls_with_types(cty, np, (&(Lists::Node::Nil)));
-      proj_guard_walk(rc, after, ctx, fidx, (&(Lists::Node::Nil)))
+      let KernelTypes::KConstantInfo::Induct(_, ind_ty, ind_np, ind_ni, _, _, _, _) = (*(Ingress::get_ci_iprj(block, idx)));
+      match is_inductive_prop(rc, ind_ty, ind_np + ind_ni) {
+        1 => {  KernelGuard::proj_walk_checked(rc, after, ctx, fidx, (&(Lists::Node::Nil))) } ,
+        _ => {  proj_guard_walk(rc, after, ctx, fidx, (&(Lists::Node::Nil))) } ,
+      }
     }
 ⟧
 

@@ -600,13 +600,49 @@ def former_is_tele := aiur_fn⟦
     }
 ⟧
 
+  -- Only the head of a parameter domain matters here. In particular, a family occurring in
+  -- an erased argument or below a lambda is permitted. Lets are read by substitution, as in
+  -- the kernel reading of the record.
+
+def assert_alias_parameter_head := aiur_fn⟦
+  fn assert_alias_parameter_head(e: KernelTypes::KExpr, t: Bytes::AddressRef) -> () {
+      match (*(e)) {
+        KernelTypes::KExprNode::Forall(_, b, _) => { assert_alias_parameter_head(b, t) },
+        KernelTypes::KExprNode::App(f, _) => { assert_alias_parameter_head(f, t) },
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          assert_alias_parameter_head(KernelSubst::expr_inst1(b, v, 0), t)
+        },
+        KernelTypes::KExprNode::Const(a, _) => {
+          assert_eq!(Bytes::address_eq(a, t), 0,
+            "an alias constructor parameter is headed by its family");
+          ()
+        },
+        _ => { () },
+      }
+    }
+⟧
+
+def assert_alias_parameter_heads := aiur_fn⟦
+  fn assert_alias_parameter_heads(ty: KernelTypes::KExpr, n: Field, t: Bytes::AddressRef) -> () {
+      match n {
+        0 => { () },
+        _ => {
+          let KernelTypes::KExprNode::Forall(d, b, _) = (*(ty));
+          assert_alias_parameter_head(d, t);
+          assert_alias_parameter_heads(b, n - 1, t)
+        },
+      }
+    }
+⟧
+
 def ctor_zero_all := aiur_fn⟦
   fn ctor_zero_all(block_addr: Bytes::AddressRef, ind_idx: Field, n: Field, j: Field, t: Bytes::AddressRef,
                    res: KernelTypes::KLevel) -> () {
       match n - j {
         0 => {  () } ,
         _ => {
-          let KernelTypes::KConstantInfo::Ctor(_, cty, _, _, _, _, _, _) = (*(Ingress::get_ci_cprj(block_addr, ind_idx, j)));
+          let KernelTypes::KConstantInfo::Ctor(_, cty, _, _, _, np, _, _) = (*(Ingress::get_ci_cprj(block_addr, ind_idx, j)));
+          assert_alias_parameter_heads(cty, np, t);
           ctor_zero_ok(cty, t, res);
           ctor_zero_all(block_addr, ind_idx, n, j + 1, t, res) } ,
       }
@@ -741,6 +777,7 @@ def check_inductive_shape_ctors := aiur_fn⟦
               check_ctor_return_type(cty, c_np, n_indices, c_nf, num_lvls,
                                           block_addr, ind_idx);
               check_field_universes(rc, cty, c_np, ind_level);
+              KernelGuard::check_prop_fields(rc, ind_level, num_ctors, n_indices, cty, c_np, c_nf);
 
               match is_unsafe {
                 0 => {  check_positivity(cty, c_np, block_addr) } ,
