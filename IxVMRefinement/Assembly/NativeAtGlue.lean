@@ -58,9 +58,7 @@ theorem nativePartsAt?_block_eq {nPd nIdx : Nat} {block : List (ConstantInfo .an
   refine ⟨caps₀, p₀.ctors.map (fun c => (c.1, p₀.nP, c.2)), ?_, ?_⟩
   · rw [hblk, List.map_map]
     try rfl
-  · first
-      | (simp [List.map_map, Function.comp_def]; done)
-      | (rw [List.map_map]; exact (List.map_id _).symm)
+  · simp [List.map_map, Function.comp_def]
 
 /-- Extract constructor-key `NonAuxKey` from `nativePartsAt?` on a block of `NonAuxKey` members. -/
 theorem nonAuxKey_ctors_of_nativePartsAt {nPd nIdx : Nat} {block : List (ConstantInfo .anon)}
