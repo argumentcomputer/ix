@@ -39,7 +39,7 @@ set_option linter.unusedSimpArgs false
 
 /-- **The unit's record**: the block at `B` has one member, the inductive `ind`, is in Lean's
 logic, and the run's store holds its member and constructor projection records. -/
-structure NativeBlockRecord (E₀ : Ixon.Env) (B : _root_.Address) (cb : Ixon.Constant)
+structure BlockUnitRecord (E₀ : Ixon.Env) (B : _root_.Address) (cb : Ixon.Constant)
     (ind : Ixon.Inductive) : Prop where
   record : recordOf E₀ B = some cb
   muts : cb.info = .muts #[.indc ind]
@@ -49,7 +49,7 @@ structure NativeBlockRecord (E₀ : Ixon.Env) (B : _root_.Address) (cb : Ixon.Co
 
 /-- **The native case**: every observation of the circuit's dispatch on the block in the run
 answers `0` (not mutual, not nested). -/
-def NativeAt (calls : List (Call F)) (B : _root_.Address) : Prop :=
+def NativeRouteAt (calls : List (Call F)) (B : _root_.Address) : Prop :=
   ∀ (bp r : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (b : Bytes.Address),
     ObsFn Core.W "KernelModeled::block_is_modeled" [bp] h r h' cs →
     (∀ cl ∈ cs, cl ∈ calls) → Bytes.RepAddressRef Core.addrTy h b bp →
@@ -57,7 +57,7 @@ def NativeAt (calls : List (Call F)) (B : _root_.Address) : Prop :=
 
 /-- **The former is declared at its telescope**: the reading of its type is a syntactic
 telescope of the parameters and indices ending in a sort. -/
-def FormerTele (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (B : _root_.Address)
+def FormerAtTele (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (B : _root_.Address)
     (cb : Ixon.Constant) (ind : Ixon.Inductive) : Prop :=
   ∀ ty₀, (exprReader t (fun x => E₀.blobs.get? x) cb id (blockSelf t B #[.indc ind])).read
       ind.typ = .ok ty₀ →
@@ -65,7 +65,7 @@ def FormerTele (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (B : _root_.Address)
 
 /-- **The declared block**: the reading of the former, then the readings of the constructors in
 order, each at its constant address. -/
-def BlockReads (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (B : _root_.Address)
+def BlockReadings (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (B : _root_.Address)
     (ind : Ixon.Inductive) (blk : List (ConstantInfo .anon)) : Prop :=
   ∃ fr cs, blk = fr :: cs ∧ Reads t E₀ (memberAddr B 0 (.indc ind)) fr ∧
     cs.length = ind.ctors.size ∧ ∀ j c, cs[j]? = some c → Reads t E₀ (ctorAddr B 0 j) c
@@ -328,7 +328,7 @@ private theorem idx_zero (B : _root_.Address) :
 /-- **Every constructor slot of the block has its load**, on either route of the `Induct` arm,
 with the block's level and parameter counts and their bounds. -/
 theorem ctorSlots_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore calls E₀)
-    (hrec : NativeBlockRecord E₀ B cb ind)
+    (hrec : BlockUnitRecord E₀ B cb ind)
     (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n) :
     ∃ b : Bytes.Address, Core.ixAddr b = B ∧ ind.lvls.toNat < 4294967296 ∧
       ind.params.toNat < 72057594037927936 ∧ ind.ctors.size < 72057594037927936 ∧
@@ -453,7 +453,7 @@ theorem ctorSlots_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore 
 
 /-- **The reading of the former**, over the run's store. -/
 theorem former_reads (ht : t.check = .ok ()) (hbound : Bounded calls)
-    (hS : LoadedReads.RunStore calls E₀) (hrec : NativeBlockRecord E₀ B cb ind)
+    (hS : LoadedReads.RunStore calls E₀) (hrec : BlockUnitRecord E₀ B cb ind)
     (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n) :
     ∃ ty₀ : Ix.Kernel.Expr .anon,
       (exprReader t (fun x => E₀.blobs.get? x) cb id (blockSelf t B #[.indc ind])).read
@@ -485,7 +485,7 @@ theorem former_reads (ht : t.check = .ok ()) (hbound : Bounded calls)
 /-- **The reading of a constructor at a loaded slot**, over the run's store, with its stored
 index, level count and parameter count pinned to the slot and the block's. -/
 theorem ctorSlot_reads (ht : t.check = .ok ()) (hbound : Bounded calls)
-    (hS : LoadedReads.RunStore calls E₀) (hrec : NativeBlockRecord E₀ B cb ind)
+    (hS : LoadedReads.RunStore calls E₀) (hrec : BlockUnitRecord E₀ B cb ind)
     {b : Bytes.Address} (hb : Core.ixAddr b = B) (hlv : ind.lvls.toNat < 4294967296)
     (hnp : ind.params.toNat < 72057594037927936) {j : Nat} (hj : j < ind.ctors.size)
     (hjb : j < 72057594037927936)
@@ -576,7 +576,7 @@ theorem ctorSlot_reads (ht : t.check = .ok ()) (hbound : Bounded calls)
 
 /-- **The constructors' addresses are distinct**: the store holds the constructor projection of
 each slot at its address, and these records differ. -/
-theorem ctorAddr_inj (hrec : NativeBlockRecord E₀ B cb ind)
+theorem ctorAddr_inj (hrec : BlockUnitRecord E₀ B cb ind)
     (hjb : ∀ {j}, j < ind.ctors.size → j < UInt64.size) :
     ∀ j j', j < ind.ctors.size → j' < ind.ctors.size →
       ctorAddr B 0 j = ctorAddr B 0 j' → j = j' := by
@@ -598,7 +598,7 @@ theorem ctorAddr_inj (hrec : NativeBlockRecord E₀ B cb ind)
 constructor per slot, each with its reading; no pinned basis block; non-derived keys. The
 former's capability record in the reading is any (`Reads` leaves it open). -/
 theorem blockReads_of_member (ht : t.check = .ok ()) (hbound : Bounded calls)
-    (hS : LoadedReads.RunStore calls E₀) (hrec : NativeBlockRecord E₀ B cb ind)
+    (hS : LoadedReads.RunStore calls E₀) (hrec : BlockUnitRecord E₀ B cb ind)
     (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n) :
     ∃ (ty₀ : Ix.Kernel.Expr .anon) (cs : List (ConstantInfo .anon)),
       (exprReader t (fun x => E₀.blobs.get? x) cb id (blockSelf t B #[.indc ind])).read
@@ -613,7 +613,7 @@ theorem blockReads_of_member (ht : t.check = .ok ()) (hbound : Bounded calls)
           ct.params.toNat ct.fields.toNat ∧
         Reads t E₀ (ctorAddr B 0 j) c) ∧
       ∀ caps : Ix.Kernel.IndCaps .anon,
-        BlockReads t E₀ B ind (.indInfo ⟨keyOf t (memberAddr B 0 (.indc ind)),
+        BlockReadings t E₀ B ind (.indInfo ⟨keyOf t (memberAddr B 0 (.indc ind)),
           List.range ind.lvls.toNat, ty₀⟩ caps :: cs) ∧
         Ix.Kernel.basisPinHit (.indInfo ⟨keyOf t (memberAddr B 0 (.indc ind)),
           List.range ind.lvls.toNat, ty₀⟩ caps :: cs) = none ∧
@@ -700,9 +700,9 @@ theorem blockReads_of_member (ht : t.check = .ok ()) (hbound : Bounded calls)
 /-- **Every block of readings at the unit's addresses is the read block**: the former's reading
 up to its capability record, and the constructors' readings. -/
 theorem blockReads_shape (ht : t.check = .ok ()) (hbound : Bounded calls)
-    (hS : LoadedReads.RunStore calls E₀) (hrec : NativeBlockRecord E₀ B cb ind)
+    (hS : LoadedReads.RunStore calls E₀) (hrec : BlockUnitRecord E₀ B cb ind)
     (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
-    {blk : List (ConstantInfo .anon)} (hblk : BlockReads t E₀ B ind blk) :
+    {blk : List (ConstantInfo .anon)} (hblk : BlockReadings t E₀ B ind blk) :
     ∃ (ty₀ : Ix.Kernel.Expr .anon) (caps : Ix.Kernel.IndCaps .anon)
       (cs : List (ConstantInfo .anon)),
       blk = .indInfo ⟨keyOf t (memberAddr B 0 (.indc ind)), List.range ind.lvls.toNat, ty₀⟩ caps
@@ -835,10 +835,10 @@ variable {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {E₀ : Ixon.Env}
 /-- **The declared block is recognised without its recursor**, at a former declared at its
 telescope, with distinct constructor names. -/
 theorem nativeParts_of_member (ht : t.check = .ok ()) (hbound : Bounded calls)
-    (hS : LoadedReads.RunStore calls E₀) (hrec : NativeBlockRecord E₀ B cb ind)
+    (hS : LoadedReads.RunStore calls E₀) (hrec : BlockUnitRecord E₀ B cb ind)
     (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
-    (htele : FormerTele t E₀ B cb ind) {blk : List (ConstantInfo .anon)}
-    (hblk : BlockReads t E₀ B ind blk)
+    (htele : FormerAtTele t E₀ B cb ind) {blk : List (ConstantInfo .anon)}
+    (hblk : BlockReadings t E₀ B ind blk)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x)) :
     ∃ p₀, Ix.Kernel.Semantics.nativePartsNoRec? ind.params.toNat blk = some p₀ ∧
       (p₀.ctors.map (·.1.name)).Nodup := by
