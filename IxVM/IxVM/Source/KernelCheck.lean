@@ -3833,15 +3833,18 @@ def check_const := aiur_fn⟦
                                          ind_is_unsafe);
               check_block_peer_param_agreement(rc, ci, addr) } ,
             _ => {
-              -- the modeled route: the declared shape only. The shape is read as Lean's
-              -- kernel reads a former, after whnf before each binder, so a former
-              -- declared at a definition (`T : MyType`, `MyType := Type`) has one. Its parameters,
-              -- as Lean counts them, are syntactic binders. The family is checked against its
+              -- the modeled route: the declared shape only. The shape is the stored type's
+              -- own: its parameters and indices are syntactic binders and what follows them is
+              -- a sort, with nothing to reduce in between (a former declared at a definition,
+              -- `T : MyType` with `MyType := Type`, is refused here; the native route reads one
+              -- after head normalization). The family is checked against its
               -- model where one of its recursors is checked (`KernelModeled::check_family`): a
               -- block no checked recursor eliminates needs none, since nothing reads a rule,
               -- a projection, structure eta or unit-likeness at it.
               assert_eq!(has_n_leading_foralls(ty, n_params), 1,
                 "a modeled inductive's parameters are not syntactic binders");
+              assert_eq!(former_is_tele(ty, n_params + n_indices), 1,
+                "a mutual or nested inductive's type is not a telescope of binders into a sort");
               get_result_sort_level(rc, ty, n_params + n_indices, (&(Lists::Node::Nil)));
               check_modeled_ctors(rc, n_params, n_indices, num_ctors, nlvls,
                                   ind_block, ind_idx, ind_is_unsafe, 0) } ,
