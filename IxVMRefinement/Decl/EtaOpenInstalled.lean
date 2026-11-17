@@ -6,8 +6,8 @@ import IxVMRefinement.StatementRel.BoolInhabit
 `Box : Type → Type`, `Box.mk : (α : Type) → α → Box α` and its recursor `Box.rec.{u}`, at three
 role keys used as placeholders (`Iff`'s, no reserved basis name; the kernel evaluates the check
 at role keys, as for the prelude's blocks), checked by IxC's own executable native check (fuel
-16, evaluated by the Lean kernel) at the empty environment. The environment it installs (`boxEnv`: the projection table,
-`Box.rec`, `Box.mk`, `Box`) has the kernel's model in every set theory (`boxEnv_ok`), stores
+16, evaluated by the Lean kernel) at the empty environment. The environment it installs
+(`boxEnv`: the projection table, `Box.rec`, `Box.mk`, `Box`) has the kernel's model in every set theory (`boxEnv_ok`), stores
 `Box` with the η capability, and `Box.mk` with one parameter, one field and never-zero binders
 (`facts`). There `EtaStable` and the typing clause of `EtaUseFacts`, as stated, fail
 (`not_etaStable`): the invariant `PrefixInv` cannot hold at an environment IxC accepts.
