@@ -123,10 +123,11 @@ theorem lateFamAt_of_install {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {n : 
     · rw [hpT, ← hO.caps_eq]
       exact hO.formerFind
     · intro j cA hcA
+      have hjc : j < p.ctors.length := by
+        have := (List.getElem?_eq_some_iff.mp hcA).1
+        omega
       obtain ⟨c, hc⟩ : ∃ c, p.ctors[j]? = some c :=
-        ⟨p.ctors[j], List.getElem?_eq_getElem (by
-          have := (List.getElem?_eq_some_iff.mp hcA).1
-          omega)⟩
+        ⟨p.ctors[j]'hjc, List.getElem?_eq_getElem hjc⟩
       obtain ⟨hf2, sorts, -, hrun⟩ := hall j c cA hc hcA
       obtain ⟨-, -, -, -, ⟨cbs, es, hst, hes⟩, -⟩ := Decl.sumCtorRunJ_struct_facts hrun
       refine ⟨hO.ctorFind cA (List.mem_of_getElem? hcA), ?_, cbs, es, ?_, hes⟩
@@ -217,8 +218,8 @@ theorem unitStep_nativeBlock {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {
     exact ⟨rfl, by rw [hcl]⟩
   have hT : BlockTable ⟨E, env, t, some n⟩ new B ind :=
     blockTable_of_install hI hinv hpin hna hO.facts hcvT hO.nP₀ hO.nIdx₀ hO.lenA hctorsA hfreshT
-      (hguard env new blk p₀ p ty' ctorsA caps hO)
-  have hE := heta env new blk p₀ p ty' ctorsA caps hinv hO
+      (hguard env new _ p₀ p ty' ctorsA caps hO)
+  have hE := heta env new _ p₀ p ty' ctorsA caps hinv hO
   -- the names of the new constants
   have hnres : ∀ cn ∈ new, cn.name ≠ Core.unresolvedKey := by
     intro cn hcn
