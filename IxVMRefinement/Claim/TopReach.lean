@@ -1,4 +1,5 @@
 import IxVMRefinement.Claim.TopExport
+import IxVMRefinement.Claim.SafetyAt
 
 /-! # Restricting a typing walk to records reached from its seeds
 
@@ -102,11 +103,6 @@ theorem TopWalkCore.reach_not_inert_of_not_block
     exact (hn (hW.owner_isBlock (hW.reach_subset hp) hrec hproj hc)).elim
 
 end Walk
-
-/-- Safety of the record at an address and of the record of its projection owner. -/
-def SourceSafe (E₀ : Ixon.Env) (a : _root_.Address) : Prop :=
-  ∀ c, recordOf E₀ a = some c → InLogic c ∧
-    ∀ cb, recordOf E₀ (Ix.Cert.ownerOf a c) = some cb → InLogic cb
 
 /-- Every installation unit is its own owner. -/
 theorem ownerOf_unit (a : _root_.Address) {c : Ixon.Constant} (hk : Typing.UnitKind c) :
