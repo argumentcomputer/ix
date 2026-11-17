@@ -131,14 +131,17 @@ theorem native_induct_dispatch {rc typePtr blockArg index safety addr result : S
   | .Quot (hv1076 := shape) .. =>
     injection shape with _ tag _
     exact absurd tag (by decide)
-  | .Ctor_n0_n0 (hne1883 := notInduct) ..
-  | .Ctor_n0_other (hne1883 := notInduct) ..
-  | .Ctor_other (hne1883 := notInduct) ..
-  | .Rec_n0 (hne1883 := notInduct) ..
-  | .Rec_other (hne1883 := notInduct) .. =>
+  | .Ctor_n0_n0 (hne1936 := notInduct) ..
+  | .Ctor_n0_other (hne1936 := notInduct) ..
+  | .Ctor_other_n0 (hne1936 := notInduct) ..
+  | .Ctor_other_other (hne1936 := notInduct) ..
+  | .Rec_n0 (hne1936 := notInduct) ..
+  | .Rec_other (hne1936 := notInduct) .. =>
     exact (notInduct [_, _, _, _, _, _, _, _] rfl rfl).elim
-  | .Induct_other (m1470 := before) (m1492 := after) (v1491 := value) (cs1503 := children)
-      (hv1240 := fields) (ev1505 := modeRun) (hne1635 := notNative) (hc1882 := allCalls) .. =>
+  | .Induct_other_n0 (m1470 := before) (m1492 := after) (v1491 := value) (cs1503 := children)
+      (hv1240 := fields) (ev1505 := modeRun) (hne1635 := notNative) (hc1926 := allCalls) ..
+  | .Induct_other_other (m1470 := before) (m1492 := after) (v1491 := value) (cs1503 := children)
+      (hv1240 := fields) (ev1505 := modeRun) (hne1635 := notNative) (hc1935 := allCalls) .. =>
     injection fields with _ _ fields
     injection fields with _ fields
     injection fields with _ fields

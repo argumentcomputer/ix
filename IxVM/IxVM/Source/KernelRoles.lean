@@ -57,8 +57,128 @@ def load_role_table := aiur_fn⟦
         read_role_bindings(s, UInt8::to_field(n), 0, RBTreeMap::RBTreeMap::Nil);
       let (m, s) = IxonDeserialize::read_byte(s);
       let (evidence, _next, s) = read_role_evidence(s, UInt8::to_field(m), 0);
+      evidence_roles_have_equations(evidence);
       let Lists::Node::Nil = (*(s));
-      (&(RoleTableNode::Mk(binding, by_role, by_addr, evidence)))
+      let tbl = (&(RoleTableNode::Mk(binding, by_role, by_addr, evidence)));
+      assert_basis_pinned(tbl, 0);
+      tbl
+    }
+⟧
+
+  -- ## The basis pin
+  --
+  -- The kernel installs its basis from committed records, and reads a role table only if the
+  -- table binds each basis role at the committed record that declares it (the prelude's
+  -- shape). The program asks the same of every table it loads: where one of these 26 roles is
+  -- bound, it is bound at the address below. In role order: `Nat`, `Nat.zero`, `Nat.succ`,
+  -- `Nat.rec` (0-3); `Bool`, `Bool.false`, `Bool.true`, `Bool.rec` (4-7); `Eq`, `Eq.refl`,
+  -- `Eq.rec` (8-10); `PUnit`, `PUnit.unit`, `PUnit.rec` (11-13); `Empty`, `Empty.rec` (14-15);
+  -- `False`, `False.rec` (16-17); `And`, `And.intro`, `And.rec` (20-22); `Quot`, `Quot.mk`,
+  -- `Quot.lift`, `Quot.ind`, `Quot.sound` (32-36). Each address is the default role table's
+  -- binding of the role and the address of a committed prelude record: an inductive's or a
+  -- constructor's projection record, a recursor's or a quotient constant's own record, the
+  -- axiom's record.
+
+def basis_pin := aiur_fn⟦
+  fn basis_pin(r: Field) -> (Field, Bytes::AddressRef) {
+      match r {
+        0 => {  (1, (&([UInt8::BYTE_238, UInt8::BYTE_93, UInt8::BYTE_66, UInt8::BYTE_79, UInt8::BYTE_111, UInt8::BYTE_187, UInt8::BYTE_84, UInt8::BYTE_16, UInt8::BYTE_206, UInt8::BYTE_130, UInt8::BYTE_164, UInt8::BYTE_101, UInt8::BYTE_124, UInt8::BYTE_88, UInt8::BYTE_110, UInt8::BYTE_216, UInt8::BYTE_220, UInt8::BYTE_87, UInt8::BYTE_235, UInt8::BYTE_37, UInt8::BYTE_136, UInt8::BYTE_148, UInt8::BYTE_117, UInt8::BYTE_120, UInt8::BYTE_99, UInt8::BYTE_102, UInt8::BYTE_118, UInt8::BYTE_228, UInt8::BYTE_46, UInt8::BYTE_208, UInt8::BYTE_7, UInt8::BYTE_43]))) } ,
+        1 => {  (1, (&([UInt8::BYTE_9, UInt8::BYTE_133, UInt8::BYTE_26, UInt8::BYTE_4, UInt8::BYTE_34, UInt8::BYTE_161, UInt8::BYTE_136, UInt8::BYTE_34, UInt8::BYTE_68, UInt8::BYTE_125, UInt8::BYTE_151, UInt8::BYTE_133, UInt8::BYTE_18, UInt8::BYTE_59, UInt8::BYTE_70, UInt8::BYTE_190, UInt8::BYTE_29, UInt8::BYTE_83, UInt8::BYTE_241, UInt8::BYTE_162, UInt8::BYTE_208, UInt8::BYTE_19, UInt8::BYTE_121, UInt8::BYTE_146, UInt8::BYTE_254, UInt8::BYTE_22, UInt8::BYTE_174, UInt8::BYTE_105, UInt8::BYTE_60, UInt8::BYTE_179, UInt8::BYTE_240, UInt8::BYTE_125]))) } ,
+        2 => {  (1, (&([UInt8::BYTE_117, UInt8::BYTE_124, UInt8::BYTE_169, UInt8::BYTE_221, UInt8::BYTE_187, UInt8::BYTE_253, UInt8::BYTE_252, UInt8::BYTE_185, UInt8::BYTE_57, UInt8::BYTE_164, UInt8::BYTE_44, UInt8::BYTE_22, UInt8::BYTE_76, UInt8::BYTE_67, UInt8::BYTE_93, UInt8::BYTE_237, UInt8::BYTE_230, UInt8::BYTE_214, UInt8::BYTE_210, UInt8::BYTE_52, UInt8::BYTE_39, UInt8::BYTE_159, UInt8::BYTE_137, UInt8::BYTE_225, UInt8::BYTE_209, UInt8::BYTE_54, UInt8::BYTE_104, UInt8::BYTE_243, UInt8::BYTE_239, UInt8::BYTE_77, UInt8::BYTE_137, UInt8::BYTE_29]))) } ,
+        3 => {  (1, (&([UInt8::BYTE_163, UInt8::BYTE_125, UInt8::BYTE_40, UInt8::BYTE_162, UInt8::BYTE_42, UInt8::BYTE_2, UInt8::BYTE_205, UInt8::BYTE_51, UInt8::BYTE_179, UInt8::BYTE_200, UInt8::BYTE_115, UInt8::BYTE_128, UInt8::BYTE_244, UInt8::BYTE_92, UInt8::BYTE_137, UInt8::BYTE_144, UInt8::BYTE_201, UInt8::BYTE_92, UInt8::BYTE_206, UInt8::BYTE_83, UInt8::BYTE_241, UInt8::BYTE_84, UInt8::BYTE_173, UInt8::BYTE_51, UInt8::BYTE_42, UInt8::BYTE_156, UInt8::BYTE_181, UInt8::BYTE_249, UInt8::BYTE_177, UInt8::BYTE_99, UInt8::BYTE_135, UInt8::BYTE_83]))) } ,
+        4 => {  (1, (&([UInt8::BYTE_119, UInt8::BYTE_219, UInt8::BYTE_130, UInt8::BYTE_215, UInt8::BYTE_5, UInt8::BYTE_42, UInt8::BYTE_96, UInt8::BYTE_110, UInt8::BYTE_170, UInt8::BYTE_243, UInt8::BYTE_36, UInt8::BYTE_137, UInt8::BYTE_49, UInt8::BYTE_97, UInt8::BYTE_214, UInt8::BYTE_152, UInt8::BYTE_144, UInt8::BYTE_73, UInt8::BYTE_239, UInt8::BYTE_78, UInt8::BYTE_15, UInt8::BYTE_57, UInt8::BYTE_62, UInt8::BYTE_47, UInt8::BYTE_233, UInt8::BYTE_237, UInt8::BYTE_175, UInt8::BYTE_82, UInt8::BYTE_244, UInt8::BYTE_34, UInt8::BYTE_94, UInt8::BYTE_216]))) } ,
+        5 => {  (1, (&([UInt8::BYTE_165, UInt8::BYTE_252, UInt8::BYTE_133, UInt8::BYTE_109, UInt8::BYTE_230, UInt8::BYTE_53, UInt8::BYTE_207, UInt8::BYTE_196, UInt8::BYTE_10, UInt8::BYTE_183, UInt8::BYTE_3, UInt8::BYTE_238, UInt8::BYTE_165, UInt8::BYTE_28, UInt8::BYTE_183, UInt8::BYTE_4, UInt8::BYTE_220, UInt8::BYTE_230, UInt8::BYTE_152, UInt8::BYTE_95, UInt8::BYTE_215, UInt8::BYTE_222, UInt8::BYTE_146, UInt8::BYTE_31, UInt8::BYTE_148, UInt8::BYTE_184, UInt8::BYTE_214, UInt8::BYTE_53, UInt8::BYTE_233, UInt8::BYTE_211, UInt8::BYTE_102, UInt8::BYTE_127]))) } ,
+        6 => {  (1, (&([UInt8::BYTE_239, UInt8::BYTE_21, UInt8::BYTE_100, UInt8::BYTE_99, UInt8::BYTE_165, UInt8::BYTE_39, UInt8::BYTE_191, UInt8::BYTE_210, UInt8::BYTE_54, UInt8::BYTE_71, UInt8::BYTE_46, UInt8::BYTE_96, UInt8::BYTE_107, UInt8::BYTE_44, UInt8::BYTE_205, UInt8::BYTE_223, UInt8::BYTE_115, UInt8::BYTE_244, UInt8::BYTE_88, UInt8::BYTE_81, UInt8::BYTE_149, UInt8::BYTE_227, UInt8::BYTE_101, UInt8::BYTE_224, UInt8::BYTE_67, UInt8::BYTE_14, UInt8::BYTE_227, UInt8::BYTE_194, UInt8::BYTE_9, UInt8::BYTE_33, UInt8::BYTE_216, UInt8::BYTE_204]))) } ,
+        7 => {  (1, (&([UInt8::BYTE_105, UInt8::BYTE_227, UInt8::BYTE_8, UInt8::BYTE_65, UInt8::BYTE_57, UInt8::BYTE_249, UInt8::BYTE_243, UInt8::BYTE_250, UInt8::BYTE_1, UInt8::BYTE_156, UInt8::BYTE_179, UInt8::BYTE_44, UInt8::BYTE_24, UInt8::BYTE_138, UInt8::BYTE_218, UInt8::BYTE_4, UInt8::BYTE_211, UInt8::BYTE_81, UInt8::BYTE_151, UInt8::BYTE_146, UInt8::BYTE_93, UInt8::BYTE_220, UInt8::BYTE_117, UInt8::BYTE_105, UInt8::BYTE_96, UInt8::BYTE_210, UInt8::BYTE_5, UInt8::BYTE_213, UInt8::BYTE_12, UInt8::BYTE_84, UInt8::BYTE_42, UInt8::BYTE_232]))) } ,
+        8 => {  (1, (&([UInt8::BYTE_157, UInt8::BYTE_60, UInt8::BYTE_123, UInt8::BYTE_207, UInt8::BYTE_204, UInt8::BYTE_143, UInt8::BYTE_31, UInt8::BYTE_22, UInt8::BYTE_97, UInt8::BYTE_188, UInt8::BYTE_232, UInt8::BYTE_125, UInt8::BYTE_55, UInt8::BYTE_26, UInt8::BYTE_93, UInt8::BYTE_160, UInt8::BYTE_213, UInt8::BYTE_24, UInt8::BYTE_140, UInt8::BYTE_27, UInt8::BYTE_192, UInt8::BYTE_93, UInt8::BYTE_239, UInt8::BYTE_33, UInt8::BYTE_212, UInt8::BYTE_170, UInt8::BYTE_23, UInt8::BYTE_97, UInt8::BYTE_56, UInt8::BYTE_201, UInt8::BYTE_27, UInt8::BYTE_16]))) } ,
+        9 => {  (1, (&([UInt8::BYTE_84, UInt8::BYTE_176, UInt8::BYTE_61, UInt8::BYTE_237, UInt8::BYTE_207, UInt8::BYTE_208, UInt8::BYTE_182, UInt8::BYTE_145, UInt8::BYTE_14, UInt8::BYTE_4, UInt8::BYTE_235, UInt8::BYTE_6, UInt8::BYTE_228, UInt8::BYTE_2, UInt8::BYTE_238, UInt8::BYTE_40, UInt8::BYTE_90, UInt8::BYTE_218, UInt8::BYTE_207, UInt8::BYTE_207, UInt8::BYTE_56, UInt8::BYTE_139, UInt8::BYTE_44, UInt8::BYTE_249, UInt8::BYTE_36, UInt8::BYTE_171, UInt8::BYTE_227, UInt8::BYTE_178, UInt8::BYTE_8, UInt8::BYTE_224, UInt8::BYTE_123, UInt8::BYTE_72]))) } ,
+        10 => {  (1, (&([UInt8::BYTE_11, UInt8::BYTE_185, UInt8::BYTE_20, UInt8::BYTE_221, UInt8::BYTE_56, UInt8::BYTE_223, UInt8::BYTE_206, UInt8::BYTE_142, UInt8::BYTE_218, UInt8::BYTE_164, UInt8::BYTE_35, UInt8::BYTE_44, UInt8::BYTE_84, UInt8::BYTE_144, UInt8::BYTE_92, UInt8::BYTE_161, UInt8::BYTE_94, UInt8::BYTE_163, UInt8::BYTE_132, UInt8::BYTE_193, UInt8::BYTE_4, UInt8::BYTE_35, UInt8::BYTE_226, UInt8::BYTE_129, UInt8::BYTE_206, UInt8::BYTE_110, UInt8::BYTE_93, UInt8::BYTE_243, UInt8::BYTE_84, UInt8::BYTE_210, UInt8::BYTE_150, UInt8::BYTE_92]))) } ,
+        11 => {  (1, (&([UInt8::BYTE_31, UInt8::BYTE_36, UInt8::BYTE_179, UInt8::BYTE_69, UInt8::BYTE_4, UInt8::BYTE_94, UInt8::BYTE_131, UInt8::BYTE_3, UInt8::BYTE_61, UInt8::BYTE_197, UInt8::BYTE_115, UInt8::BYTE_66, UInt8::BYTE_205, UInt8::BYTE_211, UInt8::BYTE_189, UInt8::BYTE_40, UInt8::BYTE_66, UInt8::BYTE_209, UInt8::BYTE_195, UInt8::BYTE_162, UInt8::BYTE_192, UInt8::BYTE_75, UInt8::BYTE_25, UInt8::BYTE_60, UInt8::BYTE_64, UInt8::BYTE_152, UInt8::BYTE_115, UInt8::BYTE_190, UInt8::BYTE_203, UInt8::BYTE_117, UInt8::BYTE_180, UInt8::BYTE_20]))) } ,
+        12 => {  (1, (&([UInt8::BYTE_165, UInt8::BYTE_137, UInt8::BYTE_154, UInt8::BYTE_97, UInt8::BYTE_138, UInt8::BYTE_94, UInt8::BYTE_199, UInt8::BYTE_185, UInt8::BYTE_223, UInt8::BYTE_6, UInt8::BYTE_178, UInt8::BYTE_217, UInt8::BYTE_209, UInt8::BYTE_13, UInt8::BYTE_236, UInt8::BYTE_115, UInt8::BYTE_250, UInt8::BYTE_96, UInt8::BYTE_253, UInt8::BYTE_212, UInt8::BYTE_189, UInt8::BYTE_170, UInt8::BYTE_89, UInt8::BYTE_32, UInt8::BYTE_77, UInt8::BYTE_138, UInt8::BYTE_76, UInt8::BYTE_107, UInt8::BYTE_19, UInt8::BYTE_234, UInt8::BYTE_34, UInt8::BYTE_114]))) } ,
+        13 => {  (1, (&([UInt8::BYTE_87, UInt8::BYTE_47, UInt8::BYTE_254, UInt8::BYTE_188, UInt8::BYTE_254, UInt8::BYTE_189, UInt8::BYTE_72, UInt8::BYTE_56, UInt8::BYTE_51, UInt8::BYTE_201, UInt8::BYTE_149, UInt8::BYTE_128, UInt8::BYTE_54, UInt8::BYTE_93, UInt8::BYTE_108, UInt8::BYTE_173, UInt8::BYTE_90, UInt8::BYTE_250, UInt8::BYTE_184, UInt8::BYTE_223, UInt8::BYTE_112, UInt8::BYTE_92, UInt8::BYTE_21, UInt8::BYTE_17, UInt8::BYTE_238, UInt8::BYTE_40, UInt8::BYTE_132, UInt8::BYTE_68, UInt8::BYTE_173, UInt8::BYTE_198, UInt8::BYTE_118, UInt8::BYTE_185]))) } ,
+        14 => {  (1, (&([UInt8::BYTE_200, UInt8::BYTE_113, UInt8::BYTE_200, UInt8::BYTE_114, UInt8::BYTE_197, UInt8::BYTE_245, UInt8::BYTE_219, UInt8::BYTE_243, UInt8::BYTE_3, UInt8::BYTE_43, UInt8::BYTE_90, UInt8::BYTE_178, UInt8::BYTE_28, UInt8::BYTE_85, UInt8::BYTE_22, UInt8::BYTE_57, UInt8::BYTE_207, UInt8::BYTE_18, UInt8::BYTE_171, UInt8::BYTE_217, UInt8::BYTE_210, UInt8::BYTE_225, UInt8::BYTE_77, UInt8::BYTE_69, UInt8::BYTE_114, UInt8::BYTE_78, UInt8::BYTE_185, UInt8::BYTE_122, UInt8::BYTE_89, UInt8::BYTE_117, UInt8::BYTE_251, UInt8::BYTE_147]))) } ,
+        15 => {  (1, (&([UInt8::BYTE_57, UInt8::BYTE_63, UInt8::BYTE_142, UInt8::BYTE_173, UInt8::BYTE_104, UInt8::BYTE_3, UInt8::BYTE_131, UInt8::BYTE_19, UInt8::BYTE_190, UInt8::BYTE_209, UInt8::BYTE_138, UInt8::BYTE_152, UInt8::BYTE_17, UInt8::BYTE_87, UInt8::BYTE_178, UInt8::BYTE_136, UInt8::BYTE_107, UInt8::BYTE_194, UInt8::BYTE_182, UInt8::BYTE_227, UInt8::BYTE_228, UInt8::BYTE_243, UInt8::BYTE_172, UInt8::BYTE_224, UInt8::BYTE_55, UInt8::BYTE_218, UInt8::BYTE_36, UInt8::BYTE_125, UInt8::BYTE_73, UInt8::BYTE_53, UInt8::BYTE_42, UInt8::BYTE_76]))) } ,
+        16 => {  (1, (&([UInt8::BYTE_206, UInt8::BYTE_119, UInt8::BYTE_72, UInt8::BYTE_125, UInt8::BYTE_84, UInt8::BYTE_147, UInt8::BYTE_216, UInt8::BYTE_231, UInt8::BYTE_36, UInt8::BYTE_239, UInt8::BYTE_3, UInt8::BYTE_103, UInt8::BYTE_125, UInt8::BYTE_170, UInt8::BYTE_235, UInt8::BYTE_93, UInt8::BYTE_68, UInt8::BYTE_4, UInt8::BYTE_9, UInt8::BYTE_15, UInt8::BYTE_124, UInt8::BYTE_18, UInt8::BYTE_184, UInt8::BYTE_239, UInt8::BYTE_203, UInt8::BYTE_85, UInt8::BYTE_124, UInt8::BYTE_147, UInt8::BYTE_163, UInt8::BYTE_107, UInt8::BYTE_207, UInt8::BYTE_82]))) } ,
+        17 => {  (1, (&([UInt8::BYTE_12, UInt8::BYTE_157, UInt8::BYTE_146, UInt8::BYTE_76, UInt8::BYTE_234, UInt8::BYTE_173, UInt8::BYTE_212, UInt8::BYTE_107, UInt8::BYTE_126, UInt8::BYTE_17, UInt8::BYTE_75, UInt8::BYTE_35, UInt8::BYTE_40, UInt8::BYTE_118, UInt8::BYTE_116, UInt8::BYTE_246, UInt8::BYTE_227, UInt8::BYTE_27, UInt8::BYTE_176, UInt8::BYTE_15, UInt8::BYTE_223, UInt8::BYTE_134, UInt8::BYTE_180, UInt8::BYTE_250, UInt8::BYTE_183, UInt8::BYTE_250, UInt8::BYTE_183, UInt8::BYTE_104, UInt8::BYTE_40, UInt8::BYTE_4, UInt8::BYTE_200, UInt8::BYTE_178]))) } ,
+        20 => {  (1, (&([UInt8::BYTE_79, UInt8::BYTE_73, UInt8::BYTE_42, UInt8::BYTE_148, UInt8::BYTE_176, UInt8::BYTE_248, UInt8::BYTE_146, UInt8::BYTE_206, UInt8::BYTE_220, UInt8::BYTE_196, UInt8::BYTE_157, UInt8::BYTE_44, UInt8::BYTE_13, UInt8::BYTE_99, UInt8::BYTE_43, UInt8::BYTE_181, UInt8::BYTE_15, UInt8::BYTE_235, UInt8::BYTE_246, UInt8::BYTE_253, UInt8::BYTE_120, UInt8::BYTE_231, UInt8::BYTE_192, UInt8::BYTE_166, UInt8::BYTE_136, UInt8::BYTE_97, UInt8::BYTE_1, UInt8::BYTE_152, UInt8::BYTE_204, UInt8::BYTE_20, UInt8::BYTE_142, UInt8::BYTE_49]))) } ,
+        21 => {  (1, (&([UInt8::BYTE_151, UInt8::BYTE_147, UInt8::BYTE_60, UInt8::BYTE_16, UInt8::BYTE_155, UInt8::BYTE_196, UInt8::BYTE_138, UInt8::BYTE_178, UInt8::BYTE_82, UInt8::BYTE_58, UInt8::BYTE_77, UInt8::BYTE_177, UInt8::BYTE_251, UInt8::BYTE_237, UInt8::BYTE_119, UInt8::BYTE_99, UInt8::BYTE_199, UInt8::BYTE_144, UInt8::BYTE_50, UInt8::BYTE_83, UInt8::BYTE_95, UInt8::BYTE_255, UInt8::BYTE_228, UInt8::BYTE_135, UInt8::BYTE_178, UInt8::BYTE_205, UInt8::BYTE_121, UInt8::BYTE_139, UInt8::BYTE_40, UInt8::BYTE_161, UInt8::BYTE_234, UInt8::BYTE_95]))) } ,
+        22 => {  (1, (&([UInt8::BYTE_244, UInt8::BYTE_229, UInt8::BYTE_147, UInt8::BYTE_204, UInt8::BYTE_38, UInt8::BYTE_9, UInt8::BYTE_152, UInt8::BYTE_78, UInt8::BYTE_207, UInt8::BYTE_107, UInt8::BYTE_4, UInt8::BYTE_110, UInt8::BYTE_217, UInt8::BYTE_122, UInt8::BYTE_66, UInt8::BYTE_240, UInt8::BYTE_236, UInt8::BYTE_218, UInt8::BYTE_251, UInt8::BYTE_48, UInt8::BYTE_24, UInt8::BYTE_221, UInt8::BYTE_169, UInt8::BYTE_240, UInt8::BYTE_209, UInt8::BYTE_155, UInt8::BYTE_178, UInt8::BYTE_125, UInt8::BYTE_218, UInt8::BYTE_110, UInt8::BYTE_223, UInt8::BYTE_3]))) } ,
+        32 => {  (1, (&([UInt8::BYTE_200, UInt8::BYTE_123, UInt8::BYTE_41, UInt8::BYTE_147, UInt8::BYTE_28, UInt8::BYTE_228, UInt8::BYTE_224, UInt8::BYTE_2, UInt8::BYTE_66, UInt8::BYTE_95, UInt8::BYTE_133, UInt8::BYTE_102, UInt8::BYTE_209, UInt8::BYTE_203, UInt8::BYTE_240, UInt8::BYTE_18, UInt8::BYTE_203, UInt8::BYTE_149, UInt8::BYTE_56, UInt8::BYTE_63, UInt8::BYTE_126, UInt8::BYTE_124, UInt8::BYTE_195, UInt8::BYTE_83, UInt8::BYTE_63, UInt8::BYTE_87, UInt8::BYTE_99, UInt8::BYTE_214, UInt8::BYTE_59, UInt8::BYTE_63, UInt8::BYTE_32, UInt8::BYTE_96]))) } ,
+        33 => {  (1, (&([UInt8::BYTE_179, UInt8::BYTE_142, UInt8::BYTE_110, UInt8::BYTE_198, UInt8::BYTE_61, UInt8::BYTE_58, UInt8::BYTE_198, UInt8::BYTE_202, UInt8::BYTE_164, UInt8::BYTE_86, UInt8::BYTE_175, UInt8::BYTE_105, UInt8::BYTE_143, UInt8::BYTE_250, UInt8::BYTE_248, UInt8::BYTE_102, UInt8::BYTE_225, UInt8::BYTE_146, UInt8::BYTE_189, UInt8::BYTE_62, UInt8::BYTE_132, UInt8::BYTE_216, UInt8::BYTE_9, UInt8::BYTE_42, UInt8::BYTE_132, UInt8::BYTE_21, UInt8::BYTE_183, UInt8::BYTE_147, UInt8::BYTE_167, UInt8::BYTE_171, UInt8::BYTE_181, UInt8::BYTE_152]))) } ,
+        34 => {  (1, (&([UInt8::BYTE_171, UInt8::BYTE_187, UInt8::BYTE_156, UInt8::BYTE_7, UInt8::BYTE_178, UInt8::BYTE_196, UInt8::BYTE_102, UInt8::BYTE_237, UInt8::BYTE_99, UInt8::BYTE_0, UInt8::BYTE_135, UInt8::BYTE_132, UInt8::BYTE_40, UInt8::BYTE_68, UInt8::BYTE_234, UInt8::BYTE_4, UInt8::BYTE_100, UInt8::BYTE_185, UInt8::BYTE_92, UInt8::BYTE_160, UInt8::BYTE_33, UInt8::BYTE_139, UInt8::BYTE_42, UInt8::BYTE_30, UInt8::BYTE_230, UInt8::BYTE_121, UInt8::BYTE_7, UInt8::BYTE_84, UInt8::BYTE_45, UInt8::BYTE_68, UInt8::BYTE_48, UInt8::BYTE_132]))) } ,
+        35 => {  (1, (&([UInt8::BYTE_44, UInt8::BYTE_5, UInt8::BYTE_242, UInt8::BYTE_131, UInt8::BYTE_164, UInt8::BYTE_80, UInt8::BYTE_160, UInt8::BYTE_87, UInt8::BYTE_187, UInt8::BYTE_103, UInt8::BYTE_160, UInt8::BYTE_180, UInt8::BYTE_66, UInt8::BYTE_37, UInt8::BYTE_244, UInt8::BYTE_120, UInt8::BYTE_194, UInt8::BYTE_208, UInt8::BYTE_15, UInt8::BYTE_187, UInt8::BYTE_253, UInt8::BYTE_151, UInt8::BYTE_40, UInt8::BYTE_180, UInt8::BYTE_248, UInt8::BYTE_206, UInt8::BYTE_246, UInt8::BYTE_192, UInt8::BYTE_243, UInt8::BYTE_85, UInt8::BYTE_60, UInt8::BYTE_253]))) } ,
+        36 => {  (1, (&([UInt8::BYTE_132, UInt8::BYTE_246, UInt8::BYTE_186, UInt8::BYTE_212, UInt8::BYTE_18, UInt8::BYTE_241, UInt8::BYTE_180, UInt8::BYTE_234, UInt8::BYTE_67, UInt8::BYTE_150, UInt8::BYTE_160, UInt8::BYTE_196, UInt8::BYTE_209, UInt8::BYTE_94, UInt8::BYTE_239, UInt8::BYTE_194, UInt8::BYTE_141, UInt8::BYTE_48, UInt8::BYTE_120, UInt8::BYTE_82, UInt8::BYTE_27, UInt8::BYTE_240, UInt8::BYTE_6, UInt8::BYTE_33, UInt8::BYTE_207, UInt8::BYTE_187, UInt8::BYTE_250, UInt8::BYTE_91, UInt8::BYTE_47, UInt8::BYTE_228, UInt8::BYTE_57, UInt8::BYTE_207]))) } ,
+        _ => {  (0, (&([UInt8::BYTE_0; 32]))) } ,
+      }
+    }
+⟧
+
+
+  -- Every pinned role from `r` on that the table binds is bound at its pin.
+
+def assert_basis_pinned := aiur_fn⟦
+  fn assert_basis_pinned(tbl: RoleTable, r: Field) -> () {
+      match r - (KernelRoleSpec::role_quot_sound() + 1) {
+        0 => {  () } ,
+        _ => {
+          let (pinned, want) = basis_pin(r);
+          match pinned * role_is_bound(tbl, r) {
+            1 => {
+              assert_eq!(Bytes::address_eq(role_bound_addr_or_zero(tbl, r), want), 1,
+                "role table: a basis role is not bound at its committed record");
+              () } ,
+            _ => {  () } ,
+          };
+          assert_basis_pinned(tbl, r + 1) } ,
+      }
+    }
+⟧
+
+  -- A recursor whose family is one of the basis families (`Nat`, `Eq`, `PUnit`, `Empty`,
+  -- `False`: roles 0, 8, 11, 14, 16, the families whose meaning the certified kernel fixes by
+  -- hand) is that family's committed recursor record (roles 3, 10, 13, 15, 17). The generated
+  -- comparison fixes a recursor's type and rules, not its record's bytes, so without this a
+  -- basis family would have recursor records at other addresses. The pins are constants, so
+  -- the check is the same in a validating and in an assumed context.
+
+def basis_rec_at_pin := aiur_fn⟦
+  fn basis_rec_at_pin(parent: Bytes::AddressRef, addr: Bytes::AddressRef) -> () {
+      basis_rec_pair(parent, addr, 0, 3);
+      basis_rec_pair(parent, addr, 8, 10);
+      basis_rec_pair(parent, addr, 11, 13);
+      basis_rec_pair(parent, addr, 14, 15);
+      basis_rec_pair(parent, addr, 16, 17)
+    }
+⟧
+
+def basis_rec_pair := aiur_fn⟦
+  fn basis_rec_pair(parent: Bytes::AddressRef, addr: Bytes::AddressRef, family: Field, recursor: Field) -> () {
+      let (_, family_pin) = basis_pin(family);
+      match Bytes::address_eq(parent, family_pin) {
+        1 => {
+          let (_, recursor_pin) = basis_pin(recursor);
+          assert_eq!(Bytes::address_eq(addr, recursor_pin), 1,
+            "a recursor of a basis family is not the family's committed recursor");
+          () } ,
+        _ => {  () } ,
+      }
+    }
+⟧
+
+  -- An evidence entry is for a role with equations: an operation or a definition role
+  -- whose specification lists at least one (the kernel's `RoleTable.check`: `evidence for
+  -- a role which has no equations`). A role without them has no entry, not an empty one.
+
+def evidence_roles_have_equations := aiur_fn⟦
+  fn evidence_roles_have_equations(ev: RoleMap<Lists::List<RoleEvidence>>) -> () {
+      match ev {
+        RoleMap::Nil => {  () } ,
+        RoleMap::Node(_, r, _, left, right) => {
+          assert_eq!(Fields::is_zero(KernelRoleSpec::op_equation_count(r) + KernelRoleSpec::eqns_equation_count(r)), 0,
+            "role table: evidence for a role with no equations");
+          evidence_roles_have_equations((*(left)));
+          evidence_roles_have_equations((*(right))) } ,
+      }
     }
 ⟧
 
@@ -417,10 +537,15 @@ def group_validation_limit := aiur_fn⟦
       match UInt32::less_than_fields(g, first_wf) {
         1 => {  g } ,
         _ => {
-          let first_equation = KernelRoleSpec::first_equation_group();
-          match UInt32::less_than_fields(g, first_equation) {
+          let first_literal = KernelRoleSpec::first_literal_group();
+          match UInt32::less_than_fields(g, first_literal) {
             1 => {  first_wf } ,
-            _ => {  first_equation } ,
+            _ => {
+              let first_equation = KernelRoleSpec::first_equation_group();
+              match UInt32::less_than_fields(g, first_equation) {
+                1 => {  first_literal } ,
+                _ => {  first_equation } ,
+              } } ,
           } } ,
       }
     }
@@ -452,12 +577,112 @@ def walk_ctx := aiur_fn⟦
             0 => {  rc } ,
             _ => {
               let g = KernelRoleSpec::role_group(r1 - 1);
+              assert_op_reached_in_order(r1 - 1, g, limit);
               match UInt32::less_than_fields(g, limit) * role_admission_checks(r1 - 1) {
                 0 => {  rc } ,
                 _ => {  (&(RoleCtxNode::Mk(tbl, group_validation_limit(g), RBTreeMap::RBTreeMap::Nil))) } ,
               } } ,
           } } ,
         RoleCtxNode::Assumed(_, _) => {  rc } ,
+      }
+    }
+⟧
+
+  -- A validation below the well-founded block never reaches an operation whose group is not
+  -- below its limit: every group there needs only earlier operations, so such a reference is
+  -- out of order (an operation's own record reached through a reference included). Inside
+  -- the block every group is validated at one limit, so the context does not say which group
+  -- is validated; there `op_order_scan` makes the check against the group's needs.
+
+def assert_op_reached_in_order := aiur_fn⟦
+  fn assert_op_reached_in_order(r: Field, g: Field, limit: Field) -> () {
+      match KernelRoleSpec::role_spec_kind(r) {
+        2 => {
+          match UInt32::less_than_fields(limit, KernelRoleSpec::first_well_founded_group()) {
+            1 => {
+              assert_eq!(UInt32::less_than_fields(g, limit), 1,
+                "an operation is reached before its group is validated");
+              () } ,
+            _ => {  () } ,
+          } } ,
+        _ => {  () } ,
+      }
+    }
+⟧
+
+  -- Inside the well-founded block: what `a` references, up to the records whose roles are in
+  -- force (each checked in its own group's validation, under the same rule), reaches an
+  -- operation only if that operation's group is below `limit` or among `needs`, the needs of
+  -- the group being validated. A referenced operation is not entered: its own validation
+  -- scanned its closure.
+
+def op_order_scan := aiur_fn⟦
+  fn op_order_scan(tbl: RoleTable, limit: Field, needs: Lists::List<Field>, a: Bytes::AddressRef) -> () {
+      let r1 = RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0);
+      match r1 {
+        0 => {  op_order_scan_refs(tbl, limit, needs, a) } ,
+        _ => {
+          let r = r1 - 1;
+          let in_force = UInt32::less_than_fields(KernelRoleSpec::role_group(r), limit);
+          match KernelRoleSpec::role_spec_kind(r) {
+            2 => {
+              let ok = match in_force {
+                1 => {  1 } ,
+                _ => {  KernelClaim::g_list_has(needs, r) } ,
+              };
+              assert_eq!(ok, 1, "an operation reaches an operation its group does not need");
+              () } ,
+            _ => {
+              match in_force {
+                1 => {  () } ,
+                _ => {  op_order_scan_refs(tbl, limit, needs, a) } ,
+              } } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- The references of `a`'s record, as the walk follows them: a projection's block, and every
+  -- reference the record uses (`KernelClaim::const_idxs_of`).
+
+def op_order_scan_refs := aiur_fn⟦
+  fn op_order_scan_refs(tbl: RoleTable, limit: Field, needs: Lists::List<Field>, a: Bytes::AddressRef) -> () {
+      let c = Ingress::load_verified_constant(a);
+      match c {
+        Ixon::Constant::Mk(info, _, refs, _, _) => {
+          match info {
+            Ixon::ConstantInfo::IPrj(p) => {
+              match p { Ixon::InductiveProj::Mk(_, b) => {  op_order_scan(tbl, limit, needs, b) } , } } ,
+            Ixon::ConstantInfo::CPrj(p) => {
+              match p { Ixon::ConstructorProj::Mk(_, _, b) => {  op_order_scan(tbl, limit, needs, b) } , } } ,
+            Ixon::ConstantInfo::RPrj(p) => {
+              match p { Ixon::RecursorProj::Mk(_, b) => {  op_order_scan(tbl, limit, needs, b) } , } } ,
+            Ixon::ConstantInfo::DPrj(p) => {
+              match p { Ixon::DefinitionProj::Mk(_, b) => {  op_order_scan(tbl, limit, needs, b) } , } } ,
+            _ => {  () } ,
+          };
+          op_order_scan_list(tbl, limit, needs, refs, KernelClaim::const_idxs_of(c), 0) } ,
+      }
+    }
+⟧
+
+def op_group_needs := aiur_fn⟦
+  fn op_group_needs(r: Field) -> Lists::List<Field> {
+      KernelRoleSpec::group_needs(KernelRoleSpec::role_group(r))
+    }
+⟧
+
+def op_order_scan_list := aiur_fn⟦
+  fn op_order_scan_list(tbl: RoleTable, limit: Field, needs: Lists::List<Field>,
+                        refs: Lists::List<Bytes::AddressRef>, used: Lists::List<Field>, i: Field) -> () {
+      match (*(refs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(b, rest) => {
+          match KernelClaim::g_list_has(used, i) {
+            1 => {  op_order_scan(tbl, limit, needs, b) } ,
+            _ => {  () } ,
+          };
+          op_order_scan_list(tbl, limit, needs, rest, used, i + 1) } ,
       }
     }
 ⟧
@@ -472,32 +697,6 @@ def walk_covered := aiur_fn⟦
             0 => {  0 } ,
             _ => {  role_admission_checks(r1 - 1) } ,
           } } ,
-      }
-    }
-⟧
-
-  -- The role context a modeled family is checked in (`KernelModeled::check_family`): the
-  -- table and axioms of `rc`, with no role native beyond the basis groups (`Nat`, `Eq`,
-  -- `PUnit`, `Empty`, `False`, the quotient package) and none that `rc` itself does not have.
-  -- The boundary is the end of the basis: one past the quotient package's group, the last of
-  -- them (groups 0 to 5). It is stated on the basis itself, not on whichever group follows
-  -- it, because it is the boundary the argument needs: every role in force while a family is
-  -- checked is a basis role, wherever the schedule puts the other groups. Whatever the
-  -- claim's own context, a family's model and rules
-  -- are then checked with no literal support, operation or equation role: a constant bound
-  -- to one is an ordinary constant there, and the family's check depends on no record that
-  -- is not the basis, the advice, or in the block's own dependency closure.
-
-def family_ctx := aiur_fn⟦
-  fn family_ctx(rc: RoleCtx) -> RoleCtx {
-      let basis = KernelRoleSpec::role_group(KernelRoleSpec::role_quot_sound()) + 1;
-      match (*(rc)) {
-        RoleCtxNode::Mk(tbl, limit, axioms) => {
-          match UInt32::less_than_fields(limit, basis) {
-            1 => {  rc } ,
-            _ => {  (&(RoleCtxNode::Mk(tbl, basis, axioms))) } ,
-          } } ,
-        RoleCtxNode::Assumed(tbl, axioms) => {  (&(RoleCtxNode::Mk(tbl, basis, axioms))) } ,
       }
     }
 ⟧
@@ -671,11 +870,54 @@ def validate_anchor := aiur_fn⟦
       KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
       let spec = KernelRoleSpec::role_type(tbl, r);
       match r {
+        4 => {  assert_type_pinned(ty, spec) } ,
+        5 => {  assert_type_pinned(ty, spec) } ,
+        6 => {  assert_type_pinned(ty, spec) } ,
         7 => {  assert_type_pinned(ty, spec) } ,
         20 => {  assert_type_pinned(ty, spec) } ,
         21 => {  assert_type_pinned(ty, spec) } ,
         22 => {  assert_type_pinned(ty, spec) } ,
+        29 => {  assert_type_pinned(ty, spec) } ,
+        30 => {  assert_type_pinned(ty, spec) } ,
+        31 => {  assert_type_pinned(ty, spec) } ,
+        37 => {  assert_type_pinned(ty, spec) } ,
+        38 => {  assert_type_pinned(ty, spec) } ,
+        39 => {  assert_type_pinned(ty, spec) } ,
+        40 => {  assert_type_pinned(ty, spec) } ,
         _ => {  assert_type_meets(rc, ty, spec) } ,
+      };
+      -- the record itself, with its closure, in this group's validation context: the anchor's
+      -- own role is not in force here, every role the record may use is
+      match anchor_walked(r) {
+        1 => {  KernelClaim::run_check_transitive(rc, role_bound_addr(tbl, r)) } ,
+        _ => {  () } ,
+      }
+    }
+⟧
+
+  -- The anchors whose records role validation checks with their closures, each in its own
+  -- group: `Bool`, `Bool.false`, `Bool.true`, `Bool.rec` (4-7), `And`, `And.intro`, `And.rec`
+  -- (20-22), and the literal support `List`, `List.nil`, `List.cons` (29-31), `String`,
+  -- `String.ofList`, `Char`, `Char.ofNat` (37-40).
+
+def anchor_walked := aiur_fn⟦
+  fn anchor_walked(r: Field) -> Field {
+      match r {
+        4 => {  1 } ,
+        5 => {  1 } ,
+        6 => {  1 } ,
+        7 => {  1 } ,
+        20 => {  1 } ,
+        21 => {  1 } ,
+        22 => {  1 } ,
+        29 => {  1 } ,
+        30 => {  1 } ,
+        31 => {  1 } ,
+        37 => {  1 } ,
+        38 => {  1 } ,
+        39 => {  1 } ,
+        40 => {  1 } ,
+        _ => {  0 } ,
       }
     }
 ⟧
@@ -688,7 +930,14 @@ def validate_standard_axiom := aiur_fn⟦
           assert_eq!(u, 0, "a bound standard axiom is unsafe");
           KernelCheck::validate_expr_well_scoped(ty, 0, nlvls);
           KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
-          assert_type_pinned(ty, KernelRoleSpec::role_type(tbl, r)) } ,
+          assert_type_pinned(ty, KernelRoleSpec::role_type(tbl, r));
+          -- what the bound record references is checked here, in this group's context; not
+          -- the axiom itself, which is not in force in its own group (the axiom arm refuses it)
+          let c = Ingress::load_verified_constant(role_bound_addr(tbl, r));
+          match c {
+            Ixon::Constant::Mk(_, _, refs, _, _) => {
+              KernelClaim::walk_refs_transitive(rc, refs, KernelClaim::const_idxs_of(c), 0) } ,
+          } } ,
       }
     }
 ⟧
@@ -719,7 +968,7 @@ def validate_op := aiur_fn⟦
   fn validate_op(rc: RoleCtx, tbl: RoleTable, r: Field, a: Bytes::AddressRef,
         ci: KernelTypes::KConstantInfo) -> () {
       match ci {
-        KernelTypes::KConstantInfo::Defn(_, ty, _, safety, _) => {
+        KernelTypes::KConstantInfo::Defn(_, ty, val, safety, _) => {
           match safety {
             Ixon::DefinitionSafety::Safe => {  () } ,
             _ => {
@@ -728,17 +977,26 @@ def validate_op := aiur_fn⟦
           };
           assert_type_pinned(ty, KernelRoleSpec::role_type(tbl, r));
           KernelClaim::run_check_transitive(rc, a);
+          -- inside the well-founded block, the operations the record reaches are in order
+          match KernelRoleSpec::op_evidence_is_proof(r) {
+            1 => {  op_order_scan_refs(tbl, role_ctx_limit(rc), op_group_needs(r), a) } ,
+            _ => {  () } ,
+          };
           let ev = role_evidence(tbl, r);
           assert_eq!(Lists::length(ev), KernelRoleSpec::op_equation_count(r),
             "an operation's evidence does not match its equations");
-          validate_op_equations(rc, tbl, r, ev, 0) } ,
+          validate_op_equations(rc, tbl, r, a, val, ev, 0) } ,
       }
     }
 ⟧
 
+  -- An operation's equations hold for its value: each side opened under two `Nat` variables
+  -- (`x` is `BVar(1)`, `y` is `BVar(0)`), with every occurrence of the operation replaced by its
+  -- record's value `val` (closed), so that nothing here needs the operation stored.
+
 def validate_op_equations := aiur_fn⟦
-  fn validate_op_equations(rc: RoleCtx, tbl: RoleTable, r: Field,
-        ev: Lists::List<RoleEvidence>, k: Field) -> () {
+  fn validate_op_equations(rc: RoleCtx, tbl: RoleTable, r: Field, a: Bytes::AddressRef,
+        val: KernelTypes::KExpr, ev: Lists::List<RoleEvidence>, k: Field) -> () {
       match (*(ev)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(e, rest) => {
@@ -746,8 +1004,10 @@ def validate_op_equations := aiur_fn⟦
             0 => {
               match e {
                 RoleEvidence::Defeq => {
-                  assert_eq!(KernelDefEq::k_is_def_eq(rc, KernelRoleSpec::op_equation_lhs(tbl, r, k),
-                      KernelRoleSpec::op_equation_rhs(tbl, r, k), (&(Lists::Node::Nil))), 1,
+                  let (lhs, types) = open_two_lams(KernelRoleSpec::op_equation_lhs(tbl, r, k));
+                  let (rhs, _) = open_two_lams(KernelRoleSpec::op_equation_rhs(tbl, r, k));
+                  assert_eq!(KernelDefEq::k_is_def_eq(rc, KernelSubst::subst_const(lhs, a, val),
+                      KernelSubst::subst_const(rhs, a, val), types), 1,
                     "an operation's equation does not hold by definition");
                   () } ,
                 RoleEvidence::Proof(_) => {
@@ -761,14 +1021,106 @@ def validate_op_equations := aiur_fn⟦
                   () } ,
                 RoleEvidence::Proof(thm) => {
                   match (*(Ingress::get_ci(thm))) {
-                    KernelTypes::KConstantInfo::Thm(nlvls, tty, _) => {
+                    KernelTypes::KConstantInfo::Thm(nlvls, _, pval) => {
                       assert_eq!(nlvls, 0, "certificate theorem has universe parameters");
-                      KernelClaim::run_check_transitive(rc, thm);
-                      assert_type_meets(rc, tty, KernelRoleSpec::op_certificate(tbl, r, k)) } ,
+                      -- the proof with the operation replaced by its value, closed and level-free;
+                      -- the theorem record itself is not walked and its type is not used
+                      let p = KernelSubst::subst_const(pval, a, val);
+                      KernelCheck::validate_expr_well_scoped(p, 0, 0);
+                      -- what the proof names, the theorem's references but the operation, checked
+                      -- with their closures; none of them reaches the operation (the order rule)
+                      let tc = Ingress::load_verified_constant(thm);
+                      match tc {
+                        Ixon::Constant::Mk(_, _, refs, _, _) => {
+                          let used = KernelClaim::const_idxs_of(tc);
+                          walk_refs_except(rc, refs, used, 0, a);
+                          op_order_scan_except(tbl, role_ctx_limit(rc), op_group_needs(r), refs, used, 0, a) } ,
+                      };
+                      -- the certificate opened: its hypotheses are the context, innermost first,
+                      -- its equation the expected type at depth 2 + n, and the proof is applied to
+                      -- x, y and the hypotheses' variables
+                      let (eqn, types) = open_foralls(
+                        KernelSubst::subst_const(KernelRoleSpec::op_certificate(tbl, r, k), a, val),
+                        (&(Lists::Node::Nil)));
+                      let d = Lists::length(types);
+                      KernelInfer::k_check(rc, KernelWhnf::apply_spine(p, KernelModeled::bvars_desc(d, d)),
+                        eqn, types) } ,
                   } } ,
               } } ,
           };
-          validate_op_equations(rc, tbl, r, rest, k + 1) } ,
+          validate_op_equations(rc, tbl, r, a, val, rest, k + 1) } ,
+      }
+    }
+⟧
+
+  -- A rendered certificate `∀ x y h₁ … hₙ, E`: `E`, open at depth `2 + n`, and the binders'
+  -- types, innermost first.
+
+def open_foralls := aiur_fn⟦
+  fn open_foralls(e: KernelTypes::KExpr, acc: Lists::List<KernelTypes::KExpr>)
+        -> (KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>) {
+      match (*(e)) {
+        KernelTypes::KExprNode::Forall(t, body, _) => {
+          open_foralls(body, (&(Lists::Node::Cons(t, acc)))) } ,
+        _ => {  (e, acc) } ,
+      }
+    }
+⟧
+
+  -- The references `refs` (used at the indices `used`) walked as `KernelClaim::walk_refs_transitive`
+  -- walks them, except `a`.
+
+def walk_refs_except := aiur_fn⟦
+  fn walk_refs_except(rc: RoleCtx, refs: Lists::List<Bytes::AddressRef>, used: Lists::List<Field>,
+                      i: Field, a: Bytes::AddressRef) -> () {
+      match (*(refs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(b, rest) => {
+          match KernelClaim::g_list_has(used, i) * (1 - Bytes::address_eq(b, a)) {
+            1 => {
+              assert_ref_allowed(rc, b);
+              match walk_covered(rc, b) {
+                0 => {
+                  KernelClaim::assert_not_block_ref(b);
+                  KernelClaim::run_check_transitive(walk_ctx(rc, b), b) } ,
+                _ => {  () } ,
+              } } ,
+            _ => {  () } ,
+          };
+          walk_refs_except(rc, rest, used, i + 1, a) } ,
+      }
+    }
+⟧
+
+  -- `op_order_scan` on the references `refs` (used at the indices `used`), except `a`.
+
+def op_order_scan_except := aiur_fn⟦
+  fn op_order_scan_except(tbl: RoleTable, limit: Field, needs: Lists::List<Field>,
+                          refs: Lists::List<Bytes::AddressRef>, used: Lists::List<Field>, i: Field,
+                          a: Bytes::AddressRef) -> () {
+      match (*(refs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(b, rest) => {
+          match KernelClaim::g_list_has(used, i) * (1 - Bytes::address_eq(b, a)) {
+            1 => {  op_order_scan(tbl, limit, needs, b) } ,
+            _ => {  () } ,
+          };
+          op_order_scan_except(tbl, limit, needs, rest, used, i + 1, a) } ,
+      }
+    }
+⟧
+
+  -- A rendered equation side `fun (x : Nat) (y : Nat) => body`: the body, open at depth 2, and
+  -- the two binders' types, innermost first.
+
+def open_two_lams := aiur_fn⟦
+  fn open_two_lams(e: KernelTypes::KExpr) -> (KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>) {
+      match (*(e)) {
+        KernelTypes::KExprNode::Lam(t1, inner, _) => {
+          match (*(inner)) {
+            KernelTypes::KExprNode::Lam(t2, body, _) => {
+              (body, (&(Lists::Node::Cons(t2, (&(Lists::Node::Cons(t1, (&(Lists::Node::Nil))))))))) } ,
+          } } ,
       }
     }
 ⟧

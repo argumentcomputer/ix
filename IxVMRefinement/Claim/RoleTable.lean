@@ -48,13 +48,20 @@ theorem hashed_mono {cs₁ cs₂ : List (Call F)} (hsub : ∀ c ∈ cs₁, c ∈
 theorem hashedCollision_mono {V : View} {extra : List ByteArray} {cs₁ cs₂ : List (Call F)}
     (hsub : ∀ c ∈ cs₁, c ∈ cs₂) (hc : V.HashedCollision extra cs₁) :
     V.HashedCollision extra cs₂ := by
-  rcases hc with ⟨x, held, bytes, hsrc, hh, hne, hblk⟩ | ⟨bytes, hsrc, hpad⟩
+  rcases hc with ⟨x, held, bytes, hsrc, hh, hne, hblk⟩ |
+    ⟨x, held, image, blk, cb, ms, hsrc, hb, hdec, hms, himg, hne, hblk⟩ | ⟨bytes, hsrc, hpad⟩
   · refine .inl ⟨x, held, bytes, ?_, hashed_mono hsub hh, hne, hblk⟩
     rcases hsrc with hp | hex | ⟨hh0, hb0⟩
     · exact .inl hp
     · exact .inr (.inl hex)
     · exact .inr (.inr ⟨hashed_mono hsub hh0, hb0⟩)
-  · refine .inr ⟨bytes, ?_, hpad⟩
+  · refine .inr (.inl ⟨x, held, image, blk, cb, ms, ?_, hashed_mono hsub hb, hdec, hms, himg,
+      hne, hblk⟩)
+    rcases hsrc with hp | hex | ⟨hh0, hb0⟩
+    · exact .inl hp
+    · exact .inr (.inl hex)
+    · exact .inr (.inr ⟨hashed_mono hsub hh0, hb0⟩)
+  · refine .inr (.inr ⟨bytes, ?_, hpad⟩)
     rcases hsrc with hp | hh
     · exact .inl hp
     · exact .inr (hashed_mono hsub hh)
@@ -788,9 +795,10 @@ theorem load_role_table_spec {V : View} {extra : List ByteArray}
     m343, cs351, m356, cs366, x_n, x_s_380, m392, cs402, v406, m417, cs425,
     x_by_role, x_by_addr, x__next, x_s_454, m476, cs486, x_m, x_s_500,
     m512, cs522, v526, m536, cs544, x_evidence, x__next_564, x_s_565,
+    v581, m582, cs592, m619, v665, m666, cs676,
     ld11, ev26, ev68, ev105, ev135, ev181, _, ev210, ev257, _,
     ev286, ev333, ev353, _, ev368, ev427, ev404, ev488, ev546, ev524,
-    ld591, rfl, rfl, hc636⟩ := Obs.«KernelRoles::load_role_table».obs ev
+    ev594, ld613, hm629, ev678, rfl, rfl, hc636⟩ := Obs.«KernelRoles::load_role_table».obs ev
   have hv1 : v1 = L1.digestV ab := L1.load_repAddressRef hab ld11
   obtain ⟨bytes, _, ext1, ext2, hst, hcall, hproj⟩ := L1.checked_read ev26 ev68 ev105
   have hhashed : Hashed calls ⟨bytes.toArray⟩ :=
@@ -854,19 +862,27 @@ theorem load_role_table_spec {V : View} {extra : List ByteArray}
       (fun _ hp => hp) he_ok' (rest := []) (by rw [List.append_nil]; exact hst6) ev524
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupE
   obtain ⟨rfl, rfl, rfl⟩ := htupE
+  -- the evidence check (`evidence_roles_have_equations`) and the basis pin
+  -- (`assert_basis_pinned`) are assertions: they only extend the heap
   let rtNode := Value.construct rtEnum "Mk" [x_binding, x_by_role, x_by_addr, x_evidence]
-  have extSnoc := Heap.Extends.snoc m512 rtNode
-  have extAll := ext1.trans (ext2.trans (extB.trans (extE.trans extSnoc)))
-  refine ⟨extAll, hwf, x_binding, x_by_role, x_by_addr, x_evidence,
-    loadValue_snoc_construct m512 rtEnum "Mk" [x_binding, x_by_role, x_by_addr, x_evidence],
-    ⟨ab, Bytes.repAddressRef_heapMono₂ addrTy extAll hab, hix_b⟩, ?_,
-    hinvB.mono (extE.trans extSnoc), ?_⟩
-  · refine RoleMapAll.mono ?_ (extE.trans extSnoc) hmapRole
-    intro _ _ _ _ ext' ⟨ro', ab', hk, hab', hbof⟩
-    exact ⟨ro', ab', hk, Bytes.repAddressRef_heapMono₂ addrTy ext' hab', hbof⟩
-  · refine RoleMapAll.mono ?_ extSnoc hmapEv
-    intro _ _ _ _ ext' ⟨ro', es', hk, hm, hl'⟩
-    exact ⟨ro', es', hk, hm, repList_heapMono₂ evListEnum evRep_heapMono₂ ext' hl'⟩
+  have extEv := ev594.heap_extends
+  subst hm629
+  have extSnoc := Heap.Extends.snoc m582 rtNode
+  have extPin := ev678.heap_extends
+  have extAll := ext1.trans (ext2.trans (extB.trans (extE.trans (extEv.trans extSnoc))))
+  have hfull : TableFullRep t b.address (m582 ++ [rtNode])
+      (.ptr (.enum "KernelRoles::RoleTableNode") m582.length) := by
+    refine ⟨hwf, x_binding, x_by_role, x_by_addr, x_evidence,
+      loadValue_snoc_construct m582 rtEnum "Mk" [x_binding, x_by_role, x_by_addr, x_evidence],
+      ⟨ab, Bytes.repAddressRef_heapMono₂ addrTy extAll hab, hix_b⟩, ?_,
+      hinvB.mono (extE.trans (extEv.trans extSnoc)), ?_⟩
+    · refine RoleMapAll.mono ?_ (extE.trans (extEv.trans extSnoc)) hmapRole
+      intro _ _ _ _ ext' ⟨ro', ab', hk, hab', hbof⟩
+      exact ⟨ro', ab', hk, Bytes.repAddressRef_heapMono₂ addrTy ext' hab', hbof⟩
+    · refine RoleMapAll.mono ?_ (extEv.trans extSnoc) hmapEv
+      intro _ _ _ _ ext' ⟨ro', es', hk, hm, hl'⟩
+      exact ⟨ro', es', hk, hm, repList_heapMono₂ evListEnum evRep_heapMono₂ ext' hl'⟩
+  exact ⟨extAll.trans extPin, hfull.mono extPin⟩
 
 theorem load_role_ctx_spec {V : View} {extra : List ByteArray}
     {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}
@@ -1193,22 +1209,34 @@ theorem group_validation_limit_spec {g : F} (hg : g.val < 4294967296)
   rcases Obs.«KernelRoles::group_validation_limit».obs ev with
     ⟨v1, m2, _, m16, _, ev14, ev29, rfl, rfl, -⟩ |
     ⟨v1, m2, _, _, m16, _, v58, m59, _, m73, _, ev14, ev29, _, ev71, ev86, rfl, rfl, -⟩ |
-    ⟨v1, m2, _, _, m16, _, v58, m59, _, _, m73, _, ev14, ev29, _, ev71, ev86, _, rfl, rfl, -⟩
+    ⟨v1, m2, _, _, m16, _, v58, m59, _, _, m73, _, v115, m116, _, m130, _, ev14, ev29, _, ev71,
+      ev86, _, ev128, ev143, rfl, rfl, -⟩ |
+    ⟨v1, m2, _, _, m16, _, v58, m59, _, _, m73, _, v115, m116, _, _, m130, _, ev14, ev29, _, ev71,
+      ev86, _, ev128, ev143, _, rfl, rfl, -⟩
   · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
     obtain ⟨_, _, hlt_iff, _, rfl⟩ := Lib.less_than_fields_field ev29
-    have hlt38 : g.val < 38 := by
-      have h38 : (38 : F).val = 38 := ZMod.val_natCast_of_lt (by decide)
-      simpa [h38] using hlt_iff.mp rfl
+    have hlt33 : g.val < 33 := by
+      have h33 : (33 : F).val = 33 := ZMod.val_natCast_of_lt (by decide)
+      simpa [h33] using hlt_iff.mp rfl
     exact ⟨rfl, g.val, by omega, by simp⟩
   · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
     obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev29
-    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev71
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_literal_group».obs ev71
     obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev86
-    exact ⟨rfl, 38, by omega, rfl⟩
+    exact ⟨rfl, 33, by omega, rfl⟩
   · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
     obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev29
-    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev71
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_literal_group».obs ev71
     obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev86
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev128
+    obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev143
+    exact ⟨rfl, 41, by omega, rfl⟩
+  · obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev14
+    obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev29
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_literal_group».obs ev71
+    obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev86
+    obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev128
+    obtain ⟨_, _, _, _, rfl⟩ := Lib.less_than_fields_field ev143
     exact ⟨rfl, 46, by omega, rfl⟩
 
 theorem walk_ctx_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : Nat}
@@ -1221,10 +1249,10 @@ theorem walk_ctx_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : 
   rcases Obs.«KernelRoles::walk_ctx».obs ev with
     ⟨_, _, _, _, _, _, _, _, _, _, _, rfl, rfl, -⟩ |
     ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-      _, _, _, _, _, _, _, _, _, _, rfl, rfl, -⟩ |
+      _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, rfl, rfl, -⟩ |
     ⟨x_tbl, x_limit, w20, v36, m37, cs47, v51, m61, cs69, v108, m109, cs119, v122, v138,
-      m139, x147, y148, m149, cs158, cs180, v183, v220, m230, cs238,
-      ld12, _, _, _, _, _, ev160, _, _, _, _, rfl, rfl, ev240, -⟩ |
+      m139, cs149, v152, v184, m185, x193, y194, m195, cs204, cs226, v229, v266, m276, cs284,
+      ld12, _, _, _, _, _, _, _, ev206, _, _, _, _, rfl, rfl, ev286, -⟩ |
     ⟨_, _, ld12, -⟩
   · exact ⟨ext, lim, hlim, tbl, ext.loadValue_eq hl_rc, htbl.mono ext⟩
   · exact ⟨ext, lim, hlim, tbl, ext.loadValue_eq hl_rc, htbl.mono ext⟩
@@ -1233,10 +1261,10 @@ theorem walk_ctx_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : 
     injection hv with _ _ hargs
     simp only [List.cons.injEq] at hargs
     rw [hargs.1] at htbl
-    obtain ⟨g, _, rfl, _, hg_lt, _, _, _⟩ := Lib.less_than_fields_spec ev160
-    obtain ⟨_, lim', hlim46, rfl⟩ := group_validation_limit_spec hg_lt ev240
+    obtain ⟨g, _, rfl, _, hg_lt, _, _, _⟩ := Lib.less_than_fields_spec ev206
+    obtain ⟨_, lim', hlim46, rfl⟩ := group_validation_limit_spec hg_lt ev286
     exact ⟨ext, lim', by omega, x_tbl,
-      loadValue_snoc_construct m230 rcEnum "Mk"
+      loadValue_snoc_construct m276 rcEnum "Mk"
         [x_tbl, .field (lim' : F), .construct addrMapEnum "Nil" []],
       htbl.mono ext⟩
   · rw [hl_rc] at ld12

@@ -273,7 +273,7 @@ def roleRowOk (r : Role) : Bool :=
   | none => false
 
 /-- The groups of the witness. -/
-abbrev InGroups (g : Nat) : Prop := g < 6 ∨ g = 11 ∨ g = 20
+abbrev InGroups (g : Nat) : Prop := g < 6 ∨ g = 6 ∨ g = 15
 
 /-- **Every role of the basis and quotient groups is bound at the address of a row that is not
 a block, keyed by the role** (decided). -/
@@ -282,7 +282,7 @@ theorem basis_roles : (List.range 6).all (fun g => (roleGroup g).all roleRowOk) 
 
 /-- **The same for the `Bool` and `And` groups** (decided). -/
 theorem boolAnd_roles :
-    ((roleGroup 11).all roleRowOk && (roleGroup 20).all roleRowOk) = true := by
+    ((roleGroup 6).all roleRowOk && (roleGroup 15).all roleRowOk) = true := by
   decide +kernel
 
 theorem roleRowOk_of {g : Nat} (hg : InGroups g) {r : Role} (hr : r ∈ roleGroup g) :
@@ -342,8 +342,8 @@ theorem role_keptIn {g : Nat} (hg : InGroups g) {r : Role} (hr : r ∈ roleGroup
     unfold KeptIn
     exact ⟨axiom_clause a, ci₀, hread, hst⟩
 
-/-- The `And` roles are the roles of group 20 (decided). -/
-theorem andRoles_group : andRoles.all (fun r => (roleGroup 20).contains r) = true := by
+/-- The `And` roles are the roles of group 15 (decided). -/
+theorem andRoles_group : andRoles.all (fun r => (roleGroup 15).contains r) = true := by
   decide +kernel
 
 /-- A constant of the environment keyed by a role of the eight groups is kept at that role. -/
@@ -377,7 +377,7 @@ theorem and_provenance : ∀ ci ∈ (claimedEnv andEnv).consts,
     | false =>
       rw [hp, Bool.false_or] at h1
       obtain ⟨r, hr, hn⟩ := List.any_eq_true.mp h1
-      have hg : r ∈ roleGroup 20 :=
+      have hg : r ∈ roleGroup 15 :=
         List.mem_of_elem_eq_true (List.all_eq_true.mp andRoles_group r hr)
       exact Or.inr (Or.inr (keptIn_of_role hmem (Or.inr (Or.inr rfl)) hg
         (of_decide_eq_true hn).symm))
@@ -386,7 +386,7 @@ theorem and_provenance : ∀ ci ∈ (claimedEnv andEnv).consts,
         rw [← boolEnv_take]
         exact List.mem_map.mpr ⟨ci, h, rfl⟩
       obtain ⟨r, hr, hname⟩ := List.mem_map.mp hn
-      have hg : r ∈ roleGroup 11 :=
+      have hg : r ∈ roleGroup 6 :=
         List.mem_of_elem_eq_true (List.all_eq_true.mp boolRoles_group r hr)
       exact Or.inr (Or.inr (keptIn_of_role hmem (Or.inr (Or.inl rfl)) hg hname))
     · exact Or.inr (Or.inl (basisEnv_pinned ci h))
@@ -397,21 +397,21 @@ theorem and_provenance : ∀ ci ∈ (claimedEnv andEnv).consts,
 `Bool` group and the `And` group**, with the store of all 33 committed prelude records and the
 environment IxC's native checks of the `Bool` and `And` blocks install over the pins. -/
 theorem tableShape_and :
-    TableShape.{u} committedDefaultRoleTable (fun g => g < 6 ∨ g = 11 ∨ g = 20) andStore
+    TableShape.{u} committedDefaultRoleTable (fun g => g < 6 ∨ g = 6 ∨ g = 15) andStore
       andEnv := {
   needsClosed := fun g hg r hr => by
     have hg' : InGroups g := hg
-    show Ix.SpecDigest.groupOf r < 6 ∨ Ix.SpecDigest.groupOf r = 11 ∨
-      Ix.SpecDigest.groupOf r = 20
+    show Ix.SpecDigest.groupOf r < 6 ∨ Ix.SpecDigest.groupOf r = 6 ∨
+      Ix.SpecDigest.groupOf r = 15
     rcases hg' with hg' | hg' | hg'
     · have h1 : (groupNeeded g).all (fun r => decide (Ix.SpecDigest.groupOf r < 6)) = true :=
         List.all_eq_true.mp groups_closed g (List.mem_range.mpr hg')
       exact Or.inl (of_decide_eq_true (List.all_eq_true.mp h1 r hr))
-    · have h11 : groupNeeded 11 = [] := by decide +kernel
-      rw [hg', h11] at hr
+    · have h6 : groupNeeded 6 = [] := by decide +kernel
+      rw [hg', h6] at hr
       cases hr
-    · have h20 : groupNeeded 20 = [] := by decide +kernel
-      rw [hg', h20] at hr
+    · have h15 : groupNeeded 15 = [] := by decide +kernel
+      rw [hg', h15] at hr
       cases hr
   bound := fun _ _ r _ => defaultTable_allBound r
   prelude := preludePinned_default

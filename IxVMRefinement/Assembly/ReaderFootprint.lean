@@ -195,13 +195,21 @@ theorem held_image_agrees {V : View} {extra : List ByteArray} {calls : List (Cal
 theorem collision_extra_mono {V : View} {small large : List ByteArray} {calls : List (Call IxVM.F)}
     (hsub : ∀ bytes ∈ small, bytes ∈ large) (h : V.HashedCollision small calls) :
     V.HashedCollision large calls := by
-  rcases h with ⟨address, held, bytes, hheld, hashed, different, same⟩ | padding
+  rcases h with ⟨address, held, bytes, hheld, hashed, different, same⟩ |
+    ⟨address, held, image, blk, cb, ms, hheld, hashed, decoded, block, isImage, different,
+      same⟩ | padding
   · refine .inl ⟨address, held, bytes, ?_, hashed, different, same⟩
     rcases hheld with view | ⟨member, hash⟩ | traced
     · exact .inl view
     · exact .inr (.inl ⟨hsub held member, hash⟩)
     · exact .inr (.inr traced)
-  · exact .inr padding
+  · refine .inr (.inl ⟨address, held, image, blk, cb, ms, ?_, hashed, decoded, block, isImage,
+      different, same⟩)
+    rcases hheld with view | ⟨member, hash⟩ | traced
+    · exact .inl view
+    · exact .inr (.inl ⟨hsub held member, hash⟩)
+    · exact .inr (.inr traced)
+  · exact .inr (.inr padding)
 
 theorem collision_into_readerImages {V : View} {claimBytes bindingBytes : ByteArray}
     {calls : List (Call IxVM.F)}

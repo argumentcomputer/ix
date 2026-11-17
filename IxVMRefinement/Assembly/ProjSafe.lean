@@ -3,6 +3,7 @@ import IxVMRefinement.Assembly.ClaimsL1L6
 import IxVMRefinement.L1.Records
 import IxVMRefinement.Lib.Words
 import IxVMRefinement.Obs.KernelCheck12
+import IxVMRefinement.Obs.KernelRoles
 import IxVMRefinement.Obs.KernelRoles2
 import Ix.Cert.ReaderKeys
 import IxC.Ixon.Verify.NonrecursiveConstant

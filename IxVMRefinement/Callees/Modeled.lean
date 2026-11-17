@@ -5,6 +5,7 @@ import IxVMRefinement.Lib.Bytes
 import IxVMRefinement.Lib.Lists
 import IxVMRefinement.Obs.KernelCheck0
 import IxVMRefinement.Obs.KernelCheck2
+import IxVMRefinement.Obs.KernelModeled
 import IxVMRefinement.Obs.KernelModeled0
 
 /-! # Recursor parent scan and modeled-route gates

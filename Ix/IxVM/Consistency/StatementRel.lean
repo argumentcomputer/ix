@@ -1010,56 +1010,88 @@ theorem selfHashed_of_authentic {V : View} (h : V.Authentic) : SelfHashed V := b
   obtain ⟨hrec, hblob, hrole⟩ := h
   exact And.intro (fun a lc hl => (hrec a lc hl).1) (And.intro hblob hrole)
 
-/-- **A BLAKE3 collision the run hashed one side of**: a byte string the run hashed and a
-different byte string with the same pure BLAKE3 hash that the view holds under that hash, that
-is one of `extra`, or that the run hashed too; or a preimage of the zero address that the run
-hashed or the view holds at that address. Every case is about bytes the run hashed and bytes
-the view holds, `extra` lists or the run hashed. -/
+/-- **A projection image of a block the run hashed** (the image side of the second case of
+`View.HashedCollision`): `image` is the serialization of the projection record, with empty
+tables, of member `i` as an inductive (`iPrj`) or of constructor `j` of member `i` (`cPrj`), at
+any indices, of the block at the pure BLAKE3 hash of `blk`, a byte string the run hashed that
+decodes exactly to a block record. -/
+def HashedBlockProjImage (calls : List (Call IxVM.F)) (image : ByteArray) : Prop :=
+  ∃ (blk : ByteArray) (cb : Ixon.Constant) (ms : Array Ixon.MutConst),
+    Hashed calls blk ∧ Ixon.deConstantExact blk = .ok cb ∧ cb.info = .muts ms ∧
+    ((∃ i : UInt64,
+        image = Ixon.serConstant ⟨.iPrj ⟨i, Address.blake3Pure blk⟩, #[], #[], #[], #[]⟩) ∨
+      ∃ i j : UInt64,
+        image = Ixon.serConstant ⟨.cPrj ⟨i, j, Address.blake3Pure blk⟩, #[], #[], #[], #[]⟩)
+
+/-- **A BLAKE3 collision the run hashed or computed one side of**: a byte string the run hashed
+and a different byte string with the same pure BLAKE3 hash that the view holds under that hash,
+that is one of `extra`, or that the run hashed too; the same with a projection image of a block
+the run hashed (`HashedBlockProjImage`) in place of the byte string the run hashed; or a
+preimage of the zero address that the run hashed or the view holds at that address. Every case
+is about bytes the run hashed, or computed from bytes it hashed, and bytes the view holds,
+`extra` lists or the run hashed. -/
 def GenuineCollision (V : View) (extra : List ByteArray) (calls : List (Call IxVM.F)) : Prop :=
   (∃ held bytes : ByteArray,
     (V.Preimage (Address.blake3Pure held) held ∨ held ∈ extra ∨ Hashed calls held) ∧
     Hashed calls bytes ∧ bytes ≠ held ∧ Address.blake3Pure bytes = Address.blake3Pure held) ∨
+  (∃ held image : ByteArray,
+    (V.Preimage (Address.blake3Pure held) held ∨ held ∈ extra ∨ Hashed calls held) ∧
+    HashedBlockProjImage calls image ∧ image ≠ held ∧
+    Address.blake3Pure image = Address.blake3Pure held) ∨
   ∃ bytes : ByteArray,
     (V.Preimage Ix.HostAdmission.Merkle.padding bytes ∨ Hashed calls bytes) ∧
       Address.blake3Pure bytes = Ix.HostAdmission.Merkle.padding
+
+/-- Over a view stored under its own hashes, a byte string in hand at `x` hashes to `x`, and is
+held by the view under its own hash, one of `extra`, or hashed by the run. -/
+private theorem held_selfHashed {V : View} (hV : SelfHashed V) {extra : List ByteArray}
+    {calls : List (Call IxVM.F)} {x : Address} {held : ByteArray}
+    (hheld : V.Preimage x held ∨ (held ∈ extra ∧ Address.blake3Pure held = x) ∨
+      (Hashed calls held ∧ Address.blake3Pure held = x)) :
+    Address.blake3Pure held = x ∧
+      (V.Preimage (Address.blake3Pure held) held ∨ held ∈ extra ∨ Hashed calls held) := by
+  obtain ⟨hrec, hblob, hrole⟩ := hV
+  have hx' : Address.blake3Pure held = x := by
+    rcases hheld with hpre | ⟨-, hx'⟩ | ⟨-, hx'⟩
+    · rcases hpre with ⟨lc, hl, hlc⟩ | hb | ⟨rb, hr, hra, hrb⟩ | ⟨_, -, -, hx'⟩
+      · rw [← hlc]
+        exact hrec x lc hl
+      · exact hblob x held hb
+      · rw [← hra, ← hrb]
+        exact hrole rb hr
+      · exact hx'
+    · exact hx'
+    · exact hx'
+  refine ⟨hx', ?_⟩
+  rcases hheld with hpre | ⟨hmem, -⟩ | ⟨hh', -⟩
+  · rw [hx']
+    exact Or.inl hpre
+  · exact Or.inr (Or.inl hmem)
+  · exact Or.inr (Or.inr hh')
 
 /-- **Over a view stored under its own hashes, the collision alternative is a collision**:
 `View.HashedCollision` counts a byte string the view holds at an address as a preimage of
 that address whatever its hash; when the view's data is stored under its own hashes, the
 alternative exhibits two different byte strings with one BLAKE3 hash, one of them hashed by
-the run and the other held by the view under that hash, one of `extra`, or hashed by the run;
-or a preimage of the zero address. -/
+the run or a projection image of a block the run hashed, and the other held by the view under
+that hash, one of `extra`, or hashed by the run; or a preimage of the zero address. -/
 theorem hashedCollision_genuine {V : View} (hV : SelfHashed V) {extra : List ByteArray}
     {calls : List (Call IxVM.F)} (h : V.HashedCollision extra calls) :
     GenuineCollision V extra calls := by
-  obtain ⟨hrec, hblob, hrole⟩ := hV
   unfold GenuineCollision
-  rcases h with ⟨x, held, bytes, hheld, hh, hne, hx⟩ | ⟨bytes, hb, hp⟩
-  · have hx' : Address.blake3Pure held = x := by
-      rcases hheld with hpre | ⟨-, hx'⟩ | ⟨-, hx'⟩
-      · rcases hpre with ⟨lc, hl, hlc⟩ | hb | ⟨rb, hr, hra, hrb⟩ | ⟨_, -, -, hx'⟩
-        · rw [← hlc]
-          exact hrec x lc hl
-        · exact hblob x held hb
-        · rw [← hra, ← hrb]
-          exact hrole rb hr
-        · exact hx'
-      · exact hx'
-      · exact hx'
-    have hanchor : V.Preimage (Address.blake3Pure held) held ∨ held ∈ extra ∨
-        Hashed calls held := by
-      rcases hheld with hpre | ⟨hmem, -⟩ | ⟨hh', -⟩
-      · rw [hx']
-        exact Or.inl hpre
-      · exact Or.inr (Or.inl hmem)
-      · exact Or.inr (Or.inr hh')
+  rcases h with ⟨x, held, bytes, hheld, hh, hne, hx⟩ |
+    ⟨x, held, image, blk, cb, ms, hheld, hb, hdec, hms, himg, hne, hx⟩ | ⟨bytes, hb, hp⟩
+  · obtain ⟨hx', hanchor⟩ := held_selfHashed hV hheld
     exact Or.inl ⟨held, bytes, hanchor, hh, hne, hx.trans hx'.symm⟩
-  · exact Or.inr ⟨bytes, hb, hp⟩
+  · obtain ⟨hx', hanchor⟩ := held_selfHashed hV hheld
+    exact Or.inr (Or.inl ⟨held, image, hanchor, ⟨blk, cb, ms, hb, hdec, hms, himg⟩, hne,
+      hx.trans hx'.symm⟩)
+  · exact Or.inr (Or.inr ⟨bytes, hb, hp⟩)
 
 /-- **The statement over a view stored under its own hashes**: a collision between a byte
-string the run hashed and one in hand (held by the view under its hash, one of the claim's
-bytes, the table's bytes and the reader's images, or hashed by the run), or
-`ConsistentReadRel`. -/
+string the run hashed, or a projection image of a block it hashed, and one in hand (held by
+the view under its hash, one of the claim's bytes, the table's bytes and the reader's images,
+or hashed by the run), or a preimage of the zero address, or `ConsistentReadRel`. -/
 theorem ConsistencySpecRel.selfHashed {calls : List (Call IxVM.F)} {d : Digest}
     (h : ConsistencySpecRel.{u} calls d) {bytes : ByteArray} {c : Claim}
     (hde : Claim.de bytes = .ok c) (hd : packDigest (Address.blake3Pure bytes) = d)
@@ -1072,9 +1104,10 @@ theorem ConsistencySpecRel.selfHashed {calls : List (Call IxVM.F)} {d : Digest}
     (fun hcol => Or.inl (hashedCollision_genuine hV hcol)) Or.inr
 
 /-- **The statement with no admission premise, over a view stored under its own hashes**: a
-collision between a byte string the run hashed and one in hand (held by the view under its
-hash, one of the claim's bytes, the table's bytes and the derived projection images, or hashed
-by the run), or `ConsistentReadP`. -/
+collision between a byte string the run hashed, or a projection image of a block it hashed, and
+one in hand (held by the view under its hash, one of the claim's bytes, the table's bytes and
+the derived projection images, or hashed by the run), or a preimage of the zero address, or
+`ConsistentReadP`. -/
 theorem ConsistencySpecP.selfHashed {calls : List (Call IxVM.F)} {d : Digest}
     (h : ConsistencySpecP.{u} calls d) {bytes : ByteArray} {c : Claim}
     (hde : Claim.de bytes = .ok c) (hd : packDigest (Address.blake3Pure bytes) = d)

@@ -64,24 +64,14 @@ def nativeEvaluationFixtures : Array Lean.Name := #[
   `Tests.Ix.Kernel.TutorialDefs.natBleTrue, `Tests.Ix.Kernel.TutorialDefs.natBleFalse,
   `Tests.Ix.Kernel.TutorialDefs.natBeqTrue, `Tests.Ix.Kernel.TutorialDefs.natBeqFalse]
 
-/-- Fixtures Lean rejects whose types and constructors IxVM accepts on their
-declared shape. A mutual or nested block's types and constructors are checked
-for their declared shape only (closed, typed, a telescope into a sort; each
-constructor's record, counts and return type), with no positivity or
-nested-occurrence condition: nothing reads a rule, a projection, structure eta
-or unit-likeness at such a block unless one of its recursors is checked, and
-the program refuses those recursors (`Tests.Ix.IxVM.modeledRecursorsRefused`).
-`nestedSpecLocalF`'s nested occurrence takes a constructor field as its
-parametric argument, so no auxiliary type can be formed (Lean's elaborator
-rejects the declaration; IxC declines it, `Tests.Ix.Kernel.Tutorial.cornerCases`).
-`r6Host` nests through `r6NegBox`, which is not strictly positive; the claim
-assumes `r6NegBox`, whose own check refuses it. Their recursors stay refused. -/
-def declaredShapeAccepts : Array Lean.Name :=
-  #[`nestedSpecLocalF, `nestedSpecLocalF.mk, `r6Host, `r6Host.mk]
-
-/-- The recursor of a fixture the kernel's modeller has no model for (decision
-D7): refused. -/
-def modeledDeclines : Array Lean.Name := #[`nestedSpecLocalF.rec]
+/-- Fixtures the modeled route refuses because the kernel's modeller has no
+model for them (decision D7). `nestedSpecLocalF`'s nested occurrence takes a
+constructor field as its parametric argument, so no auxiliary type can be formed:
+IxC declines it (`Tests.Ix.Kernel.Tutorial.cornerCases`), and IxVM, which checks a
+nested block against a model, finds none ("no model advice"). Lean's elaborator
+rejects the declaration; the arena's outcome for its nearest test is `either`. -/
+def modeledDeclines : Array Lean.Name :=
+  #[`nestedSpecLocalF, `nestedSpecLocalF.mk, `nestedSpecLocalF.rec]
 
 /-- Recursors of mutual or nested families among the good fixtures: refused while
 the program refuses such recursors (`Tests.Ix.IxVM.modeledRecursorsRefused`). -/
@@ -112,9 +102,8 @@ private def collectChecks (env : Lean.Environment) : Array ArenaCheck := Id.run 
       seen := seen.insert n
       if !env.constants.contains n && !rawNames.contains n then continue
       if skipSet.contains n then continue
-      let expectPass := (pass && !nativeEvaluationFixtures.contains n &&
-        !modeledDeclines.contains n && !nativeDeclines.contains n) ||
-        declaredShapeAccepts.contains n
+      let expectPass := pass && !nativeEvaluationFixtures.contains n &&
+        !modeledDeclines.contains n && !nativeDeclines.contains n
       out := out.push { name := n, expectPass := expectPass }
   return out
 
@@ -164,9 +153,7 @@ def arenaCases (env : Lean.Environment) : IO (Array Tests.Ix.IxVM.Builder) := do
   let ctx := { ctx with axioms := none }
   let mut out : Array Tests.Ix.IxVM.Builder := #[]
   for c in checks do
-    let label := s!"arena {if c.expectPass then "GOOD" else "BAD"} {c.name}" ++
-      (if declaredShapeAccepts.contains c.name then
-        " (Lean rejects it; accepted on its declared shape)" else "")
+    let label := s!"arena {if c.expectPass then "GOOD" else "BAD"} {c.name}"
     match ixonEnv.getAddr? (Ix.Name.fromLeanName c.name) with
     | none => IO.println s!"{label}: skipped (ungrounded by the compile)"
     | some addr =>

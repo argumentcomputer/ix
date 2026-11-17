@@ -436,8 +436,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
   let mkCase (e : Ixon.Env) (tag : String) (n : Lean.Name) : Builder := fun u => do
     let c ← mkPlain e tag n u
     return if isRecursor n then c.throughModeledRecursor else c
-  -- no advice under user axioms: `Even.rec` with an unused, well-typed `axiom ax : Prop`.
-  -- `Even` itself needs no advice: its type is checked on its declared shape.
+  -- no advice under user axioms: `Even` and `Even.rec` with an unused, well-typed `axiom ax : Prop`
   let underAxiom (name : String) : Builder := fun _ => do
     let ax : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero], #[]⟩
     let a := Address.blake3 (Ixon.ser ax)
@@ -454,7 +453,8 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
         (rejectsWith := some (if modeledRecursorsRefused then modeledRecursorRefusal
           else "model advice: a claim with user axioms"))
     else
-      Case.ofClaim s!"check {name} under a user axiom (its declared shape, no model)" e claim trees
+      Case.ofClaim s!"check {name} under a user axiom (no model advice)" e claim trees
+        (accept := false) (rejectsWith := some "model advice: a claim with user axioms")
   let cases := (names.map (mkCase env "modeller's model")) ++
     (names.map (mkCase tweaked "a different valid model")) ++
     (quotNames.map fun n => mkCase quotEnv "a model whose proofs use the quotient" (nameOfString n)) ++

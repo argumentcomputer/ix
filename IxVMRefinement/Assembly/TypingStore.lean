@@ -405,7 +405,7 @@ theorem collision_of_zero {bytes : ByteArray} (hh : Hashed calls bytes)
     (hz : Address.blake3Pure bytes = Ix.HostAdmission.Merkle.padding) :
     CollisionWith V extra R calls := by
   unfold CollisionWith View.HashedCollision
-  exact Or.inl (Or.inr ⟨bytes, Or.inr hh, hz⟩)
+  exact Or.inl (Or.inr (Or.inr ⟨bytes, Or.inr hh, hz⟩))
 
 /-- A byte string the run hashed at an address where the witness store holds other bytes is
 a collision. -/
@@ -415,7 +415,30 @@ theorem collision_of_store {x : _root_.Address} {held bytes : ByteArray}
     (hh : Hashed calls bytes) (hne : bytes ≠ held) (hx : Address.blake3Pure bytes = x) :
     CollisionWith V extra R calls := by
   unfold CollisionWith
-  exact Or.inr ⟨x, held, bytes, hheld, hh, hne, hx⟩
+  exact Or.inr (Or.inl ⟨x, held, bytes, hheld, hh, hne, hx⟩)
+
+/-- A projection image of a block the run hashed, at an address where the witness store holds
+other bytes, is a collision. -/
+theorem collision_of_store_image {x : _root_.Address} {held image : ByteArray}
+    (hheld : (∃ lc, R.consts.get? x = some lc ∧ lc.rawBytes = held) ∨
+      R.blobs.get? x = some held)
+    (himg : HashedBlockProjImage calls image) (hne : image ≠ held)
+    (hx : Address.blake3Pure image = x) :
+    CollisionWith V extra R calls := by
+  unfold CollisionWith
+  exact Or.inr (Or.inr ⟨x, held, image, hheld, himg, hne, hx⟩)
+
+/-- A projection image of a block the run hashed, at the address of a different byte string in
+hand (held by the view, one of `extra`, or hashed by the run), is a collision. -/
+theorem collision_of_image {x : _root_.Address} {held image : ByteArray}
+    (hheld : V.Preimage x held ∨ (held ∈ extra ∧ Address.blake3Pure held = x) ∨
+      (Hashed calls held ∧ Address.blake3Pure held = x))
+    (himg : HashedBlockProjImage calls image) (hne : image ≠ held)
+    (hx : Address.blake3Pure image = x) :
+    CollisionWith V extra R calls := by
+  obtain ⟨blk, cb, ms, hb, hdec, hms, hi⟩ := himg
+  unfold CollisionWith View.HashedCollision
+  exact Or.inl (Or.inr (Or.inl ⟨x, held, image, blk, cb, ms, hheld, hb, hdec, hms, hi, hne, hx⟩))
 
 variable {E₀ : Ixon.Env}
 
@@ -491,7 +514,8 @@ theorem Merged.good (hM : Merged E₀ R E) (hload : LoadedBy calls E₀)
     (hb : Bounded calls) (env : Ix.Kernel.Env .anon) (t : Ix.Kernel.RoleTable)
     (lim : Option Nat) : Core.Good ⟨E, env, t, lim⟩ calls := by
   refine ⟨fun hcol => hnc ?_, hb⟩
-  rcases hcol with ⟨x, held, bytes, hpre, hh, hne, hx⟩ | ⟨bytes, hpre, hz⟩
+  rcases hcol with ⟨x, held, bytes, hpre, hh, hne, hx⟩ |
+    ⟨x, held, image, blk, cb, ms, hpre, hblk, hdec, hms, himg, hne, hx⟩ | ⟨bytes, hpre, hz⟩
   · rcases hpre with hp | ⟨hmem, -⟩ | ⟨hh', hx'⟩
     · rcases hM.preimage hload hp with ⟨hh', hx'⟩ | hR | ⟨p, hp, hp1, hp2⟩
       · exact collision_of_run hh hh' hne (hx.trans hx'.symm)
@@ -502,6 +526,20 @@ theorem Merged.good (hM : Merged E₀ R E) (hload : LoadedBy calls E₀)
           (hx.trans (hp1.symm.trans hhash.symm))
     · exact absurd hmem List.not_mem_nil
     · exact collision_of_run hh hh' hne (hx.trans hx'.symm)
+  · have himg' : HashedBlockProjImage calls image := ⟨blk, cb, ms, hblk, hdec, hms, himg⟩
+    rcases hpre with hp | ⟨hmem, -⟩ | ⟨hh', hx'⟩
+    · rcases hM.preimage hload hp with hrun | hR | ⟨p, hp, hp1, hp2⟩
+      · exact collision_of_image (Or.inr (Or.inr hrun)) himg' hne hx
+      · exact collision_of_store_image hR himg' hne hx
+      · have hhash : Address.blake3Pure p.2 = p.1 := ClosedFacts.committedRows_hashed p hp
+        have hmem : held ∈ extra := by
+          rw [← hp2]
+          exact hextra _ (committedRows_footprint hp)
+        have hheld_x : Address.blake3Pure held = x := by
+          rw [← hp2, hhash, hp1]
+        exact collision_of_image (Or.inr (Or.inl ⟨hmem, hheld_x⟩)) himg' hne hx
+    · exact absurd hmem List.not_mem_nil
+    · exact collision_of_image (Or.inr (Or.inr ⟨hh', hx'⟩)) himg' hne hx
   · rcases hpre with hp | hh
     · rcases hM.preimage hload hp with ⟨hh', -⟩ | hR | ⟨p, hp, hp1, -⟩
       · exact collision_of_zero hh' hz

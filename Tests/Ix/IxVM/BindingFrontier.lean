@@ -112,9 +112,10 @@ def cases (base : Ixon.Env) : Except String (Array Case) := do
     env := valid, claim := validClaim }
   let invalid ← invalidWfEvidence base table
   let (invalid, invalidClaim) ← charConsumer invalid table
+  -- the proof `True.intro`, applied to a certificate's variables, is not a function
   result := result.push {
     name := "late-equation-refuses-invalid-earlier-evidence"
-    env := invalid, claim := invalidClaim, expectedError := some typeError }
+    env := invalid, claim := invalidClaim, expectedError := some "no matching arm" }
   return result
 
 /-- The cases as claims to the IxVM program: negative controls must hit their

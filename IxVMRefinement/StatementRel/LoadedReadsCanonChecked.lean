@@ -137,8 +137,8 @@ theorem checkedDefn_at {κ : _root_.Address → Core.KKey}
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other
     | Thm | Opaque | Quot
-    | Induct_n0 | Induct_other
-    | Ctor_n0_n0 | Ctor_n0_other | Ctor_other
+    | Induct_n0 | Induct_other_n0 | Induct_other_other
+    | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
     | Rec_n0 | Rec_other =>
       simp_all [L1.defnValShape, Core.kciEnum]
     | Defn v1 m2 cs12 x_nlvls x_ty x_val _ _ _ m299 cs309 _ m336 cs346 v372 m373 cs383 m404
@@ -192,8 +192,8 @@ theorem checkedDefn_at {κ : _root_.Address → Core.KKey}
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other | Defn
     | Opaque | Quot
-    | Induct_n0 | Induct_other
-    | Ctor_n0_n0 | Ctor_n0_other | Ctor_other
+    | Induct_n0 | Induct_other_n0 | Induct_other_other
+    | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
     | Rec_n0 | Rec_other =>
       simp_all [L1.defnValShape, Core.kciEnum]
     | Thm v1 m2 cs12 x_nlvls x_ty x_val _ m544 cs554 _ m581 cs591 v617 m618 cs628 m649
@@ -257,8 +257,8 @@ theorem checkedDefn_at {κ : _root_.Address → Core.KKey}
     cases «KernelCheck::check_const».obs ev_chk with
     | Axiom_n1 | Axiom_other_n0 | Axiom_other_other | Defn | Thm
     | Quot
-    | Induct_n0 | Induct_other
-    | Ctor_n0_n0 | Ctor_n0_other | Ctor_other
+    | Induct_n0 | Induct_other_n0 | Induct_other_other
+    | Ctor_n0_n0 | Ctor_n0_other | Ctor_other_n0 | Ctor_other_other
     | Rec_n0 | Rec_other =>
       simp_all [L1.defnValShape, Core.kciEnum]
     | Opaque v1 m2 cs12 x_nlvls x_ty x_val _ _ m849 cs859 _ m886 cs896 v922 m923 cs933 m954

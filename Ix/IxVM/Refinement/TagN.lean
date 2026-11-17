@@ -18,6 +18,9 @@ mirror). This module is the creative layer on top of it:
   (`getU64le_run`, `u64Add_value`). The wide rungs and the refinements on every header
   are in `Ix.IxVM.Refinement.TagNWide`. -/
 
+-- the program's function table, which the lookup facts unfold, outgrew the default depth
+set_option maxRecDepth 100000
+
 namespace IxVM.Refinement.TagN
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
