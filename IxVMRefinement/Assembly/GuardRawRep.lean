@@ -65,7 +65,8 @@ private theorem level_rep_go :
         simpa only [Obs.Names.«Lists::lookup<&KernelTypes::KLevelNode>».symbol] using lookup
       have hp' : RepList (Instance.mk "Lists::Node" [(.ptr (.named "KernelTypes::KLevelNode" []))]).symbol
           RepKLevel h ls params := by
-        simpa only [Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol] using hp
+        simpa only [RepKLevelList, Levels.klevelList_names,
+          Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol] using hp
       obtain ⟨⟨l', -, hr⟩, rfl⟩ := Lib.Lists.lookup_spec ev' hp'
       exact ⟨l', hr⟩
 
@@ -93,13 +94,17 @@ private theorem levels_rep_go :
       exact ⟨ls, hl⟩
     | .Cons (cs88 := children) (ld12 := ld) (he45 := hr) (hm44 := hh)
         (ev62 := e1) (ev90 := e2) (hc107 := hc) .. =>
-      obtain ⟨l, rest, -, h1, h2⟩ := Lib.rep_cons_of_load hl ld
+      have ld' := ld
+      rw [← Levels.klevelList_names] at ld'
+      obtain ⟨l, rest, -, h1, h2⟩ := Lib.rep_cons_of_load hl ld'
       obtain ⟨l', h1'⟩ := level_inst_raw_rep h1 hp e1
       have hlt : children.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
       obtain ⟨rest', h2'⟩ := ih children.length hlt (Nat.le_refl _)
-        (h2.mono e1.heap_extends) (hp.mono e1.heap_extends) e2
+        (RepKLevelList.mono h2 e1.heap_extends) (hp.mono e1.heap_extends) e2
       subst hr hh
-      exact ⟨l' :: rest', (RepKLevelList.allocCons (h1'.mono e2.heap_extends) h2').1⟩
+      exact ⟨l' :: rest', by
+        simpa only [Levels.klevelList_names] using
+          (RepKLevelList.allocCons (h1'.mono e2.heap_extends) h2').1⟩
 
 /-- Raw substitution through a list of levels preserves its represented list. -/
 theorem levels_inst_raw_rep {ls ps : List KLevel} {p params r : SourceValue F}
