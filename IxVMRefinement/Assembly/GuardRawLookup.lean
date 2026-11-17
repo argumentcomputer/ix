@@ -1,9 +1,8 @@
 import IxC.Kernel.Model.GuardClassifier
 import IxC.Kernel.Model.GuardClassifierErase
 import IxC.Kernel.Verify.Cached.NormalizeRef
-import IxVMRefinement.StatementRel.LoadedReadsCanon
+import IxVMRefinement.StatementRel.ReadsMono
 import IxVMRefinement.Assembly.TypingStore
-import IxVMRefinement.Assembly.TypingDefnStep
 import IxVMRefinement.Assembly.BareState
 
 /-! # The guard classifier's address-keyed raw-record dictionary
@@ -119,11 +118,6 @@ theorem readRoot_sort {blob : Blobs} {root : Root} {i : UInt64} {u : Ixon.Univ}
   rw [hecx, he]
   simp [Ix.Kernel.Reader.convExpr, Ix.Kernel.Reader.ECx.level, hu, Expr.eraseMeta]
   exact ⟨.sort (Ix.Kernel.Reader.convUniv id u), rfl, rfl⟩
-
-/-- The richer annotated reading is retained separately for consumers that need binder data. -/
-noncomputable def readAnnotatedRoot (blob : Blobs) (root : Root) : Option (Expr .anon) := do
-  let e ← (exprReader addressTable blob root.source id root.self).read root.expression |>.toOption
-  LoadedReads.canonAnn root.source (List.range root.levels) (root.offset : IxVM.F) root.expression e
 
 /-- A successful dictionary answer checks universe arity and instantiates that raw reading. -/
 noncomputable def answer (blob : Blobs) (root : Option Root) (us : List Level) :
@@ -285,18 +279,23 @@ theorem readRoot_noFvar {blob : Blobs} {root : Root} {e : Expr .anon}
   rw [Ix.Kernel.GuardClassifier.eraseMeta_hasFvar]
   exact Assembly.memberReader_read_noFvar (Typing.toOption_eq_some hv)
 
+private theorem recordOf_eq_cached {E : Ixon.Env} (hd : L1.EnvDecoded E) (a : _root_.Address) :
+    recordOf E a = Ix.Cert.recordAt E a := by
+  unfold recordOf Ix.Cert.recordAt
+  cases hget : E.consts.get? a with
+  | none => rfl
+  | some lc =>
+    obtain ⟨c, hc, hdec⟩ := hd a lc hget
+    change (Ixon.deConstantExact lc.rawBytes).toOption = lc.get?
+    rw [hdec, hc]
+    rfl
+
 /-- The witness-store interface itself supplies a raw dictionary extension, at every limit. -/
 theorem ofStore_extends_recordsFor {R E : Ixon.Env} (h : Typing.RecordsFor R E) :
     (ofStore R).Extends (ofStore E) :=
   lookup_extends
-    (fun a c hc => (Typing.recordOf_eq_recordAt_of_decoded h.1 a).trans (h.2.1 a c hc))
+    (fun a c hc => (recordOf_eq_cached h.1 a).trans (h.2.1 a c hc))
     h.2.2.1
-
-/-- The actual run-store interface supplies its raw dictionary extension. -/
-theorem ofStore_extends_stepStore {calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)}
-    {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} (h : Typing.StepStore calls t E₀ E) :
-    (ofStore E₀).Extends (ofStore E) :=
-  lookup_extends (fun _ _ hc => h.held hc) h.runBlob
 
 /-- Collision exclusion supplies agreement of the run and witness dictionaries. -/
 theorem common_lookup_of_noCollision
