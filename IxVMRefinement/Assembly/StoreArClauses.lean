@@ -1,5 +1,5 @@
 import IxVMRefinement.Assembly.LevelClauses
-import IxC.Kernel.Model.StoreArKeep
+import IxC.Kernel.Model.StoreArNative
 
 /-! # The arity clause beside the model invariant
 
@@ -12,6 +12,7 @@ the recursor step's level transport reads beside the prefix invariant:
   `lvClauses_basisEnv`;
 * along a value step: `keepsValuesJ_storeArR`, `keepsValuesKeyed_storeArR`,
   `keepsValuesJ_lvClauses`, `keepsValuesKeyed_lvClauses`;
+* along a native block's install: `NativeNoRecFacts.storeArR`, `NativeNoRecFacts.lvClauses`;
 * the declaration front's check at any permutation of the positions from the prefix invariant
   and `LvClauses`: `constantValCheckJ_of_prefix_lv`.
 -/
@@ -131,6 +132,15 @@ theorem keepsValuesKeyed_storeArR (t : Ix.Kernel.RoleTable) :
     KeepsValuesKeyed t (StoreArR (md := .anon)) :=
   keepsValuesJ_storeArR.keyed t
 
+/-! ## A native block's install -/
+
+/-- **A native block's install keeps `StoreArR`** (`Ix.Kernel.Model.storeArR_nativeNoRec`). -/
+theorem NativeNoRecFacts.storeArR {env env₂ : Ix.Kernel.Env .anon}
+    {blk : List (ConstantInfo .anon)} {nP : Nat} {p₀ : Ix.Kernel.NativeParts .anon}
+    {fam : Ix.Kernel.Semantics.NativeFam .anon} (h : NativeNoRecFacts env env₂ blk nP p₀ fam)
+    (hA : StoreArR env) : StoreArR env₂ :=
+  Ix.Kernel.Model.storeArR_nativeNoRec hA h.runJ
+
 /-! ## The carried clause -/
 
 /-- **The level clauses the fold carries beside the invariant**: a stored theorem's value
@@ -154,6 +164,13 @@ theorem keepsValuesJ_lvClauses : KeepsValuesJ LvClauses :=
 /-- **A value step at the key of a 32-byte address keeps `LvClauses`.** -/
 theorem keepsValuesKeyed_lvClauses (t : Ix.Kernel.RoleTable) : KeepsValuesKeyed t LvClauses :=
   keepsValuesJ_lvClauses.keyed t
+
+/-- **A native block's install keeps `LvClauses`.** -/
+theorem NativeNoRecFacts.lvClauses {env env₂ : Ix.Kernel.Env .anon}
+    {blk : List (ConstantInfo .anon)} {nP : Nat} {p₀ : Ix.Kernel.NativeParts .anon}
+    {fam : Ix.Kernel.Semantics.NativeFam .anon} (hpin : Ix.Kernel.basisPinHit blk = none)
+    (h : NativeNoRecFacts env env₂ blk nP p₀ fam) (hX : LvClauses env) : LvClauses env₂ :=
+  ⟨h.thmLevels hpin hX.1, h.storeArR hX.2⟩
 
 /-! ## The final form -/
 
