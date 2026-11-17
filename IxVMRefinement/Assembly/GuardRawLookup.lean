@@ -1,4 +1,5 @@
 import IxC.Kernel.Model.GuardClassifier
+import IxC.Kernel.Verify.Cached.NormalizeRef
 import IxVMRefinement.StatementRel.LoadedReadsCanon
 import IxVMRefinement.Assembly.TypingStore
 import IxVMRefinement.Assembly.TypingDefnStep
@@ -101,8 +102,14 @@ def valueRoot (store : Records) (a : _root_.Address) : Option Root := do
   | .dPrj p => memberRoot store p.block p.idx.toNat definitionValue
   | _ => none
 
-/-- The canonical annotated reading of a selected raw root, at positional universes. -/
-noncomputable def readRoot (blob : Blobs) (root : Root) : Option (Expr .anon) := do
+/-- Canonical unannotated address-keyed syntax. The classifier never reads binder/let metadata;
+lets remain explicit, so this data reader requires no typing or closedness hypothesis. -/
+def readRoot (blob : Blobs) (root : Root) : Option (Expr .anon) :=
+  ((exprReader addressTable blob root.source id root.self).read root.expression).toOption.map
+    Expr.eraseMeta
+
+/-- The richer annotated reading is retained separately for consumers that need binder data. -/
+noncomputable def readAnnotatedRoot (blob : Blobs) (root : Root) : Option (Expr .anon) := do
   let e ← (exprReader addressTable blob root.source id root.self).read root.expression |>.toOption
   LoadedReads.canonAnn root.source (List.range root.levels) (root.offset : IxVM.F) root.expression e
 
@@ -154,15 +161,30 @@ theorem valueRoot_mono {store store' : Records}
   case dPrj p => exact memberRoot_mono hs hr
   all_goals exact hr
 
-/-- Canonical annotation is record-local; only successful literal blob reads require transport. -/
+/-- Only successful literal blob reads require transport; metadata erasure is store independent. -/
 theorem readRoot_mono {blob blob' : Blobs}
     (hb : ∀ a bytes, blob a = some bytes → blob' a = some bytes)
     {r : Root} {e : Expr .anon} (h : readRoot blob r = some e) : readRoot blob' r = some e := by
-  refine bind_preserved ?_ (fun _ _ h => h) h
-  intro v hv
+  obtain ⟨v, hv, heq⟩ := Option.map_eq_some_iff.mp h
   have hr := Typing.toOption_eq_some hv
   have hr' := ReaderReads.exprReader_mono hb hr
-  rw [hr']
+  apply Option.map_eq_some_iff.mpr
+  exact ⟨v, by rw [hr']; rfl, heq⟩
+
+/-- An actual raw conversion produces a dictionary reading without an InLogic, typed-environment
+or closed-term premise. This is the data producer needed for arbitrary classifier loads. -/
+theorem readRoot_of_rawConv {blob : Blobs} {root : Root}
+    {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
+    {h : Aiur.Generic.Heap IxVM.F} {kp : Aiur.Generic.SourceValue IxVM.F}
+    (raw : L1.RawConvExpr root.source.refs.toList recurAddrs root.source.univs.toList
+      root.source.sharing.toList blobs h 4294967295 root.expression kp)
+    (hself : ∀ i x, recurAddrs[i]? = some x → ∃ m k, root.self i = some m ∧ m = .ok k)
+    (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs) :
+    ∃ e, readRoot blob root = some e := by
+  obtain ⟨v, hv⟩ := LoadedReads.exprReader_read_ok addressTable_check raw hself hblob
+  refine ⟨v.eraseMeta, ?_⟩
+  unfold readRoot
+  rw [hv]
   rfl
 
 theorem answer_mono {blob blob' : Blobs} {r r' : Option Root}
