@@ -566,11 +566,11 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   have hlarge' : rc.lvls.toNat = ind.lvls.toNat + 1 := of_decide_eq_true hlarge
   obtain ⟨hat, hname, cb', ms', ind', hcb', hms', hind', hnP, hnI, hlenC, hnames⟩ := hm
   have hcbE : cb' = cb := Option.some.inj (hcb'.symm.trans hcb)
-  subst hcbE
+  subst cb'
   have hmsE : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hms)
-  subst hmsE
+  subst ms'
   have hindE : ind' = ind := Ixon.MutConst.indc.inj (Option.some.inj (hind'.symm.trans hind))
-  subst hindE
+  subst ind'
   -- the result sort is zero, so there is one constructor
   have hiso : Ix.Kernel.Level.isEquiv fam.p.resSort .zero = some true := by
     have h := hat.isProp
