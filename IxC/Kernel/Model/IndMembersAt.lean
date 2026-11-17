@@ -11,7 +11,7 @@ import IxC.Kernel.Model.Annot.BitRename
 import IxC.Kernel.Verify.Extend.Block
 import IxC.Kernel.Verify.Extend.Ind
 import IxC.Kernel.Verify.Extend.Iota
-import IxC.Kernel.Semantics.EnvFactsCons
+public import IxC.Kernel.Semantics.EnvFactsCons
 import IxC.Kernel.Semantics.IndBlockRun
 
 public section
@@ -365,7 +365,7 @@ theorem memberInstallInvAt {μ : CheckMode} {J : Judgements md}
   have hicw : Ix.Kernel.IndCapsWF c₀ := by
     intro cv' caps heq
     rw [hcaps cv' caps heq, indCaps_empty_eta, indCaps_empty_unitlike]
-    exact ⟨fun h => nomatch h, fun h => nomatch h⟩
+    exact ⟨(fun h => nomatch h), (fun h => nomatch h)⟩
   have hwf : EnvWF ⟨c₀ :: env.consts⟩ := by
     refine EnvWF.cons hwfE ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, hicw⟩
     · rw [hc₀cv, htypeA]; exact htf'
@@ -448,7 +448,7 @@ theorem memberInstallPMAt {blockNames : List (Key md)} (mp : EnvModelM V μ env)
           env.find? (Ix.Kernel.projFnName cvA.name 0) = none) := by
     intro caps heq
     rw [hcaps cvA caps heq, indCaps_empty_eta]
-    exact ⟨etaPins_empty, fun h => nomatch h, fun h => nomatch h⟩
+    exact ⟨etaPins_empty, (fun h => nomatch h), (fun h => nomatch h)⟩
   obtain ⟨hwf₁, hI₁, hEC₁, hNE₁⟩ :=
     memberInstallInvAt mp.base2.wf hmv hfr.annot_syntax hI hout hbn hEC hNE hc₀cv
       hc₀name hkind hcaps
