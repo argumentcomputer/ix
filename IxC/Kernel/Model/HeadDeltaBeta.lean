@@ -84,14 +84,14 @@ theorem Trace.normal_unique {env : Env md} {e r : Expr md} (h : Trace env e r)
     | cons hs' ht' =>
       have he := hs.deterministic hs'
       subst he
-      exact ih ht' hr'
+      exact ih hr ht' hr'
 
 /-- A single head step is preserved by keeping existing lookups. -/
 theorem Step.mono {env env' : Env md}
     (hext : ∀ k ci, env.find? k = some ci → env'.find? k = some ci)
     {e r : Expr md} (h : Step env e r) : Step env' e r := by
   induction h with
-  | delta (n := n) hd =>
+  | @delta n us e hd =>
     apply Step.delta
     unfold unfoldDefinition at hd ⊢
     simp only [Expr.getAppFn] at hd ⊢
