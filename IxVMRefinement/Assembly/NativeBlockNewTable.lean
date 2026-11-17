@@ -389,14 +389,14 @@ theorem BlockInstall.newProjTablesGuard (hI : BlockInstall c new B cb ind caps)
     rw [← hk, ← hκC]
     exact hctorB
   refine ⟨hT.ctorTele j' hj' cvC nP nF hfC', fun hprop f rc bp' rg hg hg' csg g us hf hus evg gg
-    hrc hbp' hg' hzero => ?_⟩
+    hrc hbp' hrg hzero => ?_⟩
   have htblB : (appCtx c new).env.find?
       (Ix.Kernel.projTableName ((appCtx c new).stored.κ (Core.iprjAddr B 0))) =
       some (.projInfo tbl) := by
     rw [← hbB, ← hi0]
     exact htbl
   exact hT.guard i hi0 j cvC nP nF tbl hctorB htblB hprop f rc bp' rg hg hg' csg g us b hf hus evg
-    gg hrc hbp' hbB hg' hzero
+    gg hrc hbp' hbB hrg hzero
 
 end
 
