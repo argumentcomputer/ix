@@ -44,9 +44,9 @@ theorem native_constructor_hashed (ctx : Core.ScopedCtx)
       have heq := congrArg ZMod.val (sub_eq_zero.mp op)
       rw [hnv, hkv] at heq
       omega
-    | .other (m646 := hashHeap) (m655 := nextHeap)
-        (cs665 := hashCalls) (v708 := nextIndex)
-        (ev667 := hashRun) (op792 := add) (ev697 := nextRun) (hc794 := events) .. =>
+    | .other (m716 := hashHeap) (m725 := nextHeap)
+        (cs735 := hashCalls) (v778 := nextIndex)
+        (ev737 := hashRun) (op862 := add) (ev767 := nextRun) (hc864 := events) .. =>
       by_cases hkj : k = j
       · subst j
         have hmem :
@@ -104,9 +104,9 @@ theorem modeled_constructor_hashed (ctx : Core.ScopedCtx)
       have heq := congrArg ZMod.val (sub_eq_zero.mp op)
       rw [hnv, hkv] at heq
       omega
-    | .other (m430 := hashHeap) (m500 := nextHeap)
-        (cs510 := hashCalls) (v551 := nextIndex)
-        (ev512 := hashRun) (op621 := add) (ev542 := nextRun) (hc623 := events) .. =>
+    | .other (m430 := hashHeap) (m551 := nextHeap)
+        (cs510 := hashCalls) (v599 := nextIndex)
+        (ev512 := hashRun) (op669 := add) (ev590 := nextRun) (hc671 := events) .. =>
       by_cases hkj : k = j
       · subst j
         have hmem :
