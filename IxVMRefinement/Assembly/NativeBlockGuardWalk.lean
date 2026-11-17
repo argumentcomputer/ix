@@ -538,7 +538,7 @@ theorem proj_guard_open (c : ScopedCtx) (hc : ScopedCoreFacts c)
       (RCRep.mono E187 hrc) (types_mono e187 htypesP) (Tm.mono e187 hEP) (Tm.mono e187 hRP)
       hnil_deps
   -- the peel passed every parameter: the walk starts at a `Forall` cell
-  have hm'eq : m' = nP := by
+  have hm'eq : nP = m' := by
     by_contra hne
     obtain ⟨vv, hldv', hnf⟩ := hstop (by omega)
     have hl := L1.loadValue_extend e187 hldv'
