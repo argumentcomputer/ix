@@ -200,9 +200,9 @@ theorem alias_sort_inhabited (n : Key md) (d : Nat) :
   let env : Env md := ⟨[.defnInfo ⟨n, [], .forallE ty ty mb⟩ (.lam ty (.bvar 0) mb) .abbrev]⟩
   refine ⟨env, ?_⟩
   have hdef : unfoldDefinition env (.const n []) = some (.lam ty (.bvar 0) mb) := by
-    simp [env, ty, mb, unfoldDefinition, Env.find?, ConstantInfo.name,
-      Expr.getAppFn, Expr.getAppArgs, Expr.mkAppN]
-  simpa only [Expr.instantiate1] using
+    simp [env, ty, mb, unfoldDefinition, Env.find?, ConstantInfo.name, ConstantInfo.toConstantVal,
+      Expr.getAppFn, Expr.getAppArgs, Expr.mkAppN, Expr.instantiateLevelParams]
+  simpa [Expr.instantiate1] using
     (Certified.alias_beta (d := d) (a := Expr.sort .zero) hdef (by simp [mb, BinderMeta.leanNever]))
 
 end Ix.Kernel.HeadDeltaBeta
