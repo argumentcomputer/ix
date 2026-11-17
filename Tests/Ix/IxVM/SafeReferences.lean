@@ -91,7 +91,7 @@ private def coveredCase : Except String Case := do
   let table ← Ix.Kernel.Reader.defaultTable
   let (env, x) := put env unsafeAxiom
   let table := { table with bound := table.bound.map fun (r, a) =>
-    (r, if r == .natPred then x else a) }
+    (r, if r == Ix.Kernel.Role.natPred then x else a) }
   table.check
   let env ← withRoleTable env table.toBytes
   let (env, a) := put env (unused x)
@@ -119,7 +119,7 @@ private def standardAxiomCase (guarded : Bool) : Except String Case := do
   let c := { c with sharing := c.sharing.push (.ref c.refs.size.toUInt64 #[]), refs := c.refs.push x }
   let (env, a') := put env c
   let table := { table with bound := table.bound.map fun (r, b) =>
-    (r, if r == .propext then a' else b) }
+    (r, if r == Ix.Kernel.Role.propext then a' else b) }
   let env ← withRoleTable env table.toBytes
   bindingCase "binding: standard axiom has an unused unsafe reference" env (!guarded)
     (if guarded then some recordMessage else none)
@@ -140,7 +140,8 @@ private def certificateCase (guarded : Bool) (mode : Nat) : Except String Case :
   if d.kind != .thm then throw "default certificate is not a theorem"
   let (env, replacement) ← if mode == 0 then do
       let (env, x) := put env unsafeAxiom
-      pure (put env { c with sharing := c.sharing.push (.ref c.refs.size.toUInt64 #[]),
+      pure (put env { c with
+        sharing := c.sharing.push (.ref c.refs.size.toUInt64 #[])
         refs := c.refs.push x })
     else do
       let ms := if mode == 1 then #[.defn d]
@@ -207,7 +208,9 @@ def runUnsafeOrigins : IO UInt32 := do
           buffer "IxVM::verify_transitive" }
     let path := dir / "unsafe-origins.ixt"
     IO.FS.writeBinFile path (Ix.AiurInvocation.encodeCases cases)
-    let out ← IO.Process.output { cmd := host, args := #["test", artifact, path.toString],
+    let out ← IO.Process.output {
+      cmd := host
+      args := #["test", artifact, path.toString]
       env := #[(circuitVerdictVar, some "1")] }
     IO.print out.stdout
     IO.eprint out.stderr
