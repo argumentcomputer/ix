@@ -531,6 +531,83 @@ theorem mutsMember_defn_canon (ht : t.check = .ok ()) (hbound : Bounded calls)
       hannT hannV htmT' htmV' ev_chk hsub_chk hn
   exact ⟨_, decl, decl', canonDefn_eq hcT hcV, hco, hi, hi', hreads hn⟩
 
+/-! ## The two inputs of a step, together -/
+
+/-- **The inputs of the walked-constant step for a standalone definition, theorem or opaque
+record, from the walk's check alone.** The walk checked `a`, the run's store `E` holds the
+record `c` there, in Lean's logic, and the prefix `env` stores the references the record
+uses. Then there are a group limit and readings `ty₀`, `val₀` such that for every hint there
+are a constant `cn` and declarations `decl`, `decl'` with
+
+* the check evidence of `decl` at the prefix's keying, storing `decl'`, which installs
+  exactly `cn` (`hchk` of `Decl.walkedConst_step`);
+* `decl` installing the constant the record at `a` declares (`Reads`);
+* `cn` reloading under the prefix that stores it, at every store `E'` that holds the record
+  `c` at `a` (exact decoding) and at least the blobs of `E` (the reload input of the step).
+
+Nothing else is assumed about `E'`: the runs a reload speaks of are only required to be good
+for `E'`. -/
+theorem checkedAtFull_defn_step (ht : t.check = .ok ()) (hbound : Bounded calls)
+    (hS : RunStore calls E) {bAddr a : _root_.Address} {order_role : List _root_.Address}
+    {c : Ixon.Constant} {d : Ixon.Definition} (hrec : Ix.Cert.recordAt E a = some c)
+    (hinfo : c.info = .defn d) (hlogic : InLogic c) (hnot_role : a ∉ order_role)
+    (hchk : Claim.CheckedAtFull calls bAddr t a)
+    {env : Ix.Kernel.Env .anon} (hstored : Decl.UsedRefsStored t env c) :
+    ∃ (lim : Nat) (ty₀ val₀ : Ix.Kernel.Expr .anon), ∀ hn : Ix.Kernel.ReducibilityHint,
+      ∃ (cn : Ix.Kernel.ConstantInfo .anon) (decl decl' : Ix.Kernel.Declaration .anon),
+        Decl.CheckedConstOriginAt (Core.Ctx.stored ⟨E, env, t, some lim⟩).κ lim calls t bAddr
+          E order_role decl decl' ∧
+        IxVM.Consistency.installs decl =
+          [defnConst d.kind ⟨keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn] ∧
+        IxVM.Consistency.installs decl' = [cn] ∧
+        Reads t E a (defnConst d.kind ⟨keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn) ∧
+        ∀ E' : Ixon.Env, recordOf E' a = some c →
+          (∀ x b, E.blobs.get? x = some b → E'.blobs.get? x = some b) →
+          Decl.ReloadsAs E' t ⟨cn :: env.consts⟩ cn := by
+  obtain ⟨lim, ty₀, val₀, hty, hval, h1, h2, h3, h4, hall⟩ :=
+    checkedAtFull_defn_canon ht hbound hS hrec hinfo hlogic hnot_role hchk hstored
+  refine ⟨lim, ty₀, val₀, fun hn => ?_⟩
+  obtain ⟨cn, decl, decl', hcn, hco, hi, hi', hreads⟩ := hall hn
+  exact ⟨cn, decl, decl', hco, hi, hi', hreads, fun E' hrec' hblobs =>
+    reloadsAs_defn_cons ht hrec' hinfo hlogic hblobs hty hval h1 h2 h3 h4 hstored hcn⟩
+
+/-- **The inputs of the walked-constant step for a member of a definition block.** As
+`checkedAtFull_defn_step`, for member `k` of the block `cb` at `B`: the reload holds at every
+store `E'` that holds the member's projection record at its constant address, the block at
+`B` (exact decodings) and at least the blobs of `E`. -/
+theorem mutsMember_defn_step (ht : t.check = .ok ()) (hbound : Bounded calls)
+    (hS : RunStore calls E) (hcov : HashedRecordsStored calls E) {bAddr B : _root_.Address}
+    {order_role : List _root_.Address} {cb : Ixon.Constant} {ms : Array Ixon.MutConst}
+    {k : Nat} {d : Ixon.Definition} (hrecB : Ix.Cert.recordAt E B = some cb)
+    (hmuts : cb.info = .muts ms) (hk : ms[k]? = some (.defn d)) (hlogic : InLogic cb)
+    (hnot_role : memberAddr B k (.defn d) ∉ order_role)
+    (hm : Claim.MutsMemberCheckedAtFull calls bAddr t B ms k)
+    {env : Ix.Kernel.Env .anon} (hstored : Decl.UsedRefsStored t env cb) :
+    ∃ (lim : Nat) (ty₀ val₀ : Ix.Kernel.Expr .anon), ∀ hn : Ix.Kernel.ReducibilityHint,
+      ∃ (cn : Ix.Kernel.ConstantInfo .anon) (decl decl' : Ix.Kernel.Declaration .anon),
+        Decl.CheckedConstOriginAt (Core.Ctx.stored ⟨E, env, t, some lim⟩).κ lim calls t bAddr
+          E order_role decl decl' ∧
+        IxVM.Consistency.installs decl =
+          [defnConst d.kind
+            ⟨keyOf t (memberAddr B k (.defn d)), List.range d.lvls.toNat, ty₀⟩ val₀ hn] ∧
+        IxVM.Consistency.installs decl' = [cn] ∧
+        Reads t E (memberAddr B k (.defn d))
+          (defnConst d.kind
+            ⟨keyOf t (memberAddr B k (.defn d)), List.range d.lvls.toNat, ty₀⟩ val₀ hn) ∧
+        ∀ E' : Ixon.Env,
+          recordOf E' (memberAddr B k (.defn d)) = some (memberProjection B k (.defn d)) →
+          recordOf E' B = some cb →
+          (∀ x b, E.blobs.get? x = some b → E'.blobs.get? x = some b) →
+          Decl.ReloadsAs E' t ⟨cn :: env.consts⟩ cn := by
+  obtain ⟨hk64, -, -⟩ := mutsMember_record hbound hS hcov hm hk
+  obtain ⟨lim, ty₀, val₀, hty, hval, h1, h2, h3, h4, hall⟩ :=
+    mutsMember_defn_canon ht hbound hS hcov hrecB hmuts hk hlogic hnot_role hm hstored
+  refine ⟨lim, ty₀, val₀, fun hn => ?_⟩
+  obtain ⟨cn, decl, decl', hcn, hco, hi, hi', hreads⟩ := hall hn
+  exact ⟨cn, decl, decl', hco, hi, hi', hreads, fun E' hproj' hblock' hblobs =>
+    reloadsAs_member_cons ht hk64 hproj' hblock' hmuts hk hlogic hblobs hty hval h1 h2 h3 h4
+      hstored hcn⟩
+
 end Checked
 
 end IxVM.Refinement.LoadedReads
