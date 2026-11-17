@@ -164,6 +164,27 @@ theorem defnConst_name (kind : Ix.DefKind) (cv : Ix.Kernel.ConstantVal .anon)
     (defnConst kind cv value hn).name = cv.name := by
   cases kind <;> rfl
 
+/-- **The declaration a definition record's constant is checked as**, by its kind: a
+definition under the hint `hn`, a theorem, or an opaque. It installs `defnConst`. -/
+def defnDecl (kind : Ix.DefKind) (cv : Ix.Kernel.ConstantVal .anon)
+    (value : Ix.Kernel.Expr .anon) (hn : Ix.Kernel.ReducibilityHint) :
+    Ix.Kernel.Declaration .anon :=
+  match kind with
+  | .defn => .defnDecl cv value hn
+  | .thm => .thmDecl cv value
+  | .opaq => .opaqueDecl cv value
+
+theorem installs_defnDecl (kind : Ix.DefKind) (cv : Ix.Kernel.ConstantVal .anon)
+    (value : Ix.Kernel.Expr .anon) (hn : Ix.Kernel.ReducibilityHint) :
+    IxVM.Consistency.installs (defnDecl kind cv value hn) = [defnConst kind cv value hn] := by
+  cases kind <;> rfl
+
+/-- The declaration of a definition record is never an axiom declaration. -/
+theorem defnDecl_ne_axiomDecl (kind : Ix.DefKind) (cv : Ix.Kernel.ConstantVal .anon)
+    (value : Ix.Kernel.Expr .anon) (hn : Ix.Kernel.ReducibilityHint)
+    (cv' : Ix.Kernel.ConstantVal .anon) : defnDecl kind cv value hn ≠ .axiomDecl cv' := by
+  cases kind <;> simp [defnDecl]
+
 /-! ## Helpers -/
 
 private theorem toUInt64_toNat_c {n : Nat} (hn : n < UInt64.size) : n.toUInt64.toNat = n := by

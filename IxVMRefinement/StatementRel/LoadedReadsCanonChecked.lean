@@ -124,12 +124,10 @@ theorem checkedDefn_at {κ : _root_.Address → Core.KKey}
     (ev_chk : ObsFn Core.W "KernelCheck::check_const"
       [rc, L1.defnValShape d tyPtr valPtr hintVal, ap] m_chk r_chk h'_chk cs_chk)
     (hsub_chk : ∀ cl ∈ cs_chk, cl ∈ calls) :
-    ∀ hn : Ix.Kernel.ReducibilityHint, ∃ decl decl' : Ix.Kernel.Declaration .anon,
-      Decl.CheckedConstOriginAt κ lim calls t bAddr E order_role decl decl' ∧
-      IxVM.Consistency.installs decl =
-        [defnConst d.kind ⟨keyOf t decl_addr, List.range d.lvls.toNat, ty₀⟩ val₀ hn] ∧
-      IxVM.Consistency.installs decl' =
-        [defnConst d.kind ⟨keyOf t decl_addr, List.range d.lvls.toNat, ty'⟩ val' hn] := by
+    ∀ hn : Ix.Kernel.ReducibilityHint,
+      Decl.CheckedConstOriginAt κ lim calls t bAddr E order_role
+        (defnDecl d.kind ⟨Core.keyOf t decl_addr, List.range d.lvls.toNat, ty₀⟩ val₀ hn)
+        (defnDecl d.kind ⟨Core.keyOf t decl_addr, List.range d.lvls.toNat, ty'⟩ val' hn) := by
   cases hk : d.kind with
   | defn =>
     have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
@@ -182,13 +180,11 @@ theorem checkedDefn_at {κ : _root_.Address → Core.KKey}
       have hty_tmc_404 := Core.TmC.mono ext_m_404 hty_tmc_m
       have hval_tmc_508 := Core.TmC.mono ext_m_508 hval_tmc_m
       intro hn
-      exact ⟨.defnDecl ⟨Core.keyOf t decl_addr, List.range d.lvls.toNat, ty₀⟩ val₀ hn,
-        .defnDecl ⟨Core.keyOf t decl_addr, List.range d.lvls.toNat, ty'⟩ val' hn,
-        .defnDecl hdecl_not_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann
+      exact .defnDecl hdecl_not_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann
           hty_out_def hval_out_def
           hm412 hty_tmc_404 (hrc_m.mono ext_m_404) ev385 hcl_es hsub_es
           ext_373_508 hm516 (Core.TmC.mono ext_404_508 hty_tmc_404) hval_tmc_508
-          (hrc_m.mono ext_m_508) ev481 hcl_kc hsub_kc, rfl, rfl⟩
+          (hrc_m.mono ext_m_508) ev481 hcl_kc hsub_kc
   | thm =>
     have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Thm" [.field (d.lvls.toNat : F), tyPtr, valPtr] := by
@@ -247,14 +243,12 @@ theorem checkedDefn_at {κ : _root_.Address → Core.KKey}
       have hty_tmc_649 := Core.TmC.mono ext_m_649 hty_tmc_m
       have hval_tmc_807 := Core.TmC.mono ext_m_807 hval_tmc_m
       intro hn
-      exact ⟨.thmDecl ⟨Core.keyOf t decl_addr, List.range d.lvls.toNat, ty₀⟩ val₀,
-        .thmDecl ⟨Core.keyOf t decl_addr, List.range d.lvls.toNat, ty'⟩ val',
-        .thmDecl hdecl_not_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann
+      exact .thmDecl hdecl_not_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann
           hty_out_def hval_out_def
           hm657 hty_tmc_649 (hrc_m.mono ext_m_649) ev630 hcl_es hsub_es
           hm704 ev685 hcl_le hsub_le
           ext_675_807 hm815 (Core.TmC.mono ext_649_807 hty_tmc_649) hval_tmc_807
-          (hrc_m.mono ext_m_807) ev780 hcl_kc hsub_kc, rfl, rfl⟩
+          (hrc_m.mono ext_m_807) ev780 hcl_kc hsub_kc
   | opaq =>
     have hv_shape : L1.defnValShape d tyPtr valPtr hintVal =
         .construct Core.kciEnum "Opaque"
@@ -306,26 +300,25 @@ theorem checkedDefn_at {κ : _root_.Address → Core.KKey}
       have hty_tmc_954 := Core.TmC.mono ext_m_954 hty_tmc_m
       have hval_tmc_1058 := Core.TmC.mono ext_m_1058 hval_tmc_m
       intro hn
-      exact ⟨.opaqueDecl ⟨Core.keyOf t decl_addr, List.range d.lvls.toNat, ty₀⟩ val₀,
-        .opaqueDecl ⟨Core.keyOf t decl_addr, List.range d.lvls.toNat, ty'⟩ val',
-        .opaqueDecl hdecl_not_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann
+      exact .opaqueDecl hdecl_not_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann
           hty_out_def hval_out_def
           hm962 hty_tmc_954 (hrc_m.mono ext_m_954) ev935 hcl_es hsub_es
           ext_923_1058 hm1066 (Core.TmC.mono ext_954_1058 hty_tmc_954) hval_tmc_1058
-          (hrc_m.mono ext_m_1058) ev1031 hcl_kc hsub_kc, rfl, rfl⟩
+          (hrc_m.mono ext_m_1058) ev1031 hcl_kc hsub_kc
 
 variable {E : Ixon.Env}
 
 /-- **A checked standalone definition, theorem or opaque record stores its canonical
 constant.** The walk checked `a` (`Claim.CheckedAtFull`), the run's store holds the record `c`
 there, in Lean's logic, and the prefix `env` stores the references the record uses. Then there
-are a group limit and the readings `ty₀`, `val₀` of its type and value, well scoped, such that
-for every hint:
+are a group limit, the readings `ty₀`, `val₀` of its type and value, well scoped, and their
+canonical annotations `ty'`, `val'` (`canonAnn`, at roots `0` and `1`) such that for every
+hint:
 
-* the canonical constant `cn` of the record and its reading is defined (`canonDefn`);
 * the declaration of the reading has its check evidence at the prefix's keying
   (`Decl.CheckedConstOriginAt`, what the walked-constant step consumes), and the declaration
-  it stores installs exactly `cn`;
+  it stores is the declaration of the canonical annotations: it installs the canonical
+  constant (`installs_defnDecl`, `canonDefn_eq`);
 * the declaration of the reading installs the constant the record at `a` declares (`Reads`).
 
 The constant the evidence stores is thus the one `reloadsAs_defn_cons` reloads. -/
@@ -335,22 +328,21 @@ theorem checkedAtFull_defn_canon (ht : t.check = .ok ()) (hbound : Bounded calls
     (hinfo : c.info = .defn d) (hlogic : InLogic c) (hnot_role : a ∉ order_role)
     (hchk : Claim.CheckedAtFull calls bAddr t a)
     {env : Ix.Kernel.Env .anon} (hstored : Decl.UsedRefsStored t env c) :
-    ∃ (lim : Nat) (ty₀ val₀ : Ix.Kernel.Expr .anon),
+    ∃ (lim : Nat) (ty₀ val₀ ty' val' : Ix.Kernel.Expr .anon),
       (exprReader t (fun x => E.blobs.get? x) c id (soloSelf t a)).read d.typ = .ok ty₀ ∧
       (exprReader t (fun x => E.blobs.get? x) c id (soloSelf t a)).read d.value = .ok val₀ ∧
       ty₀.looseBVarsBounded 0 = true ∧
       ty₀.allLevelParamsDefined (List.range d.lvls.toNat) = true ∧
       val₀.looseBVarsBounded 0 = true ∧
       val₀.allLevelParamsDefined (List.range d.lvls.toNat) = true ∧
+      canonAnn c (List.range d.lvls.toNat) 0 d.typ ty₀ = some ty' ∧
+      canonAnn c (List.range d.lvls.toNat) (0 + 1) d.value val₀ = some val' ∧
       ∀ hn : Ix.Kernel.ReducibilityHint,
-        ∃ (cn : Ix.Kernel.ConstantInfo .anon) (decl decl' : Ix.Kernel.Declaration .anon),
-          canonDefn (keyOf t a) c 0 d ty₀ val₀ hn = some cn ∧
-          Decl.CheckedConstOriginAt (Core.Ctx.stored ⟨E, env, t, some lim⟩).κ lim calls t bAddr
-            E order_role decl decl' ∧
-          IxVM.Consistency.installs decl =
-            [defnConst d.kind ⟨keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn] ∧
-          IxVM.Consistency.installs decl' = [cn] ∧
-          Reads t E a (defnConst d.kind ⟨keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn) := by
+        Decl.CheckedConstOriginAt (Core.Ctx.stored ⟨E, env, t, some lim⟩).κ lim calls t bAddr
+          E order_role
+          (defnDecl d.kind ⟨Core.keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn)
+          (defnDecl d.kind ⟨Core.keyOf t a, List.range d.lvls.toNat, ty'⟩ val' hn) ∧
+        Reads t E a (defnConst d.kind ⟨keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn) := by
   have hsafe : Ix.Kernel.Reader.safetyDecline d = none := by
     have hl := hlogic
     unfold InLogic at hl
@@ -406,20 +398,19 @@ theorem checkedAtFull_defn_canon (ht : t.check = .ok ()) (hbound : Bounded calls
     exact List.mem_append_right _ (List.mem_append_right _ hi)
   have htmT' := Decl.tmC_stored_of_usedRefs (E₀ := E) (lim := some lim) rty heT hstored htmT
   have htmV' := Decl.tmC_stored_of_usedRefs (E₀ := E) (lim := some lim) rval heV hstored htmV
-  refine ⟨lim, ty₀, val₀, hty, hval, h1, h2, h3, h4, fun hn => ?_⟩
-  obtain ⟨decl, decl', hco, hi, hi'⟩ :=
-    checkedDefn_at (E := E) (order_role := order_role) (decl_addr := Core.ixAddr a')
-      hnot_role hsafe hrc_m hnlvls h1 h2 h3 h4 hannT hannV htmT' htmV' ev_chk hsub_chk hn
-  exact ⟨_, decl, decl', canonDefn_eq hcT hcV, hco, hi, hi', hreads hn⟩
+  exact ⟨lim, ty₀, val₀, ty', val', hty, hval, h1, h2, h3, h4, hcT, hcV, fun hn =>
+    ⟨checkedDefn_at (E := E) (order_role := order_role) (decl_addr := Core.ixAddr a')
+      hnot_role hsafe hrc_m hnlvls h1 h2 h3 h4 hannT hannV htmT' htmV' ev_chk hsub_chk hn,
+      hreads hn⟩⟩
 
 /-- **A checked member of a definition block stores its canonical constant.** The store holds
 the block `cb` at `B`, in Lean's logic; the walk checked member `k`, the definition `d`; the
-prefix `env` stores the references the block uses. Then there are a group limit and the
-readings `ty₀`, `val₀` of the member's type and value in the block, well scoped, such that for
-every hint the canonical constant `cn` of the member (at its root offset in the block) is
-defined, the declaration of the reading has its check evidence at the prefix's keying with
-the stored declaration installing exactly `cn`, and the declaration of the reading installs
-the constant the member's projection record declares (`Reads`). -/
+prefix `env` stores the references the block uses. Then there are a group limit, the readings
+`ty₀`, `val₀` of the member's type and value in the block, well scoped, and their canonical
+annotations `ty'`, `val'` (at the member's root offset in the block and the next root) such
+that for every hint the declaration of the reading has its check evidence at the prefix's
+keying, storing the declaration of the canonical annotations, and installs the constant the
+member's projection record declares (`Reads`). -/
 theorem mutsMember_defn_canon (ht : t.check = .ok ()) (hbound : Bounded calls)
     (hS : RunStore calls E) (hcov : HashedRecordsStored calls E) {bAddr B : _root_.Address}
     {order_role : List _root_.Address} {cb : Ixon.Constant} {ms : Array Ixon.MutConst}
@@ -428,7 +419,7 @@ theorem mutsMember_defn_canon (ht : t.check = .ok ()) (hbound : Bounded calls)
     (hnot_role : memberAddr B k (.defn d) ∉ order_role)
     (hm : Claim.MutsMemberCheckedAtFull calls bAddr t B ms k)
     {env : Ix.Kernel.Env .anon} (hstored : Decl.UsedRefsStored t env cb) :
-    ∃ (lim : Nat) (ty₀ val₀ : Ix.Kernel.Expr .anon),
+    ∃ (lim : Nat) (ty₀ val₀ ty' val' : Ix.Kernel.Expr .anon),
       (exprReader t (fun x => E.blobs.get? x) cb id (blockSelf t B ms)).read d.typ = .ok ty₀ ∧
       (exprReader t (fun x => E.blobs.get? x) cb id (blockSelf t B ms)).read d.value =
         .ok val₀ ∧
@@ -436,19 +427,20 @@ theorem mutsMember_defn_canon (ht : t.check = .ok ()) (hbound : Bounded calls)
       ty₀.allLevelParamsDefined (List.range d.lvls.toNat) = true ∧
       val₀.looseBVarsBounded 0 = true ∧
       val₀.allLevelParamsDefined (List.range d.lvls.toNat) = true ∧
+      canonAnn cb (List.range d.lvls.toNat) ((L1.mutsRootOffset ms.toList k : Nat) : F) d.typ
+        ty₀ = some ty' ∧
+      canonAnn cb (List.range d.lvls.toNat) (((L1.mutsRootOffset ms.toList k : Nat) : F) + 1)
+        d.value val₀ = some val' ∧
       ∀ hn : Ix.Kernel.ReducibilityHint,
-        ∃ (cn : Ix.Kernel.ConstantInfo .anon) (decl decl' : Ix.Kernel.Declaration .anon),
-          canonDefn (keyOf t (memberAddr B k (.defn d))) cb
-            ((L1.mutsRootOffset ms.toList k : Nat) : F) d ty₀ val₀ hn = some cn ∧
-          Decl.CheckedConstOriginAt (Core.Ctx.stored ⟨E, env, t, some lim⟩).κ lim calls t bAddr
-            E order_role decl decl' ∧
-          IxVM.Consistency.installs decl =
-            [defnConst d.kind
-              ⟨keyOf t (memberAddr B k (.defn d)), List.range d.lvls.toNat, ty₀⟩ val₀ hn] ∧
-          IxVM.Consistency.installs decl' = [cn] ∧
-          Reads t E (memberAddr B k (.defn d))
-            (defnConst d.kind
-              ⟨keyOf t (memberAddr B k (.defn d)), List.range d.lvls.toNat, ty₀⟩ val₀ hn) := by
+        Decl.CheckedConstOriginAt (Core.Ctx.stored ⟨E, env, t, some lim⟩).κ lim calls t bAddr
+          E order_role
+          (defnDecl d.kind
+            ⟨Core.keyOf t (memberAddr B k (.defn d)), List.range d.lvls.toNat, ty₀⟩ val₀ hn)
+          (defnDecl d.kind
+            ⟨Core.keyOf t (memberAddr B k (.defn d)), List.range d.lvls.toNat, ty'⟩ val' hn) ∧
+        Reads t E (memberAddr B k (.defn d))
+          (defnConst d.kind
+            ⟨keyOf t (memberAddr B k (.defn d)), List.range d.lvls.toNat, ty₀⟩ val₀ hn) := by
   obtain ⟨hk64, hchk, hrec⟩ := mutsMember_record hbound hS hcov hm hk
   have hmem' : Ixon.MutConst.defn d ∈ ms.toList :=
     List.mem_of_getElem? (by rw [Array.getElem?_toList]; exact hk)
@@ -524,26 +516,25 @@ theorem mutsMember_defn_canon (ht : t.check = .ok ()) (hbound : Bounded calls)
     (fun i hi => hused i (List.mem_append_left _ hi)) hstored htmT
   have htmV' := Decl.tmC_stored_of_usedRefs (E₀ := E) (lim := some lim) rval
     (fun i hi => hused i (List.mem_append_right _ hi)) hstored htmV
-  refine ⟨lim, ty₀, val₀, hty, hval, h1, h2, h3, h4, fun hn => ?_⟩
-  obtain ⟨decl, decl', hco, hi, hi'⟩ :=
-    checkedDefn_at (E := E) (order_role := order_role)
+  exact ⟨lim, ty₀, val₀, ty', val', hty, hval, h1, h2, h3, h4, hcT, hcV, fun hn =>
+    ⟨checkedDefn_at (E := E) (order_role := order_role)
       (decl_addr := memberAddr B k (.defn d)) hnot_role hsafe hrc_m hnlvls h1 h2 h3 h4
-      hannT hannV htmT' htmV' ev_chk hsub_chk hn
-  exact ⟨_, decl, decl', canonDefn_eq hcT hcV, hco, hi, hi', hreads hn⟩
+      hannT hannV htmT' htmV' ev_chk hsub_chk hn, hreads hn⟩⟩
 
 /-! ## The two inputs of a step, together -/
 
 /-- **The inputs of the walked-constant step for a standalone definition, theorem or opaque
 record, from the walk's check alone.** The walk checked `a`, the run's store `E` holds the
 record `c` there, in Lean's logic, and the prefix `env` stores the references the record
-uses. Then there are a group limit and readings `ty₀`, `val₀` such that for every hint there
-are a constant `cn` and declarations `decl`, `decl'` with
+uses. Then there are a group limit, readings `ty₀`, `val₀` and annotations `ty'`, `val'` such
+that for every hint:
 
-* the check evidence of `decl` at the prefix's keying, storing `decl'`, which installs
-  exactly `cn` (`hchk` of `Decl.walkedConst_step`);
-* `decl` installing the constant the record at `a` declares (`Reads`);
-* `cn` reloading under the prefix that stores it, at every store `E'` that holds the record
-  `c` at `a` (exact decoding) and at least the blobs of `E` (the reload input of the step).
+* the declaration of the reading has its check evidence at the prefix's keying, storing the
+  declaration of the annotations (`hchk` of `Decl.walkedConst_step`);
+* it installs the constant the record at `a` declares (`Reads`);
+* every constant the stored declaration installs reloads under the prefix that stores it, at
+  every store `E'` that holds the record `c` at `a` (exact decoding) and at least the blobs
+  of `E` (the reload input of the step, in the form the step takes it).
 
 Nothing else is assumed about `E'`: the runs a reload speaks of are only required to be good
 for `E'`. -/
@@ -553,23 +544,28 @@ theorem checkedAtFull_defn_step (ht : t.check = .ok ()) (hbound : Bounded calls)
     (hinfo : c.info = .defn d) (hlogic : InLogic c) (hnot_role : a ∉ order_role)
     (hchk : Claim.CheckedAtFull calls bAddr t a)
     {env : Ix.Kernel.Env .anon} (hstored : Decl.UsedRefsStored t env c) :
-    ∃ (lim : Nat) (ty₀ val₀ : Ix.Kernel.Expr .anon), ∀ hn : Ix.Kernel.ReducibilityHint,
-      ∃ (cn : Ix.Kernel.ConstantInfo .anon) (decl decl' : Ix.Kernel.Declaration .anon),
+    ∃ (lim : Nat) (ty₀ val₀ ty' val' : Ix.Kernel.Expr .anon),
+      ∀ hn : Ix.Kernel.ReducibilityHint,
         Decl.CheckedConstOriginAt (Core.Ctx.stored ⟨E, env, t, some lim⟩).κ lim calls t bAddr
-          E order_role decl decl' ∧
-        IxVM.Consistency.installs decl =
-          [defnConst d.kind ⟨keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn] ∧
-        IxVM.Consistency.installs decl' = [cn] ∧
+          E order_role
+          (defnDecl d.kind ⟨Core.keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn)
+          (defnDecl d.kind ⟨Core.keyOf t a, List.range d.lvls.toNat, ty'⟩ val' hn) ∧
         Reads t E a (defnConst d.kind ⟨keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn) ∧
         ∀ E' : Ixon.Env, recordOf E' a = some c →
           (∀ x b, E.blobs.get? x = some b → E'.blobs.get? x = some b) →
-          Decl.ReloadsAs E' t ⟨cn :: env.consts⟩ cn := by
-  obtain ⟨lim, ty₀, val₀, hty, hval, h1, h2, h3, h4, hall⟩ :=
+          ∀ cn ∈ IxVM.Consistency.installs
+              (defnDecl d.kind ⟨Core.keyOf t a, List.range d.lvls.toNat, ty'⟩ val' hn),
+            Decl.ReloadsAs E' t ⟨cn :: env.consts⟩ cn := by
+  obtain ⟨lim, ty₀, val₀, ty', val', hty, hval, h1, h2, h3, h4, hcT, hcV, hall⟩ :=
     checkedAtFull_defn_canon ht hbound hS hrec hinfo hlogic hnot_role hchk hstored
-  refine ⟨lim, ty₀, val₀, fun hn => ?_⟩
-  obtain ⟨cn, decl, decl', hcn, hco, hi, hi', hreads⟩ := hall hn
-  exact ⟨cn, decl, decl', hco, hi, hi', hreads, fun E' hrec' hblobs =>
-    reloadsAs_defn_cons ht hrec' hinfo hlogic hblobs hty hval h1 h2 h3 h4 hstored hcn⟩
+  refine ⟨lim, ty₀, val₀, ty', val', fun hn =>
+    ⟨(hall hn).1, (hall hn).2, fun E' hrec' hblobs cn hcn => ?_⟩⟩
+  rw [installs_defnDecl] at hcn
+  have hcn' : cn = defnConst d.kind ⟨Core.keyOf t a, List.range d.lvls.toNat, ty'⟩ val' hn :=
+    List.mem_singleton.mp hcn
+  subst hcn'
+  exact reloadsAs_defn_cons ht hrec' hinfo hlogic hblobs hty hval h1 h2 h3 h4 hstored
+    (canonDefn_eq hcT hcV)
 
 /-- **The inputs of the walked-constant step for a member of a definition block.** As
 `checkedAtFull_defn_step`, for member `k` of the block `cb` at `B`: the reload holds at every
@@ -583,14 +579,14 @@ theorem mutsMember_defn_step (ht : t.check = .ok ()) (hbound : Bounded calls)
     (hnot_role : memberAddr B k (.defn d) ∉ order_role)
     (hm : Claim.MutsMemberCheckedAtFull calls bAddr t B ms k)
     {env : Ix.Kernel.Env .anon} (hstored : Decl.UsedRefsStored t env cb) :
-    ∃ (lim : Nat) (ty₀ val₀ : Ix.Kernel.Expr .anon), ∀ hn : Ix.Kernel.ReducibilityHint,
-      ∃ (cn : Ix.Kernel.ConstantInfo .anon) (decl decl' : Ix.Kernel.Declaration .anon),
+    ∃ (lim : Nat) (ty₀ val₀ ty' val' : Ix.Kernel.Expr .anon),
+      ∀ hn : Ix.Kernel.ReducibilityHint,
         Decl.CheckedConstOriginAt (Core.Ctx.stored ⟨E, env, t, some lim⟩).κ lim calls t bAddr
-          E order_role decl decl' ∧
-        IxVM.Consistency.installs decl =
-          [defnConst d.kind
-            ⟨keyOf t (memberAddr B k (.defn d)), List.range d.lvls.toNat, ty₀⟩ val₀ hn] ∧
-        IxVM.Consistency.installs decl' = [cn] ∧
+          E order_role
+          (defnDecl d.kind
+            ⟨Core.keyOf t (memberAddr B k (.defn d)), List.range d.lvls.toNat, ty₀⟩ val₀ hn)
+          (defnDecl d.kind
+            ⟨Core.keyOf t (memberAddr B k (.defn d)), List.range d.lvls.toNat, ty'⟩ val' hn) ∧
         Reads t E (memberAddr B k (.defn d))
           (defnConst d.kind
             ⟨keyOf t (memberAddr B k (.defn d)), List.range d.lvls.toNat, ty₀⟩ val₀ hn) ∧
@@ -598,15 +594,23 @@ theorem mutsMember_defn_step (ht : t.check = .ok ()) (hbound : Bounded calls)
           recordOf E' (memberAddr B k (.defn d)) = some (memberProjection B k (.defn d)) →
           recordOf E' B = some cb →
           (∀ x b, E.blobs.get? x = some b → E'.blobs.get? x = some b) →
-          Decl.ReloadsAs E' t ⟨cn :: env.consts⟩ cn := by
+          ∀ cn ∈ IxVM.Consistency.installs
+              (defnDecl d.kind
+                ⟨Core.keyOf t (memberAddr B k (.defn d)), List.range d.lvls.toNat, ty'⟩ val'
+                hn),
+            Decl.ReloadsAs E' t ⟨cn :: env.consts⟩ cn := by
   obtain ⟨hk64, -, -⟩ := mutsMember_record hbound hS hcov hm hk
-  obtain ⟨lim, ty₀, val₀, hty, hval, h1, h2, h3, h4, hall⟩ :=
+  obtain ⟨lim, ty₀, val₀, ty', val', hty, hval, h1, h2, h3, h4, hcT, hcV, hall⟩ :=
     mutsMember_defn_canon ht hbound hS hcov hrecB hmuts hk hlogic hnot_role hm hstored
-  refine ⟨lim, ty₀, val₀, fun hn => ?_⟩
-  obtain ⟨cn, decl, decl', hcn, hco, hi, hi', hreads⟩ := hall hn
-  exact ⟨cn, decl, decl', hco, hi, hi', hreads, fun E' hproj' hblock' hblobs =>
-    reloadsAs_member_cons ht hk64 hproj' hblock' hmuts hk hlogic hblobs hty hval h1 h2 h3 h4
-      hstored hcn⟩
+  refine ⟨lim, ty₀, val₀, ty', val', fun hn =>
+    ⟨(hall hn).1, (hall hn).2, fun E' hproj' hblock' hblobs cn hcn => ?_⟩⟩
+  rw [installs_defnDecl] at hcn
+  have hcn' : cn = defnConst d.kind
+      ⟨Core.keyOf t (memberAddr B k (.defn d)), List.range d.lvls.toNat, ty'⟩ val' hn :=
+    List.mem_singleton.mp hcn
+  subst hcn'
+  exact reloadsAs_member_cons ht hk64 hproj' hblock' hmuts hk hlogic hblobs hty hval h1 h2
+    h3 h4 hstored (canonDefn_eq hcT hcV)
 
 end Checked
 
