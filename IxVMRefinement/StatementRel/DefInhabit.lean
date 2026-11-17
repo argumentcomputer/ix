@@ -1,5 +1,6 @@
 import IxVMRefinement.StatementRel.StoreInhabit
 import IxVMRefinement.StatementRel.ReadsMono
+import Ix.IxVM.Consistency.StoredCheck
 import IxC.Kernel.Model.Fold
 import IxC.Kernel.Semantics.DeclRun
 
@@ -227,6 +228,10 @@ theorem def_reads : Reads committedDefaultRoleTable defStore defAddr defConst :=
 /-- The stored definition is the declared one, stored. -/
 theorem def_storedAs : StoredAs defConst defConst :=
   And.intro (And.intro rfl (And.intro rfl Annotates.const)) (And.intro Annotates.const rfl)
+
+/-- The same, found by evaluation (`storedAsCheck`). -/
+theorem def_storedAs_checked : StoredAs defConst defConst :=
+  storedAs_of_check (n := 16) (by decide +kernel)
 
 /-! ## The environment and its model -/
 

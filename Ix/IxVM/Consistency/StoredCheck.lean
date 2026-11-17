@@ -11,9 +11,9 @@ the check, `storedAs_of_check (by decide +kernel)`.
 They are not complete: `fuel` bounds the depth of the terms and the number of declared
 `let`s expanded.
 
-`pins_storedAs_raw`: each of the kernel's stored basis constants (`BasisKind.declsA`) outside
-the quotient package stores the raw basis constant (`BasisKind.decls`) that a stream's block
-is compared with (`Ix.Kernel.basisPinHit`).
+`pins_storedAs_raw`: each of the kernel's stored basis constants (`BasisKind.declsA`), the
+quotient package included, stores the raw basis constant (`BasisKind.decls`) that a stream's
+record is compared with (`Ix.Kernel.basisPinHit`, `Ix.Kernel.quotPinHit`).
 -/
 
 namespace IxVM.Consistency
@@ -149,16 +149,13 @@ theorem storedList_of_check {n : Nat} {cs cs₀ : List (ConstantInfo .anon)}
     cases h'
   | some p => exact p.down
 
-/-- **Each stored basis constant outside the quotient package stores the raw basis
-constant**: the kernel's annotated
+/-- **Each stored basis constant stores the raw basis constant**: the kernel's annotated
 pins (`declsA`, what the environment holds) against the raw pins (`decls`, what a stream's
 block is compared with), block by block, constant by constant, recursors and their rules
 included. -/
-theorem pins_storedAs_raw (kind : Ix.Kernel.BasisKind) (h : kind ≠ .quotK) :
+theorem pins_storedAs_raw (kind : Ix.Kernel.BasisKind) :
     List.Forall₂ StoredAs (kind.declsA : List (ConstantInfo .anon))
       (kind.decls : List (ConstantInfo .anon)) := by
-  cases kind <;> first
-    | exact absurd rfl h
-    | exact storedList_of_check (n := 256) (by decide +kernel)
+  cases kind <;> exact storedList_of_check (n := 256) (by decide +kernel)
 
 end IxVM.Consistency
