@@ -57,28 +57,28 @@ theorem get_result_sort_level_staged_bounded_spec {c : ScopedCtx} :
         ∀ bs s, E.stripPis n = some (bs, .sort s) → LvEq s ℓ
   | 0, d, Γ, E, rc, pe, types, r, h, h', cs, _, hrc, hty, hsc, hef, hlf, hgood, hE, ev => by
     match Obs.«KernelCheck::get_result_sort_level».obs ev with
-    | .n0 (cs12 := cs12) (ev14 := ev_w) (ld64 := ld) (he78 := hr) (he79 := hh) (hc80 := hc) .. =>
+    | .n0 (cs12 := cs12) (ev14 := ev_w) (ld55 := ld) (he69 := hr) (he70 := hh) (hc71 := hc) .. =>
       subst hc hr hh
       have hg1 : CoreGood c cs12 := hgood.sub (fun x hx => by simp [hx])
-      obtain ⟨E', hE', hred⟩ := scoped_core_whnf hrc hty hsc hef hlf hg1 ev_w hE
+      obtain ⟨E', hE', hrigid⟩ := Core.GuardData.head_rep ⟨hef, hlf⟩ hg1 hE ev_w
       obtain ⟨u, rfl, ℓ, hℓ, huℓ⟩ := hE'.sort_of_load ld
       refine ⟨ℓ, hℓ, fun bs s hst => ?_⟩
       simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at hst
       obtain ⟨rfl, rfl⟩ := hst
-      have hsort := Red.sort_eq hred
+      have hsort := hrigid rfl
       injection hsort with hsu
       subst hsu
       exact huℓ
-    | .other (hne82 := hne) .. => exact absurd rfl hne
+    | .other (hne73 := hne) .. => exact absurd rfl hne
   | m + 1, d, Γ, E, rc, pe, types, r, h, h', cs, hlt, hrc, hty, hsc, hef, hlf, hgood, hE, ev => by
     match Obs.«KernelCheck::get_result_sort_level».obs ev with
-    | .n0 (hv52 := hv) .. => exact absurd hv (succ_field_ne_zero_bounded hlt)
-    | .other (cs12 := cs12) (x_body := xbody) (cs124 := cs2) (m161 := m3) (ev14 := ev_w)
-        (ld97 := ld) (op158 := op) (hm169 := hm3) (ev126 := ev_rec) (hc189 := hc) .. =>
+    | .n0 (hv43 := hv) .. => exact absurd hv (succ_field_ne_zero_bounded hlt)
+    | .other (cs12 := cs12) (x_body := xbody) (cs115 := cs2) (m152 := m3) (ev14 := ev_w)
+        (ld88 := ld) (op149 := op) (hm160 := hm3) (ev117 := ev_rec) (hc180 := hc) .. =>
       subst hc
       have hg1 : CoreGood c cs12 := hgood.sub (fun x hx => by simp [hx])
       have hg2 : CoreGood c cs2 := hgood.sub (fun x hx => by simp [hx])
-      obtain ⟨E', hE', hred⟩ := scoped_core_whnf hrc hty hsc hef hlf hg1 ev_w hE
+      obtain ⟨E', hE', hrigid⟩ := Core.GuardData.head_rep ⟨hef, hlf⟩ hg1 hE ev_w
       obtain ⟨T, B, _, rfl, hT, hB, _⟩ := hE'.forallE_of_load ld
       have ext_w := ev_w.heap_extends
       obtain ⟨ext_push, hty', hsc'⟩ := push_binder_types hT (hty.mono ext_w) hsc
@@ -91,7 +91,7 @@ theorem get_result_sort_level_staged_bounded_spec {c : ScopedCtx} :
       refine ⟨ℓ, hℓ, fun bs s hst => ?_⟩
       cases E with
       | forallE dom₀ bo₀ m₀ =>
-        obtain ⟨rfl, rfl, rfl⟩ := Red.forallE_eq hred
+        obtain ⟨rfl, rfl, rfl⟩ := Expr.forallE.inj (hrigid rfl)
         simp only [Expr.stripPis, Option.map_eq_some_iff] at hst
         obtain ⟨⟨bs₁, body₁⟩, hst₁, hst⟩ := hst
         simp only [Prod.mk.injEq] at hst
