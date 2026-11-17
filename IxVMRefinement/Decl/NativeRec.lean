@@ -2,12 +2,7 @@ import IxVMRefinement.Decl.NativeFront
 import IxVMRefinement.Lib.Lists
 import IxVMRefinement.Levels.Bound
 import IxVMRefinement.Subst.Steps
-import IxVMRefinement.Obs.KernelCheck6
-import IxVMRefinement.Obs.KernelCheck7
-import IxVMRefinement.Obs.KernelCheck8
-import IxVMRefinement.Obs.KernelCheck9
-import IxVMRefinement.Obs.KernelCheck11
-
+import IxVMRefinement.Obs.KernelCheck
 /-! # Native one-type inductive recursor route
 
 This module refines the native recursor stages of `KernelCheck::check_const` on unpinned

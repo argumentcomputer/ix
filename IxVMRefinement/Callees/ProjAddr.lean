@@ -2,8 +2,7 @@ import IxVMRefinement.Callees.PutConstant
 import IxVMRefinement.Core.RomBound
 import IxVMRefinement.L1.Blake3
 import IxVMRefinement.Obs.Ingress0
-import IxVMRefinement.Obs.KernelCheck9
-
+import IxVMRefinement.Obs.KernelCheck
 /-! # Projection-record addresses and BLAKE3 hashing
 
 Step lemmas for:

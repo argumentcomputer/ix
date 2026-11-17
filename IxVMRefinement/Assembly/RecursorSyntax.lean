@@ -1,6 +1,4 @@
-import IxVMRefinement.Obs.KernelCheck0
-import IxVMRefinement.Obs.KernelCheck2
-import IxVMRefinement.Obs.KernelCheck11
+import IxVMRefinement.Obs.KernelCheck
 import IxVMRefinement.Obs.KernelModeled
 import IxVMRefinement.Obs.KernelModeled0
 

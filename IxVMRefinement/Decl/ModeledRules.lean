@@ -4,8 +4,7 @@ import IxVMRefinement.Decl.Value
 import IxVMRefinement.L1.ByteStream
 import IxVMRefinement.L1.Stream
 import IxVMRefinement.Core.Specs.Callees
-import IxVMRefinement.Obs.KernelClaim0
-
+import IxVMRefinement.Obs.KernelClaim
 /-! # Modeled Recursor Rule Verification (`check_iota_rule`, `check_rules_go`, `check_rules`)
 
 The direct inversion of `check_iota_rule` and the refinements of the rule loops are parked
