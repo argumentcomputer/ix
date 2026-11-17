@@ -51,6 +51,7 @@ import Tests.Ix.IxVM.CircuitVerdict
 import Tests.Ix.IxVM.ClaimSafety
 import Tests.Ix.IxVM.RecursorParentRoute
 import Tests.Ix.IxVM.GuardBatch
+import Tests.Ix.IxVM.AliasFormers
 import Tests.Ix.IxVM.Differential
 import Tests.Ix.IxVM.Mutator
 import Tests.Ix.IxVM.PwHints
@@ -268,6 +269,7 @@ def registry : List Entry := [
   -- use of a recursive field, a recursor header free of `let`.
   .env "ixvm-guard-batch" (.ci .ixvm) Tests.Ix.IxVM.GuardBatch.run,
   .runner "ixvm-claim-safety-corpus" (.manual "walk closure of what stays owned on a compiled corpus; IX_SAFETY_IXE, IX_SAFETY_IXES") Tests.Ix.IxVM.ClaimSafety.corpus,
+  .runner "ixvm-alias-formers" (.manual "formers that are not a telescope into a sort, walked as the native check walks them, of IX_ALIAS_IXE; IX_ALIAS_OUT") Tests.Ix.IxVM.AliasFormers.run,
   -- The binder data a witness carries for the conversion: hand-made records
   -- with known data, the host-side check (coverage, the kernel's values), tampering.
   .runner "ixvm-pw-hints" (.ci .ixvm) Tests.Ix.IxVM.PwHints.run,
