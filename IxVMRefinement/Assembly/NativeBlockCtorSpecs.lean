@@ -7,8 +7,8 @@ The constructor loop of a native block calls `get_result_sort_level`, `check_par
 `check_field_universes` on terms typed against the constructor stage, whose keying resolves the
 addresses its environment stores and no other (`Decl.ctorStage`). Their specifications in
 `Decl/NativeFront.lean` are stated at a table-keyed context, but the keying assumption is only
-passed through: every step uses the scoped core (`scoped_core_whnf`, `scoped_core_defeq`,
-`scoped_core_ensure_sort`) at the context's own keying. The specifications below are the same
+passed through: the result-sort walk uses the scoped deterministic data head, while typing and conversion use
+`scoped_core_ensure_sort` and `scoped_core_defeq` at the context's own keying. The specifications below are the same
 proofs at any scoped context:
 
 * `get_result_sort_level_staged_bounded_spec`, and `NativeShapeCalls.resultSort_staged` (the

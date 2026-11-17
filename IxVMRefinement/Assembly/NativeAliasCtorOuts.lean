@@ -25,6 +25,11 @@ derivations), so `aliasOuts_of_member` reads both stages on one inversion:
   stage staged at `s`, with IxC's later-use condition. At a former declared at its telescope the
   telescope constant is the declared former and `s` its sort; otherwise `s` is the level the
   result-sort walk left at the pointer the constructor loop reads (`RepKLevel.det`).
+
+`aliasOuts_of_member_checked` discharges the conversion interface from the current program
+and also retains the actual guard-produced alternative: the telescope is the stored former,
+or every staged constructor satisfies `ctorZeroOk`. Parameter cases come from the actual
+parameter-head guard; field cases come from the same constructor positivity observations.
 -/
 
 namespace IxVM.Refinement.Typing

@@ -220,7 +220,7 @@ def FormerAtAlias (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (B : _root_.Addres
 
 /-- **The former is a syntactic telescope into a sort of another length** than the record's
 parameter and index counts. The circuit refuses it: `get_result_sort_level` head-normalizes a
-sort before a binder or a `∀` at the end, and neither reduces (`Red.sort_eq`, `Red.forallE_eq`). -/
+sort before a binder or a `∀` at the end, and the deterministic data head preserves both rigid constructors. -/
 def FormerTeleOther (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (B : _root_.Address)
     (cb : Ixon.Constant) (ind : Ixon.Inductive) : Prop :=
   ∃ ty₀ bs s, (exprReader t (fun x => E₀.blobs.get? x) cb id (blockSelf t B #[.indc ind])).read
