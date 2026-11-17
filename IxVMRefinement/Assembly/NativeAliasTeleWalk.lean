@@ -160,7 +160,7 @@ theorem former_tele_at_spec {c : ScopedCtx} :
         injection hl'' with _ _ hargs
         simp only [List.cons.injEq, and_true] at hargs
         obtain ⟨rfl, rfl, rfl⟩ := hargs
-        exact ⟨xd, xb, vb, xm, hl, (ext_f.trans hH).loadValue_eq
+        exact ⟨xd, xb, vb, xm, hl, hH.loadValue_eq
           (loadValue_snoc_cell mb "Forall" [xd, vb, xm]),
           hcells m H (by omega) (ext_f.trans hH) hfc'⟩
     | .other_other (v36 := v0) (x_d := xd) (x_b := xb) (x_m := xm) (v250 := vb) (m260 := mb)
@@ -231,11 +231,11 @@ theorem check_param_agreement_go_cells :
 /-- **At a family with a constructor, the constructor loop walks the family's declared type's
 first `nP` cells as syntactic `Forall` cells** (the first constructor's parameter agreement),
 read at a heap after the loop's start. -/
-theorem check_inductive_shape_ctors_param_cells {rc ty nI numLvls blk idx lvl unsafe r :
+theorem check_inductive_shape_ctors_param_cells {rc ty nI numLvls blk idx lvl uns r :
       SourceValue F} {nP N : Nat} {h h' : Heap F} {cs : List (Call F)}
     (hN : N ≠ 0) (hNb : N < 18446744069414584321) (hP : nP < 18446744069414584321)
     (ev : ObsFn W "KernelCheck::check_inductive_shape_ctors"
-      [rc, ty, .field (nP : F), nI, .field (N : F), numLvls, blk, idx, lvl, unsafe, .field 0]
+      [rc, ty, .field (nP : F), nI, .field (N : F), numLvls, blk, idx, lvl, uns, .field 0]
       h r h' cs) :
     ∃ H, Heap.Extends h H ∧ ForallCells H nP ty := by
   match Obs.«KernelCheck::check_inductive_shape_ctors».obs ev with
