@@ -94,11 +94,8 @@ theorem unitStep_defn_lim_nativeXR {calls : List (Call F)}
     (hchk : Claim.CheckedLimAt calls bAddr t A lim)
     (hkey : Decl.KeyFree (keyOf t A))
     (hinert : InertClause t c)
-    (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c) : UnitStep.{u} (NativeBlockXR.{u} t E) t envT E₀ E lim A c := by
-  intro env hext hnd hinv hXe href hfresh
-  have hbound : Bounded calls := (hst.good env none).2
-  have hrec₀ : Ix.Cert.recordAt E₀ A = some c := (hS.recordOf_eq_recordAt A).symm.trans hc
-
+    (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c) :
+    UnitStep.{u} (NativeBlockXR.{u} t E) t envT E₀ E lim A c := by
   have htwf : t.wf = true := by
     unfold Ix.Kernel.RoleTable.wf
     rw [ht]
