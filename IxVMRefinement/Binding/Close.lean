@@ -23,6 +23,8 @@ below `g`) to the top carried limit below `g + 1`.
 universe u
 
 set_option linter.unusedVariables false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
 
 namespace IxVM.Refinement.Binding
 
@@ -33,7 +35,7 @@ open IxVM.Refinement.Typing
 
 theorem topLim_le33 {n : Nat} (h : n ≤ 33) : topLim n = some n := by
   unfold topLim
-  split_ifs <;> first | rfl | omega | (congr 1; omega)
+  rw [if_pos h]
 
 theorem topLim_wfBlock {n : Nat} (h1 : 33 ≤ n) (h2 : n ≤ 40) : topLim n = some 33 := by
   unfold topLim
