@@ -2126,7 +2126,7 @@ theorem wrap_rel_spec {c : Ctx} {Γ : Nat → KExpr} {G D : KExpr} {xg xd : Sour
 
 /-! ## Section 4: `is_large_eliminator` and large-`Prop` singleton sort checks -/
 
-private theorem args_contain_bvar_01 {a t : SourceValue F} {h : Heap F} {r : SourceValue F}
+theorem args_contain_bvar_01 {a t : SourceValue F} {h : Heap F} {r : SourceValue F}
     {h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn W "KernelCheck::args_contain_bvar" [a, t] h r h' cs) :
     r = .field 0 ∨ r = .field 1 :=
@@ -2216,7 +2216,7 @@ private theorem all_bvars_in_args_one_spec {κ : _root_.Address → KKey} {d : N
       · exact hmem0
       · exact ih_rest tgt hmem_tl
 
-private theorem openPisAtFvars_succ_forallE {m off : Nat} {dom body : KExpr}
+theorem openPisAtFvars_succ_forallE {m off : Nat} {dom body : KExpr}
     {bi : Ix.Kernel.BinderMeta} {fvs : List KExpr} {res : KExpr}
     (h : Ix.Kernel.openPisAtFvars (m + 1) (.forallE dom body bi) off = some (fvs, res)) :
     ∃ fvs_tl, fvs = .fvar off dom :: fvs_tl ∧
@@ -2233,7 +2233,7 @@ private theorem openPisAtFvars_succ_forallE {m off : Nat} {dom body : KExpr}
     subst hres
     exact ⟨fvs_tl, hfvs.symm, rfl⟩
 
-private theorem fvar_not_in_fvsP {nP : Nat} :
+theorem fvar_not_in_fvsP {nP : Nat} :
     ∀ {fvsP : List KExpr} {ty : KExpr} {m off : Nat} {crest : KExpr},
       Ix.Kernel.openPisAtFvars m ty off = some (fvsP, crest) →
       off + m ≤ nP →

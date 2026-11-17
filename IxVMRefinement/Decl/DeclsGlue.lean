@@ -1504,6 +1504,68 @@ theorem etaType_of_closed {env : Ix.Kernel.Env .anon}
   rw [hta, hargs_eq]
   exact .refl
 
+/-- **`etaType` on closed parameter arguments, from the constructor's own stored shape**: the
+inversion behind `etaType_of_closed` reads only the stored constructor (its level parameters and
+the residual of its telescope), so it holds at every environment storing that constructor, in
+particular at every extension. The closedness premise is needed: `Expr.instantiate1` does not lift
+its value, so a loose bound variable of a parameter is captured by the remaining binders. -/
+theorem etaType_of_closed_stored {env : Ix.Kernel.Env .anon}
+    {T kc : KKey} {cvc : ConstantVal .anon} {nP nF : Nat}
+    {cbs : List (KExpr × Ix.Kernel.BinderMeta)}
+    (hkc : env.find? kc = some (.ctorInfo cvc nP nF)) (hnd : cvc.levelParams.Nodup)
+    (hstrip : cvc.type.stripPis (nP + nF) =
+      some (cbs, Expr.mkAppN (.const T (cvc.levelParams.map .param))
+        (Ix.Kernel.structPsAt nF nP)))
+    {d : Nat} {us : List KLevel} {Ss : List KExpr} {ta : KExpr}
+    (hlen : Ss.length = nP + nF)
+    (hclosed : ∀ s ∈ Ss.take nP, s.looseBVarsBounded 0 = true)
+    (hinf : Infer env .io d (Expr.mkAppN (.const kc us) Ss) ta) :
+    Red env d ta (Expr.mkAppN (.const T us) (Ss.take nP)) := by
+  have huniq : ∀ t', Infer env .io d (.const kc us) t' →
+      t' = cvc.type.instantiateLevelParams cvc.levelParams us := by
+    intro t' h'
+    obtain ⟨ci, hf', _, _, rfl⟩ := Ix.Kernel.Rules.Infer.const_inv h'
+    rw [hkc] at hf'
+    obtain rfl := Option.some.inj hf'
+    rfl
+  have hus_len : us.length = cvc.levelParams.length := by
+    obtain ⟨tf, hconst⟩ := infer_io_mkAppN_head Ss hinf
+    obtain ⟨ci, hf', _, hus, _⟩ := Ix.Kernel.Rules.Infer.const_inv hconst
+    rw [hkc] at hf'
+    obtain rfl := Option.some.inj hf'
+    exact hus
+  obtain ⟨bs', hst_inst⟩ := stripPis_instantiateLevelParams cvc.levelParams us (nP + nF) hstrip
+  have hps_inst :
+      (Ix.Kernel.structPsAt (md := .anon) nF nP).map (·.instantiateLevelParams cvc.levelParams us) =
+        Ix.Kernel.structPsAt (md := .anon) nF nP := by
+    unfold Ix.Kernel.structPsAt
+    simp [List.map_map, Expr.instantiateLevelParams]
+  rw [instantiateLevelParams_mkAppN, Expr.instantiateLevelParams,
+    map_subst_self_params hnd hus_len, hps_inst, ← hlen] at hst_inst
+  have hta := infer_io_spine_inst Ss huniq hst_inst hinf
+  have hsplit : Ss = Ss.take nP ++ Ss.drop nP := (List.take_append_drop nP Ss).symm
+  have hlenP : (Ss.take nP).length = nP := by simp [hlen]
+  have hlenF : (Ss.drop nP).length = nF := by simp [hlen]
+  rw [hlen, spineInst_mkAppN_const] at hta
+  have hargs_eq :
+      (Ix.Kernel.structPsAt nF nP).map (spineInst Ss (nP + nF)) = Ss.take nP := by
+    apply List.ext_getElem
+    · simp [Ix.Kernel.structPsAt, hlenP]
+    · intro i h1 h2
+      simp only [Ix.Kernel.structPsAt, List.length_map, List.length_range] at h1
+      simp only [Ix.Kernel.structPsAt, List.getElem_map, List.getElem_range]
+      have hcall := spineInst_bvar_param (Ss.take nP) (Ss.drop nP) i
+        (by rw [hlenP]; exact h1) hclosed
+      rw [← hsplit] at hcall
+      have hlhs :
+          spineInst Ss ((Ss.take nP).length + (Ss.drop nP).length)
+            (.bvar ((Ss.drop nP).length + (Ss.take nP).length - 1 - i)) =
+          spineInst Ss (nP + nF) (.bvar (nF + nP - 1 - i)) := by
+        rw [hlenP, hlenF]
+      exact hlhs.symm.trans hcall
+  rw [hta, hargs_eq]
+  exact .refl
+
 /-! ## Section 3: Unified store and fold invariants (`FoldStoreInv`, `FoldInv`) -/
 
 /-- Unified store-level declaration invariant bundle carried alongside `EnvModelT` across all
@@ -1709,6 +1771,7 @@ structure FoldEnvCompanions (c : Ctx) : Prop where
     c.env.find? T = some (.indInfo cvT caps) → caps.eta = true → caps.etaCtor = some kc →
     c.env.find? kc = some (.ctorInfo cvc nP nF) →
     ∀ (d : Nat) (us : List KLevel) (Ss : List KExpr) (ta : KExpr), Ss.length = nP + nF →
+      (∀ s ∈ Ss.take nP, s.looseBVarsBounded 0 = true) →
       Infer c.env .io d (Expr.mkAppN (.const kc us) Ss) ta →
       Red c.env d ta (Expr.mkAppN (.const T us) (Ss.take nP))
 

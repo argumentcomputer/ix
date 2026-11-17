@@ -529,14 +529,15 @@ structure EnvFacts (c : Ctx) : Prop where
   /-- (L5) **The type of a full application of an η-constructor**: its io-inferred type reduces to
   the structure at the same levels applied to the parameters (the stored constructor's type is
   the telescope of the parameters and fields ending in the structure at the constructor's level
-  parameters applied to the parameter variables). Owed by the declaration layer as stated; it
-  could instead be derived from the stored constructor's shape and an inversion of io `Infer`
-  along the spine. -/
+  parameters applied to the parameter variables), at parameters with no loose bound variable (at a
+  loose one it is false, `Decl.etaType_open_false`). From the stored constructor's shape and an
+  inversion of io `Infer` along the spine (`Decl.etaType_of_closed_stored`). -/
   etaType : ∀ (T kc : KKey) (cvT cvc : Ix.Kernel.ConstantVal .anon)
       (caps : Ix.Kernel.IndCaps .anon) (nP nF : Nat),
     c.env.find? T = some (.indInfo cvT caps) → caps.eta = true → caps.etaCtor = some kc →
     c.env.find? kc = some (.ctorInfo cvc nP nF) →
     ∀ (d : Nat) (us : List KLevel) (Ss : List KExpr) (ta : KExpr), Ss.length = nP + nF →
+      (∀ s ∈ Ss.take nP, s.looseBVarsBounded 0 = true) →
       Infer c.env .io d (Ix.Kernel.Expr.mkAppN (.const kc us) Ss) ta →
       Red c.env d ta (Ix.Kernel.Expr.mkAppN (.const T us) (Ss.take nP))
   /-- (L5) **A one-rule recursor's η bit is the install's** (`recRuleBits`): `rl.eta` is
