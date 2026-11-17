@@ -388,12 +388,12 @@ theorem induct_native_or_tele {rc typePtr blockArg index safety addr result : So
   | .Quot (hv1076 := shape) .. =>
     injection shape with _ tag _
     exact absurd tag (by decide)
-  | .Ctor_n0_n0 (hne1936 := notInduct) ..
-  | .Ctor_n0_other (hne1936 := notInduct) ..
-  | .Ctor_other_n0 (hne1936 := notInduct) ..
-  | .Ctor_other_other (hne1936 := notInduct) ..
-  | .Rec_n0 (hne1936 := notInduct) ..
-  | .Rec_other (hne1936 := notInduct) .. =>
+  | .Ctor_n0_n0 (hne1984 := notInduct) ..
+  | .Ctor_n0_other (hne1984 := notInduct) ..
+  | .Ctor_other_n0 (hne1984 := notInduct) ..
+  | .Ctor_other_other (hne1984 := notInduct) ..
+  | .Rec_n0 (hne1984 := notInduct) ..
+  | .Rec_other (hne1984 := notInduct) .. =>
     exact (notInduct [_, _, _, _, _, _, _, _] rfl rfl).elim
   | .Induct_n0 (m1470 := before) (m1492 := after) (cs1503 := children)
       (hv1240 := fields) (ev1505 := modeRun) (hc1634 := allCalls) .. =>
@@ -404,9 +404,9 @@ theorem induct_native_or_tele {rc typePtr blockArg index safety addr result : So
       rw [allCalls]; simp
     exact .inl ⟨before, after, children, modeRun, (observed.call_heap_bounds member).1,
       fun cl inside => by rw [allCalls]; simp [inside]⟩
-  | .Induct_other_n0 (m1653 := before) (m1701 := after) (cs1709 := children)
-      (hv1240 := fields) (op1734 := sum) (ev1711 := teleRun) (heq1743 := teleOne)
-      (hc1926 := allCalls) .. =>
+  | .Induct_other_n0 (m1701 := before) (m1749 := after) (cs1757 := children)
+      (hv1240 := fields) (op1782 := sum) (ev1759 := teleRun) (heq1791 := teleOne)
+      (hc1974 := allCalls) .. =>
     injection fields with _ _ fields
     simp only [List.cons.injEq, and_true] at fields
     obtain ⟨rfl, rfl, rfl, rfl, rfl, -, rfl, rfl⟩ := fields
@@ -416,9 +416,9 @@ theorem induct_native_or_tele {rc typePtr blockArg index safety addr result : So
         [typePtr, .field ((params + indices : Nat) : F)], before⟩ : Call F) ∈ calls := by
       rw [allCalls]; simp
     exact .inr ⟨before, after, children, teleRun, (observed.call_heap_bounds member).1⟩
-  | .Induct_other_other (m1653 := before) (m1701 := after) (cs1709 := children)
-      (hv1240 := fields) (op1734 := sum) (ev1711 := teleRun) (heq1743 := teleOne)
-      (hc1935 := allCalls) .. =>
+  | .Induct_other_other (m1701 := before) (m1749 := after) (cs1757 := children)
+      (hv1240 := fields) (op1782 := sum) (ev1759 := teleRun) (heq1791 := teleOne)
+      (hc1983 := allCalls) .. =>
     injection fields with _ _ fields
     simp only [List.cons.injEq, and_true] at fields
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := fields

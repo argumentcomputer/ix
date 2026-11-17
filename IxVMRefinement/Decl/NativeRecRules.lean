@@ -3539,25 +3539,25 @@ theorem nativeWithRec_step_mapped {J : Judgements .anon}
     | .Defn (hv269 := hv) .. | .Thm (hv526 := hv) .. | .Opaque (hv825 := hv) ..
     | .Quot (hv1076 := hv) ..
     | .Induct_n0 (hv1240 := hv) .. | .Induct_other_n0 (hv1240 := hv) .. | .Induct_other_other (hv1240 := hv) ..
-    | .Ctor_n0_n0 (hv1941 := hv) .. | .Ctor_n0_other (hv1941 := hv) ..
-    | .Ctor_other_n0 (hv1941 := hv) ..
-    | .Ctor_other_other (hv1941 := hv) .. =>
+    | .Ctor_n0_n0 (hv1989 := hv) .. | .Ctor_n0_other (hv1989 := hv) ..
+    | .Ctor_other_n0 (hv1989 := hv) ..
+    | .Ctor_other_other (hv1989 := hv) .. =>
       injection hv with _ htag _
       exact absurd htag (by decide)
-    | .Rec_other (v2855 := v2769) (m2834 := m2748) (m2856 := m2770) (v2877 := v2791)
-        (m2878 := m2792) (cs2866 := cs2780) (cs2888 := cs2803)
-        (ev2868 := ev2782) (ev2890 := ev2805) (hne2998 := hne2876) (hc3086 := hc) .. =>
+    | .Rec_other (v2951 := v2769) (m2930 := m2748) (m2952 := m2770) (v2973 := v2791)
+        (m2974 := m2792) (cs2962 := cs2780) (cs2984 := cs2803)
+        (ev2964 := ev2782) (ev2986 := ev2805) (hne3094 := hne2876) (hc3182 := hc) .. =>
       have hsub₁ : ∀ x ∈ cs2780, x ∈ w.cs_rec := fun x hx => by simp [hc, hx]
       have hsub₂ : ∀ x ∈ cs2803, x ∈ w.cs_rec := fun x hx => by simp [hc, hx]
       exact absurd (w.unmodeled_rec m2748 v2769 m2770 v2791 m2792 cs2780 cs2803
         ev2782 ev2805 hsub₁ hsub₂) hne2876
-    | .Rec_n0 (v1 := v1) (m2 := m2) (v2692 := v2636) (m2693 := m2637) (cs2703 := cs2647)
-        (v2729 := v2673) (m2730 := m2674) (cs2740 := cs2684) (m2761 := m2705)
-        (m2774 := m2718) (m2834 := m2748) (m2856 := m2770) (m2878 := m2792) (cs2970 := cs2848)
-        (ev14 := ev14) (hv2631 := hv2574) (ev2705 := ev2649) (hm2769 := hm2713)
-        (ev2742 := ev2686) (ev2786 := ev2730) (ev2816 := ev_rules)
-        (ev2846 := ev2760) (ev2868 := ev2782)
-        (ev2890 := ev2805) (ev2972 := ev2850) (hc2997 := hc) .. =>
+    | .Rec_n0 (v1 := v1) (m2 := m2) (v2788 := v2636) (m2789 := m2637) (cs2799 := cs2647)
+        (v2825 := v2673) (m2826 := m2674) (cs2836 := cs2684) (m2857 := m2705)
+        (m2870 := m2718) (m2930 := m2748) (m2952 := m2770) (m2974 := m2792) (cs3066 := cs2848)
+        (ev14 := ev14) (hv2727 := hv2574) (ev2801 := ev2649) (hm2865 := hm2713)
+        (ev2838 := ev2686) (ev2882 := ev2730) (ev2912 := ev_rules)
+        (ev2942 := ev2760) (ev2964 := ev2782)
+        (ev2986 := ev2805) (ev3068 := ev2850) (hc3093 := hc) .. =>
       injection hv2574 with _ _ hr_xs
       injection hr_xs with hr1 hr_xs; injection hr_xs with hr2 hr_xs
       injection hr_xs with hr3 hr_xs; injection hr_xs with hr4 hr_xs

@@ -296,12 +296,12 @@ theorem modeled_ctor_runs {b : Bytes.Address} {n levels params indices : Nat} {i
         (x_c_unsafe := cus) (v318 := scopeResult) (m144 := scopeBefore) (m319 := scopeAfter)
         (cs329 := scopeCalls) (m387 := sortBefore) (v355 := sortResult) (m356 := sortAfter)
         (cs366 := sortCalls) (m400 := retBefore) (v429 := retResult) (m430 := retAfter)
-        (cs440 := retCalls) (m500 := nextHeap) (cs540 := nextCalls) (v551 := nextIndex)
+        (cs440 := retCalls) (m551 := nextHeap) (cs588 := nextCalls) (v599 := nextIndex)
         (ev49 := loaded) (ld43 := tag) (ev154 := addressEq)
         (heq205 := memberChecked) (heq233 := slotChecked) (heq261 := levelsChecked)
         (heq289 := paramsChecked) (heq317 := safetyChecked) (ev331 := scopeRun)
         (hm395 := nilTypes) (ev368 := sortRun) (ev412 := safetyRun) (ev442 := retRun)
-        (op621 := addition) (ev542 := nextRun) (hc623 := allCalls) .. =>
+        (op669 := addition) (ev590 := nextRun) (hc671 := allCalls) .. =>
       by_cases hjk : j = k
       · subst hjk
         have retRun' : ObsFn Core.W "KernelCheck::check_ctor_return_type"
@@ -381,12 +381,12 @@ theorem induct_native_or_ctors {rc typePtr blockArg index safety addr result : S
   | .Quot (hv1076 := shape) .. =>
     injection shape with _ tag _
     exact absurd tag (by decide)
-  | .Ctor_n0_n0 (hne1936 := notInduct) ..
-  | .Ctor_n0_other (hne1936 := notInduct) ..
-  | .Ctor_other_n0 (hne1936 := notInduct) ..
-  | .Ctor_other_other (hne1936 := notInduct) ..
-  | .Rec_n0 (hne1936 := notInduct) ..
-  | .Rec_other (hne1936 := notInduct) .. =>
+  | .Ctor_n0_n0 (hne1984 := notInduct) ..
+  | .Ctor_n0_other (hne1984 := notInduct) ..
+  | .Ctor_other_n0 (hne1984 := notInduct) ..
+  | .Ctor_other_other (hne1984 := notInduct) ..
+  | .Rec_n0 (hne1984 := notInduct) ..
+  | .Rec_other (hne1984 := notInduct) .. =>
     exact (notInduct [_, _, _, _, _, _, _, _] rfl rfl).elim
   | .Induct_n0 (m1470 := before) (m1492 := after) (cs1503 := children)
       (hv1240 := fields) (ev1505 := modeRun) (hc1634 := allCalls) .. =>
@@ -397,8 +397,8 @@ theorem induct_native_or_ctors {rc typePtr blockArg index safety addr result : S
       rw [allCalls]; simp
     exact .inl ⟨before, after, children, modeRun, (observed.call_heap_bounds member).1,
       fun cl inside => by rw [allCalls]; simp [inside]⟩
-  | .Induct_other_n0 (m1745 := before) (v1805 := res) (m1806 := after) (cs1816 := children)
-      (hv1240 := fields) (ev1818 := ctorsRun) (hc1926 := allCalls) .. =>
+  | .Induct_other_n0 (m1793 := before) (v1853 := res) (m1854 := after) (cs1864 := children)
+      (hv1240 := fields) (ev1866 := ctorsRun) (hc1974 := allCalls) .. =>
     injection fields with _ _ fields
     simp only [List.cons.injEq, and_true] at fields
     obtain ⟨rfl, rfl, rfl, rfl, rfl, -, rfl, rfl⟩ := fields
@@ -408,8 +408,8 @@ theorem induct_native_or_ctors {rc typePtr blockArg index safety addr result : S
       rw [allCalls]; simp
     exact .inr ⟨.field 0, before, after, res, children, .inl rfl, ctorsRun,
       (observed.call_heap_bounds member).1, fun cl inside => by rw [allCalls]; simp [inside]⟩
-  | .Induct_other_other (m1745 := before) (v1805 := res) (m1806 := after) (cs1816 := children)
-      (hv1240 := fields) (ev1818 := ctorsRun) (hc1935 := allCalls) .. =>
+  | .Induct_other_other (m1793 := before) (v1853 := res) (m1854 := after) (cs1864 := children)
+      (hv1240 := fields) (ev1866 := ctorsRun) (hc1983 := allCalls) .. =>
     injection fields with _ _ fields
     simp only [List.cons.injEq, and_true] at fields
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := fields
