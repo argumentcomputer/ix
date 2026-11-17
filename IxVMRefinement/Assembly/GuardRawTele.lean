@@ -166,4 +166,73 @@ theorem former_tele_at_raw (rawKey : _root_.Address → KKey) [∀ a, Resolved (
         tailRep (rawLevel.mono allExtended)
       exact ⟨outBound, _, outRep, .step headTrace tailTrace⟩
 
+/-- The actual recursor builder produces the same consumed-prefix trace while retaining
+its residual input at zero binders. -/
+theorem nat_former_tele_raw (rawKey : _root_.Address → KKey) [∀ a, Resolved (rawKey a)]
+    {c : ScopedCtx} (facts : ScopedCoreFacts c) {rootCalls : List (Call F)} :
+    ∀ n {d k : Nat} {Γ : Nat → KExpr} {R E : KExpr}
+      {rc p types r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      n < 18446744069414584321 → CoreGood c calls → (∀ call ∈ calls, call ∈ rootCalls) →
+      Tm c.κ d Γ h 0 E p → RawExprRep rawKey h k R p →
+      ObsFn W "KernelCheck::nat_former_tele" [rc, p, .field (n : F), types] h r h' calls →
+      ∃ bound result, RawExprRep rawKey h' bound result r ∧
+        RawBinderTrace (RawDeltaAt c rawKey rootCalls) n R result
+  | 0, d, k, Γ, R, E, rc, p, types, r, h, h', calls,
+      _, good, subset, scopedRep, physical, observed => by
+    match Obs.«KernelCheck::nat_former_tele».obs observed with
+    | .n0 (he16 := result) (he17 := heap) .. =>
+      subst result heap
+      exact ⟨k, R, physical, .done _ _⟩
+    | .other_Forall (hne19 := nonzero) .. | .other_other (hne19 := nonzero) .. =>
+      exact (nonzero rfl).elim
+  | n + 1, d, k, Γ, R, E, rc, p, types, r, h, h', calls,
+      bound, good, subset, scopedRep, physical, observed => by
+    match Obs.«KernelCheck::nat_former_tele».obs observed with
+    | .n0 (hv14 := zero) .. => exact (succ_field_ne_zero_bounded bound zero).elim
+    | .other_Forall (x_d := dom) (x_b := body) (x_m := metadata)
+        (v66 := tailPtr) (m76 := after) (cs84 := children) (m121 := pushed)
+        (ld34 := loaded) (he61 := result) (hm60 := heap) (op118 := subtracted)
+        (hm129 := push) (ev86 := child) (hc156 := events) .. =>
+      obtain ⟨semantic, raw⟩ := physical
+      obtain ⟨RD, RB, ED, EB, u, rfl, rfl, rawDom, rawBody, rawLevel⟩ := raw.raw_forallE_view loaded
+      obtain ⟨D, B, _, rfl, _, scopedBody, _⟩ := scopedRep.forallE_of_load loaded
+      have extension : Heap.Extends h pushed := by rw [push]; exact Heap.Extends.snoc _ _
+      have opened := (scopedBody.open_body (Ghost.extend_at Γ d D) (Ghost.extend_below Γ d D)).mono extension
+      rw [evalBinOp_sub_succ n subtracted] at child
+      have childInside : ∀ call ∈ children, call ∈ calls := by intro call member; rw [events]; simp [member]
+      obtain ⟨tailBound, tailRaw, tailRep, tailTrace⟩ := nat_former_tele_raw rawKey facts n (by omega)
+        (good.sub childInside) (fun call member => subset call (childInside call member))
+        opened ⟨_, rawBody.mono extension⟩ child
+      subst result heap
+      have allExtended := extension.trans child.heap_extends
+      obtain ⟨outBound, outRep⟩ := store_raw_forall
+        (show RawExprRep rawKey after k RD dom from ⟨_, rawDom.mono allExtended⟩)
+        tailRep (rawLevel.mono allExtended)
+      exact ⟨outBound, _, outRep, .step (.forallE RD RB (bmeta u)) tailTrace⟩
+    | .other_other (x_d := dom) (x_b := body) (x_m := metadata)
+        (v220 := tailPtr) (m230 := after) (cs238 := children) (cs175 := heads)
+        (m162 := headHeap) (p169 := headPtr) (m275 := pushed)
+        (ev177 := headCall) (ld171 := loaded) (he215 := result) (hm214 := heap)
+        (op272 := subtracted) (hm283 := push) (ev240 := child) (hc310 := events) .. =>
+      have headInside : ∀ call ∈ heads, call ∈ calls := by intro call member; rw [events]; simp [member]
+      have childInside : ∀ call ∈ children, call ∈ calls := by intro call member; rw [events]; simp [member]
+      obtain ⟨headBound, headRaw, headRep, headTrace⟩ := Core.GuardData.head_raw_trace rawKey facts
+        (good.sub headInside) (fun call member => subset call (headInside call member)) scopedRep physical headCall
+      obtain ⟨headSemantic, headScoped, _⟩ := Core.GuardData.head_rep facts (good.sub headInside) scopedRep headCall
+      obtain ⟨semantic, raw⟩ := headRep
+      obtain ⟨RD, RB, ED, EB, u, rfl, rfl, rawDom, rawBody, rawLevel⟩ := raw.raw_forallE_view loaded
+      obtain ⟨D, B, _, rfl, _, scopedBody, _⟩ := headScoped.forallE_of_load loaded
+      have extension : Heap.Extends headHeap pushed := by rw [push]; exact Heap.Extends.snoc _ _
+      have opened := (scopedBody.open_body (Ghost.extend_at Γ d D) (Ghost.extend_below Γ d D)).mono extension
+      rw [evalBinOp_sub_succ n subtracted] at child
+      obtain ⟨tailBound, tailRaw, tailRep, tailTrace⟩ := nat_former_tele_raw rawKey facts n (by omega)
+        (good.sub childInside) (fun call member => subset call (childInside call member)) opened
+        ⟨_, rawBody.mono extension⟩ child
+      subst result heap
+      have allExtended := extension.trans child.heap_extends
+      obtain ⟨outBound, outRep⟩ := store_raw_forall
+        (show RawExprRep rawKey after headBound RD dom from ⟨_, rawDom.mono allExtended⟩)
+        tailRep (rawLevel.mono allExtended)
+      exact ⟨outBound, _, outRep, .step headTrace tailTrace⟩
+
 end IxVM.Refinement.Decl
