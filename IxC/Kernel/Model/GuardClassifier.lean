@@ -1,0 +1,162 @@
+module
+
+public import IxC.Kernel.Model.GuardSignature
+public import IxC.Kernel.ExprOps
+
+@[expose] public section
+
+/-!
+# A partial, context-independent classifier for field zero-signatures
+
+The classifier operates on de Bruijn syntax and instantiated declarations. It is a data
+computation, not a typing judgement: the circuit must separately infer each field sort and
+compare zero-signatures. In Pi formation the domain universe is deliberately discarded, since
+only the codomain universe determines zero-ness.
+
+Every lookup on a successful computation is positive. Consequently extending the declaration
+lookup preserves the exact result. This also separates the computation from validation limits:
+the same raw declarations and field context give the same result at any limit.
+-/
+
+namespace Ix.Kernel.GuardClassifier
+
+/-- Instantiated declared types and unfoldable definition values. Neither operation types terms. -/
+structure Lookup (md : Mode) where
+  typeOf : Key md → List Level → Option (Expr md)
+  valueOf : Key md → List Level → Option (Expr md)
+
+/-- An extension keeps all successful answers. Negative lookups need not be preserved. -/
+structure Lookup.Extends (a b : Lookup md) : Prop where
+  typeOf : ∀ k us e, a.typeOf k us = some e → b.typeOf k us = some e
+  valueOf : ∀ k us e, a.valueOf k us = some e → b.valueOf k us = some e
+
+private theorem bind_preserved {α β : Type} {a b : Option α} {f g : α → Option β}
+    (ha : ∀ x, a = some x → b = some x)
+    (hf : ∀ x y, f x = some y → g x = some y)
+    {r : β} (h : a.bind f = some r) : b.bind g = some r := by
+  obtain ⟨x, hx, hr⟩ := Option.bind_eq_some_iff.mp h
+  exact Option.bind_eq_some_iff.mpr ⟨x, ha x hx, hf x r hr⟩
+
+/-- A concrete lookup from stored kernel syntax. Only definitions unfold. -/
+def Lookup.ofEnv (env : Env md) : Lookup md where
+  typeOf k us := do
+    let ci ← env.find? k
+    if us.length = ci.toConstantVal.levelParams.length then
+      some (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams us)
+    else none
+  valueOf k us := do
+    let ci ← env.find? k
+    match ci with
+    | .defnInfo cv value _ =>
+      if us.length = cv.levelParams.length then
+        some (value.instantiateLevelParams cv.levelParams us)
+      else none
+    | _ => none
+
+/-- Keeping stored declarations produces the lookup extension required by the classifier. -/
+theorem Lookup.ofEnv_extends {env env' : Env md}
+    (hext : ∀ k ci, env.find? k = some ci → env'.find? k = some ci) :
+    (Lookup.ofEnv env).Extends (Lookup.ofEnv env') := by
+  constructor
+  · intro k us e h
+    exact bind_preserved (fun ci hci => hext k ci hci) (fun _ _ h => h) h
+  · intro k us e h
+    exact bind_preserved (fun ci hci => hext k ci hci) (fun _ _ h => h) h
+
+/-- Expose a rigid head by definition unfolding, beta and let substitution. Stuck heads fail.
+Beta here is only a data operation; independent typing supplies its semantic certificate. -/
+def head (look : Lookup md) : Nat → Expr md → Option (Expr md)
+  | 0, _ => none
+  | _ + 1, e@(.sort _) => some e
+  | _ + 1, e@(.forallE ..) => some e
+  | _ + 1, e@(.lam ..) => some e
+  | fuel + 1, .const k us => (look.valueOf k us).bind (head look fuel)
+  | fuel + 1, .app f a => (head look fuel f).bind fun
+      | .lam _ body _ => head look fuel (body.instantiate1 a)
+      | _ => none
+  | fuel + 1, .letE _ value body _ => head look fuel (body.instantiate1 value)
+  | _ + 1, _ => none
+
+/-- Successful normalization depends only on the positive declarations it read. -/
+theorem head_mono {a b : Lookup md} (hext : a.Extends b) :
+    ∀ fuel e r, head a fuel e = some r → head b fuel e = some r := by
+  intro fuel
+  induction fuel with
+  | zero => intro e r h; exact h
+  | succ fuel ih =>
+    intro e r h
+    cases e <;> simp only [head] at h ⊢
+    case const k us =>
+      exact bind_preserved (hext.valueOf k us) (fun e r h => ih e r h) h
+    case app f arg =>
+      refine bind_preserved (fun e h => ih f e h) ?_ h
+      intro e r h
+      cases e <;> first | exact ih _ _ h | exact h
+    case letE ty value body meta => exact ih _ _ h
+    all_goals exact h
+
+/-- Structural type-shape calculation. Pi formation retains only the body universe; argument
+checking is deliberately absent, since this result is compared to an independently inferred sort. -/
+def infer (look : Lookup md) : Nat → List (Expr md) → Expr md → Option (Expr md)
+  | 0, _, _ => none
+  | _ + 1, _, .sort u => some (.sort (.succ u))
+  | _ + 1, ctx, .bvar i => (ctx[i]?).map (Expr.liftLooseBVars (i + 1) 0)
+  | _ + 1, _, .fvar _ ty => some ty
+  | _ + 1, _, .const k us => look.typeOf k us
+  | fuel + 1, ctx, .app f arg => do
+    let tf ← infer look fuel ctx f
+    let .forallE _ body _ ← head look fuel tf | none
+    pure (body.instantiate1 arg)
+  | fuel + 1, ctx, .forallE ty body _ => do
+    let tb ← infer look fuel (ty :: ctx) body
+    let .sort u ← head look fuel tb | none
+    pure (.sort u)
+  | fuel + 1, ctx, .lam ty body meta => do
+    let tb ← infer look fuel (ty :: ctx) body
+    pure (.forallE ty tb meta)
+  | fuel + 1, ctx, .letE _ value body _ => infer look fuel ctx (body.instantiate1 value)
+  | _ + 1, _, _ => none
+
+/-- Successful classification is stable under positive lookup extension. -/
+theorem infer_mono {a b : Lookup md} (hext : a.Extends b) :
+    ∀ fuel ctx e r, infer a fuel ctx e = some r → infer b fuel ctx e = some r := by
+  intro fuel
+  induction fuel with
+  | zero => intro ctx e r h; exact h
+  | succ fuel ih =>
+    intro ctx e r h
+    cases e <;> simp only [infer] at h ⊢
+    case const k us => exact hext.typeOf k us r h
+    case app f arg =>
+      refine bind_preserved (fun e h => ih ctx f e h) ?_ h
+      intro e r h
+      exact bind_preserved (fun e' h => head_mono hext fuel e e' h) (fun _ _ h => h) h
+    case forallE ty body meta =>
+      refine bind_preserved (fun e h => ih (ty :: ctx) body e h) ?_ h
+      intro e r h
+      exact bind_preserved (fun e' h => head_mono hext fuel e e' h) (fun _ _ h => h) h
+    case lam ty body meta =>
+      exact bind_preserved (fun e h => ih (ty :: ctx) body e h) (fun _ _ h => h) h
+    case letE ty value body meta => exact ih ctx _ r h
+    all_goals exact h
+
+/-- The field classifier succeeds exactly when its structural type exposes a sort. -/
+def sortSignature (look : Lookup md) (fuel : Nat) (ctx : List (Expr md)) (e : Expr md) :
+    Option Level := do
+  let t ← infer look fuel ctx e
+  let .sort u ← head look fuel t | none
+  pure (Level.guardSignatureLevel u)
+
+/-- This is the cross-environment functionality contract for a successful field classifier. -/
+theorem sortSignature_mono {a b : Lookup md} (hext : a.Extends b)
+    {fuel : Nat} {ctx : List (Expr md)} {e : Expr md} {s : Level}
+    (h : sortSignature a fuel ctx e = some s) : sortSignature b fuel ctx e = some s := by
+  refine bind_preserved (fun t h => infer_mono hext fuel ctx e t h) ?_ h
+  intro t r h
+  exact bind_preserved (fun t' h => head_mono hext fuel t t' h) (fun _ _ h => h) h
+
+/-- A sort is a concrete member of the classifier's domain, in every lookup and context. -/
+theorem sortSignature_sort (look : Lookup md) (ctx : List (Expr md)) (u : Level) :
+    sortSignature look 1 ctx (.sort u) = some (.succ .zero) := rfl
+
+end Ix.Kernel.GuardClassifier
