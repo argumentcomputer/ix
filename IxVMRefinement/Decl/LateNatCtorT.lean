@@ -305,7 +305,7 @@ theorem NatMetaAgree.stripPis :
     simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at hR hE
     obtain ⟨_, rfl⟩ := hR
     obtain ⟨_, rfl⟩ := hE
-    exact ⟨fun _ hi => nomatch hi, hag⟩
+    exact ⟨(fun _ hi => nomatch hi), hag⟩
   | n + 1, R, E, rbody, ebody, rbs, ebs, hag, hR, hE => by
     cases hag with
     | forallE hagt hagb =>
