@@ -454,7 +454,7 @@ theorem ctorSlots_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore 
         (e_1376.trans (e_1354.trans (ev_emb.heap_extends.trans
           (e_1427.trans (ev_es.heap_extends.trans (ev_saf.heap_extends.trans
             (ev_mk.heap_extends.trans (ev_mod.heap_extends.trans
-              (ev_fa.heap_extends.trans (ev_tele.heap_extends.trans
+              ((ev_fa.heap_extends.trans ev_lead.heap_extends).trans (ev_tele.heap_extends.trans
                 (e_1736.trans ev_rsl.heap_extends))))))))))))
     have hsub_mc : ∀ cl ∈ cs_mc, cl ∈ calls := fun cl hcl =>
       hsub_chk cl (by rw [hc]; simp [hcl])
