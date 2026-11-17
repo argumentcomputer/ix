@@ -19,6 +19,8 @@ cell of the term is a reference the block uses, which the prefix stores.
   checked at the prefix (`ConstantValCheckJ`) and its type is typed there as a sort.
 -/
 
+universe u
+
 set_option maxHeartbeats 1600000
 set_option maxRecDepth 100000
 set_option linter.unusedVariables false
@@ -442,5 +444,161 @@ theorem mentions_block_cells (hdec : L1.EnvDecoded c.E)
       exact (Core.load_cell_ne cellm ld (by decide)).elim
 
 end Scan
+
+/-! ## The former checked at the prefix -/
+
+/-- **The former of a native block, checked at the prefix.** From the walked check of member `0`
+of the block at `B` under the walk's role context at the limit `n`: the canonical annotation `ty'`
+of the reading `ty₀` of the former's type is checked against the prefix environment
+(`ConstantValCheckJ`, at the prefix's keying, where the former's own address does not resolve), and
+it is typed there as a sort. The inputs about the prefix are the invariant, the references the
+block uses stored, the former's key fresh and free. -/
+theorem formerChecked_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    (ht : t.check = .ok ()) {E₀ E : Ixon.Env} {bAddr B : _root_.Address} {cb : Ixon.Constant}
+    {ind : Ixon.Inductive} {n : Nat} {env : Ix.Kernel.Env .anon}
+    (hst : StepStore calls t E₀ E) (hinv : Decl.PrefixInv.{u} E t (some n) env)
+    (hblock : recordOf E B = some cb) (hmuts : cb.info = .muts #[.indc ind])
+    (hproj : recordOf E (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind)))
+    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
+    {ty₀ : Ix.Kernel.Expr .anon}
+    (hty : (exprReader t (fun x => E.blobs.get? x) cb id
+      (blockSelf t B #[.indc ind])).read ind.typ = .ok ty₀)
+    (hty_lbb : ty₀.looseBVarsBounded 0 = true)
+    (hty_def : ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true)
+    (hfv : ty₀.hasFvar = false)
+    (hstored : Decl.UsedRefsStored t env cb)
+    (hfresh : env.find? (Core.keyOf t (Core.iprjAddr B 0)) = none)
+    (hfree : Decl.KeyFree (Core.keyOf t (Core.iprjAddr B 0))) :
+    ∃ ty' : Ix.Kernel.Expr .anon,
+      LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
+        ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ =
+        some ty' ∧ Annotates ty' ty₀ ∧
+      Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ env
+        ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty₀⟩
+        ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ ∧
+      ∃ sty u, Ix.Kernel.Rules.Infer env .full 0 ty' sty ∧
+        Ix.Kernel.Rules.Red env 0 sty (.sort u) := by
+  have hbound : Bounded calls := (hst.good env none).2
+  have hchkA := mutsMemberAt_checkedAt hbound hchk
+    (rfl : (#[.indc ind] : Array Ixon.MutConst)[0]? = some (.indc ind))
+  obtain ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk, hrc_pre, hrc_m, ha_pre,
+    ha_m, ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := hchkA
+  obtain ⟨a, ha, hax⟩ := ha_pre
+  have hgood : Core.Good ⟨E, env, t, some n⟩ calls := hst.good env (some n)
+  have hg_ld : Core.Good ⟨E, env, t, some n⟩ cs_load := hgood.sub hsub_ld
+  have hg_chk : Core.Good ⟨E, env, t, some n⟩ cs_chk := hgood.sub hsub_chk
+  have h0' : (⟨(0 : Nat).toUInt64, B⟩ : Ixon.InductiveProj).idx.toNat = 0 := by
+    show ((0 : Nat).toUInt64).toNat = 0
+    decide
+  -- the load of the member's projection record, traced
+  obtain ⟨rawBytes, c', hh, haddr, hex, htv, hres⟩ := L1.get_ci_block_trace_spec hg_ld.2 ha ev_ld
+  have hrec : recordOf E (Core.ixAddr a) = some (memberProjection B 0 (.indc ind)) := by
+    rw [hax, LoadedReads.memberAddr_indc]
+    exact hproj
+  obtain ⟨lc, hget, hdecA⟩ := LoadedReads.recordOf_inv hrec
+  have hb : rawBytes = lc.rawBytes := Core.load_escape hget hg_ld.1 rawBytes hh haddr
+  have hc : c' = memberProjection B 0 (.indc ind) := by
+    rw [hb, hdecA] at hex
+    exact (Except.ok.inj hex).symm
+  subst hc
+  unfold L1.GetCIBlockTraceResult at hres
+  have hinfo : (memberProjection B 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, B⟩ := rfl
+  rw [hinfo] at hres
+  obtain ⟨hidx, blkBytes, cb', ms', ind', blobs, tree, plan, v₀, hhB, haB, hexB, hcb, hms,
+    hhp, built, planned, hld₀, hraw, hlev⟩ := hres
+  obtain ⟨lcB, hgetB, hdecB⟩ := LoadedReads.recordOf_inv hblock
+  have hbB : blkBytes = lcB.rawBytes := Core.load_escape hgetB hg_ld.1 blkBytes hhB haB
+  have hcB : cb' = cb := by
+    rw [hbB, hdecB] at hexB
+    exact (Except.ok.inj hexB).symm
+  subst cb'
+  have hmsEq : ms' = #[.indc ind] := (Ixon.ConstantInfo.muts.inj (hcb.symm.trans hmuts))
+  subst hmsEq
+  rw [h0'] at hms planned hraw
+  have hiEq : ind' = ind := by
+    have e : (Ixon.MutConst.indc ind : Ixon.MutConst) = .indc ind' := Option.some.inj hms
+    exact (Ixon.MutConst.indc.inj e).symm
+  subst ind'
+  have hvv : v₀ = v := Except.ok.inj (hld₀.symm.trans hld)
+  subst v₀
+  obtain ⟨hlvls, hp56, hi56, hc56, hidx56, tyPtr, blkPtr, b, hb_eq, hb_rep, hv, rty⟩ := hraw
+  subst hv
+  obtain ⟨count, typePtr, fields, shape, trace⟩ := hlev
+  injection shape with _ _ hargs
+  injection hargs with _ hrest
+  injection hrest with htp _
+  subst typePtr
+  have hagree := LoadedReads.blobReadAgreement_of_noCollision hg_ld.1 hhp t
+  obtain ⟨ty', hcT, hannT, htmT⟩ :=
+    LoadedReads.annotation_canon_exact ht hlvls (LoadedReads.blockSelf_key t B #[.indc ind])
+      hagree rty built planned trace hty hty_lbb hty_def
+  -- the prelude of the check
+  obtain ⟨prelude⟩ := Decl.native_prelude_calls ev_chk
+  -- the references the block uses are stored in the prefix
+  have used : ∀ x, L1.RefUsed cb.refs.toList cb.sharing.toList ind.typ x →
+      ∃ ci, env.find? (Core.keyOf t x) = some ci := by
+    have hmem' : Ixon.MutConst.indc ind ∈ (#[.indc ind] : Array Ixon.MutConst).toList :=
+      List.mem_singleton.mpr rfl
+    intro x hu
+    obtain ⟨i, hi | ⟨s, hs, his⟩, hr⟩ := hu
+    · refine hstored i ?_ x hr
+      unfold usedRefIdxs
+      rw [hmuts]
+      exact List.mem_append_right _
+        (List.mem_flatMap.mpr ⟨.indc ind, hmem', by unfold mutRefIdxs; exact List.mem_append_left _ hi⟩)
+    · refine hstored i ?_ x hr
+      unfold usedRefIdxs
+      exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨s, hs, his⟩)
+  let κP := (Core.Ctx.stored ⟨E, env, t, some n⟩).κ
+  have hextM : Heap.Extends m_chk prelude.mentionsBefore :=
+    prelude.initialExtended.trans prelude.scope_to_mentions
+  have hagreeP : ∀ a', Core.AddrIn m_chk tyPtr a' →
+      κP (Core.ixAddr a') = Core.keyOf t (Core.ixAddr a') := by
+    intro a' hin
+    rcases rty.addrIn_used a' hin with hu | hr
+    · obtain ⟨ci, hci⟩ := used _ hu
+      exact Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hci
+    · exfalso
+      obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp hr
+      obtain ⟨m, hm, hxm⟩ := LoadedReads.blockRecurAddrs_get hk
+      have hk0 : k = 0 := by
+        have hlt : k < 1 := (Array.getElem?_eq_some_iff.mp hm).1
+        omega
+      subst hk0
+      have hmm : m = .indc ind := by simpa using hm.symm
+      subst hmm
+      rw [LoadedReads.memberAddr_indc] at hxm
+      have hxm' : Core.ixAddr a' = Core.iprjAddr B 0 := hxm
+      have hscan := mentions_block_cells (c := ⟨E, env, t, some n⟩) hst.decoded hblock hmuts hproj
+        hb_eq hin hextM (prelude.blocksRep hb_rep) prelude.mentionsRun
+        (hg_chk.sub prelude.mentionsSubset)
+      rcases hscan with hp | hne
+      · obtain ⟨ci, hci⟩ := used _ (rty.projIn_used a' hp)
+        rw [hxm', hfresh] at hci
+        cases hci
+      · exact hne hxm'
+  have hpermP : ∀ a', Core.ProjIn m_chk tyPtr a' →
+      Core.ProjPermitted (Core.keyOf t) (Core.ixAddr a') → Core.ProjPermitted κP (Core.ixAddr a') := by
+    intro a' hp _
+    obtain ⟨ci, hci⟩ := used _ (rty.projIn_used a' hp)
+    exact Core.Ctx.stored_projPermitted_of_find (c := ⟨E, env, t, some n⟩) hci
+  have htmP : Decl.TmCExact κP m_chk (Core.posOf (List.range ind.lvls.toNat) ty') tyPtr :=
+    htmT.rekey hagreeP hpermP
+  have hvP : Decl.ValRepExact κP m_chk (.field (ind.lvls.toNat : F)) tyPtr
+      ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ :=
+    ⟨by simp, by simpa using hlvls, by simp, htmP⟩
+  have hgS : Core.CoreGood (Core.Ctx.stored ⟨E, env, t, some n⟩) prelude.sortCalls :=
+    Core.CoreGood.ofRaw (hg_chk.sub prelude.sortSubset) (fun _ _ => trivial)
+  obtain ⟨checked, sty, u, ℓ, inferred, reduced, -, -⟩ :=
+    Decl.constantValCheckJ_of_scoped (c := Core.Ctx.stored ⟨E, env, t, some n⟩)
+      (cv := ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty₀⟩)
+      ⟨rfl, rfl, hannT⟩ (hvP.mono prelude.initialExtended) hty_lbb hfv hfresh hfree.1
+      (Decl.isProjFnShape_of_isBaseKey (Decl.isBaseKey_keyOf t _)) hinv.store.store
+      (Decl.PosSortLift.of_range rfl) prelude.scopeRun prelude.scope_to_sort
+      (hrc_m.toRCRep.mono (prelude.initialExtended.trans prelude.scope_to_sort))
+      (prelude.typesRep κP (fun _ => default)) hinv.scopedCoreFacts.1 hinv.loads hgS
+      prelude.sortRun
+  rw [Decl.posOf_range] at inferred
+  exact ⟨ty', hcT, hannT, checked, sty, u, inferred, reduced⟩
 
 end IxVM.Refinement.Typing
