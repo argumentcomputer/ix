@@ -109,4 +109,120 @@ theorem levels_inst_raw_rep {ls ps : List KLevel} {p params r : SourceValue F}
     ∃ ls', RepKLevelList h' ls' r :=
   levels_rep_go cs.length (Nat.le_refl _) hl hp ev
 
+private def rawExprName (walk : Bool) : String :=
+  if walk then "KernelGuard::expr_inst_raw_walk" else "KernelGuard::expr_inst_raw"
+
+private theorem expr_rep_go (κ : _root_.Address → KKey) :
+    ∀ fuel : Nat, ∀ (walk : Bool) {d k : Nat} {Γ : Nat → KExpr} {E : KExpr}
+      {ps : List KLevel} {p params r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      cs.length ≤ fuel → Tm κ d Γ h k E p → RepKLevelList h ps params →
+      ObsFn W (rawExprName walk) [p, params] h r h' cs →
+      ∃ E', Tm κ d Γ h' k E' r := by
+  intro fuel
+  induction fuel using Nat.strong_induction_on with
+  | h fuel ih =>
+    intro walk d k Γ E ps p params r h h' cs hlen hE hp ev
+    cases walk with
+    | false =>
+      change ObsFn W "KernelGuard::expr_inst_raw" [p, params] h r h' cs at ev
+      match Obs.«KernelGuard::expr_inst_raw».obs ev with
+      | .Nil (he21 := hr) (he22 := hh) .. =>
+        subst hr hh
+        exact ⟨E, hE⟩
+      | .other (cs31 := children) (ev33 := child) (hc50 := hc) .. =>
+        have hlt : children.length < fuel := by rw [hc] at hlen; simp only [List.length_cons] at hlen; omega
+        exact ih children.length hlt true (Nat.le_refl _) hE hp child
+    | true =>
+      change ObsFn W "KernelGuard::expr_inst_raw_walk" [p, params] h r h' cs at ev
+      match Obs.«KernelGuard::expr_inst_raw_walk».obs ev with
+      | .BVar (he27 := hr) (he28 := hh) .. | .Lit (he595 := hr) (he596 := hh) .. =>
+        subst hr hh
+        exact ⟨E, hE⟩
+      | .Srt (ld12 := ld) (he46 := hr) (hm45 := hh) (ev62 := child) .. =>
+        obtain ⟨u, rfl, l, hl, -⟩ := hE.sort_of_load ld
+        obtain ⟨l', hl'⟩ := level_inst_raw_rep hl hp child
+        subst hr hh
+        exact ⟨.sort l', SubstAux.tm_store_sort hl' (LvEq.refl _)⟩
+      | .Const (ld12 := ld) (he101 := hr) (hm100 := hh) (ev125 := child) .. =>
+        obtain ⟨a, us, rfl, ha, ls, hls, -⟩ := hE.const_of_load ld
+        have : Resolved (κ (ixAddr a)) := ⟨hE.const_key_ne⟩
+        obtain ⟨ls', hls'⟩ := levels_inst_raw_rep hls hp child
+        subst hr hh
+        exact ⟨.const (κ (ixAddr a)) ls',
+          SubstAux.tm_store_const (Bytes.repAddressRef_heapMono₂ addrTy child.heap_extends ha)
+            hls' (LvEqList.refl _)⟩
+      | .App (cs179 := first) (cs207 := second) (ld12 := ld) (he164 := hr) (hm163 := hh)
+          (ev181 := e1) (ev209 := e2) (hc226 := hc) .. =>
+        obtain ⟨f, a, rfl, hf, ha⟩ := hE.app_of_load ld
+        have h1 : first.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
+        have h2 : second.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
+        obtain ⟨f', hf'⟩ := ih first.length h1 false (Nat.le_refl _) hf hp e1
+        obtain ⟨a', ha'⟩ := ih second.length h2 false (Nat.le_refl _)
+          (ha.mono e1.heap_extends) (hp.mono e1.heap_extends) e2
+        subst hr hh
+        exact ⟨.app f' a', Tm.store_app (hf'.mono e2.heap_extends) ha'⟩
+      | .Lam (cs269 := first) (cs297 := second) (ld12 := ld) (he253 := hr) (hm252 := hh)
+          (ev271 := e1) (ev299 := e2) (ev327 := e3) (hc344 := hc) .. =>
+        obtain ⟨T, B, l, rfl, hT, hB, hl⟩ := hE.lam_of_load ld
+        have h1 : first.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
+        have h2 : second.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
+        obtain ⟨T', hT'⟩ := ih first.length h1 false (Nat.le_refl _) hT hp e1
+        obtain ⟨B', hB'⟩ := ih second.length h2 false (Nat.le_refl _)
+          (hB.mono e1.heap_extends) (hp.mono e1.heap_extends) e2
+        have ext := e1.heap_extends.trans e2.heap_extends
+        obtain ⟨l', hl'⟩ := level_inst_raw_rep (hl.mono ext) (hp.mono ext) e3
+        subst hr hh
+        exact ⟨.lam T' B' (bmeta l'),
+          SubstAux.tm_store_lam (hT'.mono (e2.heap_extends.trans e3.heap_extends))
+            (hB'.mono e3.heap_extends) hl'⟩
+      | .Forall (cs387 := first) (cs415 := second) (ld12 := ld) (he371 := hr) (hm370 := hh)
+          (ev389 := e1) (ev417 := e2) (ev445 := e3) (hc462 := hc) .. =>
+        obtain ⟨T, B, l, rfl, hT, hB, hl⟩ := hE.forallE_of_load ld
+        have h1 : first.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
+        have h2 : second.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
+        obtain ⟨T', hT'⟩ := ih first.length h1 false (Nat.le_refl _) hT hp e1
+        obtain ⟨B', hB'⟩ := ih second.length h2 false (Nat.le_refl _)
+          (hB.mono e1.heap_extends) (hp.mono e1.heap_extends) e2
+        have ext := e1.heap_extends.trans e2.heap_extends
+        obtain ⟨l', hl'⟩ := level_inst_raw_rep (hl.mono ext) (hp.mono ext) e3
+        subst hr hh
+        exact ⟨.forallE T' B' (bmeta l'),
+          SubstAux.tm_store_forallE (hT'.mono (e2.heap_extends.trans e3.heap_extends))
+            (hB'.mono e3.heap_extends) hl'⟩
+      | .Let (cs505 := first) (cs533 := second) (cs561 := third) (ld12 := ld)
+          (he489 := hr) (hm488 := hh) (ev507 := e1) (ev535 := e2) (ev563 := e3) (hc580 := hc) .. =>
+        obtain ⟨T, V, B, rfl, hT, hV, hB⟩ := hE.letE_of_load ld
+        have h1 : first.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
+        have h2 : second.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
+        have h3 : third.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
+        obtain ⟨T', hT'⟩ := ih first.length h1 false (Nat.le_refl _) hT hp e1
+        obtain ⟨V', hV'⟩ := ih second.length h2 false (Nat.le_refl _)
+          (hV.mono e1.heap_extends) (hp.mono e1.heap_extends) e2
+        have ext := e1.heap_extends.trans e2.heap_extends
+        obtain ⟨B', hB'⟩ := ih third.length h3 false (Nat.le_refl _)
+          (hB.mono ext) (hp.mono ext) e3
+        subst hr hh
+        exact ⟨instShift V' 0 B',
+          SubstAux.tm_store_letE (hT'.mono (e2.heap_extends.trans e3.heap_extends))
+            (hV'.mono e3.heap_extends) hB'⟩
+      | .Proj (cs654 := children) (ld12 := ld) (he624 := hr) (hm623 := hh)
+          (ev656 := child) (hc673 := hc) .. =>
+        obtain ⟨a, i, E, rfl, rfl, ha, hE'⟩ := hE.proj_of_load ld
+        have : Resolved (κ (ixAddr a)) := ⟨hE.proj_key_ne⟩
+        have : ProjPermitted κ (ixAddr a) := hE.proj_permitted ld ha
+        have hlt : children.length < fuel := by rw [hc] at hlen; simp only [List.length_cons] at hlen; omega
+        obtain ⟨E', hE''⟩ := ih children.length hlt false (Nat.le_refl _) hE' hp child
+        subst hr hh
+        exact ⟨.proj (κ (ixAddr a)) i.val E',
+          SubstAux.tm_store_proj (Bytes.repAddressRef_heapMono₂ addrTy child.heap_extends ha) hE''⟩
+
+/-- The classifier's raw expression substitution returns a represented expression. This weak
+statement deliberately does not identify the result with a canonical substituted AST. -/
+theorem expr_inst_raw_rep {κ : _root_.Address → KKey} {d k : Nat} {Γ : Nat → KExpr} {E : KExpr}
+    {ps : List KLevel} {p params r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hE : Tm κ d Γ h k E p) (hp : RepKLevelList h ps params)
+    (ev : ObsFn W "KernelGuard::expr_inst_raw" [p, params] h r h' cs) :
+    ∃ E', Tm κ d Γ h' k E' r :=
+  expr_rep_go κ cs.length false (Nat.le_refl _) hE hp ev
+
 end IxVM.Refinement.Core.GuardData
