@@ -14,7 +14,7 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 open Core
 open Core.LevelsAux
-open KernelLevels
+open _root_.IxVM.Refinement.KernelLevels
 open Ix.Kernel (Level)
 
 set_option maxHeartbeats 4000000

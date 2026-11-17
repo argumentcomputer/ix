@@ -15,7 +15,7 @@ open Aiur.Library Aiur.Library.List
 open IxVM (F)
 open Core (W)
 open Core.LevelsAux
-open KernelLevels
+open _root_.IxVM.Refinement.KernelLevels
 open Ix.Kernel (Level)
 
 /-- Positional substitution without smart universe constructors. -/
