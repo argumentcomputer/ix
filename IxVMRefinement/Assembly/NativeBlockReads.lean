@@ -3,6 +3,8 @@ import IxVMRefinement.Assembly.ClaimsL1L6
 import IxVMRefinement.Assembly.ReadBare
 import IxVMRefinement.StatementRel.LoadedReadsWalked
 import IxVMRefinement.Core.CallHeaps
+import IxVMRefinement.Assembly.NativeScopeInputs
+import IxVMRefinement.StatementRel.ReadsMono
 
 /-! # The readings of a native block and its recognition
 
@@ -34,6 +36,8 @@ open Ix.Kernel (ConstantInfo ConstantVal)
 set_option maxHeartbeats 1600000
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
+
+universe u
 
 /-! ## The case of the unit -/
 
@@ -879,6 +883,102 @@ theorem nativeParts_of_member (ht : t.check = .ok ()) (hbound : Bounded calls)
       (Core.keyOf_inj (a₁ := ctorAddr B 0 j) (a₂ := ctorAddr B 0 j') htwf e))
   obtain ⟨ct, tyj, -, -, -, -, -, rfl, -⟩ := hcs j c hc
   rfl
+
+/-! ## The former stage -/
+
+/-- **The reading of the former's type is closed, with its level parameters defined and no free
+variable**: the walked check validated its scope before anything else (`Induct` arm prelude). -/
+theorem former_scope (hbound : Bounded calls) (hS : LoadedReads.RunStore calls E₀)
+    (hrec : BlockUnitRecord E₀ B cb ind)
+    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
+    {blob : _root_.Address → Option ByteArray} {ty₀ : Ix.Kernel.Expr .anon}
+    (hty : (exprReader t blob cb id (blockSelf t B #[.indc ind])).read ind.typ = .ok ty₀) :
+    ty₀.looseBVarsBounded 0 = true ∧
+      ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧ ty₀.hasFvar = false := by
+  have hchkA := mutsMemberAt_checkedAt (mc := .indc ind) hbound hchk rfl
+  obtain ⟨_, _, m_chk, _, rc, ap, ptr, v, r_chk, cs_ld, cs_chk, bytes, E_ld,
+    _, _, _, _, hhash, hblake, hload_ld, hL1, hsub_ld, hld, ev_chk, _, hsub_chk⟩ :=
+    Assembly.checkedAtFull_loadedL1 hbound ⟨n, hchkA⟩
+  have hrecP : Ix.Cert.recordAt E₀ (memberAddr B 0 (.indc ind)) =
+      some (memberProjection B 0 (.indc ind)) :=
+    (hS.recordOf_eq_recordAt _).symm.trans hrec.former
+  have hrecB : Ix.Cert.recordAt E₀ B = some cb :=
+    (hS.recordOf_eq_recordAt _).symm.trans hrec.record
+  obtain ⟨-, -, v', hld', hraw⟩ := LoadedReads.loadedL1_record hS hsub_ld hhash hblake hL1 hrecP
+  have hvv : v' = v := Except.ok.inj (hld'.symm.trans hld)
+  subst hvv
+  have hinfo : (memberProjection B 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, B⟩ := rfl
+  unfold L1.RawCIRep at hraw
+  rw [hinfo] at hraw
+  obtain ⟨-, lcB, cb', ms', ind', blobs, hgetB, -, -, hexB, -, hcb', hms', -, raw⟩ := hraw
+  obtain ⟨hhB, haB⟩ := hload_ld.1 _ lcB hgetB
+  have hcb_eq : cb' = cb := hS.record_eq hrecB (Core.hashed_mono hsub_ld hhB) haB hexB
+  subst cb'
+  have hms_eq : ms' = #[.indc ind] := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hrec.muts)
+  subst ms'
+  rw [idx_zero B] at hms' raw
+  have hind_eq : ind' = ind := by
+    have e : (Ixon.MutConst.indc ind : Ixon.MutConst) = .indc ind' := Option.some.inj hms'
+    exact (Ixon.MutConst.indc.inj e).symm
+  subst ind'
+  obtain ⟨hlv, -, -, -, -, tyPtr, blkPtr, b, -, -, hv, rty⟩ := raw
+  subst hv
+  obtain ⟨prelude⟩ := Decl.native_prelude_calls ev_chk
+  obtain ⟨-, hlbb, hdef⟩ := Assembly.validate_expr_well_scoped_spec (cx := readCtx t blob)
+    (self := blockSelf t B #[.indc ind]) hbound hlv rty prelude.initialExtended hty
+    prelude.scopeRun (hsub_chk _ prelude.scopeMember)
+  exact ⟨hlbb, hdef, Assembly.memberReader_read_noFvar hty⟩
+
+/-- **The former's stage of IxC at the prefix** (T6): the recognised block's former is checked
+against the prefix as its canonical annotation, at a telescope ending in the block's sort, and
+stored at the native capability record of the completed shape, for either recursion flag. The
+former's key is the key of its projection address. -/
+theorem formerStage_of_member {E : Ixon.Env} (ht : t.check = .ok ())
+    (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
+    (hrec : BlockUnitRecord E₀ B cb ind)
+    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
+    {blk : List (ConstantInfo .anon)} (hblk : BlockReadings t E₀ B ind blk)
+    {p₀ : Ix.Kernel.NativeParts .anon}
+    (hp₀ : Ix.Kernel.Semantics.nativePartsNoRec? ind.params.toNat blk = some p₀)
+    {env : Ix.Kernel.Env .anon} (hinv : Decl.PrefixInv.{u} E t (some n) env)
+    (hstored : Decl.UsedRefsStored t env cb)
+    (hfresh : env.find? (Core.keyOf t (Core.iprjAddr B 0)) = none)
+    (hfree : Decl.KeyFree (Core.keyOf t (Core.iprjAddr B 0))) :
+    ∀ isRec : Bool, ∃ (cvS : ConstantVal .anon) (p₁ : Ix.Kernel.InductiveShape .anon),
+      Ix.Kernel.Semantics.SumIndRunJ Ix.Kernel.Model.rulesJ env p₀.toInductiveShape
+        (fun p₁ => Ix.Kernel.nativeCapsAt p₁ isRec)
+        ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt p₁ isRec) :: env.consts⟩ cvS p₁ ∧
+      cvS.name = Core.keyOf t (Core.iprjAddr B 0) := by
+  intro isRec
+  have hbound : Bounded calls := (hst.good env none).2
+  obtain ⟨ty₀, caps, cs, rfl, hty, -, -⟩ := blockReads_shape ht hbound hS hrec hchk hblk
+  obtain ⟨hlbb, hdef, hfv⟩ := former_scope hbound hS hrec hchk hty
+  have hblockE : recordOf E B = some cb :=
+    (recordOf_eq_recordAt_of_decoded hst.decoded B).trans (hst.runRecord B cb hrec.record)
+  have hprojE : recordOf E (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind)) :=
+    (recordOf_eq_recordAt_of_decoded hst.decoded _).trans (hst.runRecord _ _ hrec.former)
+  have htyE : (exprReader t (fun x => E.blobs.get? x) cb id
+      (blockSelf t B #[.indc ind])).read ind.typ = .ok ty₀ :=
+    ReaderReads.exprReader_mono (fun x b hb => hst.runBlob x b hb) hty
+  obtain ⟨ty', -, hann, hcheck, -⟩ := formerChecked_of_member ht hst hinv hblockE hrec.muts
+    hprojE hchk htyE hlbb hdef hfv hstored hfresh hfree
+  obtain ⟨caps₀, hshape, -, -, -, -, ⟨bs₀, hst₀⟩, -⟩ := Decl.nativePartsNoRec?_inv hp₀
+  injection hshape with hhead _
+  injection hhead with hcv _
+  have hcvT : p₀.toInductiveShape.cvT =
+      ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty₀⟩ := hcv.symm
+  have hst₀' : ty₀.stripPis (p₀.nP + p₀.nIdx) = some (bs₀, .sort p₀.resSort) := by
+    have h := hst₀
+    rw [hcvT] at h
+    exact h
+  obtain ⟨bs', hst', -⟩ := Decl.stripPis_sort_of_annotates _ hann hst₀'
+  refine ⟨⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩,
+    p₀.toInductiveShape.withSort p₀.resSort, ?_, rfl⟩
+  have hchk' : Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ env
+      p₀.toInductiveShape.cvT ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ := by
+    rw [hcvT]
+    exact hcheck
+  exact sumIndRunJ_of_former (isRec := isRec) hchk' hst'
 
 end Recognise
 
