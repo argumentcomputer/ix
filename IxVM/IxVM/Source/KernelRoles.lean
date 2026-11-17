@@ -776,10 +776,20 @@ def validate_anchor := aiur_fn⟦
       KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
       let spec = KernelRoleSpec::role_type(tbl, r);
       match r {
+        4 => {  assert_type_pinned(ty, spec) } ,
+        5 => {  assert_type_pinned(ty, spec) } ,
+        6 => {  assert_type_pinned(ty, spec) } ,
         7 => {  assert_type_pinned(ty, spec) } ,
         20 => {  assert_type_pinned(ty, spec) } ,
         21 => {  assert_type_pinned(ty, spec) } ,
         22 => {  assert_type_pinned(ty, spec) } ,
+        29 => {  assert_type_pinned(ty, spec) } ,
+        30 => {  assert_type_pinned(ty, spec) } ,
+        31 => {  assert_type_pinned(ty, spec) } ,
+        37 => {  assert_type_pinned(ty, spec) } ,
+        38 => {  assert_type_pinned(ty, spec) } ,
+        39 => {  assert_type_pinned(ty, spec) } ,
+        40 => {  assert_type_pinned(ty, spec) } ,
         _ => {  assert_type_meets(rc, ty, spec) } ,
       };
       -- the record itself, with its closure, in this group's validation context: the anchor's
