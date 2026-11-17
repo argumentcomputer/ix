@@ -28,7 +28,7 @@ theorem readRoot_exact {blob : Blobs} {root : Root}
     (read : readRoot blob root = some readValue) : readValue = R.eraseMeta := by
   obtain ⟨reader, readerRead, rfl⟩ := Option.map_eq_some_iff.mp read
   have sourceRead := Typing.toOption_eq_some readerRead
-  have data := converted.memberReader_rawData (readCtx_keyAt_inv addressTable_check blob)
+  have data := converted.memberReader_rawData (LoadedReads.readCtx_keyAt_inv addressTable_check blob)
     selfKeyed blobAgreement sourceRead
   exact data.det (L1.rawData_of_exact physical)
 
@@ -41,7 +41,7 @@ theorem answer_exact {blob : Blobs} {root : Root} {R : Expr .anon} {ps : List Le
   change (if ps.length = root.levels then
     (readRoot blob root).map (fun e => e.instantiateLevelParams (List.range root.levels) ps)
     else none) = _
-  rw [if_pos arity, read, ← arity]
+  rw [ite_eq_left arity, read, ← arity]
   simp only [Option.map_some, Ix.Kernel.GuardClassifier.eraseMeta_instantiateLevelParams]
 
 /-- The rich root reader keeps exactly the serialized binder metadata and raw let cells. -/
@@ -81,7 +81,7 @@ theorem readCanonicalRoot_exact {blob : Blobs} {root : Root}
     (levels : L1.HeapBinderLevels h p plan)
     (read : (exprReader addressTable blob root.source id root.self).read root.expression = .ok reader) :
     readCanonicalRoot blob root = some R := by
-  have canonical := converted.canonical_raw_exact (readCtx_keyAt_inv addressTable_check blob)
+  have canonical := converted.canonical_raw_exact (LoadedReads.readCtx_keyAt_inv addressTable_check blob)
     selfKeyed blobAgreement built planned levels read physical root.levels
   unfold readCanonicalRoot
   rw [read]
