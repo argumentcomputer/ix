@@ -89,8 +89,8 @@ theorem substConstAll_liftLooseBVars {n : KKey} {r : KExpr} (hr : r.looseBVarsBo
       Expr.liftLooseBVars m c (.bvar i)
     simp only [Expr.liftLooseBVars]
     by_cases hc : i ≥ c
-    · rw [if_pos hc]; try rfl
-    · rw [if_neg hc]; try rfl
+    · rw [ite_eq_left hc]; try rfl
+    · rw [ite_eq_right hc]; try rfl
   | fvar _ _ _ => intro m c; rfl
   | sort _ => intro m c; rfl
   | lit _ => intro m c; rfl
@@ -104,7 +104,7 @@ theorem substConstAll_liftLooseBVars {n : KKey} {r : KExpr} (hr : r.looseBVarsBo
     · have hk : ¬ (k = n ∧ us = []) := hc
       have e : Expr.substConstAll n r (.const k us) = .const k us := by
         simp only [Expr.substConstAll]
-        exact if_neg hk
+        exact ite_eq_right hk
       rw [e]; rfl
   | app f a ihf iha =>
     intro m c
@@ -137,12 +137,12 @@ theorem substConstAll_instantiate1Lift {n : KKey} {r : KExpr}
       Expr.instantiate1Lift (.bvar i) (Expr.substConstAll n r V) j
     simp only [Expr.instantiate1Lift]
     by_cases h1 : i = j
-    · rw [if_pos h1, if_pos h1]
+    · rw [ite_eq_left h1, ite_eq_left h1]
       exact substConstAll_liftLooseBVars hr V j 0
-    · rw [if_neg h1, if_neg h1]
+    · rw [ite_eq_right h1, ite_eq_right h1]
       by_cases h2 : i > j
-      · rw [if_pos h2]; try rfl
-      · rw [if_neg h2]; try rfl
+      · rw [ite_eq_left h2]; try rfl
+      · rw [ite_eq_right h2]; try rfl
   | fvar _ _ _ => intro V j; rfl
   | sort _ => intro V j; rfl
   | lit _ => intro V j; rfl
@@ -156,7 +156,7 @@ theorem substConstAll_instantiate1Lift {n : KKey} {r : KExpr}
       exact (Expr.instantiate1Lift_eq_self (Expr.looseBVarsBounded_mono (Nat.zero_le j) hr)).symm
     · have e : Expr.substConstAll n r (.const k us) = .const k us := by
         simp only [Expr.substConstAll]
-        exact if_neg hc
+        exact ite_eq_right hc
       rw [e]; rfl
   | app f a ihf iha =>
     intro V j
@@ -260,7 +260,7 @@ private theorem subst_const_aux (κ : _root_.Address → KKey) (d : Nat) (Γ : N
           subst hus' hab
           rw [substConstAll_const_self]
           exact tmC_atLocal hv d Γ k
-        · rw [if_neg hab] at h1
+        · rw [ite_eq_right hab] at h1
           exact absurd (Value.field.inj h1) one_ne_zero
       | .Const_n1_Cons (heq132 := h01) .. =>
         exact absurd (Value.field.inj h01) zero_ne_one
@@ -270,7 +270,7 @@ private theorem subst_const_aux (κ : _root_.Address → KKey) (d : Nat) (Γ : N
         subst hXe
         obtain ⟨h1, hm⟩ := Lib.address_eq_spec aeq ra ha
         subst hm h1
-        have hab : a' ≠ b := fun hab => hne (by rw [if_pos hab])
+        have hab : a' ≠ b := fun hab => hne (by rw [ite_eq_left hab])
         rw [substConstAll_const_ne val us (fun hk => hab (hinj a' hk))]
         exact hX
       | .App (ld12 := ld) (he167 := hr) (hm166 := hm) (ev184 := e1) (ev220 := e2)
@@ -398,7 +398,7 @@ theorem natOpEquations_binderFree (c : KKey) :
     (Ix.Kernel.natOpEquations 0 c).all (fun eq => binderFree eq.1 && binderFree eq.2) = true := by
   simp only [Ix.Kernel.natOpEquations]
   repeat' split
-  all_goals first | rfl | decide | simp [binderFree]
+  all_goals rfl
 
 theorem natOpEquations_sides_binderFree {c : KKey} {eq : KExpr × KExpr}
     (heq : eq ∈ Ix.Kernel.natOpEquations 0 c) :
@@ -439,7 +439,8 @@ theorem open_two_lams_spec {κ : _root_.Address → KKey} {Γ : Nat → KExpr} {
   | .run (x_t1 := xt1) (x_t2 := xt2) (x_body := xbody) (m84 := m84) (m106 := m106)
       (m128 := m128) (ld12 := ld1) (ld47 := ld2) (he75 := hr) (hm92 := hm84) (hm114 := hm106)
       (hm136 := hm128) (he140 := hh) .. =>
-    subst hr hh
+    subst hr
+    rw [hh]
     obtain ⟨T, B', ℓ, hEq, ht1, hin, -⟩ := (hE 0 Γ).lam_of_load ld1
     injection hEq with e1 e2 e3
     subst e1 e2
