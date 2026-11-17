@@ -308,4 +308,59 @@ theorem typeRoot_converted {E : Ixon.Env} {h : Heap F} {a : _root_.Address}
     rw [L1.RawCIRep, info] at raw
     exact raw.elim
 
+/-- Actual count and type-pointer agreement identify every declared-type dictionary answer. -/
+theorem type_lookup_exact {E : Ixon.Env} {h : Heap F} {a : _root_.Address}
+    {c : Ixon.Constant} {v typePtr : SourceValue F}
+    {Γ : Nat → Core.KExpr} {k : Nat} {R semantic : Core.KExpr} {ps : List Core.KLevel}
+    (record : recordOf E a = some c) (raw : L1.RawCIRep E h a c v)
+    (physical : Decl.RawTmExact (Core.keyOf addressTable) 0 Γ h k R semantic typePtr)
+    (fields : typeFields v = some (.field (ps.length : F), typePtr))
+    (small : ps.length < 549755813888) :
+    L1.EnvInternalCollision E ∨
+      (ofStore E).typeOf (.id a) ps =
+        some (R.instantiateLevelParams (List.range ps.length) ps).eraseMeta := by
+  rcases typeRoot_converted record raw with collision | ⟨root, p, selected, bound, rootFields, converted⟩
+  · exact Or.inl collision
+  · obtain ⟨count, samePointer⟩ := Prod.mk.inj (Option.some.inj (fields.symm.trans rootFields))
+    cases samePointer
+    have countEq := congrArg ZMod.val (Value.field.inj count)
+    rw [ZMod.val_natCast_of_lt (by change _ < 18446744069414584321; omega),
+      ZMod.val_natCast_of_lt (by change _ < 18446744069414584321; omega)] at countEq
+    refine Or.inr ?_
+    change answer (fun x => E.blobs.get? x) (typeRoot (recordOf E) a) ps = _
+    rw [selected]
+    exact answer_exact (converted.exact physical) countEq
+
+/-- The actual helper returns the raw payload's second field and changes no heap. -/
+theorem const_type_fields {v r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (observed : ObsFn Core.W "KernelInfer::const_type_of" [v] h r h' calls) :
+    ∃ count, typeFields v = some (count, r) ∧ h' = h := by
+  match Obs.«KernelInfer::const_type_of».obs observed with
+  | .Axiom (hv15 := value) (he35 := result) (he36 := heap) ..
+  | .Defn (hv43 := value) (he75 := result) (he76 := heap) ..
+  | .Thm (hv83 := value) (he103 := result) (he104 := heap) ..
+  | .Opaque (hv111 := value) (he137 := result) (he138 := heap) ..
+  | .Quot (hv145 := value) (he165 := result) (he166 := heap) ..
+  | .Induct (hv173 := value) (he223 := result) (he224 := heap) ..
+  | .Ctor (hv231 := value) (he281 := result) (he282 := heap) ..
+  | .Rec (hv289 := value) (he357 := result) (he358 := heap) .. =>
+    subst value result heap
+    exact ⟨_, rfl, rfl⟩
+
+/-- The actual count helper returns the payload's first field and changes no heap. -/
+theorem const_count_fields {v r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (observed : ObsFn Core.W "KernelInfer::const_num_lvls" [v] h r h' calls) :
+    ∃ typePtr, typeFields v = some (r, typePtr) ∧ h' = h := by
+  match Obs.«KernelInfer::const_num_lvls».obs observed with
+  | .Axiom (hv15 := value) (he35 := result) (he36 := heap) ..
+  | .Defn (hv43 := value) (he75 := result) (he76 := heap) ..
+  | .Thm (hv83 := value) (he103 := result) (he104 := heap) ..
+  | .Opaque (hv111 := value) (he137 := result) (he138 := heap) ..
+  | .Quot (hv145 := value) (he165 := result) (he166 := heap) ..
+  | .Induct (hv173 := value) (he223 := result) (he224 := heap) ..
+  | .Ctor (hv231 := value) (he281 := result) (he282 := heap) ..
+  | .Rec (hv289 := value) (he357 := result) (he358 := heap) .. =>
+    subst value result heap
+    exact ⟨_, rfl, rfl⟩
+
 end IxVM.Refinement.GuardRaw
