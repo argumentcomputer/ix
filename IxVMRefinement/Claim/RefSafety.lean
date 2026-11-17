@@ -187,4 +187,67 @@ theorem assert_safe_used_refs_spec {calls : List (Call F)} {E₀ : Ixon.Env}
         have hj' : j < rest.length := by simpa using hj
         exact ht j hj' (by simpa only [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hm) hn
 
+/-- A concrete record guard supplies the conditional edge-safety clause. The source and
+owner safety premises determine the guard branch; neither branch choice nor the conclusion
+is assumed. -/
+theorem RecordRefsIn.safe {calls : List (Call F)} {E₀ : Ixon.Env}
+    {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address} {lim : Option Nat} {c : Ixon.Constant}
+    (hS : LoadedReads.RunStore calls E₀) (hH : LoadedReads.HashedRecordsStored calls E₀)
+    (hc : recordOf E₀ a = some c) (hsafe : SourceSafe E₀ a)
+    (hg : RecordRefsIn calls t bAddr lim a c) :
+    ∀ i ∈ usedRefIdxs c, ∀ x, c.refs.toList[i]? = some x →
+      ¬ CoveredAt t lim x → SourceSafe E₀ x := by
+  obtain ⟨h, h', rc, ap, cp, r, cs, hrc, ha, hcp, ev, hsub⟩ := hg
+  obtain ⟨csUnder, evUnder, hcalls⟩ := Obs.«KernelClaim::assert_safe_record_refs».obs ev
+  have hsubUnder : ∀ cl ∈ csUnder, cl ∈ calls :=
+    fun cl hcl => hsub cl (by rw [hcalls]; simp [hcl])
+  match Obs.«KernelClaim::assert_safe_record_refs_under».obs evUnder with
+  | .other (cs13 := csSrc) (ev15 := ev15) (hne190 := hn) (hc198 := hcs) .. =>
+    have hs : ∀ cl ∈ csSrc, cl ∈ calls :=
+      fun cl hcl => hsubUnder cl (by rw [hcs]; simp [hcl])
+    exact (hn (record_unsafe_eq_zero_in_store hS hc (hsafe c hc).1 ha ev15 hs)).elim
+  | .n0_other (cs40 := csOwner) (ev15 := ev15) (ev55 := ev55) (ev42 := ev42)
+      (hne181 := hn) (hc189 := hcs) .. =>
+    have ext := ev15.heap_extends
+    obtain ⟨_, haOwner⟩ := record_owner_spec (S0.addr_mono ext ha) (hcp.mono ext) ev55
+    obtain ⟨_, bytes, cb, hsz, hh, hb, hd, he, himp⟩ :=
+      record_unsafe_safe_spec (S0.addr_mono ev55.heap_extends haOwner) ev42
+    have hs : ∀ cl ∈ csOwner, cl ∈ calls :=
+      fun cl hcl => hsubUnder cl (by rw [hcs]; simp [hcl])
+    have howner := recordOf_hashed hS hH (hashed_mono hs hh) hsz hd he
+    rw [hb] at howner
+    exact (hn (himp ((hsafe c hc).2 cb howner))).elim
+  | .n0_n0 (cs13 := csSrc) (cs124 := csLoop) (x_refs := refsPtr) (ev15 := ev15)
+      (ev55 := ev55) (ev42 := ev42) (hv90 := hv90) (ev157 := ev157) (ev126 := ev126)
+      (hc179 := hcs) .. =>
+    have hsSrc : ∀ cl ∈ csSrc, cl ∈ calls :=
+      fun cl hcl => hsubUnder cl (by rw [hcs]; simp [hcl])
+    obtain ⟨_, bytes, c', hsz, hh, hb, _, he, _⟩ := record_unsafe_safe_spec ha ev15
+    have hrecAt : Ix.Cert.recordAt E₀ a = some c := (hS.recordOf_eq_recordAt a).symm.trans hc
+    have hcc : c' = c := hS.record_eq hrecAt (hashed_mono hsSrc hh) hb he
+    subst c'
+    have hrefsSmall := refs_small_of_decoded hsz he
+    have extBefore := ev15.heap_extends.trans (ev55.heap_extends.trans ev42.heap_extends)
+    obtain ⟨extIdx, hidx⟩ := const_idxs_of_spec (hcp.mono extBefore) ev157
+    have hRefs : RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem _ c.refs.toList refsPtr := by
+      obtain ⟨_, _, rp, _, _, heq, _, _, hrf, _, _⟩ := hcp
+      have heq' := heq.symm.trans hv90
+      simp only [Value.construct.injEq, List.cons.injEq, and_true, true_and] at heq'
+      rcases heq' with ⟨_, _, heqRefs, _, _⟩
+      rw [heqRefs] at hrf
+      exact repList_heapMono₂ _ repAddrElem_heapMono₂ (extBefore.trans extIdx) hrf
+    have hloopSub : ∀ cl ∈ csLoop, cl ∈ calls :=
+      fun cl hcl => hsubUnder cl (by rw [hcs]; simp [hcl])
+    have hloop := assert_safe_used_refs_spec hS c.refs.toList 0
+      (by simpa only [Nat.zero_add, Array.length_toList] using hrefsSmall)
+      (hrc.mono (extBefore.trans extIdx)) hRefs hidx ev126 hloopSub
+    intro i hi x hx hn
+    obtain ⟨hiLt, hget⟩ := List.getElem?_eq_some_iff.mp hx
+    have hi' : i ∈ S0.usedRefIdxs c := by
+      rw [Assembly.usedRefIdxs_eq]
+      exact hi
+    have hs := hloop i hiLt (by simpa only [Nat.zero_add] using hi')
+    rw [hget] at hs
+    exact hs hn
+
 end IxVM.Refinement.Claim
