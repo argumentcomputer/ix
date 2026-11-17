@@ -108,10 +108,9 @@ theorem newConsts_names (formers : List FormerRec) (ctors : List CtorRec) :
 
 /-- **What the check of a constructors-only block establishes.** The fields are judgement-level
 facts over derivations (`rulesJ`), each with the circuit check expected to supply it:
+* `members`: the declaration's records are the listed formers and constructors (the reader's
+  block);
 
-* `members`, `notPinned`: the declaration's records are the listed formers and constructors,
-  and the block is not a pinned basis block (the reader's block and the fold's dispatch, as for
-  every inductive route);
 * `nodup`, `keyF`, `keyC`: the members' keys are distinct input keys (an address the role table
   binds to no role). **No block-arm check gives the input-key half**: it is the table's
   validity, which pins the basis roles to prelude records;
@@ -138,7 +137,6 @@ structure PointBlock (env : Env .anon) (block : List (ConstantInfo .anon))
     (formers : List FormerRec) (ctors : List CtorRec) : Prop where
   members : ∀ ci, ci ∈ block ↔
     ci ∈ formers.map (·.declared) ∨ ci ∈ ctors.map (·.declared)
-  notPinned : basisPinHit block = none
   nodup : (formers.map (·.cv.name) ++ ctors.map (·.cv.name)).Nodup
   keyF : ∀ f ∈ formers, ∃ a, f.cv.name = .id a
   keyC : ∀ c ∈ ctors, ∃ a, c.cv.name = .id a
@@ -238,6 +236,33 @@ theorem ctors_run (F : List (Key .anon)) {base : Env .anon} :
     exact ⟨c.stored, ⟨c.type', constantValRunJ_weaken hx hfr hfront, hid, rfl, T, us, cvT,
       caps, hT, hx.find hfT, hends⟩, hrun⟩
 
+/-- **A block whose records sit at input keys is no pinned basis block**: a pinned block's
+names are role keys. -/
+theorem basisPinHit_none_of_id {block : List (ConstantInfo .anon)}
+    (hid : ∀ ci ∈ block, ∃ a, ci.name = .id a) : basisPinHit block = none := by
+  have noMatch : ∀ kind ∈ [BasisKind.eqK, .natK, .punitK, .emptyK, .falseK],
+      (kind.decls.map (·.name) == block.map (·.name)) = false := by
+    intro kind member
+    apply beq_eq_false_iff_ne.mpr
+    intro same
+    have hrole : ∃ s : Role, Key.role s ∈ (kind.decls (md := .anon)).map (·.name) := by
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+      rcases member with rfl | rfl | rfl | rfl | rfl
+      · exact ⟨.eq, by decide⟩
+      · exact ⟨.nat, by decide⟩
+      · exact ⟨.punit, by decide⟩
+      · exact ⟨.empty, by decide⟩
+      · exact ⟨.false, by decide⟩
+    obtain ⟨s, hs⟩ := hrole
+    rw [same] at hs
+    obtain ⟨ci, hci, hname⟩ := List.mem_map.mp hs
+    obtain ⟨a, ha⟩ := hid ci hci
+    rw [ha] at hname
+    exact nomatch hname
+  unfold basisPinHit
+  rw [List.find?_eq_none.mpr (fun kind member => by rw [noMatch kind member]; decide)]
+  rfl
+
 theorem stage_find {env : Env .anon} {formers : List FormerRec}
     (hnd : (formers.map (·.cv.name)).Nodup) {f : FormerRec} (hf : f ∈ formers) :
     (stage env formers).find? f.cv.name = some f.stored := by
@@ -267,6 +292,16 @@ theorem PointBlock.freshF (hb : PointBlock env block formers ctors) :
 theorem PointBlock.freshC (hb : PointBlock env block formers ctors) :
     ∀ c ∈ ctors, (stage env formers).find? c.cv.name = none :=
   fun c hc => Option.isNone_iff_eq_none.mp (hb.ctorFront c hc).1
+
+/-- The block is no pinned basis block: its records sit at input keys. -/
+theorem PointBlock.notPinned (hb : PointBlock env block formers ctors) :
+    basisPinHit block = none :=
+  basisPinHit_none_of_id (fun ci hci => by
+    rcases (hb.members ci).mp hci with h | h
+    · obtain ⟨f, hf, rfl⟩ := List.mem_map.mp h
+      exact hb.keyF f hf
+    · obtain ⟨c, hc, rfl⟩ := List.mem_map.mp h
+      exact hb.keyC c hc)
 
 /-- The formers' run and the extension to the staged environment. -/
 theorem PointBlock.formersRun (hb : PointBlock env block formers ctors) :

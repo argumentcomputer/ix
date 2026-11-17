@@ -2,16 +2,19 @@ import IxVMRefinement.Decl.PointModel
 
 /-! # Constructors-only blocks over the pinned `PUnit` basis
 
-`PointBlock` (`Decl/PointModel.lean`) is inhabited, by derivations, at three blocks over the
+`PointBlock` (`Decl/PointModel.lean`) is inhabited, by derivations, at four blocks over the
 environment that stores the kernel's `PUnit` pin and nothing else:
 
 * a two-type mutual block, `A B : Type` with `A.mk : B → A` and `B.mk : A → B`;
 * a block with a parameter, `W : Type → Type` with `W.mk : (α : Type) → α → W α`;
 * over the second, a nested-shaped block: `T : Type` with `T.mk : W T → T`, whose constructor
-  takes a field whose type applies the earlier-installed `W` to the block's own type.
+  takes a field whose type applies the earlier-installed `W` to the block's own type;
+* a universe-polymorphic block with a proposition: `P.{u} : Sort u`, `Q : Prop`,
+  `P.mk : P.{u}` and `Q.mk : P.{0} → Q`.
 
 Each installs by `pointBlock_install`, and the fold's invariant holds at the result in every
-set theory, with no hypothesis left (`mutual_installs`, `nested_installs`). The second and third
+set theory, with no hypothesis left (`mutual_installs`, `nested_installs`, `univ_installs`). The
+second and third
 are installed one after the other: the invariant the first install gives is the one the second
 takes.
 -/
@@ -54,32 +57,6 @@ theorem reserved_id (a : Address) :
   rcases hm with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;>
     exact nomatch h
 
-/-- A block whose records sit at input keys is no pinned basis block. -/
-theorem basisPinHit_none_of_id {block : List (ConstantInfo .anon)}
-    (hid : ∀ ci ∈ block, ∃ a, ci.name = .id a) : basisPinHit block = none := by
-  have noMatch : ∀ kind ∈ [BasisKind.eqK, .natK, .punitK, .emptyK, .falseK],
-      (kind.decls.map (·.name) == block.map (·.name)) = false := by
-    intro kind member
-    apply beq_eq_false_iff_ne.mpr
-    intro same
-    have hrole : ∃ s : Role, Key.role s ∈ (kind.decls (md := .anon)).map (·.name) := by
-      simp only [List.mem_cons, List.not_mem_nil, or_false] at member
-      rcases member with rfl | rfl | rfl | rfl | rfl
-      · exact ⟨.eq, by decide⟩
-      · exact ⟨.nat, by decide⟩
-      · exact ⟨.punit, by decide⟩
-      · exact ⟨.empty, by decide⟩
-      · exact ⟨.false, by decide⟩
-    obtain ⟨s, hs⟩ := hrole
-    rw [same] at hs
-    obtain ⟨ci, hci, hname⟩ := List.mem_map.mp hs
-    obtain ⟨a, ha⟩ := hid ci hci
-    rw [ha] at hname
-    exact nomatch hname
-  unfold basisPinHit
-  rw [List.find?_eq_none.mpr (fun kind member => by rw [noMatch kind member]; decide)]
-  rfl
-
 /-- **The front door of a constant at an input key whose declared type is already annotated**:
 closed, without `let`, with resolving constants and a typing. -/
 theorem front_of {env : Env .anon} {a : Address} {lps : List LevelParam}
@@ -100,7 +77,7 @@ theorem front_of {env : Env .anon} {a : Address} {lps : List LevelParam}
 def envP : Env .anon := ⟨[punitRecA, punitUnitA, punitA]⟩
 
 theorem envP_run : DeclBasisRun Env.empty .punitK envP :=
-  ⟨fun h => nomatch h, by decide +kernel, by decide +kernel, by decide +kernel, rfl⟩
+  ⟨fun h => (nomatch h), by decide +kernel, by decide +kernel, by decide +kernel, rfl⟩
 
 theorem envP_foldInv (V : Type u) [SetTheory V] : FoldInv V envP :=
   foldInv_step_basis envP_run V (foldInv_empty V)
@@ -158,7 +135,7 @@ theorem infer_cst {env : Env .anon} {n : Nat} {ci : ConstantInfo .anon} {d : Nat
     (hf : env.find? (key n) = some ci) (ht : ci.isTowerEntry = false)
     (hl : ci.toConstantVal.levelParams = []) (hty : ci.toConstantVal.type = tyType) :
     Infer env .full d (cst n) tyType := by
-  have h := Infer.const (env := env) (g := .full) (d := d) (us := []) hf ht (by rw [hl])
+  have h := Infer.const (env := env) (g := .full) (d := d) (us := []) hf ht (by rw [hl]; rfl)
   rw [hl, hty] at h
   exact h
 
@@ -191,11 +168,6 @@ theorem stageAB_B (d : Nat) : Infer (stage envP [fA, fB]) .full d (cst 1) tyType
 /-- **The mutual block's checks.** -/
 theorem mutual_block : PointBlock envP mutualBlock [fA, fB] [cA, cB] where
   members := fun ci => List.mem_append
-  notPinned := basisPinHit_none_of_id (by
-    intro ci hci
-    simp only [mutualBlock, List.map_cons, List.map_nil, List.cons_append, List.nil_append,
-      List.mem_cons, List.not_mem_nil, or_false] at hci
-    rcases hci with rfl | rfl | rfl | rfl <;> exact ⟨_, rfl⟩)
   nodup := by simp [fA, fB, cA, cB]
   keyF := by
     intro f hf
@@ -292,7 +264,7 @@ theorem infer_W_app {env : Env .anon} {ci : ConstantInfo .anon} {d i : Nat} (hi 
     (hl : ci.toConstantVal.levelParams = []) (hty : ci.toConstantVal.type = tyW) :
     Infer env .full d (.app (cst 4) (.fvar i tyType)) tyType := by
   have hW : Infer env .full d (cst 4) (tyW.instantiateLevelParams [] []) := by
-    have h := Infer.const (env := env) (g := .full) (d := d) (us := []) hf ht (by rw [hl])
+    have h := Infer.const (env := env) (g := .full) (d := d) (us := []) hf ht (by rw [hl]; rfl)
     rw [hl, hty] at h
     exact h
   exact Infer.app (f := cst 4) (a := .fvar i tyType) (ty := tyType) (body := tyType)
@@ -320,11 +292,6 @@ theorem infer_tyWmk {env : Env .anon} {ci : ConstantInfo .anon}
 /-- **The parametric block's checks.** -/
 theorem param_block : PointBlock envP paramBlock [fW] [cW] where
   members := fun ci => List.mem_append
-  notPinned := basisPinHit_none_of_id (by
-    intro ci hci
-    simp only [paramBlock, List.map_cons, List.map_nil, List.cons_append, List.nil_append,
-      List.mem_cons, List.not_mem_nil, or_false] at hci
-    rcases hci with rfl | rfl <;> exact ⟨_, rfl⟩)
   nodup := by simp [fW, cW]
   keyF := by
     intro f hf
@@ -435,11 +402,6 @@ theorem infer_tyTmk :
 /-- **The nested-shaped block's checks**, over the environment that stores `W`. -/
 theorem nested_block : PointBlock envW nestedBlock [fT] [cT] where
   members := fun ci => List.mem_append
-  notPinned := basisPinHit_none_of_id (by
-    intro ci hci
-    simp only [nestedBlock, List.map_cons, List.map_nil, List.cons_append, List.nil_append,
-      List.mem_cons, List.not_mem_nil, or_false] at hci
-    rcases hci with rfl | rfl <;> exact ⟨_, rfl⟩)
   nodup := by simp [fT, cT]
   keyF := by
     intro f hf
@@ -499,5 +461,123 @@ theorem nested_inert {cvT : ConstantVal .anon} {caps : IndCaps .anon}
     (h : (installed envW [fT] [cT]).find? (key 6) = some (.indInfo cvT caps)) :
     caps.eta = false ∧ caps.unitlike = false ∧ caps.etaCtor = none ∧ caps.ruleK = false :=
   nested_block.former_caps (f := fT) (by simp) h
+
+/-! ## A universe-polymorphic block with a proposition -/
+
+/-- `P.{u} : Sort u`: a former at a universe parameter, a proposition at `u = 0`. -/
+def fP : FormerRec := ⟨⟨key 8, [0], .sort (.param 0)⟩, {}, .sort (.param 0)⟩
+
+/-- `Q : Prop`. -/
+def fQ : FormerRec := ⟨⟨key 9, [], .sort .zero⟩, {}, .sort .zero⟩
+
+/-- `P.{u}` at the parameter. -/
+def tyPmk : Expr .anon := .const (key 8) [.param 0]
+
+/-- `P.{0} → Q`: a proposition, so the binder's datum is the zero-ness of `Sort 0`. -/
+def tyQmk : Expr .anon := .forallE (.const (key 8) [.zero]) (cst 9) { pw := .ifAllZero [] }
+
+/-- `P.mk.{u} : P.{u}`. -/
+def cP : CtorRec := ⟨⟨key 10, [0], tyPmk⟩, 0, 0, tyPmk⟩
+
+/-- `Q.mk : P.{0} → Q`. -/
+def cQ : CtorRec := ⟨⟨key 11, [], tyQmk⟩, 0, 1, tyQmk⟩
+
+/-- The block's records. -/
+def univBlock : List (ConstantInfo .anon) :=
+  [fP, fQ].map (·.declared) ++ [cP, cQ].map (·.declared)
+
+theorem stagePQ_find_P : (stage envP [fP, fQ]).find? (key 8) = some fP.stored :=
+  stage_find (formers := [fP, fQ]) (f := fP) (by simp [fP, fQ]) (by simp)
+
+theorem stagePQ_find_Q : (stage envP [fP, fQ]).find? (key 9) = some fQ.stored :=
+  stage_find (formers := [fP, fQ]) (f := fQ) (by simp [fP, fQ]) (by simp)
+
+theorem stagePQ_fresh {n : Nat} (h8 : n ≠ 8) (h9 : n ≠ 9) :
+    (stage envP [fP, fQ]).find? (key n) = none :=
+  find?_append_none_of_not_mem (env := envP) (cs := [fQ.stored, fP.stored])
+    (by simp [fP, fQ, FormerRec.stored, ConstantInfo.name, ConstantInfo.toConstantVal, h8, h9])
+    (envP_find_id _)
+
+/-- `P.{l}` has the sort `P`'s type gives at `l`. -/
+theorem stagePQ_P (l : Level) (d : Nat) :
+    Infer (stage envP [fP, fQ]) .full d (.const (key 8) [l])
+      ((Expr.sort (.param 0)).instantiateLevelParams [0] [l]) :=
+  Infer.const (env := stage envP [fP, fQ]) (g := .full) (d := d) (us := [l])
+    stagePQ_find_P rfl rfl
+
+theorem stagePQ_Q (d : Nat) :
+    Infer (stage envP [fP, fQ]) .full d (cst 9)
+      ((Expr.sort .zero).instantiateLevelParams [] []) :=
+  Infer.const (env := stage envP [fP, fQ]) (g := .full) (d := d) (us := [])
+    stagePQ_find_Q rfl rfl
+
+theorem infer_tyQmk :
+    Infer (stage envP [fP, fQ]) .full 0 tyQmk
+      (.sort (.imax (Level.subst [0] [.zero] (.param 0)) (Level.subst [] [] .zero))) :=
+  Infer.forallE (ty := .const (key 8) [.zero]) (body := cst 9)
+    (s := (Expr.sort (.param 0)).instantiateLevelParams [0] [.zero])
+    (bs := (Expr.sort .zero).instantiateLevelParams [] [])
+    (u := Level.subst [0] [.zero] (.param 0)) (v := Level.subst [] [] .zero)
+    (mb := { pw := .ifAllZero [] })
+    (stagePQ_P .zero 0) Red.refl (stagePQ_Q 1) Red.refl rfl
+
+/-- **The universe-polymorphic block's checks.** -/
+theorem univ_block : PointBlock envP univBlock [fP, fQ] [cP, cQ] where
+  members := fun ci => List.mem_append
+  nodup := by simp [fP, fQ, cP, cQ]
+  keyF := by
+    intro f hf
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hf
+    rcases hf with rfl | rfl <;> exact ⟨_, rfl⟩
+  keyC := by
+    intro c hc
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hc
+    rcases hc with rfl | rfl <;> exact ⟨_, rfl⟩
+  formerFront := by
+    intro f hf
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hf
+    rcases hf with rfl | rfl
+    · exact front_of (envP_find_id _) (by decide) rfl rfl rfl (by decide) rfl Infer.sort
+        Red.refl
+    · exact front_of (envP_find_id _) rfl rfl rfl rfl rfl rfl Infer.sort Red.refl
+  formerAnnot := by
+    intro f hf
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hf
+    rcases hf with rfl | rfl <;> exact Annotates.sort
+  formerSort := by
+    intro f hf
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hf
+    rcases hf with rfl | rfl <;> exact ⟨_, rfl⟩
+  ctorFront := by
+    intro c hc
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hc
+    rcases hc with rfl | rfl
+    · exact front_of (stagePQ_fresh (by decide) (by decide)) (by decide) rfl rfl rfl
+        (by simp [cP, tyPmk, Expr.allLevelParamsDefined, Level.allParamsDefined])
+        (by simp [cP, tyPmk, Expr.constsResolve, stagePQ_find_P])
+        (stagePQ_P (.param 0) 0) Red.refl
+    · exact front_of (stagePQ_fresh (by decide) (by decide)) rfl rfl rfl rfl
+        (by simp [cQ, tyQmk, cst, Expr.allLevelParamsDefined, Level.allParamsDefined])
+        (by simp [cQ, tyQmk, cst, Expr.constsResolve, stagePQ_find_P, stagePQ_find_Q])
+        infer_tyQmk Red.refl
+  ctorAnnot := by
+    intro c hc
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hc
+    rcases hc with rfl | rfl <;> exact annotates_refl_of_noLetNoFvar rfl
+  ctorResult := by
+    intro c hc
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hc
+    rcases hc with rfl | rfl
+    · exact ⟨fP, by simp, [.param 0], rfl, rfl⟩
+    · exact ⟨fQ, by simp, [], rfl, rfl⟩
+  pin := envP_pin
+
+/-- **The universe-polymorphic block installs and the fold's invariant holds at the result**,
+in every set theory: a former at a universe parameter and a proposition, each with a
+constructor. -/
+theorem univ_installs :
+    InstallStep envP (.indDecl univBlock 0) (installed envP [fP, fQ] [cP, cQ]) ∧
+      ∀ (V : Type u) [SetTheory V], FoldInv V (installed envP [fP, fQ] [cP, cQ]) :=
+  ⟨univ_block.installStep 0, fun V _ => univ_block.foldInv V (envP_foldInv V)⟩
 
 end IxVM.Refinement.Decl.Point.Examples
