@@ -329,33 +329,31 @@ theorem blockTable_of_install {c : Core.Ctx} {new : List (ConstantInfo .anon)}
     (hna.1 ci (by simpa [IxVM.Consistency.installs, hpin] using hci)).1
   have hstore₂ : Decl.FoldStoreInv (appCtx c new).env :=
     hfacts.foldStoreInv hpin hnaKeys hinv.store
-  have hcvTp : p.cvT = p₀.cvT := hfacts.cvT_eq
-  have hTname : p.cvT.name = Core.keyOf c.t (Core.iprjAddr B 0) := by rw [hcvTp, hcvT]
-  have hTlps : p.cvT.levelParams = List.range ind.lvls.toNat := by rw [hcvTp, hcvT]
-  obtain ⟨-, -, isRec, cvS', cvTa, caps', p₁, p', ctorsA', sortss, kinds, tfvs, trest, isorts,
+  obtain ⟨-, -, isRec, cvS', cvTa, caps', p₁, q, ctorsB, sortss, kinds, tfvs, trest, isorts,
     hfam, hInd, hp, hCtors, -, -, -, -, -, -, hTbl⟩ := hfacts
   injection hfam with h1 h2 h3 h4
-  subst p'
-  subst cvS'
-  subst cvTa
-  subst ctorsA'
+  subst h2 h3
+  rw [h4] at hlenA hctorsA
   obtain ⟨cvTa₀, s, bsT, cvS'', -, -, hstT, -, hp₁, -⟩ := hInd
-  have hpnP : p.nP = p₀.nP := by subst hp hp₁; rfl
-  have hpnIdx : p.nIdx = p₀.nIdx := by subst hp hp₁; rfl
-  have hpRes : p.resSort = s := by subst hp hp₁; rfl
+  have hqcvT : q.cvT = p₀.cvT := by subst hp hp₁; rfl
+  have hTname : q.cvT.name = Core.keyOf c.t (Core.iprjAddr B 0) := by rw [hqcvT, hcvT]
+  have hTlps : q.cvT.levelParams = List.range ind.lvls.toNat := by rw [hqcvT, hcvT]
+  have hpnP : q.nP = p₀.nP := by subst hp hp₁; rfl
+  have hpnIdx : q.nIdx = p₀.nIdx := by subst hp hp₁; rfl
+  have hpRes : q.resSort = s := by subst hp hp₁; rfl
   have hstT' : ty'.stripPis (p₀.nP + p₀.nIdx) = some (bsT, .sort s) := hstT
   obtain ⟨hres, har⟩ := tbl_stripPis_sort _ _ _ hstT'
-  have har' : ty'.piArity = p.nP + p.nIdx := by rw [har, hpnP, hpnIdx]
+  have har' : ty'.piArity = q.nP + q.nIdx := by rw [har, hpnP, hpnIdx]
   obtain ⟨hlA, hlS, hall⟩ := hCtors
   obtain ⟨hnewC, hnewT⟩ := new_mem_of_checkNativeTable hTbl
-  have hstoredCtor : ∀ cA ∈ ctorsA, (appCtx c new).env.find? cA.1.name =
-      some (.ctorInfo cA.1 p.nP cA.2) := fun cA hcA => hI.newFind _ (hnewC cA hcA)
+  have hstoredCtor : ∀ cA ∈ ctorsB, (appCtx c new).env.find? cA.1.name =
+      some (.ctorInfo cA.1 q.nP cA.2) := fun cA hcA => hI.newFind _ (hnewC cA hcA)
   refine ⟨?_, ?_, ?_, ?_, hguard⟩
   · -- table
     intro hi0 hs1
-    have hlen1 : ctorsA.length = 1 := hlenA.trans hs1
-    obtain ⟨cA, rfl⟩ : ∃ cA, ctorsA = [cA] := by
-      rcases ctorsA with _ | ⟨cA, _ | ⟨_, _⟩⟩
+    have hlen1 : ctorsB.length = 1 := hlenA.trans hs1
+    obtain ⟨cA, rfl⟩ : ∃ cA, ctorsB = [cA] := by
+      rcases ctorsB with _ | ⟨cA, _ | ⟨_, _⟩⟩
       · simp at hlen1
       · exact ⟨cA, rfl⟩
       · simp at hlen1
@@ -365,12 +363,12 @@ theorem blockTable_of_install {c : Core.Ctx} {new : List (ConstantInfo .anon)}
       · simp at hlenS1
       · exact ⟨s0, rfl⟩
       · simp at hlenS1
-    obtain ⟨c0, hc0⟩ : ∃ c0, p.ctors[0]? = some c0 :=
+    obtain ⟨c0, hc0⟩ : ∃ c0, q.ctors[0]? = some c0 :=
       ⟨_, List.getElem?_eq_getElem (by rw [← hlA]; simp)⟩
     obtain ⟨hc2, sorts, hsorts, hrun⟩ := hall 0 c0 cA hc0 rfl
     have hs : sorts = s0 := (Option.some.inj (hsorts : some s0 = some sorts)).symm
     subst hs
-    have hnIdx0 : p.nIdx = 0 := hpnIdx.trans (hnIdx.trans hi0)
+    have hnIdx0 : q.nIdx = 0 := hpnIdx.trans (hnIdx.trans hi0)
     obtain ⟨tbl, -, -, hfindTbl, hsn, hctor, hnPt, hnFt, hlpt, hss, -, hbodies, hguards,
       hfindProj⟩ := Decl.checkNativeTable_struct_inv hnIdx0 hTbl
     obtain ⟨hnm0, hlps0⟩ := hctorsA 0 cA rfl
@@ -400,8 +398,8 @@ theorem blockTable_of_install {c : Core.Ctx} {new : List (ConstantInfo .anon)}
     exact (hnewT tbl htbl).trans hTname
   · -- ctorTele
     intro j hj cvC nP nF hf
-    have hjA : j < ctorsA.length := by rw [hlenA]; exact hj
-    obtain ⟨cA, hcA⟩ : ∃ cA, ctorsA[j]? = some cA := ⟨_, List.getElem?_eq_getElem hjA⟩
+    have hjA : j < ctorsB.length := by rw [hlenA]; exact hj
+    obtain ⟨cA, hcA⟩ : ∃ cA, ctorsB[j]? = some cA := ⟨_, List.getElem?_eq_getElem hjA⟩
     obtain ⟨hnm, -⟩ := hctorsA j cA hcA
     have hfind := hstoredCtor cA (List.mem_of_getElem? hcA)
     rw [hnm] at hfind
@@ -409,7 +407,7 @@ theorem blockTable_of_install {c : Core.Ctx} {new : List (ConstantInfo .anon)}
     injection hf with hf
     injection hf with h1 h2 h3
     subst h1 h2 h3
-    obtain ⟨c0, hc0⟩ : ∃ c0, p.ctors[j]? = some c0 :=
+    obtain ⟨c0, hc0⟩ : ∃ c0, q.ctors[j]? = some c0 :=
       ⟨_, List.getElem?_eq_getElem (by rw [← hlA]; exact hjA)⟩
     obtain ⟨hc2, sorts, -, hrun⟩ := hall j c0 cA hc0 hcA
     obtain ⟨-, -, -, htele, -⟩ := Decl.sumCtorRunJ_struct_facts hrun
