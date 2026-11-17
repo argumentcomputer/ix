@@ -3,6 +3,7 @@ import IxVMRefinement.Assembly.Bridge
 import IxVMRefinement.Assembly.LoadGlue
 import IxVMRefinement.Assembly.RoleFacts
 import IxVMRefinement.Decl.PrefixLoads
+import IxVMRefinement.Decl.PrefixInv
 
 /-!
 # Walked Constant Declaration Steps (`DeclWalkedConst.lean`)
@@ -871,5 +872,542 @@ theorem dummyInstallStep {env : Env .anon} {d : Declaration .anon}
   · intro ci hci
     obtain ⟨ci₀, hci₀, rfl⟩ := List.mem_map.mp hci
     exact Or.inl ⟨ci₀, hci₀, (zetaEraseCI_name ci₀).symm⟩
+
+
+/-! ## Walked constant step over the prefix context -/
+
+/-- **The check evidence of a walked constant, under a keying and at a group limit.** The same
+evidence as `Assembly.CheckedConstOrigin`, with the heap terms of the declaration's type and value
+represented under the keying `κ` instead of the table's, and with the group limit of its role
+context and the declaration as it is stored (`d'`: the annotated type and value the heap terms
+represent) exposed. At the keying of a prefix (`Ctx.stored`) the representation says that every
+constant and projection cell of the declaration's own terms has a stored address: this is the
+form in which a step reads "the references the record uses are stored". -/
+inductive CheckedConstOriginAt (κ : _root_.Address → Core.KKey) (lim : Nat)
+    (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (bAddr : _root_.Address)
+    (E_core : Ixon.Env) (order_role : List _root_.Address) :
+    Ix.Kernel.Declaration .anon → Ix.Kernel.Declaration .anon → Prop where
+  | axiomDecl
+      {a : _root_.Address} {c : Ixon.Constant} {ax : Ixon.Axiom}
+      {nlvls : Nat} {ty₀ ty' : Core.KExpr}
+      {m_pre m_es m_es' m_ax m_ax' : Heap F}
+      {x_rc x_ty x_addr v_sort v_ax : SourceValue F}
+      {cs_es cs_ax : List (Call F)}
+      (hnot_role : a ∉ order_role)
+      (hrec : Ix.Cert.recordAt E_core a = some c)
+      (hinfo : c.info = .axio ax)
+      (hsafe : ax.isUnsafe = false)
+      (hnlvls : nlvls < 4294967296)
+      (hty_lbb : ty₀.looseBVarsBounded 0 = true)
+      (hty_def : ty₀.allLevelParamsDefined (List.range nlvls) = true)
+      (hty_ann : IxVM.Consistency.Annotates ty' ty₀)
+      (hm_es : m_es = m_pre ++
+        [.construct IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []])
+      (hty_tmc : Core.TmC κ m_es (Core.posOf (List.range nlvls) ty') x_ty)
+      (hrc_es : Claim.RCFullRep t bAddr lim m_es x_rc)
+      (ev_es : ObsFn Core.W "KernelInfer::k_ensure_sort"
+        [x_rc, x_ty, .ptr (.enum IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m_pre.length]
+        m_es v_sort m_es' cs_es)
+      (hcl_es : (⟨"KernelInfer::k_ensure_sort",
+        [x_rc, x_ty, .ptr (.enum IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m_pre.length],
+        m_es⟩ : Call F) ∈ calls)
+      (hsub_es : ∀ cl ∈ cs_es, cl ∈ calls)
+      (hext_ax : Heap.Extends m_es' m_ax)
+      (hrc_ax : Claim.RCFullRep t bAddr lim m_ax x_rc)
+      (ha_ax : Core.S0.addr m_ax x_addr a)
+      (ev_ax : ObsFn Core.W "KernelRoles::axiom_standing" [x_rc, x_addr] m_ax v_ax m_ax' cs_ax)
+      (hne_ax : v_ax ≠ .field 0)
+      (hcl_ax : (⟨"KernelRoles::axiom_standing", [x_rc, x_addr], m_ax⟩ : Call F) ∈ calls)
+      (hsub_ax : ∀ cl ∈ cs_ax, cl ∈ calls) :
+      CheckedConstOriginAt κ lim calls t bAddr E_core order_role
+        (.axiomDecl ⟨Core.keyOf t a, List.range nlvls, ty₀⟩)
+        (.axiomDecl ⟨Core.keyOf t a, List.range nlvls, ty'⟩)
+  | defnDecl
+      {a : _root_.Address} {nlvls : Nat} {ty₀ val₀ ty' val' : Core.KExpr}
+      {hn : Ix.Kernel.ReducibilityHint}
+      {m_pre1 m_es m_es' m_pre2 m_kc m_kc' : Heap F}
+      {x_rc x_ty x_val v_sort r_kc : SourceValue F}
+      {cs_es cs_kc : List (Call F)}
+      (hnot_role : a ∉ order_role)
+      (hnlvls : nlvls < 4294967296)
+      (hty_lbb : ty₀.looseBVarsBounded 0 = true)
+      (hty_def : ty₀.allLevelParamsDefined (List.range nlvls) = true)
+      (hval_lbb : val₀.looseBVarsBounded 0 = true)
+      (hval_def : val₀.allLevelParamsDefined (List.range nlvls) = true)
+      (hty_ann : IxVM.Consistency.Annotates ty' ty₀)
+      (hval_ann : IxVM.Consistency.Annotates val' val₀)
+      (hty_out_def : ty'.allLevelParamsDefined (List.range nlvls) = true)
+      (hval_out_def : val'.allLevelParamsDefined (List.range nlvls) = true)
+      (hm_es : m_es = m_pre1 ++
+        [.construct IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []])
+      (hty_tmc_es : Core.TmC κ m_es (Core.posOf (List.range nlvls) ty') x_ty)
+      (hrc_es : Claim.RCFullRep t bAddr lim m_es x_rc)
+      (ev_es : ObsFn Core.W "KernelInfer::k_ensure_sort"
+        [x_rc, x_ty, .ptr (.enum IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m_pre1.length]
+        m_es v_sort m_es' cs_es)
+      (hcl_es : (⟨"KernelInfer::k_ensure_sort",
+        [x_rc, x_ty, .ptr (.enum IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m_pre1.length],
+        m_es⟩ : Call F) ∈ calls)
+      (hsub_es : ∀ cl ∈ cs_es, cl ∈ calls)
+      (hext_kc : Heap.Extends m_es' m_kc)
+      (hm_kc : m_kc = m_pre2 ++
+        [.construct IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []])
+      (hty_tmc_kc : Core.TmC κ m_kc (Core.posOf (List.range nlvls) ty') x_ty)
+      (hval_tmc_kc : Core.TmC κ m_kc (Core.posOf (List.range nlvls) val') x_val)
+      (hrc_kc : Claim.RCFullRep t bAddr lim m_kc x_rc)
+      (ev_kc : ObsFn Core.W "KernelInfer::k_check"
+        [x_rc, x_val, x_ty,
+         .ptr (.enum IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m_pre2.length]
+        m_kc r_kc m_kc' cs_kc)
+      (hcl_kc : (⟨"KernelInfer::k_check",
+        [x_rc, x_val, x_ty,
+         .ptr (.enum IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m_pre2.length],
+        m_kc⟩ : Call F) ∈ calls)
+      (hsub_kc : ∀ cl ∈ cs_kc, cl ∈ calls) :
+      CheckedConstOriginAt κ lim calls t bAddr E_core order_role
+        (.defnDecl ⟨Core.keyOf t a, List.range nlvls, ty₀⟩ val₀ hn)
+        (.defnDecl ⟨Core.keyOf t a, List.range nlvls, ty'⟩ val' hn)
+  | thmDecl
+      {a : _root_.Address} {nlvls : Nat} {ty₀ val₀ ty' val' : Core.KExpr}
+      {m_pre1 m_es m_es' m_le m_le' m_pre2 m_kc m_kc' : Heap F}
+      {x_rc x_ty x_val v_sort r_kc : SourceValue F}
+      {cs_es cs_le cs_kc : List (Call F)}
+      (hnot_role : a ∉ order_role)
+      (hnlvls : nlvls < 4294967296)
+      (hty_lbb : ty₀.looseBVarsBounded 0 = true)
+      (hty_def : ty₀.allLevelParamsDefined (List.range nlvls) = true)
+      (hval_lbb : val₀.looseBVarsBounded 0 = true)
+      (hval_def : val₀.allLevelParamsDefined (List.range nlvls) = true)
+      (hty_ann : IxVM.Consistency.Annotates ty' ty₀)
+      (hval_ann : IxVM.Consistency.Annotates val' val₀)
+      (hty_out_def : ty'.allLevelParamsDefined (List.range nlvls) = true)
+      (hval_out_def : val'.allLevelParamsDefined (List.range nlvls) = true)
+      (hm_es : m_es = m_pre1 ++
+        [.construct IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []])
+      (hty_tmc_es : Core.TmC κ m_es (Core.posOf (List.range nlvls) ty') x_ty)
+      (hrc_es : Claim.RCFullRep t bAddr lim m_es x_rc)
+      (ev_es : ObsFn Core.W "KernelInfer::k_ensure_sort"
+        [x_rc, x_ty, .ptr (.enum IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m_pre1.length]
+        m_es v_sort m_es' cs_es)
+      (hcl_es : (⟨"KernelInfer::k_ensure_sort",
+        [x_rc, x_ty, .ptr (.enum IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m_pre1.length],
+        m_es⟩ : Call F) ∈ calls)
+      (hsub_es : ∀ cl ∈ cs_es, cl ∈ calls)
+      (hm_le : m_le = m_es' ++ [.construct "KernelTypes::KLevelNode" "Zero" []])
+      (ev_le : ObsFn Core.W "KernelLevels::level_equal"
+        [v_sort, .ptr (.enum "KernelTypes::KLevelNode") m_es'.length]
+        m_le (.field 1) m_le' cs_le)
+      (hcl_le : (⟨"KernelLevels::level_equal",
+        [v_sort, .ptr (.enum "KernelTypes::KLevelNode") m_es'.length],
+        m_le⟩ : Call F) ∈ calls)
+      (hsub_le : ∀ cl ∈ cs_le, cl ∈ calls)
+      (hext_kc : Heap.Extends m_le' m_kc)
+      (hm_kc : m_kc = m_pre2 ++
+        [.construct IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []])
+      (hty_tmc_kc : Core.TmC κ m_kc (Core.posOf (List.range nlvls) ty') x_ty)
+      (hval_tmc_kc : Core.TmC κ m_kc (Core.posOf (List.range nlvls) val') x_val)
+      (hrc_kc : Claim.RCFullRep t bAddr lim m_kc x_rc)
+      (ev_kc : ObsFn Core.W "KernelInfer::k_check"
+        [x_rc, x_val, x_ty,
+         .ptr (.enum IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m_pre2.length]
+        m_kc r_kc m_kc' cs_kc)
+      (hcl_kc : (⟨"KernelInfer::k_check",
+        [x_rc, x_val, x_ty,
+         .ptr (.enum IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m_pre2.length],
+        m_kc⟩ : Call F) ∈ calls)
+      (hsub_kc : ∀ cl ∈ cs_kc, cl ∈ calls) :
+      CheckedConstOriginAt κ lim calls t bAddr E_core order_role
+        (.thmDecl ⟨Core.keyOf t a, List.range nlvls, ty₀⟩ val₀)
+        (.thmDecl ⟨Core.keyOf t a, List.range nlvls, ty'⟩ val')
+  | opaqueDecl
+      {a : _root_.Address} {nlvls : Nat} {ty₀ val₀ ty' val' : Core.KExpr}
+      {m_pre1 m_es m_es' m_pre2 m_kc m_kc' : Heap F}
+      {x_rc x_ty x_val v_sort r_kc : SourceValue F}
+      {cs_es cs_kc : List (Call F)}
+      (hnot_role : a ∉ order_role)
+      (hnlvls : nlvls < 4294967296)
+      (hty_lbb : ty₀.looseBVarsBounded 0 = true)
+      (hty_def : ty₀.allLevelParamsDefined (List.range nlvls) = true)
+      (hval_lbb : val₀.looseBVarsBounded 0 = true)
+      (hval_def : val₀.allLevelParamsDefined (List.range nlvls) = true)
+      (hty_ann : IxVM.Consistency.Annotates ty' ty₀)
+      (hval_ann : IxVM.Consistency.Annotates val' val₀)
+      (hty_out_def : ty'.allLevelParamsDefined (List.range nlvls) = true)
+      (hval_out_def : val'.allLevelParamsDefined (List.range nlvls) = true)
+      (hm_es : m_es = m_pre1 ++
+        [.construct IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []])
+      (hty_tmc_es : Core.TmC κ m_es (Core.posOf (List.range nlvls) ty') x_ty)
+      (hrc_es : Claim.RCFullRep t bAddr lim m_es x_rc)
+      (ev_es : ObsFn Core.W "KernelInfer::k_ensure_sort"
+        [x_rc, x_ty, .ptr (.enum IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m_pre1.length]
+        m_es v_sort m_es' cs_es)
+      (hcl_es : (⟨"KernelInfer::k_ensure_sort",
+        [x_rc, x_ty, .ptr (.enum IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m_pre1.length],
+        m_es⟩ : Call F) ∈ calls)
+      (hsub_es : ∀ cl ∈ cs_es, cl ∈ calls)
+      (hext_kc : Heap.Extends m_es' m_kc)
+      (hm_kc : m_kc = m_pre2 ++
+        [.construct IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []])
+      (hty_tmc_kc : Core.TmC κ m_kc (Core.posOf (List.range nlvls) ty') x_ty)
+      (hval_tmc_kc : Core.TmC κ m_kc (Core.posOf (List.range nlvls) val') x_val)
+      (hrc_kc : Claim.RCFullRep t bAddr lim m_kc x_rc)
+      (ev_kc : ObsFn Core.W "KernelInfer::k_check"
+        [x_rc, x_val, x_ty,
+         .ptr (.enum IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m_pre2.length]
+        m_kc r_kc m_kc' cs_kc)
+      (hcl_kc : (⟨"KernelInfer::k_check",
+        [x_rc, x_val, x_ty,
+         .ptr (.enum IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m_pre2.length],
+        m_kc⟩ : Call F) ∈ calls)
+      (hsub_kc : ∀ cl ∈ cs_kc, cl ∈ calls) :
+      CheckedConstOriginAt κ lim calls t bAddr E_core order_role
+        (.opaqueDecl ⟨Core.keyOf t a, List.range nlvls, ty₀⟩ val₀)
+        (.opaqueDecl ⟨Core.keyOf t a, List.range nlvls, ty'⟩ val')
+
+
+/-- The table-keyed evidence is the evidence at the table's own keying. -/
+theorem CheckedConstOriginAt.ofTable {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {bAddr : _root_.Address} {E_core : Ixon.Env} {order_role : List _root_.Address}
+    {d : Declaration .anon} (h : Assembly.CheckedConstOrigin calls t bAddr E_core order_role d) :
+    ∃ lim d', CheckedConstOriginAt (keyOf t) lim calls t bAddr E_core order_role d d' := by
+  cases h with
+  | axiomDecl hnot_role hrec hinfo hsafe hnlvls hty_lbb hty_def hty_ann hm_es hty_tmc hrc_es ev_es hcl_es hsub_es hext_ax hrc_ax ha_ax ev_ax hne_ax hcl_ax hsub_ax =>
+    exact ⟨_, _, .axiomDecl hnot_role hrec hinfo hsafe hnlvls hty_lbb hty_def hty_ann hm_es hty_tmc hrc_es ev_es hcl_es hsub_es hext_ax hrc_ax ha_ax ev_ax hne_ax hcl_ax hsub_ax⟩
+  | defnDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es hty_tmc_es hrc_es ev_es hcl_es hsub_es hext_kc hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc hcl_kc hsub_kc =>
+    exact ⟨_, _, .defnDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es hty_tmc_es hrc_es ev_es hcl_es hsub_es hext_kc hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc hcl_kc hsub_kc⟩
+  | thmDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es hty_tmc_es hrc_es ev_es hcl_es hsub_es hm_le ev_le hcl_le hsub_le hext_kc hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc hcl_kc hsub_kc =>
+    exact ⟨_, _, .thmDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es hty_tmc_es hrc_es ev_es hcl_es hsub_es hm_le ev_le hcl_le hsub_le hext_kc hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc hcl_kc hsub_kc⟩
+  | opaqueDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es hty_tmc_es hrc_es ev_es hcl_es hsub_es hext_kc hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc hcl_kc hsub_kc =>
+    exact ⟨_, _, .opaqueDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es hty_tmc_es hrc_es ev_es hcl_es hsub_es hext_kc hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc hcl_kc hsub_kc⟩
+
+/-- **A heap term a typed run takes as an argument**: the term of a `k_ensure_sort` call, or the
+value or the type of a `k_check` call, among `calls`. -/
+def RunTerm (calls : List (Call F)) (h : Heap F) (p : SourceValue F) : Prop :=
+  (∃ rc types, (⟨"KernelInfer::k_ensure_sort", [rc, p, types], h⟩ : Call F) ∈ calls) ∨
+  (∃ rc ty types, (⟨"KernelInfer::k_check", [rc, p, ty, types], h⟩ : Call F) ∈ calls) ∨
+  (∃ rc val types, (⟨"KernelInfer::k_check", [rc, val, p, types], h⟩ : Call F) ∈ calls)
+
+/-- **The evidence under another keying**: one that agrees with the first on the cell addresses of
+the heap terms the typed runs of `calls` take. -/
+theorem CheckedConstOriginAt.rekey {κ₁ κ₂ : _root_.Address → Core.KKey} {lim : Nat}
+    {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {E_core : Ixon.Env} {order_role : List _root_.Address} {d d' : Declaration .anon}
+    (h : CheckedConstOriginAt κ₁ lim calls t bAddr E_core order_role d d')
+    (agree : ∀ (hp : Heap F) (p : SourceValue F) (a : Bytes.Address), RunTerm calls hp p →
+      AddrIn hp p a → κ₂ (ixAddr a) = κ₁ (ixAddr a)) :
+    CheckedConstOriginAt κ₂ lim calls t bAddr E_core order_role d d' := by
+  cases h with
+  | axiomDecl hnot_role hrec hinfo hsafe hnlvls hty_lbb hty_def hty_ann hm_es hty_tmc hrc_es ev_es hcl_es hsub_es hext_ax hrc_ax ha_ax ev_ax hne_ax hcl_ax hsub_ax =>
+    exact .axiomDecl hnot_role hrec hinfo hsafe hnlvls hty_lbb hty_def hty_ann hm_es 
+      (Core.TmC.rekey hty_tmc fun a m => agree _ _ a (Or.inl ⟨_, _, hcl_es⟩) m) hrc_es ev_es hcl_es hsub_es hext_ax hrc_ax ha_ax ev_ax hne_ax hcl_ax hsub_ax
+  | defnDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es hty_tmc_es hrc_es ev_es hcl_es hsub_es hext_kc hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc hcl_kc hsub_kc =>
+    exact .defnDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es 
+      (Core.TmC.rekey hty_tmc_es fun a m => agree _ _ a (Or.inl ⟨_, _, hcl_es⟩) m) hrc_es ev_es hcl_es hsub_es hext_kc hm_kc 
+      (Core.TmC.rekey hty_tmc_kc fun a m => agree _ _ a (Or.inr (Or.inr ⟨_, _, _, hcl_kc⟩)) m) 
+      (Core.TmC.rekey hval_tmc_kc fun a m => agree _ _ a (Or.inr (Or.inl ⟨_, _, _, hcl_kc⟩)) m) hrc_kc ev_kc hcl_kc hsub_kc
+  | thmDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es hty_tmc_es hrc_es ev_es hcl_es hsub_es hm_le ev_le hcl_le hsub_le hext_kc hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc hcl_kc hsub_kc =>
+    exact .thmDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es 
+      (Core.TmC.rekey hty_tmc_es fun a m => agree _ _ a (Or.inl ⟨_, _, hcl_es⟩) m) hrc_es ev_es hcl_es hsub_es hm_le ev_le hcl_le hsub_le hext_kc hm_kc 
+      (Core.TmC.rekey hty_tmc_kc fun a m => agree _ _ a (Or.inr (Or.inr ⟨_, _, _, hcl_kc⟩)) m) 
+      (Core.TmC.rekey hval_tmc_kc fun a m => agree _ _ a (Or.inr (Or.inl ⟨_, _, _, hcl_kc⟩)) m) hrc_kc ev_kc hcl_kc hsub_kc
+  | opaqueDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es hty_tmc_es hrc_es ev_es hcl_es hsub_es hext_kc hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc hcl_kc hsub_kc =>
+    exact .opaqueDecl hnot_role hnlvls hty_lbb hty_def hval_lbb hval_def hty_ann hval_ann hty_out_def hval_out_def hm_es 
+      (Core.TmC.rekey hty_tmc_es fun a m => agree _ _ a (Or.inl ⟨_, _, hcl_es⟩) m) hrc_es ev_es hcl_es hsub_es hext_kc hm_kc 
+      (Core.TmC.rekey hty_tmc_kc fun a m => agree _ _ a (Or.inr (Or.inr ⟨_, _, _, hcl_kc⟩)) m) 
+      (Core.TmC.rekey hval_tmc_kc fun a m => agree _ _ a (Or.inr (Or.inl ⟨_, _, _, hcl_kc⟩)) m) hrc_kc ev_kc hcl_kc hsub_kc
+
+/-- **The evidence at a prefix, from the table-keyed evidence**: when every cell address of the
+heap terms the typed runs take is stored. The table-keyed evidence is what the record layer
+produces (`Assembly.CheckedConstOrigin`); the storedness of the cells is the step's input about
+the references the record uses. -/
+theorem CheckedConstOriginAt.stored_of_table {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {bAddr : _root_.Address} {E_core : Ixon.Env} {order_role : List _root_.Address}
+    {env : Env .anon} {d : Declaration .anon}
+    (h : Assembly.CheckedConstOrigin calls t bAddr E_core order_role d)
+    (hcells : ∀ (hp : Heap F) (p : SourceValue F) (a : Bytes.Address), RunTerm calls hp p →
+      AddrIn hp p a → ∃ ci, env.find? (keyOf t (ixAddr a)) = some ci) :
+    ∃ lim d', CheckedConstOriginAt (Ctx.stored ⟨E_core, env, t, some lim⟩).κ lim calls t bAddr
+      E_core order_role d d' := by
+  obtain ⟨lim, d', h'⟩ := CheckedConstOriginAt.ofTable h
+  refine ⟨lim, d', h'.rekey fun hp p a hr m => ?_⟩
+  obtain ⟨ci, hci⟩ := hcells hp p a hr m
+  exact Ctx.stored_key_of_find (c := ⟨E_core, env, t, some lim⟩) hci
+
+/-- **A walked definition, theorem, opaque constant or axiom installs and keeps the prefix
+invariant.** The step reads the prefix through `PrefixInv` alone. Its inputs about the record
+being folded are: the check evidence at the prefix's keying (`hchk`: the declaration's own heap
+terms mention stored addresses only), the freshness of the declared key (`hfresh`), that the
+declared name is no key of a role outside compiler trust (`hnr`), and the reload of the record
+as the constant stored (`hreload`). It uses neither the unrestricted load contract, nor the
+public core seam, nor a hypothesis about which calls a run makes. -/
+theorem walkedConst_step
+    {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {E_core : Ixon.Env} {order_role : List _root_.Address} {lim : Nat}
+    {env : Env .anon} {d d' : Declaration .anon}
+    (hinv : PrefixInv.{u} E_core t lim env)
+    (hchk : CheckedConstOriginAt (Ctx.stored ⟨E_core, env, t, some lim⟩).κ lim calls t bAddr
+      E_core order_role d d')
+    (hgood : Good ⟨E_core, env, t, none⟩ calls)
+    (hfresh : ∀ ci₀ ∈ IxVM.Consistency.installs d, env.find? ci₀.name = none)
+    (hnr : ∀ ci₀ ∈ IxVM.Consistency.installs d, ∀ r : Ix.Kernel.Role,
+      IxVM.Refinement.compilerTrust r = false → ci₀.name ≠ .role r)
+    (hreload : ∀ cn ∈ IxVM.Consistency.installs d',
+      ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
+        ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → Good ⟨E_core, env, t, some lim⟩ cs →
+        Bytes.RepAddressRef addrTy h a addr → keyOf t (ixAddr a) = cn.name →
+        CIPtrRep (Ctx.stored ⟨E_core, ⟨cn :: env.consts⟩, t, some lim⟩).κ h' ptr cn) :
+    CleanInstallStep env d ⟨IxVM.Consistency.installs d' ++ env.consts⟩ ∧
+      PrefixInv.{u} E_core t lim ⟨IxVM.Consistency.installs d' ++ env.consts⟩ := by
+  have hbound : IxVM.Consistency.Bounded calls := hgood.2
+  cases hchk with
+  | @axiomDecl a _ _ nlvls ty₀ ty' _ _ _ m_ax _ x_rc _ x_addr _ v_ax _ cs_ax
+      hnot_role _ _ _ _ _ _ _ _ _ _ _ _ _ _ hrc_ax ha_ax ev_ax hne_ax _ hsub_ax =>
+    let cv₀ : ConstantVal .anon := ⟨keyOf t a, List.range nlvls, ty₀⟩
+    by_cases hskip : cv₀.name = Ix.Kernel.quotSoundName ∨ IxVM.Consistency.inertKey cv₀.name = true
+    · have hempty : IxVM.Consistency.installs (.axiomDecl cv₀) = [] := ite_eq_left hskip
+      have hempty' : IxVM.Consistency.installs
+          (.axiomDecl ⟨keyOf t a, List.range nlvls, ty'⟩ : Declaration .anon) = [] :=
+        ite_eq_left hskip
+      rw [hempty']
+      exact ⟨CleanInstallStep.empty hempty, hinv⟩
+    · obtain ⟨a', ha'_ref, heq_a⟩ := ha_ax
+      let c : Ctx := ⟨E_core, env, t, some lim⟩
+      have hgood_c : Good c calls := hgood
+      obtain ⟨ro, hro_addr, _, hrole⟩ :=
+        axiom_standing_spec rolesSpec (hgood_c.sub hsub_ax) hinv.tableWf
+          hrc_ax.toRCRep (rcFullRep_axiomsNil hrc_ax) ha'_ref ev_ax hne_ax
+      have hk : keyOf t a = .role ro := by
+        have hk0 := keyOf_of_addressOf hinv.tableWf hro_addr
+        rwa [heq_a] at hk0
+      have hct : IxVM.Refinement.compilerTrust ro = false := by
+        rcases hrole with rfl | rfl | rfl | hinert
+        · rfl
+        · rfl
+        · rfl
+        · exact False.elim (hskip (Or.inr (by
+            show IxVM.Consistency.inertKey (keyOf t a) = true
+            rw [hk]
+            exact hinert)))
+      have hmem : (ConstantInfo.axiomInfo cv₀) ∈ IxVM.Consistency.installs (.axiomDecl cv₀) := by
+        rw [show IxVM.Consistency.installs (.axiomDecl cv₀) = [.axiomInfo cv₀] from ite_eq_right hskip]
+        exact List.mem_singleton.mpr rfl
+      exact False.elim (hnr (.axiomInfo cv₀) hmem ro hct hk)
+  | @defnDecl a nlvls ty₀ val₀ ty' val' hn m_pre1 m_es m_es' m_pre2 m_kc m_kc'
+      x_rc x_ty x_val v_sort r_kc cs_es cs_kc
+      hnot_role _ _ hty_def _ hval_def hty_ann hval_ann hty'_def hval'_def
+      hm_es hty_tmc_es hrc_es ev_es _ hsub_es
+      _ hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc _ hsub_kc =>
+    let cv₀ : ConstantVal .anon := ⟨keyOf t a, List.range nlvls, ty₀⟩
+    let cv' : ConstantVal .anon := ⟨keyOf t a, List.range nlvls, ty'⟩
+    have hbase : isBaseKey cv₀.name = true := isBaseKey_keyOf t a
+    have hfresh_cv : env.find? cv'.name = none :=
+      hfresh (.defnInfo cv₀ val₀ hn) (List.mem_singleton.mpr rfl)
+    have hstored : IxVM.Consistency.StoredAs (.defnInfo cv' val' hn) (.defnInfo cv₀ val₀ hn) :=
+      ⟨⟨rfl, rfl, hty_ann⟩, hval_ann, rfl⟩
+    have hclean : CleanInstallStep env (.defnDecl cv₀ val₀ hn) ⟨.defnInfo cv' val' hn :: env.consts⟩ :=
+      CleanInstallStep.single rfl hstored hfresh_cv hbase
+    let c : ScopedCtx := Ctx.stored ⟨E_core, env, t, some lim⟩
+    have hgood_c : Good c.toCtx calls := hgood
+    obtain ⟨hef, hlf⟩ := hinv.scopedCoreFacts
+    have hty_tmc_es' : TmC c.κ m_es ty' x_ty := by
+      have h := hty_tmc_es
+      rwa [posOf_range nlvls ty'] at h
+    have hty_tmc_kc' : TmC c.κ m_kc ty' x_ty := by
+      have h := hty_tmc_kc
+      rwa [posOf_range nlvls ty'] at h
+    have hval_tmc_kc' : TmC c.κ m_kc val' x_val := by
+      have h := hval_tmc_kc
+      rwa [posOf_range nlvls val'] at h
+    obtain ⟨_, hty'_nfv, hty'_bvs, hty'_ann⟩ := tmC_closed_props hty_tmc_es'
+    obtain ⟨_, hval'_nfv, hval'_bvs, hval'_ann⟩ := tmC_closed_props hval_tmc_kc'
+    obtain ⟨stype, u, _, hinf_ty, hred_ty, _, _⟩ :=
+      scoped_core_ensure_sort (c := c) hrc_es.toRCRep (typesRep_of_nil_eq c.κ hm_es)
+        (ghostScoped_zero zeroGhostWalked) hef hlf
+        (CoreGood.ofRaw (hgood_c.sub hsub_es) (fun _ _ => trivial)) ev_es
+        (hty_tmc_es' 0 zeroGhostWalked)
+    obtain ⟨vtype, hinf_val, hde_val⟩ :=
+      scoped_core_check (c := c) hrc_kc.toRCRep (typesRep_of_nil_eq c.κ hm_kc)
+        (ghostScoped_zero zeroGhostWalked) hef hlf
+        (CoreGood.ofRaw (hgood_c.sub hsub_kc) (fun _ _ => trivial)) ev_kc
+        (hval_tmc_kc' 0 zeroGhostWalked) (hty_tmc_kc' 0 zeroGhostWalked)
+    have hnrole : ∀ r : Ix.Kernel.Role, IxVM.Refinement.compilerTrust r = false →
+        keyOf t a ≠ .role r := hnr _ (List.mem_singleton.mpr rfl)
+    have hres_name : Ix.Kernel.reservedBasisNames.contains cv'.name = false :=
+      reservedBasisNames_false_of_ne_nonTrustRole hnrole
+    have hnoprj : cv'.name.isProjFnShape = false := isProjFnShape_of_isBaseKey hbase
+    have hcv_run : ConstantValRunJ rulesJ env cv' ty' :=
+      ⟨by rw [hfresh_cv]; rfl, hres_name, hnoprj, levelParam_nodup_of_nodup List.nodup_range,
+        hty'_bvs, hty'_nfv, hty'_ann, hty'_def,
+        infer_constsResolve hinf_ty hef.store hty'_nfv, stype, u, hinf_ty, hred_ty⟩
+    have hv_run : ValueFrontRunJ rulesJ env cv' val' ty' val' :=
+      ⟨hval'_bvs, hval'_nfv, hval'_ann, hval'_def,
+        infer_constsResolve hinf_val hef.store hval'_nfv, vtype, hinf_val, hde_val⟩
+    have hnat_false : Ix.Kernel.natOpNames.contains cv'.name = false :=
+      natOpNames_false_of_ne_nonTrustRole hnrole
+    have hdm_false : Ix.Kernel.natDivModNames.contains cv'.name = false :=
+      natDivModNames_false_of_ne_nonTrustRole hnrole
+    have hdecl : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env (.defnDecl cv' val' hn)
+        ⟨.defnInfo cv' val' hn :: env.consts⟩ :=
+      ⟨ty', val', hcv_run, hv_run, rfl,
+        (fun hc => by rw [hnat_false] at hc; exact nomatch hc),
+        (fun hc => by rw [hdm_false] at hc; exact nomatch hc)⟩
+    exact ⟨hclean, hinv.cons_value (cn := .defnInfo cv' val' hn) (a₀ := a) rfl hfresh_cv
+      (fun _ => ne_projTableName_of_isBaseKey hbase) (fun _ _ e => nomatch e)
+      (fun _ _ _ e => nomatch e) (fun _ _ _ _ e => nomatch e) (fun _ e => nomatch e)
+      (FullDeclInv.step_of_foldInv_clean hclean
+        (foldInv_step_declRunJ (d := .defnDecl cv' val' hn) (fun _ _ heq => nomatch heq) hdecl))
+      (foldStoreInv_step_declRunJ (d := .defnDecl cv' val' hn) hinv.store (fun _ _ heq => nomatch heq) hdecl)
+      (hreload _ (List.mem_singleton.mpr rfl))⟩
+  | @thmDecl a nlvls ty₀ val₀ ty' val' m_pre1 m_es m_es' m_le m_le' m_pre2 m_kc m_kc'
+      x_rc x_ty x_val v_sort r_kc cs_es cs_le cs_kc
+      hnot_role _ _ hty_def _ hval_def hty_ann hval_ann hty'_def hval'_def
+      hm_es hty_tmc_es hrc_es ev_es _ hsub_es
+      hm_le ev_le _ hsub_le
+      _ hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc _ hsub_kc =>
+    let cv₀ : ConstantVal .anon := ⟨keyOf t a, List.range nlvls, ty₀⟩
+    let cv' : ConstantVal .anon := ⟨keyOf t a, List.range nlvls, ty'⟩
+    have hbase : isBaseKey cv₀.name = true := isBaseKey_keyOf t a
+    have hfresh_cv : env.find? cv'.name = none :=
+      hfresh (.thmInfo cv₀ val₀) (List.mem_singleton.mpr rfl)
+    have hstored : IxVM.Consistency.StoredAs (.thmInfo cv' val') (.thmInfo cv₀ val₀) :=
+      ⟨⟨rfl, rfl, hty_ann⟩, hval_ann⟩
+    have hclean : CleanInstallStep env (.thmDecl cv₀ val₀) ⟨.thmInfo cv' val' :: env.consts⟩ :=
+      CleanInstallStep.single rfl hstored hfresh_cv hbase
+    let c : ScopedCtx := Ctx.stored ⟨E_core, env, t, some lim⟩
+    have hgood_c : Good c.toCtx calls := hgood
+    obtain ⟨hef, hlf⟩ := hinv.scopedCoreFacts
+    have hty_tmc_es' : TmC c.κ m_es ty' x_ty := by
+      have h := hty_tmc_es
+      rwa [posOf_range nlvls ty'] at h
+    have hty_tmc_kc' : TmC c.κ m_kc ty' x_ty := by
+      have h := hty_tmc_kc
+      rwa [posOf_range nlvls ty'] at h
+    have hval_tmc_kc' : TmC c.κ m_kc val' x_val := by
+      have h := hval_tmc_kc
+      rwa [posOf_range nlvls val'] at h
+    obtain ⟨_, hty'_nfv, hty'_bvs, hty'_ann⟩ := tmC_closed_props hty_tmc_es'
+    obtain ⟨_, hval'_nfv, hval'_bvs, hval'_ann⟩ := tmC_closed_props hval_tmc_kc'
+    obtain ⟨stype, u, ℓ, hinf_ty, hred_ty, hℓ, hu⟩ :=
+      scoped_core_ensure_sort (c := c) hrc_es.toRCRep (typesRep_of_nil_eq c.κ hm_es)
+        (ghostScoped_zero zeroGhostWalked) hef hlf
+        (CoreGood.ofRaw (hgood_c.sub hsub_es) (fun _ _ => trivial)) ev_es
+        (hty_tmc_es' 0 zeroGhostWalked)
+    have hisZero : (rulesJ (md := .anon)).isZero u :=
+      thm_isZero_of_level_equal Levels.l2
+        (RomBound.bounded_mono hbound hsub_le) hℓ hu hm_le ev_le
+    obtain ⟨vtype, hinf_val, hde_val⟩ :=
+      scoped_core_check (c := c) hrc_kc.toRCRep (typesRep_of_nil_eq c.κ hm_kc)
+        (ghostScoped_zero zeroGhostWalked) hef hlf
+        (CoreGood.ofRaw (hgood_c.sub hsub_kc) (fun _ _ => trivial)) ev_kc
+        (hval_tmc_kc' 0 zeroGhostWalked) (hty_tmc_kc' 0 zeroGhostWalked)
+    have hnrole : ∀ r : Ix.Kernel.Role, IxVM.Refinement.compilerTrust r = false →
+        keyOf t a ≠ .role r := hnr _ (List.mem_singleton.mpr rfl)
+    have hres_name : Ix.Kernel.reservedBasisNames.contains cv'.name = false :=
+      reservedBasisNames_false_of_ne_nonTrustRole hnrole
+    have hnoprj : cv'.name.isProjFnShape = false := isProjFnShape_of_isBaseKey hbase
+    have hcv_run : ConstantValRunJ rulesJ env cv' ty' :=
+      ⟨by rw [hfresh_cv]; rfl, hres_name, hnoprj, levelParam_nodup_of_nodup List.nodup_range,
+        hty'_bvs, hty'_nfv, hty'_ann, hty'_def,
+        infer_constsResolve hinf_ty hef.store hty'_nfv, stype, u, hinf_ty, hred_ty⟩
+    have hv_run : ValueFrontRunJ rulesJ env cv' val' ty' val' :=
+      ⟨hval'_bvs, hval'_nfv, hval'_ann, hval'_def,
+        infer_constsResolve hinf_val hef.store hval'_nfv, vtype, hinf_val, hde_val⟩
+    have hdecl : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env (.thmDecl cv' val')
+        ⟨.thmInfo cv' val' :: env.consts⟩ :=
+      ⟨ty', val', hcv_run, ⟨stype, u, hinf_ty, hred_ty, hisZero⟩, hv_run, rfl⟩
+    exact ⟨hclean, hinv.cons_value (cn := .thmInfo cv' val') (a₀ := a) rfl hfresh_cv
+      (fun _ => ne_projTableName_of_isBaseKey hbase) (fun _ _ e => nomatch e)
+      (fun _ _ _ e => nomatch e) (fun _ _ _ _ e => nomatch e) (fun _ e => nomatch e)
+      (FullDeclInv.step_of_foldInv_clean hclean
+        (foldInv_step_declRunJ (d := .thmDecl cv' val') (fun _ _ heq => nomatch heq) hdecl))
+      (foldStoreInv_step_declRunJ (d := .thmDecl cv' val') hinv.store (fun _ _ heq => nomatch heq) hdecl)
+      (hreload _ (List.mem_singleton.mpr rfl))⟩
+  | @opaqueDecl a nlvls ty₀ val₀ ty' val' m_pre1 m_es m_es' m_pre2 m_kc m_kc'
+      x_rc x_ty x_val v_sort r_kc cs_es cs_kc
+      hnot_role _ _ hty_def _ hval_def hty_ann hval_ann hty'_def hval'_def
+      hm_es hty_tmc_es hrc_es ev_es _ hsub_es
+      _ hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc _ hsub_kc =>
+    let cv₀ : ConstantVal .anon := ⟨keyOf t a, List.range nlvls, ty₀⟩
+    let cv' : ConstantVal .anon := ⟨keyOf t a, List.range nlvls, ty'⟩
+    have hbase : isBaseKey cv₀.name = true := isBaseKey_keyOf t a
+    have hfresh_cv : env.find? cv'.name = none :=
+      hfresh (.axiomInfo cv₀) (List.mem_singleton.mpr rfl)
+    have hstored : IxVM.Consistency.StoredAs (.axiomInfo cv') (.axiomInfo cv₀) :=
+      ⟨⟨rfl, rfl, hty_ann⟩, trivial⟩
+    have hclean : CleanInstallStep env (.opaqueDecl cv₀ val₀) ⟨.axiomInfo cv' :: env.consts⟩ :=
+      CleanInstallStep.single rfl hstored hfresh_cv hbase
+    let c : ScopedCtx := Ctx.stored ⟨E_core, env, t, some lim⟩
+    have hgood_c : Good c.toCtx calls := hgood
+    obtain ⟨hef, hlf⟩ := hinv.scopedCoreFacts
+    have hty_tmc_es' : TmC c.κ m_es ty' x_ty := by
+      have h := hty_tmc_es
+      rwa [posOf_range nlvls ty'] at h
+    have hty_tmc_kc' : TmC c.κ m_kc ty' x_ty := by
+      have h := hty_tmc_kc
+      rwa [posOf_range nlvls ty'] at h
+    have hval_tmc_kc' : TmC c.κ m_kc val' x_val := by
+      have h := hval_tmc_kc
+      rwa [posOf_range nlvls val'] at h
+    obtain ⟨_, hty'_nfv, hty'_bvs, hty'_ann⟩ := tmC_closed_props hty_tmc_es'
+    obtain ⟨_, hval'_nfv, hval'_bvs, hval'_ann⟩ := tmC_closed_props hval_tmc_kc'
+    obtain ⟨stype, u, _, hinf_ty, hred_ty, _, _⟩ :=
+      scoped_core_ensure_sort (c := c) hrc_es.toRCRep (typesRep_of_nil_eq c.κ hm_es)
+        (ghostScoped_zero zeroGhostWalked) hef hlf
+        (CoreGood.ofRaw (hgood_c.sub hsub_es) (fun _ _ => trivial)) ev_es
+        (hty_tmc_es' 0 zeroGhostWalked)
+    obtain ⟨vtype, hinf_val, hde_val⟩ :=
+      scoped_core_check (c := c) hrc_kc.toRCRep (typesRep_of_nil_eq c.κ hm_kc)
+        (ghostScoped_zero zeroGhostWalked) hef hlf
+        (CoreGood.ofRaw (hgood_c.sub hsub_kc) (fun _ _ => trivial)) ev_kc
+        (hval_tmc_kc' 0 zeroGhostWalked) (hty_tmc_kc' 0 zeroGhostWalked)
+    have hnrole : ∀ r : Ix.Kernel.Role, IxVM.Refinement.compilerTrust r = false →
+        keyOf t a ≠ .role r := hnr _ (List.mem_singleton.mpr rfl)
+    have hres_name : Ix.Kernel.reservedBasisNames.contains cv'.name = false :=
+      reservedBasisNames_false_of_ne_nonTrustRole hnrole
+    have hnoprj : cv'.name.isProjFnShape = false := isProjFnShape_of_isBaseKey hbase
+    have hcv_run : ConstantValRunJ rulesJ env cv' ty' :=
+      ⟨by rw [hfresh_cv]; rfl, hres_name, hnoprj, levelParam_nodup_of_nodup List.nodup_range,
+        hty'_bvs, hty'_nfv, hty'_ann, hty'_def,
+        infer_constsResolve hinf_ty hef.store hty'_nfv, stype, u, hinf_ty, hred_ty⟩
+    have hv_run : ValueFrontRunJ rulesJ env cv' val' ty' val' :=
+      ⟨hval'_bvs, hval'_nfv, hval'_ann, hval'_def,
+        infer_constsResolve hinf_val hef.store hval'_nfv, vtype, hinf_val, hde_val⟩
+    have hdecl : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env (.opaqueDecl cv' val')
+        ⟨.axiomInfo cv' :: env.consts⟩ :=
+      ⟨ty', val', hcv_run, hv_run, rfl⟩
+    exact ⟨hclean, hinv.cons_value (cn := .axiomInfo cv') (a₀ := a) rfl hfresh_cv
+      (fun _ => ne_projTableName_of_isBaseKey hbase) (fun _ _ e => nomatch e)
+      (fun _ _ _ e => nomatch e) (fun _ _ _ _ e => nomatch e) (fun _ e => nomatch e)
+      (FullDeclInv.step_of_foldInv_clean hclean
+        (foldInv_step_declRunJ (d := .opaqueDecl cv' val') (fun _ _ heq => nomatch heq) hdecl))
+      (foldStoreInv_step_declRunJ (d := .opaqueDecl cv' val') hinv.store (fun _ _ heq => nomatch heq) hdecl)
+      (hreload _ (List.mem_singleton.mpr rfl))⟩
+
+
+/-- **The step at the start of a fold.** At the empty environment under the group limit `0` the
+prefix invariant holds (`prefixInv_empty`) and every key is fresh, so the step's hypotheses are
+the inputs about the record alone: the invariant and the freshness hypotheses of
+`walkedConst_step` are jointly satisfiable, and its conclusion is the invariant of the next
+step. -/
+theorem walkedConst_step_empty
+    {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {E_core : Ixon.Env} {order_role : List _root_.Address} {d d' : Declaration .anon}
+    (hdec : L1.EnvDecoded E_core) (htwf : t.wf = true)
+    (hchk : CheckedConstOriginAt (Ctx.stored ⟨E_core, Ix.Kernel.Env.empty, t, some 0⟩).κ 0 calls
+      t bAddr E_core order_role d d')
+    (hgood : Good ⟨E_core, Ix.Kernel.Env.empty, t, none⟩ calls)
+    (hnr : ∀ ci₀ ∈ IxVM.Consistency.installs d, ∀ r : Ix.Kernel.Role,
+      IxVM.Refinement.compilerTrust r = false → ci₀.name ≠ .role r)
+    (hreload : ∀ cn ∈ IxVM.Consistency.installs d',
+      ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
+        ObsFn W "Ingress::get_ci" [addr] h ptr h' cs →
+        Good ⟨E_core, Ix.Kernel.Env.empty, t, some 0⟩ cs →
+        Bytes.RepAddressRef addrTy h a addr → keyOf t (ixAddr a) = cn.name →
+        CIPtrRep (Ctx.stored ⟨E_core, ⟨cn :: Ix.Kernel.Env.empty.consts⟩, t, some 0⟩).κ h' ptr
+          cn) :
+    CleanInstallStep Ix.Kernel.Env.empty d
+        ⟨IxVM.Consistency.installs d' ++ Ix.Kernel.Env.empty.consts⟩ ∧
+      PrefixInv.{u} E_core t 0 ⟨IxVM.Consistency.installs d' ++ Ix.Kernel.Env.empty.consts⟩ :=
+  walkedConst_step (prefixInv_empty hdec htwf) hchk hgood (fun _ _ => rfl) hnr hreload
 
 end IxVM.Refinement.Decl
