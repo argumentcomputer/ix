@@ -15,6 +15,7 @@ namespace IxVM.Refinement.Decl
 
 open Ix.Kernel
 open Ix.Kernel.Semantics
+open IxVM.Refinement.Core
 
 /-- Expose one pair of equal telescope binders. -/
 theorem PrefixEq.succ_view {n : Nat} {E R : KExpr} (h : PrefixEq (n + 1) E R) :
@@ -130,7 +131,7 @@ theorem NativeRecJ.of_prefix {J : Judgements .anon} {env : Env .anon}
     (hrun : NativeRecJ J env p cvTa ctorsA cvRa rhss) :
     NativeRecJ J env p cvTb ctorsA cvRa rhss := by
   obtain ⟨cvRg, rhsG, hg, hs⟩ := hrun
-  exact ⟨cvRg, rhsG, hg.of_prefix hprefix, hs⟩
+  exact ⟨cvRg, rhsG, NativeRecRunJ.of_prefix hprefix hg, hs⟩
 
 /-- The terminal expressions really may differ: no binders are inspected at depth zero. -/
 example : PrefixEq 0 (.sort .zero) (.sort (.succ .zero)) := trivial
