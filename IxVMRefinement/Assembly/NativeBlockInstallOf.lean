@@ -371,7 +371,9 @@ theorem nativeInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTa
   have hbaseT : (Core.keyOf t (Core.iprjAddr B 0)).base = Core.keyOf t (Core.iprjAddr B 0) :=
     Decl.base_of_isBaseKey (Decl.isBaseKey_keyOf t _)
   have htbl : env.find? (Ix.Kernel.projTableName (Core.keyOf t (Core.iprjAddr B 0))) = none :=
-    haux.fresh_of_base_none (by rw [hbaseT]; exact hfreshT)
+    haux.fresh_of_base_none (by
+      show env.find? (Core.keyOf t (Core.iprjAddr B 0)).base = none
+      rw [hbaseT]; exact hfreshT)
   have hTC : ∀ j < ind.ctors.size,
       keyOf t (ctorAddr B 0 j) ≠ Core.keyOf t (Core.iprjAddr B 0) := by
     intro j hj e
@@ -400,7 +402,6 @@ theorem nativeInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTa
         rw [List.getElem?_eq_none_iff] at hc ⊢
         omega
       rw [h0]
-      rfl
     | some c =>
       obtain ⟨ct, cty', -, -, -, -, -, -, -, -, -, -, -, hA⟩ := hper j c hc
       rw [hA]
@@ -486,8 +487,12 @@ theorem nativeInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTa
         [ConstantInfo.indInfo ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩
           caps]) := by
     intro j c cty' hc hA
-    refine List.mem_append_right _ (List.mem_append_left _ (List.mem_reverse.mpr ?_))
-    exact List.mem_map.mpr ⟨_, List.mem_of_getElem? hA, rfl⟩
+    have h1 : ((⟨c.1.name, c.1.levelParams, cty'⟩, c.2) : ConstantVal .anon × Nat) ∈ ctorsA :=
+      List.mem_of_getElem? hA
+    have h2 : ConstantInfo.ctorInfo ⟨c.1.name, c.1.levelParams, cty'⟩ p.nP c.2 ∈
+        ctorsA.map (fun c => ConstantInfo.ctorInfo c.1 p.nP c.2) :=
+      List.mem_map.mpr ⟨_, h1, rfl⟩
+    exact List.mem_append_right _ (List.mem_append_left _ (List.mem_reverse.mpr h2))
   -- the block's readings
   obtain ⟨fr, cs, hblkEq, hfrR, hlenC, hcsR⟩ := id hblk
   obtain ⟨caps₀, hshape, -, -, -, -, -, -⟩ := Decl.nativePartsNoRec?_inv hp₀
