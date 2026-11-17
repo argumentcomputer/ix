@@ -439,7 +439,10 @@ theorem canonical_full_elim {c : Core.ScopedCtx} (hc : Core.ScopedCoreFacts c)
   | .Induct (m272 := m272) (m329 := m329) (m281 := m281) (m389 := m389) (v280 := resLvl)
       (v296 := nsum) (v341 := univ) (cs291 := cs291) (sg279 := seg) (op325 := hsumOp)
       (hm337 := hm337) (ev293 := sortRun) (ev399 := soloRun) (ev354 := largeRun)
-      (ev518 := natRun) (hc567 := children) .. =>
+      (ev518 := natRun) (hc567 := children) (hv86 := parentShape) .. =>
+    injection parentShape with _ _ parentFields
+    simp only [List.cons.injEq, and_true] at parentFields
+    obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := parentFields
     have e1 : Heap.Extends heap m272 := by
       match seg with
       | .n1 (ev159 := e) (he201 := hh) .. =>
@@ -560,11 +563,11 @@ theorem rec_elim_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ 
   have hpos : ∃ bs', (Core.posOf fam.cvS.levelParams fam.cvS.type).stripPis
       (ind.params.toNat + ind.indices.toNat) =
       some (bs', .sort (Ix.Kernel.Level.subst fam.cvS.levelParams
-        (Core.posLevels fam.cvS.levelParams) fam.p.resSort)) := by
-    refine ⟨_, ?_⟩
-    unfold Core.posOf
-    rw [Decl.stripPis_instantiateLevelParams_full, hsort]
-    rfl
+        (Core.posLevels fam.cvS.levelParams) fam.p.resSort)) :=
+    ⟨_, by
+      unfold Core.posOf
+      rw [Decl.stripPis_instantiateLevelParams_full, hsort]
+      first | rfl | skip⟩
   obtain ⟨bs', hpos⟩ := hpos
   rcases helim _ _ hpos with h | h
   · exact Or.inl (eval_ne_zero_of_posOf hperm h)
