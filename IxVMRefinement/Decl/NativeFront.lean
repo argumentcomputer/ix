@@ -3650,9 +3650,9 @@ private theorem ctor_zero_all_go {t : Ix.Kernel.RoleTable}
       have hj_eq := nat_eq_of_field_eq (by decide) (by omega) hsub_op
       omega
     | .other (m34 := m34) (p41 := p41) (cs47 := cs_cprj) (x_cty := xcty)
-        (m125 := m125) (cs165 := cs_rec) (v171 := v171)
-        (ev49 := ev_cprj) (ld43 := ld_ctor) (ev137 := ev_cz)
-        (op208 := op_add) (ev167 := ev_rec) (hc224 := hc) .. =>
+        (m162 := m162) (cs202 := cs_rec) (v208 := v208)
+        (ev49 := ev_cprj) (ld43 := ld_ctor) (ev136 := ev_params) (ev174 := ev_cz)
+        (op245 := op_add) (ev204 := ev_rec) (hc261 := hc) .. =>
       obtain ⟨c_j, cvCa₀, hc_j, hcA_j, hvs_j, hload_j⟩ := hcload.2 j (by omega)
       have hsub_cprj : ∀ x ∈ cs_cprj, x ∈ cs_root := fun x hx => hsub x (by simp [hc, hx])
       have hsub_rec : ∀ x ∈ cs_rec, x ∈ cs_root := fun x hx => hsub x (by simp [hc, hx])
@@ -3662,7 +3662,7 @@ private theorem ctor_zero_all_go {t : Ix.Kernel.RoleTable}
       injection ld_ctor with hval; injection hval with _ _ h1
       injection h1 with _ h1; injection h1 with hcty_eq _
       cases hcty_eq.symm
-      have e1 := ev_cprj.heap_extends
+      have e1 := ev_cprj.heap_extends.trans ev_params.heap_extends
       have e2 := ev_cz.heap_extends
       by_cases hkj : k = j
       · subst hkj
@@ -3682,10 +3682,10 @@ private theorem ctor_zero_all_go {t : Ix.Kernel.RoleTable}
           intro a ha
           rw [hT_eq] at ha
           exact nat_keyOf_injective hwf ha
-        exact ctor_zero_ok_raw_go hκ_inj (nP + c_j.2) hstR hstE hdoms hcty_raw
+        exact ctor_zero_ok_raw_go hκ_inj (nP + c_j.2) hstR hstE hdoms (hcty_raw.mono ev_params.heap_extends)
           (Bytes.repAddressRef_heapMono₂ addrTy e1 hpt)
           (repKLevel_heapMono₂ e1 hpind) ev_cz
-      · have hv171 : v171 = .field ((j + 1 : Nat) : F) := evalBinOp_add_nat j 1 op_add
+      · have hv171 : v208 = .field ((j + 1 : Nat) : F) := evalBinOp_add_nat j 1 op_add
         rw [hv171] at ev_rec
         exact ctor_zero_all_go hwf hlps_ctors hT_eq hcload hctor_sp hnCtors_lt
           m (j + 1) (by omega) hsub_rec
