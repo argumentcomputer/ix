@@ -300,7 +300,8 @@ theorem unitStep_defn {X : Ix.Kernel.Env .anon → Prop} {calls : List (Call F)}
     obtain rfl := List.mem_singleton.mp hci
     rw [hname]
     exact hfreshA
-  · exact hX env _ hXe (by rw [hname]; exact hfreshA) (isValueConst_defnConst _ _ _ _)
+  · exact hX env (LoadedReads.defnConst d.kind ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val'
+      (.regular 0)) hXe (by rw [hname]; exact hfreshA) (isValueConst_defnConst _ _ _ _)
   · intro x hx
     rcases hx with ⟨hxA, -⟩ | ⟨ms, i, m, hms, -, -⟩
     · rw [hxA]

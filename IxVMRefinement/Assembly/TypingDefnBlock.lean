@@ -133,7 +133,9 @@ theorem memberStep (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀
     LoadedReads.defnConst d.kind
       ⟨keyOf t (memberAddr B k (.defn d)), List.range d.lvls.toNat, ty₀⟩ val₀ (.regular 0),
     hname, hreads, storedAs_defnConst _ _ _ _ hannT hannV, hinv', ?_⟩
-  exact hX env _ hXe (by rw [hname]; exact hfresh) (isValueConst_defnConst _ _ _ _)
+  exact hX env (LoadedReads.defnConst d.kind
+      ⟨keyOf t (memberAddr B k (.defn d)), List.range d.lvls.toNat, ty'⟩ val' (.regular 0)) hXe
+    (by rw [hname]; exact hfresh) (isValueConst_defnConst _ _ _ _)
 
 /-- **The members `0, …, m - 1` installed**, in index order, at the front of `env`: the
 installed constants `acc` have distinct fresh keys, the prefix keeps the invariant and the
@@ -216,10 +218,11 @@ theorem unitStep_defnBlock {envT : Ix.Kernel.Env .anon} {lim : Option Nat}
           (keyOf t (memberAddr B m (.defn d))) = none := by
         apply find_none_of_not_storedAt
         rintro ⟨ci, hci, hn⟩
-        rcases List.mem_append.mp hci with hca | hce
+        have hci' : ci ∈ acc ++ env.consts := hci
+        rcases List.mem_append.mp hci' with hca | hce
         · exact hnotacc ci hca hn
-        · have hs := find_isSome_of_storedAt (t := t) (x := memberAddr B m (.defn d))
-            ⟨ci, hce, hn⟩
+        · have hs := find_isSome_of_storedAt (t := t) (env := env)
+            (x := memberAddr B m (.defn d)) ⟨ci, hce, hn⟩
           rw [hfreshM m _ hmi] at hs
           simp at hs
       obtain ⟨cn, ci₀, hname, hreads, hsto, hinv', hX'⟩ :=
