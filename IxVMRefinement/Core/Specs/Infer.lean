@@ -212,7 +212,8 @@ def peel_field_loop : SpecFn := fun c args h r h' calls =>
     ∀ t0 c0 : F, tg = .field t0 → cu = .field c0 →
       ZMod.val c0 ≤ ZMod.val t0 →
       ∀ d Γ (T : KExpr) (a : Bytes.Address) (PE : KExpr),
-        c.tm d Γ h T ty → RepAddr h a sa → c.tm d Γ h PE val →
+        c.tm d Γ h T ty → RepAddr h a sa → c.κ (ixAddr a) ≠ unresolvedKey →
+        ProjPermitted c.κ (ixAddr a) → c.tm d Γ h PE val →
           ∃ (n : Nat) (FT : KExpr), ZMod.val c0 + n = ZMod.val t0 ∧ c.tm d Γ h' FT r ∧
             fieldTypeAt (c.κ (ixAddr a)) PE n (ZMod.val c0) T = some FT
 
@@ -221,7 +222,8 @@ def peel_field_loop : SpecFn := fun c args h r h' calls =>
 def k_infer_proj : SpecFn := fun c args h r h' calls =>
   ∀ rc sa fi e1 types, args = [rc, sa, fi, e1, types] → CoreGood c calls → c.rc h rc →
     ∀ i : F, fi = .field i → ∀ d Γ, c.types Γ h d types →
-      ∀ (a : Bytes.Address) (PE : KExpr), RepAddr h a sa → c.tm d Γ h PE e1 →
+      ∀ (a : Bytes.Address) (PE : KExpr), RepAddr h a sa → ProjPermitted c.κ (ixAddr a) →
+        c.tm d Γ h PE e1 →
         ∃ T, c.tm d Γ h' T r ∧ Infer c.env .full d (.proj (c.κ (ixAddr a)) (ZMod.val i) PE) T
 
 /-- `k_ensure_sort(rc, e, types)`: **`e` is a type**: its full-grade type head-reduces to a sort

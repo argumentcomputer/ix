@@ -44,7 +44,7 @@ local notation "W" => IxVM.Refinement.Obs.W
 
 /-! ## Primitive, byte-stream, and address-cell helpers -/
 
-private theorem val_cast_u56_ing {n : Nat} (h : n < 72057594037927936) :
+theorem val_cast_u56_ing {n : Nat} (h : n < 72057594037927936) :
     ZMod.val (n : F) = n := by
   have hP : (72057594037927936 : Nat) < U32.Goldilocks.modulus := by decide
   exact ZMod.val_cast_of_lt (Nat.lt_trans h hP)
@@ -1757,7 +1757,7 @@ private theorem byteArray_of_toList (ba : ByteArray) :
   cases ba with
   | mk data => simp
 
-private theorem core_to_repIxonAddressRef {h : Heap F} {b : Bytes.Address} {ptr : SourceValue F}
+theorem core_to_repIxonAddressRef {h : Heap F} {b : Bytes.Address} {ptr : SourceValue F}
     (hb : Bytes.RepAddressRef Core.addrTy h b ptr) :
     RepIxonAddressRef h (Core.ixAddr b) ptr :=
   ⟨b, rfl, hb⟩
@@ -2113,13 +2113,13 @@ private theorem repList_mutShape_of_repMutConst_ing {h : Heap F} {ms : List Ixon
   | nil cell => exact .nil cell
   | cons cell hhead _ ih => exact .cons cell hhead.toMutShape ih
 
-private theorem repIxonAddressRef_to_core_ing {h : Heap F} {a : _root_.Address} {ptr : SourceValue F}
+theorem repIxonAddressRef_to_core_ing {h : Heap F} {a : _root_.Address} {ptr : SourceValue F}
     (rep : RepIxonAddressRef h a ptr) :
     ∃ b : Bytes.Address, Core.ixAddr b = a ∧ Bytes.RepAddressRef Core.addrTy h b ptr := by
   obtain ⟨b, rfl, hb⟩ := rep
   exact ⟨b, rfl, hb⟩
 
-private theorem hashed_sub {calls₁ calls₂ : List (Call F)} {b : ByteArray}
+theorem hashed_sub {calls₁ calls₂ : List (Call F)} {b : ByteArray}
     (h : Hashed calls₁ b) (hsub : ∀ x ∈ calls₁, x ∈ calls₂) : Hashed calls₂ b :=
   Core.hashed_mono hsub h
 
@@ -2243,7 +2243,7 @@ theorem defn_member_recur_addrs_spec {d : Ixon.Definition} {ms : List Ixon.MutCo
 
 /-! ## Top-level constant ingress (`get_ci_dprj`, `get_ci_iprj`, `get_ci_cprj`, `get_ci_rprj`, `get_ci`) -/
 
-private theorem repConstantInfo_muts_inv {h : Heap F} {info : Ixon.ConstantInfo}
+theorem repConstantInfo_muts_inv {h : Heap F} {info : Ixon.ConstantInfo}
     {x_members : SourceValue F}
     (hinfo : RepConstantInfo h info (.construct "Ixon::ConstantInfo" "Muts" [x_members])) :
     ∃ ms : Array Ixon.MutConst,
@@ -2258,7 +2258,7 @@ private theorem repConstantInfo_muts_inv {h : Heap F} {info : Ixon.ConstantInfo}
   | defn _ | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ =>
     obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
 
-private theorem repConstantInfo_defn_inv {h : Heap F} {info : Ixon.ConstantInfo}
+theorem repConstantInfo_defn_inv {h : Heap F} {info : Ixon.ConstantInfo}
     {dv : SourceValue F}
     (hinfo : RepConstantInfo h info (.construct "Ixon::ConstantInfo" "Defn" [dv])) :
     ∃ d : Ixon.Definition, info = .defn d ∧ RepDefinition h d dv := by
@@ -2272,7 +2272,7 @@ private theorem repConstantInfo_defn_inv {h : Heap F} {info : Ixon.ConstantInfo}
   | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
     obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
 
-private theorem repConstantInfo_axio_inv {h : Heap F} {info : Ixon.ConstantInfo}
+theorem repConstantInfo_axio_inv {h : Heap F} {info : Ixon.ConstantInfo}
     {av : SourceValue F}
     (hinfo : RepConstantInfo h info (.construct "Ixon::ConstantInfo" "Axio" [av])) :
     ∃ ax : Ixon.Axiom, info = .axio ax ∧ RepAxiom h ax av := by
@@ -2286,7 +2286,7 @@ private theorem repConstantInfo_axio_inv {h : Heap F} {info : Ixon.ConstantInfo}
   | defn _ | recr _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
     obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
 
-private theorem repConstantInfo_quot_inv {h : Heap F} {info : Ixon.ConstantInfo}
+theorem repConstantInfo_quot_inv {h : Heap F} {info : Ixon.ConstantInfo}
     {qv : SourceValue F}
     (hinfo : RepConstantInfo h info (.construct "Ixon::ConstantInfo" "Quot" [qv])) :
     ∃ q : Ixon.Quotient, info = .quot q ∧ RepQuotient h q qv := by
@@ -2300,7 +2300,7 @@ private theorem repConstantInfo_quot_inv {h : Heap F} {info : Ixon.ConstantInfo}
   | defn _ | recr _ | axio _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
     obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
 
-private theorem repConstantInfo_recr_inv {h : Heap F} {info : Ixon.ConstantInfo}
+theorem repConstantInfo_recr_inv {h : Heap F} {info : Ixon.ConstantInfo}
     {rv : SourceValue F}
     (hinfo : RepConstantInfo h info (.construct "Ixon::ConstantInfo" "Recr" [rv])) :
     ∃ rc : Ixon.Recursor, info = .recr rc ∧ RepRecursor h rc rv := by
@@ -2314,7 +2314,7 @@ private theorem repConstantInfo_recr_inv {h : Heap F} {info : Ixon.ConstantInfo}
   | defn _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
     obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
 
-private theorem repConstantInfo_dPrj_inv {h : Heap F} {info : Ixon.ConstantInfo}
+theorem repConstantInfo_dPrj_inv {h : Heap F} {info : Ixon.ConstantInfo}
     {x_idx x_block_addr : SourceValue F}
     (hinfo : RepConstantInfo h info
       (.construct "Ixon::ConstantInfo" "DPrj"
@@ -2331,7 +2331,7 @@ private theorem repConstantInfo_dPrj_inv {h : Heap F} {info : Ixon.ConstantInfo}
   | defn _ | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | muts _ =>
     obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
 
-private theorem repConstantInfo_iPrj_inv {h : Heap F} {info : Ixon.ConstantInfo}
+theorem repConstantInfo_iPrj_inv {h : Heap F} {info : Ixon.ConstantInfo}
     {x_idx x_block_addr : SourceValue F}
     (hinfo : RepConstantInfo h info
       (.construct "Ixon::ConstantInfo" "IPrj"
@@ -2348,7 +2348,7 @@ private theorem repConstantInfo_iPrj_inv {h : Heap F} {info : Ixon.ConstantInfo}
   | defn _ | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | dPrj _ | muts _ =>
     obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
 
-private theorem repConstantInfo_cPrj_inv {h : Heap F} {info : Ixon.ConstantInfo}
+theorem repConstantInfo_cPrj_inv {h : Heap F} {info : Ixon.ConstantInfo}
     {x_idx x_cidx x_block_addr : SourceValue F}
     (hinfo : RepConstantInfo h info
       (.construct "Ixon::ConstantInfo" "CPrj"
@@ -2369,7 +2369,7 @@ private theorem repConstantInfo_cPrj_inv {h : Heap F} {info : Ixon.ConstantInfo}
   | defn _ | recr _ | axio _ | quot _ | rPrj _ | iPrj _ | dPrj _ | muts _ =>
     obtain ⟨_, hmk, _⟩ := hinfo; simp at hmk
 
-private theorem repConstantInfo_rPrj_inv {h : Heap F} {info : Ixon.ConstantInfo}
+theorem repConstantInfo_rPrj_inv {h : Heap F} {info : Ixon.ConstantInfo}
     {x_idx x_block_addr : SourceValue F}
     (hinfo : RepConstantInfo h info
       (.construct "Ixon::ConstantInfo" "RPrj"

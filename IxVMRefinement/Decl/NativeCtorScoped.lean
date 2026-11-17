@@ -45,6 +45,9 @@ def nativeCtorCoreCtx (base : Ctx) {rootCalls : List (Call F)}
     (runs : List (NativeCtorCoreRun rootCalls)) : ScopedCtx :=
   { toCtx := base, allowed := fun call => call ∈ nativeCtorCoreCalls runs }
 
+instance (base : Ctx) {rootCalls : List (Call F)} (runs : List (NativeCtorCoreRun rootCalls)) :
+    (nativeCtorCoreCtx base runs).TableKeyed := ⟨rfl⟩
+
 /-- Each selected run has core coverage in the produced context. -/
 theorem NativeCtorCoreRun.coreGood {base : Ctx} {rootCalls : List (Call F)}
     {runs : List (NativeCtorCoreRun rootCalls)} {run : NativeCtorCoreRun rootCalls}
@@ -96,7 +99,7 @@ theorem CtorLoadAtIndex.scoped_fresh_read {base : Ctx} {block : Bytes.Address}
 remaining load premise is explicitly restricted to that scope by the caller; base semantic
 facts and raw metadata facts retain their separate obligations. -/
 theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
-    {cR : ScopedCtx} {indIndex : F}
+    {cR : ScopedCtx} [cR.TableKeyed] {indIndex : F}
     {b₀ : Bytes.Address} {T : KKey} {lps : List LevelParam}
     {nP nIdx : Nat} {ta : KExpr} {resSort ind_lvl : KLevel}
     {cs_root : List (Call F)} {ctors ctorsA : List (KConstantVal × Nat)}
@@ -135,7 +138,7 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
       ∃ runs : List (NativeCtorCoreRun cs_root),
         ∀ allowed : Call F → Prop,
           (∀ call ∈ nativeCtorCoreCalls runs, allowed call) →
-          ScopedLoadFacts { toCtx := cR.toCtx, allowed := allowed } →
+          ScopedLoadFacts { cR with allowed := allowed } →
       ∃ sortss_suf : List (List KLevel),
         sortss_suf.length = m ∧
         ∀ t_idx < m, ∃ c cA sorts,
@@ -209,7 +212,8 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
         subset := fun call member => hsub call (by simp [hc, member]) }
       refine ⟨sortRun :: paramRun :: fieldRun :: restRuns, ?_⟩
       intro allowed covered loads
-      let cC : ScopedCtx := { toCtx := cR.toCtx, allowed := allowed }
+      let cC : ScopedCtx := { cR with allowed := allowed }
+      have cCKeyed : cC.TableKeyed := ScopedCtx.TableKeyed.withAllowed inferInstance allowed
       have restAllowed : ∀ call ∈ nativeCtorCoreCalls restRuns, allowed call := by
         intro call member
         apply covered call
@@ -250,8 +254,9 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
           rw [hvs_j.2.1, hlps_ctors c_j hc_mem]
           exact hlps
         have hpos_lift : PosSortLift cR.env cvCa₀ := PosSortLift.of_range hlps_cj
-        have hv_m144 : ValRepExact cR.κ m144 (.field (lps.length : F)) xcty cvCa₀ :=
-          ⟨hv_rep.1, hv_rep.2.1, hv_rep.2.2.1, hv_rep.2.2.2.mono e_aeq⟩
+        have hv_m144 : ValRepExact cR.κ m144 (.field (lps.length : F)) xcty cvCa₀ := by
+          rw [ScopedCtx.κ_eq cR]
+          exact ⟨hv_rep.1, hv_rep.2.1, hv_rep.2.2.1, hv_rep.2.2.2.mono e_aeq⟩
         have hty_nil : TypesRep cR.κ (fun _ => default) m387 0
             (.ptr (.enum kexprListEnum) m319.length) := by
           rw [hm387]; exact typesRep_alloc_nil cR.κ (fun _ => default) m319
@@ -272,6 +277,7 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
         have hcty_raw_m34 :
             RawTmExact cR.κ 0 (fun _ => default) m34 0
               (ctorRawTypes.getD j default) cvCa₀.type xcty := by
+          rw [ScopedCtx.κ_eq cR]
           have h0 := hraw_rep 0 (fun _ => default)
           rwa [hlps_cj, posOf_range] at h0
         have hcty_exact_m34 : TmExact cR.κ 0 (fun _ => default) m34 0 cvCa₀.type xcty :=
@@ -358,7 +364,7 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
 /-- The actual complete constructor traversal chooses its exact typed-call scope. No caller
 coverage predicate or unrestricted load contract is needed. -/
 theorem native_ctor_scoped (hLevels : IxVM.Consistency.Levels)
-    {cR : ScopedCtx} {indIndex : F}
+    {cR : ScopedCtx} [cR.TableKeyed] {indIndex : F}
     {b₀ : Bytes.Address} {T : KKey} {lps : List LevelParam}
     {nP nIdx : Nat} {ta : KExpr} {resSort ind_lvl : KLevel}
     {cs_root : List (Call F)} {ctors ctorsA : List (KConstantVal × Nat)}
@@ -406,7 +412,8 @@ theorem native_ctor_scoped (hLevels : IxVM.Consistency.Levels)
     (Nat.add_zero _) subset good rawCovered roleContext formerRep blockRep sortRep observed
   refine ⟨runs, fun loads => ?_⟩
   simpa only [Nat.zero_add] using
-    checked (fun call => call ∈ nativeCtorCoreCalls runs) (fun _ member => member) loads
+    checked (fun call => call ∈ nativeCtorCoreCalls runs) (fun _ member => member)
+      (by rw [ScopedCtx.withAllowed_eq]; exact loads)
 
 
 end IxVM.Refinement.Decl

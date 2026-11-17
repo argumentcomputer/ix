@@ -197,17 +197,25 @@ theorem k_synth_fab_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     subst hiap
     -- the inductive's record, and the rule's constructor
     obtain ⟨cm, b, i, hcm, hb, hidx, hinfo⟩ := hc.loads.inductRecord x_ind_addr p189 m146 m181 cs195
-      ia _ _ _ _ _ _ x_ind_block x_ind_idx ev197 (good.allowedTop (by simp))
+      ia _ _ _ _ _ _ x_ind_block x_ind_idx ev197 (good.allowedTop (by simp)) (by resolve_key)
       (good.sub fun z hz => by simp [hz]).raw
       (Bytes.repAddressRef_heapMono₂ addrTy e159 hia) ld191
     subst hidx
     obtain ⟨us0, hmh0⟩ := hmh
+    have hmh0k := hmh0
+    rw [c.key_eq hHT.const_key_ne] at hmh0k
     obtain ⟨hnd, hfire, hkeys⟩ := hc.env.recRules k cv mI rP [rl] hfind
-    have hctor := hkeys (ixAddr ia) cm _ us0 hmh0 hcm hinfo 0 rl rfl
+    have hctor := hkeys (ixAddr ia) cm _ us0 hmh0k hcm hinfo 0 rl rfl
     simp only [val_toUInt64_toNat] at hctor
     obtain ⟨cpa, hcpa, hcpaa⟩ := ih.get (.callees .projection_addr_ctor) (by lt_calls) ev271 i 0
       x_ind_block b rfl (good.sub fun z hz => by simp [hz]) hb
-    have hκ : rl.ctor = c.κ (ixAddr cpa) := by rw [hctor, hcpaa, ZMod.val_zero]
+    obtain ⟨cvj0, nF0, hfj0⟩ := (hfire rl (List.mem_singleton.mpr rfl)).2
+    have hresc : c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0) ≠ unresolvedKey :=
+      hc.loads.storedRes _ _ ((congrArg (fun k => c.env.find? k) hctor).symm.trans hfj0)
+    have hκ : rl.ctor = c.κ (ixAddr cpa) := by
+      rw [hctor, hcpaa, ZMod.val_zero]; exact (c.key_eq hresc).symm
+    have hrescpa : c.κ (ixAddr cpa) ≠ unresolvedKey := by
+      rw [hcpaa, ZMod.val_zero]; exact hresc
     obtain ⟨-, cvj, nF, hcj⟩ := hfire rl hrl
     obtain ⟨-, -, harity⟩ := hc.env.ruleCtorArity k cv mI rP [rl] hfind rl hrl cvj _ _ hcj
     obtain ⟨cvj', cnP', T', us', cvT, caps, hcj', hres', hT', -⟩ :=
@@ -221,6 +229,7 @@ theorem k_synth_fab_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     -- the fabrication
     have hhead : c.tmk d Γ 0 m313 (.const rl.ctor ust) (.ptr (.enum kexprEnum) m259.length) := by
       obtain ⟨ls, hls, hlseq⟩ := LvListRep.mono Y313 hust
+      have : Resolved (c.κ (ixAddr cpa)) := ⟨hrescpa⟩
       rw [hκ]
       exact .const (by rw [hm321]; simp) (Bytes.repAddressRef_heapMono₂ addrTy e313 hcpa) hls
         hlseq

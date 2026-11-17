@@ -16,7 +16,7 @@ open IxVM (F)
 open IxVM.Refinement.Core (KKey KExpr)
 
 /-- The actual former annotation needs self-name agreement only at recursive leaves reached by its raw type and sharing entries. -/
-theorem native_former_value_of_trace_of_selfReads {κ : _root_.Address → KKey}
+theorem native_former_value_of_trace_of_selfReads {κ : _root_.Address → KKey} [∀ a, Core.Resolved (κ a)]
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
@@ -73,7 +73,7 @@ theorem native_former_value_of_trace_of_selfReads {κ : _root_.Address → KKey}
   · simpa only [cv, List.append_nil] using readTrace plan trace []
 
 /-- The exact type trace chooses the annotated value represented by a raw former load. -/
-theorem native_former_value_of_trace_of_blobAgreement {κ : _root_.Address → KKey}
+theorem native_former_value_of_trace_of_blobAgreement {κ : _root_.Address → KKey} [∀ a, Core.Resolved (κ a)]
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
@@ -100,7 +100,7 @@ theorem native_former_value_of_trace_of_blobAgreement {κ : _root_.Address → K
     (fun i a m k _ => selfKeyed i a m k) blobReads
 
 /-- Compatibility with full observed-blob membership. -/
-theorem native_former_value_of_trace {κ : _root_.Address → KKey}
+theorem native_former_value_of_trace {κ : _root_.Address → KKey} [∀ a, Core.Resolved (κ a)]
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}

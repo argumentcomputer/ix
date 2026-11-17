@@ -185,23 +185,52 @@ private theorem ctorZero_of_rep {κ : _root_.Address → KKey} {h : Heap F}
     exact ⟨_, _, rfl⟩
   all_goals (injection hv with _ htag _; exact absurd htag (by decide))
 
+/-- **The roles whose constants the checker builds or loads by role**: the `Nat` literal
+constructors and type, the accelerated `Nat` operations (the offset rules rebuild their
+applications), the `Bool` results of the comparisons, the constants a string literal expands
+to and its type, and the quotient constructor and eliminators. A term the checker builds
+mentions these constants, so their keys must resolve; no other role is asked for. -/
+def fabricatedRole : Ix.Kernel.Role → Bool
+  | .nat | .natZero | .natSucc | .natPred | .natAdd | .natSub | .natMul | .natDiv | .natMod
+  | .natGcd | .natPow | .natLand | .natLor | .natXor | .natShiftLeft | .natShiftRight
+  | .natBeq | .natBle | .boolFalse | .boolTrue | .string | .listNil | .listCons | .char
+  | .charOfNat | .stringOfList | .quotMk | .quotLift | .quotInd => true
+  | _ => false
+
+/-- **`b` is the address of a block record a run hashed**: bounded calls that hash no collision
+with the store `E` hash bytes that decode exactly to a `muts` record, and `b` is their hash. -/
+def HashedBlockAt (E : Ixon.Env) (b : _root_.Address) : Prop :=
+  ∃ (cs : List (Call F)) (blk : ByteArray) (cb : Ixon.Constant) (ms : Array Ixon.MutConst),
+    ¬ View.HashedCollision { env := E } [] cs ∧ IxVM.Consistency.Bounded cs ∧
+    Hashed cs blk ∧ Ixon.deConstantExact blk = .ok cb ∧ cb.info = .muts ms ∧
+    Address.blake3Pure blk = b
+
+theorem HashedBlockAt.of_good {c : Ctx} {cs : List (Call F)} (hg : Good c cs) {blk : ByteArray}
+    {cb : Ixon.Constant} {ms : Array Ixon.MutConst} (hh : Hashed cs blk)
+    (hex : Ixon.deConstantExact blk = .ok cb) (hms : cb.info = .muts ms) {b : _root_.Address}
+    (hb : Address.blake3Pure blk = b) : HashedBlockAt c.E b :=
+  ⟨cs, blk, cb, ms, hg.1, hg.2, hh, hex, hms, hb⟩
+
 /-- Installed reads require allowed top invocations and coverage of their children. Raw record facts stay
 conditional on actual stored records, and native eta observations carry their own evidence. -/
 structure ScopedLoadFacts (c : ScopedCtx) : Prop where
   getCI : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
-    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → c.allowedTop "Ingress::get_ci" [addr] h → CoreGood c cs →
+    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → c.allowedTop "Ingress::get_ci" [addr] h →
+      c.κ (ixAddr a) ≠ unresolvedKey → CoreGood c cs →
     Bytes.RepAddressRef addrTy h a addr →
       ∃ ci, c.env.find? (c.κ (ixAddr a)) = some ci ∧ CIPtrRep c.κ h' ptr ci
   getCprj : ∀ (bp ptr : SourceValue F) (i j : F) (h h' : Heap F) (cs : List (Call F))
       (b : Bytes.Address),
-    ObsFn W "Ingress::get_ci_cprj" [bp, .field i, .field j] h ptr h' cs → c.allowedTop "Ingress::get_ci_cprj" [bp, .field i, .field j] h → CoreGood c cs →
+    ObsFn W "Ingress::get_ci_cprj" [bp, .field i, .field j] h ptr h' cs → c.allowedTop "Ingress::get_ci_cprj" [bp, .field i, .field j] h →
+      c.FamAt (ixAddr b) (ZMod.val i) → CoreGood c cs →
     Bytes.RepAddressRef addrTy h b bp →
       (∃ ci₀, CIPtrRep c.κ h' ptr ci₀) ∧
-      ∀ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j))) = some ci →
-        CIPtrRep c.κ h' ptr ci
+      ∀ cv nP nF, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val j))) =
+          some (.ctorInfo cv nP nF) → CIPtrRep c.κ h' ptr (.ctorInfo cv nP nF)
   getIprj : ∀ (bp ptr : SourceValue F) (i : F) (h h' : Heap F) (cs : List (Call F))
       (b : Bytes.Address),
-    ObsFn W "Ingress::get_ci_iprj" [bp, .field i] h ptr h' cs → c.allowedTop "Ingress::get_ci_iprj" [bp, .field i] h → CoreGood c cs →
+    ObsFn W "Ingress::get_ci_iprj" [bp, .field i] h ptr h' cs → c.allowedTop "Ingress::get_ci_iprj" [bp, .field i] h →
+      c.FamAt (ixAddr b) (ZMod.val i) → CoreGood c cs →
     Bytes.RepAddressRef addrTy h b bp →
       ∃ ci, c.env.find? (c.κ (iprjAddr (ixAddr b) (ZMod.val i))) = some ci ∧ CIPtrRep c.κ h' ptr ci
   indRecord : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address)
@@ -219,7 +248,8 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
       p.idx.toNat < 2 ^ 56 ∧ ind.ctors.size < 2 ^ 56
   inductRecord : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
       (a : Bytes.Address) (nl ty np ni nc u blk idx : SourceValue F),
-    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → c.allowedTop "Ingress::get_ci" [addr] h → Good c.toCtx cs → Bytes.RepAddressRef addrTy h a addr →
+    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → c.allowedTop "Ingress::get_ci" [addr] h →
+      c.κ (ixAddr a) ≠ unresolvedKey → Good c.toCtx cs → Bytes.RepAddressRef addrTy h a addr →
     loadValue h' ptr = .ok (.construct kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, idx]) →
     ∃ (cm : Ixon.Constant) (b : Bytes.Address) (i : F),
       Ix.Cert.recordAt c.E (ixAddr a) = some cm ∧ Bytes.RepAddressRef addrTy h' b blk ∧
@@ -229,10 +259,20 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
     ObsFn W "KernelModeled::proj_ctor" [bp, ip] h ptr h' cs →
     c.allowedTop "KernelModeled::proj_ctor" [bp, ip] h → Good c.toCtx cs →
     Bytes.RepAddressRef addrTy h b bp → ip = .field i →
+    c.FamAt (ixAddr b) (ZMod.val i) →
+    ProjPermitted c.κ (iprjAddr (ixAddr b) (ZMod.val i)) →
     (∃ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some ci ∧
       CIPtrRep c.κ h' ptr ci) ∧
+    ∀ (sap sptr nl ty np u blk : SourceValue F) (h1 h2 : Heap F) (cs1 : List (Call F))
+      (s : Bytes.Address),
+    ObsFn W "Ingress::get_ci" [sap] h1 sptr h2 cs1 → Good c.toCtx cs1 →
+    Bytes.RepAddressRef addrTy h1 s sap →
+    loadValue h2 sptr =
+      .ok (.construct kciEnum "Induct" [nl, ty, np, .field 0, .field 1, u, blk, .field i]) →
+    Bytes.RepAddressRef addrTy h2 b blk →
     ∀ (j : Nat) (cvC : Ix.Kernel.ConstantVal .anon) (nP nF : Nat),
       c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) j)) = some (.ctorInfo cvC nP nF) →
+      (cvC.type.stripPis 1).isSome = true →
       ∃ tbl : Ix.Kernel.ProjTable .anon,
         c.env.find? (Ix.Kernel.projTableName (c.κ (iprjAddr (ixAddr b) (ZMod.val i)))) =
           some (.projInfo tbl) ∧
@@ -259,6 +299,7 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
     Bytes.RepAddressRef addrTy h2 b blk →
     ∀ (j : Nat) (cvC : Ix.Kernel.ConstantVal .anon) (nP nF : Nat),
       c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) j)) = some (.ctorInfo cvC nP nF) →
+      0 < nF →
       ∃ tbl : Ix.Kernel.ProjTable .anon,
         c.env.find? (Ix.Kernel.projTableName (c.κ (iprjAddr (ixAddr b) (ZMod.val i)))) =
           some (.projInfo tbl) ∧
@@ -295,6 +336,7 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
       (a : Bytes.Address) (nl ty u blk : SourceValue F) (p i : F) (b : Bytes.Address)
       (cvT : Ix.Kernel.ConstantVal .anon) (caps : Ix.Kernel.IndCaps .anon),
     ObsFn W "Ingress::get_ci" [ap] h ptr h' cs → c.allowedTop "Ingress::get_ci" [ap] h →
+    c.κ (ixAddr a) ≠ unresolvedKey →
     Good c.toCtx cs → Bytes.RepAddressRef addrTy h a ap →
     loadValue h' ptr = .ok (.construct kciEnum "Induct"
       [nl, ty, .field p, .field 0, .field 1, u, blk, .field i]) →
@@ -358,7 +400,8 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
     Specs.Callees.ConstShapeRep h' cst r
   inductBlock : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
       (a b : Bytes.Address) (nl ty np ni nc u blk : SourceValue F) (i : F),
-    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → c.allowedTop "Ingress::get_ci" [addr] h → Good c.toCtx cs →
+    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → c.allowedTop "Ingress::get_ci" [addr] h →
+      c.κ (ixAddr a) ≠ unresolvedKey → Good c.toCtx cs →
     Bytes.RepAddressRef addrTy h a addr →
     loadValue h' ptr = .ok (.construct kciEnum "Induct" [nl, ty, np, ni, nc, u, blk, .field i]) →
     Bytes.RepAddressRef addrTy h' b blk →
@@ -390,25 +433,53 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
     (⟨info, #[], #[], #[], #[]⟩ : Ixon.Constant).wireWF →
     c.E.consts.get? x = some lc → lc.rawBytes = Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩ →
       ∀ cm, lc.get? = some cm → cm.info = info
+  /-- A key the environment stores resolves. -/
+  storedRes : ∀ (a : _root_.Address) (ci : Ix.Kernel.ConstantInfo .anon),
+    c.env.find? (keyOf c.t a) = some ci → c.κ a ≠ unresolvedKey
+  /-- What the environment stores under the context's keying is not at the unresolved key. -/
+  findRes : ∀ (a : _root_.Address) (ci : Ix.Kernel.ConstantInfo .anon),
+    c.env.find? (c.κ a) = some ci → c.κ a ≠ unresolvedKey
+  /-- The inductive of a stored constructor resolves, at the address of a block record a run
+  hashed. -/
+  ctorIndRes : ∀ (b : _root_.Address) (i j : Nat) (cv : Ix.Kernel.ConstantVal .anon)
+      (nP nF : Nat), HashedBlockAt c.E b →
+    c.env.find? (c.κ (cprjAddr b i j)) = some (.ctorInfo cv nP nF) →
+    c.κ (iprjAddr b i) ≠ unresolvedKey
+  /-- The inductive of a stored constructor permits projection, at the address it is stored
+  under, for a block record a run hashed. -/
+  ctorIndPerm : ∀ (a b : _root_.Address) (i j : Nat) (cvT : Ix.Kernel.ConstantVal .anon)
+      (caps : Ix.Kernel.IndCaps .anon) (cv : Ix.Kernel.ConstantVal .anon) (nP nF : Nat),
+    HashedBlockAt c.E b →
+    c.env.find? (c.κ a) = some (.indInfo cvT caps) → cvT.name = c.κ (iprjAddr b i) →
+    c.env.find? (c.κ (cprjAddr b i j)) = some (.ctorInfo cv nP nF) → ProjPermitted c.κ a
+  /-- A role in force whose constant the checker builds or loads by role resolves
+  (`fabricatedRole`). Other roles in force need not be stored. -/
+  roleRes : ∀ (r : Ix.Kernel.Role) (a : _root_.Address), c.inForce r →
+    fabricatedRole r = true →
+    c.t.addressOf? r = some a → c.κ a ≠ unresolvedKey
 
 /-- Compatibility with the old unrestricted interface. This adapter does not construct
 load evidence for a fresh declaration or establish its selected-call coverage. -/
-theorem ScopedLoadFacts.ofUnrestricted {c : ScopedCtx}
-    (he : EnvFacts c.toCtx) (h : LoadFacts c.toCtx) : ScopedLoadFacts c where
-  getCI := fun addr ptr h₀ h₁ cs a ev _ hg ha => h.getCI addr ptr h₀ h₁ cs a ev hg.raw ha
+theorem ScopedLoadFacts.ofUnrestricted {c : ScopedCtx} (hk : c.key = keyOf c.t)
+    (he : EnvFacts c.toCtx) (h : LoadFacts c.toCtx) : ScopedLoadFacts c := by
+  obtain ⟨c₀, allowed, key, key_spec⟩ := c
+  dsimp only at hk
+  subst hk
+  exact {
+  getCI := fun addr ptr h₀ h₁ cs a ev _ _ hg ha => h.getCI addr ptr h₀ h₁ cs a ev hg.raw ha
   getCprj := by
-    intro bp ptr i j h₀ h₁ cs b ev _ hg hb
+    intro bp ptr i j h₀ h₁ cs b ev _ _ hg hb
     obtain ⟨ci₀, hfind₀, hrep⟩ := h.getCprj bp ptr i j h₀ h₁ cs b ev hg.raw hb
-    refine ⟨⟨ci₀, hrep⟩, fun ci hfind => ?_⟩
+    refine ⟨⟨ci₀, hrep⟩, fun cv nP nF hfind => ?_⟩
     have heq := Option.some.inj (hfind₀.symm.trans hfind)
     cases heq
     exact hrep
-  getIprj := fun bp ptr i h₀ h₁ cs b ev _ hg hb => h.getIprj bp ptr i h₀ h₁ cs b ev hg.raw hb
+  getIprj := fun bp ptr i h₀ h₁ cs b ev _ _ hg hb => h.getIprj bp ptr i h₀ h₁ cs b ev hg.raw hb
   indRecord := h.indRecord
-  inductRecord := fun addr ptr h₀ h₁ cs a nl ty np ni nc u blk idx ev _ hg ha ld =>
+  inductRecord := fun addr ptr h₀ h₁ cs a nl ty np ni nc u blk idx ev _ _ hg ha ld =>
     h.inductRecord addr ptr h₀ h₁ cs a nl ty np ni nc u blk idx ev hg ha ld
   projTables := by
-    intro bp ip ptr h₀ h₁ cs b i ev _ hg hb hip
+    intro bp ip ptr h₀ h₁ cs b i ev _ hg hb hip _ _
     subst ip
     have htables := h.projTables bp (.field i) ptr h₀ h₁ cs b i ev hg hb rfl
     obtain ⟨v, mid, cs_assert, cs_load, ev_assert, ev_load, hcalls⟩ :=
@@ -416,11 +487,15 @@ theorem ScopedLoadFacts.ofUnrestricted {c : ScopedCtx}
     have hstored := h.getCprj bp ptr i 0 mid h₁ cs_load b ev_load
       (hg.sub fun cl hcl => by simp [hcalls, hcl])
       (Bytes.repAddressRef_heapMono₂ addrTy ev_assert.heap_extends hb)
-    exact ⟨by simpa only [ZMod.val_zero] using hstored, htables⟩
-  projTablesAt := h.projTablesAt
+    exact ⟨by simpa only [ZMod.val_zero] using hstored,
+      fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ j cvC nP nF hc _ => htables j cvC nP nF hc⟩
+  projTablesAt := fun bp sap ptr nl ty np u blk h₀ h₁ h1 h2 cs cs1 b s i evM gM hb evG gG hs hld
+      hblk j cvC nP nF hc _ =>
+    h.projTablesAt bp sap ptr nl ty np u blk h₀ h₁ h1 h2 cs cs1 b s i evM gM hb evG gG hs hld hblk
+      j cvC nP nF hc
   unitLike := h.unitLike
   unitLikeRaw := by
-    intro ap ptr h₀ h₁ cs a nl ty u blk p i b cvT caps ev _ hg ha ld hb hfind hfew hz _
+    intro ap ptr h₀ h₁ cs a nl ty u blk p i b cvT caps ev _ _ hg ha ld hb hfind hfew hz _
     obtain ⟨ciC, hfindC, vC, hldC, hrepC⟩ := h.getCprj hz.bp hz.ptr i 0 hz.before hz.after
       hz.calls b hz.observed hz.good hz.blockRep
     obtain ⟨cnl, cty, cblk, cidx, ccidx, cnp, cu, hzero⟩ := hz.zeroFields
@@ -444,10 +519,15 @@ theorem ScopedLoadFacts.ofUnrestricted {c : ScopedCtx}
       ev hg hp ld hb hT hC hmulti hrec hpi hnz
     exact ⟨ho, he.etaUseFacts hT ho.1 ho.2.1 hC⟩
   recordShape := h.recordShape
-  inductBlock := fun addr ptr h₀ h₁ cs a b nl ty np ni nc u blk i ev _ hg ha ld hb =>
+  inductBlock := fun addr ptr h₀ h₁ cs a b nl ty np ni nc u blk i ev _ _ hg ha ld hb =>
     h.inductBlock addr ptr h₀ h₁ cs a b nl ty np ni nc u blk i ev hg ha ld hb
   projTablesGuard := h.projTablesGuard
   canonical := h.canonical
+  storedRes := fun _ _ _ => Resolved.ne
+  findRes := fun _ _ _ => Resolved.ne
+  ctorIndRes := fun _ _ _ _ _ _ _ _ => Resolved.ne
+  ctorIndPerm := fun _ _ _ _ _ _ _ _ _ _ _ _ _ => inferInstance
+  roleRes := fun _ _ _ _ _ => Resolved.ne }
 
 /-- Context evidence for actual scoped registry runs. -/
 structure ScopedCoreFacts (c : ScopedCtx) : Prop where
@@ -456,6 +536,110 @@ structure ScopedCoreFacts (c : ScopedCtx) : Prop where
 
 theorem ScopedCoreFacts.ofUnrestricted {c : Ctx} (h : CoreFacts c) :
     ScopedCoreFacts (ScopedCtx.unrestricted c) :=
-  ⟨h.env.toCoreEnvFacts, ScopedLoadFacts.ofUnrestricted h.env h.loads⟩
+  ⟨h.env.toCoreEnvFacts, ScopedLoadFacts.ofUnrestricted rfl h.env h.loads⟩
+
+/-! ## Resolution at the load sites
+
+A step proof reads the resolution of the address it is about to load from what it has in hand:
+the represented term whose constant it loads (`Tm.const_key_ne`, `Tm.head_key_ne`,
+`Tm.proj_key_ne`), a stored constant (`res_of_find`), or the stored inductive or constructor
+whose block member it names (`res_of_ind`, `res_of_ctor`). -/
+
+private theorem find?_name_eq {env : Ix.Kernel.Env .anon} {k : KKey}
+    {ci : Ix.Kernel.ConstantInfo .anon} (h : env.find? k = some ci) : ci.name = k := by
+  unfold Ix.Kernel.Env.find? at h
+  have := List.find?_some h
+  simpa using this
+
+/-- What the environment stores under the context's keying resolves. -/
+theorem ScopedCoreFacts.res_of_find {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {a : _root_.Address} {ci : Ix.Kernel.ConstantInfo .anon}
+    (h : c.env.find? (c.κ a) = some ci) : c.κ a ≠ unresolvedKey :=
+  hc.loads.findRes a ci h
+
+/-- A key the environment stores under the table's keying resolves, and the context keys it as
+the table does. -/
+theorem ScopedCoreFacts.key_of_stored {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {a : _root_.Address} {ci : Ix.Kernel.ConstantInfo .anon}
+    (h : c.env.find? (keyOf c.t a) = some ci) : c.κ a = keyOf c.t a :=
+  c.key_eq (hc.loads.storedRes a ci h)
+
+/-- **The inductive a stored inductive names resolves**: the name is the stored key. -/
+theorem ScopedCoreFacts.res_of_ind {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {a b : _root_.Address} {i : Nat} {cv : Ix.Kernel.ConstantVal .anon}
+    {caps : Ix.Kernel.IndCaps .anon}
+    (hfind : c.env.find? (c.κ a) = some (.indInfo cv caps))
+    (hname : cv.name = c.κ (iprjAddr b i)) : c.κ (iprjAddr b i) ≠ unresolvedKey := by
+  have h1 : cv.name = c.κ a := find?_name_eq hfind
+  rw [← hname, h1]
+  exact hc.res_of_find hfind
+
+/-- **The inductive of a stored constructor resolves.** -/
+theorem ScopedCoreFacts.res_of_ctor {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {a b : _root_.Address} {i j : Nat} {cv : Ix.Kernel.ConstantVal .anon} {nP nF : Nat}
+    (hfind : c.env.find? (c.κ a) = some (.ctorInfo cv nP nF))
+    (hname : cv.name = c.κ (cprjAddr b i j)) (hb : HashedBlockAt c.E b) :
+    c.κ (iprjAddr b i) ≠ unresolvedKey := by
+  have h1 : cv.name = c.κ a := find?_name_eq hfind
+  refine hc.loads.ctorIndRes b i j cv nP nF hb ?_
+  rw [← hname, h1]
+  exact hfind
+
+/-- A stored inductive is family evidence at its own projection address. -/
+theorem ScopedCtx.famAt_of_ind {c : ScopedCtx} {a b : _root_.Address} {i : Nat}
+    {cv : Ix.Kernel.ConstantVal .anon} {caps : Ix.Kernel.IndCaps .anon}
+    (hfind : c.env.find? (c.κ a) = some (.indInfo cv caps))
+    (hname : cv.name = c.κ (iprjAddr b i)) : c.FamAt b i := by
+  have h1 : cv.name = c.κ a := find?_name_eq hfind
+  refine Or.inl ⟨cv, caps, ?_⟩
+  rw [← hname, h1]
+  exact hfind
+
+/-- A stored constructor is family evidence for its inductive. -/
+theorem ScopedCtx.famAt_of_ctor {c : ScopedCtx} {a b : _root_.Address} {i j : Nat}
+    {cv : Ix.Kernel.ConstantVal .anon} {nP nF : Nat}
+    (hfind : c.env.find? (c.κ a) = some (.ctorInfo cv nP nF))
+    (hname : cv.name = c.κ (cprjAddr b i j)) : c.FamAt b i := by
+  have h1 : cv.name = c.κ a := find?_name_eq hfind
+  refine Or.inr ⟨j, cv, nP, nF, ?_⟩
+  rw [← hname, h1]
+  exact hfind
+
+/-- **The inductive of a stored constructor permits projection**, at the address it is stored
+under: the permission a step needs for the `Proj` cells it builds at a structure it has the
+constructor of. -/
+theorem ScopedCoreFacts.perm_of_ctor {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {a ac b : _root_.Address} {i j : Nat} {cvT : Ix.Kernel.ConstantVal .anon}
+    {caps : Ix.Kernel.IndCaps .anon} {cv : Ix.Kernel.ConstantVal .anon} {nP nF : Nat}
+    (hfindI : c.env.find? (c.κ a) = some (.indInfo cvT caps))
+    (hnameI : cvT.name = c.κ (iprjAddr b i))
+    (hfindC : c.env.find? (c.κ ac) = some (.ctorInfo cv nP nF))
+    (hnameC : cv.name = c.κ (cprjAddr b i j)) (hb : HashedBlockAt c.E b) :
+    ProjPermitted c.κ a := by
+  have h1 : cv.name = c.κ ac := find?_name_eq hfindC
+  refine hc.loads.ctorIndPerm a b i j cvT caps cv nP nF hb hfindI hnameI ?_
+  rw [← hnameC, h1]
+  exact hfindC
+
+/-- The address a role in force is bound to resolves. -/
+theorem ScopedCoreFacts.res_of_role {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {r : Ix.Kernel.Role} {a : _root_.Address} (hb : c.t.addressOf? r = some a)
+    (hf : c.inForce r) (hi : fabricatedRole r = true) : c.κ a ≠ unresolvedKey :=
+  hc.loads.roleRes r a hf hi hb
+
+/-- Discharge the resolution of a key from what a step proof has in hand. -/
+macro "resolve_key" : tactic => `(tactic| first
+  | with_reducible (first
+    | assumption
+    | exact Resolved.ne
+    | exact Tm.const_key_ne (by assumption)
+    | exact Tm.head_key_ne (by assumption)
+    | exact Tm.proj_key_ne (by assumption)
+    | exact ScopedCoreFacts.res_of_find (by assumption) (by assumption)
+    | exact ScopedCoreFacts.res_of_ind (by assumption) (by assumption) (by assumption)
+    | exact ScopedCoreFacts.res_of_ctor (by assumption) (by assumption) (by assumption)
+        (by assumption))
+  | exact ScopedCoreFacts.res_of_role (by with_reducible assumption)
+      (by with_reducible assumption) (by with_reducible assumption) (by decide))
 
 end IxVM.Refinement.Core

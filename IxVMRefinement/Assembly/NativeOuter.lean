@@ -82,6 +82,7 @@ theorem NativeFormerRunInput.noSelf {base : Core.Ctx} {block : Bytes.Address} {i
   have noFvars := Decl.annotates_hasFvar_false input.stored.2.2 input.noFvars
   have noProj := Decl.noProjAt_of_infer_full noProjection inferred noFvars
   let raw := L1.traceRecordCtx base calls
+  have rawKeyed : raw.TableKeyed := ⟨rfl⟩
   obtain ⟨projection, projectionShape⟩ := input.projectionSource
   have peer := native_peer_reads (raw := raw) source projection projectionShape input.blockShape
     (by simpa only [Array.getElem?_toList] using input.memberAt) (input.oneFamily native good) facts.tableWf

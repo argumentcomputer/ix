@@ -118,6 +118,7 @@ theorem NativeFormerRunInput.unitLikeRaw_current {base : Core.Ctx} {block : Byte
         (ZMod.val p = 0 ∧ ∀ us,
           Ix.Kernel.isUnitLikeTy (input.stageCtx parts isRec).env (.const (base.κ (Core.ixAddr address)) us) = true)) := by
   let context := input.scopedStageCtx parts isRec allowed
+  have contextKeyed : context.TableKeyed := ⟨rfl⟩
   obtain ⟨projection, projectionShape⟩ := input.projectionSource
   have peers := native_peer_reads (raw := context) source projection projectionShape input.blockShape
     (by simpa only [Array.getElem?_toList] using input.memberAt) (input.oneFamily native rootGood) tableWf

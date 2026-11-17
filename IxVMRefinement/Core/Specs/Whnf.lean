@@ -202,7 +202,7 @@ licensed `Certs` is all `never` skips, which the proof reads off the stored type
 def red_proj : SpecFn := fun c args h r h' calls =>
   ∀ rc sa fidx scrut types, args = [rc, sa, fidx, scrut, types] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ (s : Bytes.Address) (i : F) S,
-      RepAddr h s sa → fidx = .field i → c.tm d Γ h S scrut →
+      RepAddr h s sa → fidx = .field i → c.κ (ixAddr s) ≠ unresolvedKey → c.tm d Γ h S scrut →
       ∀ x, r = .tuple [.field 1, x] →
         ∃ E, c.tm d Γ h' E x ∧ Red c.env d (.proj (c.κ (ixAddr s)) (ZMod.val i) S) E
 
@@ -660,6 +660,7 @@ def ProjHeadSpec : SpecFn := fun c args h r h' calls =>
     c.rc h rc →
     ∀ d Γ, c.types Γ h d types →
       ∀ (s : Bytes.Address) (i : F) S As, RepAddr h s sa → fidx = .field i →
+        c.κ (ixAddr s) ≠ unresolvedKey → ProjPermitted c.κ (ixAddr s) →
         c.tm d Γ h S inner → c.tml d Γ h As sp →
         ∃ E', c.tm d Γ h' E' r ∧
           Red c.env d (mkAppN (.proj (c.κ (ixAddr s)) (ZMod.val i) S) As) E'
@@ -700,13 +701,15 @@ def se_parent_addr : SpecFn := fun c args h r h' calls =>
     ∀ d Γ k RT (n : F), c.tmk d Γ k h RT rt → skip = .field n →
       ∀ (t : F) pa, r = .tuple [.field t, pa] → t ≠ 0 →
         ∃ (p : Bytes.Address) (us : List KLevel), RepAddr h' p pa ∧
-          (piDomAt (ZMod.val n) RT).map (·.getAppFn) = some (.const (c.κ (ixAddr p)) us)
+          (piDomAt (ZMod.val n) RT).map (·.getAppFn) = some (.const (c.κ (ixAddr p)) us) ∧
+          c.κ (ixAddr p) ≠ unresolvedKey
 
 /-- `apply_n_projs(head, parent, major, n_fields, i)`: the head applied to the projections
 `i, i + 1, …` of the major out of the structure at `parent`, up to `n_fields`. -/
 def apply_n_projs : SpecFn := fun c args h r h' calls =>
   ∀ hd par major nf i, args = [hd, par, major, nf, i] → CoreGood c calls →
     ∀ d Γ H (p : Bytes.Address) M (n j : F), c.tm d Γ h H hd → RepAddr h p par →
+      c.κ (ixAddr p) ≠ unresolvedKey → ProjPermitted c.κ (ixAddr p) →
       c.tm d Γ h M major → nf = .field n → i = .field j →
       ∃ m : Nat, j + (m : F) = n ∧
         c.tm d Γ h' (mkAppN H ((List.range m).map fun t =>
@@ -794,9 +797,11 @@ def MembersClean (c : ScopedCtx) (h : Heap F) (ms membs : List Bytes.Address) : 
     Ix.Cert.recordAt c.E (ixAddr m) = some cm → cm.info = .iPrj p →
     Ix.Cert.recordAt c.E p.block = some cb → cb.info = .muts xs →
     xs[p.idx.toNat]? = some (.indc ind) →
+    c.FamAt p.block p.idx.toNat →
     ∀ t < ind.ctors.size, ∃ (cicon : Ix.Kernel.ConstantInfo .anon) (w nl ty : SourceValue F)
         (rest : List (SourceValue F)),
-      (∀ ci, c.env.find? (c.κ (cprjAddr p.block p.idx.toNat t)) = some ci → c.ci h w ci) ∧
+      (∀ cv nP nF, c.env.find? (c.κ (cprjAddr p.block p.idx.toNat t)) = some (.ctorInfo cv nP nF) →
+        c.ci h w (.ctorInfo cv nP nF)) ∧
       c.ci h w cicon ∧
       w = .construct kciEnum "Ctor" (nl :: ty :: rest) ∧ FieldsClean h ind.params.toNat membs ty
 
@@ -843,12 +848,14 @@ binders, mention no address of `members` (`FieldsClean`). Answer `1`: no claim. 
 def struct_scan_ctors : SpecFn := fun c args h r h' calls =>
   ∀ blk idx nc np xs ci, args = [blk, idx, nc, np, xs, ci] → CoreGood c calls →
     ∀ (b : Bytes.Address) (i n p j : F) ms, RepAddr h b blk → idx = .field i → nc = .field n →
-      np = .field p → RepList addrListEnum RepAddr h ms xs → ci = .field j → r ≠ .field 1 →
+      np = .field p → RepList addrListEnum RepAddr h ms xs → ci = .field j →
+      c.FamAt (ixAddr b) (ZMod.val i) → r ≠ .field 1 →
       ∀ t < ZMod.val (n - j),
         ∃ (cicon : Ix.Kernel.ConstantInfo .anon) (w nl' ty' : SourceValue F)
           (rest : List (SourceValue F)),
-          (∀ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val (j + (t : F))))) =
-            some ci → c.ci h' w ci) ∧
+          (∀ cv nP nF,
+            c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) (ZMod.val (j + (t : F))))) =
+              some (.ctorInfo cv nP nF) → c.ci h' w (.ctorInfo cv nP nF)) ∧
           c.ci h' w cicon ∧ w = .construct kciEnum "Ctor" (nl' :: ty' :: rest) ∧
           FieldsClean h' (ZMod.val p) ms ty'
 
@@ -867,7 +874,7 @@ parent's record is the inductive projection of a member of a block, `b` is that 
 `1`: no claim. -/
 def struct_is_rec : SpecFn := fun c args h r h' calls =>
   ∀ par, args = [par] → CoreGood c calls →
-    ∀ (p : Bytes.Address), RepAddr h p par → r ≠ .field 1 →
+    ∀ (p : Bytes.Address), RepAddr h p par → c.κ (ixAddr p) ≠ unresolvedKey → r ≠ .field 1 →
       ∃ (b : Bytes.Address) (ms : List Bytes.Address), MembersClean c h' ms ms ∧
         (∀ (cm cb : Ixon.Constant) (pp : Ixon.InductiveProj) (xs : Array Ixon.MutConst)
             (ind : Ixon.Inductive),

@@ -148,7 +148,7 @@ theorem red_proj_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (Sou
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::red_proj" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.red_proj c args h r h' calls := by
-  intro rc sa fidx scrut types hargs good hrc d Γ htypes s fi S hs hfidx hS x hr
+  intro rc sa fidx scrut types hargs good hrc d Γ htypes s fi S hs hfidx hres hS x hr
   subst hargs hfidx
   have p := Obs.«KernelWhnf::red_proj».obs ev
   cases p
@@ -173,7 +173,7 @@ theorem red_proj_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (Sou
     have e15 := ObsFn.heap_extends ev15
     -- the constructor
     obtain ⟨ciC, hfindC, vC, hldC, hciC⟩ := ih.get (.callees .get_ci) (by lt_calls) ev86 x_caddr
-      ca rfl (good.allowedTop (by simp_all)) (good.sub fun x hx => by simp [hx]) hca
+      ca rfl (good.allowedTop (by simp_all)) (by resolve_key) (good.sub fun x hx => by simp [hx]) hca
     rw [ld80] at hldC
     injection hldC with hvC
     subst hvC
@@ -184,7 +184,7 @@ theorem red_proj_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (Sou
     have ext70 := e15.trans e86
     -- the structure
     obtain ⟨ciS, hfindS, vS, hldS, hciS⟩ := ih.get (.callees .get_ci) (by lt_calls) ev161 sa s
-      rfl (good.allowedTop (by simp_all)) (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy ext70 hs)
+      rfl (good.allowedTop (by simp_all)) (by resolve_key) (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy ext70 hs)
     rw [ld155] at hldS
     injection hldS with hvS
     subst hvS
@@ -289,7 +289,7 @@ theorem red_proj_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (Sou
         cs159 bS s iS ev565 (good.sub fun x hx => by simp [hx]).raw
         (Bytes.repAddressRef_heapMono₂ addrTy ext490' hbS) ev161
         (good.sub fun x hx => by simp [hx]).raw (Bytes.repAddressRef_heapMono₂ addrTy ext70 hs) ld155
-        hbS (ZMod.val jC) cvC nP nF hfindC'
+        hbS (ZMod.val jC) cvC nP nF hfindC' (Nat.lt_of_le_of_lt (Nat.zero_le _) hltF)
     obtain ⟨hfp, -, -, -, ⟨cvT, capsT, hT, hlT, bsT, hsT⟩, -⟩ := hent (ZMod.val fi) hltF
     have hT' := hT
     rw [show (tbl.entry (ZMod.val fi)).structName = c.κ (ixAddr s) from hsn.trans hkS.symm,

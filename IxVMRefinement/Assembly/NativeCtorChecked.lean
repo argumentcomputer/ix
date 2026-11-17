@@ -73,6 +73,7 @@ theorem native_ctor_scoped_of_records (hLevels : IxVM.Consistency.Levels)
   subst T
   obtain ⟨queries, rawFacts, covered⟩ := L1.rawRecordFacts_of_trace (base := base) observed known
   let raw := L1.rawQueryCtx base queries
+  have rawKeyed : raw.TableKeyed := ⟨rfl⟩
   have peer := native_peer_reads (raw := raw) source former formerShape blockShape memberAt one tableWf
   have peer' : Decl.OneTypePeerReads raw block
       (base.κ (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
@@ -214,6 +215,7 @@ theorem native_ctor_scoped_of_root (hLevels : IxVM.Consistency.Levels)
     exact sourceCountBound
   have fieldsBound := native_ctor_field_bounds (base := base) family countBound blockRep subset observed
   let raw := L1.traceRecordCtx base rootCalls
+  have rawKeyed : raw.TableKeyed := ⟨rfl⟩
   have rawFacts := L1.rawRecordFacts_of_hashed_trace rootObserved rootGood rootCoverage
   have covered := L1.traceRecordCtx_coverage base subset
   have peer := native_peer_reads (raw := raw) source former formerShape blockShape memberAt one envFacts.tableWf

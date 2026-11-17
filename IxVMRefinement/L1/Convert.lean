@@ -1030,7 +1030,7 @@ theorem convert_recursor_spec {rc : Ixon.Recursor} {blkAddr : _root_.Address} {r
 /-! ## Bridges from `Raw*ValRep` to `StoredAs` and `Core.CIRep` -/
 
 /-- Helper constructing `Core.ValRep` and `ValStored` from a converted root type expression. -/
-theorem rawConvExpr_to_valRepExact {κ : _root_.Address → Core.KKey}
+theorem rawConvExpr_to_valRepExact {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam} {nl : Nat}
     (hnl : ps.length = nl) (hperm : ps.Perm (List.range ps.length)) (hlt32 : nl < 4294967296)
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
@@ -1055,7 +1055,7 @@ theorem rawConvExpr_to_valRepExact {κ : _root_.Address → Core.KKey}
   refine ⟨?_, hps_lt, hperm, hTm⟩
   exact congrArg (fun n : Nat => Value.field (n : F)) hnl.symm
 
-theorem rawConvExpr_to_valRep {κ : _root_.Address → Core.KKey}
+theorem rawConvExpr_to_valRep {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam} {nl : Nat}
     (hnl : ps.length = nl) (hperm : ps.Perm (List.range ps.length)) (hlt32 : nl < 4294967296)
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
@@ -1079,7 +1079,7 @@ theorem rawConvExpr_to_valRep {κ : _root_.Address → Core.KKey}
   exact ⟨ty', hvs, hvr.toValRep⟩
 
 /-- Bridge from `RawDefnValRep` on `.defn` to `StoredAs` and `Core.CIRep`. -/
-theorem RawDefnValRep.toCIRep_defn {κ : _root_.Address → Core.KKey}
+theorem RawDefnValRep.toCIRep_defn {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam} {d : Ixon.Definition}
     (hkind : d.kind = .defn)
     (hnl : ps.length = d.lvls.toNat) (hperm : ps.Perm (List.range ps.length))
@@ -1113,7 +1113,7 @@ theorem RawDefnValRep.toCIRep_defn {κ : _root_.Address → Core.KKey}
   exact .defn hvr hTm_val
 
 /-- Bridge from `RawDefnValRep` on `.opaq` to `StoredAs` (against `.axiomInfo`) and `Core.CIRep`. -/
-theorem RawDefnValRep.toCIRep_opaq {κ : _root_.Address → Core.KKey}
+theorem RawDefnValRep.toCIRep_opaq {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam} {d : Ixon.Definition}
     (hkind : d.kind = .opaq)
     (hnl : ps.length = d.lvls.toNat) (hperm : ps.Perm (List.range ps.length))
@@ -1140,7 +1140,7 @@ theorem RawDefnValRep.toCIRep_opaq {κ : _root_.Address → Core.KKey}
   exact .opaq hvr
 
 /-- Bridge from `RawDefnValRep` on `.thm` to `StoredAs` and `Core.CIRep`. -/
-theorem RawDefnValRep.toCIRep_thm {κ : _root_.Address → Core.KKey}
+theorem RawDefnValRep.toCIRep_thm {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam} {d : Ixon.Definition}
     (hkind : d.kind = .thm)
     (hnl : ps.length = d.lvls.toNat) (hperm : ps.Perm (List.range ps.length))
@@ -1173,7 +1173,7 @@ theorem RawDefnValRep.toCIRep_thm {κ : _root_.Address → Core.KKey}
   exact .thm hvr hTm_val
 
 /-- Unified `RawDefnValRep.toCIRep` across all three `Ix.DefKind` cases. -/
-theorem RawDefnValRep.toCIRep {κ : _root_.Address → Core.KKey}
+theorem RawDefnValRep.toCIRep {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam} {d : Ixon.Definition}
     (hnl : ps.length = d.lvls.toNat) (hperm : ps.Perm (List.range ps.length))
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
@@ -1210,7 +1210,7 @@ theorem RawDefnValRep.toCIRep {κ : _root_.Address → Core.KKey}
       hval_rd hval_lbb hval_def
 
 /-- Bridge from `RawAxioValRep` to `StoredAs` and `Core.CIRep`. -/
-theorem RawAxioValRep.toCIRep {κ : _root_.Address → Core.KKey}
+theorem RawAxioValRep.toCIRep {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam} {ax : Ixon.Axiom}
     (hnl : ps.length = ax.lvls.toNat) (hperm : ps.Perm (List.range ps.length))
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
@@ -1242,7 +1242,7 @@ private def defaultQuotCI (k : Ix.QuotKind) (cv : Ix.Kernel.ConstantVal .anon) :
   | .ind => .recInfo cv 0 0 []
 
 /-- Bridge from `RawQuotValRep` to `Core.CIRep` (using the canonical shape per `QuotKind`). -/
-theorem RawQuotValRep.toCIRep {κ : _root_.Address → Core.KKey}
+theorem RawQuotValRep.toCIRep {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam} {q : Ixon.Quotient}
     (hnl : ps.length = q.lvls.toNat) (hperm : ps.Perm (List.range ps.length))
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
@@ -1274,7 +1274,7 @@ theorem RawQuotValRep.toCIRep {κ : _root_.Address → Core.KKey}
       .quot hvr (.inr (.inr (.inr ⟨by simp [repQuotKindVal], _, _, _, _, rfl⟩)))⟩
 
 /-- Bridge from `RawQuotValRep` against a given pinned quotient `ConstantInfo` `ci₀`. -/
-theorem RawQuotValRep.toCIRep_stored {κ : _root_.Address → Core.KKey}
+theorem RawQuotValRep.toCIRep_stored {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {q : Ixon.Quotient} {ci₀ : Ix.Kernel.ConstantInfo .anon}
     (hkind : Core.QuotKindRep (repQuotKindVal q.kind) ci₀)
     (hnl : ci₀.toConstantVal.levelParams.length = q.lvls.toNat)
@@ -1317,7 +1317,7 @@ theorem RawQuotValRep.toCIRep_stored {κ : _root_.Address → Core.KKey}
       .quot hvr (.inr (.inr (.inr ⟨hk_eq, _, _, _, _, rfl⟩)))⟩
 
 /-- Bridge from `RawInductValRep` to `StoredAs` and `Core.CIRep`. -/
-theorem RawInductValRep.toCIRepExact {κ : _root_.Address → Core.KKey}
+theorem RawInductValRep.toCIRepExact {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam}
     {ind : Ixon.Inductive} {blkAddr : _root_.Address} {indIdx : Nat}
     (hname : name = κ (Core.iprjAddr blkAddr indIdx))
@@ -1347,7 +1347,7 @@ theorem RawInductValRep.toCIRepExact {κ : _root_.Address → Core.KKey}
   rw [hb_eq, val_cast_u56_conv hidx56]
   exact hname
 
-theorem RawInductValRep.toCIRep {κ : _root_.Address → Core.KKey}
+theorem RawInductValRep.toCIRep {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam}
     {ind : Ixon.Inductive} {blkAddr : _root_.Address} {indIdx : Nat}
     (hname : name = κ (Core.iprjAddr blkAddr indIdx))
@@ -1373,7 +1373,7 @@ theorem RawInductValRep.toCIRep {κ : _root_.Address → Core.KKey}
   exact ⟨ci, hst, hrep.toCIRep⟩
 
 /-- Bridge from `RawCtorValRep` to `StoredAs` and `Core.CIRep`. -/
-theorem RawCtorValRep.toCIRepExact {κ : _root_.Address → Core.KKey}
+theorem RawCtorValRep.toCIRepExact {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam}
     {ct : Ixon.Constructor} {blkAddr : _root_.Address} {indIdx : Nat}
     (hname : name = κ (Core.cprjAddr blkAddr indIdx ct.cidx.toNat))
@@ -1401,7 +1401,7 @@ theorem RawCtorValRep.toCIRepExact {κ : _root_.Address → Core.KKey}
   rw [hb_eq, val_cast_u56_conv hidx56, val_cast_u56_conv hcidx56]
   exact hname
 
-theorem RawCtorValRep.toCIRep {κ : _root_.Address → Core.KKey}
+theorem RawCtorValRep.toCIRep {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam}
     {ct : Ixon.Constructor} {blkAddr : _root_.Address} {indIdx : Nat}
     (hname : name = κ (Core.cprjAddr blkAddr indIdx ct.cidx.toNat))
@@ -1427,7 +1427,7 @@ theorem RawCtorValRep.toCIRep {κ : _root_.Address → Core.KKey}
 
 /-- Bridge from `RawRulesRep` and a one-for-one list of read `RecRule`s to `RuleStored` and
 `Core.RulesRep`. -/
-theorem RawRulesRep.toRulesRep {κ : _root_.Address → Core.KKey}
+theorem RawRulesRep.toRulesRep {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (hperm : ps.Perm (List.range ps.length)) (hps_lt : ps.length < 4294967296)
     {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
@@ -1484,7 +1484,7 @@ theorem RawRulesRep.toRulesRep {κ : _root_.Address → Core.KKey}
 /-- Bridge from `RawRecrValRep` to `StoredAs` and `Core.CIRep`.
 Note that `rc.typ` is read under an arbitrary `selfTy` (because `RawRecrValRep` has `recurAddrs = []`
 on `rc.typ`, `hself` holds vacuously for `rc.typ`!). -/
-theorem RawRecrValRep.toCIRep {κ : _root_.Address → Core.KKey}
+theorem RawRecrValRep.toCIRep {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {name : Core.KKey} {ps : List Ix.Kernel.LevelParam}
     {rc : Ixon.Recursor} {blkAddr : _root_.Address} {recIdx : Nat}
     (hname : name = κ blkAddr ∨ name = κ (Core.rprjAddr blkAddr recIdx))

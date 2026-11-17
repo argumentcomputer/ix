@@ -75,7 +75,7 @@ theorem native_former_header_of_record {base : Core.Ctx} {block : Bytes.Address}
 
 /-- The actual one-family block and canonical former projection supply raw peer facts at
 its real member index. Projection identities use the successful read's decoder guard. -/
-theorem native_peer_reads {raw : Core.ScopedCtx} {block : Bytes.Address} {i : F}
+theorem native_peer_reads {raw : Core.ScopedCtx} [raw.TableKeyed] {block : Bytes.Address} {i : F}
     (source : L1.CanonicalRecordAt raw.E (Core.ixAddr block))
     (former : L1.CanonicalRecordAt raw.E (Core.iprjAddr (Core.ixAddr block) (ZMod.val i)))
     (formerShape : former.value.info = .iPrj ⟨(ZMod.val i).toUInt64, Core.ixAddr block⟩)
@@ -89,6 +89,7 @@ theorem native_peer_reads {raw : Core.ScopedCtx} {block : Bytes.Address} {i : F}
   refine ⟨rfl, ?_, ?_⟩
   ·
     intro addr ptr h h' calls a loaded good addressRep sameKey
+    rw [Core.ScopedCtx.κ_eq raw] at sameKey
     have addressEq : Core.ixAddr a = Core.iprjAddr (Core.ixAddr block) (ZMod.val i) :=
       Decl.nat_keyOf_injective (t := raw.t) tableWf
         (a₁ := Core.ixAddr a) (a₂ := Core.iprjAddr (Core.ixAddr block) (ZMod.val i)) sameKey

@@ -429,7 +429,7 @@ theorem proj_ctor_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelModeled::proj_ctor" args h r h' calls) (ih : IH c calls) :
     Specs.Callees.proj_ctor c args h r h' calls := by
-  intro bp i b hargs allowed good hb
+  intro bp i b hargs allowed res hperm good hb
   subst hargs
   obtain ⟨v1, m2, cs12, cs26, ev14, ev28, hc52⟩ := Obs.«KernelModeled::proj_ctor».obs ev
   obtain ⟨v12, m15, cs23, ev25, heq40, -, hm2, hc45⟩ :=
@@ -442,7 +442,7 @@ theorem proj_ctor_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
   have hfew : FewInductives c (ixAddr b) :=
     ModeledAux.fewInductives_of_modeled_zero c hbim hgood1 hb
   exact ⟨hfew, (hc.loads.projTables bp (.field i) r h h' calls b i
-    ev allowed good.raw hb rfl).1⟩
+    ev allowed good.raw hb rfl res hperm).1⟩
 
 /-- `KernelModeled::defeq_list_ok`: pairwise `DefEq` on two represented term lists when the answer
 is nonzero. -/

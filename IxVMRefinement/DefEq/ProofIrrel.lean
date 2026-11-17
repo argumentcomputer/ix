@@ -559,7 +559,7 @@ private theorem type_sort_class_zero (c : ScopedCtx) {x_t x_types x_us : SourceV
       obtain ⟨rfl, rfl⟩ := htup
       obtain ⟨a, cus, rfl, ha, hcus⟩ := hH.const_of_load ld134
       obtain ⟨ci, hfind, vci, hvci, hrep⟩ := ih.get (.callees .get_ci) (by lt_calls) ev168 x_c a
-        rfl (good.allowedTop (by simp_all)) (good.sub fun x hx => by simp [hx]) ha
+        rfl (good.allowedTop (by simp_all)) (by resolve_key) (good.sub fun x hx => by simp [hx]) ha
       rw [ld162] at hvci
       injection hvci with hvci
       subst hvci
@@ -727,7 +727,7 @@ private theorem type_sort_class_inst (c : ScopedCtx) {x_t x_types x_us : SourceV
       obtain ⟨a, cus', rfl, ha, hcus'⟩ := hH.const_of_load ld134
       obtain ⟨cus, hT_fn, rfl, hT_num⟩ := posOf_eq_mkAppN_const_inv heq_pos
       obtain ⟨ci, hfind, vci, hvci, hrep⟩ := ih.get (.callees .get_ci) (by lt_calls) ev168 x_c a
-        rfl (good.allowedTop (by simp_all)) (good.sub fun x hx => by simp [hx]) ha
+        rfl (good.allowedTop (by simp_all)) (by resolve_key) (good.sub fun x hx => by simp [hx]) ha
       rw [ld162] at hvci
       injection hvci with hvci
       subst hvci
@@ -864,7 +864,7 @@ private theorem proof_class_spec (c : ScopedCtx) {x_a x_types : SourceValue F}
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
     obtain ⟨rfl, rfl⟩ := htup
     obtain ⟨a, us, rfl, ha, hus⟩ := hH.const_of_load ld117
-    obtain ⟨ci, hfind, vci, hvci, hrep⟩ := ih.get (.callees .get_ci) (by lt_calls) ev151 x_c a rfl (good.allowedTop (by simp_all))
+    obtain ⟨ci, hfind, vci, hvci, hrep⟩ := ih.get (.callees .get_ci) (by lt_calls) ev151 x_c a rfl (good.allowedTop (by simp_all)) (by resolve_key)
       (good.sub fun x hx => by simp [hx]) ha
     rw [ld145] at hvci
     injection hvci with hvci

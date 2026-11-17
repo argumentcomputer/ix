@@ -412,6 +412,23 @@ theorem keyOf_of_unbound {t : Ix.Kernel.RoleTable} (hwf : t.wf = true) {a : _roo
     unfold keyOf
     rw [hq]
 
+/-- **The table's keying is injective**: two addresses with one key are one address. -/
+theorem keyOf_inj {t : Ix.Kernel.RoleTable} (hwf : t.wf = true) {a₁ a₂ : _root_.Address}
+    (h : keyOf t a₁ = keyOf t a₂) : a₁ = a₂ := by
+  cases hq₁ : t.bound.find? (·.2 == a₁) with
+  | some p =>
+    have hk₁ : keyOf t a₁ = .role p.1 := by simp [keyOf, hq₁]
+    have h₁ := addressOf_of_keyOf hwf hk₁
+    have h₂ := addressOf_of_keyOf hwf (h.symm.trans hk₁)
+    exact Option.some.inj (h₁.symm.trans h₂)
+  | none =>
+    cases hq₂ : t.bound.find? (·.2 == a₂) with
+    | some q =>
+      simp [keyOf, hq₁, hq₂] at h
+    | none =>
+      simp [keyOf, hq₁, hq₂] at h
+      exact h
+
 
 /-! ## The context list as a list -/
 

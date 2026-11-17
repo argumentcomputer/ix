@@ -62,6 +62,10 @@ def keyOf (t : Ix.Kernel.RoleTable) (a : _root_.Address) : KKey :=
   | some (r, _) => .role r
   | none => .id a
 
+/-- Every key of a role table's keying resolves: it is a role key or an input key. -/
+instance (t : Ix.Kernel.RoleTable) (a : _root_.Address) : Resolved (keyOf t a) :=
+  ⟨by unfold keyOf; split <;> exact nofun⟩
+
 /-! ## The context -/
 
 /-- **The context of a run of the core**: the records the environment was read from, the
@@ -74,10 +78,17 @@ structure Ctx where
   t : Ix.Kernel.RoleTable
   lim : Option Nat := none
 
-/-- A core run selects the exact function, arguments, and input heap of its allowed calls.
+/-- A core run selects the exact function, arguments, and input heap of its allowed calls, and
+keys the terms it handles by `key`: the table's keying on the addresses the context knows
+resolve, `unresolvedKey` on every other (`key_spec`). By default every address resolves and
+`key` is the table's keying. A term is represented under `key` only when the keys of all its
+constant and projection nodes resolve (`Tm.const`, `Tm.proj`), so the installed-lookup claims of
+the loads can be conditional on resolution and still be read at every load the core makes.
 The underlying context remains available to raw declaration and record traversal. -/
 structure ScopedCtx extends Ctx where
   allowed : Call F → Prop
+  key : _root_.Address → KKey := keyOf t
+  key_spec : ∀ a, key a = keyOf t a ∨ key a = unresolvedKey := by intro a; exact Or.inl rfl
 
 /-- Explicit compatibility with the historical unrestricted context. Actual declaration
 origins supply their own selected-call predicate. -/
@@ -93,7 +104,215 @@ abbrev ScopedCtx.allowedTop (c : ScopedCtx) (fname : String)
 /-- The keying of addresses: the table's. -/
 abbrev Ctx.κ (c : Ctx) : _root_.Address → KKey := keyOf c.t
 
-abbrev ScopedCtx.κ (c : ScopedCtx) : _root_.Address → KKey := keyOf c.t
+/-- The keying of the terms a scoped run handles (`ScopedCtx.key`). -/
+abbrev ScopedCtx.κ (c : ScopedCtx) : _root_.Address → KKey := c.key
+
+/-- **A family is stored at member `i` of block `b`**: the inductive at the key of its projection
+record, or one of its constructors. The evidence a run has in hand when it loads a member of the
+block: it names the kind of the stored constant, so a constant of another kind at the same key
+is no evidence. -/
+def ScopedCtx.FamAt (c : ScopedCtx) (b : _root_.Address) (i : Nat) : Prop :=
+  (∃ cv caps, c.env.find? (c.κ (iprjAddr b i)) = some (.indInfo cv caps)) ∨
+    ∃ j cv nP nF, c.env.find? (c.κ (cprjAddr b i j)) = some (.ctorInfo cv nP nF)
+
+/-- A resolved key of a scoped context is the table's. -/
+theorem ScopedCtx.key_eq (c : ScopedCtx) {a : _root_.Address} (h : c.κ a ≠ unresolvedKey) :
+    c.κ a = keyOf c.t a :=
+  (c.key_spec a).resolve_right h
+
+/-- A resolved address, as the instance the term seam reads. -/
+theorem ScopedCtx.resolved (c : ScopedCtx) {a : _root_.Address} (h : c.κ a ≠ unresolvedKey) :
+    Resolved (c.κ a) := ⟨h⟩
+
+/-- **The context keys every address by the table**: no address is unresolved. The contexts of
+the native fragments are of this kind; their loads are constrained by scope membership. -/
+class ScopedCtx.TableKeyed (c : ScopedCtx) : Prop where
+  key_eq : c.key = keyOf c.t
+
+instance (c : Ctx) (allowed : Call F → Prop) :
+    ScopedCtx.TableKeyed { toCtx := c, allowed := allowed } := ⟨rfl⟩
+
+instance (c : Ctx) : (ScopedCtx.unrestricted c).TableKeyed := ⟨rfl⟩
+
+/-- The keying of a table-keyed context is the table's. -/
+theorem ScopedCtx.κ_eq (c : ScopedCtx) [h : c.TableKeyed] : c.κ = keyOf c.t := h.key_eq
+
+/-- A table-keyed context with another scope is the plain context of its base and that scope. -/
+theorem ScopedCtx.withAllowed_eq (c : ScopedCtx) [h : c.TableKeyed] (allowed : Call F → Prop) :
+    ({ c with allowed := allowed } : ScopedCtx) = { toCtx := c.toCtx, allowed := allowed } := by
+  obtain ⟨c₀, al, key, ks⟩ := c
+  have hk : key = keyOf c₀.t := h.key_eq
+  subst hk
+  rfl
+
+/-- Narrowing the scope of a table-keyed context keeps its keying. -/
+theorem ScopedCtx.TableKeyed.withAllowed {c : ScopedCtx} (h : c.TableKeyed)
+    (allowed : Call F → Prop) : ScopedCtx.TableKeyed { c with allowed := allowed } :=
+  ⟨h.key_eq⟩
+
+open Classical in
+/-- **The keying that knows the addresses `res` resolve**: the table's on them, `unresolvedKey`
+elsewhere. -/
+noncomputable def resKey (t : Ix.Kernel.RoleTable) (res : _root_.Address → Prop)
+    (a : _root_.Address) : KKey :=
+  if res a then keyOf t a else unresolvedKey
+
+theorem resKey_of_res {t : Ix.Kernel.RoleTable} {res : _root_.Address → Prop}
+    {a : _root_.Address} (h : res a) : resKey t res a = keyOf t a := by
+  simp [resKey, h]
+
+theorem resKey_of_not_res {t : Ix.Kernel.RoleTable} {res : _root_.Address → Prop}
+    {a : _root_.Address} (h : ¬ res a) : resKey t res a = unresolvedKey := by
+  simp [resKey, h]
+
+theorem res_of_resKey_ne {t : Ix.Kernel.RoleTable} {res : _root_.Address → Prop}
+    {a : _root_.Address} (h : resKey t res a ≠ unresolvedKey) : res a := by
+  by_contra hn
+  exact h (resKey_of_not_res hn)
+
+theorem resKey_spec (t : Ix.Kernel.RoleTable) (res : _root_.Address → Prop)
+    (a : _root_.Address) : resKey t res a = keyOf t a ∨ resKey t res a = unresolvedKey := by
+  by_cases h : res a
+  · exact .inl (resKey_of_res h)
+  · exact .inr (resKey_of_not_res h)
+
+/-- **What a context over the prefix `pre` resolves**: an address whose key the context's
+environment stores, and the marker of an address whose key `pre` stores. The second clause is
+the projection permission (`ProjPermitted`): it is given at the addresses `pre` stores. -/
+def Ctx.resolvesOver (c : Ctx) (pre : Ix.Kernel.Env .anon) (a : _root_.Address) : Prop :=
+  (∃ ci, c.env.find? (keyOf c.t a) = some ci) ∨
+    ∃ y, a = projMarker y ∧ ∃ ci, pre.find? (keyOf c.t y) = some ci
+
+/-- **The context of a stage over a prefix**: the environment of `c` is the prefix `pre` with
+the constants the stage has stored so far. The addresses that resolve are those whose key the
+environment stores; a projection is permitted at the addresses `pre` stores, so not at a constant
+the stage adds; no call is excluded. A term is represented under it only when every constant it
+names is stored and every structure it projects at is one of the prefix. -/
+noncomputable def Ctx.stagedOver (c : Ctx) (pre : Ix.Kernel.Env .anon) : ScopedCtx :=
+  { toCtx := c, allowed := fun _ => True,
+    key := resKey c.t (c.resolvesOver pre),
+    key_spec := resKey_spec _ _ }
+
+theorem Ctx.stagedOver_toCtx (c : Ctx) (pre : Ix.Kernel.Env .anon) :
+    (c.stagedOver pre).toCtx = c := rfl
+
+theorem Ctx.stagedOver_κ (c : Ctx) (pre : Ix.Kernel.Env .anon) :
+    (c.stagedOver pre).κ = resKey c.t (c.resolvesOver pre) := rfl
+
+/-- A key the environment of a stage stores resolves, as the table keys it. -/
+theorem Ctx.stagedOver_key_of_find {c : Ctx} {pre : Ix.Kernel.Env .anon} {a : _root_.Address}
+    {ci : Ix.Kernel.ConstantInfo .anon} (h : c.env.find? (keyOf c.t a) = some ci) :
+    (c.stagedOver pre).κ a = keyOf c.t a := by
+  rw [Ctx.stagedOver_κ]
+  exact resKey_of_res (Or.inl ⟨ci, h⟩)
+
+/-- An address a stage resolves, one a record can have, has its key stored. -/
+theorem Ctx.stagedOver_key_ne {c : Ctx} {pre : Ix.Kernel.Env .anon} {a : _root_.Address}
+    (h : (c.stagedOver pre).κ a ≠ unresolvedKey) (hm : ¬ IsProjMarker a) :
+    ∃ ci, c.env.find? (keyOf c.t a) = some ci := by
+  rw [Ctx.stagedOver_κ] at h
+  rcases res_of_resKey_ne h with hs | ⟨y, hy, -⟩
+  · exact hs
+  · exact (hm ⟨y, hy⟩).elim
+
+/-- **The context of a prefix**: the stage over the prefix that has stored nothing. The
+addresses that resolve are those whose key the environment stores, a projection is permitted at
+each of them, and no call is excluded. A term is represented under it only when every constant
+it names is stored. -/
+noncomputable def Ctx.stored (c : Ctx) : ScopedCtx := c.stagedOver c.env
+
+theorem Ctx.stored_toCtx (c : Ctx) : c.stored.toCtx = c := rfl
+
+theorem Ctx.stored_κ (c : Ctx) : c.stored.κ = resKey c.t (c.resolvesOver c.env) := rfl
+
+/-- An address a prefix resolves, one a record can have, has its key stored. -/
+theorem Ctx.stored_key_ne {c : Ctx} {a : _root_.Address}
+    (h : c.stored.κ a ≠ unresolvedKey) (hm : ¬ IsProjMarker a) :
+    ∃ ci, c.env.find? (keyOf c.t a) = some ci :=
+  Ctx.stagedOver_key_ne (pre := c.env) h hm
+
+theorem Ctx.stored_key_of_find {c : Ctx} {a : _root_.Address} {ci : Ix.Kernel.ConstantInfo .anon}
+    (h : c.env.find? (keyOf c.t a) = some ci) : c.stored.κ a = keyOf c.t a :=
+  Ctx.stagedOver_key_of_find (pre := c.env) h
+
+/-! ## Projection permission under the three keyings
+
+`ProjPermitted` (`Rep.lean`) under the table's keying, under a prefix's and under a stage's. -/
+
+/-- **Under the table's keying a projection is permitted at every address**, by instance: every
+key resolves. -/
+theorem projPermitted_keyOf (t : Ix.Kernel.RoleTable) (a : _root_.Address) :
+    ProjPermitted (keyOf t) a := inferInstance
+
+/-- A table-keyed context permits a projection at every address. -/
+theorem ScopedCtx.projPermitted_of_tableKeyed (c : ScopedCtx) [h : c.TableKeyed]
+    (a : _root_.Address) : ProjPermitted c.κ a := by
+  rw [ScopedCtx.κ_eq c]
+  exact inferInstance
+
+/-- **The keying of a stage permits a projection at an address the prefix stores.** -/
+theorem Ctx.stagedOver_projPermitted_of_find {c : Ctx} {pre : Ix.Kernel.Env .anon}
+    {a : _root_.Address} {ci : Ix.Kernel.ConstantInfo .anon}
+    (h : pre.find? (keyOf c.t a) = some ci) : ProjPermitted (c.stagedOver pre).κ a := by
+  have e : (c.stagedOver pre).κ (projMarker a) = keyOf c.t (projMarker a) := by
+    rw [Ctx.stagedOver_κ]
+    exact resKey_of_res (Or.inr ⟨a, rfl, ci, h⟩)
+  exact ⟨by rw [e]; exact Resolved.ne⟩
+
+/-- **Where the keying of a stage permits a projection**: at an address the prefix stores, or
+at one whose marker has a stored key. -/
+theorem Ctx.stagedOver_projPermitted_iff {c : Ctx} {pre : Ix.Kernel.Env .anon}
+    {a : _root_.Address} :
+    ProjPermitted (c.stagedOver pre).κ a ↔
+      (∃ ci, pre.find? (keyOf c.t a) = some ci) ∨
+        ∃ ci, c.env.find? (keyOf c.t (projMarker a)) = some ci := by
+  constructor
+  · intro h
+    have h' : resKey c.t (c.resolvesOver pre) (projMarker a) ≠ unresolvedKey := h.ne
+    rcases res_of_resKey_ne h' with hs | ⟨y, hy, hpre⟩
+    · exact Or.inr hs
+    · rw [projMarker_injective hy]
+      exact Or.inl hpre
+  · intro h
+    rcases h with ⟨ci, hci⟩ | ⟨ci, hci⟩
+    · exact Ctx.stagedOver_projPermitted_of_find hci
+    · have e : (c.stagedOver pre).κ (projMarker a) = keyOf c.t (projMarker a) :=
+        Ctx.stagedOver_key_of_find hci
+      exact ⟨by rw [e]; exact Resolved.ne⟩
+
+/-- **The keying of a stage permits no projection at an address the prefix does not store**
+and whose marker has no stored key: so not at a constant the stage adds. -/
+theorem Ctx.stagedOver_not_projPermitted {c : Ctx} {pre : Ix.Kernel.Env .anon}
+    {a : _root_.Address} (hpre : pre.find? (keyOf c.t a) = none)
+    (hm : c.env.find? (keyOf c.t (projMarker a)) = none) :
+    ¬ ProjPermitted (c.stagedOver pre).κ a := by
+  intro h
+  rcases Ctx.stagedOver_projPermitted_iff.mp h with ⟨ci, hci⟩ | ⟨ci, hci⟩
+  · rw [hpre] at hci
+    cases hci
+  · rw [hm] at hci
+    cases hci
+
+/-- **The keying of a prefix permits a projection at a stored address.** -/
+theorem Ctx.stored_projPermitted_of_find {c : Ctx} {a : _root_.Address}
+    {ci : Ix.Kernel.ConstantInfo .anon} (h : c.env.find? (keyOf c.t a) = some ci) :
+    ProjPermitted c.stored.κ a :=
+  Ctx.stagedOver_projPermitted_of_find (pre := c.env) h
+
+/-- **The keying of a prefix permits a projection exactly at the stored addresses**, for an
+address whose marker has no stored key. -/
+theorem Ctx.stored_projPermitted_iff {c : Ctx} {a : _root_.Address}
+    (hm : c.env.find? (keyOf c.t (projMarker a)) = none) :
+    ProjPermitted c.stored.κ a ↔ ∃ ci, c.env.find? (keyOf c.t a) = some ci := by
+  constructor
+  · intro h
+    rcases (Ctx.stagedOver_projPermitted_iff (pre := c.env)).mp h with hs | ⟨ci, hci⟩
+    · exact hs
+    · rw [hm] at hci
+      cases hci
+  · intro h
+    obtain ⟨ci, hci⟩ := h
+    exact Ctx.stored_projPermitted_of_find hci
 
 /-! ## The role context -/
 

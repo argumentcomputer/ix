@@ -1842,7 +1842,7 @@ theorem nat_former_tele_syntactic_spec {κ : _root_.Address → KKey} {Γ₀ : N
 
 /-- `KernelCheck::nat_ih_apps` builds `(is.map fun i => Ix.Kernel.structIhApp ...)` at binder depth
 `nP + 1 + n + nF`. -/
-theorem nat_ih_apps_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
+theorem nat_ih_apps_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)] {Γ₀ : Nat → KExpr}
     {T recC : KKey} {bRec : Bytes.Address} {rlvls_c : List KLevel}
     {nP n nF : Nat} {ℓ : KLevel} {Rcty Ecty rbody ebody : KExpr}
     {rcbs ecbs : List (KExpr × Ix.Kernel.BinderMeta)}

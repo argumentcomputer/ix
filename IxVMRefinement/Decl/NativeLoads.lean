@@ -96,7 +96,7 @@ theorem nullary_of_record {c : Ctx} {b₀ : Bytes.Address} {cb : Ixon.Constant}
 
 /-- The scoped raw constructor-load result is constructible at a fresh constructor of the
 canonical nullary family. Installed agreement is vacuous exactly because the key is fresh. -/
-theorem nullary_fresh {c : ScopedCtx} {b₀ : Bytes.Address} {cb : Ixon.Constant}
+theorem nullary_fresh {c : ScopedCtx} [c.TableKeyed] {b₀ : Bytes.Address} {cb : Ixon.Constant}
     {ind : Ixon.Inductive} {order : List _root_.Address} {cs_root cs : List (Call F)}
     {bp ptr : SourceValue F} {h h' : Heap F}
     (hcan : Ix.Cert.Stream.StoredCanonical c.E order)

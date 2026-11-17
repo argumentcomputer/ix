@@ -235,7 +235,7 @@ theorem se_parent_addr_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' 
     obtain ⟨rfl, rfl⟩ := tuple2_inj he
     obtain ⟨a, us, rfl, ha, -⟩ := hH.const_of_load ld102
     obtain ⟨-, rfl⟩ := tuple2_inj (hr.symm.trans he125)
-    refine ⟨a, us, ha, ?_⟩
+    refine ⟨a, us, ha, ?_, hH.const_key_ne⟩
     simp [piDomAt, getAppFn_mkAppN, Ix.Kernel.Expr.getAppFn]
   · obtain ⟨ht0, -⟩ := tuple2_inj (hr.symm.trans he149)
     injection ht0 with ht0
@@ -247,9 +247,9 @@ theorem se_parent_addr_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' 
     have hv := NatAux.sub_ok op268
     subst hv hc270
     obtain ⟨T0, B, ℓ, rfl, -, hB, -⟩ := hRT.forallE_of_load ld215
-    obtain ⟨p, us, hp, hpi⟩ := ih.get (.whnf .se_parent_addr) (by lt_calls) ev245 x_body _ rfl
+    obtain ⟨p, us, hp, hpi, hresp⟩ := ih.get (.whnf .se_parent_addr) (by lt_calls) ev245 x_body _ rfl
       (good.sub fun z hz => by simp [hz]) d Γ (k + 1) B (n - 1) hB rfl t pa hr ht
-    refine ⟨p, us, hp, ?_⟩
+    refine ⟨p, us, hp, ?_, hresp⟩
     rw [← Lib.val_sub_one hn0]
     simpa [piDomAt] using hpi
   · obtain ⟨ht0, -⟩ := tuple2_inj (hr.symm.trans he279)

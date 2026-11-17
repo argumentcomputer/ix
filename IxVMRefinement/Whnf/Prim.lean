@@ -231,7 +231,7 @@ theorem nat_lit_to_ctor_or_self_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {a
       subst hv96 e1
       obtain ⟨a, ha, hb, hf⟩ := ih.get (.roles .role_addr) (by lt_calls) ev94 rc .natZero rfl
         (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc)
-      have htmc := PrimStrAux.tmc_role_const_nil hc ha hb hm125 rfl
+      have htmc := PrimStrAux.tmc_role_const_nil hc ha hb (by resolve_key) hm125 rfl
       refine ⟨_, htmc d Γ, ?_⟩
       rw [h0]
       exact .natLit (PrimNat.natLit_of_natBlock hc hf (by decide) (by decide) (by decide))
@@ -261,7 +261,7 @@ theorem nat_lit_to_ctor_or_self_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {a
       have ext := e0.trans ((ObsFn.heap_extends ev160).trans ((ObsFn.heap_extends ev147).trans esn))
       obtain ⟨a, ha, hb, hf⟩ := ih.get (.roles .role_addr) (by lt_calls) ev230 rc .natSucc rfl
         (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc)
-      have htmc := PrimStrAux.tmc_role_const_nil hc ha hb hm261 hm213
+      have htmc := PrimStrAux.tmc_role_const_nil hc ha hb (by resolve_key) hm261 hm213
       have e3 : Heap.Extends m220 m203 := by
         rw [hm213, hm261]; exact (Heap.Extends.snoc _ _).trans (Heap.Extends.snoc _ _)
       have e2 := (ObsFn.heap_extends ev230).trans e3

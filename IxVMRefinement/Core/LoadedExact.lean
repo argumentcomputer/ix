@@ -40,6 +40,7 @@ inductive TmExact (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) 
       (rl : RepKLevel h l lp) :
       TmExact κ d Γ h k (.sort l) (.ptr (.enum kexprEnum) addr)
   | const {k addr : Nat} {ap lsp : SourceValue F} {a : Bytes.Address} {ls : List KLevel}
+      [res : Resolved (κ (ixAddr a))]
       (cell : h[addr]? = some (.construct kexprEnum "Const" [ap, lsp]))
       (ra : Bytes.RepAddressRef addrTy h a ap) (rls : RepKLevelList h ls lsp) :
       TmExact κ d Γ h k (.const (κ (ixAddr a)) ls) (.ptr (.enum kexprEnum) addr)
@@ -71,6 +72,7 @@ inductive TmExact (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) 
       (rb : Bytes.RepByteStream byteListEnum h bytes bp) (hs : StrBytes s bytes) :
       TmExact κ d Γ h k (.lit (.strVal s)) (.ptr (.enum kexprEnum) addr)
   | proj {k addr : Nat} {ap ep : SourceValue F} {a : Bytes.Address} {i : F} {E : KExpr}
+      [res : Resolved (κ (ixAddr a))] [perm : ProjPermitted κ (ixAddr a)]
       (cell : h[addr]? = some (.construct kexprEnum "Proj" [ap, .field i, ep]))
       (ra : Bytes.RepAddressRef addrTy h a ap) (re : TmExact κ d Γ h k E ep) :
       TmExact κ d Γ h k (.proj (κ (ixAddr a)) (ZMod.val i) E) (.ptr (.enum kexprEnum) addr)
@@ -78,7 +80,8 @@ inductive TmExact (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) 
 def TmCExact (κ : _root_.Address → KKey) (h : Heap F) (E : KExpr) (p : SourceValue F) : Prop :=
   ∀ d Γ, TmExact κ d Γ h 0 E p
 
-theorem TmExact.toTm {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
+theorem TmExact.toTm {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+    {h : Heap F}
     {k : Nat} {E : KExpr} {p : SourceValue F} (rep : TmExact κ d Γ h k E p) :
     Tm κ d Γ h k E p := by
   induction rep with
@@ -94,7 +97,8 @@ theorem TmExact.toTm {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExp
   | litStr cell rb hs => exact .litStr cell rb hs
   | proj cell ra _ ihe => exact .proj cell ra ihe
 
-theorem TmCExact.toTmC {κ : _root_.Address → KKey} {h : Heap F} {E : KExpr} {p : SourceValue F}
+theorem TmCExact.toTmC {κ : _root_.Address → KKey} {h : Heap F} {E : KExpr}
+    {p : SourceValue F}
     (rep : TmCExact κ h E p) : TmC κ h E p :=
   fun d Γ => (rep d Γ).toTm
 
@@ -194,11 +198,13 @@ inductive CIRepExact (κ : _root_.Address → KKey) (h : Heap F) :
       CIRepExact κ h (.construct kciEnum "Rec"
         [nl, ty, np, ni, nm, nmi, rules, k, u, blk, idx]) (.recInfo cv mI rP rls)
 
-theorem ValRepExact.toValRep {κ : _root_.Address → KKey} {h : Heap F} {nl ty : SourceValue F}
+theorem ValRepExact.toValRep {κ : _root_.Address → KKey} {h : Heap F}
+    {nl ty : SourceValue F}
     {cv : ConstantVal .anon} (hv : ValRepExact κ h nl ty cv) : ValRep κ h nl ty cv :=
   ⟨hv.1, hv.2.1, hv.2.2.1, hv.2.2.2.toTmC⟩
 
-theorem RulesRepExact.toRulesRep {κ : _root_.Address → KKey} {h : Heap F} {ps : List LevelParam}
+theorem RulesRepExact.toRulesRep {κ : _root_.Address → KKey} {h : Heap F}
+    {ps : List LevelParam}
     {j : Nat} {v : SourceValue F} {rls : List (RecRule .anon)}
     (hr : RulesRepExact κ h ps j v rls) : RulesRep κ h ps j v rls := by
   induction hr with
@@ -224,7 +230,8 @@ theorem CIRepExact.ctor_valRep {κ : _root_.Address → KKey} {h : Heap F}
     exact exactValue
   all_goals (injection shape with _ tag _; exact absurd tag (by decide))
 
-theorem CIRepExact.toCIRep {κ : _root_.Address → KKey} {h : Heap F} {v : SourceValue F}
+theorem CIRepExact.toCIRep {κ : _root_.Address → KKey} {h : Heap F}
+    {v : SourceValue F}
     {ci : ConstantInfo .anon} (hci : CIRepExact κ h v ci) : CIRep κ h v ci := by
   cases hci with
   | axio hv => exact .axio hv.toValRep
@@ -241,7 +248,8 @@ def CIPtrRepExact (κ : _root_.Address → KKey) (h : Heap F) (p : SourceValue F
     (ci : ConstantInfo .anon) : Prop :=
   ∃ v, loadValue h p = .ok v ∧ CIRepExact κ h v ci
 
-theorem CIPtrRepExact.toCIPtrRep {κ : _root_.Address → KKey} {h : Heap F} {p : SourceValue F}
+theorem CIPtrRepExact.toCIPtrRep {κ : _root_.Address → KKey} {h : Heap F}
+    {p : SourceValue F}
     {ci : ConstantInfo .anon} (r : CIPtrRepExact κ h p ci) : CIPtrRep κ h p ci :=
   let ⟨v, hl, hr⟩ := r; ⟨v, hl, hr.toCIRep⟩
 
@@ -438,6 +446,7 @@ inductive RawTmExact (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExp
       (rl : RepKLevel h l lp) :
       RawTmExact κ d Γ h k (.sort l) (.sort l) (.ptr (.enum kexprEnum) addr)
   | const {k addr : Nat} {ap lsp : SourceValue F} {a : Bytes.Address} {ls : List KLevel}
+      [res : Resolved (κ (ixAddr a))]
       (cell : h[addr]? = some (.construct kexprEnum "Const" [ap, lsp]))
       (ra : Bytes.RepAddressRef addrTy h a ap) (rls : RepKLevelList h ls lsp) :
       RawTmExact κ d Γ h k (.const (κ (ixAddr a)) ls) (.const (κ (ixAddr a)) ls)
@@ -475,6 +484,7 @@ inductive RawTmExact (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExp
       RawTmExact κ d Γ h k (.lit (.strVal s)) (.lit (.strVal s))
         (.ptr (.enum kexprEnum) addr)
   | proj {k addr : Nat} {ap ep : SourceValue F} {a : Bytes.Address} {i : F} {RE E : KExpr}
+      [res : Resolved (κ (ixAddr a))] [perm : ProjPermitted κ (ixAddr a)]
       (cell : h[addr]? = some (.construct kexprEnum "Proj" [ap, .field i, ep]))
       (ra : Bytes.RepAddressRef addrTy h a ap) (re : RawTmExact κ d Γ h k RE E ep) :
       RawTmExact κ d Γ h k (.proj (κ (ixAddr a)) (ZMod.val i) RE)

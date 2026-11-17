@@ -119,7 +119,7 @@ theorem NativePreludeCalls.blocksRep {rc nl ty blockArg : SourceValue F}
 
 /-- The observed occurrence guard excludes the native former from its checked declared type.
 Raw query facts and coverage are supplied by the actual root trace. -/
-theorem NativePreludeCalls.noSelf {raw : ScopedCtx} {rc nl ty blockArg : SourceValue F}
+theorem NativePreludeCalls.noSelf {raw : ScopedCtx} [raw.TableKeyed] {rc nl ty blockArg : SourceValue F}
     {initial : Heap F} {calls : List (Call F)} (prelude : NativePreludeCalls rc nl ty blockArg initial calls)
     {block : Bytes.Address} {T : KKey} {levels params indices ctors : Nat} {i : F} {type : KExpr}
     (peer : OneTypePeerReads raw block T levels params indices ctors i)
@@ -161,6 +161,10 @@ theorem NativePreludeCalls.typesRep {rc nl ty blockArg : SourceValue F}
 def nativeFormerCheckCtx (base : Ctx) {rc nl ty blockArg : SourceValue F}
     {initial : Heap F} {calls : List (Call F)} (prelude : NativePreludeCalls rc nl ty blockArg initial calls) :
     ScopedCtx := { toCtx := base, allowed := fun call => call ∈ prelude.sortCalls }
+
+instance (base : Ctx) {rc nl ty blockArg : SourceValue F}
+    {initial : Heap F} {calls : List (Call F)} (prelude : NativePreludeCalls rc nl ty blockArg initial calls) :
+    (nativeFormerCheckCtx base prelude).TableKeyed := ⟨rfl⟩
 
 /-- The common prelude is extracted from every successful inductive dispatch arm. -/
 theorem native_prelude_calls {rc nl ty np ni nc unsafeFlag blockArg index addr result : SourceValue F}

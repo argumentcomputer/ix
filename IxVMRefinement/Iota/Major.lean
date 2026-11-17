@@ -93,7 +93,7 @@ theorem whnf_iota_major_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : Li
     obtain ⟨rfl, rfl⟩ := tuple2_inj he
     obtain ⟨a, us, rfl, ha, hus⟩ := hH.const_of_load ld89
     have e1 := ObsFn.heap_extends ev53
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev138 x_addr a rfl (good.allowedTop (by simp_all))
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev138 x_addr a rfl (good.allowedTop (by simp_all)) (by resolve_key)
       (good.sub fun z hz => by simp [hz]) ha
     rw [ld132] at hld
     injection hld with hv

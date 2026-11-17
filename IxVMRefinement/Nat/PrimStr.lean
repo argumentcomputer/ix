@@ -94,14 +94,16 @@ keyed by the role (the address is bound to it, and the table binds no address tw
 theorem tmc_role_const {c : ScopedCtx} (hc : ScopedCoreFacts c) {ro : Ix.Kernel.Role} {m h₂ : Heap F}
     {ap lsp : SourceValue F} {a : Bytes.Address} {ls : List KLevel}
     (ra : RepAddr m a ap) (hb : c.t.addressOf? ro = some (ixAddr a))
+    (hres : c.κ (ixAddr a) ≠ unresolvedKey)
     (rls : RepKLevelList m ls lsp)
     (hm₂ : h₂ = m ++ [.construct kexprEnum "Const" [ap, lsp]]) :
     c.tmc h₂ (.const (.role ro) ls) (.ptr (.enum kexprEnum) m.length) := by
   subst hm₂
   intro d Γ
   have ext := Heap.Extends.snoc m (.construct kexprEnum "Const" [ap, lsp])
-  have hk : c.κ (ixAddr a) = .role ro := keyOf_of_addressOf hc.env.tableWf hb
+  have hk : c.κ (ixAddr a) = .role ro := (c.key_eq (by resolve_key)).trans (keyOf_of_addressOf hc.env.tableWf hb)
   rw [← hk]
+  have : Resolved (c.κ (ixAddr a)) := ⟨hres⟩
   exact .const List.getElem?_concat_length (Bytes.repAddressRef_heapMono₂ addrTy ext ra)
     (rls.mono ext) (LvEqList.refl ls)
 
@@ -110,10 +112,11 @@ node. -/
 theorem tmc_role_const_nil {c : ScopedCtx} (hc : ScopedCoreFacts c) {ro : Ix.Kernel.Role} {m m₁ h₂ : Heap F}
     {ap : SourceValue F} {a : Bytes.Address}
     (ra : RepAddr m a ap) (hb : c.t.addressOf? ro = some (ixAddr a))
+    (hres : c.κ (ixAddr a) ≠ unresolvedKey)
     (hm₁ : m₁ = m ++ [.construct klevelListEnum "Nil" []])
     (hm₂ : h₂ = m₁ ++ [.construct kexprEnum "Const" [ap, .ptr (.enum klevelListEnum) m.length]]) :
     c.tmc h₂ (.const (.role ro) []) (.ptr (.enum kexprEnum) m₁.length) :=
-  tmc_role_const hc (Bytes.repAddressRef_heapMono₂ addrTy (ext_of_eq_snoc hm₁) ra) hb
+  tmc_role_const hc (Bytes.repAddressRef_heapMono₂ addrTy (ext_of_eq_snoc hm₁) ra) hb hres
     (repKLevelList_nil_of hm₁) hm₂
 
 /-! ## Fields and words -/
@@ -175,7 +178,7 @@ theorem delta_prefix (c : ScopedCtx) {calls : List (Call F)} (ih : IH c calls)
     {a : Bytes.Address} {cs74 cs141 : List (Call F)}
     (hlt1 : cs74.length < calls.length) (hlt2 : cs141.length < calls.length)
     (g1 : CoreGood c cs74) (g2 : CoreGood c cs141)
-    (allowed : c.allowedTop "Ingress::get_ci" [ap] h)
+    (allowed : c.allowedTop "Ingress::get_ci" [ap] h) (res : c.κ (ixAddr a) ≠ unresolvedKey)
     (hkey : Ix.Kernel.stringOfListName = c.κ (ixAddr a)) (ha : RepAddr h a ap)
     (ev76 : ObsFn W "Ingress::get_ci" [ap] h p68 m61 cs74)
     (ld70 : loadValue m61 p68 = .ok (.construct kciEnum "Defn" [w101, w102, x_value, w103, w104]))
@@ -184,7 +187,7 @@ theorem delta_prefix (c : ScopedCtx) {calls : List (Call F)} (ih : IH c calls)
       [x_value, .ptr (.enum klevelListEnum) m61.length] m154 v130 m131 cs141) :
     ∃ V : KExpr, (∀ Γ, Tm c.κ 0 Γ m131 0 V v130) ∧
       ∀ d L, Red c.env d (.app (.const Ix.Kernel.stringOfListName []) L) (.app V L) := by
-  obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) hlt1 ev76 ap a rfl allowed g1 ha
+  obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) hlt1 ev76 ap a rfl allowed res g1 ha
   rw [ld70] at hld
   injection hld with hv
   subst hv
@@ -229,19 +232,19 @@ theorem mk_bool_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (Sour
     subst hc71
     obtain ⟨rfl, hm47⟩ := ih.get (.roles .role_bool_false) (by nat_lt_calls) ev57 rfl
     subst m47
-    obtain ⟨a, ha, hb, -⟩ := ih.get (.roles .role_addr) (by nat_lt_calls) ev36 rc .boolFalse rfl
+    obtain ⟨a, ha, hb, hfr⟩ := ih.get (.roles .role_addr) (by nat_lt_calls) ev36 rc .boolFalse rfl
       (good.sub fun x hx => by simp [hx]) hrc
     rw [he19, ite_eq_left hg]
-    exact PrimStrAux.tmc_role_const_nil hc ha hb hm67 hm18
+    exact PrimStrAux.tmc_role_const_nil hc ha hb (by resolve_key) hm67 hm18
   · -- `_ => Bool.true`
     have hg : g ≠ 0 := fun h0 => hne72 (by rw [h0])
     subst hc132
     obtain ⟨rfl, hm108⟩ := ih.get (.roles .role_bool_true) (by nat_lt_calls) ev118 rfl
     subst m108
-    obtain ⟨a, ha, hb, -⟩ := ih.get (.roles .role_addr) (by nat_lt_calls) ev97 rc .boolTrue rfl
+    obtain ⟨a, ha, hb, hfr⟩ := ih.get (.roles .role_addr) (by nat_lt_calls) ev97 rc .boolTrue rfl
       (good.sub fun x hx => by simp [hx]) hrc
     rw [he80, ite_eq_right hg]
-    exact PrimStrAux.tmc_role_const_nil hc ha hb hm128 hm79
+    exact PrimStrAux.tmc_role_const_nil hc ha hb (by resolve_key) hm128 hm79
 
 /-- `KernelNatPrim::mk_nat_lit`: a literal node of the (canonical) limbs. -/
 theorem mk_nat_lit_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
@@ -407,7 +410,7 @@ theorem str_lit_to_ctor_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : Li
   obtain ⟨rfl, hm92⟩ := ih.get (.roles .role_list_nil) (by nat_lt_calls) ev102 rfl
   subst m92
   have E17 : Heap.Extends h m17 := e1.trans (e2.trans e3)
-  obtain ⟨aN, haN, hbN, -⟩ := ih.get (.roles .role_used_implicitly) (by nat_lt_calls) ev81 rc
+  obtain ⟨aN, haN, hbN, hfr⟩ := ih.get (.roles .role_used_implicitly) (by nat_lt_calls) ev81 rc
     .listNil rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono E17 hrc)
   have e4 := ObsFn.heap_extends ev81
   have e5 := PrimStrAux.ext_of_eq_snoc hm64
@@ -415,7 +418,7 @@ theorem str_lit_to_ctor_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : Li
   obtain ⟨rfl, hm149⟩ := ih.get (.roles .role_list_cons) (by nat_lt_calls) ev159 rfl
   subst m149
   have E54 : Heap.Extends h m54 := E17.trans (e4.trans e5)
-  obtain ⟨aC, haC, hbC, -⟩ := ih.get (.roles .role_used_implicitly) (by nat_lt_calls) ev138 rc
+  obtain ⟨aC, haC, hbC, hfr⟩ := ih.get (.roles .role_used_implicitly) (by nat_lt_calls) ev138 rc
     .listCons rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono E54 hrc)
   have e6 := ObsFn.heap_extends ev138
   have e7 := PrimStrAux.ext_of_eq_snoc hm121
@@ -423,7 +426,7 @@ theorem str_lit_to_ctor_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : Li
   obtain ⟨rfl, hm206⟩ := ih.get (.roles .role_char) (by nat_lt_calls) ev216 rfl
   subst m206
   have E111 : Heap.Extends h m111 := E54.trans (e6.trans e7)
-  obtain ⟨aCh, haCh, hbCh, -⟩ := ih.get (.roles .role_used_implicitly) (by nat_lt_calls) ev195 rc
+  obtain ⟨aCh, haCh, hbCh, hfr⟩ := ih.get (.roles .role_used_implicitly) (by nat_lt_calls) ev195 rc
     .char rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono E111 hrc)
   have e8 := ObsFn.heap_extends ev195
   have e9 := PrimStrAux.ext_of_eq_snoc hm226
@@ -432,7 +435,7 @@ theorem str_lit_to_ctor_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : Li
   obtain ⟨rfl, hm269⟩ := ih.get (.roles .role_char_of_nat) (by nat_lt_calls) ev279 rfl
   subst m269
   have E168 : Heap.Extends h m168 := E111.trans (e8.trans (e9.trans e10))
-  obtain ⟨aK, haK, hbK, -⟩ := ih.get (.roles .role_used_implicitly) (by nat_lt_calls) ev258 rc
+  obtain ⟨aK, haK, hbK, hfr⟩ := ih.get (.roles .role_used_implicitly) (by nat_lt_calls) ev258 rc
     .charOfNat rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono E168 hrc)
   have e11 := ObsFn.heap_extends ev258
   have e12 := PrimStrAux.ext_of_eq_snoc hm289
@@ -452,11 +455,11 @@ theorem str_lit_to_ctor_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : Li
     E231.trans (e14.trans (e15.trans (e16.trans (e17.trans e18))))
   -- the five constants
   have hls := PrimStrAux.repKLevelList_zero_of hm12 hm49 hm27
-  have nilC := PrimStrAux.tmc_role_const hc haN hbN (hls.mono e4) hm64
-  have consC := PrimStrAux.tmc_role_const hc haC hbC (hls.mono (e4.trans (e5.trans e6))) hm121
-  have charC := PrimStrAux.tmc_role_const_nil hc haCh hbCh hm226 hm178
-  have conC := PrimStrAux.tmc_role_const_nil hc haK hbK hm289 hm241
-  have strC := PrimStrAux.tmc_role_const_nil hc haS hbS hm352 hm304
+  have nilC := PrimStrAux.tmc_role_const hc haN hbN (by resolve_key) (hls.mono e4) hm64
+  have consC := PrimStrAux.tmc_role_const hc haC hbC (by resolve_key) (hls.mono (e4.trans (e5.trans e6))) hm121
+  have charC := PrimStrAux.tmc_role_const_nil hc haCh hbCh (by resolve_key) hm226 hm178
+  have conC := PrimStrAux.tmc_role_const_nil hc haK hbK (by resolve_key) hm289 hm241
+  have strC := PrimStrAux.tmc_role_const_nil hc haS hbS (by resolve_key) hm352 hm304
   -- the characters
   obtain ⟨cs, hcs, hlist⟩ := ih.get (.nat .build_char_list) (by nat_lt_calls) ev431 bp _ _ _ rfl
     (good.sub fun x hx => by simp [hx]) bs (Bytes.repByteStream_heapMono₂ _ E388 hbs)
@@ -508,7 +511,7 @@ theorem str_lit_delta_step_step (c : ScopedCtx) {args : List (SourceValue F)} {h
     obtain ⟨a, hk, ha, hL⟩ := PrimStrAux.app_const_of_load hE ld12 ld41
     obtain ⟨V, hV, hred⟩ := PrimStrAux.delta_prefix c ih hsup (by nat_lt_calls) (by nat_lt_calls)
       (good.sub fun x hx => by simp [hx]) (good.sub fun x hx => by simp [hx])
-      (good.allowedTop (by simp)) hk ha ev76 ld70
+      (good.allowedTop (by simp)) (by rw [← hk]; exact Tm.head_key_ne (zs := [_]) hE) hk ha ev76 ld70
       hm162 ev143
     obtain ⟨T, B, ℓ, rfl, -, hB, hℓ⟩ := (hV Γ).lam_of_load ld177
     obtain ⟨hr1, hm202⟩ := ih.get (.levelOps .level_is_not_zero) (by nat_lt_calls) ev215 x_bl rfl
@@ -537,7 +540,7 @@ theorem str_lit_delta_step_step (c : ScopedCtx) {args : List (SourceValue F)} {h
     obtain ⟨a, hk, ha, hL⟩ := PrimStrAux.app_const_of_load hE ld12 ld41
     obtain ⟨V, hV, hred⟩ := PrimStrAux.delta_prefix c ih hsup (by nat_lt_calls) (by nat_lt_calls)
       (good.sub fun x hx => by simp [hx]) (good.sub fun x hx => by simp [hx])
-      (good.allowedTop (by simp)) hk ha ev76 ld70
+      (good.allowedTop (by simp)) (by rw [← hk]; exact Tm.head_key_ne (zs := [_]) hE) hk ha ev76 ld70
       hm162 ev143
     have e3 := ObsFn.heap_extends ev215
     have ext : Heap.Extends h m202 := (ObsFn.heap_extends ev76).trans
@@ -554,7 +557,7 @@ theorem str_lit_delta_step_step (c : ScopedCtx) {args : List (SourceValue F)} {h
     obtain ⟨a, hk, ha, hL⟩ := PrimStrAux.app_const_of_load hE ld12 ld41
     obtain ⟨V, hV, hred⟩ := PrimStrAux.delta_prefix c ih hsup (by nat_lt_calls) (by nat_lt_calls)
       (good.sub fun x hx => by simp [hx]) (good.sub fun x hx => by simp [hx])
-      (good.allowedTop (by simp)) hk ha ev76 ld70
+      (good.allowedTop (by simp)) (by rw [← hk]; exact Tm.head_key_ne (zs := [_]) hE) hk ha ev76 ld70
       hm162 ev143
     have ext : Heap.Extends h m131 := (ObsFn.heap_extends ev76).trans
       ((PrimStrAux.ext_of_eq_snoc hm162).trans (ObsFn.heap_extends ev143))

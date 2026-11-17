@@ -188,7 +188,7 @@ theorem whnf_struct_core_const_step (c : ScopedCtx) {args : List (SourceValue F)
   · -- ι, continued
     subst hc332
     have e0 := ObsFn.heap_extends ev18
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev18 addr a rfl (good.allowedTop (by simp_all))
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev18 addr a rfl (good.allowedTop (by simp_all)) (by resolve_key)
       (good.sub fun x hx => by simp [hx]) ha
     rw [ld12] at hld
     injection hld with hv
@@ -279,7 +279,7 @@ theorem whnf_nd_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h
       w423 w424 m451 cs461 x_reduced cs527 ev14 sg296 ev397 ld391 ev463 ev529 hc =>
     subst hc
     have ext := (ObsFn.heap_extends ev14).trans (WhnfAux.nd_seg_ext sg296)
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl (good.allowedTop (by simp_all))
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl (good.allowedTop (by simp_all)) (by resolve_key)
       (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy ext ha)
     rw [ld391] at hld
     injection hld with hv
@@ -325,7 +325,7 @@ theorem whnf_nd_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h
       x_reduced cs950 ev14 sg296 ev397 ld391 ev824 ev952 hc =>
     subst hc
     have ext0 := (ObsFn.heap_extends ev14).trans (WhnfAux.nd_seg_ext sg296)
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl (good.allowedTop (by simp_all))
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl (good.allowedTop (by simp_all)) (by resolve_key)
       (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha)
     rw [ld391] at hld
     injection hld with hv
@@ -346,7 +346,7 @@ theorem whnf_nd_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h
       ev14 sg296 ev397 ld391 ev824 he997 he998 hc =>
     subst hc he997 he998
     have ext0 := (ObsFn.heap_extends ev14).trans (WhnfAux.nd_seg_ext sg296)
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl (good.allowedTop (by simp_all))
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl (good.allowedTop (by simp_all)) (by resolve_key)
       (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha)
     rw [ld391] at hld
     injection hld with hv
@@ -363,7 +363,7 @@ theorem whnf_nd_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h
       x_k_reduct cs1021 ev14 sg296 ev397 ld391 ev824 ev1023 hc =>
     subst hc
     have ext0 := (ObsFn.heap_extends ev14).trans (WhnfAux.nd_seg_ext sg296)
-    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl (good.allowedTop (by simp_all))
+    obtain ⟨ci, hfind, v, hld, hci⟩ := ih.get (.callees .get_ci) (by lt_calls) ev397 addr a rfl (good.allowedTop (by simp_all)) (by resolve_key)
       (good.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha)
     rw [ld391] at hld
     injection hld with hv
@@ -403,7 +403,9 @@ theorem apply_n_projs_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' :
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::apply_n_projs" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.apply_n_projs c args h r h' calls := by
-  intro hd par major nf i hargs good d Γ H p M n j hH hp hM hn hi
+  intro hd par major nf i hargs good d Γ H p M n j hH hp hres hperm hM hn hi
+  have : Resolved (c.κ (ixAddr p)) := ⟨hres⟩
+  have : ProjPermitted c.κ (ixAddr p) := hperm
   subst hargs hn hi
   rcases Obs.«KernelWhnf::apply_n_projs».obs ev with
     ⟨op17, he25, he26, hc27⟩ |
@@ -428,7 +430,7 @@ theorem apply_n_projs_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' :
     have ext := e1.trans e2
     obtain ⟨m', hm', hrep⟩ := ih.get (.whnf .apply_n_projs) (by lt_calls) ev76 _ par major _ _ rfl
       (good.sub fun x hx => by simp [hx]) d Γ _ p M n (j + 1) happ
-      (Bytes.repAddressRef_heapMono₂ addrTy ext hp) (Tm.mono ext hM) rfl rfl
+      (Bytes.repAddressRef_heapMono₂ addrTy ext hp) hres hperm (Tm.mono ext hM) rfl rfl
     refine ⟨m' + 1, by rw [← hm']; push_cast; ring, ?_⟩
     rw [WhnfAux.projs_succ]
     exact hrep

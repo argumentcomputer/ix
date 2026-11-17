@@ -174,7 +174,7 @@ theorem RawConvExpr.memberReader_self_mono
 
 /-- Exact conversion needs self-name agreement only for recursive references actually
 reached by this root and its sharing entries. -/
-theorem RawConvExpr.toTmCExact_of_selfReads {κ : _root_.Address → Core.KKey}
+theorem RawConvExpr.toTmCExact_of_selfReads {κ : _root_.Address → Core.KKey} [∀ a, Core.Resolved (κ a)]
     {ps : List Ix.Kernel.LevelParam}
     (permutation : ps.Perm (List.range ps.length)) (paramsBound : ps.length < 4294967296)
     {cx : Ctx .anon} {source : Ixon.Constant}
