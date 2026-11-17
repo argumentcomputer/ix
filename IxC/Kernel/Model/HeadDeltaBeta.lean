@@ -162,4 +162,18 @@ theorem Certified.sort_zero_agree {env env' : Env md} {d : Nat}
     Level.eval φ u = 0 ↔ Level.eval φ v = 0 := by
   rw [h.trace.sort_unique hext h']
 
+/-- A concrete definition supplies a nonempty certified trace to a sort. The definition is
+`fun A : Type => A`; the argument is `Prop`. -/
+theorem alias_sort_inhabited (n : Key md) (d : Nat) :
+    ∃ env : Env md, Certified env d (.app (.const n []) (.sort .zero)) (.sort .zero) := by
+  let ty : Expr md := .sort (.succ .zero)
+  let mb : BinderMeta := .leanNever
+  let env : Env md := ⟨[.defnInfo ⟨n, [], .forallE ty ty mb⟩ (.lam ty (.bvar 0) mb) .abbrev]⟩
+  refine ⟨env, ?_⟩
+  have hdef : unfoldDefinition env (.const n []) = some (.lam ty (.bvar 0) mb) := by
+    simp [env, ty, mb, unfoldDefinition, Env.find?, ConstantInfo.name,
+      Expr.getAppFn, Expr.getAppArgs, Expr.mkAppN, Expr.instantiateLevelParams]
+  simpa only [Expr.instantiate1] using
+    (Certified.alias_beta (d := d) (a := Expr.sort .zero) hdef (by rfl))
+
 end Ix.Kernel.HeadDeltaBeta
