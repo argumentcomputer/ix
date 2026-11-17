@@ -31,7 +31,7 @@ open Ix.Kernel (ConstantInfo)
 
 /-- **A block of definitions**: every member is a definition. -/
 def DefnBlock (ms : Array Ixon.MutConst) : Prop :=
-  ∀ i m, ms[i]? = some m → ∃ d, m = .defn d
+  ∀ (i : Nat) (m : Ixon.MutConst), ms[i]? = some m → ∃ d : Ixon.Definition, m = .defn d
 
 private theorem toUInt64_toNat_b {n : Nat} (hn : n < UInt64.size) : n.toUInt64.toNat = n := by
   change (UInt64.ofNat n).toNat = n
@@ -201,8 +201,8 @@ theorem unitStep_defnBlock {envT : Ix.Kernel.Env .anon} {lim : Option Nat}
     induction m with
     | zero =>
       intro _
-      exact ⟨[], List.nodup_nil, fun _ h => nomatch h, hinv, hXe,
-        fun i mi hi _ => absurd hi (Nat.not_lt_zero _), fun _ h => nomatch h⟩
+      exact ⟨[], List.nodup_nil, (fun _ h => nomatch h), hinv, hXe,
+        (fun i mi hi _ => absurd hi (Nat.not_lt_zero _)), (fun _ h => nomatch h)⟩
     | succ m ih =>
       intro hm
       obtain ⟨acc, hacc⟩ := ih (by omega)
