@@ -2344,8 +2344,10 @@ def nat_rec_check := aiur_fn⟦
   -- ## `WrapRel`: the generated term with type-annotation wrappers consumed at binder domains
   --
   -- Structural equality, binder data included, except that at a binder's domain the generated
-  -- side may lose wrappers at its head (`wrap_dom`), and a `let` on either side is expanded,
-  -- as `Annot` expands it.
+  -- side may lose wrappers at its head (`wrap_dom`). A `let` is compared as any other node:
+  -- a stored `let` is related only to a generated `let`, type with type, value with value,
+  -- body with body; neither side's `let` is expanded, so the stored term names no constant
+  -- in a `let` that the generated term does not name at the same place.
   -- A wrapper is a constant stored as a definition whose value is `λ x₁ … xₖ, x₁`, every λ
   -- carrying the datum `never`, applied to exactly `k` arguments; consuming it leaves its first
   -- argument.
@@ -2353,10 +2355,22 @@ def nat_rec_check := aiur_fn⟦
 def wrap_rel := aiur_fn⟦
   fn wrap_rel(g: KernelTypes::KExpr, d: KernelTypes::KExpr) -> Field {
       match (*(g)) {
-        KernelTypes::KExprNode::Let(_, v, b) => {  wrap_rel(KernelSubst::expr_inst1(b, v, 0), d) } ,
+        KernelTypes::KExprNode::Let(t, v, b) => {
+          match (*(d)) {
+            KernelTypes::KExprNode::Let(t2, v2, b2) => {
+              match wrap_rel(t, t2) {
+                1 => {
+                  match wrap_rel(v, v2) {
+                    1 => {  wrap_rel(b, b2) } ,
+                    _ => {  0 } ,
+                  } } ,
+                _ => {  0 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
         _ => {
           match (*(d)) {
-            KernelTypes::KExprNode::Let(_, v2, b2) => {  wrap_rel(g, KernelSubst::expr_inst1(b2, v2, 0)) } ,
+            KernelTypes::KExprNode::Let(_, _, _) => {  0 } ,
             _ => {
               match (*(g)) {
                 KernelTypes::KExprNode::App(f, a) => {
@@ -2408,7 +2422,7 @@ def wrap_binder := aiur_fn⟦
 def wrap_dom := aiur_fn⟦
   fn wrap_dom(t: KernelTypes::KExpr, t2: KernelTypes::KExpr) -> Field {
       match (*(t)) {
-        KernelTypes::KExprNode::Let(_, v, b) => {  wrap_dom(KernelSubst::expr_inst1(b, v, 0), t2) } ,
+        KernelTypes::KExprNode::Let(_, _, _) => {  wrap_rel(t, t2) } ,
         _ => {
           match wrap_rel(t, t2) {
             1 => {  1 } ,
