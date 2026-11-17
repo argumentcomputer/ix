@@ -81,7 +81,7 @@ private theorem infer_shape_rep_go {c : ScopedCtx} (hc : ScopedCoreFacts c) :
       obtain ⟨tn, htn, _⟩ := head_rep hc (hg.sub hnsub) htb norm
       obtain ⟨u, _, l, hl, _⟩ := htn.sort_of_load ldsort
       exact ⟨.sort l, .sort List.getElem?_concat_length (hl.mono (Heap.Extends.snoc _ _)) (LvEq.refl _)⟩
-    | .other_Lam (x_ty := ty) (x_m := data) (cs523 := first) (ld60 := ld)
+    | .other_Lam (x_ty := ty) (x_m := data) (v512 := out) (m513 := mout) (cs523 := first) (ld60 := ld)
         (hm545 := hm) (ev525 := child) (he584 := hr) (hm583 := hh) (hc612 := hall) .. =>
       obtain ⟨D, B, level, rfl, hD, hB, hlevel⟩ := hE.lam_of_load ld
       subst hm hr hh
@@ -90,13 +90,14 @@ private theorem infer_shape_rep_go {c : ScopedCtx} (hc : ScopedCoreFacts c) :
       have hb := Tm.open_body (Ghost.extend_at Γ d D) (Ghost.extend_below Γ d D) (hB.mono ectx)
       have hsub : ∀ cl ∈ first, cl ∈ cs := by intro cl hm; rw [hall]; simp [hm]
       have hlt : first.length < fuel := by
-        rw [hall] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
+        rw [hall] at hlen; simp only [List.length_cons] at hlen; omega
       obtain ⟨tb, htb⟩ := ih first.length hlt (Nat.le_refl _) (hg.sub hsub) hctx' hb child
       have hcbody := htb.close (Ghost.extend_below Γ d D)
-      have ext := ectx.trans (child.heap_extends.trans (Heap.Extends.snoc _ _))
+      have eFinal := Heap.Extends.snoc mout (.construct kexprEnum "Forall" [ty, out, data])
+      have ext := ectx.trans (child.heap_extends.trans eFinal)
       exact ⟨.forallE D (tb.abstract1 d) (bmeta level),
         .forallE List.getElem?_concat_length (hD.mono ext)
-          (hcbody.mono (Heap.Extends.snoc _ _)) (hlevel.mono ext)⟩
+          (hcbody.mono eFinal) (hlevel.mono ext)⟩
     | .other_Let (cs639 := children) (cs654 := subs) (ld60 := ld)
         (ev656 := inst) (ev641 := child) (hc702 := hall) .. =>
       obtain ⟨D, V, B, rfl, _, hV, hB⟩ := hE.letE_of_load ld
