@@ -52,7 +52,7 @@ theorem scoped_nat_former_tele_spec {c : ScopedCtx} (hc : ScopedCoreFacts c) :
     have hsB : (B.stripPis m).isSome = true := by
       simpa only [Ix.Kernel.Expr.stripPis, Option.isSome_map] using hs
     have hsB' : ((B.instantiate1 (.fvar d T)).stripPis m).isSome = true :=
-      stripPis_isSome_instantiate1 _ m B 0 hsB
+      Specs.Whnf.stripPis_isSome_instantiate1 _ m B 0 hsB
     match Obs.«KernelCheck::nat_former_tele».obs ev with
     | .n0 (hv14 := hv14) .. => exact absurd hv14 (succ_field_ne_zero (by omega))
     | .other_Forall (x_d := x_d) (x_b := x_b) (x_m := x_m) (v66 := v66) (m76 := m76)
