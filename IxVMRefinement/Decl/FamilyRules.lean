@@ -224,7 +224,8 @@ theorem check_rules_go_stepsR {κ : _root_.Address → KKey} {ps : List LevelPar
         have ext_h_m77 := ext_ga.trans ext_m42_m77
         have hrest_out := ih (j + 1) sub_rec (hrls_rest.mono ext_h_m77)
           (hstr_mid.mono ext_m42_m77) ev_rec
-        exact ⟨{ w_idx := w100, rnf := x_rnf, rhs := x_rhs, rest := x_rest, ld_rules := ld,
+        exact ⟨
+          { w_idx := w100, rnf := x_rnf, rhs := x_rhs, rest := x_rest, ld_rules := ld,
             t := x_t, s2 := x_s2, h_ga := m42, cs_ga := cs52, call_ga, ev_ga,
             cprj := v_cprj, h_cprj := m117, cs_cprj := cs127, call_cprj, ev_cprj, sub_cprj,
             p_ci := p163, h_ci := m155, cs_ci := cs169, call_ci, ev_ci, sub_ci,
