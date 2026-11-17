@@ -199,4 +199,64 @@ theorem check_fields_sorts {c : ScopedCtx} (hc : ScopedCoreFacts c)
   exact ⟨fv, type, u, hfv, hu, infer, reduce, (fun impossible => nomatch impossible),
     (fun _ impossible => nomatch impossible)⟩
 
+/-- For a single-constructor index-free proposition, the outer check necessarily invokes the
+field loop. The alternative nonzero certificate contradicts the supplied semantic zero-set. -/
+theorem check_prop_fields_call {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {Γ : Nat → KExpr} {u : KLevel} {rc level p np nf r : SourceValue F}
+    {h h' : Heap F} {cs : List (Call F)} (hg : CoreGood c cs)
+    (represented : RepKLevel h u level) (zero : ∀ φ, Level.eval φ u = 0)
+    (ev : ObsFn W "KernelGuard::check_prop_fields"
+      [rc, level, .field 1, .field 0, p, np, nf] h r h' cs) :
+    ∃ before context inner, Heap.Extends h before ∧ c.types Γ before 0 context ∧
+      ObsFn W "KernelGuard::check_fields" [rc, p, np, nf, context] before r h' inner ∧
+      (∀ cl ∈ inner, cl ∈ cs) := by
+  match Obs.«KernelGuard::check_prop_fields».obs ev with
+  | .other (hne181 := nonone) .. => exact (nonone rfl).elim
+  | .n1_other (hne172 := nonzero) .. => exact (nonzero rfl).elim
+  | .n1_n0_n1 (m30 := compared) (m54 := zeroHeap) (m110 := contextHeap)
+      (cs73 := inner) (hm62 := zeroAllocated) (ev43 := comparison)
+      (hm118 := contextAllocated) (ev75 := walked) (hc122 := events) .. =>
+    subst zeroAllocated contextAllocated
+    have extension := (Heap.Extends.snoc h (.construct klevelEnum "Zero" [])).trans
+      (comparison.heap_extends.trans (Heap.Extends.snoc compared (.construct kexprListEnum "Nil" [])))
+    refine ⟨_, _, inner, extension, ?_, walked, fun cl member => ?_⟩
+    · exact ⟨Decl.typesRep_alloc_nil c.κ Γ compared, Decl.ghostScoped_zero Γ⟩
+    · rw [events]; simp [member]
+  | .n1_n0_other (m30 := compared) (cs149 := inner) (hm62 := allocated)
+      (ev43 := comparison) (ev151 := nonzero) (heq166 := answer) (hc171 := events) .. =>
+    subst allocated
+    have extension := (Heap.Extends.snoc h (.construct klevelEnum "Zero" [])).trans
+      comparison.heap_extends
+    have included : ∀ cl ∈ inner, cl ∈ cs := by intro cl member; rw [events]; simp [member]
+    have spec := Registry.induction c (scoped_steps c hc) (.infer .level_may_be_nonzero)
+      _ _ _ _ _ nonzero
+    have result := spec level u rfl (hg.sub included) ⟨u, represented.mono extension, LvEq.refl u⟩
+    exact (result.2 answer zero).elim
+
+/-- A successful outer check for a structure-like proposition supplies actual checked field
+sorts, with provenance relative to the entire outer invocation. -/
+theorem check_prop_fields_sorts {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {nP nF : Nat} {Γ : Nat → KExpr} {E residual body : KExpr}
+    {parameters fvs : List KExpr} {rc level p r : SourceValue F} {np nf : F}
+    {h h' : Heap F} {cs : List (Call F)} {u : KLevel}
+    (hp : np.val = nP) (hf : nf.val = nF)
+    (opened : Ix.Kernel.openPisAtFvars nP E 0 = some (parameters, residual))
+    (openedFields : Ix.Kernel.openPisAtFvars nF residual nP = some (fvs, body))
+    (hg : CoreGood c cs) (hrc : c.rc h rc) (hE : Tm c.κ 0 Γ h 0 E p)
+    (represented : RepKLevel h u level) (zero : ∀ φ, Level.eval φ u = 0)
+    (ev : ObsFn W "KernelGuard::check_prop_fields"
+      [rc, level, .field 1, .field 0, p, .field np, .field nf] h r h' cs) :
+    ∃ sorts : List KLevel,
+      Ix.Kernel.Semantics.FieldSortsJ Ix.Kernel.Model.rulesJ c.env true false u
+        nP fvs [] nF sorts ∧
+      ∀ i < nF, ∃ fv v, fvs[i]? = some fv ∧ sorts[i]? = some v ∧
+        CheckedSortAt c h cs (nP + i) fv.fvarTypeD v := by
+  obtain ⟨before, context, inner, extension, types, walked, included⟩ :=
+    check_prop_fields_call (Γ := Γ) hc hg represented zero ev
+  obtain ⟨sorts, sorted, checked⟩ := check_fields_sorts hc u hp hf opened openedFields
+    (hg.sub included) (hrc.mono extension) types (hE.mono extension) walked
+  refine ⟨sorts, sorted, fun i hi => ?_⟩
+  obtain ⟨fv, v, hfv, hv, field⟩ := checked i hi
+  exact ⟨fv, v, hfv, hv, field.weaken extension included⟩
+
 end IxVM.Refinement.Core.GuardData
