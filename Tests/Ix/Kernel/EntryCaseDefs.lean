@@ -275,6 +275,15 @@ bad_thm giIota : giVal (GI.mk [GI.leaf]) = 2 := unchecked (Eq.refl (giVal (GI.mk
 bad_thm geIota : geVal (GE.succ (GO.succ GE.zero)) = 2 :=
   unchecked (Eq.refl (geVal (GE.succ (GO.succ GE.zero))))
 
+-- False ι equations at the blocks whose formers are declared at a definition, installed in
+-- Lean unchecked (must-reject cases).
+bad_thm gaIotaFalse : gaVal (GA.mk [GA.leaf]) = 3 := unchecked (Eq.refl (gaVal (GA.mk [GA.leaf])))
+
+bad_thm giIotaFalse : giVal (GI.mk [GI.leaf]) = 1 := unchecked (Eq.refl (giVal (GI.mk [GI.leaf])))
+
+bad_thm geIotaFalse : geVal (GE.succ (GO.succ GE.zero)) = 1 :=
+  unchecked (Eq.refl (geVal (GE.succ (GO.succ GE.zero))))
+
 /-- The face of a `partial` definition: an opaque constant whose value is an
 inhabitant of its type. The recursive body is the `partial` companion
 `loop._unsafe_rec`. -/

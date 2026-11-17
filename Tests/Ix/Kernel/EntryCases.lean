@@ -352,6 +352,19 @@ def cases : List Case := [
   { label := "nested-erased-false-iota", seeds := [`eaIotaFalse],
     expected := .fail .declined "checker" fun input e => match e, keyOf input `eaIotaFalse with
       | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  -- false ι equations at formers declared at a definition (nested; mutual)
+  { label := "former-at-definition-false-iota", seeds := [`gaIotaFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `gaIotaFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  { label := "former-at-definition-index-false-iota", seeds := [`giIotaFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `giIotaFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
+      | _, _ => false },
+  { label := "former-at-definition-mutual-false-iota", seeds := [`geIotaFalse],
+    expected := .fail .declined "checker" fun input e => match e, keyOf input `geIotaFalse with
+      | .kernel (.invalid m) _, some key => Ix.Kernel.Msg.render toString m == s!"type mismatch in theorem {key}"
       | _, _ => false } ]
 
 def limits : Ix.Kernel.Admission.Limits := ⟨1 <<< 14, 1 <<< 14, 1 <<< 26, 1 <<< 22, 1 <<< 20⟩
@@ -536,7 +549,14 @@ def forgedCases : List ForgedCase := [
     target := seed "BD2.rec", forge := swapRules },
   -- a field that mentions a member only where whnf erases it (`EA`)
   { label := "modeled-nested-erased-forged-rule", seeds := [seed "EA"],
-    target := seed "EA.rec", forge := swapRules } ]
+    target := seed "EA.rec", forge := swapRules },
+  -- formers declared at a definition (`GA`; the mutual `GE`)
+  { label := "modeled-former-at-definition-forged-rule", seeds := [seed "GA"],
+    target := seed "GA.rec", forge := swapRules },
+  { label := "modeled-former-at-definition-index-forged-rule", seeds := [seed "GI"],
+    target := seed "GI.rec", forge := swapRules },
+  { label := "modeled-former-at-definition-mutual-forged-rule", seeds := [seed "GE"],
+    target := seed "GE.rec", forge := swapRules } ]
 
 def runForged (leanEnv : Lean.Environment) (test : ForgedCase) : IO Bool := do
   let started ← IO.monoMsNow
