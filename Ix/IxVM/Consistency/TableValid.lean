@@ -81,8 +81,10 @@ stored under its own hash (the table as the view's `roleBinding`): a run that ha
 bytes at that address then hashed a collision with the view. Over a view stored under its
 own hashes the alternative is a BLAKE3 collision between a byte string a run hashed and one in
 hand: held by the view under its hash, one of the two claims' byte strings or the committed
-images, or hashed by a run; or a preimage of the zero address a run hashed or the view holds
-(`ComposedSpec.selfHashed`).
+images, or hashed by a run; or the same with a projection image of a block a run hashed (the
+projection record of an inductive member or a constructor of the block, at any index) in place
+of the byte string the run hashed; or a preimage of the zero address a run hashed or the view
+holds (`ComposedSpec.selfHashed`).
 
 ## Corollaries
 
@@ -524,15 +526,19 @@ committed one is a collision with these. -/
 def committedFootprint : List ByteArray :=
   committedImages ++ committedProjImages
 
-/-- **A collision the run hashed one side of**, with the view's data or `extra`
+/-- **A collision the run hashed or computed one side of**, with the view's data or `extra`
 (`View.HashedCollision`), or with a record or blob of the store `R`: a byte string the run
-hashed that differs from what `R` holds at its hash. -/
+hashed that differs from what `R` holds at its hash, or a projection image of a block the run
+hashed (`HashedBlockProjImage`) that differs from what `R` holds at its hash. -/
 def CollisionWith (V : View) (extra : List ByteArray) (R : Ixon.Env)
     (calls : List (Call IxVM.F)) : Prop :=
   V.HashedCollision extra calls ∨
-  ∃ (x : Address) (held bytes : ByteArray),
+  (∃ (x : Address) (held bytes : ByteArray),
     ((∃ lc, R.consts.get? x = some lc ∧ lc.rawBytes = held) ∨ R.blobs.get? x = some held) ∧
-    Hashed calls bytes ∧ bytes ≠ held ∧ Address.blake3Pure bytes = x
+    Hashed calls bytes ∧ bytes ≠ held ∧ Address.blake3Pure bytes = x) ∨
+  ∃ (x : Address) (held image : ByteArray),
+    ((∃ lc, R.consts.get? x = some lc ∧ lc.rawBytes = held) ∨ R.blobs.get? x = some held) ∧
+    HashedBlockProjImage calls image ∧ image ≠ held ∧ Address.blake3Pure image = x
 
 /-! ## The statements -/
 
@@ -547,8 +553,9 @@ def InScopeTyping : Claim → Prop
 docstring): for every claim byte string whose digest packs to `d` and decodes to a typing
 claim in scope, every reader's view of its seeds, every byte string that admits as a table
 `t` at the address the claim's context names, and every witness that `t` is valid on every
-group: the run hashed a collision (with the claim's bytes, the table's, the committed images,
-the view's data or the witness's store), or `ConsistentReadOver`. -/
+group: the run hashed a collision, or computed one side of it from a block it hashed (with the
+claim's bytes, the table's, the committed images, the view's data or the witness's store), or
+`ConsistentReadOver`. -/
 def TypingSpecOn
     (Facts : Ix.Kernel.RoleTable → (Nat → Prop) → Ixon.Env → Ix.Kernel.Env .anon → Prop)
     (calls : List (Call IxVM.F)) (d : Digest) : Prop :=
@@ -564,7 +571,8 @@ def TypingSpecOn
 
 /-- **What a `binding` derivation establishes** (the other half): for every claim byte string
 whose digest packs to `d` and decodes to `binding spec a`, and every view: the run hashed a
-collision (with the claim's bytes, the committed images or the view's data), or it hashed
+collision, or computed one side of it from a block it hashed (with the claim's bytes, the
+committed images or the view's data), or it hashed
 table bytes that admit as a table `t` at `a`, `t` binds every role, and `t` is valid on
 every group, witnessed over records the run loaded. -/
 def BindingSpecOn
@@ -588,12 +596,12 @@ def CircuitConsistentOn : Prop :=
 /-- **What a typing derivation and a `binding` derivation establish together** (the public
 statement; see the module docstring). For a `binding spec a` claim behind `dB` and a typing
 claim in scope behind `dA` whose context names the table address `a`, and every reader's view
-of the seeds: the two runs hashed a collision (with either claim's bytes, the committed
-images or the view's data), or the binding run hashed table bytes that admit as a table `t`
-at `a` binding every role, `t`'s validity on every group is witnessed by an environment
-`envT` over records the binding run loaded (`TableShape`: prelude pinned, pinned basis
-blocks whole, a model), and the typing run's environment extends `envT`, covers the seeds
-and has a model (`ConsistentReadOver`). -/
+of the seeds: the two runs hashed a collision, or computed one side of it from a block one of
+them hashed (with either claim's bytes, the committed images or the view's data), or the
+binding run hashed table bytes that admit as a table `t` at `a` binding every role, `t`'s
+validity on every group is witnessed by an environment `envT` over records the binding run
+loaded (`TableShape`: prelude pinned, pinned basis blocks whole, a model), and the typing run's
+environment extends `envT`, covers the seeds and has a model (`ConsistentReadOver`). -/
 def ComposedSpec (callsA callsB : List (Call IxVM.F)) (dA dB : Digest) : Prop :=
   ∀ (bytesB : ByteArray) (spec a : Address), Claim.de bytesB = .ok (.binding spec a) →
     packDigest (Address.blake3Pure bytesB) = dB →
@@ -625,15 +633,24 @@ theorem hashedCollision_mono {V : View} {extra extra' : List ByteArray}
     (hc : ∀ c ∈ calls, c ∈ calls') (h : V.HashedCollision extra calls) :
     V.HashedCollision extra' calls' := by
   unfold View.HashedCollision at h ⊢
-  rcases h with ⟨x, held, bytes, hheld, hh, hne, hx⟩ | ⟨bytes, hb, hp⟩
-  · refine Or.inl ⟨x, held, bytes, ?_, hashed_mono hc hh, hne, hx⟩
+  have hanchor : ∀ {x : Address} {held : ByteArray},
+      (V.Preimage x held ∨ (held ∈ extra ∧ Address.blake3Pure held = x) ∨
+        (Hashed calls held ∧ Address.blake3Pure held = x)) →
+      (V.Preimage x held ∨ (held ∈ extra' ∧ Address.blake3Pure held = x) ∨
+        (Hashed calls' held ∧ Address.blake3Pure held = x)) := by
+    intro x held hheld
     rcases hheld with hpre | ⟨hmem, hx'⟩ | ⟨hh', hx'⟩
     · exact Or.inl hpre
     · rcases he held hmem with h1 | h2
       · exact Or.inr (Or.inl ⟨h1, hx'⟩)
       · exact Or.inr (Or.inr ⟨h2, hx'⟩)
     · exact Or.inr (Or.inr ⟨hashed_mono hc hh', hx'⟩)
-  · refine Or.inr ⟨bytes, ?_, hp⟩
+  rcases h with ⟨x, held, bytes, hheld, hh, hne, hx⟩ |
+    ⟨x, held, image, blk, cb, ms, hheld, hblk, hdec, hms, himg, hne, hx⟩ | ⟨bytes, hb, hp⟩
+  · exact Or.inl ⟨x, held, bytes, hanchor hheld, hashed_mono hc hh, hne, hx⟩
+  · exact Or.inr (Or.inl ⟨x, held, image, blk, cb, ms, hanchor hheld, hashed_mono hc hblk, hdec,
+      hms, himg, hne, hx⟩)
+  · refine Or.inr (Or.inr ⟨bytes, ?_, hp⟩)
     rcases hb with hpre | hh
     · exact Or.inl hpre
     · exact Or.inr (hashed_mono hc hh)
@@ -667,18 +684,30 @@ theorem binding_discharge
           exact hashed_mono hcB htb
         · exact Or.inl (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ h3))
     rcases hA bytesA cA deA dgA hsc V seeds hs ctx hctx tb t ht' R envT hw with hcol | hok
-    · rcases hcol with hcol | ⟨x, held, bytes, hheld, hh, hne, hx⟩
+    · have hR : ∀ {x : Address} {held : ByteArray},
+          ((∃ lc, R.consts.get? x = some lc ∧ lc.rawBytes = held) ∨
+            R.blobs.get? x = some held) →
+          Hashed callsB held ∧ Address.blake3Pure held = x := by
+        intro x held hheld
+        obtain ⟨hrec, hblob⟩ := hload
+        rcases hheld with ⟨lc, hl, hlc⟩ | hbl
+        · rw [← hlc]
+          exact hrec x lc hl
+        · exact hblob x held hbl
+      rcases hcol with hcol | ⟨x, held, bytes, hheld, hh, hne, hx⟩ |
+        ⟨x, held, image, hheld, ⟨blk, cb, ms, hblk, hdec, hms, himg⟩, hne, hx⟩
       · exact Or.inl (hashedCollision_mono heA hcA hcol)
-      · obtain ⟨hrec, hblob⟩ := hload
-        have hR : Hashed callsB held ∧ Address.blake3Pure held = x := by
-          rcases hheld with ⟨lc, hl, hlc⟩ | hbl
-          · rw [← hlc]
-            exact hrec x lc hl
-          · exact hblob x held hbl
+      · have hR' := hR hheld
         refine Or.inl ?_
         unfold View.HashedCollision
-        exact Or.inl ⟨x, held, bytes, Or.inr (Or.inr ⟨hashed_mono hcB hR.1, hR.2⟩),
+        exact Or.inl ⟨x, held, bytes, Or.inr (Or.inr ⟨hashed_mono hcB hR'.1, hR'.2⟩),
           hashed_mono hcA hh, hne, hx⟩
+      · have hR' := hR hheld
+        refine Or.inl ?_
+        unfold View.HashedCollision
+        exact Or.inr (Or.inl ⟨x, held, image, blk, cb, ms,
+          Or.inr (Or.inr ⟨hashed_mono hcB hR'.1, hR'.2⟩), hashed_mono hcA hblk, hdec, hms, himg,
+          hne, hx⟩)
     · exact Or.inr ⟨tb, t, R, envT, htb, ht, hall, hload, hw.shape, hok⟩
 
 /-! ## The circuit-level statements -/

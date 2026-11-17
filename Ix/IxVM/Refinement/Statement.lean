@@ -47,9 +47,14 @@ that covers the claim, the claim holds in the view, **or the derivation
 hashed a second preimage** of the claim's bytes or of data the view holds, or a
 preimage of the zero padding address (`View.HashedCollision`): a byte string
 passed to the program's BLAKE3 (`Blake3::hash`) in that derivation, with the
-same pure BLAKE3 hash as the data and different from it (or a held or hashed
-preimage of `Ix.HostAdmission.Merkle.padding`). Fooling a reader therefore
-requires computing a second preimage of the reader's data or a preimage of zero.
+same pure BLAKE3 hash as the data and different from it; or the projection
+record of an inductive member or a constructor of a block whose bytes the
+derivation hashed, which the derivation addresses by its hash without hashing
+it, with the same pure BLAKE3 hash as the data and different from it (or a held
+or hashed preimage of `Ix.HostAdmission.Merkle.padding`). Fooling a reader
+therefore requires computing a second preimage of the reader's data, a block
+one of whose projection records is such a second preimage, or a preimage of
+zero.
 
 **An existential form is false** in this semantics, so it is not stated:
 that some environment, addressed by BLAKE3, is accepted by IxC for
@@ -133,18 +138,34 @@ def Hashed (calls : List (Call IxVM.F)) (bytes : ByteArray) : Prop :=
   ∃ c ∈ calls, c.name = blake3Hash ∧ ∃ input : Aiur.SourceValue IxVM.F,
     c.args = [input] ∧ Aiur.Library.Bytes.RepByteStream byteStreamEnum c.heap bytes.data.toList input
 
-/-- **A second preimage the derivation hashed, or a preimage of the zero
-padding address**: a byte string the derivation hashed (`Hashed`) that has the
-same pure BLAKE3 hash as data the view holds (`View.Preimage`), as one of
+/-- **A second preimage the derivation hashed or addressed, or a preimage of the
+zero padding address**: a byte string the derivation hashed (`Hashed`) that has
+the same pure BLAKE3 hash as data the view holds (`View.Preimage`), as one of
 `extra` (the claim's bytes), or as another byte string the derivation hashed,
-and differs from it; or a byte string held by the view or hashed by the
-derivation whose pure BLAKE3 hash is `Ix.HostAdmission.Merkle.padding` (the
-zero address). -/
+and differs from it; or, in place of the byte string the derivation hashed, a
+projection image of a block it hashed: the serialization of the projection
+record, with empty tables, of member `i` as an inductive (`iPrj`) or of
+constructor `j` of member `i` (`cPrj`), at any indices, of the block at the pure
+BLAKE3 hash of bytes `blk` the derivation hashed that decode exactly to a block
+record (the derivation computes the address of such a record from the block and
+an index without hashing the record); or a byte string held by the view or
+hashed by the derivation whose pure BLAKE3 hash is
+`Ix.HostAdmission.Merkle.padding` (the zero address). -/
 def View.HashedCollision (V : View) (extra : List ByteArray) (calls : List (Call IxVM.F)) : Prop :=
   (∃ (x : Address) (held bytes : ByteArray),
     (V.Preimage x held ∨ (held ∈ extra ∧ Address.blake3Pure held = x) ∨
       (Hashed calls held ∧ Address.blake3Pure held = x)) ∧
       Hashed calls bytes ∧ bytes ≠ held ∧ Address.blake3Pure bytes = x) ∨
+  (∃ (x : Address) (held image blk : ByteArray) (cb : Ixon.Constant)
+      (ms : Array Ixon.MutConst),
+    (V.Preimage x held ∨ (held ∈ extra ∧ Address.blake3Pure held = x) ∨
+      (Hashed calls held ∧ Address.blake3Pure held = x)) ∧
+      Hashed calls blk ∧ Ixon.deConstantExact blk = .ok cb ∧ cb.info = .muts ms ∧
+      ((∃ i : UInt64,
+          image = Ixon.serConstant ⟨.iPrj ⟨i, Address.blake3Pure blk⟩, #[], #[], #[], #[]⟩) ∨
+        ∃ i j : UInt64,
+          image = Ixon.serConstant ⟨.cPrj ⟨i, j, Address.blake3Pure blk⟩, #[], #[], #[], #[]⟩) ∧
+      image ≠ held ∧ Address.blake3Pure image = x) ∨
   ∃ bytes, (V.Preimage Ix.HostAdmission.Merkle.padding bytes ∨ Hashed calls bytes) ∧
     Address.blake3Pure bytes = Ix.HostAdmission.Merkle.padding
 

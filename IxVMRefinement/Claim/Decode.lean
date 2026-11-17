@@ -458,7 +458,7 @@ theorem treeRoot_collision_or_eq {V : View} {extra : List ByteArray} {calls : Li
     | padding =>
       have hpad : treeRoot (.leaf a) = Ix.HostAdmission.Merkle.padding := hroot
       rw [hpad] at hpre hheld_hash
-      exact .inl (.inr ⟨_, .inl hpre, hheld_hash⟩)
+      exact .inl (.inr (.inr ⟨_, .inl hpre, hheld_hash⟩))
     | node l' r' =>
       let img := ByteArray.mk #[1] ++ (treeRoot l').hash ++ (treeRoot r').hash
       have himg_hash : Hashed calls img := hhashed _ (by simp [treeImages, img])
@@ -477,14 +477,14 @@ theorem treeRoot_collision_or_eq {V : View} {extra : List ByteArray} {calls : Li
       have himg_blk : Address.blake3Pure (ByteArray.mk #[0] ++ a'.hash) =
           Ix.HostAdmission.Merkle.padding := by
         simpa [treeRoot, Ix.HostAdmission.Merkle.leaf, Address.admissionHash_eq] using hroot.symm
-      exact .inl (.inr ⟨_, .inr himg_hash, himg_blk⟩)
+      exact .inl (.inr (.inr ⟨_, .inr himg_hash, himg_blk⟩))
     | node l' r' =>
       let img := ByteArray.mk #[1] ++ (treeRoot l').hash ++ (treeRoot r').hash
       have himg_hash : Hashed calls img := hhashed _ (by simp [treeImages, img])
       have himg_blk : Address.blake3Pure img = Ix.HostAdmission.Merkle.padding := by
         simpa [treeRoot, Ix.HostAdmission.Merkle.node, Address.admissionHash_eq, img] using
           hroot.symm
-      exact .inl (.inr ⟨_, .inr himg_hash, himg_blk⟩)
+      exact .inl (.inr (.inr ⟨_, .inr himg_hash, himg_blk⟩))
   | node l r ihl ihr =>
     intro t' hsub hhashed hroot
     let held := ByteArray.mk #[1] ++ (treeRoot l).hash ++ (treeRoot r).hash
@@ -497,7 +497,7 @@ theorem treeRoot_collision_or_eq {V : View} {extra : List ByteArray} {calls : Li
     | padding =>
       have hpad : treeRoot (.node l r) = Ix.HostAdmission.Merkle.padding := hroot
       rw [hpad] at hpre hheld_hash
-      exact .inl (.inr ⟨_, .inl hpre, hheld_hash⟩)
+      exact .inl (.inr (.inr ⟨_, .inl hpre, hheld_hash⟩))
     | leaf a' =>
       let img := ByteArray.mk #[0] ++ a'.hash
       have himg_hash : Hashed calls img := hhashed _ (by simp [treeImages, img])

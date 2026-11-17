@@ -1087,8 +1087,18 @@ theorem good_subEnvRole_of_noCollision {V : IxVM.Refinement.View} {extra : List 
     (hbound : IxVM.Consistency.Bounded calls) :
     Core.Good ⟨subEnvRole E₀ Keep supp roleBlobs, env, t, lim⟩ calls := by
   refine ⟨fun hcol => hnoCol ?_, hbound⟩
-  rcases hcol with ⟨x, held, bytes, hsrc, hh, hne, hblk⟩ | ⟨bytes, hsrc, hpad⟩
+  rcases hcol with ⟨x, held, bytes, hsrc, hh, hne, hblk⟩ |
+    ⟨x, held, image, blk, cb, ms, hsrc, hb, hdec, hms, himg, hne, hblk⟩ | ⟨bytes, hsrc, hpad⟩
   · refine Or.inl ⟨x, held, bytes, ?_, hh, hne, hblk⟩
+    rcases hsrc with hpre | ⟨hmem, -⟩ | hh_held
+    · rcases subEnvRole_preimage_to_view hload hsupp hblobs hpre with
+        hv | hh' | ⟨hex, hblk_held, -⟩
+      · exact Or.inl hv
+      · exact Or.inr (Or.inr hh')
+      · exact Or.inr (Or.inl ⟨hex, hblk_held⟩)
+    · cases hmem
+    · exact Or.inr (Or.inr hh_held)
+  · refine Or.inr (Or.inl ⟨x, held, image, blk, cb, ms, ?_, hb, hdec, hms, himg, hne, hblk⟩)
     rcases hsrc with hpre | ⟨hmem, -⟩ | hh_held
     · rcases subEnvRole_preimage_to_view hload hsupp hblobs hpre with
         hv | hh' | ⟨hex, hblk_held, -⟩
@@ -1099,10 +1109,10 @@ theorem good_subEnvRole_of_noCollision {V : IxVM.Refinement.View} {extra : List 
     · exact Or.inr (Or.inr hh_held)
   · rcases hsrc with hpre | hh
     · rcases subEnvRole_preimage_to_view hload hsupp hblobs hpre with hv | ⟨hh', -⟩ | ⟨-, -, hne⟩
-      · exact Or.inr ⟨bytes, Or.inl hv, hpad⟩
-      · exact Or.inr ⟨bytes, Or.inr hh', hpad⟩
+      · exact Or.inr (Or.inr ⟨bytes, Or.inl hv, hpad⟩)
+      · exact Or.inr (Or.inr ⟨bytes, Or.inr hh', hpad⟩)
       · exact absurd rfl hne
-    · exact Or.inr ⟨bytes, Or.inr hh, hpad⟩
+    · exact Or.inr (Or.inr ⟨bytes, Or.inr hh, hpad⟩)
 
 /-- **`Core.Good` on `coreEnvRole E₀ Keep supp roleBlobs pre`** from `RolePreludeInputs` and
 `¬ V.HashedCollision extra calls`. -/

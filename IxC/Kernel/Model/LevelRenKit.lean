@@ -1169,8 +1169,10 @@ structure StoreAr (env : Env md) : Prop where
       ∀ lvls pins, rl.fire = .nested lvls pins → ∀ p ∈ pins, Expr.arOk env p = true
   proj : ∀ {sn : Key md} {i : Nat} {entry : ProjEntry md},
     env.findProj? sn i = some entry → Expr.arOk env entry.body = true
-  /-- the `Bool` values a `Nat` comparison folds to take no level parameters -/
-  bool : ∀ {n : Key md} {ci : ConstantInfo md}, (n = boolTrueName ∨ n = boolFalseName) →
+  /-- the `Bool` values a stored `Nat` comparison folds to take no level parameters (the
+  comparison's install checks them, `natOpGuard`) -/
+  bool : ∀ {c : Key md}, natOpStored env c = true → (c = natBeqName ∨ c = natBleName) →
+    ∀ {n : Key md} {ci : ConstantInfo md}, (n = boolTrueName ∨ n = boolFalseName) →
     env.find? n = some ci → ci.toConstantVal.levelParams = []
 
 namespace LvStore

@@ -394,7 +394,7 @@ theorem rec_counts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
   -- the member check: route, counts, rule list length
   obtain ⟨parent, pointer, scanHeap, loadedHeap, routedHeap, scanCalls, loadCalls, routeCalls,
     nl, pty, np, ni, nc, pu, blk, idx, lenHeap, lenAfter, kHeap, kAfter, canonHeap, len, kTarget,
-    lenCalls, kCalls, canonCalls, evScan, hsScan, evLoad, hsLoad, hldP, evRoute, hsRoute,
+    lenCalls, kCalls, canonCalls, canonResult, canonFinal, evScan, hsScan, evLoad, hsLoad, hldP, evRoute, hsRoute,
     hnp, hni, eLen, evLen, hsLen, hlenEq, -, -, -, -, -, evCanon, -⟩ := native_rec_member_full evM
   have hsScan' : ∀ x ∈ scanCalls, x ∈ calls := fun x hx => hsub_chk x (hsubM x (hsScan x hx))
   have hsLoad' : ∀ x ∈ loadCalls, x ∈ calls := fun x hx => hsub_chk x (hsubM x (hsLoad x hx))

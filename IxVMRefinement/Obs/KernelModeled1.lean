@@ -581,10 +581,20 @@ inductive «KernelModeled::basis_role_allowed».Path (x_r : SourceValue F) (h : 
       (he127 : r = (.field 1))
       (he128 : h' = h)
       (hc129 : calls = [])
+  | n37
+      (hv134 : x_r = (.field 37))
+      (he135 : r = (.field 1))
+      (he136 : h' = h)
+      (hc137 : calls = [])
+  | n39
+      (hv142 : x_r = (.field 39))
+      (he143 : r = (.field 1))
+      (he144 : h' = h)
+      (hc145 : calls = [])
   | other
-      (he134 : r = (.field 0))
-      (he135 : h' = h)
-      (hc136 : calls = [])
+      (he150 : r = (.field 0))
+      (he151 : h' = h)
+      (hc152 : calls = [])
 
 /-- **Every observed derivation of `KernelModeled::basis_role_allowed` takes one of its paths.** -/
 theorem «KernelModeled::basis_role_allowed».obs {x_r : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -673,10 +683,20 @@ theorem «KernelModeled::basis_role_allowed».obs {x_r : SourceValue F} {h h' : 
                                 exact «KernelModeled::basis_role_allowed».Path.n36 hv126 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                               · have hne130 := MatchesConst.none_inv (MatchesConst.literal 36) nm124
                                 rcases selectArm_cons_inv sel125 with ⟨mt131, rfl⟩ | ⟨nm132, sel133⟩
-                                · obtain rfl := matchPattern_wildcard_inv mt131
+                                · obtain ⟨hv134, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 37) mt131
                                   obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
-                                  exact «KernelModeled::basis_role_allowed».Path.other rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-                                · exact (matchPattern_wildcard_none nm132).elim
+                                  exact «KernelModeled::basis_role_allowed».Path.n37 hv134 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                · have hne138 := MatchesConst.none_inv (MatchesConst.literal 37) nm132
+                                  rcases selectArm_cons_inv sel133 with ⟨mt139, rfl⟩ | ⟨nm140, sel141⟩
+                                  · obtain ⟨hv142, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 39) mt139
+                                    obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+                                    exact «KernelModeled::basis_role_allowed».Path.n39 hv142 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                  · have hne146 := MatchesConst.none_inv (MatchesConst.literal 39) nm140
+                                    rcases selectArm_cons_inv sel141 with ⟨mt147, rfl⟩ | ⟨nm148, sel149⟩
+                                    · obtain rfl := matchPattern_wildcard_inv mt147
+                                      obtain ⟨rfl, rfl, rfl⟩ := d9.literal_inv
+                                      exact «KernelModeled::basis_role_allowed».Path.other rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                                    · exact (matchPattern_wildcard_none nm148).elim
 
 /-- The evaluation paths of `KernelModeled::check_witnesses`: one constructor per combination of selected arms. -/
 inductive «KernelModeled::check_witnesses».Path (x_rc x_block x_s x_n : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)

@@ -37,13 +37,20 @@ theorem hashed_mono {calls₁ calls₂ : List (Call F)} (hsub : ∀ x ∈ calls�
 theorem collision_mono {V : View} {calls₁ calls₂ : List (Call F)}
     (hsub : ∀ x ∈ calls₁, x ∈ calls₂) (h : V.HashedCollision [] calls₁) :
     V.HashedCollision [] calls₂ := by
-  rcases h with ⟨x, held, bytes, hpre, hh, hne, hx⟩ | ⟨bytes, hpre, hx⟩
+  rcases h with ⟨x, held, bytes, hpre, hh, hne, hx⟩ |
+    ⟨x, held, image, blk, cb, ms, hpre, hb, hex, hms, himg, hne, hx⟩ | ⟨bytes, hpre, hx⟩
   · refine .inl ⟨x, held, bytes, ?_, hashed_mono hsub hh, hne, hx⟩
     rcases hpre with hp | hp | ⟨hh', hx'⟩
     · exact .inl hp
     · exact .inr (.inl hp)
     · exact .inr (.inr ⟨hashed_mono hsub hh', hx'⟩)
-  · refine .inr ⟨bytes, ?_, hx⟩
+  · refine .inr (.inl ⟨x, held, image, blk, cb, ms, ?_, hashed_mono hsub hb, hex, hms, himg,
+      hne, hx⟩)
+    rcases hpre with hp | hp | ⟨hh', hx'⟩
+    · exact .inl hp
+    · exact .inr (.inl hp)
+    · exact .inr (.inr ⟨hashed_mono hsub hh', hx'⟩)
+  · refine .inr (.inr ⟨bytes, ?_, hx⟩)
     rcases hpre with hp | hp
     · exact .inl hp
     · exact .inr (hashed_mono hsub hp)

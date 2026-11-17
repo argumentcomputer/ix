@@ -325,57 +325,6 @@ theorem sentinelEnv_installed_of_serConstant {E : Ixon.Env}
   · rw [sentinelLazy_rawBytes] at hraw
     exact absurd hraw.symm (serConstant_ne_empty hwf)
 
-/-- Collision lifting from `sentinelEnv E InstalledAddr` to `E` when padding is not replaced by an
-uninstalled sentinel (or `blake3Pure ByteArray.empty ≠ padding`) and every `E.consts` address
-hashed during `calls` satisfies `InstalledAddr`. -/
-theorem hashedCollision_sentinelEnv_to_env {E : Ixon.Env}
-    {InstalledAddr : _root_.Address → Prop} {calls : List (Call F)}
-    (hpad : E.consts.get? Ix.HostAdmission.Merkle.padding = none ∨
-      InstalledAddr Ix.HostAdmission.Merkle.padding ∨
-      _root_.Address.blake3Pure ByteArray.empty ≠ Ix.HostAdmission.Merkle.padding)
-    (hreach : ∀ x bytes, (E.consts.get? x).isSome = true →
-      Hashed calls bytes → _root_.Address.blake3Pure bytes = x → InstalledAddr x)
-    (hcol : View.HashedCollision { env := sentinelEnv E InstalledAddr } [] calls) :
-    View.HashedCollision { env := E } [] calls := by
-  rcases hcol with ⟨x, held, bytes, hsrc, hh, hne, hblk⟩ | ⟨bytes, hsrc, hpad_eq⟩
-  · refine .inl ⟨x, held, bytes, ?_, hh, hne, hblk⟩
-    rcases hsrc with hpre | ⟨hmem, -⟩ | hh_held
-    · rcases hpre with ⟨lc, hget, rfl⟩ | hblob | ⟨rb, hrb, ha1, ha2⟩ | ⟨t, ht, -, -⟩
-      · rcases sentinelEnv_get?_some_inv E InstalledAddr hget with ⟨_, hgetE⟩ | ⟨hni, _, his⟩
-        · exact .inl (.inl ⟨lc, hgetE, rfl⟩)
-        · exact absurd (hreach x bytes his hh hblk) hni
-      · exact .inl (.inr (.inl hblob))
-      · exact .inl (.inr (.inr (.inl ⟨rb, hrb, ha1, ha2⟩)))
-      · cases ht
-    · cases hmem
-    · exact .inr (.inr hh_held)
-  · rcases hsrc with hpre | hh
-    · rcases hpre with ⟨lc, hget, rfl⟩ | hblob | ⟨rb, hrb, ha1, ha2⟩ | ⟨t, ht, -, -⟩
-      · rcases sentinelEnv_get?_some_inv E InstalledAddr hget with ⟨_, hgetE⟩ | ⟨hni, rfl, _⟩
-        · exact .inr ⟨lc.rawBytes, .inl (.inl ⟨lc, hgetE, rfl⟩), hpad_eq⟩
-        · rcases hpad with hnone | hi | hne_pad
-          · rw [sentinelEnv_get?_none E InstalledAddr hnone] at hget
-            cases hget
-          · exact absurd hi hni
-          · rw [sentinelLazy_rawBytes] at hpad_eq
-            exact absurd hpad_eq hne_pad
-      · exact .inr ⟨bytes, .inl (.inr (.inl hblob)), hpad_eq⟩
-      · exact .inr ⟨bytes, .inl (.inr (.inr (.inl ⟨rb, hrb, ha1, ha2⟩))), hpad_eq⟩
-      · cases ht
-    · exact .inr ⟨bytes, .inr hh, hpad_eq⟩
-
-theorem good_sentinelEnv_of_good {E : Ixon.Env} {InstalledAddr : _root_.Address → Prop}
-    {env : Ix.Kernel.Env .anon} {t : Ix.Kernel.RoleTable} {lim : Option Nat}
-    {calls : List (Call F)}
-    (hpad : E.consts.get? Ix.HostAdmission.Merkle.padding = none ∨
-      InstalledAddr Ix.HostAdmission.Merkle.padding ∨
-      _root_.Address.blake3Pure ByteArray.empty ≠ Ix.HostAdmission.Merkle.padding)
-    (hreach : ∀ x bytes, (E.consts.get? x).isSome = true →
-      Hashed calls bytes → _root_.Address.blake3Pure bytes = x → InstalledAddr x)
-    (hg : Core.Good ⟨E, env, t, lim⟩ calls) :
-    Core.Good ⟨sentinelEnv E InstalledAddr, env, t, lim⟩ calls :=
-  ⟨fun hcol => hg.1 (hashedCollision_sentinelEnv_to_env hpad hreach hcol), hg.2⟩
-
 /-! ## Section 3: `DeclStoreFacts` and `loadFacts_of_declStoreFacts` -/
 
 /-- Store-decoded witness on hashed constant preimages: whenever a good derivation hashes `bytes`

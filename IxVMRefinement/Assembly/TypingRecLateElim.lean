@@ -249,7 +249,7 @@ theorem rec_arm_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E
     exact ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
   obtain ⟨parent, pointer, scanHeap, loadedHeap, routedHeap, scanCalls, loadCalls, routeCalls,
     nl, pty, np, ni, nc, pu, blk, idx, lenHeap, lenAfter, kHeap, kAfter, canonHeap, len, kTarget,
-    lenCalls, kCalls, canonCalls, evScan, hsScan, evLoad, hsLoad, hldP, evRoute, hsRoute,
+    lenCalls, kCalls, canonCalls, canonResult, canonFinal, evScan, hsScan, evLoad, hsLoad, hldP, evRoute, hsRoute,
     hnp, hni, eLen, evLen, hsLen, hlenEq, eK, evK, hsK, hkEq, eC, evCanon, hsCanon⟩ :=
     native_rec_member_full evM
   have hsScan' : ∀ x ∈ scanCalls, x ∈ calls := fun x hx => hsub_chk x (hsubM x (hsScan x hx))
@@ -316,7 +316,7 @@ theorem rec_arm_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E
     hextM.trans (evScan.heap_extends.trans evLoad.heap_extends)
   have extA : Heap.Extends h_pre loadedHeap := ev_ld.heap_extends.trans extL
   exact ⟨_, _, _, _, _, _, _, _, _, _, _, _, a', bR, a, bP, blobs, tree,
-    scanHeap, loadedHeap, kHeap, kAfter, canonHeap, h'_chk, loadCalls, kCalls, canonCalls,
+    scanHeap, loadedHeap, kHeap, kAfter, canonHeap, canonFinal, loadCalls, kCalls, canonCalls,
     hrcM.mono extL,
     Bytes.repAddressRef_heapMono₂ Core.addrTy extA ha'_ref, rfl,
     Bytes.repAddressRef_heapMono₂ Core.addrTy extL hblkR, hbR,

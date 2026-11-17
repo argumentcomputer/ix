@@ -200,16 +200,21 @@ theorem arOk_natAddLit (ht : natAddTyOk (env.find? natAddName) = true) {b : Expr
   · exact arOk_app.mpr ⟨arOk_app.mpr ⟨natAdd_arOk ht, hb⟩, rfl⟩
 
 theorem arOk_natOpResult (hA : StoreAr env) {c : Key md} {a b : Nat} {r : Expr md}
-    (h : natOpResult c a b = some r) : Expr.arOk env r = true := by
-  have hT : Expr.arOk env (.const boolTrueName []) = true :=
-    arOk_const_nil (fun ci hf => hA.bool (.inl rfl) hf)
-  have hF : Expr.arOk env (.const boolFalseName []) = true :=
-    arOk_const_nil (fun ci hf => hA.bool (.inr rfl) hf)
+    (hst : natOpStored env c = true) (h : natOpResult c a b = some r) :
+    Expr.arOk env r = true := by
   have hlit : ∀ n : Nat, Expr.arOk env (.lit (.natVal n) : Expr md) = true := fun _ => rfl
   have hall : (natOpResult c a b).all (Expr.arOk env) = true := by
     unfold natOpResult
-    simp [apply_ite (Option.all (Expr.arOk env)), hlit,
-      apply_ite (fun n : Key md => Expr.arOk env (.const n [])), hT, hF]
+    by_cases hcb : c = natBeqName ∨ c = natBleName
+    · have hT : Expr.arOk env (.const boolTrueName []) = true :=
+        arOk_const_nil (fun ci hf => hA.bool hst hcb (.inl rfl) hf)
+      have hF : Expr.arOk env (.const boolFalseName []) = true :=
+        arOk_const_nil (fun ci hf => hA.bool hst hcb (.inr rfl) hf)
+      simp [apply_ite (Option.all (Expr.arOk env)), hlit,
+        apply_ite (fun n : Key md => Expr.arOk env (.const n [])), hT, hF]
+    · have h1 : ¬ c = natBeqName := fun e => hcb (.inl e)
+      have h2 : ¬ c = natBleName := fun e => hcb (.inr e)
+      simp [apply_ite (Option.all (Expr.arOk env)), hlit, h1, h2]
   rw [h] at hall
   simpa using hall
 
@@ -537,7 +542,7 @@ theorem red_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : LvRe
     obtain ⟨-, ha⟩ := arOk_app.mp hfa
     have ra := red_lr h hwa ha
     have rb := red_lr h hwb hb
-    refine ⟨arOk_natOpResult h.ar hr, ?_⟩
+    refine ⟨arOk_natOpResult h.ar hst hr, ?_⟩
     rw [natOpResult_inst ks ws hr]
     exact .natOp hc hst ra.2 (by rw [rawNatLit?_inst]; exact hn₁) rb.2
       (by rw [rawNatLit?_inst]; exact hn₂) hr

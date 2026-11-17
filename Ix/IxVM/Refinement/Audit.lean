@@ -273,9 +273,27 @@ fun V extra calls =>
           held ∈ extra ∧ Address.blake3Pure held = x ∨
             IxVM.Refinement.Hashed calls held ∧ Address.blake3Pure held = x) ∧
         IxVM.Refinement.Hashed calls bytes ∧ bytes ≠ held ∧ Address.blake3Pure bytes = x) ∨
-    ∃ bytes,
-      (V.Preimage Ix.HostAdmission.Merkle.padding bytes ∨ IxVM.Refinement.Hashed calls bytes) ∧
-        Address.blake3Pure bytes = Ix.HostAdmission.Merkle.padding
+    (∃ x held image blk cb ms,
+        (V.Preimage x held ∨
+            held ∈ extra ∧ Address.blake3Pure held = x ∨
+              IxVM.Refinement.Hashed calls held ∧ Address.blake3Pure held = x) ∧
+          IxVM.Refinement.Hashed calls blk ∧
+            Ixon.deConstantExact blk = Except.ok cb ∧
+              cb.info = Ixon.ConstantInfo.muts ms ∧
+                ((∃ i,
+                      image =
+                        Ixon.serConstant
+                          { info := Ixon.ConstantInfo.iPrj { idx := i, block := Address.blake3Pure blk },
+                            sharing := #[], refs := #[], univs := #[] }) ∨
+                    ∃ i j,
+                      image =
+                        Ixon.serConstant
+                          { info := Ixon.ConstantInfo.cPrj { idx := i, cidx := j, block := Address.blake3Pure blk },
+                            sharing := #[], refs := #[], univs := #[] }) ∧
+                  image ≠ held ∧ Address.blake3Pure image = x) ∨
+      ∃ bytes,
+        (V.Preimage Ix.HostAdmission.Merkle.padding bytes ∨ IxVM.Refinement.Hashed calls bytes) ∧
+          Address.blake3Pure bytes = Ix.HostAdmission.Merkle.padding
 -/
 #guard_msgs in
 #print IxVM.Refinement.View.HashedCollision

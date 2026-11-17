@@ -1,6 +1,7 @@
 import IxVMRefinement.Obs.KernelCheck0
 import IxVMRefinement.Obs.KernelCheck2
 import IxVMRefinement.Obs.KernelCheck11
+import IxVMRefinement.Obs.KernelModeled
 import IxVMRefinement.Obs.KernelModeled0
 
 /-! # Syntactic recursor guards from actual Source observations
@@ -113,7 +114,7 @@ theorem native_rec_parent_observed
       (w167 := parentType) (x_parent_np := parentParams) (x_parent_ni := parentIndices)
       (x_num_ctors := constructors) (w168 := parentUnsafe) (x_parent_block_addr := parentBlock)
       (x_parent_ind_idx := parentIndex) (hv15 := input) (ev85 := scan) (ev142 := load)
-      (ld136 := parentInfo) (hc868 := children) .. =>
+      (ld136 := parentInfo) (hc898 := children) .. =>
     injection input with _ _ fields
     simp only [List.cons.injEq, and_true] at fields
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := fields
@@ -153,7 +154,7 @@ theorem native_rec_actual_parent_route
       (x_parent_ind_idx := parentIndex) (m223 := routedHeap) (cs231 := routeCalls)
       (hv15 := input) (ev85 := scan) (ev142 := load) (ld136 := parentInfo)
       (ev233 := route) (heq248 := native)
-      (hc868 := children) .. =>
+      (hc898 := children) .. =>
     injection input with _ _ fields
     simp only [List.cons.injEq, and_true] at fields
     obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := fields

@@ -68,8 +68,17 @@ theorem hashedCollision_subEnv_to_view {V : IxVM.Refinement.View} {extra : List 
         (raw ∈ extra ∧ a ≠ Ix.HostAdmission.Merkle.padding)))
     (hcol : IxVM.Refinement.View.HashedCollision { env := subEnv E₀ Keep supp } [] calls) :
     V.HashedCollision extra calls := by
-  rcases hcol with ⟨x, held, bytes, hsrc, hh, hne, hblk⟩ | ⟨bytes, hsrc, hpad⟩
+  rcases hcol with ⟨x, held, bytes, hsrc, hh, hne, hblk⟩ |
+    ⟨x, held, image, blk, cb, ms, hsrc, hb, hdec, hms, himg, hne, hblk⟩ | ⟨bytes, hsrc, hpad⟩
   · refine Or.inl ⟨x, held, bytes, ?_, hh, hne, hblk⟩
+    rcases hsrc with hpre | ⟨hmem, -⟩ | hh_held
+    · rcases subEnv_preimage_to_view hload hsupp hpre with hv | hh' | ⟨hex, hblk_held, -⟩
+      · exact Or.inl hv
+      · exact Or.inr (Or.inr hh')
+      · exact Or.inr (Or.inl ⟨hex, hblk_held⟩)
+    · cases hmem
+    · exact Or.inr (Or.inr hh_held)
+  · refine Or.inr (Or.inl ⟨x, held, image, blk, cb, ms, ?_, hb, hdec, hms, himg, hne, hblk⟩)
     rcases hsrc with hpre | ⟨hmem, -⟩ | hh_held
     · rcases subEnv_preimage_to_view hload hsupp hpre with hv | hh' | ⟨hex, hblk_held, -⟩
       · exact Or.inl hv
@@ -79,10 +88,10 @@ theorem hashedCollision_subEnv_to_view {V : IxVM.Refinement.View} {extra : List 
     · exact Or.inr (Or.inr hh_held)
   · rcases hsrc with hpre | hh
     · rcases subEnv_preimage_to_view hload hsupp hpre with hv | ⟨hh', -⟩ | ⟨-, -, hne⟩
-      · exact Or.inr ⟨bytes, Or.inl hv, hpad⟩
-      · exact Or.inr ⟨bytes, Or.inr hh', hpad⟩
+      · exact Or.inr (Or.inr ⟨bytes, Or.inl hv, hpad⟩)
+      · exact Or.inr (Or.inr ⟨bytes, Or.inr hh', hpad⟩)
       · exact absurd rfl hne
-    · exact Or.inr ⟨bytes, Or.inr hh, hpad⟩
+    · exact Or.inr (Or.inr ⟨bytes, Or.inr hh, hpad⟩)
 
 /-- **`Core.Good` on `subEnv E₀ Keep supp`** from `¬ V.HashedCollision extra calls` and
 `Bounded calls`. -/

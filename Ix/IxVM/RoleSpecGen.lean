@@ -53,7 +53,7 @@ namespace IxVM.RoleSpecGen
 open Ix.Kernel
 
 export Ix.SpecDigest (groupOrder groups groupOf groupNeeds wellFounded tailOnly
-  firstWellFoundedGroup firstEquationGroup)
+  firstWellFoundedGroup firstLiteralGroup firstEquationGroup)
 
 def roleIdx (r : Role) : Nat := Role.all.idxOf r
 
@@ -559,6 +559,8 @@ def renderSource (src : Source) : Except String String := do
   fns := fns.push (formalAiurFn "inline fn group_count() -> Field" s!"      {schedule.groups.length}")
   fns := fns.push (formalAiurFn "inline fn first_well_founded_group() -> Field"
     s!"      {schedule.firstWellFounded}")
+  fns := fns.push (formalAiurFn "inline fn first_literal_group() -> Field"
+    s!"      {schedule.firstLiteral}")
   fns := fns.push (formalAiurFn "inline fn first_equation_group() -> Field"
     s!"      {schedule.firstEquation}")
   for r in namedRoles do
