@@ -4100,7 +4100,7 @@ private theorem check_inductive_shape_ctors_go (hLevels : IxVM.Consistency.Level
                Ix.Kernel.recFieldKind T lps nP nIdx i (cbs.getD (nP + i) default).1 ≠ .unsupported) ∧
               ((cbs.getD (nP + i) default).1.mentionsConst T = false ∨
                RawRecSpine T (rcbs.getD (nP + i) default).1 (cbs.getD (nP + i) default).1)) ∧
-            Heap.Extends m546 m716 := by
+            Heap.Extends m_prop m646 := by
           cases sg_pos with
           | other hne _ _ _ => exact absurd rfl hne
           | n0 cs_pos _ ev_pos hc_sg =>

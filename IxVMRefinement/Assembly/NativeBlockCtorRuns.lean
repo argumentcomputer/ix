@@ -276,7 +276,7 @@ theorem native_ctor_staged_runs (hLevels : IxVM.Consistency.Levels)
                 .unsupported) ∧
               ((cbs.getD (nP + i) default).1.mentionsConst T = false ∨
                RawRecSpine T (rcbs.getD (nP + i) default).1 (cbs.getD (nP + i) default).1)) ∧
-            Heap.Extends m546 m716 := by
+            Heap.Extends m_prop m646 := by
           cases sg_pos with
           | other hne _ _ _ => exact absurd rfl hne
           | n0 cs_pos _ ev_pos hc_sg =>
