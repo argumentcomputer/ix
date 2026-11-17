@@ -1,3 +1,4 @@
+import IxVMRefinement.Core.CallHeaps
 import IxVMRefinement.Obs.KernelRoles
 import IxVMRefinement.RoleVal.LookupSpec
 import IxVMRefinement.Claim.RoleTable
@@ -1457,67 +1458,62 @@ private theorem validate_op_equations_walks {t : Ix.Kernel.RoleTable} {n : Nat}
     | Cons x_e x_rest v1048 m1049 cs1051 cs1060 v1069 ld12 sg1056 _ ev1062 hc1127 =>
       rw [← evListEnum] at ld12
       obtain ⟨e, rest, rfl, he_rep, hrest_rep⟩ := Lib.rep_cons_of_load hlist ld12
+      have tailMember : (⟨"KernelRoles::validate_op_equations",
+          [x_rc, x_tbl, x_r, x_a, x_val, x_rest, v1069], m1049⟩ : Call F) ∈ calls := by
+        rw [hc1127]; simp
+      have ext_seg_all : Heap.Extends h m1049 := (ev.call_heap_bounds tailMember).1
       have hseg : Heap.Extends h m1049 ∧
           (∀ thm : _root_.Address, e = .proof thm →
             GetThmCiIn cs1051 thm ∧ RefsWalkedExceptIn cs1051 t thm a) := by
-        cases sg1056 with
-        | n0_Defeq m43 cs54 m86 cs96 v99 m101 cs109 x_lhs x_types m150 cs160 v163 m165 cs173
-            x_rhs w203 v225 m228 cs236 v240 v241 m251 cs259 m287 cs295
-            ev56 hv83 ev111 ev98 ev175 ev162 ev261 ev297 ev238 _ _ he339 _ =>
-          have ext_seg : Heap.Extends h m1049 := by
-            rw [he339]
-            exact ev56.heap_extends.trans (ev111.heap_extends.trans (ev98.heap_extends.trans
-              (ev175.heap_extends.trans (ev162.heap_extends.trans (ev261.heap_extends.trans
-                (ev297.heap_extends.trans ev238.heap_extends))))))
-          refine ⟨ext_seg, fun thm he => ?_⟩
+        match sg1056 with
+        | .n0_Defeq (hv83 := hv83) .. =>
+          refine ⟨ext_seg_all, fun thm he => ?_⟩
           have he_prf : EvRep h (.proof thm) x_e := by rwa [← he]
           exact (evRep_proof_not_defeq he_prf hv83).elim
-        | n0_Proof _ _ _ _ _ _ heq379 _ _ _ =>
-          exact absurd (Value.field.inj heq379) zero_ne_one
-        | other_Defeq _ _ _ _ _ _ heq431 _ _ _ =>
-          exact absurd (Value.field.inj heq431) zero_ne_one
-        | other_Proof v42 m43 cs54 x_thm m450 p458 cs464 x_nlvls w481 x_pval v524 m525 cs535
-            v562 m563 cs573 m599 cs609 v620 m621 w644 w645 x_refs w646 w647 v673 m674 cs684
-            v695 m696 cs706 cs751 v755 v756 m769 cs777 m789 cs797 m836 cs846 v849 m852 cs860
-            v863 m867 cs875 m917 x_eqn x_types v942 m943 cs953 cs967 v971 m982 cs990 v994 m1003
-            cs1011
-            ev56 _ _ hv442 ev466 ld460 _ ev537 ev575 ev611 ev686 ev708 ev779 ev799 ev753 ev877
-            ev862 hm925 ev848 ev955 ev1013 ev992 ev969 hc1044 =>
-          have e_43 := ev56.heap_extends
-          have e_563 : Heap.Extends m43 m563 :=
-            ev466.heap_extends.trans (ev537.heap_extends.trans ev575.heap_extends)
-          have e_674 : Heap.Extends m563 m674 := ev611.heap_extends.trans ev686.heap_extends
-          have e_917 : Heap.Extends m852 m917 := by rw [hm925]; exact Heap.Extends.snoc m852 _
-          have ext_seg : Heap.Extends h m1049 :=
-            e_43.trans (e_563.trans (e_674.trans (ev708.heap_extends.trans
-              (ev779.heap_extends.trans (ev799.heap_extends.trans (ev753.heap_extends.trans
-                (ev877.heap_extends.trans (ev862.heap_extends.trans (e_917.trans
-                  (ev848.heap_extends.trans (ev955.heap_extends.trans
-                    (ev1013.heap_extends.trans (ev992.heap_extends.trans
-                      ev969.heap_extends)))))))))))))
-          refine ⟨ext_seg, fun thm he => ?_⟩
+        | .n0_Proof (heq379 := heq) .. => exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Defeq (heq431 := heq) .. => exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Proof_Defn_other (heq1257 := heq) .. =>
+          exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Proof_other (heq1904 := heq) .. =>
+          exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Proof_Defn_Theorem
+            (m43 := roleHeap) (x_thm := thmPtr) (m450 := rawHeap) (w496 := refsPtr)
+            (m615 := ciHeap) (p623 := ciPtr) (cs629 := ciCalls)
+            (x_nlvls := levels) (w646 := typeVal) (x_pval := proofVal)
+            (m728 := scopeHeap) (m809 := idxHeap) (m831 := walkHeap) (cs887 := walkCalls)
+            (ev56 := roleRun) (hv442 := proofShape) (ev462 := rawRun)
+            (ev631 := ciRun) (ld625 := ciLoad) (ev702 := substRun) (ev740 := scopeRun)
+            (ev821 := idxRun) (ev843 := guardRun) (ev889 := walkRun) (hc1225 := segCalls) .. =>
+          have extRole := roleRun.heap_extends
+          have extRaw := rawRun.heap_extends
+          have extToScope := ciRun.heap_extends.trans (substRun.heap_extends.trans scopeRun.heap_extends)
+          refine ⟨ext_seg_all, fun thm he => ?_⟩
           have he_prf : EvRep h (.proof thm) x_e := by rwa [← he]
-          have ha_h : S0.addr h x_thm thm := evRep_proof_inv he_prf hv442
-          have ha_m43 : S0.addr m43 x_thm thm := S0.addr_mono e_43 ha_h
+          have ha_h : S0.addr h thmPtr thm := evRep_proof_inv he_prf proofShape
+          have ha_raw : S0.addr roleHeap thmPtr _ := S0.addr_mono extRole ha_h
           obtain ⟨_, rawBytes, c, hsz, _, hblk, _, hdeExact, hrep, _⟩ :=
-            Claim.load_verified_constant_de (S0.addr_mono e_563 ha_m43) ev611
-          have hrefs_rep : RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem m674
-              c.refs.toList x_refs := by
-            obtain ⟨_, _, refsPtr, _, _, hv_c, _, _, hr_list, _, _⟩ := hrep
+            Claim.load_verified_constant_de ha_raw rawRun
+          obtain ⟨extIdx, hidxs⟩ := Claim.const_idxs_of_spec (hrep.mono extToScope) idxRun
+          have extRawWalk : Heap.Extends rawHeap walkHeap :=
+            extToScope.trans (extIdx.trans guardRun.heap_extends)
+          have hrefs_rep : RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem walkHeap
+              c.refs.toList refsPtr := by
+            obtain ⟨_, _, refsVal, _, _, hv_c, _, _, hr_list, _, _⟩ := hrep
             injection hv_c with _ _ hargs_c
             simp only [List.cons.injEq] at hargs_c
             rw [← hargs_c.2.2.1] at hr_list
-            exact repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ ev686.heap_extends hr_list
-          obtain ⟨_, hidxs⟩ := Claim.const_idxs_of_spec hrep ev686
+            exact repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ extRawWalk hr_list
+          have hidxsWalk := repList_heapMono₂ _ Claim.repBoundedIdx_heapMono₂ guardRun.heap_extends hidxs
           have hbound : 0 + c.refs.toList.length < 8589934592 := by
             rw [Nat.zero_add, Array.length_toList]
             exact refs_size_lt_bound' hsz hdeExact
-          have e_h674 : Heap.Extends h m674 := e_43.trans (e_563.trans e_674)
-          obtain ⟨_, hwalk⟩ := walk_refs_except_walks c.refs.toList hbound (hrc.mono e_h674)
-            hrefs_rep hidxs (S0.addr_mono e_h674 ha) ev708
-          have hsub_w : ∀ cl ∈ cs706, cl ∈ cs1051 := fun cl hm => by rw [hc1044]; simp [hm]
-          refine ⟨⟨m43, m450, x_thm, p458, x_nlvls, w481, x_pval, cs464, ha_m43, ev466,
-            by rw [hc1044]; simp, fun cl hm => by rw [hc1044]; simp [hm], ld460⟩,
+          have extWalk : Heap.Extends h walkHeap := extRole.trans (extRaw.trans extRawWalk)
+          have hsub_w : ∀ cl ∈ walkCalls, cl ∈ cs1051 := fun cl hm => by rw [segCalls]; simp [hm]
+          obtain ⟨_, hwalk⟩ := walk_refs_except_walks c.refs.toList hbound (hrc.mono extWalk)
+            hrefs_rep hidxsWalk (S0.addr_mono extWalk ha) walkRun
+          have ha_ci : S0.addr rawHeap thmPtr thm := S0.addr_mono extRaw ha_raw
+          refine ⟨⟨rawHeap, ciHeap, thmPtr, ciPtr, levels, typeVal, proofVal, ciCalls,
+            ha_ci, ciRun, by rw [segCalls]; simp, fun cl hm => by rw [segCalls]; simp [hm], ciLoad⟩,
             rawBytes, c, hblk, hdeExact, fun j hj hu hne => ?_⟩
           have hj' : j < c.refs.toList.length := by rwa [Array.length_toList]
           obtain ⟨lim', hr⟩ := hwalk j hj' (by simpa using hu) (by simpa using hne)
@@ -1561,68 +1557,62 @@ private theorem validate_op_equations_full_walks {t : Ix.Kernel.RoleTable}
     | Cons x_e x_rest v1048 m1049 cs1051 cs1060 v1069 ld12 sg1056 _ ev1062 hc1127 =>
       rw [← evListEnum] at ld12
       obtain ⟨e, rest, rfl, he_rep, hrest_rep⟩ := Lib.rep_cons_of_load hlist ld12
+      have tailMember : (⟨"KernelRoles::validate_op_equations",
+          [x_rc, x_tbl, x_r, x_a, x_val, x_rest, v1069], m1049⟩ : Call F) ∈ calls := by
+        rw [hc1127]; simp
+      have ext_seg_all : Heap.Extends h m1049 := (ev.call_heap_bounds tailMember).1
       have hseg : Heap.Extends h m1049 ∧
           ∃ recs₁ : List (Claim.WalkedRec cs1051 bAddr t),
             Claim.RecsClosed recs₁ ∧
             (∀ thm : _root_.Address, e = .proof thm → RefsWalkedExcept thm a (recs₁.map (·.addr))) := by
-        cases sg1056 with
-        | n0_Defeq m43 cs54 m86 cs96 v99 m101 cs109 x_lhs x_types m150 cs160 v163 m165 cs173
-            x_rhs w203 v225 m228 cs236 v240 v241 m251 cs259 m287 cs295
-            ev56 hv83 ev111 ev98 ev175 ev162 ev261 ev297 ev238 _ _ he339 _ =>
-          have ext_seg : Heap.Extends h m1049 := by
-            rw [he339]
-            exact ev56.heap_extends.trans (ev111.heap_extends.trans (ev98.heap_extends.trans
-              (ev175.heap_extends.trans (ev162.heap_extends.trans (ev261.heap_extends.trans
-                (ev297.heap_extends.trans ev238.heap_extends))))))
-          refine ⟨ext_seg, [], by simp [Claim.RecsClosed], fun thm he => ?_⟩
+        match sg1056 with
+        | .n0_Defeq (hv83 := hv83) .. =>
+          refine ⟨ext_seg_all, [], by simp [Claim.RecsClosed], fun thm he => ?_⟩
           have he_prf : EvRep h (.proof thm) x_e := by rwa [← he]
           exact (evRep_proof_not_defeq he_prf hv83).elim
-        | n0_Proof _ _ _ _ _ _ heq379 _ _ _ =>
-          exact absurd (Value.field.inj heq379) zero_ne_one
-        | other_Defeq _ _ _ _ _ _ heq431 _ _ _ =>
-          exact absurd (Value.field.inj heq431) zero_ne_one
-        | other_Proof v42 m43 cs54 x_thm m450 p458 cs464 x_nlvls w481 x_pval v524 m525 cs535
-            v562 m563 cs573 m599 cs609 v620 m621 w644 w645 x_refs w646 w647 v673 m674 cs684
-            v695 m696 cs706 cs751 v755 v756 m769 cs777 m789 cs797 m836 cs846 v849 m852 cs860
-            v863 m867 cs875 m917 x_eqn x_types v942 m943 cs953 cs967 v971 m982 cs990 v994 m1003
-            cs1011
-            ev56 _ _ hv442 ev466 ld460 _ ev537 ev575 ev611 ev686 ev708 ev779 ev799 ev753 ev877
-            ev862 hm925 ev848 ev955 ev1013 ev992 ev969 hc1044 =>
-          have e_43 := ev56.heap_extends
-          have e_563 : Heap.Extends m43 m563 :=
-            ev466.heap_extends.trans (ev537.heap_extends.trans ev575.heap_extends)
-          have e_674 : Heap.Extends m563 m674 := ev611.heap_extends.trans ev686.heap_extends
-          have e_917 : Heap.Extends m852 m917 := by rw [hm925]; exact Heap.Extends.snoc m852 _
-          have ext_seg : Heap.Extends h m1049 :=
-            e_43.trans (e_563.trans (e_674.trans (ev708.heap_extends.trans
-              (ev779.heap_extends.trans (ev799.heap_extends.trans (ev753.heap_extends.trans
-                (ev877.heap_extends.trans (ev862.heap_extends.trans (e_917.trans
-                  (ev848.heap_extends.trans (ev955.heap_extends.trans
-                    (ev1013.heap_extends.trans (ev992.heap_extends.trans
-                      ev969.heap_extends)))))))))))))
+        | .n0_Proof (heq379 := heq) .. => exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Defeq (heq431 := heq) .. => exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Proof_Defn_other (heq1257 := heq) .. =>
+          exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Proof_other (heq1904 := heq) .. =>
+          exact (zero_ne_one (Value.field.inj heq)).elim
+        | .other_Proof_Defn_Theorem
+            (m43 := roleHeap) (x_thm := thmPtr) (m450 := rawHeap) (w496 := refsPtr)
+            (m615 := ciHeap) (p623 := ciPtr) (cs629 := ciCalls)
+            (x_nlvls := levels) (w646 := typeVal) (x_pval := proofVal)
+            (m728 := scopeHeap) (m809 := idxHeap) (m831 := walkHeap) (cs887 := walkCalls)
+            (ev56 := roleRun) (hv442 := proofShape) (ev462 := rawRun)
+            (ev631 := ciRun) (ld625 := ciLoad) (ev702 := substRun) (ev740 := scopeRun)
+            (ev821 := idxRun) (ev843 := guardRun) (ev889 := walkRun) (hc1225 := segCalls) .. =>
+          have extRole := roleRun.heap_extends
+          have extRaw := rawRun.heap_extends
+          have extToScope := ciRun.heap_extends.trans (substRun.heap_extends.trans scopeRun.heap_extends)
           cases e with
-          | defeq =>
-            exact ⟨ext_seg, [], by simp [Claim.RecsClosed], fun _ he => by cases he⟩
+          | defeq => exact ⟨ext_seg_all, [], by simp [Claim.RecsClosed], fun _ he => by cases he⟩
           | proof thm₀ =>
-            have ha_h : S0.addr h x_thm thm₀ := evRep_proof_inv he_rep hv442
+            have ha_h : S0.addr h thmPtr thm₀ := evRep_proof_inv he_rep proofShape
+            have ha_raw : S0.addr roleHeap thmPtr _ := S0.addr_mono extRole ha_h
             obtain ⟨_, rawBytes, c, hsz, _, hblk, _, hdeExact, hrep, _⟩ :=
-              Claim.load_verified_constant_de (S0.addr_mono (e_43.trans e_563) ha_h) ev611
-            have hrefs_rep : RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem m674
-                c.refs.toList x_refs := by
-              obtain ⟨_, _, refsPtr, _, _, hv_c, _, _, hr_list, _, _⟩ := hrep
+              Claim.load_verified_constant_de ha_raw rawRun
+            obtain ⟨extIdx, hidxs⟩ := Claim.const_idxs_of_spec (hrep.mono extToScope) idxRun
+            have extRawWalk : Heap.Extends rawHeap walkHeap :=
+              extToScope.trans (extIdx.trans guardRun.heap_extends)
+            have hrefs_rep : RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem walkHeap
+                c.refs.toList refsPtr := by
+              obtain ⟨_, _, refsVal, _, _, hv_c, _, _, hr_list, _, _⟩ := hrep
               injection hv_c with _ _ hargs_c
               simp only [List.cons.injEq] at hargs_c
               rw [← hargs_c.2.2.1] at hr_list
-              exact repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ ev686.heap_extends hr_list
-            obtain ⟨_, hidxs⟩ := Claim.const_idxs_of_spec hrep ev686
+              exact repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ extRawWalk hr_list
+            have hidxsWalk := repList_heapMono₂ _ Claim.repBoundedIdx_heapMono₂ guardRun.heap_extends hidxs
             have hbound : 0 + c.refs.toList.length < 8589934592 := by
               rw [Nat.zero_add, Array.length_toList]
               exact refs_size_lt_bound' hsz hdeExact
-            have e_h674 : Heap.Extends h m674 := e_43.trans (e_563.trans e_674)
+            have extWalk : Heap.Extends h walkHeap := extRole.trans (extRaw.trans extRawWalk)
+            have hsub_w : ∀ cl ∈ walkCalls, cl ∈ cs1051 := fun cl hm => by rw [segCalls]; simp [hm]
             obtain ⟨_, recs_w, hcl_w, hwalk⟩ := walk_refs_except_full_walks c.refs.toList hbound
-              (hrc.mono e_h674) hrefs_rep hidxs (S0.addr_mono e_h674 ha) ev708
-            have hsub_w : ∀ cl ∈ cs706, cl ∈ cs1051 := fun cl hm => by rw [hc1044]; simp [hm]
-            refine ⟨ext_seg, recs_w.map (Claim.WalkedRec.mono hsub_w), hcl_w.mono hsub_w,
+              (hrc.mono extWalk) hrefs_rep hidxsWalk (S0.addr_mono extWalk ha) walkRun
+            refine ⟨ext_seg_all, recs_w.map (Claim.WalkedRec.mono hsub_w), hcl_w.mono hsub_w,
               fun thm he => ?_⟩
             injection he with hthm
             subst hthm

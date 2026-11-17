@@ -617,7 +617,7 @@ theorem indBlockCtorIdx_and_hashed_of_exact_noCollision
         (Array.getElem?_eq_some_iff.mp hct_j).1 ind.ctors.size 0
         (by omega) (Nat.zero_le _) hbp ev137
       simpa only [hb_eq] using Core.hashed_mono hsub_ctors hashed
-  | .Induct_other_other (hv1240 := hv_ind) (hne1927 := hne_u) .. =>
+  | .Induct_other_other (hv1240 := hv_ind) (hne1975 := hne_u) .. =>
     injection hv_ind with _ _ hargs
     injection hargs with _ hargs; injection hargs with _ hargs
     injection hargs with _ hargs; injection hargs with _ hargs
@@ -628,13 +628,14 @@ theorem indBlockCtorIdx_and_hashed_of_exact_noCollision
       (x_ind_block := xblk) (x_ind_idx := xidx)
       (m1283 := m1283) (m1333 := m1333) (m1354 := m1354) (m1376 := m1376)
       (m1396 := m1396) (m1427 := m1427) (m1440 := m1440) (m1470 := m1470)
-      (m1492 := m1492) (m1701 := m1653) (m1745 := m1688) (m1793 := m1736)
-      (cs1816 := cs_mc)
+      (m1492 := m1492) (m1749 := m1653) (m1793 := m1688) (m1841 := m1736)
+      (cs1864 := cs_mc)
       (ev14 := ev_iu) (hv1240 := hv_ind) (ev1295 := ev_ws)
       (hm1362 := hm1354) (hm1384 := hm1376) (ev1343 := ev_emb)
       (hm1435 := hm1427) (ev1408 := ev_es) (ev1452 := ev_saf)
-      (ev1482 := ev_mk) (ev1505 := ev_mod) (ev1663 := ev_fa) (ev1711 := ev_tele)
-      (hm1801 := hm1736) (ev1757 := ev_rsl) (ev1818 := ev_mc) (hc1926 := hc) .. =>
+      (ev1482 := ev_mk) (ev1505 := ev_mod) (ev1663 := ev_role)
+      (ev1711 := ev_fa) (ev1759 := ev_tele)
+      (hm1849 := hm1736) (ev1805 := ev_rsl) (ev1866 := ev_mc) (hc1974 := hc) .. =>
     injection hv_ind with _ _ hargs
     injection hargs with hnl hargs; injection hargs with hty hargs
     injection hargs with hnp hargs; injection hargs with hni hargs
@@ -650,8 +651,9 @@ theorem indBlockCtorIdx_and_hashed_of_exact_noCollision
         (e_1376.trans (e_1354.trans (ev_emb.heap_extends.trans
           (e_1427.trans (ev_es.heap_extends.trans (ev_saf.heap_extends.trans
             (ev_mk.heap_extends.trans (ev_mod.heap_extends.trans
-              (ev_fa.heap_extends.trans (ev_tele.heap_extends.trans
-                (e_1736.trans ev_rsl.heap_extends))))))))))))
+              (ev_role.heap_extends.trans
+                (ev_fa.heap_extends.trans (ev_tele.heap_extends.trans
+                  (e_1736.trans ev_rsl.heap_extends)))))))))))))
     have hsub_mc : ∀ cl ∈ cs_mc, cl ∈ calls := fun cl hcl =>
       hsub_chk cl (by rw [hc]; simp [hcl])
     have hbp := Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy e_to_1688 hbp_m
@@ -2016,14 +2018,14 @@ private theorem ind_block_checked_member_kinds
       (ev14 := ev1) (hv1240 := hv_ind) (ev1295 := ev2)
       (hm1362 := hm1354) (hm1384 := hm1376) (ev1343 := ev3)
       (hm1435 := hm1427) (ev1408 := ev4) (ev1452 := ev5)
-      (ev1482 := ev_mk) (hc1926 := hc) ..
+      (ev1482 := ev_mk) (hc1974 := hc) ..
   | .Induct_other_other (x_ind_block := xblk) (m1283 := m1283) (m1333 := m1333)
       (m1354 := m1354) (m1376 := m1376)
       (m1427 := m1427) (m1440 := m1440) (v1469 := r_mk) (m1470 := m_mk) (cs1480 := cs_mk)
       (ev14 := ev1) (hv1240 := hv_ind) (ev1295 := ev2)
       (hm1362 := hm1354) (hm1384 := hm1376) (ev1343 := ev3)
       (hm1435 := hm1427) (ev1408 := ev4) (ev1452 := ev5)
-      (ev1482 := ev_mk) (hc1935 := hc) .. =>
+      (ev1482 := ev_mk) (hc1983 := hc) .. =>
     injection hv_ind with _ _ hargs
     injection hargs with _ hargs; injection hargs with _ hargs
     injection hargs with _ hargs; injection hargs with _ hargs

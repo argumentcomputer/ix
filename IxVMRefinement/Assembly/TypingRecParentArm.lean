@@ -78,21 +78,21 @@ theorem check_const_rec_route
   | .Induct_n0 (hv1240 := shape) ..
   | .Induct_other_n0 (hv1240 := shape) ..
   | .Induct_other_other (hv1240 := shape) ..
-  | .Ctor_n0_n0 (hv1941 := shape) ..
-  | .Ctor_n0_other (hv1941 := shape) ..
-  | .Ctor_other_n0 (hv1941 := shape) ..
-  | .Ctor_other_other (hv1941 := shape) .. =>
+  | .Ctor_n0_n0 (hv1989 := shape) ..
+  | .Ctor_n0_other (hv1989 := shape) ..
+  | .Ctor_other_n0 (hv1989 := shape) ..
+  | .Ctor_other_other (hv1989 := shape) .. =>
     injection shape with _ tag _
     exact absurd tag (by decide)
-  | .Rec_other (heq2925 := native) (hne2998 := modeled) .. =>
+  | .Rec_other (heq3021 := native) (hne3094 := modeled) .. =>
     exact absurd native modeled
-  | .Rec_n0 (m2 := scopeBefore) (m2693 := scopeAfter) (m2761 := sortBefore)
-      (m2730 := sortAfter) (m2774 := safeAfter) (m2804 := rulesAfter) (m2834 := kindsAfter)
-      (m2856 := familyAfter) (m2878 := memberHeap)
-      (ev14 := unsafeRun) (hv2631 := shape) (ev2705 := scopeRun) (hm2769 := nilSort)
-      (ev2742 := sortRun) (ev2786 := safeRun) (ev2816 := rulesRun) (ev2846 := kindsRun)
-      (ev2868 := familyRun) (ev2890 := modeledRun) (ev2972 := memberRun)
-      (hc2997 := allCalls) .. =>
+  | .Rec_n0 (m2 := scopeBefore) (m2789 := scopeAfter) (m2857 := sortBefore)
+      (m2826 := sortAfter) (m2870 := safeAfter) (m2900 := rulesAfter) (m2930 := kindsAfter)
+      (m2952 := familyAfter) (m2974 := memberHeap)
+      (ev14 := unsafeRun) (hv2727 := shape) (ev2801 := scopeRun) (hm2865 := nilSort)
+      (ev2838 := sortRun) (ev2882 := safeRun) (ev2912 := rulesRun) (ev2942 := kindsRun)
+      (ev2964 := familyRun) (ev2986 := modeledRun) (ev3068 := memberRun)
+      (hc3093 := allCalls) .. =>
     injection shape with _ _ entries
     injection entries with levelEq entries
     injection entries with typeEq entries
