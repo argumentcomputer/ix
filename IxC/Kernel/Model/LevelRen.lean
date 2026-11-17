@@ -66,7 +66,7 @@ theorem natIndOk_len : ∀ ci : ConstantInfo md, natIndOk (some ci) = true →
   | indInfo cv caps =>
     simp only [natIndOk, Bool.and_eq_true, List.isEmpty_iff] at h
     show cv.levelParams.length = 0
-    rw [h.1]; rfl
+    simp [h.1]
   | _ => simp [natIndOk] at h
 
 theorem natZeroOk_len : ∀ ci : ConstantInfo md, natZeroOk (some ci) = true →
@@ -76,7 +76,7 @@ theorem natZeroOk_len : ∀ ci : ConstantInfo md, natZeroOk (some ci) = true →
   | ctorInfo cv nP nF =>
     simp only [natZeroOk, Bool.and_eq_true, List.isEmpty_iff] at h
     show cv.levelParams.length = 0
-    rw [h.1]; rfl
+    simp [h.1]
   | _ => simp [natZeroOk] at h
 
 theorem natSuccOk_len : ∀ ci : ConstantInfo md, natSuccOk (some ci) = true →
@@ -86,7 +86,7 @@ theorem natSuccOk_len : ∀ ci : ConstantInfo md, natSuccOk (some ci) = true →
   | ctorInfo cv nP nF =>
     simp only [natSuccOk, Bool.and_eq_true, List.isEmpty_iff] at h
     show cv.levelParams.length = 0
-    rw [h.1]; rfl
+    simp [h.1]
   | _ => simp [natSuccOk] at h
 
 theorem anyEmpty_len {p : Option (ConstantInfo md) → Bool}
@@ -95,7 +95,7 @@ theorem anyEmpty_len {p : Option (ConstantInfo md) → Bool}
   intro ci h
   have := hp ci h
   rw [List.isEmpty_iff] at this
-  rw [this]; rfl
+  simp [this]
 
 theorem stringTyOk_empty : ∀ ci : ConstantInfo md, stringTyOk (some ci) = true →
     ci.toConstantVal.levelParams.isEmpty = true := by
@@ -127,7 +127,7 @@ theorem listNilTyOk_len : ∀ ci : ConstantInfo md, listNilTyOk (some ci) = true
   simp only [listNilTyOk] at h
   split at h
   · rename_i p hp
-    rw [hp]; rfl
+    simp [hp]
   · exact nomatch h
 
 theorem listConsTyOk_len : ∀ ci : ConstantInfo md, listConsTyOk (some ci) = true →
@@ -136,7 +136,7 @@ theorem listConsTyOk_len : ∀ ci : ConstantInfo md, listConsTyOk (some ci) = tr
   simp only [listConsTyOk] at h
   split at h
   · rename_i p hp
-    rw [hp]; rfl
+    simp [hp]
   · exact nomatch h
 
 theorem natAddTyOk_len : ∀ ci : ConstantInfo md, natAddTyOk (some ci) = true →
@@ -199,24 +199,19 @@ theorem arOk_natAddLit (ht : natAddTyOk (env.find? natAddName) = true) {b : Expr
   · exact hb
   · exact arOk_app.mpr ⟨arOk_app.mpr ⟨natAdd_arOk ht, hb⟩, rfl⟩
 
-theorem natOpResult_cases {c : Key md} {a b : Nat} {r : Expr md}
-    (h : natOpResult c a b = some r) :
-    (∃ n, r = .lit (.natVal n)) ∨ r = .const boolTrueName [] ∨ r = .const boolFalseName [] := by
-  unfold natOpResult at h
-  repeat' (split at h)
-  all_goals
-    first
-    | exact .inl ⟨_, (Option.some.inj h).symm⟩
-    | exact .inr (.inl (Option.some.inj h).symm)
-    | exact .inr (.inr (Option.some.inj h).symm)
-    | exact nomatch h
-
 theorem arOk_natOpResult (hA : StoreAr env) {c : Key md} {a b : Nat} {r : Expr md}
     (h : natOpResult c a b = some r) : Expr.arOk env r = true := by
-  rcases natOpResult_cases h with ⟨n, rfl⟩ | rfl | rfl
-  · rfl
-  · exact arOk_const_nil (fun ci hf => hA.bool (.inl rfl) hf)
-  · exact arOk_const_nil (fun ci hf => hA.bool (.inr rfl) hf)
+  have hT : Expr.arOk env (.const boolTrueName []) = true :=
+    arOk_const_nil (fun ci hf => hA.bool (.inl rfl) hf)
+  have hF : Expr.arOk env (.const boolFalseName []) = true :=
+    arOk_const_nil (fun ci hf => hA.bool (.inr rfl) hf)
+  have hlit : ∀ n : Nat, Expr.arOk env (.lit (.natVal n) : Expr md) = true := fun _ => rfl
+  have hall : (natOpResult c a b).all (Expr.arOk env) = true := by
+    unfold natOpResult
+    repeat' split
+    all_goals simp [hT, hF, hlit, apply_ite (fun n : Key md => Expr.arOk env (.const n []))]
+  rw [h] at hall
+  simpa using hall
 
 end Guards
 
@@ -563,11 +558,12 @@ theorem red_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : LvRe
       he₀ => by
     have he : AR e := he₀
     have hargs := arOk_getAppArgs he
-    have hlenC := arOk_head_len he hhead hctor
+    have hlenC : us.length = cvC.levelParams.length := arOk_head_len he hhead hctor
+    have hlvC : cvC.type.allLevelParamsDefined cvC.levelParams = true := h.lv.type hctor
     have hT : AR (cvC.type.instantiateLevelParams cvC.levelParams us) := by
       rw [arOk_inst]; exact h.ar.type hctor
     have hc := certs_lr h hcerts hT hargs
-    rw [inst_comp hlenC (h.lv.type hctor), ← Expr.getAppArgs_instantiateLevelParams] at hc
+    rw [inst_comp hlenC hlvC, ← Expr.getAppArgs_instantiateLevelParams] at hc
     refine ⟨arOk_getD hargs _, ?_⟩
     rw [← getD_map_inst, ← Expr.getAppArgs_instantiateLevelParams]
     exact .proj hent (inst_getAppFn_const ks ws hhead) hi
@@ -581,7 +577,9 @@ theorem red_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : LvRe
     have hargs := arOk_getAppArgs he
     have rmaj := red_lr h hmajor (arOk_getD hargs _)
     have hmargs := arOk_getAppArgs rmaj.1
-    have husj := arOk_head_len rmaj.1 hmhead hctor
+    have husj : usj.length = cvj.levelParams.length := arOk_head_len rmaj.1 hmhead hctor
+    have hlvj : cvj.type.allLevelParamsDefined cvj.levelParams = true := h.lv.type hctor
+    have hlvR : cv.type.allLevelParamsDefined cv.levelParams = true := h.lv.type hrec
     refine ⟨arOk_mkAppN _ (by rw [arOk_inst]; exact (h.ar.rhs hrec rl hrl).1)
       (arOk_append (arOk_take hargs _) (arOk_drop hmargs _)), ?_⟩
     have hgoal : (Expr.mkAppN (rl.rhs.instantiateLevelParams cv.levelParams us)
@@ -600,12 +598,12 @@ theorem red_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : LvRe
     have hcR := certs_lr h hcertR hTR
       (arOk_append (arOk_take hargs _) (fun x hx => by
         rw [List.mem_singleton] at hx; subst hx; exact rmaj.1))
-    rw [inst_comp hus (h.lv.type hrec), List.map_append, List.map_take,
+    rw [inst_comp hus hlvR, List.map_append, List.map_take,
       ← Expr.getAppArgs_instantiateLevelParams] at hcR
     have hTC : AR (cvj.type.instantiateLevelParams cvj.levelParams usj) := by
       rw [arOk_inst]; exact h.ar.type hctor
     have hcC := certs_lr h hcertC hTC hmargs
-    rw [inst_comp husj (h.lv.type hctor), ← Expr.getAppArgs_instantiateLevelParams] at hcC
+    rw [inst_comp husj hlvj, ← Expr.getAppArgs_instantiateLevelParams] at hcC
     exact .iota (inst_getAppFn_const ks ws hhead) hrec
       (by rw [Expr.getAppArgs_instantiateLevelParams, List.length_map]; exact hlen)
       (by rw [List.length_map]; exact hus) hmaj
@@ -624,7 +622,7 @@ theorem red_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : LvRe
       hcR hcC
       (fun hne => by
         have hp := piResidual_inst ks ws _ _ _ (hres hne)
-        rw [inst_comp husj (h.lv.type hctor), ← Expr.getAppArgs_instantiateLevelParams] at hp
+        rw [inst_comp husj hlvj, ← Expr.getAppArgs_instantiateLevelParams] at hp
         exact hp)
       (fun hne => by
         have hrs := arOk_piResidual _ (hres hne) hTC hmargs
@@ -649,7 +647,7 @@ theorem red_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : LvRe
     have hT : AR (cvj.type.instantiateLevelParams cvj.levelParams ust) := by
       rw [arOk_inst]; exact h.ar.type hctor
     have hcs := certs_lr h hcerts hT (arOk_take htargs _)
-    rw [inst_comp hlv.symm (h.lv.type hctor), List.map_take,
+    rw [inst_comp hlv.symm (show cvj.type.allLevelParamsDefined cvj.levelParams = true from h.lv.type hctor), List.map_take,
       ← Expr.getAppArgs_instantiateLevelParams] at hcs
     refine ⟨hfab', .rescueK hrec hk hctor hres hind itm.2.2 rtm.2
       (inst_getAppFn_const ks ws hthead) (by rw [List.length_map]; exact hlv)
@@ -660,7 +658,7 @@ theorem red_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : LvRe
       (by rw [Expr.looseBVarsBounded_instantiateLevelParams]; exact hb)
       (fvarLeaves_all_inst ks ws hlv') hcs itf.2.2 (defEq_lr h hdt rtm.1 itf.2.1)
       (defEq_lr h hpi hfab' he)⟩
-  | _, _, _, .rescueEta (major := major) (tmaj := tmaj) (fab := fab) (cvj := cvj) (rl := rl)
+  | d, _, _, .rescueEta (major := major) (tmaj := tmaj) (fab := fab) (cvj := cvj) (rl := rl)
       (T := T) (ust := ust) (cvT := cvT) (caps := caps) hrec heta hctor hres hind htm htmaj
       hthead hlen hlv hnz hfab hws hb hlv' hcerts hproj hpi, he => by
     have itm := infer_lr h htm (arOk_fvarLeaves he) (fun _ => he)
@@ -672,7 +670,7 @@ theorem red_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : LvRe
           ∃ (cvp : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md)),
             env.find? (projFnName T j) = some (.recInfo cvp mI rP rules) ∧
               cvp.levelParams = cvT.levelParams) ∧
-          EtaProjCerts env _ T (ust.map (Level.subst ks ws))
+          EtaProjCerts env d T (ust.map (Level.subst ks ws))
             (tmaj.getAppArgs.map (·.instantiateLevelParams ks ws)) ⌜major⌝ cvT.levelParams
             (List.range caps.etaFields) :=
       fun hno => etaProjCerts_lr h (hproj hno) hlv htargs he
@@ -692,7 +690,7 @@ theorem red_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : LvRe
     have hT : AR (cvj.type.instantiateLevelParams cvj.levelParams ust) := by
       rw [arOk_inst]; exact h.ar.type hctor
     have hcs := certs_lr h hcerts hT hfa
-    rw [inst_comp hlj (h.lv.type hctor), hargs] at hcs
+    rw [inst_comp hlj (show cvj.type.allLevelParamsDefined cvj.levelParams = true from h.lv.type hctor), hargs] at hcs
     refine ⟨hfab', .rescueEta hrec heta hctor hres hind itm.2.2 rtm.2
       (inst_getAppFn_const ks ws hthead)
       (by rw [Expr.getAppArgs_instantiateLevelParams, List.length_map]; exact hlen)
@@ -732,7 +730,7 @@ theorem red_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : LvRe
     have hT : AR (cvj.type.instantiateLevelParams cvj.levelParams ust) := by
       rw [arOk_inst]; exact h.ar.type hctor
     have hcs := certs_lr h hcerts hT hfa
-    rw [inst_comp hlv.symm (h.lv.type hctor), hargs] at hcs
+    rw [inst_comp hlv.symm (show cvj.type.allLevelParamsDefined cvj.levelParams = true from h.lv.type hctor), hargs] at hcs
     refine ⟨hfab', .rescueAnd hrec hctor hres hind itm.2.2 rtm.2
       (inst_getAppFn_const ks ws hthead)
       (by rw [Expr.getAppArgs_instantiateLevelParams, List.length_map]; exact hlen)
@@ -773,16 +771,16 @@ theorem defEq_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : Lv
       ha, hb => by
     obtain ⟨hty₁, hb₁⟩ := arOk_bind.mp ha
     obtain ⟨hty₂, hb₂⟩ := arOk_bind.mp hb
-    have h2 := defEq_lr h hbody (arOk_instantiate1 hty₂ body₁ 0 hb₁)
-      (arOk_instantiate1 hty₂ body₂ 0 hb₂)
+    have h2 := defEq_lr h hbody (arOk_instantiate1 (v := .fvar d ty₂) hty₂ body₁ 0 hb₁)
+      (arOk_instantiate1 (v := .fvar d ty₂) hty₂ body₂ 0 hb₂)
     rw [inst_instantiate1, inst_instantiate1] at h2
     exact .forallE (defEq_lr h hty hty₁ hty₂) h2 (congrArg (Level.substPW ks ws) hpw)
   | d, _, _, .lam (ty₁ := ty₁) (body₁ := body₁) (ty₂ := ty₂) (body₂ := body₂) hty hbody hpw,
       ha, hb => by
     obtain ⟨hty₁, hb₁⟩ := arOk_lam.mp ha
     obtain ⟨hty₂, hb₂⟩ := arOk_lam.mp hb
-    have h2 := defEq_lr h hbody (arOk_instantiate1 hty₂ body₁ 0 hb₁)
-      (arOk_instantiate1 hty₂ body₂ 0 hb₂)
+    have h2 := defEq_lr h hbody (arOk_instantiate1 (v := .fvar d ty₂) hty₂ body₁ 0 hb₁)
+      (arOk_instantiate1 (v := .fvar d ty₂) hty₂ body₂ 0 hb₂)
     rw [inst_instantiate1, inst_instantiate1] at h2
     exact .lam (defEq_lr h hty hty₁ hty₂) h2 (congrArg (Level.substPW ks ws) hpw)
   | _, _, _, .app hf ha', ha, hb =>
@@ -794,7 +792,7 @@ theorem defEq_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : Lv
     have itb := infer_lr h htb (arOk_fvarLeaves hb) (fun _ => hb)
     have rtb := red_lr h hwtb itb.2.1
     obtain ⟨hty₂, -⟩ := arOk_bind.mp rtb.1
-    have h2 := defEq_lr h hbody (arOk_instantiate1 hty₁ body₁ 0 hb₁)
+    have h2 := defEq_lr h hbody (arOk_instantiate1 (v := .fvar d ty₁) hty₁ body₁ 0 hb₁)
       (arOk_app.mpr ⟨hb, hty₁⟩)
     rw [inst_instantiate1] at h2
     exact .eta itb.2.2 rtb.2 (defEq_lr h hty hty₂ hty₁) h2 (congrArg (Level.substPW ks ws) hpw)
@@ -813,7 +811,7 @@ theorem defEq_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : Lv
     have itb := infer_lr h htb (arOk_fvarLeaves hb) (fun _ => hb)
     exact .unitLike ita.2.2 (red_lr h hwta ita.2.1).2 (by rw [isUnitLikeTy_inst]; exact hua)
       itb.2.2 (red_lr h hwtb itb.2.1).2 (by rw [isUnitLikeTy_inst]; exact hub)
-  | _, _, _, .structEta (a := a) (b := b) (wtb := wtb) (cvT := cvT) (caps := caps) (T := T)
+  | d, _, _, .structEta (a := a) (b := b) (wtb := wtb) (cvT := cvT) (caps := caps) (T := T)
       (us' := us') htb hwtb hhead hctor hlen hthead hind heta hetaCtor hresT hresc htlen hlv
       hlps hslots hus hcerts hproj hparams hfields, ha, hb => by
     have itb := infer_lr h htb (arOk_fvarLeaves hb) (fun _ => hb)
@@ -825,7 +823,7 @@ theorem defEq_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : Lv
           ∃ (cvp : ConstantVal md) (mI rP : Nat) (rules : List (RecRule md)),
             env.find? (projFnName T j) = some (.recInfo cvp mI rP rules) ∧
               cvp.levelParams = cvT.levelParams) ∧
-          EtaProjCerts env _ T (us'.map (Level.subst ks ws))
+          EtaProjCerts env d T (us'.map (Level.subst ks ws))
             (wtb.getAppArgs.map (·.instantiateLevelParams ks ws)) ⌜b⌝ cvT.levelParams
             (List.range caps.etaFields) :=
       fun hno => etaProjCerts_lr h (hproj hno) hlv hwargs hb
@@ -835,7 +833,7 @@ theorem defEq_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : Lv
     have hT : AR (cvT.type.instantiateLevelParams cvT.levelParams us') := by
       rw [arOk_inst]; exact h.ar.type hind
     have hcs := certs_lr h hcerts hT hwargs
-    rw [inst_comp hlv (h.lv.type hind), ← Expr.getAppArgs_instantiateLevelParams] at hcs
+    rw [inst_comp hlv (show cvT.type.allLevelParamsDefined cvT.levelParams = true from h.lv.type hind), ← Expr.getAppArgs_instantiateLevelParams] at hcs
     have hp := defEqList_lr h hparams (arOk_take haargs _) hwargs
     rw [List.map_take, ← Expr.getAppArgs_instantiateLevelParams,
       ← Expr.getAppArgs_instantiateLevelParams] at hp
@@ -861,7 +859,7 @@ theorem defEq_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : Lv
     have hT : AR (cvT.type.instantiateLevelParams cvT.levelParams us') := by
       rw [arOk_inst]; exact h.ar.type hind
     have hcs := certs_lr h hcerts hT (arOk_getAppArgs rta.1)
-    rw [inst_comp hlv (h.lv.type hind), ← Expr.getAppArgs_instantiateLevelParams] at hcs
+    rw [inst_comp hlv (show cvT.type.allLevelParamsDefined cvT.levelParams = true from h.lv.type hind), ← Expr.getAppArgs_instantiateLevelParams] at hcs
     exact .structUnit ita.2.2 rta.2 (inst_getAppFn_const ks ws hthead) hind hunit hresT
       (by rw [Expr.getAppArgs_instantiateLevelParams, List.length_map]; exact htlen)
       (by rw [List.length_map]; exact hlv) itb.2.2 rtb.2 (defEq_lr h hd' rta.1 rtb.1) hcs
@@ -876,11 +874,11 @@ theorem defEq_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : Lv
     have ita := infer_lr h hta (arOk_fvarLeaves ha) (fun _ => ha)
     have rta := red_lr h hwta ita.2.1
     have itb := infer_lr h htb (arOk_fvarLeaves hb) (fun _ => hb)
-    have hlenT := arOk_head_len rta.1 hthead hind
+    have hlenT : us.length = cvT.levelParams.length := arOk_head_len rta.1 hthead hind
     have hT : AR (cvT.type.instantiateLevelParams cvT.levelParams us) := by
       rw [arOk_inst]; exact h.ar.type hind
     have hcs := certs_lr h hcerts hT (arOk_getAppArgs rta.1)
-    rw [inst_comp hlenT (h.lv.type hind), ← Expr.getAppArgs_instantiateLevelParams] at hcs
+    rw [inst_comp hlenT (show cvT.type.allLevelParamsDefined cvT.levelParams = true from h.lv.type hind), ← Expr.getAppArgs_instantiateLevelParams] at hcs
     exact .unitLikeTy ita.2.2 rta.2 (inst_getAppFn_const ks ws hthead) hind hunit
       (by rw [Expr.getAppArgs_instantiateLevelParams, List.length_map]; exact htlen) hcs
       (hkind.imp id (fun hk => by rw [isUnitLikeTy_inst]; exact hk)) itb.2.2
@@ -901,7 +899,7 @@ theorem defEq_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : Lv
     have hT : AR (cvT.type.instantiateLevelParams cvT.levelParams us) := by
       rw [arOk_inst]; exact h.ar.type hind
     have hcs := certs_lr h hcerts hT (arOk_take haargs _)
-    rw [inst_comp hlenT (h.lv.type hind), List.map_take,
+    rw [inst_comp hlenT (show cvT.type.allLevelParamsDefined cvT.levelParams = true from h.lv.type hind), List.map_take,
       ← Expr.getAppArgs_instantiateLevelParams] at hcs
     have hpl : ∀ x ∈ (List.range cnF).map (fun i => Expr.proj T i b), AR x := by
       intro x hx
@@ -934,7 +932,7 @@ theorem infer_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : Lv
     have is := infer_lr h hs hl'.1 (fun hg => (arOk_bind.mp (hio hg)).1)
     have hbo := leaves_open d is.1 hl'.1 hl'.2
     have ibs := infer_lr h hbs hbo
-      (fun hg => arOk_instantiate1 is.1 body 0 (arOk_bind.mp (hio hg)).2)
+      (fun hg => arOk_instantiate1 (v := .fvar d ty) is.1 body 0 (arOk_bind.mp (hio hg)).2)
     have hbody : AR body := arOk_of_instantiate1 body 0 ibs.1
     have rv := red_lr h hv ibs.2.1
     rw [inst_instantiate1] at ibs
@@ -953,7 +951,7 @@ theorem infer_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : Lv
         exact (arOk_lam.mp (hio hgi)).1
     have hbo := leaves_open d hty hl'.1 hl'.2
     have ibt := infer_lr h hbt hbo
-      (fun hg => arOk_instantiate1 hty body 0 (arOk_lam.mp (hio hg)).2)
+      (fun hg => arOk_instantiate1 (v := .fvar d ty) hty body 0 (arOk_lam.mp (hio hg)).2)
     have hbody : AR body := arOk_of_instantiate1 body 0 ibt.1
     have hbt := ibt.2.1
     rw [inst_instantiate1] at ibt
@@ -1062,14 +1060,14 @@ theorem etaProjCerts_lr {env : Env md} {ks : List LevelParam} {ws : List Level}
         EtaProjCerts env d T (us'.map (Level.subst ks ws))
           (targs.map (·.instantiateLevelParams ks ws)) ⌜b⌝ lpsT idxs
   | _, _, _, _, _, _, _, .nil, _, _, _ => ⟨fun _ hj => nomatch hj, .nil⟩
-  | _, _, _, us', targs, b, _, _, .cons (i := i) (cvp := cvp) hf hlps hstrip hcerts hrest, hlen,
+  | _, _, us', targs, b, _, _, .cons (i := i) (cvp := cvp) hf hlps hstrip hcerts hrest, hlen,
       ht, hb => by
     have hT : AR (cvp.type.instantiateLevelParams cvp.levelParams us') := by
       rw [arOk_inst]; exact h.ar.type hf
     have hc := certs_lr h hcerts hT (arOk_append ht (fun x hx => by
       rw [List.mem_singleton] at hx; subst hx; exact hb))
     have hl' : us'.length = cvp.levelParams.length := by rw [hlen, hlps]
-    rw [inst_comp hl' (h.lv.type hf), List.map_append] at hc
+    rw [inst_comp hl' (show cvp.type.allLevelParamsDefined cvp.levelParams = true from h.lv.type hf), List.map_append] at hc
     have ir := etaProjCerts_lr h hrest hlen ht hb
     refine ⟨fun j hj => ?_, .cons hf hlps (by rw [List.length_map]; exact hstrip) hc ir.2⟩
     rcases List.mem_cons.mp hj with rfl | hj
