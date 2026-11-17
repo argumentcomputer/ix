@@ -91,9 +91,9 @@ def NoCtorProj (ci : Ix.Kernel.ConstantInfo .anon) : Prop :=
 theorem noCtorProj_of_isValueConst {ci : Ix.Kernel.ConstantInfo .anon} (h : IsValueConst ci) :
     NoCtorProj ci := by
   rcases h with ⟨cv, v, hh, rfl⟩ | ⟨cv, v, rfl⟩ | ⟨cv, rfl⟩
-  · exact ⟨fun _ _ _ e => nomatch e, fun _ e => nomatch e⟩
-  · exact ⟨fun _ _ _ e => nomatch e, fun _ e => nomatch e⟩
-  · exact ⟨fun _ _ _ e => nomatch e, fun _ e => nomatch e⟩
+  · exact ⟨(fun _ _ _ e => nomatch e), (fun _ e => nomatch e)⟩
+  · exact ⟨(fun _ _ _ e => nomatch e), (fun _ e => nomatch e)⟩
+  · exact ⟨(fun _ _ _ e => nomatch e), (fun _ e => nomatch e)⟩
 
 /-- A free key is no operation's key. -/
 theorem not_mem_opNames_of_keyFree {k : Ix.Kernel.Key .anon} (h : Decl.KeyFree k) :
