@@ -208,8 +208,8 @@ theorem arOk_natOpResult (hA : StoreAr env) {c : Key md} {a b : Nat} {r : Expr m
   have hlit : ∀ n : Nat, Expr.arOk env (.lit (.natVal n) : Expr md) = true := fun _ => rfl
   have hall : (natOpResult c a b).all (Expr.arOk env) = true := by
     unfold natOpResult
-    repeat' split
-    all_goals simp [hT, hF, hlit, apply_ite (fun n : Key md => Expr.arOk env (.const n []))]
+    simp [apply_ite (Option.all (Expr.arOk env)), hlit,
+      apply_ite (fun n : Key md => Expr.arOk env (.const n [])), hT, hF]
   rw [h] at hall
   simpa using hall
 
@@ -570,7 +570,7 @@ theorem red_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : LvRe
       (by rw [Expr.getAppArgs_instantiateLevelParams, List.length_map]; exact hlen)
       (by rw [List.length_map]; exact hus) (fireSem_ren h.ren ks hfire) hctor hc
   | _, _, _, .iota (e := e) (us := us) (cv := cv) (rP := rP) (rules := rules)
-      (major := major) (usj := usj) (cvj := cvj) (rl := rl)
+      (major := major) (cj := cj) (usj := usj) (cvj := cvj) (cnP := cnP) (cnF := cnF) (rl := rl)
       hhead hrec hlen hus hmajor hmhead hctor hrule hmlen hfire hlv hparams hcertR hcertC hres
       hidx, he => by
     have hrl : rl ∈ rules := List.mem_of_find?_eq_some hrule
@@ -611,7 +611,10 @@ theorem red_lr {env : Env md} {ks : List LevelParam} {ws : List Level} (h : LvRe
       (by rw [Expr.getAppArgs_instantiateLevelParams, List.length_map]; exact hmlen) hfire
       (by
         intro φ
-        rw [h.comparands_fst hrec hrl hfire hctor hus e.getAppArgs]
+        have hrc : rl.ctor = cj := by simpa using List.find?_some hrule
+        have hctor' : env.find? rl.ctor = some (.ctorInfo cvj cnP cnF) := by
+          rw [hrc]; exact hctor
+        rw [h.comparands_fst hrec hrl hfire hctor' hus e.getAppArgs]
         exact Level.evalEqList_subst ks ws φ (hlv _))
       (fun hc => by
         have hd := defEqList_lr h (hparams hc) (arOk_take hmargs _)
@@ -1059,7 +1062,7 @@ theorem etaProjCerts_lr {env : Env md} {ks : List LevelParam} {ws : List Level}
             cvp.levelParams = lpsT) ∧
         EtaProjCerts env d T (us'.map (Level.subst ks ws))
           (targs.map (·.instantiateLevelParams ks ws)) ⌜b⌝ lpsT idxs
-  | _, _, _, _, _, _, _, .nil, _, _, _ => ⟨fun _ hj => nomatch hj, .nil⟩
+  | _, _, _, _, _, _, _, .nil, _, _, _ => ⟨(fun _ hj => nomatch hj), .nil⟩
   | _, _, us', targs, b, _, _, .cons (i := i) (cvp := cvp) hf hlps hstrip hcerts hrest, hlen,
       ht, hb => by
     have hT : AR (cvp.type.instantiateLevelParams cvp.levelParams us') := by
