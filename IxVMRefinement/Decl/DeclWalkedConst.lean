@@ -1133,65 +1133,53 @@ theorem CheckedConstOriginAt.stored_of_table {calls : List (Call F)} {t : Ix.Ker
   obtain ⟨ci, hci⟩ := hcells hp p a hr m
   exact Ctx.stored_key_of_find (c := ⟨E_core, env, t, some lim⟩) hci
 
-/-- **A walked definition, theorem, opaque constant or axiom installs and keeps the prefix
-invariant.** The step reads the prefix through `PrefixInv` alone. Its inputs about the record
-being folded are: the check evidence at the prefix's keying (`hchk`: the declaration's own heap
-terms mention stored addresses only), the freshness of the declared key (`hfresh`), that the
-declared name is no key of a role outside compiler trust (`hnr`), and the reload of the record
-as the constant stored (`hreload`). It uses neither the unrestricted load contract, nor the
-public core seam, nor a hypothesis about which calls a run makes. -/
+/-- **A key a walked declaration may be stored at**: no reserved basis name, no accelerated `Nat`
+operation's key and no division certificate's name. These are the three lists the declaration
+judgment tests the declared name against; a role key outside them (an anchor's) is allowed. -/
+def KeyFree (k : KKey) : Prop :=
+  Ix.Kernel.reservedBasisNames.contains k = false ∧ Ix.Kernel.natOpNames.contains k = false ∧
+    Ix.Kernel.natDivModNames.contains k = false
+
+/-- **A walked definition, theorem or opaque constant installs, and the prefix invariant is kept
+at every store and every group limit.** The check is read at the store and limit of its own run
+(`hinv`, `hchk`); the conclusion transports the invariant for any store `E'` and limit `lim'`,
+given that the new record reloads as the constant stored in runs good for `E'` (`ReloadsAs`).
+The inputs about the record are: the check evidence at the prefix's keying (`hchk`: the
+declaration's own heap terms mention stored addresses only), the freshness of the declared key
+(`hfresh`), and that the key is free (`hkey`). An axiom is stepped only where it installs
+nothing (`hskipax`: `Quot.sound` and the inert axioms); a walked standard axiom is not covered.
+The step uses neither the unrestricted load contract, nor the public core seam, nor a hypothesis
+about which calls a run makes. -/
 theorem walkedConst_step
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     {E_core : Ixon.Env} {order_role : List _root_.Address} {lim : Nat}
     {env : Env .anon} {d d' : Declaration .anon}
-    (hinv : PrefixInv.{u} E_core t lim env)
+    (hinv : PrefixInv.{u} E_core t (some lim) env)
     (hchk : CheckedConstOriginAt (Ctx.stored ⟨E_core, env, t, some lim⟩).κ lim calls t bAddr
       E_core order_role d d')
     (hgood : Good ⟨E_core, env, t, none⟩ calls)
     (hfresh : ∀ ci₀ ∈ IxVM.Consistency.installs d, env.find? ci₀.name = none)
-    (hnr : ∀ ci₀ ∈ IxVM.Consistency.installs d, ∀ r : Ix.Kernel.Role,
-      IxVM.Refinement.compilerTrust r = false → ci₀.name ≠ .role r)
-    (hreload : ∀ cn ∈ IxVM.Consistency.installs d',
-      ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
-        ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → Good ⟨E_core, env, t, some lim⟩ cs →
-        Bytes.RepAddressRef addrTy h a addr → keyOf t (ixAddr a) = cn.name →
-        CIPtrRep (Ctx.stored ⟨E_core, ⟨cn :: env.consts⟩, t, some lim⟩).κ h' ptr cn) :
+    (hkey : ∀ ci₀ ∈ IxVM.Consistency.installs d, KeyFree ci₀.name)
+    (hskipax : ∀ cv, d = .axiomDecl cv →
+      cv.name = Ix.Kernel.quotSoundName ∨ IxVM.Consistency.inertKey cv.name = true) :
     CleanInstallStep env d ⟨IxVM.Consistency.installs d' ++ env.consts⟩ ∧
-      PrefixInv.{u} E_core t lim ⟨IxVM.Consistency.installs d' ++ env.consts⟩ := by
+      ∀ (E' : Ixon.Env) (lim' : Option Nat),
+        (∀ cn ∈ IxVM.Consistency.installs d', ReloadsAs E' t ⟨cn :: env.consts⟩ cn) →
+        PrefixInv.{u} E' t lim' env →
+          PrefixInv.{u} E' t lim' ⟨IxVM.Consistency.installs d' ++ env.consts⟩ := by
   have hbound : IxVM.Consistency.Bounded calls := hgood.2
   cases hchk with
-  | @axiomDecl a _ _ nlvls ty₀ ty' _ _ _ m_ax _ x_rc _ x_addr _ v_ax _ cs_ax
-      hnot_role _ _ _ _ _ _ _ _ _ _ _ _ _ _ hrc_ax ha_ax ev_ax hne_ax _ hsub_ax =>
+  | @axiomDecl a _ _ nlvls ty₀ ty' _ _ _ _ _ _ _ _ _ _ _ _
+      _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ =>
     let cv₀ : ConstantVal .anon := ⟨keyOf t a, List.range nlvls, ty₀⟩
-    by_cases hskip : cv₀.name = Ix.Kernel.quotSoundName ∨ IxVM.Consistency.inertKey cv₀.name = true
-    · have hempty : IxVM.Consistency.installs (.axiomDecl cv₀) = [] := ite_eq_left hskip
-      have hempty' : IxVM.Consistency.installs
-          (.axiomDecl ⟨keyOf t a, List.range nlvls, ty'⟩ : Declaration .anon) = [] :=
-        ite_eq_left hskip
-      rw [hempty']
-      exact ⟨CleanInstallStep.empty hempty, hinv⟩
-    · obtain ⟨a', ha'_ref, heq_a⟩ := ha_ax
-      let c : Ctx := ⟨E_core, env, t, some lim⟩
-      have hgood_c : Good c calls := hgood
-      obtain ⟨ro, hro_addr, _, hrole⟩ :=
-        axiom_standing_spec rolesSpec (hgood_c.sub hsub_ax) hinv.tableWf
-          hrc_ax.toRCRep (rcFullRep_axiomsNil hrc_ax) ha'_ref ev_ax hne_ax
-      have hk : keyOf t a = .role ro := by
-        have hk0 := keyOf_of_addressOf hinv.tableWf hro_addr
-        rwa [heq_a] at hk0
-      have hct : IxVM.Refinement.compilerTrust ro = false := by
-        rcases hrole with rfl | rfl | rfl | hinert
-        · rfl
-        · rfl
-        · rfl
-        · exact False.elim (hskip (Or.inr (by
-            show IxVM.Consistency.inertKey (keyOf t a) = true
-            rw [hk]
-            exact hinert)))
-      have hmem : (ConstantInfo.axiomInfo cv₀) ∈ IxVM.Consistency.installs (.axiomDecl cv₀) := by
-        rw [show IxVM.Consistency.installs (.axiomDecl cv₀) = [.axiomInfo cv₀] from ite_eq_right hskip]
-        exact List.mem_singleton.mpr rfl
-      exact False.elim (hnr (.axiomInfo cv₀) hmem ro hct hk)
+    have hskip : cv₀.name = Ix.Kernel.quotSoundName ∨
+        IxVM.Consistency.inertKey cv₀.name = true := hskipax cv₀ rfl
+    have hempty : IxVM.Consistency.installs (.axiomDecl cv₀) = [] := ite_eq_left hskip
+    have hempty' : IxVM.Consistency.installs
+        (.axiomDecl ⟨keyOf t a, List.range nlvls, ty'⟩ : Declaration .anon) = [] :=
+      ite_eq_left hskip
+    rw [hempty']
+    exact ⟨CleanInstallStep.empty hempty, fun _ _ _ h => h⟩
   | @defnDecl a nlvls ty₀ val₀ ty' val' hn m_pre1 m_es m_es' m_pre2 m_kc m_kc'
       x_rc x_ty x_val v_sort r_kc cs_es cs_kc
       hnot_role _ _ hty_def _ hval_def hty_ann hval_ann hty'_def hval'_def
@@ -1230,10 +1218,9 @@ theorem walkedConst_step
         (ghostScoped_zero zeroGhostWalked) hef hlf
         (CoreGood.ofRaw (hgood_c.sub hsub_kc) (fun _ _ => trivial)) ev_kc
         (hval_tmc_kc' 0 zeroGhostWalked) (hty_tmc_kc' 0 zeroGhostWalked)
-    have hnrole : ∀ r : Ix.Kernel.Role, IxVM.Refinement.compilerTrust r = false →
-        keyOf t a ≠ .role r := hnr _ (List.mem_singleton.mpr rfl)
+    have hkf := hkey _ (List.mem_singleton.mpr rfl)
     have hres_name : Ix.Kernel.reservedBasisNames.contains cv'.name = false :=
-      reservedBasisNames_false_of_ne_nonTrustRole hnrole
+      hkf.1
     have hnoprj : cv'.name.isProjFnShape = false := isProjFnShape_of_isBaseKey hbase
     have hcv_run : ConstantValRunJ rulesJ env cv' ty' :=
       ⟨by rw [hfresh_cv]; rfl, hres_name, hnoprj, levelParam_nodup_of_nodup List.nodup_range,
@@ -1243,21 +1230,21 @@ theorem walkedConst_step
       ⟨hval'_bvs, hval'_nfv, hval'_ann, hval'_def,
         infer_constsResolve hinf_val hef.store hval'_nfv, vtype, hinf_val, hde_val⟩
     have hnat_false : Ix.Kernel.natOpNames.contains cv'.name = false :=
-      natOpNames_false_of_ne_nonTrustRole hnrole
+      hkf.2.1
     have hdm_false : Ix.Kernel.natDivModNames.contains cv'.name = false :=
-      natDivModNames_false_of_ne_nonTrustRole hnrole
+      hkf.2.2
     have hdecl : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env (.defnDecl cv' val' hn)
         ⟨.defnInfo cv' val' hn :: env.consts⟩ :=
       ⟨ty', val', hcv_run, hv_run, rfl,
         (fun hc => by rw [hnat_false] at hc; exact nomatch hc),
         (fun hc => by rw [hdm_false] at hc; exact nomatch hc)⟩
-    exact ⟨hclean, hinv.cons_value (cn := .defnInfo cv' val' hn) (a₀ := a) rfl hfresh_cv
+    exact ⟨hclean, fun E' lim' hrel hinv' => hinv'.cons_value (cn := .defnInfo cv' val' hn) (a₀ := a) rfl hfresh_cv
       (fun _ => ne_projTableName_of_isBaseKey hbase) (fun _ _ e => nomatch e)
       (fun _ _ _ e => nomatch e) (fun _ _ _ _ e => nomatch e) (fun _ e => nomatch e)
       (FullDeclInv.step_of_foldInv_clean hclean
         (foldInv_step_declRunJ (d := .defnDecl cv' val' hn) (fun _ _ heq => nomatch heq) hdecl))
       (foldStoreInv_step_declRunJ (d := .defnDecl cv' val' hn) hinv.store (fun _ _ heq => nomatch heq) hdecl)
-      (hreload _ (List.mem_singleton.mpr rfl))⟩
+      (hrel _ (List.mem_singleton.mpr rfl))⟩
   | @thmDecl a nlvls ty₀ val₀ ty' val' m_pre1 m_es m_es' m_le m_le' m_pre2 m_kc m_kc'
       x_rc x_ty x_val v_sort r_kc cs_es cs_le cs_kc
       hnot_role _ _ hty_def _ hval_def hty_ann hval_ann hty'_def hval'_def
@@ -1300,10 +1287,9 @@ theorem walkedConst_step
         (ghostScoped_zero zeroGhostWalked) hef hlf
         (CoreGood.ofRaw (hgood_c.sub hsub_kc) (fun _ _ => trivial)) ev_kc
         (hval_tmc_kc' 0 zeroGhostWalked) (hty_tmc_kc' 0 zeroGhostWalked)
-    have hnrole : ∀ r : Ix.Kernel.Role, IxVM.Refinement.compilerTrust r = false →
-        keyOf t a ≠ .role r := hnr _ (List.mem_singleton.mpr rfl)
+    have hkf := hkey _ (List.mem_singleton.mpr rfl)
     have hres_name : Ix.Kernel.reservedBasisNames.contains cv'.name = false :=
-      reservedBasisNames_false_of_ne_nonTrustRole hnrole
+      hkf.1
     have hnoprj : cv'.name.isProjFnShape = false := isProjFnShape_of_isBaseKey hbase
     have hcv_run : ConstantValRunJ rulesJ env cv' ty' :=
       ⟨by rw [hfresh_cv]; rfl, hres_name, hnoprj, levelParam_nodup_of_nodup List.nodup_range,
@@ -1315,13 +1301,13 @@ theorem walkedConst_step
     have hdecl : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env (.thmDecl cv' val')
         ⟨.thmInfo cv' val' :: env.consts⟩ :=
       ⟨ty', val', hcv_run, ⟨stype, u, hinf_ty, hred_ty, hisZero⟩, hv_run, rfl⟩
-    exact ⟨hclean, hinv.cons_value (cn := .thmInfo cv' val') (a₀ := a) rfl hfresh_cv
+    exact ⟨hclean, fun E' lim' hrel hinv' => hinv'.cons_value (cn := .thmInfo cv' val') (a₀ := a) rfl hfresh_cv
       (fun _ => ne_projTableName_of_isBaseKey hbase) (fun _ _ e => nomatch e)
       (fun _ _ _ e => nomatch e) (fun _ _ _ _ e => nomatch e) (fun _ e => nomatch e)
       (FullDeclInv.step_of_foldInv_clean hclean
         (foldInv_step_declRunJ (d := .thmDecl cv' val') (fun _ _ heq => nomatch heq) hdecl))
       (foldStoreInv_step_declRunJ (d := .thmDecl cv' val') hinv.store (fun _ _ heq => nomatch heq) hdecl)
-      (hreload _ (List.mem_singleton.mpr rfl))⟩
+      (hrel _ (List.mem_singleton.mpr rfl))⟩
   | @opaqueDecl a nlvls ty₀ val₀ ty' val' m_pre1 m_es m_es' m_pre2 m_kc m_kc'
       x_rc x_ty x_val v_sort r_kc cs_es cs_kc
       hnot_role _ _ hty_def _ hval_def hty_ann hval_ann hty'_def hval'_def
@@ -1360,10 +1346,9 @@ theorem walkedConst_step
         (ghostScoped_zero zeroGhostWalked) hef hlf
         (CoreGood.ofRaw (hgood_c.sub hsub_kc) (fun _ _ => trivial)) ev_kc
         (hval_tmc_kc' 0 zeroGhostWalked) (hty_tmc_kc' 0 zeroGhostWalked)
-    have hnrole : ∀ r : Ix.Kernel.Role, IxVM.Refinement.compilerTrust r = false →
-        keyOf t a ≠ .role r := hnr _ (List.mem_singleton.mpr rfl)
+    have hkf := hkey _ (List.mem_singleton.mpr rfl)
     have hres_name : Ix.Kernel.reservedBasisNames.contains cv'.name = false :=
-      reservedBasisNames_false_of_ne_nonTrustRole hnrole
+      hkf.1
     have hnoprj : cv'.name.isProjFnShape = false := isProjFnShape_of_isBaseKey hbase
     have hcv_run : ConstantValRunJ rulesJ env cv' ty' :=
       ⟨by rw [hfresh_cv]; rfl, hres_name, hnoprj, levelParam_nodup_of_nodup List.nodup_range,
@@ -1375,13 +1360,13 @@ theorem walkedConst_step
     have hdecl : DeclRunJ rulesJ (IndRoutesJ rulesJ env) env (.opaqueDecl cv' val')
         ⟨.axiomInfo cv' :: env.consts⟩ :=
       ⟨ty', val', hcv_run, hv_run, rfl⟩
-    exact ⟨hclean, hinv.cons_value (cn := .axiomInfo cv') (a₀ := a) rfl hfresh_cv
+    exact ⟨hclean, fun E' lim' hrel hinv' => hinv'.cons_value (cn := .axiomInfo cv') (a₀ := a) rfl hfresh_cv
       (fun _ => ne_projTableName_of_isBaseKey hbase) (fun _ _ e => nomatch e)
       (fun _ _ _ e => nomatch e) (fun _ _ _ _ e => nomatch e) (fun _ e => nomatch e)
       (FullDeclInv.step_of_foldInv_clean hclean
         (foldInv_step_declRunJ (d := .opaqueDecl cv' val') (fun _ _ heq => nomatch heq) hdecl))
       (foldStoreInv_step_declRunJ (d := .opaqueDecl cv' val') hinv.store (fun _ _ heq => nomatch heq) hdecl)
-      (hreload _ (List.mem_singleton.mpr rfl))⟩
+      (hrel _ (List.mem_singleton.mpr rfl))⟩
 
 
 /-- **The step at the start of a fold.** At the empty environment under the group limit `0` the
@@ -1396,18 +1381,16 @@ theorem walkedConst_step_empty
     (hchk : CheckedConstOriginAt (Ctx.stored ⟨E_core, Ix.Kernel.Env.empty, t, some 0⟩).κ 0 calls
       t bAddr E_core order_role d d')
     (hgood : Good ⟨E_core, Ix.Kernel.Env.empty, t, none⟩ calls)
-    (hnr : ∀ ci₀ ∈ IxVM.Consistency.installs d, ∀ r : Ix.Kernel.Role,
-      IxVM.Refinement.compilerTrust r = false → ci₀.name ≠ .role r)
+    (hkey : ∀ ci₀ ∈ IxVM.Consistency.installs d, KeyFree ci₀.name)
+    (hskipax : ∀ cv, d = .axiomDecl cv →
+      cv.name = Ix.Kernel.quotSoundName ∨ IxVM.Consistency.inertKey cv.name = true)
     (hreload : ∀ cn ∈ IxVM.Consistency.installs d',
-      ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
-        ObsFn W "Ingress::get_ci" [addr] h ptr h' cs →
-        Good ⟨E_core, Ix.Kernel.Env.empty, t, some 0⟩ cs →
-        Bytes.RepAddressRef addrTy h a addr → keyOf t (ixAddr a) = cn.name →
-        CIPtrRep (Ctx.stored ⟨E_core, ⟨cn :: Ix.Kernel.Env.empty.consts⟩, t, some 0⟩).κ h' ptr
-          cn) :
+      ReloadsAs E_core t ⟨cn :: Ix.Kernel.Env.empty.consts⟩ cn) :
     CleanInstallStep Ix.Kernel.Env.empty d
         ⟨IxVM.Consistency.installs d' ++ Ix.Kernel.Env.empty.consts⟩ ∧
-      PrefixInv.{u} E_core t 0 ⟨IxVM.Consistency.installs d' ++ Ix.Kernel.Env.empty.consts⟩ :=
-  walkedConst_step (prefixInv_empty hdec htwf) hchk hgood (fun _ _ => rfl) hnr hreload
+      PrefixInv.{u} E_core t (some 0)
+        ⟨IxVM.Consistency.installs d' ++ Ix.Kernel.Env.empty.consts⟩ :=
+  have h := walkedConst_step (prefixInv_empty hdec htwf) hchk hgood (fun _ _ => rfl) hkey hskipax
+  ⟨h.1, h.2 E_core (some 0) hreload (prefixInv_empty hdec htwf)⟩
 
 end IxVM.Refinement.Decl

@@ -2,6 +2,7 @@ import IxVMRefinement.Decl.DeclSpecs
 import IxVMRefinement.Decl.PrefixLoads
 import IxVMRefinement.Core.Rekey
 import IxVMRefinement.Whnf.Proj
+import IxVMRefinement.L1.Cells
 
 /-! # The standing invariant of a prefix
 
@@ -456,10 +457,62 @@ theorem structLoad_one_ctor {c : ScopedCtx} (hl : ScopedLoadFacts c)
     exact NatAux.field_inj hc
   exact ((NatAux.natCast_inj (by norm_num) hsz).mp h1).symm
 
+/-! ## The references a record uses are stored -/
+
+/-- **The references a record uses are stored**: every address at a used reference index of the
+record has a constant in the environment. This is the form in which a declaration step takes the
+claim layer's coverage and inert clauses. -/
+def UsedRefsStored (t : Ix.Kernel.RoleTable) (env : Ix.Kernel.Env .anon) (c : Ixon.Constant) :
+    Prop :=
+  ∀ i ∈ IxVM.Consistency.usedRefIdxs c, ∀ x, c.refs.toList[i]? = some x →
+    ∃ ci, env.find? (keyOf t x) = some ci
+
+/-- The two clauses give it: a used reference that is no inert axiom's is stored (coverage), and
+no used reference is an inert axiom's (inert). -/
+theorem usedRefsStored_of_clauses {t : Ix.Kernel.RoleTable} {env : Ix.Kernel.Env .anon}
+    {c : Ixon.Constant}
+    (hcover : ∀ i ∈ IxVM.Consistency.usedRefIdxs c, ∀ x, c.refs.toList[i]? = some x →
+      IxVM.Consistency.inertKey (keyOf t x) = false → ∃ ci, env.find? (keyOf t x) = some ci)
+    (hinert : ∀ i ∈ IxVM.Consistency.usedRefIdxs c, ∀ x, c.refs.toList[i]? = some x →
+      IxVM.Consistency.inertKey (keyOf t x) = false) : UsedRefsStored t env c :=
+  fun i hi x hx => hcover i hi x hx (hinert i hi x hx)
+
+/-- **A converted term of a record whose used references are stored is represented under the
+prefix keying.** The expression `e` is one of the record's own (its reference indices are used
+indices of the record) and has no recursion address. -/
+theorem tmC_stored_of_usedRefs {E₀ : Ixon.Env} {t : Ix.Kernel.RoleTable}
+    {env : Ix.Kernel.Env .anon} {lim : Option Nat} {c : Ixon.Constant}
+    {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {bound : Nat} {e : Ixon.Expr}
+    {p : SourceValue F} {X : KExpr}
+    (raw : L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e p)
+    (he : ∀ i, i ∈ IxVM.Consistency.exprRefIdxs e → i ∈ IxVM.Consistency.usedRefIdxs c)
+    (hstored : UsedRefsStored t env c) (rep : TmC (keyOf t) h X p) :
+    TmC (Ctx.stored ⟨E₀, env, t, lim⟩).κ h X p := by
+  refine raw.tmC_rekey rep fun x hu => ?_
+  rcases hu with ⟨i, hi | ⟨s, hs, his⟩, hr⟩ | hr
+  · obtain ⟨ci, hci⟩ := hstored i (he i hi) x hr
+    exact Ctx.stored_key_of_find (c := ⟨E₀, env, t, lim⟩) hci
+  · have hmem : i ∈ IxVM.Consistency.usedRefIdxs c := by
+      unfold IxVM.Consistency.usedRefIdxs
+      exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨s, hs, his⟩)
+    obtain ⟨ci, hci⟩ := hstored i hmem x hr
+    exact Ctx.stored_key_of_find (c := ⟨E₀, env, t, lim⟩) hci
+  · cases hr
+
 /-! ## The invariant -/
 
+/-- **Every load of the address of `cn` returns `cn`**, in any run good for the store `E`, under
+the keying of the prefix `env` (which stores `cn`). The statement mentions no run of a check and
+no group limit: it is a fact about the record at that address in `E`. -/
+def ReloadsAs (E : Ixon.Env) (t : Ix.Kernel.RoleTable) (env : Ix.Kernel.Env .anon)
+    (cn : ConstantInfo .anon) : Prop :=
+  ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
+    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → Good ⟨E, env, t, none⟩ cs →
+    Bytes.RepAddressRef addrTy h a addr → keyOf t (ixAddr a) = cn.name →
+    CIPtrRep (Ctx.stored ⟨E, env, t, none⟩).κ h' ptr cn
+
 /-- **The standing invariant of a prefix** (module docstring). -/
-structure PrefixInv (E : Ixon.Env) (t : Ix.Kernel.RoleTable) (lim : Nat)
+structure PrefixInv (E : Ixon.Env) (t : Ix.Kernel.RoleTable) (lim : Option Nat)
     (env : Ix.Kernel.Env .anon) : Prop where
   /-- The declaration layer's invariant, in every set theory. -/
   decl : ∀ (V : Type u) [Ix.Kernel.SetTheory V], FullDeclInv V env
@@ -470,16 +523,16 @@ structure PrefixInv (E : Ixon.Env) (t : Ix.Kernel.RoleTable) (lim : Nat)
   /-- The role table is well formed. -/
   tableWf : t.wf = true
   /-- The role and record companions of the scoped core's environment facts, at the limit. -/
-  companions : CoreCompanions ⟨E, env, t, some lim⟩
+  companions : CoreCompanions ⟨E, env, t, lim⟩
   /-- The scoped load contract at the prefix context. -/
-  loads : ScopedLoadFacts (Ctx.stored ⟨E, env, t, some lim⟩)
+  loads : ScopedLoadFacts (Ctx.stored ⟨E, env, t, lim⟩)
   /-- η typing of the stored η-capable families holds in every extension. -/
   etaStable : EtaStable env
 
 /-- **The invariant holds at the empty environment under the limit `0`**, for decoded records and
 any well-formed role table: nothing is stored and no role is in force. -/
 theorem prefixInv_empty {E : Ixon.Env} (hdec : L1.EnvDecoded E) {t : Ix.Kernel.RoleTable}
-    (htwf : t.wf = true) : PrefixInv.{u} E t 0 Ix.Kernel.Env.empty where
+    (htwf : t.wf = true) : PrefixInv.{u} E t (some 0) Ix.Kernel.Env.empty where
   decl := FullDeclInv.empty
   store := foldStoreInv_empty
   unresolved := rfl
@@ -490,28 +543,28 @@ theorem prefixInv_empty {E : Ixon.Env} (hdec : L1.EnvDecoded E) {t : Ix.Kernel.R
   etaStable := etaStable_empty
 
 /-- The scoped core's facts at the prefix context. -/
-theorem PrefixInv.scopedCoreFacts {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Nat}
+theorem PrefixInv.scopedCoreFacts {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Option Nat}
     {env : Ix.Kernel.Env .anon} (h : PrefixInv.{u} E t lim env) :
-    ScopedCoreFacts (Ctx.stored ⟨E, env, t, some lim⟩) :=
-  ⟨FoldStoreInv.toCoreEnvFacts (c := ⟨E, env, t, some lim⟩) h.store h.tableWf h.companions,
+    ScopedCoreFacts (Ctx.stored ⟨E, env, t, lim⟩) :=
+  ⟨FoldStoreInv.toCoreEnvFacts (c := ⟨E, env, t, lim⟩) h.store h.tableWf h.companions,
     h.loads⟩
 
 /-- **A stored constructor's inductive is stored**: the closing fact of the load contract, in the
 table's keying. -/
-theorem PrefixInv.ctor_ind_stored {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Nat}
+theorem PrefixInv.ctor_ind_stored {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Option Nat}
     {env : Ix.Kernel.Env .anon} (h : PrefixInv.{u} E t lim env) {b : _root_.Address} {i j : Nat}
     {cv : ConstantVal .anon} {nP nF : Nat}
     (hf : env.find? (keyOf t (cprjAddr b i j)) = some (.ctorInfo cv nP nF)) :
     ∃ ci, env.find? (keyOf t (iprjAddr b i)) = some ci := by
-  have hk : (Ctx.stored ⟨E, env, t, some lim⟩).κ (cprjAddr b i j) = keyOf t (cprjAddr b i j) :=
-    Ctx.stored_key_of_find (c := ⟨E, env, t, some lim⟩) hf
+  have hk : (Ctx.stored ⟨E, env, t, lim⟩).κ (cprjAddr b i j) = keyOf t (cprjAddr b i j) :=
+    Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hf
   have hr := h.loads.ctorIndRes b i j cv nP nF (by rw [hk]; exact hf)
   exact Ctx.stored_key_ne hr
 
 /-- **A value constant keeps the invariant.** Storing a definition, a theorem or an axiom `cn` at
 the fresh key of the address `a₀` keeps `PrefixInv`, given the declaration layer's step
 (`hdecl`, `hstore`) and the reload of the new record (`hreload`). -/
-theorem PrefixInv.cons_value {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Nat}
+theorem PrefixInv.cons_value {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Option Nat}
     {env : Ix.Kernel.Env .anon} (h : PrefixInv.{u} E t lim env)
     {cn : ConstantInfo .anon} {a₀ : _root_.Address}
     (hname : cn.name = keyOf t a₀)
@@ -524,11 +577,7 @@ theorem PrefixInv.cons_value {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Nat
     (hdecl : ∀ (V : Type u) [Ix.Kernel.SetTheory V], FullDeclInv V env →
       FullDeclInv V ⟨cn :: env.consts⟩)
     (hstore : FoldStoreInv ⟨cn :: env.consts⟩)
-    (hreload : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
-      (a : Bytes.Address),
-      ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → Good ⟨E, env, t, some lim⟩ cs →
-      Bytes.RepAddressRef addrTy h a addr → keyOf t (ixAddr a) = cn.name →
-      CIPtrRep (Ctx.stored ⟨E, ⟨cn :: env.consts⟩, t, some lim⟩).κ h' ptr cn) :
+    (hreload : ReloadsAs E t ⟨cn :: env.consts⟩ cn) :
     PrefixInv.{u} E t lim ⟨cn :: env.consts⟩ where
   decl := fun V _ => hdecl V (h.decl V)
   store := hstore
@@ -541,7 +590,7 @@ theorem PrefixInv.cons_value {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Nat
     exact h.unresolved
   tableWf := h.tableWf
   companions := h.companions.cons_value hfresh hnt hrec hctor
-  loads := storedLoads_cons_value (c := ⟨E, env, t, some lim⟩) h.loads hname hfresh hnt hind
+  loads := storedLoads_cons_value (c := ⟨E, env, t, lim⟩) h.loads hname hfresh hnt hind
     hctor hproj h.etaStable hreload
   etaStable := h.etaStable.cons_value hfresh hnt hind hctor
 

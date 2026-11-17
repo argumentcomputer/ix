@@ -185,6 +185,18 @@ private theorem ctorZero_of_rep {κ : _root_.Address → KKey} {h : Heap F}
     exact ⟨_, _, rfl⟩
   all_goals (injection hv with _ htag _; exact absurd htag (by decide))
 
+/-- **The roles whose constants the checker builds or loads by role**: the `Nat` literal
+constructors and type, the accelerated `Nat` operations (the offset rules rebuild their
+applications), the `Bool` results of the comparisons, the constants a string literal expands
+to and its type, and the quotient constructor and eliminators. A term the checker builds
+mentions these constants, so their keys must resolve; no other role is asked for. -/
+def fabricatedRole : Ix.Kernel.Role → Bool
+  | .nat | .natZero | .natSucc | .natPred | .natAdd | .natSub | .natMul | .natDiv | .natMod
+  | .natGcd | .natPow | .natLand | .natLor | .natXor | .natShiftLeft | .natShiftRight
+  | .natBeq | .natBle | .boolFalse | .boolTrue | .string | .listNil | .listCons | .char
+  | .charOfNat | .stringOfList | .quotMk | .quotLift | .quotInd => true
+  | _ => false
+
 /-- Installed reads require allowed top invocations and coverage of their children. Raw record facts stay
 conditional on actual stored records, and native eta observations carry their own evidence. -/
 structure ScopedLoadFacts (c : ScopedCtx) : Prop where
@@ -414,8 +426,10 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
   ctorIndRes : ∀ (b : _root_.Address) (i j : Nat) (cv : Ix.Kernel.ConstantVal .anon)
       (nP nF : Nat), c.env.find? (c.κ (cprjAddr b i j)) = some (.ctorInfo cv nP nF) →
     c.κ (iprjAddr b i) ≠ unresolvedKey
-  /-- A role in force that is no inert axiom resolves: the checker builds its constant. -/
-  roleRes : ∀ (r : Ix.Kernel.Role) (a : _root_.Address), c.inForce r → r.inert = false →
+  /-- A role in force whose constant the checker builds or loads by role resolves
+  (`fabricatedRole`). Other roles in force need not be stored. -/
+  roleRes : ∀ (r : Ix.Kernel.Role) (a : _root_.Address), c.inForce r →
+    fabricatedRole r = true →
     c.t.addressOf? r = some a → c.κ a ≠ unresolvedKey
 
 /-- Compatibility with the old unrestricted interface. This adapter does not construct
@@ -563,7 +577,7 @@ theorem ScopedCtx.famAt_of_ctor {c : ScopedCtx} {a b : _root_.Address} {i j : Na
 /-- The address a role in force is bound to resolves. -/
 theorem ScopedCoreFacts.res_of_role {c : ScopedCtx} (hc : ScopedCoreFacts c)
     {r : Ix.Kernel.Role} {a : _root_.Address} (hb : c.t.addressOf? r = some a)
-    (hf : c.inForce r) (hi : r.inert = false) : c.κ a ≠ unresolvedKey :=
+    (hf : c.inForce r) (hi : fabricatedRole r = true) : c.κ a ≠ unresolvedKey :=
   hc.loads.roleRes r a hf hi hb
 
 /-- Discharge the resolution of a key from what a step proof has in hand. -/
