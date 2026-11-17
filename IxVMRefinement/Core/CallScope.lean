@@ -124,8 +124,12 @@ structure EtaUseFacts (env : Ix.Kernel.Env .anon) (T kc : KKey)
   towers : Ix.Kernel.towerSlotsAll env T caps.etaFields = true
   sort : ∃ bs l, cvT.type.stripPis caps.etaParams = some (bs, .sort l) ∧
     caps.sortZ = Ix.Kernel.Level.zeronessOf l
+  /-- The type of a full application of the η constructor, at parameters with no loose bound
+  variable (free variables allowed; at a loose one the clause is false,
+  `Decl.etaType_open_false`). -/
   type : ∀ (d : Nat) (us : List KLevel) (args : List KExpr) (ty : KExpr),
-    args.length = nP + nF → Infer env .io d (Ix.Kernel.Expr.mkAppN (.const kc us) args) ty →
+    args.length = nP + nF → (∀ s ∈ args.take nP, s.looseBVarsBounded 0 = true) →
+    Infer env .io d (Ix.Kernel.Expr.mkAppN (.const kc us) args) ty →
       Red env d ty (Ix.Kernel.Expr.mkAppN (.const T us) (args.take nP))
 
 theorem EnvFacts.etaUseFacts {c : Ctx} (h : EnvFacts c)

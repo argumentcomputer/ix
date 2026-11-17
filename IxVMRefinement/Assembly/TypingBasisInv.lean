@@ -251,7 +251,7 @@ theorem basisEnv_eta_punit :
 is the constant's stored type, so in every extension the type of `PUnit.unit.{u}` is
 `PUnit.{u}`. -/
 theorem basisEnv_etaStable : Decl.EtaStable basisEnv := by
-  intro T kc cvT cvc caps nP nF hT heta hkc hC env' hext d us args ty hlen hinf
+  intro T kc cvT cvc caps nP nF hT heta hkc hC env' hext d us args ty hlen _hcl hinf
   obtain ⟨hmemT, -⟩ := basisEnv_find_mem hT
   have hall := List.all_eq_true.mp basisEnv_eta_punit _ hmemT
   have hpu : ConstantInfo.indInfo cvT caps = Ix.Kernel.punitA := by

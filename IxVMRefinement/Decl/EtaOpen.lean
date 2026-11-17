@@ -10,24 +10,22 @@ a parameter with a loose bound variable is captured by the binders after it. So 
 parameters with no loose bound variable (free variables are allowed: the circuit's terms are of
 that kind), and fails at open ones.
 
-* **The open form is false** (`etaType_open_false`): at a stored constructor whose binders are
-  never-zero at the use's levels, the io grade certifies no argument (`Infer.appSkip`), so the
-  spine `mk (bvar 0) (sort 0) …` infers a type in which the loose variable has been replaced by
-  the last argument. That type has no loose bound variable, and reduction keeps it so
-  (`red_bclosed`), so it does not reduce to `T.{us} (bvar 0) …`. Hence `EtaStable` and the
-  typing clause of `EtaUseFacts` fail at every environment storing an η-capable family with a
-  parameter and a second binder (`not_etaStable_of_param`, `FoldStoreInv.not_etaStable`), and the
-  statement read off the stored constructor alone, `EtaTypeOpenStmt`, is false
-  (`EtaOpenExample.not_etaTypeOpen`).
-* **The true form** (`EtaStableC`, `EtaUseFactsC`): the same clauses at parameters with no loose
-  bound variable. It holds wherever the fold invariant does (`FoldStoreInv.etaStableC`,
-  `FoldStoreInv.etaUseFactsC`), at every extension, from the constructor's stored shape alone
-  (`etaType_of_closed_stored`).
-* **Where the open form holds**: where no η-capable family has a parameter
-  (`etaStable_of_etaShape_noParams`, `FoldStoreInv.etaUseFacts_noParams`).
-* **What the consumers hold** (`TmL.bclosed`, `EtaUseFactsC.type_tml`): the two steps that read
-  the clause (`try_eta_struct_step`, `eta_iota_fab_step`) read it at argument lists the circuit
-  represents at local depth `0`, which have no loose bound variable.
+* **The clause at every argument list is false** (`etaType_open_false`): at a stored
+  constructor whose binders are never-zero at the use's levels, the io grade certifies no
+  argument (`Infer.appSkip`), so the spine `mk (bvar 0) (sort 0) …` infers a type in which the
+  loose variable has been replaced by the last argument. That type has no loose bound variable,
+  and reduction keeps it so (`red_bclosed`), so it does not reduce to `T.{us} (bvar 0) …`. Hence
+  the clause without a closedness premise (`EtaClauseOpen`, `EtaStableOpen`) fails at every
+  environment storing an η-capable family with a parameter and a second binder
+  (`not_etaClauseOpen_of_param`, `FoldStoreInv.not_etaClauseOpen`), and so does the statement
+  read off the stored constructor alone, `EtaTypeOpenStmt` (`EtaOpenExample.not_etaTypeOpen`).
+* **The clause at parameters with no loose bound variable** (the premise `EtaStable` and
+  `EtaUseFacts` carry) holds wherever the fold invariant does (`FoldStoreInv.etaStable`,
+  `FoldStoreInv.etaUseFacts`), at every extension, from the constructor's stored shape alone
+  (`etaType_of_closed_stored`, `etaStable_of_etaShape`).
+* The consumers (`try_eta_struct_step`, `eta_iota_fab_step`) read the clause at argument lists
+  the circuit represents at local depth `0`, which have no loose bound variable
+  (`TmL.looseBVarsBounded`).
 -/
 
 namespace IxVM.Refinement.Decl
@@ -240,11 +238,27 @@ theorem never_of_zeroness {lps : List LevelParam} {us : List Level} {l : Level}
 
 end
 
-/-! ## `EtaStable` and `EtaUseFacts` as stated fail at a family with a parameter -/
+/-! ## The typing clause at open parameters fails at a family with a parameter -/
 
-/-- **`EtaStable` and the typing clause of `EtaUseFacts` fail at an η-capable family with a
-parameter and a second binder** whose constructor's binders are never-zero at some levels. -/
-theorem not_etaStable_of_param {env : Env .anon} (hS : BClosedStore env)
+/-- **The typing clause at every argument list** (no closedness premise): the form `EtaStable` and
+`EtaUseFacts` had before they took parameters with no loose bound variable. False at a family
+with a parameter (`not_etaClauseOpen_of_param`). -/
+def EtaClauseOpen (env : Env .anon) (T kc : KKey) (nP nF : Nat) : Prop :=
+  ∀ (d : Nat) (us : List KLevel) (args : List KExpr) (ty : KExpr),
+    args.length = nP + nF → Infer env .io d (Expr.mkAppN (.const kc us) args) ty →
+      Red env d ty (Expr.mkAppN (.const T us) (args.take nP))
+
+/-- **`EtaStable` at every argument list** (no closedness premise). -/
+def EtaStableOpen (env : Env .anon) : Prop :=
+  ∀ (T kc : KKey) (cvT cvc : ConstantVal .anon) (caps : IndCaps .anon) (nP nF : Nat),
+    env.find? T = some (.indInfo cvT caps) → caps.eta = true → caps.etaCtor = some kc →
+    env.find? kc = some (.ctorInfo cvc nP nF) →
+    ∀ env' : Env .anon, Ix.Kernel.EnvExt env env' → EtaClauseOpen env' T kc nP nF
+
+/-- **The typing clause at every argument list fails at an η-capable family with a parameter and
+a second binder** whose constructor's binders are never-zero at some levels; so does its
+stability. -/
+theorem not_etaClauseOpen_of_param {env : Env .anon} (hS : BClosedStore env)
     {T kc : KKey} {cvT cvc : ConstantVal .anon} {caps : IndCaps .anon} {nP nF : Nat}
     (hT : env.find? T = some (.indInfo cvT caps)) (heta : caps.eta = true)
     (hctor : caps.etaCtor = some kc) (hkc : env.find? kc = some (.ctorInfo cvc nP nF))
@@ -254,16 +268,16 @@ theorem not_etaStable_of_param {env : Env .anon} (hS : BClosedStore env)
     {us : List KLevel} (hus : us.length = cvc.levelParams.length)
     (hnev : ∀ b ∈ cbs, (Level.substPW cvc.levelParams us b.2.pw).isNever = true)
     (hP : 1 ≤ nP) (hn : 2 ≤ nP + nF) :
-    ¬ EtaStable env ∧ ¬ EtaUseFacts env T kc cvT caps nP nF := by
+    ¬ EtaClauseOpen env T kc nP nF ∧ ¬ EtaStableOpen env := by
   obtain ⟨args, ty, hlen, hinf, hnot⟩ := etaType_open_false hS hkc hty hstrip hus hnev hP hn T 0
-  exact ⟨fun h => hnot (h T kc cvT cvc caps nP nF hT heta hctor hkc env
-      (Ix.Kernel.EnvExt.refl env) 0 us args ty hlen hinf),
-    fun h => hnot (h.type 0 us args ty hlen hinf)⟩
+  exact ⟨fun h => hnot (h 0 us args ty hlen hinf),
+    fun h => hnot (h T kc cvT cvc caps nP nF hT heta hctor hkc env (Ix.Kernel.EnvExt.refl env)
+      0 us args ty hlen hinf)⟩
 
 /-- **The same at the fold invariant**, with the binder data read as the zero-ness of a level
 (the constructor check's `ctorZeroOk`, the projection table's `structSort`) that is never zero at
 `us`. Every other premise is the family's own shape. -/
-theorem FoldStoreInv.not_etaStable {env : Env .anon} (h : FoldStoreInv env)
+theorem FoldStoreInv.not_etaClauseOpen {env : Env .anon} (h : FoldStoreInv env)
     {T kc : KKey} {cvT cvc : ConstantVal .anon} {caps : IndCaps .anon} {nP nF : Nat}
     (hT : env.find? T = some (.indInfo cvT caps)) (heta : caps.eta = true)
     (hctor : caps.etaCtor = some kc) (hkc : env.find? kc = some (.ctorInfo cvc nP nF))
@@ -273,25 +287,9 @@ theorem FoldStoreInv.not_etaStable {env : Env .anon} (h : FoldStoreInv env)
     {us : List KLevel} (hus : us.length = cvc.levelParams.length)
     (hnz : (Level.subst cvc.levelParams us l).isNeverZero = true)
     (hP : 1 ≤ nP) (hn : 2 ≤ nP + nF) :
-    ¬ EtaStable env ∧ ¬ EtaUseFacts env T kc cvT caps nP nF :=
-  not_etaStable_of_param (BClosedStore.of_wf h.store.wf) hT heta hctor hkc
+    ¬ EtaClauseOpen env T kc nP nF ∧ ¬ EtaStableOpen env :=
+  not_etaClauseOpen_of_param (BClosedStore.of_wf h.store.wf) hT heta hctor hkc
     (envWF_type_bclosed h.store.wf hkc) hstrip hus (never_of_zeroness hnz hz) hP hn
-
-/-- **The prefix invariant excludes such a family**: `PrefixInv` carries `EtaStable` and the fold
-invariant, so it does not hold at an environment storing an η-capable family with a parameter and
-a second binder, never-zero at some levels. -/
-theorem PrefixInv.no_param_eta {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Option Nat}
-    {env : Env .anon} (h : PrefixInv.{u} E t lim env)
-    {T kc : KKey} {cvT cvc : ConstantVal .anon} {caps : IndCaps .anon} {nP nF : Nat}
-    (hT : env.find? T = some (.indInfo cvT caps)) (heta : caps.eta = true)
-    (hctor : caps.etaCtor = some kc) (hkc : env.find? kc = some (.ctorInfo cvc nP nF))
-    {cbs : List (KExpr × BinderMeta)} {res : KExpr} {l : KLevel}
-    (hstrip : cvc.type.stripPis (nP + nF) = some (cbs, res))
-    (hz : ∀ b ∈ cbs, b.2.pw = Level.zeronessOf l)
-    {us : List KLevel} (hus : us.length = cvc.levelParams.length)
-    (hnz : (Level.subst cvc.levelParams us l).isNeverZero = true)
-    (hP : 1 ≤ nP) (hn : 2 ≤ nP + nF) : False :=
-  (h.store.not_etaStable hT heta hctor hkc hstrip hz hus hnz hP hn).1 h.etaStable
 
 /-- **The typing clause at every spine**, read off the constructor's own stored shape. False:
 `EtaOpenExample.not_etaTypeOpen`. -/
@@ -307,7 +305,7 @@ def EtaTypeOpenStmt : Prop :=
       Infer env .io d (Expr.mkAppN (.const kc us) args) ty →
       Red env d ty (Expr.mkAppN (.const T us) (args.take nP))
 
-/-! ## The true form: parameters with no loose bound variable -/
+/-! ## The clause at parameters with no loose bound variable -/
 
 /-- **The typing clause at closed parameters** (free variables allowed), read off the stored
 constructor. -/
@@ -327,118 +325,28 @@ theorem etaTypeClosed : EtaTypeClosedStmt :=
   fun _ _ _ _ _ _ _ hkc hnd hstrip _ _ _ _ hlen hcl hinf =>
     etaType_of_closed_stored hkc hnd hstrip hlen hcl hinf
 
-/-- **`EtaStable` at closed parameters.** -/
-def EtaStableC (env : Env .anon) : Prop :=
-  ∀ (T kc : KKey) (cvT cvc : ConstantVal .anon) (caps : IndCaps .anon) (nP nF : Nat),
-    env.find? T = some (.indInfo cvT caps) → caps.eta = true → caps.etaCtor = some kc →
-    env.find? kc = some (.ctorInfo cvc nP nF) →
-    ∀ env' : Env .anon, Ix.Kernel.EnvExt env env' →
-      ∀ (d : Nat) (us : List KLevel) (args : List KExpr) (ty : KExpr),
-        args.length = nP + nF → (∀ s ∈ args.take nP, s.looseBVarsBounded 0 = true) →
-        Infer env' .io d (Expr.mkAppN (.const kc us) args) ty →
-          Red env' d ty (Expr.mkAppN (.const T us) (args.take nP))
-
-/-- **It holds wherever the stored η-capable families have their shape**, at every extension:
-an extension keeps the constructor, and the inversion reads nothing else (a later projection
-table or recursor is not read). -/
-theorem etaStableC_of_etaShape {env : Env .anon} (h : EtaShape env) : EtaStableC env := by
+/-- **`EtaStable` holds wherever the stored η-capable families have their shape**, at every
+extension: an extension keeps the constructor, and the inversion reads nothing else (a later
+projection table or recursor is not read). -/
+theorem etaStable_of_etaShape {env : Env .anon} (h : EtaShape env) : EtaStable env := by
   intro T kc cvT cvc caps nP nF hT heta hctor hkc env' hext d us args ty hlen hcl hinf
   obtain ⟨_, hshape⟩ := h T cvT caps hT heta
   obtain ⟨hnd, _, _, _, cbs, hstrip⟩ := hshape kc cvc nP nF hctor hkc
   exact etaType_of_closed_stored (hext.find hkc) hnd hstrip hlen hcl hinf
 
-theorem FoldStoreInv.etaStableC {env : Env .anon} (h : FoldStoreInv env) : EtaStableC env :=
-  etaStableC_of_etaShape h.etaShape
+/-- **`EtaStable` at the fold invariant.** -/
+theorem FoldStoreInv.etaStable {env : Env .anon} (h : FoldStoreInv env) : EtaStable env :=
+  etaStable_of_etaShape h.etaShape
 
-/-- **`EtaStable` as stated holds where no η-capable family has a parameter.** -/
-theorem etaStable_of_etaShape_noParams {env : Env .anon} (h : EtaShape env)
-    (h0 : ∀ T cvT caps, env.find? T = some (.indInfo cvT caps) → caps.eta = true →
-      caps.etaParams = 0) : EtaStable env := by
-  intro T kc cvT cvc caps nP nF hT heta hctor hkc env' hext d us args ty hlen hinf
-  obtain ⟨_, hshape⟩ := h T cvT caps hT heta
-  obtain ⟨hnd, _, hnP, _, cbs, hstrip⟩ := hshape kc cvc nP nF hctor hkc
-  have h0' : nP = 0 := hnP.trans (h0 T cvT caps hT heta)
-  subst h0'
-  exact etaType_of_closed_stored (hext.find hkc) hnd hstrip hlen (by simp) hinf
-
-/-- **`EtaStable` as stated across an extension that adds only families with no parameter**: the
-families with a parameter are the shorter environment's, with their constructors, and keep its
-`EtaStable`; the others hold from their shape. -/
-theorem EtaStable.of_ext_noParams {env env₂ : Env .anon} (h : EtaStable env)
-    (hext : Ix.Kernel.EnvExt env env₂) (hshape : EtaShape env₂)
-    (hold : ∀ T cvT caps, env₂.find? T = some (.indInfo cvT caps) → caps.eta = true →
-      caps.etaParams ≠ 0 → env.find? T = some (.indInfo cvT caps) ∧
-        ∀ kc c, caps.etaCtor = some kc → env₂.find? kc = some c → env.find? kc = some c) :
-    EtaStable env₂ := by
-  intro T kc cvT cvc caps nP nF hT heta hctor hkc env' hext' d us args ty hlen hinf
-  by_cases h0 : caps.etaParams = 0
-  · obtain ⟨_, hsh⟩ := hshape T cvT caps hT heta
-    obtain ⟨hnd, _, hnP, _, cbs, hstrip⟩ := hsh kc cvc nP nF hctor hkc
-    have h0' : nP = 0 := hnP.trans h0
-    subst h0'
-    exact etaType_of_closed_stored (hext'.find hkc) hnd hstrip hlen (by simp) hinf
-  · obtain ⟨hT₁, hk₁⟩ := hold T cvT caps hT heta h0
-    exact h T kc cvT cvc caps nP nF hT₁ heta hctor (hk₁ kc _ hctor hkc) env' (hext.trans hext')
-      d us args ty hlen hinf
-
-/-- **`EtaUseFacts` at closed parameters.** -/
-structure EtaUseFactsC (env : Env .anon) (T kc : KKey) (cvT : ConstantVal .anon)
-    (caps : IndCaps .anon) (nP nF : Nat) : Prop where
-  towers : Ix.Kernel.towerSlotsAll env T caps.etaFields = true
-  sort : ∃ bs l, cvT.type.stripPis caps.etaParams = some (bs, .sort l) ∧
-    caps.sortZ = Level.zeronessOf l
-  type : ∀ (d : Nat) (us : List KLevel) (args : List KExpr) (ty : KExpr),
-    args.length = nP + nF → (∀ s ∈ args.take nP, s.looseBVarsBounded 0 = true) →
-    Infer env .io d (Expr.mkAppN (.const kc us) args) ty →
-      Red env d ty (Expr.mkAppN (.const T us) (args.take nP))
-
-theorem FoldStoreInv.etaUseFactsC {env : Env .anon} (h : FoldStoreInv env)
+/-- **The η use facts at the fold invariant**, at every stored η-capable family: the tower
+slots, the sort, and the typing clause. -/
+theorem FoldStoreInv.etaUseFacts {env : Env .anon} (h : FoldStoreInv env)
     {T kc : KKey} {cvT cvc : ConstantVal .anon} {caps : IndCaps .anon} {nP nF : Nat}
     (hT : env.find? T = some (.indInfo cvT caps)) (heta : caps.eta = true)
     (hctor : caps.etaCtor = some kc) (hkc : env.find? kc = some (.ctorInfo cvc nP nF)) :
-    EtaUseFactsC env T kc cvT caps nP nF where
+    EtaUseFacts env T kc cvT caps nP nF where
   towers := h.etaTowers T cvT caps hT heta
   sort := (h.etaShape T cvT caps hT heta).1
-  type := fun d us args ty hlen hcl hinf =>
-    h.etaStableC T kc cvT cvc caps nP nF hT heta hctor hkc env (Ix.Kernel.EnvExt.refl env)
-      d us args ty hlen hcl hinf
-
-/-- **`EtaUseFacts` as stated, at a family with no parameter.** -/
-theorem FoldStoreInv.etaUseFacts_noParams {env : Env .anon} (h : FoldStoreInv env)
-    {T kc : KKey} {cvT cvc : ConstantVal .anon} {caps : IndCaps .anon} {nF : Nat}
-    (hT : env.find? T = some (.indInfo cvT caps)) (heta : caps.eta = true)
-    (hctor : caps.etaCtor = some kc) (hkc : env.find? kc = some (.ctorInfo cvc 0 nF)) :
-    EtaUseFacts env T kc cvT caps 0 nF :=
-  ⟨h.etaTowers T cvT caps hT heta, (h.etaShape T cvT caps hT heta).1,
-    fun d us args ty hlen hinf =>
-      (h.etaUseFactsC hT heta hctor hkc).type d us args ty hlen (by simp) hinf⟩
-
-/-! ## What the consumers hold -/
-
-/-- **A list of top-level circuit terms has no loose bound variable** (a free de Bruijn index of
-the circuit is an opened variable, `Tm.bvarFree`). -/
-theorem TmL.bclosed {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
-    {h : Aiur.Heap F} {Es : List KExpr} {p : Aiur.SourceValue F}
-    (rep : TmL κ d Γ h Es p) : ∀ E ∈ Es, E.looseBVarsBounded 0 = true := by
-  induction rep with
-  | nil _ => intro E hE; simp at hE
-  | cons _ rh _ ih =>
-    intro E hE
-    rcases List.mem_cons.mp hE with rfl | hE
-    · exact Tm.looseBVarsBounded rh
-    · exact ih E hE
-
-/-- **The closed form serves the consumers**: at an argument list the circuit represents (as
-`try_eta_struct_step` and `eta_iota_fab_step` hold theirs), the closed clause gives the open
-one's conclusion. -/
-theorem EtaUseFactsC.type_tml {env : Env .anon} {T kc : KKey} {cvT : ConstantVal .anon}
-    {caps : IndCaps .anon} {nP nF : Nat} (hU : EtaUseFactsC env T kc cvT caps nP nF)
-    {κ : _root_.Address → KKey} {d' : Nat} {Γ : Nat → KExpr} {h : Aiur.Heap F}
-    {args : List KExpr} {p : Aiur.SourceValue F}
-    (hrep : TmL κ d' Γ h args p) {d : Nat} {us : List KLevel} {ty : KExpr}
-    (hlen : args.length = nP + nF)
-    (hinf : Infer env .io d (Expr.mkAppN (.const kc us) args) ty) :
-    Red env d ty (Expr.mkAppN (.const T us) (args.take nP)) :=
-  hU.type d us args ty hlen (fun s hs => TmL.bclosed hrep s (List.mem_of_mem_take hs)) hinf
+  type := h.etaStable T kc cvT cvc caps nP nF hT heta hctor hkc env (Ix.Kernel.EnvExt.refl env)
 
 end IxVM.Refinement.Decl
