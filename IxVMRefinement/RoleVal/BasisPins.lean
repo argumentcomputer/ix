@@ -400,4 +400,126 @@ theorem basis_pin_bound {ro : Ix.Kernel.Role} {ptr : SourceValue F}
     have hbad : (1 : F) = 0 := Value.field.inj (List.cons.inj (Value.tuple.inj hp)).1
     exact (one_ne_zero hbad).elim
 
+
+/-- Select the tail of a tuple whose leading literal is the pinned flag. -/
+private def pinFlagArm (k : Nat) :
+    List (Generic.Pattern F × Generic.Expr F) → Option (List (Generic.Expr F))
+  | (.literal c, .tuple (.literal tag :: tail)) :: rest =>
+      if k == ZMod.val c then if tag == 1 then some tail else none else pinFlagArm k rest
+  | (.wildcard, .tuple (.literal tag :: tail)) :: _ =>
+      if tag == 1 then some tail else none
+  | _ => none
+
+private def pinArms : List (Generic.Pattern F × Generic.Expr F) :=
+  match IxVM.KernelRoles.basis_pin.body with
+  | .matchValue _ arms => arms
+  | _ => []
+
+private theorem pinFlagArm_select {arms : List (Generic.Pattern F × Generic.Expr F)}
+    {x : F} {tail : List (Generic.Expr F)}
+    (ht : pinFlagArm (ZMod.val x) arms = some tail)
+    {h : Heap F} {bs : Environment F Nat} {body : Generic.Expr F}
+    (hs : selectArm Obs.W [] h (.field x) arms = .ok (some (bs, body))) :
+    bs = [] ∧ body = .tuple (.literal 1 :: tail) := by
+  induction arms with
+  | nil => simp [pinFlagArm] at ht
+  | cons arm rest ih =>
+    rcases arm with ⟨pat, expr⟩
+    cases pat <;> try (solve | simp [pinFlagArm] at ht)
+    case literal c =>
+      cases expr <;> try (solve | simp [pinFlagArm] at ht)
+      case tuple es =>
+        cases es with
+        | nil => simp [pinFlagArm] at ht
+        | cons e es =>
+          cases e <;> try (solve | simp [pinFlagArm] at ht)
+          case literal tag =>
+            simp only [pinFlagArm] at ht
+            by_cases he : (ZMod.val x == ZMod.val c) = true
+            · rw [ite_eq_left he] at ht
+              by_cases htag : (tag == 1) = true
+              · rw [ite_eq_left htag] at ht
+                injection ht with htail
+                subst tail
+                have hx : x = c := ZMod.val_injective _ (beq_iff_eq.mp he)
+                have ht1 : tag = 1 := beq_iff_eq.mp htag
+                subst c tag
+                rcases selectArm_cons_inv hs with ⟨hm, rfl⟩ | ⟨hn, _⟩
+                · exact ⟨(MatchesConst.some_inv (MatchesConst.literal x) hm).2, rfl⟩
+                · exact (MatchesConst.none_inv (MatchesConst.literal x) hn rfl).elim
+              · rw [ite_eq_right htag] at ht
+                cases ht
+            · rw [ite_eq_right he] at ht
+              have hne : x ≠ c := fun hxc => he (beq_iff_eq.mpr (congrArg ZMod.val hxc))
+              rcases selectArm_cons_inv hs with ⟨hm, _⟩ | ⟨_, hs'⟩
+              · exact (hne (Value.field.inj
+                  (MatchesConst.some_inv (MatchesConst.literal c) hm).1)).elim
+              · exact ih ht hs'
+    case wildcard =>
+      cases expr <;> try (solve | simp [pinFlagArm] at ht)
+      case tuple es =>
+        cases es with
+        | nil => simp [pinFlagArm] at ht
+        | cons e es =>
+          cases e <;> try (solve | simp [pinFlagArm] at ht)
+          case literal tag =>
+            simp only [pinFlagArm] at ht
+            by_cases htag : (tag == 1) = true
+            · rw [ite_eq_left htag] at ht
+              injection ht with htail
+              subst tail
+              have ht1 : tag = 1 := beq_iff_eq.mp htag
+              subst tag
+              rcases selectArm_cons_inv hs with ⟨hm, rfl⟩ | ⟨hn, _⟩
+              · exact ⟨matchPattern_wildcard_inv hm, rfl⟩
+              · exact (matchPattern_wildcard_none hn).elim
+            · rw [ite_eq_right htag] at ht
+              cases ht
+
+private theorem pinFlagArm_prelude (ro : Ix.Kernel.Role)
+    (hr : ro ∈ Ix.Kernel.preludeShape.flatMap id) :
+    (pinFlagArm ro.idx pinArms).isSome = true := by
+  cases ro <;> simp [Ix.Kernel.preludeShape] at hr
+  all_goals decide +kernel
+
+/-- Every prelude role actually takes a pinned branch, including in an assumed role context. -/
+theorem basis_pin_prelude_flag {ro : Ix.Kernel.Role}
+    (hr : ro ∈ Ix.Kernel.preludeShape.flatMap id)
+    {flag ptr : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (ev : ObsFn Obs.W "KernelRoles::basis_pin" [.field (roleNum ro)] h
+      (.tuple [flag, ptr]) h' calls) : flag = .field 1 := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoles.basis_pin.lookup
+    (by simp [IxVM.KernelRoles.basis_pin, ControlLower.hasControl]) ev
+  have hp : (IxVM.KernelRoles.basis_pin.params.map fun (n, t) =>
+      (n, (t.subst []).toCore)).map Prod.fst = ["r"] := rfl
+  have hb : IxVM.KernelRoles.basis_pin.body = .matchValue (.var "r") pinArms := rfl
+  rw [hp, hb] at d0
+  obtain ⟨_, _, _, _, _, _, dv, hs, db, _⟩ := d0.matchValue_inv
+  obtain ⟨lookup, rfl, rfl⟩ := dv.var_inv
+  simp at lookup
+  subst lookup
+  have hsome := pinFlagArm_prelude ro hr
+  cases he : pinFlagArm ro.idx pinArms with
+  | none => rw [he] at hsome; cases hsome
+  | some tail =>
+    have he' : pinFlagArm (ZMod.val (roleNum ro)) pinArms = some tail := by
+      simpa only [RolesAux.val_roleNum] using he
+    obtain ⟨rfl, rfl⟩ := pinFlagArm_select he' hs
+    obtain ⟨vs, args, hout⟩ := db.tuple_inv
+    obtain ⟨v, rest, _, _, _, hvs, literal, _, _⟩ := args.cons_inv
+    obtain ⟨rfl, rfl, rfl⟩ := literal.literal_inv
+    simp_all only [Value.tuple.injEq, List.cons.injEq]
+
+/-- A prelude lookup returns exactly the committed address, with no external flag premise. -/
+theorem basis_pin_prelude {ro : Ix.Kernel.Role}
+    (hr : ro ∈ Ix.Kernel.preludeShape.flatMap id)
+    {flag ptr : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (ev : ObsFn Obs.W "KernelRoles::basis_pin" [.field (roleNum ro)] h
+      (.tuple [flag, ptr]) h' calls) :
+    flag = .field 1 ∧
+      ∃ a, committedDefaultRoleTable.addressOf? ro = some a ∧ S0.addr h' ptr a := by
+  have hf := basis_pin_prelude_flag hr ev
+  subst flag
+  exact ⟨rfl, basis_pin_bound ev⟩
+
 end IxVM.Refinement.RoleVal
