@@ -1608,7 +1608,11 @@ def check_recs := aiur_fn⟦
               -- the raw type, as `check_const` checks a recursor reached directly
               KernelCheck::validate_expr_well_scoped(ty, 0, nl);
               -- and it names no member of its own family record, so that every constant it
-              -- names is the block's or stored before the family
+              -- names is the block's or stored before the family. No stored record reaches
+              -- this: `get_ci` above reads a recursor's type with no recursive reference in scope
+              -- (a `Rec` node does not convert), and a `Ref` to a member of the same family
+              -- record would name an address computed from the record itself. Kept as the
+              -- condition the refinement states.
               assert_eq!(expr_mentions_addrs(ty, fam), 0,
                 "a modeled recursor's type mentions its own family");
               KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
