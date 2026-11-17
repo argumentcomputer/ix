@@ -29,11 +29,11 @@ theorem former_is_tele_one_cells :
     | .n0_Srt (hv14 := hv) .. | .n0_other (hv14 := hv) .. =>
       exact absurd hv (succ_field_ne_zero_bounded hlt)
     | .other_other (he125 := hr) .. => exact nomatch hr
-    | .other_Forall (w73 := dom) (x_b := body) (w74 := meta) (ld65 := ld)
+    | .other_Forall (w73 := dom) (x_b := body) (w74 := metaPtr) (ld65 := ld)
         (op118 := op) (ev95 := rest) .. =>
       rw [evalBinOp_sub_succ n op] at rest
       obtain ⟨level, tail⟩ := former_is_tele_one_cells n (by omega) rest
-      exact ⟨level, dom, body, meta, ld, tail⟩
+      exact ⟨level, dom, body, metaPtr, ld, tail⟩
 
 /-- The same actual cells force a successful answer, regardless of the observed derivation. -/
 theorem former_is_tele_of_cells :
@@ -47,12 +47,12 @@ theorem former_is_tele_of_cells :
       exact (hn [level] rfl (Except.ok.inj (ld.symm.trans shape))).elim
     | .other_Forall (hne50 := hne) .. | .other_other (hne50 := hne) .. =>
       exact absurd rfl hne
-  | n + 1, p, level, r, h, h', cs, hlt, ⟨dom, body, meta, cell, tail⟩, ev => by
+  | n + 1, p, level, r, h, h', cs, hlt, ⟨dom, body, metaPtr, cell, tail⟩, ev => by
     match Obs.«KernelCheck::former_is_tele».obs ev with
     | .n0_Srt (hv14 := hv) .. | .n0_other (hv14 := hv) .. =>
       exact absurd hv (succ_field_ne_zero_bounded hlt)
     | .other_other (ld65 := ld) (hne121 := hn) .. =>
-      exact (hn [dom, body, meta] rfl (Except.ok.inj (ld.symm.trans cell))).elim
+      exact (hn [dom, body, metaPtr] rfl (Except.ok.inj (ld.symm.trans cell))).elim
     | .other_Forall (ld65 := ld) (op118 := op) (ev95 := rest) .. =>
       have he := Except.ok.inj (cell.symm.trans ld)
       simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at he
