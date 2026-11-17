@@ -55,18 +55,22 @@ theorem indMembersRunJ_noModel {K : Judgements md} {blockNames : List (Key md)}
   | _, ci :: rest, _, h => by
     obtain ⟨cvA, hmv, hm⟩ := h
     obtain ⟨type', -, hcvA, hsuf, -⟩ := hmv
-    intro c hc
-    rcases List.mem_cons.mp hc with rfl | hc
-    · have hn : cvA.name = c.name := by rw [hcvA]; rfl
+    have hhead : ci.name.isModelSuffix = false := by
+      have hn : cvA.name = ci.name := by rw [hcvA]; rfl
       rw [← hn]; exact hsuf
-    · cases ci with
-      | indInfo _ _ => exact indMembersRunJ_noModel hm c hc
-      | ctorInfo _ _ _ => exact indMembersRunJ_noModel hm c hc
+    have htail : ∀ c ∈ rest, c.name.isModelSuffix = false := by
+      cases ci with
+      | indInfo _ _ => exact indMembersRunJ_noModel hm
+      | ctorInfo _ _ _ => exact indMembersRunJ_noModel hm
       | axiomInfo _ => exact nomatch hm
       | defnInfo _ _ _ => exact nomatch hm
       | thmInfo _ _ => exact nomatch hm
       | recInfo _ _ _ _ => exact nomatch hm
       | projInfo _ => exact nomatch hm
+    intro c hc
+    rcases List.mem_cons.mp hc with rfl | hc'
+    · exact hhead
+    · exact htail c hc'
 
 /-- The recursors' front doors: no recursor's name is a model's key. -/
 theorem provisionRecsRunJ_noModel {K : Judgements md} {blockNames : List (Key md)} :
@@ -85,7 +89,7 @@ theorem provisionRecsRunJ_noModel {K : Judgements md} {blockNames : List (Key md
     · exact provisionRecsRunJ_noModel hrec c hc
 
 /-- **No block name is a model's key**, on the renamed record. -/
-theorem DeclIndRenRunJ.noModel {J : Judgements md} {env env₂ : Env md}
+theorem declIndRenRunJ_noModel {J : Judgements md} {env env₂ : Env md}
     {block : List (ConstantInfo md)} (h : DeclIndRenRunJ J env block env₂) :
     ∀ n, (block.map (·.name)).contains n = true → n.isModelSuffix = false := by
   obtain ⟨hsplit, envM, hmem, hrecs⟩ := h
@@ -111,7 +115,7 @@ theorem declIndRenJ {J : Judgements md}
     (hE : Ix.Kernel.EtaFamiliesClosed env)
     (h : DeclIndRenRunJ J env block env₂) :
     ∃ mp₂ : EnvModelM V μ env₂, ModelExt mp mp₂ := by
-  have hns := h.noModel
+  have hns := declIndRenRunJ_noModel h
   obtain ⟨hsplit, envM, hmem, hrecs⟩ := h
   -- the block's split
   have hbnAll : ∀ ci ∈ block,
