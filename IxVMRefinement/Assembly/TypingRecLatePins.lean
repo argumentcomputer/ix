@@ -235,7 +235,7 @@ theorem recr_rules_size_lt {rawBytes : ByteArray} {c : Ixon.Constant} {rc : Ixon
 /-- Field images of two counts below the modulus are equal only if the counts are. -/
 theorem field_nat_inj {a b : Nat} (ha : a < 18446744069414584321)
     (hb : b < 18446744069414584321)
-    (h : (SourceValue.field (a : F) : SourceValue F) = .field (b : F)) : a = b := by
+    (h : ((.field (a : F)) : SourceValue F) = .field (b : F)) : a = b := by
   have h' := congrArg ZMod.val (Value.field.inj h)
   rwa [ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega),
     ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)] at h'
@@ -270,5 +270,181 @@ theorem rulesTrace_length_spec {refs recurAddrs : List _root_.Address}
     rw [Obs.Names.«Lists::Node<KernelTypes::KRecRule>».symbol]
     exact RulesTraceRep.toRepListTrue hr
   exact (Lib.Lists.length_spec ev' hl').1
+
+/-! ## The counts -/
+
+/-- **The record's counts against its parent's member inductive.** At an environment the
+skeleton hands the step, for the parent `P` tied to the record (`RecMajorTie`) whose record in
+`E` is the projection `ip` of member `ind` of the block `cb`: the record declares the member's
+parameter and index counts, one motive, and one rule per constructor. -/
+theorem rec_counts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
+    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlim : lim = some n)
+    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
+    {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
+    {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
+    (hcm : Ix.Cert.recordAt E P = some cm) (hcmi : cm.info = .iPrj ip)
+    (htie : RecMajorTie t E₀ A c rc P)
+    {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (hcb : Ix.Cert.recordAt E ip.block = some cb) (hms : cb.info = .muts ms)
+    (hind : ms[ip.idx.toNat]? = some (.indc ind)) :
+    rc.params.toNat = ind.params.toNat ∧ rc.indices.toNat = ind.indices.toNat ∧
+      rc.motives.toNat = 1 ∧ rc.rules.size = ind.ctors.size := by
+  subst hlim
+  have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
+  have hgood : Core.Good ⟨E, env, t, some n⟩ calls := hst.good env (some n)
+  have hbound : Bounded calls := hgood.2
+  have hrec₀ : Ix.Cert.recordAt E₀ A = some c := (hS.recordOf_eq_recordAt A).symm.trans hc
+  have hstored : Decl.UsedRefsStored t env c :=
+    usedRefsStored_of_cover (hcover env ⟨hstep.ext, hstep.refs, hstep.fresh⟩) hinert
+  obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
+    minors, rules, kf, uns, block, position, cs_load, cs_chk, -, -, ha_pre, -, ev_ld, hsub_ld,
+    hld, ev_chk, hsub_chk⟩ := hnat
+  -- the record has few rules
+  obtain ⟨rawB, cB, hszB, hhB, hbaB, hexB⟩ := get_ci_bytes_bound ha_pre ev_ld
+  have hcB : cB = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hhB) hbaB hexB
+  subst cB
+  have hrules_lt := recr_rules_size_lt hszB hexB hinfo
+  -- one motive
+  have hmot := (check_const_rec_arm ev_chk).1
+  obtain ⟨a', ha'_ref, haA⟩ := ha_pre
+  subst haA
+  -- the load of the record, traced
+  obtain ⟨rawBytes, c', hh, hba, hex, -, hres'⟩ :=
+    L1.get_ci_block_trace_spec (hgood.sub hsub_ld).2 ha'_ref ev_ld
+  have hcc : c' = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hh) hba hex
+  subst c'
+  unfold L1.GetCIBlockTraceResult at hres'
+  rw [hinfo] at hres'
+  obtain ⟨blobs, tree, v, hhp, built, hldv, htr⟩ := hres'
+  rw [hld] at hldv
+  obtain ⟨hlvls, hp56, hi56, hm56, hmi56, -, tyPtr, rulesPtr, blkPtr, b, planT, -, -, hv, rty,
+    -, -, hrulesTr⟩ := htr
+  subst hv
+  injection hldv with hv'
+  injection hv' with _ _ hfields
+  simp only [List.cons.injEq, and_true] at hfields
+  obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, -, -, -, -⟩ := hfields
+  have hblob : ∀ x bs, (x, bs) ∈ blobs → E₀.blobs.get? x = some bs := by
+    intro x bs hm
+    obtain ⟨hhx, hxa⟩ := hhp (x, bs) hm
+    have hhx' : Hashed cs_load bs := hhx
+    have hxa' : Address.blake3Pure bs = x := hxa
+    have hrun := hS.blobs bs (Core.hashed_mono hsub_ld hhx')
+    rw [hxa'] at hrun
+    exact hrun
+  -- the type reads, well scoped, represented under the prefix keying
+  obtain ⟨tyP, htyP⟩ := LoadedReads.exprReader_read_ok (t := t)
+    (blob := fun x => E₀.blobs.get? x) ht (param := id) (self := soloSelf t (Core.ixAddr a'))
+    rty (fun i x hx => by simp at hx) hblob
+  obtain ⟨sB, sA, mH, sR, sCs, mCs, hextS, evS, hmemS, hextM, evM, hsubM⟩ :=
+    check_const_rec_route ev_chk
+  obtain ⟨-, hlbb, hdef⟩ := Assembly.validate_expr_well_scoped_spec
+    (cx := readCtx t (fun x => E₀.blobs.get? x)) (self := soloSelf t (Core.ixAddr a'))
+    hbound hlvls rty hextS htyP evS (hsub_chk _ hmemS)
+  have hrd : (Ix.Kernel.Reader.MemberReader.mk' (readCtx t (fun x => E₀.blobs.get? x)) c
+      (Ix.Kernel.Reader.recParam (List.range rc.lvls.toNat))
+      (soloSelf t (Core.ixAddr a'))).read rc.typ = .ok tyP := by
+    rw [Assembly.recParam_range]
+    exact htyP
+  obtain ⟨E', hann, htm⟩ := rty.toTmC (κ := Core.keyOf t) (ps := List.range rc.lvls.toNat)
+    (by simp) (by simpa using hlvls) (LoadedReads.readCtx_keyAt_inv ht _)
+    (fun i x m k hx => by simp at hx) hblob hrd hlbb hdef
+  have htmS := Decl.tmC_stored_of_usedRefs (E₀ := E) (env := env) (lim := some n) rty
+    (recr_typ_usedRefs hinfo) hstored htm
+  rw [Decl.posOf_range] at htmS
+  have hsum : ZMod.val ((rc.params.toNat : F) + (rc.motives.toNat : F) + (rc.minors.toNat : F) +
+      (rc.indices.toNat : F)) =
+      rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat := by
+    rw [← Nat.cast_add, ← Nat.cast_add, ← Nat.cast_add]
+    exact ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
+  -- the member check: route, counts, rule list length
+  obtain ⟨parent, pointer, scanHeap, loadedHeap, routedHeap, scanCalls, loadCalls, routeCalls,
+    nl, pty, np, ni, nc, pu, blk, idx, lenHeap, lenAfter, kHeap, kAfter, canonHeap, len, kTarget,
+    lenCalls, kCalls, canonCalls, evScan, hsScan, evLoad, hsLoad, hldP, evRoute, hsRoute,
+    hnp, hni, eLen, evLen, hsLen, hlenEq, -, -, -, -, -, -, -⟩ := native_rec_member_full evM
+  have hsScan' : ∀ x ∈ scanCalls, x ∈ calls := fun x hx => hsub_chk x (hsubM x (hsScan x hx))
+  have hsLoad' : ∀ x ∈ loadCalls, x ∈ calls := fun x hx => hsub_chk x (hsubM x (hsLoad x hx))
+  -- the route's parent is the tied one
+  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, some n⟩
+  have hcS : Core.ScopedCoreFacts cS := hstep.inv.scopedCoreFacts
+  have htmM := htmS.mono hextM
+  obtain ⟨a, dom, us, ha, hpi, hhead⟩ := Decl.scopedCalleesSpec cS hcS .rec_to_parent_addr _ _ _
+    _ _ evScan _ _ _ _ _ rfl (Core.CoreGood.ofRaw (hgood.sub hsScan') (fun _ _ => trivial)) E' htmM
+  have hkr : Core.KeysResolved E' := (htmM 0 (fun _ => .sort .zero)).keysResolved
+  have hne : cS.κ (Core.ixAddr a) ≠ Core.unresolvedKey :=
+    keysResolved_getAppFn (keysResolved_piDomAt _ hkr hpi) hhead
+  have hkey : cS.κ (Core.ixAddr a) = Core.keyOf t (Core.ixAddr a) := cS.key_eq hne
+  have hhead' := hhead
+  rw [hkey] at hhead'
+  have hmajA : majorKey rc E' = some (keyOf t (Core.ixAddr a)) :=
+    majorKey_of_piDomAt (by rw [← hsum]; exact hpi) hhead'
+  obtain ⟨tyP', E'', htyP', hann', hmajP⟩ := htie
+  have htyEq : tyP' = tyP := Except.ok.inj (htyP'.symm.trans htyP)
+  subst htyEq
+  have hkeys : keyOf t P = keyOf t (Core.ixAddr a) :=
+    Option.some.inj (hmajP.symm.trans ((majorKey_annotates_eq (rc := rc) hann' hann).trans hmajA))
+  have hPa : P = Core.ixAddr a := keyOf_inj hroles hkeys
+  subst hPa
+  -- the parent's load, traced: the member `ind` of the block `cb`
+  have hgL : Core.Good ⟨E, env, t, some n⟩ loadCalls := hgood.sub hsLoad'
+  obtain ⟨rawP, cP, hhP, hbaP, hexP, -, hresP⟩ := L1.get_ci_block_trace_spec hgL.2 ha evLoad
+  have hrecP : recordOf E (Core.ixAddr a) = some cm := by
+    rw [recordOf_eq_recordAt_of_decoded hst.decoded]
+    exact hcm
+  obtain ⟨lc, hget, hdec⟩ := LoadedReads.recordOf_inv hrecP
+  have hbP : rawP = lc.rawBytes := Core.load_escape hget hgL.1 rawP hhP hbaP
+  have hcP : cP = cm := by
+    rw [hbP, hdec] at hexP
+    exact (Except.ok.inj hexP).symm
+  subst hcP
+  unfold L1.GetCIBlockTraceResult at hresP
+  rw [hcmi] at hresP
+  obtain ⟨-, blkBytes, cb', ms', ind', blobs', tree', plan', v₀, hhB', haB', hexB', hcb', hms',
+    -, -, -, hld₀, hraw, -⟩ := hresP
+  have hrecB : recordOf E ip.block = some cb := by
+    rw [recordOf_eq_recordAt_of_decoded hst.decoded]
+    exact hcb
+  obtain ⟨lcB, hgetB, hdecB⟩ := LoadedReads.recordOf_inv hrecB
+  have hbB : blkBytes = lcB.rawBytes := Core.load_escape hgetB hgL.1 blkBytes hhB' haB'
+  have hcbEq : cb' = cb := by
+    rw [hbB, hdecB] at hexB'
+    exact (Except.ok.inj hexB').symm
+  subst hcbEq
+  have hmsEq : ms' = ms := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hms)
+  subst hmsEq
+  have hlist : ms'.toList[ip.idx.toNat]? = ms'[ip.idx.toNat]? := by simp
+  rw [hlist, hind] at hms'
+  have hindEq : ind = ind' := Ixon.MutConst.indc.inj (Option.some.inj hms')
+  subst hindEq
+  obtain ⟨hlvlsP, hpP, hiP, hcP56, hidxP, tyPtrP, blkPtrP, bP, -, -, hvP, -⟩ := hraw
+  subst hvP
+  rw [hld₀] at hldP
+  injection hldP with hvP'
+  injection hvP' with _ _ hpf
+  simp only [List.cons.injEq, and_true] at hpf
+  obtain ⟨-, -, hnpEq, hniEq, hncEq, -, -, -⟩ := hpf
+  -- the counts
+  have hparams : rc.params.toNat = ind.params.toNat :=
+    field_nat_inj (by omega) (by omega) (hnp.trans hnpEq.symm)
+  have hindices : rc.indices.toNat = ind.indices.toNat :=
+    field_nat_inj (by omega) (by omega) (hni.trans hniEq.symm)
+  have hmotives : rc.motives.toNat = 1 := by
+    have h1 : ((.field ((rc.motives.toNat : Nat) : F)) : SourceValue F) =
+        .field ((1 : Nat) : F) := by
+      rw [Nat.cast_one]
+      exact hmot
+    exact field_nat_inj (by omega) (by norm_num) h1
+  have extL : Heap.Extends m_chk lenHeap :=
+    hextM.trans (evScan.heap_extends.trans (evLoad.heap_extends.trans eLen))
+  have hlenV := rulesTrace_length_spec evLen (hrulesTr.mono extL (fun q hq => hq))
+  have hrulesN : rc.rules.toList.length = ind.ctors.size :=
+    field_nat_inj (by rw [Array.length_toList]; omega) (by omega)
+      (hlenV.symm.trans (hlenEq.trans hncEq.symm))
+  rw [Array.length_toList] at hrulesN
+  exact ⟨hparams, hindices, hmotives, hrulesN⟩
 
 end IxVM.Refinement.Typing
