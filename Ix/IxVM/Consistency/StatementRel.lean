@@ -1087,4 +1087,76 @@ theorem ConsistencySpecP.selfHashed {calls : List (Call IxVM.F)} {d : Digest}
   (h bytes c hde hd hc V seeds b hs hb t ht hl).elim
     (fun hcol => Or.inl (hashedCollision_genuine hV hcol)) Or.inr
 
+/-! ## The projection-image collision
+
+The checker computes the address of an inductive member or of a constructor from a block it
+loaded and an index it read: the BLAKE3 hash of that member's or constructor's projection
+record. It does not hash the record itself, so a record in hand at that address that differs
+from it is a collision that `View.HashedCollision` does not cover: one side is in hand, the
+other is a byte string computed from a block the run hashed. -/
+
+/-- **A projection image of a block the run hashed**: `image` is the serialization of the
+projection record, with empty tables, of member `i` as an inductive (`iPrj`) or of constructor
+`j` of member `i` (`cPrj`) of the block at the pure BLAKE3 hash of `blk`, a byte string the run
+hashed that decodes exactly to a block record. Any indices: an index the checker reads need
+not name a member or constructor the block has. -/
+def HashedBlockProjImage (calls : List (Call IxVM.F)) (image : ByteArray) : Prop :=
+  ∃ (blk : ByteArray) (cb : Ixon.Constant) (ms : Array Ixon.MutConst),
+    Hashed calls blk ∧ Ixon.deConstantExact blk = .ok cb ∧ cb.info = .muts ms ∧
+    ((∃ i : UInt64,
+        image = Ixon.serConstant ⟨.iPrj ⟨i, Address.blake3Pure blk⟩, #[], #[], #[], #[]⟩) ∨
+      ∃ i j : UInt64,
+        image = Ixon.serConstant ⟨.cPrj ⟨i, j, Address.blake3Pure blk⟩, #[], #[], #[], #[]⟩)
+
+/-- **A projection-image collision with the view's data or `extra`**: a byte string in hand at
+an address `x` (held by the view there, one of `extra` hashing to `x`, or a byte string the run
+hashed that hashes to `x`) differs from a projection image of a block the run hashed
+(`HashedBlockProjImage`) whose pure BLAKE3 hash is `x`. The anchoring of
+`View.HashedCollision`, with the byte string the run hashed replaced by an image computed from
+one. -/
+def ProjImageCollision (V : View) (extra : List ByteArray) (calls : List (Call IxVM.F)) :
+    Prop :=
+  ∃ (x : Address) (held image : ByteArray),
+    (V.Preimage x held ∨ (held ∈ extra ∧ Address.blake3Pure held = x) ∨
+      (Hashed calls held ∧ Address.blake3Pure held = x)) ∧
+    HashedBlockProjImage calls image ∧ image ≠ held ∧ Address.blake3Pure image = x
+
+/-- **A BLAKE3 collision between a projection image of a block the run hashed and a byte string
+in hand**: a different byte string with the same pure BLAKE3 hash that the view holds under that
+hash, that is one of `extra`, or that the run hashed. -/
+def GenuineProjImageCollision (V : View) (extra : List ByteArray)
+    (calls : List (Call IxVM.F)) : Prop :=
+  ∃ held image : ByteArray,
+    (V.Preimage (Address.blake3Pure held) held ∨ held ∈ extra ∨ Hashed calls held) ∧
+    HashedBlockProjImage calls image ∧ image ≠ held ∧
+    Address.blake3Pure image = Address.blake3Pure held
+
+/-- **Over a view stored under its own hashes, the projection-image alternative is a
+collision**: the byte string in hand is held by the view under its own hash, is one of `extra`,
+or was hashed by the run. -/
+theorem projImageCollision_genuine {V : View} (hV : SelfHashed V) {extra : List ByteArray}
+    {calls : List (Call IxVM.F)} (h : ProjImageCollision V extra calls) :
+    GenuineProjImageCollision V extra calls := by
+  obtain ⟨hrec, hblob, hrole⟩ := hV
+  obtain ⟨x, held, image, hheld, himg, hne, hx⟩ := h
+  have hx' : Address.blake3Pure held = x := by
+    rcases hheld with hpre | ⟨-, hx'⟩ | ⟨-, hx'⟩
+    · rcases hpre with ⟨lc, hl, hlc⟩ | hb | ⟨rb, hr, hra, hrb⟩ | ⟨_, -, -, hx'⟩
+      · rw [← hlc]
+        exact hrec x lc hl
+      · exact hblob x held hb
+      · rw [← hra, ← hrb]
+        exact hrole rb hr
+      · exact hx'
+    · exact hx'
+    · exact hx'
+  have hanchor : V.Preimage (Address.blake3Pure held) held ∨ held ∈ extra ∨
+      Hashed calls held := by
+    rcases hheld with hpre | ⟨hmem, -⟩ | ⟨hh', -⟩
+    · rw [hx']
+      exact Or.inl hpre
+    · exact Or.inr (Or.inl hmem)
+    · exact Or.inr (Or.inr hh')
+  exact ⟨held, image, hanchor, himg, hne, hx.trans hx'.symm⟩
+
 end IxVM.Consistency

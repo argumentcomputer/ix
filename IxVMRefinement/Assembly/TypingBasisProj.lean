@@ -871,4 +871,68 @@ theorem hashedBlockProjectionsHeld_of_noProjectionCollision {E : Ixon.Env}
   rintro b ⟨cs, blk, cb, ms, hnc, -, hh, hex, hms, rfl⟩
   exact projectionsHeldAt_of_noProjectionCollision hdec (hnp cs hnc) hh hex hms
 
+/-! ## The collision clause and the public projection-image alternative -/
+
+section
+open IxVM.Consistency
+
+/-- **The collision clause is an instance of the public alternative**: a record the view holds
+at the hash of a projection image of a block the calls hashed, with other bytes, is a
+`ProjImageCollision` with the view's data. So the negation of the public alternative gives the
+negation of the clause. -/
+theorem projImageCollision_of_projectionCollision {V : View} {calls : List (Call F)}
+    {extra : List ByteArray} (h : ProjectionCollision V calls) :
+    ProjImageCollision V extra calls := by
+  obtain ⟨blk, cb, ms, info, x, held, hh, hex, hms, hinfo, hheld, hx, hne⟩ := h
+  refine ⟨x, held, Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩, Or.inl (Or.inl hheld),
+    ⟨blk, cb, ms, hh, hex, hms, ?_⟩, fun he => hne he.symm, hx⟩
+  rcases hinfo with ⟨i, rfl⟩ | ⟨i, j, rfl⟩
+  · exact Or.inl ⟨i, rfl⟩
+  · exact Or.inr ⟨i, j, rfl⟩
+
+/-- **The typing statement's alternative excludes the collision clause at the store a typing
+run is read against**: with no projection-image collision in the sense of the typing half
+(`ProjImageCollisionWith`, compared with the committed images), the run's calls hash no
+`ProjectionCollision` with a store that merges the run's records, the witness's and the
+committed prelude rows (`Merged`). -/
+theorem Merged.noProjectionCollision {E₀ R E : Ixon.Env} {calls : List (Call F)} {V : View}
+    {extra : List ByteArray} (hM : Merged E₀ R E) (hload : LoadedBy calls E₀)
+    (hextra : ∀ x ∈ committedFootprint, x ∈ extra)
+    (hnp : ¬ ProjImageCollisionWith V extra R calls) :
+    ¬ ProjectionCollision { env := E } calls := by
+  intro h
+  obtain ⟨blk, cb, ms, info, x, held, hh, hex, hms, hinfo, hheld, hx, hne⟩ := h
+  have himg : HashedBlockProjImage calls (Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩) := by
+    refine ⟨blk, cb, ms, hh, hex, hms, ?_⟩
+    rcases hinfo with ⟨i, rfl⟩ | ⟨i, j, rfl⟩
+    · exact Or.inl ⟨i, rfl⟩
+    · exact Or.inr ⟨i, j, rfl⟩
+  have hne' : Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩ ≠ held := fun he => hne he.symm
+  apply hnp
+  rcases hM.preimage hload (Or.inl hheld) with hrun | hR | ⟨p, hp, hp1, hp2⟩
+  · exact Or.inl ⟨x, held, _, Or.inr (Or.inr hrun), himg, hne', hx⟩
+  · exact Or.inr ⟨x, held, _, hR, himg, hne', hx⟩
+  · have hhash : Address.blake3Pure p.2 = p.1 := ClosedFacts.committedRows_hashed p hp
+    have hmem : held ∈ extra := by
+      rw [← hp2]
+      exact hextra _ (committedRows_footprint hp)
+    have hheld_x : Address.blake3Pure held = x := by
+      rw [← hp2, hhash, hp1]
+    exact Or.inl ⟨x, held, _, Or.inr (Or.inl ⟨hmem, hheld_x⟩), himg, hne', hx⟩
+
+/-- **`Facts` at the basis from the public alternative**: if no calls that hash no collision
+with a store of the basis records hash a projection-image collision with it
+(`ProjImageCollision`, the case of the public alternative), `Facts` holds on the six basis
+groups at the environment of the pins. The hypothesis is about every run and every such store;
+`Facts` quantifies over every run that is `Core.Good` for the store, and `Core.Good` excludes
+only `View.HashedCollision`. -/
+theorem basis_facts_of_noProjImageCollision
+    (h : ∀ E, RecordsFor StoreInhabit.basisStore E → ∀ cs : List (Call F),
+      ¬ View.HashedCollision { env := E } [] cs → ¬ ProjImageCollision { env := E } [] cs) :
+    Facts.{u} ctab (fun g => g < 6) StoreInhabit.basisStore basisEnv :=
+  basis_facts fun E hE => hashedBlockProjectionsHeld_of_noProjectionCollision hE.1
+    fun cs hnc hpc => h E hE cs hnc (projImageCollision_of_projectionCollision hpc)
+
+end
+
 end IxVM.Refinement.Typing
