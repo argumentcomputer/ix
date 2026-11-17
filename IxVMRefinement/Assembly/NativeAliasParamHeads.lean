@@ -62,6 +62,7 @@ private theorem alias_parameter_head_go (κ : _root_.Address → KKey) (T : KKey
       obtain ⟨f, a, rfl, hf, -⟩ := hE.app_of_load ld
       have hsub : ∀ cl ∈ children, cl ∈ cs := by intro cl hm; rw [hc]; simp [hm]
       have hlt : children.length < fuel := by rw [hc] at hlen; simp only [List.length_cons] at hlen; omega
+      change famHead T f = false
       exact ih children.length hlt (Nat.le_refl _) (bounded_sub hsub hbound) hf ht child
     | .Let (cs127 := children) (cs141 := subCalls) (ld12 := ld) (ev143 := inst)
         (ev129 := child) (hc174 := hc) .. =>
@@ -74,7 +75,7 @@ private theorem alias_parameter_head_go (κ : _root_.Address → KKey) (T : KKey
         omega
       have hi := SubstAux.gall κ .expr_inst1 _ _ _ _ _ inst _ _ (0 : F) rfl
         (bounded_sub hisub hbound) d Γ B V (by simpa only [ZMod.val_zero, Nat.zero_add] using hB) hV
-      simp only [ZMod.val_zero, Nat.zero_add] at hi
+      simp only [ZMod.val_zero] at hi
       have hr := ih children.length hlt (Nat.le_refl _) (bounded_sub hsub hbound)
         hi (Bytes.repAddressRef_heapMono₂ addrTy inst.heap_extends ht) child
       rw [instShift_eq_instantiate1 hV.looseBVarsBounded 0 B]
@@ -146,8 +147,7 @@ private theorem alias_count_succ_ne_zero {n : Nat} (hn : n + 1 < 184467440694145
 private theorem alias_count_pred (n : Nat) {v : SourceValue F}
     (op : evalBinOp .sub (.field ((n + 1 : Nat) : F) : SourceValue F) (.field 1) = .ok v) :
     v = .field (n : F) := by
-  simp only [evalBinOp, bind, Except.bind, pure, Except.pure, Option.some.injEq,
-    Except.ok.injEq] at op
+  simp only [evalBinOp, Except.ok.injEq] at op
   rw [← op]
   congr 1
   simp [Nat.cast_add]

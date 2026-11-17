@@ -57,11 +57,11 @@ private theorem level_rep_go :
         (hv.mono e1.heap_extends) (hp.mono e1.heap_extends) e2
       subst hr hh
       exact ⟨.imax u' v', (RepKLevel.allocIMax (hu'.mono e2.heap_extends) hv').1⟩
-    | .Param (ld12 := ld) (ev259 := lookup) .. =>
+    | .Param (cs257 := lookupCalls) (ld12 := ld) (ev259 := lookup) .. =>
       obtain ⟨i, -, hi, -⟩ := Levels.rep_param_of_load' hl ld
       rw [hi] at lookup
       have ev' : ObsFn W (Instance.mk "Lists::lookup" [(.ptr (.named "KernelTypes::KLevelNode" []))]).symbol
-          [params, .field (i : F)] h r h' _ := by
+          [params, .field (i : F)] h r h' lookupCalls := by
         simpa only [Obs.Names.«Lists::lookup<&KernelTypes::KLevelNode>».symbol] using lookup
       have hp' : RepList (Instance.mk "Lists::Node" [(.ptr (.named "KernelTypes::KLevelNode" []))]).symbol
           RepKLevel h ls params := by
@@ -93,7 +93,7 @@ private theorem levels_rep_go :
       exact ⟨ls, hl⟩
     | .Cons (cs88 := children) (ld12 := ld) (he45 := hr) (hm44 := hh)
         (ev62 := e1) (ev90 := e2) (hc107 := hc) .. =>
-      obtain ⟨l, rest, -, h1, h2⟩ := rep_cons_of_load hl ld
+      obtain ⟨l, rest, -, h1, h2⟩ := Lib.rep_cons_of_load hl ld
       obtain ⟨l', h1'⟩ := level_inst_raw_rep h1 hp e1
       have hlt : children.length < fuel := by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega
       obtain ⟨rest', h2'⟩ := ih children.length hlt (Nat.le_refl _)
