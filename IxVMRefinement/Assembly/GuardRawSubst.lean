@@ -26,12 +26,12 @@ def RawExprRep (κ : _root_.Address → KKey) (h : Heap F) (k : Nat) (R : KExpr)
 
 /-- A successful scoped reading supplies an exact physical raw expression. No equality with
 the original semantic expression is claimed: its universe syntax may have been weakened. -/
-theorem RawExprRep.ofTm {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
-    {h : Heap F} {k : Nat} {E : KExpr} {p : SourceValue F}
-    (represented : Tm κ 0 Γ h k E p) : ∃ R, RawExprRep κ h k R p := by
+theorem RawExprRep.ofOpenTm {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
+    {h : Heap F} {d k : Nat} {E : KExpr} {p : SourceValue F}
+    (represented : Tm κ d Γ h k E p) : ∃ R, RawExprRep κ h (k + d) R p := by
   induction represented with
-  | bvarLocal cell small inside => exact ⟨_, _, .bvarLocal cell small inside⟩
-  | bvarFree _ _ _ impossible => omega
+  | bvarLocal cell small inside => exact ⟨_, _, .bvarLocal cell small (by omega)⟩
+  | bvarFree cell small lower upper => exact ⟨_, _, .bvarLocal cell small (by omega)⟩
   | sort cell level _ => exact ⟨_, _, .sort cell level⟩
   | const cell address levels _ => exact ⟨_, _, .const cell address levels⟩
   | app cell _ _ left right =>
@@ -41,21 +41,27 @@ theorem RawExprRep.ofTm {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
   | lam cell _ _ level dom body =>
     obtain ⟨RD, ED, domain⟩ := dom
     obtain ⟨RB, EB, tail⟩ := body
-    exact ⟨_, _, .lam cell domain tail level⟩
+    exact ⟨_, _, .lam cell domain (by simpa only [Nat.add_right_comm] using tail) level⟩
   | forallE cell _ _ level dom body =>
     obtain ⟨RD, ED, domain⟩ := dom
     obtain ⟨RB, EB, tail⟩ := body
-    exact ⟨_, _, .forallE cell domain tail level⟩
+    exact ⟨_, _, .forallE cell domain (by simpa only [Nat.add_right_comm] using tail) level⟩
   | letE cell _ _ _ type value body =>
     obtain ⟨RT, ET, typeRep⟩ := type
     obtain ⟨RV, EV, valueRep⟩ := value
     obtain ⟨RB, EB, tail⟩ := body
-    exact ⟨_, _, .letE cell typeRep valueRep tail⟩
+    exact ⟨_, _, .letE cell typeRep valueRep (by simpa only [Nat.add_right_comm] using tail)⟩
   | litNat cell limbs canonical => exact ⟨_, _, .litNat cell limbs canonical⟩
   | litStr cell bytes string => exact ⟨_, _, .litStr cell bytes string⟩
   | proj cell address _ inner =>
     obtain ⟨RI, EI, rep⟩ := inner
     exact ⟨_, _, .proj cell address rep⟩
+
+/-- The depth-zero specialization keeps its original local bound. -/
+theorem RawExprRep.ofTm {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
+    {h : Heap F} {k : Nat} {E : KExpr} {p : SourceValue F}
+    (represented : Tm κ 0 Γ h k E p) : ∃ R, RawExprRep κ h k R p := by
+  simpa only [Nat.add_zero] using RawExprRep.ofOpenTm represented
 
 /-- The actual raw universe operation preserves this physical syntax with exact metadata. -/
 theorem RawExprRep.instLevels {κ : _root_.Address → KKey} {h h' : Heap F} {k : Nat}
