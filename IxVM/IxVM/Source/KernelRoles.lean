@@ -57,8 +57,26 @@ def load_role_table := aiur_fn⟦
         read_role_bindings(s, UInt8::to_field(n), 0, RBTreeMap::RBTreeMap::Nil);
       let (m, s) = IxonDeserialize::read_byte(s);
       let (evidence, _next, s) = read_role_evidence(s, UInt8::to_field(m), 0);
+      evidence_roles_have_equations(evidence);
       let Lists::Node::Nil = (*(s));
       (&(RoleTableNode::Mk(binding, by_role, by_addr, evidence)))
+    }
+⟧
+
+  -- An evidence entry is for a role with equations: an operation or a definition role
+  -- whose specification lists at least one (the kernel's `RoleTable.check`: `evidence for
+  -- a role which has no equations`). A role without them has no entry, not an empty one.
+
+def evidence_roles_have_equations := aiur_fn⟦
+  fn evidence_roles_have_equations(ev: RoleMap<Lists::List<RoleEvidence>>) -> () {
+      match ev {
+        RoleMap::Nil => {  () } ,
+        RoleMap::Node(_, r, _, left, right) => {
+          assert_eq!(Fields::is_zero(KernelRoleSpec::op_equation_count(r) + KernelRoleSpec::eqns_equation_count(r)), 0,
+            "role table: evidence for a role with no equations");
+          evidence_roles_have_equations((*(left)));
+          evidence_roles_have_equations((*(right))) } ,
+      }
     }
 ⟧
 
