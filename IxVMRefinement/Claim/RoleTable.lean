@@ -788,9 +788,10 @@ theorem load_role_table_spec {V : View} {extra : List ByteArray}
     m343, cs351, m356, cs366, x_n, x_s_380, m392, cs402, v406, m417, cs425,
     x_by_role, x_by_addr, x__next, x_s_454, m476, cs486, x_m, x_s_500,
     m512, cs522, v526, m536, cs544, x_evidence, x__next_564, x_s_565,
+    v581, m582, cs592, m619, v665, m666, cs676,
     ld11, ev26, ev68, ev105, ev135, ev181, _, ev210, ev257, _,
     ev286, ev333, ev353, _, ev368, ev427, ev404, ev488, ev546, ev524,
-    ld591, rfl, rfl, hc636⟩ := Obs.«KernelRoles::load_role_table».obs ev
+    ev594, ld613, hm629, ev678, rfl, rfl, hc636⟩ := Obs.«KernelRoles::load_role_table».obs ev
   have hv1 : v1 = L1.digestV ab := L1.load_repAddressRef hab ld11
   obtain ⟨bytes, _, ext1, ext2, hst, hcall, hproj⟩ := L1.checked_read ev26 ev68 ev105
   have hhashed : Hashed calls ⟨bytes.toArray⟩ :=
@@ -854,19 +855,27 @@ theorem load_role_table_spec {V : View} {extra : List ByteArray}
       (fun _ hp => hp) he_ok' (rest := []) (by rw [List.append_nil]; exact hst6) ev524
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupE
   obtain ⟨rfl, rfl, rfl⟩ := htupE
+  -- the evidence check (`evidence_roles_have_equations`) and the basis pin
+  -- (`assert_basis_pinned`) are assertions: they only extend the heap
   let rtNode := Value.construct rtEnum "Mk" [x_binding, x_by_role, x_by_addr, x_evidence]
-  have extSnoc := Heap.Extends.snoc m512 rtNode
-  have extAll := ext1.trans (ext2.trans (extB.trans (extE.trans extSnoc)))
-  refine ⟨extAll, hwf, x_binding, x_by_role, x_by_addr, x_evidence,
-    loadValue_snoc_construct m512 rtEnum "Mk" [x_binding, x_by_role, x_by_addr, x_evidence],
-    ⟨ab, Bytes.repAddressRef_heapMono₂ addrTy extAll hab, hix_b⟩, ?_,
-    hinvB.mono (extE.trans extSnoc), ?_⟩
-  · refine RoleMapAll.mono ?_ (extE.trans extSnoc) hmapRole
-    intro _ _ _ _ ext' ⟨ro', ab', hk, hab', hbof⟩
-    exact ⟨ro', ab', hk, Bytes.repAddressRef_heapMono₂ addrTy ext' hab', hbof⟩
-  · refine RoleMapAll.mono ?_ extSnoc hmapEv
-    intro _ _ _ _ ext' ⟨ro', es', hk, hm, hl'⟩
-    exact ⟨ro', es', hk, hm, repList_heapMono₂ evListEnum evRep_heapMono₂ ext' hl'⟩
+  have extEv := ev594.heap_extends
+  subst hm629
+  have extSnoc := Heap.Extends.snoc m582 rtNode
+  have extPin := ev678.heap_extends
+  have extAll := ext1.trans (ext2.trans (extB.trans (extE.trans (extEv.trans extSnoc))))
+  have hfull : TableFullRep t b.address (m582 ++ [rtNode])
+      (.ptr (.enum "KernelRoles::RoleTableNode") m582.length) := by
+    refine ⟨hwf, x_binding, x_by_role, x_by_addr, x_evidence,
+      loadValue_snoc_construct m582 rtEnum "Mk" [x_binding, x_by_role, x_by_addr, x_evidence],
+      ⟨ab, Bytes.repAddressRef_heapMono₂ addrTy extAll hab, hix_b⟩, ?_,
+      hinvB.mono (extE.trans (extEv.trans extSnoc)), ?_⟩
+    · refine RoleMapAll.mono ?_ (extE.trans (extEv.trans extSnoc)) hmapRole
+      intro _ _ _ _ ext' ⟨ro', ab', hk, hab', hbof⟩
+      exact ⟨ro', ab', hk, Bytes.repAddressRef_heapMono₂ addrTy ext' hab', hbof⟩
+    · refine RoleMapAll.mono ?_ (extEv.trans extSnoc) hmapEv
+      intro _ _ _ _ ext' ⟨ro', es', hk, hm, hl'⟩
+      exact ⟨ro', es', hk, hm, repList_heapMono₂ evListEnum evRep_heapMono₂ ext' hl'⟩
+  exact ⟨extAll.trans extPin, hfull.mono extPin⟩
 
 theorem load_role_ctx_spec {V : View} {extra : List ByteArray}
     {b : Ix.Kernel.Admission.Binding} {t : Ix.Kernel.RoleTable}

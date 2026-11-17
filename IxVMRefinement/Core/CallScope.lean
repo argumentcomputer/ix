@@ -1,4 +1,5 @@
 import IxVMRefinement.Core.Good
+import IxVMRefinement.Obs.KernelModeled
 import IxVMRefinement.Obs.KernelModeled0
 
 /-! # Core facts restricted to selected observed calls
