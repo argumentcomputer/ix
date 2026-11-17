@@ -5,11 +5,15 @@ public import IxC.Kernel.Rules.TransportKit
 public import IxC.Kernel.Rules.NatOffset
 public import IxC.Kernel.Verify.InstLevels
 public import IxC.Kernel.Verify.PropWhen
-public import IxC.Kernel.Verify.Level
+import all IxC.Kernel.Verify.Level
 public import IxC.Kernel.Verify.EnvWF
 public import IxC.Kernel.Model.Open.StoredFacts
 
 @[expose] public section
+
+set_option linter.unusedVariables false
+set_option linter.unusedSimpArgs false
+set_option linter.unnecessarySimpa false
 
 /-!
 # Renaming level parameters: the kit
@@ -123,13 +127,6 @@ theorem evalEqList_subst (ks : List LevelParam) (ws : List Level) :
     refine ⟨?_, evalEqList_subst ks ws φ h2⟩
     rw [eval_subst, eval_subst]
     exact h1
-  | [], _ :: _, _, h => h.elim
-  | _ :: _, [], _, h => h.elim
-
-theorem evalEqList_length : ∀ {us us' : List Level} {φ : LevelParam → Nat},
-    EvalEqList φ us us' → us.length = us'.length
-  | [], [], _, _ => rfl
-  | _ :: _, _ :: _, _, h => by rw [List.length_cons, List.length_cons, evalEqList_length h.2]
   | [], _ :: _, _, h => h.elim
   | _ :: _, [], _, h => h.elim
 
@@ -416,7 +413,8 @@ theorem strLitToConstructor_inst (s : String) :
 
 theorem natOpResult_map_inst (c : Key md) (a b : Nat) :
     (natOpResult c a b).map (·.instantiateLevelParams ks ws) = natOpResult c a b := by
-  simp only [natOpResult, apply_ite (Option.map (·.instantiateLevelParams ks ws)),
+  simp only [natOpResult,
+    apply_ite (Option.map (fun x : Expr md => x.instantiateLevelParams ks ws)),
     Option.map_some, Option.map_none, Expr.instantiateLevelParams, List.map_nil]
 
 theorem natOpResult_inst {c : Key md} {a b : Nat} {r : Expr md}
@@ -582,34 +580,23 @@ theorem headTypePW_inst (c : Nat) (f : Key md → Option (ConstantInfo md)) (e :
       (headTypePW f e n).map (·.holds (fun _ => c)) := by
   cases e with
   | const I us =>
-    show (match f I with
-        | some ci =>
-          if ci.isTowerEntry then none else
-          if (us.map (Level.subst ks ws)).length = ci.toConstantVal.levelParams.length then
-            (residualPW (ci.toConstantVal.type.peelNeverPis n)).map
-              (Level.substPW ci.toConstantVal.levelParams (us.map (Level.subst ks ws)))
-          else none
-        | none => none).map (·.holds (fun _ => c)) =
-      (match f I with
-        | some ci =>
-          if ci.isTowerEntry then none else
-          if us.length = ci.toConstantVal.levelParams.length then
-            (residualPW (ci.toConstantVal.type.peelNeverPis n)).map
-              (Level.substPW ci.toConstantVal.levelParams us)
-          else none
-        | none => none).map (·.holds (fun _ => c))
+    simp only [Expr.instantiateLevelParams, headTypePW]
     rcases f I with _ | ci
     · rfl
-    · dsimp only
-      rw [List.length_map]
-      split
-      · rfl
-      · split
-        · rw [Option.map_map, Option.map_map]
+    · by_cases htw : ci.isTowerEntry = true
+      · simp [htw]
+      · by_cases hl : us.length = ci.toConstantVal.levelParams.length
+        · have hl' : (us.map (Level.subst ks ws)).length =
+              ci.toConstantVal.levelParams.length := by
+            rw [List.length_map]; exact hl
+          simp only [htw, Bool.false_eq_true, if_false, if_pos hl, if_pos hl', Option.map_map]
           congr 1
           funext pw
           exact holds_const_substPW_map hR c ks _ us pw
-        · rfl
+        · have hl' : ¬ (us.map (Level.subst ks ws)).length =
+              ci.toConstantVal.levelParams.length := by
+            rw [List.length_map]; exact hl
+          simp only [htw, Bool.false_eq_true, if_false, if_neg hl, if_neg hl']
   | fvar i ty =>
     show (residualPW ((ty.instantiateLevelParams ks ws).peelNeverPis n)).map _ =
       (residualPW (ty.peelNeverPis n)).map _
@@ -647,34 +634,23 @@ theorem headProofPW_inst (c : Nat) (f : Key md → Option (ConstantInfo md)) (e 
       (headProofPW f e).map (·.holds (fun _ => c)) := by
   cases e with
   | const cn us =>
-    show (match f cn with
-        | some ci =>
-          if ci.isTowerEntry then none else
-          if (us.map (Level.subst ks ws)).length = ci.toConstantVal.levelParams.length then
-            (typeSortPW f ci.toConstantVal.type).map
-              (Level.substPW ci.toConstantVal.levelParams (us.map (Level.subst ks ws)))
-          else none
-        | none => none).map (·.holds (fun _ => c)) =
-      (match f cn with
-        | some ci =>
-          if ci.isTowerEntry then none else
-          if us.length = ci.toConstantVal.levelParams.length then
-            (typeSortPW f ci.toConstantVal.type).map
-              (Level.substPW ci.toConstantVal.levelParams us)
-          else none
-        | none => none).map (·.holds (fun _ => c))
+    simp only [Expr.instantiateLevelParams, headProofPW]
     rcases f cn with _ | ci
     · rfl
-    · dsimp only
-      rw [List.length_map]
-      split
-      · rfl
-      · split
-        · rw [Option.map_map, Option.map_map]
+    · by_cases htw : ci.isTowerEntry = true
+      · simp [htw]
+      · by_cases hl : us.length = ci.toConstantVal.levelParams.length
+        · have hl' : (us.map (Level.subst ks ws)).length =
+              ci.toConstantVal.levelParams.length := by
+            rw [List.length_map]; exact hl
+          simp only [htw, Bool.false_eq_true, if_false, if_pos hl, if_pos hl', Option.map_map]
           congr 1
           funext pw
           exact holds_const_substPW_map hR c ks _ us pw
-        · rfl
+        · have hl' : ¬ (us.map (Level.subst ks ws)).length =
+              ci.toConstantVal.levelParams.length := by
+            rw [List.length_map]; exact hl
+          simp only [htw, Bool.false_eq_true, if_false, if_neg hl, if_neg hl']
   | fvar i ty => exact typeSortPW_inst hR ks c f ty
   | _ => rfl
 
@@ -705,8 +681,8 @@ theorem isProofFast_inst (f : Key md → Option (ConstantInfo md)) (a : Expr md)
   · rfl
   · exact nomatch key
   · exact nomatch key
-  · rw [isProp_eq_holds_one, isProp_eq_holds_one]
-    exact Option.some.inj key
+  · simp only [isProp_eq_holds_one]
+    simpa using key
 
 end Readers
 
