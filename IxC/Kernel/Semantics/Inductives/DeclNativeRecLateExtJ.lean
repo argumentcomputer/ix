@@ -12,7 +12,8 @@ Facts about the late recursor's step (`DeclNativeRecLateRunJ`) that read only it
 guard and its cons, so they hold at every package:
 
 * what the store holds of the family is lookups only, kept by every extension
-  (`NativeFamStored.ext`);
+  (`NativeFamStored.ext`), and it reads at the recursor's record, whose family projections are
+  the family's (`NativeFamStored.atRec`);
 * the step extends the environment (`declNativeRecLateRunJ_envExt`): the recursor is fresh and
   passes the front door's shape test, so it is no structure's projection table;
 * the step keeps the η-families closed (`declNativeRecLateRunJ_etaClosed`): the head is a
