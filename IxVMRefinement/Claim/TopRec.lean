@@ -72,7 +72,6 @@ private theorem lvc_tag {a : Bytes.Address} {x_addr : SourceValue F} {tag : Stri
   rw [hrc] at hinfo
   obtain ⟨rv, hv, -⟩ := hinfo
   injection hv with _ htag _
-  exact htag
 
 /-- `Ingress::load_verified_constant` on any argument: the run hashed fewer than `2^32` bytes
 that decode exactly to a record the returned value represents. -/
