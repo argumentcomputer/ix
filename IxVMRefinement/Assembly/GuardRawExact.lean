@@ -21,9 +21,9 @@ set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
 set_option maxHeartbeats 2400000
 
-private theorem raw_ilp_nil {Îº : _root_.Address â KKey} {Î : Nat â KExpr}
+private theorem raw_ilp_nil {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p : SourceValue F}
-    (rep : RawTmExact Îº 0 Î h k R E p) : R.instantiateLevelParams [] [] = R := by
+    (rep : RawTmExact κ 0 Γ h k R E p) : R.instantiateLevelParams [] [] = R := by
   induction rep with
   | bvarLocal => rfl
   | bvarFree _ _ _ hd => omega
@@ -44,81 +44,81 @@ private theorem raw_bmeta_subst (params : List Level) (u : Level) :
   unfold bmeta
   rw [Level.zeronessOf_subst]
 
-private theorem raw_sort_view {Îº : _root_.Address â KKey} {d : Nat} {Î : Nat â KExpr}
+private theorem raw_sort_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p level : SourceValue F}
-    (rep : RawTmExact Îº d Î h k R E p)
+    (rep : RawTmExact κ d Γ h k R E p)
     (loaded : loadValue h p = .ok (.construct kexprEnum "Srt" [level])) :
-    â u, R = .sort u â§ E = .sort u â§ RepKLevel h u level := by
+    ∃ u, R = .sort u ∧ E = .sort u ∧ RepKLevel h u level := by
   cases rep with
   | sort cell represented =>
-    obtain â¨_, fieldsâ© := load_cell cell loaded
+    obtain ⟨_, fields⟩ := load_cell cell loaded
     injection fields with same
     subst same
-    exact â¨_, rfl, rfl, representedâ©
+    exact ⟨_, rfl, rfl, represented⟩
   | bvarLocal cell _ _ | bvarFree cell _ _ _ | const cell _ _ | app cell _ _
   | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _
   | litStr cell _ _ | proj cell _ _ => exact (load_cell_ne cell loaded (by decide)).elim
 
-private theorem raw_lam_view {Îº : _root_.Address â KKey} {d : Nat} {Î : Nat â KExpr}
+private theorem raw_lam_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p dom body level : SourceValue F}
-    (rep : RawTmExact Îº d Î h k R E p)
+    (rep : RawTmExact κ d Γ h k R E p)
     (loaded : loadValue h p = .ok (.construct kexprEnum "Lam" [dom, body, level])) :
-    â RD RB D B u, R = .lam RD RB (bmeta u) â§ E = .lam D B (bmeta u) â§
-      RawTmExact Îº d Î h k RD D dom â§ RawTmExact Îº d Î h (k + 1) RB B body â§
+    ∃ RD RB D B u, R = .lam RD RB (bmeta u) ∧ E = .lam D B (bmeta u) ∧
+      RawTmExact κ d Γ h k RD D dom ∧ RawTmExact κ d Γ h (k + 1) RB B body ∧
       RepKLevel h u level := by
   cases rep with
   | lam cell domain bodyRep represented =>
-    obtain â¨_, fieldsâ© := load_cell cell loaded
+    obtain ⟨_, fields⟩ := load_cell cell loaded
     injection fields with one fields; injection fields with two fields; injection fields with three
     subst one two three
-    exact â¨_, _, _, _, _, rfl, rfl, domain, bodyRep, representedâ©
+    exact ⟨_, _, _, _, _, rfl, rfl, domain, bodyRep, represented⟩
   | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ | const cell _ _ | app cell _ _
   | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _
   | litStr cell _ _ | proj cell _ _ => exact (load_cell_ne cell loaded (by decide)).elim
 
-private theorem raw_let_view {Îº : _root_.Address â KKey} {d : Nat} {Î : Nat â KExpr}
+private theorem raw_let_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p ty val body : SourceValue F}
-    (rep : RawTmExact Îº d Î h k R E p)
+    (rep : RawTmExact κ d Γ h k R E p)
     (loaded : loadValue h p = .ok (.construct kexprEnum "Let" [ty, val, body])) :
-    â RT RV RB T V B, R = .letE RT RV RB default â§ E = instShift V 0 B â§
-      RawTmExact Îº d Î h k RT T ty â§ RawTmExact Îº d Î h k RV V val â§
-      RawTmExact Îº d Î h (k + 1) RB B body := by
+    ∃ RT RV RB T V B, R = .letE RT RV RB default ∧ E = instShift V 0 B ∧
+      RawTmExact κ d Γ h k RT T ty ∧ RawTmExact κ d Γ h k RV V val ∧
+      RawTmExact κ d Γ h (k + 1) RB B body := by
   cases rep with
   | letE cell typeRep valueRep bodyRep =>
-    obtain â¨_, fieldsâ© := load_cell cell loaded
+    obtain ⟨_, fields⟩ := load_cell cell loaded
     injection fields with one fields; injection fields with two fields; injection fields with three
     subst one two three
-    exact â¨_, _, _, _, _, _, rfl, rfl, typeRep, valueRep, bodyRepâ©
+    exact ⟨_, _, _, _, _, _, rfl, rfl, typeRep, valueRep, bodyRep⟩
   | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ | const cell _ _ | app cell _ _
   | lam cell _ _ _ | forallE cell _ _ _ | litNat cell _ _
   | litStr cell _ _ | proj cell _ _ => exact (load_cell_ne cell loaded (by decide)).elim
 
-private theorem raw_proj_view {Îº : _root_.Address â KKey} {d : Nat} {Î : Nat â KExpr}
+private theorem raw_proj_view {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p ap i inner : SourceValue F}
-    (rep : RawTmExact Îº d Î h k R E p)
+    (rep : RawTmExact κ d Γ h k R E p)
     (loaded : loadValue h p = .ok (.construct kexprEnum "Proj" [ap, i, inner])) :
-    â (a : Bytes.Address) (index : F) (RI I : KExpr), R = .proj (Îº (ixAddr a)) index.val RI â§
-      E = .proj (Îº (ixAddr a)) index.val I â§ i = .field index â§
-      Bytes.RepAddressRef addrTy h a ap â§ RawTmExact Îº d Î h k RI I inner := by
+    ∃ (a : Bytes.Address) (index : F) (RI I : KExpr), R = .proj (κ (ixAddr a)) index.val RI ∧
+      E = .proj (κ (ixAddr a)) index.val I ∧ i = .field index ∧
+      Bytes.RepAddressRef addrTy h a ap ∧ RawTmExact κ d Γ h k RI I inner := by
   cases rep with
   | proj cell address represented =>
-    obtain â¨_, fieldsâ© := load_cell cell loaded
+    obtain ⟨_, fields⟩ := load_cell cell loaded
     injection fields with one fields; injection fields with two fields; injection fields with three
     subst one two three
-    exact â¨_, _, _, _, rfl, rfl, rfl, address, representedâ©
+    exact ⟨_, _, _, _, rfl, rfl, rfl, address, represented⟩
   | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ | const cell _ _ | app cell _ _
   | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _
   | litStr cell _ _ => exact (load_cell_ne cell loaded (by decide)).elim
 
-private theorem raw_leaf_ilp {Îº : _root_.Address â KKey} {Î : Nat â KExpr}
+private theorem raw_leaf_ilp {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p : SourceValue F} {fields : List (SourceValue F)}
-    (rep : RawTmExact Îº 0 Î h k R E p) (params : List Level)
-    (leaf : loadValue h p = .ok (.construct kexprEnum "BVar" fields) â¨
+    (rep : RawTmExact κ 0 Γ h k R E p) (params : List Level)
+    (leaf : loadValue h p = .ok (.construct kexprEnum "BVar" fields) ∨
       loadValue h p = .ok (.construct kexprEnum "Lit" fields)) :
-    R.instantiateLevelParams (List.range params.length) params = R â§
+    R.instantiateLevelParams (List.range params.length) params = R ∧
       E.instantiateLevelParams (List.range params.length) params = E := by
   cases rep with
-  | bvarLocal | litNat | litStr => exact â¨rfl, rflâ©
+  | bvarLocal | litNat | litStr => exact ⟨rfl, rfl⟩
   | bvarFree _ _ _ hd => omega
   | sort cell _ | const cell _ _ | app cell _ _ | lam cell _ _ _
   | forallE cell _ _ _ | letE cell _ _ _ | proj cell _ _ =>
