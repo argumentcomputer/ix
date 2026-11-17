@@ -3,6 +3,7 @@ import IxVMRefinement.Infer.Close
 import IxVMRefinement.Infer.ProjBody
 import IxVMRefinement.Whnf.Proj
 import IxVMRefinement.Obs.KernelCheck1
+import IxVMRefinement.Obs.KernelGuard
 
 /-! # Step lemmas of the projection helpers of `KernelInfer` and `KernelInferOnly`
 
@@ -702,6 +703,23 @@ theorem proj_guard_fold_rep {ls : List KLevel} :
         .max List.getElem?_concat_length (hacc.mono ext) (hd.mono ext)
       exact ih ev46 hmax (RepKLevelList.mono hrest ext)
 
+/-- The checked guard sort retains the ordinary sort check's represented result. -/
+theorem checked_sort_rep (c : ScopedCtx) {calls0 : List (Call F)} (ih : IH c calls0)
+    {rc e types r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hlt0 : calls.length < calls0.length) (good : CoreGood c calls)
+    (ev : ObsFn W "KernelGuard::checked_sort" [rc, e, types] h r h' calls)
+    {d : Nat} {Γ : Nat → KExpr} {T : KExpr}
+    (hrc : c.rc h rc) (htypes : c.types Γ h d types) (hT : c.tm d Γ h T e) :
+    ∃ g : KLevel, RepKLevel h' g r := by
+  obtain ⟨actual, m1, cs1, expected, m2, cs2, answer, m3, cs3, signature, m4, cs4,
+    ev1, ev2, ev4, ev3, _, hr, hh, hcs⟩ := Obs.«KernelGuard::checked_sort».obs ev
+  subst hr hh hcs
+  have g1 : CoreGood c cs1 := good.sub fun x hx => by simp [hx]
+  obtain ⟨_, _, _, _, level, hlevel, _⟩ := ih.get (.infer .k_ensure_sort)
+    (by simp only [List.length_cons, List.length_append] at hlt0; omega)
+    ev1 rc e types rfl g1 hrc d Γ htypes T hT
+  exact ⟨level, hlevel.mono (ev2.heap_extends.trans (ev4.heap_extends.trans ev3.heap_extends))⟩
+
 theorem proj_guard_walk_rep (c : ScopedCtx) {calls0 : List (Call F)} (ih : IH c calls0) (N : Nat) :
     ∀ {x_rc x_ty x_ctx x_k x_deps r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
       calls.length < N → calls.length < calls0.length → CoreGood c calls →
@@ -762,6 +780,66 @@ theorem proj_guard_walk_rep (c : ScopedCtx) {calls0 : List (Call F)} (ih : IH c 
         g188 ev190 (k - 1) (d + 1) _ _ ls' hv194
         (RCRep.mono E211 hrc) htypes211 hbody211 (RepKLevelList.mono hls177 e211)
 
+theorem proj_walk_checked_rep (c : ScopedCtx) {calls0 : List (Call F)} (ih : IH c calls0) (N : Nat) :
+    ∀ {x_rc x_ty x_ctx x_k x_deps r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      calls.length < N → calls.length < calls0.length → CoreGood c calls →
+      ObsFn W "KernelGuard::proj_walk_checked" [x_rc, x_ty, x_ctx, x_k, x_deps] h r h' calls →
+      ∀ (k : F) (d : Nat) (Γ : Nat → KExpr) (T : KExpr) (ls : List KLevel),
+        x_k = .field k → c.rc h x_rc → c.types Γ h d x_ctx → c.tm d Γ h T x_ty →
+        RepKLevelList h ls x_deps →
+        ∃ g : KLevel, RepKLevel h' g r := by
+  induction N with
+  | zero => intro _ _ _ _ _ _ _ _ _ hlt; exact absurd hlt (Nat.not_lt_zero _)
+  | succ N ihN =>
+    intro x_rc x_ty x_ctx x_k x_deps r h h' calls hlt hlt0 good ev k d Γ T ls hk hrc htypes hT hls
+    subst hk
+    rcases Obs.«KernelGuard::proj_walk_checked».obs ev with
+      ⟨x_dom, x_body, w16, v32, m33, cs43, cs87, ld11, ev45, _, ev89, hc106⟩ |
+      ⟨x_dom, x_body, w16, v32, m33, cs43, v176, m177, cs179, cs188, v194, m211,
+        ld11, ev45, _, sg184, hm219, op252, ev190, hc261⟩
+    · subst hc106
+      obtain ⟨D, B, ℓ, rfl, hD, -, -⟩ := hT.forallE_of_load ld11
+      have g43 : CoreGood c cs43 := good.sub fun x hx => by simp [hx]
+      obtain ⟨lu, hlu⟩ := checked_sort_rep c ih
+        (by simp only [List.length_cons, List.length_append] at hlt0; omega)
+        g43 ev45 hrc htypes hD
+      have e45 := ObsFn.heap_extends ev45
+      exact proj_guard_fold_rep ev89 hlu (RepKLevelList.mono hls e45)
+    · subst hc261
+      obtain ⟨D, B, ℓ, rfl, hD, hB, -⟩ := hT.forallE_of_load ld11
+      have g43 : CoreGood c cs43 := good.sub fun x hx => by simp [hx]
+      obtain ⟨lu, hlu⟩ := checked_sort_rep c ih
+        (by simp only [List.length_cons, List.length_append] at hlt0; omega)
+        g43 ev45 hrc htypes hD
+      have e45 := ObsFn.heap_extends ev45
+      obtain ⟨ls', hls177, e33_177⟩ :
+          ∃ ls', RepKLevelList m177 ls' v176 ∧ Heap.Extends m33 m177 := by
+        rcases sg184 with
+          ⟨m112, cs123, cs148, ev125, ev150, _⟩ |
+          ⟨v111, m112, cs123, ev125, _, he173, he174, _⟩
+        · have e125 := ObsFn.heap_extends ev125
+          have e150 := ObsFn.heap_extends ev150
+          exact ⟨ls ++ [lu],
+            lv_snoc ev150 (RepKLevelList.mono (RepKLevelList.mono hls e45) e125) (hlu.mono e125),
+            e125.trans e150⟩
+        · subst he173 he174
+          have e125 := ObsFn.heap_extends ev125
+          exact ⟨ls, RepKLevelList.mono (RepKLevelList.mono hls e45) e125, e125⟩
+      subst hm219
+      have hv194 : v194 = .field (k - 1) := NatAux.sub_ok op252
+      have e211 := Heap.Extends.snoc m177 (.construct kexprListEnum "Cons" [x_dom, x_ctx])
+      have E177 : Heap.Extends h m177 := e45.trans e33_177
+      have E211 : Heap.Extends h _ := E177.trans e211
+      have htypes211 := types_extend (types_mono E177 htypes) (Tm.mono E177 hD)
+      have hbody211 := Tm.open_body (Ghost.extend_at Γ d D) (Ghost.extend_below Γ d D)
+        (Tm.mono E211 hB)
+      have g188 : CoreGood c cs188 := good.sub fun x hx => by simp [hx]
+      exact ihN
+        (by simp only [List.length_cons, List.length_append] at hlt; omega)
+        (by simp only [List.length_cons, List.length_append] at hlt0; omega)
+        g188 ev190 (k - 1) (d + 1) _ _ ls' hv194
+        (RCRep.mono E211 hrc) htypes211 hbody211 (RepKLevelList.mono hls177 e211)
+
 theorem proj_guard_rep (c : ScopedCtx) {calls0 : List (Call F)} (ih : IH c calls0)
     {x_rc x_block x_idx x_fidx r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hlt0 : calls.length < calls0.length) (good : CoreGood c calls)
@@ -774,40 +852,81 @@ theorem proj_guard_rep (c : ScopedCtx) {calls0 : List (Call F)} (ih : IH c calls
   subst hi hf
   rcases Obs.«KernelInfer::proj_guard».obs ev with
     ⟨m2, p9, cs15, w44, x_cty, w45, w46, w47, x_np, w48, w49, m91, cs101, m122,
-      x_after, x_ctx, cs150, m187, ev17, ld11, hm130, ev103, hm195, ev152, hc199⟩
-  subst hc199 hm130 hm195
-  have g15 : CoreGood c cs15 := good.sub fun x hx => by simp [hx]
-  have hctorLoad := ih.get (.callees .get_ci_cprj)
-    (by simp only [List.length_cons, List.length_append] at hlt0; omega)
-    ev17 x_block i 0 b rfl (good.allowedTop (by simp_all)) hres g15 hb
-  obtain ⟨ci, v, hld, hci⟩ := hctorLoad.1
-  rw [ld11] at hld
-  injection hld with hv
-  subst hv
-  obtain ⟨cv, nP, nF, rfl, ⟨-, -, -, hcty⟩, hnp_eq, -, -, -, -⟩ := WhnfAux.ctor_inv hci
-  have e17 := ObsFn.heap_extends ev17
-  have e122 := Heap.Extends.snoc m2 (.construct kexprListEnum "Nil" [])
-  have hnil_ctx : c.types (fun _ => .sort .zero)
-      (m2 ++ [.construct kexprListEnum "Nil" []]) 0 (.ptr (.enum kexprListEnum) m2.length) :=
-    ⟨.nil List.getElem?_concat_length, fun _ hj => absurd hj (Nat.not_lt_zero _)⟩
-  obtain ⟨d', Γ', T_after, htypes91, hT91⟩ :=
-    peel_n_foralls_with_types_rep c (cs101.length + 1) (Nat.lt_succ_self _) ev103 rfl
-      (nP : F) 0 (fun _ => .sort .zero) (posOf cv.levelParams cv.type) hnp_eq hnil_ctx
-      (Tm.mono e122 (hcty 0 (fun _ => .sort .zero)))
-  have e103 := ObsFn.heap_extends ev103
-  have e187 := Heap.Extends.snoc m91
-    (.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" [])
-  have hnil_deps : RepKLevelList
-      (m91 ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" []]) []
-      (.ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>») m91.length) := by
-    rw [klevel_node_eq]
-    exact .nil List.getElem?_concat_length
-  have E187 : Heap.Extends h _ := e17.trans (e122.trans (e103.trans e187))
-  have g150 : CoreGood c cs150 := good.sub fun x hx => by simp [hx]
-  exact proj_guard_walk_rep c ih (cs150.length + 1) (Nat.lt_succ_self _)
-    (by simp only [List.length_cons, List.length_append] at hlt0; omega)
-    g150 ev152 f d' Γ' T_after [] rfl (RCRep.mono E187 hrc)
-    (types_mono e187 htypes91) (Tm.mono e187 hT91) hnil_deps
+      x_after, x_ctx, m148, p155, cs161, w183, x_ind_ty, x_ind_np, x_ind_ni, w184, w185,
+      w186, w187, m229, cs240, v245, csTail, mFinal, ev17, ld11, hm130, ev103, ev163,
+      ld157, op273, ev242, hmFinal, evTail, hcs⟩ |
+    ⟨m2, p9, cs15, w44, x_cty, w45, w46, w47, x_np, w48, w49, m91, cs101, m122,
+      x_after, x_ctx, m148, p155, cs161, w183, x_ind_ty, x_ind_np, x_ind_ni, w184, w185,
+      w186, w187, v228, m229, cs240, v245, csTail, mFinal, ev17, ld11, hm130, ev103,
+      ev163, ld157, op273, ev242, hne, hmFinal, evTail, hcs⟩
+  · subst hcs hm130 hmFinal
+    have g15 : CoreGood c cs15 := good.sub fun x hx => by simp [hx]
+    have hctorLoad := ih.get (.callees .get_ci_cprj)
+      (by simp only [List.length_cons, List.length_append] at hlt0; omega)
+      ev17 x_block i 0 b rfl (good.allowedTop (by simp_all)) hres g15 hb
+    obtain ⟨ci, v, hld, hci⟩ := hctorLoad.1
+    rw [ld11] at hld
+    injection hld with hv
+    subst hv
+    obtain ⟨cv, nP, nF, rfl, ⟨_, _, _, hcty⟩, hnp_eq, _, _, _, _⟩ := WhnfAux.ctor_inv hci
+    have e17 := ObsFn.heap_extends ev17
+    have e122 := Heap.Extends.snoc m2 (.construct kexprListEnum "Nil" [])
+    have hnil_ctx : c.types (fun _ => .sort .zero)
+        (m2 ++ [.construct kexprListEnum "Nil" []]) 0 (.ptr (.enum kexprListEnum) m2.length) :=
+      ⟨.nil List.getElem?_concat_length, fun _ hj => absurd hj (Nat.not_lt_zero _)⟩
+    obtain ⟨d', Γ', T_after, htypes91, hT91⟩ :=
+      peel_n_foralls_with_types_rep c (cs101.length + 1) (Nat.lt_succ_self _) ev103 rfl
+        (nP : F) 0 (fun _ => .sort .zero) (posOf cv.levelParams cv.type) hnp_eq hnil_ctx
+        (Tm.mono e122 (hcty 0 (fun _ => .sort .zero)))
+    have e103 := ObsFn.heap_extends ev103
+    have eRest := ev163.heap_extends.trans ev242.heap_extends
+    have eFinal := Heap.Extends.snoc m229
+      (.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" [])
+    have hnil_deps : RepKLevelList
+        (m229 ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" []]) []
+        (.ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>») m229.length) := by
+      rw [klevel_node_eq]
+      exact .nil List.getElem?_concat_length
+    have EFinal : Heap.Extends h _ := e17.trans (e122.trans (e103.trans (eRest.trans eFinal)))
+    have gTail : CoreGood c csTail := good.sub fun x hx => by simp [hx]
+    exact proj_walk_checked_rep c ih (csTail.length + 1) (Nat.lt_succ_self _)
+      (by simp only [List.length_cons, List.length_append] at hlt0; omega)
+      gTail evTail f d' Γ' T_after [] rfl (RCRep.mono EFinal hrc)
+      (types_mono (eRest.trans eFinal) htypes91) (Tm.mono (eRest.trans eFinal) hT91) hnil_deps
+  · subst hcs hm130 hmFinal
+    have g15 : CoreGood c cs15 := good.sub fun x hx => by simp [hx]
+    have hctorLoad := ih.get (.callees .get_ci_cprj)
+      (by simp only [List.length_cons, List.length_append] at hlt0; omega)
+      ev17 x_block i 0 b rfl (good.allowedTop (by simp_all)) hres g15 hb
+    obtain ⟨ci, v, hld, hci⟩ := hctorLoad.1
+    rw [ld11] at hld
+    injection hld with hv
+    subst hv
+    obtain ⟨cv, nP, nF, rfl, ⟨_, _, _, hcty⟩, hnp_eq, _, _, _, _⟩ := WhnfAux.ctor_inv hci
+    have e17 := ObsFn.heap_extends ev17
+    have e122 := Heap.Extends.snoc m2 (.construct kexprListEnum "Nil" [])
+    have hnil_ctx : c.types (fun _ => .sort .zero)
+        (m2 ++ [.construct kexprListEnum "Nil" []]) 0 (.ptr (.enum kexprListEnum) m2.length) :=
+      ⟨.nil List.getElem?_concat_length, fun _ hj => absurd hj (Nat.not_lt_zero _)⟩
+    obtain ⟨d', Γ', T_after, htypes91, hT91⟩ :=
+      peel_n_foralls_with_types_rep c (cs101.length + 1) (Nat.lt_succ_self _) ev103 rfl
+        (nP : F) 0 (fun _ => .sort .zero) (posOf cv.levelParams cv.type) hnp_eq hnil_ctx
+        (Tm.mono e122 (hcty 0 (fun _ => .sort .zero)))
+    have e103 := ObsFn.heap_extends ev103
+    have eRest := ev163.heap_extends.trans ev242.heap_extends
+    have eFinal := Heap.Extends.snoc m229
+      (.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" [])
+    have hnil_deps : RepKLevelList
+        (m229 ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» "Nil" []]) []
+        (.ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>») m229.length) := by
+      rw [klevel_node_eq]
+      exact .nil List.getElem?_concat_length
+    have EFinal : Heap.Extends h _ := e17.trans (e122.trans (e103.trans (eRest.trans eFinal)))
+    have gTail : CoreGood c csTail := good.sub fun x hx => by simp [hx]
+    exact proj_guard_walk_rep c ih (csTail.length + 1) (Nat.lt_succ_self _)
+      (by simp only [List.length_cons, List.length_append] at hlt0; omega)
+      gTail evTail f d' Γ' T_after [] rfl (RCRep.mono EFinal hrc)
+      (types_mono (eRest.trans eFinal) htypes91) (Tm.mono (eRest.trans eFinal) hT91) hnil_deps
 
 theorem prop_guard_ok_zero {c : ScopedCtx} {calls0 : List (Call F)} (ih : IH c calls0)
     {x_guard x_lvls x_is_prop r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
