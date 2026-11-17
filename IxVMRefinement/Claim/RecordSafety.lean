@@ -32,8 +32,8 @@ theorem defn_is_unsafe_ci_safe_spec {d : Ixon.Definition} {xk xs r : SourceValue
     cases he : d.safety <;> simpa only [RepDefinitionSafety, L1.repDefSafetyVal, he] using hs
   rw [hk', hs'] at ev
   have hf : L1.defnIsUnsafeCI d = false := by
-    cases hk : d.kind <;> cases hs : d.safety <;>
-      simp_all [Ix.Kernel.Reader.safetyDecline, Ix.Kernel.Reader.safetyDeclineOf, L1.defnIsUnsafeCI, beq_iff_eq]
+    rcases d with ⟨kind, safety, asserts, lvls, typ, val⟩
+    cases kind <;> cases safety <;> first | rfl | cases hlogic
   obtain ⟨hr, hh⟩ := L1.defn_is_unsafe_ci_spec ev
   exact ⟨by simpa [hf, L1.repBoolField] using hr, hh⟩
 
