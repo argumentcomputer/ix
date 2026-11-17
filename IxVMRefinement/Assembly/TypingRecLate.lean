@@ -97,7 +97,6 @@ def MatchedAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (env : Ix.Kernel.Env .ano
       ∀ (j : Nat) (cA : ConstantVal .anon × Nat), fam.ctorsA[j]? = some cA →
         cA.1.name = keyOf t (Core.cprjAddr ip.block ip.idx.toNat j)
 
-
 /-! ## The head of the late step -/
 
 /-- **The late step conses the recursor**: fresh, no table's name, named after the declared
@@ -437,6 +436,17 @@ theorem late_prefixInv_step {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Opti
   exact hinv.unresolved
 
 /-! ## The step of the record -/
+
+/-- **A block the circuit's native recursor route tested is native at the store**: the route's
+`block_is_modeled` run answered `0` (`Assembly.native_rec_actual_parent_route`), and its calls,
+within the run's, are good for the store. -/
+theorem nativeAt_of_route {c : Core.Ctx} {bq : SourceValue F} {h h' : Heap F}
+    {cs calls : List (Call F)} {b : Bytes.Address}
+    (ev : ObsFn Core.W "KernelModeled::block_is_modeled" [bq] h (.field 0) h' cs)
+    (hsub : ∀ x ∈ cs, x ∈ calls) (hg : Core.Good c calls)
+    (hb : Bytes.RepAddressRef Core.addrTy h b bq) : NativeAt c.E (Core.ixAddr b) :=
+  let g := hg.sub hsub
+  ⟨bq, h, h', cs, b, ev, g.1, g.2, hb, rfl⟩
 
 /-- **What the skeleton hands a step at an environment** (`UnitStep`'s premises, without the
 extra clause). -/
