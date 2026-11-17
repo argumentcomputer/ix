@@ -103,7 +103,7 @@ theorem RawExprRep.lbr {κ : _root_.Address → KKey} {h h' : Heap F} {k : Nat}
     {R : KExpr} {p r : SourceValue F} {calls : List (Call F)}
     (represented : RawExprRep κ h k R p) (bounded : IxVM.Consistency.Bounded calls)
     (observed : ObsFn W "KernelSubst::expr_lbr" [p] h r h' calls) :
-    h' = h ∧ ∃ bound, r = .field (bound : F) ∧ bound ≤ 9223372036854775808 ∧
+    h' = h ∧ ∃ (bound : Nat), r = .field (bound : F) ∧ bound ≤ 9223372036854775808 ∧
       R.looseBVarsBounded bound = true := by
   obtain ⟨E, rep⟩ := represented
   obtain ⟨unchanged, scan⟩ := SubstAux.gall κ .expr_lbr _ _ _ _ _ observed p rfl bounded
@@ -127,10 +127,10 @@ theorem raw_lift_bvar_exact {κ : _root_.Address → KKey} {h h' : Heap F}
     injection hi with hi; injection hc with hc
     subst hi hc result heap
     have below := SubstAux.ltf_one verdict.symm
-    have rep : RawExprRep κ (h ++ [.construct kexprEnum "BVar" [.field i]])
-        (k + shift.val) (.bvar i.val) (.ptr (.enum kexprEnum) h.length) :=
+    have rep : RawExprRep κ (m2 ++ [.construct kexprEnum "BVar" [.field i]])
+        (k + shift.val) (.bvar i.val) (.ptr (.enum kexprEnum) m2.length) :=
       ⟨_, .bvarLocal (by simp) small (by omega)⟩
-    simpa only [Expr.liftLooseBVars, if_neg (by omega : ¬ cutoff.val ≤ i.val)] using rep
+    simpa [Expr.liftLooseBVars, show ¬ cutoff.val ≤ i.val by omega] using rep
   | n0 m2 childCalls value comparison result heap added events =>
     obtain ⟨i', cutoff', hi, hc, inputBound, _, verdict, rfl⟩ := SubstAux.ltf comparison
     injection hi with hi; injection hc with hc
@@ -141,10 +141,10 @@ theorem raw_lift_bvar_exact {κ : _root_.Address → KKey} {h h' : Heap F}
       SubstAux.val_add (by
         have : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
         omega)
-    have rep : RawExprRep κ (h ++ [.construct kexprEnum "BVar" [.field (i + shift)]])
-        (k + shift.val) (.bvar (i + shift).val) (.ptr (.enum kexprEnum) h.length) :=
+    have rep : RawExprRep κ (m2 ++ [.construct kexprEnum "BVar" [.field (i + shift)]])
+        (k + shift.val) (.bvar (i + shift).val) (.ptr (.enum kexprEnum) m2.length) :=
       ⟨_, .bvarLocal (by simp) (by rw [sumValue]; omega) (by rw [sumValue]; omega)⟩
-    simpa only [Expr.liftLooseBVars, if_pos above, sumValue] using rep
+    simpa [Expr.liftLooseBVars, show cutoff.val ≤ i.val by omega, sumValue] using rep
 
 
 end IxVM.Refinement.Decl
