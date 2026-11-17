@@ -107,7 +107,12 @@ a `SetTheory`: the first takes one, the second speaks of every model in every on
   constant references, and validate an operation on its value (for `Facts`: the shapes and
   equations the native rules rely on);
 * refuse a recursor with a `let` in its first motive's type or its major premise's domain
-  (`Reads` at a recursor; see the `Reads` documentation).
+  (`Reads` at a recursor; see the `Reads` documentation);
+* walk, in a `binding` run, what the records of the two standard axioms reference: `kept`
+  keeps both records, so `UsedClosed` asks for every record they reference;
+* refuse a claim whose closure holds a recursor of a mutual or nested family. The proof of
+  the typing half relies on this refusal until it has a route for such recursors; the
+  statements do not mention it.
 
 ## What the statements do not cover
 
@@ -117,8 +122,11 @@ an arbitrary set with its constructors' values, and a structure whose projection
 in the environment has projections with no law. Nothing requires either to be present beyond
 the pinned basis blocks, `And` and `Bool`.
 
-Claims with user axioms, assumed leaves, a literal class, `eval`. That the role addresses are
-a given toolchain's constants.
+Claims with user axioms, assumed leaves, a literal class, `eval`. Conditional claims, that is
+claims with an assumption tree, the form a large library takes when it is checked in parts.
+Proofs consumed through aggregation: an aggregate's verifier would have to pin this circuit
+and match the table address, and nothing here states that. That the role addresses are a
+given toolchain's constants.
 -/
 
 universe u
