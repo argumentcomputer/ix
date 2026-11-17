@@ -31,7 +31,7 @@ private theorem sub_one_roleNum' {ro : Ix.Kernel.Role} {v : SourceValue F}
   simp only [evalBinOp, add_sub_cancel_right, Except.ok.injEq] at op
   exact op.symm
 
-private theorem eq_of_sub_zero {a b : F}
+theorem field_eq_of_sub_zero {a b : F}
     (op : evalBinOp .sub (.field a) (.field b) = .ok (.field 0)) : a = b := by
   simp only [evalBinOp, Except.ok.injEq, Value.field.injEq] at op
   exact sub_eq_zero.mp op
@@ -53,15 +53,15 @@ theorem axiom_role_standing_inert {ro : Ix.Kernel.Role} (hin : ro.inert = true)
   | .other_n0 (op37 := op37) (ev62 := ev62) (op55 := op55) .. =>
     rw [sub_one_roleNum' op37] at op55
     obtain ⟨rfl, -, -⟩ := Obs.«KernelRoleSpec::role_propext».obs ev62
-    exact absurd (eq_of_sub_zero op55) h56
+    exact absurd (field_eq_of_sub_zero op55) h56
   | .other_other_n0 (op37 := op37) (ev62 := ev62) (ev97 := ev97) (op90 := op90) .. =>
     rw [sub_one_roleNum' op37] at op90
     obtain ⟨rfl, -, -⟩ := Obs.«KernelRoleSpec::role_choice».obs ev97
-    exact absurd (eq_of_sub_zero op90) h57
+    exact absurd (field_eq_of_sub_zero op90) h57
   | .other_other_other_n0 (op37 := op37) (ev132 := ev132) (op125 := op125) .. =>
     rw [sub_one_roleNum' op37] at op125
     obtain ⟨rfl, -, -⟩ := Obs.«KernelRoleSpec::role_quot_sound».obs ev132
-    exact absurd (eq_of_sub_zero op125) h36
+    exact absurd (field_eq_of_sub_zero op125) h36
   | .other_other_other_other_n0 (he179 := he) .. => exact he
   | .other_other_other_other_other (op37 := op37) (ev166 := ev166) (op160 := op160)
       (hne182 := hne) .. =>
