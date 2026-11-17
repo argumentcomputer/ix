@@ -164,14 +164,14 @@ theorem former_tele_at_spec {c : ScopedCtx} :
         exact ⟨xd, xb, vb, xm, hl, hH.loadValue_eq
           (loadValue_snoc_cell mb "Forall" [xd, vb, xm]),
           hcells m H (by omega) (ext_f.trans hH) hfc'⟩
-    | .other_other (v36 := v0) (x_d := xd) (x_b := xb) (x_m := xm) (v250 := vb) (m260 := mb)
-        (cs268 := csb) (cs196 := csw) (m183 := mw) (p190 := pw) (m306 := m1)
-        (ld47 := ld) (hne178 := hnf) (ev198 := evw) (ld192 := ldw) (he245 := hr) (hm244 := hh)
-        (op303 := op) (hm314 := hm1) (ev270 := evb) (hc348 := hc) .. =>
+    | .other_other (v36 := v0) (x_d := xd) (x_b := xb) (x_m := xm) (v241 := vb) (m251 := mb)
+        (cs259 := csb) (cs196 := csw) (m183 := mw) (p190 := pw) (m297 := m1)
+        (ld47 := ld) (hne178 := hnf) (ev198 := evw) (ld192 := ldw) (he236 := hr) (hm235 := hh)
+        (op294 := op) (hm305 := hm1) (ev261 := evb) (hc339 := hc) .. =>
       subst hc hr hh
       have hgw : CoreGood c csw := hgood.sub (fun x hx => by simp [hx])
       have hgb : CoreGood c csb := hgood.sub (fun x hx => by simp [hx])
-      obtain ⟨E', hE', hred⟩ := scoped_core_whnf hrc hty hsc hef hlf hgw evw hE
+      obtain ⟨E', hE', -⟩ := Core.GuardData.head_rep ⟨hef, hlf⟩ hgw hE evw
       obtain ⟨T, B, ℓm, rfl, hT, hB, hℓm⟩ := hE'.forallE_of_load ldw
       have ext_w : Heap.Extends h mw := evw.heap_extends
       obtain ⟨ext_push, hty', hsc'⟩ := push_binder_types hT (hty.mono ext_w) hsc

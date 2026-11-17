@@ -3,8 +3,8 @@ import IxVMRefinement.Assembly.TypingRecLateElim
 /-! # The telescope length `get_result_sort_level` accepts
 
 `get_result_sort_level(rc, ty, n, types)` head-normalizes before each of `n` binders and at the
-end, where it must find a sort. A syntactic telescope into a sort is already head normal at
-every position (`Red.forallE_eq`, `Red.sort_eq`: neither a `∀` nor a sort reduces), so the walk
+end, where it must find a sort. A syntactic telescope into a sort is returned unchanged at
+every exposed head by the structural classifier (`GuardData.head_rep`), so the walk
 accepts one only at its own length: `get_result_sort_level_tele_len`. This refutes the third case
 of `formerAt_cases` (`FormerTeleOther`) wherever the walked check's shape stage is read at a
 scoped context.
