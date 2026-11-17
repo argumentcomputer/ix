@@ -402,12 +402,12 @@ theorem RawExprRep.lift {κ : _root_.Address → KKey} {h h' : Heap F} {k : Nat}
 
 
 private theorem lower_eq_self {R : KExpr} {cutoff shift : Nat}
-    (closed : R.looseBVarsBounded cutoff = true) : R.lowerBVars shift cutoff = R := by
+    (closed : R.looseBVarsBounded (cutoff + shift) = true) : R.lowerBVars shift cutoff = R := by
   induction R generalizing cutoff with
   | bvar i =>
     simp only [Expr.looseBVarsBounded, decide_eq_true_eq] at closed
-    simp [Expr.lowerBVars, show ¬ cutoff ≤ i by omega]
-  | _ => simp_all [Expr.lowerBVars, Expr.looseBVarsBounded, Bool.and_eq_true]
+    simp [Expr.lowerBVars, show ¬ cutoff + shift ≤ i by omega]
+  | _ => simp_all [Expr.lowerBVars, Expr.looseBVarsBounded, Bool.and_eq_true, Nat.add_right_comm]
 
 private theorem lower_zero (R : KExpr) (cutoff : Nat) : R.lowerBVars 0 cutoff = R := by
   induction R generalizing cutoff <;> simp_all [Expr.lowerBVars]
@@ -423,7 +423,7 @@ private theorem raw_lower_go (κ : _root_.Address → KKey) :
       (walk = true → cutoff.val < 4294967296 ∧ ¬ IdxLt h cutoff.val p) →
       RawExprRep κ h k R p →
       ObsFn W (rawLowerName walk) [p, .field shift, .field cutoff] h r h' calls →
-      RawExprRep κ h' k (R.lowerBVars shift.val cutoff.val) r := by
+      RawExprRep κ h' k (R.lowerBVars shift.val (cutoff.val - shift.val)) r := by
   intro fuel
   induction fuel using Nat.strong_induction_on with
   | h fuel ih =>
@@ -435,7 +435,7 @@ private theorem raw_lower_go (κ : _root_.Address → KKey) :
       | .n0 (hv14 := zero) (he16 := result) (he17 := heap) .. =>
         injection zero with zero
         subst shift result heap
-        simpa only [ZMod.val_zero, Nat.add_zero, lower_zero] using represented
+        simpa only [ZMod.val_zero, Nat.add_zero, Nat.sub_zero, lower_zero] using represented
       | .other_n0 (ev36 := scan) (ev59 := compare) (he81 := result) (he82 := heap) (hc83 := events) .. =>
         obtain ⟨same, limit, readLimit, limitBound, closed⟩ := represented.lbr
           (bounded_sub (fun _ inside => by rw [events]; simp [inside]) bounded) scan
@@ -486,7 +486,7 @@ private theorem raw_lower_go (κ : _root_.Address → KKey) :
         have resultRep : RawExprRep κ (h ++ [.construct kexprEnum "BVar" [.field (i - shift)]])
             k (.bvar (i - shift).val) (.ptr (.enum kexprEnum) h.length) :=
           ⟨_, .bvarLocal (by simp) (by rw [difference]; omega) (by rw [difference]; omega)⟩
-        simpa [Expr.lowerBVars, above, difference] using resultRep
+        simpa [Expr.lowerBVars, Nat.sub_add_cancel shiftBound, above, difference] using resultRep
       | .Srt (ld12 := loaded) (he67 := result) (hm66 := heap) .. =>
         obtain ⟨u, rfl, rfl, level⟩ := rep.raw_sort_view loaded
         subst result heap
@@ -543,6 +543,8 @@ private theorem raw_lower_go (κ : _root_.Address → KKey) :
           (bounded_sub (fun _ inside => by rw [events]; simp [inside]) bounded)
           (by rw [SubstAux.val_succ32 cutoffSmall]; omega) (by intro impossible; cases impossible) ⟨_, body.mono e1.heap_extends⟩ e2
         rw [SubstAux.val_succ32 cutoffSmall] at hb
+        have cut : cutoff.val + 1 - shift.val = cutoff.val - shift.val + 1 := by omega
+        rw [cut] at hb
         subst result heap
         refine ⟨.lam D' B' (bmeta u), .lam (bp := bodyOut) (by simp) (hd.mono (e2.heap_extends.trans (Heap.Extends.snoc _ _))) ?_
           (level.mono (e1.heap_extends.trans (e2.heap_extends.trans (Heap.Extends.snoc _ _))))⟩
@@ -560,6 +562,8 @@ private theorem raw_lower_go (κ : _root_.Address → KKey) :
           (bounded_sub (fun _ inside => by rw [events]; simp [inside]) bounded)
           (by rw [SubstAux.val_succ32 cutoffSmall]; omega) (by intro impossible; cases impossible) ⟨_, body.mono e1.heap_extends⟩ e2
         rw [SubstAux.val_succ32 cutoffSmall] at hb
+        have cut : cutoff.val + 1 - shift.val = cutoff.val - shift.val + 1 := by omega
+        rw [cut] at hb
         subst result heap
         refine ⟨.forallE D' B' (bmeta u), .forallE (bp := bodyOut) (by simp) (hd.mono (e2.heap_extends.trans (Heap.Extends.snoc _ _))) ?_
           (level.mono (e1.heap_extends.trans (e2.heap_extends.trans (Heap.Extends.snoc _ _))))⟩
@@ -584,6 +588,10 @@ private theorem raw_lower_go (κ : _root_.Address → KKey) :
             (by rw [SubstAux.val_succ32 cutoffSmall]; omega) (by intro impossible; cases impossible)
             ⟨_, body.mono (e1.heap_extends.trans e2.heap_extends)⟩ e3
           rw [SubstAux.val_succ32 cutoffSmall] at hb
+          have cut : cutoff.val + 1 - shift.val = cutoff.val - shift.val + 1 := by omega
+          rw [cut] at hb
+        have cut : cutoff.val + 1 - shift.val = cutoff.val - shift.val + 1 := by omega
+        rw [cut] at hb
           subst result heap
           refine ⟨instShift V' 0 B', .letE (bp := bodyOut) (by simp)
             (ht.mono (e2.heap_extends.trans (e3.heap_extends.trans (Heap.Extends.snoc _ _))))
@@ -611,7 +619,7 @@ theorem RawExprRep.lower {κ : _root_.Address → KKey} {h h' : Heap F} {k : Nat
     (represented : RawExprRep κ h k R p) (bounded : IxVM.Consistency.Bounded calls)
     (shiftBound : shift.val ≤ cutoff.val)
     (observed : ObsFn W "KernelSubst::expr_lower" [p, .field shift, .field cutoff] h r h' calls) :
-    RawExprRep κ h' k (R.lowerBVars shift.val cutoff.val) r :=
+    RawExprRep κ h' k (R.lowerBVars shift.val (cutoff.val - shift.val)) r :=
   raw_lower_go κ calls.length false (Nat.le_refl _) bounded shiftBound
     (by intro impossible; cases impossible) represented observed
 
