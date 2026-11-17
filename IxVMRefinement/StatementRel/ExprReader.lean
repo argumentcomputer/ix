@@ -44,9 +44,18 @@ theorem mapM_cons_ok {f : UInt64 → ReadM CLevel} {u : UInt64} {us : List UInt6
   rw [List.mapM_cons]
   exact except_bind_ok.mpr ⟨l, h, except_bind_ok.mpr ⟨ls, hs, rfl⟩⟩
 
-theorem conv_var {i : UInt64} :
+theorem conv_mkBvar {i : UInt64} :
     convExpr ecx tbl (.var i) = pure (Expr.mkBvar i.toNat) := by
   simp only [convExpr]
+
+/-- A variable converts to the plain `bvar` node. The reader builds it through the pooled
+constructor `Expr.mkBvar`, which is the same value; the plain node is what an evaluation in
+the Lean kernel can afford (the pool is a table of 4096 nodes). -/
+theorem conv_var {i : UInt64} :
+    convExpr ecx tbl (.var i) = .ok (.bvar i.toNat) := by
+  have h := conv_mkBvar (ecx := ecx) (tbl := tbl) (i := i)
+  rw [Expr.mkBvar_eq] at h
+  exact h
 
 theorem conv_sort {i : UInt64} {l : CLevel} (hl : ecx.level i = .ok l) :
     convExpr ecx tbl (.sort i) = .ok (.sort l) := by
@@ -126,7 +135,7 @@ table `tbl` whose first entries are known to be the terms `vs`. -/
 def convCheck (o : Oracle ecx) (tbl : Array (ReadM (CExpr .anon))) (vs : Array (CExpr .anon))
     (hsh : ∀ (i : Nat) (v : CExpr .anon), vs[i]? = some v → tbl[i]? = some (Except.ok v)) :
     (e : Ixon.Expr) → Option { v : CExpr .anon // convExpr ecx tbl e = .ok v }
-  | .var i => some ⟨Expr.mkBvar i.toNat, conv_var⟩
+  | .var i => some ⟨.bvar i.toNat, conv_var⟩
   | .sort i =>
     match levelCheck o i with
     | some l => some ⟨.sort l.1, conv_sort l.2⟩

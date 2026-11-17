@@ -22,7 +22,8 @@ open IxVM.Refinement.TableInhabit
 open IxVM.Refinement.StoreInhabit
 open IxVM.Refinement.RowReader
 
-set_option maxRecDepth 20000 in
+set_option maxHeartbeats 4000000 in
+set_option maxRecDepth 100000 in
 /-- Every row of the basis store that is not a block has a reading that the pin at its key
 stores (decided: the reading is computed and `StoredAs` checked, row by row). -/
 theorem basis_rowsOk :
