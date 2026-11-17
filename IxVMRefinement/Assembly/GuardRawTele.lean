@@ -70,18 +70,18 @@ PrefixEq interface used by native recursor generation. -/
 theorem PrefixEq.rawMeaning : ∀ {n : Nat} {R S : KExpr}, PrefixEq n R S →
     PrefixEq n (rawMeaning R) (rawMeaning S)
   | 0, _, _, _ => trivial
-  | n + 1, R, S, prefix => by
-    cases R <;> cases S <;> simp only [PrefixEq] at prefix
+  | n + 1, R, S, samePrefix => by
+    cases R <;> cases S <;> simp only [PrefixEq] at samePrefix
     rename_i D B binderData D' B' binderData'
-    obtain ⟨rfl, rfl, tail⟩ := prefix
+    obtain ⟨rfl, rfl, tail⟩ := samePrefix
     exact ⟨rfl, rfl, PrefixEq.rawMeaning tail⟩
 
 theorem PrefixEq.of_raw_readings {κ κ' : _root_.Address → KKey} {d d' k k' n : Nat}
     {Γ Γ' : Nat → KExpr} {h h' : Heap F} {R S E E' : KExpr} {p p' : SourceValue F}
     (first : RawTmExact κ d Γ h k R E p) (second : RawTmExact κ' d' Γ' h' k' S E' p')
-    (prefix : PrefixEq n R S) : PrefixEq n E E' := by
+    (samePrefix : PrefixEq n R S) : PrefixEq n E E' := by
   rw [first.meaning, second.meaning]
-  exact prefix.rawMeaning
+  exact samePrefix.rawMeaning
 
 private theorem store_raw_forall {κ : _root_.Address → KKey} {h : Heap F} {kd kb : Nat}
     {D B : KExpr} {dom body levelPtr : SourceValue F} {level : KLevel}
@@ -101,7 +101,7 @@ Its context-list and role-pointer inputs are passed through by the source; scope
 supplies exactly the load licensing needed by the structural head producer. -/
 theorem former_tele_at_raw (rawKey : _root_.Address → KKey) [∀ a, Resolved (rawKey a)]
     {c : ScopedCtx} (facts : ScopedCoreFacts c) {rootCalls : List (Call F)} :
-    ∀ n {d k : Nat} {Γ : Nat → KExpr} {R E : KExpr} {level : KLevel}
+    ∀ (n : Nat) {d k : Nat} {Γ : Nat → KExpr} {R E : KExpr} {level : KLevel}
       {rc p types levelPtr r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
       n < 18446744069414584321 → CoreGood c calls → (∀ call ∈ calls, call ∈ rootCalls) →
       Tm c.κ d Γ h 0 E p → RawExprRep rawKey h k R p → RepKLevel h level levelPtr →
@@ -166,11 +166,11 @@ theorem former_tele_at_raw (rawKey : _root_.Address → KKey) [∀ a, Resolved (
         tailRep (rawLevel.mono allExtended)
       exact ⟨outBound, _, outRep, .step headTrace tailTrace⟩
 
-/-- The actual recursor builder produces the same consumed-prefix trace while retaining
+/-- The actual recursor builder produces the same consumed-samePrefix trace while retaining
 its residual input at zero binders. -/
 theorem nat_former_tele_raw (rawKey : _root_.Address → KKey) [∀ a, Resolved (rawKey a)]
     {c : ScopedCtx} (facts : ScopedCoreFacts c) {rootCalls : List (Call F)} :
-    ∀ n {d k : Nat} {Γ : Nat → KExpr} {R E : KExpr}
+    ∀ (n : Nat) {d k : Nat} {Γ : Nat → KExpr} {R E : KExpr}
       {rc p types r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
       n < 18446744069414584321 → CoreGood c calls → (∀ call ∈ calls, call ∈ rootCalls) →
       Tm c.κ d Γ h 0 E p → RawExprRep rawKey h k R p →
@@ -239,7 +239,7 @@ theorem nat_former_tele_raw (rawKey : _root_.Address → KKey) [∀ a, Resolved 
 sort level. This replaces a semantic representation-equivalence guess with observed data. -/
 theorem get_result_sort_level_raw (rawKey : _root_.Address → KKey) [∀ a, Resolved (rawKey a)]
     {c : ScopedCtx} (facts : ScopedCoreFacts c) {rootCalls : List (Call F)} :
-    ∀ n {d k : Nat} {Γ : Nat → KExpr} {R E : KExpr}
+    ∀ (n : Nat) {d k : Nat} {Γ : Nat → KExpr} {R E : KExpr}
       {rc p types r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
       n < 18446744069414584321 → CoreGood c calls → (∀ call ∈ calls, call ∈ rootCalls) →
       Tm c.κ d Γ h 0 E p → RawExprRep rawKey h k R p →
