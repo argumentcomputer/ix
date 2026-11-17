@@ -830,7 +830,7 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
               some (rcbs, Ix.Kernel.Expr.mkAppN (.const p₀.cvT.name us) rargs) ∧
             cvCa.type.stripPis (p₀.nP + c.2) =
               some (cbs, Ix.Kernel.Expr.mkAppN (.const p₀.cvT.name us) eargs) ∧
-            ∀ idx, p₀.nP ≤ idx → idx < p₀.nP + c.2,
+            ∀ idx, p₀.nP ≤ idx → idx < p₀.nP + c.2 →
               Ix.Kernel.Semantics.famHead p₀.cvT.name (cbs.getD idx default).1 = false ∨
                 Decl.RawRecSpine p₀.cvT.name (rcbs.getD idx default).1 (cbs.getD idx default).1 := by
         intro j hj c cvCa hc hcA

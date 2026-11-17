@@ -37,7 +37,7 @@ theorem ctor_zero_all_from_fields {t : Ix.Kernel.RoleTable}
           some (rcbs, Expr.mkAppN (.const T us₀) rargs) ∧
         cvCa₀.type.stripPis (nP + c.2) =
           some (cbs, Expr.mkAppN (.const T us₀) eargs) ∧
-        ∀ idx, nP ≤ idx → idx < nP + c.2,
+        ∀ idx, nP ≤ idx → idx < nP + c.2 →
           famHead T (cbs.getD idx default).1 = false ∨
           RawRecSpine T (rcbs.getD idx default).1 (cbs.getD idx default).1)
     (hnP_lt : nP < 18446744069414584321)
@@ -145,7 +145,7 @@ theorem former_decl_ok_observed_from_fields {c : Ctx}
           some (rcbs, Expr.mkAppN (.const T us₀) rargs) ∧
         cvCa₀.type.stripPis (nP + c.2) =
           some (cbs, Expr.mkAppN (.const T us₀) eargs) ∧
-        ∀ idx, nP ≤ idx → idx < nP + c.2,
+        ∀ idx, nP ≤ idx → idx < nP + c.2 →
           famHead T (cbs.getD idx default).1 = false ∨
           RawRecSpine T (rcbs.getD idx default).1 (cbs.getD idx default).1)
     (hsub : ∀ x ∈ cs, x ∈ cs_root)
@@ -216,7 +216,7 @@ theorem former_decl_ok_from_fields {c : Ctx}
           some (rcbs, Expr.mkAppN (.const T us₀) rargs) ∧
         cvCa₀.type.stripPis (nP + c.2) =
           some (cbs, Expr.mkAppN (.const T us₀) eargs) ∧
-        ∀ idx, nP ≤ idx → idx < nP + c.2,
+        ∀ idx, nP ≤ idx → idx < nP + c.2 →
           famHead T (cbs.getD idx default).1 = false ∨
           RawRecSpine T (rcbs.getD idx default).1 (cbs.getD idx default).1)
     (hsub : ∀ x ∈ cs, x ∈ cs_root)
