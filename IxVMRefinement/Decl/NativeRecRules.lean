@@ -984,24 +984,27 @@ private theorem wrap_rel_appHeadConstLvls {a_g a_d : Bytes.Address} {ls_g ls_d :
   induction hg generalizing xd h' cs with
   | const cell_g _ rls_g =>
     match Obs.«KernelCheck::wrap_rel».obs ev with
-    | .other_other_App_App_other (he301 := he) ..
-    | .other_other_App_other (he308 := he) ..
-    | .other_other_Lam_other (he426 := he) ..
-    | .other_other_Forall_other (he544 := he) ..
-    | .other_other_Proj_Proj_other (he696 := he) ..
-    | .other_other_Proj_other (he703 := he) .. =>
+    | .other_other_App_App_other (he351 := he) ..
+    | .other_other_App_other (he358 := he) ..
+    | .other_other_Lam_other (he476 := he) ..
+    | .other_other_Forall_other (he594 := he) ..
+    | .other_other_Proj_Proj_other (he746 := he) ..
+    | .other_other_Proj_other (he753 := he) .. =>
       exact absurd (Value.field.inj he) one_ne_zero
-    | .Let (ld12 := ld) ..
-    | .other_other_App_App_n1 (ld192 := ld) ..
-    | .other_other_Lam_Lam (ld192 := ld) ..
-    | .other_other_Forall_Forall (ld192 := ld) ..
-    | .other_other_Proj_Proj_n1 (ld192 := ld) .. =>
+    | .Let_Let_n1_n1 (ld12 := ld) ..
+    | .Let_Let_n1_other (ld12 := ld) ..
+    | .Let_Let_other (ld12 := ld) ..
+    | .Let_other (ld12 := ld) ..
+    | .other_other_App_App_n1 (ld242 := ld) ..
+    | .other_other_Lam_Lam (ld242 := ld) ..
+    | .other_other_Forall_Forall (ld242 := ld) ..
+    | .other_other_Proj_Proj_n1 (ld242 := ld) .. =>
       exact (load_cell_ne cell_g ld (by decide)).elim
-    | .other_Let (ld102 := ld) .. =>
+    | .other_Let (ld198 := ld) .. =>
       cases hd with
       | const cell_d _ _ | app cell_d _ =>
         exact (load_cell_ne cell_d ld (by decide)).elim
-    | .other_other_other (ev715 := ev715) .. =>
+    | .other_other_other (ev765 := ev715) .. =>
       rcases Obs.«KernelCheck::kexpr_struct_eq».obs ev715 with
         ⟨_, _, ld12, _, _, _, _, _⟩ |
         ⟨_, _, _, _, _, _, _, he, _, _⟩ |
@@ -1045,27 +1048,30 @@ private theorem wrap_rel_appHeadConstLvls {a_g a_d : Bytes.Address} {ls_g ls_d :
             (rls_g.mono ev215.heap_extends) (rls_d.mono ev215.heap_extends) ev241).1
   | app cell_g rf_g ih =>
     match Obs.«KernelCheck::wrap_rel».obs ev with
-    | .other_other_App_App_other (he301 := he) ..
-    | .other_other_App_other (he308 := he) ..
-    | .other_other_Lam_other (he426 := he) ..
-    | .other_other_Forall_other (he544 := he) ..
-    | .other_other_Proj_Proj_other (he696 := he) ..
-    | .other_other_Proj_other (he703 := he) .. =>
+    | .other_other_App_App_other (he351 := he) ..
+    | .other_other_App_other (he358 := he) ..
+    | .other_other_Lam_other (he476 := he) ..
+    | .other_other_Forall_other (he594 := he) ..
+    | .other_other_Proj_Proj_other (he746 := he) ..
+    | .other_other_Proj_other (he753 := he) .. =>
       exact absurd (Value.field.inj he) one_ne_zero
-    | .Let (ld12 := ld) ..
-    | .other_other_Lam_Lam (ld192 := ld) ..
-    | .other_other_Forall_Forall (ld192 := ld) ..
-    | .other_other_Proj_Proj_n1 (ld192 := ld) .. =>
+    | .Let_Let_n1_n1 (ld12 := ld) ..
+    | .Let_Let_n1_other (ld12 := ld) ..
+    | .Let_Let_other (ld12 := ld) ..
+    | .Let_other (ld12 := ld) ..
+    | .other_other_Lam_Lam (ld242 := ld) ..
+    | .other_other_Forall_Forall (ld242 := ld) ..
+    | .other_other_Proj_Proj_n1 (ld242 := ld) .. =>
       exact (load_cell_ne cell_g ld (by decide)).elim
-    | .other_Let (ld102 := ld) .. =>
+    | .other_Let (ld198 := ld) .. =>
       cases hd with
       | const cell_d _ _ | app cell_d _ =>
         exact (load_cell_ne cell_d ld (by decide)).elim
-    | .other_other_other (ld192 := ld192) (hne311 := hne311) .. =>
+    | .other_other_other (ld242 := ld192) (hne361 := hne311) .. =>
       rw [loadValue_enum_cell cell_g] at ld192
       injection ld192 with hv
       exact (hne311 [_, _] rfl hv.symm).elim
-    | .other_other_App_App_n1 (ld192 := ld192) (ld221 := ld221) (ev253 := ev253) .. =>
+    | .other_other_App_App_n1 (ld242 := ld192) (ld271 := ld221) (ev303 := ev253) .. =>
       obtain ⟨-, hxs1⟩ := load_cell cell_g ld192
       injection hxs1 with hfg _
       cases hd with
@@ -1092,26 +1098,29 @@ private theorem wrap_rel_forallDomHeadLvls
       cases hd with
       | zero cell_d hhead_d =>
         match Obs.«KernelCheck::wrap_rel».obs ev with
-        | .other_other_App_App_other (he301 := he) ..
-        | .other_other_App_other (he308 := he) ..
-        | .other_other_Lam_other (he426 := he) ..
-        | .other_other_Forall_other (he544 := he) ..
-        | .other_other_Proj_Proj_other (he696 := he) ..
-        | .other_other_Proj_other (he703 := he) .. =>
+        | .other_other_App_App_other (he351 := he) ..
+        | .other_other_App_other (he358 := he) ..
+        | .other_other_Lam_other (he476 := he) ..
+        | .other_other_Forall_other (he594 := he) ..
+        | .other_other_Proj_Proj_other (he746 := he) ..
+        | .other_other_Proj_other (he753 := he) .. =>
           exact absurd (Value.field.inj he) one_ne_zero
-        | .Let (ld12 := ld) ..
-        | .other_other_App_App_n1 (ld192 := ld) ..
-        | .other_other_Lam_Lam (ld192 := ld) ..
-        | .other_other_Proj_Proj_n1 (ld192 := ld) .. =>
+        | .Let_Let_n1_n1 (ld12 := ld) ..
+        | .Let_Let_n1_other (ld12 := ld) ..
+        | .Let_Let_other (ld12 := ld) ..
+        | .Let_other (ld12 := ld) ..
+        | .other_other_App_App_n1 (ld242 := ld) ..
+        | .other_other_Lam_Lam (ld242 := ld) ..
+        | .other_other_Proj_Proj_n1 (ld242 := ld) .. =>
           exact (load_cell_ne cell_g ld (by decide)).elim
-        | .other_Let (ld102 := ld) .. =>
+        | .other_Let (ld198 := ld) .. =>
           exact (load_cell_ne cell_d ld (by decide)).elim
-        | .other_other_other (ld192 := ld192) (hne547 := hne547) .. =>
+        | .other_other_other (ld242 := ld192) (hne597 := hne547) .. =>
           rw [loadValue_enum_cell cell_g] at ld192
           injection ld192 with hv
           exact (hne547 [_, _, _] rfl hv.symm).elim
-        | .other_other_Forall_Forall (ld192 := ld192) (ld462 := ld462)
-            (ev490 := ev490) (hc539 := hc539) .. =>
+        | .other_other_Forall_Forall (ld242 := ld192) (ld512 := ld462)
+            (ev540 := ev490) (hc589 := hc539) .. =>
           obtain ⟨-, hxs1⟩ := load_cell cell_g ld192
           injection hxs1 with htg _
           obtain ⟨-, hxs2⟩ := load_cell cell_d ld462
@@ -1124,16 +1133,16 @@ private theorem wrap_rel_forallDomHeadLvls
           | .n1_n1 (m2 := m2) (cs48 := cs48) (ev15 := ev15) (ev50 := ev50) (hc93 := hc93) .. =>
             have e1 := ev15.heap_extends
             match Obs.«KernelCheck::wrap_dom».obsx ev50 with
-            | .other_other_other (he200 := he) .. =>
+            | .other_other_other (he174 := he) .. =>
               exact absurd (Value.field.inj he) one_ne_zero
             | .Let (ld12 := ld12) .. =>
               cases hhead_g with
               | const cg _ _ | app cg _ =>
                 exact (load_cell_ne (e1.getElem?_eq cg) ld12 (by decide)).elim
-            | .other_n1 (ev105 := ev105) .. =>
+            | .other_n1 (ev79 := ev105) .. =>
               exact wrap_rel_appHeadConstLvls (hhead_g.mono e1) (hhead_d.mono e1) ev105
-            | .other_other_n1_bind (m92 := m92) (cs145 := cs145)
-                (ev105 := ev105) (ev147 := ev147) (hc196 := hc196) .. =>
+            | .other_other_n1_bind (m66 := m92) (cs119 := cs145)
+                (ev79 := ev105) (ev121 := ev147) (hc170 := hc196) .. =>
               have hgood_cw : Good c cs145 :=
                 hgood.sub (fun z hz => by subst hc539 hc93 hc196; simp [hz])
               match Obs.«KernelCheck::consume_wrapper».obsx ev147 with
@@ -1177,26 +1186,29 @@ private theorem wrap_rel_forallDomHeadLvls
       cases hd with
       | succ cell_d hrest_d =>
         match Obs.«KernelCheck::wrap_rel».obs ev with
-        | .other_other_App_App_other (he301 := he) ..
-        | .other_other_App_other (he308 := he) ..
-        | .other_other_Lam_other (he426 := he) ..
-        | .other_other_Forall_other (he544 := he) ..
-        | .other_other_Proj_Proj_other (he696 := he) ..
-        | .other_other_Proj_other (he703 := he) .. =>
+        | .other_other_App_App_other (he351 := he) ..
+        | .other_other_App_other (he358 := he) ..
+        | .other_other_Lam_other (he476 := he) ..
+        | .other_other_Forall_other (he594 := he) ..
+        | .other_other_Proj_Proj_other (he746 := he) ..
+        | .other_other_Proj_other (he753 := he) .. =>
           exact absurd (Value.field.inj he) one_ne_zero
-        | .Let (ld12 := ld) ..
-        | .other_other_App_App_n1 (ld192 := ld) ..
-        | .other_other_Lam_Lam (ld192 := ld) ..
-        | .other_other_Proj_Proj_n1 (ld192 := ld) .. =>
+        | .Let_Let_n1_n1 (ld12 := ld) ..
+        | .Let_Let_n1_other (ld12 := ld) ..
+        | .Let_Let_other (ld12 := ld) ..
+        | .Let_other (ld12 := ld) ..
+        | .other_other_App_App_n1 (ld242 := ld) ..
+        | .other_other_Lam_Lam (ld242 := ld) ..
+        | .other_other_Proj_Proj_n1 (ld242 := ld) .. =>
           exact (load_cell_ne cell_g ld (by decide)).elim
-        | .other_Let (ld102 := ld) .. =>
+        | .other_Let (ld198 := ld) .. =>
           exact (load_cell_ne cell_d ld (by decide)).elim
-        | .other_other_other (ld192 := ld192) (hne547 := hne547) .. =>
+        | .other_other_other (ld242 := ld192) (hne597 := hne547) .. =>
           rw [loadValue_enum_cell cell_g] at ld192
           injection ld192 with hv
           exact (hne547 [_, _, _] rfl hv.symm).elim
-        | .other_other_Forall_Forall (ld192 := ld192) (ld462 := ld462)
-            (ev490 := ev490) (hc539 := hc539) .. =>
+        | .other_other_Forall_Forall (ld242 := ld192) (ld512 := ld462)
+            (ev540 := ev490) (hc589 := hc539) .. =>
           obtain ⟨-, hxs1⟩ := load_cell cell_g ld192
           injection hxs1 with _ hxs1; injection hxs1 with hbg _
           obtain ⟨-, hxs2⟩ := load_cell cell_d ld462

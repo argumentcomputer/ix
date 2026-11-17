@@ -1934,52 +1934,62 @@ private theorem wrap_rel_family {c : Ctx} (hlf : LoadFacts c) :
         fun hfn d Γ T B T2 B2 ℓ ℓ2 xt xb xm xt2 xb2 xm2 hargs hT hB hℓ hT2 hB2 hℓ2 => ?_⟩
       · subst hfn hargs
         match Obs.«KernelCheck::wrap_rel».obs ev with
-        | .other_other_App_App_other (he301 := he) .. =>
+        | .other_other_App_App_other (he351 := he) .. =>
           exact absurd (Value.field.inj he) one_ne_zero
-        | .other_other_App_other (he308 := he) .. =>
+        | .other_other_App_other (he358 := he) .. =>
           exact absurd (Value.field.inj he) one_ne_zero
-        | .other_other_Lam_other (he426 := he) .. =>
+        | .other_other_Lam_other (he476 := he) .. =>
           exact absurd (Value.field.inj he) one_ne_zero
-        | .other_other_Forall_other (he544 := he) .. =>
+        | .other_other_Forall_other (he594 := he) .. =>
           exact absurd (Value.field.inj he) one_ne_zero
-        | .other_other_Proj_Proj_other (he696 := he) .. =>
+        | .other_other_Proj_Proj_other (he746 := he) .. =>
           exact absurd (Value.field.inj he) one_ne_zero
-        | .other_other_Proj_other (he703 := he) .. =>
+        | .other_other_Proj_other (he753 := he) .. =>
           exact absurd (Value.field.inj he) one_ne_zero
-        | .Let (w20 := w20) (x_v := xv) (x_b := xb) (cs39 := cs39) (v42 := v42)
-            (m45 := m45) (cs53 := cs53)
-            (ld12 := ld12) (ev55 := ev55) (ev41 := ev41) (hc86 := hc86) =>
-          subst hc86
+        | .Let_Let_n1_other (he166 := he) .. =>
+          exact absurd (Value.field.inj he) one_ne_zero
+        | .Let_Let_other (he173 := he) .. =>
+          exact absurd (Value.field.inj he) one_ne_zero
+        | .Let_other (he180 := he) .. =>
+          exact absurd (Value.field.inj he) one_ne_zero
+        | .other_Let (he224 := he) .. =>
+          exact absurd (Value.field.inj he) one_ne_zero
+        | .Let_Let_n1_n1 (x_v := xv) (x_b := xb) (x_v2 := xv2) (x_b2 := xb2)
+            (m70 := m70) (cs81 := cs81) (m105 := m105) (cs116 := cs116) (cs142 := cs142)
+            (ld12 := ld12) (ld46 := ld46) (ev83 := ev83) (ev118 := ev118) (ev144 := ev144)
+            (hc161 := hc161) .. =>
+          -- a `let` against a `let`: the values and the bodies are related, so their
+          -- expansions (what `Tm` reads a `let` as) are
+          subst hc161
           obtain ⟨_, V, B, rfl, _, hV, hB⟩ := hG.letE_of_load ld12
-          have hbnd53 : IxVM.Consistency.Bounded cs53 :=
-            RomBound.bounded_mono hgood.2 (fun z hz => by simp [hz])
-          have hinst : Tm c.κ d Γ m45 0 (instShift V 0 B) v42 := by
-            have hi := SubstAux.gall c.κ .expr_inst1 _ _ _ _ _ ev55 xb xv 0 rfl hbnd53
-              d Γ B V (by simpa using hB) hV
-            simpa [instShift_eq_instantiate1 hV.looseBVarsBounded 0 B] using hi
-          have e1 := ev55.heap_extends
-          exact (ih _ _ _ _ _ _ (by rec_lt_calls) ev41 rfl
-            (hgood.sub fun z hz => by simp [hz])).1 rfl d Γ (instShift V 0 B) D v42 xd rfl
-            hinst (hD.mono e1)
-        | .other_Let (w110 := w110) (x_v2 := xv2) (x_b2 := xb2) (cs129 := cs129)
-            (v133 := v133) (m142 := m142) (cs150 := cs150)
-            (ld102 := ld102) (ev152 := ev152) (ev131 := ev131) (hc176 := hc176) .. =>
-          subst hc176
-          obtain ⟨_, V2, B2, rfl, _, hV2, hB2⟩ := hD.letE_of_load ld102
-          have hbnd150 : IxVM.Consistency.Bounded cs150 :=
-            RomBound.bounded_mono hgood.2 (fun z hz => by simp [hz])
-          have hinst : Tm c.κ d Γ m142 0 (instShift V2 0 B2) v133 := by
-            have hi := SubstAux.gall c.κ .expr_inst1 _ _ _ _ _ ev152 xb2 xv2 0 rfl hbnd150
-              d Γ B2 V2 (by simpa using hB2) hV2
-            simpa [instShift_eq_instantiate1 hV2.looseBVarsBounded 0 B2] using hi
-          have e1 := ev152.heap_extends
-          exact (ih _ _ _ _ _ _ (by rec_lt_calls) ev131 rfl
-            (hgood.sub fun z hz => by simp [hz])).1 rfl d Γ G (instShift V2 0 B2) xg v133 rfl
-            (hG.mono e1) hinst
+          obtain ⟨_, V2, B2, rfl, _, hV2, hB2⟩ := hD.letE_of_load ld46
+          have hB : Tm c.κ d Γ h 1 B xb := hB
+          have hB2 : Tm c.κ d Γ h 1 B2 xb2 := hB2
+          have e1 := ev83.heap_extends
+          have e2 := ev118.heap_extends
+          have hwV := (ih _ _ _ _ _ _ (by rec_lt_calls) ev118 rfl
+            (hgood.sub fun z hz => by simp [hz])).1 rfl d Γ V V2 xv xv2 rfl
+            (hV.mono e1) (hV2.mono e1)
+          let Γ' := Ghost.extend Γ d (.sort .zero)
+          have hB_open : Tm c.κ (d + 1) Γ' m105 0 (B.instantiate1 (.fvar d (.sort .zero))) xb :=
+            (hB.mono (e1.trans e2)).open_body (Ghost.extend_at _ _ _) (Ghost.extend_below _ _ _)
+          have hB2_open : Tm c.κ (d + 1) Γ' m105 0 (B2.instantiate1 (.fvar d (.sort .zero))) xb2 :=
+            (hB2.mono (e1.trans e2)).open_body (Ghost.extend_at _ _ _) (Ghost.extend_below _ _ _)
+          have hw_open := (ih _ _ _ _ _ _ (by rec_lt_calls) ev144 rfl
+            (hgood.sub fun z hz => by simp [hz])).1 rfl (d + 1) Γ'
+            (B.instantiate1 (.fvar d (.sort .zero))) (B2.instantiate1 (.fvar d (.sort .zero)))
+            xb xb2 rfl hB_open hB2_open
+          have hw_abs := hw_open.abstract1 d 0
+          rw [abstract1_instantiate1_cancel (.sort .zero) 0 (tm_fvarIdxLt hB) hB.looseBVarsBounded,
+            abstract1_instantiate1_cancel (.sort .zero) 0 (tm_fvarIdxLt hB2) hB2.looseBVarsBounded]
+            at hw_abs
+          rw [instShift_eq_instantiate1 hV.looseBVarsBounded 0 B,
+            instShift_eq_instantiate1 hV2.looseBVarsBounded 0 B2]
+          exact WrapTSem.instantiate1 hwV hw_abs 0
         | .other_other_App_App_n1 (x_f := xf) (x_a := xa) (x_f2 := xf2) (x_a2 := xa2)
-            (m240 := m240) (cs251 := cs251) (cs277 := cs277)
-            (ld192 := ld192) (ld221 := ld221) (ev253 := ev253) (ev279 := ev279)
-            (hc296 := hc296) .. =>
+            (m290 := m240) (cs301 := cs251) (cs327 := cs277)
+            (ld242 := ld192) (ld271 := ld221) (ev303 := ev253) (ev329 := ev279)
+            (hc346 := hc296) .. =>
           subst hc296
           obtain ⟨Ef, Ea, rfl, hEf, hEa⟩ := hG.app_of_load ld192
           obtain ⟨Ef2, Ea2, rfl, hEf2, hEa2⟩ := hD.app_of_load ld221
@@ -1991,8 +2001,8 @@ private theorem wrap_rel_family {c : Ctx} (hlf : LoadFacts c) :
               (hgood.sub fun z hz => by simp [hz])).1 rfl d Γ Ea Ea2 xa xa2 rfl
               (hEa.mono e1) (hEa2.mono e1))
         | .other_other_Lam_Lam (x_t := xt) (x_b := xb) (x_m := xm)
-            (x_t2 := xt2) (x_b2 := xb2) (x_m2 := xm2) (cs370 := cs370)
-            (ld192 := ld192) (ld344 := ld344) (ev372 := ev372) (hc421 := hc421) .. =>
+            (x_t2 := xt2) (x_b2 := xb2) (x_m2 := xm2) (cs420 := cs370)
+            (ld242 := ld192) (ld394 := ld344) (ev422 := ev372) (hc471 := hc421) .. =>
           subst hc421
           obtain ⟨T, B, ℓ, rfl, hT, hB, hℓ⟩ := hG.lam_of_load ld192
           obtain ⟨T2, B2, ℓ2, rfl, hT2, hB2, hℓ2⟩ := hD.lam_of_load ld344
@@ -2002,8 +2012,8 @@ private theorem wrap_rel_family {c : Ctx} (hlf : LoadFacts c) :
               xt xb xm xt2 xb2 xm2 rfl hT hB hℓ hT2 hB2 hℓ2
           exact .lam hpw hs hw_dom hw_body
         | .other_other_Forall_Forall (x_t := xt) (x_b := xb) (x_m := xm)
-            (x_t2 := xt2) (x_b2 := xb2) (x_m2 := xm2) (cs488 := cs488)
-            (ld192 := ld192) (ld462 := ld462) (ev490 := ev490) (hc539 := hc539) .. =>
+            (x_t2 := xt2) (x_b2 := xb2) (x_m2 := xm2) (cs538 := cs488)
+            (ld242 := ld192) (ld512 := ld462) (ev540 := ev490) (hc589 := hc539) .. =>
           subst hc539
           obtain ⟨T, B, ℓ, rfl, hT, hB, hℓ⟩ := hG.forallE_of_load ld192
           obtain ⟨T2, B2, ℓ2, rfl, hT2, hB2, hℓ2⟩ := hD.forallE_of_load ld462
@@ -2013,11 +2023,11 @@ private theorem wrap_rel_family {c : Ctx} (hlf : LoadFacts c) :
               xt xb xm xt2 xb2 xm2 rfl hT hB hℓ hT2 hB2 hℓ2
           exact .forallE hpw hs hw_dom hw_body
         | .other_other_Proj_Proj_n1 (x_s := xs) (x_i := xi) (x_e := xe)
-            (x_s2 := xs2) (x_i2 := xi2) (x_e2 := xe2) (m604 := m604)
-            (x612 := x612) (y613 := y613) (m614 := m614)
-            (cs623 := cs623) (cs645 := cs645) (v648 := v648) (cs672 := cs672)
-            (ld192 := ld192) (ld580 := ld580) (ev625 := ev625) (op662 := op662)
-            (ev647 := ev647) (op619 := op619) (ev674 := ev674) (hc691 := hc691) .. =>
+            (x_s2 := xs2) (x_i2 := xi2) (x_e2 := xe2) (m654 := m604)
+            (x662 := x612) (y663 := y613) (m664 := m614)
+            (cs673 := cs623) (cs695 := cs645) (v698 := v648) (cs722 := cs672)
+            (ld242 := ld192) (ld630 := ld580) (ev675 := ev625) (op712 := op662)
+            (ev697 := ev647) (op669 := op619) (ev724 := ev674) (hc741 := hc691) .. =>
           subst hc691
           obtain ⟨sa, fa, Ea, rfl, rfl, hsa, hEa⟩ := hG.proj_of_load ld192
           obtain ⟨sb, fb, Eb, rfl, rfl, hsb, hEb⟩ := hD.proj_of_load ld580
@@ -2043,36 +2053,27 @@ private theorem wrap_rel_family {c : Ctx} (hlf : LoadFacts c) :
           exact .proj
             ((ih _ _ _ _ _ _ (by rec_lt_calls) ev674 rfl
               (hgood.sub fun z hz => by simp [hz])).1 rfl d Γ Ea Eb xe xe2 rfl hEa hEb)
-        | .other_other_other (cs713 := cs713) (ev715 := ev715) (hc732 := hc732) .. =>
+        | .other_other_other (cs763 := cs713) (ev765 := ev715) (hc782 := hc732) .. =>
           subst hc732
           exact (kexpr_struct_eq_tm_one hG hD ev715).toWrapTSem c.env.find?
       · subst hfn hargs
         match Obs.«KernelCheck::wrap_dom».obsx ev with
-        | .other_other_other (he200 := he) .. =>
+        | .other_other_other (he174 := he) .. =>
           exact absurd (Value.field.inj he) one_ne_zero
-        | .Let (w20 := w20) (x_v := xv) (x_b := xb) (cs39 := cs39) (v42 := v42)
-            (m45 := m45) (cs53 := cs53)
-            (ld12 := ld12) (ev55 := ev55) (ev41 := ev41) (hc86 := hc86) =>
-          subst hc86
-          obtain ⟨_, V, B, rfl, _, hV, hB⟩ := hT.letE_of_load ld12
-          have hbnd53 : IxVM.Consistency.Bounded cs53 :=
-            RomBound.bounded_mono hgood.2 (fun z hz => by simp [hz])
-          have hinst : Tm c.κ d Γ m45 0 (instShift V 0 B) v42 := by
-            have hi := SubstAux.gall c.κ .expr_inst1 _ _ _ _ _ ev55 xb xv 0 rfl hbnd53
-              d Γ B V (by simpa using hB) hV
-            simpa [instShift_eq_instantiate1 hV.looseBVarsBounded 0 B] using hi
-          have e1 := ev55.heap_extends
-          exact (ih _ _ _ _ _ _ (by rec_lt_calls) ev41 rfl
-            (hgood.sub fun z hz => by simp [hz])).2.1 rfl d Γ (instShift V 0 B) T2 v42 xt2 rfl
-            hinst (hT2.mono e1)
-        | .other_n1 (cs103 := cs103) (ev105 := ev105) (hc128 := hc128) .. =>
+        | .Let (cs41 := cs41) (ev43 := ev43) (hc60 := hc60) .. =>
+          -- a domain that is a `let` is compared whole
+          subst hc60
+          have hw := (ih _ _ _ _ _ _ (by rec_lt_calls) ev43 rfl
+            (hgood.sub fun z hz => by simp [hz])).1 rfl d Γ T T2 xt xt2 rfl hT hT2
+          exact ⟨T, .refl T, hw⟩
+        | .other_n1 (cs77 := cs103) (ev79 := ev105) (hc102 := hc128) .. =>
           subst hc128
           have hw := (ih _ _ _ _ _ _ (by rec_lt_calls) ev105 rfl
             (hgood.sub fun z hz => by simp [hz])).1 rfl d Γ T T2 xt xt2 rfl hT hT2
           exact ⟨T, .refl T, hw⟩
-        | .other_other_n1_bind (m92 := m92) (cs103 := cs103) (m134 := m134)
-            (cs145 := cs145) (x_a := xa) (cs177 := cs177)
-            (ev105 := ev105) (ev147 := ev147) (ev179 := ev179) (hc196 := hc196) .. =>
+        | .other_other_n1_bind (m66 := m92) (cs77 := cs103) (m108 := m134)
+            (cs119 := cs145) (x_a := xa) (cs151 := cs177)
+            (ev79 := ev105) (ev121 := ev147) (ev153 := ev179) (hc170 := hc196) .. =>
           subst hc196
           have e1 := ev105.heap_extends
           have e2 := ev147.heap_extends
