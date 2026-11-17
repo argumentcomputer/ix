@@ -84,6 +84,20 @@ theorem LateRegistryWith.at_parent {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
   rw [hii] at hcb hind hctors
   exact ⟨fam, hReg, hat, hname, cb, ms, ind, hcb, hms, hind, hp, hi, hlen, hctors⟩
 
+/-- **A registered family read off the parent's record** (`LateRegistryWith.at_parent`'s
+conclusion, without the registry). -/
+def MatchedAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (env : Ix.Kernel.Env .anon)
+    (P : _root_.Address) (ip : Ixon.InductiveProj) (fam : NativeFam .anon) : Prop :=
+  LateFamAt t E env fam ∧ fam.p.cvT.name = keyOf t P ∧
+    ∃ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (ind : Ixon.Inductive),
+      Ix.Cert.recordAt E ip.block = some cb ∧ cb.info = .muts ms ∧
+      ms[ip.idx.toNat]? = some (.indc ind) ∧
+      fam.p.nP = ind.params.toNat ∧ fam.p.nIdx = ind.indices.toNat ∧
+      fam.ctorsA.length = ind.ctors.size ∧
+      ∀ (j : Nat) (cA : ConstantVal .anon × Nat), fam.ctorsA[j]? = some cA →
+        cA.1.name = keyOf t (Core.cprjAddr ip.block ip.idx.toNat j)
+
+
 /-! ## The head of the late step -/
 
 /-- **The late step conses the recursor**: fresh, no table's name, named after the declared
@@ -232,7 +246,7 @@ theorem sumRules_ctors_sublist {find? : Key .anon → Option (ConstantInfo .anon
   | _ :: _, [] => by simp [Ix.Kernel.sumRules]
   | c :: cs, rhs :: rhss => by
     simp only [Ix.Kernel.sumRules, List.map_cons, Ix.Kernel.recRuleBits_ctor]
-    exact (sumRules_ctors_sublist (ctorsA := cs) (rhss := rhss)).cons₂ _
+    exact (sumRules_ctors_sublist (ctorsA := cs) (rhss := rhss)).cons_cons _
 
 /-- **The companions after the late step**: the role and record companions of the scoped core
 at the environment with the recursor, from those before, the family read off the parent's
@@ -444,19 +458,6 @@ def RecParent (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (env : Ix.Kernel.Env .ano
   (∃ cv caps, env.find? (keyOf t P) = some (.indInfo cv caps)) ∧
     Ix.Kernel.reservedBasisNames.contains (keyOf t P) = false ∧
     (∃ cm, Ix.Cert.recordAt E P = some cm ∧ cm.info = .iPrj ip) ∧ NativeAt E ip.block
-
-/-- **A registered family read off the parent's record** (`LateRegistryWith.at_parent`'s
-conclusion, without the registry). -/
-def MatchedAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (env : Ix.Kernel.Env .anon)
-    (P : _root_.Address) (ip : Ixon.InductiveProj) (fam : NativeFam .anon) : Prop :=
-  LateFamAt t E env fam ∧ fam.p.cvT.name = keyOf t P ∧
-    ∃ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (ind : Ixon.Inductive),
-      Ix.Cert.recordAt E ip.block = some cb ∧ cb.info = .muts ms ∧
-      ms[ip.idx.toNat]? = some (.indc ind) ∧
-      fam.p.nP = ind.params.toNat ∧ fam.p.nIdx = ind.indices.toNat ∧
-      fam.ctorsA.length = ind.ctors.size ∧
-      ∀ (j : Nat) (cA : ConstantVal .anon × Nat), fam.ctorsA[j]? = some cA →
-        cA.1.name = keyOf t (Core.cprjAddr ip.block ip.idx.toNat j)
 
 /-- **What the circuit's check of the recursor record gives at a matched family**: the late
 relation with the recursor `cn` in front, `cn` at the record's key and stored as a reading of
