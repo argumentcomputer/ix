@@ -154,4 +154,37 @@ theorem value_read_of_raw_defn {E : Ixon.Env} {h : Heap IxVM.F} {a : _root_.Addr
     exact Or.inr ⟨root, e, by simp [valueRoot, hc, hi, hk, root], hn, he⟩
   · exact Or.inl hcol
 
+/-- The runtime Defn tag determines the serialized definition kind. -/
+theorem definition_kind_of_shape {d : Ixon.Definition}
+    {ty value hint : SourceValue IxVM.F} {args : List (SourceValue IxVM.F)}
+    (h : L1.defnValShape d ty value hint = .construct Core.kciEnum "Defn" args) :
+    d.kind = .defn := by
+  cases hk : d.kind <;> simp_all [L1.defnValShape]
+
+/-- A definition-block member actually loaded as Defn supplies its raw value reading; the
+member's kind and owner record are derived from the loaded data, not assumed modeled. -/
+theorem value_read_of_raw_dprj {E : Ixon.Env} {h : Heap IxVM.F} {a : _root_.Address}
+    {c : Ixon.Constant} {p : Ixon.DefinitionProj} {v : SourceValue IxVM.F}
+    {args : List (SourceValue IxVM.F)}
+    (hc : recordOf E a = some c) (hi : c.info = .dPrj p)
+    (htag : v = .construct Core.kciEnum "Defn" args) (raw : L1.RawCIRep E h a c v) :
+    L1.EnvInternalCollision E ∨
+      ∃ root e, valueRoot (recordOf E) a = some root ∧ root.levels < 4294967296 ∧
+        readRoot (fun x => E.blobs.get? x) root = some e := by
+  rw [L1.RawCIRep, hi] at raw
+  obtain ⟨_, lc, cb, ms, d, blobs, hget, _, _, hdec, _, hms, hm, hb,
+    hn, tp, vp, hint, hshape, _, rv⟩ := raw
+  have hk := definition_kind_of_shape (hshape.symm.trans htag)
+  have hcb := Typing.recordOf_of_get hget hdec
+  have hm' : ms[p.idx.toNat]? = some (.defn d) := by simpa only [Array.getElem?_toList] using hm
+  rcases hb with hb | hcol
+  · let root : Root := ⟨cb, blockSelf addressTable p.block ms,
+      L1.mutsRootOffset ms.toList p.idx.toNat + 1, d.lvls.toNat, d.value⟩
+    obtain ⟨e, he⟩ := readRoot_of_rawConv (root := root) rv (member_self_ok p.block ms d)
+      (fun x b hmem => (hb x b hmem).1)
+    refine Or.inr ⟨root, e, ?_, hn, he⟩
+    simp [valueRoot, hc, hi, memberRoot, hcb, hms, hm', definitionValue, hk, root]
+  · exact Or.inl hcol
+
+
 end IxVM.Refinement.GuardRaw
