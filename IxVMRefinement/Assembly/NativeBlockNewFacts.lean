@@ -52,15 +52,14 @@ theorem get_ci_induct_addr {addr ptr : SourceValue F} {h h' : Heap F} {cs : List
   obtain ⟨rawBytes, blkBytes, cm, cb, xs, ind, b', i', -, haddr, hde, -, -, -, -, -, hb', hidx, -,
     hinfo, -, -, htv⟩ := L1.inductRecord_raw_tables_of_get_ci ev hbound ha hld
   have hbb : b' = b := IxVMRep.repAddressRef_det U32.Goldilocks.compatible hb' hb
-  subst hbb
+  rw [hbb] at hinfo
   have hii : i = i' := by
-    injection hidx with e
-    exact e
-  subst hii
-  have hcan : Address.blake3Pure rawBytes =
-      Core.iprjAddr (Core.ixAddr b) ((ZMod.val i).toUInt64.toNat) :=
-    (LoadedReads.iprj_canonical ind hde htv hinfo).2
+    injection hidx
+  rw [← hii] at hinfo
+  have hcan := (LoadedReads.iprj_canonical ind hde htv hinfo).2
+  rw [LoadedReads.memberAddr_indc] at hcan
   rw [← haddr, hcan]
+  show Core.iprjAddr (Core.ixAddr b) ((ZMod.val i).toUInt64.toNat) = _
   have hu : (((ZMod.val i).toUInt64.toNat).toUInt64 : UInt64) = (ZMod.val i).toUInt64 :=
     UInt64.ofNat_toNat
   unfold Core.iprjAddr
