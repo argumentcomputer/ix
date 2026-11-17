@@ -1,5 +1,6 @@
 import IxVMRefinement.Decl.LateNatCtorT
 import IxVMRefinement.L1.Ingress
+import Ix.IxVM.Consistency.StatementRel
 
 /-! # The literal return position of a family's constructors, as a fact about its block record
 
@@ -120,7 +121,8 @@ theorem natCtorRetHeadT_of_ixon {c : Ctx} {b₀ : Bytes.Address} {cb : Ixon.Cons
     (hcb : cb.info = .muts ms) (hms : ms[idx]? = some (.indc ind))
     (hhead : CtorRetHeadAt cb ind) (hnP : nP = ind.params.toNat)
     (hidx : idx < 4294967296) (hlen : ctors_info.length < 4294967296)
-    (hnf_lt : ∀ j info, ctors_info[j]? = some info → info.2.1 < 4294967296)
+    (hnf_lt : ∀ (j : Nat) (info : KKey × Nat × KExpr × KExpr × List Nat),
+      ctors_info[j]? = some info → info.2.1 < 4294967296)
     (hload : NatCtorLoadT κ b₀ idx k ctors_info x_block cs)
     (hg : Good c cs) :
     NatCtorRetHeadT b₀ idx nP ctors_info x_block cs := by
