@@ -839,16 +839,6 @@ theorem indRecsFoldFactsRunAt {J : Judgements md}
 /-! ## `declIndEtaClosedRun` — the ind kind's η-closure, on the run
 record -/
 
-/-- **The inductive block preserves the η-family closure**, from
-`DeclIndRun` alone (task #161 S11b).
-
-`declIndEtaClosed`'s proof verbatim, at the run family: it reads the
-member fold's `indNew`/`mono`/`ctorEntry`, the group's `noInd`/`keep`,
-and the three post-member phases' `ExtEta` extensions — no valuation
-anywhere.  This is what `declStep_preserves` hands `declEtaStepRun` now that
-
-    · exact absurd he (by (cases md <;> decide))
-
 /-- **A modeled block preserves the η-family closure**: its members are
 installed at the empty capability record, so no former it adds has η. -/
 theorem declIndEtaClosedRunJAt {J : Judgements md} {env env₂ : Env md}
