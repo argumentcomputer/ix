@@ -25,6 +25,9 @@ def addressTable : Ix.Kernel.RoleTable := ⟨Ix.Kernel.specVersion, #[], #[]⟩
 
 theorem addressTable_key (a : _root_.Address) : keyOf addressTable a = .id a := rfl
 
+/-- The naming table is well formed, though deliberately not a full admitted table. -/
+theorem addressTable_check : addressTable.check = .ok () := by decide +kernel
+
 /-- One raw expression root, including the record-local data needed by its canonical reader. -/
 structure Root where
   source : Ixon.Constant
@@ -171,7 +174,8 @@ theorem answer_mono {blob blob' : Blobs} {r r' : Option Root}
   intro root e he
   by_cases hn : us.length = root.levels
   · rw [ite_eq_left hn] at he ⊢
-    exact bind_preserved (fun e h => readRoot_mono hb h) (fun _ _ h => h) he
+    obtain ⟨v, hv, heq⟩ := Option.map_eq_some_iff.mp he
+    exact Option.map_eq_some_iff.mpr ⟨v, readRoot_mono hb hv, heq⟩
   · rw [ite_eq_right hn] at he ⊢
     exact he
 
@@ -256,8 +260,7 @@ theorem common_lookup_of_noCollision
 
 /-- A small real definition record: `def _ : Type := Prop`, with no references or binders. -/
 def sortDefinition : Ixon.Constant :=
-  { info := .defn { kind := .defn, safety := .safe, lvls := 0,
-      typ := .sort 1, value := .sort 0 }
+  { info := .defn { kind := .defn, safety := .safe, lvls := 0, typ := .sort 1, value := .sort 0 }
     sharing := #[], refs := #[], univs := #[.zero, .succ .zero] }
 
 /-- Its singleton raw-record map. No admitted typed environment is assumed. -/
@@ -268,7 +271,8 @@ def sortDefinitionRecords (a : _root_.Address) : Records :=
 theorem sortDefinition_type (a : _root_.Address) :
     (lookup (sortDefinitionRecords a) (fun _ => none)).typeOf (.id a) [] =
       some (.sort (.succ .zero)) := by
-  unfold lookup typeRoot sortDefinitionRecords
+  change answer (fun _ => none) (typeRoot (sortDefinitionRecords a) a) [] = some (.sort (.succ .zero))
+  unfold typeRoot sortDefinitionRecords
   rw [ite_eq_left rfl]
   rfl
 
@@ -276,7 +280,8 @@ theorem sortDefinition_type (a : _root_.Address) :
 theorem sortDefinition_value (a : _root_.Address) :
     (lookup (sortDefinitionRecords a) (fun _ => none)).valueOf (.id a) [] =
       some (.sort .zero) := by
-  unfold lookup valueRoot sortDefinitionRecords
+  change answer (fun _ => none) (valueRoot (sortDefinitionRecords a) a) [] = some (.sort .zero)
+  unfold valueRoot sortDefinitionRecords
   rw [ite_eq_left rfl]
   rfl
 
