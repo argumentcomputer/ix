@@ -31,7 +31,7 @@ theorem red_unfold_definition_trace {c : ScopedCtx}
       Certified c.env d (.const cv.name us) (value.instantiateLevelParams cv.levelParams us) := by
   have spec := Registry.induction c (scoped_steps c hcore) (.whnf .red_unfold)
     [v, lvls] h (.tuple [.field 1, x]) h' calls ev
-  rcases spec v lvls rfl good _ us hci hus 1 x rfl NatAux.field_one_ne_zero with
+  rcases spec v lvls rfl good _ us hci hus 1 x rfl one_ne_zero with
     ⟨_, cv', V', hn', heq, hlen, htm⟩ | ⟨_, cv', V', heq, _, _⟩
   · cases heq
     have hd : Ix.Kernel.unfoldDefinition c.env (.const cv.name us) =
