@@ -74,9 +74,12 @@ def modeledNames : List String := [
 must give: `Tests.Ix.Kernel.EntryCaseDefs.NB4` (an index domain that mentions
 a parameter), `RA1` and `RA3` (a reflexive field into a member), `BD1` and `BD2`
 (a member behind a definition), `EA` (a member only where whnf erases it), and `GA`, `GI`
-and `GE` (formers declared at a definition). For each, ι reductions through the recursors are accepted, and false ι or constructor
-equations installed in Lean unchecked are refused (`bad_thm` declares their
-names at the root). -/
+and `GE` (formers declared at a definition). For each, ι reductions through the recursors are
+accepted by a program that checks families, and false ι or constructor equations installed in
+Lean unchecked are refused (`bad_thm` declares their names at the root). The families of `GA`,
+`GI` and `GE` are refused whatever the program does with recursors: a mutual or nested
+family's type must be a telescope of binders into a sort as stored. While the program refuses
+the recursors of such families (`modeledRecursorsRefused`), every claim here is refused. -/
 def nestedVerdicts : List (Lean.Name × Bool) := [
   (`Tests.Ix.Kernel.EntryCaseDefs.nb4Iota, true),
   (`nb4IotaFalse, false),
@@ -92,9 +95,9 @@ def nestedVerdicts : List (Lean.Name × Bool) := [
   (`bd2CtorFalse, false),
   (`Tests.Ix.Kernel.EntryCaseDefs.eaIota, true),
   (`eaIotaFalse, false),
-  (`gaIota, true),
-  (`giIota, true),
-  (`geIota, true)]
+  (`gaIota, false),
+  (`giIota, false),
+  (`geIota, false)]
 
 private def nameOfString (str : String) : Lean.Name :=
   str.splitOn "." |>.foldl (init := .anonymous) fun acc s =>
@@ -422,30 +425,42 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
   IO.println s!"[ixvm-model-advice] {quotBlocks} of {repQ.blocks.size} quotient-using models name \
     the five quotient roles as basis references"
   unless quotBlocks > 0 do quotOk := false
-  let mkCase (e : Ixon.Env) (tag : String) (n : Lean.Name) : Builder := fun _ => do
+  -- a claim on a family's recursor is refused while the program refuses such recursors
+  let isRecursor (n : Lean.Name) : Bool :=
+    n.toString.endsWith ".rec" || n.toString.endsWith ".rec_1"
+  let mkPlain (e : Ixon.Env) (tag : String) (n : Lean.Name) : Builder := fun _ => do
     let some target := e.getAddr? (Ix.Name.fromLeanName n)
       | throw s!"{n} is not in the Ixon environment"
     let ctx ← Ix.ClaimContext.ofEnv e true
     Case.ofClaim s!"check {n} ({tag})" e (.check ctx target none)
-  -- no advice under user axioms: `Even` with an unused, well-typed `axiom ax : Prop`
-  let underAxiom : Builder := fun _ => do
+  let mkCase (e : Ixon.Env) (tag : String) (n : Lean.Name) : Builder := fun u => do
+    let c ← mkPlain e tag n u
+    return if isRecursor n then c.throughModeledRecursor else c
+  -- no advice under user axioms: `Even.rec` with an unused, well-typed `axiom ax : Prop`.
+  -- `Even` itself needs no advice: its type is checked on its declared shape.
+  let underAxiom (name : String) : Builder := fun _ => do
     let ax : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero], #[]⟩
     let a := Address.blake3 (Ixon.ser ax)
     let e := env.storeConst a ax
     let some axioms := Ix.AssumptionTree.canonical #[a] | throw "no tree for the axiom"
-    let some target := e.getAddr? (Ix.Name.fromLeanName (nameOfString "IxVMInd.Even"))
-      | throw "IxVMInd.Even is not in the Ixon environment"
+    let some target := e.getAddr? (Ix.Name.fromLeanName (nameOfString name))
+      | throw s!"{name} is not in the Ixon environment"
     let ctx ← Ix.ClaimContext.ofEnv e true
-    Case.ofClaim "check IxVMInd.Even under a user axiom (no model advice)" e
-      (.check { ctx with axioms := some axioms.root } target none)
-      (({} : Std.HashMap _ _).insert axioms.root axioms) (accept := false)
-      (rejectsWith := some "model advice: a claim with user axioms")
+    let claim : Ix.Claim := .check { ctx with axioms := some axioms.root } target none
+    let trees := ({} : Std.HashMap _ _).insert axioms.root axioms
+    if isRecursor (nameOfString name) then
+      Case.ofClaim s!"check {name} under a user axiom (no model advice)" e claim trees
+        (accept := false)
+        (rejectsWith := some (if modeledRecursorsRefused then modeledRecursorRefusal
+          else "model advice: a claim with user axioms"))
+    else
+      Case.ofClaim s!"check {name} under a user axiom (its declared shape, no model)" e claim trees
   let cases := (names.map (mkCase env "modeller's model")) ++
     (names.map (mkCase tweaked "a different valid model")) ++
     (quotNames.map fun n => mkCase quotEnv "a model whose proofs use the quotient" (nameOfString n)) ++
-    [underAxiom] ++
-    [mkCase tagEnv "its tag enumeration is Tri" `IxVMInd.TriA,
-     mkCase tagEnv "the recursor of TriA's tag enumeration" `IxVMInd.Tri.rec]
+    [underAxiom "IxVMInd.Even", underAxiom "IxVMInd.Even.rec"] ++
+    [mkPlain tagEnv "its tag enumeration is Tri" `IxVMInd.TriA,
+     mkPlain tagEnv "the recursor of TriA's tag enumeration" `IxVMInd.Tri.rec]
   -- the verdicts on `NB4`'s claims, from the entry's host cases (loaded at run time)
   let fenv ← getCompileEnv #[`Tests.Ix.Kernel.EntryCaseDefs]
   let fixEnv ← loadSharedIxonEnv (nestedVerdicts.map (·.1)).toArray fenv
@@ -453,6 +468,8 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     let some target := fixEnv.getAddr? (Ix.Name.fromLeanName n)
       | throw s!"{n} is not in the Ixon environment"
     let ctx ← Ix.ClaimContext.ofEnv fixEnv true
+    -- every accepted claim here reduces through a family's recursor
+    let accept := accept && !modeledRecursorsRefused
     Case.ofClaim s!"{if accept then "accept" else "refuse"} {n}" fixEnv (.check ctx target none) {} accept
   let cases := cases ++ nestedVerdicts.map fun (n, accept) => verdictCase n accept
   let rc ← runCases "ixvm-model-advice" cases.toArray

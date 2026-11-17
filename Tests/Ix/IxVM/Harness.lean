@@ -255,6 +255,22 @@ def Case.ofClaim (label : String) (env : Ixon.Env) (claim : Ix.Claim)
   let witness ← buildSectionedWitness env claim trees
   return { label, accept, rejectsWith, witness }
 
+/-- The program refuses every recursor of a mutual or nested family: its family check is not
+part of what the program is proved to establish. A suite that claims such a recursor, or a
+constant whose closure holds one, expects this refusal while that is so. Set to `false`
+together with the removal of the refusal from `KernelCheck::check_const`. -/
+def modeledRecursorsRefused : Bool := true
+
+/-- The refusal's message. -/
+def modeledRecursorRefusal : String := "a recursor of a mutual or nested family is refused"
+
+/-- `c`, a case that the program accepts when it checks families, as the program in force
+decides it: its closure holds a recursor of a mutual or nested family. -/
+def Case.throughModeledRecursor (c : Case) : Case :=
+  if modeledRecursorsRefused then
+    { c with accept := false, rejectsWith := some modeledRecursorRefusal, exercises := none }
+  else c
+
 /-! ## The case file
 
 `ixvm-proof test` reads a case file in Ixon (`Ix.AiurInvocation`): a header,

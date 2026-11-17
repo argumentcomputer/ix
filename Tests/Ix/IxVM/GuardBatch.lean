@@ -294,8 +294,7 @@ private def modeledHeaderCase (guards recursors wrapped : Bool) : Except String 
     witness := witness }
   -- a program that refuses the recursors of such a family refuses the block of them first
   return if recursors then
-    { c with accept := false
-             rejectsWith := some "a recursor of a mutual or nested family is refused" }
+    { c with accept := false, rejectsWith := some modeledRecursorRefusal }
   else if wrapped then
     refused guards "recursor header: a let in an index's domain" none c
   else c
@@ -417,14 +416,14 @@ private def familyCases (shape recursors : Bool) (env : Ixon.Env) : Array Builde
     fun u => do
       return { (← kernelCheckCase env (defs "Rose.rec") true u) with
         accept := false
-        rejectsWith := some (if recursors then "a recursor of a mutual or nested family is refused"
-          else noModel) }]
+        rejectsWith := some (if recursors then modeledRecursorRefusal else noModel) }]
 
 def run (leanEnv : Lean.Environment) : IO UInt32 := do
   -- the program under test: every guard (unset), or one of the earlier states
   let before ← IO.getEnv "IX_GUARD_BATCH_BEFORE"
   let state := match before with
-    | none => 5 | some "recursors" => 4 | some "telescope" => 3 | some "shape" => 2
+    | none => if modeledRecursorsRefused then 5 else 4
+    | some "recursors" => 4 | some "telescope" => 3 | some "shape" => 2
     | some "lets" => 1 | some _ => 0
   let guards := decide (state ≥ 1)
   let lets := decide (state ≥ 2)
