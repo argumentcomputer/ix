@@ -630,12 +630,16 @@ theorem storeArR_nativeRecLate {env env₂ : Env md} {fam : NativeFam md}
     obtain ⟨cA, hcA, h1, h2⟩ := mem_nativeCtors4 hc
     obtain ⟨j, hj⟩ := List.getElem?_of_mem hcA
     obtain ⟨hfC, hlC, -⟩ := hFS.ctor j cA hj
+    have har : Expr.arOk env (.const cA.1.name (fam.p.cvT.levelParams.map .param)) = true :=
+      arOk_const_of (fun ci hci => by
+        rw [hfC] at hci
+        obtain rfl := Option.some.inj hci
+        simp [hlC, Ix.Kernel.ConstantInfo.toConstantVal])
+    have hres' : (Expr.const cA.1.name (fam.p.cvT.levelParams.map .param)).constsResolve env =
+        true := by
+      simp [Expr.constsResolve, hfC]
     rw [h1, h2]
-    refine ⟨⟨arOk_const_of (fun ci hci => ?_), by simp [Expr.constsResolve, hfC]⟩,
-      (h.const hfC).type⟩
-    rw [hfC] at hci
-    obtain rfl := Option.some.inj hci
-    simp [hlC, Ix.Kernel.ConstantInfo.toConstantVal]
+    exact ⟨⟨har, hres'⟩, (h.const hfC).type⟩
   -- the recursor's name is fresh
   have hfresh : env.find? pR.cvR.name = none := hck.fresh
   -- the generated rules at the environment holding the recursor
@@ -679,7 +683,7 @@ theorem storeArR_nativeRecLate {env env₂ : Env md} {fam : NativeFam md}
       refine ⟨⟨(arP_iff _).mp (arP_structRecTyR hTR httyR hcsR hty), ?_⟩,
         fun r hr => (hG r hr).1, rfl, rfl⟩
       exact Ix.Kernel.Expr.constsResolve_mono hres
-    · refine ⟨hR (arRes_of_cvCheck hck'), fun r hr => ?_, rfl, rfl⟩
+    · refine ⟨hR (show ArRes env cvRi'.type from arRes_of_cvCheck hck'), fun r hr => ?_, rfl, rfl⟩
       obtain ⟨g, hg, hgr⟩ := forall₂_mem_right hW r hr
       exact arRes_of_wrapRel hgr (hG g hg).2 (hlet r hr) (hG g hg).1
   obtain ⟨hTy, hRh, hname, hlp⟩ := hstore
