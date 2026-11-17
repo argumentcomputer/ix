@@ -1,0 +1,232 @@
+import IxC.Kernel.Model.GuardClassifier
+import IxVMRefinement.StatementRel.LoadedReadsCanon
+import IxVMRefinement.Assembly.TypingStore
+
+/-! # The guard classifier's address-keyed raw-record dictionary
+
+This dictionary reads types and definition values directly from decoded records and literal
+blobs. It does not consult a typed environment, role binding, recursor model or validation limit.
+Member projections select their containing block and canonical binder-root offset. Recursors
+are read at positional universes, as the runtime payload presents them to the classifier.
+
+Positive record/blob extension preserves every successful lookup. The two sides can therefore
+be embedded in their common collision-free raw store before comparing classifier results.
+-/
+
+namespace IxVM.Refinement.GuardRaw
+
+open IxVM.Consistency
+open Ix.Kernel (Expr Key Level)
+open Ix.Kernel.GuardClassifier (Lookup)
+
+/-- This is only an address-naming device for the expression reader, not an admitted table. -/
+def addressTable : Ix.Kernel.RoleTable := ⟨Ix.Kernel.specVersion, #[], #[]⟩
+
+theorem addressTable_key (a : _root_.Address) : keyOf addressTable a = .id a := rfl
+
+/-- One raw expression root, including the record-local data needed by its canonical reader. -/
+structure Root where
+  source : Ixon.Constant
+  self : Nat → Option (Ix.Kernel.Reader.ReadM (Key .anon))
+  offset : Nat
+  levels : Nat
+  expression : Ixon.Expr
+
+abbrev Records := _root_.Address → Option Ixon.Constant
+abbrev Blobs := _root_.Address → Option ByteArray
+
+private theorem bind_preserved {α β : Type} {a b : Option α} {f g : α → Option β}
+    (ha : ∀ x, a = some x → b = some x)
+    (hf : ∀ x y, f x = some y → g x = some y)
+    {r : β} (h : a.bind f = some r) : b.bind g = some r := by
+  obtain ⟨x, hx, hr⟩ := Option.bind_eq_some_iff.mp h
+  exact Option.bind_eq_some_iff.mpr ⟨x, ha x hx, hf x r hr⟩
+
+/-- Select a root from one member, using its offset in the whole block's binder table. -/
+def memberRoot (store : Records) (B : _root_.Address) (i : Nat)
+    (select : Ixon.MutConst → Option (Nat × Nat × Ixon.Expr)) : Option Root := do
+  let cb ← store B
+  let .muts ms := cb.info | none
+  let m ← ms[i]?
+  let (off, nl, e) ← select m
+  pure ⟨cb, blockSelf addressTable B ms, L1.mutsRootOffset ms.toList i + off, nl, e⟩
+
+def definitionType : Ixon.MutConst → Option (Nat × Nat × Ixon.Expr)
+  | .defn d => some (0, d.lvls.toNat, d.typ)
+  | _ => none
+
+def inductiveType : Ixon.MutConst → Option (Nat × Nat × Ixon.Expr)
+  | .indc ind => some (0, ind.lvls.toNat, ind.typ)
+  | _ => none
+
+def recursorType : Ixon.MutConst → Option (Nat × Nat × Ixon.Expr)
+  | .recr rc => some (0, rc.lvls.toNat, rc.typ)
+  | _ => none
+
+def constructorType (j : Nat) : Ixon.MutConst → Option (Nat × Nat × Ixon.Expr)
+  | .indc ind => (ind.ctors[j]?).map fun ct => (1 + j, ct.lvls.toNat, ct.typ)
+  | _ => none
+
+def definitionValue : Ixon.MutConst → Option (Nat × Nat × Ixon.Expr)
+  | .defn d => match d.kind with
+      | .defn => some (1, d.lvls.toNat, d.value)
+      | _ => none
+  | _ => none
+
+/-- The declared type at an address. A projection is resolved by its own kind, never guessed. -/
+def typeRoot (store : Records) (a : _root_.Address) : Option Root := do
+  let c ← store a
+  match c.info with
+  | .defn d => pure ⟨c, soloSelf addressTable a, 0, d.lvls.toNat, d.typ⟩
+  | .recr r => pure ⟨c, soloSelf addressTable a, 0, r.lvls.toNat, r.typ⟩
+  | .axio x => pure ⟨c, fun _ => none, 0, x.lvls.toNat, x.typ⟩
+  | .quot q => pure ⟨c, fun _ => none, 0, q.lvls.toNat, q.typ⟩
+  | .dPrj p => memberRoot store p.block p.idx.toNat definitionType
+  | .iPrj p => memberRoot store p.block p.idx.toNat inductiveType
+  | .rPrj p => memberRoot store p.block p.idx.toNat recursorType
+  | .cPrj p => memberRoot store p.block p.idx.toNat (constructorType p.cidx.toNat)
+  | .muts _ => none
+
+/-- Only a definition value is unfoldable. Theorem/opaque bodies are not classifier inputs. -/
+def valueRoot (store : Records) (a : _root_.Address) : Option Root := do
+  let c ← store a
+  match c.info with
+  | .defn d => match d.kind with
+      | .defn => pure ⟨c, soloSelf addressTable a, 1, d.lvls.toNat, d.value⟩
+      | _ => none
+  | .dPrj p => memberRoot store p.block p.idx.toNat definitionValue
+  | _ => none
+
+/-- The canonical annotated reading of a selected raw root, at positional universes. -/
+noncomputable def readRoot (blob : Blobs) (root : Root) : Option (Expr .anon) := do
+  let e ← (exprReader addressTable blob root.source id root.self).read root.expression |>.toOption
+  LoadedReads.canonAnn root.source (List.range root.levels) (root.offset : IxVM.F) root.expression e
+
+/-- A successful dictionary answer checks universe arity and instantiates that raw reading. -/
+noncomputable def answer (blob : Blobs) (root : Option Root) (us : List Level) :
+    Option (Expr .anon) := do
+  let root ← root
+  if us.length = root.levels then
+    (readRoot blob root).map (fun e => e.instantiateLevelParams (List.range root.levels) us)
+  else none
+
+/-- The classifier's concrete raw dictionary. Only address keys are accepted. -/
+noncomputable def lookup (store : Records) (blob : Blobs) : Lookup .anon where
+  typeOf k us := match k with
+    | .id a => answer blob (typeRoot store a) us
+    | _ => none
+  valueOf k us := match k with
+    | .id a => answer blob (valueRoot store a) us
+    | _ => none
+
+noncomputable def ofStore (E : Ixon.Env) : Lookup .anon :=
+  lookup (recordOf E) (fun x => E.blobs.get? x)
+
+/-- Selecting a member uses only the positive answer at the containing block. -/
+theorem memberRoot_mono {store store' : Records}
+    (hs : ∀ a c, store a = some c → store' a = some c)
+    {B : _root_.Address} {i : Nat} {select : Ixon.MutConst → Option (Nat × Nat × Ixon.Expr)}
+    {r : Root} (h : memberRoot store B i select = some r) : memberRoot store' B i select = some r :=
+  bind_preserved (hs B) (fun _ _ h => h) h
+
+theorem typeRoot_mono {store store' : Records}
+    (hs : ∀ a c, store a = some c → store' a = some c)
+    {a : _root_.Address} {r : Root} (h : typeRoot store a = some r) : typeRoot store' a = some r := by
+  refine bind_preserved (hs a) ?_ h
+  intro c r hr
+  cases hc : c.info <;> simp only [hc] at hr ⊢
+  case dPrj p => exact memberRoot_mono hs hr
+  case iPrj p => exact memberRoot_mono hs hr
+  case rPrj p => exact memberRoot_mono hs hr
+  case cPrj p => exact memberRoot_mono hs hr
+  all_goals exact hr
+
+theorem valueRoot_mono {store store' : Records}
+    (hs : ∀ a c, store a = some c → store' a = some c)
+    {a : _root_.Address} {r : Root} (h : valueRoot store a = some r) : valueRoot store' a = some r := by
+  refine bind_preserved (hs a) ?_ h
+  intro c r hr
+  cases hc : c.info <;> simp only [hc] at hr ⊢
+  case dPrj p => exact memberRoot_mono hs hr
+  all_goals exact hr
+
+/-- Canonical annotation is record-local; only successful literal blob reads require transport. -/
+theorem readRoot_mono {blob blob' : Blobs}
+    (hb : ∀ a bytes, blob a = some bytes → blob' a = some bytes)
+    {r : Root} {e : Expr .anon} (h : readRoot blob r = some e) : readRoot blob' r = some e := by
+  refine bind_preserved ?_ (fun _ _ h => h) h
+  intro v hv
+  have hr := Typing.toOption_eq_some hv
+  have hr' := ReaderReads.exprReader_mono hb hr
+  rw [hr']
+  rfl
+
+theorem answer_mono {blob blob' : Blobs} {r r' : Option Root}
+    (hb : ∀ a bytes, blob a = some bytes → blob' a = some bytes)
+    (hr : ∀ root, r = some root → r' = some root)
+    {us : List Level} {e : Expr .anon} (h : answer blob r us = some e) :
+    answer blob' r' us = some e := by
+  refine bind_preserved hr ?_ h
+  intro root e he
+  split at he ⊢
+  · exact bind_preserved (fun e h => readRoot_mono hb h) (fun _ _ h => h) he
+  · assumption
+
+/-- Positive agreement of actual records and blobs supplies the classifier lookup extension. -/
+theorem lookup_extends {store store' : Records} {blob blob' : Blobs}
+    (hs : ∀ a c, store a = some c → store' a = some c)
+    (hb : ∀ a bytes, blob a = some bytes → blob' a = some bytes) :
+    (lookup store blob).Extends (lookup store' blob') := by
+  constructor
+  · intro k us e h
+    cases k with
+    | id a => exact answer_mono hb (fun _ h => typeRoot_mono hs h) h
+    | role _ => exact h
+    | aux _ _ => exact h
+  · intro k us e h
+    cases k with
+    | id a => exact answer_mono hb (fun _ h => valueRoot_mono hs h) h
+    | role _ => exact h
+    | aux _ _ => exact h
+
+/-- Both raw stores map into their left-biased union when overlapping records and blobs agree. -/
+theorem common_lookup {E R : Ixon.Env}
+    (hr : ∀ a c c', recordOf E a = some c → recordOf R a = some c' → c = c')
+    (hb : ∀ a b b', E.blobs.get? a = some b → R.blobs.get? a = some b' → b = b') :
+    (ofStore E).Extends (lookup (storeOver E R) (blobOver E R)) ∧
+    (ofStore R).Extends (lookup (storeOver E R) (blobOver E R)) :=
+  ⟨lookup_extends (fun _ _ h => ReaderReads.storeOver_left h)
+      (fun _ _ h => ReaderReads.blobOver_left h),
+    lookup_extends (fun _ _ h => ReaderReads.storeOver_right hr h)
+      (fun _ _ h => ReaderReads.blobOver_right hb h)⟩
+
+/-- Two successful raw-store classifications agree from record/blob agreement alone. -/
+theorem sortSignature_agree {E R : Ixon.Env}
+    (hr : ∀ a c c', recordOf E a = some c → recordOf R a = some c' → c = c')
+    (hb : ∀ a b b', E.blobs.get? a = some b → R.blobs.get? a = some b' → b = b')
+    {fuel : Nat} {ctx : List (Expr .anon)} {e : Expr .anon} {s t : Level}
+    (hs : Ix.Kernel.GuardClassifier.sortSignature (ofStore E) fuel ctx e = some s)
+    (ht : Ix.Kernel.GuardClassifier.sortSignature (ofStore R) fuel ctx e = some t) : s = t :=
+  Ix.Kernel.GuardClassifier.sortSignature_agree (common_lookup hr hb).1 (common_lookup hr hb).2 hs ht
+
+/-- Raw-byte preservation gives record preservation even when cached decoded values differ. -/
+theorem records_of_bytes {E E' : Ixon.Env}
+    (hraw : ∀ a lc, E.consts.get? a = some lc →
+      ∃ lc', E'.consts.get? a = some lc' ∧ lc'.rawBytes = lc.rawBytes) :
+    ∀ a c, recordOf E a = some c → recordOf E' a = some c := by
+  intro a c hc
+  obtain ⟨lc, hget, hdec⟩ := Typing.recordOf_some hc
+  obtain ⟨lc', hget', hbytes⟩ := hraw a lc hget
+  apply Typing.recordOf_of_get hget'
+  rw [hbytes]
+  exact hdec
+
+/-- The concrete store lookup extends when bytes and literal blobs extend. -/
+theorem ofStore_extends_of_bytes {E E' : Ixon.Env}
+    (hraw : ∀ a lc, E.consts.get? a = some lc →
+      ∃ lc', E'.consts.get? a = some lc' ∧ lc'.rawBytes = lc.rawBytes)
+    (hb : ∀ a bytes, E.blobs.get? a = some bytes → E'.blobs.get? a = some bytes) :
+    (ofStore E).Extends (ofStore E') :=
+  lookup_extends (records_of_bytes hraw) hb
+
+end IxVM.Refinement.GuardRaw
