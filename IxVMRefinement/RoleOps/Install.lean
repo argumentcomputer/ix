@@ -55,7 +55,8 @@ theorem OpFront.runs {env : Env .anon} {c : KKey} {ty₀ val₀ ty val : KExpr}
     (Ix.Kernel.Model.judgeFrames_rulesJ env).annot_syntax h.tyAnnot h.tyNoFvar h.tyClosed
   have hvalS :=
     (Ix.Kernel.Model.judgeFrames_rulesJ env).annot_syntax h.valAnnot h.valNoFvar h.valClosed
-  exact ⟨⟨by rw [hfresh]; rfl, notReserved_of_mem_opNames hc,
+  have hnone : (env.find? c).isNone = true := by rw [hfresh]; rfl
+  exact ⟨⟨hnone, notReserved_of_mem_opNames hc,
       isProjFnShape_of_isBaseKey (isBaseKey_of_mem_opNames hc), rfl, h.tyClosed, h.tyNoFvar,
       h.tyAnnot, h.tyLevels, infer_constsResolve hinf hS htyS.1, s, u, hinf, hred⟩,
     ⟨h.valClosed, h.valNoFvar, h.valAnnot, h.valLevels,
@@ -74,7 +75,8 @@ theorem structOp_run {env : Env .anon} {c : KKey} {ty₀ val₀ ty val : KExpr}
   obtain ⟨hcv, hvf⟩ := hk.front.runs hS hp.fresh hco
   refine ⟨ty, val, hcv, hvf, rfl, fun _ => ⟨natOpGuard_installed hp hbase ty val hint,
     natOpDeps_storedOk_installed hp hbase hk.tyShape val hint, ?_⟩, fun hdm => ?_⟩
-  · intro eq heq
+  · unfold NatEqsRunJ
+    intro eq heq
     obtain ⟨eq₀, hmem, rfl⟩ := List.mem_map.mp heq
     exact hk.eqs eq₀ hmem
   · have hdm' : (natDivModNames : List KKey).contains c = true := hdm

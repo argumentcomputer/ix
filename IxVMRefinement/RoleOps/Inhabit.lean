@@ -1,5 +1,6 @@
 import IxVMRefinement.RoleOps.Interface
 import IxVMRefinement.Decl.VerifiedRunMap
+import IxC.Kernel.Model.NatEqs
 
 /-! # The interface holds of every operation the kernel installs
 
