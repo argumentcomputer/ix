@@ -623,7 +623,8 @@ theorem recCtorKinds_noRec {T : Core.KKey} {lps : List Ix.Kernel.LevelParam} {nP
       intro k hk
       obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hk
       have ho := hord i hi
-      simp only [ho] <;> decide
+      simp only [ho]
+      decide
     · injection h with h
       subst h
       rw [List.any_eq_false]
