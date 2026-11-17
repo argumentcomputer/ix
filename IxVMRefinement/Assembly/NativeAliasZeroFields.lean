@@ -100,7 +100,7 @@ theorem ctor_zero_all_from_fields {t : Ix.Kernel.RoleTable}
         have hparams := alias_parameter_heads_spec
           (fun a ha => ixAddr_inj (hκ_inj a ha)) nP hnP_lt
           (bounded_sub (fun cl hx => hsub cl (by simp [hc, hx])) hroot)
-          hcty_raw.toTm (Bytes.repAddressRef_heapMono₂ addrTy ev_cprj.heap_extends hpt) ev_params
+          hcty_raw.toTmExact.toTm (Bytes.repAddressRef_heapMono₂ addrTy ev_cprj.heap_extends hpt) ev_params
         obtain ⟨cbsP, cbodyP, cbsF, hstP, -, happ, hlenP⟩ := stripPis_split nP c_j.2 hstE
         have hdoms : ∀ idx < nP + c_j.2,
             famHead T (cbs.getD idx default).1 = false ∨
