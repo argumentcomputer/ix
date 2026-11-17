@@ -72,17 +72,17 @@ theorem signature_pair_spec_aux :
         obtain ⟨rfl, rfl⟩ := pair_inj hrb
         subst hr hh hm
         cases hgu : Level.guardSignature u <;> cases hgv : Level.guardSignature v <;>
-          simp only [hgu, hgv, Option.isNone_none, Option.isNone_some, Bool.false_eq_true,
-            Bool.true_eq, ite_true, ite_false, evalBinOp, Except.ok.injEq, Value.field.injEq] at hop
+          simp [hgu, hgv, evalBinOp] at hop
         all_goals try { norm_num at hop }
         rename_i su sv
         refine ⟨_, ?_, ?_⟩
         · simp [Level.guardSignature, hgu, hgv]
-        · simp only [Level.guardSignatureLevel, Level.guardSignature, hgu, hgv,
-            Option.bind_some, Option.getD_some] at hsa hsb ⊢
-          exact .max List.getElem?_concat_length
-            (hsa.mono (evb.heap_extends.trans (Heap.Extends.snoc _ _)))
-            (hsb.mono (Heap.Extends.snoc _ _))
+        · have haRep : RepKLevel m0 su spa := by simpa [Level.guardSignatureLevel, hgu] using hsa
+          have hbRep : RepKLevel m1 sv spb := by simpa [Level.guardSignatureLevel, hgv] using hsb
+          simpa [Level.guardSignatureLevel, Level.guardSignature, hgu, hgv] using
+            (RepKLevel.max List.getElem?_concat_length
+              (haRep.mono (evb.heap_extends.trans (Heap.Extends.snoc _ _)))
+              (hbRep.mono (Heap.Extends.snoc _ _)))
       · obtain ⟨u, v, rfl, hu, hv⟩ := max_of_load hrep ld
         subst hcs
         obtain ⟨spa, hra, hsa⟩ := ih _ _ _ _ _ _ (by guard_lt_calls) eva rfl u a rfl hu
@@ -95,7 +95,7 @@ theorem signature_pair_spec_aux :
         all_goals try { simp [hgu, hgv, evalBinOp] at hop; subst hop; exact (hne rfl).elim }
         all_goals refine ⟨_, ?_, ?_⟩
         all_goals first
-          | simp [Level.guardSignature, hgu, hgv]
+          | (solve | simp [Level.guardSignature, hgu, hgv])
           | simpa [Level.guardSignatureLevel, Level.guardSignature, hgu, hgv] using stored_one m1)
 
 /-- The actual signature function returns precisely the signature level of its input. -/
