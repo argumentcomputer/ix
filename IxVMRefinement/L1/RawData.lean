@@ -29,6 +29,8 @@ theorem rawLevel_of_exact {h : Heap F} {u : KLevel} {p : SourceValue F}
 
 theorem rawLevels_of_exact {h : Heap F} {us : List KLevel} {p : SourceValue F}
     (rep : RepKLevelList h us p) : RawKLevelList h us p := by
+  unfold RawKLevelList
+  rw [Core.klevelListEnum_eq]
   induction rep with
   | nil cell => exact .nil cell
   | cons cell level _ tail => exact .cons cell (rawLevel_of_exact level) tail
