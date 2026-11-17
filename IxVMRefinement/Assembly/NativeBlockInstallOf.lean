@@ -552,7 +552,9 @@ theorem nativeInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTa
         rw [ZMod.val_zero] at hcan
         refine ⟨ct, c.1.type, cty', hct, hcidx, hrd, hclbb, hcdef, hcan, ?_⟩
         have hf' := hfind _ (hmemC j c cty' hc hA)
-        rw [hcn, hclp, hc2, hpnP, hnP₀, ← hcp] at hf'
+        have hnP' : p.nP = ct.params.toNat := hpnP.trans (hnP₀.trans hcp.symm)
+        rw [hcn, hclp, hc2] at hf'
+        rw [← hnP']
         exact hf'
       newName := by
         intro ci hci
@@ -578,7 +580,7 @@ theorem nativeInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTa
         rw [hcs1]
         have hidx : (p₀.toInductiveShape.withSort s).nIdx = 0 := hnIdx₀.trans hi0
         have hnp : (p₀.toInductiveShape.withSort s).nP = ind.params.toNat := hnP₀
-        simp [hidx, hnp, hcf]
+        simp [hidx, hnp, hcf, hnIdx₀, hi0, hnP₀]
       free := (hfree _ (Or.inr ⟨_, 0, .indc ind, hrec.muts, rfl, Or.inl rfl⟩)).1 }
   · have h := hndAll
     rw [List.map_append] at h
