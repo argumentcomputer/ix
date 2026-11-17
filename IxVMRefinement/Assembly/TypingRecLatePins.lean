@@ -271,6 +271,35 @@ theorem rulesTrace_length_spec {refs recurAddrs : List _root_.Address}
     exact RulesTraceRep.toRepListTrue hr
   exact (Lib.Lists.length_spec ev' hl').1
 
+/-- **The minor premises are the constructors**: `check_recursor_canonical_full` at an inductive
+parent runs `nat_rec_check`, which asserts `n_min = num_ctors` (its other arm refuses a parent
+that is not an inductive). -/
+theorem canonical_full_minors
+    {rc levels type parameters indices motives minors rules k unsafeFlag block position address
+      parentLevels parentType parentParams parentIndices constructors parentUnsafe parentBlock
+      parentIndex parent result : SourceValue F}
+    {heap final : Heap F} {calls : List (Call F)}
+    (observed : ObsFn Obs.W "KernelCheck::check_recursor_canonical_full"
+      [rc, .construct "KernelTypes::KConstantInfo" "Rec"
+        [levels, type, parameters, indices, motives, minors, rules, k, unsafeFlag, block,
+          position], address,
+        .construct "KernelTypes::KConstantInfo" "Induct"
+          [parentLevels, parentType, parentParams, parentIndices, constructors, parentUnsafe,
+            parentBlock, parentIndex], parent]
+      heap result final calls) :
+    minors = constructors := by
+  match Obs.«KernelCheck::check_recursor_canonical_full».obs observed with
+  | .other (hne568 := hne) .. =>
+    exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Induct (ev518 := natRun) .. =>
+    match Obs.«KernelCheck::nat_rec_check».obs natRun with
+    | .run (hv11 := recShape) (hv81 := parentShape) (heq217 := minorsEq) .. =>
+      injection recShape with _ _ recFields
+      simp only [List.cons.injEq, and_true] at recFields
+      injection parentShape with _ _ parentFields
+      simp only [List.cons.injEq, and_true] at parentFields
+      exact recFields.2.2.2.2.2.1.trans (minorsEq.trans parentFields.2.2.2.2.1.symm)
+
 /-! ## The counts -/
 
 /-- **The record's counts against its parent's member inductive.** At an environment the
@@ -292,7 +321,8 @@ theorem rec_counts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
     (hcb : Ix.Cert.recordAt E ip.block = some cb) (hms : cb.info = .muts ms)
     (hind : ms[ip.idx.toNat]? = some (.indc ind)) :
     rc.params.toNat = ind.params.toNat ∧ rc.indices.toNat = ind.indices.toNat ∧
-      rc.motives.toNat = 1 ∧ rc.rules.size = ind.ctors.size := by
+      rc.motives.toNat = 1 ∧ rc.rules.size = ind.ctors.size ∧
+      rc.minors.toNat = ind.ctors.size := by
   subst hlim
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
   have hgood : Core.Good ⟨E, env, t, some n⟩ calls := hst.good env (some n)
@@ -365,7 +395,7 @@ theorem rec_counts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
   obtain ⟨parent, pointer, scanHeap, loadedHeap, routedHeap, scanCalls, loadCalls, routeCalls,
     nl, pty, np, ni, nc, pu, blk, idx, lenHeap, lenAfter, kHeap, kAfter, canonHeap, len, kTarget,
     lenCalls, kCalls, canonCalls, evScan, hsScan, evLoad, hsLoad, hldP, evRoute, hsRoute,
-    hnp, hni, eLen, evLen, hsLen, hlenEq, -, -, -, -, -, -, -⟩ := native_rec_member_full evM
+    hnp, hni, eLen, evLen, hsLen, hlenEq, -, -, -, -, -, evCanon, -⟩ := native_rec_member_full evM
   have hsScan' : ∀ x ∈ scanCalls, x ∈ calls := fun x hx => hsub_chk x (hsubM x (hsScan x hx))
   have hsLoad' : ∀ x ∈ loadCalls, x ∈ calls := fun x hx => hsub_chk x (hsubM x (hsLoad x hx))
   -- the route's parent is the tied one
@@ -445,6 +475,8 @@ theorem rec_counts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
     field_nat_inj (by rw [Array.length_toList]; omega) (by omega)
       (hlenV.symm.trans (hlenEq.trans hncEq.symm))
   rw [Array.length_toList] at hrulesN
-  exact ⟨hparams, hindices, hmotives, hrulesN⟩
+  have hminors : rc.minors.toNat = ind.ctors.size :=
+    field_nat_inj (by omega) (by omega) ((canonical_full_minors evCanon).trans hncEq.symm)
+  exact ⟨hparams, hindices, hmotives, hrulesN, hminors⟩
 
 end IxVM.Refinement.Typing
