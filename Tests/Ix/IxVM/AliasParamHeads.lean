@@ -200,6 +200,7 @@ def run : IO UInt32 := do
   let mut names : Std.HashMap Address String := {}
   for (n, d) in env.named.toArray do
     if !names.contains d.addr then names := names.insert d.addr (toString n)
+  let nameMap := names
   for (a, lc) in env.consts.toArray do
     if lc.peekTag != .ok .muts then continue
     let some c := lc.get? | continue
@@ -218,7 +219,7 @@ def run : IO UInt32 := do
       let some f := f | continue
       if formerIsTele (ind.params.toNat + ind.indices.toNat) f then continue
       aliases := aliases + 1
-      let old := teleWalk env (fun a => names.getD a (toString a)) 5000000
+      let old := teleWalk env (fun a => nameMap.getD a (toString a)) 5000000
         (ind.params.toNat + ind.indices.toNat) f
       match classifierWalk env (ind.params.toNat + ind.indices.toNat) f with
       | .error msg =>
