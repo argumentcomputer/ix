@@ -1009,11 +1009,15 @@ theorem selfHashed_of_authentic {V : View} (h : V.Authentic) : SelfHashed V := b
   exact And.intro (fun a lc hl => (hrec a lc hl).1) (And.intro hblob hrole)
 
 /-- **A BLAKE3 collision the run hashed one side of**: a byte string the run hashed and a
-different byte string with the same pure BLAKE3 hash; or a preimage of the zero address. -/
-def GenuineCollision (calls : List (Call IxVM.F)) : Prop :=
+different byte string with the same pure BLAKE3 hash; or a preimage of the zero address that
+the run hashed or the view holds at that address. Every case is about bytes the run hashed
+or the view holds. -/
+def GenuineCollision (V : View) (calls : List (Call IxVM.F)) : Prop :=
   (∃ held bytes : ByteArray, Hashed calls bytes ∧ bytes ≠ held ∧
     Address.blake3Pure bytes = Address.blake3Pure held) ∨
-  ∃ bytes : ByteArray, Address.blake3Pure bytes = Ix.HostAdmission.Merkle.padding
+  ∃ bytes : ByteArray,
+    (V.Preimage Ix.HostAdmission.Merkle.padding bytes ∨ Hashed calls bytes) ∧
+      Address.blake3Pure bytes = Ix.HostAdmission.Merkle.padding
 
 /-- **Over a view stored under its own hashes, the collision alternative is a collision**:
 `View.HashedCollision` counts a byte string the view holds at an address as a preimage of
@@ -1021,10 +1025,11 @@ that address whatever its hash; when the view's data is stored under its own has
 alternative exhibits two different byte strings with one BLAKE3 hash, one of them hashed by
 the run, or a preimage of the zero address. -/
 theorem hashedCollision_genuine {V : View} (hV : SelfHashed V) {extra : List ByteArray}
-    {calls : List (Call IxVM.F)} (h : V.HashedCollision extra calls) : GenuineCollision calls := by
+    {calls : List (Call IxVM.F)} (h : V.HashedCollision extra calls) :
+    GenuineCollision V calls := by
   obtain ⟨hrec, hblob, hrole⟩ := hV
   unfold GenuineCollision
-  rcases h with ⟨x, held, bytes, hheld, hh, hne, hx⟩ | ⟨bytes, -, hp⟩
+  rcases h with ⟨x, held, bytes, hheld, hh, hne, hx⟩ | ⟨bytes, hb, hp⟩
   · have hx' : Address.blake3Pure held = x := by
       rcases hheld with hpre | ⟨-, hx'⟩ | ⟨-, hx'⟩
       · rcases hpre with ⟨lc, hl, hlc⟩ | hb | ⟨rb, hr, hra, hrb⟩ | ⟨_, -, -, hx'⟩
@@ -1037,7 +1042,7 @@ theorem hashedCollision_genuine {V : View} (hV : SelfHashed V) {extra : List Byt
       · exact hx'
       · exact hx'
     exact Or.inl ⟨held, bytes, hh, hne, hx.trans hx'.symm⟩
-  · exact Or.inr ⟨bytes, hp⟩
+  · exact Or.inr ⟨bytes, hb, hp⟩
 
 /-- **The statement over a view stored under its own hashes**: a collision the run hashed
 one side of, or `ConsistentReadRel`. -/
@@ -1047,7 +1052,7 @@ theorem ConsistencySpecRel.selfHashed {calls : List (Call IxVM.F)} {d : Digest}
     (hc : InScope c) {V : View} {seeds : List Address} {b : Binding}
     (hs : ClaimSeeds c V seeds) (hb : BindingAt c b) (w : ReaderAdmissionWitness V b)
     (hV : SelfHashed V) :
-    GenuineCollision calls ∨ ConsistentReadRel.{u} V calls b w seeds :=
+    GenuineCollision V calls ∨ ConsistentReadRel.{u} V calls b w seeds :=
   (h bytes c hde hd hc V seeds b hs hb w).elim
     (fun hcol => Or.inl (hashedCollision_genuine hV hcol)) Or.inr
 
@@ -1060,7 +1065,7 @@ theorem ConsistencySpecP.selfHashed {calls : List (Call IxVM.F)} {d : Digest}
     (hs : ClaimSeeds c V seeds) (hb : BindingAt c b) {t : Ix.Kernel.RoleTable}
     (ht : Ix.Kernel.Admission.admitBinding Address.admissionHash b = .ok t)
     (hl : LiteralSupportBound t) (hV : SelfHashed V) :
-    GenuineCollision calls ∨ ConsistentReadP.{u} calls t seeds :=
+    GenuineCollision V calls ∨ ConsistentReadP.{u} calls t seeds :=
   (h bytes c hde hd hc V seeds b hs hb t ht hl).elim
     (fun hcol => Or.inl (hashedCollision_genuine hV hcol)) Or.inr
 

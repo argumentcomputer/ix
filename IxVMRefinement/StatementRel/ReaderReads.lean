@@ -54,19 +54,38 @@ private theorem ecx_keyAt_le (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂.ke
     simp only [hr] at h ⊢
     exact hkey a k h
 
-private theorem ecx_blobAt_eq (hblob : cx₁.blob = cx₂.blob) (i : UInt64) :
-    (⟨cx₂, src, univs, self₂⟩ : ECx .anon).blobAt i =
-      (⟨cx₁, src, univs, self₁⟩ : ECx .anon).blobAt i := by
-  simp only [ECx.blobAt, hblob]
+private theorem ecx_blobAt_le (hblob : ∀ a b, cx₁.blob a = some b → cx₂.blob a = some b)
+    {i : UInt64} {b : ByteArray}
+    (h : (⟨cx₁, src, univs, self₁⟩ : ECx .anon).blobAt i = .ok b) :
+    (⟨cx₂, src, univs, self₂⟩ : ECx .anon).blobAt i = .ok b := by
+  simp only [ECx.blobAt] at h ⊢
+  cases hr : src.refs[i.toNat]? with
+  | none =>
+    simp only [hr] at h
+    exact (throw_ok h).elim
+  | some a =>
+    simp only [hr] at h ⊢
+    cases hb : cx₁.blob a with
+    | none =>
+      simp only [hb] at h
+      exact (throw_ok h).elim
+    | some b' =>
+      simp only [hb] at h
+      simp only [hblob a b' hb]
+      exact h
 
-private theorem ecx_natAt_eq (hblob : cx₁.blob = cx₂.blob) (i : UInt64) :
-    (⟨cx₂, src, univs, self₂⟩ : ECx .anon).natAt i =
-      (⟨cx₁, src, univs, self₁⟩ : ECx .anon).natAt i := by
-  simp only [ECx.natAt, ecx_blobAt_eq (self₁ := self₁) (self₂ := self₂) hblob i]
+private theorem ecx_natAt_le (hblob : ∀ a b, cx₁.blob a = some b → cx₂.blob a = some b)
+    {i : UInt64} {n : Nat}
+    (h : (⟨cx₁, src, univs, self₁⟩ : ECx .anon).natAt i = .ok n) :
+    (⟨cx₂, src, univs, self₂⟩ : ECx .anon).natAt i = .ok n := by
+  simp only [ECx.natAt] at h ⊢
+  obtain ⟨bytes, hb, h⟩ := except_bind_ok.mp h
+  rw [ecx_blobAt_le (self₂ := self₂) hblob hb]
+  exact h
 
 /-- **One expression, in a context that answers at least as much.** -/
 theorem convExpr_le (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂.keyAt a = .ok k)
-    (hblob : cx₁.blob = cx₂.blob)
+    (hblob : ∀ a b, cx₁.blob a = some b → cx₂.blob a = some b)
     (hself : ∀ (i : Nat) (k : CName .anon), self₁ i = some (Except.ok k) →
       self₂ i = some (Except.ok k))
     {tbl₁ tbl₂ : Array (ReadM (CExpr .anon))}
@@ -115,12 +134,14 @@ theorem convExpr_le (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂.keyAt a = .
   | str i =>
     intro v h
     simp only [convExpr] at h ⊢
-    rw [ecx_blobAt_eq (self₁ := self₁) (self₂ := self₂) hblob i]
+    obtain ⟨bytes, hb, h⟩ := except_bind_ok.mp h
+    rw [ecx_blobAt_le (self₂ := self₂) hblob hb]
     exact h
   | nat i =>
     intro v h
     simp only [convExpr] at h ⊢
-    rw [ecx_natAt_eq (self₁ := self₁) (self₂ := self₂) hblob i]
+    obtain ⟨n, hn, h⟩ := except_bind_ok.mp h
+    rw [ecx_natAt_le (self₂ := self₂) hblob hn]
     exact h
   | app f a ihf iha =>
     intro v h
@@ -164,7 +185,7 @@ theorem convExpr_le (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂.keyAt a = .
 
 /-- The sharing table, entry by entry. -/
 theorem buildShareTblGo_le (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂.keyAt a = .ok k)
-    (hblob : cx₁.blob = cx₂.blob)
+    (hblob : ∀ a b, cx₁.blob a = some b → cx₂.blob a = some b)
     (hself : ∀ (i : Nat) (k : CName .anon), self₁ i = some (Except.ok k) →
       self₂ i = some (Except.ok k)) :
     ∀ (es : List Ixon.Expr) (acc₁ acc₂ : Array (ReadM (CExpr .anon))),
@@ -199,12 +220,13 @@ theorem buildShareTblGo_le (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂.keyA
 end Transfer
 
 /-- **The kernel reader's expression conversion is monotone in its context**: a member
-reader over a context that answers every key the first answers, with the same blobs and
-every `recur` the first resolves, converts what the first converts, to the same term. -/
+reader over a context that answers every key the first answers, holds every blob the first
+holds and resolves every `recur` the first resolves, converts what the first converts, to
+the same term. -/
 theorem read_le {cx₁ cx₂ : Ctx .anon} {src : Ixon.Constant}
     {self₁ self₂ : Nat → Option (ReadM (CName .anon))}
     (hkey : ∀ a k, cx₁.keyAt a = .ok k → cx₂.keyAt a = .ok k)
-    (hblob : cx₁.blob = cx₂.blob)
+    (hblob : ∀ a b, cx₁.blob a = some b → cx₂.blob a = some b)
     (hself : ∀ (i : Nat) (k : CName .anon), self₁ i = some (Except.ok k) →
       self₂ i = some (Except.ok k))
     {param : Nat → LevelParam} {e : Ixon.Expr} {v : CExpr .anon}
@@ -230,7 +252,8 @@ theorem read_reads {t : RoleTable} (checked : t.check = .ok ()) {cx : Ctx .anon}
     (h : (MemberReader.mk' cx src param self).read e = .ok v) :
     (exprReader t cx.blob src param self').read e = .ok v :=
   read_le (cx₁ := cx) (cx₂ := readCtx t cx.blob)
-    (fun a k hk => by rw [hkeys a k hk]; exact readCtx_keyAt checked cx.blob a) rfl hself h
+    (fun a k hk => by rw [hkeys a k hk]; exact readCtx_keyAt checked cx.blob a)
+    (fun _ _ hb => hb) hself h
 
 /-! ## Standalone records -/
 

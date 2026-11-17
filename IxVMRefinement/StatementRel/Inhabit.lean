@@ -17,7 +17,7 @@ the empty environment); the store clauses hold of the empty store.
 
 What it does not check: any clause over a record. The store is empty, so `ReadingOf.stored`,
 `KeptIn`, `UsedClosed` and `AgreesCommitted` hold with nothing to say, and the set of groups
-is empty, so `bound`, `needsClosed`, `roles` and `preludeKept` do too. `And` and `Bool` are
+is empty, so `bound`, `needsClosed`, `kept` and `preludeKept` do too. `And` and `Bool` are
 not in the environment. `Facts` is taken to be `True`: the inhabitant says nothing about the
 invariant the typing half continues from.
 -/
@@ -283,9 +283,13 @@ theorem tableShape_basis :
       cases h
   have hused : UsedClosed ({} : Ixon.Env) := by
     unfold UsedClosed
-    intro _ _ h
-    rw [emptyStore_record] at h
-    cases h
+    constructor
+    · intro _ _ h
+      rw [emptyStore_record] at h
+      cases h
+    · intro _ _ _ h
+      rw [emptyStore_record] at h
+      cases h
   have hcommitted : AgreesCommitted ({} : Ixon.Env) := by
     unfold AgreesCommitted
     intro _ _ _ h
@@ -309,7 +313,7 @@ theorem tableShape_basis :
     hashed := hhashed
     usedClosed := hused
     committed := hcommitted
-    roles := fun _ _ _ hg => hg.elim
+    kept := fun _ _ _ hg => hg.elim
     reading := hreading
     pins := basisEnv_pins
     preludeKept := fun _ _ _ hg => hg.elim
