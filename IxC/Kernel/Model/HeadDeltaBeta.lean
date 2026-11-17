@@ -144,6 +144,35 @@ theorem Certified.red {env : Env md} {d : Nat} {e r : Expr md}
   | refl => exact .refl
   | cons _ hr _ ih => exact .trans hr ih
 
+/-- Concatenating finite traces preserves their operational evidence. -/
+theorem Trace.trans {env : Env md} {e m r : Expr md} (h : Trace env e m)
+    (h' : Trace env m r) : Trace env e r := by
+  induction h with
+  | refl => exact h'
+  | cons hs _ ih => exact .cons hs (ih h')
+
+/-- Certified traces compose without discarding their operational evidence. -/
+theorem Certified.trans {env : Env md} {d : Nat} {e m r : Expr md}
+    (h : Certified env d e m) (h' : Certified env d m r) : Certified env d e r := by
+  induction h with
+  | refl => exact h'
+  | cons hs hr _ ih => exact .cons hs hr (ih h')
+
+/-- A certified head trace can run beneath a fixed application argument. -/
+theorem Certified.appFn {env : Env md} {d : Nat} {e r : Expr md}
+    (h : Certified env d e r) (a : Expr md) : Certified env d (.app e a) (.app r a) := by
+  induction h with
+  | refl => exact .refl
+  | cons hs hr _ ih => exact .cons (.appFn hs) (.appFn hr) ih
+
+/-- A certified head trace can run beneath a fixed application spine. -/
+theorem Certified.mkAppN {env : Env md} {d : Nat} {e r : Expr md}
+    (h : Certified env d e r) (args : List (Expr md)) :
+    Certified env d (Expr.mkAppN e args) (Expr.mkAppN r args) := by
+  induction args generalizing e r with
+  | nil => exact h
+  | cons a args ih => exact ih (h.appFn a)
+
 /-- One definition followed by a licensed beta step is a certified trace. Its body may contain
 free variables or loose de Bruijn indices: this is an operational statement at any depth. -/
 theorem Certified.alias_beta {env : Env md} {d : Nat} {n : Key md} {us : List Level}
@@ -172,8 +201,8 @@ theorem alias_sort_inhabited (n : Key md) (d : Nat) :
   refine ⟨env, ?_⟩
   have hdef : unfoldDefinition env (.const n []) = some (.lam ty (.bvar 0) mb) := by
     simp [env, ty, mb, unfoldDefinition, Env.find?, ConstantInfo.name,
-      Expr.getAppFn, Expr.getAppArgs, Expr.mkAppN, Expr.instantiateLevelParams]
+      Expr.getAppFn, Expr.getAppArgs, Expr.mkAppN]
   simpa only [Expr.instantiate1] using
-    (Certified.alias_beta (d := d) (a := Expr.sort .zero) hdef (by rfl))
+    (Certified.alias_beta (d := d) (a := Expr.sort .zero) hdef (by simp [mb, BinderMeta.leanNever]))
 
 end Ix.Kernel.HeadDeltaBeta
