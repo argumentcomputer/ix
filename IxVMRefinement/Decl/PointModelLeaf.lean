@@ -6,6 +6,7 @@ import IxC.Kernel.Model.IndCaps
 import IxC.Kernel.Model.Swap
 import IxC.Kernel.Model.CtxOkKit
 import IxC.Kernel.Semantics.IndBlockFacts
+import IxC.Kernel.Rules.Transport
 
 /-! # The one-point interpretation of an inductive block, at the model tier
 
@@ -436,7 +437,7 @@ theorem consMember {env : Env .anon} (mp : EnvModelM V μ env) {c₀ : ConstantI
   have hicw : IndCapsWF c₀ := by
     intro cv caps heq
     rw [hcaps0 cv caps heq]
-    exact ⟨fun h => nomatch h, fun h => nomatch h⟩
+    exact ⟨fun h => (nomatch h), fun h => (nomatch h)⟩
   have hwf : EnvWF ⟨c₀ :: env.consts⟩ :=
     EnvWF.cons mp.base2.wf (structConstWF (by rw [hcv]; exact h1) (by rw [hcv]; exact h2)
       (Expr.constsResolve_mono (by rw [hcv]; exact h3)) (by rw [hcv]; exact h4)
@@ -474,7 +475,7 @@ theorem consMember {env : Env .anon} (mp : EnvModelM V μ env) {c₀ : ConstantI
       (fun caps heq => by
         have hc : caps = {} := hcaps0 cvA caps heq
         subst hc
-        exact ⟨etaPins_empty, fun h => nomatch h, fun h => nomatch h⟩)
+        exact ⟨etaPins_empty, fun h => (nomatch h), fun h => (nomatch h)⟩)
       (fun T cvT caps hf hcape hres _ => hE T cvT caps hf hcape hres)
       (fun n cvS capsS hnb hf => by
         have hn : n = cvA.name := by simpa using hnb
@@ -558,7 +559,7 @@ theorem consDefn {env : Env .anon} (mp : EnvModelM V μ env) {cvA : ConstantVal 
       rw [e2]
       exact hcomp ψ value' hcbV (hreads ψ)
     · exact fun φ => natHeads_cons_fresh mp (c₀ := .defnInfo cvA value' hint) (A := A) hfresh
-        ⟨fun _ _ h => nomatch h, fun _ _ _ h => nomatch h⟩ _ rfl φ
+        ⟨fun _ _ h => (nomatch h), fun _ _ _ h => (nomatch h)⟩ _ rfl φ
     · exact fun φ => natOps_cons_fresh mp (mp.nat_ops φ) (c₀ := .defnInfo cvA value' hint)
         (A := A) hfresh (hntc := ConsCrossEnv.ofNtc (fun _ h => nomatch h)) (Or.inr hnop) _ rfl
     · exact fun φ => divMod_cons_fresh (mp.div_mod φ) (c₀ := .defnInfo cvA value' hint)
@@ -754,9 +755,8 @@ theorem chain_ctor {formers : List (Key .anon)} {envT envD : Env .anon}
       shadowed := fun T' hT' cvT' caps' hf => by
         by_cases hn : cv.name = T'
         · subst hn
-          rw [Env.find?_cons_self
-            (.ctorInfo ⟨cv.name, cv.levelParams, type'⟩ nP nF) envT] at hf
-          exact nomatch hf
+          exact nomatch (Option.some.inj ((Env.find?_cons_self
+            (.ctorInfo ⟨cv.name, cv.levelParams, type'⟩ nP nF) envT).symm.trans hf))
         · rw [EnvExt.find?_cons_ne
             (c := .ctorInfo ⟨cv.name, cv.levelParams, type'⟩ nP nF) hn] at hf
           exact (hch.shadowed T' hT' cvT' caps' hf).cons hn hn
