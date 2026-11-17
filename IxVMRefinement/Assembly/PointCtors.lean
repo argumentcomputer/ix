@@ -605,7 +605,6 @@ theorem pointCtors_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     injection e with _ _ hargs₂
     injection hargs₂ with _ hargs₂
     injection hargs₂ with e2 _
-    exact e2
   -- the stage's keying resolves the type's cells
   let S := (⟨E, Decl.Point.stage env formers, t, some n⟩ : Core.Ctx).stagedOver env
   have hκused : ∀ i' ∈ usedRefIdxs cb, ∀ x, cb.refs.toList[i']? = some x →
