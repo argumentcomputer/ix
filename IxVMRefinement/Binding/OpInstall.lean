@@ -149,7 +149,7 @@ theorem installed_find_ne {k : Core.KKey} (h : c ≠ k) :
   show (⟨(Ix.Kernel.ConstantInfo.defnInfo ⟨c, [], ty⟩ val hint) :: env.consts⟩ :
     Ix.Kernel.Env .anon).find? k = env.find? k
   rw [Ix.Kernel.Env.find?_cons]
-  exact if_neg h
+  exact ite_eq_right h
 
 theorem not_mem_names_of_find_none {k : Core.KKey} (h : env.find? k = none) :
     k ∉ env.consts.map (·.name) := by
@@ -354,7 +354,7 @@ theorem reads_down {t : Ix.Kernel.RoleTable} {R₁ R' : Ixon.Env} {a : _root_.Ad
     rw [hc₀] at hc
     have hcc : c₀ = c := Option.some.inj hc
     rw [← hcc, hd₀]
-    exact ⟨fun ms e => nomatch e, fun p e => nomatch e⟩
+    exact ⟨(fun ms e => nomatch e), (fun p e => nomatch e)⟩
   have h' := readsIn_back (blob := fun y => R'.blobs.get? y) hS hx h
   have hbl := blobs_eq hs
   unfold Reads
@@ -640,7 +640,7 @@ theorem roleOp_step {Y : Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Prop} {
         rw [hgr] at hlt
         have hvg : RoleVal.groupValLimit g = g := by
           unfold RoleVal.groupValLimit
-          rw [if_pos hlt]
+          rw [ite_eq_left hlt]
         have h0 := hinvA E hE (some g) (Or.inr (Or.inr ⟨g, by rw [hvg]⟩))
           (fun r' _ hr' => hr' g rfl)
         refine prefixInv_raise_succ h0 (fun r'' hr'' _ => ?_) (hguard E hE (some (g + 1)))
