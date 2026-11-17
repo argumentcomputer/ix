@@ -49,6 +49,7 @@ import Tests.Ix.IxVM.UserAxioms
 import Tests.Ix.IxVM.DecisionRoles
 import Tests.Ix.IxVM.CircuitVerdict
 import Tests.Ix.IxVM.ClaimSafety
+import Tests.Ix.IxVM.SafeReferences
 import Tests.Ix.IxVM.RecursorParentRoute
 import Tests.Ix.IxVM.GuardBatch
 import Tests.Ix.IxVM.AliasFormers
@@ -265,6 +266,9 @@ def registry : List Entry := [
   -- Typing claims refuse seeds outside Lean's logic (unsafe or partial); the claim
   -- builders leave them out.
   .runner "ixvm-claim-safety" (.ci .ixvm) Tests.Ix.IxVM.ClaimSafety.run,
+  .runner "ixvm-safe-references" (.ci .ixvm) Tests.Ix.IxVM.SafeReferences.run,
+  .runner "ixvm-unsafe-origin-walks" (.manual "IX_AIUR_WALK_ARTIFACT: a verify_transitive artifact") Tests.Ix.IxVM.SafeReferences.runUnsafeOrigins,
+  .runner "ixvm-export-safe-walk" (.manual "IX_AIUR_WALK_ARTIFACT: write a compiled direct-walk test package") Tests.Ix.IxVM.SafeReferences.exportWalkArtifact,
   .runner "ixvm-recursor-parent-route" (.ci .ixvm) Tests.Ix.IxVM.RecursorParentRoute.run,
   -- The declaration checker's shape guards: one kind of member per inductive block, no later
   -- use of a recursive field, a recursor header free of `let`.
