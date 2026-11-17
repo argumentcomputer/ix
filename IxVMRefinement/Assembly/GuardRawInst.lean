@@ -84,8 +84,11 @@ theorem instantiate1Lift_of_absent {R V : KExpr} {j : Nat}
   | bvar i =>
     simp only [Expr.hasLooseBVar, beq_eq_false_iff_ne] at absent
     simp only [Expr.instantiate1Lift, Expr.lowerBVars, Ne.symm absent, ↓reduceIte]
-    have conditions : (i > j) = (i ≥ j + 1) := propext (by omega)
-    rw [conditions]
+    by_cases above : i > j
+    · have threshold : i ≥ j + 1 := by omega
+      simp only [above, threshold, ↓reduceIte]
+    · have below : ¬ i ≥ j + 1 := by omega
+      simp only [above, below, ↓reduceIte]
   | _ => simp_all [Expr.instantiate1Lift, Expr.lowerBVars, Expr.hasLooseBVar, Bool.or_eq_false_iff]
 
 /-- The actual variable substitution primitive lifts an open argument under the consumed
