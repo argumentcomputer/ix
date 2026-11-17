@@ -373,7 +373,8 @@ def IotaRulesRunJAt (J : Judgements md) (env' envSelf : Env md)
 
 /-- The recursor group's install fold over a package: each provisioned
 recursor is stored with its checked rules. -/
-def IndRecsFoldRunJAt (J : Judgements md) (g : Key md → Key md) (thmKey : Key md → Nat → Key md) (blockNames : List (Key md))
+def IndRecsFoldRunJAt (J : Judgements md) (g : Key md → Key md)
+    (thmKey : Key md → Nat → Key md) (blockNames : List (Key md))
     (envBase envSelf : Env md) :
     (Env md) → List (ConstantVal md × Nat × Nat × List (RecRule md)) →
     (Env md) → Prop
@@ -405,7 +406,8 @@ def IndRecsRunJAt (J : Judgements md) (g : Key md → Key md) (thmKey : Key md �
 members before its recursors; the members are installed at the empty
 capability record, then the recursors with their rules. No projection function
 is installed. -/
-def DeclIndRunJAt (J : Judgements md) (g : Key md → Key md) (thmKey : Key md → Nat → Key md) (env : Env md)
+def DeclIndRunJAt (J : Judgements md) (g : Key md → Key md)
+    (thmKey : Key md → Nat → Key md) (env : Env md)
     (block : List (ConstantInfo md)) (env₂ : Env md) : Prop :=
   let recs := block.filter (fun ci => match ci with
     | .recInfo _ _ _ _ => true | _ => false)
@@ -524,7 +526,8 @@ def IotaRulesRenRunJAt (J : Judgements md) (env' envSelf : Env md)
       out = r' :: rest'
 
 /-- `IndRecsFoldRunJ` over the renamed rule record. -/
-def IndRecsFoldRenRunJAt (J : Judgements md) (g : Key md → Key md) (thmKey : Key md → Nat → Key md) (blockNames : List (Key md))
+def IndRecsFoldRenRunJAt (J : Judgements md) (g : Key md → Key md)
+    (thmKey : Key md → Nat → Key md) (blockNames : List (Key md))
     (envBase envSelf : Env md) :
     (Env md) → List (ConstantVal md × Nat × Nat × List (RecRule md)) →
     (Env md) → Prop
@@ -554,7 +557,8 @@ def IndRecsRenRunJAt (J : Judgements md) (g : Key md → Key md) (thmKey : Key m
 /-- **The modeled route with the rule typings renamed**: `DeclIndRunJ` whose front doors and
 rule judgements are over `renameJ f J` for the block renaming `f`, except a nested rule's pin
 typing, which is on the renamed pins. -/
-def DeclIndRenRunJAt (J : Judgements md) (g : Key md → Key md) (thmKey : Key md → Nat → Key md) (env : Env md)
+def DeclIndRenRunJAt (J : Judgements md) (g : Key md → Key md)
+    (thmKey : Key md → Nat → Key md) (env : Env md)
     (block : List (ConstantInfo md)) (env₂ : Env md) : Prop :=
   let recs := block.filter (fun ci => match ci with
     | .recInfo _ _ _ _ => true | _ => false)
@@ -701,7 +705,8 @@ theorem provisionRecsRunJ_shapeAt {blockNames : List (Key md)} :
 theorem iotaThmRunJ_shapeAt {env envSelf : Env md}
     {cvName : Key md} {lps : List LevelParam} {tyA : Expr md} {mI rP j : Nat}
     {r : RecRule md} {cvj : ConstantVal md} {cnP cnF : Nat} {rhsA : Expr md}
-    (h : IotaThmRunJAt (renameJ f J) env envSelf f thmKey cvName lps tyA mI rP j r cvj cnP cnF rhsA) :
+    (h : IotaThmRunJAt (renameJ f J) env envSelf f thmKey cvName lps tyA mI rP j r cvj cnP cnF
+      rhsA) :
     IotaThmRunJAt (shapeJ f J) env envSelf f thmKey cvName lps tyA mI rP j r cvj cnP cnF rhsA := by
   obtain ⟨cvt, fvs, tbody, h1, h2, h3, h4, h5, h6⟩ := h
   refine ⟨cvt, fvs, tbody, h1, h2, h3, h4, h5, ?_⟩
@@ -716,7 +721,8 @@ theorem iotaThmNRenRunJ_shapeAt {env envSelf : Env md}
     {cvName : Key md} {lps : List LevelParam} {tyA : Expr md} {mI rP j : Nat}
     {r : RecRule md} {cvj : ConstantVal md} {cnP cnF : Nat} {rhsA : Expr md}
     {lvls : List Level} {pins : List (Expr md)}
-    (h : IotaThmNRenRunJAt J env envSelf f thmKey cvName lps tyA mI rP j r cvj cnP cnF rhsA lvls pins) :
+    (h : IotaThmNRenRunJAt J env envSelf f thmKey cvName lps tyA mI rP j r cvj cnP cnF rhsA lvls
+      pins) :
     IotaThmNRunJAt (shapeJ f J) env envSelf f thmKey cvName lps tyA mI rP j r cvj cnP cnF rhsA
       lvls pins := by
   obtain ⟨hshape, cvt, fvs, tbody, h1, h2, h3, h4, h5, h6⟩ := h

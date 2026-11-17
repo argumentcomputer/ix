@@ -25,10 +25,10 @@ public section
 # The per-rule bridge, with the rule typings renamed, at given model and theorem keys
 
 `Model/IotaRulePlain.lean` and `Model/IotaRuleRen.lean` over the rule records of
-`Model/IndRenAt.lean`: the block renaming is `blockRenAt g blockNames` and a rule's `iota`
-theorem is read at `thmKey R j`. The proofs are the originals': the model key enters only
-through the block invariant (`BlockInstalledTTAt`) and the renaming, the theorem key only through
-the statement's lookup.
+`Model/IndRenAt.lean`: the block renaming is `blockRenAt g blockNames` and the
+`iota` theorem of a rule is read at `thmKey R j`. The proofs are the originals': the model key
+enters only through the block invariant (`BlockInstalledTTAt`) and the renaming, the theorem
+key only through the statement's lookup.
 -/
 
 namespace Ix.Kernel.Model
