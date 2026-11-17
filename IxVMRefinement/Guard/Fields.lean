@@ -35,9 +35,9 @@ theorem CheckedSortAt.weaken {c : ScopedCtx} {start earlier : Heap F}
     (extension : Heap.Extends earlier start) (included : ∀ cl ∈ calls, cl ∈ outer) :
     CheckedSortAt c earlier outer depth domain sort := by
   obtain ⟨type, signature, Γ, input, context, predicted, before, after, inner,
-    infer, reduce, extension, types, represented, observed, level, members, zero⟩ := checked
+    infer, reduce, visited, types, represented, observed, level, members, zero⟩ := checked
   exact ⟨type, signature, Γ, input, context, predicted, before, after, inner,
-    infer, reduce, extension.trans extension, types, represented, observed, level,
+    infer, reduce, extension.trans visited, types, represented, observed, level,
     fun cl member => included cl (members cl member), zero⟩
 
 /-- Actual assertion evidence retains the classifier's represented physical input. -/
@@ -112,5 +112,91 @@ theorem check_fields_open {c : ScopedCtx} (hc : ScopedCoreFacts c) :
           refine ⟨fv, v, hfv, hv, ?_⟩
           have result := checkedField.weaken allExtension restInside
           simpa only [Nat.add_assoc, Nat.add_comm 1 i] using result
+
+/-- The parameter-skipping arm preserves the field evidence and its original call provenance. -/
+theorem check_fields_all {c : ScopedCtx} (hc : ScopedCoreFacts c) :
+    ∀ (nP : Nat) {nF d : Nat} {Γ : Nat → KExpr} {E residual body : KExpr}
+      {parameters fvs : List KExpr} {rc p ctx r : SourceValue F} {np nf : F}
+      {h h' : Heap F} {cs : List (Call F)},
+      np.val = nP → nf.val = nF →
+      Ix.Kernel.openPisAtFvars nP E d = some (parameters, residual) →
+      Ix.Kernel.openPisAtFvars nF residual (d + nP) = some (fvs, body) →
+      CoreGood c cs → c.rc h rc → c.types Γ h d ctx → Tm c.κ d Γ h 0 E p →
+      ObsFn W "KernelGuard::check_fields" [rc, p, .field np, .field nf, ctx] h r h' cs →
+      ∃ sorts : List KLevel, sorts.length = nF ∧
+        ∀ i < nF, ∃ fv u, fvs[i]? = some fv ∧ sorts[i]? = some u ∧
+          CheckedSortAt c h cs (d + nP + i) fv.fvarTypeD u := by
+  intro nP
+  induction nP with
+  | zero =>
+    intro nF d Γ E residual body parameters fvs rc p ctx r np nf h h' cs
+      hn hf opened openedFields hg hrc hctx hE ev
+    have npZero := (ZMod.val_eq_zero np).mp hn
+    subst np
+    simp only [Ix.Kernel.openPisAtFvars, Option.some.injEq, Prod.mk.injEq] at opened
+    obtain ⟨rfl, rfl⟩ := opened
+    simpa only [Nat.add_zero] using
+      check_fields_open hc nF hf (by simpa only [Nat.add_zero] using openedFields) hg hrc hctx hE ev
+  | succ nP ih =>
+    intro nF d Γ E residual body parameters fvs rc p ctx r np nf h h' cs
+      hn hf opened openedFields hg hrc hctx hE ev
+    have hn0 : np ≠ 0 := by intro equal; rw [equal, ZMod.val_zero] at hn; omega
+    match Obs.«KernelGuard::check_fields».obs ev with
+    | .n0_n0 (hv14 := zero) .. | .n0_other (hv14 := zero) .. =>
+      exact (hn0 (Value.field.inj zero)).elim
+    | .other (x_dom := dom) (x_body := tail) (cs221 := rest)
+        (v226 := remaining) (m266 := nextHeap) (ld197 := loaded)
+        (op256 := subtracted) (hm274 := allocated) (ev223 := walked) (hc294 := events) .. =>
+      obtain ⟨D, B, metadata, rfl, hD, hB, _⟩ := hE.forallE_of_load loaded
+      simp only [Ix.Kernel.openPisAtFvars] at opened
+      rcases openedTail : Ix.Kernel.openPisAtFvars nP (B.instantiate1 (.fvar d D)) (d + 1) with
+        _ | ⟨parameters', residual'⟩ <;> rw [openedTail] at opened
+      · exact nomatch opened
+      · simp only [Option.some.injEq, Prod.mk.injEq] at opened
+        obtain ⟨rfl, rfl⟩ := opened
+        have restInside : ∀ cl ∈ rest, cl ∈ cs := by intro cl member; rw [events]; simp [member]
+        have remainingValue : remaining = .field (np - 1) := NatAux.sub_ok subtracted
+        subst remainingValue allocated
+        have decremented : (np - 1).val = nP := by have := NatAux.val_sub_one hn0; omega
+        have extension := Heap.Extends.snoc h (.construct kexprListEnum "Cons" [dom, ctx])
+        have newTypes := ProjAux.types_extend hctx hD
+        have newBody := Tm.open_body (Ghost.extend_at Γ d D) (Ghost.extend_below Γ d D)
+          (hB.mono extension)
+        have nextFields : Ix.Kernel.openPisAtFvars nF residual' (d + 1 + nP) = some (fvs, body) := by
+          simpa only [Nat.add_assoc, Nat.add_comm 1 nP] using openedFields
+        obtain ⟨sorts, length, fields⟩ := ih decremented hf openedTail nextFields
+          (hg.sub restInside) (hrc.mono extension) newTypes newBody walked
+        refine ⟨sorts, length, fun i hi => ?_⟩
+        obtain ⟨fv, u, hfv, hu, checked⟩ := fields i hi
+        refine ⟨fv, u, hfv, hu, ?_⟩
+        have result := checked.weaken extension restInside
+        simpa only [Nat.add_assoc, Nat.add_comm 1 nP] using result
+
+/-- The Prop constructor's ordinary field-sort witnesses can be chosen from the new checked
+loop itself, with classifier provenance for exactly those witnesses. Large elimination is
+handled separately by the native constructor route. -/
+theorem check_fields_sorts {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {nP nF : Nat} {Γ : Nat → KExpr} {E residual body : KExpr}
+    {parameters fvs : List KExpr} {rc p ctx r : SourceValue F} {np nf : F}
+    {h h' : Heap F} {cs : List (Call F)} (resultSort : KLevel)
+    (hp : np.val = nP) (hf : nf.val = nF)
+    (opened : Ix.Kernel.openPisAtFvars nP E 0 = some (parameters, residual))
+    (openedFields : Ix.Kernel.openPisAtFvars nF residual nP = some (fvs, body))
+    (hg : CoreGood c cs) (hrc : c.rc h rc) (hctx : c.types Γ h 0 ctx)
+    (hE : Tm c.κ 0 Γ h 0 E p)
+    (ev : ObsFn W "KernelGuard::check_fields" [rc, p, .field np, .field nf, ctx] h r h' cs) :
+    ∃ sorts : List KLevel,
+      Ix.Kernel.Semantics.FieldSortsJ Ix.Kernel.Model.rulesJ c.env true false resultSort
+        nP fvs [] nF sorts ∧
+      ∀ i < nF, ∃ fv u, fvs[i]? = some fv ∧ sorts[i]? = some u ∧
+        CheckedSortAt c h cs (nP + i) fv.fvarTypeD u := by
+  obtain ⟨sorts, length, fields⟩ := check_fields_all hc nP hp hf opened
+    (by simpa only [Nat.zero_add] using openedFields) hg hrc hctx hE ev
+  simp only [Nat.zero_add] at fields
+  refine ⟨sorts, ⟨length, fun i hi => ?_⟩, fields⟩
+  obtain ⟨fv, u, hfv, hu, checked⟩ := fields i hi
+  obtain ⟨type, _, _, _, _, _, _, _, _, infer, reduce, _⟩ := checked
+  exact ⟨fv, type, u, hfv, hu, infer, reduce, (fun impossible => nomatch impossible),
+    (fun _ impossible => nomatch impossible)⟩
 
 end IxVM.Refinement.Core.GuardData
