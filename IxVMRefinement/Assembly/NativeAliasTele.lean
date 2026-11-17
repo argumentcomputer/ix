@@ -1,3 +1,4 @@
+import IxVMRefinement.Assembly.NativeAliasConversion
 import IxVMRefinement.Assembly.NativeAliasFormer
 import IxVMRefinement.Assembly.NativeAliasTeleWalk
 import IxVMRefinement.Decl.ModeledAux
@@ -49,54 +50,7 @@ set_option linter.unusedSimpArgs false
 
 universe u
 
-/-! ## The named input -/
-
-/-- **The paths of `former_tele_typed` with the conversion assertion** (named input). Every
-observed derivation of `KernelCheck::former_tele_typed(rc, ty, k, nl, s)` either finds the former
-syntactically a telescope (`former_is_tele = 1`), or builds the telescope `tele`
-(`former_tele_at` on the empty context), checks its scoping (`validate_expr_well_scoped`), types it
-as a sort (`k_ensure_sort`) and then finds `ty` and `tele` convertible
-(`k_is_def_eq(rc, ty, tele, []) = 1`), with its calls in that order.
-
-This is the content of the path lemma `Obs.«KernelCheck::former_tele_typed».obs` once the
-circuit's `former_tele_typed` asserts the conversion after `k_ensure_sort` (proposed hunk: lane
-notes, `stage3-alias-defeq.diff`); after that regeneration it is discharged by one `match` on the
-two paths. The circuit at this commit does not assert the conversion, so this input is not
-satisfied by it at a former declared at a definition. -/
-def FormerTeleConv : Prop :=
-  ∀ (rc ty k nl s : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
-    (cs : List (Call F)),
-    ObsFn Core.W "KernelCheck::former_tele_typed" [rc, ty, k, nl, s] h r h' cs →
-    (∃ (m2 : Heap F) (cs13 : List (Call F)),
-      ObsFn Core.W "KernelCheck::former_is_tele" [ty, k] h (.field 1) m2 cs13 ∧
-      r = .tuple [] ∧ h' = m2 ∧ cs = (⟨"KernelCheck::former_is_tele", [ty, k], h⟩ : Call F) :: cs13) ∨
-    (∃ (v1 : SourceValue F) (m2 : Heap F) (cs13 : List (Call F)) (tele : SourceValue F)
-        (m46 : Heap F) (cs56 : List (Call F)) (v105 : SourceValue F) (m106 : Heap F)
-        (cs116 : List (Call F)) (v142 : SourceValue F) (m143 : Heap F) (cs153 : List (Call F))
-        (mD : Heap F) (csD : List (Call F)),
-      ObsFn Core.W "KernelCheck::former_is_tele" [ty, k] h v1 m2 cs13 ∧ v1 ≠ .field 1 ∧
-      ObsFn Core.W "KernelCheck::former_tele_at"
-        [rc, ty, k, .ptr (.enum Core.kexprListEnum) m2.length, s]
-        (m2 ++ [.construct Core.kexprListEnum "Nil" []]) tele m46 cs56 ∧
-      ObsFn Core.W "KernelCheck::validate_expr_well_scoped" [tele, .field 0, nl]
-        m46 v105 m106 cs116 ∧
-      ObsFn Core.W "KernelInfer::k_ensure_sort"
-        [rc, tele, .ptr (.enum Core.kexprListEnum) m106.length]
-        (m106 ++ [.construct Core.kexprListEnum "Nil" []]) v142 m143 cs153 ∧
-      ObsFn Core.W "KernelDefEq::k_is_def_eq"
-        [rc, ty, tele, .ptr (.enum Core.kexprListEnum) m143.length]
-        (m143 ++ [.construct Core.kexprListEnum "Nil" []]) (.field 1) mD csD ∧
-      r = .tuple [] ∧ h' = mD ∧
-      cs = (⟨"KernelCheck::former_is_tele", [ty, k], h⟩ : Call F) :: (cs13 ++
-        ((⟨"KernelCheck::former_tele_at", [rc, ty, k, .ptr (.enum Core.kexprListEnum) m2.length, s],
-            m2 ++ [.construct Core.kexprListEnum "Nil" []]⟩ : Call F) :: (cs56 ++
-        ((⟨"KernelCheck::validate_expr_well_scoped", [tele, .field 0, nl], m46⟩ : Call F) ::
-          (cs116 ++
-        ((⟨"KernelInfer::k_ensure_sort", [rc, tele, .ptr (.enum Core.kexprListEnum) m106.length],
-            m106 ++ [.construct Core.kexprListEnum "Nil" []]⟩ : Call F) :: (cs153 ++
-        ((⟨"KernelDefEq::k_is_def_eq",
-            [rc, ty, tele, .ptr (.enum Core.kexprListEnum) m143.length],
-            m143 ++ [.construct Core.kexprListEnum "Nil" []]⟩ : Call F) :: csD)))))))))
+/-! ## The actual conversion interface is imported from NativeAliasConversion. -/
 
 /-! ## The former stage's input, with its parameter clause at a family with a constructor -/
 
