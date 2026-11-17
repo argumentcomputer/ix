@@ -59,6 +59,12 @@ section
 variable {env env₂ : Env .anon} {blk : List (ConstantInfo .anon)} {nP : Nat}
   {p₀ : NativeParts .anon} {fam : NativeFam .anon}
 
+/-- The recogniser reads the block. -/
+theorem NativeNoRecFacts.recognised (h : NativeNoRecFacts env env₂ blk nP p₀ fam) :
+    nativePartsNoRec? nP blk = some p₀ := by
+  obtain ⟨hdp, -⟩ := h
+  exact hdp
+
 /-- **IxC's record of the install.** -/
 theorem NativeNoRecFacts.runJ (h : NativeNoRecFacts env env₂ blk nP p₀ fam) :
     DeclNativeNoRecRunJ Ix.Kernel.Model.rulesJ env p₀ env₂ := by
@@ -73,7 +79,7 @@ theorem NativeNoRecFacts.declRunJ (hpin : Ix.Kernel.basisPinHit blk = none)
     DeclRunJ Ix.Kernel.Model.rulesJ (IndRoutesJ Ix.Kernel.Model.rulesJ env) env
       (.indDecl blk nP) env₂ := by
   simp only [DeclRunJ, hpin]
-  exact Or.inr (Or.inr (Or.inl ⟨p₀, h.1, h.runJ⟩))
+  exact Or.inr (Or.inr (Or.inl ⟨p₀, h.recognised, h.runJ⟩))
 
 /-- **The model step with the family registered**: the conclusion of
 `Ix.Kernel.Model.EnvModelN.nativeCore` for this block, at every registry `R`. -/
@@ -98,7 +104,7 @@ theorem NativeNoRecFacts.register (h : NativeNoRecFacts env env₂ blk nP p₀ f
 theorem NativeNoRecFacts.foldInv (hpin : Ix.Kernel.basisPinHit blk = none)
     (hna : ∀ ci ∈ blk, Decl.NonAuxKey ci.name) (h : NativeNoRecFacts env env₂ blk nP p₀ fam) :
     ∀ (V : Type u) [Ix.Kernel.SetTheory V], Decl.FoldInv V env → Decl.FoldInv V env₂ :=
-  Decl.foldInv_step_indNativeNoRec hpin hna h.1 h.runJ
+  Decl.foldInv_step_indNativeNoRec hpin hna h.recognised h.runJ
 
 /-- **The full declaration invariant at the new environment**, where the declared constants'
 keys and the keys their types name are not derived and the declared names are distinct. -/
@@ -120,7 +126,7 @@ theorem NativeNoRecFacts.installStep (hpin : Ix.Kernel.basisPinHit blk = none)
     (hstored : ∀ ci₀ ∈ blk,
       ∃ ci, env₂.find? ci₀.name = some ci ∧ IxVM.Consistency.StoredAs ci ci₀) :
     IxVM.Consistency.InstallStep env (.indDecl blk nP) env₂ :=
-  Decl.installStep_glue_indNativeNoRec hpin h.1 h.runJ hstored
+  Decl.installStep_glue_indNativeNoRec hpin h.recognised h.runJ hstored
 
 end
 

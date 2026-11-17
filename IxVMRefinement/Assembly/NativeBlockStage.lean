@@ -547,9 +547,8 @@ theorem formerLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {
     obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp hx
     obtain ⟨m, hm, rfl⟩ := LoadedReads.blockRecurAddrs_get hk
     have hk0 : k = 0 := by
-      cases k with
-      | zero => rfl
-      | succ k => simp at hm
+      have hlt : k < 1 := (Array.getElem?_eq_some_iff.mp hm).1
+      omega
     subst hk0
     have hmm : m = .indc ind := by simpa using hm.symm
     subst hmm
@@ -561,7 +560,7 @@ theorem formerLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {
     rfl
   -- a load at the former's projection record
   have formerLoad : ∀ {addr ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-      {a : Bytes.Address}, ObsFn W "Ingress::get_ci" [addr] h ptr h' cs →
+      {a : Bytes.Address}, ObsFn Core.W "Ingress::get_ci" [addr] h ptr h' cs →
       Core.Good ⟨E, env, t, lim⟩ cs → Bytes.RepAddressRef Core.addrTy h a addr →
       Core.keyOf t (Core.ixAddr a) = Core.keyOf t (Core.iprjAddr B 0) →
       Core.ixAddr a = Core.iprjAddr B 0 ∧
@@ -707,8 +706,8 @@ theorem formerLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {
       simpa only [ZMod.val_natCast_of_lt (Nat.lt_trans hp56 (by decide))] using fieldValues
     have hi0 : ZMod.val i = 0 := by
       have fieldValues := congrArg ZMod.val (Value.field.inj hidxEq)
-      rw [h0'] at fieldValues
-      simpa using fieldValues.symm
+      simp only [h0, h0', Nat.cast_zero, ZMod.val_zero] at fieldValues
+      exact fieldValues.symm
     rw [hblkEq] at hb'
     have hbb : b = b' := Bytes.repAddressRef_inj U32.Goldilocks.compatible hb hb'
     subst hbb
