@@ -640,6 +640,7 @@ theorem front_constantValCheck {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
       (h₁ ++ [.construct Core.kexprListEnum "Nil" []]) r₂ h₃ cs₂) :
     Ix.Kernel.Semantics.ConstantValCheckJ rulesJ env ⟨keyOf t A, ps, ty⟩ ⟨keyOf t A, ps, tyC⟩ :=
   (constantValCheckJ_of_prefix_lv (c := Core.Ctx.stored ⟨E, env, t, some n⟩)
+    (Γ := fun _ => default)
     (cv := ⟨keyOf t A, ps, ty⟩) (cv' := ⟨keyOf t A, ps, tyC⟩) hinv hlv ⟨rfl, rfl, hann⟩
     ⟨by
       show (Value.field ((nlv : Nat) : F) : SourceValue F) = Value.field ((ps.length : Nat) : F)
