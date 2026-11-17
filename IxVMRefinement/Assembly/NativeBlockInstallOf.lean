@@ -320,6 +320,13 @@ structure NativeInstallOut (t : Ix.Kernel.RoleTable) (E₀ E : Ixon.Env) (n : Na
   cvT₀ : p₀.cvT.name = Core.keyOf t (Core.iprjAddr B 0) ∧
     p₀.cvT.levelParams = List.range ind.lvls.toNat
   ctorNames : p₀.ctors.map (·.1.name) = ctorsA.map (·.1.name)
+  formerFind : (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find?
+      (Core.keyOf t (Core.iprjAddr B 0)) =
+    some (.indInfo ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ caps)
+  ctorFind : ∀ cA ∈ ctorsA, (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? cA.1.name =
+    some (.ctorInfo cA.1 p.nP cA.2)
+  tableName : ∀ tbl, ConstantInfo.projInfo tbl ∈ new →
+    tbl.structName = Core.keyOf t (Core.iprjAddr B 0)
 
 /-- **The new constants of a native block's install, read off the member check** (module
 docstring). The inputs are those of `ctorOuts_of_member_named` and distinct names in the
@@ -480,7 +487,8 @@ theorem nativeInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTa
       ty'⟩ caps ∈ tbls ++ ((ctorsA.map (fun c => ConstantInfo.ctorInfo c.1 p.nP c.2)).reverse ++
       [ConstantInfo.indInfo ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩
         caps]) := by simp
-  have hmemC : ∀ j c cty', p₀.ctors[j]? = some c →
+  have hmemC : ∀ (j : Nat) (c : ConstantVal .anon × Nat) (cty' : Ix.Kernel.Expr .anon),
+      p₀.ctors[j]? = some c →
       ctorsA[j]? = some (⟨c.1.name, c.1.levelParams, cty'⟩, c.2) →
       ConstantInfo.ctorInfo ⟨c.1.name, c.1.levelParams, cty'⟩ p.nP c.2 ∈
         tbls ++ ((ctorsA.map (fun c => ConstantInfo.ctorInfo c.1 p.nP c.2)).reverse ++
@@ -515,7 +523,12 @@ theorem nativeInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     nIdx := hpnIdx.trans hnIdx₀
     cvT := hpcvT
     cvT₀ := by rw [hcvT]; exact ⟨rfl, rfl⟩
-    ctorNames := hnames }⟩
+    ctorNames := hnames
+    formerFind := hfind _ hmemF
+    ctorFind := fun cA hcA => hfind (.ctorInfo cA.1 p.nP cA.2)
+      (List.mem_append_right _ (List.mem_append_left _
+        (List.mem_reverse.mpr (List.mem_map.mpr ⟨cA, hcA, rfl⟩))))
+    tableName := ?_ }⟩
   · -- the new constants as the store reads them
     obtain ⟨hp56, hi56, hc56⟩ := member_bounds hbound hS hrec hchk
     exact {
@@ -638,5 +651,17 @@ theorem nativeInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     refine ⟨ct, cty', hct, hcl, hcp, ?_⟩
     rw [hA, hcn, hclp, hc2]
     rfl
+  · intro tbl htm
+    rcases List.mem_append.mp htm with h | h
+    · rcases htbls with rfl | ⟨tbl', rfl, hsn⟩
+      · simp at h
+      · have e : tbl = tbl' := by
+          have h' := List.mem_singleton.mp h
+          injection h'
+        rw [e, hsn, hpcvT, hcvT]
+    · rcases List.mem_append.mp h with h | h
+      · obtain ⟨j, c, cty', -, -, -, he⟩ := hrevMem _ h
+        exact nomatch he
+      · exact nomatch List.mem_singleton.mp h
 
 end IxVM.Refinement.Typing
