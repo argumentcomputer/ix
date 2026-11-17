@@ -299,7 +299,7 @@ def has_n_leading_foralls := aiur_fn⟦
 def get_result_sort_level := aiur_fn⟦
   fn get_result_sort_level(rc: KernelRoles::RoleCtx, ind_ty: KernelTypes::KExpr, n: Field,
                                   types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KLevel {
-      let w = KernelWhnf::whnf(rc, ind_ty, types);
+      let w = KernelGuard::head(ind_ty, 10000);
       match n {
         0 => {
           match (*(w)) {
@@ -721,7 +721,7 @@ def former_tele_at := aiur_fn⟦
               (&(KernelTypes::KExprNode::Forall(d,
                 former_tele_at(rc, b, k - 1, (&(Lists::Node::Cons(d, types))), s), m))) } ,
             _ => {
-              let KernelTypes::KExprNode::Forall(d, b, m) = (*(KernelWhnf::whnf(rc, ty, types)));
+              let KernelTypes::KExprNode::Forall(d, b, m) = (*(KernelGuard::head(ty, 10000)));
               (&(KernelTypes::KExprNode::Forall(d,
                 former_tele_at(rc, b, k - 1, (&(Lists::Node::Cons(d, types))), s), m))) } ,
           } } ,
@@ -2316,7 +2316,7 @@ def nat_former_tele := aiur_fn⟦
               (&(KernelTypes::KExprNode::Forall(d,
                 nat_former_tele(rc, b, k - 1, (&(Lists::Node::Cons(d, types)))), m))) } ,
             _ => {
-              let KernelTypes::KExprNode::Forall(d, b, m) = (*(KernelWhnf::whnf(rc, ty, types)));
+              let KernelTypes::KExprNode::Forall(d, b, m) = (*(KernelGuard::head(ty, 10000)));
               (&(KernelTypes::KExprNode::Forall(d,
                 nat_former_tele(rc, b, k - 1, (&(Lists::Node::Cons(d, types)))), m))) } ,
           } } ,
