@@ -2,11 +2,7 @@ import IxVMRefinement.Core.RawRecords
 import IxVMRefinement.Decl.NativeEnv
 import IxVMRefinement.Callees.ProjAddr
 import IxVMRefinement.Subst.Spine
-import IxVMRefinement.Obs.KernelCheck0
-import IxVMRefinement.Obs.KernelCheck1
-import IxVMRefinement.Obs.KernelCheck2
-import IxVMRefinement.Obs.KernelCheck5
-import IxVMRefinement.Obs.KernelCheck12
+import IxVMRefinement.Obs.KernelCheck
 import IxVMRefinement.Obs.KernelDefEq3
 import IxVMRefinement.Obs.KernelTypes0
 import IxC.Kernel.Verify.PropWhen
