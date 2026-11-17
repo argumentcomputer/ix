@@ -33,6 +33,40 @@ partial def famHead (t : Address) : RE → Bool
   | .const a _ => a == t
   | _ => false
 
+
+/-- The exact branch/fuel strategy of GuardClassifier.head and KernelGuard::head. -/
+partial def headClass (env : Ixon.Env) (cap fuel : Nat) (lg : WLog) (e : RE) :
+    Except String (RE × WLog) := do
+  if fuel == 0 then throw "head-class: fuel"
+  match e with
+  | .sort _ | .all .. | .lam .. => return (e, lg)
+  | .const a us =>
+    let some (value, nl) ← defnInfo env a cap | throw "head-class: not a definition"
+    unless us.size == nl do throw "head-class: universe count mismatch"
+    let lg := { lg with deltas := lg.deltas.push a,
+      projDefs := if projShape 0 value then lg.projDefs.push a else lg.projDefs }
+    headClass env cap (fuel - 1) lg (value.instLevels us)
+  | .app f a =>
+    let (f, lg) ← headClass env cap (fuel - 1) lg f
+    let .lam d _ body := f | throw "head-class: not lambda"
+    let lg := { lg with betas := lg.betas + 1, betaCert := lg.betaCert + (if d.isSome then 1 else 0) }
+    headClass env cap (fuel - 1) lg (RE.inst a 0 body)
+  | .letE _ value body =>
+    headClass env cap (fuel - 1) { lg with zetas := lg.zetas + 1 } (RE.inst value 0 body)
+  | _ => throw "head-class: unsupported head"
+
+/-- Each binder head and the terminal sort use the classifier, with its measured fuel10000. -/
+partial def classifierWalk (env : Ixon.Env) (n : Nat) (e : RE) (lg : WLog := {}) :
+    Except String (List (Datum × RE) × Ixon.Univ × WLog) := do
+  let (e, lg) ← headClass env 5000000 10000 lg e
+  if n == 0 then
+    let .sort u := e | throw "head-class: terminal is not sort"
+    return ([], u, lg)
+  else
+    let .all d t b := e | throw "head-class: binder is not forall"
+    let (ds, u, lg) ← classifierWalk env (n - 1) b lg
+    return ((d, t) :: ds, u, lg)
+
 partial def parameterDomains : Nat → RE → Except String (List RE)
   | 0, _ => .ok []
   | n + 1, .all _ t b => (parameterDomains n b).map (t :: ·)
@@ -149,6 +183,12 @@ def run : IO UInt32 := do
   let env ← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile path))
   IO.println s!"corpus {path}: records={env.consts.size}; names={env.named.size}"
   let mut aliases := 0
+  let mut classFailures := 0
+  let mut classDifferences := 0
+  let mut classDelta := 0
+  let mut classBeta := 0
+  let mut classCert := 0
+  let mut classZeta := 0
   let mut constructors := 0
   let mut parameters := 0
   let mut mentions := 0
@@ -177,6 +217,20 @@ def run : IO UInt32 := do
       let some f := f | continue
       if formerIsTele (ind.params.toNat + ind.indices.toNat) f then continue
       aliases := aliases + 1
+      let old := teleWalk env (fun a => names.getD a (toString a)) 5000000
+        (ind.params.toNat + ind.indices.toNat) f
+      match classifierWalk env (ind.params.toNat + ind.indices.toNat) f with
+      | .error msg =>
+        classFailures := classFailures + 1
+        IO.println s!"classifier-failure {a}/{j}: {msg}"
+      | .ok (ds, u, lg) =>
+        classDelta := classDelta + lg.deltas.size
+        classBeta := classBeta + lg.betas
+        classCert := classCert + lg.betaCert
+        classZeta := classZeta + lg.zetas
+        if !old.err.isEmpty || old.doms.toList != ds || old.endSort != some u then
+          classDifferences := classDifferences + 1
+          IO.println s!"classifier-difference {a}/{j}"
       let t := iprjAddr a j
       for k in [:ind.ctors.size] do
         let ct := ind.ctors[k]!
@@ -201,8 +255,9 @@ def run : IO UInt32 := do
                 IO.println s!"family-headed parameter {names.getD t (toString t)} ctor={k}"
   IO.println s!"aliases={aliases}; constructors={constructors}; parameters={parameters}"
   IO.println s!"raw self-occurrences={mentions}; zeta-read family heads={heads}; parameter lets={lets}; errors={errors}"
+  IO.println s!"classifier failures={classFailures}; exact binder/sort differences={classDifferences}; delta={classDelta}; beta={classBeta}; beta-not-never={classCert}; zeta={classZeta}"
   IO.println s!"affected blocks={badBlocks.size}"
   if badBlocks.isEmpty then IO.println "affected dependent names=0 (the affected block set is empty)"
-  return if localOk && headsOk && aliases == 31 && errors == 0 && heads == 0 then 0 else 1
+  return if localOk && headsOk && aliases == 31 && errors == 0 && heads == 0 && classFailures == 0 && classDifferences == 0 then 0 else 1
 
 end Tests.Ix.IxVM.AliasParamHeads
