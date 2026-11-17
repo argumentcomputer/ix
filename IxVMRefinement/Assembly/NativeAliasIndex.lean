@@ -1,3 +1,4 @@
+import IxVMRefinement.Assembly.NativeAliasFormer
 import IxVMRefinement.Assembly.NativeAliasTeleStable
 import IxVMRefinement.Assembly.TypingRecLateMajorKey
 
@@ -76,7 +77,7 @@ theorem alias_indices_of_guard {κ : _root_.Address → KKey} {Γ : Nat → KExp
     (bound : params + indices < 18446744069414584321)
     (shape : RawShape read raw)
     (represented : Decl.RawTmExact κ 0 Γ h 0 raw semantic pointer)
-    (alias : ∀ binders sort, read.piBinders ≠ (binders, .sort sort))
+    (notTelescope : ∀ binders sort, read.piBinders ≠ (binders, .sort sort))
     (observed : ObsFn W "KernelCheck::former_decl_ok"
       [pointer, .field (params : F), .field (indices : F), count, blockArg, index, level]
       h result h' calls) : indices ≠ 0 := by
@@ -86,7 +87,7 @@ theorem alias_indices_of_guard {κ : _root_.Address → KKey} {Γ : Nat → KExp
     obtain ⟨level, cells⟩ := Decl.former_is_tele_one_cells (params + indices) bound telescope
     obtain ⟨binders, sort, stripped⟩ := Decl.raw_telescope_of_cells _ represented cells
     obtain ⟨original, readStrip⟩ := shape.strip_sort_left stripped
-    exact (alias original sort (stripPis_sort_piBinders readStrip)).elim
+    exact (notTelescope original sort (stripPis_sort_piBinders _ _ readStrip).1).elim
   | .other (ev78 := zeroTest) (heq93 := resultEq) .. =>
     subst resultEq
     obtain ⟨isZero, _⟩ := Lib.is_zero_spec zeroTest

@@ -154,7 +154,7 @@ theorem nativeAtFacts_of_alias_member {calls : List (Call F)} {t : Ix.Kernel.Rol
     (halias : FormerAtAlias t E₀ B cb ind)
     (shape : TableShape.{u} t (fun _ => True) R envT)
     (prefixExtension : ∀ ci ∈ envT.consts, ci ∈ env.consts)
-    (distinct : (env.consts.map (·.name)).Nodup) (hn : ind.indices.toNat ≠ 0)
+    (distinct : (env.consts.map (·.name)).Nodup)
     (hinv : Decl.PrefixInv.{u} E t (some n) env) (hstored : Decl.UsedRefsStored t env cb)
     (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
@@ -164,10 +164,10 @@ theorem nativeAtFacts_of_alias_member {calls : List (Call F)} {t : Ix.Kernel.Rol
   obtain ⟨p₀, recognised, constructorNames, indices⟩ :=
     nativePartsAt_of_member ht (hst.good env none).2 hS hrec hchk halias hblk hfree
   obtain ⟨cvS, cvTa, s, ctorsA, rawTypes, checked, tele, named, _, _, count,
-    parameters, outputs, _, zero, unused⟩ := aliasOuts_of_member_checked ht hS hst hrec hchk
-      hnat hblk recognised indices hn hinv hstored hP hkeys hfresh hfree hcov haux
+    parameters, outputs, _, zero, indexed, unused⟩ := aliasOuts_of_member_checked ht hS hst hrec hchk
+      hnat hblk recognised indices (.inr halias) hinv hstored hP hkeys hfresh hfree hcov haux
   obtain ⟨env₂, parts, installed⟩ := nativeAtFacts_of_alias_outs ht hS hst hrec hchk hblk
-    recognised constructorNames (by rwa [indices]) shape prefixExtension distinct hinv hfresh haux
+    recognised constructorNames (by rw [indices]; exact indexed) shape prefixExtension distinct hinv hfresh haux
     checked tele parameters zero named count outputs unused
   exact ⟨p₀, env₂, ⟨parts, cvS, cvTa, ctorsA⟩, installed⟩
 

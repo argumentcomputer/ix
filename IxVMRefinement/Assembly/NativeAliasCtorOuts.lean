@@ -1,3 +1,4 @@
+import IxVMRefinement.Assembly.NativeAliasIndex
 import IxVMRefinement.Assembly.NativeAliasZeroFields
 import IxVMRefinement.Assembly.NativeAliasTeleStable
 import IxVMRefinement.Assembly.NativeBlockCtorOuts
@@ -176,7 +177,8 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
     (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
     (hnat : NativeRouteAt calls B) (hblk : BlockReadings t E₀ B ind blk)
     (hp₀ : Ix.Kernel.Model.nativePartsAt? ind.params.toNat ind.indices.toNat blk = some p₀)
-    (hnIdx : p₀.nIdx = ind.indices.toNat) (hn : ind.indices.toNat ≠ 0)
+    (hnIdx : p₀.nIdx = ind.indices.toNat)
+    (hindex : ind.indices.toNat ≠ 0 ∨ FormerAtAlias t E₀ B cb ind)
     (hinv : Decl.PrefixInv.{u} E t (some n) env) (hstored : Decl.UsedRefsStored t env cb)
     (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
@@ -201,6 +203,7 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
       AliasGuardAt calls t E env n B p₀ cvS ctorsA rawTypes s ∧
       (cvTa = cvS ∨ ∀ cA ∈ ctorsA,
         Ix.Kernel.Semantics.ctorZeroOk p₀.cvT.name (Ix.Kernel.Level.zeronessOf s) cA.1.type = true) ∧
+      ind.indices.toNat ≠ 0 ∧
       (∀ cA ∈ ctorsA, ∀ cbs body, cA.1.type.stripPis (p₀.nP + cA.2) = some (cbs, body) →
         ∀ i < cA.2,
           (Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
@@ -414,6 +417,25 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
   have hef := hinv.scopedCoreFacts.1
   have hlf := hinv.loads
   have hPI : ind.params.toNat + ind.indices.toNat < 18446744069414584321 := by omega
+  have hn : ind.indices.toNat ≠ 0 := by
+    rcases hindex with nonzero | halias
+    · exact nonzero
+    · have read : (Ix.Kernel.Reader.MemberReader.mk' (readCtx t (fun x => E.blobs.get? x)) cb
+          (Ix.Kernel.Reader.recParam (List.range ind.lvls.toNat))
+          (blockSelf t B #[.indc ind])).read ind.typ = .ok ty₀ := by
+        rw [Assembly.recParam_range]
+        exact htyE
+      obtain ⟨rawFormer, semanticFormer, _, rawRep, _, rawTrace⟩ :=
+        rty.toRawTmCExactTrace_of_blobAgreement (κ := Core.keyOf t)
+          (ps := List.range ind.lvls.toNat) (by simp) (by simpa using hlvls)
+          (LoadedReads.readCtx_keyAt_inv ht _) (LoadedReads.blockSelf_key t B #[.indc ind])
+          hagree read hlbb hdef
+      have rawShape := rawShape_of_rawTrace ty₀ (rawTrace plan trace [])
+      have represented := rawRep 0 (fun _ => default)
+      rw [Decl.posOf_range] at represented
+      exact alias_indices_of_guard hPI rawShape
+        (represented.mono (native.initialToShape.trans shape.initial_to_guard))
+        (halias ty₀ hty) shape.guardRun
   have e_sb : Heap.Extends m_chk shape.sortBefore :=
     native.initialToShape.trans shape.initial_to_sort
   have e_ga : Heap.Extends m_chk shape.guardAfter :=
@@ -883,7 +905,7 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
         rw [← Core.zeronessOf_congr hlevel] at hz
         exact hz
   refine ⟨cvS, cvTa, s, ctorsA, rawTypes, hcheckT, hAT', hTname.symm, htyT.name_eq,
-    htyT.levelParams_eq, hcloadT.1, hparam', houts, hguardAt, hzeroChoice, ?_⟩
+    htyT.levelParams_eq, hcloadT.1, hparam', houts, hguardAt, hzeroChoice, hn, ?_⟩
   -- the later-use condition, from the loop's positivity scans
   intro cA hcA cbs body hstrip i hi hkind
   obtain ⟨j, hjA⟩ := List.mem_iff_getElem?.mp hcA
@@ -988,8 +1010,8 @@ theorem aliasOuts_of_member_guard {calls : List (Call F)} {t : Ix.Kernel.RoleTab
              (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
           Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false) := by
   obtain ⟨cvS, cvTa, s, ctorsA, rawTypes, hcheck, htele, hnS, hnT, hlT, hlen,
-    hparam, houts, hguard, -, hunused⟩ := aliasOuts_of_member_checked ht hS hst hrec hchk
-      hnat hblk hp₀ hnIdx hn hinv hstored hP hkeys hfresh hfree hcov haux
+    hparam, houts, hguard, -, -, hunused⟩ := aliasOuts_of_member_checked ht hS hst hrec hchk
+      hnat hblk hp₀ hnIdx (.inl hn) hinv hstored hP hkeys hfresh hfree hcov haux
   exact ⟨cvS, cvTa, s, ctorsA, rawTypes, hcheck, htele, hnS, hnT, hlT, hlen,
     hparam, houts, hguard, hunused⟩
 
