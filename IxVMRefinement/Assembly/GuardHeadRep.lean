@@ -139,7 +139,7 @@ private theorem head_rep_go {c : ScopedCtx} (hc : ScopedCoreFacts c) :
       have hi := SubstAux.gall c.κ .expr_inst1 _ _ _ _ _ inst _ _ (0 : F) rfl
         (bounded_sub hinst hg.2) d Γ B a
         (by simpa only [ZMod.val_zero, Nat.zero_add] using hB) hArg
-      simp only [ZMod.val_zero, Nat.zero_add] at hi
+      simp only [ZMod.val_zero] at hi
       obtain ⟨E', hE', -⟩ := ih children.length hlt (Nat.le_refl _) (hg.sub hsub) hi child
       exact ⟨E', hE', fun hfalse => nomatch hfalse⟩
     | .other_Let (cs382 := subs) (cs368 := children) (ld60 := ld)
@@ -154,7 +154,7 @@ private theorem head_rep_go {c : ScopedCtx} (hc : ScopedCoreFacts c) :
       have hi := SubstAux.gall c.κ .expr_inst1 _ _ _ _ _ inst _ _ (0 : F) rfl
         (bounded_sub hinst hg.2) d Γ B V
         (by simpa only [ZMod.val_zero, Nat.zero_add] using hB) hV
-      simp only [ZMod.val_zero, Nat.zero_add] at hi
+      simp only [ZMod.val_zero] at hi
       rw [instShift_eq_instantiate1 hV.looseBVarsBounded 0 B]
       exact ih children.length hlt (Nat.le_refl _) (hg.sub hsub) hi child
 
