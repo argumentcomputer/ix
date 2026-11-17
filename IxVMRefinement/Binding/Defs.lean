@@ -243,6 +243,11 @@ structure BRun where
 def New (R R' : Ixon.Env) (a : _root_.Address) : Prop :=
   (recordOf R' a).isSome = true ∧ recordOf R a = none
 
+/-- **The record of a role unit of group `g`**: the record bound to an operation or a standard
+axiom of the group. It is installed after the group's closure. -/
+def RoleUnitAt (t : Ix.Kernel.RoleTable) (g : Nat) (a : _root_.Address) : Prop :=
+  ∃ r ∈ roleGroup g, t.addressOf? r = some a ∧ (r ∈ RoleOps.opRoles ∨ r ∈ standardAxioms)
+
 /-- **An axiom or quotient record.** -/
 def IsAxiomLike (c : Ixon.Constant) : Prop :=
   (∃ ax, c.info = .axio ax) ∨ ∃ q, c.info = .quot q
@@ -289,6 +294,10 @@ structure Admits (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : Ixon.En
     (recordOf R' a).isSome = true
   /-- No new record is an operation's, other than the group's own. -/
   opsOwn : ∀ a r, New R R' a → t.addressOf? r = some a → r ∈ RoleOps.opRoles → r ∈ roleGroup g
+  /-- No new record uses the record of a role unit of the group: the walk refuses an
+  operation's own address (`assert_op_reached_in_order`, `op_order_scan`) and an axiom whose
+  role is not in force (`check_const`'s axiom arm). So the role units come last. -/
+  unitsLast : ∀ x a, New R R' x → UsedRef R' x a → ¬ RoleUnitAt t g a
 
 /-! ## The step -/
 
