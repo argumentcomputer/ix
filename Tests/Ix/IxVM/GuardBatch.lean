@@ -20,6 +20,10 @@ writes. Each has cases that must now be refused and cases that must stay accepte
   the major premise's domain or the result is refused, on the native route and on the
   modeled route. A `let` in a parameter's or a minor premise's domain is accepted, and so
   is a type-annotation wrapper that the stored recursor dropped from a minor premise.
+* **Mutual and nested families.** A family's types and constructors are checked on their
+  declared shape, with no model, whether the family is claimed or reached by reference; the
+  shape is the stored type's, so a type declared at a definition is refused. A projection at
+  such a family is refused, and so is any of its recursors.
 * **A stored `let` is the generated one.** A recursor whose type has a `let` where the
   generated recursor has none is refused (a rule under such a `let` is refused in
   `ixvm-claim-safety`). A `let` the family carries into its recursor, in a parameter's or
@@ -28,7 +32,11 @@ writes. Each has cases that must now be refused and cases that must stay accepte
 `IX_GUARD_BATCH_BEFORE`, when set, expects the verdicts of a program without the guards:
 each refused shape was accepted, or refused by a later check, which the case names. It
 shows that every refusal here is the guard's own. Set to `lets`, it expects the verdicts of
-a program with the first three guards and without the fourth. -/
+a program with the first three guards and without the fourth; set to `shape`, of one with the
+four guards that still checks a family at its types; set to `telescope`, of one that checks
+a family's types on their declared shape and reads that shape after head normalization; set
+to `recursors`, of one that reads it off the stored type and still checks a family at its
+recursors. -/
 
 namespace Tests.Ix.IxVM.GuardBatch
 
@@ -107,7 +115,7 @@ private def compiledCases (guards : Bool) (env : Ixon.Env) : Array Builder :=
 private def compiledNames : List Lean.Name :=
   ["FieldLet", "FieldLet.rec", "ParamLet", "ParamLet.rec", "FieldWrapper", "FieldWrapper.rec",
     "ParamWrapper", "ParamWrapper.rec", "RecFirst", "RecFirst.rec", "ReflIdx", "ReflIdx.rec",
-    "UsedLater", "UsedLater.rec"].map defs
+    "UsedLater", "UsedLater.rec", "Rose", "Rose.rec", "Rose.children", "WithTactic"].map defs
 
 /-! ## An inductive and its recursor in one block -/
 
@@ -251,7 +259,7 @@ private def modeledType (member : UInt64) (wrapped : Bool) : Ixon.Expr :=
 
 /-- A modeled family's recursors, the first with a `let` in its index's domain when
 `wrapped`, claimed with the model advice generated for that family record. -/
-private def modeledHeaderCase (guards wrapped : Bool) : Except String Case := do
+private def modeledHeaderCase (guards recursors wrapped : Bool) : Except String Case := do
   let env ← IxVM.ClaimHarness.withRoleTable {} (← defaultTableBytes)
   let table ← defaultTable
   let some nat := table.addressOf? .nat | throw "missing Nat"
@@ -284,8 +292,13 @@ private def modeledHeaderCase (guards wrapped : Bool) : Except String Case := do
       else "modeled recursors: no let"
     accept := true
     witness := witness }
-  return if wrapped then
-    refused guards "recursor header: a let in an index's domain" none c else c
+  -- a program that refuses the recursors of such a family refuses the block of them first
+  return if recursors then
+    { c with accept := false
+             rejectsWith := some "a recursor of a mutual or nested family is refused" }
+  else if wrapped then
+    refused guards "recursor header: a let in an index's domain" none c
+  else c
 
 /-! ## The suite -/
 
@@ -335,10 +348,89 @@ private def parameterLetCase (lets dead : Bool) : Except String Case := do
       none c
   else c
 
+/-! ## Mutual and nested families -/
+
+/-- `env` with no model advice: nothing the program reads on the model channel. -/
+private def bare (env : Ixon.Env) : Ixon.Env :=
+  { env with models := {}, modelRecords := {}, modelHints := {}, modelBlobs := {},
+             modelDeps := {}, modelsAttached := true }
+
+/-- A two-type family `P Q : Nat → Sort 3` without constructors, claimed at `P` with no model.
+When `declared`, `P`'s stored type is the constant `A := Nat → Sort 3`: a telescope into a
+sort only after unfolding. A program that checks such a family on its declared shape
+(`shape`) accepted it, by head-normalizing the type; one that reads the shape off the stored
+type (`telescope`) refuses it. -/
+private def declaredFormerCase (shape telescope declared : Bool) : Except String Case := do
+  let env ← IxVM.ClaimHarness.withRoleTable {} (← defaultTableBytes)
+  let table ← defaultTable
+  let some nat := table.addressOf? .nat | throw "missing Nat"
+  let aliasRecord ← IxVM.RecordSections.withSection env
+    ⟨.defn ⟨.defn, .safe, {}, 0, .sort 1, .all (.ref 0 #[]) (.sort 0)⟩, #[], #[nat],
+      #[.succ (.succ (.succ .zero)), .succ (.succ (.succ (.succ .zero)))], #[]⟩
+  let aliasAddress := address aliasRecord
+  let env := env.storeConst aliasAddress aliasRecord
+  let env := { env with anonHints := env.anonHints.insert aliasAddress .abbrev }
+  let syntactic : Ixon.Inductive := {
+    isUnsafe := false, lvls := 0, params := 0, indices := 1,
+    typ := .all (.ref 0 #[]) (.sort 0), ctors := #[] }
+  let first : Ixon.Inductive := if declared then { syntactic with typ := .ref 1 #[] } else syntactic
+  let block ← IxVM.RecordSections.withSection env
+    ⟨.muts #[.indc first, .indc syntactic], #[], #[nat, aliasAddress],
+      #[.succ (.succ (.succ .zero))], #[]⟩
+  let blockAddress := address block
+  let p : Ixon.Constant := ⟨.iPrj ⟨0, blockAddress⟩, #[], #[], #[], #[]⟩
+  let q : Ixon.Constant := ⟨.iPrj ⟨1, blockAddress⟩, #[], #[], #[], #[]⟩
+  let env := bare
+    (((env.storeConst blockAddress block).storeConst (address p) p).storeConst (address q) q)
+  let context ← Ix.ClaimContext.ofEnv env
+  let witness ← IxVM.ClaimHarness.buildClaimWitness env (.check context (address p) none)
+  let c : Case := {
+    label := if declared then "a two-type family whose first type is declared at a definition, no model"
+      else "a two-type family of syntactic telescopes, no model"
+    accept := true
+    witness := witness }
+  return if !shape then
+    { c with accept := false, rejectsWith := some "no model advice for a mutual or nested block" }
+  else if telescope && declared then
+    { c with accept := false
+             rejectsWith := some "a mutual or nested inductive's type is not a telescope of binders into a sort" }
+  else c
+
+/-- A mutual or nested family is checked on its declared shape, with no model: claimed as the
+seed (`Rose`) and reached by reference (`WithTactic`, whose field domain names `Lean.Syntax`).
+Its projection is refused, and so is its recursor. `shape = false` is a program that checks
+the whole family at its types (no model, no acceptance); `recursors = false` one that still
+checks a family at its recursors (here: asks for the model). -/
+private def familyCases (shape recursors : Bool) (env : Ixon.Env) : Array Builder :=
+  let env := bare env
+  let noModel := "no model advice for a mutual or nested block"
+  let declared (n : String) (what : String) : Builder := fun u => do
+    let c ← kernelCheckCase env (defs n) true u
+    let c := { c with label := s!"{c.label}, no model ({what})" }
+    return if shape then c else { c with accept := false, rejectsWith := some noModel }
+  #[declared "Rose" "a nested family, claimed",
+    declared "WithTactic" "a nested family reached by reference",
+    fun u => do
+      return { (← kernelCheckCase env (defs "Rose.children") true u) with
+        accept := false
+        rejectsWith := some "projection on a member of a mutual or nested block" },
+    fun u => do
+      return { (← kernelCheckCase env (defs "Rose.rec") true u) with
+        accept := false
+        rejectsWith := some (if recursors then "a recursor of a mutual or nested family is refused"
+          else noModel) }]
+
 def run (leanEnv : Lean.Environment) : IO UInt32 := do
+  -- the program under test: every guard (unset), or one of the earlier states
   let before ← IO.getEnv "IX_GUARD_BATCH_BEFORE"
-  let guards := before.isNone || before == some "lets"
-  let lets := before.isNone
+  let state := match before with
+    | none => 5 | some "recursors" => 4 | some "telescope" => 3 | some "shape" => 2
+    | some "lets" => 1 | some _ => 0
+  let guards := decide (state ≥ 1)
+  let lets := decide (state ≥ 2)
+  let shape := decide (state ≥ 3)
+  let telescope := decide (state ≥ 4)
+  let recursors := decide (state ≥ 5)
   let missing := compiledNames.filter (!leanEnv.constants.contains ·)
   unless missing.isEmpty do
     IO.eprintln s!"[ixvm-guard-batch] not in the environment: {missing}"
@@ -349,8 +441,12 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     fun _ => nativeHeaderCase guards .nowhere, fun _ => nativeHeaderCase guards .motive,
     fun _ => nativeHeaderCase guards .index, fun _ => nativeHeaderCase guards .major,
     fun _ => nativeHeaderCase guards .result,
-    fun _ => modeledHeaderCase guards false, fun _ => modeledHeaderCase guards true,
-    fun _ => parameterLetCase lets false, fun _ => parameterLetCase lets true]
-  runCases "ixvm-guard-batch" (compiledCases guards env ++ built) (jobs := 4)
+    fun _ => modeledHeaderCase guards recursors false,
+    fun _ => modeledHeaderCase guards recursors true,
+    fun _ => parameterLetCase lets false, fun _ => parameterLetCase lets true,
+    fun _ => declaredFormerCase shape telescope false,
+    fun _ => declaredFormerCase shape telescope true]
+  runCases "ixvm-guard-batch" (compiledCases guards env ++ familyCases shape recursors env ++ built)
+    (jobs := 4)
 
 end Tests.Ix.IxVM.GuardBatch

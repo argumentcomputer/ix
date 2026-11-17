@@ -12,7 +12,10 @@ Ordinary, kernel-checked Lean declarations for `Tests.Ix.IxVM.GuardBatch`.
   (`RecFirst`); a reflexive field of an indexed family (`ReflIdx`).
 * **Declined**: a later field whose stored domain names an earlier recursive field
   (`UsedLater`). Lean accepts it, because the later domain reduces to a proposition that
-  mentions neither the family nor the field. -/
+  mentions neither the family nor the field.
+* **A nested family** (`Rose`) and a structure that reaches one by reference (`WithTactic`,
+  through `Lean.Syntax`): accepted as declared, with no model; the nested family's projection
+  and its recursor are declined. -/
 
 namespace Tests.Ix.IxVM.GuardBatchDefs
 
@@ -42,6 +45,17 @@ inductive RecFirst where
 inductive ReflIdx : Nat → Type where
   | base : ReflIdx 0
   | sup (n : Nat) : (Nat → ReflIdx n) → ReflIdx (n + 1)
+
+/-- A nested family: its own type occurs under `List` in its constructor. Its projection
+`Rose.children` is a definition by `Expr.proj`. -/
+structure Rose where
+  children : List Rose
+
+/-- A structure with a field whose default is a tactic block: the field's domain names
+`Lean.Syntax`, a nested family, through `autoParam`. -/
+structure WithTactic where
+  n : Nat
+  h : n = n := by rfl
 
 /-- A proposition that ignores its arguments. -/
 def Erase (α : Type) (_ : α) : Prop := True
