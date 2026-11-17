@@ -793,7 +793,14 @@ def validate_standard_axiom := aiur_fn⟦
           assert_eq!(u, 0, "a bound standard axiom is unsafe");
           KernelCheck::validate_expr_well_scoped(ty, 0, nlvls);
           KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
-          assert_type_pinned(ty, KernelRoleSpec::role_type(tbl, r)) } ,
+          assert_type_pinned(ty, KernelRoleSpec::role_type(tbl, r));
+          -- what the bound record references is checked here, in this group's context; not
+          -- the axiom itself, which is not in force in its own group (the axiom arm refuses it)
+          let c = Ingress::load_verified_constant(role_bound_addr(tbl, r));
+          match c {
+            Ixon::Constant::Mk(_, _, refs, _, _) => {
+              KernelClaim::walk_refs_transitive(rc, refs, KernelClaim::const_idxs_of(c), 0) } ,
+          } } ,
       }
     }
 ⟧
