@@ -43,11 +43,10 @@ private theorem semForall₂_of_getElem {α β : Type} {Rel : α → β → Prop
   | [], _ :: _, hl, _ => by simp only [List.length_nil, List.length_cons] at hl; omega
   | _ :: _, [], hl, _ => by simp only [List.length_nil, List.length_cons] at hl; omega
   | x :: xs, y :: ys, hl, h =>
-    .cons (by simpa using h 0 (by simp) (by simp))
+    .cons (h 0 (by simp only [List.length_cons]; omega) (by simp only [List.length_cons]; omega))
       (semForall₂_of_getElem (by simp only [List.length_cons] at hl; omega)
-        (fun i h₁ h₂ => by
-          simpa using h (i + 1) (by simp only [List.length_cons]; omega)
-            (by simp only [List.length_cons]; omega)))
+        (fun i h₁ h₂ => h (i + 1) (by simp only [List.length_cons]; omega)
+          (by simp only [List.length_cons]; omega)))
 
 /-- Every element on the left of a positionwise relation is related to one on the right. -/
 private theorem forall₂_left_mem {α β : Type} {Rel : α → β → Prop} {xs : List α}
