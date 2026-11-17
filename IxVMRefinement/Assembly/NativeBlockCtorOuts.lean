@@ -446,7 +446,7 @@ theorem ctorOuts_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
             true ∧
           (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort p₀.resSort) isRec).unitParams =
             (p₀.toInductiveShape.withSort p₀.resSort).nP := by
-        simp [Ix.Kernel.nativeCapsAt, hcP, hnP0, hnF0]
+        simp [Ix.Kernel.nativeCapsAt, hcP, hc, hnP0, hnF0, hnIdx, h0]
       exact ⟨hu.1, hu.2.trans hnP⟩
     have hcore := ctorStageCoreFacts_of_block (p := p₀.toInductiveShape.withSort p₀.resSort)
       (isRec := isRec) ht hinv hst.decoded hP hkeys hblockE hrec.muts hprojE
