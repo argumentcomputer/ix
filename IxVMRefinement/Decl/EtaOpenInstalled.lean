@@ -4,8 +4,9 @@ import IxVMRefinement.StatementRel.BoolInhabit
 /-! # A structure with a parameter, installed by IxC's checker
 
 `Box : Type → Type`, `Box.mk : (α : Type) → α → Box α` and its recursor `Box.rec.{u}`, at three
-fresh input keys, checked by IxC's own executable native check (fuel 16, evaluated by the Lean
-kernel) at the empty environment. The environment it installs (`boxEnv`: the projection table,
+role keys used as placeholders (`Iff`'s, no reserved basis name; the kernel evaluates the check
+at role keys, as for the prelude's blocks), checked by IxC's own executable native check (fuel
+16, evaluated by the Lean kernel) at the empty environment. The environment it installs (`boxEnv`: the projection table,
 `Box.rec`, `Box.mk`, `Box`) has the kernel's model in every set theory (`boxEnv_ok`), stores
 `Box` with the η capability, and `Box.mk` with one parameter, one field and never-zero binders
 (`facts`). There `EtaStable` and the typing clause of `EtaUseFacts`, as stated, fail
@@ -27,9 +28,9 @@ def nb : BinderMeta := { pw := .never }
 /-- A binder whose codomain lives in `Sort u`. -/
 def mu : BinderMeta := { pw := Level.zeronessOf (.param 0) }
 
-def tk : KKey := .id ⟨⟨#[11]⟩⟩
-def mk : KKey := .id ⟨⟨#[12]⟩⟩
-def rk : KKey := .id ⟨⟨#[13]⟩⟩
+def tk : KKey := .role .iff
+def mk : KKey := .role .iffIntro
+def rk : KKey := .role .iffRec
 
 /-- `Box : Type → Type`. -/
 def boxT : ConstantVal .anon :=
@@ -182,7 +183,7 @@ theorem not_etaStable :
     ¬ EtaStable boxEnv ∧ ∃ cvT caps, boxEnv.find? tk = some (.indInfo cvT caps) ∧
       caps.eta = true ∧ ¬ EtaUseFacts boxEnv tk mk cvT caps 1 1 := by
   obtain ⟨⟨cvT, caps, hT, heta, hctor⟩, ⟨cvc, cbs, res, hkc, hty, hst, hnev, hlp⟩, hS⟩ := facts
-  have hus : ([] : List KLevel).length = cvc.levelParams.length := by rw [hlp]; rfl
+  have hus : ([] : List KLevel).length = cvc.levelParams.length := by simp [hlp]
   have h := not_etaStable_of_param hS hT heta hctor hkc hty hst hus hnev (Nat.le_refl 1)
     (Nat.le_refl 2)
   exact ⟨h.1, cvT, caps, hT, heta, h.2⟩

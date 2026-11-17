@@ -17,7 +17,8 @@ that kind), and fails at open ones.
   (`red_bclosed`), so it does not reduce to `T.{us} (bvar 0) …`. Hence `EtaStable` and the
   typing clause of `EtaUseFacts` fail at every environment storing an η-capable family with a
   parameter and a second binder (`not_etaStable_of_param`, `FoldStoreInv.not_etaStable`), and the
-  block route's `EtaTypeOpenStmt` is false (`EtaOpenExample.not_etaTypeOpen`).
+  statement read off the stored constructor alone, `EtaTypeOpenStmt`, is false
+  (`EtaOpenExample.not_etaTypeOpen`).
 * **The true form** (`EtaStableC`, `EtaUseFactsC`): the same clauses at parameters with no loose
   bound variable. It holds wherever the fold invariant does (`FoldStoreInv.etaStableC`,
   `FoldStoreInv.etaUseFactsC`), at every extension, from the constructor's stored shape alone
@@ -292,8 +293,8 @@ theorem PrefixInv.no_param_eta {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : O
     (hP : 1 ≤ nP) (hn : 2 ≤ nP + nF) : False :=
   (h.store.not_etaStable hT heta hctor hkc hstrip hz hus hnz hP hn).1 h.etaStable
 
-/-- **The block route's statement** (its notes): the typing clause at every spine, read off the
-constructor's own stored shape. False: `EtaOpenExample.not_etaTypeOpen`. -/
+/-- **The typing clause at every spine**, read off the constructor's own stored shape. False:
+`EtaOpenExample.not_etaTypeOpen`. -/
 def EtaTypeOpenStmt : Prop :=
   ∀ (env : Env .anon) (T kc : KKey) (cvc : ConstantVal .anon) (nP nF : Nat)
     (cbs : List (KExpr × BinderMeta)),
@@ -308,7 +309,8 @@ def EtaTypeOpenStmt : Prop :=
 
 /-! ## The true form: parameters with no loose bound variable -/
 
-/-- **The block route's statement at closed parameters** (free variables allowed). -/
+/-- **The typing clause at closed parameters** (free variables allowed), read off the stored
+constructor. -/
 def EtaTypeClosedStmt : Prop :=
   ∀ (env : Env .anon) (T kc : KKey) (cvc : ConstantVal .anon) (nP nF : Nat)
     (cbs : List (KExpr × BinderMeta)),

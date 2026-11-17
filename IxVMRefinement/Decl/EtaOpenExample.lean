@@ -6,9 +6,10 @@ import IxVMRefinement.Decl.EtaOpen
 with its constructor (the keys are placeholders: two role keys of no other use here). At this
 environment:
 
-* the block route's statement fails (`not_etaTypeOpen`), and so do `EtaStable` and the typing
-  clause of `EtaUseFacts` as stated (`not_etaStable`): `Box.mk (bvar 0) (sort 0)` infers
-  `Box (sort 0)`, which does not reduce to `Box (bvar 0)`;
+* the typing clause at every spine, read off the stored constructor, fails
+  (`not_etaTypeOpen`), and so do `EtaStable` and the typing clause of `EtaUseFacts` as stated
+  (`not_etaStable`): `Box.mk (bvar 0) (sort 0)` infers `Box (sort 0)`, which does not reduce to
+  `Box (bvar 0)`;
 * the stored family has its shape (`etaShape`), so the closed form holds at every extension
   (`etaStableC`), and its conclusion is reached at a closed spine (`closed_instance`).
 -/
@@ -68,7 +69,7 @@ theorem mk_never : ∀ b ∈ ([(.sort (.succ .zero), nb), (.bvar 0, nb)] : List 
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
   rcases hb with rfl | rfl <;> rfl
 
-/-- **The block route's statement is false.** -/
+/-- **The typing clause at every spine, read off the stored constructor, is false.** -/
 theorem not_etaTypeOpen : ¬ EtaTypeOpenStmt := by
   intro h
   obtain ⟨args, ty, hlen, hinf, hnot⟩ :=
