@@ -23,7 +23,7 @@ theorem red_unfold_definition_trace {c : ScopedCtx}
     (hcore : ScopedCoreFacts c) {v lvls x : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)} (good : CoreGood c calls)
     (ev : ObsFn W "KernelWhnf::red_unfold" [v, lvls] h (.tuple [.field 1, x]) h' calls)
-    {cv : KConstantVal} {value : KExpr} {hint : Ix.Kernel.ReducibilityHint}
+    {cv : Ix.Kernel.ConstantVal .anon} {value : KExpr} {hint : Ix.Kernel.ReducibilityHint}
     {us : List KLevel} (hci : c.ci h v (.defnInfo cv value hint))
     (hus : LvListRep h us lvls) (hf : c.env.find? cv.name = some (.defnInfo cv value hint))
     (d : Nat) :
