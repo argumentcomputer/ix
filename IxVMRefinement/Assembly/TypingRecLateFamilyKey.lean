@@ -44,7 +44,6 @@ open Aiur.Library Aiur.Library.List
 open IxVM (F)
 open IxVM.Consistency
 open Ix.Kernel (ConstantInfo ConstantVal)
-open Ix.CompileCert.Loop (except_bind_ok)
 open Ix.Cert.ReaderUnits (throw_ok)
 
 /-! ## Key shape: equal up to levels, binder data and free-variable annotations -/
@@ -248,15 +247,12 @@ theorem keyShape_isForall {a b : Ix.Kernel.Expr .anon} (h : KeyShape a b) :
     IsForall a ↔ IsForall b := by
   cases h with
   | forallE _ _ => exact ⟨fun _ => ⟨_, _, _, rfl⟩, fun _ => ⟨_, _, _, rfl⟩⟩
-  | bvar => exact ⟨fun ⟨_, _, _, he⟩ => by cases he, fun ⟨_, _, _, he⟩ => by cases he⟩
-  | fvar => exact ⟨fun ⟨_, _, _, he⟩ => by cases he, fun ⟨_, _, _, he⟩ => by cases he⟩
-  | sort => exact ⟨fun ⟨_, _, _, he⟩ => by cases he, fun ⟨_, _, _, he⟩ => by cases he⟩
-  | const => exact ⟨fun ⟨_, _, _, he⟩ => by cases he, fun ⟨_, _, _, he⟩ => by cases he⟩
-  | lit => exact ⟨fun ⟨_, _, _, he⟩ => by cases he, fun ⟨_, _, _, he⟩ => by cases he⟩
-  | app => exact ⟨fun ⟨_, _, _, he⟩ => by cases he, fun ⟨_, _, _, he⟩ => by cases he⟩
-  | lam => exact ⟨fun ⟨_, _, _, he⟩ => by cases he, fun ⟨_, _, _, he⟩ => by cases he⟩
-  | letE => exact ⟨fun ⟨_, _, _, he⟩ => by cases he, fun ⟨_, _, _, he⟩ => by cases he⟩
-  | proj => exact ⟨fun ⟨_, _, _, he⟩ => by cases he, fun ⟨_, _, _, he⟩ => by cases he⟩
+  | _ =>
+    constructor
+    · rintro ⟨_, _, _, he⟩
+      cases he
+    · rintro ⟨_, _, _, he⟩
+      cases he
 
 theorem lastBinderDom_forallE_of_isForall {d b : Ix.Kernel.Expr .anon}
     {m : Ix.Kernel.BinderMeta} (hb : IsForall b) :
@@ -478,8 +474,8 @@ theorem convExpr_keyShape
   | sort i =>
     intro x y h1 h2
     simp only [Ix.Kernel.Reader.convExpr] at h1 h2
-    obtain ⟨l1, -, h1⟩ := except_bind_ok.mp h1
-    obtain ⟨l2, -, h2⟩ := except_bind_ok.mp h2
+    obtain ⟨l1, -, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+    obtain ⟨l2, -, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
     cases h1
     cases h2
     exact .sort _ _
@@ -496,10 +492,10 @@ theorem convExpr_keyShape
   | ref i us =>
     intro x y h1 h2
     simp only [Ix.Kernel.Reader.convExpr] at h1 h2
-    obtain ⟨k1, hk1, h1⟩ := except_bind_ok.mp h1
-    obtain ⟨l1, -, h1⟩ := except_bind_ok.mp h1
-    obtain ⟨k2, hk2, h2⟩ := except_bind_ok.mp h2
-    obtain ⟨l2, -, h2⟩ := except_bind_ok.mp h2
+    obtain ⟨k1, hk1, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+    obtain ⟨l1, -, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+    obtain ⟨k2, hk2, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
+    obtain ⟨l2, -, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
     have hk : k1 = k2 := ecx_keyAt_same hk1 hk2
     cases h1
     cases h2
@@ -513,10 +509,10 @@ theorem convExpr_keyShape
       exact (throw_ok h1).elim
     | some mk =>
       simp only [Ix.Kernel.Reader.convExpr, hs] at h1 h2
-      obtain ⟨k1, hk1, h1⟩ := except_bind_ok.mp h1
-      obtain ⟨l1, -, h1⟩ := except_bind_ok.mp h1
-      obtain ⟨k2, hk2, h2⟩ := except_bind_ok.mp h2
-      obtain ⟨l2, -, h2⟩ := except_bind_ok.mp h2
+      obtain ⟨k1, hk1, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+      obtain ⟨l1, -, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+      obtain ⟨k2, hk2, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
+      obtain ⟨l2, -, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
       have hk : k1 = k2 := Except.ok.inj (hk1.symm.trans hk2)
       cases h1
       cases h2
@@ -525,10 +521,10 @@ theorem convExpr_keyShape
   | prj i field val ih =>
     intro x y h1 h2
     simp only [Ix.Kernel.Reader.convExpr] at h1 h2
-    obtain ⟨k1, hk1, h1⟩ := except_bind_ok.mp h1
-    obtain ⟨v1, hv1, h1⟩ := except_bind_ok.mp h1
-    obtain ⟨k2, hk2, h2⟩ := except_bind_ok.mp h2
-    obtain ⟨v2, hv2, h2⟩ := except_bind_ok.mp h2
+    obtain ⟨k1, hk1, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+    obtain ⟨v1, hv1, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+    obtain ⟨k2, hk2, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
+    obtain ⟨v2, hv2, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
     have hk : k1 = k2 := ecx_keyAt_same hk1 hk2
     cases h1
     cases h2
@@ -557,42 +553,42 @@ theorem convExpr_keyShape
   | app f a ihf iha =>
     intro x y h1 h2
     simp only [Ix.Kernel.Reader.convExpr] at h1 h2
-    obtain ⟨f1, hf1, h1⟩ := except_bind_ok.mp h1
-    obtain ⟨a1, ha1, h1⟩ := except_bind_ok.mp h1
-    obtain ⟨f2, hf2, h2⟩ := except_bind_ok.mp h2
-    obtain ⟨a2, ha2, h2⟩ := except_bind_ok.mp h2
+    obtain ⟨f1, hf1, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+    obtain ⟨a1, ha1, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+    obtain ⟨f2, hf2, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
+    obtain ⟨a2, ha2, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
     cases h1
     cases h2
     exact .app (ihf f1 f2 hf1 hf2) (iha a1 a2 ha1 ha2)
   | lam ty b iht ihb =>
     intro x y h1 h2
     simp only [Ix.Kernel.Reader.convExpr] at h1 h2
-    obtain ⟨t1, ht1, h1⟩ := except_bind_ok.mp h1
-    obtain ⟨b1, hb1, h1⟩ := except_bind_ok.mp h1
-    obtain ⟨t2, ht2, h2⟩ := except_bind_ok.mp h2
-    obtain ⟨b2, hb2, h2⟩ := except_bind_ok.mp h2
+    obtain ⟨t1, ht1, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+    obtain ⟨b1, hb1, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+    obtain ⟨t2, ht2, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
+    obtain ⟨b2, hb2, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
     cases h1
     cases h2
     exact .lam (iht t1 t2 ht1 ht2) (ihb b1 b2 hb1 hb2)
   | all ty b iht ihb =>
     intro x y h1 h2
     simp only [Ix.Kernel.Reader.convExpr] at h1 h2
-    obtain ⟨t1, ht1, h1⟩ := except_bind_ok.mp h1
-    obtain ⟨b1, hb1, h1⟩ := except_bind_ok.mp h1
-    obtain ⟨t2, ht2, h2⟩ := except_bind_ok.mp h2
-    obtain ⟨b2, hb2, h2⟩ := except_bind_ok.mp h2
+    obtain ⟨t1, ht1, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+    obtain ⟨b1, hb1, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+    obtain ⟨t2, ht2, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
+    obtain ⟨b2, hb2, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
     cases h1
     cases h2
     exact .forallE (iht t1 t2 ht1 ht2) (ihb b1 b2 hb1 hb2)
   | letE nonDep mode ty val b iht ihv ihb =>
     intro x y h1 h2
     simp only [Ix.Kernel.Reader.convExpr] at h1 h2
-    obtain ⟨t1, ht1, h1⟩ := except_bind_ok.mp h1
-    obtain ⟨v1, hv1, h1⟩ := except_bind_ok.mp h1
-    obtain ⟨b1, hb1, h1⟩ := except_bind_ok.mp h1
-    obtain ⟨t2, ht2, h2⟩ := except_bind_ok.mp h2
-    obtain ⟨v2, hv2, h2⟩ := except_bind_ok.mp h2
-    obtain ⟨b2, hb2, h2⟩ := except_bind_ok.mp h2
+    obtain ⟨t1, ht1, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+    obtain ⟨v1, hv1, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+    obtain ⟨b1, hb1, h1⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h1
+    obtain ⟨t2, ht2, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
+    obtain ⟨v2, hv2, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
+    obtain ⟨b2, hb2, h2⟩ := Ix.CompileCert.Loop.except_bind_ok.mp h2
     cases h1
     cases h2
     exact .letE (iht t1 t2 ht1 ht2) (ihv v1 v2 hv1 hv2) (ihb b1 b2 hb1 hb2)
