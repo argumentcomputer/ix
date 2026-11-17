@@ -83,7 +83,9 @@ theorem instantiate1Lift_of_absent {R V : KExpr} {j : Nat}
   induction R generalizing j with
   | bvar i =>
     simp only [Expr.hasLooseBVar, beq_eq_false_iff_ne] at absent
-    simp [Expr.instantiate1Lift, Expr.lowerBVars, Ne.symm absent, Nat.add_one, Nat.succ_le_iff]
+    simp only [Expr.instantiate1Lift, Expr.lowerBVars, Ne.symm absent, ↓reduceIte]
+    have conditions : (j < i) = (j + 1 ≤ i) := propext (by omega)
+    rw [conditions]
   | _ => simp_all [Expr.instantiate1Lift, Expr.lowerBVars, Expr.hasLooseBVar, Bool.or_eq_false_iff]
 
 /-- The actual variable substitution primitive lifts an open argument under the consumed
@@ -101,8 +103,8 @@ theorem raw_inst1_bvar_exact {κ : _root_.Address → KKey} {h h' : Heap F}
     injection hi with hi; injection hd with hd
     subst i' depth' unchanged result heap
     have below := SubstAux.ltf_one verdict.symm
-    have rep : RawExprRep κ (h ++ [.construct kexprEnum "BVar" [.field i]])
-        (n + depth.val + 1) (.bvar i.val) (.ptr (.enum kexprEnum) h.length) :=
+    have rep : RawExprRep κ (after ++ [.construct kexprEnum "BVar" [.field i]])
+        (n + depth.val + 1) (.bvar i.val) (.ptr (.enum kexprEnum) after.length) :=
       ⟨_, .bvarLocal (by simp) small inside⟩
     simpa [Expr.instantiate1Lift, show i.val ≠ depth.val by omega, show ¬ depth.val < i.val by omega] using rep
   | .n0_n0 (ev15 := comparison) (op74 := subtracted) (ev86 := lifted) (hc110 := events) .. =>
@@ -117,7 +119,7 @@ theorem raw_inst1_bvar_exact {κ : _root_.Address → KKey} {h h' : Heap F}
     have rawLift := argument.lift
       (bounded_sub (fun _ member => by rw [events]; simp [member]) bounded) (by omega) lifted
     simpa only [Expr.instantiate1Lift, ite_true, ZMod.val_zero] using rawLift.weaken (k' := n + depth.val + 1) (by omega)
-  | .n0_other (ev15 := comparison) (op74 := subtracted) (hne111 := different)
+  | .n0_other (m2 := after) (ev15 := comparison) (op74 := subtracted) (hne111 := different)
       (he119 := result) (hm118 := heap) (op137 := lowered) .. =>
     obtain ⟨i', depth', hi, hd, _, _, verdict, unchanged⟩ := SubstAux.ltf comparison
     injection hi with hi; injection hd with hd
@@ -128,8 +130,8 @@ theorem raw_inst1_bvar_exact {κ : _root_.Address → KKey} {h h' : Heap F}
     rw [SubstAux.sub_ok lowered]
     have difference : (i - 1).val = i.val - 1 := by
       rw [SubstAux.val_sub (by rw [SubstAux.val_one]; omega), SubstAux.val_one]
-    have rep : RawExprRep κ (h ++ [.construct kexprEnum "BVar" [.field (i - 1)]])
-        (n + depth.val + 1) (.bvar (i - 1).val) (.ptr (.enum kexprEnum) h.length) :=
+    have rep : RawExprRep κ (after ++ [.construct kexprEnum "BVar" [.field (i - 1)]])
+        (n + depth.val + 1) (.bvar (i - 1).val) (.ptr (.enum kexprEnum) after.length) :=
       ⟨_, .bvarLocal (by simp) (by rw [difference]; omega) (by rw [difference]; omega)⟩
     simpa [Expr.instantiate1Lift, valuesDistinct, show depth.val < i.val by omega, difference] using rep
 

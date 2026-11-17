@@ -196,7 +196,7 @@ theorem raw_lift_bvar_exact {κ : _root_.Address → KKey} {h h' : Heap F}
     simpa [Expr.liftLooseBVars, show cutoff.val ≤ i.val by omega, sumValue] using rep
 
 
-private theorem raw_bvar_view {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
+theorem RawTmExact.raw_bvar_view {κ : _root_.Address → KKey} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {R E : KExpr} {p value : SourceValue F}
     (rep : RawTmExact κ 0 Γ h k R E p)
     (loaded : loadValue h p = .ok (.construct kexprEnum "BVar" [value])) :
@@ -270,7 +270,7 @@ private theorem raw_lift_go (κ : _root_.Address → KKey) :
       obtain ⟨E, rep⟩ := represented
       match Obs.«KernelSubst::expr_lift_walk».obs observed with
       | .BVar (ld12 := loaded) (ev30 := child) .. =>
-        obtain ⟨i, rfl, rfl, small, inside⟩ := raw_bvar_view rep loaded
+        obtain ⟨i, rfl, rfl, small, inside⟩ := rep.raw_bvar_view loaded
         exact raw_lift_bvar_exact small inside shiftBound child
       | .Srt (ld12 := loaded) (he72 := result) (hm71 := heap) .. =>
         obtain ⟨u, rfl, rfl, level⟩ := rep.raw_sort_view loaded
@@ -475,7 +475,7 @@ private theorem raw_lower_go (κ : _root_.Address → KKey) :
       obtain ⟨E, rep⟩ := represented
       match Obs.«KernelSubst::expr_lower_walk».obs observed with
       | .BVar (ld12 := loaded) (he29 := result) (hm28 := heap) (op47 := subtracted) .. =>
-        obtain ⟨i, rfl, rfl, small, inside⟩ := raw_bvar_view rep loaded
+        obtain ⟨i, rfl, rfl, small, inside⟩ := rep.raw_bvar_view loaded
         have above : cutoff.val ≤ i.val := by
           apply Nat.le_of_not_lt
           intro below
