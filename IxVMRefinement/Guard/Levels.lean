@@ -23,11 +23,18 @@ macro "guard_lt_calls" : tactic =>
   `(tactic| (simp only [List.length_cons, List.length_append]; omega))
 
 private theorem stored_one (h : Heap F) :
-    RepKLevel ((h ++ [.construct klevelEnum "Zero" []]) ++
-      [.construct klevelEnum "Succ" [.ptr (.enum klevelEnum) h.length]])
-      (.succ .zero) (.ptr (.enum klevelEnum) (h ++ [.construct klevelEnum "Zero" []]).length) :=
+    RepKLevel ((h ++ [.construct KernelLevels.klevelEnum "Zero" []]) ++
+      [.construct KernelLevels.klevelEnum "Succ" [.ptr (.enum KernelLevels.klevelEnum) h.length]])
+      (.succ .zero) (.ptr (.enum KernelLevels.klevelEnum) (h ++ [.construct KernelLevels.klevelEnum "Zero" []]).length) :=
   .succ List.getElem?_concat_length
     ((RepKLevel.zero List.getElem?_concat_length).mono (Heap.Extends.snoc _ _))
+
+private theorem flags_add_zero {a b : Bool}
+    (h : evalBinOp .add (.field (if a then 1 else 0) : SourceValue F)
+      (.field (if b then 1 else 0)) = .ok (.field 0)) : a = false ∧ b = false := by
+  have htwo : (1 : F) + 1 ≠ 0 := by decide +kernel
+  cases a <;> cases b <;> simp_all [evalBinOp]
+
 
 theorem signature_pair_spec_aux :
     ∀ (name : String) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
@@ -71,18 +78,21 @@ theorem signature_pair_spec_aux :
           (hv.mono eva.heap_extends)
         obtain ⟨rfl, rfl⟩ := pair_inj hrb
         subst hr hh hm
-        cases hgu : Level.guardSignature u <;> cases hgv : Level.guardSignature v <;>
-          simp [hgu, hgv, evalBinOp] at hop
-        all_goals try { norm_num at hop }
-        rename_i su sv
-        refine ⟨_, ?_, ?_⟩
-        · simp [Level.guardSignature, hgu, hgv]
-        · have haRep : RepKLevel m0 su spa := by simpa [Level.guardSignatureLevel, hgu] using hsa
-          have hbRep : RepKLevel m1 sv spb := by simpa [Level.guardSignatureLevel, hgv] using hsb
-          simpa [Level.guardSignatureLevel, Level.guardSignature, hgu, hgv] using
-            (RepKLevel.max List.getElem?_concat_length
-              (haRep.mono (evb.heap_extends.trans (Heap.Extends.snoc _ _)))
-              (hbRep.mono (Heap.Extends.snoc _ _)))
+        have hab := flags_add_zero hop
+        cases hgu : Level.guardSignature u with
+        | none => simp [hgu] at hab
+        | some su =>
+          cases hgv : Level.guardSignature v with
+          | none => simp [hgv] at hab
+          | some sv =>
+            refine ⟨_, ?_, ?_⟩
+            · simp [Level.guardSignature, hgu, hgv]
+            · have haRep : RepKLevel m0 su _ := by simpa [Level.guardSignatureLevel, hgu] using hsa
+              have hbRep : RepKLevel m1 sv _ := by simpa [Level.guardSignatureLevel, hgv] using hsb
+              simpa [Level.guardSignatureLevel, Level.guardSignature, hgu, hgv] using
+                (RepKLevel.max List.getElem?_concat_length
+                  (haRep.mono (evb.heap_extends.trans (Heap.Extends.snoc _ _)))
+                  (hbRep.mono (Heap.Extends.snoc _ _)))
       · obtain ⟨u, v, rfl, hu, hv⟩ := max_of_load hrep ld
         subst hcs
         obtain ⟨spa, hra, hsa⟩ := ih _ _ _ _ _ _ (by guard_lt_calls) eva rfl u a rfl hu
@@ -91,12 +101,15 @@ theorem signature_pair_spec_aux :
           (hv.mono eva.heap_extends)
         obtain ⟨rfl, rfl⟩ := pair_inj hrb
         subst hr hh hm2 hm3
-        cases hgu : Level.guardSignature u <;> cases hgv : Level.guardSignature v
-        all_goals try { simp [hgu, hgv, evalBinOp] at hop; subst hop; exact (hne rfl).elim }
-        all_goals refine ⟨_, ?_, ?_⟩
-        all_goals first
-          | (solve | simp [Level.guardSignature, hgu, hgv])
-          | simpa [Level.guardSignatureLevel, Level.guardSignature, hgu, hgv] using stored_one m1)
+        have hnone : Level.guardSignature (.max u v) = none := by
+          cases hgu : Level.guardSignature u <;> cases hgv : Level.guardSignature v
+          all_goals try solve | simp [Level.guardSignature, hgu, hgv]
+          simp [hgu, hgv, evalBinOp] at hop
+          subst sum
+          exact (hne rfl).elim
+        refine ⟨_, ?_, ?_⟩
+        · simp [hnone]
+        · simpa [Level.guardSignatureLevel, hnone] using stored_one m1)
 
 /-- The actual signature function returns precisely the signature level of its input. -/
 theorem signature_level_spec {l : Level} {p r : SourceValue F} {h h' : Heap F}
