@@ -723,14 +723,19 @@ theorem map_addr_topRec_mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Addre
   | nil => rfl
   | cons r rs ih => simp [TopRec.mono, ih]
 
+/-- A projection record (its owner is its block). -/
+def IsProjRec (c : Ixon.Constant) : Prop :=
+  (∃ p, c.info = .dPrj p) ∨ (∃ p, c.info = .iPrj p) ∨ (∃ p, c.info = .cPrj p) ∨
+    ∃ p, c.info = .rPrj p
+
 /-- **The records of a walk at `lim` are closed**: the block of a projection record is a record
-of the walk at a smaller depth; a reference a record uses was asked about
-(`RefAllowedIn`), and is a record of the walk at a smaller depth that is no block record, or is
-covered at `lim`. -/
+of the walk at a smaller depth (so not the record's own address); a reference a record uses was
+asked about (`RefAllowedIn`), and is a record of the walk at a smaller depth that is no block
+record, or is covered at `lim`. -/
 def TopRecsClosed {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
     {lim : Option Nat} (recs : List (TopRec calls bAddr t lim)) : Prop :=
   ∀ r ∈ recs,
-    (Ix.Cert.ownerOf r.addr r.c ≠ r.addr →
+    (IsProjRec r.c →
       ∃ r' ∈ recs, r'.addr = Ix.Cert.ownerOf r.addr r.c ∧ r'.depth < r.depth) ∧
     (∀ i ∈ S0.usedRefIdxs r.c, ∀ b, r.c.refs[i]? = some b →
       RefAllowedIn calls t bAddr lim b ∧
@@ -757,7 +762,7 @@ theorem TopRecsClosed.mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Address
 def TopRecsClosedIn {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
     {lim : Option Nat} (xs ys : List (TopRec calls bAddr t lim)) : Prop :=
   ∀ r ∈ xs,
-    (Ix.Cert.ownerOf r.addr r.c ≠ r.addr →
+    (IsProjRec r.c →
       ∃ r' ∈ ys, r'.addr = Ix.Cert.ownerOf r.addr r.c ∧ r'.depth < r.depth) ∧
     (∀ i ∈ S0.usedRefIdxs r.c, ∀ b, r.c.refs[i]? = some b →
       RefAllowedIn calls t bAddr lim b ∧
