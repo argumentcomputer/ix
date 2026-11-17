@@ -990,7 +990,7 @@ def check_family := aiur_fn⟦
               -- the block's members, and witnessed members of its closure
               family_refs_ok(rec_block, block, wset);
               let s9 = check_recs(rc, type_addrs, rec_addrs, rec_models, src, dst, aset, s8,
-                                  n_recs, 0, np, univ_offset, bnl);
+                                  n_recs, 0, np, univ_offset, bnl, rec_addrs);
               let Lists::Node::Nil = (*(s9));
               () } ,
           } } ,
@@ -1584,7 +1584,8 @@ def check_recs := aiur_fn⟦
                 recs: Lists::List<Bytes::AddressRef>, models: Lists::List<Bytes::AddressRef>,
                 src: Lists::List<Bytes::AddressRef>, dst: Lists::List<Bytes::AddressRef>,
                 aset: RBTreeMap::RBTreeMap<Field>, s: Bytes::Stream,
-                n_recs: Field, k: Field, np: Field, univ_offset: Field, bnl: Field) -> Bytes::Stream {
+                n_recs: Field, k: Field, np: Field, univ_offset: Field, bnl: Field,
+                fam: Lists::List<Bytes::AddressRef>) -> Bytes::Stream {
       match (*(recs)) {
         Lists::Node::Nil => {  s } ,
         Lists::Node::Cons(r, rest) => {
@@ -1606,6 +1607,10 @@ def check_recs := aiur_fn⟦
               check_carriers(ty, rnp, type_addrs);
               -- the raw type, as `check_const` checks a recursor reached directly
               KernelCheck::validate_expr_well_scoped(ty, 0, nl);
+              -- and it names no member of its own family record, so that every constant it
+              -- names is the block's or stored before the family
+              assert_eq!(expr_mentions_addrs(ty, fam), 0,
+                "a modeled recursor's type mentions its own family");
               KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
               KernelCheck::assert_safety(0, ty);
               KernelCheck::assert_safety_rules(0, rules);
@@ -1616,8 +1621,48 @@ def check_recs := aiur_fn⟦
               KernelCheck::check_rec_header_lets(ty, rnp, nmot, nmin, ni);
               let s2 = check_rules(rc, rm, nl, ty, rnp + nmot + nmin, ni, rules, src, dst, aset, s);
               check_recs(rc, type_addrs, rest, mrest, src, dst, aset, s2, n_recs, k + 1, np,
-                         univ_offset, bnl) } ,
+                         univ_offset, bnl, fam) } ,
           } } ,
+      }
+    }
+⟧
+
+  -- Whether `e` names one of `addrs`, as a constant or as a projection's structure.
+
+def expr_mentions_addrs := aiur_fn⟦
+  fn expr_mentions_addrs(e: KernelTypes::KExpr, addrs: Lists::List<Bytes::AddressRef>) -> Field {
+      match (*(e)) {
+        KernelTypes::KExprNode::Const(c, _) => {  KernelCheck::addr_list_contains(addrs, c) } ,
+        KernelTypes::KExprNode::App(f, x) => {
+          match expr_mentions_addrs(f, addrs) {
+            0 => {  expr_mentions_addrs(x, addrs) } ,
+            _ => {  1 } ,
+          } } ,
+        KernelTypes::KExprNode::Lam(t, b, _) => {
+          match expr_mentions_addrs(t, addrs) {
+            0 => {  expr_mentions_addrs(b, addrs) } ,
+            _ => {  1 } ,
+          } } ,
+        KernelTypes::KExprNode::Forall(t, b, _) => {
+          match expr_mentions_addrs(t, addrs) {
+            0 => {  expr_mentions_addrs(b, addrs) } ,
+            _ => {  1 } ,
+          } } ,
+        KernelTypes::KExprNode::Let(t, v, b) => {
+          match expr_mentions_addrs(t, addrs) {
+            0 => {
+              match expr_mentions_addrs(v, addrs) {
+                0 => {  expr_mentions_addrs(b, addrs) } ,
+                _ => {  1 } ,
+              } } ,
+            _ => {  1 } ,
+          } } ,
+        KernelTypes::KExprNode::Proj(s, _, x) => {
+          match KernelCheck::addr_list_contains(addrs, s) {
+            0 => {  expr_mentions_addrs(x, addrs) } ,
+            _ => {  1 } ,
+          } } ,
+        _ => {  0 } ,
       }
     }
 ⟧
