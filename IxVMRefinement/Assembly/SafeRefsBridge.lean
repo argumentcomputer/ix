@@ -322,13 +322,9 @@ theorem check_inductive_shape_ctors_cidx
         rwa [hnc_val, hk_val] at hv
       omega
     | .other (m34 := m34) (p41 := p41) (cs47 := cs47) (x_c_cidx := x_c_cidx)
-        (m144 := m144) (m319 := m319) (m356 := m356) (m387 := m387)
-        (m400 := m400) (m430 := m430) (m476 := m476) (m546 := m546)
-        (m646 := m646) (m655 := m655) (cs695 := cs657) (v708 := v670)
-        (ev49 := ev49) (ld43 := ld43) (ev154 := ev154) (heq233 := heq233)
-        (ev331 := ev331) (hm395 := hm395) (ev368 := ev368) (ev412 := ev412)
-        (ev442 := ev442) (ev488 := ev488) (ev558 := ev558) (sg653 := sg653)
-        (ev667 := ev_hash) (op792 := op754) (ev697 := ev659) (hc794 := hc756) .. =>
+        (m725 := nextHeap) (cs765 := cs657) (v778 := v670)
+        (ev49 := ev49) (ld43 := ld43) (heq233 := heq233)
+        (op862 := op754) (ev767 := ev659) (hc864 := hc756) .. =>
       have hsub47 : ∀ cl ∈ cs47, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc756]; simp [hcl])
       obtain ⟨e_cprj, _, _, blkBytes, cb', ms', ind', ct', _, v_c,
         hhash_blk, hblake_blk, hexact_blk, _, hcb'_info, hms'_i, hct'_k, _, hld_vc, hraw_ct⟩ :=
@@ -368,16 +364,11 @@ theorem check_inductive_shape_ctors_cidx
         rwa [hcidx_val, hk_val] at hv
       · have hsub657 : ∀ cl ∈ cs657, cl ∈ calls := fun cl hcl =>
           hsub cl (by rw [hc756]; simp [hcl])
-        have e_387 : Heap.Extends m319 m387 := by rw [hm395]; exact Heap.Extends.snoc m319 _
-        have e_pos : Heap.Extends m546 m646 := by
-          cases sg653 with
-          | other hne _ _ _ => exact absurd rfl hne
-          | n0 _ _ ev_pos _ => exact ev_pos.heap_extends
-        have e_all : Heap.Extends h m646 :=
-          e_cprj.trans (ev154.heap_extends.trans (ev331.heap_extends.trans
-            (e_387.trans (ev368.heap_extends.trans (ev412.heap_extends.trans
-              (ev442.heap_extends.trans (ev488.heap_extends.trans
-                (ev558.heap_extends.trans e_pos))))))))
+        have hnext : (⟨"KernelCheck::check_inductive_shape_ctors",
+            [x_rc, x_ind_ty, x_np, x_ni, .field (ind.ctors.size : F), x_nl,
+             blkPtr, .field (i : F), x_il, .field 0, v670], nextHeap⟩ : Call F) ∈ cs := by
+          rw [hc756]; simp
+        have hext := (ev.call_heap_bounds hnext).1
         have hv670 : v670 = .field ((k + 1 : Nat) : F) := by
           simp only [evalBinOp, Except.ok.injEq] at op754
           rw [← op754]
@@ -386,7 +377,7 @@ theorem check_inductive_shape_ctors_cidx
         rw [hv670] at ev659
         exact ih (k + 1) (by omega) (by omega) hsub657
           (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy
-            (e_all.trans ev_hash.heap_extends) hbp) ev659
+            hext hbp) ev659
 
 /-- Along `KernelCheck::check_modeled_ctors` on a safe inductive member `i`, every
 constructor at `k ≤ j < ind.ctors.size` satisfies `ct.cidx.toNat = j`. -/
@@ -440,12 +431,9 @@ theorem check_modeled_ctors_cidx
         rwa [hnc_val, hk_val] at hv
       omega
     | .other (m34 := m34) (p41 := p41) (cs47 := cs47) (x_c_cidx := x_c_cidx)
-        (m144 := m144) (m319 := m319) (m356 := m356) (m387 := m387)
-        (m400 := m400) (m430 := m430) (cs540 := cs502) (v551 := v513)
-        (ev49 := ev49) (ld43 := ld43) (ev154 := ev154) (heq233 := heq233)
-        (ev331 := ev331) (hm395 := hm395) (ev368 := ev368) (ev412 := ev412)
-        (ev442 := ev442) (ev512 := ev_hash) (op621 := op583) (ev542 := ev504)
-        (hc623 := hc585) .. =>
+        (m551 := nextHeap) (cs588 := cs502) (v599 := v513)
+        (ev49 := ev49) (ld43 := ld43) (heq233 := heq233)
+        (op669 := op583) (ev590 := ev504) (hc671 := hc585) .. =>
       have hsub47 : ∀ cl ∈ cs47, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc585]; simp [hcl])
       obtain ⟨e_cprj, _, _, blkBytes, cb', ms', ind', ct', _, v_c,
         hhash_blk, hblake_blk, hexact_blk, _, hcb'_info, hms'_i, hct'_k, _, hld_vc, hraw_ct⟩ :=
@@ -485,11 +473,11 @@ theorem check_modeled_ctors_cidx
         rwa [hcidx_val, hk_val] at hv
       · have hsub502 : ∀ cl ∈ cs502, cl ∈ calls := fun cl hcl =>
           hsub cl (by rw [hc585]; simp [hcl])
-        have e_387 : Heap.Extends m319 m387 := by rw [hm395]; exact Heap.Extends.snoc m319 _
-        have e_all : Heap.Extends h m430 :=
-          e_cprj.trans (ev154.heap_extends.trans (ev331.heap_extends.trans
-            (e_387.trans (ev368.heap_extends.trans (ev412.heap_extends.trans
-              ev442.heap_extends)))))
+        have hnext : (⟨"KernelCheck::check_modeled_ctors",
+            [x_rc, x_np, x_ni, .field (ind.ctors.size : F), x_nl,
+             blkPtr, .field (i : F), .field 0, v513], nextHeap⟩ : Call F) ∈ cs := by
+          rw [hc585]; simp
+        have hext := (ev.call_heap_bounds hnext).1
         have hv513 : v513 = .field ((k + 1 : Nat) : F) := by
           simp only [evalBinOp, Except.ok.injEq] at op583
           rw [← op583]
@@ -498,7 +486,7 @@ theorem check_modeled_ctors_cidx
         rw [hv513] at ev504
         exact ih (k + 1) (by omega) (by omega) hsub502
           (Aiur.Library.Bytes.repAddressRef_heapMono₂ Core.addrTy
-            (e_all.trans ev_hash.heap_extends) hbp) ev504
+            hext hbp) ev504
 
 /-- Constructor indices and exact projection hashes on a safe walked mutual inductive block in
 an exact-decoded collision-free store `E₀`.
@@ -580,10 +568,10 @@ theorem indBlockCtorIdx_and_hashed_of_exact_noCollision
   | .Axiom_other_other (hv37 := hv) ..
   | .Defn (hv269 := hv) .. | .Thm (hv526 := hv) ..
   | .Opaque (hv825 := hv) .. | .Quot (hv1076 := hv) ..
-  | .Ctor_n0_n0 (hv1941 := hv) .. | .Ctor_n0_other (hv1941 := hv) ..
-  | .Ctor_other_n0 (hv1941 := hv) ..
-  | .Ctor_other_other (hv1941 := hv) ..
-  | .Rec_n0 (hv2631 := hv) .. | .Rec_other (hv2631 := hv) .. =>
+  | .Ctor_n0_n0 (hv1989 := hv) .. | .Ctor_n0_other (hv1989 := hv) ..
+  | .Ctor_other_n0 (hv1989 := hv) ..
+  | .Ctor_other_other (hv1989 := hv) ..
+  | .Rec_n0 (hv2727 := hv) .. | .Rec_other (hv2727 := hv) .. =>
     injection hv with _ htag _; exact absurd htag (by decide)
   | .Induct_n0 (m2 := m2) (x_nlvls := xnl) (x_ty := xty)
       (x_n_params := xnp) (x_n_indices := xni) (x_num_ctors := xnc)
@@ -2010,10 +1998,10 @@ private theorem ind_block_checked_member_kinds
   | .Axiom_other_other (hv37 := hv) ..
   | .Defn (hv269 := hv) .. | .Thm (hv526 := hv) ..
   | .Opaque (hv825 := hv) .. | .Quot (hv1076 := hv) ..
-  | .Ctor_n0_n0 (hv1941 := hv) .. | .Ctor_n0_other (hv1941 := hv) ..
-  | .Ctor_other_n0 (hv1941 := hv) ..
-  | .Ctor_other_other (hv1941 := hv) ..
-  | .Rec_n0 (hv2631 := hv) .. | .Rec_other (hv2631 := hv) .. =>
+  | .Ctor_n0_n0 (hv1989 := hv) .. | .Ctor_n0_other (hv1989 := hv) ..
+  | .Ctor_other_n0 (hv1989 := hv) ..
+  | .Ctor_other_other (hv1989 := hv) ..
+  | .Rec_n0 (hv2727 := hv) .. | .Rec_other (hv2727 := hv) .. =>
     injection hv with _ htag _; exact absurd htag (by decide)
   | .Induct_n0 (x_ind_block := xblk) (m1283 := m1283) (m1333 := m1333)
       (m1354 := m1354) (m1376 := m1376)
@@ -2102,20 +2090,20 @@ private theorem rec_block_checked_member_kinds
   | .Defn (hv269 := hv) .. | .Thm (hv526 := hv) ..
   | .Opaque (hv825 := hv) .. | .Quot (hv1076 := hv) ..
   | .Induct_n0 (hv1240 := hv) .. | .Induct_other_n0 (hv1240 := hv) .. | .Induct_other_other (hv1240 := hv) ..
-  | .Ctor_n0_n0 (hv1941 := hv) .. | .Ctor_n0_other (hv1941 := hv) ..
-  | .Ctor_other_n0 (hv1941 := hv) ..
-  | .Ctor_other_other (hv1941 := hv) .. =>
+  | .Ctor_n0_n0 (hv1989 := hv) .. | .Ctor_n0_other (hv1989 := hv) ..
+  | .Ctor_other_n0 (hv1989 := hv) ..
+  | .Ctor_other_other (hv1989 := hv) .. =>
     injection hv with _ htag _; exact absurd htag (by decide)
-  | .Rec_n0 (x_rec_block := xblk) (m2693 := m2637) (m2761 := m2705) (m2804 := m2718)
-      (v2833 := r_mk) (m2834 := m_mk) (cs2844 := cs_mk)
-      (ev14 := ev1) (hv2631 := hv_rec) (ev2705 := ev2)
-      (hm2769 := hm2705) (ev2742 := ev3) (ev2786 := ev4) (ev2816 := ev_rules)
-      (ev2846 := ev_mk) (hc2997 := hc) ..
-  | .Rec_other (x_rec_block := xblk) (m2693 := m2637) (m2761 := m2705) (m2804 := m2718)
-      (v2833 := r_mk) (m2834 := m_mk) (cs2844 := cs_mk)
-      (ev14 := ev1) (hv2631 := hv_rec) (ev2705 := ev2)
-      (hm2769 := hm2705) (ev2742 := ev3) (ev2786 := ev4) (ev2816 := ev_rules)
-      (ev2846 := ev_mk) (hc3086 := hc) .. =>
+  | .Rec_n0 (x_rec_block := xblk) (m2789 := m2637) (m2857 := m2705) (m2900 := m2718)
+      (v2929 := r_mk) (m2930 := m_mk) (cs2940 := cs_mk)
+      (ev14 := ev1) (hv2727 := hv_rec) (ev2801 := ev2)
+      (hm2865 := hm2705) (ev2838 := ev3) (ev2882 := ev4) (ev2912 := ev_rules)
+      (ev2942 := ev_mk) (hc3093 := hc) ..
+  | .Rec_other (x_rec_block := xblk) (m2789 := m2637) (m2857 := m2705) (m2900 := m2718)
+      (v2929 := r_mk) (m2930 := m_mk) (cs2940 := cs_mk)
+      (ev14 := ev1) (hv2727 := hv_rec) (ev2801 := ev2)
+      (hm2865 := hm2705) (ev2838 := ev3) (ev2882 := ev4) (ev2912 := ev_rules)
+      (ev2942 := ev_mk) (hc3182 := hc) .. =>
     injection hv_rec with _ _ hargs
     injection hargs with _ hargs; injection hargs with _ hargs
     injection hargs with _ hargs; injection hargs with _ hargs
