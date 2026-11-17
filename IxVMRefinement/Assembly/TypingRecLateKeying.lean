@@ -20,6 +20,7 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM (F)
 open IxVM.Refinement.Core
+open IxVM.Consistency (recordOf)
 
 /-- **The keying of the rule comparison**: the prefix's resolved addresses and the recursor's. -/
 noncomputable def lateRuleKey (c : Core.Ctx) (A : _root_.Address) : _root_.Address → KKey :=
