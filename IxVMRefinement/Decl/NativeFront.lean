@@ -4266,13 +4266,16 @@ theorem nativeFront_pass (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
   | .Thm (hv526 := hv) .. => injection hv with _ hc _; exact absurd hc (by decide)
   | .Opaque (hv825 := hv) .. => injection hv with _ hc _; exact absurd hc (by decide)
   | .Quot (hv1076 := hv) .. => injection hv with _ hc _; exact absurd hc (by decide)
-  | .Ctor_n0_n0 (hne1883 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Ctor_n0_other (hne1883 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Ctor_other (hne1883 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Rec_n0 (hne1883 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Rec_other (hne1883 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Induct_other (x_ind_block := xblk) (v1491 := vmod) (cs1503 := cs_mod)
-      (hv1240 := hv_ind) (ev1505 := ev_mod) (hne1635 := hne_mod) (hc1882 := hc) .. =>
+  | .Ctor_n0_n0 (hne1936 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Ctor_n0_other (hne1936 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Ctor_other_n0 (hne1936 := hne) ..
+  | .Ctor_other_other (hne1936 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Rec_n0 (hne1936 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Rec_other (hne1936 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Induct_other_n0 (x_ind_block := xblk) (v1491 := vmod) (cs1503 := cs_mod)
+      (hv1240 := hv_ind) (ev1505 := ev_mod) (hne1635 := hne_mod) (hc1926 := hc) ..
+  | .Induct_other_other (x_ind_block := xblk) (v1491 := vmod) (cs1503 := cs_mod)
+      (hv1240 := hv_ind) (ev1505 := ev_mod) (hne1635 := hne_mod) (hc1935 := hc) .. =>
     injection hv_ind with _ _ hxs
     injection hxs with _ hxs; injection hxs with _ hxs; injection hxs with _ hxs
     injection hxs with _ hxs; injection hxs with _ hxs; injection hxs with _ hxs

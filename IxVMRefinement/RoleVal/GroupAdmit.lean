@@ -103,7 +103,7 @@ theorem group_validation_limit_exact {x_g r : SourceValue F} {h h' : Heap F}
       simp only [h33, hc, ↓reduceIte] at hr29
       exact hne hr29
     obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_literal_group».obs ev71
-    obtain ⟨h41, -⟩ := lt_const_iff (RolesAux.val_natCast (by decide) : ZMod.val (41 : F) = 41) ev86
+    obtain ⟨h41, rfl⟩ := lt_const_iff (RolesAux.val_natCast (by decide) : ZMod.val (41 : F) = 41) ev86
     have hlt41 : gf.val < 41 := h41.mp rfl
     refine ⟨rfl, gf.val, hgf_lt, congrArg Value.field (natCast_val_eq gf).symm, ?_⟩
     unfold groupValLimit
@@ -121,7 +121,7 @@ theorem group_validation_limit_exact {x_g r : SourceValue F} {h h' : Heap F}
     obtain ⟨h41, rfl⟩ := lt_const_iff (RolesAux.val_natCast (by decide) : ZMod.val (41 : F) = 41) ev86
     have hge41 : ¬ gf.val < 41 := fun hc => hne2 (h41.mpr hc)
     obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_equation_group».obs ev128
-    obtain ⟨h46, -⟩ := lt_const_iff (RolesAux.val_natCast (by decide) : ZMod.val (46 : F) = 46) ev143
+    obtain ⟨h46, rfl⟩ := lt_const_iff (RolesAux.val_natCast (by decide) : ZMod.val (46 : F) = 46) ev143
     have hlt46 : gf.val < 46 := h46.mp rfl
     refine ⟨rfl, gf.val, hgf_lt, congrArg Value.field (natCast_val_eq gf).symm, ?_⟩
     unfold groupValLimit
