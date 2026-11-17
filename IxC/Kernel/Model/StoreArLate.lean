@@ -35,6 +35,7 @@ generated ones up to consumed type-annotation wrappers (`WrapRel`) and carry no 
 namespace Ix.Kernel.Model
 
 open Ix.Kernel.Semantics
+open Ix.Kernel.LevelRen
 open Ix.Kernel (Env Key Expr ConstantInfo ConstantVal RecRule ProjTable NativeParts Level
   LevelParam EnvExt BinderMeta PropWhen RecFieldKind)
 
