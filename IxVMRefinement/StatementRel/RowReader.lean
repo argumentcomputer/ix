@@ -153,9 +153,11 @@ def inLogicMutB : Ixon.MutConst → Bool
 
 theorem inLogicMut_of_B {m : Ixon.MutConst} (h : inLogicMutB m = true) : InLogicMut m := by
   cases m with
-  | defn d => exact of_decide_eq_true h
-  | indc i => exact of_decide_eq_true h
-  | recr r => exact of_decide_eq_true h
+  | defn d => exact of_decide_eq_true (p := Ix.Kernel.Reader.safetyDecline d = none) h
+  | indc i =>
+    exact of_decide_eq_true
+      (p := i.isUnsafe = false ∧ ∀ ctor ∈ i.ctors.toList, ctor.isUnsafe = false) h
+  | recr r => exact of_decide_eq_true (p := r.isUnsafe = false) h
 
 theorem inLogic_muts {cb : Ixon.Constant} {ms : Array Ixon.MutConst} (hms : cb.info = .muts ms)
     (h : ms.toList.all inLogicMutB = true) : InLogic cb := by
@@ -448,7 +450,7 @@ def readQuot (S : RowStore t) (a : _root_.Address) (c : Ixon.Constant)
 
 /-- The inductive type's projection row whose key is `k`. -/
 def findIndByKey (S : RowStore t) (k : Key .anon) :
-    Option (Σ a : _root_.Address, { r : IndRow S a // k = keyOf t a }) :=
+    Option (Σ a : _root_.Address, { _r : IndRow S a // k = keyOf t a }) :=
   S.rows.attach.findSome? fun x =>
     if hk : k = keyOf t x.1.1 then
       match indRow? S x.1.1 x.1.2 x.2 with
