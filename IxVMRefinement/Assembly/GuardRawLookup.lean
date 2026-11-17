@@ -1,6 +1,7 @@
 import IxC.Kernel.Model.GuardClassifier
 import IxVMRefinement.StatementRel.LoadedReadsCanon
 import IxVMRefinement.Assembly.TypingStore
+import IxVMRefinement.Assembly.TypingDefnStep
 
 /-! # The guard classifier's address-keyed raw-record dictionary
 
@@ -168,9 +169,11 @@ theorem answer_mono {blob blob' : Blobs} {r r' : Option Root}
     answer blob' r' us = some e := by
   refine bind_preserved hr ?_ h
   intro root e he
-  split at he ⊢
-  · exact bind_preserved (fun e h => readRoot_mono hb h) (fun _ _ h => h) he
-  · assumption
+  by_cases hn : us.length = root.levels
+  · rw [ite_eq_left hn] at he ⊢
+    exact bind_preserved (fun e h => readRoot_mono hb h) (fun _ _ h => h) he
+  · rw [ite_eq_right hn] at he ⊢
+    exact he
 
 /-- Positive agreement of actual records and blobs supplies the classifier lookup extension. -/
 theorem lookup_extends {store store' : Records} {blob blob' : Blobs}
@@ -228,5 +231,54 @@ theorem ofStore_extends_of_bytes {E E' : Ixon.Env}
     (hb : ∀ a bytes, E.blobs.get? a = some bytes → E'.blobs.get? a = some bytes) :
     (ofStore E).Extends (ofStore E') :=
   lookup_extends (records_of_bytes hraw) hb
+
+/-- The witness-store interface itself supplies a raw dictionary extension, at every limit. -/
+theorem ofStore_extends_recordsFor {R E : Ixon.Env} (h : Typing.RecordsFor R E) :
+    (ofStore R).Extends (ofStore E) :=
+  lookup_extends
+    (fun a c hc => (Typing.recordOf_eq_recordAt_of_decoded h.1 a).trans (h.2.1 a c hc))
+    h.2.2.1
+
+/-- The actual run-store interface supplies its raw dictionary extension. -/
+theorem ofStore_extends_stepStore {calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)}
+    {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} (h : Typing.StepStore calls t E₀ E) :
+    (ofStore E₀).Extends (ofStore E) :=
+  lookup_extends (fun _ _ hc => h.held hc) h.runBlob
+
+/-- Collision exclusion supplies agreement of the run and witness dictionaries. -/
+theorem common_lookup_of_noCollision
+    {calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)} {E₀ R : Ixon.Env}
+    {V : View} {extra : List ByteArray}
+    (hload : LoadedBy calls E₀) (hnc : ¬ CollisionWith V extra R calls) :
+    (ofStore E₀).Extends (lookup (storeOver E₀ R) (blobOver E₀ R)) ∧
+    (ofStore R).Extends (lookup (storeOver E₀ R) (blobOver E₀ R)) :=
+  common_lookup (Typing.records_agree hload hnc) (Typing.blobs_agree hload hnc)
+
+/-- A small real definition record: `def _ : Type := Prop`, with no references or binders. -/
+def sortDefinition : Ixon.Constant :=
+  { info := .defn { kind := .defn, safety := .safe, lvls := 0,
+      typ := .sort 1, value := .sort 0 }
+    sharing := #[], refs := #[], univs := #[.zero, .succ .zero] }
+
+/-- Its singleton raw-record map. No admitted typed environment is assumed. -/
+def sortDefinitionRecords (a : _root_.Address) : Records :=
+  fun x => if x = a then some sortDefinition else none
+
+/-- The raw dictionary reads the declared type of the concrete definition. -/
+theorem sortDefinition_type (a : _root_.Address) :
+    (lookup (sortDefinitionRecords a) (fun _ => none)).typeOf (.id a) [] =
+      some (.sort (.succ .zero)) := by
+  unfold lookup typeRoot sortDefinitionRecords
+  rw [ite_eq_left rfl]
+  rfl
+
+/-- The same dictionary reads its definition value, independently of any model. -/
+theorem sortDefinition_value (a : _root_.Address) :
+    (lookup (sortDefinitionRecords a) (fun _ => none)).valueOf (.id a) [] =
+      some (.sort .zero) := by
+  unfold lookup valueRoot sortDefinitionRecords
+  rw [ite_eq_left rfl]
+  rfl
+
 
 end IxVM.Refinement.GuardRaw
