@@ -24,23 +24,23 @@ theorem PrefixEq.succ_view {n : Nat} {E R : KExpr} (h : PrefixEq (n + 1) E R) :
   all_goals try contradiction
   rename_i T B bm T' B' bm'
   obtain ⟨rfl, rfl, hr⟩ := h
-  exact ⟨T', B, B', bm', rfl, rfl, hr⟩
+  exact ⟨T, B, B', bm, rfl, rfl, hr⟩
 
 /-- Forget a suffix of the common binder prefix. -/
 theorem PrefixEq.take : ∀ (n m : Nat) {E R : KExpr},
     PrefixEq (n + m) E R → PrefixEq n E R
   | 0, _, _, _, _ => trivial
   | n + 1, m, E, R, h => by
-    have h' : PrefixEq ((n + m) + 1) E R := by simpa [Nat.add_assoc, Nat.add_comm] using h
+    have h' : PrefixEq ((n + m) + 1) E R := by simpa only [Nat.succ_add, Nat.add_succ] using h
     obtain ⟨T, B, B', bm, rfl, rfl, hr⟩ := h'.succ_view
     exact ⟨rfl, rfl, PrefixEq.take n m hr⟩
 
 /-- Stripping a common prefix keeps the same binders and the remaining common prefix. -/
 theorem PrefixEq.strip : ∀ (n m : Nat) {E R : KExpr}, PrefixEq (n + m) E R →
     ∃ bs B B', E.stripPis n = some (bs, B) ∧ R.stripPis n = some (bs, B') ∧ PrefixEq m B B'
-  | 0, _, E, R, h => ⟨[], E, R, rfl, rfl, h⟩
+  | 0, _, E, R, h => ⟨[], E, R, rfl, rfl, by simpa only [Nat.zero_add] using h⟩
   | n + 1, m, E, R, h => by
-    have h' : PrefixEq ((n + m) + 1) E R := by simpa [Nat.add_assoc, Nat.add_comm] using h
+    have h' : PrefixEq ((n + m) + 1) E R := by simpa only [Nat.succ_add, Nat.add_succ] using h
     obtain ⟨T, B, B', bm, rfl, rfl, hr⟩ := h'.succ_view
     obtain ⟨bs, C, C', hc, hc', heq⟩ := PrefixEq.strip n m hr
     exact ⟨(T, bm) :: bs, C, C', by simp [Expr.stripPis, hc],
@@ -74,11 +74,11 @@ theorem PrefixEq.pisToLamsPw : ∀ {n : Nat} {E R : KExpr}, PrefixEq n E R →
 theorem PrefixEq.structRecTyR {nP nIdx : Nat} {E R : KExpr} (h : PrefixEq (nP + nIdx) E R)
     (T : Key .anon) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
     (ctors : List (Key .anon × Nat × KExpr × List Nat)) :
-    structRecTyR T lps elim large nP nIdx E ctors =
-      structRecTyR T lps elim large nP nIdx R ctors := by
+    Ix.Kernel.structRecTyR T lps elim large nP nIdx E ctors =
+      Ix.Kernel.structRecTyR T lps elim large nP nIdx R ctors := by
   obtain ⟨bs, B, B', hb, hb', hi⟩ := h.strip nP nIdx
   have hp := h.take nP nIdx
-  unfold structRecTyR
+  unfold Ix.Kernel.structRecTyR
   rw [hb, hb']
   simp only [Option.bind_some, structMotiveTyI]
   simp_rw [hi.replacePisPw, (hi.lift nIdx (ctors.length + 1) 0).replacePisPw,
@@ -89,11 +89,11 @@ theorem PrefixEq.structRecRhsR {nP nIdx : Nat} {E R : KExpr} (h : PrefixEq (nP +
     (T : Key .anon) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
     (ctors : List (Key .anon × Nat × KExpr × List Nat))
     (recC : Key .anon) (rlvls : List Level) (j : Nat) :
-    structRecRhsR T lps elim large nP nIdx E ctors recC rlvls j =
-      structRecRhsR T lps elim large nP nIdx R ctors recC rlvls j := by
+    Ix.Kernel.structRecRhsR T lps elim large nP nIdx E ctors recC rlvls j =
+      Ix.Kernel.structRecRhsR T lps elim large nP nIdx R ctors recC rlvls j := by
   obtain ⟨bs, B, B', hb, hb', hi⟩ := h.strip nP nIdx
   have hp := h.take nP nIdx
-  unfold structRecRhsR
+  unfold Ix.Kernel.structRecRhsR
   split
   · rfl
   · rw [hb, hb']
@@ -106,11 +106,11 @@ theorem PrefixEq.checkNativeRules {nP nIdx : Nat} {E R : KExpr}
     (T : Key .anon) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
     (ctors : List (Key .anon × Nat × KExpr × List Nat)) (recC : Key .anon)
     (rlvls : List Level) : ∀ k j,
-    checkNativeRules (m := CheckM .anon) envR rlps T lps elim large nP nIdx E ctors recC rlvls k j =
-      checkNativeRules (m := CheckM .anon) envR rlps T lps elim large nP nIdx R ctors recC rlvls k j
+    Ix.Kernel.checkNativeRules (m := CheckM .anon) envR rlps T lps elim large nP nIdx E ctors recC rlvls k j =
+      Ix.Kernel.checkNativeRules (m := CheckM .anon) envR rlps T lps elim large nP nIdx R ctors recC rlvls k j
   | 0, _ => rfl
   | k + 1, j => by
-    simp only [checkNativeRules, h.structRecRhsR, h.checkNativeRules envR rlps T lps elim large
+    simp only [Ix.Kernel.checkNativeRules, h.structRecRhsR, h.checkNativeRules envR rlps T lps elim large
       ctors recC rlvls k (j + 1)]
 
 /-- Transfer the actual generated-type/rule check to the registered telescope using only
