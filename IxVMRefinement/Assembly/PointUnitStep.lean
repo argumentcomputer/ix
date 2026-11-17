@@ -70,7 +70,9 @@ def PointLoadsFrom (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B : _root_.Address)
     (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (n : Nat) : Prop :=
   ∀ (env : Ix.Kernel.Env .anon) (new : List (ConstantInfo .anon)),
     PointInstall ⟨E, env, t, some n⟩ new B cb ms → Decl.PrefixInv.{u} E t (some n) env →
-    Decl.AuxRootSynced env → PointShape E B ms →
+    Decl.AuxRootSynced env →
+    (∀ k ind, ms[k]? = some (.indc ind) → env.find? (Core.keyOf t (Core.iprjAddr B k)) = none) →
+    PointShape E B ms →
     NewLoads (appCtx ⟨E, env, t, some n⟩ new).stored new
 
 section
@@ -186,7 +188,9 @@ theorem unitStep_pointBlock {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
         exact h }
   -- the prefix invariant after the install
   have hinv₂ : Decl.PrefixInv.{u} E t (some n) (installed env formers ctors) :=
-    hb.prefixInv hinv (hloads env _ hI hinv haux hgate)
+    hb.prefixInv hinv (hloads env _ hI hinv haux
+      (fun k ind hk => hfresh (Core.iprjAddr B k)
+        (Or.inr ⟨ms, k, .indc ind, hrec.muts, hk, Or.inl rfl⟩)) hgate)
   rw [heq] at hinv₂
   -- the carried clause after the install
   have hreg₂ : LateRegistry.{u} t E (installed env formers ctors) := by
