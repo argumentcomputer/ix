@@ -2,6 +2,7 @@ import IxVMRefinement.Assembly.TypingFold
 import IxVMRefinement.Assembly.TypingFacts
 import IxVMRefinement.Assembly.TypingModel
 import IxVMRefinement.StatementRel.DefInhabit
+import IxVMRefinement.Assembly.Closure
 
 /-! # The typing statement over explicit interfaces
 
@@ -852,5 +853,48 @@ theorem typing_def_instance (calls : List (Call F)) :
       exact (congrArg Option.isSome hf).trans rfl
     · rw [TableInhabit.emptyStore_record] at hc
       cases hc
+
+/-! ## The walk interface at the existing claim layer -/
+
+/-- **The existing claim layer gives five of the clauses of `TopGraph`** for a run that
+validates its table: its walked set and rank (`Claim.WalkedL6`) hold the seeds, hold a record
+at every address, decrease strictly along every used reference and along the edge from a
+record to a block that is not itself, and the seeds are in Lean's logic. The other three
+clauses (`members`, `projMember`, `standing`) and the covered branch of `closed` are not
+exported by it. -/
+theorem walkedL6_graph {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
+    {seeds : List _root_.Address} (hload : LoadedBy calls E₀)
+    (hw : Claim.WalkedL6 calls t E₀ seeds) (hseedOk : ∀ a ∈ seeds, ¬ OutsideLogicAt E₀ a) :
+    ∃ (Top : _root_.Address → Prop) (rank : _root_.Address → Nat),
+      (∀ a ∈ seeds, Top a) ∧
+      (∀ a, Top a → ∃ c, recordOf E₀ a = some c) ∧
+      (∀ a x, Top a → UsedRef E₀ a x → Top x ∧ rank x < rank a) ∧
+      (∀ a c, Top a → recordOf E₀ a = some c → Ix.Cert.ownerOf a c ≠ a →
+        Top (Ix.Cert.ownerOf a c) ∧ rank (Ix.Cert.ownerOf a c) < rank a) ∧
+      ∀ a ∈ seeds, ∀ c, recordOf E₀ a = some c →
+        InLogic c ∧ ∀ cb, recordOf E₀ (Ix.Cert.ownerOf a c) = some cb → InLogic cb := by
+  have hS := LoadedReads.RunStore.of_walkedL6 hload hw
+  have hat : ∀ {a : _root_.Address} {c : Ixon.Constant}, recordOf E₀ a = some c →
+      Ix.Cert.recordAt E₀ a = some c :=
+    fun {a c} h => (hS.recordOf_eq_recordAt a).symm.trans h
+  obtain ⟨bAddr, -, -, -, -, -, Wk, rank, hseeds, hclosed, hchecked⟩ := hw
+  refine ⟨Wk, rank, hseeds, ?_, ?_, ?_, ?_⟩
+  · intro a hTa
+    obtain ⟨c, hc, -⟩ := hchecked a hTa
+    exact ⟨c, hS.recordOf_of_recordAt hc⟩
+  · intro a x hTa hused
+    obtain ⟨c, i, hc, hi, hx⟩ := hused
+    have hi' : i ∈ Core.S0.usedRefIdxs c := by
+      rw [Assembly.usedRefIdxs_eq]
+      exact hi
+    exact hclosed a x hTa ⟨c, hat hc, Or.inr ⟨i, hi', hx⟩⟩
+  · intro a c hTa hc hne
+    exact hclosed a (Ix.Cert.ownerOf a c) hTa ⟨c, hat hc, Or.inl ⟨rfl, hne⟩⟩
+  · intro a ha c hc
+    refine ⟨?_, fun cb hcb => ?_⟩
+    · by_contra hn
+      exact hseedOk a ha ⟨c, hat hc, Or.inl hn⟩
+    · by_contra hn
+      exact hseedOk a ha ⟨c, hat hc, Or.inr ⟨cb, hat hcb, hn⟩⟩
 
 end IxVM.Refinement.Typing
