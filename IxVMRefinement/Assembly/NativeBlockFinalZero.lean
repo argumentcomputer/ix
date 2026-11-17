@@ -141,6 +141,8 @@ theorem unitStep_nativeBlock_struct_z {calls : List (Call F)} {t : Ix.Kernel.Rol
     hkeys hfresh hkey hcov haux hO
   have hreg₂ : RetHeadRegistry.{u} t E ⟨new ++ env.consts⟩ :=
     hreg.nativeNoRec hO.facts (lateFamAt_of_install hrec hO) hrh
+      (blockFamCtorNoProj_of_member ht hS hst hrec hchk hnat htele hblk hp₀ hinv hstored hP hkeys
+        hfresh hkey hcov haux hO)
   have hkeys₂ : HashKeyed t ⟨new ++ env.consts⟩ := by
     refine HashKeyed.append htwf hkeys fun ci hci => ?_
     rcases hI.newName ci hci with h | ⟨j, hj, h⟩ | ⟨tbl, rfl⟩

@@ -1,20 +1,22 @@
 import IxVMRefinement.Assembly.NativeBlockFinalStruct
 import IxVMRefinement.Assembly.RetHeadRegistry
+import IxVMRefinement.Assembly.NativeBlockNoProjOf
 
 /-! # The native block step carrying the literal return of every registered family
 
 `NativeBlockXR t E`: the native block step's carried clause `NativeBlockX t E` with the registry
-replaced by `RetHeadRegistry t E` (the registry and, for each of its families, the constructors'
-literal return `FamIxonRetHead`). `NativeBlockXR.toX` forgets it.
+replaced by `RetHeadRegistry t E` (the registry and, for each of its families, the entry facts
+`LateEntryFacts`: the constructors' literal return and no projection of the family in a stored
+constructor type). `NativeBlockXR.toX` forgets it.
 
 * `nativeBlockXR_basisEnv`: the clause at the environment of the pins;
 * `keepsValuesKeyed_nativeBlockXR`: a value step at the key of a 32-byte address keeps it;
 * `unitStep_nativeBlock_struct_rh`: `unitStep_nativeBlock_struct` for the clause: the install
-  registers its family with the family's `FamIxonRetHead`, produced from the member check
-  (`famIxonRetHead_of_member`);
+  registers its family with the family's entry facts, produced from the member check
+  (`famIxonRetHead_of_member`, `blockFamCtorNoProj_of_member`);
 * `unitStep_recLate_xr`: the late recursor's step for the clause: the second interface
-  receives the matched family's `FamIxonRetHead`; the registry, its facts and the other clauses
-  are kept.
+  receives the matched family's entry facts (`FamIxonRetHead`, `BlockFamCtorNoProj`); the
+  registry, its facts and the other clauses are kept.
 -/
 
 set_option maxHeartbeats 4000000
@@ -147,6 +149,8 @@ theorem unitStep_nativeBlock_struct_rh {calls : List (Call F)} {t : Ix.Kernel.Ro
     hkeys hfresh hkey hcov haux hO
   have hreg₂ : RetHeadRegistry.{u} t E ⟨new ++ env.consts⟩ :=
     hreg.nativeNoRec hO.facts (lateFamAt_of_install hrec hO) hrh
+      (blockFamCtorNoProj_of_member ht hS hst hrec hchk hnat htele hblk hp₀ hinv hstored hP hkeys
+        hfresh hkey hcov haux hO)
   have hkeys₂ : HashKeyed t ⟨new ++ env.consts⟩ := by
     refine HashKeyed.append htwf hkeys fun ci hci => ?_
     rcases hI.newName ci hci with h | ⟨j, hj, h⟩ | ⟨tbl, rfl⟩
@@ -172,7 +176,7 @@ theorem unitStep_recLate_xr {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
       ∃ P ip, RecParent t E env P ip ∧ Q P)
     (hout : ∀ env P ip fam, StepAt.{u} t envT E₀ E lim A c env → LvClauses env →
       RecParent t E env P ip → Q P → MatchedAt t E env P ip fam → FamIxonRetHead t E fam →
-      RecLateOut t E₀ E A env fam) :
+      BlockFamCtorNoProj fam → RecLateOut t E₀ E A env fam) :
     UnitStep.{u} (NativeBlockXR.{u} t E) t envT E₀ E lim A c := by
   intro env hext hnd hinv hX href hfresh
   obtain ⟨⟨⟨⟨Reg, hR, hH⟩, hkeys⟩, haux⟩, hlv⟩ := hX
@@ -182,7 +186,7 @@ theorem unitStep_recLate_xr {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
   obtain ⟨fam, hReg, hat, hnameP, hmatch⟩ := hR.at_parent ht hfP hres hcm hcmi hnat
   obtain ⟨cvR, mI, rP, rules, cn, ci₀, hrun, hname, hreads, hstored, hreload⟩ :=
     hout env P ip fam hstep hlv ⟨⟨cvP, capsP, hfP⟩, hres, ⟨cm, hcm, hcmi⟩, hnat⟩ hQ
-      ⟨hat, hnameP, hmatch⟩ (hH fam hReg)
+      ⟨hat, hnameP, hmatch⟩ (hH fam hReg).1 (hH fam hReg).2
   have hcomp := late_companions ht hinv.companions ⟨hat, hnameP, hmatch⟩ hcm hcmi hrun
   obtain ⟨hinv', hR'⟩ := late_prefixInv_step_rh hinv hR hH hReg hrun
     (hname.trans (LoadedReads.keyOf_eq t A).symm) hcomp hreload
