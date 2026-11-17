@@ -138,4 +138,38 @@ theorem sort_signature_rep {c : ScopedCtx} (hc : ScopedCoreFacts c)
   obtain ⟨v, _, l, hl, _⟩ := hu.sort_of_load ld
   exact ⟨_, IxVM.Refinement.Guard.signature_level_spec hl sig⟩
 
+/-- The actual assertion produces agreement of the inferred sort's zero-set with the actual
+classifier output, retaining that classifier subcall for the raw-dictionary refinement. -/
+theorem checked_sort_zero_iff {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {d : Nat} {Γ : Nat → KExpr} {E : KExpr} {rc p ctx r : SourceValue F}
+    {h h' : Heap F} {cs : List (Call F)} (hg : CoreGood c cs)
+    (hrc : c.rc h rc) (hctx : c.types Γ h d ctx) (hE : Tm c.κ d Γ h 0 E p)
+    (ev : ObsFn W "KernelGuard::checked_sort" [rc, p, ctx] h r h' cs) :
+    ∃ T u actual signature predicted before after inner,
+      Ix.Kernel.Rules.Infer c.env .full d E T ∧ Ix.Kernel.Rules.Red c.env d T (.sort u) ∧
+      RepKLevel h' actual r ∧ LvEq u actual ∧ Heap.Extends h before ∧
+      ObsFn W "KernelGuard::sort_signature" [p, ctx] before predicted after inner ∧
+      RepKLevel after signature predicted ∧ (∀ cl ∈ inner, cl ∈ cs) ∧
+      ∀ φ, Ix.Kernel.Level.eval φ u = 0 ↔ Ix.Kernel.Level.eval φ signature = 0 := by
+  obtain ⟨value, m1, cs1, expected, m2, cs2, answer, m3, cs3, code, m4, cs4,
+    infer, predict, encode, compare, hanswer, hr, hh, hall⟩ := Obs.«KernelGuard::checked_sort».obs ev
+  subst hr hh
+  have h1 : ∀ cl ∈ cs1, cl ∈ cs := by intro cl hm; rw [hall]; simp [hm]
+  have h2 : ∀ cl ∈ cs2, cl ∈ cs := by intro cl hm; rw [hall]; simp [hm]
+  have h3 : ∀ cl ∈ cs3, cl ∈ cs := by intro cl hm; rw [hall]; simp [hm]
+  obtain ⟨T, u, actual, hi, hred, ha, heq⟩ :=
+    Decl.scoped_core_ensure_sort hrc hctx.1 hctx.2 hc.env hc.loads (hg.sub h1) infer hE
+  obtain ⟨signature, hs⟩ := sort_signature_rep hc (hg.sub h2)
+    (types_mono infer.heap_extends hctx) (hE.mono infer.heap_extends) predict
+  have hcoded := IxVM.Refinement.Guard.signature_level_spec (ha.mono predict.heap_extends) encode
+  rw [hanswer] at compare
+  have hchecked := Decl.levels_equal_one IxVM.Refinement.Levels.levels compare
+    (bounded_sub h3 hg.2) hcoded (hs.mono encode.heap_extends)
+  refine ⟨T, u, actual, signature, expected, m1, m2, cs2, hi, hred,
+    ha.mono (predict.heap_extends.trans (encode.heap_extends.trans compare.heap_extends)),
+    heq, infer.heap_extends, predict, hs, h2, ?_⟩
+  intro φ
+  rw [heq φ, Ix.Kernel.Level.guardSignatureLevel_zero_iff actual φ, hchecked φ]
+
+
 end IxVM.Refinement.Core.GuardData
