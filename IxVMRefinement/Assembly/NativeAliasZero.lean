@@ -16,7 +16,7 @@ open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
 open IxVM.Refinement.KernelLevels
 open Ix.Kernel (Expr Level LevelParam ConstantInfo ConstantVal)
-open Ix.Kernel.Semantics (ctorZeroOk famDomOk pwsAll)
+open Ix.Kernel.Semantics (ctorZeroOk famDomOk famHead pwsAll)
 
 set_option maxHeartbeats 1600000
 set_option linter.unusedVariables false
