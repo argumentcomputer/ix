@@ -341,6 +341,26 @@ theorem etaStable_of_etaShape_noParams {env : Env .anon} (h : EtaShape env)
   subst h0'
   exact etaType_of_closed_stored (hext.find hkc) hnd hstrip hlen (by simp) hinf
 
+/-- **`EtaStable` as stated across an extension that adds only families with no parameter**: the
+families with a parameter are the shorter environment's, with their constructors, and keep its
+`EtaStable`; the others hold from their shape. -/
+theorem EtaStable.of_ext_noParams {env env₂ : Env .anon} (h : EtaStable env)
+    (hext : Ix.Kernel.EnvExt env env₂) (hshape : EtaShape env₂)
+    (hold : ∀ T cvT caps, env₂.find? T = some (.indInfo cvT caps) → caps.eta = true →
+      caps.etaParams ≠ 0 → env.find? T = some (.indInfo cvT caps) ∧
+        ∀ kc c, caps.etaCtor = some kc → env₂.find? kc = some c → env.find? kc = some c) :
+    EtaStable env₂ := by
+  intro T kc cvT cvc caps nP nF hT heta hctor hkc env' hext' d us args ty hlen hinf
+  by_cases h0 : caps.etaParams = 0
+  · obtain ⟨_, hsh⟩ := hshape T cvT caps hT heta
+    obtain ⟨hnd, _, hnP, _, cbs, hstrip⟩ := hsh kc cvc nP nF hctor hkc
+    have h0' : nP = 0 := hnP.trans h0
+    subst h0'
+    exact etaType_of_closed_stored (hext'.find hkc) hnd hstrip hlen (by simp) hinf
+  · obtain ⟨hT₁, hk₁⟩ := hold T cvT caps hT heta h0
+    exact h T kc cvT cvc caps nP nF hT₁ heta hctor (hk₁ kc _ hctor hkc) env' (hext.trans hext')
+      d us args ty hlen hinf
+
 /-- **`EtaUseFacts` at closed parameters.** -/
 structure EtaUseFactsC (env : Env .anon) (T kc : KKey) (cvT : ConstantVal .anon)
     (caps : IndCaps .anon) (nP nF : Nat) : Prop where

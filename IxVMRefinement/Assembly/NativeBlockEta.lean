@@ -49,6 +49,17 @@ theorem NativeNoRecFacts.etaStable_noParams (hpin : Ix.Kernel.basisPinHit blk = 
       caps.etaParams = 0) : EtaStable env₂ :=
   etaStable_of_etaShape_noParams (h.foldStoreInv hpin hna hS).etaShape h0
 
+/-- **`EtaStable` as stated after the install, from the prefix's**, where every family with a
+parameter is the prefix's (the install adds one with none). -/
+theorem NativeNoRecFacts.etaStable_of_prefix (hpin : Ix.Kernel.basisPinHit blk = none)
+    (hna : ∀ ci ∈ blk, NonAuxKey ci.name) (h : NativeNoRecFacts env env₂ blk nP p₀ fam)
+    (hS : FoldStoreInv env) (hη : EtaStable env) (hext : Ix.Kernel.EnvExt env env₂)
+    (hold : ∀ T cvT caps, env₂.find? T = some (.indInfo cvT caps) → caps.eta = true →
+      caps.etaParams ≠ 0 → env.find? T = some (.indInfo cvT caps) ∧
+        ∀ kc c, caps.etaCtor = some kc → env₂.find? kc = some c → env.find? kc = some c) :
+    EtaStable env₂ :=
+  hη.of_ext_noParams hext (h.foldStoreInv hpin hna hS).etaShape hold
+
 /-- **`EtaUseFacts` as stated after the install**, at a family with no parameter. -/
 theorem NativeNoRecFacts.etaUseFacts_noParams (hpin : Ix.Kernel.basisPinHit blk = none)
     (hna : ∀ ci ∈ blk, NonAuxKey ci.name) (h : NativeNoRecFacts env env₂ blk nP p₀ fam)
