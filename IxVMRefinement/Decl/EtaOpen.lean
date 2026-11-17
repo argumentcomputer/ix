@@ -35,6 +35,8 @@ open IxVM.Refinement.Core
 open Ix.Kernel (Env Expr Level LevelParam ConstantVal ConstantInfo IndCaps BinderMeta Key Mode)
 open Ix.Kernel.Rules (Red Infer)
 
+universe u
+
 /-! ## The type of a spine at never-zero binders -/
 
 section
@@ -273,6 +275,22 @@ theorem FoldStoreInv.not_etaStable {env : Env .anon} (h : FoldStoreInv env)
     ¬ EtaStable env ∧ ¬ EtaUseFacts env T kc cvT caps nP nF :=
   not_etaStable_of_param (BClosedStore.of_wf h.store.wf) hT heta hctor hkc
     (envWF_type_bclosed h.store.wf hkc) hstrip hus (never_of_zeroness hnz hz) hP hn
+
+/-- **The prefix invariant excludes such a family**: `PrefixInv` carries `EtaStable` and the fold
+invariant, so it does not hold at an environment storing an η-capable family with a parameter and
+a second binder, never-zero at some levels. -/
+theorem PrefixInv.no_param_eta {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Option Nat}
+    {env : Env .anon} (h : PrefixInv.{u} E t lim env)
+    {T kc : KKey} {cvT cvc : ConstantVal .anon} {caps : IndCaps .anon} {nP nF : Nat}
+    (hT : env.find? T = some (.indInfo cvT caps)) (heta : caps.eta = true)
+    (hctor : caps.etaCtor = some kc) (hkc : env.find? kc = some (.ctorInfo cvc nP nF))
+    {cbs : List (KExpr × BinderMeta)} {res : KExpr} {l : KLevel}
+    (hstrip : cvc.type.stripPis (nP + nF) = some (cbs, res))
+    (hz : ∀ b ∈ cbs, b.2.pw = Level.zeronessOf l)
+    {us : List KLevel} (hus : us.length = cvc.levelParams.length)
+    (hnz : (Level.subst cvc.levelParams us l).isNeverZero = true)
+    (hP : 1 ≤ nP) (hn : 2 ≤ nP + nF) : False :=
+  (h.store.not_etaStable hT heta hctor hkc hstrip hz hus hnz hP hn).1 h.etaStable
 
 /-- **The block route's statement** (its notes): the typing clause at every spine, read off the
 constructor's own stored shape. False: `EtaOpenExample.not_etaTypeOpen`. -/
