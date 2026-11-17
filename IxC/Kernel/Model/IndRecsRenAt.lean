@@ -216,7 +216,7 @@ theorem indRecsRenAt
         · exact h
         · exact nomatch heq)
       (fun ψ d e => denoteMeta_swap hcg ψ d e) hacc
-  refine ⟨mp₃, ?_, by rw [hacc]; exact blockAcvalInstalled_swapAt hcg hIAS, hext₃⟩
+  refine ⟨mp₃, ?_, by rw [hacc]; exact blockAcvalInstalledAt_swap hcg hIAS, hext₃⟩
   -- the block invariant survives the swap
   rw [hcval₃]
   intro n hn ci₃ hf₃
