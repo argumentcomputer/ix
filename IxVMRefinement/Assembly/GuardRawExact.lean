@@ -178,7 +178,9 @@ private theorem raw_expr_go (κ : _root_.Address → KKey) :
         obtain ⟨a, levels, rfl, rfl, address, represented⟩ := hE.const_of_load loaded
         have : Resolved (κ (ixAddr a)) := ⟨semantic.const_key_ne⟩
         have exactLevels := (Guard.levels_inst_raw_spec child represented hp).2
-        simp only [Guard.rawSubst_eq] at exactLevels
+        have substitution : Guard.rawSubst ps = Level.subst (List.range ps.length) ps :=
+          funext (Guard.rawSubst_eq ps)
+        rw [substitution] at exactLevels
         subst hr hh
         exact .const (by simp)
           (Bytes.repAddressRef_heapMono₂ addrTy (child.heap_extends.trans (Heap.Extends.snoc _ _)) address)
