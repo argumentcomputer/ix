@@ -25,7 +25,7 @@ macro "guard_lt_calls" : tactic =>
 private theorem stored_one (h : Heap F) :
     RepKLevel ((h ++ [.construct KernelLevels.klevelEnum "Zero" []]) ++
       [.construct KernelLevels.klevelEnum "Succ" [.ptr (.enum KernelLevels.klevelEnum) h.length]])
-      (.succ .zero) (.ptr (.enum KernelLevels.klevelEnum) (h ++ [.construct KernelLevels.klevelEnum "Zero" []]).length) :=
+      (.succ .zero) (.ptr (.enum KernelLevels.klevelEnum) ((h ++ [.construct KernelLevels.klevelEnum "Zero" []]) : Heap F).length) :=
   .succ List.getElem?_concat_length
     ((RepKLevel.zero List.getElem?_concat_length).mono (Heap.Extends.snoc _ _))
 
@@ -85,7 +85,7 @@ theorem signature_pair_spec_aux :
           cases hgv : Level.guardSignature v with
           | none => simp [hgv] at hab
           | some sv =>
-            refine ⟨_, ?_, ?_⟩
+            refine ⟨.ptr (.enum KernelLevels.klevelEnum) m1.length, ?_, ?_⟩
             · simp [Level.guardSignature, hgu, hgv]
             · have haRep : RepKLevel m0 su _ := by simpa [Level.guardSignatureLevel, hgu] using hsa
               have hbRep : RepKLevel m1 sv _ := by simpa [Level.guardSignatureLevel, hgv] using hsb
@@ -107,7 +107,8 @@ theorem signature_pair_spec_aux :
           simp [hgu, hgv, evalBinOp] at hop
           subst sum
           exact (hne rfl).elim
-        refine ⟨_, ?_, ?_⟩
+        refine ⟨.ptr (.enum KernelLevels.klevelEnum)
+          ((m1 ++ [.construct KernelLevels.klevelEnum "Zero" []]) : Heap F).length, ?_, ?_⟩
         · simp [hnone]
         · simpa [Level.guardSignatureLevel, hnone] using stored_one m1)
 

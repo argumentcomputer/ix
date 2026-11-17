@@ -114,14 +114,14 @@ theorem levels_inst_raw_spec {p pp r : SourceValue F} {h h' : Heap F} {cs : List
   cases Obs.«KernelGuard::levels_inst_raw».obs ev with
   | Nil ld hr hh hc =>
     rw [← Levels.klevelList_names] at ld
-    obtain rfl := RepList.nil_of_load rep ld
+    obtain rfl := Lib.rep_nil_of_load rep ld
     subst hr hh
     exact ⟨by simp, rep⟩
   | Cons x rest vx vr mx csx mr csr ld hr hh evx evr hc =>
     rw [← Levels.klevelList_names] at ld
-    obtain ⟨l, ls', rfl, hl, hls⟩ := RepList.cons_of_load rep ld
+    obtain ⟨l, ls', rfl, hl, hls⟩ := Lib.rep_cons_of_load rep ld
     obtain ⟨hpl, hrl⟩ := level_inst_raw_spec evx hl repPs
-    obtain ⟨hpls, hrls⟩ := levels_inst_raw_spec evr (hls.mono repKLevel_heapMono₂ evx.heap_extends)
+    obtain ⟨hpls, hrls⟩ := levels_inst_raw_spec evr (RepKLevelList.mono hls evx.heap_extends)
       (repPs.mono evx.heap_extends)
     subst hr hh
     refine ⟨?_, ?_⟩
@@ -131,7 +131,7 @@ theorem levels_inst_raw_spec {p pp r : SourceValue F} {h h' : Heap F} {cs : List
       · exact hpls l' hmem
     · exact .cons List.getElem?_concat_length
         (hrl.mono (evr.heap_extends.trans (Heap.Extends.snoc _ _)))
-        (hrls.mono repKLevel_heapMono₂ (Heap.Extends.snoc _ _))
+        (RepKLevelList.mono hrls (Heap.Extends.snoc _ _))
 termination_by cs.length
 decreasing_by all_goals (rw [hc]; simp only [List.length_cons, List.length_append]; omega)
 
