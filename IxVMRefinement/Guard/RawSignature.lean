@@ -48,7 +48,7 @@ theorem sort_signature_raw_trace (rawKey : _root_.Address → KKey) [∀ a, Reso
     {d k : Nat} {Γ : Nat → KExpr} {R E : KExpr} {context : List KExpr}
     {p ctx r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (good : CoreGood c calls) (subset : ∀ call ∈ calls, call ∈ rootCalls)
-    (types : c.types Γ h d ctx) (scoped : Tm c.κ d Γ h 0 E p)
+    (types : c.types Γ h d ctx) (scopedRep : Tm c.κ d Γ h 0 E p)
     (rawCtx : RawContext rawKey h context ctx) (physical : RawExprRep rawKey h k R p)
     (observed : ObsFn W "KernelGuard::sort_signature" [p, ctx] h r h' calls) :
     ∃ signature, RepKLevel h' signature r ∧
@@ -59,8 +59,8 @@ theorem sort_signature_raw_trace (rawKey : _root_.Address → KKey) [∀ a, Reso
   have headInside : ∀ call ∈ heads, call ∈ calls := by intro call member; rw [events]; simp [member]
   obtain ⟨typeBound, typeRaw, typeRep, inferred⟩ := infer_raw_trace rawKey facts
     (good.sub firstInside) (fun call member => subset call (firstInside call member))
-    types scoped rawCtx physical infer
-  obtain ⟨type, typeScoped⟩ := infer_shape_rep facts (good.sub firstInside) types scoped infer
+    types scopedRep rawCtx physical infer
+  obtain ⟨type, typeScoped⟩ := infer_shape_rep facts (good.sub firstInside) types scopedRep infer
   obtain ⟨headBound, result, resultRep, headed⟩ := head_raw_trace rawKey facts
     (good.sub headInside) (fun call member => subset call (headInside call member)) typeScoped typeRep norm
   obtain ⟨image, raw⟩ := resultRep

@@ -115,7 +115,7 @@ private theorem infer_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved
   intro fuel
   induction fuel using Nat.strong_induction_on with
   | h fuel ih =>
-    intro d k Γ R E context p ctx budget r h h' calls length good subset types scoped rawCtx physical observed
+    intro d k Γ R E context p ctx budget r h h' calls length good subset types scopedRep rawCtx physical observed
     obtain ⟨image, raw⟩ := physical
     match Obs.«KernelGuard::infer_shape».obs observed with
     | .n0 (heq40 := impossible) .. | .other_other (heq732 := impossible) .. =>
@@ -135,14 +135,14 @@ private theorem infer_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved
         (successor.mono (Heap.Extends.snoc _ _))⟩, .sort context level⟩
     | .other_Const (cs159 := children) (ld60 := loaded) (ev161 := declared) (hc178 := events) .. =>
       obtain ⟨address, parameters, rfl, rfl, addressRep, paramsRep⟩ := raw.raw_const_view loaded
-      obtain ⟨scopedAddress, _, rfl, scopedAddressRep, _, _, _⟩ := scoped.const_of_load loaded
+      obtain ⟨scopedAddress, _, rfl, scopedAddressRep, _, _, _⟩ := scopedRep.const_of_load loaded
       have same := addr_det addressRep scopedAddressRep
       subst scopedAddress
       have inside : ∀ call ∈ children, call ∈ calls := by intro call member; rw [events]; simp [member]
       obtain ⟨ci, origin, ptr, value, typePtr, loadedHeap, beforeType, beforeInst, loadCalls,
         typeCalls, instCalls, found, arity, load, member, node, getType, originRep, extension,
         inst, loadSubset, typeSubset, _, resultRep⟩ := declared_type_keyed_raw_origin rawKey facts
-          (good.sub inside) addressRep scoped.const_key_ne paramsRep declared
+          (good.sub inside) addressRep scopedRep.const_key_ne paramsRep declared
       have typeOrigin : RawTypeAt c rawKey rootCalls (rawKey (ixAddr address)) parameters
           (origin.instantiateLevelParams (List.range parameters.length) parameters) := by
         exact ⟨address, ci, origin, _, ptr, value, typePtr, h, loadedHeap, beforeType, beforeInst,
@@ -154,7 +154,7 @@ private theorem infer_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved
     | .other_App (cs207 := first) (cs256 := heads) (cs306 := instCalls) (ld60 := loaded)
         (ev209 := child) (ev258 := norm) (ld252 := forallNode) (ev308 := inst) (hc332 := events) .. =>
       obtain ⟨RF, RA, EF, EA, rfl, rfl, rawFunc, rawArg⟩ := raw.raw_app_view loaded
-      obtain ⟨func, arg, rfl, scopedFunc, scopedArg⟩ := scoped.app_of_load loaded
+      obtain ⟨func, arg, rfl, scopedFunc, scopedArg⟩ := scopedRep.app_of_load loaded
       have firstInside : ∀ call ∈ first, call ∈ calls := by intro call member; rw [events]; simp [member]
       have headInside : ∀ call ∈ heads, call ∈ calls := by intro call member; rw [events]; simp [member]
       have instInside : ∀ call ∈ instCalls, call ∈ calls := by intro call member; rw [events]; simp [member]
@@ -182,7 +182,7 @@ private theorem infer_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved
         (hm389 := allocated) (ev369 := child) (ev440 := norm) (ld434 := sortNode)
         (he477 := result) (hm476 := heap) (hc489 := events) .. =>
       obtain ⟨RD, RB, ED, EB, metadata, rfl, rfl, rawDom, rawBody, _⟩ := raw.raw_forallE_view loaded
-      obtain ⟨D, B, level, rfl, scopedDom, scopedBody, _⟩ := scoped.forallE_of_load loaded
+      obtain ⟨D, B, level, rfl, scopedDom, scopedBody, _⟩ := scopedRep.forallE_of_load loaded
       subst allocated result heap
       have extension := Heap.Extends.snoc h (.construct kexprListEnum "Cons" [ty, ctx])
       have newTypes := ProjAux.types_extend types scopedDom
@@ -207,7 +207,7 @@ private theorem infer_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved
         (ld60 := loaded) (hm545 := allocated) (ev525 := child) (he584 := result)
         (hm583 := heap) (hc612 := events) .. =>
       obtain ⟨RD, RB, ED, EB, level, rfl, rfl, rawDom, rawBody, rawLevel⟩ := raw.raw_lam_view loaded
-      obtain ⟨D, B, metadata, rfl, scopedDom, scopedBody, _⟩ := scoped.lam_of_load loaded
+      obtain ⟨D, B, metadata, rfl, scopedDom, scopedBody, _⟩ := scopedRep.lam_of_load loaded
       subst allocated result heap
       have extension := Heap.Extends.snoc h (.construct kexprListEnum "Cons" [ty, ctx])
       have newTypes := ProjAux.types_extend types scopedDom
@@ -233,7 +233,7 @@ private theorem infer_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved
     | .other_Let (cs639 := children) (cs654 := instCalls) (ld60 := loaded)
         (ev656 := inst) (ev641 := child) (hc702 := events) .. =>
       obtain ⟨RT, RV, RB, ET, EV, EB, rfl, rfl, _, rawValue, rawBody⟩ := raw.raw_let_view loaded
-      obtain ⟨D, V, B, rfl, _, scopedValue, scopedBody⟩ := scoped.letE_of_load loaded
+      obtain ⟨D, V, B, rfl, _, scopedValue, scopedBody⟩ := scopedRep.letE_of_load loaded
       have instInside : ∀ call ∈ instCalls, call ∈ calls := by intro call member; rw [events]; simp [member]
       have childInside : ∀ call ∈ children, call ∈ calls := by intro call member; rw [events]; simp [member]
       have shorter : children.length < fuel := by
@@ -259,11 +259,11 @@ theorem infer_raw_trace (rawKey : _root_.Address → KKey) [∀ a, Resolved (raw
     {d k : Nat} {Γ : Nat → KExpr} {R E : KExpr} {context : List KExpr}
     {p ctx budget r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (good : CoreGood c calls) (subset : ∀ call ∈ calls, call ∈ rootCalls)
-    (types : c.types Γ h d ctx) (scoped : Tm c.κ d Γ h 0 E p)
+    (types : c.types Γ h d ctx) (scopedRep : Tm c.κ d Γ h 0 E p)
     (rawCtx : RawContext rawKey h context ctx) (physical : RawExprRep rawKey h k R p)
     (observed : ObsFn W "KernelGuard::infer_shape" [p, ctx, budget] h r h' calls) :
     ∃ bound result, RawExprRep rawKey h' bound result r ∧
       RawInferTrace (RawTypeAt c rawKey rootCalls) (RawDeltaAt c rawKey rootCalls) context R result :=
-  infer_raw_go rawKey facts rootCalls calls.length (Nat.le_refl _) good subset types scoped rawCtx physical observed
+  infer_raw_go rawKey facts rootCalls calls.length (Nat.le_refl _) good subset types scopedRep rawCtx physical observed
 
 end IxVM.Refinement.Core.GuardData
