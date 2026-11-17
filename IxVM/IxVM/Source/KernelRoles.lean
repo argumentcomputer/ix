@@ -967,6 +967,16 @@ def role_evidence := aiur_fn⟦
 def validate_op := aiur_fn⟦
   fn validate_op(rc: RoleCtx, tbl: RoleTable, r: Field, a: Bytes::AddressRef,
         ci: KernelTypes::KConstantInfo) -> () {
+      let record = Ingress::load_verified_constant(a);
+      match record {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
+          match info {
+            Ixon::ConstantInfo::Defn(_) => {  () } ,
+            _ => {
+              assert_eq!(0, 1, "a bound operation is not a standalone definition");
+              () } ,
+          } } ,
+      };
       match ci {
         KernelTypes::KConstantInfo::Defn(_, ty, val, safety, _) => {
           match safety {

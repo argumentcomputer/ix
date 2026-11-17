@@ -649,7 +649,7 @@ def dom_zero_ok := aiur_fn⟦
 
   -- The telescope a former declared at a definition is read at, as a type in its own right:
   -- its binders' domains are types in the growing context and it ends in the family's sort.
-  -- The declared type was typed and is convertible with it by construction; the telescope
+  -- The declared type was typed; conversion with its telescope is checked here. The telescope
   -- itself is what the kernel checks from scratch for such a family, and what the family's
   -- recursor is generated from. A former that is syntactically its telescope was typed as
   -- declared.
@@ -663,6 +663,9 @@ def former_tele_typed := aiur_fn⟦
           let tele = former_tele_at(rc, ty, k, (&(Lists::Node::Nil)), s);
           validate_expr_well_scoped(tele, 0, num_lvls);
           KernelInfer::k_ensure_sort(rc, tele, (&(Lists::Node::Nil)));
+          let conv = KernelDefEq::k_is_def_eq(rc, ty, tele, (&(Lists::Node::Nil)));
+          assert_eq!(conv, 1,
+            "a former declared at a definition is not convertible with its telescope");
           () } ,
       }
     }
@@ -786,7 +789,9 @@ def check_modeled_ctors := aiur_fn⟦
               assert_safety(is_unsafe, cty);
               check_ctor_return_type(cty, c_np, n_indices, c_nf, num_lvls,
                                           block_addr, ind_idx);
-              projection_addr_ctor(ind_idx, cidx, block_addr);
+              let ctor_addr = projection_addr_ctor(ind_idx, cidx, block_addr);
+              assert_eq!(KernelRoles::role_index_of(rc, ctor_addr), 0,
+                "a modeled constructor is bound to a role");
               check_modeled_ctors(rc, n_params, n_indices, num_ctors, num_lvls,
                                   block_addr, ind_idx, is_unsafe, cidx + 1) } ,
           } } ,
@@ -3886,6 +3891,8 @@ def check_const := aiur_fn⟦
               -- with nothing to reduce in between (a former declared at a definition,
               -- `T : MyType` with `MyType := Type`, is refused here; the native route reads one
               -- after head normalization).
+              assert_eq!(KernelRoles::role_index_of(rc, addr), 0,
+                "a modeled inductive is bound to a role");
               assert_eq!(has_n_leading_foralls(ty, n_params), 1,
                 "a modeled inductive's parameters are not syntactic binders");
               assert_eq!(former_is_tele(ty, n_params + n_indices), 1,
@@ -3928,6 +3935,8 @@ def check_const := aiur_fn⟦
                     _ => {  () } ,
                   } } ,
                 _ => {
+                  assert_eq!(KernelRoles::role_index_of(rc, addr), 0,
+                    "a modeled constructor is bound to a role");
                   match ind_is_unsafe {
                     0 => {  KernelModeled::check_modeled_block(rc, block_addr) } ,
                     _ => {  () } ,
@@ -3944,8 +3953,8 @@ def check_const := aiur_fn⟦
           let modeled = KernelModeled::block_is_modeled(family);
           -- A recursor of a mutual or nested family is refused: the family check below is not
           -- part of what the program is proved to establish. Every route to a recursor passes
-          -- here (a constant by its address, a member of a block, a container recursor that
-          -- a family's advice names), so with this assertion no accepted run checks a family.
+          -- here (a constant by its address, a member of a block, or a container recursor
+          -- named by family advice). Modeled block arms still check their families.
           assert_eq!(modeled, 0, "a recursor of a mutual or nested family is refused");
           match modeled {
             0 => {
