@@ -3833,20 +3833,18 @@ def check_const := aiur_fn⟦
                                          ind_is_unsafe);
               check_block_peer_param_agreement(rc, ci, addr) } ,
             _ => {
-              -- the modeled route: the declared shape, then the family against
-              -- its model (`KernelModeled::check_family`). The shape is read as Lean's
+              -- the modeled route: the declared shape only. The shape is read as Lean's
               -- kernel reads a former, after whnf before each binder, so a former
               -- declared at a definition (`T : MyType`, `MyType := Type`) has one. Its parameters,
-              -- as Lean counts them, are syntactic binders.
+              -- as Lean counts them, are syntactic binders. The family is checked against its
+              -- model where one of its recursors is checked (`KernelModeled::check_family`): a
+              -- block no checked recursor eliminates needs none, since nothing reads a rule,
+              -- a projection, structure eta or unit-likeness at it.
               assert_eq!(has_n_leading_foralls(ty, n_params), 1,
                 "a modeled inductive's parameters are not syntactic binders");
               get_result_sort_level(rc, ty, n_params + n_indices, (&(Lists::Node::Nil)));
               check_modeled_ctors(rc, n_params, n_indices, num_ctors, nlvls,
-                                  ind_block, ind_idx, ind_is_unsafe, 0);
-              match ind_is_unsafe {
-                0 => {  KernelModeled::check_modeled_block(rc, ind_block) } ,
-                _ => {  () } ,
-              } } ,
+                                  ind_block, ind_idx, ind_is_unsafe, 0) } ,
           } } ,
         KernelTypes::KConstantInfo::Ctor(nlvls, ty, block_addr, ind_idx, _cidx,
                            num_params, num_fields, _) => {
@@ -3878,10 +3876,8 @@ def check_const := aiur_fn⟦
                     _ => {  () } ,
                   } } ,
                 _ => {
-                  match ind_is_unsafe {
-                    0 => {  KernelModeled::check_modeled_block(rc, block_addr) } ,
-                    _ => {  () } ,
-                  } } ,
+                  -- the modeled route: the constructor's declared shape, checked above
+                  () } ,
               } } ,
           } } ,
         KernelTypes::KConstantInfo::Rec(nlvls, ty, _, _, n_mot, _, rules, k_flag, rec_uns, rec_block, _) => {
@@ -3898,9 +3894,12 @@ def check_const := aiur_fn⟦
               check_recursor_member(rc, ci, addr) } ,
             _ => {
               -- the modeled route: no K, safe; the recursor's whole family record
-              -- against the block and its model. An unsafe recursor of a modeled block
-              -- is refused rather than accepted unchecked: every recursor record IxVM
-              -- accepts is then the canonical one.
+              -- against the block and its model, with the block's types and constructors
+              -- (the block's own check reads their declared shape only). An unsafe recursor
+              -- of a modeled block is refused rather than accepted unchecked: every recursor
+              -- record IxVM accepts is then the canonical one. The family is checked in the
+              -- basis role context (`KernelRoles::family_ctx`): its model depends on no
+              -- other role.
               assert_eq!(k_flag, 0, "a recursor of a mutual or nested block declares K");
               assert_eq!(rec_uns, 0, "an unsafe recursor of a mutual or nested block");
               KernelModeled::check_family(rc, family, rec_block) } ,

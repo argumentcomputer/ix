@@ -476,6 +476,32 @@ def walk_covered := aiur_fn⟦
     }
 ⟧
 
+  -- The role context a modeled family is checked in (`KernelModeled::check_family`): the
+  -- table and axioms of `rc`, with no role native beyond the basis groups (`Nat`, `Eq`,
+  -- `PUnit`, `Empty`, `False`, the quotient package) and none that `rc` itself does not have.
+  -- The boundary is the end of the basis: one past the quotient package's group, the last of
+  -- them (groups 0 to 5). It is stated on the basis itself, not on whichever group follows
+  -- it, because it is the boundary the argument needs: every role in force while a family is
+  -- checked is a basis role, wherever the schedule puts the other groups. Whatever the
+  -- claim's own context, a family's model and rules
+  -- are then checked with no literal support, operation or equation role: a constant bound
+  -- to one is an ordinary constant there, and the family's check depends on no record that
+  -- is not the basis, the advice, or in the block's own dependency closure.
+
+def family_ctx := aiur_fn⟦
+  fn family_ctx(rc: RoleCtx) -> RoleCtx {
+      let basis = KernelRoleSpec::role_group(KernelRoleSpec::role_quot_sound()) + 1;
+      match (*(rc)) {
+        RoleCtxNode::Mk(tbl, limit, axioms) => {
+          match UInt32::less_than_fields(limit, basis) {
+            1 => {  rc } ,
+            _ => {  (&(RoleCtxNode::Mk(tbl, basis, axioms))) } ,
+          } } ,
+        RoleCtxNode::Assumed(tbl, axioms) => {  (&(RoleCtxNode::Mk(tbl, basis, axioms))) } ,
+      }
+    }
+⟧
+
 def validate_binding := aiur_fn⟦
   fn validate_binding(binding: Bytes::AddressRef) -> () {
       let tbl = load_role_table(binding);
