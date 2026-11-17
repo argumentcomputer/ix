@@ -797,7 +797,6 @@ theorem aliasOuts_of_member_guard {calls : List (Call F)} {t : Ix.Kernel.RoleTab
     have htmGuard := htmT 0 (fun _ => default)
     rw [Decl.posOf_range] at htmGuard
     have hguard := shape.guardRun
-    rw [← hnP, ← hnIdx, ← hlenP] at hguard
     refine ⟨hvalS, by rw [hnP, hnIdx]; exact hPI, by rw [hlenP]; exact hc39,
       b, cs_chk, shape.guardCalls, shape.sortAfter, shape.guardAfter, tyPtr, blkPtr,
       shape.sortLevel, shape.guardResult, ℓ, hb_eq, hTname, hcloadT, ?_, hsub_chk,
@@ -805,7 +804,7 @@ theorem aliasOuts_of_member_guard {calls : List (Call F)} {t : Ix.Kernel.RoleTab
       htmGuard.mono (native.initialToShape.trans shape.initial_to_guard),
       Bytes.repAddressRef_heapMono₂ Core.addrTy
         (native.initialToShape.trans shape.initial_to_guard) hb_rep,
-      hℓ, hlevel, hguard⟩
+      hℓ, hlevel, by simpa only [hnP, hnIdx, hlenP] using hguard⟩
     intro c hc
     rw [(hlps_ctors c hc).1, hcvT]
     simp
