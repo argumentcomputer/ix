@@ -36,11 +36,11 @@ private theorem infer_shape_rep_go {c : ScopedCtx} (hc : ScopedCoreFacts c) :
       have hs := Registry.induction c (scoped_steps c hc) (.infer .types_lookup)
         _ _ _ _ _ lookup
       exact ⟨_, (hs ctx i rfl (hg.sub hsub) d Γ hctx).2⟩
-    | .other_Srt (ld60 := ld) (he112 := hr) (hm111 := hh) (hm126 := hm) .. =>
+    | .other_Srt (x_u := lp) (ld60 := ld) (he112 := hr) (hm111 := hh) (hm126 := hm) .. =>
       obtain ⟨u, rfl, l, hl, _⟩ := hE.sort_of_load ld
       subst hr hh hm
-      have e1 := Heap.Extends.snoc h (.construct klevelEnum "Succ" [_])
-      have hs : RepKLevel (h ++ [.construct klevelEnum "Succ" [_]]) (.succ l)
+      have e1 := Heap.Extends.snoc h (.construct klevelEnum "Succ" [lp])
+      have hs : RepKLevel (h ++ [.construct klevelEnum "Succ" [lp]]) (.succ l)
           (.ptr (.enum klevelEnum) h.length) :=
         .succ List.getElem?_concat_length (hl.mono e1)
       exact ⟨.sort (.succ l), .sort List.getElem?_concat_length
@@ -48,7 +48,7 @@ private theorem infer_shape_rep_go {c : ScopedCtx} (hc : ScopedCoreFacts c) :
     | .other_Const (cs159 := calls) (ld60 := ld) (ev161 := load) (hc178 := hall) .. =>
       obtain ⟨a, us, rfl, ha, ps, hp, _⟩ := hE.const_of_load ld
       have hsub : ∀ cl ∈ calls, cl ∈ cs := by intro cl hm; rw [hall]; simp [hm]
-      exact declared_type_rep hc (hg.sub hsub) ha (Resolved.ne_unresolved _) hp load
+      exact declared_type_rep hc (hg.sub hsub) ha hE.const_key_ne hp load
     | .other_App (cs207 := first) (cs256 := heads) (cs306 := subs) (ld60 := ld)
         (ev209 := child) (ev258 := norm) (ld252 := ldpi) (ev308 := inst) (hc332 := hall) .. =>
       obtain ⟨f, a, rfl, hf, ha⟩ := hE.app_of_load ld
@@ -65,7 +65,7 @@ private theorem infer_shape_rep_go {c : ScopedCtx} (hc : ScopedCoreFacts c) :
         (by simpa only [ZMod.val_zero, Nat.zero_add] using hB)
         (ha.mono (child.heap_extends.trans norm.heap_extends))
       exact ⟨_, by simpa only [ZMod.val_zero, Nat.zero_add] using hi⟩
-    | .other_Forall (x_ty := ty) (x_ctx := _) (m381 := mctx) (cs367 := first)
+    | .other_Forall (x_ty := ty) (m381 := mctx) (cs367 := first)
         (cs438 := heads) (ld60 := ld) (hm389 := hm) (ev369 := child) (ev440 := norm)
         (ld434 := ldsort) (he477 := hr) (hm476 := hh) (hc489 := hall) .. =>
       obtain ⟨D, B, level, rfl, hD, hB, _⟩ := hE.forallE_of_load ld
