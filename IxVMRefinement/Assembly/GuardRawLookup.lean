@@ -116,7 +116,7 @@ theorem readRoot_sort {blob : Blobs} {root : Root} {i : UInt64} {u : Ixon.Univ}
   have hecx := (L1.memberReader_mk'_eq (readCtx addressTable blob) root.source id root.self).1
   unfold readRoot exprReader Ix.Kernel.Reader.MemberReader.read
   rw [hecx, he]
-  simp [Ix.Kernel.Reader.convExpr, Ix.Kernel.Reader.ECx.level, hu, Expr.eraseMeta]
+  simp [Ix.Kernel.Reader.convExpr, Ix.Kernel.Reader.ECx.level, hu]
   exact ⟨.sort (Ix.Kernel.Reader.convUniv id u), rfl, rfl⟩
 
 /-- A successful dictionary answer checks universe arity and instantiates that raw reading. -/

@@ -71,7 +71,7 @@ private theorem infer_shape_rep_go {c : ScopedCtx} (hc : ScopedCoreFacts c) :
       obtain ⟨D, B, level, rfl, hD, hB, _⟩ := hE.forallE_of_load ld
       subst hm hr hh
       have ectx := Heap.Extends.snoc h (.construct kexprListEnum "Cons" [ty, ctx])
-      have hctx' := types_extend hctx hD
+      have hctx' := ProjAux.types_extend hctx hD
       have hb := Tm.open_body (Ghost.extend_at Γ d D) (Ghost.extend_below Γ d D) (hB.mono ectx)
       have hfsub : ∀ cl ∈ first, cl ∈ cs := by intro cl hm; rw [hall]; simp [hm]
       have hnsub : ∀ cl ∈ heads, cl ∈ cs := by intro cl hm; rw [hall]; simp [hm]
@@ -86,7 +86,7 @@ private theorem infer_shape_rep_go {c : ScopedCtx} (hc : ScopedCoreFacts c) :
       obtain ⟨D, B, level, rfl, hD, hB, hlevel⟩ := hE.lam_of_load ld
       subst hm hr hh
       have ectx := Heap.Extends.snoc h (.construct kexprListEnum "Cons" [ty, ctx])
-      have hctx' := types_extend hctx hD
+      have hctx' := ProjAux.types_extend hctx hD
       have hb := Tm.open_body (Ghost.extend_at Γ d D) (Ghost.extend_below Γ d D) (hB.mono ectx)
       have hsub : ∀ cl ∈ first, cl ∈ cs := by intro cl hm; rw [hall]; simp [hm]
       have hlt : first.length < fuel := by
@@ -107,7 +107,7 @@ private theorem infer_shape_rep_go {c : ScopedCtx} (hc : ScopedCoreFacts c) :
       have hi := SubstAux.gall c.κ .expr_inst1 _ _ _ _ _ inst _ _ (0 : F) rfl
         (bounded_sub hisub hg.2) d Γ B V
         (by simpa only [ZMod.val_zero, Nat.zero_add] using hB) hV
-      simp only [ZMod.val_zero, Nat.zero_add] at hi
+      simp only [ZMod.val_zero] at hi
       exact ih children.length hlt (Nat.le_refl _) (hg.sub hsub)
         (types_mono inst.heap_extends hctx) hi child
 
