@@ -3992,12 +3992,12 @@ private theorem check_inductive_shape_ctors_go (hLevels : IxVM.Consistency.Level
         (m356 := m356) (cs366 := cs_es) (m387 := m387)
         (m400 := m400) (m430 := m430) (cs440 := cs_pa)
         (m476 := m476) (cs486 := cs_rt) (m546 := m546) (cs556 := cs_fu)
-        (m646 := m646) (cs648 := cs_sg) (cs695 := cs_rec) (v708 := v670)
+        (m592 := m_prop) (m716 := m646) (cs718 := cs_sg) (cs765 := cs_rec) (v778 := v670)
         (ev49 := ev_cprj) (ld43 := ld_ctor) (ev154 := ev_aeq)
         (heq261 := heq_nl) (heq289 := heq_np)
         (ev331 := ev_ws) (hm395 := hm387) (ev368 := ev_es) (ev412 := ev_saf)
-        (ev442 := ev_pa) (ev488 := ev_rt) (ev558 := ev_fu) (sg653 := sg_pos)
-        (ev667 := ev_hash) (op792 := op_add) (ev697 := ev_rec) (hc794 := hc) .. =>
+        (ev442 := ev_pa) (ev488 := ev_rt) (ev558 := ev_fu) (ev604 := ev_prop) (sg723 := sg_pos)
+        (ev737 := ev_hash) (op862 := op_add) (ev767 := ev_rec) (hc864 := hc) .. =>
       obtain ⟨c_j, cvCa₀, hc_j, hcA_j, hvs_j, hload_j⟩ := hcload.2 j (by omega)
       have hc_mem : c_j ∈ ctors := List.mem_of_getElem? hc_j
       have hc_nf_lt : c_j.2 < 2147483648 := hnF_lt c_j hc_mem
@@ -4092,7 +4092,7 @@ private theorem check_inductive_shape_ctors_go (hLevels : IxVM.Consistency.Level
             (repKLevel_heapMono₂ e_to_fu hpind)
             (hcty_exact_m34.mono e_from_m34_to_m476).toTm hnt_476 ev_fu
         have e_fu := ev_fu.heap_extends
-        have e_from_m34_to_m546 := e_from_m34_to_m476.trans e_fu
+        have e_from_m34_to_m546 := (e_from_m34_to_m476.trans e_fu).trans ev_prop.heap_extends
         have e_to_pos := e_cprj.trans e_from_m34_to_m546
         have hpos_ext :
             (∀ i < c_j.2,
@@ -4100,7 +4100,7 @@ private theorem check_inductive_shape_ctors_go (hLevels : IxVM.Consistency.Level
                Ix.Kernel.recFieldKind T lps nP nIdx i (cbs.getD (nP + i) default).1 ≠ .unsupported) ∧
               ((cbs.getD (nP + i) default).1.mentionsConst T = false ∨
                RawRecSpine T (rcbs.getD (nP + i) default).1 (cbs.getD (nP + i) default).1)) ∧
-            Heap.Extends m546 m646 := by
+            Heap.Extends m546 m716 := by
           cases sg_pos with
           | other hne _ _ _ => exact absurd rfl hne
           | n0 cs_pos _ ev_pos hc_sg =>
@@ -4263,16 +4263,16 @@ theorem nativeFront_pass (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
   | .Thm (hv526 := hv) .. => injection hv with _ hc _; exact absurd hc (by decide)
   | .Opaque (hv825 := hv) .. => injection hv with _ hc _; exact absurd hc (by decide)
   | .Quot (hv1076 := hv) .. => injection hv with _ hc _; exact absurd hc (by decide)
-  | .Ctor_n0_n0 (hne1936 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Ctor_n0_other (hne1936 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Ctor_other_n0 (hne1936 := hne) ..
-  | .Ctor_other_other (hne1936 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Rec_n0 (hne1936 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Rec_other (hne1936 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Ctor_n0_n0 (hne1984 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Ctor_n0_other (hne1984 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Ctor_other_n0 (hne1984 := hne) ..
+  | .Ctor_other_other (hne1984 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Rec_n0 (hne1984 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Rec_other (hne1984 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
   | .Induct_other_n0 (x_ind_block := xblk) (v1491 := vmod) (cs1503 := cs_mod)
-      (hv1240 := hv_ind) (ev1505 := ev_mod) (hne1635 := hne_mod) (hc1926 := hc) ..
+      (hv1240 := hv_ind) (ev1505 := ev_mod) (hne1635 := hne_mod) (hc1974 := hc) ..
   | .Induct_other_other (x_ind_block := xblk) (v1491 := vmod) (cs1503 := cs_mod)
-      (hv1240 := hv_ind) (ev1505 := ev_mod) (hne1635 := hne_mod) (hc1935 := hc) .. =>
+      (hv1240 := hv_ind) (ev1505 := ev_mod) (hne1635 := hne_mod) (hc1983 := hc) .. =>
     injection hv_ind with _ _ hxs
     injection hxs with _ hxs; injection hxs with _ hxs; injection hxs with _ hxs
     injection hxs with _ hxs; injection hxs with _ hxs; injection hxs with _ hxs

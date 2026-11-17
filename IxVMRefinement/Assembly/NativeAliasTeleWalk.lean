@@ -247,7 +247,7 @@ theorem check_inductive_shape_ctors_param_cells {rc ty nI numLvls blk idx lvl un
     injection op with hv
     rw [sub_zero] at hv
     exact succ_field_ne_zero_bounded hNb hv
-  | .other (x_cty := cty) (m400 := m400) (ev442 := evpa) (hc794 := hc) .. =>
+  | .other (x_cty := cty) (m400 := m400) (ev442 := evpa) (hc864 := hc) .. =>
     have hmem : (⟨"KernelCheck::check_param_agreement", [rc, ty, cty, .field (nP : F)], m400⟩ :
         Call F) ∈ cs := by
       rw [hc]

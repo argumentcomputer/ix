@@ -35,7 +35,7 @@ theorem nativeAtFacts_of_alias_outs {calls : List (Call F)} {t : Ix.Kernel.RoleT
     (hindexed : p₀.nIdx ≠ 0)
     (shape : TableShape.{u} t (fun _ => True) R envT)
     {env : Ix.Kernel.Env .anon}
-    (extends : ∀ ci ∈ envT.consts, ci ∈ env.consts)
+    (prefixExtension : ∀ ci ∈ envT.consts, ci ∈ env.consts)
     (distinct : (env.consts.map (·.name)).Nodup) (hinv : Decl.PrefixInv.{u} E t (some n) env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (haux : Decl.AuxRootSynced env)
@@ -135,7 +135,7 @@ theorem nativeAtFacts_of_alias_outs {calls : List (Call F)} {t : Ix.Kernel.RoleT
   have hshapeT : cvS.name.isProjFnShape = false := by
     rw [hnameS, hTname]
     exact Decl.isProjFnShape_of_isBaseKey (Decl.isBaseKey_keyOf t _)
-  have hliterals := alias_literal_keys_distinct htwf shape extends distinct
+  have hliterals := alias_literal_keys_distinct htwf shape prefixExtension distinct
     (by rw [← hTname]; exact hfreshT)
   rw [← hTname, ← hnameS] at hliterals
   exact Decl.nativeAtFacts_of_alias_stage hp₀ hnd hinv.store.store hcheckT htele hindexed
@@ -152,7 +152,7 @@ theorem nativeAtFacts_of_alias_member {calls : List (Call F)} {t : Ix.Kernel.Rol
     (hnat : NativeRouteAt calls B) (hblk : BlockReadings t E₀ B ind blk)
     (halias : FormerAtAlias t E₀ B cb ind)
     (shape : TableShape.{u} t (fun _ => True) R envT)
-    (extends : ∀ ci ∈ envT.consts, ci ∈ env.consts)
+    (prefixExtension : ∀ ci ∈ envT.consts, ci ∈ env.consts)
     (distinct : (env.consts.map (·.name)).Nodup) (hn : ind.indices.toNat ≠ 0)
     (hinv : Decl.PrefixInv.{u} E t (some n) env) (hstored : Decl.UsedRefsStored t env cb)
     (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
@@ -166,7 +166,7 @@ theorem nativeAtFacts_of_alias_member {calls : List (Call F)} {t : Ix.Kernel.Rol
     parameters, outputs, _, zero, unused⟩ := aliasOuts_of_member_checked ht hS hst hrec hchk
       hnat hblk recognised indices hn hinv hstored hP hkeys hfresh hfree hcov haux
   obtain ⟨env₂, fam, installed⟩ := nativeAtFacts_of_alias_outs ht hS hst hrec hchk hblk
-    recognised constructorNames (by rwa [indices]) shape extends distinct hinv hfresh haux
+    recognised constructorNames (by rwa [indices]) shape prefixExtension distinct hinv hfresh haux
     checked tele parameters zero named count outputs unused
   exact ⟨p₀, env₂, fam, installed⟩
 

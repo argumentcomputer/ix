@@ -247,10 +247,10 @@ theorem native_ctor_slots {b : Bytes.Address} {n levels params : Nat} {i : F}
     | .other (m34 := after) (p41 := ptr) (cs47 := loadCalls)
         (x_c_nlvls := cnl) (x_cty := cty) (x_c_block := cblk)
         (x_c_ind_idx := cmi) (x_c_cidx := csl) (x_c_np := cnp) (x_c_nf := cnf)
-        (x_c_unsafe := cus) (m655 := nextHeap) (cs695 := nextCalls) (v708 := nextIndex)
+        (x_c_unsafe := cus) (m725 := nextHeap) (cs765 := nextCalls) (v778 := nextIndex)
         (ev49 := loaded) (ld43 := tag) (heq233 := slotChecked) (heq261 := levelsChecked)
-        (heq289 := paramsChecked) (op792 := addition) (ev697 := nextRun)
-        (hc794 := allCalls) .. =>
+        (heq289 := paramsChecked) (op862 := addition) (ev767 := nextRun)
+        (hc864 := allCalls) .. =>
       by_cases hjk : j = k
       · subst hjk
         exact ⟨blockArg, ptr, h, after, loadCalls, cnl, cty, cblk, cmi, csl, cnp, cnf, cus,
@@ -432,13 +432,13 @@ theorem ctorSlots_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore 
       (x_ind_block := xblk) (x_ind_idx := xidx)
       (m1283 := m1283) (m1333 := m1333) (m1354 := m1354) (m1376 := m1376)
       (m1396 := m1396) (m1427 := m1427) (m1440 := m1440) (m1470 := m1470)
-      (m1492 := m1492) (m1701 := m1653) (m1745 := m1688) (m1793 := m1736)
-      (cs1816 := cs_mc)
+      (m1492 := m1492) (m1749 := m1653) (m1793 := m1688) (m1841 := m1736)
+      (cs1864 := cs_mc)
       (ev14 := ev_iu) (hv1240 := hv_ind) (ev1295 := ev_ws)
       (hm1362 := hm1354) (hm1384 := hm1376) (ev1343 := ev_emb)
       (hm1435 := hm1427) (ev1408 := ev_es) (ev1452 := ev_saf)
-      (ev1482 := ev_mk) (ev1505 := ev_mod) (ev1663 := ev_fa) (ev1711 := ev_tele)
-      (hm1801 := hm1736) (ev1757 := ev_rsl) (ev1818 := ev_mc) (hc1926 := hc) .. =>
+      (ev1482 := ev_mk) (ev1505 := ev_mod) (ev1663 := ev_fa) (ev1711 := ev_lead) (ev1759 := ev_tele)
+      (hm1849 := hm1736) (ev1805 := ev_rsl) (ev1866 := ev_mc) (hc1974 := hc) .. =>
     injection hv_ind with _ _ hargs
     injection hargs with hnl hargs; injection hargs with hty hargs
     injection hargs with hnp' hargs; injection hargs with hni' hargs

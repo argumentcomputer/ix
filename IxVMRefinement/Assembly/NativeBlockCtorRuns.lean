@@ -147,12 +147,12 @@ theorem native_ctor_staged_runs (hLevels : IxVM.Consistency.Levels)
         (m356 := m356) (cs366 := cs_es) (m387 := m387)
         (m400 := m400) (m430 := m430) (cs440 := cs_pa)
         (m476 := m476) (cs486 := cs_rt) (m546 := m546) (cs556 := cs_fu)
-        (m646 := m646) (m655 := m655) (cs648 := cs_sg) (cs695 := cs_rec) (v708 := v670)
+        (m592 := m_prop) (m716 := m646) (m725 := m655) (cs718 := cs_sg) (cs765 := cs_rec) (v778 := v670)
         (ev49 := ev_cprj) (ld43 := ld_ctor) (ev154 := ev_aeq)
         (heq261 := heq_nl) (heq289 := heq_np)
         (ev331 := ev_ws) (hm395 := hm387) (ev368 := ev_es) (ev412 := ev_saf)
-        (ev442 := ev_pa) (ev488 := ev_rt) (ev558 := ev_fu) (sg653 := sg_pos)
-        (op792 := op_add) (ev697 := ev_rec) (hc794 := hc) .. =>
+        (ev442 := ev_pa) (ev488 := ev_rt) (ev558 := ev_fu) (ev604 := ev_prop) (sg723 := sg_pos)
+        (op862 := op_add) (ev767 := ev_rec) (hc864 := hc) .. =>
       have indexEq := evalBinOp_add_nat j 1 op_add
       subst v670
       have recurseMember : (⟨"KernelCheck::check_inductive_shape_ctors",
@@ -267,7 +267,7 @@ theorem native_ctor_staged_runs (hLevels : IxVM.Consistency.Levels)
             (repKLevel_heapMono₂ e_to_fu hpind)
             (hcty_exact_m34.mono e_from_m34_to_m476).toTm hnt_476 ev_fu
         have e_fu := ev_fu.heap_extends
-        have e_from_m34_to_m546 := e_from_m34_to_m476.trans e_fu
+        have e_from_m34_to_m546 := (e_from_m34_to_m476.trans e_fu).trans ev_prop.heap_extends
         have e_to_pos := e_cprj.trans e_from_m34_to_m546
         have hpos_ext :
             (∀ i < c_j.2,
@@ -276,7 +276,7 @@ theorem native_ctor_staged_runs (hLevels : IxVM.Consistency.Levels)
                 .unsupported) ∧
               ((cbs.getD (nP + i) default).1.mentionsConst T = false ∨
                RawRecSpine T (rcbs.getD (nP + i) default).1 (cbs.getD (nP + i) default).1)) ∧
-            Heap.Extends m546 m646 := by
+            Heap.Extends m546 m716 := by
           cases sg_pos with
           | other hne _ _ _ => exact absurd rfl hne
           | n0 cs_pos _ ev_pos hc_sg =>
