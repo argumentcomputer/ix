@@ -590,8 +590,6 @@ private theorem raw_lower_go (κ : _root_.Address → KKey) :
           rw [SubstAux.val_succ32 cutoffSmall] at hb
           have cut : cutoff.val + 1 - shift.val = cutoff.val - shift.val + 1 := by omega
           rw [cut] at hb
-        have cut : cutoff.val + 1 - shift.val = cutoff.val - shift.val + 1 := by omega
-        rw [cut] at hb
           subst result heap
           refine ⟨instShift V' 0 B', .letE (bp := bodyOut) (by simp)
             (ht.mono (e2.heap_extends.trans (e3.heap_extends.trans (Heap.Extends.snoc _ _))))
