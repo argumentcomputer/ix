@@ -96,7 +96,7 @@ def FormerTeleConv : Prop :=
             m106 ++ [.construct Core.kexprListEnum "Nil" []]⟩ : Call F) :: (cs153 ++
         ((⟨"KernelDefEq::k_is_def_eq",
             [rc, ty, tele, .ptr (.enum Core.kexprListEnum) m143.length],
-            m143 ++ [.construct Core.kexprListEnum "Nil" []]⟩ : Call F) :: csD))))))))
+            m143 ++ [.construct Core.kexprListEnum "Nil" []]⟩ : Call F) :: csD)))))))))
 
 /-! ## The former stage's input, with its parameter clause at a family with a constructor -/
 
@@ -165,7 +165,7 @@ theorem formerAliasTeleC_of_member {env : Ix.Kernel.Env .anon} (hconv : FormerTe
   obtain ⟨ty', hcT', -, hcheck, -⟩ := formerChecked_of_member ht hst hinv hblock hmuts
     hproj hchk htyE hty_lbb hty_def hfv hstored hfresh hfree
   have hty'eq : ty'₀ = ty' := Option.some.inj (hcT₀.symm.trans hcT')
-  subst hty'eq
+  subst ty'₀
   -- the member's check, navigated as `formerChecked_of_member` does
   have hchkA := mutsMemberAt_checkedAt (mc := .indc ind) hbound hchk (by rfl)
   obtain ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk, hrc_pre, hrc_m, ha_pre,
@@ -218,8 +218,8 @@ theorem formerAliasTeleC_of_member {env : Ix.Kernel.Env .anon} (hconv : FormerTe
   obtain ⟨ty'', hcT'', hannT, htmT⟩ :=
     LoadedReads.annotation_canon_exact ht hlvls (LoadedReads.blockSelf_key t B #[.indc ind])
       hagree rty built planned trace htyE hty_lbb hty_def
-  have hty'' : ty'' = ty'₀ := Option.some.inj (hcT''.symm.trans hcT')
-  subst hty''
+  have hty'' : ty'' = ty' := Option.some.inj (hcT''.symm.trans hcT')
+  subst ty''
   obtain ⟨prelude⟩ := Decl.native_prelude_calls ev_chk
   have used : ∀ x, L1.RefUsed cb.refs.toList cb.sharing.toList ind.typ x →
       ∃ ci, env.find? (Core.keyOf t x) = some ci := by
@@ -269,7 +269,7 @@ theorem formerAliasTeleC_of_member {env : Ix.Kernel.Env .anon} (hconv : FormerTe
     intro a' hp _
     obtain ⟨ci, hci⟩ := used _ (rty.projIn_used a' hp)
     exact Core.Ctx.stored_projPermitted_of_find (c := ⟨E, env, t, some n⟩) hci
-  have htmP : Decl.TmCExact κP m_chk (Core.posOf (List.range ind.lvls.toNat) ty'₀) tyPtr :=
+  have htmP : Decl.TmCExact κP m_chk (Core.posOf (List.range ind.lvls.toNat) ty') tyPtr :=
     TmCExact.rekey htmT hagreeP hpermP
   rw [Decl.posOf_range] at htmP
   -- the native dispatch and the shape stage
@@ -360,7 +360,7 @@ theorem formerAliasTeleC_of_member {env : Ix.Kernel.Env .anon} (hconv : FormerTe
         (Decl.typesRep_alloc_nil κP (fun _ => default) m106) hef hlf
         (hgS cs153 (fun x hx => hteleSub x (by rw [hcT]; simp [hx]))) evSort
       -- convertible with the declared former's annotated type
-      have hdq : Ix.Kernel.Rules.DefEq env 0 ty'₀ E' :=
+      have hdq : Ix.Kernel.Rules.DefEq env 0 ty' E' :=
         Decl.scoped_core_defeq (c := cP) (hrcP.mono (e_m46.trans e_dq))
           (Decl.typesRep_alloc_nil κP (fun _ => default) m143) (Decl.ghostScoped_zero _) hef hlf
           (hgS csD (fun x hx => hteleSub x (by rw [hcT]; simp [hx]))) evDq
