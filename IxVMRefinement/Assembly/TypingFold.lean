@@ -252,11 +252,8 @@ theorem toy_steps : toyFold.Steps [7] [2, 0, 1] := by
 
 /-- The start state of the toy keeps the invariant. -/
 theorem toy_start : toyFold.Inv [7] := by
-  refine ⟨List.nodup_cons.mpr ⟨fun h => nomatch h, List.nodup_nil⟩, ?_⟩
-  intro a ha x hx
-  have h7 : a = 7 := List.mem_singleton.mp ha
-  rw [h7] at hx
-  exact nomatch hx
+  have hclosed : ∀ a ∈ [7], ∀ x ∈ toyNeeds a, x ∈ [7] := by decide
+  exact ⟨List.nodup_cons.mpr ⟨(fun h => nomatch h), List.nodup_nil⟩, hclosed⟩
 
 /-- The toy units need only what the start stores, themselves, or a unit of smaller rank. -/
 theorem toy_needs : toyFold.NeedsEarlier [7] [2, 0, 1] := by
