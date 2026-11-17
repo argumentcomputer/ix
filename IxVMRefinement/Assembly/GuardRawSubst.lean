@@ -329,7 +329,7 @@ private theorem raw_lift_go (κ : _root_.Address → KKey) :
           shiftBound (by intro impossible; cases impossible) ⟨_, body.mono e1.heap_extends⟩ e2
         rw [SubstAux.val_succ32 cutoffSmall] at hb
         subst result heap
-        refine ⟨_, .lam (bp := bodyOut) (by simp) (hd.mono (e2.heap_extends.trans (Heap.Extends.snoc _ _))) ?_
+        refine ⟨.lam D' B' (bmeta u), .lam (bp := bodyOut) (by simp) (hd.mono (e2.heap_extends.trans (Heap.Extends.snoc _ _))) ?_
           (level.mono (e1.heap_extends.trans (e2.heap_extends.trans (Heap.Extends.snoc _ _))))⟩
         simpa only [Nat.add_right_comm] using hb.mono (Heap.Extends.snoc _ _)
       | .Forall (v379 := bodyOut) (cs390 := first) (cs426 := second) (ld12 := loaded) (he374 := result) (hm373 := heap)
@@ -346,7 +346,7 @@ private theorem raw_lift_go (κ : _root_.Address → KKey) :
           shiftBound (by intro impossible; cases impossible) ⟨_, body.mono e1.heap_extends⟩ e2
         rw [SubstAux.val_succ32 cutoffSmall] at hb
         subst result heap
-        refine ⟨_, .forallE (bp := bodyOut) (by simp) (hd.mono (e2.heap_extends.trans (Heap.Extends.snoc _ _))) ?_
+        refine ⟨.forallE D' B' (bmeta u), .forallE (bp := bodyOut) (by simp) (hd.mono (e2.heap_extends.trans (Heap.Extends.snoc _ _))) ?_
           (level.mono (e1.heap_extends.trans (e2.heap_extends.trans (Heap.Extends.snoc _ _))))⟩
         simpa only [Nat.add_right_comm] using hb.mono (Heap.Extends.snoc _ _)
       | .Let (ld12 := loaded) (ev496 := helper) (hc537 := events) .. =>
@@ -370,7 +370,7 @@ private theorem raw_lift_go (κ : _root_.Address → KKey) :
             ⟨_, body.mono (e1.heap_extends.trans e2.heap_extends)⟩ e3
           rw [SubstAux.val_succ32 cutoffSmall] at hb
           subst result heap
-          refine ⟨_, .letE (bp := bodyOut) (by simp)
+          refine ⟨instShift V' 0 B', .letE (bp := bodyOut) (by simp)
             (ht.mono (e2.heap_extends.trans (e3.heap_extends.trans (Heap.Extends.snoc _ _))))
             (hv.mono (e3.heap_extends.trans (Heap.Extends.snoc _ _))) ?_⟩
           simpa only [Nat.add_right_comm] using hb.mono (Heap.Extends.snoc _ _)
