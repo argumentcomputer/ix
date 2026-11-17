@@ -27,6 +27,8 @@ reading, and shows that every load of the record represents it.
 * `reloadsAs_defn`, `reloadsAs_dprj`: hence the canonical constant reloads (`Decl.ReloadsAs`)
   at every store that holds the record (for a member, also its block) and over whose blobs the
   record reads as it did.
+* `get_ci_axio_canon`, `reloadsAs_axio`: the same for an axiom record, whose type is converted
+  at root `0`.
 -/
 
 set_option maxHeartbeats 1600000
@@ -192,6 +194,14 @@ theorem recordOf_inv {E : Ixon.Env} {a : _root_.Address} {c : Ixon.Constant}
       rw [hd] at h'
       have h'' : some c' = some c := h'
       rw [Option.some.inj h'']
+
+/-- A level count and a represented type are a represented constant value, under any key. -/
+theorem valRep_range {κ : _root_.Address → Core.KKey} {h : Heap F} {n : Nat}
+    {tyPtr : SourceValue F} {key : Ix.Kernel.Key .anon} {ty' : Ix.Kernel.Expr .anon}
+    (hn : n < 4294967296) (hty : Core.TmC κ h (Core.posOf (List.range n) ty') tyPtr) :
+    Core.ValRep κ h (.field (n : F)) tyPtr ⟨key, List.range n, ty'⟩ := by
+  have hlen : n = (List.range n).length := by simp
+  exact ⟨congrArg (fun m : Nat => Value.field (m : F)) hlen, by simpa using hn, by simp, hty⟩
 
 /-- **A converted definition value represents a constant whose type and value its two heap
 terms represent**, under any keying and every hint. -/
@@ -564,5 +574,85 @@ theorem reloadsAs_member_cons (ht : t.check = .ok ()) {E E' : Ixon.Env}
     hty_lbb hty_def hval_lbb hval_def (usedRefsStored_cons cn hstored) hcn'
 
 end Member
+
+/-! ## An axiom record -/
+
+section Axio
+
+variable {t : Ix.Kernel.RoleTable}
+
+/-- **Every load of a held axiom record represents the axiom with the canonical annotation of
+its read type.** The store `E` holds the record `c` at the address (exact decoding); `ty₀` is
+the reading of its type over `E`'s blobs, well scoped. Then for a `get_ci` at the address in
+calls that hash no collision with `E`, the canonical annotation of the reading (at root `0`)
+is defined and the returned pointer represents the axiom of that type: under the table's
+keying, and under the keying of any prefix that stores the references the record uses. -/
+theorem get_ci_axio_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Call F)}
+    (hnc : ¬ View.HashedCollision { env := E } [] cs) {a : Aiur.Library.Bytes.Address}
+    {addr ptr : SourceValue F} {h h' : Heap F}
+    (ha : Aiur.Library.Bytes.RepAddressRef Core.addrTy h a addr)
+    (ev : ObsFn Core.W "Ingress::get_ci" [addr] h ptr h' cs) {c : Ixon.Constant}
+    {ax : Ixon.Axiom} (hrec : recordOf E (Core.ixAddr a) = some c)
+    (hinfo : c.info = .axio ax) {ty₀ : Ix.Kernel.Expr .anon}
+    (hty : (exprReader t (fun x => E.blobs.get? x) c id (fun _ => none)).read ax.typ = .ok ty₀)
+    (hty_lbb : ty₀.looseBVarsBounded 0 = true)
+    (hty_def : ty₀.allLevelParamsDefined (List.range ax.lvls.toNat) = true) :
+    ∃ ty' : Ix.Kernel.Expr .anon,
+      canonAnn c (List.range ax.lvls.toNat) 0 ax.typ ty₀ = some ty' ∧ Annotates ty' ty₀ ∧
+      Core.CIPtrRep (Core.keyOf t) h' ptr
+        (.axiomInfo ⟨keyOf t (Core.ixAddr a), List.range ax.lvls.toNat, ty'⟩) ∧
+      (∀ (env : Ix.Kernel.Env .anon) (lim : Option Nat), Decl.UsedRefsStored t env c →
+        Core.CIPtrRep (Core.Ctx.stored ⟨E, env, t, lim⟩).κ h' ptr
+          (.axiomInfo ⟨keyOf t (Core.ixAddr a), List.range ax.lvls.toNat, ty'⟩)) := by
+  obtain ⟨rawBytes, c', hh, haddr, hex, hres⟩ := L1.get_ci_trace_spec ha ev
+  obtain ⟨lc, hget, hdec⟩ := recordOf_inv hrec
+  have hb : rawBytes = lc.rawBytes := Core.load_escape hget hnc rawBytes hh haddr
+  have hc : c = c' := by
+    rw [hb, hdec] at hex
+    exact Except.ok.inj hex
+  subst hc
+  unfold L1.GetCITraceResult at hres
+  rw [hinfo] at hres
+  obtain ⟨blobs, tree, v, hhp, built, hld, htr⟩ := hres
+  obtain ⟨hnlvls, tyPtr, plan, hv, rty, hp, hl⟩ := htr
+  subst hv
+  have hagree := blobReadAgreement_of_noCollision hnc hhp t
+  obtain ⟨ty', hcT, hannT, htmT⟩ :=
+    annotation_canon ht hnlvls hagree rty built hp hl hty hty_lbb hty_def
+  refine ⟨ty', hcT, hannT, ⟨_, hld, .axio (valRep_range hnlvls htmT)⟩,
+    fun env lim hstored => ⟨_, hld, .axio (valRep_range hnlvls ?_)⟩⟩
+  have heT : ∀ i, i ∈ exprRefIdxs ax.typ → i ∈ usedRefIdxs c := by
+    intro i hi
+    unfold usedRefIdxs
+    rw [hinfo]
+    exact List.mem_append_right _ hi
+  exact Decl.tmC_stored_of_usedRefs (E₀ := E) (lim := lim) rty heT hstored htmT
+
+/-- **The axiom with the canonical annotation of its read type reloads** at every store `E'`
+that holds the record `c` at `a` (exact decoding) and over whose blobs the record's type
+reads as `ty₀`, under the keying of any prefix `env` that stores the references the record
+uses. -/
+theorem reloadsAs_axio (ht : t.check = .ok ()) {E' : Ixon.Env} {env : Ix.Kernel.Env .anon}
+    {a : _root_.Address} {c : Ixon.Constant} {ax : Ixon.Axiom}
+    (hrec : recordOf E' a = some c) (hinfo : c.info = .axio ax)
+    {ty₀ ty' : Ix.Kernel.Expr .anon}
+    (hty : (exprReader t (fun x => E'.blobs.get? x) c id (fun _ => none)).read ax.typ =
+      .ok ty₀)
+    (hty_lbb : ty₀.looseBVarsBounded 0 = true)
+    (hty_def : ty₀.allLevelParamsDefined (List.range ax.lvls.toNat) = true)
+    (hstored : Decl.UsedRefsStored t env c)
+    (hcn : canonAnn c (List.range ax.lvls.toNat) 0 ax.typ ty₀ = some ty') :
+    Decl.ReloadsAs E' t env (.axiomInfo ⟨keyOf t a, List.range ax.lvls.toNat, ty'⟩) := by
+  intro addr ptr h h' cs a' ev hgood ha hkey
+  have hk : Core.keyOf t (Core.ixAddr a') = Core.keyOf t a := hkey
+  have haddr : Core.ixAddr a' = a := Assembly.keyOf_injective ht hk
+  subst haddr
+  obtain ⟨ty'', hcT', -, -, hrep⟩ :=
+    get_ci_axio_canon ht hgood.1 ha ev hrec hinfo hty hty_lbb hty_def
+  have e1 : ty'' = ty' := Option.some.inj (hcT'.symm.trans hcn)
+  subst e1
+  exact hrep env none hstored
+
+end Axio
 
 end IxVM.Refinement.LoadedReads
