@@ -1,5 +1,6 @@
 import IxVMRefinement.Assembly.NativeBlockFormer
 import IxVMRefinement.Assembly.NativeBlockCtorRuns
+import IxVMRefinement.Assembly.NativeCtorReads
 
 /-! # The constructor loads of a native block at the constructor stage's keying
 
@@ -174,6 +175,56 @@ theorem ctor_load_canon (ht : t.check = .ok ()) {E : Ixon.Env} {cs : List (Call 
       · exact hrecur _ hr
     · exact (usedOf _ (rty.projIn_used a hp)).2
 
+/-- **A constructor the loop scoped has a closed reading**: the loop loads the constructor of
+the slot and validates the scope of its type (`validate_expr_well_scoped` at the record's level
+count), so the reading of the type has no loose variable and only the declared level
+parameters. -/
+theorem ctor_scope_closed (ht : t.check = .ok ()) {c : Core.Ctx} {cs_root : List (Call F)}
+    (hgood : Core.Good c cs_root) {block : Aiur.Library.Bytes.Address} {i j safety : F}
+    {params levels : Nat}
+    (checked : Assembly.CtorScopeRead block i j safety params levels cs_root)
+    {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {ind : Ixon.Inductive} {ct : Ixon.Constructor}
+    (hblock : recordOf c.E (Core.ixAddr block) = some cb) (hmuts : cb.info = .muts ms)
+    (hmem : ms[i.val]? = some (.indc ind)) (hct : ind.ctors[j.val]? = some ct)
+    {cty : Ix.Kernel.Expr .anon}
+    (hty : (exprReader t (fun x => c.E.blobs.get? x) cb id
+      (blockSelf t (Core.ixAddr block) ms)).read ct.typ = .ok cty) :
+    cty.looseBVarsBounded 0 = true ∧
+      cty.allLevelParamsDefined (List.range ct.lvls.toNat) = true := by
+  have hg := hgood.sub checked.loadSubset
+  obtain ⟨-, -, -, blkBytes, cb', ms', ind', ct', blobs, v, hhB, haB, hexB, -, hcb, hms, hcts,
+    hhp, hld, hraw, -⟩ := L1.get_ci_cprj_origin_spec hg.2 checked.blockRep checked.loaded
+  obtain ⟨lcB, hgetB, hdecB⟩ := recordOf_inv hblock
+  have hbB : blkBytes = lcB.rawBytes := Core.load_escape hgetB hg.1 blkBytes hhB haB
+  have hcB : cb = cb' := by
+    rw [hbB, hdecB] at hexB
+    exact Except.ok.inj hexB
+  subst hcB
+  have hmsEq : ms = ms' := Ixon.ConstantInfo.muts.inj (hmuts.symm.trans hcb)
+  subst hmsEq
+  have hms' : ms[i.val]? = some (.indc ind') := by
+    rw [← Array.getElem?_toList]
+    exact hms
+  have hiEq : ind = ind' := Ixon.MutConst.indc.inj (Option.some.inj (hmem.symm.trans hms'))
+  subst hiEq
+  have hct' : ind.ctors[j.val]? = some ct' := by
+    rw [← Array.getElem?_toList]
+    exact hcts
+  have hctEq : ct = ct' := Option.some.inj (hct.symm.trans hct')
+  subst hctEq
+  obtain ⟨hlvls, -, -, -, -, tyPtr, blkPtr, b', -, -, hv, rty⟩ := hraw
+  subst hv
+  have hval := Except.ok.inj (hld.symm.trans checked.tag)
+  simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at hval
+  obtain ⟨hnl, hty_eq, -⟩ := hval
+  have hrun := checked.scopeRun
+  have hmemb := checked.scopeMember
+  rw [← hnl, ← hty_eq] at hrun hmemb
+  obtain ⟨-, hlbb, hdef⟩ := Assembly.validate_expr_well_scoped_spec
+    (cx := readCtx t (fun x => c.E.blobs.get? x)) (self := blockSelf t (Core.ixAddr block) ms)
+    hgood.2 hlvls rty checked.extended hty hrun hmemb
+  exact ⟨hlbb, hdef⟩
+
 end
 
 end IxVM.Refinement.LoadedReads
@@ -215,7 +266,7 @@ theorem stagedCtorLoads_of_block {t : Ix.Kernel.RoleTable} (ht : t.check = .ok (
     ∃ (ctorsA : List (Ix.Kernel.ConstantVal .anon × Nat))
       (rawTypes : List (Ix.Kernel.Expr .anon)),
       ∀ κ : _root_.Address → Core.KKey,
-        (∀ i ∈ LoadedReads.usedRefIdxs cb, ∀ x, cb.refs.toList[i]? = some x →
+        (∀ i ∈ usedRefIdxs cb, ∀ x, cb.refs.toList[i]? = some x →
           κ x = Core.keyOf t x ∧ Core.ProjPermitted κ x) →
         (∀ x ∈ L1.blockRecurAddrs (Core.ixAddr b₀) (#[.indc ind] : Array Ixon.MutConst).toList,
           κ x = Core.keyOf t x) →
