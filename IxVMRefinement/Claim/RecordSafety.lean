@@ -33,9 +33,9 @@ theorem defn_is_unsafe_ci_safe_spec {d : Ixon.Definition} {xk xs r : SourceValue
   rw [hk', hs'] at ev
   have hf : L1.defnIsUnsafeCI d = false := by
     cases hk : d.kind <;> cases hs : d.safety <;>
-      simp_all [Ix.Kernel.Reader.safetyDecline, Ix.Kernel.Reader.safetyDeclineOf, L1.defnIsUnsafeCI]
+      simp_all [Ix.Kernel.Reader.safetyDecline, Ix.Kernel.Reader.safetyDeclineOf, L1.defnIsUnsafeCI, beq_iff_eq]
   obtain ⟨hr, hh⟩ := L1.defn_is_unsafe_ci_spec ev
-  exact ⟨by simpa only [hf, L1.repBoolField] using hr, hh⟩
+  exact ⟨by simpa [hf, L1.repBoolField] using hr, hh⟩
 
 /-- A list of safe constructors reports zero, without changing the heap. -/
 theorem ctors_unsafe_safe_spec (ctors : List Ixon.Constructor) :
@@ -123,7 +123,8 @@ private theorem mut_unsafe_safe_spec {mc : Ixon.MutConst} {m rest ms r : SourceV
       simp only [List.cons.injEq, and_true] at h1
       injection h1 with _ _ hargs
       simp only [List.cons.injEq] at hargs
-      have hu0 : u = .field 0 := by simpa [RepBool, hl] using hu
+      have hsafety : rc.isUnsafe = false := hl
+      have hu0 : u = .field 0 := by simpa [RepBool, hsafety] using hu
       exact ⟨hr.trans (hargs.2.1.trans hu0), hh⟩
 
 /-- A block whose members are all in logic reports zero unsafe status. -/
@@ -172,7 +173,9 @@ theorem record_owner_spec {a : _root_.Address} {c : Ixon.Constant}
     (ev : ObsFn Obs.W "KernelClaim::record_owner" [ap, cp] h r h' calls) :
     h' = h ∧ S0.addr h r (Ix.Cert.ownerOf a c) := by
   match Obs.«KernelClaim::record_owner».obs ev with
-  | .DPrj (hv15 := hv) (he95 := rfl) (he96 := rfl) .. =>
+  | .DPrj (hv15 := hv) (he95 := hr) (he96 := hh) .. =>
+    subst hh
+    subst hr
     rw [hv] at hc
     have hi := repConstant_info_of_shape hc
     cases hinfo : c.info <;> rw [hinfo] at hi
@@ -183,7 +186,9 @@ theorem record_owner_spec {a : _root_.Address} {c : Ixon.Constant}
       rcases hpv with ⟨_, hb⟩
       exact ⟨rfl, by simpa only [Ix.Cert.ownerOf, hinfo, hb] using hab⟩
     all_goals obtain ⟨_, bad, _⟩ := hi; simp at bad
-  | .IPrj (hv15 := hv) (he139 := rfl) (he140 := rfl) .. =>
+  | .IPrj (hv15 := hv) (he139 := hr) (he140 := hh) .. =>
+    subst hh
+    subst hr
     rw [hv] at hc
     have hi := repConstant_info_of_shape hc
     cases hinfo : c.info <;> rw [hinfo] at hi
@@ -194,7 +199,9 @@ theorem record_owner_spec {a : _root_.Address} {c : Ixon.Constant}
       rcases hpv with ⟨_, hb⟩
       exact ⟨rfl, by simpa only [Ix.Cert.ownerOf, hinfo, hb] using hab⟩
     all_goals obtain ⟨_, bad, _⟩ := hi; simp at bad
-  | .CPrj (hv15 := hv) (he189 := rfl) (he190 := rfl) .. =>
+  | .CPrj (hv15 := hv) (he189 := hr) (he190 := hh) .. =>
+    subst hh
+    subst hr
     rw [hv] at hc
     have hi := repConstant_info_of_shape hc
     cases hinfo : c.info <;> rw [hinfo] at hi
@@ -205,7 +212,9 @@ theorem record_owner_spec {a : _root_.Address} {c : Ixon.Constant}
       rcases hpv with ⟨_, _, hb⟩
       exact ⟨rfl, by simpa only [Ix.Cert.ownerOf, hinfo, hb] using hab⟩
     all_goals obtain ⟨_, bad, _⟩ := hi; simp at bad
-  | .RPrj (hv15 := hv) (he233 := rfl) (he234 := rfl) .. =>
+  | .RPrj (hv15 := hv) (he233 := hr) (he234 := hh) .. =>
+    subst hh
+    subst hr
     rw [hv] at hc
     have hi := repConstant_info_of_shape hc
     cases hinfo : c.info <;> rw [hinfo] at hi
@@ -217,7 +226,9 @@ theorem record_owner_spec {a : _root_.Address} {c : Ixon.Constant}
       exact ⟨rfl, by simpa only [Ix.Cert.ownerOf, hinfo, hb] using hab⟩
     all_goals obtain ⟨_, bad, _⟩ := hi; simp at bad
   | .other (hv15 := hv) (hne99 := hnd) (hne143 := hni) (hne193 := hnc) (hne237 := hnr)
-      (he242 := rfl) (he243 := rfl) .. =>
+      (he242 := hr) (he243 := hh) .. =>
+    subst hh
+    subst hr
     rw [hv] at hc
     have hi := repConstant_info_of_shape hc
     cases hinfo : c.info <;> rw [hinfo] at hi
