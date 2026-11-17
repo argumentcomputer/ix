@@ -81,7 +81,9 @@ theorem RawConvExpr.canonical_raw {κ : _root_.Address → Core.KKey} [∀ a, Co
   have canonical : canonicalRawAnnotation src ps root e reader = some raw := by
     unfold canonicalRawAnnotation
     rw [canonicalRawTree_of_built built, planned]
-    simp only [Option.bind_some, traced]
+    change (applyRawBinderTrace (fun level => Core.bmeta (invPosLevel ps level)) reader plan).bind
+      (fun result => some result.1) = some raw
+    rw [traced]
     rfl
   exact ⟨raw, semantic, canonical, annotates, represented, applyRawBinderTrace_eraseMeta reader traced⟩
 
