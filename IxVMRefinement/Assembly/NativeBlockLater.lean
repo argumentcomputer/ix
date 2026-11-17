@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.NativeBlockCtorRuns
+import IxVMRefinement.Decl.NativeRec
 import IxC.Kernel.Verify.Inductives.StructBody
 
 /-! # The later-use condition of a native constructor
@@ -25,31 +26,6 @@ open Ix.Kernel (ConstantInfo ConstantVal Expr Level LevelParam)
 
 set_option maxHeartbeats 1600000
 set_option linter.unusedVariables false
-
-/-- `noProjAt` is kept by peeling leading binders. -/
-theorem noProjAt_stripPis {T : KKey} :
-    ∀ (n : Nat) {e : KExpr} {bs : List (KExpr × Ix.Kernel.BinderMeta)} {body : KExpr},
-      e.stripPis n = some (bs, body) → noProjAt T e = true → noProjAt T body = true
-  | 0, e, bs, body, h, hn => by
-    simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at h
-    obtain ⟨-, rfl⟩ := h
-    exact hn
-  | n + 1, .forallE ty b m, bs, body, h, hn => by
-    simp only [Expr.stripPis] at h
-    cases hb : b.stripPis n with
-    | none => rw [hb] at h; cases h
-    | some p =>
-      rw [hb] at h
-      obtain ⟨bs', body'⟩ := p
-      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
-      obtain ⟨-, rfl⟩ := h
-      simp only [noProjAt, Bool.and_eq_true] at hn
-      exact noProjAt_stripPis n hb hn.2
-  | n + 1, .bvar _, _, _, h, _ | n + 1, .fvar _ _, _, _, h, _ | n + 1, .sort _, _, _, h, _
-  | n + 1, .const _ _, _, _, h, _ | n + 1, .app _ _, _, _, h, _ | n + 1, .lam _ _ _, _, _, h, _
-  | n + 1, .letE _ _ _ _, _, _, h, _ | n + 1, .lit _, _, _, h, _
-  | n + 1, .proj _ _ _, _, _, h, _ => by
-    simp [Expr.stripPis] at h
 
 /-- **The raw scan's later-use assertion.** On a run of `check_positivity_fields` over a heap
 term that represents `E` (with its raw syntax `R`) and mentions no projection at `T`, for each of
@@ -191,7 +167,7 @@ theorem check_positivity_later_spec {c : ScopedCtx} [c.TableKeyed] {indIndex : F
         (Bytes.repAddressRef_heapMono₂ addrTy ext_m2 hblk) hnil
     have hg_fields : Good c.toCtx cs_fields := hgood.sub (fun x hx => by simp [hc, hx])
     have hs_fields : RawRecordCoverage c cs_fields := hscope.sub (fun x hx => by simp [hc, hx])
-    have hnp_crest := noProjAt_stripPis (T := T) nP hstP hnp
+    have hnp_crest := (noProjAt_stripPis (T := T) hstP hnp).2
     have hgo := check_positivity_fields_later_go hpeer hlf nF hstRF hstF hg_fields hs_fields
       hcrest₀ hnp_crest hbas_m2 ev_fields
     intro i hi hmen
