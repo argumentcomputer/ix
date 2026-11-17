@@ -316,6 +316,8 @@ structure NativeInstallOut (t : Ix.Kernel.RoleTable) (E₀ E : Ixon.Env) (n : Na
   lenA : ctorsA.length = ind.ctors.size
   nP : p.nP = ind.params.toNat
   nIdx : p.nIdx = ind.indices.toNat
+  nP₀ : p₀.nP = ind.params.toNat
+  nIdx₀ : p₀.nIdx = ind.indices.toNat
   cvT : p.cvT = p₀.cvT
   cvT₀ : p₀.cvT.name = Core.keyOf t (Core.iprjAddr B 0) ∧
     p₀.cvT.levelParams = List.range ind.lvls.toNat
@@ -521,6 +523,8 @@ theorem nativeInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     lenA := hlenA'
     nP := hpnP.trans hnP₀
     nIdx := hpnIdx.trans hnIdx₀
+    nP₀ := hnP₀
+    nIdx₀ := hnIdx₀
     cvT := hpcvT
     cvT₀ := by rw [hcvT]; exact ⟨rfl, rfl⟩
     ctorNames := hnames
