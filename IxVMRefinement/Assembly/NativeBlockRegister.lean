@@ -85,8 +85,8 @@ theorem LateRegistryWith.nativeNoRec {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
   rw [henv] at hf'
   rcases find?_append_cases new hf' with hm | ho
   · have hcv := hind _ hm cv caps rfl
-    have hname : cv.name = keyOf t P := WhnfAux.name_of_find hf
-    have hname₂ : fam.cvS.name = fam.p.cvT.name := WhnfAux.name_of_find hat.stored.former
+    have hname : cv.name = keyOf t P := Core.WhnfAux.name_of_find hf
+    have hname₂ : fam.cvS.name = fam.p.cvT.name := Core.WhnfAux.name_of_find hat.stored.former
     rw [hcv] at hname
     exact hname.symm.trans hname₂
   · rw [hold] at ho
