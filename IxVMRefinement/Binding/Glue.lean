@@ -160,7 +160,7 @@ theorem stepCoreR_of_parts
       cases h₁ : R₁.consts.get? x with
       | some lc' =>
         have e : some lc' = some lc := (hR₁R'.1 x lc' h₁).symm.trans hx
-        exact Or.inl (h₁.trans e)
+        exact Or.inl e
       | none =>
         obtain ⟨r', hr', ha', -⟩ := hunit x (by rw [hx]; rfl) h₁
         rw [hsingle] at hr'
