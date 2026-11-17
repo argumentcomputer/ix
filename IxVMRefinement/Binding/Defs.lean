@@ -243,8 +243,8 @@ structure BRun where
 def New (R R' : Ixon.Env) (a : _root_.Address) : Prop :=
   (recordOf R' a).isSome = true ∧ recordOf R a = none
 
-/-- **The record of a role unit of group `g`**: the record bound to an operation or a standard
-axiom of the group. It is installed after the group's closure. -/
+/-- **The record of a role unit of group `g`**: the record bound to one of the group's
+operations or standard axioms. It is installed after the group's closure. -/
 def RoleUnitAt (t : Ix.Kernel.RoleTable) (g : Nat) (a : _root_.Address) : Prop :=
   ∃ r ∈ roleGroup g, t.addressOf? r = some a ∧ (r ∈ RoleOps.opRoles ∨ r ∈ standardAxioms)
 
