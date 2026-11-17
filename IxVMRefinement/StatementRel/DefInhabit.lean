@@ -306,7 +306,7 @@ theorem defEnv_nodup : (defEnv.consts.map (·.name)).Nodup := by
   have hn : basisEnv.consts.map (·.name) = basisRoleOrder.map Key.role := rfl
   rw [hn] at hmem
   obtain ⟨r, -, hr⟩ := List.mem_map.mp hmem
-  have hr' : Key.role r = Key.id defAddr := hr
+  have hr' : (Key.role r : Key .anon) = Key.id defAddr := hr
   cases hr'
 
 theorem defEnv_find_def : defEnv.find? (Key.id defAddr) = some defConst :=
