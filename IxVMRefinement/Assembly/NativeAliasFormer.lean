@@ -173,7 +173,7 @@ theorem nativePartsAt?_isSome {nP nIdx : Nat} {cvT : ConstantVal .anon}
         omega
       · split
         · simp only [Option.some.injEq, Prod.mk.injEq]
-          exact ⟨rfl, by omega⟩
+          exact ⟨trivial, by omega⟩
         · next hc =>
           simp only [beq_iff_eq] at hc
           omega
