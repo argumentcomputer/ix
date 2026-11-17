@@ -1,4 +1,4 @@
-import IxVMRefinement.RoleOps.Install
+import IxVMRefinement.RoleOps.Interface
 import IxC.Kernel.Rules.Transport
 import IxC.Kernel.Verify.BridgeWfImp
 

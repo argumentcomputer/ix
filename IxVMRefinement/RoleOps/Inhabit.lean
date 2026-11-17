@@ -1,4 +1,4 @@
-import IxVMRefinement.RoleOps.Install
+import IxVMRefinement.RoleOps.Interface
 import IxVMRefinement.Decl.VerifiedRunMap
 
 /-! # The interface holds of every operation the kernel installs
