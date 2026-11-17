@@ -366,6 +366,44 @@ theorem walkedL6_ind_reads (hbound : Bounded calls) {E₀ : Ixon.Env}
     rw [hmuts] at hraw
     exact False.elim hraw
 
+/-! ## Seeds
+
+The claim phase refuses a seed outside Lean's logic (`KernelClaim::assert_claimable`), so for
+a seed the reading needs nothing beyond the claim phase's own conclusion. -/
+
+/-- A record at an address that is not outside Lean's logic is in Lean's logic. -/
+theorem inLogic_of_not_outside {a : _root_.Address} {c : Ixon.Constant}
+    (hrec : Ix.Cert.recordAt E a = some c) (h : ¬ OutsideLogicAt E a) : InLogic c :=
+  Classical.byContradiction fun hn => h ⟨c, hrec, Or.inl hn⟩
+
+/-- The block of a projection record at an address that is not outside Lean's logic is in
+Lean's logic. -/
+theorem inLogic_block_of_not_outside {a : _root_.Address} {c cb : Ixon.Constant}
+    (hrec : Ix.Cert.recordAt E a = some c)
+    (hrecB : Ix.Cert.recordAt E (Ix.Cert.ownerOf a c) = some cb) (h : ¬ OutsideLogicAt E a) :
+    InLogic cb :=
+  Classical.byContradiction fun hn => h ⟨c, hrec, Or.inr ⟨cb, hrecB, hn⟩⟩
+
+/-- **Every seed that is a standalone definition, theorem or opaque record has its check
+evidence and its reading**, from the claim phase's conclusion alone: the store it built, the
+walk over it, and its refusal of seeds outside Lean's logic. -/
+theorem seed_defn_reads (hbound : Bounded calls) {E₀ : Ixon.Env} {seeds : List _root_.Address}
+    (hload : LoadedBy calls E₀) (hw : Claim.WalkedL6 calls t E₀ seeds)
+    (hseedOk : ∀ a ∈ seeds, ¬ OutsideLogicAt E₀ a ∧ ¬ InertAt t a) :
+    ∃ bAddr : _root_.Address, ∀ a ∈ seeds, ∀ (c : Ixon.Constant) (d : Ixon.Definition)
+      (order_role : List _root_.Address),
+      Ix.Cert.recordAt E₀ a = some c → c.info = .defn d → a ∉ order_role →
+      ∃ ty₀ val₀ : Ix.Kernel.Expr .anon, ∀ hn : Ix.Kernel.ReducibilityHint,
+        ∃ decl : Ix.Kernel.Declaration .anon,
+          Assembly.CheckedConstOrigin calls t bAddr E₀ order_role decl ∧
+          IxVM.Consistency.installs decl =
+            [defnConst d.kind ⟨keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn] ∧
+          Reads t E₀ a (defnConst d.kind ⟨keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn) := by
+  obtain ⟨bAddr, Wk, hseeds, hall⟩ := walkedL6_defn_reads hbound hload hw
+  exact ⟨bAddr, fun a ha c d order_role hrec hinfo hnr =>
+    hall a c d order_role (hseeds a ha) hrec hinfo
+      (inLogic_of_not_outside hrec (hseedOk a ha).1) hnr⟩
+
 end Walked
 
 end IxVM.Refinement.LoadedReads
