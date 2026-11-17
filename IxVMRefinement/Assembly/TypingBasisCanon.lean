@@ -2,6 +2,7 @@ import IxVMRefinement.Assembly.TypingBasisLoads
 import IxVMRefinement.StatementRel.LoadedReadsCanonRec
 import IxVMRefinement.StatementRel.LoadedReadsCanonCtor
 import IxVMRefinement.StatementRel.LoadedReadsCanonInd
+import IxVMRefinement.StatementRel.LoadedReadsCanonQuot
 
 /-! # The pins reload: the load facts at the stored keys of the basis
 
@@ -997,6 +998,94 @@ theorem basis_getCI_of_quot {E : Ixon.Env} (hE : RecordsFor StoreInhabit.basisSt
   refine ⟨ci, by rw [e]; exact hci, ?_⟩
   have hname : keyOf ctab (ixAddr a) = ci.name := (WhnfAux.name_of_find hci).symm
   exact hrl addr ptr h h' cs a ev hg.raw ha hname
+
+end
+
+/-! ## The quotient pins reload -/
+
+/-- The check of a quotient row (`LoadedReads.reloadsAs_quot`). -/
+def quotReload? (a : _root_.Address) (c : Ixon.Constant)
+    (hrow : (a, c) ∈ StoreInhabit.basisRows) : Option (PLift (PinReload a)) :=
+  match hinfo : c.info with
+  | .quot q =>
+    match ExprReader.sharesCheck (RowReader.plainOracle basisS c) c.sharing.toList with
+    | none => none
+    | some sh =>
+      match ExprReader.readCheck (RowReader.plainOracle basisS c) sh q.typ with
+      | none => none
+      | some ty =>
+        if h1 : ty.1.looseBVarsBounded 0 = true ∧
+            ty.1.allLevelParamsDefined (List.range q.lvls.toNat) = true then
+          match hcn : canonAnnC c (List.range q.lvls.toNat) 0 q.typ ty.1 with
+          | none => none
+          | some ty' =>
+            match hp : basisEnv.find? (Core.keyOf ctab a) with
+            | none => none
+            | some ci =>
+              if h3 : ci.toConstantVal = ⟨Core.keyOf ctab a, List.range q.lvls.toNat, ty'⟩ ∧
+                  LoadedReads.quotKindOk q.kind ci = true then
+                some ⟨fun E hE pin hpin => by
+                  rw [hp] at hpin
+                  cases hpin
+                  exact LoadedReads.reloadsAs_quot RoleVal.committedDefaultRoleTable_check
+                    (recordOf_of_row hE hrow) hinfo (read_mono hE ty.2) h1.1 h1.2
+                    (row_usedRefs hrow) (canonAnn_of_C hcn) h3.1 h3.2⟩
+              else none
+        else none
+  | _ => none
+
+/-- The check of a row, by its kind, the quotient records included. -/
+def rowReloadAll? (a : _root_.Address) (c : Ixon.Constant)
+    (hrow : (a, c) ∈ StoreInhabit.basisRows) : Option (PLift (PinReload a)) :=
+  match rowReload? a c hrow with
+  | some r => some r
+  | none => quotReload? a c hrow
+
+set_option maxHeartbeats 4000000 in
+set_option maxRecDepth 100000 in
+/-- **Every row that is not a block passes its check** (decided). -/
+theorem basis_rowReloadsAll :
+    StoreInhabit.basisRows.attach.all (fun x =>
+      (StoreInhabit.isMutsInfo x.1.2.info && !StoreInhabit.isBasisKey (Core.keyOf ctab x.1.1)) ||
+      (rowReloadAll? x.1.1 x.1.2 x.2).isSome) = true := by
+  decide +kernel
+
+/-- **The pin of every basis role reloads**, for every store of the basis records. -/
+theorem basis_reloadsAll {E : Ixon.Env} (hE : RecordsFor StoreInhabit.basisStore E) {r : Role}
+    (hr : r ∈ TableInhabit.basisRoleOrder) {pin : ConstantInfo .anon}
+    (hpin : basisEnv.find? (Key.role r) = some pin) : Decl.ReloadsAs E ctab basisEnv pin := by
+  have h0 := List.all_eq_true.mp basisRoles_rows r hr
+  cases ha : ctab.addressOf? r with
+  | none =>
+    rw [ha] at h0
+    cases h0
+  | some a =>
+    have hk : Core.keyOf ctab a = Key.role r := Core.keyOf_of_addressOf committedTable_wf ha
+    obtain ⟨c, hmem, -⟩ := basis_role_record hE hr hk
+    have h1 := List.all_eq_true.mp basis_rowReloadsAll ⟨(a, c), hmem⟩ (List.mem_attach _ _)
+    have hb : StoreInhabit.isBasisKey (Key.role r) = true := List.elem_eq_true_of_mem hr
+    simp only [hk, hb, Bool.not_true, Bool.and_false, Bool.false_or] at h1
+    obtain ⟨⟨hrl⟩, -⟩ := Option.isSome_iff_exists.mp h1
+    exact hrl E hE pin (by rw [hk]; exact hpin)
+
+theorem quotRoles_basis : ∀ r ∈ quotRoles, r ∈ TableInhabit.basisRoleOrder := by decide
+
+section
+open IxVM.Refinement.Core
+
+/-- **The `getCI` field of the load contract at the environment of the pins**: a load at a
+stored key represents the pin stored there. -/
+theorem basis_getCI {E : Ixon.Env} (hE : RecordsFor StoreInhabit.basisStore E)
+    (lim : Option Nat) :
+    ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
+    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs →
+      (bctx E lim).stored.allowedTop "Ingress::get_ci" [addr] h →
+      (bctx E lim).stored.κ (ixAddr a) ≠ unresolvedKey → CoreGood (bctx E lim).stored cs →
+    Bytes.RepAddressRef addrTy h a addr →
+      ∃ ci, (bctx E lim).stored.env.find? ((bctx E lim).stored.κ (ixAddr a)) = some ci ∧
+        CIPtrRep (bctx E lim).stored.κ h' ptr ci :=
+  basis_getCI_of_quot hE lim fun r hr _ hpin =>
+    basis_reloadsAll hE (quotRoles_basis r hr) hpin
 
 end
 

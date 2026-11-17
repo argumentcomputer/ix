@@ -9,12 +9,11 @@ assemble them: the invariant, and `Facts` on the six basis groups, follow from t
 contract at the prefix context alone.
 
 The load contract there is not proved. Its fields proved at the environment of the pins are in
-`TypingBasisLoads`, `TypingBasisCanon` (`getCI`, given the reload of the four quotient pins)
-and `TypingBasisUnit`. Two of its fields, `projTables` and `projTablesAt`, ask for a projection
-table of every stored one-constructor family without indices whose constructor is stored;
-`PUnit` is such a family and the pins store no table, so as stated they do not hold at this
-environment for a run that projects at `PUnit`'s block. The hypothesis `hloads` below is
-therefore not producible as the contract stands.
+`TypingBasisLoads`, `TypingBasisCanon` (`getCI` at all nineteen pins) and `TypingBasisUnit`.
+The fields that remain (`getCprj`, `getIprj`, `eta`, `ctorIndRes`, `projTables`,
+`projTablesAt`) relate a block given only by a call argument, or by no run at all, to a stored
+constant through the address of one of its projection records; they need that two distinct
+projection records do not share an address with a record the store holds.
 -/
 
 universe u
