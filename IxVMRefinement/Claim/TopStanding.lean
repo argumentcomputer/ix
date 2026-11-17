@@ -58,8 +58,7 @@ theorem axiom_standing_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Addr
     obtain ⟨rfl, htbl⟩ := role_ctx_table_lim_spec hrc ev14
     obtain ⟨rfl, rfl, -⟩ := addr_index_lookup htbl ha ev58 ev36
     obtain ⟨rfl, rfl, -⟩ := Decl.role_ctx_axioms_nil hrc.axiomsNil ev114
-    change ObsFn W (Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [.field]).symbol
-      [ap, .construct addrMapEnum "Nil" [], .field 0] _ r _ _ at ev92
+    rw [← Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>».symbol] at ev92
     match Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev92 with
     | .Nil (he18 := he) .. => exact (hne he).elim
     | .Node_n1 (hv26 := hv) .. => simp [addrMapEnum] at hv
