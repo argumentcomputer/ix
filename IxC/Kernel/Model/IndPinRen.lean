@@ -95,7 +95,7 @@ theorem pinSpine_renameConsts (f : Key md → Key md) (fvsP pins : List (Expr md
     (pins.map (·.renameConsts f)).map
         (Expr.instSpine ((fvsP.map (·.renameConsts f)).take rP) (rP - 1))
       = (pins.map (Expr.instSpine (fvsP.take rP) (rP - 1))).map (·.renameConsts f) := by
-  rw [List.map_map, List.map_map, List.map_take]
+  rw [List.map_map, List.map_map, ← List.map_take]
   refine List.map_congr_left (fun p _ => ?_)
   exact (instSpine_renameConsts f (fvsP.take rP) (rP - 1) p).symm
 
@@ -273,7 +273,7 @@ theorem nestedParamSupplyRen {m : EnvModel V env} {J : Judgements md}
       rw [renameConsts_idem hidem]
       exact hrenCty)
     (fun q hq => by
-      rw [hpinGet q hq, renameConsts_idem hidem, List.map_take,
+      rw [hpinGet q hq, renameConsts_idem hidem, ← List.map_take,
         ← instSpine_renameConsts]
       show Expr.ErasedEq (((Expr.instSpine (fvsP.take rP) (rP - 1)
         (pins.getD q default)).renameConsts f).renameConsts f) _
@@ -353,7 +353,7 @@ theorem nestedPinRowRen {m : EnvModel V env} {J : Judgements md}
     (fun q hq => by
       obtain ⟨w, hw⟩ := hpinRead q hq
       refine ⟨w, ?_⟩
-      rw [hpinGet q hq, List.map_take, ← instSpine_renameConsts,
+      rw [hpinGet q hq, ← List.map_take, ← instSpine_renameConsts,
         denoteMeta_renameConsts hro]
       exact hw)
   intro q hq
