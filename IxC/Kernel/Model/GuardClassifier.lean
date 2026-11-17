@@ -92,7 +92,7 @@ theorem head_mono {a b : Lookup md} (hext : a.Extends b) :
       refine bind_preserved (fun e h => ih f e h) ?_ h
       intro e r h
       cases e <;> first | exact ih _ _ h | exact h
-    case letE ty value body meta => exact ih _ _ h
+    case letE ty value body mb => exact ih _ _ h
     all_goals exact h
 
 /-- Structural type-shape calculation. Pi formation retains only the body universe; argument
@@ -111,9 +111,9 @@ def infer (look : Lookup md) : Nat → List (Expr md) → Expr md → Option (Ex
     let tb ← infer look fuel (ty :: ctx) body
     let .sort u ← head look fuel tb | none
     pure (.sort u)
-  | fuel + 1, ctx, .lam ty body meta => do
+  | fuel + 1, ctx, .lam ty body mb => do
     let tb ← infer look fuel (ty :: ctx) body
-    pure (.forallE ty tb meta)
+    pure (.forallE ty tb mb)
   | fuel + 1, ctx, .letE _ value body _ => infer look fuel ctx (body.instantiate1 value)
   | _ + 1, _, _ => none
 
@@ -131,13 +131,13 @@ theorem infer_mono {a b : Lookup md} (hext : a.Extends b) :
       refine bind_preserved (fun e h => ih ctx f e h) ?_ h
       intro e r h
       exact bind_preserved (fun e' h => head_mono hext fuel e e' h) (fun _ _ h => h) h
-    case forallE ty body meta =>
+    case forallE ty body mb =>
       refine bind_preserved (fun e h => ih (ty :: ctx) body e h) ?_ h
       intro e r h
       exact bind_preserved (fun e' h => head_mono hext fuel e e' h) (fun _ _ h => h) h
-    case lam ty body meta =>
+    case lam ty body mb =>
       exact bind_preserved (fun e h => ih (ty :: ctx) body e h) (fun _ _ h => h) h
-    case letE ty value body meta => exact ih ctx _ r h
+    case letE ty value body mb => exact ih ctx _ r h
     all_goals exact h
 
 /-- The field classifier succeeds exactly when its structural type exposes a sort. -/
