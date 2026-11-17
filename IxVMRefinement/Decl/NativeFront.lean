@@ -4276,7 +4276,7 @@ theorem nativeFront_pass (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
     injection hxs with hblk_eq _
     subst hblk_eq
     exact absurd (w.unmodeled _ _ _ _ ev_mod (fun x hx => by simp [hc, hx])) hne_mod
-  | .Induct_other (x_ind_block := xblk) (v1491 := vmod) (cs1503 := cs_mod)
+  | .Induct_n0 (m2 := m2) (x_nlvls := xnl) (x_ty := xty)
       (x_n_params := xnp) (x_n_indices := xni) (x_num_ctors := xnc)
       (x_ind_is_unsafe := xiu) (x_ind_block := xblk) (x_ind_idx := xidx)
       (m1283 := m1283) (cs1293 := cs_ws) (v1330 := v_emb) (m1333 := m1333)
