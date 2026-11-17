@@ -1,6 +1,7 @@
 import IxVMRefinement.Assembly.TypingRecLateOut
 import IxVMRefinement.Assembly.TypingRecLateRetHead
 import IxVMRefinement.Assembly.TypingRecLateNative
+import IxVMRefinement.Assembly.TypingRecLateNativeRaw
 import IxVMRefinement.Assembly.TypingRecLateReading
 import IxVMRefinement.Assembly.TypingRecLateFields
 import IxVMRefinement.Assembly.TypingRecLatePinsAt
@@ -14,7 +15,8 @@ store keys, projection names, level clauses).
 
 * `recLateOut_of_arm` (the second interface at the recursor's own parent): the late relation's
   conjuncts read off the arm (`rec_pins_of_arm`, `rec_elim_of_arm`, `rec_field_sorts_of_arm`,
-  `rec_nativeRecJ_of_arm`), the reading (`rec_reads_of_arm`), the K bit (`rec_k_stored_of_arm`),
+  `rec_nativeRecJ_of_arm`, with the read rules' scoping from the member check,
+  `rec_rules_scoped_of_arm`), the reading (`rec_reads_of_arm`), the K bit (`rec_k_stored_of_arm`),
   assembled by `rec_lateOut_of_parts`;
 * the parent with its tie (`recParent_of_arm_tied`);
 * `unitStep_recLate_lv`.
@@ -52,17 +54,6 @@ more at a large eliminator. -/
 abbrev lateRecLps (rc : Ixon.Recursor) (ind : Ixon.Inductive) : List Ix.Kernel.LevelParam :=
   Ix.Kernel.Reader.recLps (decide (rc.lvls.toNat = ind.lvls.toNat + 1)) (List.range ind.lvls.toNat)
 
-/-- **The rules of the record, read at the matched member's level parameters, are closed and
-their level parameters are among those** (the reading of `rc.rules` at `lateRecLps rc ind`). -/
-def RecRulesScoped (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (A : _root_.Address)
-    (c : Ixon.Constant) (rc : Ixon.Recursor) (ind : Ixon.Inductive) : Prop :=
-  ∀ rules : List (RecRule .anon),
-    List.Forall₂ (fun ru rl₀ => (exprReader t (fun x => E₀.blobs.get? x) c
-        (Ix.Kernel.Reader.recParam (lateRecLps rc ind)) (soloSelf t A)).read ru.rhs =
-          .ok rl₀.rhs) rc.rules.toList rules →
-    ∀ rl₀ ∈ rules, rl₀.rhs.looseBVarsBounded 0 = true ∧
-      rl₀.rhs.allLevelParamsDefined (lateRecLps rc ind) = true
-
 /-- **The second interface at the recursor's own parent** (module docstring). -/
 theorem recLateOut_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
     {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
@@ -81,10 +72,7 @@ theorem recLateOut_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
     (hnoProj : FamCtorNoProj fam)
     (hbounds : ∀ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (ind : Ixon.Inductive),
       Ix.Cert.recordAt E ip.block = some cb → cb.info = .muts ms →
-      ms[ip.idx.toNat]? = some (.indc ind) → RecArmBounds ip ind fam)
-    (hscoped : ∀ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (ind : Ixon.Inductive),
-      Ix.Cert.recordAt E ip.block = some cb → cb.info = .muts ms →
-      ms[ip.idx.toNat]? = some (.indc ind) → RecRulesScoped t E₀ A c rc ind) :
+      ms[ip.idx.toNat]? = some (.indc ind) → RecArmBounds ip ind fam) :
     RecLateOut t E₀ E A env fam := by
   obtain ⟨-, -, ⟨cm, hcm, hcmi⟩, -⟩ := hpar
   have hm' := hm
@@ -94,7 +82,8 @@ theorem recLateOut_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
     hannT, hrs, hlen⟩ :=
     rec_nativeRecJ_of_arm ht hS hcov hst hc hinfo hlogic hlim hnat hkey hinert hcover hstep hlv
       hcm hcmi htie hcb hms hind hm hhd hnoProj (hbounds cb ms ind hcb hms hind)
-      (hscoped cb ms ind hcb hms hind)
+      (rec_rules_scoped_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hcb
+        hms hind)
   obtain ⟨rules', hrr', -, hmI, hrP, hrlen, hpins⟩ :=
     rec_pins_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hm
       (lateRecLps rc ind) ⟨keyOf t A, lateRecLps rc ind, ty⟩
@@ -126,8 +115,7 @@ registry entry and the record, at every environment the fold hands the step: `hh
 entry's constructors return literally, `FamIxonRetHead`: the native block step's, carried by the
 fold), `hnoProj` (no stored constructor type projects out of the family: the native block step's
 constructor stage), `hbounds` (the count bounds of the native recursor comparison's
-specifications) and `hscoped` (the record's rules, read at the member's level parameters, are
-closed). -/
+specifications). -/
 theorem unitStep_recLate {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
     {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
     {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
@@ -146,12 +134,7 @@ theorem unitStep_recLate {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
       MatchedAt t E env P ip fam →
       ∀ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (ind : Ixon.Inductive),
         Ix.Cert.recordAt E ip.block = some cb → cb.info = .muts ms →
-        ms[ip.idx.toNat]? = some (.indc ind) → RecArmBounds ip ind fam)
-    (hscoped : ∀ env P ip fam, StepAt.{u} t envT E₀ E lim A c env →
-      MatchedAt t E env P ip fam →
-      ∀ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (ind : Ixon.Inductive),
-        Ix.Cert.recordAt E ip.block = some cb → cb.info = .muts ms →
-        ms[ip.idx.toNat]? = some (.indc ind) → RecRulesScoped t E₀ A c rc ind) :
+        ms[ip.idx.toNat]? = some (.indc ind) → RecArmBounds ip ind fam) :
     UnitStep.{u}
       (fun env => ((LateRegistry.{u} t E env ∧ HashKeyed t env) ∧ Decl.AuxRootSynced env) ∧
         LvClauses env) t envT E₀ E lim A c :=
@@ -161,7 +144,6 @@ theorem unitStep_recLate {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     (fun env P ip fam hstep hlv hpar htie hm =>
       recLateOut_of_arm ht hS hcov hst hc hinfo hlogic hlim hnat hkey hinert hcover hstep hlv hpar
         htie hm (famCtorRetHead_of_ixon (hhead env P ip fam hstep hm))
-        (hnoProj env P ip fam hstep hm) (hbounds env P ip fam hstep hm)
-        (hscoped env P ip fam hstep hm))
+        (hnoProj env P ip fam hstep hm) (hbounds env P ip fam hstep hm))
 
 end IxVM.Refinement.Typing
