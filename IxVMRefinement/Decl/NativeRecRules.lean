@@ -4,12 +4,7 @@ import IxVMRefinement.Decl.NativePositionalInv
 import IxVMRefinement.Callees.Loads
 import IxVMRefinement.Callees.ProjAddr
 import IxVMRefinement.Callees.Modeled
-import IxVMRefinement.Obs.KernelCheck7
-import IxVMRefinement.Obs.KernelCheck8
-import IxVMRefinement.Obs.KernelCheck9
-import IxVMRefinement.Obs.KernelCheck11
-import IxVMRefinement.Obs.KernelCheck12
-
+import IxVMRefinement.Obs.KernelCheck
 /-!
 # Native One-Type Inductive Blocks with Recursor (`L5` Native Recursor Rules & Assembly)
 

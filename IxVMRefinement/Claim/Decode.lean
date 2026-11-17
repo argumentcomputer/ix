@@ -1,8 +1,6 @@
 import IxVMRefinement.Claim.RoleTable
 import IxVMRefinement.Obs.IxVM0
-import IxVMRefinement.Obs.KernelClaim0
-import IxVMRefinement.Obs.KernelClaim1
-import IxVMRefinement.Obs.KernelClaim2
+import IxVMRefinement.Obs.KernelClaim
 import IxVMRefinement.Obs.IxonSerialize1
 import IxC.Ixon.Verify.ConstantTables
 

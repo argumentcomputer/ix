@@ -1,6 +1,5 @@
 import IxVMRefinement.Core.CallScope
-import IxVMRefinement.Obs.KernelCheck9
-
+import IxVMRefinement.Obs.KernelCheck
 /-! # The peer recursor of a standalone recursor record
 
 `KernelCheck::nat_rec_check` names the recursor its generated rules apply by

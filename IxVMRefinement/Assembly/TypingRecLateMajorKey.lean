@@ -1,9 +1,7 @@
 import IxVMRefinement.Assembly.TypingRecLateReads
 import IxVMRefinement.L1.AnnotationCorrespondence
 import IxVMRefinement.Decl.NativeRec
-import IxVMRefinement.Obs.KernelCheck0
-import IxVMRefinement.Obs.KernelCheck2
-
+import IxVMRefinement.Obs.KernelCheck
 /-! # The major key of the reading of a late recursor's type
 
 `RecReads` asks for the key heading the major premise of the reading `tyP` of a recursor

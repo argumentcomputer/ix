@@ -2,7 +2,7 @@ import IxVMRefinement.Assembly.RolePreludeBridge
 import IxVMRefinement.Assembly.ProjSafe
 import IxVMRefinement.Assembly.RecordReadBare
 import IxVMRefinement.Assembly.ConstructorHashes
-import IxVMRefinement.Obs.KernelCheck11
+import IxVMRefinement.Obs.KernelCheck
 import IxC.Kernel.Verify.Frontend.Prepare
 import IxC.Ixon.Verify.ConstantBounds
 
