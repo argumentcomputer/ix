@@ -133,13 +133,12 @@ theorem walkedDefn_step_lim
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     {E_core : Ixon.Env} {order_role : List _root_.Address} {lim : Option Nat}
     {env : Env .anon} {d d' : Declaration .anon}
-    (hinv : PrefixInv.{u} E_core t (lim) env)
+    (hinv : PrefixInv.{u} E_core t lim env)
     (hchk : CheckedDefnAtLim (Ctx.stored ⟨E_core, env, t, lim⟩).κ lim calls t bAddr
       E_core order_role d d')
     (hgood : Good ⟨E_core, env, t, none⟩ calls)
     (hfresh : ∀ ci₀ ∈ IxVM.Consistency.installs d, env.find? ci₀.name = none)
-    (hkey : ∀ ci₀ ∈ IxVM.Consistency.installs d, KeyFree ci₀.name)
-    :
+    (hkey : ∀ ci₀ ∈ IxVM.Consistency.installs d, KeyFree ci₀.name) :
     CleanInstallStep env d ⟨IxVM.Consistency.installs d' ++ env.consts⟩ ∧
       ∀ (E' : Ixon.Env) (lim' : Option Nat),
         (∀ cn ∈ IxVM.Consistency.installs d', ReloadsAs E' t ⟨cn :: env.consts⟩ cn) →
@@ -285,16 +284,13 @@ variable {t : Ix.Kernel.RoleTable} {calls : List (Call F)}
 
 /-- The roots of a checked safe definition are scoped at either kind of role context. -/
 theorem checkedDefn_scope_lim (ht : t.check = .ok ()) (hbound : Bounded calls)
-    {E : Ixon.Env} {bAddr decl_addr : _root_.Address} {order_role : List _root_.Address}
     {blob : _root_.Address → Option ByteArray} {src : Ixon.Constant} {d : Ixon.Definition}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon))}
     {ty₀ val₀ : Ix.Kernel.Expr .anon}
-    (hdecl_not_role : decl_addr ∉ order_role)
     (hkind : d.kind = .defn)
     (hsafe_decl : Ix.Kernel.Reader.safetyDecline d = none)
-    {lim : Option Nat} {m_chk h'_chk : Heap F} {rc ap v r_chk : SourceValue F}
+    {m_chk h'_chk : Heap F} {rc ap v r_chk : SourceValue F}
     {cs_chk : List (Call F)} {blobs : List (_root_.Address × ByteArray)}
-    (hrc_m : Core.RCRep t lim m_chk rc)
     (hblob : ∀ x bs, (x, bs) ∈ blobs → blob x = some bs)
     (hraw_d : L1.RawDefnValRep src.refs.toList [] src.univs.toList src.sharing.toList blobs
       m_chk d v)
@@ -528,8 +524,7 @@ theorem checkedLimAt_defn_step (ht : t.check = .ok ()) (hbound : Bounded calls)
     LoadedReads.defn_reading (store := recordOf E₀) (blob := fun x => E₀.blobs.get? x) ht
       (hS.recordOf_of_recordAt hrec) hinfo hlogic hblob htr.toRaw
   obtain ⟨h1, h2, h3, h4⟩ :=
-    LoadedReads.checkedDefn_scope_lim (E := Ecore) (order_role := order_role)
-      (decl_addr := Core.ixAddr a') ht hbound hnot_role hkind hsafe hrc_m.toRCRep hblob raw' hty hval ev_chk
+    LoadedReads.checkedDefn_scope_lim ht hbound hkind hsafe hblob raw' hty hval ev_chk
       hsub_chk
   have hrecur : L1.defnRecurAddrs d (Core.ixAddr a') = [] := by
     have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
