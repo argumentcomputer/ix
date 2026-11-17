@@ -1,4 +1,6 @@
 import Tests.Ix.IxVM.Harness
+import IxVM
+import Aiur.Artifact
 
 /-! # Safety of the references a claim or binding walk traverses
 
@@ -66,13 +68,14 @@ private def sharingCase (guarded assumed environment : Bool) (mode : Nat) : Exce
     | 3 => "reachable unsafe reference"
     | _ => "unsafe direct seed"
   let reject := match mode with
-    | 1 => if guarded then some recordMessage else none
+    | 1 => if guarded then some recordMessage else
+        if environment then some "claim seed is unsafe or partial" else none
     | 2 => some "an axiom that is not one of Lean's standard axioms"
     | 3 => some "safe constant references an unsafe constant"
     | 4 => some "claim seed is unsafe or partial"
     | _ => none
   typingCase s!"checkEnv={environment}, assumed={assumed}: {label}" env target assumed environment
-    (mode == 0 || (mode == 1 && !guarded)) reject
+    (mode == 0 || (mode == 1 && !guarded && !environment)) reject
 
 private def ownerCase (guarded assumed unsafeOwner : Bool) : Except String Case := do
   let env ← base
@@ -105,6 +108,21 @@ private def inertCase (assumed : Bool) : Except String Case := do
   typingCase s!"assumed={assumed}: inert reference retains its refusal" env a assumed false false
     (some "a constant uses an inert axiom")
 
+private def assumedLeafCase (guarded assumed environment : Bool) : Except String Case := do
+  let env ← base
+  let (env, x) := put env unsafeAxiom
+  let (env, a) := put env (unused x)
+  let some binding := env.roleBinding | throw "missing binding"
+  let ctx ← Ix.ClaimContext.ofBinding binding.address assumed
+  let some asm := Ix.AssumptionTree.canonical #[x] | throw "empty assumptions"
+  let some owned := Ix.AssumptionTree.canonical #[a] | throw "empty owned tree"
+  let trees := (({} : Std.HashMap Address Ix.AssumptionTree).insert asm.root asm).insert owned.root owned
+  let claim := if environment then .checkEnv ctx owned.root (some asm.root)
+    else .check ctx a (some asm.root)
+  let c ← Case.ofClaim s!"checkEnv={environment}, assumed={assumed}: assumed leaf stays unloaded"
+    env claim trees true
+  return { c with exercises := if guarded then some "KernelClaim::assert_safe_record_refs_under" else none }
+
 private def bindingCase (label : String) (env : Ixon.Env) (accept : Bool)
     (reject : Option String := none) : Except String Case := do
   let some binding := env.roleBinding | throw "missing role binding"
@@ -121,8 +139,8 @@ private def standardAxiomCase (guarded : Bool) : Except String Case := do
   let table := { table with bound := table.bound.map fun (r, b) =>
     (r, if r == Ix.Kernel.Role.propext then a' else b) }
   let env ← withRoleTable env table.toBytes
-  bindingCase "binding: standard axiom has an unused unsafe reference" env (!guarded)
-    (if guarded then some recordMessage else none)
+  bindingCase "binding: standard axiom has an unused unsafe reference" env false
+    (some (if guarded then recordMessage else "an axiom that is not one of Lean's standard axioms"))
 
 private def certificateCase (guarded : Bool) (mode : Nat) : Except String Case := do
   let env ← base
@@ -156,8 +174,9 @@ private def certificateCase (guarded : Bool) (mode : Nat) : Except String Case :
     | 0 => "standalone certificate with an unused unsafe reference"
     | 1 => "projected theorem certificate with a safe owner"
     | _ => "projected theorem certificate with an unsafe owner"
-  bindingCase s!"binding: {label}" env (!guarded)
-    (if guarded then some (if mode == 0 then recordMessage else certificateMessage) else none)
+  bindingCase s!"binding: {label}" env (!guarded && mode != 2)
+    (if guarded then some (if mode == 0 then recordMessage else certificateMessage)
+      else if mode == 2 then some "mutual block mixes safe members with unsafe or partial ones" else none)
 
 /-- The same fixtures can be compared with a retained pre-guard artifact explicitly. -/
 def runWithGuard (guarded : Bool) : IO UInt32 := do
@@ -166,6 +185,9 @@ def runWithGuard (guarded : Bool) : IO UInt32 := do
     for assumed in [false, true] do
       for mode in List.range 5 do
         cases := cases.push (fun _ => sharingCase guarded assumed environment mode)
+  for environment in [false, true] do
+    for assumed in [false, true] do
+      cases := cases.push (fun _ => assumedLeafCase guarded assumed environment)
   for assumed in [false, true] do
     for unsafeOwner in [false, true] do
       cases := cases.push (fun _ => ownerCase guarded assumed unsafeOwner)
@@ -177,6 +199,17 @@ def runWithGuard (guarded : Bool) : IO UInt32 := do
   runCases "ixvm-safe-references" cases (jobs := 4) (circuit := some true)
 
 def run : IO UInt32 := runWithGuard true
+
+/-- Export a compiled package for the direct-walk preservation controls. The generic
+`ixvm export` command writes an execution package, which the multi-case test host cannot use. -/
+def exportWalkArtifact : IO UInt32 := do
+  let some path ← IO.getEnv "IX_AIUR_WALK_ARTIFACT"
+    | throw (IO.userError "IX_AIUR_WALK_ARTIFACT must name the output path")
+  IO.eprintln s!"IxVM program {_root_.IxVM.programDigest}"
+  let exported ← IO.ofExcept (_root_.IxVM.source.exportExecution ["IxVM::verify_transitive"])
+  Aiur.Artifact.write path (← IO.ofExcept (Aiur.Artifact.package exported _root_.IxVM.modulus ZMod.val))
+  IO.eprintln s!"Wrote compiled walk package {path}"
+  return 0
 
 /-- A direct transitive walk is allowed to originate outside the logic. These controls use
 `IX_AIUR_WALK_ARTIFACT`, an export containing `IxVM::verify_transitive`, rather than a claim
