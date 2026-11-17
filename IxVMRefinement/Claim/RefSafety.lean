@@ -2,6 +2,7 @@ import IxVMRefinement.Claim.TopBase
 import IxVMRefinement.Claim.RecordSafety
 import IxVMRefinement.Claim.SafetyAt
 import IxVMRefinement.StatementRel.LoadedReadsWalked
+import IxVMRefinement.Assembly.Closure
 
 /-! # Reference-guard observations over the run's store
 
