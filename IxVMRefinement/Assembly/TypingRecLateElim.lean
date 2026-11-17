@@ -567,7 +567,7 @@ theorem rec_elim_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ 
     ⟨_, by
       unfold Core.posOf
       rw [Decl.stripPis_instantiateLevelParams_full, hsort]
-      first | rfl | skip⟩
+      rfl⟩
   obtain ⟨bs', hpos⟩ := hpos
   rcases helim _ _ hpos with h | h
   · exact Or.inl (eval_ne_zero_of_posOf hperm h)
