@@ -755,4 +755,119 @@ theorem projGuardWalkAt_of_install {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
       hb hbB hgr
   exact ⟨lus, flags, h1, h2, h3⟩
 
+/-! ## The constructor stage's core facts at the install -/
+
+/-- **A checked constant's type is closed, bounded, defined at its level parameters and resolved
+in the environment** (`ConstantValRunJ`; the annotation keeps closedness and boundedness). -/
+theorem typeShape_of_constantValCheckJ {env : Ix.Kernel.Env .anon} {cv cv' : ConstantVal .anon}
+    {lps : List Ix.Kernel.LevelParam}
+    (h : Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ env cv cv')
+    (hlp : cv.levelParams = lps) :
+    cv'.type.hasFvar = false ∧ cv'.type.allLevelParamsDefined lps = true ∧
+      cv'.type.constsResolve env = true ∧ cv'.type.looseBVarsBounded 0 = true := by
+  subst hlp
+  obtain ⟨type', ⟨-, -, -, -, hlbb, hfv, hann, hlpd, hcr, -⟩, rfl⟩ := h
+  obtain ⟨hfv', hb'⟩ := (Ix.Kernel.Model.judgeFrames_rulesJ env).annot_syntax hann hfv hlbb
+  exact ⟨hfv', hlpd, hcr, hb'⟩
+
+/-- **The scoped core facts of the constructor stage of a native block's install**, at the
+install's former and capability record (`ctorStageCoreFacts_of_block`): the former's checked type
+and its telescope are IxC's former stage's (`SumIndRunJ` in `NativeNoRecFacts`), and the install's
+capability record is the stage's (`nativeCaps p = nativeCapsAt p₁ isRec`). -/
+theorem ctorStageCoreFacts_of_install {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {n : Nat}
+    {env : Ix.Kernel.Env .anon} {B : _root_.Address} {cb : Ixon.Constant}
+    {ind : Ixon.Inductive} {blk : List (ConstantInfo .anon)} {p₀ p : Ix.Kernel.NativeParts .anon}
+    {new : List (ConstantInfo .anon)} {ty' : Ix.Kernel.Expr .anon}
+    {ctorsA : List (ConstantVal .anon × Nat)} {caps : IndCaps .anon}
+    (hO : NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps)
+    (hinv : Decl.PrefixInv E t (some n) env) (hkeys : HashKeyed t env)
+    (hstored : Decl.UsedRefsStored t env cb)
+    (hfreshT : env.find? (Core.keyOf t (Core.iprjAddr B 0)) = none) :
+    Core.ScopedCoreFacts (Decl.ctorStage ⟨E, env, t, some n⟩
+      ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ caps) := by
+  have hI := hO.install
+  obtain ⟨ty₀, ty'', hty, hlbb, hdef, hcanon, hfind⟩ := hI.former
+  have hty'' : ty'' = ty' := by
+    have h := Option.some.inj (hfind.symm.trans hO.formerFind)
+    injection h with hcv hcaps
+    injection hcv with h1 h2 h3
+    first | exact h3 | skip
+  subst hty''
+  obtain ⟨-, -, isRec, cvS, cvTa, capsF, p₁, p', ctorsA', sortss, kinds, tfvs, trest, isorts,
+    hfam, hInd, -, -, -, hcaps, -, -, -, -, -⟩ := hO.facts
+  injection hfam with hp hcvS hcvTa hctorsA
+  subst hp hcvS hcvTa
+  obtain ⟨cvTa₀, s, bs, cvS', hchk0, hor, hstrip, -, hp1, -⟩ := hInd
+  subst hp1
+  have htype : ty''.hasFvar = false ∧
+      ty''.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
+      ty''.constsResolve env = true ∧ ty''.looseBVarsBounded 0 = true := by
+    rcases hor with hEq | ⟨ty₁, hchk1⟩
+    · subst hEq
+      exact typeShape_of_constantValCheckJ hchk0 hO.cvT₀.2
+    · exact typeShape_of_constantValCheckJ hchk1 hO.cvT₀.2
+  have hctys : ∀ (k : Nat) (ct' : Ixon.Constructor), ind.ctors[k]? = some ct' →
+      ct'.cidx.toNat = k ∧ ∃ cty₁ : Ix.Kernel.Expr .anon,
+        (exprReader t (fun x => E.blobs.get? x) cb id
+          (blockSelf t B #[.indc ind])).read ct'.typ = .ok cty₁ ∧
+        cty₁.looseBVarsBounded 0 = true ∧
+        cty₁.allLevelParamsDefined (List.range ct'.lvls.toNat) = true := by
+    intro k ct' hk
+    have hks : k < ind.ctors.size := (Array.getElem?_eq_some_iff.mp hk).1
+    obtain ⟨ct₂, cty₂, -, hct₂, hcidx₂, hty₂, hlbb₂, hdef₂, -, -⟩ := hI.ctor k hks
+    have e : ct₂ = ct' := Option.some.inj (hct₂.symm.trans hk)
+    subst e
+    exact ⟨hcidx₂, cty₂, hty₂, hlbb₂, hdef₂⟩
+  have hcapsEq : caps = Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort s) isRec :=
+    hO.caps_eq.trans hcaps
+  have hunit : ind.indices.toNat = 0 → ind.ctors.size = 1 →
+      (∀ ct, ind.ctors[0]? = some ct → ct.fields.toNat = 0) →
+      (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort s) isRec).unitlike = true ∧
+        (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort s) isRec).unitParams =
+          ind.params.toNat := by
+    rw [← hcapsEq]
+    exact hI.unit
+  rw [hcapsEq]
+  exact ctorStageCoreFacts_of_block (t := t) (E := E) (env := env) (lim := some n)
+    (p := p₀.toInductiveShape.withSort s) (isRec := isRec)
+    hI.check hinv hI.decoded hI.held hkeys hI.block hI.muts hI.formerRec hI.bounds hty hlbb hdef
+    hctys hstored hcanon hfreshT hunit hI.free htype hstrip
+
+/-- **The constructor stage's environment keeps the prefix's lookups** when the stored former's
+name is fresh in the prefix. -/
+theorem ctorStageEnv_find {env : Ix.Kernel.Env .anon} {cvS : ConstantVal .anon}
+    {capsS : IndCaps .anon} (hfresh : env.find? cvS.name = none) :
+    ∀ (k : Core.KKey) (ci : ConstantInfo .anon), env.find? k = some ci →
+      (⟨.indInfo cvS capsS :: env.consts⟩ : Ix.Kernel.Env .anon).find? k = some ci := by
+  intro k ci hf
+  rw [Ix.Kernel.Env.find?_cons]
+  have hne : ¬ (ConstantInfo.indInfo cvS capsS).name = k := by
+    intro h
+    have hk : k = cvS.name := h.symm
+    rw [hk, hfresh] at hf
+    cases hf
+  rw [ite_eq_right hne]
+  exact hf
+
+/-- **The circuit's guard runs at a one-constructor install, in IxC's terms, from the step's
+data**: `projGuardWalkAt_of_install` at the install's constructor stage
+(`ctorStageCoreFacts_of_install`). The stage's environment keeps the prefix's lookups
+(`ctorStageEnv_find`). -/
+theorem projGuardWalkAt_of_step {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {n : Nat}
+    {env : Ix.Kernel.Env .anon} {B : _root_.Address} {cb : Ixon.Constant}
+    {ind : Ixon.Inductive} {blk : List (ConstantInfo .anon)} {p₀ p : Ix.Kernel.NativeParts .anon}
+    {new : List (ConstantInfo .anon)} {ty' : Ix.Kernel.Expr .anon}
+    {ctorsA : List (ConstantVal .anon × Nat)} {caps : IndCaps .anon}
+    (hO : NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps)
+    (hsize : ind.ctors.size = 1)
+    (hinv : Decl.PrefixInv E t (some n) env) (hkeys : HashKeyed t env)
+    (hstored : Decl.UsedRefsStored t env cb)
+    (hfreshT : env.find? (Core.keyOf t (Core.iprjAddr B 0)) = none) :
+    ∀ cA ∈ ctorsA, ProjGuardWalkAt E env t n new B
+      ⟨.indInfo ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ caps ::
+        env.consts⟩ cA p.nP :=
+  projGuardWalkAt_of_install
+    (cvS := ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩) (capsS := caps)
+    hO hsize hstored hfreshT rfl (ctorStageCoreFacts_of_install hO hinv hkeys hstored hfreshT)
+
 end IxVM.Refinement.Typing
