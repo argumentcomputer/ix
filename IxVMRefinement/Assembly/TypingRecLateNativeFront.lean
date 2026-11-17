@@ -273,7 +273,7 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
   have hRec : lateRuleKey ⟨E, env, t, some n⟩ A (Core.ixAddr bA) = keyOf t A := by
     rw [hbA', ← LoadedReads.keyOf_eq]
     exact lateRuleKey_self _ A
-  haveI hRes : Core.Resolved (lateRuleKey ⟨E, env, t, some n⟩ A (Core.ixAddr bA)) := by
+  have hRes : Core.Resolved (lateRuleKey ⟨E, env, t, some n⟩ A (Core.ixAddr bA)) := by
     rw [hbA']
     exact lateRuleKey_self_resolved _ A
   have hCres : ∀ i, i < (lateCtorsInfo fam).length →
