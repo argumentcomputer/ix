@@ -3,6 +3,7 @@ import IxVMRefinement.Claim.TopRefs
 import IxVMRefinement.Claim.TopDecode
 import IxVMRefinement.Claim.TopWalkCheck
 import IxVMRefinement.Assembly.TypingSkeleton
+import IxVMRefinement.Assembly.TypingDefnStep
 import IxVMRefinement.StatementRel.LoadedReadsWalked
 
 /-! # The claim layer's walk export for the typing half
@@ -164,7 +165,8 @@ theorem topWalkCore_of_recs
     rw [← ha']
     exact ⟨⟨r', hr', rfl⟩, by have := topRank_le hr'; omega⟩
   · intro a ha c hc
-    have hout := claimableSeed_not_outsideLogicAt hnoColl [] (hseedOk a ha)
+    have hout := claimableSeed_not_outsideLogicAt (b := b) hnoColl
+      ([] : List (WalkedRec calls b.address t)) (hseedOk a ha)
     refine ⟨?_, fun cb hcb => ?_⟩
     · by_contra hn
       exact hout ⟨c, hat hc, Or.inl hn⟩
@@ -263,11 +265,12 @@ top-level limit (`some 77` validating, `none` assumed) its walk exports `TopWalk
 theorem claimPhase_typing_check
     {d : Digest} {value : SourceValue F} {heap : Heap F} {calls : List (Call F)}
     (ev : ObsFn W verifyClaim [digestValue d] [] value heap calls)
-    {bytes : ByteArray} {c : Claim} (hde : Claim.de bytes = .ok c)
+    {bytes : ByteArray} {c : Ix.Claim} (hde : Ix.Claim.de bytes = .ok c)
     (hpack : packDigest (Address.blake3Pure bytes) = d)
     (hscope : InScopeTyping c)
     {V : View} {seeds : List _root_.Address} (hseeds : ClaimSeeds c V seeds)
-    {ctx} (hctx : c.context? = some ctx) {tb : ByteArray} {t : Ix.Kernel.RoleTable}
+    {ctx : Ix.ClaimContext} (hctx : c.context? = some ctx) {tb : ByteArray}
+    {t : Ix.Kernel.RoleTable}
     (hadm : Ix.Kernel.Admission.admitBinding Address.admissionHash ⟨ctx.binding, tb⟩ = .ok t) :
     V.HashedCollision (bytes :: tb :: committedFootprint) calls ∨
     ∃ lim : Option Nat, (lim = some 77 ∨ lim = none) ∧
