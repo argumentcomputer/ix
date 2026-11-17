@@ -97,4 +97,54 @@ theorem RawTmExact.raw_bounded_of_idx {κ : _root_.Address → KKey} {Γ : Nat �
     intro m bound indices
     exact inner (SubstAux.idxAll_proj_inv indices (loadValue_enum_cell cell))
 
+/-- The actual loose-bound scan gives a bound on the retained raw syntax, not only its
+let-erased semantic image. -/
+theorem RawExprRep.lbr {κ : _root_.Address → KKey} {h h' : Heap F} {k : Nat}
+    {R : KExpr} {p r : SourceValue F} {calls : List (Call F)}
+    (represented : RawExprRep κ h k R p) (bounded : IxVM.Consistency.Bounded calls)
+    (observed : ObsFn W "KernelSubst::expr_lbr" [p] h r h' calls) :
+    h' = h ∧ ∃ bound, r = .field (bound : F) ∧ bound ≤ 9223372036854775808 ∧
+      R.looseBVarsBounded bound = true := by
+  obtain ⟨E, rep⟩ := represented
+  obtain ⟨unchanged, scan⟩ := SubstAux.gall κ .expr_lbr _ _ _ _ _ observed p rfl bounded
+  obtain ⟨bound, result, small, _, indices, _⟩ := scan 0 (fun _ => default) k E rep.toTmExact.toTm
+  refine ⟨unchanged, bound, result, small, ?_⟩
+  simpa only [Nat.add_zero] using rep.raw_bounded_of_idx indices
+
+/-- The actual lifted-variable primitive preserves the exact de Bruijn index. The successful
+comparison bounds the input by 2^32; the explicit shift bound prevents field wraparound. -/
+theorem raw_lift_bvar_exact {κ : _root_.Address → KKey} {h h' : Heap F}
+    {k : Nat} {i shift cutoff : F} {r : SourceValue F} {calls : List (Call F)}
+    (small : i.val < 9223372036854775808) (inside : i.val < k)
+    (shiftBound : shift.val < 4611686018427387904)
+    (observed : ObsFn W "KernelSubst::expr_lift_bvar"
+      [.field i, .field shift, .field cutoff] h r h' calls) :
+    RawExprRep κ h' (k + shift.val)
+      ((.bvar i.val : KExpr).liftLooseBVars shift.val cutoff.val) r := by
+  cases Obs.«KernelSubst::expr_lift_bvar».obs observed with
+  | n1 m2 childCalls comparison result heap events =>
+    obtain ⟨i', cutoff', hi, hc, _, _, verdict, rfl⟩ := SubstAux.ltf comparison
+    injection hi with hi; injection hc with hc
+    subst hi hc result heap
+    have below := SubstAux.ltf_one verdict.symm
+    have rep : RawExprRep κ (h ++ [.construct kexprEnum "BVar" [.field i]])
+        (k + shift.val) (.bvar i.val) (.ptr (.enum kexprEnum) h.length) :=
+      ⟨_, .bvarLocal (by simp) small (by omega)⟩
+    simpa only [Expr.liftLooseBVars, if_neg (by omega : ¬ cutoff.val ≤ i.val)] using rep
+  | n0 m2 childCalls value comparison result heap added events =>
+    obtain ⟨i', cutoff', hi, hc, inputBound, _, verdict, rfl⟩ := SubstAux.ltf comparison
+    injection hi with hi; injection hc with hc
+    subst hi hc result heap
+    have above := SubstAux.ltf_zero verdict.symm
+    rw [SubstAux.add_ok added]
+    have sumValue : (i + shift).val = i.val + shift.val :=
+      SubstAux.val_add (by
+        have : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
+        omega)
+    have rep : RawExprRep κ (h ++ [.construct kexprEnum "BVar" [.field (i + shift)]])
+        (k + shift.val) (.bvar (i + shift).val) (.ptr (.enum kexprEnum) h.length) :=
+      ⟨_, .bvarLocal (by simp) (by rw [sumValue]; omega) (by rw [sumValue]; omega)⟩
+    simpa only [Expr.liftLooseBVars, if_pos above, sumValue] using rep
+
+
 end IxVM.Refinement.Decl
