@@ -61,6 +61,16 @@ theorem ctxOk_renameConsts {env : Env md} {m : EnvModel V env} {f : Key md → K
   exact ⟨hlt, fvarsBelow_renameConstsM _ hfb, tya, Aa,
     (denoteMeta_renameConsts hro l₀.2 d).trans hden, hAa, hint, hok⟩
 
+/-- The renamed package keeps `J`'s annotations, so their scoping. -/
+theorem judgeFrames_renameJ {J : Judgements md} {env : Env md} {f : Key md → Key md}
+    (h : JudgeFrames J env) : JudgeFrames (renameJ f J) env :=
+  ⟨h.annot_syntax, h.annot_wscoped, h.annot_bounded, h.annot_leaves⟩
+
+/-- The shape package keeps `J`'s annotations, so their scoping. -/
+theorem judgeFrames_shapeJ {J : Judgements md} {env : Env md} {f : Key md → Key md}
+    (h : JudgeFrames J env) : JudgeFrames (shapeJ f J) env :=
+  ⟨h.annot_syntax, h.annot_wscoped, h.annot_bounded, h.annot_leaves⟩
+
 /-- **The renamed judgements are sound** where the renaming is invisible to the reading. -/
 theorem judgeSound_renameJ {J : Judgements md} {env : Env md} {m : EnvModel V env}
     {f : Key md → Key md} (hro : RenameOk m.acval env f) (h : JudgeSound J m) :
@@ -137,12 +147,11 @@ theorem blockRen_idem {blockNames : List (Key md)}
   dsimp only
   by_cases hn : blockNames.contains n = true
   · rw [if_pos hn]
-    have hm : blockNames.contains (auxKey n .model) = false := by
-      rcases hc : blockNames.contains (auxKey n .model) with _ | _
-      · rfl
-      · have h := hns _ hc
-        simp [auxKey, Key.isModelSuffix] at h
-    simp [hm]
+    have hm : ¬ (blockNames.contains (auxKey n .model) = true) := by
+      intro hc
+      have h := hns _ hc
+      simp [auxKey, Key.isModelSuffix] at h
+    rw [if_neg hm]
   · rw [if_neg hn, if_neg hn]
 
 end Ix.Kernel.Model
