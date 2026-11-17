@@ -249,15 +249,13 @@ private theorem natT_appHeadConst_app {κ : _root_.Address → KKey} {d : Nat} {
         RawTm κ d Γ h k f E p → NatAppHeadConstT h p) →
       ∀ {k : Nat} {E : KExpr} {p : SourceValue F},
         RawTm κ d Γ h k (Expr.mkAppN f ras) E p → NatAppHeadConstT h p
-  | [], f, hf => by
-    intro k E p hR
-    exact hf hR
-  | a :: ras, f, hf => by
-    intro k E p hR
-    refine natT_appHeadConst_app ras (f := .app f a) ?_ hR
-    intro k' E' p' hR'
-    cases hR' with
-    | app cell rf _ => exact .app cell (hf rf)
+  | [], f, hf => fun hR => hf hR
+  | a :: ras, f, hf => fun hR =>
+    natT_appHeadConst_app ras (f := .app f a)
+      (fun hR' => by
+        cases hR' with
+        | app cell rf _ => exact .app cell (hf rf))
+      hR
 
 /-- A raw reading that strips `n` binders down to an application spine over a constant is, in
 the heap, of shape `NatRetHeadT h n`. -/
