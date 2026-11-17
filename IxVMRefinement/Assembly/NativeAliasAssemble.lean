@@ -99,7 +99,7 @@ theorem nativeAtFacts_of_alias_stage {env : Env .anon} {blk : List KConstantInfo
       hout_j.residual
     have hfv_c : cA.1.type.hasFvar = false :=
       annotates_hasFvar_false hout_j.stored.2.2 (hfv_ctors c (List.mem_of_getElem? hc))
-    have hsum_c := hout_j.toSumCtorRunJ (LvEq.refl s) (hfv_ctors c (List.mem_of_getElem? hc))
+    have hsum_c := hout_j.toSumCtorRunJ (former := cvS) (LvEq.refl s) (hfv_ctors c (List.mem_of_getElem? hc))
     obtain ⟨sty_c, _, hinf_c, _⟩ := hout_j.inferSort
     have hres_c : cA.1.type.constsResolve
         ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt p₁ isRec) :: env.consts⟩ = true := by
