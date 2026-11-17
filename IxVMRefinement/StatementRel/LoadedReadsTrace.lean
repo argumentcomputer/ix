@@ -115,6 +115,27 @@ theorem AxioTraceRep.toRaw {refs recurAddrs : List _root_.Address} {univs : List
   obtain ⟨hl, tyPtr, plan, hv, rty, hp, hlv⟩ := rep
   exact ⟨hl, tyPtr, hv, rty⟩
 
+/-- **A converted quotient value with the binder plan of its type**, converted at root `0`. -/
+def QuotTraceRep (refs recurAddrs : List _root_.Address) (univs : List Ixon.Univ)
+    (sharing : List Ixon.Expr) (blobs : List (_root_.Address × ByteArray))
+    (tree : BinderTreeData) (h : Heap F) (q : Ixon.Quotient) (v : SourceValue F) : Prop :=
+  q.lvls.toNat < 4294967296 ∧
+  ∃ (tyPtr : SourceValue F) (plan : List Core.KLevel),
+    v = .construct Core.kciEnum "Quot"
+      [.field (q.lvls.toNat : F), tyPtr, repQuotKindVal q.kind] ∧
+    RawConvExpr refs recurAddrs univs sharing blobs h 4294967295 q.typ tyPtr ∧
+    binderRootPlan tree sharing 0 q.typ = some plan ∧
+    HeapBinderLevels h tyPtr plan
+
+theorem QuotTraceRep.mono {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
+    {sharing : List Ixon.Expr} {blobs : List (_root_.Address × ByteArray)}
+    {tree : BinderTreeData} {h₁ h₂ : Heap F} {q : Ixon.Quotient} {v : SourceValue F}
+    (ext : Heap.Extends h₁ h₂)
+    (rep : QuotTraceRep refs recurAddrs univs sharing blobs tree h₁ q v) :
+    QuotTraceRep refs recurAddrs univs sharing blobs tree h₂ q v := by
+  obtain ⟨hl, tyPtr, plan, hv, rty, hp, hlv⟩ := rep
+  exact ⟨hl, tyPtr, plan, hv, rty.mono ext (fun _ hm => hm), hp, HeapBinderLevels.mono ext hlv⟩
+
 /-! ## `Convert::convert_definition` and `Convert::convert_axiom` with their plans -/
 
 /-- **`Convert::convert_definition` with the binder plans of its roots.** The type is converted
@@ -269,6 +290,37 @@ theorem convert_axiom_trace_spec {ax : Ixon.Axiom} {sharing : List Ixon.Expr}
   exact ⟨ext1, blobs, hhp.sub (by rw [hc143]; intro c hc; simp [hc]),
     hlvls32, v32, plan, he107, hraw_ty, planned, levels⟩
 
+/-- **`Convert::convert_quotient` with the binder plan of its type**, converted at root `0`. -/
+theorem convert_quotient_trace_spec {q : Ixon.Quotient} {sharing : List Ixon.Expr}
+    {refs recurAddrs : List _root_.Address} {univs : List Ixon.Univ}
+    {x_q shPtr refsPtr recPtr univsPtr tbl r : SourceValue F}
+    {h h' : Heap F} {calls : List (Call F)}
+    (hq : RepQuotient h q x_q)
+    (hsh : RepShareVec h sharing shPtr)
+    (hrefs : RepList addressListEnum RepIxonAddressRef h refs refsPtr)
+    (hrecs : RepList addressListEnum RepIxonAddressRef h recurAddrs recPtr)
+    (hunivs : RepList univListEnum RepUnivPtr h univs univsPtr)
+    {tree : BinderTreeData} (represented : RepBinderTreeData h tree tbl)
+    (htbl : RepBinderTree 4294967296 h tbl)
+    (ev : ObsFn W "Convert::convert_quotient"
+      [x_q, shPtr, refsPtr, recPtr, univsPtr, tbl] h r h' calls) :
+    Heap.Extends h h' ∧ ∃ blobs : List (_root_.Address × ByteArray),
+      HashedPairs calls blobs ∧
+      QuotTraceRep refs recurAddrs univs sharing blobs tree h' q r := by
+  obtain ⟨typPtr, rfl, htyp⟩ := hq
+  obtain ⟨x_kind, x_lvls, x_typ, v32, m33, cs43, v104, m109, cs117,
+      hv15, ev45, he107, ev119, he142, hc143⟩ :=
+    «Convert::convert_quotient».obs ev
+  simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv15
+  rcases hv15 with ⟨_, _, hk_eq, hlvls_eq, htyp_eq⟩
+  subst x_kind x_lvls x_typ
+  obtain ⟨ext1, blobs, hhp, hraw_ty, plan, planned, levels⟩ :=
+    convert_root_trace_spec htyp hsh hrefs hrecs hunivs represented htbl ev45
+  obtain ⟨hlvls32, hv104, hm109⟩ := lvls_to_field_spec q.lvls.toNat_lt ev119
+  rw [he142, hm109]; subst v104
+  exact ⟨ext1, blobs, hhp.sub (by rw [hc143]; intro c hc; simp [hc]),
+    hlvls32, v32, plan, he107, hraw_ty, planned, levels⟩
+
 /-! ## The loads with their plans -/
 
 /-- **`Ingress::get_ci_dprj` with the binder plans of the member's roots.** The parent block
@@ -401,7 +453,12 @@ def GetCITraceResult (calls : List (Call F)) (h : Heap F) (a : _root_.Address)
       DefnTraceRep cb.refs.toList (defnMemberRecurAddrs d p.block ms.toList)
         cb.univs.toList cb.sharing.toList blobs tree
         ((mutsRootOffset ms.toList p.idx.toNat : Nat) : F) h d v
-  | .quot _ => True
+  | .quot q =>
+    ∃ (blobs : List (_root_.Address × ByteArray)) (tree : BinderTreeData) (v : SourceValue F),
+      HashedPairs calls blobs ∧
+      BinderTreeBuilt (binderLeavesData c.binders.toList) tree ∧
+      loadValue h r = .ok v ∧
+      QuotTraceRep c.refs.toList [] c.univs.toList c.sharing.toList blobs tree h q v
   | .recr _ => True
   | .iPrj _ => True
   | .cPrj _ => True
@@ -592,10 +649,30 @@ theorem get_ci_trace_spec {a : Bytes.Address} {x_addr r : SourceValue F}
     rcases hc_eq with ⟨_, _, hinfo_eq, hsh_eq, hrf_eq, hun_eq, hbd_eq⟩
     subst infoVal shPtr rfPtr unPtr bdPtr
     obtain ⟨q, hc_info, hq_rep⟩ := repConstantInfo_quot_inv hinfo
+    have ext2 : Heap.Extends m2 m567 := by rw [hm575]; exact Heap.Extends.snoc m2 _
+    have hrecs : RepList addressListEnum RepIxonAddressRef m567 []
+        (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») m2.length) := by
+      rw [hm575, addressListEnum_eq]
+      exact Lib.rep_store_nil m2
+    obtain ⟨ext3, tree, built, represented, _, htbl⟩ :=
+      binder_table_data_bounded_spec (hbd.mono repBinderBlock_heapMono₂ ext2) hbd32 ev597
+    have ext23 := ext2.trans ext3
+    obtain ⟨ext4, blobs, hhp, htrace⟩ :=
+      convert_quotient_trace_spec
+        (hq_rep.mono ext23)
+        (RepShareVec.mono ext23 hsh)
+        (hrf.mono repIxonAddressRef_heapMono₂ ext23)
+        (hrecs.mono repIxonAddressRef_heapMono₂ ext3)
+        (hun.mono repUnivPtr_heapMono₂ ext23)
+        represented htbl ev538
+    rw [he532, hm531]
+    have ext_snoc := Heap.Extends.snoc m529 v528
     refine ⟨⟨rawList.toArray⟩, c,
       hashed_sub hhash (by rw [hc606]; intro x hx; simp [hx]),
       haddr, hexact, ?_⟩
     simp only [GetCITraceResult, hc_info]
+    exact ⟨blobs, tree, v528, hhp.sub (by rw [hc606]; intro x hx; simp [hx]), built,
+      loadValue_snoc m529 v528, htrace.mono ext_snoc⟩
   · -- `DPrj`
     obtain ⟨ext1, rawList, c, hhash, haddr, hexact, hde, _, _, _, _, htables, cRep⟩ :=
       load_verified_constant_decode ha ev14
