@@ -723,6 +723,19 @@ theorem PointBlock.coreCompanions (hb : PointBlock env block formers ctors)
     CoreCompanions ⟨E, installed env formers ctors, t, lim⟩ :=
   coreCompanions_of_noRec (c := ⟨E, env, t, lim⟩) h hS hb.envExt hb.newSat_notRec
 
+/-- **The step, in the shape every declaration route takes**: the install, the fold's invariant
+with its auxiliary-root companion, the core's companions at every record store, table and group
+limit, and the stored keys kept. -/
+theorem pointBlock_step (hb : PointBlock env block formers ctors) (nP : Nat)
+    (hS : Ix.Kernel.Open.StoreInv env) :
+    ∃ env₂, InstallStep env (.indDecl block nP) env₂ ∧
+      (∀ (V : Type u) [SetTheory V], FullDeclInv V env → FullDeclInv V env₂) ∧
+      (∀ (E : Ixon.Env) (t : RoleTable) (lim : Option Nat),
+        CoreCompanions ⟨E, env, t, lim⟩ → CoreCompanions ⟨E, env₂, t, lim⟩) ∧
+      ∀ k, (env.find? k).isSome = true → (env₂.find? k).isSome = true :=
+  ⟨installed env formers ctors, (pointBlock_install hb nP).1, (pointBlock_install hb nP).2.2.1,
+    fun E t lim h => hb.coreCompanions hS E t lim h, (pointBlock_install hb nP).2.2.2⟩
+
 /-- No added constant is a model family's: the claimed environment keeps them all. -/
 theorem PointBlock.not_modelAux (hb : PointBlock env block formers ctors)
     {x : ConstantInfo .anon} (hx : x ∈ newConsts formers ctors) :
