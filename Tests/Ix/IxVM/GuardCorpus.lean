@@ -90,7 +90,7 @@ def runBlocks (cp : Corpus) (h : Host) : IO UInt32 := do
   let blocks := blocksOf cp.env
   let requested ← match ← IO.getEnv "IX_GUARD_CORPUS_ADDRESS_FILE" with
     | none => pure ([] : List String)
-    | some path => pure (((← IO.FS.readFile path).splitOn "\n").map String.trimAscii.toString |>.filter (· != ""))
+    | some path => pure (((← IO.FS.readFile path).splitOn "\n").map (fun s => s.trimAscii.toString) |>.filter (· != ""))
   let selected := if requested.isEmpty then blocks else blocks.filter fun b =>
     requested.contains (toString b.addr) || (match b.c.info with
       | .muts ms => ms.zipIdx.any fun (_, i) =>
