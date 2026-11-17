@@ -140,7 +140,8 @@ theorem whnf_nd_with_spine_step (c : ScopedCtx) {args : List (SourceValue F)} {h
     subst hc535
     obtain ⟨s, i, S, rfl, rfl, hs, hS⟩ := hH.proj_of_load ld12
     exact ih.get (.whnf .whnf_nd_proj_head) (by lt_calls) ev486 rc x_sa (.field i) x_inner sp types
-      rfl (good.sub fun x hx => by simp [hx]) hrc d Γ htypes s i S As hs rfl (by resolve_key) hS hAs
+      rfl (good.sub fun x hx => by simp [hx]) hrc d Γ htypes s i S As hs rfl (by resolve_key)
+      (hH.proj_permitted ld12 hs) hS hAs
   · -- any other head: stuck
     subst hc562
     have happ := ih.get (.whnf .apply_spine) (by lt_calls) ev545 hd sp rfl
@@ -333,11 +334,12 @@ theorem proj_head_step (c : ScopedCtx) (norm cont : Specs.Whnf.Fn)
         (∀ x ∈ cs12, x ∈ calls) ∧ (∀ x ∈ cs50, x ∈ calls) ∧ (∀ x ∈ cs234, x ∈ calls)))
     (hrc : c.rc h rc) {d : Nat} {Γ : Nat → KExpr} (htypes : c.types Γ h d types)
     {s : Bytes.Address} {S : KExpr} {As : List KExpr} (hs : RepAddr h s sa)
-    (hres : c.κ (ixAddr s) ≠ unresolvedKey)
+    (hres : c.κ (ixAddr s) ≠ unresolvedKey) (hperm : ProjPermitted c.κ (ixAddr s))
     (hS : c.tm d Γ h S inner) (hAs : c.tml d Γ h As sp) :
     ∃ E', c.tm d Γ h' E' r ∧
       Red c.env d (Specs.Whnf.mkAppN (.proj (c.κ (ixAddr s)) (ZMod.val i) S) As) E' := by
   have : Resolved (c.κ (ixAddr s)) := ⟨hres⟩
+  have : ProjPermitted c.κ (ixAddr s) := hperm
   rcases path with
     ⟨v1, m2, cs12, v39, m40, cs50, m78, cs89, x_field, cs153, ev14, ev52, ev91, ev155, l1, l2, l3,
       l4, s1, s2, s3, s4⟩ |
@@ -384,9 +386,9 @@ theorem whnf_proj_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' 
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_proj_head" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_proj_head c args h r h' calls := by
-  intro rc sa fidx inner sp types hargs good hrc d Γ htypes s i S As hs hfidx hres hS hAs
+  intro rc sa fidx inner sp types hargs good hrc d Γ htypes s i S As hs hfidx hres hperm hS hAs
   subst hargs hfidx
-  refine proj_head_step c .whnf .whnf_with_spine rfl rfl ih good ?_ hrc htypes hs hres hS hAs
+  refine proj_head_step c .whnf .whnf_with_spine rfl rfl ih good ?_ hrc htypes hs hres hperm hS hAs
   rcases Obs.«KernelWhnf::whnf_proj_head».obs ev with
     ⟨v1, m2, cs12, v39, m40, cs50, m78, cs89, x_field, cs153, ev14, ev52, ev91, ev155, hc188⟩ |
     ⟨v1, m2, cs12, v39, m40, cs50, v77, m78, cs89, m193, cs234, ev14, ev52, ev91, hm203, ev236,
@@ -406,9 +408,10 @@ theorem whnf_nd_proj_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_nd_proj_head" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_nd_proj_head c args h r h' calls := by
-  intro rc sa fidx inner sp types hargs good hrc d Γ htypes s i S As hs hfidx hres hS hAs
+  intro rc sa fidx inner sp types hargs good hrc d Γ htypes s i S As hs hfidx hres hperm hS hAs
   subst hargs hfidx
-  refine proj_head_step c .whnf_nd .whnf_nd_with_spine rfl rfl ih good ?_ hrc htypes hs hres hS hAs
+  refine proj_head_step c .whnf_nd .whnf_nd_with_spine rfl rfl ih good ?_ hrc htypes hs hres hperm hS
+    hAs
   rcases Obs.«KernelWhnf::whnf_nd_proj_head».obs ev with
     ⟨v1, m2, cs12, v39, m40, cs50, m78, cs89, x_field, cs153, ev14, ev52, ev91, ev155, hc188⟩ |
     ⟨v1, m2, cs12, v39, m40, cs50, v77, m78, cs89, m193, cs234, ev14, ev52, ev91, hm203, ev236,

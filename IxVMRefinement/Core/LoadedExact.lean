@@ -72,7 +72,7 @@ inductive TmExact (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) 
       (rb : Bytes.RepByteStream byteListEnum h bytes bp) (hs : StrBytes s bytes) :
       TmExact κ d Γ h k (.lit (.strVal s)) (.ptr (.enum kexprEnum) addr)
   | proj {k addr : Nat} {ap ep : SourceValue F} {a : Bytes.Address} {i : F} {E : KExpr}
-      [res : Resolved (κ (ixAddr a))]
+      [res : Resolved (κ (ixAddr a))] [perm : ProjPermitted κ (ixAddr a)]
       (cell : h[addr]? = some (.construct kexprEnum "Proj" [ap, .field i, ep]))
       (ra : Bytes.RepAddressRef addrTy h a ap) (re : TmExact κ d Γ h k E ep) :
       TmExact κ d Γ h k (.proj (κ (ixAddr a)) (ZMod.val i) E) (.ptr (.enum kexprEnum) addr)
@@ -484,7 +484,7 @@ inductive RawTmExact (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExp
       RawTmExact κ d Γ h k (.lit (.strVal s)) (.lit (.strVal s))
         (.ptr (.enum kexprEnum) addr)
   | proj {k addr : Nat} {ap ep : SourceValue F} {a : Bytes.Address} {i : F} {RE E : KExpr}
-      [res : Resolved (κ (ixAddr a))]
+      [res : Resolved (κ (ixAddr a))] [perm : ProjPermitted κ (ixAddr a)]
       (cell : h[addr]? = some (.construct kexprEnum "Proj" [ap, .field i, ep]))
       (ra : Bytes.RepAddressRef addrTy h a ap) (re : RawTmExact κ d Γ h k RE E ep) :
       RawTmExact κ d Γ h k (.proj (κ (ixAddr a)) (ZMod.val i) RE)

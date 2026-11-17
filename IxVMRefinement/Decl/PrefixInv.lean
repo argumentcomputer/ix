@@ -43,6 +43,28 @@ abbrev consCtx (c : Ctx) (cn : ConstantInfo .anon) : Ctx :=
 section
 variable {c : Ctx} {cn : ConstantInfo .anon}
 
+/-- **A stage over a larger environment and a larger prefix keeps every key the smaller one
+resolves.** -/
+theorem stagedOver_keep {c₁ c₂ : Ctx} {pre₁ pre₂ : Ix.Kernel.Env .anon} (ht : c₂.t = c₁.t)
+    (henv : ∀ {k : KKey} {ci : ConstantInfo .anon}, c₁.env.find? k = some ci →
+      ∃ ci', c₂.env.find? k = some ci')
+    (hpre : ∀ {k : KKey} {ci : ConstantInfo .anon}, pre₁.find? k = some ci →
+      ∃ ci', pre₂.find? k = some ci')
+    (x : _root_.Address) (h : (c₁.stagedOver pre₁).κ x ≠ unresolvedKey) :
+    (c₂.stagedOver pre₂).κ x = (c₁.stagedOver pre₁).κ x := by
+  have h' : resKey c₁.t (c₁.resolvesOver pre₁) x ≠ unresolvedKey := h
+  have hr := res_of_resKey_ne h'
+  have hr₂ : c₂.resolvesOver pre₂ x := by
+    rcases hr with ⟨ci, hci⟩ | ⟨y, hy, ci, hci⟩
+    · obtain ⟨ci', hci'⟩ := henv hci
+      exact Or.inl ⟨ci', by rw [ht]; exact hci'⟩
+    · obtain ⟨ci', hci'⟩ := hpre hci
+      exact Or.inr ⟨y, hy, ci', by rw [ht]; exact hci'⟩
+  show resKey c₂.t (c₂.resolvesOver pre₂) x = resKey c₁.t (c₁.resolvesOver pre₁) x
+  calc resKey c₂.t (c₂.resolvesOver pre₂) x = keyOf c₂.t x := resKey_of_res hr₂
+    _ = keyOf c₁.t x := by rw [ht]
+    _ = resKey c₁.t (c₁.resolvesOver pre₁) x := (resKey_of_res hr).symm
+
 /-- A fresh constant that is no projection table extends the environment. -/
 theorem consCtx_ext (hfresh : c.env.find? cn.name = none)
     (hnt : ∀ T : KKey, cn.name ≠ Ix.Kernel.projTableName T) :
@@ -60,16 +82,16 @@ theorem consCtx_find_old {k : KKey} {x : ConstantInfo .anon}
 
 /-- A key the prefix resolves is kept by the longer prefix. -/
 theorem consCtx_keep (hext : Ix.Kernel.EnvExt c.env (consCtx c cn).env) (x : _root_.Address)
-    (h : c.stored.κ x ≠ unresolvedKey) : (consCtx c cn).stored.κ x = c.stored.κ x := by
-  obtain ⟨ci, hci⟩ := Ctx.stored_key_ne h
-  rw [Ctx.stored_key_of_find hci]
-  exact Ctx.stored_key_of_find (c := consCtx c cn) (hext.find hci)
+    (h : c.stored.κ x ≠ unresolvedKey) : (consCtx c cn).stored.κ x = c.stored.κ x :=
+  stagedOver_keep (c₁ := c) (c₂ := consCtx c cn) (pre₁ := c.env) (pre₂ := (consCtx c cn).env)
+    rfl (fun hf => ⟨_, hext.find hf⟩) (fun hf => ⟨_, hext.find hf⟩) x h
 
-/-- A key the longer prefix resolves is the new constant's, or one the prefix resolves. -/
-theorem consCtx_split (x : _root_.Address)
+/-- A key the longer prefix resolves, at an address a record can have, is the new constant's, or
+one the prefix resolves. -/
+theorem consCtx_split (x : _root_.Address) (hm : ¬ IsProjMarker x)
     (h : (consCtx c cn).stored.κ x ≠ unresolvedKey) :
     keyOf c.t x = cn.name ∨ c.stored.κ x ≠ unresolvedKey := by
-  obtain ⟨ci, hci⟩ := Ctx.stored_key_ne h
+  obtain ⟨ci, hci⟩ := Ctx.stored_key_ne h hm
   have hci' : (⟨cn :: c.env.consts⟩ : Ix.Kernel.Env .anon).find? (keyOf c.t x) = some ci := hci
   by_cases e : cn.name = keyOf c.t x
   · exact Or.inl e.symm
@@ -93,9 +115,7 @@ theorem consCtx_old (h₁ : ScopedLoadFacts c.stored)
       exact hr ((consCtx_keep hext x hr).symm.trans hr₂)
     rw [hr₂, ← hr₁] at hfo
     exact h₁.findRes x y hfo hr₁
-  · obtain ⟨ci, hci⟩ := Ctx.stored_key_ne hr₂
-    have e₂ : (consCtx c cn).stored.κ x = keyOf c.t x :=
-      Ctx.stored_key_of_find (c := consCtx c cn) hci
+  · have e₂ : (consCtx c cn).stored.κ x = keyOf c.t x := (consCtx c cn).stored.key_eq hr₂
     rw [e₂] at hfo
     have e₁ : c.stored.κ x = keyOf c.t x := Ctx.stored_key_of_find hfo
     exact ⟨by rw [e₁]; exact hfo, e₂.trans e₁.symm⟩
@@ -163,8 +183,10 @@ theorem storedLoads_of_empty {c : Ctx} (hdec : L1.EnvDecoded c.E)
     cases h
   have nores : ∀ {x : _root_.Address}, c.stored.κ x ≠ unresolvedKey → False := by
     intro x h
-    obtain ⟨ci, hci⟩ := Ctx.stored_key_ne h
-    exact nof hci
+    have h' : resKey c.t (c.resolvesOver c.env) x ≠ unresolvedKey := h
+    rcases res_of_resKey_ne h' with ⟨ci, hci⟩ | ⟨y, -, ci, hci⟩
+    · exact nof hci
+    · exact nof hci
   have nofam : ∀ {b : _root_.Address} {i : Nat}, c.stored.FamAt b i → False := by
     intro b i h
     rcases h with ⟨cv, caps, hf⟩ | ⟨j, cv, nP, nF, hf⟩
@@ -213,6 +235,7 @@ theorem storedLoads_of_empty {c : Ctx} (hdec : L1.EnvDecoded c.E)
       storedRes := fun a ci hf => (nof hf).elim
       findRes := fun a ci hf => (nof hf).elim
       ctorIndRes := fun b i j cv nP nF hf => (nof hf).elim
+      ctorIndPerm := fun a b i j cvT caps cv nP nF hf _ _ => (nof hf).elim
       roleRes := fun r a hf _ _ => (hnf r hf).elim }
 
 /-! ## The load contract after a value constant -/
@@ -251,6 +274,15 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
     rcases hfam with ⟨cv, caps, hf⟩ | ⟨j, cv, nP, nF, hf⟩
     · exact Or.inl ⟨cv, caps, (old hf (fun e => hind cv caps e.symm)).1⟩
     · exact Or.inr ⟨j, cv, nP, nF, (old hf (fun e => hctor cv nP nF e.symm)).1⟩
+  have famPerm : ∀ {b : _root_.Address} {i : Nat}, c.stored.FamAt b i →
+      ProjPermitted c.stored.κ (iprjAddr b i) := by
+    intro b i hfam
+    have hr : c.stored.κ (iprjAddr b i) ≠ unresolvedKey := by
+      rcases hfam with ⟨cv, caps, hf⟩ | ⟨j, cv, nP, nF, hf⟩
+      · exact h₁.findRes _ _ hf
+      · exact h₁.ctorIndRes _ _ _ _ _ _ hf
+    obtain ⟨ci, hci⟩ := Ctx.stored_key_ne hr (iprjAddr_not_marker _ _)
+    exact Ctx.stored_projPermitted_of_find hci
   have good₁ : ∀ {cs : List (Call F)}, CoreGood (consCtx c cn).stored cs → CoreGood c.stored cs :=
     fun g => ⟨g.noCollision, g.bounded, fun _ _ => trivial⟩
   have notInduct : ∀ {h' : Heap F} {ptr nl ty np ni nc u blk idx : SourceValue F},
@@ -267,7 +299,7 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
   exact
     { getCI := by
         intro addr ptr h h' cs a ev _ res good ha
-        rcases consCtx_split (ixAddr a) res with hnew | hold
+        rcases consCtx_split (ixAddr a) (ixAddr_not_marker a) res with hnew | hold
         · refine ⟨cn, ?_, hreload addr ptr h h' cs a ev good.raw ha hnew⟩
           rw [(consCtx c cn).stored.key_eq res]
           show (⟨cn :: c.env.consts⟩ : Ix.Kernel.Env .anon).find? (keyOf c.t (ixAddr a)) = some cn
@@ -294,14 +326,15 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
       indRecord := h₁.indRecord
       inductRecord := by
         intro addr ptr h h' cs a nl ty np ni nc u blk idx ev _ res good ha hld
-        rcases consCtx_split (ixAddr a) res with hnew | hold
+        rcases consCtx_split (ixAddr a) (ixAddr_not_marker a) res with hnew | hold
         · exact (notInduct (hreload addr ptr h h' cs a ev good ha hnew) hld).elim
         · exact h₁.inductRecord addr ptr h h' cs a nl ty np ni nc u blk idx ev trivial hold good
             ha hld
       projTables := by
-        intro bp ip ptr h h' cs b i ev _ good hb hip hfam
+        intro bp ip ptr h h' cs b i ev _ good hb hip hfam _
         obtain ⟨⟨ci, hf, hrep⟩, htab⟩ :=
           h₁.projTables bp ip ptr h h' cs b i ev trivial good hb hip (fam hfam)
+            (famPerm (fam hfam))
         refine ⟨⟨ci, ?_, hrep.rekey_mono keep (stored_name_ne h₁ hf)⟩, ?_⟩
         · rw [keep _ (h₁.findRes _ _ hf)]
           exact hext.find hf
@@ -391,7 +424,7 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
       recordShape := h₁.recordShape
       inductBlock := by
         intro addr ptr h h' cs a b nl ty np ni nc u blk i ev _ res good ha hld hblk
-        rcases consCtx_split (ixAddr a) res with hnew | hold
+        rcases consCtx_split (ixAddr a) (ixAddr_not_marker a) res with hnew | hold
         · exact (notInduct (hreload addr ptr h h' cs a ev good ha hnew) hld).elim
         · exact h₁.inductBlock addr ptr h h' cs a b nl ty np ni nc u blk i ev trivial hold good
             ha hld hblk
@@ -420,6 +453,12 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
         have hr := h₁.ctorIndRes b i j cv nP nF hf₁
         rw [keep _ hr]
         exact hr
+      ctorIndPerm := by
+        intro a b i j cvT caps cv nP nF hf _ _
+        obtain ⟨hf₁, -⟩ := old hf (fun e => hind cvT caps e.symm)
+        have e₁ : c.stored.κ a = keyOf c.t a := c.stored.key_eq (h₁.findRes a _ hf₁)
+        rw [e₁] at hf₁
+        exact Ctx.stored_projPermitted_of_find (c := consCtx c cn) (hext.find hf₁)
       roleRes := by
         intro r a hf hi hb
         have hr := h₁.roleRes r a hf hi hb
@@ -488,16 +527,22 @@ theorem tmC_stored_of_usedRefs {E₀ : Ixon.Env} {t : Ix.Kernel.RoleTable}
     (he : ∀ i, i ∈ IxVM.Consistency.exprRefIdxs e → i ∈ IxVM.Consistency.usedRefIdxs c)
     (hstored : UsedRefsStored t env c) (rep : TmC (keyOf t) h X p) :
     TmC (Ctx.stored ⟨E₀, env, t, lim⟩).κ h X p := by
-  refine raw.tmC_rekey rep fun x hu => ?_
-  rcases hu with ⟨i, hi | ⟨s, hs, his⟩, hr⟩ | hr
-  · obtain ⟨ci, hci⟩ := hstored i (he i hi) x hr
-    exact Ctx.stored_key_of_find (c := ⟨E₀, env, t, lim⟩) hci
-  · have hmem : i ∈ IxVM.Consistency.usedRefIdxs c := by
-      unfold IxVM.Consistency.usedRefIdxs
-      exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨s, hs, his⟩)
-    obtain ⟨ci, hci⟩ := hstored i hmem x hr
-    exact Ctx.stored_key_of_find (c := ⟨E₀, env, t, lim⟩) hci
-  · cases hr
+  have used : ∀ x, L1.RefUsed c.refs.toList c.sharing.toList e x →
+      ∃ ci, env.find? (keyOf t x) = some ci := by
+    intro x hu
+    obtain ⟨i, hi | ⟨s, hs, his⟩, hr⟩ := hu
+    · exact hstored i (he i hi) x hr
+    · have hmem : i ∈ IxVM.Consistency.usedRefIdxs c := by
+        unfold IxVM.Consistency.usedRefIdxs
+        exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨s, hs, his⟩)
+      exact hstored i hmem x hr
+  refine raw.tmC_rekey rep (fun x hu => ?_) (fun x hu => ?_)
+  · rcases hu with hu | hr
+    · obtain ⟨ci, hci⟩ := used x hu
+      exact Ctx.stored_key_of_find (c := ⟨E₀, env, t, lim⟩) hci
+    · cases hr
+  · obtain ⟨ci, hci⟩ := used x hu
+    exact Ctx.stored_projPermitted_of_find (c := ⟨E₀, env, t, lim⟩) hci
 
 /-! ## The invariant -/
 
@@ -559,7 +604,7 @@ theorem PrefixInv.ctor_ind_stored {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim 
   have hk : (Ctx.stored ⟨E, env, t, lim⟩).κ (cprjAddr b i j) = keyOf t (cprjAddr b i j) :=
     Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hf
   have hr := h.loads.ctorIndRes b i j cv nP nF (by rw [hk]; exact hf)
-  exact Ctx.stored_key_ne hr
+  exact Ctx.stored_key_ne hr (iprjAddr_not_marker _ _)
 
 /-- **A value constant keeps the invariant.** Storing a definition, a theorem or an axiom `cn` at
 the fresh key of the address `a₀` keeps `PrefixInv`, given the declaration layer's step

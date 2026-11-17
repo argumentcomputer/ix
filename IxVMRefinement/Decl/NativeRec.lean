@@ -1643,7 +1643,7 @@ private theorem hasLooseBVar_false_of_idxAll {κ : _root_.Address → KKey} {d :
     | bvar cell' _ | sort cell' | const cell' | lit cell' | app cell' _ _
     | lam cell' _ _ | forallE cell' _ _ | proj cell' _ =>
       exact False.elim (load_cell_ne cell (loadValue_enum_cell cell') (by decide))
-  | m, k, _, _, .proj (res := _) cell _ he, hidx, hjk => by
+  | m, k, _, _, .proj (res := _) (perm := _) cell _ he, hidx, hjk => by
     cases hidx with
     | proj cell' hie =>
       obtain ⟨_, hxs⟩ := load_cell cell (loadValue_enum_cell cell')
@@ -4500,7 +4500,7 @@ inductive RawTm (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat → KExpr) (h
       (rb : Bytes.RepByteStream byteListEnum h bytes bp) (hs : StrBytes s bytes) :
       RawTm κ d Γ h k (.lit (.strVal s)) (.lit (.strVal s)) (.ptr (.enum kexprEnum) addr)
   | proj {k addr : Nat} {ap ep : SourceValue F} {a : Bytes.Address} {i : F} {Re E : KExpr}
-      [res : Resolved (κ (ixAddr a))]
+      [res : Resolved (κ (ixAddr a))] [perm : ProjPermitted κ (ixAddr a)]
       (cell : h[addr]? = some (.construct kexprEnum "Proj" [ap, .field i, ep]))
       (ra : Bytes.RepAddressRef addrTy h a ap) (re : RawTm κ d Γ h k Re E ep) :
       RawTm κ d Γ h k (.proj (κ (ixAddr a)) (ZMod.val i) Re)

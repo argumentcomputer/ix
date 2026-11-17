@@ -206,7 +206,8 @@ projection record `(i, 0, block)`. -/
 def proj_ctor : SpecFn := fun c args h r h' calls =>
   ∀ bp (i : F) (b : Bytes.Address), args = [bp, .field i] →
     c.allowedTop "KernelModeled::proj_ctor" [bp, .field i] h →
-    c.FamAt (ixAddr b) (ZMod.val i) → CoreGood c calls → RepAddr h b bp →
+    c.FamAt (ixAddr b) (ZMod.val i) → ProjPermitted c.κ (iprjAddr (ixAddr b) (ZMod.val i)) →
+    CoreGood c calls → RepAddr h b bp →
     FewInductives c (ixAddr b) ∧
       ∃ ci, c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some ci ∧
         CIPtrRep c.κ h' r ci

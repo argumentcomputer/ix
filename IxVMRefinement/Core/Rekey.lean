@@ -68,54 +68,132 @@ inductive AddrIn (h : Heap F) : SourceValue F → Bytes.Address → Prop where
       (sub : AddrIn h bp a) :
       AddrIn h (.ptr (.enum kexprEnum) addr) a
 
+
+/-- **An address heads a projection of a heap term**: it is the address of a `Proj` cell
+reachable from the pointer through term cells. -/
+inductive ProjIn (h : Heap F) : SourceValue F → Bytes.Address → Prop where
+  | head {addr : Nat} {ap ep : SourceValue F} {i : F} {a : Bytes.Address}
+      (cell : h[addr]? = some (.construct kexprEnum "Proj" [ap, .field i, ep]))
+      (ra : Bytes.RepAddressRef addrTy h a ap) :
+      ProjIn h (.ptr (.enum kexprEnum) addr) a
+  | projArg {addr : Nat} {ap ep : SourceValue F} {i : F} {a : Bytes.Address}
+      (cell : h[addr]? = some (.construct kexprEnum "Proj" [ap, .field i, ep]))
+      (sub : ProjIn h ep a) :
+      ProjIn h (.ptr (.enum kexprEnum) addr) a
+  | appFn {addr : Nat} {fp ap : SourceValue F} {a : Bytes.Address}
+      (cell : h[addr]? = some (.construct kexprEnum "App" [fp, ap]))
+      (sub : ProjIn h fp a) :
+      ProjIn h (.ptr (.enum kexprEnum) addr) a
+  | appArg {addr : Nat} {fp ap : SourceValue F} {a : Bytes.Address}
+      (cell : h[addr]? = some (.construct kexprEnum "App" [fp, ap]))
+      (sub : ProjIn h ap a) :
+      ProjIn h (.ptr (.enum kexprEnum) addr) a
+  | lamTy {addr : Nat} {tp bp lp : SourceValue F} {a : Bytes.Address}
+      (cell : h[addr]? = some (.construct kexprEnum "Lam" [tp, bp, lp]))
+      (sub : ProjIn h tp a) :
+      ProjIn h (.ptr (.enum kexprEnum) addr) a
+  | lamBody {addr : Nat} {tp bp lp : SourceValue F} {a : Bytes.Address}
+      (cell : h[addr]? = some (.construct kexprEnum "Lam" [tp, bp, lp]))
+      (sub : ProjIn h bp a) :
+      ProjIn h (.ptr (.enum kexprEnum) addr) a
+  | forallTy {addr : Nat} {tp bp lp : SourceValue F} {a : Bytes.Address}
+      (cell : h[addr]? = some (.construct kexprEnum "Forall" [tp, bp, lp]))
+      (sub : ProjIn h tp a) :
+      ProjIn h (.ptr (.enum kexprEnum) addr) a
+  | forallBody {addr : Nat} {tp bp lp : SourceValue F} {a : Bytes.Address}
+      (cell : h[addr]? = some (.construct kexprEnum "Forall" [tp, bp, lp]))
+      (sub : ProjIn h bp a) :
+      ProjIn h (.ptr (.enum kexprEnum) addr) a
+  | letTy {addr : Nat} {tp vp bp : SourceValue F} {a : Bytes.Address}
+      (cell : h[addr]? = some (.construct kexprEnum "Let" [tp, vp, bp]))
+      (sub : ProjIn h tp a) :
+      ProjIn h (.ptr (.enum kexprEnum) addr) a
+  | letVal {addr : Nat} {tp vp bp : SourceValue F} {a : Bytes.Address}
+      (cell : h[addr]? = some (.construct kexprEnum "Let" [tp, vp, bp]))
+      (sub : ProjIn h vp a) :
+      ProjIn h (.ptr (.enum kexprEnum) addr) a
+  | letBody {addr : Nat} {tp vp bp : SourceValue F} {a : Bytes.Address}
+      (cell : h[addr]? = some (.construct kexprEnum "Let" [tp, vp, bp]))
+      (sub : ProjIn h bp a) :
+      ProjIn h (.ptr (.enum kexprEnum) addr) a
+
+/-- The head of a projection of a term is an address of the term. -/
+theorem ProjIn.addrIn {h : Heap F} {p : SourceValue F} {a : Bytes.Address} (m : ProjIn h p a) :
+    AddrIn h p a := by
+  induction m with
+  | head cell ra => exact .projHead cell ra
+  | projArg cell _ ih => exact .projArg cell ih
+  | appFn cell _ ih => exact .appFn cell ih
+  | appArg cell _ ih => exact .appArg cell ih
+  | lamTy cell _ ih => exact .lamTy cell ih
+  | lamBody cell _ ih => exact .lamBody cell ih
+  | forallTy cell _ ih => exact .forallTy cell ih
+  | forallBody cell _ ih => exact .forallBody cell ih
+  | letTy cell _ ih => exact .letTy cell ih
+  | letVal cell _ ih => exact .letVal cell ih
+  | letBody cell _ ih => exact .letBody cell ih
+
 /-- **A represented term under another keying**: one that agrees with the first on the
-addresses of the term's `Const` and `Proj` cells. The keys of those cells resolve under the second
-keying because they resolve under the first. -/
+addresses of the term's `Const` and `Proj` cells, and that permits a projection at the head of
+each `Proj` cell where the first does. The keys of those cells resolve under the second keying
+because they resolve under the first. -/
 theorem Tm.rekey {κ₁ κ₂ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
     {k : Nat} {E : KExpr} {p : SourceValue F} (rep : Tm κ₁ d Γ h k E p) :
-    (∀ a, AddrIn h p a → κ₂ (ixAddr a) = κ₁ (ixAddr a)) → Tm κ₂ d Γ h k E p := by
+    (∀ a, AddrIn h p a → κ₂ (ixAddr a) = κ₁ (ixAddr a)) →
+    (∀ a, ProjIn h p a → ProjPermitted κ₁ (ixAddr a) → ProjPermitted κ₂ (ixAddr a)) →
+      Tm κ₂ d Γ h k E p := by
   induction rep with
-  | bvarLocal cell hs hi => exact fun _ => .bvarLocal cell hs hi
-  | bvarFree cell hs hk hd => exact fun _ => .bvarFree cell hs hk hd
-  | sort cell rl hu => exact fun _ => .sort cell rl hu
+  | bvarLocal cell hs hi => exact fun _ _ => .bvarLocal cell hs hi
+  | bvarFree cell hs hk hd => exact fun _ _ => .bvarFree cell hs hk hd
+  | sort cell rl hu => exact fun _ _ => .sort cell rl hu
   | @const k addr ap lsp a ls us res cell ra rls hus =>
-    intro agree
+    intro agree _
     have e := agree a (.const cell ra)
     have : Resolved (κ₂ (ixAddr a)) := ⟨by rw [e]; exact res.ne⟩
     rw [← e]
     exact .const cell ra rls hus
   | app cell _ _ ihf iha =>
-    exact fun agree => .app cell (ihf fun a m => agree a (.appFn cell m))
-      (iha fun a m => agree a (.appArg cell m))
+    exact fun agree perm => .app cell
+      (ihf (fun a m => agree a (.appFn cell m)) (fun a m => perm a (.appFn cell m)))
+      (iha (fun a m => agree a (.appArg cell m)) (fun a m => perm a (.appArg cell m)))
   | lam cell _ _ rl iht ihb =>
-    exact fun agree => .lam cell (iht fun a m => agree a (.lamTy cell m))
-      (ihb fun a m => agree a (.lamBody cell m)) rl
+    exact fun agree perm => .lam cell
+      (iht (fun a m => agree a (.lamTy cell m)) (fun a m => perm a (.lamTy cell m)))
+      (ihb (fun a m => agree a (.lamBody cell m)) (fun a m => perm a (.lamBody cell m))) rl
   | forallE cell _ _ rl iht ihb =>
-    exact fun agree => .forallE cell (iht fun a m => agree a (.forallTy cell m))
-      (ihb fun a m => agree a (.forallBody cell m)) rl
+    exact fun agree perm => .forallE cell
+      (iht (fun a m => agree a (.forallTy cell m)) (fun a m => perm a (.forallTy cell m)))
+      (ihb (fun a m => agree a (.forallBody cell m)) (fun a m => perm a (.forallBody cell m))) rl
   | letE cell _ _ _ iht ihv ihb =>
-    exact fun agree => .letE cell (iht fun a m => agree a (.letTy cell m))
-      (ihv fun a m => agree a (.letVal cell m)) (ihb fun a m => agree a (.letBody cell m))
-  | litNat cell rl hc => exact fun _ => .litNat cell rl hc
-  | litStr cell rb hs => exact fun _ => .litStr cell rb hs
-  | @proj k addr ap ep a i E res cell ra _ ih =>
-    intro agree
+    exact fun agree perm => .letE cell
+      (iht (fun a m => agree a (.letTy cell m)) (fun a m => perm a (.letTy cell m)))
+      (ihv (fun a m => agree a (.letVal cell m)) (fun a m => perm a (.letVal cell m)))
+      (ihb (fun a m => agree a (.letBody cell m)) (fun a m => perm a (.letBody cell m)))
+  | litNat cell rl hc => exact fun _ _ => .litNat cell rl hc
+  | litStr cell rb hs => exact fun _ _ => .litStr cell rb hs
+  | @proj k addr ap ep a i E res pm cell ra _ ih =>
+    intro agree perm
     have e := agree a (.projHead cell ra)
     have : Resolved (κ₂ (ixAddr a)) := ⟨by rw [e]; exact res.ne⟩
+    have : ProjPermitted κ₂ (ixAddr a) := perm a (.head cell ra) pm
     rw [← e]
-    exact .proj cell ra (ih fun a m => agree a (.projArg cell m))
+    exact .proj cell ra
+      (ih (fun a m => agree a (.projArg cell m)) (fun a m => perm a (.projArg cell m)))
 
 /-- A closed represented term under another keying. -/
 theorem TmC.rekey {κ₁ κ₂ : _root_.Address → KKey} {h : Heap F} {E : KExpr} {p : SourceValue F}
-    (rep : TmC κ₁ h E p) (agree : ∀ a, AddrIn h p a → κ₂ (ixAddr a) = κ₁ (ixAddr a)) :
+    (rep : TmC κ₁ h E p) (agree : ∀ a, AddrIn h p a → κ₂ (ixAddr a) = κ₁ (ixAddr a))
+    (perm : ∀ a, ProjIn h p a → ProjPermitted κ₁ (ixAddr a) → ProjPermitted κ₂ (ixAddr a)) :
     TmC κ₂ h E p :=
-  fun d Γ => (rep d Γ).rekey agree
+  fun d Γ => (rep d Γ).rekey agree perm
 
 /-- A represented level count and type under another keying. -/
 theorem ValRep.rekey {κ₁ κ₂ : _root_.Address → KKey} {h : Heap F} {nl ty : SourceValue F}
     {cv : Ix.Kernel.ConstantVal .anon} (rep : ValRep κ₁ h nl ty cv)
-    (agree : ∀ a, AddrIn h ty a → κ₂ (ixAddr a) = κ₁ (ixAddr a)) : ValRep κ₂ h nl ty cv :=
-  ⟨rep.1, rep.2.1, rep.2.2.1, TmC.rekey rep.2.2.2 agree⟩
+    (agree : ∀ a, AddrIn h ty a → κ₂ (ixAddr a) = κ₁ (ixAddr a))
+    (perm : ∀ a, ProjIn h ty a → ProjPermitted κ₁ (ixAddr a) → ProjPermitted κ₂ (ixAddr a)) :
+    ValRep κ₂ h nl ty cv :=
+  ⟨rep.1, rep.2.1, rep.2.2.1, TmC.rekey rep.2.2.2 agree perm⟩
 
 /-- **An address occurs in a rule list**: in the right-hand side of one of its rules. -/
 inductive RulesAddrIn (h : Heap F) : SourceValue F → Bytes.Address → Prop where
@@ -129,17 +207,20 @@ inductive RulesAddrIn (h : Heap F) : SourceValue F → Bytes.Address → Prop wh
       (sub : RulesAddrIn h rest a) :
       RulesAddrIn h (.ptr (.enum krrListEnum) addr) a
 
-/-- A represented rule list under another keying. -/
+/-- A represented rule list under another keying, one that permits the projections the first
+permits. -/
 theorem RulesRep.rekey {κ₁ κ₂ : _root_.Address → KKey} {h : Heap F}
     {ps : List Ix.Kernel.LevelParam} {j : Nat} {p : SourceValue F}
-    {rls : List (Ix.Kernel.RecRule .anon)} (rep : RulesRep κ₁ h ps j p rls) :
+    {rls : List (Ix.Kernel.RecRule .anon)} (rep : RulesRep κ₁ h ps j p rls)
+    (perm : ∀ a, ProjPermitted κ₁ (ixAddr a) → ProjPermitted κ₂ (ixAddr a)) :
     (∀ a, RulesAddrIn h p a → κ₂ (ixAddr a) = κ₁ (ixAddr a)) → RulesRep κ₂ h ps j p rls := by
   induction rep with
   | nil cell => exact fun _ => .nil cell
   | cons cell hr _ ih =>
     intro agree
     obtain ⟨rhs, rfl, hnf, hrhs⟩ := hr
-    exact .cons cell ⟨rhs, rfl, hnf, TmC.rekey hrhs fun a m => agree a (.head cell m)⟩
+    exact .cons cell
+      ⟨rhs, rfl, hnf, TmC.rekey hrhs (fun a m => agree a (.head cell m)) (fun a _ => perm a)⟩
       (ih fun a m => agree a (.tail cell m))
 
 /-- **An address occurs in a loaded constant**: in its type, its value or a rule's right-hand
@@ -171,33 +252,38 @@ inductive CIAddrIn (h : Heap F) : SourceValue F → Bytes.Address → Prop where
       CIAddrIn h (.construct kciEnum "Rec" [nl, ty, np, ni, nm, nmi, rules, k, u, blk, idx]) a
 
 /-- **A loaded constant under another keying**: one that agrees with the first on the addresses
-of the constant's terms and on every address the constant's name is the key of. -/
+of the constant's terms and on every address the constant's name is the key of, and that permits
+the projections the first permits. -/
 theorem CIRep.rekey {κ₁ κ₂ : _root_.Address → KKey} {h : Heap F} {v : SourceValue F}
     {ci : Ix.Kernel.ConstantInfo .anon} (rep : CIRep κ₁ h v ci)
     (name : ∀ x, ci.toConstantVal.name = κ₁ x → κ₂ x = κ₁ x)
-    (agree : ∀ a, CIAddrIn h v a → κ₂ (ixAddr a) = κ₁ (ixAddr a)) : CIRep κ₂ h v ci := by
+    (agree : ∀ a, CIAddrIn h v a → κ₂ (ixAddr a) = κ₁ (ixAddr a))
+    (perm : ∀ a, ProjPermitted κ₁ (ixAddr a) → ProjPermitted κ₂ (ixAddr a)) :
+    CIRep κ₂ h v ci := by
+  have pm : ∀ {p : SourceValue F} (a : Bytes.Address), ProjIn h p a →
+      ProjPermitted κ₁ (ixAddr a) → ProjPermitted κ₂ (ixAddr a) := fun a _ => perm a
   cases rep with
-  | axio hv => exact .axio (hv.rekey fun a m => agree a (.axio m))
-  | opaq hv => exact .opaq (hv.rekey fun a m => agree a (.opaq m))
+  | axio hv => exact .axio (hv.rekey (fun a m => agree a (.axio m)) pm)
+  | opaq hv => exact .opaq (hv.rekey (fun a m => agree a (.opaq m)) pm)
   | defn hv hV =>
-    exact .defn (hv.rekey fun a m => agree a (.defnTy m))
-      (TmC.rekey hV fun a m => agree a (.defnVal m))
+    exact .defn (hv.rekey (fun a m => agree a (.defnTy m)) pm)
+      (TmC.rekey hV (fun a m => agree a (.defnVal m)) pm)
   | thm hv hV =>
-    exact .thm (hv.rekey fun a m => agree a (.thmTy m))
-      (TmC.rekey hV fun a m => agree a (.thmVal m))
-  | quot hv hk => exact .quot (hv.rekey fun a m => agree a (.quot m)) hk
+    exact .thm (hv.rekey (fun a m => agree a (.thmTy m)) pm)
+      (TmC.rekey hV (fun a m => agree a (.thmVal m)) pm)
+  | quot hv hk => exact .quot (hv.rekey (fun a m => agree a (.quot m)) pm) hk
   | induct hv hcounts hkey =>
     obtain ⟨b, i, hb, hidx, hname⟩ := hkey
-    exact .induct (hv.rekey fun a m => agree a (.induct m)) hcounts
+    exact .induct (hv.rekey (fun a m => agree a (.induct m)) pm) hcounts
       ⟨b, i, hb, hidx, hname.trans (name _ hname).symm⟩
   | ctor hv hnp hnf hcounts hkey =>
     obtain ⟨b, i, j, hb, hind, hcidx, hname⟩ := hkey
-    exact .ctor (hv.rekey fun a m => agree a (.ctor m)) hnp hnf hcounts
+    exact .ctor (hv.rekey (fun a m => agree a (.ctor m)) pm) hnp hnf hcounts
       ⟨b, i, j, hb, hind, hcidx, hname.trans (name _ hname).symm⟩
   | recr hv hnp hni hnm hnmi hrP hmI hcounts hrules hk hkey =>
     obtain ⟨b, i, hb, hidx, hname⟩ := hkey
-    refine .recr (hv.rekey fun a m => agree a (.recTy m)) hnp hni hnm hnmi hrP hmI hcounts
-      (hrules.rekey fun a m => agree a (.recRule m)) hk ⟨b, i, hb, hidx, ?_⟩
+    refine .recr (hv.rekey (fun a m => agree a (.recTy m)) pm) hnp hni hnm hnmi hrP hmI hcounts
+      (hrules.rekey perm fun a m => agree a (.recRule m)) hk ⟨b, i, hb, hidx, ?_⟩
     rcases hname with hname | hname
     · exact .inl (hname.trans (name _ hname).symm)
     · exact .inr (hname.trans (name _ hname).symm)
@@ -206,10 +292,11 @@ theorem CIRep.rekey {κ₁ κ₂ : _root_.Address → KKey} {h : Heap F} {v : So
 theorem CIPtrRep.rekey {κ₁ κ₂ : _root_.Address → KKey} {h : Heap F} {p : SourceValue F}
     {ci : Ix.Kernel.ConstantInfo .anon} (rep : CIPtrRep κ₁ h p ci)
     (name : ∀ x, ci.toConstantVal.name = κ₁ x → κ₂ x = κ₁ x)
-    (agree : ∀ v, loadValue h p = .ok v → ∀ a, CIAddrIn h v a → κ₂ (ixAddr a) = κ₁ (ixAddr a)) :
+    (agree : ∀ v, loadValue h p = .ok v → ∀ a, CIAddrIn h v a → κ₂ (ixAddr a) = κ₁ (ixAddr a))
+    (perm : ∀ a, ProjPermitted κ₁ (ixAddr a) → ProjPermitted κ₂ (ixAddr a)) :
     CIPtrRep κ₂ h p ci := by
   obtain ⟨v, hld, hrep⟩ := rep
-  exact ⟨v, hld, hrep.rekey name (agree v hld)⟩
+  exact ⟨v, hld, hrep.rekey name (agree v hld) perm⟩
 
 /-! ## A keying that keeps every resolved key
 
@@ -235,9 +322,10 @@ theorem Tm.rekey_mono {κ₁ κ₂ : _root_.Address → KKey} {d : Nat} {Γ : Na
   | letE cell _ _ _ iht ihv ihb => exact .letE cell iht ihv ihb
   | litNat cell rl hc => exact .litNat cell rl hc
   | litStr cell rb hs => exact .litStr cell rb hs
-  | @proj k addr ap ep a i E res cell ra _ ih =>
+  | @proj k addr ap ep a i E res pm cell ra _ ih =>
     have e := keep (ixAddr a) res.ne
     have : Resolved (κ₂ (ixAddr a)) := ⟨by rw [e]; exact res.ne⟩
+    have : ProjPermitted κ₂ (ixAddr a) := ProjPermitted.of_keep keep pm
     rw [← e]
     exact .proj cell ra ih
 

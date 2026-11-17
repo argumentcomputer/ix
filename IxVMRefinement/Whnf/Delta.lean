@@ -225,7 +225,8 @@ theorem pdi_strong (c : ScopedCtx) (N : Nat) :
           j = n - 1 - i ∧ RomBound.HeapDescent h (.enum kexprEnum) val m ∧ m < 549755813889 ∧
           Specs.Whnf.stripLams m V = some (.proj (c.κ (ixAddr s)) (ZMod.val f) X) ∧
           c.tmk d Γ (K + m) h X bp ∧
-          loadValue h bp = .ok (.construct kexprEnum "BVar" [.field i]) := by
+          loadValue h bp = .ok (.construct kexprEnum "BVar" [.field i]) ∧
+          ProjPermitted c.κ (ixAddr s) := by
   induction N with
   | zero => intro _ _ _ _ _ _ hlt; exact absurd hlt (Nat.not_lt_zero _)
   | succ N ihN =>
@@ -246,7 +247,7 @@ theorem pdi_strong (c : ScopedCtx) (N : Nat) :
         rw [NatAux.add_ok op65, Nat.cast_succ]
       obtain ⟨T, B, ℓ, rfl, -, hB, -⟩ := hV.lam_of_load ld12
       obtain ⟨n, f, j, i, s, m, X, bp, hxa, hxf, hxj, hs, hh, hn, hi, hn32, hj, hdesc, hm,
-          hstrip, hX, hbp⟩ :=
+          hstrip, hX, hbp, hpm⟩ :=
         ihN (by simp only [List.length_cons] at hlt; omega) ev42
           (good.sub fun x hx => by simp [hx]) rfl hB hr
       have hm' : m < 2 ^ 39 := RomBound.bounded_descent_lt good.2
@@ -257,7 +258,7 @@ theorem pdi_strong (c : ScopedCtx) (N : Nat) :
       obtain rfl : t = .enum kexprEnum := htyped.symm.trans (by simp)
       refine ⟨n, f, j, i, s, m + 1, X, bp, hxa, hxf, hxj, hs, hh, ?_, hi, hn32, hj,
         .down hcell (by simp) (by simp [RomBound.cellArgs]) hdesc, by omega, hstrip,
-        ?_, hbp⟩
+        ?_, hbp, hpm⟩
       · rw [hn, show K + 1 + m = K + (m + 1) by omega]
       · rw [show K + (m + 1) = K + 1 + m by omega]; exact hX
     · -- a projection of a bound variable below the arity
@@ -275,7 +276,7 @@ theorem pdi_strong (c : ScopedCtx) (N : Nat) :
       obtain rfl : t = .enum kexprEnum := htyped.symm.trans (by simp)
       refine ⟨((K : Nat) : F), i0, ((K : Nat) : F) - 1 - a0, a0, s, 0, Es, x_projected, rfl, rfl,
         rfl, hs, rfl, by simp, hlt', hb32, rfl, .here hcell (by simp), by omega, rfl,
-        hEs, ld101⟩
+        hEs, ld101, hV.proj_permitted ld12 hs⟩
     · exact (field_one_ne_zero (tuple5_inj (hr.symm.trans he221)).1).elim
     · exact (field_one_ne_zero (tuple5_inj (hr.symm.trans he271)).1).elim
     · exact (field_one_ne_zero (tuple5_inj (hr.symm.trans he321)).1).elim
@@ -307,9 +308,10 @@ theorem pdi_top (c : ScopedCtx) {val : SourceValue F} {a : F} {h h' : Heap F} {r
       xj = .field j ∧ RepAddr h s sp ∧ h' = h ∧ ZMod.val n = ZMod.val a + m ∧
       ZMod.val j < ZMod.val n ∧
       Specs.Whnf.stripLams m V = some (.proj (c.κ (ixAddr s)) (ZMod.val f)
-        (.bvar (ZMod.val n - 1 - ZMod.val j))) := by
+        (.bvar (ZMod.val n - 1 - ZMod.val j))) ∧
+      ProjPermitted c.κ (ixAddr s) := by
   obtain ⟨n, f, j, i, s, m, X, bp, hxa, hxf, hxj, hs, hh, hn, hi, hn32, hj, -, hm, hstrip, hX,
-      hbp⟩ :=
+      hbp, hpm⟩ :=
     pdi_strong c (calls.length + 1) (Nat.lt_succ_self _) ev good (K := ZMod.val a)
       (by rw [NatAux.natCast_val]) hV hr
   have hnv : ZMod.val n = ZMod.val a + m := by rw [hn]; exact NatAux.val_natCast (by omega)
@@ -319,7 +321,7 @@ theorem pdi_top (c : ScopedCtx) {val : SourceValue F} {a : F} {h h' : Heap F} {r
     rw [hj, NatAux.val_sub (x := n - 1) (y := i) (by omega), hv1]
   rcases hX.bvar_of_load hbp with ⟨i', hi', -, ⟨hlt, rfl⟩ | ⟨hge, -, -⟩⟩
   · obtain rfl := Value.field.inj hi'
-    refine ⟨n, f, j, s, m, hxa, hxf, hxj, hs, hh, hnv, by omega, ?_⟩
+    refine ⟨n, f, j, s, m, hxa, hxf, hxj, hs, hh, hnv, by omega, ?_, hpm⟩
     rw [hstrip, show ZMod.val n - 1 - ZMod.val j = ZMod.val i by omega]
   · obtain rfl := Value.field.inj hi'
     exfalso
@@ -503,7 +505,7 @@ theorem projection_definition_info_step (c : ScopedCtx) {args : List (SourceValu
     Specs.Whnf.projection_definition_info c args h r h' calls := by
   intro val arity hargs good d Γ a V harity ha hV n f j sp hr
   subst hargs harity
-  obtain ⟨n', f', j', s, m, hxa, hxf, hxj, hs, hh, hnv, hj, hstrip⟩ :=
+  obtain ⟨n', f', j', s, m, hxa, hxf, hxj, hs, hh, hnv, hj, hstrip, -⟩ :=
     WhnfAux.pdi_top c ev good ha hV hr
   obtain rfl := Value.field.inj hxa
   obtain rfl := Value.field.inj hxf
@@ -544,7 +546,7 @@ theorem try_reduce_core (c : ScopedCtx) {args : List (SourceValue F)} {h h' : He
   · subst hc346 he345
     obtain ⟨-, rfl⟩ := WhnfAux.tag_eq (hr.symm.trans he310)
     -- the value: `m` `λ`s over a projection of a bound variable
-    obtain ⟨nF, f, j, s, m, rfl, rfl, rfl, hs, -, hnv, hjn, hstrip⟩ :=
+    obtain ⟨nF, f, j, s, m, rfl, rfl, rfl, hs, -, hnv, hjn, hstrip, hpermS⟩ :=
       WhnfAux.pdi_top c ev15 (good.sub fun x hx => by simp [hx]) (by simp)
         (by rw [ZMod.val_zero]; exact hP d Γ) rfl
     rw [ZMod.val_zero, Nat.zero_add] at hnv
@@ -605,6 +607,7 @@ theorem try_reduce_core (c : ScopedCtx) {args : List (SourceValue F)} {h h' : He
     have hress := WhnfAux.keysResolved_stripLams (Tm.keysResolved (hP d Γ)) hstrip
     simp only [KeysResolved] at hress
     have : Resolved (c.κ (ixAddr s)) := ⟨hress.1⟩
+    have : ProjPermitted c.κ (ixAddr s) := hpermS
     have hcell : Tm c.κ d Γ m238 0 (.proj (c.κ (ixAddr s)) (ZMod.val f) A)
         (.ptr (.enum kexprEnum) m208.length) := by
       subst hm248

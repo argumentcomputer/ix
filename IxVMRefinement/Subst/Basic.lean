@@ -736,7 +736,8 @@ theorem tm_store_letE {h : Heap F} {k : Nat} {T V B : KExpr} {tp vp bp : SourceV
   have ext := Heap.Extends.snoc h (.construct kexprEnum "Let" [tp, vp, bp])
   exact .letE store_get (rt.mono ext) (rv.mono ext) (rb.mono ext)
 
-theorem tm_store_proj {h : Heap F} {k : Nat} {a : Bytes.Address} [Resolved (κ (ixAddr a))] {i : F}
+theorem tm_store_proj {h : Heap F} {k : Nat} {a : Bytes.Address} [Resolved (κ (ixAddr a))]
+    [ProjPermitted κ (ixAddr a)] {i : F}
     {E : KExpr}
     {ap ep : SourceValue F} (ra : Bytes.RepAddressRef addrTy h a ap) (re : Tm κ d Γ h k E ep) :
     Tm κ d Γ (h ++ [.construct kexprEnum "Proj" [ap, .field i, ep]]) k
