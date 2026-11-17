@@ -87,7 +87,7 @@ theorem native_ctor_slots_scoped {b : Bytes.Address} {n levels params : Nat} {i 
     | .other (m34 := after) (p41 := ptr) (cs47 := loadCalls)
         (x_c_nlvls := cnl) (x_cty := cty) (x_c_block := cblk)
         (x_c_ind_idx := cmi) (x_c_cidx := csl) (x_c_np := cnp) (x_c_nf := cnf)
-        (x_c_unsafe := cus) (m144 := scopeHeap) (ev154 := addrEq) (ev331 := scoped)
+        (x_c_unsafe := cus) (m144 := scopeHeap) (ev154 := addrEq) (ev331 := scopeRun)
         (m655 := nextHeap) (cs695 := nextCalls) (v708 := nextIndex)
         (ev49 := loaded) (ld43 := tag) (heq233 := slotChecked) (heq261 := levelsChecked)
         (heq289 := paramsChecked) (op792 := addition) (ev697 := nextRun)
@@ -96,7 +96,7 @@ theorem native_ctor_slots_scoped {b : Bytes.Address} {n levels params : Nat} {i 
       · subst hjk
         exact ⟨blockArg, ptr, h, after, scopeHeap, _, loadCalls, _, cnl, cty, cblk, cmi, csl,
           cnp, cnf, cus, _, loaded, fun cl hcl => hsub cl (by rw [allCalls]; simp [hcl]), hbp,
-          tag, slotChecked, levelsChecked, paramsChecked.trans hnp, addrEq.heap_extends, scoped,
+          tag, slotChecked, levelsChecked, paramsChecked.trans hnp, addrEq.heap_extends, scopeRun,
           hsub _ (by rw [allCalls]; simp)⟩
       · have added := Decl.evalBinOp_add_nat k 1 addition
         subst nextIndex
@@ -140,7 +140,7 @@ theorem modeled_ctor_slots_scoped {b : Bytes.Address} {n levels params : Nat} {i
     | .other (m34 := after) (p41 := ptr) (cs47 := loadCalls)
         (x_c_nlvls := cnl) (x_cty := cty) (x_c_block := cblk)
         (x_c_ind_idx := cmi) (x_c_cidx := csl) (x_c_np := cnp) (x_c_nf := cnf)
-        (x_c_unsafe := cus) (m144 := scopeHeap) (ev154 := addrEq) (ev331 := scoped)
+        (x_c_unsafe := cus) (m144 := scopeHeap) (ev154 := addrEq) (ev331 := scopeRun)
         (m500 := nextHeap) (cs540 := nextCalls) (v551 := nextIndex)
         (ev49 := loaded) (ld43 := tag) (heq233 := slotChecked) (heq261 := levelsChecked)
         (heq289 := paramsChecked) (op621 := addition) (ev542 := nextRun)
@@ -149,7 +149,7 @@ theorem modeled_ctor_slots_scoped {b : Bytes.Address} {n levels params : Nat} {i
       · subst hjk
         exact ⟨blockArg, ptr, h, after, scopeHeap, _, loadCalls, _, cnl, cty, cblk, cmi, csl,
           cnp, cnf, cus, _, loaded, fun cl hcl => hsub cl (by rw [allCalls]; simp [hcl]), hbp,
-          tag, slotChecked, levelsChecked, paramsChecked.trans hnp, addrEq.heap_extends, scoped,
+          tag, slotChecked, levelsChecked, paramsChecked.trans hnp, addrEq.heap_extends, scopeRun,
           hsub _ (by rw [allCalls]; simp)⟩
       · have added := Decl.evalBinOp_add_nat k 1 addition
         subst nextIndex
