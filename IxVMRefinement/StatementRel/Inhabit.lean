@@ -313,6 +313,7 @@ theorem tableShape_basis :
     hashed := hhashed
     usedClosed := hused
     committed := hcommitted
+    zeroFree := ⟨emptyStore_consts _, emptyStore_blobs _⟩
     kept := fun _ _ _ hg => hg.elim
     reading := hreading
     pins := basisEnv_pins

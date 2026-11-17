@@ -109,16 +109,16 @@ theorem natPrimOp_role {r r' : Ix.Kernel.Role} {o : Nat} (h : Specs.Nat.natPrimO
   rw [h'] at this
   exact (Option.some.inj this).symm
 
-/-- A `Nat` operation is no inert axiom. -/
-theorem natPrimOp_not_inert {r : Ix.Kernel.Role} {o : Nat}
-    (h : Specs.Nat.natPrimOp r = some o) : r.inert = false := by
+/-- The checker rebuilds applications of a `Nat` operation. -/
+theorem natPrimOp_fabricated {r : Ix.Kernel.Role} {o : Nat}
+    (h : Specs.Nat.natPrimOp r = some o) : fabricatedRole r = true := by
   cases r <;> first | rfl | (simp [Specs.Nat.natPrimOp] at h)
 
 /-- The address of a `Nat` operation in force resolves. -/
 theorem natOpAt_res {c : ScopedCtx} (hc : ScopedCoreFacts c) {a : Bytes.Address} {o : Nat}
     (h : Specs.Nat.NatOpAt c a o) : c.κ (ixAddr a) ≠ unresolvedKey := by
   obtain ⟨r, hr, hb, hf⟩ := h
-  exact hc.res_of_role hb hf (natPrimOp_not_inert hr)
+  exact hc.res_of_role hb hf (natPrimOp_fabricated hr)
 
 /-- **A binary `Nat` operation** (a code from `3` on) is one of the fourteen the kernel
 accelerates. -/
@@ -1308,7 +1308,7 @@ theorem try_nat_binop_dispatch_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {ar
     subst h'
     refine ⟨_, hsp, ?_⟩
     have hk : c.κ (ixAddr a) = .role ro :=
-      (c.key_eq (hc.res_of_role haddr hforce (natPrimOp_not_inert hro))).trans
+      (c.key_eq (hc.res_of_role haddr hforce (natPrimOp_fabricated hro))).trans
         (keyOf_of_addressOf hc.env.tableWf haddr)
     have hmem := natBinOp_mem hro hcode.1
     rw [hk]

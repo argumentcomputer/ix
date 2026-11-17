@@ -153,6 +153,15 @@ clause over every role. -/
 theorem role_mem_roleGroup (r : Ix.Kernel.Role) : r ∈ roleGroup (Ix.SpecDigest.groupOf r) := by
   cases r <;> decide +kernel
 
+/-- Every role's group is one of the 77. -/
+theorem groupOf_lt (r : Ix.Kernel.Role) :
+    Ix.SpecDigest.groupOf r < Ix.SpecDigest.groups.length := by
+  rcases Nat.lt_or_ge (Ix.SpecDigest.groupOf r) Ix.SpecDigest.groups.length with h | h
+  · exact h
+  · have hm := role_mem_roleGroup r
+    rw [roleGroup_eq_nil h] at hm
+    cases hm
+
 /-- **The prelude roles** (`Ix.Kernel.preludeShape`): the members of the `Eq`, `Nat`, `PUnit`,
 `Empty` and `False` blocks, the quotient package, `And` and `Bool`. -/
 def preludeRoles : List Ix.Kernel.Role :=
@@ -317,6 +326,10 @@ environment `env`.
 * `t` pins the prelude and binds a string literal's whole support;
 * `R` is authentic, closed under used references and block members, and agrees with the
   committed prelude records;
+* `R` holds no record and no blob at the zero address (`zeroFree`). A run that hashed a
+  preimage of the zero address hashed a collision in the sense of the statements, so a
+  `binding` run can establish this of the records it loaded; and the proof of the typing
+  half needs the store it reads from to be free of one;
 * `env` is made of the readings of `R`'s records (`ReadingOf`) and has a model in every set
   theory;
 * at every role of `G` that a model reads, and at the two standard axioms, `env` stores a
@@ -350,6 +363,8 @@ structure TableShape (t : Ix.Kernel.RoleTable) (G : Nat → Prop) (R : Ixon.Env)
   hashed : EnvSelfHashed R
   usedClosed : UsedClosed R
   committed : AgreesCommitted R
+  zeroFree : R.consts.get? Ix.HostAdmission.Merkle.padding = none ∧
+    R.blobs.get? Ix.HostAdmission.Merkle.padding = none
   kept : ∀ g r a, G g → r ∈ roleGroup g → keptRole r → t.addressOf? r = some a →
     ∃ ci, env.find? (Ix.Kernel.Key.role r) = some ci ∧
       (PinnedBasis ci ∨ KeptIn t (recordOf R) (fun x => R.blobs.get? x) a ci)
@@ -394,6 +409,7 @@ theorem TableShape.of_all_groups {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
     hashed := h.hashed
     usedClosed := h.usedClosed
     committed := h.committed
+    zeroFree := h.zeroFree
     kept := fun g r a _ hr hk ha => h.kept g r a (hlt g r hr) hr hk ha
     reading := h.reading
     pins := h.pins
