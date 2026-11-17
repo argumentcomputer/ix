@@ -38,20 +38,20 @@ def RawDeltaAt (c : ScopedCtx) (κ : _root_.Address → KKey) (rootCalls : List 
 asserts a Rules.Red judgement; beta and zeta are capture-avoiding data substitutions. -/
 inductive RawHeadTrace (delta : KKey → List KLevel → KExpr → Prop) : KExpr → KExpr → Prop
   | sort (level : KLevel) : RawHeadTrace delta (.sort level) (.sort level)
-  | forallE (dom body : KExpr) (meta : BinderMeta) :
-      RawHeadTrace delta (.forallE dom body meta) (.forallE dom body meta)
-  | lam (dom body : KExpr) (meta : BinderMeta) :
-      RawHeadTrace delta (.lam dom body meta) (.lam dom body meta)
+  | forallE (dom body : KExpr) (binderData : BinderMeta) :
+      RawHeadTrace delta (.forallE dom body binderData) (.forallE dom body binderData)
+  | lam (dom body : KExpr) (binderData : BinderMeta) :
+      RawHeadTrace delta (.lam dom body binderData) (.lam dom body binderData)
   | const {key : KKey} {parameters : List KLevel} {value result : KExpr} :
       delta key parameters value → RawHeadTrace delta value result →
       RawHeadTrace delta (.const key parameters) result
-  | app {func arg dom body result : KExpr} {meta : BinderMeta} :
-      RawHeadTrace delta func (.lam dom body meta) →
+  | app {func arg dom body result : KExpr} {binderData : BinderMeta} :
+      RawHeadTrace delta func (.lam dom body binderData) →
       RawHeadTrace delta (body.instantiate1Lift arg) result →
       RawHeadTrace delta (.app func arg) result
-  | letE {ty value body result : KExpr} {meta : Ix.Kernel.LetMeta} :
+  | letE {ty value body result : KExpr} {binderData : Ix.Kernel.LetMeta} :
       RawHeadTrace delta (body.instantiate1Lift value) result →
-      RawHeadTrace delta (.letE ty value body meta) result
+      RawHeadTrace delta (.letE ty value body binderData) result
 
 /-- Any produced interpretation of the actual delta origins transports the complete trace. -/
 theorem RawHeadTrace.map {delta other : KKey → List KLevel → KExpr → Prop}
@@ -60,8 +60,8 @@ theorem RawHeadTrace.map {delta other : KKey → List KLevel → KExpr → Prop}
     RawHeadTrace other input result := by
   induction trace with
   | sort level => exact .sort level
-  | forallE dom body meta => exact .forallE dom body meta
-  | lam dom body meta => exact .lam dom body meta
+  | forallE dom body binderData => exact .forallE dom body binderData
+  | lam dom body binderData => exact .lam dom body binderData
   | const loaded child ih => exact .const (preserves _ _ _ loaded) ih
   | app func body ihf ihb => exact .app ihf ihb
   | letE body ih => exact .letE ih
@@ -75,8 +75,8 @@ theorem RawHeadTrace.unique {delta other : KKey → List KLevel → KExpr → Pr
     (right : RawHeadTrace other input second) : first = second := by
   induction left generalizing second with
   | sort level => cases right; rfl
-  | forallE dom body meta => cases right; rfl
-  | lam dom body meta => cases right; rfl
+  | forallE dom body binderData => cases right; rfl
+  | lam dom body binderData => cases right; rfl
   | const loaded child ih =>
     cases right with
     | const loaded' child' =>
@@ -114,7 +114,7 @@ private theorem head_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved 
   intro fuel
   induction fuel using Nat.strong_induction_on with
   | h fuel ih =>
-    intro d k Γ R E p budget r h h' calls length good subset scoped physical observed
+    intro d k Γ R E p budget r h h' calls length good subset scopedRep physical observed
     obtain ⟨semantic, raw⟩ := physical
     match Obs.«KernelGuard::head».obs observed with
     | .n0 (heq40 := impossible) .. | .other_other (heq453 := impossible) .. =>
@@ -134,7 +134,7 @@ private theorem head_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved 
     | .other_Const (cs156 := children) (cs170 := loadBranch) (ld60 := loaded)
         (ev172 := valueCall) (ev158 := child) (hc204 := events) .. =>
       obtain ⟨address, parameters, rfl, rfl, addressRep, paramsRep⟩ := raw.raw_const_view loaded
-      obtain ⟨scopedAddress, _, rfl, scopedAddressRep, _, _, _⟩ := scoped.const_of_load loaded
+      obtain ⟨scopedAddress, _, rfl, scopedAddressRep, _, _, _⟩ := scopedRep.const_of_load loaded
       have same := addr_det addressRep scopedAddressRep
       subst scopedAddress
       have loadInside : ∀ call ∈ loadBranch, call ∈ calls := by
@@ -144,9 +144,9 @@ private theorem head_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved 
       obtain ⟨cv, value, origin, hint, ptr, nl, ty, valuePtr, safety, hintPtr, loadedHeap,
         beforeInst, loadCalls, instCalls, found, arity, load, member, node, rawOrigin, extension,
         inst, loadSubset, _, valueRep⟩ := definition_value_keyed_raw_origin rawKey facts
-          (good.sub loadInside) addressRep scoped.const_key_ne paramsRep valueCall
+          (good.sub loadInside) addressRep scopedRep.const_key_ne paramsRep valueCall
       obtain ⟨valueSemantic, valueScoped⟩ := definition_value_rep (d := d) (Γ := Γ) facts (good.sub loadInside)
-        addressRep scoped.const_key_ne paramsRep valueCall
+        addressRep scopedRep.const_key_ne paramsRep valueCall
       have shorter : children.length < fuel := by
         rw [events] at length; simp only [List.length_cons, List.length_append] at length; omega
       obtain ⟨bound, result, resultRep, resultTrace⟩ := ih children.length shorter (Nat.le_refl _)
@@ -163,7 +163,7 @@ private theorem head_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved 
         (ld60 := loaded) (ev238 := functionCall) (ld232 := lambda) (ev302 := inst)
         (ev288 := child) (hc341 := events) .. =>
       obtain ⟨RF, RA, EF, EA, rfl, rfl, rawFunc, rawArg⟩ := raw.raw_app_view loaded
-      obtain ⟨F, A, rfl, scopedFunc, scopedArg⟩ := scoped.app_of_load loaded
+      obtain ⟨F, A, rfl, scopedFunc, scopedArg⟩ := scopedRep.app_of_load loaded
       have firstInside : ∀ call ∈ first, call ∈ calls := by intro call member; rw [events]; simp [member]
       have instInside : ∀ call ∈ instCalls, call ∈ calls := by intro call member; rw [events]; simp [member]
       have childInside : ∀ call ∈ children, call ∈ calls := by intro call member; rw [events]; simp [member]
@@ -198,7 +198,7 @@ private theorem head_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved 
     | .other_Let (cs382 := instCalls) (cs368 := children) (ld60 := loaded)
         (ev384 := inst) (ev370 := child) (hc423 := events) .. =>
       obtain ⟨RT, RV, RB, ET, EV, EB, rfl, rfl, _, rawValue, rawBody⟩ := raw.raw_let_view loaded
-      obtain ⟨T, V, B, rfl, _, valueScoped, bodyScoped⟩ := scoped.letE_of_load loaded
+      obtain ⟨T, V, B, rfl, _, valueScoped, bodyScoped⟩ := scopedRep.letE_of_load loaded
       have instInside : ∀ call ∈ instCalls, call ∈ calls := by intro call member; rw [events]; simp [member]
       have childInside : ∀ call ∈ children, call ∈ calls := by intro call member; rw [events]; simp [member]
       have shorter : children.length < fuel := by
@@ -225,10 +225,10 @@ theorem head_raw_trace (rawKey : _root_.Address → KKey) [∀ a, Resolved (rawK
     {d k : Nat} {Γ : Nat → KExpr} {R E : KExpr}
     {p budget r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (good : CoreGood c calls) (subset : ∀ call ∈ calls, call ∈ rootCalls)
-    (scoped : Tm c.κ d Γ h 0 E p) (physical : RawExprRep rawKey h k R p)
+    (scopedRep : Tm c.κ d Γ h 0 E p) (physical : RawExprRep rawKey h k R p)
     (observed : ObsFn W "KernelGuard::head" [p, budget] h r h' calls) :
     ∃ bound result, RawExprRep rawKey h' bound result r ∧
       RawHeadTrace (RawDeltaAt c rawKey rootCalls) R result :=
-  head_raw_go rawKey facts rootCalls calls.length (Nat.le_refl _) good subset scoped physical observed
+  head_raw_go rawKey facts rootCalls calls.length (Nat.le_refl _) good subset scopedRep physical observed
 
 end IxVM.Refinement.Core.GuardData
