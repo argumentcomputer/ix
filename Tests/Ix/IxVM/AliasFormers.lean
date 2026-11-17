@@ -573,8 +573,9 @@ def teleWalk (env : Ixon.Env) (nm : Address → String) (cap n : Nat) (ty : RE) 
   | .ok (r, lg) =>
     match r with
     | .sort u => return { base with endLog := lg, endSort := some u }
-    | _ => return { base with endLog := lg, endHead := headDesc env nm r,
-                    err := "end: the head normal form is not a sort" }
+    | _ =>
+      let msg := "end: the head normal form is not a sort"
+      return { base with endLog := lg, endHead := headDesc env nm r, err := msg }
 
 /-- `get_result_sort_level`: head normalization before every binder and at the end. -/
 def resultSortLevel (env : Ixon.Env) (cap n : Nat) (ty : RE) :
