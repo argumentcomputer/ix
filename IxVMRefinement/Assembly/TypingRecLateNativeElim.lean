@@ -36,10 +36,10 @@ local macro "rec_lt_calls" : tactic =>
 /-! ## Arity -/
 
 /-- **An observed call has as many arguments as its function has parameters.** -/
-theorem obsFn_args_length_of_lookup {s : Source F} {name : String} {fn : SourceFunction F}
-    (hfn : s.program.sourceFunction? name = some fn)
+theorem obsFn_args_length_of_lookup {s : Source F} {name : String} {sf : SourceFunction F}
+    (hfn : s.program.sourceFunction? name = some sf)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {cs : List (Call F)}
-    (ev : ObsFn s.world name args h r h' cs) : args.length = fn.params.length := by
+    (ev : ObsFn s.world name args h r h' cs) : args.length = sf.params.length := by
   cases ev with
   | intro prepared _ =>
     simp only [Source.world, sourceWorld, hfn, SourceFunction.prepare] at prepared
@@ -64,7 +64,7 @@ theorem list_eq_five {α : Type _} {l : List α} (hl : l.length = 5) :
   rcases l with _ | ⟨a, _ | ⟨b, _ | ⟨c, _ | ⟨d, _ | ⟨e, _ | ⟨f, rest⟩⟩⟩⟩⟩⟩
   all_goals first
     | exact ⟨_, _, _, _, _, rfl⟩
-    | (simp only [List.length_cons, List.length_nil] at hl <;> omega)
+    | (simp only [List.length_cons, List.length_nil] at hl; omega)
 
 /-! ## The walks answer `0` or `1` -/
 
