@@ -72,9 +72,9 @@ def head (look : Lookup md) : Nat → Expr md → Option (Expr md)
   | _ + 1, e@(.lam ..) => some e
   | fuel + 1, .const k us => (look.valueOf k us).bind (head look fuel)
   | fuel + 1, .app f a => (head look fuel f).bind fun
-      | .lam _ body _ => head look fuel (body.instantiate1 a)
+      | .lam _ body _ => head look fuel (body.instantiate1Lift a)
       | _ => none
-  | fuel + 1, .letE _ value body _ => head look fuel (body.instantiate1 value)
+  | fuel + 1, .letE _ value body _ => head look fuel (body.instantiate1Lift value)
   | _ + 1, _ => none
 
 /-- Successful normalization depends only on the positive declarations it read. -/
@@ -106,7 +106,7 @@ def infer (look : Lookup md) : Nat → List (Expr md) → Expr md → Option (Ex
   | fuel + 1, ctx, .app f arg => do
     let tf ← infer look fuel ctx f
     let .forallE _ body _ ← head look fuel tf | none
-    pure (body.instantiate1 arg)
+    pure (body.instantiate1Lift arg)
   | fuel + 1, ctx, .forallE ty body _ => do
     let tb ← infer look fuel (ty :: ctx) body
     let .sort u ← head look fuel tb | none
@@ -114,7 +114,7 @@ def infer (look : Lookup md) : Nat → List (Expr md) → Expr md → Option (Ex
   | fuel + 1, ctx, .lam ty body mb => do
     let tb ← infer look fuel (ty :: ctx) body
     pure (.forallE ty tb mb)
-  | fuel + 1, ctx, .letE _ value body _ => infer look fuel ctx (body.instantiate1 value)
+  | fuel + 1, ctx, .letE _ value body _ => infer look fuel ctx (body.instantiate1Lift value)
   | _ + 1, _, _ => none
 
 /-- Successful classification is stable under positive lookup extension. -/
@@ -227,7 +227,7 @@ its erased reading with the original depth budget. -/
 theorem infer_eraseLet (look : Lookup md) {fuel : Nat} {ctx : List (Expr md)}
     {ty value body r : Expr md} {lm : LetMeta}
     (h : infer look fuel ctx (.letE ty value body lm) = some r) :
-    infer look fuel ctx (body.instantiate1 value) = some r := by
+    infer look fuel ctx (body.instantiate1Lift value) = some r := by
   cases fuel with
   | zero => cases h
   | succ fuel => exact infer_succ look fuel ctx _ r h
@@ -236,7 +236,7 @@ theorem infer_eraseLet (look : Lookup md) {fuel : Nat} {ctx : List (Expr md)}
 theorem head_eraseLet (look : Lookup md) {fuel : Nat}
     {ty value body r : Expr md} {lm : LetMeta}
     (h : head look fuel (.letE ty value body lm) = some r) :
-    head look fuel (body.instantiate1 value) = some r := by
+    head look fuel (body.instantiate1Lift value) = some r := by
   cases fuel with
   | zero => cases h
   | succ fuel => exact head_succ look fuel _ r h
@@ -261,5 +261,14 @@ theorem checked_zero_transfer_of_zero_iff {a b common : Lookup md}
 /-- A sort is a concrete member of the classifier's domain, in every lookup and context. -/
 theorem sortSignature_sort (look : Lookup md) (ctx : List (Expr md)) (u : Level) :
     sortSignature look 1 ctx (.sort u) = some (.succ .zero) := rfl
+
+/-- A raw open argument must be lifted beneath the result's binder. This regression distinguishes
+capture-avoiding heap substitution from substitution of already-opened kernel terms. -/
+theorem head_open_beta (look : Lookup md) :
+    head look 3
+      (.app (.lam (.sort (.succ .zero))
+        (.forallE (.sort (.succ .zero)) (.bvar 1) .leanNever) .leanNever) (.bvar 0)) =
+      some (.forallE (.sort (.succ .zero)) (.bvar 1) .leanNever) := rfl
+
 
 end Ix.Kernel.GuardClassifier

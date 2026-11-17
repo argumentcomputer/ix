@@ -124,15 +124,15 @@ abbrev «Lists::length<KernelRoles::RoleEvidence>» : String := "${\"name\":\"Li
 
 theorem «Lists::length<KernelRoles::RoleEvidence>».symbol : (Instance.mk "Lists::length" [(.named "KernelRoles::RoleEvidence" [])]).symbol = «Lists::length<KernelRoles::RoleEvidence>» := by decide +kernel
 
-/-- The instance `Lists::lookup<&KernelTypes::KExprNode>`. -/
-abbrev «Lists::lookup<&KernelTypes::KExprNode>» : String := "${\"name\":\"Lists::lookup\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KExprNode\"}}}}]}"
-
-theorem «Lists::lookup<&KernelTypes::KExprNode>».symbol : (Instance.mk "Lists::lookup" [(.ptr (.named "KernelTypes::KExprNode" []))]).symbol = «Lists::lookup<&KernelTypes::KExprNode>» := by decide +kernel
-
 /-- The instance `Lists::length<&KernelTypes::KExprNode>`. -/
 abbrev «Lists::length<&KernelTypes::KExprNode>» : String := "${\"name\":\"Lists::length\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KExprNode\"}}}}]}"
 
 theorem «Lists::length<&KernelTypes::KExprNode>».symbol : (Instance.mk "Lists::length" [(.ptr (.named "KernelTypes::KExprNode" []))]).symbol = «Lists::length<&KernelTypes::KExprNode>» := by decide +kernel
+
+/-- The instance `Lists::lookup<&KernelTypes::KExprNode>`. -/
+abbrev «Lists::lookup<&KernelTypes::KExprNode>» : String := "${\"name\":\"Lists::lookup\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KExprNode\"}}}}]}"
+
+theorem «Lists::lookup<&KernelTypes::KExprNode>».symbol : (Instance.mk "Lists::lookup" [(.ptr (.named "KernelTypes::KExprNode" []))]).symbol = «Lists::lookup<&KernelTypes::KExprNode>» := by decide +kernel
 
 /-- The instance `Lists::drop<&KernelTypes::KExprNode>`. -/
 abbrev «Lists::drop<&KernelTypes::KExprNode>» : String := "${\"name\":\"Lists::drop\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"KernelTypes::KExprNode\"}}}}]}"
@@ -1013,9 +1013,13 @@ theorem n10624601528528401748 : constructorName [] (.named "Lists::Node" [(.name
 
 theorem n17202553764910585161 : constructorName [] (.named "KernelRoles::RoleEvidence" []) = "KernelRoles::RoleEvidence" := by decide +kernel
 
-theorem n11123572196661760086 : instanceName [] "Lists::lookup" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::lookup<&KernelTypes::KExprNode>» := by decide +kernel
+theorem n2573733564204472081 : constructorName [] (.named "Ixon::Definition" []) = "Ixon::Definition" := by decide +kernel
+
+theorem n14332935079175280282 : constructorName [] (.named "Ixon::DefKind" []) = "Ixon::DefKind" := by decide +kernel
 
 theorem n6682477127133607924 : instanceName [] "Lists::length" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::length<&KernelTypes::KExprNode>» := by decide +kernel
+
+theorem n11123572196661760086 : instanceName [] "Lists::lookup" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::lookup<&KernelTypes::KExprNode>» := by decide +kernel
 
 theorem n4825454920124213627 : instanceName [] "Lists::drop" (some [(.ptr (.named "KernelTypes::KExprNode" []))]) = Names.«Lists::drop<&KernelTypes::KExprNode>» := by decide +kernel
 
@@ -1042,8 +1046,6 @@ theorem n12804523882079250342 : constructorName [] (.named "Ixon::Constructor" [
 theorem n13867139974106667730 : constructorName [] (.named "Lists::Node" [(.named "Ixon::MutConst" [])]) = Names.«Lists::Node<Ixon::MutConst>» := by decide +kernel
 
 theorem n6728187131918759785 : constructorName [] (.named "Ixon::MutConst" []) = "Ixon::MutConst" := by decide +kernel
-
-theorem n2573733564204472081 : constructorName [] (.named "Ixon::Definition" []) = "Ixon::Definition" := by decide +kernel
 
 theorem n8501700870504622791 : constructorName [] (.named "Ixon::Inductive" []) = "Ixon::Inductive" := by decide +kernel
 
@@ -1080,8 +1082,6 @@ theorem n4465200220353309676 : instanceName [] "Lists::Node" (some [(.tuple [(.a
 theorem n5074881248809228168 : instanceName [] "Options::Option" (some [(.ptr (.named "Lists::Node" [(.tuple [(.array .field 8), (.named "KernelClaim::RevealConstructorInfo" [])])]))]) = Names.«Options::Option<&Lists::Node<([Field; 8], KernelClaim::RevealConstructorInfo)>>» := by decide +kernel
 
 theorem n11366054579103077952 : instanceName [] "Lists::Node" (some [(.tuple [(.array .field 8), (.named "KernelClaim::RevealMutConstInfo" [])])]) = Names.«Lists::Node<([Field; 8], KernelClaim::RevealMutConstInfo)>» := by decide +kernel
-
-theorem n14332935079175280282 : constructorName [] (.named "Ixon::DefKind" []) = "Ixon::DefKind" := by decide +kernel
 
 theorem n2014147543875015428 : constructorName [] (.named "Options::Option" [(.named "Ixon::DefKind" [])]) = Names.«Options::Option<Ixon::DefKind>» := by decide +kernel
 
