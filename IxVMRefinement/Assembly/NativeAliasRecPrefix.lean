@@ -21,7 +21,6 @@ open IxVM.Refinement.Core
 theorem PrefixEq.succ_view {n : Nat} {E R : KExpr} (h : PrefixEq (n + 1) E R) :
     ∃ T B B' bm, E = .forallE T B bm ∧ R = .forallE T B' bm ∧ PrefixEq n B B' := by
   cases E <;> cases R <;> simp only [PrefixEq] at h
-  all_goals try contradiction
   rename_i T B bm T' B' bm'
   obtain ⟨rfl, rfl, hr⟩ := h
   exact ⟨T, B, B', bm, rfl, rfl, hr⟩
