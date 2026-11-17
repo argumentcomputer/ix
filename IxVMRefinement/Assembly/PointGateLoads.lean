@@ -43,7 +43,7 @@ constant witnesses at a block a run hashed is a member of the installed block. -
 def PointFamNew (c : Core.Ctx) (new : List (ConstantInfo .anon)) (B : _root_.Address)
     (ms : Array Ixon.MutConst) : Prop :=
   ∀ (b : _root_.Address) (i : Nat), Core.HashedBlockAt c.E b → i < UInt64.size →
-    FamNew (appCtx c new).stored new b i → b = B ∧ ∃ ind, ms[i]? = some (.indc ind)
+    FamNew (appCtx c new).stored new b i → b = B ∧ ∃ ind : Ixon.Inductive, ms[i]? = some (.indc ind)
 
 /-- The record at the installed block, as the store's decoding. -/
 theorem PointInstall.recordAt (hI : PointInstall c new B cb ms) :

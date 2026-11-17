@@ -41,10 +41,10 @@ structure ModeledBlockRecord (E₀ : Ixon.Env) (B : _root_.Address) (cb : Ixon.C
   record : recordOf E₀ B = some cb
   muts : cb.info = .muts ms
   logic : InLogic cb
-  inds : ∀ i m, ms[i]? = some m → ∃ ind, m = .indc ind
-  former : ∀ i ind, ms[i]? = some (.indc ind) →
+  inds : ∀ (i : Nat) (m : Ixon.MutConst), ms[i]? = some m → ∃ ind : Ixon.Inductive, m = .indc ind
+  former : ∀ (i : Nat) (ind : Ixon.Inductive), ms[i]? = some (.indc ind) →
     recordOf E₀ (Core.iprjAddr B i) = some (memberProjection B i (.indc ind))
-  ctors : ∀ i ind, ms[i]? = some (.indc ind) → ∀ j < ind.ctors.size,
+  ctors : ∀ (i : Nat) (ind : Ixon.Inductive), ms[i]? = some (.indc ind) → ∀ j < ind.ctors.size,
     recordOf E₀ (Core.cprjAddr B i j) = some (constructorProjection B i j)
 
 /-- **The circuit's dispatch on the block is the modeled branch in every good run**: no bounded
@@ -57,7 +57,7 @@ def ModeledAt (E : Ixon.Env) (B : _root_.Address) : Prop := ¬ NativeAt E B
 /-- The reading of an expression of the block at `B` over the store `E`. -/
 abbrev blockRead (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B : _root_.Address)
     (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (e : Ixon.Expr) :
-    Except String (Ix.Kernel.Expr .anon) :=
+    Ix.Kernel.Reader.ReadM (Ix.Kernel.Reader.CExpr .anon) :=
   (exprReader t (fun x => E.blobs.get? x) cb id (blockSelf t B ms)).read e
 
 /-- **The type former of member `i`** at the key of its projection address, with the reading
@@ -107,14 +107,14 @@ structure PointReads (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B : _root_.Addres
       (caps : IndCaps .anon),
     ms[i]? = some (.indc ind) ∧ f = pointFormer t B i ind ty₀ caps ty' ∧
     FormerRead t E B cb ms i ind ty₀ ty'
-  formerAt : ∀ i ind, ms[i]? = some (.indc ind) →
+  formerAt : ∀ (i : Nat) (ind : Ixon.Inductive), ms[i]? = some (.indc ind) →
     ∃ (ty₀ ty' : Ix.Kernel.Expr .anon) (caps : IndCaps .anon),
       pointFormer t B i ind ty₀ caps ty' ∈ formers ∧ FormerRead t E B cb ms i ind ty₀ ty'
   ctorOf : ∀ c ∈ ctors, ∃ (i : Nat) (ind : Ixon.Inductive) (j : Nat) (ct : Ixon.Constructor)
       (cty₀ cty' : Ix.Kernel.Expr .anon),
     ms[i]? = some (.indc ind) ∧ ind.ctors[j]? = some ct ∧
     c = pointCtor t B i j ct cty₀ cty' ∧ CtorRead t E B cb ms i j ct cty₀ cty'
-  ctorAt : ∀ i ind j, ms[i]? = some (.indc ind) → j < ind.ctors.size →
+  ctorAt : ∀ (i : Nat) (ind : Ixon.Inductive) (j : Nat), ms[i]? = some (.indc ind) → j < ind.ctors.size →
     ∃ (ct : Ixon.Constructor) (cty₀ cty' : Ix.Kernel.Expr .anon), ind.ctors[j]? = some ct ∧
       pointCtor t B i j ct cty₀ cty' ∈ ctors ∧ CtorRead t E B cb ms i j ct cty₀ cty'
 
@@ -135,15 +135,15 @@ structure PointInstall (c : Core.Ctx) (new : List (ConstantInfo .anon)) (B : _ro
   held : HashedBlockProjectionsHeld c.E
   block : recordOf c.E B = some cb
   muts : cb.info = .muts ms
-  inds : ∀ i m, ms[i]? = some m → ∃ ind, m = .indc ind
-  formerRec : ∀ i ind, ms[i]? = some (.indc ind) →
+  inds : ∀ (i : Nat) (m : Ixon.MutConst), ms[i]? = some m → ∃ ind : Ixon.Inductive, m = .indc ind
+  formerRec : ∀ (i : Nat) (ind : Ixon.Inductive), ms[i]? = some (.indc ind) →
     recordOf c.E (Core.iprjAddr B i) = some (memberProjection B i (.indc ind))
-  ctorRec : ∀ i ind, ms[i]? = some (.indc ind) → ∀ j < ind.ctors.size,
+  ctorRec : ∀ (i : Nat) (ind : Ixon.Inductive), ms[i]? = some (.indc ind) → ∀ j < ind.ctors.size,
     recordOf c.E (Core.cprjAddr B i j) = some (constructorProjection B i j)
-  bounds : ∀ i ind, ms[i]? = some (.indc ind) →
+  bounds : ∀ (i : Nat) (ind : Ixon.Inductive), ms[i]? = some (.indc ind) →
     ind.params.toNat < 2 ^ 56 ∧ ind.indices.toNat < 2 ^ 56 ∧ ind.ctors.size < 2 ^ 56
   used : Decl.UsedRefsStored c.t (appCtx c new).env cb
-  former : ∀ i ind, ms[i]? = some (.indc ind) → ∃ ty₀ ty' : Ix.Kernel.Expr .anon,
+  former : ∀ (i : Nat) (ind : Ixon.Inductive), ms[i]? = some (.indc ind) → ∃ ty₀ ty' : Ix.Kernel.Expr .anon,
     blockRead c.t c.E B cb ms ind.typ = .ok ty₀ ∧
     ty₀.looseBVarsBounded 0 = true ∧
     ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
@@ -151,7 +151,7 @@ structure PointInstall (c : Core.Ctx) (new : List (ConstantInfo .anon)) (B : _ro
       ((L1.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some ty' ∧
     (appCtx c new).env.find? (Core.keyOf c.t (Core.iprjAddr B i)) =
       some (.indInfo ⟨Core.keyOf c.t (Core.iprjAddr B i), List.range ind.lvls.toNat, ty'⟩ {})
-  ctor : ∀ i ind, ms[i]? = some (.indc ind) → ∀ j < ind.ctors.size,
+  ctor : ∀ (i : Nat) (ind : Ixon.Inductive), ms[i]? = some (.indc ind) → ∀ j < ind.ctors.size,
     ∃ (ct : Ixon.Constructor) (cty cty' : Ix.Kernel.Expr .anon),
     ind.ctors[j]? = some ct ∧ ct.cidx.toNat = j ∧
     blockRead c.t c.E B cb ms ct.typ = .ok cty ∧
@@ -163,8 +163,8 @@ structure PointInstall (c : Core.Ctx) (new : List (ConstantInfo .anon)) (B : _ro
       some (.ctorInfo ⟨Core.keyOf c.t (Core.cprjAddr B i j), List.range ct.lvls.toNat, cty'⟩
         ct.params.toNat ct.fields.toNat)
   newName : ∀ ci ∈ new,
-    (∃ i ind, ms[i]? = some (.indc ind) ∧ ci.name = Core.keyOf c.t (Core.iprjAddr B i)) ∨
-    ∃ i ind j, ms[i]? = some (.indc ind) ∧ j < ind.ctors.size ∧
+    (∃ (i : Nat) (ind : Ixon.Inductive), ms[i]? = some (.indc ind) ∧ ci.name = Core.keyOf c.t (Core.iprjAddr B i)) ∨
+    ∃ (i : Nat) (ind : Ixon.Inductive) (j : Nat), ms[i]? = some (.indc ind) ∧ j < ind.ctors.size ∧
       ci.name = Core.keyOf c.t (Core.cprjAddr B i j)
   newFind : ∀ ci ∈ new, (appCtx c new).env.find? ci.name = some ci
 

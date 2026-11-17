@@ -60,7 +60,7 @@ def PointEvidence (t : Ix.Kernel.RoleTable) (E₀ E : Ixon.Env) (B : _root_.Addr
     ∃ (formers : List FormerRec) (ctors : List CtorRec) (blk : List (ConstantInfo .anon)),
       PointBlock env blk formers ctors ∧ PointReads t E B cb ms formers ctors ∧
       (∀ x, ConstAddrOf B cb x → ∃ ci₀ ∈ blk, ci₀.name = keyOf t x ∧ Reads t E₀ x ci₀) ∧
-      ∀ i ind, ms[i]? = some (.indc ind) →
+      ∀ (i : Nat) (ind : Ixon.Inductive), ms[i]? = some (.indc ind) →
         ind.params.toNat < 2 ^ 56 ∧ ind.indices.toNat < 2 ^ 56 ∧ ind.ctors.size < 2 ^ 56
 
 /-- **The load facts that reach the new constants of a constructors-only install**, at every
@@ -71,7 +71,7 @@ def PointLoadsFrom (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B : _root_.Address)
   ∀ (env : Ix.Kernel.Env .anon) (new : List (ConstantInfo .anon)),
     PointInstall ⟨E, env, t, some n⟩ new B cb ms → Decl.PrefixInv.{u} E t (some n) env →
     Decl.AuxRootSynced env →
-    (∀ k ind, ms[k]? = some (.indc ind) → env.find? (Core.keyOf t (Core.iprjAddr B k)) = none) →
+    (∀ (k : Nat) (ind : Ixon.Inductive), ms[k]? = some (.indc ind) → env.find? (Core.keyOf t (Core.iprjAddr B k)) = none) →
     PointShape E B ms →
     NewLoads (appCtx ⟨E, env, t, some n⟩ new).stored new
 
@@ -110,8 +110,8 @@ theorem PointReads.newName {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {B : _root_.
     {cb : Ixon.Constant} {ms : Array Ixon.MutConst} (hb : PointBlock env block formers ctors)
     (hR : PointReads t E B cb ms formers ctors) :
     ∀ ci ∈ newConsts formers ctors,
-      (∃ i ind, ms[i]? = some (.indc ind) ∧ ci.name = Core.keyOf t (Core.iprjAddr B i)) ∨
-      ∃ i ind j, ms[i]? = some (.indc ind) ∧ j < ind.ctors.size ∧
+      (∃ (i : Nat) (ind : Ixon.Inductive), ms[i]? = some (.indc ind) ∧ ci.name = Core.keyOf t (Core.iprjAddr B i)) ∨
+      ∃ (i : Nat) (ind : Ixon.Inductive) (j : Nat), ms[i]? = some (.indc ind) ∧ j < ind.ctors.size ∧
         ci.name = Core.keyOf t (Core.cprjAddr B i j) := by
   intro ci hci
   rcases hb.new_cases hci with ⟨f, hf, rfl⟩ | ⟨c, hc, rfl⟩

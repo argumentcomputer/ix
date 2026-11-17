@@ -132,7 +132,7 @@ structure NestedGate (E : Ixon.Env) (B : _root_.Address) (ind : Ixon.Inductive) 
 /-- **The block's shape on the constructors-only route**: two or more inductive types, or one
 inductive type with the facts `NestedGate` names. -/
 def PointShape (E : Ixon.Env) (B : _root_.Address) (ms : Array Ixon.MutConst) : Prop :=
-  2 ≤ (ms.toList.filter Core.isIndc).length ∨ ∃ ind, ms = #[.indc ind] ∧ NestedGate E B ind
+  2 ≤ (ms.toList.filter Core.isIndc).length ∨ ∃ ind : Ixon.Inductive, ms = #[.indc ind] ∧ NestedGate E B ind
 
 /-- **The dispatch is the modeled branch in every good run**, at either shape. -/
 theorem PointShape.modeledAt {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Option Nat}

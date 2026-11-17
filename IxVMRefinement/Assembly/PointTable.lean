@@ -18,10 +18,11 @@ freshness the skeleton hands a unit's step:
   it;
 * `key_id_of_fresh`: the input key, where no such unstored role is bound at the address.
 
-The roles `TableShape` leaves unstored are the four inert axioms (`sorryAx`, `trustCompiler`,
-`ofReduceBool`, `ofReduceNat`) and the two opaques their types mention (`reduceBool`,
-`reduceNat`): a table may bind one of them to a block member's address, and nothing in the
-public shape excludes it.
+The roles `TableShape` leaves unstored are twenty-three (`storedRole_or_unstored`): `True` and
+its constructor, the four inert axioms and the two opaques their types mention, and the roles of
+`Decidable`, `Not`, `Nat.le`, `Int`, `BitVec`, `ByteArray` and `of_decide_eq_*` that neither
+`walkedRole` nor `shapeAnchors` covers. A table may bind one of them to a block member's
+address, and nothing in the public shape excludes it.
 -/
 
 namespace IxVM.Refinement.Typing
@@ -116,11 +117,15 @@ theorem key_id_of_fresh {t : Ix.Kernel.RoleTable} (htwf : t.wf = true) {R : Ixon
   · exact h
   · exact absurd ha (hunb r hs)
 
-/-- **Every role but six is stored** (decided over the roles): the roles that are neither kept
-nor prelude roles are the four inert axioms and the two opaques `reduceBool`, `reduceNat`. -/
-theorem storedRole_or_inert (r : Ix.Kernel.Role) :
-    StoredRole r ∨ r ∈ [.sorryAx, .trustCompiler, .ofReduceBool, .ofReduceNat, .reduceBool,
-      .reduceNat] := by
+/-- **Every role but twenty-three is stored** (decided over the roles). The roles that are
+neither kept nor prelude roles: `True` and its constructor, the four inert axioms, the two
+opaques their types mention, and roles of `Decidable`, `Not`, `Nat.le`, `Int`, `BitVec`,
+`ByteArray` and `of_decide_eq_*` that neither `walkedRole` nor `shapeAnchors` covers. -/
+theorem storedRole_or_unstored (r : Ix.Kernel.Role) :
+    StoredRole r ∨ r ∈ [.true, .trueIntro, .sorryAx, .trustCompiler, .reduceBool, .reduceNat,
+      .ofReduceBool, .ofReduceNat, .notProp, .decidable, .decidableIsTrue, .decidableIsFalse,
+      .natLe, .int, .intOfNat, .intNegSucc, .intLe, .bitVec, .bitVecOfNat, .byteArray,
+      .byteArrayEmpty, .ofDecideEqTrue, .ofDecideEqFalse] := by
   unfold StoredRole keptRole modelRead
   cases r <;> decide +kernel
 
