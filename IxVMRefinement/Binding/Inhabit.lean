@@ -142,52 +142,75 @@ theorem basis_committed : Committed basisRows :=
 
 theorem boolRows_eq : boolRows = basisRows ++ boolNew := rfl
 
-/-- What the check of a new row reads: no axiom, quotient, standalone definition or recursor
-record; a block of members in Lean's logic; a projection record found among the expected
-projection records of the rows' blocks. -/
+/-- The rank of a record kind in the `Bool` admission: the block, then the projection records,
+then a standalone record (the recursor record, which names the projection records). -/
+def kindRank : Ixon.ConstantInfo → Nat
+  | .muts _ => 0
+  | .recr _ => 2
+  | .defn _ => 2
+  | .axio _ => 2
+  | .quot _ => 2
+  | _ => 1
+
+theorem kindRank_proj {c : Ixon.Constant} (h : IsProj c) : kindRank c.info = 1 := by
+  rcases h with ⟨p, hp⟩ | ⟨p, hp⟩ | ⟨p, hp⟩ | ⟨p, hp⟩ <;> rw [hp] <;> rfl
+
+/-- What the check of a new row reads: no axiom, quotient or standalone definition record; a
+recursor record that is safe; a block of members in Lean's logic; a projection record found
+among the expected projection records of the rows' blocks. -/
 def newRowOk (a : _root_.Address) : Ixon.ConstantInfo → Bool
   | .axio _ => false
   | .quot _ => false
   | .defn _ => false
-  | .recr _ => false
+  | .recr rc => decide (rc.isUnsafe = false)
   | .muts ms => ms.toList.all inLogicMutB
   | _ => (expectedProjsOf boolRows).any fun p => (findProjOf boolRows p).map (·.1) == some a
 
+/-- A reference a new row uses: a basis row, or a new row of smaller kind rank. -/
+def refOk (k : Nat) (x : _root_.Address) : Bool :=
+  hasKeyIn basisRows x || boolNew.any fun e' => e'.1 == x && decide (kindRank e'.2.info < k)
+
 set_option maxHeartbeats 4000000 in
 set_option maxRecDepth 100000 in
-/-- **The new rows, decided**: each is a block in Lean's logic or a projection record found
-among the expected ones; none uses a reference outside the basis rows; none has its block
-among the basis rows; none is at the address of an operation role. -/
+/-- **The new rows, decided**: each passes `newRowOk`; every reference it uses is a basis row or
+a new row of smaller kind rank; neither it nor its block is a basis row; none is at the address
+of an operation role. -/
 theorem boolNew_ok :
     boolNew.all (fun e =>
       newRowOk e.1 e.2.info &&
-      (usedRefIdxs e.2).all (fun i => (e.2.refs[i]?).all (hasKeyIn basisRows)) &&
+      (usedRefIdxs e.2).all (fun i => (e.2.refs[i]?).all (refOk (kindRank e.2.info))) &&
       !hasKeyIn basisRows (Ix.Cert.ownerOf e.1 e.2) &&
+      !hasKeyIn basisRows e.1 &&
       RoleOps.opRoles.all fun r => RoleVal.committedDefaultRoleTable.addressOf? r != some e.1) =
       true := by
   decide +kernel
 
 theorem boolNew_row {e : Row} (h : e ∈ boolNew) :
     newRowOk e.1 e.2.info = true ∧
-      (usedRefIdxs e.2).all (fun i => (e.2.refs[i]?).all (hasKeyIn basisRows)) = true ∧
+      (usedRefIdxs e.2).all (fun i => (e.2.refs[i]?).all (refOk (kindRank e.2.info))) = true ∧
       hasKeyIn basisRows (Ix.Cert.ownerOf e.1 e.2) = false ∧
+      hasKeyIn basisRows e.1 = false ∧
       ∀ r ∈ RoleOps.opRoles, RoleVal.committedDefaultRoleTable.addressOf? r ≠ some e.1 := by
   have h1 : (newRowOk e.1 e.2.info &&
-      (usedRefIdxs e.2).all (fun i => (e.2.refs[i]?).all (hasKeyIn basisRows)) &&
+      (usedRefIdxs e.2).all (fun i => (e.2.refs[i]?).all (refOk (kindRank e.2.info))) &&
       !hasKeyIn basisRows (Ix.Cert.ownerOf e.1 e.2) &&
+      !hasKeyIn basisRows e.1 &&
       RoleOps.opRoles.all fun r => RoleVal.committedDefaultRoleTable.addressOf? r != some e.1) =
       true := List.all_eq_true.mp boolNew_ok e h
-  rw [Bool.and_eq_true, Bool.and_eq_true, Bool.and_eq_true] at h1
-  obtain ⟨⟨⟨h2, h3⟩, h4⟩, h5⟩ := h1
-  refine ⟨h2, h3, ?_, fun r hr => ?_⟩
+  rw [Bool.and_eq_true, Bool.and_eq_true, Bool.and_eq_true, Bool.and_eq_true] at h1
+  obtain ⟨⟨⟨⟨h2, h3⟩, h4⟩, h5⟩, h6⟩ := h1
+  refine ⟨h2, h3, ?_, ?_, fun r hr => ?_⟩
   · revert h4
     cases hasKeyIn basisRows (Ix.Cert.ownerOf e.1 e.2) <;> decide
-  · exact bne_iff_ne.mp (List.all_eq_true.mp h5 r hr)
+  · revert h5
+    cases hasKeyIn basisRows e.1 <;> decide
+  · exact bne_iff_ne.mp (List.all_eq_true.mp h6 r hr)
 
 theorem recordOf_none_of_not_hasKey {rows : List Row} {a : _root_.Address}
-    (h : hasKeyIn rows a = false) : recordOf (rowsEnv rows) a = none := by
-  unfold recordOf
-  simp [RowsStore.get?_of_not_hasKey h]
+    (h : hasKeyIn rows a = false) : recordOf (rowsEnv rows) a = none :=
+  (congrArg (fun (o : Option Ixon.LazyConstant) =>
+    o.bind fun lc => (Ixon.deConstantExact lc.rawBytes).toOption)
+    (RowsStore.get?_of_not_hasKey h)).trans rfl
 
 /-- **A record new in the `Bool` store is a row of the block.** -/
 theorem new_bool {a : _root_.Address} (h : New basisStore boolStore a) :
@@ -201,8 +224,16 @@ theorem new_bool {a : _root_.Address} (h : New basisStore boolStore a) :
     cases hn
   · exact ⟨c, hnew, hc⟩
 
-theorem isMuts_false_of_proj {c : Ixon.Constant} (h : IsProj c) : isMutsInfo c.info = false := by
-  rcases h with ⟨p, hp⟩ | ⟨p, hp⟩ | ⟨p, hp⟩ | ⟨p, hp⟩ <;> rw [hp] <;> rfl
+/-- A new row is new in the `Bool` store. -/
+theorem bool_new_of_row {e : Row} (he : e ∈ boolNew) :
+    recordOf boolStore e.1 = some e.2 ∧ New basisStore boolStore e.1 := by
+  have hrec : recordOf boolStore e.1 = some e.2 :=
+    RowsStore.record_of_mem BoolInhabit.boolRows_committed (a := e.1) (c := e.2)
+      (by rw [boolRows_eq]; exact List.mem_append_right _ he)
+  refine ⟨hrec, ?_, ?_⟩
+  · simp [hrec]
+  · rw [basisStore_eq]
+    exact recordOf_none_of_not_hasKey (boolNew_row he).2.2.2.1
 
 /-- The projection records of member `i` of a block record. -/
 theorem mem_projsOf {B : _root_.Address} {cb : Ixon.Constant} {i : Nat} {p : Ixon.Constant}
@@ -286,11 +317,16 @@ theorem bool_projMember {a : _root_.Address} {c : Ixon.Constant}
     refine ⟨cb, hcb, Or.inr ⟨ms, i, m, hms, hm, Or.inr ⟨ind, j, hind, hj, ?_⟩⟩⟩
     exact hap.trans (congrArg (fun q => _root_.Address.blake3Pure (Ixon.serConstant q)) hpe)
 
-/-- The rank of the `Bool` admission: a block record before every other record. -/
+/-- The rank of the `Bool` admission: the kind rank of the record at the address. -/
 def boolRank (a : _root_.Address) : Nat :=
   match recordOf boolStore a with
-  | some c => if isMutsInfo c.info then 0 else 1
-  | none => 1
+  | some c => kindRank c.info
+  | none => 3
+
+theorem boolRank_of {a : _root_.Address} {c : Ixon.Constant}
+    (h : recordOf boolStore a = some c) : boolRank a = kindRank c.info := by
+  unfold boolRank
+  simp [h]
 
 /-- **The run view of the `Bool` admission**: the 29 rows are the records loaded; the check and
 validation predicates are trivial (the admission's store clauses do not read them). -/
@@ -299,18 +335,6 @@ def boolRun : BRun where
   rank := fun _ a => boolRank a
   checked := fun _ _ => True
   validated := fun _ _ => True
-
-theorem boolRank_muts {a : _root_.Address} {c : Ixon.Constant}
-    (h : recordOf boolStore a = some c) (hm : isMutsInfo c.info = true) : boolRank a = 0 := by
-  unfold boolRank
-  rw [h]
-  simp [hm]
-
-theorem boolRank_not {a : _root_.Address} {c : Ixon.Constant}
-    (h : recordOf boolStore a = some c) (hm : isMutsInfo c.info = false) : boolRank a = 1 := by
-  unfold boolRank
-  rw [h]
-  simp [hm]
 
 /-- The `Bool` group has no operation and no standard axiom (decided). -/
 theorem group6_noUnits : ∀ r ∈ roleGroup 6, r ∉ RoleOps.opRoles ∧ r ∉ standardAxioms := by
@@ -345,11 +369,29 @@ theorem admits_bool : Admits boolRun ctab 6 basisStore boolStore where
     have hcc : c = c' := Option.some.inj (hc.symm.trans hc')
     subst hcc
     have h1 := (boolNew_row hmem).2.1
-    have h2 : (c.refs[i]?).all (hasKeyIn basisRows) = true := List.all_eq_true.mp h1 i hi
+    have h2 : (c.refs[i]?).all (refOk (kindRank c.info)) = true := List.all_eq_true.mp h1 i hi
     rw [hx] at h2
-    refine Or.inr ?_
-    rw [basisStore_eq]
-    exact RowsStore.isSome_of_hasKey basis_committed h2
+    have h3 : (hasKeyIn basisRows x || boolNew.any fun e' =>
+        e'.1 == x && decide (kindRank e'.2.info < kindRank c.info)) = true := h2
+    cases hb : hasKeyIn basisRows x with
+    | true =>
+      refine Or.inr ?_
+      rw [basisStore_eq]
+      exact RowsStore.isSome_of_hasKey basis_committed hb
+    | false =>
+      rw [hb, Bool.false_or] at h3
+      obtain ⟨e', he', hxe⟩ := List.any_eq_true.mp h3
+      have hxe' : (e'.1 == x && decide (kindRank e'.2.info < kindRank c.info)) = true := hxe
+      rw [Bool.and_eq_true] at hxe'
+      obtain ⟨hx1, hx2⟩ := hxe'
+      have hex : e'.1 = x := beq_iff_eq.mp hx1
+      have hlt : kindRank e'.2.info < kindRank c.info := of_decide_eq_true hx2
+      obtain ⟨hrec, hnew'⟩ := bool_new_of_row he'
+      rw [hex] at hrec hnew'
+      refine Or.inl ⟨hnew', ?_⟩
+      show boolRank x < boolRank a
+      rw [boolRank_of hrec, boolRank_of hc]
+      exact hlt
   rankOwner := by
     intro a c hnew hc hp
     obtain ⟨c₀, hmem, hc₀⟩ := new_bool hnew
@@ -367,12 +409,9 @@ theorem admits_bool : Admits boolRun ctab 6 basisStore boolStore where
         exact (standalone_not_proj hs hp).elim
       · exact ⟨ms, hms⟩
     obtain ⟨ms, hms⟩ := hmuts
-    have hr0 : boolRank (Ix.Cert.ownerOf a c₀) = 0 :=
-      boolRank_muts hcb (by simp only [hms, isMutsInfo])
-    have hr1 : boolRank a = 1 := boolRank_not hc (isMuts_false_of_proj hp)
     refine Or.inl ⟨⟨by simp [hcb], hB⟩, ?_⟩
     show boolRank (Ix.Cert.ownerOf a c₀) < boolRank a
-    rw [hr0, hr1]
+    rw [boolRank_of hcb, boolRank_of hc, hms, kindRank_proj hp]
     exact Nat.zero_lt_one
   projMember := fun a c hnew hc hp => bool_projMember hnew hc hp
   standing := by
@@ -392,10 +431,13 @@ theorem admits_bool : Admits boolRun ctab 6 basisStore boolStore where
     | muts ms =>
       rw [hinfo] at hok
       exact RowReader.inLogic_muts hinfo hok
+    | recr rc =>
+      rw [hinfo] at hok
+      have h' : decide (rc.isUnsafe = false) = true := hok
+      exact RowReader.inLogic_recr hinfo (of_decide_eq_true h')
     | axio _ => rw [hinfo] at hok; cases hok
     | quot _ => rw [hinfo] at hok; cases hok
     | defn _ => rw [hinfo] at hok; cases hok
-    | recr _ => rw [hinfo] at hok; cases hok
     | cPrj _ => unfold InLogic; rw [hinfo]; trivial
     | rPrj _ => unfold InLogic; rw [hinfo]; trivial
     | iPrj _ => unfold InLogic; rw [hinfo]; trivial
@@ -412,7 +454,7 @@ theorem admits_bool : Admits boolRun ctab 6 basisStore boolStore where
   opsOwn := by
     intro a r hnew ha hop
     obtain ⟨c, hmem, -⟩ := new_bool hnew
-    exact absurd ha ((boolNew_row hmem).2.2.2 r hop)
+    exact absurd ha ((boolNew_row hmem).2.2.2.2 r hop)
   unitsLast := by
     rintro x a - - ⟨r, hr, -, hop⟩
     have h := group6_noUnits r hr
