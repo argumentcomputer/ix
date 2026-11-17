@@ -1,3 +1,4 @@
+import IxVMRefinement.Obs.KernelRoles
 import IxVMRefinement.RoleVal.LookupSpec
 import IxVMRefinement.Claim.RoleTable
 import IxVMRefinement.Claim.Walk
@@ -1918,47 +1919,54 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
       ev47.heap_extends.trans (ev80.heap_extends.trans
         (ev100.heap_extends.trans ev124.heap_extends))
     have hsub_op : ∀ cl ∈ cs236, cl ∈ calls := fun cl hm => by rw [hc279]; simp [hm]
-    obtain ⟨_, _, _, _, _, _, m102_op, _, _, m111_op, _, _, m134_op, _,
-      v161, m162, cs172, _, m_sg2, _, v191, m192, cs202, v232, v233, m235, cs243, m255, cs263,
-      cs278, _, sg109, ev144, ev123, ev174, sg2, ev204, ev245, ev265, heq274, ev280, hc320⟩ :=
-      Obs.«KernelRoles::validate_op».obs ev238
-    have ext_sg : Heap.Extends m111 m102_op := by
-      cases sg109 with
-      | Safe _ _ he64 _ => rw [he64]
-      | other _ heq95 _ _ _ => exact absurd (Value.field.inj heq95) zero_ne_one
-    -- the order scan of the well-founded operations: assertions, extending the heap
-    have ext_sg2 : Heap.Extends m162 m_sg2 := by
-      cases sg2 with
-      | n1 _ _ _ _ _ _ _ _ _ e1 e2 e3 e4 _ =>
-        exact e1.heap_extends.trans (e2.heap_extends.trans (e3.heap_extends.trans e4.heap_extends))
-      | other _ _ _ e1 _ _ he _ => rw [he]; exact e1.heap_extends
-    have ext_w : Heap.Extends m111 m111_op :=
-      ext_sg.trans (ev144.heap_extends.trans ev123.heap_extends)
-    have hrc_w : RCRep t (some (groupValLimit g)) m111_op x_rc :=
-      hrc.mono (ext_ba.trans (ext_m111.trans ext_w))
-    have ha_w : S0.addr m111_op v1 a := S0.addr_mono (ext_m111.trans ext_w) ha_m2
-    have hwalk_a : RunCheckIn calls t (some (groupValLimit g)) a :=
-      RunCheckIn.mono hsub_op ⟨m111_op, m162, x_rc, v1, v161, cs172, hrc_w, ha_w, ev174,
-        by rw [hc320]; simp, fun cl hm => by rw [hc320]; simp [hm]⟩
-    have htbl_m162 : TableRep c₀.t m_sg2 x_tbl :=
-      htbl.mono (ext_ba.trans (ext_m111.trans (ext_w.trans (ev174.heap_extends.trans ext_sg2))))
-    obtain ⟨es, hlist_m192, hes⟩ := role_evidence_step (ScopedCtx.unrestricted c₀) ev204 x_tbl ro rfl htbl_m162
-    obtain ⟨rfl, rfl⟩ := evList_length ev245 hlist_m192
-    obtain ⟨rfl, k, hk0, hk10, rfl⟩ := op_equation_count_pos hsk ev265
-    obtain ⟨arr, hmem_ev, harr_eq, hpos⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq274
-    have e_255 : Heap.Extends m111_op m255 :=
-      ev174.heap_extends.trans (ext_sg2.trans ev204.heap_extends)
-    have hrc_m255 : RCRep t (some (groupValLimit g)) m255 x_rc := hrc_w.mono e_255
-    obtain ⟨_, hprfs⟩ :=
-      validate_op_equations_walks hrc_m255 (S0.addr_mono e_255 ha_w) hlist_m192 ev280
-    have hsub_eqs : ∀ cl ∈ cs278, cl ∈ calls := fun cl hm =>
-      hsub_op cl (by rw [hc320]; simp [hm])
-    refine ⟨a, had, ⟨m2, m32, v1, p39, v31, cs45, ha_m2, ev47,
-      by rw [hc279]; simp, fun cl hm => by rw [hc279]; simp [hm], ld41⟩,
-      fun _ => hwalk_a, fun _ => ⟨arr, hmem_ev, hpos, fun thm hthm => ?_⟩⟩
-    rw [harr_eq] at hthm
-    obtain ⟨htci, htw⟩ := hprfs thm hthm
-    exact ⟨htci.mono hsub_eqs, fun h5 => absurd h5 (by omega), fun _ => htw.mono hsub_eqs⟩
+    match Obs.«KernelRoles::validate_op».obs ev238 with
+    | .other (heq575 := hbad) .. => exact (zero_ne_one (Value.field.inj hbad)).elim
+    | .Defn (m2 := rawHeap) (m200 := m102_op) (m209 := m111_op) (m232 := m134_op)
+        (v259 := v161) (m260 := m162) (cs270 := cs172) (m391 := m_sg2)
+        (v399 := v191) (m400 := m192) (cs410 := cs202) (v440 := v232) (v441 := v233)
+        (m443 := m235) (cs451 := cs243) (m463 := m255) (cs471 := cs263)
+        (cs486 := cs278) (ev14 := rawLoad) (sg207 := sg109) (ev242 := ev144)
+        (ev221 := ev123) (ev272 := ev174) (sg398 := sg2) (ev412 := ev204)
+        (ev453 := ev245) (ev473 := ev265) (heq482 := heq274) (ev488 := ev280)
+        (hc544 := hc320) .. =>
+      have ext_safe : Heap.Extends rawHeap m102_op := by
+        cases sg109 with
+        | Safe _ _ he64 _ => rw [he64]
+        | other _ heq95 _ _ _ => exact absurd (Value.field.inj heq95) zero_ne_one
+      have ext_sg : Heap.Extends m111 m102_op := rawLoad.heap_extends.trans ext_safe
+      -- the order scan of the well-founded operations: assertions, extending the heap
+      have ext_sg2 : Heap.Extends m162 m_sg2 := by
+        cases sg2 with
+        | n1 _ _ _ _ _ _ _ _ _ e1 e2 e3 e4 _ =>
+          exact e1.heap_extends.trans (e2.heap_extends.trans (e3.heap_extends.trans e4.heap_extends))
+        | other _ _ _ e1 _ _ he _ => rw [he]; exact e1.heap_extends
+      have ext_w : Heap.Extends m111 m111_op :=
+        ext_sg.trans (ev144.heap_extends.trans ev123.heap_extends)
+      have hrc_w : RCRep t (some (groupValLimit g)) m111_op x_rc :=
+        hrc.mono (ext_ba.trans (ext_m111.trans ext_w))
+      have ha_w : S0.addr m111_op v1 a := S0.addr_mono (ext_m111.trans ext_w) ha_m2
+      have hwalk_a : RunCheckIn calls t (some (groupValLimit g)) a :=
+        RunCheckIn.mono hsub_op ⟨m111_op, m162, x_rc, v1, v161, cs172, hrc_w, ha_w, ev174,
+          by rw [hc320]; simp, fun cl hm => by rw [hc320]; simp [hm]⟩
+      have htbl_m162 : TableRep c₀.t m_sg2 x_tbl :=
+        htbl.mono (ext_ba.trans (ext_m111.trans (ext_w.trans (ev174.heap_extends.trans ext_sg2))))
+      obtain ⟨es, hlist_m192, hes⟩ := role_evidence_step (ScopedCtx.unrestricted c₀) ev204 x_tbl ro rfl htbl_m162
+      obtain ⟨rfl, rfl⟩ := evList_length ev245 hlist_m192
+      obtain ⟨rfl, k, hk0, hk10, rfl⟩ := op_equation_count_pos hsk ev265
+      obtain ⟨arr, hmem_ev, harr_eq, hpos⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq274
+      have e_255 : Heap.Extends m111_op m255 :=
+        ev174.heap_extends.trans (ext_sg2.trans ev204.heap_extends)
+      have hrc_m255 : RCRep t (some (groupValLimit g)) m255 x_rc := hrc_w.mono e_255
+      obtain ⟨_, hprfs⟩ :=
+        validate_op_equations_walks hrc_m255 (S0.addr_mono e_255 ha_w) hlist_m192 ev280
+      have hsub_eqs : ∀ cl ∈ cs278, cl ∈ calls := fun cl hm =>
+        hsub_op cl (by rw [hc320]; simp [hm])
+      refine ⟨a, had, ⟨m2, m32, v1, p39, v31, cs45, ha_m2, ev47,
+        by rw [hc279]; simp, fun cl hm => by rw [hc279]; simp [hm], ld41⟩,
+        fun _ => hwalk_a, fun _ => ⟨arr, hmem_ev, hpos, fun thm hthm => ?_⟩⟩
+      rw [harr_eq] at hthm
+      obtain ⟨htci, htw⟩ := hprfs thm hthm
+      exact ⟨htci.mono hsub_eqs, fun h5 => absurd h5 (by omega), fun _ => htw.mono hsub_eqs⟩
   | n3 v1 m2 cs12 v31 m32 p39 cs45 _ _ _ _ _ _ _ _ _
       ev14 ev47 ld41 _ _ _ ev124 _ hc323 =>
     obtain ⟨_, a, ha_m2, had⟩ := role_bound_addr_uncond htbl ev14
@@ -2136,56 +2144,63 @@ theorem validate_role_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
       have ext_m111 : Heap.Extends m2 m111 :=
         ev47.heap_extends.trans (ev80.heap_extends.trans
           (ev100.heap_extends.trans ev124.heap_extends))
-      obtain ⟨_, _, _, _, _, _, m102_op, _, _, m111_op, _, _, m134_op, _,
-        v161, m162, cs172, _, m_sg2, _, v191, m192, cs202, v232, v233, m235, cs243, m255, cs263,
-        cs278, _, sg109, ev144, ev123, ev174, sg2, ev204, ev245, ev265, heq274, ev280, hc320⟩ :=
-        Obs.«KernelRoles::validate_op».obs ev238
-      have ext_sg : Heap.Extends m111 m102_op := by
-        cases sg109 with
-        | Safe _ _ he64 _ => rw [he64]
-        | other _ heq95 _ _ _ => exact absurd (Value.field.inj heq95) zero_ne_one
-      have ext_sg2 : Heap.Extends m162 m_sg2 := by
-        cases sg2 with
-        | n1 _ _ _ _ _ _ _ _ _ e1 e2 e3 e4 _ =>
-          exact e1.heap_extends.trans (e2.heap_extends.trans (e3.heap_extends.trans e4.heap_extends))
-        | other _ _ _ e1 _ _ he _ => rw [he]; exact e1.heap_extends
-      have ext_w : Heap.Extends m111 m111_op :=
-        ext_sg.trans (ev144.heap_extends.trans ev123.heap_extends)
-      have hrc_w := hrc.mono (ext_ba.trans (ext_m111.trans ext_w))
-      have ha_w := S0.addr_mono (ext_m111.trans ext_w) ha_m2
-      obtain ⟨_, recs_a, hmem_a, hcl_a, _⟩ := Claim.run_check_transitive_spec hrc_w ha_w ev174
-      have htbl_m162 : TableRep c₀.t m_sg2 x_tbl :=
-        htbl.toTableRep.mono (ext_ba.trans (ext_m111.trans (ext_w.trans
-          (ev174.heap_extends.trans ext_sg2))))
-      obtain ⟨es, hlist_m192, hes⟩ := role_evidence_step (ScopedCtx.unrestricted c₀) ev204 x_tbl ro rfl htbl_m162
-      obtain ⟨rfl, rfl⟩ := evList_length ev245 hlist_m192
-      obtain ⟨rfl, k, hk0, hk10, rfl⟩ := op_equation_count_pos hsk ev265
-      obtain ⟨arr₀, hmem_ev₀, harr_eq, _⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq274
-      have e_255 : Heap.Extends m111_op m255 :=
-        ev174.heap_extends.trans (ext_sg2.trans ev204.heap_extends)
-      have hrc_m255 := hrc_w.mono e_255
-      obtain ⟨_, recs_ev, hcl_ev, hprfs⟩ :=
-        validate_op_equations_full_walks hrc_m255 (S0.addr_mono e_255 ha_w) hlist_m192 ev280
-      have hsub_a : ∀ cl ∈ cs172, cl ∈ calls := fun cl hm => by
-        rw [hc279]; simp [show cl ∈ cs236 by rw [hc320]; simp [hm]]
-      have hsub_ev : ∀ cl ∈ cs278, cl ∈ calls := fun cl hm => by
-        rw [hc279]; simp [show cl ∈ cs236 by rw [hc320]; simp [hm]]
-      refine ⟨recs_a.map (Claim.WalkedRec.mono hsub_a) ++ recs_ev.map (Claim.WalkedRec.mono hsub_ev),
-        (hcl_a.mono hsub_a).append (hcl_ev.mono hsub_ev), ?_, ?_⟩
-      · intro a' _ had'
-        rw [had] at had'; injection had' with ha_eq; subst ha_eq
-        rw [List.map_append, Claim.map_addr_walkedRec_mono]
-        exact List.mem_append_left _ hmem_a
-      · intro arr thm hm hthm
-        have harr : arr = arr₀ := evidence_eq_of_wf hwf hm hmem_ev₀
-        subst harr
-        rw [harr_eq] at hthm
-        rw [List.map_append, Claim.map_addr_walkedRec_mono, Claim.map_addr_walkedRec_mono]
-        refine ⟨fun h5 => absurd h5 (by omega), fun _ a' had' => ?_⟩
-        rw [had] at had'
-        injection had' with ha_eq
-        subst ha_eq
-        exact (hprfs thm hthm).mono (fun _ hx => List.mem_append_right _ hx)
+      match Obs.«KernelRoles::validate_op».obs ev238 with
+      | .other (heq575 := hbad) .. => exact (zero_ne_one (Value.field.inj hbad)).elim
+      | .Defn (m2 := rawHeap) (m200 := m102_op) (m209 := m111_op) (m232 := m134_op)
+          (v259 := v161) (m260 := m162) (cs270 := cs172) (m391 := m_sg2)
+          (v399 := v191) (m400 := m192) (cs410 := cs202) (v440 := v232) (v441 := v233)
+          (m443 := m235) (cs451 := cs243) (m463 := m255) (cs471 := cs263)
+          (cs486 := cs278) (ev14 := rawLoad) (sg207 := sg109) (ev242 := ev144)
+          (ev221 := ev123) (ev272 := ev174) (sg398 := sg2) (ev412 := ev204)
+          (ev453 := ev245) (ev473 := ev265) (heq482 := heq274) (ev488 := ev280)
+          (hc544 := hc320) .. =>
+        have ext_safe : Heap.Extends rawHeap m102_op := by
+          cases sg109 with
+          | Safe _ _ he64 _ => rw [he64]
+          | other _ heq95 _ _ _ => exact absurd (Value.field.inj heq95) zero_ne_one
+        have ext_sg : Heap.Extends m111 m102_op := rawLoad.heap_extends.trans ext_safe
+        have ext_sg2 : Heap.Extends m162 m_sg2 := by
+          cases sg2 with
+          | n1 _ _ _ _ _ _ _ _ _ e1 e2 e3 e4 _ =>
+            exact e1.heap_extends.trans (e2.heap_extends.trans (e3.heap_extends.trans e4.heap_extends))
+          | other _ _ _ e1 _ _ he _ => rw [he]; exact e1.heap_extends
+        have ext_w : Heap.Extends m111 m111_op :=
+          ext_sg.trans (ev144.heap_extends.trans ev123.heap_extends)
+        have hrc_w := hrc.mono (ext_ba.trans (ext_m111.trans ext_w))
+        have ha_w := S0.addr_mono (ext_m111.trans ext_w) ha_m2
+        obtain ⟨_, recs_a, hmem_a, hcl_a, _⟩ := Claim.run_check_transitive_spec hrc_w ha_w ev174
+        have htbl_m162 : TableRep c₀.t m_sg2 x_tbl :=
+          htbl.toTableRep.mono (ext_ba.trans (ext_m111.trans (ext_w.trans
+            (ev174.heap_extends.trans ext_sg2))))
+        obtain ⟨es, hlist_m192, hes⟩ := role_evidence_step (ScopedCtx.unrestricted c₀) ev204 x_tbl ro rfl htbl_m162
+        obtain ⟨rfl, rfl⟩ := evList_length ev245 hlist_m192
+        obtain ⟨rfl, k, hk0, hk10, rfl⟩ := op_equation_count_pos hsk ev265
+        obtain ⟨arr₀, hmem_ev₀, harr_eq, _⟩ := nonempty_evidence_of_len_eq hk0 hk10 hes heq274
+        have e_255 : Heap.Extends m111_op m255 :=
+          ev174.heap_extends.trans (ext_sg2.trans ev204.heap_extends)
+        have hrc_m255 := hrc_w.mono e_255
+        obtain ⟨_, recs_ev, hcl_ev, hprfs⟩ :=
+          validate_op_equations_full_walks hrc_m255 (S0.addr_mono e_255 ha_w) hlist_m192 ev280
+        have hsub_a : ∀ cl ∈ cs172, cl ∈ calls := fun cl hm => by
+          rw [hc279]; simp [show cl ∈ cs236 by rw [hc320]; simp [hm]]
+        have hsub_ev : ∀ cl ∈ cs278, cl ∈ calls := fun cl hm => by
+          rw [hc279]; simp [show cl ∈ cs236 by rw [hc320]; simp [hm]]
+        refine ⟨recs_a.map (Claim.WalkedRec.mono hsub_a) ++ recs_ev.map (Claim.WalkedRec.mono hsub_ev),
+          (hcl_a.mono hsub_a).append (hcl_ev.mono hsub_ev), ?_, ?_⟩
+        · intro a' _ had'
+          rw [had] at had'; injection had' with ha_eq; subst ha_eq
+          rw [List.map_append, Claim.map_addr_walkedRec_mono]
+          exact List.mem_append_left _ hmem_a
+        · intro arr thm hm hthm
+          have harr : arr = arr₀ := evidence_eq_of_wf hwf hm hmem_ev₀
+          subst harr
+          rw [harr_eq] at hthm
+          rw [List.map_append, Claim.map_addr_walkedRec_mono, Claim.map_addr_walkedRec_mono]
+          refine ⟨fun h5 => absurd h5 (by omega), fun _ a' had' => ?_⟩
+          rw [had] at had'
+          injection had' with ha_eq
+          subst ha_eq
+          exact (hprfs thm hthm).mono (fun _ hx => List.mem_append_right _ hx)
     | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
       obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
       have hsk : roleSpecKindNat ro = 3 := by
