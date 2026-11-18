@@ -1,5 +1,6 @@
 import IxVMRefinement.Binding.FamilyWitness
 import IxVMRefinement.Binding.RunPredicate
+import IxVMRefinement.Binding.OpRoleUnit
 
 /-! # The closure of a group with its modeled blocks' families: the fold's statement
 
@@ -18,10 +19,10 @@ is no role unit. Each record is installed by the step of its kind, at the closur
 The statement is `ClosureFoldStatement`: from the three step premises, the closure of every group
 in the family form, with the binding fold's invariant that the walked records are stored.
 
-* `WalkedStored ρ t G R env`: every non-block record of `R` the run checked, in Lean's logic with
-  its block, is stored at its key, and so is the record of every walked role of a group of `G`.
-  The role unit of an operation reads it after the closure (`UsedRefsStored` of the operation's
-  record). It is to become a field of the boundary invariant; here it is beside it, in and out.
+* `WalkedStored ρ t G R env` (`Binding/OpRoleUnit.lean`): every non-block record of `R` the run
+  checked, in Lean's logic with its block, is stored at its key, and so is the record of every
+  walked role of a group of `G`. The role unit of an operation reads it after the closure. It
+  reads the run record, so it sits beside the boundary invariant, in and out.
 * `ClosureStepOverFamilyW`: `ClosureStepOverFamily` with `WalkedStored` before and after.
 * `ClosureStore t g R R' R₁`: the closure's store: between `R` and `R'`, every blob of `R'`, and
   lacking only records of the group's role units.
@@ -51,22 +52,6 @@ open IxVM.Refinement.Binding.FamilyOf (FamilyOfBlock)
 open Aiur.Generic.SourceSemantics (Call)
 open IxVM (F)
 open Ix.Kernel.Semantics (NativeFam)
-
-/-! ## The walked records stored -/
-
-/-- **The walked records are stored** (module docstring): every non-block record of `R` that the
-run checked at some limit, in Lean's logic with its block, is stored at its key (a projection
-record included: the run checks the projection's address); and the record of every walked role
-of a group of `G` is stored at its key. -/
-def WalkedStored (ρ : BRun) (t : Ix.Kernel.RoleTable) (G : Nat → Prop) (R : Ixon.Env)
-    (env : Ix.Kernel.Env .anon) : Prop :=
-  (∀ (x : _root_.Address) (c : Ixon.Constant) (n : Nat), recordOf R x = some c →
-    (∀ ms, c.info ≠ .muts ms) → InLogic c →
-    (∀ cb, recordOf R (Ix.Cert.ownerOf x c) = some cb → InLogic cb) → ρ.checked x n →
-    (env.find? (keyOf t x)).isSome = true) ∧
-  (∀ (r : Ix.Kernel.Role) (x : _root_.Address), walkedRole r = true →
-    G (Ix.SpecDigest.groupOf r) → t.addressOf? r = some x →
-    (env.find? (keyOf t x)).isSome = true)
 
 /-- **The closure of group `g` with its families and the walked records stored**:
 `ClosureStepOverFamily` with `WalkedStored` on the groups below `g` before the group and after
