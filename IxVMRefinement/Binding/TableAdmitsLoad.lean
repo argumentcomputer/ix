@@ -228,4 +228,139 @@ theorem loadedTableAdmits_of (hval : ValidationsCheckEvidence)
     obtain ⟨rfl, rfl⟩ := hqe
     exact ⟨q.2, rfl, (hidx _ _).mpr (.inr ⟨q.1, hq, rfl⟩)⟩
 
+/-! ## The load's `evidence_roles_have_equations` -/
+
+
+theorem op_equation_count_val {ro : Ix.Kernel.Role} {r : SourceValue F} {h h' : Heap F}
+    {calls : List (Call F)} {g : F}
+    (ht : RolesAux.evalLitTable (RolesAux.matchArms IxVM.KernelRoleSpec.op_equation_count.body)
+      (roleNum ro) = some g)
+    (ev : ObsFn W "KernelRoleSpec::op_equation_count" [.field (roleNum ro)] h r h' calls) :
+    r = .field g ∧ h' = h := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.op_equation_count.lookup
+    (by simp [IxVM.KernelRoleSpec.op_equation_count, ControlLower.hasControl]) ev
+  have hp : (IxVM.KernelRoleSpec.op_equation_count.params.map fun (n, t) =>
+      (n, (t.subst []).toCore)).map Prod.fst = ["r"] := rfl
+  have hb : IxVM.KernelRoleSpec.op_equation_count.body =
+      .matchValue (.var "r") (RolesAux.matchArms IxVM.KernelRoleSpec.op_equation_count.body) := rfl
+  rw [hp, hb] at d0
+  obtain ⟨_, _, bs3, body4, _, _, d7, sel8, d9, -⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, -⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  obtain ⟨rfl, rfl⟩ := RolesAux.selectArm_litTable ht sel8
+  obtain ⟨rfl, rfl, -⟩ := d9.literal_inv
+  exact ⟨rfl, rfl⟩
+
+theorem eqns_equation_count_val {ro : Ix.Kernel.Role} {r : SourceValue F} {h h' : Heap F}
+    {calls : List (Call F)} {g : F}
+    (ht : RolesAux.evalLitTable (RolesAux.matchArms IxVM.KernelRoleSpec.eqns_equation_count.body)
+      (roleNum ro) = some g)
+    (ev : ObsFn W "KernelRoleSpec::eqns_equation_count" [.field (roleNum ro)] h r h' calls) :
+    r = .field g ∧ h' = h := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.eqns_equation_count.lookup
+    (by simp [IxVM.KernelRoleSpec.eqns_equation_count, ControlLower.hasControl]) ev
+  have hp : (IxVM.KernelRoleSpec.eqns_equation_count.params.map fun (n, t) =>
+      (n, (t.subst []).toCore)).map Prod.fst = ["r"] := rfl
+  have hb : IxVM.KernelRoleSpec.eqns_equation_count.body =
+      .matchValue (.var "r") (RolesAux.matchArms IxVM.KernelRoleSpec.eqns_equation_count.body) :=
+    rfl
+  rw [hp, hb] at d0
+  obtain ⟨_, _, bs3, body4, _, _, d7, sel8, d9, -⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, -⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  obtain ⟨rfl, rfl⟩ := RolesAux.selectArm_litTable ht sel8
+  obtain ⟨rfl, rfl, -⟩ := d9.literal_inv
+  exact ⟨rfl, rfl⟩
+
+set_option maxRecDepth 100000 in
+/-- The two equation counts of a role (decided over the 108 roles): both tables answer, and
+their sum is zero for a role without equations only. -/
+theorem counts_table (ro : Ix.Kernel.Role) :
+    (match RolesAux.evalLitTable (RolesAux.matchArms IxVM.KernelRoleSpec.op_equation_count.body)
+        (roleNum ro),
+      RolesAux.evalLitTable (RolesAux.matchArms IxVM.KernelRoleSpec.eqns_equation_count.body)
+        (roleNum ro) with
+     | some g₁, some g₂ => decide (g₁ + g₂ = 0) || RoleVal.roleHasEquations ro
+     | _, _ => false) = true := by
+  cases ro <;> decide +kernel
+
+/-- **The walk of `evidence_roles_have_equations`**: every key of the evidence map is a role
+with equations. -/
+theorem evidence_roles_have_equations_walk {h₀ : Heap F} :
+    ∀ {ents : List (Nat × SourceValue F)} {tree : SourceValue F},
+      RoleVal.RoleMapEntries roleEvMapEnum h₀ ents tree →
+      (∀ q ∈ ents, ∃ ro : Ix.Kernel.Role, ro.idx = q.1) →
+      ∀ {v : SourceValue F} {h h' : Heap F} {cs : List (Call F)}, Heap.Extends h₀ h →
+        ObsFn W "KernelRoles::evidence_roles_have_equations" [tree] h v h' cs →
+        ∀ q ∈ ents, ∀ ro : Ix.Kernel.Role, ro.idx = q.1 → RoleVal.roleHasEquations ro = true := by
+  intro ents tree he
+  induction he with
+  | nil => intro _ _ _ _ _ _ _ q hq; cases hq
+  | @node c k v0 lp rp lv rv ls rs hl hr rl rr ihl ihr =>
+    intro hkeys v h h' cs ext ev q hq ro hro
+    match Obs.«KernelRoles::evidence_roles_have_equations».obs ev with
+    | .Nil (hv15 := hv) .. =>
+      injection hv with _ hc _
+      exact absurd hc (by decide)
+    | .Node (hv27 := hv) (ev101 := ev101) (ev115 := ev115) (op95 := op95) (ev80 := ev80)
+        (heq130 := heq) (ld154 := ldl) (ev144 := evl) (ld171 := ldr) (ev161 := evr) .. =>
+      injection hv with _ _ hargs
+      simp only [List.cons.injEq, and_true] at hargs
+      obtain ⟨-, hxr, -, hxl, hxr'⟩ := hargs
+      subst hxr hxl hxr'
+      have ext70 := ext.trans (ev101.heap_extends.trans (ev115.heap_extends.trans
+        ev80.heap_extends))
+      obtain rfl := Claim.loadValue_eq_inj ldl (ext70.loadValue_eq hl)
+      have ext132 := ext70.trans evl.heap_extends
+      obtain rfl := Claim.loadValue_eq_inj ldr (ext132.loadValue_eq hr)
+      simp only [List.append_assoc, List.singleton_append, List.mem_append, List.mem_cons] at hq
+      have hkeysL : ∀ q ∈ ls, ∃ ro : Ix.Kernel.Role, ro.idx = q.1 :=
+        fun q hq => hkeys q (by simp [hq])
+      have hkeysR : ∀ q ∈ rs, ∃ ro : Ix.Kernel.Role, ro.idx = q.1 :=
+        fun q hq => hkeys q (by simp [hq])
+      rcases hq with hq | rfl | hq
+      · exact ihl hkeysL ext70 evl q hq ro hro
+      · -- this node's key
+        simp only at hro
+        subst hro
+        have htab := counts_table ro
+        cases h1 : RolesAux.evalLitTable
+            (RolesAux.matchArms IxVM.KernelRoleSpec.op_equation_count.body) (roleNum ro) with
+        | none => rw [h1] at htab; cases htab
+        | some g₁ =>
+          cases h2 : RolesAux.evalLitTable
+              (RolesAux.matchArms IxVM.KernelRoleSpec.eqns_equation_count.body) (roleNum ro) with
+          | none => rw [h1, h2] at htab; cases htab
+          | some g₂ =>
+            rw [h1, h2] at htab
+            obtain ⟨rfl, -⟩ := op_equation_count_val h1 ev101
+            obtain ⟨rfl, -⟩ := eqns_equation_count_val h2 ev115
+            simp only [evalBinOp, Except.ok.injEq] at op95
+            subst op95
+            obtain ⟨hz, -⟩ := Lib.is_zero_spec ev80
+            rw [heq] at hz
+            have hne : g₁ + g₂ ≠ 0 := by
+              intro h0
+              rw [h0] at hz
+              simp at hz
+            simpa [hne] using htab
+      · exact ihr hkeysR ext132 evr q hq ro hro
+
+/-- **`LoadEvidenceHasEquations` holds of every observed load.** -/
+theorem loadEvidenceHasEquations : LoadEvidenceHasEquations := by
+  intro le ents evMap v hE hE' cs hent hev ev p hp
+  obtain ⟨q, hq, hk, -⟩ := RoleVal.forall₂_mem_left hev p hp
+  have hkeys : ∀ q ∈ ents, ∃ ro : Ix.Kernel.Role, ro.idx = q.1 := by
+    intro q hq
+    obtain ⟨p', -, hk', -⟩ := RoleVal.forall₂_mem_right hev q hq
+    exact ⟨p'.1, hk'.symm⟩
+  exact evidence_roles_have_equations_walk hent hkeys (Heap.Extends.refl _) ev q hq p.1 hk.symm
+
+/-- **The loaded table admits, from the evidence clauses of the roles' validations.** -/
+theorem loadedTableAdmits_of_validations (hval : ValidationsCheckEvidence) :
+    LoadedTableAdmits :=
+  loadedTableAdmits_of hval loadEvidenceHasEquations
+
 end IxVM.Refinement.Binding
