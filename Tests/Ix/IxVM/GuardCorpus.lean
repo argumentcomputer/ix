@@ -358,11 +358,13 @@ def runFamilies (cp : Corpus) (out : System.FilePath) : IO UInt32 := do
   -- `IX_GUARD_CORPUS_TYPES_ONLY`: each claim owns the inductive block and its projections only;
   -- the family check runs on the block's own arm and reads the family record through the advice
   let typesOnly := (← IO.getEnv "IX_GUARD_CORPUS_TYPES_ONLY").isSome
+  -- `IX_GUARD_CORPUS_EXERCISE`: the function an accepted family claim must call
+  let exercise := (← IO.getEnv "IX_GUARD_CORPUS_EXERCISE").getD "KernelModeled::check_family"
   let cases : Array Builder := rep.advice.map fun (b, adv) => fun _ => do
     let owned := groups.getD b #[] ++ (if typesOnly then #[] else groups.getD adv.layout.recBlock #[])
     let (_, witness) ← buildShardCheckEnvWitness env owned (assumeBinding := true)
     return { label := s!"family {blockName b}: {owned.size} owned, {adv.records.size} advice records",
-             accept := true, exercises := some "KernelModeled::check_family",
+             accept := true, exercises := some exercise,
              expectedFftCost := pin, witness }
   -- a claim that reaches a modeled block through a type and none of its recursors, with
   -- the models attached: `autoParam`, whose type names `Lean.Syntax`

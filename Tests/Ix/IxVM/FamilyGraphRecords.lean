@@ -296,7 +296,7 @@ private def familyOf (env0 : Ixon.Env) (first : Lean.Name) :
   let some block := (env.getConst? ty).bind IxVM.Model.projectionBlock?
     | throw (IO.userError s!"{first} is not a member of a block")
   let some (_, adv) := rep.advice.find? (·.1 == block)
-    | throw (IO.userError s!"the block of {first} has no model advice")
+    | throw (IO.userError s!"the block of {first} has no model advice: {match rep.blocks.find? (·.1 == block) with | some (_, .error e) => e | _ => "no entry"}")
   let mut owned : Array Address := #[block]
   for (a, lc) in env.consts do
     if let some c := lc.get? then
