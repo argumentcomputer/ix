@@ -495,9 +495,12 @@ theorem familyGraph_of_checks {d : GraphData} {t : Ix.Kernel.RoleTable} {E₀ : 
   refine
     { famBlock := fun B rb hB => kBlock (B, rb) (assoc_mem hB)
       famUnit := ?_
-      famRecord := fun B rb hB => famRecRecord_of_P (kRecord (B, rb) (assoc_mem hB))
+      famRecord := fun B rb hB => by
+        obtain ⟨crb, rs, hR, -⟩ := famRecRecord_of_P (kRecord (B, rb) (assoc_mem hB))
+        exact ⟨crb, rs, hR⟩
       famAfter := fun B rb hB hW => kAfter (B, rb) (assoc_mem hB) hW
-      famInj := fun B B' rb hB hB' => kInj (B, rb) (assoc_mem hB) (B', rb) (assoc_mem hB') rfl
+      famInj := fun B B' rb _ _ hB hB' _ _ =>
+        kInj (B, rb) (assoc_mem hB) (B', rb) (assoc_mem hB') rfl
       famFresh := fun B rb crb x hB hcrb hx => hff (B, rb) (assoc_mem hB) crb x hcrb hx
       famClosed := ?_
       advEarlier := ?_
