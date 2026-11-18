@@ -946,6 +946,21 @@ def assert_inner_refs_safe := aiur_fn⟦
     }
 ⟧
 
+  -- No address of the recursor family record is bound to a role: an honest table binds no role at
+  -- a mutual or nested family's recursor (the condition the modeled type and constructor assert).
+
+def assert_no_role := aiur_fn⟦
+  fn assert_no_role(rc: KernelRoles::RoleCtx, xs: Lists::List<Bytes::AddressRef>) -> () {
+      match (*(xs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(x, rest) => {
+          assert_eq!(KernelRoles::role_index_of(rc, x), 0,
+            "a modeled recursor is bound to a role");
+          assert_no_role(rc, rest) } ,
+      }
+    }
+⟧
+
 def projection_of_advice := aiur_fn⟦
   fn projection_of_advice(r: Bytes::AddressRef, aset: RBTreeMap::RBTreeMap<Field>) -> Field {
       let c = Ingress::load_verified_constant(r);
@@ -1013,6 +1028,7 @@ def check_family := aiur_fn⟦
               let ctor_addrs = block_ctor_addrs(members, block, 0);
               let (ctor_models, s7) = get_addrs(s6, Lists::length(ctor_addrs));
               let rec_addrs = family_recs(rec_block);
+              assert_no_role(rc, rec_addrs);
               let n_recs = Lists::length(rec_addrs);
               let (rec_models, s8) = get_addrs(s7, n_recs);
               let src = Lists::concat(type_addrs, Lists::concat(ctor_addrs, rec_addrs));
