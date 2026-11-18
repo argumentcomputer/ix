@@ -477,6 +477,34 @@ theorem MemberCheckedLimAt.block_kinds {E₀ : Ixon.Env} (hS : LoadedReads.RunSt
     BlockKindsChecked calls B :=
   member_zero_block_kinds hS hm
 
+/-- **The check of member `0` of a block runs the block's member-kind check, under any role
+context**: the member's projection address, the load at it and the check of the loaded value,
+as observed (`MemberCheckedLimAt.block_kinds` without the context). -/
+theorem member_zero_block_kinds_of {E₀ : Ixon.Env} (hS : LoadedReads.RunStore calls E₀)
+    {B : _root_.Address} {ms : Array Ixon.MutConst} {h_pa h_pre m_chk h'_chk : Heap F}
+    {rc x_members x_block ap ptr v r_chk : SourceValue F} {cs_pa cs_load cs_chk : List (Call F)}
+    (hmem : Specs.Callees.MembersRep h_pa ms.toList x_members) (hblk : S0.addr h_pa x_block B)
+    (ev_pa : ObsFn Obs.W "Ingress::projection_addr" [x_members, x_block, .field ((0 : Nat) : F)]
+      h_pa ap h_pre cs_pa)
+    (hsub_pa : ∀ cl ∈ cs_pa, cl ∈ calls)
+    (ev_ld : ObsFn Obs.W "Ingress::get_ci" [ap] h_pre ptr m_chk cs_load)
+    (hsub_ld : ∀ cl ∈ cs_load, cl ∈ calls) (hld : loadValue m_chk ptr = .ok v)
+    (ev_chk : ObsFn Obs.W "KernelCheck::check_const" [rc, v, ap] m_chk r_chk h'_chk cs_chk)
+    (hsub_chk : ∀ cl ∈ cs_chk, cl ∈ calls) : BlockKindsChecked calls B := by
+  obtain ⟨b, hb, rfl⟩ := hblk
+  obtain ⟨-, -, -, mc, a, -, ra, hixa, hhp⟩ := L1.projection_addr_hashed_spec hmem hb ev_pa
+  have hhp' := hashed_mono hsub_pa hhp
+  have hB : (Core.ixAddr b).hash.size = 32 := b.size_toArray
+  cases mc with
+  | defn d =>
+    exact get_ci_dprj_block_kinds hS (B := Core.ixAddr b) hB hhp' ⟨a, ra, hixa⟩ ev_ld hsub_ld
+  | indc ind =>
+    exact get_ci_iprj_block_kinds hS (B := Core.ixAddr b) hB hhp' ⟨a, ra, hixa⟩ ev_ld hsub_ld
+      hld ev_chk hsub_chk
+  | recr rcr =>
+    exact get_ci_rprj_block_kinds hS (B := Core.ixAddr b) hB hhp' ⟨a, ra, hixa⟩ ev_ld hsub_ld
+      hld ev_chk hsub_chk
+
 /-- **A loaded block whose member-kind check the run observed is in Lean's logic when one of
 its members has a constant in Lean's logic.** -/
 theorem BlockLoad.inLogic {E₀ : Ixon.Env} (hS : LoadedReads.RunStore calls E₀)
