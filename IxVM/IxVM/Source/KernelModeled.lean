@@ -721,7 +721,20 @@ def container_refs_ok := aiur_fn⟦
                     _ => {
                       match projection_of_ref_block(r, irefs, iused) {
                         1 => {  1 } ,
-                        _ => {  KernelClaim::addr_set_member(r, wset) } ,
+                        _ => {
+                          match KernelClaim::addr_set_member(r, wset) {
+                            1 => {
+                              let wc = Ingress::load_verified_constant(r);
+                              match wc {
+                                Ixon::Constant::Mk(winfo, _, _, _, _) => {
+                                  match winfo {
+                                    Ixon::ConstantInfo::Recr(_) => {  0 } ,
+                                    Ixon::ConstantInfo::RPrj(_) => {  0 } ,
+                                    _ => {  1 } ,
+                                  } } ,
+                              } } ,
+                            _ => {  0 } ,
+                          } } ,
                       } } ,
                   } } ,
               };
