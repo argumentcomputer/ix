@@ -224,7 +224,8 @@ private theorem scan_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : Heap
           ⟨w183, w184, x_b, cs203, hne155, hv160, ev205, hc238⟩ |
           ⟨w268, x_b, cs282, hne155, hne240, hv245, ev284, hc317⟩ |
           ⟨w347, x_b, cs361, hne155, hne240, hne319, hv324, ev363, hc396⟩ |
-          ⟨hne155, hne240, hne319, hne398, he404, he405, hc406⟩
+          ⟨wM, vM, mM, csM, hne155, hne240, hne319, hne398, hvM, evM, heqM, hrM, hhM, hcM⟩ |
+          ⟨hne155, hne240, hne319, hne398, hneM, he404, he405, hc406⟩
         · rw [hv81] at hinfo
           cases hc_i : c.info <;> rw [hc_i] at hinfo
           case iPrj p =>
@@ -313,6 +314,19 @@ private theorem scan_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : Heap
             · exact Or.inl h
             · exact Or.inr (Or.inl h)
           all_goals (obtain ⟨_, hv', _⟩ := hinfo; simp at hv')
+        · -- a block: the scan asserts it is not modeled, and its owner is itself
+          have hown : Ix.Cert.ownerOf a c = a := by
+            unfold Ix.Cert.ownerOf
+            cases hc_i : c.info <;> rw [hc_i] at hinfo <;> try rfl
+            all_goals
+              obtain ⟨pv, hv', _⟩ := hinfo
+              first
+                | exact absurd hv' (hne155 [_] rfl)
+                | exact absurd hv' (hne240 [_] rfl)
+                | exact absurd hv' (hne319 [_] rfl)
+                | exact absurd hv' (hne398 [_] rfl)
+          refine ⟨by subst hhM; exact evM.heap_extends, [], scanClosed_nil cs410 Ok,
+            Or.inr (Or.inr hown)⟩
         · have hown : Ix.Cert.ownerOf a c = a := by
             unfold Ix.Cert.ownerOf
             cases hc_i : c.info <;> rw [hc_i] at hinfo <;> try rfl
