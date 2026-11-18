@@ -46,7 +46,7 @@ binders. -/
 theorem nat_former_tele_traced {c : ScopedCtx} (hc : ScopedCoreFacts c) :
     ∀ (k : Nat) {d : Nat} {Γ : Nat → KExpr} {E : KExpr}
       {x_rc x_ty x_types r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
-      k < 4294967296 →
+      k < 18446744069414584321 →
       RCRep c.t c.lim h x_rc → TypesRep c.κ Γ h d x_types → GhostScoped Γ d →
       CoreGood c cs → Tm c.κ d Γ h 0 E x_ty →
       ObsFn W "KernelCheck::nat_former_tele" [x_rc, x_ty, .field (k : F), x_types] h r h' cs →
@@ -60,7 +60,7 @@ theorem nat_former_tele_traced {c : ScopedCtx} (hc : ScopedCoreFacts c) :
     | .other_other (hne19 := hne) .. => exact absurd rfl hne
   | m + 1, d, Γ, E, x_rc, x_ty, x_types, r, h, h', cs, hlt, hrc, hty, hsc, hgood, hE, ev => by
     match Obs.«KernelCheck::nat_former_tele».obs ev with
-    | .n0 (hv14 := hv14) .. => exact absurd hv14 (succ_field_ne_zero (by omega))
+    | .n0 (hv14 := hv14) .. => exact absurd hv14 (succ_field_ne_zero_bounded hlt)
     | .other_Forall (x_d := x_d) (x_b := x_b) (x_m := x_m) (v66 := v66) (m76 := m76)
         (cs84 := cs84) (v89 := v89) (ld34 := ld34) (he61 := hr) (hm60 := hh')
         (op118 := op118) (hm129 := hm121) (ev86 := ev_rec) (hc156 := hcs) .. =>
@@ -109,7 +109,7 @@ theorem nat_former_tele_traced {c : ScopedCtx} (hc : ScopedCoreFacts c) :
 
 /-- The builder follows the head traces of every term. -/
 theorem NatFormerTeleTraced.of_run {c : ScopedCtx} (hc : ScopedCoreFacts c) {n : Nat}
-    (hn : n < 4294967296) (A : KExpr) : NatFormerTeleTraced c n A := by
+    (hn : n < 18446744069414584321) (A : KExpr) : NatFormerTeleTraced c n A := by
   intro x_rc x_ty x_types r h h' cs hrc htypes hgood hA ev
   exact (nat_former_tele_traced hc n hn hrc htypes (ghostScoped_zero _) hgood hA ev).2
 
@@ -138,13 +138,12 @@ theorem late_nat_rec_check_spec_traced {c : ScopedCtx} (hc : ScopedCoreFacts c)
     (hT : c.κ (ixAddr bT) = T)
     (hκ₂_inj : ∀ a : Bytes.Address, κ₂ (ixAddr a) = T → a = bT)
     (hRec : κ₂ (ixAddr bRec) = recC)
-    (hidx : idx < 4294967296)
+    (hidx : idx < 72057594037927936)
     (hCres : ∀ i, i < ctors_info.length → c.κ (cprjAddr (ixAddr b₀) idx i) ≠ unresolvedKey)
-    (hk_lt : k < 2147483648)
-    (hnP_lt : nP < 2147483648)
-    (hnIdx_lt : nIdx < 2147483648)
-    (hnCtors_lt : ctors_info.length < 2147483648)
-    (hnall_lt : nP + 1 + ctors_info.length + nIdx + 1 < 4294967296)
+    (hk_lt : k + (if large then 1 else 0) < 4294967296)
+    (hnP_lt : nP < 72057594037927936)
+    (hnIdx_lt : nIdx < 72057594037927936)
+    (hnCtors_lt : ctors_info.length < 72057594037927936)
     (hlps_pty : pty₀.allLevelParamsDefined (List.range k) = true)
     (hwf_all : ∀ info ∈ ctors_info,
       NatCtorInfoWfT T k large nP nIdx ctors_info.length info)
@@ -197,7 +196,7 @@ theorem late_nat_rec_check_spec_traced {c : ScopedCtx} (hc : ScopedCoreFacts c)
   exact late_nat_rec_check_spec_registered hc hall hkeep hwl₂
     (hT_ind := hT_ind) (hrecblk := hrecblk) (hcst := hcst) (hT := hT) (hκ₂_inj := hκ₂_inj)
     (hRec := hRec) (hidx := hidx) (hCres := hCres) (hk_lt := hk_lt) (hnP_lt := hnP_lt)
-    (hnIdx_lt := hnIdx_lt) (hnCtors_lt := hnCtors_lt) (hnall_lt := hnall_lt)
+    (hnIdx_lt := hnIdx_lt) (hnCtors_lt := hnCtors_lt)
     (hlps_pty := hlps_pty) (hwf_all := hwf_all) (hrls_len := hrls_len)
     (hload := hload) (hhead := hhead) (hgood := hgood) (hrc := hrc) (hb₀_blk := hb₀_blk)
     (hbRB := hbRB) (hbT := hbT) (hbRec := hbRec) (hpty := hpty) (hdef := hdef) (hreg := hreg)
@@ -411,4 +410,46 @@ theorem alias_block_runs_traced {c : ScopedCtx} (hc : ScopedCoreFacts c) {n : Na
     former_tele_at_traced hc n hn hrc₂ hty₂ (ghostScoped_zero _) hg₂ hS₂ (hℓ.mono hext) hsℓ evt
   exact ⟨Z, s, bs, hZ, hstrip, .intro hY hpre, hsort⟩
 
+/-! ## The result-sort walk at an instance of a recorded type -/
+
+/-- **The result-sort walk at an instance of a type whose walk is recorded**: if the walk from
+`S` ends in a sort level-equivalent to `s₀` (`TracedSort`), then on every instance of `S` the
+function answers the instance of `s₀`. The function follows the walk
+(`get_result_sort_level_traced`), the walk commutes with level instantiation and is a function
+of its input. -/
+theorem ResultSortReads.of_traced {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    (hdef : DefnLevelsClosed c.env) {n : Nat} {S : KExpr} {s₀ : KLevel}
+    (hn : n < 18446744069414584321) (hreg : TracedSort c.env n S s₀)
+    (ks : List LevelParam) (ws : List KLevel) :
+    ResultSortReads c n (S.instantiateLevelParams ks ws) (Level.subst ks ws s₀) := by
+  intro rc pe types r h h' cs hrc hty hgood hE ev
+  obtain ⟨s, ℓ, htrace, hℓ, hsℓ⟩ := get_result_sort_level_traced hc n hn hrc hty
+    (ghostScoped_zero _) hgood hE ev
+  obtain ⟨s', hs', hl⟩ := hreg
+  have hss : s = Level.subst ks ws s' :=
+    htrace.unique (fun _ _ hf => hf) (hs'.instantiateLevelParams hdef ks ws)
+  have h1 : LvEq (Level.subst ks ws s') (Level.subst ks ws s₀) := by
+    intro φ
+    rw [Level.eval_subst, Level.eval_subst, hl (Level.substFn φ ks ws)]
+  exact ⟨ℓ, hℓ, fun φ => (h1 φ).symm.trans (by rw [← hss]; exact hsℓ φ)⟩
+
 end IxVM.Refinement.Decl
+
+namespace IxVM.Refinement.Typing
+
+open Ix.Kernel.Semantics (NativeFam)
+
+/-- **A family that records the walks of its stored former answers its sort to the result-sort
+walk**, at a step's context: `FormerSortReads` from the recorded result-sort walk
+(`FormerOpenTraceAt.result`) of a family whose parameters and indices are in the field's
+range. -/
+theorem formerSortReads_of_trace {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim : Option Nat}
+    {env : Ix.Kernel.Env .anon} {fam : NativeFam .anon}
+    (hcS : Core.ScopedCoreFacts (Core.Ctx.stored ⟨E, env, t, lim⟩))
+    (henv : Ix.Kernel.EnvWF env)
+    (hn : fam.p.nP + fam.p.nIdx < 18446744069414584321)
+    (h : FormerOpenTraceAt env fam) : FormerSortReads t E lim env fam :=
+  Decl.ResultSortReads.of_traced hcS (Ix.Kernel.HeadDeltaBeta.DefnLevelsClosed.of_envWF henv) hn
+    h.result fam.cvS.levelParams (Core.posLevels fam.cvS.levelParams)
+
+end IxVM.Refinement.Typing

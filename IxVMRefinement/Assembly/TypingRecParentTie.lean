@@ -9,8 +9,11 @@ interface must receive the parent the route read, not any registered family.
 
 * `RecMajorTie`: the key heading the major premise's domain, in an annotation of the reading of
   the record's type, is the parent's key;
+* `RecMajorFreshNotBasis`: where the record's own key is not stored, a native parent that
+  heads its major premise is at no reserved basis name;
 * `recParent_of_route_tied`, `recParent_of_arm_tied`: the route gives the parent with that tie
-  (the route's scan returns the head of the major premise's domain of the represented type);
+  (the route's scan returns the head of the major premise's domain of the represented type),
+  at any validation limit;
 * `unitStep_recLate_of_tied`: `unitStep_recLate_of` with a predicate `Q` on the parent, produced
   with it and handed to the second interface.
 -/
@@ -39,8 +42,36 @@ def RecMajorTie (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (A : _root_.Address)
     (exprReader t (fun x => E₀.blobs.get? x) c id (soloSelf t A)).read rc.typ = .ok tyP ∧
     Annotates E' tyP ∧ majorKey rc E' = some (keyOf t P)
 
+/-- **A fresh recursor record's major premise is headed by no basis family**, at every
+environment a step is asked at: a parent that heads the major premise's domain (`RecMajorTie`),
+is stored as an inductive type and has for record an inductive projection of a block the
+circuit treats as native is at no reserved basis name. The record-scoped form
+`RecMajorNotBasis` asks this of every recursor record, and is false of the committed recursor
+of a basis family; here it is asked only where the record's own key is not stored
+(`StepAt.fresh`), with the parent's facts the route has read in hand. The circuit accepts a
+recursor of a basis family only at that family's committed recursor address
+(`basis_rec_at_pin`), whose key the table's environment stores. -/
+def RecMajorFreshNotBasis (t : Ix.Kernel.RoleTable) (envT : Ix.Kernel.Env .anon)
+    (E₀ E : Ixon.Env) (lim : Option Nat) (A : _root_.Address) (c : Ixon.Constant)
+    (rc : Ixon.Recursor) : Prop :=
+  ∀ (env : Ix.Kernel.Env .anon) (P : _root_.Address) (ip : Ixon.InductiveProj),
+    StepAt.{u} t envT E₀ E lim A c env →
+    (∃ cv caps, env.find? (keyOf t P) = some (.indInfo cv caps)) →
+    (∃ cm, Ix.Cert.recordAt E P = some cm ∧ cm.info = .iPrj ip) → NativeAt E ip.block →
+    RecMajorTie t E₀ A c rc P → Ix.Kernel.reservedBasisNames.contains (keyOf t P) = false
+
+/-- The record-scoped hypothesis gives the one asked at a fresh record. -/
+theorem RecMajorNotBasis.fresh {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .anon}
+    {E₀ E : Ixon.Env} {lim : Option Nat} {A : _root_.Address} {c : Ixon.Constant}
+    {rc : Ixon.Recursor} (h : RecMajorNotBasis t E₀ A c rc) :
+    RecMajorFreshNotBasis.{u} t envT E₀ E lim A c rc := by
+  intro env P ip _ _ _ _ htie
+  obtain ⟨tyP, E', htyP, hann, hmaj⟩ := htie
+  exact h tyP E' _ htyP hann hmaj
+
 /-- **`recParent_of_route`, with the head it read**: the parent's key heads the domain of the
-binder the route's scan reached in the represented type. -/
+binder the route's scan reached in the represented type. The basis exclusion is asked at the
+parent the route has read, with its facts. -/
 theorem recParent_of_route_tied {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Option Nat}
     {env : Ix.Kernel.Env .anon} (hinv : Decl.PrefixInv.{u} E t lim env)
     {calls cs₁ cs₂ cs₃ : List (Call F)}
@@ -57,9 +88,13 @@ theorem recParent_of_route_tied {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : 
       [nl, pty, np, ni, nc, pu, blk, idx]))
     (ev₃ : ObsFn Core.W "KernelModeled::block_is_modeled" [blk] h₃ (.field 0) h₄ cs₃)
     (hs₃ : ∀ x ∈ cs₃, x ∈ calls)
-    (hres : ∀ (dom : Core.KExpr) (k : Core.KKey) (us : List Core.KLevel),
-      Core.piDomAt (ZMod.val (p + m + mi + i)) T = some dom → dom.getAppFn = .const k us →
-      Ix.Kernel.reservedBasisNames.contains k = false) :
+    (hres : ∀ (dom : Core.KExpr) (P : _root_.Address) (ip : Ixon.InductiveProj)
+      (us : List Core.KLevel),
+      Core.piDomAt (ZMod.val (p + m + mi + i)) T = some dom →
+      dom.getAppFn = .const (keyOf t P) us →
+      (∃ cv caps, env.find? (keyOf t P) = some (.indInfo cv caps)) →
+      (∃ cm, Ix.Cert.recordAt E P = some cm ∧ cm.info = .iPrj ip) → NativeAt E ip.block →
+      Ix.Kernel.reservedBasisNames.contains (keyOf t P) = false) :
     ∃ P ip, RecParent t E env P ip ∧ ∃ (dom : Core.KExpr) (us : List Core.KLevel),
       Core.piDomAt (ZMod.val (p + m + mi + i)) T = some dom ∧
       dom.getAppFn = .const (keyOf t P) us := by
@@ -78,29 +113,31 @@ theorem recParent_of_route_tied {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : 
   obtain rfl := (Except.ok.inj hv).symm
   obtain ⟨cv, caps, _, _, _, rfl, -⟩ := Core.WhnfAux.ind_inv hcir
   have hkey : c.κ (Core.ixAddr a) = Core.keyOf t (Core.ixAddr a) := c.key_eq hne
-  have hr := hres dom _ us hpi hhead
   have hhead' := hhead
-  rw [hkey] at hfci hr hhead'
+  rw [hkey] at hfci hhead'
   obtain ⟨cm, b, i', hcm, hb, -, hinfo⟩ := hinv.loads.inductRecord parent ptr h₂ h₃ cs₂ a nl pty
     np ni nc pu blk idx ev₂ trivial hne (hgood.sub hs₂) ha hld
-  refine ⟨Core.ixAddr a, ⟨(ZMod.val i').toUInt64, Core.ixAddr b⟩,
-    ⟨⟨cv, caps, hfci⟩, hr, ⟨cm, hcm, hinfo⟩, ?_⟩, dom, us, hpi, hhead'⟩
-  exact nativeAt_of_route (c := ⟨E, env, t, lim⟩) ev₃ hs₃ hgood hb
+  have hnative : NativeAt E (Core.ixAddr b) :=
+    nativeAt_of_route (c := ⟨E, env, t, lim⟩) ev₃ hs₃ hgood hb
+  have hr : Ix.Kernel.reservedBasisNames.contains (keyOf t (Core.ixAddr a)) = false :=
+    hres dom (Core.ixAddr a) ⟨(ZMod.val i').toUInt64, Core.ixAddr b⟩ us hpi hhead'
+      ⟨cv, caps, hfci⟩ ⟨cm, hcm, hinfo⟩ hnative
+  exact ⟨Core.ixAddr a, ⟨(ZMod.val i').toUInt64, Core.ixAddr b⟩,
+    ⟨⟨cv, caps, hfci⟩, hr, ⟨cm, hcm, hinfo⟩, hnative⟩, dom, us, hpi, hhead'⟩
 
 /-- **`recParent_of_arm`, with the tie**: the parent the circuit read is the recursor's, its key
 heading the major premise's domain of the annotation of the record's type the route scanned. -/
 theorem recParent_of_arm_tied {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon} {lim : Option Nat}
-    {bAddr A : _root_.Address} {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {A : _root_.Address} {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlim : lim = some n)
-    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
-    (hres : RecMajorNotBasis t E₀ A c rc)
+    (hres : RecMajorFreshNotBasis.{u} t envT E₀ E lim A c rc)
     (env : Ix.Kernel.Env .anon) (hstep : StepAt.{u} t envT E₀ E lim A c env) :
     ∃ P ip, RecParent t E env P ip ∧ RecMajorTie t E₀ A c rc P := by
-  subst hlim
-  have hgood : Core.Good ⟨E, env, t, some n⟩ calls := hst.good env (some n)
+  have hgood : Core.Good ⟨E, env, t, lim⟩ calls := hst.good env lim
   have hbound : Bounded calls := hgood.2
   have hrec₀ : Ix.Cert.recordAt E₀ A = some c := (hS.recordOf_eq_recordAt A).symm.trans hc
   have hstored : Decl.UsedRefsStored t env c :=
@@ -149,7 +186,7 @@ theorem recParent_of_arm_tied {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨E', hann, htm⟩ := rty.toTmC (κ := Core.keyOf t) (ps := List.range rc.lvls.toNat)
     (by simp) (by simpa using hlvls) (LoadedReads.readCtx_keyAt_inv ht _)
     (fun i x m k hx => by simp at hx) hblob hrd hlbb hdef
-  have htmS := Decl.tmC_stored_of_usedRefs (E₀ := E) (env := env) (lim := some n) rty
+  have htmS := Decl.tmC_stored_of_usedRefs (E₀ := E) (env := env) (lim := lim) rty
     (recr_typ_usedRefs hinfo) hstored htm
   rw [Decl.posOf_range] at htmS
   obtain ⟨parent, pointer, scanHeap, loadedHeap, routedHeap, scanCalls, loadCalls, routeCalls,
@@ -165,8 +202,8 @@ theorem recParent_of_arm_tied {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     (fun x hx => hsub_chk x (hsubM x (hsScan x hx))) evLoad
     (fun x hx => hsub_chk x (hsubM x (hsLoad x hx))) hldP evRoute
     (fun x hx => hsub_chk x (hsubM x (hsRoute x hx)))
-    (fun dom k us hpi hhead => hres tyP E' k htyP hann
-      (majorKey_of_piDomAt (by rw [← hsum]; exact hpi) hhead))
+    (fun dom P ip us hpi hhead hf hrec hnative => hres env P ip hstep hf hrec hnative
+      ⟨tyP, E', htyP, hann, majorKey_of_piDomAt (by rw [← hsum]; exact hpi) hhead⟩)
   exact ⟨P, ip, hpar, tyP, E', htyP, hann,
     majorKey_of_piDomAt (by rw [← hsum]; exact hpi) hhead⟩
 

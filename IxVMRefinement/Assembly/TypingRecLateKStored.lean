@@ -14,7 +14,7 @@ sort that is zero at every assignment (`rec_k_of_arm`).
   (completeness of `Level.isEquiv` against zero);
 * `recRuleKOf_late`: at a registered family with one stored constructor without field and a
   result sort zero everywhere, the stored K bit of that constructor's rule is set (the declared
-  field count is the stored one, `LateFamAt.ctorFields`);
+  field count is the stored one, `FamRead.ctorFields`);
 * `rec_k_stored_of_arm`: a record that declares K has, at its tied parent's family, one stored
   constructor whose stored K bit is set.
 -/
@@ -88,7 +88,8 @@ the family, the family is stored with its capability record, whose `ruleK` reads
 constructor's field count (the stored one, `ctorFields`) and the family's `Prop` flag
 (`isProp`, decided by `Level.isEquiv` with zero). -/
 theorem recRuleKOf_late {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
-    {fam : NativeFam .anon} (hat : LateFamAt t E env fam) {cA : ConstantVal .anon × Nat}
+    {fam : NativeFam .anon} {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    (hat : FamRead L t E env fam) {cA : ConstantVal .anon × Nat}
     (hA : fam.ctorsA = [cA]) (h0 : cA.2 = 0)
     (hz : ∀ φ, Ix.Kernel.Level.eval φ fam.p.resSort = 0) :
     Ix.Kernel.recRuleKOf env.find? cA.1.name = true := by
@@ -117,22 +118,23 @@ theorem recRuleKOf_late {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env : Ix.Kerne
 constructor, and the stored K bit of its rule is set (`rec_k_of_arm` with `recRuleKOf_late`). -/
 theorem rec_k_stored_of_arm {calls : List (Aiur.Generic.SourceSemantics.Call F)}
     {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlim : lim = some n)
-    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
     {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
     (hcm : Ix.Cert.recordAt E P = some cm) (hcmi : cm.info = .iPrj ip)
     (htie : RecMajorTie t E₀ A c rc P) {fam : NativeFam .anon}
-    (hm : MatchedAt t E env P ip fam) :
+    {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    (hm : FamReadAt L t E env P ip fam) (hsr : FormerSortReads t E lim env fam) :
     rc.k = true → rc.rules.size = 1 ∧
       ∃ cA, fam.ctorsA = [cA] ∧ Ix.Kernel.recRuleKOf env.find? cA.1.name = true := by
   intro hk
   obtain ⟨hsize, hlen, hfields, hz⟩ :=
-    rec_k_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hm hk
+    rec_k_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie hm hsr hk
   obtain ⟨cA, hA⟩ : ∃ cA, fam.ctorsA = [cA] := List.length_eq_one_iff.mp hlen
   have h0 : cA.2 = 0 := hfields cA (by simp [hA])
   exact ⟨hsize, cA, hA, recRuleKOf_late hm.1 hA h0 hz⟩

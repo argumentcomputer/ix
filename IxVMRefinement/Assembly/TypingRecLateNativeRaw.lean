@@ -15,7 +15,7 @@ or `Const` cell below `nlvls` (`Assembly.validate_expr_well_scoped_spec`). So:
   list and level count, at a heap after its own, within its calls;
 * `rules_wellscoped_reads`: by induction on a converted rule list, every rule's right-hand side
   read under the positions is closed and its level parameters are positions below `nlvls`;
-* `rec_rules_reads_scoped`: at the record's load (`NativeRecArm`), every rule of the record read
+* `rec_rules_reads_scoped`: at the record's load (`RecArmRun`), every rule of the record read
   under the positions is scoped by the record's level count;
 * `rec_lvls_or_of_arm`: at the tied parent, the record's level count is the member's, or one
   more (the canonical comparison's level link, `nat_rec_check_levels`);
@@ -128,14 +128,14 @@ theorem rules_wellscoped_reads {calls : List (Call F)} (hbound : Bounded calls)
 /-! ## At the record's load -/
 
 /-- **Every rule of the record, read under the positions, is scoped by the record's level
-count**: at the record's load (`NativeRecArm`), the member check's scope check runs on the
+count**: at the record's load (`RecArmRun`), the member check's scope check runs on the
 converted rule list. -/
 theorem rec_rules_reads_scoped {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
-    {E₀ E : Ixon.Env} {bAddr A : _root_.Address} {c : Ixon.Constant} {rc : Ixon.Recursor}
-    {n : Nat}
+    {E₀ E : Ixon.Env} {A : _root_.Address} {c : Ixon.Constant} {rc : Ixon.Recursor}
+    {lim : Option Nat}
     (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
     (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
-    (hnat : NativeRecArm calls bAddr t A n) :
+    (hnat : RecArmRun calls t A lim) :
     ∀ ru ∈ rc.rules.toList, ∀ E_rd : Ix.Kernel.Expr .anon,
       (exprReader t (fun x => E₀.blobs.get? x) c id (soloSelf t A)).read ru.rhs = .ok E_rd →
       E_rd.looseBVarsBounded 0 = true ∧
@@ -180,11 +180,11 @@ theorem rec_rules_reads_scoped {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
 tied parent runs `nat_rec_check` with the large-eliminator bit as universe offset, and
 `nat_rec_check` asserts the record's level count is the parent's plus the offset. -/
 theorem rec_lvls_or_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlim : lim = some n)
-    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
     {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
@@ -201,7 +201,7 @@ theorem rec_lvls_or_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
     built, rty, hpT, hlT, hrulesTr, hrules_lt, hidx56, hlvR, hpR, hiR, hmR, hmiR, hlvP, hpP, hiP,
     hcP, eLS, evS, hmemS, evSort, hsSort, eSM, evScan, hsScan, hbT, hbT', hbP, hbP', eSL, evLoad,
     hsLoad, hldP, eC, evCanon, hsCanon⟩ :=
-    rec_front_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hcb hms hind
+    rec_front_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie hcb hms hind
   obtain ⟨large', natHeap, natCalls, eN, evNat, hsNat⟩ := canonical_full_nat_rec_bool evCanon
   have hsum := Decl.evalBinOp_add_nat _ _ (nat_rec_check_levels evNat)
   have hb1 : (if large' then 1 else 0 : Nat) ≤ 1 := by cases large' <;> decide
@@ -230,12 +230,12 @@ parameters are among `ps`. The member check's scope check bounds the rules read 
 positions by the record's level count, which is `ps.length` (`rec_lvls_or_of_arm`); the reading
 under `ps` is that reading renamed by `posOf ps`. -/
 theorem rec_rules_scoped_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
-    {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hst : StepStore calls t E₀ E)
     (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
-    (hlim : lim = some n) (hnat : NativeRecArm calls bAddr t A n)
+    (hnat : RecArmRun calls t A lim)
     (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
@@ -254,7 +254,7 @@ theorem rec_rules_scoped_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable
         rl₀.rhs.allLevelParamsDefined (Ix.Kernel.Reader.recLps
           (decide (rc.lvls.toNat = ind.lvls.toNat + 1)) (List.range ind.lvls.toNat)) = true := by
   intro rules hrd rl₀ hrl
-  have hlvOr := rec_lvls_or_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi
+  have hlvOr := rec_lvls_or_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi
     htie hcb hms hind
   have hpsLen : (Ix.Kernel.Reader.recLps (decide (rc.lvls.toNat = ind.lvls.toNat + 1))
       (List.range ind.lvls.toNat)).length = rc.lvls.toNat := LoadedReads.recPs_length hlvOr

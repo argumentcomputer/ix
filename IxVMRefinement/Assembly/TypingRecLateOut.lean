@@ -4,8 +4,9 @@ import IxVMRefinement.StatementRel.LoadedReadsCanonRec
 
 /-! # The late recursor step's output, from its parts
 
-`RecLateOut t E₀ E A env fam` (the late relation with the recursor in front, the recursor at the
-record's key, the record's reading, the recursor stored as read, and its reload) from:
+`RecLateOutAll t E₀ A c env fam` (the late relation with the recursor in front, the recursor at
+the record's key, the record's reading, the recursor stored as read, and its reload at every
+store that holds the record) from:
 * the reading of the record (`ty`, `rules`, their scoping), its canonical annotation (`tyC`,
   `rlsC`: `LoadedReads.canonAnn`/`canonRules`, which every load of the record represents);
 * the conjuncts of `DeclNativeRecLateRunJ` at `pR := fam.recParts ⟨keyOf t A, ps, ty⟩ elim large
@@ -148,11 +149,35 @@ theorem canonRules_single {src : Ixon.Constant} {ps : List LevelParam} {kFlag : 
   obtain ⟨h1, h2, -⟩ := (List.forall₂_cons.mp hf).1
   exact ⟨h1, h2⟩
 
-/-- **`RecLateOut` from its parts** (module docstring). -/
-theorem rec_lateOut_of_parts {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {A : _root_.Address}
+/-- **What the circuit's check of a recursor record gives at a family, at every store that
+holds the record**: the late relation with the recursor `cn` in front, `cn` at the record's key
+and stored as a reading of the record over the run's records, and its reload at every store
+that holds the record `c` at `A` and the run's blobs. The relation, the key and the reading
+name no store; only the reload does. The typing fold reads it at the store its step runs
+against (`RecLateOutAll.at`), the binding fold at every record store of its witness store. -/
+def RecLateOutAll (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (A : _root_.Address)
+    (c : Ixon.Constant) (env : Ix.Kernel.Env .anon) (fam : NativeFam .anon) : Prop :=
+  ∃ (cvR : ConstantVal .anon) (mI rP : Nat) (rules : List (RecRule .anon))
+    (cn : ConstantInfo .anon) (ci₀ : ConstantInfo .anon),
+    DeclNativeRecLateRunJ rulesJ env fam cvR mI rP rules ⟨cn :: env.consts⟩ ∧
+    cn.name = keyOf t A ∧ Reads t E₀ A ci₀ ∧ StoredAs cn ci₀ ∧
+    ∀ E : Ixon.Env, recordOf E A = some c →
+      (∀ x b, E₀.blobs.get? x = some b → E.blobs.get? x = some b) →
+      Decl.ReloadsAs E t ⟨cn :: env.consts⟩ cn
+
+/-- At a store that holds the record and the run's blobs, the output is the typing fold's. -/
+theorem RecLateOutAll.at {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {A : _root_.Address}
+    {c : Ixon.Constant} {env : Ix.Kernel.Env .anon} {fam : NativeFam .anon}
+    (h : RecLateOutAll t E₀ A c env fam) (hcE : recordOf E A = some c)
+    (hblobs : ∀ x b, E₀.blobs.get? x = some b → E.blobs.get? x = some b) :
+    RecLateOut t E₀ E A env fam := by
+  obtain ⟨cvR, mI, rP, rules, cn, ci₀, hrun, hname, hreads, hstored, hreload⟩ := h
+  exact ⟨cvR, mI, rP, rules, cn, ci₀, hrun, hname, hreads, hstored, hreload E hcE hblobs⟩
+
+/-- **`RecLateOutAll` from its parts** (module docstring). -/
+theorem rec_lateOut_of_parts {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {A : _root_.Address}
     {env : Ix.Kernel.Env .anon} {fam : NativeFam .anon} {c : Ixon.Constant} {rc : Ixon.Recursor}
-    (ht : t.check = .ok ()) (hcE : recordOf E A = some c) (hinfo : c.info = .recr rc)
-    (hblobs : ∀ x b, E₀.blobs.get? x = some b → E.blobs.get? x = some b)
+    (ht : t.check = .ok ()) (hinfo : c.info = .recr rc)
     (hstored : Decl.UsedRefsStored t env c)
     {k : Nat} {large : Bool} {elim : LevelParam}
     {ty tyC : Ix.Kernel.Expr .anon} {rules rlsC : List (RecRule .anon)}
@@ -207,7 +232,7 @@ theorem rec_lateOut_of_parts {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {A : 
     (hreads : Reads t E₀ A (.recInfo ⟨keyOf t A, Ix.Kernel.Reader.recLps large (List.range k), ty⟩
       (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat)
       (rc.params.toNat + rc.motives.toNat + rc.minors.toNat) rules)) :
-    RecLateOut t E₀ E A env fam := by
+    RecLateOutAll t E₀ A c env fam := by
   have hpinsF : List.Forall₂ (fun cA r => r.ctor = cA.1.name ∧ r.nfields = cA.2) fam.ctorsA
       rules :=
     forall₂_of_getElem? hrlen.symm (fun j cA r hcA hr => hpins j r cA hr hcA)
@@ -236,8 +261,6 @@ theorem rec_lateOut_of_parts {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {A : 
   rw [hnPR] at hrun
   -- the reload: the canonical constant's, moved to the stored rules
   have hcn := LoadedReads.canonRec_eq (key := keyOf t A) hcT hcR
-  have hreC := LoadedReads.reloadsAs_recr_cons ht hcE hinfo hblobs hlen (recLps_perm large k)
-    hty hty_lbb hty_def hrd (fun hk => (hK hk).1) hstored hcn
   have hkrule : ∀ rl rl', rlsC = [rl] →
       Ix.Kernel.sumRules env.find? (keyOf t A) rc.params.toNat
         (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat)
@@ -252,7 +275,9 @@ theorem rec_lateOut_of_parts {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {A : 
     rw [hA] at hS
     obtain ⟨hk2, hcp2⟩ := sumRules_single hS hKA
     exact ⟨hk2, hcp2.trans hcp1.symm⟩
-  have hre := reloadsAs_recr_rules (env₂ := ⟨.recInfo
+  exact ⟨_, _, _, rules, _, _, hrun, rfl, hreads,
+    ⟨⟨rfl, rfl, hannT⟩, rfl, rfl, sumRules_ruleStored hpinsF hrs⟩, fun E hcE hblobs =>
+      reloadsAs_recr_rules (env₂ := ⟨.recInfo
       ⟨keyOf t A, Ix.Kernel.Reader.recLps large (List.range k), tyC⟩
       (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat)
       (rc.params.toNat + rc.motives.toNat + rc.minors.toNat)
@@ -260,8 +285,8 @@ theorem rec_lateOut_of_parts {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {A : 
         (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat)
         (rc.params.toNat + rc.motives.toNat + rc.minors.toNat) tyC fam.ctorsA
         (rlsC.map (·.rhs))) :: env.consts⟩)
-    hreC (find_isSome_cons_congr rfl) (sumRules_agree hpinsF hrs) hkrule
-  exact ⟨_, _, _, rules, _, _, hrun, rfl, hreads,
-    ⟨⟨rfl, rfl, hannT⟩, rfl, rfl, sumRules_ruleStored hpinsF hrs⟩, hre⟩
+        (LoadedReads.reloadsAs_recr_cons ht hcE hinfo hblobs hlen (recLps_perm large k)
+          hty hty_lbb hty_def hrd (fun hk => (hK hk).1) hstored hcn)
+        (find_isSome_cons_congr rfl) (sumRules_agree hpinsF hrs) hkrule⟩
 
 end IxVM.Refinement.Typing

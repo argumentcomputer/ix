@@ -6,11 +6,12 @@ import IxVMRefinement.Decl.LateWalkedConst
 
 /-! # Inhabitants of the binding fold's interfaces over the fold's clause
 
-* `overUnitStep_recLate`: **the step of a standalone recursor record of a native family**. The
-  parent is read at one store the run is good for; the registry, chosen before the store, holds
-  its family, and the family is read off the parent's record at every store for `R`. The
-  circuit's output is asked once, at the family read at that one store, with the recursor's
-  reload at every store for `R`. Nothing is asked about the circuit's dispatch at another store.
+* `RecLateOutOver`: what the check of a standalone recursor record gives at a registered
+  family, for the binding fold: the late relation, and the recursor's reload at every store for
+  `R`. The step that consumes it is `overUnitStep_recLate_tied` (`Binding/ClauseRecursor.lean`):
+  the parent is read at one store the run is good for and is tied to the record; the registry,
+  chosen before the store, holds its family, and the family is read off the parent's record at
+  every store for `R`. Nothing is asked about the circuit's dispatch at another store.
 * `overUnitStep_defn`: **the step of a standalone definition, theorem or opaque record**, from
   the walk's observed check of the record at a carried limit: the registry is kept at the same
   registered families at every store.
@@ -70,66 +71,6 @@ theorem RecLateOutOver.recLateOut {t : Ix.Kernel.RoleTable} {R E₀ E : Ixon.Env
     RecLateOut t E₀ E A env fam := by
   obtain ⟨cvR, mI, rP, rules, cn, ci₀, hrun, hname, hreads, hstored, hreload⟩ := h
   exact ⟨cvR, mI, rP, rules, cn, ci₀, hrun, hname, hreads, hstored, hreload E hE⟩
-
-/-- **The step of a standalone recursor record of a native family, over the fold's clause**
-(module docstring). `Ec` is a record store for `R` the parent is read at, at a carried limit
-`lim₀` within `G`. -/
-theorem overUnitStep_recLate {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (hL : LinkLaws L) {t : Ix.Kernel.RoleTable} {G : Nat → Prop} {R E₀ Ec : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim₀ : Option Nat} {A : _root_.Address} {c : Ixon.Constant}
-    {rc : Ixon.Recursor} (ht : t.check = .ok ()) (hinfo : c.info = .recr rc)
-    (hsz : A.hash.size = 32) (hRc : RecordsFor R Ec) (hc₀ : Carried lim₀)
-    (hl₀ : LimWithin G t lim₀) (hop : keyOf t A ∉ RoleOps.opNames)
-    (hparent : ∀ env, StepAt.{u} t envT E₀ Ec lim₀ A c env →
-      ∃ P ip, RecParent t Ec env P ip ∧ (recordOf R P).isSome = true)
-    (hout : ∀ env P ip fam, StepAt.{u} t envT E₀ Ec lim₀ A c env → RecParent t Ec env P ip →
-      FamReadAt L t Ec env P ip fam → RecLateOutOver t R E₀ A env fam) :
-    OverUnitStep.{u} L t G R envT E₀ A c := by
-  intro env Reg hext hnd hcl href hfresh
-  have hC₀ := hcl Ec hRc lim₀ hc₀ hl₀
-  have hstep : StepAt.{u} t envT E₀ Ec lim₀ A c env :=
-    ⟨hext, hnd, hC₀.prefixInv, href, hfresh⟩
-  obtain ⟨P, ip, hpar, hheld⟩ := hparent env hstep
-  have hpar' := hpar
-  obtain ⟨⟨cvP, capsP, hfP⟩, hres, ⟨cm, hcm, hcmi⟩, hnat⟩ := hpar'
-  -- The family, found once, at the store the parent was read at.
-  obtain ⟨fam, hReg, hread₀⟩ := hC₀.registry.at_parent ht hfP hres hcm hcmi hnat
-  have hnameP : fam.p.cvT.name = keyOf t P := hread₀.2.1
-  obtain ⟨cmR, hcmR⟩ := Option.isSome_iff_exists.mp hheld
-  have hcc : cmR = cm := Option.some.inj ((hRc.2.1 P cmR hcmR).symm.trans hcm)
-  obtain ⟨cvR, mI, rP, rules, cn, ci₀, hrun, hname, hreads, hstored, hreload⟩ :=
-    hout env P ip fam hstep hpar hread₀
-  -- The clause with the recursor, at every store for `R` and every carried limit within `G`.
-  have hall : ∀ E, RecordsFor R E → ∀ lim, Carried lim → LimWithin G t lim →
-      FoldClauseWith.{u} L t E lim ⟨cn :: env.consts⟩ Reg := by
-    intro E hE lim hc hl
-    have hC := hcl E hE lim hc hl
-    have hcmE : Ix.Cert.recordAt E P = some cm := by
-      rw [← hcc]
-      exact hE.2.1 P cmR hcmR
-    have hread : FamReadAt L t E env P ip fam := (hC.fams fam hReg).readAt ht hnameP hcmE hcmi
-    have hcomp := late_companions_read ht hC.companions hread hcmE hcmi hrun
-    exact hC.lateRec hL hReg hrun (hname.trans (LoadedReads.keyOf_eq t A).symm) hsz hcomp
-      (hreload E hE)
-  obtain ⟨hfreshN, -, -, -⟩ := late_head hrun
-  have hown : ConstAddrOf A c A := Or.inl ⟨rfl, Or.inr (Or.inl ⟨rc, hinfo⟩)⟩
-  refine ⟨[cn], Reg, List.nodup_singleton _, ?_, hall, ?_, ?_, ?_⟩
-  · intro ci hci
-    obtain rfl := List.mem_singleton.mp hci
-    exact hfreshN
-  · intro ci hci
-    obtain rfl := List.mem_singleton.mp hci
-    rw [hname]
-    exact hop
-  · intro x hx
-    rcases hx with ⟨hxA, -⟩ | ⟨ms, i, m, hms, -, -⟩
-    · rw [hxA]
-      exact ⟨cn, List.mem_singleton_self _, ci₀, hname, hreads, hstored⟩
-    · have h := hinfo.symm.trans hms
-      cases h
-  · intro ci hci
-    obtain rfl := List.mem_singleton.mp hci
-    exact Or.inl ⟨A, hown, hname⟩
 
 /-! ## The step of a standalone definition record -/
 

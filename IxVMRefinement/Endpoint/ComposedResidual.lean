@@ -6,6 +6,7 @@ import IxVMRefinement.Assembly.TypingDefnBlock
 import IxVMRefinement.Assembly.FoldClauseSteps
 import IxVMRefinement.Assembly.FoldClauseAlias
 import IxVMRefinement.Assembly.TypingRecParentTie
+import IxVMRefinement.Assembly.TypingRecLateRegistered
 import IxVMRefinement.Assembly.TypingKeyFree
 import IxVMRefinement.Assembly.RawQueryCoverage
 
@@ -45,11 +46,23 @@ Proved inside, with no hypothesis left:
 * the case split of a unit by the form of its record (`unitSteps_of_kinds`);
 * the step of a standalone definition, at either limit (`standaloneDefinition_foldExtra`, from
   `unitStep_defn_foldExtra`);
-* the step of a standalone recursor whose major premise is headed, at every environment the
-  step is asked at, by a parent the circuit treats as native: the registry and the late
-  relation's bookkeeping, at any limit (`standaloneRecursor_of_parts`, from
-  `unitStep_recLate_foldExtra`). What is left of it is the check's output at the family the
-  registry reads at that parent;
+* the step of a standalone recursor, at any limit, up to one fact
+  (`standaloneRecursor_of_freshNotBasis`, from `unitStep_recLate_walked`): the check's output
+  at the family the registry reads at the parent that heads the record's major premise
+  (`recLateOut_of_walk`: a family with a telescope former or one whose former only
+  head-reduces to a telescope), and the parent itself, which the circuit's route reads as a
+  stored former of a native block (`recParent_of_arm_tied`). **The case of a recursor with no
+  native parent is empty because the circuit refuses it today**: the `Rec` arm of
+  `check_const` asserts that the recursor's family block is not modeled, and
+  `check_recursor_member` asserts the same of the block of the major premise's parent, so no
+  accepted run checks a recursor of a mutual or nested family. Three lemmas read the first
+  assertion (`Typing.check_const_rec_route`, `Typing.check_const_rec_arm`,
+  `Claim.TopWalkCore.recFamilyNative`: each closes the `Rec_other` path of `check_const` by
+  it) and two read the second (`Typing.native_rec_route_calls`,
+  `Typing.native_rec_member_full`: the member check has one path, with the route's answer
+  `0`). When the source stops refusing those recursors, these five lemmas stop building at
+  exactly those paths, the parent of `recParent_of_arm_tied` is no longer always native, and
+  the recursor of a mutual or nested family is a case of its own, for the family's step;
 * on the binding side, everything `composed_skeleton_over` proves from its named hypotheses:
   the fold over the 77 groups, the step of a group from its parts, the raise past a group, the
   table's well-formedness from the claim's admission, and the witness on every group.
@@ -64,9 +77,9 @@ store sequence is not fixed):
   and of a standard axiom, and the load contract's guard at the limits a closed group brings
   within range;
 * typing, for a top-walked unit by the form of its record (`WalkedUnit`, `WalkedUnitStep`): the
-  step of a standalone theorem or opaque; for a standalone recursor, the check's output at a
-  native parent's registered family, and the step where no such parent heads the major
-  premise; the step of a block of definitions; of a block of one inductive type on the native
+  step of a standalone theorem or opaque; for a standalone recursor at an address the
+  witness's environment does not store, that a native parent heading its major premise is no
+  basis family (`RecMajorFreshNotBasis`); the step of a block of definitions; of a block of one inductive type on the native
   route, by the three cases of its former's reading (`formerAt_cases`); of a block of one
   inductive type off the native route; of any other block.
 
@@ -246,40 +259,26 @@ theorem standaloneDefinition_foldExtra
   have hown : ConstAddrOf A c A := Or.inl ⟨rfl, Or.inl ⟨d, hinfo⟩⟩
   exact unitStep_defn_foldExtra hL ht hS hst hc hinfo hlog hk hchk' (hkeys A hown) hinert hcover
 
-/-- **The step of a top-walked standalone recursor keeps the fold's clause, from its two
-parts.** The recursor's major premise is headed by a parent the circuit treats as native at
-every environment the step is asked at, or it is not. In the first case the registry holds the
-parent's family and the step is the late recursor step, given the check's output at that
-family (`atNativeParent`); the second case is taken whole (`withoutNativeParent`). -/
-theorem standaloneRecursor_of_parts
-    {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop} (hL : LinkLaws L)
-    (atNativeParent :
+/-- **The step of a top-walked standalone recursor keeps the fold's clause**, at the walk's
+limit and at the opened head trace, from one fact: at a record whose address the witness's
+environment does not store, a native parent that heads the major premise is at no reserved
+basis name (`freshNotBasis`). The check's output at the parent's registered family and the
+parent itself are read off the walk (`unitStep_recLate_walked`). The parent is always native
+because the circuit refuses a recursor of a modeled family (module docstring). -/
+theorem standaloneRecursor_of_freshNotBasis
+    (freshNotBasis :
       WalkedUnit.{u} (fun _ _ _ _ c => ∃ rc : Ixon.Recursor, c.info = .recr rc)
         fun _ t envT E₀ E lim A c => ∀ rc : Ixon.Recursor, c.info = .recr rc →
-          ∀ env P ip fam, StepAt.{u} t envT E₀ E lim A c env → LvClauses env →
-            RecParent t E env P ip → RecMajorTie t E₀ A c rc P →
-            FamReadAt L t E env P ip fam → RecLateOut t E₀ E A env fam)
-    (withoutNativeParent :
-      WalkedUnit.{u} (fun _ _ _ _ c => ∃ rc : Ixon.Recursor, c.info = .recr rc)
-        fun _ t envT E₀ E lim A c => ∀ rc : Ixon.Recursor, c.info = .recr rc →
-          ¬ (∀ env, StepAt.{u} t envT E₀ E lim A c env →
-              ∃ P ip, RecParent t E env P ip ∧ RecMajorTie t E₀ A c rc P) →
-          UnitStep.{u} (FoldExtra.{u} L t E) t envT E₀ E lim A c) :
-    WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+          RecMajorFreshNotBasis.{u} t envT E₀ E lim A c rc) :
+    WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun _ _ _ _ c =>
       ∃ rc : Ixon.Recursor, c.info = .recr rc := by
   intro calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc hlog hkind ht hS hcov
     hst hcanon hinert hcover hchk hns hkeys
   obtain ⟨rc, hinfo⟩ := hkind
-  by_cases hN : ∀ env, StepAt.{u} t envT E₀ E lim A c env →
-      ∃ P ip, RecParent t E env P ip ∧ RecMajorTie t E₀ A c rc P
-  · exact unitStep_recLate_foldExtra hL (RecMajorTie t E₀ A c rc) ht hinfo
-      (address_size_of_record hS hc) hN
-      (fun env P ip fam hstep hlv hpar htie hread =>
-        atNativeParent calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc hlog
-          ⟨rc, hinfo⟩ ht hS hcov hst hcanon hinert hcover hchk hns hkeys rc hinfo env P ip fam
-          hstep hlv hpar htie hread)
-  · exact withoutNativeParent calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc
-      hlog ⟨rc, hinfo⟩ ht hS hcov hst hcanon hinert hcover hchk hns hkeys rc hinfo hN
+  exact unitStep_recLate_walked hW hT hc hlog hinfo ht hS hcov hst hinert hcover
+    (hkeys A (Or.inl ⟨rfl, Or.inr (Or.inl ⟨rc, hinfo⟩)⟩))
+    (freshNotBasis calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc hlog
+      ⟨rc, hinfo⟩ ht hS hcov hst hcanon hinert hcover hchk hns hkeys rc hinfo)
 
 /-! ## The composed statement -/
 
@@ -352,15 +351,15 @@ theorem circuitComposed_of_parts
 
 /-- **The public statement from the open obligations** (module docstring):
 `circuitComposed_of_parts` at the opened head trace `FormerOpenTraceAt`, with the step of a
-standalone definition proved and the step of a standalone recursor reduced to its two parts.
+standalone definition proved and the step of a standalone recursor reduced to one fact.
 `Run` is the binding claim layer's run predicate, by the run's calls. The first nine
 hypotheses are the binding half's, for every bounded run: the claim export with the observed
 run record; the invariant at the six basis groups; the admission of each group and its reading
 clause; and at each group from 6 to 76 of a run the closure, the stored shapes where the group
 has no role unit, the role unit of an operation, the role unit of a standard axiom and the
-guard at the raised limits. The other nine are the typing half's, for a top-walked unit of
-each remaining kind: its step, and for a standalone recursor the check's output at a native
-parent's registered family and the step where no native parent heads its major premise. -/
+guard at the raised limits. The other eight are the typing half's, for a top-walked unit of
+each remaining kind: its step, and for a standalone recursor at a fresh address that a native
+parent heading its major premise is no basis family. -/
 theorem circuitComposed_residual
     {Run : List (Call F) → Ix.Kernel.RoleTable → BRun → (Nat → Ixon.Env) → Prop}
     (bindingClaimExport :
@@ -380,18 +379,10 @@ theorem circuitComposed_residual
     (standaloneTheoremOrOpaque :
       WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun _ _ _ _ c =>
         ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind ≠ .defn)
-    (recursorAtNativeParent :
+    (freshRecursorMajorNotBasis :
       WalkedUnit.{u} (fun _ _ _ _ c => ∃ rc : Ixon.Recursor, c.info = .recr rc)
         fun _ t envT E₀ E lim A c => ∀ rc : Ixon.Recursor, c.info = .recr rc →
-          ∀ env P ip fam, StepAt.{u} t envT E₀ E lim A c env → LvClauses env →
-            RecParent t E env P ip → RecMajorTie t E₀ A c rc P →
-            FamReadAt FormerOpenTraceAt t E env P ip fam → RecLateOut t E₀ E A env fam)
-    (recursorWithoutNativeParent :
-      WalkedUnit.{u} (fun _ _ _ _ c => ∃ rc : Ixon.Recursor, c.info = .recr rc)
-        fun _ t envT E₀ E lim A c => ∀ rc : Ixon.Recursor, c.info = .recr rc →
-          ¬ (∀ env, StepAt.{u} t envT E₀ E lim A c env →
-              ∃ P ip, RecParent t E env P ip ∧ RecMajorTie t E₀ A c rc P) →
-          UnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt t E) t envT E₀ E lim A c)
+          RecMajorFreshNotBasis.{u} t envT E₀ E lim A c rc)
     (definitionBlock :
       WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun _ _ _ _ c =>
         ∃ ms : Array Ixon.MutConst, c.info = .muts ms ∧ DefnBlock ms)
@@ -419,8 +410,7 @@ theorem circuitComposed_residual
     groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit raisedLimitGuard
     (standaloneDefinition_foldExtra linkLaws_formerOpenTrace)
     standaloneTheoremOrOpaque
-    (standaloneRecursor_of_parts linkLaws_formerOpenTrace recursorAtNativeParent
-      recursorWithoutNativeParent)
+    (standaloneRecursor_of_freshNotBasis freshRecursorMajorNotBasis)
     definitionBlock nativeBlockTelescope nativeBlockAlias nativeBlockOtherTelescope
     oneTypeBlockOffNativeRoute otherBlock
 
