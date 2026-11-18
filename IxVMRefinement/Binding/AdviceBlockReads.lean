@@ -370,10 +370,7 @@ theorem adviceBlock_reads {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {E�
     have hlt := (Array.getElem?_eq_some_iff.mp hm).1
     have hi0 : i = 0 := by simp at hlt; omega
     subst hi0
-    refine ⟨rfl, ?_⟩
-    first
-      | exact (Option.some.inj hm).symm
-      | (simp at hm; exact hm.symm)
+    exact ⟨rfl, (Option.some.inj hm).symm⟩
   obtain ⟨rfl, rfl⟩ := hi
   have hobs := formerCheckObs_of_advice hS hab ev hcs hE hms
   obtain ⟨hformE, hctorE⟩ := hmemb 0 (.indc ind) hm
