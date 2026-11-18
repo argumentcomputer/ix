@@ -53,10 +53,21 @@ earlier advice blocks and witnessed references.
 A family record with no recursor is covered as stated: `recs` and `eqStored` are then empty
 conditions, and `adv.thms` is empty.
 
-**The circuit this is stated against** is the family check after the final circuit change:
-a family recursor's declared type accepted only as the reconstruction or its full consumption,
-the auxiliary members in the derived order. Three fields need more than that source has; each
-is marked `(change)` below with the assertion it needs. -/
+**The circuit this is stated against** is the family check with a family recursor's declared
+type accepted only as the reconstruction or its full consumption and the auxiliary members in
+the derived order, and with three further changes. No observation of the source without them
+gives the fields marked `needs change N`:
+
+1. `KernelModeled::defeq_lam_tele` extends its context with the Π-side domain, not the λ-side
+   one. The rule's λ-domains are then compared at variables annotated by the recursor's and
+   the constructor's domains, as IxC's rule record compares them
+   (`StatementFacts`, the λ-walk).
+2. `KernelModeled::member_val` asserts that a type's type names no member of the family, and
+   that a constructor's type names no constructor and no recursor of it, as `check_recs`
+   asserts that a recursor's type names no recursor (`FamilyCheckFacts.typesScoped`).
+3. `KernelModeled::check_recs` asserts that the renaming to the model leaves the recursor's
+   parameter domains as they are, and that no parameter argument of its major premise mentions
+   a motive or a minor premise (`StatementFacts`, the pins' variables). -/
 
 namespace IxVM.Refinement.Decl.FamilyAlias
 
@@ -168,19 +179,18 @@ for the block renaming and `posRulesJ` for the package:
   prefix variables) and the field variables: structural equalities;
 * the constructor's type, at the major's levels and renamed, instantiates at those arguments;
   its residual has an argument for each parameter and index;
-* `pinsFixed`: the renaming fixes the annotation of every variable a pin mentions `(change)`:
-  a pin mentions parameters only and a parameter's domain names no member of the block. The
-  comparison with the reconstruction gives it only with a specification of the reconstruction;
-  two assertions give it directly (no pin mentions a motive or a minor premise; the first
-  parameter domains of a family recursor name no member);
+* the renaming fixes the annotation of every variable a pin mentions (`LeavesFixed`; **needs
+  change 3**): a pin mentions parameters only, and the renaming leaves a parameter's domain as
+  it is. The comparison with the reconstruction gives this only through a specification of the
+  reconstruction;
 * the pins, renamed, inhabit the renamed constructor's parameter domains
   (`inst_params_typed`);
 * the walks (`IotaRunsJ`): the index arguments (`defeq_list_ok`), the statement's field and
   prefix domains (`defeq_tele`, twice), the rule's λ-domains against the recursor's prefix and
   the constructor's fields (`defeq_lam_tele`, twice), the right side against the rule applied,
   and both sides typed at the equation's type. The λ-walk is stated at the variables of the
-  recursor's and the constructor's telescopes `(change)`: `defeq_lam_tele` has to extend its
-  context with the Π-side domain, not the λ-side one. -/
+  recursor's and the constructor's telescopes (**needs change 1**); the source without the
+  change compares at variables annotated by the rule's own λ-domains. -/
 def StatementFacts (env : Env .anon) (g : KKey → KKey) (recKey : KKey) (lps : List LevelParam)
     (tyA : KExpr) (mI rP : Nat) (ctorKey : KKey) (rhsA : KExpr) (cvj : ConstantVal .anon)
     (cnP cnF : Nat) (lvls : List Level) (pins : List KExpr) (stmt : KExpr) : Prop :=
@@ -306,8 +316,8 @@ sides of each recursor's rules. `env` stores the advice.
 * `members`: each member against its model (`members_val`, three times);
 * `typesScoped`: a member's annotated type names, of the family's members, only earlier
   ones. For a recursor this is `expr_mentions_addrs(ty, fam) = 0` in `check_recs`. For a type
-  and a constructor `(change)`: the same assertion on a type's type against every member, and
-  on a constructor's type against the constructors and the recursors;
+  and a constructor it **needs change 2**: the same assertion on a type's type against every
+  member, and on a constructor's type against the constructors and the recursors;
 * `recs`: each rule of each recursor against its theorem (`check_recs`, `check_rules`);
 * `eqStored`: the pinned equality is stored (the statements are equations at the equality
   role's address, `check_iota_rule`). -/
