@@ -32,14 +32,14 @@ theorem famJ_defeq_of_pos {h f : KKey → KKey} {env : Env .anon} {d : Nat} {a b
     (hd : DefEq env d (posOf ps ((a.renameConsts f).renameConsts h))
       (posOf ps ((b.renameConsts f).renameConsts h))) :
     (renameJ f (famJ h)).defeq env d a b :=
-  Or.inr ⟨hA, ps, hperm, hd⟩
+  Or.inr ⟨hA, Or.inl ⟨ps, hperm, hd⟩⟩
 
 /-- A positional conversion of terms that are already over the aux keys. -/
 theorem famJ_defeq_of_pos' {h f : KKey → KKey} {env : Env .anon} {d : Nat} {a b : KExpr}
     {ps : List LevelParam} (hA : AliasEnv env h) (hperm : ps.Perm (List.range ps.length))
     (hd : DefEq env d (posOf ps (a.renameConsts h)) (posOf ps (b.renameConsts h))) :
     (renameJ f (famJ h)).defeq env d a b :=
-  Or.inl ⟨hA, ps, hperm, hd⟩
+  Or.inl ⟨hA, Or.inl ⟨ps, hperm, hd⟩⟩
 
 /-- A positional typing of a closed renamed subject is a typing of the record's package, at the
 inferred type with the positions renamed back. -/
