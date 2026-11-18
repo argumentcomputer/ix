@@ -1,9 +1,10 @@
 import IxVMRefinement.Assembly.TypingRecLateStep
+import IxVMRefinement.Assembly.FoldClause
 import IxVMRefinement.Decl.LateNatRecCheckT
 
 /-! # The registry entry's data for the native recursor comparison at the arm
 
-The native recursor comparison (`Decl.late_nat_rec_check_specT`) reads the matched family's
+The native recursor comparison (`Decl.late_nat_rec_check_spec_traced`) reads the matched family's
 stored constructors as a list of entries `(C, nF, R₀, C₀, recIdx)` (`lateCtorsInfo`: the stored
 constructor's key, field count and type, and the recursive field indices of its kinds), and
 asks, of each entry, the well-formedness facts `Decl.NatCtorInfoWfT`. This module states:
@@ -226,7 +227,8 @@ private theorem lateAux_mapM_option_getElem? {α β : Type} {f : α → Option �
 /-- **The kinds of a registered family's constructor**: the recogniser's reading of the stored
 constructor, with no non-positive and no unmodeled field. -/
 private theorem lateAux_kinds_at {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
-    {env : Ix.Kernel.Env .anon} {fam : NativeFam .anon} (hat : LateFamAt t E env fam)
+    {env : Ix.Kernel.Env .anon} {fam : NativeFam .anon}
+    {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop} (hat : FamRead L t E env fam)
     {j : Nat} {cA : ConstantVal .anon × Nat} {ks : List Ix.Kernel.RecFieldKind}
     (hcA : fam.ctorsA[j]? = some cA) (hks : fam.p.kinds[j]? = some ks) :
     Ix.Kernel.recCtorKinds fam.p.cvT.name fam.p.cvT.levelParams fam.p.nP fam.p.nIdx cA =
@@ -250,7 +252,8 @@ bounds, the stored type's level parameters from the environment's well-formednes
 from projections of the family from `FamCtorNoProj`, its return position from the store, and
 the recursive field indices from the kinds. -/
 theorem lateCtorsInfo_wf {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
-    {fam : NativeFam .anon} (hat : LateFamAt t E env fam) (henv : Ix.Kernel.EnvWF env) {k : Nat}
+    {fam : NativeFam .anon} {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    (hat : FamRead L t E env fam) (henv : Ix.Kernel.EnvWF env) {k : Nat}
     (hk : fam.p.cvT.levelParams = List.range k) (hnoProj : FamCtorNoProj fam)
     {ip : Ixon.InductiveProj} {ind : Ixon.Inductive} (hb : RecArmBounds ip ind fam)
     (hnP : fam.p.nP = ind.params.toNat) (hn : fam.ctorsA.length = ind.ctors.size) (large : Bool) :
@@ -306,29 +309,24 @@ theorem lateCtorsInfo_wf {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env : Ix.Kern
 
 /-! ## The stored types are scoped at the environment -/
 
-/-- **The stored former's type is `GenScoped`** at the environment, at every level-parameter
-list covering the family's. -/
+/-- **The telescope constant's type is `GenScoped`** at the environment, at every
+level-parameter list covering the family's: what the recursor generators read of it, from the
+facts the former's stage checked (`TeleChecked`). The telescope constant need not be the stored
+former. -/
 theorem late_former_genScoped {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
-    {env : Ix.Kernel.Env .anon} {fam : NativeFam .anon} (hat : LateFamAt t E env fam)
-    (henv : Ix.Kernel.EnvWF env) (hlv : LvClauses env) {rlps : List LevelParam}
-    (hsub : ∀ x ∈ fam.p.cvT.levelParams, x ∈ rlps) :
-    Decl.GenScoped env rlps 0 fam.cvTa.type := by
-  have hf := hat.stored.former
-  have hwf := henv _ (Ix.Kernel.Semantics.Env.find?_mem hf)
-  have hfv : fam.cvS.type.hasFvar = false := hwf.1
-  have hlp : fam.cvS.type.allLevelParamsDefined fam.cvS.levelParams = true := hwf.2.1
-  have hcr : fam.cvS.type.constsResolve env = true := hwf.2.2.1
-  have hlb : fam.cvS.type.looseBVarsBounded 0 = true := hwf.2.2.2.1
-  have har : Ix.Kernel.Expr.arOk env fam.cvS.type = true := (hlv.2.const hf).type.ar
-  rw [hat.lps] at hlp
-  rw [hat.tele]
-  exact ⟨hlb, lateAux_alpd_mono hsub hlp, hcr, hfv, defnAritiesOk_of_arOk har⟩
+    {env : Ix.Kernel.Env .anon} {fam : NativeFam .anon}
+    {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop} (hat : FamRead L t E env fam)
+    {rlps : List LevelParam} (hsub : ∀ x ∈ fam.p.cvT.levelParams, x ∈ rlps) :
+    Decl.GenScoped env rlps 0 fam.cvTa.type :=
+  ⟨hat.tele.bounded, lateAux_alpd_mono hsub hat.tele.levels, hat.tele.arRes.res,
+    hat.tele.closed, defnAritiesOk_of_arOk hat.tele.arRes.ar⟩
 
 /-- **Each constructor of the family, as the generators read it**: stored, not a definition, its
 type `GenScoped` at the environment, its recursive field indices field indices, and its type
 with the parameter and field binders. -/
 theorem late_ctors_genScoped {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
-    {env : Ix.Kernel.Env .anon} {fam : NativeFam .anon} (hat : LateFamAt t E env fam)
+    {env : Ix.Kernel.Env .anon} {fam : NativeFam .anon}
+    {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop} (hat : FamRead L t E env fam)
     (henv : Ix.Kernel.EnvWF env) (hlv : LvClauses env) {rlps : List LevelParam}
     (hsub : ∀ x ∈ fam.p.cvT.levelParams, x ∈ rlps) :
     ∀ c4 ∈ Ix.Kernel.nativeCtors4 fam.ctorsA fam.p.kinds,

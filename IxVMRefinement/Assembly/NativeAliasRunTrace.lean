@@ -411,4 +411,46 @@ theorem alias_block_runs_traced {c : ScopedCtx} (hc : ScopedCoreFacts c) {n : Na
     former_tele_at_traced hc n hn hrc₂ hty₂ (ghostScoped_zero _) hg₂ hS₂ (hℓ.mono hext) hsℓ evt
   exact ⟨Z, s, bs, hZ, hstrip, .intro hY hpre, hsort⟩
 
+/-! ## The result-sort walk at an instance of a recorded type -/
+
+/-- **The result-sort walk at an instance of a type whose walk is recorded**: if the walk from
+`S` ends in a sort level-equivalent to `s₀` (`TracedSort`), then on every instance of `S` the
+function answers the instance of `s₀`. The function follows the walk
+(`get_result_sort_level_traced`), the walk commutes with level instantiation and is a function
+of its input. -/
+theorem ResultSortReads.of_traced {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    (hdef : DefnLevelsClosed c.env) {n : Nat} {S : KExpr} {s₀ : KLevel}
+    (hn : n < 18446744069414584321) (hreg : TracedSort c.env n S s₀)
+    (ks : List LevelParam) (ws : List KLevel) :
+    ResultSortReads c n (S.instantiateLevelParams ks ws) (Level.subst ks ws s₀) := by
+  intro rc pe types r h h' cs hrc hty hgood hE ev
+  obtain ⟨s, ℓ, htrace, hℓ, hsℓ⟩ := get_result_sort_level_traced hc n hn hrc hty
+    (ghostScoped_zero _) hgood hE ev
+  obtain ⟨s', hs', hl⟩ := hreg
+  have hss : s = Level.subst ks ws s' :=
+    htrace.unique (fun _ _ hf => hf) (hs'.instantiateLevelParams hdef ks ws)
+  have h1 : LvEq (Level.subst ks ws s') (Level.subst ks ws s₀) := by
+    intro φ
+    rw [Level.eval_subst, Level.eval_subst, hl (Level.substFn φ ks ws)]
+  exact ⟨ℓ, hℓ, fun φ => (h1 φ).symm.trans (by rw [← hss]; exact hsℓ φ)⟩
+
 end IxVM.Refinement.Decl
+
+namespace IxVM.Refinement.Typing
+
+open Ix.Kernel.Semantics (NativeFam)
+
+/-- **A family that records the walks of its stored former answers its sort to the result-sort
+walk**, at a step's context: `FormerSortReads` from the recorded result-sort walk
+(`FormerOpenTraceAt.result`) of a family whose parameters and indices are in the field's
+range. -/
+theorem formerSortReads_of_trace {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim : Option Nat}
+    {env : Ix.Kernel.Env .anon} {fam : NativeFam .anon}
+    (hcS : Core.ScopedCoreFacts (Core.Ctx.stored ⟨E, env, t, lim⟩))
+    (henv : Ix.Kernel.EnvWF env)
+    (hn : fam.p.nP + fam.p.nIdx < 18446744069414584321)
+    (h : FormerOpenTraceAt env fam) : FormerSortReads t E lim env fam :=
+  Decl.ResultSortReads.of_traced hcS (Ix.Kernel.HeadDeltaBeta.DefnLevelsClosed.of_envWF henv) hn
+    h.result fam.cvS.levelParams (Core.posLevels fam.cvS.levelParams)
+
+end IxVM.Refinement.Typing

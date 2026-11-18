@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.TypingRecLateElim
+import IxVMRefinement.Assembly.FoldClause
 
 /-! # The pins of the late relation at the tied parent
 
@@ -23,6 +24,39 @@ open IxVM (F)
 open IxVM.Consistency
 open Ix.Kernel (ConstantVal)
 
+/-- **The block's logic and the family's level parameters, read at a record of the family's
+name**: the registered family's own record is this one (keys identify addresses, one store), so
+its block is in Lean's logic and its level parameters are the positions below the member's level
+count. -/
+theorem FamRead.logic_lvls {L : Ix.Kernel.Env .anon → Ix.Kernel.Semantics.NativeFam .anon → Prop}
+    {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
+    {env : Ix.Kernel.Env .anon} {fam : Ix.Kernel.Semantics.NativeFam .anon}
+    (hat : FamRead L t E env fam)
+    (ht : t.check = .ok ()) {P : _root_.Address} {cm : Ixon.Constant} {ip : Ixon.InductiveProj}
+    {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {ind : Ixon.Inductive}
+    (hname : fam.p.cvT.name = keyOf t P) (hcm : Ix.Cert.recordAt E P = some cm)
+    (hinfo : cm.info = .iPrj ip) (hcb : Ix.Cert.recordAt E ip.block = some cb)
+    (hms : cb.info = .muts ms) (hind : ms[ip.idx.toNat]? = some (.indc ind)) :
+    InLogic cb ∧ fam.p.cvT.levelParams = List.range ind.lvls.toNat := by
+  have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
+  obtain ⟨P', cm', ip', cb', ms', ind', hn', hcm', hinfo', hcb', hms', hind', -, -, -, -,
+    hlog, hlps⟩ := hat.record
+  have hPP : P' = P := keyOf_inj hroles (hn'.symm.trans hname)
+  rw [hPP, hcm] at hcm'
+  have hcc : cm' = cm := (Option.some.inj hcm').symm
+  rw [hcc, hinfo] at hinfo'
+  have hii : ip' = ip := (Ixon.ConstantInfo.iPrj.inj hinfo').symm
+  rw [hii, hcb] at hcb'
+  have hbb : cb' = cb := (Option.some.inj hcb').symm
+  rw [hbb, hms] at hms'
+  injection hms' with hmm
+  rw [← hmm, hii, hind] at hind'
+  injection hind' with h1
+  injection h1 with hdd
+  rw [hbb] at hlog
+  rw [← hdd] at hlps
+  exact ⟨hlog, hlps⟩
+
 /-- **The pins at the tied parent**: the record's rules as read (any level parameters `ps`),
 naming the constructor projections of the parent's member, are the late relation's pinned rules
 for the matched family, with the record's major index and rule prefix the family's. -/
@@ -37,7 +71,8 @@ theorem rec_pins_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ 
     {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
     (hcm : Ix.Cert.recordAt E P = some cm) (hcmi : cm.info = .iPrj ip)
     (htie : RecMajorTie t E₀ A c rc P) {fam : Ix.Kernel.Semantics.NativeFam .anon}
-    (hm : MatchedAt t E env P ip fam)
+    {L : Ix.Kernel.Env .anon → Ix.Kernel.Semantics.NativeFam .anon → Prop}
+    (hm : FamReadAt L t E env P ip fam)
     (ps : List Ix.Kernel.LevelParam) (cvR : ConstantVal .anon) (elim : Ix.Kernel.LevelParam)
     (large : Bool) :
     ∃ rules : List (Ix.Kernel.RecRule .anon),

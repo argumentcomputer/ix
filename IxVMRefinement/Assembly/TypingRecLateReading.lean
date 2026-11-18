@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.TypingRecLateFamilyKey
+import IxVMRefinement.Assembly.TypingRecLatePinsAt
 
 /-! # The reading of a late recursor record
 
@@ -61,7 +62,9 @@ theorem rec_reads_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (hcb : Ix.Cert.recordAt E ip.block = some cb) (hms : cb.info = .muts ms)
     (hind : ms[ip.idx.toNat]? = some (.indc ind))
-    {fam : Ix.Kernel.Semantics.NativeFam .anon} (hm : MatchedAt t E env P ip fam)
+    {fam : Ix.Kernel.Semantics.NativeFam .anon}
+    {L : Ix.Kernel.Env .anon → Ix.Kernel.Semantics.NativeFam .anon → Prop}
+    (hm : FamReadAt L t E env P ip fam)
     {ty tyC recTy : Ix.Kernel.Expr .anon} {rules : List (Ix.Kernel.RecRule .anon)}
     (hty : (exprReader t (fun x => E₀.blobs.get? x) c
         (Ix.Kernel.Reader.recParam (Ix.Kernel.Reader.recLps

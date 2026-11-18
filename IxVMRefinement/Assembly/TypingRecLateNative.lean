@@ -16,7 +16,7 @@ and IxC's recursor stage holds at the step's environment: `NativeRecJ` at
 The proof composes:
 * `rec_native_front` (the circuit side: the reading, the canonical annotations, the front
   check of the declared recursor at the prefix, and the native recursor comparison
-  `Decl.late_nat_rec_check_specT` instantiated at the arm);
+  `Decl.late_nat_rec_check_spec_traced` instantiated at the arm);
 * `nativeRecJ_of_parts` (the kernel side: `NativeRecRunJ` and the declared arm of
   `RecStoredJ` from the comparison's outputs);
 * the registry entry's stored types (`late_former_genScoped`, `late_ctors_genScoped`) and the
@@ -61,7 +61,7 @@ theorem rec_nativeRecJ_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} 
     {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (hcb : Ix.Cert.recordAt E ip.block = some cb) (hms : cb.info = .muts ms)
     (hind : ms[ip.idx.toNat]? = some (.indc ind))
-    {fam : NativeFam .anon} (hm : MatchedAt t E env P ip fam)
+    {fam : NativeFam .anon} (hm : FamReadAt FormerOpenTraceAt t E env P ip fam)
     (hhead : Decl.CtorRetHeadAt cb ind)
     (hnoProj : FamCtorNoProj fam) (hbounds : RecArmBounds ip ind fam)
     (hrscoped : ∀ rules : List (Ix.Kernel.RecRule .anon),
@@ -123,7 +123,7 @@ theorem rec_nativeRecJ_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} 
     hrec, hwrap, hlenC, hrules, hmaj⟩ :=
     rec_native_front ht hS hcov hst hc hinfo hlogic hnat hkey hinert hcover hstep hlv hcm
       hcmi htie hcb hms hind hm hhead hnoProj hbounds hrscoped
-  have hat : LateFamAt t E env fam := hm.1
+  have hat : FamRead FormerOpenTraceAt t E env fam := hm.1
   have hL1 : fam.p.cvT.levelParams = List.range ind.lvls.toNat :=
     (hat.logic_lvls ht hm.2.1 hcm hcmi hcb hms hind).2
   have henv : Ix.Kernel.EnvWF env := hstep.inv.store.store.wf
@@ -150,7 +150,7 @@ theorem rec_nativeRecJ_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} 
   have hNR := nativeRecJ_of_parts (hat.stored.former)
     (fun c4 hc4 => ⟨(hctors c4 hc4).1, (hctors c4 hc4).2.1⟩) hL1
     (decide (rc.lvls.toNat = ind.lvls.toNat + 1))
-    (late_former_genScoped hat henv hlv hsub) ⟨bs, _, hsort⟩
+    (late_former_genScoped hat hsub) ⟨bs, _, hsort⟩
     (fun c4 hc4 => (hctors c4 hc4).2.2) hRfresh hcv hrec hwrap hannT hstR hlenC hrules
     (fun rl hrl => by
       obtain ⟨j, hj, rfl⟩ := List.getElem_of_mem hrl

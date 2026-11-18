@@ -721,11 +721,13 @@ theorem front_rules_canon {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
 /-! ## The parent's type and the constructor loads -/
 
 /-- **The parent's loaded type is the stored former's**: the scoped `get_ci` at the parent
-answers the stored former, whose type at positions is the family's telescope constant's. -/
+answers the stored former, whose type at positions the pointer represents. Nothing is said of
+the family's telescope constant: the comparison reads it through the recorded binders. -/
 theorem front_parent_former {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
     {env : Ix.Kernel.Env .anon} {lim : Option Nat}
     (hcS : Core.ScopedCoreFacts (Core.Ctx.stored ⟨E, env, t, lim⟩))
-    {fam : NativeFam .anon} (hat : LateFamAt t E env fam) {P : _root_.Address}
+    {fam : NativeFam .anon} (hfam : NativeFamStored env fam)
+    (hlps : fam.cvS.levelParams = fam.p.cvT.levelParams) {P : _root_.Address}
     (hname : fam.p.cvT.name = keyOf t P) {k : Nat}
     (hk : fam.p.cvT.levelParams = List.range k)
     {parentV pointer : SourceValue F} {bT : Bytes.Address} (hbT' : Core.ixAddr bT = P)
@@ -736,12 +738,12 @@ theorem front_parent_former {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
     {nl tyPtrP np ni nc u blk idx : SourceValue F}
     (hldP : loadValue loadedHeap pointer = .ok (.construct "KernelTypes::KConstantInfo" "Induct"
       [nl, tyPtrP, np, ni, nc, u, blk, idx])) :
-    Core.TmC (Core.Ctx.stored ⟨E, env, t, lim⟩).κ loadedHeap fam.cvTa.type tyPtrP := by
+    Core.TmC (Core.Ctx.stored ⟨E, env, t, lim⟩).κ loadedHeap fam.cvS.type tyPtrP := by
   let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, lim⟩
   have hformer : env.find? (Core.keyOf t P) =
       some (.indInfo fam.cvS (Ix.Kernel.nativeCaps fam.p)) := by
     rw [LoadedReads.keyOf_eq, ← hname]
-    exact hat.stored.former
+    exact hfam.former
   have hκP : cS.κ P = Core.keyOf t P :=
     Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hformer
   obtain ⟨ci, hfind, hptr⟩ := Core.get_ci_step cS hcS evLoad parentV bT rfl trivial
@@ -759,8 +761,7 @@ theorem front_parent_former {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
   obtain ⟨hcvEq, -⟩ := Ix.Kernel.ConstantInfo.indInfo.inj hcv
   subst hcvEq
   obtain ⟨-, -, -, htm⟩ := hval
-  rw [hat.lps, hk, Decl.posOf_range] at htm
-  rw [hat.tele]
+  rw [hlps, hk, Decl.posOf_range] at htm
   exact htm
 
 /-- **The constructor loads of the member, as the comparison reads them**: every scoped

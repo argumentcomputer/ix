@@ -56,7 +56,8 @@ theorem rec_k_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E :
     {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
     (hcm : Ix.Cert.recordAt E P = some cm) (hcmi : cm.info = .iPrj ip)
     (htie : RecMajorTie t E₀ A c rc P) {fam : NativeFam .anon}
-    (hm : MatchedAt t E env P ip fam) :
+    {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    (hm : FamReadAt L t E env P ip fam) (hsr : FormerSortReads t E lim env fam) :
     rc.k = true →
       rc.rules.size = 1 ∧ fam.ctorsA.length = 1 ∧
       (∀ cA, fam.ctorsA[0]? = some cA → cA.2 = 0) ∧
@@ -97,17 +98,8 @@ theorem rec_k_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E :
   obtain ⟨hcvEq, -⟩ := Ix.Kernel.ConstantInfo.indInfo.inj hcv
   subst hcvEq
   obtain ⟨-, -, hperm, htm⟩ := hval
-  obtain ⟨bs, hsort⟩ := hat.sort
-  rw [hat.tele, hnP, hnI] at hsort
-  have hpos : ∃ bs', (Core.posOf fam.cvS.levelParams fam.cvS.type).stripPis
-      (ind.params.toNat + ind.indices.toNat) =
-      some (bs', .sort (Ix.Kernel.Level.subst fam.cvS.levelParams
-        (Core.posLevels fam.cvS.levelParams) fam.p.resSort)) :=
-    ⟨_, by
-      unfold Core.posOf
-      rw [Decl.stripPis_instantiateLevelParams_full, hsort]
-      rfl⟩
-  obtain ⟨bs', hpos⟩ := hpos
+  unfold FormerSortReads at hsr
+  rw [hnP, hnI] at hsr
   have hgK : Core.Good ⟨E, env, t, lim⟩ kCalls := (hst.good env lim).sub hsK
   -- the verdict's arm
   match Obs.«KernelCheck::compute_k_target».obs evK with
@@ -152,12 +144,9 @@ theorem rec_k_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E :
         (.ptr (.enum Core.kexprListEnum) m60.length) := by
       rw [hm167]
       exact Decl.typesRep_alloc_nil _ _ _
-    obtain ⟨ℓ, hℓ, hlv⟩ := Decl.get_result_sort_level_any_spec
-      (ind.params.toNat + ind.indices.toNat) (by omega)
-      ((hrc.mono eK).mono e1) htys (Decl.ghostScoped_zero _) hcS.env hcS.loads
+    obtain ⟨ℓ, hℓ, hsℓ⟩ := hsr ((hrc.mono eK).mono e1) htys
       (hsub (fun x hx => by rw [children]; simp [hx]))
       ((htm.mono (eK.trans e1)) 0 (fun _ => default)) sortRun
-    have hsℓ := hlv bs' _ hpos
     have hzero : IxVM.Refinement.KernelLevels.RepKLevel m196 .zero
         (.ptr (.enum "KernelTypes::KLevelNode") m111.length) := by
       rw [hm204]

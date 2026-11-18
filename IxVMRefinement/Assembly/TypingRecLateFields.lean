@@ -553,7 +553,8 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (hcb : Ix.Cert.recordAt E ip.block = some cb) (hms : cb.info = .muts ms)
     (hind : ms[ip.idx.toNat]? = some (.indc ind))
-    {fam : NativeFam .anon} (hm : MatchedAt t E env P ip fam) :
+    {fam : NativeFam .anon} {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    (hm : FamReadAt L t E env P ip fam) (hsr : FormerSortReads t E lim env fam) :
     decide (rc.lvls.toNat = ind.lvls.toNat + 1) = true → fam.p.isProp = true →
       ∀ (j : Nat) (cA : ConstantVal .anon × Nat), fam.ctorsA[j]? = some cA →
         ∃ (fvsP : List Core.KExpr) (crest : Core.KExpr) (xFvs : List Core.KExpr)
@@ -579,7 +580,7 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   have hz : ∀ φ, Ix.Kernel.Level.eval φ fam.p.resSort = 0 := fun φ =>
     (Ix.Kernel.Level.isEquiv_sound hiso φ).trans rfl
   have helim := rec_elim_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie
-    hcb' hms' hind' hat hname hnP hnI hlenC hlarge
+    hcb' hms' hind' hat.stored hsr hname hnP hnI hlenC hlarge
   have hlen2 : fam.ctorsA.length < 2 := by
     rcases helim with h | h
     · exact absurd (hz (fun _ => 0)) (h (fun _ => 0))
@@ -637,17 +638,8 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨hcvEq, -⟩ := Ix.Kernel.ConstantInfo.indInfo.inj hcv
   subst hcvEq
   obtain ⟨-, -, hperm, htm⟩ := hval
-  obtain ⟨bs, hsort⟩ := hat.sort
-  rw [hat.tele, hnP, hnI] at hsort
-  have hpos : ∃ bs', (Core.posOf fam.cvS.levelParams fam.cvS.type).stripPis
-      (ind.params.toNat + ind.indices.toNat) =
-      some (bs', .sort (Ix.Kernel.Level.subst fam.cvS.levelParams
-        (Core.posLevels fam.cvS.levelParams) fam.p.resSort)) :=
-    ⟨_, by
-      unfold Core.posOf
-      rw [Decl.stripPis_instantiateLevelParams_full, hsort]
-      rfl⟩
-  obtain ⟨bs', hpos⟩ := hpos
+  unfold FormerSortReads at hsr
+  rw [hnP, hnI] at hsr
   -- the canonical comparison
   have hgC : Core.Good ⟨E, env, t, lim⟩ canonCalls := (hst.good env lim).sub hsCanon
   have hsub : ∀ {cs : List (Call F)}, (∀ x ∈ cs, x ∈ canonCalls) → Core.CoreGood cS cs :=
@@ -701,12 +693,9 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
           (.ptr (.enum Core.kexprListEnum) m272.length) := by
         rw [hm337]
         exact Decl.typesRep_alloc_nil _ _ _
-      obtain ⟨ℓ, hℓ, hlv⟩ := Decl.get_result_sort_level_any_spec
-        (ind.params.toNat + ind.indices.toNat) (by omega)
-        ((hrc.mono eC).mono e2) htys (Decl.ghostScoped_zero _) hcS.env hcS.loads
+      obtain ⟨ℓ, hℓ, hsℓ⟩ := hsr ((hrc.mono eC).mono e2) htys
         (hsub (fun x hx => by rw [children]; simp [hx]))
         ((htm.mono (eC.trans e2)) 0 (fun _ => default)) sortRun
-      have hsℓ := hlv bs' _ hpos
       have huniv : univ = .field 1 := by
         rw [evalBinOp_add_inv (nat_rec_check_levels natRun), hlarge']
         congr 1

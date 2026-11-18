@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.TypingRecLateNativeFront2
+import IxVMRefinement.Assembly.NativeAliasRunTrace
 import IxVMRefinement.Assembly.TypingRecLateNativeElim
 import IxVMRefinement.Assembly.TypingRecLateNativeRead
 
@@ -18,8 +19,9 @@ arm:
 * the canonical annotations of both (`canonAnn`, `canonRules`), which annotate the reading;
 * the declared recursor checked at the step's environment (`ConstantValCheckJ`), from the scope
   and sort runs on the type pointer;
-* the native recursor comparison (`Decl.late_nat_rec_check_specT`, instantiated at the prefix
-  keying for the type and at `lateRuleKey` for the rules): the generated type and its relation
+* the native recursor comparison (`Decl.late_nat_rec_check_spec_traced`, instantiated at the
+  prefix keying for the type and at `lateRuleKey` for the rules, at the stored former's loaded
+  type and the binders the family records for its telescope constant): the generated type and its relation
   with the canonical type, the generated rules and their relation with the canonical rules;
 * the level arguments of the head of the major premise's domain (`Decl.front_maj`).
 
@@ -66,7 +68,7 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (hcb : Ix.Cert.recordAt E ip.block = some cb) (hms : cb.info = .muts ms)
     (hind : ms[ip.idx.toNat]? = some (.indc ind))
-    {fam : NativeFam .anon} (hm : MatchedAt t E env P ip fam)
+    {fam : NativeFam .anon} (hm : FamReadAt FormerOpenTraceAt t E env P ip fam)
     (hhead : Decl.CtorRetHeadAt cb ind)
     (hnoProj : FamCtorNoProj fam) (hbounds : RecArmBounds ip ind fam)
     (hrscoped : ∀ rules : List (Ix.Kernel.RecRule .anon),
@@ -318,27 +320,31 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     intro x hx
     rw [hL1] at hx
     exact hx
-  have hgen := late_former_genScoped hat henv hlv hsubL
-  obtain ⟨bsS, hsort⟩ := hat.sort
+  have hlpsS : fam.cvS.type.allLevelParamsDefined (List.range ind.lvls.toNat) = true := by
+    have h := (henv _ (Ix.Kernel.Semantics.Env.find?_mem hat.stored.former)).2.1
+    rw [hat.lps, hL1] at h
+    exact h
   -- the parent's type
-  have hpty := front_parent_former hcS hat hname hL1 hbT' (hgood.sub hsLoad) hbT evLoad hldP
+  have hpty := front_parent_former hcS hat.stored hat.lps hname hL1 hbT' (hgood.sub hsLoad) hbT
+    evLoad hldP
   -- the run of the comparison, at the family's counts
   have e1 : rc.params.toNat = fam.p.nP := hp.trans hnP.symm
   have e2 : rc.indices.toNat = fam.p.nIdx := hi.trans hnI.symm
   have e3 : ind.ctors.size = (lateCtorsInfo fam).length := by rw [hlenInfo, hlenC]
   rw [e1, e2, e3] at evNat
-  have hspec := Decl.late_nat_rec_check_specT (c := Core.Ctx.stored ⟨E, env, t, lim⟩) hcS
+  have hspec := Decl.late_nat_rec_check_spec_traced (c := Core.Ctx.stored ⟨E, env, t, lim⟩) hcS
     (fun _ => trivial) (κ₂ := lateRuleKey ⟨E, env, t, lim⟩ A) (find₂ := env.find?)
     (lateRuleKey_keep _ A) (wrapLoads_late hcS hst.decoded (hst.runRecord A c hc) hinfo)
     (cst := c) (rc' := rc) (T := fam.p.cvT.name) (recC := keyOf t A) (b₀ := bP) (bT := bT)
     (bRec := bA) (bRB := bR) (idx := ip.idx.toNat) (k := ind.lvls.toNat) (nP := fam.p.nP)
     (nIdx := fam.p.nIdx) (large := decide (rc.lvls.toNat = ind.lvls.toNat + 1))
-    (tty₀ := fam.cvTa.type) (rec_ty₀ := tyC) (ctors_info := lateCtorsInfo fam) (rls := rlsC)
+    (pty₀ := fam.cvS.type) (ttyReg := fam.cvTa.type)
+    (rec_ty₀ := tyC) (ctors_info := lateCtorsInfo fam) (rls := rlsC)
     ⟨_, _, hat.stored.former⟩
     (by rw [hbR']; exact hst.runRecord A c hc) hinfo hT hκ₂_inj hRec
     (by omega) hCres hk31 (by rw [hnP]; exact hnP31) (by rw [hnI]; exact hnI31)
     (by rw [hlenInfo, hlenC]; exact hnC31) (by rw [hlenInfo, hlenC, hnP, hnI]; exact hnall)
-    hgen.2.1 hsort
+    hlpsS
     (lateCtorsInfo_wf hat henv hL1 hnoProj ⟨hk31, hnP31, hnI31, hnC31, hnall, hidx32, hc4⟩ hnP
       hlenC (decide (rc.lvls.toNat = ind.lvls.toNat + 1)))
     hrls_len hload hretHead (Core.CoreGood.ofRaw (hgood.sub hsN) (fun _ _ => trivial))
@@ -348,6 +354,7 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     (Bytes.repAddressRef_heapMono₂ Core.addrTy eScN hbT)
     (Bytes.repAddressRef_heapMono₂ Core.addrTy eLN hbA)
     ((hpty.mono (eC.trans eN)) 0 (fun _ => default))
+    (Ix.Kernel.HeadDeltaBeta.DefnLevelsClosed.of_envWF henv) hat.link.binders
     (by rw [← hpsE]; exact ((htmT 0 (fun _ => default)).mono eLN).toTm)
     (by rw [← hpsE]; exact hrrC.mono eLN)
     evNat

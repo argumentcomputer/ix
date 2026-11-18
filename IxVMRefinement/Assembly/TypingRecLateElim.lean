@@ -100,6 +100,28 @@ theorem get_result_sort_level_any_spec {c : ScopedCtx} :
         exact htele bs₂ s hst₂
       | _ => simp [Expr.stripPis] at hst
 
+/-- **The result-sort walk on `A` answers `s`**: every observed run of
+`KernelCheck::get_result_sort_level` for `n` binders, at depth zero and with good calls, on a
+pointer that represents `A`, returns a level semantically equal to `s`. For a term whose first
+`n` nodes are `∀`s into `Sort s` it holds by reading (`ResultSortReads.of_strip`); for a type
+that only head-reduces to such a telescope it is what the recorded walk of the type gives. -/
+def ResultSortReads (c : ScopedCtx) (n : Nat) (A : KExpr) (s : KLevel) : Prop :=
+  ∀ {rc pe types r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+    RCRep c.t c.lim h rc → TypesRep c.κ (fun _ => default) h 0 types → CoreGood c cs →
+    Tm c.κ 0 (fun _ => default) h 0 A pe →
+    ObsFn W "KernelCheck::get_result_sort_level" [rc, pe, .field (n : F), types] h r h' cs →
+    ∃ ℓ : KLevel, RepKLevel h' ℓ r ∧ LvEq s ℓ
+
+/-- On a term whose first `n` nodes are `∀`s into `Sort s` the walk answers `s`. -/
+theorem ResultSortReads.of_strip {c : ScopedCtx} (hc : ScopedCoreFacts c) {n : Nat}
+    {A : KExpr} {bs : List (KExpr × Ix.Kernel.BinderMeta)} {s : KLevel}
+    (hn : n < 18446744069414584321) (hs : A.stripPis n = some (bs, .sort s)) :
+    ResultSortReads c n A s := by
+  intro rc pe types r h h' cs hrc hty hgood hA ev
+  obtain ⟨ℓ, hℓ, hlv⟩ := get_result_sort_level_any_spec n hn hrc hty (ghostScoped_zero _)
+    hc.env hc.loads hgood hA ev
+  exact ⟨ℓ, hℓ, hlv bs s hs⟩
+
 end IxVM.Refinement.Decl
 
 namespace IxVM.Refinement.Typing
@@ -408,8 +430,9 @@ theorem field_nat_eq_zero {a : Nat} (ha : a < 18446744069414584321)
 
 /-- **The elimination restriction from the canonical comparison**: at a record with one level
 more than its parent, under a scoped context that allows every call, where the parent's type
-pointer represents `E`, the result sort of `E`'s telescope over the parent's parameters and
-indices is never zero, or the parent has fewer than two constructors. -/
+pointer represents `E` and the result-sort walk on `E` over the parent's parameters and
+indices answers `s`, the level `s` is never zero or the parent has fewer than two
+constructors. -/
 theorem canonical_full_elim {c : Core.ScopedCtx} (hc : Core.ScopedCoreFacts c)
     (hall : ∀ cl, c.allowed cl)
     {rcv type parameters indices motives minors rules k unsafeFlag block position address
@@ -418,7 +441,8 @@ theorem canonical_full_elim {c : Core.ScopedCtx} (hc : Core.ScopedCoreFacts c)
     {lvls plvls pnp pni nctors : Nat} {E : Core.KExpr}
     (hrc : Core.RCRep c.t c.lim heap rcv) (hgood : Core.Good c.toCtx calls)
     (hE : Core.TmC c.κ heap E parentType)
-    (hn : pnp + pni < 18446744069414584321) (hnc : nctors < 18446744069414584321)
+    (hnc : nctors < 18446744069414584321) {s : Core.KLevel}
+    (hrd : Decl.ResultSortReads c (pnp + pni) E s)
     (observed : ObsFn Obs.W "KernelCheck::check_recursor_canonical_full"
       [rcv, .construct "KernelTypes::KConstantInfo" "Rec"
         [.field (lvls : F), type, parameters, indices, motives, minors, rules, k, unsafeFlag,
@@ -428,10 +452,7 @@ theorem canonical_full_elim {c : Core.ScopedCtx} (hc : Core.ScopedCoreFacts c)
             .field (nctors : F), parentUnsafe, parentBlock, parentIndex], parent]
       heap result final calls)
     (hlarge : lvls = plvls + 1) :
-    ∀ (bs : List (Core.KExpr × Ix.Kernel.BinderMeta)) (s : Core.KLevel),
-      E.stripPis (pnp + pni) = some (bs, .sort s) →
-      (∀ φ, Ix.Kernel.Level.eval φ s ≠ 0) ∨ nctors < 2 := by
-  intro bs s hst
+    (∀ φ, Ix.Kernel.Level.eval φ s ≠ 0) ∨ nctors < 2 := by
   match Obs.«KernelCheck::check_recursor_canonical_full».obs observed with
   | .other (hne568 := hne) .. =>
     exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
@@ -460,9 +481,7 @@ theorem canonical_full_elim {c : Core.ScopedCtx} (hc : Core.ScopedCoreFacts c)
         (.ptr (.enum Core.kexprListEnum) m272.length) := by
       rw [hm337]
       exact Decl.typesRep_alloc_nil _ _ _
-    obtain ⟨ℓ, hℓ, hlv⟩ := Decl.get_result_sort_level_any_spec (pnp + pni) hn (hrc.mono e2) htys
-      (Decl.ghostScoped_zero _) hc.env hc.loads hgS ((hE.mono e2) 0 (fun _ => default)) sortRun
-    have hsℓ := hlv bs s hst
+    obtain ⟨ℓ, hℓ, hsℓ⟩ := hrd (hrc.mono e2) htys hgS ((hE.mono e2) 0 (fun _ => default)) sortRun
     have huniv : univ = .field 1 := by
       rw [evalBinOp_add_inv (nat_rec_check_levels natRun), hlarge]
       congr 1
@@ -497,6 +516,18 @@ theorem canonical_full_elim {c : Core.ScopedCtx} (hc : Core.ScopedCoreFacts c)
 
 /-! ## The restriction at the family -/
 
+/-- **The result-sort walk at a family's stored former answers the family's sort**, at the
+step's context: on the stored former's type with its level parameters at positions, over
+the family's parameters and indices, the walk answers the family's result sort at positions.
+The canonical comparison, the K verdict and the large eliminator's field walk read the
+family's sort through this walk only. -/
+def FormerSortReads (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (lim : Option Nat)
+    (env : Ix.Kernel.Env .anon) (fam : NativeFam .anon) : Prop :=
+  Decl.ResultSortReads (Core.Ctx.stored ⟨E, env, t, lim⟩) (fam.p.nP + fam.p.nIdx)
+    (Core.posOf fam.cvS.levelParams fam.cvS.type)
+    (Ix.Kernel.Level.subst fam.cvS.levelParams (Core.posLevels fam.cvS.levelParams)
+      fam.p.resSort)
+
 /-- **The elimination restriction of the late relation** at the family read off the tied
 parent: if the record has one level more than the parent's member (a large eliminator), the
 family's result sort is never zero or the family has fewer than two constructors. -/
@@ -514,7 +545,8 @@ theorem rec_elim_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ 
     {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (hcb : Ix.Cert.recordAt E ip.block = some cb) (hms : cb.info = .muts ms)
     (hind : ms[ip.idx.toNat]? = some (.indc ind))
-    {fam : NativeFam .anon} (hat : LateFamAt t E env fam) (hname : fam.p.cvT.name = keyOf t P)
+    {fam : NativeFam .anon} (hfam : NativeFamStored env fam)
+    (hsr : FormerSortReads t E lim env fam) (hname : fam.p.cvT.name = keyOf t P)
     (hnP : fam.p.nP = ind.params.toNat) (hnI : fam.p.nIdx = ind.indices.toNat)
     (hctors : fam.ctorsA.length = ind.ctors.size) :
     decide (rc.lvls.toNat = ind.lvls.toNat + 1) = true →
@@ -533,7 +565,7 @@ theorem rec_elim_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ 
   -- the former the parent's key stores
   have hformer : env.find? (Core.keyOf t P) = some (.indInfo fam.cvS (Ix.Kernel.nativeCaps fam.p)) := by
     rw [LoadedReads.keyOf_eq, ← hname]
-    exact hat.stored.former
+    exact hfam.former
   have hκP : cS.κ P = Core.keyOf t P := Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hformer
   have hgL : Core.Good ⟨E, env, t, lim⟩ loadCalls := (hst.good env lim).sub hsLoad
   obtain ⟨ci, hfind, hptr⟩ := Core.get_ci_step cS hcS evLoad parentV bT rfl trivial
@@ -553,21 +585,10 @@ theorem rec_elim_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ 
   obtain ⟨-, -, hperm, htm⟩ := hval
   -- the canonical comparison
   have hgC : Core.Good ⟨E, env, t, lim⟩ canonCalls := (hst.good env lim).sub hsCanon
-  have helim := canonical_full_elim hcS (fun _ => trivial) (hrc.mono eC) hgC
-    (htm.mono eC) (by omega) (by omega) evCanon hlarge'
-  -- the former's telescope, renamed to positions
-  obtain ⟨bs, hsort⟩ := hat.sort
-  rw [hat.tele, hnP, hnI] at hsort
-  have hpos : ∃ bs', (Core.posOf fam.cvS.levelParams fam.cvS.type).stripPis
-      (ind.params.toNat + ind.indices.toNat) =
-      some (bs', .sort (Ix.Kernel.Level.subst fam.cvS.levelParams
-        (Core.posLevels fam.cvS.levelParams) fam.p.resSort)) :=
-    ⟨_, by
-      unfold Core.posOf
-      rw [Decl.stripPis_instantiateLevelParams_full, hsort]
-      rfl⟩
-  obtain ⟨bs', hpos⟩ := hpos
-  rcases helim _ _ hpos with h | h
+  unfold FormerSortReads at hsr
+  rw [hnP, hnI] at hsr
+  rcases canonical_full_elim hcS (fun _ => trivial) (hrc.mono eC) hgC
+    (htm.mono eC) (by omega) hsr evCanon hlarge' with h | h
   · exact Or.inl (eval_ne_zero_of_posOf hperm h)
   · exact Or.inr (by omega)
 
