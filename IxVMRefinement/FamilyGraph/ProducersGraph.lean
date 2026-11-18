@@ -180,7 +180,7 @@ variable {K}
 theorem famCalls_spec {B rb : _root_.Address} (h : K.FamCheck B rb) :
     FamilyCallAtLim K.calls K.bAddr K.t B rb K.lim (K.famCalls B rb) := by
   unfold famCalls
-  rw [dif_pos h]
+  rw [dite_eq_left h]
   exact Classical.choose_spec h
 
 theorem fam_some {B rb : _root_.Address} (h : K.fam B = some rb) :
@@ -188,44 +188,44 @@ theorem fam_some {B rb : _root_.Address} (h : K.fam B = some rb) :
       ((∃ rb', K.FamCheck B rb' ∧ K.Pref B rb') → K.Pref B rb) := by
   unfold fam at h
   by_cases hc : K.FamBlock B ∧ ∃ rb, K.FamCheck B rb
-  · rw [dif_pos hc] at h
+  · rw [dite_eq_left hc] at h
     by_cases hp : ∃ rb, K.FamCheck B rb ∧ K.Pref B rb
-    · rw [dif_pos hp] at h
+    · rw [dite_eq_left hp] at h
       have e := Option.some.inj h
       subst e
       exact ⟨hc.1, (Classical.choose_spec hp).1, fun _ => (Classical.choose_spec hp).2⟩
-    · rw [dif_neg hp] at h
+    · rw [dite_eq_right hp] at h
       have e := Option.some.inj h
       subst e
       exact ⟨hc.1, Classical.choose_spec hc.2, fun h' => absurd h' hp⟩
-  · rw [dif_neg hc] at h
+  · rw [dite_eq_right hc] at h
     cases h
 
 theorem fam_of {B rb : _root_.Address} (hB : K.FamBlock B) (hc : K.FamCheck B rb) :
     ∃ rb', K.fam B = some rb' := by
   have hc' : K.FamBlock B ∧ ∃ rb, K.FamCheck B rb := ⟨hB, rb, hc⟩
   unfold fam
-  rw [dif_pos hc']
+  rw [dite_eq_left hc']
   by_cases hp : ∃ rb, K.FamCheck B rb ∧ K.Pref B rb
-  · rw [dif_pos hp]
+  · rw [dite_eq_left hp]
     exact ⟨_, rfl⟩
-  · rw [dif_neg hp]
+  · rw [dite_eq_right hp]
     exact ⟨_, rfl⟩
 
 theorem twin_some {rb' B : _root_.Address} (h : K.twin rb' = some B) : K.TwinOf rb' B := by
   unfold twin at h
   by_cases hc : ∃ B, K.TwinOf rb' B
-  · rw [dif_pos hc] at h
+  · rw [dite_eq_left hc] at h
     have e := Option.some.inj h
     subst e
     exact Classical.choose_spec hc
-  · rw [dif_neg hc] at h
+  · rw [dite_eq_right hc] at h
     cases h
 
 theorem twin_of {rb' B : _root_.Address} (h : K.TwinOf rb' B) : ∃ B', K.twin rb' = some B' := by
   have hc : ∃ B, K.TwinOf rb' B := ⟨B, h⟩
   unfold twin
-  rw [dif_pos hc]
+  rw [dite_eq_left hc]
   exact ⟨_, rfl⟩
 
 theorem famCheck_of_inner {B rb : _root_.Address} (h : K.fam B = some rb ∨ K.twin rb = some B) :
