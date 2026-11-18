@@ -169,8 +169,9 @@ sequence over the records of an observed run is defined (`groupStore`, in
 `IxVMRefinement.Binding.RunStores`) and this statement is reduced to what is not proved of that
 sequence (`groupStoresOfRun_of_remaining`, `RemainingStoreClauses`, in
 `IxVMRefinement.Binding.GroupStores`): that the record bound to a role whose validation walks
-it is in Lean's logic with its block (`RootsSafe`, from which the clause `logic` is proved), and
-the clauses `standing`, `opsOwn`, `unitsLast` and the reading clause. The other clauses are
+it is in Lean's logic with its block, and so is what the proofs in the roles' evidence use
+(`RootsSafe`, from which the clauses `logic` and `standing` are proved), and the clauses
+`opsOwn`, `unitsLast` and the reading clause. The other clauses are
 proved of the sequence for every run in the alternative without a collision, with the two facts
 about the run's records they read (`basisRows_of_run`, `axiomRoles_of_run`).
 

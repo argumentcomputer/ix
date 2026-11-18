@@ -1,4 +1,4 @@
-import IxVMRefinement.Binding.StoreLogic
+import IxVMRefinement.Binding.StoreStanding
 import IxVMRefinement.Binding.BasisAt
 import IxVMRefinement.Assembly.TypingBasisInv
 
@@ -11,9 +11,10 @@ clauses that are left, named in `RemainingStoreClauses`.
 
 * `basisRolesStored_of_pinned`: at a table that pins the prelude, the bound record of a walked
   role of a group below 6 is a basis row.
-* `RemainingStoreClauses t E₀`: what is not proved of the sequence: four clauses (`standing`,
-  `opsOwn`, `unitsLast`, and the reading clause of `AdmitsReads`) and the safety of the roots
-  (`RootsSafe`), from which the clause `logic` is proved (`logic_of_rootsSafe`). The two facts
+* `RemainingStoreClauses t E₀`: what is not proved of the sequence: three clauses (`opsOwn`,
+  `unitsLast`, and the reading clause of `AdmitsReads`) and the safety of the roots
+  (`RootsSafe`), from which the clauses `logic` and `standing` are proved (`logic_of_rootsSafe`,
+  `standing_of_rootsSafe`). The two facts
   about the run's records the proved clauses read are proved
   (`IxVMRefinement.Binding.StoreFieldsRun`):
   the basis rows are records the run loaded as the basis store holds them (`basisRows_of_run`),
@@ -59,8 +60,6 @@ theorem basisRolesStored_of_pinned {t : Ix.Kernel.RoleTable} (hpre : PreludePinn
 /-- **What is left of the store sequence's clauses**, over the run's records `E₀`.
 
 Status: stated only; nothing proves any field of any run.
-* `standing`: a new axiom or quotient record is the group's standard axiom. The walk's check of
-  an axiom record asks for a standing role in force.
 * `rootsSafe`: the record bound to a role whose validation walks it is in Lean's logic with its
   block, and so are the theorem of a proof in the evidence of a definition specified by
   equations and the references a certificate in an operation's evidence uses (`RootsSafe`).
@@ -80,10 +79,6 @@ Status: stated only; nothing proves any field of any run.
 * `reads`: a reading over the run's records of a constant address of a new record is a reading
   over the store after the group. -/
 structure RemainingStoreClauses (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
-  standing : ∀ g, 6 ≤ g → g < 77 → ∀ a c,
-    New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a →
-    recordOf (groupStore t E₀ (g + 1)) a = some c → IsAxiomLike c →
-    ∃ r ∈ roleGroup g, r ∈ standardAxioms ∧ t.addressOf? r = some a
   rootsSafe : RootsSafe t E₀
   opsOwn : ∀ g, 6 ≤ g → g < 77 → ∀ a r,
     New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a → t.addressOf? r = some a →
@@ -155,7 +150,7 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
         rankUsed := groupStore_rankUsed hC hb hbr hax hws hg6 hw
         rankOwner := groupStore_rankOwner hC hb hax hg6 hw
         projMember := groupStore_projMember hC hb hax hg6 hw
-        standing := hR.standing g hg6 hg
+        standing := standing_of_rootsSafe hC hb hpin hval hR.rootsSafe g hg6 hg
         logic := logic_of_rootsSafe hC hb hval hR.rootsSafe g hg6 hg
         checked := groupStore_checked hC hb hax hg6 hw
         validated := fun _ _ => trivial
