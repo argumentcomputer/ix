@@ -964,9 +964,34 @@ def assert_quot_kind := aiur_fn⟦
     }
 ⟧
 
+  -- The literal anchors' record kinds: `List.nil`, `List.cons` (30, 31) are constructors and
+  -- `String.ofList`, `Char.ofNat` (38, 40) definitions, as the kernel's literal rules read them.
+  -- Any other anchor: no kind is asked.
+
+def anchor_kind_ok := aiur_fn⟦
+  fn anchor_kind_ok(r: Field, ci: KernelTypes::KConstantInfo) -> Field {
+      let is_ctor = match ci {
+        KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, _, _, _) => {  1 } ,
+        _ => {  0 } ,
+      };
+      let is_defn = match ci {
+        KernelTypes::KConstantInfo::Defn(_, _, _, _, _) => {  1 } ,
+        _ => {  0 } ,
+      };
+      match r {
+        30 => {  is_ctor } ,
+        31 => {  is_ctor } ,
+        38 => {  is_defn } ,
+        40 => {  is_defn } ,
+        _ => {  1 } ,
+      }
+    }
+⟧
+
 def validate_anchor := aiur_fn⟦
   fn validate_anchor(rc: RoleCtx, tbl: RoleTable, r: Field, ci: KernelTypes::KConstantInfo) -> () {
       assert_safe_role(ci);
+      assert_eq!(anchor_kind_ok(r, ci), 1, "a literal anchor is bound to a record of the wrong kind");
       let ty = KernelInfer::const_type_of(ci);
       -- the anchor's type is closed and a type, before it is compared with the role's spec
       KernelCheck::validate_expr_well_scoped(ty, 0, KernelInfer::const_num_lvls(ci));
