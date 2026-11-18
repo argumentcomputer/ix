@@ -1,4 +1,5 @@
 import IxVMRefinement.Binding.FamilyOf
+import IxVMRefinement.StatementRel.LoadedReadsCanon
 
 /-! # A block's flattened family, entry by entry: read off a family record, derived from the block
 
@@ -12,6 +13,13 @@ block's own types, the parameters it is taken at and its levels (`FlatEntry`). T
 over one container share their address and differ in their parameters or levels, so the
 addresses alone do not fix the positions.
 
+Every term the model reads of a record is the circuit's loaded form of it (`loadedAt`): the
+kernel reader's conversion with the binder data `Convert` computes from the record's binder blocks
+at the expression's root (`LoadedReads.canonAnn`, the form every `get_ci` load represents), a
+`let` read as its reduct. The raw conversion alone gives every binder the datum `never` and keeps
+`let`s.
+
+* `mutsRoot`, `loadedAt`: the root of a block member's expressions, and the canonical reading.
 * `FlatEntry`; `RecordFlat t E rb crb rs es`: recursor `k` of the record has its major premise
   over entry `k`, at its parameters and levels.
 * `FlatView`: what the derivation reads of a store (the circuit's `get_ci`, `get_ci_cprj`,
@@ -33,6 +41,28 @@ namespace IxVM.Refinement.Binding.FamilyFlat
 open IxVM.Consistency
 
 set_option linter.unusedVariables false
+
+/-! ## The canonical reading -/
+
+/-- **The root of member `i`'s expressions** among a block's binder-indexed roots
+(`Convert::mut_const_roots`, summed over the members before it): a definition's type is at the
+root, its value at the next; an inductive's type at the root, its constructor `j` at the root plus
+`1 + j`; a recursor's type at the root, its rule `j` at the root plus `1 + j`. -/
+abbrev mutsRoot (ms : Array Ixon.MutConst) (i : Nat) : IxVM.F :=
+  ((IxVM.Refinement.L1.mutsRootOffset ms.toList i : Nat) : IxVM.F)
+
+/-- **The circuit's loaded form of an expression `e` of the record `src`**, converted at root
+`root` with `nl` level parameters: the kernel reader's conversion (universe variable `i` read as
+the level parameter `i`, `recur` as `self`) with the binder data of the root's plan in the
+record's binder blocks (`LoadedReads.canonAnn`; a `let` read as its reduct). Every `get_ci` load
+of the record represents it (`LoadedReads.annotation_canon`). `none` where the conversion or the
+plan fails. -/
+noncomputable def loadedAt (t : Ix.Kernel.RoleTable) (blob : _root_.Address → Option ByteArray)
+    (src : Ixon.Constant) (self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon)))
+    (nl : Nat) (root : IxVM.F) (e : Ixon.Expr) : Option (Ix.Kernel.Expr .anon) :=
+  match ((exprReader t blob src id self).read e).toOption with
+  | none => none
+  | some e₀ => IxVM.Refinement.LoadedReads.canonAnn src (List.range nl) root e e₀
 
 /-! ## Entries, and the record's -/
 
@@ -62,16 +92,16 @@ def binderDomAfter (n : Nat) (e : Ix.Kernel.Expr .anon) : Option (Ix.Kernel.Expr
   | _ => none
 
 /-- **The record's flattened family, entry by entry** (`build_flat_block`, tied to the positions
-by `check_recs`): recursor `k` of the record `rb` reads (`exprReader`, over the record's tables)
-to a type whose major premise is headed by entry `k`'s type at its levels, and, at an auxiliary,
-taken at its parameters (the major premise's first arguments, lowered past the motives, minors and
-indices to the parameter frame). -/
+by `check_recs`): recursor `k` of the record `rb` has, in the canonical reading (`loadedAt`, over
+the record's tables at the member's root), a type whose major premise is headed by entry `k`'s
+type at its levels, and, at an auxiliary, taken at its parameters (the major premise's first
+arguments, lowered past the motives, minors and indices to the parameter frame). -/
 def RecordFlat (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (rb : _root_.Address)
     (crb : Ixon.Constant) (rs : Array Ixon.MutConst) (es : List FlatEntry) : Prop :=
   ∀ (k : Nat) (r : Ixon.Recursor) (e : FlatEntry), rs[k]? = some (Ixon.MutConst.recr r) →
     es[k]? = some e →
-    ∃ ty d, (exprReader t (fun x => E.blobs.get? x) crb id (blockSelf t rb rs)).read r.typ =
-        .ok ty ∧
+    ∃ ty d, loadedAt t (fun x => E.blobs.get? x) crb (blockSelf t rb rs) r.lvls.toNat
+        (mutsRoot rs k) r.typ = some ty ∧
       binderDomAfter (r.params.toNat + r.motives.toNat + r.minors.toNat + r.indices.toNat) ty =
         some d ∧
       Ix.Kernel.Expr.getAppFn d = .const (keyOf t e.addr) e.levels ∧
@@ -120,10 +150,10 @@ def indInfoAt (E : Ixon.Env) (a : _root_.Address) : Option (Option IndInfo) :=
         | _ => none
     | _ => some none
 
-/-- `get_ci_cprj blk i c`'s type: constructor `c` of member `i` of the block at `b`, read over
-the block's tables. -/
-def ctorTypeAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (b : _root_.Address) (i c : Nat) :
-    Option (Ix.Kernel.Expr .anon) :=
+/-- `get_ci_cprj blk i c`'s type: constructor `c` of member `i` of the block at `b`, in the
+canonical reading over the block's tables at the constructor's root (`mutsRoot ms i + 1 + c`). -/
+noncomputable def ctorTypeAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (b : _root_.Address)
+    (i c : Nat) : Option (Ix.Kernel.Expr .anon) :=
   match recordOf E b with
   | none => none
   | some cb =>
@@ -134,7 +164,8 @@ def ctorTypeAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (b : _root_.Address) (i 
         match ind.ctors[c]? with
         | none => none
         | some ctor =>
-          ((exprReader t (fun x => E.blobs.get? x) cb id (blockSelf t b ms)).read ctor.typ).toOption
+          loadedAt t (fun x => E.blobs.get? x) cb (blockSelf t b ms) ctor.lvls.toNat
+            (mutsRoot ms i + 1 + ((c : Nat) : IxVM.F)) ctor.typ
       | _ => none
     | _ => none
 
@@ -162,7 +193,7 @@ def keyAddr (t : Ix.Kernel.RoleTable) : Ix.Kernel.Key .anon → Option _root_.Ad
   | .aux _ _ => none
 
 /-- **The readings of the store `E`** under the role table `t`. -/
-def FlatView.ofStore (t : Ix.Kernel.RoleTable) (E : Ixon.Env) : FlatView :=
+noncomputable def FlatView.ofStore (t : Ix.Kernel.RoleTable) (E : Ixon.Env) : FlatView :=
   ⟨indInfoAt E, ctorTypeAt t E, membersAt E, keyAddr t⟩
 
 /-! ## The derivation -/
@@ -417,7 +448,8 @@ def derivedFlatAt (V : FlatView) (B : _root_.Address) (off n : Nat) :
     | some os => nestedWalk V B n 0 os
 
 /-- **`es` is the flattened family derived from the block `B` in the store `E`** (the changed
-`aux_all_in` in `check_nested_aux` asserts that a family record's entries are these, in order),
+`aux_all_in` in `check_nested_aux` asserts that a family record's entries are these, in order;
+the constructor types in the canonical reading, `ctorTypeAt`),
 at the block's elimination offset `off` (`block_elim`, a function of the block). -/
 def BlockDerivedFlat (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B : _root_.Address) (off : Nat)
     (es : List FlatEntry) : Prop :=
