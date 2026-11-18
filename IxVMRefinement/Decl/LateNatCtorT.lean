@@ -1,4 +1,5 @@
 import IxVMRefinement.Decl.LateNatRules
+import IxVMRefinement.Decl.NativeRecFieldRange
 
 /-! # The native recursor's rule generators over the stored constructor types
 
@@ -42,7 +43,9 @@ set_option linter.unnecessarySimpa false
 
 /-- Per-constructor `get_ci_cprj` load witness at member `idx` of the block `b₀`, on the stored
 constructor type: each entry `(C, nF, R₀, C₀, recIdx)` carries the key of the constructor
-projection `j` of the member, the field count and the stored type `C₀` (`R₀` is not read). -/
+projection `j` of the member, the field count, its bound below `2^56` (what `UInt64::to_field`
+asserts when the record is converted, and the load contract keeps) and the stored type `C₀`
+(`R₀` is not read). -/
 def NatCtorLoadT (κ : _root_.Address → KKey) (b₀ : Bytes.Address) (idx k : Nat)
     (ctors_info : List (KKey × Nat × KExpr × KExpr × List Nat))
     (x_block : SourceValue F) (calls_bound : List (Call F)) : Prop :=
@@ -57,6 +60,7 @@ def NatCtorLoadT (κ : _root_.Address → KKey) (b₀ : Bytes.Address) (idx k : 
       ∀ info, ctors_info[j]? = some info →
         info.1 = κ (cprjAddr (ixAddr b₀) idx j) ∧
         x_nf = .field (info.2.1 : F) ∧
+        info.2.1 < 72057594037927936 ∧
         Tm κ 0 (fun _ => default) m2 0 (posOf (List.range k) info.2.2.2.1) x_cty0
 
 theorem NatCtorLoadT.mono_calls {κ : _root_.Address → KKey} {b₀ : Bytes.Address} {idx k : Nat}
@@ -67,22 +71,11 @@ theorem NatCtorLoadT.mono_calls {κ : _root_.Address → KKey} {b₀ : Bytes.Add
   fun j hj p9 hp m2 cs15 w45 x_cty0 w46 w47 w48 w49 x_nf w50 hs =>
     h j hj p9 hp m2 cs15 w45 x_cty0 w46 w47 w48 w49 x_nf w50 (fun x hx => hsub x (hs x hx))
 
-/-- The raw load witness gives the stored one. -/
-theorem NatCtorLoadI.toT {κ : _root_.Address → KKey} {b₀ : Bytes.Address} {idx k : Nat}
-    {ctors_info : List (KKey × Nat × KExpr × KExpr × List Nat)} {x_block : SourceValue F}
-    {cs : List (Call F)} (hI : NatCtorLoadI κ b₀ idx k ctors_info x_block cs) :
-    NatCtorLoadT κ b₀ idx k ctors_info x_block cs := by
-  intro j hj p9 hp m2 cs15 w45 x_cty0 w46 w47 w48 w49 x_nf w50 hs hb ev ld info hinfo
-  obtain ⟨h1, h2, h3⟩ :=
-    hI j hj p9 hp m2 cs15 w45 x_cty0 w46 w47 w48 w49 x_nf w50 hs hb ev ld info hinfo
-  exact ⟨h1, h2, h3.toTm⟩
-
 /-- Well-formedness of a `ctors_info` entry for native recursor checking at
 `(T, k, large, nP, nIdx, num_ctors)`, on the stored constructor type only: `NatCtorInfoWf`
 without its raw-side fields `lps_R`, `strip_R` and `rec_spines`. -/
 structure NatCtorInfoWfT (T : KKey) (k : Nat) (large : Bool) (nP nIdx num_ctors : Nat)
     (info : KKey × Nat × KExpr × KExpr × List Nat) : Prop where
-  nf_lt : nP + info.2.1 < 2147483648
   lps_C : info.2.2.2.1.allLevelParamsDefined (List.range k) = true
   noProj_C : noProjAt T info.2.2.2.1 = true
   strip_C : ∃ ecbs eus eargs,
@@ -91,16 +84,12 @@ structure NatCtorInfoWfT (T : KKey) (k : Nat) (large : Bool) (nP nIdx num_ctors 
     (posOf (if large then k :: List.range k else List.range k) info.2.2.2.1).stripPis
       (nP + info.2.1) = some (ecbs, ebody) →
     info.2.2.2.2 = recIdxFrom ecbs T nP info.2.1 0
-  minor_base_lt : nP + 1 + num_ctors + info.2.1 + info.2.2.2.2.length < 4294967296
-  tele_lt : ∀ i ∈ info.2.2.2.2,
-    nP + 1 + num_ctors + info.2.1 + info.2.2.2.2.length +
-      (Ix.Kernel.structFieldTeleOf info.2.2.2.1 nP info.2.1 i).length < 4294967296
 
 theorem NatCtorInfoWf.toT {T : KKey} {k : Nat} {large : Bool} {nP nIdx num_ctors : Nat}
     {info : KKey × Nat × KExpr × KExpr × List Nat}
     (h : NatCtorInfoWf T k large nP nIdx num_ctors info) :
     NatCtorInfoWfT T k large nP nIdx num_ctors info :=
-  ⟨h.nf_lt, h.lps_C, h.noProj_C, h.strip_C, h.recIdx_eq, h.minor_base_lt, h.tele_lt⟩
+  ⟨h.lps_C, h.noProj_C, h.strip_C, h.recIdx_eq⟩
 
 /-- The recursive field indices are field indices. -/
 theorem NatCtorInfoWfT.recIdx_lt {T : KKey} {k : Nat} {large : Bool} {nP nIdx num_ctors : Nat}
@@ -116,6 +105,21 @@ theorem NatCtorInfoWfT.recIdx_lt {T : KKey} {k : Nat} {large : Bool} {nP nIdx nu
   rw [hwf.recIdx_eq _ _ hs, recIdxFrom_eq_filter_drop info.2.1 0 (Nat.zero_add _),
     List.drop_zero] at hi
   exact List.mem_range.mp (List.mem_filter.mp hi).1
+
+/-- There are at most as many recursive field indices as fields. -/
+theorem NatCtorInfoWfT.recIdx_length_le {T : KKey} {k : Nat} {large : Bool}
+    {nP nIdx num_ctors : Nat} {info : KKey × Nat × KExpr × KExpr × List Nat}
+    (hwf : NatCtorInfoWfT T k large nP nIdx num_ctors info) :
+    info.2.2.2.2.length ≤ info.2.1 := by
+  obtain ⟨ecbs₀, eus₀, eargs₀, hsC₀⟩ := hwf.strip_C
+  have hs := ilp_stripPis (if large then k :: List.range k else List.range k)
+    (posLevels (if large then k :: List.range k else List.range k)) (nP + info.2.1) hsC₀
+  change (posOf (if large then k :: List.range k else List.range k) info.2.2.2.1).stripPis
+    (nP + info.2.1) = _ at hs
+  rw [hwf.recIdx_eq _ _ hs, recIdxFrom_eq_filter_drop info.2.1 0 (Nat.zero_add _),
+    List.drop_zero]
+  refine (List.length_filter_le _ _).trans ?_
+  simp
 
 /-! ## The return position as a heap shape -/
 
@@ -481,7 +485,7 @@ theorem natT_rec_idx_spine {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr
     {Rcty Ecty rbody ebody : KExpr} {rcbs ecbs : List (KExpr × Ix.Kernel.BinderMeta)}
     (hT : κ (ixAddr bT) = T)
     (hκ_inj : ∀ a : Bytes.Address, κ (ixAddr a) = T → a = bT)
-    (hnPF_lt : nP + nF < 2147483648)
+    (hnPF_lt : nP + nF < 18446744069414584321)
     (hsR : Rcty.stripPis (nP + nF) = some (rcbs, rbody))
     (hsE : Ecty.stripPis (nP + nF) = some (ecbs, ebody))
     (hnp_dom : ∀ idx < nF, noProjAt T (ecbs.getD (nP + idx) default).1 = true)
@@ -508,7 +512,7 @@ theorem natT_rec_idx_spine {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr
       have hsub := evalBinOp_sub_nat (by omega : i ≤ nF) op17
       have hval := congrArg ZMod.val (Value.field.inj hsub.symm)
       have h1 : ZMod.val ((nF - i : Nat) : F) = nF - i :=
-        ZMod.val_natCast_of_lt (Nat.lt_trans (by omega : nF - i < 2147483648) (by decide))
+        ZMod.val_natCast_of_lt (by omega : nF - i < 18446744069414584321)
       rw [h1, ZMod.val_zero] at hval
       omega
     | .other_n0 (m38 := m38) (m180 := m180) (v213 := v213) (m202 := m202)
@@ -611,6 +615,7 @@ theorem natT_ctor_spec {κ : _root_.Address → KKey}
     {x_block x_t x_lps r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hT : κ (ixAddr bT) = T)
     (hκ_inj : ∀ a : Bytes.Address, κ (ixAddr a) = T → a = bT)
+    (hnP_lt : nP < 72057594037927936)
     (hj : j < ctors_info.length)
     (hinfo : ctors_info[j]? = some info)
     (hwf : NatCtorInfoWfT T k large nP nIdx num_ctors info)
@@ -637,7 +642,8 @@ theorem natT_ctor_spec {κ : _root_.Address → KKey}
           RawRecSpine T (rcbs.getD (nP + i) default).1 (ecbs.getD (nP + i) default).1) ∧
       RepList fieldListEnum (fun _ (i : Nat) v => v = .field (i : F)) h'
         info.2.2.2.2 x_rec_idx ∧
-      (∀ i ∈ info.2.2.2.2, Ix.Kernel.structUsedLater info.2.2.2.1 nP i = false) := by
+      (∀ i ∈ info.2.2.2.2, Ix.Kernel.structUsedLater info.2.2.2.1 nP i = false) ∧
+      info.2.1 < 72057594037927936 := by
   intro rlps
   dsimp only [rlps]
   rcases Obs.«KernelCheck::nat_ctor».obs ev with
@@ -646,11 +652,11 @@ theorem natT_ctor_spec {κ : _root_.Address → KKey}
       v222, m225, cs233, v236, m239, cs247, v284, m301, cs309,
       ev17, ld11, sg144, op194, ev171, ev158, ev249, ev235, heq279, htup_out, ev311, hm_out, hc⟩
   subst hc htup_out hm_out
-  obtain ⟨_, hnf_eq, hTm0⟩ :=
+  obtain ⟨_, hnf_eq, hnf_lt, hTm0⟩ :=
     hload j hj p9 h m2 cs15 w45 x_cty0 w46 w47 w48 w49 x_nf w50
       (fun x hx => by simp [hx]) hb₀ ev17 ld11 info hinfo
   subst hnf_eq
-  have hnPF_lt : nP + info.2.1 < 2147483648 := hwf.nf_lt
+  have hnPF_lt : nP + info.2.1 < 18446744069414584321 := by omega
   -- Step 1: a raw reading of the loaded type, through `Seg1`
   obtain ⟨R0, hRaw0, hag0⟩ := natT_tm_raw hTm0
   have hRaw_rlps : ∃ R, RawTm κ 0 (fun _ => default) m137 0 R
@@ -701,7 +707,7 @@ theorem natT_ctor_spec {κ : _root_.Address → KKey}
   -- Step 2: `peel_n_foralls`, `collect_spine`, `drop`, `nat_none_mention`
   rw [evalBinOp_add_nat nP info.2.1 op194] at ev171
   obtain ⟨hm161_eq, rcbs, ecbs, rbody, ebody, hsR, hsE, hmid⟩ :=
-    peel_n_foralls_rawTm_spec (nP + info.2.1) (by omega) hRaw137 ev171
+    peel_n_foralls_rawTm_bounded (nP + info.2.1) (by omega) hRaw137 ev171
   rw [hm161_eq] at ev158
   obtain ⟨hd_sp, sp_sp, Rh, Eh, Ras, Eas, htup_sp, hH, hEas, _, hR_sp, hE_sp, hnot_app⟩ :=
     collect_spine_rawTm_spec hmid ev158
@@ -744,7 +750,8 @@ theorem natT_ctor_spec {κ : _root_.Address → KKey}
   have hrec_eq := hwf.recIdx_eq _ _ hsE
   rw [← hrec_eq] at hrep_idx hunused_idx hspine_idx
   refine ⟨v136, v284, R, rcbs, rbody, rfl,
-    (hRaw137.mono ev158.heap_extends).mono ev311'.heap_extends, hsR, ?_, ?_, hrep_idx, ?_⟩
+    (hRaw137.mono ev158.heap_extends).mono ev311'.heap_extends, hsR, ?_, ?_, hrep_idx, ?_,
+    hnf_lt⟩
   · -- the return position, under the head shape at the load
     intro hHT
     have hH0 := hHT j hj p9 h m2 cs15 _ _ _ _ _ _ _ _
@@ -807,15 +814,10 @@ theorem natT_ctor_inputs {T : KKey} {k nP nIdx num_ctors : Nat} {large : Bool}
     ∃ ecbs eus eargs,
       (posOf (if large then k :: List.range k else List.range k) info.2.2.2.1).stripPis
         (nP + info.2.1) = some (ecbs, Expr.mkAppN (.const T eus) eargs) ∧
-      ∀ B, B ≤ nP + 1 + num_ctors + info.2.1 + info.2.2.2.2.length →
-        ∀ i ∈ info.2.2.2.2, i < info.2.1 ∧
-          RawRecSpine T (rcbs.getD (nP + i) default).1 (ecbs.getD (nP + i) default).1 ∧
-          B + (Ix.Kernel.structFieldTeleOf
-            (posOf (if large then k :: List.range k else List.range k) info.2.2.2.1)
-              nP info.2.1 i).length < 4294967296 := by
+      ∀ i ∈ info.2.2.2.2, i < info.2.1 ∧
+        RawRecSpine T (rcbs.getD (nP + i) default).1 (ecbs.getD (nP + i) default).1 := by
   obtain ⟨ecbs₀, eus₀, eargs₀, hsC₀⟩ := hwf.strip_C
   have hlt_all : ∀ i ∈ info.2.2.2.2, i < info.2.1 := hwf.recIdx_lt
-  have htele := hwf.tele_lt
   revert hspine
   generalize (if large then k :: List.range k else List.range k) = rlps
   intro hspine
@@ -827,17 +829,7 @@ theorem natT_ctor_inputs {T : KKey} {k nP nIdx num_ctors : Nat} {large : Bool}
     have hs := ilp_stripPis rlps (posLevels rlps) (nP + info.2.1) hsC₀
     unfold posOf at hs ⊢
     rwa [ilp_mkAppN, Expr.instantiateLevelParams] at hs
-  refine ⟨_, _, _, hsE, fun B hB i hi => ?_⟩
-  have hi_lt := hlt_all i hi
-  have hlenC : ecbs₀.length = nP + info.2.1 := stripPis_length (nP + info.2.1) hsC₀
-  have hltC : nP + i < ecbs₀.length := by omega
-  have hft_len : (Ix.Kernel.structFieldTeleOf (posOf rlps info.2.2.2.1) nP info.2.1 i).length =
-      (Ix.Kernel.structFieldTeleOf info.2.2.2.1 nP info.2.1 i).length := by
-    unfold posOf
-    rw [ilp_structFieldTeleOf rlps (posLevels rlps) info.2.2.2.1 nP info.2.1 i
-      ⟨_, _, hsC₀, hltC⟩, List.length_map]
-  have htl_lt := htele i hi
-  exact ⟨hi_lt, hspine _ _ hsE i hi, by rw [hft_len]; omega⟩
+  exact ⟨_, _, _, hsE, fun i hi => ⟨hlt_all i hi, hspine _ _ hsE i hi⟩⟩
 
 /-! ## `nat_minors`, `nat_rule_rhs`, `nat_check_rules` -/
 
@@ -850,9 +842,10 @@ theorem natT_minors_spec {c : Ctx} {κ : _root_.Address → KKey}
     {ctors_info : List (KKey × Nat × KExpr × KExpr × List Nat)}
     (hT : κ (ixAddr bT) = T)
     (hκ_inj : ∀ a : Bytes.Address, κ (ixAddr a) = T → a = bT)
-    (hidx : idx < 4294967296)
+    (hidx : idx < 72057594037927936)
     (hCres : ∀ i, i < ctors_info.length → κ (cprjAddr (ixAddr b₀) idx i) ≠ unresolvedKey)
-    (hnCtors_lt : ctors_info.length < 4294967296)
+    (hnCtors_lt : ctors_info.length < 72057594037927936)
+    (hnP_lt : nP < 72057594037927936)
     (hwf_all : ∀ info ∈ ctors_info,
       NatCtorInfoWfT T k large nP nIdx ctors_info.length info) :
     ∀ (rem j : Nat) {body : KExpr}
@@ -909,16 +902,14 @@ theorem natT_minors_spec {c : Ctx} {κ : _root_.Address → KKey}
       hwf_all info (List.mem_of_getElem? hinfo_get)
     have hdrop_j : ctors_info.drop j = info :: ctors_info.drop (j + 1) := by
       rw [← List.cons_getElem_drop_succ (h := hj_lt)]
-    have hbase_lt : nP + (j + 1) + info.2.1 + info.2.2.2.2.length < 4294967296 := by
-      have := hwf_j.minor_base_lt
-      omega
+    have hrecLen : info.2.2.2.2.length ≤ info.2.1 := hwf_j.recIdx_length_le
     match Obs.«KernelCheck::nat_minors».obs ev with
     | .n0 (op17 := op17) .. =>
       have hsub := evalBinOp_sub_nat (by omega : j ≤ ctors_info.length) op17
       have hval := congrArg ZMod.val (Value.field.inj hsub.symm)
       have h1 : ZMod.val ((ctors_info.length - j : Nat) : F) = ctors_info.length - j :=
         ZMod.val_natCast_of_lt
-          (Nat.lt_trans (by omega : ctors_info.length - j < 4294967296) (by decide))
+          (by omega : ctors_info.length - j < 18446744069414584321)
       rw [h1, ZMod.val_zero] at hval
       omega
     | .other_n0 (m33 := m33) (cs43 := cs_ctor) (x_cty := x_cty) (x_nf := x_nf)
@@ -943,8 +934,11 @@ theorem natT_minors_spec {c : Ctx} {κ : _root_.Address → KKey}
       have hhead_ctor : NatCtorRetHeadT b₀ idx nP ctors_info x_block cs_ctor :=
         hhead.mono_calls (fun x hx => by simp [hx])
       obtain ⟨x_cty', x_rec_idx', Rc, rcbs, rbody, htup_c, hRaw_c, hsRc, hheadc, hspinec,
-          hrec_c, _⟩ :=
-        natT_ctor_spec hT hκ_inj hj_lt hinfo_get hwf_j hload_ctor hbnd_ctor hb₀ hbT hlps ev_ctor
+          hrec_c, _, hnf_lt⟩ :=
+        natT_ctor_spec hT hκ_inj hnP_lt hj_lt hinfo_get hwf_j hload_ctor hbnd_ctor hb₀ hbT hlps
+          ev_ctor
+      have hbase_lt : nP + (j + 1) + info.2.1 + info.2.2.2.2.length < 2305843009213693952 := by
+        omega
       obtain ⟨rus, rargs, hrbody⟩ := hheadc hhead_ctor
       subst hrbody
       obtain ⟨ecbs, eus, eargs, hsE_pos, hall_inp⟩ := natT_ctor_inputs hwf_j hspinec
@@ -961,8 +955,8 @@ theorem natT_minors_spec {c : Ctx} {κ : _root_.Address → KKey}
       have hb₀_33 := Bytes.repAddressRef_heapMono₂ addrTy ev_ctor.heap_extends hb₀
       have hgood_proj : Good c cs_proj :=
         hgood.sub (fun x hx => by simp [hx])
-      obtain ⟨bC, hbC, hbC_addr⟩ := projection_addr_ctor_spec hidx
-        (by omega : j < 4294967296) hb₀_33 hgood_proj ev_proj
+      obtain ⟨bC, hbC, hbC_addr⟩ := projection_addr_ctor_bounded (by omega) (by omega) hb₀_33
+        hgood_proj ev_proj
       have hres_C : Resolved (κ (ixAddr bC)) := ⟨by rw [hbC_addr]; exact hCres j hj_lt⟩
       rw [evalBinOp_add_one j op220] at ev_mty
       have ext_h_151 := ev_ctor.heap_extends.trans ev_proj.heap_extends
@@ -972,7 +966,7 @@ theorem natT_minors_spec {c : Ctx} {κ : _root_.Address → KKey}
         natI_minor_ty_spec (κ := κ) (Γ₀ := fun _ => default) (bC := bC) (hC_res := hres_C)
           (by rw [hbC_addr, ← hC_key])
           (by omega : 1 ≤ j + 1) hsRc hsE_pos
-          (hall_inp (nP + (j + 1) + info.2.1 + info.2.2.2.2.length) (by omega))
+          hall_inp
           hbase_lt hbnd_mty hbC
           (RepKLevelList.mono hlps ext_h_151)
           (repKLevel_heapMono₂ ext_h_151 hpw)
@@ -989,7 +983,7 @@ theorem natT_minors_spec {c : Ctx} {κ : _root_.Address → KKey}
       have hhead_rec : NatCtorRetHeadT b₀ idx nP ctors_info x_block cs_rec :=
         hhead.mono_calls (fun x hx => by simp [hx])
       obtain ⟨rest_out, hrest_eq, hrest_tm⟩ :=
-        natT_minors_spec hT hκ_inj hidx hCres hnCtors_lt hwf_all rem (j + 1) (by omega)
+        natT_minors_spec hT hκ_inj hidx hCres hnCtors_lt hnP_lt hwf_all rem (j + 1) (by omega)
           hload_rec hhead_rec hgood_rec hbnd_rec
           (Bytes.repAddressRef_heapMono₂ addrTy ext_h_129 hb₀)
           (Bytes.repAddressRef_heapMono₂ addrTy ext_h_129 hbT)
@@ -1038,8 +1032,11 @@ theorem natT_minors_spec {c : Ctx} {κ : _root_.Address → KKey}
       have hhead_ctor : NatCtorRetHeadT b₀ idx nP ctors_info x_block cs_ctor :=
         hhead.mono_calls (fun x hx => by simp [hx])
       obtain ⟨x_cty', x_rec_idx', Rc, rcbs, rbody, htup_c, hRaw_c, hsRc, hheadc, hspinec,
-          hrec_c, _⟩ :=
-        natT_ctor_spec hT hκ_inj hj_lt hinfo_get hwf_j hload_ctor hbnd_ctor hb₀ hbT hlps ev_ctor
+          hrec_c, _, hnf_lt⟩ :=
+        natT_ctor_spec hT hκ_inj hnP_lt hj_lt hinfo_get hwf_j hload_ctor hbnd_ctor hb₀ hbT hlps
+          ev_ctor
+      have hbase_lt : nP + (j + 1) + info.2.1 + info.2.2.2.2.length < 2305843009213693952 := by
+        omega
       obtain ⟨rus, rargs, hrbody⟩ := hheadc hhead_ctor
       subst hrbody
       obtain ⟨ecbs, eus, eargs, hsE_pos, hall_inp⟩ := natT_ctor_inputs hwf_j hspinec
@@ -1056,8 +1053,8 @@ theorem natT_minors_spec {c : Ctx} {κ : _root_.Address → KKey}
       have hb₀_33 := Bytes.repAddressRef_heapMono₂ addrTy ev_ctor.heap_extends hb₀
       have hgood_proj : Good c cs_proj :=
         hgood.sub (fun x hx => by simp [hx])
-      obtain ⟨bC, hbC, hbC_addr⟩ := projection_addr_ctor_spec hidx
-        (by omega : j < 4294967296) hb₀_33 hgood_proj ev_proj
+      obtain ⟨bC, hbC, hbC_addr⟩ := projection_addr_ctor_bounded (by omega) (by omega) hb₀_33
+        hgood_proj ev_proj
       have hres_C : Resolved (κ (ixAddr bC)) := ⟨by rw [hbC_addr]; exact hCres j hj_lt⟩
       rw [evalBinOp_add_one j op220] at ev_mty
       have ext_h_151 := ev_ctor.heap_extends.trans ev_proj.heap_extends
@@ -1067,7 +1064,7 @@ theorem natT_minors_spec {c : Ctx} {κ : _root_.Address → KKey}
         natI_minor_ty_spec (κ := κ) (Γ₀ := fun _ => default) (bC := bC) (hC_res := hres_C)
           (by rw [hbC_addr, ← hC_key])
           (by omega : 1 ≤ j + 1) hsRc hsE_pos
-          (hall_inp (nP + (j + 1) + info.2.1 + info.2.2.2.2.length) (by omega))
+          hall_inp
           hbase_lt hbnd_mty hbC
           (RepKLevelList.mono hlps ext_h_151)
           (repKLevel_heapMono₂ ext_h_151 hpw)
@@ -1084,7 +1081,7 @@ theorem natT_minors_spec {c : Ctx} {κ : _root_.Address → KKey}
       have hhead_rec : NatCtorRetHeadT b₀ idx nP ctors_info x_block cs_rec :=
         hhead.mono_calls (fun x hx => by simp [hx])
       obtain ⟨rest_out, hrest_eq, hrest_tm⟩ :=
-        natT_minors_spec hT hκ_inj hidx hCres hnCtors_lt hwf_all rem (j + 1) (by omega)
+        natT_minors_spec hT hκ_inj hidx hCres hnCtors_lt hnP_lt hwf_all rem (j + 1) (by omega)
           hload_rec hhead_rec hgood_rec hbnd_rec
           (Bytes.repAddressRef_heapMono₂ addrTy ext_h_129 hb₀)
           (Bytes.repAddressRef_heapMono₂ addrTy ext_h_129 hbT)
@@ -1127,10 +1124,10 @@ theorem natT_rule_rhs_spec {c : Ctx} {κ : _root_.Address → KKey}
     (hT : κ (ixAddr bT) = T)
     (hκ_inj : ∀ a : Bytes.Address, κ (ixAddr a) = T → a = bT)
     (hRec : κ (ixAddr bRec) = recC)
-    (hidx : idx < 4294967296)
+    (hidx : idx < 72057594037927936)
     (hCres : ∀ i, i < ctors_info.length → κ (cprjAddr (ixAddr b₀) idx i) ≠ unresolvedKey)
-    (hnCtors_lt : ctors_info.length < 2147483648)
-    (hnP_lt : nP < 2147483648)
+    (hnCtors_lt : ctors_info.length < 72057594037927936)
+    (hnP_lt : nP < 72057594037927936)
     (hj : j < ctors_info.length)
     (hwf_all : ∀ info ∈ ctors_info,
       NatCtorInfoWfT T k large nP nIdx ctors_info.length info)
@@ -1175,10 +1172,6 @@ theorem natT_rule_rhs_spec {c : Ctx} {κ : _root_.Address → KKey}
   let nF := info.2.1
   let C₀ := info.2.2.2.1
   let recIdx := info.2.2.2.2
-  have hnPF_lt : nP + nF < 2147483648 := hwf_j.nf_lt
-  have hbase_lt : nP + 1 + n + nF < 4294967296 := by
-    have := hwf_j.minor_base_lt
-    omega
   rcases Obs.«KernelCheck::nat_rule_rhs».obs ev with
     ⟨m2, cs12, x_cty, x_nf, x_rec_idx, v97, m98, cs108, v112, m114, v126, x133, x141,
       m161, cs169, v172, v173, m175, cs183, m202, cs210, v277, m278, cs288, v293, m311,
@@ -1191,8 +1184,12 @@ theorem natT_rule_rhs_spec {c : Ctx} {κ : _root_.Address → KKey}
     RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
   have hload_ctor : NatCtorLoadT κ b₀ idx k ctors_info x_block cs12 :=
     hload.mono_calls (fun x hx => by simp [hx])
-  obtain ⟨x_cty', x_rec_idx', Rc, rcbs, rbody, htup_c, hRaw_c, hsRc, _, hspinec, hrec_c, _⟩ :=
-    natT_ctor_spec hT hκ_inj hj hinfo_get hwf_j hload_ctor hbnd_ctor hb₀ hbT hlps ev14
+  obtain ⟨x_cty', x_rec_idx', Rc, rcbs, rbody, htup_c, hRaw_c, hsRc, _, hspinec, hrec_c, _,
+      hnf_lt⟩ :=
+    natT_ctor_spec hT hκ_inj hnP_lt hj hinfo_get hwf_j hload_ctor hbnd_ctor hb₀ hbT hlps ev14
+  have hbase_lt : nP + 1 + n + nF < 2305843009213693952 := by
+    dsimp only [n, nF]
+    omega
   obtain ⟨ecbs, eus, eargs, hsE_pos, hall_inp⟩ := natT_ctor_inputs hwf_j hspinec
   injection htup_c with hl_c
   injection hl_c with h1 hl_c; injection hl_c with h2 hl_c; injection hl_c with h3
@@ -1205,21 +1202,21 @@ theorem natT_rule_rhs_spec {c : Ctx} {κ : _root_.Address → KKey}
   have hbvar_min : Tm κ 0 (fun _ => default) m114 (nP + 1 + n + nF)
       (.bvar (nF + n - 1 - j)) (.ptr (.enum kexprEnum) m2.length) := by
     rw [hm122]
-    exact tm_bvarLocal_nat (by simp) (by omega) (by omega)
-  have hps_f := nat_ps_at_spec (κ := κ) (d := 0) (Γ := fun _ => default)
-    nF 0 (nP + 1 + n + nF) (by omega) hbase_lt ev185
+    exact tm_bvarLocal_nat_bounded (by simp) (by omega) (by omega)
+  have hps_f := nat_ps_at_bounded (κ := κ) (d := 0) (Γ := fun _ => default)
+    nF 0 (nP + 1 + n + nF) (by omega) (by omega) ev185
   have hps_f' : RepList kexprListEnum
       (fun h E p => Tm κ 0 (fun _ => default) h (nP + 1 + n + nF) E p)
       m175 ((List.range nF).map fun i => Expr.bvar (nF - 1 - i)) v172 := by
     rw [structPsAt_zero_eq_structTeleVars] at hps_f
     exact hps_f
   let rlps' := if large then k :: List.range k else List.range k
-  have hall_ih := hall_inp (nP + 1 + n + info.2.1) (by omega)
+  have hall_ih := hall_inp
   have ext_2_175 := ext_2_114.trans ev185.heap_extends
   have ext_h_175 := ev14.heap_extends.trans ext_2_175
   have hbnd_ih : IxVM.Consistency.Bounded cs210 :=
     RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
-  have hih_apps := natI_ih_apps_spec hRec hnPF_lt hsRc hsE_pos hall_ih hbase_lt hbnd_ih
+  have hih_apps := natI_ih_apps_spec hRec hsRc hsE_pos hall_ih hbase_lt hbnd_ih
     (Bytes.repAddressRef_heapMono₂ addrTy ext_h_175 hbRec)
     (RepKLevelList.mono hrlvls ext_h_175)
     (repKLevel_heapMono₂ ext_h_175 hpw)
@@ -1235,13 +1232,13 @@ theorem natT_rule_rhs_spec {c : Ctx} {κ : _root_.Address → KKey}
   -- Step 3: `peel_n_foralls`, `expr_lift`, `nat_replace_pis` (fields -> `inner`)
   have ext_2_98 := ext_2_114.trans (ext_114_161.trans ev110.heap_extends)
   obtain ⟨hm326_eq, _, ecbsP, _, ecrest, _, hsCP_pos, hcrest_raw⟩ :=
-    peel_n_foralls_rawTm_spec nP (by omega) (hRaw_c.mono ext_2_98) ev336
+    peel_n_foralls_rawTm_bounded nP (by omega) (hRaw_c.mono ext_2_98) ev336
   rw [hm326_eq, evalBinOp_add_one n op366] at ev321
   have hbnd_lift : IxVM.Consistency.Bounded cs319 :=
     RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
   have hcrest_tm : Tm κ 0 (fun _ => default) m98 nP ecrest v322 := by
     simpa [Nat.zero_add] using hcrest_raw.toTm
-  have hcrest_lift := expr_lift_local_spec (Nat.zero_le nP) (by omega) (by decide)
+  have hcrest_lift := expr_lift_local_bounded (Nat.zero_le nP) (by omega) (by decide)
     hbnd_lift hcrest_tm ev321
   have hcrest_lift' : Tm κ 0 (fun _ => default) m311 (nP + 1 + n)
       (ecrest.liftLooseBVars (n + 1) 0) v293 := by
@@ -1249,7 +1246,7 @@ theorem natT_rule_rhs_spec {c : Ctx} {κ : _root_.Address → KKey}
     exact hcrest_lift
   have ext_h_311 := ev14.heap_extends.trans (ext_2_98.trans ev321.heap_extends)
   obtain ⟨inner, hinner_ite, hinner_tm⟩ :=
-    nat_replace_pis_spec nF (by omega) (repKLevel_heapMono₂ ext_h_311 hpw)
+    nat_replace_pis_bounded nF (by omega) (repKLevel_heapMono₂ ext_h_311 hpw)
       hcrest_lift' (hbody.mono ev321.heap_extends) ev290
   have h1_ne_0 : (.field 1 : SourceValue F) ≠ .field 0 := by
     intro h01; exact absurd (Value.field.inj h01) one_ne_zero
@@ -1270,7 +1267,7 @@ theorem natT_rule_rhs_spec {c : Ctx} {κ : _root_.Address → KKey}
       m278 v387 m388 cs398 := by
     simpa using ev400
   obtain ⟨minors, hmin_eq, hmin_tm⟩ :=
-    natT_minors_spec hT hκ_inj hidx hCres (by omega) hwf_all n 0 (by omega)
+    natT_minors_spec hT hκ_inj hidx hCres (by omega) hnP_lt hwf_all n 0 (by omega)
       hload_min hhead_min hgood_min hbnd_min
       (Bytes.repAddressRef_heapMono₂ addrTy ext_h_278 hb₀)
       (Bytes.repAddressRef_heapMono₂ addrTy ext_h_278 hbT)
@@ -1288,7 +1285,7 @@ theorem natT_rule_rhs_spec {c : Ctx} {κ : _root_.Address → KKey}
       (hmin_tm.mono ext_388_528)
       (repKLevel_heapMono₂ ext_h_528 hpw)
   obtain ⟨rhs_c, hrhs_ite, hrhs_tm⟩ :=
-    nat_replace_pis_spec nP (by omega) (repKLevel_heapMono₂ ext_h_528 hpw)
+    nat_replace_pis_bounded nP (by omega) (repKLevel_heapMono₂ ext_h_528 hpw)
       (htty.mono ext_h_528) hlam_mot ev500
   rw [ite_eq_right h1_ne_0] at hrhs_ite
   refine ⟨rhs_c, ?_, hrhs_tm⟩
@@ -1332,10 +1329,10 @@ theorem natT_check_rules_spec {c : Ctx} {κ : _root_.Address → KKey}
     (hT : κ (ixAddr bT) = T)
     (hκ_inj : ∀ a : Bytes.Address, κ (ixAddr a) = T → a = bT)
     (hRec : κ (ixAddr bRec) = recC)
-    (hidx : idx < 4294967296)
+    (hidx : idx < 72057594037927936)
     (hCres : ∀ i, i < ctors_info.length → κ (cprjAddr (ixAddr b₀) idx i) ≠ unresolvedKey)
-    (hnCtors_lt : ctors_info.length < 2147483648)
-    (hnP_lt : nP < 2147483648)
+    (hnCtors_lt : ctors_info.length < 72057594037927936)
+    (hnP_lt : nP < 72057594037927936)
     (hwf_all : ∀ info ∈ ctors_info,
       NatCtorInfoWfT T k large nP nIdx ctors_info.length info)
     (hsT₀ : tty₀.stripPis (nP + nIdx) = some (tbs₀, tsort₀))
@@ -1430,7 +1427,7 @@ theorem natT_check_rules_spec {c : Ctx} {κ : _root_.Address → KKey}
           hwf_all info (List.mem_of_getElem? hinfo_get)
         have ld_ctor' : loadValue m98 p105 = .ok (.construct kciEnum "Ctor"
             [w141, w142, w143, w144, w145, w146, x_c_nf, w147]) := ld_ctor
-        obtain ⟨_, hcnf_eq, _⟩ :=
+        obtain ⟨_, hcnf_eq, hcnf_lt, _⟩ :=
           hload j hj p105 h m98 cs_cprj w141 w142 w143 w144 w145 w146 x_c_nf w147
             (fun x hx => by simp [hx]) hb₀ ev_cprj ld_ctor' info hinfo_get
         have hnf_val : rl.nfields = info.2.1 := by
@@ -1439,8 +1436,7 @@ theorem natT_check_rules_spec {c : Ctx} {κ : _root_.Address → KKey}
           have h1 : ZMod.val (rl.nfields : F) = rl.nfields :=
             ZMod.val_natCast_of_lt (Nat.lt_trans hrnf_lt (by decide))
           have h2 : ZMod.val (info.2.1 : F) = info.2.1 :=
-            ZMod.val_natCast_of_lt (Nat.lt_trans
-              (Nat.lt_of_le_of_lt (Nat.le_add_left _ _) hwf_j.nf_lt) (by decide))
+            ZMod.val_natCast_of_lt (Nat.lt_trans hcnf_lt (by decide))
           omega
         -- Step 2: `nat_rule_rhs` + `posOf_structRecRhsR` + `wrap_rel`
         have ext_h_98 := ev_cprj.heap_extends

@@ -70,7 +70,7 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     (hind : ms[ip.idx.toNat]? = some (.indc ind))
     {fam : NativeFam .anon} (hm : FamReadAt FormerOpenTraceAt t E env P ip fam)
     (hhead : Decl.CtorRetHeadAt cb ind)
-    (hnoProj : FamCtorNoProj fam) (hbounds : RecArmBounds ip ind fam)
+    (hnoProj : FamCtorNoProj fam)
     (hrscoped : ∀ rules : List (Ix.Kernel.RecRule .anon),
       List.Forall₂ (fun ru rl₀ => (exprReader t (fun x => E₀.blobs.get? x) c
           (Ix.Kernel.Reader.recParam (Ix.Kernel.Reader.recLps
@@ -175,7 +175,6 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     hstep.inv.scopedCoreFacts
   have henv : Ix.Kernel.EnvWF env := hstep.inv.store.store.wf
   have hagree := LoadedReads.blobReadAgreement_of_noCollision (hgood.sub hsLd).1 hhp t
-  obtain ⟨hk31, hnP31, hnI31, hnC31, hnall, hidx32, hc4⟩ := hbounds
   -- the universe offset is the large-eliminator bit, which is `large`
   obtain ⟨large', natHeap, natCalls, eN, evNat, hsNat⟩ := canonical_full_nat_rec_bool evCanon
   have hsum := Decl.evalBinOp_add_nat _ _ (nat_rec_check_levels evNat)
@@ -296,26 +295,16 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
   have hsN : ∀ x ∈ natCalls, x ∈ calls := fun x hx => hsCanon x (hsNat x hx)
   have hload : Decl.NatCtorLoadT (Core.Ctx.stored ⟨E, env, t, lim⟩).κ bP ip.idx.toNat
       ind.lvls.toNat (lateCtorsInfo fam) blkPtrP natCalls :=
-    front_ctor_loads hcS hat.stored hL1 hidx32 (by rw [hlenC]; omega) hnamesB (hgood.sub hsN)
-  have hnf_lt : ∀ (j : Nat) (info : Core.KKey × Nat × Core.KExpr × Core.KExpr × List Nat),
-      (lateCtorsInfo fam)[j]? = some info → info.2.1 < 4294967296 := by
-    intro j info hinfo'
-    obtain ⟨cA, ks, hcA, hks, rfl⟩ := front_lateCtorsInfo_getElem? hinfo'
-    have hmem : (cA.1.name, cA.2, cA.1.type, Ix.Kernel.recIdxOf ks) ∈
-        Ix.Kernel.nativeCtors4 fam.ctorsA fam.p.kinds := by
-      unfold Ix.Kernel.nativeCtors4
-      exact List.mem_of_getElem? (List.getElem?_zipWith_eq_some.mpr ⟨cA, ks, hcA, hks, rfl⟩)
-    have h1 : ind.params.toNat + cA.2 < 2147483648 := (hc4 _ hmem).1
-    show cA.2 < 4294967296
-    omega
+    front_ctor_loads hcS hat.stored hL1 hidx56 (by rw [hlenC]; exact hcP) hnamesB
+      (hgood.sub hsN)
   have hrecB : recordOf (⟨E, env, t, lim⟩ : Core.Ctx).E (Core.ixAddr bP) = some cb := by
     show recordOf E (Core.ixAddr bP) = some cb
     rw [hbP', recordOf_eq_recordAt_of_decoded hst.decoded]
     exact hcb
   have hretHead : Decl.NatCtorRetHeadT bP ip.idx.toNat fam.p.nP (lateCtorsInfo fam) blkPtrP
       natCalls :=
-    Decl.natCtorRetHeadT_of_ixon (c := ⟨E, env, t, lim⟩) hrecB hms hind hhead hnP hidx32
-      (by rw [hlenInfo, hlenC]; omega) hnf_lt hload (hgood.sub hsN)
+    Decl.natCtorRetHeadT_of_ixon (c := ⟨E, env, t, lim⟩) hrecB hms hind hhead hnP (by omega)
+      (by rw [hlenInfo, hlenC]; omega) hload (hgood.sub hsN)
   have hsubL : ∀ x ∈ fam.p.cvT.levelParams, x ∈ List.range ind.lvls.toNat := by
     intro x hx
     rw [hL1] at hx
@@ -343,11 +332,11 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     (rec_ty₀ := tyC) (ctors_info := lateCtorsInfo fam) (rls := rlsC)
     ⟨_, _, hat.stored.former⟩
     (by rw [hbR']; exact hst.runRecord A c hc) hinfo hT hκ₂_inj hRec
-    (by omega) hCres hk31 (by rw [hnP]; exact hnP31) (by rw [hnI]; exact hnI31)
-    (by rw [hlenInfo, hlenC]; exact hnC31) (by rw [hlenInfo, hlenC, hnP, hnI]; exact hnall)
+    hidx56 hCres (by first | (rw [← hlvEq]; exact hlvR) | (have h := hlvEq; omega))
+    (by rw [hnP]; exact hpP)
+    (by rw [hnI]; exact hiP) (by rw [hlenInfo, hlenC]; exact hcP)
     hlpsS
-    (lateCtorsInfo_wf hat henv hL1 hnoProj ⟨hk31, hnP31, hnI31, hnC31, hnall, hidx32, hc4⟩ hnP
-      hlenC (decide (rc.lvls.toNat = ind.lvls.toNat + 1)))
+    (lateCtorsInfo_wf hat henv hL1 hnoProj (decide (rc.lvls.toNat = ind.lvls.toNat + 1)))
     hrls_len hload hretHead (Core.CoreGood.ofRaw (hgood.sub hsN) (fun _ _ => trivial))
     (hrc.mono eLN)
     (Bytes.repAddressRef_heapMono₂ Core.addrTy (eC.trans eN) hbP)

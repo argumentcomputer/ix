@@ -59,13 +59,10 @@ theorem recLateOut_of_walk {calls : List (Call F)} {bAddr : _root_.Address}
     (hlv : LvClauses env)
     {P : _root_.Address} {ip : Ixon.InductiveProj} (hpar : RecParent t E env P ip)
     (htie : RecMajorTie t E₀ A c rc P) {fam : NativeFam .anon}
-    (hm : FamReadAt FormerOpenTraceAt t E env P ip fam)
-    (hbounds : ∀ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (ind : Ixon.Inductive),
-      Ix.Cert.recordAt E ip.block = some cb → cb.info = .muts ms →
-      ms[ip.idx.toNat]? = some (.indc ind) → RecArmBounds ip ind fam) :
+    (hm : FamReadAt FormerOpenTraceAt t E env P ip fam) :
     RecLateOut t E₀ E A env fam :=
   (recLateOutAll_of_arm ht hS hcov hst hc hinfo hlogic (recArmRun_of_walk hW hT hc hinfo) hkey
-    hinert hcover hstep hlv hpar htie hm hbounds).at (hst.held hc) hst.runBlob
+    hinert hcover hstep hlv hpar htie hm).at (hst.held hc) hst.runBlob
 
 /-- **`UnitStep` for a top-walked standalone recursor record, keeping the fold's clause**, at
 the walk's limit. `hres` is the basis exclusion at a fresh record. -/
@@ -80,12 +77,7 @@ theorem unitStep_recLate_walked {calls : List (Call F)} {bAddr : _root_.Address}
     (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     (hkey : Decl.KeyFree (keyOf t A))
-    (hres : RecMajorFreshNotBasis.{u} t envT E₀ E lim A c rc)
-    (hbounds : ∀ env P ip fam, StepAt.{u} t envT E₀ E lim A c env →
-      FamReadAt FormerOpenTraceAt t E env P ip fam →
-      ∀ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (ind : Ixon.Inductive),
-        Ix.Cert.recordAt E ip.block = some cb → cb.info = .muts ms →
-        ms[ip.idx.toNat]? = some (.indc ind) → RecArmBounds ip ind fam) :
+    (hres : RecMajorFreshNotBasis.{u} t envT E₀ E lim A c rc) :
     UnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt t E) t envT E₀ E lim A c :=
   unitStep_recLate_foldExtra linkLaws_formerOpenTrace (RecMajorTie t E₀ A c rc) ht hinfo
     (address_size_of_record hS hc)
@@ -93,6 +85,6 @@ theorem unitStep_recLate_walked {calls : List (Call F)} {bAddr : _root_.Address}
       hinert hcover hres env hstep)
     (fun env P ip fam hstep hlv hpar htie hread =>
       recLateOut_of_walk hW hT hc hlogic hinfo ht hS hcov hst hinert hcover hkey hstep hlv hpar
-        htie hread (hbounds env P ip fam hstep hread))
+        htie hread)
 
 end IxVM.Refinement.Typing

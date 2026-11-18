@@ -77,10 +77,7 @@ theorem recLateOutAll_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {
     (hlv : LvClauses env)
     {P : _root_.Address} {ip : Ixon.InductiveProj} (hpar : RecParent t E env P ip)
     (htie : RecMajorTie t E₀ A c rc P) {fam : NativeFam .anon}
-    (hm : FamReadAt FormerOpenTraceAt t E env P ip fam)
-    (hbounds : ∀ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (ind : Ixon.Inductive),
-      Ix.Cert.recordAt E ip.block = some cb → cb.info = .muts ms →
-      ms[ip.idx.toNat]? = some (.indc ind) → RecArmBounds ip ind fam) :
+    (hm : FamReadAt FormerOpenTraceAt t E env P ip fam) :
     RecLateOutAll t E₀ A c env fam := by
   obtain ⟨-, -, ⟨cm, hcm, hcmi⟩, -⟩ := hpar
   have hm' := hm
@@ -96,7 +93,7 @@ theorem recLateOutAll_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {
   obtain ⟨ty, rules, tyC, rlsC, recTy, hty, hlbb, hdef, hrd, hrr, hcT, hcR, hnatJ, hgen, hwrap,
     hannT, hrs, hlen⟩ :=
     rec_nativeRecJ_of_arm ht hS hcov hst hc hinfo hlogic hnat hkey hinert hcover hstep hlv
-      hcm hcmi htie hcb hms hind hm hhd hnoProj (hbounds cb ms ind hcb hms hind)
+      hcm hcmi htie hcb hms hind hm hhd hnoProj
       (rec_rules_scoped_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie hcb
         hms hind)
   obtain ⟨rules', hrr', -, hmI, hrP, hrlen, hpins⟩ :=

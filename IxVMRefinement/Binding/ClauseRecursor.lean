@@ -127,12 +127,7 @@ theorem overUnitStep_recLate_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleT
     (hkey : Decl.KeyFree (keyOf t A)) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     (hres : RecMajorFreshNotBasis.{u} t envT E₀ Ec lim₀ A c rc)
-    (hparentHeld : ∀ P, RecMajorTie t E₀ A c rc P → (recordOf R P).isSome = true)
-    (hbounds : ∀ env P ip fam, StepAt.{u} t envT E₀ Ec lim₀ A c env →
-      FamReadAt FormerOpenTraceAt t Ec env P ip fam →
-      ∀ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (ind : Ixon.Inductive),
-        Ix.Cert.recordAt Ec ip.block = some cb → cb.info = .muts ms →
-        ms[ip.idx.toNat]? = some (.indc ind) → RecArmBounds ip ind fam) :
+    (hparentHeld : ∀ P, RecMajorTie t E₀ A c rc P → (recordOf R P).isSome = true) :
     OverUnitStep.{u} FormerOpenTraceAt t G R envT E₀ A c := by
   have hc : recordOf E₀ A = some c := recordOf_of_loaded hloaded hR
   exact overUnitStep_recLate_tied linkLaws_formerOpenTrace (RecMajorTie t E₀ A c rc) ht hinfo
@@ -144,7 +139,7 @@ theorem overUnitStep_recLate_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleT
     (fun env P ip fam hstep hlv hpar htie hread =>
       recLateOutOver_of_all
         (recLateOutAll_of_arm ht hS hcov hst hc hinfo hlogic hnat hkey hinert hcover hstep hlv
-          hpar htie hread (hbounds env P ip fam hstep hread))
+          hpar htie hread)
         hR hblobs)
 
 end IxVM.Refinement.Binding

@@ -4,7 +4,7 @@ import Ix.IxVM.Consistency.StatementRel
 
 /-! # The literal return position of a family's constructors, as a fact about its block record
 
-The native recursor comparison (`late_nat_rec_check_specT`) needs `NatCtorRetHeadT`: at every
+The native recursor comparison (`late_nat_rec_check_spec_of_tele`) needs `NatCtorRetHeadT`: at every
 `get_ci_cprj` load of a constructor of the parent's member, the loaded type's first
 `nP + nF` binders are literal `Forall` cells ending in a literal application spine over a literal
 `Const` cell. The recursor's own run does not check this (`nat_ctor` reads only the arguments of
@@ -112,7 +112,7 @@ theorem natRetHeadT_of_ixon {refs recurAddrs : List _root_.Address}
 /-- **`NatCtorRetHeadT` from the block record**: if the constructors of member `idx` of the
 block record at `b₀` return literally (`CtorRetHeadAt`), then at every good `get_ci_cprj` load
 the loaded type has the literal return shape. The field count of the load witness is the
-record's (`hload`, under a bound). -/
+record's (`hload`, with the bound the load keeps). -/
 theorem natCtorRetHeadT_of_ixon {c : Ctx} {b₀ : Bytes.Address} {cb : Ixon.Constant}
     {ms : Array Ixon.MutConst} {ind : Ixon.Inductive} {idx k nP : Nat}
     {ctors_info : List (KKey × Nat × KExpr × KExpr × List Nat)} {x_block : SourceValue F}
@@ -120,9 +120,7 @@ theorem natCtorRetHeadT_of_ixon {c : Ctx} {b₀ : Bytes.Address} {cb : Ixon.Cons
     (hrecB : IxVM.Consistency.recordOf c.E (ixAddr b₀) = some cb)
     (hcb : cb.info = .muts ms) (hms : ms[idx]? = some (.indc ind))
     (hhead : CtorRetHeadAt cb ind) (hnP : nP = ind.params.toNat)
-    (hidx : idx < 4294967296) (hlen : ctors_info.length < 4294967296)
-    (hnf_lt : ∀ (j : Nat) (info : KKey × Nat × KExpr × KExpr × List Nat),
-      ctors_info[j]? = some info → info.2.1 < 4294967296)
+    (hidx : idx < 18446744069414584321) (hlen : ctors_info.length < 18446744069414584321)
     (hload : NatCtorLoadT κ b₀ idx k ctors_info x_block cs)
     (hg : Good c cs) :
     NatCtorRetHeadT b₀ idx nP ctors_info x_block cs := by
@@ -152,9 +150,9 @@ theorem natCtorRetHeadT_of_ixon {c : Ctx} {b₀ : Bytes.Address} {cb : Ixon.Cons
     injection hcb' with hms_eq
     subst hms_eq
     have hidxv : ((idx : Nat) : F).val = idx :=
-      ZMod.val_natCast_of_lt (Nat.lt_trans hidx (by decide))
+      ZMod.val_natCast_of_lt hidx
     have hjv : ((j : Nat) : F).val = j :=
-      ZMod.val_natCast_of_lt (Nat.lt_trans (Nat.lt_trans hj hlen) (by decide))
+      ZMod.val_natCast_of_lt (Nat.lt_trans hj hlen)
     rw [hidxv, Array.getElem?_toList, hms] at hms'
     injection hms' with hind_eq
     injection hind_eq with hind_eq
@@ -174,14 +172,14 @@ theorem natCtorRetHeadT_of_ixon {c : Ctx} {b₀ : Bytes.Address} {cb : Ixon.Cons
     injection hargs with _ hargs
     injection hargs with hnfEq _
     -- the field count of the load witness is the record's
-    obtain ⟨-, hxnf, -⟩ := hload j hj p9 h m2 cs15 w45 x_cty0 w46 w47 w48 w49 x_nf w50 hsub hb ev
+    obtain ⟨-, hxnf, hxlt, -⟩ := hload j hj p9 h m2 cs15 w45 x_cty0 w46 w47 w48 w49 x_nf w50 hsub hb ev
       hld0 info hinfo
     subst htyEq
     have hnf : info.2.1 = ct.fields.toNat := by
       rw [← hnfEq] at hxnf
       have h' := congrArg ZMod.val (Value.field.inj hxnf)
       rwa [ZMod.val_natCast_of_lt (Nat.lt_trans hfl (by decide)),
-        ZMod.val_natCast_of_lt (Nat.lt_trans (hnf_lt j info hinfo) (by decide)), eq_comm] at h'
+        ZMod.val_natCast_of_lt (Nat.lt_trans hxlt (by decide)), eq_comm] at h'
     rw [hnP, hnf]
     exact natRetHeadT_of_ixon (hhead j ct hct) hraw
 

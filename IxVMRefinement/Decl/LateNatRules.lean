@@ -195,7 +195,7 @@ theorem natI_ctor_spec {κ : _root_.Address → KKey}
       m146 v284 h' cs309 := by
     simpa using ev311
   obtain ⟨hrep_idx, hunused_idx⟩ :=
-    nat_rec_idx_spec hT hκ_inj hnPF_lt hsR_pos hsE_pos hnp_dom_f nF 0 (by omega) hbnd_rec
+    nat_rec_idx_spec hT hκ_inj (by omega) hsR_pos hsE_pos hnp_dom_f nF 0 (by omega) hbnd_rec
       (hRaw137.mono ev158.heap_extends) hbT_146 ev311'
   have hrec_eq := hwf.recIdx_eq _ _ hsE_pos
   rw [← hrec_eq] at hrep_idx hunused_idx
@@ -223,9 +223,8 @@ theorem natI_minor_ty_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr
     (hsR : Rcty.stripPis (nP + nF) = some (rcbs, Expr.mkAppN (.const T rus) rargs))
     (hsE : Ecty.stripPis (nP + nF) = some (ecbs, Expr.mkAppN (.const T eus) eargs))
     (hall : ∀ i ∈ recIdx, i < nF ∧
-      RawRecSpine T (rcbs.getD (nP + i) default).1 (ecbs.getD (nP + i) default).1 ∧
-      nP + o + nF + recIdx.length + (Ix.Kernel.structFieldTeleOf Ecty nP nF i).length < 4294967296)
-    (hlt_base : nP + o + nF + recIdx.length < 4294967296)
+      RawRecSpine T (rcbs.getD (nP + i) default).1 (ecbs.getD (nP + i) default).1)
+    (hlt_base : nP + o + nF + recIdx.length < 2305843009213693952)
     (hbnd : IxVM.Consistency.Bounded cs)
     (hcprj : Bytes.RepAddressRef addrTy h bC pcprj)
     (hlps : RepKLevelList h clvls plps)
@@ -248,10 +247,10 @@ theorem natI_minor_ty_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr
   subst hc
   -- Step 1 & 2: peel `nP` then `nF` Pis on `pcty`
   obtain ⟨hm2, rbsP, ebsP, Rq, Eq, hsRP, hsEP, hRq⟩ :=
-    peel_n_foralls_rawTm_spec nP (by omega) hRaw ev14
+    peel_n_foralls_rawTm_bounded nP (by omega) hRaw ev14
   rw [hm2] at ev57
   obtain ⟨hm47, rbsF, ebsF, Rr, Er, hsRF, hsEF, hRr⟩ :=
-    peel_n_foralls_rawTm_spec nF (by omega) hRq ev57
+    peel_n_foralls_rawTm_bounded nF (by omega) hRq ev57
   rw [hm47] at ev44
   obtain ⟨bsP_R, q2_R, bsF_R, hsRP', hsRF', _, _⟩ := stripPis_split nP nF hsR
   rw [hsRP] at hsRP'; injection hsRP' with hp; injection hp with _ hRq_eq; subst hRq_eq
@@ -289,8 +288,8 @@ theorem natI_minor_ty_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr
       (Bytes.repAddressRef_heapMono₂ addrTy (ev44.heap_extends.trans (Heap.Extends.snoc _ _)) hcprj)
       (hlps.mono (ev44.heap_extends.trans (Heap.Extends.snoc _ _))) (LvEqList.refl clvls)
   rw [evalBinOp_add_nat o nF op174] at ev158
-  have hps1 := nat_ps_at_spec (κ := κ) (d := 0) (Γ := Γ₀) nP (o + nF) (nP + o + nF) (by omega) (by omega) ev158
-  have hps2 := nat_ps_at_spec (κ := κ) (d := 0) (Γ := Γ₀) nF 0 (nP + o + nF) (by omega) (by omega) ev195
+  have hps1 := nat_ps_at_bounded (κ := κ) (d := 0) (Γ := Γ₀) nP (o + nF) (nP + o + nF) (by omega) (by omega) ev158
+  have hps2 := nat_ps_at_bounded (κ := κ) (d := 0) (Γ := Γ₀) nF 0 (nP + o + nF) (by omega) (by omega) ev195
   have hps12 := kexpr_list_concat_spec' ev144 (tmRepList_mono ev195.heap_extends hps1) hps2
   have hv88 := nat_app_n_spec
     ((hC_const.mono (ev158.heap_extends.trans (ev195.heap_extends.trans ev144.heap_extends))))
@@ -301,7 +300,7 @@ theorem natI_minor_ty_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr
   have ext_m243 : Heap.Extends m89 m243 := by rw [hm243]; exact Heap.Extends.snoc _ _
   have hbvar_mot : Tm κ 0 Γ₀ m243 (nP + o + nF) (.bvar (nF + o - 1))
       (.ptr (.enum kexprEnum) m89.length) := by
-    rw [hm243]; exact tm_bvarLocal_nat (by simp) (by omega) (by omega)
+    rw [hm243]; exact tm_bvarLocal_nat_bounded (by simp) (by omega) (by omega)
   have ext_32_243 := ext_m105.trans (ev158.heap_extends.trans (ev195.heap_extends.trans
     (ev144.heap_extends.trans (ev101.heap_extends.trans ext_m243))))
   obtain ⟨_, hdrop_rargs, hm310⟩ :=
@@ -326,7 +325,7 @@ theorem natI_minor_ty_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr
   rw [hv226, hm359] at ev224
   have hbnd_l1 : IxVM.Consistency.Bounded cs222 :=
     RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
-  have hv211 := expr_lift_local_spec (k := nP + o + nF) (shift := recIdx.length) (cut := 0)
+  have hv211 := expr_lift_local_bounded (k := nP + o + nF) (shift := recIdx.length) (cut := 0)
     (by omega) (by omega) (by omega) hbnd_l1 hv225 (by simpa using ev224)
   -- Step 11: lift `v1` (`Eq`) by `o` at `0`
   have ext_h_212 := ext_h_229.trans ev224.heap_extends
@@ -334,7 +333,7 @@ theorem natI_minor_ty_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr
     RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
   have hv1_tm : Tm κ 0 Γ₀ m212 nP Eq v1 := by
     simpa [Nat.zero_add] using hRq.toTm.mono ext_h_212
-  have hv392 := expr_lift_local_spec (k := nP) (shift := o) (cut := 0)
+  have hv392 := expr_lift_local_bounded (k := nP) (shift := o) (cut := 0)
     (by omega) (by omega) (by omega) hbnd_l2 hv1_tm (by simpa using ev420)
   -- Step 12: `nat_ih_pis`
   have ext_h_410 := ext_h_212.trans ev420.heap_extends
@@ -343,7 +342,7 @@ theorem natI_minor_ty_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr
   have hv211' := hv211.mono ev420.heap_extends
   rw [show (nP + o + nF) + recIdx.length = nP + o + nF + 0 + recIdx.length by omega] at hv211'
   have hv393 := nat_ih_pis_spec ho hsR hsE 0
-    (fun i hi => by obtain ⟨h1, h2, h3⟩ := hall i hi; exact ⟨h1, h2, by omega⟩)
+    hall
     (by omega) hbnd_ih
     (repKLevel_heapMono₂ ext_h_410 hpw)
     (hRaw.mono ext_h_410) (fieldRepList_mono ext_h_410 hrec) hv211' ev455
@@ -351,7 +350,7 @@ theorem natI_minor_ty_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr
   have ext_h_445 := ext_h_410.trans ev455.heap_extends
   have hv393' := hv393
   rw [show nP + o + nF + 0 = (nP + o) + nF by omega] at hv393'
-  obtain ⟨mty, hmty, hmty_tm⟩ := nat_replace_pis_spec nF (by omega)
+  obtain ⟨mty, hmty, hmty_tm⟩ := nat_replace_pis_bounded nF (by omega)
     (repKLevel_heapMono₂ ext_h_445 hpw)
     (hv392.mono ev455.heap_extends) hv393' ev389
   simp only [↓reduceIte] at hmty
@@ -544,7 +543,8 @@ theorem natI_minors_spec {c : Ctx} {κ : _root_.Address → KKey}
       obtain ⟨mty, hmty_eq, hmty_tm⟩ :=
         natI_minor_ty_spec (κ := κ) (Γ₀ := fun _ => default) (bC := bC) (hC_res := hres_C)
           (by rw [hbC_addr, ← hC_key])
-          (by omega : 1 ≤ j + 1) hsR_pos hsE_pos hall_minor hbase_lt hbnd_mty hbC
+          (by omega : 1 ≤ j + 1) hsR_pos hsE_pos
+          (fun i hi => ⟨(hall_minor i hi).1, (hall_minor i hi).2.1⟩) (by omega) hbnd_mty hbC
           (RepKLevelList.mono hlps ext_h_151)
           (repKLevel_heapMono₂ ext_h_151 hpw)
           (hRaw_c.mono ev_proj.heap_extends)
@@ -629,7 +629,8 @@ theorem natI_minors_spec {c : Ctx} {κ : _root_.Address → KKey}
       obtain ⟨mty, hmty_eq, hmty_tm⟩ :=
         natI_minor_ty_spec (κ := κ) (Γ₀ := fun _ => default) (bC := bC) (hC_res := hres_C)
           (by rw [hbC_addr, ← hC_key])
-          (by omega : 1 ≤ j + 1) hsR_pos hsE_pos hall_minor hbase_lt hbnd_mty hbC
+          (by omega : 1 ≤ j + 1) hsR_pos hsE_pos
+          (fun i hi => ⟨(hall_minor i hi).1, (hall_minor i hi).2.1⟩) (by omega) hbnd_mty hbC
           (RepKLevelList.mono hlps ext_h_151)
           (repKLevel_heapMono₂ ext_h_151 hpw)
           (hRaw_c.mono ev_proj.heap_extends)
@@ -679,15 +680,13 @@ theorem natI_ih_apps_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     {nP n nF : Nat} {ℓ : KLevel} {Rcty Ecty rbody ebody : KExpr}
     {rcbs ecbs : List (KExpr × Ix.Kernel.BinderMeta)}
     (hRec : κ (ixAddr bRec) = recC)
-    (hnPF_lt : nP + nF < 2147483648)
     (hsR : Rcty.stripPis (nP + nF) = some (rcbs, rbody))
     (hsE : Ecty.stripPis (nP + nF) = some (ecbs, ebody)) :
     ∀ {is : List Nat}
       {x_rec x_rlvls x_pw x_rec_idx x_cty r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       (∀ i ∈ is, i < nF ∧
-        RawRecSpine T (rcbs.getD (nP + i) default).1 (ecbs.getD (nP + i) default).1 ∧
-        nP + 1 + n + nF + (Ix.Kernel.structFieldTeleOf Ecty nP nF i).length < 4294967296) →
-      nP + 1 + n + nF < 4294967296 →
+        RawRecSpine T (rcbs.getD (nP + i) default).1 (ecbs.getD (nP + i) default).1) →
+      nP + 1 + n + nF < 2305843009213693952 →
       IxVM.Consistency.Bounded cs →
       Bytes.RepAddressRef addrTy h bRec x_rec →
       RepKLevelList h rlvls_c x_rlvls →
@@ -740,15 +739,18 @@ theorem natI_ih_apps_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
       subst hc hr hm_end
       obtain ⟨i', rest', heq, hi_eq, hrest_rep⟩ := RepList.cons_of_load his ld
       injection heq with h1 h2; subst h1 h2; subst hi_eq
-      obtain ⟨hi_lt, hspine_i, hlt_m⟩ := hall i List.mem_cons_self
+      obtain ⟨hi_lt, hspine_i⟩ := hall i List.mem_cons_self
       let tele_i := Ix.Kernel.structFieldTeleOf Ecty nP nF i
       let idx_i := Ix.Kernel.structFieldIdxOf Ecty nP nF i
       let m := tele_i.length
-      have hlt_m' : nP + 1 + n + nF + m < 4294967296 := hlt_m
       obtain ⟨ptele, pidx, htup_ft, htele_m47, hidx_m47⟩ :=
         nat_field_tele_spec hi_lt (by omega) hRaw hsR hsE hspine_i ev_ft
       injection htup_ft with hl_ft; injection hl_ft with h1 hl_ft; injection hl_ft with h2
       subst h1 h2
+      -- the telescope is a list the run passes to `Lists::length`: fewer than `2^39` binders
+      have hm_lt : m < 549755813888 :=
+        teleRep_length_lt_of_call hbnd ev_len (by simp) htele_m47
+      have hlt_m' : nP + 1 + n + nF + m < 4611686018427387904 := by omega
       obtain ⟨hv97, hm98⟩ := tele_length_spec ev_len htele_m47
       rw [hm98] at ev_psP
       have hv97' : v97 = .field (m : F) := hv97
@@ -757,19 +759,19 @@ theorem natI_ih_apps_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
       rw [evalBinOp_add_nat m nF op192] at op184
       rw [evalBinOp_add_nat (m + nF) n op184] at op176
       rw [evalBinOp_add_one (m + nF + n) op176] at ev_psP
-      have hpsP := nat_ps_at_spec (κ := κ) (d := 0) (Γ := Γ₀)
-        nP (m + nF + n + 1) (nP + 1 + n + nF + m) (by omega) hlt_m' ev_psP
+      have hpsP := nat_ps_at_bounded (κ := κ) (d := 0) (Γ := Γ₀)
+        nP (m + nF + n + 1) (nP + 1 + n + nF + m) (by omega) (by omega) ev_psP
       rw [evalBinOp_add_nat m nF op238] at op230
       rw [evalBinOp_add_nat (m + nF) n op230] at hm204
       have ext_m204 : Heap.Extends m150 m204 := by rw [hm204]; exact Heap.Extends.snoc _ _
       have hbvar_mot : Tm κ 0 Γ₀ m204 (nP + 1 + n + nF + m)
           (.bvar (m + nF + n)) (.ptr (.enum kexprEnum) m150.length) := by
-        rw [hm204]; exact tm_bvarLocal_nat (by simp) (by omega) (by omega)
+        rw [hm204]; exact tm_bvarLocal_nat_bounded (by simp) (by omega) (by omega)
       have hsnoc1 := SubstAux.ksnoc (R := fun h E p => Tm κ 0 Γ₀ h (nP + 1 + n + nF + m) E p)
         (fun _ _ _ _ ext r => Tm.mono ext r) ev_snoc1 (tmRepList_mono ext_m204 hpsP) hbvar_mot
       rw [evalBinOp_add_nat m nF op269] at ev_psN
-      have hpsN := nat_ps_at_spec (κ := κ) (d := 0) (Γ := Γ₀)
-        n (m + nF) (nP + 1 + n + nF + m) (by omega) hlt_m' ev_psN
+      have hpsN := nat_ps_at_bounded (κ := κ) (d := 0) (Γ := Γ₀)
+        n (m + nF) (nP + 1 + n + nF + m) (by omega) (by omega) ev_psN
       have hpref := kexpr_list_concat_spec' ev_cat1
         (tmRepList_mono ev_psN.heap_extends hsnoc1) hpsN
       have hpref_eq :
@@ -785,9 +787,9 @@ theorem natI_ih_apps_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
       have ext_m296 : Heap.Extends m120 m296 := by rw [hm296]; exact Heap.Extends.snoc _ _
       have hbvar_fi : Tm κ 0 Γ₀ m296 (nP + 1 + n + nF + m)
           (.bvar (nF - 1 - i + m)) (.ptr (.enum kexprEnum) m120.length) := by
-        rw [hm296]; exact tm_bvarLocal_nat (by simp) (by omega) (by omega)
-      have hpsM := nat_ps_at_spec (κ := κ) (d := 0) (Γ := Γ₀)
-        m 0 (nP + 1 + n + nF + m) (by omega) hlt_m' ev_psM
+        rw [hm296]; exact tm_bvarLocal_nat_bounded (by simp) (by omega) (by omega)
+      have hpsM := nat_ps_at_bounded (κ := κ) (d := 0) (Γ := Γ₀)
+        m 0 (nP + 1 + n + nF + m) (by omega) (by omega) ev_psM
       rw [structPsAt_zero_eq_structTeleVars] at hpsM
       have hfi_app := nat_app_n_spec (hbvar_fi.mono ev_psM.heap_extends) hpsM ev_app_fi
       -- `idx_i.map (structIdxAt nF (n + 1) i 0 m)` and full spine
@@ -822,7 +824,7 @@ theorem natI_ih_apps_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
         RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
       have htele_370 := htele_m47.mono ext_47_370
       rw [Nat.zero_add] at htele_370
-      have hta := nat_tele_at_spec (k_base := nP) (o := n + 1) (l := 0)
+      have hta := nat_tele_at_bounded (k_base := nP) (o := n + 1) (l := 0)
         (by omega : i ≤ nF) (by omega) hbnd_ta
         (repKLevel_heapMono₂ ext_h_370 hpw) htele_370 ev_ta
       have hta' : TeleRep κ 0 Γ₀ m498 (nP + 1 + n + nF)
@@ -861,8 +863,7 @@ theorem natI_ih_apps_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
       have hbnd_rec : IxVM.Consistency.Bounded cs_rec :=
         RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
       have hall_rest : ∀ k ∈ rest, k < nF ∧
-          RawRecSpine T (rcbs.getD (nP + k) default).1 (ecbs.getD (nP + k) default).1 ∧
-          nP + 1 + n + nF + (Ix.Kernel.structFieldTeleOf Ecty nP nF k).length < 4294967296 :=
+          RawRecSpine T (rcbs.getD (nP + k) default).1 (ecbs.getD (nP + k) default).1 :=
         fun k hk => hall k (List.mem_cons_of_mem _ hk)
       have hrest_ih := ih hall_rest hlt_base hbnd_rec
         (Bytes.repAddressRef_heapMono₂ addrTy ext_h_481 hbR)
@@ -882,7 +883,7 @@ theorem natI_forallDomHeadLvls_minors
     {κ : _root_.Address → KKey} {T : KKey} {bT : Bytes.Address} {idx nP nIdx m : Nat}
     {large : Bool} {ctors_info : List (KKey × Nat × KExpr × KExpr × List Nat)}
     {ls : List KLevel}
-    (hnCtors_lt : ctors_info.length < 2147483648) :
+    (hnCtors_lt : ctors_info.length < 18446744069414584321) :
     ∀ (rem j : Nat) {x_block x_t x_lps x_pw x_body r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
       j + rem = ctors_info.length →
@@ -916,7 +917,7 @@ theorem natI_forallDomHeadLvls_minors
       have hsub := evalBinOp_sub_nat (by omega : j ≤ ctors_info.length) op17
       have hval := congrArg ZMod.val (Value.field.inj hsub.symm)
       have h1 : ZMod.val ((ctors_info.length - j : Nat) : F) = ctors_info.length - j :=
-        ZMod.val_natCast_of_lt (Nat.lt_trans (by omega : ctors_info.length - j < 4294967296) (by decide))
+        ZMod.val_natCast_of_lt (by omega : ctors_info.length - j < 18446744069414584321)
       rw [h1, ZMod.val_zero] at hval
       omega
     | .other_other (hne408 := hne_lam) .. =>
@@ -1094,7 +1095,8 @@ theorem natI_rule_rhs_spec {c : Ctx} {κ : _root_.Address → KKey}
   have ext_h_175 := ev14.heap_extends.trans ext_2_175
   have hbnd_ih : IxVM.Consistency.Bounded cs210 :=
     RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
-  have hih_apps := natI_ih_apps_spec hRec hnPF_lt hsR_pos hsE_pos hall_ih hbase_lt hbnd_ih
+  have hih_apps := natI_ih_apps_spec hRec hsR_pos hsE_pos
+    (fun i hi => ⟨(hall_ih i hi).1, (hall_ih i hi).2.1⟩) (by omega) hbnd_ih
     (Bytes.repAddressRef_heapMono₂ addrTy ext_h_175 hbRec)
     (RepKLevelList.mono hrlvls ext_h_175)
     (repKLevel_heapMono₂ ext_h_175 hpw)

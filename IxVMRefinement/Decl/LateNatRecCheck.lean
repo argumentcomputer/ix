@@ -17,7 +17,7 @@ is a syntactic telescope. Here it is restated
 * for a standalone recursor record (its block field is its own address, so the peer search answers
   the recursor itself: `find_peer_standalone_spec`);
 * for a parent type read only through `Tm` (it may hold a `let`; the former telescope then takes a
-  weak head normal form: `scoped_nat_former_tele_spec`);
+  weak head normal form: `scoped_nat_former_tele_bounded`);
 * with two keyings. The type part (former telescope, motive, minors, generated type and its
   `wrap_rel`) runs under a scoped context `c` whose calls are all allowed: its terms mention only
   stored constants. The rule part (`nat_check_rules`) mentions the recursor constant itself, which
@@ -425,7 +425,7 @@ theorem late_nat_rec_check_spec {c : ScopedCtx} (hc : ScopedCoreFacts c)
     exact typesRep_alloc_nil c.κ (fun _ => default) m382
   have ext_h_439 : Heap.Extends h m439 := ext_h_308.trans (ext_308_382.trans ext_382_439)
   have hgood_ft : CoreGood c cs401 := hgood.sub (fun x hx => by simp [hx])
-  obtain ⟨_, htty_390⟩ := scoped_nat_former_tele_spec hc (nP + nIdx) (by omega) hs_isSome
+  obtain ⟨_, htty_390⟩ := scoped_nat_former_tele_bounded hc (nP + nIdx) (by omega) hs_isSome
     (hrc.mono ext_h_439) htypes (ghostScoped_zero _) hgood_ft (htm_381.mono ext_382_439) ev403
   obtain ⟨hm452_eq, tbsP, itele_pos, hsT_pos, _, hitele0⟩ :=
     peel_n_foralls_tm_spec nP (by omega) htty_390 ev464
@@ -600,7 +600,7 @@ theorem late_nat_rec_check_spec {c : ScopedCtx} (hc : ScopedCoreFacts c)
       hmaj_tm' ev1057'
   have hmin_head :=
     natI_forallDomHeadLvls_minors (κ := c.κ) (idx := idx) (nIdx := nIdx) (large := large)
-      hnCtors_lt n 0 (by omega) hmaj_head' (by simpa using ev1057)
+      (by omega) n 0 (by omega) hmaj_head' (by simpa using ev1057)
   simp only [Bool.false_eq_true, ↓reduceIte, List.drop_zero, Nat.add_zero] at hmin_eq hmin_tm hmin_head
   have ext_1045_1193 : Heap.Extends m1045 m1193 := by rw [hm1201]; exact Heap.Extends.snoc _ _
   have ext_605_1193 := ev749.heap_extends.trans (ev794.heap_extends.trans

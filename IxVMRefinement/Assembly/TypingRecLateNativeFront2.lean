@@ -176,7 +176,7 @@ headed by the constant `κ a_d` at `ls_d`. -/
 theorem front_rec_to_parent_addr_head_lvls {κ : _root_.Address → KKey}
     {np nm nmi ni : Nat} {E : KExpr} {x_ty r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
-    (hsum_lt : np + nm + nmi + ni < 4294967296)
+    (hsum_lt : np + nm + nmi + ni < 18446744069414584321)
     (hT : TmExact κ 0 (fun _ => default) h 0 E x_ty)
     (ev : ObsFn W "KernelCheck::rec_to_parent_addr"
       [x_ty, .field (np : F), .field (nm : F), .field (nmi : F), .field (ni : F)]
@@ -199,7 +199,7 @@ theorem front_rec_to_parent_addr_head_lvls {κ : _root_.Address → KKey}
     simp only [evalBinOp, Except.ok.injEq, Nat.cast_add] at op16 ⊢; exact op16.symm
   rw [hv1] at ev50
   have hval : ZMod.val (((np + nm + nmi + ni : Nat) : F)) = np + nm + nmi + ni :=
-    ZMod.val_natCast_of_lt (Nat.lt_trans hsum_lt (by decide))
+    ZMod.val_natCast_of_lt hsum_lt
   obtain ⟨rfl, bs₀, B_peel, hstrip₀, hB_peel, hwrap_peel⟩ :=
     front_peel_n_foralls_exact (np + nm + nmi + ni) hval hT ev50
   cases hB_peel with
@@ -244,7 +244,7 @@ comparison's level clause on the same pointer, the domain of binder `np + 1 + nm
 declared type is headed by a constant at the family's level parameters `List.range k`. -/
 theorem front_maj {κ : _root_.Address → KKey} {k : Nat} {large : Bool} {np nmi ni : Nat}
     {tyC : KExpr} {x_ty r : SourceValue F} {h h' h₂ : Heap F} {cs : List (Call F)}
-    (hsum : np + 1 + nmi + ni < 4294967296)
+    (hsum : np + 1 + nmi + ni < 18446744069414584321)
     (hT : TmExact κ 0 (fun _ => default) h 0
       (posOf (if large then k :: List.range k else List.range k) tyC) x_ty)
     (ev : ObsFn W "KernelCheck::rec_to_parent_addr"
@@ -766,15 +766,17 @@ theorem front_parent_former {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
 
 /-- **The constructor loads of the member, as the comparison reads them**: every scoped
 `get_ci_cprj` load of constructor `j` of member `idx` of the block at `bP`, within calls good
-for the step's store, answers the stored constructor `j` of the family: its key, its field count,
-and its stored type at positions. -/
+for the step's store, answers the stored constructor `j` of the family: its key, its field count
+with the bound the load contract keeps (`Core.CIRep.ctor_fields`), and its stored type at
+positions. The member index and the constructor count are asked at what the parent's load
+gives. -/
 theorem front_ctor_loads {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
     {env : Ix.Kernel.Env .anon} {lim : Option Nat}
     (hcS : Core.ScopedCoreFacts (Core.Ctx.stored ⟨E, env, t, lim⟩))
     {fam : NativeFam .anon} (hfam : NativeFamStored env fam) {k : Nat}
     (hk : fam.p.cvT.levelParams = List.range k)
-    {bP : Bytes.Address} {idx : Nat} (hidx : idx < 4294967296)
-    (hlen : fam.ctorsA.length < 4294967296)
+    {bP : Bytes.Address} {idx : Nat} (hidx : idx < 72057594037927936)
+    (hlen : fam.ctorsA.length < 72057594037927936)
     (hnames : ∀ (j : Nat) (cA : ConstantVal .anon × Nat), fam.ctorsA[j]? = some cA →
       cA.1.name = keyOf t (Core.cprjAddr (Core.ixAddr bP) idx j))
     {x_block : SourceValue F} {cs : List (Call F)}
@@ -806,11 +808,11 @@ theorem front_ctor_loads {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
   rw [hld] at hv
   injection hv with hv
   rw [← hv] at hrep
-  obtain ⟨cv', nP', nF', hci, hvr, -, hnf', -, -⟩ := Core.CIRep.ctor_fields hrep
+  obtain ⟨cv', nP', nF', hci, hvr, -, hnf', hcounts, -⟩ := Core.CIRep.ctor_fields hrep
   obtain ⟨rfl, rfl, rfl⟩ := Ix.Kernel.ConstantInfo.ctorInfo.inj hci
   obtain ⟨-, -, -, htmC⟩ := hvr
   rw [hlpsC, hk] at htmC
-  refine ⟨?_, hnf', htmC 0 (fun _ => default)⟩
+  refine ⟨?_, hnf', hcounts.2, htmC 0 (fun _ => default)⟩
   show cA.1.name = (Core.Ctx.stored ⟨E, env, t, lim⟩).κ
     (Core.cprjAddr (Core.ixAddr bP) idx j)
   rw [hκ, hnames j cA hcA, LoadedReads.keyOf_eq]

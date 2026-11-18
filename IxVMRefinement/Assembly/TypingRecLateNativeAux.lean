@@ -12,8 +12,6 @@ asks, of each entry, the well-formedness facts `Decl.NatCtorInfoWfT`. This modul
 * `FamCtorNoProj`: no constructor type of the family projects out of the family, a fact of the
   registry entry (the constructor stage of the native block's step) that the store does not
   carry;
-* `RecArmBounds`: the count bounds the comparison's specifications are stated under, on the
-  record's and the registry entry's data;
 * `lateCtorsInfo` and its facts: the entries are the family's `nativeCtors4`, and each entry
   meets `NatCtorInfoWfT` at the family; the former's and the constructors' stored types are
   `GenScoped` at the environment.
@@ -39,30 +37,6 @@ the registry entry carries it, and the recursor's run does not check it. -/
 def FamCtorNoProj (fam : NativeFam .anon) : Prop :=
   ∀ (j : Nat) (cA : ConstantVal .anon × Nat), fam.ctorsA[j]? = some cA →
     Decl.noProjAt fam.p.cvT.name cA.1.type = true
-
-/-- **The count bounds of the comparison's specifications**, on the record's and the registry
-entry's data: the member's level count (`hk_lt`), parameter count (`hnP_lt`), index count
-(`hnIdx_lt`), constructor count (`hnCtors_lt`), the recursor's binder count (`hnall_lt`), the
-member index (`hidx`), and per constructor of the family (`nativeCtors4`): its parameter and
-field count (`NatCtorInfoWfT.nf_lt`), its minor premise's binder count
-(`NatCtorInfoWfT.minor_base_lt`) and, per recursive field, the induction hypothesis's binder
-count (`NatCtorInfoWfT.tele_lt`). These are bounds the specifications of the circuit's
-generators are stated under; the circuit checks none of them, and a bounded run gives counts
-below `2^39` only. -/
-def RecArmBounds (ip : Ixon.InductiveProj) (ind : Ixon.Inductive) (fam : NativeFam .anon) :
-    Prop :=
-  ind.lvls.toNat < 2147483648 ∧
-  ind.params.toNat < 2147483648 ∧
-  ind.indices.toNat < 2147483648 ∧
-  ind.ctors.size < 2147483648 ∧
-  ind.params.toNat + 1 + ind.ctors.size + ind.indices.toNat + 1 < 4294967296 ∧
-  ip.idx.toNat < 4294967296 ∧
-  ∀ c4 ∈ Ix.Kernel.nativeCtors4 fam.ctorsA fam.p.kinds,
-    ind.params.toNat + c4.2.1 < 2147483648 ∧
-    ind.params.toNat + 1 + ind.ctors.size + c4.2.1 + c4.2.2.2.length < 4294967296 ∧
-    ∀ i ∈ c4.2.2.2,
-      ind.params.toNat + 1 + ind.ctors.size + c4.2.1 + c4.2.2.2.length +
-        (Ix.Kernel.structFieldTeleOf c4.2.2.1 ind.params.toNat c4.2.1 i).length < 4294967296
 
 /-- **The comparison's constructor entries at a family**: per stored constructor, its key, its
 field count, its stored type (twice: the raw slot is not read by the stored-type
@@ -247,16 +221,15 @@ private theorem lateAux_kinds_at {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
   · exact List.any_eq_true.mpr ⟨k, hk, by simp [he]⟩
   · exact List.any_eq_true.mpr ⟨k, hk, by simp [he]⟩
 
-/-- **Every entry is well formed at the family** (`Decl.NatCtorInfoWfT`): the counts from the
-bounds, the stored type's level parameters from the environment's well-formedness, its freedom
-from projections of the family from `FamCtorNoProj`, its return position from the store, and
-the recursive field indices from the kinds. -/
+/-- **Every entry is well formed at the family** (`Decl.NatCtorInfoWfT`): the stored type's
+level parameters from the environment's well-formedness, its freedom from projections of the
+family from `FamCtorNoProj`, its return position from the store, and the recursive field
+indices from the kinds. No count bound is among the facts: the comparison reads each
+constructor's field count with its load. -/
 theorem lateCtorsInfo_wf {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
     {fam : NativeFam .anon} {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hat : FamRead L t E env fam) (henv : Ix.Kernel.EnvWF env) {k : Nat}
-    (hk : fam.p.cvT.levelParams = List.range k) (hnoProj : FamCtorNoProj fam)
-    {ip : Ixon.InductiveProj} {ind : Ixon.Inductive} (hb : RecArmBounds ip ind fam)
-    (hnP : fam.p.nP = ind.params.toNat) (hn : fam.ctorsA.length = ind.ctors.size) (large : Bool) :
+    (hk : fam.p.cvT.levelParams = List.range k) (hnoProj : FamCtorNoProj fam) (large : Bool) :
     ∀ info ∈ lateCtorsInfo fam,
       Decl.NatCtorInfoWfT fam.p.cvT.name k large fam.p.nP fam.p.nIdx (lateCtorsInfo fam).length
         info := by
@@ -270,23 +243,6 @@ theorem lateCtorsInfo_wf {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env : Ix.Kern
   subst hinfo_eq
   obtain ⟨hfind, hlpsC, cbs, es, hsC, hes⟩ := hat.stored.ctor j cA hcA
   obtain ⟨hrck, hok⟩ := lateAux_kinds_at hat hcA hks
-  have hlen : (lateCtorsInfo fam).length = ind.ctors.size := by
-    rw [lateCtorsInfo_length hat.stored, hn]
-  -- the bounds at the constructor
-  have hc4 : (cA.1.name, cA.2, cA.1.type, Ix.Kernel.recIdxOf ks) ∈
-      Ix.Kernel.nativeCtors4 fam.ctorsA fam.p.kinds := by
-    unfold Ix.Kernel.nativeCtors4
-    exact List.mem_of_getElem? (List.getElem?_zipWith_eq_some.mpr ⟨cA, ks, hcA, hks, rfl⟩)
-  obtain ⟨_, _, _, _, _, _, hcb⟩ := hb
-  obtain ⟨hnf, hmb, htele⟩ := hcb _ hc4
-  have hnf' : ind.params.toNat + cA.2 < 2147483648 := hnf
-  have hmb' : ind.params.toNat + 1 + ind.ctors.size + cA.2 + (Ix.Kernel.recIdxOf ks).length <
-      4294967296 := hmb
-  have htele' : ∀ i ∈ Ix.Kernel.recIdxOf ks,
-      ind.params.toNat + 1 + ind.ctors.size + cA.2 + (Ix.Kernel.recIdxOf ks).length +
-        (Ix.Kernel.structFieldTeleOf cA.1.type ind.params.toNat cA.2 i).length < 4294967296 :=
-    htele
-  rw [← hnP] at htele'
   -- the stored type's level parameters
   have hwfC := henv _ (Ix.Kernel.Semantics.Env.find?_mem hfind)
   have hlpC0 : cA.1.type.allLevelParamsDefined cA.1.levelParams = true := hwfC.2.1
@@ -294,18 +250,10 @@ theorem lateCtorsInfo_wf {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env : Ix.Kern
     rw [hlpsC, hk] at hlpC0
     exact hlpC0
   exact
-    { nf_lt := show fam.p.nP + cA.2 < 2147483648 by omega
-      lps_C := hlpC
+    { lps_C := hlpC
       noProj_C := hnoProj j cA hcA
       strip_C := ⟨cbs, _, _, hsC⟩
-      recIdx_eq := fun ecbs ebody hsE => Decl.recIdxOf_eq_recIdxFrom hrck hok hsC hsE
-      minor_base_lt := show fam.p.nP + 1 + (lateCtorsInfo fam).length + cA.2 +
-          (Ix.Kernel.recIdxOf ks).length < 4294967296 by omega
-      tele_lt := fun i hi => show fam.p.nP + 1 + (lateCtorsInfo fam).length + cA.2 +
-          (Ix.Kernel.recIdxOf ks).length +
-          (Ix.Kernel.structFieldTeleOf cA.1.type fam.p.nP cA.2 i).length < 4294967296 by
-            have := htele' i hi
-            omega }
+      recIdx_eq := fun ecbs ebody hsE => Decl.recIdxOf_eq_recIdxFrom hrck hok hsC hsE }
 
 /-! ## The stored types are scoped at the environment -/
 
