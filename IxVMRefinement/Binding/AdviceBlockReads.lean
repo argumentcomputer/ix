@@ -273,8 +273,8 @@ theorem formerCheckObs_of_advice {calls cs : List (Call F)} {E₀ : Ixon.Env}
       exact absurd (Value.construct.inj (hv.symm.trans hxm)).2.1 (by decide)
     | .CPrj (hv869 := hv) .. =>
       exact absurd (Value.construct.inj (hv.symm.trans hxm)).2.1 (by decide)
-    | .Muts (x_members := xm) (hv598 := hv) (ev629 := ev629) (ev649 := ev649)
-        (ev683 := ev683) (ev723 := ev723) (ev744 := evm) (cs742 := csm) (hc784 := hcs) .. =>
+    | .Muts (x_members := xm) (cs742 := csm) (hv598 := hv) (ev629 := ev629) (ev649 := ev649)
+        (ev683 := ev683) (ev723 := ev723) (ev744 := evm) (hc784 := hcs) .. =>
       have hxe : xm = msPtr := (List.cons.inj (Value.construct.inj (hv.symm.trans hxm)).2.2).1
       subst hxe
       have ext2 : Heap.Extends m2 _ := ev629.heap_extends.trans (ev649.heap_extends.trans
@@ -310,7 +310,10 @@ namespace IxVM.Refinement.Binding
 open IxVM.Consistency
 open IxVM.Refinement.Typing
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open Aiur.Library
 open IxVM (F)
+
+set_option linter.unusedVariables false
 
 /-- **An observed advice-record check at `a`**, its calls among the run's. -/
 def AdviceCheckObs (calls : List (Call F)) (a : _root_.Address) : Prop :=
@@ -332,25 +335,28 @@ theorem adviceCheckObs_of_familyCall {calls cs : List (Call F)} {bAddr : _root_.
   exact ⟨rc', xa, seen, wset, r₁, h₁, h₁', cs₁, ab, hab, rfl, ev₁,
     fun cl hcl => hsub cl (hcs₁ cl hcl)⟩
 
-/-- **Every constant address of an advice block has a reading over a used-closed store within the
-run's records that holds the block and the run's blobs** (module docstring): the block is one
+/-- **Every constant address of an advice block, held by a used-closed store within the run's
+records that holds the run's blobs, reads over that store** (module docstring): the block is one
 inductive type (`Decl.adviceBlock_shape`); the advice check checked its former
 (`formerCheckObs_of_advice`), which reads over the run's store (`former_reads_of_obs`) and loaded
-every constructor (`ctorSlots_of_formerObs`, `ctorSlot_reads`); the store holds the block's
-projection records (`UsedClosed`), so each reading is one over the store (`reads_of_closed_sub`).
-The block's being in Lean's logic is a premise (the store's logic clause, or `PayloadFacts.logic`,
-where the block was stored). -/
+every constructor (`ctorSlots_of_formerObs`, `ctorSlot_reads`); each reading is one over the store
+(`reads_of_closed_sub`). Premises on the block, each a field of `PayloadFacts` for a block the
+payload reaches: its projection records are the run's (`blockMembers`) and it is in Lean's logic
+(`logic`). -/
 theorem adviceBlock_reads {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {E₀ R : Ixon.Env}
     (ht : t.check = .ok ()) (hbound : Bounded calls) (hS : LoadedReads.RunStore calls E₀)
     (hcl : UsedClosed R) (hsubR : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c)
     (hblob : ∀ y b, E₀.blobs.get? y = some b → R.blobs.get? y = some b)
     {a : _root_.Address} {ca : Ixon.Constant} {ms : Array Ixon.MutConst}
-    (haR : recordOf R a = some ca) (hms : ca.info = .muts ms) (hlog : InLogic ca)
+    (hE : recordOf E₀ a = some ca) (hms : ca.info = .muts ms) (hlog : InLogic ca)
+    (hmemb : ∀ i m, ms[i]? = some m →
+      recordOf E₀ (memberAddr a i m) = some (memberProjection a i m) ∧
+      ∀ ind j, m = .indc ind → j < ind.ctors.size →
+        recordOf E₀ (ctorAddr a i j) = some (constructorProjection a i j))
     (hadv : AdviceCheckObs calls a) :
-    ∀ x, ConstAddrOf a ca x → ∃ ci₀, Reads t R x ci₀ := by
+    ∀ x, ConstAddrOf a ca x → (recordOf R x).isSome = true → ∃ ci₀, Reads t R x ci₀ := by
   obtain ⟨x_rc, x_a, x_aset, x_wset, r, h, h', cs, ab, hab, rfl, ev, hcs⟩ := hadv
-  have hE : recordOf E₀ (Core.ixAddr ab) = some ca := hsubR _ _ haR
-  intro x hx
+  intro x hx hxR
   rcases hx with ⟨-, hst⟩ | ⟨ms', i, m, hms', hm, hx⟩
   · exact (standalone_not_block hst ⟨ms, hms⟩).elim
   have e : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hms)
@@ -360,7 +366,6 @@ theorem adviceBlock_reads {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {E�
     have hlt := (Array.getElem?_eq_some_iff.mp hm).1
     omega
   obtain ⟨ind, rfl⟩ := Decl.adviceBlock_shape hS hab ev hcs hE hms h0
-  have hms1 : ca.info = .muts #[.indc ind] := hms
   have hi : i = 0 ∧ m = .indc ind := by
     have hlt := (Array.getElem?_eq_some_iff.mp hm).1
     have hi0 : i = 0 := by simp at hlt; omega
@@ -370,24 +375,18 @@ theorem adviceBlock_reads {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {E�
       | exact (Option.some.inj hm).symm
       | (simp at hm; exact hm.symm)
   obtain ⟨rfl, rfl⟩ := hi
-  have hobs := formerCheckObs_of_advice hS hab ev hcs hE hms1
-  obtain ⟨hformR, hctorR⟩ := hcl.2 _ ca _ haR hms1 0 (.indc ind) rfl
+  have hobs := formerCheckObs_of_advice hS hab ev hcs hE hms
+  obtain ⟨hformE, hctorE⟩ := hmemb 0 (.indc ind) hm
   have hrec : BlockUnitRecord E₀ (Core.ixAddr ab) ca ind :=
-    ⟨hE, hms1, hlog, hsubR _ _ hformR, fun j hj => hsubR _ _ (hctorR ind rfl j hj)⟩
-  have hheld : ∀ y c, recordOf R y = some c → (recordOf R y).isSome = true := by
-    intro y c hy
-    rw [hy]
-    rfl
+    ⟨hE, hms, hlog, hformE, fun j hj => hctorE ind j rfl hj⟩
   rcases hx with rfl | ⟨ind', j, hind', hj, rfl⟩
   · obtain ⟨ty₀, -, hreads⟩ := former_reads_of_obs ht hbound hS hrec hobs
-    exact ⟨_, reads_of_closed_sub ht (wf_of_check ht) hsubR hcl hblob (hheld _ _ hformR)
-      (hreads default)⟩
-  · have e : ind' = ind := (Ixon.MutConst.indc.inj hind').symm
-    subst e
+    exact ⟨_, reads_of_closed_sub ht (wf_of_check ht) hsubR hcl hblob hxR (hreads default)⟩
+  · have e' : ind = ind' := Ixon.MutConst.indc.inj hind'
+    subst e'
     obtain ⟨b, hb, hlv, hnp, hnc, hslots⟩ := ctorSlots_of_formerObs hbound hS hrec hobs
     obtain ⟨ct, ty₀, -, -, -, -, -, hreads⟩ :=
       ctorSlot_reads ht hbound hS hrec hb hlv hnp hj (by omega) (hslots j hj)
-    exact ⟨_, reads_of_closed_sub ht (wf_of_check ht) hsubR hcl hblob
-      (hheld _ _ (hctorR ind' rfl j hj)) hreads⟩
+    exact ⟨_, reads_of_closed_sub ht (wf_of_check ht) hsubR hcl hblob hxR hreads⟩
 
 end IxVM.Refinement.Binding
