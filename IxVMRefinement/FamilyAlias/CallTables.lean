@@ -206,17 +206,19 @@ theorem FamilyTables.length_eq {B rb : _root_.Address} {ms rs : Array Ixon.MutCo
 /-! ## The payload up to the models -/
 
 /-- **The payload is a stream where the models start**: `read_payload` gives a stream
-(`read_payload_stream`); the family record's address (`IxonDeserialize::get_address`), the
+(`read_payload_stream`); the family record's address (`IxonDeserialize::get_address`, then
+`KernelRoles::assert_in_order` at it), the
 advice list (`get_count`, `get_addrs`) and the witnesses (`get_count`, `check_witnesses`) each
 leave one. -/
 theorem family_payload_stream {xb xrb v113 x_rb x_s1 v181 x_n_a x_s2 x_advice x_s3 x_n_w x_s4 x_rc
-      x_outside x_s5 : SourceValue F}
-    {m105 m114 m136 m184 m219 m254 m297 m332 : Heap F}
-    {cs124 cs146 cs192 cs229 cs264 cs307 cs342 : List (Call F)}
+      x_outside x_s5 v_ord : SourceValue F}
+    {m105 m114 m136 m184 m184' m219 m254 m297 m332 : Heap F}
+    {cs124 cs146 cs192 cs_ord cs229 cs264 cs307 cs342 : List (Call F)}
     (ev126 : ObsFn W "KernelModeled::read_payload" [xb] m105 v113 m114 cs124)
     (ev148 : ObsFn W "IxonDeserialize::get_address" [v113] m114 (.tuple [x_rb, x_s1]) m136 cs146)
     (ev194 : ObsFn W "Bytes::address_eq" [x_rb, xrb] m136 v181 m184 cs192)
-    (ev231 : ObsFn W "KernelModeled::get_count" [x_s1] m184 (.tuple [x_n_a, x_s2]) m219 cs229)
+    (evOrd : ObsFn W "KernelRoles::assert_in_order" [x_rc, xrb] m184 v_ord m184' cs_ord)
+    (ev231 : ObsFn W "KernelModeled::get_count" [x_s1] m184' (.tuple [x_n_a, x_s2]) m219 cs229)
     (ev266 : ObsFn W "KernelModeled::get_addrs" [x_s2, x_n_a] m219 (.tuple [x_advice, x_s3]) m254
       cs264)
     (ev309 : ObsFn W "KernelModeled::get_count" [x_s3] m254 (.tuple [x_n_w, x_s4]) m297 cs307)
@@ -227,7 +229,8 @@ theorem family_payload_stream {xb xrb v113 x_rb x_s1 v181 x_n_a x_s2 x_advice x_
   obtain ⟨a, rem, x_t, x_s1', -, htup, -, hs1, -, -⟩ := Decl.get_address_spec hs0 ev148
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
   rw [← htup.2] at hs1
-  obtain ⟨b2, hs2⟩ := get_count_stream (hs1.mono ev194.heap_extends) ev231
+  obtain ⟨b2, hs2⟩ :=
+    get_count_stream ((hs1.mono ev194.heap_extends).mono evOrd.heap_extends) ev231
   obtain ⟨-, -, b3, -, -, -, hs3, -⟩ := Decl.get_addrs_spec hs2 ev266
   obtain ⟨b4, hs4⟩ := get_count_stream hs3 ev309
   exact check_witnesses_stream hs4 ev344
@@ -247,12 +250,12 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
     {c : Ctx} {b b' : Bytes.Address} {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
     (hB : FamBlockRecord E₀ (ixAddr b) cb ms) (hR : FamRecRecord E₀ (ixAddr b') crb rs)
     {xb xrb x_members w538 w539 w540 w541 v588 v621 v651 v673 x_s5 x_type_models x_s6 v746 v798
-      x_ctor_models x_s7 v839 v861 x_rec_models x_s8 v941 v926 v992 v977 : SourceValue F}
+      x_ctor_models x_s7 v839 v861 x_rec_models x_s8 v941 v926 v992 v977 rc v_nr : SourceValue F}
     {bytes : List UInt8}
-    {m453 m501 m589 m624 m652 m674 m704 m747 m807 m784 m840 m862 m884 m950 m927 m1001
+    {m453 m501 m589 m624 m652 m674 m704 m747 m807 m784 m840 m840' m862 m884 m950 m927 m1001
       m978 : Heap F}
-    {cs511 cs599 cs632 cs662 cs684 cs714 cs757 cs815 cs794 cs850 cs872 cs894 cs958 cs937 cs1009
-      cs988 : List (Call F)}
+    {cs511 cs599 cs632 cs662 cs684 cs714 cs757 cs815 cs794 cs850 cs_nr cs872 cs894 cs958 cs937
+      cs1009 cs988 : List (Call F)}
     (hb : Bytes.RepAddressRef addrTy m453 b xb) (hrb : Bytes.RepAddressRef addrTy m453 b' xrb)
     (hs5 : L1.Stream m453 bytes x_s5)
     (ev513 : ObsFn W "Ingress::load_verified_constant" [xb] m453
@@ -270,7 +273,8 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
     (ev796 : ObsFn W "KernelModeled::get_addrs" [x_s6, v798] m807 (.tuple [x_ctor_models, x_s7])
       m784 cs794)
     (ev852 : ObsFn W "KernelModeled::family_recs" [xrb] m784 v839 m840 cs850)
-    (ev874 : ObsFn W Obs.Names.«Lists::length<&[Field; 32]>» [v839] m840 v861 m862 cs872)
+    (evNoRole : ObsFn W "KernelModeled::assert_no_role" [rc, v839] m840 v_nr m840' cs_nr)
+    (ev874 : ObsFn W Obs.Names.«Lists::length<&[Field; 32]>» [v839] m840' v861 m862 cs872)
     (ev896 : ObsFn W "KernelModeled::get_addrs" [x_s7, v861] m862 (.tuple [x_rec_models, x_s8])
       m884 cs894)
     (ev960 : ObsFn W Obs.Names.«Lists::concat<&[Field; 32]>» [v746, v839] m884 v941 m950 cs958)
@@ -286,6 +290,7 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
         v673 v746 v839 x_type_models x_ctor_models x_rec_models v926 v977 ∧
       v861 = .field (recAs.length : F) ∧ ∃ bytes' : List UInt8, L1.Stream m978 bytes' x_s8 := by
   have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
+  have x874 : Heap.Extends m840 m862 := evNoRole.heap_extends.trans ev874.heap_extends
   -- the block
   obtain ⟨cb', ms', hbl, hrep⟩ := Claim.load_block_head hb ev513
   obtain ⟨hrec, hinfo⟩ := (hbl.mono hsub511).stored hH
@@ -301,7 +306,7 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
   have X927 : Heap.Extends m927 m978 := ev1011.heap_extends.trans ev990.heap_extends
   have X884 : Heap.Extends m884 m978 :=
     ev960.heap_extends.trans (ev939.heap_extends.trans X927)
-  have X840 : Heap.Extends m840 m978 := ev874.heap_extends.trans (ev896.heap_extends.trans X884)
+  have X840 : Heap.Extends m840 m978 := x874.trans (ev896.heap_extends.trans X884)
   have X784 : Heap.Extends m784 m978 := ev852.heap_extends.trans X840
   have X747 : Heap.Extends m747 m978 := ev817.heap_extends.trans (ev796.heap_extends.trans X784)
   have X704 : Heap.Extends m704 m978 := ev759.heap_extends.trans X747
@@ -366,10 +371,11 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
   have hrlen : recAs.length = rs.size := by
     have e := congrArg List.length hrmap
     simpa only [List.length_map, List.length_mapIdx, Array.length_toList] using e
-  obtain ⟨hv861, -⟩ := Decl.addrList_length_spec hrA ev874
+  obtain ⟨hv861, -⟩ := Decl.addrList_length_spec
+    (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) evNoRole.heap_extends hrA) ev874
   subst hv861
   obtain ⟨nR, recMs, bR, hnR, hlenR, hrM, hs8, -⟩ := Decl.get_addrs_spec
-    (hs7.mono (ev852.heap_extends.trans ev874.heap_extends)) ev896
+    (hs7.mono (ev852.heap_extends.trans x874)) ev896
   injection hnR with hnR'
   have hR' : recMs.length = recAs.length := by
     rw [hlenR, ← hnR', SubstAux.val_natCast (n := recAs.length) (by omega)]
@@ -377,24 +383,24 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
   have hsrc1 := Decl.addrList_concat_spec
     (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy)
       (ev817.heap_extends.trans (ev796.heap_extends.trans (ev852.heap_extends.trans
-        (ev874.heap_extends.trans ev896.heap_extends)))) hcA)
+        (x874.trans ev896.heap_extends)))) hcA)
     (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy)
-      (ev874.heap_extends.trans ev896.heap_extends) hrA) ev960
+      (x874.trans ev896.heap_extends) hrA) ev960
   have hsrc := Decl.addrList_concat_spec
     (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy)
       (ev716.heap_extends.trans (ev759.heap_extends.trans (ev817.heap_extends.trans
-        (ev796.heap_extends.trans (ev852.heap_extends.trans (ev874.heap_extends.trans
+        (ev796.heap_extends.trans (ev852.heap_extends.trans (x874.trans
           (ev896.heap_extends.trans ev960.heap_extends))))))) htA) hsrc1 ev939
   have hdst1 := Decl.addrList_concat_spec
     (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy)
-      (ev852.heap_extends.trans (ev874.heap_extends.trans (ev896.heap_extends.trans
+      (ev852.heap_extends.trans (x874.trans (ev896.heap_extends.trans
         (ev960.heap_extends.trans ev939.heap_extends)))) hcM)
     (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy)
       (ev960.heap_extends.trans ev939.heap_extends) hrM) ev1011
   have hdst := Decl.addrList_concat_spec
     (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy)
       (ev759.heap_extends.trans (ev817.heap_extends.trans (ev796.heap_extends.trans
-        (ev852.heap_extends.trans (ev874.heap_extends.trans (ev896.heap_extends.trans
+        (ev852.heap_extends.trans (x874.trans (ev896.heap_extends.trans
           (ev960.heap_extends.trans (ev939.heap_extends.trans ev1011.heap_extends)))))))) htM)
     hdst1 ev990
   refine ⟨typeAs, ctorAs, recAs, typeMs, ctorMs, recMs,
@@ -430,22 +436,28 @@ theorem check_family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
       FamilyTables (ixAddr b) (ixAddr b') ms rs m typeAs ctorAs recAs typeMs ctorMs recMs
         xtA xcA xrA xtM xcM xrM xsrc xdst := by
   match Obs.«KernelModeled::check_family».obs ev with
-  | .run (sg112 := sg) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194) (ev231 := ev231)
+  | .run (sg112 := sg) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+      (ev_yqjbwijz := evOrd) (ev231 := ev231)
       (ev266 := ev266) (ev309 := ev309) (ev344 := ev344) (ev403 := ev403) (ev435 := ev435)
       (ev465 := ev465) (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
       (ev686 := ev686) (ev716 := ev716) (ev759 := ev759) (ev817 := ev817) (ev796 := ev796)
-      (ev852 := ev852) (ev874 := ev874) (ev896 := ev896) (ev960 := ev960) (ev939 := ev939)
+      (ev852 := ev852) (ev_ursqbimm := evNoRole) (ev874 := ev874) (ev896 := ev896)
+      (ev960 := ev960) (ev939 := ev939)
       (ev1011 := ev1011) (ev990 := ev990) (hc1474 := hc) .. =>
     have e0 := Decl.check_family_seg1_inv sg
+    have x874 : Heap.Extends _ _ := evNoRole.heap_extends.trans ev874.heap_extends
     have x332 := ev126.heap_extends.trans (ev148.heap_extends.trans (ev194.heap_extends.trans
+      (evOrd.heap_extends.trans
       (ev231.heap_extends.trans (ev266.heap_extends.trans (ev309.heap_extends.trans
-        ev344.heap_extends)))))
+        ev344.heap_extends))))))
     have x453 := ev403.heap_extends.trans (ev435.heap_extends.trans ev465.heap_extends)
-    obtain ⟨bytes, hs5⟩ := family_payload_stream ev126 ev148 ev194 ev231 ev266 ev309 ev344
+    obtain ⟨bytes, hs5⟩ :=
+      family_payload_stream ev126 ev148 ev194 evOrd ev231 ev266 ev309 ev344
     obtain ⟨typeAs, ctorAs, recAs, typeMs, ctorMs, recMs, T, -, -⟩ := family_tables hS hH hB hR
       (Bytes.repAddressRef_heapMono₂ addrTy (e0.trans (x332.trans x453)) hb)
       (Bytes.repAddressRef_heapMono₂ addrTy (e0.trans (x332.trans x453)) hrb)
-      (hs5.mono x453) ev513 ev601 ev634 ev664 ev686 ev716 ev759 ev817 ev796 ev852 ev874 ev896
+      (hs5.mono x453) ev513 ev601 ev634 ev664 ev686 ev716 ev759 ev817 ev796 ev852 evNoRole ev874
+      ev896
       ev960 ev939 ev1011 ev990
       (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))
       (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))
@@ -454,7 +466,7 @@ theorem check_family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
       e0.trans (x332.trans (x453.trans (ev513.heap_extends.trans (ev601.heap_extends.trans
         (ev634.heap_extends.trans (ev664.heap_extends.trans (ev686.heap_extends.trans
           (ev716.heap_extends.trans (ev759.heap_extends.trans (ev817.heap_extends.trans
-            (ev796.heap_extends.trans (ev852.heap_extends.trans (ev874.heap_extends.trans
+            (ev796.heap_extends.trans (ev852.heap_extends.trans (x874.trans
               (ev896.heap_extends.trans (ev960.heap_extends.trans (ev939.heap_extends.trans
                 (ev1011.heap_extends.trans ev990.heap_extends))))))))))))))))), T⟩
 
