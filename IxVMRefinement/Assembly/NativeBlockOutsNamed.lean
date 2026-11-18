@@ -204,11 +204,32 @@ theorem stagedCtorLoads_of_block_named {t : Ix.Kernel.RoleTable} (ht : t.check =
     exact hκ κ hused hrecur
   · rw [hnp]
 
+/-- **The field sorts of the constructor stage are the ones the classifier checked**, at a
+structure-like proposition: where the block has one constructor, no index and a result sort
+that evaluates to zero, the sorts of that constructor come with the run data of the classifier's
+field loop (`Core.GuardData.CheckedFieldsAt`) at the constructor stage of the recursion flag
+`isRec`, inside the run `calls`, and with that stage's core facts. Elsewhere it says nothing. -/
+def StageSortsChecked (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (n : Nat)
+    (env : Ix.Kernel.Env .anon) (B : _root_.Address) (cvS : ConstantVal .anon)
+    (p₀ : Ix.Kernel.NativeParts .anon) (ctorsA : List (ConstantVal .anon × Nat))
+    (isRec : Bool) (sortss : List (List Ix.Kernel.Level)) : Prop :=
+  p₀.ctors.length = 1 → p₀.nIdx = 0 →
+  (∀ φ : Ix.Kernel.LevelParam → Nat, Ix.Kernel.Level.eval φ p₀.resSort = 0) →
+  ∃ (b : Bytes.Address) (u : Ix.Kernel.Level) (cA : ConstantVal .anon × Nat)
+    (sorts : List Ix.Kernel.Level),
+    Core.ixAddr b = B ∧ ctorsA = [cA] ∧ sortss = [sorts] ∧
+    Core.ScopedCoreFacts (Decl.ctorStage ⟨E, env, t, some n⟩ cvS
+      (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort p₀.resSort) isRec)) ∧
+    Core.GuardData.CheckedFieldsAt
+      (Decl.ctorStage ⟨E, env, t, some n⟩ cvS
+        (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort p₀.resSort) isRec))
+      calls b 0 p₀.nP cA.2 cA.1.type u sorts
+
 /-- **The constructor stage of a native block, from its walked check, with the stored constants
-named**: `ctorOuts_of_member`, where the stage's former `cvS` is the canonical annotation `ty'` of
-the former's reading `ty₀` at the former's key, and each annotated constructor is the canonical
-annotation of its reading (with the reading, its scope, the record's counts and its key). -/
-theorem ctorOuts_of_member_named {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
+named and the checked sorts kept**: `ctorOuts_of_member_named` where, at a structure-like
+proposition, the field sorts are the ones the classifier's field loop checked
+(`StageSortsChecked`). -/
+theorem ctorOuts_of_member_named_checked {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
     {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {n : Nat}
     {env : Ix.Kernel.Env .anon} {blk : List (ConstantInfo .anon)}
     {p₀ : Ix.Kernel.NativeParts .anon}
@@ -255,12 +276,13 @@ theorem ctorOuts_of_member_named {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
       cvS.name = p₀.cvT.name ∧ ctorsA.length = p₀.ctors.length ∧
       (∀ isRec : Bool, ∃ sortss : List (List Ix.Kernel.Level),
         sortss.length = p₀.ctors.length ∧
-        ∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
+        (∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
           sortss[j]? = some sorts ∧
           Decl.NativeCtorOut ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
               (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩
             p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx p₀.resSort cvS.type
             (rawTypes.getD j default) c cA sorts) ∧
+        StageSortsChecked calls t E n env B cvS p₀ ctorsA isRec sortss) ∧
       (∀ cA ∈ ctorsA, ∀ cbs body, cA.1.type.stripPis (p₀.nP + cA.2) = some (cbs, body) →
         ∀ i < cA.2,
           (Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
@@ -576,12 +598,13 @@ theorem ctorOuts_of_member_named {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
   have h256 : (2 : Nat) ^ 56 = 72057594037927936 := by norm_num
   have houts : ∀ isRec : Bool, ∃ sortss : List (List Ix.Kernel.Level),
       sortss.length = p₀.ctors.length ∧
-      ∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
+      (∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
         sortss[j]? = some sorts ∧
         Decl.NativeCtorOut ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
             (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩
           p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx p₀.resSort cvS.type
-          (rawTypes.getD j default) c cA sorts := by
+          (rawTypes.getD j default) c cA sorts) ∧
+      StageSortsChecked calls t E n env B cvS p₀ ctorsA isRec sortss := by
     intro isRec
     have hunit : ind.indices.toNat = 0 → ind.ctors.size = 1 →
         (∀ ct, ind.ctors[0]? = some ct → ct.fields.toNat = 0) →
@@ -672,7 +695,7 @@ theorem ctorOuts_of_member_named {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
           (by rw [hb_eq]; exact h5E) hl hd
       rw [hc2]
       exact hf56
-    obtain ⟨sortss, hlen_s, hout⟩ := Decl.native_ctor_staged IxVM.Refinement.Levels.levels
+    obtain ⟨sortss, hlen_s, hout⟩ := Decl.native_ctor_staged_checked IxVM.Refinement.Levels.levels
       (cS := cS) (fun _ => trivial) (T := p₀.cvT.name) (lps := p₀.cvT.levelParams)
       (nP := p₀.nP) (nIdx := p₀.nIdx) (ta := ty') (resSort := p₀.resSort) (ind_lvl := ind_lvl)
       (cs_root := cs_chk) (ctors := p₀.ctors) (ctorsA := ctorsA) (ctorRawTypes := rawTypes)
@@ -717,7 +740,16 @@ theorem ctorOuts_of_member_named {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
       (hraw_at ⟨ConstantInfo.indInfo cvS caps₁ :: env.consts⟩).2 shape.ctorSubset
       (hg_chk.sub shape.ctorSubset) (hrc_m.toRCRep.mono e_ctor) (hformer.mono e_ctor)
       hbRepCtor hlvRep ctorRun
-    exact ⟨sortss, hlen_s, hout⟩
+    refine ⟨sortss, hlen_s, fun j hj => ?_, fun h1 h0 hz => ?_⟩
+    · obtain ⟨c, cA, sorts, hc, hcA, hs, ho, -⟩ := hout j hj
+      exact ⟨c, cA, sorts, hc, hcA, hs, ho⟩
+    · obtain ⟨c, cA, sorts, hc, hcA, hs, ho, hchk⟩ := hout 0 (by omega)
+      have hk := hchk h1 h0 (fun φ => (hlveq φ).symm.trans (hz φ))
+      rw [← ho.nF_eq] at hk
+      exact ⟨b, ind_lvl, cA, sorts, hb_eq,
+        Core.GuardData.eq_singleton (by rw [hcload.1]; exact h1) hcA,
+        Core.GuardData.eq_singleton (by rw [hlen_s]; exact h1) hs, ⟨hcore.1, hcore.2⟩,
+        hk.mono hsub_chk⟩
   have hctorsCanon : ∀ j c, p₀.ctors[j]? = some c →
       ∃ (ct : Ixon.Constructor) (cty' : Ix.Kernel.Expr .anon),
         ind.ctors[j]? = some ct ∧ ct.cidx.toNat = j ∧ ct.params.toNat = ind.params.toNat ∧
@@ -753,7 +785,7 @@ theorem ctorOuts_of_member_named {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
   rw [hjA] at hcA'
   injection hcA' with hcAeq
   subst hcAeq
-  obtain ⟨sortss, -, hout⟩ := houts false
+  obtain ⟨sortss, -, hout, -⟩ := houts false
   obtain ⟨c', cA', sorts, hc', hcA'', -, hout_j⟩ := hout j hjP
   rw [hc] at hc'
   injection hc' with hceq
@@ -803,5 +835,77 @@ theorem ctorOuts_of_member_named {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
     (L1.traceRecordCtx_coverage _ hsub2) hcty hout_j.noProj hstR hstA
     (Bytes.repAddressRef_heapMono₂ Core.addrTy (ev_load.heap_extends.trans e12) hbp) ev_pos
     i hi hmen
+
+/-- **The constructor stage of a native block, from its walked check, with the stored constants
+named**: `ctorOuts_of_member`, where the stage's former `cvS` is the canonical annotation `ty'` of
+the former's reading `ty₀` at the former's key, and each annotated constructor is the canonical
+annotation of its reading (with the reading, its scope, the record's counts and its key). -/
+theorem ctorOuts_of_member_named {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
+    {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {n : Nat}
+    {env : Ix.Kernel.Env .anon} {blk : List (ConstantInfo .anon)}
+    {p₀ : Ix.Kernel.NativeParts .anon}
+    (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
+    (hrec : BlockUnitRecord E₀ B cb ind)
+    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
+    (hnat : NativeRouteAt calls B) (htele : FormerAtTele t E₀ B cb ind)
+    (hblk : BlockReadings t E₀ B ind blk)
+    (hp₀ : Ix.Kernel.Semantics.nativePartsNoRec? ind.params.toNat blk = some p₀)
+    (hinv : Decl.PrefixInv.{u} E t (some n) env) (hstored : Decl.UsedRefsStored t env cb)
+    (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
+    (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
+    (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
+    (hcov : L1.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env) :
+    ∃ (ty₀ ty' : Ix.Kernel.Expr .anon) (cvS : ConstantVal .anon)
+      (bsT : List (Ix.Kernel.Expr .anon × Ix.Kernel.BinderMeta))
+      (ctorsA : List (ConstantVal .anon × Nat)) (rawTypes : List (Ix.Kernel.Expr .anon)),
+      (exprReader t (fun x => E.blobs.get? x) cb id
+        (blockSelf t B #[.indc ind])).read ind.typ = .ok ty₀ ∧
+      ty₀.looseBVarsBounded 0 = true ∧
+      ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
+      LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
+        ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ ty₀ =
+        some ty' ∧
+      p₀.cvT = ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty₀⟩ ∧
+      cvS = ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ ∧
+      p₀.nP = ind.params.toNat ∧ p₀.nIdx = ind.indices.toNat ∧
+      p₀.ctors.length = ind.ctors.size ∧
+      (∀ j c, p₀.ctors[j]? = some c → ∃ (ct : Ixon.Constructor) (cty' : Ix.Kernel.Expr .anon),
+        ind.ctors[j]? = some ct ∧ ct.cidx.toNat = j ∧ ct.params.toNat = ind.params.toNat ∧
+        ct.lvls.toNat = ind.lvls.toNat ∧
+        c.1.name = keyOf t (ctorAddr B 0 j) ∧ c.1.levelParams = List.range ct.lvls.toNat ∧
+        c.2 = ct.fields.toNat ∧
+        (exprReader t (fun x => E.blobs.get? x) cb id
+          (blockSelf t B #[.indc ind])).read ct.typ = .ok c.1.type ∧
+        c.1.type.looseBVarsBounded 0 = true ∧
+        c.1.type.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
+        LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
+          (((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val (0 : F)) :
+            Nat) : F) + 1 + ((j : Nat) : F)) ct.typ c.1.type = some cty' ∧
+        ctorsA[j]? = some (⟨c.1.name, c.1.levelParams, cty'⟩, c.2)) ∧
+      Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ env p₀.cvT cvS ∧
+      cvS.type.stripPis (p₀.nP + p₀.nIdx) = some (bsT, .sort p₀.resSort) ∧
+      cvS.name = p₀.cvT.name ∧ ctorsA.length = p₀.ctors.length ∧
+      (∀ isRec : Bool, ∃ sortss : List (List Ix.Kernel.Level),
+        sortss.length = p₀.ctors.length ∧
+        ∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
+          sortss[j]? = some sorts ∧
+          Decl.NativeCtorOut ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
+              (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩
+            p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx p₀.resSort cvS.type
+            (rawTypes.getD j default) c cA sorts) ∧
+      (∀ cA ∈ ctorsA, ∀ cbs body, cA.1.type.stripPis (p₀.nP + cA.2) = some (cbs, body) →
+        ∀ i < cA.2,
+          (Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
+             (cbs.getD (p₀.nP + i) default).1 = .recursive ∨
+           Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
+             (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
+          Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false) := by
+  obtain ⟨ty₀, ty', cvS, bsT, ctorsA, rawTypes, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12,
+    h13, h14, houts, h16⟩ := ctorOuts_of_member_named_checked ht hS hst hrec hchk hnat htele hblk hp₀
+      hinv hstored hP hkeys hfresh hfree hcov haux
+  exact ⟨ty₀, ty', cvS, bsT, ctorsA, rawTypes, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12,
+    h13, h14, fun isRec => by
+      obtain ⟨sortss, hl, ho, -⟩ := houts isRec
+      exact ⟨sortss, hl, ho⟩, h16⟩
 
 end IxVM.Refinement.Typing
