@@ -6,14 +6,14 @@ import IxVMRefinement.Binding.OpInstall
 * `bndOver_of_beforeRaise`: **the raise past a group**. From the invariant before the raise
   (`BeforeRaise`) to the invariant below `g + 1`: the clause at the top carried limit below
   `g + 1` is raised from the group's validation limit (`prefixInv_top_succ`), and lowered to
-  every other carried limit within the groups below `g + 1`. Both moves read the load contract's
-  guard at the target limit, which is the one input beside `BeforeRaise`.
+  every other carried limit within the groups below `g + 1`. Neither move needs anything beside
+  `BeforeRaise`: the load contract's firing of the stored projection tables names no limit.
 * `beforeRaise_of_kept`: the invariant before the raise at a group with no role unit, from its
   closure, the stored shapes and what the raise needs.
 * `groupStepOver_of_parts`: **the step of a group from its parts**: the closure; at a group with
   no role unit the stored shapes (`RoleFreeShapes`; the fabricated roles' keys and the literal
-  support at group 45 are derived here); at a group whose role is a role unit, that unit's step;
-  and the guard at the raised limits.
+  support at group 45 are derived here); and at a group whose role is a role unit, that unit's
+  step.
 * `fold_groups_over`: the invariant below every group from 6 to 77.
 * `binding_skeleton_over`: **the binding half** for the internal part `OverW L`, from named
   hypotheses, each about an observed run.
@@ -64,12 +64,9 @@ variable {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop} {t : Ix.Kernel.R
   {g : Nat} {R : Ixon.Env} {env : Ix.Kernel.Env .anon}
 
 /-- **The invariant below `g + 1` from the invariant before the raise past `g`** (module
-docstring), given the load contract's guard at the carried limits within the groups below
-`g + 1`. -/
+docstring). -/
 theorem bndOver_of_beforeRaise (hall : AllBound t) (hg : g < 77)
-    (h : BeforeRaise.{u} L t g R env)
-    (hguard : ∀ E, RecordsFor R E → ∀ lim, Carried lim → LimWithin (· < g + 1) t lim →
-      GuardAt E t lim env) :
+    (h : BeforeRaise.{u} L t g R env) :
     BndOver.{u} L t (· < g + 1) R env := by
   obtain ⟨Reg, hR⟩ := h.clause
   refine ⟨h.shape, ⟨Reg, fun E hE lim hc hw => ?_⟩, h.facts⟩
@@ -79,9 +76,8 @@ theorem bndOver_of_beforeRaise (hall : AllBound t) (hg : g < 77)
     exact h0.prefixInv
   have htop : Decl.PrefixInv.{u} E t (topLim (g + 1)) env :=
     prefixInv_top_succ hg hp0 h.raise
-      (hguard E hE _ (carried_topLim (g + 1)) (limWithin_topLim t (g + 1)))
   have hinv : Decl.PrefixInv.{u} E t lim env :=
-    prefixInv_lower htop (fun r hf => inForce_top hall hc hw hf) (hguard E hE lim hc hw)
+    prefixInv_lower htop (fun r hf => inForce_top hall hc hw hf)
   exact FoldClauseWith.of_prefix hinv h0.registry h0.hashKeyed h0.auxRoot
     ⟨h0.thmLevels, h0.storeArR⟩ h0.guard
 
@@ -160,8 +156,7 @@ theorem groupStepOver_of_parts {L : Ix.Kernel.Env .anon → NativeFam .anon → 
     (hg6 : 6 ≤ g) (hg : g < 77)
     (hcl : ClosureStepOver.{u} L ρ t g) (hnone : RoleFreeShapes.{u} L ρ t g)
     (hop : RoleUnitStepOver.{u} (· ∈ RoleOps.opRoles) L ρ t g)
-    (hax : RoleUnitStepOver.{u} (· ∈ standardAxioms) L ρ t g)
-    (hguard : RaisedLimitGuard.{u} L t g) :
+    (hax : RoleUnitStepOver.{u} (· ∈ standardAxioms) L ρ t g) :
     GroupStepOver.{u} L ρ t g := by
   intro R R' env hb hadm hrd
   obtain ⟨R₁, env₁, hRR₁, hR₁R', hblobs, hunit, hext, hb₁, hkept⟩ := hcl R R' env hb hadm hrd
@@ -184,10 +179,10 @@ theorem groupStepOver_of_parts {L : Ix.Kernel.Env .anon → NativeFam .anon → 
     rcases hk with hk | hk
     · obtain ⟨env', hext', hb'⟩ := hop r a R R₁ R' env₁ hsingle hk ha hadm hrd hb₁ hadds
       exact ⟨env', fun ci h => hext' ci (hext ci h),
-        bndOver_of_beforeRaise hall hg hb' (hguard R' env' hb')⟩
+        bndOver_of_beforeRaise hall hg hb'⟩
     · obtain ⟨env', hext', hb'⟩ := hax r a R R₁ R' env₁ hsingle hk ha hadm hrd hb₁ hadds
       exact ⟨env', fun ci h => hext' ci (hext ci h),
-        bndOver_of_beforeRaise hall hg hb' (hguard R' env' hb')⟩
+        bndOver_of_beforeRaise hall hg hb'⟩
   · have hnu : ∀ r ∈ roleGroup g, ¬ (r ∈ RoleOps.opRoles ∨ r ∈ standardAxioms) :=
       fun r hr hk => hu ⟨r, hr, hk⟩
     have hshapes : Shapes (· < g + 1) env₁ := hnone hnu R R₁ R' env₁ hadm hrd hR₁R' hb₁ hkept
@@ -230,7 +225,7 @@ theorem groupStepOver_of_parts {L : Ix.Kernel.Env .anon → NativeFam .anon → 
       beforeRaise_of_kept hall hb₁ (fun r hr hkr a ha => hkept.1 r hr hkr (hnu r hr) a ha)
         hkept.2 hshapes hraise
     have hb₂ : BndOver.{u} L t (· < g + 1) R₁ env₁ :=
-      bndOver_of_beforeRaise hall hg hB (hguard R₁ env₁ hB)
+      bndOver_of_beforeRaise hall hg hB
     have hsame : ∀ x, R₁.consts.get? x = R'.consts.get? x := by
       intro x
       cases h₁ : R₁.consts.get? x with
@@ -308,8 +303,8 @@ def BasisOver (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
 /-- **The binding half over the fold's clause**, for the internal part `OverW L`. Its
 hypotheses: the claim's export with the observed run record; the six basis groups; the
 admission of each group and its reading clause; and for each group from 6 to 76 of a run, the
-closure, the stored shapes where the group has no role unit, the step of an operation, the step
-of a standard axiom, and the load contract's guard at the raised limits. -/
+closure, the stored shapes where the group has no role unit, the step of an operation and the
+step of a standard axiom. -/
 theorem binding_skeleton_over {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     {Run : Ix.Kernel.RoleTable → BRun → (Nat → Ixon.Env) → Prop}
     {calls : List (Call F)} {d : Digest}
@@ -319,8 +314,7 @@ theorem binding_skeleton_over {L : Ix.Kernel.Env .anon → NativeFam .anon → P
     (groupClosure : AtGroups Run (ClosureStepOver.{u} L))
     (groupWithoutRoleUnit : AtGroups Run (RoleFreeShapes.{u} L))
     (operationRoleUnit : AtGroups Run (RoleUnitStepOver.{u} (· ∈ RoleOps.opRoles) L))
-    (standardAxiomRoleUnit : AtGroups Run (RoleUnitStepOver.{u} (· ∈ standardAxioms) L))
-    (raisedLimitGuard : AtGroups Run (fun _ t g => RaisedLimitGuard.{u} L t g)) :
+    (standardAxiomRoleUnit : AtGroups Run (RoleUnitStepOver.{u} (· ∈ standardAxioms) L)) :
     BindingSpecOn.{u} (OverW.{u} L) calls d := by
   intro bytes spec a hde hdig V
   rcases bindingClaimExport bytes spec a hde hdig V with
@@ -336,8 +330,7 @@ theorem binding_skeleton_over {L : Ix.Kernel.Env .anon → NativeFam .anon → P
         (groupClosure t _ Rs hrun hall ht g hg6 hg)
         (groupWithoutRoleUnit t _ Rs hrun hall ht g hg6 hg)
         (operationRoleUnit t _ Rs hrun hall ht g hg6 hg)
-        (standardAxiomRoleUnit t _ Rs hrun hall ht g hg6 hg)
-        (raisedLimitGuard t _ Rs hrun hall ht g hg6 hg)) 77 (by omega) (Nat.le_refl 77)
+        (standardAxiomRoleUnit t _ Rs hrun hall ht g hg6 hg)) 77 (by omega) (Nat.le_refl 77)
     have hlast := groupAdmissions t _ Rs hrun 76 (by omega) (by omega)
     exact Or.inr ⟨tb, t, Rs 77, env, htb, hadmt, hall,
       loadedBy_sub hload hlast.loaded hlast.loadedBlobs, overW_of_bndOver hb⟩
@@ -393,7 +386,6 @@ theorem composed_skeleton_over {L : Ix.Kernel.Env .anon → NativeFam .anon → 
     (groupWithoutRoleUnit : AtGroups Run (RoleFreeShapes.{u} L))
     (operationRoleUnit : AtGroups Run (RoleUnitStepOver.{u} (· ∈ RoleOps.opRoles) L))
     (standardAxiomRoleUnit : AtGroups Run (RoleUnitStepOver.{u} (· ∈ standardAxioms) L))
-    (raisedLimitGuard : AtGroups Run (fun _ t g => RaisedLimitGuard.{u} L t g))
     (hb : Bounded callsA) (hclaimA : ClaimExport Walk callsA dA) (hlim : WalkLim Walk)
     (hgraph : ∀ t seeds E₀ lim Top rank, Walk t seeds E₀ lim Top rank →
       TopGraph t E₀ seeds Top rank)
@@ -404,7 +396,7 @@ theorem composed_skeleton_over {L : Ix.Kernel.Env .anon → NativeFam .anon → 
     ComposedSpec.{u} callsA callsB dA dB :=
   binding_discharge
     (binding_skeleton_over bindingClaimExport basisGroups groupAdmissions groupAdmissionReads
-      groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit raisedLimitGuard)
+      groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit)
     (typing_skeleton_over hb hclaimA hlim hgraph hstepA)
 
 /-! ## The six basis groups -/

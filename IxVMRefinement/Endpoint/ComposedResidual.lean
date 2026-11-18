@@ -94,9 +94,8 @@ store sequence is not fixed):
 
 * binding: the claim export with the observed run record; the invariant at the six basis
   groups; the admission of each group and its reading clause; and at each group of a run the
-  closure, the stored shapes where the group has no role unit, the role unit of an operation
-  and of a standard axiom, and the load contract's guard at the limits a closed group brings
-  within range;
+  closure, the stored shapes where the group has no role unit, and the role unit of an
+  operation and of a standard axiom;
 * typing, for a top-walked unit by the form of its record (`WalkedUnit`, `WalkedUnitStep`, in
   `IxVMRefinement.Endpoint.WalkedUnit`): the step of a block of one inductive type on the native
   route whose former is declared at its telescope; and, given that the block is modeled at the
@@ -310,12 +309,12 @@ theorem standaloneRecursor_of_freshNotBasis
 
 /-- **The public statement from the parts of the two halves, for any link.** `L` is the link
 of the fold's clause and `Run` the binding claim layer's run predicate, by the run's calls. The
-first nine hypotheses are the binding half's, those of `composed_skeleton_over` for every
+first eight hypotheses are the binding half's, those of `composed_skeleton_over` for every
 bounded run: the claim export with the observed run record; the invariant at the six basis
 groups; the admission of each group and its reading clause; and at each group from 6 to 76 of
 a run the closure, the stored shapes where the group has no role unit, the role unit of an
-operation, the role unit of a standard axiom and the guard at the raised limits. The other
-nine are the typing half's: the step of a top-walked unit of each kind. -/
+operation and the role unit of a standard axiom. The other nine are the typing half's: the
+step of a top-walked unit of each kind. -/
 theorem circuitComposed_of_parts
     {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     {Run : List (Call F) → Ix.Kernel.RoleTable → BRun → (Nat → Ixon.Env) → Prop}
@@ -330,8 +329,6 @@ theorem circuitComposed_of_parts
       ∀ calls, AtGroups (Run calls) (RoleUnitStepOver.{u} (· ∈ RoleOps.opRoles) L))
     (standardAxiomRoleUnit :
       ∀ calls, AtGroups (Run calls) (RoleUnitStepOver.{u} (· ∈ standardAxioms) L))
-    (raisedLimitGuard :
-      ∀ calls, AtGroups (Run calls) (fun _ t g => RaisedLimitGuard.{u} L t g))
     (standaloneDefinition : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
       ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind = .defn)
     (standaloneTheoremOrOpaque : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
@@ -365,7 +362,7 @@ theorem circuitComposed_of_parts
   exact composed_skeleton_over (bindingClaimExport dB valueB heapB callsB evB hbB)
     (basisGroups callsB) (groupAdmissions callsB) (groupAdmissionReads callsB)
     (groupClosure callsB) (groupWithoutRoleUnit callsB) (operationRoleUnit callsB)
-    (standardAxiomRoleUnit callsB) (raisedLimitGuard callsB) hbA
+    (standardAxiomRoleUnit callsB) hbA
     (Claim.claimPhase_typing evA)
     (fun _ _ _ _ _ _ h => by
       obtain ⟨_, hW, _⟩ := h
@@ -378,15 +375,15 @@ theorem circuitComposed_of_parts
 /-- **The public statement from the open obligations** (module docstring):
 `circuitComposed_of_parts` at the opened head trace `FormerOpenTraceAt`, with the steps that
 are proved passed in and the others reduced to smaller ones. `Run` is the binding claim
-layer's run predicate, by the run's calls. The first nine hypotheses are the binding half's,
+layer's run predicate, by the run's calls. The first eight hypotheses are the binding half's,
 for every bounded run: the claim export with the observed run record; the invariant at the six
 basis groups; the admission of each group and its reading clause; and at each group from 6 to
 76 of a run the closure, the stored shapes where the group has no role unit, the role unit of
-an operation, the role unit of a standard axiom and the guard at the raised limits. The other
-four are the typing half's, for a top-walked unit: the step of a one-type native block whose
-former is declared at its telescope; of a one-type block and of a block of two or more
-inductive types on the modeled route, each given that the block is modeled at the step's
-store; and of a non-empty block of recursors. -/
+an operation and the role unit of a standard axiom. The other four are the typing half's, for a
+top-walked unit: the step of a one-type native block whose former is declared at its
+telescope; of a one-type block and of a block of two or more inductive types on the modeled
+route, each given that the block is modeled at the step's store; and of a non-empty block of
+recursors. -/
 theorem circuitComposed_residual
     {Run : List (Call F) → Ix.Kernel.RoleTable → BRun → (Nat → Ixon.Env) → Prop}
     (bindingClaimExport :
@@ -401,8 +398,6 @@ theorem circuitComposed_residual
       AtGroups (Run calls) (RoleUnitStepOver.{u} (· ∈ RoleOps.opRoles) FormerOpenTraceAt))
     (standardAxiomRoleUnit : ∀ calls,
       AtGroups (Run calls) (RoleUnitStepOver.{u} (· ∈ standardAxioms) FormerOpenTraceAt))
-    (raisedLimitGuard : ∀ calls,
-      AtGroups (Run calls) (fun _ t g => RaisedLimitGuard.{u} FormerOpenTraceAt t g))
     (nativeBlockTelescope :
       WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun calls t E₀ B cb =>
         ∃ ind : Ixon.Inductive,
@@ -426,7 +421,7 @@ theorem circuitComposed_residual
           ∀ m ∈ ms.toList, ∃ r, m = Ixon.MutConst.recr r) :
     CircuitComposed.{u} :=
   circuitComposed_of_parts bindingClaimExport basisGroups groupAdmissions groupAdmissionReads
-    groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit raisedLimitGuard
+    groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit
     (standaloneDefinition_foldExtra linkLaws_formerOpenTrace)
     (standaloneTheoremOrOpaque_foldExtra linkLaws_formerOpenTrace)
     (standaloneRecursor_of_freshNotBasis freshRecursorMajorNotBasis_walked)

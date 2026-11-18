@@ -415,7 +415,7 @@ abbrev SpecFn : Type :=
   ScopedCtx → List (SourceValue F) → Heap F → SourceValue F → Heap F → List (Call F) → Prop
 
 /-- Unrestricted compatibility facts supplied by `S0.ctx`. Actual registry steps use
-`ScopedCoreFacts`, including selected calls and observation-specific native eta evidence. -/
+`ScopedCoreBase`, including selected calls and observation-specific native eta evidence. -/
 structure CoreFacts (c : Ctx) : Prop where
   env : EnvFacts c
   loads : LoadFacts c

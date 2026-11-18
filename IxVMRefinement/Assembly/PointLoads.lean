@@ -43,7 +43,8 @@ theorem pointLoadsFrom (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B : _root_.Addr
       eta := hE.eta
       etaIota := hE.etaIota
       inductBlock := hI.newInductBlock
-      projTablesGuard := hI.newProjTablesGuard haux hfresh
+      projCtorTele := hI.newProjCtorTele haux hfresh
+      projFire := fun _ tbl hm _ _ => (hI.noTable tbl hm).elim
       ctorIndRes := hI.newCtorIndRes }
 
 /-- **`UnitStep` for a block on the constructors-only route, the load interface discharged.** The

@@ -115,7 +115,7 @@ theorem natPrimOp_fabricated {r : Ix.Kernel.Role} {o : Nat}
   cases r <;> first | rfl | (simp [Specs.Nat.natPrimOp] at h)
 
 /-- The address of a `Nat` operation in force resolves. -/
-theorem natOpAt_res {c : ScopedCtx} (hc : ScopedCoreFacts c) {a : Bytes.Address} {o : Nat}
+theorem natOpAt_res {c : ScopedCtx} (hc : ScopedCoreBase c) {a : Bytes.Address} {o : Nat}
     (h : Specs.Nat.NatOpAt c a o) : c.κ (ixAddr a) ≠ unresolvedKey := by
   obtain ⟨r, hr, hb, hf⟩ := h
   exact hc.res_of_role hb hf (natPrimOp_fabricated hr)
@@ -129,7 +129,7 @@ theorem natBinOp_mem {ro : Ix.Kernel.Role} {o : Nat} (h : Specs.Nat.natPrimOp ro
     | (exfalso; simp [Specs.Nat.natPrimOp] at h <;> omega)
 
 /-- `natLitSupported` from a role in force whose block holds `Nat`, `Nat.zero` and `Nat.succ`. -/
-theorem natLit_of_natBlock {c : ScopedCtx} (hc : ScopedCoreFacts c) {r : Ix.Kernel.Role} (hr : c.inForce r)
+theorem natLit_of_natBlock {c : ScopedCtx} (hc : ScopedCoreBase c) {r : Ix.Kernel.Role} (hr : c.inForce r)
     (h0 : Ix.Kernel.Role.nat ∈ r.block) (h1 : Ix.Kernel.Role.natZero ∈ r.block)
     (h2 : Ix.Kernel.Role.natSucc ∈ r.block) : Ix.Kernel.natLitSupported c.env = true :=
   hc.env.natLit (ScopedCtx.inForce_of_block_or_dep hc.env.tableWf hr (.inl h0))
@@ -137,7 +137,7 @@ theorem natLit_of_natBlock {c : ScopedCtx} (hc : ScopedCoreFacts c) {r : Ix.Kern
     (ScopedCtx.inForce_of_block_or_dep hc.env.tableWf hr (.inl h2))
 
 /-- `natLitSupported` from `Nat.add` in force (`Nat` is a dependency of `Nat.add`). -/
-theorem natLit_of_natAdd {c : ScopedCtx} (hc : ScopedCoreFacts c) (hr : c.inForce .natAdd) :
+theorem natLit_of_natAdd {c : ScopedCtx} (hc : ScopedCoreBase c) (hr : c.inForce .natAdd) :
     Ix.Kernel.natLitSupported c.env = true :=
   natLit_of_natBlock hc
     (ScopedCtx.inForce_of_block_or_dep (s := .nat) hc.env.tableWf hr (.inr (by decide)))
@@ -469,7 +469,7 @@ theorem try_nat_offset_dispatch_obs {x_rc x_ap x_op x_a0 x_nb x_sp : SourceValue
 
 /-- `try_extract_nat(rc, e)`: tag `1` at a literal (`Red.refl`), at `Nat.zero` with no levels
 (`Red.natZeroLit`), and at an application `try_extract_nat_app` reads. -/
-theorem try_extract_nat_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem try_extract_nat_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::try_extract_nat" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.try_extract_nat c args h r h' calls := by
@@ -531,7 +531,7 @@ theorem try_extract_nat_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : Li
 
 /-- `try_extract_nat_app(rc, f, a)`: tag `1` at `Nat.succ` (no levels) applied to a readable
 argument, the successor literal (`Red.natSucc`). -/
-theorem try_extract_nat_app_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem try_extract_nat_app_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::try_extract_nat_app" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.try_extract_nat_app c args h r h' calls := by
@@ -856,7 +856,7 @@ theorem try_nat_binop_addr_step (c : ScopedCtx) {args : List (SourceValue F)} {h
 
 /-- **`try_match_nat_add`, strengthened**: tag `1` also gives `Nat.add` in force (the answer of
 `role_is`), which the offset rules' guards need. -/
-theorem try_match_nat_add_strong (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem try_match_nat_add_strong (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::try_match_nat_add" args h r h' calls) (ih : IH c calls) :
     ∀ rc hd sp, args = [rc, hd, sp] → CoreGood c calls → c.rc h rc →
@@ -920,7 +920,7 @@ theorem try_match_nat_add_strong (c : ScopedCtx) (hc : ScopedCoreFacts c) {args 
   · exact absurd (hr.symm.trans hr') tag3_one_ne_zero
 
 /-- `try_match_nat_add(rc, head, args)`: tag `1` at `Nat.add` applied to a base and a literal. -/
-theorem try_match_nat_add_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem try_match_nat_add_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::try_match_nat_add" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.try_match_nat_add c args h r h' calls :=
@@ -930,7 +930,7 @@ theorem try_match_nat_add_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : 
 /-! ## Building the stuck forms -/
 
 /-- `mk_nat_offset_stuck(rc, base_w, n, post)`: `base + n` (`natAddLit`) applied to `post`. -/
-theorem mk_nat_offset_stuck_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem mk_nat_offset_stuck_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::mk_nat_offset_stuck" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.mk_nat_offset_stuck c args h r h' calls := by
@@ -1025,7 +1025,7 @@ theorem mk_nat_binop_stuck_step (c : ScopedCtx) {args : List (SourceValue F)} {h
     (TmL.mono ((((x34.trans x12).trans x64).trans e95).trans x49) hPs)
 
 /-- `build_succ_offset(rc, base, lit)`: `Nat.succ (base + (lit - 1))` (`natAddLit`). -/
-theorem build_succ_offset_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem build_succ_offset_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::build_succ_offset" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.build_succ_offset c args h r h' calls := by
@@ -1149,7 +1149,7 @@ theorem build_succ_offset_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : 
 
 /-- `cleanup_nat_offset_major(rc, e)`: `Nat.add b (lit (k + 1))` steps to `Nat.succ (b + k)`
 (`Red.natAddSucc`); any other term is kept (`Red.refl`). -/
-theorem cleanup_nat_offset_major_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem cleanup_nat_offset_major_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::cleanup_nat_offset_major" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.cleanup_nat_offset_major c args h r h' calls := by
@@ -1208,7 +1208,7 @@ theorem cleanup_nat_offset_major_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {
 /-- `try_nat_offset_dispatch(rc, head_addr, op, a0_w, nb, spine)`: the stuck form of the applied
 operation, a reduct (`Nat.add`: `Red.natAddZero` at `0`, else `Red.appArg`; `div`/`mod`:
 `Red.appArg`), through the rest of the spine (`Red.appFn`). -/
-theorem try_nat_offset_dispatch_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem try_nat_offset_dispatch_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::try_nat_offset_dispatch" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.try_nat_offset_dispatch c args h r h' calls := by
@@ -1258,7 +1258,7 @@ theorem try_nat_offset_dispatch_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {a
 
 /-- `try_nat_binop_dispatch(rc, head_addr, op, spine, spine_len)`: `Red.natOp` on two readable
 arguments, or the offset dispatch's stuck form. -/
-theorem try_nat_binop_dispatch_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem try_nat_binop_dispatch_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::try_nat_binop_dispatch" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.try_nat_binop_dispatch c args h r h' calls := by
@@ -1338,7 +1338,7 @@ theorem try_nat_binop_dispatch_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {ar
 
 /-- `try_nat_dispatch(rc, head_addr, op, spine, types)`: `Red.natSucc` for `Nat.succ` on a
 readable argument, the binary dispatch for the other operations (`Nat.pred` is not native). -/
-theorem try_nat_dispatch_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem try_nat_dispatch_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::try_nat_dispatch" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.try_nat_dispatch c args h r h' calls := by

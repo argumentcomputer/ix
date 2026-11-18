@@ -461,7 +461,7 @@ theorem struct_scan_ctors_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
 constructors of an inductive (`struct_scan_ctors`); `LoadFacts.indRecord` ties the loaded
 inductive's counts, block and index to the records, and its bounds read the field elements back
 as the records' numbers. -/
-theorem struct_scan_members_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
+theorem struct_scan_members_step (c : ScopedCtx) (hc : ScopedCoreBase c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::struct_scan_members" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.struct_scan_members c args h r h' calls := by
@@ -608,7 +608,7 @@ theorem struct_block_member_addrs_step (c : ScopedCtx) {args : List (SourceValue
 block scans the block's member list against itself. The block IxVM loaded is the parent's block
 in the records (`LoadFacts.indRecord`, `addr_det`); with no record at the block the member list
 is taken empty. -/
-theorem struct_is_rec_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem struct_is_rec_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::struct_is_rec" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.struct_is_rec c args h r h' calls := by

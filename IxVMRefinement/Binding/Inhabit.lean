@@ -6,9 +6,8 @@ import IxVMRefinement.StatementRel.BoolInhabit
 
 * `bnd_basis`: **the boundary invariant below group 6 at the default table**, the store of the
   24 committed basis rows and the environment of the pins: `TableShape` from
-  `StoreInhabit.tableShape_store`, the prefix invariant from `Typing.basis_facts`, the guard
-  from `Typing.basis_projTablesGuard`, and the rest (no operation stored, the shapes of groups
-  not yet admitted) closed here. With no further hypothesis.
+  `StoreInhabit.tableShape_store`, the prefix invariant from `Typing.basis_facts`, and the
+  rest (no operation stored, the shapes of groups not yet admitted) closed here. With no further hypothesis.
 * `admits_bool`: **the admission of the `Bool` group (6) at the default table**, from the basis
   store to the store of the 29 committed rows (`BoolInhabit.boolStore`), for the run view
   `boolRun` whose loaded records are that store, whose rank puts the block before its
@@ -112,7 +111,6 @@ theorem bnd_basis
     shape := StoreInhabit.tableShape_store
     facts := {
       inv := fun E hE lim _ hlim => basis_facts.inv E hE lim hlim
-      guard := fun E _ lim => basis_projTablesGuard E lim
       whole := basis_facts.{0}.whole
       opsPinned := hpin
       opsAdmitted := fun r hr hs => by
@@ -528,7 +526,7 @@ private theorem ops_not_bool :
   decide
 
 /-- **The `Bool` environment's fields of the internal invariant below 7 other than the prefix
-invariant and block wholeness**: the guard at every limit, no operation stored, and the
+invariant and block wholeness**: no operation stored, and the
 shapes (the `Bool` constants' shapes, decided; the others' groups are not yet admitted). -/
 theorem bool_bfacts {R : Ixon.Env}
     (hinv : ∀ E, RecordsFor R E → ∀ lim, Carried lim →
@@ -544,7 +542,6 @@ theorem bool_bfacts {R : Ixon.Env}
   have hbool := boolShape_of boolEnv_shapeB
   exact {
     inv := hinv
-    guard := fun E _ lim => guardAt_of_noTable boolEnv_noTable
     whole := hwhole
     opsPinned := hpin
     opsAdmitted := fun r hr hs => by

@@ -12,7 +12,8 @@ The input `heta` of `unitStep_nativeBlock` is stated for every prefix `env`; it 
 producer the store keys and used references at that prefix, which `struct_is_rec_doms` reads, so
 this step is stated anew rather than derived from that one.
 
-One input remains: the projection guard of the new table (`hguard`, `BlockGuard`).
+Two inputs remain: the certificate of the new projection table (`hcert`, `BlockCert`) and the
+reading of a `proj_guard` run (`hread`), which together give the table's firing.
 -/
 
 set_option maxHeartbeats 4000000
@@ -43,11 +44,12 @@ theorem unitStep_nativeBlock_eta {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
     (hP : HashedBlockProjectionsHeld E) (hcov : L1.CanonicalHashCoverage E calls)
-    (hguard : ∀ (env : Ix.Kernel.Env .anon) (new blk : List (ConstantInfo .anon))
+    (hread : Core.ProjGuardRunReading)
+    (hcert : ∀ (env : Ix.Kernel.Env .anon) (new blk : List (ConstantInfo .anon))
       (p₀ p : Ix.Kernel.NativeParts .anon) (ty' : Ix.Kernel.Expr .anon)
       (ctorsA : List (ConstantVal .anon × Nat)) (caps : IndCaps .anon),
       NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps →
-      BlockGuard ⟨E, env, t, some n⟩ new B) :
+      BlockCert t E ⟨new ++ env.consts⟩ B) :
     UnitStep.{u} (NativeBlockX.{u} t E) t envT E₀ E lim B cb := by
   subst hlim
   intro env hext hnd hinv hXe href hfresh
@@ -82,7 +84,7 @@ theorem unitStep_nativeBlock_eta {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
     exact ⟨rfl, by rw [hcl]⟩
   have hT : BlockTable ⟨E, env, t, some n⟩ new B ind :=
     blockTable_of_install hI hinv hpin hna hO.facts hcvT hO.nP₀ hO.nIdx₀ hO.lenA hctorsA hfreshT
-      (hguard env new _ p₀ p ty' ctorsA caps hO)
+      (blockFire_of_cert hread hI (hcert env new _ p₀ p ty' ctorsA caps hO))
   have hE : BlockEta ⟨E, env, t, some n⟩ new :=
     blockEta_of_install hrec hinv hkeys hstored hpin hna hO
   -- the names of the new constants

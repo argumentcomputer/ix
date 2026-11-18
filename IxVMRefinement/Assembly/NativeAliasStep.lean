@@ -301,14 +301,9 @@ theorem blockTable_of_indexed {blk : List (ConstantInfo .anon)}
           obtain ⟨ci, hci⟩ := hinv.ctor_ind_stored hbh hold
           rw [hfreshT] at hci
           exact nomatch hci
-      guard := by
-        intro i hi j cvC nP nF tbl hf htbl
+      fire := by
+        intro tbl htbl _
         exfalso
-        have hκT : (appCtx c new).stored.κ (Core.iprjAddr B 0) =
-            Core.keyOf c.t (Core.iprjAddr B 0) := by
-          obtain ⟨ty₀, ty', -, -, -, -, hfT⟩ := hI.former
-          exact appCtx_key_of_find hfT
-        rw [hκT] at htbl
         rcases find?_append_cases (env := c.env) new htbl with hm | hold
         · exact hnoTbl tbl hm
         · rw [hfreshTbl] at hold

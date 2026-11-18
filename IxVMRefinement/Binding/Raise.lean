@@ -3,13 +3,13 @@ import IxVMRefinement.Binding.Defs
 /-! # Changing the group limit of the prefix invariant
 
 `Decl.PrefixInv E t lim env` reads the limit `lim` in three places only: the role fields of
-`CoreCompanions` (through the roles in force), `roleRes` (every fabricated role in force
-resolves) and the guard of `projTablesGuard` (through the role context `proj_guard` is called
-with). Every other field is the same statement at every limit.
+`CoreCompanions` (through the roles in force) and `roleRes` (every fabricated role in force
+resolves). Every other field is the same statement at every limit; the firing of the stored
+projection tables names no limit.
 
 * `scopedLoadFacts_withLim`, `prefixInv_withLim`: the invariant at another limit, given the
-  companions, `roleRes` and the guard there.
-* `prefixInv_lower`: to a limit with fewer roles in force, given only the guard there.
+  companions and `roleRes` there.
+* `prefixInv_lower`: to a limit with fewer roles in force.
 * `prefixInv_raise`: to a limit with more roles in force, given for each role newly in force
   that its companion fact holds (`RaiseOk`: an operation with its companion facts, `String` with
   the whole literal support, or a role no companion field reads) and, for a fabricated role,
@@ -20,8 +20,8 @@ with). Every other field is the same statement at every limit.
   support constants, `strLitSupported_of_shapes`), and the equation groups at once
   (`prefixInv_raise_tail`, 46 to any limit).
 * `topLim n`: the largest carried limit at which every role in force is of the first `n`
-  groups; `bfacts_inv_of_top`: the prefix invariant at it and the guard at every limit give it
-  at every carried limit within the first `n` groups.
+  groups; `bfacts_inv_of_top`: the prefix invariant at it gives it at every carried limit
+  within the first `n` groups.
 -/
 
 universe u
@@ -35,13 +35,11 @@ open IxVM.Refinement.Typing
 
 /-! ## The load contract at another limit -/
 
-/-- **The load contract at another limit**: every field but `roleRes` and the guard is the same
-statement. -/
+/-- **The load contract at another limit**: every field but `roleRes` is the same statement. -/
 theorem scopedLoadFacts_withLim {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
     {t : Ix.Kernel.RoleTable} {lim lim' : Option Nat}
     (h : Core.ScopedLoadFacts (Core.Ctx.stored ⟨E, env, t, lim⟩))
-    (hres : RoleResAt (Core.Ctx.stored ⟨E, env, t, lim'⟩))
-    (hguard : ProjGuard (Core.Ctx.stored ⟨E, env, t, lim'⟩)) :
+    (hres : RoleResAt (Core.Ctx.stored ⟨E, env, t, lim'⟩)) :
     Core.ScopedLoadFacts (Core.Ctx.stored ⟨E, env, t, lim'⟩) where
   getCI := fun addr ptr h₀ h₁ cs a ev hal hne hg ha =>
     h.getCI addr ptr h₀ h₁ cs a ev hal hne ⟨hg.noCollision, hg.bounded, hg.allAllowed⟩ ha
@@ -65,7 +63,8 @@ theorem scopedLoadFacts_withLim {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
   etaIota := h.etaIota
   recordShape := h.recordShape
   inductBlock := h.inductBlock
-  projTablesGuard := hguard
+  projCtorTele := h.projCtorTele
+  projFire := h.projFire
   canonical := h.canonical
   storedRes := h.storedRes
   findRes := h.findRes
@@ -212,37 +211,36 @@ theorem roleResAt_raise (h : RoleResAt (Core.Ctx.stored ⟨E, env, t, lim⟩))
 
 /-! ## The prefix invariant at another limit -/
 
-/-- **The prefix invariant at another limit**, given the companions, `roleRes` and the guard
-there. -/
+/-- **The prefix invariant at another limit**, given the companions and `roleRes` there. -/
 theorem prefixInv_withLim (h : Decl.PrefixInv.{u} E t lim env)
     (hc : Decl.CoreCompanions ⟨E, env, t, lim'⟩)
-    (hr : RoleResAt (Core.Ctx.stored ⟨E, env, t, lim'⟩)) (hg : GuardAt E t lim' env) :
+    (hr : RoleResAt (Core.Ctx.stored ⟨E, env, t, lim'⟩)) :
     Decl.PrefixInv.{u} E t lim' env where
   decl := h.decl
   store := h.store
   unresolved := h.unresolved
   tableWf := h.tableWf
   companions := hc
-  loads := scopedLoadFacts_withLim h.loads hr hg
+  loads := scopedLoadFacts_withLim h.loads hr
   etaStable := h.etaStable
 
-/-- **Lowering the limit** needs only the guard at the lower limit. -/
+/-- **Lowering the limit** to one with fewer roles in force. -/
 theorem prefixInv_lower (h : Decl.PrefixInv.{u} E t lim env)
-    (hsub : ∀ r, Core.Ctx.inForce ⟨E, env, t, lim'⟩ r → Core.Ctx.inForce ⟨E, env, t, lim⟩ r)
-    (hg : GuardAt E t lim' env) : Decl.PrefixInv.{u} E t lim' env :=
+    (hsub : ∀ r, Core.Ctx.inForce ⟨E, env, t, lim'⟩ r → Core.Ctx.inForce ⟨E, env, t, lim⟩ r) :
+    Decl.PrefixInv.{u} E t lim' env :=
   prefixInv_withLim h (coreCompanions_lower h.companions hsub)
-    (roleResAt_lower (roleResAt_of_loads h.loads) hsub) hg
+    (roleResAt_lower (roleResAt_of_loads h.loads) hsub)
 
 /-- **Raising the limit**: every role newly in force has its companion fact and, if fabricated,
 its key stored. -/
 theorem prefixInv_raise (h : Decl.PrefixInv.{u} E t lim env)
     (hnew : ∀ r, Core.Ctx.inForce ⟨E, env, t, lim'⟩ r → ¬ Core.Ctx.inForce ⟨E, env, t, lim⟩ r →
       RaiseOk env r ∧ (Core.fabricatedRole r = true → ∀ a, t.addressOf? r = some a →
-        ∃ ci, env.find? (Core.keyOf t a) = some ci))
-    (hg : GuardAt E t lim' env) : Decl.PrefixInv.{u} E t lim' env :=
+        ∃ ci, env.find? (Core.keyOf t a) = some ci)) :
+    Decl.PrefixInv.{u} E t lim' env :=
   prefixInv_withLim h (coreCompanions_raise h.companions fun r hf hn => (hnew r hf hn).1)
     (roleResAt_raise (roleResAt_of_loads h.loads)
-      fun r a hf hn hfab ha => (hnew r hf hn).2 hfab a ha) hg
+      fun r a hf hn hfab ha => (hnew r hf hn).2 hfab a ha)
 
 /-- A role in force at `m` and not at `n` is of a group in `[n, m)`. -/
 theorem inForce_new_some {m n : Nat} {r : Ix.Kernel.Role}
@@ -326,9 +324,9 @@ key stored. -/
 theorem prefixInv_raise_succ {g : Nat} (h : Decl.PrefixInv.{u} E t (some g) env)
     (hnew : ∀ r ∈ roleGroup g, (t.addressOf? r).isSome = true →
       RaiseOk env r ∧ (Core.fabricatedRole r = true → ∀ a, t.addressOf? r = some a →
-        ∃ ci, env.find? (Core.keyOf t a) = some ci))
-    (hg : GuardAt E t (some (g + 1)) env) : Decl.PrefixInv.{u} E t (some (g + 1)) env := by
-  refine prefixInv_raise h (fun r hf hn => ?_) hg
+        ∃ ci, env.find? (Core.keyOf t a) = some ci)) :
+    Decl.PrefixInv.{u} E t (some (g + 1)) env := by
+  refine prefixInv_raise h (fun r hf hn => ?_)
   obtain ⟨hlo, hhi⟩ := inForce_new_some hf hn
   have hgr : Ix.SpecDigest.groupOf r = g := by omega
   have hmem : r ∈ roleGroup g := hgr ▸ role_mem_roleGroup r
@@ -338,9 +336,9 @@ theorem prefixInv_raise_succ {g : Nat} (h : Decl.PrefixInv.{u} E t (some g) env)
 operations alone, each stored as pinned. -/
 theorem prefixInv_raise_wf (h : Decl.PrefixInv.{u} E t (some 33) env)
     (hops : ∀ r ∈ wfOpRoles, (t.addressOf? r).isSome = true →
-      Ix.Kernel.natOpStoredOk env (.role r) = true)
-    (hg : GuardAt E t (some 41) env) : Decl.PrefixInv.{u} E t (some 41) env := by
-  refine prefixInv_raise h (fun r hf hn => ?_) hg
+      Ix.Kernel.natOpStoredOk env (.role r) = true) :
+    Decl.PrefixInv.{u} E t (some 41) env := by
+  refine prefixInv_raise h (fun r hf hn => ?_)
   obtain ⟨hlo, hhi⟩ := inForce_new_some hf hn
   have hr := wf_block hlo hhi
   have hok := hops r hr hf.1
@@ -371,9 +369,9 @@ need their keys stored. -/
 theorem prefixInv_raise_literal (h : Decl.PrefixInv.{u} E t (some 41) env)
     (hstr : Ix.Kernel.strLitSupported env = true)
     (hst : ∀ r ∈ literalRoles, Core.fabricatedRole r = true → ∀ a, t.addressOf? r = some a →
-      ∃ ci, env.find? (Core.keyOf t a) = some ci)
-    (hg : GuardAt E t (some 46) env) : Decl.PrefixInv.{u} E t (some 46) env := by
-  refine prefixInv_raise h (fun r hf hn => ?_) hg
+      ∃ ci, env.find? (Core.keyOf t a) = some ci) :
+    Decl.PrefixInv.{u} E t (some 46) env := by
+  refine prefixInv_raise h (fun r hf hn => ?_)
   obtain ⟨hlo, hhi⟩ := inForce_new_some hf hn
   have hr := literal_block hlo hhi
   refine ⟨?_, hst r hr⟩
@@ -382,10 +380,10 @@ theorem prefixInv_raise_literal (h : Decl.PrefixInv.{u} E t (some 41) env)
   · exact Or.inr (Or.inr (literal_free r hr hs))
 
 /-- **Past the equation groups at once** (46 to any limit): their roles are read by no
-companion field and are not fabricated, so only the guard is needed. -/
-theorem prefixInv_raise_tail (h : Decl.PrefixInv.{u} E t (some 46) env) (lim' : Option Nat)
-    (hg : GuardAt E t lim' env) : Decl.PrefixInv.{u} E t lim' env := by
-  refine prefixInv_raise h (fun r hf hn => ?_) hg
+companion field and are not fabricated. -/
+theorem prefixInv_raise_tail (h : Decl.PrefixInv.{u} E t (some 46) env) (lim' : Option Nat) :
+    Decl.PrefixInv.{u} E t lim' env := by
+  refine prefixInv_raise h (fun r hf hn => ?_)
   obtain ⟨hc, hb, hfab⟩ := tail_free (inForce_new_ge hf hn)
   exact ⟨Or.inr (Or.inr ⟨hc, hb⟩),
     fun hf' => (Bool.false_ne_true (hfab.symm.trans hf')).elim⟩
@@ -469,14 +467,13 @@ theorem inForce_top (hall : AllBound t) {n : Nat} {lim : Option Nat} (hc : Carri
 end Top
 
 /-- **The prefix invariant at every carried limit within the first `n` groups**, from the
-invariant at the top limit and the guard at every limit. -/
+invariant at the top limit. -/
 theorem bfacts_inv_of_top {t : Ix.Kernel.RoleTable} {R : Ixon.Env} {env : Ix.Kernel.Env .anon}
     (hall : AllBound t) {n : Nat}
-    (htop : ∀ E, RecordsFor R E → Decl.PrefixInv.{u} E t (topLim n) env)
-    (hguard : ∀ E, RecordsFor R E → ∀ lim, GuardAt E t lim env) :
+    (htop : ∀ E, RecordsFor R E → Decl.PrefixInv.{u} E t (topLim n) env) :
     ∀ E, RecordsFor R E → ∀ lim, Carried lim → LimWithin (· < n) t lim →
       Decl.PrefixInv.{u} E t lim env :=
   fun E hE lim hc hw =>
-    prefixInv_lower (htop E hE) (fun r hf => inForce_top hall hc hw hf) (hguard E hE lim)
+    prefixInv_lower (htop E hE) (fun r hf => inForce_top hall hc hw hf)
 
 end IxVM.Refinement.Binding

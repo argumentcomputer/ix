@@ -12,15 +12,13 @@ projection table. `BlockTable` is what the table fields of `NewLoads` read of it
 * `ctorTele`: each new constructor's telescope ends in the family;
 * `ctorAt`: every constructor the new environment stores at a constructor key of the block is new
   (the prefix stores none: it does not store the former's key);
-* `guard`: **the guard conjunct of `projTablesGuard` at the new table** — the circuit's
-  `proj_guard` recomputes the field's sort (`k_ensure_sort` on the loaded constructor's field
-  domains) and folds the sorts of earlier fields the later binders use; the table's guard is
-  `structProjGuards` of the field sorts IxC's constructor stage read (`FieldSortsJ`). Relating
-  the two needs that two inferred sorts of one domain agree at every valuation (no such lemma for
-  `Rules.Infer` in IxC); it is kept as this named clause.
+* `fire`: **the firing of the new table** where the family's sort passes the zero test: the
+  table, with its stored first constructor, fires at every context over the role table and the
+  store (`Core.ProjTableFires`). It names no limit; its producer is the table's certificate with
+  the reading of a `proj_guard` run.
 
 The fields: `BlockInstall.newGetCprjFound`, `BlockInstall.newProjTables`,
-`BlockInstall.newProjTablesAt`, `BlockInstall.newProjTablesGuard`.
+`BlockInstall.newProjTablesAt`, `BlockInstall.newProjCtorTele`, `BlockTable.newProjFire`.
 -/
 
 namespace IxVM.Refinement.Typing
@@ -65,25 +63,15 @@ structure BlockTable (c : Core.Ctx) (new : List (ConstantInfo .anon)) (B : _root
     (appCtx c new).env.find? ((appCtx c new).stored.κ (Core.cprjAddr B 0 j)) =
       some (.ctorInfo cv nP nF) →
     ConstantInfo.ctorInfo cv nP nF ∈ new
-  guard : ∀ (i : F), ZMod.val i = 0 → ∀ (j : Nat) (cvC : ConstantVal .anon) (nP nF : Nat)
-      (tbl : Ix.Kernel.ProjTable .anon),
-    (appCtx c new).env.find? ((appCtx c new).stored.κ (Core.cprjAddr B 0 j)) =
-      some (.ctorInfo cvC nP nF) →
-    (appCtx c new).env.find?
-        (Ix.Kernel.projTableName ((appCtx c new).stored.κ (Core.iprjAddr B 0))) =
+  fire : ∀ tbl : Ix.Kernel.ProjTable .anon,
+    (appCtx c new).env.find? (Ix.Kernel.projTableName (Core.keyOf c.t (Core.iprjAddr B 0))) =
       some (.projInfo tbl) →
     Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true →
-    ∀ (f : F) (rc bp' rg : SourceValue F) (hg hg' : Heap F) (csg : List (Call F))
-      (g : Core.KLevel) (us : List Core.KLevel) (b : Bytes.Address),
-      ZMod.val f < nF → us.length = tbl.levelParams.length →
-      ObsFn Core.W "KernelInfer::proj_guard" [rc, bp', .field i, .field f] hg rg hg' csg →
-      Core.Good (appCtx c new) csg → Core.RCRep c.t c.lim hg rc →
-      Bytes.RepAddressRef Core.addrTy hg b bp' → Core.ixAddr b = B →
-      IxVM.Refinement.KernelLevels.RepKLevel hg' g rg →
-      (∀ φ, Ix.Kernel.Level.eval φ
-        (Ix.Kernel.Level.subst (List.range us.length) us g) = 0) →
-      ∀ φ, Ix.Kernel.Level.eval φ
-        (Ix.Kernel.Level.subst tbl.levelParams us (tbl.entry (ZMod.val f)).fieldSort) = 0
+    ∃ (cvC : ConstantVal .anon) (nP nF : Nat),
+      (appCtx c new).env.find? (Core.keyOf c.t (Core.cprjAddr B 0 0)) =
+        some (.ctorInfo cvC nP nF) ∧
+      Core.ProjTableFires c.t c.E (Core.keyOf c.t (Core.iprjAddr B 0)) tbl
+        (Core.keyOf c.t (Core.cprjAddr B 0 0)) cvC
 
 section
 variable {c : Core.Ctx} {new : List (ConstantInfo .anon)} {B : _root_.Address}
@@ -327,8 +315,28 @@ theorem BlockInstall.newProjTablesAt (hI : BlockInstall c new B cb ind caps)
   obtain ⟨hbB, hi0, -⟩ := cprj_key_block hI.wf hI.decoded hI.held (hI.ctorRec j' hj') hbh hk
   exact hI.tableAt hT evG hgG hs hld hblk hbB (toUInt64_zero_of_lt (val_lt_uint64 i) hi0) hctor
 
-/-- **`NewLoads.projTablesGuard`**, its guard conjunct being `BlockTable.guard`. -/
-theorem BlockInstall.newProjTablesGuard (hI : BlockInstall c new B cb ind caps)
+/-- **`NewLoads.projFire`**: a projection table the install stores new is the family's, and the
+family's table fires (`BlockTable.fire`). -/
+theorem BlockTable.newProjFire (hT : BlockTable c new B ind) :
+    ∀ (k : Core.KKey) (tbl : Ix.Kernel.ProjTable .anon),
+      ConstantInfo.projInfo tbl ∈ new →
+      (appCtx c new).env.find? (Ix.Kernel.projTableName k) = some (.projInfo tbl) →
+      Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true →
+      ∃ (kc : Core.KKey) (cvC : ConstantVal .anon) (nP nF : Nat),
+        (appCtx c new).env.find? kc = some (.ctorInfo cvC nP nF) ∧
+        Core.ProjTableFires c.t c.E k tbl kc cvC := by
+  intro k tbl hm htbl hprop
+  have hn : (ConstantInfo.projInfo tbl).name = Ix.Kernel.projTableName k :=
+    Core.WhnfAux.name_of_find htbl
+  have hsn : tbl.structName = k := Ix.Kernel.projTableName_inj hn
+  have hk : k = Core.keyOf c.t (Core.iprjAddr B 0) := hsn.symm.trans (hT.newTable tbl hm)
+  subst hk
+  obtain ⟨cvC, nP, nF, hc, hf⟩ := hT.fire tbl htbl hprop
+  exact ⟨_, cvC, nP, nF, hc, hf⟩
+
+/-- **`NewLoads.projCtorTele`**: the telescope of a new constructor, or of the constructor of a
+new table. -/
+theorem BlockInstall.newProjCtorTele (hI : BlockInstall c new B cb ind caps)
     (hT : BlockTable c new B ind) :
     ∀ (bp ip ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (b : Bytes.Address) (i : F),
       ObsFn Core.W "KernelModeled::proj_ctor" [bp, ip] h ptr h' cs →
@@ -340,19 +348,7 @@ theorem BlockInstall.newProjTablesGuard (hI : BlockInstall c new B cb ind caps)
           ((appCtx c new).stored.κ (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)))) =
           some (.projInfo tbl) →
         (ConstantInfo.ctorInfo cvC nP nF ∈ new ∨ ConstantInfo.projInfo tbl ∈ new) →
-        Ix.Kernel.Expr.ctorTeleOk cvC.type (nP + nF) = true ∧
-        (Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true →
-          ∀ (f : F) (rc bp' rg : SourceValue F) (hg hg' : Heap F) (csg : List (Call F))
-            (g : Core.KLevel) (us : List Core.KLevel),
-            ZMod.val f < nF → us.length = tbl.levelParams.length →
-            ObsFn Core.W "KernelInfer::proj_guard" [rc, bp', .field i, .field f] hg rg hg' csg →
-            Core.Good (appCtx c new) csg → Core.RCRep c.t c.lim hg rc →
-            Bytes.RepAddressRef Core.addrTy hg b bp' →
-            IxVM.Refinement.KernelLevels.RepKLevel hg' g rg →
-            (∀ φ, Ix.Kernel.Level.eval φ
-              (Ix.Kernel.Level.subst (List.range us.length) us g) = 0) →
-            ∀ φ, Ix.Kernel.Level.eval φ
-              (Ix.Kernel.Level.subst tbl.levelParams us (tbl.entry (ZMod.val f)).fieldSort) = 0) := by
+        Ix.Kernel.Expr.ctorTeleOk cvC.type (nP + nF) = true := by
   intro bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hctor htbl hm
   subst hip
   have hbh := L1.hashedBlockAt_of_proj_ctor (c := appCtx c new) good ev hb rfl
@@ -388,15 +384,7 @@ theorem BlockInstall.newProjTablesGuard (hI : BlockInstall c new B cb ind caps)
       some (.ctorInfo cvC nP nF) := by
     rw [← hk, ← hκC]
     exact hctorB
-  refine ⟨hT.ctorTele j' hj' cvC nP nF hfC', fun hprop f rc bp' rg hg hg' csg g us hf hus evg gg
-    hrc hbp' hrg hzero => ?_⟩
-  have htblB : (appCtx c new).env.find?
-      (Ix.Kernel.projTableName ((appCtx c new).stored.κ (Core.iprjAddr B 0))) =
-      some (.projInfo tbl) := by
-    rw [← hbB, ← hi0]
-    exact htbl
-  exact hT.guard i hi0 j cvC nP nF tbl hctorB htblB hprop f rc bp' rg hg hg' csg g us b hf hus evg
-    gg hrc hbp' hbB hrg hzero
+  exact hT.ctorTele j' hj' cvC nP nF hfC'
 
 end
 
