@@ -71,9 +71,8 @@ the invariant at the basis groups and the two admission chains are its projectio
   its prelude pin, and the stores of a run; the claim's decode is proved); and at each group of
   a run the closure, the stored shapes where the group has no role unit, and the role unit of
   an operation and of a standard axiom;
-* typing: the use-site reading of the projection guard (`Core.ProjGuardRunReading`); what an
-  accepted run gives of its family records, advice and twins (`FamilyGraphRow`) and of the
-  records a family check checks (`InnerCheckedRow`); the step of a top-walked block with its
+* typing: what an accepted run gives of its family records, advice and twins
+  (`FamilyGraphRow`) and of the records a family check checks (`InnerCheckedRow`); the step of a top-walked block with its
   family record (`FamilyBlockRow`) and the step of a twin (`FamilyTwinRow`).
 
 The typing half takes nothing from the binding half but the table witness at `OverW L`, so no
@@ -212,16 +211,9 @@ and the two admission chains are projections of the run predicate (`basisOver_bi
 run and each group from 6 to 76 of it, the closure, the stored shapes where the group has no
 role unit, the role unit of an operation and the role unit of a standard axiom.
 
-The last five hypotheses are the typing half's.
+The last four hypotheses are the typing half's. The step of the ordinary inductive type takes
+the use-site reading of the projection guard, a theorem (`Core.projGuardRunReading`).
 
-* `projGuardRunReading`: the use-site reading of the projection guard: a run of the projection
-  guard at a propositional structure's table, within the registry's induction, reads as the
-  guard's use at the stored raw type of the structure's constructor (`ProjGuardUse`), the run's
-  own hashed collision being the only alternative (`Core.ProjGuardRunReading`). It is the one premise of the step of a block of one inductive
-  type on the native route whose former is declared at its telescope (the ordinary inductive
-  type), at every checked unit (`nativeBlockTelescope_checked`) and at every top-walked one
-  (`nativeBlockTelescope_walked`). Stated; producer open: trace lemmas of the classifier
-  restated below the registry's induction.
 * `familyGraph`: at every walk of an accepted typing claim and every witness of the table's
   shape, the run's family records, advice, inner records and twins form a family graph in which
   every top-walked non-empty block of recursors is a family record or a twin, every top-walked
@@ -269,7 +261,6 @@ theorem circuitComposed_residual
     (standardAxiomRoleUnit : ∀ calls,
       AtGroups (BindingRun calls)
         (RoleUnitStepOver.{u} (· ∈ standardAxioms) FormerOpenTraceAt))
-    (projGuardRunReading : Core.ProjGuardRunReading)
     (familyGraph : FamilyGraphRow.{u})
     (innerChecked : InnerCheckedRow)
     (familyBlock : FamilyBlockRow.{u} FormerOpenTraceAt)
@@ -282,13 +273,13 @@ theorem circuitComposed_residual
     groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit
     familyGraph
     (innerUnitSteps_of_innerChecked innerChecked
-      (nativeBlockTelescope_checked linkLaws_formerOpenTrace projGuardRunReading))
+      (nativeBlockTelescope_checked linkLaws_formerOpenTrace Core.projGuardRunReading))
     familyBlock familyTwin
     (standaloneDefinition_foldExtra linkLaws_formerOpenTrace)
     (standaloneTheoremOrOpaque_foldExtra linkLaws_formerOpenTrace)
     (standaloneRecursor_of_freshNotBasis freshRecursorMajorNotBasis_walked)
     (definitionBlock_of_nonempty (definitionBlock_foldExtra linkLaws_formerOpenTrace))
-    (nativeBlockTelescope_walked linkLaws_formerOpenTrace projGuardRunReading)
+    (nativeBlockTelescope_walked linkLaws_formerOpenTrace Core.projGuardRunReading)
     nativeBlockAlias_walked
     nativeBlockOtherTelescope_step
 
