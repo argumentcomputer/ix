@@ -192,7 +192,8 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
   · rw [← henv₂]
     exact (hkeeps env env₂ h as blk hinv hX.1 hg hroots hreads hd hst).2
   · rw [← henv₂]
-    exact familyRecsModeled_famStep hX.2 hg hd hst (hclaim blk hreads)
+    exact familyRecsModeled_famStep (A := A) (rb := rb) (c := c) (crb := crb) hX.2 hg hd hst
+      (hclaim blk hreads)
   · -- each address of the family, stored as its reading
     intro x hx
     obtain ⟨ci₀, hci₀, hk⟩ := hreads.2.2.1 x hx
