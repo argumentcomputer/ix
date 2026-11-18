@@ -21,20 +21,22 @@ execution that they occur.
   assembled over the compiled records: the definition's value is the compiled theorem, the
   opaque constant's value is the compiled opaque constant, the theorem's value is
   `True.intro`. The block is claimed at each member's projection address, under a validated and
-  under an assumed binding, and must be accepted; under the assumed binding the program must
-  have called `KernelClaim::check_muts_member_at` (no other block is walked then: the
-  references to `True` and `True.intro` are bound by the role table). One claim so holds a
-  theorem, an opaque constant and a block of definitions.
+  under an assumed binding, and must be accepted having called `Ingress::get_ci_dprj`, the load
+  of a definition through its projection record: no other record of the claim, and no record a
+  validation of the default table walks, is a member of a block of definitions. One claim so
+  holds a theorem, an opaque constant and a block of definitions.
 * The same block with a theorem member whose value is not a proof of its statement must be
   refused, under either binding.
 
 It is executed evidence, not a kernel proof: nothing here enters a theorem. Lines of the
 record report start with `VR`; the exit code is `0` only if every check and every case passed.
 
-With `IX_VALUE_RECORDS_CONTROLS=1` the suite runs two controls in place of its cases, and must
-then fail on each: the compiled theorem claimed under the assumed binding as having called the
-member check of a block (its closure holds no block that is walked), and as having called a
-function the program does not have.
+With `IX_VALUE_RECORDS_CONTROLS=1` the suite runs three controls in place of its cases, and
+must then fail on each: the compiled theorem claimed, under the validated and under the assumed
+binding, as having called the load of a definition through its projection record (its closure
+holds no block of definitions), and as having called a function the program does not have.
+The member check of a block (`KernelClaim::check_muts_member_at`) would not do as a control: the
+theorem's claim calls it at the block of `True`, which the walk checks as a unit.
 -/
 
 namespace Tests.Ix.IxVM.ValueRecords
@@ -170,8 +172,10 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
   let aOpq ← IO.ofExcept (addrOf env (defs "sealed"))
   if (← IO.getEnv "IX_VALUE_RECORDS_CONTROLS") == some "1" then
     let controls : Array Builder :=
-      #["KernelClaim::check_muts_member_at", "KernelCheck::no_such_function"].map
-        fun callee _ => typingCase env "the compiled theorem" aThm true true (some callee)
+      #[(false, "Ingress::get_ci_dprj"), (true, "Ingress::get_ci_dprj"),
+        (true, "KernelCheck::no_such_function")].map
+        fun (assumed, callee) _ =>
+          typingCase env "the compiled theorem" aThm assumed true (some callee)
     return (← runCases "ixvm-value-records" controls (jobs := 4) (circuit := some true))
   let mut ok := true
   ok := (← standaloneRecord env "proved" .thm) && ok
@@ -190,8 +194,7 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     for (p, i) in ps.zipIdx do
       cases := cases.push (fun _ => typingCase envB
         s!"the block of a definition, an opaque constant and a theorem, at member {i}" p
-        assumed true
-        (some (if assumed then "KernelClaim::check_muts_member_at" else "KernelCheck::check_const")))
+        assumed true (some "Ingress::get_ci_dprj"))
     for (p, i) in psX.zipIdx do
       cases := cases.push (fun _ => typingCase envX
         s!"the block with an ill-typed theorem member, at member {i}" p assumed false none)

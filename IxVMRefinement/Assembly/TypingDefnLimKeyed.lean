@@ -1,7 +1,7 @@
 import IxVMRefinement.Claim.TopDefn
 import IxVMRefinement.Assembly.NativeBlockFinalRetHead
 
-/-! # Definition steps at either role context with the registered-family invariant
+/-! # The definition step at either role context, for a clause kept by checked keyed values
 
 The actual declaration judgement and hashed key supply the invariant preservation
 premises. No assumption that arbitrary unchecked value constants preserve it is used.
@@ -81,26 +81,5 @@ theorem unitStep_defn_lim_keyed {X : Ix.Kernel.Env .anon → Prop} {calls : List
   · intro ci hci
     obtain rfl := List.mem_singleton.mp hci
     exact Or.inl ⟨A, hown, hname⟩
-
-
-/-- A definition at either role context preserves the native registered-family clause. -/
-theorem unitStep_defn_lim_nativeXR {calls : List (Call F)}
-    {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon}
-    {lim : Option Nat} {bAddr A : _root_.Address} {c : Ixon.Constant} {d : Ixon.Definition}
-    (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
-    (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .defn d) (hlogic : InLogic c)
-    (hkind : d.kind = .defn)
-    (hchk : Claim.CheckedLimAt calls bAddr t A lim)
-    (hkey : Decl.KeyFree (keyOf t A))
-    (hinert : InertClause t c)
-    (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c) :
-    UnitStep.{u} (NativeBlockXR.{u} t E) t envT E₀ E lim A c := by
-  have htwf : t.wf = true := by
-    unfold Ix.Kernel.RoleTable.wf
-    rw [ht]
-    rfl
-  exact unitStep_defn_lim_keyed ht hS hst hc hinfo hlogic hkind hchk hkey hinert hcover
-    (keepsValuesKeyed_nativeBlockXR htwf E)
 
 end IxVM.Refinement.Typing
