@@ -560,6 +560,15 @@ structure BatchGives (K : FamRunCtx) : Prop where
     FamilyCallOwn K.calls K.bAddr K.t B rb K.lim cs advAs → advAs[k]? = some b →
     (∃ ca x, recordOf K.E₀ (Core.ixAddr b) = some ca ∧ ConstAddrOf (Core.ixAddr b) ca x) →
     Unclaimed K.fam (Core.ixAddr b)
+  /-- `check_advice_record`'s `Muts` arm, which asserts `muts_indc_count(members)` equals the
+  member count (every member inductive), read through `check_family`'s unfolding: an advice
+  record a scope check's own advice walk lists is no non-empty block of recursors. The arm is in
+  today's circuit (READ, `IxVM/IxVM/Source/KernelModeled.lean:840-842`; batch candidate
+  `75d3512f6`, `:902-907`, unchanged), so this is provable now from the observation of
+  `check_advice_record`, as `Decl.adviceRecord_kind` reads its arms; not yet proved here. -/
+  listedNotRec : ∀ B rb cs advAs (k : Nat) b, K.ScopeAt B rb cs →
+    FamilyCallOwn K.calls K.bAddr K.t B rb K.lim cs advAs → advAs[k]? = some b →
+    ¬ RecBlock K.E₀ (Core.ixAddr b)
 
 /-- **An advice record of a block is top-walked or inner**: the family check's own advice walk
 runs under the family check's role context, at the walk's limit, and checks every listed record

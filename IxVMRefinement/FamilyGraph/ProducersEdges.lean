@@ -485,11 +485,12 @@ inductive FamEdge (K : FamRunCtx) (rank : _root_.Address → Nat) :
   | twinRec {B rb' : _root_.Address} : K.twin rb' = some B → FamEdge K rank B rb'
   | loc {B rb : _root_.Address} {cs : List (Call F)} {a : _root_.Address} {p : Nat} :
       K.ScopeAt B rb cs → K.LocalAt B rb cs a p → FamEdge K rank a B
-  | owner {D a x : _root_.Address} : K.Inner a → K.Top D →
+  | owner {D a x : _root_.Address} : K.Inner a → (¬ ∃ B', K.twin a = some B') → K.Top D →
       (∀ B rb cs p, K.ScopeAt B rb cs → K.LocalAt B rb cs a p → rank D < rank B) →
       UsedRef K.E₀ a x → FamOwns K.E₀ K.fam D x → FamEdge K rank D a
   | earlier {B rb : _root_.Address} {cs : List (Call F)} {a₁ a₂ x : _root_.Address}
-      {p₁ p₂ : Nat} : K.Inner a₂ → K.ScopeAt B rb cs → K.LocalAt B rb cs a₁ p₁ →
+      {p₁ p₂ : Nat} : K.Inner a₂ → (¬ ∃ B', K.twin a₂ = some B') → K.ScopeAt B rb cs →
+      K.LocalAt B rb cs a₁ p₁ →
       K.LocalAt B rb cs a₂ p₂ → p₁ < p₂ →
       (∀ B' rb' cs' p', K.ScopeAt B' rb' cs' → K.LocalAt B' rb' cs' a₂ p' →
         rank B < rank B' ∨ (rank B = rank B' ∧ p₂ ≤ p')) →
@@ -611,7 +612,7 @@ theorem innerClosed_of
           · exact hD
           · exact transGen_trans hD hT
         have hr : rank D < rank B := transGen_rank_lt hW hDB
-        exact Or.inr (Or.inr (Or.inr ⟨D, Or.inl hTD, hU, hown, .single (.owner hI hTD
+        exact Or.inr (Or.inr (Or.inr ⟨D, Or.inl hTD, hU, hown, .single (.owner hI htw hTD
           (fun B' rb' cs' p' hS' hl' => Nat.lt_of_lt_of_le hr (hle B' rb' cs' p' hS' hl'))
           hu hown)⟩))
     -- a local record of the scope check at an earlier position: the earlier edge
@@ -623,7 +624,7 @@ theorem innerClosed_of
             Relation.TransGen (FamEdge K rank) D a := by
       intro D q hlD hq hw hU hown
       exact Or.inr (Or.inr (Or.inr ⟨D, hw, hU, hown,
-        .single (.earlier hI hS hlD hl hq hall hu hown)⟩))
+        .single (.earlier hI htw hS hlD hl hq hall hu hown)⟩))
     rcases hl with ⟨advAs, k, b, hown, hb, hba, hp, -⟩ | ⟨hp, hwit, hcov, cx, hcx, hs⟩ |
       ⟨-, htw', -⟩
     · -- a listed advice record: `adviceRefs`
@@ -691,8 +692,8 @@ theorem rankEdges_of
     | famRec h _ => exact hG.record z (FamRunCtx.fam_some h).1.1
     | twinRec h => exact hG.record z (FamRunCtx.twin_block_top h)
     | loc _ hl => exact FamRunCtx.localAt_record hl
-    | owner _ hT _ _ _ => exact hG.record z hT
-    | earlier _ _ hl _ _ _ _ _ => exact FamRunCtx.localAt_record hl
+    | owner _ _ hT _ _ _ => exact hG.record z hT
+    | earlier _ _ _ hl _ _ _ _ _ => exact FamRunCtx.localAt_record hl
   walkUse := fun a x hTa hTx hcov hu => .walk ⟨hTa, hTx, Or.inl ⟨hu, hcov⟩⟩
   walkOwner := fun a c hTa hc hp =>
     .walk ⟨hTa, (hW.owner a c hTa hc hp).1, Or.inr ⟨c, hc, hp, rfl⟩⟩
