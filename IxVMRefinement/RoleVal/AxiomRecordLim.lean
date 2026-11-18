@@ -305,7 +305,7 @@ theorem validate_role_axiom_guard {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
         role_bound_addr_uncond ((htbl.mono ext_192).toTableRep) e314
       have ha_eq' : a'' = a' := by
         rw [had] at had''
-        exact Option.some.inj had''
+        exact (Option.some.inj had'').symm
       subst ha_eq'
       have hrc304 : Claim.RCLimRep t bAddr (some (groupValLimit g)) b304 x_rc :=
         hrc.mono (ext_192.trans ext_ba3)
