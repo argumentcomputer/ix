@@ -81,7 +81,9 @@ structure GroupFamilyChecks (calls : List (Call F)) (bAddr : _root_.Address)
   /-- The selected record's flattened family, entry by entry: derived from the block's
   constructors and read off the record. `check_family`'s `check_nested_aux` with the changed
   `aux_all_in` (the record's entries, `build_flat_block`, are the derived ones, `nested_walk`,
-  in order) and `check_recs` (entry `k` at recursor `k`), at the offset `block_elim` computes. -/
+  in order) and `check_recs` (entry `k` at recursor `k`), at the offset `block_elim` computes
+  (every term read off the store in the canonical reading, `FamilyFlat.loadedAt`: the binder
+  data of the record's binder blocks at the expression's root, as `get_ci` loads it). -/
   familyFlat : ∀ B rb, famOf B = some rb → ∃ (cb crb : Ixon.Constant)
       (ms rs : Array Ixon.MutConst) (es : List FamilyFlat.FlatEntry) (off : Nat),
     FamilyOfBlock E₀ B cb ms rb crb rs (es.map FamilyFlat.FlatEntry.addr) ∧
@@ -92,7 +94,9 @@ structure GroupFamilyChecks (calls : List (Call F)) (bAddr : _root_.Address)
   reconstructed body (`populate_rules`), up to the semantic equality of levels. `check_family`'s
   `check_recs` under the group's validation: `canonical_rules_at_pos` refuses the full-consumption
   arm in a context that validates a group (`rc_validates_group`), so every member's declared type
-  is structurally the reconstruction; `compare_rules` checks every rule. -/
+  is structurally the reconstruction; `compare_rules` checks every rule (every term read off the
+  store in the canonical reading, `FamilyFlat.loadedAt`: the binder data of the record's binder
+  blocks at the expression's root, as `get_ci` loads it). -/
   familyForm : ∀ B rb, famOf B = some rb → FamilyRecon.RFormS t E₀ B rb
   /-- A new non-empty block of recursors is a selected family record, or was checked as a
   second family record of a block (a twin). -/

@@ -516,11 +516,15 @@ a named change of the circuit source, or unknown.
   observations of `KernelModeled::check_family` regenerated with the changed `aux_all_in`
   (`check_nested_aux`: the record's entries, `build_flat_block`, are the derived ones,
   `nested_walk`, in order), with `check_recs` (entry `k` at recursor `k`), at the offset
-  `block_elim` computes.
+  `block_elim` computes (every term read off the store in the canonical reading,
+  `FamilyFlat.loadedAt`: the binder data of the record's binder blocks at the expression's root,
+  as `get_ci` loads it).
 * `familyForm`: the field `GroupFamilyChecks.familyForm`: the selected record's reconstruction
   form. Source: `check_recs`' form state under the group's validation (the reconstruction
   comparison in `canonical_rules_at_pos`), in the regenerated observations of
-  `KernelModeled::check_family` and `check_recs`.
+  `KernelModeled::check_family` and `check_recs` (every term read off the store in the canonical
+  reading, `FamilyFlat.loadedAt`: the binder data of the record's binder blocks at the
+  expression's root, as `get_ci` loads it).
 * `runFacts`: what is left of `ClosureRunFacts` at the group (`RunFactsLeft`, which names each
   field's source); `famRefs` is the rank's, `advNotUnit`, `roleUnitForm` and `keptRoles` are proved
   (`families_of_remaining`).
