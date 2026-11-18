@@ -32,7 +32,8 @@ def RawDeltaAt (c : ScopedCtx) (κ : _root_.Address → KKey) (rootCalls : List 
     loadValue loaded ptr = .ok (.construct kciEnum "Defn" [levels, ty, value, safety, hintPtr]) ∧
     RawExprRep κ loaded 0 raw value ∧
     (∀ call ∈ loadCalls, call ∈ rootCalls) ∧
-    output = raw.instantiateLevelParams (List.range parameters.length) parameters
+    output = raw.instantiateLevelParams (List.range parameters.length) parameters ∧
+    levels = .field (parameters.length : F) ∧ parameters.length < 549755813888
 
 /-- Deterministic head strategy over raw syntax, with explicit delta evidence. No constructor
 asserts a Rules.Red judgement; beta and zeta are capture-avoiding data substitutions. -/
@@ -143,7 +144,8 @@ private theorem head_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved 
         intro call member; rw [events]; simp [member]
       obtain ⟨cv, value, origin, hint, ptr, nl, ty, valuePtr, safety, hintPtr, loadedHeap,
         beforeInst, loadCalls, instCalls, found, arity, load, member, node, rawOrigin, extension,
-        inst, loadSubset, _, valueRep⟩ := definition_value_keyed_raw_origin rawKey facts
+        inst, loadSubset, _, valueRep, countEq, countBound⟩ :=
+          definition_value_keyed_raw_origin rawKey facts
           (good.sub loadInside) addressRep scopedRep.const_key_ne paramsRep valueCall
       obtain ⟨valueSemantic, valueScoped⟩ := definition_value_rep (d := d) (Γ := Γ) facts (good.sub loadInside)
         addressRep scopedRep.const_key_ne paramsRep valueCall
@@ -157,7 +159,8 @@ private theorem head_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved 
         exact ⟨address, cv, value, origin, hint, _, ptr, nl, ty, valuePtr, safety, hintPtr,
           h, loadedHeap, loadCalls, rfl, found, arity, addressRep, load,
           subset _ (loadInside _ member), node, rawOrigin,
-          fun call inside => subset call (loadInside call (loadSubset call inside)), rfl⟩
+          fun call inside => subset call (loadInside call (loadSubset call inside)), rfl,
+          countEq, countBound⟩
       exact ⟨bound, result, resultRep, .const delta resultTrace⟩
     | .other_App (cs236 := first) (cs300 := instCalls) (cs286 := children)
         (ld60 := loaded) (ev238 := functionCall) (ld232 := lambda) (ev302 := inst)
