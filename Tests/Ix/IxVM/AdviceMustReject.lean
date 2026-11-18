@@ -23,6 +23,7 @@ program to reject a claim that needs the block:
 * the payload of another block, a payload naming a claimed definition as the
   recursor family, no payload, a payload naming a record the store lacks;
 * an oversized payload (an advice count far beyond its bytes);
+* an unsafe copy of Tree's container recursor as one more container-recursor witness;
 * under a binding whose `Nat.add` record also names `Even`, so that the validation of
   `Nat.add`'s group (limit 8) checks Even's family: the record bound to `Nat.mul`, an operation
   of a later group, as the first advice record (the operation order at a payload record; the same
@@ -134,7 +135,23 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     fun _ => Case.ofClaim
       "advice must-reject control: Nat.add's record reaches Even, with Even's advice unchanged"
       envX (.binding spec bindingX.address)]
+  -- Tree's payload with one more kind-2 witness: an unsafe copy of its container recursor (a
+  -- standalone recursor record), on the same path to the container's block; refused for the flag
+  -- (`check_container_rec`), as the native route's recursor check does not read it
+  let pT := advT.layout
+  let some (xRec, _, recSteps, recExtra) := pT.witnesses.find? (fun (_, k, _, _) => k == 2)
+    | throw (IO.userError "Tree's payload names no container recursor")
+  let some recC := env.getConst? xRec <|> env.modelRecords[xRec]?
+    | throw (IO.userError "Tree's container recursor is not stored")
+  let .recr recR := recC.info | throw (IO.userError "Tree's container recursor is no standalone recursor record")
+  let unsafeRec : Ixon.Constant := { recC with info := .recr { recR with isUnsafe := true } }
+  let unsafeRecA := Address.blake3 (Ixon.ser unsafeRec)
+  let withUnsafeRec := variant treeB
+    { pT with witnesses := pT.witnesses.push (unsafeRecA, 2, recSteps, recExtra) }.ser
+    #[(unsafeRecA, unsafeRec)]
   let cases : Array Builder := orderCases ++ #[
+    caseOn "an unsafe container recursor as a witness" withUnsafeRec tree
+      (some "an unsafe container recursor"),
     caseOn "a type's slot holds a constructor's model" (variant evenB
       { pE with typeModels := pE.typeModels.set! 0 ctorModel }.ser) even (some "model type mismatch"),
     caseOn "two iota theorems swapped" swapped even none,
