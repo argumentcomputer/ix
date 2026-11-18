@@ -261,6 +261,7 @@ theorem twinKeepsStoreAr : TwinKeepsStoreAr := by
             rw [← hname]
             show (env₂.find? w'.cvW'.name).isSome = true
             rw [(hall w' hw').1.name_eq, hfindRec w' hw']
+            rfl
         · intro lvls pins hnest p hp
           have hfire' : rl.fire = rC.fire := hfire
           exact (hrC'.2 lvls pins (hfire'.symm.trans hnest) p hp).mono hext.find
