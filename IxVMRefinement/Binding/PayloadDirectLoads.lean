@@ -449,17 +449,16 @@ private theorem rec_flag_eq
         [a₁, a₂, a₃, a₄, a₅, a₆, a₇, a₈, u, a₁₀, a₁₁] : SourceValue F) =
       .construct "KernelTypes::KConstantInfo" "Rec" [b₁, b₂, b₃, b₄, b₅, b₆, b₇, b₈, u', b₁₀, b₁₁]) :
     u = u' := by
-  injection h with _ _ hargs
-  injection hargs with _ hargs
-  injection hargs with _ hargs
-  injection hargs with _ hargs
-  injection hargs with _ hargs
-  injection hargs with _ hargs
-  injection hargs with _ hargs
-  injection hargs with _ hargs
-  injection hargs with _ hargs
-  injection hargs with hu _
-  exact hu
+  have e := (Value.construct.inj h).2.2
+  have e1 := (List.cons.inj e).2
+  have e2 := (List.cons.inj e1).2
+  have e3 := (List.cons.inj e2).2
+  have e4 := (List.cons.inj e3).2
+  have e5 := (List.cons.inj e4).2
+  have e6 := (List.cons.inj e5).2
+  have e7 := (List.cons.inj e6).2
+  have e8 := (List.cons.inj e7).2
+  exact (List.cons.inj e8).1
 
 /-! ## The family record -/
 
@@ -632,7 +631,7 @@ private theorem familyRecs_facts (hS : LoadedReads.RunStore calls E₀)
     have hmems : Core.Specs.Callees.MembersRep m2 ms.toList x_members :=
       Decl.membersRep_of_repMutConstList hrep
     obtain ⟨hv100, hm103⟩ := muts_recr_count_spec hmems ev113
-    subst hm103
+    subst m103
     have ev' : ObsFn Obs.W (Instance.mk "Lists::length" [.named "Ixon::MutConst" []]).symbol
         [x_members] m2 v101 m123 cs131 := by
       rw [Obs.Names.«Lists::length<Ixon::MutConst>».symbol]; exact ev133
@@ -640,7 +639,7 @@ private theorem familyRecs_facts (hS : LoadedReads.RunStore calls E₀)
         L1.RepMutConst m2 ms.toList x_members := by
       rw [Obs.Names.«Lists::Node<Ixon::MutConst>».symbol]; exact hrep
     obtain ⟨hv101, hm123⟩ := Lib.Lists.length_spec ev' hl'
-    subst hm123
+    subst m123
     have hlen : ms.toList.length = ms.size := Array.length_toList
     have hcnt : recrCount ms.toList = ms.toList.length := by
       have e : ((recrCount ms.toList : Nat) : F) = ((ms.toList.length : Nat) : F) :=
@@ -663,8 +662,9 @@ private theorem familyRecs_facts (hS : LoadedReads.RunStore calls E₀)
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
     obtain ⟨-, bytes, c, hsz, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
       L1.load_verified_constant_decode_bounded hb ev14
+    have haddr' : Address.blake3Pure ⟨bytes.toArray⟩ = Core.ixAddr b := haddr
     have hrecb : recordOf E₀ (Core.ixAddr b) = some c := by
-      rw [← haddr]
+      rw [← haddr']
       exact Claim.recordOf_of_hashed hH (Core.hashed_mono hsub12 hh)
         (by simpa only [ByteArray.size, List.size_toArray] using hsz) hexact
     obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
@@ -873,7 +873,7 @@ theorem adviceRecord_logic (hS : LoadedReads.RunStore calls E₀)
     have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
       (Core.hashed_mono hsub12 hh) haddr hexact
     subst hcc
-    obtain ⟨infoVal, -, -, -, -, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
+    obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
     have hinfo_eq : x_info = infoVal := (List.cons.inj (Value.construct.inj hc_eq).2.2).1
     rw [← hinfo_eq] at hinfoRep
     match sg952 with
@@ -978,7 +978,7 @@ theorem adviceBlock_memberObs (hS : LoadedReads.RunStore calls E₀)
     | .Muts (x_members := xm) (cs742 := csm) (hv598 := hv) (ev629 := ev629) (ev649 := ev649)
         (ev683 := ev683) (ev723 := ev723) (heq738 := heq738) (ev744 := evm) (hc784 := hcs) .. =>
       have hxe : xm = msPtr := (List.cons.inj (Value.construct.inj (hv.symm.trans hxm)).2.2).1
-      subst hxe
+      subst xm
       have ext2a : Heap.Extends m2 _ := ev629.heap_extends.trans (ev649.heap_extends.trans
         ev683.heap_extends)
       have hflag : ∀ ind, ms.toList.head? = some (.indc ind) → ind.isUnsafe = false := by
