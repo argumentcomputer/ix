@@ -117,7 +117,7 @@ theorem majorShape_inv {tyA : KExpr} {mI rP cnP : Nat} {lvls : List Level} {pins
         (List.range (mI - rP)).map (fun i => Expr.bvar (mI - rP - 1 - i)) := by
   unfold majorShape at h
   by_cases hle : rP ≤ mI
-  · rw [if_pos hle] at h
+  · rw [ite_eq_left hle] at h
     cases hstrip : tyA.stripPis mI with
     | none => rw [hstrip] at h; exact nomatch h
     | some p =>
@@ -134,11 +134,11 @@ theorem majorShape_inv {tyA : KExpr} {mI rP cnP : Nat} {lvls : List Level} {pins
           · rename_i hcond
             simp only [Option.some.injEq, Prod.mk.injEq] at h
             obtain ⟨rfl, rfl⟩ := h
-            exact ⟨hle, bsT, dom, body, mb, D, hstrip, hfn, hcond.1, rfl, hcond.2.1, hcond.2.2⟩
+            exact ⟨hle, bsT, dom, body, mb, D, rfl, hfn, hcond.1, rfl, hcond.2.1, hcond.2.2⟩
           · exact nomatch h
         | _ => rw [hfn] at h; exact nomatch h
       | _ => exact nomatch h
-  · rw [if_neg hle] at h
+  · rw [ite_eq_right hle] at h
     exact nomatch h
 
 /-- **The pins, renamed to the advice, resolve where the recursor's renamed type does**: lifted
