@@ -32,7 +32,8 @@ open Ix.Kernel.Model (HasModel)
 set_option linter.unusedVariables false
 
 /-- **The constants a twin record adds**: the twin recursors, one under the name of each member
-of the block, then model copies at derived keys; fresh in the prefix, with distinct names. -/
+of the block, then model copies, definitions at the model keys of twin recursors; fresh in the
+prefix, with distinct names. -/
 theorem twinRun_parts {J : Judgements .anon} {env env₂ : Ix.Kernel.Env .anon}
     {blk : List (ConstantInfo .anon)} (hrun : DeclRecTwinRunJ J env blk env₂) :
     ∃ ws : List (TwinRecPart .anon),
@@ -41,7 +42,8 @@ theorem twinRun_parts {J : Judgements .anon} {env env₂ : Ix.Kernel.Env .anon}
       (∀ ci ∈ twinRecs ws ++ twinModels ws, env.find? ci.name = none) ∧
       (twinRecs ws).map (·.name) = blk.map (·.name) ∧
       (∀ ci ∈ twinRecs ws, ∃ cv mI rP rules, ci = .recInfo cv mI rP rules) ∧
-      ∀ ci ∈ twinModels ws, ∃ k, ci.name = Ix.Kernel.auxKey k .model := by
+      ∀ ci ∈ twinModels ws, ∃ ci' ∈ twinRecs ws, ci.name = Ix.Kernel.auxKey ci'.name .model ∧
+        ∃ cv v hint, ci = .defnInfo cv v hint := by
   obtain ⟨ws, f, -, hblk, henv, hnd, hfr, -, hall⟩ := hrun
   refine ⟨ws, ?_, hnd, hfr, ?_, ?_, ?_⟩
   · rw [henv]
@@ -54,10 +56,13 @@ theorem twinRun_parts {J : Judgements .anon} {env env₂ : Ix.Kernel.Env .anon}
     obtain ⟨w, -, rfl⟩ := List.mem_map.mp hci
     exact ⟨_, _, _, _, rfl⟩
   · intro ci hc
-    obtain ⟨w, -, hmi⟩ := List.mem_filterMap.mp hc
+    obtain ⟨w, hw, hmi⟩ := List.mem_filterMap.mp hc
     unfold TwinRecPart.modelInfo? at hmi
     obtain ⟨⟨cvm, mval, hint⟩, -, rfl⟩ := Option.map_eq_some_iff.mp hmi
-    exact ⟨w.cvW.name, rfl⟩
+    refine ⟨.recInfo w.cvW' w.mI w.rP w.rulesW', List.mem_map.mpr ⟨w, hw, rfl⟩, ?_,
+      _, _, _, rfl⟩
+    show Ix.Kernel.auxKey w.cvW.name .model = Ix.Kernel.auxKey w.cvW'.name .model
+    rw [(hall w hw).1.name_eq]
 
 /-- **The keeping the twin's step needs**: across a twin record of the second record `A` (as
 the target gives it: the record's declaration as read, IxC's record at the positional package,
@@ -135,8 +140,8 @@ theorem unitStepTwin_of_target (hT : TwinStepTarget.{u}) {X : Ix.Kernel.Env .ano
         have hm₀ := hmodel ci₀ hci₀
         rw [he, hname] at hm₀
         exact hm₀
-      · obtain ⟨k, hk⟩ := hmods ci hmo
-        exact (keyOf_nonAux t x k .model (hname.symm.trans hk)).elim
+      · obtain ⟨ci', -, hk, -⟩ := hmods ci hmo
+        exact (keyOf_nonAux t x ci'.name .model (hname.symm.trans hk)).elim
     · rw [hnone] at hold
       cases hold
   · intro x hx
@@ -155,7 +160,7 @@ theorem unitStepTwin_of_target (hT : TwinStepTarget.{u}) {X : Ix.Kernel.Env .ano
     · obtain ⟨ci₀, hci₀, he⟩ := hrecName ci hr
       obtain ⟨x, hx, hn, -⟩ := hreads.2.1 ci₀ hci₀
       exact Or.inl ⟨x, hx, he.symm.trans hn⟩
-    · obtain ⟨k, hk⟩ := hmods ci hmo
-      exact Or.inr ⟨k, .model, hk⟩
+    · obtain ⟨ci', -, hk, -⟩ := hmods ci hmo
+      exact Or.inr ⟨ci'.name, .model, hk⟩
 
 end IxVM.Refinement.Typing.TwinFamily
