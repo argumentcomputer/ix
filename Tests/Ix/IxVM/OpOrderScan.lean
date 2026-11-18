@@ -18,7 +18,8 @@ operation among the group's needs; a reference to a later role that is no operat
 refused at the scan: a reference to a later operation, directly, through an unbound record,
 through a record bound to `True`, and through a record bound to `Lean.reduceBool`. Must be
 refused at the substitution of the operation's value (`KernelSubst::subst_const`): a certificate
-whose proof projects through the operation itself.
+whose proof projects through the operation itself. Must be refused at the anchor's validation
+(`KernelRoles::validate_anchor`): `String.ofList` bound to `String.mk`, a constructor of its type.
 
 With `IX_OP_ORDER_DEFAULT_ONLY` set, only the unchanged default table's claim runs.
 -/
@@ -198,6 +199,22 @@ private def projThroughOpCase : Except String Case := do
   bindingCase s!"binding: a certificate of {repr rA} projects through {repr rA} itself" env false
     (some "an operation's certificate projects through the operation")
 
+/-- `String.ofList` (an anchor the literal rules read as a definition) bound to `String.mk`, the
+constructor of the same type: refused for the record's kind (`KernelRoles::validate_anchor`). -/
+private def ofListAtCtorCase : Except String Case := do
+  let env ← base
+  let table ← Ix.Kernel.Reader.defaultTable
+  let some s := table.addressOf? .string | throw "String is unbound"
+  let some sc := env.getConst? s | throw "no record for String"
+  let .iPrj p := sc.info | throw "String is not an inductive projection"
+  let mk := projWrapperAddr (.cPrj ⟨0, 0, p.block⟩)
+  unless env.consts.contains mk do throw "String.mk's projection is not stored"
+  let table := rebind table [(.stringOfList, mk)]
+  table.check
+  let env ← withRoleTable env table.toBytes
+  bindingCase "binding: String.ofList bound to String.mk, a constructor" env false
+    (some "a literal anchor is bound to a record of the wrong kind")
+
 def run : IO UInt32 := do
   if (← IO.getEnv "IX_OP_ORDER_DEFAULT_ONLY").isSome then
     return (← runCases "ixvm-op-order-scan" #[fun _ => defaultCase] (jobs := 1)
@@ -215,7 +232,8 @@ def run : IO UInt32 := do
     fun _ => trueCase "unbound",
     fun _ => trueCase "true",
     fun _ => reduceBoolCase,
-    fun _ => projThroughOpCase]
+    fun _ => projThroughOpCase,
+    fun _ => ofListAtCtorCase]
   runCases "ixvm-op-order-scan" cases (jobs := 4) (circuit := some true)
 
 end Tests.Ix.IxVM.OpOrderScan
