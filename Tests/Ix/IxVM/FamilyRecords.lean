@@ -13,7 +13,9 @@ With `IX_FAMILY_RECORDS_OUT` set to a file, it writes what it compiled there, on
 hexadecimal: the role table's bytes (`table`), every record with its address (`rec`: the
 environment's, then the advice's), every blob (`blob`), and for each family its block's address,
 its recursor family record's address, and the addresses of its advice records, member models and
-rule theorems (`fam`). The proofs about family records read this file. -/
+rule theorems (`fam`); also the prelude records and blobs the kernel's reader falls back on
+(`prel`, `evid`, `pblob`) and the order the records are checked in (`order`). The proofs about
+family records read this file. -/
 
 namespace Tests.Ix.IxVM.FamilyRecords
 
@@ -63,6 +65,22 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     lines := lines.push s!"blob {hex a.hash} {hex bytes}"
   for (a, bytes) in env.modelBlobs do
     lines := lines.push s!"blob {hex a.hash} {hex bytes}"
+  -- the prelude the reader falls back on, and the order the records are checked in
+  if let some b := env.roleBinding then
+    if let some table := Ix.Kernel.RoleTable.ofBytes b.bytes then
+      if let .ok (pre : Ix.Kernel.Reader.Prelude .anon) := Ix.Kernel.Reader.preludeFor table then
+        for (a, c) in pre.records do
+          lines := lines.push s!"prel {hex a.hash} {hex (Ixon.serConstant c)}"
+        for (a, c) in pre.evidence do
+          lines := lines.push s!"evid {hex a.hash} {hex (Ixon.serConstant c)}"
+        for (a, bytes) in pre.blobs do
+          lines := lines.push s!"pblob {hex a.hash} {hex bytes}"
+        let mut records : Array (Address × Ixon.Constant) := #[]
+        for (a, lc) in env.consts do
+          if let some c := lc.get? then records := records.push (a, c)
+        for (a, c) in env.modelRecords do
+          records := records.push (a, c)
+        lines := lines.push s!"order {hexList (Ixon.CheckOrder.wholeEnv table pre records)}"
   for (label, first, _, nModels, nIotas) in families do
     let ty ← lookupAddr env first
     let some block := (env.getConst? ty).bind IxVM.Model.projectionBlock?
