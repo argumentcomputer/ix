@@ -721,7 +721,7 @@ def container_refs_ok := aiur_fn⟦
                     _ => {
                       match projection_of_ref_block(r, irefs, iused) {
                         1 => {  1 } ,
-                        _ => {  KernelClaim::addr_set_member(r, wset) } ,
+                        _ => {  0 } ,
                       } } ,
                   } } ,
               };
