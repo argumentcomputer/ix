@@ -80,7 +80,9 @@ theorem ctorRaw_recordsFor {R E : Ixon.Env} (h : Typing.RecordsFor R E)
 /-- **The projection guards of `env`, certified over the witness store `R`**: for every block
 address `B` and member `i` whose projection table `env` stores, with the constructor `env`
 stores for it, if the table's structure sort passes the zero test, the table has its
-certificate over `R`'s raw dictionary at the constructor's raw telescope read from `R`.
+certificate over `R`'s raw dictionary at the constructor's raw telescope read from `R`, and
+its level parameters are the positions `0, …, k - 1` (the numbering of the classifier's raw
+syntax and of the levels a run computes).
 
 The clause mentions no role context, no validation limit and no run: the role table enters
 only through the keys of the two lookups in `env`. -/
@@ -91,7 +93,9 @@ def GuardCerts (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (env : Ix.Kernel.Env .an
       some (.projInfo tbl) →
     env.find? (Core.keyOf t (Core.cprjAddr B i 0)) = some (.ctorInfo cvC nP nF) →
     Level.isEquiv tbl.structSort .zero = some true →
-    ∃ raw, ctorRaw R B i 0 = some raw ∧ ProjGuardCert (GuardRaw.ofStore R) raw cvC.type tbl
+    ∃ raw, ctorRaw R B i 0 = some raw ∧
+      tbl.levelParams = List.range tbl.levelParams.length ∧
+      ProjGuardCert (GuardRaw.ofStore R) raw cvC.type tbl
 
 /-- **The clause over a witness store is the clause over each of its record stores.** A record
 store is constrained by `Typing.RecordsFor` alone. -/
@@ -99,8 +103,8 @@ theorem GuardCerts.recordsFor {t : Ix.Kernel.RoleTable} {R E : Ixon.Env}
     {env : Ix.Kernel.Env .anon} (h : GuardCerts t R env) (hRE : Typing.RecordsFor R E) :
     GuardCerts t E env := by
   intro B i tbl cvC nP nF htbl hctor hprop
-  obtain ⟨raw, hraw, cert⟩ := h B i tbl cvC nP nF htbl hctor hprop
-  exact ⟨raw, ctorRaw_recordsFor hRE hraw,
+  obtain ⟨raw, hraw, hpos, cert⟩ := h B i tbl cvC nP nF htbl hctor hprop
+  exact ⟨raw, ctorRaw_recordsFor hRE hraw, hpos,
     cert.mono (GuardRaw.ofStore_extends_recordsFor hRE)⟩
 
 /-- An environment that stores no projection table carries the clause over every store. -/
@@ -131,10 +135,11 @@ theorem projGuardCert_of_checkNativeTable {p : Ix.Kernel.NativeParts .anon}
       env₂ = ⟨.projInfo tbl :: env.consts⟩ ∧
       env₂.find? (Ix.Kernel.projTableName p.cvT.name) = some (.projInfo tbl) ∧
       tbl.numParams = p.nP ∧ tbl.numFields = cA.2 ∧ tbl.structSort = p.resSort ∧
+      tbl.levelParams = p.cvT.levelParams ∧
       ProjGuardCert look raw cA.1.type tbl := by
-  obtain ⟨tbl, henv, -, hfind, -, -, hnP, hnF, -, hsort, -, -, hguards, -⟩ :=
+  obtain ⟨tbl, henv, -, hfind, -, -, hnP, hnF, hlps, hsort, -, -, hguards, -⟩ :=
     Decl.checkNativeTable_struct_inv hidx htbl
-  refine ⟨tbl, henv, hfind, hnP, hnF, hsort, ⟨sorts, sigs, fuel, ?_, ?_, ?_⟩⟩
+  refine ⟨tbl, henv, hfind, hnP, hnF, hsort, hlps, ⟨sorts, sigs, fuel, ?_, ?_, ?_⟩⟩
   · rw [hnP, hnF]; exact hguards
   · rw [hnP, hnF]; exact hsig
   · intro j hj φ
@@ -174,13 +179,16 @@ theorem GuardCerts.fireSem {t : Ix.Kernel.RoleTable} {R E : Ixon.Env}
     {raw' : Expr .anon} {f : Nat} {g : Level} {us : List Level}
     (hraw' : ctorRaw E B i 0 = some raw')
     (use : ProjGuardUse (GuardRaw.ofStore E) raw' cvC.type tbl.numParams f g)
-    (hf : f < tbl.numFields)
+    (hf : f < tbl.numFields) (hus : us.length = tbl.levelParams.length)
     (hzero : ∀ φ : Ix.Kernel.LevelParam → Nat,
-      Level.eval φ (Level.subst tbl.levelParams us g) = 0) :
+      Level.eval φ (Level.subst (List.range us.length) us g) = 0) :
     Ix.Kernel.Rules.FireSem (tbl.entry f) us := by
   intro hprop
-  obtain ⟨raw, hraw, cert⟩ := h B i tbl cvC nP nF htbl hctor hprop
-  exact fireSem_of_cert hRE hraw cert hraw' use hf hzero hprop
+  obtain ⟨raw, hraw, hpos, cert⟩ := h B i tbl cvC nP nF htbl hctor hprop
+  have hlp : tbl.levelParams = List.range us.length := by rw [hus]; exact hpos
+  refine fireSem_of_cert hRE hraw cert hraw' use hf (fun φ => ?_) hprop
+  rw [hlp]
+  exact hzero φ
 
 end IxVM.Refinement.Guard
 

@@ -153,7 +153,7 @@ theorem install_and_use {p : Ix.Kernel.NativeParts .anon} {cvC : ConstantVal .an
       (ctorType aNat aEq aTrue aP) = some [.zero, .zero] := by
     rw [hnP]
     exact ctorType_signatures aNat aEq aTrue aP hEq hTrue
-  obtain ⟨tbl, -, hfind, hnPt, hnFt, -, cert⟩ :=
+  obtain ⟨tbl, -, hfind, hnPt, hnFt, -, -, cert⟩ :=
     projGuardCert_of_checkNativeTable (cA := (cvC, 2)) hidx htbl hsig sorts_zero_iff
   refine ⟨tbl, hfind, cert, fun E hRE us => ?_⟩
   have hEq' := (GuardRaw.ofStore_extends_recordsFor hRE).typeOf _ _ _ hEq
