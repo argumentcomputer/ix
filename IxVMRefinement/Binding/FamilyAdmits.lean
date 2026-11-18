@@ -1,6 +1,7 @@
 import IxVMRefinement.Binding.FamilyOf
 import IxVMRefinement.Binding.Defs
 import IxVMRefinement.FamilyAlias.Target
+import IxVMRefinement.Binding.FamilyFlat
 
 /-! # A group's admission with modeled blocks: the family checks and the store
 
@@ -76,6 +77,14 @@ structure GroupFamilyChecks (calls : List (Call F)) (bAddr : _root_.Address)
   in the run's store. -/
   family : ∀ B rb, famOf B = some rb →
     ∃ cb ms crb rs flat, FamilyOfBlock E₀ B cb ms rb crb rs flat
+  /-- The selected record's flattened family, entry by entry: derived from the block's
+  constructors and read off the record. `check_family`'s `check_nested_aux` with the changed
+  `aux_all_in` (the record's entries, `build_flat_block`, are the derived ones, `nested_walk`,
+  in order) and `check_recs` (entry `k` at recursor `k`), at the offset `block_elim` computes. -/
+  familyFlat : ∀ B rb, famOf B = some rb → ∃ (cb crb : Ixon.Constant)
+      (ms rs : Array Ixon.MutConst) (es : List FamilyFlat.FlatEntry) (off : Nat),
+    FamilyOfBlock E₀ B cb ms rb crb rs (es.map FamilyFlat.FlatEntry.addr) ∧
+    FamilyFlat.RecordFlat t E₀ rb crb rs es ∧ FamilyFlat.BlockDerivedFlat t E₀ B off es
   /-- A new non-empty block of recursors is a selected family record, or was checked as a
   second family record of a block (a twin). -/
   claimed : ∀ (A : _root_.Address) (c : Ixon.Constant) (rs' : Array Ixon.MutConst),
