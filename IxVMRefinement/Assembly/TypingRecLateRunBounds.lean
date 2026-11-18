@@ -1,6 +1,7 @@
 import IxVMRefinement.Assembly.RecArmRunBounds
 import IxVMRefinement.Assembly.TypingRecLateNativeFront2
 import IxVMRefinement.Claim.TopRec
+import IxVMRefinement.Claim.TopDefn
 
 /-! # The count bounds of a native recursor's step, from the arm's own observations
 
@@ -9,16 +10,17 @@ bounds. This module derives the bounds an accepted run gives (`RecArmRunBounds`)
 walk observed at the record, at every validation limit:
 
 * `RecArmObs calls A`: the walk loaded the record at `A` as a `Rec` value and ran `check_const`
-  on it. It is `NativeRecArm` and `Claim.RecArmLimAt` without their role-context
-  representation, which the bounds do not read; so one statement serves a validating run and a
-  run under an assumed binding (`NativeRecArm.obs`, `recArmObs_of_lim`);
+  on it. It is `RecArmRun` and `Claim.RecArmLimAt` without their role-context
+  representation, which the bounds do not read (`RecArmRun.obs`, `recArmObs_of_lim`);
+* `recArmRun_of_limArm`: the arm the walk exports at any limit (`Claim.TopWalkCore.recArm`) is
+  the arm the step reads;
 * `recArmRunBounds_of_obs`: at a step's environment and the tied parent, the two loads of the
   arm (the record's own, and the member check's load of the parent) give `RecArmRunBounds`.
   Its hypotheses are those `rec_front_arm` takes, with the limit free;
-* `Decl.NatCtorLoadCountT`, `front_ctor_loads_count`: every constructor load the comparison
-  observes answers the stored constructor and bounds its field count below `2^56`
-  (`Core.CIRep.ctor_fields`, which the load contract carries);
-* `RecArmBounds.runBounds`: the bounds the earlier specifications were stated under imply these.
+
+The field count of each constructor is bounded where its load is observed
+(`Decl.NatCtorLoadT`, `front_ctor_loads_count`), and the telescope of a recursive field where the
+run passes it on (`Decl.teleRep_length_lt`).
 -/
 
 universe u
@@ -30,45 +32,6 @@ set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySimpa false
 set_option linter.unusedTactic false
 set_option linter.unreachableTactic false
-
-namespace IxVM.Refinement.Decl
-
-open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
-open Aiur.Library Aiur.Library.List
-open IxVM.Refinement.Core
-open Ix.Kernel (Expr Level LevelParam ConstantVal ConstantInfo RecRule Declaration)
-
-/-- **The constructor loads of a member, with the field count the load checked**:
-`NatCtorLoadT` together with the bound `UInt64::to_field` asserts on the constructor's field
-count when the record is converted. -/
-def NatCtorLoadCountT (κ : _root_.Address → KKey) (b₀ : Bytes.Address) (idx k : Nat)
-    (ctors_info : List (KKey × Nat × KExpr × KExpr × List Nat))
-    (x_block : SourceValue F) (calls_bound : List (Call F)) : Prop :=
-  ∀ (j : Nat), j < ctors_info.length →
-    ∀ (p9 : SourceValue F) (h m2 : Heap F) (cs15 : List (Call F))
-      (w45 x_cty0 w46 w47 w48 w49 x_nf w50 : SourceValue F),
-      (∀ x ∈ cs15, x ∈ calls_bound) →
-      Bytes.RepAddressRef addrTy h b₀ x_block →
-      ObsFn W "Ingress::get_ci_cprj" [x_block, .field (idx : F), .field (j : F)] h p9 m2 cs15 →
-      loadValue m2 p9 = .ok (.construct kciEnum "Ctor"
-        [w45, x_cty0, w46, w47, w48, w49, x_nf, w50]) →
-      ∀ info, ctors_info[j]? = some info →
-        info.1 = κ (cprjAddr (ixAddr b₀) idx j) ∧
-        x_nf = .field (info.2.1 : F) ∧
-        info.2.1 < 72057594037927936 ∧
-        Tm κ 0 (fun _ => default) m2 0 (posOf (List.range k) info.2.2.2.1) x_cty0
-
-/-- The counted load witness gives the plain one. -/
-theorem NatCtorLoadCountT.toT {κ : _root_.Address → KKey} {b₀ : Bytes.Address} {idx k : Nat}
-    {ctors_info : List (KKey × Nat × KExpr × KExpr × List Nat)} {x_block : SourceValue F}
-    {cs : List (Call F)} (hB : NatCtorLoadCountT κ b₀ idx k ctors_info x_block cs) :
-    NatCtorLoadT κ b₀ idx k ctors_info x_block cs := by
-  intro j hj p9 hp m2 cs15 w45 x_cty0 w46 w47 w48 w49 x_nf w50 hs hb ev ld info hinfo
-  obtain ⟨h1, h2, -, h4⟩ :=
-    hB j hj p9 hp m2 cs15 w45 x_cty0 w46 w47 w48 w49 x_nf w50 hs hb ev ld info hinfo
-  exact ⟨h1, h2, h4⟩
-
-end IxVM.Refinement.Decl
 
 namespace IxVM.Refinement.Typing
 
@@ -111,6 +74,29 @@ theorem NativeRecArm.obs {calls : List (Call F)} {bAddr : _root_.Address}
   exact ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, ha_pre, ev_ld, hsub_ld, hld,
     ev_chk, hsub_chk⟩
+
+/-- The arm at a limit gives the observations. -/
+theorem RecArmRun.obs {calls : List (Call F)}
+    {t : Ix.Kernel.RoleTable} {A : _root_.Address} {lim : Option Nat}
+    (h : RecArmRun calls t A lim) : RecArmObs calls A := by
+  obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
+    minors, rules, kf, uns, block, position, cs_load, cs_chk, -, -, ha_pre, -, ev_ld, hsub_ld,
+    hld, ev_chk, hsub_chk⟩ := h
+  exact ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
+    minors, rules, kf, uns, block, position, cs_load, cs_chk, ha_pre, ev_ld, hsub_ld, hld,
+    ev_chk, hsub_chk⟩
+
+/-- **The arm the walk exports at any limit is the arm at that limit**: the walk's role
+context, read as the core reads it. -/
+theorem recArmRun_of_limArm {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {A : _root_.Address} {lim : Option Nat}
+    (h : Claim.RecArmLimAt calls bAddr t A lim) : RecArmRun calls t A lim := by
+  obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
+    minors, rules, kf, uns, block, position, cs_load, cs_chk, hrc_pre, hrc_m, ha_pre, ha_m, ev_ld,
+    hsub_ld, hld, ev_chk, hsub_chk⟩ := h
+  exact ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
+    minors, rules, kf, uns, block, position, cs_load, cs_chk, hrc_pre.toRCRep, hrc_m.toRCRep,
+    ha_pre, ha_m, ev_ld, hsub_ld, hld, ev_chk, hsub_chk⟩
 
 /-- The arm the walk exports at any limit gives the observations. -/
 theorem recArmObs_of_lim {calls : List (Call F)} {bAddr : _root_.Address}
@@ -270,14 +256,13 @@ theorem recArmRunBounds_of_obs {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨hlvlsP, hpP, hiP, hcP56, hidxP, -⟩ := hraw
   exact ⟨hlvls, hrules_lt, hlvlsP, hpP, hiP, hcP56, hidxP⟩
 
-/-- **The bounds at a validating run's arm**: `recArmRunBounds_of_obs` at `NativeRecArm`. The
-limit of the step and the limit of the arm's role context are not related by the statement. -/
+/-- **The bounds at the arm**: `recArmRunBounds_of_obs` at `RecArmRun`. -/
 theorem recArmRunBounds_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
-    {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
     (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
-    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
     {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
@@ -309,69 +294,5 @@ theorem recArmRunBounds_of_limArm {calls : List (Call F)} {t : Ix.Kernel.RoleTab
     RecArmRunBounds rc ip ind :=
   recArmRunBounds_of_obs ht hS hst hc hinfo (recArmObs_of_lim harm) hinert hcover hstep hcm hcmi
     htie hcb hms hind
-
-/-! ## The constructor loads, with the field count -/
-
-/-- **The constructor loads of the member, with the field count each load checked**:
-`front_ctor_loads` keeping the bound of the load contract's `CIRep.ctor`, at every validation
-limit, and under the member index and constructor count the run bounds (`RecArmRunBounds`). -/
-theorem front_ctor_loads_count {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
-    {env : Ix.Kernel.Env .anon} {lim : Option Nat}
-    (hcS : Core.ScopedCoreFacts (Core.Ctx.stored ⟨E, env, t, lim⟩))
-    {fam : NativeFam .anon} (hfam : NativeFamStored env fam) {k : Nat}
-    (hk : fam.p.cvT.levelParams = List.range k)
-    {bP : Bytes.Address} {idx : Nat} (hidx : idx < 72057594037927936)
-    (hlen : fam.ctorsA.length < 72057594037927936)
-    (hnames : ∀ (j : Nat) (cA : ConstantVal .anon × Nat), fam.ctorsA[j]? = some cA →
-      cA.1.name = keyOf t (Core.cprjAddr (Core.ixAddr bP) idx j))
-    {x_block : SourceValue F} {cs : List (Call F)}
-    (hgood : Core.Good ⟨E, env, t, lim⟩ cs) :
-    Decl.NatCtorLoadCountT (Core.Ctx.stored ⟨E, env, t, lim⟩).κ bP idx k (lateCtorsInfo fam)
-      x_block cs := by
-  intro j hj p9 h m2 cs15 w45 x_cty0 w46 w47 w48 w49 x_nf w50 hsub hb ev hld info hinfo
-  obtain ⟨cA, ks, hcA, hks, rfl⟩ := front_lateCtorsInfo_getElem? hinfo
-  have hjlt : j < fam.ctorsA.length := (List.getElem?_eq_some_iff.mp hcA).1
-  obtain ⟨hfindN, hlpsC, -⟩ := hfam.ctor j cA hcA
-  rw [hnames j cA hcA, ← LoadedReads.keyOf_eq] at hfindN
-  have hκ : (Core.Ctx.stored ⟨E, env, t, lim⟩).κ (Core.cprjAddr (Core.ixAddr bP) idx j) =
-      Core.keyOf t (Core.cprjAddr (Core.ixAddr bP) idx j) :=
-    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hfindN
-  have hidxv : ZMod.val ((idx : Nat) : F) = idx :=
-    ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
-  have hjv : ZMod.val ((j : Nat) : F) = j :=
-    ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
-  have hfind' : (Core.Ctx.stored ⟨E, env, t, lim⟩).env.find?
-      ((Core.Ctx.stored ⟨E, env, t, lim⟩).κ (Core.cprjAddr (Core.ixAddr bP)
-        (ZMod.val ((idx : Nat) : F)) (ZMod.val ((j : Nat) : F)))) =
-      some (.ctorInfo cA.1 fam.p.nP cA.2) := by
-    rw [hidxv, hjv, hκ]
-    exact hfindN
-  obtain ⟨-, hctor⟩ := Core.get_ci_cprj_step _ hcS ev x_block ((idx : Nat) : F)
-    ((j : Nat) : F) bP rfl trivial (Or.inr ⟨_, _, _, _, hfind'⟩)
-    (Core.CoreGood.ofRaw (hgood.sub hsub) (fun _ _ => trivial)) hb
-  obtain ⟨v, hv, hrep⟩ := hctor _ _ _ hfind'
-  rw [hld] at hv
-  injection hv with hv
-  rw [← hv] at hrep
-  obtain ⟨cv', nP', nF', hci, hvr, -, hnf', hcounts, -⟩ := Core.CIRep.ctor_fields hrep
-  obtain ⟨rfl, rfl, rfl⟩ := Ix.Kernel.ConstantInfo.ctorInfo.inj hci
-  obtain ⟨-, -, -, htmC⟩ := hvr
-  rw [hlpsC, hk] at htmC
-  refine ⟨?_, hnf', hcounts.2, htmC 0 (fun _ => default)⟩
-  show cA.1.name = (Core.Ctx.stored ⟨E, env, t, lim⟩).κ
-    (Core.cprjAddr (Core.ixAddr bP) idx j)
-  rw [hκ, hnames j cA hcA, LoadedReads.keyOf_eq]
-
-/-! ## The earlier bounds imply these -/
-
-/-- **The bounds the earlier specifications were stated under imply the run's**, given the
-recursor's own level and rule counts (which those bounds do not mention). So a specification
-proved under `RecArmRunBounds` applies wherever one proved under `RecArmBounds` did. -/
-theorem RecArmBounds.runBounds {ip : Ixon.InductiveProj} {ind : Ixon.Inductive}
-    {fam : NativeFam .anon} (hb : RecArmBounds ip ind fam) {rc : Ixon.Recursor}
-    (hlv : rc.lvls.toNat < 4294967296) (hrules : rc.rules.size < 8589934592) :
-    RecArmRunBounds rc ip ind := by
-  obtain ⟨h1, h2, h3, h4, -, h6, -⟩ := hb
-  exact ⟨hlv, hrules, by omega, by omega, by omega, by omega, by omega⟩
 
 end IxVM.Refinement.Typing

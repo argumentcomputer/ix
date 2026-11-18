@@ -46,17 +46,18 @@ theorem eval_eq_zero_of_posOf {ps : List Ix.Kernel.LevelParam}
 family has one stored constructor, which has no field; and the family's result sort is zero at
 every assignment. -/
 theorem rec_k_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlim : lim = some n)
-    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
     {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
     (hcm : Ix.Cert.recordAt E P = some cm) (hcmi : cm.info = .iPrj ip)
     (htie : RecMajorTie t E₀ A c rc P) {fam : NativeFam .anon}
-    (hm : MatchedAt t E env P ip fam) :
+    {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    (hm : FamReadAt L t E env P ip fam) (hsr : FormerSortReads t E lim env fam) :
     rc.k = true →
       rc.rules.size = 1 ∧ fam.ctorsA.length = 1 ∧
       (∀ cA, fam.ctorsA[0]? = some cA → cA.2 = 0) ∧
@@ -64,16 +65,15 @@ theorem rec_k_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E :
   intro hk
   obtain ⟨hat, hname, cb, ms, ind, hcb, hms, hind, hnP, hnI, hlenC, hnames⟩ := hm
   obtain ⟨hp, hi, hmot, hrules, hmin⟩ :=
-    rec_counts_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hcb hms hind
+    rec_counts_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie hcb hms hind
   obtain ⟨rcv, apv, parentV, tyPtr, rulesPtr, blkPtr, tyPtrP, unsP, blkPtrP, kTarget, result,
     pointer, bA, bR, bT, bP, blobs, tree, scanHeap, loadedHeap, kHeap, kAfter, canonHeap, final,
     loadCalls, kCalls, canonCalls, hrc, hbA, hbA', hbR, hbR', hbT, hbT', hbP, hbP', hblob, rty,
     hrulesTr, hrules_lt, hidx56, hlvR, hlvP, hpP, hiP, hcP, eSL, evLoad, hsLoad, hldP, eK, evK,
     hsK, hkEq, eC, evCanon, hsCanon⟩ :=
-    rec_arm_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hcb hms hind
-  subst hlim
+    rec_arm_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie hcb hms hind
   rw [hk] at hkEq
-  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, some n⟩
+  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, lim⟩
   have hcS : Core.ScopedCoreFacts cS := hstep.inv.scopedCoreFacts
   -- the parent's type, as the stored former's
   have hformer : env.find? (Core.keyOf t P) =
@@ -81,8 +81,8 @@ theorem rec_k_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E :
     rw [LoadedReads.keyOf_eq, ← hname]
     exact hat.stored.former
   have hκP : cS.κ P = Core.keyOf t P :=
-    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hformer
-  have hgL : Core.Good ⟨E, env, t, some n⟩ loadCalls := (hst.good env (some n)).sub hsLoad
+    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hformer
+  have hgL : Core.Good ⟨E, env, t, lim⟩ loadCalls := (hst.good env lim).sub hsLoad
   obtain ⟨ci, hfind, hptr⟩ := Core.get_ci_step cS hcS evLoad parentV bT rfl trivial
     (by rw [hbT', hκP]; exact Core.Resolved.ne)
     (Core.CoreGood.ofRaw hgL (fun _ _ => trivial)) hbT
@@ -98,18 +98,9 @@ theorem rec_k_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E :
   obtain ⟨hcvEq, -⟩ := Ix.Kernel.ConstantInfo.indInfo.inj hcv
   subst hcvEq
   obtain ⟨-, -, hperm, htm⟩ := hval
-  obtain ⟨bs, hsort⟩ := hat.sort
-  rw [hat.tele, hnP, hnI] at hsort
-  have hpos : ∃ bs', (Core.posOf fam.cvS.levelParams fam.cvS.type).stripPis
-      (ind.params.toNat + ind.indices.toNat) =
-      some (bs', .sort (Ix.Kernel.Level.subst fam.cvS.levelParams
-        (Core.posLevels fam.cvS.levelParams) fam.p.resSort)) :=
-    ⟨_, by
-      unfold Core.posOf
-      rw [Decl.stripPis_instantiateLevelParams_full, hsort]
-      rfl⟩
-  obtain ⟨bs', hpos⟩ := hpos
-  have hgK : Core.Good ⟨E, env, t, some n⟩ kCalls := (hst.good env (some n)).sub hsK
+  unfold FormerSortReads at hsr
+  rw [hnP, hnI] at hsr
+  have hgK : Core.Good ⟨E, env, t, lim⟩ kCalls := (hst.good env lim).sub hsK
   -- the verdict's arm
   match Obs.«KernelCheck::compute_k_target».obs evK with
   | .Induct_n0 (he103 := he) .. =>
@@ -153,12 +144,9 @@ theorem rec_k_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E :
         (.ptr (.enum Core.kexprListEnum) m60.length) := by
       rw [hm167]
       exact Decl.typesRep_alloc_nil _ _ _
-    obtain ⟨ℓ, hℓ, hlv⟩ := Decl.get_result_sort_level_any_spec
-      (ind.params.toNat + ind.indices.toNat) (by omega)
-      (((hrc.mono eK).toRCRep).mono e1) htys (Decl.ghostScoped_zero _) hcS.env hcS.loads
+    obtain ⟨ℓ, hℓ, hsℓ⟩ := hsr ((hrc.mono eK).mono e1) htys
       (hsub (fun x hx => by rw [children]; simp [hx]))
       ((htm.mono (eK.trans e1)) 0 (fun _ => default)) sortRun
-    have hsℓ := hlv bs' _ hpos
     have hzero : IxVM.Refinement.KernelLevels.RepKLevel m196 .zero
         (.ptr (.enum "KernelTypes::KLevelNode") m111.length) := by
       rw [hm204]
@@ -182,7 +170,7 @@ theorem rec_k_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E :
       rw [hnames 0 cA hcA, ← LoadedReads.keyOf_eq] at hfindC
       have hκC : cS.κ (Core.cprjAddr ip.block ip.idx.toNat 0) =
           Core.keyOf t (Core.cprjAddr ip.block ip.idx.toNat 0) :=
-        Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hfindC
+        Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hfindC
       have hidx : ZMod.val ((ip.idx.toNat : Nat) : F) = ip.idx.toNat :=
         ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
       have hfindC' : cS.env.find? (cS.κ (Core.cprjAddr (Core.ixAddr bP)

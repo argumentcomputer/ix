@@ -13,8 +13,9 @@ whose first `k` nodes are already `Forall`s. A stored former's type is a `∀`-t
 head operation, which returns a term already headed by a `∀` unchanged
 (`Core.GuardData.head_rep`).
 
-`scoped_nat_former_tele_spec`: under the scoped core facts, at any depth, for a term whose first
-`k` binders are `∀`s (`stripPis`), the result represents the same term. -/
+`scoped_nat_former_tele_bounded`: under the scoped core facts, at any depth, for a term whose
+first `k` binders are `∀`s (`stripPis`), the result represents the same term, for any binder
+count below the field's modulus. -/
 
 namespace IxVM.Refinement.Decl
 
@@ -27,13 +28,13 @@ open Ix.Kernel (Expr Level LevelParam)
 set_option maxHeartbeats 1600000
 set_option linter.unusedVariables false
 
-/-- **`nat_former_tele` keeps the term**: at depth `d` with the context `types`, a term whose
-first `k` binders are `∀`s is represented by the result, with every head step it takes on a
-non-`Forall` node read through the scoped core. -/
-theorem scoped_nat_former_tele_spec {c : ScopedCtx} (hc : ScopedCoreFacts c) :
+/-- **`nat_former_tele` keeps the term**, for any binder count in the field's range: at depth
+`d` with the context `types`, a term whose first `k` binders are `∀`s is represented by the
+result, with every head step it takes on a non-`Forall` node read through the scoped core. -/
+theorem scoped_nat_former_tele_bounded {c : ScopedCtx} (hc : ScopedCoreFacts c) :
     ∀ (k : Nat) {d : Nat} {Γ : Nat → KExpr} {E : KExpr}
       {x_rc x_ty x_types r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
-      k < 4294967296 → (E.stripPis k).isSome = true →
+      k < 18446744069414584321 → (E.stripPis k).isSome = true →
       RCRep c.t c.lim h x_rc → TypesRep c.κ Γ h d x_types → GhostScoped Γ d →
       CoreGood c cs → Tm c.κ d Γ h 0 E x_ty →
       ObsFn W "KernelCheck::nat_former_tele" [x_rc, x_ty, .field (k : F), x_types] h r h' cs →
@@ -56,7 +57,7 @@ theorem scoped_nat_former_tele_spec {c : ScopedCtx} (hc : ScopedCoreFacts c) :
     have hsB' : ((B.instantiate1 (.fvar d T)).stripPis m).isSome = true :=
       Specs.Whnf.stripPis_isSome_instantiate1 _ m B 0 hsB
     match Obs.«KernelCheck::nat_former_tele».obs ev with
-    | .n0 (hv14 := hv14) .. => exact absurd hv14 (succ_field_ne_zero (by omega))
+    | .n0 (hv14 := hv14) .. => exact absurd hv14 (succ_field_ne_zero_bounded hlt)
     | .other_Forall (x_d := x_d) (x_b := x_b) (x_m := x_m) (v66 := v66) (m76 := m76)
         (cs84 := cs84) (v89 := v89) (ld34 := ld34) (he61 := hr) (hm60 := hh')
         (op118 := op118) (hm129 := hm121) (ev86 := ev_rec) (hc156 := hcs) .. =>
@@ -69,7 +70,7 @@ theorem scoped_nat_former_tele_spec {c : ScopedCtx} (hc : ScopedCoreFacts c) :
       have hB_open := (hB.mono e_push).open_body (Ghost.extend_at Γ d T)
         (Ghost.extend_below Γ d T)
       have hgood_rec : CoreGood c cs84 := hgood.sub (by rw [hcs]; intro x hx; simp [hx])
-      obtain ⟨e_rec, hrec⟩ := scoped_nat_former_tele_spec hc m (by omega) hsB'
+      obtain ⟨e_rec, hrec⟩ := scoped_nat_former_tele_bounded hc m (by omega) hsB'
         (hrc.mono e_push) htypes' hsc' hgood_rec hB_open ev_rec
       have hclose := tm_close (Γ' := Γ) (fun j hj => (Ghost.extend_below Γ d T j hj).symm) hrec
       rw [abstract1_instantiate1_cancel T 0 (tm_fvarIdxLt hB) hB.looseBVarsBounded] at hclose
@@ -98,7 +99,7 @@ theorem scoped_nat_former_tele_spec {c : ScopedCtx} (hc : ScopedCoreFacts c) :
       have hB_open := (hB.mono e_push).open_body (Ghost.extend_at Γ d T)
         (Ghost.extend_below Γ d T)
       have hgood_rec : CoreGood c cs247 := hgood.sub (by rw [hcs]; intro x hx; simp [hx])
-      obtain ⟨e_rec, hrec⟩ := scoped_nat_former_tele_spec hc m (by omega) hsB'
+      obtain ⟨e_rec, hrec⟩ := scoped_nat_former_tele_bounded hc m (by omega) hsB'
         ((hrc.mono e_w).mono e_push) htypes' hsc' hgood_rec hB_open ev_rec
       have hclose := tm_close (Γ' := Γ) (fun j hj => (Ghost.extend_below Γ d T j hj).symm) hrec
       rw [abstract1_instantiate1_cancel T 0 (tm_fvarIdxLt hB) hB.looseBVarsBounded] at hclose

@@ -62,30 +62,11 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
   (standaloneTheoremOrOpaque :
     IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
       fun x x_1 x_2 x_3 c => ∃ d, c.info = Ixon.ConstantInfo.defn d ∧ d.kind ≠ Ix.DefKind.defn)
-  (recursorAtNativeParent :
+  (freshRecursorMajorNotBasis :
     IxVM.Refinement.Endpoint.WalkedUnit (fun x x_1 x_2 x_3 c => ∃ rc, c.info = Ixon.ConstantInfo.recr rc)
       fun x t envT E₀ E lim A c =>
       ∀ (rc : Ixon.Recursor),
-        c.info = Ixon.ConstantInfo.recr rc →
-          ∀ (env : Ix.Kernel.Env Ix.Kernel.Mode.anon) (P : Address) (ip : Ixon.InductiveProj)
-            (fam : Ix.Kernel.Semantics.NativeFam Ix.Kernel.Mode.anon),
-            IxVM.Refinement.Typing.StepAt t envT E₀ E lim A c env →
-              IxVM.Refinement.Typing.LvClauses env →
-                IxVM.Refinement.Typing.RecParent t E env P ip →
-                  IxVM.Refinement.Typing.RecMajorTie t E₀ A c rc P →
-                    IxVM.Refinement.Typing.FamReadAt IxVM.Refinement.Typing.FormerOpenTraceAt t E env P ip fam →
-                      IxVM.Refinement.Typing.RecLateOut t E₀ E A env fam)
-  (recursorWithoutNativeParent :
-    IxVM.Refinement.Endpoint.WalkedUnit (fun x x_1 x_2 x_3 c => ∃ rc, c.info = Ixon.ConstantInfo.recr rc)
-      fun x t envT E₀ E lim A c =>
-      ∀ (rc : Ixon.Recursor),
-        c.info = Ixon.ConstantInfo.recr rc →
-          (¬∀ (env : Ix.Kernel.Env Ix.Kernel.Mode.anon),
-                IxVM.Refinement.Typing.StepAt t envT E₀ E lim A c env →
-                  ∃ P ip,
-                    IxVM.Refinement.Typing.RecParent t E env P ip ∧ IxVM.Refinement.Typing.RecMajorTie t E₀ A c rc P) →
-            IxVM.Refinement.Typing.UnitStep
-              (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt t E) t envT E₀ E lim A c)
+        c.info = Ixon.ConstantInfo.recr rc → IxVM.Refinement.Typing.RecMajorFreshNotBasis t envT E₀ E lim A c rc)
   (definitionBlock :
     IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
       fun x x_1 x_2 x_3 c => ∃ ms, c.info = Ixon.ConstantInfo.muts ms ∧ IxVM.Refinement.Typing.DefnBlock ms)
