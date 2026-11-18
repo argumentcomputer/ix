@@ -101,12 +101,13 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     #[(badThmA, badThm)]
   let otherBlock := variant evenB advT.layout.ser
   let definitionFamily := variant evenB { pE with recBlock := natAdd }.ser
-  -- a binding whose `Nat.add` (group 8, validated at limit 8) is the default record with one
-  -- more, unused, reference to `Even` (a sharing entry): the validation's walk of `Nat.add`
-  -- reaches `Even`, whose family is checked there with its payload; with `Nat.mul`'s record
-  -- (group 10, an operation not yet in force) as the payload's first advice record, the order
-  -- assertion at the advice address must refuse it (`KernelRoles::assert_in_order`); with the
-  -- payload unchanged, the same binding is accepted (control)
+  -- a binding whose `Nat.add` (group 8, validated at limit 8) is the default record with its
+  -- value `v` replaced by `(fun (_ : Nat → Prop) => v) Even` (definitionally `v`, so its
+  -- equations hold): the validation's walk of `Nat.add` reaches `Even`, whose family is checked
+  -- there with its payload; with `Nat.mul`'s record (group 10, an operation not yet in force) as
+  -- the payload's first advice record, the order assertion at the advice address must refuse it
+  -- (`KernelRoles::assert_in_order`); with the payload unchanged, the same binding is accepted
+  -- (control). The record's binder section is recomputed (`withRecordSections`).
   let table ← IO.ofExcept Ix.Kernel.Reader.defaultTable
   let roleAt (r : Ix.Kernel.Role) : IO Address := match table.bound.find? (·.1 == r) with
     | some (_, a) => pure a
@@ -114,8 +115,18 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
   let addA ← roleAt .natAdd
   let mulA ← roleAt .natMul
   let some addC := env.getConst? addA | throw (IO.userError "the record bound to Nat.add is not stored")
+  let natA ← roleAt .nat
+  let .defn addD := addC.info | throw (IO.userError "the record bound to Nat.add is no definition")
+  let (refs1, natIdx) := match addC.refs.findIdx? (· == natA) with
+    | some j => (addC.refs, j.toUInt64)
+    | none => (addC.refs.push natA, addC.refs.size.toUInt64)
+  let evenIdx := refs1.size.toUInt64
+  let propIdx := addC.univs.size.toUInt64
+  let wrapped : Ixon.Expr :=
+    .app (.lam (.all (.ref natIdx #[]) (.sort propIdx)) addD.value) (.ref evenIdx #[])
   let addX : Ixon.Constant := { addC with
-    sharing := addC.sharing.push (.ref addC.refs.size.toUInt64 #[]), refs := addC.refs.push even }
+    info := .defn { addD with value := wrapped }, refs := refs1.push even,
+    univs := addC.univs.push .zero, binders := #[] }
   let addXA := Address.blake3 (Ixon.serConstant addX)
   let tableX : Ix.Kernel.RoleTable :=
     { table with bound := table.bound.map fun (r, b) => (r, if r == .natAdd then addXA else b) }
