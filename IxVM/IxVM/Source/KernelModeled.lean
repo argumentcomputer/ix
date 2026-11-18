@@ -2045,7 +2045,7 @@ def defeq_lam_tele := aiur_fn⟦
               match (*(p)) {
                 KernelTypes::KExprNode::Forall(dp, bp, _) => {
                   assert_eq!(KernelDefEq::k_is_def_eq(rc, dl, dp, ctx), 1, "rule domain mismatch");
-                  defeq_lam_tele(rc, bl, bp, n - 1, (&(Lists::Node::Cons(dl, ctx)))) } ,
+                  defeq_lam_tele(rc, bl, bp, n - 1, (&(Lists::Node::Cons(dp, ctx)))) } ,
               } } ,
           } } ,
       }
