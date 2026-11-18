@@ -11,15 +11,19 @@ takes the kinds of a top-walked unit in, and of `CheckedUnitFact` and `CheckedUn
 form of a kind's step for every checked unit) and the axioms it reaches. A change to any of them
 fails the build.
 
-How to read it. The explicit arguments are the open obligations: the first four are the
+How to read it. The explicit arguments are the open obligations: the first six are the
 binding half's, the others the typing half's: the typing fold's rows over the family graph (the
 run's family graph, the records a family check checks, the step of a block with its family record and the step of a
 twin). The binding half's run predicate is `IxVM.Refinement.Binding.BindingRun`. The first
-argument is the part of the binding claim's export that remains: the stores of a run (the
-loaded table's admission and its prelude pin are theorems, `Binding.loadedTableAdmits` and
-`Binding.loadedTablePinsPrelude`). The run predicate holds the prelude pin,
-the store after the basis groups and the admission of each group with its reading clause, so
-the fold's hypotheses about those are its projections and are not listed. A hypothesis is typed
+argument is the part of the binding claim's export that remains: the stores of a run and the
+family clauses of its family checks (the loaded table's admission and its prelude pin are
+theorems, `Binding.loadedTableAdmits` and `Binding.loadedTablePinsPrelude`). The next three are
+the closure's steps in the family form (a unit with no family record and no twin, a block with
+its family record, a twin), then the stored shapes of a group with no role unit and the role unit
+of an operation in the family form. The run predicate holds the prelude pin, the store after the
+basis groups, the admission of each group with its reading clause and the group's family checks,
+so the fold's hypotheses about those are its projections and are not listed; the basis groups'
+family form and the standard axioms' role unit are theorems. A hypothesis is typed
 by the interface its obligation has today, so the theorem claims nothing by itself; it fixes
 how the parts compose and what is left.
 
@@ -29,8 +33,9 @@ same commit. When the interface of an obligation changes, retype its hypothesis 
 The proof is complete when the theorem has no explicit argument.
 
 What this module does not print. A definition that a hypothesis reads
-(`RemainingStoreClausesOfRun`, `BindingRun`, `AtGroups`, `ClosureStepOver`,
-`RoleFreeShapes`, `RoleUnitStepOver`, `FamilyGraphRow`, `InnerCheckedRow`,
+(`RemainingStoreClausesOfRun`, `BindingRun`, `AtGroups`, `ClosureUnitSteps`,
+`ClosureFamilySteps`, `ClosureTwinSteps`, `RoleFreeShapes`, `RoleUnitStepOverW`,
+`FamilyGraphRow`, `InnerCheckedRow`,
 `FamilyBlockCheckRow`, `FamilyTwinRow`, `FoldExtra`, `UnitStep` and the others) appears by name only: its own
 module holds it. The public statement and what it reads are printed in
 `Ix.IxVM.ConsistencyAudit` and `Ix.IxVM.ConsistencyModelAudit`. The module is outside any
@@ -43,10 +48,18 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
   (groupStores :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
       IxVM.Refinement.Binding.RemainingStoreClausesOfRun calls)
-  (groupClosure :
+  (closureUnitSteps :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
       IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
-        (IxVM.Refinement.Binding.ClosureStepOver IxVM.Refinement.Typing.FormerOpenTraceAt))
+        (IxVM.Refinement.Binding.ClosureUnitSteps IxVM.Refinement.Typing.FormerOpenTraceAt calls))
+  (closureFamilySteps :
+    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
+      IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
+        (IxVM.Refinement.Binding.ClosureFamilySteps IxVM.Refinement.Typing.FormerOpenTraceAt calls))
+  (closureTwinSteps :
+    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
+      IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
+        (IxVM.Refinement.Binding.ClosureTwinSteps IxVM.Refinement.Typing.FormerOpenTraceAt calls))
   (groupWithoutRoleUnit :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
       IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
@@ -54,7 +67,7 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
   (operationRoleUnit :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
       IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
-        (IxVM.Refinement.Binding.RoleUnitStepOver (fun x => x ∈ IxVM.Refinement.RoleOps.opRoles)
+        (IxVM.Refinement.Binding.RoleUnitStepOverW (fun x => x ∈ IxVM.Refinement.RoleOps.opRoles)
           IxVM.Refinement.Typing.FormerOpenTraceAt))
   (familyGraph : IxVM.Refinement.Typing.FamilyGraphRow) (innerChecked : IxVM.Refinement.Typing.InnerCheckedRow)
   (familyBlock : IxVM.Refinement.Typing.FamilyAlias.FamilyBlockCheckRow IxVM.Refinement.Typing.FormerOpenTraceAt)

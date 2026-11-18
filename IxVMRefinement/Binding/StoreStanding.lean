@@ -63,7 +63,7 @@ theorem basisRow_of_basisRole {t : Ix.Kernel.RoleTable} (hpre : PreludePinned t)
 section Run
 
 variable {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
-  {E₀ : Ixon.Env}
+  {E₀ : Ixon.Env} {Pay : PayloadRel}
 
 /-- **How an address a group's admission reaches was reached**: it is the record bound to a
 role of the group whose validation walks it, it holds a block record, or the walk asked about it
@@ -164,13 +164,14 @@ theorem GroupReach.root_or_allowed (hC : CollisionFreeRun calls E₀) {g : Nat}
 /-- **`Admits.standing`**: a new axiom or quotient record of a group's admission is the record of
 a standard axiom of the group. -/
 theorem groupStore_standing (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
-    (hax : AxiomRolesDeclared t E₀) (hpin : PreludePinned t) {g : Nat} (hg : 6 ≤ g)
+    (hax : AxiomRolesDeclared t E₀) (hP : PayloadFacts t E₀ Pay) (hpin : PreludePinned t)
+    {g : Nat} (hg : 6 ≤ g)
     (hval : ∀ r ∈ roleGroup g, RoleValidationIn calls bAddr t g r)
     {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
     (hw : GroupWalked calls bAddr t E₀ g recs)
     (hsafe : ∀ a, GroupReach t E₀ g a → Claim.SourceSafe E₀ a) :
-    ∀ a c, New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a →
-      recordOf (groupStore t E₀ (g + 1)) a = some c → IsAxiomLike c →
+    ∀ a c, New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) a →
+      recordOf (groupStore t E₀ Pay (g + 1)) a = some c → IsAxiomLike c →
       ∃ r ∈ roleGroup g, r ∈ standardAxioms ∧ t.addressOf? r = some a := by
   intro a c hnew hc hk
   obtain ⟨c₀, hE₀, hc₀, hadd, hnot⟩ := new_groupStore hb hg hnew
@@ -181,9 +182,18 @@ theorem groupStore_standing (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLo
   have hnotStd : ∀ ro, ro ∈ standardAxioms → 6 ≤ Ix.SpecDigest.groupOf ro →
       Ix.SpecDigest.groupOf ro < g → t.addressOf? ro = some a → False :=
     fun ro hs h6 hlt had => hnot (Or.inr ⟨_, h6, hlt,
-      Or.inr (Or.inr ⟨ro, role_mem_roleGroup ro, hs, had⟩)⟩)
+      GroupAdds.stdAxiom (role_mem_roleGroup ro) hs had⟩)
   rcases groupAdds_cases hC hax hw hadd with ⟨hra, y, hy, hya⟩ |
-      ⟨r, hr, -, -, p, hp, hproj, -⟩ | ⟨ro, hro, hs, had, -⟩
+      ⟨r, hr, -, -, p, hp, hproj, -⟩ | ⟨ro, hro, hs, had, -⟩ | hpay
+  rotate_right
+  · exfalso
+    rcases payAdds_cases hP hpay with ⟨hr, -⟩ | ⟨-, -, -, -, -, p, hp, hproj, -⟩
+    · exact hP.notAxiomLike g a c hr hE hk
+    · have e : p = c := Option.some.inj (hp.symm.trans hE)
+      rw [e] at hproj
+      rcases hk with ⟨ax, h⟩ | ⟨q, h⟩
+      · exact proj_not_axiom hproj h
+      · rcases hproj with ⟨_, h'⟩ | ⟨_, h'⟩ | ⟨_, h'⟩ | ⟨_, h'⟩ <;> (rw [h] at h'; cases h')
   · have hyc : y.c = c := by
       have h1 := topRec_recordOf hC.hashedStored y
       rw [hya, hE] at h1
@@ -237,17 +247,17 @@ theorem groupStore_standing (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLo
 
 /-- **`Admits.standing` for every group of a run**, from the safety of the roots. -/
 theorem standing_of_rootsSafe (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
-    (hpin : PreludePinned t)
+    (hpin : PreludePinned t) (hP : PayloadFacts t E₀ Pay)
     (hval : ∀ g, g < 77 → ∀ r ∈ roleGroup g, RoleValidationIn calls bAddr t g r)
     (hroots : RootsSafe t E₀) :
     ∀ g, 6 ≤ g → g < 77 → ∀ a c,
-      New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a →
-      recordOf (groupStore t E₀ (g + 1)) a = some c → IsAxiomLike c →
+      New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) a →
+      recordOf (groupStore t E₀ Pay (g + 1)) a = some c → IsAxiomLike c →
       ∃ r ∈ roleGroup g, r ∈ standardAxioms ∧ t.addressOf? r = some a := by
   intro g hg6 hg
   have hax := axiomRoles_of_run hC hval
   obtain ⟨recs, hw⟩ := groupWalked_exists hC.hashedStored (hval g hg)
-  exact groupStore_standing hC hb hax hpin hg6 (hval g hg) hw
+  exact groupStore_standing hC hb hax hP hpin hg6 (hval g hg) hw
     (groupReach_sourceSafe_of_run hC hval hroots hg hw)
 
 end Run
