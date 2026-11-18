@@ -1,5 +1,6 @@
 import IxVMRefinement.Binding.FamilyFlat
 import IxVMRefinement.Core.Det
+import IxVMRefinement.Callees.RouteDispatch
 
 /-! # The family record's reconstruction: the recursor types and rules a family check compares
 
@@ -21,11 +22,16 @@ and states the record-level form a family check of a group's validation leaves a
   reconstruction's binders, at the elimination level, never equal.)
 * `hnf`: the head normalization the reconstruction performs (`whnf` in `collect_n_doms_whnf`,
   `collect_index_doms`, `peel_ctor_params_subst`, `whnf_tele`), modelled as the δβ head
-  strategy: a definition unfolded at a head constant, β at a λ applied, the function of an
-  application, to a term with no such step. β substitutes by the circuit's lifting substitution
-  (`instantiate1Lift`): the terms are open. Where the circuit's `whnf` takes another step on the
-  reconstruction's inputs (ζ, ι, a projection, a primitive operation, a quotient, a literal) the
-  model departs from it; that the circuit takes none there is the fidelity obligation of the head
+  strategy with projections: a definition unfolded at a head constant, β at a λ applied, the
+  function of an application, and at a projection its projected term normalized and then a
+  constructor's field projected under `red_proj`'s gates (`projStep`; a stuck projection keeps its
+  normalized term, as `whnf_proj_head` does), to a term with no such step. A projection
+  definition applied to its arity (`try_reduce_projection_definition`, met in the census at
+  Mathlib's `Lists.Equiv`) is δ and β to the projection, then the projection step. β substitutes
+  by the circuit's lifting substitution (`instantiate1Lift`): the terms are open. Where the
+  circuit's `whnf` takes another step on the reconstruction's inputs (ζ, ι, a primitive
+  operation, a quotient, a literal, a string literal expanded under a projection) the model
+  departs from it; that the circuit takes none there is the fidelity obligation of the head
   normalization.
 * The reconstruction, mirroring the circuit function by function: `collectDoms`
   (`collect_n_doms_whnf`, `collect_index_doms`), `peelMotiveParams` (`peel_motive_params_subst`),
@@ -66,11 +72,22 @@ structure IndData where
   blk : _root_.Address
   idx : Nat
 
+/-- What `get_ci` gives of a constructor (`convert_constructor`): its level count, its block, its
+inductive's position in the block, its parameter and field counts. -/
+structure CtorData where
+  nl : Nat
+  blk : _root_.Address
+  ind : Nat
+  np : Nat
+  nf : Nat
+
 /-- **What the reconstruction reads of a store**: `get_ci` at an inductive's address, a
 constructor's type and parameter count (`get_ci_cprj`), a constructor's constant address
-(`projection_addr_ctor`), the key a constant's address reads as, the address a key names, and a
-definition's value at given levels (the unfolding `whnf` performs). Each answer is `none` where
-the circuit's load fails, so a store that holds more answers the same where the first answers. -/
+(`projection_addr_ctor`), the key a constant's address reads as, the address a key names, a
+definition's value at given levels (the unfolding `whnf` performs), `get_ci`'s constructor arm at
+a constant address, and whether a block is on the modeled route (`block_is_modeled`; the last two
+for `red_proj`). Each answer is `none` where the circuit's load fails, so a store that holds more
+answers the same where the first answers. -/
 structure ReconView where
   ind : _root_.Address → Option IndData
   ctor : _root_.Address → Nat → Nat → Option (KExpr × Nat)
@@ -78,6 +95,8 @@ structure ReconView where
   key : _root_.Address → KKey
   addr : KKey → Option _root_.Address
   unfold : KKey → List KLevel → Option (Option KExpr)
+  ctorOf : _root_.Address → Option (Option CtorData)
+  modeled : _root_.Address → Option Bool
 
 /-- `get_ci` at an inductive type's address of the store: through its projection record, the
 member of its block, its type in the canonical reading over the block's tables at the member's
@@ -178,11 +197,39 @@ noncomputable def unfoldAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (k : KKey)
       if us.length = n then some (some (v.instantiateLevelParams (List.range n) us))
       else some none
 
-/-- **The readings of the store `E`** under the role table `t`. -/
-noncomputable def ReconView.ofStore (t : Ix.Kernel.RoleTable) (E : Ixon.Env) : ReconView :=
-  ⟨indDataAt t E, ctorAt t E, IxVM.Consistency.ctorAddr, keyOf t, keyAddr t, unfoldAt t E⟩
+/-- `get_ci` at a constant address of the store, its constructor arm (`convert_constructor`):
+through the constructor's projection record, the member of its block and the constructor, its
+level count, block, inductive's position, parameter and field counts; `some none` at a constant of
+another kind; `none` where the load fails. -/
+def ctorOfAt (E : Ixon.Env) (a : _root_.Address) : Option (Option CtorData) :=
+  match recordOf E a with
+  | none => none
+  | some c =>
+    match c.info with
+    | .cPrj p =>
+      match recordOf E p.block with
+      | none => none
+      | some cb =>
+        match cb.info with
+        | .muts ms =>
+          match ms[p.idx.toNat]? with
+          | some (.indc ind) =>
+            match ind.ctors[p.cidx.toNat]? with
+            | some ctor =>
+              some (some ⟨ctor.lvls.toNat, p.block, p.idx.toNat, ctor.params.toNat,
+                ctor.fields.toNat⟩)
+            | none => none
+          | _ => none
+        | _ => none
+    | _ => some none
 
-/-! ## Head normalization: the δβ head strategy -/
+/-- **The readings of the store `E`** under the role table `t`; whether a block is on the modeled
+route is the dispatch's answer (`Route.blockRoute`, the model of `block_is_modeled`). -/
+noncomputable def ReconView.ofStore (t : Ix.Kernel.RoleTable) (E : Ixon.Env) : ReconView :=
+  ⟨indDataAt t E, ctorAt t E, IxVM.Consistency.ctorAddr, keyOf t, keyAddr t, unfoldAt t E,
+    ctorOfAt E, Route.blockRoute E⟩
+
+/-! ## Head normalization: the δβ head strategy, with projections -/
 
 /-- The body of a λ. -/
 def lamBody : KExpr → Option KExpr
@@ -194,15 +241,76 @@ def isForall : KExpr → Option (KExpr × KExpr × Ix.Kernel.BinderMeta)
   | .forallE d b m => some (d, b, m)
   | _ => none
 
+/-- **`type_sort_never`**: the sort a type former's telescope ends in, after `n` binders and at
+the levels `us`, is never zero (`level_is_not_zero` after `level_inst_params`); `false` at another
+shape. -/
+def typeSortNever : KExpr → Nat → List KLevel → Bool
+  | .forallE _ b _, n + 1, us => typeSortNever b n us
+  | .sort l, 0, us => (Ix.Kernel.Level.subst (List.range us.length) us l).isNeverZero
+  | _, _, _ => false
+
+/-- `red_proj`'s gates at a constructor `cd` applied at the levels `cus` to `args`, projected
+through the structure `sd` at field `i`: the constructor is the structure's (its block, position
+and level count), the structure has no index, one constructor and the constructor's parameter
+count, the application is full at the constructor's levels, and the field exists. -/
+def projGate (cd : CtorData) (sd : IndData) (cus : List KLevel) (args : List KExpr) (i : Nat) :
+    Bool :=
+  cd.blk == sd.blk && cd.ind == sd.idx && sd.nl == cd.nl && sd.ni == 0 && sd.nctors == 1 &&
+    sd.np == cd.np && args.length == cd.np + cd.nf && cus.length == cd.nl && decide (i < cd.nf)
+
+/-- **`red_proj`** on a head-normal projected term `e` (`whnf_proj_head`): where `e` is a
+constructor applied, of the structure `s`, past `red_proj`'s gates (`projGate`), with the
+structure's block off the modeled route and its sort never zero at the constructor's levels
+(`type_sort_never`), the field `i`: argument `params + i`. `some none`: no step; `none`: a load
+fails. (`str_lit_to_ctor_app_or_self`'s string literal is not modelled: there the model takes no
+step.) -/
+def projStep (V : ReconView) (s : KKey) (i : Nat) (e : KExpr) : Option (Option KExpr) :=
+  match Ix.Kernel.Expr.getAppFn e with
+  | .const ck cus =>
+    match V.addr ck with
+    | none => some none
+    | some ca =>
+      match V.ctorOf ca with
+      | none => none
+      | some none => some none
+      | some (some cd) =>
+        match V.addr s with
+        | none => some none
+        | some sa =>
+          match V.ind sa with
+          | none => none
+          | some sd =>
+            if projGate cd sd cus (Ix.Kernel.Expr.getAppArgs e) i then
+              match V.modeled sd.blk with
+              | none => none
+              | some true => some none
+              | some false =>
+                if typeSortNever sd.ty sd.np cus then
+                  some ((Ix.Kernel.Expr.getAppArgs e)[cd.np + i]?)
+                else some none
+            else some none
+  | _ => some none
+
+/-- A projection's step: a step of the projected term, else `red_proj` on it (`projStep`). -/
+def projCase (V : ReconView) (s : KKey) (i : Nat) (e : KExpr) :
+    Option (Option KExpr) → Option (Option KExpr)
+  | none => none
+  | some (some e') => some (some (.proj s i e'))
+  | some none => projStep V s i e
+
 /-- One head step: a definition unfolded at a constant, β at a λ applied (the circuit's
-substitution, which lifts the argument past the binders it crosses), or a step of an
-application's function. `some none`: no step applies; `none`: a load fails. -/
+substitution, which lifts the argument past the binders it crosses), a step of an application's
+function, or at a projection a step of the projected term and then `red_proj` (`whnf_proj_head`:
+the projected term head-normalized, a constructor's field projected). A projection definition
+applied to its arity (`try_reduce_projection_definition`) is the definition unfolded and its λs
+applied, which these steps take. `some none`: no step applies; `none`: a load fails. -/
 def headStep (V : ReconView) : KExpr → Option (Option KExpr)
   | .const k us => V.unfold k us
   | .app f a =>
     match lamBody f with
     | some b => some (some (Ix.Kernel.Expr.instantiate1Lift b a 0))
     | none => (headStep V f).map (Option.map fun f' => .app f' a)
+  | .proj s i e => projCase V s i e (headStep V e)
   | _ => some none
 
 /-- **Head normalization** at a fuel of steps: head steps until none applies. -/

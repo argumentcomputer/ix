@@ -48,6 +48,8 @@ structure ReconView.LeOn (S : _root_.Address → Prop) (V V' : ReconView) : Prop
   addr : V'.addr = V.addr
   unfold : ∀ k us x, (∀ a, V.addr k = some a → S a) → V.unfold k us = some x →
     V'.unfold k us = some x
+  ctorOf : ∀ a x, S a → V.ctorOf a = some x → V'.ctorOf a = some x
+  modeled : ∀ b x, S b → V.modeled b = some x → V'.modeled b = some x
 
 /-- **What `V` answers at the addresses of `S` stays in `S`**: an inductive type's block, the keys
 of an inductive's type, of a constructor's type and of a definition's value. -/
@@ -116,6 +118,109 @@ end Keys
 section LeOn
 
 variable {S : _root_.Address → Prop} {V V' : ReconView}
+
+/-- **`red_proj` reads the store at the constructor's and the structure's addresses and at the
+structure's block**, which a closed set holding the projection's keys holds. -/
+theorem projStep_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {s : KKey} {i : Nat} {e : KExpr}
+    {x : Option KExpr} (hK : RKeysAt V S (.proj s i e)) (h : projStep V s i e = some x) :
+    projStep V' s i e = some x := by
+  unfold projStep at h ⊢
+  rw [hV.addr]
+  cases hf : Ix.Kernel.Expr.getAppFn e with
+  | const ck cus =>
+    rw [hf] at h
+    have hkck : ∀ a, V.addr ck = some a → S a := fun a ha =>
+      hK ck (.projBody (keyIn_getAppFn (by rw [hf]; exact .const cus))) a ha
+    have hks : ∀ a, V.addr s = some a → S a := fun a ha => hK s (.proj i e) a ha
+    simp only at h ⊢
+    cases ha : V.addr ck with
+    | none => rw [ha] at h; exact h
+    | some ca =>
+      rw [ha] at h
+      simp only at h ⊢
+      cases hco : V.ctorOf ca with
+      | none => rw [hco] at h; simp at h
+      | some co =>
+        rw [hV.ctorOf ca co (hkck ca ha) hco]
+        rw [hco] at h
+        cases co with
+        | none => exact h
+        | some cd =>
+          simp only at h ⊢
+          cases hsa : V.addr s with
+          | none => rw [hsa] at h; exact h
+          | some sa =>
+            rw [hsa] at h
+            simp only at h ⊢
+            cases hsd : V.ind sa with
+            | none => rw [hsd] at h; simp at h
+            | some sd =>
+              rw [hV.ind sa sd (hks sa hsa) hsd]
+              rw [hsd] at h
+              simp only at h ⊢
+              by_cases hg : projGate cd sd cus (Ix.Kernel.Expr.getAppArgs e) i = true
+              · rw [ite_eq_left hg] at h
+                rw [ite_eq_left hg]
+                cases hm : V.modeled sd.blk with
+                | none => rw [hm] at h; simp at h
+                | some mb =>
+                  rw [hV.modeled sd.blk mb (hC.indBlk sa sd (hks sa hsa) hsd) hm]
+                  rw [hm] at h
+                  exact h
+              · rw [ite_eq_right hg] at h
+                rw [ite_eq_right hg]
+                exact h
+  | _ => rw [hf] at h; exact h
+
+/-- **A field `red_proj` projects is an argument of the projected term.** -/
+theorem projStep_mem {s : KKey} {i : Nat} {e e' : KExpr}
+    (h : projStep V s i e = some (some e')) : e' ∈ Ix.Kernel.Expr.getAppArgs e := by
+  unfold projStep at h
+  cases hf : Ix.Kernel.Expr.getAppFn e with
+  | const ck cus =>
+    rw [hf] at h
+    simp only at h
+    cases ha : V.addr ck with
+    | none => rw [ha] at h; simp at h
+    | some ca =>
+      rw [ha] at h
+      simp only at h
+      cases hco : V.ctorOf ca with
+      | none => rw [hco] at h; simp at h
+      | some co =>
+        rw [hco] at h
+        cases co with
+        | none => simp at h
+        | some cd =>
+          simp only at h
+          cases hsa : V.addr s with
+          | none => rw [hsa] at h; simp at h
+          | some sa =>
+            rw [hsa] at h
+            simp only at h
+            cases hsd : V.ind sa with
+            | none => rw [hsd] at h; simp at h
+            | some sd =>
+              rw [hsd] at h
+              simp only at h
+              by_cases hg : projGate cd sd cus (Ix.Kernel.Expr.getAppArgs e) i = true
+              · rw [ite_eq_left hg] at h
+                cases hm : V.modeled sd.blk with
+                | none => rw [hm] at h; simp at h
+                | some mb =>
+                  rw [hm] at h
+                  cases mb with
+                  | true => simp at h
+                  | false =>
+                    simp only at h
+                    by_cases ht : typeSortNever sd.ty sd.np cus = true
+                    · rw [ite_eq_left ht] at h
+                      exact List.mem_of_getElem? (Option.some.inj h)
+                    · rw [ite_eq_right ht] at h
+                      simp at h
+              · rw [ite_eq_right hg] at h
+                simp at h
+  | _ => rw [hf] at h; simp at h
 
 theorem headStep_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) :
     ∀ (e : KExpr) (x : Option KExpr), RKeysAt V S e → headStep V e = some x →
@@ -193,11 +298,34 @@ theorem headStep_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) :
     simp [headStep] at h
     subst h
     simp [headStep]
-  | proj s i e _ =>
-    intro x _ h
-    simp [headStep] at h
-    subst h
-    simp [headStep]
+  | proj s i e ih =>
+    intro x hK h
+    have hKe : RKeysAt V S e := fun k hk => hK k (.projBody hk)
+    show projCase V' s i e (headStep V' e) = some x ∧ _
+    have h' : projCase V s i e (headStep V e) = some x := h
+    cases hs : headStep V e with
+    | none => rw [hs] at h'; simp [projCase] at h'
+    | some y =>
+      obtain ⟨hs', hky⟩ := ih y hKe hs
+      rw [hs']
+      rw [hs] at h'
+      cases y with
+      | some e' =>
+        simp only [projCase, Option.some.injEq] at h'
+        subst h'
+        refine ⟨rfl, fun e'' he'' => ?_⟩
+        simp only [Option.some.injEq] at he''
+        subst he''
+        intro k hk a ha
+        cases hk with
+        | proj => exact hK _ (.proj i e) a ha
+        | projBody h1 => exact hky e' rfl k h1 a ha
+      | none =>
+        have h'' : projStep V s i e = some x := h'
+        refine ⟨projStep_leOn hV hC hK h'', fun e' he' => ?_⟩
+        subst he'
+        intro k hk a ha
+        exact hK k (.projBody (keyIn_of_mem_getAppArgs e (projStep_mem h'') hk)) a ha
 
 theorem hnf_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) :
     ∀ (n : Nat) (e r : KExpr), RKeysAt V S e → hnf V n e = some r →
