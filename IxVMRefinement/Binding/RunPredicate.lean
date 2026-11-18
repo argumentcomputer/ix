@@ -1,6 +1,7 @@
 import IxVMRefinement.Binding.ClauseFold
 import IxVMRefinement.StatementRel.LoadedReadsWalked
 import IxVMRefinement.Binding.RunStepStores
+import IxVMRefinement.Binding.ClosureFold
 
 /-! # The run predicate of an accepted binding claim
 
@@ -20,7 +21,9 @@ table `t`, with the calls `calls`, establishes:
 * the table pins the prelude, and the store after the six basis groups has the entries of the
   committed basis rows;
 * the admission of each group from 6 to 76 takes the store before it to the store after it
-  (`Admits`), with its reading clause (`AdmitsReads`).
+  (`Admits`), with its reading clause (`AdmitsReads`);
+* the family checks of each group, with what its store holds for its modeled blocks
+  (`ClosureFam`, `FamilyAdmits`).
 
 With the predicate fixed, three hypotheses of the fold are theorems: the invariant at the six
 basis groups (`basisOver_bindingRun`), the admission of each group (`admitsChain_bindingRun`) and
@@ -69,6 +72,11 @@ structure BindingRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (ρ : BRu
   /-- Every store within the run's records that agrees with the committed rows and holds
   nothing at the zero address is held by a record store the run's calls are good for. -/
   stepStores : RunStepStores calls t ρ.E₀
+  /-- The family checks of each group from 6 to 76 (`ClosureFam`), with what the group's store
+  holds for its modeled blocks and in what order (`FamilyAdmits`). -/
+  families : ∀ g, 6 ≤ g → g < 77 → ∃ famOf adv cont,
+    ClosureFam calls ρ t g (Rs g) (Rs (g + 1)) famOf adv cont ∧
+    FamilyAdmits ρ t g (Rs g) (Rs (g + 1)) famOf adv cont
 
 /-- **The invariant at the six basis groups, for a binding run.** -/
 theorem basisOver_bindingRun (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
