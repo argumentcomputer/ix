@@ -884,7 +884,8 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
           rw [he]
           exact Core.LvEq.refl _
       have hguard := Decl.former_decl_ok_observed_from_fields (c := ⟨E, env, t, some n⟩)
-        htwf (by rw [hnP, hnIdx]; exact hPI) (by rw [hlenP]; exact hc39) hg_chk.2
+        (nIdx := p₀.nIdx) htwf (by rw [hnP, hnIdx]; exact hPI)
+        (by rw [hlenP]; exact hc39) hg_chk.2
         (by rw [hb_eq]; exact hTname)
         (fun c hc => by rw [(hlps_ctors c hc).1, hcvT]; simp)
         hcloadT hfields shape.guardSubset (hg_chk.sub shape.guardSubset)

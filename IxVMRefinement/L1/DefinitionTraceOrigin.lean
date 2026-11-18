@@ -62,8 +62,8 @@ theorem RawCIRep.defn_compatible {E : Ixon.Env} {h : Heap F} {address : _root_.A
     (raw : RawCIRep E h address record (.construct kciEnum "Defn" [nl, ty, value, flag, hint])) :
     (∃ d, record.info = .defn d) ∨ ∃ p, record.info = .dPrj p := by
   cases info : record.info with
-  | defn d => exact .inl ⟨d, info⟩
-  | dPrj p => exact .inr ⟨p, info⟩
+  | defn d => exact .inl ⟨d, rfl⟩
+  | dPrj p => exact .inr ⟨p, rfl⟩
   | axio ax | quot ax =>
     rw [RawCIRep, info] at raw
     obtain ⟨_, _, _, _, shape, _⟩ := raw
