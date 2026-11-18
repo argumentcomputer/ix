@@ -114,7 +114,7 @@ advice-record check (`Decl.adviceBlock_shape`). -/
 theorem adviceBlockShape_holds : AdviceBlockShape := by
   intro calls cs t E₀ lim bAddr a c ms hS hcs hadv hc hms h0
   obtain ⟨h, h', rc, xa, seen, wset, r, cs₁, hrc, ⟨ab, hab, rfl⟩, ev, hsub₁⟩ := hadv
-  exact Decl.adviceBlock_shape hS hab ev (fun cl h => hcs cl (hsub₁ cl h)) hc hms h0
+  exact Decl.adviceBlock_shape (lim := lim) hS hab ev (fun cl h => hcs cl (hsub₁ cl h)) hc hms h0
 
 /-- **Row `innerChecked`**, from what the batch's assertions give of the inner records' used
 references alone. -/
