@@ -208,7 +208,7 @@ theorem stagedCtorLoads_of_block_named {t : Ix.Kernel.RoleTable} (ht : t.check =
 structure-like proposition: where the block has one constructor, no index and a result sort
 that evaluates to zero, the sorts of that constructor come with the run data of the classifier's
 field loop (`Core.GuardData.CheckedFieldsAt`) at the constructor stage of the recursion flag
-`isRec`, inside the run `calls`. Elsewhere it says nothing. -/
+`isRec`, inside the run `calls`, and with that stage's core facts. Elsewhere it says nothing. -/
 def StageSortsChecked (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (n : Nat)
     (env : Ix.Kernel.Env .anon) (B : _root_.Address) (cvS : ConstantVal .anon)
     (p₀ : Ix.Kernel.NativeParts .anon) (ctorsA : List (ConstantVal .anon × Nat))
@@ -217,7 +217,9 @@ def StageSortsChecked (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E : Ixo
   (∀ φ : Ix.Kernel.LevelParam → Nat, Ix.Kernel.Level.eval φ p₀.resSort = 0) →
   ∃ (b : Bytes.Address) (u : Ix.Kernel.Level) (cA : ConstantVal .anon × Nat)
     (sorts : List Ix.Kernel.Level),
-    Core.ixAddr b = B ∧ ctorsA[0]? = some cA ∧ sortss[0]? = some sorts ∧
+    Core.ixAddr b = B ∧ ctorsA = [cA] ∧ sortss = [sorts] ∧
+    Core.ScopedCoreFacts (Decl.ctorStage ⟨E, env, t, some n⟩ cvS
+      (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort p₀.resSort) isRec)) ∧
     Core.GuardData.CheckedFieldsAt
       (Decl.ctorStage ⟨E, env, t, some n⟩ cvS
         (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort p₀.resSort) isRec))
@@ -744,7 +746,10 @@ theorem ctorOuts_of_member_named_checked {calls : List (Call F)} {t : Ix.Kernel.
     · obtain ⟨c, cA, sorts, hc, hcA, hs, ho, hchk⟩ := hout 0 (by omega)
       have hk := hchk h1 h0 (fun φ => (hlveq φ).symm.trans (hz φ))
       rw [← ho.nF_eq] at hk
-      exact ⟨b, ind_lvl, cA, sorts, hb_eq, hcA, hs, hk.mono hsub_chk⟩
+      exact ⟨b, ind_lvl, cA, sorts, hb_eq,
+        Core.GuardData.eq_singleton (by rw [hcload.1]; exact h1) hcA,
+        Core.GuardData.eq_singleton (by rw [hlen_s]; exact h1) hs, ⟨hcore.1, hcore.2⟩,
+        hk.mono hsub_chk⟩
   have hctorsCanon : ∀ j c, p₀.ctors[j]? = some c →
       ∃ (ct : Ixon.Constructor) (cty' : Ix.Kernel.Expr .anon),
         ind.ctors[j]? = some ct ∧ ct.cidx.toNat = j ∧ ct.params.toNat = ind.params.toNat ∧

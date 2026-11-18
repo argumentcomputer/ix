@@ -70,7 +70,8 @@ theorem nativeNoRecFacts_of_stage_named_with {env : Env .anon} {blk : List KCons
       ∃ (isRec : Bool) (sortss : List (List KLevel)), Q isRec sortss ∧
         Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM .anon) p ctorsA sortss
           (Ix.Kernel.consSumCtors p.nP ctorsA ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
-            (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩) = .ok env₂ := by
+            (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩) = .ok env₂ ∧
+        p.resSort = p₀.resSort := by
   obtain ⟨caps₀, hblk, hnP_eq, hlarge, hbasis_T, hctor_basis, ⟨bs₀, hst_raw⟩, hisProp⟩ :=
     nativePartsNoRec?_inv hp₀
   let p₁ : Ix.Kernel.InductiveShape .anon := p₀.toInductiveShape.withSort p₀.resSort
@@ -320,7 +321,7 @@ theorem nativeNoRecFacts_of_stage_named_with {env : Env .anon} {blk : List KCons
     checkNativeTable_ok (sortss := sortss) hT_in_base hc_wf_base hfn_fresh_base htbl_fresh_base
   refine ⟨env₂, p, ⟨hp₀, hnd, isRec, cvS, cvS, caps, p₁, p, ctorsA, sortss,
     kinds, tfvs_all, .sort p₀.resSort, isorts, rfl, ?_, rfl, hsum_ctors₁, ?_, rfl, ?_, ?_, ?_,
-    ?_, htable_ok⟩, isRec, sortss, hQ, htable_ok⟩
+    ?_, htable_ok⟩, isRec, sortss, hQ, htable_ok, rfl⟩
   · exact ⟨cvS, p₀.resSort, bsT, cvS, hcheckT, Or.inl rfl, hstS, Or.inl rfl, rfl, rfl⟩
   · simpa [p, p₁] using hclassify
   · simpa [p, p₁] using hop_all
@@ -435,7 +436,8 @@ theorem nativeNoRecFacts_of_outs_named_with {calls : List (Call F)} {t : Ix.Kern
       ∃ (isRec : Bool) (sortss : List (List Ix.Kernel.Level)), Q isRec sortss ∧
         Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM .anon) p ctorsA sortss
           (Ix.Kernel.consSumCtors p.nP ctorsA ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
-            (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩) = .ok env₂ := by
+            (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩) = .ok env₂ ∧
+        p.resSort = p₀.resSort := by
   have hbound : Bounded calls := (hst.good env none).2
   have htwf : t.wf = true := hinv.tableWf
   obtain ⟨ty₀, caps, cs, rfl, hty, hlen, hcs⟩ := blockReads_shape ht hbound hS hrec hchk hblk

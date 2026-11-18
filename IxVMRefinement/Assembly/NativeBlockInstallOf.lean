@@ -332,7 +332,8 @@ structure NativeInstallOut (t : Ix.Kernel.RoleTable) (E₀ E : Ixon.Env) (n : Na
 
 /-- **The table stage of a native block's install ran at sorts the classifier checked**: a
 recursion flag and field sorts with `StageSortsChecked`, at which IxC's table stage, run after
-the stage of that flag with the constructors stored, gives the environment of the install. With
+the stage of that flag with the constructors stored, gives the environment of the install; and
+the result sort of the completed parts is the recognised block's. With
 `Guard.projGuardCert_of_checkNativeTable` this is what a certificate of the new projection table
 is read from. -/
 def InstallSortsChecked (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (n : Nat)
@@ -344,7 +345,8 @@ def InstallSortsChecked (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E : I
     Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM .anon) p ctorsA sortss
       (Ix.Kernel.consSumCtors p.nP ctorsA ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
         (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩) =
-      .ok ⟨new ++ env.consts⟩
+      .ok ⟨new ++ env.consts⟩ ∧
+    p.resSort = p₀.resSort
 
 /-- **The new constants of a native block's install, read off the member check, with the sorts
 of its table stage**: `nativeInstallOut_of_member`, and the table stage ran at sorts the
@@ -381,7 +383,7 @@ theorem nativeInstallOut_of_member_checked {calls : List (Call F)} {t : Ix.Kerne
   rw [hp₀] at hp₀'
   injection hp₀' with e
   subst e
-  obtain ⟨env₂, p, hf, isRecQ, sortssQ, hQ, htabQ⟩ := nativeNoRecFacts_of_outs_named_with
+  obtain ⟨env₂, p, hf, isRecQ, sortssQ, hQ, htabQ, hresQ⟩ := nativeNoRecFacts_of_outs_named_with
     (Q := StageSortsChecked calls t E n env B cvS p₀ ctorsA) ht hS hst hrec hchk hblk hp₀ hnd₀
     hinv hfresh haux hT hstT hname hlenA hout hun
   subst hcvS
@@ -551,7 +553,7 @@ theorem nativeInstallOut_of_member_checked {calls : List (Call F)} {t : Ix.Kerne
     ctorFind := fun cA hcA => hfind (.ctorInfo cA.1 p.nP cA.2)
       (List.mem_append_right _ (List.mem_append_left _
         (List.mem_reverse.mpr (List.mem_map.mpr ⟨cA, hcA, rfl⟩))))
-    tableName := ?_ }, isRecQ, sortssQ, hQ, htabQ⟩
+    tableName := ?_ }, isRecQ, sortssQ, hQ, htabQ, hresQ⟩
   · -- the new constants as the store reads them
     obtain ⟨hp56, hi56, hc56⟩ := member_bounds hbound hS hrec hchk
     exact {

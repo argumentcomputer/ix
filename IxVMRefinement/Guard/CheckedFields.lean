@@ -26,6 +26,20 @@ open IxVM.Refinement.KernelLevels (RepKLevel)
 
 set_option linter.unusedVariables false
 
+/-- A list of length one is the singleton of its first element. -/
+theorem eq_singleton {α : Type} {l : List α} {x : α} (hl : l.length = 1)
+    (h0 : l[0]? = some x) : l = [x] := by
+  cases l with
+  | nil => exact absurd hl (by simp)
+  | cons a tl =>
+    cases tl with
+    | nil =>
+      have hax : a = x := by simpa using h0
+      rw [hax]
+    | cons b tl' =>
+      simp only [List.length_cons] at hl
+      omega
+
 /-- **The field loop's run at a constructor, with the sorts it checked** (module docstring). The
 context `c` is the one the loop ran at; `calls` is the run the loop and the constructor's load
 lie in. -/
