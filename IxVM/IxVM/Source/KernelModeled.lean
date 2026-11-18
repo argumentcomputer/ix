@@ -670,7 +670,7 @@ def check_container_rec := aiur_fn⟦
   -- closure of the modeled block). So none depends on the modeled block.
 
 def container_recs_refs := aiur_fn⟦
-  fn container_recs_refs(xs: Lists::List<Bytes::AddressRef>, wset: RBTreeMap::RBTreeMap<Field>) -> () {
+  fn container_recs_refs(rc: KernelRoles::RoleCtx, xs: Lists::List<Bytes::AddressRef>, wset: RBTreeMap::RBTreeMap<Field>) -> () {
       match (*(xs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(x, rest) => {
@@ -678,19 +678,19 @@ def container_recs_refs := aiur_fn⟦
           match c0 {
             Ixon::Constant::Mk(info, _, _, _, _) => {
               match info {
-                Ixon::ConstantInfo::Recr(_) => {  container_refs_check(x, c0, wset) } ,
+                Ixon::ConstantInfo::Recr(_) => {  container_refs_check(rc, x, c0, wset) } ,
                 Ixon::ConstantInfo::RPrj(_) => {
-                  container_refs_check(x, Ingress::load_verified_constant(projection_block(c0)), wset) } ,
+                  container_refs_check(rc, x, Ingress::load_verified_constant(projection_block(c0)), wset) } ,
                 _ => {  () } ,
               } } ,
           };
-          container_recs_refs(rest, wset) } ,
+          container_recs_refs(rc, rest, wset) } ,
       }
     }
 ⟧
 
 def container_refs_check := aiur_fn⟦
-  fn container_refs_check(x: Bytes::AddressRef, c: Ixon::Constant, wset: RBTreeMap::RBTreeMap<Field>) -> () {
+  fn container_refs_check(rc: KernelRoles::RoleCtx, x: Bytes::AddressRef, c: Ixon::Constant, wset: RBTreeMap::RBTreeMap<Field>) -> () {
       let iblock = rec_family_block(x);
       let ib = Ingress::load_verified_constant(iblock);
       match c {
@@ -698,7 +698,8 @@ def container_refs_check := aiur_fn⟦
           match ib {
             Ixon::Constant::Mk(_, _, irefs, _, _) => {
               container_refs_ok(refs, KernelClaim::const_idxs_of(c), 0, iblock, irefs,
-                                KernelClaim::const_idxs_of(ib), wset) } ,
+                                KernelClaim::const_idxs_of(ib), wset);
+              assert_inner_refs_safe(rc, refs, KernelClaim::const_idxs_of(c)) } ,
           } } ,
       }
     }
@@ -865,7 +866,8 @@ def check_advice_record := aiur_fn⟦
                 "model advice: a projection of a block that is not advice");
               () } ,
           };
-          advice_refs_ok(refs, KernelClaim::const_idxs_of(c), 0, aset, wset) } ,
+          advice_refs_ok(refs, KernelClaim::const_idxs_of(c), 0, aset, wset);
+          assert_inner_refs_safe(rc, refs, KernelClaim::const_idxs_of(c)) } ,
       }
     }
 ⟧
@@ -912,6 +914,33 @@ def advice_refs_ok := aiur_fn⟦
           };
           advice_refs_ok(rest, used, i + 1, aset, wset) } ,
       }
+    }
+⟧
+
+  -- The walk's contract on an inner record's references, which the three inner reference checks
+  -- do not themselves assert: every used reference is allowed (no inert axiom) and, where not
+  -- covered, its record and owner are safe (`assert_safe_used_refs`), and none names a block
+  -- record (`assert_not_block_ref`). An honest inner record satisfies both.
+
+def assert_used_not_block := aiur_fn⟦
+  fn assert_used_not_block(refs: Lists::List<Bytes::AddressRef>, used: Lists::List<Field>, i: Field) -> () {
+      match (*(refs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(r, rest) => {
+          match KernelClaim::g_list_has(used, i) {
+            1 => {  KernelClaim::assert_not_block_ref(r) } ,
+            _ => {  () } ,
+          };
+          assert_used_not_block(rest, used, i + 1) } ,
+      }
+    }
+⟧
+
+def assert_inner_refs_safe := aiur_fn⟦
+  fn assert_inner_refs_safe(rc: KernelRoles::RoleCtx, refs: Lists::List<Bytes::AddressRef>,
+                            used: Lists::List<Field>) -> () {
+      KernelClaim::assert_safe_used_refs(rc, refs, used, 0, RBTreeMap::RBTreeMap::Nil);
+      assert_used_not_block(refs, used, 0)
     }
 ⟧
 
@@ -966,7 +995,7 @@ def check_family := aiur_fn⟦
       let (n_w, s4) = get_count(s3);
       let (outside, s5) = check_witnesses(rc, block, s4, n_w);
       let wset = KernelClaim::addr_set_build(outside, RBTreeMap::RBTreeMap::Nil);
-      container_recs_refs(outside, wset);
+      container_recs_refs(rc, outside, wset);
       let aset = check_advice_records(rc, advice, RBTreeMap::RBTreeMap::Nil, wset);
       let bc = Ingress::load_verified_constant(block);
       match bc {
@@ -1001,7 +1030,7 @@ def check_family := aiur_fn⟦
               -- the family record references only what the block's own walk checks:
               -- the block's used references, members of the blocks those project from,
               -- the block's members, and witnessed members of its closure
-              family_refs_ok(rec_block, block, wset);
+              family_refs_ok(rc, rec_block, block, wset);
               let s9 = check_recs(rc, type_addrs, rec_addrs, rec_models, src, dst, aset, s8,
                                   n_recs, 0, np, univ_offset, bnl, rec_addrs);
               let Lists::Node::Nil = (*(s9));
@@ -1333,7 +1362,7 @@ def aux_all_in := aiur_fn⟦
   -- constructors, parameter and index domains, and the containers it nests through).
 
 def family_refs_ok := aiur_fn⟦
-  fn family_refs_ok(rec_block: Bytes::AddressRef, block: Bytes::AddressRef,
+  fn family_refs_ok(rc: KernelRoles::RoleCtx, rec_block: Bytes::AddressRef, block: Bytes::AddressRef,
                     wset: RBTreeMap::RBTreeMap<Field>) -> () {
       let rcst = Ingress::load_verified_constant(rec_block);
       let bc = Ingress::load_verified_constant(block);
@@ -1342,7 +1371,8 @@ def family_refs_ok := aiur_fn⟦
           match bc {
             Ixon::Constant::Mk(_, _, irefs, _, _) => {
               family_refs_go(refs, KernelClaim::const_idxs_of(rcst), 0, block, irefs,
-                             KernelClaim::const_idxs_of(bc), wset) } ,
+                             KernelClaim::const_idxs_of(bc), wset);
+              assert_inner_refs_safe(rc, refs, KernelClaim::const_idxs_of(rcst)) } ,
           } } ,
       }
     }
