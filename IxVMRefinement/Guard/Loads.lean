@@ -53,7 +53,7 @@ theorem definition_value_raw_origin {c : ScopedCtx} (hc : ScopedCoreFacts c)
     have allowed : c.allowed ⟨"Ingress::get_ci", [ap], h⟩ :=
       hg.allAllowed _ (by rw [events]; simp)
     obtain ⟨ci, found, actual, loadedValue, represented⟩ :=
-      get_ci_step c hc load ap a rfl allowed resolved (hg.sub loadInside) ha
+      get_ci_step c hc.base load ap a rfl allowed resolved (hg.sub loadInside) ha
     rw [shape] at loadedValue
     have same := Except.ok.inj loadedValue
     subst actual
@@ -109,7 +109,7 @@ theorem declared_type_raw_origin {c : ScopedCtx} (hc : ScopedCoreFacts c)
     have allowed : c.allowed ⟨"Ingress::get_ci", [ap], h⟩ :=
       hg.allAllowed _ (by rw [events]; simp)
     obtain ⟨ci, found, actual, loadedValue, represented⟩ :=
-      get_ci_step c hc load ap a rfl allowed resolved (hg.sub loadInside) ha
+      get_ci_step c hc.base load ap a rfl allowed resolved (hg.sub loadInside) ha
     rw [shape] at loadedValue
     have same := Except.ok.inj loadedValue
     subst actual

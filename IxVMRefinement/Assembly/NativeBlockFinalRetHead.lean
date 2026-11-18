@@ -71,13 +71,14 @@ theorem unitStep_nativeBlock_struct_rh {calls : List (Call F)} {t : Ix.Kernel.Ro
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
     (hcov : L1.CanonicalHashCoverage E calls)
-    (hguard : ind.ctors.size = 1 → ind.indices.toNat = 0 →
+    (hread : Core.ProjGuardRunReading)
+    (hcert : ind.ctors.size = 1 → ind.indices.toNat = 0 →
       ∀ (env : Ix.Kernel.Env .anon) (new blk : List (ConstantInfo .anon))
         (p₀ p : Ix.Kernel.NativeParts .anon) (ty' : Ix.Kernel.Expr .anon)
         (ctorsA : List (ConstantVal .anon × Nat)) (caps : IndCaps .anon),
         NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps →
         Ix.Kernel.Level.isEquiv p.resSort .zero = some true →
-        BlockGuard ⟨E, env, t, some n⟩ new B) :
+        BlockCert t E ⟨new ++ env.consts⟩ B) :
     UnitStep.{u} (NativeBlockXR.{u} t E) t envT E₀ E lim B cb := by
   subst hlim
   have hP : HashedBlockProjectionsHeld E := hashedBlockProjectionsHeld_of_decoded hst.decoded
@@ -111,11 +112,12 @@ theorem unitStep_nativeBlock_struct_rh {calls : List (Call F)} {t : Ix.Kernel.Ro
     injection hcA with hcA
     subst hcA
     exact ⟨rfl, by rw [hcl]⟩
-  have hG : BlockGuard ⟨E, env, t, some n⟩ new B := by
+  have hG : BlockFire ⟨E, env, t, some n⟩ new B := by
     by_cases hs : ind.ctors.size = 1 ∧ ind.indices.toNat = 0 ∧
         Ix.Kernel.Level.isEquiv p.resSort .zero = some true
-    · exact hguard hs.1 hs.2.1 env new _ p₀ p ty' ctorsA caps hO hs.2.2
-    · exact blockGuard_of_install_off hO haux hfreshT hs
+    · exact blockFire_of_cert hread hI
+        (hcert hs.1 hs.2.1 env new _ p₀ p ty' ctorsA caps hO hs.2.2)
+    · exact blockFire_of_install_off hO haux hfreshT hs
   have hT : BlockTable ⟨E, env, t, some n⟩ new B ind :=
     blockTable_of_install hI hinv hpin hna hO.facts hcvT hO.nP₀ hO.nIdx₀ hO.lenA hctorsA hfreshT
       hG

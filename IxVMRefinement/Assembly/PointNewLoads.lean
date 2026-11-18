@@ -18,7 +18,7 @@ any number of members of the facts `NativeBlockNewFacts.lean` gives for a block 
 * `PointInstall.famNew`: a family witnessed by a new constant at a hashed block is a member of the
   installed block;
 * the fields `getCI`, `getCprj`, `getIprj`, `inductRecord`, `inductBlock`, `ctorIndRes` and
-  `projTablesGuard` of `NewLoads` (`PointInstall.newGetCI`, …).
+  `projCtorTele` of `NewLoads` (`PointInstall.newGetCI`, …).
 
 A projection address reads its indices as 64-bit numbers, so a key of the install names a member
 up to that reading. The member a load reaches is the one at the read index, which is no larger
@@ -536,14 +536,14 @@ theorem PointInstall.newCtorIndRes (hI : PointInstall c new B cb ms) :
   rw [appCtx_key_of_find hfT]
   exact Core.Resolved.ne
 
-/-- **`NewLoads.projTablesGuard`**, vacuous: the install stores no projection table
+/-- **`NewLoads.projCtorTele`**, vacuous: the install stores no projection table
 (`PointInstall.noTable`), and a constructor it stores is of a member whose former's key is fresh
 in the prefix, so the prefix stores no table at that key's projection-table name either: every
 key the prefix stores has its root stored (`haux`), and the table name's root is the former's
 key. The two hypotheses are facts of the fold at the prefix: `AuxRootSynced` is kept by every
 install (`Decl.Point.PointBlock.auxRootSynced`), and the formers' keys are fresh in the prefix
 (`Decl.Point.PointBlock.freshF`). -/
-theorem PointInstall.newProjTablesGuard (hI : PointInstall c new B cb ms)
+theorem PointInstall.newProjCtorTele (hI : PointInstall c new B cb ms)
     (haux : Decl.AuxRootSynced c.env)
     (hfresh : ∀ (k : Nat) (ind : Ixon.Inductive), ms[k]? = some (.indc ind) →
       c.env.find? (Core.keyOf c.t (Core.iprjAddr B k)) = none) :
@@ -557,19 +557,7 @@ theorem PointInstall.newProjTablesGuard (hI : PointInstall c new B cb ms)
           ((appCtx c new).stored.κ (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)))) =
           some (.projInfo tbl) →
         (ConstantInfo.ctorInfo cvC nP nF ∈ new ∨ ConstantInfo.projInfo tbl ∈ new) →
-        Ix.Kernel.Expr.ctorTeleOk cvC.type (nP + nF) = true ∧
-        (Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true →
-          ∀ (f : F) (rc bp' rg : SourceValue F) (hg hg' : Heap F) (csg : List (Call F))
-            (g : Core.KLevel) (us : List Core.KLevel),
-            ZMod.val f < nF → us.length = tbl.levelParams.length →
-            ObsFn Core.W "KernelInfer::proj_guard" [rc, bp', .field i, .field f] hg rg hg' csg →
-            Core.Good (appCtx c new) csg → Core.RCRep c.t c.lim hg rc →
-            Bytes.RepAddressRef Core.addrTy hg b bp' →
-            IxVM.Refinement.KernelLevels.RepKLevel hg' g rg →
-            (∀ φ, Ix.Kernel.Level.eval φ
-              (Ix.Kernel.Level.subst (List.range us.length) us g) = 0) →
-            ∀ φ, Ix.Kernel.Level.eval φ
-              (Ix.Kernel.Level.subst tbl.levelParams us (tbl.entry (ZMod.val f)).fieldSort) = 0) := by
+        Ix.Kernel.Expr.ctorTeleOk cvC.type (nP + nF) = true := by
   intro bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hctor htbl hm
   exfalso
   rcases hm with hm | hm

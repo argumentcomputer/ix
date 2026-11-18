@@ -17,9 +17,6 @@ import IxVMRefinement.Decl.LateWalkedConst
   registered families at every store.
 * `roleFreeShapes_of_unit`, `roleFreeShapes_natPred`: the shapes premise of a group with no role
   unit is not asked at a group that holds one; at the default order, group 7 holds `Nat.pred`.
-* `guardAt_of_noPropTable`, `raisedGuard_of_noPropTable`: the load contract's guard does not read
-  the limit where no stored projection table is of a propositional structure, so the guard at
-  the raised limits is the guard the clause holds at the group's validation limit.
 * At the default table (`ctab`):
   * `bndOver_basis_default`: the invariant below group 6, at the store of the basis rows and the
     environment of the pins.
@@ -30,7 +27,7 @@ import IxVMRefinement.Decl.LateWalkedConst
   * `shapes_bool`, `groupKept_bool`, `bndOver_bool`: at the environment IxC's native check of
     the `Bool` block installs, the stored shapes below 7, the group's roles kept, and the
     invariant below 7 from the clause below 6 at that environment and block wholeness (what the
-    closure's unit step is to give): the raise past group 6 and its guard need nothing else.
+    closure's unit step is to give): the raise past group 6 needs nothing else.
 -/
 
 universe u
@@ -227,36 +224,6 @@ theorem roleFreeShapes_natPred (L : Ix.Kernel.Env .anon → NativeFam .anon → 
     (t : Ix.Kernel.RoleTable) : RoleFreeShapes.{u} L ρ t 7 :=
   roleFreeShapes_of_unit L ρ t natPred_group7 (Or.inl (by decide))
 
-/-! ## The guard where no propositional structure is stored -/
-
-/-- **The load contract's guard does not read the limit where no stored projection table has a
-structure sort that passes the zero test.** -/
-theorem guardAt_of_noPropTable {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim lim' : Option Nat}
-    {env : Ix.Kernel.Env .anon} (h : GuardAt E t lim env)
-    (hno : ∀ (k : Ix.Kernel.Key .anon) (tbl : Ix.Kernel.ProjTable .anon),
-      env.find? k = some (.projInfo tbl) →
-      Ix.Kernel.Level.isEquiv tbl.structSort .zero ≠ some true) :
-    GuardAt E t lim' env := by
-  intro bp ip ptr hh hh' cs b i ev good hb hip j cvC nP nF tbl hc htbl
-  exact ⟨(h bp ip ptr hh hh' cs b i ev good hb hip j cvC nP nF tbl hc htbl).1,
-    fun hz => absurd hz (hno _ tbl htbl)⟩
-
-/-- **The guard at the raised limits, where no propositional structure's table is stored**: it
-is the guard the clause holds at the group's validation limit. -/
-theorem raisedGuard_of_noPropTable {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    {t : Ix.Kernel.RoleTable} {g : Nat} {R : Ixon.Env} {env : Ix.Kernel.Env .anon}
-    (h : BeforeRaise.{u} L t g R env)
-    (hno : ∀ (k : Ix.Kernel.Key .anon) (tbl : Ix.Kernel.ProjTable .anon),
-      env.find? k = some (.projInfo tbl) →
-      Ix.Kernel.Level.isEquiv tbl.structSort .zero ≠ some true) :
-    ∀ E, RecordsFor R E → ∀ lim, Carried lim → LimWithin (· < g + 1) t lim →
-      GuardAt E t lim env := by
-  intro E hE lim _ _
-  obtain ⟨Reg, hR⟩ := h.clause
-  exact guardAt_of_noPropTable
-    (lim := some (valLimit g)) (projGuard_of_loads
-      (hR E hE (some (valLimit g)) (carried_valLimit g) (limWithin_below t g)).loads) hno
-
 /-! ## The default table: the basis and the `Bool` group -/
 
 /-- **The invariant below group 6 at the default table**, at the store of the basis rows and
@@ -334,8 +301,7 @@ private theorem ops_not_boolRoles :
 /-- **The invariant below group 7 at the default table**, at the store with `Bool`'s committed
 rows and the environment IxC's native check of the `Bool` block installs, from the clause below
 group 6 at that environment and block wholeness there (what the closure's unit step gives).
-The stored shapes, the group's roles, the raise past group 6 and the guard at the raised limit
-are proved: the environment stores no projection table. -/
+The stored shapes, the group's roles and the raise past group 6 are proved. -/
 theorem bndOver_bool (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
     (hclause : FoldClauseOver.{u} L ctab (· < 6) boolStore boolEnv)
     (hwhole : ∀ E, RecordsFor boolStore E →
@@ -372,6 +338,5 @@ theorem bndOver_bool (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
         cases hs
       shapes := shapes_bool }
   exact bndOver_of_beforeRaise hall (by omega) ⟨hshape, hclause, hfacts, hraise⟩
-    (fun E _ lim _ _ => guardAt_of_noTable boolEnv_noTable)
 
 end IxVM.Refinement.Binding

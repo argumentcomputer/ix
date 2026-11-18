@@ -71,7 +71,7 @@ theorem major_idx_field {np nm nmi ni x17 x9 v1 : SourceValue F} {p i m mi : F} 
 
 /-- `KernelWhnf::whnf_iota_major`: `whnf`, then, at a theorem head, its unfolding
 (`Red.deltaThm`, premises from `EnvFacts.thmTyped`) and again. -/
-theorem whnf_iota_major_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem whnf_iota_major_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_iota_major" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_iota_major c args h r h' calls := by

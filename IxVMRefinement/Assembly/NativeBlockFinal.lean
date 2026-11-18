@@ -1,5 +1,6 @@
 import IxVMRefinement.Assembly.NativeBlockInstallOf
 import IxVMRefinement.Assembly.NativeBlockTableOf
+import IxVMRefinement.Assembly.NativeBlockFire
 import IxVMRefinement.Assembly.NativeBlockEta
 import IxVMRefinement.Assembly.NativeBlockAux
 import IxVMRefinement.Assembly.StoreArClauses
@@ -25,10 +26,10 @@ The level clauses are not read by this step; they are in the carried clause so t
 fold's one clause, which the value steps read for their front check
 (`constantValCheckJ_of_prefix_lv`) and this step keeps.
 
-Two inputs remain, each stated over the install read off the member check
-(`NativeInstallOut`): the projection guard of the new table (`BlockGuard`, open: the circuit
-recomputes the field sorts at each use, IxC reads them stored) and the two η fields of the load
-contract at the new family (`BlockEta`).
+Three inputs remain: the certificate of the new projection table and the two η fields of the
+load contract at the new family, each stated over the install read off the member check
+(`NativeInstallOut`; `BlockCert`, `BlockEta`), and the reading of a `proj_guard` run (`hread`),
+with which the certificate gives the table's firing at every context (`blockFire_of_cert`).
 -/
 
 set_option maxHeartbeats 4000000
@@ -174,11 +175,12 @@ theorem unitStep_nativeBlock {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
     (hP : HashedBlockProjectionsHeld E) (hcov : L1.CanonicalHashCoverage E calls)
-    (hguard : ∀ (env : Ix.Kernel.Env .anon) (new blk : List (ConstantInfo .anon))
+    (hread : Core.ProjGuardRunReading)
+    (hcert : ∀ (env : Ix.Kernel.Env .anon) (new blk : List (ConstantInfo .anon))
       (p₀ p : Ix.Kernel.NativeParts .anon) (ty' : Ix.Kernel.Expr .anon)
       (ctorsA : List (ConstantVal .anon × Nat)) (caps : IndCaps .anon),
       NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps →
-      BlockGuard ⟨E, env, t, some n⟩ new B)
+      BlockCert t E ⟨new ++ env.consts⟩ B)
     (heta : ∀ (env : Ix.Kernel.Env .anon) (new blk : List (ConstantInfo .anon))
       (p₀ p : Ix.Kernel.NativeParts .anon) (ty' : Ix.Kernel.Expr .anon)
       (ctorsA : List (ConstantVal .anon × Nat)) (caps : IndCaps .anon),
@@ -219,7 +221,7 @@ theorem unitStep_nativeBlock {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {
     exact ⟨rfl, by rw [hcl]⟩
   have hT : BlockTable ⟨E, env, t, some n⟩ new B ind :=
     blockTable_of_install hI hinv hpin hna hO.facts hcvT hO.nP₀ hO.nIdx₀ hO.lenA hctorsA hfreshT
-      (hguard env new _ p₀ p ty' ctorsA caps hO)
+      (blockFire_of_cert hread hI (hcert env new _ p₀ p ty' ctorsA caps hO))
   have hE := heta env new _ p₀ p ty' ctorsA caps hinv hO
   -- the names of the new constants
   have hnres : ∀ cn ∈ new, cn.name ≠ Core.unresolvedKey := by

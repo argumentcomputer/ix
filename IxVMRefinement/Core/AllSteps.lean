@@ -9,9 +9,11 @@ import IxVMRefinement.Callees.Steps
 
 /-! # Registry step closure and `L4` at `S₀`
 
-`scoped_steps` combines the step theorems of all nine registry families (`Fn`) into `Steps c`,
-closing the strong induction (`Registry.induction`). `all_steps` explicitly embeds the historical
-unrestricted package. From that induction on call-list length,
+`scoped_steps_base` combines the step theorems of all nine registry families (`Fn`) into
+`Steps c`, closing the strong induction (`Registry.induction`), from the facts stated before the
+registry and the firing of the projection guards at the context. `scoped_steps` is the same from
+the facts a prefix carries. `all_steps` explicitly embeds the historical unrestricted package.
+From that induction on call-list length,
 `core_S₀` discharges `IxVM.Consistency.Core S₀` (`whnf`, `k_is_def_eq`, `k_infer` up to
 `View.HashedCollision`), giving `l4_S₀ : IxVM.Consistency.L4 S₀`. -/
 
@@ -34,21 +36,30 @@ theorem levelOps_step (c : ScopedCtx) :
   | .level_inst_params, _, _, _, _, _, ev, _ => IxVM.Refinement.Levels.levelInstParams_step ev
   | .level_list_inst, _, _, _, _, _, ev, _ => IxVM.Refinement.Levels.levelListInst_step ev
 
-/-- Every registered function satisfies its step under the selected-call contracts. -/
-theorem scoped_steps (c : ScopedCtx) (hc : ScopedCoreFacts c) : Steps c
+/-- Every registered function satisfies its step under the selected-call contracts and the firing
+of the projection guards at the context. -/
+theorem scoped_steps_base (c : ScopedCtx) (hc : ScopedCoreBase c) (hfire : ProjGuardFires c) :
+    Steps c
   | .subst f, _, _, _, _, _, ev, ih => subst_step c f _ _ _ _ _ ev ih
   | .levels f, _, _, _, _, _, ev, ih => levels_step c f _ _ _ _ _ ev ih
   | .levelOps f, _, _, _, _, _, ev, ih => levelOps_step c f _ _ _ _ _ ev ih
   | .whnf f, _, _, _, _, _, ev, ih => whnf_family_step c hc f _ _ _ _ _ ev ih
   | .defEq f, _, _, _, _, _, ev, ih => defEq_step c hc f _ _ _ _ _ ev ih
-  | .infer f, _, _, _, _, _, ev, ih => infer_step c hc f _ _ _ _ _ ev ih
+  | .infer f, _, _, _, _, _, ev, ih => infer_step c hc hfire f _ _ _ _ _ ev ih
   | .nat f, _, _, _, _, _, ev, ih => nat_step c hc f _ _ _ _ _ ev ih
   | .roles f, _, _, _, _, _, ev, ih => roles_step c hc f _ _ _ _ _ ev ih
   | .callees f, _, _, _, _, _, ev, ih => callees_step c hc f _ _ _ _ _ ev ih
 
+/-- Every registered function satisfies its step under the facts a prefix carries: the
+selected-call contracts, with the load contract's firing of every stored projection table read
+at the context. -/
+theorem scoped_steps (c : ScopedCtx) (hc : ScopedCoreFacts c) : Steps c :=
+  scoped_steps_base c hc.base hc.fires
+
 /-- Explicit compatibility for the historical unrestricted context package. -/
 theorem all_steps (c : Ctx) (hc : CoreFacts c) : Steps (ScopedCtx.unrestricted c) :=
-  scoped_steps (ScopedCtx.unrestricted c) (ScopedCoreFacts.ofUnrestricted hc)
+  scoped_steps_base (ScopedCtx.unrestricted c) (ScopedCoreBase.ofUnrestricted hc)
+    hc.loads.projGuardFires
 
 /-- **Obligation L4's content at `S₀`**: weak head normalization, definitional equality, and
 full-grade type inference refine `Ix.Kernel.Rules.{Red,DefEq,Infer}` up to hashed collision. -/

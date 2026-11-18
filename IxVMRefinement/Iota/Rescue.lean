@@ -142,7 +142,7 @@ theorem CIRep.recr_k {κ : _root_.Address → KKey} {h : Heap F}
 /-- **`KernelWhnf::k_synth_fab`**: the major's io type head-normalizes to its inductive (the major
 premise's head), the rule's constructor applied to the type's parameters is fabricated, and its
 type and the major's are propositions definitionally equal to each other: `Red.rescueK`. -/
-theorem k_synth_fab_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
+theorem k_synth_fab_step (c : ScopedCtx) (hc : ScopedCoreBase c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::k_synth_fab" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.k_synth_fab c args h r h' calls := by

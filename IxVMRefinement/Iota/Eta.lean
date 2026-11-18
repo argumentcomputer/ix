@@ -224,7 +224,7 @@ private theorem red_rec_seg1_ext {rc nl rt lvls hd sp np ni nm nmi rules kf type
 /-- **`KernelWhnf::eta_iota_fab`**: fabricates the constructor of the major's projections,
 certifies the family's and constructor's telescopes (`certs_all`), and establishes `Red.rescueEta`
 via `DefEq.structEtaTy` (at `0 < cnF`) or `DefEq.unitLikeTy` (at `cnF = 0`). -/
-theorem eta_iota_fab_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
+theorem eta_iota_fab_step (c : ScopedCtx) (hc : ScopedCoreBase c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::eta_iota_fab" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.eta_iota_fab c args h r h' calls := by
@@ -564,7 +564,7 @@ set_option maxHeartbeats 400000 in
 /-- **`KernelWhnf::try_struct_eta_iota`**: verifies the single-rule non-recursive structure guards,
 derives `rl.eta = true` via `LoadFacts.etaIota` and `EnvFacts.recEta`, fabricates the constructor
 application (`eta_iota_fab`), and runs `red_iota`. -/
-theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
+theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreBase c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::try_struct_eta_iota" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.try_struct_eta_iota c args h r h' calls := by

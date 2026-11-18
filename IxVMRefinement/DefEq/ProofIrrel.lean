@@ -978,7 +978,7 @@ private theorem try_proof_irrel_slow_spec (c : ScopedCtx) {rc a b types : Source
 
 /-- `KernelDefEq::try_proof_irrel`: fast proof-class multiplication (`DefEq.proofFast`), falling
 back to io-grade inference and `is_prop_type` (`DefEq.proofIrrelTy`). -/
-theorem try_proof_irrel_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem try_proof_irrel_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h : Heap F} {r : SourceValue F} {h' : Heap F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_proof_irrel" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_proof_irrel c args h r h' calls := by

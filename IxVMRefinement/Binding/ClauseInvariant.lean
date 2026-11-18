@@ -9,9 +9,9 @@ registry before the store (`FoldClauseOver`), and the interfaces of the steps in
 
 * `BoundaryFacts t G R env`: what the invariant holds beside the public shape and the clause:
   blocks stored whole, the stored operations pinned and of admitted groups, the stored shapes.
-  The prefix invariant is not a field: it is read off the clause (`BndOver.inv`). The load
-  contract's guard at every limit is not a field either: the clause holds the projection guards
-  as certificates, which name no limit.
+  The prefix invariant is not a field: it is read off the clause (`BndOver.inv`). No guard at a
+  limit is a field either: the clause holds the projection guards as certificates, and its load
+  contract the firing of every stored projection table, and neither names a limit.
 * `BndOver L t G R env`: the boundary invariant: `TableShape`, `FoldClauseOver L`,
   `BoundaryFacts`. `OverW L` is the internal part of the table witness it gives.
 * `OverUnitStep L t G R envT E₀ A c`: **the step of one closure unit**. From the clause at one
@@ -30,10 +30,6 @@ registry before the store (`FoldClauseOver`), and the interfaces of the steps in
 * `RoleUnitStepOver P L ρ t g`: **the step of a group whose one role is a role unit**, with the
   admission's reading clause (a reading of the unit's record over the grown store needs the
   run's blobs there), ending before the raise.
-* `RaisedLimitGuard L t g`: the load contract's guard at the carried limits the close of `g`
-  brings within range. It is the one field of the load contract that reads a limit above the
-  limit a structure was installed at; with the guards held as certificates the field has no
-  content of its own, and this premise goes when the field does.
 * `GroupStepOver L ρ t g`: the step of a group.
 -/
 
@@ -98,8 +94,7 @@ theorem BndOver.inv (h : BndOver.{u} L t G R env) {E : Ixon.Env} (hE : RecordsFo
   obtain ⟨Reg, hR⟩ := h.clause
   exact (hR E hE lim hc hl).prefixInv
 
-/-- The invariant with the clause as its extra part and the guard at every limit gives the
-invariant over the clause. -/
+/-- The invariant with the clause as its extra part gives the invariant over the clause. -/
 theorem BndOver.of_bnd (h : Bnd.{u} (FoldClauseOver.{u} L) t G R env) :
     BndOver.{u} L t G R env :=
   ⟨h.shape, h.extra, ⟨h.facts.whole, h.facts.opsPinned, h.facts.opsAdmitted, h.facts.shapes⟩⟩
@@ -208,15 +203,6 @@ def RoleUnitStepOver (P : Ix.Kernel.Role → Prop)
     AdmitsReads ρ t R R' → BndOver.{u} L t (· < g) R₁ env₁ → AddsAt R₁ R' a →
     ∃ env' : Ix.Kernel.Env .anon, (∀ ci ∈ env₁.consts, ci ∈ env'.consts) ∧
       BeforeRaise.{u} L t g R' env'
-
-/-- **The load contract's guard at the carried limits the close of `g` brings within range**
-(module docstring): at the invariant before the raise past `g`, at every record store and every
-carried limit within the groups below `g + 1`. -/
-def RaisedLimitGuard (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
-    (t : Ix.Kernel.RoleTable) (g : Nat) : Prop :=
-  ∀ (R : Ixon.Env) (env : Ix.Kernel.Env .anon), BeforeRaise.{u} L t g R env →
-    ∀ E, RecordsFor R E → ∀ lim, Carried lim → LimWithin (· < g + 1) t lim →
-      GuardAt E t lim env
 
 /-- **The step of group `g`**: from the invariant below `g`, the admission of `g` and its
 reading clause, the invariant below `g + 1` at the grown store and an environment that extends
