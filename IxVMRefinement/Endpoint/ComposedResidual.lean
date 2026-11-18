@@ -3,6 +3,7 @@ import IxVMRefinement.FamilyGraph.Composition
 import IxVMRefinement.Assembly.NativeBlockWalked
 import IxVMRefinement.Binding.TableAdmits
 import IxVMRefinement.Binding.TableAdmitsValidate
+import IxVMRefinement.Binding.AxiomValidation
 import IxVMRefinement.Binding.GroupStores
 
 /-! # The composed statement from its open obligations
@@ -62,18 +63,21 @@ Proved inside, with no hypothesis left:
   table's well-formedness from the claim's admission, and the witness on every group;
 * of the binding claim's export (`Binding.bindingClaimExport_of_table_and_stores`): the
   claim's decode (an accepted `binding` claim's run calls the binding's validation on the
-  claimed address, `Claim.verify_claim_decode_binding_spec`), that the table binds every role,
-  the observed validation of every role of every group, and the run's store.
+  claimed address, `Claim.verify_claim_decode_binding_spec`), the loaded table's admission and
+  its prelude pin (`Binding.loadedTableAdmits`, `Binding.loadedTablePinsPrelude`), that the
+  table binds every role, the observed validation of every role of every group, and the run's
+  store;
+* the role unit of a standard axiom at each group of a run (`Binding.standardAxiomRoleUnit_closed`,
+  from the axiom's observed validation, `Binding.axiomValidationFacts`).
 
 Left as hypotheses, at the binding claim layer's run predicate `Binding.BindingRun` (the run
 record is the observed one, `observedRun`; the predicate holds the table's prelude pin, the
 store after the six basis groups and the admission of each group with its reading clause, so
 the invariant at the basis groups and the two admission chains are its projections):
 
-* binding: the three parts of the claim's export that remain (the loaded table's admission,
-  its prelude pin, and the stores of a run; the claim's decode is proved); and at each group of
-  a run the closure, the stored shapes where the group has no role unit, and the role unit of
-  an operation and of a standard axiom;
+* binding: the part of the claim's export that remains, what is left of the clauses of the
+  stores of a run (`RemainingStoreClausesOfRun`); and at each group of a run the closure, the
+  stored shapes where the group has no role unit, and the role unit of an operation;
 * typing: what an accepted run gives of its family records, advice and twins
   (`FamilyGraphRow`) and of the records a family check checks (`InnerCheckedRow`); the step of a top-walked block with its
   family record (`FamilyBlockRow`) and the step of a twin (`FamilyTwinRow`).
@@ -203,7 +207,7 @@ theorem circuitComposed_of_parts
 are proved passed in. The binding claim layer's run predicate is `Binding.BindingRun`, by the
 run's calls.
 
-The first five hypotheses are the binding half's. One is the part of the claim's export that
+The first four hypotheses are the binding half's. One is the part of the claim's export that
 remains (`Binding.bindingClaimExport_of_table_and_stores`; the claim's decode is proved,
 `Claim.verify_claim_decode_binding_spec`, and so are the other two parts: that the table a
 binding run loads is the admitted table of bytes the run hashed, `Binding.loadedTableAdmits`,
@@ -214,9 +218,11 @@ of its roles, reduced to what is left of their clauses over the run's records
 `unitsLast` and the reading clause; the store sequence and every other clause are proved,
 `Binding.groupStoresOfRun_of_remaining`). The invariant at the six basis groups
 and the two admission chains are projections of the run predicate (`basisOver_bindingRun`,
-`admitsChain_bindingRun`, `admitsReadsChain_bindingRun`). The other four are, for every bounded
+`admitsChain_bindingRun`, `admitsReadsChain_bindingRun`). The other three are, for every bounded
 run and each group from 6 to 76 of it, the closure, the stored shapes where the group has no
-role unit, the role unit of an operation and the role unit of a standard axiom.
+role unit and the role unit of an operation. The role unit of a standard axiom is proved
+(`Binding.standardAxiomRoleUnit_closed`, from the axiom's observed validation,
+`Binding.axiomValidationFacts`).
 
 The last four hypotheses are the typing half's. The step of the ordinary inductive type takes
 the use-site reading of the projection guard, a theorem (`Core.projGuardRunReading`).
@@ -264,9 +270,6 @@ theorem circuitComposed_residual
     (operationRoleUnit : ∀ calls,
       AtGroups (BindingRun calls)
         (RoleUnitStepOver.{u} (· ∈ RoleOps.opRoles) FormerOpenTraceAt))
-    (standardAxiomRoleUnit : ∀ calls,
-      AtGroups (BindingRun calls)
-        (RoleUnitStepOver.{u} (· ∈ standardAxioms) FormerOpenTraceAt))
     (familyGraph : FamilyGraphRow.{u})
     (innerChecked : InnerCheckedRow)
     (familyBlock : FamilyBlockRow.{u} FormerOpenTraceAt)
@@ -277,7 +280,7 @@ theorem circuitComposed_residual
       Binding.loadedTablePinsPrelude fun calls => groupStoresOfRun_of_remaining (groupStores calls))
     (fun calls => basisOver_bindingRun FormerOpenTraceAt calls) admitsChain_bindingRun
     admitsReadsChain_bindingRun
-    groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit
+    groupClosure groupWithoutRoleUnit operationRoleUnit Binding.standardAxiomRoleUnit_closed
     familyGraph
     (innerUnitSteps_of_innerChecked innerChecked
       (nativeBlockTelescope_checked linkLaws_formerOpenTrace Core.projGuardRunReading))
