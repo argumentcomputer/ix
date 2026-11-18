@@ -1,5 +1,4 @@
 import IxVMRefinement.FamilyGraph.Graph
-import IxVMRefinement.Binding.Carried
 
 /-! # The typing skeleton over the family graph
 
