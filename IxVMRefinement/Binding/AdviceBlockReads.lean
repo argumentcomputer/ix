@@ -365,7 +365,7 @@ theorem adviceBlock_reads {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {E�
     intro hz
     have hlt := (Array.getElem?_eq_some_iff.mp hm).1
     omega
-  obtain ⟨ind, rfl⟩ := Decl.adviceBlock_shape hS hab ev hcs hE hms h0
+  obtain ⟨ind, rfl⟩ := Decl.adviceBlock_shape (lim := none) hS hab ev hcs hE hms h0
   have hi : i = 0 ∧ m = .indc ind := by
     have hlt := (Array.getElem?_eq_some_iff.mp hm).1
     have hi0 : i = 0 := by simp at hlt; omega
