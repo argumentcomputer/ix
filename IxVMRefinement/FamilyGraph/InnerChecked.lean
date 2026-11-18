@@ -1,5 +1,6 @@
 import IxVMRefinement.FamilyGraph.AdviceChecked
 import IxVMRefinement.Claim.TopProj
+import IxVMRefinement.Claim.TopRec
 
 /-! # The checks a family check runs on its inner records, beyond one-constant advice
 
