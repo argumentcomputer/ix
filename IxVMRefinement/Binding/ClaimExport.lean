@@ -95,6 +95,7 @@ theorem admits_observed_of_checked {calls : List (Call F)} {bAddr : _root_.Addre
   kept := h.kept
   opsOwn := h.opsOwn
   unitsLast := h.unitsLast
+  evidenceRefs := h.evidenceRefs
 
 /-- The reading clause reads the run's records only. -/
 theorem admitsReads_observed_of_checked {calls : List (Call F)} {bAddr : _root_.Address}
