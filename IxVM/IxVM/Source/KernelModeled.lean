@@ -701,6 +701,13 @@ def check_container_rec := aiur_fn⟦
   fn check_container_rec(rc: KernelRoles::RoleCtx, x: Bytes::AddressRef, iblock: Bytes::AddressRef) -> () {
       assert_eq!(Bytes::address_eq(rec_family_block(x), iblock), 1,
         "model advice: a container recursor of another block");
+      -- in Lean's logic: not unsafe, as an advice recursor (`check_advice_record`); the native
+      -- route's recursor check does not read the flag
+      match (*(Ingress::get_ci(x))) {
+        KernelTypes::KConstantInfo::Rec(_, _, _, _, _, _, _, _, r_uns, _, _) => {
+          assert_eq!(r_uns, 0, "model advice: an unsafe container recursor");
+          () } ,
+      };
       KernelClaim::run_check(rc, x);
       ()
     }
