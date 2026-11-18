@@ -91,10 +91,10 @@ clause. -/
 theorem unitStepTwin_of_installed (hT : TwinStepTarget.{u}) {X : Ix.Kernel.Env .anon → Prop}
     {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
     {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} {lim : Option Nat} {A B rb : _root_.Address}
-    {c cb crb : Ixon.Constant} {ms rs rs' : Array Ixon.MutConst} {cs : List (Call F)}
+    {c cb crb : Ixon.Constant} {ms rs' : Array Ixon.MutConst} {cs : List (Call F)}
     (ht : t.check = .ok ()) (hRS : LoadedReads.RunStore calls E₀)
     (hSS : StepStore calls t E₀ E) (hB : FamBlockRecord E₀ B cb ms)
-    (hrb : FamRecRecord E₀ rb crb rs) (hA : FamRecRecord E₀ A c rs') (hsz : rs'.size ≠ 0)
+    (hA : FamRecRecord E₀ A c rs') (hsz : rs'.size ≠ 0)
     (hne : A ≠ rb) (hcall : FamilyCallAtLim calls bAddr t B A lim cs)
     (hroute : ModeledRouteAt calls B) (hinert : InertClause t c)
     (hkey : ∀ x, ConstAddrOf A c x → Decl.KeyFree (keyOf t x))
@@ -107,7 +107,7 @@ theorem unitStepTwin_of_installed (hT : TwinStepTarget.{u}) {X : Ix.Kernel.Env .
   intro env hext hnd hinv hX href hrbS hfresh
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
   obtain ⟨blk, env₂, hreads, hrun, hstored, hmodel⟩ :=
-    hT calls bAddr t E₀ E env B rb A cb crb c ms rs rs' lim cs ht hRS hSS hB hrb hA hsz hne
+    hT calls bAddr t E₀ E env B rb A cb crb c ms rs' lim cs ht hRS hSS hB hA hsz hne
       hcall hroute hinv href (hinst env hext hnd hinv hX hrbS) hinert hfresh hkey
   obtain ⟨hinv₂, hX₂⟩ :=
     hkeep env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel
@@ -190,18 +190,18 @@ theorem unitStepTwin_of_target (hT : TwinStepTarget.{u}) {X : Ix.Kernel.Env .ano
     {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
     {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} {lim : Option Nat}
     {fam : _root_.Address → Option _root_.Address} {A B rb : _root_.Address}
-    {c cb crb : Ixon.Constant} {ms rs rs' : Array Ixon.MutConst} {cs : List (Call F)}
+    {c cb crb : Ixon.Constant} {ms rs' : Array Ixon.MutConst} {cs : List (Call F)}
     (ht : t.check = .ok ()) (hRS : LoadedReads.RunStore calls E₀)
     (hSS : StepStore calls t E₀ E) (hB : FamBlockRecord E₀ B cb ms)
-    (hrb : FamRecRecord E₀ rb crb rs) (hA : FamRecRecord E₀ A c rs') (hsz : rs'.size ≠ 0)
+    (hcrb : recordOf E₀ rb = some crb) (hA : FamRecRecord E₀ A c rs') (hsz : rs'.size ≠ 0)
     (hne : A ≠ rb) (hcall : FamilyCallAtLim calls bAddr t B A lim cs)
     (hroute : ModeledRouteAt calls B) (hinert : InertClause t c)
     (hkey : ∀ x, ConstAddrOf A c x → Decl.KeyFree (keyOf t x)) (hfam : fam B = some rb)
     (hkeep : TwinStepKeeps.{u} X t envT E₀ E lim A c) :
     UnitStepTwin.{u} (fun env => X env ∧ FamilyRecsModeled t E₀ fam env) t envT E₀ E lim A c
       rb crb :=
-  unitStepTwin_of_installed hT ht hRS hSS hB hrb hA hsz hne hcall hroute hinert hkey
-    (fun env _ _ _ hXe hrbS => familyInstalled_of_clause hXe.2 hfam hrb.record hrbS)
+  unitStepTwin_of_installed hT ht hRS hSS hB hA hsz hne hcall hroute hinert hkey
+    (fun env _ _ _ hXe hrbS => familyInstalled_of_clause hXe.2 hfam hcrb hrbS)
     hkeep.and_familyRecsModeled
 
 end IxVM.Refinement.Typing.TwinFamily

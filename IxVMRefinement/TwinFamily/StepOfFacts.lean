@@ -31,10 +31,10 @@ theorem unitStepTwin_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon → P
     (hL : LinkLaws L)
     (hseam : ∀ (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
       (E₀ E : Ixon.Env) (env : Ix.Kernel.Env .anon) (B rb rb' : _root_.Address)
-      (cb crb crb' : Ixon.Constant) (ms rs rs' : Array Ixon.MutConst) (lim : Option Nat)
+      (cb crb crb' : Ixon.Constant) (ms rs' : Array Ixon.MutConst) (lim : Option Nat)
       (cs : List (Call F)),
       t.check = .ok () → LoadedReads.RunStore calls E₀ → StepStore calls t E₀ E →
-      FamBlockRecord E₀ B cb ms → FamRecRecord E₀ rb crb rs → FamRecRecord E₀ rb' crb' rs' →
+      FamBlockRecord E₀ B cb ms → FamRecRecord E₀ rb' crb' rs' →
       rs'.size ≠ 0 → rb' ≠ rb →
       FamilyCallAtLim calls bAddr t B rb' lim cs →
       ModeledRouteAt calls B →
@@ -51,10 +51,10 @@ theorem unitStepTwin_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon → P
     {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
     {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} {lim : Option Nat}
     {fam : _root_.Address → Option _root_.Address} {A B rb : _root_.Address}
-    {c cb crb : Ixon.Constant} {ms rs rs' : Array Ixon.MutConst} {cs : List (Call F)}
+    {c cb crb : Ixon.Constant} {ms rs' : Array Ixon.MutConst} {cs : List (Call F)}
     (ht : t.check = .ok ()) (hRS : LoadedReads.RunStore calls E₀)
     (hSS : StepStore calls t E₀ E) (hB : FamBlockRecord E₀ B cb ms)
-    (hrb : FamRecRecord E₀ rb crb rs) (hA : FamRecRecord E₀ A c rs') (hsz : rs'.size ≠ 0)
+    (hA : FamRecRecord E₀ A c rs') (hsz : rs'.size ≠ 0)
     (hne : A ≠ rb) (hcall : FamilyCallAtLim calls bAddr t B A lim cs)
     (hroute : ModeledRouteAt calls B) (hinert : InertClause t c)
     (hkey : ∀ x, ConstAddrOf A c x → Decl.KeyFree (keyOf t x))
@@ -76,7 +76,7 @@ theorem unitStepTwin_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon → P
         ∀ x, ci.name = keyOf t x → Decl.ReloadsAs E t env₂ ci) :
     UnitStepTwin.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
       t envT E₀ E lim A c rb crb :=
-  unitStepTwin_of_installed (twinStepTarget_of_facts hseam) ht hRS hSS hB hrb hA hsz hne
+  unitStepTwin_of_installed (twinStepTarget_of_facts hseam) ht hRS hSS hB hA hsz hne
     hcall hroute hinert hkey hinst
     (twinStepKeeps_foldExtra hL (fun x hx => constAddr_hash_size_of_block hA.muts hx) hcomp
       hreload).and_familyRecsModeled

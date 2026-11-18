@@ -73,7 +73,8 @@ def FamilyInstalled (t : Ix.Kernel.RoleTable) (env : Ix.Kernel.Env .anon) (rb : 
 
 /-- **The twin step's target.** The hypotheses are the accepted family check of the block `B`
 with the second record `rb'` on the modeled route, at any limit; the prefix invariant at that
-limit; what the second record uses, stored; the block's family record `rb` installed; the inert
+limit; what the second record uses, stored; the block's family record `rb` installed (wherever
+the record itself is: in the run's store, or, for a stored family, in the witness's); the inert
 clause; freshness and key freedom of the second record's constant addresses. The conclusion is
 the second record's declaration as read, IxC's twin record for it over the positional package,
 each member stored after the step as a constant that stores its reading, and a model companion
@@ -81,10 +82,10 @@ at each member. -/
 def TwinStepTarget : Prop :=
   ∀ (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
     (E₀ E : Ixon.Env) (env : Ix.Kernel.Env .anon) (B rb rb' : _root_.Address)
-    (cb crb crb' : Ixon.Constant) (ms rs rs' : Array Ixon.MutConst) (lim : Option Nat)
+    (cb crb crb' : Ixon.Constant) (ms rs' : Array Ixon.MutConst) (lim : Option Nat)
     (cs : List (Call F)),
     t.check = .ok () → LoadedReads.RunStore calls E₀ → StepStore calls t E₀ E →
-    FamBlockRecord E₀ B cb ms → FamRecRecord E₀ rb crb rs → FamRecRecord E₀ rb' crb' rs' →
+    FamBlockRecord E₀ B cb ms → FamRecRecord E₀ rb' crb' rs' →
     rs'.size ≠ 0 → rb' ≠ rb →
     FamilyCallAtLim calls bAddr t B rb' lim cs →
     ModeledRouteAt calls B →

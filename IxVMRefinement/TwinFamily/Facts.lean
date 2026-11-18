@@ -124,10 +124,10 @@ the circuit side hands the second record's declaration as read and the facts of 
 theorem twinStepTarget_of_facts
     (hseam : ∀ (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
       (E₀ E : Ixon.Env) (env : Ix.Kernel.Env .anon) (B rb rb' : _root_.Address)
-      (cb crb crb' : Ixon.Constant) (ms rs rs' : Array Ixon.MutConst) (lim : Option Nat)
+      (cb crb crb' : Ixon.Constant) (ms rs' : Array Ixon.MutConst) (lim : Option Nat)
       (cs : List (Call F)),
       t.check = .ok () → LoadedReads.RunStore calls E₀ → StepStore calls t E₀ E →
-      FamBlockRecord E₀ B cb ms → FamRecRecord E₀ rb crb rs → FamRecRecord E₀ rb' crb' rs' →
+      FamBlockRecord E₀ B cb ms → FamRecRecord E₀ rb' crb' rs' →
       rs'.size ≠ 0 → rb' ≠ rb →
       FamilyCallAtLim calls bAddr t B rb' lim cs →
       ModeledRouteAt calls B →
@@ -142,10 +142,10 @@ theorem twinStepTarget_of_facts
         (f : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon),
         TwinDeclReads t E₀ rb' crb' blk ∧ TwinPartsFacts t env rb crb blk ws f) :
     TwinStepTarget.{u} := by
-  intro calls bAddr t E₀ E env B rb rb' cb crb crb' ms rs rs' lim cs ht hRS hSS hB hrb hrb' hsz
+  intro calls bAddr t E₀ E env B rb rb' cb crb crb' ms rs' lim cs ht hRS hSS hB hrb' hsz
     hne hcall hroute hinv href hinst hinert hfresh hkey
-  obtain ⟨blk, ws, f, hreads, hF⟩ := hseam calls bAddr t E₀ E env B rb rb' cb crb crb' ms rs rs'
-    lim cs ht hRS hSS hB hrb hrb' hsz hne hcall hroute hinv href hinst hinert hfresh hkey
+  obtain ⟨blk, ws, f, hreads, hF⟩ := hseam calls bAddr t E₀ E env B rb rb' cb crb crb' ms rs'
+    lim cs ht hRS hSS hB hrb' hsz hne hcall hroute hinv href hinst hinert hfresh hkey
   obtain ⟨env₂, hrun, hstored, hmodel⟩ := twinTarget_of_facts hF hinst
   exact ⟨blk, env₂, hreads, hrun, hstored, hmodel⟩
 
