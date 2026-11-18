@@ -67,6 +67,37 @@ theorem containerRec_checked {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
       subst hcc
       exact hhead.notMuts ms hms
 
+/-- **An observed container-recursor check is at no axiom and no quotient record**:
+`rec_family_block` reads the record with `Ingress::get_ci` and matches only its `Rec` output,
+while `get_ci` answers an axiom record with `Axiom` and a quotient record with `Quot`
+(`Claim.GetCIHead`). -/
+theorem containerRec_kind {calls cs : List (Call F)} {E₀ : Ixon.Env}
+    (hS : LoadedReads.RunStore calls E₀)
+    {x_rc x_x x_ib r : SourceValue F} {h h' : Heap F} {a : _root_.Address}
+    (ha : S0.addr h x_x a)
+    (ev : ObsFn Obs.W "KernelModeled::check_container_rec" [x_rc, x_x, x_ib] h r h' cs)
+    (hsub : ∀ cl ∈ cs, cl ∈ calls) {c : Ixon.Constant}
+    (hc : IxVM.Consistency.recordOf E₀ a = some c) :
+    (∀ ax, c.info ≠ .axio ax) ∧ ∀ q, c.info ≠ .quot q := by
+  match Obs.«KernelModeled::check_container_rec».obs ev with
+  | .run (ev39 := ev39) (hc96 := hc96) .. =>
+    match Obs.«KernelModeled::rec_family_block».obs ev39 with
+    | .run (cs16 := cs16) (ev18 := ev18) (ld12 := ld12) (hc333 := hc333) .. =>
+      obtain ⟨ab, hab, rfl⟩ := ha
+      obtain ⟨raw, c', -, hh, hba, hx, -, hhead⟩ := Claim.get_ci_head hab ev18
+      have hsub16 : ∀ cl ∈ cs16, cl ∈ calls := fun cl hcl =>
+        hsub cl (by rw [hc96]; simp [hc333, hcl])
+      have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
+        (Core.hashed_mono hsub16 hh) hba hx
+      subst hcc
+      refine ⟨fun ax hax => ?_, fun q hq => ?_⟩
+      · obtain ⟨nl, ty, hl⟩ := hhead.axio ax hax
+        rw [ld12] at hl
+        simp at hl
+      · obtain ⟨nl, ty, hl⟩ := hhead.quot q hq
+        rw [ld12] at hl
+        simp at hl
+
 /-- **An observed advice-record check at a block record checked every member at the limit of
 its context**, and the dispatch answered `0` on the block. -/
 theorem adviceBlock_checked {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
