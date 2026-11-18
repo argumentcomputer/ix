@@ -9,6 +9,7 @@ import IxVMRefinement.Binding.BasisAt
 import IxVMRefinement.Assembly.TypingBasisInv
 import IxVMRefinement.StatementRel.StoreInhabit
 import IxVMRefinement.Binding.ReadsLocal
+import IxVMRefinement.Binding.ReadsLiteralFree
 
 /-! # The family checks of a binding run, group by group
 
@@ -24,8 +25,8 @@ The run's payload and family selection, and what of the family form's clauses is
   `modeled_of_run`: the clause `GroupFamilyChecks.modeled` of every run;
   `familyCall_block_nonempty`, `famNonempty_of_run`: the block of a family check is a non-empty
   block of the run's store; `noPinned_of_run`: no constant address of a new record is at a
-  pinned basis key; `readsDown_of_run`: from group 7 on, a reading over the closure's store of an
-  address held before the group is a reading over that store.
+  pinned basis key; `readsDown_of_run`, `readsDownBasis_of_run`: a reading over the closure's store
+  of an address held before the group is a reading over that store.
 * `RemainingFamilyClauses calls bAddr t E₀`: what is not proved of the run's family checks, at
   the store sequence with the run's payload. Each field names the source it comes from.
 * `families_of_remaining`: the family form's clauses at a group (`ClosureFam` and
@@ -202,8 +203,8 @@ end Run
 /-- **What is left of `ClosureRunFacts`** at a group: its fields but `famRefs` (the rank's,
 `GroupRanked.famRefs`), `advNotUnit` (`advNotUnit_of_run`), `roleUnitForm`
 (`roleUnitForm_of_run`), `keptRoles` (`keptRoles_of_run`), `famNonempty`
-(`famNonempty_of_run`) and `noPinned` (`noPinned_of_run`), which are proved, and `readsDown` from
-group 7 on (`readsDown_of_run`). Each field's source:
+(`famNonempty_of_run`), `noPinned` (`noPinned_of_run`) and `readsDown` (`readsDown_of_run` from
+group 7 on, `readsDownBasis_of_run` at the basis group), which are proved. Each field's source:
 * `oldNeeds`: today's circuit, not specified: an address a new unit's step reads that is held
   before the group was checked at the limit of the group that added it (the walk's
   `KernelClaim::run_check` at that group; for a payload record, its family check), or is a
@@ -215,12 +216,6 @@ group 7 on (`readsDown_of_run`). Each field's source:
 * `routeNew`: today's circuit: the modeled arm of `KernelCheck::check_const` reaches
   `KernelModeled::check_modeled_block` and `check_family`; a block's route over the closure's
   store against the route the circuit read; not specified.
-* `readsDownBasis`: what is left of `readsDown`, proved from group 7 on (`readsDown_of_run`): at
-  the basis group, a reading over the closure's store of a basis row is a reading over the basis
-  store. The basis store holds no blob, and the closure's store holds every blob of the run, so
-  this needs that a basis row reads without a blob: no expression of the 24 committed basis rows
-  has a literal (a decidable fact of the committed rows), and a reading of an expression without a
-  literal looks up no blob (`exprReader`). Source: the committed basis rows; not specified.
 * `notInert`, `needOk`, `literals`, `famNotInert`, `famNeedOk`: the producers are in each field's
   docstring (the group's walk; the walk's reference assertions run on the payload's records for
   payload records; the literal roles' validations at or below group 45). -/
@@ -235,9 +230,6 @@ structure RunFactsLeft (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : I
     ∃ ci₀, IxVM.Consistency.Reads t R x ci₀
   routeNew : ∀ R₁ B, ClosureStore t g R R' R₁ → New R R' B →
     Route.blockRoute R₁ B = some true → ∃ rb, famOf B = some rb
-  readsDownBasis : g = 6 → ∀ R₁ x ci₀, ClosureStore t g R R' R₁ →
-    (recordOf R x).isSome = true → IxVM.Consistency.Reads t R₁ x ci₀ →
-    IxVM.Consistency.Reads t R x ci₀
   /-- No reference a plain unit uses is an inert axiom's. Producer: the group's walk.
   `KernelRoles::assert_ref_allowed` admits a reference bound to an inert role whose group is at or
   above the group's validation limit (`Claim.refAllowed_inert`); such a reference is excluded by
@@ -603,10 +595,41 @@ theorem readsDown_of_run (hcheck : t.check = .ok ()) {Pay : PayloadRel} {g : Nat
     exact groupStore_reads_blobs hg y b
       (groupStore_loadedBlobs (Nat.lt_succ_of_lt hg) y b (hR₁.le₂.2 y b hy))
 
+/-- **`ClosureRunFacts.readsDown` of every run at the basis group**: the store before group 6 is
+the basis store, which is used-closed (`StoreInhabit.store_usedClosed`) and which the closure's
+store extends. So a reading over the closure's store at a basis row is a reading over the basis
+rows with the closure's blobs (`reads_of_closed_sub`, at the basis store's records with the
+closure's blobs). The basis store holds no blob, but no basis row has a literal
+(`basisStore_litFree`, decided over the 24 rows), so the reading looks up no blob and is one over
+the basis store itself (`readsIn_litFree`). -/
+theorem readsDownBasis_of_run (hcheck : t.check = .ok ()) {Pay : PayloadRel} {g : Nat}
+    (hg : g = 6) :
+    ∀ R₁ x ci₀,
+      ClosureStore t g (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) R₁ →
+      (recordOf (groupStore t E₀ Pay g) x).isSome = true →
+      IxVM.Consistency.Reads t R₁ x ci₀ →
+      IxVM.Consistency.Reads t (groupStore t E₀ Pay g) x ci₀ := by
+  subst hg
+  intro R₁ x ci₀ hR₁ hx hr
+  have hsub : ∀ y c, recordOf basisStore y = some c → recordOf R₁ y = some c := by
+    intro y c hy
+    unfold recordOf at hy ⊢
+    cases hgy : basisStore.consts.get? y with
+    | none => rw [hgy] at hy; cases hy
+    | some lc =>
+      rw [hgy] at hy
+      rw [hR₁.le₁.1 y lc ((groupStore_basis_consts y).trans hgy)]
+      exact hy
+  rw [groupStore_six] at hx ⊢
+  have h1 : IxVM.Consistency.ReadsIn t (recordOf basisStore) (fun y => R₁.blobs.get? y) x ci₀ :=
+    reads_of_closed_sub (R := { basisStore with blobs := R₁.blobs }) (E₀ := R₁) hcheck
+      (wf_of_check hcheck) hsub StoreInhabit.store_usedClosed (fun _ _ h => h) hx hr
+  exact readsIn_litFree (fun _ _ h => basisStore_litFree h) h1
+
 /-- **The family form's clauses at a group**, for a rank of its new records: `ClosureRunFacts`
 from what is left of it (`RemainingFamilyClauses.runFacts`), the rank's `famRefs`, and
-`advNotUnit`, `roleUnitForm`, `keptRoles`, `famNonempty`, `noPinned` proved of the run, and
-`readsDown` from group 7 on;
+`advNotUnit`, `roleUnitForm`, `keptRoles`, `famNonempty`, `noPinned`, `readsDown` proved of the
+run;
 `GroupFamilyChecks.modeled` and `famCall` proved of the run. -/
 theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
     (hax : AxiomRolesDeclared t E₀) (hR : RemainingFamilyClauses calls bAddr t E₀)
@@ -648,7 +671,7 @@ theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRows
         readsDown := by
           rcases Nat.lt_or_ge 6 g with h7 | h6
           · exact readsDown_of_run hcheck h7 hclg
-          · exact hL.readsDownBasis (Nat.le_antisymm h6 hg6)
+          · exact readsDownBasis_of_run hcheck (Nat.le_antisymm h6 hg6)
         notInert := hL.notInert
         needOk := hL.needOk
         literals := hL.literals
