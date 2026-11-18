@@ -971,7 +971,7 @@ private theorem wrap_rel_appHeadConstLvls {a_g a_d : Bytes.Address} {ls_g ls_d :
     ∀ {xg xd : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       AppHeadConstLvls h a_g ls_g xg →
       AppHeadConstLvls h a_d ls_d xd →
-      ObsFn W "KernelCheck::wrap_rel" [xg, xd] h (.field 1) h' cs →
+      ObsFn W "KernelCheck::wrap_rel" [.field 0, xg, xd] h (.field 1) h' cs →
       ls_g = ls_d := by
   intro xg xd h h' cs hg hd ev
   induction hg generalizing xd h' cs with
@@ -1083,7 +1083,7 @@ private theorem wrap_rel_forallDomHeadLvls
       Good c cs →
       ForallDomHeadLvls (keyOf c.t) 0 (fun _ => default) h T a_g ls_g m k xg →
       ForallRightHeadLvls h a_d ls_d m xd →
-      ObsFn W "KernelCheck::wrap_rel" [xg, xd] h (.field 1) h' cs →
+      ObsFn W "KernelCheck::wrap_rel" [.field 0, xg, xd] h (.field 1) h' cs →
       ls_g = ls_d
   | 0, k, xg, xd, h, h', cs, hgood, hg, hd, ev => by
     cases hg with
@@ -1126,16 +1126,19 @@ private theorem wrap_rel_forallDomHeadLvls
           | .n1_n1 (m2 := m2) (cs48 := cs48) (ev15 := ev15) (ev50 := ev50) (hc93 := hc93) .. =>
             have e1 := ev15.heap_extends
             match Obs.«KernelCheck::wrap_dom».obsx ev50 with
-            | .other_other_other (he174 := he) .. =>
+            | .other_n0_other_other (he_vjzsmrqa := he) .. =>
               exact absurd (Value.field.inj he) one_ne_zero
+            | .other_other_n1_bind (hne_trdykyhf := hsm) ..
+            | .other_other_other (hne_trdykyhf := hsm) .. =>
+              exact absurd rfl hsm
             | .Let (ld12 := ld12) .. =>
               cases hhead_g with
               | const cg _ _ | app cg _ =>
                 exact (load_cell_ne (e1.getElem?_eq cg) ld12 (by decide)).elim
-            | .other_n1 (ev79 := ev105) .. =>
+            | .other_n0_n1 (ev_teknbelh := ev105) .. =>
               exact wrap_rel_appHeadConstLvls (hhead_g.mono e1) (hhead_d.mono e1) ev105
-            | .other_other_n1_bind (m66 := m92) (cs119 := cs145)
-                (ev79 := ev105) (ev121 := ev147) (hc170 := hc196) .. =>
+            | .other_n0_other_n1_bind (m_fwvfxwkq := m92) (cs_szysaksf := cs145)
+                (ev_teknbelh := ev105) (ev_tyrbnlfr := ev147) (hc_uuoaavue := hc196) .. =>
               have hgood_cw : Good c cs145 :=
                 hgood.sub (fun z hz => by subst hc539 hc93 hc196; simp [hz])
               match Obs.«KernelCheck::consume_wrapper».obsx ev147 with
