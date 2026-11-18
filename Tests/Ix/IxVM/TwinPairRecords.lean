@@ -340,7 +340,8 @@ private def evalMembers (fuel : Nat) (env : Ix.Kernel.Env .anon) (blk : List CI)
           | some DW, some DC => decide (DW.getAppFn = DC.getAppFn) &&
               (!(DC.getAppArgs.all isBVar) || decide (DW.getAppArgs = DC.getAppArgs))
           | _, _ => false
-        m := { m with canonical := true,
+        m := { m with
+          canonical := true,
           counts := mI == mIC && rP == rPC && rulesW.length == rulesC.length,
           lvls := cvW.levelParams == cvC.levelParams, model := model?.isSome, major,
           majorAgrees := Ix.Kernel.NativeTwin.majorAgrees mI cvC.type cvW'.type,
