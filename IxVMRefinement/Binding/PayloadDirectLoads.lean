@@ -467,6 +467,10 @@ section FamilyRecord
 variable {calls : List (Call F)} {E₀ : Ixon.Env} {bAddr : _root_.Address}
   {t : Ix.Kernel.RoleTable}
 
+private theorem ext_snocEq {h m : Heap F} {v : SourceValue F} (e : m = h ++ [v]) :
+    Heap.Extends h m := by
+  rw [e]; exact Heap.Extends.snoc h v
+
 /-- **`KernelModeled::check_recs` loads every recursor address of its list as a recursor with the
 unsafe flag `0`.** -/
 private theorem check_recs_safe
@@ -491,7 +495,6 @@ private theorem check_recs_safe
         (ld76 := ld76) (heq217 := heq217) (ev298 := ev298) (ev359 := ev359) (ev345 := ev345)
         (ev403 := ev403) (ev485 := ev485) (ev523 := ev523) (ev571 := ev571) (hm635 := hm635)
         (ev608 := ev608) (ev652 := ev652) (ev681 := ev681) (ev710 := ev710)
-        (m_oajaqiwd := mA) (m_shkxqcak := mB0) (m_raxeqbbt := mB) (m_akkqvxxx := mF)
         (hm_odcsfbbr := hmA) (ev_uprevpxl := evA) (ev_svgicqcr := evB) (hm_owdmgqhw := hmB)
         (ev_oqkxxxxs := evC) (ev_eejlfykm := evD) (ev_uoyvrvop := evE) (ev_akrqpecc := evF)
         (ev_uoummlhs := evG) (ev_tjosvhyt := evH) (ev850 := ev850) (ev904 := ev904)
@@ -499,18 +502,10 @@ private theorem check_recs_safe
       obtain ⟨z, zs, he, hz, hzs⟩ := Lib.rep_cons_of_load hrep ld12
       injection he with he1 he2
       subst he1 he2
-      have eA : Heap.Extends m561 mA := by rw [hmA]; exact Heap.Extends.snoc m561 _
-      have eB : Heap.Extends mB0 mB := by rw [hmB]; exact Heap.Extends.snoc mB0 _
-      have e627 : Heap.Extends m561 m627 := by
-        refine eA.trans ?_
-        refine evA.heap_extends.trans ?_
-        refine evB.heap_extends.trans ?_
-        refine eB.trans ?_
-        refine evC.heap_extends.trans ?_
-        refine evD.heap_extends.trans ?_
-        refine evE.heap_extends.trans ?_
-        refine evF.heap_extends.trans ?_
-        rw [hm635]; exact Heap.Extends.snoc mF _
+      have e627 : Heap.Extends m561 m627 :=
+        (ext_snocEq hmA).trans (evA.heap_extends.trans (evB.heap_extends.trans
+          ((ext_snocEq hmB).trans (evC.heap_extends.trans (evD.heap_extends.trans
+            (evE.heap_extends.trans (evF.heap_extends.trans (ext_snocEq hm635))))))))
       have ext : Heap.Extends h m892 := by
         refine ev82.heap_extends.trans ?_
         refine ev298.heap_extends.trans ?_
