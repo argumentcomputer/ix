@@ -215,10 +215,10 @@ binding run loads is the admitted table of bytes the run hashed, `Binding.loaded
 and that such a table binding every role pins the prelude, `Binding.loadedTablePinsPrelude`):
 the stores of a run, with every clause of each group's admission but the observed validation
 of its roles, reduced to what is left of their clauses over the run's records
-(`groupStores`, `Binding.RemainingStoreClausesOfRun`: `opsOwn`, `unitsLast` and the reading
-clause; the store sequence and every other clause are proved,
-`Binding.groupStoresOfRun_of_remaining`, the safety of the roots among them,
-`Binding.rootsAndTheoremsSafe_of_run`). The invariant at the six basis groups
+(`groupStores`, `Binding.RemainingStoreClausesOfRun`: `opsOwn` and `unitsLast`; the store
+sequence and every other clause are proved, `Binding.groupStoresOfRun_of_remaining`, among them
+the safety of the roots, `Binding.rootsAndTheoremsSafe_of_run`, and the reading clause,
+`Binding.groupStore_reads`). The invariant at the six basis groups
 and the two admission chains are projections of the run predicate (`basisOver_bindingRun`,
 `admitsChain_bindingRun`, `admitsReadsChain_bindingRun`). The other three are, for every bounded
 run and each group from 6 to 76 of it, the closure, the stored shapes where the group has no
