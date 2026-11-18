@@ -1,9 +1,9 @@
 import IxVMRefinement.Guard.UseStore
-import IxVMRefinement.Assembly.NativeBlockGuardUse
+import IxVMRefinement.Guard.UseWalk
 
 /-! # A use's observation over the run's store, from the traced walk
 
-`Core.GuardWalk.proj_guard_traced` gives, for a `KernelInfer::proj_guard` run that took the
+`Core.GuardWalk.proj_guard_traced_ih` gives, for a `KernelInfer::proj_guard` run that took the
 checked walk: the guard level as the fold of the field levels under the flags, the flags against
 the stored constructor type, the run's constructor load, the raw telescope behind its type
 pointer, and the classifier's field traces of that telescope with the zero-set agreement.
