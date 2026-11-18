@@ -619,8 +619,6 @@ theorem recTypeAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {es : Li
         split at h
         · simp at h
         · next selfAfter hsa =>
-          rw [hsa]
-          simp only
           have hka := peelMotiveParams_keys hek.params _ 0 _ selfAfter
             (rk_ilp _ _ (hC.indTy _ _ hek.addr hs)) hsa
           split at h
@@ -658,8 +656,6 @@ theorem ruleBody_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {es : Lis
   split at h
   · simp at h
   · next raw hraw =>
-    rw [hraw]
-    simp only
     split at h
     · simp at h
     · next after hp =>
