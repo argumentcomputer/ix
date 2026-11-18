@@ -371,7 +371,7 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
     · exact h
     · exact (hunc B' hB').elim
   obtain ⟨bAddr', hiff⟩ := hrun.checked_iff
-  have hU : UnitCheckedAt calls bAddr' t ρ.E₀ B (some (Binding.valLimit g)) :=
+  have hU : Binding.UnitCheckedAt calls bAddr' t ρ.E₀ B (some (Binding.valLimit g)) :=
     (hiff B _).mp hchkB
   have hmem : ∀ k, k < ms.size →
       Claim.MemberCheckedLimAt calls bAddr' t B ms k (some (Binding.valLimit g)) := by
