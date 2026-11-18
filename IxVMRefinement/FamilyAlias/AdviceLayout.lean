@@ -25,8 +25,8 @@ functions of the environment IxC's fold stores (`ModeledFamily`):
 * `familyTable`, `annotatedTypes`, `annotatedRules`: the alias table and the annotated data the
   record search takes.
 
-The advice keys here are placeholders (`adviceKey`: an address made of the model constant's
-position), since a model constant's own address is a hash of its record.
+The advice keys are the ones a family lists (`advice`: the addresses of its compiled advice
+records), or placeholders (`adviceAddress`: an address made of the model constant's position).
 -/
 
 namespace IxVM.Refinement.Decl.FamilyAlias
@@ -45,6 +45,9 @@ structure ModeledFamily where
   /-- the environment after the block, newest first: the block's members, the model at the
   derived keys, the prefix -/
   stored : List (ConstantInfo .anon)
+  /-- the advice keys, where they are known: pairs (model key, key of the advice constant);
+  placeholders by position otherwise -/
+  advice : Option (List (KKey × KKey)) := none
 
 namespace ModeledFamily
 
@@ -65,9 +68,12 @@ def modelKeys (m : ModeledFamily) : List KKey :=
 def adviceAddress (i : Nat) : _root_.Address :=
   ⟨⟨#[0xAD, UInt8.ofNat (i / 256), UInt8.ofNat (i % 256)]⟩⟩
 
-/-- The pairs (model key, advice key), oldest first. -/
+/-- The pairs (model key, advice key): the listed ones, or a placeholder address for each model
+key by its position, oldest first. -/
 def adviceKeys (m : ModeledFamily) : List (KKey × KKey) :=
-  m.modelKeys.zipIdx.map fun p => (p.1, Key.id (adviceAddress p.2))
+  match m.advice with
+  | some ps => ps
+  | none => m.modelKeys.zipIdx.map fun p => (p.1, Key.id (adviceAddress p.2))
 
 /-- **The renaming to the advice keys**: a model key goes to its advice key. -/
 def adviceRen (m : ModeledFamily) : KKey → KKey := aliasMap m.adviceKeys
