@@ -108,13 +108,16 @@ structure FamilyOfBlock (E : Ixon.Env) (B : _root_.Address) (cb : Ixon.Constant)
   /-- One recursor per type of the block at least: a non-empty block has a non-empty family. -/
   covers : ms.size ≤ rs.size
   /-- One complete family: each recursor has one motive per member of the record. -/
-  motives : ∀ k r, rs[k]? = some (.recr r) → r.motives.toNat = rs.size
+  motives : ∀ (k : Nat) (r : Ixon.Recursor), rs[k]? = some (Ixon.MutConst.recr r) →
+    r.motives.toNat = rs.size
   /-- The carriers: in every recursor, motive `i` below the type count is over member `i`. -/
-  carriers : ∀ k r, rs[k]? = some (.recr r) → ∀ i m, ms[i]? = some m →
+  carriers : ∀ (k : Nat) (r : Ixon.Recursor), rs[k]? = some (Ixon.MutConst.recr r) →
+    ∀ (i : Nat) (m : Ixon.MutConst), ms[i]? = some m →
     motiveCarrier crb r i = some (memberAddr B i m)
   /-- The member correspondence: the recursor at position `k` below the type count eliminates
   member `k`. -/
-  major : ∀ k r m, rs[k]? = some (.recr r) → ms[k]? = some m →
+  major : ∀ (k : Nat) (r : Ixon.Recursor) (m : Ixon.MutConst),
+    rs[k]? = some (Ixon.MutConst.recr r) → ms[k]? = some m →
     majorHead crb r = some (memberAddr B k m)
 
 /-- **The family record of a non-empty block has a recursor at every type's position**, and each
@@ -123,7 +126,8 @@ theorem FamilyOfBlock.recursor_at {E : Ixon.Env} {B rb : _root_.Address}
     {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
     (h : FamilyOfBlock E B cb ms rb crb rs) {k : Nat} {m : Ixon.MutConst}
     (hm : ms[k]? = some m) :
-    ∃ r, rs[k]? = some (.recr r) ∧ majorHead crb r = some (memberAddr B k m) := by
+    ∃ r : Ixon.Recursor, rs[k]? = some (Ixon.MutConst.recr r) ∧
+      majorHead crb r = some (memberAddr B k m) := by
   have hk : k < ms.size := by
     rcases Nat.lt_or_ge k ms.size with hlt | hge
     · exact hlt
