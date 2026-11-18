@@ -16,9 +16,10 @@ group's admission that read what the group's validations walked.
   of the list at it, and one more than every depth for an address the list does not hold (a
   projection record added beside its block, the group's standard axiom).
 * The clauses, each for `groupStore t E₀ g` and `groupStore t E₀ (g + 1)`: `groupStore_kept`,
-  `groupStore_checked`, `groupStore_rankUsed`, `groupStore_rankOwner`,
-  `groupStore_projMember`, `groupStore_usedClosed` (one step), `groupStore_usedClosed_all` and
-  `groupStore_evidenceRefs`.
+  `groupStore_rankUsed`, `groupStore_rankOwner`, `groupStore_projMember`,
+  `groupStore_usedClosed` (one step), `groupStore_usedClosed_all` and
+  `groupStore_evidenceRefs`; and `groupStore_checked`, the check of every new unit of this store,
+  the unit's half of `FamilyAdmits.checked` (the admission has no check clause of its own).
 
 Two premises are named and not produced here:
 
@@ -623,8 +624,9 @@ theorem groupStore_kept (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded
   rw [(groupStore_recordOf hb h6).mpr ⟨storedBelow_of_adds hg hadd, hc⟩]
   rfl
 
-/-- **`Admits.checked`**: every new unit was checked under the role context at the group's
-validation limit. -/
+/-- **Every new unit of the store was checked** under the role context at the group's
+validation limit: every address this store adds is reached by the group's walk, so the first
+alternative of `FamilyAdmits.checked` holds at each new unit. -/
 theorem groupStore_checked (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
     (hax : AxiomRolesDeclared t E₀) {g : Nat} (hg : 6 ≤ g)
     {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
