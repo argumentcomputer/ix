@@ -51,6 +51,49 @@ private def line (name : String) (ok : Bool) (detail : String) : IO Bool := do
   IO.println s!"AB\t{name}\t{if ok then "PASS" else "FAIL"}\t{detail}"
   return ok
 
+/-- An application spine over a reference, through the sharing table (`fuel` bounds the walk):
+the executable mirror of `IxVM.Refinement.Typing.BlockIxonAppHeadRef`. -/
+private def appHeadRef (sharing : Array Ixon.Expr) : Nat → Ixon.Expr → Bool
+  | 0, _ => false
+  | fuel + 1, e =>
+    match e with
+    | .ref _ _ => true
+    | .recur _ _ => true
+    | .app f _ => appHeadRef sharing fuel f
+    | .share idx =>
+      match sharing[idx.toNat]? with
+      | some s => appHeadRef sharing fuel s
+      | none => false
+    | _ => false
+
+/-- `n` literal binders and then an application spine over a reference, through the sharing
+table: the executable mirror of `IxVM.Refinement.Typing.BlockIxonRetHead`. -/
+private def retHead (sharing : Array Ixon.Expr) : Nat → Nat → Ixon.Expr → Bool
+  | 0, _, _ => false
+  | fuel + 1, n, e =>
+    match e with
+    | .share idx =>
+      match sharing[idx.toNat]? with
+      | some s => retHead sharing fuel n s
+      | none => false
+    | .all _ body =>
+      match n with
+      | 0 => false
+      | n + 1 => retHead sharing fuel n body
+    | e => n == 0 && appHeadRef sharing fuel e
+
+/-- The number of leading literal binders of an expression, through the sharing table. -/
+private def leadingBinders (sharing : Array Ixon.Expr) : Nat → Ixon.Expr → Nat
+  | 0, _ => 0
+  | fuel + 1, e =>
+    match e with
+    | .share idx =>
+      match sharing[idx.toNat]? with
+      | some s => leadingBinders sharing fuel s
+      | none => 0
+    | .all _ body => leadingBinders sharing fuel body + 1
+    | _ => 0
+
 /-- The compiled record of the family: its projection record, its block and its counts. -/
 private def recordShape (env : Ixon.Env) : IO Bool := do
   let some aInd := env.getAddr? (Ix.Name.fromLeanName (defs "R"))
@@ -75,7 +118,15 @@ private def recordShape (env : Ixon.Env) : IO Bool := do
     s!"params={ind.params} indices={ind.indices}"
   let ok₃ ← line "R: one constructor, in Lean's logic"
     (ind.ctors.size == 1 && !ind.isUnsafe) s!"constructors={ind.ctors.size}"
-  return ok₁ && ok₂ && ok₃
+  let binders := leadingBinders cb.sharing 4096 ind.typ
+  let ok₄ ← line "R: the declared type is no literal telescope of its parameters and indices"
+    (binders < ind.params.toNat + ind.indices.toNat)
+    s!"literal binders={binders}, parameters and indices={ind.params.toNat + ind.indices.toNat}"
+  let ok₅ ← line "R: every constructor returns literally"
+    (ind.ctors.toList.all fun ct =>
+      retHead cb.sharing 4096 (ind.params.toNat + ct.fields.toNat) ct.typ)
+    "the executable mirror of BlockCtorIxonRetHead on the block's record"
+  return ok₁ && ok₂ && ok₃ && ok₄ && ok₅
 
 /-- The functions whose observations the block's unit step inverts: the member's load and
 check, the dispatch on the block, the result-sort walk, the test for a syntactic telescope, the
