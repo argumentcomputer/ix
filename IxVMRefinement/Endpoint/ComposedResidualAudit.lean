@@ -66,9 +66,6 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
       IxVM.Refinement.Binding.AtGroups (Run calls) fun x t g =>
         IxVM.Refinement.Binding.RaisedLimitGuard IxVM.Refinement.Typing.FormerOpenTraceAt t g)
-  (standaloneTheoremOrOpaque :
-    IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
-      fun x x_1 x_2 x_3 c => ∃ d, c.info = Ixon.ConstantInfo.defn d ∧ d.kind ≠ Ix.DefKind.defn)
   (recursorAtNativeParent :
     IxVM.Refinement.Endpoint.WalkedUnit (fun x x_1 x_2 x_3 c => ∃ rc, c.info = Ixon.ConstantInfo.recr rc)
       fun x t envT E₀ E lim A c =>
@@ -93,9 +90,6 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
                     IxVM.Refinement.Typing.RecParent t E env P ip ∧ IxVM.Refinement.Typing.RecMajorTie t E₀ A c rc P) →
             IxVM.Refinement.Typing.UnitStep
               (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt t E) t envT E₀ E lim A c)
-  (definitionBlock :
-    IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
-      fun x x_1 x_2 x_3 c => ∃ ms, c.info = Ixon.ConstantInfo.muts ms ∧ IxVM.Refinement.Typing.DefnBlock ms)
   (nativeBlockTelescope :
     IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
       fun calls t E₀ B cb =>
