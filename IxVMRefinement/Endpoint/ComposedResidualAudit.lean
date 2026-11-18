@@ -62,13 +62,8 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u} (tableAdmits : IxVM.
       IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
         (IxVM.Refinement.Binding.RoleUnitStepOver (fun x => x ∈ IxVM.Consistency.standardAxioms)
           IxVM.Refinement.Typing.FormerOpenTraceAt))
-  (nativeBlockTelescope :
-    IxVM.Refinement.Typing.CheckedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
-      fun calls t E₀ B cb =>
-      ∃ ind,
-        IxVM.Refinement.Typing.BlockUnitRecord E₀ B cb ind ∧
-          IxVM.Refinement.Typing.NativeRouteAt calls B ∧ IxVM.Refinement.Typing.FormerAtTele t E₀ B cb ind)
-  (familyGraph : IxVM.Refinement.Typing.FamilyGraphRow) (innerChecked : IxVM.Refinement.Typing.InnerCheckedRow)
+  (projGuardRunReading : IxVM.Refinement.Core.ProjGuardRunReading) (familyGraph : IxVM.Refinement.Typing.FamilyGraphRow)
+  (innerChecked : IxVM.Refinement.Typing.InnerCheckedRow)
   (familyBlock : IxVM.Refinement.Typing.FamilyBlockRow IxVM.Refinement.Typing.FormerOpenTraceAt)
   (familyTwin : IxVM.Refinement.Typing.FamilyTwinRow IxVM.Refinement.Typing.FormerOpenTraceAt) :
   IxVM.Consistency.CircuitComposed
