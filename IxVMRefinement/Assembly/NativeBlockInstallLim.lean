@@ -20,7 +20,8 @@ limit. At `lim = some n` each is the earlier statement.
 * `InstallSortsCheckedLim`, `nativeInstallOut_of_member_checked_lim`: the new constants of the
   install, and the table stage ran at sorts the classifier checked. The limit index of the
   bundle it concludes is free: the bundle reads the limit nowhere.
-* `blockCert_of_install_lim`: the certificate of the new projection table from them.
+* `blockCert_of_reading_lim`: the certificate of the new projection table from them and the
+  reading of the checked field loop over a store, which need not be the store of the check.
 * `blockRawRetHead_of_member_lim`: the constructors' raw types return literally.
 * `blockFamCtorNoProj_of_member_lim`: no stored constructor type projects out of the family.
 -/
@@ -518,22 +519,23 @@ theorem nativeInstallOut_of_member_checked_lim {calls : List (Call F)} {t : Ix.K
       · exact nomatch List.mem_singleton.mp h
 
 
-/-- **The new table's certificate, from the install's output and the sorts of its table stage, at either role context**: `blockCert_of_install` with the stage's facts at the context of the limit `lim : Option Nat`
-(`InstallSortsCheckedLim`); the same proof. The limit index of the install's output is free. -/
-theorem blockCert_of_install_lim (hfields : Core.CheckedSortsRunReading)
+/-- **The new table's certificate over a store, from the install's output, the sorts of its table stage and the reading of the checked field loop over that store, at either role context**: `blockCert_of_reading` with the stage's facts at the context of the limit `lim : Option Nat`
+(`InstallSortsCheckedLim`) and the reading over any store `Er`; the same proof. The limit index
+of the install's output is free. -/
+theorem blockCert_of_reading_lim
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {n : Nat} {lim : Option Nat}
     {env : Ix.Kernel.Env .anon} {B : _root_.Address} {cb : Ixon.Constant}
     {ind : Ixon.Inductive} {blk : List (ConstantInfo .anon)}
     {p₀ p : Ix.Kernel.NativeParts .anon} {new : List (ConstantInfo .anon)}
     {ty' : Ix.Kernel.Expr .anon} {ctorsA : List (ConstantVal .anon × Nat)}
     {caps : IndCaps .anon}
-    (hnc : ¬ View.HashedCollision { env := E } [] calls)
+    {Er : Ixon.Env} (hfields : Guard.CheckedSortsReadingAt calls Er)
     (hO : NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps)
     (hS : InstallSortsCheckedLim calls t E lim env B
       ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ p₀ new p ctorsA)
     (h1 : ind.ctors.size = 1) (h0 : ind.indices.toNat = 0)
     (hz : Ix.Kernel.Level.isEquiv p.resSort .zero = some true) :
-    BlockCert t E ⟨new ++ env.consts⟩ B := by
+    BlockCert t Er ⟨new ++ env.consts⟩ B := by
   intro tbl htbl hprop
   obtain ⟨isRec, sortss, hQ, htab, hres⟩ := hS
   have hlenP : p₀.ctors.length = 1 := by
@@ -548,8 +550,7 @@ theorem blockCert_of_install_lim (hfields : Core.CheckedSortsRunReading)
   obtain ⟨b, u, cA, sorts, hbB, hcA, hsorts, hcS, hchk⟩ := hQ hlenP (hO.nIdx₀.trans h0) hzero
   subst hcA hsorts
   -- the loop's reading at the sorts the table stage ran at
-  rcases hfields _ hcS hchk with hcol | ⟨sigs, fuel, raw, hraw, hsig, hzeros⟩
-  · exact absurd hcol hnc
+  obtain ⟨sigs, fuel, raw, hraw, hsig, hzeros⟩ := hfields _ hchk
   have hv0 : ZMod.val (0 : F) = 0 := ZMod.val_zero
   rw [hbB, hv0] at hraw
   rw [hO.nP₀, ← hO.nP] at hsig

@@ -159,13 +159,13 @@ theorem _root_.IxVM.Refinement.Typing.NativeUnitStep.overUnitStep
 telescope, from the walk's facts.** The member's check is the walk's, observed under the role
 context at the limit `lim` (a carried limit within `G`); `Ec` is a record store for `R` the
 check is read at; `R` holds the block's records and every blob the run loaded. `hread` is the
-reading of a projection guard's run; `hcert` gives, for every output of the install at one
-constructor, no index and a sort that tests zero, with the sorts its table stage ran at as the
-classifier checked them at `Ec`, the certificate of the new projection table over the witness
-store `R` (it is then its certificate over every record store for `R`,
-`BlockCert.recordsFor`). The run gives that certificate over `Ec` only
-(`blockCert_of_install_lim`), and a certificate moves to a store that holds more records, not
-to one that holds fewer: over `R` it is a premise. -/
+reading of a projection guard's run; `hfieldsR` is the reading of the classifier's field loop
+over the witness store `R`. With the sorts the table stage ran at it gives the certificate of
+the new projection table over `R` (`blockCert_of_reading_lim`), which is then its certificate
+over every record store for `R` (`BlockCert.recordsFor`). The run store gives that reading over
+a store that holds the run store's records and blobs (`Guard.CheckedSortsReadingAt.stepStore`);
+a reading or a certificate moves to a store that holds more records, not to one that holds
+fewer, so over `R` the reading is a premise. -/
 theorem overUnitStep_nativeBlockTele {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hL : LinkLaws L) {calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)}
     {t : Ix.Kernel.RoleTable} {G : Nat → Prop} {R E₀ Ec : Ixon.Env}
@@ -186,22 +186,13 @@ theorem overUnitStep_nativeBlockTele {L : Ix.Kernel.Env .anon → NativeFam .ano
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
     (hcov : L1.CanonicalHashCoverage Ec calls)
-    (hread : Core.ProjGuardRunReading)
-    (hcert : ind.ctors.size = 1 → ind.indices.toNat = 0 →
-      ∀ (env : Ix.Kernel.Env .anon) (new blk : List (ConstantInfo .anon))
-        (p₀ p : Ix.Kernel.NativeParts .anon) (ty' : Ix.Kernel.Expr .anon)
-        (ctorsA : List (ConstantVal .anon × Nat)) (caps : IndCaps .anon),
-        NativeInstallOut t E₀ Ec 0 env B cb ind blk p₀ new p ty' ctorsA caps →
-        InstallSortsCheckedLim calls t Ec lim env B
-          ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ p₀ new p ctorsA →
-        Ix.Kernel.Level.isEquiv p.resSort .zero = some true →
-        BlockCert t R ⟨new ++ env.consts⟩ B) :
+    (hread : Core.ProjGuardRunReading) (hfieldsR : Guard.CheckedSortsReadingAt calls R) :
     OverUnitStep.{u} L t G R envT E₀ B cb :=
   NativeUnitStep.overUnitStep (Stores := fun E => RecordsFor R E) hRc hcn hln (fun E hE => hE)
     hfree
     (nativeUnitStep_of_member_holds hL ht hS hst hrec hchk hnat htele hfree hinert hcover hcov
       hread (fun E hE => holdsBlock_of_recordsFor hE hRblock hRformer hRctors hblobs)
       (fun h1 h0 env new blk p₀ p ty' ctorsA caps hO hSorts hz E hE =>
-        (hcert h1 h0 env new blk p₀ p ty' ctorsA caps hO hSorts hz).recordsFor hE))
+        (blockCert_of_reading_lim hfieldsR hO hSorts h1 h0 hz).recordsFor hE))
 
 end IxVM.Refinement.Binding

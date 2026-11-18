@@ -8,11 +8,9 @@ The composed statement takes, for each kind of top-walked unit, the unit's step 
 clause from the facts the walk hands every unit (`Endpoint.WalkedUnitStep`). A record that only
 a family check checks needs the same step and is not top-walked. This module proves the step of
 a one-type native block whose former is declared at its telescope, the ordinary inductive type,
-from what the run gives of the unit's own record however the run came to check it, and from two
-readings of a run, both closed propositions:
-
-* `Core.ProjGuardRunReading`: the reading of a projection guard's run;
-* `Core.CheckedSortsRunReading`: the reading of the classifier's field loop for given sorts.
+from what the run gives of the unit's own record however the run came to check it, and from one
+reading of a run, a closed proposition: `Core.ProjGuardRunReading`, the reading of a projection
+guard's run.
 
 * `nativeBlockTelescope_checked`: the step of every checked unit of the kind
   (`CheckedUnitStep`): from a step context, the record in Lean's logic, the kind, the table's
@@ -36,11 +34,10 @@ open Ix.Kernel.Semantics (NativeFam)
 
 /-- **The step of every checked one-type native block whose former is declared at its telescope
 keeps the fold's clause**, at the limit of its check under either role context, for any link
-that satisfies the link laws, from the two readings of a run (module docstring). A block record
+that satisfies the link laws, from the reading of a projection guard's run (module docstring). A block record
 is never checked as a record, so the member was checked. -/
 theorem nativeBlockTelescope_checked {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (hL : LinkLaws L) (hread : Core.ProjGuardRunReading)
-    (hfields : Core.CheckedSortsRunReading) :
+    (hL : LinkLaws L) (hread : Core.ProjGuardRunReading) :
     CheckedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
       ∃ ind : Ixon.Inductive,
         BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerAtTele t E₀ B cb ind := by
@@ -49,17 +46,16 @@ theorem nativeBlockTelescope_checked {L : Ix.Kernel.Env .anon → NativeFam .ano
   have hmem : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim :=
     memberChecked_of_walked_block hS hc hrec.muts hu.checked 0 (by simp)
   exact unitStep_nativeBlockTele hL ht hS hctx.toStepStore hrec hmem hnat htele hu.keys hu.inert
-    hu.cover hcanon hread hfields
+    hu.cover hcanon hcov hread
 
 /-- **The step of every top-walked one-type native block whose former is declared at its
 telescope keeps the fold's clause**: what the walk hands a unit is what a checked unit's step
 asks (`walkedUnitStep_of_checked`). -/
 theorem nativeBlockTelescope_walked {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (hL : LinkLaws L) (hread : Core.ProjGuardRunReading)
-    (hfields : Core.CheckedSortsRunReading) :
+    (hL : LinkLaws L) (hread : Core.ProjGuardRunReading) :
     Endpoint.WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
       ∃ ind : Ixon.Inductive,
         BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerAtTele t E₀ B cb ind :=
-  walkedUnitStep_of_checked (nativeBlockTelescope_checked hL hread hfields)
+  walkedUnitStep_of_checked (nativeBlockTelescope_checked hL hread)
 
 end IxVM.Refinement.Typing

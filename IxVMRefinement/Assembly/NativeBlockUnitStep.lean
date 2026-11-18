@@ -36,7 +36,7 @@ record store for its witness store.
   context, with the constructors' literal return, the absence of projections out of the
   family, the sorts the table stage ran at as the classifier checked them, and the block's
   types read over the run's store. At the store of the check those sorts and the reading of
-  the classifier's field loop (`Core.CheckedSortsRunReading`, a premise) give the certificate.
+  the classifier's field loop over it, which the run store gives, give the certificate.
 * `NativeUnitStep`, `NativeUnitStep.unitStep`, `nativeUnitStep_of_install`,
   `nativeUnitStep_of_member`, `unitStep_nativeBlockTele`.
 -/
@@ -571,10 +571,11 @@ theorem nativeUnitStep_of_install {L : Ix.Kernel.Env .anon → NativeFam .anon �
   exact hOE.keeps hL ht hread hS hrec hpin hna hstored hret hnp (hholds E hE) hcertE hC'
 
 /-- **The step from the walk's member check, kept at the store of the check**: the form the
-typing fold reads. `hread` is the reading of a projection guard's run and `hfields` the reading
-of the classifier's field loop for given sorts; with the run's goodness at the step's store and
-the sorts the table stage ran at, the second gives the certificate of the new projection table
-over that store (`blockCert_of_install_lim`). -/
+typing fold reads. `hread` is the reading of a projection guard's run. The certificate of the
+new projection table over the step's store is read from the sorts the table stage ran at and
+the reading of the classifier's field loop over that store, which the run store gives
+(`blockCert_of_reading_lim`, `Guard.checkedSortsReadingAt_of_stepStore`; `hrecs` says the run's
+store holds the run's hashed records). -/
 theorem nativeUnitStep_of_member {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hL : LinkLaws L) {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
     {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr B : _root_.Address}
@@ -587,7 +588,7 @@ theorem nativeUnitStep_of_member {L : Ix.Kernel.Env .anon → NativeFam .anon �
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
     (hcov : L1.CanonicalHashCoverage E calls)
-    (hread : Core.ProjGuardRunReading) (hfields : Core.CheckedSortsRunReading) :
+    (hrecs : LoadedReads.HashedRecordsStored calls E₀) (hread : Core.ProjGuardRunReading) :
     NativeUnitStep.{u} L t envT E₀ (fun E' => E' = E) E lim B cb := by
   refine nativeUnitStep_of_install hL ht hread hS hrec
     (fun E' hE' => hE' ▸ HoldsBlock.of_stepStore hst hrec) ?_
@@ -595,16 +596,17 @@ theorem nativeUnitStep_of_member {L : Ix.Kernel.Env .anon → NativeFam .anon �
   obtain ⟨blk, p₀, new, p, ty', ctorsA, caps, hO, hpin, hna, hstored, hret, hnp, hSorts, -, -⟩ :=
     nativeInstall_of_member ht hS hst hrec hchk hnat htele hfree hinert hcover hcov hext hnd hC
       href hfresh
-  have hnc : ¬ View.HashedCollision { env := E } [] calls := (hst.good env none).1
   refine ⟨blk, p₀, new, p, ty', ctorsA, caps, hO, hpin, hna, hstored, hret, hnp, ?_⟩
   intro E' hE'
   subst hE'
-  exact ⟨hO, fun h1 h0 hz => blockCert_of_install_lim hfields hnc hO hSorts h1 h0 hz⟩
+  exact ⟨hO, fun h1 h0 hz =>
+    blockCert_of_reading_lim (Guard.checkedSortsReadingAt_of_stepStore hS hrecs hst) hO hSorts h1
+      h0 hz⟩
 
 /-- **`UnitStep` for a one-type native inductive block whose former is declared at its
 telescope, for the fold's clause**, at the walk's limit under either role context. The inputs
-are what the walk hands every unit, the kind's three facts, and the two readings of a run
-`hread` and `hfields` (`nativeUnitStep_of_member`). -/
+are what a checked unit's step is handed, the kind's three facts, and the reading of a
+projection guard's run `hread` (`nativeUnitStep_of_member`). -/
 theorem unitStep_nativeBlockTele {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hL : LinkLaws L) {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
     {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr B : _root_.Address}
@@ -617,10 +619,10 @@ theorem unitStep_nativeBlockTele {L : Ix.Kernel.Env .anon → NativeFam .anon �
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
     (hcov : L1.CanonicalHashCoverage E calls)
-    (hread : Core.ProjGuardRunReading) (hfields : Core.CheckedSortsRunReading) :
+    (hrecs : LoadedReads.HashedRecordsStored calls E₀) (hread : Core.ProjGuardRunReading) :
     UnitStep.{u} (FoldExtra.{u} L t E) t envT E₀ E lim B cb :=
   NativeUnitStep.unitStep (Stores := fun E' => E' = E) rfl
-    (nativeUnitStep_of_member hL ht hS hst hrec hchk hnat htele hfree hinert hcover hcov hread
-      hfields)
+    (nativeUnitStep_of_member hL ht hS hst hrec hchk hnat htele hfree hinert hcover hcov hrecs
+      hread)
 
 end IxVM.Refinement.Typing
