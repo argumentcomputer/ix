@@ -11,9 +11,9 @@ the constants of other roles read through the table (`role_bound_addr(tbl, i)`).
 rendered from the kernel's specification set (`Ix.Kernel.Role.spec`) after the kernel's annotation
 pass, which recomputes the binders' data and changes nothing else.
 
-This file states, as propositions, what each of those functions returns. They are the seam
-between the role validations' refinement and the rendered functions: every one has the same
-form.
+This file states, as propositions, what each of those functions returns: every one has the same
+form. The four statements are proved in `Binding/RenderedArms.lean`, by reading the functions'
+arms off their syntax trees (`Binding/RenderedRead.lean`).
 
 * `specTypeRaw r`: the type the specification set declares for the role `r`, with its universe
   parameters by position; `opSideRaw l`: a recurrence side `l` closed over its two `Nat`
