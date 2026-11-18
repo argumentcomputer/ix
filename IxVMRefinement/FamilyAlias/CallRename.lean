@@ -22,7 +22,7 @@ table's keying:
 namespace IxVM.Refinement.Typing.FamilyAlias
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
-open Aiur.Library
+open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
 open IxVM (F)
 open IxVM.Refinement.Decl.FamilyAlias (aliasMap)
@@ -58,8 +58,8 @@ theorem rename_aliasMap {t : Ix.Kernel.RoleTable} (hwf : t.wf = true)
     (hlen : srcAs.length = dstAs.length)
     (hsrc : RepList addrListEnum (Bytes.RepAddressRef addrTy) h srcAs src)
     (hdst : RepList addrListEnum (Bytes.RepAddressRef addrTy) h dstAs dst)
-    (he : TmExact (Core.keyOf t) 0 Γ₁ h k E e) :
-    TmExact (Core.keyOf t) 0 Γ₂ h' k
+    (he : Decl.TmExact (Core.keyOf t) 0 Γ₁ h k E e) :
+    Decl.TmExact (Core.keyOf t) 0 Γ₂ h' k
       (Decl.renameAll (aliasMap ((srcAs.map fun b => Core.keyOf t (ixAddr b)).zip
         (dstAs.map fun b => Core.keyOf t (ixAddr b)))) E) r :=
   Decl.rename_exact ev he (renameMap_aliasMap hwf hlen hsrc hdst)
@@ -73,9 +73,9 @@ theorem rename_aliasMap_consts {t : Ix.Kernel.RoleTable} (hwf : t.wf = true)
     (hlen : srcAs.length = dstAs.length)
     (hsrc : RepList addrListEnum (Bytes.RepAddressRef addrTy) h srcAs src)
     (hdst : RepList addrListEnum (Bytes.RepAddressRef addrTy) h dstAs dst)
-    (he : TmExact (Core.keyOf t) 0 Γ₁ h k E e)
+    (he : Decl.TmExact (Core.keyOf t) 0 Γ₁ h k E e)
     (hnp : Decl.NoProjIn (srcAs.map fun b => Core.keyOf t (ixAddr b)) E = true) :
-    TmExact (Core.keyOf t) 0 Γ₂ h' k
+    Decl.TmExact (Core.keyOf t) 0 Γ₂ h' k
       (E.renameConsts (aliasMap ((srcAs.map fun b => Core.keyOf t (ixAddr b)).zip
         (dstAs.map fun b => Core.keyOf t (ixAddr b))))) r := by
   have hout : ∀ k', (srcAs.map fun b => Core.keyOf t (ixAddr b)).contains k' = false →
