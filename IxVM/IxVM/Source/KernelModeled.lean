@@ -514,7 +514,9 @@ def get_addrs := aiur_fn⟦
   -- `Eq.refl`, `Eq.rec`, `PUnit`, `PUnit.unit`, `PUnit.rec`, the quotient (`Quot`,
   -- `Quot.mk`, `Quot.lift`, `Quot.ind`, `Quot.sound`: function extensionality, along
   -- which the model of a block with a nested occurrence under a binder transports, is a
-  -- theorem from them), `String`, `Char`. No other axiom.
+  -- theorem from them). No other axiom. Each is walked when a validation checks its group,
+  -- or is a quotient role; an anchor such as `String` or `Char` is witnessed by a
+  -- dependency path instead.
 
 def basis_role_allowed := aiur_fn⟦
   fn basis_role_allowed(r: Field) -> Field {
@@ -534,8 +536,6 @@ def basis_role_allowed := aiur_fn⟦
         34 => {  1 } ,
         35 => {  1 } ,
         36 => {  1 } ,
-        37 => {  1 } ,
-        39 => {  1 } ,
         _ => {  0 } ,
       }
     }
