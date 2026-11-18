@@ -3393,7 +3393,7 @@ private theorem validate_op_equations_observed {t : Ix.Kernel.RoleTable}
             (m728 := scopeHeap) (m809 := idxHeap) (m831 := walkHeap) (cs887 := walkCalls)
             (ev56 := roleRun) (hv442 := proofShape) (ev462 := rawRun)
             (ev631 := ciRun) (ld625 := ciLoad) (ev702 := substRun) (ev740 := scopeRun)
-            (ev821 := idxRun) (ev843 := guardRun) (cs841 := guardCalls) (ev889 := walkRun)
+            (ev821 := idxRun) (ev843 := guardRun) (ev889 := walkRun)
             (hc1225 := segCalls) .. =>
           have extRole := roleRun.heap_extends
           have extRaw := rawRun.heap_extends
@@ -3415,8 +3415,6 @@ private theorem validate_op_equations_observed {t : Ix.Kernel.RoleTable}
               rw [← hargs_c.2.2.1] at hr_list
               exact repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ extRawIdx hr_list
             have extIdxH : Heap.Extends h idxHeap := extRole.trans (extRaw.trans extRawIdx)
-            have hsub_g : ∀ cl ∈ guardCalls, cl ∈ cs1051 := fun cl hm => by
-              rw [segCalls]; simp [hm]
             have extRawWalk : Heap.Extends rawHeap walkHeap :=
               extToScope.trans (extIdx.trans guardRun.heap_extends)
             have hrefs_rep : RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem walkHeap
@@ -3440,7 +3438,7 @@ private theorem validate_op_equations_observed {t : Ix.Kernel.RoleTable}
             subst hthm
             exact ⟨rawBytes, c, hsz, Claim.hashed_mono hsub_raw hh_raw, hblk, hdeExact,
               ⟨_, _, _, _, _, _, _, _, hrc.mono extIdxH, hrefs_idx, hidxs,
-                S0.addr_mono extIdxH ha, guardRun, hsub_g⟩,
+                S0.addr_mono extIdxH ha, guardRun, fun cl hm => by rw [segCalls]; simp [hm]⟩,
               fun j hj hu hne =>
                 (hwalk j hj (by rw [Nat.zero_add]; exact hu) hne).mono hsub_w⟩
       obtain ⟨ext1, hhead⟩ := hseg
