@@ -420,6 +420,25 @@ private def betaRecursor (rv : Lean.RecursorVal) : Lean.RecursorVal :=
     type := editBinderAt target betaDom 0 rv.type
     rules := rv.rules.map fun r => { r with rhs := editBinderAt target betaDom 0 r.rhs } }
 
+/-- The recursor with the first field of its first minor premise at a β-redex domain, in its type,
+in its rules. λ-prefix and at that field of the constructor.s rule. -/
+private def betaFieldRecursor (rv : Lean.RecursorVal) : Lean.RecursorVal :=
+  let target := rv.numParams + rv.numMotives
+  let inMinor (d : Lean.Expr) : Lean.Expr := editBinderAt 0 betaDom 0 d
+  let ctor? : Option Lean.Name := Id.run do
+    let mut ty := rv.type
+    for _ in [0:target] do
+      if let .forallE _ _ b _ := ty then ty := b
+    match ty with
+    | .forallE _ d _ _ => return resultCtor d
+    | _ => return none
+  { rv with
+    type := editBinderAt target inMinor 0 rv.type
+    rules := rv.rules.map fun r =>
+      let rhs := editBinderAt target inMinor 0 r.rhs
+      { r with rhs := if some r.ctor == ctor? && r.nfields > 0 then
+          editBinderAt (target + rv.numMinors) betaDom 0 rhs else rhs } }
+
 /-- Reorder the first `pre` binders of a telescope: the new binder `j` is the old `perm[j]`. -/
 private def permuteTele (lam : Bool) (pre : Nat) (perm : Array Nat) (tag : Nat)
     (e : Lean.Expr) : Lean.Expr := Id.run do
@@ -494,6 +513,10 @@ def runMustReject (leanEnv : Lean.Environment) : IO UInt32 := do
     match ci with
     | .recInfo rv => if btRecs.contains n then (n, .recInfo (betaRecursor rv)) else (n, ci)
     | _ => (n, ci)
+  let betaFieldEdit : Lean.Name × Lean.ConstantInfo → Lean.Name × Lean.ConstantInfo := fun (n, ci) =>
+    match ci with
+    | .recInfo rv => if btRecs.contains n then (n, .recInfo (betaFieldRecursor rv)) else (n, ci)
+    | _ => (n, ci)
   -- `PT`: motives `PT`, `List PT`, `Option PT`; minors `node`, `nil`, `cons`, `none`, `some`
   let perm : Array Nat := #[0, 2, 1, 3, 6, 7, 4, 5]
   let swap : List (Lean.Name × Lean.Name) :=
@@ -512,6 +535,9 @@ def runMustReject (leanEnv : Lean.Environment) : IO UInt32 := do
       (none : Option String)),
     ("a family record with a minor premise's domain as a β-redex", bt, #[bt] ++ btRecs.toArray,
       betaEdit, false,
+      some "neither the canonical reconstruction nor its full consumption"),
+    ("a family record with a minor premise.s field domain as a β-redex", bt, #[bt] ++ btRecs.toArray,
+      betaFieldEdit, false,
       some "neither the canonical reconstruction nor its full consumption"),
     ("control: the two-container tree's family record", pt, #[pt] ++ ptRecs.toArray, id, true,
       none),
