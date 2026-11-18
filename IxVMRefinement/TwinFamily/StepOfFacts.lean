@@ -5,10 +5,10 @@ import IxVMRefinement.TwinFamily.StepKeeps
 
 The twin's unit step at the fold's clause with the family recursors' companions beside it
 (`FoldExtra L t E env ∧ FamilyRecsModeled t E₀ fam env`), from the run hypotheses of
-`TwinStepTarget`, the block's family record installed at every environment the step is handed
-(wherever that comes from), and the facts the circuit side hands: the second record's
-declaration as read with the facts of its parts (`TwinPartsFacts`), the companions after the
-step, and the reload of each new constant. It composes `twinStepTarget_of_facts`,
+`TwinStepTarget`, the block's family record installed and in the reconstruction's form at every
+environment the step is handed (wherever those come from), and the facts the circuit side
+hands: the second record's declaration as read with the facts of its parts (`TwinPartsFacts`),
+and the reload of each new constant. It composes `twinStepTarget_of_facts`,
 `twinStepKeeps_foldExtra` and `TwinStepKeeps.and_familyRecsModeled` into
 `unitStepTwin_of_installed`. -/
 
@@ -28,7 +28,7 @@ set_option linter.unusedVariables false
 
 /-- **The twin's unit step from the facts** (module docstring). -/
 theorem unitStepTwin_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (hL : LinkLaws L)
+    (hL : LinkLaws L) {recon : _root_.Address → Core.KExpr × List Core.KExpr}
     (hseam : ∀ (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
       (E₀ E : Ixon.Env) (env : Ix.Kernel.Env .anon) (B rb rb' : _root_.Address)
       (cb crb crb' : Ixon.Constant) (ms rs' : Array Ixon.MutConst) (lim : Option Nat)
@@ -47,7 +47,7 @@ theorem unitStepTwin_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon → P
       (∀ x, ConstAddrOf rb' crb' x → Decl.KeyFree (keyOf t x)) →
       ∃ (blk : List (ConstantInfo .anon)) (ws : List (TwinRecPart .anon))
         (f : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon),
-        TwinDeclReads t E₀ rb' crb' blk ∧ TwinPartsFacts t env rb crb blk ws f)
+        TwinDeclReads t E₀ rb' crb' blk ∧ TwinPartsFacts t env rb crb recon blk ws f)
     {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
     {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} {lim : Option Nat}
     {fam : _root_.Address → Option _root_.Address} {A B rb : _root_.Address}
@@ -63,11 +63,11 @@ theorem unitStepTwin_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon → P
       (FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env) →
       (∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true) →
       FamilyInstalled t env rb crb)
-    (hcomp : ∀ (env env₂ : Ix.Kernel.Env .anon) (blk : List (ConstantInfo .anon)),
-      Decl.PrefixInv.{u} E t lim env → TwinDeclReads t E₀ A c blk →
-      DeclRecTwinRunJ twinPosRulesJ env blk env₂ →
-      (∀ ci ∈ blk, ∃ c', env₂.find? ci.name = some c' ∧ StoredAs c' ci) →
-      Decl.CoreCompanions ⟨E, env₂, t, lim⟩)
+    (hform : ∀ env : Ix.Kernel.Env .anon, (∀ ci ∈ envT.consts, ci ∈ env.consts) →
+      (env.consts.map (·.name)).Nodup → Decl.PrefixInv.{u} E t lim env →
+      (FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env) →
+      (∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true) →
+      CanonReconForm t env rb crb recon)
     (hreload : ∀ (env env₂ : Ix.Kernel.Env .anon) (blk : List (ConstantInfo .anon)),
       Decl.PrefixInv.{u} E t lim env → TwinDeclReads t E₀ A c blk →
       DeclRecTwinRunJ twinPosRulesJ env blk env₂ →
@@ -77,8 +77,8 @@ theorem unitStepTwin_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon → P
     UnitStepTwin.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
       t envT E₀ E lim A c rb crb :=
   unitStepTwin_of_installed (twinStepTarget_of_facts hseam) ht hRS hSS hB hA hsz hne
-    hcall hroute hinert hkey hinst
-    (twinStepKeeps_foldExtra hL (fun x hx => constAddr_hash_size_of_block hA.muts hx) hcomp
+    hcall hroute hinert hkey hinst hform
+    (twinStepKeeps_foldExtra hL (fun x hx => constAddr_hash_size_of_block hA.muts hx)
       hreload).and_familyRecsModeled
 
 end IxVM.Refinement.Typing.TwinFamily
