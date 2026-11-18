@@ -302,8 +302,9 @@ private def coveredRecursor (env : Ixon.Env) (which : Nat) (assumed : Bool) : Ex
   let some target := env.getAddr? (Ix.Name.fromLeanName (defs "taIota")) | throw "taIota is not compiled"
   match which with
   | 0 =>
+    -- the family check runs at the recursor, which the default table binds to no role
     typing "a reduction through a mutual family's recursor, the default table" env target assumed
-      false (some modeledRecursorRefusal)
+      true
   | 1 =>
     let env ← bound env (rebind table [(.iffRec, x)])
     -- assumed, the covered recursor is not walked; validated, it is
