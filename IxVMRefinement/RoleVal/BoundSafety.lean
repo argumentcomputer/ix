@@ -26,7 +26,7 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
 open IxVM (F)
-open IxVM.Refinement.Obs
+
 
 set_option linter.unusedVariables false
 
@@ -112,17 +112,17 @@ theorem ValidateRoleIn.bound_load_safe {calls : List (Call F)} {bAddr : _root_.A
       (ld41 := ld41) (ev142 := evk) (hc183 := hc) .. =>
     obtain ⟨-, a, ha, had⟩ := role_bound_addr_uncond htbl.toTableRep ev14
     exact ⟨a, had, _, _, _, _, _, _, ha, ev47,
-      fun cl hm => hsub cl (by rw [hc]; simp [hm]), ld41, validate_member_safe evk⟩
+      fun cl (hm : cl ∈ cs45) => hsub cl (by rw [hc]; simp [hm]), ld41, validate_member_safe evk⟩
   | .n1 (v1 := v1) (m2 := m2) (v31 := v31) (cs45 := cs45) (ev14 := ev14) (ev47 := ev47)
       (ld41 := ld41) (ev194 := evk) (hc227 := hc) .. =>
     obtain ⟨-, a, ha, had⟩ := role_bound_addr_uncond htbl.toTableRep ev14
     exact ⟨a, had, _, _, _, _, _, _, ha, ev47,
-      fun cl hm => hsub cl (by rw [hc]; simp [hm]), ld41, validate_anchor_safe evk⟩
+      fun cl (hm : cl ∈ cs45) => hsub cl (by rw [hc]; simp [hm]), ld41, validate_anchor_safe evk⟩
   | .n2 (v1 := v1) (m2 := m2) (v31 := v31) (cs45 := cs45) (ev14 := ev14) (ev47 := ev47)
       (ld41 := ld41) (ev238 := evk) (hc279 := hc) .. =>
     obtain ⟨-, a, ha, had⟩ := role_bound_addr_uncond htbl.toTableRep ev14
     exact ⟨a, had, _, _, _, _, _, _, ha, ev47,
-      fun cl hm => hsub cl (by rw [hc]; simp [hm]), ld41, validate_op_safe evk⟩
+      fun cl (hm : cl ∈ cs45) => hsub cl (by rw [hc]; simp [hm]), ld41, validate_op_safe evk⟩
   | .n3 (ev124 := ev124) .. =>
     obtain ⟨hsk, -⟩ := role_spec_kind_spec ev124
     exfalso
@@ -137,7 +137,7 @@ theorem ValidateRoleIn.bound_load_safe {calls : List (Call F)} {bAddr : _root_.A
       (ld41 := ld41) (ev378 := evk) (hc419 := hc) .. =>
     obtain ⟨-, a, ha, had⟩ := role_bound_addr_uncond htbl.toTableRep ev14
     exact ⟨a, had, _, _, _, _, _, _, ha, ev47,
-      fun cl hm => hsub cl (by rw [hc]; simp [hm]), ld41, validate_eqns_safe evk⟩
+      fun cl (hm : cl ∈ cs45) => hsub cl (by rw [hc]; simp [hm]), ld41, validate_eqns_safe evk⟩
 
 set_option maxRecDepth 100000 in
 /-- **A role whose bound record its validation walks is of kind 0, 1, 2 or 5.** -/
