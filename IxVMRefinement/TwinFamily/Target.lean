@@ -42,7 +42,7 @@ open IxVM.Consistency
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library
 open IxVM (F)
-open IxVM.Refinement.Core
+open IxVM.Refinement.Core (KExpr KKey)
 open IxVM.Refinement.Decl (twinPosRulesJ judgeFrames_twinPosRulesJ judgeSound_twinPosRulesJ_of
   DeclStoreInv)
 open IxVM.Refinement.Typing.FamilyAlias (FamilyCallAtLim)
