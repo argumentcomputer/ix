@@ -97,7 +97,10 @@ def nestedVerdicts : List (Lean.Name × Bool) := [
   (`eaIotaFalse, false),
   (`gaIota, false),
   (`giIota, false),
-  (`geIota, false)]
+  (`geIota, false),
+  (`gaIotaFalse, false),
+  (`giIotaFalse, false),
+  (`geIotaFalse, false)]
 
 private def nameOfString (str : String) : Lean.Name :=
   str.splitOn "." |>.foldl (init := .anonymous) fun acc s =>
