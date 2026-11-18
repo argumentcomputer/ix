@@ -321,7 +321,8 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     rw [hL1] at hx
     exact hx
   have hlpsS : fam.cvS.type.allLevelParamsDefined (List.range ind.lvls.toNat) = true := by
-    have h := (henv _ (Ix.Kernel.Semantics.Env.find?_mem hat.stored.former)).2.1
+    have h : fam.cvS.type.allLevelParamsDefined fam.cvS.levelParams = true :=
+      (henv _ (Ix.Kernel.Semantics.Env.find?_mem hat.stored.former)).2.1
     rw [hat.lps, hL1] at h
     exact h
   -- the parent's type
