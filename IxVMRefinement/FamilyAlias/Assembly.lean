@@ -137,8 +137,24 @@ theorem familyRecord_of_facts {env : Env .anon} {blk : List (ConstantInfo .anon)
       AliasGroup env h aliases ∧
       (∀ a ∈ aliases, ∃ ci ∈ blk, a.name.base = ci.name) ∧
       DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk env₂ ∧
-      (∀ ci ∈ blk, ∃ c, env₂.find? ci.name = some c ∧ IxVM.Consistency.StoredAs c ci) := by
+      (∀ ci ∈ blk, ∃ c, env₂.find? ci.name = some c ∧ IxVM.Consistency.StoredAs c ci) ∧
+      (∀ (i : Nat) (ci : ConstantInfo .anon) (tyA : KExpr), (nonrecsOf blk)[i]? = some ci →
+        tys[i]? = some tyA → env₂.find? ci.name = some (storedMember ci tyA)) ∧
+      (∀ (i : Nat) (cv : ConstantVal .anon) (mI rP : Nat) (rules : List (RecRule .anon))
+        (tyA : KExpr) (rhss : List KExpr),
+        (recsOf blk)[i]? = some (.recInfo cv mI rP rules) →
+        tys[(nonrecsOf blk).length + i]? = some tyA → rhsss[i]? = some rhss →
+        ∃ rules' : List (RecRule .anon),
+          env₂.find? cv.name = some (.recInfo ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules') ∧
+          List.Forall₂ IxVM.Consistency.RuleStored rules' rules ∧
+          List.Forall₂ (fun (r' : RecRule .anon) rhsA => r'.rhs = rhsA) rules' rhss) := by
   have hwf : EnvWF env := hsi.wf
+  have htake : ∀ {i : Nat} {ci : ConstantInfo .anon} {tyA : KExpr},
+      (nonrecsOf blk)[i]? = some ci → tys[i]? = some tyA →
+      (tys.take (nonrecsOf blk).length)[i]? = some tyA := by
+    intro i ci tyA hi hty
+    rw [List.getElem?_take_of_lt (List.getElem?_eq_some_iff.mp hi).1]
+    exact hty
   obtain ⟨as, tbl, hg, htgt, hfindM, hnames, hrecsA⟩ :=
     aliasGroup_family hF hwf hnd hnewM hnewI
   -- names
@@ -289,13 +305,18 @@ theorem familyRecord_of_facts {env : Env .anon} {blk : List (ConstantInfo .anon)
   · -- no recursor
     refine ⟨aliasMap tbl, as,
       storeMembers ⟨as ++ env.consts⟩ (nonrecsOf blk) (tys.take (nonrecsOf blk).length), hg,
-      hroots, ?_, ?_⟩
+      hroots, ?_, ?_, ?_, ?_⟩
     · set_option smartUnfolding false in
       exact ⟨hF.split, _, hmem, Or.inl ⟨hrecs, rfl⟩⟩
-    intro ci hci
-    have hci' : ci ∈ nonrecsOf blk ++ recsOf blk := by rw [← hF.split]; exact hci
-    rw [hrecs, List.append_nil] at hci'
-    exact hstoredN ci hci'
+    · intro ci hci
+      have hci' : ci ∈ nonrecsOf blk ++ recsOf blk := by rw [← hF.split]; exact hci
+      rw [hrecs, List.append_nil] at hci'
+      exact hstoredN ci hci'
+    · intro i ci tyA hi hty
+      exact storeMembers_find _ _ _ hNnd i ci tyA hi (htake hi hty)
+    · intro i cv mI rP rules tyA rhss hi
+      rw [hrecs] at hi
+      simp at hi
   · -- the recursors without rules, then with their rules
     obtain ⟨hprov, hextS, hAS⟩ := provisionRecsRunJ_of_facts (bn := blk.map (·.name)) hwf
       (recsOf blk) (tys.drop (nonrecsOf blk).length) _ (recsOf_all_isRecursor blk) hmfs.2
@@ -338,20 +359,28 @@ theorem familyRecord_of_facts {env : Env .anon} {blk : List (ConstantInfo .anon)
             rw [hc]
             rfl
           · exact storeMembers_isSome_mem _ _ _ (MembersFacts.length_eq _ _ hmfs.2) ci hci'
-    obtain ⟨out, hfold, hkeep, hstoredR⟩ := indRecsFoldRenRunJ_of_aliased hR (recsOf blk)
-      (tys.drop (nonrecsOf blk).length) rhsss adv.thms
+    obtain ⟨out, hfold, hkeep, hstoredR, hstoredF⟩ := indRecsFoldRenRunJ_of_aliased hR
+      (recsOf blk) (tys.drop (nonrecsOf blk).length) rhsss adv.thms
       (storeMembers ⟨as ++ env.consts⟩ (nonrecsOf blk) (tys.take (nonrecsOf blk).length))
       hrecsA hmfs.2
       (fun ci hci => hblk ci (hRmem ci hci)) hRnd
-    refine ⟨aliasMap tbl, as, out, hg, hroots, ?_, ?_⟩
+    refine ⟨aliasMap tbl, as, out, hg, hroots, ?_, ?_, ?_, ?_⟩
     · set_option smartUnfolding false in
       exact ⟨hF.split, _, hmem, Or.inr ⟨fun he => hrecs he, heqM, _, _, hprov, hfold⟩⟩
-    intro ci hci
-    have hci' : ci ∈ nonrecsOf blk ++ recsOf blk := by rw [← hF.split]; exact hci
-    rcases List.mem_append.mp hci' with hci' | hci'
-    · obtain ⟨c, hc, hs⟩ := hstoredN ci hci'
-      exact ⟨c, (hkeep _ (hdisj ci hci')).trans hc, hs⟩
-    · exact hstoredR ci hci'
+    · intro ci hci
+      have hci' : ci ∈ nonrecsOf blk ++ recsOf blk := by rw [← hF.split]; exact hci
+      rcases List.mem_append.mp hci' with hci' | hci'
+      · obtain ⟨c, hc, hs⟩ := hstoredN ci hci'
+        exact ⟨c, (hkeep _ (hdisj ci hci')).trans hc, hs⟩
+      · exact hstoredR ci hci'
+    · intro i ci tyA hi hty
+      exact (hkeep _ (hdisj ci (List.mem_of_getElem? hi))).trans
+        (storeMembers_find _ _ _ hNnd i ci tyA hi (htake hi hty))
+    · intro i cv mI rP rules tyA rhss hi hty hrh
+      have hty' : (tys.drop (nonrecsOf blk).length)[i]? = some tyA := by
+        rw [List.getElem?_drop]
+        exact hty
+      exact hstoredF i cv mI rP rules tyA rhss hi hty' hrh
 
 end IxVM.Refinement.Decl.FamilyAlias
 
@@ -363,11 +392,15 @@ open Ix.Kernel.Semantics (DeclIndRenRunJ)
 open IxVM.Refinement.Decl.FamilyAlias (AliasGroup famJ FamilyAdvice FamilyCheckFacts
   familyRecord_of_facts)
 
-/-- **The family step's conclusion from the family check's facts**: `FamilyStepTarget`'s
-conclusion, from the facts at the family as read (`FamDeclReads`), the prefix's store invariant
-and root synchronization, the pinned equality, and the target's own freshness and key-freedom
-hypotheses on the family's addresses. -/
-theorem famStepConclusion_of_facts {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
+/-- **The family step's record from the family check's facts, with the installed members**: the
+alias group, the roots, IxC's renamed record and each member stored as its reading, from the facts
+at the family as read (`FamDeclReads`), the prefix's store invariant and root synchronization, the
+pinned equality, and the target's own freshness and key-freedom hypotheses on the family's
+addresses; and the members as the record installs them from the selected annotated types `tys`
+and right-hand sides `rhsss`: each type and constructor at its position as `storedMember` of its
+`tys` entry, each recursor at its type's `tys` entry with rules whose right-hand sides are its
+`rhsss` entry. -/
+theorem famStepConclusion_installed {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     {B rb : _root_.Address} {cb crb : Ixon.Constant} {env : Ix.Kernel.Env .anon}
     {blk : List (ConstantInfo .anon)} {adv : FamilyAdvice}
     {tys : List IxVM.Refinement.Core.KExpr} {rhsss : List (List IxVM.Refinement.Core.KExpr)}
@@ -378,12 +411,23 @@ theorem famStepConclusion_of_facts {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     (hfresh : ∀ x, FamAddr B cb rb crb x → env.find? (keyOf t x) = none)
     (hfree : ∀ x, FamAddr B cb rb crb x → Decl.KeyFree (keyOf t x)) :
     ∃ (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
-      (aliases blk' : List (ConstantInfo .anon)) (env₂ : Ix.Kernel.Env .anon),
+      (aliases : List (ConstantInfo .anon)) (env₂ : Ix.Kernel.Env .anon),
       AliasGroup env h aliases ∧
-      (∀ a ∈ aliases, ∃ ci ∈ blk', a.name.base = ci.name) ∧
-      FamDeclReads t E₀ B cb rb crb blk' ∧
-      DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk' env₂ ∧
-      (∀ ci ∈ blk', ∃ c, env₂.find? ci.name = some c ∧ StoredAs c ci) := by
+      (∀ a ∈ aliases, ∃ ci ∈ blk, a.name.base = ci.name) ∧
+      DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk env₂ ∧
+      (∀ ci ∈ blk, ∃ c, env₂.find? ci.name = some c ∧ StoredAs c ci) ∧
+      (∀ (i : Nat) (ci : ConstantInfo .anon) (tyA : IxVM.Refinement.Core.KExpr),
+        (Decl.FamilyAlias.nonrecsOf blk)[i]? = some ci → tys[i]? = some tyA →
+        env₂.find? ci.name = some (Decl.FamilyAlias.storedMember ci tyA)) ∧
+      (∀ (i : Nat) (cv : ConstantVal .anon) (mI rP : Nat)
+        (rules : List (Ix.Kernel.RecRule .anon)) (tyA : IxVM.Refinement.Core.KExpr)
+        (rhss : List IxVM.Refinement.Core.KExpr),
+        (Decl.FamilyAlias.recsOf blk)[i]? = some (.recInfo cv mI rP rules) →
+        tys[(Decl.FamilyAlias.nonrecsOf blk).length + i]? = some tyA → rhsss[i]? = some rhss →
+        ∃ rules' : List (Ix.Kernel.RecRule .anon),
+          env₂.find? cv.name = some (.recInfo ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules') ∧
+          List.Forall₂ RuleStored rules' rules ∧
+          List.Forall₂ (fun (r' : Ix.Kernel.RecRule .anon) rhsA => r'.rhs = rhsA) rules' rhss) := by
   have hmem : ∀ ci ∈ blk, ∃ x, FamAddr B cb rb crb x ∧ ci.name = keyOf t x := by
     intro ci hci
     obtain ⟨x, hx, hk, -⟩ := hreads.2.1 ci hci
@@ -405,10 +449,34 @@ theorem famStepConclusion_of_facts {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     refine ⟨hbase ci hci, ?_⟩
     rw [hk]
     exact (hfree x hx).1
-  obtain ⟨h, as, env₂, hg, hroots, hd, hst⟩ := familyRecord_of_facts hF hsi hreads.1 hkey hfr
+  exact familyRecord_of_facts hF hsi hreads.1 hkey hfr
     (fun ci hci => hroot.fresh_auxKey (hbase ci hci) (hfr ci hci) .model)
     (fun ci hci j => hroot.fresh_auxKey2 (hbase ci hci) (hfr ci hci) .model (.iota j))
     heq
+
+/-- **The family step's conclusion from the family check's facts**: `FamilyStepTarget`'s
+conclusion, from the facts at the family as read (`FamDeclReads`), the prefix's store invariant
+and root synchronization, the pinned equality, and the target's own freshness and key-freedom
+hypotheses on the family's addresses (`famStepConclusion_installed`). -/
+theorem famStepConclusion_of_facts {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
+    {B rb : _root_.Address} {cb crb : Ixon.Constant} {env : Ix.Kernel.Env .anon}
+    {blk : List (ConstantInfo .anon)} {adv : FamilyAdvice}
+    {tys : List IxVM.Refinement.Core.KExpr} {rhsss : List (List IxVM.Refinement.Core.KExpr)}
+    (hF : FamilyCheckFacts env blk adv tys rhsss)
+    (hreads : FamDeclReads t E₀ B cb rb crb blk)
+    (hsi : Ix.Kernel.Open.StoreInv env) (hroot : Decl.AuxRootSynced env)
+    (heq : env.find? Ix.Kernel.eqName = some Ix.Kernel.eqA)
+    (hfresh : ∀ x, FamAddr B cb rb crb x → env.find? (keyOf t x) = none)
+    (hfree : ∀ x, FamAddr B cb rb crb x → Decl.KeyFree (keyOf t x)) :
+    ∃ (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
+      (aliases blk' : List (ConstantInfo .anon)) (env₂ : Ix.Kernel.Env .anon),
+      AliasGroup env h aliases ∧
+      (∀ a ∈ aliases, ∃ ci ∈ blk', a.name.base = ci.name) ∧
+      FamDeclReads t E₀ B cb rb crb blk' ∧
+      DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk' env₂ ∧
+      (∀ ci ∈ blk', ∃ c, env₂.find? ci.name = some c ∧ StoredAs c ci) := by
+  obtain ⟨h, as, env₂, hg, hroots, hd, hst, -, -⟩ :=
+    famStepConclusion_installed hF hreads hsi hroot heq hfresh hfree
   exact ⟨h, as, blk, env₂, hg, hroots, hreads, hd, hst⟩
 
 end IxVM.Refinement.Typing.FamilyAlias

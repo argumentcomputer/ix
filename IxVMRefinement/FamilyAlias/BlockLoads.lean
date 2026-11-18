@@ -104,13 +104,15 @@ structure FamilyMembersCanon (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (A : _r
       LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
         (((L1.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀ =
         some cv.type
-  /-- The references the family record uses are stored. Producer: open. No walk reaches the
-  family record. The family check's witnessed branch of `KernelModeled::family_refs_go` would have
-  to assert, at each reference the family record uses, what the walk asserts of a walked
-  record's: `KernelRoles::assert_ref_allowed`, `KernelClaim::assert_not_block_ref` and
-  `KernelClaim::assert_safe_used_refs`. That gives the record's inert clause and `NeedOk` of each
+  /-- The references the family record uses are stored. Producer: the circuit side, from the
+  family check: `KernelModeled::check_family` runs `family_refs_ok`, whose
+  `assert_inner_refs_safe` covers every used reference of the family record, whichever branch of
+  `family_refs_go` admitted it (`KernelClaim::assert_safe_used_refs`, with
+  `KernelRoles::assert_ref_allowed`, and `assert_used_not_block`, with
+  `KernelClaim::assert_not_block_ref`). That gives the record's inert clause and `NeedOk` of each
   uncovered reference; with the step's need hypothesis and the family addresses stored after the
-  step, as for the block (`famUsedStored`), it gives this field. -/
+  step, as for the block (`famUsedStored` at the family record), it gives this field. It stays a
+  seam field until the circuit's observations are regenerated. -/
   usedRecs : Decl.UsedRefsStored t env crb
   /-- Each recursor member of the family record, read as the recursor `cv` (rules `rules₀`) and
   stored at its key as `cv'` (rules `rules'`), is loaded as the stored recursor: the reading's
