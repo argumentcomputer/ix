@@ -85,7 +85,8 @@ theorem belowCount_lt {E : _root_.Address → _root_.Address → Prop} {S : List
 
 /-- **A relation that orders the family graph at the choices `K`** (module docstring): it has no
 cycle, every address below another holds a record of the run's store, and it puts below each other
-a top-walked used reference and its user, a top-walked projection record's block and the record,
+a top-walked used reference that is not covered and its user (a covered one needs no rank), a
+top-walked projection record's block and the record,
 an advice record and its block, a block and its family record where that is checked, a block with
 a family record and its twin; and what a family record or an inner record uses is stored,
 covered, its own (for a family record also its block's), or owned by a checked unclaimed record
@@ -93,7 +94,7 @@ below the block or the inner record. -/
 structure RankEdges (K : FamRunCtx) (E : _root_.Address → _root_.Address → Prop) : Prop where
   acyclic : ∀ z, ¬ Relation.TransGen E z z
   source : ∀ z y, E z y → ∃ c, recordOf K.E₀ z = some c
-  walkUse : ∀ a x, K.Top a → K.Top x → UsedRef K.E₀ a x → E x a
+  walkUse : ∀ a x, K.Top a → K.Top x → ¬ Covered K.t x → UsedRef K.E₀ a x → E x a
   walkOwner : ∀ a c, K.Top a → recordOf K.E₀ a = some c → IsProj c → E (Ix.Cert.ownerOf a c) a
   after : ∀ B rb, K.fam B = some rb → Walked K.Top K.Inner rb → E B rb
   advBelow : ∀ B a, K.adv B a → E a B
@@ -137,9 +138,11 @@ theorem familyRanked_of_edges {K : FamRunCtx} {E : _root_.Address → _root_.Add
       twinAfter := fun rb' B rb h h' => lt (.single (hE.twinAfter rb' B rb h h'))
       famClosed := fun B rb x h hu hok => ?_
       innerClosed := fun a x h hu hok => ?_ }
-  · rcases hW.closed a x hT hu with ⟨hTx, -⟩ | hcov
-    · exact Or.inl ⟨hTx, lt (.single (hE.walkUse a x hT hTx hu))⟩
+  · by_cases hcov : Covered K.t x
     · exact Or.inr hcov
+    · rcases hW.closed a x hT hu with ⟨hTx, -⟩ | hcov'
+      · exact Or.inl ⟨hTx, lt (.single (hE.walkUse a x hT hTx hcov hu))⟩
+      · exact absurd hcov' hcov
   · exact ⟨(hW.owner a c hT hc hp).1, lt (.single (hE.walkOwner a c hT hc hp))⟩
   · rcases hE.famClosed B rb x h hu hok with h1 | h1 | h1 | h1 | h1
     · exact Or.inl h1
