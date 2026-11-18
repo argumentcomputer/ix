@@ -548,7 +548,9 @@ gives at the closure's environment** (the last part of `validate_op`: `validate_
 at a binding run, an operation's group, its admission, the closure's store and environment
 with the closure's coverage, a record store for the store after the group the run's calls are
 good for, the record (a definition with no universe parameter, in Lean's logic), the reading of
-its value and the stored value (its canonical annotation), and the record's references stored:
+its value and the stored value (its canonical annotation), the record's references stored, and
+the prefix half of a well-founded operation's check at the closure's environment
+(`RoleOps.WfPrefix`, which `OpRefine.wfPrefix_of_bnd` gives from the invariant below the group):
 one comparison per recurrence (`OpRefine.EqObs`) for a structural operation, and one checked
 proof per certificate statement (`OpRefine.CertObs`) for a well-founded one. -/
 def OpEquationFacts (calls : List (Call F)) : Prop :=
@@ -567,7 +569,7 @@ def OpEquationFacts (calls : List (Call F)) : Prop :=
         (IxVM.Consistency.soloSelf t a)).read d.value = .ok val₀ →
       val₀.looseBVarsBounded 0 = true → val₀.allLevelParamsDefined [] = true →
       LoadedReads.canonAnn c [] (0 + 1) d.value val₀ = some val →
-      Decl.UsedRefsStored t env₁ c →
+      Decl.UsedRefsStored t env₁ c → RoleOps.WfPrefix env₁ (.role r) →
       ((Ix.Kernel.Key.role r : KKey) ∈ Ix.Kernel.natOpNames →
           ∀ eq ∈ Ix.Kernel.natOpEquations 0 (Ix.Kernel.Key.role r : KKey),
             OpRefine.EqObs Ec t (valLimit g) env₁ (.role r) val eq) ∧
@@ -687,6 +689,7 @@ theorem opValidationFactsW_of_equations (L : Ix.Kernel.Env .anon → NativeFam .
     rw [hrange] at hcV; exact hcV
   obtain ⟨hstruct, hwf⟩ := heqs t ρ Rs hrun ht g r a R R₁ R' Ec env₁ c d val₀ val h6 h77 hgrp hop
     ha hadm hrd hadds hws hEc hst hinv hcE hinfo hlv0 hlogic hvl h3 h4' hcV' hstored
+    (OpRefine.wfPrefix_of_bnd hall hgrp hop hb)
   have hchecked : RoleOps.OpChecked env₁ (.role r) ty val ty val := by
     have hopN : (Ix.Kernel.Key.role r : KKey) ∈ RoleOps.opNames := by
       rw [RoleOps.opNames_eq_map]
