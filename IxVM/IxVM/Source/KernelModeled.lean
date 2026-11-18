@@ -1077,7 +1077,15 @@ def check_family := aiur_fn⟦
               let (bnl, univ_offset) = block_elim(rc, type_addrs);
               -- the family's auxiliary members are the nested occurrences the block's
               -- constructors require, no more and no fewer
-              check_nested_aux(block, KernelCheck::build_flat_block(rec_block, block, univ_offset));
+              let flat = KernelCheck::build_flat_block(rec_block, block, univ_offset);
+              check_nested_aux(block, flat);
+              -- no partial family record: empty (a declaration-only family) or one recursor per
+              -- member of the flattened block, asserted before the per-recursor loop; under a
+              -- group's validation (the binding stores what it checks) only a complete one
+              let complete = Fields::is_zero(n_recs - Lists::length(flat));
+              let empty_ok = Fields::is_zero(n_recs) * (1 - KernelRoles::rc_validates_group(rc));
+              assert_eq!(complete + empty_ok - complete * empty_ok, 1,
+                "modeled recursor family record is neither empty nor one recursor per member of the flattened block");
               -- the family record references only what the block's own walk checks:
               -- the block's used references, members of the blocks those project from,
               -- the block's members, and witnessed members of its closure
