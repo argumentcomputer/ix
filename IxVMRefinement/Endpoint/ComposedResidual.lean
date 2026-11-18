@@ -14,7 +14,7 @@ import IxVMRefinement.Binding.ClosureUnitDispatch
 import IxVMRefinement.FamilyGraph.ProducersAcyclic
 import IxVMRefinement.FamilyGraph.ProducersInner
 import IxVMRefinement.Binding.OpCertObs
-import IxVMRefinement.FamilyAlias.ClosureStep
+import IxVMRefinement.FamilyAlias.ClosureFamilyStep
 
 /-! # The composed statement from its open obligations
 
