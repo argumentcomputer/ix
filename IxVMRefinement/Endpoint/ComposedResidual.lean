@@ -247,8 +247,9 @@ the use-site reading of the projection guard, a theorem (`Core.projGuardRunReadi
   Stated; the model side's facts (`Decl.FamilyAlias.FamilyCheckFacts`) are kernel-checked at two
   compiled fixtures. Producer: `FamilyAlias.FamilyStepTarget` with
   `FamilyAlias.modelSide_of_target` on the model side (left: the companions after the step, the
-  advice's ties from `FamilyRun.famCall` and the family record's inert clause); the circuit
-  side, from the observed family check to the facts, open until the circuit's family changes.
+  advice's ties from `FamilyRun.checks` (its `FamilyChecksAt.famCall`) and the family record's
+  inert clause); the circuit side, from the observed family check to the facts, open until the
+  circuit's family changes.
 * `familyTwin`: the step of a second family record of a block (a twin), handed the block's
   family record stored, installs it and keeps the fold's clause with the family recursors'
   companions beside it (`UnitStepTwin`). Stated; one accepted pair was executed. Producer open:
