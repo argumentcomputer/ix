@@ -337,8 +337,11 @@ theorem familyRun_of (K : FamRunCtx) {rank' : _root_.Address → Nat}
     (hST : StoredTwinField K) :
     FamilyRun K.calls K.t K.envT K.E₀ K.lim K.Top rank' K.fam K.twin K.adv K.Inner ∧
       ∀ B rb rb', K.fam B = some rb → K.twin rb' = some B → K.Pref B rb := by
-  refine ⟨{ graph := ?graph, claimed := ?claimed, modeled := ?modeled, famCall := ?famCall,
-            twinCall := ?twinCall, innerCall := ?innerCall, storedTwin := hST }, ?form⟩
+  refine ⟨{ graph := ?graph, claimed := ?claimed, modeled := ?modeled,
+            famInductive := ?famInductive,
+            checks := ⟨K.bAddr, { famCall := ?famCall, twinCall := ?twinCall,
+              innerCall := ?innerCall }⟩,
+            storedTwin := hST }, ?form⟩
   case graph =>
     exact
     { famBlock := fun B rb h => (FamRunCtx.fam_some h).1.1
@@ -406,10 +409,14 @@ theorem familyRun_of (K : FamRunCtx) {rank' : _root_.Address → Nat}
           exact hlog⟩
     obtain ⟨rb, hFC⟩ := hO.modeledCall B hFB
     exact FamRunCtx.fam_of hFB hFC
+  case famInductive =>
+    intro B rb h
+    obtain ⟨cb, ms, hcb, hms, -, hall⟩ := (FamRunCtx.fam_some h).1.2.2.1
+    exact ⟨cb, ms, hcb, hms, hall⟩
   case famCall =>
     intro B rb h
     obtain ⟨⟨-, hroute, -⟩, hFC, -⟩ := FamRunCtx.fam_some h
-    refine ⟨hroute, K.bAddr, K.famCalls B rb, FamRunCtx.famCalls_spec hFC, fun a ha => ?_⟩
+    refine ⟨hroute, K.famCalls B rb, FamRunCtx.famCalls_spec hFC, fun a ha => ?_⟩
     by_cases hca : ∃ ca x, recordOf K.E₀ a = some ca ∧ ConstAddrOf a ca x
     · exact Or.inl ⟨rb, h, ha, hca⟩
     · have hno : ∀ ca x, recordOf K.E₀ a = some ca → ¬ ConstAddrOf a ca x :=
@@ -418,9 +425,9 @@ theorem familyRun_of (K : FamRunCtx) {rank' : _root_.Address → Nat}
   case twinCall =>
     intro rb' B h
     obtain ⟨-, -, -, -, hFC, -⟩ := FamRunCtx.twin_some h
-    exact ⟨K.bAddr, K.famCalls B rb', FamRunCtx.famCalls_spec hFC⟩
+    exact ⟨K.famCalls B rb', FamRunCtx.famCalls_spec hFC⟩
   case innerCall =>
-    refine ⟨K.bAddr, fun a h => ?_⟩
+    intro a h
     obtain ⟨-, -, B, rb, hor, hchk⟩ := h
     exact ⟨B, rb, K.famCalls B rb, hor,
       FamRunCtx.famCalls_spec (FamRunCtx.famCheck_of_inner hor),

@@ -3,7 +3,7 @@ import IxVMRefinement.FamilyGraph.InnerChecked
 
 /-! # Row `innerChecked` from what the family checks check
 
-`InnerCheckedRow` asks, of the records a family check checks (`FamilyRun.innerCall`), four
+`InnerCheckedRow` asks, of the records a family check checks (`FamilyChecksAt.innerCall`), four
 facts. Two are read off the observations of functions the circuit batch does not change, or that
 are proved already:
 
@@ -62,7 +62,8 @@ def AdviceBlockShape : Prop :=
 theorem innerCheckedRow_of (refs : InnerRefsChecked) (shape : AdviceBlockShape) :
     InnerCheckedRow := by
   intro calls t seeds E₀ lim Top rank hWalk R envT fam twin adv Inner hFR
-  obtain ⟨bAddr, hcall⟩ := hFR.innerCall
+  obtain ⟨bAddr, hC⟩ := hFR.checks
+  have hcall := hC.innerCall
   obtain ⟨bW, hW, hG⟩ := hWalk
   have hS := hW.runStore
   -- a twin reached through a container projection is the twin step's, not this row's
