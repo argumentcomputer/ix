@@ -11,9 +11,9 @@ binding fold's witness store:
 * `recLateOutOver_of_all`: where the witness store holds the record and the run's blobs, the
   output is the binding fold's (`RecLateOutOver`).
 * `overUnitStep_recLate_tied`: the step over the fold's clause with a predicate on the parent,
-  which the first interface produces and the second receives. `overUnitStep_recLate` asks its
-  second interface at every parent the store reads as native; the check's output holds only at
-  the parent that heads the record's own major premise, so the step is restated with the tie.
+  which the first interface produces and the second receives. The second interface cannot be
+  asked at every parent the store reads as native: the check's output holds only at the parent
+  that heads the record's own major premise.
 * `overUnitStep_recLate_of_arm`: **the step of a standalone recursor record of a registered
   family, over the fold's clause at the recorded head traces**, from the circuit's check of
   the record at one record store and one carried limit. That the record's key is no
