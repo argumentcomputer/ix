@@ -456,49 +456,119 @@ def runInner (leanEnv : Lean.Environment) : IO UInt32 := do
                  exercises := some "KernelModeled::check_advice_record", witness }
   runCases "ixvm-family-graph-records" cases (jobs := 2)
 
-/-- Payload edits of the `List`-nested tree's advice, each one more advice entry or witnessed
-reference than the accepted payload: the record at the role of `sorryAx` as a basis-role
-witness; the same record as an advice record; a dependency path that ends at a block record. The
-first two must be rejected; the third is expected to be accepted (a path is only followed). -/
+/-- A binder-free safe `.defn` record (type and value are refs/apps, no `∀`/`λ`), so it needs no
+binder section: `typ` and `value` are expressions over `refs` (`.ref i #[..]`) and `univs`. -/
+private def bareDefn (safety : Ix.DefinitionSafety) (typ value : Ixon.Expr)
+    (refs : Array Address) (univs : Array Ixon.Univ) : Address × Ixon.Constant :=
+  let c : Ixon.Constant :=
+    { info := .defn { kind := .defn, safety, lvls := 0, typ, value },
+      sharing := #[], refs, univs, binders := #[] }
+  (IxVM.Model.addressOf c, c)
+
+/-- One family check's advice path, probed by execution. For each fixture (the `List`-nested tree
+`T`, the mutual pair `EvT`/`OdT`) and each binding (assumed, validated), the clean payload is the
+accepted control; each candidate differs from it by one advice or witness record, served through
+`modelRecords`/`modelDeps` with the payload's `advice`/`witnesses` edited. Candidates that use an
+inert axiom, an unsafe record or a block address must be rejected, and the function and message
+are read from the circuit's error; a kind-1 dependency path ending at a block record is the one
+benign accepted case (an unused witness). `IX_FAMILY_PROBE_SCOPE=quick` runs only `T`/assumed. -/
 def runProbe (leanEnv : Lean.Environment) : IO UInt32 := do
-  let first := recordDefs "T"
-  let env0 ← loadSharedIxonEnv #[first, first.str "rec", first.str "rec_1"] leanEnv
-  let (env, rep) ← IO.ofExcept (IxVM.Model.generateReport
-    { env0 with models := {}, modelRecords := {}, modelHints := {}, modelBlobs := {},
-                modelDeps := {}, modelsAttached := false })
-  let ty ← lookupAddr env first
-  let some block := (env.getConst? ty).bind IxVM.Model.projectionBlock?
-    | throw (IO.userError "the tree is not a member of a block")
-  let some (_, adv) := rep.advice.find? (·.1 == block)
-    | throw (IO.userError "the tree's block has no model advice")
-  let p := adv.layout
-  let sorryA ← lookupAddr env `sorryAx
-  let some sorryC := env.getConst? sorryA | throw (IO.userError "no record for sorryAx")
-  let listA ← lookupAddr env `List
-  let some listB := (env.getConst? listA).bind IxVM.Model.projectionBlock?
-    | throw (IO.userError "List is not a member of a block")
-  let some blockRec := env.getConst? block | throw (IO.userError "no block record")
-  let some j := blockRec.refs.findIdx? (· == listA)
-    | throw (IO.userError "the block does not reference List")
-  IO.println s!"[ixvm-family-graph-records] probe: block {block}, sorryAx {sorryA}, List's block \
-    {listB} at reference {j}"
-  let variant (bytes : ByteArray) : Ixon.Env :=
-    { env with models := env.models.insert block bytes,
-               modelRecords := env.modelRecords.insert sorryA sorryC,
-               modelDeps := env.modelDeps.insert block ((env.modelDeps.getD block #[]).push sorryA) }
-  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
-  let probe (label : String) (bytes : ByteArray) (accept : Bool) (why : Option String) :
-      Builder := fun _ =>
-    Case.ofClaim s!"probe-{label}" (variant bytes) (.check ctx ty none) (accept := accept)
-      (rejectsWith := why)
-  runCases "ixvm-family-graph-records" (jobs := 2) #[
-    probe "control" p.ser true none,
-    probe "inert-axiom-as-basis-witness"
-      { p with witnesses := p.witnesses.push (sorryA, 0, [], []) }.ser false
-      (some "a reference to a role outside the basis"),
-    probe "inert-axiom-as-advice" { p with advice := p.advice.push sorryA }.ser false none,
-    probe "path-witness-ending-at-a-block"
-      { p with witnesses := p.witnesses.push (listB, 1, [j + 1, 0], []) }.ser true none]
+  let fixtures : List (String × Lean.Name × Array Lean.Name) :=
+    [("NestedTree", recordDefs "T",
+       #[recordDefs "T", (recordDefs "T").str "rec", (recordDefs "T").str "rec_1"]),
+     ("IndexedPair", recordDefs "EvT",
+       #[recordDefs "EvT", recordDefs "OdT", (recordDefs "EvT").str "rec",
+         (recordDefs "OdT").str "rec"])]
+  let scope := (← IO.getEnv "IX_FAMILY_PROBE_SCOPE").getD "all"
+  let fixtures := if scope == "quick" then fixtures.take 1 else fixtures
+  let modes := if scope == "quick" then [true] else [true, false]
+  IO.println s!"[ixvm-family-graph-records] probe: artifact {← programArtifact}, host {← programHost}"
+  let mut cases : Array Builder := #[]
+  for (label, first, names) in fixtures do
+    let env0 ← loadSharedIxonEnv names leanEnv
+    let (env, rep) ← IO.ofExcept (IxVM.Model.generateReport
+      { env0 with models := {}, modelRecords := {}, modelHints := {}, modelBlobs := {},
+                  modelDeps := {}, modelsAttached := false })
+    let ty ← lookupAddr env first
+    let some block := (env.getConst? ty).bind IxVM.Model.projectionBlock?
+      | throw (IO.userError s!"{first} is not a member of a block")
+    let some (_, adv) := rep.advice.find? (·.1 == block)
+      | throw (IO.userError s!"the block of {first} has no model advice")
+    let p := adv.layout
+    let some blockRec := env.getConst? block | throw (IO.userError "no block record")
+    -- the inert axioms (`sorryAx` always; `trustCompiler`/`ofReduceBool` when the env has them)
+    let sorryA ← lookupAddr env `sorryAx
+    let inertAddrs : Array (String × Address) :=
+      (#[("sorryAx", some sorryA),
+         ("trustCompiler", env.getAddr? (Ix.Name.fromLeanName `Lean.trustCompiler)),
+         ("ofReduceBool", env.getAddr? (Ix.Name.fromLeanName `Lean.ofReduceBool))]).filterMap
+        fun (n, a?) => a?.map (n, ·)
+    -- the hand-built harmful records
+    let natA ← lookupAddr env `Nat
+    let bfA ← lookupAddr env `Bool.false
+    let nzA ← lookupAddr env `Nat.zero
+    let listA ← lookupAddr env `List
+    let some listB := (env.getConst? listA).bind IxVM.Model.projectionBlock?
+      | throw (IO.userError "List is not a member of a block")
+    let rNat : Ixon.Expr := .ref 0 #[]
+    -- `dSorry : Nat := @sorryAx.{1} Nat Bool.false` (a safe def that uses the inert axiom)
+    let (dSorryA, dSorry) := bareDefn .safe (.ref 1 #[])
+      (.app (.app (.ref 0 #[0]) (.ref 1 #[])) (.ref 2 #[]))
+      #[sorryA, natA, bfA] #[.succ .zero]
+    -- `dUnsafe : Nat := Nat.zero` flagged unsafe; `dRefsUnsafe : Nat := dUnsafe` (safe -> unsafe)
+    let (dUnsafeA, dUnsafe) := bareDefn .unsaf rNat (.ref 1 #[]) #[natA, nzA] #[]
+    let (dRefsUnsafeA, dRefsUnsafe) := bareDefn .safe rNat (.ref 1 #[]) #[natA, dUnsafeA] #[]
+    -- `dBlock : Nat := <List's block record>` (a term naming a block (Muts) address)
+    let (dBlockA, dBlock) := bareDefn .safe rNat (.ref 1 #[]) #[natA, listB] #[]
+    -- a used reference of the block, for a one-step dependency path that cannot reach an axiom
+    let usedSet := IxVM.Model.usedIdxs blockRec
+    let jAny? := (blockRec.refs.zipIdx.find? fun (_, k) => usedSet.contains k).map (·.2)
+    let jList? := blockRec.refs.findIdx? (· == listA)
+    IO.println s!"[ixvm-family-graph-records] probe {label}: block {block}, {p.advice.size} advice, \
+      {p.witnesses.size} witnesses; inert {inertAddrs.map (·.1)}; List's block {listB}; \
+      block-ref-used {jAny?}, List-ref {jList?}"
+    for assume in modes do
+      let mode := if assume then "assumed" else "validated"
+      let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env assume)
+      let mkEnv (extra : Array (Address × Ixon.Constant)) (pl : IxVM.Model.Payload) : Ixon.Env :=
+        { env with models := env.models.insert block pl.ser,
+                   modelRecords := extra.foldl (fun m (a, c) => m.insert a c) env.modelRecords,
+                   modelDeps := env.modelDeps.insert block
+                     ((env.modelDeps.getD block #[]) ++ extra.map (·.1)) }
+      let probe (name : String) (extra : Array (Address × Ixon.Constant)) (pl : IxVM.Model.Payload)
+          (accept : Bool) (why : Option String) : Builder := fun _ =>
+        Case.ofClaim s!"probe-{label}-{mode}-{name}" (mkEnv extra pl) (.check ctx ty none)
+          (accept := accept) (rejectsWith := why)
+      cases := cases.push (probe "control" #[] p true none)
+      -- (i) the inert axiom: as a basis-role witness, and the referencing safe def as advice
+      for (n, a) in inertAddrs do
+        cases := cases.push (probe s!"{n}-as-basis-witness" #[]
+          { p with witnesses := p.witnesses.push (a, 0, [], []) } false
+          (some "a reference to a role outside the basis"))
+        if let some jAny := jAny? then
+          cases := cases.push (probe s!"{n}-as-path-witness" #[]
+            { p with witnesses := p.witnesses.push (a, 1, [jAny + 1], []) } false
+            (some "a dependency path ends elsewhere"))
+      cases := cases.push (probe "inert-axiom-record-as-advice" #[]
+        { p with advice := p.advice.push sorryA } false none)
+      cases := cases.push (probe "def-using-inert-axiom-as-advice" #[(dSorryA, dSorry)]
+        { p with advice := p.advice.push dSorryA } false (some "an unwitnessed outside reference"))
+      -- (ii) an unsafe record: directly as advice, and referenced by a safe advice record
+      cases := cases.push (probe "unsafe-record-as-advice" #[(dUnsafeA, dUnsafe)]
+        { p with advice := p.advice.push dUnsafeA } false
+        (some "an opaque, unsafe or partial definition"))
+      cases := cases.push (probe "safe-record-referencing-unsafe"
+        #[(dUnsafeA, dUnsafe), (dRefsUnsafeA, dRefsUnsafe)]
+        { p with advice := p.advice.push dRefsUnsafeA } false
+        (some "safe constant references an unsafe constant"))
+      -- (iii) an advice term naming a block (Muts) record's address
+      cases := cases.push (probe "advice-term-names-a-block" #[(dBlockA, dBlock)]
+        { p with advice := p.advice.push dBlockA } false none)
+      -- the known benign case: a kind-1 path ending at a block record (an unused witness)
+      if let some jList := jList? then
+        cases := cases.push (probe "path-witness-ending-at-a-block" #[]
+          { p with witnesses := p.witnesses.push (listB, 1, [jList + 1, 0], []) } true none)
+  runCases "ixvm-family-graph-records" cases (jobs := 2)
 
 /-- The two nested families; with `IX_FAMILY_TWIN` set, the second recursor record; with
 `IX_FAMILY_INNER` set, the checks two family checks run on their advice. -/
