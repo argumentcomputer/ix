@@ -65,6 +65,19 @@ theorem CheckedFieldsAt.sorted {c : ScopedCtx} {calls : List (Call F)} {b : Byte
     -, -, -, -, -, sorted, -⟩ := h
   exact ⟨parameters, fvs, residual, body, opened, openedFields, sorted⟩
 
+/-- The run data hold inside any longer run. -/
+theorem CheckedFieldsAt.mono {c : ScopedCtx} {calls calls' : List (Call F)} {b : Bytes.Address}
+    {i : F} {nP nF : Nat} {cty : KExpr} {u : KLevel} {sorts : List KLevel}
+    (h : CheckedFieldsAt c calls b i nP nF cty u sorts)
+    (hsub : ∀ cl ∈ calls, cl ∈ calls') : CheckedFieldsAt c calls' b i nP nF cty u sorts := by
+  obtain ⟨Γ, residual, body, parameters, fvs, rc, level, p, r, np, nf, h₁, h₂, cs, bp, ptr,
+    w₁, w₃, w₄, w₅, w₆, w₇, w₈, h₀, m, cs₀, hp, hf, opened, openedFields, hg, hrc, hE,
+    represented, zero, ev, load, good₀, hb, ld, hext, hin, hin₀, sorted, checked⟩ := h
+  exact ⟨Γ, residual, body, parameters, fvs, rc, level, p, r, np, nf, h₁, h₂, cs, bp, ptr,
+    w₁, w₃, w₄, w₅, w₆, w₇, w₈, h₀, m, cs₀, hp, hf, opened, openedFields, hg, hrc, hE,
+    represented, zero, ev, load, good₀, hb, ld, hext, fun cl hcl => hsub cl (hin cl hcl),
+    fun cl hcl => hsub cl (hin₀ cl hcl), sorted, checked⟩
+
 /-- **The loop's observation gives sorts with their run data**: the hypotheses are those of
 `check_prop_fields_sorts`, the constructor's load whose type field is the pointer the loop
 walks, and that the loop's calls and the load's lie in `calls`. -/

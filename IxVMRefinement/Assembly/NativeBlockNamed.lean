@@ -29,11 +29,11 @@ set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
 set_option linter.unnecessarySimpa false
 
-/-- **The no-recursor install of a native block, from its two stages, with the family named**:
-`nativeNoRecFacts_of_stage` with the telescope constant the stored former `cvS` and the stored
-constructors `ctorsA`. -/
-theorem nativeNoRecFacts_of_stage_named {env : Env .anon} {blk : List KConstantInfo} {nP : Nat}
-    {p₀ : NativeParts .anon}
+/-- **The no-recursor install of a native block, from its two stages, with the family named and
+the sorts of the table stage kept**: the constructor outputs carry any property `Q` of the
+recursion flag and the field sorts; the install's table stage is run at sorts that have it. -/
+theorem nativeNoRecFacts_of_stage_named_with {env : Env .anon} {blk : List KConstantInfo} {nP : Nat}
+    {p₀ : NativeParts .anon} {Q : Bool → List (List KLevel) → Prop}
     (hp₀ : nativePartsNoRec? nP blk = some p₀) (hnd : (p₀.ctors.map (·.1.name)).Nodup)
     (hstore : Ix.Kernel.Open.StoreInv env)
     {cvS : KConstantVal} {bsT : List (KExpr × Ix.Kernel.BinderMeta)}
@@ -45,12 +45,12 @@ theorem nativeNoRecFacts_of_stage_named {env : Env .anon} {blk : List KConstantI
     {ctorsA : List (KConstantVal × Nat)} {rawTypes : List KExpr}
     (hlenA : ctorsA.length = p₀.ctors.length)
     (hout : ∀ isRec : Bool, ∃ sortss : List (List KLevel), sortss.length = p₀.ctors.length ∧
-      ∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
+      (∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
         sortss[j]? = some sorts ∧
         NativeCtorOut ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
             (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩
           p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx p₀.resSort cvS.type
-          (rawTypes.getD j default) c cA sorts)
+          (rawTypes.getD j default) c cA sorts) ∧ Q isRec sortss)
     (hfv_ctors : ∀ c ∈ p₀.ctors, c.1.type.hasFvar = false)
     (hfresh_ctors : ∀ c ∈ p₀.ctors, env.find? c.1.name = none)
     (hshape_ctors : ∀ c ∈ p₀.ctors, c.1.name.isProjFnShape = false)
@@ -66,7 +66,11 @@ theorem nativeNoRecFacts_of_stage_named {env : Env .anon} {blk : List KConstantI
            (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
         Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false) :
     ∃ (env₂ : Env .anon) (p : NativeParts .anon),
-      NativeNoRecFacts env env₂ blk nP p₀ ⟨p, cvS, cvS, ctorsA⟩ := by
+      NativeNoRecFacts env env₂ blk nP p₀ ⟨p, cvS, cvS, ctorsA⟩ ∧
+      ∃ (isRec : Bool) (sortss : List (List KLevel)), Q isRec sortss ∧
+        Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM .anon) p ctorsA sortss
+          (Ix.Kernel.consSumCtors p.nP ctorsA ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
+            (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩) = .ok env₂ := by
   obtain ⟨caps₀, hblk, hnP_eq, hlarge, hbasis_T, hctor_basis, ⟨bs₀, hst_raw⟩, hisProp⟩ :=
     nativePartsNoRec?_inv hp₀
   let p₁ : Ix.Kernel.InductiveShape .anon := p₀.toInductiveShape.withSort p₀.resSort
@@ -144,7 +148,7 @@ theorem nativeNoRecFacts_of_stage_named {env : Env .anon} {blk : List KConstantI
         rfl hnameS hstrip_c' hes_len hes_noT hfv_c hres_c hlit_c hpos_c' hunused_c
     exact ⟨hout_j.nF_eq, hsum_c, ks, hrck, hks_len, hks_ok, hopen_ok⟩
   -- the kinds of the fields, read at the stage of either flag
-  obtain ⟨sortss₀, -, hout₀⟩ := hout false
+  obtain ⟨sortss₀, -, hout₀, -⟩ := hout false
   have hk_ex : ∀ idx : Fin ctorsA.length, ∃ ks,
       Ix.Kernel.recCtorKinds p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx ctorsA[idx.1] =
         some ks ∧
@@ -184,7 +188,7 @@ theorem nativeNoRecFacts_of_stage_named {env : Env .anon} {blk : List KConstantI
   let p : NativeParts .anon := (p₀.complete p₁).withKinds kinds
   let caps : Ix.Kernel.IndCaps .anon := Ix.Kernel.nativeCapsAt p₁ isRec
   let env₁ : Env .anon := ⟨.indInfo cvS caps :: env.consts⟩
-  obtain ⟨sortss, hslen, hout₁⟩ := hout isRec
+  obtain ⟨sortss, hslen, hout₁, hQ⟩ := hout isRec
   have hsum_ctors₀ :
       SumCtorsRunJ rulesJ env₁ env₁ p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx
         p₀.resSort p₀.isProp false cvS p₀.ctors ctorsA sortss := by
@@ -314,9 +318,9 @@ theorem nativeNoRecFacts_of_stage_named {env : Env .anon} {blk : List KConstantI
     exact htbl
   obtain ⟨env₂, htable_ok, -⟩ :=
     checkNativeTable_ok (sortss := sortss) hT_in_base hc_wf_base hfn_fresh_base htbl_fresh_base
-  refine ⟨env₂, p, hp₀, hnd, isRec, cvS, cvS, caps, p₁, p, ctorsA, sortss,
+  refine ⟨env₂, p, ⟨hp₀, hnd, isRec, cvS, cvS, caps, p₁, p, ctorsA, sortss,
     kinds, tfvs_all, .sort p₀.resSort, isorts, rfl, ?_, rfl, hsum_ctors₁, ?_, rfl, ?_, ?_, ?_,
-    ?_, htable_ok⟩
+    ?_, htable_ok⟩, isRec, sortss, hQ, htable_ok⟩
   · exact ⟨cvS, p₀.resSort, bsT, cvS, hcheckT, Or.inl rfl, hstS, Or.inl rfl, rfl, rfl⟩
   · simpa [p, p₁] using hclassify
   · simpa [p, p₁] using hop_all
@@ -326,6 +330,52 @@ theorem nativeNoRecFacts_of_stage_named {env : Env .anon} {blk : List KConstantI
     have hpT : p.cvT.name = cvS.name := hnameS.symm
     rw [hpT]
     exact hself
+
+/-- **The no-recursor install of a native block, from its two stages, with the family named**:
+`nativeNoRecFacts_of_stage` with the telescope constant the stored former `cvS` and the stored
+constructors `ctorsA`. -/
+theorem nativeNoRecFacts_of_stage_named {env : Env .anon} {blk : List KConstantInfo} {nP : Nat}
+    {p₀ : NativeParts .anon}
+    (hp₀ : nativePartsNoRec? nP blk = some p₀) (hnd : (p₀.ctors.map (·.1.name)).Nodup)
+    (hstore : Ix.Kernel.Open.StoreInv env)
+    {cvS : KConstantVal} {bsT : List (KExpr × Ix.Kernel.BinderMeta)}
+    (hcheckT : ConstantValCheckJ rulesJ env p₀.cvT cvS)
+    (hstS : cvS.type.stripPis (p₀.nP + p₀.nIdx) = some (bsT, .sort p₀.resSort))
+    (hnameS : cvS.name = p₀.cvT.name)
+    (hfreshT : env.find? cvS.name = none)
+    (hshapeT : cvS.name.isProjFnShape = false)
+    {ctorsA : List (KConstantVal × Nat)} {rawTypes : List KExpr}
+    (hlenA : ctorsA.length = p₀.ctors.length)
+    (hout : ∀ isRec : Bool, ∃ sortss : List (List KLevel), sortss.length = p₀.ctors.length ∧
+      ∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
+        sortss[j]? = some sorts ∧
+        NativeCtorOut ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
+            (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩
+          p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx p₀.resSort cvS.type
+          (rawTypes.getD j default) c cA sorts)
+    (hfv_ctors : ∀ c ∈ p₀.ctors, c.1.type.hasFvar = false)
+    (hfresh_ctors : ∀ c ∈ p₀.ctors, env.find? c.1.name = none)
+    (hshape_ctors : ∀ c ∈ p₀.ctors, c.1.name.isProjFnShape = false)
+    (hT_ctors : ∀ c ∈ p₀.ctors, c.1.name ≠ p₀.cvT.name)
+    (hfn : ∀ j, env.find? (Ix.Kernel.projFnName p₀.cvT.name j) = none)
+    (htbl : env.find? (Ix.Kernel.projTableName p₀.cvT.name) = none)
+    (hunused : ∀ cA ∈ ctorsA, ∀ cbs body,
+      cA.1.type.stripPis (p₀.nP + cA.2) = some (cbs, body) →
+      ∀ i < cA.2,
+        (Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
+           (cbs.getD (p₀.nP + i) default).1 = .recursive ∨
+         Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
+           (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
+        Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false) :
+    ∃ (env₂ : Env .anon) (p : NativeParts .anon),
+      NativeNoRecFacts env env₂ blk nP p₀ ⟨p, cvS, cvS, ctorsA⟩ := by
+  obtain ⟨env₂, p, hf, -⟩ := nativeNoRecFacts_of_stage_named_with (Q := fun _ _ => True) hp₀ hnd
+    hstore hcheckT hstS hnameS hfreshT hshapeT hlenA
+    (fun isRec => by
+      obtain ⟨sortss, hl, ho⟩ := hout isRec
+      exact ⟨sortss, hl, ho, trivial⟩)
+    hfv_ctors hfresh_ctors hshape_ctors hT_ctors hfn htbl hunused
+  exact ⟨env₂, p, hf⟩
 
 end IxVM.Refinement.Decl
 
@@ -343,15 +393,17 @@ set_option maxHeartbeats 1600000
 set_option linter.unusedVariables false
 
 /-- **IxC's no-recursor install of the block, from the outputs of its two stages, with the family
-named**: `nativeNoRecFacts_of_outs` with the telescope constant the stored former `cvS` and the
-stored constructors `ctorsA`. -/
-theorem nativeNoRecFacts_of_outs_named {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+named and the sorts of the table stage kept**: `nativeNoRecFacts_of_outs` with the telescope
+constant the stored former `cvS` and the stored constructors `ctorsA`; the constructor outputs
+carry any property `Q` of the recursion flag and the field sorts, and the table stage is run at
+sorts that have it. -/
+theorem nativeNoRecFacts_of_outs_named_with {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ E : Ixon.Env} {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
     {n : Nat} (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hst : StepStore calls t E₀ E) (hrec : BlockUnitRecord E₀ B cb ind)
     (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
     {blk : List (ConstantInfo .anon)} (hblk : BlockReadings t E₀ B ind blk)
-    {p₀ : Ix.Kernel.NativeParts .anon}
+    {p₀ : Ix.Kernel.NativeParts .anon} {Q : Bool → List (List Ix.Kernel.Level) → Prop}
     (hp₀ : Ix.Kernel.Semantics.nativePartsNoRec? ind.params.toNat blk = some p₀)
     (hnd : (p₀.ctors.map (·.1.name)).Nodup)
     {env : Ix.Kernel.Env .anon} (hinv : Decl.PrefixInv.{u} E t (some n) env)
@@ -364,12 +416,12 @@ theorem nativeNoRecFacts_of_outs_named {calls : List (Call F)} {t : Ix.Kernel.Ro
     (hnameS : cvS.name = p₀.cvT.name) (hlenA : ctorsA.length = p₀.ctors.length)
     (hout : ∀ isRec : Bool, ∃ sortss : List (List Ix.Kernel.Level),
       sortss.length = p₀.ctors.length ∧
-      ∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
+      (∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
         sortss[j]? = some sorts ∧
         Decl.NativeCtorOut ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
             (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩
           p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx p₀.resSort cvS.type
-          (rawTypes.getD j default) c cA sorts)
+          (rawTypes.getD j default) c cA sorts) ∧ Q isRec sortss)
     (hunused : ∀ cA ∈ ctorsA, ∀ cbs body,
       cA.1.type.stripPis (p₀.nP + cA.2) = some (cbs, body) →
       ∀ i < cA.2,
@@ -379,7 +431,11 @@ theorem nativeNoRecFacts_of_outs_named {calls : List (Call F)} {t : Ix.Kernel.Ro
            (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
         Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false) :
     ∃ (env₂ : Ix.Kernel.Env .anon) (p : Ix.Kernel.NativeParts .anon),
-      NativeNoRecFacts env env₂ blk ind.params.toNat p₀ ⟨p, cvS, cvS, ctorsA⟩ := by
+      NativeNoRecFacts env env₂ blk ind.params.toNat p₀ ⟨p, cvS, cvS, ctorsA⟩ ∧
+      ∃ (isRec : Bool) (sortss : List (List Ix.Kernel.Level)), Q isRec sortss ∧
+        Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM .anon) p ctorsA sortss
+          (Ix.Kernel.consSumCtors p.nP ctorsA ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
+            (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩) = .ok env₂ := by
   have hbound : Bounded calls := (hst.good env none).2
   have htwf : t.wf = true := hinv.tableWf
   obtain ⟨ty₀, caps, cs, rfl, hty, hlen, hcs⟩ := blockReads_shape ht hbound hS hrec hchk hblk
@@ -449,8 +505,53 @@ theorem nativeNoRecFacts_of_outs_named {calls : List (Call F)} {t : Ix.Kernel.Ro
   have hshapeT : cvS.name.isProjFnShape = false := by
     rw [hnameS, hTname]
     exact Decl.isProjFnShape_of_isBaseKey (Decl.isBaseKey_keyOf t _)
-  exact Decl.nativeNoRecFacts_of_stage_named hp₀ hnd hinv.store.store hcheckT hstS hnameS
+  exact Decl.nativeNoRecFacts_of_stage_named_with hp₀ hnd hinv.store.store hcheckT hstS hnameS
     (by rw [hnameS]; exact hfreshT) hshapeT hlenA hout hfv_ctors hfresh_ctors hshape_ctors
     hT_ctors hfn htbl hunused
+
+/-- **The no-recursor install of a native block, from its walked check, with the stored constants
+named** (the form without the sorts of the table stage). -/
+theorem nativeNoRecFacts_of_outs_named {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {E₀ E : Ixon.Env} {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
+    {n : Nat} (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
+    (hst : StepStore calls t E₀ E) (hrec : BlockUnitRecord E₀ B cb ind)
+    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
+    {blk : List (ConstantInfo .anon)} (hblk : BlockReadings t E₀ B ind blk)
+    {p₀ : Ix.Kernel.NativeParts .anon}
+    (hp₀ : Ix.Kernel.Semantics.nativePartsNoRec? ind.params.toNat blk = some p₀)
+    (hnd : (p₀.ctors.map (·.1.name)).Nodup)
+    {env : Ix.Kernel.Env .anon} (hinv : Decl.PrefixInv.{u} E t (some n) env)
+    (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
+    (haux : Decl.AuxRootSynced env)
+    {cvS : ConstantVal .anon} {bsT : List (Ix.Kernel.Expr .anon × Ix.Kernel.BinderMeta)}
+    {ctorsA : List (ConstantVal .anon × Nat)} {rawTypes : List (Ix.Kernel.Expr .anon)}
+    (hcheckT : Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ env p₀.cvT cvS)
+    (hstS : cvS.type.stripPis (p₀.nP + p₀.nIdx) = some (bsT, .sort p₀.resSort))
+    (hnameS : cvS.name = p₀.cvT.name) (hlenA : ctorsA.length = p₀.ctors.length)
+    (hout : ∀ isRec : Bool, ∃ sortss : List (List Ix.Kernel.Level),
+      sortss.length = p₀.ctors.length ∧
+      ∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
+        sortss[j]? = some sorts ∧
+        Decl.NativeCtorOut ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
+            (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩
+          p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx p₀.resSort cvS.type
+          (rawTypes.getD j default) c cA sorts)
+    (hunused : ∀ cA ∈ ctorsA, ∀ cbs body,
+      cA.1.type.stripPis (p₀.nP + cA.2) = some (cbs, body) →
+      ∀ i < cA.2,
+        (Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
+           (cbs.getD (p₀.nP + i) default).1 = .recursive ∨
+         Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
+           (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
+        Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false) :
+    ∃ (env₂ : Ix.Kernel.Env .anon) (p : Ix.Kernel.NativeParts .anon),
+      NativeNoRecFacts env env₂ blk ind.params.toNat p₀ ⟨p, cvS, cvS, ctorsA⟩ := by
+  obtain ⟨env₂, p, hf, -⟩ := nativeNoRecFacts_of_outs_named_with (Q := fun _ _ => True) ht hS hst
+    hrec hchk hblk hp₀ hnd hinv hfresh haux hcheckT hstS hnameS hlenA
+    (fun isRec => by
+      obtain ⟨sortss, hl, ho⟩ := hout isRec
+      exact ⟨sortss, hl, ho, trivial⟩)
+    hunused
+  exact ⟨env₂, p, hf⟩
 
 end IxVM.Refinement.Typing

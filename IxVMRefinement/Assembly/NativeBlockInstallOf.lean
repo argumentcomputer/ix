@@ -330,10 +330,26 @@ structure NativeInstallOut (t : Ix.Kernel.RoleTable) (E₀ E : Ixon.Env) (n : Na
   tableName : ∀ tbl, ConstantInfo.projInfo tbl ∈ new →
     tbl.structName = Core.keyOf t (Core.iprjAddr B 0)
 
-/-- **The new constants of a native block's install, read off the member check** (module
-docstring). The inputs are those of `ctorOuts_of_member_named` and distinct names in the
-prefix. -/
-theorem nativeInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+/-- **The table stage of a native block's install ran at sorts the classifier checked**: a
+recursion flag and field sorts with `StageSortsChecked`, at which IxC's table stage, run after
+the stage of that flag with the constructors stored, gives the environment of the install. With
+`Guard.projGuardCert_of_checkNativeTable` this is what a certificate of the new projection table
+is read from. -/
+def InstallSortsChecked (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (n : Nat)
+    (env : Ix.Kernel.Env .anon) (B : _root_.Address) (cvS : ConstantVal .anon)
+    (p₀ : Ix.Kernel.NativeParts .anon) (new : List (ConstantInfo .anon))
+    (p : Ix.Kernel.NativeParts .anon) (ctorsA : List (ConstantVal .anon × Nat)) : Prop :=
+  ∃ (isRec : Bool) (sortss : List (List Ix.Kernel.Level)),
+    StageSortsChecked calls t E n env B cvS p₀ ctorsA isRec sortss ∧
+    Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM .anon) p ctorsA sortss
+      (Ix.Kernel.consSumCtors p.nP ctorsA ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
+        (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩) =
+      .ok ⟨new ++ env.consts⟩
+
+/-- **The new constants of a native block's install, read off the member check, with the sorts
+of its table stage**: `nativeInstallOut_of_member`, and the table stage ran at sorts the
+classifier checked (`InstallSortsChecked`, at the stored former). -/
+theorem nativeInstallOut_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ E : Ixon.Env} {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
     {n : Nat} {env : Ix.Kernel.Env .anon} {blk : List (ConstantInfo .anon)}
     {p₀ : Ix.Kernel.NativeParts .anon}
@@ -352,18 +368,21 @@ theorem nativeInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     ∃ (new : List (ConstantInfo .anon)) (p : Ix.Kernel.NativeParts .anon)
       (ty' : Ix.Kernel.Expr .anon) (ctorsA : List (ConstantVal .anon × Nat))
       (caps : IndCaps .anon),
-      NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps := by
+      NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps ∧
+      InstallSortsChecked calls t E n env B
+        ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ p₀ new p ctorsA := by
   have hbound : Bounded calls := (hst.good env none).2
   have htwf : t.wf = true := hinv.tableWf
   obtain ⟨ty₀, ty', cvS, bsT, ctorsA, rawTypes, hty, hlbb, hdef, hcT, hcvT, hcvS, hnP₀, hnIdx₀,
     hlenP, hper, hT, hstT, hname, hlenA, hout, hun⟩ :=
-    ctorOuts_of_member_named ht hS hst hrec hchk hnat htele hblk hp₀ hinv hstored hP hkeys
-      hfresh hfree hcov haux
+    ctorOuts_of_member_named_checked ht hS hst hrec hchk hnat htele hblk hp₀ hinv hstored hP
+      hkeys hfresh hfree hcov haux
   obtain ⟨p₀', hp₀', hnd₀⟩ := nativeParts_of_member ht hbound hS hrec hchk htele hblk hfree
   rw [hp₀] at hp₀'
   injection hp₀' with e
   subst e
-  obtain ⟨env₂, p, hf⟩ := nativeNoRecFacts_of_outs_named ht hS hst hrec hchk hblk hp₀ hnd₀
+  obtain ⟨env₂, p, hf, isRecQ, sortssQ, hQ, htabQ⟩ := nativeNoRecFacts_of_outs_named_with
+    (Q := StageSortsChecked calls t E n env B cvS p₀ ctorsA) ht hS hst hrec hchk hblk hp₀ hnd₀
     hinv hfresh haux hT hstT hname hlenA hout hun
   subst hcvS
   obtain ⟨isRec, s, kinds, caps, tbls, hpEq, hcapsAt, hcapsP, henv₂, htbls⟩ := hf.named_env
@@ -532,7 +551,7 @@ theorem nativeInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     ctorFind := fun cA hcA => hfind (.ctorInfo cA.1 p.nP cA.2)
       (List.mem_append_right _ (List.mem_append_left _
         (List.mem_reverse.mpr (List.mem_map.mpr ⟨cA, hcA, rfl⟩))))
-    tableName := ?_ }⟩
+    tableName := ?_ }, isRecQ, sortssQ, hQ, htabQ⟩
   · -- the new constants as the store reads them
     obtain ⟨hp56, hi56, hc56⟩ := member_bounds hbound hS hrec hchk
     exact {
@@ -669,5 +688,32 @@ theorem nativeInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTa
       · obtain ⟨j, c, cty', -, -, -, he⟩ := hrevMem _ h
         exact nomatch he
       · exact nomatch List.mem_singleton.mp h
+
+/-- **The new constants of a native block's install, read off the member check** (module
+docstring). The inputs are those of `ctorOuts_of_member_named` and distinct names in the
+prefix. -/
+theorem nativeInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {E₀ E : Ixon.Env} {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
+    {n : Nat} {env : Ix.Kernel.Env .anon} {blk : List (ConstantInfo .anon)}
+    {p₀ : Ix.Kernel.NativeParts .anon}
+    (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
+    (hrec : BlockUnitRecord E₀ B cb ind)
+    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
+    (hnat : NativeRouteAt calls B) (htele : FormerAtTele t E₀ B cb ind)
+    (hblk : BlockReadings t E₀ B ind blk)
+    (hp₀ : Ix.Kernel.Semantics.nativePartsNoRec? ind.params.toNat blk = some p₀)
+    (hinv : Decl.PrefixInv.{u} E t (some n) env) (hstored : Decl.UsedRefsStored t env cb)
+    (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
+    (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
+    (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
+    (hcov : L1.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env)
+    (hndE : (env.consts.map (·.name)).Nodup) :
+    ∃ (new : List (ConstantInfo .anon)) (p : Ix.Kernel.NativeParts .anon)
+      (ty' : Ix.Kernel.Expr .anon) (ctorsA : List (ConstantVal .anon × Nat))
+      (caps : IndCaps .anon),
+      NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps := by
+  obtain ⟨new, p, ty', ctorsA, caps, hO, -⟩ := nativeInstallOut_of_member_checked ht hS hst hrec
+    hchk hnat htele hblk hp₀ hinv hstored hP hkeys hfresh hfree hcov haux hndE
+  exact ⟨new, p, ty', ctorsA, caps, hO⟩
 
 end IxVM.Refinement.Typing
