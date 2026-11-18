@@ -1071,4 +1071,26 @@ theorem familyGraphRow_of_batch (Pref : RunPref)
     FamilyGraphRow.{u} :=
   familyGraphRow_of_pref (familyGraphRowPref_of_batch Pref batch storedTwin)
 
+/-- **What the graph row is owed, at the twin preference `Pref`**: at every walk and witness, the
+batch's facts (`BatchGives`) and the stored twins' field (`StoredTwinField`) at the run's choices.
+`Pref` is the twin preference the typing side instantiates with the concrete record-level form.
+The obligation holds at any `Pref`: `BatchGives` and `StoredTwinField` read it only through the
+selector's choice of the family records and the twins. -/
+def FamilyGraphOwed (Pref : RunPref) : Prop :=
+  AtWalk.{u} Pref fun K _ => BatchGives K ∧ StoredTwinField K
+
+/-- **Row `familyGraph` with the selector's form fact, from what it is owed.** -/
+theorem familyGraphRowPref_of_owed {Pref : RunPref} (h : FamilyGraphOwed.{u} Pref) :
+    FamilyGraphRowPref.{u} Pref :=
+  familyGraphRowPref_of_batch Pref
+    (fun calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape =>
+      (h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape).1)
+    (fun calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape =>
+      (h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape).2)
+
+/-- **Row `familyGraph` from what it is owed.** -/
+theorem familyGraphRow_of_owed {Pref : RunPref} (h : FamilyGraphOwed.{u} Pref) :
+    FamilyGraphRow.{u} :=
+  familyGraphRow_of_pref (familyGraphRowPref_of_owed h)
+
 end IxVM.Refinement.Typing
