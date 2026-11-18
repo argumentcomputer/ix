@@ -31,7 +31,7 @@ checks every generated proof.
 **Names.** A generated name is a base (`ev`, `hv`, `m`, …) and a suffix. It is asked
 for at a *position* in the function: the arms selected so far in matches of several
 arms, the place in the body (the chain of enclosing statements and operands, a
-statement being named by what it binds and what it calls, not by its index), the
+statement being named by what it binds, not by its index), the
 base, and how many names of that base the place has been given. A position does not
 move when a statement is added or removed before it.
 
@@ -510,8 +510,12 @@ def uniqueName (taken : Array String) (base : String) : String := Id.run do
 
 A place is a string: the chain of enclosing nodes, each by its tag. The statements of a block
 (`let`s and matches of one arm, whose bodies are the rest of the block) are siblings: each is
-tagged by what it binds and what it binds it to, so that a statement keeps its place when
-another is added or removed before it. -/
+tagged by what it binds (`stmtTag`), so that a statement keeps its place when another is added
+or removed before it.
+
+These tags, the places built from them in `inv` and its companions, and `strHash` are what the
+table of names is keyed by: changing any of them moves every position, and the table then
+matches nothing. -/
 
 /-- A pattern without its variables' names: an arm keeps its place when a variable is renamed. -/
 partial def patShape : Pattern F → String
@@ -524,16 +528,6 @@ partial def patShape : Pattern F → String
   | .construct t c ps | .constructAs _ t c ps =>
     tyStr t ++ "." ++ c ++ "(" ++ ", ".intercalate (ps.map patShape) ++ ")"
   | p => patKind p
-
-/-- A pattern with its variables' names: what a statement binds. -/
-partial def patText : Pattern F → String
-  | .bind n => n
-  | .load p => "*" ++ patText p
-  | .tuple ps => "(" ++ ", ".intercalate (ps.map patText) ++ ")"
-  | .array ps => "[" ++ ", ".intercalate (ps.map patText) ++ "]"
-  | .construct t c ps | .constructAs _ t c ps =>
-    tyStr t ++ "." ++ c ++ "(" ++ ", ".intercalate (ps.map patText) ++ ")"
-  | p => patShape p
 
 /-- A node's own tag, without its operands. -/
 def nodeTag : Expr F → String
@@ -574,11 +568,18 @@ def anchor : Expr F → String
   | .matchValue x _ => "match " ++ nodeTag x
   | e => nodeTag e
 
-/-- A statement of a block: its tag (what it binds and to what), what it binds its pattern to,
-and the rest of the block. -/
+/-- A statement's tag: the variable it binds; for any other pattern, the pattern's shape and
+what it is bound to (`anchor`). Binding another of a pattern's components, or binding a
+variable to another expression, leaves the tag. -/
+def stmtTag (kind : String) (p : Pattern F) (x : Expr F) : String :=
+  match p with
+  | .bind n => s!"{kind} {n}"
+  | _ => s!"{kind} {patShape p} = {anchor x}"
+
+/-- A statement of a block: its tag, what it binds its pattern to, and the rest of the block. -/
 def stmt? : Expr F → Option (String × Expr F × Expr F)
-  | .letValue p x b => some (s!"let {patText p} = {anchor x}", x, b)
-  | .matchValue x [(p, b)] => some (s!"match {anchor x} as {patText p}", x, b)
+  | .letValue p x b => some (stmtTag "let" p x, x, b)
+  | .matchValue x [(p, b)] => some (stmtTag "match" p x, x, b)
   | _ => none
 
 /-- The tags of the statements of the block that `e` heads, in order. -/
@@ -595,14 +596,14 @@ def blockDups (e : Expr F) : List String :=
 /-- An expression in full: statements by what they bind, matches by their arms' shapes. -/
 partial def deep (e : Expr F) : String :=
   let own := match e with
-    | .letValue p _ _ => "let " ++ patText p
+    | .letValue p _ _ => "let " ++ patShape p
     | .matchValue _ arms => "match [" ++ " | ".intercalate (arms.map fun (p, _) => patShape p) ++ "]"
     | e => nodeTag e
   own ++ "(" ++ ", ".intercalate (e.children.map deep) ++ ")"
 
-/-- A node's tag in its place. A statement is tagged by what it binds and to what; where
-several statements of the block share that tag (`dups`), each also by a hash of what it binds
-its pattern to, in full: they are told apart by content, not by order, unless they are equal. -/
+/-- A node's tag in its place. A statement has its statement tag; where several statements of
+the block share that tag (`dups`), each also a hash of what it binds its pattern to, in full:
+they are told apart by content, not by order, unless they are equal. -/
 def placeTag (dups : List String) (e : Expr F) : String :=
   match stmt? e with
   | some (t, x, _) => if dups.contains t then s!"{t} [{hex (strHash (deep x))}]" else t
