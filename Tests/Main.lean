@@ -69,6 +69,7 @@ import Tests.Ix.IxVM.IndVariations
 import Tests.Ix.IxVM.RefusalControls
 import Tests.Ix.IxVM.GuardCertificate
 import Tests.Ix.IxVM.RecRunBounds
+import Tests.Ix.IxVM.FamilyRecords
 import Tests.Ix.IxVM.RoleMemberCensus
 import Tests.Ix.Kernel.ReaderCoverage
 import Tests.Ix.IOIngress
@@ -273,6 +274,7 @@ def registry : List Entry := [
   .env "ixvm-refusal-controls" (.manual "negative controls that reach the later refusals of the declaration checker, role validation and the field classifier") Tests.Ix.IxVM.RefusalControls.run,
   .env "ixvm-guard-certificate" (.manual "the guard certificate's example against the compiled structure: the store's readings and IxC's table stage, by evaluation") Tests.Ix.IxVM.GuardCertificate.run,
   .env "ixvm-rec-run-bounds" (.manual "three compiled native recursors through the program, and the count bounds of the run evaluated on their records") Tests.Ix.IxVM.RecRunBounds.run,
+  .env "ixvm-family-records" (.manual "the compiled records and model advice of a nested and an indexed family; IX_FAMILY_RECORDS_OUT writes them") Tests.Ix.IxVM.FamilyRecords.run,
   .env "ixvm-model-report" (.manual "model advice per mutual or nested block of IX_MODEL_IXE") Tests.Ix.IxVM.ModelAdvice.report,
   .env "ixvm-model-coverage" (.manual "every modeled block of IX_MODEL_IXE through IxVM") Tests.Ix.IxVM.ModelAdvice.coverage,
   .env "ixvm-model-proj" (.manual "records of IX_MODEL_IXE that project at a modeled block") Tests.Ix.IxVM.ModelAdvice.projUse,
