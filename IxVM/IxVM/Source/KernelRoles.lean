@@ -652,6 +652,27 @@ def assert_op_reached_in_order := aiur_fn⟦
     }
 ⟧
 
+  -- The walk's order assertion (`walk_ctx`) at a record a family check reaches through its
+  -- payload, where no `walk_ctx` passes: an advice record, a witnessed reference, a used
+  -- reference of an advice, container or family record. Below the well-founded block such a
+  -- record bound to an operation must be in force; inside the block `op_order_scan` refuses
+  -- the modeled block itself, so no payload is checked there; an assumed binding asserts
+  -- nothing, as in `walk_ctx`.
+
+def assert_in_order := aiur_fn⟦
+  fn assert_in_order(rc: RoleCtx, a: Bytes::AddressRef) -> () {
+      match (*(rc)) {
+        RoleCtxNode::Mk(tbl, limit, _) => {
+          let r1 = RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0);
+          match r1 {
+            0 => {  () } ,
+            _ => {  assert_op_reached_in_order(r1 - 1, KernelRoleSpec::role_group(r1 - 1), limit) } ,
+          } } ,
+        RoleCtxNode::Assumed(_, _) => {  () } ,
+      }
+    }
+⟧
+
   -- Inside the well-founded block: what `a` references, up to the records at which the scan
   -- stops, reaches an operation only if that operation's group is below `limit` or among
   -- `needs`, the needs of the group being validated. A referenced operation is not entered: its

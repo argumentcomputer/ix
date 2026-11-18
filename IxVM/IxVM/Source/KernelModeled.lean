@@ -549,6 +549,8 @@ def check_witnesses := aiur_fn⟦
         _ => {
           let (x, s2) = IxonDeserialize::get_address(s);
           let (kind, s3) = IxonDeserialize::read_byte(s2);
+          -- a witnessed reference is reached through the payload, past every `walk_ctx`
+          KernelRoles::assert_in_order(rc, x);
           let s4 = check_witness(rc, block, x, UInt8::to_field(kind), s3);
           let (rest, s5) = check_witnesses(rc, block, s4, n - 1);
           ((&(Lists::Node::Cons(x, rest))), s5) } ,
@@ -871,6 +873,8 @@ def check_advice_records := aiur_fn⟦
 def check_advice_record := aiur_fn⟦
   fn check_advice_record(rc: KernelRoles::RoleCtx, a: Bytes::AddressRef,
                          aset: RBTreeMap::RBTreeMap<Field>, wset: RBTreeMap::RBTreeMap<Field>) -> () {
+      -- the advice record itself is reached through the payload, past every `walk_ctx`
+      KernelRoles::assert_in_order(rc, a);
       let c = Ingress::load_verified_constant(a);
       match c {
         Ixon::Constant::Mk(info, _, refs, _, _) => {
@@ -991,7 +995,26 @@ def assert_inner_refs_safe := aiur_fn⟦
   fn assert_inner_refs_safe(rc: KernelRoles::RoleCtx, refs: Lists::List<Bytes::AddressRef>,
                             used: Lists::List<Field>) -> () {
       KernelClaim::assert_safe_used_refs(rc, refs, used, 0, RBTreeMap::RBTreeMap::Nil);
-      assert_used_not_block(refs, used, 0)
+      assert_used_not_block(refs, used, 0);
+      assert_used_in_order(rc, refs, used, 0)
+    }
+⟧
+
+  -- The walk's order assertion at every used reference of an inner record
+  -- (`KernelRoles::assert_in_order`): no `walk_ctx` passes them.
+
+def assert_used_in_order := aiur_fn⟦
+  fn assert_used_in_order(rc: KernelRoles::RoleCtx, refs: Lists::List<Bytes::AddressRef>,
+                          used: Lists::List<Field>, i: Field) -> () {
+      match (*(refs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(r, rest) => {
+          match KernelClaim::g_list_has(used, i) {
+            1 => {  KernelRoles::assert_in_order(rc, r) } ,
+            _ => {  () } ,
+          };
+          assert_used_in_order(rc, rest, used, i + 1) } ,
+      }
     }
 ⟧
 
@@ -1082,6 +1105,9 @@ def check_family := aiur_fn⟦
       let (rb, s1) = IxonDeserialize::get_address(s0);
       assert_eq!(Bytes::address_eq(rb, rec_block), 1,
         "model advice: the payload names another recursor family");
+      -- the family record is reached through the payload too (its members are bound to no
+      -- role: `assert_no_role` below)
+      KernelRoles::assert_in_order(rc, rec_block);
       let (n_a, s2) = get_count(s1);
       let (advice, s3) = get_addrs(s2, n_a);
       let (n_w, s4) = get_count(s3);
