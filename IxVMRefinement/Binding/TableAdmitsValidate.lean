@@ -514,6 +514,7 @@ theorem validate_role_evidence {t : Ix.Kernel.RoleTable} {ro : Ix.Kernel.Role}
       obtain ⟨rfl, -⟩ := eqns_equation_count_val hn ev313
       obtain ⟨arr, hmem, harr, hsize⟩ := found_of_len hsz hes heq322 hn0
       have hlenes : es.length = n.val := by rw [← harr, Array.length_toList, hsize]
+      have hlt256 : arr.size < 256 := by simpa using hsz _ hmem
       have hk := validate_eqns_equations_kinds 0 (by omega)
         (repList_heapMono₂ evListEnum evRep_heapMono₂
           (ev293.heap_extends.trans ev313.heap_extends) hlist)
