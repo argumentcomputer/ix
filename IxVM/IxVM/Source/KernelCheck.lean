@@ -1245,26 +1245,31 @@ def flat_originals_walk := aiur_fn⟦
     }
 ⟧
 
+  -- Whether an auxiliary entry has the occurrence identity `(target_addr, target_sp,
+  -- target_us)`: the same type, structurally the same parameters and the same levels (the
+  -- constructor side's `KernelModeled::aux_entry_in`).
+
 def aux_already_in := aiur_fn⟦
   fn aux_already_in(flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
                             target_addr: Bytes::AddressRef,
-                            target_sp: Lists::List<KernelTypes::KExpr>) -> Field {
+                            target_sp: Lists::List<KernelTypes::KExpr>,
+                            target_us: Lists::List<KernelTypes::KLevel>) -> Field {
       match (*(flat)) {
         Lists::Node::Nil => {  0 } ,
         Lists::Node::Cons(m, rest) => {
           match m {
-            (addr, is_aux, sp, _ou) => {
+            (addr, is_aux, sp, ou) => {
               match is_aux {
                 1 => {
                   match Bytes::address_eq(addr, target_addr) {
                     1 => {
-                      match spec_params_ptr_eq(sp, target_sp) {
+                      match spec_params_ptr_eq(sp, target_sp) * level_list_struct_eq(ou, target_us) {
                         1 => {  1 } ,
-                        _ => {  aux_already_in(rest, target_addr, target_sp) } ,
+                        _ => {  aux_already_in(rest, target_addr, target_sp, target_us) } ,
                       } } ,
-                    _ => {  aux_already_in(rest, target_addr, target_sp) } ,
+                    _ => {  aux_already_in(rest, target_addr, target_sp, target_us) } ,
                   } } ,
-                _ => {  aux_already_in(rest, target_addr, target_sp) } ,
+                _ => {  aux_already_in(rest, target_addr, target_sp, target_us) } ,
               } } ,
           } } ,
       }
@@ -1536,7 +1541,7 @@ def aux_from_recrs_walk_ex := aiur_fn⟦
                   let spec_params = extract_aux_spec_params_from_rec(
                     rec_ci, pnp);
                   let occ = extract_aux_occ_us(rec_ci);
-                  match aux_already_in(acc, parent_addr, spec_params) {
+                  match aux_already_in(acc, parent_addr, spec_params, occ) {
                     1 => {
                       aux_from_recrs_walk_ex(all_members, rest, rec_block_addr,
                         primary_parent_block, univ_offset, acc, pos + 1) } ,
@@ -1577,25 +1582,27 @@ def flat_find_pos_kind := aiur_fn⟦
                                target_addr: Bytes::AddressRef,
                                want_aux: Field,
                                want_sp: Lists::List<KernelTypes::KExpr>,
+                               want_us: Lists::List<KernelTypes::KLevel>,
                                pos: Field) -> (Field, Field) {
       match (*(flat)) {
         Lists::Node::Nil => {  (0, 0) } ,
         Lists::Node::Cons(m, rest) => {
           match m {
-            (member_addr, is_aux, sp, _ou) => {
+            (member_addr, is_aux, sp, ou) => {
               let addr_match = Bytes::address_eq(member_addr, target_addr);
               let kind_eq = match want_aux - is_aux {
                 0 => {  1 } ,
                 _ => {  0 } ,
               };
+              -- an auxiliary entry: the whole occurrence identity, levels included
               let sp_eq = match want_aux {
-                1 => {  spec_params_ptr_eq(sp, want_sp) } ,
+                1 => {  spec_params_ptr_eq(sp, want_sp) * level_list_struct_eq(ou, want_us) } ,
                 _ => {  1 } ,
               };
               match (addr_match * kind_eq) * sp_eq {
                 1 => {  (1, pos) } ,
                 _ => {  flat_find_pos_kind(rest, target_addr, want_aux,
-                                             want_sp, pos + 1) } ,
+                                             want_sp, want_us, pos + 1) } ,
               } } ,
           } } ,
       }
@@ -2421,7 +2428,7 @@ def nat_rec_check := aiur_fn⟦
       let gen_ty = nat_replace_pis(pw, n_p, tty, (&(KernelTypes::KExprNode::Forall(motive_ty, minors, pw))), 0);
       assert_eq!(wrap_rel(0, gen_ty, ty), 1,
         "native recursor: the stored type is not the generated one up to consumed wrappers");
-      let rec_c = find_peer_recursor_with_spec(rec_block_addr, parent_addr, (&(Lists::Node::Nil)), 0, addr);
+      let rec_c = find_peer_recursor_with_spec(rec_block_addr, parent_addr, (&(Lists::Node::Nil)), (&(Lists::Node::Nil)), 0, addr);
       nat_check_rules(rules, block, idx, parent_addr, lps, n_p, n_i, pw, num_ctors, univ_offset, tty,
         motive_ty, rec_c, build_rec_lvls_list(nlvls, 0), 0)
     }
@@ -2741,10 +2748,14 @@ def check_recursor_canonical_at := aiur_fn⟦
                 1 => {  extract_aux_spec_params_from_rec(rec_ci, pnp) } ,
                 _ => {  (&(Lists::Node::Nil)) } ,
               };
+              let rec_occ_us = match rec_is_aux {
+                1 => {  extract_aux_occ_us(rec_ci) } ,
+                _ => {  (&(Lists::Node::Nil)) } ,
+              };
 
               let kind_hit = flat_find_pos_kind(flat, parent_addr,
                                                       rec_is_aux,
-                                                      rec_spec_params, 0);
+                                                      rec_spec_params, rec_occ_us, 0);
               match kind_hit {
                 (1, self_pos) => {
                   canonical_rules_at_pos(rc, flat, self_pos, num_ctors,
@@ -3040,9 +3051,9 @@ def build_peer_recs := aiur_fn⟦
         Lists::Node::Nil => {  (&(Lists::Node::Nil)) } ,
         Lists::Node::Cons(m, rest) => {
           match m {
-            (member_addr, is_aux, sp, _ou) => {
+            (member_addr, is_aux, sp, ou) => {
               let peer = find_peer_recursor_with_spec(rec_block_addr,
-                member_addr, sp, is_aux, rec_self_addr);
+                member_addr, sp, ou, is_aux, rec_self_addr);
               (&(Lists::Node::Cons(peer,
                 build_peer_recs(rest, rec_block_addr, rec_self_addr)))) } ,
           } } ,
@@ -3050,10 +3061,14 @@ def build_peer_recs := aiur_fn⟦
     }
 ⟧
 
+  -- The recursor of the family record for a flat entry: for an auxiliary entry, the one
+  -- whose major premise has the entry's whole occurrence identity, levels included.
+
 def find_peer_recursor_with_spec := aiur_fn⟦
   fn find_peer_recursor_with_spec(block_addr: Bytes::AddressRef,
                                           target_ind_addr: Bytes::AddressRef,
                                           target_sp: Lists::List<KernelTypes::KExpr>,
+                                          target_us: Lists::List<KernelTypes::KLevel>,
                                           target_is_aux: Field,
                                           rec_self_addr: Bytes::AddressRef) -> Bytes::AddressRef {
       let block_c = Ingress::load_verified_constant(block_addr);
@@ -3062,7 +3077,7 @@ def find_peer_recursor_with_spec := aiur_fn⟦
           match info {
             Ixon::ConstantInfo::Muts(members) => {
               find_peer_rec_spec_walk(members, members, block_addr,
-                target_ind_addr, target_sp, target_is_aux, rec_self_addr, 0) } ,
+                target_ind_addr, target_sp, target_us, target_is_aux, rec_self_addr, 0) } ,
             _ => {  rec_self_addr } ,
           } } ,
       }
@@ -3074,6 +3089,7 @@ def find_peer_rec_spec_walk := aiur_fn⟦
                                      cur: Lists::List<Ixon::MutConst>, block_addr: Bytes::AddressRef,
                                      target_ind_addr: Bytes::AddressRef,
                                      target_sp: Lists::List<KernelTypes::KExpr>,
+                                     target_us: Lists::List<KernelTypes::KLevel>,
                                      target_is_aux: Field,
                                      rec_self_addr: Bytes::AddressRef, pos: Field) -> Bytes::AddressRef {
       match (*(cur)) {
@@ -3099,7 +3115,8 @@ def find_peer_rec_spec_walk := aiur_fn⟦
                         _ => {
                           let rec_sp = extract_aux_spec_params(ty, np,
                             nmot, nmin, ni, pnp);
-                          spec_params_ptr_eq(rec_sp, target_sp) } ,
+                          spec_params_ptr_eq(rec_sp, target_sp) *
+                            level_list_struct_eq(extract_aux_occ_us(rec_ci), target_us) } ,
                       } } ,
                     _ => {  0 } ,
                   } } ,
@@ -3109,12 +3126,12 @@ def find_peer_rec_spec_walk := aiur_fn⟦
                 1 => {  rec_wrapper } ,
                 _ => {
                   find_peer_rec_spec_walk(all_members, rest, block_addr,
-                    target_ind_addr, target_sp, target_is_aux,
+                    target_ind_addr, target_sp, target_us, target_is_aux,
                     rec_self_addr, pos + 1) } ,
               } } ,
             _ => {
               find_peer_rec_spec_walk(all_members, rest, block_addr,
-                target_ind_addr, target_sp, target_is_aux, rec_self_addr,
+                target_ind_addr, target_sp, target_us, target_is_aux, rec_self_addr,
                 pos + 1) } ,
           } } ,
       }
@@ -3502,8 +3519,8 @@ def is_rec_field_peel := aiur_fn⟦
           match KernelTypes::collect_spine(ty) {
             (head, args) => {
               match (*(head)) {
-                KernelTypes::KExprNode::Const(caddr, _) => {
-                  flat_find_matching(flat, caddr, args, spec_lift_by, 0) } ,
+                KernelTypes::KExprNode::Const(caddr, us) => {
+                  flat_find_matching(flat, caddr, us, args, spec_lift_by, 0) } ,
                 _ => {  (0, 0) } ,
               } } ,
           } } ,
@@ -3513,22 +3530,24 @@ def is_rec_field_peel := aiur_fn⟦
 
 def flat_find_matching := aiur_fn⟦
   fn flat_find_matching(flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
-                                caddr: Bytes::AddressRef, dom_args: Lists::List<KernelTypes::KExpr>,
+                                caddr: Bytes::AddressRef, us: Lists::List<KernelTypes::KLevel>,
+                                dom_args: Lists::List<KernelTypes::KExpr>,
                                 spec_lift_by: Field, pos: Field) -> (Field, Field) {
       match (*(flat)) {
         Lists::Node::Nil => {  (0, 0) } ,
         Lists::Node::Cons(m, rest) => {
           match m {
-            (member_addr, is_aux, sp, _) => {
+            (member_addr, is_aux, sp, ou) => {
               let addr_match = Bytes::address_eq(member_addr, caddr);
+              -- an auxiliary entry: its parameters and its levels (the occurrence identity)
               let spec_match = match is_aux {
                 0 => {  1 } ,
                 _ => {  spec_params_dom_prefix_match(sp, dom_args,
-                       spec_lift_by) } ,
+                       spec_lift_by) * level_list_struct_eq(ou, us) } ,
               };
               match addr_match * spec_match {
                 1 => {  (1, pos) } ,
-                _ => {  flat_find_matching(rest, caddr, dom_args,
+                _ => {  flat_find_matching(rest, caddr, us, dom_args,
                        spec_lift_by, pos + 1) } ,
               } } ,
           } } ,
