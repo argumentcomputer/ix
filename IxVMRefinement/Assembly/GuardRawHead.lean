@@ -104,7 +104,7 @@ set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
 
 private theorem head_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved (rawKey a)]
-    {c : ScopedCtx} (facts : ScopedCoreFacts c) (rootCalls : List (Call F)) :
+    {c : ScopedCtx} (facts : ScopedCoreBase c) (rootCalls : List (Call F)) :
     ∀ fuel : Nat, ∀ {d k : Nat} {Γ : Nat → KExpr} {R E : KExpr}
       {p budget r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
       calls.length ≤ fuel → CoreGood c calls → (∀ call ∈ calls, call ∈ rootCalls) →
@@ -145,9 +145,9 @@ private theorem head_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved 
       obtain ⟨cv, value, origin, hint, ptr, nl, ty, valuePtr, safety, hintPtr, loadedHeap,
         beforeInst, loadCalls, instCalls, found, arity, load, member, node, rawOrigin, extension,
         inst, loadSubset, _, valueRep, countEq, countBound⟩ :=
-          definition_value_keyed_raw_origin rawKey facts
+          definition_value_keyed_raw_origin_base rawKey facts
           (good.sub loadInside) addressRep scopedRep.const_key_ne paramsRep valueCall
-      obtain ⟨valueSemantic, valueScoped⟩ := definition_value_rep (d := d) (Γ := Γ) facts (good.sub loadInside)
+      obtain ⟨valueSemantic, valueScoped⟩ := definition_value_rep_base (d := d) (Γ := Γ) facts (good.sub loadInside)
         addressRep scopedRep.const_key_ne paramsRep valueCall
       have shorter : children.length < fuel := by
         rw [events] at length; simp only [List.length_cons, List.length_append] at length; omega
@@ -177,7 +177,7 @@ private theorem head_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved 
       obtain ⟨functionBound, functionRaw, functionRep, functionTrace⟩ :=
         ih first.length shorter1 (Nat.le_refl _) (good.sub firstInside)
           (fun call inside => subset call (firstInside call inside)) scopedFunc ⟨_, rawFunc⟩ functionCall
-      obtain ⟨functionSemantic, functionScoped, _⟩ := head_rep facts (good.sub firstInside) scopedFunc functionCall
+      obtain ⟨functionSemantic, functionScoped, _⟩ := head_rep_base facts (good.sub firstInside) scopedFunc functionCall
       obtain ⟨D, B, _, rfl, _, bodyScoped, _⟩ := functionScoped.lam_of_load lambda
       let common := max k functionBound
       obtain ⟨functionImage, functionExact⟩ := functionRep.weaken (show functionBound ≤ common from Nat.le_max_right _ _)
@@ -222,6 +222,20 @@ private theorem head_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved 
       exact ⟨bound, result, resultRep, .letE resultTrace⟩
 
 /-- The actual normalizer produces a raw trace whose delta steps contain their actual
+scoped-licensed definition loads, from the facts stated before the registry. No common-lookup or
+prefix-equality premise is assumed. -/
+theorem head_raw_trace_base (rawKey : _root_.Address → KKey) [∀ a, Resolved (rawKey a)]
+    {c : ScopedCtx} (facts : ScopedCoreBase c) {rootCalls : List (Call F)}
+    {d k : Nat} {Γ : Nat → KExpr} {R E : KExpr}
+    {p budget r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (good : CoreGood c calls) (subset : ∀ call ∈ calls, call ∈ rootCalls)
+    (scopedRep : Tm c.κ d Γ h 0 E p) (physical : RawExprRep rawKey h k R p)
+    (observed : ObsFn W "KernelGuard::head" [p, budget] h r h' calls) :
+    ∃ bound result, RawExprRep rawKey h' bound result r ∧
+      RawHeadTrace (RawDeltaAt c rawKey rootCalls) R result :=
+  head_raw_go rawKey facts rootCalls calls.length (Nat.le_refl _) good subset scopedRep physical observed
+
+/-- The actual normalizer produces a raw trace whose delta steps contain their actual
 scoped-licensed definition loads. No common-lookup or prefix-equality premise is assumed. -/
 theorem head_raw_trace (rawKey : _root_.Address → KKey) [∀ a, Resolved (rawKey a)]
     {c : ScopedCtx} (facts : ScopedCoreFacts c) {rootCalls : List (Call F)}
@@ -232,6 +246,6 @@ theorem head_raw_trace (rawKey : _root_.Address → KKey) [∀ a, Resolved (rawK
     (observed : ObsFn W "KernelGuard::head" [p, budget] h r h' calls) :
     ∃ bound result, RawExprRep rawKey h' bound result r ∧
       RawHeadTrace (RawDeltaAt c rawKey rootCalls) R result :=
-  head_raw_go rawKey facts rootCalls calls.length (Nat.le_refl _) good subset scopedRep physical observed
+  head_raw_trace_base rawKey facts.base good subset scopedRep physical observed
 
 end IxVM.Refinement.Core.GuardData

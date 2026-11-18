@@ -11,8 +11,8 @@ alias at its model key.
 * `provisioned`: the list the install fold walks: each recursor's stored value, its two counts
   and its rules as read.
 * `provisionRecsRunJ_of_facts`: from the recursors' facts and `MembersReady`, the run over the
-  family package, the environment it leaves (every recursor stored without rules), and that this
-  environment extends the prefix and stores the aliases the renaming moves. -/
+  family package to the environment with every recursor stored without rules (`storeMembers`),
+  and that this environment extends the prefix and stores the aliases the renaming moves. -/
 
 namespace IxVM.Refinement.Decl.FamilyAlias
 
@@ -44,11 +44,10 @@ theorem provisionRecsRunJ_of_facts {env : Env .anon} {g h : KKey → KKey} {bn :
     ∀ (recs : List (ConstantInfo .anon)) (tys : List KExpr) (envAcc : Env .anon),
       recs.all isRecursor = true → MembersFacts env g recs tys →
       EnvExt env envAcc → AliasEnv envAcc h → MembersReady g h bn envAcc recs tys →
-      ∃ envSelf : Env .anon,
-        ProvisionRecsRunJ (renameJ (blockRen bn) (famJ h)) bn envAcc recs envSelf
-          (provisioned recs tys) ∧
-        EnvExt env envSelf ∧ AliasEnv envSelf h
-  | [], [], envAcc, _, _, hext, hA, _ => ⟨envAcc, ⟨rfl, rfl⟩, hext, hA⟩
+      ProvisionRecsRunJ (renameJ (blockRen bn) (famJ h)) bn envAcc recs
+          (storeMembers envAcc recs tys) (provisioned recs tys) ∧
+        EnvExt env (storeMembers envAcc recs tys) ∧ AliasEnv (storeMembers envAcc recs tys) h
+  | [], [], envAcc, _, _, hext, hA, _ => ⟨⟨rfl, rfl⟩, hext, hA⟩
   | [], _ :: _, _, _, hm, _, _, _ => nomatch hm
   | _ :: _, [], _, _, hm, _, _, _ => nomatch hm
   | ci :: rest, tyA :: tys, envAcc, hk, hm, hext, hA, hr => by
@@ -69,11 +68,15 @@ theorem provisionRecsRunJ_of_facts {env : Env .anon} {g h : KKey → KKey} {bn :
       hext.trans (envExt_cons_fresh hfresh' hnpt')
     have hA' : AliasEnv ⟨storedMember ci tyA :: envAcc.consts⟩ h :=
       hA.mono (fun hf => Ix.Kernel.Env.find?_cons_of_fresh hfresh' hf)
-    obtain ⟨envSelf, hrun, hextS, hAS⟩ :=
+    obtain ⟨hrun, hextS, hAS⟩ :=
       provisionRecsRunJ_of_facts hwf rest tys _ hk'.2 hrestF hext' hA' hready
+    have hcons : storeMembers envAcc (ci :: rest) (tyA :: tys) =
+        storeMembers ⟨storedMember ci tyA :: envAcc.consts⟩ rest tys := rfl
+    rw [hcons]
+    refine ⟨?_, hextS, hAS⟩
     cases ci with
     | recInfo cv mI rP rules =>
-      exact ⟨envSelf, ⟨_, mI, rP, rules, _, rfl, hmv, hrun, rfl⟩, hextS, hAS⟩
+      exact ⟨_, mI, rP, rules, _, rfl, hmv, hrun, rfl⟩
     | axiomInfo _ => exact absurd hk'.1 (by simp [isRecursor])
     | defnInfo _ _ _ => exact absurd hk'.1 (by simp [isRecursor])
     | thmInfo _ _ => exact absurd hk'.1 (by simp [isRecursor])

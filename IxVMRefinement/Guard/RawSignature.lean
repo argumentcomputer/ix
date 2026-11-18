@@ -42,9 +42,10 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM.Refinement.Decl (RawExprRep RawContext RawTypeAt RawDeltaAt RawSignatureTrace)
 open IxVM.Refinement.KernelLevels (RepKLevel)
 
-/-- Actual sort classification produces a trace of its exact represented signature. -/
-theorem sort_signature_raw_trace (rawKey : _root_.Address → KKey) [∀ a, Resolved (rawKey a)]
-    {c : ScopedCtx} (facts : ScopedCoreFacts c) {rootCalls : List (Call F)}
+/-- Actual sort classification produces a trace of its exact represented signature, from the
+facts stated before the registry. -/
+theorem sort_signature_raw_trace_base (rawKey : _root_.Address → KKey) [∀ a, Resolved (rawKey a)]
+    {c : ScopedCtx} (facts : ScopedCoreBase c) {rootCalls : List (Call F)}
     {d k : Nat} {Γ : Nat → KExpr} {R E : KExpr} {context : List KExpr}
     {p ctx r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (good : CoreGood c calls) (subset : ∀ call ∈ calls, call ∈ rootCalls)
@@ -57,17 +58,30 @@ theorem sort_signature_raw_trace (rawKey : _root_.Address → KKey) [∀ a, Reso
     infer, norm, loaded, encode, events⟩ := Obs.«KernelGuard::sort_signature».obs observed
   have firstInside : ∀ call ∈ first, call ∈ calls := by intro call member; rw [events]; simp [member]
   have headInside : ∀ call ∈ heads, call ∈ calls := by intro call member; rw [events]; simp [member]
-  obtain ⟨typeBound, typeRaw, typeRep, inferred⟩ := infer_raw_trace rawKey facts
+  obtain ⟨typeBound, typeRaw, typeRep, inferred⟩ := infer_raw_trace_base rawKey facts
     (good.sub firstInside) (fun call member => subset call (firstInside call member))
     types scopedRep rawCtx physical infer
-  obtain ⟨type, typeScoped⟩ := infer_shape_rep facts (good.sub firstInside) types scopedRep infer
-  obtain ⟨headBound, result, resultRep, headed⟩ := head_raw_trace rawKey facts
+  obtain ⟨type, typeScoped⟩ := infer_shape_rep_base facts (good.sub firstInside) types scopedRep infer
+  obtain ⟨headBound, result, resultRep, headed⟩ := head_raw_trace_base rawKey facts
     (good.sub headInside) (fun call member => subset call (headInside call member)) typeScoped typeRep norm
   obtain ⟨image, raw⟩ := resultRep
   obtain ⟨u, rfl, rfl, represented⟩ := raw.raw_sort_view loaded
   exact ⟨Ix.Kernel.Level.guardSignatureLevel u,
     IxVM.Refinement.Guard.signature_level_spec represented encode,
     typeRaw, u, inferred, headed, rfl⟩
+
+/-- Actual sort classification produces a trace of its exact represented signature. -/
+theorem sort_signature_raw_trace (rawKey : _root_.Address → KKey) [∀ a, Resolved (rawKey a)]
+    {c : ScopedCtx} (facts : ScopedCoreFacts c) {rootCalls : List (Call F)}
+    {d k : Nat} {Γ : Nat → KExpr} {R E : KExpr} {context : List KExpr}
+    {p ctx r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (good : CoreGood c calls) (subset : ∀ call ∈ calls, call ∈ rootCalls)
+    (types : c.types Γ h d ctx) (scopedRep : Tm c.κ d Γ h 0 E p)
+    (rawCtx : RawContext rawKey h context ctx) (physical : RawExprRep rawKey h k R p)
+    (observed : ObsFn W "KernelGuard::sort_signature" [p, ctx] h r h' calls) :
+    ∃ signature, RepKLevel h' signature r ∧
+      RawSignatureTrace (RawTypeAt c rawKey rootCalls) (RawDeltaAt c rawKey rootCalls) context R signature :=
+  sort_signature_raw_trace_base rawKey facts.base good subset types scopedRep rawCtx physical observed
 
 /-- An actual checked field chooses raw input/context data and produces a classifier trace
 whose signature has exactly the inferred sort's zero-set. All raw premises have producers here. -/

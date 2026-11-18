@@ -159,8 +159,9 @@ theorem _root_.IxVM.Refinement.Typing.NativeUnitStep.overUnitStep
 telescope, from the walk's facts.** The member's check is the walk's, observed under the role
 context at the limit `lim` (a carried limit within `G`); `Ec` is a record store for `R` the
 check is read at; `R` holds the block's records and every blob the run loaded. `hread` is the
-reading of a projection guard's run; `hfieldsR` is the reading of the classifier's field loop
-over the witness store `R`. With the sorts the table stage ran at it gives the certificate of
+reading of a projection guard's run; `hfieldsR` is the reading of the classifier's field loop at
+the block `B` over the witness store `R` (`Guard.CheckedSortsReadingAtBlock`: only the loop at
+`B` is read, so `R` need not hold what the loops at other blocks load). With the sorts the table stage ran at it gives the certificate of
 the new projection table over `R` (`blockCert_of_reading_lim`), which is then its certificate
 over every record store for `R` (`BlockCert.recordsFor`). The run store gives that reading over
 a store that holds the run store's records and blobs (`Guard.CheckedSortsReadingAt.stepStore`);
@@ -186,7 +187,7 @@ theorem overUnitStep_nativeBlockTele {L : Ix.Kernel.Env .anon → NativeFam .ano
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
     (hcov : L1.CanonicalHashCoverage Ec calls)
-    (hread : Core.ProjGuardRunReading) (hfieldsR : Guard.CheckedSortsReadingAt calls R) :
+    (hread : Core.ProjGuardRunReading) (hfieldsR : Guard.CheckedSortsReadingAtBlock calls R B) :
     OverUnitStep.{u} L t G R envT E₀ B cb :=
   NativeUnitStep.overUnitStep (Stores := fun E => RecordsFor R E) hRc hcn hln (fun E hE => hE)
     hfree
