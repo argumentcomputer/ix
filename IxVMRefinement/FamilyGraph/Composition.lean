@@ -83,10 +83,14 @@ structure FamilyRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
     (∀ m ∈ ms.toList, ∃ r, m = Ixon.MutConst.recr r) →
     (∃ x, ConstAddrOf A c x ∧ ¬ StoredAt t envT x) →
     (∃ B, fam B = some A) ∨ ∃ B, twin A = some B
-  /-- A top-walked block the run routes as modeled, with a constant address the witness's
-  environment does not store, has a family record (possibly empty). A block the witness
-  already stores is no unit: the fold does not step it. -/
-  modeled : ∀ B cb, Top B → recordOf E₀ B = some cb → ModeledRouteAt calls B →
+  /-- A top-walked block of inductive types the run routes as modeled, with a constant address
+  the witness's environment does not store, has a family record (possibly empty). A block the
+  witness already stores is no unit: the fold does not step it. (`ModeledRouteAt` reads the
+  run's observations of the dispatch, so it holds of a record the dispatch never saw: the field
+  is asked of blocks of inductive types only, the records the dispatch reads.) -/
+  modeled : ∀ B cb (ms : Array Ixon.MutConst), Top B → recordOf E₀ B = some cb →
+    cb.info = .muts ms → (∀ m ∈ ms.toList, ∃ ind, m = Ixon.MutConst.indc ind) →
+    ModeledRouteAt calls B →
     (∃ x, ConstAddrOf B cb x ∧ ¬ StoredAt t envT x) → ∃ rb, fam B = some rb
   famCall : ∀ B rb, fam B = some rb → ModeledRouteAt calls B ∧
     ∃ bAddr cs, FamilyCallAtLim calls bAddr t B rb lim cs ∧
@@ -267,9 +271,11 @@ theorem topUnitSteps_family
       ht hW.runStore hW.hashedStored hctx.toStepStore hcanon hinert hcover hchk hns
       (fun x hx => keyFree_of_not_stored hctx.shape ht (hns x hx))
       env hext hnd hinv hXe href hfresh
-  have hnoFam : (∃ x, ConstAddrOf A c x ∧ ¬ StoredAt t envT x) → ¬ ModeledRouteAt calls A := by
-    intro hun hroute
-    obtain ⟨rb, hrb⟩ := hFR.modeled A c hT hc hroute hun
+  have hnoFam : ∀ ms : Array Ixon.MutConst, c.info = .muts ms →
+      (∀ m ∈ ms.toList, ∃ ind, m = Ixon.MutConst.indc ind) →
+      (∃ x, ConstAddrOf A c x ∧ ¬ StoredAt t envT x) → ¬ ModeledRouteAt calls A := by
+    intro ms hinfo hall hun hroute
+    obtain ⟨rb, hrb⟩ := hFR.modeled A c ms hT hc hinfo hall hroute hun
     rw [hfa] at hrb
     cases hrb
   -- a step is asked only at an environment that extends the witness's and stores none of the
@@ -304,13 +310,15 @@ theorem topUnitSteps_family
           · exact step nativeBlockOtherTelescope ⟨ind, hrec, hnat, hother⟩
         · have hx0 := constAddr_member0 (A := A) hinfo (by simp)
           exact byUnit _ hx0 fun hns =>
-            hnoFam ⟨_, hx0, hns⟩ (modeled_of_offNativeRoute hW.runStore hctx.toStepStore hcanon
+            hnoFam _ hinfo (fun m hm => ⟨ind, by simpa using hm⟩) ⟨_, hx0, hns⟩
+              (modeled_of_offNativeRoute hW.runStore hctx.toStepStore hcanon
               hrec hchk hnat).1
       · rcases hW.otherBlock_cases hT hc hinfo hdefs (fun ind h => hone ⟨ind, h⟩) with
           ⟨hsize, hall⟩ | ⟨hpos, hall⟩
         · have hx0 := constAddr_member0 (A := A) hinfo (by omega)
           exact byUnit _ hx0 fun hns =>
-            hnoFam ⟨_, hx0, hns⟩ (modeledRouteAt_of_multi ht hctx.toStepStore hc hinfo hsize hall).1
+            hnoFam ms hinfo hall ⟨_, hx0, hns⟩
+              (modeledRouteAt_of_multi ht hctx.toStepStore hc hinfo hsize hall).1
         · have hx0 := constAddr_member0 (A := A) hinfo hpos
           exact byUnit _ hx0 fun hns => by
             rcases hFR.claimed A c ms hT hc hinfo hpos hall ⟨_, hx0, hns⟩ with ⟨B, hB⟩ | ⟨B, hB⟩
