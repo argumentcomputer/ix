@@ -1,0 +1,952 @@
+{
+  "schema": "ix-single-gpu-preparation-comparison/1",
+  "date_utc": "2026-11-14",
+  "base_commit": "4e27c5fcdaef0a7258e4e42693c695881a19e5e9",
+  "scope": "Isolated native execution and fresh GPU proof generation on retained immutable records; not whole ix prove or a two-child aggregation join.",
+  "method": {
+    "samples_per_version": 3,
+    "order": "baseline then candidate for each workload",
+    "first_sample": "Includes first proof preparation in that process; no proof or witness cache is reused.",
+    "remaining_samples": "Fresh witnesses and proofs; execution, backend and layout reused.",
+    "comparison_requires": [
+      "identical source-input hashes and config",
+      "identical program, key, parameters, actual executor and execution counts",
+      "identical layouts, retention, pipeline and population providers",
+      "every proof verifies and all proof bytes agree within a workload",
+      "zero record-pool reservation after release"
+    ],
+    "resource_policy": "One GPU, default CPU width, idle-host guard with competing-work preemption.",
+    "population": {
+      "AIUR_GPU_TRACE": "cpu",
+      "AIUR_TRACE_ONLY_LOOKUPS": "1"
+    },
+    "build_command": "cargo build --release --locked --offline -p ix-prover --features cuda,native --example profile_proof"
+  },
+  "host": {
+    "date_utc": "2026-11-14T00:30:00.837412+00:00",
+    "cpu_model": "Intel(R) Xeon(R) Platinum 8559C",
+    "logical_cpus_available": 32,
+    "memory": {
+      "MemTotal": "261815268 kB",
+      "MemAvailable": "239184272 kB",
+      "Shmem": "8831616 kB"
+    },
+    "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-5b5ae21a-3cca-06b8-030c-e722c78b7e1a, 97887 MiB, 595.91.07",
+    "thread_overrides": {
+      "RAYON_NUM_THREADS": null,
+      "CARGO_BUILD_JOBS": null,
+      "OMP_NUM_THREADS": null
+    }
+  },
+  "cuda_library": {
+    "cuda_library": "/home/sam/repos/ix.ci-merge-tests/.worktrees/aiur-single-gpu/target/release/build/multi-stark-45f1f6ccb5b84cf1/out/libmulti_stark_cuda.so",
+    "cuda_library_sha256": "65242e01650f4424d75d1a2a44f1c151fa43119e1b869b479297ea7acd9e6d58"
+  },
+  "preparation_sources": {
+    "crates/aiur/src/trace/stark.rs": {
+      "baseline_sha256": "800601e0846d7f9498afe5270c94f300419c2475b5de0dc55bfaa78f912de072",
+      "candidate_sha256": "cb2d3d9e879e794b6c0f8ca046cf7d3c5e31ceec4a1d02b1adda62f316b1819d"
+    },
+    "crates/aiur/src/trace/stark/streaming.rs": {
+      "baseline_sha256": "bdee45b6b28625cc22917fb10b1a42b42406a83130b4e26d4299d25bf43d5cba",
+      "candidate_sha256": "baf7476d7f437d006c898851b66cdf18763cfb96ca9aa4c78c0f7044d35b5450"
+    }
+  },
+  "workloads": {
+    "recursion": {
+      "comparison": {
+        "scope": "matched single-job proof samples; overlapping phase times are not additive",
+        "verified_identical_proofs": true,
+        "samples": [
+          3,
+          3
+        ],
+        "execution_seconds_single_observation": [
+          3.241920153,
+          3.243723233
+        ],
+        "median_metrics": {
+          "proof_wall_seconds": {
+            "before": 2.2625382,
+            "after": 2.101047959,
+            "change_percent": -7.137569699375668
+          },
+          "preparation_seconds": {
+            "before": 0.229833058,
+            "after": 0.072657784,
+            "change_percent": -68.38671310721541
+          },
+          "initial_validation_seconds": {
+            "before": 0.026663624,
+            "after": 0.026308491,
+            "change_percent": -1.3319007198721367
+          },
+          "depth_ranges_seconds": {
+            "before": 0.189908131,
+            "after": 0.027541822,
+            "change_percent": -85.49729184581359
+          },
+          "repeated_validation_seconds": {
+            "before": 0.00206861,
+            "after": 6.4e-08,
+            "change_percent": -99.99690613503753
+          },
+          "witness_stall_seconds": {
+            "before": 0.551874909,
+            "after": 0.553202379,
+            "change_percent": 0.24053820500833378
+          },
+          "backend_seconds": {
+            "before": 1.472491127,
+            "after": 1.472479841,
+            "change_percent": -0.0007664562314269041
+          }
+        }
+      },
+      "driver_sha256": "71c38dfc914cd046e65601ffba1948fd2dd9620db74698f990850e9d0e8adfa5",
+      "versions": {
+        "baseline": {
+          "binary": "target/single-gpu-research/bin/baseline-profile_proof",
+          "binary_sha256": "c7a4580ae58c044eea21b548b408b4317996ab8a9a5a6707a706e2615aabf34e",
+          "raw_report": "target/single-gpu-research/baseline-recursion-3.jsonl",
+          "raw_report_sha256": "be12b4955e24d0a742c61fa6aee9727bedec316bc37deee47a328a400989c38b",
+          "input": {
+            "allocator": "mimalloc",
+            "artifact_blake3": "5861d825d7988af23a400af23a7ef6380fb615597cd779794bc97f08de369101",
+            "config_blake3": "35b98edcfc289418d1e9e8a7136aad9904ba95c326dff7ea957c9358dc18bd86",
+            "event": "input",
+            "package": "/home/sam/repos/ix.aiur-compression-active/.lake/aiur/stark-export-5861d825d7988af23a400af23a7ef6380fb615597cd779794bc97f08de369101.ixa",
+            "schema": "ix-single-job-profile/1",
+            "sources": [
+              {
+                "blake3": "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86",
+                "bytes": 273337,
+                "path": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init-raw-root/root-vk.bin"
+              },
+              {
+                "blake3": "c67d7ce5ac847836c4962eef2eadc71de89c08577e63d25f1982a145c09a6908",
+                "bytes": 160,
+                "path": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init-raw-root/root-claims.bin"
+              },
+              {
+                "blake3": "552154c3622f5c737366dbe379a7b7e97560f20865410d142d65fc58bec64399",
+                "bytes": 5438702,
+                "path": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init-raw-root/root-proof.bin"
+              }
+            ],
+            "workload": {
+              "claims": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init-raw-root/root-claims.bin",
+              "key": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init-raw-root/root-vk.bin",
+              "kind": "recursive_proof",
+              "proof": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init-raw-root/root-proof.bin"
+            },
+            "workload_blake3": "258a86296d65600cf468bf5b4c911ba39eca0353f3df052fcaf121744e1522b3"
+          },
+          "execution": {
+            "artifact_blake3": "5861d825d7988af23a400af23a7ef6380fb615597cd779794bc97f08de369101",
+            "binding_seconds": 0.003651407,
+            "config": {
+              "options": {
+                "device": 0,
+                "fixed_log_heights": null,
+                "layout": null,
+                "layout_file": null,
+                "max_cells": 1500000000,
+                "max_device_bytes": null,
+                "max_ram_bytes": 26088568116,
+                "max_rows": null,
+                "packing": null,
+                "pipeline": null,
+                "retention": "auto"
+              },
+              "record_limit_bytes": 68719476736,
+              "require_native": true,
+              "samples": 3
+            },
+            "cuda_build": true,
+            "entry": "MultiStark::verify_multi_stark_proof",
+            "event": "execution",
+            "execution_seconds": 3.241920153,
+            "executor": "native-verifier",
+            "instructions": 2936240598,
+            "key_blake3": "f9b9335605a33cc7ca066df9ba0f44d996962d9dac2f6de11655afefbe50eda9",
+            "parameters": {
+              "commit_proof_of_work_bits": 0,
+              "log_blowup": 2,
+              "num_queries": 100,
+              "query_proof_of_work_bits": 20
+            },
+            "preparation": {
+              "advice_metadata_bytes": 144,
+              "advice_payload_bytes": 5712295,
+              "advice_reserved_bytes": 5712583,
+              "hint_preparation_seconds": 0.003647569
+            },
+            "queries": 7370239,
+            "record_storage": {
+              "query_index_estimate_bytes": 110937196,
+              "query_payload_bytes": 1426760960,
+              "query_vector_capacity_bytes": 1551737552,
+              "rom_index_estimate_bytes": 37748752,
+              "rom_payload_bytes": 121738920,
+              "rom_vector_capacity_bytes": 224663392
+            },
+            "reserved_bytes": 2135851612,
+            "schema": "ix-single-job-profile/1",
+            "setup_seconds": 0.015570133
+          },
+          "plan": {
+            "shards": 1,
+            "retention": "retain",
+            "pipelined": false,
+            "stage1_cells": 868044591,
+            "shard_cells": 1288243787,
+            "device_record_bytes": 0,
+            "budget_bytes": 26088568116,
+            "device_budget_bytes": 86679473350,
+            "fits": true
+          },
+          "samples": [
+            {
+              "encoding_seconds": 0.009730502,
+              "peak_resident_bytes": 8199364608,
+              "proof_blake3": "17f7060b3a89a6ed48e9e6bc4a3ac872a1c2959ce73f25c78626af5ae159d32b",
+              "proof_bytes": 5232186,
+              "proving_seconds": 1.653573301,
+              "sample": 0,
+              "trace_seconds": 0.781707092,
+              "verification_seconds": 0.031561749,
+              "verified": true,
+              "wall_seconds": 2.435298271,
+              "preparation": {
+                "auxiliary_counts_seconds": 0.007893153,
+                "depth_ranges_seconds": 0.189908131,
+                "layout_seconds": 0.003565476,
+                "metadata_seconds": 0.001801153,
+                "upload_seconds": 4.4e-08,
+                "validation_seconds": 0.026663624
+              },
+              "preparation_seconds": 0.229833058,
+              "witness_supplies": 1,
+              "repeated_validation_seconds": 0.001906494,
+              "population_seconds": 0.551874034,
+              "witness_stall_seconds": 0.551874909
+            },
+            {
+              "encoding_seconds": 0.011532743,
+              "peak_resident_bytes": 8883171328,
+              "proof_blake3": "17f7060b3a89a6ed48e9e6bc4a3ac872a1c2959ce73f25c78626af5ae159d32b",
+              "proof_bytes": 5232186,
+              "proving_seconds": 1.467212046,
+              "sample": 1,
+              "trace_seconds": 0.795307738,
+              "verification_seconds": 0.031610542,
+              "verified": true,
+              "wall_seconds": 2.2625382,
+              "preparation": {
+                "auxiliary_counts_seconds": 0.008208229,
+                "depth_ranges_seconds": 0.195668162,
+                "layout_seconds": 0.010978773,
+                "metadata_seconds": 0.002019135,
+                "upload_seconds": 7.8e-08,
+                "validation_seconds": 0.026687378
+              },
+              "preparation_seconds": 0.243563114,
+              "witness_supplies": 1,
+              "repeated_validation_seconds": 0.002137756,
+              "population_seconds": 0.551744624,
+              "witness_stall_seconds": 0.551745942
+            },
+            {
+              "encoding_seconds": 0.009804751,
+              "peak_resident_bytes": 8883171328,
+              "proof_blake3": "17f7060b3a89a6ed48e9e6bc4a3ac872a1c2959ce73f25c78626af5ae159d32b",
+              "proof_bytes": 5232186,
+              "proving_seconds": 1.472491127,
+              "sample": 2,
+              "trace_seconds": 0.782641154,
+              "verification_seconds": 0.031634424,
+              "verified": true,
+              "wall_seconds": 2.255151575,
+              "preparation": {
+                "auxiliary_counts_seconds": 0.008103426,
+                "depth_ranges_seconds": 0.178646665,
+                "layout_seconds": 0.010968788,
+                "metadata_seconds": 0.001957855,
+                "upload_seconds": 8.1e-08,
+                "validation_seconds": 0.025837434
+              },
+              "preparation_seconds": 0.225515761,
+              "witness_supplies": 1,
+              "repeated_validation_seconds": 0.00206861,
+              "population_seconds": 0.557125393,
+              "witness_stall_seconds": 0.557126413
+            }
+          ],
+          "record_release": {
+            "event": "record_release",
+            "pool_peak_reserved_bytes": 2156609823,
+            "pool_reserved_bytes": 0,
+            "schema": "ix-single-job-profile/1",
+            "seconds": 0.000678394
+          }
+        },
+        "candidate": {
+          "binary": "target/single-gpu-research/bin/candidate-profile_proof",
+          "binary_sha256": "0e8f7e757df5ad1ad44aa2bbde774c736644deeb4dc131ebfa511e4a104184d1",
+          "raw_report": "target/single-gpu-research/candidate-recursion-3.jsonl",
+          "raw_report_sha256": "1511e36cb15f57b3b57833ea42b326d214f42513ef60285584cbfdf8c1abf5c8",
+          "input": {
+            "allocator": "mimalloc",
+            "artifact_blake3": "5861d825d7988af23a400af23a7ef6380fb615597cd779794bc97f08de369101",
+            "config_blake3": "35b98edcfc289418d1e9e8a7136aad9904ba95c326dff7ea957c9358dc18bd86",
+            "event": "input",
+            "package": "/home/sam/repos/ix.aiur-compression-active/.lake/aiur/stark-export-5861d825d7988af23a400af23a7ef6380fb615597cd779794bc97f08de369101.ixa",
+            "schema": "ix-single-job-profile/1",
+            "sources": [
+              {
+                "blake3": "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86",
+                "bytes": 273337,
+                "path": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init-raw-root/root-vk.bin"
+              },
+              {
+                "blake3": "c67d7ce5ac847836c4962eef2eadc71de89c08577e63d25f1982a145c09a6908",
+                "bytes": 160,
+                "path": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init-raw-root/root-claims.bin"
+              },
+              {
+                "blake3": "552154c3622f5c737366dbe379a7b7e97560f20865410d142d65fc58bec64399",
+                "bytes": 5438702,
+                "path": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init-raw-root/root-proof.bin"
+              }
+            ],
+            "workload": {
+              "claims": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init-raw-root/root-claims.bin",
+              "key": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init-raw-root/root-vk.bin",
+              "kind": "recursive_proof",
+              "proof": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init-raw-root/root-proof.bin"
+            },
+            "workload_blake3": "258a86296d65600cf468bf5b4c911ba39eca0353f3df052fcaf121744e1522b3"
+          },
+          "execution": {
+            "artifact_blake3": "5861d825d7988af23a400af23a7ef6380fb615597cd779794bc97f08de369101",
+            "binding_seconds": 0.003672463,
+            "config": {
+              "options": {
+                "device": 0,
+                "fixed_log_heights": null,
+                "layout": null,
+                "layout_file": null,
+                "max_cells": 1500000000,
+                "max_device_bytes": null,
+                "max_ram_bytes": 26088568116,
+                "max_rows": null,
+                "packing": null,
+                "pipeline": null,
+                "retention": "auto"
+              },
+              "record_limit_bytes": 68719476736,
+              "require_native": true,
+              "samples": 3
+            },
+            "cuda_build": true,
+            "entry": "MultiStark::verify_multi_stark_proof",
+            "event": "execution",
+            "execution_seconds": 3.243723233,
+            "executor": "native-verifier",
+            "instructions": 2936240598,
+            "key_blake3": "f9b9335605a33cc7ca066df9ba0f44d996962d9dac2f6de11655afefbe50eda9",
+            "parameters": {
+              "commit_proof_of_work_bits": 0,
+              "log_blowup": 2,
+              "num_queries": 100,
+              "query_proof_of_work_bits": 20
+            },
+            "preparation": {
+              "advice_metadata_bytes": 144,
+              "advice_payload_bytes": 5712295,
+              "advice_reserved_bytes": 5712583,
+              "hint_preparation_seconds": 0.003668841
+            },
+            "queries": 7370239,
+            "record_storage": {
+              "query_index_estimate_bytes": 110937196,
+              "query_payload_bytes": 1426760960,
+              "query_vector_capacity_bytes": 1551737552,
+              "rom_index_estimate_bytes": 37748752,
+              "rom_payload_bytes": 121738920,
+              "rom_vector_capacity_bytes": 224663392
+            },
+            "reserved_bytes": 2135851612,
+            "schema": "ix-single-job-profile/1",
+            "setup_seconds": 0.015570829
+          },
+          "plan": {
+            "shards": 1,
+            "retention": "retain",
+            "pipelined": false,
+            "stage1_cells": 868044591,
+            "shard_cells": 1288243787,
+            "device_record_bytes": 0,
+            "budget_bytes": 26088568116,
+            "device_budget_bytes": 86679473350,
+            "fits": true
+          },
+          "samples": [
+            {
+              "encoding_seconds": 0.009578726,
+              "peak_resident_bytes": 8212144128,
+              "proof_blake3": "17f7060b3a89a6ed48e9e6bc4a3ac872a1c2959ce73f25c78626af5ae159d32b",
+              "proof_bytes": 5232186,
+              "proving_seconds": 1.655067023,
+              "sample": 0,
+              "trace_seconds": 0.617191402,
+              "verification_seconds": 0.031566522,
+              "verified": true,
+              "wall_seconds": 2.272275464,
+              "preparation": {
+                "auxiliary_counts_seconds": 0.008086136,
+                "depth_ranges_seconds": 0.028560036,
+                "layout_seconds": 0.003621782,
+                "metadata_seconds": 1.3431e-05,
+                "upload_seconds": 4.9e-08,
+                "validation_seconds": 0.027270393
+              },
+              "preparation_seconds": 0.067553064,
+              "witness_supplies": 1,
+              "repeated_validation_seconds": 6.1e-08,
+              "population_seconds": 0.549638338,
+              "witness_stall_seconds": 0.549639515
+            },
+            {
+              "encoding_seconds": 0.010456997,
+              "peak_resident_bytes": 8878985216,
+              "proof_blake3": "17f7060b3a89a6ed48e9e6bc4a3ac872a1c2959ce73f25c78626af5ae159d32b",
+              "proof_bytes": 5232186,
+              "proving_seconds": 1.468609437,
+              "sample": 1,
+              "trace_seconds": 0.625859067,
+              "verification_seconds": 0.031613079,
+              "verified": true,
+              "wall_seconds": 2.094486279,
+              "preparation": {
+                "auxiliary_counts_seconds": 0.008198644,
+                "depth_ranges_seconds": 0.027238172,
+                "layout_seconds": 0.010918034,
+                "metadata_seconds": 9.445e-06,
+                "upload_seconds": 5.5e-08,
+                "validation_seconds": 0.026292229
+              },
+              "preparation_seconds": 0.072657784,
+              "witness_supplies": 1,
+              "repeated_validation_seconds": 7.7e-08,
+              "population_seconds": 0.553201283,
+              "witness_stall_seconds": 0.553202379
+            },
+            {
+              "encoding_seconds": 0.009677761,
+              "peak_resident_bytes": 8878985216,
+              "proof_blake3": "17f7060b3a89a6ed48e9e6bc4a3ac872a1c2959ce73f25c78626af5ae159d32b",
+              "proof_bytes": 5232186,
+              "proving_seconds": 1.472479841,
+              "sample": 2,
+              "trace_seconds": 0.6285505459999999,
+              "verification_seconds": 0.031584029,
+              "verified": true,
+              "wall_seconds": 2.101047959,
+              "preparation": {
+                "auxiliary_counts_seconds": 0.008187681,
+                "depth_ranges_seconds": 0.027541822,
+                "layout_seconds": 0.010851783,
+                "metadata_seconds": 9.415e-06,
+                "upload_seconds": 5.2e-08,
+                "validation_seconds": 0.026308491
+              },
+              "preparation_seconds": 0.072900608,
+              "witness_supplies": 1,
+              "repeated_validation_seconds": 6.4e-08,
+              "population_seconds": 0.555649938,
+              "witness_stall_seconds": 0.55565118
+            }
+          ],
+          "record_release": {
+            "event": "record_release",
+            "pool_peak_reserved_bytes": 2156609823,
+            "pool_reserved_bytes": 0,
+            "schema": "ix-single-job-profile/1",
+            "seconds": 0.000695755
+          }
+        }
+      }
+    },
+    "claim": {
+      "comparison": {
+        "scope": "matched single-job proof samples; overlapping phase times are not additive",
+        "verified_identical_proofs": true,
+        "samples": [
+          3,
+          3
+        ],
+        "execution_seconds_single_observation": [
+          92.204669893,
+          91.45296458
+        ],
+        "median_metrics": {
+          "proof_wall_seconds": {
+            "before": 49.34131647,
+            "after": 41.626920275,
+            "change_percent": -15.634759562385058
+          },
+          "preparation_seconds": {
+            "before": 9.215309423,
+            "after": 4.470041077,
+            "change_percent": -51.49331539705588
+          },
+          "initial_validation_seconds": {
+            "before": 0.785001159,
+            "after": 0.797157796,
+            "change_percent": 1.548613891919115
+          },
+          "depth_ranges_seconds": {
+            "before": 7.598694341,
+            "after": 3.04516368,
+            "change_percent": -59.92517209740467
+          },
+          "repeated_validation_seconds": {
+            "before": 9.049639732,
+            "after": 6.792e-06,
+            "change_percent": -99.9999249472885
+          },
+          "witness_stall_seconds": {
+            "before": 9.829476337,
+            "after": 3.383922055,
+            "change_percent": -65.57373008506791
+          },
+          "backend_seconds": {
+            "before": 30.324543069,
+            "after": 33.621150472,
+            "change_percent": 10.871086814066565
+          }
+        }
+      },
+      "driver_sha256": "4da3ab545ef0a17d5077b682eeec07b3bd588724c0e6db380d46c540273a976b",
+      "versions": {
+        "baseline": {
+          "binary": "target/single-gpu-research/bin/baseline-profile_proof-models",
+          "binary_sha256": "0dba7e02e2fd6872ac1fd81e364d488b20e876b2c45fa8534b2fd74d675c561f",
+          "raw_report": "target/single-gpu-research/baseline-claim-models-3.jsonl",
+          "raw_report_sha256": "58f39b8e3fb446148d86ecfa884a83231144c9e9bfafccef3ad284f5c7717038",
+          "input": {
+            "allocator": "mimalloc",
+            "artifact_blake3": "5bce5f797cd03bf76f6e70404f046baf7ecb90f7b9a76995b6ee8c62d31a1b08",
+            "config_blake3": "35b98edcfc289418d1e9e8a7136aad9904ba95c326dff7ea957c9358dc18bd86",
+            "event": "input",
+            "package": "/home/sam/repos/ix.aiur-compression-active/.lake/aiur/ixvm-5bce5f797cd03bf76f6e70404f046baf7ecb90f7b9a76995b6ee8c62d31a1b08.ixa",
+            "schema": "ix-single-job-profile/1",
+            "sources": [
+              {
+                "blake3": "49c59538bb305d98e0a43c66ef6fb0fff9b2824a317dc0aa6bd94b17b5456e9c",
+                "bytes": 143518840,
+                "path": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init.ixe"
+              },
+              {
+                "blake3": "57b41c7a520e1a3a419ac58852f23ddb706e73d4f9f11545ccb2b0c906cf24c7",
+                "bytes": 2150825,
+                "path": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init.ixes"
+              },
+              {
+                "blake3": "62b6edc992293d7d0f56e83b9fbf283c14a151c53675d049dbca1e07add219c9",
+                "bytes": 52051,
+                "path": "/home/sam/repos/ix.ci-merge-tests/.worktrees/aiur-single-gpu/target/single-gpu-research/init-models.bin"
+              }
+            ],
+            "workload": {
+              "assume_binding": false,
+              "environment": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init.ixe",
+              "kind": "shard",
+              "manifest": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init.ixes",
+              "models": "/home/sam/repos/ix.ci-merge-tests/.worktrees/aiur-single-gpu/target/single-gpu-research/init-models.bin",
+              "shard": 0
+            },
+            "workload_blake3": "95603ebbd8166be742effff8ffa8b3f6c49e676d6b23898e8a484fc6ec21ce7a"
+          },
+          "execution": {
+            "artifact_blake3": "5bce5f797cd03bf76f6e70404f046baf7ecb90f7b9a76995b6ee8c62d31a1b08",
+            "binding_seconds": 1.634390379,
+            "config": {
+              "options": {
+                "device": 0,
+                "fixed_log_heights": null,
+                "layout": null,
+                "layout_file": null,
+                "max_cells": 1500000000,
+                "max_device_bytes": null,
+                "max_ram_bytes": 26088568116,
+                "max_rows": null,
+                "packing": null,
+                "pipeline": null,
+                "retention": "auto"
+              },
+              "record_limit_bytes": 68719476736,
+              "require_native": true,
+              "samples": 3
+            },
+            "cuda_build": true,
+            "entry": "IxVM::verify_claim",
+            "event": "execution",
+            "execution_seconds": 92.204669893,
+            "executor": "native-ixvm",
+            "instructions": 16119073541,
+            "key_blake3": "b7f25ae0205febd46a96cab8c43deff72e2bac1e0505ff2ce18febcd1df2c360",
+            "parameters": {
+              "commit_proof_of_work_bits": 0,
+              "log_blowup": 2,
+              "num_queries": 100,
+              "query_proof_of_work_bits": 20
+            },
+            "preparation": {
+              "advice_metadata_bytes": 15959536,
+              "advice_payload_bytes": 29523201,
+              "advice_reserved_bytes": 61442273,
+              "advice_seconds": 0.028522084,
+              "claim_digest": "fde8699521f649ed164f57ecb5885b7667fcedb62b84ea028c317712477d7407",
+              "hint_preparation_seconds": 0.120491117,
+              "owned_constants": 18698,
+              "witness_seconds": 1.477165984
+            },
+            "queries": 232362784,
+            "record_storage": {
+              "query_index_estimate_bytes": 3194878760,
+              "query_payload_bytes": 13840161016,
+              "query_vector_capacity_bytes": 16487987744,
+              "rom_index_estimate_bytes": 1207959568,
+              "rom_payload_bytes": 1896797472,
+              "rom_vector_capacity_bytes": 4925460208
+            },
+            "reserved_bytes": 32243475464,
+            "schema": "ix-single-job-profile/1",
+            "setup_seconds": 0.238689122
+          },
+          "plan": {
+            "shards": 22,
+            "retention": "regenerate",
+            "pipelined": true,
+            "stage1_cells": 10215028818,
+            "shard_cells": 1500000000,
+            "device_record_bytes": 0,
+            "budget_bytes": 26088568116,
+            "device_budget_bytes": 86679473350,
+            "fits": true
+          },
+          "samples": [
+            {
+              "encoding_seconds": 0.073910586,
+              "peak_resident_bytes": 44759846912,
+              "proof_blake3": "29fa2eb77d35a0b78b8b3e43c2fd8928c51b9a0a85ade94ab109d62e793417c0",
+              "proof_bytes": 37328905,
+              "proving_seconds": 30.606145343,
+              "sample": 0,
+              "trace_seconds": 38.113381323,
+              "verification_seconds": 0.260722148,
+              "verified": true,
+              "wall_seconds": 49.34131647,
+              "preparation": {
+                "auxiliary_counts_seconds": 0.24925326,
+                "depth_ranges_seconds": 7.598694341,
+                "layout_seconds": 0.371336345,
+                "metadata_seconds": 0.18569168,
+                "upload_seconds": 6.3e-08,
+                "validation_seconds": 0.776721695
+              },
+              "preparation_seconds": 9.181700138,
+              "witness_supplies": 43,
+              "repeated_validation_seconds": 9.049639732,
+              "population_seconds": 28.931681184999995,
+              "witness_stall_seconds": 9.553314298
+            },
+            {
+              "encoding_seconds": 0.072149772,
+              "peak_resident_bytes": 45907480576,
+              "proof_blake3": "29fa2eb77d35a0b78b8b3e43c2fd8928c51b9a0a85ade94ab109d62e793417c0",
+              "proof_bytes": 37328905,
+              "proving_seconds": 30.083841922,
+              "sample": 1,
+              "trace_seconds": 38.26853014500001,
+              "verification_seconds": 0.261255785,
+              "verified": true,
+              "wall_seconds": 49.269463468,
+              "preparation": {
+                "auxiliary_counts_seconds": 0.250003094,
+                "depth_ranges_seconds": 7.621944244,
+                "layout_seconds": 0.372882188,
+                "metadata_seconds": 0.185475871,
+                "upload_seconds": 4.5e-08,
+                "validation_seconds": 0.785001159
+              },
+              "preparation_seconds": 9.215309423,
+              "witness_supplies": 43,
+              "repeated_validation_seconds": 9.058199789,
+              "population_seconds": 29.053220722000006,
+              "witness_stall_seconds": 9.970151225
+            },
+            {
+              "encoding_seconds": 0.072611513,
+              "peak_resident_bytes": 45907480576,
+              "proof_blake3": "29fa2eb77d35a0b78b8b3e43c2fd8928c51b9a0a85ade94ab109d62e793417c0",
+              "proof_bytes": 37328905,
+              "proving_seconds": 30.324543069,
+              "sample": 2,
+              "trace_seconds": 38.33269888700001,
+              "verification_seconds": 0.261257189,
+              "verified": true,
+              "wall_seconds": 49.370499763,
+              "preparation": {
+                "auxiliary_counts_seconds": 0.2500192,
+                "depth_ranges_seconds": 7.560301267,
+                "layout_seconds": 0.371961403,
+                "metadata_seconds": 0.185821668,
+                "upload_seconds": 4.5e-08,
+                "validation_seconds": 0.848215857
+              },
+              "preparation_seconds": 9.216322883,
+              "witness_supplies": 43,
+              "repeated_validation_seconds": 9.011518923,
+              "population_seconds": 29.116376004000003,
+              "witness_stall_seconds": 9.829476337
+            }
+          ],
+          "record_release": {
+            "event": "record_release",
+            "pool_peak_reserved_bytes": 32483350325,
+            "pool_reserved_bytes": 0,
+            "schema": "ix-single-job-profile/1",
+            "seconds": 0.031077551
+          }
+        },
+        "candidate": {
+          "binary": "target/single-gpu-research/bin/candidate-profile_proof-models",
+          "binary_sha256": "b04a2f231222b8d15ff6e25734207d7e3a5ab174f69bf151b72196f82257cb4b",
+          "raw_report": "target/single-gpu-research/candidate-claim-models-3.jsonl",
+          "raw_report_sha256": "ea6045c7492611a50cd0453e0d8023cc1fe326cb3ee02a7ffd1c37b8947e2adc",
+          "input": {
+            "allocator": "mimalloc",
+            "artifact_blake3": "5bce5f797cd03bf76f6e70404f046baf7ecb90f7b9a76995b6ee8c62d31a1b08",
+            "config_blake3": "35b98edcfc289418d1e9e8a7136aad9904ba95c326dff7ea957c9358dc18bd86",
+            "event": "input",
+            "package": "/home/sam/repos/ix.aiur-compression-active/.lake/aiur/ixvm-5bce5f797cd03bf76f6e70404f046baf7ecb90f7b9a76995b6ee8c62d31a1b08.ixa",
+            "schema": "ix-single-job-profile/1",
+            "sources": [
+              {
+                "blake3": "49c59538bb305d98e0a43c66ef6fb0fff9b2824a317dc0aa6bd94b17b5456e9c",
+                "bytes": 143518840,
+                "path": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init.ixe"
+              },
+              {
+                "blake3": "57b41c7a520e1a3a419ac58852f23ddb706e73d4f9f11545ccb2b0c906cf24c7",
+                "bytes": 2150825,
+                "path": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init.ixes"
+              },
+              {
+                "blake3": "62b6edc992293d7d0f56e83b9fbf283c14a151c53675d049dbca1e07add219c9",
+                "bytes": 52051,
+                "path": "/home/sam/repos/ix.ci-merge-tests/.worktrees/aiur-single-gpu/target/single-gpu-research/init-models.bin"
+              }
+            ],
+            "workload": {
+              "assume_binding": false,
+              "environment": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init.ixe",
+              "kind": "shard",
+              "manifest": "/home/sam/repos/ix.aiur-compression-active/target/compress-wrap/init.ixes",
+              "models": "/home/sam/repos/ix.ci-merge-tests/.worktrees/aiur-single-gpu/target/single-gpu-research/init-models.bin",
+              "shard": 0
+            },
+            "workload_blake3": "95603ebbd8166be742effff8ffa8b3f6c49e676d6b23898e8a484fc6ec21ce7a"
+          },
+          "execution": {
+            "artifact_blake3": "5bce5f797cd03bf76f6e70404f046baf7ecb90f7b9a76995b6ee8c62d31a1b08",
+            "binding_seconds": 1.640833872,
+            "config": {
+              "options": {
+                "device": 0,
+                "fixed_log_heights": null,
+                "layout": null,
+                "layout_file": null,
+                "max_cells": 1500000000,
+                "max_device_bytes": null,
+                "max_ram_bytes": 26088568116,
+                "max_rows": null,
+                "packing": null,
+                "pipeline": null,
+                "retention": "auto"
+              },
+              "record_limit_bytes": 68719476736,
+              "require_native": true,
+              "samples": 3
+            },
+            "cuda_build": true,
+            "entry": "IxVM::verify_claim",
+            "event": "execution",
+            "execution_seconds": 91.45296458,
+            "executor": "native-ixvm",
+            "instructions": 16119073541,
+            "key_blake3": "b7f25ae0205febd46a96cab8c43deff72e2bac1e0505ff2ce18febcd1df2c360",
+            "parameters": {
+              "commit_proof_of_work_bits": 0,
+              "log_blowup": 2,
+              "num_queries": 100,
+              "query_proof_of_work_bits": 20
+            },
+            "preparation": {
+              "advice_metadata_bytes": 15959536,
+              "advice_payload_bytes": 29523201,
+              "advice_reserved_bytes": 61442273,
+              "advice_seconds": 0.026526235,
+              "claim_digest": "fde8699521f649ed164f57ecb5885b7667fcedb62b84ea028c317712477d7407",
+              "hint_preparation_seconds": 0.124055683,
+              "owned_constants": 18698,
+              "witness_seconds": 1.480909786
+            },
+            "queries": 232362784,
+            "record_storage": {
+              "query_index_estimate_bytes": 3194878760,
+              "query_payload_bytes": 13840161016,
+              "query_vector_capacity_bytes": 16487987744,
+              "rom_index_estimate_bytes": 1207959568,
+              "rom_payload_bytes": 1896797472,
+              "rom_vector_capacity_bytes": 4925460208
+            },
+            "reserved_bytes": 32243475464,
+            "schema": "ix-single-job-profile/1",
+            "setup_seconds": 0.234698455
+          },
+          "plan": {
+            "shards": 22,
+            "retention": "regenerate",
+            "pipelined": true,
+            "stage1_cells": 10215028818,
+            "shard_cells": 1500000000,
+            "device_record_bytes": 0,
+            "budget_bytes": 26088568116,
+            "device_budget_bytes": 86679473350,
+            "fits": true
+          },
+          "samples": [
+            {
+              "encoding_seconds": 0.075893356,
+              "peak_resident_bytes": 47828103168,
+              "proof_blake3": "29fa2eb77d35a0b78b8b3e43c2fd8928c51b9a0a85ade94ab109d62e793417c0",
+              "proof_bytes": 37328905,
+              "proving_seconds": 34.116546436,
+              "sample": 0,
+              "trace_seconds": 25.891241047999998,
+              "verification_seconds": 0.25727834,
+              "verified": true,
+              "wall_seconds": 41.626920275,
+              "preparation": {
+                "auxiliary_counts_seconds": 0.247226728,
+                "depth_ranges_seconds": 3.032195645,
+                "layout_seconds": 0.372485744,
+                "metadata_seconds": 4.5081e-05,
+                "upload_seconds": 4.6e-08,
+                "validation_seconds": 0.797157796
+              },
+              "preparation_seconds": 4.449113053,
+              "witness_supplies": 43,
+              "repeated_validation_seconds": 6.792e-06,
+              "population_seconds": 21.442127994999996,
+              "witness_stall_seconds": 3.061095298
+            },
+            {
+              "encoding_seconds": 0.070293303,
+              "peak_resident_bytes": 47828103168,
+              "proof_blake3": "29fa2eb77d35a0b78b8b3e43c2fd8928c51b9a0a85ade94ab109d62e793417c0",
+              "proof_bytes": 37328905,
+              "proving_seconds": 33.547390938,
+              "sample": 1,
+              "trace_seconds": 26.035204604,
+              "verification_seconds": 0.256344582,
+              "verified": true,
+              "wall_seconds": 41.671104982,
+              "preparation": {
+                "auxiliary_counts_seconds": 0.246950706,
+                "depth_ranges_seconds": 3.055673316,
+                "layout_seconds": 0.372100261,
+                "metadata_seconds": 4.2641e-05,
+                "upload_seconds": 4.7e-08,
+                "validation_seconds": 0.79527205
+              },
+              "preparation_seconds": 4.470041077,
+              "witness_supplies": 43,
+              "repeated_validation_seconds": 6.824e-06,
+              "population_seconds": 21.565163527,
+              "witness_stall_seconds": 3.653516387
+            },
+            {
+              "encoding_seconds": 0.071663514,
+              "peak_resident_bytes": 47828103168,
+              "proof_blake3": "29fa2eb77d35a0b78b8b3e43c2fd8928c51b9a0a85ade94ab109d62e793417c0",
+              "proof_bytes": 37328905,
+              "proving_seconds": 33.621150472,
+              "sample": 2,
+              "trace_seconds": 25.97566901699999,
+              "verification_seconds": 0.272976581,
+              "verified": true,
+              "wall_seconds": 41.481521397,
+              "preparation": {
+                "auxiliary_counts_seconds": 0.246829083,
+                "depth_ranges_seconds": 3.04516368,
+                "layout_seconds": 0.372644583,
+                "metadata_seconds": 4.7878e-05,
+                "upload_seconds": 5.5e-08,
+                "validation_seconds": 0.811603803
+              },
+              "preparation_seconds": 4.476291508,
+              "witness_supplies": 43,
+              "repeated_validation_seconds": 6.718e-06,
+              "population_seconds": 21.49937750899999,
+              "witness_stall_seconds": 3.383922055
+            }
+          ],
+          "record_release": {
+            "event": "record_release",
+            "pool_peak_reserved_bytes": 32483350325,
+            "pool_reserved_bytes": 0,
+            "schema": "ix-single-job-profile/1",
+            "seconds": 0.030897922
+          }
+        }
+      }
+    }
+  },
+  "validation": {
+    "parallel_streaming_tests": {
+      "passed": 16,
+      "failed": 0
+    },
+    "serial_streaming_tests": {
+      "passed": 16,
+      "failed": 0
+    },
+    "lean_acceptance_typecheck": "passed against existing dependency artifacts",
+    "lean_model_exporter": "compiled and linked from existing Ix objects; model export completed",
+    "lakefile_typecheck": "passed with the Lake plugin",
+    "full_workspace_tests": "not run",
+    "fresh_full_init_comparison": "not run"
+  },
+  "limitations": [
+    "Three proof samples share one execution per version; execution timings are single observations, not an executor speedup measurement.",
+    "Proof timings exclude environment/statement/model preparation, setup, execution, independent verification, serialization and destruction.",
+    "Phase metrics can overlap; phase medians and thread-seconds must not be added to infer wall time.",
+    "No end-to-end speedup, Mathlib result, generated/compiled GPU population result, or CPU executor improvement is established."
+  ],
+  "model_export": {
+    "source_sha256": "6124997dbcd4d1764ea39cec1715ae7f053fa1557e4e4011d178f19e93662966",
+    "reused_ix_link_arguments_sha256": "2b4b28c3af9e102eec0115ade74d9a0816973c812695d475884023b4453862cc",
+    "binary_sha256": "67d433e8951208b9a08659d075846ea0178fe3f09e828ff820b047354fc32864",
+    "compiled_dependency_root": "/home/sam/repos/ix.ci-merge-tests"
+  },
+  "excluded_failed_attempt": {
+    "report": "target/single-gpu-research/baseline-claim-3.jsonl",
+    "reason": "The .ixe environment omits model advice; execution failed on a missing KernelModeled payload. No proof was generated. Corrected claim profiles explicitly load and hash the exported model sidecar."
+  }
+}

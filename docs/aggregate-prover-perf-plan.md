@@ -27,7 +27,7 @@ Final compression, for context: Init 143.6 s (median of three warm runs) and
 Mathlib 168.1 s (one warm run, earlier binary). Both keep the 864-byte PLONK
 proof and report 285,614 gas for the verifier call. Aggregate execution and
 trace delivery dominate end to end, not compression. Measurements:
-`/home/sam/repos/ix.aiur-compression-active/docs/measurements/aiur-compression-l3-ladder.json`
+`docs/measurements/aiur-compression-l3-ladder.json`
 (Init) and `…/aiur-compression-mathlib-l3-ladder.json` (Mathlib).
 
 Since prove5, not yet measured on Mathlib:

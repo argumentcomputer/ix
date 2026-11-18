@@ -1,8 +1,16 @@
 # Single-GPU performance for Aiur proving
 
-Status: proposed design, based on source inspection and existing measurements
-on 2026-11-13. No new proving benchmarks were run for this analysis. Candidate
-speedups are unmeasured unless a measurement and its scope are cited below.
+Status: design with an initial host implementation. The source study and
+whole-Init baseline date from 2026-11-13; focused correctness checks and GPU
+comparisons on 2026-11-14 are recorded in §§7–8. The preparation changes cut
+median proof-generation time by 15.6% on one Init claim and 7.1% on a saved-root
+verifier workload. Full-command and execution speedups remain unmeasured.
+
+The [CPU execution and initial FRI research plan](aiur-fri-performance-research.md)
+extends this design with the compression findings through 2026-11-16, a full
+word-stream experiment, native execution profiling and the remaining GPU
+work. It gives the next experiment order; §§7–8 below retain the completed
+preparation work and its measurements.
 
 ## 1. Goal and scope
 
@@ -179,7 +187,12 @@ may cost only seconds. Stage 0's timeline decides whether it comes first;
 low risk alone doesn't put it ahead of the exposed execution waits (§I) or
 the unattributed acceptance time (§F).
 
-### B. Port word-sized I/O and transcripts to Goldilocks aggregation
+### B. Evaluate word streams for IxVM and Goldilocks aggregation
+
+The [word-stream design](aiur-fri-performance-research.md#33-full-word-streams)
+specifies the representation, correctness conditions and measurement matrix
+for both applications. Four-byte hints are a smaller ablation; their result
+does not decide whether removing byte-list allocations is worthwhile.
 
 [StarkIO](../MultiStark/MultiStark/Modules/StarkIO.lean) currently performs a
 hint, recursive call and list allocation per byte. Key deserialization and
@@ -208,8 +221,9 @@ Validate native and Aiur parsing/hash/challenge results against the existing
 implementation, including malformed encodings and all tail lengths. Source
 changes alter bytecode and circuits: regenerate native kernels, trace writers
 and key identities explicitly. Equality of consumed proof/transcript bytes
-does not imply equality of the newly generated outer proof bytes. Consider
-IxVM stream changes separately after aggregation establishes the benefit.
+does not imply equality of the newly generated outer proof bytes. Evaluate
+IxVM and aggregation separately, using their profiles to choose port order.
+Preserve the aggregation proof parser's existing indexed batched reads.
 
 ### C. Target native execution's remaining hot operations
 
@@ -238,47 +252,6 @@ queries and counts its proof needs. Compare complete records and proofs
 with the interpreter/reference path. Earlier constant-arity unrolling gave
 inconsistent results, and small historical variations of up to roughly 15%
 were attributable to code layout; use paired measurements, not one run.
-
-#### C2. Parallel interpreter execution (deferred)
-
-Status: design only, not implemented, 2026-11-15. CompressGL's execution
-over BN254 is about 30 s on one core in the warm L3 benchmark
-(`docs/measurements/aiur-compression-l3.json`), the largest serial phase of
-the ladder. A native executor is not planned: ixcc-compiled Lean is to
-replace the interpreter.
-
-Execution only affects completeness: the proof constrains every row, so a
-parallel executor needs to produce *a* valid record, not the sequential
-one. Aiur functions are pure and memoized, so two calls whose arguments
-are known are independent. The verifier has large independent subtrees:
-the 100 FRI queries (`Pcs::verify_one_query`) and the per-circuit
-constraint evaluations.
-
-What a parallel executor would have to handle:
-
-- **ROM addresses.** Memory is interned per width, with addresses assigned
-  in first-store order, and addresses are values in records (list and
-  stream pointers). Per-thread memories need a deterministic merge that
-  re-interns payloads and rewrites every address in query inputs and
-  outputs, or a shared concurrent interner with a canonical address order.
-- **Memo tables.** Per-thread query tables need a merge that deduplicates
-  identical calls and sums their multiplicities. Fixed-map counts and
-  depth/range counts are summed the same way.
-- **Pending queries.** Cycle detection is per call stack, so each thread
-  keeps its own. A call that another thread has pending must wait for it
-  or be recomputed, never read half-done.
-- **Fork points.** The interpreter cannot see independence in sequential
-  bytecode: a call's arguments may depend on earlier results. Either the
-  interpreter runs calls as futures (a dataflow schedule), or the source
-  marks the parallel loops (for example the query loop) for the executor.
-- **Validation.** The merged record must pass the existing record shape and
-  lookup-balance checks, and proofs from it must verify. Comparing against
-  the sequential record is not possible, because addresses and row order
-  differ.
-
-The expected gain is bounded by the query loop's share of the 2.63B
-instructions, which is not yet measured. Measure that share with the
-function profile before building any of this.
 
 ### D. Choose shard geometry for total recursive cost
 
@@ -387,7 +360,7 @@ population, so a column-only objective is inadequate.
 
 For stages with a fixed predecessor key and shape, the preferred route is a
 preprocessed verifier plan: fixed tables committed in the stage's own key,
-read by the unchanged Aiur verifier source
+read by an adapted Aiur verifier whose equivalence to the generic path is checked
 ([aiur-structural-gap.md](aiur-structural-gap.md) §5a). It applies only where
 the key dependency is acyclic, such as a verifier of a fixed IxVM key. Pinning
 a self-recursive aggregator's own newly generated key creates a circular
@@ -413,17 +386,21 @@ VM execution is the largest exposed cost in the baseline:
 Section C's native-execution profiling addresses per-instruction cost. Two
 structural levers belong here as well:
 
-- **Overlap execution with proving.** Start join and root execution as soon
-  as their inputs exist, while sibling proofs are still running, where data
-  dependencies allow. The baseline already overlaps one join; quantify how
-  much of the 159 s remains exposed after that.
+- **Improve dependency order where evidence permits.** The controller
+  already dispatches ready joins first, and both intermediate joins overlap
+  proving in the baseline. The 159 s is the residual wait after that overlap,
+  not a pool of time recovered by enabling it. A scheduling change must
+  identify a ready task that could run earlier and show how that shortens
+  the critical path; initial execution and root dependencies remain.
 - **Partition for an earlier GPU start.** Smaller first-wave claims begin
   proving sooner and spread execution across more cores. This trades against
   duplicated frontier/binding work and extra joins (§D), so measure it as a
   whole-run comparison.
 
-These change scheduling and partitioning, not proofs. Fresh records and
-verified proofs of the expected statement are still required.
+Scheduling alone can preserve proof bytes. Repartitioning changes leaf
+claims, frontiers, the aggregation tree and proof identities; the invariant
+is the final expected environment statement. Fresh records and verified
+proofs of that statement are still required.
 
 ## 5. Rollout and validation
 
@@ -431,10 +408,10 @@ verified proofs of the expected statement are still required.
 |---|---|---|
 | 0 | Per-job timeline and provenance; isolate one leaf, one join and one wrap | Distinguish VM, preparation, stalls, backend and acceptance costs |
 | 1 | The largest exposed cost from stage 0: candidates are acceptance reuse (§F), execution overlap and partitioning (§I), and validate-once preparation with row-parallel depth counting (§A) | Host-only changes: same records and layouts, verified byte-identical proofs. Scheduling changes: verified proofs of the expected statement. Both need a measured reduction beyond noise |
-| 2 | Word streams for Goldilocks aggregation | Parser/transcript parity and regenerated artifacts. Byte-identical outer proofs are not expected; require lower execution plus proving time on one join |
+| 2 | Full word streams for IxVM and Goldilocks aggregation | Parser/transcript parity and regenerated artifacts. Measure fresh executions, padding, proving and parent costs separately for each application |
 | 3 | Profile-guided native changes and remaining stage-1 candidates | Preserve reference behavior and independent acceptance; gains exceed observed noise |
 | 4 | Geometry, residency and population-provider comparisons | Improve child-plus-parent cost within host/device budgets |
-| 5 | Optional root policy, broader grouping or specialization | Demonstrate total pipeline benefit and explicit identity/output-policy changes |
+| 5 | Optional root policy, broader grouping or preprocessed verifier plans | Demonstrate total pipeline benefit and explicit identity/output-policy changes |
 
 For local host changes, execute once and reuse an immutable record to compare
 preparation/proving with identical layouts and parameters. Generate a fresh
@@ -467,7 +444,179 @@ performance samples on an otherwise idle device and host.
 Acceptance for an adopted change requires a verified proof of the expected
 statement, measured elapsed-time improvement beyond run-to-run variation,
 bounded memory without new contention failures, and no hidden transfer of
-work into a downstream stage. Initial priority is stage 0. Its timeline
-picks the stage-1 target among the exposed execution waits, the unattributed
-acceptance time and repeated preparation. The word-stream aggregation port
-follows. Exact speedup targets await stage 0 timings.
+work into a downstream stage. The preparation candidate has passed the
+narrow comparisons in §8. The next profiling, word-stream and GPU experiments
+follow the [extended research plan](aiur-fri-performance-research.md);
+execution and full-command improvements require their own measurements.
+
+## 6. Phase reporting
+
+`IX_PROVER_PROFILE=1` enables JSON records on stderr with prefix
+`[prover-profile]` and schema `ix-prover-profile/1`. The usual progress output
+and stdout proof address retain their formats. Detailed provider/candidate
+reports are serialized only when profiling is enabled.
+
+The aggregate backend emits:
+
+- `execution`: advice/witness and hint preparation, the executor that
+  actually ran, VM elapsed time, instruction/query counts, charged record
+  bytes and binding-release time.
+- `proof`: planning, encoding, backend wall time excluding witness stalls,
+  the population report, actual population providers and host fallback
+  causes, and planner candidates/budgets.
+- `record_release`: elapsed time to destroy an execution record after proving.
+
+Rust events carry `call_id`, the hash of the entry and canonical public
+arguments, and elapsed time since the resident backend was created. A root
+and its wraps can share a call ID; use event order and controller task logs
+to distinguish those attempts. This elapsed clock is local to that backend,
+not a timestamp to compare across separate processes.
+
+The population report separates layout checks, full record validation,
+metadata preparation, device upload, host depth-range counting and auxiliary
+counts. Per-shard and per-round totals also expose repeated validation time.
+Upload includes the device's range-counting work; the separate depth-range
+phase covers the remaining host work and merging counts. Preparation phases
+are sequential, while witness allocation/fill thread-seconds can overlap.
+
+The Lean acceptance path emits `acceptance` with manifest/loading,
+statement reconstruction, constant audit, native verification and total
+durations. These retain all independent acceptance checks. Together with
+the controller timer, they distinguish VM/proving costs from the final
+host audit. Store captured stderr on disk rather than in a large tmpfs run
+directory. Profiling data diagnoses candidates; use unprofiled paired runs
+to establish the final speedup.
+
+For a narrow measurement without rebuilding the Lean CLI, use the
+[single-proof driver](../crates/ix-prover/examples/profile_proof.md). It
+profiles a pinned program on a real manifest leaf, a saved invocation or an
+exported STARK, with explicit record/workspace limits and the CLI's allocator.
+It retains one execution across fresh proof samples, verifies every result
+and records input hashes and detailed population timings. It does not replace
+the full controller/acceptance measurement.
+
+## 7. Preparation candidate
+
+The working implementation binds each `PreparedRecord` to a private identity
+of the backend that validated it. Repeated witness supplies check that identity
+and their local dimensions instead of rescanning the immutable record's depth
+arrays. The identity survives moving the backend, and preparations from a
+different backend are rejected even when its verifying key is identical:
+placements and device allocations belong to the preparing backend.
+
+Full record validation remains at preparation, and public planning methods
+still validate records received without a preparation. Preparation derives its
+row counts from the already validated record, avoiding another scan there.
+This removes the per-supply whole-record scan; it does not claim to remove
+every repeated check across independent planning API calls.
+
+Depth-range counting now distributes rows within each gapped function, using
+worker-local scratch and histograms. Reductions combine exact integer counts
+and release completed histograms without retaining one result per function.
+A minimum task grain amortizes histogram initialization; the Rayon thread
+count remains unchanged. The serial implementation remains available.
+
+Focused regressions cover rejection of preparations from another backend,
+reuse after the owner moves, rejection of out-of-field recorded depths, and
+reference-trace parity for a recursive execution spanning multiple row batches.
+Existing streaming tests compare complete proofs against the independent
+full-trace path across layouts and retention policies. On 2026-11-14, all 16
+streaming tests passed with `parallel`, and all 16 passed in the serial
+`stark` configuration. The integrated profiling example passed `cargo check`
+with `parallel` and a release build with `cuda,native`. The modified Lean
+acceptance module also typechecked against the existing dependency artifacts.
+These are focused checks; no full workspace suite or fresh whole-Init
+comparison has been run for this implementation.
+
+## 8. Initial measurements
+
+The [measurement record](measurements/aiur-single-gpu-preparation.json) contains
+the individual samples, input and binary hashes, parameters, execution counts,
+plan summaries and memory measurements. Full JSONL reports remain under
+`target/single-gpu-research/` in the isolated `perf/aiur-single-gpu` worktree.
+The base is `4e27c5fcdaef0a7258e4e42693c695881a19e5e9`. The control has the same
+instrumentation and profiling driver; only the preparation implementation in
+`stark.rs` and `streaming.rs` differs within each comparison.
+
+Two inputs were measured:
+
+- **Init claim:** original manifest shard 0, with 18,698 owned constants
+  reported by the driver. Native IxVM execution produces 232,362,784 query
+  rows. Its plan has 22 trace shards, regenerate retention and pipelined
+  population: 43 witness supplies per proof.
+- **Saved-root verifier:** `MultiStark::verify_multi_stark_proof` checks the
+  exported Init root STARK. Native verifier execution produces 7,370,239 query
+  rows. Its outer proof uses one retained trace shard and one witness supply.
+  This exercises recursive verification, not a two-child aggregation join or
+  its structural discharge.
+
+Each version executes its input once and then generates three fresh witnesses
+and proofs from the immutable record. The control runs before the candidate.
+Sample 0 is the first proof in that process; later samples reuse execution and
+backend setup. They do not reuse witnesses or proofs. All 12 proofs verify,
+and proof digests match across all six samples of each workload. Program/key
+identities, security parameters, instruction/query counts, exact layouts,
+retention and population providers also match. The claim proof remains
+37,328,905 bytes, and the verifier proof remains 5,232,186 bytes.
+
+Runs use one RTX PRO 6000 Blackwell, all 32 available logical CPUs, the CLI's
+mimalloc allocator, host trace population (`AIUR_GPU_TRACE=cpu`) and device
+lookups (`AIUR_TRACE_ONLY_LOOKUPS=1`). Limits are 64 GiB for counted records,
+about 24.3 GiB for proving workspace and 1.5 billion committed cells per shard.
+An external host/GPU check gates heavy work and stops it if competing work
+starts. No profiler or thread cap is applied during the paired samples.
+
+All times below are seconds; proof-phase values are medians of three samples.
+The timers overlap, so the rows must not be added.
+
+| Metric | Init control | Init candidate | Verifier control | Verifier candidate |
+|---|---:|---:|---:|---:|
+| Proof-generation wall time | 49.341 | 41.627 | 2.263 | 2.101 |
+| Preparation before supplying witnesses | 9.215 | 4.470 | 0.230 | 0.073 |
+| Host depth-range counting | 7.599 | 3.045 | 0.190 | 0.028 |
+| Summed per-supply validation | 9.050 | 0.0000068 | 0.0021 | <0.000001 |
+| Witness stalls | 9.829 | 3.384 | 0.552 | 0.553 |
+| Backend time excluding witness stalls | 30.325 | 33.621 | 1.472 | 1.472 |
+
+The Init claim's wall-time reduction is **7.714 s (15.6%)**. Its control
+samples span 49.269–49.370 s; candidate samples span 41.482–41.671 s. The
+saved-root verifier's reduction is **0.161 s (7.1%)**, mostly from depth
+preparation. These compare the combined preparation changes, not an ablation
+that isolates each optimization's contribution.
+
+The Init non-stall backend counter rises even as total wall time falls. It
+includes host orchestration and reflects the changed overlap with population;
+it is not a GPU-event measurement. The removed scans' nine seconds and the
+depth reduction cannot be summed into a predicted wall-time saving. A GPU
+timeline would be needed to attribute the backend-counter change further.
+
+Init peak RSS rises from **42.75 to 44.54 GiB**. Counted record-pool peaks are
+identical at 30.25 GiB, and both reservations return to zero after release.
+The verifier's peak RSS is approximately 8.27 GiB in both versions. Thus the
+claim timing gain carries about 1.8 GiB more observed host residency; it is
+not a demonstrated memory saving. The configured record/workspace limits
+are accounting and planning bounds, not a process-wide RSS cap.
+
+Execution takes **92.20 / 91.45 s** for the control/candidate Init claim and
+**3.242 / 3.244 s** for the verifier. These are single observations from
+unchanged executors, not evidence of an execution optimization. Proof timings
+exclude input/model preparation, program setup, execution, verification,
+serialization and destruction. A fresh full `ix prove` comparison, an actual
+aggregation join and Mathlib remain unmeasured.
+
+The leaf driver must load model advice separately: `.ixe` deliberately omits
+it, while the Lean CLI generates and attaches it before execution. The
+`profile-proof-models` helper exports that existing Lean advice; the driver
+hashes and decodes it through the ordinary Rust loader. An initial attempt
+without the sidecar failed on a missing modeled-block hint before proving and
+is excluded from the measurements. Model export and environment loading took
+about eight seconds together in the helper; reuse of that input must not be
+credited as an improvement to a fresh command.
+
+The next performance work should profile native execution on a leaf and a
+real aggregation join, and collect the newly instrumented independent
+acceptance phases. The claim still spends roughly 92 seconds executing before
+GPU proving can begin. Preserve this host improvement, but use those profiles
+to choose between native hot operations, word streams, acceptance reuse and
+partitioning. A paired full fresh Init run is the gate for an end-to-end claim;
+the narrow samples do not establish that result.

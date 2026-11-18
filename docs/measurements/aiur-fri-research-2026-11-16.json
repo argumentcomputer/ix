@@ -1,0 +1,169 @@
+{
+  "schema": "ix-aiur-fri-research-evidence/1",
+  "research_date_utc": "2026-11-16",
+  "captured_at_utc": "2026-11-16T14:37:03.697974+00:00",
+  "scope": "Existing evidence supporting proposed CPU execution and initial Goldilocks/FRI proving experiments. No new build, test, profile or benchmark results.",
+  "source_root": "/home/sam/repos/ix.aiur-compression-active",
+  "source_head": "4e27c5fcdaef0a7258e4e42693c695881a19e5e9",
+  "source_status": "Modified working tree; hashes cover the cited files only, not a complete reproducible prover build.",
+  "sources": [
+    {
+      "path": "docs/aiur-compression-architecture.md",
+      "sha256": "4fd0a26e0c3d39c1bc9bf57876532f77f6df25fc4ad7fe926f203db578e8e578"
+    },
+    {
+      "path": "docs/measurements/aiur-compression-l3.json",
+      "sha256": "d56412f38817ffa0f7804493da86b294e45dc54891896c2b738f026a9ce45dcf"
+    },
+    {
+      "path": "docs/measurements/aiur-packed-bn-stages.json",
+      "sha256": "58b30ed1e89d5f16be7fd0833df957b7ea70377580fac722c7ef28204cab40dc"
+    },
+    {
+      "path": "target/streams-experiment/summary.json",
+      "sha256": "60c0d79be79af1a8cda8dba94c2ce2279a36c436494647efd676ab3e194ceee3"
+    },
+    {
+      "path": "target/wrap-normalized/summary.json",
+      "sha256": "d5e6f79f847568a8bc516b2157024890f65aee1c9bb2993d87cd3d8b4da44af9"
+    },
+    {
+      "path": "docs/aiur-stage-ladder.md",
+      "sha256": "16d9ea4a5bc8d7d5b206747cad9941a0b52c643feb3c60196b498090658d1a94"
+    },
+    {
+      "path": "target/e2e-l3/run.sh",
+      "sha256": "cb7ff8b4a7fad6d0096960f63872bb671a15ac9dcb1ae7fe2fbaf0f1f2500914"
+    },
+    {
+      "path": "MultiStark/MultiStark/BN/KzgIO.lean",
+      "sha256": "16e1192c778566983599714b258c291ca261755040cfff061c10ba9cddde7de4"
+    },
+    {
+      "path": "MultiStark/MultiStark/BN/KzgTranscript.lean",
+      "sha256": "fe573ef82e54a59a97dd6e10105a48b2604fa0124e87e5334d93c0e07d6a632e"
+    },
+    {
+      "path": "MultiStark/MultiStark/BN/KzgBlake3.lean",
+      "sha256": "2d012232b386f4c35da64f1b942ce15aef4b37491aabbdf8f0532c2dbf36c6cf"
+    },
+    {
+      "path": "MultiStark/MultiStark/BN/KzgPackedTerminal.lean",
+      "sha256": "727d764d8aece7d777f742982dba6aaeb8ddadf42d80db321a4aacd10f3f9d43"
+    },
+    {
+      "path": "IxVM/IxVM/Source/IxByteStream.lean",
+      "sha256": "e3bfacd960c0174a9a93d8756be001f38fe5ad0b3e6a46bcc3d314d296265f9f"
+    },
+    {
+      "path": "MultiStark/MultiStark/Modules/StarkIO.lean",
+      "sha256": "7955a333b1d6e406eaf92d307824e050a2b66f0225eede7b67335c0388631243"
+    },
+    {
+      "path": "MultiStark/MultiStark/Modules/ProofDeserialize.lean",
+      "sha256": "b7dda2c465de4271dfd49a5488ed5074bf74db86d7529ecb883eaa876d9a0c37"
+    },
+    {
+      "path": "MultiStark/MultiStark/Modules/StarkVerifier.lean",
+      "sha256": "bcacbdbb31eb162bc5574d7ff6472526db533047e82bc67476db7806440598fd"
+    },
+    {
+      "path": "MultiStark/MultiStark/Modules/Aggregation.lean",
+      "sha256": "cb699e045897bdddf92c39af15e8baf15042aa2ffee34a116d291e2905fcf21f"
+    },
+    {
+      "path": "MultiStark/MultiStark/Modules/Transcript.lean",
+      "sha256": "c1a8337171387ab8489022fe6d471367c7e627a86312e44f3a2deafb4a512f07"
+    },
+    {
+      "path": "crates/ixvm/src/lib.rs",
+      "sha256": "750c5488b658908398d75095c360aa35d98385715ab106aa7ab9334ade61454b"
+    },
+    {
+      "path": "crates/aiur/src/library/advice.rs",
+      "sha256": "563507aabec663eb9298d28e3c390de5551b93a7aecc005c5d3c6c59b4671336"
+    },
+    {
+      "path": "crates/aiur/src/native.rs",
+      "sha256": "b7b584f51a4373ece9a9f53665d94c537a85c8e73288ddb92e1faa2904137ec8"
+    },
+    {
+      "path": "crates/aiur/src/query.rs",
+      "sha256": "03b4a9b9a495f8496360adbfd8620b393eeba4b93c9bc0dd6599136ae5191b19"
+    },
+    {
+      "path": "crates/aiur/src/trace/stark/streaming.rs",
+      "sha256": "4aa5ce181c5bbdbadf138ba192a7d805dbaa8250cb1075ebed1d82b2091ab9e3"
+    },
+    {
+      "path": "crates/aiur/src/trace/stark/wide.rs",
+      "sha256": "66efcf4f4b1b5809fc9845531801a9ca77d115e0fe5522a813e235d387d43b5c"
+    },
+    {
+      "path": "crates/proof-compression/src/aiur_backend/kzg/witness.rs",
+      "sha256": "86b8e07ebbc07af3bd2e3aab71b692e839c96349ef318087757fa4aabaaddd80"
+    }
+  ],
+  "initial_prover": {
+    "measurement": "aiur-single-gpu-preparation.json",
+    "sha256": "67498d07ec998c7cee0b9098f086dc2e0b31c051fc0c5460b7de2a0c188d4a50",
+    "execution_scope": "One execution per version; proof samples reuse that execution. No repeated-execution speedup is established."
+  },
+  "word_streams": {
+    "date": "2026-11-13",
+    "scope": "Representation only: verifier channels deliver range-checked u32 words (hint kzg.io.read4) instead of bytes; parse cursor = (word list, byte offset 0..3); u32/32-byte fields read as words; key/claims/proof/policy hashed by a word-level BLAKE3 driver (16 words per block row, Blake3::compress_init unchanged); transcript keeps reversed word list + 0..3 tail bytes, fields absorbed 8 words per row; XOF over words. Transcript and digest bytes unchanged (Init proof accepted, digests match, pairing holds).",
+    "count_only": true,
+    "padded_main_cells": {
+      "before": 147534387,
+      "after": 105266664,
+      "delta": -42267723,
+      "ratio": 0.7135
+    },
+    "unpadded_memory_cells": {
+      "before": 9923339,
+      "after": 2756652,
+      "delta": -7166687
+    },
+    "source": "target/streams-experiment/summary.json"
+  },
+  "word_streams_and_grouping": {
+    "scope": "Historical packed BN steady-state count comparisons; not initial Goldilocks timings.",
+    "observations": [
+      "I1 (split programs): first key 379,542 B / 43 circuits, steady key 399,566 B / 76 circuits (single combined key was 463,203 B). Steady-state verification 263.7M -> 213.9M padded (172.2M unpadded); stage 2 190.5M padded. Proof 158,673 B, 4,692 values, 70 points.",
+      "I2 (word streams) with the byte-era grouping regressed padded cells (steady 256.0M, stage 1 854.9M) although unpadded fell (steady 148.2M): 16 new ungrouped word circuits (92 total), KzgGroup_reuse crossing 2^17 rows, and KzgTranscript::observe_bytes (per-byte push in the per-column commitment absorption, 345K rows) inside the 289-wide KzgGroup_cold_b. Transcript/digest bytes unchanged: kzg-xof.ixa and kzg-source.ixa regenerate byte-identically to the streams experiment and every native/Aiur check passes.",
+      "I2 regrouped (i2q): steady key 440,350 B / 42 circuits, proof 115,689 B, 3,444 values, 60 points; steady verification 175.5M padded / 129.5M unpadded (max height 2^19); stage 1 636.0M padded / 499.9M unpadded. Adding many members to an existing wide group widens it (columns add up across members): the i2p variant that put them into cold_b/cold_c (cold_b 289 -> 510 wide) measured 215.4M.",
+      "I3 (sharding, copies in key): k<=2 gives steady 161.8M committed padded (129.6M unpadded verification, unchanged) and stage 1 607.5M; k<=3 with a column-only cost model added 2.7K values to every steady proof and raised unpadded verification to 167M (each extra copy also re-evaluates the circuit's constraint graph in the next verifier); with 600 cells/node added to the model, k<=3 keeps steady at 163.1M/129.4M, cuts stage 1 to 541.0M but makes stage 2 213.2M (bigger first-program proof). Sharding also absorbs row drift across a power of two (k3 stage 4: KzgGroup_reuse 131,072+256+128 instead of 262,144)."
+    ],
+    "source": "docs/measurements/aiur-packed-bn-stages.json"
+  },
+  "normalized_wrapper": {
+    "date": "2026-11-14",
+    "scope": "Ladder step 2, iteration 2: Init raw root -> normalized CompressWrap (grouping m16384w64, layout v2, FRI (2,100,0,20) unchanged) -> packed CompressGL on the wrap proof -> 3x CompressBNPacked::chain_v1 (CUDA). Raw-root and wrap chains run back to back on an idle machine with the same binary and BN artifact. Every proof verified natively; changed outputs rejected.",
+    "grouping_finding": "The grouping compiler gives a many-member group a wide union of columns (G_cold: 805 cols; even the <64-column members alone give 496). Rows, not widths, decide where they belong: m16384w64 keeps the 22 functions with 16k-65k Init rows in their own group (G_mid: 191+64 cols, 2^20) and splits the <=16k-row cold functions by width into a narrow group (409+44 cols, 2^18) and a wide one (367+130 cols, 2^16). Pure thresholds (t16384, s16384w48) cut wrap cells further but add ~600-900 opened columns, which costs CompressGL more than the wrap saves.",
+    "next_compress_gl_execution_seconds": {
+      "on_raw_root": 44.291692425,
+      "on_wrap": 29.1045918
+    },
+    "source": "target/wrap-normalized/summary.json"
+  },
+  "latest_compression_ladder": {
+    "date": "2026-11-16",
+    "scope": "Starts from an already produced Init root; excludes initial ix prove.",
+    "end_to_end_seconds": {
+      "median": 167.192,
+      "min": 167.187,
+      "max": 167.244,
+      "values": [
+        167.192,
+        167.244,
+        167.187
+      ]
+    },
+    "source": "docs/measurements/aiur-compression-l3.json"
+  },
+  "research_limits": [
+    "No measured word-stream execution speedup on IxVM or Goldilocks aggregation.",
+    "Cell counts do not establish elapsed-time improvements.",
+    "Source/layout changes require explicit new artifacts and key identities."
+  ]
+}
