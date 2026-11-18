@@ -211,9 +211,10 @@ theorem subst_const_cells (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat →
           · exact Or.inr (Or.inl ⟨.letBody hc₂ hf', hne⟩)
           · exact Or.inr (Or.inr (.letBody hc₂ hp))
       | .Proj (m662 := m₂) (v646 := r₁) (x_s := xs) (x_i := xi) (ld12 := ld) (he640 := hr)
-          (hm639 := hm) (ev672 := e1) (hc697 := hc) .. =>
+          (ev_fcagpdzw := aeq) (hm639 := hm) (ev672 := e1) (hc697 := hc) .. =>
         have ext2 := ext_snoc' hm
-        have ext1 := e1.heap_extends
+        have ext0 := aeq.heap_extends
+        have ext1 := ext0.trans e1.heap_extends
         subst hc hr hm
         obtain ⟨s, i, Es, hxi, hXe, ra, hes⟩ := hX.proj_of_load ld
         subst hxi
@@ -228,7 +229,8 @@ theorem subst_const_cells (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat →
         · have e' : s = x := Bytes.repAddressRef_inj U32.Goldilocks.compatible ra₂ h1
           subst e'
           exact Or.inr (Or.inr (.head hc₂ ra₂))
-        · rcases ih _ _ _ _ _ _ lt_calls' e1 rfl _ k Es rfl hes ha hv h₂ (ext2.trans ext) x h1
+        · rcases ih _ _ _ _ _ _ lt_calls' e1 rfl _ k Es rfl (hes.mono ext0)
+            (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha) (hv.mono ext0) h₂ (ext2.trans ext) x h1
             with hv' | ⟨hf', hne⟩ | hp
           · exact Or.inl hv'
           · exact Or.inr (Or.inl ⟨.projArg hc₂ hf', hne⟩)

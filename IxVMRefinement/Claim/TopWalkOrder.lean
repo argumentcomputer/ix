@@ -268,8 +268,9 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
   | ind fuel ih =>
     refine ⟨?_, ?_⟩
     · intro x_rc x_addr r addr h h' calls hfuel hrc ha ev
-      obtain ⟨m2, cs12, x_info, w39, x_refs, w40, w41, v539, m540, cs542, v548, m549, cs559, cs589, v594, m611, cs619,
-        ev14, sg547, ev561, ev621, ev591, hc636⟩ := Obs.«KernelClaim::run_check_transitive».obs ev
+      obtain ⟨m2, cs12, x_info, w39, x_refs, w40, w41, v539, m540, cs542, v548, m549, cs559, v_quot,
+        m_quot, cs_quot, cs589, v594, m611, cs619, ev14, sg547, ev561, ev_quot, ev621, ev591, hc636⟩ :=
+        Obs.«KernelClaim::run_check_transitive».obs ev
       obtain ⟨ext1, rawBytes, c, hsz, hh_load, hblk, hde, hdeExact, hrep, _⟩ :=
         load_verified_constant_de ha ev14
       have hseg : Heap.Extends m2 m540 ∧
@@ -443,7 +444,7 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
             .inr (hchk.mono (fun cl hcl => by rw [hc636, hc538]; simp [hcl])),
             [], by simp [TopRecsClosed], topRecsOrdered_nil, by simp, fun hp => absurd hp hnp⟩
       obtain ⟨ext_seg, hchk_self, recs_blk, hcl_blk, hord_blk, hdep_blk, hown_blk⟩ := hseg
-      have ext_guard : Heap.Extends m540 m549 := ev561.heap_extends
+      have ext_guard : Heap.Extends m540 m_quot := ev561.heap_extends.trans ev_quot.heap_extends
       obtain ⟨ext_idx, hidxs⟩ := const_idxs_of_spec (hrep.mono (ext_seg.trans ext_guard)) ev621
       have hrefs_rep :
           RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem m611 c.refs.toList x_refs := by

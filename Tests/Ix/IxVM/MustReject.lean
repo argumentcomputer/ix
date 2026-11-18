@@ -183,8 +183,8 @@ def rejectionReasons : List (String × String) := [
   ("split-elim/control-large-recursor-of-P", levelLink),
   -- a nested block the reader does not model, and its recursors
   ("nonempty-nest/inductive-T", noModel),
-  ("nonempty-nest/recursor-T", modeledRecursorRefusal),
-  ("nonempty-nest/recursor-aux", modeledRecursorRefusal),
+  ("nonempty-nest/recursor-T", noModel),
+  ("nonempty-nest/recursor-aux", noModel),
   ("peer-negative/inductive-Bad", noModel),
   ("peer-negative/ctor-Bad.mk", noModel),
   ("peer-negative/unwrap", modeledProjection),

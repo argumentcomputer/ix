@@ -48,25 +48,28 @@ theorem check_advice_records_walk {rc wset : SourceValue F} :
       (∀ b ∈ advAs, Typing.AdviceIn cs (ixAddr b)) ∧
       Heap.Extends h h'
   | [], seenSet, x_advice, x_seen, r, h, h', cs, hadv_rep, hseen, ev => by
-    cases Obs.«KernelModeled::check_advice_records».obs ev with
-    | Nil _ he21 he22 _ =>
+    match Obs.«KernelModeled::check_advice_records».obs ev with
+    | .Nil (he21 := he21) (he22 := he22) .. =>
       rw [he21, he22]
       exact ⟨addrSet_mono_imp (Heap.Extends.refl h) (fun _ hp => Or.inl hp) hseen,
         (fun _ hb => nomatch hb), Heap.Extends.refl h⟩
-    | Cons _ _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ _ =>
+    | .Cons (ld12 := ld12) .. =>
       obtain ⟨_, _, he, _, _⟩ := Lib.rep_cons_of_load hadv_rep ld12
       cases he
   | a :: rest, seenSet, x_advice, x_seen, r, h, h', cs, hadv_rep, hseen, ev => by
-    cases Obs.«KernelModeled::check_advice_records».obs ev with
-    | Nil ld12 _ _ _ =>
+    match Obs.«KernelModeled::check_advice_records».obs ev with
+    | .Nil (ld12 := ld12) .. =>
       cases Lib.rep_nil_of_load hadv_rep ld12
-    | Cons x_a x_rest v52 m55 cs63 v89 m90 cs100 cs138 v143 m160 cs168
-        ld12 ev65 heq88 ev102 ev170 ev140 hc201 =>
-      subst heq88 hc201
+    | .Cons (x_a := x_a) (m_aiikskik := m55) (m90 := m90) (v143 := v143) (m160 := m160)
+        (ld12 := ld12) (ev_mfihupbr := ev65) (heq_sefkntmx := heq88) (ev_xzbngsxs := ev65w)
+        (heq_xyxoxrbw := heq88w) (ev102 := ev102) (ev170 := ev170) (ev140 := ev140)
+        (hc201 := hc201) .. =>
+      subst heq88 heq88w hc201
       obtain ⟨a', rest', heq_cons, ha_rep, hrest_rep⟩ := Lib.rep_cons_of_load hadv_rep ld12
       injection heq_cons with ha_eq hrest_eq
       subst ha_eq hrest_eq
-      have ext_55 : Heap.Extends h m55 := ObsFn.heap_extends ev65
+      have ext_55 : Heap.Extends h m55 :=
+        (ObsFn.heap_extends ev65).trans (ObsFn.heap_extends ev65w)
       have ext_90 : Heap.Extends h m90 := ext_55.trans (ObsFn.heap_extends ev102)
       have ext_160 : Heap.Extends m90 m160 := ObsFn.heap_extends ev170
       have ext_h_160 : Heap.Extends h m160 := ext_90.trans ext_160

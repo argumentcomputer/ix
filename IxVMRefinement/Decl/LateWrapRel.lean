@@ -302,16 +302,16 @@ private theorem wrapL_rel_family {c : Ctx} {κ : _root_.Address → KKey}
       ObsFn W fname args h r h' cs → r = .field 1 → Good c cs →
       ((fname = "KernelCheck::wrap_rel" →
         ∀ (d : Nat) (Γ : Nat → KExpr) (G D : KExpr) (xg xd : SourceValue F),
-          args = [xg, xd] → Tm κ d Γ h 0 G xg → Tm κ d Γ h 0 D xd →
+          args = [.field 0, xg, xd] → Tm κ d Γ h 0 G xg → Tm κ d Γ h 0 D xd →
           WrapTSem find? G D) ∧
        (fname = "KernelCheck::wrap_dom" →
         ∀ (d : Nat) (Γ : Nat → KExpr) (T T2 : KExpr) (xt xt2 : SourceValue F),
-          args = [xt, xt2] → Tm κ d Γ h 0 T xt → Tm κ d Γ h 0 T2 xt2 →
+          args = [.field 0, xt, xt2] → Tm κ d Γ h 0 T xt → Tm κ d Γ h 0 T2 xt2 →
           ∃ A : KExpr, ConsumeStar find? T A ∧ WrapTSem find? A T2) ∧
        (fname = "KernelCheck::wrap_binder" →
         ∀ (d : Nat) (Γ : Nat → KExpr) (T B T2 B2 : KExpr) (ℓ ℓ2 : KLevel)
           (xt xb xm xt2 xb2 xm2 : SourceValue F),
-          args = [xt, xb, xm, xt2, xb2, xm2] →
+          args = [.field 0, xt, xb, xm, xt2, xb2, xm2] →
           Tm κ d Γ h 0 T xt → Tm κ d Γ h 1 B xb → RepKLevel h ℓ xm →
           Tm κ d Γ h 0 T2 xt2 → Tm κ d Γ h 1 B2 xb2 → RepKLevel h ℓ2 xm2 →
           (bmeta ℓ).pw = (bmeta ℓ2).pw ∧
@@ -321,16 +321,16 @@ private theorem wrapL_rel_family {c : Ctx} {κ : _root_.Address → KKey}
     (fun fname args h r h' cs => r = .field 1 → Good c cs →
       ((fname = "KernelCheck::wrap_rel" →
         ∀ (d : Nat) (Γ : Nat → KExpr) (G D : KExpr) (xg xd : SourceValue F),
-          args = [xg, xd] → Tm κ d Γ h 0 G xg → Tm κ d Γ h 0 D xd →
+          args = [.field 0, xg, xd] → Tm κ d Γ h 0 G xg → Tm κ d Γ h 0 D xd →
           WrapTSem find? G D) ∧
        (fname = "KernelCheck::wrap_dom" →
         ∀ (d : Nat) (Γ : Nat → KExpr) (T T2 : KExpr) (xt xt2 : SourceValue F),
-          args = [xt, xt2] → Tm κ d Γ h 0 T xt → Tm κ d Γ h 0 T2 xt2 →
+          args = [.field 0, xt, xt2] → Tm κ d Γ h 0 T xt → Tm κ d Γ h 0 T2 xt2 →
           ∃ A : KExpr, ConsumeStar find? T A ∧ WrapTSem find? A T2) ∧
        (fname = "KernelCheck::wrap_binder" →
         ∀ (d : Nat) (Γ : Nat → KExpr) (T B T2 B2 : KExpr) (ℓ ℓ2 : KLevel)
           (xt xb xm xt2 xb2 xm2 : SourceValue F),
-          args = [xt, xb, xm, xt2, xb2, xm2] →
+          args = [.field 0, xt, xb, xm, xt2, xb2, xm2] →
           Tm κ d Γ h 0 T xt → Tm κ d Γ h 1 B xb → RepKLevel h ℓ xm →
           Tm κ d Γ h 0 T2 xt2 → Tm κ d Γ h 1 B2 xb2 → RepKLevel h ℓ2 xm2 →
           (bmeta ℓ).pw = (bmeta ℓ2).pw ∧
@@ -467,22 +467,25 @@ private theorem wrapL_rel_family {c : Ctx} {κ : _root_.Address → KKey}
           exact (kexpr_struct_eq_tm_one hG hD ev715).toWrapTSem find?
       · subst hfn hargs
         match Obs.«KernelCheck::wrap_dom».obsx ev with
-        | .other_other_other (he174 := he) .. =>
+        | .other_n0_other_other (he_vjzsmrqa := he) .. =>
           exact absurd (Value.field.inj he) one_ne_zero
+        | .other_other_n1_bind (hne_trdykyhf := hsm) .. | .other_other_other (hne_trdykyhf := hsm) .. =>
+          exact absurd rfl hsm
         | .Let (cs41 := cs41) (ev43 := ev43) (hc60 := hc60) .. =>
           -- a domain that is a `let` is compared whole
           subst hc60
           have hw := (ih _ _ _ _ _ _ (by rec_lt_calls) ev43 rfl
             (hgood.sub fun z hz => by simp [hz])).1 rfl d Γ T T2 xt xt2 rfl hT hT2
           exact ⟨T, .refl T, hw⟩
-        | .other_n1 (cs77 := cs103) (ev79 := ev105) (hc102 := hc128) .. =>
+        | .other_n0_n1 (cs_inoibkuh := cs103) (ev_teknbelh := ev105) (hc_mhrqvtgu := hc128) .. =>
           subst hc128
           have hw := (ih _ _ _ _ _ _ (by rec_lt_calls) ev105 rfl
             (hgood.sub fun z hz => by simp [hz])).1 rfl d Γ T T2 xt xt2 rfl hT hT2
           exact ⟨T, .refl T, hw⟩
-        | .other_other_n1_bind (m66 := m92) (cs77 := cs103) (m108 := m134)
-            (cs119 := cs145) (x_a := xa) (cs151 := cs177)
-            (ev79 := ev105) (ev121 := ev147) (ev153 := ev179) (hc170 := hc196) .. =>
+        | .other_n0_other_n1_bind (m_fwvfxwkq := m92) (cs_inoibkuh := cs103) (m_iludgrvx := m134)
+            (cs_szysaksf := cs145) (x_a := xa) (cs_bhijnlkz := cs177)
+            (ev_teknbelh := ev105) (ev_tyrbnlfr := ev147) (ev_jqflmfnr := ev179)
+            (hc_uuoaavue := hc196) .. =>
           subst hc196
           have e1 := ev105.heap_extends
           have e2 := ev147.heap_extends
@@ -529,7 +532,7 @@ theorem wrapL_rel_spec {c : Ctx} {κ : _root_.Address → KKey}
     {xg xd : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hlf : WrapLoads c κ find?) (hgood : Good c cs)
     (hG : Tm κ 0 Γ h 0 G xg) (hD : Tm κ 0 Γ h 0 D xd)
-    (ev : ObsFn W "KernelCheck::wrap_rel" [xg, xd] h (.field 1) h' cs) :
+    (ev : ObsFn W "KernelCheck::wrap_rel" [.field 0, xg, xd] h (.field 1) h' cs) :
     WrapRelSem find? G D :=
   ((wrapL_rel_family hlf _ _ _ _ _ _ ev rfl hgood).1 rfl 0 Γ G D xg xd rfl hG hD).toWrapRelSem
     (wrapL_hasFvar_false_of_fvarIdxLt_zero (tm_fvarIdxLt hG))
@@ -548,7 +551,7 @@ theorem wrapL_rel_appHeadConstLvls {a_g a_d : Bytes.Address} {ls_g ls_d : List K
     ∀ {xg xd : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       AppHeadConstLvls h a_g ls_g xg →
       AppHeadConstLvls h a_d ls_d xd →
-      ObsFn W "KernelCheck::wrap_rel" [xg, xd] h (.field 1) h' cs →
+      ObsFn W "KernelCheck::wrap_rel" [.field 0, xg, xd] h (.field 1) h' cs →
       ls_g = ls_d := by
   intro xg xd h h' cs hg hd ev
   induction hg generalizing xd h' cs with
@@ -665,7 +668,7 @@ theorem wrapL_rel_forallDomHeadLvls
       Good c cs →
       ForallDomHeadLvls κ 0 (fun _ => default) h T a_g ls_g m k xg →
       ForallRightHeadLvls h a_d ls_d m xd →
-      ObsFn W "KernelCheck::wrap_rel" [xg, xd] h (.field 1) h' cs →
+      ObsFn W "KernelCheck::wrap_rel" [.field 0, xg, xd] h (.field 1) h' cs →
       ls_g = ls_d
   | 0, k, xg, xd, h, h', cs, hgood, hg, hd, ev => by
     cases hg with
@@ -708,16 +711,19 @@ theorem wrapL_rel_forallDomHeadLvls
           | .n1_n1 (m2 := m2) (cs48 := cs48) (ev15 := ev15) (ev50 := ev50) (hc93 := hc93) .. =>
             have e1 := ev15.heap_extends
             match Obs.«KernelCheck::wrap_dom».obsx ev50 with
-            | .other_other_other (he174 := he) .. =>
+            | .other_n0_other_other (he_vjzsmrqa := he) .. =>
               exact absurd (Value.field.inj he) one_ne_zero
+            | .other_other_n1_bind (hne_trdykyhf := hsm) ..
+            | .other_other_other (hne_trdykyhf := hsm) .. =>
+              exact absurd rfl hsm
             | .Let (ld12 := ld12) .. =>
               cases hhead_g with
               | const cg _ _ | app cg _ =>
                 exact (load_cell_ne (e1.getElem?_eq cg) ld12 (by decide)).elim
-            | .other_n1 (ev79 := ev105) .. =>
+            | .other_n0_n1 (ev_teknbelh := ev105) .. =>
               exact wrapL_rel_appHeadConstLvls (hhead_g.mono e1) (hhead_d.mono e1) ev105
-            | .other_other_n1_bind (m66 := m92) (cs119 := cs145)
-                (ev79 := ev105) (ev121 := ev147) (hc170 := hc196) .. =>
+            | .other_n0_other_n1_bind (m_fwvfxwkq := m92) (cs_szysaksf := cs145)
+                (ev_teknbelh := ev105) (ev_tyrbnlfr := ev147) (hc_uuoaavue := hc196) .. =>
               have hgood_cw : Good c cs145 :=
                 hgood.sub (fun z hz => by subst hc539 hc93 hc196; simp [hz])
               match Obs.«KernelCheck::consume_wrapper».obsx ev147 with

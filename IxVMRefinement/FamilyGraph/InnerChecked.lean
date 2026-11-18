@@ -51,8 +51,9 @@ theorem containerRec_checked {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     Claim.CheckedLimAt calls bAddr t a lim ∧
       ∀ c, IxVM.Consistency.recordOf E₀ a = some c → ∀ ms, c.info ≠ .muts ms := by
   match Obs.«KernelModeled::check_container_rec».obs ev with
-  | .run (ev39 := ev39) (ev25 := ev25) (ev75 := ev75) (hc96 := hc96) .. =>
-    have ext : Heap.Extends h _ := ev39.heap_extends.trans ev25.heap_extends
+  | .run (ev39 := ev39) (ev25 := ev25) (ev_nqhglzzq := ev_ci) (ev75 := ev75) (hc96 := hc96) .. =>
+    have ext : Heap.Extends h _ :=
+      ev39.heap_extends.trans (ev25.heap_extends.trans ev_ci.heap_extends)
     refine ⟨(Claim.run_check_lim_spec (hrc.mono ext) (S0.addr_mono ext ha) ev75).2.mono
       (fun cl hcl => hsub cl (by rw [hc96]; simp [hcl])), ?_⟩
     intro c hc ms hms
@@ -114,11 +115,13 @@ theorem adviceBlock_checked {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
       Claim.NativeObsAt calls (ixAddr ab) := by
   match Obs.«KernelModeled::check_advice_record».obs ev with
   | .run (m2 := m2) (cs12 := cs12) (x_info := x_info) (cs947 := cs947) (ev14 := ev14)
-      (sg952 := sg952) (hc1011 := hc1011) .. =>
+      (ev_yqjbwijz := ev_ord) (sg952 := sg952) (hc1011 := hc1011) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
     have hsub947 : ∀ cl ∈ cs947, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
+    have ext0 := ev_ord.heap_extends
     obtain ⟨ext1, bytes, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded ha ev14
+      L1.load_verified_constant_decode_bounded (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha) ev14
+    replace ext1 := ext0.trans ext1
     have hrec₀ : Ix.Cert.recordAt E₀ (ixAddr ab) = some c :=
       (hS.recordOf_eq_recordAt _).symm.trans hc
     have hcc : c' = c := hS.record_eq hrec₀ (hashed_mono hsub12 hh) haddr hexact
@@ -257,11 +260,13 @@ theorem adviceBlock_shape {lim : Option Nat} {calls cs : List (Call F)} {E₀ : 
     ∃ ind : Ixon.Inductive, ms = #[.indc ind] := by
   match Obs.«KernelModeled::check_advice_record».obs ev with
   | .run (m2 := m2) (cs12 := cs12) (x_info := x_info) (cs947 := cs947) (ev14 := ev14)
-      (sg952 := sg952) (hc1011 := hc1011) .. =>
+      (ev_yqjbwijz := ev_ord) (sg952 := sg952) (hc1011 := hc1011) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
     have hsub947 : ∀ cl ∈ cs947, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
-    obtain ⟨msPtr, hxm, hlist, hlt⟩ := load_block_info hS ha ev14 hsub12 hc hms
-    have ext1 : Heap.Extends h m2 := ev14.heap_extends
+    have ext0 := ev_ord.heap_extends
+    obtain ⟨msPtr, hxm, hlist, hlt⟩ :=
+      load_block_info hS (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha) ev14 hsub12 hc hms
+    have ext1 : Heap.Extends h m2 := ext0.trans ev14.heap_extends
     match sg952 with
     | .Defn_Definition_Safe (hv81 := hv) .. =>
       exact absurd (Value.construct.inj (hv.symm.trans hxm)).2.1 (by decide)

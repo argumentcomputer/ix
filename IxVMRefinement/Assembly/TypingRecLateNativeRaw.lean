@@ -144,7 +144,7 @@ theorem rec_rules_reads_scoped {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   have hrec₀ : Ix.Cert.recordAt E₀ A = some c := (hS.recordOf_eq_recordAt A).symm.trans hc
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, -, -, ha_pre, -, ev_ld, hsub_ld,
-    hld, ev_chk, hsub_chk⟩ := hnat
+    hld, ev_chk, hsub_chk, hfr⟩ := hnat
   obtain ⟨a', ha'_ref, haA⟩ := ha_pre
   subst haA
   obtain ⟨rawBytes, c', hh, hba, hex, -, hres'⟩ :=
@@ -163,7 +163,7 @@ theorem rec_rules_reads_scoped {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   simp only [List.cons.injEq, and_true] at hfields
   obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hfields
   obtain ⟨-, sB, sA, sortAfter, mH, sR, sortR, sCs, sortCs, mCs, hextS, evS, -, evSort,
-    -, -, hextSM, evM, hsubM⟩ := check_const_rec_arm ev_chk
+    -, -, hextSM, evM, hsubM⟩ := check_const_rec_arm ev_chk hfr
   have hextM : Heap.Extends m_chk mH :=
     hextS.trans (evS.heap_extends.trans ((Heap.Extends.snoc _ _).trans
       (evSort.heap_extends.trans hextSM)))

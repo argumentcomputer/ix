@@ -402,6 +402,20 @@ def role_ctx_is_assumed := aiur_fn⟦
     }
 ⟧
 
+  -- Whether `rc` is a group's validation context: a validating context whose limit is below the
+  -- group count (`group_admit`'s and `walk_ctx`'s), not a typing claim's (`group_count()`) nor
+  -- an assumed one.
+
+def rc_validates_group := aiur_fn⟦
+  fn rc_validates_group(rc: RoleCtx) -> Field {
+      match (*(rc)) {
+        RoleCtxNode::Mk(_, limit, _) => {
+          UInt32::less_than_fields(limit, KernelRoleSpec::group_count()) } ,
+        RoleCtxNode::Assumed(_, _) => {  0 } ,
+      }
+    }
+⟧
+
 def role_ctx_binding := aiur_fn⟦
   fn role_ctx_binding(rc: RoleCtx) -> Bytes::AddressRef {
       match (*(role_ctx_table(rc))) {
@@ -568,6 +582,34 @@ def role_admission_checks := aiur_fn⟦
     }
 ⟧
 
+def addr_quot_bound := aiur_fn⟦
+  fn addr_quot_bound(rc: RoleCtx, a: Bytes::AddressRef) -> Field {
+      let r1 = role_index_of(rc, a);
+      match r1 {
+        0 => {  0 } ,
+        _ => {
+          match (r1 - 1) - KernelRoleSpec::role_quot() {
+            0 => {  1 } ,
+            1 => {  1 } ,
+            2 => {  1 } ,
+            3 => {  1 } ,
+            4 => {  1 } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
+def addr_walked_role := aiur_fn⟦
+  fn addr_walked_role(rc: RoleCtx, a: Bytes::AddressRef) -> Field {
+      let r1 = role_index_of(rc, a);
+      match r1 {
+        0 => {  0 } ,
+        _ => {  role_admission_checks(r1 - 1) } ,
+      }
+    }
+⟧
+
 def walk_ctx := aiur_fn⟦
   fn walk_ctx(rc: RoleCtx, a: Bytes::AddressRef) -> RoleCtx {
       match (*(rc)) {
@@ -610,11 +652,38 @@ def assert_op_reached_in_order := aiur_fn⟦
     }
 ⟧
 
-  -- Inside the well-founded block: what `a` references, up to the records whose roles are in
-  -- force (each checked in its own group's validation, under the same rule), reaches an
-  -- operation only if that operation's group is below `limit` or among `needs`, the needs of
-  -- the group being validated. A referenced operation is not entered: its own validation
-  -- scanned its closure.
+  -- The walk's order assertion (`walk_ctx`) at a record a family check reaches through its
+  -- payload, where no `walk_ctx` passes: an advice record, a witnessed reference, a used
+  -- reference of an advice, container or family record. Below the well-founded block such a
+  -- record bound to an operation must be in force; inside the block `op_order_scan` refuses
+  -- the modeled block itself, so no payload is checked there; an assumed binding asserts
+  -- nothing, as in `walk_ctx`.
+
+def assert_in_order := aiur_fn⟦
+  fn assert_in_order(rc: RoleCtx, a: Bytes::AddressRef) -> () {
+      match (*(rc)) {
+        RoleCtxNode::Mk(tbl, limit, _) => {
+          let r1 = RBTreeMap::rbtree_map_lookup_or_default(a, role_addr_index(tbl), 0);
+          match r1 {
+            0 => {  () } ,
+            _ => {  assert_op_reached_in_order(r1 - 1, KernelRoleSpec::role_group(r1 - 1), limit) } ,
+          } } ,
+        RoleCtxNode::Assumed(_, _) => {  () } ,
+      }
+    }
+⟧
+
+  -- Inside the well-founded block: what `a` references, up to the records at which the scan
+  -- stops, reaches an operation only if that operation's group is below `limit` or among
+  -- `needs`, the needs of the group being validated. A referenced operation is not entered: its
+  -- own validation scanned its closure. The scan stops at a role-bound record in force that is
+  -- no operation, unless the role is an anchor whose validation does not walk its record
+  -- (`anchor_walked` answers 0): the record of a walked role, of a walked anchor and what a
+  -- standard axiom's record references were walked in their own group, below the block, where
+  -- every reference to an operation is to one in force; the quotient package is bound at
+  -- committed records; no walk passes an inert axiom. An anchor no validation walks has had no
+  -- such walk, and the walk of this validation does not stop at it, so the scan goes on into
+  -- what its record references.
 
 def op_order_scan := aiur_fn⟦
   fn op_order_scan(tbl: RoleTable, limit: Field, needs: Lists::List<Field>, a: Bytes::AddressRef) -> () {
@@ -632,6 +701,11 @@ def op_order_scan := aiur_fn⟦
               };
               assert_eq!(ok, 1, "an operation reaches an operation its group does not need");
               () } ,
+            1 => {
+              match in_force * anchor_walked(r) {
+                1 => {  () } ,
+                _ => {  op_order_scan_refs(tbl, limit, needs, a) } ,
+              } } ,
             _ => {
               match in_force {
                 1 => {  () } ,
@@ -659,6 +733,13 @@ def op_order_scan_refs := aiur_fn⟦
               match p { Ixon::RecursorProj::Mk(_, b) => {  op_order_scan(tbl, limit, needs, b) } , } } ,
             Ixon::ConstantInfo::DPrj(p) => {
               match p { Ixon::DefinitionProj::Mk(_, b) => {  op_order_scan(tbl, limit, needs, b) } , } } ,
+            Ixon::ConstantInfo::Muts(_) => {
+              -- no mutual or nested block inside the well-founded block: its payload (family
+              -- record, advice, witnessed references) would be checked in an operation's group
+              -- with no order against the operations
+              assert_eq!(KernelModeled::block_is_modeled(a), 0,
+                "an operation reaches a mutual or nested family");
+              () } ,
             _ => {  () } ,
           };
           op_order_scan_list(tbl, limit, needs, refs, KernelClaim::const_idxs_of(c), 0) } ,
@@ -797,6 +878,10 @@ def validate_member := aiur_fn⟦
   fn validate_member(rc: RoleCtx, tbl: RoleTable, r: Field, a: Bytes::AddressRef,
         ci: KernelTypes::KConstantInfo) -> () {
       assert_safe_role(ci);
+      -- the member's type is closed over its levels, as the anchors' and axioms' validators
+      -- check it, before it is compared with the pinned type
+      KernelCheck::validate_expr_well_scoped(KernelInfer::const_type_of(ci), 0,
+        KernelInfer::const_num_lvls(ci));
       assert_type_pinned(KernelInfer::const_type_of(ci), KernelRoleSpec::role_type(tbl, r));
       match KernelRoleSpec::role_member_kind(r) {
         0 => {
@@ -827,7 +912,25 @@ def validate_member := aiur_fn⟦
           } } ,
         2 => {
           match ci {
-            KernelTypes::KConstantInfo::Rec(_, _, _, _, _, _, _, _, _, _, _) => {
+            KernelTypes::KConstantInfo::Rec(_, _, np, ni, nmot, nmin, _, _, _, _, _) => {
+              -- the recursors of `Iff` and `Nonempty`: the major premise's index and the rules'
+              -- prefix are the pinned ones (the level count is the pinned type's,
+              -- `validate_role`)
+              match r {
+                25 => {
+                  assert_eq!(((np + nmot) + nmin) + ni, 4,
+                    "a bound recursor's major premise is not at its pinned index");
+                  assert_eq!((np + nmot) + nmin, 4,
+                    "a bound recursor's rules' prefix is not its pinned length");
+                  () } ,
+                28 => {
+                  assert_eq!(((np + nmot) + nmin) + ni, 3,
+                    "a bound recursor's major premise is not at its pinned index");
+                  assert_eq!((np + nmot) + nmin, 3,
+                    "a bound recursor's rules' prefix is not its pinned length");
+                  () } ,
+                _ => {  () } ,
+              };
               KernelClaim::run_check_transitive(rc, a) } ,
           } } ,
         3 => {
@@ -861,9 +964,34 @@ def assert_quot_kind := aiur_fn⟦
     }
 ⟧
 
+  -- The literal anchors' record kinds: `List.nil`, `List.cons` (30, 31) are constructors and
+  -- `String.ofList`, `Char.ofNat` (38, 40) definitions, as the kernel's literal rules read them.
+  -- Any other anchor: no kind is asked.
+
+def anchor_kind_ok := aiur_fn⟦
+  fn anchor_kind_ok(r: Field, ci: KernelTypes::KConstantInfo) -> Field {
+      let is_ctor = match ci {
+        KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, _, _, _) => {  1 } ,
+        _ => {  0 } ,
+      };
+      let is_defn = match ci {
+        KernelTypes::KConstantInfo::Defn(_, _, _, _, _) => {  1 } ,
+        _ => {  0 } ,
+      };
+      match r {
+        30 => {  is_ctor } ,
+        31 => {  is_ctor } ,
+        38 => {  is_defn } ,
+        40 => {  is_defn } ,
+        _ => {  1 } ,
+      }
+    }
+⟧
+
 def validate_anchor := aiur_fn⟦
   fn validate_anchor(rc: RoleCtx, tbl: RoleTable, r: Field, ci: KernelTypes::KConstantInfo) -> () {
       assert_safe_role(ci);
+      assert_eq!(anchor_kind_ok(r, ci), 1, "a literal anchor is bound to a record of the wrong kind");
       let ty = KernelInfer::const_type_of(ci);
       -- the anchor's type is closed and a type, before it is compared with the role's spec
       KernelCheck::validate_expr_well_scoped(ty, 0, KernelInfer::const_num_lvls(ci));
