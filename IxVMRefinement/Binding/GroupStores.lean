@@ -62,11 +62,16 @@ Status: stated only; nothing proves any field of any run.
 * `standing`: a new axiom or quotient record is the group's standard axiom. The walk's check of
   an axiom record asks for a standing role in force.
 * `rootsSafe`: the record bound to a role whose validation walks it is in Lean's logic with its
-  block (`RootsSafe`). The clause `logic` follows from it (`logic_of_rootsSafe`,
+  block, and so are the theorem of a proof in the evidence of a definition specified by
+  equations and the references a certificate in an operation's evidence uses (`RootsSafe`).
+  The clause `logic` follows from it (`logic_of_rootsSafe`,
   `IxVMRefinement.Binding.StoreLogic`): a walked record's references are guarded against a safe
   source (`Claim.RecordRefsIn.safe`). Its producer is the roles' validations
   (`KernelRoles::assert_safe_role`, the `Safe` match of `validate_op` and `validate_eqns`) with
-  `KernelCheck::check_block_member_kinds` for the block of a projection record.
+  `KernelCheck::check_block_member_kinds` for the block of a projection record; for the
+  evidence, the `Thm` match on `Ingress::get_ci` of an equation theorem (a theorem record, or a
+  projection into a block of uniform safety) and `KernelClaim::assert_safe_refs_except` on a
+  certificate's references.
 * `opsOwn`, `unitsLast`: no new record is another group's operation, and none uses the record
   of a role unit of the group: below the well-founded block from
   `KernelRoles::assert_op_reached_in_order` in `KernelRoles::walk_ctx`, in the block from
@@ -156,7 +161,8 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
         validated := fun _ _ => trivial
         kept := groupStore_kept hC hb hax hg6 hw
         opsOwn := hR.opsOwn g hg6 hg
-        unitsLast := hR.unitsLast g hg6 hg }
+        unitsLast := hR.unitsLast g hg6 hg
+        evidenceRefs := groupStore_evidenceRefs hC hb hbr hax hws hg6 hw }
   · exact
       { blobs := groupStore_reads_blobs (Nat.lt_succ_of_le hg6)
         reads := hR.reads g hg6 hg }

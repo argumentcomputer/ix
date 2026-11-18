@@ -14,9 +14,11 @@ alone; the clauses that read the walks are in `IxVMRefinement.Binding.StoreClaus
 * `recordsAt E S`: the records of `E` at the addresses of `S`, with every blob of `E`.
 * `GroupReach t E₀ g a`: `a` is reached by the admission of group `g` over the run's records
   `E₀`: the bound record of a role of the group whose validation walks it, a reference the
-  group's standard axiom uses, a reference a reached record uses, or the block of a reached
-  projection record; a reference bound to a walked role in force at the group's validation
-  limit is not followed (its own group reached it).
+  group's standard axiom uses, a reference a reached record uses, the block of a reached
+  projection record, or a reference a proof in the evidence of a role of the group uses other
+  than the role's own address (an equation theorem is walked with its closure, a certificate's
+  references one by one; the proof's own record is not reached); a reference bound to a walked
+  role in force at the group's validation limit is not followed (its own group reached it).
 * `GroupAdds t E₀ g a`: what the admission of group `g` adds: a reached address, a member's or
   a constructor's address of a reached block, or the address of the group's standard axiom.
 * `groupStore t E₀ g`: the basis store at group 6, and from group 7 on the run's records at the
@@ -109,6 +111,10 @@ inductive GroupReach (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (g : Nat) :
       ¬ Claim.CoveredAt t (some (valLimit g)) x → GroupReach t E₀ g x
   | owner {a : _root_.Address} {c : Ixon.Constant} : GroupReach t E₀ g a →
       recordOf E₀ a = some c → IsProj c → GroupReach t E₀ g (Ix.Cert.ownerOf a c)
+  | evidenceRef {r : Ix.Kernel.Role} {arr : Array (Ix.Kernel.Evidence _root_.Address)}
+      {thm x : _root_.Address} : r ∈ roleGroup g → (r, arr) ∈ t.evidence.toList →
+      Ix.Kernel.Evidence.proof thm ∈ arr.toList → UsedRef E₀ thm x → t.addressOf? r ≠ some x →
+      ¬ Claim.CoveredAt t (some (valLimit g)) x → GroupReach t E₀ g x
 
 /-- **An address the admission of group `g` adds to the store**: a reached address, a member's
 or a constructor's address of a reached block, or the address of the group's standard axiom. -/
