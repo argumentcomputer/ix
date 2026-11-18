@@ -119,12 +119,13 @@ theorem blockRoute_storeCongr {R R' : Ixon.Env}
     rw [recordOf_storeCongr hc]
 
 /-- **The stored families pass to a store closed under what its records use that holds the
-records of the first**, and to an environment that keeps what the first stores and the family
-records installed, provided the blocks the new store routes as modeled and the new environment
-stores were already so at the first. -/
+records and blobs of the first**, and to an environment that keeps what the first stores and the
+family records installed, provided the blocks the new store routes as modeled and the new
+environment stores were already so at the first. -/
 theorem storedFamilies_grow {t : Ix.Kernel.RoleTable} {R₁ R' : Ixon.Env}
     {env₁ env' : Ix.Kernel.Env .anon} {famOf : _root_.Address → Option _root_.Address}
-    (hle : ∀ a c, recordOf R₁ a = some c → recordOf R' a = some c) (hclosed : UsedClosed R')
+    (hle : ∀ a c, recordOf R₁ a = some c → recordOf R' a = some c)
+    (hblob : ∀ x b, R₁.blobs.get? x = some b → R'.blobs.get? x = some b) (hclosed : UsedClosed R')
     (hblocks : ∀ B cb, recordOf R' B = some cb → Route.blockRoute R' B = some true →
       (∀ x, ConstAddrOf B cb x → StoredAt t env' x) →
       recordOf R₁ B = some cb ∧ Route.blockRoute R₁ B = some true ∧
@@ -152,14 +153,17 @@ theorem storedFamilies_grow {t : Ix.Kernel.RoleTable} {R₁ R' : Ixon.Env}
     rw [e] at hrb₁
     obtain ⟨hs, hi⟩ := h.installed B rb crb hrb hrb₁
     exact ⟨fun x hx => hst x (hs x hx), hinst rb crb hi⟩
+  flat := storedFamiliesFlat_grow hle hblob hclosed h.flat
 
-/-- **The stored families depend on the store only through its records**, at a store closed under
-what its records use. -/
+/-- **The stored families depend on the store only through its records and blobs**, at a store
+closed under what its records use. -/
 theorem storedFamilies_storeCongr {t : Ix.Kernel.RoleTable} {R R' : Ixon.Env}
     {env : Ix.Kernel.Env .anon} {famOf : _root_.Address → Option _root_.Address}
-    (hc : ∀ a, R.consts.get? a = R'.consts.get? a) (hclosed : UsedClosed R')
+    (hc : ∀ a, R.consts.get? a = R'.consts.get? a) (hb : ∀ a, R.blobs.get? a = R'.blobs.get? a)
+    (hclosed : UsedClosed R')
     (h : StoredFamilies t R env famOf) : StoredFamilies t R' env famOf :=
-  storedFamilies_grow (fun a c hac => by rw [← recordOf_storeCongr hc]; exact hac) hclosed
+  storedFamilies_grow (fun a c hac => by rw [← recordOf_storeCongr hc]; exact hac)
+    (fun x b hx => by rw [← hb x]; exact hx) hclosed
     (fun B cb hB hroute hst => by
       rw [← recordOf_storeCongr hc] at hB
       rw [blockRoute_storeCongr hc] at hroute
@@ -324,7 +328,7 @@ theorem groupStepOverW_of_parts {L : Ix.Kernel.Env .anon → NativeFam .anon →
           rw [h₁] at this
           cases this
     exact ⟨env₁, hext, ⟨bndOver_storeCongr hsame hsameB hb₂, walkedStored_storeCongr hsame hws₂,
-      famOf₁, storedFamilies_storeCongr hsame hadm.usedClosed hsf₁⟩⟩
+      famOf₁, storedFamilies_storeCongr hsame hsameB hadm.usedClosed hsf₁⟩⟩
 
 /-! ## The fold and the witness -/
 
