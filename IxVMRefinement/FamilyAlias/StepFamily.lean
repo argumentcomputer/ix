@@ -141,6 +141,9 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
     (hkeeps : ∀ (env env₂ : Ix.Kernel.Env .anon)
       (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon) (aliases blk : List (ConstantInfo .anon)),
       Decl.PrefixInv.{u} E t lim env → FoldExtra.{u} L t E env →
+      (∀ ci ∈ envT.consts, ci ∈ env.consts) →
+      (∀ x, UsedRef E₀ A x ∨ UsedRef E₀ rb x →
+        (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x) →
       AliasGroup env h aliases → (∀ a ∈ aliases, ∃ ci ∈ blk, a.name.base = ci.name) →
       FamDeclReads t E₀ A c rb crb blk →
       DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk env₂ →
@@ -191,9 +194,9 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
       exact hfresh x hx
     · exact AliasGroup.fresh_prefix hg ci hci
   · rw [← henv₂]
-    exact (hkeeps env env₂ h as blk hinv hX.1 hg hroots hreads hd hst).1
+    exact (hkeeps env env₂ h as blk hinv hX.1 hext hrefs hg hroots hreads hd hst).1
   · rw [← henv₂]
-    exact (hkeeps env env₂ h as blk hinv hX.1 hg hroots hreads hd hst).2
+    exact (hkeeps env env₂ h as blk hinv hX.1 hext hrefs hg hroots hreads hd hst).2
   · rw [← henv₂]
     exact familyRecsModeled_famStep (A := A) (rb := rb) (c := c) (crb := crb) hX.2 hg hd hst
       (hclaim blk hreads)
