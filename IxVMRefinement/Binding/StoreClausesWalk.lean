@@ -162,8 +162,8 @@ theorem groupWalked_exists (hH : LoadedReads.HashedRecordsStored calls E₀) {g 
     induction rs with
     | nil =>
       intro _
-      exact ⟨[], by simp [Claim.TopRecsClosed], fun r hr => by cases hr,
-        fun r hr => by cases hr⟩
+      exact ⟨[], by simp [Claim.TopRecsClosed], (fun r hr => by cases hr),
+        (fun r hr => by cases hr)⟩
     | cons r rs ih =>
       intro hsub
       obtain ⟨recs, hcl, hw, hs⟩ := ih (fun r' hr' => hsub r' (List.mem_cons_of_mem _ hr'))
