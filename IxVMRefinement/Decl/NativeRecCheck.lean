@@ -1015,13 +1015,13 @@ theorem kexpr_list_concat_spec' {κ : _root_.Address → KKey} {d : Nat} {Γ : N
 
 theorem kexpr_list_drop_spec' {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {k n : Nat} {xs : List KExpr} {l r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hn : n < 4294967296)
+    (hn : n < 18446744069414584321)
     (ev : ObsFn W Obs.Names.«Lists::drop<&KernelTypes::KExprNode>» [l, .field (n : F)] h r h' cs)
     (hl : RepList kexprListEnum (fun h E p => Tm κ d Γ h k E p) h xs l) :
     n ≤ xs.length ∧
       RepList kexprListEnum (fun h E p => Tm κ d Γ h k E p) h (xs.drop n) r ∧ h' = h := by
   have hval : ZMod.val (n : F) = n :=
-    ZMod.val_natCast_of_lt (Nat.lt_trans hn (by decide))
+    ZMod.val_natCast_of_lt hn
   have hres := Lib.Lists.drop_spec (t := .ptr (.named "KernelTypes::KExprNode" []))
     (R := fun h₀ X p₀ => Tm κ d Γ h₀ k X p₀) n hval
     (by rw [Obs.Names.«Lists::drop<&KernelTypes::KExprNode>».symbol]; exact ev)
@@ -1071,7 +1071,7 @@ theorem nat_rec_idx_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     {Rcty Ecty rbody ebody : KExpr} {rcbs ecbs : List (KExpr × Ix.Kernel.BinderMeta)}
     (hT : κ (ixAddr bT) = T)
     (hκ_inj : ∀ a : Bytes.Address, κ (ixAddr a) = T → a = bT)
-    (hnPF_lt : nP + nF < 2147483648)
+    (hnPF_lt : nP + nF < 18446744069414584321)
     (hsR : Rcty.stripPis (nP + nF) = some (rcbs, rbody))
     (hsE : Ecty.stripPis (nP + nF) = some (ecbs, ebody))
     (hnp_dom : ∀ idx < nF, noProjAt T (ecbs.getD (nP + idx) default).1 = true) :
@@ -1110,7 +1110,7 @@ theorem nat_rec_idx_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
       have hsub := evalBinOp_sub_nat (by omega : i ≤ nF) op17
       have hval := congrArg ZMod.val (Value.field.inj hsub.symm)
       have h1 : ZMod.val ((nF - i : Nat) : F) = nF - i :=
-        ZMod.val_natCast_of_lt (Nat.lt_trans (by omega : nF - i < 2147483648) (by decide))
+        ZMod.val_natCast_of_lt (by omega : nF - i < 18446744069414584321)
       rw [h1, ZMod.val_zero] at hval
       omega
     | .other_n0 (m38 := m38) (m180 := m180) (v213 := v213) (v199 := v199) (m202 := m202)
@@ -1201,7 +1201,7 @@ theorem nat_rec_idx_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
       rw [evalBinOp_add_one (nP + i) op397] at ev_peel
       have ext_237 := ext_180.trans ev_rec.heap_extends
       obtain ⟨hm364_eq, _, ebs₁, _, emid, _, hsE₁, hmid⟩ :=
-        peel_n_foralls_rawTm_spec (nP + i + 1) (by omega) (hRaw.mono ext_237) ev_peel
+        peel_n_foralls_rawTm_bounded (nP + i + 1) (by omega) (hRaw.mono ext_237) ev_peel
       rw [hm364_eq, heq420] at ev_bvar
       have hbnd_bvar : IxVM.Consistency.Bounded cs_bvar :=
         RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
@@ -1229,7 +1229,7 @@ theorem nat_rec_idx_unused_later {κ : _root_.Address → KKey} {Γ₀ : Nat →
     {pcty pt plps r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hT : κ (ixAddr bT) = T)
     (hκ_inj : ∀ a : Bytes.Address, κ (ixAddr a) = T → a = bT)
-    (hnPF_lt : nP + nF < 2147483648)
+    (hnPF_lt : nP + nF < 18446744069414584321)
     (hsR : Rcty.stripPis (nP + nF) = some (rcbs, rbody))
     (hsE : Ecty.stripPis (nP + nF) = some (ecbs, ebody))
     (hnp_dom : ∀ i < nF, noProjAt T (ecbs.getD (nP + i) default).1 = true)
@@ -1443,7 +1443,7 @@ theorem nat_ctor_spec {κ : _root_.Address → KKey}
       m146 v284 h' cs309 := by
     simpa using ev311
   obtain ⟨hrep_idx, hunused_idx⟩ :=
-    nat_rec_idx_spec hT hκ_inj hnPF_lt hsR_pos hsE_pos hnp_dom_f nF 0 (by omega) hbnd_rec
+    nat_rec_idx_spec hT hκ_inj (by omega) hsR_pos hsE_pos hnp_dom_f nF 0 (by omega) hbnd_rec
       (hRaw137.mono ev158.heap_extends) hbT_146 ev311'
   have hrec_eq := hwf.recIdx_eq _ _ hsE_pos
   rw [← hrec_eq] at hrep_idx hunused_idx

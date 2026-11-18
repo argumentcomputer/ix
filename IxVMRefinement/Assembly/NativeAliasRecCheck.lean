@@ -44,11 +44,11 @@ def NatFormerTeleTraced (c : ScopedCtx) (n : Nat) (A : KExpr) : Prop :=
 
 /-- On a term whose first `n` nodes are `∀`s the builder follows the empty traces. -/
 theorem NatFormerTeleTraced.of_strip {c : ScopedCtx} (hc : ScopedCoreFacts c) {n : Nat}
-    {A : KExpr} (hn : n < 4294967296) (hs : (A.stripPis n).isSome = true) :
+    {A : KExpr} (hn : n < 18446744069414584321) (hs : (A.stripPis n).isSome = true) :
     NatFormerTeleTraced c n A := by
   intro x_rc x_ty x_types r h h' cs hrc htypes hgood hA ev
   exact ⟨A, OpenBinderTrace.of_strip c.env n hs (tm_fvarIdxLt hA) hA.looseBVarsBounded,
-    (scoped_nat_former_tele_spec hc n hn hs hrc htypes (ghostScoped_zero _) hgood hA ev).2⟩
+    (scoped_nat_former_tele_bounded hc n hn hs hrc htypes (ghostScoped_zero _) hgood hA ev).2⟩
 
 /-- **The builder's output at the registered telescope.** If `A` carries the traced binders of
 `S` and the builder follows the traces of an instance of `S`, then the builder's output on that
@@ -95,13 +95,12 @@ theorem late_nat_rec_check_spec_registered {c : ScopedCtx} (hc : ScopedCoreFacts
     (hT : c.κ (ixAddr bT) = T)
     (hκ₂_inj : ∀ a : Bytes.Address, κ₂ (ixAddr a) = T → a = bT)
     (hRec : κ₂ (ixAddr bRec) = recC)
-    (hidx : idx < 4294967296)
+    (hidx : idx < 72057594037927936)
     (hCres : ∀ i, i < ctors_info.length → c.κ (cprjAddr (ixAddr b₀) idx i) ≠ unresolvedKey)
-    (hk_lt : k < 2147483648)
-    (hnP_lt : nP < 2147483648)
-    (hnIdx_lt : nIdx < 2147483648)
-    (hnCtors_lt : ctors_info.length < 2147483648)
-    (hnall_lt : nP + 1 + ctors_info.length + nIdx + 1 < 4294967296)
+    (hk_lt : k + (if large then 1 else 0) < 4294967296)
+    (hnP_lt : nP < 72057594037927936)
+    (hnIdx_lt : nIdx < 72057594037927936)
+    (hnCtors_lt : ctors_info.length < 72057594037927936)
     (hlps_pty : pty₀.allLevelParamsDefined (List.range k) = true)
     (hwf_all : ∀ info ∈ ctors_info,
       NatCtorInfoWfT T k large nP nIdx ctors_info.length info)
@@ -162,7 +161,7 @@ theorem late_nat_rec_check_spec_registered {c : ScopedCtx} (hc : ScopedCoreFacts
   have hmain := late_nat_rec_check_spec_of_tele hc hall hkeep hwl₂ (tty₀ := X)
     (hT_ind := hT_ind) (hrecblk := hrecblk) (hcst := hcst) (hT := hT) (hκ₂_inj := hκ₂_inj)
     (hRec := hRec) (hidx := hidx) (hCres := hCres) (hk_lt := hk_lt) (hnP_lt := hnP_lt)
-    (hnIdx_lt := hnIdx_lt) (hnCtors_lt := hnCtors_lt) (hnall_lt := hnall_lt)
+    (hnIdx_lt := hnIdx_lt) (hnCtors_lt := hnCtors_lt)
     (hlps_pty := hlps_pty) (hsT₀ := hsT₀) (hwf_all := hwf_all) (hrls_len := hrls_len)
     (hload := hload) (hhead := hhead) (hgood := hgood) (hrc := hrc) (hb₀_blk := hb₀_blk)
     (hbRB := hbRB) (hbT := hbT) (hbRec := hbRec) (hpty := hpty) (htele := hreads)

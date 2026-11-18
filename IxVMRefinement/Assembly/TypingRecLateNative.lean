@@ -16,16 +16,15 @@ and IxC's recursor stage holds at the step's environment: `NativeRecJ` at
 The proof composes:
 * `rec_native_front` (the circuit side: the reading, the canonical annotations, the front
   check of the declared recursor at the prefix, and the native recursor comparison
-  `Decl.late_nat_rec_check_specT` instantiated at the arm);
+  `Decl.late_nat_rec_check_spec_traced` instantiated at the arm);
 * `nativeRecJ_of_parts` (the kernel side: `NativeRecRunJ` and the declared arm of
   `RecStoredJ` from the comparison's outputs);
 * the registry entry's stored types (`late_former_genScoped`, `late_ctors_genScoped`) and the
   level parameters of the canonical rules (`wrapRelSem_annot_allLevelParamsDefined`).
 
-Three hypotheses are not consequences of the run or of the carried clauses, and are named:
-`FamCtorNoProj fam` (a fact of the registry entry the block step's constructor stage gives),
-`RecArmBounds ip ind fam` (count bounds the comparison's specifications are stated under) and
-the scoping of the rules as read (which the run gives only at the raw level: `wrap_rel` compares
+Two hypotheses are not consequences of the arm alone, and are named: `FamCtorNoProj fam` (a
+fact of the registry entry, which the fold's clause carries with it) and the scoping of the
+rules as read (which the run gives only at the raw level: `wrap_rel` compares
 the stored rule with the closed generated one cell by cell, a `let` only against a `let`).
 -/
 
@@ -45,12 +44,12 @@ open Ix.Kernel.Model (rulesJ)
 
 /-- **The recursor's stage and the stored recursor at the arm** (module docstring). -/
 theorem rec_nativeRecJ_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hcov : LoadedReads.HashedRecordsStored calls E₀) (hst : StepStore calls t E₀ E)
     (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlogic : InLogic c)
-    (hlim : lim = some n) (hnat : NativeRecArm calls bAddr t A n)
+    (hnat : RecArmRun calls t A lim)
     (hkey : Decl.KeyFree (keyOf t A)) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
@@ -61,9 +60,9 @@ theorem rec_nativeRecJ_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} 
     {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (hcb : Ix.Cert.recordAt E ip.block = some cb) (hms : cb.info = .muts ms)
     (hind : ms[ip.idx.toNat]? = some (.indc ind))
-    {fam : NativeFam .anon} (hm : MatchedAt t E env P ip fam)
+    {fam : NativeFam .anon} (hm : FamReadAt FormerOpenTraceAt t E env P ip fam)
     (hhead : Decl.CtorRetHeadAt cb ind)
-    (hnoProj : FamCtorNoProj fam) (hbounds : RecArmBounds ip ind fam)
+    (hnoProj : FamCtorNoProj fam)
     (hrscoped : ∀ rules : List (Ix.Kernel.RecRule .anon),
       List.Forall₂ (fun ru rl₀ => (exprReader t (fun x => E₀.blobs.get? x) c
           (Ix.Kernel.Reader.recParam (Ix.Kernel.Reader.recLps
@@ -121,9 +120,9 @@ theorem rec_nativeRecJ_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} 
         (List.range ind.lvls.toNat)).length = rc.lvls.toNat := by
   obtain ⟨ty, rules, tyC, rlsC, recTy, hty, hlbb, hdef, hrd, hrr, hcT, hcR, hannT, hstR, hM, hcv,
     hrec, hwrap, hlenC, hrules, hmaj⟩ :=
-    rec_native_front ht hS hcov hst hc hinfo hlogic hlim hnat hkey hinert hcover hstep hlv hcm
-      hcmi htie hcb hms hind hm hhead hnoProj hbounds hrscoped
-  have hat : LateFamAt t E env fam := hm.1
+    rec_native_front ht hS hcov hst hc hinfo hlogic hnat hkey hinert hcover hstep hlv hcm
+      hcmi htie hcb hms hind hm hhead hnoProj hrscoped
+  have hat : FamRead FormerOpenTraceAt t E env fam := hm.1
   have hL1 : fam.p.cvT.levelParams = List.range ind.lvls.toNat :=
     (hat.logic_lvls ht hm.2.1 hcm hcmi hcb hms hind).2
   have henv : Ix.Kernel.EnvWF env := hstep.inv.store.store.wf
@@ -150,7 +149,7 @@ theorem rec_nativeRecJ_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} 
   have hNR := nativeRecJ_of_parts (hat.stored.former)
     (fun c4 hc4 => ⟨(hctors c4 hc4).1, (hctors c4 hc4).2.1⟩) hL1
     (decide (rc.lvls.toNat = ind.lvls.toNat + 1))
-    (late_former_genScoped hat henv hlv hsub) ⟨bs, _, hsort⟩
+    (late_former_genScoped hat hsub) ⟨bs, _, hsort⟩
     (fun c4 hc4 => (hctors c4 hc4).2.2) hRfresh hcv hrec hwrap hannT hstR hlenC hrules
     (fun rl hrl => by
       obtain ⟨j, hj, rfl⟩ := List.getElem_of_mem hrl

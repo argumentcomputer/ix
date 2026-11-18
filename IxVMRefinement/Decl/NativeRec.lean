@@ -5229,13 +5229,13 @@ private theorem kexpr_list_concat_spec {κ : _root_.Address → KKey} {d : Nat} 
 
 private theorem kexpr_list_drop_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {k n : Nat} {xs : List KExpr} {l r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hn : n < 4294967296)
+    (hn : n < 18446744069414584321)
     (ev : ObsFn W Obs.Names.«Lists::drop<&KernelTypes::KExprNode>» [l, .field (n : F)] h r h' cs)
     (hl : RepList kexprListEnum (fun h E p => Tm κ d Γ h k E p) h xs l) :
     n ≤ xs.length ∧
       RepList kexprListEnum (fun h E p => Tm κ d Γ h k E p) h (xs.drop n) r ∧ h' = h := by
   have hval : ZMod.val (n : F) = n :=
-    ZMod.val_natCast_of_lt (Nat.lt_trans hn (by decide))
+    ZMod.val_natCast_of_lt hn
   have hres := Lib.Lists.drop_spec (t := .ptr (.named "KernelTypes::KExprNode" []))
     (R := fun h₀ X p₀ => Tm κ d Γ h₀ k X p₀) n hval
     (by rw [Obs.Names.«Lists::drop<&KernelTypes::KExprNode>».symbol]; exact ev)
@@ -5918,6 +5918,389 @@ theorem stripPis_at_lt :
   | a + 1, rem, .letE _ _ _ _, _, _, _, _, hs, _ | a + 1, rem, .lit _, _, _, _, _, hs, _
   | a + 1, rem, .proj _ _ _, _, _, _, _, hs, _ => nomatch hs
 
+/-! ### The generators at counts in the field's range
+
+The specifications above take their counts below `2^32`. An accepted run bounds a parameter,
+index, field or constructor count below `2^56` and a telescope it built below `2^39`; the
+lemmas of this section hold at those bounds. A natural's cast to the field is the natural
+below the modulus `18446744069414584321`; a represented bound variable has an index below
+`2^63`; a lift's shift is below `2^62`. -/
+
+/-! ### A represented bound variable, at an index below `2^63` -/
+
+/-- A `BVar` cell holding the cast of a natural below `2^63` represents that local variable:
+`tm_bvarLocal_nat` at the bound `Tm.bvarLocal` asks. -/
+theorem tm_bvarLocal_nat_bounded {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+    {h : Heap F} {k addr n : Nat}
+    (cell : h[addr]? = some (.construct kexprEnum "BVar" [.field (n : F)]))
+    (hsm : n < 9223372036854775808) (hlt : n < k) :
+    Tm κ d Γ h k (.bvar n) (.ptr (.enum kexprEnum) addr) := by
+  have hval : ZMod.val (n : F) = n :=
+    ZMod.val_natCast_of_lt (Nat.lt_trans hsm (by decide))
+  rw [← hval]
+  exact .bvarLocal cell (by rw [hval]; exact hsm) (by rw [hval]; exact hlt)
+
+/-- `KernelCheck::peel_n_foralls` on a `RawTm` expression, for any count in the field's range
+(`peel_n_foralls_rawTm_spec` asks `n < 2^32`). -/
+theorem peel_n_foralls_rawTm_bounded {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
+    ∀ (n : Nat) {k : Nat} {R E : KExpr} {pe r : SourceValue F} {h h' : Heap F}
+      {cs : List (Call F)},
+      n < 18446744069414584321 →
+      RawTm κ d Γ h k R E pe →
+      ObsFn W "KernelCheck::peel_n_foralls" [pe, .field (n : F)] h r h' cs →
+      h' = h ∧ ∃ rbs ebs rbody ebody,
+        R.stripPis n = some (rbs, rbody) ∧
+        E.stripPis n = some (ebs, ebody) ∧
+        RawTm κ d Γ h (k + n) rbody ebody r
+  | 0, k, R, E, pe, r, h, h', cs, _, hRE, ev => by
+    match Obs.«KernelCheck::peel_n_foralls».obs ev with
+    | .n0 (he16 := hr) (he17 := hh) .. =>
+      subst hr hh
+      exact ⟨rfl, [], [], R, E, rfl, rfl, by rwa [Nat.add_zero]⟩
+    | .other (hne19 := hne) .. =>
+      exact absurd rfl hne
+  | m + 1, k, R, E, pe, r, h, h', cs, hlt, hRE, ev => by
+    match Obs.«KernelCheck::peel_n_foralls».obs ev with
+    | .n0 (hv14 := hv) .. =>
+      exact absurd hv (succ_field_ne_zero_bounded hlt)
+    | .other (ld34 := ld34) (op87 := op87) (ev64 := ev64) .. =>
+      obtain ⟨Rt, Rb, mR, T, B, ℓ, rfl, rfl, _, rb, _⟩ := hRE.forallE_of_load' ld34
+      rw [evalBinOp_sub_succ m op87] at ev64
+      obtain ⟨hh, rbs, ebs, rbody, ebody, hsR, hsE, hbody⟩ :=
+        peel_n_foralls_rawTm_bounded m (by omega) rb ev64
+      refine ⟨hh, (Rt, mR) :: rbs, (T, bmeta ℓ) :: ebs, rbody, ebody,
+        by simp [Expr.stripPis, hsR], by simp [Expr.stripPis, hsE], ?_⟩
+      rwa [show k + (m + 1) = k + 1 + m by omega]
+
+/-- `KernelCheck::nat_ps_at(o, n)` builds `Ix.Kernel.structPsAt o n` at any local binder depth
+`k` below `2^63` (`nat_ps_at_spec` asks `k < 2^32`). -/
+theorem nat_ps_at_bounded {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
+    ∀ (n o k : Nat) {r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      o + n ≤ k → k < 9223372036854775808 →
+      ObsFn W "KernelCheck::nat_ps_at" [.field (o : F), .field (n : F)] h r h' cs →
+      RepList kexprListEnum (fun h E p => Tm κ d Γ h k E p) h' (Ix.Kernel.structPsAt o n) r
+  | 0, o, k, r, h, h', cs, _, _, ev => by
+    match Obs.«KernelCheck::nat_ps_at».obs ev with
+    | .n0 (he19 := hr) (hm18 := hh) .. =>
+      subst hr hh
+      exact .nil (by simp)
+    | .other (hne24 := hne) .. =>
+      exact absurd rfl hne
+  | m + 1, o, k, r, h, h', cs, hle, hk, ev => by
+    match Obs.«KernelCheck::nat_ps_at».obs ev with
+    | .n0 (hv14 := hv) .. =>
+      exact absurd hv (succ_field_ne_zero_bounded (by omega))
+    | .other (v37 := v37) (m39 := m39) (v51 := v51) (x58 := x58) (m77 := m77) (v89 := v89)
+        (he32 := hr) (hm31 := hh) (hm47 := hm47) (op73 := op73) (op65 := op65)
+        (op110 := op110) (ev87 := ev87) .. =>
+      subst hr hh
+      have hx58 : x58 = .field ((o + (m + 1) : Nat) : F) := evalBinOp_add_nat o (m + 1) op73
+      rw [hx58, show o + (m + 1) = (o + m) + 1 by omega] at op65
+      have hv51 : v51 = .field ((o + m : Nat) : F) := evalBinOp_sub_succ (o + m) op65
+      have hv89 : v89 = .field (m : F) := evalBinOp_sub_succ m op110
+      rw [hv89] at ev87
+      have htl := nat_ps_at_bounded (κ := κ) (d := d) (Γ := Γ) m o k (by omega) hk ev87
+      have hhd_m39 : Tm κ d Γ m39 k (.bvar (o + m)) (.ptr (.enum kexprEnum) h.length) := by
+        rw [hm47, hv51]
+        exact tm_bvarLocal_nat_bounded (by simp) (by omega) (by omega)
+      have ext_end : Heap.Extends m77
+          (m77 ++ [.construct kexprListEnum "Cons"
+            [.ptr (.enum kexprEnum) h.length, v37]]) := Heap.Extends.snoc _ _
+      have hstruct : Ix.Kernel.structPsAt (md := .anon) o (m + 1) =
+          .bvar (o + m) :: Ix.Kernel.structPsAt o m := by
+        simp only [Ix.Kernel.structPsAt, List.range_succ_eq_map, List.map_cons, List.map_map]
+        rw [show o + (m + 1) - 1 - 0 = o + m by omega]
+        congr 1
+        apply List.map_congr_left; intro j _; dsimp only [Function.comp_apply]
+        exact congrArg Expr.bvar (by omega)
+      rw [hstruct]
+      exact .cons (by simp) ((hhd_m39.mono ev87.heap_extends).mono ext_end)
+        (tmRepList_mono ext_end htl)
+
+/-- `KernelCheck::nat_replace_pis` computes `Expr.replacePisPw` (`lam = 0`) or
+`Expr.pisToLamsPw` (`lam ≠ 0`), for any count in the field's range (`nat_replace_pis_spec` asks
+`cnt < 2^32`). -/
+theorem nat_replace_pis_bounded {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
+    ∀ (cnt : Nat) {k : Nat} {ℓ : KLevel} {tele body : KExpr}
+      {ppw ptele pb plam r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      cnt < 18446744069414584321 →
+      RepKLevel h ℓ ppw →
+      Tm κ d Γ h k tele ptele →
+      Tm κ d Γ h (k + cnt) body pb →
+      ObsFn W "KernelCheck::nat_replace_pis"
+        [ppw, .field (cnt : F), ptele, pb, plam] h r h' cs →
+      ∃ out,
+        (if plam = .field 0
+         then Expr.replacePisPw ℓ.zeronessOf cnt tele body
+         else Expr.pisToLamsPw ℓ.zeronessOf cnt tele body) = some out ∧
+        Tm κ d Γ h' k out r
+  | 0, k, _, _, body, _, _, pb, plam, r, h, h', cs, _, _, _, hbody, ev => by
+    match Obs.«KernelCheck::nat_replace_pis».obs ev with
+    | .n0 (he16 := hr) (he17 := hh) .. =>
+      subst hr hh
+      refine ⟨body, ?_, by rwa [Nat.add_zero] at hbody⟩
+      by_cases hl : plam = .field 0 <;> simp [hl, Expr.replacePisPw, Expr.pisToLamsPw]
+    | .other_n0 (hne19 := hne) .. => exact absurd rfl hne
+    | .other_other (hne19 := hne) .. => exact absurd rfl hne
+  | m + 1, k, ℓ, tele, body, ppw, ptele, pb, plam, r, h, h', cs, hlt, hpw, htele, hbody, ev => by
+    have hne0 : (.field ((m + 1 : Nat) : F) : SourceValue F) ≠ .field 0 :=
+      succ_field_ne_zero_bounded hlt
+    match Obs.«KernelCheck::nat_replace_pis».obs ev with
+    | .n0 (hv14 := hv) .. => exact absurd hv hne0
+    | .other_n0 (x_ty := xty) (v54 := v54) (m55 := m55) (ld33 := ld) (op93 := op) (ev67 := ev')
+        (hv129 := hlam0) (he134 := hr) (hm133 := hm) .. =>
+      subst hlam0 hr hm
+      obtain ⟨T, B, _, rfl, ht, hb, _⟩ := htele.forallE_of_load ld
+      rw [evalBinOp_sub_succ m op] at ev'
+      have hbody' : Tm κ d Γ h (k + 1 + m) body pb := by
+        rwa [show k + 1 + m = k + (m + 1) by omega]
+      obtain ⟨out', hout', htm'⟩ := nat_replace_pis_bounded m (by omega) hpw hb hbody' ev'
+      simp only [↓reduceIte] at hout' ⊢
+      have ext_end : Heap.Extends m55
+          (m55 ++ [.construct kexprEnum "Forall" [xty, v54, ppw]]) := Heap.Extends.snoc _ _
+      exact ⟨.forallE T out' (bmeta ℓ),
+        by simp [Expr.replacePisPw, hout', bmeta],
+        .forallE (by simp) ((ht.mono ev'.heap_extends).mono ext_end)
+          (htm'.mono ext_end) (repKLevel_heapMono₂ (ev'.heap_extends.trans ext_end) hpw)⟩
+    | .other_other (x_ty := xty) (v54 := v54) (m55 := m55) (ld33 := ld) (op93 := op) (ev67 := ev')
+        (hne163 := hlam_ne) (he171 := hr) (hm170 := hm) .. =>
+      subst hr hm
+      obtain ⟨T, B, _, rfl, ht, hb, _⟩ := htele.forallE_of_load ld
+      rw [evalBinOp_sub_succ m op] at ev'
+      have hbody' : Tm κ d Γ h (k + 1 + m) body pb := by
+        rwa [show k + 1 + m = k + (m + 1) by omega]
+      obtain ⟨out', hout', htm'⟩ := nat_replace_pis_bounded m (by omega) hpw hb hbody' ev'
+      simp only [ite_eq_right hlam_ne] at hout' ⊢
+      have ext_end : Heap.Extends m55
+          (m55 ++ [.construct kexprEnum "Lam" [xty, v54, ppw]]) := Heap.Extends.snoc _ _
+      exact ⟨.lam T out' (bmeta ℓ),
+        by simp [Expr.pisToLamsPw, hout', bmeta],
+        .lam (by simp) ((ht.mono ev'.heap_extends).mono ext_end)
+          (htm'.mono ext_end) (repKLevel_heapMono₂ (ev'.heap_extends.trans ext_end) hpw)⟩
+
+/-! ### The lift, at a cut-off in the field's range -/
+
+/-- `KernelSubst::expr_lift(pe, shift, cut)` on a `Tm` term at `d = 0` and local binder depth
+`k ≥ cut` produces `E.liftLooseBVars shift cut` at local binder depth `k + shift`, for any
+cut-off in the field's range (`expr_lift_local_spec` asks `cut < 2^32`; the circuit's own
+comparisons of a variable with the cut-off are read from the run by `Subst.GSpec.expr_lift`). -/
+theorem expr_lift_local_bounded {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
+    {k shift cut : Nat} {E : KExpr} {pe r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hcut_le : cut ≤ k)
+    (hshift_lt : shift < 4611686018427387904)
+    (hcut_lt : cut < 18446744069414584321)
+    (hbnd : IxVM.Consistency.Bounded cs)
+    (hE : Tm κ 0 Γ₀ h k E pe)
+    (ev : ObsFn W "KernelSubst::expr_lift" [pe, .field (shift : F), .field (cut : F)] h r h' cs) :
+    Tm κ 0 Γ₀ h' (k + shift) (E.liftLooseBVars shift cut) r := by
+  let m := k - cut
+  have hk_eq : k = cut + m := by omega
+  have hE₀ : Tm κ 0 (fun _ => .sort .zero) h (cut + m) E pe := by
+    rw [← hk_eq]
+    exact hE.congr_ghost (fun _ hj => by omega)
+  have hop : Tm κ m (fun _ => .sort .zero) h cut (openDummies m 0 cut E) pe := by
+    simpa using tm_openDummies m 0 cut hE₀
+  have hval_s : ZMod.val (shift : F) = shift :=
+    ZMod.val_natCast_of_lt (Nat.lt_trans hshift_lt (by decide))
+  have hval_c : ZMod.val (cut : F) = cut :=
+    ZMod.val_natCast_of_lt hcut_lt
+  have hlift := SubstAux.gall κ .expr_lift _ _ _ _ _ ev pe (shift : F) (cut : F) rfl hbnd
+    (by rw [hval_s]; exact hshift_lt) shift 0 (by rw [hval_s]; omega) m (fun _ => .sort .zero)
+    (openDummies m 0 cut E) (by rwa [hval_c])
+  rw [hval_c, Nat.add_zero] at hlift
+  have hcl : Tm κ 0 (fun _ => .sort .zero) h' (cut + shift + m)
+      (closeDummies m 0 (cut + shift) (openDummies m 0 cut E)) r :=
+    tm_closeDummies m 0 (cut + shift) (by simpa using hlift)
+  rw [closeDummies_openDummies shift m 0 cut (tm_fvarIdxLt hE₀) hE₀.looseBVarsBounded,
+    show cut + shift + m = k + shift by omega] at hcl
+  exact hcl.congr_ghost (fun _ hj => by omega)
+
+/-- `KernelCheck::nat_idx_at` computes `Ix.Kernel.structIdxAt nF o i l m E`, moving local binder
+depth from `k_base + i + m` to `k_base + o + nF + l + m`, at any target depth below `2^62`
+(`nat_idx_at_spec` asks it below `2^32`). -/
+theorem nat_idx_at_bounded {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
+    {k_base nF o i l m : Nat} {E : KExpr} {pe r : SourceValue F}
+    {h h' : Heap F} {cs : List (Call F)}
+    (hi : i ≤ nF)
+    (hlt : k_base + o + nF + l + m < 4611686018427387904)
+    (hbnd : IxVM.Consistency.Bounded cs)
+    (hE : Tm κ 0 Γ₀ h (k_base + i + m) E pe)
+    (ev : ObsFn W "KernelCheck::nat_idx_at"
+      [.field (nF : F), .field (o : F), .field (i : F), .field (l : F), .field (m : F), pe]
+      h r h' cs) :
+    Tm κ 0 Γ₀ h' (k_base + o + nF + l + m) (Ix.Kernel.structIdxAt nF o i l m E) r := by
+  rcases Obs.«KernelCheck::nat_idx_at».obs ev with
+    ⟨cs4, v7, v9, m11, cs19, v23, x38, x77, op53, op45, ev21, op92, op84, ev6, hc⟩
+  subst hc
+  rw [evalBinOp_sub_nat hi op53] at op45
+  rw [evalBinOp_add_nat (nF - i) l op45] at ev21
+  rw [evalBinOp_add_nat nF l op92] at op84
+  rw [evalBinOp_add_nat (nF + l) m op84] at ev6
+  have hbnd1 : IxVM.Consistency.Bounded cs19 :=
+    RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
+  have hbnd2 : IxVM.Consistency.Bounded cs4 :=
+    RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
+  have h1 := expr_lift_local_bounded (by omega) (by omega) (by omega) hbnd1 hE ev21
+  have h1' : Tm κ 0 Γ₀ m11 (k_base + nF + l + m) (E.liftLooseBVars (nF - i + l) m) v7 := by
+    rwa [show k_base + nF + l + m = (k_base + i + m) + (nF - i + l) by omega]
+  have h2 := expr_lift_local_bounded (by omega) (by omega) (by omega) hbnd2 h1' ev6
+  rwa [show k_base + o + nF + l + m = (k_base + nF + l + m) + o by omega]
+
+/-! ### The telescope of a recursive field is a list of the run -/
+
+/-- **A telescope a call of a bounded run takes as an argument has fewer than `2^39`
+binders**: the run represents it as a list, and its memory holds fewer than `2^39` cells. This
+is the bound on `Ix.Kernel.structFieldTeleOf` that the earlier chain asked of its caller
+(`NatCtorInfoWfT.tele_lt`): `nat_field_tele` returns the telescope as a `TeleRep` list
+(`nat_field_tele_spec`), and `nat_ih_pis` passes it on to `nat_tele_at`. -/
+theorem teleRep_length_lt {calls : List (Call F)} (bounded : IxVM.Consistency.Bounded calls)
+    {c : Call F} (called : c ∈ calls) {p : SourceValue F} (argument : p ∈ c.args)
+    {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {k : Nat}
+    {tele : List (KExpr × Ix.Kernel.BinderMeta)}
+    (rep : TeleRep κ d Γ c.heap k tele p) : tele.length < 549755813888 :=
+  RomBound.bounded_length_lt bounded called argument rep.toRepListTrue
+
+/-- The same at a call whose observation names the telescope argument: the call is among the
+bounded run's and the telescope is represented at its heap. -/
+theorem teleRep_length_lt_of_call {calls : List (Call F)}
+    (bounded : IxVM.Consistency.Bounded calls) {name : String} {p r : SourceValue F}
+    {h h' : Heap F} {cs : List (Call F)} (ev : ObsFn W name [p] h r h' cs)
+    (called : (⟨name, [p], h⟩ : Call F) ∈ calls)
+    {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} {k : Nat}
+    {tele : List (KExpr × Ix.Kernel.BinderMeta)} (rep : TeleRep κ d Γ h k tele p) :
+    tele.length < 549755813888 :=
+  teleRep_length_lt bounded called (by simp) rep
+
+/-- `KernelCheck::nat_tele_at` along a telescope, at any target depth below `2^62`
+(the earlier statement asks it below `2^32`). -/
+theorem nat_tele_at_go_bounded {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
+    {k_base nF o i l : Nat} {ℓ : KLevel} (hi : i ≤ nF) :
+    ∀ {tele_rem : List (KExpr × Ix.Kernel.BinderMeta)} (m : Nat)
+      {ppw ptele r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      k_base + o + nF + l + m + tele_rem.length < 4611686018427387904 →
+      IxVM.Consistency.Bounded cs →
+      RepKLevel h ℓ ppw →
+      TeleRep κ 0 Γ₀ h (k_base + i + m) tele_rem ptele →
+      ObsFn W "KernelCheck::nat_tele_at"
+        [.field (nF : F), .field (o : F), .field (i : F), .field (l : F),
+          ppw, ptele, .field (m : F)] h r h' cs →
+      TeleRep κ 0 Γ₀ h' (k_base + o + nF + l + m)
+        ((List.range tele_rem.length).map fun idx =>
+          (Ix.Kernel.structIdxAt nF o i l (m + idx) (tele_rem.getD idx default).1, bmeta ℓ)) r := by
+  intro tele_rem
+  induction tele_rem with
+  | nil =>
+    intro m ppw ptele r h h' cs _ _ _ htele ev
+    match Obs.«KernelCheck::nat_tele_at».obs ev with
+    | .Nil (he24 := hr) (hm23 := hm) .. =>
+      subst hr hm
+      exact .nil (by simp)
+    | .Cons (ld12 := ld) .. =>
+      cases htele with | nil cell => exact (load_cell_ne cell ld (by decide)).elim
+  | cons b rest ih =>
+    intro m ppw ptele r h h' cs hlt hbnd hpw htele ev
+    have hlist_eq :
+        List.map
+          ((fun idx =>
+            (Ix.Kernel.structIdxAt nF o i l (m + idx) ((b :: rest).getD idx default).1, bmeta ℓ)) ∘
+            Nat.succ)
+          (List.range rest.length) =
+        List.map
+          (fun idx =>
+            (Ix.Kernel.structIdxAt nF o i l (m + 1 + idx) (rest.getD idx default).1, bmeta ℓ))
+          (List.range rest.length) := by
+      apply List.map_congr_left
+      intro idx _
+      dsimp only [Function.comp_apply]
+      rw [List.getD_cons_succ, show m + idx.succ = m + 1 + idx by omega]
+    cases htele with
+    | cons cell ht hl_hd hrest =>
+      match Obs.«KernelCheck::nat_tele_at».obs ev with
+      | .Nil (ld12 := ld) .. => exact (load_cell_ne cell ld (by decide)).elim
+      | .Cons (x_rest := xrest) (m94 := m94) (v82 := v82) (v91 := v91) (cs102 := cs1)
+          (m161 := m161) (cs169 := cs2)
+          (ld12 := ld) (he77 := hr) (hm76 := hm) (ev104 := ev1) (op234 := op)
+          (ev171 := ev2) (hc236 := hc) .. =>
+        subst hc hr hm
+        obtain ⟨-, hxs⟩ := load_cell cell ld
+        injection hxs with htup hxs; injection hxs with hrest_eq
+        injection htup with hlist
+        injection hlist with h1 _
+        subst h1 hrest_eq
+        rw [evalBinOp_add_one m op] at ev2
+        have hbnd1 : IxVM.Consistency.Bounded cs1 :=
+          RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
+        have hbnd2 : IxVM.Consistency.Bounded cs2 :=
+          RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
+        have hhd := nat_idx_at_bounded hi (by simp at hlt; omega) hbnd1 ht ev1
+        have hrest_m94 := hrest.mono ev1.heap_extends
+        rw [show k_base + i + m + 1 = k_base + i + (m + 1) by omega] at hrest_m94
+        have htl := ih (m + 1)
+          (by simp at hlt; omega) hbnd2
+          (repKLevel_heapMono₂ ev1.heap_extends hpw) hrest_m94 ev2
+        have ext_end : Heap.Extends m161
+            (m161 ++ [.construct teleListEnum "Cons" [.tuple [v91, ppw], v82]]) :=
+          Heap.Extends.snoc _ _
+        simp only [List.length_cons, List.range_succ_eq_map, List.map_cons, List.map_map,
+          Nat.add_zero, List.getD_cons_zero]
+        have htl_ext := htl.mono ext_end
+        rw [show k_base + o + nF + l + (m + 1) = k_base + o + nF + l + m + 1 by omega] at htl_ext
+        rw [hlist_eq]
+        exact .cons (by simp) ((hhd.mono ev2.heap_extends).mono ext_end)
+          (repKLevel_heapMono₂ (ev1.heap_extends.trans (ev2.heap_extends.trans ext_end)) hpw)
+          htl_ext
+
+
+/-- `KernelCheck::nat_tele_at` at `k = 0` computes
+`Ix.Kernel.structTeleAt nF o i l ℓ.zeronessOf tele`, at any target depth below `2^62`
+(`nat_tele_at_spec` asks it below `2^32`). -/
+theorem nat_tele_at_bounded {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
+    {k_base nF o i l : Nat} {ℓ : KLevel} {tele : List (KExpr × Ix.Kernel.BinderMeta)}
+    {ppw ptele r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hi : i ≤ nF)
+    (hlt : k_base + o + nF + l + tele.length < 4611686018427387904)
+    (hbnd : IxVM.Consistency.Bounded cs)
+    (hpw : RepKLevel h ℓ ppw)
+    (htele : TeleRep κ 0 Γ₀ h (k_base + i) tele ptele)
+    (ev : ObsFn W "KernelCheck::nat_tele_at"
+      [.field (nF : F), .field (o : F), .field (i : F), .field (l : F),
+        ppw, ptele, .field 0] h r h' cs) :
+    TeleRep κ 0 Γ₀ h' (k_base + o + nF + l)
+      (Ix.Kernel.structTeleAt nF o i l ℓ.zeronessOf tele) r := by
+  have ev' : ObsFn W "KernelCheck::nat_tele_at"
+      [.field (nF : F), .field (o : F), .field (i : F), .field (l : F),
+        ppw, ptele, .field ((0 : Nat) : F)] h r h' cs := by
+    simpa using ev
+  have hgo := nat_tele_at_go_bounded hi 0 (by omega) hbnd hpw (by simpa using htele) ev'
+  simpa [Ix.Kernel.structTeleAt, bmeta] using hgo
+
+/-- **`nat_tele_at` at a call of a bounded run, with no hypothesis on the telescope's length.**
+The caller's run is bounded and makes the call, so the telescope it passes has fewer than `2^39`
+binders (`teleRep_length_lt`); with the binder depth before the telescope below `2^61`, the
+depth the lifts work at stays below `2^62`. This is how the bound on the telescope of a
+recursive field is obtained inside the specification of `nat_ih_pis`, where the earlier chain
+took it from its caller. -/
+theorem nat_tele_at_of_call {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
+    {k_base nF o i l : Nat} {ℓ : KLevel} {tele : List (KExpr × Ix.Kernel.BinderMeta)}
+    {ppw ptele r : SourceValue F} {h h' : Heap F} {cs calls : List (Call F)}
+    (hi : i ≤ nF)
+    (hbase : k_base + o + nF + l < 2305843009213693952)
+    (bounded : IxVM.Consistency.Bounded calls)
+    (called : (⟨"KernelCheck::nat_tele_at",
+      [.field (nF : F), .field (o : F), .field (i : F), .field (l : F), ppw, ptele, .field 0],
+      h⟩ : Call F) ∈ calls)
+    (hbnd : IxVM.Consistency.Bounded cs)
+    (hpw : RepKLevel h ℓ ppw)
+    (htele : TeleRep κ 0 Γ₀ h (k_base + i) tele ptele)
+    (ev : ObsFn W "KernelCheck::nat_tele_at"
+      [.field (nF : F), .field (o : F), .field (i : F), .field (l : F),
+        ppw, ptele, .field 0] h r h' cs) :
+    TeleRep κ 0 Γ₀ h' (k_base + o + nF + l)
+      (Ix.Kernel.structTeleAt nF o i l ℓ.zeronessOf tele) r := by
+  have hlen : tele.length < 549755813888 :=
+    teleRep_length_lt bounded called (by simp) htele
+  exact nat_tele_at_bounded hi (by omega) hbnd hpw htele ev
+
 /-- `KernelCheck::nat_field_dom(cty, np, i)` returns the `i`-th field domain `(bs.getD (nP + i) default).1`
 at local binder depth `k + (nP + i)`, preserving `RawTm` without modifying the heap. -/
 theorem nat_field_dom_rawTm_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
@@ -5925,7 +6308,7 @@ theorem nat_field_dom_rawTm_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : 
     {rcbs ecbs : List (KExpr × Ix.Kernel.BinderMeta)}
     {pcty r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hi : i < nF)
-    (hlt : nP + nF < 4294967296)
+    (hlt : nP + nF < 18446744069414584321)
     (hRaw : RawTm κ d Γ h k Rcty Ecty pcty)
     (hsR : Rcty.stripPis (nP + nF) = some (rcbs, rbody))
     (hsE : Ecty.stripPis (nP + nF) = some (ecbs, ebody))
@@ -5938,7 +6321,7 @@ theorem nat_field_dom_rawTm_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : 
     ⟨_, _, _, v19, _, _, _, op40, ev17, ld11, rfl, rfl, _⟩
   rw [evalBinOp_add_nat nP i op40] at ev17
   obtain ⟨rfl, rbs₁, ebs₁, rmid, emid, hsR₁, hsE₁, hmid⟩ :=
-    peel_n_foralls_rawTm_spec (nP + i) (by omega) hRaw ev17
+    peel_n_foralls_rawTm_bounded (nP + i) (by omega) hRaw ev17
   have hsplit : nP + nF = (nP + i) + ((nF - 1 - i) + 1) := by omega
   rw [hsplit] at hsR hsE
   obtain ⟨_, hrmid⟩ := stripPis_at_lt (nP + i) (nF - 1 - i) hsR hsR₁
@@ -5982,7 +6365,8 @@ theorem nat_idx_at_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
   rwa [show k_base + o + nF + l + m = (k_base + nF + l + m) + o by omega]
 
 theorem nat_map_idx_at_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
-    {k_base nF o i l m : Nat} (hi : i ≤ nF) (hlt : k_base + o + nF + l + m < 4294967296) :
+    {k_base nF o i l m : Nat} (hi : i ≤ nF)
+    (hlt : k_base + o + nF + l + m < 4611686018427387904) :
     ∀ {es : List KExpr} {pes r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       IxVM.Consistency.Bounded cs →
       RepList kexprListEnum (fun h E p => Tm κ 0 Γ₀ h (k_base + i + m) E p) h es pes →
@@ -6018,7 +6402,7 @@ theorem nat_map_idx_at_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExp
         RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
       have hbnd2 : IxVM.Consistency.Bounded cs2 :=
         RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
-      have hhd := nat_idx_at_spec hi hlt hbnd1 ha ev1
+      have hhd := nat_idx_at_bounded hi hlt hbnd1 ha ev1
       have htl := ih hbnd2 (tmRepList_mono ev1.heap_extends has) ev2
       have ext_end : Heap.Extends m117
           (m117 ++ [.construct kexprListEnum "Cons" [v54, v55]]) := Heap.Extends.snoc _ _
@@ -6027,7 +6411,7 @@ theorem nat_map_idx_at_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExp
 
 theorem nat_map_lift_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     {k shift cut : Nat} (hcut_le : cut ≤ k)
-    (hshift_lt : shift < 4611686018427387904) (hcut_lt : cut < 4294967296) :
+    (hshift_lt : shift < 4611686018427387904) (hcut_lt : cut < 18446744069414584321) :
     ∀ {es : List KExpr} {pes r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       IxVM.Consistency.Bounded cs →
       RepList kexprListEnum (fun h E p => Tm κ 0 Γ₀ h k E p) h es pes →
@@ -6062,7 +6446,7 @@ theorem nat_map_lift_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
         RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
       have hbnd2 : IxVM.Consistency.Bounded cs2 :=
         RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
-      have hhd := expr_lift_local_spec hcut_le hshift_lt hcut_lt hbnd1 ha ev1
+      have hhd := expr_lift_local_bounded hcut_le hshift_lt hcut_lt hbnd1 ha ev1
       have htl := ih hbnd2 (tmRepList_mono ev1.heap_extends has) ev2
       have ext_end : Heap.Extends m93
           (m93 ++ [.construct kexprListEnum "Cons" [v54, v55]]) := Heap.Extends.snoc _ _
@@ -6174,7 +6558,7 @@ theorem nat_field_tele_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat �
     {rcbs ecbs : List (KExpr × Ix.Kernel.BinderMeta)}
     {pcty r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hi : i < nF)
-    (hlt : nP + nF < 4294967296)
+    (hlt : nP + nF < 18446744069414584321)
     (hRaw : RawTm κ d Γ h k Rcty Ecty pcty)
     (hsR : Rcty.stripPis (nP + nF) = some (rcbs, rbody))
     (hsE : Ecty.stripPis (nP + nF) = some (ecbs, ebody))
@@ -6270,10 +6654,8 @@ theorem nat_ih_pis_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     ∀ {is : List Nat} (l : Nat) {body : KExpr}
       {ppw pcty pis pbody r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       (∀ i ∈ is, i < nF ∧
-        RawRecSpine T (rcbs.getD (nP + i) default).1 (ecbs.getD (nP + i) default).1 ∧
-        nP + o + nF + l + is.length + (Ix.Kernel.structFieldTeleOf Ecty nP nF i).length <
-          4294967296) →
-      nP + o + nF + l + is.length < 4294967296 →
+        RawRecSpine T (rcbs.getD (nP + i) default).1 (ecbs.getD (nP + i) default).1) →
+      nP + o + nF + l + is.length < 2305843009213693952 →
       IxVM.Consistency.Bounded cs →
       RepKLevel h ℓ ppw →
       RawTm κ 0 Γ₀ h 0 Rcty Ecty pcty →
@@ -6321,18 +6703,19 @@ theorem nat_ih_pis_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
       subst hc hr hm_end
       obtain ⟨i', rest', heq, hi_eq, hrest_rep⟩ := RepList.cons_of_load his ld
       injection heq with h1 h2; subst h1 h2; subst hi_eq
-      obtain ⟨hi_lt, hspine_i, hlt_m⟩ := hall i List.mem_cons_self
+      obtain ⟨hi_lt, hspine_i⟩ := hall i List.mem_cons_self
       let tele_i := Ix.Kernel.structFieldTeleOf Ecty nP nF i
       let idx_i := Ix.Kernel.structFieldIdxOf Ecty nP nF i
       let m := tele_i.length
-      have hlt_m' : nP + o + nF + l + m < 4294967296 := by
-        dsimp only [m, tele_i]
-        simp only [List.length_cons] at hlt_m
-        omega
+      simp only [List.length_cons] at hlt_base
       obtain ⟨ptele, pidx, htup_ft, htele_m42, hidx_m42⟩ :=
         nat_field_tele_spec hi_lt (by omega) hRaw hsR hsE hspine_i ev_ft
       injection htup_ft with hl_ft; injection hl_ft with h1 hl_ft; injection hl_ft with h2
       subst h1 h2
+      -- the telescope is a list the run passes to `Lists::length`: fewer than `2^39` binders
+      have hm_lt : m < 549755813888 :=
+        teleRep_length_lt_of_call hbnd ev_len (by simp) htele_m42
+      have hlt_m' : nP + o + nF + l + m < 4611686018427387904 := by omega
       obtain ⟨hv92, hm93⟩ := tele_length_spec ev_len htele_m42
       rw [hm93] at hm131 ev_app1
       have hv92' : v92 = .field (m : F) := hv92
@@ -6351,15 +6734,16 @@ theorem nat_ih_pis_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
       have ext_m131 : Heap.Extends m42 m131 := by rw [hm131]; exact Heap.Extends.snoc _ _
       have hbvar_fi : Tm κ 0 Γ₀ m131 (nP + o + nF + l + m)
           (.bvar (nF - 1 - i + l + m)) (.ptr (.enum kexprEnum) m42.length) := by
-        rw [hm131]; exact tm_bvarLocal_nat (by simp) (by omega) (by omega)
-      have hps_m := nat_ps_at_spec (κ := κ) (d := 0) (Γ := Γ₀) m 0 (nP + o + nF + l + m) (by omega) hlt_m' ev_ps
+        rw [hm131]; exact tm_bvarLocal_nat_bounded (by simp) (by omega) (by omega)
+      have hps_m := nat_ps_at_bounded (κ := κ) (d := 0) (Γ := Γ₀) m 0 (nP + o + nF + l + m)
+        (by omega) (by omega) ev_ps
       rw [structPsAt_zero_eq_structTeleVars] at hps_m
       have hfi_app := nat_app_n_spec (hbvar_fi.mono ev_ps.heap_extends) hps_m ev_app1
       -- `motive e⃗_i(a⃗) (f_i a⃗)`
       have ext_m230 : Heap.Extends m115 m230 := by rw [hm230]; exact Heap.Extends.snoc _ _
       have hbvar_mot : Tm κ 0 Γ₀ m230 (nP + o + nF + l + m)
           (.bvar (nF + o - 1 + l + m)) (.ptr (.enum kexprEnum) m115.length) := by
-        rw [hm230]; exact tm_bvarLocal_nat (by simp) (by omega) (by omega)
+        rw [hm230]; exact tm_bvarLocal_nat_bounded (by simp) (by omega) (by omega)
       have ext_42_230 := ext_m131.trans (ev_ps.heap_extends.trans
         (ev_app1.heap_extends.trans ext_m230))
       have hidx_230 : RepList kexprListEnum (fun h E p => Tm κ 0 Γ₀ h (nP + i + m) E p)
@@ -6382,7 +6766,7 @@ theorem nat_ih_pis_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
         RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
       have htele_214 := htele_m42.mono ext_42_214
       rw [Nat.zero_add] at htele_214
-      have hta := nat_tele_at_spec (k_base := nP) (by omega : i ≤ nF) hlt_m' hbnd_ta
+      have hta := nat_tele_at_bounded (k_base := nP) (by omega : i ≤ nF) hlt_m' hbnd_ta
         (repKLevel_heapMono₂ ext_h_214 hpw) htele_214 ev_ta
       have hta_len : (Ix.Kernel.structTeleAt nF o i l ℓ.zeronessOf tele_i).length = m := by
         simp [Ix.Kernel.structTeleAt, m]
@@ -6401,14 +6785,10 @@ theorem nat_ih_pis_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
           simp; omega]
         exact hbody.mono ext_h_367
       have hall_rest : ∀ k ∈ rest, k < nF ∧
-          RawRecSpine T (rcbs.getD (nP + k) default).1 (ecbs.getD (nP + k) default).1 ∧
-          nP + o + nF + (l + 1) + rest.length +
-            (Ix.Kernel.structFieldTeleOf Ecty nP nF k).length < 4294967296 := by
-        intro k hk
-        obtain ⟨hk1, hk2, hk3⟩ := hall k (List.mem_cons_of_mem _ hk)
-        exact ⟨hk1, hk2, by simp only [List.length_cons] at hk3; omega⟩
+          RawRecSpine T (rcbs.getD (nP + k) default).1 (ecbs.getD (nP + k) default).1 :=
+        fun k hk => hall k (List.mem_cons_of_mem _ hk)
       have hrest_ih := ih (l + 1) hall_rest
-        (by simp only [List.length_cons] at hlt_base; omega)
+        (by omega)
         hbnd_rec (repKLevel_heapMono₂ ext_h_367 hpw)
         (hRaw.mono ext_h_367) (fieldRepList_mono ext_h_367 hrest_rep) hbody_367 ev_rec
       have ext_end : Heap.Extends m482
@@ -6613,7 +6993,7 @@ theorem nat_minor_ty_spec {κ : _root_.Address → KKey} [∀ a, Resolved (κ a)
   have hv211' := hv211.mono ev420.heap_extends
   rw [show (nP + o + nF) + recIdx.length = nP + o + nF + 0 + recIdx.length by omega] at hv211'
   have hv393 := nat_ih_pis_spec ho hsR hsE 0
-    (fun i hi => by obtain ⟨h1, h2, h3⟩ := hall i hi; exact ⟨h1, h2, by omega⟩)
+    (fun i hi => by obtain ⟨h1, h2, h3⟩ := hall i hi; exact ⟨h1, h2⟩)
     (by omega) hbnd_ih
     (repKLevel_heapMono₂ ext_h_410 hpw)
     (hRaw.mono ext_h_410) (fieldRepList_mono ext_h_410 hrec) hv211' ev455

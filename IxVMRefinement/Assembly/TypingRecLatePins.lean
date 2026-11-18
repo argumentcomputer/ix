@@ -307,11 +307,11 @@ skeleton hands the step, for the parent `P` tied to the record (`RecMajorTie`) w
 `E` is the projection `ip` of member `ind` of the block `cb`: the record declares the member's
 parameter and index counts, one motive, and one rule per constructor. -/
 theorem rec_counts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlim : lim = some n)
-    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
     {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
@@ -323,9 +323,8 @@ theorem rec_counts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
     rc.params.toNat = ind.params.toNat ∧ rc.indices.toNat = ind.indices.toNat ∧
       rc.motives.toNat = 1 ∧ rc.rules.size = ind.ctors.size ∧
       rc.minors.toNat = ind.ctors.size := by
-  subst hlim
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
-  have hgood : Core.Good ⟨E, env, t, some n⟩ calls := hst.good env (some n)
+  have hgood : Core.Good ⟨E, env, t, lim⟩ calls := hst.good env lim
   have hbound : Bounded calls := hgood.2
   have hrec₀ : Ix.Cert.recordAt E₀ A = some c := (hS.recordOf_eq_recordAt A).symm.trans hc
   have hstored : Decl.UsedRefsStored t env c :=
@@ -383,7 +382,7 @@ theorem rec_counts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
   obtain ⟨E', hann, htm⟩ := rty.toTmC (κ := Core.keyOf t) (ps := List.range rc.lvls.toNat)
     (by simp) (by simpa using hlvls) (LoadedReads.readCtx_keyAt_inv ht _)
     (fun i x m k hx => by simp at hx) hblob hrd hlbb hdef
-  have htmS := Decl.tmC_stored_of_usedRefs (E₀ := E) (env := env) (lim := some n) rty
+  have htmS := Decl.tmC_stored_of_usedRefs (E₀ := E) (env := env) (lim := lim) rty
     (recr_typ_usedRefs hinfo) hstored htm
   rw [Decl.posOf_range] at htmS
   have hsum : ZMod.val ((rc.params.toNat : F) + (rc.motives.toNat : F) + (rc.minors.toNat : F) +
@@ -399,7 +398,7 @@ theorem rec_counts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
   have hsScan' : ∀ x ∈ scanCalls, x ∈ calls := fun x hx => hsub_chk x (hsubM x (hsScan x hx))
   have hsLoad' : ∀ x ∈ loadCalls, x ∈ calls := fun x hx => hsub_chk x (hsubM x (hsLoad x hx))
   -- the route's parent is the tied one
-  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, some n⟩
+  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, lim⟩
   have hcS : Core.ScopedCoreFacts cS := hstep.inv.scopedCoreFacts
   have htmM := htmS.mono hextM
   obtain ⟨a, dom, us, ha, hpi, hhead⟩ := Decl.scopedCalleesSpec cS hcS .rec_to_parent_addr _ _ _
@@ -420,7 +419,7 @@ theorem rec_counts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
   have hPa : P = Core.ixAddr a := keyOf_inj hroles hkeys
   subst hPa
   -- the parent's load, traced: the member `ind` of the block `cb`
-  have hgL : Core.Good ⟨E, env, t, some n⟩ loadCalls := hgood.sub hsLoad'
+  have hgL : Core.Good ⟨E, env, t, lim⟩ loadCalls := hgood.sub hsLoad'
   obtain ⟨rawP, cP, hhP, hbaP, hexP, -, hresP⟩ := L1.get_ci_block_trace_spec hgL.2 ha evLoad
   have hrecP : recordOf E (Core.ixAddr a) = some cm := by
     rw [recordOf_eq_recordAt_of_decoded hst.decoded]

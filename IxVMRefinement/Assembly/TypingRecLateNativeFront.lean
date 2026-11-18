@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.TypingRecLateNativeFront2
+import IxVMRefinement.Assembly.NativeAliasRunTrace
 import IxVMRefinement.Assembly.TypingRecLateNativeElim
 import IxVMRefinement.Assembly.TypingRecLateNativeRead
 
@@ -18,9 +19,11 @@ arm:
 * the canonical annotations of both (`canonAnn`, `canonRules`), which annotate the reading;
 * the declared recursor checked at the step's environment (`ConstantValCheckJ`), from the scope
   and sort runs on the type pointer;
-* the native recursor comparison (`Decl.late_nat_rec_check_specT`, instantiated at the prefix
-  keying for the type and at `lateRuleKey` for the rules): the generated type and its relation
-  with the canonical type, the generated rules and their relation with the canonical rules;
+* the native recursor comparison (`Decl.late_nat_rec_check_spec_traced`, instantiated at the
+  prefix keying for the type and at `lateRuleKey` for the rules, at the stored former's loaded
+  type and the binders the family records for its telescope constant): the generated type and
+  its relation with the canonical type, the generated rules and their relation with the
+  canonical rules;
 * the level arguments of the head of the major premise's domain (`Decl.front_maj`).
 
 The universe offset `nat_rec_check` receives is the large-eliminator bit
@@ -50,12 +53,12 @@ open Ix.Kernel.Model (rulesJ)
 
 /-- **The circuit side of a late recursor's step** (module docstring). -/
 theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hcov : LoadedReads.HashedRecordsStored calls E₀) (hst : StepStore calls t E₀ E)
     (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlogic : InLogic c)
-    (hlim : lim = some n) (hnat : NativeRecArm calls bAddr t A n)
+    (hnat : RecArmRun calls t A lim)
     (hkey : Decl.KeyFree (keyOf t A)) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
@@ -66,9 +69,9 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (hcb : Ix.Cert.recordAt E ip.block = some cb) (hms : cb.info = .muts ms)
     (hind : ms[ip.idx.toNat]? = some (.indc ind))
-    {fam : NativeFam .anon} (hm : MatchedAt t E env P ip fam)
+    {fam : NativeFam .anon} (hm : FamReadAt FormerOpenTraceAt t E env P ip fam)
     (hhead : Decl.CtorRetHeadAt cb ind)
-    (hnoProj : FamCtorNoProj fam) (hbounds : RecArmBounds ip ind fam)
+    (hnoProj : FamCtorNoProj fam)
     (hrscoped : ∀ rules : List (Ix.Kernel.RecRule .anon),
       List.Forall₂ (fun ru rl₀ => (exprReader t (fun x => E₀.blobs.get? x) c
           (Ix.Kernel.Reader.recParam (Ix.Kernel.Reader.recLps
@@ -140,13 +143,13 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
         some (bs, .forallE dom B m) →
         ∃ K, dom.getAppFn = .const K (fam.p.cvT.levelParams.map .param)) := by
   -- the pins and the counts, before the arm is destructured
-  obtain ⟨rules, hRR, hrd, -, -, hrlen, -⟩ := rec_pins_of_arm ht hS hst hc hinfo hlim hnat hinert
+  obtain ⟨rules, hRR, hrd, -, -, hrlen, -⟩ := rec_pins_of_arm ht hS hst hc hinfo hnat hinert
     hcover hstep hcm hcmi htie hm
     (Ix.Kernel.Reader.recLps (decide (rc.lvls.toNat = ind.lvls.toNat + 1))
       (List.range ind.lvls.toNat))
     ⟨keyOf t A, [], .sort .zero⟩ 0 false
   obtain ⟨hp, hi, hmot, hrsz, hmin⟩ :=
-    rec_counts_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hcb hms hind
+    rec_counts_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie hcb hms hind
   have hm' := hm
   obtain ⟨hat, hname, cb', ms', ind', hcb', hms', hind', hnP, hnI, hlenC, hnames⟩ := hm'
   have hcbE : cb' = cb := Option.some.inj (hcb'.symm.trans hcb)
@@ -164,17 +167,15 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     built, rty, hpT, hlT, hrulesTr, hrules_lt, hidx56, hlvR, hpR, hiR, hmR, hmiR, hlvP, hpP, hiP,
     hcP, eLS, evS, hmemS, evSort, hsSort, eSM, evScan, hsScan, hbT, hbT', hbP, hbP', eSL, evLoad,
     hsLoad, hldP, eC, evCanon, hsCanon⟩ :=
-    rec_front_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hcb hms hind
-  subst hlim
+    rec_front_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie hcb hms hind
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
-  have hgood : Core.Good ⟨E, env, t, some n⟩ calls := hst.good env (some n)
+  have hgood : Core.Good ⟨E, env, t, lim⟩ calls := hst.good env lim
   have hstored : Decl.UsedRefsStored t env c :=
     usedRefsStored_of_cover (hcover env ⟨hstep.ext, hstep.refs, hstep.fresh⟩) hinert
-  have hcS : Core.ScopedCoreFacts (Core.Ctx.stored ⟨E, env, t, some n⟩) :=
+  have hcS : Core.ScopedCoreFacts (Core.Ctx.stored ⟨E, env, t, lim⟩) :=
     hstep.inv.scopedCoreFacts
   have henv : Ix.Kernel.EnvWF env := hstep.inv.store.store.wf
   have hagree := LoadedReads.blobReadAgreement_of_noCollision (hgood.sub hsLd).1 hhp t
-  obtain ⟨hk31, hnP31, hnI31, hnC31, hnall, hidx32, hc4⟩ := hbounds
   -- the universe offset is the large-eliminator bit, which is `large`
   obtain ⟨large', natHeap, natCalls, eN, evNat, hsNat⟩ := canonical_full_nat_rec_bool evCanon
   have hsum := Decl.evalBinOp_add_nat _ _ (nat_rec_check_levels evNat)
@@ -218,13 +219,13 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
   obtain ⟨hlbb, hdef⟩ := read_recParam_scoped hpsPerm hty hty₀ hlbb₀
     (by rw [hpsLen]; exact hdef₀)
   -- (F)(K): the canonical type, exactly represented at the prefix's keying
-  obtain ⟨tyC, hcT, hannT, htmT⟩ := front_type_canon (n := n) ht hinfo hstored hst.runBlob
+  obtain ⟨tyC, hcT, hannT, htmT⟩ := front_type_canon (lim := lim) ht hinfo hstored hst.runBlob
     hpsPerm hps32 hagree built rty hpT hlT hty hlbb hdef
   -- (CV)
   have hcv := front_constantValCheck (A := A) hstep.inv hlv hpsLen hps32 hpsPerm hannT hlbb
     (Assembly.memberReader_read_noFvar hty)
     (hstep.fresh A (Or.inl ⟨rfl, Or.inr (Or.inl ⟨rc, hinfo⟩)⟩)) hkey.1 (htmT.mono eLS) evS
-    ((hrc.mono (eLS.trans (evS.heap_extends.trans (Heap.Extends.snoc _ _)))).toRCRep)
+    (hrc.mono (eLS.trans (evS.heap_extends.trans (Heap.Extends.snoc _ _))))
     (hgood.sub hsSort) evSort
   -- (D)(G)(L): the rules
   have hrdS : List.Forall₂ (fun ru rl₀ => rl₀.nfields = ru.fields.toNat ∧
@@ -238,7 +239,7 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
       rc.rules.toList rules :=
     (front_forall₂_and_right hrd (hrscoped rules (hrd.imp (fun _ _ h => h.2)))).imp
       (fun _ _ h => ⟨h.1.1, h.1.2, h.2.1, h.2.2⟩)
-  obtain ⟨rlsC, hcR, hstR, hrrC⟩ := front_rules_canon (n := n) ht hinfo hstored hst.runBlob
+  obtain ⟨rlsC, hcR, hstR, hrrC⟩ := front_rules_canon (lim := lim) ht hinfo hstored hst.runBlob
     hpsPerm hps32 hagree built hrulesTr hrdS
   have hlenInfo : (lateCtorsInfo fam).length = fam.ctorsA.length := lateCtorsInfo_length hat.stored
   have hrlsC_len : rlsC.length = fam.ctorsA.length := by rw [hstR.length_eq, hrlen]
@@ -254,15 +255,15 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
       some (.indInfo fam.cvS (Ix.Kernel.nativeCaps fam.p)) := by
     rw [LoadedReads.keyOf_eq, ← hname]
     exact hat.stored.former
-  have hκP : (Core.Ctx.stored ⟨E, env, t, some n⟩).κ P = Core.keyOf t P :=
-    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hformer
-  have hT : (Core.Ctx.stored ⟨E, env, t, some n⟩).κ (Core.ixAddr bT) = fam.p.cvT.name := by
+  have hκP : (Core.Ctx.stored ⟨E, env, t, lim⟩).κ P = Core.keyOf t P :=
+    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hformer
+  have hT : (Core.Ctx.stored ⟨E, env, t, lim⟩).κ (Core.ixAddr bT) = fam.p.cvT.name := by
     rw [hbT', hκP, LoadedReads.keyOf_eq, hname]
   have hκ₂_inj : ∀ a : Bytes.Address,
-      lateRuleKey ⟨E, env, t, some n⟩ A (Core.ixAddr a) = fam.p.cvT.name → a = bT := by
+      lateRuleKey ⟨E, env, t, lim⟩ A (Core.ixAddr a) = fam.p.cvT.name → a = bT := by
     intro a ha
-    have hsp : lateRuleKey ⟨E, env, t, some n⟩ A (Core.ixAddr a) = Core.keyOf t (Core.ixAddr a) ∨
-        lateRuleKey ⟨E, env, t, some n⟩ A (Core.ixAddr a) = Core.unresolvedKey :=
+    have hsp : lateRuleKey ⟨E, env, t, lim⟩ A (Core.ixAddr a) = Core.keyOf t (Core.ixAddr a) ∨
+        lateRuleKey ⟨E, env, t, lim⟩ A (Core.ixAddr a) = Core.unresolvedKey :=
       Core.resKey_spec _ _ _
     rcases hsp with h1 | h1
     · rw [h1, hname, LoadedReads.keyOf_eq] at ha
@@ -270,21 +271,21 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
       exact Decl.ixAddr_injective (hPa.trans hbT'.symm)
     · rw [h1, hname, ← LoadedReads.keyOf_eq] at ha
       exact absurd ha.symm Core.Resolved.ne
-  have hRec : lateRuleKey ⟨E, env, t, some n⟩ A (Core.ixAddr bA) = keyOf t A := by
+  have hRec : lateRuleKey ⟨E, env, t, lim⟩ A (Core.ixAddr bA) = keyOf t A := by
     rw [hbA', ← LoadedReads.keyOf_eq]
     exact lateRuleKey_self _ A
-  have hRes : Core.Resolved (lateRuleKey ⟨E, env, t, some n⟩ A (Core.ixAddr bA)) := by
+  have hRes : Core.Resolved (lateRuleKey ⟨E, env, t, lim⟩ A (Core.ixAddr bA)) := by
     rw [hbA']
     exact lateRuleKey_self_resolved _ A
   have hCres : ∀ i, i < (lateCtorsInfo fam).length →
-      (Core.Ctx.stored ⟨E, env, t, some n⟩).κ
+      (Core.Ctx.stored ⟨E, env, t, lim⟩).κ
         (Core.cprjAddr (Core.ixAddr bP) ip.idx.toNat i) ≠ Core.unresolvedKey := by
     intro i hi
     rw [hlenInfo] at hi
     have hcA : fam.ctorsA[i]? = some fam.ctorsA[i] := List.getElem?_eq_getElem hi
     have hf := (hat.stored.ctor i _ hcA).1
     rw [hnames i _ hcA, ← LoadedReads.keyOf_eq] at hf
-    rw [hbP', Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hf]
+    rw [hbP', Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hf]
     exact Core.Resolved.ne
   -- the constructor entries
   have hnamesB : ∀ (j : Nat) (cA : ConstantVal .anon × Nat), fam.ctorsA[j]? = some cA →
@@ -293,62 +294,58 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     rw [hbP']
     exact hnames j cA hcA
   have hsN : ∀ x ∈ natCalls, x ∈ calls := fun x hx => hsCanon x (hsNat x hx)
-  have hload : Decl.NatCtorLoadT (Core.Ctx.stored ⟨E, env, t, some n⟩).κ bP ip.idx.toNat
+  have hload : Decl.NatCtorLoadT (Core.Ctx.stored ⟨E, env, t, lim⟩).κ bP ip.idx.toNat
       ind.lvls.toNat (lateCtorsInfo fam) blkPtrP natCalls :=
-    front_ctor_loads hcS hat.stored hL1 hidx32 (by rw [hlenC]; omega) hnamesB (hgood.sub hsN)
-  have hnf_lt : ∀ (j : Nat) (info : Core.KKey × Nat × Core.KExpr × Core.KExpr × List Nat),
-      (lateCtorsInfo fam)[j]? = some info → info.2.1 < 4294967296 := by
-    intro j info hinfo'
-    obtain ⟨cA, ks, hcA, hks, rfl⟩ := front_lateCtorsInfo_getElem? hinfo'
-    have hmem : (cA.1.name, cA.2, cA.1.type, Ix.Kernel.recIdxOf ks) ∈
-        Ix.Kernel.nativeCtors4 fam.ctorsA fam.p.kinds := by
-      unfold Ix.Kernel.nativeCtors4
-      exact List.mem_of_getElem? (List.getElem?_zipWith_eq_some.mpr ⟨cA, ks, hcA, hks, rfl⟩)
-    have h1 : ind.params.toNat + cA.2 < 2147483648 := (hc4 _ hmem).1
-    show cA.2 < 4294967296
-    omega
-  have hrecB : recordOf (⟨E, env, t, some n⟩ : Core.Ctx).E (Core.ixAddr bP) = some cb := by
+    front_ctor_loads_count hcS hat.stored hL1 hidx56 (by rw [hlenC]; exact hcP) hnamesB
+      (hgood.sub hsN)
+  have hrecB : recordOf (⟨E, env, t, lim⟩ : Core.Ctx).E (Core.ixAddr bP) = some cb := by
     show recordOf E (Core.ixAddr bP) = some cb
     rw [hbP', recordOf_eq_recordAt_of_decoded hst.decoded]
     exact hcb
   have hretHead : Decl.NatCtorRetHeadT bP ip.idx.toNat fam.p.nP (lateCtorsInfo fam) blkPtrP
       natCalls :=
-    Decl.natCtorRetHeadT_of_ixon (c := ⟨E, env, t, some n⟩) hrecB hms hind hhead hnP hidx32
-      (by rw [hlenInfo, hlenC]; omega) hnf_lt hload (hgood.sub hsN)
+    Decl.natCtorRetHeadT_of_ixon (c := ⟨E, env, t, lim⟩) hrecB hms hind hhead hnP (by omega)
+      (by rw [hlenInfo, hlenC]; omega) hload (hgood.sub hsN)
   have hsubL : ∀ x ∈ fam.p.cvT.levelParams, x ∈ List.range ind.lvls.toNat := by
     intro x hx
     rw [hL1] at hx
     exact hx
-  have hgen := late_former_genScoped hat henv hlv hsubL
-  obtain ⟨bsS, hsort⟩ := hat.sort
+  have hlpsS : fam.cvS.type.allLevelParamsDefined (List.range ind.lvls.toNat) = true := by
+    have h : fam.cvS.type.allLevelParamsDefined fam.cvS.levelParams = true :=
+      (henv _ (Ix.Kernel.Semantics.Env.find?_mem hat.stored.former)).2.1
+    rw [hat.lps, hL1] at h
+    exact h
   -- the parent's type
-  have hpty := front_parent_former hcS hat hname hL1 hbT' (hgood.sub hsLoad) hbT evLoad hldP
+  have hpty := front_parent_former hcS hat.stored hat.lps hname hL1 hbT' (hgood.sub hsLoad) hbT
+    evLoad hldP
   -- the run of the comparison, at the family's counts
   have e1 : rc.params.toNat = fam.p.nP := hp.trans hnP.symm
   have e2 : rc.indices.toNat = fam.p.nIdx := hi.trans hnI.symm
   have e3 : ind.ctors.size = (lateCtorsInfo fam).length := by rw [hlenInfo, hlenC]
   rw [e1, e2, e3] at evNat
-  have hspec := Decl.late_nat_rec_check_specT (c := Core.Ctx.stored ⟨E, env, t, some n⟩) hcS
-    (fun _ => trivial) (κ₂ := lateRuleKey ⟨E, env, t, some n⟩ A) (find₂ := env.find?)
+  have hspec := Decl.late_nat_rec_check_spec_traced (c := Core.Ctx.stored ⟨E, env, t, lim⟩) hcS
+    (fun _ => trivial) (κ₂ := lateRuleKey ⟨E, env, t, lim⟩ A) (find₂ := env.find?)
     (lateRuleKey_keep _ A) (wrapLoads_late hcS hst.decoded (hst.runRecord A c hc) hinfo)
     (cst := c) (rc' := rc) (T := fam.p.cvT.name) (recC := keyOf t A) (b₀ := bP) (bT := bT)
     (bRec := bA) (bRB := bR) (idx := ip.idx.toNat) (k := ind.lvls.toNat) (nP := fam.p.nP)
     (nIdx := fam.p.nIdx) (large := decide (rc.lvls.toNat = ind.lvls.toNat + 1))
-    (tty₀ := fam.cvTa.type) (rec_ty₀ := tyC) (ctors_info := lateCtorsInfo fam) (rls := rlsC)
+    (pty₀ := fam.cvS.type) (ttyReg := fam.cvTa.type)
+    (rec_ty₀ := tyC) (ctors_info := lateCtorsInfo fam) (rls := rlsC)
     ⟨_, _, hat.stored.former⟩
     (by rw [hbR']; exact hst.runRecord A c hc) hinfo hT hκ₂_inj hRec
-    (by omega) hCres hk31 (by rw [hnP]; exact hnP31) (by rw [hnI]; exact hnI31)
-    (by rw [hlenInfo, hlenC]; exact hnC31) (by rw [hlenInfo, hlenC, hnP, hnI]; exact hnall)
-    hgen.2.1 hsort
-    (lateCtorsInfo_wf hat henv hL1 hnoProj ⟨hk31, hnP31, hnI31, hnC31, hnall, hidx32, hc4⟩ hnP
-      hlenC (decide (rc.lvls.toNat = ind.lvls.toNat + 1)))
+    hidx56 hCres (by first | (rw [← hlvEq]; exact hlvR) | (have h := hlvEq; omega))
+    (by rw [hnP]; exact hpP)
+    (by rw [hnI]; exact hiP) (by rw [hlenInfo, hlenC]; exact hcP)
+    hlpsS
+    (lateCtorsInfo_wf hat henv hL1 hnoProj (decide (rc.lvls.toNat = ind.lvls.toNat + 1)))
     hrls_len hload hretHead (Core.CoreGood.ofRaw (hgood.sub hsN) (fun _ _ => trivial))
-    ((hrc.mono eLN).toRCRep)
+    (hrc.mono eLN)
     (Bytes.repAddressRef_heapMono₂ Core.addrTy (eC.trans eN) hbP)
     (Bytes.repAddressRef_heapMono₂ Core.addrTy eLN hbR)
     (Bytes.repAddressRef_heapMono₂ Core.addrTy eScN hbT)
     (Bytes.repAddressRef_heapMono₂ Core.addrTy eLN hbA)
     ((hpty.mono (eC.trans eN)) 0 (fun _ => default))
+    (Ix.Kernel.HeadDeltaBeta.DefnLevelsClosed.of_envWF henv) hat.link.binders
     (by rw [← hpsE]; exact ((htmT 0 (fun _ => default)).mono eLN).toTm)
     (by rw [← hpsE]; exact hrrC.mono eLN)
     evNat
@@ -372,7 +369,7 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     have hmin' : rc.minors.toNat = fam.p.ctors.length := by
       rw [hmin, ← hlenC, hat.stored.lenA]
     rw [e1, hmot, hmin', e2] at evScan
-    have hmaj := Decl.front_maj (κ := (Core.Ctx.stored ⟨E, env, t, some n⟩).κ)
+    have hmaj := Decl.front_maj (κ := (Core.Ctx.stored ⟨E, env, t, lim⟩).κ)
       (k := ind.lvls.toNat) (large := decide (rc.lvls.toNat = ind.lvls.toNat + 1))
       (np := fam.p.nP) (nmi := fam.p.ctors.length) (ni := fam.p.nIdx) (tyC := tyC)
       (by rw [← hlenP, hlenInfo, hlenC, hnP, hnI]; omega)
