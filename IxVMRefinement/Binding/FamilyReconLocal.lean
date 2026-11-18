@@ -8,16 +8,22 @@ flattened family's entries (their types, counts, blocks), the constructors of th
 definitions that head normalization unfolds at the head constants of the terms it normalizes.
 Every answer is `none` where a load fails, so a view that answers as the first wherever the first
 answers, on a set of addresses closed under what is read (`ReconView.ClosedOn`), reconstructs the
-same (`recTypeAt_leOn`, `ruleBodiesAt_leOn`).
+same, at any larger fuel (`recTypeAt_leOn`, `ruleBodiesAt_leOn`); so does the same view at a larger
+fuel (`recTypeAt_fuel_mono`, `ruleBodiesAt_fuel_mono`, `MemberRecon.fuel_mono`), and recursors each
+against the reconstruction at a fuel of their own give the record-level form at one
+(`recordReconWith_of_members`).
 
 * `RKeysAt`, `REntryAt`, `ReconView.LeOn`, `ReconView.ClosedOn`;
 * the keys of the terms normalized stay in the set (`isForall_keys`, `lamBody_keys`, the keys of
   an instantiation, a lift, a level instantiation, a substituted parameter);
-* `headStep_leOn`, `hnf_leOn`, `binderOf_leOn`, `collectDoms_leOn`, `peelMotiveParams_keys`,
-  `peelCtorParams_leOn`, `whnfTele_leOn`, `isRecField_congr`, `fieldsClassify_leOn`,
-  `minorAt_leOn`, `minorDoms_leOn`, `allMinors_leOn`, `motiveType_leOn`, `allMotives_leOn`,
-  `flatOwnParams_leOn`, `ctorsBefore_leOn`, **`recTypeAt_leOn`**, `applyIhs_congr`,
-  `ruleBody_leOn`, `ruleBodies_leOn`, **`ruleBodiesAt_leOn`**. -/
+* `rk_mkAppN`, `hnfSpine_leOn`, `hnf_leOn`, `binderOf_leOn`, `collectDoms_leOn`,
+  `peelMotiveParams_keys`, `peelCtorParams_leOn`, `whnfTele_leOn`, `isRecField_congr`,
+  `fieldsClassify_leOn`, `minorAt_leOn`, `minorDoms_leOn`, `allMinors_leOn`, `motiveType_leOn`,
+  `allMotives_leOn`, `flatOwnParams_leOn`, `ctorsBefore_leOn`, **`recTypeAt_leOn`**,
+  `applyIhs_congr`, `ruleBody_leOn`, `ruleBodies_leOn`, **`ruleBodiesAt_leOn`**;
+* `ReconView.LeOn.refl`, `ReconView.closedOn_univ`, **`recTypeAt_fuel_mono`**,
+  **`ruleBodiesAt_fuel_mono`**, `MemberRecon.fuel_mono`, `exists_fuel_bound`,
+  **`recordReconWith_of_members`**. -/
 
 namespace IxVM.Refinement.Binding.FamilyRecon
 
@@ -222,136 +228,110 @@ theorem projStep_mem {s : KKey} {i : Nat} {e e' : KExpr}
                 simp at h
   | _ => rw [hf] at h; simp at h
 
-theorem headStep_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) :
-    ∀ (e : KExpr) (x : Option KExpr), RKeysAt V S e → headStep V e = some x →
-      headStep V' e = some x ∧ ∀ e', x = some e' → RKeysAt V S e' := by
-  intro e
-  induction e with
-  | const k us =>
-    intro x hK h
-    simp only [headStep] at h ⊢
-    have hk : ∀ a, V.addr k = some a → S a := hK k (.const _)
-    exact ⟨hV.unfold k us x hk h, fun e' he' => hC.unfold k us e' hk (he' ▸ h)⟩
-  | app f a ihf iha =>
-    intro x hK h
-    simp only [headStep] at h ⊢
-    cases hl : lamBody f with
-    | some b =>
-      simp only [hl, Option.some.injEq] at h ⊢
-      subst h
-      refine ⟨rfl, fun e' he' => ?_⟩
-      simp only [Option.some.injEq] at he'
-      subst he'
-      exact rk_inst1Lift (lamBody_keys hl fun k hk => hK k (.appFn hk))
-        fun k hk => hK k (.appArg hk)
-    | none =>
-      simp only [hl] at h ⊢
-      cases hf : headStep V f with
-      | none => simp [hf] at h
-      | some y =>
-        obtain ⟨hf', hky⟩ := ihf y (fun k hk => hK k (.appFn hk)) hf
-        rw [hf']
-        rw [hf, Option.map_some, Option.some.injEq] at h
-        subst h
-        refine ⟨rfl, fun e' he' => ?_⟩
-        cases y with
-        | none => simp at he'
-        | some f' =>
-          simp only [Option.map_some, Option.some.injEq] at he'
-          subst he'
-          intro k hk a' ha'
-          cases hk with
-          | appFn h1 => exact hky f' rfl k h1 a' ha'
-          | appArg h1 => exact hK k (.appArg h1) a' ha'
-  | bvar i =>
-    intro x _ h
-    simp [headStep] at h
-    subst h
-    simp [headStep]
-  | fvar i ty _ =>
-    intro x _ h
-    simp [headStep] at h
-    subst h
-    simp [headStep]
-  | sort u =>
-    intro x _ h
-    simp [headStep] at h
-    subst h
-    simp [headStep]
-  | lam t b m _ _ =>
-    intro x _ h
-    simp [headStep] at h
-    subst h
-    simp [headStep]
-  | forallE t b m _ _ =>
-    intro x _ h
-    simp [headStep] at h
-    subst h
-    simp [headStep]
-  | letE t v b l _ _ _ =>
-    intro x _ h
-    simp [headStep] at h
-    subst h
-    simp [headStep]
-  | lit l =>
-    intro x _ h
-    simp [headStep] at h
-    subst h
-    simp [headStep]
-  | proj s i e ih =>
-    intro x hK h
-    have hKe : RKeysAt V S e := fun k hk => hK k (.projBody hk)
-    show projCase V' s i e (headStep V' e) = some x ∧ _
-    have h' : projCase V s i e (headStep V e) = some x := h
-    cases hs : headStep V e with
-    | none => rw [hs] at h'; simp [projCase] at h'
-    | some y =>
-      obtain ⟨hs', hky⟩ := ih y hKe hs
-      rw [hs']
-      rw [hs] at h'
-      cases y with
-      | some e' =>
-        simp only [projCase, Option.some.injEq] at h'
-        subst h'
-        refine ⟨rfl, fun e'' he'' => ?_⟩
-        simp only [Option.some.injEq] at he''
-        subst he''
-        intro k hk a ha
-        cases hk with
-        | proj => exact hK _ (.proj i e) a ha
-        | projBody h1 => exact hky e' rfl k h1 a ha
-      | none =>
-        have h'' : projStep V s i e = some x := h'
-        refine ⟨projStep_leOn hV hC hK h'', fun e' he' => ?_⟩
-        subst he'
-        intro k hk a ha
-        exact hK k (.projBody (keyIn_of_mem_getAppArgs e (projStep_mem h'') hk)) a ha
 
-theorem hnf_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) :
-    ∀ (n : Nat) (e r : KExpr), RKeysAt V S e → hnf V n e = some r →
-      hnf V' n e = some r ∧ RKeysAt V S r := by
+/-- The keys of a head applied to a spine. -/
+theorem rk_mkAppN : ∀ (sp : List KExpr) (e : KExpr), RKeysAt V S e → (∀ a ∈ sp, RKeysAt V S a) →
+    RKeysAt V S (Ix.Kernel.Expr.mkAppN e sp)
+  | [], e, he, _ => he
+  | a :: sp, e, he, hs => by
+    simp only [Ix.Kernel.Expr.mkAppN]
+    refine rk_mkAppN sp (.app e a) (fun k hk => ?_) (fun b hb => hs b (List.mem_cons_of_mem _ hb))
+    cases hk with
+    | appFn h => exact he k h
+    | appArg h => exact hs a List.mem_cons_self k h
+
+/-- **The spine machine at a larger fuel, through a view that answers as the first on a closed
+set holding the head's and the spine's keys, normalizes to the same term**, whose keys stay in the
+set. -/
+theorem hnfSpine_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) :
+    ∀ (n n' : Nat) (e : KExpr) (sp : List KExpr) (r : KExpr), n ≤ n' → RKeysAt V S e →
+      (∀ a ∈ sp, RKeysAt V S a) → hnfSpine V n e sp = some r →
+      hnfSpine V' n' e sp = some r ∧ RKeysAt V S r := by
   intro n
   induction n with
-  | zero => intro e r _ h; simp [hnf] at h
+  | zero => intro n' e sp r _ _ _ h; simp [hnfSpine] at h
   | succ n ih =>
-    intro e r hK h
-    cases hs : headStep V e with
-    | none => simp [hnf, hs] at h
-    | some x =>
-      obtain ⟨hs', hk⟩ := headStep_leOn hV hC e x hK hs
-      cases x with
-      | none =>
-        simp only [hnf, hs, hs', Option.some.injEq] at h ⊢
+    intro n' e sp r hn hK hsp h
+    obtain ⟨m, rfl⟩ : ∃ m, n' = m + 1 := ⟨n' - 1, by omega⟩
+    have hnm : n ≤ m := by omega
+    cases e with
+    | app f a =>
+      simp only [hnfSpine] at h ⊢
+      refine ih m f (a :: sp) r hnm (fun k hk => hK k (.appFn hk)) (fun b hb => ?_) h
+      rcases List.mem_cons.mp hb with rfl | hb
+      · exact fun k hk => hK k (.appArg hk)
+      · exact hsp b hb
+    | lam d b mm =>
+      cases sp with
+      | nil =>
+        simp only [hnfSpine, Option.some.injEq] at h ⊢
         subst h
         exact ⟨rfl, hK⟩
-      | some e' =>
-        simp only [hnf, hs, hs'] at h ⊢
-        exact ih e' r (hk e' rfl) h
+      | cons a sp' =>
+        simp only [hnfSpine] at h ⊢
+        exact ih m _ sp' r hnm
+          (rk_inst1Lift (fun k hk => hK k (.lamBody hk)) (hsp a List.mem_cons_self))
+          (fun x hx => hsp x (List.mem_cons_of_mem _ hx)) h
+    | const k us =>
+      have hk : ∀ a, V.addr k = some a → S a := hK k (.const _)
+      simp only [hnfSpine] at h ⊢
+      cases hu : V.unfold k us with
+      | none => rw [hu] at h; simp at h
+      | some x =>
+        rw [hV.unfold k us x hk hu]
+        rw [hu] at h
+        cases x with
+        | none =>
+          simp only [Option.some.injEq] at h ⊢
+          subst h
+          exact ⟨rfl, rk_mkAppN sp _ hK hsp⟩
+        | some v =>
+          simp only at h ⊢
+          exact ih m v sp r hnm (hC.unfold k us v hk hu) hsp h
+    | proj s i x =>
+      have hKx : RKeysAt V S x := fun k hk => hK k (.projBody hk)
+      simp only [hnfSpine] at h ⊢
+      cases hw : hnfSpine V n x [] with
+      | none => rw [hw] at h; simp at h
+      | some w =>
+        obtain ⟨hw', hkw⟩ := ih m x [] w hnm hKx (by simp) hw
+        rw [hw']
+        rw [hw] at h
+        simp only at h ⊢
+        have hKp : RKeysAt V S (.proj s i w) := by
+          intro k hk a ha
+          cases hk with
+          | proj => exact hK _ (.proj i x) a ha
+          | projBody h1 => exact hkw k h1 a ha
+        cases hp : projStep V s i w with
+        | none => rw [hp] at h; simp at h
+        | some y =>
+          rw [projStep_leOn hV hC hKp hp]
+          rw [hp] at h
+          cases y with
+          | none =>
+            simp only [Option.some.injEq] at h ⊢
+            subst h
+            exact ⟨rfl, rk_mkAppN sp _ hKp hsp⟩
+          | some y =>
+            simp only at h ⊢
+            exact ih m y sp r hnm
+              (fun k hk a ha => hkw k (keyIn_of_mem_getAppArgs w (projStep_mem hp) hk) a ha) hsp h
+    | bvar _ | fvar _ _ | sort _ | forallE _ _ _ | letE _ _ _ _ | lit _ =>
+      simp only [hnfSpine, Option.some.injEq] at h ⊢
+      subst h
+      exact ⟨rfl, rk_mkAppN sp _ hK hsp⟩
 
-theorem binderOf_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) (f : Nat) (ty : KExpr)
-    (x : Option (KExpr × KExpr × Ix.Kernel.BinderMeta)) (hK : RKeysAt V S ty)
+/-- **Head normalization at a larger fuel, through a view that answers as the first on a closed
+set holding the term's keys, gives the same term**, whose keys stay in the set. -/
+theorem hnf_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {n n' : Nat} (hn : n ≤ n') {e r : KExpr}
+    (hK : RKeysAt V S e) (h : hnf V n e = some r) : hnf V' n' e = some r ∧ RKeysAt V S r :=
+  hnfSpine_leOn hV hC n n' e [] r hn hK (by simp) h
+
+theorem binderOf_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hf : f ≤ f')
+    (ty : KExpr) (x : Option (KExpr × KExpr × Ix.Kernel.BinderMeta)) (hK : RKeysAt V S ty)
     (h : binderOf V f ty = some x) :
-    binderOf V' f ty = some x ∧
+    binderOf V' f' ty = some x ∧
       ∀ d b m, x = some (d, b, m) → RKeysAt V S d ∧ RKeysAt V S b := by
   unfold binderOf at h ⊢
   cases hi : isForall ty with
@@ -367,15 +347,15 @@ theorem binderOf_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) (f : Nat) (ty : KEx
     cases hh : hnf V f ty with
     | none => simp [hh] at h
     | some w =>
-      obtain ⟨hh', hkw⟩ := hnf_leOn hV hC f ty w hK hh
+      obtain ⟨hh', hkw⟩ := hnf_leOn hV hC hf hK hh
       rw [hh, Option.map_some, Option.some.injEq] at h
       rw [hh', Option.map_some, Option.some.injEq]
       subst h
       exact ⟨rfl, fun d b m hp => isForall_keys hp hkw⟩
 
-theorem collectDoms_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) (f : Nat) :
+theorem collectDoms_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hf : f ≤ f') :
     ∀ (n : Nat) (ty : KExpr) (r : List KExpr × KExpr), RKeysAt V S ty →
-      collectDoms V f n ty = some r → collectDoms V' f n ty = some r := by
+      collectDoms V f n ty = some r → collectDoms V' f' n ty = some r := by
   intro n
   induction n with
   | zero => intro ty r _ h; simpa only [collectDoms] using h
@@ -384,7 +364,7 @@ theorem collectDoms_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) (f : Nat) :
     cases hb : binderOf V f ty with
     | none => simp [collectDoms, hb] at h
     | some x =>
-      obtain ⟨hb', hk⟩ := binderOf_leOn hV hC f ty x hK hb
+      obtain ⟨hb', hk⟩ := binderOf_leOn hV hC hf ty x hK hb
       cases x with
       | none =>
         simp only [collectDoms, hb, hb'] at h ⊢
@@ -422,11 +402,11 @@ theorem peelMotiveParams_keys {nrp : Nat} {aux : Bool} {sp : List KExpr}
       simp only [hi] at h
       exact ih (j + 1) _ r (rk_inst1Lift (isForall_keys hi hK).2 (rk_substParamFor hsp)) h
 
-theorem peelCtorParams_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f depth specLift : Nat}
-    {aux : Bool} {sp : List KExpr} (hsp : ∀ p ∈ sp, RKeysAt V S p) :
+theorem peelCtorParams_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' depth specLift : Nat}
+    (hf : f ≤ f') {aux : Bool} {sp : List KExpr} (hsp : ∀ p ∈ sp, RKeysAt V S p) :
     ∀ (n j : Nat) (ty r : KExpr), RKeysAt V S ty →
       peelCtorParams V f depth specLift aux sp n j ty = some r →
-      peelCtorParams V' f depth specLift aux sp n j ty = some r ∧ RKeysAt V S r := by
+      peelCtorParams V' f' depth specLift aux sp n j ty = some r ∧ RKeysAt V S r := by
   intro n
   induction n with
   | zero =>
@@ -439,7 +419,7 @@ theorem peelCtorParams_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f depth spec
     cases hb : binderOf V f ty with
     | none => simp [peelCtorParams, hb] at h
     | some x =>
-      obtain ⟨hb', hk⟩ := binderOf_leOn hV hC f ty x hK hb
+      obtain ⟨hb', hk⟩ := binderOf_leOn hV hC hf ty x hK hb
       cases x with
       | none => simp [peelCtorParams, hb] at h
       | some p =>
@@ -447,29 +427,31 @@ theorem peelCtorParams_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f depth spec
         simp only [peelCtorParams, hb, hb'] at h ⊢
         exact ih (j + 1) _ r (rk_inst1Lift (hk d b m rfl).2 (rk_ctorSubstParamFor hsp)) h
 
-theorem whnfTele_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) (f : Nat) :
-    ∀ (n : Nat) (e r : KExpr), RKeysAt V S e → whnfTele V f n e = some r →
-      whnfTele V' f n e = some r := by
+theorem whnfTele_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hf : f ≤ f') :
+    ∀ (n n' : Nat) (e r : KExpr), n ≤ n' → RKeysAt V S e → whnfTele V f n e = some r →
+      whnfTele V' f' n' e = some r := by
   intro n
   induction n with
-  | zero => intro e r _ h; simp [whnfTele] at h
+  | zero => intro n' e r _ _ h; simp [whnfTele] at h
   | succ n ih =>
-    intro e r hK h
+    intro n' e r hn hK h
+    obtain ⟨m, rfl⟩ : ∃ m, n' = m + 1 := ⟨n' - 1, by omega⟩
+    have hnm : n ≤ m := by omega
     cases hh : hnf V f e with
     | none => simp [whnfTele, hh] at h
     | some w =>
-      obtain ⟨hh', hkw⟩ := hnf_leOn hV hC f e w hK hh
+      obtain ⟨hh', hkw⟩ := hnf_leOn hV hC hf hK hh
       cases hi : isForall w with
       | none =>
         simp only [whnfTele, hh, hh', hi] at h ⊢
         exact h
       | some p =>
-        obtain ⟨d, b, m⟩ := p
+        obtain ⟨d, b, mm⟩ := p
         simp only [whnfTele, hh, hh', hi] at h ⊢
         cases ht : whnfTele V f n b with
         | none => simp [ht] at h
         | some q =>
-          rw [ih b q (isForall_keys hi hkw).2 ht]
+          rw [ih m b q hnm (isForall_keys hi hkw).2 ht]
           rw [ht] at h
           exact h
 
@@ -477,11 +459,11 @@ theorem isRecField_congr (hV : V.LeOn S V') (es : List FlatEntry) (liftBy : Nat)
     isRecField V' es liftBy e = isRecField V es liftBy e := by
   simp only [isRecField, hV.addr]
 
-theorem fieldsClassify_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) (f : Nat)
+theorem fieldsClassify_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hf : f ≤ f')
     (es : List FlatEntry) (liftBy : Nat) :
     ∀ (ty : KExpr) (fidx : Nat) (r : List KExpr × List Nat × List Nat × KExpr × List KExpr),
       RKeysAt V S ty → fieldsClassify V f es liftBy fidx ty = some r →
-      fieldsClassify V' f es liftBy fidx ty = some r := by
+      fieldsClassify V' f' es liftBy fidx ty = some r := by
   intro ty
   induction ty with
   | forallE d b m ihd ihb =>
@@ -490,7 +472,7 @@ theorem fieldsClassify_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) (f : Nat)
     cases hw : whnfTele V f f d with
     | none => simp [hw] at h
     | some nd =>
-      rw [whnfTele_leOn hV hC f f d nd (fun k hk => hK k (.allTy hk)) hw]
+      rw [whnfTele_leOn hV hC hf f f' d nd hf (fun k hk => hK k (.allTy hk)) hw]
       rw [hw] at h
       simp only at h ⊢
       cases hr : fieldsClassify V f es liftBy (fidx + 1) b with
@@ -512,38 +494,40 @@ theorem fieldsClassify_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) (f : Nat)
 
 /-! ## Minor premises and motives -/
 
-theorem minorAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {es : List FlatEntry}
+theorem minorAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu : f ≤ f')
+    {es : List FlatEntry}
     {fop : List Nat} {ck : KKey} {cty : KExpr} {nOwn : Nat} {aux : Bool} {sp : List KExpr}
     {us : List KLevel} {nrp nMot prev motiveBase selfMemIdx : Nat} {elim : KLevel}
     (hK : RKeysAt V S cty) (hsp : ∀ p ∈ sp, RKeysAt V S p) {r : KExpr}
     (h : minorAt V f es fop ck cty nOwn aux sp us nrp nMot prev motiveBase selfMemIdx elim =
       some r) :
-    minorAt V' f es fop ck cty nOwn aux sp us nrp nMot prev motiveBase selfMemIdx elim =
+    minorAt V' f' es fop ck cty nOwn aux sp us nrp nMot prev motiveBase selfMemIdx elim =
       some r := by
   simp only [minorAt] at h ⊢
   cases hp : peelCtorParams V f nrp 0 aux sp nOwn 0
       (cty.instantiateLevelParams (List.range us.length) us) with
   | none => simp [hp] at h
   | some after =>
-    obtain ⟨hp', hka⟩ := peelCtorParams_leOn hV hC hsp nOwn 0 _ after (rk_ilp _ _ hK) hp
+    obtain ⟨hp', hka⟩ := peelCtorParams_leOn hV hC hfu hsp nOwn 0 _ after (rk_ilp _ _ hK) hp
     rw [hp']
     rw [hp] at h
     simp only at h ⊢
     cases hc : fieldsClassify V f es 0 0 after with
     | none => simp [hc] at h
     | some q =>
-      rw [fieldsClassify_leOn hV hC f es 0 after 0 q hka hc]
+      rw [fieldsClassify_leOn hV hC hfu es 0 after 0 q hka hc]
       rw [hc] at h
       exact h
 
-theorem minorDoms_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {es : List FlatEntry}
+theorem minorDoms_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu : f ≤ f')
+    {es : List FlatEntry}
     {fop : List Nat} {aux : Bool} {sp : List KExpr} {us : List KLevel}
     {nrp nMot motiveBase selfMemIdx : Nat} {blk : _root_.Address} {idx : Nat} {elim : KLevel}
     (hblk : S blk) (hsp : ∀ p ∈ sp, RKeysAt V S p) :
     ∀ (cs : List Nat) (prev : Nat) (r : List KExpr),
       minorDoms V f es fop aux sp us nrp nMot motiveBase selfMemIdx blk idx elim prev cs =
         some r →
-      minorDoms V' f es fop aux sp us nrp nMot motiveBase selfMemIdx blk idx elim prev cs =
+      minorDoms V' f' es fop aux sp us nrp nMot motiveBase selfMemIdx blk idx elim prev cs =
         some r := by
   intro cs
   induction cs with
@@ -562,7 +546,7 @@ theorem minorDoms_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {es : Li
           prev motiveBase selfMemIdx elim with
       | none => simp [hm] at h
       | some m =>
-        rw [minorAt_leOn hV hC (hC.ctorTy blk idx c cty np hblk hc) hsp hm]
+        rw [minorAt_leOn hV hC hfu (hC.ctorTy blk idx c cty np hblk hc) hsp hm]
         rw [hm] at h
         simp only at h ⊢
         cases hr : minorDoms V f es fop aux sp us nrp nMot motiveBase selfMemIdx blk idx elim
@@ -573,11 +557,11 @@ theorem minorDoms_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {es : Li
           rw [hr] at h
           exact h
 
-theorem allMinors_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat}
+theorem allMinors_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu : f ≤ f')
     {fullEs : List FlatEntry} {fop : List Nat} {nrp nMot motiveBase : Nat} {elim : KLevel} :
     ∀ (es : List FlatEntry) (prev pos : Nat) (r : List KExpr), (∀ e ∈ es, REntryAt V S e) →
       allMinors V f fullEs fop nrp nMot motiveBase elim es prev pos = some r →
-      allMinors V' f fullEs fop nrp nMot motiveBase elim es prev pos = some r := by
+      allMinors V' f' fullEs fop nrp nMot motiveBase elim es prev pos = some r := by
   intro es
   induction es with
   | nil => intro prev pos r _ h; simpa only [allMinors] using h
@@ -595,7 +579,7 @@ theorem allMinors_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat}
           i.idx elim prev (List.range i.nctors) with
       | none => simp [hm] at h
       | some ms =>
-        rw [minorDoms_leOn hV hC (hC.indBlk e.addr i he.addr hi) he.params _ prev ms hm]
+        rw [minorDoms_leOn hV hC hfu (hC.indBlk e.addr i he.addr hi) he.params _ prev ms hm]
         rw [hm] at h
         simp only at h ⊢
         cases hr : allMinors V f fullEs fop nrp nMot motiveBase elim es (prev + ms.length)
@@ -606,12 +590,12 @@ theorem allMinors_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat}
           rw [hr] at h
           exact h
 
-theorem motiveType_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat}
+theorem motiveType_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu : f ≤ f')
     {memberAddr : _root_.Address} {indTy : KExpr} {nOwn nIdx : Nat} {us : List KLevel}
     {elim : KLevel} {nrp : Nat} {aux : Bool} {sp : List KExpr} (hK : RKeysAt V S indTy)
     (hsp : ∀ p ∈ sp, RKeysAt V S p) {r : KExpr}
     (h : motiveType V f memberAddr indTy nOwn nIdx us elim nrp aux sp = some r) :
-    motiveType V' f memberAddr indTy nOwn nIdx us elim nrp aux sp = some r := by
+    motiveType V' f' memberAddr indTy nOwn nIdx us elim nrp aux sp = some r := by
   simp only [motiveType] at h ⊢
   cases hp : peelMotiveParams nrp aux sp nOwn 0
       (indTy.instantiateLevelParams (List.range us.length) us) with
@@ -623,14 +607,15 @@ theorem motiveType_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat}
     cases hc : collectDoms V f nIdx after with
     | none => simp [hc] at h
     | some q =>
-      rw [collectDoms_leOn hV hC f nIdx after q hka hc, hV.key]
+      rw [collectDoms_leOn hV hC hfu nIdx after q hka hc, hV.key]
       rw [hc] at h
       exact h
 
-theorem allMotives_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {elim : KLevel}
+theorem allMotives_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu : f ≤ f')
+    {elim : KLevel}
     {nrp : Nat} :
     ∀ (es : List FlatEntry) (j : Nat) (r : List KExpr), (∀ e ∈ es, REntryAt V S e) →
-      allMotives V f elim nrp es j = some r → allMotives V' f elim nrp es j = some r := by
+      allMotives V f elim nrp es j = some r → allMotives V' f' elim nrp es j = some r := by
   intro es
   induction es with
   | nil => intro j r _ h; simpa only [allMotives] using h
@@ -647,7 +632,7 @@ theorem allMotives_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {elim :
       cases hm : motiveType V f e.addr i.ty i.np i.ni e.levels elim nrp e.aux e.params with
       | none => simp [hm] at h
       | some mt =>
-        rw [motiveType_leOn hV hC (hC.indTy e.addr i he.addr hi) he.params hm]
+        rw [motiveType_leOn hV hC hfu (hC.indTy e.addr i he.addr hi) he.params hm]
         rw [hm] at h
         simp only at h ⊢
         cases hr : allMotives V f elim nrp es (j + 1) with
@@ -708,9 +693,10 @@ theorem ctorsBefore_leOn (hV : V.LeOn S V') :
 
 /-- **A view that answers as the first on a closed set holding the entries reconstructs the same
 recursor type.** -/
-theorem recTypeAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {es : List FlatEntry}
+theorem recTypeAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu : f ≤ f')
+    {es : List FlatEntry}
     (hE : ∀ e ∈ es, REntryAt V S e) {off nP k : Nat} {R : KExpr}
-    (h : recTypeAt V f es off nP k = some R) : recTypeAt V' f es off nP k = some R := by
+    (h : recTypeAt V f es off nP k = some R) : recTypeAt V' f' es off nP k = some R := by
   simp only [recTypeAt] at h ⊢
   cases h0 : es[0]? with
   | none => simp [h0] at h
@@ -733,16 +719,16 @@ theorem recTypeAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {es : Li
   split at h
   · simp at h
   · next paramDoms rest hc1 =>
-    rw [collectDoms_leOn hV hC f nP _ _ (rk_ilp _ _ (hC.indTy _ _ he0.addr hp)) hc1]
+    rw [collectDoms_leOn hV hC hfu nP _ _ (rk_ilp _ _ (hC.indTy _ _ he0.addr hp)) hc1]
     simp only
     split at h
     · next motDoms fop hm hf =>
-      rw [allMotives_leOn hV hC es 0 motDoms hE hm, flatOwnParams_leOn hV es fop hE hf]
+      rw [allMotives_leOn hV hC hfu es 0 motDoms hE hm, flatOwnParams_leOn hV es fop hE hf]
       simp only
       split at h
       · simp at h
       · next minDoms hmin =>
-        rw [allMinors_leOn hV hC es 0 0 minDoms hE hmin]
+        rw [allMinors_leOn hV hC hfu es 0 0 minDoms hE hmin]
         simp only
         split at h
         · simp at h
@@ -752,7 +738,7 @@ theorem recTypeAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {es : Li
           split at h
           · simp at h
           · next idxRaw rest' hci =>
-            rw [collectDoms_leOn hV hC f _ selfAfter _ hka hci]
+            rw [collectDoms_leOn hV hC hfu _ selfAfter _ hka hci]
             exact h
     · simp at h
 
@@ -771,14 +757,15 @@ theorem applyIhs_congr (hV : V.LeOn S V') (rm : List Nat) (norm : List KExpr)
     intro head k
     simp only [applyIhs, hV.key, ih]
 
-theorem ruleBody_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {es : List FlatEntry}
+theorem ruleBody_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu : f ≤ f')
+    {es : List FlatEntry}
     {fop : List Nat} {peers : List _root_.Address} {cty : KExpr}
     {minorIdx nP nMot nMin nOwn : Nat} {us recLvls : List KLevel} {aux : Bool}
     {sp : List KExpr} {elim : KLevel} (hK : RKeysAt V S cty) (hsp : ∀ p ∈ sp, RKeysAt V S p)
     {r : KExpr}
     (h : ruleBody V f es fop peers cty minorIdx nP nMot nMin nOwn us recLvls aux sp elim =
       some r) :
-    ruleBody V' f es fop peers cty minorIdx nP nMot nMin nOwn us recLvls aux sp elim =
+    ruleBody V' f' es fop peers cty minorIdx nP nMot nMin nOwn us recLvls aux sp elim =
       some r := by
   simp only [ruleBody] at h ⊢
   split at h
@@ -787,23 +774,24 @@ theorem ruleBody_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {es : Lis
     split at h
     · simp at h
     · next after hp =>
-      obtain ⟨hp', hka⟩ := peelCtorParams_leOn hV hC hsp nOwn 0 _ after (rk_ilp _ _ hK) hp
+      obtain ⟨hp', hka⟩ := peelCtorParams_leOn hV hC hfu hsp nOwn 0 _ after (rk_ilp _ _ hK) hp
       rw [hp']
       simp only
       split at h
       · simp at h
       · next fds ri rm ret norm hc =>
-        rw [fieldsClassify_leOn hV hC f es 0 after 0 _ hka hc]
+        rw [fieldsClassify_leOn hV hC hfu es 0 after 0 _ hka hc]
         simp only [applyIhs_congr hV]
         exact h
 
-theorem ruleBodies_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {es : List FlatEntry}
+theorem ruleBodies_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu : f ≤ f')
+    {es : List FlatEntry}
     {fop : List Nat} {peers : List _root_.Address} {nP nMot nMin : Nat}
     {us recLvls : List KLevel} {aux : Bool} {sp : List KExpr} {elim : KLevel}
     {blk : _root_.Address} {idx off : Nat} (hblk : S blk) (hsp : ∀ p ∈ sp, RKeysAt V S p) :
     ∀ (cs : List Nat) (r : List KExpr),
       ruleBodies V f es fop peers nP nMot nMin us recLvls aux sp elim blk idx off cs = some r →
-      ruleBodies V' f es fop peers nP nMot nMin us recLvls aux sp elim blk idx off cs =
+      ruleBodies V' f' es fop peers nP nMot nMin us recLvls aux sp elim blk idx off cs =
         some r := by
   intro cs
   induction cs with
@@ -822,7 +810,7 @@ theorem ruleBodies_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {es : L
           elim with
       | none => simp [hb] at h
       | some b =>
-        rw [ruleBody_leOn hV hC (hC.ctorTy blk idx c cty np hblk hc) hsp hb]
+        rw [ruleBody_leOn hV hC hfu (hC.ctorTy blk idx c cty np hblk hc) hsp hb]
         rw [hb] at h
         simp only at h ⊢
         cases hr : ruleBodies V f es fop peers nP nMot nMin us recLvls aux sp elim blk idx off
@@ -835,11 +823,11 @@ theorem ruleBodies_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat} {es : L
 
 /-- **A view that answers as the first on a closed set holding the entries reconstructs the same
 rule bodies.** -/
-theorem ruleBodiesAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat}
+theorem ruleBodiesAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu : f ≤ f')
     {es : List FlatEntry} (hE : ∀ e ∈ es, REntryAt V S e) {off nP nMot nMin nl k : Nat}
     {peers : List _root_.Address} {r : List KExpr}
     (h : ruleBodiesAt V f es off nP nMot nMin nl k peers = some r) :
-    ruleBodiesAt V' f es off nP nMot nMin nl k peers = some r := by
+    ruleBodiesAt V' f' es off nP nMot nMin nl k peers = some r := by
   simp only [ruleBodiesAt] at h ⊢
   cases hk : es[k]? with
   | none => simp [hk] at h
@@ -858,8 +846,92 @@ theorem ruleBodiesAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f : Nat}
   rw [hV.ind _ _ hek.addr hs, flatOwnParams_leOn hV es fop hE hf, ctorsBefore_leOn hV es k cb hE hc]
   rw [hs, hf, hc] at h
   simp only at h ⊢
-  exact ruleBodies_leOn hV hC (hC.indBlk _ _ hek.addr hs) hek.params _ r h
+  exact ruleBodies_leOn hV hC hfu (hC.indBlk _ _ hek.addr hs) hek.params _ r h
 
 end LeOn
+
+/-! ## More fuel -/
+
+/-- A view answers as itself on any set. -/
+theorem ReconView.LeOn.refl (V : ReconView) (S : _root_.Address → Prop) : V.LeOn S V :=
+  ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h, rfl, rfl, rfl, fun _ _ _ _ h => h,
+    fun _ _ _ h => h, fun _ _ _ h => h⟩
+
+/-- Every answer of a view stays among all addresses. -/
+theorem ReconView.closedOn_univ (V : ReconView) : V.ClosedOn (fun _ => True) where
+  indBlk := by intros; trivial
+  indTy := by intros; trivial
+  ctorTy := by intros; trivial
+  unfold := by intros; trivial
+
+/-- Every entry is at an address among all addresses, its parameters' keys too. -/
+theorem rEntryAt_univ (V : ReconView) (e : FlatEntry) : REntryAt V (fun _ => True) e :=
+  ⟨trivial, by intros; trivial⟩
+
+/-- **The reconstructed recursor type at a larger fuel is the same.** -/
+theorem recTypeAt_fuel_mono {V : ReconView} {f f' : Nat} (hfu : f ≤ f') {es : List FlatEntry}
+    {off nP k : Nat} {R : KExpr} (h : recTypeAt V f es off nP k = some R) :
+    recTypeAt V f' es off nP k = some R :=
+  recTypeAt_leOn (ReconView.LeOn.refl V _) (ReconView.closedOn_univ V) hfu
+    (fun e _ => rEntryAt_univ V e) h
+
+/-- **The reconstructed rule bodies at a larger fuel are the same.** -/
+theorem ruleBodiesAt_fuel_mono {V : ReconView} {f f' : Nat} (hfu : f ≤ f') {es : List FlatEntry}
+    {off nP nMot nMin nl k : Nat} {peers : List _root_.Address} {r : List KExpr}
+    (h : ruleBodiesAt V f es off nP nMot nMin nl k peers = some r) :
+    ruleBodiesAt V f' es off nP nMot nMin nl k peers = some r :=
+  ruleBodiesAt_leOn (ReconView.LeOn.refl V _) (ReconView.closedOn_univ V) hfu
+    (fun e _ => rEntryAt_univ V e) h
+
+/-- **A recursor against the reconstruction at one fuel is so at every larger fuel.** -/
+theorem MemberRecon.fuel_mono {TyRel : KExpr → KExpr → Prop} {t : Ix.Kernel.RoleTable}
+    {E : Ixon.Env} {rb : _root_.Address} {crb : Ixon.Constant} {rs : Array Ixon.MutConst}
+    {es : List FlatEntry} {off fuel fuel' k : Nat} {r : Ixon.Recursor} (hle : fuel ≤ fuel')
+    (h : MemberRecon TyRel t E rb crb rs es off fuel k r) :
+    MemberRecon TyRel t E rb crb rs es off fuel' k r := by
+  obtain ⟨ty, R, bodies, cbk, hty, hR, hrel, hb, hcb, hrules⟩ := h
+  exact ⟨ty, R, bodies, cbk, hty, recTypeAt_fuel_mono hle hR, hrel,
+    ruleBodiesAt_fuel_mono hle hb, hcb, hrules⟩
+
+/-- Finitely many facts each holding from some fuel on hold together from one fuel on. -/
+theorem exists_fuel_bound {P : Nat → Nat → Prop} (hP : ∀ k f f', f ≤ f' → P k f → P k f') :
+    ∀ n : Nat, (∀ k, k < n → ∃ f, P k f) → ∃ N, ∀ k, k < n → P k N
+  | 0, _ => ⟨0, fun _ hk => absurd hk (Nat.not_lt_zero _)⟩
+  | n + 1, h => by
+    obtain ⟨N, hN⟩ := exists_fuel_bound hP n (fun k hk => h k (by omega))
+    obtain ⟨f, hf⟩ := h n (by omega)
+    refine ⟨max N f, fun k hk => ?_⟩
+    by_cases hkn : k < n
+    · exact hP k N _ (Nat.le_max_left _ _) (hN k hkn)
+    · have hk' : k = n := by omega
+      subst hk'
+      exact hP k f _ (Nat.le_max_right _ _) hf
+
+/-- **The family record's reconstruction from its recursors one by one**: each recursor against
+the reconstruction at a fuel of its own gives the record-level form at one fuel. -/
+theorem recordReconWith_of_members {TyRel : KExpr → KExpr → Prop} {t : Ix.Kernel.RoleTable}
+    {E : Ixon.Env} {B rb : _root_.Address} {crb : Ixon.Constant} {rs : Array Ixon.MutConst}
+    {es : List FlatEntry} {off : Nat} (hrb : recordOf E rb = some crb) (hrs : crb.info = .muts rs)
+    (hflat : RecordFlat t E rb crb rs es) (hder : BlockDerivedFlat t E B off es)
+    (hm : ∀ (k : Nat) (r : Ixon.Recursor), rs[k]? = some (.recr r) →
+      ∃ fuel, MemberRecon TyRel t E rb crb rs es off fuel k r) :
+    RecordReconWith TyRel t E B rb := by
+  have hall : ∀ k, k < rs.size → ∃ f, ∀ r : Ixon.Recursor, rs[k]? = some (.recr r) →
+      MemberRecon TyRel t E rb crb rs es off f k r := by
+    intro k _
+    by_cases hex : ∃ r : Ixon.Recursor, rs[k]? = some (.recr r)
+    · obtain ⟨r, hr⟩ := hex
+      obtain ⟨f, hf⟩ := hm k r hr
+      refine ⟨f, fun r' hr' => ?_⟩
+      rw [hr] at hr'
+      cases hr'
+      exact hf
+    · exact ⟨0, fun r hr => absurd ⟨r, hr⟩ hex⟩
+  obtain ⟨N, hN⟩ := exists_fuel_bound
+    (P := fun k f => ∀ r : Ixon.Recursor, rs[k]? = some (.recr r) →
+      MemberRecon TyRel t E rb crb rs es off f k r)
+    (fun k f f' hle h r hr => (h r hr).fuel_mono hle) rs.size hall
+  exact ⟨crb, rs, es, off, N, hrb, hrs, hflat, hder, fun k r hr =>
+    hN k (Array.getElem?_eq_some_iff.mp hr).1 r hr⟩
 
 end IxVM.Refinement.Binding.FamilyRecon

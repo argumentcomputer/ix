@@ -585,8 +585,8 @@ theorem memberRecon_transport {TyRel : KExpr → KExpr → Prop} {t : Ix.Kernel.
     (h : MemberRecon TyRel t E rb crb rs es off fuel k r) :
     MemberRecon TyRel t E' rb crb rs es off fuel k r := by
   obtain ⟨ty, R, bodies, cbk, hty, hR, hrel, hb, hcb, hrules⟩ := h
-  refine ⟨ty, R, bodies, cbk, loadedAt_mono hblob hty, recTypeAt_leOn hV hC hE hR, hrel,
-    ruleBodiesAt_leOn hV hC hE hb, ctorsBefore_leOn hV es k cbk hE hcb, fun c ru hru => ?_⟩
+  refine ⟨ty, R, bodies, cbk, loadedAt_mono hblob hty, recTypeAt_leOn hV hC le_rfl hE hR, hrel,
+    ruleBodiesAt_leOn hV hC le_rfl hE hb, ctorsBefore_leOn hV es k cbk hE hcb, fun c ru hru => ?_⟩
   obtain ⟨rhs, cb, hrhs, hcbody, hf⟩ := hrules c ru hru
   exact ⟨rhs, cb, loadedAt_mono hblob hrhs, hcbody, hf⟩
 

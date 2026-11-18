@@ -20,19 +20,17 @@ and states the record-level form a family check of a group's validation leaves a
   `get_ci` loads, with the binder data of the record's binder blocks at the expression's root and
   a `let` read as its reduct. (The raw reader gives every binder the datum `never`, which the
   reconstruction's binders, at the elimination level, never equal.)
-* `hnf`: the head normalization the reconstruction performs (`whnf` in `collect_n_doms_whnf`,
-  `collect_index_doms`, `peel_ctor_params_subst`, `whnf_tele`), modelled as the δβ head
-  strategy with projections: a definition unfolded at a head constant, β at a λ applied, the
-  function of an application, and at a projection its projected term normalized and then a
-  constructor's field projected under `red_proj`'s gates (`projStep`; a stuck projection keeps its
-  normalized term, as `whnf_proj_head` does), to a term with no such step. A projection
-  definition applied to its arity (`try_reduce_projection_definition`, met in the census at
-  Mathlib's `Lists.Equiv`) is δ and β to the projection, then the projection step. β substitutes
-  by the circuit's lifting substitution (`instantiate1Lift`): the terms are open. Where the
-  circuit's `whnf` takes another step on the reconstruction's inputs (ζ, ι, a primitive
-  operation, a quotient, a literal, a string literal expanded under a projection) the model
-  departs from it; that the circuit takes none there is the fidelity obligation of the head
-  normalization.
+* `hnfSpine`, `hnf`: the head normalization the reconstruction performs in
+  `collect_n_doms_whnf`, `collect_index_doms`, `peel_ctor_params_subst` and `whnf_tele`, the
+  reconstruction's own normalizer (`recon_whnf`, `recon_whnf_spine`), mirrored call by call as a
+  machine on a head and a spine: a definition unfolded at a head constant applied at its level
+  count, β at a λ applied (every λ, by the circuit's lifting substitution `instantiate1Lift`: the
+  terms are open), and at a projection its projected term normalized and then a constructor's field
+  projected under `red_proj`'s gates (`projStep`; a stuck projection keeps its normalized term). A
+  projection definition applied to its arity (met in the census at Mathlib's `Lists.Equiv`) is δ
+  and β to the projection, then the projection step. The normalizer reads no role and no binder
+  context and takes no certificate, so one block's reconstruction is one term under every context
+  that checks it.
 * The reconstruction, mirroring the circuit function by function: `collectDoms`
   (`collect_n_doms_whnf`, `collect_index_doms`), `peelMotiveParams` (`peel_motive_params_subst`),
   `peelCtorParams` (`peel_ctor_params_subst`), `whnfTele`, `isRecField` (`is_rec_field_peel`,
@@ -291,36 +289,43 @@ def projStep (V : ReconView) (s : KKey) (i : Nat) (e : KExpr) : Option (Option K
             else some none
   | _ => some none
 
-/-- A projection's step: a step of the projected term, else `red_proj` on it (`projStep`). -/
-def projCase (V : ReconView) (s : KKey) (i : Nat) (e : KExpr) :
-    Option (Option KExpr) → Option (Option KExpr)
-  | none => none
-  | some (some e') => some (some (.proj s i e'))
-  | some none => projStep V s i e
+/-- **The reconstruction's head normalization of a head applied to a spine**
+(`recon_whnf_spine`), at a fuel of calls: an application's function taken with its argument
+pushed on the spine; a λ with an argument by its body with the argument substituted (the circuit's
+substitution, which lifts the argument past the binders it crosses), with none it is the result; a
+constant unfolded where it names a definition at its level count, else the result applied to the
+spine; a projection by its projected term normalized and then `red_proj` (`projStep`), a stuck
+projection keeping the normalized term; any other head applied to the spine. A projection
+definition applied to its arity is the definition unfolded and its λs applied. `none`: the fuel
+runs out or a load fails. (The circuit also steps a `let` by its body with the value substituted,
+which the term seam reads as the same term, so no image the model meets is a `let`.) -/
+def hnfSpine (V : ReconView) : Nat → KExpr → List KExpr → Option KExpr
+  | 0, _, _ => none
+  | n + 1, e, sp =>
+    match e with
+    | .app f a => hnfSpine V n f (a :: sp)
+    | .lam d b m =>
+      match sp with
+      | [] => some (.lam d b m)
+      | a :: sp' => hnfSpine V n (Ix.Kernel.Expr.instantiate1Lift b a 0) sp'
+    | .const k us =>
+      match V.unfold k us with
+      | none => none
+      | some none => some (Ix.Kernel.Expr.mkAppN (.const k us) sp)
+      | some (some v) => hnfSpine V n v sp
+    | .proj s i x =>
+      match hnfSpine V n x [] with
+      | none => none
+      | some w =>
+        match projStep V s i w with
+        | none => none
+        | some none => some (Ix.Kernel.Expr.mkAppN (.proj s i w) sp)
+        | some (some y) => hnfSpine V n y sp
+    | _ => some (Ix.Kernel.Expr.mkAppN e sp)
 
-/-- One head step: a definition unfolded at a constant, β at a λ applied (the circuit's
-substitution, which lifts the argument past the binders it crosses), a step of an application's
-function, or at a projection a step of the projected term and then `red_proj` (`whnf_proj_head`:
-the projected term head-normalized, a constructor's field projected). A projection definition
-applied to its arity (`try_reduce_projection_definition`) is the definition unfolded and its λs
-applied, which these steps take. `some none`: no step applies; `none`: a load fails. -/
-def headStep (V : ReconView) : KExpr → Option (Option KExpr)
-  | .const k us => V.unfold k us
-  | .app f a =>
-    match lamBody f with
-    | some b => some (some (Ix.Kernel.Expr.instantiate1Lift b a 0))
-    | none => (headStep V f).map (Option.map fun f' => .app f' a)
-  | .proj s i e => projCase V s i e (headStep V e)
-  | _ => some none
-
-/-- **Head normalization** at a fuel of steps: head steps until none applies. -/
-def hnf (V : ReconView) : Nat → KExpr → Option KExpr
-  | 0, _ => none
-  | n + 1, e =>
-    match headStep V e with
-    | none => none
-    | some none => some e
-    | some (some e') => hnf V n e'
+/-- **Head normalization** at a fuel (`recon_whnf`): the term as a head with no spine. -/
+def hnf (V : ReconView) (n : Nat) (e : KExpr) : Option KExpr :=
+  hnfSpine V n e []
 
 /-! ## Building terms -/
 
