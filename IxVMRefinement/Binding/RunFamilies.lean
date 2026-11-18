@@ -5,6 +5,9 @@ import IxVMRefinement.RoleVal.BoundSafety
 import IxVMRefinement.FamilyGraph.ProducersModeled
 import IxVMRefinement.Obs.KernelModeled2
 import IxVMRefinement.Obs.KernelModeled3
+import IxVMRefinement.Binding.BasisAt
+import IxVMRefinement.Assembly.TypingBasisInv
+import IxVMRefinement.StatementRel.StoreInhabit
 
 /-! # The family checks of a binding run, group by group
 
@@ -19,7 +22,8 @@ The run's payload and family selection, and what of the family form's clauses is
   `runFamOf_famCall`: the clause `GroupFamilyChecks.famCall` of that selection;
   `modeled_of_run`: the clause `GroupFamilyChecks.modeled` of every run;
   `familyCall_block_nonempty`, `famNonempty_of_run`: the block of a family check is a non-empty
-  block of the run's store.
+  block of the run's store; `noPinned_of_run`: no constant address of a new record is at a
+  pinned basis key.
 * `RemainingFamilyClauses calls bAddr t E₀`: what is not proved of the run's family checks, at
   the store sequence with the run's payload. Each field names the source it comes from.
 * `families_of_remaining`: the family form's clauses at a group (`ClosureFam` and
@@ -36,6 +40,7 @@ open IxVM.Refinement.Binding.FamilyOf (FamilyOfBlock)
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library
 open IxVM (F)
+open IxVM.Refinement.StoreInhabit (basisStore)
 
 /-- **The payload of a run's family checks** (module docstring). -/
 def runPayload (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable) :
@@ -194,15 +199,13 @@ end Run
 
 /-- **What is left of `ClosureRunFacts`** at a group: its fields but `famRefs` (the rank's,
 `GroupRanked.famRefs`), `advNotUnit` (`advNotUnit_of_run`), `roleUnitForm`
-(`roleUnitForm_of_run`), `keptRoles` (`keptRoles_of_run`) and `famNonempty`
-(`famNonempty_of_run`), which are proved. Each field's source:
+(`roleUnitForm_of_run`), `keptRoles` (`keptRoles_of_run`), `famNonempty`
+(`famNonempty_of_run`) and `noPinned` (`noPinned_of_run`), which are proved. Each field's source:
 * `oldNeeds`: today's circuit, not specified: an address a new unit's step reads that is held
   before the group was checked at the limit of the group that added it (the walk's
   `KernelClaim::run_check` at that group; for a payload record, its family check), or is a
   walked role's record; the step's reading set (`ClosureNeeds`) is wider than what the walk of
   the unit reads, through the family record's and the advice's references.
-* `noPinned`: unknown; it is a statement about the basis pins and the keys of the new records
-  (`PinnedBasis`), for which no reading of the circuit is written.
 * `routeNew`: today's circuit: the modeled arm of `KernelCheck::check_const` reaches
   `KernelModeled::check_modeled_block` and `check_family`; a block's route over the closure's
   store against the route the circuit read; not specified.
@@ -219,8 +222,6 @@ structure RunFactsLeft (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : I
     (∃ c n, recordOf R x = some c ∧ (∀ ms, c.info ≠ .muts ms) ∧ InLogic c ∧
       (∀ cb, recordOf R (Ix.Cert.ownerOf x c) = some cb → InLogic cb) ∧ ρ.checked x n) ∨
     ∃ r, walkedRole r = true ∧ Ix.SpecDigest.groupOf r < g ∧ t.addressOf? r = some x
-  noPinned : ∀ A c x ci, New R R' A → recordOf R' A = some c → ConstAddrOf A c x →
-    PinnedBasis ci → ci.name ≠ keyOf t x
   routeNew : ∀ R₁ B, ClosureStore t g R R' R₁ → New R R' B →
     Route.blockRoute R₁ B = some true → ∃ rb, famOf B = some rb
   readsDown : ∀ R₁ x ci₀, ClosureStore t g R R' R₁ → (recordOf R x).isSome = true →
@@ -489,20 +490,86 @@ theorem keptRoles_of_run (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoade
     rw [← hxa]
     exact unitCheckedAt_of_topRec hC.hashedStored x
 
+/-- The names of the pinned basis constants are keys of basis roles. -/
+set_option maxRecDepth 100000 in
+private theorem pinned_names_basis (kind : Ix.Kernel.BasisKind) :
+    ∀ n ∈ (kind.declsA (md := .anon)).map (·.name),
+      n ∈ TableInhabit.basisRoleOrder.map Ix.Kernel.Key.role := by
+  cases kind <;> decide +kernel
+
+/-- A basis row is a record of the run's store, at an address the basis store holds. -/
+private theorem basis_row_run (hb : BasisRowsLoaded E₀) {y : _root_.Address}
+    {cy : Ixon.Constant} (h : recordOf basisStore y = some cy) :
+    (basisStore.consts.get? y).isSome = true ∧ recordOf E₀ y = some cy := by
+  unfold recordOf at h ⊢
+  cases hg : basisStore.consts.get? y with
+  | none => rw [hg] at h; cases h
+  | some lc =>
+    rw [hg] at h
+    rw [hb y lc hg]
+    exact ⟨rfl, h⟩
+
+/-- **`ClosureRunFacts.noPinned` of every run**: the name of a pinned basis constant is the key of
+a basis role (`pinned_names_basis`), so a constant address at that key is the address the table
+binds the role to, which a table pinning the prelude binds to a basis row (`addressOf_basis`,
+`basisRoles_rows`). A basis row is held before the group, so it is no new record's own address;
+and it is no member's or constructor's address of a new block, since the basis store holds the
+block of each of its projection records (`StoreInhabit.store_usedClosed`). -/
+theorem noPinned_of_run (hb : BasisRowsLoaded E₀) (hpin : PreludePinned t)
+    (hcheck : t.check = .ok ()) {Pay : PayloadRel} {g : Nat} (hg6 : 6 ≤ g)
+    (hcl : UsedClosed (groupStore t E₀ Pay (g + 1))) :
+    ∀ A c x ci, New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) A →
+      recordOf (groupStore t E₀ Pay (g + 1)) A = some c → ConstAddrOf A c x →
+      PinnedBasis ci → ci.name ≠ keyOf t x := by
+  intro A c x ci hnew hc hx ⟨kind, hci⟩ hk
+  obtain ⟨r, hr, hrk⟩ : ∃ r ∈ TableInhabit.basisRoleOrder, ci.name = .role r := by
+    obtain ⟨r, hr, he⟩ :=
+      List.mem_map.mp (pinned_names_basis kind ci.name (List.mem_map.mpr ⟨ci, hci, rfl⟩))
+    exact ⟨r, hr, he.symm⟩
+  rw [hrk] at hk
+  have had : t.addressOf? r = some x :=
+    Core.addressOf_of_keyOf (wf_of_check hcheck) (by rw [LoadedReads.keyOf_eq]; exact hk.symm)
+  have hrows := List.all_eq_true.mp basisRoles_rows r hr
+  simp only [← addressOf_basis hpin hr, had] at hrows
+  have hxb : (recordOf basisStore x).isSome = true := StoreInhabit.isSome_of_hasKey hrows
+  obtain ⟨cx, hcx⟩ := Option.isSome_iff_exists.mp hxb
+  have hA : (recordOf basisStore A).isSome = true := by
+    rcases hx with ⟨rfl, -⟩ | ⟨ms, i, m, hms, hm, hxm⟩
+    · exact hxb
+    · obtain ⟨p, hp, hown⟩ : ∃ p, recordOf (groupStore t E₀ Pay (g + 1)) x = some p ∧
+          Ix.Cert.ownerOf x p = A := by
+        obtain ⟨h1, h2⟩ := hcl.2 A c ms hc hms i m hm
+        rcases hxm with rfl | ⟨ind, j, rfl, hj, rfl⟩
+        · exact ⟨_, h1, ownerOf_memberProjection _ _ _ _⟩
+        · exact ⟨_, h2 ind rfl j hj, ownerOf_constructorProjection _ _ _ _⟩
+      have hpE : recordOf E₀ x = some p :=
+        ((groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mp hp).2
+      have e : cx = p := Option.some.inj ((basis_row_run hb hcx).2.symm.trans hpE)
+      subst e
+      have hown' := (StoreInhabit.store_usedClosed.1 x cx hcx).1
+      rw [hown] at hown'
+      exact hown'
+  obtain ⟨cA, hcA⟩ := Option.isSome_iff_exists.mp hA
+  obtain ⟨hkA, hEA⟩ := basis_row_run hb hcA
+  have hheld := (groupStore_recordOf (t := t) (Pay := Pay) hb hg6).mpr ⟨Or.inl hkA, hEA⟩
+  rw [hnew.2] at hheld
+  cases hheld
+
 /-- **The family form's clauses at a group**, for a rank of its new records: `ClosureRunFacts`
 from what is left of it (`RemainingFamilyClauses.runFacts`), the rank's `famRefs`, and
-`advNotUnit`, `roleUnitForm`, `keptRoles` proved of the run; `GroupFamilyChecks.modeled` and
-`famCall` proved of the run. -/
+`advNotUnit`, `roleUnitForm`, `keptRoles`, `famNonempty`, `noPinned` proved of the run;
+`GroupFamilyChecks.modeled` and `famCall` proved of the run. -/
 theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
     (hax : AxiomRolesDeclared t E₀) (hR : RemainingFamilyClauses calls bAddr t E₀)
-    (hcheck : t.check = .ok ()) (hroots : RootsSafe t E₀)
+    (hcheck : t.check = .ok ()) (hroots : RootsSafe t E₀) (hpin : PreludePinned t)
     {rk : Nat → _root_.Address → Nat} {g : Nat} (hg6 : 6 ≤ g) (hg : g < 77)
     (hval : ∀ r ∈ roleGroup g, RoleValidationIn calls bAddr t g r)
     {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
     (hw : GroupWalked calls bAddr t E₀ g recs)
     (hrank : GroupRanked t E₀ (runPayload calls bAddr t) g (runFamOf calls bAddr t E₀ g)
       (runAdv calls bAddr t g) (runCont calls bAddr t g) (rk g))
-    (hpay : ∀ x, PayReach t E₀ (runPayload calls bAddr t) g x → OpEarlier t g x) :
+    (hpay : ∀ x, PayReach t E₀ (runPayload calls bAddr t) g x → OpEarlier t g x)
+    (hcl : UsedClosed (groupStore t E₀ (runPayload calls bAddr t) (g + 1))) :
     ClosureFam calls (observedRun calls bAddr t E₀ rk) t g
         (groupStore t E₀ (runPayload calls bAddr t) g)
         (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) (runFamOf calls bAddr t E₀ g)
@@ -523,7 +590,7 @@ theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRows
         famRefs := hrank.famRefs
         famNonempty := famNonempty_of_run hC
         advNotUnit := advNotUnit_of_run hC hb hax hR hg6 hg hw hpay
-        noPinned := hL.noPinned
+        noPinned := noPinned_of_run hb hpin hcheck hg6 hcl
         roleUnitForm := roleUnitForm_of_run hC hb hax hcheck hg6 hval
         keptRoles := keptRoles_of_run hC hb hroots hg6 hval hw
         routeNew := hL.routeNew
