@@ -504,6 +504,20 @@ structure BatchGives (K : FamRunCtx) : Prop where
   routed as modeled. -/
   recArm : ∀ A, K.Top A → RecBlock K.E₀ A →
     ∃ B, K.FamCheck B A ∧ K.Top B ∧ ModeledRouteAt K.calls B ∧ IndBlock K.E₀ B
+  /-- `check_const`'s `Rec` arm, once the refusal of a modeled recursor is removed from it: it
+  runs `check_family` on the recursor's family block (`rec_family_block`) only after
+  `block_is_modeled` answered the modeled route for that block; a family check nested in another's
+  calls is that arm's, reached through `run_check` on a container's recursor; and the modeled
+  `Induct` arm's `check_modeled_block` runs only on the modeled route too. So the block of a
+  nested twin is routed as modeled. (A top-walked twin's block is, by `FamRunCtx.TwinOf`;
+  both: `FamRunCtx.twin_routed`.) -/
+  routed : ∀ a B, K.NestedTwinOf a B → ModeledRouteAt K.calls B
+  /-- `check_const`'s `Rec` arm on the modeled route (it refuses an unsafe recursor, and
+  `assert_safety` on its type and `assert_safety_rules` on its rules refuse, in a safe recursor,
+  a reference to an unsafe type or constructor of its family block), with the modeled `Induct`
+  arm's guard (`check_modeled_block` runs only for a safe inductive): the block a twin is a
+  second family record of, top-walked or nested, is in Lean's logic. -/
+  inLogic : ∀ rb' B, K.twin rb' = some B → ∀ cb, recordOf K.E₀ B = some cb → InLogic cb
   /-- `canonical_rules_at_pos`, syntactic after the batch: a family record's recursor types are
   the reconstruction over its block's types, so a record with a constant address is the family
   record of one block. -/
