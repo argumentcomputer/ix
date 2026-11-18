@@ -539,13 +539,4 @@ theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
         (fun ⟨ms, hms⟩ => hnb ms hms)
       exact Option.isSome_iff_exists.mpr ⟨ci, hci⟩
 
-/-- **The residual's closure hypothesis in the family form, from the three step premises at every
-group of every run.** -/
-theorem groupClosureFamily_of_steps {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (unitSteps : ∀ calls, AtGroups (BindingRun calls) (ClosureUnitSteps.{u} L calls))
-    (familySteps : ∀ calls, AtGroups (BindingRun calls) (ClosureFamilySteps.{u} L calls))
-    (twinSteps : ∀ calls, AtGroups (BindingRun calls) (ClosureTwinSteps.{u} L calls)) :
-    GroupClosureFamily.{u} L :=
-  groupClosureFamily_of_fold (closureFoldStatement L) unitSteps familySteps twinSteps
-
 end IxVM.Refinement.Binding
