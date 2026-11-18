@@ -485,15 +485,16 @@ theorem circuitComposed_of_partsFamInnerW
 
 /-! ## The twin row's stored case at the witness's selected record -/
 
-/-- **Every witness's selected family records are in the form `RFormS`** (premise). `RFormS B rb`
-is the twin seam's record-level form (the reconstruction's own type at every member of the
-record `rb` of the block `B`). Producer: the binding run's family check of each selected record,
-carried by the stored families once the form predicate is concrete; open until then. -/
-def StoredFormAt (RFormS : _root_.Address → _root_.Address → Prop) : Prop :=
+/-- **Every witness's selected family records are in the form `RFormS`** (premise).
+`RFormS t R B rb` is the twin seam's record-level form over the witness's store (the
+reconstruction's own type at every member of the record `rb` of the block `B`). Producer: the
+binding run's family check of each selected record, carried by the stored families once the form
+predicate is concrete; open until then. -/
+def StoredFormAt (RFormS : StoredFormPred) : Prop :=
   ∀ (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (envT : Ix.Kernel.Env .anon)
     (famOf : _root_.Address → Option _root_.Address),
     TableShape.{u} t (fun _ => True) R envT → StoredFamilies t R envT famOf →
-    StoredFamiliesRForm RFormS famOf
+    StoredFamiliesRForm RFormS t R famOf
 
 /-- **The typing half's premise at the witness with its stored families, the twin row's stored
 case at the witness's selected record**: as `familyStepsFam_of_graphInner`, the twin conjunct
@@ -503,7 +504,7 @@ stored conjunct from the restated row at the witness's selected record
 (`StoredFamilies.flat`), their form (`StoredFormAt`) and the stored twins' blocks the graph row
 exports. -/
 theorem familyStepsFam_of_graphInnerT {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    {Pref : RunPref} {RFormS : _root_.Address → _root_.Address → Prop}
+    {Pref : RunPref} {RFormS : StoredFormPred}
     (familyGraph : FamilyGraphRowInnerFamT.{u} Pref) (storedForm : StoredFormAt.{u} RFormS)
     (innerSteps : InnerStepsChecked.{u} L) (familyBlock : FamilyBlockRow.{u} L)
     (familyTwin : TwinFamily.FamilyTwinRowFam.{u} RFormS L)
@@ -549,7 +550,7 @@ theorem circuitComposed_of_partsFamInnerWT
     {Fam : List (Call F) → BRun → Ix.Kernel.RoleTable → Nat → Ixon.Env → Ixon.Env →
       (_root_.Address → Option _root_.Address) → (_root_.Address → _root_.Address → Prop) →
       (_root_.Address → _root_.Address → Prop) → Prop}
-    {Pref : RunPref} {RFormS : _root_.Address → _root_.Address → Prop}
+    {Pref : RunPref} {RFormS : StoredFormPred}
     (bindingClaimExport :
       SourceSoundBounded fun calls d => BindingClaimExportObs (Run calls) calls d)
     (basisGroups : ∀ calls, BasisOverW.{u} L (Run calls))
