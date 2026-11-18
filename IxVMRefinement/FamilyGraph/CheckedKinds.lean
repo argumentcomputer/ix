@@ -104,7 +104,8 @@ theorem recArmLimAt_of_checked {calls : List (Call F)} {bAddr : _root_.Address}
 
 /-- **The step of every checked standalone recursor record keeps the fold's clause**, at the
 limit of its check and at the opened head trace. The parent that heads the major premise is
-native because the recursor arm refuses a recursor of a modeled family. -/
+native because the recursor arm's modeled route, the family check at the record itself, fails at
+a standalone recursor record (`Claim.familyCheckRefused_of_recr`). -/
 theorem standaloneRecursor_checked :
     CheckedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun _ _ _ _ c =>
       ∃ rc : Ixon.Recursor, c.info = .recr rc := by

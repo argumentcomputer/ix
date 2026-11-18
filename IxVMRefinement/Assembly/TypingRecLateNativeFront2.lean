@@ -454,7 +454,7 @@ theorem rec_front_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E 
     (blob := fun x => E₀.blobs.get? x) ht (param := id) (self := soloSelf t (Core.ixAddr a'))
     rty (fun i x hx => by simp at hx) hblob
   obtain ⟨-, sB, sA, sortAfter, mH, sR, sortR, sCs, sortCs, mCs, hextS, evS, hmemS, evSort,
-    -, hsubSort, hextSM, evM, hsubM⟩ := check_const_rec_arm ev_chk
+    -, hsubSort, hextSM, evM, hsubM⟩ := check_const_rec_arm ev_chk hfr
   obtain ⟨-, hlbb, hdef⟩ := Assembly.validate_expr_well_scoped_spec
     (cx := readCtx t (fun x => E₀.blobs.get? x)) (self := soloSelf t (Core.ixAddr a'))
     hbound hlvls rty hextS htyP evS (hsub_chk _ hmemS)

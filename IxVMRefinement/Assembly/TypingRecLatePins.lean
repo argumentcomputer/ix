@@ -338,7 +338,7 @@ theorem rec_counts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
   subst cB
   have hrules_lt := recr_rules_size_lt hszB hexB hinfo
   -- one motive
-  have hmot := (check_const_rec_arm ev_chk).1
+  have hmot := (check_const_rec_arm ev_chk hfr).1
   obtain ⟨a', ha'_ref, haA⟩ := ha_pre
   subst haA
   -- the load of the record, traced
@@ -370,7 +370,7 @@ theorem rec_counts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
     (blob := fun x => E₀.blobs.get? x) ht (param := id) (self := soloSelf t (Core.ixAddr a'))
     rty (fun i x hx => by simp at hx) hblob
   obtain ⟨sB, sA, mH, sR, sCs, mCs, hextS, evS, hmemS, hextM, evM, hsubM⟩ :=
-    check_const_rec_route ev_chk
+    check_const_rec_route ev_chk hfr
   obtain ⟨-, hlbb, hdef⟩ := Assembly.validate_expr_well_scoped_spec
     (cx := readCtx t (fun x => E₀.blobs.get? x)) (self := soloSelf t (Core.ixAddr a'))
     hbound hlvls rty hextS htyP evS (hsub_chk _ hmemS)

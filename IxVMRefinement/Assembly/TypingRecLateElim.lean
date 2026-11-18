@@ -251,7 +251,7 @@ theorem rec_arm_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E
     (blob := fun x => E₀.blobs.get? x) ht (param := id) (self := soloSelf t (Core.ixAddr a'))
     rty (fun i x hx => by simp at hx) hblob
   obtain ⟨sB, sA, mH, sR, sCs, mCs, hextS, evS, hmemS, hextM, evM, hsubM⟩ :=
-    check_const_rec_route ev_chk
+    check_const_rec_route ev_chk hfr
   obtain ⟨-, hlbb, hdef⟩ := Assembly.validate_expr_well_scoped_spec
     (cx := readCtx t (fun x => E₀.blobs.get? x)) (self := soloSelf t (Core.ixAddr a'))
     hbound hlvls rty hextS htyP evS (hsub_chk _ hmemS)

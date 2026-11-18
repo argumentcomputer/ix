@@ -163,7 +163,7 @@ theorem rec_rules_reads_scoped {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   simp only [List.cons.injEq, and_true] at hfields
   obtain ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ := hfields
   obtain ⟨-, sB, sA, sortAfter, mH, sR, sortR, sCs, sortCs, mCs, hextS, evS, -, evSort,
-    -, -, hextSM, evM, hsubM⟩ := check_const_rec_arm ev_chk
+    -, -, hextSM, evM, hsubM⟩ := check_const_rec_arm ev_chk hfr
   have hextM : Heap.Extends m_chk mH :=
     hextS.trans (evS.heap_extends.trans ((Heap.Extends.snoc _ _).trans
       (evSort.heap_extends.trans hextSM)))
