@@ -1,0 +1,415 @@
+import IxVMRefinement.FamilyGraph.ProducersInner
+import IxVMRefinement.TwinFamily.StoredTwin
+
+/-! # The typing half at the witness with its stored families, and the stored twins from them
+
+The binding half gives the table's witness with one selected family map (`OverWFam L`: the
+internal part `OverW L` and `∃ famOf, StoredFamilies t R env famOf`). The typing half over the
+family graph is stated at `OverW L` and weakened (`typingSpecOn_mono`), so the graph row cannot
+read the map, and the stored twins' field (`StoredTwinField`, `FamilyRun.storedTwin`) is a
+premise of its own. This module states the typing half at `OverWFam L` and produces that field
+from the map:
+
+* `FamilyStepsFam`: `FamilySteps` with the witness's map and the agreement of the run's store
+  with the witness's on the records both hold (the no-collision branch gives it:
+  `records_agree`) as premises;
+* `typing_skeleton_over_familyFam`: the typing half at `OverWFam L` from `FamilyStepsFam`;
+  `composed_skeleton_over_familyWFam`: the composed statement with no weakening;
+* `FamilyGraphRowInnerFam`, `familyStepsFam_of_graphInner`: the graph row with the inner records
+  (`FamilyGraphRowInner`) reading the map and the agreement, and the typing half's premise from
+  it and the other rows;
+* `storedTwinField_of_block`: the stored twins' field from the map, given that the block of each
+  stored twin is a stored modeled block of the witness's store (`TwinFamily.StoredTwinBlock`);
+* `FamRunCtx.twinBlock_stored`, `StoredTwinReads`, `storedTwinBlock_of_reads`: that block fact
+  from the selector (a twin's block with no family record has its constant addresses stored), the
+  agreement, and four reads of the run and the witness (`StoredTwinReads`, each field with its
+  source);
+* `FamilyGraphInnerOwedFam`, `familyGraphRowInnerFam_of_owed`: what the graph row and the inner
+  records are owed at the witness with its map: `StoredTwinReads` in place of `StoredTwinField`;
+* `circuitComposed_of_partsFamInnerW`: the public statement with the typing half at
+  `OverWFam L`. -/
+
+universe u
+
+namespace IxVM.Refinement.Typing
+
+open IxVM.Consistency
+open Aiur.Generic.SourceSemantics (Call)
+open IxVM (F)
+open Ix.Kernel.Semantics (NativeFam)
+open IxVM.Refinement.Binding
+open IxVM.Refinement.Endpoint
+open TwinFamily (FamilyRecsModeled FamilyInstalled StoredTwinBlock)
+open FamilyAlias (FamilyCallAtLim)
+
+set_option linter.unusedVariables false
+
+/-! ## The typing half at the witness with its stored families -/
+
+/-- **The agreement of the run's store with the witness's**: a record both hold at one address
+is the same record. On the branch where the run hashed no collision with the witness's store it
+holds (`records_agree`). -/
+def RecordsAgree (E₀ R : Ixon.Env) : Prop :=
+  ∀ x c c', recordOf E₀ x = some c → recordOf R x = some c' → c = c'
+
+/-- **The typing half's premise over the family graph, reading the witness's stored families**:
+`FamilySteps` with the witness's selected family map (`StoredFamilies`) and the agreement of the
+run's store with the witness's (`RecordsAgree`) as premises. -/
+def FamilyStepsFam (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (calls : List (Call F))
+    (Walk : Ix.Kernel.RoleTable → List _root_.Address → Ixon.Env → Option Nat →
+      (_root_.Address → Prop) → (_root_.Address → Nat) → Prop) : Prop :=
+  ∀ t seeds E₀ lim Top rank, Walk t seeds E₀ lim Top rank →
+    ∀ (R : Ixon.Env) (envT : Ix.Kernel.Env .anon), TableShape.{u} t (fun _ => True) R envT →
+      ∀ famOf, StoredFamilies t R envT famOf → RecordsAgree E₀ R →
+      ∃ (rank' : _root_.Address → Nat) (fam twin : _root_.Address → Option _root_.Address)
+        (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop),
+        Walk t seeds E₀ lim Top rank' ∧
+        FamilyGraph t envT E₀ Top rank' fam twin adv Inner ∧
+        (∀ E, StepCtx.{u} calls t R envT E₀ E → ∀ A c, Top A → Unclaimed fam A →
+          recordOf E₀ A = some c → InLogic c → UnitKind c → fam A = none → twin A = none →
+          UnitStep.{u} (FoldExtra.{u} L t E) t envT E₀ E lim A c) ∧
+        (∀ E, StepCtx.{u} calls t R envT E₀ E → ∀ A c, Inner A → Unclaimed fam A →
+          recordOf E₀ A = some c → InLogic c → UnitKind c → fam A = none → twin A = none →
+          UnitStep.{u} (FoldExtra.{u} L t E) t envT E₀ E lim A c) ∧
+        (∀ E, StepCtx.{u} calls t R envT E₀ E → ∀ A c rb crb rs, Top A →
+          recordOf E₀ A = some c → InLogic c → UnitKind c → fam A = some rb →
+          FamRecRecord E₀ rb crb rs →
+          UnitStepFamily.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
+            t envT E₀ E lim A c rb crb (adv A)) ∧
+        (∀ E, StepCtx.{u} calls t R envT E₀ E → ∀ A c B rb crb, Walked Top Inner A →
+          recordOf E₀ A = some c → InLogic c → twin A = some B → fam B = some rb →
+          recordOf E₀ rb = some crb →
+          UnitStepTwin.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
+            t envT E₀ E lim A c rb crb) ∧
+        (∀ E, StepCtx.{u} calls t R envT E₀ E → ∀ A c B, Walked Top Inner A →
+          recordOf E₀ A = some c → InLogic c → twin A = some B → fam B = none →
+          UnitStep.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
+            t envT E₀ E lim A c)
+
+/-- `FamilySteps` gives `FamilyStepsFam`: the new premises are not read. -/
+theorem familyStepsFam_of_steps {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    {calls : List (Call F)}
+    {Walk : Ix.Kernel.RoleTable → List _root_.Address → Ixon.Env → Option Nat →
+      (_root_.Address → Prop) → (_root_.Address → Nat) → Prop}
+    (h : FamilySteps.{u} L calls Walk) : FamilyStepsFam.{u} L calls Walk :=
+  fun t seeds E₀ lim Top rank hW R envT hshape _ _ _ => h t seeds E₀ lim Top rank hW R envT hshape
+
+/-- **The typing half over the fold's clause and the family graph, at the witness with its
+stored families**: `typing_skeleton_over_family` at `OverWFam L`, handing the graph the
+witness's map and, on the branch where the run hashed no collision, the agreement of the two
+stores. -/
+theorem typing_skeleton_over_familyFam {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    {Walk : Ix.Kernel.RoleTable → List _root_.Address → Ixon.Env → Option Nat →
+      (_root_.Address → Prop) → (_root_.Address → Nat) → Prop}
+    {calls : List (Call F)} {d : Digest} (hb : Bounded calls)
+    (hclaim : ClaimExport Walk calls d) (hlim : WalkLim Walk)
+    (hgraph : ∀ t seeds E₀ lim Top rank, Walk t seeds E₀ lim Top rank →
+      TopGraph t E₀ seeds Top rank)
+    (hsteps : FamilyStepsFam.{u} L calls Walk) :
+    TypingSpecOn.{u} (OverWFam.{u} L) calls d := by
+  intro bytes c hde hdig hscope V seeds hseeds ctx hctx tb t hadm R envT hW
+  by_cases hnc : CollisionWith V (bytes :: tb :: committedFootprint) R calls
+  · exact Or.inl hnc
+  · refine Or.inr ?_
+    have ht : t.check = .ok () :=
+      ((Ix.Kernel.Admission.admitBinding_ok_iff _ _ t).mp hadm).wellFormed
+    have hextra : ∀ x ∈ committedFootprint, x ∈ bytes :: tb :: committedFootprint :=
+      fun x hx => List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hx)
+    rcases hclaim bytes c hde hdig hscope V seeds hseeds ctx hctx tb t hadm with
+      hcol | ⟨E₀, lim, Top, rank, hS, hWalk⟩
+    · exact (hnc (Or.inl hcol)).elim
+    · have hF : BoundaryFacts t (fun _ => True) R envT := hW.facts.1.1
+      obtain ⟨Reg, hR⟩ := hW.facts.1.2
+      obtain ⟨famOf, hSF⟩ := hW.facts.2
+      have hc : Carried lim := carried_of_typingLim (hlim t seeds E₀ lim Top rank hWalk)
+      obtain ⟨rank', fam, twin, adv, Inner, hWalk', hFG, hTop, hInner, hFam, hTwin,
+        hTwinStored⟩ := hsteps t seeds E₀ lim Top rank hWalk R envT hW.shape famOf hSF
+          (records_agree hS.loaded hnc)
+      exact typing_skeleton_core_family_modeled (X := fun E => FoldExtra.{u} L t E) hW.shape
+        (fun E hE => (hR E hE lim hc (limWithin_all t lim)).prefixInv) hF.whole
+        (fun E hE => (hR E hE lim hc (limWithin_all t lim)).extra) ht hb hextra hnc hS
+        (hgraph t seeds E₀ lim Top rank' hWalk') hFG hTop hInner hFam hTwin hTwinStored
+
+/-- **The composed statement with the binding half's family form and the typing half reading
+it**: `composed_skeleton_over_familyW` with the typing half at `OverWFam L` itself
+(`typing_skeleton_over_familyFam`), no weakening. -/
+theorem composed_skeleton_over_familyWFam {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    {Run : Ix.Kernel.RoleTable → BRun → (Nat → Ixon.Env) → Prop}
+    {Fam : BRun → Ix.Kernel.RoleTable → Nat → Ixon.Env → Ixon.Env →
+      (_root_.Address → Option _root_.Address) → (_root_.Address → _root_.Address → Prop) →
+      (_root_.Address → _root_.Address → Prop) → Prop}
+    {Walk : Ix.Kernel.RoleTable → List _root_.Address → Ixon.Env → Option Nat →
+      (_root_.Address → Prop) → (_root_.Address → Nat) → Prop}
+    {callsA callsB : List (Call F)} {dA dB : Digest}
+    (bindingClaimExport : BindingClaimExportObs Run callsB dB)
+    (basisGroups : BasisOverW.{u} L Run)
+    (groupAdmissions : AdmitsChain Run) (groupAdmissionReads : AdmitsReadsChain Run)
+    (groupFamilies : FamiliesChain Run Fam)
+    (groupClosure : AtGroups Run fun ρ t g => ClosureStepOverFamilyW.{u} L ρ t g (Fam ρ t g))
+    (groupWithoutRoleUnit : AtGroups Run (RoleFreeShapes.{u} L))
+    (operationRoleUnit : AtGroups Run (RoleUnitStepOverW.{u} (· ∈ RoleOps.opRoles) L))
+    (standardAxiomRoleUnit : AtGroups Run (RoleUnitStepOverW.{u} (· ∈ standardAxioms) L))
+    (hb : Bounded callsA) (hclaimA : ClaimExport Walk callsA dA) (hlim : WalkLim Walk)
+    (hgraph : ∀ t seeds E₀ lim Top rank, Walk t seeds E₀ lim Top rank →
+      TopGraph t E₀ seeds Top rank)
+    (hstepsA : FamilyStepsFam.{u} L callsA Walk) :
+    ComposedSpec.{u} callsA callsB dA dB :=
+  binding_discharge
+    (binding_skeleton_overW bindingClaimExport basisGroups groupAdmissions groupAdmissionReads
+      groupFamilies groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit)
+    (typing_skeleton_over_familyFam hb hclaimA hlim hgraph hstepsA)
+
+/-! ## The graph row reading the witness's stored families -/
+
+/-- **Row `familyGraph` with the inner records, at the witness with its stored families**:
+`FamilyGraphRowInner` with the witness's map and the agreement of the two stores as premises. -/
+def FamilyGraphRowInnerFam : Prop :=
+  ∀ (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (seeds : List _root_.Address)
+    (E₀ : Ixon.Env) (lim : Option Nat) (Top : _root_.Address → Prop)
+    (rank : _root_.Address → Nat), Claim.TopWalk calls t seeds E₀ lim Top rank →
+    ∀ (R : Ixon.Env) (envT : Ix.Kernel.Env .anon), TableShape.{u} t (fun _ => True) R envT →
+      ∀ famOf, StoredFamilies t R envT famOf → RecordsAgree E₀ R →
+      ∃ (rank' : _root_.Address → Nat) (fam twin : _root_.Address → Option _root_.Address)
+        (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop),
+        Claim.TopWalk calls t seeds E₀ lim Top rank' ∧
+        FamilyRun calls t envT E₀ lim Top rank' fam twin adv Inner ∧
+        ∃ bAddr, InnerChecked calls bAddr t envT E₀ lim Top rank' fam twin Inner
+
+/-- `FamilyGraphRowInner` gives `FamilyGraphRowInnerFam`: the new premises are not read. -/
+theorem familyGraphRowInnerFam_of_row (h : FamilyGraphRowInner.{u}) :
+    FamilyGraphRowInnerFam.{u} :=
+  fun calls t seeds E₀ lim Top rank hW R envT hshape _ _ _ =>
+    h calls t seeds E₀ lim Top rank hW R envT hshape
+
+/-- **The typing half's premise at the witness with its stored families, from the rows**:
+`familySteps_of_graphInner` with the graph row reading the map. -/
+theorem familyStepsFam_of_graphInner {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    (familyGraph : FamilyGraphRowInnerFam.{u}) (innerSteps : InnerStepsChecked.{u} L)
+    (familyBlock : FamilyBlockRow.{u} L) (familyTwin : FamilyTwinRow.{u} L)
+    (standaloneDefinition : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind = .defn)
+    (standaloneTheoremOrOpaque : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind ≠ .defn)
+    (standaloneRecursor : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ rc : Ixon.Recursor, c.info = .recr rc)
+    (definitionBlock : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ ms : Array Ixon.MutConst, c.info = .muts ms ∧ DefnBlock ms)
+    (nativeBlockTelescope : WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
+      ∃ ind : Ixon.Inductive,
+        BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerAtTele t E₀ B cb ind)
+    (nativeBlockAlias : WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
+      ∃ ind : Ixon.Inductive,
+        BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerAtAlias t E₀ B cb ind)
+    (nativeBlockOtherTelescope : WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
+      ∃ ind : Ixon.Inductive,
+        BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerTeleOther t E₀ B cb ind)
+    (calls : List (Call F)) :
+    FamilyStepsFam.{u} L calls (Claim.TopWalk calls) := by
+  intro t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree
+  obtain ⟨rank, fam, twin, adv, Inner, hWalk, hFR, bAddr, hIC⟩ :=
+    familyGraph calls t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree
+  exact ⟨rank, fam, twin, adv, Inner, hWalk, hFR.graph,
+    topUnitSteps_family standaloneDefinition standaloneTheoremOrOpaque standaloneRecursor
+      definitionBlock nativeBlockTelescope nativeBlockAlias nativeBlockOtherTelescope hWalk hFR,
+    innerSteps calls t seeds E₀ lim Top rank hWalk R envT fam twin adv Inner bAddr hFR hIC,
+    fun E => familyBlock calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR,
+    fun E hctx A c B rb crb hW hc hlog htw hrb hcrb =>
+      familyTwin calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx A c B
+        rb crb hW hc hlog htw (Or.inl ⟨hrb, hcrb⟩),
+    fun E hctx A c B hW hc hlog htw hnone => by
+      obtain ⟨rb, crb, hst, hinst⟩ := hFR.storedTwin A B htw hnone
+      exact unitStep_of_twin_stored hst
+        (familyTwin calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx A c
+          B rb crb hW hc hlog htw (Or.inr ⟨hnone, hst, hinst⟩))⟩
+
+/-! ## The stored twins from the witness's map -/
+
+/-- **The stored twins' field from the witness's map**: the block of each stored twin is a
+stored modeled block of the witness's store, so the map selects its family record, stored whole
+with its companions (`storedFamily_of_clause`). -/
+theorem storedTwinField_of_block {K : FamRunCtx} {R : Ixon.Env}
+    {famOf : _root_.Address → Option _root_.Address} (hSF : StoredFamilies K.t R K.envT famOf)
+    (hblock : StoredTwinBlock K.t R K.envT K.fam K.twin) : StoredTwinField K := by
+  intro rb' B htw hnone
+  obtain ⟨cb, hB, hroute, hst⟩ := hblock rb' B htw hnone
+  obtain ⟨rb, ms, crb, rs, flat, -, -, hstored, hinst⟩ := storedFamily_of_clause hSF hB hroute hst
+  exact ⟨rb, crb, hstored, hinst⟩
+
+/-- **A twin's block with no family record has its constant addresses stored**, when it is in
+Lean's logic and the run routes it as modeled: it is a top-walked non-empty block of inductive
+types with a family check, so an unstored constant address would make it a block the selector
+gives a family record (`FamRunCtx.fam_of`). -/
+theorem FamRunCtx.twinBlock_stored {K : FamRunCtx} {rb' B : _root_.Address}
+    (h : K.twin rb' = some B) (hnone : K.fam B = none) (hroute : ModeledRouteAt K.calls B)
+    (hlog : ∀ cb, recordOf K.E₀ B = some cb → InLogic cb) :
+    ∀ cb x, recordOf K.E₀ B = some cb → ConstAddrOf B cb x → StoredAt K.t K.envT x := by
+  intro cb x hcb hx
+  refine Classical.byContradiction fun hns => ?_
+  have hTB : K.Top B ∧ IndBlock K.E₀ B := by
+    rcases FamRunCtx.twin_some h with ⟨-, -, -, -, -, hT, -, hI⟩ | ⟨-, hT, hI, -⟩
+    · exact ⟨hT, hI⟩
+    · exact ⟨hT, hI⟩
+  have hFB : K.FamBlock B := ⟨hTB.1, hroute, hTB.2, ⟨cb, x, hcb, hx, hns⟩, hlog⟩
+  obtain ⟨rb, hrb⟩ := FamRunCtx.fam_of hFB (FamRunCtx.twin_facts h).2.2.2
+  rw [hnone] at hrb
+  cases hrb
+
+/-- **A top-walked twin's block is routed as modeled** (`FamRunCtx.TwinOf`). -/
+theorem FamRunCtx.twinOf_route {K : FamRunCtx} {rb' B : _root_.Address} (h : K.TwinOf rb' B) :
+    ModeledRouteAt K.calls B :=
+  h.2.2.2.2.2.2.1
+
+/-- **What the stored twins' block fact reads of the run and the witness** (premise; each field
+names its source). Asked of the block of a twin with no family record. -/
+structure StoredTwinReads (K : FamRunCtx) (R : Ixon.Env) : Prop where
+  /-- The witness's store holds the block. INFERRED from the witness: the block's constant
+  addresses are stored by its environment (`FamRunCtx.twinBlock_stored`), whose constants are
+  readings of the store's records (`TableShape.reading.provenance`), and the store is closed
+  under a projection's block (`TableShape.usedClosed`). Not proved here. -/
+  record : ∀ rb' B, K.twin rb' = some B → K.fam B = none → ∃ cb, recordOf R B = some cb
+  /-- The witness's store routes the block as modeled. INFERRED: the run routes it as modeled
+  (`routed`), the run's dispatch agrees with `Route.blockRoute` at a step's store
+  (`FamilyAlias.famBlockRoute_of_run` reads it so at a family record's block), and the
+  witness's store agrees with the step's store on what the route reads (`RecordsFor`,
+  `TableShape.usedClosed`, `Binding.blockRoute_storeCongr`). Not proved here. -/
+  route : ∀ rb' B, K.twin rb' = some B → K.fam B = none → Route.blockRoute R B = some true
+  /-- The run routes the block as modeled. Proved for a top-walked twin's block
+  (`FamRunCtx.twinOf_route`). For a nested twin's block: the `Rec` arm of `check_const`, once
+  the refusal of a modeled recursor is removed from it, runs `check_family` on the recursor's
+  family block only after the dispatch answered the modeled route (to be added beside
+  `BatchGives.recArm`). -/
+  routed : ∀ rb' B, K.twin rb' = some B → K.fam B = none → ModeledRouteAt K.calls B
+  /-- The block is in Lean's logic. Source: the `Rec` arm of `check_const` as above, with the
+  modeled `Induct` arm's guard (`check_modeled_block` runs only for a safe inductive, today
+  `KernelCheck.lean:3940-3941`); a twin's family check is the `Rec` arm's. -/
+  inLogic : ∀ rb' B, K.twin rb' = some B → K.fam B = none →
+    ∀ cb, recordOf K.E₀ B = some cb → InLogic cb
+
+/-- **The block of every stored twin is a stored modeled block of the witness's store**, from
+the reads and the agreement of the two stores: the witness's record of the block is the run's,
+whose constant addresses are stored (`FamRunCtx.twinBlock_stored`). -/
+theorem storedTwinBlock_of_reads {K : FamRunCtx} {R : Ixon.Env} (hagree : RecordsAgree K.E₀ R)
+    (hr : StoredTwinReads K R) : StoredTwinBlock K.t R K.envT K.fam K.twin := by
+  intro rb' B htw hnone
+  obtain ⟨cb, hcb⟩ := hr.record rb' B htw hnone
+  have hTB : IndBlock K.E₀ B := by
+    rcases FamRunCtx.twin_some htw with ⟨-, -, -, -, -, -, -, hI⟩ | ⟨-, -, hI, -⟩
+    · exact hI
+    · exact hI
+  obtain ⟨cb₀, ms, hcb₀, -, -, -⟩ := hTB
+  have e : cb₀ = cb := hagree B cb₀ cb hcb₀ hcb
+  rw [← e] at hcb
+  exact ⟨cb₀, hcb, hr.route rb' B htw hnone,
+    fun x hx => FamRunCtx.twinBlock_stored htw hnone (hr.routed rb' B htw hnone)
+      (hr.inLogic rb' B htw hnone) cb₀ x hcb₀ hx⟩
+
+/-! ## What the graph row is owed at the witness with its stored families -/
+
+/-- **A premise at every walk and every witness with its stored families**: `P` of the run's
+choices, the witness's store and map, where the two stores agree. -/
+def AtWalkFam (Pref : RunPref)
+    (P : FamRunCtx → Ixon.Env → (_root_.Address → Option _root_.Address) →
+      (_root_.Address → Nat) → Prop) : Prop :=
+  ∀ (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
+    (seeds : List _root_.Address) (E₀ : Ixon.Env) (lim : Option Nat)
+    (Top : _root_.Address → Prop) (rank : _root_.Address → Nat),
+    Claim.TopWalkCore calls bAddr t seeds E₀ lim Top rank → TopGraph t E₀ seeds Top rank →
+    ∀ (R : Ixon.Env) (envT : Ix.Kernel.Env .anon), TableShape.{u} t (fun _ => True) R envT →
+      ∀ famOf, StoredFamilies t R envT famOf → RecordsAgree E₀ R →
+      P ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ R famOf rank
+
+/-- **What the graph row and the inner records are owed at the witness with its stored
+families**, at the twin preference `Pref`: the run's facts the graph reads (`BatchGives`), the
+reads of the stored twins' blocks (`StoredTwinReads`) and the inner records' facts
+(`InnerOwed`). The stored twins' field (`StoredTwinField`) is no longer owed: it is the
+witness's map (`storedTwinField_of_block`). -/
+def FamilyGraphInnerOwedFam (Pref : RunPref) : Prop :=
+  AtWalkFam.{u} Pref fun K R _ _ => BatchGives K ∧ StoredTwinReads K R ∧ InnerOwed K
+
+/-- **The graph row with the inner records at the witness with its stored families, from what
+they are owed**: as `familyGraphRowInner_of_owed`, the stored twins' field from the map. -/
+theorem familyGraphRowInnerFam_of_owed {Pref : RunPref} (h : FamilyGraphInnerOwedFam.{u} Pref) :
+    FamilyGraphRowInnerFam.{u} := by
+  intro calls t seeds E₀ lim Top rank hWalk R envT hshape famOf hSF hagree
+  obtain ⟨bAddr, hW, hG⟩ := hWalk
+  obtain ⟨hB, hreads, hIO⟩ :=
+    h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape famOf hSF hagree
+  obtain ⟨rank', hR⟩ : ∃ rank',
+      FamilyRanked ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ rank' :=
+    ⟨_, familyRanked_of_edges hW
+      (rankEdges_of hW hG hB hshape (FamRunCtx.famEdge_acyclic hW hG hB))⟩
+  obtain ⟨hFR, -⟩ :=
+    familyRun_of ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ hB hW
+      (noBatchFields_of _ hW) hR
+      (storedTwinField_of_block hSF (storedTwinBlock_of_reads hagree hreads))
+  have hWalk' : Claim.TopWalk calls t seeds E₀ lim Top rank' :=
+    topWalk_of_edges ⟨bAddr, hW, hG⟩ hR.closed hR.owner
+  exact ⟨rank', _, _, _, _, hWalk', hFR, bAddr, innerChecked_of_gives hWalk' hFR
+    (FamRunCtx.checks_of _ hB) (innerGives_of_owed hW hG hB hshape hIO)⟩
+
+/-! ## The public statement with the typing half at the witness with its stored families -/
+
+/-- **The public statement from the open obligations, the typing half reading the witness's
+stored families**: `circuitComposed_of_partsFamInner` with the typing half at `OverWFam L`
+(`composed_skeleton_over_familyWFam`) and the graph row with the inner records reading the map
+(`FamilyGraphRowInnerFam`). -/
+theorem circuitComposed_of_partsFamInnerW
+    {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    {Run : List (Call F) → Ix.Kernel.RoleTable → BRun → (Nat → Ixon.Env) → Prop}
+    {Fam : List (Call F) → BRun → Ix.Kernel.RoleTable → Nat → Ixon.Env → Ixon.Env →
+      (_root_.Address → Option _root_.Address) → (_root_.Address → _root_.Address → Prop) →
+      (_root_.Address → _root_.Address → Prop) → Prop}
+    (bindingClaimExport :
+      SourceSoundBounded fun calls d => BindingClaimExportObs (Run calls) calls d)
+    (basisGroups : ∀ calls, BasisOverW.{u} L (Run calls))
+    (groupAdmissions : ∀ calls, AdmitsChain (Run calls))
+    (groupAdmissionReads : ∀ calls, AdmitsReadsChain (Run calls))
+    (groupFamilies : ∀ calls, FamiliesChain (Run calls) (Fam calls))
+    (groupClosure : ∀ calls, AtGroups (Run calls) fun ρ t g =>
+      ClosureStepOverFamilyW.{u} L ρ t g (Fam calls ρ t g))
+    (groupWithoutRoleUnit : ∀ calls, AtGroups (Run calls) (RoleFreeShapes.{u} L))
+    (operationRoleUnit :
+      ∀ calls, AtGroups (Run calls) (RoleUnitStepOverW.{u} (· ∈ RoleOps.opRoles) L))
+    (standardAxiomRoleUnit :
+      ∀ calls, AtGroups (Run calls) (RoleUnitStepOverW.{u} (· ∈ standardAxioms) L))
+    (familyGraph : FamilyGraphRowInnerFam.{u}) (innerSteps : InnerStepsChecked.{u} L)
+    (familyBlock : FamilyBlockRow.{u} L) (familyTwin : FamilyTwinRow.{u} L)
+    (standaloneDefinition : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind = .defn)
+    (standaloneTheoremOrOpaque : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind ≠ .defn)
+    (standaloneRecursor : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ rc : Ixon.Recursor, c.info = .recr rc)
+    (definitionBlock : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ ms : Array Ixon.MutConst, c.info = .muts ms ∧ DefnBlock ms)
+    (nativeBlockTelescope : WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
+      ∃ ind : Ixon.Inductive,
+        BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerAtTele t E₀ B cb ind)
+    (nativeBlockAlias : WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
+      ∃ ind : Ixon.Inductive,
+        BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerAtAlias t E₀ B cb ind)
+    (nativeBlockOtherTelescope : WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
+      ∃ ind : Ixon.Inductive,
+        BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerTeleOther t E₀ B cb ind) :
+    CircuitComposed.{u} := by
+  unfold CircuitComposed
+  refine circuitSound_of_bounded l0 ?_
+  intro dB valueB heapB callsB evB hbB
+  show CircuitSound fun callsA dA => ComposedSpec.{u} callsA callsB dA dB
+  refine circuitSound_of_bounded l0 ?_
+  intro dA valueA heapA callsA evA hbA
+  show ComposedSpec.{u} callsA callsB dA dB
+  exact composed_skeleton_over_familyWFam (bindingClaimExport dB valueB heapB callsB evB hbB)
+    (basisGroups callsB) (groupAdmissions callsB) (groupAdmissionReads callsB)
+    (groupFamilies callsB) (groupClosure callsB) (groupWithoutRoleUnit callsB)
+    (operationRoleUnit callsB) (standardAxiomRoleUnit callsB) hbA
+    (Claim.claimPhase_typing evA)
+    (fun _ _ _ _ _ _ h => by
+      obtain ⟨_, hW, _⟩ := h
+      exact hW.topLim)
+    (fun _ _ _ _ _ _ h => Claim.TopWalk.graph h)
+    (familyStepsFam_of_graphInner familyGraph innerSteps familyBlock familyTwin
+      standaloneDefinition standaloneTheoremOrOpaque standaloneRecursor definitionBlock
+      nativeBlockTelescope nativeBlockAlias nativeBlockOtherTelescope callsA)
+
+end IxVM.Refinement.Typing
