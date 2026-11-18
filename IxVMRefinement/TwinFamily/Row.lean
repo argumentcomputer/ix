@@ -8,15 +8,16 @@ block's family record: the graph's (`fam B = some rb`), or one the witness's env
 This module gives the graph case from the twin's step `unitStepTwin_of_facts_fam`, at the row's
 own hypotheses, and the row from it and the stored case.
 
-What the step takes beyond `FamilyRun` as it stands is `TwinRunFacts`: the block's members are
-inductive types (the block record, `FamBlockRecord`, has its member and constructor projections
-from the walk), and one binding under which the run's family checks of the block with its family
-record and with the twin both ran, with the family record in the form `RForm` where the twin is.
-The run gives them at the graph's own choices, once `FamilyRun` carries them.
+The run gives the step what it reads: the block is a block of inductive types
+(`FamilyRun.famInd`), whose member and constructor projections the walk holds; the family checks
+of the block with its family record and with the twin are at one binding
+(`FamilyRun.famRecAt`, `FamilyChecksAt.twinCall`). What the run does not yet give is the graph's
+choice of the family record in the form `RForm` wherever the twin is in it, at that binding
+(`TwinFormAt`): a field of the run's checks once `RForm` is fixed.
 
 * `familyTwinStep_graph`: the twin's step at the graph's family record;
-* `familyTwinRow_of`: `FamilyTwinRow`, from the seam, the run facts at every run, and the step of
-  a twin of a block the witness's environment stores. -/
+* `familyTwinRow_of`: `FamilyTwinRow`, from the seam, the form choice at every run, and the step
+  of a twin of a block the witness's environment stores. -/
 
 universe u
 
@@ -30,20 +31,17 @@ open Ix.Kernel.Semantics (NativeFam)
 
 set_option linter.unusedVariables false
 
-/-- **What the twin's step reads of the run beyond `FamilyRun`**, for the twin `A` of the block
-`B` with the family record `rb`: `B` is a block of inductive types; and one binding under which
-the run's family check of `B` with `rb` and with `A` ran, at the walk's limit, with `rb` in the
-form `RForm` where `A` is. -/
-structure TwinRunFacts (RForm : RecordFormPred) (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
-    (E₀ : Ixon.Env) (lim : Option Nat) (B rb A : _root_.Address) : Prop where
-  famInd : ∃ cb ms, recordOf E₀ B = some cb ∧ cb.info = .muts ms ∧
-    ∀ m ∈ ms.toList, ∃ ind, m = Ixon.MutConst.indc ind
-  calls : ∃ bAddr cs cs', FamilyCallAtLim calls bAddr t B rb lim cs ∧
-    FamilyCallAtLim calls bAddr t B A lim cs' ∧
-    (RForm calls bAddr t E₀ B A lim → RForm calls bAddr t E₀ B rb lim)
+/-- **The graph's form choice at the run's checks**: at the binding of the run's family checks,
+a block's family record is in the form `RForm` wherever a twin of the block is. -/
+def TwinFormAt (RForm : RecordFormPred) (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
+    (E₀ : Ixon.Env) (lim : Option Nat) (fam twin : _root_.Address → Option _root_.Address)
+    (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop) : Prop :=
+  ∀ bAddr, FamilyChecksAt calls bAddr t E₀ lim fam twin adv Inner →
+    ∀ rb' B rb, twin rb' = some B → fam B = some rb →
+      RForm calls bAddr t E₀ B rb' lim → RForm calls bAddr t E₀ B rb lim
 
 /-- **The twin's step at the graph's family record**: at the row's hypotheses with
-`fam B = some rb`, from the seam and the run facts. -/
+`fam B = some rb`, from the seam and the form choice. -/
 theorem familyTwinStep_graph {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hL : LinkLaws L) {RForm : RecordFormPred} (hseam : TwinSeam.{u} RForm)
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {seeds : List _root_.Address}
@@ -53,18 +51,18 @@ theorem familyTwinStep_graph {L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
     {fam twin : _root_.Address → Option _root_.Address}
     {adv : _root_.Address → _root_.Address → Prop} {Inner : _root_.Address → Prop}
     (hFR : FamilyRun calls t envT E₀ lim Top rank fam twin adv Inner)
+    (hform : TwinFormAt RForm calls t E₀ lim fam twin adv Inner)
     (hctx : StepCtx.{u} calls t R envT E₀ E)
     {A : _root_.Address} {c : Ixon.Constant} {B rb : _root_.Address} {crb : Ixon.Constant}
     (hW : Walked Top Inner A) (hc : recordOf E₀ A = some c) (htw : twin A = some B)
-    (hfam : fam B = some rb) (hcrb : recordOf E₀ rb = some crb)
-    (hrun : TwinRunFacts RForm calls t E₀ lim B rb A) :
+    (hfam : fam B = some rb) (hcrb : recordOf E₀ rb = some crb) :
     UnitStepTwin.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
       t envT E₀ E lim A c rb crb := by
   obtain ⟨bAddrW, hWc, hG⟩ := hWalk
   have ht : t.check = .ok () := hWc.check_ok
   -- the block's record
   obtain ⟨-, cb₀, hcb₀, hlogB, -⟩ := hFR.graph.famUnit B rb hfam
-  obtain ⟨cb, ms, hcb, hms, hind⟩ := hrun.famInd
+  obtain ⟨cb, ms, hcb, hms, hind⟩ := hFR.famInd B rb hfam
   have ecb : cb = cb₀ := Option.some.inj (hcb.symm.trans hcb₀)
   have hlog : InLogic cb := by
     rw [ecb]
@@ -78,14 +76,12 @@ theorem familyTwinStep_graph {L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       members := fun i m hm => (hG.members B cb ms hTB hcb hms i m hm).1
       ctors := fun i ind j hm hj =>
         (hG.members B cb ms hTB hcb hms i (.indc ind) hm).2 ind j rfl hj }
-  -- the family record, checked under the twin's binding
-  obtain ⟨crb₀, rs, hR₀⟩ := hFR.graph.famRecord B rb hfam
-  have hR : FamRecRecord E₀ rb crb rs := by
-    have e : crb₀ = crb := Option.some.inj (hR₀.record.symm.trans hcrb)
-    rw [← e]
-    exact hR₀
-  obtain ⟨bAddr, cs, cs', hcallB, hcallA, hpref⟩ := hrun.calls
-  have hrbB : FamRecOfBlock calls bAddr t E₀ B rb crb lim := ⟨rs, cs, hR, hcallB⟩
+  -- the family checks of the block, with its family record and with the twin, at one binding
+  obtain ⟨bAddr, hC, hrec⟩ := hFR.famRecAt
+  have hrbB : FamRecOfBlock calls bAddr t E₀ B rb crb lim := hrec B rb crb hfam hcrb
+  obtain ⟨cs', hcallA⟩ := hC.twinCall A B htw
+  have hpref := hform bAddr hC A B rb htw hfam
+  have hroute : ModeledRouteAt calls B := (hC.famCall B rb hfam).1
   -- the twin's record
   obtain ⟨c₀, rs', hA₀, hsz⟩ := hFR.graph.twinRecord A B htw
   have hA : FamRecRecord E₀ A c rs' := by
@@ -99,7 +95,6 @@ theorem familyTwinStep_graph {L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       exact hne
     · rw [hfam] at hnone
       cases hnone
-  have hroute : ModeledRouteAt calls B := (hFR.famCall B rb hfam).1
   -- a step is asked only at an environment that extends the witness's and stores none of the
   -- twin's constant addresses, so none of them is the witness's
   intro env hext hnd hinv hX href hrbS hfresh
@@ -132,24 +127,25 @@ def StoredTwinStep (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) : Prop
         UnitStepTwin.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
           t envT E₀ E lim A c rb crb
 
-/-- **The twin row** from the seam at a record form `RForm`, the run facts at the graph's family
-record of every run (`TwinRunFacts`, which `FamilyRun` is to carry), and the stored case. -/
+/-- **The twin row** from the seam at a record form `RForm`, the graph's form choice at every
+run (`TwinFormAt`, a field of the run's checks once `RForm` is fixed), and the stored case. -/
 theorem familyTwinRow_of {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hL : LinkLaws L) {RForm : RecordFormPred} (hseam : TwinSeam.{u} RForm)
-    (hrunFacts : ∀ (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (seeds : List _root_.Address)
+    (hform : ∀ (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (seeds : List _root_.Address)
       (E₀ : Ixon.Env) (lim : Option Nat) (Top : _root_.Address → Prop)
       (rank : _root_.Address → Nat), Claim.TopWalk calls t seeds E₀ lim Top rank →
       ∀ (envT : Ix.Kernel.Env .anon) (fam twin : _root_.Address → Option _root_.Address)
         (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop),
         FamilyRun calls t envT E₀ lim Top rank fam twin adv Inner →
-        ∀ A B rb, twin A = some B → fam B = some rb → TwinRunFacts RForm calls t E₀ lim B rb A)
+        TwinFormAt RForm calls t E₀ lim fam twin adv Inner)
     (hstored : StoredTwinStep.{u} L) :
     FamilyTwinRow.{u} L := by
   intro calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx A c B rb crb
     hW hc hlog htw hcase
   rcases hcase with ⟨hfam, hcrb⟩ | ⟨hnone, hst, hinst⟩
-  · exact familyTwinStep_graph hL hseam hWalk hFR hctx hW hc htw hfam hcrb
-      (hrunFacts calls t seeds E₀ lim Top rank hWalk envT fam twin adv Inner hFR A B rb htw hfam)
+  · exact familyTwinStep_graph hL hseam hWalk hFR
+      (hform calls t seeds E₀ lim Top rank hWalk envT fam twin adv Inner hFR) hctx hW hc htw hfam
+      hcrb
   · exact hstored calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx A c B
       rb crb hW hc hlog htw hnone hst hinst
 
