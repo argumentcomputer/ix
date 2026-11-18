@@ -33,10 +33,9 @@ module KzgAlgebra {
     let (main,main_next,fixed,fixed_next,stage2,stage2_next,publics,first,last,transition) = *context;
     match Lists::lookup(nodes,index) {
       KzgDeserialize::Node::Const(value) => value,
-      KzgDeserialize::Node::Var(source,offset,column) => match source+source+offset {
-        0=>Lists::lookup(fixed,column),1=>Lists::lookup(fixed_next,column),
-        2=>Lists::lookup(main,column),3=>Lists::lookup(main_next,column),
-        4=>Lists::lookup(stage2,column),5=>Lists::lookup(stage2_next,column),
+      KzgDeserialize::Node::Var(source,offset,column) => {
+        let row = match source+source+offset {0=>fixed,1=>fixed_next,2=>main,3=>main_next,4=>stage2,5=>stage2_next};
+        Lists::lookup(row,column)
       },
       KzgDeserialize::Node::Public(index) => match index {0=>publics[0],1=>publics[1],2=>publics[2],3=>publics[3]},
       KzgDeserialize::Node::First => first,

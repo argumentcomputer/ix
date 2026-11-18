@@ -85,7 +85,7 @@ module KzgMsm {
     }
   }
 
-  fn msm(terms: Lists::List<(Point,Field)>) -> Point {
+  inline fn msm(terms: Lists::List<(Point,Field)>) -> Point {
     let prepared = prepare(terms);
     let a = windows(limb(prepared,3),4,BN254G1::INFINITY);
     let b = windows(limb(prepared,2),20,a);

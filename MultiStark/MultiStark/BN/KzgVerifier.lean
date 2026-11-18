@@ -53,9 +53,10 @@ module KzgVerifier {
 
   fn verify_deferred(expected_key: KzgIO::Digest, expected_claims: KzgIO::Digest) -> [Field;4] {
     KzgIO::digest_bytes(expected_key); KzgIO::digest_bytes(expected_claims);
-    let key_bytes=KzgIO::channel(1); let claims_bytes=KzgIO::channel(2); let proof_bytes=KzgIO::channel(3);
-    assert_eq!(Blake3::pack_digest(Blake3::hash(key_bytes)),expected_key,"KZG key digest mismatch");
-    assert_eq!(Blake3::pack_digest(Blake3::hash(claims_bytes)),expected_claims,"KZG claims digest mismatch");
+    let (key_bytes,key_length)=KzgIO::sized_channel(1); let (claims_bytes,claims_length)=KzgIO::sized_channel(2);
+    let proof_bytes=KzgIO::channel(3);
+    assert_eq!(Blake3::pack_digest(KzgBlake3::hash_input(key_bytes,key_length)),expected_key,"KZG key digest mismatch");
+    assert_eq!(Blake3::pack_digest(KzgBlake3::hash_input(claims_bytes,claims_length)),expected_claims,"KZG claims digest mismatch");
     let (a,b)=verify(KzgDeserialize::key(key_bytes),KzgDeserialize::proof(proof_bytes),KzgDeserialize::claims(claims_bytes));
     KzgAccumulator::pack(a,b)
   }

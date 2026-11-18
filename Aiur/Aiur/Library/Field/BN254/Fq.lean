@@ -104,13 +104,13 @@ module BN254Fq {
     raw[0] + 65536 * raw[1] + 4294967296 * raw[2] + 281474976710656 * raw[3] + 18446744073709551616 * raw[4]
   }
 
-  fn range80(value: Field) -> () {
+  inline fn range80(value: Field) -> () {
     let raw = hint::<[Field; 5]>("bn254.fq.u16_80", value);
     assert_eq!(checked_pack80_u16(raw), value, "Fq 80-bit decomposition");
     ()
   }
 
-  fn range84(value: Field) -> () {
+  inline fn range84(value: Field) -> () {
     let raw = hint::<[Field; 6]>("bn254.fq.u16_84", value);
     let low = checked_pack80_u16([raw[0], raw[1], raw[2], raw[3], raw[4]]);
     byte(raw[5]);

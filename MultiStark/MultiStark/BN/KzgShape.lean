@@ -31,6 +31,21 @@ module KzgShape {
     }
   }
 
+  fn fixed_columns(shape: [Field; 8], log: Field, fixed_next: Field, fixed: Commitment, fixed_open: Openings)
+      -> (Points, Rows, Commitment, Openings) {
+    match shape[3] {
+      0 => (&(Lists::Node::Nil), &(Lists::Node::Nil), fixed, fixed_open),
+      _ => {
+        assert_eq!(shape[2], power2(log), "KZG fixed domain");
+        let Lists::Node::Cons(fixed_row, fixed) = *fixed;
+        let Lists::Node::Cons(fixed_values, fixed_open) = *fixed_open;
+        assert_eq!(Lists::length(fixed_row), shape[3], "KZG fixed commitment width");
+        rows_width(fixed_values, shape[3], 1 + fixed_next);
+        (fixed_row, fixed_values, fixed, fixed_open)
+      },
+    }
+  }
+
   fn consume(circuit: KzgDeserialize::Circuit, cursor: Cursor, max_log: Field) -> (Frame, Cursor) {
     let KzgDeserialize::Circuit::Mk(shape, _nodes, _roots, _lookups, main_next, fixed_next) = circuit;
     let (logs, main, stage2, quotient, accumulators, main_open, stage2_open, quotient_open, fixed, fixed_open) = *cursor;
@@ -50,22 +65,9 @@ module KzgShape {
     rows_width(main_values, shape[4], 1 + main_next);
     rows_width(stage2_values, shape[5], 2);
     rows_width(quotient_values, shape[7], 1);
-    match shape[3] {
-      0 => {
-        let tail = &(logs,main,stage2,quotient,accumulators,main_open,stage2_open,quotient_open,fixed,fixed_open);
-        (Frame::Mk(circuit,log,main_row,stage2_row,quotient_row,next_accumulator,main_values,stage2_values,quotient_values,
-          &(Lists::Node::Nil),&(Lists::Node::Nil)), tail)
-      },
-      _ => {
-        assert_eq!(shape[2], power2(log), "KZG fixed domain");
-        let Lists::Node::Cons(fixed_row, fixed) = *fixed;
-        let Lists::Node::Cons(fixed_values, fixed_open) = *fixed_open;
-        assert_eq!(Lists::length(fixed_row), shape[3], "KZG fixed commitment width");
-        rows_width(fixed_values, shape[3], 1 + fixed_next);
-        let tail = &(logs,main,stage2,quotient,accumulators,main_open,stage2_open,quotient_open,fixed,fixed_open);
-        (Frame::Mk(circuit,log,main_row,stage2_row,quotient_row,next_accumulator,main_values,stage2_values,quotient_values,fixed_row,fixed_values),tail)
-      },
-    }
+    let (fixed_row, fixed_values, fixed, fixed_open) = fixed_columns(shape, log, fixed_next, fixed, fixed_open);
+    let tail = &(logs,main,stage2,quotient,accumulators,main_open,stage2_open,quotient_open,fixed,fixed_open);
+    (Frame::Mk(circuit,log,main_row,stage2_row,quotient_row,next_accumulator,main_values,stage2_values,quotient_values,fixed_row,fixed_values),tail)
   }
 
   fn walk(circuits: Lists::List<KzgDeserialize::Circuit>, active: Lists::List<Field>, cursor: Cursor,
@@ -105,7 +107,7 @@ module KzgShape {
     }
   }
 
-  fn frames(key: KzgDeserialize::Key, proof: KzgDeserialize::Proof) -> Lists::List<Frame> {
+  inline fn frames(key: KzgDeserialize::Key, proof: KzgDeserialize::Proof) -> Lists::List<Frame> {
     let KzgDeserialize::Key::Mk(_seed,max_log,_budget,_generator,_anchors,circuits,fixed) = key;
     let KzgDeserialize::Proof::Mk(active,logs,main,stage2,quotient,accumulators,_witnesses,main_open,stage2_open,quotient_open,fixed_open) = proof;
     match (fixed,fixed_open) {

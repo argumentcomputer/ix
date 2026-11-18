@@ -44,11 +44,11 @@ module CompressFinal {
      word(b[0 .. 4]),word(b[4 .. 8]),word(b[8 .. 12]),word(b[12 .. 16])]
   }
 
-  fn anchor_stream(raw:[Field;128])->Bytes::Stream {
-    let tail=KzgIO::prepend32(Blake3::address_from_fields(raw[96 .. 128]),&(Lists::Node::Nil));
-    let tail=KzgIO::prepend32(Blake3::address_from_fields(raw[64 .. 96]),tail);
-    let tail=KzgIO::prepend32(Blake3::address_from_fields(raw[32 .. 64]),tail);
-    KzgIO::prepend32(Blake3::address_from_fields(raw[0 .. 32]),tail)
+  fn anchor_stream(raw:[Field;128])->KzgIO::Input {
+    let tail=KzgIO::prepend_words32(Blake3::address_from_fields(raw[96 .. 128]),&(Lists::Node::Nil));
+    let tail=KzgIO::prepend_words32(Blake3::address_from_fields(raw[64 .. 96]),tail);
+    let tail=KzgIO::prepend_words32(Blake3::address_from_fields(raw[32 .. 64]),tail);
+    (KzgIO::prepend_words32(Blake3::address_from_fields(raw[0 .. 32]),tail),0)
   }
 
   fn verify_v1(statement_low:Field,statement_high:Field)->() {

@@ -15,16 +15,16 @@ module KzgDeserialize {
   type Openings = Lists::List<Lists::List<Lists::List<Field>>>;
   enum Fixed { None, Some(Commitment) }
   enum FixedOpen { None, Some(Openings) }
-  enum Key { Mk(Bytes::Stream, Field, Field, BN254G1::Point, Bytes::Stream, Lists::List<Circuit>, Fixed) }
+  enum Key { Mk(KzgIO::Input, Field, Field, BN254G1::Point, KzgIO::Input, Lists::List<Circuit>, Fixed) }
   enum Proof { Mk(Lists::List<Field>, Lists::List<Field>, Commitment, Commitment, Commitment,
     Lists::List<Field>, Lists::List<BN254G1::Point>, Openings, Openings, Openings, FixedOpen) }
-  enum Policy { Mk(Bytes::Stream, KzgIO::Digest, Field, KzgIO::Digest, Field) }
+  enum Policy { Mk(KzgIO::Input, KzgIO::Digest, Field, KzgIO::Digest, Field) }
 
   fn check_child(child: Field, index: Field) -> () {
     assert_eq!(UInt32::less_than_fields(child, index), 1, "KZG graph child does not precede parent"); ()
   }
 
-  fn node(input: Bytes::Stream, index: Field, widths: [Field;8]) -> (Node, Bytes::Stream, Field, Field) {
+  fn node(input: KzgIO::Input, index: Field, widths: [Field;8]) -> (Node, KzgIO::Input, Field, Field) {
     let (tag, input) = KzgIO::tag(input);
     match tag {
       0 => {let (value, input) = KzgIO::scalar(input); (Node::Const(value), input, 0, 0)},
@@ -33,27 +33,30 @@ module KzgDeserialize {
         let (offset, input) = KzgIO::tag(input);
         let (column, input) = KzgIO::u32(input);
         assert_eq!(offset * (offset - 1), 0, "KZG graph row offset");
-        match source {
-          0 => {assert_eq!(UInt32::less_than_fields(column, widths[3]), 1, "KZG fixed column"); (Node::Var(0, offset, column), input, 0, offset)},
-          1 => {assert_eq!(UInt32::less_than_fields(column, widths[4]), 1, "KZG main column"); (Node::Var(1, offset, column), input, offset, 0)},
-          2 => {assert_eq!(UInt32::less_than_fields(column, widths[5]), 1, "KZG lookup column"); (Node::Var(2, offset, column), input, 0, 0)},
-        }
+        let (bound, main, fixed) = match source {0 => (widths[3], 0, offset), 1 => (widths[4], offset, 0), 2 => (widths[5], 0, 0)};
+        assert_eq!(UInt32::less_than_fields(column, bound), 1, "KZG graph column");
+        (Node::Var(source, offset, column), input, main, fixed)
       },
       2 => {let (index, input) = KzgIO::u32(input); assert_eq!(UInt32::less_than_fields(index, 4), 1, "KZG public column"); (Node::Public(index), input, 0, 0)},
       3 => (Node::First, input, 0, 0),
       4 => (Node::Last, input, 0, 0),
       5 => (Node::Transition, input, 0, 0),
-      6 => {let (a, input) = KzgIO::u32(input); let (b, input) = KzgIO::u32(input);
-        check_child(a, index); check_child(b, index); (Node::Add(a, b), input, 0, 0)},
-      7 => {let (a, input) = KzgIO::u32(input); let (b, input) = KzgIO::u32(input);
-        check_child(a, index); check_child(b, index); (Node::Sub(a, b), input, 0, 0)},
-      8 => {let (a, input) = KzgIO::u32(input); let (b, input) = KzgIO::u32(input);
-        check_child(a, index); check_child(b, index); (Node::Mul(a, b), input, 0, 0)},
-      9 => {let (a, input) = KzgIO::u32(input); check_child(a, index); (Node::Neg(a), input, 0, 0)},
+      _ => {
+        let (a, input) = KzgIO::u32(input);
+        check_child(a, index);
+        match tag {
+          9 => (Node::Neg(a), input, 0, 0),
+          _ => {
+            let (b, input) = KzgIO::u32(input);
+            check_child(b, index);
+            match tag {6 => (Node::Add(a, b), input, 0, 0), 7 => (Node::Sub(a, b), input, 0, 0), 8 => (Node::Mul(a, b), input, 0, 0)}
+          },
+        }
+      },
     }
   }
 
-  fn nodes(input: Bytes::Stream, count: Field, index: Field, widths: [Field;8]) -> (Lists::List<Node>, Bytes::Stream, Field, Field) {
+  fn nodes(input: KzgIO::Input, count: Field, index: Field, widths: [Field;8]) -> (Lists::List<Node>, KzgIO::Input, Field, Field) {
     match count {
       0 => (&(Lists::Node::Nil), input, 0, 0),
       _ => {
@@ -65,7 +68,7 @@ module KzgDeserialize {
     }
   }
 
-  fn ids(input: Bytes::Stream, count: Field, bound: Field) -> (Lists::List<Field>, Bytes::Stream) {
+  fn ids(input: KzgIO::Input, count: Field, bound: Field) -> (Lists::List<Field>, KzgIO::Input) {
     match count {
       0 => (&(Lists::Node::Nil), input),
       _ => {
@@ -76,7 +79,7 @@ module KzgDeserialize {
     }
   }
 
-  fn lookups(input: Bytes::Stream, count: Field, bound: Field) -> (Lists::List<Lookup>, Bytes::Stream) {
+  fn lookups(input: KzgIO::Input, count: Field, bound: Field) -> (Lists::List<Lookup>, KzgIO::Input) {
     match count {
       0 => (&(Lists::Node::Nil), input),
       _ => {
@@ -113,7 +116,7 @@ module KzgDeserialize {
     }
   }
 
-  fn circuits(input: Bytes::Stream, count: Field, budget: Field) -> (Lists::List<Circuit>, Bytes::Stream) {
+  fn circuits(input: KzgIO::Input, count: Field, budget: Field) -> (Lists::List<Circuit>, KzgIO::Input) {
     match count {
       0 => (&(Lists::Node::Nil), input),
       _ => {
@@ -147,7 +150,7 @@ module KzgDeserialize {
     }
   }
 
-  fn scalars(input: Bytes::Stream, count: Field) -> (Lists::List<Field>, Bytes::Stream) {
+  fn scalars(input: KzgIO::Input, count: Field) -> (Lists::List<Field>, KzgIO::Input) {
     match count {
       0 => (&(Lists::Node::Nil), input),
       _ => {let (head, input) = KzgIO::scalar(input); let (tail, input) = scalars(input, count - 1);
@@ -155,7 +158,7 @@ module KzgDeserialize {
     }
   }
 
-  fn points(input: Bytes::Stream, count: Field) -> (Lists::List<BN254G1::Point>, Bytes::Stream) {
+  fn points(input: KzgIO::Input, count: Field) -> (Lists::List<BN254G1::Point>, KzgIO::Input) {
     match count {
       0 => (&(Lists::Node::Nil), input),
       _ => {let (head, input) = KzgIO::point(input); let (tail, input) = points(input, count - 1);
@@ -163,7 +166,7 @@ module KzgDeserialize {
     }
   }
 
-  fn tags(input: Bytes::Stream, count: Field) -> (Lists::List<Field>, Bytes::Stream) {
+  fn tags(input: KzgIO::Input, count: Field) -> (Lists::List<Field>, KzgIO::Input) {
     match count {
       0 => (&(Lists::Node::Nil), input),
       _ => {let (head, input) = KzgIO::tag(input); let (tail, input) = tags(input, count - 1);
@@ -171,7 +174,7 @@ module KzgDeserialize {
     }
   }
 
-  fn scalar_rows(input: Bytes::Stream, count: Field) -> (Lists::List<Lists::List<Field>>, Bytes::Stream) {
+  fn scalar_rows(input: KzgIO::Input, count: Field) -> (Lists::List<Lists::List<Field>>, KzgIO::Input) {
     match count {
       0 => (&(Lists::Node::Nil), input),
       _ => {let (width, input) = KzgIO::u32(input); let (head, input) = scalars(input, width);
@@ -179,7 +182,7 @@ module KzgDeserialize {
     }
   }
 
-  fn point_rows(input: Bytes::Stream, count: Field) -> (Lists::List<Lists::List<BN254G1::Point>>, Bytes::Stream) {
+  fn point_rows(input: KzgIO::Input, count: Field) -> (Lists::List<Lists::List<BN254G1::Point>>, KzgIO::Input) {
     match count {
       0 => (&(Lists::Node::Nil), input),
       _ => {let (width, input) = KzgIO::u32(input); let (head, input) = points(input, width);
@@ -187,7 +190,7 @@ module KzgDeserialize {
     }
   }
 
-  fn opening_matrices(input: Bytes::Stream, count: Field) -> (Lists::List<Lists::List<Lists::List<Field>>>, Bytes::Stream) {
+  fn opening_matrices(input: KzgIO::Input, count: Field) -> (Lists::List<Lists::List<Lists::List<Field>>>, KzgIO::Input) {
     match count {
       0 => (&(Lists::Node::Nil), input),
       _ => {let (width, input) = KzgIO::u32(input); let (head, input) = scalar_rows(input, width);
@@ -195,14 +198,30 @@ module KzgDeserialize {
     }
   }
 
-  fn commitment(input: Bytes::Stream) -> (Commitment, Bytes::Stream) {
+  inline fn commitment(input: KzgIO::Input) -> (Commitment, KzgIO::Input) {
     let (count, input) = KzgIO::u32(input); point_rows(input, count)
   }
-  fn openings(input: Bytes::Stream) -> (Openings, Bytes::Stream) {
+  inline fn openings(input: KzgIO::Input) -> (Openings, KzgIO::Input) {
     let (count, input) = KzgIO::u32(input); opening_matrices(input, count)
   }
 
-  fn key(input: Bytes::Stream) -> Key {
+  fn fixed(input: KzgIO::Input) -> Fixed {
+    let (tag, input) = KzgIO::tag(input);
+    match tag {
+      0 => {KzgIO::finish(input); Fixed::None},
+      1 => {let (fixed, input) = commitment(input); KzgIO::finish(input); Fixed::Some(fixed)},
+    }
+  }
+
+  fn fixed_open(input: KzgIO::Input) -> FixedOpen {
+    let (tag, input) = KzgIO::tag(input);
+    match tag {
+      0 => {KzgIO::finish(input); FixedOpen::None},
+      1 => {let (fixed_open, input) = openings(input); KzgIO::finish(input); FixedOpen::Some(fixed_open)},
+    }
+  }
+
+  inline fn key(input: KzgIO::Input) -> Key {
     let input = KzgIO::magic(input, [73,88,65,85,75,89,48,49]);
     let (seed, input) = KzgIO::blob(input);
     let (max_log, input) = KzgIO::u32(input);
@@ -215,15 +234,10 @@ module KzgDeserialize {
     let (count, input) = KzgIO::u32(input);
     assert_eq!(Fields::is_zero(count), 0, "empty KZG system");
     let (circuits, input) = circuits(input, count, budget);
-    let (tag, input) = KzgIO::tag(input);
-    match tag {
-      0 => {KzgIO::finish(input); Key::Mk(seed, max_log, budget, generator, anchors, circuits, Fixed::None)},
-      1 => {let (fixed, input) = commitment(input); KzgIO::finish(input);
-        Key::Mk(seed, max_log, budget, generator, anchors, circuits, Fixed::Some(fixed))},
-    }
+    Key::Mk(seed, max_log, budget, generator, anchors, circuits, fixed(input))
   }
 
-  fn proof(input: Bytes::Stream) -> Proof {
+  inline fn proof(input: KzgIO::Input) -> Proof {
     let input = KzgIO::magic(input, [73,88,65,85,80,70,48,49]);
     let (count, input) = KzgIO::u32(input); let (active, input) = tags(input, count);
     let (count, input) = KzgIO::u32(input); let (logs, input) = tags(input, count);
@@ -233,21 +247,16 @@ module KzgDeserialize {
     let (count, input) = KzgIO::u32(input); let (witnesses, input) = points(input, count);
     let (main_open, input) = openings(input); let (stage2_open, input) = openings(input);
     let (quotient_open, input) = openings(input);
-    let (tag, input) = KzgIO::tag(input);
-    match tag {
-      0 => {KzgIO::finish(input); Proof::Mk(active,logs,main,stage2,quotient,accumulators,witnesses,main_open,stage2_open,quotient_open,FixedOpen::None)},
-      1 => {let (fixed_open, input) = openings(input); KzgIO::finish(input);
-        Proof::Mk(active,logs,main,stage2,quotient,accumulators,witnesses,main_open,stage2_open,quotient_open,FixedOpen::Some(fixed_open))},
-    }
+    Proof::Mk(active,logs,main,stage2,quotient,accumulators,witnesses,main_open,stage2_open,quotient_open,fixed_open(input))
   }
 
-  fn claims(input: Bytes::Stream) -> Lists::List<Lists::List<Field>> {
+  inline fn claims(input: KzgIO::Input) -> Lists::List<Lists::List<Field>> {
     let input = KzgIO::magic(input, [73,88,65,85,67,76,48,49]);
     let (count, input) = KzgIO::u32(input);
     let (claims, input) = scalar_rows(input, count); KzgIO::finish(input); claims
   }
 
-  fn policy(input: Bytes::Stream) -> Policy {
+  inline fn policy(input: KzgIO::Input) -> Policy {
     let input = KzgIO::magic(input, [73,88,65,85,75,76,48,49]);
     let (anchors, input) = KzgIO::read_bytes(input, 128);
     let (gl_digest, input) = KzgIO::digest(input); let (gl_entry, input) = KzgIO::u32(input);

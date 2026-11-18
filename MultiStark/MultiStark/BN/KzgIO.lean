@@ -9,113 +9,202 @@ def kzgIO : Aiur.Modules.Program Nat := aiur⟦
 module KzgIO {
   type Digest = [Field; 8];
 
-  fn read_stream(channel: Field, remaining: Field, offset: Field) -> Bytes::Stream {
+  type U8 = UInt8::U8;
+  type U32 = UInt32::U32;
+  type Words = Lists::List<U32>;
+
+  -- A byte stream read from the front: a word list and the offset (0..3) of
+  -- the next byte in its first word. Bytes before that offset are not part
+  -- of the stream. Every byte is a checked `U8`, and the stream ends exactly
+  -- where its word list does, so a read past the end fails.
+  type Input = (Words, Field);
+
+  fn read_words(channel: Field, remaining: Field, offset: Field) -> Words {
     match remaining {
       0 => &(Lists::Node::Nil),
       _ => {
-        let byte = UInt8::from_field(hint::<Field>("kzg.io.read1", (channel, offset)));
-        &(Lists::Node::Cons(byte, read_stream(channel, remaining - 1, offset + 1)))
+        let word = UInt32::from_fields(hint::<[Field; 4]>("kzg.io.read4", (channel, offset)));
+        &(Lists::Node::Cons(word, read_words(channel, remaining - 1, offset + 4)))
       },
     }
   }
 
-  fn channel(channel: Field) -> Bytes::Stream {
+  inline fn read_byte(channel: Field, offset: Field) -> U8 {
+    UInt8::from_field(hint::<Field>("kzg.io.read1", (channel, offset)))
+  }
+
+  -- `count = 4 * words + lead`. `lead` must be 0..3; any other advice makes
+  -- `words` a field element far beyond every finite stream, so the word reads
+  -- that follow cannot terminate.
+  fn split4(count: Field) -> (Field, Field) {
+    let words = hint::<Field>("kzg.io.div", (count, 4));
+    let lead = count - 4 * words;
+    match lead { 0 => (words, 0), 1 => (words, 1), 2 => (words, 2), 3 => (words, 3) }
+  }
+
+  -- The first `count mod 4` bytes end the first word, so the rest is whole words.
+  fn sized_channel(channel: Field) -> (Input, Field) {
     let length = hint::<Field>("kzg.io.length", channel);
     assert_eq!(UInt32::less_than_fields(length, 67108865), 1, "KZG input exceeds 64 MiB");
-    read_stream(channel, length, 0)
+    let (words, lead) = split4(length);
+    let zero = UInt8::BYTE_0;
+    let input = match lead {
+      0 => (read_words(channel, words, 0), 0),
+      1 => (&(Lists::Node::Cons(UInt32::from_bytes([zero, zero, zero, read_byte(channel, 0)]), read_words(channel, words, 1))), 3),
+      2 => (&(Lists::Node::Cons(UInt32::from_bytes([zero, zero, read_byte(channel, 0), read_byte(channel, 1)]), read_words(channel, words, 2))), 2),
+      3 => (&(Lists::Node::Cons(UInt32::from_bytes([zero, read_byte(channel, 0), read_byte(channel, 1), read_byte(channel, 2)]), read_words(channel, words, 3))), 1),
+    };
+    (input, length)
   }
 
-  fn byte(input: Bytes::Stream) -> (UInt8::U8, Bytes::Stream) {
-    let Lists::Node::Cons(value, rest) = *input;
-    (value, rest)
+  inline fn channel(channel: Field) -> Input {
+    let (input, _length) = sized_channel(channel); input
   }
 
-  inline fn tag(input: Bytes::Stream) -> (Field, Bytes::Stream) {
+  fn byte(input: Input) -> (U8, Input) {
+    let (words, offset) = input;
+    let Lists::Node::Cons(w, rest) = *words; let w = UInt32::to_bytes(w);
+    match offset {
+      0 => (w[0], (words, 1)),
+      1 => (w[1], (words, 2)),
+      2 => (w[2], (words, 3)),
+      3 => (w[3], (rest, 0)),
+    }
+  }
+
+  inline fn tag(input: Input) -> (Field, Input) {
     let (value, rest) = byte(input);
     (UInt8::to_field(value), rest)
   }
 
-  fn u32(input: Bytes::Stream) -> (Field, Bytes::Stream) {
-    let (a, input) = byte(input); let (b, input) = byte(input);
-    let (c, input) = byte(input); let (d, input) = byte(input);
-    (UInt8::to_field(a) + 256 * UInt8::to_field(b) + 65536 * UInt8::to_field(c) + 16777216 * UInt8::to_field(d), input)
+  inline fn word(input: Input) -> (U32, Input) {
+    let (words, offset) = input;
+    let Lists::Node::Cons(w, rest) = *words;
+    match offset {
+      0 => (w, (rest, 0)),
+      _ => {
+        let Lists::Node::Cons(v, _next) = *rest;
+        let w = UInt32::to_bytes(w); let v = UInt32::to_bytes(v);
+        match offset {
+          1 => (UInt32::from_bytes([w[1], w[2], w[3], v[0]]), (rest, 1)),
+          2 => (UInt32::from_bytes([w[2], w[3], v[0], v[1]]), (rest, 2)),
+          3 => (UInt32::from_bytes([w[3], v[0], v[1], v[2]]), (rest, 3)),
+        }
+      },
+    }
   }
 
-  fn read_bytes(input: Bytes::Stream, count: Field) -> (Bytes::Stream, Bytes::Stream) {
+  fn u32(input: Input) -> (Field, Input) {
+    let (w, rest) = word(input);
+    (UInt32::compact_field(UInt32::compact(w)), rest)
+  }
+
+  fn next_word(input: Input) -> (U32, Input) { word(input) }
+
+  -- 32 bytes: eight words, or nine when the stream is not word aligned.
+  fn read32(input: Input) -> ([U8; 32], Input) {
+    let (words, offset) = input;
+    let Lists::Node::Cons(w0, l) = *words; let Lists::Node::Cons(w1, l) = *l;
+    let Lists::Node::Cons(w2, l) = *l; let Lists::Node::Cons(w3, l) = *l;
+    let Lists::Node::Cons(w4, l) = *l; let Lists::Node::Cons(w5, l) = *l;
+    let Lists::Node::Cons(w6, l) = *l; let Lists::Node::Cons(w7, l) = *l;
+    let w0 = UInt32::to_bytes(w0); let w1 = UInt32::to_bytes(w1); let w2 = UInt32::to_bytes(w2); let w3 = UInt32::to_bytes(w3);
+    let w4 = UInt32::to_bytes(w4); let w5 = UInt32::to_bytes(w5); let w6 = UInt32::to_bytes(w6); let w7 = UInt32::to_bytes(w7);
+    match offset {
+      0 => ([w0[0], w0[1], w0[2], w0[3], w1[0], w1[1], w1[2], w1[3], w2[0], w2[1], w2[2], w2[3], w3[0], w3[1], w3[2], w3[3], w4[0], w4[1], w4[2], w4[3], w5[0], w5[1], w5[2], w5[3], w6[0], w6[1], w6[2], w6[3], w7[0], w7[1], w7[2], w7[3]], (l, 0)),
+      _ => {
+        let Lists::Node::Cons(w8, _next) = *l; let w8 = UInt32::to_bytes(w8);
+        match offset {
+          1 => ([w0[1], w0[2], w0[3], w1[0], w1[1], w1[2], w1[3], w2[0], w2[1], w2[2], w2[3], w3[0], w3[1], w3[2], w3[3], w4[0], w4[1], w4[2], w4[3], w5[0], w5[1], w5[2], w5[3], w6[0], w6[1], w6[2], w6[3], w7[0], w7[1], w7[2], w7[3], w8[0]], (l, 1)),
+          2 => ([w0[2], w0[3], w1[0], w1[1], w1[2], w1[3], w2[0], w2[1], w2[2], w2[3], w3[0], w3[1], w3[2], w3[3], w4[0], w4[1], w4[2], w4[3], w5[0], w5[1], w5[2], w5[3], w6[0], w6[1], w6[2], w6[3], w7[0], w7[1], w7[2], w7[3], w8[0], w8[1]], (l, 2)),
+          3 => ([w0[3], w1[0], w1[1], w1[2], w1[3], w2[0], w2[1], w2[2], w2[3], w3[0], w3[1], w3[2], w3[3], w4[0], w4[1], w4[2], w4[3], w5[0], w5[1], w5[2], w5[3], w6[0], w6[1], w6[2], w6[3], w7[0], w7[1], w7[2], w7[3], w8[0], w8[1], w8[2]], (l, 3)),
+        }
+      },
+    }
+  }
+
+  fn copy_words(input: Input, count: Field) -> (Words, Input) {
     match count {
       0 => (&(Lists::Node::Nil), input),
       _ => {
-        let (head, input) = byte(input);
-        let (tail, rest) = read_bytes(input, count - 1);
+        let (head, input) = next_word(input);
+        let (tail, rest) = copy_words(input, count - 1);
         (&(Lists::Node::Cons(head, tail)), rest)
       },
     }
   }
 
-  fn blob(input: Bytes::Stream) -> (Bytes::Stream, Bytes::Stream) {
-    let (count, input) = u32(input);
-    read_bytes(input, count)
-  }
-
-  fn finish(input: Bytes::Stream) -> () { let Lists::Node::Nil = *input; () }
-
-  fn equal_bytes(a: Bytes::Stream, b: Bytes::Stream) -> () {
-    match (*a, *b) {
-      (Lists::Node::Nil, Lists::Node::Nil) => (),
-      (Lists::Node::Cons(x, xs), Lists::Node::Cons(y, ys)) => {
-        assert_eq!(UInt8::to_field(x), UInt8::to_field(y), "KZG byte mismatch");
-        equal_bytes(xs, ys)
+  -- The next `count` bytes as a stream of their own.
+  fn read_bytes(input: Input, count: Field) -> (Input, Input) {
+    let (words, lead) = split4(count);
+    let zero = UInt8::BYTE_0;
+    match lead {
+      0 => {let (body, rest) = copy_words(input, words); ((body, 0), rest)},
+      1 => {
+        let (a, input) = byte(input);
+        let (body, rest) = copy_words(input, words);
+        ((&(Lists::Node::Cons(UInt32::from_bytes([zero, zero, zero, a]), body)), 3), rest)
+      },
+      2 => {
+        let (a, input) = byte(input); let (b, input) = byte(input);
+        let (body, rest) = copy_words(input, words);
+        ((&(Lists::Node::Cons(UInt32::from_bytes([zero, zero, a, b]), body)), 2), rest)
+      },
+      3 => {
+        let (a, input) = byte(input); let (b, input) = byte(input); let (c, input) = byte(input);
+        let (body, rest) = copy_words(input, words);
+        ((&(Lists::Node::Cons(UInt32::from_bytes([zero, a, b, c]), body)), 1), rest)
       },
     }
   }
 
-  fn magic(input: Bytes::Stream, expected: [Field; 8]) -> Bytes::Stream {
-    let (b0, input) = tag(input);
-    let (b1, input) = tag(input);
-    let (b2, input) = tag(input);
-    let (b3, input) = tag(input);
-    let (b4, input) = tag(input);
-    let (b5, input) = tag(input);
-    let (b6, input) = tag(input);
-    let (b7, input) = tag(input);
-    assert_eq!([b0, b1, b2, b3, b4, b5, b6, b7], expected, "KZG wire version mismatch");
+  inline fn blob(input: Input) -> (Input, Input) {
+    let (count, input) = u32(input);
+    read_bytes(input, count)
+  }
+
+  inline fn finish(input: Input) -> () {
+    let (words, offset) = input; assert_eq!(offset, 0, "KZG trailing bytes"); let Lists::Node::Nil = *words; ()
+  }
+
+  fn equal_bytes(a: Input, b: Input) -> () {
+    let (x, i) = a; let (y, j) = b;
+    match (*x, *y) {
+      (Lists::Node::Nil, Lists::Node::Nil) => {assert_eq!(i, 0, "KZG byte mismatch"); assert_eq!(j, 0, "KZG byte mismatch"); ()},
+      _ => match i + 4 * j {
+        0 => {
+          let Lists::Node::Cons(p, xs) = *x; let Lists::Node::Cons(q, ys) = *y;
+          assert_eq!(UInt32::compact_field(UInt32::compact(p)), UInt32::compact_field(UInt32::compact(q)), "KZG byte mismatch");
+          equal_bytes((xs, 0), (ys, 0))
+        },
+        _ => {
+          let (p, a) = byte(a); let (q, b) = byte(b);
+          assert_eq!(UInt8::to_field(p), UInt8::to_field(q), "KZG byte mismatch");
+          equal_bytes(a, b)
+        },
+      },
+    }
+  }
+
+  inline fn magic(input: Input, expected: [Field; 8]) -> Input {
+    let (low, input) = next_word(input); let low = UInt32::to_bytes(low);
+    let (high, input) = next_word(input); let high = UInt32::to_bytes(high);
+    assert_eq!([UInt8::to_field(low[0]), UInt8::to_field(low[1]), UInt8::to_field(low[2]), UInt8::to_field(low[3]),
+      UInt8::to_field(high[0]), UInt8::to_field(high[1]), UInt8::to_field(high[2]), UInt8::to_field(high[3])],
+      expected, "KZG wire version mismatch");
     input
   }
 
-  fn read32(input: Bytes::Stream) -> ([UInt8::U8; 32], Bytes::Stream) {
-    let (b0, input) = byte(input);
-    let (b1, input) = byte(input);
-    let (b2, input) = byte(input);
-    let (b3, input) = byte(input);
-    let (b4, input) = byte(input);
-    let (b5, input) = byte(input);
-    let (b6, input) = byte(input);
-    let (b7, input) = byte(input);
-    let (b8, input) = byte(input);
-    let (b9, input) = byte(input);
-    let (b10, input) = byte(input);
-    let (b11, input) = byte(input);
-    let (b12, input) = byte(input);
-    let (b13, input) = byte(input);
-    let (b14, input) = byte(input);
-    let (b15, input) = byte(input);
-    let (b16, input) = byte(input);
-    let (b17, input) = byte(input);
-    let (b18, input) = byte(input);
-    let (b19, input) = byte(input);
-    let (b20, input) = byte(input);
-    let (b21, input) = byte(input);
-    let (b22, input) = byte(input);
-    let (b23, input) = byte(input);
-    let (b24, input) = byte(input);
-    let (b25, input) = byte(input);
-    let (b26, input) = byte(input);
-    let (b27, input) = byte(input);
-    let (b28, input) = byte(input);
-    let (b29, input) = byte(input);
-    let (b30, input) = byte(input);
-    let (b31, input) = byte(input);
-    ([b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16, b17, b18, b19, b20, b21, b22, b23, b24, b25, b26, b27, b28, b29, b30, b31], input)
+  -- Prepends the 32 bytes as eight words.
+  inline fn prepend_words32(bytes: [U8; 32], tail: Words) -> Words {
+    let tail = &(Lists::Node::Cons(UInt32::from_bytes([bytes[28], bytes[29], bytes[30], bytes[31]]), tail));
+    let tail = &(Lists::Node::Cons(UInt32::from_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]), tail));
+    let tail = &(Lists::Node::Cons(UInt32::from_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]), tail));
+    let tail = &(Lists::Node::Cons(UInt32::from_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]), tail));
+    let tail = &(Lists::Node::Cons(UInt32::from_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]), tail));
+    let tail = &(Lists::Node::Cons(UInt32::from_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]), tail));
+    let tail = &(Lists::Node::Cons(UInt32::from_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]), tail));
+    &(Lists::Node::Cons(UInt32::from_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]), tail))
   }
 
   fn scalar_from_bytes(bytes: [UInt8::U8; 32]) -> Field {
@@ -144,17 +233,17 @@ module KzgIO {
     bytes
   }
 
-  fn scalar(input: Bytes::Stream) -> (Field, Bytes::Stream) {
+  fn scalar(input: Input) -> (Field, Input) {
     let (bytes, rest) = read32(input);
     (scalar_from_bytes(bytes), rest)
   }
 
-  fn point(input: Bytes::Stream) -> (BN254G1::Point, Bytes::Stream) {
+  fn point(input: Input) -> (BN254G1::Point, Input) {
     let (bytes, rest) = read32(input);
     (BN254G1::from_bytes(Blake3::address_to_fields(bytes)), rest)
   }
 
-  fn digest(input: Bytes::Stream) -> (Digest, Bytes::Stream) {
+  fn digest(input: Input) -> (Digest, Input) {
     let (bytes, rest) = read32(input);
     ([Blake3::pack_word(UInt32::from_bytes(bytes[0 .. 4])), Blake3::pack_word(UInt32::from_bytes(bytes[4 .. 8])), Blake3::pack_word(UInt32::from_bytes(bytes[8 .. 12])), Blake3::pack_word(UInt32::from_bytes(bytes[12 .. 16])), Blake3::pack_word(UInt32::from_bytes(bytes[16 .. 20])), Blake3::pack_word(UInt32::from_bytes(bytes[20 .. 24])), Blake3::pack_word(UInt32::from_bytes(bytes[24 .. 28])), Blake3::pack_word(UInt32::from_bytes(bytes[28 .. 32]))], rest)
   }

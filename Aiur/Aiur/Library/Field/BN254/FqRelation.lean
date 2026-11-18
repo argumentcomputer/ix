@@ -95,7 +95,7 @@ module BN254FqRelation {
   inline fn twice(a: Expression) -> Expression { add(a, a) }
   inline fn thrice(a: Expression) -> Expression { add(twice(a), a) }
 
-  fn range17(value: Field) -> () {
+  inline fn range17(value: Field) -> () {
     let raw = hint::<[Field; 2]>("bn254.fq_relation.u16_17", value);
     BN254Fq::limb16(raw[0]);
     assert_eq!(raw[1] * (raw[1] - 1), 0, "Fq relation quotient top bit");
@@ -103,7 +103,7 @@ module BN254FqRelation {
     ()
   }
 
-  fn range89(value: Field) -> () {
+  inline fn range89(value: Field) -> () {
     let raw = hint::<[Field; 6]>("bn254.fq_relation.u16_89", value);
     let low = BN254Fq::checked_pack80_u16([raw[0], raw[1], raw[2], raw[3], raw[4]]);
     BN254Fq::limb16(raw[5]); BN254Fq::limb16(128 * raw[5]);

@@ -21,20 +21,15 @@ module KzgPcs {
       Lists::Node::Cons(frame,rest)=>{
         let KzgShape::Frame::Mk(circuit,log,main,stage2,quotient,_acc,main_open,stage2_open,quotient_open,fixed,fixed_open)=frame;
         let tail=matrices(rest,round);
-        match round {
-          0=>&(Lists::Node::Cons(Matrix::Mk(log,main,main_open),tail)),
-          1=>&(Lists::Node::Cons(Matrix::Mk(log,stage2,stage2_open),tail)),
-          2=>&(Lists::Node::Cons(Matrix::Mk(log,quotient,quotient_open),tail)),
-          3=>{
-            let KzgDeserialize::Circuit::Mk(shape,_nodes,_roots,_lookups,_mn,_fn)=circuit;
-            match shape[3] {0=>tail,_=>&(Lists::Node::Cons(Matrix::Mk(log,fixed,fixed_open),tail))}
-          },
-        }
+        let KzgDeserialize::Circuit::Mk(shape,_nodes,_roots,_lookups,_mn,_fn)=circuit;
+        let (points,values,absent)=match round {0=>(main,main_open,0),1=>(stage2,stage2_open,0),
+          2=>(quotient,quotient_open,0),3=>(fixed,fixed_open,Fields::is_zero(shape[3]))};
+        match absent {0=>&(Lists::Node::Cons(Matrix::Mk(log,points,values),tail)),1=>tail}
       },
     }
   }
 
-  fn rounds(frames: Lists::List<KzgShape::Frame>, fixed: KzgDeserialize::Fixed) -> Lists::List<Round> {
+  inline fn rounds(frames: Lists::List<KzgShape::Frame>, fixed: KzgDeserialize::Fixed) -> Lists::List<Round> {
     let tail=match fixed {KzgDeserialize::Fixed::None=>&(Lists::Node::Nil),
       KzgDeserialize::Fixed::Some(_)=>&(Lists::Node::Cons(matrices(frames,3),&(Lists::Node::Nil)))};
     &(Lists::Node::Cons(matrices(frames,0),&(Lists::Node::Cons(matrices(frames,1),
@@ -133,7 +128,7 @@ module KzgPcs {
       Lists::Node::Nil=>transcript,
       Lists::Node::Cons(point,rest)=>{
         let bytes=Blake3::address_from_fields(BN254G1::to_bytes(point));
-        let transcript=KzgTranscript::observe_bytes(transcript,KzgIO::prepend32(bytes,&(Lists::Node::Nil)));
+        let transcript=KzgTranscript::observe32(transcript,bytes);
         observe_witnesses(transcript,rest)
       },
     }
@@ -162,7 +157,7 @@ module KzgPcs {
     }
   }
 
-  fn reduce(transcript: KzgTranscript::Transcript, frames: Lists::List<KzgShape::Frame>, fixed: KzgDeserialize::Fixed,
+  inline fn reduce(transcript: KzgTranscript::Transcript, frames: Lists::List<KzgShape::Frame>, fixed: KzgDeserialize::Fixed,
       witnesses: Points, zeta: Field, generator: Point) -> (Point,Point) {
     let rounds=rounds(frames,fixed);
     let transcript=observe_rounds(transcript,rounds);

@@ -13,30 +13,50 @@ open Aiur.Ixon
 /-- The bytecode semantics version. Version 2 adds named hint channels. -/
 def bytecodeVersion : Nat := 2
 
-partial def putTy : Ty → PutM Unit
+def putTy : Ty → PutM Unit
   | .field => u8 0
-  | .tuple items => do u8 1; list items putTy
+  | .tuple items => do u8 1; list items.attach fun ⟨item, _⟩ => putTy item
   | .ptr type => do u8 2; putTy type
   | .enum name => do u8 3; str name
+termination_by type => sizeOf type
+decreasing_by
+  all_goals simp_wf
+  all_goals first
+    | omega
+    | (have := List.sizeOf_lt_of_mem ‹_›; omega)
 
-/-- Read a type written by `putTy`. -/
-partial def getTy : GetM Ty := do
-  match ← getTag "type" 4 with
-  | 0 => return .field
-  | 1 => return .tuple (← getArray getTy).toList
-  | 2 => return .ptr (← getTy)
-  | _ => return .enum (← getString)
+/-- `getTy` with a bound on the nesting depth. -/
+def getTyAux : Nat → GetM Ty
+  | 0 => fail "type nesting exceeds the input"
+  | fuel + 1 => do
+      match ← getTag "type" 4 with
+      | 0 => return .field
+      | 1 => return .tuple (← getArray (getTyAux fuel)).toList
+      | 2 => return .ptr (← getTyAux fuel)
+      | _ => return .enum (← getString)
 
-partial def putIOType : IOType → PutM Unit
+/-- Read a type written by `putTy`. Every nesting level reads a tag byte, so a
+depth bound of one more than the remaining bytes never binds. -/
+def getTy : GetM Ty := do getTyAux ((← remaining) + 1)
+
+def putIOType : IOType → PutM Unit
   | .field => u8 0
-  | .tuple items => do u8 1; list items putIOType
+  | .tuple items => do u8 1; list items.attach fun ⟨item, _⟩ => putIOType item
   | .array element length => do u8 2; putIOType element; nat length
   | .record name fields => do
       u8 3; str name
-      list fields fun (field, type) => do str field; putIOType type
+      list fields.attach fun ⟨(field, type), h⟩ => do str field; putIOType type
   | .enum name constructors => do
       u8 4; str name
-      list constructors fun (constructor, fields) => do str constructor; list fields putIOType
+      list constructors.attach fun ⟨(constructor, fields), h₁⟩ => do
+        str constructor; list fields.attach fun ⟨item, h₂⟩ => putIOType item
+termination_by type => sizeOf type
+decreasing_by
+  all_goals simp_wf
+  · have := List.sizeOf_lt_of_mem ‹_›; omega
+  · omega
+  · have := List.sizeOf_lt_of_mem h; simp at this; omega
+  · have := List.sizeOf_lt_of_mem h₁; have := List.sizeOf_lt_of_mem h₂; simp at *; omega
 
 private def putTestsWith (putScalar : Nat → PutM Unit) (encode : F → Nat)
     (tests : List (Register × F)) : PutM Unit :=

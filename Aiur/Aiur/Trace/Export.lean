@@ -308,23 +308,34 @@ def putDepth (cfg : Depth.Config) (source : Circuit.Chip F) : PutM Unit := do
     | .gap => do u8 2; nat column
     | .external => do u8 3; nat column
 
-/-- The trace section of an artifact: population plans for every function,
-the activated depth circuits (`Depth.system` of the physical circuits), and
-the checked function groups over them. It also returns `exported` with the
-range maps (`depthBytecode`), which the package must carry. -/
-def exportPreparedPlanWithEncoding [Field F] [DecidableEq F] (encoding : FieldEncoding)
-    (modulus : Nat) (encode : F → Nat)
+/-- The depth configuration of `physical` and the bytecode the package
+carries: `exported`'s with the depth pass's range maps (`depthBytecode`).
+Every map of `program` must be an exported map, so that the package's map
+names cover the map claims of the circuits. -/
+def exportBytecode [Field F] [DecidableEq F] (modulus : Nat)
     (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
-    (exported : Execution.Export F) (groups : List (String × List String) := [])
-    (replays : Option (List (Except String (Replay F))) := none) :
-    Except String (Execution.Export F × ByteArray) := do
+    (exported : Execution.Export F) (replays : Option (List (Except String (Replay F))) := none) :
+    Except String (Depth.Config × Execution.Bytecode F) := do
   let original := exported.bytecode
   unless program.functions.length == artifact.layouts.length && program.functions.length == original.functions.length do
     throw "trace program/function count mismatch"
   if let some replays := replays then
     unless replays.length == program.functions.length do throw "trace replay count mismatch"
   let cfg ← depthConfig modulus physical
-  let bytecode := depthBytecode cfg original
+  unless program.maps.all (fun m => original.maps.any (·.name == m.name)) do
+    throw "a program map is not among the exported maps"
+  return (cfg, depthBytecode cfg original)
+
+/-- The trace section for the depth configuration `cfg` and the package
+bytecode `bytecode` (`exportBytecode`): population plans for every function
+of `original`, the activated depth circuits (`Depth.system` of the physical
+circuits), and the checked function groups over them. -/
+def exportTraceSection [Field F] [DecidableEq F] (encoding : FieldEncoding)
+    (modulus : Nat) (encode : F → Nat)
+    (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
+    (original : Execution.Bytecode F) (cfg : Depth.Config) (bytecode : Execution.Bytecode F)
+    (groups : List (String × List String) := [])
+    (replays : Option (List (Except String (Replay F))) := none) : Except String ByteArray := do
   let system := Depth.system cfg physical.system
   let callableNames := bytecode.functions.map (·.name) ++ bytecode.maps.map (·.name)
   let id := fun name => if callableNames.contains name then pure (callableNames.idxOf name)
@@ -362,6 +373,19 @@ def exportPreparedPlanWithEncoding [Field F] [DecidableEq F] (encoding : FieldEn
         putChip encode chip
         putDepth cfg source
       listP plan.groups fun p => putGroup encode p.checked.layout
+  return trace
+
+/-- The trace section of an artifact (`exportTraceSection`), with `exported`
+carrying the range maps (`exportBytecode`), which the package must carry. -/
+def exportPreparedPlanWithEncoding [Field F] [DecidableEq F] (encoding : FieldEncoding)
+    (modulus : Nat) (encode : F → Nat)
+    (program : Program F) (artifact : Optimized.Artifact F) (physical : Physical.Prepared artifact)
+    (exported : Execution.Export F) (groups : List (String × List String) := [])
+    (replays : Option (List (Except String (Replay F))) := none) :
+    Except String (Execution.Export F × ByteArray) := do
+  let (cfg, bytecode) ← exportBytecode modulus program artifact physical exported replays
+  let trace ← exportTraceSection encoding modulus encode program artifact physical exported.bytecode cfg
+    bytecode groups replays
   return ({ exported with bytecode }, trace)
 
 /-- The version-two trace section with UInt64 field values. -/

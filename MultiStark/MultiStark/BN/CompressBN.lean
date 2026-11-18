@@ -13,7 +13,7 @@ module CompressBN {
   type Digest=KzgIO::Digest;
   type Values=Lists::List<Field>;
 
-  fn take8(values: Values) -> ([Field;8],Values) {
+  inline fn take8(values: Values) -> ([Field;8],Values) {
     let Lists::Node::Cons(v0,values)=*values;
     let Lists::Node::Cons(v1,values)=*values;
     let Lists::Node::Cons(v2,values)=*values;
@@ -54,8 +54,8 @@ module CompressBN {
     }
   }
 
-  inline fn point_bytes(point: BN254G1::Point, tail: Bytes::Stream) -> Bytes::Stream {
-    KzgIO::prepend32(Blake3::address_from_fields(BN254G1::to_bytes(point)),tail)
+  fn digest_onto(digest: Digest, tail: Bytes::Stream) -> Bytes::Stream {
+    KzgIO::prepend32(KzgIO::digest_bytes(digest),tail)
   }
 
   inline fn domain(tail: Bytes::Stream) -> Bytes::Stream {
@@ -85,10 +85,12 @@ module CompressBN {
   fn fold(policy: Digest, statement: Digest, stage: Field, key_digest: Digest, proof_digest: Digest,
       previous_a: BN254G1::Point, previous_b: BN254G1::Point, current_a: BN254G1::Point, current_b: BN254G1::Point)
       -> (BN254G1::Point,BN254G1::Point) {
-    let tail=point_bytes(previous_a,point_bytes(previous_b,point_bytes(current_a,point_bytes(current_b,&(Lists::Node::Nil)))));
-    let tail=KzgIO::prepend32(KzgIO::digest_bytes(key_digest),KzgIO::prepend32(KzgIO::digest_bytes(proof_digest),tail));
+    let points=&(Lists::Node::Cons(previous_a,&(Lists::Node::Cons(previous_b,
+      &(Lists::Node::Cons(current_a,&(Lists::Node::Cons(current_b,&(Lists::Node::Nil)))))))));
+    let tail=KzgIO::fields_to_bytes(BN254G1::point_list_bytes(points));
+    let tail=digest_onto(key_digest,digest_onto(proof_digest,tail));
     let tail=KzgIO::prepend4(UInt32::to_bytes(KzgIO::digest_word(stage)),tail);
-    let tail=KzgIO::prepend32(KzgIO::digest_bytes(policy),KzgIO::prepend32(KzgIO::digest_bytes(statement),tail));
+    let tail=digest_onto(policy,digest_onto(statement,tail));
     let weight=KzgTranscript::derive(domain(tail));
     assert_eq!(Fields::is_zero(weight),0,"zero compression fold challenge");
     let a=KzgMsm::msm(&(Lists::Node::Cons((previous_a,weight),&(Lists::Node::Nil))));
@@ -96,16 +98,16 @@ module CompressBN {
     (BN254G1::add(current_a,a),BN254G1::add(current_b,b))
   }
 
-  fn step_v1(policy_digest: Digest, stage: Field, statement: Digest) -> ([Field;4],Bytes::Stream) {
-    KzgIO::digest_bytes(policy_digest); KzgIO::digest_bytes(statement);
+  fn step_v1(policy_digest: Digest, stage: Field, statement: Digest) -> ([Field;4],KzgIO::Input) {
+    digest_onto(policy_digest,&(Lists::Node::Nil)); digest_onto(statement,&(Lists::Node::Nil));
     KzgIO::digest_word(stage);
     assert_eq!(UInt32::less_than_fields(0,stage),1,"compression stage must be positive");
-    let policy_bytes=KzgIO::channel(4);
-    assert_eq!(Blake3::pack_digest(Blake3::hash(policy_bytes)),policy_digest,"compression policy digest mismatch");
+    let (policy_bytes,policy_length)=KzgIO::sized_channel(4);
+    assert_eq!(Blake3::pack_digest(KzgBlake3::hash_input(policy_bytes,policy_length)),policy_digest,"compression policy digest mismatch");
     let policy=KzgDeserialize::policy(policy_bytes);
     let KzgDeserialize::Policy::Mk(anchors,gl_key,_gl_entry,bn_key,_bn_entry)=policy;
-    let key_bytes=KzgIO::channel(1);
-    let key_digest=Blake3::pack_digest(Blake3::hash(key_bytes));
+    let (key_bytes,key_length)=KzgIO::sized_channel(1);
+    let key_digest=Blake3::pack_digest(KzgBlake3::hash_input(key_bytes,key_length));
     let expected=match stage {1=>gl_key,_=>bn_key};
     assert_eq!(key_digest,expected,"unauthorized compression predecessor key");
     let key=KzgDeserialize::key(key_bytes);
@@ -113,8 +115,8 @@ module CompressBN {
     KzgIO::equal_bytes(anchors,key_anchors);
     let claims=KzgDeserialize::claims(KzgIO::channel(2));
     let (previous_a,previous_b)=previous(policy,policy_digest,stage,statement,claims);
-    let proof_bytes=KzgIO::channel(3);
-    let proof_digest=Blake3::pack_digest(Blake3::hash(proof_bytes));
+    let (proof_bytes,proof_length)=KzgIO::sized_channel(3);
+    let proof_digest=Blake3::pack_digest(KzgBlake3::hash_input(proof_bytes,proof_length));
     let (current_a,current_b)=KzgVerifier::verify(key,KzgDeserialize::proof(proof_bytes),claims);
     let (a,b)=fold(policy_digest,statement,stage,key_digest,proof_digest,previous_a,previous_b,current_a,current_b);
     (KzgAccumulator::pack(a,b),anchors)
