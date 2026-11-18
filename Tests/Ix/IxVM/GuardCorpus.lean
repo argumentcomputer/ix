@@ -311,6 +311,21 @@ def runFamilies (cp : Corpus) (out : System.FilePath) : IO UInt32 := do
   let nameOf := namesOf cp.env
   let blockName (b : Address) : String :=
     nameOf.getD (projWrapperAddr (.iPrj ⟨0, b⟩)) (toString b)
+  -- each family record: its recursors, their motive counts, and whether a type or a rule holds a `let`
+  let mut famRecs := 0
+  for (a, b) in families do
+    if let some c := cp.env.getConst? a then
+      if let .muts ms := c.info then
+        let recs := ms.zipIdx.filterMap fun (m, i) => match m with
+          | .recr r => some (nameOf.getD (projWrapperAddr (.rPrj ⟨i.toUInt64, a⟩)) s!"{a}#{i}", r)
+          | _ => none
+        famRecs := famRecs + recs.size
+        let tyLets := recs.filter fun (_, r) => anyIn c.sharing isLet r.typ
+        let ruleLets := recs.filter fun (_, r) => r.rules.any fun rl => anyIn c.sharing isLet rl.rhs
+        IO.println s!"FAMREC {blockName b}\t{a}\trecursors={recs.size}\t\
+          motives={recs.map (·.2.motives.toNat)}\ttype-lets={tyLets.size}\trule-lets={ruleLets.size}\t\
+          names={recs.map (·.1)}"
+  IO.println s!"FAMRECS {families.size} family records, {famRecs} recursors"
   let mut lines : Array String := #[]
   let mut withPayload := 0
   let mut basis : Std.HashMap String Nat := {}
@@ -358,11 +373,13 @@ def runFamilies (cp : Corpus) (out : System.FilePath) : IO UInt32 := do
   -- `IX_GUARD_CORPUS_TYPES_ONLY`: each claim owns the inductive block and its projections only;
   -- the family check runs on the block's own arm and reads the family record through the advice
   let typesOnly := (← IO.getEnv "IX_GUARD_CORPUS_TYPES_ONLY").isSome
+  -- `IX_GUARD_CORPUS_EXERCISE`: the function an accepted family claim must call
+  let exercise := (← IO.getEnv "IX_GUARD_CORPUS_EXERCISE").getD "KernelModeled::check_family"
   let cases : Array Builder := rep.advice.map fun (b, adv) => fun _ => do
     let owned := groups.getD b #[] ++ (if typesOnly then #[] else groups.getD adv.layout.recBlock #[])
     let (_, witness) ← buildShardCheckEnvWitness env owned (assumeBinding := true)
     return { label := s!"family {blockName b}: {owned.size} owned, {adv.records.size} advice records",
-             accept := true, exercises := some "KernelModeled::check_family",
+             accept := true, exercises := some exercise,
              expectedFftCost := pin, witness }
   -- a claim that reaches a modeled block through a type and none of its recursors, with
   -- the models attached: `autoParam`, whose type names `Lean.Syntax`

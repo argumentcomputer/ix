@@ -1275,23 +1275,37 @@ def aux_count := aiur_fn⟦
     }
 ⟧
 
-  -- Every auxiliary entry of `derived` is one of `flat`'s. The derived entries are distinct,
-  -- and `flat`'s are distinct by type and parameters, so with equal counts the two sets agree.
+  -- `derived` and `flat` are the same entries in the same order: the family record's
+  -- auxiliary members are the derived ones, in the derived order.
 
 def aux_all_in := aiur_fn⟦
   fn aux_all_in(derived: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>,
                 flat: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>) -> Field {
       match (*(derived)) {
-        Lists::Node::Nil => {  1 } ,
+        Lists::Node::Nil => {
+          match (*(flat)) {
+            Lists::Node::Nil => {  1 } ,
+            _ => {  0 } ,
+          } } ,
         Lists::Node::Cons(m, rest) => {
-          match m {
-            (a, is_aux, s, u) => {
-              match is_aux {
-                0 => {  aux_all_in(rest, flat) } ,
-                _ => {
-                  match aux_entry_in(flat, a, s, u) {
-                    1 => {  aux_all_in(rest, flat) } ,
-                    _ => {  0 } ,
+          match (*(flat)) {
+            Lists::Node::Nil => {  0 } ,
+            Lists::Node::Cons(m2, rest2) => {
+              match m {
+                (a, is_aux, s, u) => {
+                  match m2 {
+                    (a2, is_aux2, s2, u2) => {
+                      let same_kind = match is_aux - is_aux2 {
+                        0 => {  1 } ,
+                        _ => {  0 } ,
+                      };
+                      let same = ((Bytes::address_eq(a, a2) * same_kind) *
+                        KernelCheck::spec_params_ptr_eq(s, s2)) *
+                        KernelCheck::level_list_struct_eq(u, u2);
+                      match same {
+                        1 => {  aux_all_in(rest, rest2) } ,
+                        _ => {  0 } ,
+                      } } ,
                   } } ,
               } } ,
           } } ,
