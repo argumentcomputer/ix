@@ -20,7 +20,10 @@ it over the stores of the proof.
 * `projGuardCert_of_checkNativeTable`: **install**. The table stage of IxC's native install,
   run at field sorts `sorts` (the caller's argument), stores a table whose certificate holds as
   soon as those sorts have the zero-sets of the classifier's signatures. The sorts to pass are
-  the ones the installing run's checked field loop computed.
+  the rules-tier sorts of the field domains that the reading of the installing run's checked
+  field loop yields (`GuardData.check_prop_fields_sorts`). The levels the circuit itself
+  computes are simplified (`level_imax a 0 = 0`): they equal those sorts at every assignment,
+  not as syntax, which is all the certificate reads of them.
 * `GuardCerts.fireSem`: **use**. The clause over `R`, and one use observed over any record store
   `E` for `R`, give `Rules.FireSem` at the use's levels. The store `E` is constrained by
   `Typing.RecordsFor R E` alone, and no limit occurs.
