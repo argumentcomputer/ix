@@ -587,8 +587,8 @@ structure BatchGives (K : FamRunCtx) : Prop where
   `Rec` arm, each on a modeled block): the block of a scope check is listed by no scope check's
   own advice walk. -/
   listedNotScope : ∀ B rb cs B' rb' cs' advAs (k : Nat) b, K.ScopeAt B rb cs →
-    K.ScopeAt B' rb' cs' → FamilyCallOwn K.calls K.bAddr K.t B' rb' K.lim cs' advAs → advAs[k]? = some b →
-    Core.ixAddr b ≠ B
+    K.ScopeAt B' rb' cs' → FamilyCallOwn K.calls K.bAddr K.t B' rb' K.lim cs' advAs →
+    advAs[k]? = some b → Core.ixAddr b ≠ B
   /-- `check_advice_record`'s arms (an advice block is a block of inductive types), read through
   `check_family`'s unfolding: an advice record with a constant address that a scope check's own
   advice walk lists is no family check's record (`adviceChecked`'s first part, for every scope
@@ -640,6 +640,17 @@ structure NoBatchFields (K : FamRunCtx) : Prop where
   containerKind : ∀ (cs : List (Call F)) a c, ContainerRecCheckIn cs K.bAddr K.t K.lim a →
     (∀ cl ∈ cs, cl ∈ K.calls) → recordOf K.E₀ a = some c →
     (∀ ax, c.info ≠ .axio ax) ∧ ∀ q, c.info ≠ .quot q
+
+/-- **The facts of unchanged functions, proved**: a container's recursor's check reads the record
+through `rec_family_block`'s `get_ci`, which answers an axiom or a quotient record with no `Rec`
+(`Decl.containerRec_kind`). -/
+theorem noBatchFields_of (K : FamRunCtx) {seeds : List _root_.Address}
+    {rank : _root_.Address → Nat}
+    (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank) :
+    NoBatchFields K := by
+  refine ⟨fun cs a c hcont hsub hc => ?_⟩
+  obtain ⟨h, h', rc, xa, ib, r, cs₁, hrc, haddr, ev, hsub₁⟩ := hcont
+  exact Decl.containerRec_kind hW.runStore haddr ev (fun cl hcl => hsub cl (hsub₁ cl hcl)) hc
 
 /-- **The member and constructor projection records of an inner block are in the store**: an
 advice block's members were checked by `check_muts_all` (`Decl.adviceBlock_checked`), so their

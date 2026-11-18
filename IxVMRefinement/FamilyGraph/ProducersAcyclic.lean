@@ -1053,22 +1053,22 @@ theorem familyRanking_of (Pref : RunPref)
     (rankEdges_of hW hG hB hshape (FamRunCtx.famEdge_acyclic hW hG hB))⟩
 
 /-- **Row `familyGraph` with the selector's form fact, from what the run's functions give**, the
-ranking proved: the batch's (`BatchGives`), the facts of unchanged functions not yet proved here
-(`NoBatchFields`), and the stored twins' field (to be restated). -/
+ranking and the facts of unchanged functions proved: the batch's (`BatchGives`) and the stored
+twins' field (to be restated). -/
 theorem familyGraphRowPref_of_batch (Pref : RunPref)
     (batch : AtWalk.{u} Pref fun K _ => BatchGives K)
-    (noBatch : AtWalk.{u} Pref fun K _ => NoBatchFields K)
     (storedTwin : AtWalk.{u} Pref fun K _ => StoredTwinField K) :
     FamilyGraphRowPref.{u} Pref :=
-  familyGraphRowPref_of_parts Pref batch noBatch (familyRanking_of Pref batch) storedTwin
+  familyGraphRowPref_of_parts Pref batch
+    (fun _ _ _ _ _ _ _ _ hW _ _ _ _ => noBatchFields_of _ hW)
+    (familyRanking_of Pref batch) storedTwin
 
-/-- **Row `familyGraph` from what the run's functions give**, the ranking proved
-(`familyGraphRowPref_of_batch` without the form fact). -/
+/-- **Row `familyGraph` from what the run's functions give**, the ranking and the facts of
+unchanged functions proved (`familyGraphRowPref_of_batch` without the form fact). -/
 theorem familyGraphRow_of_batch (Pref : RunPref)
     (batch : AtWalk.{u} Pref fun K _ => BatchGives K)
-    (noBatch : AtWalk.{u} Pref fun K _ => NoBatchFields K)
     (storedTwin : AtWalk.{u} Pref fun K _ => StoredTwinField K) :
     FamilyGraphRow.{u} :=
-  familyGraphRow_of_pref (familyGraphRowPref_of_batch Pref batch noBatch storedTwin)
+  familyGraphRow_of_pref (familyGraphRowPref_of_batch Pref batch storedTwin)
 
 end IxVM.Refinement.Typing
