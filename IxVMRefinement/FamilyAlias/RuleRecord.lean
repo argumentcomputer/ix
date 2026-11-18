@@ -59,7 +59,7 @@ theorem take_dropLast_of_lt {α : Type} :
   | [_], _ + 1, h => absurd h (by simp)
   | _ :: _ :: _, 0, _ => rfl
   | a :: b :: l, n + 1, h => by
-    rw [List.dropLast_cons₂, List.take_succ_cons, List.take_succ_cons,
+    rw [List.dropLast_cons_cons, List.take_succ_cons, List.take_succ_cons,
       take_dropLast_of_lt (l := b :: l) (n := n) (by simp only [List.length_cons] at h ⊢; omega)]
 
 theorem take_drop_dropLast_append {α : Type} (m : α) (l : List α) (n k : Nat)
