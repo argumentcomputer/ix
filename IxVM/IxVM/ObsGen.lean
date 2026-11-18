@@ -24,8 +24,26 @@ replaced by the value it was bound to:
 The proof inverts the derivation node by node with the generic lemmas of
 `IxVMRefinement.Core.Obs` and closes each path with its constructor.
 
-The generator reads only the program (`IxVM.program`): its output follows the
-source. It is untrusted; Lean checks every generated proof. -/
+The generator reads only the program (`IxVM.program`) and the table of names
+(`IxVM/IxVM/ObsNames.txt`): its output follows the source. It is untrusted; Lean
+checks every generated proof.
+
+**Names.** A generated name is a base (`ev`, `hv`, `m`, …) and a suffix. It is asked
+for at a *position* in the function: the arms selected so far in matches of several
+arms, the place in the body (the chain of enclosing statements and operands, a
+statement being named by what it binds and what it calls, not by its index), the
+base, and how many names of that base the place has been given. A position does not
+move when a statement is added or removed before it.
+
+* A name that appears in a constructor (a binder that is kept, a fact) is *shown*:
+  proofs refer to it. Its suffix is the table's entry for the position if there is
+  one, and `_` with eight letters derived from the position otherwise.
+* Every other name is local to the generated proof and keeps the suffix of a
+  counter that runs through the function.
+
+The table holds, for each position that was shown when it was written, the suffix
+the counter gave it then (`--emit-names`): at that source, the output is the
+counter's, byte for byte. The table is never extended. -/
 
 namespace IxVM.ObsGen
 
@@ -125,10 +143,52 @@ def renderSegs (sub : List (String × T)) : List Seg → String
     s!"((⟨{n}, {list (args.map fun a => (a.resolve sub).render)}, {(h.resolve sub).render}⟩ : Call F) :: {renderSegs sub rest})"
   | .sub c :: rest => s!"({c} ++ {renderSegs sub rest})"
 
+/-! ## Positions of names -/
+
+/-- A 64-bit mixing step (the finalizer of MurmurHash3). -/
+def mix64 (h : UInt64) : UInt64 :=
+  let h := (h ^^^ (h >>> 33)) * 0xff51afd7ed558ccd
+  let h := (h ^^^ (h >>> 33)) * 0xc4ceb9fe1a85ec53
+  h ^^^ (h >>> 33)
+
+/-- A string's hash: FNV-1a over its UTF-8 bytes, mixed. Written out here, so that the
+names derived from it do not depend on the toolchain's `hash`. -/
+def strHash (s : String) : UInt64 :=
+  mix64 (s.toUTF8.data.foldl (fun h b => (h ^^^ b.toUInt64) * 1099511628211) 14695981039346656037)
+
+def combine (a b : UInt64) : UInt64 :=
+  mix64 (a * 0x9e3779b97f4a7c15 + b + 1)
+
+/-- A position's key as the table writes it: sixteen hexadecimal digits. -/
+def hex (h : UInt64) : String :=
+  let ds := Nat.toDigits 16 h.toNat
+  String.ofList (List.replicate (16 - ds.length) '0' ++ ds)
+
+/-- Eight letters derived from a position: the suffix of a shown name the table does not have. -/
+def letters (h : UInt64) : String :=
+  String.ofList ((List.range 8).map fun i => Char.ofNat (97 + (h.toNat / 26 ^ i) % 26))
+
+/-- One request for a name: the position's key, the base, the counter's suffix, the kind
+(0: the function's counter; 1: the counter of the facts kept after the call equation; 2: a
+segment's name, always shown), the inductive it belongs to (0: the function's paths; `i`: its
+`i`-th segment), and the position in words (`--explain` only). -/
+structure Req where
+  key : UInt64
+  base : String
+  sfx : String
+  kind : Nat
+  unit : Nat
+  desc : String
+  deriving Inhabited
+
 /-! ## State -/
 
 /-- What one path has established so far. -/
 structure Path where
+  /-- The arms selected so far in matches of several arms: a hash of their patterns' shapes
+  in order (part of a name's position), and the same in words. -/
+  ctx : UInt64 := 0
+  ctxs : String := ""
   binders : Array (String × String) := #[]
   subst : List (String × T) := []
   /-- Field name, fact template, proof term, and a subject: the fact is dropped when
@@ -191,34 +251,65 @@ structure St where
   lateUsed : Bool := false
   /-- The suffix of the extended pass's names (`X`). -/
   suffix : String := ""
+  /-- Every request for a name in this pass, in order. -/
+  trace : Array Req := #[]
+  /-- How many names each place has been given under each base. -/
+  ords : Std.HashMap UInt64 Nat := {}
+  /-- The names that appear in a constructor, as `unit/kind/name`. -/
+  shown : Std.HashSet String := {}
+  /-- The names of the requests by index, when the pass is run again to rename. -/
+  assigned : Option (Array String) := none
+  /-- The inductive being generated: 0 the function's paths, `i` its `i`-th segment. -/
+  unit : Nat := 0
+  /-- Keep each request's position in words. -/
+  explain : Bool := false
 
 abbrev M := StateT St (Except String)
 
-def fresh (base : String) : M String := do
+/-- A name for the position `(arms selected, sc, base, how many before)`: the counter's
+(`base ++ sfx`), or the one assigned to this request when the pass is run again. -/
+def request (sc base sfx : String) (kind : Nat) : M String :=
+  modifyGet fun s =>
+    let ctx : UInt64 := if kind == 2 then 0 else s.path.ctx
+    let h := combine (combine ctx (strHash sc)) (strHash base)
+    -- the two collections are taken out of the state, so that they are updated in place
+    let ords := s.ords
+    let trace := s.trace
+    let s := { s with ords := ∅, trace := #[] }
+    let n := ords.getD h 0
+    let name := match s.assigned with
+      | some names => names.getD trace.size (base ++ sfx)
+      | none => base ++ sfx
+    let desc := if s.explain then s!"{s.path.ctxs} @ {sc} : {base} #{n}" else ""
+    (name, { s with
+      ords := ords.insert h (n + 1),
+      trace := trace.push { key := combine h n.toUInt64, base, sfx, kind, unit := s.unit, desc } })
+
+def fresh (sc base : String) : M String := do
   let s ← get
   set { s with counter := s.counter + 1 }
-  return s!"{base}{s.counter}"
+  request sc base (toString s.counter) 0
 
-def freshLate (base : String) : M String := do
+def freshLate (sc base : String) : M String := do
   let s ← get
   set { s with lateCounter := s.lateCounter + 1 }
-  return s!"{base}{s.lateCounter}"
+  request sc base (toString s.lateCounter) 1
 
 def modifyPath (f : Path → Path) : M Unit :=
   modify fun s => { s with path := f s.path }
 
 /-- A new path variable of a type. -/
-def binder (base type : String) : M String := do
-  let n ← fresh base
+def binder (sc base type : String) : M String := do
+  let n ← fresh sc base
   modifyPath fun p => { p with binders := p.binders.push (n, type), used := p.used.push n }
   return n
 
 /-- A binder named after a source variable, unique on the path. -/
-def namedBinder (src type : String) : M String := do
+def namedBinder (sc src type : String) : M String := do
   let base := "x_" ++ src
   let p := (← get).path
   let taken := (← get).params.contains base || p.used.contains base
-  let n ← if taken then fresh (base ++ "_") else pure base
+  let n ← if taken then fresh sc (base ++ "_") else pure base
   modifyPath fun p => { p with binders := p.binders.push (n, type), used := p.used.push n }
   return n
 
@@ -239,11 +330,11 @@ def useLemma (l : String) : M Unit :=
 
 /-- Bind a destination: a path variable takes the term, a parameter gets an
 equation proved by `rfl` (Lean has substituted it). -/
-def assign (dest t : T) : M Unit := do
+def assign (sc : String) (dest t : T) : M Unit := do
   match ← resolveT dest with
   | .v n =>
     if ← isParam n then
-      let f ← fresh "he"
+      let f ← fresh sc "he"
       addFact f [.s s!"{n} = ", .t t] "rfl" false
     else
       if (← resolveT t).mentions n then throw "cyclic assignment"
@@ -415,9 +506,83 @@ def uniqueName (taken : Array String) (base : String) : String := Id.run do
     if !taken.contains s!"{base}_{i}" then return s!"{base}_{i}"
   return base
 
+/-! ## Places in the body
+
+A place is a string: the chain of enclosing nodes, each by its tag. The statements of a block
+(`let`s and matches of one arm, whose bodies are the rest of the block) are siblings: each is
+tagged by what it binds and what it binds it to, so that a statement keeps its place when
+another is added or removed before it. -/
+
+/-- A pattern without its variables' names: an arm keeps its place when a variable is renamed. -/
+partial def patShape : Pattern F → String
+  | .literal c => field c
+  | .wildcard | .bind _ => "_"
+  | .global n _ => n
+  | .load p => "*" ++ patShape p
+  | .tuple ps => "(" ++ ", ".intercalate (ps.map patShape) ++ ")"
+  | .array ps => "[" ++ ", ".intercalate (ps.map patShape) ++ "]"
+  | .construct t c ps | .constructAs _ t c ps =>
+    tyStr t ++ "." ++ c ++ "(" ++ ", ".intercalate (ps.map patShape) ++ ")"
+  | p => patKind p
+
+/-- A pattern with its variables' names: what a statement binds. -/
+partial def patText : Pattern F → String
+  | .bind n => n
+  | .load p => "*" ++ patText p
+  | .tuple ps => "(" ++ ", ".intercalate (ps.map patText) ++ ")"
+  | .array ps => "[" ++ ", ".intercalate (ps.map patText) ++ "]"
+  | .construct t c ps | .constructAs _ t c ps =>
+    tyStr t ++ "." ++ c ++ "(" ++ ", ".intercalate (ps.map patText) ++ ")"
+  | p => patShape p
+
+/-- A node's own tag, without its operands. -/
+def nodeTag : Expr F → String
+  | .literal c => s!"lit {field c}"
+  | .var n => s!"var {n}"
+  | .global n _ => s!"global {n}"
+  | .tuple _ => "tuple"
+  | .array _ => "array"
+  | .repeat _ n => s!"repeat {n}"
+  | .index _ i => s!"index {i}"
+  | .slice _ a _ => s!"slice {a}"
+  | .construct n _ c _ => s!"new {n}.{c}"
+  | .constructAs _ t c _ => s!"new {tyStr t}.{c}"
+  | .record _ _ => "record"
+  | .member _ f => s!"member {f.name}"
+  | .update _ _ => "update"
+  | .builtin (.assertEq _) _ => "assert"
+  | .builtin (.ascribe _) _ => "ascribe"
+  | .builtin (.debug _) _ => "debug"
+  | .project _ i => s!"project {i}"
+  | .letValue _ _ _ => "let"
+  | .store _ => "store"
+  | .load _ => "load"
+  | .hint _ _ _ => "hint"
+  | .neg _ => "neg"
+  | .binary .add _ _ => "add"
+  | .binary .sub _ _ => "sub"
+  | .binary .mul _ _ => "mul"
+  | .binary .div _ _ => "div"
+  | .call n _ _ => s!"call {n}"
+  | .matchValue _ _ => "match"
+  | .control _ _ => "control"
+
+/-- What a statement binds its pattern to, as far as it tells the statement from its
+neighbours: a call's callee, an assertion's two sides by their tags. -/
+def anchor : Expr F → String
+  | .builtin (.assertEq _) es => "assert(" ++ ", ".intercalate (es.map nodeTag) ++ ")"
+  | .matchValue x _ => "match " ++ nodeTag x
+  | e => nodeTag e
+
+/-- A node's tag in its place: a statement by what it binds and to what. -/
+def placeTag : Expr F → String
+  | .letValue p x _ => s!"let {patText p} = {anchor x}"
+  | .matchValue x [(p, _)] => s!"match {anchor x} as {patText p}"
+  | e => nodeTag e
+
 /-- The leaf: the call list's equation, then the path's constructor (of the inductive `ind`). -/
-def leaf (ind : String) (segs : List Seg) : M (List String) := do
-  let hcName ← fresh "hc"
+def leaf (sc ind : String) (segs : List Seg) : M (List String) := do
+  let hcName ← fresh (sc ++ "/leaf") "hc"
   let s ← get
   if s.ctors.size ≥ s.maxPaths then throw "too many paths"
   if s.path.facts.size > 150 then throw "too many facts on a path"
@@ -448,7 +613,12 @@ def leaf (ind : String) (segs : List Seg) : M (List String) := do
   let text := s!"  | {name}" ++
     (if bs.isEmpty then "" else "\n      " ++ " ".intercalate bs) ++
     String.join (fields.map ("\n      " ++ ·))
-  modify fun s => { s with ctors := s.ctors.push { name, text } }
+  -- what the constructor shows: its binders, its facts
+  let unit := s.unit
+  let shown := binders.foldl (fun acc (n, _) => acc.insert s!"{unit}/0/{n}") s.shown
+  let shown := p.facts.foldl (fun acc (n, _, _, _) => acc.insert s!"{unit}/0/{n}") shown
+  let shown := p.late.foldl (fun acc (n, _, _) => acc.insert s!"{unit}/1/{n}") shown
+  modify fun s => { s with ctors := s.ctors.push { name, text }, shown := shown }
   let norm := if p.stored then
       let hs := p.hyps.toList
       [s!"try simp only [Value.type, List.map_cons, List.map_nil] at {" ".intercalate hs} ⊢"]
@@ -486,11 +656,16 @@ def segmentable (x : Expr F) : M Bool := do
 mutual
   /-- Invert derivation `d` of `e` (input heap `hin`; destinations `dv`, `dh`),
   then continue with the call segments. -/
-  partial def inv (e : Expr F) (d : String) (env : Env) (hin dv dh : T) (k : K) :
+  partial def inv (sc0 : String) (e : Expr F) (d : String) (env : Env) (hin dv dh : T) (k : K) :
       M (List String) := do
     let s ← get
     if s.work ≥ 20000 then throw "too large"
     set { s with work := s.work + 1 }
+    -- the node's place; a statement's body continues in the enclosing place `sc0`
+    let sc := sc0 ++ "/" ++ placeTag e
+    let fresh := fresh sc
+    let binder := binder sc
+    let assign := assign sc
     match e with
     | .var n =>
       let some t := env.lookup n | throw s!"unbound variable {n}"
@@ -515,21 +690,21 @@ mutual
       let items ← es.mapM fun _ => binder "v" "SourceValue F"
       assign dv (.tuple (items.map .v))
       let lem := match e with | .tuple _ => "tuple_inv" | _ => "array_inv"
-      return [s!"obtain ⟨{vs}, {a}, rfl⟩ := {d}.{lem}"] ++ (← invArgs es a env hin items dh k)
+      return [s!"obtain ⟨{vs}, {a}, rfl⟩ := {d}.{lem}"] ++ (← invArgs sc 0 es a env hin items dh k)
     | .construct name targs ctor es =>
       let (lit, lem) ← instName name targs
       let vs ← fresh "vs"; let a ← fresh "a"; let hr ← fresh "hres"
       let items ← es.mapM fun _ => binder "v" "SourceValue F"
       assign dv (.ctor lit ctor (items.map .v))
       return [s!"obtain ⟨{vs}, {a}, {hr}⟩ := {d}.construct_inv", s!"rw [{lem}] at {hr}",
-        s!"subst {hr}"] ++ (← invArgs es a env hin items dh k)
+        s!"subst {hr}"] ++ (← invArgs sc 0 es a env hin items dh k)
     | .constructAs _ t ctor es =>
       let (lit, lem) ← ctorName t
       let vs ← fresh "vs"; let a ← fresh "a"; let hr ← fresh "hres"
       let items ← es.mapM fun _ => binder "v" "SourceValue F"
       assign dv (.ctor lit ctor (items.map .v))
       return [s!"obtain ⟨{vs}, {a}, {hr}⟩ := {d}.constructAs_inv", s!"rw [{lem}] at {hr}",
-        s!"subst {hr}"] ++ (← invArgs es a env hin items dh k)
+        s!"subst {hr}"] ++ (← invArgs sc 0 es a env hin items dh k)
     | .store x =>
       let v ← binder "v" "SourceValue F"; let m ← binder "m" "Heap F"; let d' ← fresh "d"
       let hm ← fresh "hm"
@@ -540,10 +715,10 @@ mutual
       | _ => throw "store destination is not a variable"
       modifyPath fun p => { p with stored := true }
       return [s!"obtain ⟨{v}, {m}, {d'}, rfl, {hm}⟩ := {d}.store_inv"] ++
-        (← inv x d' env hin (.v v) (.v m) k)
+        (← inv sc x d' env hin (.v v) (.v m) k)
     | .load x =>
       let p ← binder "p" "SourceValue F"; let d' ← fresh "d"; let ld ← fresh "ld"
-      let rest ← inv x d' env hin (.v p) dh fun segs => do
+      let rest ← inv sc x d' env hin (.v p) dh fun segs => do
         addFact ld [.s "loadValue ", .t dh, .s " ", .t (.v p), .s " = .ok ", .t dv] ld
         k segs
       return [s!"obtain ⟨{p}, {d'}, {ld}⟩ := {d}.load_inv"] ++ rest
@@ -553,7 +728,7 @@ mutual
       let vs ← fresh "vs"; let m ← binder "m" "Heap F"; let c1 ← fresh "c"
       let c2 ← binder "cs" "List (Call F)"; let a ← fresh "a"; let ev ← fresh "ev"
       let items ← es.mapM fun _ => binder "v" "SourceValue F"
-      let rest ← invArgs es a env hin items (.v m) fun s1 => do
+      let rest ← invArgs sc 0 es a env hin items (.v m) fun s1 => do
         let argPieces : List Piece :=
           ((items.map fun i => [Piece.t (.v i)]).intersperse [Piece.s ", "]).flatten
         addFact ev ([.s s!"ObsFn W {lit} ["] ++ argPieces ++
@@ -568,8 +743,8 @@ mutual
       let o ← fresh "op"
       let opName := match op with
         | .add => ".add" | .sub => ".sub" | .mul => ".mul" | .div => ".div"
-      let rest ← inv l dl env hin (.v x) (.v m) fun s1 =>
-        inv r dr env (.v m) (.v y) dh fun s2 => do
+      let rest ← inv (sc ++ "/l") l dl env hin (.v x) (.v m) fun s1 =>
+        inv (sc ++ "/r") r dr env (.v m) (.v y) dh fun s2 => do
           addFact o [.s s!"evalBinOp {opName} (", .t (.v x), .s " : SourceValue F) (", .t (.v y),
             .s " : SourceValue F) = .ok ", .t dv] o
           k (s1 ++ s2)
@@ -577,7 +752,7 @@ mutual
     | .builtin op es =>
       let vs ← fresh "vs"; let a ← fresh "a"; let ap ← fresh "ap"
       let items ← es.mapM fun _ => binder "v" "SourceValue F"
-      let rest ← invArgs es a env hin items dh fun segs => do
+      let rest ← invArgs sc 0 es a env hin items dh fun segs => do
         match op, items with
         | .ascribe _, [x] =>
           let eq ← fresh "eq"
@@ -597,38 +772,38 @@ mutual
     | .index x i | .project x i =>
       let p ← binder "p" "SourceValue F"; let d' ← fresh "d"; let pr ← fresh "pr"
       let lem := match e with | .index _ _ => "index_inv" | _ => "project_inv"
-      let rest ← inv x d' env hin (.v p) dh fun segs => do
+      let rest ← inv sc x d' env hin (.v p) dh fun segs => do
         addFact pr [.s "projectValue (", .t (.v p), .s s!" : SourceValue F) {i} = .ok ", .t dv] pr
         k segs
       return [s!"obtain ⟨{p}, {d'}, {pr}⟩ := {d}.{lem}"] ++ rest
     | .slice x a b =>
       let p ← binder "p" "SourceValue F"; let d' ← fresh "d"; let pr ← fresh "sl"
       let bs := match b with | some n => s!"(some {n})" | none => "none"
-      let rest ← inv x d' env hin (.v p) dh fun segs => do
+      let rest ← inv sc x d' env hin (.v p) dh fun segs => do
         addFact pr [.s "sliceValue (", .t (.v p), .s s!" : SourceValue F) {a} {bs} = .ok ", .t dv] pr
         k segs
       return [s!"obtain ⟨{p}, {d'}, {pr}⟩ := {d}.slice_inv"] ++ rest
     | .member x f =>
       let p ← binder "p" "SourceValue F"; let d' ← fresh "d"; let pr ← fresh "mb"
-      let rest ← inv x d' env hin (.v p) dh fun segs => do
+      let rest ← inv sc x d' env hin (.v p) dh fun segs => do
         addFact pr [.s s!"memberValue [] {fieldRef f} (", .t (.v p), .s " : SourceValue F) = .ok ", .t dv] pr
         k segs
       return [s!"obtain ⟨{p}, {d'}, {pr}⟩ := {d}.member_inv"] ++ rest
     | .neg x =>
       let p ← binder "p" "SourceValue F"; let d' ← fresh "d"; let pr ← fresh "ng"
-      let rest ← inv x d' env hin (.v p) dh fun segs => do
+      let rest ← inv sc x d' env hin (.v p) dh fun segs => do
         addFact pr [.s "evalNeg (", .t (.v p), .s " : SourceValue F) = .ok ", .t dv] pr
         k segs
       return [s!"obtain ⟨{p}, {d'}, {pr}⟩ := {d}.neg_inv"] ++ rest
     | .repeat x n =>
       let p ← binder "v" "SourceValue F"; let d' ← fresh "d"
       assign dv (.rep n (.v p))
-      return [s!"obtain ⟨{p}, {d'}, rfl⟩ := {d}.repeat_inv"] ++ (← inv x d' env hin (.v p) dh k)
+      return [s!"obtain ⟨{p}, {d'}, rfl⟩ := {d}.repeat_inv"] ++ (← inv sc x d' env hin (.v p) dh k)
     | .update paths es =>
       let vs ← fresh "vs"; let a ← fresh "a"; let up ← fresh "up"
       let items ← es.mapM fun _ => binder "v" "SourceValue F"
       let ps := list (paths.map fun p => list (p.map updateStep))
-      let rest ← invArgs es a env hin items dh fun segs => do
+      let rest ← invArgs sc 0 es a env hin items dh fun segs => do
         addFact up ([.s s!"Update.value [] {ps} ["] ++
           ((items.map (fun i => [Piece.t (.v i)])).intersperse [.s ", "]).flatten ++
           [.s "] = .ok ", .t dv]) up
@@ -639,27 +814,27 @@ mutual
       let x ← binder "x" "SourceValue F"; let c ← binder "k" "Constant F"
       let d' ← fresh "d"; let tp ← fresh "ty"
       assign dv (.app "Constant.toValue" [.v c])
-      let rest ← inv key d' env hin (.v x) dh fun segs => do
+      let rest ← inv sc key d' env hin (.v x) dh fun segs => do
         addFact tp [.s s!"W.typed (Generic.Ty.toCore (Generic.Ty.subst [] {ty t})) ", .t (.v c),
           .s " = true"] tp
         k segs
       return [s!"obtain ⟨{x}, {c}, {d'}, {tp}, rfl⟩ := {d}.hint_inv"] ++ rest
     | .letValue pat x b =>
-      if ← segmentable x then return ← letSegment e pat x b d env hin dv dh k
+      if ← segmentable x then return ← letSegment sc0 sc e pat x b d env hin dv dh k
       let v ← binder "v" "SourceValue F"; let m ← binder "m" "Heap F"
       let bs ← fresh "bs"; let c1 ← fresh "c"; let c2 ← fresh "c"
       let dx ← fresh "d"; let mt ← fresh "mt"; let db ← fresh "d"
-      let rest ← inv x dx env hin (.v v) (.v m) fun s1 => do
-        let (pl, binds) ← patInv (.v v) pat mt (.v m)
+      let rest ← inv sc x dx env hin (.v v) (.v m) fun s1 => do
+        let (pl, binds) ← patInv (sc ++ "/pat") (.v v) pat mt (.v m)
         if ← isDead then return pl
-        return pl ++ (← inv b db (binds ++ env) (.v m) dv dh fun s2 => k (s1 ++ s2))
+        return pl ++ (← inv sc0 b db (binds ++ env) (.v m) dv dh fun s2 => k (s1 ++ s2))
       return [s!"obtain ⟨{v}, {m}, {bs}, {c1}, {c2}, {dx}, {mt}, {db}, rfl⟩ := {d}.letValue_inv"] ++ rest
     | .matchValue x arms =>
       let v ← binder "v" "SourceValue F"; let m ← binder "m" "Heap F"
       let bs ← fresh "bs"; let body ← fresh "body"; let c1 ← fresh "c"; let c2 ← fresh "c"
       let dx ← fresh "d"; let sel ← fresh "sel"; let db ← fresh "d"
-      let rest ← inv x dx env hin (.v v) (.v m) fun s1 =>
-        invArms arms (arms.length > 1) (arms.length ≥ tableArms) sel db env (.v v) (.v m) dv dh
+      let rest ← inv (sc ++ "/on") x dx env hin (.v v) (.v m) fun s1 =>
+        invArms sc0 sc arms (arms.length > 1) (arms.length ≥ tableArms) sel db env (.v v) (.v m) dv dh
           fun s2 => k (s1 ++ s2)
       return [s!"obtain ⟨{v}, {m}, {bs}, {body}, {c1}, {c2}, {dx}, {sel}, {db}, rfl⟩ := {d}.matchValue_inv"] ++
         rest
@@ -672,8 +847,10 @@ mutual
   segment is stated over the whole local environment, entry by entry, in the
   evaluation's order (`bindings ++ locals`, as the generator's `binds ++ env`), so
   that the derivation of `x` instantiates it by unification alone. -/
-  partial def letSegment (e : Expr F) (pat : Pattern F) (x b : Expr F) (d : String) (env : Env)
-      (hin dv dh : T) (k : K) : M (List String) := do
+  partial def letSegment (sc0 sc : String) (e : Expr F) (pat : Pattern F) (x b : Expr F) (d : String)
+      (env : Env) (hin dv dh : T) (k : K) : M (List String) := do
+    let fresh := fresh sc
+    let binder := binder sc
     let s ← get
     let some body := s.body | throw "segment without a body"
     let some pos := body.find? e | throw "segment position"
@@ -681,26 +858,28 @@ mutual
     let names := env.map (·.1)
     let segName ← match s.segs.find? (·.1 == pos) with
       | some (_, n, _) => pure n
-      | none => genSegment pos names x
+      | none => genSegment sc pos names x
     let v ← binder "v" "SourceValue F"; let m ← binder "m" "Heap F"
     let bs ← fresh "bs"; let c1 ← binder "cs" "List (Call F)"; let c2 ← fresh "c"
     let dx ← fresh "d"; let mt ← fresh "mt"; let db ← fresh "d"; let sg ← fresh "sg"
     addFact sg ([.s s!"«{s.fname}».{segName}"] ++ (env.map fun (_, t) => [Piece.s " ", .t t]).flatten ++
       [.s " ", .t hin, .s " ", .t (.v v), .s " ", .t (.v m), .s s!" {c1}"]) sg
-    let (pl, binds) ← patInv (.v v) pat mt (.v m)
+    let (pl, binds) ← patInv (sc ++ "/pat") (.v v) pat mt (.v m)
     let rest ← if ← isDead then pure pl else
-      pure (pl ++ (← inv b db (binds ++ env) (.v m) dv dh fun s2 => k ([Seg.sub c1] ++ s2)))
+      pure (pl ++ (← inv sc0 b db (binds ++ env) (.v m) dv dh fun s2 => k ([Seg.sub c1] ++ s2)))
     return [s!"obtain ⟨{v}, {m}, {bs}, {c1}, {c2}, {dx}, {mt}, {db}, rfl⟩ := {d}.letValue_inv",
       s!"have {sg} := «{s.fname}».{segName.decapitalize} {dx}", s!"clear {dx}"] ++ rest
 
   /-- The segment at `pos`: its inductive and theorem, over the local environment `names`. -/
-  partial def genSegment (pos : List Nat) (names : List String) (x : Expr F) : M String := do
+  partial def genSegment (sc : String) (pos : List Nat) (names : List String) (x : Expr F) :
+      M String := do
+    let s0 ← get
+    let segName ← request sc s!"Seg{s0.suffix}" (toString (s0.segs.size + 1)) 2
     let saved ← get
-    let segName := s!"Seg{saved.suffix}{saved.segs.size + 1}"
     let es := names.zipIdx.map fun (n, i) => s!"e{i}_{sanitize n}"
-    set { saved with path := {}, ctors := #[], params := es ++ ["h", "r", "h'", "calls"], inSeg := true }
-    let script ← inv x "d0" (names.zip (es.map T.v)) (.v "h") (.v "r") (.v "h'")
-      (leaf s!"«{saved.fname}».{segName}")
+    set { saved with path := {}, ctors := #[], params := es ++ ["h", "r", "h'", "calls"], inSeg := true, unit := saved.segs.size + 1 }
+    let script ← inv (sc ++ "/seg") x "d0" (names.zip (es.map T.v)) (.v "h") (.v "r") (.v "h'")
+      (leaf (sc ++ "/seg") s!"«{saved.fname}».{segName}")
     let st ← get
     let lean := saved.leanName
     let ebind := if es.isEmpty then "" else s!"({" ".intercalate es} : SourceValue F) "
@@ -719,52 +898,66 @@ mutual
       s!"  simp only [Expr.sub, Expr.childAt, Expr.children, {lean}, List.map_cons, List.map_nil] at d0\n" ++
       "\n".intercalate (script.map ("  " ++ ·)) ++ "\n"
     let segs := saved.segs.push (pos, segName, ind ++ "\n" ++ thm)
-    set { saved with counter := st.counter, names := st.names, abbrevs := st.abbrevs, work := st.work, lookups := st.lookups, segs := segs, lateUsed := st.lateUsed }
+    set { saved with counter := st.counter, names := st.names, abbrevs := st.abbrevs, work := st.work, lookups := st.lookups, segs := segs, lateUsed := st.lateUsed, trace := st.trace, ords := st.ords, shown := st.shown }
     return segName
 
-  partial def invArgs (es : List (Expr F)) (a : String) (env : Env) (hin : T)
+  partial def invArgs (sc : String) (i : Nat) (es : List (Expr F)) (a : String) (env : Env) (hin : T)
       (items : List String) (dh : T) (k : K) : M (List String) := do
     match es, items with
     | [], [] =>
-      assign dh hin
+      assign (sc ++ "/end") dh hin
       return [s!"obtain ⟨rfl, rfl, rfl⟩ := {a}.nil_inv"] ++ (← k [])
     | e :: es, it :: its =>
+      -- the `i`-th operand's place
+      let me := s!"{sc}/{i}"
+      let fresh := fresh me
+      let binder := binder me
       let vs ← fresh "vs"; let m ← binder "m" "Heap F"; let c1 ← fresh "c"; let c2 ← fresh "c"
       let dh' ← fresh "d"; let a' ← fresh "a"
       return [s!"obtain ⟨{it}, {vs}, {m}, {c1}, {c2}, rfl, {dh'}, {a'}, rfl⟩ := {a}.cons_inv"] ++
-        (← inv e dh' env hin (.v it) (.v m) fun s1 =>
-          invArgs es a' env (.v m) its dh fun s2 => k (s1 ++ s2))
+        (← inv me e dh' env hin (.v it) (.v m) fun s1 =>
+          invArgs sc (i + 1) es a' env (.v m) its dh fun s2 => k (s1 ++ s2))
     | _, _ => throw "argument arity"
 
   /-- Arms in order: the first matched (positive branch) or did not (negative). In a
   table (`table`: a dispatch of at least `tableArms` arms) whose scrutinee is a
   parameter, a matched arm drops the negations of the earlier arms: its own equation
   `x = template` implies them, and keeping them makes the paths quadratic. -/
-  partial def invArms (arms : List (Pattern F × Expr F)) (multi table : Bool) (sel db : String)
-      (env : Env) (V heap dv dh : T) (k : K) : M (List String) := do
+  partial def invArms (sc0 sc : String) (arms : List (Pattern F × Expr F)) (multi table : Bool)
+      (sel db : String) (env : Env) (V heap dv dh : T) (k : K) : M (List String) := do
     match arms with
     | [] => return [s!"exact (selectArm_nil_inv {sel}).elim"]
     | (p, b) :: rest =>
+      -- the arm's place, by its pattern's shape; the body of a match's only arm is the rest
+      -- of the enclosing block (`sc0`), and selecting it is no choice
+      let arm := sc ++ "/arm " ++ patShape p
+      let fresh := fresh arm
       let mt ← fresh "mt"; let nm ← fresh "nm"; let sel' ← fresh "sel"
       let saved := (← get).path
-      if multi then modifyPath fun q => { q with tokens := q.tokens.push (armToken p) }
-      let (pl, binds) ← patInv V p mt heap
+      if multi then modifyPath fun q => { q with
+        tokens := q.tokens.push (armToken p),
+        ctx := combine q.ctx (strHash (patShape p)),
+        ctxs := q.ctxs ++ "/" ++ armToken p }
+      let (pl, binds) ← patInv (arm ++ "/pat") V p mt heap
       if table && !(← isDead) then
         let s ← get
         let Vr := V.resolve s.path.subst
         if (match Vr with | .v n => s.params.contains n | _ => false) then
           modifyPath fun q => { q with facts := q.facts.filter fun (_, _, _, subj) =>
             match subj with | some u => u.resolve q.subst != Vr | none => true }
-      let pos ← if ← isDead then pure [] else inv b db (binds ++ env) heap dv dh k
+      let pos ← if ← isDead then pure [] else
+        inv (if multi then arm else sc0) b db (binds ++ env) heap dv dh k
       modify fun s => { s with path := saved }
-      let (nl, dead) ← negArm V p nm
-      let negRest ← if dead then pure [] else invArms rest multi table sel' db env V heap dv dh k
+      let (nl, dead) ← negArm arm V p nm
+      let negRest ← if dead then pure [] else
+        invArms sc0 sc rest multi table sel' db env V heap dv dh k
       modify fun s => { s with path := saved }
       return [s!"rcases selectArm_cons_inv {sel} with ⟨{mt}, rfl⟩ | ⟨{nm}, {sel'}⟩"] ++
         bullet (pl ++ pos) ++ bullet (nl ++ negRest)
 
   /-- What an unmatched arm tells about the scrutinee; `true` if impossible. -/
-  partial def negArm (V : T) (p : Pattern F) (nm : String) : M (List String × Bool) := do
+  partial def negArm (sc : String) (V : T) (p : Pattern F) (nm : String) : M (List String × Bool) := do
+    let fresh := fresh sc
     match p with
     | .wildcard => return ([s!"exact (matchPattern_wildcard_none {nm}).elim"], true)
     | .bind _ => return ([s!"exact (matchPattern_bind_none {nm}).elim"], true)
@@ -792,7 +985,7 @@ mutual
           return ([s!"have {hne} := {lem} (by trivial) {nm}"], false)
         else
           let kind := match p with | .tuple _ => "tuple" | _ => "array"
-          match ← (if (← get).late then mixedNeg V kind ps nm else pure none) with
+          match ← (if (← get).late then mixedNeg sc V kind ps nm else pure none) with
           | some ls => return (ls, false)
           | none => return ([s!"clear {nm}"], false)
       | _ => return ([s!"clear {nm}"], false)
@@ -802,8 +995,9 @@ mutual
   `¬ (u₁ = c₁ ∧ …)` (`u ≠ c` for one constant); at a variable `v`,
   `∀ a⃗, v ≠ .tuple [c₁, a₁, …]`. The fact is kept after the call equation (`Path.late`),
   so the fields before it keep their positions. `none` for any other pattern. -/
-  partial def mixedNeg (V : T) (kind : String) (ps : List (Pattern F)) (nm : String) :
+  partial def mixedNeg (sc : String) (V : T) (kind : String) (ps : List (Pattern F)) (nm : String) :
       M (Option (List String)) := do
+    let freshLate := freshLate sc
     let mut comps : Array (Option (T × String)) := #[]
     for q in ps do
       if isFlat q then comps := comps.push none
@@ -856,15 +1050,17 @@ mutual
     | _ => return none
 
   /-- Invert a successful match of `p` against `V`; returns the bindings. -/
-  partial def patInv (V : T) (p : Pattern F) (mt : String) (heap : T) :
+  partial def patInv (sc : String) (V : T) (p : Pattern F) (mt : String) (heap : T) :
       M (List String × Env) := do
+    let fresh := fresh sc
+    let binder := binder sc
     match p with
     | .bind n => return ([s!"obtain rfl := matchPattern_bind_inv {mt}"], [(n, V)])
     | .wildcard => return ([s!"obtain rfl := matchPattern_wildcard_inv {mt}"], [])
     | .load p' =>
       let u ← binder "y" "SourceValue F"; let ld ← fresh "ld"; let mt' ← fresh "mt"
       addFact ld [.s "loadValue ", .t heap, .s " ", .t V, .s " = .ok ", .t (.v u)] ld
-      let (ls, bs) ← patInv (.v u) p' mt' heap
+      let (ls, bs) ← patInv (sc ++ "/*") (.v u) p' mt' heap
       return ([s!"obtain ⟨{u}, {ld}, {mt'}⟩ := matchPattern_load_inv {mt}"] ++ ls, bs)
     | _ =>
       if let some (u, prf) ← constPat? p then
@@ -881,15 +1077,15 @@ mutual
             throw "concrete constructor pattern mismatch"
           unless us.length == ps.length do throw "constructor pattern length"
           let fields ← fresh "hfields"
-          let (mls, bs) ← listInvConcrete ps us ml heap
+          let (mls, bs) ← listInvConcrete sc 0 ps us ml heap
           return ([s!"obtain ⟨{vs}, {hv}, -, {ml}⟩ := matchPattern_construct_inv {mt}",
             s!"rw [{lem}] at {hv}",
             s!"have {fields} := (Value.construct.inj {hv}).2.2",
             s!"subst {vs}"] ++ mls, bs)
         | _ =>
-          let subs ← subBinders ps
+          let subs ← subBinders sc ps
           let ls ← unifyPat V (.ctor lit c (subs.map .v)) hv
-          let (mls, bs) ← listInv ps subs ml heap
+          let (mls, bs) ← listInv sc 0 ps subs ml heap
           return ([s!"obtain ⟨{vs}, {hv}, -, {ml}⟩ := matchPattern_construct_inv {mt}",
             s!"rw [{lem}] at {hv}"] ++ ls ++ mls, bs)
       | .tuple ps | .array ps =>
@@ -898,48 +1094,52 @@ mutual
         | .tuple us =>
           unless us.length == ps.length do throw "tuple pattern length"
           let ml ← fresh "ml"
-          let (mls, bs) ← listInvConcrete ps us ml heap
+          let (mls, bs) ← listInvConcrete sc 0 ps us ml heap
           return ([s!"have {ml} := matchPattern_{kind}_tuple_inv {mt}"] ++ mls, bs)
         | .v _ =>
           let vs ← fresh "vs"; let hv ← fresh "hv"; let ml ← fresh "ml"
-          let subs ← subBinders ps
+          let subs ← subBinders sc ps
           let ls ← unifyPat V (.tuple (subs.map .v)) hv
           if ← isDead then return ([s!"obtain ⟨{vs}, {hv}, -, {ml}⟩ := matchPattern_{kind}_inv {mt}"] ++ ls, [])
-          let (mls, bs) ← listInv ps subs ml heap
+          let (mls, bs) ← listInv sc 0 ps subs ml heap
           return ([s!"obtain ⟨{vs}, {hv}, -, {ml}⟩ := matchPattern_{kind}_inv {mt}"] ++ ls ++ mls, bs)
         | _ => throw "tuple pattern on a non-tuple"
       | .orElse _ _ _ => throw "or-pattern"
       | p => throw s!"pattern form ({patKind p})"
 
-  partial def subBinders (ps : List (Pattern F)) : M (List String) :=
-    ps.mapM fun
-      | .bind n => namedBinder n "SourceValue F"
-      | _ => binder "w" "SourceValue F"
+  partial def subBinders (sc : String) (ps : List (Pattern F)) : M (List String) :=
+    ps.zipIdx.mapM fun
+      | (.bind n, i) => namedBinder s!"{sc}/{i}" n "SourceValue F"
+      | (_, i) => binder s!"{sc}/{i}" "w" "SourceValue F"
 
-  partial def listInv (ps : List (Pattern F)) (subs : List String) (ml : String) (heap : T) :
-      M (List String × Env) := do
+  partial def listInv (sc : String) (i : Nat) (ps : List (Pattern F)) (subs : List String) (ml : String)
+      (heap : T) : M (List String × Env) := do
     match ps, subs with
     | [], [] => return ([s!"obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv {ml}"], [])
     | p :: ps, w :: ws =>
+      let me := s!"{sc}/{i}"
+      let fresh := fresh me
       let vs ← fresh "vs"; let b1 ← fresh "b"; let b2 ← fresh "b"
       let mt ← fresh "mt"; let ml' ← fresh "ml"
       let hd := s!"obtain ⟨{w}, {vs}, {b1}, {b2}, rfl, {mt}, {ml'}, rfl⟩ := matchListWith_cons_inv {ml}"
-      let (l1, bs1) ← patInv (.v w) p mt heap
+      let (l1, bs1) ← patInv me (.v w) p mt heap
       if ← isDead then return (hd :: l1, bs1)
-      let (l2, bs2) ← listInv ps ws ml' heap
+      let (l2, bs2) ← listInv sc (i + 1) ps ws ml' heap
       return (hd :: l1 ++ l2, bs1 ++ bs2)
     | _, _ => throw "pattern arity"
 
-  partial def listInvConcrete (ps : List (Pattern F)) (us : List T) (ml : String) (heap : T) :
-      M (List String × Env) := do
+  partial def listInvConcrete (sc : String) (i : Nat) (ps : List (Pattern F)) (us : List T) (ml : String)
+      (heap : T) : M (List String × Env) := do
     match ps, us with
     | [], [] => return ([s!"obtain ⟨-, rfl⟩ := matchListWith_nil_inv {ml}"], [])
     | p :: ps, u :: us =>
+      let me := s!"{sc}/{i}"
+      let fresh := fresh me
       let b1 ← fresh "b"; let b2 ← fresh "b"; let mt ← fresh "mt"; let ml' ← fresh "ml"
       let hd := s!"obtain ⟨{b1}, {b2}, {mt}, {ml'}, rfl⟩ := matchListWith_cons_cons_inv {ml}"
-      let (l1, bs1) ← patInv u p mt heap
+      let (l1, bs1) ← patInv me u p mt heap
       if ← isDead then return (hd :: l1, bs1)
-      let (l2, bs2) ← listInvConcrete ps us ml' heap
+      let (l2, bs2) ← listInvConcrete sc (i + 1) ps us ml' heap
       return (hd :: l1 ++ l2, bs1 ++ bs2)
     | _, _ => throw "pattern arity"
 end
@@ -952,12 +1152,92 @@ larger caps, at a larger module cost. -/
 def generous : List String :=
   ["KernelWhnf::whnf_nd_const_head", "KernelRoles::basis_pin"]
 
+/-! ## Renaming -/
+
+/-- How names are chosen: with the table (`some`: function, then position key, to suffix), or
+by the counter alone (`none`: the output before names had positions, and the entries the
+table is written from). -/
+structure NameCfg where
+  table : Option (Std.HashMap String (Std.HashMap String String)) := none
+  explain : Bool := false
+
+/-- What naming a function produced besides its text. -/
+structure Naming where
+  /-- The position key and the counter's suffix of each shown name: the function's entries of
+  the table, when the names are the counter's. -/
+  entries : Array (String × String) := #[]
+  /-- The shown names with their positions in words (`NameCfg.explain`). -/
+  lines : Array String := #[]
+  /-- The function was run again, to rename. -/
+  renamed : Bool := false
+  /-- Shown names that are the table's, and shown names derived from their positions. -/
+  fromTable : Nat := 0
+  derived : Nat := 0
+
+/-- Whether a request's name (as `name`) appears in a constructor. -/
+def isShown (shown : Std.HashSet String) (r : Req) (name : String) : Bool :=
+  r.kind == 2 || shown.contains s!"{r.unit}/{r.kind}/{name}"
+
+/-- A shown name: the table's suffix for its position, or letters derived from the position. -/
+def shownName (tbl : Std.HashMap String String) (r : Req) : String :=
+  match tbl.get? (hex r.key) with
+  | some sfx => r.base ++ sfx
+  | none => r.base ++ "_" ++ letters r.key
+
+/-- The names of a pass's requests under the table, after the pass was run with the counter's
+names (`st`). `none`: every shown name already is the table's, and the pass's output stands.
+A name that is not shown keeps the counter's suffix, set apart (`_`) if a shown name of its
+inductive reads the same. Two shown names of one inductive that read the same are an error. -/
+def rename (tbl : Std.HashMap String String) (st : St) : Except String (Option (Array String)) := do
+  let shown (r : Req) : Bool := isShown st.shown r (r.base ++ r.sfx)
+  if st.trace.all (fun r => !shown r || tbl.get? (hex r.key) == some r.sfx) then return none
+  let mut used : Std.HashSet String := {}
+  for r in st.trace do
+    if shown r then
+      let n := s!"{r.unit}/{shownName tbl r}"
+      if used.contains n then throw s!"two shown names {n}"
+      used := used.insert n
+  return some (st.trace.map fun r =>
+    if shown r then shownName tbl r
+    else if used.contains s!"{r.unit}/{r.base}{r.sfx}" then
+      r.base ++ (if r.kind == 1 then "_l" else "_") ++ r.sfx
+    else r.base ++ r.sfx)
+
+/-- The pass run again under `names` asked for the same positions in the same order, and shows
+the same requests' names. -/
+def sameRequests (st : St) (names : Array String) (st2 : St) : Bool :=
+  st.trace.size == st2.trace.size && names.size == st.trace.size &&
+  (List.range st.trace.size).all fun i =>
+    let r := st.trace[i]!
+    let r2 := st2.trace[i]!
+    r.key == r2.key && isShown st.shown r (r.base ++ r.sfx) == isShown st2.shown r2 names[i]!
+
+/-- The table's entries of a pass run with the counter's names. -/
+def tableEntries (st : St) : Array (String × String) :=
+  st.trace.filterMap fun r =>
+    if isShown st.shown r (r.base ++ r.sfx) then some (hex r.key, r.sfx) else none
+
+/-- The shown names of a pass (as `names`, or the counter's) with their positions in words. -/
+def explainLines (fname : String) (st : St) (names : Option (Array String)) : Array String :=
+  if !st.explain then #[] else
+    ((List.range st.trace.size).filterMap fun i =>
+      let r := st.trace[i]!
+      let name := (names.map fun ns => ns.getD i "").getD (r.base ++ r.sfx)
+      if isShown st.shown r name then
+        some s!"{fname}\t{r.unit}\t{name}\t{hex r.key}\t{r.desc}"
+      else none).toArray
+
 /-- The path inductive and the inversion theorem of one function, in one pass: the unchanged
 `«f».Path` and `«f».obs`, or (`x`) the extended `«f».PathX` and `«f».obsx`, whose constructors
-also carry the facts kept after the call equation. The last component says whether any was. -/
-def functionPass (src : Aiur.Generic.Source F) (f : Function F) (index : Nat) (x : Bool)
+also carry the facts kept after the call equation. The last component of the first result says
+whether any was.
+
+The pass runs with the counter's names. Under a table, it runs once more with the names
+`rename` gives, unless every shown name already is the table's: at the source the table was
+written from, the output is the first run's. -/
+def functionPass (cfg : NameCfg) (src : Aiur.Generic.Source F) (f : Function F) (index : Nat) (x : Bool)
     (maxChars : Nat := if generous.contains f.name then 2000000 else 200000) :
-    Except String (String × Array (String × String × String) × Array (String × String × String) × Nat × Bool) := do
+    Except String ((String × Array (String × String × String) × Array (String × String × String) × Nat × Bool) × Naming) := do
   if f.typeParams.length > 1 then throw "several type parameters"
   if f.name.startsWith "$" then throw "internal function"
   if ControlLower.hasControl f.body then throw "control"
@@ -968,10 +1248,9 @@ def functionPass (src : Aiur.Generic.Source F) (f : Function F) (index : Nat) (x
   let env : Env := (f.params.map (·.1)).zip (ps.map .v)
   let leanName := s!"IxVM.{functionName f.name}"
   let body : M (List String) :=
-    inv f.body "d0" env (.v "h") (.v "r") (.v "h'") (leaf s!"«{f.name}».Path{sfx}")
+    inv "" f.body "d0" env (.v "h") (.v "r") (.v "h'") (leaf "" s!"«{f.name}».Path{sfx}")
   let maxLookups := if generous.contains f.name then 40000 else 3000
-  let init : St := { counter := 1, params, src := some src, typeParam := tp, maxLookups, fname := f.name, leanName, body := some f.body, segment := !unsegmented.contains f.name, late := x, suffix := sfx }
-  let (script, st) ← body.run init
+  let init : St := { counter := 1, params, src := some src, typeParam := tp, maxLookups, fname := f.name, leanName, body := some f.body, segment := !unsegmented.contains f.name, late := x, suffix := sfx, explain := cfg.explain }
   -- a generic function is stated at its instance `t_<param>`
   let (tbind, targ, tibind, symbol, lookupThm, lookupDecl) := match tp with
     | none => ("", "", "", q f.name, s!"{leanName}.lookup", "")
@@ -990,33 +1269,54 @@ def functionPass (src : Aiur.Generic.Source F) (f : Function F) (index : Nat) (x
   let pbind := if ps.isEmpty then "" else s!"({" ".intercalate ps} : SourceValue F) "
   let pargs := if ps.isEmpty then "" else " " ++ " ".intercalate ps
   let ibind := if ps.isEmpty then "" else s!"\{{" ".intercalate ps} : SourceValue F} "
-  let ind := s!"/-- The evaluation paths of `{f.name}`: one constructor per combination of selected arms" ++
-    (if x then ", with the facts of the arms not taken." else ".") ++ " -/\n" ++
-    s!"inductive «{f.name}».Path{sfx} {tbind}{pbind}(h : Heap F) (r : SourceValue F) (h' : Heap F)\n" ++
-    "    (calls : List (Call F)) : Prop where\n" ++
-    "\n".intercalate (st.ctors.toList.map (·.text)) ++ "\n"
-  let thm := s!"/-- **Every observed derivation of `{f.name}` takes one of its paths.** -/\n" ++
-    s!"theorem «{f.name}».obs{sfx.toLower} {tibind}{ibind}\{h h' : Heap F} \{r : SourceValue F}\n" ++
-    s!"    \{calls : List (Call F)} (ev : ObsFn W {symbol} {list ps} h r h' calls) :\n" ++
-    s!"    «{f.name}».Path{sfx}{targ}{pargs} h r h' calls := by\n" ++
-    s!"  have d0 := ObsFn.function_inv (s := IxVM.source) {lookupThm}\n" ++
-    s!"    (by simp [{leanName}, ControlLower.hasControl]) ev\n" ++
-    s!"  simp only [{leanName}] at d0\n" ++
-    "\n".intercalate (script.map ("  " ++ ·)) ++ "\n"
-  let segTexts := String.join (st.segs.toList.map fun (_, _, t) => t ++ "\n")
-  let text := lookupDecl ++ segTexts ++ ind ++ "\n" ++ thm
+  let render (script : List String) (st : St) : String :=
+    let ind := s!"/-- The evaluation paths of `{f.name}`: one constructor per combination of selected arms" ++
+      (if x then ", with the facts of the arms not taken." else ".") ++ " -/\n" ++
+      s!"inductive «{f.name}».Path{sfx} {tbind}{pbind}(h : Heap F) (r : SourceValue F) (h' : Heap F)\n" ++
+      "    (calls : List (Call F)) : Prop where\n" ++
+      "\n".intercalate (st.ctors.toList.map (·.text)) ++ "\n"
+    let thm := s!"/-- **Every observed derivation of `{f.name}` takes one of its paths.** -/\n" ++
+      s!"theorem «{f.name}».obs{sfx.toLower} {tibind}{ibind}\{h h' : Heap F} \{r : SourceValue F}\n" ++
+      s!"    \{calls : List (Call F)} (ev : ObsFn W {symbol} {list ps} h r h' calls) :\n" ++
+      s!"    «{f.name}».Path{sfx}{targ}{pargs} h r h' calls := by\n" ++
+      s!"  have d0 := ObsFn.function_inv (s := IxVM.source) {lookupThm}\n" ++
+      s!"    (by simp [{leanName}, ControlLower.hasControl]) ev\n" ++
+      s!"  simp only [{leanName}] at d0\n" ++
+      "\n".intercalate (script.map ("  " ++ ·)) ++ "\n"
+    let segTexts := String.join (st.segs.toList.map fun (_, _, t) => t ++ "\n")
+    lookupDecl ++ segTexts ++ ind ++ "\n" ++ thm
+  -- the counter's names; the size limit is on this text, so that renaming never drops a function
+  let (script, st) ← body.run init
+  let text := render script st
   if text.length > maxChars then throw s!"too large: {text.length / 1000} KB"
-  return (text, st.names, st.abbrevs, st.ctors.size, st.lateUsed)
+  let out := (text, st.names, st.abbrevs, st.ctors.size, st.lateUsed)
+  match cfg.table with
+  | none => return (out, { entries := tableEntries st, lines := explainLines f.name st none })
+  | some table =>
+    let tbl : Std.HashMap String String := table.getD f.name ∅
+    let shown := st.trace.filter fun r => isShown st.shown r (r.base ++ r.sfx)
+    let fromTable := (shown.filter fun r => (tbl.get? (hex r.key)).isSome).size
+    match ← rename tbl st with
+    | none => return (out, { lines := explainLines f.name st none, fromTable })
+    | some names =>
+      let (script2, st2) ← body.run { init with assigned := some names }
+      unless sameRequests st names st2 do throw "renaming changed the requests"
+      return ((render script2 st2, st2.names, st2.abbrevs, st2.ctors.size, st2.lateUsed),
+        { lines := explainLines f.name st2 (some names), renamed := true, fromTable,
+          derived := shown.size - fromTable })
 
 /-- The path inductive and the inversion theorem of one function (`functionPass`), followed by
 the extended ones when the function keeps a fact after a call equation. -/
-def function (src : Aiur.Generic.Source F) (f : Function F) (index : Nat) :
-    Except String (String × Array (String × String × String) × Array (String × String × String) × Nat) := do
-  let (text, names, abbrevs, n, _) ← functionPass src f index false
-  match functionPass src f index true with
-  | .ok (textX, namesX, abbrevsX, _, true) =>
-    return (text ++ "\n" ++ textX, names ++ namesX, abbrevs ++ abbrevsX, n)
-  | _ => return (text, names, abbrevs, n)
+def function (cfg : NameCfg) (src : Aiur.Generic.Source F) (f : Function F) (index : Nat) :
+    Except String ((String × Array (String × String × String) × Array (String × String × String) × Nat) × Naming) := do
+  let ((text, names, abbrevs, n, _), nm) ← functionPass cfg src f index false
+  match functionPass cfg src f index true with
+  | .ok ((textX, namesX, abbrevsX, _, true), nmX) =>
+    return ((text ++ "\n" ++ textX, names ++ namesX, abbrevs ++ abbrevsX, n),
+      { entries := nm.entries ++ nmX.entries.filter fun e => !nm.entries.any (·.1 == e.1),
+        lines := nm.lines ++ nmX.lines, renamed := nm.renamed || nmX.renamed,
+        fromTable := nm.fromTable, derived := nm.derived })
+  | _ => return ((text, names, abbrevs, n), nm)
 
 /-! ## Files -/
 
@@ -1124,24 +1424,54 @@ def assemble (results : List (String × Result)) (maxLines : Nat := 3000) :
 
 
 /-- Each function's result, in program order. -/
-def results : List (String × Result) :=
+def results (cfg : NameCfg) : List (String × Result) :=
   ((IxVM.functions.map (·.name)).zipIdx).filterMap fun (name, i) =>
-    (IxVM.program.functions.find? (·.name == name)).map fun f => (name, function IxVM.source f i)
+    (IxVM.program.functions.find? (·.name == name)).map fun f =>
+      (name, (function cfg IxVM.source f i).map (·.1))
 
-def render : List (System.FilePath × String) := assemble results
+def render (cfg : NameCfg) : List (System.FilePath × String) := assemble (results cfg)
 
-/-- `render`, printing each function's outcome and time. -/
-def renderIO : IO (List (System.FilePath × String)) := do
+/-- The table of names from its text: a line `@<tab>function` starts a function's entries,
+each a line `key<tab>suffix`; any other line is skipped. -/
+def readTable (text : String) : Std.HashMap String (Std.HashMap String String) := Id.run do
+  let mut table : Std.HashMap String (Std.HashMap String String) := ∅
+  let mut cur := ""
+  let mut entries : Std.HashMap String String := ∅
+  for line in text.splitOn "\n" do
+    match line.splitOn "\t" with
+    | ["@", name] =>
+      if cur != "" then table := table.insert cur entries
+      cur := name
+      entries := ∅
+    | [key, sfx] => entries := entries.insert key sfx
+    | _ => pure ()
+  if cur != "" then table := table.insert cur entries
+  return table
+
+/-- `render`, printing each function's outcome and time. Also: the text of the table (its
+entries are the counter's suffixes: meaningful when `cfg.table` is `none`), and the shown
+names with their positions in words (`cfg.explain`). -/
+def renderIO (cfg : NameCfg) : IO (List (System.FilePath × String) × String × String) := do
   let mut rs : Array (String × Result) := #[]
+  let mut table : Array String :=
+    #["# Path-lemma names (IxVM.ObsGen): for each function, the positions that showed a name when",
+      "# this table was written, with the suffix the name had. Written once by",
+      "# `lake exe ixvm/ixvm-proof-gen --emit-names`; not extended, not edited."]
+  let mut lines : Array String := #[]
   for (name, i) in (IxVM.functions.map (·.name)).zipIdx do
     let some f := IxVM.program.functions.find? (·.name == name) | continue
     let t0 ← IO.monoMsNow
-    let r := function IxVM.source f i
+    let r := function cfg IxVM.source f i
     let tag := match r with
-      | .ok (_, _, _, n) => s!"{n} paths"
+      | .ok ((_, _, _, n), nm) => s!"{n} paths" ++
+        (if nm.renamed then s!", renamed: {nm.fromTable} names of the table, {nm.derived} derived" else "")
       | .error e => s!"skipped ({e})"
     IO.eprintln s!"[obs-gen] {name}: {tag} {(← IO.monoMsNow) - t0}ms"
-    rs := rs.push (name, r)
-  return assemble rs.toList
+    if let .ok (_, nm) := r then
+      table := (table.push s!"@\t{name}") ++ nm.entries.map fun (key, sfx) => s!"{key}\t{sfx}"
+      lines := lines ++ nm.lines
+    rs := rs.push (name, r.map (·.1))
+  return (assemble rs.toList, "\n".intercalate table.toList ++ "\n",
+    "\n".intercalate lines.toList ++ "\n")
 
 end IxVM.ObsGen

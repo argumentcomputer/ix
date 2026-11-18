@@ -4,7 +4,13 @@ import IxVM.ObsGen
 /-! `lake exe ixvm/ixvm-proof-gen [--check] [--out DIR]`: write or check the
 derived lookup certificates, refinement mirrors and path lemmas (`--out` writes
 them under `DIR` instead of the working directory). The function definitions
-themselves are elaborated from the DSL during compilation. -/
+themselves are elaborated from the DSL during compilation.
+
+The path lemmas' names (`IxVM.ObsGen`) are read from the table
+`IxVM/IxVM/ObsNames.txt` (`--names FILE` for another). `--counter-names` ignores the
+table and numbers every name by the function's counter; `--emit-names FILE` does the
+same and writes the table of those names to `FILE`. `--explain FILE` writes every
+shown name with its position in words. -/
 
 open IxVM.ProofGen
 
@@ -13,10 +19,27 @@ def outDir : List String → Option System.FilePath
   | _ :: rest => outDir rest
   | [] => none
 
+def argOf (flag : String) : List String → Option String
+  | f :: rest => if f == flag then rest.head? else argOf flag rest
+  | [] => none
+
 def main (args : List String) : IO UInt32 := do
   let check := args.contains "--check"
   let root := outDir args
-  let files := render ++ (← IxVM.ObsGen.renderIO)
+  let emit := argOf "--emit-names" args
+  let explain := argOf "--explain" args
+  let namesPath : System.FilePath := ⟨(argOf "--names" args).getD "IxVM/IxVM/ObsNames.txt"⟩
+  let mut tableText : Option String := none
+  if !(args.contains "--counter-names" || emit.isSome) then
+    tableText ← try pure (some (← IO.FS.readFile namesPath)) catch _ => pure none
+    if tableText.isNone then
+      IO.eprintln s!"[ixvm-proof-gen] no table of names at {namesPath}"
+      return 2
+  let (obsFiles, tableOut, explainOut) ← IxVM.ObsGen.renderIO
+    { table := tableText.map IxVM.ObsGen.readTable, explain := explain.isSome }
+  if let some path := emit then IO.FS.writeFile ⟨path⟩ tableOut
+  if let some path := explain then IO.FS.writeFile ⟨path⟩ explainOut
+  let files := render ++ obsFiles
   let mut ok := true
   for (path, text) in files do
     let path := match root with
