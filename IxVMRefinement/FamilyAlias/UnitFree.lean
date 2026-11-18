@@ -242,7 +242,8 @@ check of the member (`MemberCheckedLimAt`) took the modeled branch of the `Induc
 one observes the dispatch answering `0`, which `ModeledAt` refutes) and ran the modeled
 constructor loop, whose return-type check gives each constructor's stored type, read as the
 dispatch reads it (`ExprTree`), a telescope of its parameters and fields into a constant applied
-to `n_params + n_indices` arguments, the first `n_params` of them variables. -/
+to `n_params + n_indices` arguments, the first `n_params` of them variables; the constructor's
+parameter count is the member's. -/
 theorem modeledCtor_trees {calls : List (Call F)} {c : Core.Ctx} (hg : Core.Good c calls)
     {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable} {lim : Option Nat} {B : _root_.Address}
     {cb : Ixon.Constant} {ind : Ixon.Inductive}
@@ -251,7 +252,7 @@ theorem modeledCtor_trees {calls : List (Call F)} {c : Core.Ctx} (hg : Core.Good
     (hmod : ModeledAt c.E B)
     (hchk : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim) :
     ∀ j < ind.ctors.size, ∃ (ct : Ixon.Constructor) (T Bd : ScanTree),
-      ind.ctors[j]? = some ct ∧
+      ind.ctors[j]? = some ct ∧ ct.params.toNat = ind.params.toNat ∧
       ExprTree cb.refs.toList (L1.blockRecurAddrs B (#[.indc ind] : Array Ixon.MutConst).toList)
         cb.sharing.toList 4294967295 ct.typ T ∧
       T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
@@ -375,7 +376,7 @@ theorem modeledCtor_trees {calls : List (Call F)} {c : Core.Ctx} (hg : Core.Good
   have hgR : Core.Good c st.retCalls := hg.sub st.retSubset
   obtain ⟨Bd, hpeel, hhd, hlen, hat⟩ :=
     ctor_return_tree hgR.2 (by omega) (by omega) hTR retRun
-  refine ⟨ct, T, Bd, hctj, ?_, ?_, hhd, ?_, ?_⟩
+  refine ⟨ct, T, Bd, hctj, hparN, ?_, ?_, hhd, ?_, ?_⟩
   · rw [hbB'] at hET
     exact hET
   · rw [hparN]

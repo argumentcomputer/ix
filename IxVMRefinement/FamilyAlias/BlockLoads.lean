@@ -1,4 +1,5 @@
 import IxVMRefinement.FamilyAlias.BlockRow
+import IxVMRefinement.FamilyAlias.StructRecScan
 import IxVMRefinement.Assembly.NativeBlockNewFacts
 import IxVMRefinement.L1.HashedBlock
 
@@ -9,7 +10,7 @@ each field of the load contract whose load or stored constant is new. The step s
 block's inductives and constructors and the family record's recursors at the keys of their
 constant addresses, and the aliases (definitions) at derived keys. Ten fields hold from the
 records at those addresses, the store, the route fact at the block and the walk's check of the
-block, with no fact of the family check (`FamLoadCtx.newLoads`):
+block, with no fact of the family check (`FamLoadCtx.newLoads`); eleven fields in all:
 
 * `projFire`: the step stores no projection table;
 * `inductRecord`, `inductBlock`, `ctorIndRes`: a load of a new inductive reads the member's
@@ -24,12 +25,18 @@ block, with no fact of the family check (`FamLoadCtx.newLoads`):
   has no index and one constructor with no field (the load's counts and, for `unitLike`, the
   stored constructor's field count, `FamLoadCtx.ctorCounts`; for `unitLikeRaw`, the zero-field
   load). A modeled block of one inductive has no such constructor (`FamLoadCtx.unitFree`: the
-  dispatch's scan answers `0` at it, `FamilyAlias/UnitFree.lean`).
+  dispatch's scan answers `0` at it, `FamilyAlias/UnitFree.lean`);
+* `etaIota`: its conclusion asks the η bit, unset at the step; its hypotheses are refuted. They
+  observe `block_is_multi` answering `0` at the loaded block (two or more inductives: refused by
+  that function's specification, `multi_not_zero_core`), so the loaded inductive is the only
+  member of the family's block, with no index and one constructor; and they observe the
+  recursion scan `struct_is_rec` answering other than `1` at it, which a modeled block of one
+  inductive refutes (`struct_is_rec_one`, `FamilyAlias/StructRecScan.lean`: the dispatch's nested
+  occurrence is in a field that mentions the member).
 
-The other four are `FamilyLoadsCheck`: the loads of the new constants (`getCI`, `getIprj`,
+The other three are `FamilyLoadsCheck`: the loads of the new constants (`getCI`, `getIprj`,
 `getCprj`: the circuit loads a member's canonical annotated form, which the family check's
-stored types have to be) and `etaIota`, whose conclusion asks the η bit the step stores as
-unset. -/
+stored types have to be). -/
 
 universe u
 
@@ -47,9 +54,9 @@ set_option linter.unusedVariables false
 section Check
 open IxVM.Refinement.Core
 
-/-- **The load facts at the family step's new constants that read the family check**: the four
-fields of `NewLoads` the store, the records and the route fact do not give (module
-docstring). -/
+/-- **The load facts at the family step's new constants that read the family check**: the three
+fields of `NewLoads` the store, the records, the route fact and the walk's check of the block do
+not give (module docstring). -/
 structure FamilyLoadsCheck (c : ScopedCtx) (new : List (ConstantInfo .anon)) : Prop where
   getCI : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
     ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → Good c.toCtx cs →
@@ -69,31 +76,6 @@ structure FamilyLoadsCheck (c : ScopedCtx) (new : List (ConstantInfo .anon)) : P
       FamNew c new (ixAddr b) (ZMod.val i) → Good c.toCtx cs →
     Bytes.RepAddressRef addrTy h b bp →
       ∃ ci, c.env.find? (c.κ (iprjAddr (ixAddr b) (ZMod.val i))) = some ci ∧ CIPtrRep c.κ h' ptr ci
-  etaIota : ∀ (pp ptr nl ty u blk : SourceValue F) (h1 h2 : Heap F) (cs1 : List (Call F))
-      (pa b : Bytes.Address) (i m : F) (cvT cvc : Ix.Kernel.ConstantVal .anon)
-      (caps : Ix.Kernel.IndCaps .anon) (cnP cnF : Nat) (us : List KLevel) (l : KLevel),
-    ObsFn W "Ingress::get_ci" [pp] h1 ptr h2 cs1 → Good c.toCtx cs1 →
-    Bytes.RepAddressRef addrTy h1 pa pp →
-    loadValue h2 ptr = .ok (.construct kciEnum "Induct"
-      [nl, ty, .field m, .field 0, .field 1, u, blk, .field i]) →
-    Bytes.RepAddressRef addrTy h2 b blk →
-    c.env.find? (c.κ (ixAddr pa)) = some (.indInfo cvT caps) →
-    c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some (.ctorInfo cvc cnP cnF) →
-    (∃ (bq : SourceValue F) (h3 h4 : Heap F) (cs3 : List (Call F)),
-      ObsFn W "KernelModeled::block_is_multi" [bq] h3 (.field 0) h4 cs3 ∧ Good c.toCtx cs3 ∧
-        Bytes.RepAddressRef addrTy h3 b bq) →
-    (∃ (sp v : SourceValue F) (h5 h6 : Heap F) (cs5 : List (Call F)),
-      ObsFn W "KernelWhnf::struct_is_rec" [sp] h5 v h6 cs5 ∧ v ≠ .field 1 ∧ Good c.toCtx cs5 ∧
-        Bytes.RepAddressRef addrTy h5 pa sp) →
-    piSortAt (ZMod.val m) (posOf cvT.levelParams cvT.type) = some l →
-    (Ix.Kernel.Level.subst (List.range us.length) us l).isNeverZero = true →
-    (ConstantInfo.indInfo cvT caps ∈ new ∨ ConstantInfo.ctorInfo cvc cnP cnF ∈ new) →
-    (caps.eta = true ∧
-      caps.etaCtor = some (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) ∧ caps.etaFields = cnF ∧
-      caps.etaParams = cnP ∧ cnP = ZMod.val m ∧ cvc.levelParams = cvT.levelParams) ∧
-      EtaUseFacts c.env (c.κ (ixAddr pa))
-      (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) cvT caps cnP cnF
-
 
 end Check
 
@@ -139,6 +121,23 @@ structure FamLoadCtx (C : Core.Ctx) (new : List (ConstantInfo .anon)) (A : _root
   ctorCounts : ∀ ind ct, ms = #[.indc ind] → ind.ctors[0]? = some ct → ∀ ci,
     (appCtx C new).env.find? (Core.keyOf C.t (Core.cprjAddr A 0 0)) = some ci →
     ∃ cv, ci = .ctorInfo cv ct.params.toNat ct.fields.toNat
+  /-- The dispatch at the block answers `1` at the store. -/
+  routeTrue : Route.blockRoute C.E A = some true
+  /-- At a block of one inductive, each constructor's stored type, read as the dispatch reads it,
+  is a telescope of its parameters and fields into a constant applied to `params + indices`
+  arguments, the first `params` of them atoms; its parameter count is the member's (the walk's
+  return-type check, `modeledCtor_trees`). -/
+  ctorTrees : ∀ ind, ms = #[.indc ind] → ∀ j < ind.ctors.size,
+    ∃ (ct : Ixon.Constructor) (T Bd : Route.ScanTree),
+      ind.ctors[j]? = some ct ∧ ct.params.toNat = ind.params.toNat ∧
+      Route.ExprTree cb.refs.toList
+        (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
+        cb.sharing.toList 4294967295 ct.typ T ∧
+      T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
+      Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
+      ∀ k < ct.params.toNat, Bd.args[k]? = some .atom
+  /-- The registry's facts at the prefix context. -/
+  core : Core.ScopedCoreFacts (Core.Ctx.stored C)
 
 variable {C : Core.Ctx} {new : List (ConstantInfo .anon)} {A rb : _root_.Address}
   {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
@@ -366,6 +365,21 @@ theorem FamLoadCtx.member_counts (hL : FamLoadCtx C new A cb ms rb crb rs)
   injection hargs with hnc _
   exact ⟨field_count_eq hi56 hni, field_count_eq hc56 hnc⟩
 
+/-- **At a block of two or more inductives no good run answers `block_is_multi = 0`**, at the
+registry's facts of the prefix context (`multi_not_zero`, read from the facts alone). -/
+theorem multi_not_zero_core {C : Core.Ctx} (core : Core.ScopedCoreFacts (Core.Ctx.stored C))
+    {B : _root_.Address} (hm : MultiAt C.E B) {bq : SourceValue F} {h h' : Heap F}
+    {cs : List (Call F)} {bb : Bytes.Address}
+    (ev : ObsFn Core.W "KernelModeled::block_is_multi" [bq] h (.field 0) h' cs)
+    (hnc : ¬ View.HashedCollision { env := C.E } [] cs) (hbd : Bounded cs)
+    (hrep : Bytes.RepAddressRef Core.addrTy h bb bq) (hB : Core.ixAddr bb = B) : False := by
+  obtain ⟨cb, ms, hrec, hms, h2⟩ := hm
+  have hspec := Core.Registry.spec _ (Core.scoped_steps _ core) _ _ _ _ _ _ ev
+    (.callees .block_is_multi) rfl
+  have h1 := ((hspec bq bb rfl ⟨hnc, hbd, fun _ _ => trivial⟩ hrep).2 cb
+    (by rw [hB]; exact hrec)).2 ⟨ms, hms, h2⟩
+  exact absurd (Value.field.inj h1) (by decide)
+
 /-- **`proj_ctor` observes the native route at its block**: it asserts `block_is_modeled = 0`. -/
 theorem nativeAt_of_proj_ctor {c : Core.Ctx} {cs : List (Call F)} (hg : Core.Good c cs)
     {b : Bytes.Address} {bp ip ptr : SourceValue F} {h h' : Heap F}
@@ -511,7 +525,29 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs)
       ⟨bq, h3, h4, cs3, b, ev3, good3.1, good3.2, hb3, rfl⟩
     rw [hbA] at hnat
     exact hL.route hnat
-  etaIota := hK.etaIota
+  etaIota := by
+    intro pp ptr nl ty u blk h1 h2 cs1 pa b i m cvT cvc caps cnP cnF us l ev good hpa hld hb hT hC
+      hmulti hrec hpi hnz hm
+    exfalso
+    have hfew : Core.FewInductives (appCtx C new) (Core.ixAddr b) := by
+      intro cst ms' hrecB hms'
+      obtain ⟨bq, h3, h4, cs3, evM, goodM, hbq⟩ := hmulti
+      by_contra hlt
+      exact multi_not_zero_core hL.core ⟨cst, ms', hrecB, hms', by omega⟩ evM goodM.1 goodM.2
+        hbq rfl
+    obtain ⟨hbA, hval, ind, hms, hxa⟩ := hL.member_of_load ev good hpa hld hb
+      (hm.imp (fun hm => ⟨cvT, caps, hT, hm⟩) (fun hm => ⟨cvc, cnP, cnF, hC, hm⟩)) hfew
+    obtain ⟨hidx, hsz⟩ := hL.member_counts hms ev good hpa hld hxa
+    rw [ZMod.val_zero] at hidx
+    rw [ZMod.val_one] at hsz
+    have hmuts : cb.info = .muts #[.indc ind] := by
+      rw [← hms]
+      exact hL.muts
+    have hproj : recordOf C.E (Core.iprjAddr A 0) = some (memberProjection A 0 (.indc ind)) :=
+      hL.members 0 (.indc ind) (by subst hms; rfl)
+    obtain ⟨sp, v, h5, h6, cs5, evR, hne, goodR, hpR⟩ := hrec
+    exact struct_is_rec_one hL.core hL.decoded hL.record hmuts hproj hL.routeTrue hidx.symm
+      hsz.symm (hL.ctorTrees ind hms 0 (by omega)) evR hne ⟨goodR.1, goodR.2⟩ hpR hxa
   inductBlock := by
     intro addr ptr h h' cs a b nl ty np ni nc u blk i ev hn good ha hld hb
     obtain ⟨cn, hcn, hname⟩ := hn
