@@ -59,7 +59,7 @@ theorem unitStepTwin_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon → P
     (hroute : ModeledRouteAt calls B) (hinert : InertClause t c)
     (hkey : ∀ x, ConstAddrOf A c x → Decl.KeyFree (keyOf t x))
     (hinst : ∀ env : Ix.Kernel.Env .anon, (∀ ci ∈ envT.consts, ci ∈ env.consts) →
-      Decl.PrefixInv.{u} E t lim env →
+      (env.consts.map (·.name)).Nodup → Decl.PrefixInv.{u} E t lim env →
       (FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env) →
       (∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true) →
       FamilyInstalled t env rb crb)

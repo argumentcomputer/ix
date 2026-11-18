@@ -99,7 +99,7 @@ theorem unitStepTwin_of_installed (hT : TwinStepTarget.{u}) {X : Ix.Kernel.Env .
     (hroute : ModeledRouteAt calls B) (hinert : InertClause t c)
     (hkey : ∀ x, ConstAddrOf A c x → Decl.KeyFree (keyOf t x))
     (hinst : ∀ env : Ix.Kernel.Env .anon, (∀ ci ∈ envT.consts, ci ∈ env.consts) →
-      Decl.PrefixInv.{u} E t lim env → X env →
+      (env.consts.map (·.name)).Nodup → Decl.PrefixInv.{u} E t lim env → X env →
       (∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true) →
       FamilyInstalled t env rb crb)
     (hkeep : TwinStepKeeps.{u} X t envT E₀ E lim A c) :
@@ -108,7 +108,7 @@ theorem unitStepTwin_of_installed (hT : TwinStepTarget.{u}) {X : Ix.Kernel.Env .
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
   obtain ⟨blk, env₂, hreads, hrun, hstored, hmodel⟩ :=
     hT calls bAddr t E₀ E env B rb A cb crb c ms rs rs' lim cs ht hRS hSS hB hrb hA hsz hne
-      hcall hroute hinv href (hinst env hext hinv hX hrbS) hinert hfresh hkey
+      hcall hroute hinv href (hinst env hext hnd hinv hX hrbS) hinert hfresh hkey
   obtain ⟨hinv₂, hX₂⟩ :=
     hkeep env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel
   obtain ⟨ws, henv, hnd₂, hfr₂, hnames, hrecs, hmods⟩ := twinRun_parts hrun
@@ -201,7 +201,7 @@ theorem unitStepTwin_of_target (hT : TwinStepTarget.{u}) {X : Ix.Kernel.Env .ano
     UnitStepTwin.{u} (fun env => X env ∧ FamilyRecsModeled t E₀ fam env) t envT E₀ E lim A c
       rb crb :=
   unitStepTwin_of_installed hT ht hRS hSS hB hrb hA hsz hne hcall hroute hinert hkey
-    (fun env _ _ hXe hrbS => familyInstalled_of_clause hXe.2 hfam hrb.record hrbS)
+    (fun env _ _ _ hXe hrbS => familyInstalled_of_clause hXe.2 hfam hrb.record hrbS)
     hkeep.and_familyRecsModeled
 
 end IxVM.Refinement.Typing.TwinFamily
