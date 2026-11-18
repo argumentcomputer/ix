@@ -243,12 +243,12 @@ theorem native_ctor_positivity_slots {b : Bytes.Address} {n nP : Nat} {i : F}
         (x_c_ind_idx := cmi) (x_c_cidx := csl) (x_c_np := cnp) (x_c_nf := cnf)
         (x_c_unsafe := cus)
         (m144 := m144) (m319 := m319) (m387 := m387) (m400 := m400) (m430 := m430)
-        (m476 := m476) (m546 := m546) (m646 := m646) (cs648 := cs_sg)
-        (m655 := nextHeap) (cs695 := nextCalls) (v708 := nextIndex)
+        (m476 := m476) (m546 := m546) (m592 := m_prop) (m716 := m646) (cs718 := cs_sg)
+        (m725 := nextHeap) (cs765 := nextCalls) (v778 := nextIndex)
         (ev49 := loaded) (ld43 := tag) (ev154 := ev_aeq) (heq289 := paramsChecked)
         (ev331 := ev_ws) (hm395 := hm387) (ev368 := ev_es) (ev412 := ev_saf)
-        (ev442 := ev_pa) (ev488 := ev_rt) (ev558 := ev_fu) (sg653 := sg_pos)
-        (op792 := addition) (ev697 := nextRun) (hc794 := allCalls) .. =>
+        (ev442 := ev_pa) (ev488 := ev_rt) (ev558 := ev_fu) (ev604 := ev_prop) (sg723 := sg_pos)
+        (op862 := addition) (ev767 := nextRun) (hc864 := allCalls) .. =>
       by_cases hjk : j = k
       · subst hjk
         have e_nil : Heap.Extends m319 m387 := by rw [hm387]; exact Heap.Extends.snoc m319 _
@@ -256,13 +256,14 @@ theorem native_ctor_positivity_slots {b : Bytes.Address} {n nP : Nat} {i : F}
           ev_aeq.heap_extends.trans (ev_ws.heap_extends.trans (e_nil.trans
             (ev_es.heap_extends.trans (ev_saf.heap_extends.trans (ev_pa.heap_extends.trans
               (ev_rt.heap_extends.trans ev_fu.heap_extends))))))
+        have e_to_prop := e_to_pos.trans ev_prop.heap_extends
         cases sg_pos with
         | other hne _ _ _ => exact absurd rfl hne
         | n0 cs_pos _ ev_pos hc_sg =>
           rw [paramsChecked] at ev_pos
           exact ⟨blockArg, ptr, h, after, loadCalls, cnl, cty, cblk, cmi, csl, cnp, cnf, cus,
-            m546, m646, _, cs_pos, loaded,
-            fun cl hcl => hsub cl (by rw [allCalls]; simp [hcl]), hbp, tag, e_to_pos, ev_pos,
+            m_prop, m646, _, cs_pos, loaded,
+            fun cl hcl => hsub cl (by rw [allCalls]; simp [hcl]), hbp, tag, e_to_prop, ev_pos,
             fun cl hcl => hsub cl (by rw [allCalls]; simp [hc_sg, hcl])⟩
       · have added := evalBinOp_add_nat k 1 addition
         subst nextIndex

@@ -708,6 +708,90 @@ private theorem lit_constsResolve_of_cons_former {env : Ix.Kernel.Env .anon} {ci
         hres_sl.2, isSome_sl, hres_sl.1.1, isSome_ln, isSome_lc, hres_sl.1.2, isSome_cn]
     · exact nomatch hsl.2
 
+private theorem lit_constsResolve_of_cons_distinct {env : Ix.Kernel.Env .anon} {ci : KConstantInfo}
+    (hstore : Ix.Kernel.Open.StoreInv env)
+    (hbasis : Ix.Kernel.reservedBasisNames.contains ci.name = false)
+    (hneSL : ci.name ≠ Ix.Kernel.stringOfListName)
+    (hneLN : ci.name ≠ Ix.Kernel.listNilName)
+    (hneLC : ci.name ≠ Ix.Kernel.listConsName)
+    (hneCN : ci.name ≠ Ix.Kernel.charOfNatName) :
+    (∀ n, Ix.Kernel.natLitSupported ⟨ci :: env.consts⟩ = true →
+      (Expr.lit (md := .anon) (.natVal n)).constsResolve env = true) ∧
+    (∀ s, Ix.Kernel.strLitSupported ⟨ci :: env.consts⟩ = true →
+      (Expr.lit (md := .anon) (.strVal s)).constsResolve env = true) := by
+  have hnot_basis : ∀ k : KKey, Ix.Kernel.reservedBasisNames.contains k = true →
+      (⟨ci :: env.consts⟩ : Ix.Kernel.Env .anon).find? k = env.find? k := by
+    intro k hk
+    have hne : (ci.name == k) = false := by
+      rw [beq_eq_false_iff_ne]
+      intro heq; subst heq; rw [hbasis] at hk; exact nomatch hk
+    simp [Ix.Kernel.Env.find?, List.find?, hne]
+  have hnat_imp : Ix.Kernel.natLitSupported ⟨ci :: env.consts⟩ = true →
+      ((env.find? Ix.Kernel.natName).isSome &&
+       (env.find? Ix.Kernel.natZeroName).isSome &&
+       (env.find? Ix.Kernel.natSuccName).isSome) = true := by
+    intro hnat
+    have hn1 : (⟨ci :: env.consts⟩ : Ix.Kernel.Env .anon).find? Ix.Kernel.natName =
+        env.find? Ix.Kernel.natName :=
+      hnot_basis Ix.Kernel.natName (by simp [Ix.Kernel.reservedBasisNames])
+    have hn2 : (⟨ci :: env.consts⟩ : Ix.Kernel.Env .anon).find? Ix.Kernel.natZeroName =
+        env.find? Ix.Kernel.natZeroName :=
+      hnot_basis Ix.Kernel.natZeroName (by simp [Ix.Kernel.reservedBasisNames])
+    have hn3 : (⟨ci :: env.consts⟩ : Ix.Kernel.Env .anon).find? Ix.Kernel.natSuccName =
+        env.find? Ix.Kernel.natSuccName :=
+      hnot_basis Ix.Kernel.natSuccName (by simp [Ix.Kernel.reservedBasisNames])
+    simp only [Ix.Kernel.natLitSupported, hn1, hn2, hn3, Bool.and_eq_true] at hnat
+    obtain ⟨⟨h1, h2⟩, h3⟩ := hnat
+    have s1 : (env.find? Ix.Kernel.natName).isSome = true := by
+      cases hf : env.find? Ix.Kernel.natName <;> simp_all [Ix.Kernel.natIndOk]
+    have s2 : (env.find? Ix.Kernel.natZeroName).isSome = true := by
+      cases hf : env.find? Ix.Kernel.natZeroName <;> simp_all [Ix.Kernel.natZeroOk]
+    have s3 : (env.find? Ix.Kernel.natSuccName).isSome = true := by
+      cases hf : env.find? Ix.Kernel.natSuccName <;> simp_all [Ix.Kernel.natSuccOk]
+    simp [s1, s2, s3]
+  refine ⟨fun n hnat => hnat_imp hnat, fun s hstr => ?_⟩
+  simp only [Ix.Kernel.strLitSupported, Bool.and_eq_true] at hstr
+  obtain ⟨⟨⟨⟨⟨⟨⟨hnat, _⟩, hsl⟩, _⟩, hln⟩, hlc⟩, _⟩, hcn⟩ := hstr
+  have hnat' := hnat_imp hnat
+  simp only [Bool.and_eq_true] at hnat'
+  have hne_sl : (ci.name == Ix.Kernel.stringOfListName) = false := beq_eq_false_iff_ne.mpr hneSL
+  have hne_ln : (ci.name == Ix.Kernel.listNilName) = false := beq_eq_false_iff_ne.mpr hneLN
+  have hne_lc : (ci.name == Ix.Kernel.listConsName) = false := beq_eq_false_iff_ne.mpr hneLC
+  have hne_cn : (ci.name == Ix.Kernel.charOfNatName) = false := beq_eq_false_iff_ne.mpr hneCN
+  have hf_sl : (⟨ci :: env.consts⟩ : Ix.Kernel.Env .anon).find? Ix.Kernel.stringOfListName =
+      env.find? Ix.Kernel.stringOfListName := by simp [Ix.Kernel.Env.find?, List.find?, hne_sl]
+  have hf_ln : (⟨ci :: env.consts⟩ : Ix.Kernel.Env .anon).find? Ix.Kernel.listNilName =
+      env.find? Ix.Kernel.listNilName := by simp [Ix.Kernel.Env.find?, List.find?, hne_ln]
+  have hf_lc : (⟨ci :: env.consts⟩ : Ix.Kernel.Env .anon).find? Ix.Kernel.listConsName =
+      env.find? Ix.Kernel.listConsName := by simp [Ix.Kernel.Env.find?, List.find?, hne_lc]
+  have hf_cn : (⟨ci :: env.consts⟩ : Ix.Kernel.Env .anon).find? Ix.Kernel.charOfNatName =
+      env.find? Ix.Kernel.charOfNatName := by simp [Ix.Kernel.Env.find?, List.find?, hne_cn]
+  rw [hf_sl] at hsl; rw [hf_ln] at hln; rw [hf_lc] at hlc; rw [hf_cn] at hcn
+  have isSome_ln : (env.find? Ix.Kernel.listNilName).isSome = true := by
+    cases hf : env.find? Ix.Kernel.listNilName <;> simp_all [Ix.Kernel.listNilTyOk]
+  have isSome_lc : (env.find? Ix.Kernel.listConsName).isSome = true := by
+    cases hf : env.find? Ix.Kernel.listConsName <;> simp_all [Ix.Kernel.listConsTyOk]
+  have isSome_cn : (env.find? Ix.Kernel.charOfNatName).isSome = true := by
+    cases hf : env.find? Ix.Kernel.charOfNatName <;> simp_all [Ix.Kernel.charOfNatTyOk]
+  cases hfind_sl : env.find? Ix.Kernel.stringOfListName with
+  | none => simp [hfind_sl, Ix.Kernel.stringOfListTyOk] at hsl
+  | some ci_sl =>
+    have isSome_sl : (env.find? Ix.Kernel.stringOfListName).isSome = true := by simp [hfind_sl]
+    have hmem_sl : ci_sl ∈ env.consts := List.mem_of_find?_eq_some hfind_sl
+    have hres_sl : ci_sl.toConstantVal.type.constsResolve env = true :=
+      (hstore.wf ci_sl hmem_sl).2.2.1
+    rw [hfind_sl] at hsl
+    simp only [Ix.Kernel.stringOfListTyOk, Bool.and_eq_true] at hsl
+    split at hsl
+    · rename_i l1 us1 c1 c2 mb hty
+      simp only [Bool.and_eq_true, beq_iff_eq] at hsl
+      obtain ⟨⟨⟨rfl, _⟩, rfl⟩, rfl⟩ := hsl.2
+      rw [hty] at hres_sl
+      simp only [Expr.constsResolve, Bool.and_eq_true] at hres_sl
+      simp [Expr.constsResolve, hnat'.1.1, hnat'.1.2, hnat'.2,
+        hres_sl.2, isSome_sl, hres_sl.1.1, isSome_ln, isSome_lc, hres_sl.1.2, isSome_cn]
+    · exact nomatch hsl.2
+
 private theorem litResolve_of_infer_aux {env env₁ : Ix.Kernel.Env .anon} {ci : KConstantInfo}
     (henv₁ : env₁ = ⟨ci :: env.consts⟩)
     (hlit_nat : ∀ n, Ix.Kernel.natLitSupported env₁ = true →
@@ -775,6 +859,27 @@ theorem litResolve_of_infer_cons_former {env env₁ : Ix.Kernel.Env .anon} {ci :
     (hfv : e.hasFvar = false) :
     litResolve env e = true := by
   obtain ⟨hnat, hstr⟩ := lit_constsResolve_of_cons_former hstore hbasis hsort
+  exact litResolve_of_infer_aux henv₁
+    (fun n hn => hnat n (by rwa [← henv₁]))
+    (fun s hs => hstr s (by rwa [← henv₁]))
+    (nexprDepth e) (Nat.le_refl _) hinf rfl (fvarLitResolve_of_hasFvar_false hfv)
+
+/-- Literal resolution descends past a former whose key is distinct from the literal
+functions. These inequalities can come from role storage and freshness even when the former
+is declared through a type alias. -/
+theorem litResolve_of_infer_cons_distinct {env env₁ : Ix.Kernel.Env .anon} {ci : KConstantInfo}
+    {d : Nat} {e t : KExpr}
+    (hstore : Ix.Kernel.Open.StoreInv env)
+    (henv₁ : env₁ = ⟨ci :: env.consts⟩)
+    (hbasis : Ix.Kernel.reservedBasisNames.contains ci.name = false)
+    (hneSL : ci.name ≠ Ix.Kernel.stringOfListName)
+    (hneLN : ci.name ≠ Ix.Kernel.listNilName)
+    (hneLC : ci.name ≠ Ix.Kernel.listConsName)
+    (hneCN : ci.name ≠ Ix.Kernel.charOfNatName)
+    (hinf : Infer env₁ .full d e t)
+    (hfv : e.hasFvar = false) :
+    litResolve env e = true := by
+  obtain ⟨hnat, hstr⟩ := lit_constsResolve_of_cons_distinct hstore hbasis hneSL hneLN hneLC hneCN
   exact litResolve_of_infer_aux henv₁
     (fun n hn => hnat n (by rwa [← henv₁]))
     (fun s hs => hstr s (by rwa [← henv₁]))

@@ -14,7 +14,9 @@ lookup-preserving extensions: binder prefixes agree, and the result sorts agree.
 built telescope. Ordinary syntactic entries produce it from their existing fields; an alias
 producer must retain operational traces from its actual checks. The delta/beta trace relation
 here is not asserted for arbitrary circuit whnf paths. In particular, typing or definitional
-equality alone is not a producer of either trace.
+equality alone is not a producer of either trace. The underlying HeadDeltaBeta relation uses
+non-lifting beta on opened expressions; it is not a specification of raw de Bruijn substitution.
+The structural classifier instead uses lifting substitution and needs its own data refinement.
 -/
 
 namespace IxVM.Refinement.Decl

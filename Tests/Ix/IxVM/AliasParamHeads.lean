@@ -184,6 +184,10 @@ def run : IO UInt32 := do
   let env ← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile path))
   IO.println s!"corpus {path}: records={env.consts.size}; names={env.named.size}"
   let mut aliases := 0
+  let mut allMembers := 0
+  let mut unsafeMembers := 0
+  let mut syntacticMembers := 0
+  let mut syntacticFailures := 0
   let mut classFailures := 0
   let mut classDifferences := 0
   let mut classDelta := 0
@@ -208,7 +212,11 @@ def run : IO UInt32 := do
     let cx : RCx := { refs := c.refs, univs := c.univs, recur := recurOf a ms }
     for j in [:ms.size] do
       let some (.indc ind) := ms[j]? | continue
-      if ind.isUnsafe then continue
+      allMembers := allMembers + 1
+      if ind.isUnsafe || ind.ctors.any (·.isUnsafe) then
+        unsafeMembers := unsafeMembers + 1
+        IO.println s!"unsafe-member {nameMap.getD (iprjAddr a j) (toString a)} block={a} indUnsafe={ind.isUnsafe} ctorUnsafe={ind.ctors.any (·.isUnsafe)}"
+        continue
       let off := rootOffset ms j
       let f ← match readRoots c cx #[(off, ind.typ)] 5000000 with
         | .ok fs => pure (some fs[0]!)
@@ -217,7 +225,14 @@ def run : IO UInt32 := do
           errors := errors + 1
           pure none
       let some f := f | continue
-      if formerIsTele (ind.params.toNat + ind.indices.toNat) f then continue
+      if formerIsTele (ind.params.toNat + ind.indices.toNat) f then
+        syntacticMembers := syntacticMembers + 1
+        match classifierWalk env (ind.params.toNat + ind.indices.toNat) f with
+        | .error _ => syntacticFailures := syntacticFailures + 1
+        | .ok (ds, u, _) =>
+          let rebuilt := ds.foldr (fun (d, t) b => RE.all d t b) (RE.sort u)
+          if rebuilt != f then syntacticFailures := syntacticFailures + 1
+        continue
       aliases := aliases + 1
       let old := teleWalk env (fun a => nameMap.getD a (toString a)) 5000000
         (ind.params.toNat + ind.indices.toNat) f
@@ -255,11 +270,12 @@ def run : IO UInt32 := do
                 heads := heads + 1
                 badBlocks := badBlocks.insert a
                 IO.println s!"family-headed parameter {names.getD t (toString t)} ctor={k}"
+  IO.println s!"all inductive members={allMembers}; outside logic={unsafeMembers}; safe syntactic={syntacticMembers}; syntactic changes/failures={syntacticFailures}"
   IO.println s!"aliases={aliases}; constructors={constructors}; parameters={parameters}"
   IO.println s!"raw self-occurrences={mentions}; zeta-read family heads={heads}; parameter lets={lets}; errors={errors}"
   IO.println s!"classifier failures={classFailures}; exact binder/sort differences={classDifferences}; delta={classDelta}; beta={classBeta}; beta-not-never={classCert}; zeta={classZeta}"
   IO.println s!"affected blocks={badBlocks.size}"
   if badBlocks.isEmpty then IO.println "affected dependent names=0 (the affected block set is empty)"
-  return if localOk && headsOk && aliases == 31 && errors == 0 && heads == 0 && classFailures == 0 && classDifferences == 0 then 0 else 1
+  return if localOk && headsOk && aliases == 31 && errors == 0 && heads == 0 && classFailures == 0 && classDifferences == 0 && syntacticFailures == 0 then 0 else 1
 
 end Tests.Ix.IxVM.AliasParamHeads

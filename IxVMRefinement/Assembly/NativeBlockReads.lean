@@ -247,10 +247,10 @@ theorem native_ctor_slots {b : Bytes.Address} {n levels params : Nat} {i : F}
     | .other (m34 := after) (p41 := ptr) (cs47 := loadCalls)
         (x_c_nlvls := cnl) (x_cty := cty) (x_c_block := cblk)
         (x_c_ind_idx := cmi) (x_c_cidx := csl) (x_c_np := cnp) (x_c_nf := cnf)
-        (x_c_unsafe := cus) (m655 := nextHeap) (cs695 := nextCalls) (v708 := nextIndex)
+        (x_c_unsafe := cus) (m725 := nextHeap) (cs765 := nextCalls) (v778 := nextIndex)
         (ev49 := loaded) (ld43 := tag) (heq233 := slotChecked) (heq261 := levelsChecked)
-        (heq289 := paramsChecked) (op792 := addition) (ev697 := nextRun)
-        (hc794 := allCalls) .. =>
+        (heq289 := paramsChecked) (op862 := addition) (ev767 := nextRun)
+        (hc864 := allCalls) .. =>
       by_cases hjk : j = k
       · subst hjk
         exact ⟨blockArg, ptr, h, after, loadCalls, cnl, cty, cblk, cmi, csl, cnp, cnf, cus,
@@ -297,10 +297,10 @@ theorem modeled_ctor_slots {b : Bytes.Address} {n levels params : Nat} {i : F}
     | .other (m34 := after) (p41 := ptr) (cs47 := loadCalls)
         (x_c_nlvls := cnl) (x_cty := cty) (x_c_block := cblk)
         (x_c_ind_idx := cmi) (x_c_cidx := csl) (x_c_np := cnp) (x_c_nf := cnf)
-        (x_c_unsafe := cus) (m500 := nextHeap) (cs540 := nextCalls) (v551 := nextIndex)
+        (x_c_unsafe := cus) (m551 := nextHeap) (cs588 := nextCalls) (v599 := nextIndex)
         (ev49 := loaded) (ld43 := tag) (heq233 := slotChecked) (heq261 := levelsChecked)
-        (heq289 := paramsChecked) (op621 := addition) (ev542 := nextRun)
-        (hc623 := allCalls) .. =>
+        (heq289 := paramsChecked) (op669 := addition) (ev590 := nextRun)
+        (hc671 := allCalls) .. =>
       by_cases hjk : j = k
       · subst hjk
         exact ⟨blockArg, ptr, h, after, loadCalls, cnl, cty, cblk, cmi, csl, cnp, cnf, cus,
@@ -378,10 +378,10 @@ theorem ctorSlots_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore 
   | .Axiom_other_other (hv37 := hv) ..
   | .Defn (hv269 := hv) .. | .Thm (hv526 := hv) ..
   | .Opaque (hv825 := hv) .. | .Quot (hv1076 := hv) ..
-  | .Ctor_n0_n0 (hv1941 := hv) .. | .Ctor_n0_other (hv1941 := hv) ..
-  | .Ctor_other_n0 (hv1941 := hv) ..
-  | .Ctor_other_other (hv1941 := hv) ..
-  | .Rec_n0 (hv2631 := hv) .. | .Rec_other (hv2631 := hv) .. =>
+  | .Ctor_n0_n0 (hv1989 := hv) .. | .Ctor_n0_other (hv1989 := hv) ..
+  | .Ctor_other_n0 (hv1989 := hv) ..
+  | .Ctor_other_other (hv1989 := hv) ..
+  | .Rec_n0 (hv2727 := hv) .. | .Rec_other (hv2727 := hv) .. =>
     injection hv with _ htag _; exact absurd htag (by decide)
   | .Induct_n0 (m2 := m2) (x_nlvls := xnl) (x_ty := xty)
       (x_n_params := xnp) (x_n_indices := xni) (x_num_ctors := xnc)
@@ -421,7 +421,7 @@ theorem ctorSlots_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore 
       have hbp := Bytes.repAddressRef_heapMono₂ Core.addrTy e_to_63 hbp_m
       exact native_ctor_slots hnc ind.ctors.size 0 (by omega) rfl rfl hsub_ctors hbp ev137 j
         (Nat.zero_le _) hj
-  | .Induct_other_other (hv1240 := hv_ind) (hne1927 := hne_u) .. =>
+  | .Induct_other_other (hv1240 := hv_ind) (hne1975 := hne_u) .. =>
     injection hv_ind with _ _ hargs
     injection hargs with _ hargs; injection hargs with _ hargs
     injection hargs with _ hargs; injection hargs with _ hargs
@@ -432,13 +432,13 @@ theorem ctorSlots_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore 
       (x_ind_block := xblk) (x_ind_idx := xidx)
       (m1283 := m1283) (m1333 := m1333) (m1354 := m1354) (m1376 := m1376)
       (m1396 := m1396) (m1427 := m1427) (m1440 := m1440) (m1470 := m1470)
-      (m1492 := m1492) (m1701 := m1653) (m1745 := m1688) (m1793 := m1736)
-      (cs1816 := cs_mc)
+      (m1492 := m1492) (m1749 := m1653) (m1793 := m1688) (m1841 := m1736)
+      (cs1864 := cs_mc)
       (ev14 := ev_iu) (hv1240 := hv_ind) (ev1295 := ev_ws)
       (hm1362 := hm1354) (hm1384 := hm1376) (ev1343 := ev_emb)
       (hm1435 := hm1427) (ev1408 := ev_es) (ev1452 := ev_saf)
-      (ev1482 := ev_mk) (ev1505 := ev_mod) (ev1663 := ev_fa) (ev1711 := ev_tele)
-      (hm1801 := hm1736) (ev1757 := ev_rsl) (ev1818 := ev_mc) (hc1926 := hc) .. =>
+      (ev1482 := ev_mk) (ev1505 := ev_mod) (ev1663 := ev_fa) (ev1711 := ev_lead) (ev1759 := ev_tele)
+      (hm1849 := hm1736) (ev1805 := ev_rsl) (ev1866 := ev_mc) (hc1974 := hc) .. =>
     injection hv_ind with _ _ hargs
     injection hargs with hnl hargs; injection hargs with hty hargs
     injection hargs with hnp' hargs; injection hargs with hni' hargs
@@ -454,7 +454,7 @@ theorem ctorSlots_of_member (hbound : Bounded calls) (hS : LoadedReads.RunStore 
         (e_1376.trans (e_1354.trans (ev_emb.heap_extends.trans
           (e_1427.trans (ev_es.heap_extends.trans (ev_saf.heap_extends.trans
             (ev_mk.heap_extends.trans (ev_mod.heap_extends.trans
-              (ev_fa.heap_extends.trans (ev_tele.heap_extends.trans
+              ((ev_fa.heap_extends.trans ev_lead.heap_extends).trans (ev_tele.heap_extends.trans
                 (e_1736.trans ev_rsl.heap_extends))))))))))))
     have hsub_mc : ∀ cl ∈ cs_mc, cl ∈ calls := fun cl hcl =>
       hsub_chk cl (by rw [hc]; simp [hcl])

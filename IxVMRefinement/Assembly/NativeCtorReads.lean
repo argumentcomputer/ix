@@ -84,12 +84,12 @@ theorem native_ctor_scope_reads {block : Bytes.Address} {indIndex safety : F}
         (x_c_nlvls := nl) (x_cty := ty) (x_c_block := parent)
         (x_c_ind_idx := member) (x_c_cidx := slot) (x_c_np := np) (x_c_nf := nf)
         (x_c_unsafe := unsafeFlag) (v318 := scopeResult) (m144 := scopeBefore)
-        (m319 := scopeAfter) (cs329 := scopeCalls) (m655 := nextHeap)
-        (cs695 := nextCalls) (v708 := nextIndex)
+        (m319 := scopeAfter) (cs329 := scopeCalls) (m725 := nextHeap)
+        (cs765 := nextCalls) (v778 := nextIndex)
         (ev49 := loaded) (ld43 := tag) (ev154 := addressEq)
         (heq205 := memberChecked) (heq233 := slotChecked) (heq261 := levelsChecked)
         (heq289 := paramsChecked) (heq317 := safetyChecked) (ev331 := scopeRun)
-        (op792 := addition) (ev697 := nextRun) (hc794 := allCalls) .. =>
+        (op862 := addition) (ev767 := nextRun) (hc864 := allCalls) .. =>
       have added := Decl.evalBinOp_add_nat start 1 addition
       subst nextIndex
       have nextMember : (⟨"KernelCheck::check_inductive_shape_ctors",
@@ -149,9 +149,9 @@ theorem native_ctor_projection_hashes (context : Core.ScopedCtx)
         simpa using Decl.evalBinOp_sub_nat (by omega : start ≤ count) operation
       have equal := Decl.nat_eq_of_field_eq (by decide) (by omega) zero
       omega
-    | .other (m646 := hashHeap) (m655 := nextHeap) (cs665 := hashCalls)
-        (cs695 := nextCalls) (v708 := nextIndex) (ev667 := hashed)
-        (op792 := addition) (ev697 := nextRun) (hc794 := allCalls) .. =>
+    | .other (m716 := hashHeap) (m725 := nextHeap) (cs735 := hashCalls)
+        (cs765 := nextCalls) (v778 := nextIndex) (ev737 := hashed)
+        (op862 := addition) (ev767 := nextRun) (hc864 := allCalls) .. =>
       have hashMember : (⟨"KernelCheck::projection_addr_ctor",
           [.field indIndex, .field (start : F), blockArg], hashHeap⟩ : Call F) ∈ calls := by
         rw [allCalls]; simp
