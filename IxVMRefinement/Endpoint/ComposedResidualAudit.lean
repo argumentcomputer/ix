@@ -9,19 +9,24 @@ that has no unconditional theorem yet. This module prints its statement (`#check
 its typing hypotheses (`#print` of `WalkedUnit` and `WalkedUnitStep`) and the axioms it
 reaches. A change to any of them fails the build.
 
-How to read it. The explicit arguments are the open obligations: the first eight are the
+How to read it. The explicit arguments are the open obligations: the first seven are the
 binding half's, the others the typing half's, for each kind of top-walked unit that has no
-step yet. The implicit argument `Run` is the binding claim layer's run predicate, which nothing
-supplies yet. A hypothesis is typed by the interface its obligation has today, so the theorem
-claims nothing by itself; it fixes how the parts compose and what is left.
+step yet. The binding half's run predicate is `IxVM.Refinement.Binding.BindingRun`. The first
+three arguments are the parts of the binding claim's export that remain: the loaded table's
+admission, its prelude pin, and the stores of a run. The run predicate holds the prelude pin,
+the store after the basis groups and the admission of each group with its reading clause, so
+the fold's hypotheses about those are its projections and are not listed. A hypothesis is typed
+by the interface its obligation has today, so the theorem claims nothing by itself; it fixes
+how the parts compose and what is left.
 
 How to change it. When a theorem produces a hypothesis, apply it inside
 `circuitComposed_residual`, delete the hypothesis and update the expected output here in the
 same commit. When the interface of an obligation changes, retype its hypothesis the same way.
 The proof is complete when the theorem has no explicit argument.
 
-What this module does not print. A definition that a hypothesis reads (`BindingClaimExportObs`,
-`BasisOver`, `AtGroups`, `ClosureStepOver`, `RoleFreeShapes`, `RoleUnitStepOver`,
+What this module does not print. A definition that a hypothesis reads (`LoadedTableAdmits`,
+`LoadedTablePinsPrelude`, `GroupStoresOfRun`, `BindingRun`, `AtGroups`, `ClosureStepOver`,
+`RoleFreeShapes`, `RoleUnitStepOver`,
 `FoldExtra`, `UnitStep` and the others) appears by name only: its own
 module holds it. The public statement and what it reads are printed in
 `Ix.IxVM.ConsistencyAudit` and `Ix.IxVM.ConsistencyModelAudit`. The module is outside any
@@ -30,36 +35,26 @@ namespace, so every name prints in full. -/
 /-! ## The theorem -/
 
 /--
-info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
-  {Run :
-    List (Aiur.Generic.SourceSemantics.Call IxVM.F) →
-      Ix.Kernel.RoleTable → IxVM.Refinement.Binding.BRun → (ℕ → Ixon.Env) → Prop}
-  (bindingClaimExport :
-    IxVM.Consistency.SourceSoundBounded fun calls d =>
-      IxVM.Refinement.Binding.BindingClaimExportObs (Run calls) calls d)
-  (basisGroups :
-    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.BasisOver IxVM.Refinement.Typing.FormerOpenTraceAt (Run calls))
-  (groupAdmissions :
-    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)), IxVM.Refinement.Binding.AdmitsChain (Run calls))
-  (groupAdmissionReads :
-    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)), IxVM.Refinement.Binding.AdmitsReadsChain (Run calls))
+info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u} (tableAdmits : IxVM.Refinement.Binding.LoadedTableAdmits)
+  (preludePins : IxVM.Refinement.Binding.LoadedTablePinsPrelude)
+  (groupStores :
+    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)), IxVM.Refinement.Binding.GroupStoresOfRun calls)
   (groupClosure :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.AtGroups (Run calls)
+      IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
         (IxVM.Refinement.Binding.ClosureStepOver IxVM.Refinement.Typing.FormerOpenTraceAt))
   (groupWithoutRoleUnit :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.AtGroups (Run calls)
+      IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
         (IxVM.Refinement.Binding.RoleFreeShapes IxVM.Refinement.Typing.FormerOpenTraceAt))
   (operationRoleUnit :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.AtGroups (Run calls)
+      IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
         (IxVM.Refinement.Binding.RoleUnitStepOver (fun x => x ∈ IxVM.Refinement.RoleOps.opRoles)
           IxVM.Refinement.Typing.FormerOpenTraceAt))
   (standardAxiomRoleUnit :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.AtGroups (Run calls)
+      IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
         (IxVM.Refinement.Binding.RoleUnitStepOver (fun x => x ∈ IxVM.Consistency.standardAxioms)
           IxVM.Refinement.Typing.FormerOpenTraceAt))
   (nativeBlockTelescope :
