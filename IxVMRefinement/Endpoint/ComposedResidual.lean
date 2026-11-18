@@ -3,6 +3,7 @@ import IxVMRefinement.FamilyGraph.Composition
 import IxVMRefinement.Assembly.NativeBlockWalked
 import IxVMRefinement.Binding.TableAdmits
 import IxVMRefinement.Binding.TableAdmitsValidate
+import IxVMRefinement.Binding.GroupStores
 
 /-! # The composed statement from its open obligations
 
@@ -208,7 +209,10 @@ remains (`Binding.bindingClaimExport_of_table_and_stores`; the claim's decode is
 binding run loads is the admitted table of bytes the run hashed, `Binding.loadedTableAdmits`,
 and that such a table binding every role pins the prelude, `Binding.loadedTablePinsPrelude`):
 the stores of a run, with every clause of each group's admission but the observed validation
-of its roles (`groupStores`). The invariant at the six basis groups
+of its roles, reduced to what is left of their clauses over the run's records
+(`groupStores`, `Binding.RemainingStoreClausesOfRun`: the safety of the roots, `opsOwn`,
+`unitsLast` and the reading clause; the store sequence and every other clause are proved,
+`Binding.groupStoresOfRun_of_remaining`). The invariant at the six basis groups
 and the two admission chains are projections of the run predicate (`basisOver_bindingRun`,
 `admitsChain_bindingRun`, `admitsReadsChain_bindingRun`). The other four are, for every bounded
 run and each group from 6 to 76 of it, the closure, the stored shapes where the group has no
@@ -243,15 +247,16 @@ the use-site reading of the projection guard, a theorem (`Core.projGuardRunReadi
   Stated; the model side's facts (`Decl.FamilyAlias.FamilyCheckFacts`) are kernel-checked at two
   compiled fixtures. Producer: `FamilyAlias.FamilyStepTarget` with
   `FamilyAlias.modelSide_of_target` on the model side (left: the companions after the step, the
-  advice's ties from `FamilyRun.famCall` and the family record's inert clause); the circuit
-  side, from the observed family check to the facts, open until the circuit's family changes.
+  advice's ties from `FamilyRun.checks` (its `FamilyChecksAt.famCall`) and the family record's
+  inert clause); the circuit side, from the observed family check to the facts, open until the
+  circuit's family changes.
 * `familyTwin`: the step of a second family record of a block (a twin), handed the block's
   family record stored, installs it and keeps the fold's clause with the family recursors'
   companions beside it (`UnitStepTwin`). Stated; one accepted pair was executed. Producer open:
   the step from `TwinFamily.TwinStepTarget` through `TwinFamily.familyInstalled_of_clause`, and
   the target from `Decl.FamilyAlias.FamilyCheckFacts`. -/
 theorem circuitComposed_residual
-    (groupStores : ∀ calls, GroupStoresOfRun calls)
+    (groupStores : ∀ calls, RemainingStoreClausesOfRun calls)
     (groupClosure :
       ∀ calls, AtGroups (BindingRun calls) (ClosureStepOver.{u} FormerOpenTraceAt))
     (groupWithoutRoleUnit :
@@ -269,7 +274,7 @@ theorem circuitComposed_residual
     CircuitComposed.{u} :=
   circuitComposed_of_parts
     (bindingClaimExport_of_table_and_stores Binding.loadedTableAdmits
-      Binding.loadedTablePinsPrelude groupStores)
+      Binding.loadedTablePinsPrelude fun calls => groupStoresOfRun_of_remaining (groupStores calls))
     (fun calls => basisOver_bindingRun FormerOpenTraceAt calls) admitsChain_bindingRun
     admitsReadsChain_bindingRun
     groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit

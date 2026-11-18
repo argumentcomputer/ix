@@ -1,4 +1,4 @@
-import IxVMRefinement.Binding.StoreLogic
+import IxVMRefinement.Binding.StoreStanding
 import IxVMRefinement.Binding.BasisAt
 import IxVMRefinement.Assembly.TypingBasisInv
 
@@ -11,17 +11,19 @@ clauses that are left, named in `RemainingStoreClauses`.
 
 * `basisRolesStored_of_pinned`: at a table that pins the prelude, the bound record of a walked
   role of a group below 6 is a basis row.
-* `RemainingStoreClauses t E₀`: what is not proved of the sequence: four clauses (`standing`,
-  `opsOwn`, `unitsLast`, and the reading clause of `AdmitsReads`) and the safety of the roots
-  (`RootsSafe`), from which the clause `logic` is proved (`logic_of_rootsSafe`). The two facts
+* `RemainingStoreClauses t E₀`: what is not proved of the sequence: three clauses (`opsOwn`,
+  `unitsLast`, and the reading clause of `AdmitsReads`) and the safety of the roots
+  (`RootsSafe`), from which the clauses `logic` and `standing` are proved (`logic_of_rootsSafe`,
+  `standing_of_rootsSafe`). The two facts
   about the run's records the proved clauses read are proved
   (`IxVMRefinement.Binding.StoreFieldsRun`):
   the basis rows are records the run loaded as the basis store holds them (`basisRows_of_run`),
   and the record a standard axiom is bound to is a safe axiom record (`axiomRoles_of_run`).
-* `groupStoresOfRun_of_remaining`: `GroupStoresOfRun calls` from `RemainingStoreClauses` at
-  the run's records, in the alternative without a collision. Every other clause of every
-  group's admission is proved: the rank is `walkRank` over a closed list of the records the
-  group's validations walked.
+* `RemainingStoreClausesOfRun calls`: `RemainingStoreClauses` at the run's records, at every
+  table the run's binding claim admits and validates, in the alternative without a collision.
+* `groupStoresOfRun_of_remaining`: `GroupStoresOfRun calls` from `RemainingStoreClausesOfRun`.
+  Every other clause of every group's admission is proved: the rank is `walkRank` over a closed
+  list of the records the group's validations walked.
 -/
 
 set_option linter.unusedVariables false
@@ -59,8 +61,6 @@ theorem basisRolesStored_of_pinned {t : Ix.Kernel.RoleTable} (hpre : PreludePinn
 /-- **What is left of the store sequence's clauses**, over the run's records `E₀`.
 
 Status: stated only; nothing proves any field of any run.
-* `standing`: a new axiom or quotient record is the group's standard axiom. The walk's check of
-  an axiom record asks for a standing role in force.
 * `rootsSafe`: the record bound to a role whose validation walks it is in Lean's logic with its
   block, and so are the theorem of a proof in the evidence of a definition specified by
   equations and the references a certificate in an operation's evidence uses (`RootsSafe`).
@@ -80,10 +80,6 @@ Status: stated only; nothing proves any field of any run.
 * `reads`: a reading over the run's records of a constant address of a new record is a reading
   over the store after the group. -/
 structure RemainingStoreClauses (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
-  standing : ∀ g, 6 ≤ g → g < 77 → ∀ a c,
-    New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a →
-    recordOf (groupStore t E₀ (g + 1)) a = some c → IsAxiomLike c →
-    ∃ r ∈ roleGroup g, r ∈ standardAxioms ∧ t.addressOf? r = some a
   rootsSafe : RootsSafe t E₀
   opsOwn : ∀ g, 6 ≤ g → g < 77 → ∀ a r,
     New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a → t.addressOf? r = some a →
@@ -96,18 +92,25 @@ structure RemainingStoreClauses (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Pr
     recordOf (groupStore t E₀ (g + 1)) A = some c → ConstAddrOf A c x →
     Reads t E₀ x ci₀ → Reads t (groupStore t E₀ (g + 1)) x ci₀
 
+/-- **What is left of the store sequence's clauses, for a run**: at every table that bytes the
+run hashed admit at a binding address, binding every role, pinning the prelude and with every
+role of the 77 groups validated by the run, the run's records without a collision have
+`RemainingStoreClauses`. -/
+def RemainingStoreClausesOfRun (calls : List (Call F)) : Prop :=
+  ∀ (a : _root_.Address) (tb : ByteArray) (t : Ix.Kernel.RoleTable),
+    Hashed calls tb →
+    Ix.Kernel.Admission.admitBinding Address.admissionHash ⟨a, tb⟩ = .ok t →
+    AllBound t → PreludePinned t →
+    (∀ g, g < 77 → ∀ r ∈ roleGroup g, RoleValidationIn calls a t g r) →
+    CollisionFreeRun calls (Claim.runEnv ⟨a, tb⟩ (t := t) calls) →
+    RemainingStoreClauses t (Claim.runEnv ⟨a, tb⟩ (t := t) calls)
+
 /-- **The stores of a binding run, from what is left of the sequence's clauses**: for every run,
 `GroupStoresOfRun calls` with the stores `groupStore t E₀` over the run's records and the rank
 `walkRank` over a closed list of the records each group's validations walked, if the run's
-records without a collision have `RemainingStoreClauses`. -/
+records without a collision have `RemainingStoreClauses` (`RemainingStoreClausesOfRun`). -/
 theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
-    (hrem : ∀ (a : _root_.Address) (tb : ByteArray) (t : Ix.Kernel.RoleTable),
-      Hashed calls tb →
-      Ix.Kernel.Admission.admitBinding Address.admissionHash ⟨a, tb⟩ = .ok t →
-      AllBound t → PreludePinned t →
-      (∀ g, g < 77 → ∀ r ∈ roleGroup g, RoleValidationIn calls a t g r) →
-      CollisionFreeRun calls (Claim.runEnv ⟨a, tb⟩ (t := t) calls) →
-      RemainingStoreClauses t (Claim.runEnv ⟨a, tb⟩ (t := t) calls)) :
+    (hrem : RemainingStoreClausesOfRun calls) :
     GroupStoresOfRun calls := by
   intro V extra hextra a tb t htb hadm hall hpin hval
   by_cases hcol : V.HashedCollision extra calls
@@ -155,7 +158,7 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
         rankUsed := groupStore_rankUsed hC hb hbr hax hws hg6 hw
         rankOwner := groupStore_rankOwner hC hb hax hg6 hw
         projMember := groupStore_projMember hC hb hax hg6 hw
-        standing := hR.standing g hg6 hg
+        standing := standing_of_rootsSafe hC hb hpin hval hR.rootsSafe g hg6 hg
         logic := logic_of_rootsSafe hC hb hval hR.rootsSafe g hg6 hg
         checked := groupStore_checked hC hb hax hg6 hw
         validated := fun _ _ => trivial
