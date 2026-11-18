@@ -199,7 +199,7 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
         opsOwn := groupStore_opsOwn hC hb hax hP hcheck hvalAll hg6 hw
           (walkStepsOrdered_all hC hvalAll hRS.blockSteps g)
           (payloadOpEarlier_all hRS.payloadOps g hg6)
-        unitsLast := groupStore_unitsLast hC hb hax hP hg6 (hvalAll g) hw
+        unitsLast := groupStore_unitsLast hC hb hax hP hws hg6 (hvalAll g) hw
           (walkStepsOrdered_all hC hvalAll hRS.blockSteps g)
           (payloadOpEarlier_all hRS.payloadOps g hg6)
         evidenceRefs := groupStore_evidenceRefs hC hb hbr hax hP hws hg6 hw }

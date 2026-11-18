@@ -303,14 +303,14 @@ theorem advNotUnit_of_run (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoad
     ∀ B rb a, runFamOf calls bAddr t E₀ g B = some rb → runAdv calls bAddr t g B a →
       ¬ (RoleUnitAt t g a ∧ New (groupStore t E₀ (runPayload calls bAddr t) g)
         (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) a) := by
-  rintro B rb a hfam ⟨rb', cs, hcs, hin⟩ ⟨⟨r, hr, had, hk⟩, -⟩
+  rintro B rb a hfam ⟨rb', cs, hcs, hin⟩ ⟨⟨r, hr, had, hk⟩, hnew⟩
   have hreach := runPayload_reach hC hb hax hR hg6 hg hw hfam ⟨rb', cs, hcs, Or.inr (Or.inl hin)⟩
   rcases hk with hop | hs
   · have h1 := hpay a hreach r had hop
     rw [groupOf_of_mem_roleGroup hr] at h1
     exact Nat.lt_irrefl g h1
   · obtain ⟨c, ax, hc, hi, -⟩ := hax r hs a had
-    exact hR.payloadFacts.notAxiomLike g a c hreach hc (Or.inl ⟨ax, hi⟩)
+    exact hR.payloadFacts.notAxiomLike g a c hreach hnew hc (Or.inl ⟨ax, hi⟩)
 
 /-- **`ClosureRunFacts.keptRoles` of every run**: the record of a kept or prelude role of the group
 that is no role unit is the record its validation walked (`kept_walked`, `GroupWalked.roots`), so

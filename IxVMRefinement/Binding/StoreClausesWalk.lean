@@ -541,10 +541,12 @@ not exported. Where each fact comes from in the source, all under the group's va
   assertions on inner references;
 * `notAxiomLike`: `check_advice_record` has no arm for an axiom or a quotient record; a container
   recursor is a recursor (`rec_family_block`); the family record is a block of recursors.
-  Source: today's circuit for the payload's addresses. As stated, over every record `PayReach`
-  reaches, it fails where a reference the payload's records use that is not covered is bound to
-  a standard axiom in force (`propext`, `choice` are no walked roles, so `CoveredAt` does not
-  hold there): such a record is an axiom record held before the group. -/
+  Stated for the records new in the group only: a walked witness whose closure uses `propext`
+  or `choice` makes an axiom record payload-reached in later groups (a standard axiom is no
+  walked role, so a reference to it is not covered), and that record is held before them.
+  Source: today's circuit for the payload's addresses; for a record new in the group that the
+  payload's records reference, the walk of a witness checks an axiom record only with its role
+  in force (`check_const`'s axiom arm), so it was held before. -/
 structure PayloadFacts (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (Pay : PayloadRel) : Prop where
   record : ∀ g a, PayReach t E₀ Pay g a → ∃ c, recordOf E₀ a = some c
   blockMembers : ∀ g B c ms, PayReach t E₀ Pay g B → recordOf E₀ B = some c → c.info = .muts ms →
@@ -555,7 +557,9 @@ structure PayloadFacts (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (Pay : Payloa
   projMember : ∀ g a c, PayReach t E₀ Pay g a → recordOf E₀ a = some c → IsProj c →
     ∃ cb, recordOf E₀ (Ix.Cert.ownerOf a c) = some cb ∧ ConstAddrOf (Ix.Cert.ownerOf a c) cb a
   logic : ∀ g a c, PayReach t E₀ Pay g a → recordOf E₀ a = some c → InLogic c
-  notAxiomLike : ∀ g a c, PayReach t E₀ Pay g a → recordOf E₀ a = some c → ¬ IsAxiomLike c
+  notAxiomLike : ∀ g a c, PayReach t E₀ Pay g a →
+    New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) a → recordOf E₀ a = some c →
+    ¬ IsAxiomLike c
 
 /-- **With no payload there is nothing to assume.** -/
 theorem payloadFacts_none (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) :
