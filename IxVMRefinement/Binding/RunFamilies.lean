@@ -297,6 +297,12 @@ a named change of the circuit source, or unknown.
   (`claimed`). Source: `family` the change of `check_family` and
   `check_recs` that takes the family record as the reconstruction of the block's recursors, and
   the change that compares nested pins in `check_recs`; `claimed` the first of these changes.
+* `familyFlat`: the field `GroupFamilyChecks.familyFlat`: the selected record's flattened family,
+  entry by entry, derived from the block's constructors and read off the record. Source: the
+  observations of `KernelModeled::check_family` regenerated with the changed `aux_all_in`
+  (`check_nested_aux`: the record's entries, `build_flat_block`, are the derived ones,
+  `nested_walk`, in order), with `check_recs` (entry `k` at recursor `k`), at the offset
+  `block_elim` computes.
 * `runFacts`: what is left of `ClosureRunFacts` at the group (`RunFactsLeft`, which names each
   field's source); `famRefs` is the rank's, `advNotUnit`, `roleUnitForm` and `keptRoles` are proved
   (`families_of_remaining`).
@@ -316,6 +322,11 @@ structure RemainingFamilyClauses (calls : List (Call F)) (bAddr : _root_.Address
       (runAdv calls bAddr t g) (runCont calls bAddr t g) rank
   family : ∀ g, 6 ≤ g → g < 77 → ∀ B rb, runFamOf calls bAddr t E₀ g B = some rb →
     ∃ cb ms crb rs flat, FamilyOfBlock E₀ B cb ms rb crb rs flat
+  familyFlat : ∀ g, 6 ≤ g → g < 77 → ∀ B rb, runFamOf calls bAddr t E₀ g B = some rb →
+    ∃ (cb crb : Ixon.Constant) (ms rs : Array Ixon.MutConst) (es : List FamilyFlat.FlatEntry)
+      (off : Nat),
+      FamilyOfBlock E₀ B cb ms rb crb rs (es.map FamilyFlat.FlatEntry.addr) ∧
+      FamilyFlat.RecordFlat t E₀ rb crb rs es ∧ FamilyFlat.BlockDerivedFlat t E₀ B off es
   claimed : ∀ g, 6 ≤ g → g < 77 → ∀ (A : _root_.Address) (c : Ixon.Constant)
     (rs' : Array Ixon.MutConst),
     New (groupStore t E₀ (runPayload calls bAddr t) g)
@@ -619,6 +630,7 @@ theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRows
       { modeled := modeled_of_run hC g
         famCall := runFamOf_famCall
         family := hR.family g hg6 hg
+        familyFlat := hR.familyFlat g hg6 hg
         claimed := hR.claimed g hg6 hg }
   · exact
       { oldNeeds := hL.oldNeeds
