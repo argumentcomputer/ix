@@ -115,7 +115,7 @@ theorem coreCompanions_append {c : Core.Ctx} (h : Decl.CoreCompanions c)
         intro k cv mI rP rls rl cvj nP nF T us hf hrl hc hdom
         rcases find?_append_cases new hf with hm | hf'
         · exact (hrec cv mI rP rls hm).2.2.2 rl cvj nP nF T us hrl (hctor_old hc) hdom
-        · exact h.ruleCtorHead k cv mI rP rls rl cvj nP nF T us hf' hrl (hctor_old hc) }
+        · exact h.ruleCtorHead k cv mI rP rls rl cvj nP nF T us hf' hrl (hctor_old hc) hdom }
 
 /-! ## The twin record's constants -/
 
