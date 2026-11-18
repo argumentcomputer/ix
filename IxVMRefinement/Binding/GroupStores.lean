@@ -1,6 +1,7 @@
 import IxVMRefinement.Binding.StoreStanding
 import IxVMRefinement.Binding.BasisAt
 import IxVMRefinement.Binding.RootSafety
+import IxVMRefinement.Binding.StoreReads
 import IxVMRefinement.Assembly.TypingBasisInv
 
 /-! # The stores of a binding run: the sequence and what is left of its clauses
@@ -12,8 +13,9 @@ clauses that are left, named in `RemainingStoreClauses`.
 
 * `basisRolesStored_of_pinned`: at a table that pins the prelude, the bound record of a walked
   role of a group below 6 is a basis row.
-* `RemainingStoreClauses t E₀`: what is not proved of the sequence: three clauses (`opsOwn`,
-  `unitsLast`, and the reading clause of `AdmitsReads`). The safety of the roots
+* `RemainingStoreClauses t E₀`: what is not proved of the sequence: two clauses (`opsOwn`,
+  `unitsLast`). The reading clause of `AdmitsReads` is proved (`groupStore_reads`). The safety
+  of the roots
   (`RootsAndTheoremsSafe`, `rootsAndTheoremsSafe_of_run`; with `certRefs_of_run`, `RootsSafe`)
   is proved of every run (`IxVMRefinement.Binding.RootSafety`), and the clauses `logic`
   and `standing` are proved (`logic_of_rootsSafe`, `standing_of_rootsSafe`). The two facts
@@ -63,14 +65,13 @@ theorem basisRolesStored_of_pinned {t : Ix.Kernel.RoleTable} (hpre : PreludePinn
 /-- **What is left of the store sequence's clauses**, over the run's records `E₀`.
 
 Status: stated only; nothing proves any field of any run. (The safety of the roots, which this
-structure held as `rootsSafe`, is proved of every run: `rootsAndTheoremsSafe_of_run`.)
+structure held as `rootsSafe`, is proved of every run: `rootsAndTheoremsSafe_of_run`; so is the
+reading clause it held as `reads`: `groupStore_reads`.)
 * `opsOwn`, `unitsLast`: no new record is another group's operation, and none uses the record
   of a role unit of the group: below the well-founded block from
   `KernelRoles::assert_op_reached_in_order` in `KernelRoles::walk_ctx`, in the block from
   `KernelRoles::op_order_scan` as it will be after the next change of the circuit source
-  (`RoleVal.OpOrderScanStep`).
-* `reads`: a reading over the run's records of a constant address of a new record is a reading
-  over the store after the group. -/
+  (`RoleVal.OpOrderScanStep`). -/
 structure RemainingStoreClauses (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
   opsOwn : ∀ g, 6 ≤ g → g < 77 → ∀ a r,
     New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a → t.addressOf? r = some a →
@@ -78,10 +79,6 @@ structure RemainingStoreClauses (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Pr
   unitsLast : ∀ g, 6 ≤ g → g < 77 → ∀ x a,
     New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) x →
     UsedRef (groupStore t E₀ (g + 1)) x a → ¬ RoleUnitAt t g a
-  reads : ∀ g, 6 ≤ g → g < 77 → ∀ A c x ci₀,
-    New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) A →
-    recordOf (groupStore t E₀ (g + 1)) A = some c → ConstAddrOf A c x →
-    Reads t E₀ x ci₀ → Reads t (groupStore t E₀ (g + 1)) x ci₀
 
 /-- **What is left of the store sequence's clauses, for a run**: at every table that bytes the
 run hashed admit at a binding address, binding every role, pinning the prelude and with every
@@ -125,6 +122,8 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
   have hb := basisRows_of_run hC hpin hval
   have hax := axiomRoles_of_run hC hval
   have hbr : BasisRolesStored t := basisRolesStored_of_pinned hpin
+  have hcheck : t.check = .ok () :=
+    ((Ix.Kernel.Admission.admitBinding_ok_iff _ _ t).mp hadm).wellFormed
   have hroots : RootsSafe t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) :=
     RootsSafe.of_run hC hval (rootsAndTheoremsSafe_of_run hC hval)
   have hvalAll : ∀ g, ∀ r ∈ roleGroup g, RoleValidationIn calls a t g r := by
@@ -162,6 +161,6 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
         evidenceRefs := groupStore_evidenceRefs hC hb hbr hax hws hg6 hw }
   · exact
       { blobs := groupStore_reads_blobs (Nat.lt_succ_of_le hg6)
-        reads := hR.reads g hg6 hg }
+        reads := groupStore_reads hcheck hC hb hbr hax hws hg6 }
 
 end IxVM.Refinement.Binding
