@@ -3,7 +3,7 @@
 #include "trace_runtime.cuh"
 
 namespace aiur_trace {
-using namespace multi_stark_cuda;
+using namespace certifri_cuda;
 
 static __device__ __noinline__ uint64_t inverse(uint64_t value) {
     return value == 0 ? 0 : goldilocks_pow(value, GOLDILOCKS_P - 2);

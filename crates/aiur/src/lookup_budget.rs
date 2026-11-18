@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Argument Computer Corporation.
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use multi_stark::p3_field::PrimeField64;
+use certifri::p3_field::PrimeField64;
 
 use crate::G;
 

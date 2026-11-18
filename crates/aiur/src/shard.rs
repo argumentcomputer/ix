@@ -6,7 +6,7 @@
 //! pointer increment. So the rows of a record may be dealt out to several
 //! proofs — each small enough for a given prover budget — provided all of
 //! them evaluate the lookup argument under the same challenges and their
-//! residuals sum to zero, which is exactly what [`multi_stark::batch`]
+//! residuals sum to zero, which is exactly what [`certifri::batch`]
 //! provides. This module decides the partition ([`ShardPlan`]), builds each
 //! shard's witness, and states the verifier-side policy that makes a batch
 //! mean what a single proof means.
@@ -64,7 +64,7 @@
 
 use std::ops::Range;
 
-use multi_stark::{
+use certifri::{
   batch::{BatchMessage, BatchPreamble, BatchProof, Retention},
   p3_field::{Field, PrimeCharacteristicRing, PrimeField64},
   system::SystemWitness,
@@ -365,7 +365,7 @@ impl AiurSystem {
     index: &RowIndex,
     shard: usize,
     round: BatchRound,
-  ) -> multi_stark::witness::PreparedWitness<G> {
+  ) -> certifri::witness::PreparedWitness<G> {
     self.prepare_shard_witness(
       record,
       io_buffer,
@@ -386,7 +386,7 @@ impl AiurSystem {
     index: &RowIndex,
     shard: usize,
     _generated: Option<BatchRound>,
-  ) -> multi_stark::witness::PreparedWitness<G> {
+  ) -> certifri::witness::PreparedWitness<G> {
     let circuit_types = self.circuit_types();
     let ranges = &plan.shards[shard].rows;
     assert_eq!(ranges.len(), circuit_types.len(), "plan/system circuit count");
@@ -473,11 +473,11 @@ impl AiurSystem {
             Bytes2.witness_data(source, &slot_arg_widths)
           },
         };
-        (multi_stark::witness::TraceSource::Host(trace), lookups)
+        (certifri::witness::TraceSource::Host(trace), lookups)
       })
       .collect::<Vec<_>>();
     let (traces, lookups) = witness_data.into_iter().unzip();
-    multi_stark::witness::PreparedWitness { traces, lookups }
+    certifri::witness::PreparedWitness { traces, lookups }
   }
 
   /// The projected prover peak of shard `shard` of `plan` with the record

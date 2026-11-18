@@ -1,7 +1,7 @@
 use super::*;
 use std::sync::Arc;
 
-use multi_stark::{
+use certifri::{
   p3_matrix::Matrix,
   witness::{TraceGenerator, TraceSource},
 };
@@ -282,7 +282,7 @@ fn blake3_generated_timing() {
 
 #[test]
 fn generated_sources_and_commitments_stay_on_their_device() {
-  use multi_stark::{
+  use certifri::{
     config::StarkGenericConfig,
     types::{CommitmentParameters, FriParameters, GoldilocksBlake3Config},
   };
@@ -319,11 +319,8 @@ fn generated_sources_and_commitments_stay_on_their_device() {
           let config =
             GoldilocksBlake3Config::with_device(cp, fp, Some(device));
           let domain =
-            multi_stark::config::Domain::<GoldilocksBlake3Config>::new(
-              G::ONE,
-              3,
-            )
-            .unwrap();
+            certifri::config::Domain::<GoldilocksBlake3Config>::new(G::ONE, 3)
+              .unwrap();
           let (root, data) = config.commit_main(vec![(domain, source.clone())]);
           drop(data);
           let (regenerated, data) = config.commit_main(vec![(domain, source)]);

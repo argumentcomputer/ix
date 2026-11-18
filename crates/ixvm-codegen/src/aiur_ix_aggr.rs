@@ -5,7 +5,7 @@
 unused_parens, non_snake_case, clippy::all,
 clippy::ptr_as_ptr, clippy::match_same_arms,
 clippy::large_types_passed_by_value)]
-use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
+use certifri::p3_field::{PrimeCharacteristicRing, PrimeField64};
 use aiur::G;
 use aiur::execute::{ExecError, IOBuffer, QueryRecord};
 

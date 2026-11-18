@@ -1,14 +1,14 @@
-use multi_stark::expr::Expr;
-use multi_stark::lookup::Lookup;
-use multi_stark::p3_field::PrimeCharacteristicRing;
-use multi_stark::system::CircuitInputs;
-use multi_stark::system::ProverKey;
-use multi_stark::system::System;
-use multi_stark::system::SystemWitness;
-use multi_stark::types::CommitmentParameters;
-use multi_stark::types::FriParameters;
-use multi_stark::types::GoldilocksBlake3Config as Config;
-use multi_stark::types::Val;
+use certifri::expr::Expr;
+use certifri::lookup::Lookup;
+use certifri::p3_field::PrimeCharacteristicRing;
+use certifri::system::CircuitInputs;
+use certifri::system::ProverKey;
+use certifri::system::System;
+use certifri::system::SystemWitness;
+use certifri::types::CommitmentParameters;
+use certifri::types::FriParameters;
+use certifri::types::GoldilocksBlake3Config as Config;
+use certifri::types::Val;
 use p3_matrix::dense::RowMajorMatrix;
 
 pub(crate) const ACTIVE: [bool; 4] = [false, true, true, true];

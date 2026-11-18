@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use multi_stark::{lookup::LookupValues, witness::TraceSource};
+use certifri::{lookup::LookupValues, witness::TraceSource};
 
 use crate::{
   G,

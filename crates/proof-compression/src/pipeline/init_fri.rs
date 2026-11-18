@@ -1,9 +1,9 @@
 //! The saved intermediate FRI proof and the statement it exposes.
 use super::claims::{ClaimTemplate, decode_claims};
 use crate::fri::*;
-use multi_stark::prover::Proof;
-use multi_stark::types::GoldilocksBlake3Config;
-use multi_stark::types::Val;
+use certifri::prover::Proof;
+use certifri::types::GoldilocksBlake3Config;
+use certifri::types::Val;
 use p3_field::PrimeCharacteristicRing;
 use std::{fs, path::Path};
 

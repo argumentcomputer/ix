@@ -6,7 +6,7 @@ use ark_ff::Zero;
 use ark_serialize::{
   CanonicalDeserialize, CanonicalSerialize, SerializationError,
 };
-use multi_stark::traits::TwoAdicField;
+use certifri::traits::TwoAdicField;
 
 const VERSION: u64 = 0x424e0001;
 

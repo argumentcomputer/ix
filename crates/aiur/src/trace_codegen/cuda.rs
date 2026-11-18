@@ -7,7 +7,7 @@ use std::sync::{
 
 use rayon::prelude::*;
 
-use multi_stark::{
+use certifri::{
   cuda::DeviceTraceView,
   lookup::LookupValues,
   witness::{TraceGenerator, TraceSource},

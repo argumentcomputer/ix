@@ -1,13 +1,13 @@
 use crate::support::root_profile as fixture;
 
+use certifri::p3_field::PrimeCharacteristicRing;
+use certifri::p3_field::PrimeField64;
+use certifri::system::System;
+use certifri::system::SystemWitness;
+use certifri::types::ExtVal;
+use certifri::types::Val;
 use ix_proof_compression::fri::ExpandedPcsWitness;
 use ix_proof_compression::fri::expand_pcs_witness;
-use multi_stark::p3_field::PrimeCharacteristicRing;
-use multi_stark::p3_field::PrimeField64;
-use multi_stark::system::System;
-use multi_stark::system::SystemWitness;
-use multi_stark::types::ExtVal;
-use multi_stark::types::Val;
 use p3_blake3::Blake3;
 use p3_symmetric::CryptographicHasher;
 
@@ -186,7 +186,7 @@ fn root_profile_constrains_sparse_mixed_height_grouped_proof_and_statement() {
       if attack == 0 {
         definitions[3].preprocessed.as_mut().unwrap().values[10] += Val::ONE;
       } else {
-        use multi_stark::expr::Expr;
+        use certifri::expr::Expr;
         definitions[8].constraints =
           vec![Expr::main(0) - Expr::constant(Val::from_u8(18))];
         traces[8].values[0] = Val::from_u8(18);

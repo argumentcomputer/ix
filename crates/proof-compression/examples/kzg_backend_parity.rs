@@ -1,15 +1,15 @@
 //! Deterministic development proofs for comparing independently built backends.
 
-use ix_proof_compression::kzg::{
-  KzgCommitment, KzgConfig, Scalar, Srs, VerifierParams,
-  compact::FixedProofCodec, curve,
-};
-use multi_stark::{
+use certifri::{
   config::ProofConfig,
   expr::Expr,
   lookup::Lookup,
   system::{Circuit, CircuitInputs, System, SystemWitness},
   traits::{Algebra, Field},
+};
+use ix_proof_compression::kzg::{
+  KzgCommitment, KzgConfig, Scalar, Srs, VerifierParams,
+  compact::FixedProofCodec, curve,
 };
 use p3_matrix::dense::RowMajorMatrix;
 use serde::{Deserialize, Serialize};

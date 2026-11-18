@@ -68,14 +68,14 @@ fn main() {
   }
   let mut artifacts = Vec::new();
   if env::var_os("CARGO_FEATURE_CUDA").is_some() {
-    let multi_stark = PathBuf::from(multi_stark_cuda("LIBRARY"));
+    let certifri = PathBuf::from(certifri_cuda("LIBRARY"));
     artifacts.push(RuntimeArtifact {
-      path: multi_stark
+      path: certifri
         .file_name()
         .and_then(|name| name.to_str())
-        .expect("multi-stark's CUDA library has a UTF-8 file name")
+        .expect("CertiFRI's CUDA library has a UTF-8 file name")
         .to_owned(),
-      source: multi_stark,
+      source: certifri,
       link: true,
     });
     artifacts.push(RuntimeArtifact {
@@ -125,20 +125,18 @@ fn json_string(value: &str) -> String {
   quoted
 }
 
-/// Toolchain metadata from multi-stark's CUDA build, which this crate's
+/// Toolchain metadata from CertiFRI's CUDA build, which this crate's
 /// Goldilocks backend links against.
-fn multi_stark_cuda(key: &str) -> OsString {
-  env::var_os(format!("DEP_MULTI_STARK_CUDA_{key}"))
-    .unwrap_or_else(|| panic!("multi-stark's CUDA build did not report {key}"))
+fn certifri_cuda(key: &str) -> OsString {
+  env::var_os(format!("DEP_CERTIFRI_CUDA_{key}"))
+    .unwrap_or_else(|| panic!("CertiFRI's CUDA build did not report {key}"))
 }
 
-/// `IX_KZG_CUDA_ARCHS`, or else the architectures multi-stark compiled its
+/// `IX_KZG_CUDA_ARCHS`, or else the architectures CertiFRI compiled its
 /// backend for.
 fn kzg_architectures() -> Vec<String> {
   let selected = env::var("IX_KZG_CUDA_ARCHS").unwrap_or_else(|_| {
-    multi_stark_cuda("ARCHS")
-      .into_string()
-      .expect("CUDA architectures are ASCII")
+    certifri_cuda("ARCHS").into_string().expect("CUDA architectures are ASCII")
   });
   let architectures: Vec<String> = selected
     .split(',')
@@ -169,7 +167,7 @@ fn build_bn254_cuda() -> PathBuf {
     Ok("x86_64"),
     "the BN254 CUDA backend supports x86_64 targets only"
   );
-  let nvcc = multi_stark_cuda("NVCC");
+  let nvcc = certifri_cuda("NVCC");
   let architectures = kzg_architectures();
   let out = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"));
   let architecture_header = out.join("kzg_architectures.h");
@@ -265,7 +263,7 @@ fn build_bn254_cuda() -> PathBuf {
   println!("cargo:rustc-link-lib=dylib=ix_bn254_cuda");
   println!("cargo:rustc-link-arg=-Wl,-rpath,{}", out.display());
   // Tests query the CUDA runtime directly.
-  for directory in env::split_paths(&multi_stark_cuda("LIB_DIRS")) {
+  for directory in env::split_paths(&certifri_cuda("LIB_DIRS")) {
     if directory.is_dir() {
       println!("cargo:rustc-link-search=native={}", directory.display());
     }

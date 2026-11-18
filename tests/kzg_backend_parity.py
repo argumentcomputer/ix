@@ -56,8 +56,8 @@ def build(cuda, directory, environment):
             continue
         if event.get('reason') == 'compiler-artifact' and event.get('target', {}).get('name') == 'kzg_backend_parity':
             executable = event.get('executable')
-        if 'dylib=multi_stark_cuda' in event.get('linked_libs', []):
-            native = Path(event['out_dir']) / 'libmulti_stark_cuda.so'
+        if 'dylib=certifri_cuda' in event.get('linked_libs', []):
+            native = Path(event['out_dir']) / 'libcertifri_cuda.so'
     if not executable or (cuda and native is None):
         raise RuntimeError(f'Cargo did not report the requested artifacts: {log}')
     # Cargo reuses the example's output name across feature selections.

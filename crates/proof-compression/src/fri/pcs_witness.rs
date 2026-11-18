@@ -17,15 +17,15 @@ use p3_util::reverse_bits_len;
 use super::FixedPcsShape;
 use super::FixedVerifierInputs;
 use super::QuadraticValue;
-use multi_stark::config::StarkGenericConfig;
-use multi_stark::plonkish::Witness;
-use multi_stark::prover::Proof;
-use multi_stark::prover::observe_claims;
-use multi_stark::prover::sample_lookup_challenges;
-use multi_stark::system::System;
-use multi_stark::types::ExtVal;
-use multi_stark::types::GoldilocksBlake3Config;
-use multi_stark::types::Val;
+use certifri::config::StarkGenericConfig;
+use certifri::plonkish::Witness;
+use certifri::prover::Proof;
+use certifri::prover::observe_claims;
+use certifri::prover::sample_lookup_challenges;
+use certifri::system::System;
+use certifri::types::ExtVal;
+use certifri::types::GoldilocksBlake3Config;
+use certifri::types::Val;
 
 type Digest = [u8; 32];
 type Path = Vec<Digest>;
@@ -250,7 +250,7 @@ pub(super) fn expand_after_lookup(
   shape: &FixedPcsShape,
   proof: &Proof<GoldilocksBlake3Config>,
   claims: &[&[Val]],
-  mut challenger: multi_stark::types::Challenger,
+  mut challenger: certifri::types::Challenger,
   beta: ExtVal,
   gamma: ExtVal,
 ) -> Result<ExpandedPcsWitness, String> {
@@ -449,7 +449,7 @@ impl ExpandedPcsWitness {
     let mut set =
       |wire, value| witness.set(wire, value).map_err(|e| e.to_string());
     fn extension(
-      set: &mut impl FnMut(multi_stark::plonkish::Value, Val) -> Result<(), String>,
+      set: &mut impl FnMut(certifri::plonkish::Value, Val) -> Result<(), String>,
       wire: QuadraticValue,
       value: ExtVal,
     ) -> Result<(), String> {
@@ -461,7 +461,7 @@ impl ExpandedPcsWitness {
       Ok(())
     }
     fn digest(
-      set: &mut impl FnMut(multi_stark::plonkish::Value, Val) -> Result<(), String>,
+      set: &mut impl FnMut(certifri::plonkish::Value, Val) -> Result<(), String>,
       wires: &super::pcs::Digest,
       values: Digest,
     ) -> Result<(), String> {

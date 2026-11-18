@@ -263,7 +263,7 @@ extern "C" fn rs_compression_write_root(
 #[unsafe(no_mangle)]
 extern "C" fn rs_compression_release_gpu_memory() -> LeanIOResult<LeanOwned> {
   #[cfg(feature = "cuda")]
-  multi_stark::cuda::release_device_memory();
+  certifri::cuda::release_device_memory();
   LeanIOResult::ok(LeanOwned::box_usize(0))
 }
 

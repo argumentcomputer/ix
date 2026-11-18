@@ -2,19 +2,19 @@
 //! replay supplies witness values and differential-test oracle challenges;
 //! transcript tests constrain these values independently.
 
+use certifri::config::StarkGenericConfig;
+use certifri::p3_field::BasedVectorSpace;
+use certifri::p3_field::PrimeCharacteristicRing;
+use certifri::plonkish::CircuitBuilder;
+use certifri::plonkish::Witness;
+use certifri::plonkish::WitnessError;
+use certifri::prover::Proof;
+use certifri::system::System;
+use certifri::types::ExtVal;
+use certifri::types::GoldilocksBlake3Config;
+use certifri::types::Val;
 use ix_proof_compression::fri::AlgebraicInputs;
 use ix_proof_compression::fri::QuadraticValue;
-use multi_stark::config::StarkGenericConfig;
-use multi_stark::p3_field::BasedVectorSpace;
-use multi_stark::p3_field::PrimeCharacteristicRing;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::plonkish::Witness;
-use multi_stark::plonkish::WitnessError;
-use multi_stark::prover::Proof;
-use multi_stark::system::System;
-use multi_stark::types::ExtVal;
-use multi_stark::types::GoldilocksBlake3Config;
-use multi_stark::types::Val;
 use p3_challenger::{CanObserve, FieldChallenger};
 
 /// Native transcript replay through zeta, in the order used by System::verify.

@@ -8,7 +8,7 @@ use crate::{
   },
   gadgets::bytes2::Bytes2Op,
 };
-use multi_stark::eval::{VarValues, eval_expr};
+use certifri::eval::{VarValues, eval_expr};
 
 fn byte_toplevel(grouped: bool) -> Toplevel {
   let functions = [Op::U8And(0, 1), Op::U8Or(0, 1), Op::U8LessThan(0, 1)]

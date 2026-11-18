@@ -7,16 +7,16 @@
 //! Usage: fri_sizing <saved-fri-dir> [queries,...] [log-height]
 //!        fri_sizing --statistics <outer-vk.bin>
 
+use certifri::config::StarkGenericConfig;
+use certifri::system::{Circuit, System};
+use certifri::traits::Field;
+use certifri::types::{
+  CommitmentParameters, FriParameters, GoldilocksBlake3Config, Val,
+};
 use ix_proof_compression::foreign::GoldilocksCircuit;
 use ix_proof_compression::fri::{
   DEFAULT_FIELD_RETRIES, Envelope, ImplementationOptions, ProofProfile,
   Statement, StatementSlot, VerifierKey, VerifierLimits, VerifierPlan,
-};
-use multi_stark::config::StarkGenericConfig;
-use multi_stark::system::{Circuit, System};
-use multi_stark::traits::Field;
-use multi_stark::types::{
-  CommitmentParameters, FriParameters, GoldilocksBlake3Config, Val,
 };
 use p3_field::PrimeField64;
 use std::{fs, path::Path, time::Instant};
@@ -191,16 +191,15 @@ fn main() -> Result<()> {
     let (circuit, _inputs) =
       plan.build(schema.clone(), ImplementationOptions::default())?;
     let source = circuit.stats();
-    let layout = circuit.multi_stark_layout_with_max_height(1 << log_height)?;
+    let layout = circuit.certifri_layout_with_max_height(1 << log_height)?;
     let scalar = GoldilocksCircuit::estimate(&circuit);
     let scalar_rows = scalar.gates + scalar.lookups + scalar.publics + 1;
     // `FRI_SIZING_LOWER` materializes the translated circuit and lays it
     // out as the first stage does, which costs tens of GiB at full size.
     let scalar_layout = if std::env::var_os("FRI_SIZING_LOWER").is_some() {
       let translated = GoldilocksCircuit::new_preallocated(&circuit);
-      let layout = translated
-        .circuit
-        .multi_stark_layout_with_max_height(1 << log_height)?;
+      let layout =
+        translated.circuit.certifri_layout_with_max_height(1 << log_height)?;
       Some(serde_json::json!({
         "used_rows": layout.used_rows,
         "main_heights": layout.main_heights,

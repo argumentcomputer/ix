@@ -5,7 +5,7 @@
 //! Inputs and outputs have no separators in the message.
 //! Their boundaries must agree at every constrained call and public claim.
 
-use multi_stark::p3_field::PrimeField64;
+use certifri::p3_field::PrimeField64;
 
 use crate::{
   G,

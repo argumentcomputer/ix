@@ -1,6 +1,6 @@
 use super::KzgPcs;
 use crate::kzg::{KzgConfig, Scalar, Srs};
-use multi_stark::{
+use certifri::{
   config::ProofConfig,
   expr::Expr,
   prover::{Commitments, Proof, observe_claims, sample_lookup_challenges},

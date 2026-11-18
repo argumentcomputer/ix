@@ -46,7 +46,7 @@ fn query_budget_rejects_malformed_alignment_and_shifts() {
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn query_budget_checks_the_global_sum_and_both_overflows() {
-  use multi_stark::p3_field::PrimeField64;
+  use certifri::p3_field::PrimeField64;
   let p = usize::try_from(G::ORDER_U64).unwrap();
   assert_eq!(bound(&[p - 2], &[true], &[0]), Some(G::ORDER_U64 - 1));
   assert_eq!(bound(&[p - 1], &[true], &[0]), None);
@@ -105,7 +105,7 @@ fn public_verify_checks_lookup_metadata() {
 
 #[test]
 fn serialized_key_maximum_lookup_budget_fits_characteristic() {
-  use multi_stark::p3_field::PrimeField64;
+  use certifri::p3_field::PrimeField64;
   let slots = vec![65535; 65535];
   let active = vec![true; 65535];
   let degrees = vec![32; 65535];

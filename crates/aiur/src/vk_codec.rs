@@ -61,7 +61,7 @@
 // The codec is exercised by tests and wired to the FFI / Aiur port.
 #![allow(dead_code)]
 
-use multi_stark::{
+use certifri::{
   expr::{ColRef, RowOffset, Source},
   graph::{ConstraintGraph, Node, NodeId},
   lookup::Lookup,
@@ -344,7 +344,7 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
   let preprocessed_height = seg.u32_usize()?;
   let max_constraint_degree = seg.u16()? as usize;
   let lookup_group_size = seg.u8()? as usize;
-  if !(1..=multi_stark::lookup::MAX_LOOKUP_GROUP).contains(&lookup_group_size) {
+  if !(1..=certifri::lookup::MAX_LOOKUP_GROUP).contains(&lookup_group_size) {
     return Err(format!("bad lookup group size {lookup_group_size}"));
   }
   let node_count = seg.u16()? as usize;
@@ -396,7 +396,7 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
   };
   let num_lookups = graph.lookups.len();
   let ext_degree =
-    <multi_stark::types::ExtVal as multi_stark::p3_field::BasedVectorSpace<
+    <certifri::types::ExtVal as certifri::p3_field::BasedVectorSpace<
       Val,
     >>::DIMENSION;
   Ok(Circuit {
@@ -406,12 +406,12 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
     preprocessed_width,
     preprocessed_height,
     num_lookups,
-    stage_2_width: multi_stark::lookup::stage2_width(
+    stage_2_width: certifri::lookup::stage2_width(
       num_lookups,
       lookup_group_size,
       ext_degree,
     ),
-    num_publics: multi_stark::lookup::num_publics(ext_degree),
+    num_publics: certifri::lookup::num_publics(ext_degree),
     lookup_group_size,
     constraint_count: zeros_plus_logup(
       zero_count,
@@ -424,7 +424,7 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
 }
 
 /// The folded constraint count: user roots + the directly-evaluated logUp
-/// values (mirrors `multi_stark::lookup::logup_constraint_count`).
+/// values (mirrors `certifri::lookup::logup_constraint_count`).
 fn zeros_plus_logup(
   zero_count: usize,
   num_lookups: usize,
@@ -432,7 +432,7 @@ fn zeros_plus_logup(
   d: usize,
 ) -> usize {
   zero_count
-    + multi_stark::lookup::logup_constraint_count(num_lookups, group_size, d)
+    + certifri::lookup::logup_constraint_count(num_lookups, group_size, d)
 }
 
 /// Deserialize a `System<AiurConfig>` from [`to_bytes`] output, requiring that
@@ -533,7 +533,7 @@ impl AiurVerifyingKey {
   pub fn validate_preamble(
     &self,
     claim: &[Val],
-    preamble: &multi_stark::batch::BatchPreamble<AiurConfig>,
+    preamble: &certifri::batch::BatchPreamble<AiurConfig>,
   ) -> Result<(), crate::synthesis::AiurVerificationError> {
     crate::synthesis::validate_preamble(
       &self.system,
@@ -568,7 +568,7 @@ impl AiurVerifyingKey {
 mod tests {
   use super::*;
   use crate::gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2};
-  use multi_stark::system::CircuitInputs;
+  use certifri::system::CircuitInputs;
 
   fn test_parameters() -> (CommitmentParameters, FriParameters) {
     let cp = CommitmentParameters { log_blowup: 1, cap_height: 0 };

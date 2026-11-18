@@ -17,7 +17,7 @@ use ark_ec::CurveGroup;
 use ark_ec::pairing::Pairing;
 use ark_ff::Zero;
 use ark_serialize::CanonicalSerialize;
-use multi_stark::{
+use certifri::{
   config::ProofConfig,
   expr::{RowOffset, Source},
   graph::Node,
@@ -62,7 +62,7 @@ pub struct Built {
 
 #[derive(Clone, Copy)]
 pub struct InnerVerifyingKey<'a> {
-  pub circuits: &'a [multi_stark::system::Circuit<Scalar>],
+  pub circuits: &'a [certifri::system::Circuit<Scalar>],
   pub fixed: &'a KzgCommitment,
   pub transcript_seed: &'a [u8],
   pub transcript_kind: crate::kzg::TranscriptKind,
@@ -699,10 +699,8 @@ impl Built {
   #[cfg(test)]
   pub fn check(
     &self,
-  ) -> Result<
-    multi_stark::plonkish::Assignment<Scalar>,
-    Box<dyn std::error::Error>,
-  > {
+  ) -> Result<certifri::plonkish::Assignment<Scalar>, Box<dyn std::error::Error>>
+  {
     let assignment = self.assign()?;
     bindings::check_msm_outputs(
       &assignment,
@@ -716,10 +714,8 @@ impl Built {
   /// Generate a constraint-checked witness and verify its deferred opening pairing.
   pub fn assign(
     &self,
-  ) -> Result<
-    multi_stark::plonkish::Assignment<Scalar>,
-    Box<dyn std::error::Error>,
-  > {
+  ) -> Result<certifri::plonkish::Assignment<Scalar>, Box<dyn std::error::Error>>
+  {
     let mut w = self.circuit.witness();
     for &(v, n) in &self.inputs {
       w.set(v, n)?;
@@ -734,7 +730,7 @@ impl Built {
 mod tests {
   use super::*;
   use crate::{foreign::KzgCircuitExt, kzg::Srs};
-  use multi_stark::system::SystemWitness;
+  use certifri::system::SystemWitness;
   use std::sync::Arc;
 
   #[test]
@@ -749,7 +745,7 @@ mod tests {
 
   #[test]
   fn constant_column_proof_has_canonical_identity_pairing_outputs() {
-    use multi_stark::{expr::Expr, system::CircuitInputs};
+    use certifri::{expr::Expr, system::CircuitInputs};
     use p3_matrix::dense::RowMajorMatrix;
     let srs = Arc::new(Srs::unsafe_dev_setup_prefix(
       4,
@@ -810,7 +806,7 @@ mod tests {
     w.set(x, Scalar::TWO).unwrap();
     let a = w.generate().unwrap();
     let lowered =
-      circuit.lower_to_multi_stark_sharded(Scalar::from_u8(93), 32).unwrap();
+      circuit.lower_to_certifri_sharded(Scalar::from_u8(93), 32).unwrap();
     let claims = lowered.claims(a.public_values()).unwrap();
     let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
     let srs = if public_degree {

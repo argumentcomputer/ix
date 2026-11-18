@@ -3,10 +3,10 @@
 
 use super::*;
 use crate::kzg::{config::KzgConfig, field::Scalar, pcs::CommittedMatrix};
-use multi_stark::config::QuotientCommitInput;
-use multi_stark::expr::{RowOffset, Source};
-use multi_stark::graph::{ConstraintGraph, Node, NodeId};
-use multi_stark::traits::Algebra;
+use certifri::config::QuotientCommitInput;
+use certifri::expr::{RowOffset, Source};
+use certifri::graph::{ConstraintGraph, Node, NodeId};
+use certifri::traits::Algebra;
 
 pub(super) const TILE: usize = 128;
 pub(super) const MAX_BLOCKS: usize = 256;
@@ -393,7 +393,7 @@ pub(super) fn coefficients_with_mode(
   let group_size = circuit.lookup_group_size.max(1);
   let groups = circuit.graph.lookups.len().div_ceil(group_size).max(1);
   if input.lookup_publics.len() < 4
-    || group_size > multi_stark::lookup::MAX_LOOKUP_GROUP
+    || group_size > certifri::lookup::MAX_LOOKUP_GROUP
     || groups != circuit.stage_2_width
     || input.constraint_count
       != circuit.graph.zeros.len().checked_add(groups)?

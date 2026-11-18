@@ -271,10 +271,8 @@ impl<'a> Plan<'a> {
     let construction =
       construct(&self.vk, &self.shape, &self.claims, Builder::new())?;
     let compiled = construction.finish(self);
-    let layout = compiled
-      .circuit
-      .multi_stark_layout()
-      .map_err(|error| error.to_string())?;
+    let layout =
+      compiled.circuit.certifri_layout().map_err(|error| error.to_string())?;
     if layout.main_heights.len() != 1
       || layout.main_height > self.layout.max_computation_height
     {

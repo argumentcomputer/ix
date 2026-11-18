@@ -238,12 +238,12 @@ pub fn prepare_plonk(_config: &CompressConfig) -> Result<()> {
 mod tests {
   use super::*;
   use crate::kzg::Scalar;
-  use multi_stark::{
+  use certifri::{
     plonkish::CircuitBuilder,
     traits::{Algebra, Field},
   };
 
-  fn compiled() -> multi_stark::plonkish::MultiStarkCircuit<Scalar> {
+  fn compiled() -> certifri::plonkish::CertiFriCircuit<Scalar> {
     let mut b = CircuitBuilder::new();
     let table =
       b.fixed_table("small", vec![vec![Scalar::ONE], vec![Scalar::TWO]]);
@@ -252,7 +252,7 @@ mod tests {
     let y = b.mul(x, x);
     b.expose_public(y);
     b.finish()
-      .lower_to_multi_stark_sharded(Scalar::from_u8(94), 16)
+      .lower_to_certifri_sharded(Scalar::from_u8(94), 16)
       .unwrap()
       .merge_table_traces(16)
       .unwrap()

@@ -2,16 +2,16 @@ use ix_proof_compression::foreign::KzgCircuitExt;
 
 use std::sync::Arc;
 
+use certifri::batch::Retention;
+use certifri::plonkish::CircuitBuilder;
+use certifri::plonkish::WitnessError;
+use certifri::system::System;
+use certifri::system::SystemWitness;
+use certifri::traits::Algebra;
+use certifri::traits::Field;
 use ix_proof_compression::kzg::KzgConfig;
 use ix_proof_compression::kzg::Scalar;
 use ix_proof_compression::kzg::Srs;
-use multi_stark::batch::Retention;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::plonkish::WitnessError;
-use multi_stark::system::System;
-use multi_stark::system::SystemWitness;
-use multi_stark::traits::Algebra;
-use multi_stark::traits::Field;
 
 #[test]
 fn regenerated_kzg_shards_preserve_global_copy_constraints() {
@@ -21,7 +21,7 @@ fn regenerated_kzg_shards_preserve_global_copy_constraints() {
   let double = b.add(x, x);
   b.mul(x, x);
   b.expose_public(double);
-  let compiled = b.finish().lower_to_multi_stark_sharded(f(81), 2).unwrap();
+  let compiled = b.finish().lower_to_certifri_sharded(f(81), 2).unwrap();
   assert_eq!(compiled.main_heights(), [2, 2, 2]);
   let mut witness = compiled.witness();
   witness.set(x, f(5)).unwrap();

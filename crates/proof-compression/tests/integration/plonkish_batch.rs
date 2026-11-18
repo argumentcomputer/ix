@@ -1,26 +1,26 @@
 use crate::support::parity as fixture;
+use certifri::batch::BatchMessage;
+use certifri::batch::ShardInput;
+use certifri::plonkish::Assignment;
+use certifri::plonkish::Circuit;
+use certifri::system::System;
+use certifri::system::SystemWitness;
+use certifri::types::ExtVal;
+use certifri::types::Val;
 use ix_proof_compression::fri::ExpandedPcsWitness;
 use ix_proof_compression::fri::FixedPcsShape;
 use ix_proof_compression::fri::FixedVerifierInputs;
 use ix_proof_compression::fri::build_single_batch_verifier;
 use ix_proof_compression::fri::expand_pcs_witness;
 use ix_proof_compression::fri::expand_single_batch_witness;
-use multi_stark::batch::BatchMessage;
-use multi_stark::batch::ShardInput;
-use multi_stark::plonkish::Assignment;
-use multi_stark::plonkish::Circuit;
-use multi_stark::system::System;
-use multi_stark::system::SystemWitness;
-use multi_stark::types::ExtVal;
-use multi_stark::types::Val;
 use p3_field::{PrimeCharacteristicRing, PrimeField64};
 
 #[test]
 fn multiple_shards_bind_the_shared_transcript_and_global_balance() {
+  use certifri::plonkish::CircuitBuilder;
   use ix_proof_compression::fri::{
     ByteGadgets, Message, constrain_batch_verifier, expand_batch_witness,
   };
-  use multi_stark::plonkish::CircuitBuilder;
   let (system, key) = System::new(fixture::config(), fixture::circuit_inputs());
   let claim = fixture::claim(fixture::Function::Even, 17, false);
   let split = |unbalanced: bool| {
@@ -255,12 +255,12 @@ fn single_batch_constrains_nonzero_residual_against_messages() {
 
 #[test]
 fn compact_hash_batch_verification_can_be_proved() {
+  use certifri::plonkish::CircuitBuilder;
+  use certifri::types::CommitmentParameters;
+  use certifri::types::FriParameters;
+  use certifri::types::GoldilocksBlake3Config;
   use ix_proof_compression::fri::ByteGadgets;
   use ix_proof_compression::fri::constrain_single_batch_verifier;
-  use multi_stark::plonkish::CircuitBuilder;
-  use multi_stark::types::CommitmentParameters;
-  use multi_stark::types::FriParameters;
-  use multi_stark::types::GoldilocksBlake3Config;
   let (inner, key) = System::new(fixture::config(), fixture::circuit_inputs());
   let claim = fixture::claim(fixture::Function::Odd, 19, true);
   let batch = inner.prove_batch(
@@ -302,7 +302,7 @@ fn compact_hash_batch_verification_can_be_proved() {
       .sum();
     assert_eq!(actual, expected as u64);
   }
-  let compiled = circuit.lower_to_multi_stark(Val::from_u8(99)).unwrap();
+  let compiled = circuit.lower_to_certifri(Val::from_u8(99)).unwrap();
   let claims = compiled.claims(&claim).unwrap();
   let traces = compiled.traces(&a).unwrap();
   let mut defs = compiled.circuit_inputs();

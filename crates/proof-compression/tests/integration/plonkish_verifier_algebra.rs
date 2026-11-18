@@ -1,28 +1,28 @@
 use crate::support::parity;
 use crate::support::parity_algebra as adapter;
 
+use certifri::config::StarkGenericConfig;
+use certifri::eval::VarValues;
+use certifri::p3_field::BasedVectorSpace;
+use certifri::p3_field::Field;
+use certifri::p3_field::PrimeCharacteristicRing;
+use certifri::p3_field::TwoAdicField;
+use certifri::p3_field::extension::BinomiallyExtendable;
+use certifri::plonkish::Assignment;
+use certifri::plonkish::Circuit;
+use certifri::plonkish::CircuitBuilder;
+use certifri::plonkish::WitnessError;
+use certifri::prover::Proof;
+use certifri::system::System;
+use certifri::system::SystemWitness;
+use certifri::traits::Pcs;
+use certifri::types::ExtVal;
+use certifri::types::GoldilocksBlake3Config;
+use certifri::types::Val;
 use ix_proof_compression::fri::AlgebraicInputs;
 use ix_proof_compression::fri::AlgebraicOutputs;
 use ix_proof_compression::fri::QuadraticValue as Q;
 use ix_proof_compression::fri::constrain_algebraic_checks;
-use multi_stark::config::StarkGenericConfig;
-use multi_stark::eval::VarValues;
-use multi_stark::p3_field::BasedVectorSpace;
-use multi_stark::p3_field::Field;
-use multi_stark::p3_field::PrimeCharacteristicRing;
-use multi_stark::p3_field::TwoAdicField;
-use multi_stark::p3_field::extension::BinomiallyExtendable;
-use multi_stark::plonkish::Assignment;
-use multi_stark::plonkish::Circuit;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::plonkish::WitnessError;
-use multi_stark::prover::Proof;
-use multi_stark::system::System;
-use multi_stark::system::SystemWitness;
-use multi_stark::traits::Pcs;
-use multi_stark::types::ExtVal;
-use multi_stark::types::GoldilocksBlake3Config;
-use multi_stark::types::Val;
 use p3_commit::PolynomialSpace;
 
 fn value(assignment: &Assignment<Val>, wire: Q) -> ExtVal {
@@ -126,7 +126,7 @@ fn check_intermediates(
       (publics[6 + k] - publics[4 + k]) * norm
     });
     let mut constraints = circuit.graph.constraint_values(&nodes);
-    multi_stark::lookup::logup_constraint_values(
+    certifri::lookup::logup_constraint_values(
       &circuit.graph.lookups,
       &nodes,
       view.stage2[0],
@@ -304,7 +304,7 @@ fn parity_algebra_rejects_tampered_claim_openings_accumulators_and_challenges()
 
 #[test]
 fn algebra_rejects_zero_ood_challenge_with_satisfied_openings() {
-  use multi_stark::system::CircuitInputs;
+  use certifri::system::CircuitInputs;
 
   let (system, _) = System::new(
     parity::config(),
@@ -380,7 +380,7 @@ fn algebraic_relations_can_be_proved_independently() {
   // proof. Otherwise private, unauthenticated openings are freely chosen.
   adapter::expose_boundary(&mut builder, &inputs);
   let compiled =
-    builder.finish().lower_to_multi_stark(Val::from_u32(101)).unwrap();
+    builder.finish().lower_to_certifri(Val::from_u32(101)).unwrap();
   let assignment =
     assignment(compiled.circuit(), &inputs, &proof, &claim, challenges)
       .unwrap();
@@ -413,9 +413,9 @@ fn algebraic_relations_can_be_proved_independently() {
 #[test]
 fn algebra_handles_selectors_next_rows_no_lookups_and_multiple_quotient_slices()
 {
-  use multi_stark::expr::Expr;
-  use multi_stark::p3_matrix::dense::RowMajorMatrix;
-  use multi_stark::system::CircuitInputs;
+  use certifri::expr::Expr;
+  use certifri::p3_matrix::dense::RowMajorMatrix;
+  use certifri::system::CircuitInputs;
 
   let x = Expr::main(0);
   let square = Expr::main(1);
@@ -475,11 +475,11 @@ fn algebra_handles_selectors_next_rows_no_lookups_and_multiple_quotient_slices()
 
 #[test]
 fn grouped_logup_coordinates_match_native_for_full_and_partial_groups() {
-  use multi_stark::expr::Expr;
-  use multi_stark::lookup::Lookup;
-  use multi_stark::system::CircuitInputs;
-  use multi_stark::types::CommitmentParameters;
-  use multi_stark::types::FriParameters;
+  use certifri::expr::Expr;
+  use certifri::lookup::Lookup;
+  use certifri::system::CircuitInputs;
+  use certifri::types::CommitmentParameters;
+  use certifri::types::FriParameters;
   use p3_matrix::dense::RowMajorMatrix;
   let claim = vec![Val::from_u8(17)];
   for group in [1, 2, 3, 8] {

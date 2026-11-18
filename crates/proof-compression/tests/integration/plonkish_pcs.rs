@@ -1,14 +1,14 @@
 use crate::support::parity;
 
+use certifri::p3_field::PrimeCharacteristicRing;
+use certifri::p3_field::PrimeField64;
+use certifri::system::System;
+use certifri::system::SystemWitness;
+use certifri::types::ExtVal;
+use certifri::types::Val;
 use ix_proof_compression::fri::FixedPcsShape;
 use ix_proof_compression::fri::build_fixed_verifier;
 use ix_proof_compression::fri::expand_pcs_witness;
-use multi_stark::p3_field::PrimeCharacteristicRing;
-use multi_stark::p3_field::PrimeField64;
-use multi_stark::system::System;
-use multi_stark::system::SystemWitness;
-use multi_stark::types::ExtVal;
-use multi_stark::types::Val;
 use p3_symmetric::MerkleCap;
 
 #[test]

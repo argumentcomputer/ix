@@ -4,7 +4,7 @@
 //! Choose lookup groups from the compiled degrees and the FFT tradeoff.
 //! This runs before exposing the system or constructing its transcript.
 
-use multi_stark::{
+use certifri::{
   expr::Source,
   graph::Node,
   lookup::{

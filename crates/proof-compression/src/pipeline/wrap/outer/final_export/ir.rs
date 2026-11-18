@@ -227,7 +227,7 @@ pub(super) fn build(
       zeta - Term::Constant(omega.inverse()),
     );
     let mut constraints = c.graph.constraint_values(&nodes);
-    let ext = multi_stark::system::extension_params::<KzgConfig>();
+    let ext = certifri::system::extension_params::<KzgConfig>();
     if ext.degree != 1 {
       return Err(
         "PLONK scalar export requires a native-field KZG proof".into(),
@@ -235,7 +235,7 @@ pub(super) fn build(
     }
     let delta =
       (next - accumulator) * (Scalar::from_usize(height) * omega).inverse();
-    multi_stark::lookup::logup_constraint_values(
+    certifri::lookup::logup_constraint_values(
       &c.graph.lookups,
       &nodes,
       stage2[0],

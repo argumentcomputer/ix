@@ -11,7 +11,7 @@
 //! seven-channel IO advice, and the strict decoders for the compact keyed
 //! blob framing the Lean host uses to hand preimages and trees across FFI.
 
-use multi_stark::p3_field::PrimeCharacteristicRing;
+use certifri::p3_field::PrimeCharacteristicRing;
 use rustc_hash::FxHashMap;
 
 use crate::aiur_ix_aggr::execute_generated;
@@ -273,7 +273,7 @@ pub fn aggr_io_buffer(advice: &AggrAdvice<'_>) -> IOBuffer {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use multi_stark::p3_field::PrimeField64;
+  use certifri::p3_field::PrimeField64;
 
   fn info(io: &IOBuffer, channel: u8, key: Vec<G>) -> (usize, usize) {
     let info =

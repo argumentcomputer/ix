@@ -350,7 +350,7 @@ def emit (top : Bytecode.Toplevel) (cratePath : String := "aiur")
     "#![allow(unused_imports, unused_variables, unused_parens, unreachable_code, unused_labels)]\n" ++
     s!"use {cratePath}::" ++ "{G, bytecode::{Toplevel, Function, FunctionLayout, Circuit, Block, Op, Ctrl},\n" ++
     "  execute::{g_inverse_value, CodegenBytes1 as Bytes1, CodegenBytes2 as Bytes2}, trace_codegen::*};\n" ++
-    "use multi_stark::p3_field::{Field, PrimeCharacteristicRing, PrimeField64};\n\n"
+    "use certifri::p3_field::{Field, PrimeCharacteristicRing, PrimeField64};\n\n"
   let mut descriptors := #[]
   for entry in plan.functions do
     match entry with

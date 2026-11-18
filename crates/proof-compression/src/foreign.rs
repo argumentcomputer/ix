@@ -5,23 +5,23 @@ use num_bigint::{BigInt, BigUint, Sign};
 use p3_field::PrimeField64;
 
 use crate::kzg::field::Scalar;
-use multi_stark::plonkish::Assignment;
-use multi_stark::plonkish::Circuit;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::plonkish::CircuitId;
-use multi_stark::plonkish::CircuitStats;
-use multi_stark::plonkish::Gate;
-use multi_stark::plonkish::LoweringError;
-use multi_stark::plonkish::MultiStarkCircuit;
-use multi_stark::plonkish::Table;
-use multi_stark::plonkish::Value;
-use multi_stark::plonkish::ValueSource as Recipe;
-use multi_stark::plonkish::Witness;
-use multi_stark::plonkish::WitnessError;
-use multi_stark::system::CircuitInputs;
-use multi_stark::traits::Algebra;
-use multi_stark::traits::Field;
-use multi_stark::types::Val;
+use certifri::plonkish::Assignment;
+use certifri::plonkish::CertiFriCircuit;
+use certifri::plonkish::Circuit;
+use certifri::plonkish::CircuitBuilder;
+use certifri::plonkish::CircuitId;
+use certifri::plonkish::CircuitStats;
+use certifri::plonkish::Gate;
+use certifri::plonkish::LoweringError;
+use certifri::plonkish::Table;
+use certifri::plonkish::Value;
+use certifri::plonkish::ValueSource as Recipe;
+use certifri::plonkish::Witness;
+use certifri::plonkish::WitnessError;
+use certifri::system::CircuitInputs;
+use certifri::traits::Algebra;
+use certifri::traits::Field;
+use certifri::types::Val;
 use p3_matrix::Matrix;
 
 const P: u64 = <Val as PrimeField64>::ORDER_U64;
@@ -42,7 +42,7 @@ pub trait KzgCircuitExt {
     quotient_budget: usize,
   ) -> Result<Option<CircuitInputs<Scalar>>, LoweringError>;
 }
-impl KzgCircuitExt for MultiStarkCircuit<Scalar> {
+impl KzgCircuitExt for CertiFriCircuit<Scalar> {
   /// Minimize KZG commitment/evaluation bytes by choosing lookup groups per
   /// trace, within the supplied trace cap and quotient budget.
   fn kzg_circuit_inputs(
@@ -77,10 +77,10 @@ fn tune_kzg_input(
   max_trace_len: usize,
   quotient_budget: usize,
 ) -> Result<(), LoweringError> {
-  use multi_stark::graph::ExtensionParams;
-  use multi_stark::lookup::MAX_LOOKUP_GROUP;
-  use multi_stark::lookup::logup_max_degree;
-  use multi_stark::lookup::stage2_width;
+  use certifri::graph::ExtensionParams;
+  use certifri::lookup::MAX_LOOKUP_GROUP;
+  use certifri::lookup::logup_max_degree;
+  use certifri::lookup::stage2_width;
   let fixed = input.preprocessed.as_ref().expect("lowering has fixed columns");
   if fixed.height() > max_trace_len {
     return Err(LoweringError::InvalidTraceHeight);
@@ -612,8 +612,8 @@ impl GoldilocksCircuit {
     }
     {
       if expand_hashes {
-        use multi_stark::plonkish::gadgets::ByteGadgets;
-        use multi_stark::plonkish::gadgets::blake3;
+        use certifri::plonkish::gadgets::ByteGadgets;
+        use certifri::plonkish::gadgets::blake3;
         let bytes = ByteGadgets::new(b);
         for (hash_input, hash_output) in source.blake3_calls() {
           let input: Vec<_> = hash_input
@@ -1032,7 +1032,7 @@ mod tests {
     let x = b.input("x");
     let y = b.mul(x, x);
     b.expose_public(y);
-    let compiled = b.finish().lower_to_multi_stark(Scalar::from_u8(1)).unwrap();
+    let compiled = b.finish().lower_to_certifri(Scalar::from_u8(1)).unwrap();
     let height = compiled.main_height();
     let tuned = compiled.kzg_circuit_inputs(height, 4).unwrap();
     assert_eq!(tuned[0].lookup_group_size, 4);

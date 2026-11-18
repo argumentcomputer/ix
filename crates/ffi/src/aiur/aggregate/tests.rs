@@ -7,10 +7,10 @@ use super::{
   statement::{CanonicalTree, ShardSet, SubjectTree, merge_sorted},
 };
 use aiur::G;
+use certifri::p3_field::PrimeCharacteristicRing;
 use ix_common::address::Address;
 use ixon::shard::{AggNode, ShardInfo, ShardManifest};
 use ixon::{Constant, ConstantInfo};
-use multi_stark::p3_field::PrimeCharacteristicRing;
 use std::sync::Arc;
 
 use ixon::{Axiom, Expr};

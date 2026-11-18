@@ -55,7 +55,7 @@ pub fn decode(values: &[Scalar]) -> Result<[G1Affine; 2], SerializationError> {
 mod tests {
   use super::*;
   use ark_ec::{AffineRepr, CurveGroup};
-  use multi_stark::traits::Algebra;
+  use certifri::traits::Algebra;
 
   #[test]
   fn public_pairing_encoding_preserves_both_points_and_flags() {

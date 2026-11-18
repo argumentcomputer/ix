@@ -1,7 +1,7 @@
 //! Fixed-layout proving of an already executed invocation. Used after a
 //! recursive wrap to normalize arbitrary child proofs for compression.
 use super::*;
-use multi_stark::{batch::ShardInput, system::SystemWitness};
+use certifri::{batch::ShardInput, system::SystemWitness};
 
 impl AiurSystem {
   /// Rows each circuit needs to hold `record` in one shard, in system order.

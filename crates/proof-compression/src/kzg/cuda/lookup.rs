@@ -4,8 +4,8 @@
 use super::quotient::{self, Column, Instruction, Lookup, Program, allocation};
 use super::*;
 use crate::kzg::{config::KzgConfig, field::Scalar, pcs::CommittedMatrix};
-use multi_stark::config::LookupCommitInput;
-use multi_stark::traits::Algebra;
+use certifri::config::LookupCommitInput;
+use certifri::traits::Algebra;
 
 #[repr(C, align(32))]
 pub(super) struct Parameters {
@@ -97,7 +97,7 @@ pub(super) fn coefficients_with_mode(
   let group_size = circuit.lookup_group_size.max(1);
   let groups = circuit.graph.lookups.len().div_ceil(group_size).max(1);
   let widths = [fixed.map_or(0, CommittedMatrix::width), main.width(), 0];
-  if group_size > multi_stark::lookup::MAX_LOOKUP_GROUP
+  if group_size > certifri::lookup::MAX_LOOKUP_GROUP
     || groups != circuit.stage_2_width
     || widths[..2] != [circuit.preprocessed_width, circuit.main_width]
     || fixed.is_some_and(|matrix| matrix.domain() != trace)

@@ -1,5 +1,5 @@
 use aiur::{G, querymap::QueryMap};
-use multi_stark::p3_field::PrimeCharacteristicRing;
+use certifri::p3_field::PrimeCharacteristicRing;
 
 #[test]
 fn retained_hash_survives_nested_insertions_and_table_growth() {

@@ -1,4 +1,4 @@
-use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
+use certifri::p3_field::{PrimeCharacteristicRing, PrimeField64};
 
 use crate::{
   G,

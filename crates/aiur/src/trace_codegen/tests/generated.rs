@@ -2,7 +2,7 @@
 #![allow(unused_imports, unused_variables, unused_parens, unreachable_code, unused_labels)]
 use crate::{G, bytecode::{Toplevel, Function, FunctionLayout, Circuit, Block, Op, Ctrl},
   execute::{g_inverse_value, CodegenBytes1 as Bytes1, CodegenBytes2 as Bytes2}, trace_codegen::*};
-use multi_stark::p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
+use certifri::p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
 
 fn pack_0(context: &SeedContext<'_>, seed: &mut [u64],) { let v_0 = context.inputs[0]; let v_1 = context.inputs[1];  }
 

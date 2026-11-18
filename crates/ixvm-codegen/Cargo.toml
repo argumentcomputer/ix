@@ -8,7 +8,7 @@ license.workspace = true
 aiur = { workspace = true }
 ix-common = { workspace = true }
 ixon = { workspace = true }
-multi-stark = { workspace = true }
+certifri = { workspace = true }
 rayon = { workspace = true }
 rustc-hash = { workspace = true }
 stacker = "0.1"

@@ -11,10 +11,10 @@ use super::{
 };
 use crate::fri::*;
 use aiur::{synthesis::AiurProof, vk_codec::AiurVerifyingKey};
-use multi_stark::batch::BatchProof;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::types::GoldilocksBlake3Config;
-use multi_stark::types::Val;
+use certifri::batch::BatchProof;
+use certifri::plonkish::CircuitBuilder;
+use certifri::types::GoldilocksBlake3Config;
+use certifri::types::Val;
 use p3_blake3::Blake3;
 use p3_field::{PrimeField64, TwoAdicField};
 use p3_symmetric::CryptographicHasher;
@@ -112,7 +112,7 @@ pub(super) fn run(dir: &Path, out: &Path, prove: bool) -> Result<()> {
     plan.prepare(&proof, &claims[0], options)?
   };
   let layout =
-    prepared.circuit().multi_stark_layout_with_max_height(MAX_TRACE_HEIGHT)?;
+    prepared.circuit().certifri_layout_with_max_height(MAX_TRACE_HEIGHT)?;
   eprintln!(
     "Circuit preparation: {:?}; {:?}",
     start.elapsed(),

@@ -9,7 +9,7 @@ use crate::recursive::{
 };
 use ark_ec::{AdditiveGroup, AffineRepr, CurveGroup};
 use ark_ff::{BigInteger, Field, PrimeField, Zero};
-use multi_stark::{
+use certifri::{
   plonkish::{Bool, Value, gadgets::ByteGadgets},
   traits::Algebra,
 };
@@ -315,7 +315,7 @@ mod tests {
   use super::*;
   use crate::recursive::native_field::fq_value;
   use ark_serialize::CanonicalSerialize;
-  use multi_stark::traits::Field as _;
+  use certifri::traits::Field as _;
 
   fn fr(n: i64) -> Fr {
     let value = Fr::from(n.unsigned_abs());
@@ -323,8 +323,8 @@ mod tests {
   }
 
   fn rejects_changed_gate(
-    circuit: &multi_stark::plonkish::Circuit<Scalar>,
-    assignment: &multi_stark::plonkish::Assignment<Scalar>,
+    circuit: &certifri::plonkish::Circuit<Scalar>,
+    assignment: &certifri::plonkish::Assignment<Scalar>,
     changed: Value,
     delta: Scalar,
   ) -> bool {

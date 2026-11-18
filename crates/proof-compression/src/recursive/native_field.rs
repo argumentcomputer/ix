@@ -1,7 +1,7 @@
 //! Bounded Fq arithmetic in a native Fr Plonkish circuit.
 use crate::kzg::{Scalar, curve::Fq};
 use ark_ff::{BigInteger, PrimeField};
-use multi_stark::{
+use certifri::{
   plonkish::{CircuitBuilder, Table, Value},
   traits::{Algebra, Field},
 };
@@ -315,7 +315,7 @@ impl FqGadget {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use multi_stark::plonkish::{Assignment, Circuit};
+  use certifri::plonkish::{Assignment, Circuit};
   use std::collections::{HashMap, HashSet};
 
   pub(super) fn check_mutations(c: &Circuit<Scalar>, a: &Assignment<Scalar>) {

@@ -64,10 +64,10 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "blake3",
+ "certifri",
  "hashbrown 0.15.5",
  "indexmap",
  "libc",
- "multi-stark",
  "num-bigint 0.4.6",
  "p3-blake3",
  "p3-commit",
@@ -469,6 +469,32 @@ checksum = "d16d90359e986641506914ba71350897565610e87ce0ad9e6f28569db3dd5c6d"
 dependencies = [
  "find-msvc-tools",
  "shlex",
+]
+
+[[package]]
+name = "certifri"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "itertools 0.14.0",
+ "p3-air",
+ "p3-blake3",
+ "p3-challenger",
+ "p3-commit",
+ "p3-dft",
+ "p3-field",
+ "p3-fri",
+ "p3-goldilocks",
+ "p3-keccak",
+ "p3-matrix",
+ "p3-maybe-rayon",
+ "p3-merkle-tree",
+ "p3-symmetric",
+ "p3-util",
+ "rayon",
+ "serde",
+ "sppark",
+ "tracing",
 ]
 
 [[package]]
@@ -1985,6 +2011,7 @@ dependencies = [
  "aiur",
  "bincode",
  "blake3",
+ "certifri",
  "getrandom 0.3.4",
  "iroh",
  "ix-common",
@@ -1994,7 +2021,6 @@ dependencies = [
  "lean-ffi",
  "memmap2",
  "mimalloc",
- "multi-stark",
  "n0-error",
  "rayon",
  "rustc-hash",
@@ -2022,7 +2048,7 @@ dependencies = [
  "bindgen",
  "blake3",
  "blst",
- "multi-stark",
+ "certifri",
  "num-bigint 0.4.6",
  "p3-blake3",
  "p3-challenger",
@@ -2066,9 +2092,9 @@ name = "ixvm-codegen"
 version = "0.1.0"
 dependencies = [
  "aiur",
+ "certifri",
  "ix-common",
  "ixon",
- "multi-stark",
  "rayon",
  "rustc-hash",
  "stacker",
@@ -2276,33 +2302,6 @@ dependencies = [
  "smallvec",
  "tagptr",
  "uuid",
-]
-
-[[package]]
-name = "multi-stark"
-version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=3515632f1dc1a5764b60fc0146ea2226bb6fc32d#3515632f1dc1a5764b60fc0146ea2226bb6fc32d"
-dependencies = [
- "bincode",
- "itertools 0.14.0",
- "p3-air",
- "p3-blake3",
- "p3-challenger",
- "p3-commit",
- "p3-dft",
- "p3-field",
- "p3-fri",
- "p3-goldilocks",
- "p3-keccak",
- "p3-matrix",
- "p3-maybe-rayon",
- "p3-merkle-tree",
- "p3-symmetric",
- "p3-util",
- "rayon",
- "serde",
- "sppark",
- "tracing",
 ]
 
 [[package]]

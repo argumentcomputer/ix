@@ -7,13 +7,13 @@
 //! fixed-preprocessing checkpoints that populate the cross-run disk cache.
 use crate::fri::{VerifierLimits, VerifierPlan};
 use crate::kzg::Scalar;
-use multi_stark::config::ProofConfig;
+use certifri::config::ProofConfig;
 #[cfg(test)]
-use multi_stark::plonkish::{Assignment, MultiStarkCircuit};
+use certifri::plonkish::{Assignment, CertiFriCircuit};
 #[cfg(test)]
-use multi_stark::traits::Field;
-use multi_stark::traits::TwoAdicField;
-use multi_stark::types::Val;
+use certifri::traits::Field;
+use certifri::traits::TwoAdicField;
+use certifri::types::Val;
 use p3_field::PrimeCharacteristicRing;
 use std::{fs, path::Path, time::Instant};
 
@@ -287,9 +287,9 @@ fn prove(
 mod tests {
   use super::*;
   use crate::test_support::TempDir;
-  use multi_stark::plonkish::gadgets::ByteGadgets;
-  use multi_stark::plonkish::gadgets::blake3;
-  use multi_stark::plonkish::{CircuitBuilder, Value};
+  use certifri::plonkish::gadgets::ByteGadgets;
+  use certifri::plonkish::gadgets::blake3;
+  use certifri::plonkish::{CircuitBuilder, Value};
 
   const OPTIONS: super::super::StageConfig = super::super::StageConfig {
     prefetch_bytes: 1 << 20,
@@ -309,7 +309,7 @@ mod tests {
   }
 
   struct Fixture {
-    compiled: MultiStarkCircuit<Scalar>,
+    compiled: CertiFriCircuit<Scalar>,
     public: Vec<Scalar>,
     input: Value,
     private: Value,
@@ -344,7 +344,7 @@ mod tests {
     }
     let compiled = builder
       .finish()
-      .lower_to_multi_stark_sharded(Scalar::from_u8(93), 1 << log_height)?
+      .lower_to_certifri_sharded(Scalar::from_u8(93), 1 << log_height)?
       .merge_table_traces(1 << 22)?;
     Ok(Fixture {
       compiled,
@@ -357,7 +357,7 @@ mod tests {
   /// Write the metadata `run` produces before proving.
   fn stage(
     dir: &Path,
-    compiled: &MultiStarkCircuit<Scalar>,
+    compiled: &CertiFriCircuit<Scalar>,
     public: &[Scalar],
     cache_root: &Path,
   ) -> storage::Result<FixedCache> {

@@ -4,7 +4,7 @@
 use super::{storage, verifying_keys};
 use crate::kzg::srs::gnark;
 use crate::kzg::{KzgConfig, PublicSetup, Srs, TranscriptKind, VerifierParams};
-use multi_stark::traits::TwoAdicField;
+use certifri::traits::TwoAdicField;
 use std::ffi::OsString;
 use std::{
   fs,

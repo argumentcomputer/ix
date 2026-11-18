@@ -6,7 +6,7 @@ use crate::kzg::{
 use crate::recursive::native_field::{Builder, FqGadget, FqVar, L, fq_value};
 use ark_ec::{AdditiveGroup, AffineRepr};
 use ark_ff::Field;
-use multi_stark::{
+use certifri::{
   plonkish::{Bool, Value},
   traits::{Algebra, Field as NativeField},
 };

@@ -10,7 +10,7 @@ use ark_ff::PrimeField;
 use ark_serialize::CanonicalSerialize;
 use tiny_keccak::{Hasher, Keccak};
 
-use multi_stark::traits::Transcript;
+use certifri::traits::Transcript;
 
 use super::field::Scalar;
 use super::pcs::KzgCommitment;
@@ -263,7 +263,7 @@ impl Transcript for Keccak256Transcript {
 mod tests {
   use super::*;
   use ark_ff::BigInteger;
-  use multi_stark::traits::Field;
+  use certifri::traits::Field;
   use num_bigint::BigUint;
 
   #[test]

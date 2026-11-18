@@ -1,9 +1,9 @@
 use p3_field::Field;
 use p3_field::extension::BinomiallyExtendable;
 
-use multi_stark::plonkish::Bool;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::plonkish::Value;
+use certifri::plonkish::Bool;
+use certifri::plonkish::CircuitBuilder;
+use certifri::plonkish::Value;
 
 /// Coordinates `a + b*X` in the configured quadratic extension, `X² = F::W`.
 /// Arithmetic uses native base-field constraints, not foreign-field emulation.
@@ -11,7 +11,7 @@ use multi_stark::plonkish::Value;
 pub struct QuadraticValue(pub [Value; 2]);
 
 impl QuadraticValue {
-  pub fn select<F: Field + multi_stark::traits::Field>(
+  pub fn select<F: Field + certifri::traits::Field>(
     b: &mut CircuitBuilder<F>,
     bit: Bool,
     yes: Self,
@@ -20,7 +20,7 @@ impl QuadraticValue {
     Self(std::array::from_fn(|i| b.select(bit, yes.0[i], no.0[i])))
   }
 
-  pub fn mul_base<F: Field + multi_stark::traits::Field>(
+  pub fn mul_base<F: Field + certifri::traits::Field>(
     self,
     b: &mut CircuitBuilder<F>,
     value: Value,
@@ -28,21 +28,21 @@ impl QuadraticValue {
     Self(self.0.map(|coordinate| b.mul(coordinate, value)))
   }
 
-  pub fn input<F: Field + multi_stark::traits::Field>(
+  pub fn input<F: Field + certifri::traits::Field>(
     builder: &mut CircuitBuilder<F>,
     name: &str,
   ) -> Self {
     Self(std::array::from_fn(|i| builder.input(format!("{name}[{i}]"))))
   }
 
-  pub fn constant<F: Field + multi_stark::traits::Field>(
+  pub fn constant<F: Field + certifri::traits::Field>(
     builder: &mut CircuitBuilder<F>,
     coordinates: [F; 2],
   ) -> Self {
     Self(coordinates.map(|c| builder.constant(c)))
   }
 
-  pub fn from_base<F: Field + multi_stark::traits::Field>(
+  pub fn from_base<F: Field + certifri::traits::Field>(
     builder: &mut CircuitBuilder<F>,
     value: Value,
   ) -> Self {
@@ -52,7 +52,7 @@ impl QuadraticValue {
     ])
   }
 
-  pub fn add<F: Field + multi_stark::traits::Field>(
+  pub fn add<F: Field + certifri::traits::Field>(
     self,
     builder: &mut CircuitBuilder<F>,
     rhs: Self,
@@ -60,7 +60,7 @@ impl QuadraticValue {
     Self(std::array::from_fn(|i| builder.add(self.0[i], rhs.0[i])))
   }
 
-  pub fn sub<F: Field + multi_stark::traits::Field>(
+  pub fn sub<F: Field + certifri::traits::Field>(
     self,
     builder: &mut CircuitBuilder<F>,
     rhs: Self,
@@ -68,7 +68,7 @@ impl QuadraticValue {
     Self(std::array::from_fn(|i| builder.sub(self.0[i], rhs.0[i])))
   }
 
-  pub fn neg<F: Field + multi_stark::traits::Field>(
+  pub fn neg<F: Field + certifri::traits::Field>(
     self,
     builder: &mut CircuitBuilder<F>,
   ) -> Self {
@@ -76,7 +76,7 @@ impl QuadraticValue {
     Self(self.0.map(|v| builder.sub(zero, v)))
   }
 
-  pub fn scale<F: Field + multi_stark::traits::Field>(
+  pub fn scale<F: Field + certifri::traits::Field>(
     self,
     builder: &mut CircuitBuilder<F>,
     scalar: F,
@@ -85,7 +85,7 @@ impl QuadraticValue {
     Self(self.0.map(|v| builder.mul(v, scalar)))
   }
 
-  pub fn mul<F: BinomiallyExtendable<2> + multi_stark::traits::Field>(
+  pub fn mul<F: BinomiallyExtendable<2> + certifri::traits::Field>(
     self,
     builder: &mut CircuitBuilder<F>,
     rhs: Self,
@@ -104,7 +104,7 @@ impl QuadraticValue {
 
   /// Constrained inverse through the norm: `(a - bX)/(a² - W*b²)`.
   /// The base inverse relation rejects zero, including malicious hints.
-  pub fn inverse<F: BinomiallyExtendable<2> + multi_stark::traits::Field>(
+  pub fn inverse<F: BinomiallyExtendable<2> + certifri::traits::Field>(
     self,
     builder: &mut CircuitBuilder<F>,
   ) -> Self {
@@ -121,7 +121,7 @@ impl QuadraticValue {
   }
 
   pub fn exp_power_of_2<
-    F: BinomiallyExtendable<2> + multi_stark::traits::Field,
+    F: BinomiallyExtendable<2> + certifri::traits::Field,
   >(
     mut self,
     builder: &mut CircuitBuilder<F>,
@@ -133,7 +133,7 @@ impl QuadraticValue {
     self
   }
 
-  pub fn assert_equal<F: Field + multi_stark::traits::Field>(
+  pub fn assert_equal<F: Field + certifri::traits::Field>(
     self,
     builder: &mut CircuitBuilder<F>,
     rhs: Self,

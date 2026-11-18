@@ -3,7 +3,7 @@ use crate::kzg::curve::Fr;
 use crate::recursive::native_field::L;
 use ark_ec::AffineRepr;
 use ark_ff::PrimeField;
-use multi_stark::plonkish::{Assignment, WitnessError};
+use certifri::plonkish::{Assignment, WitnessError};
 
 struct PointFixture {
   circuit: Circuit<Scalar>,

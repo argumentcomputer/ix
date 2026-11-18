@@ -148,7 +148,7 @@ tree, compiled lookup degrees and PCS parameters; use the built system's
 `circuitShapes` for actual widths after lookup tuning. -/
 def FunctionLayout.totalWidth (l : FunctionLayout) : Nat :=
   -- Stage 2 commits max(⌈L/k⌉, 1) chained partial accumulators (no message
-  -- inverses); see `multi_stark::lookup::stage2_width`. Retain the original
+  -- inverses); see `certifri::lookup::stage2_width`. Retain the original
   -- single-selector heuristic here; synthesis checks control flow and
   -- retunes using compiled degrees and the FFT cost.
   let slots := if l.selectors == 1 && l.lookups >= 2

@@ -1,12 +1,12 @@
 use crate::support::verifier_audit as fixture;
 
+use certifri::batch::ShardInput;
+use certifri::p3_field::BasedVectorSpace;
+use certifri::p3_field::PrimeCharacteristicRing;
+use certifri::plonkish::CircuitBuilder;
+use certifri::types::ExtVal;
+use certifri::types::Val;
 use ix_proof_compression::fri::*;
-use multi_stark::batch::ShardInput;
-use multi_stark::p3_field::BasedVectorSpace;
-use multi_stark::p3_field::PrimeCharacteristicRing;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::types::ExtVal;
-use multi_stark::types::Val;
 use p3_symmetric::MerkleCap;
 
 #[test]

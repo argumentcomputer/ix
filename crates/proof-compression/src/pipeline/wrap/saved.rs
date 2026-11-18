@@ -9,8 +9,8 @@ use crate::{
   recursive::native_verifier::{ClaimSchema, Plan},
 };
 #[cfg(test)]
-use multi_stark::traits::Field;
-use multi_stark::{prover::Proof, system::System};
+use certifri::traits::Field;
+use certifri::{prover::Proof, system::System};
 use serde::de::DeserializeOwned;
 use std::{collections::BTreeMap, fs, path::Path, time::Instant};
 
@@ -290,8 +290,8 @@ mod tests {
   use crate::pipeline::init_fri::INIT_PUBLIC_WORDS;
   use crate::pipeline::setup::SetupSource;
   use crate::recursive::native_verifier::LayoutPolicy;
-  use multi_stark::traits::Algebra;
-  use multi_stark::{
+  use certifri::traits::Algebra;
+  use certifri::{
     expr::Expr,
     lookup::Lookup,
     system::{CircuitInputs, ProverKey, SystemWitness},

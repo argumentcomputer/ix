@@ -1,4 +1,4 @@
-use multi_stark::{
+use certifri::{
   expr::Expr,
   lookup::{Lookup, LookupValues},
   p3_field::{PrimeCharacteristicRing, PrimeField64},

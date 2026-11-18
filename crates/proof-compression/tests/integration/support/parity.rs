@@ -6,15 +6,15 @@
 //! Unused slots contain `[live = 0, result = 0]` and emit no messages.
 //! This deliberately supports one public root call, not arbitrary batches.
 
-use multi_stark::expr::Expr;
-use multi_stark::lookup::Lookup;
-use multi_stark::p3_field::PrimeCharacteristicRing;
-use multi_stark::p3_matrix::dense::RowMajorMatrix;
-use multi_stark::system::CircuitInputs;
-use multi_stark::types::CommitmentParameters;
-use multi_stark::types::FriParameters;
-use multi_stark::types::GoldilocksBlake3Config;
-use multi_stark::types::Val;
+use certifri::expr::Expr;
+use certifri::lookup::Lookup;
+use certifri::p3_field::PrimeCharacteristicRing;
+use certifri::p3_matrix::dense::RowMajorMatrix;
+use certifri::system::CircuitInputs;
+use certifri::types::CommitmentParameters;
+use certifri::types::FriParameters;
+use certifri::types::GoldilocksBlake3Config;
+use certifri::types::Val;
 
 pub(crate) const HEIGHT: usize = 128;
 pub(crate) const LOG_HEIGHT: u8 = 7;

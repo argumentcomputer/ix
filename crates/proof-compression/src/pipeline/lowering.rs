@@ -5,8 +5,8 @@ use crate::{
   fri::{self, VerifierInputs, VerifierKey, VerifierPlan},
   kzg::{KzgConfig, Scalar},
 };
-use multi_stark::{
-  plonkish::{Assignment, Circuit, MultiStarkCircuit},
+use certifri::{
+  plonkish::{Assignment, CertiFriCircuit, Circuit},
   system::CircuitInputs,
   traits::Field,
   types::Val,
@@ -23,15 +23,12 @@ pub(in crate::pipeline) const RECURSIVE_HEIGHT: usize = 1 << 27;
 pub(in crate::pipeline) fn lower_fri(
   circuit: Circuit<Val>,
   height: usize,
-) -> Result<MultiStarkCircuit<Val>> {
-  Ok(
-    circuit
-      .lower_to_multi_stark_sharded(Val::from_u8(FRI_NAMESPACE), height)?,
-  )
+) -> Result<CertiFriCircuit<Val>> {
+  Ok(circuit.lower_to_certifri_sharded(Val::from_u8(FRI_NAMESPACE), height)?)
 }
 
 pub(in crate::pipeline) fn fri_definitions(
-  compiled: &MultiStarkCircuit<Val>,
+  compiled: &CertiFriCircuit<Val>,
 ) -> Vec<CircuitInputs<Val>> {
   let mut definitions = compiled.circuit_inputs();
   for definition in &mut definitions {
@@ -45,10 +42,10 @@ pub(in crate::pipeline) fn lower_first(
   circuit: Circuit<Scalar>,
   height: usize,
   table_height: usize,
-) -> Result<MultiStarkCircuit<Scalar>> {
+) -> Result<CertiFriCircuit<Scalar>> {
   Ok(
     circuit
-      .lower_to_multi_stark_sharded(Scalar::from_u8(FIRST_NAMESPACE), height)?
+      .lower_to_certifri_sharded(Scalar::from_u8(FIRST_NAMESPACE), height)?
       .merge_table_traces(table_height)?,
   )
 }
@@ -57,15 +54,15 @@ pub(in crate::pipeline) fn lower_first(
 pub(in crate::pipeline) fn lower_recursive(
   circuit: Circuit<Scalar>,
   max_height: usize,
-) -> Result<MultiStarkCircuit<Scalar>> {
-  let height = circuit.multi_stark_layout()?.main_height;
+) -> Result<CertiFriCircuit<Scalar>> {
+  let height = circuit.certifri_layout()?.main_height;
   if height > max_height.min(RECURSIVE_HEIGHT) {
     return Err(
       "recursive computation exceeds its single-trace height cap".into(),
     );
   }
   let compiled = circuit
-    .lower_to_multi_stark_sharded(Scalar::from_u8(RECURSIVE_NAMESPACE), height)?
+    .lower_to_certifri_sharded(Scalar::from_u8(RECURSIVE_NAMESPACE), height)?
     .merge_table_traces(height)?;
   if compiled.num_circuits() != 2 || compiled.main_heights() != [height] {
     return Err("expected one computation trace and one merged table".into());
@@ -74,7 +71,7 @@ pub(in crate::pipeline) fn lower_recursive(
 }
 
 pub(in crate::pipeline) fn max_height<F: Field>(
-  compiled: &MultiStarkCircuit<F>,
+  compiled: &CertiFriCircuit<F>,
 ) -> Result<usize> {
   (0..compiled.num_circuits())
     .map(|i| compiled.trace_dimensions(i).map(|(height, _)| height))
@@ -85,7 +82,7 @@ pub(in crate::pipeline) fn max_height<F: Field>(
 
 /// Owns the frontend allocations until commitment has copied their columns.
 pub(in crate::pipeline) struct Lowered {
-  pub(in crate::pipeline) compiled: MultiStarkCircuit<Scalar>,
+  pub(in crate::pipeline) compiled: CertiFriCircuit<Scalar>,
   pub(in crate::pipeline) assignment: Assignment<Scalar>,
 }
 
@@ -135,9 +132,7 @@ impl FriConstruction {
   pub(in crate::pipeline) fn assign(
     self,
     plan: &VerifierPlan<'_>,
-    proof: &multi_stark::prover::Proof<
-      multi_stark::types::GoldilocksBlake3Config,
-    >,
+    proof: &certifri::prover::Proof<certifri::types::GoldilocksBlake3Config>,
     claims: Vec<Vec<Val>>,
   ) -> Result<Prepared<Val>> {
     let expanded = plan.expand_witness(fri::ProofEnvelope::Ordinary {
@@ -205,7 +200,7 @@ pub(in crate::pipeline) fn assign_foreign(
 pub(in crate::pipeline) fn first_circuit(
   source: Circuit<Val>,
   height: usize,
-) -> Result<(MultiStarkCircuit<Scalar>, GoldilocksInputs)> {
+) -> Result<(CertiFriCircuit<Scalar>, GoldilocksInputs)> {
   let translated = translate(&source);
   drop(source);
   let compiled = lower_first(translated.circuit, height, TABLE_HEIGHT)?;
@@ -232,7 +227,7 @@ pub(in crate::pipeline) fn recursive_layout()
 }
 
 pub(in crate::pipeline) fn recursive_plan<'a>(
-  system: &'a multi_stark::system::System<KzgConfig>,
+  system: &'a certifri::system::System<KzgConfig>,
   logs: &[u8],
   schema: crate::recursive::native_verifier::ClaimSchema,
 ) -> Result<crate::recursive::native_verifier::Plan<'a>> {

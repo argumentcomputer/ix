@@ -19,12 +19,12 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use p3_matrix::Matrix;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use multi_stark::traits::Algebra;
-use multi_stark::traits::ExtensionOf;
-use multi_stark::traits::Field;
-use multi_stark::traits::Packed;
-use multi_stark::traits::PackedExtension;
-use multi_stark::traits::TwoAdicField;
+use certifri::traits::Algebra;
+use certifri::traits::ExtensionOf;
+use certifri::traits::Field;
+use certifri::traits::Packed;
+use certifri::traits::PackedExtension;
+use certifri::traits::TwoAdicField;
 
 /// The selected KZG curve's scalar field as a crate [`Field`].
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
@@ -253,7 +253,7 @@ impl PackedExtension<Self, Self> for Scalar {
   }
 }
 
-impl multi_stark::traits::PrimeField for Scalar {
+impl certifri::traits::PrimeField for Scalar {
   fn canonical_u64(self) -> Option<u64> {
     let [lo, a, b, c] = self.canonical_limbs_le();
     (a == 0 && b == 0 && c == 0).then_some(lo)

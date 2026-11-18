@@ -9,11 +9,11 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::Command;
 
-/// Toolchain metadata from multi-stark's CUDA build, so the trace writers
+/// Toolchain metadata from CertiFRI's CUDA build, so the trace writers
 /// target the same compiler and GPUs as the backend they link against.
-fn multi_stark_cuda(key: &str) -> OsString {
-  env::var_os(format!("DEP_MULTI_STARK_CUDA_{key}"))
-    .unwrap_or_else(|| panic!("multi-stark's CUDA build did not report {key}"))
+fn certifri_cuda(key: &str) -> OsString {
+  env::var_os(format!("DEP_CERTIFRI_CUDA_{key}"))
+    .unwrap_or_else(|| panic!("CertiFRI's CUDA build did not report {key}"))
 }
 
 fn main() {
@@ -38,12 +38,12 @@ fn main() {
   );
 
   // Every aiur CUDA source belongs to the generated trace writers; the bare
-  // `cuda` feature only enables multi-stark's device backend.
+  // `cuda` feature only enables CertiFRI's device backend.
   if env::var_os("CARGO_FEATURE_CUDA_TRACE_CODEGEN").is_none() {
     return;
   }
-  let nvcc = multi_stark_cuda("NVCC");
-  let architectures: Vec<String> = multi_stark_cuda("ARCHS")
+  let nvcc = certifri_cuda("NVCC");
+  let architectures: Vec<String> = certifri_cuda("ARCHS")
     .into_string()
     .expect("CUDA architectures are ASCII")
     .split(',')
@@ -52,8 +52,9 @@ fn main() {
   let out_dir =
     PathBuf::from(env::var_os("OUT_DIR").expect("Cargo did not set OUT_DIR"));
   let library = out_dir.join("libaiur_trace_cuda.a");
-  let include = env::var_os("DEP_MULTI_STARK_CUDA_INCLUDE")
-    .expect("cuda-trace-codegen requires multi-stark's shared CUDA field header metadata");
+  let include = env::var_os("DEP_CERTIFRI_CUDA_INCLUDE").expect(
+    "cuda-trace-codegen requires CertiFRI's shared CUDA field header metadata",
+  );
   let includes = vec![PathBuf::from("cuda"), PathBuf::from(&include)];
   let headers = [
     PathBuf::from("cuda/trace_runtime.cuh"),
@@ -182,7 +183,7 @@ fn main() {
   println!("cargo:rustc-link-lib=dylib=pthread");
   println!("cargo:rustc-link-lib=dylib=stdc++");
 
-  for directory in env::split_paths(&multi_stark_cuda("LIB_DIRS")) {
+  for directory in env::split_paths(&certifri_cuda("LIB_DIRS")) {
     if directory.is_dir() {
       println!("cargo:rustc-link-search=native={}", directory.display());
     }

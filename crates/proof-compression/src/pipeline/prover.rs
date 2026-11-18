@@ -7,10 +7,10 @@ use crate::{
     pcs::KzgProverData,
   },
 };
-use multi_stark::{
+use certifri::{
   config::ProofConfig,
   lookup::LookupValues,
-  plonkish::{MultiStarkCircuit, TraceShards},
+  plonkish::{CertiFriCircuit, TraceShards},
   prover::{Proof, Stage1},
   system::{Circuit, ProverKey, System},
   traits::Pcs,
@@ -216,7 +216,7 @@ pub(super) type FixedSetup = (Circuit<Scalar>, KzgCommitment);
 /// Commit each fixed partition without allocating a witness.
 pub(super) fn fixed_setup(
   config: &KzgConfig,
-  compiled: &MultiStarkCircuit<Scalar>,
+  compiled: &CertiFriCircuit<Scalar>,
 ) -> Result<Vec<FixedSetup>> {
   (0..compiled.num_circuits())
     .map(|i| {
@@ -230,7 +230,7 @@ pub(super) fn fixed_setup(
 /// `setup-{i}.bin` and `fixed-{i}.bin` checkpoints into `dir`.
 pub(super) fn fixed_setup_in(
   config: &KzgConfig,
-  compiled: &MultiStarkCircuit<Scalar>,
+  compiled: &CertiFriCircuit<Scalar>,
   dir: &Path,
 ) -> Result<Vec<FixedSetup>> {
   (0..compiled.num_circuits())
@@ -268,7 +268,7 @@ pub(super) fn fixed_system(
 #[cfg(test)]
 pub(super) fn setup(
   config: KzgConfig,
-  compiled: &MultiStarkCircuit<Scalar>,
+  compiled: &CertiFriCircuit<Scalar>,
 ) -> Result<System<KzgConfig>> {
   let parts = fixed_setup(&config, compiled)?;
   fixed_system(config, parts)
@@ -276,7 +276,7 @@ pub(super) fn setup(
 
 fn fixed_partition(
   config: &KzgConfig,
-  compiled: &MultiStarkCircuit<Scalar>,
+  compiled: &CertiFriCircuit<Scalar>,
   index: usize,
   preprocessing: Option<&Path>,
 ) -> Result<(Circuit<Scalar>, KzgProverData)> {
@@ -356,20 +356,16 @@ fn read_checkpoint(path: &Path) -> Result<KzgProverData> {
 // before committing matrices so an unsupported configuration is an error.
 pub(super) fn validate_config<SC: ProofConfig>(
   config: &SC,
-  definitions: &[multi_stark::system::CircuitInputs<
-    multi_stark::config::Val<SC>,
-  >],
+  definitions: &[certifri::system::CircuitInputs<certifri::config::Val<SC>>],
 ) -> Result<()> {
-  let params = multi_stark::system::extension_params::<SC>();
+  let params = certifri::system::extension_params::<SC>();
   for definition in definitions {
     let graph = definition
       .compile_graph(&params)
       .map_err(|e| format!("compression circuit: {e:?}"))?;
-    let degree =
-      graph.max_constraint_degree.max(multi_stark::lookup::logup_max_degree(
-        &graph,
-        definition.lookup_group_size,
-      )) as usize;
+    let degree = graph.max_constraint_degree.max(
+      certifri::lookup::logup_max_degree(&graph, definition.lookup_group_size),
+    ) as usize;
     let quotient = (degree.max(2) - 1).next_power_of_two();
     if quotient > config.max_quotient_degree() {
       return Err(format!("compression circuit requires quotient degree {quotient}; increase the PCS degree budget").into());
@@ -392,7 +388,7 @@ pub(super) fn validate_config<SC: ProofConfig>(
 mod tests {
   use super::*;
   use crate::kzg::{Srs, TranscriptKind};
-  use multi_stark::{
+  use certifri::{
     plonkish::CircuitBuilder,
     system::SystemWitness,
     traits::{Algebra, Field},
@@ -464,7 +460,7 @@ mod tests {
     builder.expose_public(square);
     let compiled = builder
       .finish()
-      .lower_to_multi_stark_sharded(Scalar::ONE, 32)?
+      .lower_to_certifri_sharded(Scalar::ONE, 32)?
       .merge_table_traces(32)?;
     assert!(compiled.num_circuits() > 2);
     let mut witness = compiled.witness();

@@ -6,7 +6,7 @@
 //! This code can be useful in the future in case we want to use it to speed up
 //! execution (instead of interpreting Aiur code).
 
-use multi_stark::{
+use certifri::{
     builder::symbolic::SymbolicExpression,
     lookup::Lookup,
     p3_air::{Air, AirBuilder, BaseAir},

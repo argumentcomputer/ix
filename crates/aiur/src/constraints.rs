@@ -1,4 +1,4 @@
-use multi_stark::{
+use certifri::{
   lookup::Lookup,
   p3_field::{Field, PrimeCharacteristicRing},
 };
@@ -19,7 +19,7 @@ use crate::{
   u16_range_check_channel,
 };
 
-type Expr = multi_stark::expr::Expr<G>;
+type Expr = certifri::expr::Expr<G>;
 type Degree = u8;
 
 /// Main-trace column variable at index `i`.

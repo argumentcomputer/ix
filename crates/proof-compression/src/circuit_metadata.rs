@@ -1,11 +1,11 @@
 //! Structural validation shared by the FRI and KZG verifier-key codecs.
-use multi_stark::expr::Source;
-use multi_stark::graph::Node;
-use multi_stark::lookup::{
+use certifri::expr::Source;
+use certifri::graph::Node;
+use certifri::lookup::{
   MAX_LOOKUP_GROUP, logup_constraint_count, stage2_width,
 };
-use multi_stark::system::Circuit;
-use multi_stark::traits::Field;
+use certifri::system::Circuit;
+use certifri::traits::Field;
 
 pub(crate) fn validate_circuit<F: Field>(
   c: &Circuit<F>,
@@ -26,7 +26,7 @@ pub(crate) fn validate_circuit<F: Field>(
     return Err("graph dimensions");
   }
   for (i, n) in g.nodes.iter().enumerate() {
-    let degree = |id: multi_stark::graph::NodeId| {
+    let degree = |id: certifri::graph::NodeId| {
       g.degrees
         .get(id.index())
         .filter(|_| id.index() < i)

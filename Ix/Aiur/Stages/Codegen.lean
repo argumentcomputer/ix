@@ -653,7 +653,7 @@ def emitPreludeHeader : String :=
    unused_parens, non_snake_case, clippy::all,\n\
    clippy::ptr_as_ptr, clippy::match_same_arms,\n\
    clippy::large_types_passed_by_value)]\n\
-   use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};\n\
+   use certifri::p3_field::{PrimeCharacteristicRing, PrimeField64};\n\
    use aiur::G;\n\
    use aiur::execute::{ExecError, IOBuffer, QueryRecord};\n\n"
 

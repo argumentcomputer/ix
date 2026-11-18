@@ -1,19 +1,19 @@
 use ix_proof_compression::foreign::KzgCircuitExt;
 
+use certifri::config::ProofConfig;
+use certifri::lookup::LookupValues;
+use certifri::plonkish::CircuitBuilder;
+use certifri::prover::Stage1;
+use certifri::system::System;
+use certifri::system::SystemWitness;
+use certifri::traits::Algebra;
+use certifri::traits::Field;
+use certifri::traits::Pcs;
 use ix_proof_compression::kzg::KzgConfig;
 use ix_proof_compression::kzg::Scalar;
 use ix_proof_compression::kzg::Srs;
 use ix_proof_compression::kzg::compact::FixedProofCodec;
 use ix_proof_compression::kzg::pcs::KzgProverData;
-use multi_stark::config::ProofConfig;
-use multi_stark::lookup::LookupValues;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::prover::Stage1;
-use multi_stark::system::System;
-use multi_stark::system::SystemWitness;
-use multi_stark::traits::Algebra;
-use multi_stark::traits::Field;
-use multi_stark::traits::Pcs;
 use p3_matrix::Matrix;
 use std::sync::Arc;
 
@@ -33,7 +33,7 @@ fn streamed_lookup_proof_matches_dense_and_checkpoint_roundtrip() {
   witness.set(x, Scalar::TWO).unwrap();
   let assignment = witness.generate().unwrap();
   let lowered =
-    circuit.lower_to_multi_stark_sharded(Scalar::from_u8(93), 16).unwrap();
+    circuit.lower_to_certifri_sharded(Scalar::from_u8(93), 16).unwrap();
   let claims = lowered.claims(assignment.public_values()).unwrap();
   let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
   let config = KzgConfig::new(
@@ -110,9 +110,9 @@ fn streamed_lookup_proof_matches_dense_and_checkpoint_roundtrip() {
 
 #[test]
 fn streamed_chunks_preserve_global_rows_and_quotient_cosets() {
-  use multi_stark::expr::Expr;
-  use multi_stark::lookup::Lookup;
-  use multi_stark::system::CircuitInputs;
+  use certifri::expr::Expr;
+  use certifri::lookup::Lookup;
+  use certifri::system::CircuitInputs;
   let x = Expr::main(0);
   let next = Expr::main_next(0);
   let message = vec![x.clone(), next.clone(), Expr::preprocessed_next(0)];
@@ -173,9 +173,9 @@ fn streamed_chunks_preserve_global_rows_and_quotient_cosets() {
 
 #[test]
 fn fixed_column_passes_preserve_weights_wide_constraints_and_lookup_carry() {
-  use multi_stark::expr::Expr;
-  use multi_stark::lookup::Lookup;
-  use multi_stark::system::CircuitInputs;
+  use certifri::expr::Expr;
+  use certifri::lookup::Lookup;
+  use certifri::system::CircuitInputs;
   use p3_matrix::dense::RowMajorMatrix;
   let mut constraints: Vec<_> =
     (0..20).map(|i| Expr::preprocessed_next(i) - Expr::main_next(i)).collect();

@@ -37,13 +37,13 @@ use p3_matrix::dense::RowMajorMatrix;
 use p3_maybe_rayon::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use multi_stark::traits::EvaluationDomain;
-use multi_stark::traits::OpenedValues;
-use multi_stark::traits::OpeningRounds;
-use multi_stark::traits::Pcs;
-use multi_stark::traits::Transcript;
-use multi_stark::traits::TwoAdicField;
-use multi_stark::traits::VerifyRounds;
+use certifri::traits::EvaluationDomain;
+use certifri::traits::OpenedValues;
+use certifri::traits::OpeningRounds;
+use certifri::traits::Pcs;
+use certifri::traits::Transcript;
+use certifri::traits::TwoAdicField;
+use certifri::traits::VerifyRounds;
 
 use super::coefficients::Column;
 #[cfg(feature = "cuda")]
@@ -650,7 +650,7 @@ impl KzgPcs {
     let matrix = CommittedMatrix::new(
       Radix2Coset {
         log_size: trace_log_size,
-        shift: multi_stark::traits::Algebra::<Scalar>::ONE,
+        shift: certifri::traits::Algebra::<Scalar>::ONE,
       },
       columns.into_iter().map(Column::from).collect(),
     );
@@ -675,7 +675,7 @@ impl KzgPcs {
   fn ark_domain(domain: Radix2Coset) -> Radix2EvaluationDomain<Fr> {
     let base = Radix2EvaluationDomain::new(domain.size())
       .expect("size within Fr two-adicity");
-    if domain.shift == multi_stark::traits::Algebra::<Scalar>::ONE {
+    if domain.shift == certifri::traits::Algebra::<Scalar>::ONE {
       base
     } else {
       base.get_coset(domain.shift.0).expect("nonzero coset shift")
@@ -913,7 +913,7 @@ impl Pcs for KzgPcs {
   fn natural_domain_for_degree(&self, degree: usize) -> Radix2Coset {
     Radix2Coset {
       log_size: p3_util::log2_strict_usize(degree),
-      shift: multi_stark::traits::Algebra::<Scalar>::ONE,
+      shift: certifri::traits::Algebra::<Scalar>::ONE,
     }
   }
 
@@ -959,7 +959,7 @@ impl Pcs for KzgPcs {
         CommittedMatrix::new(
           Radix2Coset {
             log_size: p3_util::log2_strict_usize(n),
-            shift: multi_stark::traits::Algebra::<Scalar>::ONE,
+            shift: certifri::traits::Algebra::<Scalar>::ONE,
           },
           columns,
         )
@@ -1678,8 +1678,8 @@ mod tests {
     }
   }
 
-  use multi_stark::traits::Algebra;
-  use multi_stark::traits::Field;
+  use certifri::traits::Algebra;
+  use certifri::traits::Field;
 
   #[test]
   fn chunked_commitment_matches_native_msm_with_tail() {

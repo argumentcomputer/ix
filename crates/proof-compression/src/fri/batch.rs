@@ -14,15 +14,15 @@ use super::TranscriptCommitments;
 use super::algebra::constrain_algebraic_checks_with_residual;
 use super::pcs::constrain_pcs;
 use super::pcs_witness::expand_after_lookup;
-use multi_stark::batch::BatchMessage;
-use multi_stark::batch::BatchProof;
-use multi_stark::p3_field::PrimeCharacteristicRing;
-use multi_stark::plonkish::Circuit;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::plonkish::Value;
-use multi_stark::system::System;
-use multi_stark::types::GoldilocksBlake3Config as Config;
-use multi_stark::types::Val;
+use certifri::batch::BatchMessage;
+use certifri::batch::BatchProof;
+use certifri::p3_field::PrimeCharacteristicRing;
+use certifri::plonkish::Circuit;
+use certifri::plonkish::CircuitBuilder;
+use certifri::plonkish::Value;
+use certifri::system::System;
+use certifri::types::GoldilocksBlake3Config as Config;
+use certifri::types::Val;
 use p3_challenger::CanObserve;
 
 pub fn build_single_batch_verifier(

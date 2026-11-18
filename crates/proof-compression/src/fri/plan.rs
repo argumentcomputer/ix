@@ -11,19 +11,19 @@ use super::ByteGadgets;
 use super::ExpandedPcsWitness;
 use super::FixedPcsShape;
 use super::FixedVerifierInputs;
-use multi_stark::batch::BatchMessage;
-use multi_stark::batch::BatchProof;
-use multi_stark::config::StarkGenericConfig;
-use multi_stark::plonkish::Circuit;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::plonkish::Value;
-use multi_stark::plonkish::Witness;
-use multi_stark::prover::Proof;
-use multi_stark::system::Circuit as StarkCircuit;
-use multi_stark::system::System;
-use multi_stark::types::CommitmentParameters;
-use multi_stark::types::GoldilocksBlake3Config as Config;
-use multi_stark::types::Val;
+use certifri::batch::BatchMessage;
+use certifri::batch::BatchProof;
+use certifri::config::StarkGenericConfig;
+use certifri::plonkish::Circuit;
+use certifri::plonkish::CircuitBuilder;
+use certifri::plonkish::Value;
+use certifri::plonkish::Witness;
+use certifri::prover::Proof;
+use certifri::system::Circuit as StarkCircuit;
+use certifri::system::System;
+use certifri::types::CommitmentParameters;
+use certifri::types::GoldilocksBlake3Config as Config;
+use certifri::types::Val;
 
 /// A verifier-only key. No preprocessed matrices or PCS prover data are retained.
 /// The caller must obtain this key from a trusted source; proof-supplied keys
@@ -140,7 +140,7 @@ impl Default for VerifierLimits {
 
 /// Exact number of external proof field values, including digest bytes and
 /// auxiliary challenge coordinates, before hash hints and arithmetic gates.
-/// Actual lowering costs are reported by CircuitStats and MultiStarkLayout.
+/// Actual lowering costs are reported by CircuitStats and CertiFriLayout.
 #[derive(Clone, Copy, Debug)]
 pub struct ResourceEstimate {
   pub proof_values: usize,
@@ -325,7 +325,7 @@ fn sum(
 
 pub(crate) fn validate_parameters(
   commitment: CommitmentParameters,
-  fri: multi_stark::types::FriParameters,
+  fri: certifri::types::FriParameters,
 ) -> Result<(), VerifierError> {
   if commitment.log_blowup > 31 {
     return Err(VerifierError::Unsupported("blowup exceeds Goldilocks domain"));
@@ -725,7 +725,7 @@ impl<'a> VerifierPlan<'a> {
     &self,
     schema: Statement<StatementSlot>,
     options: ImplementationOptions,
-  ) -> Result<multi_stark::plonkish::CircuitStats, VerifierError> {
+  ) -> Result<certifri::plonkish::CircuitStats, VerifierError> {
     self.check_statement(&schema)?;
     let mut b = CircuitBuilder::counting();
     let mut index = 0;

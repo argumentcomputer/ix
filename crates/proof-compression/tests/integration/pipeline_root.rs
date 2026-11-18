@@ -1,16 +1,16 @@
 //! Generated aggregate-shaped statements, including multi-shard Aiur batches.
 use aiur::vk_codec::{AiurVerifyingKey, to_bytes};
+use certifri::batch::ShardInput;
+use certifri::expr::Expr;
+use certifri::lookup::Lookup;
+use certifri::system::{CircuitInputs, System, SystemWitness};
+use certifri::types::{
+  CommitmentParameters, FriParameters, GoldilocksBlake3Config, Val,
+};
 use ix_proof_compression::kzg::Srs;
 use ix_proof_compression::pipeline::{
   FixedRoot, FriVerifier, KzgVerifier, RecursiveVerifier, prepare_kzg,
   prepare_recursive, prepare_root,
-};
-use multi_stark::batch::ShardInput;
-use multi_stark::expr::Expr;
-use multi_stark::lookup::Lookup;
-use multi_stark::system::{CircuitInputs, System, SystemWitness};
-use multi_stark::types::{
-  CommitmentParameters, FriParameters, GoldilocksBlake3Config, Val,
 };
 use p3_field::PrimeCharacteristicRing;
 use p3_matrix::dense::RowMajorMatrix;
@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 fn root_system() -> (
   System<GoldilocksBlake3Config>,
-  multi_stark::system::ProverKey<GoldilocksBlake3Config>,
+  certifri::system::ProverKey<GoldilocksBlake3Config>,
   CommitmentParameters,
   FriParameters,
 ) {
@@ -29,7 +29,7 @@ fn root_system_with_blowup(
   log_blowup: usize,
 ) -> (
   System<GoldilocksBlake3Config>,
-  multi_stark::system::ProverKey<GoldilocksBlake3Config>,
+  certifri::system::ProverKey<GoldilocksBlake3Config>,
   CommitmentParameters,
   FriParameters,
 ) {
@@ -101,8 +101,8 @@ fn different_root_statements_and_trace_shard_counts() {
     // A balanced pair can satisfy the generic batch protocol but violate
     // Aiur's memory-closure policy. The public root API must reject it.
     let messages = vec![
-      multi_stark::batch::BatchMessage::push(vec![Val::ONE]),
-      multi_stark::batch::BatchMessage::pull(vec![Val::ONE]),
+      certifri::batch::BatchMessage::push(vec![Val::ONE]),
+      certifri::batch::BatchMessage::pull(vec![Val::ONE]),
     ];
     let bad = system.prove_batch(&pk, inputs(), messages);
     system.verify_batch(&bad).unwrap();
@@ -131,11 +131,11 @@ fn different_root_statements_and_trace_shard_counts() {
 #[test]
 fn shared_batch_root_preserves_single_batch_verifier_and_proof_bytes()
 -> Result<(), Box<dyn std::error::Error>> {
+  use certifri::plonkish::CircuitBuilder;
   use ix_proof_compression::fri::{
     Envelope, ImplementationOptions, ProofEnvelope, ProofProfile, Statement,
     StatementBinding, VerifierKey, VerifierPlan,
   };
-  use multi_stark::plonkish::CircuitBuilder;
 
   let (system, pk, cp, fp) = root_system_with_blowup(2);
   let key = AiurVerifyingKey::from_bytes(&to_bytes(&system, cp, fp))?;
@@ -194,7 +194,7 @@ fn shared_batch_root_preserves_single_batch_verifier_and_proof_bytes()
   expanded.assign_proof(&mut witness, &inputs)?;
   let assignment = witness.generate()?;
   let compiled =
-    circuit.lower_to_multi_stark_sharded(Val::from_u8(107), 1 << 24)?;
+    circuit.lower_to_certifri_sharded(Val::from_u8(107), 1 << 24)?;
   let claims = compiled.claims(&expected)?;
   let template = compiled.claims(&vec![Val::ZERO; expected.len()])?;
   let traces = compiled.traces(&assignment)?;
@@ -242,7 +242,7 @@ fn check_root_directory(
   proof: &aiur::synthesis::AiurProof,
   expected: &[Val],
   shards: usize,
-  stats: multi_stark::plonkish::CircuitStats,
+  stats: certifri::plonkish::CircuitStats,
 ) {
   use ix_proof_compression::fri::*;
   use p3_field::PrimeField64;

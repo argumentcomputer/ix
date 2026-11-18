@@ -4,7 +4,7 @@
 //! Witness-independent bounds for branch selection and terminal counts.
 //! Every return/yield allocates a selector, including consumed yields.
 
-use multi_stark::p3_field::PrimeField64;
+use certifri::p3_field::PrimeField64;
 
 use crate::{
   G,
@@ -113,7 +113,7 @@ impl Toplevel {
 
 #[cfg(test)]
 mod tests {
-  use multi_stark::{
+  use certifri::{
     p3_field::PrimeCharacteristicRing,
     types::{CommitmentParameters, FriParameters},
   };

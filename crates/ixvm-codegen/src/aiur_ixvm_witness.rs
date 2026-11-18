@@ -37,7 +37,7 @@
 //!   sorted address order, then fill disjoint slices of the final channel
 //!   arenas in parallel. No intermediate field-element buffers are kept.
 
-use multi_stark::p3_field::PrimeCharacteristicRing;
+use certifri::p3_field::PrimeCharacteristicRing;
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 

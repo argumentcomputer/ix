@@ -8,11 +8,11 @@ use super::ByteGadgets;
 use super::ByteValue;
 use super::QuadraticValue;
 use super::blake3;
-use multi_stark::plonkish::Bool;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::plonkish::Value;
-use multi_stark::system::System;
-use multi_stark::types::GoldilocksBlake3Config;
+use certifri::plonkish::Bool;
+use certifri::plonkish::CircuitBuilder;
+use certifri::plonkish::Value;
+use certifri::system::System;
+use certifri::types::GoldilocksBlake3Config;
 
 #[cfg(test)]
 #[path = "transcript_tests.rs"]

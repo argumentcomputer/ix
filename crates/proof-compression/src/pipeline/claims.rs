@@ -3,8 +3,8 @@
 //! proof of a root statement exposes.
 use super::Result;
 use crate::kzg::Scalar;
-use multi_stark::{
-  plonkish::MultiStarkCircuit,
+use certifri::{
+  plonkish::CertiFriCircuit,
   traits::{Algebra, Field},
   types::Val,
 };
@@ -20,7 +20,7 @@ pub(in crate::pipeline) struct ClaimTemplate<F> {
 
 impl<F: Field> ClaimTemplate<F> {
   pub(in crate::pipeline) fn from_lowered(
-    circuit: &MultiStarkCircuit<F>,
+    circuit: &CertiFriCircuit<F>,
     count: usize,
   ) -> Result<Self> {
     Self::from_claims(&circuit.claims(&vec![F::ZERO; count])?, count)

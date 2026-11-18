@@ -828,7 +828,7 @@ def verifier := ⟦
   }
 
   -- ==========================================================================
-  -- Batch verification (`multi_stark::batch`): K shard proofs of one system
+  -- Batch verification (`certifri::batch`): K shard proofs of one system
   -- under one pair of lookup challenges.
   --
   -- The batch transcript observes the seed, the shape, the preprocessed

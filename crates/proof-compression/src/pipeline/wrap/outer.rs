@@ -30,8 +30,8 @@ use crate::{
   },
   recursive::{native_verifier::Built, pairing::PUBLIC_VALUES},
 };
-use multi_stark::{
-  plonkish::{Assignment, MultiStarkCircuit},
+use certifri::{
+  plonkish::{Assignment, CertiFriCircuit},
   traits::{Field, TwoAdicField},
 };
 use std::{fs, path::Path};
@@ -64,7 +64,7 @@ pub(crate) fn stage(
 /// A recursive circuit lowered into one computation trace and one merged
 /// table, ready to stage any number of requests of its verifying key.
 pub(crate) struct Frontend {
-  compiled: MultiStarkCircuit<Scalar>,
+  compiled: CertiFriCircuit<Scalar>,
   pairings: Pairings,
   vk: Vec<u8>,
 }
@@ -160,7 +160,7 @@ impl Frontend {
   }
 
   pub(crate) fn new(
-    circuit: multi_stark::plonkish::Circuit<Scalar>,
+    circuit: certifri::plonkish::Circuit<Scalar>,
     keys: &[G2Affine],
     vk: &[u8],
     max_height: usize,
@@ -326,7 +326,7 @@ fn packet_claims(
   Ok((claims, 32 + statement::WORDS * 8 + PAIRING_BYTES))
 }
 fn verify_packet(
-  system: &multi_stark::system::System<KzgConfig>,
+  system: &certifri::system::System<KzgConfig>,
   codec: &FixedProofCodec,
   packet: &[u8],
   vk: &[u8; 32],
@@ -380,7 +380,7 @@ fn prove(
   cache: &fixed_cache::FixedCache,
   setup: &SetupSource,
 ) -> storage::Result<()> {
-  use multi_stark::config::ProofConfig;
+  use certifri::config::ProofConfig;
   use std::time::Instant;
   let start = Instant::now();
   let manifest: storage::Manifest = storage::load(&dir.join("manifest.bin"))?;
@@ -601,9 +601,9 @@ impl VerifyingKey {
 
   pub(crate) fn system(
     &self,
-  ) -> storage::Result<multi_stark::system::System<KzgConfig>> {
+  ) -> storage::Result<certifri::system::System<KzgConfig>> {
     use crate::kzg::VerifierParams;
-    use multi_stark::system::{Circuit, System};
+    use certifri::system::{Circuit, System};
     let supported = self.version == OUTER_VK_VERSION;
     if !supported {
       return Err("unsupported recursive verifying key".into());
@@ -717,7 +717,7 @@ mod tests {
   use crate::{foreign::KzgCircuitExt, kzg::Srs, test_support::TempDir};
   use ark_ec::CurveGroup;
   use ark_serialize::CanonicalSerialize;
-  use multi_stark::{
+  use certifri::{
     plonkish::CircuitBuilder,
     system::{System, SystemWitness},
     traits::Algebra,
@@ -741,7 +741,7 @@ mod tests {
     }
     let compiled = builder
       .finish()
-      .lower_to_multi_stark_sharded(Scalar::from_u8(94), 128)?
+      .lower_to_certifri_sharded(Scalar::from_u8(94), 128)?
       .merge_table_traces(128)?;
     let assignment = compiled.witness().generate()?;
     let height = compiled.main_height();
@@ -937,7 +937,7 @@ mod tests {
       })
       .collect();
     let circuit = b.finish();
-    let lowered = circuit.lower_to_multi_stark(Scalar::from_u8(94)).unwrap();
+    let lowered = circuit.lower_to_certifri(Scalar::from_u8(94)).unwrap();
     let config =
       KzgConfig::new(Arc::new(Srs::unsafe_dev_setup(64, b"packet-outer")), 2)
         .with_transcript(TranscriptKind::Blake3);
@@ -1033,7 +1033,7 @@ mod tests {
   fn stage_fixture(
     dir: &Path,
     cache_root: &Path,
-    compiled: &MultiStarkCircuit<Scalar>,
+    compiled: &CertiFriCircuit<Scalar>,
     assignment: &Assignment<Scalar>,
     keys: &[G2Affine],
   ) -> storage::Result<fixed_cache::FixedCache> {
@@ -1075,7 +1075,7 @@ mod tests {
       }
       let compiled = b
         .finish()
-        .lower_to_multi_stark_sharded(Scalar::from_u8(94), 128)?
+        .lower_to_certifri_sharded(Scalar::from_u8(94), 128)?
         .merge_table_traces(128)?;
       let assignment = compiled.witness().generate()?;
       Ok(Lowered { compiled, assignment })
@@ -1181,7 +1181,7 @@ mod tests {
       oversized.parameters = params.to_bytes()?;
       for setup in &mut oversized.setup {
         let (mut circuit, fixed): (
-          multi_stark::system::Circuit<Scalar>,
+          certifri::system::Circuit<Scalar>,
           KzgCommitment,
         ) = decode(setup)?;
         circuit.preprocessed_height = max_domain;
@@ -1280,7 +1280,7 @@ mod tests {
   fn constant_column_first_stage_proof_wraps_proves_and_verifies()
   -> storage::Result<()> {
     use crate::recursive::native_verifier::Plan;
-    use multi_stark::{expr::Expr, lookup::Lookup, system::CircuitInputs};
+    use certifri::{expr::Expr, lookup::Lookup, system::CircuitInputs};
     use p3_matrix::dense::RowMajorMatrix;
     let words = INIT_PUBLIC_WORDS;
     let srs = Arc::new(Srs::unsafe_dev_setup(8, b"constant-column-inner"));

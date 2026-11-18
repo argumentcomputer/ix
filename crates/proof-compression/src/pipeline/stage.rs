@@ -17,13 +17,13 @@ use crate::fri::{self, VerifierKey};
 use crate::kzg::{
   KzgCommitment, KzgConfig, Scalar, Srs, TranscriptKind, VerifierParams,
 };
-use multi_stark::plonkish::{Assignment, Circuit};
-use multi_stark::prover::Proof;
-use multi_stark::system::{System, SystemWitness};
+use certifri::plonkish::{Assignment, Circuit};
+use certifri::prover::Proof;
+use certifri::system::{System, SystemWitness};
 #[cfg(test)]
-use multi_stark::traits::Algebra;
-use multi_stark::traits::{Field, TwoAdicField};
-use multi_stark::types::{GoldilocksBlake3Config, Val};
+use certifri::traits::Algebra;
+use certifri::traits::{Field, TwoAdicField};
+use certifri::types::{GoldilocksBlake3Config, Val};
 use p3_field::PrimeField64;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
@@ -87,9 +87,9 @@ impl Prepared<Val> {
     config: GoldilocksBlake3Config,
     max_height: usize,
   ) -> Result<(FriVerifier, Proof<GoldilocksBlake3Config>)> {
-    use multi_stark::config::StarkGenericConfig;
+    use certifri::config::StarkGenericConfig;
     fri::validate_parameters(
-      multi_stark::types::CommitmentParameters {
+      certifri::types::CommitmentParameters {
         log_blowup: config.log_blowup(),
         cap_height: config.cap_height(),
       },
@@ -173,7 +173,7 @@ impl KzgVerifier {
     system: System<KzgConfig>,
     statement: ClaimTemplate<Scalar>,
   ) -> Result<Self> {
-    use multi_stark::config::ProofConfig;
+    use certifri::config::ProofConfig;
     let params = system.config.pcs().verifier_params().clone();
     statement.validate()?;
     let commitment =
@@ -284,7 +284,7 @@ pub(in crate::pipeline) fn prove_lowered(
   lowered: lowering::Lowered,
   config: KzgConfig,
 ) -> Result<(KzgVerifier, Proof<KzgConfig>)> {
-  use multi_stark::config::ProofConfig;
+  use certifri::config::ProofConfig;
   let statement = ClaimTemplate::from_lowered(
     &lowered.compiled,
     lowered.assignment.public_values().len(),
@@ -334,9 +334,9 @@ impl FriVerifier {
     config: GoldilocksBlake3Config,
     height: usize,
   ) -> Result<Self> {
-    use multi_stark::config::StarkGenericConfig;
+    use certifri::config::StarkGenericConfig;
     fri::validate_parameters(
-      multi_stark::types::CommitmentParameters {
+      certifri::types::CommitmentParameters {
         log_blowup: config.log_blowup(),
         cap_height: config.cap_height(),
       },
@@ -376,7 +376,7 @@ impl KzgVerifier {
     srs: Arc<Srs>,
     height: usize,
   ) -> Result<Self> {
-    use multi_stark::config::ProofConfig;
+    use certifri::config::ProofConfig;
     if height < 2 || !height.is_power_of_two() || height > srs.max_len() {
       return Err(
         "partition height must be a power of two within the SRS range".into(),
@@ -427,7 +427,7 @@ impl KzgVerifier {
     let (params, transcript, circuits, preprocessing, statement): (
       Vec<u8>,
       u8,
-      Vec<multi_stark::system::Circuit<Scalar>>,
+      Vec<certifri::system::Circuit<Scalar>>,
       Option<KzgCommitment>,
       ClaimTemplate<Scalar>,
     ) = decode_key(KZG_VERIFIER_MAGIC, bytes)?;

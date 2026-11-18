@@ -7,8 +7,8 @@ use std::sync::Arc;
 use ark_serialize::CanonicalSerialize;
 use p3_maybe_rayon::prelude::*;
 
-use multi_stark::config::ProofConfig;
-use multi_stark::traits::Pcs;
+use certifri::config::ProofConfig;
+use certifri::traits::Pcs;
 
 #[cfg(feature = "cuda")]
 use super::cuda;
@@ -138,12 +138,12 @@ impl KzgConfig {
   fn host_lookup_part(
     &self,
     i: usize,
-    input: &multi_stark::config::LookupCommitInput<'_, Self>,
+    input: &certifri::config::LookupCommitInput<'_, Self>,
     beta: Scalar,
     gamma: Scalar,
   ) -> (KzgProverData, Scalar) {
-    use multi_stark::traits::Algebra;
-    use multi_stark::traits::EvaluationDomain;
+    use certifri::traits::Algebra;
+    use certifri::traits::EvaluationDomain;
     let start = std::time::Instant::now();
     let domain = input.stage_1.0.matrices[input.stage_1.1].domain;
     let (selected, graph) =
@@ -171,20 +171,19 @@ impl KzgConfig {
       .enumerate()
       .map(|(i, dst)| {
         let start = i * CHUNK;
-        let values = multi_stark::system::compute_lookup_values_range(
+        let values = certifri::system::compute_lookup_values_range(
           &graph,
           &main,
           fixed.as_ref(),
           start..start + dst.len() / width,
         );
-        let (mut chunks, next) =
-          multi_stark::lookup::LookupValues::stage_2_traces(
-            &[values],
-            &[input.circuit.lookup_group_size],
-            beta,
-            &gamma,
-            Scalar::ZERO,
-          );
+        let (mut chunks, next) = certifri::lookup::LookupValues::stage_2_traces(
+          &[values],
+          &[input.circuit.lookup_group_size],
+          beta,
+          &gamma,
+          Scalar::ZERO,
+        );
         dst.copy_from_slice(&chunks.remove(0).values);
         next[0]
       })
@@ -225,12 +224,12 @@ impl KzgConfig {
   fn host_quotient_part(
     &self,
     i: usize,
-    input: &multi_stark::config::QuotientCommitInput<'_, Self>,
+    input: &certifri::config::QuotientCommitInput<'_, Self>,
     alpha: Scalar,
   ) -> KzgProverData {
-    use multi_stark::traits::Algebra;
-    use multi_stark::traits::EvaluationDomain;
-    use multi_stark::traits::TwoAdicField;
+    use certifri::traits::Algebra;
+    use certifri::traits::EvaluationDomain;
+    use certifri::traits::TwoAdicField;
     let start = std::time::Instant::now();
     let n = input.trace_domain.size();
     let ratio = input.quotient_domain.size() / n;
@@ -301,11 +300,11 @@ impl KzgConfig {
 impl ProofConfig for KzgConfig {
   fn accelerated_lookup_commit(
     &self,
-    inputs: &[multi_stark::config::LookupCommitInput<'_, Self>],
+    inputs: &[certifri::config::LookupCommitInput<'_, Self>],
     beta: Scalar,
     gamma: Scalar,
     mut acc: Scalar,
-  ) -> Option<multi_stark::config::AcceleratedLookupCommitment<Self>> {
+  ) -> Option<certifri::config::AcceleratedLookupCommitment<Self>> {
     if !self.stream_lookups {
       return None;
     }
@@ -362,7 +361,7 @@ impl ProofConfig for KzgConfig {
 
   fn accelerated_quotient_commit(
     &self,
-    inputs: &[multi_stark::config::QuotientCommitInput<'_, Self>],
+    inputs: &[certifri::config::QuotientCommitInput<'_, Self>],
     alpha: Scalar,
   ) -> Option<(KzgCommitment, KzgProverData)> {
     if !self.stream_quotient {
@@ -432,7 +431,7 @@ impl ProofConfig for KzgConfig {
   }
 
   fn max_log_quotient_domain(&self) -> usize {
-    <Scalar as multi_stark::traits::TwoAdicField>::TWO_ADICITY
+    <Scalar as certifri::traits::TwoAdicField>::TWO_ADICITY
   }
 
   fn max_quotient_degree(&self) -> usize {
@@ -447,13 +446,13 @@ impl ProofConfig for KzgConfig {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use multi_stark::expr::Expr;
-  use multi_stark::lookup::Lookup;
-  use multi_stark::system::CircuitInputs;
-  use multi_stark::system::System;
-  use multi_stark::system::SystemWitness;
-  use multi_stark::traits::Algebra;
-  use multi_stark::traits::Field;
+  use certifri::expr::Expr;
+  use certifri::lookup::Lookup;
+  use certifri::system::CircuitInputs;
+  use certifri::system::System;
+  use certifri::system::SystemWitness;
+  use certifri::traits::Algebra;
+  use certifri::traits::Field;
   use p3_matrix::dense::RowMajorMatrix;
 
   /// `a·b = c` per row, with a self-canceling push/pull lookup pair to
@@ -471,8 +470,8 @@ mod tests {
     }
   }
 
-  fn kzg_system()
-  -> (System<KzgConfig>, multi_stark::system::ProverKey<KzgConfig>) {
+  fn kzg_system() -> (System<KzgConfig>, certifri::system::ProverKey<KzgConfig>)
+  {
     let srs = Arc::new(Srs::unsafe_dev_setup(1 << 8, b"test"));
     let config = KzgConfig::new(srs, 8);
     System::new(config, [mul_circuit()])
@@ -611,8 +610,8 @@ mod tests {
 
   #[test]
   fn batch_messages_work_with_scalar_challenges() {
-    use multi_stark::batch::BatchMessage;
-    use multi_stark::batch::ShardInput;
+    use certifri::batch::BatchMessage;
+    use certifri::batch::ShardInput;
     let config =
       KzgConfig::new(Arc::new(Srs::unsafe_dev_setup(2, b"batch")), 4);
     let (system, key) = System::new(

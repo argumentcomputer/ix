@@ -3,7 +3,7 @@ use super::*;
 use crate::kzg::curve::{Fq, G1Affine, G1Projective};
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{BigInteger, PrimeField, Zero};
-use multi_stark::{
+use certifri::{
   config::ProofConfig,
   eval::VarValues,
   expr::{RowOffset, Source},
@@ -145,7 +145,7 @@ impl GraphProgram {
     let mut program =
       Self { instructions: Vec::with_capacity(graph.nodes.len()) };
     for (index, node) in graph.nodes.iter().enumerate() {
-      let child = |id: multi_stark::graph::NodeId| -> Result<usize> {
+      let child = |id: certifri::graph::NodeId| -> Result<usize> {
         let child = id.index();
         if child >= index {
           return Err("graph child must precede its parent".into());
@@ -359,10 +359,10 @@ pub(super) fn diagnostics(
     let mut values = vec![];
     c.graph.sweep(&view, &mut values);
     let mut constraints = c.graph.constraint_values(&values);
-    let ext = multi_stark::system::extension_params::<KzgConfig>();
+    let ext = certifri::system::extension_params::<KzgConfig>();
     let delta = (next - accumulator)
       * (Scalar::from_usize(n) * domain.generator()).inverse();
-    multi_stark::lookup::logup_constraint_values(
+    certifri::lookup::logup_constraint_values(
       &c.graph.lookups,
       &values,
       &stage2[0],

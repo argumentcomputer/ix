@@ -11,7 +11,7 @@ use super::{
   storage::{self, Manifest, Result},
 };
 use crate::kzg::{KzgConfig, Scalar};
-use multi_stark::plonkish::MultiStarkCircuit;
+use certifri::plonkish::CertiFriCircuit;
 use serde::{Deserialize, Serialize};
 use std::{
   fs::{self, File},
@@ -165,7 +165,7 @@ impl FixedCache {
   pub(crate) fn prepare(
     &self,
     config: &KzgConfig,
-    compiled: &MultiStarkCircuit<Scalar>,
+    compiled: &CertiFriCircuit<Scalar>,
   ) -> Result<(Vec<FixedSetup>, Prepared)> {
     if let Some(bytes) = self.check()? {
       return Ok((self.setup_parts()?, Prepared::Present { bytes }));

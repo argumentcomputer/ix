@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::FxIndexMap;
-use multi_stark::eval::{VarValues, eval_expr};
+use certifri::eval::{VarValues, eval_expr};
 
 fn empty_branch_toplevel() -> Toplevel {
   let dead = Block {

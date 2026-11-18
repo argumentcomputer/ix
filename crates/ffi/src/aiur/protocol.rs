@@ -1,8 +1,8 @@
-use ix_common::address::Address;
-use multi_stark::{
+use certifri::{
   p3_field::{PrimeCharacteristicRing, PrimeField64},
   types::{CommitmentParameters, FriParameters},
 };
+use ix_common::address::Address;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::sync::LazyLock;
 

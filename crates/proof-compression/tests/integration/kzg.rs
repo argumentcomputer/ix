@@ -4,18 +4,18 @@ use ark_bn254::Fr;
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{BigInteger, PrimeField};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use certifri::config::ProofConfig;
+use certifri::expr::Expr;
+use certifri::lookup::Lookup;
+use certifri::prover::Proof;
+use certifri::system::{CircuitInputs, ProverKey, System, SystemWitness};
+use certifri::traits::{Algebra, Field, TwoAdicField};
 use ix_proof_compression::kzg::compact::FixedProofCodec;
 use ix_proof_compression::kzg::curve::{G1Affine, G2Affine};
 use ix_proof_compression::kzg::encoding::{read_scalars, write_scalars};
 use ix_proof_compression::kzg::{
   KzgConfig, Scalar, Srs, TranscriptKind, VerifierParams,
 };
-use multi_stark::config::ProofConfig;
-use multi_stark::expr::Expr;
-use multi_stark::lookup::Lookup;
-use multi_stark::prover::Proof;
-use multi_stark::system::{CircuitInputs, ProverKey, System, SystemWitness};
-use multi_stark::traits::{Algebra, Field, TwoAdicField};
 use p3_matrix::dense::RowMajorMatrix;
 
 const HEIGHTS: [usize; 2] = [4, 8];

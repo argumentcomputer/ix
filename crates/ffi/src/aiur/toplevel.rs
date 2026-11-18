@@ -1,4 +1,4 @@
-use multi_stark::p3_field::PrimeCharacteristicRing;
+use certifri::p3_field::PrimeCharacteristicRing;
 
 use lean_ffi::object::{LeanBorrowed, LeanCtor, LeanRef};
 

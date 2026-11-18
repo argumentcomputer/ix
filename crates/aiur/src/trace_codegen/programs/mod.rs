@@ -71,7 +71,7 @@ mod tests {
     execute::{IOBuffer, QueryRecord},
     gpu_trace::TraceProvider,
   };
-  use ::multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
+  use ::certifri::p3_field::{PrimeCharacteristicRing, PrimeField64};
 
   #[test]
   fn production_registration_and_dispatch_match_oracle() {

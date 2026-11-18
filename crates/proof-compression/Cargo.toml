@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 aiur = { workspace = true }
-multi-stark = { workspace = true }
+certifri = { workspace = true }
 ark-bn254 = { version = "0.5", features = ["curve"] }
 ark-ec = "0.5"
 ark-ff = { version = "0.5", features = ["asm"] }
@@ -45,7 +45,7 @@ rayon = { workspace = true }
 # The CUDA transform engine for the KZG backend. The fork supplies column
 # batching, borrowed streams, the device-selecting synchronization and the
 # MSM profiling hooks, and a runtime compatible with the Lean executable's
-# C++ linkage. The revision must match multi-stark's Goldilocks pin.
+# C++ linkage. The revision must match CertiFRI's Goldilocks pin.
 [dependencies.sppark]
 git = "https://github.com/argumentcomputer/sppark"
 rev = "9326ac014ec5415ebc4eab24c1246276714aee57"
@@ -56,12 +56,12 @@ features = ["cuda"]
 plonk = ["dep:bindgen"]
 groth16 = ["dep:bindgen"]
 default = ["parallel"]
-# GPU proving: multi-stark's Goldilocks backend for FRI compression and the
+# GPU proving: CertiFRI's Goldilocks backend for FRI compression and the
 # KZG kernels here, plus acceleration for the enabled gnark backends. Needs
 # the CUDA toolkit at build time and a visible GPU at runtime; CPU-only
 # builds neither compile sppark nor link CUDA.
-cuda = ["multi-stark/cuda", "dep:rayon", "dep:sppark", "dep:blst"]
-parallel = ["multi-stark/parallel", "aiur/parallel", "p3-maybe-rayon/parallel", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel"]
+cuda = ["certifri/cuda", "dep:rayon", "dep:sppark", "dep:blst"]
+parallel = ["certifri/parallel", "aiur/parallel", "p3-maybe-rayon/parallel", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel"]
 
 [lints]
 workspace = true

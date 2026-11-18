@@ -1,7 +1,7 @@
 //! Fixed opening layouts and scalar arithmetic for authenticated verifying keys.
 
 use super::{KzgConfig, Result, Scalar, System};
-use multi_stark::{
+use certifri::{
   config::ProofConfig,
   expr::Source,
   traits::{Algebra, Field, Pcs},
@@ -195,7 +195,7 @@ impl OpeningLayout {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use multi_stark::traits::TwoAdicField;
+  use certifri::traits::TwoAdicField;
 
   fn shapes() -> [CircuitShape; 2] {
     [

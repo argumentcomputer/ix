@@ -6,8 +6,8 @@ use super::quotient::{
 };
 use super::*;
 use crate::kzg::{Scalar, config::KzgConfig};
-use multi_stark::config::{LookupCommitInput, QuotientCommitInput};
-use multi_stark::traits::EvaluationDomain;
+use certifri::config::{LookupCommitInput, QuotientCommitInput};
+use certifri::traits::EvaluationDomain;
 
 #[repr(C, align(32))]
 struct NativePass {
@@ -321,7 +321,7 @@ pub(super) fn quotient_coefficients(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use multi_stark::traits::Algebra;
+  use certifri::traits::Algebra;
 
   #[test]
   fn pass_abi_and_memory_arithmetic() {
@@ -332,8 +332,8 @@ mod tests {
 
   #[test]
   fn pruned_pass_contains_only_transitive_dependencies() {
-    use multi_stark::expr::{ColRef, RowOffset, Source};
-    use multi_stark::graph::{ConstraintGraph, Node, NodeId};
+    use certifri::expr::{ColRef, RowOffset, Source};
+    use certifri::graph::{ConstraintGraph, Node, NodeId};
     let graph = ConstraintGraph {
       nodes: vec![
         Node::Var(ColRef {
@@ -357,7 +357,7 @@ mod tests {
       ],
       degrees: vec![1; 6],
       zeros: vec![NodeId(3), NodeId(4)],
-      lookups: vec![multi_stark::lookup::Lookup {
+      lookups: vec![certifri::lookup::Lookup {
         multiplicity: NodeId(5),
         args: vec![NodeId(1)],
       }],

@@ -4,15 +4,15 @@ use crate::support::parity;
 
 use std::collections::HashMap;
 
-use multi_stark::eval::VarValues;
-use multi_stark::eval::eval_expr;
-use multi_stark::p3_field::PrimeCharacteristicRing;
-use multi_stark::p3_matrix::Matrix;
-use multi_stark::p3_matrix::dense::RowMajorMatrix;
-use multi_stark::system::CircuitInputs;
-use multi_stark::system::System;
-use multi_stark::system::SystemWitness;
-use multi_stark::types::Val;
+use certifri::eval::VarValues;
+use certifri::eval::eval_expr;
+use certifri::p3_field::PrimeCharacteristicRing;
+use certifri::p3_matrix::Matrix;
+use certifri::p3_matrix::dense::RowMajorMatrix;
+use certifri::system::CircuitInputs;
+use certifri::system::System;
+use certifri::system::SystemWitness;
+use certifri::types::Val;
 use parity::{Function, HEIGHT, LOG_HEIGHT, NUM_QUERIES};
 
 /// Check the actual constraints and exact message multiset, independently

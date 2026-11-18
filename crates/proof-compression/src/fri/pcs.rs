@@ -12,14 +12,14 @@ use super::blake3;
 use super::constrain_algebraic_checks;
 use super::transcript::DEFAULT_FIELD_RETRIES;
 use super::transcript::constrain_active_transcript;
-use multi_stark::config::StarkGenericConfig;
-use multi_stark::plonkish::Bool;
-use multi_stark::plonkish::Circuit;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::plonkish::Value;
-use multi_stark::system::System;
-use multi_stark::types::GoldilocksBlake3Config;
-use multi_stark::types::Val;
+use certifri::config::StarkGenericConfig;
+use certifri::plonkish::Bool;
+use certifri::plonkish::Circuit;
+use certifri::plonkish::CircuitBuilder;
+use certifri::plonkish::Value;
+use certifri::system::System;
+use certifri::types::GoldilocksBlake3Config;
+use certifri::types::Val;
 
 pub(super) type Digest = [ByteValue; 32];
 

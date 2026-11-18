@@ -1,8 +1,8 @@
 //! Aggregation protocol.
 
 use aiur::{G, function_channel};
+use certifri::p3_field::{PrimeCharacteristicRing, PrimeField64};
 use ix_common::address::Address;
-use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 
 pub(super) const CACHE_VERSION: u64 = 2;
 

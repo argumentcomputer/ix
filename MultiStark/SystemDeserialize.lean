@@ -64,7 +64,7 @@ def systemDeserialize := ⟦
   -- Reconstructed `System<AiurConfig>` as Aiur data (compiled form).
   -- ==========================================================================
 
-  -- A compiled constraint node (`multi_stark::circuit::Node`). Children of
+  -- A compiled constraint node (`certifri::circuit::Node`). Children of
   -- Add/Sub/Mul/Neg are NodeIds (indices into the circuit's node vector),
   -- not sub-trees: the graph is flat and topologically ordered (a node's
   -- children always have smaller indices).

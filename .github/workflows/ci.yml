@@ -144,7 +144,7 @@ jobs:
       # This job validates feature plumbing and the Rust-staticlib-to-Lean
       # link without paying for a GPU runner. One explicit architecture
       # is sufficient for this downstream integration gate.
-      MULTI_STARK_CUDA_ARCHS: "80"
+      CERTIFRI_CUDA_ARCHS: "80"
     steps:
       # No sccache here yet. Once the GPU benchmark lands after #644, wire
       # it for both compilers: `sccache: s3` plus the sccache action for

@@ -1,4 +1,4 @@
-use multi_stark::{
+use certifri::{
   lookup::{LookupRowMut, LookupValues},
   p3_field::{Field, PrimeCharacteristicRing, PrimeField64},
   p3_matrix::dense::RowMajorMatrix,

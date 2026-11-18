@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::bytecode::Circuit;
-use multi_stark::{
+use certifri::{
   eval::{VarValues, eval_expr},
   p3_field::PrimeField64,
 };

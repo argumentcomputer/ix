@@ -6,14 +6,14 @@ use serde::{Deserialize, Serialize};
 use super::plan::VerifierError;
 use super::plan::VerifierKey;
 use super::plan::validate_circuit;
-use multi_stark::graph::ConstraintGraph;
-use multi_stark::system::Circuit;
-use multi_stark::system::System;
-use multi_stark::types::Commitment;
-use multi_stark::types::CommitmentParameters;
-use multi_stark::types::FriParameters;
-use multi_stark::types::GoldilocksBlake3Config;
-use multi_stark::types::Val;
+use certifri::graph::ConstraintGraph;
+use certifri::system::Circuit;
+use certifri::system::System;
+use certifri::types::Commitment;
+use certifri::types::CommitmentParameters;
+use certifri::types::FriParameters;
+use certifri::types::GoldilocksBlake3Config;
+use certifri::types::Val;
 
 #[derive(Serialize, Deserialize)]
 struct CircuitData {
@@ -33,7 +33,7 @@ struct KeyData {
 impl VerifierKey {
   /// Instance statistics for parameter sizing, decoded through the native key codec.
   pub fn statistics(&self) -> serde_json::Value {
-    use multi_stark::config::StarkGenericConfig;
+    use certifri::config::StarkGenericConfig;
     let system = self.system();
     let fri = system.config.fri_parameters();
     serde_json::json!({
@@ -53,7 +53,7 @@ impl VerifierKey {
   pub fn to_bytes(&self) -> Result<Vec<u8>, VerifierError> {
     let s = self.system();
     let fp = s.config.fri_parameters();
-    use multi_stark::config::StarkGenericConfig;
+    use certifri::config::StarkGenericConfig;
     let data = KeyData {
       version: 1,
       commitment: [s.config.log_blowup(), s.config.cap_height()],
@@ -123,8 +123,7 @@ impl VerifierKey {
         lookup_group_size,
         max_constraint_degree,
       ] = c.metadata;
-      if !(1..=multi_stark::lookup::MAX_LOOKUP_GROUP)
-        .contains(&lookup_group_size)
+      if !(1..=certifri::lookup::MAX_LOOKUP_GROUP).contains(&lookup_group_size)
       {
         return Err(VerifierError::Circuit {
           index,

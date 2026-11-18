@@ -8,8 +8,8 @@ use super::*;
 #[cfg(not(feature = "cuda"))]
 #[test]
 fn native_cap_can_omit_a_shorter_matrix() {
-  use multi_stark::p3_matrix::Matrix;
-  use multi_stark::types::Mmcs;
+  use certifri::p3_matrix::Matrix;
+  use certifri::types::Mmcs;
   use p3_blake3::Blake3;
   use p3_commit::Mmcs as _;
   use p3_symmetric::{CompressionFunctionFromHasher, SerializingHasher};

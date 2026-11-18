@@ -20,9 +20,9 @@ pub use algebra::{
   AlgebraicChallenges, AlgebraicInputs, AlgebraicOutputs, CircuitEvaluation,
   CircuitOpenings, Selectors, constrain_algebraic_checks,
 };
-pub use multi_stark::plonkish::gadgets::ByteGadgets;
-pub use multi_stark::plonkish::gadgets::ByteValue;
-pub use multi_stark::plonkish::gadgets::blake3;
+pub use certifri::plonkish::gadgets::ByteGadgets;
+pub use certifri::plonkish::gadgets::ByteValue;
+pub use certifri::plonkish::gadgets::blake3;
 pub use pcs::{
   FixedPcsShape, FixedVerifierInputs, PcsInputs, PcsQuery,
   build_fixed_verifier, build_profile_verifier, constrain_fixed_verifier,

@@ -19,7 +19,7 @@ unsafe extern "C" {
 #[test]
 fn native_ntt_parameters_match_scalar_roots_without_large_allocations() {
   use crate::kzg::Scalar;
-  use multi_stark::traits::TwoAdicField;
+  use certifri::traits::TwoAdicField;
   for lg in 0..=MAX_FFT_LOG {
     let mut output = [[0; 4]; 3];
     let status =

@@ -19,7 +19,7 @@ use crate::recursive::pairing::{self, PUBLIC_VALUES};
 use ark_ec::{AffineRepr, pairing::Pairing};
 use ark_ff::Zero;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use multi_stark::{prover::Proof, system::System, types::Val};
+use certifri::{prover::Proof, system::System, types::Val};
 use std::sync::Arc;
 
 /// Recursive proof and its public pairing operands. Certificate claim values
@@ -78,7 +78,7 @@ pub fn prepare_recursive(
 }
 
 impl RecursiveStage {
-  pub fn circuit(&self) -> &multi_stark::plonkish::Circuit<Scalar> {
+  pub fn circuit(&self) -> &certifri::plonkish::Circuit<Scalar> {
     self.prepared.circuit()
   }
 
@@ -318,8 +318,8 @@ mod tests {
   use crate::kzg::curve::Fr;
   use crate::recursive::pairing::POINT_LIMB_BYTES;
   use ark_ec::CurveGroup;
-  use multi_stark::plonkish::CircuitBuilder;
-  use multi_stark::traits::{Algebra, Field};
+  use certifri::plonkish::CircuitBuilder;
+  use certifri::traits::{Algebra, Field};
 
   #[test]
   fn final_verifier_requires_claim_outer_proof_and_both_pairings() -> Result<()>

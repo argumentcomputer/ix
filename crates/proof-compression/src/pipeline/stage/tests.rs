@@ -1,7 +1,7 @@
 use super::*;
 use crate::pipeline::prepare_recursive;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::types::{CommitmentParameters, FriParameters};
+use certifri::plonkish::CircuitBuilder;
+use certifri::types::{CommitmentParameters, FriParameters};
 
 fn fri_config(
   cap_height: usize,
@@ -102,7 +102,7 @@ fn fri_memory_reduction_preserves_the_dense_proof() -> Result<()> {
   // Include multiple partitions and a lookup table. The reference uses dense
   // lowering and keeps the fixed evaluations through proving.
   let prepared = arithmetic(Val::TWO, 50);
-  let compiled = prepared.circuit.lower_to_multi_stark_with_max_height(
+  let compiled = prepared.circuit.lower_to_certifri_with_max_height(
     Val::from_u8(lowering::FRI_NAMESPACE),
     32,
   )?;
@@ -233,7 +233,7 @@ fn verifier_decoder_rejects_trace_cap_without_quotient_headroom() -> Result<()>
     (
       params.to_bytes()?,
       0u8,
-      Vec::<multi_stark::system::Circuit<Scalar>>::new(),
+      Vec::<certifri::system::Circuit<Scalar>>::new(),
       Option::<KzgCommitment>::None,
       ClaimTemplate::recursive(0),
     ),

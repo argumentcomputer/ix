@@ -5,7 +5,7 @@ use super::{
   QUOTIENT_BITS, RELATION_ADVICE_LEN, Scalar, W, digits, integer, modulus,
   scalar,
 };
-use multi_stark::traits::{Algebra, Field};
+use certifri::traits::{Algebra, Field};
 
 pub(super) struct Constants {
   pub(super) modulus_digits: [BigUint; L],

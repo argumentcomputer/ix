@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use multi_stark::{
+use certifri::{
   expr::Expr,
   lookup::{Lookup, LookupRowMut, LookupValues},
   p3_field::PrimeCharacteristicRing,

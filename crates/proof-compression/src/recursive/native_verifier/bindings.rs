@@ -1,7 +1,7 @@
 use super::*;
-use multi_stark::plonkish::Assignment;
+use certifri::plonkish::Assignment;
 #[cfg(test)]
-use multi_stark::plonkish::Witness;
+use certifri::plonkish::Witness;
 use shape::{Round, Shape};
 
 #[derive(Clone, Copy)]

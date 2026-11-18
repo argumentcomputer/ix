@@ -38,7 +38,7 @@ pub(crate) fn from_claims_bytes(bytes: &[u8]) -> Result<Statement> {
   }
   let mut statement = [0; WORDS];
   for (slot, &word) in statement.iter_mut().zip(&words[2..]) {
-    if word >= multi_stark::types::Val::ORDER_U64 {
+    if word >= certifri::types::Val::ORDER_U64 {
       return Err("statement word is not a canonical field element".into());
     }
     *slot = word;
@@ -71,7 +71,7 @@ fn usize_u64(value: usize) -> u64 {
 fn scalar_word(value: Scalar) -> Result<u64> {
   let limbs = value.0.into_bigint().0;
   if limbs[1..].iter().any(|&limb| limb != 0)
-    || limbs[0] >= multi_stark::types::Val::ORDER_U64
+    || limbs[0] >= certifri::types::Val::ORDER_U64
   {
     return Err("statement word is not a canonical field element".into());
   }
@@ -109,7 +109,7 @@ pub(crate) fn with_claim(prefix: &[u64; 10], claim: &[u8]) -> Statement {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use multi_stark::traits::{Algebra, Field};
+  use certifri::traits::{Algebra, Field};
 
   #[test]
   fn claims_layout_round_trips_and_binds_the_claim() {

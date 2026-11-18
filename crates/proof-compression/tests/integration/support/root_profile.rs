@@ -5,26 +5,26 @@
 //! The receipt binds a fixed tag, format, validator, subject and assumptions marker.
 //! Keys and circuit semantics are synthetic, not an application implementation.
 
+use certifri::expr::Expr;
+use certifri::lookup::Lookup;
+use certifri::p3_field::PrimeCharacteristicRing;
+use certifri::p3_field::PrimeField64;
+use certifri::p3_matrix::dense::RowMajorMatrix;
+use certifri::plonkish::Circuit;
+use certifri::plonkish::CircuitBuilder;
+use certifri::plonkish::Value;
+use certifri::system::CircuitInputs;
+use certifri::system::System;
+use certifri::types::CommitmentParameters;
+use certifri::types::FriParameters;
+use certifri::types::GoldilocksBlake3Config;
+use certifri::types::Val;
 use ix_proof_compression::fri::ByteGadgets;
 use ix_proof_compression::fri::ByteValue;
 use ix_proof_compression::fri::FixedPcsShape;
 use ix_proof_compression::fri::FixedVerifierInputs;
 use ix_proof_compression::fri::blake3;
 use ix_proof_compression::fri::constrain_fixed_verifier;
-use multi_stark::expr::Expr;
-use multi_stark::lookup::Lookup;
-use multi_stark::p3_field::PrimeCharacteristicRing;
-use multi_stark::p3_field::PrimeField64;
-use multi_stark::p3_matrix::dense::RowMajorMatrix;
-use multi_stark::plonkish::Circuit;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::plonkish::Value;
-use multi_stark::system::CircuitInputs;
-use multi_stark::system::System;
-use multi_stark::types::CommitmentParameters;
-use multi_stark::types::FriParameters;
-use multi_stark::types::GoldilocksBlake3Config;
-use multi_stark::types::Val;
 use p3_blake3::Blake3;
 use p3_symmetric::CryptographicHasher;
 

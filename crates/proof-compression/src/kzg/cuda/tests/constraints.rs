@@ -1,6 +1,6 @@
 use super::*;
 use crate::kzg::{KzgConfig, Scalar, domain::Radix2Coset, pcs::KzgProverData};
-use multi_stark::{
+use certifri::{
   config::{LookupCommitInput, QuotientCommitInput},
   expr::Expr,
   lookup::{Lookup, LookupValues},
@@ -68,11 +68,11 @@ fn fixture(fixed: RowMajorMatrix<Scalar>) -> Circuit<Scalar> {
     ..Default::default()
   };
   let graph = spec.compile_graph(&extension_params::<KzgConfig>()).unwrap();
-  let groups = multi_stark::lookup::stage2_width(spec.lookups.len(), 2, 1);
+  let groups = certifri::lookup::stage2_width(spec.lookups.len(), 2, 1);
   let constraint_count = graph.zeros.len() + groups;
   let max_constraint_degree = graph
     .max_constraint_degree
-    .max(multi_stark::lookup::logup_max_degree(&graph, 2))
+    .max(certifri::lookup::logup_max_degree(&graph, 2))
     as usize;
   Circuit {
     graph,

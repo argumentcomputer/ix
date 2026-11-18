@@ -5,7 +5,7 @@ use crate::kzg::curve::G1Affine;
 use ark_ec::AffineRepr;
 use ark_ff::{BigInteger, PrimeField};
 use ark_serialize::CanonicalDeserialize;
-use multi_stark::{
+use certifri::{
   config::ProofConfig,
   prover::Proof,
   system::System,

@@ -2,11 +2,11 @@
 use std::collections::BTreeSet;
 
 use super::Scalar;
-use multi_stark::expr::Source;
-use multi_stark::graph::ConstraintGraph;
-use multi_stark::graph::Node;
-use multi_stark::graph::NodeId;
-use multi_stark::lookup::Lookup;
+use certifri::expr::Source;
+use certifri::graph::ConstraintGraph;
+use certifri::graph::Node;
+use certifri::graph::NodeId;
+use certifri::lookup::Lookup;
 
 pub(super) struct Pass {
   pub fixed: Vec<usize>,

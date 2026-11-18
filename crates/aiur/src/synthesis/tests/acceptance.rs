@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use super::*;
-use multi_stark::eval::{VarValues, eval_expr};
+use certifri::eval::{VarValues, eval_expr};
 
 fn values<'a>(row: &'a [G], next: &'a [G]) -> VarValues<'a, G> {
   VarValues {

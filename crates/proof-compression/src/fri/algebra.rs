@@ -4,14 +4,14 @@ use p3_field::extension::BinomiallyExtendable;
 use p3_field::{Field, TwoAdicField};
 
 use super::QuadraticValue as Q;
-use multi_stark::eval::VarValues;
-use multi_stark::expr::RowOffset;
-use multi_stark::expr::Source;
-use multi_stark::graph::ConstraintGraph;
-use multi_stark::graph::Node;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::plonkish::Value;
-use multi_stark::system::Circuit;
+use certifri::eval::VarValues;
+use certifri::expr::RowOffset;
+use certifri::expr::Source;
+use certifri::graph::ConstraintGraph;
+use certifri::graph::Node;
+use certifri::plonkish::CircuitBuilder;
+use certifri::plonkish::Value;
+use certifri::system::Circuit;
 
 /// Boundary wires that the transcript gadget binds. None of these values
 /// is authenticated by the algebraic checks themselves.
@@ -47,7 +47,7 @@ impl AlgebraicInputs {
   /// Allocate inputs using only fixed circuit metadata and claim lengths.
   /// Claims are public. Openings and challenges are private boundary wires
   /// which a complete verifier MUST bind to its PCS and transcript gadgets.
-  pub fn allocate<F: Field + multi_stark::traits::Field>(
+  pub fn allocate<F: Field + certifri::traits::Field>(
     builder: &mut CircuitBuilder<F>,
     circuits: &[impl Borrow<Circuit<F>>],
     claim_lengths: &[usize],
@@ -66,7 +66,7 @@ impl AlgebraicInputs {
 
   /// Compose verification with caller-owned statement wires. Public exposure
   /// is the caller's choice; claims may be derived by other gadgets.
-  pub fn with_claims<F: Field + multi_stark::traits::Field>(
+  pub fn with_claims<F: Field + certifri::traits::Field>(
     builder: &mut CircuitBuilder<F>,
     circuits: &[impl Borrow<Circuit<F>>],
     claims: Vec<Vec<Value>>,
@@ -133,7 +133,7 @@ pub struct AlgebraicOutputs {
   pub circuits: Vec<CircuitEvaluation>,
 }
 
-fn sweep<F: BinomiallyExtendable<2> + multi_stark::traits::Field>(
+fn sweep<F: BinomiallyExtendable<2> + certifri::traits::Field>(
   builder: &mut CircuitBuilder<F>,
   graph: &ConstraintGraph<F>,
   view: &VarValues<'_, Q>,
@@ -174,7 +174,7 @@ fn sweep<F: BinomiallyExtendable<2> + multi_stark::traits::Field>(
 /// Multiply pairs of coordinate-polynomial evaluations. Each coordinate is
 /// itself in the OOD challenge field. This is NOT ordinary multiplication
 /// after recombining the two stage-2 columns into one extension value.
-fn coordinate_mul<F: BinomiallyExtendable<2> + multi_stark::traits::Field>(
+fn coordinate_mul<F: BinomiallyExtendable<2> + certifri::traits::Field>(
   builder: &mut CircuitBuilder<F>,
   a: [Q; 2],
   b: [Q; 2],
@@ -200,7 +200,7 @@ fn coordinate_mul<F: BinomiallyExtendable<2> + multi_stark::traits::Field>(
 /// This is NOT a proof verifier: callers must additionally constrain exact
 /// Fiat-Shamir replay and PCS verification before making that claim.
 pub fn constrain_algebraic_checks<
-  F: TwoAdicField + BinomiallyExtendable<2> + multi_stark::traits::Field,
+  F: TwoAdicField + BinomiallyExtendable<2> + certifri::traits::Field,
 >(
   builder: &mut CircuitBuilder<F>,
   circuits: &[impl Borrow<Circuit<F>>],
@@ -221,7 +221,7 @@ pub fn constrain_algebraic_checks<
 /// Batch shards can end in a nonzero residual; the batch caller must constrain
 /// its value against the verifier-side messages (and any other shard residuals).
 pub(super) fn constrain_algebraic_checks_with_residual<
-  F: TwoAdicField + BinomiallyExtendable<2> + multi_stark::traits::Field,
+  F: TwoAdicField + BinomiallyExtendable<2> + certifri::traits::Field,
 >(
   builder: &mut CircuitBuilder<F>,
   circuits: &[impl Borrow<Circuit<F>>],
@@ -239,7 +239,7 @@ pub(super) fn constrain_algebraic_checks_with_residual<
   {
     assert_eq!(circuit.num_publics, 8, "quadratic challenge field required");
     assert!(
-      (1..=multi_stark::lookup::MAX_LOOKUP_GROUP)
+      (1..=certifri::lookup::MAX_LOOKUP_GROUP)
         .contains(&circuit.lookup_group_size)
     );
     assert!(usize::from(log_degree) <= F::TWO_ADICITY);
@@ -326,7 +326,7 @@ pub(super) fn constrain_algebraic_checks_with_residual<
     let mut constraints: Vec<_> =
       circuit.graph.zeros.iter().map(|id| nodes[id.index()]).collect();
     let injection_norm = Field::inverse(
-      &(<F as multi_stark::traits::Field>::from_usize(1 << log_degree) * g),
+      &(<F as certifri::traits::Field>::from_usize(1 << log_degree) * g),
     );
     let injection: [Q; 2] = std::array::from_fn(|k| {
       let delta = publics[6 + k].sub(builder, publics[4 + k]);

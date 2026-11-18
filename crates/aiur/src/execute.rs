@@ -1,4 +1,4 @@
-use multi_stark::p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
+use certifri::p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
 

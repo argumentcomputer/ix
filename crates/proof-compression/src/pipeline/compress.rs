@@ -458,7 +458,7 @@ impl Checkpoints<'_> {
     }
     let proved = span.in_scope(|| prove(&dir));
     #[cfg(feature = "cuda")]
-    multi_stark::cuda::release_device_memory();
+    certifri::cuda::release_device_memory();
     proved.and_then(|()| check(&dir)).map_err(|error| {
       format!(
         "compression {name} failed: {error}; earlier stages are kept for a \

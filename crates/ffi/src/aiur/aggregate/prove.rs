@@ -20,6 +20,7 @@ use aiur::{
   },
   synthesis::{AiurProof, AiurSystem, GatedProve, PreparedProve},
 };
+use certifri::types::ExtVal;
 use ix_common::address::Address;
 use ixon::{
   ClaimContext, Proof as IxonProof, merkle::MerklePath, proof::Claim,
@@ -27,7 +28,6 @@ use ixon::{
 use ixvm_codegen::aiur_ix_aggr_runner::{
   AggrAdvice, AggrPath, AggrPreimage, AggrTree, aggr_io_buffer, execute_ix_aggr,
 };
-use multi_stark::types::ExtVal;
 use rustc_hash::FxHashMap;
 use std::{
   path::Path,

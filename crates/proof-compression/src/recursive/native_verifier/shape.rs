@@ -233,10 +233,10 @@ impl Shape {
 }
 
 pub(super) fn validate_graph(
-  circuit: &multi_stark::system::Circuit<Scalar>,
+  circuit: &certifri::system::Circuit<Scalar>,
 ) -> Result<(), String> {
   let graph = &circuit.graph;
-  if !(1..=multi_stark::lookup::MAX_LOOKUP_GROUP)
+  if !(1..=certifri::lookup::MAX_LOOKUP_GROUP)
     .contains(&circuit.lookup_group_size)
     || circuit.num_lookups != graph.lookups.len()
     || circuit.num_publics != 4

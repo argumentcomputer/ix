@@ -1,7 +1,7 @@
 use super::*;
 use crate::kzg::Srs;
 use ark_ec::AffineRepr;
-use multi_stark::{
+use certifri::{
   expr::Expr,
   lookup::Lookup,
   plonkish::Assignment,
@@ -153,7 +153,7 @@ fn recursive_frontend_reuses_two_statements_and_returns_first() {
   let Compiled { circuit, bindings } = plan.compile().unwrap();
   let relation = relation_digest(&circuit);
   let compiled = circuit
-    .lower_to_multi_stark_sharded(
+    .lower_to_certifri_sharded(
       layout().namespace,
       layout().max_computation_height,
     )

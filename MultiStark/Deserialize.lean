@@ -6,7 +6,7 @@ public import Ix.Aiur.Library.ByteStream
 /-!
 # Multi-STARK proof deserializer (Aiur)
 
-Aiur deserializer for `multi_stark::prover::Proof`, mirroring the hand-written
+Aiur deserializer for `certifri::prover::Proof`, mirroring the hand-written
 bincode reader in `multi-stark/src/manual_codec.rs` (`fn deserialize`). Only
 the deserializer is ported (no serializer).
 
@@ -119,7 +119,7 @@ def deserialize := ⟦
     SomePreprocessed(OpenedRound)
   }
 
-  -- Mirror of `multi_stark::prover::Proof`, in serialization order.
+  -- Mirror of `certifri::prover::Proof`, in serialization order.
   -- `active` is the sparse-activation bitmap over the system's canonical
   -- circuit set (one 0/1 field value per circuit); every other per-circuit
   -- sequence in the proof is indexed by ACTIVE position.
@@ -471,7 +471,7 @@ def deserialize := ⟦
   }
 
   -- ==========================================================================
-  -- `multi_stark::batch`: a vector of shard proofs under one preamble. The
+  -- `certifri::batch`: a vector of shard proofs under one preamble. The
   -- preamble (headers, then messages) precedes the proofs on the wire.
   -- ==========================================================================
 

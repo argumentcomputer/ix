@@ -10,7 +10,7 @@ use aiur::{
   execute::IOBuffer,
   synthesis::{AiurProof, AiurSystem},
 };
-use multi_stark::{
+use certifri::{
   p3_field::PrimeCharacteristicRing,
   types::{CommitmentParameters, FriParameters},
 };

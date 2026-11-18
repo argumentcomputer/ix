@@ -147,11 +147,11 @@ fn byte_reads_after_conditional_retries_cross_digest_boundaries_correctly() {
 
 #[test]
 fn conditional_retry_circuit_proves_multiple_paths_under_one_outer_key() {
-  use multi_stark::system::System;
-  use multi_stark::system::SystemWitness;
-  use multi_stark::types::CommitmentParameters;
-  use multi_stark::types::FriParameters;
-  use multi_stark::types::GoldilocksBlake3Config;
+  use certifri::system::System;
+  use certifri::system::SystemWitness;
+  use certifri::types::CommitmentParameters;
+  use certifri::types::FriParameters;
+  use certifri::types::GoldilocksBlake3Config;
 
   let mut b = CircuitBuilder::new();
   let bytes = ByteGadgets::new(&mut b);
@@ -163,8 +163,7 @@ fn conditional_retry_circuit_proves_multiple_paths_under_one_outer_key() {
   b.expose_public(field);
   let buffer = challenger.buffer(&mut b, &bytes);
   let circuit = b.finish();
-  let compiled =
-    circuit.lower_to_multi_stark(Goldilocks::from_u8(105)).unwrap();
+  let compiled = circuit.lower_to_certifri(Goldilocks::from_u8(105)).unwrap();
   let config = GoldilocksBlake3Config::new(
     CommitmentParameters { log_blowup: 1, cap_height: 0 },
     FriParameters {

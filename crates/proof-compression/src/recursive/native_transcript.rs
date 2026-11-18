@@ -7,7 +7,7 @@ use crate::recursive::{
   native_field::{Builder, FqVar, W, integer, modulus},
 };
 use ark_ff::{BigInteger, PrimeField};
-use multi_stark::{
+use certifri::{
   plonkish::{
     Bool, Value,
     gadgets::{ByteGadgets, ByteValue, blake3_xof},
@@ -215,7 +215,7 @@ mod tests {
   use crate::recursive::{native_curve::PointInput, native_field::FqGadget};
   use ark_ec::{AffineRepr, CurveGroup};
   use ark_serialize::CanonicalSerialize;
-  use multi_stark::traits::Transcript as _;
+  use certifri::traits::Transcript as _;
   #[test]
   fn transcript_and_point_encoding_match_native() {
     let mut b = Builder::new();

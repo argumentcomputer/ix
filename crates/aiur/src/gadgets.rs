@@ -1,7 +1,7 @@
 pub(crate) mod bytes1;
 pub(crate) mod bytes2;
 
-use multi_stark::{
+use certifri::{
   expr::Expr,
   lookup::{Lookup, LookupValues},
   p3_matrix::dense::RowMajorMatrix,

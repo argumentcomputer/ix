@@ -1,7 +1,7 @@
 //! Stage output files: bincode metadata and atomic file publication.
 use super::fixed_cache::Shape;
 use crate::kzg::Scalar;
-use multi_stark::plonkish::MultiStarkCircuit;
+use certifri::plonkish::CertiFriCircuit;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
   fs::{self, File},
@@ -25,7 +25,7 @@ impl Manifest {
   /// The manifest of a compiled circuit, checked against the shape of a
   /// restored fixed-preprocessing cache entry when there is one.
   pub(crate) fn for_compiled(
-    compiled: &MultiStarkCircuit<Scalar>,
+    compiled: &CertiFriCircuit<Scalar>,
     claims: Vec<Vec<Scalar>>,
     cached: Option<&Shape>,
   ) -> Result<Self> {

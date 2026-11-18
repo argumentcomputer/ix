@@ -1,12 +1,12 @@
+use certifri::p3_field::PrimeCharacteristicRing;
+use certifri::p3_field::PrimeField64;
+use certifri::plonkish::CircuitBuilder;
+use certifri::plonkish::WitnessError;
+use certifri::types::Challenger;
+use certifri::types::Val;
 use ix_proof_compression::fri::Blake3Challenger;
 use ix_proof_compression::fri::ByteGadgets;
 use ix_proof_compression::fri::blake3;
-use multi_stark::p3_field::PrimeCharacteristicRing;
-use multi_stark::p3_field::PrimeField64;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::plonkish::WitnessError;
-use multi_stark::types::Challenger;
-use multi_stark::types::Val;
 use p3_blake3::Blake3;
 use p3_challenger::{
   CanObserve, CanSample, CanSampleBits, GrindingChallenger, HashChallenger,

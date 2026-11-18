@@ -5,12 +5,12 @@ use p3_maybe_rayon::prelude::*;
 use super::KzgConfig;
 use super::Radix2Coset;
 use super::Scalar;
-use multi_stark::config::QuotientCommitInput;
-use multi_stark::eval::VarValues;
-use multi_stark::traits::Algebra;
-use multi_stark::traits::EvaluationDomain;
-use multi_stark::traits::Field;
-use multi_stark::traits::batch_inverse;
+use certifri::config::QuotientCommitInput;
+use certifri::eval::VarValues;
+use certifri::traits::Algebra;
+use certifri::traits::EvaluationDomain;
+use certifri::traits::Field;
+use certifri::traits::batch_inverse;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn evaluate_coset(
@@ -41,7 +41,7 @@ pub(super) fn evaluate_coset(
     alpha.powers().take(input.constraint_count).collect();
   powers.reverse();
   let circuit = input.circuit;
-  let ext = multi_stark::system::extension_params::<KzgConfig>();
+  let ext = certifri::system::extension_params::<KzgConfig>();
   const BLOCK: usize = 1 << 12;
   output.par_chunks_mut(BLOCK * ratio).enumerate().for_each(|(block, out)| {
     let start = block * BLOCK;
@@ -101,7 +101,7 @@ pub(super) fn evaluate_coset(
         let target =
           if last { view.stage2[1][0] } else { view.stage2[0][group + 1] };
         constraints.clear();
-        multi_stark::lookup::logup_constraint_values(
+        certifri::lookup::logup_constraint_values(
           lookups,
           &graph,
           &[view.stage2[0][*group]],

@@ -16,7 +16,7 @@
 //! proof/vk/claims byte into a Lean `G` and marshalled the whole
 //! buffer across FFI.
 
-use multi_stark::p3_field::PrimeCharacteristicRing;
+use certifri::p3_field::PrimeCharacteristicRing;
 use rustc_hash::FxHashMap;
 
 use crate::aiur_multi_stark::execute_generated;
@@ -86,7 +86,7 @@ pub fn verifier_io_buffer(proof: &[u8], vk: &[u8], claims: &[u8]) -> IOBuffer {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use multi_stark::p3_field::PrimeField64;
+  use certifri::p3_field::PrimeField64;
 
   fn info(io: &IOBuffer, channel: u8, key: Vec<G>) -> (usize, usize) {
     let info =

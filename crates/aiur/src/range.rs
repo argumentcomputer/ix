@@ -10,8 +10,8 @@
 //! plain advice.
 
 use bincode::serde::encode_to_vec;
-use multi_stark::p3_field::{BasedVectorSpace, PrimeField64};
-use multi_stark::types::ExtVal;
+use certifri::p3_field::{BasedVectorSpace, PrimeField64};
+use certifri::types::ExtVal;
 
 use crate::{G, synthesis::AiurProof};
 
@@ -95,7 +95,7 @@ pub fn range_statement(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use multi_stark::p3_field::PrimeCharacteristicRing;
+  use certifri::p3_field::PrimeCharacteristicRing;
 
   #[test]
   fn statement_layout_is_fixed_width() {

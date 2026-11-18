@@ -1,4 +1,4 @@
-use multi_stark::{
+use certifri::{
   batch::{BatchProof, Retention},
   config::StarkGenericConfig,
   expr::Expr,
@@ -35,7 +35,7 @@ pub type AiurConfig = GoldilocksBlake3Config;
 /// unsharded execution is the one-shard batch.
 pub type AiurProof = BatchProof<AiurConfig>;
 /// What a batch prover keeps of each shard across its barrier.
-pub use multi_stark::batch::Retention as ShardRetention;
+pub use certifri::batch::Retention as ShardRetention;
 
 /// Why an [`AiurProof`] was rejected.
 #[derive(Debug)]
@@ -78,7 +78,7 @@ pub(crate) fn validate_preamble(
   system: &System<AiurConfig>,
   commitment_parameters: CommitmentParameters,
   claim: &[G],
-  preamble: &multi_stark::batch::BatchPreamble<AiurConfig>,
+  preamble: &certifri::batch::BatchPreamble<AiurConfig>,
 ) -> Result<(), AiurVerificationError> {
   for header in &preamble.headers {
     let well_shaped = fixed_trace_heights(
@@ -1329,18 +1329,18 @@ impl AiurSystem {
   pub(crate) fn prove_witness(
     &self,
     claim: &[G],
-    witness: multi_stark::system::SystemWitness<G>,
+    witness: certifri::system::SystemWitness<G>,
   ) -> AiurProof {
     let shard =
-      multi_stark::batch::ShardInput { claims: vec![claim.to_vec()], witness };
+      certifri::batch::ShardInput { claims: vec![claim.to_vec()], witness };
     self.prove_witnesses(vec![shard], vec![])
   }
 
   /// A batch over supplied shards and public messages.
   pub(crate) fn prove_witnesses(
     &self,
-    shards: Vec<multi_stark::batch::ShardInput<AiurConfig>>,
-    messages: Vec<multi_stark::batch::BatchMessage<AiurConfig>>,
+    shards: Vec<certifri::batch::ShardInput<AiurConfig>>,
+    messages: Vec<certifri::batch::BatchMessage<AiurConfig>>,
   ) -> AiurProof {
     self.system.prove_batch(&self.key, shards, messages)
   }
@@ -1388,7 +1388,7 @@ mod tests {
     execute::{IOBuffer, Ownership, pointer_stride},
     shard::ShardRows,
   };
-  use multi_stark::{
+  use certifri::{
     lookup::LookupValues,
     p3_field::PrimeCharacteristicRing,
     system::SystemWitness,
@@ -1429,8 +1429,8 @@ mod tests {
   #[cfg(feature = "cuda-trace-codegen")]
   #[test]
   fn codegen_blake3_regenerated_batch_matches_cpu() {
-    use multi_stark::p3_matrix::Matrix;
-    use multi_stark::witness::{PreparedWitness, TraceSource};
+    use certifri::p3_matrix::Matrix;
+    use certifri::witness::{PreparedWitness, TraceSource};
     let (cp, fp) = test_parameters();
     let program = (crate::trace_codegen::tests::blake3::PROGRAM.expected)();
     let mut system = AiurSystem::build(program, cp, fp);
@@ -2521,23 +2521,22 @@ mod tests {
     let pair = |width: u64, start: u64, end: u64| {
       let w = G::from_u64(width);
       [
-        multi_stark::batch::BatchMessage::pull(
+        certifri::batch::BatchMessage::pull(
           Memory::memseg_args(w, G::from_u64(start)).to_vec(),
         ),
-        multi_stark::batch::BatchMessage::push(
+        certifri::batch::BatchMessage::push(
           Memory::memseg_args(w, G::from_u64(end)).to_vec(),
         ),
       ]
     };
-    let with =
-      |extra: Vec<[multi_stark::batch::BatchMessage<AiurConfig>; 2]>| {
-        let mut preamble = proof.preamble.clone();
-        for [pull, push] in extra {
-          preamble.messages.push(pull);
-          preamble.messages.push(push);
-        }
-        check_batch_policy(system.system.circuits.len(), &claim, &preamble)
-      };
+    let with = |extra: Vec<[certifri::batch::BatchMessage<AiurConfig>; 2]>| {
+      let mut preamble = proof.preamble.clone();
+      for [pull, push] in extra {
+        preamble.messages.push(pull);
+        preamble.messages.push(push);
+      }
+      check_batch_policy(system.system.circuits.len(), &claim, &preamble)
+    };
     // The proof closes width 1 over `[0, 1)`. A later disjoint interval of
     // the same width, an empty one, and a wider width are all canonical.
     assert!(with(vec![pair(1, 1, 5)]).is_ok());
@@ -2566,9 +2565,10 @@ mod tests {
     );
 
     let mut extra_message = proof.clone();
-    extra_message.preamble.messages.push(
-      multi_stark::batch::BatchMessage::push(vec![G::ZERO, G::ONE, G::TWO]),
-    );
+    extra_message
+      .preamble
+      .messages
+      .push(certifri::batch::BatchMessage::push(vec![G::ZERO, G::ONE, G::TWO]));
     assert!(matches!(
       system.verify(&claim, &extra_message),
       Err(AiurVerificationError::Policy(_))
@@ -2706,7 +2706,7 @@ mod tests {
     let mut claim = vec![function_channel(), G::ZERO];
     claim.extend(&input);
     claim.extend(&output);
-    let shards = vec![multi_stark::batch::ShardInput {
+    let shards = vec![certifri::batch::ShardInput {
       claims: vec![claim.clone()],
       witness,
     }];

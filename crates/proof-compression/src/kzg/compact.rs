@@ -11,11 +11,11 @@ use super::KzgCommitment;
 use super::KzgConfig;
 use super::KzgProof;
 use super::Scalar;
-use multi_stark::config::ProofConfig;
-use multi_stark::prover::Commitments;
-use multi_stark::prover::Proof;
-use multi_stark::system::System;
-use multi_stark::traits::Algebra;
+use certifri::config::ProofConfig;
+use certifri::prover::Commitments;
+use certifri::prover::Proof;
+use certifri::system::System;
+use certifri::traits::Algebra;
 
 const MAGIC: &[u8; 4] = b"KBN1";
 
@@ -69,7 +69,7 @@ impl FixedProofCodec {
         let count = match i {
           0 => {
             1 + usize::from(
-              system.opens_next_row(ci, multi_stark::expr::Source::Main),
+              system.opens_next_row(ci, certifri::expr::Source::Main),
             )
           },
           1 => 2,
@@ -82,7 +82,7 @@ impl FixedProofCodec {
           vec![Scalar::ZERO; c.preprocessed_width];
           1 + usize::from(system.opens_next_row(
             ci,
-            multi_stark::expr::Source::Preprocessed
+            certifri::expr::Source::Preprocessed
           ))
         ]);
       }
@@ -268,16 +268,16 @@ fn shape(proof: &Proof<KzgConfig>) -> Vec<usize> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use multi_stark::expr::Expr;
-  use multi_stark::system::CircuitInputs;
-  use multi_stark::system::SystemWitness;
-  use multi_stark::traits::Field;
+  use certifri::expr::Expr;
+  use certifri::system::CircuitInputs;
+  use certifri::system::SystemWitness;
+  use certifri::traits::Field;
   use p3_matrix::dense::RowMajorMatrix;
   use std::sync::Arc;
 
   #[test]
   fn merged_tables_do_not_allow_cross_table_substitution() {
-    use multi_stark::plonkish::CircuitBuilder;
+    use certifri::plonkish::CircuitBuilder;
     let mut b = CircuitBuilder::<Scalar>::new();
     let a = b.fixed_table("a", vec![vec![Scalar::ONE]]);
     b.fixed_table("b", vec![vec![Scalar::ONE]]);
@@ -285,7 +285,7 @@ mod tests {
     b.lookup(a, &[one]);
     let compiled = b
       .finish()
-      .lower_to_multi_stark(Scalar::from_u8(93))
+      .lower_to_certifri(Scalar::from_u8(93))
       .unwrap()
       .merge_table_traces(16)
       .unwrap();

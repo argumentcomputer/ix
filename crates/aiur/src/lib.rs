@@ -17,11 +17,11 @@ pub mod trace_codegen;
 mod trace_heights;
 pub mod vk_codec;
 
+use certifri::p3_field::PrimeCharacteristicRing;
 use indexmap::IndexMap;
-use multi_stark::p3_field::PrimeCharacteristicRing;
 use rustc_hash::FxBuildHasher;
 
-pub type G = multi_stark::p3_goldilocks::Goldilocks;
+pub type G = certifri::p3_goldilocks::Goldilocks;
 pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 
 #[inline]

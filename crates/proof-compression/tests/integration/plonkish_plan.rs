@@ -1,19 +1,19 @@
 //! Tests the generic generator using a small lookup system.
 use crate::support::root_profile as root;
+use certifri::batch::BatchMessage;
+use certifri::batch::ShardInput;
+use certifri::expr::Expr;
+use certifri::lookup::Lookup;
+use certifri::p3_field::PrimeCharacteristicRing;
+use certifri::plonkish::CircuitBuilder;
+use certifri::system::CircuitInputs;
+use certifri::system::System;
+use certifri::system::SystemWitness;
+use certifri::types::CommitmentParameters;
+use certifri::types::FriParameters;
+use certifri::types::GoldilocksBlake3Config as Config;
+use certifri::types::Val;
 use ix_proof_compression::fri::*;
-use multi_stark::batch::BatchMessage;
-use multi_stark::batch::ShardInput;
-use multi_stark::expr::Expr;
-use multi_stark::lookup::Lookup;
-use multi_stark::p3_field::PrimeCharacteristicRing;
-use multi_stark::plonkish::CircuitBuilder;
-use multi_stark::system::CircuitInputs;
-use multi_stark::system::System;
-use multi_stark::system::SystemWitness;
-use multi_stark::types::CommitmentParameters;
-use multi_stark::types::FriParameters;
-use multi_stark::types::GoldilocksBlake3Config as Config;
-use multi_stark::types::Val;
 use p3_matrix::dense::RowMajorMatrix;
 
 fn config() -> Config {
@@ -28,7 +28,7 @@ fn config() -> Config {
     },
   )
 }
-fn setup() -> (System<Config>, multi_stark::system::ProverKey<Config>) {
+fn setup() -> (System<Config>, certifri::system::ProverKey<Config>) {
   System::new(
     config(),
     [CircuitInputs {
@@ -96,7 +96,7 @@ fn dynamic_batch_statements_reuse_circuit_and_outer_key() {
     circuit.stats().inputs,
     plan.resources().proof_values + plan.resources().statement_values
   );
-  let compiled = circuit.lower_to_multi_stark(Val::from_u8(91)).unwrap();
+  let compiled = circuit.lower_to_certifri(Val::from_u8(91)).unwrap();
   let (outer, outer_pk) = System::new(config(), compiled.circuit_inputs());
   for (value, first) in
     [(Val::from_u8(13), Val::ONE), (Val::from_u8(91), Val::from_u8(3))]
@@ -214,7 +214,7 @@ fn ordinary_composition_proof_assignment_preserves_statement_owner() {
     prepared.assign_proof(&mut w, &inputs).unwrap();
     assert!(w.generate().is_err());
     let mut corrupt = proof.clone();
-    corrupt.opening_proof.final_poly[0] += multi_stark::types::ExtVal::ONE;
+    corrupt.opening_proof.final_poly[0] += certifri::types::ExtVal::ONE;
     if let Ok(p) = plan.expand_witness(ProofEnvelope::Ordinary {
       proof: &corrupt,
       claims: &claims,
@@ -317,7 +317,7 @@ fn key_transport_constants_and_implementation_equivalence() {
     assert!(w.generate().is_err());
   }
   let mut altered = setup().0;
-  altered.circuits[0].graph.nodes.push(multi_stark::graph::Node::Public(8));
+  altered.circuits[0].graph.nodes.push(certifri::graph::Node::Public(8));
   altered.circuits[0].graph.degrees.push(0);
   let key = VerifierKey::new(altered);
   assert!(matches!(
@@ -456,7 +456,7 @@ fn statement_modes_and_keys_are_bound() {
     plan.build(schema.clone(), ImplementationOptions::default()).unwrap();
   let mut other = setup().0;
   other.preprocessed_commit =
-    Some(multi_stark::types::Commitment::from(vec![[0u8; 32]]));
+    Some(certifri::types::Commitment::from(vec![[0u8; 32]]));
   let other = VerifierKey::new(other);
   let wrong_plan = VerifierPlan::validate(
     &other,
@@ -542,7 +542,7 @@ fn height_one_only_profile_checks_zero_round_fri() {
   prepared.assign_proof(&mut w, &i).unwrap();
   w.generate().unwrap();
   let mut bad = proof;
-  bad.opening_proof.final_poly[0] += multi_stark::types::ExtVal::ONE;
+  bad.opening_proof.final_poly[0] += certifri::types::ExtVal::ONE;
   if let Ok(prepared) = plan
     .expand_witness(ProofEnvelope::Ordinary { proof: &bad, claims: &claims })
   {
@@ -649,7 +649,7 @@ fn profile_enforces_native_quotient_domain_bound() {
   proof.log_degrees[1] = 30;
   assert!(matches!(
     system.verify_shape(&proof),
-    Err(multi_stark::verifier::VerificationError::InvalidProofShape)
+    Err(certifri::verifier::VerificationError::InvalidProofShape)
   ));
   let key = VerifierKey::from_system(&system);
   let profile = ProofProfile {

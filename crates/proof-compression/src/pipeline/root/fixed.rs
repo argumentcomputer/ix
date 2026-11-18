@@ -3,7 +3,7 @@
 use super::{Prepared, Result};
 use crate::fri::*;
 use aiur::{synthesis::AiurProof, vk_codec::AiurVerifyingKey};
-use multi_stark::{
+use certifri::{
   batch::{BatchMessage, BatchPreamble, ShardHeader},
   plonkish::{Circuit, CircuitBuilder, Value},
   types::Val,
@@ -109,7 +109,7 @@ impl FixedRoot {
     key: &AiurVerifyingKey,
     expected: &[Val],
     ends: &[Val],
-  ) -> Result<BatchPreamble<multi_stark::types::GoldilocksBlake3Config>> {
+  ) -> Result<BatchPreamble<certifri::types::GoldilocksBlake3Config>> {
     if self.log_heights.len() != key.num_circuits()
       || key.system().circuits.iter().zip(&self.log_heights).any(|(c, &log)| {
         c.preprocessed_height != 0 && c.preprocessed_height != 1usize << log
@@ -313,7 +313,7 @@ impl FixedRoot {
 mod tests {
   use super::*;
   use crate::pipeline::FriVerifier;
-  use multi_stark::{
+  use certifri::{
     batch::ShardInput,
     expr::Expr,
     lookup::Lookup,

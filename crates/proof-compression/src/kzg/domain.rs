@@ -11,12 +11,12 @@
 //! - last row:       `Z(X)/(u − g⁻¹)`
 //! - transition:     `u − g⁻¹`
 
-use multi_stark::traits::Algebra;
-use multi_stark::traits::EvaluationDomain;
-use multi_stark::traits::Field;
-use multi_stark::traits::LagrangeSelectors;
-use multi_stark::traits::TwoAdicField;
-use multi_stark::traits::batch_inverse;
+use certifri::traits::Algebra;
+use certifri::traits::EvaluationDomain;
+use certifri::traits::Field;
+use certifri::traits::LagrangeSelectors;
+use certifri::traits::TwoAdicField;
+use certifri::traits::batch_inverse;
 
 use super::{curve::Fr, field::Scalar};
 
