@@ -19,6 +19,7 @@ use crate::{
   trace::describe::{
     COMPILED_ABI_VERSION, compiled_fingerprint, program_identity,
   },
+  trace::plan::device::Source,
 };
 use std::{
   ffi::c_void,
@@ -48,6 +49,9 @@ pub struct CompiledCircuit {
   pub members: &'static [&'static str],
   /// Callee function names in launcher slot order.
   pub callees: &'static [&'static str],
+  /// ROM widths its stores and loads read, in launcher slot order after
+  /// the callees.
+  pub roms: &'static [usize],
   pub launch: Launch,
 }
 
@@ -93,14 +97,25 @@ pub(super) struct Selection {
   circuits: Vec<Option<Bound>>,
 }
 
+impl Selection {
+  pub(super) fn tag(&self) -> &'static str {
+    self.tag
+  }
+
+  /// Circuits bound to a compiled writer.
+  pub(super) fn bound(&self) -> usize {
+    self.circuits.iter().filter(|c| c.is_some()).count()
+  }
+}
+
 /// Binds the registered bundle matching `backend` and restricts the device
 /// circuits to those it covers, unless `interpreter` keeps the others. Only
 /// circuits the interpreter's record upload supports (`circuits[ci]`) can be
-/// compiled; `callees` is the upload's callee list.
+/// compiled; `callees` is the upload's list of lookup tables.
 pub(super) fn select<B: WitnessField>(
   backend: &Backend<'_, '_, B>,
   circuits: &mut [bool],
-  callees: &mut Vec<usize>,
+  callees: &mut Vec<Source>,
   interpreter: bool,
 ) -> Result<Selection, String> {
   let bundles = BUNDLES.lock().unwrap_or_else(PoisonError::into_inner).clone();
@@ -167,9 +182,7 @@ pub(super) fn select<B: WitnessField>(
         compiled.name
       ));
     }
-    // Compiled writers do not fill depth columns: a depth circuit stays on
-    // the interpreter or the host whatever the bundle holds.
-    if circuits[ci] && !gpu::circuit_has_depth(backend, ci) {
+    if circuits[ci] {
       chosen[ci] = Some(compiled);
     }
   }
@@ -186,12 +199,18 @@ pub(super) fn select<B: WitnessField>(
       continue;
     };
     let mut slots = vec![];
-    for name in compiled.callees {
-      let f = function(name)?;
-      let slot = callees.iter().position(|&c| c == f).unwrap_or_else(|| {
-        callees.push(f);
-        callees.len() - 1
-      });
+    let sources = compiled
+      .callees
+      .iter()
+      .map(|name| function(name).map(Source::Function))
+      .chain(compiled.roms.iter().map(|&width| Ok(Source::Rom(width))));
+    for source in sources {
+      let source = source?;
+      let slot =
+        callees.iter().position(|&c| c == source).unwrap_or_else(|| {
+          callees.push(source);
+          callees.len() - 1
+        });
       slots.push(u32::try_from(slot).map_err(|_| "too many callees")?);
     }
     bound.push(Some(Bound { launch: compiled.launch, callees: slots }));
@@ -220,6 +239,11 @@ fn check(status: i32, what: &str) -> Result<(), String> {
 }
 
 impl Selection {
+  /// The lookup slots compiled circuit `ci` reads.
+  pub(super) fn slots(&self, ci: usize) -> Option<&[u32]> {
+    self.circuits.get(ci)?.as_ref().map(|b| b.callees.as_slice())
+  }
+
   pub(super) fn covers(&self, ci: usize) -> bool {
     self.circuits.get(ci).is_some_and(Option::is_some)
   }
@@ -339,23 +363,41 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         starts[starts.partition_point(|&(s, _)| s <= index) - 1];
       let query = index - start;
       let table = &record.queries.tables[function];
-      let output = table.output(query);
-      let placement = &self.placements[self.plan.members[function]];
-      self.plan.fills[function]
-        .fill_into(
+      let multiplicity = table.count(query);
+      let chip = self.plan.members[function];
+      let placement = &self.placements[chip];
+      let filled = if self.plan.depth.fills[chip].is_empty() {
+        self.plan.fills[function].fill_into(
           record,
-          (table.input(query), output),
+          (table, query),
           &mut Vec::new(),
           &mut Vec::new(),
           |column, value| row[placement.columns[column]] = B::into_stark(value),
         )
-        .map_err(|e| {
-          format!(
-            "{} query {query}: {e}",
-            self.plan.artifact.functions[function].name
+      } else {
+        let mut source = Vec::new();
+        self
+          .fill_depth_source(
+            record,
+            function,
+            query,
+            (&mut Vec::new(), &mut Vec::new()),
+            &mut source,
+            &mut RangeCounts::default(),
           )
-        })?;
-      placement.finish(row, output.multiplicity);
+          .map(|()| {
+            for (&column, &value) in placement.columns.iter().zip(&source) {
+              row[column] = B::into_stark(value);
+            }
+          })
+      };
+      filled.map_err(|e| {
+        format!(
+          "{} query {query}: {e}",
+          self.plan.artifact.functions[function].name
+        )
+      })?;
+      placement.finish(row, multiplicity);
       Ok(())
     };
     #[cfg(feature = "parallel")]
@@ -434,6 +476,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           for first in (0..padded).step_by(tile) {
             device.populate(
               ci,
+              None,
               buffer.cast(),
               0,
               first,
@@ -481,6 +524,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
             base,
             height,
             real_rows,
+            rows: None,
           };
           let mut output = vec![Val::ZERO; tile_rows * width];
           let start = std::time::Instant::now();

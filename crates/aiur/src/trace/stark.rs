@@ -310,6 +310,9 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     #[cfg(feature = "cuda")]
     {
       backend.device_plans = gpu::DevicePlans::from_env(&backend)?;
+      if let Some(plans) = &backend.device_plans {
+        eprintln!("[aiur/gpu] {}", plans.summary(&backend));
+      }
     }
     Ok(backend)
   }
@@ -609,9 +612,24 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     let table_counts =
       (0..program.maps.len()).map(counts).collect::<Result<_, _>>()?;
     let mut table_counts: Vec<Vec<u64>> = table_counts;
+    self.add_range_counts(&mut table_counts, ranges)?;
+    if record.memory.iter().any(|entry| entry.multiplicity >= Val::ORDER_U64) {
+      return Err("ROM count reaches field characteristic".into());
+    }
+    Ok(table_counts)
+  }
+
+  /// Adds the depth range tables' uses `ranges` to fixed-table counts
+  /// `table_counts`, as [`Self::auxiliary_counts`] lays them out.
+  fn add_range_counts(
+    &self,
+    table_counts: &mut [Vec<u64>],
+    ranges: &RangeCounts,
+  ) -> Result<(), String> {
+    let functions = self.plan.program.program.functions.len();
     for (table, range) in self.plan.depth.tables.iter().enumerate() {
       let uses = ranges.table(table);
-      let counts = &mut table_counts[range.map - program.functions.len()];
+      let counts = &mut table_counts[range.map - functions];
       if uses.len() > counts.len() {
         return Err("depth range counts exceed their table".into());
       }
@@ -622,10 +640,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
           .ok_or("table count reaches field characteristic")?;
       }
     }
-    if record.memory.iter().any(|entry| entry.multiplicity >= Val::ORDER_U64) {
-      return Err("ROM count reaches field characteristic".into());
-    }
-    Ok(table_counts)
+    Ok(())
   }
 
   fn convert_traces(

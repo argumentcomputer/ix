@@ -46,28 +46,91 @@ pub struct Execution<B: FieldBackend = PrimeField> {
   /// interpreter, whose frames are heap allocations charged to the record.
   pub native_stack_bytes: usize,
   /// Set by the planner when this record's trace stays on the host although
-  /// device population is enabled. Only CUDA builds populate on the device.
+  /// device population is enabled, or when only some device circuits fit.
+  /// Only CUDA builds populate on the device.
   #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
   pub(crate) host_population: HostPopulation,
 }
 
-/// A record's population override, kept by value through clones.
+/// A record's population override, kept by value through clones: whether
+/// the whole trace stays on the host, and otherwise, when set, which
+/// function circuits the device may populate.
 #[derive(Debug, Default)]
-pub(crate) struct HostPopulation(std::sync::atomic::AtomicBool);
+pub(crate) struct HostPopulation {
+  host: std::sync::atomic::AtomicBool,
+  circuits: std::sync::RwLock<Option<std::sync::Arc<Vec<bool>>>>,
+  /// The device circuits a planner's search admitted, with the identity of
+  /// the planning inputs it searched under, so that planning the record
+  /// again under the same inputs reuses it.
+  admitted: std::sync::Mutex<Option<(String, std::sync::Arc<Admission>)>>,
+  /// Whether the device record is uploaded one shard image at a time,
+  /// which the planner chooses only when the whole record does not fit.
+  sharded: std::sync::atomic::AtomicBool,
+}
+
+/// What a planner's population search decided.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Admission {
+  /// The device circuits admitted.
+  pub(crate) circuits: Vec<bool>,
+}
 
 #[cfg_attr(not(feature = "cuda"), allow(dead_code))]
 impl HostPopulation {
   pub(crate) fn get(&self) -> bool {
-    self.0.load(std::sync::atomic::Ordering::Acquire)
+    self.host.load(std::sync::atomic::Ordering::Acquire)
   }
   pub(crate) fn set(&self, host: bool) {
-    self.0.store(host, std::sync::atomic::Ordering::Release);
+    self.host.store(host, std::sync::atomic::Ordering::Release);
+  }
+  /// The device circuits this record admits, or `None` for all.
+  pub(crate) fn circuits(&self) -> Option<std::sync::Arc<Vec<bool>>> {
+    self
+      .circuits
+      .read()
+      .unwrap_or_else(std::sync::PoisonError::into_inner)
+      .clone()
+  }
+  pub(crate) fn set_circuits(&self, circuits: Option<Vec<bool>>) {
+    *self.circuits.write().unwrap_or_else(std::sync::PoisonError::into_inner) =
+      circuits.map(std::sync::Arc::new);
+  }
+  /// What a search under inputs `key` decided, if one ran.
+  pub(crate) fn admitted(&self, key: &str) -> Option<Admission> {
+    let admitted =
+      self.admitted.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    admitted.as_ref().filter(|(k, _)| k == key).map(|(_, a)| (**a).clone())
+  }
+  pub(crate) fn set_admitted(&self, key: String, admission: Admission) {
+    *self.admitted.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
+      Some((key, std::sync::Arc::new(admission)));
+  }
+  pub(crate) fn sharded(&self) -> bool {
+    self.sharded.load(std::sync::atomic::Ordering::Acquire)
+  }
+  pub(crate) fn set_sharded(&self, sharded: bool) {
+    self.sharded.store(sharded, std::sync::atomic::Ordering::Release);
+  }
+  /// Whether the device may populate function circuit `ci`.
+  pub(crate) fn admits(&self, ci: usize) -> bool {
+    self.circuits().is_none_or(|c| c.get(ci).copied().unwrap_or(false))
   }
 }
 
 impl Clone for HostPopulation {
   fn clone(&self) -> Self {
-    Self(std::sync::atomic::AtomicBool::new(self.get()))
+    Self {
+      host: std::sync::atomic::AtomicBool::new(self.get()),
+      circuits: std::sync::RwLock::new(self.circuits()),
+      admitted: std::sync::Mutex::new(
+        self
+          .admitted
+          .lock()
+          .unwrap_or_else(std::sync::PoisonError::into_inner)
+          .clone(),
+      ),
+      sharded: std::sync::atomic::AtomicBool::new(self.sharded()),
+    }
   }
 }
 
@@ -81,6 +144,8 @@ pub struct RecordStorage {
   pub rom_payload_bytes: usize,
   pub rom_vector_capacity_bytes: usize,
   pub rom_index_estimate_bytes: usize,
+  /// Recorded row references ([`crate::refs`]), as charged.
+  pub query_refs_bytes: usize,
 }
 
 impl<B: FieldBackend> Execution<B> {
@@ -98,6 +163,20 @@ impl<B: FieldBackend> Execution<B> {
     table.lookup(args).1.map(|row| table.depth(row))
   }
 
+  /// Rows of each query table (zero for fixed tables), then ROM cells, as
+  /// whitespace-separated text: the `AIUR_INDEX_SIZES` file that sizes a
+  /// later execution's indexes.
+  pub fn index_sizes(&self) -> String {
+    let rows = self.queries.tables.iter().map(|table| {
+      if table.static_map.is_some() { 0 } else { table.len() }
+    });
+    rows
+      .chain([self.memory.len()])
+      .map(|n| n.to_string())
+      .collect::<Vec<_>>()
+      .join(" ")
+  }
+
   pub fn storage_usage(&self) -> RecordStorage {
     let mut usage = RecordStorage::default();
     for table in &self.queries.tables {
@@ -105,6 +184,8 @@ impl<B: FieldBackend> Execution<B> {
       usage.query_payload_bytes += payload;
       usage.query_vector_capacity_bytes += capacity;
       usage.query_index_estimate_bytes += index;
+      usage.query_refs_bytes +=
+        table.refs.as_ref().map_or(0, crate::refs::TableRefs::bytes);
     }
     (
       usage.rom_payload_bytes,
@@ -153,6 +234,10 @@ struct Frame<'a, F> {
   destination: &'a [usize],
   // The query's height so far: one more than its highest callee in its SCC.
   depth: u64,
+  // Where this query's references start among the pending ones.
+  refs: usize,
+  // Its function's reference sites, when it records references.
+  records: Option<&'a crate::refs::FunctionRefs>,
 }
 struct Machine<'a, 'p, B: FieldBackend> {
   #[cfg(feature = "function-profile")]
@@ -168,6 +253,9 @@ struct Machine<'a, 'p, B: FieldBackend> {
   dispatch: &'a [Vec<dispatch::Dispatch<B::Element>>],
   // Function SCCs of the depth circuits, when heights are recorded.
   sccs: Option<&'a [u32]>,
+  // Which functions record row references, when any do.
+  refs: Option<&'a crate::refs::RefPlan>,
+  pending: crate::refs::Pending,
 }
 
 enum Request {
@@ -312,18 +400,28 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
     &self,
     reservation: Option<&crate::budget::RecordReservation>,
   ) -> Result<(QueryMap<B>, Memory<B::Element>), ExecutionError> {
+    let columns: Vec<(usize, Vec<bool>)> = self
+      .program
+      .inputs
+      .iter()
+      .zip(&self.program.outputs)
+      .map(|(inputs, outputs)| {
+        let mut narrow = vec![];
+        inputs.narrow_words(&mut narrow);
+        outputs.narrow_words(&mut narrow);
+        (inputs.width(), narrow)
+      })
+      .collect();
     let mut queries = QueryMap::new(
-      self
-        .program
-        .inputs
-        .iter()
-        .zip(&self.program.outputs)
-        .map(|(a, b)| (a.width(), b.width())),
+      columns.iter().map(|(inputs, narrow)| (*inputs, &narrow[..])),
       self.program.field,
     );
     queries.reserve_with(reservation);
     if let Some(sccs) = &self.program.depth {
       queries.track_depth(sccs);
+    }
+    if let Some(refs) = &self.program.refs {
+      queries.record_refs(refs);
     }
     for map in &self.maps {
       queries.budget.reserve(map.rows().saturating_mul(size_of::<u64>()))?;
@@ -337,6 +435,28 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
         .map(|(ty, layout)| (ty.clone(), layout.width())),
     );
     memory.budget = queries.budget.clone();
+    // Index sizes of an earlier record of the same claim
+    // ([`Execution::index_sizes`]): sizing every index up front avoids the
+    // rehashes of growing to them and their transient old-and-new peak.
+    if let Some(path) = std::env::var_os("AIUR_INDEX_SIZES") {
+      match std::fs::read_to_string(&path).map(|text| {
+        text
+          .split_whitespace()
+          .map(str::parse)
+          .collect::<Result<Vec<usize>, _>>()
+      }) {
+        Ok(Ok(sizes)) if sizes.len() == queries.tables.len() + 1 => {
+          memory.reserve_index(sizes[queries.tables.len()])?;
+          for (table, &rows) in queries.tables.iter_mut().zip(&sizes) {
+            table.reserve_index(rows)?;
+          }
+        },
+        _ => eprintln!(
+          "[aiur] ignoring AIUR_INDEX_SIZES={}: not index sizes for this program",
+          path.display()
+        ),
+      }
+    }
     Ok((queries, memory))
   }
 
@@ -373,6 +493,8 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
       hints: &self.bindings.sites,
       dispatch: &self.dispatch,
       sccs: self.program.depth.as_deref(),
+      refs: self.program.refs.as_deref(),
+      pending: crate::refs::Pending::default(),
       record: Execution {
         hints: self.bindings.clone(),
         output: vec![],
@@ -384,6 +506,9 @@ impl<B: FieldBackend> PreparedHints<'_, B> {
       },
     };
     machine.run_query(root)?;
+    machine.record.queries.drop_prefetched();
+    machine.record.memory.drop_prefetched();
+    machine.record.queries.compact_refs()?;
     Ok(machine.record)
   }
 }
@@ -407,15 +532,33 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
     } else {
       self.record.output = self.arguments.clone();
     }
+    let finished = self.record.queries.tables[frame.function]
+      .finish(frame.query, &self.arguments);
+    finished.map_err(|e| self.storage_error(&e))?;
     let table = &mut self.record.queries.tables[frame.function];
-    table.finish(frame.query, &self.arguments);
     table.set_depth(frame.query, frame.depth);
+    if let Some(refs) = &mut table.refs {
+      let budget = &table.budget;
+      self
+        .pending
+        .take(frame.refs, |pending| refs.finish(frame.query, pending, budget))?;
+    }
     self.spare_registers.push(frame.registers);
     #[cfg(feature = "function-profile")]
     if let Some(profile) = &mut self.profile {
       profile.exit(false);
     }
     Ok(())
+  }
+
+  fn storage_error(
+    &self,
+    error: &crate::budget::StorageError,
+  ) -> ExecutionError {
+    match *error {
+      crate::budget::StorageError::Resource(e) => e.into(),
+      crate::budget::StorageError::Invalid(e) => self.error(e),
+    }
   }
 
   fn error(&self, message: impl Into<String>) -> ExecutionError {
@@ -499,6 +642,7 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
         let parent = self.frames.last_mut().unwrap();
         parent.depth = parent.depth.max(height.saturating_add(1));
       }
+      self.note(id)?;
       return Ok(Request::Cached(id));
     }
     let function = &self.program.program.functions[function_id];
@@ -516,7 +660,10 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
     }
     registers[..self.arguments.len()].copy_from_slice(&self.arguments);
     let outputs = table.widths().1;
-    let query = table.start(&self.arguments, outputs, hash)?;
+    let started = table.start(&self.arguments, outputs, hash);
+    let query = started.map_err(|e| self.storage_error(&e))?;
+    self.note(query)?;
+    let budget = &self.record.queries.budget;
     budget.vector(&mut self.frames, 1)?;
     self.frames.push(Frame {
       function: function_id,
@@ -526,8 +673,29 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
       cursor: 0,
       destination,
       depth: 0,
+      refs: self.pending.mark(),
+      records: self.refs.and_then(|plan| plan.functions[function_id].as_ref()),
     });
     Ok(Request::Started)
+  }
+
+  /// Records that the innermost query read row or address `value` at its
+  /// current instruction, when its function records references.
+  #[inline(always)]
+  fn note(&mut self, value: usize) -> Result<(), ExecutionError> {
+    let Some(frame) = self.frames.last() else { return Ok(()) };
+    let Some(refs) = frame.records else { return Ok(()) };
+    let site = refs.site(frame.pc);
+    match refs.encode(site, value) {
+      Some(reference) => self.pending.push(reference),
+      None => {
+        let table = &mut self.record.queries.tables[frame.function];
+        if let Some(recorded) = &mut table.refs {
+          recorded.wide(frame.query, site, value, &table.budget)?;
+        }
+      },
+    }
+    Ok(())
   }
 
   fn run_query(
@@ -559,7 +727,7 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
     let request = self.request(root.function, &[])?;
     if !matches!(request, Request::Started) {
       self.record.output = if let Request::Cached(id) = request {
-        self.record.queries.tables[root.function].output(id).output.to_vec()
+        self.record.queries.tables[root.function].output(id).output.into_owned()
       } else {
         vec![]
       };
@@ -737,8 +905,8 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
           self.frames[parent].cursor = step.next;
           if !matches!(output, Request::Started) {
             if let Request::Cached(id) = output {
-              let output =
-                self.record.queries.tables[*function].output(id).output;
+              let output = self.record.queries.tables[*function]
+                .output_in(id, &mut self.arguments);
               self.frames[parent].write(dest, output);
             }
             #[cfg(feature = "function-profile")]
@@ -755,7 +923,7 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
             .1
             .validate_registers(&self.arguments, program.field)
             .map_err(|e| self.error(e))?;
-          let index = self
+          let cell = self
             .record
             .memory
             .intern(memory_type, &self.arguments, program.field.modulus())
@@ -765,8 +933,9 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
               },
               crate::budget::StorageError::Invalid(e) => self.error(e),
             })?;
-          let address = self.record.memory.address(index) as u64;
-          let count = self.record.memory.multiplicity_mut(index);
+          let address = cell.address as u64;
+          self.note(cell.address)?;
+          let count = self.record.memory.count_mut(cell);
           *count = count.checked_add(1).ok_or_else(|| ExecutionError {
             function: "<ROM>".into(),
             instruction: 0,
@@ -781,20 +950,19 @@ impl<'a, B: FieldBackend> Machine<'a, '_, B> {
             usize::try_from(program.field.to_u64(frame.registers[*pointer]))
               .ok()
               .ok_or_else(|| self.error("ROM address overflow"))?;
-          let Some(index) =
-            self.record.memory.index_for_type(memory_type, address)
-          else {
+          let Some(cell) = self.record.memory.cell(memory_type, address) else {
             return Err(self.error("dangling pointer"));
           };
-          let count = self.record.memory.multiplicity_mut(index);
+          self.note(address)?;
+          let count = self.record.memory.count_mut(cell);
           *count = count.checked_add(1).ok_or_else(|| ExecutionError {
             function: "<ROM>".into(),
             instruction: 0,
             resource: None,
             message: "ROM multiplicity overflow".into(),
           })?;
-          let entry = self.record.memory.get(index).unwrap();
-          self.frames.last_mut().unwrap().write(dest, entry.cell.value);
+          let value = self.record.memory.words(cell);
+          self.frames.last_mut().unwrap().write(dest, value);
         },
         Hint { key, dest, .. } => {
           let site = self.hints[frame.function][frame.pc].as_ref().unwrap();

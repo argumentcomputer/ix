@@ -9,18 +9,20 @@
 //! and types, and memory accesses by width.
 //!
 //! [`FunctionDescription::evaluate`] is an independent reference evaluator of
-//! one row; [`MemberDescription::finish`] applies the placement.
+//! one row; [`MemberDescription::finish`] applies the placement. A member's
+//! [`DepthDescription`] is the depth pass's section of its row
+//! ([`super::depth`]), filled between the selector and the group writes.
 //!
 //! [`FillPlan`]: super::plan::FillPlan
 use super::*;
 use crate::{artifact::put_type, ixon::Writer};
 
 /// Increment whenever the meaning of a described plan changes.
-pub const DESCRIPTION_VERSION: u32 = 1;
+pub const DESCRIPTION_VERSION: u32 = 2;
 
 /// Version of the encoding hashed by [`PopulationDescription::fingerprint`].
 /// Bumping it invalidates every compiled trace bundle.
-pub const DESCRIPTION_FINGERPRINT_SCHEME: u32 = 2;
+pub const DESCRIPTION_FINGERPRINT_SCHEME: u32 = 3;
 
 /// The whole population plan of a program's function circuits.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -172,6 +174,52 @@ pub struct MemberDescription {
   pub columns: Vec<usize>,
   pub selector: usize,
   pub writes: Vec<GroupWrite>,
+  #[serde(default)]
+  pub depth: DepthDescription,
+}
+
+/// A member's depth section over physical columns: the depth column, which
+/// holds the query's recorded height, then each slot in order. An enabled
+/// slot (its `enable` evaluates to one over the row written so far) reads
+/// the recorded height of the callee query `args` from the first of
+/// `callees` that recorded it; that query must not be pending.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DepthDescription {
+  pub column: Option<usize>,
+  pub slots: Vec<DepthSlotDescription>,
+}
+
+impl DepthDescription {
+  pub fn is_empty(&self) -> bool {
+    self.column.is_none() && self.slots.is_empty()
+  }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DepthSlotDescription {
+  pub kind: DepthSlotKind,
+  /// Function names.
+  pub callees: Vec<String>,
+  pub enable: Polynomial,
+  pub args: Vec<Polynomial>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DepthSlotKind {
+  /// Checks that the callee's height is the caller's minus one.
+  Exact,
+  /// Writes `height - 1 - callee height` as limbs, low first, each in
+  /// `width` bits; the limbs' range-table uses are counted separately.
+  Gap { limbs: Vec<GapLimb> },
+  /// Writes the callee's height to `column`.
+  External { column: usize },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GapLimb {
+  pub column: usize,
+  pub width: u32,
 }
 
 impl PopulationDescription {
@@ -337,6 +385,41 @@ impl PopulationDescription {
           w.usize(write.column);
           polynomial(&mut w, &write.value);
         }
+        let depth = &member.depth;
+        match depth.column {
+          None => w.u8(0),
+          Some(c) => {
+            w.u8(1);
+            w.usize(c);
+          },
+        }
+        w.usize(depth.slots.len());
+        for slot in &depth.slots {
+          match &slot.kind {
+            DepthSlotKind::Exact => w.u8(0),
+            DepthSlotKind::Gap { limbs } => {
+              w.u8(1);
+              w.usize(limbs.len());
+              for limb in limbs {
+                w.usize(limb.column);
+                w.nat(u64::from(limb.width));
+              }
+            },
+            DepthSlotKind::External { column } => {
+              w.u8(2);
+              w.usize(*column);
+            },
+          }
+          w.usize(slot.callees.len());
+          for callee in &slot.callees {
+            w.str(callee);
+          }
+          polynomial(&mut w, &slot.enable);
+          w.usize(slot.args.len());
+          for arg in &slot.args {
+            polynomial(&mut w, arg);
+          }
+        }
       }
     }
     w.into_bytes()
@@ -417,6 +500,7 @@ impl<B: FieldBackend> TracePlan<'_, B> {
         columns: placement.columns.clone(),
         selector: placement.selector,
         writes: placement.writes.clone(),
+        depth: self.describe_depth(chip, &placement.columns),
       });
     }
     Ok(PopulationDescription {
@@ -426,6 +510,67 @@ impl<B: FieldBackend> TracePlan<'_, B> {
       maps,
       circuits,
     })
+  }
+}
+
+impl<B: FieldBackend> TracePlan<'_, B> {
+  /// Circuit `chip`'s depth section, as the host writer fills it
+  /// ([`super::depth::DepthPlan::fill`]): exact checks first, then gap and
+  /// external slots, over the physical `columns` of its placement.
+  fn describe_depth(&self, chip: usize, columns: &[usize]) -> DepthDescription {
+    use super::depth::Kind;
+    let depth = &self.depth;
+    let fill = &depth.fills[chip];
+    let names = |callees: &[usize]| {
+      callees.iter().map(|&f| self.artifact.functions[f].name.clone()).collect()
+    };
+    let physical = |p: &Polynomial| physical_columns(p, columns);
+    let exact = fill.exact.iter().map(|e| DepthSlotDescription {
+      kind: DepthSlotKind::Exact,
+      callees: names(&e.callees),
+      enable: physical(&e.enable),
+      args: e.args.iter().map(physical).collect(),
+    });
+    let slots = fill.slots.iter().map(|slot| DepthSlotDescription {
+      kind: match slot.kind {
+        Kind::Gap(first) => DepthSlotKind::Gap {
+          limbs: depth
+            .limbs
+            .iter()
+            .enumerate()
+            .map(|(i, &(width, _))| GapLimb {
+              column: columns[first + i],
+              width,
+            })
+            .collect(),
+        },
+        Kind::External(c) => DepthSlotKind::External { column: columns[c] },
+      },
+      callees: names(&slot.callees),
+      enable: physical(&slot.enable),
+      args: slot.args.iter().map(physical).collect(),
+    });
+    DepthDescription {
+      column: fill.column.map(|c| columns[c]),
+      slots: exact.chain(slots).collect(),
+    }
+  }
+}
+
+/// `p` over the physical columns `columns[c]` of its columns `c`.
+fn physical_columns(p: &Polynomial, columns: &[usize]) -> Polynomial {
+  let pair = |xs: &[Polynomial; 2]| {
+    Box::new([
+      physical_columns(&xs[0], columns),
+      physical_columns(&xs[1], columns),
+    ])
+  };
+  match p {
+    Polynomial::Const(v) => Polynomial::Const(*v),
+    Polynomial::Var(c) => Polynomial::Var(columns[*c]),
+    Polynomial::Add(xs) => Polynomial::Add(pair(xs)),
+    Polynomial::Sub(xs) => Polynomial::Sub(pair(xs)),
+    Polynomial::Mul(xs) => Polynomial::Mul(pair(xs)),
   }
 }
 
@@ -621,8 +766,9 @@ impl MemberDescription {
 /// Version of the interface between compiled row writers and the device
 /// record: the `AiurCircuit`, `AiurFunction`, `AiurCallee` and
 /// `AiurPopulationError` layouts, the callee index hash, the launch
-/// signature and the error codes of `cuda/population.cu`.
-pub const COMPILED_ABI_VERSION: u32 = 3;
+/// signature, the lookup slots (callees, then ROM widths) and the error
+/// codes of `cuda/population.cu`.
+pub const COMPILED_ABI_VERSION: u32 = 5;
 
 /// What a compiled writer reads per row: the member's recorded query row of
 /// canonical words (inputs, then outputs) and its full-width multiplicity.
@@ -734,6 +880,34 @@ mod fingerprint_tests {
               Polynomial::Const(3),
             ])),
           }],
+          depth: DepthDescription {
+            column: Some(0),
+            slots: vec![
+              DepthSlotDescription {
+                kind: DepthSlotKind::Exact,
+                callees: vec!["main".into()],
+                enable: Polynomial::Var(2),
+                args: vec![Polynomial::Var(1)],
+              },
+              DepthSlotDescription {
+                kind: DepthSlotKind::Gap {
+                  limbs: vec![
+                    GapLimb { column: 1, width: 16 },
+                    GapLimb { column: 2, width: 8 },
+                  ],
+                },
+                callees: vec!["main".into()],
+                enable: Polynomial::Var(2),
+                args: vec![Polynomial::Var(1)],
+              },
+              DepthSlotDescription {
+                kind: DepthSlotKind::External { column: 1 },
+                callees: vec!["main".into()],
+                enable: Polynomial::Const(1),
+                args: vec![],
+              },
+            ],
+          },
         }],
       }],
     }
@@ -782,6 +956,26 @@ mod fingerprint_tests {
       Box::new(|d| d.circuits[0].members[0].selector = 1),
       Box::new(|d| {
         d.circuits[0].members[0].writes[0].value = Polynomial::Const(3);
+      }),
+      Box::new(|d| d.circuits[0].members[0].depth.column = None),
+      Box::new(|d| d.circuits[0].members[0].depth.slots.swap(0, 1)),
+      Box::new(|d| {
+        d.circuits[0].members[0].depth.slots[0].callees[0] = "f".into();
+      }),
+      Box::new(|d| {
+        d.circuits[0].members[0].depth.slots[0].enable = Polynomial::Var(1);
+      }),
+      Box::new(|d| d.circuits[0].members[0].depth.slots[0].args.clear()),
+      Box::new(|d| {
+        if let DepthSlotKind::Gap { limbs } =
+          &mut d.circuits[0].members[0].depth.slots[1].kind
+        {
+          limbs[1].width = 7;
+        }
+      }),
+      Box::new(|d| {
+        d.circuits[0].members[0].depth.slots[2].kind =
+          DepthSlotKind::External { column: 2 };
       }),
     ];
     let mut seen = std::collections::HashSet::from([base.clone()]);

@@ -47,6 +47,26 @@ pub struct ShardLayout {
   pub fixed_counts: bool,
 }
 
+/// What planning a layout needs that does not depend on which circuits the
+/// device populates ([`Backend::layout_terms`]).
+pub(super) struct LayoutTerms {
+  metadata: u128,
+  shards: Vec<ShardTerms>,
+}
+
+struct ShardTerms {
+  /// Main-trace cells of each circuit with rows in the shard.
+  main: Vec<(usize, u128)>,
+  committed: u128,
+  population: u128,
+  tallest: usize,
+  max_rows: usize,
+  cpu: u128,
+  saved: u128,
+  prep: u128,
+  lookup: u128,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BatchLayout {
   pub version: u32,
@@ -128,10 +148,97 @@ pub struct IncrementalRun {
   pub population: PopulationReport,
 }
 
+#[derive(Clone)]
 struct Member {
   function: usize,
   first: usize,
   end: usize,
+}
+
+/// Named phase times, for the `AIUR_POPULATION_REPORT` preparation line.
+struct Phases {
+  clock: Instant,
+  done: Vec<(&'static str, f64)>,
+}
+
+impl Default for Phases {
+  fn default() -> Self {
+    Self { clock: Instant::now(), done: Vec::new() }
+  }
+}
+
+impl Phases {
+  fn lap(&mut self, name: &'static str) {
+    self.done.push((name, self.clock.elapsed().as_secs_f64()));
+    self.clock = Instant::now();
+  }
+}
+
+/// What preparing a record needs from the host alone. Counts and spans
+/// only: its size depends on the trace plan's tables, not the record's rows.
+struct HostParts {
+  /// The trace plan these parts were prepared on.
+  plan: usize,
+  /// The circuits the device was to populate, whose depth range uses
+  /// `counts` leaves out.
+  generated: Vec<bool>,
+  counts: Vec<Vec<u64>>,
+  members: Vec<Vec<Member>>,
+  rows: Vec<usize>,
+  phases: Vec<(&'static str, f64)>,
+}
+
+impl HostParts {
+  fn retained_bytes(&self) -> usize {
+    size_of::<Self>()
+      + self.generated.len()
+      + self
+        .counts
+        .iter()
+        .map(|c| size_of::<Vec<u64>>() + size_of::<u64>() * c.len())
+        .sum::<usize>()
+      + self
+        .members
+        .iter()
+        .map(|m| size_of::<Vec<Member>>() + size_of::<Member>() * m.len())
+        .sum::<usize>()
+      + size_of::<usize>() * self.rows.len()
+      + size_of::<(&str, f64)>() * self.phases.len()
+  }
+}
+
+/// A record and the host-only part of its preparation for one root call,
+/// from [`Backend::prepare_host`].
+pub struct HostPrepared<B: WitnessField> {
+  record: Execution<B>,
+  entry: String,
+  args: Vec<B::Element>,
+  parts: HostParts,
+}
+
+impl<B: WitnessField> HostPrepared<B> {
+  pub fn record(&self) -> &Execution<B> {
+    &self.record
+  }
+
+  pub fn into_record(self) -> Execution<B> {
+    self.record
+  }
+
+  pub fn entry(&self) -> &str {
+    &self.entry
+  }
+
+  pub fn args(&self) -> &[B::Element] {
+    &self.args
+  }
+
+  /// Host bytes held beside the record.
+  pub fn retained_bytes(&self) -> usize {
+    self.parts.retained_bytes()
+      + self.entry.len()
+      + size_of_val(self.args.as_slice())
+  }
 }
 
 pub struct PreparedRecord<'r, B: WitnessField> {
@@ -146,7 +253,7 @@ pub struct PreparedRecord<'r, B: WitnessField> {
 fn ram_budget(options: &planning::Options) -> u64 {
   options
     .max_ram_bytes
-    .or_else(|| planning::available_memory().map(|n| n / 100 * 85))
+    .or_else(planning::default_budget)
     .unwrap_or(8 << 30)
     .max(1)
 }
@@ -201,7 +308,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         .circuits
         .iter()
         .skip(rows.len())
-        .map(|c| record.memory.indices_for_width(c.main_width - 3).len()),
+        .map(|c| record.memory.width_cells(c.main_width - 3).len()),
     );
     Ok(rows)
   }
@@ -477,7 +584,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
   /// row `source`, depth columns included, counting its gap limbs in
   /// `ranges`. Depth columns are computed from the circuit's own columns,
   /// so the row is built here and placed by the caller.
-  fn fill_depth_source(
+  pub(super) fn fill_depth_source(
     &self,
     record: &Execution<B>,
     function: usize,
@@ -487,7 +594,6 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     ranges: &mut RangeCounts,
   ) -> Result<(), String> {
     let table = &record.queries.tables[function];
-    let output = table.output(query);
     let chip = self.plan.members[function];
     let field = self.plan.program.field;
     let activation = self.plan.artifact.chips[chip].activation;
@@ -496,7 +602,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     source[activation] = field.one();
     self.plan.fills[function].fill(
       record,
-      (table.input(query), output),
+      (table, query),
       scratch,
       buffer,
       source,
@@ -532,40 +638,67 @@ impl<B: WitnessField> Backend<'_, '_, B> {
             .any(|slot| matches!(slot.kind, crate::trace::depth::Kind::Gap(_)))
       })
       .collect();
-    let count = |&function: &usize| {
-      let mut ranges = RangeCounts::default();
-      let mut scratch = Scratch::default();
-      let name = &self.plan.artifact.functions[function].name;
-      for query in 0..record.queries.tables[function].len() {
-        self
-          .fill_depth_source(
-            record,
-            function,
-            query,
-            (&mut scratch.scratch, &mut scratch.buffer),
-            &mut scratch.source,
-            &mut ranges,
-          )
-          .map_err(|error| format!("{name} query {query}: {error}"))?;
-      }
-      Ok::<_, String>(ranges)
-    };
+    // Counts are sums, so rows are counted in chunks across threads rather
+    // than one function per thread: the largest gap circuit holds tens of
+    // millions of rows and would otherwise bound the pass on its own.
+    const CHUNK: usize = 1 << 14;
+    let chunks: Vec<(usize, usize)> = gapped
+      .iter()
+      .flat_map(|&function| {
+        let rows = record.queries.tables[function].len();
+        (0..rows).step_by(CHUNK).map(move |first| (function, first))
+      })
+      .collect();
+    let count =
+      |(mut ranges, mut scratch): (RangeCounts, Scratch<B::Element>),
+       &(function, first): &(usize, usize)| {
+        let rows = record.queries.tables[function].len();
+        let name = &self.plan.artifact.functions[function].name;
+        for query in first..rows.min(first + CHUNK) {
+          self
+            .fill_depth_source(
+              record,
+              function,
+              query,
+              (&mut scratch.scratch, &mut scratch.buffer),
+              &mut scratch.source,
+              &mut ranges,
+            )
+            .map_err(|error| format!("{name} query {query}: {error}"))?;
+        }
+        Ok::<_, String>((ranges, scratch))
+      };
     #[cfg(feature = "parallel")]
-    let counts = gapped.par_iter().map(count).collect::<Result<Vec<_>, _>>()?;
+    let ranges = chunks
+      .par_iter()
+      .try_fold(|| (RangeCounts::default(), Scratch::default()), count)
+      .map(|folded| folded.map(|(ranges, _)| ranges))
+      .try_reduce(RangeCounts::default, |a, b| Ok(a.merge(b)))?;
     #[cfg(not(feature = "parallel"))]
-    let counts = gapped.iter().map(count).collect::<Result<Vec<_>, _>>()?;
-    Ok(counts.into_iter().fold(RangeCounts::default(), RangeCounts::merge))
+    let ranges = chunks
+      .iter()
+      .try_fold((RangeCounts::default(), Scratch::default()), count)?
+      .0;
+    Ok(ranges)
   }
 
-  pub fn prepare_incremental<'r>(
+  /// The host-only part of preparing `record`: validation, the root check,
+  /// member spans, circuit rows and fixed-table counts with the depth range
+  /// uses of every circuit the device will not populate. Which circuits the
+  /// device populates is decided here from the record as it stands; the
+  /// device part recounts on the host if planning later decides otherwise.
+  fn prepare_host_parts(
     &self,
-    record: &'r Execution<B>,
+    record: &Execution<B>,
     root: Option<(&str, &[B::Element])>,
-  ) -> Result<PreparedRecord<'r, B>, String> {
+  ) -> Result<HostParts, String> {
+    let mut phases = Phases::default();
     self.plan.validate_record(record)?;
+    phases.lap("validate");
     if let Some((entry, args)) = root {
       self.plan.root(record, entry, args)?;
     }
+    phases.lap("root");
     let mut members = Vec::new();
     for group in &self.members {
       let mut first = 0usize;
@@ -579,33 +712,189 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       }
       members.push(spans);
     }
+    let rows = self.record_rows(record)?;
+    phases.lap("rows");
+    let generated: Vec<bool> = (0..self.system.circuits.len())
+      .map(|ci| self.generated_circuit(record, ci))
+      .collect();
+    let ranges = self.depth_ranges(record, |ci| generated[ci])?;
+    phases.lap("depth ranges");
+    let counts = self.auxiliary_counts(record, &ranges)?;
+    phases.lap("auxiliary counts");
+    Ok(HostParts {
+      plan: self.plan_identity(),
+      generated,
+      counts,
+      members,
+      rows,
+      phases: phases.done,
+    })
+  }
+
+  /// Completes `host`, prepared from `record` by [`Self::prepare_host_parts`]
+  /// on this backend's plan: uploads the device circuits' record and adds
+  /// their depth range uses, counted at upload, to the host's counts.
+  /// With `layout`, the device record is uploaded one shard image at a time
+  /// when the record's references allow it (`gpu::DeviceRecord::
+  /// upload_sharded`).
+  fn prepare_device_parts<'r>(
+    &self,
+    record: &'r Execution<B>,
+    host: &HostParts,
+    layout: Option<&BatchLayout>,
+  ) -> Result<PreparedRecord<'r, B>, String> {
+    if host.plan != self.plan_identity()
+      || host.members.len() != self.members.len()
+      || host.members.iter().zip(&self.members).any(|(spans, group)| {
+        !spans.iter().map(|m| m.function).eq(group.iter().copied())
+      })
+    {
+      return Err("record prepared for another trace plan".into());
+    }
+    let mut phases = Phases::default();
     #[cfg(feature = "cuda")]
     let device = self
       .device_plans_for(record)
       .map(|plans| {
-        gpu::DeviceRecord::upload(self, plans, record, self.device)
-          .map(std::sync::Arc::new)
+        match layout {
+          Some(layout) => gpu::DeviceRecord::upload_sharded(
+            self,
+            plans,
+            record,
+            self.device,
+            layout,
+          ),
+          None => gpu::DeviceRecord::upload(self, plans, record, self.device),
+        }
+        .map(std::sync::Arc::new)
       })
       .transpose()?;
-    // Device circuits' range-table uses are counted at upload; the host
-    // counts the rest.
+    phases.lap("upload");
     #[cfg(feature = "cuda")]
-    let ranges = match &device {
-      Some(device) => self
-        .depth_ranges(record, |ci| device.height(ci).is_some())?
-        .merge(device.ranges().clone()),
-      None => self.depth_ranges(record, |_| false)?,
-    };
+    let generated: Vec<bool> = (0..self.system.circuits.len())
+      .map(|ci| device.as_ref().is_some_and(|d| d.height(ci).is_some()))
+      .collect();
     #[cfg(not(feature = "cuda"))]
-    let ranges = self.depth_ranges(record, |_| false)?;
+    let generated = vec![false; self.system.circuits.len()];
+    #[cfg_attr(not(feature = "cuda"), allow(unused_mut))]
+    let mut counts = if generated == host.generated {
+      host.counts.clone()
+    } else {
+      // The device populates other circuits than the host assumed (the
+      // device record did not fit, say): count every circuit it leaves.
+      let ranges = self.depth_ranges(record, |ci| generated[ci])?;
+      phases.lap("host depth ranges again");
+      self.auxiliary_counts(record, &ranges)?
+    };
+    #[cfg(feature = "cuda")]
+    if let Some(device) = &device {
+      self.add_range_counts(&mut counts, device.ranges())?;
+    }
+    phases.lap("merge");
+    if std::env::var_os("AIUR_POPULATION_REPORT").is_some() {
+      let list = |phases: &[(&str, f64)]| {
+        phases
+          .iter()
+          .map(|(name, secs)| format!("{name} {secs:.2}s"))
+          .collect::<Vec<_>>()
+          .join(", ")
+      };
+      eprintln!(
+        "[aiur] preparation: host {}; device {}",
+        list(&host.phases),
+        list(&phases.done)
+      );
+    }
     Ok(PreparedRecord {
       record,
-      counts: self.auxiliary_counts(record, &ranges)?,
-      members,
-      rows: self.record_rows(record)?,
+      counts,
+      members: host.members.clone(),
+      rows: host.rows.clone(),
       #[cfg(feature = "cuda")]
       device,
     })
+  }
+
+  fn plan_identity(&self) -> usize {
+    &*self.plan as *const TracePlan<'_, B> as *const () as usize
+  }
+
+  pub fn prepare_incremental<'r>(
+    &self,
+    record: &'r Execution<B>,
+    root: Option<(&str, &[B::Element])>,
+  ) -> Result<PreparedRecord<'r, B>, String> {
+    let host = self.prepare_host_parts(record, root)?;
+    self.prepare_device_parts(record, &host, None)
+  }
+
+  /// Per shard of `layout`: the device image bound planning charges and the
+  /// image the gather builds when every device circuit is populated from
+  /// per-shard images, in bytes, with the gather's seconds, beside the
+  /// whole device record's bytes; `null` without device plans or usable
+  /// row references. Gathered bytes never exceed the bound.
+  #[cfg(feature = "cuda")]
+  pub fn shard_image_report(
+    &self,
+    record: &Execution<B>,
+    layout: &BatchLayout,
+  ) -> Result<serde_json::Value, String> {
+    let Some(plans) = self.device_plans.as_ref() else {
+      return Ok(serde_json::Value::Null);
+    };
+    let Some((shards, whole)) = plans.shard_image_sizes(self, record, layout)?
+    else {
+      return Ok(serde_json::Value::Null);
+    };
+    let shards: Vec<_> = shards
+      .iter()
+      .map(|&(bound, gathered, seconds)| {
+        serde_json::json!({"bound_bytes": bound, "gathered_bytes": gathered,
+          "gather_seconds": seconds})
+      })
+      .collect();
+    Ok(serde_json::json!({"whole_record_bytes": whole, "shards": shards}))
+  }
+
+  /// Takes `record` with the host-only part of its preparation for proving
+  /// `entry(args)`, which needs neither the device nor the lane: run it
+  /// where the record was executed, and [`Self::prove_prepared`] on the
+  /// lane, with a backend over the same trace plan.
+  pub fn prepare_host(
+    &self,
+    record: Execution<B>,
+    entry: &str,
+    args: &[B::Element],
+  ) -> Result<HostPrepared<B>, String> {
+    let parts = self.prepare_host_parts(&record, Some((entry, args)))?;
+    Ok(HostPrepared {
+      record,
+      entry: entry.to_owned(),
+      args: args.to_vec(),
+      parts,
+    })
+  }
+
+  /// [`Self::prove_incremental_fed`] of a record whose host part
+  /// [`Self::prepare_host`] already prepared.
+  pub fn prove_prepared(
+    &self,
+    prepared: &HostPrepared<B>,
+    output: &[B::Element],
+    layout: &BatchLayout,
+    retention: Retention,
+    feed: Option<&ShardFeed>,
+  ) -> Result<IncrementalRun, String> {
+    let preparation = Instant::now();
+    self.prove_from_parts(
+      &prepared.record,
+      &prepared.parts,
+      (&prepared.entry, &prepared.args, output),
+      layout,
+      retention,
+      feed,
+      preparation,
+    )
   }
 
   pub fn incremental_witness(
@@ -626,9 +915,23 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     if shard.circuits.len() != self.system.circuits.len() {
       return Err("wrong shard circuit count".into());
     }
+    #[cfg(feature = "cuda")]
+    let rows = match &prepared.device {
+      Some(device) => {
+        let rows = device.shard_rows(prepared.record, shard)?;
+        if let Some(rows) = &rows {
+          device.prefetch(rows);
+        }
+        rows
+      },
+      None => None,
+    };
+    #[cfg(not(feature = "cuda"))]
+    let rows = None::<()>;
     let populate = |(ci, slice)| {
       let mut time = CircuitTime::default();
-      let trace = self.populate_slice(prepared, shard, ci, slice, &mut time)?;
+      let trace =
+        self.populate_slice(prepared, shard, rows.as_ref(), ci, slice, &mut time)?;
       Ok::<_, String>((trace, time))
     };
     #[cfg(feature = "parallel")]
@@ -676,6 +979,8 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     &self,
     prepared: &PreparedRecord<'_, B>,
     shard: &ShardLayout,
+    #[cfg(feature = "cuda")] rows: Option<&std::sync::Arc<gpu::ShardRows>>,
+    #[cfg(not(feature = "cuda"))] _rows: Option<&()>,
     ci: usize,
     slice: CircuitSlice,
     time: &mut CircuitTime,
@@ -702,6 +1007,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           base: slice.first,
           height: slice.height,
           real_rows: slice.rows,
+          rows: rows.cloned(),
         },
       )));
     }
@@ -739,8 +1045,8 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           .ok_or("slice exceeds prepared member rows")?;
         let query = index - member.first;
         let table = &prepared.record.queries.tables[member.function];
-        let output = table.output(query);
-        if output.multiplicity >= Val::ORDER_U64 {
+        let multiplicity = table.count(query);
+        if multiplicity >= Val::ORDER_U64 {
           return Err("function count reaches field characteristic".into());
         }
         let chip = self.plan.members[member.function];
@@ -750,7 +1056,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           self.plan.fills[member.function]
             .fill_into(
               prepared.record,
-              (table.input(query), output),
+              (table, query),
               &mut scratch.scratch,
               &mut scratch.buffer,
               |column, value| {
@@ -776,7 +1082,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
             row[column] = B::into_stark(value);
           }
         }
-        placement.finish(row, output.multiplicity);
+        placement.finish(row, multiplicity);
         Ok::<_, String>(())
       };
       let real = &mut values[..slice.rows * width];
@@ -811,13 +1117,11 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         }
       }
     } else if !self.fixed_circuit(ci) {
-      let bucket = prepared.record.memory.indices_for_width(width - 3);
-      for (&index, row) in bucket[slice.first..slice.first + slice.rows]
-        .iter()
-        .zip(values.chunks_mut(width))
+      let cells = prepared.record.memory.width_cells(width - 3);
+      for (address, row) in
+        (slice.first..slice.first + slice.rows).zip(values.chunks_mut(width))
       {
-        let cell =
-          prepared.record.memory.get(index).ok_or("missing ROM entry")?;
+        let cell = cells.get(address).ok_or("missing ROM entry")?;
         row[0] = Val::from_u64(cell.multiplicity);
         row[1] = Val::ONE;
         row[2] = Val::from_usize(cell.address);
@@ -887,12 +1191,46 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     feed: Option<&ShardFeed>,
   ) -> Result<IncrementalRun, String> {
     let preparation = Instant::now();
-    let rows = self.record_rows(record)?;
-    self.validate_layout(&rows, layout)?;
+    let host = self.prepare_host_parts(record, Some((entry, args)))?;
+    self.prove_from_parts(
+      record,
+      &host,
+      (entry, args, output),
+      layout,
+      retention,
+      feed,
+      preparation,
+    )
+  }
+
+  #[allow(clippy::too_many_arguments)]
+  fn prove_from_parts(
+    &self,
+    record: &Execution<B>,
+    host: &HostParts,
+    (entry, args, output): (&str, &[B::Element], &[B::Element]),
+    layout: &BatchLayout,
+    retention: Retention,
+    feed: Option<&ShardFeed>,
+    preparation: Instant,
+  ) -> Result<IncrementalRun, String> {
+    self.validate_layout(&host.rows, layout)?;
     if layout.memory_intervals != self.record_shape(record)?.memory_intervals {
       return Err("layout memory intervals differ from record".into());
     }
-    let prepared = self.prepare_incremental(record, Some((entry, args)))?;
+    let prepared = self.prepare_device_parts(
+      record,
+      host,
+      record.host_population.sharded().then_some(layout),
+    )?;
+    // SAFETY: the guard is a local of this call, dropped before `record`'s
+    // borrow ends.
+    #[cfg(feature = "cuda")]
+    let _attached = prepared
+      .device
+      .as_deref()
+      .map(|device| unsafe { device.attach(record) })
+      .transpose()?;
     let preparation_seconds = preparation.elapsed().as_secs_f64();
     let times = std::sync::Mutex::new(Vec::new());
     let proving = Instant::now();
@@ -1104,13 +1442,47 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       options.retention,
       options.pipeline,
     )?;
+    self.bound_forced(&mut batch, options)?;
+    batch.candidates = vec![planning::PlanCandidate::from(&batch)];
+    batch.layout = Some(layout);
+    batch.forced_layout = true;
+    Ok(batch)
+  }
+
+  /// Applies `options`' device bounds to a plan of a forced layout.
+  fn bound_forced(
+    &self,
+    batch: &mut planning::BatchPlan,
+    options: &planning::Options,
+  ) -> Result<(), String> {
     batch.device_cells = options.device_cells()?;
     batch.device_budget_bytes = self.device_budget(options)?;
     batch.fits &= batch.device_cells.is_none_or(|n| batch.shard_cells <= n)
       && batch.device_budget_bytes.is_none_or(|n| batch.device_peak_bytes <= n);
-    batch.candidates = vec![planning::PlanCandidate::from(&batch)];
-    batch.layout = Some(layout);
-    batch.forced_layout = true;
+    Ok(())
+  }
+
+  /// [`Self::plan_forced`] of a validated layout with `terms`, when the
+  /// device populates the `generated` circuits from a record of `bytes`
+  /// (see [`Self::plan_terms`]), without reading the record.
+  pub(super) fn plan_forced_terms(
+    &self,
+    terms: &LayoutTerms,
+    generated: &[bool],
+    bytes: u64,
+    options: &planning::Options,
+    resident: u64,
+  ) -> Result<planning::BatchPlan, String> {
+    let mut batch = self.plan_terms(
+      terms,
+      generated,
+      bytes,
+      ram_budget(options),
+      resident,
+      options.retention,
+      options.pipeline,
+    );
+    self.bound_forced(&mut batch, options)?;
     Ok(batch)
   }
 
@@ -1242,9 +1614,37 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     policy: planning::RetentionPolicy,
     pipeline: Option<bool>,
   ) -> Result<planning::BatchPlan, String> {
-    use planning::RetentionPolicy;
-    let margin = |n: u128| n.saturating_mul(5).div_ceil(4);
-    let bounded = |n: u128| u64::try_from(n).unwrap_or(u64::MAX);
+    let generated: Vec<_> = (0..self.system.circuits.len())
+      .map(|ci| self.generated_circuit(record, ci))
+      .collect();
+    #[cfg(feature = "cuda")]
+    let bytes = self
+      .device_plans_for(record)
+      .map(|p| {
+        if record.host_population.sharded() {
+          p.record_bytes_for(self, record, layout)
+        } else {
+          p.record_bytes(self, record)
+        }
+      })
+      .transpose()?
+      .unwrap_or(0);
+    #[cfg(not(feature = "cuda"))]
+    let bytes = 0;
+    Ok(self.plan_terms(
+      &self.layout_terms(layout),
+      &generated,
+      bytes,
+      budget,
+      resident,
+      policy,
+      pipeline,
+    ))
+  }
+
+  /// What planning `layout` needs that does not depend on which circuits
+  /// the device populates.
+  pub(super) fn layout_terms(&self, layout: &BatchLayout) -> LayoutTerms {
     let metadata = (layout.shards.len()
       * self.system.circuits.len()
       * size_of::<CircuitSlice>()) as u128
@@ -1259,17 +1659,92 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           self.plan.program.program.tables[m.input].rows.len() as u128 * 8
         })
         .sum::<u128>();
-    let generated: Vec<_> = (0..self.system.circuits.len())
-      .map(|ci| self.generated_circuit(record, ci))
+    let shards = layout
+      .shards
+      .iter()
+      .map(|shard| {
+        let heights: Vec<_> =
+          shard.circuits.iter().map(|slice| slice.height).collect();
+        let main: Vec<(usize, u128)> = heights
+          .iter()
+          .zip(&self.system.circuits)
+          .enumerate()
+          .filter(|(_, (h, _))| **h != 0)
+          .map(|(ci, (&h, c))| (ci, h as u128 * c.main_width as u128))
+          .collect();
+        let committed: u128 = heights
+          .iter()
+          .enumerate()
+          .map(|(ci, &h)| h as u128 * self.committed_width(ci))
+          .sum();
+        let population: u128 = heights
+          .iter()
+          .zip(&self.system.circuits)
+          .map(|(&h, c)| h as u128 * (c.main_width + c.stage_2_width) as u128)
+          .sum();
+        let tallest = heights.iter().copied().max().unwrap_or(1).max(1);
+        let max_rows = heights
+          .iter()
+          .enumerate()
+          .filter(|(ci, _)| !self.fixed_circuit(*ci))
+          .map(|(_, &h)| h)
+          .max()
+          .unwrap_or(1)
+          .max(1);
+        let (cpu, saved, prep) = self.prove_allocation(&heights, tallest);
+        let lookup: u128 = if self.gpu_lookup_only {
+          0
+        } else {
+          heights
+            .iter()
+            .zip(&self.system.circuits)
+            .map(|(&h, c)| {
+              let args: usize =
+                c.graph.lookups.iter().map(|l| l.args.len()).sum();
+              h as u128
+                * ((c.num_lookups + args) as u128 * 8
+                  + size_of::<multi_stark::lookup::LookupRowMut<'_, Val>>()
+                    as u128)
+            })
+            .sum()
+        };
+        ShardTerms {
+          main,
+          committed,
+          population,
+          tallest,
+          max_rows,
+          cpu,
+          saved,
+          prep,
+          lookup,
+        }
+      })
       .collect();
-    #[cfg(feature = "cuda")]
-    let device_record_bytes = self
-      .device_plans_for(record)
-      .map(|p| p.record_bytes(self, record))
-      .transpose()?
-      .unwrap_or(0);
-    #[cfg(not(feature = "cuda"))]
-    let device_record_bytes = 0;
+    LayoutTerms { metadata, shards }
+  }
+
+  /// The plan of a layout with `terms` when the device populates the
+  /// `generated` circuits from a record of `device_record_bytes`.
+  ///
+  /// Device population costs the host nothing beyond the record it already
+  /// holds: a proof lends the device record its execution record
+  /// (`gpu::DeviceRecord::attach`), so a release under device pressure
+  /// keeps no host copy and re-uploads from the record.
+  #[allow(clippy::too_many_arguments)]
+  pub(super) fn plan_terms(
+    &self,
+    terms: &LayoutTerms,
+    generated: &[bool],
+    device_record_bytes: u64,
+    budget: u64,
+    resident: u64,
+    policy: planning::RetentionPolicy,
+    pipeline: Option<bool>,
+  ) -> planning::BatchPlan {
+    use planning::RetentionPolicy;
+    let bounded = |n: u128| u64::try_from(n).unwrap_or(u64::MAX);
+    let metadata = terms.metadata;
     let mut device_peak = 0;
     let mut generation = 0;
     let mut proving = 0;
@@ -1280,72 +1755,35 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let mut stage1_cells = 0;
     let mut host_cells = 0;
     let mut max_rows = 0;
-    for shard in &layout.shards {
-      let heights: Vec<_> =
-        shard.circuits.iter().map(|slice| slice.height).collect();
-      let main: u128 = heights
+    for shard in &terms.shards {
+      let main: u128 = shard
+        .main
         .iter()
-        .zip(&self.system.circuits)
-        .enumerate()
-        .map(
-          |(ci, (&h, c))| {
-            if generated[ci] { 0 } else { h as u128 * c.main_width as u128 }
-          },
-        )
+        .filter(|(ci, _)| !generated.get(*ci).copied().unwrap_or(false))
+        .map(|(_, cells)| cells)
         .sum();
-      let cells: u128 = heights
-        .iter()
-        .zip(&self.system.circuits)
-        .map(|(&h, c)| h as u128 * c.main_width as u128)
-        .sum();
-      let committed: u128 = heights
-        .iter()
-        .enumerate()
-        .map(|(ci, &h)| h as u128 * self.committed_width(ci))
-        .sum();
-      let population: u128 = heights
-        .iter()
-        .zip(&self.system.circuits)
-        .map(|(&h, c)| h as u128 * (c.main_width + c.stage_2_width) as u128)
-        .sum();
+      let cells: u128 = shard.main.iter().map(|(_, cells)| cells).sum();
+      let ShardTerms {
+        committed,
+        population,
+        tallest,
+        cpu,
+        saved,
+        prep,
+        lookup,
+        ..
+      } = *shard;
       shard_cells = shard_cells.max(committed);
       stage1_cells += cells;
       host_cells += main;
-      let tallest = heights.iter().copied().max().unwrap_or(1).max(1);
       device_peak = device_peak.max(self.device_peak(
         committed,
         population,
         device_record_bytes,
         tallest,
       ));
-      max_rows = max_rows.max(
-        heights
-          .iter()
-          .enumerate()
-          .filter(|(ci, _)| !self.fixed_circuit(*ci))
-          .map(|(_, &h)| h)
-          .max()
-          .unwrap_or(1)
-          .max(1),
-      );
-      let (cpu, saved, prep) = self.prove_allocation(&heights, tallest);
+      max_rows = max_rows.max(shard.max_rows);
       retained += saved;
-      let lookup: u128 = if self.gpu_lookup_only {
-        0
-      } else {
-        heights
-          .iter()
-          .zip(&self.system.circuits)
-          .map(|(&h, c)| {
-            let args: usize =
-              c.graph.lookups.iter().map(|l| l.args.len()).sum();
-            h as u128
-              * ((c.num_lookups + args) as u128 * 8
-                + size_of::<multi_stark::lookup::LookupRowMut<'_, Val>>()
-                  as u128)
-          })
-          .sum()
-      };
       lookahead = lookahead.max(main * 8 + lookup);
       let workspace = if cfg!(feature = "cuda") {
         main * 8 + lookup + (256 << 20)
@@ -1358,20 +1796,15 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       retained_workspace = retained_workspace
         .max((workspace.max(main * 8) + prep).saturating_sub(overlap));
     }
-    #[cfg(feature = "cuda")]
-    let release_copy =
-      if gpu::release_enabled() { u128::from(device_record_bytes) } else { 0 };
-    #[cfg(not(feature = "cuda"))]
-    let release_copy = 0u128;
-    let base = u128::from(resident) + metadata + release_copy;
-    let regenerated_peak = margin(base + generation.max(proving));
-    let retained_peak = if layout.shards.len() == 1 {
+    let base = u128::from(resident) + metadata;
+    let regenerated_peak = base + generation.max(proving);
+    let retained_peak = if terms.shards.len() == 1 {
       regenerated_peak
     } else {
-      margin(base + retained_workspace + retained)
+      base + retained_workspace + retained
     };
     let retention = match policy {
-      _ if self.requires_regeneration(layout.shards.len()) => {
+      _ if self.requires_regeneration(terms.shards.len()) => {
         RetentionPolicy::Regenerate
       },
       RetentionPolicy::Auto if retained_peak <= u128::from(budget) => {
@@ -1389,7 +1822,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     // being committed or proven; without room for it, supply serially.
     let supplies = self
       .supply_order(
-        layout.shards.len(),
+        terms.shards.len(),
         if retention == RetentionPolicy::Retain {
           Retention::Retain
         } else {
@@ -1397,18 +1830,18 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         },
       )
       .len();
-    let pipelined_peak = peak + margin(lookahead);
+    let pipelined_peak = peak + lookahead;
     let pipelined = pipeline != Some(false)
       && supplies >= 2
       && pipelined_peak <= u128::from(budget);
     let peak = if pipelined { pipelined_peak } else { peak };
-    Ok(planning::BatchPlan {
+    planning::BatchPlan {
       max_rows,
-      shards: layout.shards.len(),
+      shards: terms.shards.len(),
       retention,
       budget_bytes: budget,
       stage1_cells: bounded(stage1_cells),
-      generation_peak_bytes: bounded(margin(base + generation)),
+      generation_peak_bytes: bounded(base + generation),
       proving_peak_bytes: bounded(peak),
       fits: peak <= u128::from(budget),
       suggested_parts: usize::try_from(peak.div_ceil(u128::from(budget)))
@@ -1425,12 +1858,10 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       candidates: Vec::new(),
       retained_bytes: bounded(retained),
       regenerated_peak_bytes: Some(bounded(regenerated_peak)),
-      retained_workspace_peak_bytes: Some(bounded(margin(
-        base + retained_workspace,
-      ))),
+      retained_workspace_peak_bytes: Some(bounded(base + retained_workspace)),
       pipelined,
       lookahead_bytes: bounded(lookahead),
       forced_layout: false,
-    })
+    }
   }
 }

@@ -6,13 +6,17 @@
 // Each row is filled by interpreting its function's compiled population plan
 // (the same dataflow graph the host `FillPlan` runs): guarded arithmetic,
 // inverses, branch and failure witnesses, the U8 library's byte tables, the
-// U32/U64 word hints, and calls resolved from the callee's recorded queries
-// through a device hash index. Then the function's placement in its physical
+// U32/U64 word hints, reads of a record's advice arenas, calls resolved from the callee's recorded queries
+// through a device hash index, and ROM stores and loads, resolved from the
+// record's cells of the access width: a store finds its values through the
+// same hash index, a load finds the cell at its address. The tables are the
+// whole record's or, in a shard image, the rows that shard's rows read. Then
+// the function's placement in its physical
 // circuit is applied: column writes, selector, the depth section (the depth
 // pass's depth column, exact-slot checks, gap limbs and external heights,
 // from the recorded query heights), group writes and multiplicity. Plans
-// needing host-only state (memory stores and loads, stream hints) are never
-// encoded, so their circuits stay on the host.
+// needing host-only state (hints without device data, maps outside the U8
+// library) are never encoded, so their circuits stay on the host.
 //
 // Every value is a canonical Goldilocks word. The encoding is produced by
 // `crates/aiur/src/trace/stark/gpu.rs`; keep the two in sync.
@@ -30,7 +34,7 @@ namespace {
 // Plan opcodes.
 constexpr uint32_t OP_ADD = 0, OP_SUB = 1, OP_MUL = 2, OP_SELECT = 3,
                    OP_INVERSE = 4, OP_CHOICE = 5, OP_FAILURE = 6, OP_MAP = 7,
-                   OP_CALL = 8, OP_HINT = 9;
+                   OP_CALL = 8, OP_HINT = 9, OP_STORE = 10, OP_LOAD = 11;
 // Byte-table maps of the U8 library.
 constexpr uint32_t MAP_FROM_FIELD = 0, MAP_BITS = 1, MAP_RANGE_PAIR = 2,
                    MAP_XOR = 3, MAP_AND = 4, MAP_OR = 5, MAP_LT = 6,
@@ -39,6 +43,9 @@ constexpr uint32_t MAP_FROM_FIELD = 0, MAP_BITS = 1, MAP_RANGE_PAIR = 2,
 // Word hints.
 constexpr uint32_t HINT_U32_BYTES = 0, HINT_U32_SUB = 1, HINT_U32_ADD = 2,
                    HINT_U32_ADD3 = 3, HINT_U32_LT = 4, HINT_BYTES_LE = 5;
+// A read of `width` consecutive values of advice arena `key[0]` from offset
+// `key[1]`, failing when they are not all present.
+constexpr uint32_t HINT_ARENA_READ = 6;
 // Polynomial tokens of group writes and depth sections.
 constexpr uint32_t POLY_CONST = 0, POLY_VAR = 1, POLY_ADD = 2, POLY_SUB = 3,
                    POLY_MUL = 4;
@@ -52,7 +59,8 @@ constexpr int32_t ERROR_ZERO_INVERSE = 1, ERROR_NO_ARM = 2,
                   ERROR_MISSING_CALLEE = 5, ERROR_HINT_DOMAIN = 6,
                   ERROR_ENCODING = 7, ERROR_POLY_STACK = 8, ERROR_DEPTH_GAP = 9,
                   ERROR_DEPTH_EXACT = 10, ERROR_PENDING_CALLEE = 11,
-                  ERROR_MISSING_HEIGHT = 12;
+                  ERROR_MISSING_HEIGHT = 12, ERROR_MISSING_STORE = 13,
+                  ERROR_MISSING_LOAD = 14;
 constexpr uint32_t CONSTANT = 0x80000000u;
 constexpr uint32_t EMPTY = 0;
 constexpr int POLY_STACK = 64;
@@ -62,8 +70,10 @@ constexpr uint32_t SMALL = 16;
 }  // namespace
 
 // Layouts shared with `gpu.rs` (`#[repr(C)]`).
-// A member function of a circuit. Its recorded queries are `count` rows of
-// `stride` words (inputs, then outputs), filling circuit rows from `first`.
+// A member function of a circuit. Its recorded queries are rows of `stride`
+// words (inputs, then outputs), filling circuit rows from `first`: query `q`
+// is row `q - offset` of `rows`, `multiplicities` and `depths`, which a
+// shard image holds for only some queries.
 struct AiurFunction {
     const uint32_t* code;
     const uint64_t* constants;
@@ -73,6 +83,7 @@ struct AiurFunction {
     const uint64_t* depths;
     uint64_t count;
     uint64_t first;
+    uint64_t offset;
     uint32_t code_len;
     uint32_t scratch;
     uint32_t inputs;
@@ -82,13 +93,18 @@ struct AiurFunction {
 };
 
 // A function whose recorded outputs calls and depth slots read, indexed by
-// input.
+// input. A ROM width is one too: its cells in address order are rows of
+// `inputs` words with no outputs. With `ids` null the rows are every query or
+// cell in order, so a store's address is the row a hash lookup of its values
+// finds and a load's address is its row; otherwise they are those with the
+// ascending ids (addresses) `ids` lists.
 struct AiurCallee {
     const uint64_t* rows;
     const uint32_t* index;
     const uint64_t* multiplicities;
     // Each query's recorded height, or null when the table tracks none.
     const uint64_t* depths;
+    const uint64_t* ids;
     uint64_t count;
     uint32_t mask;
     uint32_t inputs;
@@ -110,6 +126,20 @@ struct AiurPopulationError {
     int32_t code;
     uint32_t op;
     uint64_t row;
+};
+
+// One advice arena of `len` values: bytes, or canonical words when `words`
+// is set. Both pointers are null for an empty arena.
+struct AiurArena {
+    const uint8_t* bytes;
+    const uint64_t* words;
+    uint64_t len;
+};
+
+// A record's advice arenas, by number; arenas from `count` on are empty.
+struct AiurArenas {
+    const AiurArena* arenas;
+    uint64_t count;
 };
 
 namespace {
@@ -174,6 +204,18 @@ __device__ int64_t find_query(const AiurCallee& callee, const uint32_t* key,
         slot = (slot + 1) & callee.mask;
     }
     return -1;
+}
+
+// The row of the ROM cell at `address`, or -1.
+__device__ __forceinline__ int64_t find_cell(const AiurCallee& rom, uint64_t address) {
+    if (!rom.ids) return address < rom.count ? int64_t(address) : -1;
+    uint64_t low = 0, high = rom.count;
+    while (low < high) {
+        const uint64_t middle = low + (high - low) / 2;
+        if (rom.ids[middle] < address) low = middle + 1;
+        else high = middle;
+    }
+    return low < rom.count && rom.ids[low] == address ? int64_t(low) : -1;
 }
 
 __device__ bool evaluate_map(uint32_t kind, const uint64_t* in, uint64_t* out) {
@@ -396,9 +438,10 @@ __device__ int32_t fill_depth(const AiurFunction& f, const AiurCallee* callees, 
 // Interprets one function's plan for one query into `row`. Returns false on
 // a population failure, which `fail` has recorded. With `ranges`, counts the
 // row's depth range-table uses.
-__device__ bool fill_row(const AiurFunction& f, const AiurCallee* callees, uint64_t query,
-                         uint64_t row_index, const Scratch& scratch, uint64_t* row,
-                         uint32_t width, uint64_t* ranges, AiurPopulationError* error) {
+__device__ bool fill_row(const AiurFunction& f, const AiurCallee* callees, AiurArenas arenas,
+                         uint64_t query, uint64_t row_index, const Scratch& scratch,
+                         uint64_t* row, uint32_t width, uint64_t* ranges,
+                         AiurPopulationError* error) {
     const uint64_t* constants = f.constants;
     const uint64_t* recorded = f.rows + query * f.stride;
     for (uint32_t i = 0; i < f.inputs + f.outputs; ++i) scratch[i] = recorded[i];
@@ -473,8 +516,26 @@ __device__ bool fill_row(const AiurFunction& f, const AiurCallee* callees, uint6
             scratch[start + uint32_t(found)] = inverse(witness);
             break;
         }
-        case OP_MAP:
-        case OP_HINT: {
+        case OP_HINT:
+            if (args[0] == HINT_ARENA_READ) {
+                if (args[1] != 2) {
+                    fail(error, ERROR_ENCODING, k, row_index);
+                    return false;
+                }
+                const uint64_t channel = value_of(args[2], constants, scratch);
+                const uint64_t offset = value_of(args[3], constants, scratch);
+                const AiurArena* arena = channel < arenas.count ? &arenas.arenas[channel] : nullptr;
+                if (!arena || offset > arena->len || width_k > arena->len - offset) {
+                    fail(error, ERROR_HINT_DOMAIN, k, row_index);
+                    return false;
+                }
+                for (uint32_t i = 0; i < width_k; ++i)
+                    scratch[start + i] = arena->words ? arena->words[offset + i]
+                                                      : uint64_t(arena->bytes[offset + i]);
+                break;
+            }
+            [[fallthrough]];
+        case OP_MAP: {
             const uint32_t target = args[0];
             const uint32_t nargs = args[1];
             if (nargs > SMALL || width_k > SMALL) {
@@ -506,6 +567,35 @@ __device__ bool fill_row(const AiurFunction& f, const AiurCallee* callees, uint6
             }
             const uint64_t* values = callee.rows + uint64_t(found) * callee.stride + callee.inputs;
             for (uint32_t i = 0; i < width_k; ++i) scratch[start + i] = values[i];
+            break;
+        }
+        case OP_STORE: {
+            const AiurCallee& rom = callees[args[0]];
+            if (args[1] != rom.inputs || rom.outputs != 0 || width_k != 1) {
+                fail(error, ERROR_ENCODING, k, row_index);
+                return false;
+            }
+            const int64_t found = find_query(rom, args + 2, constants, scratch);
+            if (found < 0) {
+                fail(error, ERROR_MISSING_STORE, k, row_index);
+                return false;
+            }
+            scratch[start] = rom.ids ? rom.ids[found] : uint64_t(found);
+            break;
+        }
+        case OP_LOAD: {
+            const AiurCallee& rom = callees[args[0]];
+            if (width_k != rom.inputs || rom.outputs != 0) {
+                fail(error, ERROR_ENCODING, k, row_index);
+                return false;
+            }
+            const int64_t found = find_cell(rom, value_of(args[1], constants, scratch));
+            if (found < 0) {
+                fail(error, ERROR_MISSING_LOAD, k, row_index);
+                return false;
+            }
+            const uint64_t* cell = rom.rows + uint64_t(found) * rom.stride;
+            for (uint32_t i = 0; i < width_k; ++i) scratch[start + i] = cell[i];
             break;
         }
         default:
@@ -543,8 +633,8 @@ __device__ bool fill_row(const AiurFunction& f, const AiurCallee* callees, uint6
 // Row `r` of the output is circuit row `base + (first + r) % height`: a
 // shard of `height` rows starting at `base`, wrapped for lookup halos. The
 // output starts zeroed, so padding rows and unwritten columns are left as is.
-__global__ void populate_kernel(AiurCircuit circuit, uint64_t* output, uint64_t base,
-                                uint64_t first, uint64_t rows, uint64_t height,
+__global__ void populate_kernel(AiurCircuit circuit, AiurArenas arenas, uint64_t* output,
+                                uint64_t base, uint64_t first, uint64_t rows, uint64_t height,
                                 uint64_t* scratch_base, AiurPopulationError* error) {
     const uint64_t threads = uint64_t(gridDim.x) * blockDim.x;
     const uint64_t thread = uint64_t(blockIdx.x) * blockDim.x + threadIdx.x;
@@ -557,27 +647,29 @@ __global__ void populate_kernel(AiurCircuit circuit, uint64_t* output, uint64_t 
         while (member + 1 < circuit.member_count && circuit.members[member + 1].first <= index)
             ++member;
         const AiurFunction& f = circuit.members[member];
-        fill_row(f, circuit.callees, index - f.first, index, scratch, row, circuit.width, nullptr,
-                 error);
+        fill_row(f, circuit.callees, arenas, index - f.first - f.offset, index, scratch, row,
+                 circuit.width, nullptr, error);
     }
 }
 
-// Fills every real row of `circuit` once into this thread's row of `rows`,
-// only to count the rows' depth range-table uses into `ranges`.
-__global__ void count_kernel(AiurCircuit circuit, uint64_t* rows, uint64_t* scratch_base,
+// Fills each real row `begin..end` of `circuit` once into this thread's row
+// of `rows`, only to count the rows' depth range-table uses into `ranges`.
+__global__ void count_kernel(AiurCircuit circuit, AiurArenas arenas, uint64_t begin,
+                             uint64_t end, uint64_t* rows, uint64_t* scratch_base,
                              uint64_t* ranges, AiurPopulationError* error) {
     const uint64_t threads = uint64_t(gridDim.x) * blockDim.x;
     const uint64_t thread = uint64_t(blockIdx.x) * blockDim.x + threadIdx.x;
     const Scratch scratch{scratch_base + thread, size_t(threads)};
     uint64_t* row = rows + thread * circuit.width;
-    for (uint64_t index = thread; index < circuit.real; index += threads) {
+    if (end > circuit.real) end = circuit.real;
+    for (uint64_t index = begin + thread; index < end; index += threads) {
         for (uint32_t c = 0; c < circuit.width; ++c) row[c] = 0;
         uint32_t member = 0;
         while (member + 1 < circuit.member_count && circuit.members[member + 1].first <= index)
             ++member;
         const AiurFunction& f = circuit.members[member];
-        fill_row(f, circuit.callees, index - f.first, index, scratch, row, circuit.width, ranges,
-                 error);
+        fill_row(f, circuit.callees, arenas, index - f.first - f.offset, index, scratch, row,
+                 circuit.width, ranges, error);
     }
 }
 
@@ -677,9 +769,11 @@ int aiur_gpu_host_free(void* pointer) { return cudaFreeHost(pointer); }
 // default stream. `scratch` holds `aiur_gpu_population_threads() *
 // circuit->scratch` words. The first failing row, if any, is recorded in
 // `error` on the device and copied to `status`, page-locked host memory that
-// is valid once this returns; both are reset first.
-int aiur_gpu_populate(int device, const AiurCircuit* circuit, uint64_t* output, uint64_t base,
-                      uint64_t first, uint64_t rows, uint64_t height, uint64_t* scratch,
+// is valid once this returns; both are reset first. Arena reads index the
+// `arena_count` device descriptors at `arenas`.
+int aiur_gpu_populate(int device, const AiurCircuit* circuit, const AiurArena* arenas,
+                      uint64_t arena_count, uint64_t* output, uint64_t base, uint64_t first,
+                      uint64_t rows, uint64_t height, uint64_t* scratch,
                       AiurPopulationError* error, AiurPopulationError* status) {
     *status = AiurPopulationError{};
     cudaError_t result = cudaSetDevice(device);
@@ -691,8 +785,9 @@ int aiur_gpu_populate(int device, const AiurCircuit* circuit, uint64_t* output, 
     if (result != cudaSuccess) return result;
     const unsigned blocks = blocks_for(rows, unsigned(aiur_gpu_population_threads() / BLOCK));
     // Scratch is laid out for the full thread count the kernel strides by.
-    populate_kernel<<<blocks, BLOCK, 0, stream>>>(*circuit, output, base, first, rows, height,
-                                                  scratch, error);
+    populate_kernel<<<blocks, BLOCK, 0, stream>>>(*circuit, AiurArenas{arenas, arena_count},
+                                                  output, base, first, rows, height, scratch,
+                                                  error);
     result = cudaGetLastError();
     if (result != cudaSuccess) return result;
     result = cudaMemcpyAsync(status, error, sizeof(AiurPopulationError), cudaMemcpyDeviceToHost,
@@ -701,23 +796,24 @@ int aiur_gpu_populate(int device, const AiurCircuit* circuit, uint64_t* output, 
     return cudaStreamSynchronize(stream);
 }
 
-// Counts the depth range-table uses of every real row of `circuit` into
-// `ranges`, which holds every range table's counts in turn, with `threads`
-// threads, a multiple of the block size: `rows` holds `threads *
-// circuit->width` words and `scratch` `threads * circuit->scratch` words.
-// Failures are reported as by `aiur_gpu_populate`.
-int aiur_gpu_count_ranges(int device, const AiurCircuit* circuit, uint64_t threads,
+// Counts the depth range-table uses of the real rows `begin..end` of
+// `circuit` into `ranges`, which holds every range table's counts in turn,
+// with `threads` threads, a multiple of the block size: `rows` holds
+// `threads * circuit->width` words and `scratch` `threads *
+// circuit->scratch` words. Failures are reported as by `aiur_gpu_populate`.
+int aiur_gpu_count_ranges(int device, const AiurCircuit* circuit, const AiurArena* arenas,
+                          uint64_t arena_count, uint64_t begin, uint64_t end, uint64_t threads,
                           uint64_t* rows, uint64_t* scratch, uint64_t* ranges,
                           AiurPopulationError* error, AiurPopulationError* status) {
     *status = AiurPopulationError{};
     cudaError_t result = cudaSetDevice(device);
-    if (result != cudaSuccess || circuit->real == 0) return result;
+    if (result != cudaSuccess || circuit->real == 0 || begin >= end) return result;
     if (threads == 0 || threads % BLOCK != 0) return cudaErrorInvalidValue;
     const cudaStream_t stream = cudaStreamPerThread;
     result = cudaMemsetAsync(error, 0, sizeof(AiurPopulationError), stream);
     if (result != cudaSuccess) return result;
-    count_kernel<<<unsigned(threads / BLOCK), BLOCK, 0, stream>>>(*circuit, rows, scratch, ranges,
-                                                                 error);
+    count_kernel<<<unsigned(threads / BLOCK), BLOCK, 0, stream>>>(
+        *circuit, AiurArenas{arenas, arena_count}, begin, end, rows, scratch, ranges, error);
     result = cudaGetLastError();
     if (result != cudaSuccess) return result;
     result = cudaMemcpyAsync(status, error, sizeof(AiurPopulationError), cudaMemcpyDeviceToHost,

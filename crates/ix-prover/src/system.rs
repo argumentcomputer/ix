@@ -72,7 +72,9 @@ pub struct Program(Arc<ProgramInner>);
 
 impl Program {
   /// Check `program` against the Goldilocks field, have its execution
-  /// record the call heights the trace's depth circuits read, check its
+  /// record the call heights the trace's depth circuits read and, in CUDA
+  /// builds with `AIUR_RECORD_REFS=1`, the row references device
+  /// population gathers per shard ([`aiur::refs`]), check its
   /// trace artifact by building the trace plan, and select its executor.
   /// The handle exists only once all of that succeeded. Its identity is the
   /// BLAKE3 digest of the artifact it was decoded from
@@ -86,6 +88,10 @@ impl Program {
     let identity = identity.0;
     let mut checked = program.check_field::<Val>()?;
     checked.track_depth(&trace)?;
+    #[cfg(feature = "cuda")]
+    if std::env::var("AIUR_RECORD_REFS").as_deref() == Ok("1") {
+      checked.record_refs(|_| true, &aiur::trace::lookup_aliases(&trace));
+    }
     let checked = Arc::new(checked);
     let plan = Arc::new(TracePlan::new(Arc::clone(&checked), trace.clone())?);
     PLANS.fetch_add(1, Ordering::Relaxed);

@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn Error>> {
   if cli.get(1).is_some_and(|s| s == "resources") {
     println!(
       "{}",
-      serde_json::json!({"available_bytes":aiur::trace::stark::planning::available_memory(),
+      serde_json::json!({"budget_bytes":aiur::trace::stark::planning::default_budget(),
       "cores":std::thread::available_parallelism().map_or(1, usize::from)})
     );
     return Ok(());

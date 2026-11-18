@@ -20,6 +20,48 @@ pub use depth::{DepthStatistics, RangeCounts, SccStatistics};
 #[cfg(test)]
 mod tests;
 
+/// The maps device population evaluates, in the order of their kinds in
+/// `cuda/population.cu`.
+pub(crate) const DEVICE_MAPS: &[&str] = &[
+  "UInt8::from_field",
+  "UInt8::raw_bit_decomposition",
+  "UInt8::range_pair",
+  "UInt8::raw_xor",
+  "UInt8::raw_and",
+  "UInt8::raw_or",
+  "UInt8::raw_lt",
+  "UInt8::raw_add",
+  "UInt8::raw_sub",
+  "UInt8::raw_mul",
+  "UInt8::raw_xor_split4",
+  "UInt8::raw_xor_split7",
+  "UInt8::raw_sum_byte",
+];
+
+/// The hint channels device population evaluates, in the order of their
+/// kinds in `cuda/population.cu`.
+pub(crate) const DEVICE_HINTS: &[&str] =
+  &["u32.bytes", "u32.sub", "u32.add", "u32.add3", "u32.lt", "bytes_le"];
+
+/// Per function of `trace`: the other functions sharing its representative
+/// chip, in which a depth slot reading one of its rows also looks.
+pub fn lookup_aliases(trace: &TraceArtifact) -> Vec<Vec<usize>> {
+  trace
+    .functions
+    .iter()
+    .enumerate()
+    .map(|(f, function)| {
+      trace
+        .functions
+        .iter()
+        .enumerate()
+        .filter(|&(g, other)| g != f && other.chip == function.chip)
+        .map(|(g, _)| g)
+        .collect()
+    })
+    .collect()
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Polynomial {
@@ -819,14 +861,14 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
         matrix.values[offset * matrix.width
           + self.artifact.chips[self.members[function]].activation] =
           field.one();
-        matrix.multiplicities[offset] = table.output(query).multiplicity;
+        matrix.multiplicities[offset] = table.count(query);
         if !reference {
           let row = &mut matrix.values
             [offset * matrix.width..(offset + 1) * matrix.width];
           self.fills[function]
             .fill(
               record,
-              (table.input(query), table.output(query)),
+              (table, query),
               &mut scratch,
               &mut buffer,
               row,
@@ -849,10 +891,10 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
         scratch.fill(field.zero());
         let input = table.input(query);
         let output = table.output(query);
-        for (&dest, &v) in plan.inputs.iter().zip(input) {
+        for (&dest, &v) in plan.inputs.iter().zip(input.iter()) {
           scratch[dest] = v;
         }
-        for (&dest, &v) in plan.output.iter().zip(output.output) {
+        for (&dest, &v) in plan.output.iter().zip(output.output.iter()) {
           scratch[dest] = v;
         }
         for (step_id, step) in plan.steps.iter().enumerate() {
@@ -906,7 +948,9 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
                 // Independent reference population always uses
                 // the original table, never a host override.
                 let values = if let Some(map) = &table.static_map {
-                  map.binding.output(map.binding.row(&buffer)?)
+                  std::borrow::Cow::Borrowed(
+                    map.binding.output(map.binding.row(&buffer)?),
+                  )
                 } else {
                   if let Some(id) = table.lookup(&buffer).1 {
                     let answer = table.output(id);
@@ -918,7 +962,7 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
                     return Err("missing recorded callee".into());
                   }
                 };
-                for (&d, &v) in dest.iter().zip(values) {
+                for (&d, &v) in dest.iter().zip(values.iter()) {
                   scratch[d] = v;
                 }
               },
@@ -1039,8 +1083,14 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       {
         return Err("query record is missing depth heights".into());
       }
-      if table.depths().iter().any(|&d| !self.program.field.contains(d)) {
-        return Err("query record depth reaches field characteristic".into());
+      for row in 0..table.depths_len() {
+        let depth = table.depth(row);
+        if depth == u64::from(u32::MAX) {
+          return Err("query record depth overflows".into());
+        }
+        if !self.program.field.contains(depth) {
+          return Err("query record depth reaches field characteristic".into());
+        }
       }
     }
     Ok(())
@@ -1055,14 +1105,33 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       if i >= self.program.program.functions.len() {
         return Ok(());
       }
+      let inputs = &self.program.inputs[i];
+      let outputs = &self.program.outputs[i];
+      // Without tags or padding to check, a row of every-valid elements at
+      // the layouts' widths is valid, so only the counts need reading.
+      if B::ALL_ELEMENTS_VALID
+        && !inputs.has_shape_checks()
+        && !outputs.has_shape_checks()
+      {
+        if table.widths() != (inputs.width(), outputs.width()) {
+          return Err(
+            "incorrect value width or noncanonical field element".into(),
+          );
+        }
+        if (0..table.len()).any(|row| table.count(row) == 0) {
+          return Err("incomplete query record".into());
+        }
+        return Ok(());
+      }
+      let mut buffer = vec![];
       for row in 0..table.len() {
-        let output = table.output(row);
-        if output.multiplicity == 0 {
+        if table.count(row) == 0 {
           return Err("incomplete query record".into());
         }
         self.program.inputs[i]
-          .validate(table.input(row), self.program.field)?;
-        self.program.outputs[i].validate(output.output, self.program.field)?;
+          .validate(table.input_in(row, &mut buffer), self.program.field)?;
+        self.program.outputs[i]
+          .validate(table.output_in(row, &mut buffer), self.program.field)?;
       }
       Ok::<_, String>(())
     };
@@ -1138,7 +1207,7 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     self.program.inputs[id].validate(inputs, self.program.field)?;
     let table = &record.queries.tables[id];
     let query = table.lookup(inputs).1.ok_or("missing entry query")?;
-    if table.output(query).output != record.output {
+    if *table.output(query).output != *record.output {
       return Err("root output mismatch".into());
     }
     let chip = self.members[id];

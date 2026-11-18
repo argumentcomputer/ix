@@ -38,7 +38,7 @@ impl ExternalReads for RecordReads<'_> {
       .ok_or("unknown callee")?;
     let table = &self.record.queries.tables[id];
     let query = table.lookup(args).1.ok_or("missing recorded callee")?;
-    output.copy_from_slice(table.output(query).output);
+    table.read_output(query, output);
     Ok(())
   }
   fn map(
@@ -128,8 +128,8 @@ fn assert_rows_match(
         function
           .evaluate(
             description.modulus,
-            table.input(query),
-            output.output,
+            &table.input(query),
+            &output.output,
             &mut reads,
             |column, value| row[member.columns[column]] = value,
           )

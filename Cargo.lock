@@ -114,6 +114,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aiur-tracegen-tests"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "aiur-tracegen",
+ "multi-stark",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2362,7 +2371,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=bcf3fc8e902b1f7176254f6e87a1101ed785248f#bcf3fc8e902b1f7176254f6e87a1101ed785248f"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=648fb13a9fcf3ede4393cab5aa21b3ab6af975f9#648fb13a9fcf3ede4393cab5aa21b3ab6af975f9"
 dependencies = [
  "bincode",
  "itertools 0.14.0",

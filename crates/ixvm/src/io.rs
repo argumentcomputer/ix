@@ -59,16 +59,30 @@ pub(super) fn register<B: FieldBackend>(
     }
   }
   let [constants, blobs, roles, models] = arenas;
+  let values = std::sync::Arc::new(vec![
+    vec![],
+    vec![],
+    constants,
+    vec![],
+    blobs,
+    vec![],
+    roles,
+    models,
+  ]);
+  let device = std::sync::Arc::new(aiur::library::io::Values {
+    field,
+    values: values.clone(),
+  });
   channels.insert(
     READ_CHANNEL,
     key_type,
     Type::Field,
     move |key, output| {
       let arena = match field.to_u64(key[0]) {
-        2 => &constants,
-        4 => &blobs,
-        6 => &roles,
-        7 => &models,
+        2 => &values[2],
+        4 => &values[4],
+        6 => &values[6],
+        7 => &values[7],
         _ => return Err("missing hint data: unknown IO channel".into()),
       };
       let offset = usize::try_from(field.to_u64(key[1]))
@@ -80,5 +94,6 @@ pub(super) fn register<B: FieldBackend>(
       Ok(())
     },
   )?;
+  channels.set_device_arenas(READ_CHANNEL, device)?;
   Ok(true)
 }

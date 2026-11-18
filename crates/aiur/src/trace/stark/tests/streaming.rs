@@ -736,3 +736,79 @@ fn pipelined_gpu_population_matches_serial_proofs() {
     }
   }
 }
+
+#[test]
+fn host_prepared_records_prove_the_same_bytes_on_their_plan_only() {
+  let (program, artifact) = grouped();
+  let plan = TracePlan::new(&program, artifact.clone()).unwrap();
+  let backend = host_lookups(&plan);
+  let record = program.execute("Grouped::run", vec![3]).unwrap();
+  let layout = backend.uniform_layout(&record, 2).unwrap();
+  let expected = backend
+    .prove_incremental(
+      &record,
+      "Grouped::run",
+      &[3],
+      &record.output,
+      &layout,
+      Retention::Regenerate,
+    )
+    .unwrap()
+    .to_bytes()
+    .unwrap();
+  let output = record.output.clone();
+  let prepared = backend.prepare_host(record, "Grouped::run", &[3]).unwrap();
+  let actual = backend
+    .prove_prepared(&prepared, &output, &layout, Retention::Regenerate, None)
+    .unwrap();
+  assert_eq!(actual.proof.to_bytes().unwrap(), expected);
+  let other_plan = TracePlan::new(&program, artifact).unwrap();
+  let other = host_lookups(&other_plan);
+  let error = other
+    .prove_prepared(&prepared, &output, &layout, Retention::Regenerate, None)
+    .err()
+    .unwrap();
+  assert!(error.contains("another trace plan"), "{error}");
+  let record = prepared.into_record();
+  assert!(backend.prepare_host(record, "Grouped::run", &[4]).is_err());
+}
+
+#[cfg(feature = "cuda")]
+#[test]
+fn host_prepared_records_recount_when_the_device_populates_otherwise() {
+  let (program, artifact) = grouped();
+  let plan = TracePlan::new(&program, artifact).unwrap();
+  let mut backend =
+    Backend::build_with_lookup_policy(&plan, parameters(), true, None, true)
+      .unwrap();
+  backend.device_plans = Some(super::super::gpu::DevicePlans::new(&backend));
+  let record = program.execute("Grouped::run", vec![3]).unwrap();
+  let layout = backend.uniform_layout(&record, 2).unwrap();
+  let expected = backend
+    .prove_incremental(
+      &record,
+      "Grouped::run",
+      &[3],
+      &record.output,
+      &layout,
+      Retention::Regenerate,
+    )
+    .unwrap()
+    .to_bytes()
+    .unwrap();
+  let output = record.output.clone();
+  for host_population in [false, true] {
+    let record = program.execute("Grouped::run", vec![3]).unwrap();
+    let prepared =
+      backend.prepare_host(record, "Grouped::run", &[3]).unwrap();
+    prepared.record().host_population.set(host_population);
+    let actual = backend
+      .prove_prepared(&prepared, &output, &layout, Retention::Regenerate, None)
+      .unwrap();
+    assert_eq!(
+      actual.proof.to_bytes().unwrap(),
+      expected,
+      "host population {host_population}"
+    );
+  }
+}

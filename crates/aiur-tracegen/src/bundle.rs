@@ -147,8 +147,8 @@ fn binding(
     let _ = writeln!(
       s,
       "::aiur::trace::stark::compiled::CompiledCircuit {{ name: {:?}, members: &{:?}, \
-       callees: &{:?}, launch: {} }},",
-      c.name, c.members, c.callees, c.symbol
+       callees: &{:?}, roms: &{:?}, launch: {} }},",
+      c.name, c.members, c.callees, c.roms, c.symbol
     );
   }
   s.push_str("],\nskipped: &[");

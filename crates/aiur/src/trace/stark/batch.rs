@@ -913,6 +913,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
             base: begin,
             height: max_rows.min(height - begin),
             real_rows: max_rows.min(height - begin),
+            rows: None,
           }))
         },
         _ => TraceSource::Host(matrix),
@@ -961,7 +962,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       rows.push(self.system.circuits[ci].preprocessed_height);
     }
     for &width in &self.rom.widths {
-      rows.push(record.memory.indices_for_width(width).len());
+      rows.push(record.memory.width_cells(width).len());
     }
     rows
   }

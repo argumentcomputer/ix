@@ -22,13 +22,19 @@ fn describe(
 fn emits_supported_circuits_and_explains_the_rest() {
   let artifact = describe(fixture());
   let emitted = emit(&artifact, &Selection::All, "fixture").unwrap();
-  assert!(!emitted.circuits.is_empty());
-  assert!(
-    emitted
-      .skipped
-      .iter()
-      .any(|(_, reason)| reason.starts_with("reads the ROM"))
-  );
+  assert!(emitted.skipped.is_empty(), "{:?}", emitted.skipped);
+  // The memory circuit's stores and loads read ROM slots after its callees.
+  let memory = emitted
+    .circuits
+    .iter()
+    .find(|c| c.name == "arithmetic_and_memory")
+    .unwrap();
+  assert!(!memory.roms.is_empty());
+  assert!(memory.source.contains("callees[slots.v[ROMS + 0u]]"));
+  assert!(memory.source.contains(&format!(
+    "callee_count != {}u",
+    memory.callees.len() + memory.roms.len()
+  )));
   for circuit in &emitted.circuits {
     assert!(circuit.symbol.starts_with("aiur_tracegen_fixture_"));
     assert!(
@@ -38,12 +44,6 @@ fn emits_supported_circuits_and_explains_the_rest() {
   // Emission is deterministic, so cached objects are reused.
   let again = emit(&artifact, &Selection::All, "fixture").unwrap();
   assert_eq!(again.circuits, emitted.circuits);
-  // A named circuit must be supported.
-  let (skipped, _) = &emitted.skipped[0];
-  assert!(
-    emit(&artifact, &Selection::Named(vec![skipped.clone()]), "fixture")
-      .is_err()
-  );
   assert!(
     emit(&artifact, &Selection::Named(vec!["missing".into()]), "fixture")
       .is_err()
@@ -90,8 +90,7 @@ fn sources_carry_the_preamble_and_fingerprint() {
   );
 }
 
-#[test]
-fn depth_circuits_are_left_to_the_interpreter() {
+fn depth_fixture() -> aiur_tracegen::Described {
   let path =
     concat!(env!("CARGO_MANIFEST_DIR"), "/../aiur/tests/fixtures/depth.ixa");
   let (package, _) =
@@ -99,20 +98,88 @@ fn depth_circuits_are_left_to_the_interpreter() {
   let (program, trace) = package.traced().unwrap();
   let mut program = program.check().unwrap();
   program.track_depth(&trace).unwrap();
-  let described = aiur_tracegen::describe(&program, trace).unwrap();
-  assert!(described.depth.iter().any(|&d| d));
+  aiur_tracegen::describe(&program, trace).unwrap()
+}
+
+#[test]
+fn depth_circuits_compile_with_their_depth_sections() {
+  use aiur::trace::describe::DepthSlotKind;
+  let described = depth_fixture();
+  let d = &described.description;
   let emitted = emit(&described, &Selection::All, "depth").unwrap();
-  for (circuit, &depth) in
-    described.description.circuits.iter().zip(&described.depth)
-  {
-    let compiled = emitted.circuits.iter().any(|c| c.name == circuit.name);
-    assert!(!(depth && compiled), "{} was compiled", circuit.name);
-    if depth {
-      assert!(emitted.skipped.iter().any(|(name, reason)| {
-        *name == circuit.name && reason.starts_with("fills depth columns")
-      }));
+  assert!(
+    !emitted.skipped.iter().any(|(_, r)| r.contains("depth")),
+    "{:?}",
+    emitted.skipped
+  );
+  let kinds: Vec<&DepthSlotKind> = d
+    .circuits
+    .iter()
+    .flat_map(|c| &c.members)
+    .flat_map(|m| &m.depth.slots)
+    .map(|s| &s.kind)
+    .collect();
+  assert!(kinds.iter().any(|k| matches!(k, DepthSlotKind::Exact)));
+  assert!(kinds.iter().any(|k| matches!(k, DepthSlotKind::External { .. })));
+  assert!(
+    kinds
+      .iter()
+      .any(|k| matches!(k, DepthSlotKind::Gap { limbs } if limbs.len() == 2))
+  );
+  for circuit in &d.circuits {
+    let depth = circuit.members.iter().any(|m| !m.depth.is_empty());
+    let Some(unit) = emitted.circuits.iter().find(|c| c.name == circuit.name)
+    else {
+      assert!(!depth, "{} was not compiled", circuit.name);
+      continue;
+    };
+    for member in &circuit.members {
+      let depth = &member.depth;
+      if let Some(column) = depth.column {
+        assert!(unit.source.contains(&format!("row[{column}] = depth;")));
+      }
+      for slot in &depth.slots {
+        for callee in &slot.callees {
+          assert!(unit.callees.contains(callee), "{}", circuit.name);
+        }
+        match &slot.kind {
+          DepthSlotKind::Exact => {
+            assert!(unit.source.contains("height + 1 != depth"));
+          },
+          DepthSlotKind::External { column } => {
+            assert!(unit.source.contains(&format!("row[{column}] = height;")));
+          },
+          DepthSlotKind::Gap { limbs } => {
+            for limb in limbs {
+              assert!(unit.source.contains(&format!(
+                "row[{}] = rest & 0x{:x}ull;",
+                limb.column,
+                (1u64 << limb.width) - 1
+              )));
+            }
+          },
+        }
+      }
     }
   }
   let fib = Selection::Named(vec!["Depth::fib".into()]);
-  assert!(emit(&described, &fib, "depth").is_err());
+  assert_eq!(emit(&described, &fib, "depth").unwrap().circuits.len(), 1);
+}
+
+#[test]
+fn fingerprint_covers_depth_sections() {
+  let original = depth_fixture();
+  let mut changed = original.description.clone();
+  let member = changed
+    .circuits
+    .iter_mut()
+    .flat_map(|c| &mut c.members)
+    .find(|m| !m.depth.slots.is_empty())
+    .unwrap();
+  member.depth.slots.reverse();
+  member.depth.slots.pop();
+  assert_ne!(
+    aiur::trace::describe::compiled_fingerprint(&changed),
+    original.fingerprint
+  );
 }

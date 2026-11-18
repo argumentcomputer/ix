@@ -681,9 +681,6 @@ fn recorded_lookup_counts_are_checked_by_the_proof() {
   // integer multiplicity is converted to a field element.
   bad.queries.tables[2].static_map.as_mut().unwrap().counts[0] = Val::ORDER_U64;
   assert!(backend.witness(&bad, &trace).is_err());
-  let mut bad = record;
-  *bad.memory.multiplicity_mut(0) = Val::ORDER_U64;
-  assert!(backend.witness(&bad, &trace).is_err());
 }
 
 /// Interleave widths 0, 1 and 2, including different types of width 1.
@@ -742,6 +739,24 @@ fn mixed_memory() -> (CheckedProgram, TraceArtifact) {
     unused.layout(&program.program.enums, &mut vec![]).unwrap(),
   );
   (program, artifact)
+}
+
+/// `tests/fixtures/memory.ixa` is [`mixed_memory`]'s program and activated
+/// trace, for crates that read fixtures from packages. Set
+/// `AIUR_WRITE_FIXTURES=1` to rewrite it.
+#[test]
+fn memory_fixture_is_current() {
+  let (program, artifact) = mixed_memory();
+  let package = crate::artifact::Package {
+    program: program.program().clone(),
+    trace: Some(activate(artifact)),
+  };
+  let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/memory.ixa");
+  if std::env::var_os("AIUR_WRITE_FIXTURES").is_some() {
+    std::fs::write(path, package.encode()).unwrap();
+  }
+  let stored = crate::artifact::Package::decode(&std::fs::read(path).unwrap());
+  assert_eq!(stored.unwrap(), package, "rewrite with AIUR_WRITE_FIXTURES=1");
 }
 
 #[test]
@@ -1332,7 +1347,7 @@ fn cuda_host_plan_omits_device_phases() {
     .sum();
   assert_eq!(
     u128::from(whole.proving_peak_bytes),
-    ((cells * 8 + prep + retained) * 5).div_ceil(4)
+    cells * 8 + prep + retained
   );
 }
 /// The Lean grouping example's package (`Aiur/Examples/Grouping.lean`).
@@ -1560,4 +1575,15 @@ fn shared_handles_prove_like_borrowed_ones() {
   backend.verify_batch(entry, &[3], &record.output, &proof).unwrap();
   assert_eq!(backend.verifying_key_bytes().unwrap(), borrowed.0);
   assert_eq!(proof.to_bytes().unwrap(), borrowed.1);
+}
+
+#[test]
+fn visible_devices_follow_the_cuda_runtime() {
+  use super::planning::visible_devices;
+  assert_eq!(visible_devices("0,1", 4), 2);
+  assert_eq!(visible_devices("", 4), 0);
+  assert_eq!(visible_devices("-1", 4), 0);
+  assert_eq!(visible_devices("1,7,2", 4), 1);
+  assert_eq!(visible_devices("GPU-8f2a,1", 2), 2);
+  assert_eq!(visible_devices("0,1,2", 1), 1);
 }

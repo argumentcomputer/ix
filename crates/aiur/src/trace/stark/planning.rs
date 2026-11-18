@@ -27,6 +27,41 @@ pub const DEFAULT_DEVICE_CELLS: u64 = 1_500_000_000;
 /// of 1.5e9 cells took 30–32 s at 2^23 rows and 34.5–36 s at 2^24.
 pub const DEFAULT_DEVICE_ROWS: usize = 1 << 23;
 
+/// What [`Backend::fit_device_circuits`] found, for its report.
+#[cfg(feature = "cuda")]
+#[derive(Default)]
+struct DeviceSearch {
+  admission: crate::execute::Admission,
+  device_circuits: usize,
+  whole_bytes: u64,
+  /// Shard cells, rows and shards of the host layout.
+  host_layout: (u64, usize, usize),
+  trials: usize,
+}
+
+#[cfg(feature = "cuda")]
+impl DeviceSearch {
+  fn report(&self, plan: &BatchPlan) {
+    let count = self.admission.circuits.iter().filter(|&&on| on).count();
+    let (cells, rows, shards) = self.host_layout;
+    eprintln!(
+      "[aiur/gpu] device record of {} circuits ({} B) does not fit at the \
+       host layout of {shards} shards ({cells} cells, {rows} rows); \
+       populating {count} of them on the device ({} B, {} candidates, {} \
+       host stage-one cells); host peak {} of {} B, device peak {} of {:?} B",
+      self.device_circuits,
+      self.whole_bytes,
+      plan.device_record_bytes,
+      self.trials,
+      plan.host_stage1_cells,
+      plan.proving_peak_bytes,
+      plan.budget_bytes,
+      plan.device_peak_bytes,
+      plan.device_budget_bytes,
+    );
+  }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Options {
@@ -92,10 +127,11 @@ impl Options {
     if let Some(path) = result.layout_file.take() {
       result.layout = Some(read_layout(&path)?);
     }
-    result.max_ram_bytes =
-      Some(result.max_ram_bytes.unwrap_or_else(|| {
-        available_memory().map_or(8 << 30, |n| n / 100 * 85)
-      }));
+    result.max_ram_bytes = Some(
+      result
+        .max_ram_bytes
+        .unwrap_or_else(|| default_budget().unwrap_or(8 << 30)),
+    );
     result.validate()?;
     Ok(result)
   }
@@ -205,27 +241,42 @@ pub fn configured_cells() -> Result<u64, String> {
   }
 }
 
-pub fn available_memory() -> Option<u64> {
-  let text = std::fs::read_to_string("/proc/meminfo").ok()?;
-  let host = text
-    .lines()
-    .find_map(|l| {
-      l.strip_prefix("MemAvailable:")
-        .and_then(|s| s.split_whitespace().next()?.parse::<u64>().ok())
-    })?
-    .checked_mul(1024)?;
-  // Respect a container limit when cgroup v2 is mounted at its namespace root.
-  let container = std::fs::read_to_string("/sys/fs/cgroup/memory.max")
-    .ok()
-    .and_then(|s| s.trim().parse::<u64>().ok())
-    .zip(
-      std::fs::read_to_string("/sys/fs/cgroup/memory.current")
-        .ok()
-        .and_then(|s| s.trim().parse::<u64>().ok()),
-    )
-    .map(|(limit, used)| limit.saturating_sub(used));
-  Some(container.map_or(host, |n| n.min(host)))
+/// The default host budget, `MemTotal` less the one host reservation
+/// ([`record_pool::host::default_budget`]), in bytes.
+pub fn default_budget() -> Option<u64> {
+  record_pool::host::default_budget().and_then(|n| u64::try_from(n).ok())
 }
+
+/// GPUs this process can prove on, counted without initializing CUDA: the
+/// NVIDIA driver's device entries, narrowed by `CUDA_VISIBLE_DEVICES`. Zero
+/// in a build without CUDA.
+pub fn gpu_count() -> usize {
+  if !cfg!(feature = "cuda") {
+    return 0;
+  }
+  let present = std::fs::read_dir("/proc/driver/nvidia/gpus")
+    .map_or(0, |entries| entries.filter_map(Result::ok).count());
+  match std::env::var("CUDA_VISIBLE_DEVICES") {
+    Ok(visible) => visible_devices(&visible, present),
+    Err(_) => present,
+  }
+}
+
+/// The devices a `CUDA_VISIBLE_DEVICES` value selects out of `present`. As
+/// in the CUDA runtime, the list ends at its first invalid entry.
+pub(crate) fn visible_devices(visible: &str, present: usize) -> usize {
+  visible
+    .split(',')
+    .map(str::trim)
+    .take_while(|entry| {
+      entry.parse::<usize>().is_ok_and(|index| index < present)
+        || entry.starts_with("GPU-")
+        || entry.starts_with("MIG-")
+    })
+    .count()
+    .min(present)
+}
+
 /// The process's peak resident set (`VmHWM`), in bytes.
 pub fn peak_resident_memory() -> u64 {
   status_bytes("VmHWM:")
@@ -330,20 +381,12 @@ pub enum HostCause {
   /// `AIUR_GPU_TRACE=compiled` selects only compiled writers, and the
   /// registered bundle has none for this circuit.
   NotCompiled,
-  /// A member's plan stores to memory.
-  Store,
-  /// A member's plan loads from memory.
-  Load,
   /// A member's plan reads a hint channel the device does not implement.
   UnsupportedHint,
   /// A member's plan calls a map the device does not implement.
   UnsupportedMap,
   /// A member's plan exceeds a limit of the device encoding.
   EncodingLimit,
-  /// `AIUR_GPU_TRACE=compiled` selects only compiled writers, and a member
-  /// carries a depth column or depth slots, which compiled writers do not
-  /// fill (`compiled+generated` interprets such circuits on the device).
-  CompiledDepth,
   /// Some members could be filled on the device, but not all of them.
   IneligibleGroup,
   /// The record's device population does not fit at the layout host
@@ -418,9 +461,6 @@ fn padded(n: usize) -> Result<usize, String> {
 fn bounded(n: u128) -> u64 {
   u64::try_from(n).unwrap_or(u64::MAX)
 }
-fn margin(n: u128) -> u128 {
-  n.saturating_mul(5).div_ceil(4)
-}
 
 impl<B: WitnessField> Backend<'_, '_, B> {
   /// The fixed-table floor plus the caller's artifact/setup residency. An
@@ -482,12 +522,15 @@ impl<B: WitnessField> Backend<'_, '_, B> {
   }
 
   /// Plans the layout host population would get, and populates on the
-  /// device only if that layout also fits with the device record. Device
-  /// population then never changes the layout of a record host population
-  /// can prove, and so never its proof; a record whose device plan would
-  /// need a smaller layout keeps host population. A record host population
-  /// cannot prove at any layout is planned with device population, which
-  /// needs less host memory. A layout the caller forces is planned as given.
+  /// device at that layout, pipelined whenever the host plan is, when the
+  /// whole device record fits there. Otherwise it admits the device
+  /// circuits that fit ([`Self::fit_device_circuits`]) at that layout, or,
+  /// on request, at a smaller one whose fuller admission is predicted to
+  /// prove faster; the layout, and so the proof, then depends on device
+  /// memory, as the cell and device budgets already make it. A record whose
+  /// device plan fits no layout keeps host population. A record host population cannot prove
+  /// at any layout is planned with device population, which needs less host
+  /// memory. A layout the caller forces is planned as given.
   fn plan_population(
     &self,
     record: &Execution<B>,
@@ -495,6 +538,8 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     resident: u64,
   ) -> Result<BatchPlan, String> {
     record.host_population.set(false);
+    record.host_population.set_circuits(None);
+    record.host_population.set_sharded(false);
     #[cfg(feature = "cuda")]
     if self.device_plans_for(record).is_some()
       && options.forced_layout()?.is_none()
@@ -506,16 +551,205 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       let Some(layout) = host.layout.clone().filter(|_| host.fits) else {
         return self.plan_record_inner(record, options, resident);
       };
-      let mut device = self.plan_forced(record, layout, options, resident)?;
-      if device.fits {
+      let keeps =
+        |plan: &BatchPlan| plan.fits && (plan.pipelined || !host.pipelined);
+      let mut device =
+        self.plan_forced(record, layout.clone(), options, resident)?;
+      if !keeps(&device) {
+        // The whole record does not fit: upload one shard image at a time
+        // (when the record's references allow it), whose images planning
+        // charges instead.
+        record.host_population.set_sharded(true);
+        device = self.plan_forced(record, layout.clone(), options, resident)?;
+      }
+      if !keeps(&device) {
+        // The executor and the prover plan a record under the same lane
+        // options, so the prover reuses the executor's search.
+        let key = format!(
+          "{}|{resident}|{:?}",
+          serde_json::to_string(options).map_err(|e| e.to_string())?,
+          self.device_budget(options)?
+        );
+        let previous = record.host_population.admitted(&key);
+        let mut search = true;
+        if let Some(previous) = previous {
+          // An earlier search that admitted nothing is not repeated.
+          search = false;
+          if previous.circuits.iter().any(|&on| on) {
+            if let Some(reused) = self.plan_admission(
+              record, &layout, &previous, options, resident, &keeps,
+            )? {
+              device = reused;
+            } else {
+              search = true;
+            }
+          }
+        }
+        if search {
+          let found = self.fit_device_circuits(
+            record, &layout, &host, options, resident, &keeps,
+          )?;
+          let plan = if found.admission.circuits.iter().any(|&on| on) {
+            self.plan_admission(
+              record,
+              &layout,
+              &found.admission,
+              options,
+              resident,
+              &keeps,
+            )?
+          } else {
+            None
+          };
+          if let Some(plan) = &plan
+            && std::env::var_os("AIUR_POPULATION_REPORT").is_some()
+          {
+            found.report(plan);
+          }
+          record.host_population.set_admitted(
+            key,
+            if plan.is_some() {
+              found.admission
+            } else {
+              crate::execute::Admission {
+                circuits: vec![false; self.members.len()],
+              }
+            },
+          );
+          if let Some(plan) = plan {
+            device = plan;
+          }
+        }
+      }
+      if keeps(&device) {
         device.forced_layout = false;
         device.candidates = host.candidates;
         return Ok(device);
       }
+      record.host_population.set_circuits(None);
       record.host_population.set(true);
       return Ok(host);
     }
     self.plan_record_inner(record, options, resident)
+  }
+
+  /// The plan of `admission` for `record`, whose host layout is `layout`,
+  /// if `keeps` accepts it. Sets the record's population override to the
+  /// admitted circuits, or clears it when `None`.
+  #[cfg(feature = "cuda")]
+  pub(super) fn plan_admission(
+    &self,
+    record: &Execution<B>,
+    layout: &streaming::BatchLayout,
+    admission: &crate::execute::Admission,
+    options: &Options,
+    resident: u64,
+    keeps: &impl Fn(&BatchPlan) -> bool,
+  ) -> Result<Option<BatchPlan>, String> {
+    let chosen = layout.clone();
+    record.host_population.set_circuits(Some(admission.circuits.clone()));
+    let plan = self.plan_forced(record, chosen, options, resident)?;
+    if keeps(&plan) {
+      return Ok(Some(plan));
+    }
+    record.host_population.set_circuits(None);
+    Ok(None)
+  }
+
+  /// When the whole device record does not fit beside the host layout's
+  /// shards, admits the device circuits that save the most host population
+  /// per device byte, as many as `keeps` accepts: circuits are ranked by
+  /// stage-one cells over the bytes admitting them alone holds, and admitted
+  /// greedily in that order, skipping any whose plan `keeps` rejects. The
+  /// host layout, and so the proof host population would make, is kept.
+  /// Everything is planned from the layout's terms and the record's byte
+  /// model, without reading the record again.
+  #[cfg(feature = "cuda")]
+  fn fit_device_circuits(
+    &self,
+    record: &Execution<B>,
+    layout: &streaming::BatchLayout,
+    host: &BatchPlan,
+    options: &Options,
+    resident: u64,
+    keeps: &impl Fn(&BatchPlan) -> bool,
+  ) -> Result<DeviceSearch, String> {
+    let mut found = DeviceSearch {
+      admission: crate::execute::Admission {
+        circuits: vec![false; self.members.len()],
+      },
+      ..DeviceSearch::default()
+    };
+    let Some(plans) = self.device_plans.as_ref() else { return Ok(found) };
+    let rows = self.record_rows(record)?;
+    let model = if record.host_population.sharded() {
+      plans.record_model_for(self, record, layout)?
+    } else {
+      plans.record_model(self, record)?
+    };
+    let mut ranked: Vec<(usize, f64)> = (0..plans.circuits.len())
+      .filter(|&ci| plans.supports(record, ci) && rows[ci] != 0)
+      .map(|ci| {
+        let cells =
+          padded(rows[ci])? as f64 * self.system.circuits[ci].main_width as f64;
+        Ok((ci, cells / model.alone(ci).max(1) as f64))
+      })
+      .collect::<Result<_, String>>()?;
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    let mut whole = vec![false; plans.circuits.len()];
+    for &(ci, _) in &ranked {
+      whole[ci] = true;
+    }
+    let generated = |admitted: &[bool]| -> Vec<bool> {
+      (0..self.system.circuits.len())
+        .map(|ci| admitted.get(ci).copied().unwrap_or(false))
+        .collect()
+    };
+    let plan = |terms: &streaming::LayoutTerms, admitted: &[bool]| {
+      self.plan_forced_terms(
+        terms,
+        &generated(admitted),
+        model.bytes(admitted),
+        options,
+        resident,
+      )
+    };
+    let mut trials = 0;
+    let mut admit = |terms: &streaming::LayoutTerms| {
+      trials += 1;
+      if keeps(&plan(terms, &whole)?) {
+        return Ok::<_, String>(whole.clone());
+      }
+      // Runs of circuits are tested at once: a run that is accepted joins
+      // whole, a rejected one is split in halves, so one circuit too large
+      // to fit is skipped without giving up the smaller ones ranked after
+      // it.
+      let mut admitted = vec![false; plans.circuits.len()];
+      let mut runs = vec![0..ranked.len()];
+      while let Some(run) = runs.pop() {
+        trials += 1;
+        let mut trial = admitted.clone();
+        for &(ci, _) in &ranked[run.clone()] {
+          trial[ci] = true;
+        }
+        if keeps(&plan(terms, &trial)?) {
+          admitted = trial;
+        } else if run.len() > 1 {
+          let middle = run.start + run.len() / 2;
+          runs.push(middle..run.end);
+          runs.push(run.start..middle);
+        }
+      }
+      Ok(admitted)
+    };
+    let terms = self.layout_terms(layout);
+    let admitted = admit(&terms)?;
+    found.admission.circuits = admitted;
+    found.device_circuits = ranked.len();
+    found.whole_bytes = model.bytes(&whole);
+    found.host_layout = (host.shard_cells, host.max_rows, host.shards);
+    found.trials = trials;
+    Ok(found)
   }
 
   fn plan_record_inner(
@@ -587,7 +821,15 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     } else {
       #[cfg(feature = "cuda")]
       if let Some(plans) = &self.device_plans {
-        if record.host_population.get() && plans.circuits[ci] {
+        if plans.circuits[ci] && !plans.supports(record, ci) {
+          return (
+            vec![HostCause::UnsupportedHint],
+            "the record binds no device data to its arena reads".to_owned(),
+          );
+        }
+        if (record.host_population.get() || !record.host_population.admits(ci))
+          && plans.circuits[ci]
+        {
           return (
             vec![HostCause::DeviceLayout],
             "the device record does not fit at the host layout".to_owned(),
@@ -606,9 +848,9 @@ impl<B: WitnessField> Backend<'_, '_, B> {
   ) -> bool {
     #[cfg(feature = "cuda")]
     {
-      self
-        .device_plans_for(record)
-        .is_some_and(|plans| plans.circuits.get(ci).copied().unwrap_or(false))
+      self.device_plans_for(record).is_some_and(|plans| {
+        plans.supports(record, ci) && record.host_population.admits(ci)
+      })
     }
     #[cfg(not(feature = "cuda"))]
     {
@@ -641,15 +883,15 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let mut memory_intervals = Vec::new();
     for c in &self.system.circuits[memory_start..] {
       let width = c.main_width - 3;
-      let indices = record.memory.indices_for_width(width);
-      if let Some(&first) = indices.first() {
-        let start = record.memory.get(first).unwrap().address as u64;
+      let cells = record.memory.width_cells(width);
+      if let Some(first) = cells.get(0) {
+        let start = first.address as u64;
         let end = start
-          .checked_add(indices.len() as u64)
+          .checked_add(cells.len() as u64)
           .ok_or("ROM boundary overflow")?;
         memory_intervals.push((width as u64, start, end));
       }
-      heights.push(padded(indices.len())?);
+      heights.push(padded(cells.len())?);
     }
     Ok(RecordShape { heights, memory_intervals })
   }
@@ -677,11 +919,8 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     {
       return Err("invalid planning heights".into());
     }
-    let budget = options
-      .max_ram_bytes
-      .or_else(|| available_memory().map(|n| n / 100 * 85))
-      .unwrap_or(8 << 30)
-      .max(1);
+    let budget =
+      options.max_ram_bytes.or_else(default_budget).unwrap_or(8 << 30).max(1);
     if heights
       .iter()
       .zip(&self.system.circuits)
@@ -717,7 +956,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       .sum();
     let upload = if generated.iter().any(|&on| on) { 256 << 20 } else { 0 };
     let generation =
-      margin(u128::from(resident) + host_cells * 8 + descriptors + upload);
+      u128::from(resident) + host_cells * 8 + descriptors + upload;
     let device_cells = options.device_cells()?;
     let device_budget = self.device_budget(options)?;
     let mut rows = options.height_limit()?.unwrap_or(tallest).min(tallest);
@@ -745,9 +984,9 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       // its record. This conservatively covers artifact/advice residency and
       // allocator pages that are not returned to the operating system.
       let base = u128::from(resident) + host_cells * 8 + prep;
-      let regenerated_peak = margin(base + single);
+      let regenerated_peak = base + single;
       let retained_peak =
-        margin(base + single + retained * shards.saturating_sub(1) as u128);
+        base + single + retained * shards.saturating_sub(1) as u128;
       let retention = match options.retention {
         _ if self.requires_regeneration(shards) => RetentionPolicy::Regenerate,
         RetentionPolicy::Auto if retained_peak <= u128::from(budget) => {
@@ -856,17 +1095,9 @@ impl<B: WitnessField> Backend<'_, '_, B> {
   ) -> u128 {
     #[cfg(feature = "cuda")]
     {
-      // A shard without device population has no record and allocates no
-      // population workspaces.
-      let population = if record == 0 {
-        0
-      } else {
-        let scratch = self
-          .device_plans
-          .as_ref()
-          .map_or(0, |p| p.scratch_bytes(&self.members));
-        u128::from(record) + u128::from(scratch)
-      };
+      // `record` includes the population launch workspaces; a shard
+      // without device population has neither.
+      let population = u128::from(record);
       let blowup = 1u128 << self.parameters.log_blowup;
       let fixed: u128 = self
         .system
@@ -890,13 +1121,19 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       // when a narrow circuit consumes few committed cells.
       let opening = height as u128 * blowup * (192 + 160 + 88);
       let lde = |cells: u128| cells * 8 * (blowup + 1);
-      // The fixed, opening and LDE terms carry no margin: on an RTX PRO 6000
-      // they bounded the measured device high-water mark of host-populated
-      // shards from above (Init claim shards of 1.5e9 cells: 74.8 GB modelled,
-      // at most 66.7 GB in use; a 2.1e9-cell root wrap: 88.1 GB modelled, at
-      // most 71.1 GB in use, with no spill or failed admission). The device
-      // record and its launch workspaces are not measured yet and keep it.
-      let population = margin(population);
+      // No term carries a margin. The record and its workspaces are their
+      // allocations' sizes (`gpu::DevicePlans::record_bytes`, at most 1%
+      // above the device memory an Init upload measurably takes). The
+      // fixed, opening and LDE terms are estimates that bound the measured
+      // device high-water mark from above on an RTX PRO 6000: Init claim
+      // shards of 1.5e9 cells modelled at 74.8 GB used at most 66.7 GB
+      // host-populated, and with their whole 22 GB device record every
+      // multi-stark phase admission left at least 7.2 GB free beyond its
+      // target; a 2.1e9-cell root wrap modelled at 88.1 GB used at most
+      // 71.1 GB. The stage-two (lookup) phase's temporaries are not modelled
+      // beyond the population LDEs: an aggregate shard at 2^22 rows with a
+      // 34 GB record needed 30 GB of them for one circuit, and its record
+      // was released and uploaded again.
       let generation = population + fixed + opening + lde(population_cells);
       let pinned = if gpu::release_enabled() { 0 } else { population };
       let proving = pinned + fixed + opening + lde(cells);

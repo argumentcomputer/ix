@@ -279,7 +279,7 @@ impl<B: FieldBackend> FillPlan<B> {
   pub(super) fn fill(
     &self,
     record: &Execution<B>,
-    query: (&[B::Element], crate::query::QueryOutputRef<'_, B::Element>),
+    query: (&crate::query::QueryTable<B>, usize),
     scratch: &mut Vec<B::Element>,
     buffer: &mut Vec<B::Element>,
     row: &mut [B::Element],
@@ -294,7 +294,7 @@ impl<B: FieldBackend> FillPlan<B> {
   pub(super) fn fill_into(
     &self,
     record: &Execution<B>,
-    query: (&[B::Element], crate::query::QueryOutputRef<'_, B::Element>),
+    query: (&crate::query::QueryTable<B>, usize),
     scratch: &mut Vec<B::Element>,
     buffer: &mut Vec<B::Element>,
     mut write: impl FnMut(usize, B::Element),
@@ -304,10 +304,8 @@ impl<B: FieldBackend> FillPlan<B> {
     // Every retained slot is an input/output or has one earlier producer.
     // Producers overwrite their spans; only inactive/partial producers
     // need zeroing. Unused scratch slots are never read by the live graph.
-    let (input, output) = query;
-    scratch[..self.inputs].copy_from_slice(input);
-    scratch[self.inputs..self.inputs + self.output]
-      .copy_from_slice(output.output);
+    let (table, row) = query;
+    table.read_row(row, &mut scratch[..self.inputs + self.output]);
     for k in &self.kernels {
       if k.guard.get(scratch) != field.one() {
         scratch[k.start..k.start + k.width].fill(field.zero());
@@ -350,8 +348,7 @@ impl<B: FieldBackend> FillPlan<B> {
               .evaluate(buffer, &mut scratch[k.start..k.start + k.width])?;
           } else {
             if let Some(id) = table.lookup(buffer).1 {
-              scratch[k.start..k.start + k.width]
-                .copy_from_slice(table.output(id).output);
+              table.read_output(id, &mut scratch[k.start..k.start + k.width]);
             } else {
               return Err("missing recorded callee".into());
             }
@@ -528,6 +525,8 @@ pub(super) mod device {
   pub(crate) const OP_MAP: u32 = 7;
   pub(crate) const OP_CALL: u32 = 8;
   pub(crate) const OP_HINT: u32 = 9;
+  pub(crate) const OP_STORE: u32 = 10;
+  pub(crate) const OP_LOAD: u32 = 11;
   const CONSTANT: u32 = 0x8000_0000;
 
   /// Canonical field constants shared by every encoded plan of a program.
@@ -556,6 +555,14 @@ pub(super) mod device {
     Call(u32),
   }
 
+  /// A device lookup table: a function's recorded queries, or the ROM cells
+  /// of one width, in which stores and loads find their cells.
+  #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+  pub(crate) enum Source {
+    Function(usize),
+    Rom(usize),
+  }
+
   pub(crate) struct Encoded {
     pub code: Vec<u32>,
     pub scratch: u32,
@@ -565,12 +572,13 @@ pub(super) mod device {
 
   impl<B: FieldBackend> FillPlan<B> {
     /// The plan's kernels and column writes, writing physical `column`s, or
-    /// `None` when a kernel needs host-only state: memory, or a callable or
-    /// hint site without a device implementation.
+    /// `None` when a kernel needs a callable or hint site without a device
+    /// implementation. `rom(width)` is the lookup slot of that width's ROM.
     pub(crate) fn encode(
       &self,
       call: &mut impl FnMut(usize) -> Option<Target>,
       hint: &mut impl FnMut(usize) -> Option<u32>,
+      rom: &mut impl FnMut(usize) -> Option<u32>,
       column: &impl Fn(usize) -> usize,
       constants: &mut Constants,
     ) -> Option<Encoded> {
@@ -642,7 +650,18 @@ pub(super) mod device {
             }
             OP_HINT
           },
-          Node::Store { .. } | Node::Load { .. } => return None,
+          Node::Store { values } => {
+            body
+              .extend([rom(values.len())?, u32::try_from(values.len()).ok()?]);
+            for v in values {
+              body.push(word(v)?);
+            }
+            OP_STORE
+          },
+          Node::Load { address } => {
+            body.extend([rom(k.width)?, word(address)?]);
+            OP_LOAD
+          },
         };
         code.extend([
           op,

@@ -8,20 +8,27 @@
 //! its `first` row and its function's straight-line body runs over its
 //! recorded query. Slots are local variables; a guarded kernel defines its
 //! slots as zero and assigns them only when its guard is one. Writes go
-//! through the member's placement, followed by the selector, the group
-//! writes in order and the multiplicity.
+//! through the member's placement, followed by the selector, the depth
+//! section (as `fill_depth` in `population.cu` interprets it), the group
+//! writes in order and the multiplicity. Gap limbs' range-table uses are not
+//! counted here: the device record's upload counts them for every device
+//! circuit. A member's query `q` is row `q - offset` of its tables, which a
+//! shard image holds for only some queries.
 //!
 //! The launcher's arguments are those of `aiur_gpu_populate` with the
 //! interpreter's scratch replaced by the circuit's callee slots, and it
 //! likewise resets `error`, copies it to the page-locked `status` and
 //! synchronizes the calling thread's default stream. `callees[j]`
 //! indexes `circuit->callees` for the `j`th name in
-//! [`CompiledCircuit::callees`].
+//! [`CompiledCircuit::callees`], then for each width in
+//! [`CompiledCircuit::roms`]: that width's ROM cells, which stores and
+//! loads find as `population.cu` does.
 use crate::{ClosedForm, Described, closed::closed_forms, hints::WordHint};
 use aiur::trace::{
   Polynomial,
   describe::{
-    FunctionDescription, NodeDescription, Operand, PopulationDescription,
+    DepthDescription, DepthSlotKind, FunctionDescription, NodeDescription,
+    Operand, PopulationDescription,
   },
 };
 use std::fmt::Write;
@@ -35,6 +42,8 @@ pub struct CompiledCircuit {
   pub members: Vec<String>,
   /// Callee function names, in launcher slot order.
   pub callees: Vec<String>,
+  /// ROM widths, in launcher slot order after the callees.
+  pub roms: Vec<usize>,
   /// The launcher's symbol.
   pub symbol: String,
   /// The unit's file name and source.
@@ -60,6 +69,11 @@ pub enum Selection {
 
 /// Prepended to every launcher symbol.
 pub const SYMBOL_PREFIX: &str = "aiur_tracegen";
+
+/// The largest unit emitted. nvcc's optimizer is superlinear in the length
+/// of a straight-line function, so a larger unit would dominate a bundle's
+/// build; its circuit is left to the interpreter.
+pub const MAX_UNIT_BYTES: usize = 1 << 20;
 
 /// Emits the selected circuits. `tag` distinguishes the launcher symbols of
 /// bundles linked into one binary.
@@ -100,12 +114,7 @@ pub fn emit(
       continue;
     }
     let symbol = format!("{SYMBOL_PREFIX}_{tag}_{ci}");
-    let unit = if described.depth.get(ci).copied().unwrap_or(false) {
-      Err("fills depth columns (interpreted on the device)".to_owned())
-    } else {
-      Unit::circuit(d, &closed, ci, &symbol)
-    };
-    match unit {
+    match Unit::circuit(d, &closed, ci, &symbol) {
       Ok(unit) => emitted.circuits.push(unit),
       Err(reason) => {
         if matches!(selection, Selection::Named(_)) {
@@ -126,7 +135,7 @@ const PRELUDE: &str = r#"#include <cuda_runtime.h>
 using namespace multi_stark_cuda;
 
 // Layouts shared with `crates/aiur/src/trace/stark/gpu.rs` and
-// `crates/aiur/cuda/population.cu` (compiled ABI version 3).
+// `crates/aiur/cuda/population.cu` (compiled ABI version 5).
 struct AiurFunction {
     const uint32_t* code;
     const uint64_t* constants;
@@ -135,6 +144,7 @@ struct AiurFunction {
     const uint64_t* depths;
     uint64_t count;
     uint64_t first;
+    uint64_t offset;
     uint32_t code_len;
     uint32_t scratch;
     uint32_t inputs;
@@ -147,6 +157,7 @@ struct AiurCallee {
     const uint32_t* index;
     const uint64_t* multiplicities;
     const uint64_t* depths;
+    const uint64_t* ids;
     uint64_t count;
     uint32_t mask;
     uint32_t inputs;
@@ -172,7 +183,9 @@ namespace {
 
 constexpr int32_t ERROR_ZERO_INVERSE = 1, ERROR_NO_ARM = 2, ERROR_NO_FAILURE = 3,
                   ERROR_MAP_DOMAIN = 4, ERROR_MISSING_CALLEE = 5, ERROR_HINT_DOMAIN = 6,
-                  ERROR_ENCODING = 7;
+                  ERROR_ENCODING = 7, ERROR_DEPTH_GAP = 9, ERROR_DEPTH_EXACT = 10,
+                  ERROR_PENDING_CALLEE = 11, ERROR_MISSING_HEIGHT = 12,
+                  ERROR_MISSING_STORE = 13, ERROR_MISSING_LOAD = 14;
 constexpr unsigned BLOCK = 128;
 
 __device__ __noinline__ void fail(AiurPopulationError* error, int32_t code, uint32_t op,
@@ -214,12 +227,25 @@ __device__ __noinline__ int64_t find_query(const AiurCallee& callee, const uint6
     return -1;
 }
 
+// The row of the ROM cell at `address`, as `population.cu`'s `find_cell`.
+__device__ __noinline__ int64_t find_cell(const AiurCallee& rom, uint64_t address) {
+    if (!rom.ids) return address < rom.count ? int64_t(address) : -1;
+    uint64_t low = 0, high = rom.count;
+    while (low < high) {
+        const uint64_t middle = low + (high - low) / 2;
+        if (rom.ids[middle] < address) low = middle + 1;
+        else high = middle;
+    }
+    return low < rom.count && rom.ids[low] == address ? int64_t(low) : -1;
+}
+
 "#;
 
 struct Unit<'a> {
   d: &'a PopulationDescription,
   closed: &'a [Option<ClosedForm>],
   callees: Vec<String>,
+  roms: Vec<usize>,
   s: String,
 }
 
@@ -256,6 +282,22 @@ fn bounded(p: &Polynomial, width: usize, modulus: u64) -> bool {
   }
 }
 
+fn depth_bounded(depth: &DepthDescription, width: usize, modulus: u64) -> bool {
+  let column = |c: usize| c + 1 < width;
+  depth.column.is_none_or(column)
+    && depth.slots.iter().all(|slot| {
+      bounded(&slot.enable, width, modulus)
+        && slot.args.iter().all(|a| bounded(a, width, modulus))
+        && match &slot.kind {
+          DepthSlotKind::Exact => true,
+          DepthSlotKind::Gap { limbs } => {
+            limbs.iter().all(|l| column(l.column) && l.width >= 1)
+          },
+          DepthSlotKind::External { column: c } => column(*c),
+        }
+    })
+}
+
 impl Unit<'_> {
   fn circuit(
     d: &PopulationDescription,
@@ -267,7 +309,8 @@ impl Unit<'_> {
     if circuit.members.is_empty() {
       return Err("no members".into());
     }
-    let mut unit = Unit { d, closed, callees: vec![], s: String::new() };
+    let mut unit =
+      Unit { d, closed, callees: vec![], roms: vec![], s: String::new() };
     let width = circuit.width;
     for (m, member) in circuit.members.iter().enumerate() {
       let function = &d.functions[member.function];
@@ -276,8 +319,21 @@ impl Unit<'_> {
         || member.writes.iter().any(|w| {
           w.column + 1 >= width || !bounded(&w.value, width, d.modulus)
         })
+        || !depth_bounded(&member.depth, width, d.modulus)
       {
         return Err("placement outside the circuit".into());
+      }
+      for slot in &member.depth.slots {
+        if let DepthSlotKind::Gap { limbs } = &slot.kind
+          && limbs.iter().map(|l| u64::from(l.width)).sum::<u64>() > 63
+        {
+          return Err("depth gap limbs wider than 63 bits".into());
+        }
+        if slot.callees.is_empty()
+          || slot.callees.iter().any(|c| d.function(c).is_none())
+        {
+          return Err("depth slot callee is not a function".into());
+        }
       }
       unit.function(m, function, member, width)?;
     }
@@ -288,8 +344,12 @@ impl Unit<'_> {
       circuit.name
     );
     s.push_str(PRELUDE);
-    let callees = unit.callees.len().max(1);
-    let _ = writeln!(s, "struct Slots {{ uint32_t v[{callees}]; }};\n");
+    let slots = (unit.callees.len() + unit.roms.len()).max(1);
+    let _ = writeln!(
+      s,
+      "struct Slots {{ uint32_t v[{slots}]; }};\nconstexpr uint32_t ROMS = {}u;\n",
+      unit.callees.len()
+    );
     s.push_str(&unit.s);
     let _ = writeln!(
       s,
@@ -309,7 +369,7 @@ impl Unit<'_> {
     for m in 0..circuit.members.len() {
       let _ = writeln!(
         s,
-        "case {m}: fill_{m}(f, circuit.callees, slots, index - f.first, index, row, error); break;"
+        "case {m}: fill_{m}(f, circuit.callees, slots, index - f.first - f.offset, index, row, error); break;"
       );
     }
     let _ = writeln!(
@@ -345,9 +405,16 @@ impl Unit<'_> {
        if (result != cudaSuccess) return int(result);\n\
        return int(cudaStreamSynchronize(stream));\n\
        }}",
-      count = unit.callees.len(),
+      count = unit.callees.len() + unit.roms.len(),
       members = circuit.members.len(),
     );
+    if s.len() > MAX_UNIT_BYTES {
+      return Err(format!(
+        "writer of {} KiB exceeds the {} KiB unit bound",
+        s.len() >> 10,
+        MAX_UNIT_BYTES >> 10
+      ));
+    }
     Ok(CompiledCircuit {
       name: circuit.name.clone(),
       members: circuit
@@ -356,10 +423,105 @@ impl Unit<'_> {
         .map(|m| d.functions[m.function].name.clone())
         .collect(),
       callees: unit.callees,
+      roms: unit.roms,
       symbol: symbol.to_owned(),
       file: format!("{symbol}.cu"),
       source: s,
     })
+  }
+
+  /// A member's depth section, after its selector: the checks and writes
+  /// of `fill_depth` in `population.cu`, in the same order, failing with the
+  /// same codes at kernel position zero.
+  fn depth(&mut self, depth: &DepthDescription, b: &mut String) {
+    if depth.is_empty() {
+      return;
+    }
+    let fail =
+      |code: &str| format!("fail(error, {code}, 0u, row_index); return;");
+    let _ =
+      writeln!(b, "const uint64_t depth = f.depths ? f.depths[query] : 0;");
+    if let Some(column) = depth.column {
+      let _ = writeln!(
+        b,
+        "if (!f.depths) {{ {} }}\nrow[{column}] = depth;",
+        fail("ERROR_MISSING_HEIGHT")
+      );
+    }
+    for slot in &depth.slots {
+      let key: Vec<String> = slot.args.iter().map(polynomial).collect();
+      let _ = writeln!(
+        b,
+        "if ({} == 1u) {{\n\
+         const uint64_t key[{n}] = {{{keys}}};\n\
+         const AiurCallee* callee = nullptr;\n\
+         int64_t found = -1;",
+        polynomial(&slot.enable),
+        n = key.len().max(1),
+        keys = if key.is_empty() { "0".to_owned() } else { key.join(", ") },
+      );
+      for name in &slot.callees {
+        let index = self.callee_slot(name);
+        let _ = writeln!(
+          b,
+          "if (found < 0) {{ callee = &callees[slots.v[{index}]]; \
+           found = find_query(*callee, key, {}u); }}",
+          key.len()
+        );
+      }
+      let _ = writeln!(
+        b,
+        "if (found < 0) {{ {} }}\n\
+         if (callee->multiplicities[found] == 0) {{ {} }}\n\
+         if (!callee->depths) {{ {} }}\n\
+         const uint64_t height = callee->depths[found];",
+        fail("ERROR_MISSING_CALLEE"),
+        fail("ERROR_PENDING_CALLEE"),
+        fail("ERROR_MISSING_HEIGHT"),
+      );
+      match &slot.kind {
+        DepthSlotKind::Exact => {
+          let _ = writeln!(
+            b,
+            "if (height + 1 != depth) {{ {} }}",
+            fail("ERROR_DEPTH_EXACT")
+          );
+        },
+        DepthSlotKind::External { column } => {
+          let _ = writeln!(b, "row[{column}] = height;");
+        },
+        DepthSlotKind::Gap { limbs } => {
+          let bits: u32 = limbs.iter().map(|l| l.width).sum();
+          let _ = writeln!(
+            b,
+            "if (depth <= height) {{ {gap} }}\n\
+             uint64_t rest = depth - 1 - height;\n\
+             if ((rest >> {bits}u) != 0) {{ {gap} }}",
+            gap = fail("ERROR_DEPTH_GAP"),
+          );
+          for limb in limbs {
+            let _ = writeln!(
+              b,
+              "row[{}] = rest & 0x{:x}ull;\nrest >>= {}u;",
+              limb.column,
+              (1u64 << limb.width) - 1,
+              limb.width
+            );
+          }
+        },
+      }
+      let _ = writeln!(b, "}}");
+    }
+  }
+
+  /// The index of ROM width `width` among the ROM slots, which follow the
+  /// callee slots (at `ROMS`).
+  fn rom_slot(&mut self, width: usize) -> usize {
+    if let Some(i) = self.roms.iter().position(|&w| w == width) {
+      return i;
+    }
+    self.roms.push(width);
+    self.roms.len() - 1
   }
 
   fn callee_slot(&mut self, name: &str) -> usize {
@@ -597,11 +759,44 @@ impl Unit<'_> {
           let key: Vec<String> = key.iter().map(|v| operand(*v)).collect();
           hint.emit(&key, &slots, &mut body, &fail("ERROR_HINT_DOMAIN"));
         },
-        NodeDescription::Store { .. } => {
-          return Err("reads the ROM (store)".into());
+        NodeDescription::Store { width, values } => {
+          if values.len() != *width || kernel.width != 1 {
+            return Err("store shape mismatch".into());
+          }
+          let slot = self.rom_slot(*width);
+          let key: Vec<String> = values.iter().map(|v| operand(*v)).collect();
+          let _ = writeln!(
+            body,
+            "const uint64_t key[{n}] = {{{keys}}};\n\
+             const AiurCallee& rom = callees[slots.v[ROMS + {slot}u]];\n\
+             const int64_t found = find_query(rom, key, {width}u);\n\
+             if (found < 0 || rom.outputs != 0u) {{ {missing} }}\n\
+             {target} = rom.ids ? rom.ids[found] : uint64_t(found);",
+            n = key.len().max(1),
+            keys = if key.is_empty() { "0".to_owned() } else { key.join(", ") },
+            missing = fail("ERROR_MISSING_STORE"),
+            target = slots[0],
+          );
         },
-        NodeDescription::Load { .. } => {
-          return Err("reads the ROM (load)".into());
+        NodeDescription::Load { width, address } => {
+          if kernel.width != *width {
+            return Err("load shape mismatch".into());
+          }
+          let slot = self.rom_slot(*width);
+          let _ = writeln!(
+            body,
+            "const AiurCallee& rom = callees[slots.v[ROMS + {slot}u]];\n\
+             if (rom.inputs != {width}u || rom.outputs != 0u) {{ {encoding} }}\n\
+             const int64_t found = find_cell(rom, {address});\n\
+             if (found < 0) {{ {missing} }}\n\
+             const uint64_t* cell = rom.rows + uint64_t(found) * rom.stride;",
+            address = operand(*address),
+            encoding = fail("ERROR_ENCODING"),
+            missing = fail("ERROR_MISSING_LOAD"),
+          );
+          for (i, slot) in slots.iter().enumerate() {
+            let _ = writeln!(body, "{slot} = cell[{i}];");
+          }
         },
       }
       match kernel.guard {
@@ -616,6 +811,7 @@ impl Unit<'_> {
       emit_writes(&mut b, &after[k + 1])?;
     }
     let _ = writeln!(b, "row[{}] = 1u;", member.selector);
+    self.depth(&member.depth, &mut b);
     for w in &member.writes {
       let _ = writeln!(b, "row[{}] = {};", w.column, polynomial(&w.value));
     }

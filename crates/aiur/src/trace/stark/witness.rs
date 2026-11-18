@@ -455,8 +455,8 @@ impl<B: WitnessField> Backend<'_, '_, B> {
       for (i, row) in cells.chunks_mut(width).enumerate() {
         let (function, query) = rows[batch * ROW_BATCH + i];
         let table = &record.queries.tables[function];
-        let output = table.output(query);
-        if output.multiplicity >= Val::ORDER_U64 {
+        let multiplicity = table.count(query);
+        if multiplicity >= Val::ORDER_U64 {
           return Err("function count reaches field characteristic".into());
         }
         let chip = self.plan.members[function];
@@ -466,7 +466,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           self.plan.fills[function]
             .fill_into(
               record,
-              (table.input(query), output),
+              (table, query),
               &mut worker.scratch,
               &mut worker.buffer,
               |column, value| {
@@ -485,7 +485,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           self.plan.fills[function]
             .fill(
               record,
-              (table.input(query), output),
+              (table, query),
               &mut worker.scratch,
               &mut worker.buffer,
               source,
@@ -506,7 +506,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
             row[column] = B::into_stark(value);
           }
         }
-        placement.finish(row, output.multiplicity);
+        placement.finish(row, multiplicity);
         if LOOKUPS {
           lookup_plan.fill(row, &[], worker, &mut lookups[i]);
         }
