@@ -8,9 +8,6 @@ the Blake3 package's `Blake3.Pure`), with nothing of the circuit, so a module th
 (the committed role data's codec) does not depend on the circuit's program. `L1.Hashed` uses them
 for the loaders' addresses. -/
 
-set_option linter.unusedTactic false
-set_option linter.unreachableTactic false
-
 namespace IxVM.Refinement.L1
 
 /-- The address with these 32 bytes. -/
