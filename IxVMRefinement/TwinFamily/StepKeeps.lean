@@ -9,8 +9,8 @@ import IxVMRefinement.L1.Hashed
 The twin's unit step (`unitStepTwin_of_installed`) takes the keeping of the prefix invariant and
 of the clause beside it across IxC's twin record (`TwinStepKeeps`). This module proves it at
 the fold's clause (`FoldExtra`), from the role and record companions of the scoped core after
-the step (which the target gives) and one fact about the step's new constants that the twin
-record does not carry: each new constant at the key of an address reloads as itself
+the step and one fact about the step's new constants that the twin record does not carry, both
+of which the target gives: each new constant at the key of an address reloads as itself
 (`Decl.ReloadsAs`).
 
 Everything else is the twin record's: the arity of the stored terms (`twinKeepsStoreAr`,
@@ -272,21 +272,14 @@ end Clause
 
 /-! ## The keeping the twin's step takes -/
 
-/-- **The keeping of the fold's clause across the twin record**, from,
-at every environment the twin's step is handed, the reload of each new constant at the key of
-an address (the companions after the step are the target's). -/
+/-- **The keeping of the fold's clause across the twin record** (the companions after the step
+and the reload of each new constant at the key of an address are the target's). -/
 theorem twinStepKeeps_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hL : LinkLaws L) {t : Ix.Kernel.RoleTable}
     {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} {lim : Option Nat} {A : _root_.Address}
-    {c : Ixon.Constant} (hsz : ∀ x, ConstAddrOf A c x → x.hash.size = 32)
-    (hreload : ∀ (env env₂ : Ix.Kernel.Env .anon) (blk : List (ConstantInfo .anon)),
-      Decl.PrefixInv.{u} E t lim env → TwinDeclReads t E₀ A c blk →
-      DeclRecTwinRunJ twinPosRulesJ env blk env₂ →
-      (∀ ci ∈ blk, ∃ c', env₂.find? ci.name = some c' ∧ StoredAs c' ci) →
-      ∀ ci, env₂.find? ci.name = some ci → env.find? ci.name = none →
-        ∀ x, ci.name = keyOf t x → Decl.ReloadsAs E t env₂ ci) :
+    {c : Ixon.Constant} (hsz : ∀ x, ConstAddrOf A c x → x.hash.size = 32) :
     TwinStepKeeps.{u} (FoldExtra.{u} L t E) t envT E₀ E lim A c := by
-  intro env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp
+  intro env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp hrel
   obtain ⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩ := hX
   have hC : FoldClauseWith.{u} L t E lim env Reg :=
     FoldClauseWith.of_prefix hinv hR hkeys haux hlv
@@ -296,7 +289,7 @@ theorem twinStepKeeps_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon →
     exact ⟨x, hn, hsz x hx⟩
   have hC' : FoldClauseWith.{u} L t E lim env₂ Reg :=
     foldClauseWith_twinStep hL hC hrun hkeyed (twinKeepsStoreAr env env₂ blk hrun hC.storeArR)
-      hcomp (hreload env env₂ blk hinv hreads hrun hstored)
+      hcomp hrel
   exact ⟨hC'.prefixInv, hC'.extra⟩
 
 /-- **A constant address of a block record is the key of a 32-byte address**: it is the BLAKE3
