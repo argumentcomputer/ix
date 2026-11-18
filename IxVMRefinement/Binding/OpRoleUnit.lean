@@ -83,7 +83,8 @@ def OpValidationFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
             (.defnInfo ⟨.role r, [], ty⟩ val hint)
 
 /-- **`OpValidationFacts` with the closure's coverage handed**: the same facts, at every store
-and environment after the closure that also satisfy `WalkedStored`. -/
+and environment after the closure that also satisfy `WalkedStored` and hold the store before
+the group (`StoreLe R R₁`, so that the operation's record is new). -/
 def OpValidationFactsW (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
     (calls : List (Call F)) : Prop :=
   ∀ (t : Ix.Kernel.RoleTable) (ρ : BRun) (Rs : Nat → Ixon.Env),
@@ -92,7 +93,7 @@ def OpValidationFactsW (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
       (env₁ : Ix.Kernel.Env .anon),
       6 ≤ g → g < 77 → roleGroup g = [r] → r ∈ RoleOps.opRoles → t.addressOf? r = some a →
       Admits ρ t g R R' → AdmitsReads ρ t R R' → BndOver.{u} L t (· < g) R₁ env₁ →
-      AddsAt R₁ R' a → WalkedStored ρ t (· < g) R₁ env₁ →
+      AddsAt R₁ R' a → StoreLe R R₁ → WalkedStored ρ t (· < g) R₁ env₁ →
       ∃ (ty₀ val₀ ty val tyD valD : Core.KExpr) (hint : Ix.Kernel.ReducibilityHint),
         RoleOps.OpChecked env₁ (.role r) ty₀ val₀ ty val ∧
         Annotates ty tyD ∧ Annotates val valD ∧
