@@ -79,13 +79,13 @@ private def recordShape (env : Ixon.Env) : IO Bool := do
 
 /-- The functions whose observations the block's unit step inverts: the member's load and
 check, the dispatch on the block, the result-sort walk, the test for a syntactic telescope, the
-telescope builder, the head reduction it calls, the check of the built telescope and its
+head reduction the telescope builder calls, the check of the built telescope and its
 conversion with the declared type, the former's guard and the constructor loop. -/
 private def inverted : List String :=
   ["Ingress::get_ci", "KernelCheck::check_const", "KernelModeled::block_is_modeled",
     "KernelCheck::check_inductive_shape", "KernelCheck::get_result_sort_level",
     "KernelCheck::former_is_tele", "KernelCheck::former_tele_typed",
-    "KernelCheck::former_tele_at", "KernelGuard::head", "KernelCheck::validate_expr_well_scoped",
+    "KernelGuard::head", "KernelCheck::validate_expr_well_scoped",
     "KernelInfer::k_ensure_sort", "KernelDefEq::k_is_def_eq", "KernelCheck::former_decl_ok",
     "KernelCheck::check_inductive_shape_ctors"]
 
