@@ -137,7 +137,9 @@ fact about the run at the group (its producer is named in the lane's notes):
 * `notInert`, `needOk`: no reference a plain unit of the group (`PlainUnitAt`) uses is the
   address of an inert axiom, and every one is a reference a step needs stored (`NeedOk`);
 * `literals`: the key of the member of a plain unit that is a block of one inductive type is none
-  of the four literal functions' keys. -/
+  of the four literal functions' keys;
+* `famNotInert`, `famNeedOk`: the same two facts of the references a new block with a selected
+  family record uses. -/
 structure ClosureRunFacts (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : Ixon.Env)
     (famOf : _root_.Address → Option _root_.Address)
     (adv : _root_.Address → _root_.Address → Prop) : Prop where
@@ -190,6 +192,20 @@ structure ClosureRunFacts (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' 
     keyOf t (memberAddr A 0 (.indc ind)) ≠ Ix.Kernel.listNilName ∧
     keyOf t (memberAddr A 0 (.indc ind)) ≠ Ix.Kernel.listConsName ∧
     keyOf t (memberAddr A 0 (.indc ind)) ≠ Ix.Kernel.charOfNatName
+  /-- No reference the block of a selected family record uses, the block new in the group, is an
+  inert axiom's. Producer: the group's walk at the block, a new walked unit checked at the group's
+  validation limit (`FamilyAdmits.checked`; the block is claimed by no block):
+  `KernelRoles::assert_ref_allowed` admits a reference bound to an inert role whose group is at or
+  above the group's validation limit (`Claim.refAllowed_inert`), and such a reference is excluded
+  by `KernelCheck::check_const`'s axiom arm with the inert role's own validation, as for
+  `notInert`. -/
+  famNotInert : ∀ B rb x, famOf B = some rb → New R R' B → UsedRef ρ.E₀ B x → ¬ InertAt t x
+  /-- Every reference the block of a selected family record uses, the block new in the group, is
+  one a step needs stored: a record of the run's store, no block, in Lean's logic with its block.
+  Producer: the group's walk at the block, a new walked unit checked at the group's validation
+  limit (`KernelClaim::assert_not_block_ref`, `KernelClaim::assert_safe_used_refs`), as for
+  `needOk`. -/
+  famNeedOk : ∀ B rb x, famOf B = some rb → New R R' B → UsedRef ρ.E₀ B x → NeedOk ρ.E₀ x
 
 /-- **What the run gives at group `g` beside the admission and `FamilyAdmits`**: the family
 checks at one binding and the run facts. The family form's `Fam`. -/
