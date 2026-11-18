@@ -223,10 +223,10 @@ theorem spineHead_mono (c : Ixon.Constant) :
     | zero => rfl
     | succ m =>
       simp only [spineHead] at hna ⊢
-      cases hn : node c e with
-      | app f a => exact absurd hn (hna f a)
-      | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | lam _ _ | all _ _
-      | letE _ _ _ _ _ | share _ => rfl
+      try (cases hn : node c e with
+        | app f a => exact absurd hn (hna f a)
+        | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | lam _ _ | all _ _
+        | letE _ _ _ _ _ | share _ => rfl)
   | succ n ih =>
     intro m e hna hle
     obtain ⟨m, rfl⟩ : ∃ m', m = m' + 1 := ⟨m - 1, by omega⟩
@@ -294,7 +294,7 @@ theorem motiveCarrierAt_mono {c : Ixon.Constant} {r : Ixon.Recursor} {i n m : Na
       | some d =>
         have hl' : lastDom c m mm = some d := lastDom_mono c d n m mm hl hle
         simp [hp, hd, hl] at h
-        simp [hp, hd, hl']
+        simp [hd, hl']
         exact refHeadAt_mono h hle
 
 /-- **`majorHeadAt` answers the same at every larger fuel.** -/
@@ -310,7 +310,7 @@ theorem majorHeadAt_mono {c : Ixon.Constant} {r : Ixon.Recursor} {n m : Nat}
     | none => simp [hp, hd] at h
     | some d =>
       simp [hp, hd] at h
-      simp [hp, hd]
+      simp [hd]
       exact refHeadAt_mono h hle
 
 /-- **The carrier read at two fuels is one.** -/
