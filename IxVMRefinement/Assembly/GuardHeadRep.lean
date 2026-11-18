@@ -71,8 +71,9 @@ theorem definition_value_rep {c : ScopedCtx} (hc : ScopedCoreFacts c)
     ∃ E, Tm c.κ d Γ h' 0 E r :=
   definition_value_rep_base hc.base hg ha hr hp ev
 
-/-- The declared-type branch has the same weak representation guarantee. -/
-theorem declared_type_rep {c : ScopedCtx} (hc : ScopedCoreFacts c)
+/-- The declared-type branch has the same weak representation guarantee, from the facts stated
+before the registry. -/
+theorem declared_type_rep_base {c : ScopedCtx} (hc : ScopedCoreBase c)
     {d : Nat} {Γ : Nat → KExpr} {a : Bytes.Address} {ps : List KLevel}
     {ap params r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hg : CoreGood c cs) (ha : Bytes.RepAddressRef addrTy h a ap)
@@ -85,7 +86,7 @@ theorem declared_type_rep {c : ScopedCtx} (hc : ScopedCoreFacts c)
     have hsub : ∀ cl ∈ loads, cl ∈ cs := by intro cl hm; rw [allCalls]; simp [hm]
     have hallow : c.allowed ⟨"Ingress::get_ci", [ap], h⟩ :=
       hg.allAllowed _ (by rw [allCalls]; simp)
-    obtain ⟨ci, -, ptr⟩ := get_ci_step c hc.base load ap a rfl hallow hr (hg.sub hsub) ha
+    obtain ⟨ci, -, ptr⟩ := get_ci_step c hc load ap a rfl hallow hr (hg.sub hsub) ha
     obtain ⟨v, hv, hci⟩ := ptr
     rw [ld] at hv
     have he := Except.ok.inj hv
@@ -94,6 +95,16 @@ theorem declared_type_rep {c : ScopedCtx} (hc : ScopedCoreFacts c)
     have hty := const_type_rep (hci.mono ext) ty
     exact expr_inst_raw_rep (hty d Γ)
       (hp.mono (load.heap_extends.trans (ext.trans ty.heap_extends))) inst
+
+/-- The declared-type branch has the same weak representation guarantee. -/
+theorem declared_type_rep {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {d : Nat} {Γ : Nat → KExpr} {a : Bytes.Address} {ps : List KLevel}
+    {ap params r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hg : CoreGood c cs) (ha : Bytes.RepAddressRef addrTy h a ap)
+    (hr : c.κ (ixAddr a) ≠ unresolvedKey) (hp : RepKLevelList h ps params)
+    (ev : ObsFn W "KernelGuard::declared_type" [ap, params] h r h' cs) :
+    ∃ E, Tm c.κ d Γ h' 0 E r :=
+  declared_type_rep_base hc.base hg ha hr hp ev
 
 /-- Rigid heads which the classifier returns without further normalization. -/
 def rigidHead : KExpr → Bool
