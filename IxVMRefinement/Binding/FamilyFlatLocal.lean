@@ -449,9 +449,9 @@ theorem addBlockMembers_entryAt {sp : List (Ix.Kernel.Expr .anon)} {us : List Ix
     simp only [addBlockMembers]
     apply ih _ (fun m' hm' => hms m' (List.mem_cons_of_mem _ hm'))
     by_cases hin : auxEntryIn acc m sp us = true
-    · rw [if_pos hin]
+    · rw [ite_eq_left hin]
       exact hacc
-    · rw [if_neg hin]
+    · rw [ite_eq_right hin]
       intro x hx
       rcases List.mem_append.mp hx with hx | hx
       · exact hacc x hx
@@ -829,11 +829,9 @@ theorem indInfoAt_of_iPrj {E : Ixon.Env} {a : _root_.Address} {c cb : Ixon.Const
 
 theorem indInfoAt_of_not_iPrj {E : Ixon.Env} {a : _root_.Address} {c : Ixon.Constant}
     (hc : recordOf E a = some c) (hn : ∀ p, c.info ≠ .iPrj p) : indInfoAt E a = some none := by
-  unfold indInfoAt
-  simp only [hc]
   cases hci : c.info with
   | iPrj p => exact absurd hci (hn p)
-  | _ => rfl
+  | _ => simp only [indInfoAt, hc, hci]
 
 theorem ctorTypeAt_inv {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {b : _root_.Address}
     {i c : Nat} {x : Ix.Kernel.Expr .anon} (h : ctorTypeAt t E b i c = some x) :
