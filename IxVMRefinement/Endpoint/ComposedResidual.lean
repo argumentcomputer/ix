@@ -1,5 +1,5 @@
 import Ix.IxVM.Consistency.L0
-import IxVMRefinement.Binding.ClauseFold
+import IxVMRefinement.Binding.RunPredicate
 import IxVMRefinement.Claim.TopSafeExport
 import IxVMRefinement.Assembly.NativeAliasFormer
 import IxVMRefinement.Assembly.TypingDefnBlock
@@ -362,21 +362,21 @@ guard at the raised limits. The other nine are the typing half's, for a top-walk
 each remaining kind: its step, and for a standalone recursor the check's output at a native
 parent's registered family and the step where no native parent heads its major premise. -/
 theorem circuitComposed_residual
-    {Run : List (Call F) → Ix.Kernel.RoleTable → BRun → (Nat → Ixon.Env) → Prop}
     (bindingClaimExport :
-      SourceSoundBounded fun calls d => BindingClaimExportObs (Run calls) calls d)
-    (basisGroups : ∀ calls, BasisOver.{u} FormerOpenTraceAt (Run calls))
-    (groupAdmissions : ∀ calls, AdmitsChain (Run calls))
-    (groupAdmissionReads : ∀ calls, AdmitsReadsChain (Run calls))
-    (groupClosure : ∀ calls, AtGroups (Run calls) (ClosureStepOver.{u} FormerOpenTraceAt))
+      SourceSoundBounded fun calls d => BindingClaimExportObs (BindingRun calls) calls d)
+    (groupClosure :
+      ∀ calls, AtGroups (BindingRun calls) (ClosureStepOver.{u} FormerOpenTraceAt))
     (groupWithoutRoleUnit :
-      ∀ calls, AtGroups (Run calls) (RoleFreeShapes.{u} FormerOpenTraceAt))
+      ∀ calls, AtGroups (BindingRun calls) (RoleFreeShapes.{u} FormerOpenTraceAt))
     (operationRoleUnit : ∀ calls,
-      AtGroups (Run calls) (RoleUnitStepOver.{u} (· ∈ RoleOps.opRoles) FormerOpenTraceAt))
+      AtGroups (BindingRun calls)
+        (RoleUnitStepOver.{u} (· ∈ RoleOps.opRoles) FormerOpenTraceAt))
     (standardAxiomRoleUnit : ∀ calls,
-      AtGroups (Run calls) (RoleUnitStepOver.{u} (· ∈ standardAxioms) FormerOpenTraceAt))
+      AtGroups (BindingRun calls)
+        (RoleUnitStepOver.{u} (· ∈ standardAxioms) FormerOpenTraceAt))
     (raisedLimitGuard : ∀ calls,
-      AtGroups (Run calls) (fun _ t g => RaisedLimitGuard.{u} FormerOpenTraceAt t g))
+      AtGroups (BindingRun calls)
+        (fun _ t g => RaisedLimitGuard.{u} FormerOpenTraceAt t g))
     (standaloneTheoremOrOpaque :
       WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun _ _ _ _ c =>
         ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind ≠ .defn)
@@ -415,7 +415,9 @@ theorem circuitComposed_residual
         ∃ ms : Array Ixon.MutConst, c.info = .muts ms ∧ ¬ DefnBlock ms ∧
           ∀ ind : Ixon.Inductive, ms ≠ #[.indc ind]) :
     CircuitComposed.{u} :=
-  circuitComposed_of_parts bindingClaimExport basisGroups groupAdmissions groupAdmissionReads
+  circuitComposed_of_parts bindingClaimExport
+    (fun calls => basisOver_bindingRun FormerOpenTraceAt calls) admitsChain_bindingRun
+    admitsReadsChain_bindingRun
     groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit raisedLimitGuard
     (standaloneDefinition_foldExtra linkLaws_formerOpenTrace)
     standaloneTheoremOrOpaque
