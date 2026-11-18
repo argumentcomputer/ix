@@ -171,7 +171,6 @@ structure TwinPartsFacts (t : Ix.Kernel.RoleTable) (env : Ix.Kernel.Env .anon)
     (rb : _root_.Address) (crb : Ixon.Constant) (recon : _root_.Address → KExpr × List KExpr)
     (blk : List (ConstantInfo .anon)) (ws : List (TwinRecPart .anon))
     (f : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon) : Prop where
-  nonempty : ws ≠ []
   block : blk = ws.map (fun w => .recInfo w.cvW w.mI w.rP w.rulesW)
   names : ((twinRecs ws ++ twinModels ws).map (·.name)).Nodup
   fresh : ∀ ci ∈ twinRecs ws ++ twinModels ws, env.find? ci.name = none
@@ -197,7 +196,7 @@ theorem twinTarget_of_facts {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim : Opti
     {env : Ix.Kernel.Env .anon} {rb : _root_.Address} {crb : Ixon.Constant}
     {recon : _root_.Address → KExpr × List KExpr} {blk : List (ConstantInfo .anon)}
     {ws : List (TwinRecPart .anon)}
-    (hF : TwinPartsFacts t env rb crb recon blk ws (Decl.twinPeerRename ws))
+    (hF : TwinPartsFacts t env rb crb recon blk ws (Decl.twinPeerRename ws)) (hblk : blk ≠ [])
     (hinst : FamilyInstalled t env rb crb)
     (hform : CanonReconForm t env rb crb recon)
     (hcomp : Decl.CoreCompanions ⟨E, env, t, lim⟩) :
@@ -233,7 +232,8 @@ theorem twinTarget_of_facts {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim : Opti
     exact h
   have hrun : DeclRecTwinRunJ twinPosRulesJ env blk
       ⟨twinRecs ws ++ (twinModels ws ++ env.consts)⟩ := by
-    refine ⟨ws, Decl.twinPeerRename ws, hF.nonempty, hF.block, rfl, hF.names, hF.fresh,
+    have hne : ws ≠ [] := fun h => hblk (by rw [hF.block, h, List.map_nil])
+    refine ⟨ws, Decl.twinPeerRename ws, hne, hF.block, rfl, hF.names, hF.fresh,
       Decl.twinPeerRename_spec ws, fun w hw => ?_⟩
     obtain ⟨cvm, mval, hint, hfm, hm⟩ := hmod w hw
     obtain ⟨x, hb, hty, hrls⟩ := hrec w hw
@@ -318,8 +318,13 @@ theorem twinStepTarget_of_facts {recon : _root_.Address → KExpr × List KExpr}
     hne hcall hroute hinv href hinst hform hinert hfresh hkey
   obtain ⟨blk, ws, hreads, hF⟩ := hseam calls bAddr t E₀ E env B rb rb' cb crb crb' ms rs'
     lim cs ht hRS hSS hB hrb' hsz hne hcall hroute hinv href hinst hinert hfresh hkey
+  -- the record has a member, whose constant address the block reads
+  have hblk : blk ≠ [] := by
+    obtain ⟨m, hm⟩ : ∃ m, rs'[0]? = some m := ⟨rs'[0], by simp [Nat.pos_of_ne_zero hsz]⟩
+    obtain ⟨ci, hci, -⟩ := hreads.2.2 _ (Or.inr ⟨rs', 0, m, hrb'.muts, hm, Or.inl rfl⟩)
+    exact List.ne_nil_of_mem hci
   obtain ⟨env₂, hrun, hstored, hmodel, hcomp⟩ :=
-    twinTarget_of_facts (E := E) (lim := lim) hF hinst hform hinv.companions
+    twinTarget_of_facts (E := E) (lim := lim) hF hblk hinst hform hinv.companions
   exact ⟨blk, env₂, hreads, hrun, hstored, hmodel, hcomp⟩
 
 end IxVM.Refinement.Typing.TwinFamily
