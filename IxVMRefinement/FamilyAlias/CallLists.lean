@@ -95,12 +95,14 @@ def ctorAddrsFrom (B : _root_.Address) : List Ixon.MutConst → Nat → List _ro
   | _ :: rest, p => ctorAddrsFrom B rest (p + 1)
 
 /-- **`KernelModeled::block_ctor_addrs`**: the constructor addresses of the block's members from
-position `p` on (`ctorAddrsFrom`). The members are read as the block's load represents them. -/
+position `p` on (`ctorAddrsFrom`). The members are read as the block's load represents them; the
+bounds hold at a loaded record, whose resource size is below `2^33` (`Claim.BlockLoad.record`,
+`Claim.muts_size_le`, `Claim.ctors_size_le`). -/
 theorem block_ctor_addrs_spec {c : Ctx} {b : Bytes.Address} {xb : SourceValue F} :
     ∀ (ms : List Ixon.MutConst) (p : Nat) {x_members r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
-      p + ms.length < 4294967296 →
-      (∀ ind, Ixon.MutConst.indc ind ∈ ms → ind.ctors.size < 4294967296) →
+      p + ms.length < 1099511627776 →
+      (∀ ind, Ixon.MutConst.indc ind ∈ ms → ind.ctors.size < 1099511627776) →
       Good c cs → Bytes.RepAddressRef addrTy h b xb →
       RepList L1.mutConstListEnum L1.RepMutConst h ms x_members →
       ObsFn W "KernelModeled::block_ctor_addrs" [x_members, xb, .field (p : F)] h r h' cs →
@@ -155,7 +157,7 @@ theorem block_ctor_addrs_spec {c : Ctx} {b : Bytes.Address} {xb : SourceValue F}
         obtain ⟨hv140, hm157⟩ := Lib.Lists.length_spec e1' hl'
         subst hv140
         subst m157
-        have hsz0 : ind.ctors.size < 4294967296 := hsz ind (List.mem_cons_self ..)
+        have hsz0 : ind.ctors.size < 1099511627776 := hsz ind (List.mem_cons_self ..)
         have hlen : ind.ctors.toList.length = ind.ctors.size := Array.length_toList
         have hpv : ZMod.val (p : F) = p := SubstAux.val_natCast (by simp at hp; omega)
         have e2' : ObsFn W "KernelModeled::member_ctor_addrs"
