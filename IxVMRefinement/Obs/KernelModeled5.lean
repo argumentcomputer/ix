@@ -17,6 +17,99 @@ namespace IxVM.Refinement.Obs
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 
+/-- The evaluation paths of `KernelModeled::inst_params`: one constructor per combination of selected arms. -/
+inductive «KernelModeled::inst_params».Path (x_e x_pins : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Nil
+      (ld12 : loadValue h x_pins = .ok (.construct Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []))
+      (he21 : r = x_e)
+      (he22 : h' = h)
+      (hc23 : calls = [])
+  | Cons
+      (x_p : SourceValue F) (x_rest : SourceValue F) (w60 : SourceValue F) (x_b : SourceValue F) (w61 : SourceValue F) (cs80 : List (Call F)) (v83 : SourceValue F) (m86 : Heap F) (cs94 : List (Call F))
+      (ld12 : loadValue h x_pins = .ok (.construct Names.«Lists::Node<&KernelTypes::KExprNode>» "Cons" [x_p, x_rest]))
+      (ld52 : loadValue h x_e = .ok (.construct "KernelTypes::KExprNode" "Forall" [w60, x_b, w61]))
+      (ev96 : ObsFn W "KernelSubst::expr_inst1" [x_b, x_p, (.field 0)] h v83 m86 cs94)
+      (ev82 : ObsFn W "KernelModeled::inst_params" [v83, x_rest] m86 r h' cs80)
+      (hc127 : calls = ((⟨"KernelSubst::expr_inst1", [x_b, x_p, (.field 0)], h⟩ : Call F) :: (cs94 ++ ((⟨"KernelModeled::inst_params", [v83, x_rest], m86⟩ : Call F) :: cs80))))
+
+/-- **Every observed derivation of `KernelModeled::inst_params` takes one of its paths.** -/
+theorem «KernelModeled::inst_params».obs {x_e x_pins : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "KernelModeled::inst_params" [x_e, x_pins] h r h' calls) :
+    «KernelModeled::inst_params».Path x_e x_pins h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelModeled.inst_params.lookup
+    (by simp [IxVM.KernelModeled.inst_params, ControlLower.hasControl]) ev
+  simp only [IxVM.KernelModeled.inst_params] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨p10, d11, ld12⟩ := d7.load_inv
+  obtain ⟨l13, rfl, rfl⟩ := d11.var_inv
+  simp at l13
+  subst l13
+  rcases selectArm_cons_inv sel8 with ⟨mt14, rfl⟩ | ⟨nm15, sel16⟩
+  · obtain ⟨vs17, hv18, -, ml19⟩ := matchPattern_construct_inv mt14
+    rw [Names.n9644275015669645019] at hv18
+    subst hv18
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml19
+    obtain ⟨l20, rfl, rfl⟩ := d9.var_inv
+    simp at l20
+    subst l20
+    exact «KernelModeled::inst_params».Path.Nil ld12 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne24 := matchPattern_construct_none (by trivial) nm15
+    simp only [Names.n9644275015669645019] at hne24
+    rcases selectArm_cons_inv sel16 with ⟨mt25, rfl⟩ | ⟨nm26, sel27⟩
+    · obtain ⟨vs28, hv29, -, ml30⟩ := matchPattern_construct_inv mt25
+      rw [Names.n9644275015669645019] at hv29
+      subst hv29
+      obtain ⟨x_p, vs31, b32, b33, rfl, mt34, ml35, rfl⟩ := matchListWith_cons_inv ml30
+      obtain rfl := matchPattern_bind_inv mt34
+      obtain ⟨x_rest, vs36, b37, b38, rfl, mt39, ml40, rfl⟩ := matchListWith_cons_inv ml35
+      obtain rfl := matchPattern_bind_inv mt39
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml40
+      obtain ⟨v41, m42, bs43, body44, c45, c46, d47, sel48, d49, rfl⟩ := d9.matchValue_inv
+      obtain ⟨p50, d51, ld52⟩ := d47.load_inv
+      obtain ⟨l53, rfl, rfl⟩ := d51.var_inv
+      simp at l53
+      subst l53
+      rcases selectArm_cons_inv sel48 with ⟨mt54, rfl⟩ | ⟨nm55, sel56⟩
+      · obtain ⟨vs57, hv58, -, ml59⟩ := matchPattern_construct_inv mt54
+        rw [Names.n14861064886094815840] at hv58
+        subst hv58
+        obtain ⟨w60, vs62, b63, b64, rfl, mt65, ml66, rfl⟩ := matchListWith_cons_inv ml59
+        obtain rfl := matchPattern_wildcard_inv mt65
+        obtain ⟨x_b, vs67, b68, b69, rfl, mt70, ml71, rfl⟩ := matchListWith_cons_inv ml66
+        obtain rfl := matchPattern_bind_inv mt70
+        obtain ⟨w61, vs72, b73, b74, rfl, mt75, ml76, rfl⟩ := matchListWith_cons_inv ml71
+        obtain rfl := matchPattern_wildcard_inv mt75
+        obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml76
+        obtain ⟨vs77, m78, c79, cs80, a81, ev82, rfl⟩ := d49.call_inv
+        rw [instanceName_plain_some] at ev82
+        obtain ⟨v83, vs85, m86, c87, c88, rfl, d89, a90, rfl⟩ := a81.cons_inv
+        obtain ⟨vs91, m92, c93, cs94, a95, ev96, rfl⟩ := d89.call_inv
+        rw [instanceName_plain_some] at ev96
+        obtain ⟨v97, vs100, m101, c102, c103, rfl, d104, a105, rfl⟩ := a95.cons_inv
+        obtain ⟨l106, rfl, rfl⟩ := d104.var_inv
+        simp at l106
+        subst l106
+        obtain ⟨v98, vs107, m108, c109, c110, rfl, d111, a112, rfl⟩ := a105.cons_inv
+        obtain ⟨l113, rfl, rfl⟩ := d111.var_inv
+        simp at l113
+        subst l113
+        obtain ⟨v99, vs114, m115, c116, c117, rfl, d118, a119, rfl⟩ := a112.cons_inv
+        obtain ⟨rfl, rfl, rfl⟩ := d118.literal_inv
+        obtain ⟨rfl, rfl, rfl⟩ := a119.nil_inv
+        obtain ⟨v84, vs120, m121, c122, c123, rfl, d124, a125, rfl⟩ := a90.cons_inv
+        obtain ⟨l126, rfl, rfl⟩ := d124.var_inv
+        simp at l126
+        subst l126
+        obtain ⟨rfl, rfl, rfl⟩ := a125.nil_inv
+        exact «KernelModeled::inst_params».Path.Cons _ _ _ _ _ _ _ _ _ ld12 ld52 ev96 ev82 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · have hne128 := matchPattern_construct_none (by trivial) nm55
+        simp only [Names.n14861064886094815840] at hne128
+        exact (selectArm_nil_inv sel56).elim
+    · have hne129 := matchPattern_construct_none (by trivial) nm26
+      simp only [Names.n9644275015669645019] at hne129
+      exact (selectArm_nil_inv sel27).elim
+
 /-- The evaluation paths of `KernelModeled::inst_params_typed`: one constructor per combination of selected arms. -/
 inductive «KernelModeled::inst_params_typed».Path (x_rc x_e x_pins x_ctx : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
