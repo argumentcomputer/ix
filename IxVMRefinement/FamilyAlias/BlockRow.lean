@@ -117,10 +117,14 @@ structure FamilyBlockCircuit (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       StoredAs c' ci) →
     ∀ cv mI rP rls, ConstantInfo.recInfo cv mI rP rls ∈ new →
       RecCompanionFacts ⟨E, ⟨new ++ env.consts⟩, t, lim⟩ cv mI rP rls
-  /-- The load facts that reach the step's new constants. -/
+  /-- The load facts that reach the step's new constants, at an environment that extends the
+  witness's and is handed what the two records use. -/
   loads : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
     (aliases blk new : List (ConstantInfo .anon)),
-    Decl.PrefixInv.{u} E t lim env → AliasGroup env h aliases →
+    Decl.PrefixInv.{u} E t lim env → (∀ ci ∈ envT.consts, ci ∈ env.consts) →
+    (∀ x, UsedRef E₀ A x ∨ UsedRef E₀ rb x →
+      (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x) →
+    AliasGroup env h aliases →
     FamDeclReads t E₀ A c rb crb blk →
     DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
     (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧

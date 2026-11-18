@@ -10,9 +10,11 @@ import IxVMRefinement.Assembly.TypingBasisProj
 circuit side's facts that read the family check (`FamilyBlockCheckRow`): the seam, the
 companion facts of each recursor the step stores, and the seam of the loads
 (`FamilyMembersCanon`: each new constant stored in the canonical annotated form the circuit
-loads, and the references the two records use stored). The fourteen load facts at the step's
-new constants are `FamLoadCtx.newLoads`, from that seam, the store, the records, the route fact
-and the walk's check of the block (`famLoadCtx_of_step`). The other two facts
+loads, and the references the family record uses stored). The fourteen load facts at the step's
+new constants are `FamLoadCtx.newLoads`, from that seam, the store, the records, the route fact,
+the walk's check of the block (`famLoadCtx_of_step`) and the references the block uses stored
+(`famUsedStored`: the walk's inert clause and `NeedOk` at the block, the covered references
+stored by the witness, and the step's need hypothesis). The other two facts
 `familyBlockRow_of_circuit` takes from the circuit side are proved at the row:
 
 * `famBlockRecord_of_run`: the block's record is a block of inductives with its member and
@@ -362,6 +364,56 @@ theorem constVal_eta {cv : ConstantVal .anon} {n : Ix.Kernel.Key .anon}
   subst hn hl
   rfl
 
+/-- **Every constant address of the two records is stored after the step**: it is the key of a
+member of the family's declaration, which the step stores. -/
+theorem famFound_of_step {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {A rb : _root_.Address}
+    {c crb : Ixon.Constant} {blk new : List (ConstantInfo .anon)} {env : Ix.Kernel.Env .anon}
+    (hreads : FamDeclReads t E₀ A c rb crb blk)
+    (hst : ∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
+      StoredAs c' ci) :
+    ∀ x, FamAddr A c rb crb x →
+      ∃ ci, (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? (keyOf t x) = some ci := by
+  intro x hx
+  obtain ⟨ci, hci, hk⟩ := hreads.2.2.1 x hx
+  obtain ⟨c', hc', -⟩ := hst ci hci
+  rw [hk] at hc'
+  exact ⟨c', hc'⟩
+
+/-- **The references the block uses are stored after the family step**, from the walk's facts at
+the block: no used reference is an inert axiom's (`InertClause`); a used reference that is not
+covered is `NeedOk` (`Claim.TopWalk.need`), so the step's need hypothesis hands it stored or a
+constant address of the two records, which the step stores; a covered one is stored by the
+witness's environment (`covered_stored`), which the step's environment extends. -/
+theorem famUsedStored {t : Ix.Kernel.RoleTable} {R E₀ : Ixon.Env}
+    {envT env : Ix.Kernel.Env .anon} {A rb : _root_.Address} {c crb : Ixon.Constant}
+    {new : List (ConstantInfo .anon)}
+    (hshape : TableShape.{u} t (fun _ => True) R envT) (htwf : t.wf = true)
+    (hc : recordOf E₀ A = some c) (hinert : InertClause t c)
+    (hneed : ∀ i ∈ usedRefIdxs c, ∀ x, c.refs.toList[i]? = some x →
+      inertKey (keyOf t x) = false → ¬ Covered t x → NeedOk E₀ x)
+    (hextT : ∀ ci ∈ envT.consts, ci ∈ env.consts)
+    (hrefs : ∀ x, UsedRef E₀ A x ∨ UsedRef E₀ rb x →
+      (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x)
+    (hfound : ∀ x, FamAddr A c rb crb x →
+      ∃ ci, (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? (keyOf t x) = some ci) :
+    Decl.UsedRefsStored t ⟨new ++ env.consts⟩ c := by
+  intro i hi x hx
+  have hold : (env.find? (keyOf t x)).isSome = true →
+      ∃ ci, (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? (keyOf t x) = some ci := by
+    intro hs
+    obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hs
+    obtain ⟨hmem, hname⟩ := find?_mem_name hci
+    have hs' := find?_isSome_of_mem (E := ⟨new ++ env.consts⟩) (List.mem_append_right new hmem)
+    rw [hname] at hs'
+    exact Option.isSome_iff_exists.mp hs'
+  by_cases hcov : Covered t x
+  · obtain ⟨ci, hci, hname⟩ := covered_stored hshape htwf hcov
+    exact hold (find_isSome_of_storedAt ⟨ci, hextT ci hci, hname⟩)
+  · rcases hrefs x (Or.inl (usedRef_of_idx hc hi hx)) with hs | hf | hn
+    · exact hold hs
+    · exact hfound x hf
+    · exact absurd (hneed i hi x hx (hinert i hi x hx) hcov) hn
+
 /-- **What the family step gives the load facts** (`FamLoadCtx`), at each environment the step's
 record is taken at: the store's records at the two records' addresses (the run's, decoded), the
 route fact, the new constants: the members at the keys of the two records' constant addresses
@@ -393,6 +445,7 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
     (hd : DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩)
     (hst : ∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
       StoredAs c' ci)
+    (hused : Decl.UsedRefsStored t ⟨new ++ env.consts⟩ c)
     (hcanon : FamilyMembersCanon t E₀ A c ms rb crb rs ⟨new ++ env.consts⟩) :
     FamLoadCtx ⟨E, env, t, lim⟩ new A c ms rb crb rs := by
   have hdec : L1.EnvDecoded E := hctx.recordsFor.1
@@ -471,7 +524,7 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
       ctorTrees := fun ind hms => htrees ind (hB.muts.trans (by rw [hms]))
       core := hinv.scopedCoreFacts
       check := Core.RoleClosure.check_ok_of_wf hinv.tableWf
-      used := hcanon.used
+      used := hused
       indForm := by
         intro i ind hi hm
         have hx : FamAddr A c rb crb (Core.iprjAddr A i) :=
@@ -659,10 +712,14 @@ structure FamilyBlockCheck (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
     ∀ cv mI rP rls, ConstantInfo.recInfo cv mI rP rls ∈ new →
       RecCompanionFacts ⟨E, ⟨new ++ env.consts⟩, t, lim⟩ cv mI rP rls
   /-- The seam of the loads: the circuit loads each new inductive, constructor and recursor in
-  its canonical annotated form, and the references the two records use are stored. -/
+  its canonical annotated form, and the references the family record uses are stored, at an
+  environment that extends the witness's and is handed what the two records use. -/
   canon : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
     (aliases blk new : List (ConstantInfo .anon)),
-    Decl.PrefixInv.{u} E t lim env → AliasGroup env h aliases →
+    Decl.PrefixInv.{u} E t lim env → (∀ ci ∈ envT.consts, ci ∈ env.consts) →
+    (∀ x, UsedRef E₀ A x ∨ UsedRef E₀ rb x →
+      (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x) →
+    AliasGroup env h aliases →
     FamDeclReads t E₀ A c rb crb blk →
     DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
     (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
@@ -699,14 +756,21 @@ theorem familyBlockCircuitRow_of_check {L : Ix.Kernel.Env .anon → NativeFam .a
   have hfree := famUnitFree_of_run hTW hrun hctx hTop hc hlog hfam
   have hrouteT := famBlockRoute_of_run hTW hrun hctx hTop hc hfam
   have htrees := famCtorTrees_of_run hTW hrun hctx hTop hc hlog hfam
+  have hneed := Claim.TopWalk.need hTW hTop hc hkind hlog
+  have hinert : InertClause t c := by
+    obtain ⟨bAddr, hW, -⟩ := hTW
+    exact hW.inertClause hTop hc
   exact
     { seam := hK.seam
       block := ⟨ms, hB⟩
       route := hroute
       recs := hK.recs
-      loads := fun env h aliases blk new hinv hg hreads hd hst =>
+      loads := fun env h aliases blk new hinv hextT hrefs hg hreads hd hst =>
         (famLoadCtx_of_step hctx hB hrb hroute hfree hrouteT htrees hinv hg hreads hd hst
-          (hK.canon env h aliases blk new hinv hg hreads hd hst ms rs hB.muts hrb.muts)).newLoads }
+          (famUsedStored hctx.shape hinv.tableWf hc hinert hneed hextT hrefs
+            (famFound_of_step hreads hst))
+          (hK.canon env h aliases blk new hinv hextT hrefs hg hreads hd hst ms rs hB.muts
+            hrb.muts)).newLoads }
 
 /-- **The row `familyBlock` from the facts of the family check** (module docstring). -/
 theorem familyBlockRow_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}

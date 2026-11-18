@@ -37,9 +37,10 @@ fact at the block and the walk's check of the block, with no fact of the family 
 
 Three hold from the seam `FamilyMembersCanon` (the family check stores each new constant in the
 canonical annotated form the circuit loads, `LoadedReads.canonAnn` of its reading, and the
-references the two records use are stored). `getIprj` and `getCprj`, through the stored
-constants' shapes (`FamLoadCtx.indForm`, `ctorForm`) and the canonical loads
-(`LoadedReads.get_ci_iprj_load_canon`, `get_ci_cprj_load_canon`).
+references the family record uses are stored) and the references the block uses stored (from the
+walk, `famUsedStored`). `getIprj` and `getCprj`, through the stored constants' shapes
+(`FamLoadCtx.indForm`, `ctorForm`) and the canonical loads (`LoadedReads.get_ci_iprj_load_canon`,
+`get_ci_cprj_load_canon`).
 
 `getCI` (the load of a new constant at its key): at an
 inductive or a constructor projection (`FamLoadCtx.getCI_iprj`, `getCI_cprj`: the load's trace
@@ -67,8 +68,9 @@ open IxVM.Consistency
 
 /-- **The circuit loads each new constant of the family step in its canonical annotated form**
 (the seam of the loads; the family check stores what it loads). At the environment `env` after
-the step: the references the block `cb` (members `ms`, at `A`) and the family record `crb`
-(members `rs`, at `rb`) use are stored; each inductive member and each of its constructors, read
+the step, for the block `cb` (members `ms`, at `A`) and the family record `crb` (members `rs`, at
+`rb`): the references the family record uses are stored; each inductive member and each of its
+constructors, read
 over the store `E₀`'s blobs as `ty₀` and stored at its key, has a closed reading with its level
 parameters defined, and its stored type is the canonical annotation of the reading at the
 member's root (`LoadedReads.canonAnn`); each recursor member of the family record, read as a
@@ -78,13 +80,6 @@ not part of the seam. -/
 structure FamilyMembersCanon (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (A : _root_.Address)
     (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (rb : _root_.Address) (crb : Ixon.Constant)
     (rs : Array Ixon.MutConst) (env : Ix.Kernel.Env .anon) : Prop where
-  /-- The references the block uses are stored. Producer: open. The walk gives, at the
-  top-walked block, the inert clause (`Claim.TopWalkCore.inertClause`) and `NeedOk` of each
-  uncovered used reference (`Claim.TopWalk.need`); a covered one is stored by the witness's
-  environment (`coverAt_of_graph`). With the step's need hypothesis (a needed reference is stored
-  or a family address) and the family addresses stored after the step, that gives this field;
-  the load fields' binders do not receive the need hypothesis today. -/
-  used : Decl.UsedRefsStored t env cb
   /-- Each inductive member is stored in the canonical annotated form of its reading. Producer:
   the circuit side; the family check's load of the member (`Ingress::get_ci_iprj`), which stores
   what it loads. -/
@@ -110,10 +105,12 @@ structure FamilyMembersCanon (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (A : _r
         (((L1.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀ =
         some cv.type
   /-- The references the family record uses are stored. Producer: open. No walk reaches the
-  family record: the family check would have to assert, at each reference its recursors use,
-  what the walk asserts of a walked record's (the reference allowed, no block, the record and its
-  owner safe), which gives its inert clause and `NeedOk`; with the step's need hypothesis and the
-  family addresses stored after the step, that gives this field. -/
+  family record. The family check's witnessed branch of `KernelModeled::family_refs_go` would have
+  to assert, at each reference the family record uses, what the walk asserts of a walked
+  record's: `KernelRoles::assert_ref_allowed`, `KernelClaim::assert_not_block_ref` and
+  `KernelClaim::assert_safe_used_refs`. That gives the record's inert clause and `NeedOk` of each
+  uncovered reference; with the step's need hypothesis and the family addresses stored after the
+  step, as for the block (`famUsedStored`), it gives this field. -/
   usedRecs : Decl.UsedRefsStored t env crb
   /-- Each recursor member of the family record, read as the recursor `cv` (rules `rules₀`) and
   stored at its key as `cv'` (rules `rules'`), is loaded as the stored recursor: the reading's
