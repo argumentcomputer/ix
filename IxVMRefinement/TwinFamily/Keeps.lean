@@ -9,10 +9,11 @@ with a model companion. The fold carries that as `FamilyRecsModeled` (every stor
 member of a block of recursors has a model companion), beside its clause `X`. The family step
 establishes it and the twin's step keeps it; this module proves that every other step keeps it:
 
-* `unitStep_keepsFamilyRecsModeled_of_apart`: a unit step for `X` at a record none of whose constant
-  addresses is a member of a block of recursors is a unit step for `X ∧ FamilyRecsModeled`. Its
-  new constants are at the record's own constant addresses, or at derived keys, which are the
-  key of no address; the constants stored before keep their companions.
+* `unitStep_keepsFamilyRecsModeled_of_apart`: a unit step for `X` at a record none of whose
+  constant addresses is a member of a block of recursors is a unit step for
+  `X ∧ FamilyRecsModeled`. Its new constants are at the record's own constant addresses, or at
+  derived keys, which are the key of no address; the constants stored before keep their
+  companions.
 * `unitStep_keepsFamilyRecsModeled`: so does the unit step of every checked record that is no
   block of recursors: a constant address two records share makes them one record.
 
