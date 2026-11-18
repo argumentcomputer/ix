@@ -809,6 +809,8 @@ def check_advice_records := aiur_fn⟦
         Lists::Node::Cons(a, rest) => {
           assert_eq!(KernelClaim::addr_set_member(a, seen), 0,
             "model advice: duplicate advice record");
+          assert_eq!(KernelClaim::addr_set_member(a, wset), 0,
+            "model advice: an advice record is a witnessed reference");
           check_advice_record(rc, a, seen, wset);
           check_advice_records(rc, rest, RBTreeMap::rbtree_map_insert(a, 1, seen), wset) } ,
       }
