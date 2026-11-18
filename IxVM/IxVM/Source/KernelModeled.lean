@@ -1360,7 +1360,16 @@ def family_refs_go := aiur_fn⟦
               let ok = match used_ref_has(irefs, iused, 0, r) {
                 1 => {  1 } ,
                 _ => {
-                  match is_projection_of(r, block) {
+                  let rc0 = Ingress::load_verified_constant(r);
+                  let own = match rc0 {
+                    Ixon::Constant::Mk(info, _, _, _, _) => {
+                      match info {
+                        Ixon::ConstantInfo::IPrj(_) => {  Bytes::address_eq(projection_block(rc0), block) } ,
+                        Ixon::ConstantInfo::CPrj(_) => {  Bytes::address_eq(projection_block(rc0), block) } ,
+                        _ => {  0 } ,
+                      } } ,
+                  };
+                  match own {
                     1 => {  1 } ,
                     _ => {
                       match projection_of_ref_block(r, irefs, iused) {
