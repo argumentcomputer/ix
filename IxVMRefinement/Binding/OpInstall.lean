@@ -1,33 +1,38 @@
 import IxVMRefinement.Binding.Raise
+import IxVMRefinement.Binding.ClauseInvariant
 import IxVMRefinement.Assembly.TypingModel
+import IxVMRefinement.Assembly.ValueUnitStep
 import IxVMRefinement.StatementRel.ReadsMono
 import IxVMRefinement.StatementRel.Inhabit
 
 /-! # An operation's group in the binding fold: the install of the operation
 
 After the closure of an operation's group `g` (its records other than the operation's own are
-installed), the operation is installed at its role key with `RoleOps.op_step`, and the boundary
-invariant moves from the groups below `g` to the groups up to `g`.
+installed), the operation is installed at its role key with `RoleOps.op_step`, and the invariant
+over the fold's clause moves from the groups below `g` to the state before the raise past `g`
+(`BeforeRaise`): the public shape and the facts beside the clause on the groups up to `g`, the
+clause at the limits within the groups below `g`, and what the raise past `g` needs.
 
 `roleOp_step` is that step. Its inputs:
 
-* the boundary invariant below `g` at the store `R₁` and the environment `env₁` its closure left,
-  and the admission of `g` (for the store clauses of `R'`, which is `R₁` and the operation's
-  record, `StoreAdds`);
+* the invariant below `g` at the store `R₁` and the environment `env₁` its closure left, and the
+  admission of `g` (for the store clauses of `R'`, which is `R₁` and the operation's record,
+  `AddsAt`);
 * the operation's check at `env₁` (`RoleOps.OpChecked`), the stored terms annotating the record's
   reading (`Annotates`), and the reading itself;
-* the record is a standalone definition (`hsolo`), and the stored constant is the one every load
-  of the record represents (`hreload`, `Decl.ReloadsAs`): a load of an address represents the
-  canonical annotation of its record (`LoadedReads.get_ci_defn_canon`), and the load contract of
-  the prefix invariant (`ScopedLoadFacts.getCI`) reads the constant stored at the address's key,
-  so an arbitrary annotation (`Annotates` admits any binder data) would not do;
-* the extra clause at the new environment.
+* the record is a standalone definition (`hsolo`) at an address of 32 bytes, and the stored
+  constant is the one every load of the record represents (`hreload`, `Decl.ReloadsAs`): a load
+  of an address represents the canonical annotation of its record
+  (`LoadedReads.get_ci_defn_canon`), and the load contract of the prefix invariant
+  (`ScopedLoadFacts.getCI`) reads the constant stored at the address's key, so an arbitrary
+  annotation (`Annotates` admits any binder data) would not do.
 
-The step is stated for the groups below `g`, the only set the fold uses (`GroupSteps` asks for
-`StepCore` at `(· < g)`). There, the carried limits within the groups up to `g` and not below `g`
-are one: `g + 1`, below the well-founded block (one raise past the group,
-`prefixInv_raise_succ`), and `41` for the last well-founded operation (the raise past the block,
-`prefixInv_raise_wf`).
+The clause is kept by the operation's own declaration step: an operation is a value constant at
+the key of a 32-byte address, and its install record is the kernel's (`opChecked_run`), so
+`FoldClauseWith.consValue` applies at every record store and every limit within the groups below
+`g`, with the registry unchanged. The raise past the group is not taken here: the step hands the
+fold what the raise needs (`RaiseAt`): the operation's companion below the well-founded block,
+and at the block's last group every well-founded operation stored as pinned.
 
 Also here: `recordsFor_exists` (a record store for every store that agrees with the committed
 prelude rows: the merged store over no run) and the store transfers between `R₁` and `R'`
@@ -46,19 +51,7 @@ open IxVM.Refinement.Typing
 open IxVM.Refinement.Binding
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
-
-/-! ## The definitions of the targets file -/
-
-/-- The extra clause as a function of the table and the environment only. -/
-abbrev XOf (Y : Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Prop) :
-    Ix.Kernel.RoleTable → (Nat → Prop) → Ixon.Env → Ix.Kernel.Env .anon → Prop :=
-  fun t _ _ env => Y t env
-
-/-- `R'` is `R₁` and the record at `a`. -/
-def StoreAdds (R₁ R' : Ixon.Env) (a : _root_.Address) : Prop :=
-  (∀ x lc, R₁.consts.get? x = some lc → R'.consts.get? x = some lc) ∧
-  (∀ x lc, R'.consts.get? x = some lc → R₁.consts.get? x = some lc ∨ x = a) ∧
-  ∀ x b, R'.blobs.get? x = some b ↔ R₁.blobs.get? x = some b
+open Ix.Kernel.Semantics (NativeFam)
 
 /-! ## A record store exists -/
 
@@ -170,7 +163,7 @@ section Store
 
 variable {R₁ R' : Ixon.Env} {a : _root_.Address}
 
-theorem recordOf_up (hs : StoreAdds R₁ R' a) {x : _root_.Address} {c : Ixon.Constant}
+theorem recordOf_up (hs : AddsAt R₁ R' a) {x : _root_.Address} {c : Ixon.Constant}
     (h : recordOf R₁ x = some c) : recordOf R' x = some c := by
   unfold recordOf at h ⊢
   cases h₁ : R₁.consts.get? x with
@@ -180,7 +173,7 @@ theorem recordOf_up (hs : StoreAdds R₁ R' a) {x : _root_.Address} {c : Ixon.Co
     rw [hs.1 x lc h₁]
     exact h
 
-theorem consts_ne (hs : StoreAdds R₁ R' a) {x : _root_.Address} (hne : x ≠ a) :
+theorem consts_ne (hs : AddsAt R₁ R' a) {x : _root_.Address} (hne : x ≠ a) :
     R'.consts.get? x = R₁.consts.get? x := by
   cases h' : R'.consts.get? x with
   | none =>
@@ -194,12 +187,12 @@ theorem consts_ne (hs : StoreAdds R₁ R' a) {x : _root_.Address} (hne : x ≠ a
     · rw [h₁]
     · exact absurd rfl hne
 
-theorem recordOf_ne (hs : StoreAdds R₁ R' a) {x : _root_.Address} (hne : x ≠ a) :
+theorem recordOf_ne (hs : AddsAt R₁ R' a) {x : _root_.Address} (hne : x ≠ a) :
     recordOf R' x = recordOf R₁ x := by
   unfold recordOf
   rw [consts_ne hs hne]
 
-theorem blobs_eq (hs : StoreAdds R₁ R' a) :
+theorem blobs_eq (hs : AddsAt R₁ R' a) :
     (fun x => R'.blobs.get? x) = (fun x => R₁.blobs.get? x) := by
   funext x
   cases h' : R'.blobs.get? x with
@@ -212,13 +205,13 @@ theorem blobs_eq (hs : StoreAdds R₁ R' a) :
       cases this
   | some b => exact ((hs.2.2 x b).mp h').symm
 
-theorem recordsFor_down (hs : StoreAdds R₁ R' a) {E : Ixon.Env} (h : RecordsFor R' E) :
+theorem recordsFor_down (hs : AddsAt R₁ R' a) {E : Ixon.Env} (h : RecordsFor R' E) :
     RecordsFor R₁ E :=
   ⟨h.1, fun x c hc => h.2.1 x c (recordOf_up hs hc),
     fun x b hb => h.2.2.1 x b ((hs.2.2 x b).mpr hb), h.2.2.2⟩
 
 /-- **What a constant keeps of a record of `R₁` it keeps of the same record in `R'`.** -/
-theorem keptIn_up (hs : StoreAdds R₁ R' a) {t : Ix.Kernel.RoleTable} {x : _root_.Address}
+theorem keptIn_up (hs : AddsAt R₁ R' a) {t : Ix.Kernel.RoleTable} {x : _root_.Address}
     {ci : Ix.Kernel.ConstantInfo .anon}
     (h : KeptIn t (recordOf R₁) (fun y => R₁.blobs.get? y) x ci) :
     KeptIn t (recordOf R') (fun y => R'.blobs.get? y) x ci := by
@@ -314,7 +307,7 @@ end Back
 /-- **A reading of `R'` at another address than the new record's is a reading of `R₁`**, the
 new record being a standalone definition. -/
 theorem reads_down {t : Ix.Kernel.RoleTable} {R₁ R' : Ixon.Env} {a : _root_.Address}
-    (hs : StoreAdds R₁ R' a) (hsolo : ∃ c d, recordOf R' a = some c ∧ c.info = .defn d)
+    (hs : AddsAt R₁ R' a) (hsolo : ∃ c d, recordOf R' a = some c ∧ c.info = .defn d)
     {x : _root_.Address} (hx : x ≠ a) {ci₀ : Ix.Kernel.ConstantInfo .anon}
     (h : Reads t R' x ci₀) : Reads t R₁ x ci₀ := by
   obtain ⟨c₀, d₀, hc₀, hd₀⟩ := hsolo
@@ -416,7 +409,7 @@ theorem shapes_installed {g : Nat} {r : Ix.Kernel.Role} {env : Ix.Kernel.Env .an
     {ty val : Core.KExpr} {hint : Ix.Kernel.ReducibilityHint}
     (hgrp : roleGroup g = [r]) (hop : r ∈ RoleOps.opRoles)
     (hfresh : env.find? (Ix.Kernel.Key.role r) = none) (hs : Shapes (· < g) env) :
-    Shapes (fun k => k < g ∨ k = g) (RoleOps.installed env (.role r) ty val hint) := by
+    Shapes (· < g + 1) (RoleOps.installed env (.role r) ty val hint) := by
   have hext := RoleOps.installed_ext hfresh (RoleOps.isBaseKey_of_mem_opNames
     (by rw [RoleOps.opNames_eq_map]; exact List.mem_map.mpr ⟨r, hop, rfl⟩)) ty val hint
   have hfr : ∀ X : Ix.Kernel.Role, X ∉ RoleOps.opRoles →
@@ -431,10 +424,9 @@ theorem shapes_installed {g : Nat} {r : Ix.Kernel.Role} {env : Ix.Kernel.Env .an
     rw [hm] at hX
     exact hX hop
   have below : ∀ X : Ix.Kernel.Role, X ∉ RoleOps.opRoles →
-      (Ix.SpecDigest.groupOf X < g ∨ Ix.SpecDigest.groupOf X = g) →
-        Ix.SpecDigest.groupOf X < g := by
+      Ix.SpecDigest.groupOf X < g + 1 → Ix.SpecDigest.groupOf X < g := by
     intro X hX hor
-    rcases hor with h | h
+    rcases Nat.lt_or_eq_of_le (Nat.le_of_lt_succ hor) with h | h
     · exact h
     · exact absurd h (hnot X hX)
   exact {
@@ -477,70 +469,32 @@ theorem shapes_installed {g : Nat} {r : Ix.Kernel.Role} {env : Ix.Kernel.Env .an
       rw [stdAxiomOk_congr hfr cvA]
       exact hs.nonempty (below .nonempty (by decide) h) cvA hn hm }
 
-/-! ## The limits within the groups up to `g` and not below `g` -/
-
-/-- **A carried limit within the groups up to `g` and not within the groups below `g` is
-`g + 1`**, for a table binding every role and `g` an operation's group. -/
-theorem lim_succ_of_not_within {t : Ix.Kernel.RoleTable} (hall : AllBound t) {g : Nat}
-    (hg : g ≤ 40) {lim : Option Nat} (hc : Carried lim)
-    (hw : LimWithin (fun k => k < g ∨ k = g) t lim) (hn : ¬ LimWithin (· < g) t lim) :
-    lim = some (g + 1) := by
-  have hnot : ∃ r', (t.addressOf? r').isSome = true ∧
-      (∀ n, lim = some n → Ix.SpecDigest.groupOf r' < n) ∧
-      ¬ Ix.SpecDigest.groupOf r' < g := by
-    by_contra hne
-    apply hn
-    intro r' hb hf
-    by_contra hlt
-    exact hne ⟨r', hb, hf, hlt⟩
-  obtain ⟨r', hb', hf', hlt'⟩ := hnot
-  have hr'g : Ix.SpecDigest.groupOf r' = g := by
-    rcases hw r' hb' hf' with h | h
-    · exact absurd h hlt'
-    · exact h
-  obtain ⟨r76, h76⟩ := group_inhabited (k := 76) (by omega)
-  rcases hc with rfl | rfl | ⟨h, rfl⟩
-  · rcases hw r76 (hall r76) (fun n hn => nomatch hn) with h | h <;> omega
-  · rcases hw r76 (hall r76) (fun n hn => by
-      obtain rfl := Option.some.inj hn
-      omega) with h | h <;> omega
-  · have hgn : g < RoleVal.groupValLimit h := by
-      have := hf' _ rfl
-      omega
-    have hle : RoleVal.groupValLimit h ≤ g + 1 := by
-      by_contra hgt
-      obtain ⟨r1, h1⟩ := group_inhabited (k := g + 1) (by omega)
-      rcases hw r1 (hall r1) (fun n hn => by
-        obtain rfl := Option.some.inj hn
-        omega) with h | h <;> omega
-    congr 1
-    omega
-
 /-! ## The step -/
 
 set_option maxHeartbeats 1600000 in
-/-- **The operation's group, after its closure** (target T3b, `TRoleOp`, at the groups below
-`g`): from the boundary invariant below `g` at the closure's store and environment, the
-operation's check there, the reading of its record and the reload of the stored constant, the
-boundary invariant up to `g` at the store with the operation's record and the environment with
-the operation installed. -/
-theorem roleOp_step {Y : Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Prop} {ρ : BRun}
-    {t : Ix.Kernel.RoleTable} {g : Nat} {R R₁ R' : Ixon.Env} {env₁ : Ix.Kernel.Env .anon}
-    {r : Ix.Kernel.Role} {a : _root_.Address} {ty₀ val₀ ty val tyD valD : Core.KExpr}
-    {hint : Ix.Kernel.ReducibilityHint}
+/-- **The operation's group, after its closure and before the raise past it**: from the
+invariant below `g` at the closure's store and environment, the operation's check there, the
+reading of its record and the reload of the stored constant, the invariant before the raise
+past `g` at the store with the operation's record and the environment with the operation
+installed. The clause is kept at the limits within the groups below `g` by the operation's own
+declaration step (`FoldClauseWith.consValue`: a value constant at the key of a 32-byte
+address). -/
+theorem roleOp_step {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop} (hL : LinkLaws L)
+    {ρ : BRun} {t : Ix.Kernel.RoleTable} {g : Nat} {R R₁ R' : Ixon.Env}
+    {env₁ : Ix.Kernel.Env .anon} {r : Ix.Kernel.Role} {a : _root_.Address}
+    {ty₀ val₀ ty val tyD valD : Core.KExpr} {hint : Ix.Kernel.ReducibilityHint}
     (hall : AllBound t) (hgrp : roleGroup g = [r]) (hop : r ∈ RoleOps.opRoles)
     (ha : t.addressOf? r = some a) (hadm : Admits ρ t g R R')
-    (hb : Bnd.{u} (XOf Y) t (· < g) R₁ env₁) (hadds : StoreAdds R₁ R' a)
+    (hb : BndOver.{u} L t (· < g) R₁ env₁) (hadds : AddsAt R₁ R' a)
     (hchk : RoleOps.OpChecked env₁ (.role r) ty₀ val₀ ty val)
     (hty : Annotates ty tyD) (hval : Annotates val valD)
     (hreads : Reads t R' a (.defnInfo ⟨.role r, [], tyD⟩ valD hint))
-    (hY : Y t (RoleOps.installed env₁ (.role r) ty val hint))
     (hsolo : ∃ c d, recordOf R' a = some c ∧ c.info = .defn d)
+    (hsize : a.hash.size = 32)
     (hreload : ∀ E, RecordsFor R' E →
       Decl.ReloadsAs E t (RoleOps.installed env₁ (.role r) ty val hint)
         (.defnInfo ⟨.role r, [], ty⟩ val hint)) :
-    Bnd.{u} (XOf Y) t (fun k => k < g ∨ k = g) R'
-      (RoleOps.installed env₁ (.role r) ty val hint) := by
+    BeforeRaise.{u} L t g R' (RoleOps.installed env₁ (.role r) ty val hint) := by
   -- the group, the operation's key, the new constant
   have hrg : r ∈ roleGroup g := by rw [hgrp]; exact List.mem_singleton.mpr rfl
   have hgr : Ix.SpecDigest.groupOf r = g := groupOf_of_mem_roleGroup hrg
@@ -563,8 +517,7 @@ theorem roleOp_step {Y : Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Prop} {
     hstep.2.2.2.1 hb.facts.opsPinned
   have htwf : t.wf = true := by
     obtain ⟨E, hE⟩ := recordsFor_exists hb.shape.committed
-    exact (hb.facts.inv E hE (some (valLimit g)) (carried_valLimit g)
-      (limWithin_below t g)).tableWf
+    exact (hb.inv hE (carried_valLimit g) (limWithin_below t g)).tableWf
   have hkeya : keyOf t a = Ix.Kernel.Key.role r := Core.keyOf_of_addressOf htwf ha
   have hkey_role : ∀ x, keyOf t x = Ix.Kernel.Key.role r → x = a := by
     intro x hx
@@ -584,66 +537,17 @@ theorem roleOp_step {Y : Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Prop} {
   have hinvA : ∀ E, RecordsFor R' E → ∀ lim, Carried lim → LimWithin (· < g) t lim →
       Decl.PrefixInv.{u} E t lim (RoleOps.installed env₁ (.role r) ty val hint) :=
     fun E hE lim hc hw => prefixInv_installed
-      (hb.facts.inv E (recordsFor_down hadds hE) lim hc hw) ha hchk hty hval (hreload E hE)
-  -- the prefix invariant at every carried limit within the groups up to `g`
-  have hinv : ∀ E, RecordsFor R' E → ∀ lim, Carried lim →
-      LimWithin (fun k => k < g ∨ k = g) t lim →
-        Decl.PrefixInv.{u} E t lim (RoleOps.installed env₁ (.role r) ty val hint) := by
-    intro E hE lim hc hw
-    by_cases hin : LimWithin (· < g) t lim
-    · exact hinvA E hE lim hc hin
-    · have hl := lim_succ_of_not_within hall hglt hc hw hin
-      subst hl
-      rcases op_group hop with ⟨h7, hlt⟩ | ⟨h33, h40⟩
-      · -- below the well-founded block: one raise past the group
-        rw [hgr] at hlt
-        have hvg : RoleVal.groupValLimit g = g := by
-          unfold RoleVal.groupValLimit
-          rw [ite_eq_left hlt]
-        have h0 := hinvA E hE (some g) (Or.inr (Or.inr ⟨g, by rw [hvg]⟩))
-          (fun r' _ hr' => hr' g rfl)
-        refine prefixInv_raise_succ h0 (fun r'' hr'' _ => ?_)
-        rw [hgrp, List.mem_singleton] at hr''
-        subst hr''
-        refine ⟨Or.inl (RoleOps.op_companion hint hchk), fun _ a' ha' => ?_⟩
-        rw [ha] at ha'
-        obtain rfl := Option.some.inj ha'
-        rw [Core.keyOf_of_addressOf htwf ha]
-        exact ⟨_, hself⟩
-      · -- the last well-founded operation: the raise past the block
-        rw [hgr] at h33 h40
-        have hg40 : g = 40 := by
-          rcases hc with h | h | ⟨h', hh⟩
-          · cases h
-          · have := Option.some.inj h
-            omega
-          · have e := Option.some.inj hh
-            rcases valLimit_cases h' with hv | hv | hv <;> omega
-        subst hg40
-        have h0 := hinvA E hE (some 33) (Or.inr (Or.inr ⟨33, by decide⟩))
-          (fun r' _ hr' => Nat.lt_trans (hr' 33 rfl) (by norm_num))
-        refine prefixInv_raise_wf h0 (fun r'' hr'' hbd => ?_)
-        obtain ⟨⟨hg1, hg2⟩, hop''⟩ := wf_group r'' hr''
-        have hopN'' : (Ix.Kernel.Key.role r'' : Core.KKey) ∈ RoleOps.opNames := by
-          rw [RoleOps.opNames_eq_map]
-          exact List.mem_map.mpr ⟨r'', hop'', rfl⟩
-        refine hpinI _ hopN'' ?_
-        by_cases hrr : r'' = r
-        · subst hrr
-          rw [hself]
-          rfl
-        · have hlt'' : Ix.SpecDigest.groupOf r'' < 40 := by
-            rcases Nat.lt_or_ge (Ix.SpecDigest.groupOf r'') 40 with h | h
-            · exact h
-            · have he : Ix.SpecDigest.groupOf r'' = 40 := by omega
-              have hm : r'' ∈ roleGroup 40 := he ▸ role_mem_roleGroup r''
-              rw [hgrp, List.mem_singleton] at hm
-              exact absurd hm hrr
-          obtain ⟨a'', ha''⟩ := Option.isSome_iff_exists.mp hbd
-          obtain ⟨ci, hci, -⟩ := hb.shape.kept _ r'' a'' hlt'' (role_mem_roleGroup r'')
-            (op_kept hop'').1 ha''
-          rw [hfind_ne r'' hrr, hci]
-          rfl
+      (hb.inv (recordsFor_down hadds hE) hc hw) ha hchk hty hval (hreload E hE)
+  -- the clause at those limits, by the operation's own declaration step
+  have hclause : FoldClauseOver.{u} L t (· < g) R'
+      (RoleOps.installed env₁ (.role r) ty val hint) := by
+    obtain ⟨Reg, hR⟩ := hb.clause
+    refine ⟨Reg, fun E hE lim hc hw => ?_⟩
+    have h0 := hR E (recordsFor_down hadds hE) lim hc hw
+    exact FoldClauseWith.consValue hL h0 (cn := .defnInfo ⟨.role r, [], ty⟩ val hint)
+      (d₀ := .defnDecl ⟨.role r, [], ty₀⟩ val₀ hint) hfresh (Or.inl ⟨_, _, _, rfl⟩)
+      (fun _ => Decl.ne_projTableName_of_isBaseKey hbase)
+      (opChecked_run hint h0.store hchk) ⟨a, hkeya.symm, hsize⟩ (hinvA E hE lim hc hw)
   -- the reading of `R'`
   have hnodup : ((RoleOps.installed env₁ (.role r) ty val hint).consts.map (·.name)).Nodup :=
     List.nodup_cons.mpr ⟨not_mem_names_of_find_none hfresh, hb.shape.reading.nodup⟩
@@ -679,11 +583,13 @@ theorem roleOp_step {Y : Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Prop} {
       env₁.find? (Ix.Kernel.Key.role r') = some ci →
         (RoleOps.installed env₁ (.role r) ty val hint).find? (Ix.Kernel.Key.role r') =
           some ci := fun r' ci hci => hext.find hci
-  have hshape : TableShape.{u} t (fun k => k < g ∨ k = g) R'
+  have hshape : TableShape.{u} t (· < g + 1) R'
       (RoleOps.installed env₁ (.role r) ty val hint) := {
-    needsClosed := fun k hk r' hr' => Or.inl (by
+    needsClosed := fun k hk r' hr' => by
       have h1 := groupNeeded_lt hr'
-      rcases hk with hk | hk <;> omega)
+      have hk' : k < g + 1 := hk
+      show Ix.SpecDigest.groupOf r' < g + 1
+      omega
     bound := fun k _ r' _ => hall r'
     prelude := hb.shape.prelude
     literals := hb.shape.literals
@@ -692,7 +598,7 @@ theorem roleOp_step {Y : Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Prop} {
     committed := hadm.committed
     zeroFree := hadm.zeroFree
     kept := fun k r' a' hk hr' hkr ha' => by
-      rcases hk with hk | rfl
+      rcases Nat.lt_or_eq_of_le (Nat.le_of_lt_succ hk) with hk | rfl
       · obtain ⟨ci, hci, hpin⟩ := hb.shape.kept k r' a' hk hr' hkr ha'
         refine ⟨ci, hkeep_old r' ci hci, ?_⟩
         rcases hpin with hp | hp
@@ -706,7 +612,7 @@ theorem roleOp_step {Y : Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Prop} {
     reading := hreading
     pins := fun kind ci hci => List.mem_cons_of_mem _ (hb.shape.pins kind ci hci)
     preludeKept := fun k r' a' hk hr' hpr ha' => by
-      rcases hk with hk | rfl
+      rcases Nat.lt_or_eq_of_le (Nat.le_of_lt_succ hk) with hk | rfl
       · obtain ⟨ci, hci, hpin⟩ := hb.shape.preludeKept k r' a' hk hr' hpr ha'
         refine ⟨ci, hkeep_old r' ci hci, ?_⟩
         rcases hpin with hp | hp
@@ -718,11 +624,10 @@ theorem roleOp_step {Y : Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Prop} {
     model := by
       obtain ⟨E, hE⟩ := recordsFor_exists hadm.committed
       exact claimedEnv_models_of_prefixInv
-        (hinv E hE (some (valLimit g)) (carried_valLimit g)
-          (fun r' hb' hr' => Or.inl (limWithin_below t g r' hb' hr'))) hnodup hprov }
-  refine ⟨hshape, ?_, hY⟩
-  exact {
-    inv := hinv
+        (hinvA E hE (some (valLimit g)) (carried_valLimit g) (limWithin_below t g)) hnodup
+        hprov }
+  have hfacts : BoundaryFacts t (· < g + 1) R'
+      (RoleOps.installed env₁ (.role r) ty val hint) := {
     whole := fun E hE x B c cb ms hfx hrec hown hne hrecB hmuts => by
       by_cases hk : keyOf t x = Ix.Kernel.Key.role r
       · have hx := hkey_role x hk
@@ -753,11 +658,49 @@ theorem roleOp_step {Y : Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Prop} {
           rfl
     opsPinned := hpinI
     opsAdmitted := fun r'' hr'' hs => by
+      show Ix.SpecDigest.groupOf r'' < g + 1
+      by_cases hrr : r'' = r
+      · rw [hrr, hgr]
+        exact Nat.lt_succ_self g
+      · rw [hfind_ne r'' hrr] at hs
+        have h1 : Ix.SpecDigest.groupOf r'' < g := hb.facts.opsAdmitted r'' hr'' hs
+        exact Nat.lt_succ_of_lt h1
+    shapes := shapes_installed hgrp hop hfresh hb.facts.shapes }
+  -- what the raise past `g` needs: the operation's companion below the well-founded block, the
+  -- well-founded operations stored as pinned at the block's last group
+  have hraise : RaiseAt t (RoleOps.installed env₁ (.role r) ty val hint) g := {
+    succ := fun _ r'' hr'' _ => by
+      rw [hgrp, List.mem_singleton] at hr''
+      subst hr''
+      refine ⟨Or.inl (RoleOps.op_companion hint hchk), fun _ a' ha' => ?_⟩
+      rw [ha] at ha'
+      obtain rfl := Option.some.inj ha'
+      rw [Core.keyOf_of_addressOf htwf ha]
+      exact ⟨_, hself⟩
+    wf := fun hg40 r'' hr'' hbd => by
+      subst hg40
+      obtain ⟨⟨hg1, hg2⟩, hop''⟩ := wf_group r'' hr''
+      have hopN'' : (Ix.Kernel.Key.role r'' : Core.KKey) ∈ RoleOps.opNames := by
+        rw [RoleOps.opNames_eq_map]
+        exact List.mem_map.mpr ⟨r'', hop'', rfl⟩
+      refine hpinI _ hopN'' ?_
       by_cases hrr : r'' = r
       · subst hrr
-        exact Or.inr hgr
-      · rw [hfind_ne r'' hrr] at hs
-        exact Or.inl (hb.facts.opsAdmitted r'' hr'' hs)
-    shapes := shapes_installed hgrp hop hfresh hb.facts.shapes }
+        rw [hself]
+        rfl
+      · have hlt'' : Ix.SpecDigest.groupOf r'' < 40 := by
+          rcases Nat.lt_or_ge (Ix.SpecDigest.groupOf r'') 40 with h | h
+          · exact h
+          · have he : Ix.SpecDigest.groupOf r'' = 40 := by omega
+            have hm : r'' ∈ roleGroup 40 := he ▸ role_mem_roleGroup r''
+            rw [hgrp, List.mem_singleton] at hm
+            exact absurd hm hrr
+        obtain ⟨a'', ha''⟩ := Option.isSome_iff_exists.mp hbd
+        obtain ⟨ci, hci, -⟩ := hb.shape.kept _ r'' a'' hlt'' (role_mem_roleGroup r'')
+          (op_kept hop'').1 ha''
+        rw [hfind_ne r'' hrr, hci]
+        rfl
+    literal := fun h45 => absurd h45 (by omega) }
+  exact ⟨hshape, hclause, hfacts, hraise⟩
 
 end IxVM.Refinement.Binding.OpInstall
