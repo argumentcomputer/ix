@@ -857,16 +857,20 @@ theorem ReconView.LeOn.refl (V : ReconView) (S : _root_.Address → Prop) : V.Le
   ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h, rfl, rfl, rfl, fun _ _ _ _ h => h,
     fun _ _ _ h => h, fun _ _ _ h => h⟩
 
+/-- Every key of a term names, through the view, one of all addresses. -/
+theorem rKeysAt_univ (V : ReconView) (e : KExpr) : RKeysAt V (fun _ => True) e :=
+  fun _ _ _ _ => True.intro
+
 /-- Every answer of a view stays among all addresses. -/
 theorem ReconView.closedOn_univ (V : ReconView) : V.ClosedOn (fun _ => True) where
-  indBlk := by intros; trivial
-  indTy := by intros; trivial
-  ctorTy := by intros; trivial
-  unfold := by intros; trivial
+  indBlk := fun _ _ _ _ => True.intro
+  indTy := fun _ i _ _ => rKeysAt_univ V i.ty
+  ctorTy := fun _ _ _ ty _ _ _ => rKeysAt_univ V ty
+  unfold := fun _ _ v _ _ => rKeysAt_univ V v
 
 /-- Every entry is at an address among all addresses, its parameters' keys too. -/
 theorem rEntryAt_univ (V : ReconView) (e : FlatEntry) : REntryAt V (fun _ => True) e :=
-  ⟨trivial, by intros; trivial⟩
+  ⟨True.intro, fun p _ => rKeysAt_univ V p⟩
 
 /-- **The reconstructed recursor type at a larger fuel is the same.** -/
 theorem recTypeAt_fuel_mono {V : ReconView} {f f' : Nat} (hfu : f ≤ f') {es : List FlatEntry}
