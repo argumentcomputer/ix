@@ -6,6 +6,7 @@ public import Ix.RoleBinding.Compile
 public import Ix.Cli.Common
 public import Ix.Compile.BinderData
 public import Ix.Compile.KernelAnnotate
+public import Ix.EnvScope
 public section
 
 /-!
@@ -170,8 +171,9 @@ canonical environment carries the annotator over its input and that task
 (`Ix.Compile.KernelAnnotate.annotator`): the compile writes every record's binder
 data from it (`Ix.CompileM.withBinderSection`), only a record the reading leaves
 waits for the install, and the certified result is the compile of that
-environment. Once no record can read the install (after the compile, unless the
-annotator is kept), an unfinished install is abandoned. With `binderData`, binder data are
+environment. After the compile, the install is waited for whether or not a record read
+it, so that whether the compile is refused does not depend on timing; it is abandoned
+only when the compile itself throws. With `binderData`, binder data are
 always present on safe records: a safe record with an undecided binder does not compile
 (`Ix.CompileM.sectionFor`), and an install that left a safe declaration out (its ingest
 failed, or it names a constant the install lacks: an incomplete input) refuses the compile.
@@ -180,11 +182,14 @@ axiom, a role whose evidence is another toolchain's, a deliberately ill-typed te
 leaves no datum missing and does not. Without `binderData`, every record with a binder
 carries the undecided section. The default role table binds records carrying
 their binder data, so its check is made only with `binderData`, and only while that table is
-current (`defaultRoleTableCurrent`). -/
+current (`defaultRoleTableCurrent`). `installExtra` is installed beside the input and
+never compiled (`compileCertified` passes the recursors the input lacks,
+`installRecursors`). -/
 def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     (annotated : Bool) (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
     (defaultRoles : Bool := true) (binderData : Bool := false) (keepAnnotator : Bool := false)
-    (modeCheck : ModeChecker := noModeChecker) (deferModeCheck : Bool := false) :
+    (modeCheck : ModeChecker := noModeChecker) (deferModeCheck : Bool := false)
+    (installExtra : List (Lean.Name × Lean.ConstantInfo) := []) :
     IO (Except String CertifiedOut) := do
   let t0 ← IO.monoMsNow
   let env ← IO.lazyPure fun _ => canonInput prepared.toArray workers
@@ -200,7 +205,13 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     match Ix.Compile.KernelAnnotate.prelude? with
     | .error e => return .error s!"binder data: IxC's prelude is not installed: {e}"
     | .ok pre =>
-      let task ← Ix.Compile.KernelAnnotate.installTask env pre workers abandon
+      -- the install's environment: the input, with `installExtra` beside it (never compiled)
+      let installEnv ← if installExtra.isEmpty then pure env else
+        IO.lazyPure fun _ => canonInput (prepared ++ installExtra).toArray workers
+      unless installExtra.isEmpty do
+        log s!"binder data: {installExtra.length} recursor(s) and their closure installed beside \
+          the input"
+      let task ← Ix.Compile.KernelAnnotate.installTask installEnv pre workers abandon
       install? := some task
       env := { env with binderAnnotator? := some (Ix.Compile.KernelAnnotate.annotator env task) }
   else if annotated then
@@ -213,24 +224,18 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     throw e
   let t2 ← IO.monoMsNow
   log s!"compileReport: {t2 - t1}ms"
-  -- no record reads the install after the compile, unless the annotator is kept
-  unless keepAnnotator do abandon.set true
+  -- the install is always waited for, and a failed one refuses the compile whether or not a
+  -- record read it: the outcome does not depend on how far the install got during the compile
   if let some task := install? then
-    if ← IO.hasFinished task then
-      match task.get with
-      | .ok installed =>
-        log s!"binder data: installed {installed.installed} declarations, {installed.failures.size} \
-          refused ({installed.lenient} of them entered without their checks), phase A in \
-          {installed.waves} waves; phases (ms) {installed.times}; \
-          {installed.endMs - installed.startMs}ms, ready {installed.endMs - t1}ms into the compile"
-        for (name, why) in installed.failures.extract 0 20 do
-          log s!"binder data: the kernel refused {name}: {(why.replace "\n" " ").take 200}"
-      | .error e =>
-        -- abandoned after the compile, no record read it; any other error refuses the compile
-        unless e == Ix.Compile.KernelAnnotate.abandoned do
-          return .error s!"binder data: IxC's environment is not installed: {e}"
-    else
-      log "binder data: no record was left to the walk; the install was not waited for"
+    match ← IO.wait task with
+    | .ok installed =>
+      log s!"binder data: installed {installed.installed} declarations, {installed.failures.size} \
+        refused ({installed.lenient} of them entered without their checks), phase A in \
+        {installed.waves} waves; phases (ms) {installed.times}; \
+        {installed.endMs - installed.startMs}ms, ready {installed.endMs - t1}ms into the compile"
+      for (name, why) in installed.failures.extract 0 20 do
+        log s!"binder data: the kernel refused {name}: {(why.replace "\n" " ").take 200}"
+    | .error e => return .error s!"binder data: IxC's environment is not installed: {e}"
   let (ixe, failures) ← match report.val with
     | .ok out => pure out
     | .error e => return .error e
@@ -259,11 +264,38 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
                annotator?,
                undecided }
 
+/-- **The recursors an input lacks, for the binder-data install**: the recursors
+(`Ix.EnvScope.recursorsOf`: `T.rec`, and `T.rec_j` on a nested block's first member)
+of the inductives of `constants` that `constants` do not hold, with their closure in
+`source` (`Ix.EnvScope.collectDeps`, recursors on), less `constants`.
+
+IxC installs an inductive block only with its recursors (the ingress declines a
+block without them, `Ix.LeanIngress.inductiveGroupUsing`; the executable checker has
+no route for one), so an input that reaches a family without its recursor (a closure
+of single constants: `And`, `Eq`, `Nat`, `PProd`, …) cannot be installed for its binder
+data. The install is the annotator's only: nothing is compiled from these constants,
+no record of the input names them, and they complete the families the input holds, as
+the selected closure of the same constants holds them. Empty for an input closed over
+its recursors (a whole library, a selected closure), whose install is unchanged. -/
+def installRecursors (source : Lean.Environment) (constants : List (Lean.Name × Lean.ConstantInfo)) :
+    List (Lean.Name × Lean.ConstantInfo) :=
+  let present : Std.HashSet Lean.Name := constants.foldl (fun s (n, _) => s.insert n) {}
+  let missing : Std.HashSet Lean.Name := constants.foldl (init := {}) fun acc (n, ci) =>
+    match ci with
+    | .inductInfo _ =>
+      (Ix.EnvScope.recursorsOf source.constants n).foldl
+        (fun acc r => if present.contains r then acc else acc.insert r) acc
+    | _ => acc
+  if missing.isEmpty then []
+  else (Ix.EnvScope.collectDeps source missing.toList { recursors := true }).filter
+    (!present.contains ·.1)
+
 /-- **The certified compile** of the constants `constants` of `source`:
 `prepareCertified`, then `compileCertifiedPrepared` (with `defaultRoles`), with
 the binder data from IxC's pass over the input (`Ix.Compile.KernelAnnotate`), unless
 `binderData` is off: then every record with a binder carries the undecided
-section (preserving any source modes). -/
+section (preserving any source modes). The install the binder data are read from
+holds, beside the input, the recursors the input lacks (`installRecursors`). -/
 def compileCertified (source : Lean.Environment) (constants : List (Lean.Name × Lean.ConstantInfo))
     (workers : Nat := 32) (log : String → IO Unit := fun _ => pure ())
     (defaultRoles : Bool := true) (binderData : Bool := true) (keepAnnotator : Bool := false)
@@ -275,8 +307,9 @@ def compileCertified (source : Lean.Environment) (constants : List (Lean.Name ×
     | .error e => return .error e
   log s!"source contracts ({if annotated then "semantic contracts" else "none"}): \
 {(← IO.monoMsNow) - t0}ms"
+  let installExtra := if binderData then installRecursors source prepared else []
   compileCertifiedPrepared prepared annotated workers log defaultRoles binderData keepAnnotator
-    modeCheck deferModeCheck
+    modeCheck deferModeCheck installExtra
 
 /-- An input with semantic contracts is emitted only if its finalized artifact
 validates too: `compileCertifiedPrepared` validates the compiled artifact, this
