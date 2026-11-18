@@ -27,7 +27,9 @@ the binding fold's family form needs of a group beside `Admits`:
   advice records and container recursors are in the store, and those new in the group are ranked
   before the block (their own units come first); and a new unit is checked by the run's check
   of a unit at the group's limit, or is a selected family record (checked by its block's family
-  check, which is no check of a unit: `Admits.checked` is false of it as stated). -/
+  check, which is no check of a unit). This is the only check clause of a group's admission:
+  `Admits` has none, since a check of every new unit as a unit is false of a selected family
+  record. -/
 
 namespace IxVM.Refinement.Binding
 

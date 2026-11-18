@@ -153,7 +153,6 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
         standing := standing_of_rootsSafe hC hb hpin hval hroots
           g hg6 hg
         logic := logic_of_rootsSafe hC hb hval hroots g hg6 hg
-        checked := groupStore_checked hC hb hax hg6 hw
         validated := fun _ _ => trivial
         kept := groupStore_kept hC hb hax hg6 hw
         opsOwn := hR.opsOwn g hg6 hg

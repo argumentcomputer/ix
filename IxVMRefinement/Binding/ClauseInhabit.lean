@@ -22,7 +22,7 @@ import IxVMRefinement.Decl.LateWalkedConst
     environment of the pins.
   * `admits_bool_observed`: the admission of group 6 (`Bool`) for the observed run record, from
     the store of the basis rows to the store with `Bool`'s committed rows. Its store clauses are
-    proved; its two run clauses are the two observations.
+    proved; its run clause is the observed validation of the group's roles.
   * `storeCovered_bool`: the store after group 6 is covered.
   * `shapes_bool`, `groupKept_bool`, `bndOver_bool`: at the environment IxC's native check of
     the `Bool` block installs, the stored shapes below 7, the group's roles kept, and the
@@ -234,11 +234,10 @@ theorem bndOver_basis_default (L : Ix.Kernel.Env .anon → NativeFam .anon → P
 
 /-- **The admission of the `Bool` group at the default table, for the observed run record**
 whose loaded records are the store with `Bool`'s committed rows. The store clauses are those of
-`admits_bool`; the two run clauses are the observations: the check of each new unit at the
-group's validation limit, and the validation of each role of the group. -/
+`admits_bool`; the run clause is the observation of the validation of each role of the group.
+(The check of each new unit at the group's validation limit is the clause
+`FamilyAdmits.checked` beside the admission, not one of its clauses.) -/
 theorem admits_bool_observed {calls : List (Call F)} {bAddr : _root_.Address}
-    (hchk : ∀ a c, New basisStore boolStore a → recordOf boolStore a = some c → UnitKind c →
-      UnitCheckedAt calls bAddr ctab boolStore a (some (valLimit 6)))
     (hval : ∀ r ∈ roleGroup 6, RoleValidationIn calls bAddr ctab 6 r) :
     Admits (observedRun calls bAddr ctab boolStore (fun _ a => boolRank a)) ctab 6 basisStore
       boolStore where
@@ -255,7 +254,6 @@ theorem admits_bool_observed {calls : List (Call F)} {bAddr : _root_.Address}
   projMember := admits_bool.projMember
   standing := admits_bool.standing
   logic := admits_bool.logic
-  checked := hchk
   validated := hval
   kept := admits_bool.kept
   opsOwn := admits_bool.opsOwn

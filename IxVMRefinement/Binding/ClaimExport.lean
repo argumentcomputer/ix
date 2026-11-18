@@ -90,7 +90,6 @@ theorem admits_observed_of_checked {calls : List (Call F)} {bAddr : _root_.Addre
   projMember := h.projMember
   standing := h.standing
   logic := h.logic
-  checked := h.checked
   validated := hv
   kept := h.kept
   opsOwn := h.opsOwn
@@ -158,8 +157,8 @@ The collision alternative is part of the statement because several clauses of `A
 a run's records only where the run hashed no collision, and nowhere else: that a store is
 authentic (`hashed`), that it agrees with the committed prelude records (`committed`, which is
 why `extra` holds the committed footprint), that it holds nothing at the zero address
-(`zeroFree`), and that the record a store holds at an address is the one the run checked there
-(`checked`, `kept`, the rank clauses). The same holds of the first two conjuncts, the store
+(`zeroFree`), and that the record a store holds at an address is the one the run walked there
+(`kept`, the rank clauses). The same holds of the first two conjuncts, the store
 after the basis groups being the committed rows. A producer splits on the alternative first
 (`Claim.noColl_or_hashedCollision` and the committed footprint) and proves the clauses in the
 branch without a collision.

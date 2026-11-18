@@ -444,7 +444,6 @@ theorem admits_bool : Admits boolRun ctab 6 basisStore boolStore where
     | rPrj _ => unfold InLogic; rw [hinfo]; trivial
     | iPrj _ => unfold InLogic; rw [hinfo]; trivial
     | dPrj _ => unfold InLogic; rw [hinfo]; trivial
-  checked := fun _ _ _ _ _ => trivial
   validated := fun _ _ => trivial
   kept := by
     intro r hr _ a ha
