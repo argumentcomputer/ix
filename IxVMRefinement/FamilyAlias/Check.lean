@@ -184,7 +184,7 @@ def defeqFam (fuel : Nat) (h : KKey → KKey) (lbl : String) {env : Env .anon}
   match hrun : Ix.Kernel.isDefEqCore .verified env fuel d
       (posOf ps (a.renameConsts h)) (posOf ps (b.renameConsts h)) with
   | Except.ok true =>
-    .ok ⟨⟨hA, ps, hperm, Ix.Kernel.Rules.isDefEqCore_bridge hrun⟩⟩
+    .ok ⟨⟨hA, Or.inl ⟨ps, hperm, Ix.Kernel.Rules.isDefEqCore_bridge hrun⟩⟩⟩
   | _ => .error lbl
 
 /-- A typing of the family package for a subject whose leaf annotations the alias renaming fixes,

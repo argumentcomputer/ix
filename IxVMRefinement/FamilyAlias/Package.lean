@@ -238,12 +238,16 @@ theorem fvarLeaves_renameConsts_of_fixed {h : KKey → KKey} {e : KExpr}
 
 /-- **A package with stored aliases renamed to their targets**: a typing or a conversion of
 `aliasJ h J` is `J`'s on the renamed terms, at an environment that stores the aliases `h` moves.
+A conversion may leave its left term as it is: a type the package inferred is compared with a
+renamed term, and an inferred type is over the targets already.
 A typing is adjoined only for a subject whose leaf annotations `h` fixes (every closed subject),
 so that the inferred type keeps the subject's frame. -/
 def aliasJ (h : KKey → KKey) (J : Judgements .anon) : Judgements .anon where
   annot := J.annot
   infer env d e t := AliasEnv env h ∧ LeavesFixed h e ∧ J.infer env d (e.renameConsts h) t
-  defeq env d a b := AliasEnv env h ∧ J.defeq env d (a.renameConsts h) (b.renameConsts h)
+  defeq env d a b := AliasEnv env h ∧
+    (J.defeq env d (a.renameConsts h) (b.renameConsts h) ∨
+      J.defeq env d a (b.renameConsts h))
   sort := J.sort
   isZero := J.isZero
   thmValue := J.thmValue
@@ -277,15 +281,20 @@ theorem judgeSound_aliasJ {V : Type u} [Ix.Kernel.SetTheory V] {J : Judgements .
       ((denoteMeta_renameConsts_pos (hro hA) e d).trans hea) hta
   defeq := by
     intro φ d a b Δa hj hwsa hba hLa hwsb hbb hLb aa ba hca hcb hda hdb hga hgb
-    obtain ⟨hA, hj⟩ := hj
-    exact hJ.defeq φ hj (wscoped_renameConsts a hwsa)
-      ((Expr.looseBVarsBounded_renameConsts h a 0).trans hba)
-      (leavesBounded_renameConsts a hLa) (wscoped_renameConsts b hwsb)
-      ((Expr.looseBVarsBounded_renameConsts h b 0).trans hbb)
-      (leavesBounded_renameConsts b hLb)
-      (ctxOk_renameConsts_pos (hro hA) hca) (ctxOk_renameConsts_pos (hro hA) hcb)
-      ((denoteMeta_renameConsts_pos (hro hA) a d).trans hda)
-      ((denoteMeta_renameConsts_pos (hro hA) b d).trans hdb) hga hgb
+    obtain ⟨hA, hj | hj⟩ := hj
+    · exact hJ.defeq φ hj (wscoped_renameConsts a hwsa)
+        ((Expr.looseBVarsBounded_renameConsts h a 0).trans hba)
+        (leavesBounded_renameConsts a hLa) (wscoped_renameConsts b hwsb)
+        ((Expr.looseBVarsBounded_renameConsts h b 0).trans hbb)
+        (leavesBounded_renameConsts b hLb)
+        (ctxOk_renameConsts_pos (hro hA) hca) (ctxOk_renameConsts_pos (hro hA) hcb)
+        ((denoteMeta_renameConsts_pos (hro hA) a d).trans hda)
+        ((denoteMeta_renameConsts_pos (hro hA) b d).trans hdb) hga hgb
+    · exact hJ.defeq φ hj hwsa hba hLa (wscoped_renameConsts b hwsb)
+        ((Expr.looseBVarsBounded_renameConsts h b 0).trans hbb)
+        (leavesBounded_renameConsts b hLb)
+        hca (ctxOk_renameConsts_pos (hro hA) hcb) hda
+        ((denoteMeta_renameConsts_pos (hro hA) b d).trans hdb) hga hgb
   reads := by
     intro φ d e t Δa ea hj hws hb hL hctx hea
     obtain ⟨hA, -, hj⟩ := hj
