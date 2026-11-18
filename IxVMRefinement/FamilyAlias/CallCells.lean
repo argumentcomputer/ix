@@ -82,4 +82,36 @@ theorem rename_stored_of_src {t : Ix.Kernel.RoleTable} (hwf : t.wf = true) {E₀
     rw [Decl.ixAddr_injective hab] at hb
     exact Or.inr hb
 
+/-- **A renamed term typed at the prefix's context**: `KernelModeled::rename` followed by
+`KernelInfer::k_infer` at the empty context, at the prefix's selected context
+(`Core.Ctx.stored`), types the term's renaming (`rename_stored_of_src`, then
+`scoped_core_infer`). -/
+theorem rename_infer_stored {t : Ix.Kernel.RoleTable} (hwf : t.wf = true) {E₀ : Ixon.Env}
+    {env : Ix.Kernel.Env .anon} {lim : Option Nat}
+    {srcAs dstAs : List Bytes.Address} {Γ₁ Γ : Nat → KExpr}
+    {e src dst rm rc nil ty : SourceValue F} {h h₁ h₂ : Heap F} {cs₁ cs₂ : List (Call F)}
+    {E : KExpr}
+    (ev : ObsFn W "KernelModeled::rename" [e, src, dst] h rm h₁ cs₁)
+    (hlen : srcAs.length = dstAs.length)
+    (hsrc : RepList addrListEnum (Bytes.RepAddressRef addrTy) h srcAs src)
+    (hdst : RepList addrListEnum (Bytes.RepAddressRef addrTy) h dstAs dst)
+    (he : Decl.TmExact (Core.keyOf t) 0 Γ₁ h 0 E e)
+    (hmodels : ∀ b ∈ dstAs, ∃ ci, env.find? (Core.keyOf t (ixAddr b)) = some ci)
+    (hcells : ∀ a, AddrIn h e a →
+      (∃ ci, env.find? (Core.keyOf t (ixAddr a)) = some ci) ∨ ixAddr a ∈ srcAs.map ixAddr)
+    (hrc : RCRep t lim h₁ rc)
+    (hnil : TypesRep (Core.Ctx.stored ⟨E₀, env, t, lim⟩).κ Γ h₁ 0 nil)
+    (hef : CoreEnvFacts (Core.Ctx.stored ⟨E₀, env, t, lim⟩).toCtx)
+    (hlf : ScopedLoadFacts (Core.Ctx.stored ⟨E₀, env, t, lim⟩))
+    (hgood : CoreGood (Core.Ctx.stored ⟨E₀, env, t, lim⟩) cs₂)
+    (evi : ObsFn W "KernelInfer::k_infer" [rc, rm, nil] h₁ ty h₂ cs₂) :
+    ∃ tt, Ix.Kernel.Rules.Infer env .full 0
+      (Decl.renameAll (aliasMap ((srcAs.map fun b => Core.keyOf t (ixAddr b)).zip
+        (dstAs.map fun b => Core.keyOf t (ixAddr b)))) E) tt := by
+  have hre := rename_stored_of_src (E₀ := E₀) (lim := lim) (Γ₂ := Γ) hwf ev hlen hsrc hdst he
+    hmodels hcells
+  obtain ⟨tt, -, hinf⟩ := Decl.scoped_core_infer hrc hnil (Decl.ghostScoped_zero Γ) hef hlf hgood
+    evi hre.toTm
+  exact ⟨tt, hinf⟩
+
 end IxVM.Refinement.Typing.FamilyAlias
