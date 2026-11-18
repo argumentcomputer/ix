@@ -62,6 +62,7 @@ theorem recsFacts_rhsss_length {env : Ix.Kernel.Env .anon}
   | [], _, _, _, h => by
     obtain ⟨-, h2, -⟩ := Decl.FamilyAlias.RecsFacts.nil_inv h
     rw [h2]
+    rfl
   | _ :: rest, _, _, _, h => by
     obtain ⟨_, _, _, _, _, _, _, _, _, _, -, -, h3, -, -, hr⟩ :=
       Decl.FamilyAlias.RecsFacts.cons_inv h
