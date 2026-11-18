@@ -188,7 +188,7 @@ theorem groupStore_standing (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLo
   rotate_right
   · exfalso
     rcases payAdds_cases hP hpay with ⟨hr, -⟩ | ⟨-, -, -, -, -, p, hp, hproj, -⟩
-    · exact hP.notAxiomLike g a c hr hE hk
+    · exact hP.notAxiomLike g a c hr hnew hE hk
     · have e : p = c := Option.some.inj (hp.symm.trans hE)
       rw [e] at hproj
       rcases hk with ⟨ax, h⟩ | ⟨q, h⟩

@@ -524,17 +524,29 @@ not exported. Where each fact comes from in the source, all under the group's va
   reference of a payload record that is not covered is an advice record, a projection of an
   advice block or a witness (`KernelModeled::advice_refs_ok`, `container_refs_ok`), a witness is
   walked (`check_witness` kind 0, `KernelClaim::run_check_transitive`), lies on a path from the
-  block (`walk_path`, kinds 1 to 3, which loads each record it passes) or is a container recursor;
+  block (`walk_path`, kinds 1 to 3, which loads each record it passes) or is a container recursor.
+  Source: today's circuit for the payload's addresses; for what they reference, the walk's
+  assertions on inner references (`assert_safe_used_refs`, `assert_not_block_ref`) added to the
+  advice, container and witnessed-reference checks;
 * `blockMembers`: an advice block is checked by `KernelClaim::check_muts_all`, the family record
-  by `check_recs` (each member against the block's flattened family);
+  by `check_recs` (each member against the block's flattened family). Source: today's circuit;
 * `projMember`: an advice `IPrj`/`CPrj` record is asserted to project from an advice block
   (`check_advice_record`), and a witness of kind 3 is compared with the computed projection
-  address (`KernelDefEq::compute_iprj_addr`, `KernelCheck::projection_addr_ctor`);
+  address (`KernelDefEq::compute_iprj_addr`, `KernelCheck::projection_addr_ctor`). Source:
+  today's circuit, with a `get_ci` call added in the four projection arms (a projection's
+  index names a member);
 * `logic`: `check_advice_record` admits only safe definitions, theorems, safe recursors and safe
   inductive blocks (`muts_all_safe`); a container recursor and the family record are checked by
-  their blocks' routes;
+  their blocks' routes. Source: today's circuit; for what the payload references, the same
+  assertions on inner references;
 * `notAxiomLike`: `check_advice_record` has no arm for an axiom or a quotient record; a container
-  recursor is a recursor (`rec_family_block`); the family record is a block of recursors. -/
+  recursor is a recursor (`rec_family_block`); the family record is a block of recursors.
+  Stated for the records new in the group only: a walked witness whose closure uses `propext`
+  or `choice` makes an axiom record payload-reached in later groups (a standard axiom is no
+  walked role, so a reference to it is not covered), and that record is held before them.
+  Source: today's circuit for the payload's addresses; for a record new in the group that the
+  payload's records reference, the walk of a witness checks an axiom record only with its role
+  in force (`check_const`'s axiom arm), so it was held before. -/
 structure PayloadFacts (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (Pay : PayloadRel) : Prop where
   record : ∀ g a, PayReach t E₀ Pay g a → ∃ c, recordOf E₀ a = some c
   blockMembers : ∀ g B c ms, PayReach t E₀ Pay g B → recordOf E₀ B = some c → c.info = .muts ms →
@@ -545,7 +557,9 @@ structure PayloadFacts (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (Pay : Payloa
   projMember : ∀ g a c, PayReach t E₀ Pay g a → recordOf E₀ a = some c → IsProj c →
     ∃ cb, recordOf E₀ (Ix.Cert.ownerOf a c) = some cb ∧ ConstAddrOf (Ix.Cert.ownerOf a c) cb a
   logic : ∀ g a c, PayReach t E₀ Pay g a → recordOf E₀ a = some c → InLogic c
-  notAxiomLike : ∀ g a c, PayReach t E₀ Pay g a → recordOf E₀ a = some c → ¬ IsAxiomLike c
+  notAxiomLike : ∀ g a c, PayReach t E₀ Pay g a →
+    New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) a → recordOf E₀ a = some c →
+    ¬ IsAxiomLike c
 
 /-- **With no payload there is nothing to assume.** -/
 theorem payloadFacts_none (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) :
