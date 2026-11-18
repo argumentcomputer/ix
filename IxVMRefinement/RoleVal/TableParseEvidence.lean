@@ -86,9 +86,9 @@ theorem read_evidence_entries_parse :
         ih (by omega) hs1 ev122
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htuple
       obtain ⟨rfl, rfl⟩ := htuple
-      let node := Value.construct evListEnum "Cons" [.construct evEnum "Defeq" [], entriesPtr]
+      let node := Value.construct evListEnum "Cons" [.construct evEnum "Defeq" [], x_rest]
       have ext2 := Heap.Extends.snoc m110 node
-      refine ⟨ext1.trans ext2, .defeq :: es', rest, _, restPtr', rfl, by simp [hlen], ?_, ?_,
+      refine ⟨ext1.trans ext2, .defeq :: es', rest, _, x_s_150, rfl, by simp [hlen], ?_, ?_,
         ?_, hs'.mono ext2⟩
       · intro e he
         rcases List.mem_cons.mp he with rfl | he
@@ -117,9 +117,9 @@ theorem read_evidence_entries_parse :
         ih (by omega) hs2 ev260
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htuple
       obtain ⟨rfl, rfl⟩ := htuple
-      let node := Value.construct evListEnum "Cons" [.construct evEnum "Proof" [x_a], entriesPtr]
+      let node := Value.construct evListEnum "Cons" [.construct evEnum "Proof" [x_a], x_rest]
       have ext2 := Heap.Extends.snoc m248 node
-      refine ⟨ext_addr.trans (ext1.trans ext2), .proof (ixAddr a') :: es', rest, _, restPtr', rfl,
+      refine ⟨ext_addr.trans (ext1.trans ext2), .proof (ixAddr a') :: es', rest, _, x_s_288, rfl,
         by simp [hlen], ?_, ?_, ?_, hs'.mono ext2⟩
       · intro e he
         rcases List.mem_cons.mp he with rfl | he
