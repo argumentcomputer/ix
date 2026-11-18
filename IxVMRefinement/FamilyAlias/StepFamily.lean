@@ -1,5 +1,6 @@
 import IxVMRefinement.FamilyAlias.RecsModeledStep
 import IxVMRefinement.FamilyAlias.StepOfSeam
+import IxVMRefinement.Assembly.FoldClause
 
 /-! # The family row's step, its model half
 
@@ -87,18 +88,22 @@ theorem AliasGroup.names_nodup {env : Ix.Kernel.Env .anon}
     refine List.nodup_cons.mpr ⟨fun hin => ?_, ih⟩
     obtain ⟨a, ha, hn⟩ := List.mem_map.mp hin
     have h1 := hg'.find_alias a ha
-    rw [hn, hfresh] at h1
+    have hn' : a.name = Ix.Kernel.auxKey n d := hn
+    rw [hn', hfresh] at h1
     exact nomatch h1
 
 /-- A constant an environment finds is one of its constants, under the key. -/
 theorem find?_mem_name {E : Ix.Kernel.Env .anon} {k : Ix.Kernel.Key .anon}
-    {c : ConstantInfo .anon} (h : E.find? k = some c) : c ∈ E.consts ∧ c.name = k :=
-  ⟨List.mem_of_find?_eq_some h, beq_iff_eq.mp (List.find?_some h)⟩
+    {c : ConstantInfo .anon} (h : E.find? k = some c) : c ∈ E.consts ∧ c.name = k := by
+  have h' : E.consts.find? (·.name == k) = some c := h
+  have hp : (c.name == k) = true := List.find?_some h'
+  exact ⟨List.mem_of_find?_eq_some h', beq_iff_eq.mp hp⟩
 
 /-- A constant of an environment makes its key found. -/
 theorem find?_isSome_of_mem {E : Ix.Kernel.Env .anon} {c : ConstantInfo .anon}
-    (h : c ∈ E.consts) : (E.find? c.name).isSome = true :=
-  List.find?_isSome.mpr ⟨c, h, beq_self_eq_true _⟩
+    (h : c ∈ E.consts) : (E.find? c.name).isSome = true := by
+  show (E.consts.find? (·.name == c.name)).isSome = true
+  exact List.find?_isSome.mpr ⟨c, h, beq_self_eq_true _⟩
 
 /-- **The family row's step, its model half** (module docstring). -/
 theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
