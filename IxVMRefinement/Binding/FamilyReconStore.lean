@@ -1,4 +1,5 @@
 import IxVMRefinement.Binding.FamilyReconLocal
+import IxVMRefinement.Binding.FamilyReconRoute
 
 /-! # The reconstruction over stores: a larger store, a used-closed sub-store
 
@@ -193,6 +194,33 @@ theorem unfoldAt_mono
       rw [defnAt_mono hA hOwn hblob (hok a hk) hd]
       rw [hd] at h
       exact h
+
+theorem ctorOfAt_mono
+    (hA : ∀ y c, Ok y → recordOf E y = some c → recordOf E' y = some c)
+    (hOwn : ∀ y c, Ok y → recordOf E y = some c → Ok (Ix.Cert.ownerOf y c))
+    {a : _root_.Address} (ha : Ok a) {x : Option CtorData} (h : ctorOfAt E a = some x) :
+    ctorOfAt E' a = some x := by
+  unfold ctorOfAt at h ⊢
+  cases hc : recordOf E a with
+  | none => simp [hc] at h
+  | some c =>
+  rw [hc] at h
+  rw [hA a c ha hc]
+  simp only at h ⊢
+  cases hci : c.info with
+  | cPrj p =>
+    simp only [hci] at h ⊢
+    have hpb : Ok p.block := by
+      have h1 := hOwn a c ha hc
+      simp only [Ix.Cert.ownerOf, hci] at h1
+      exact h1
+    cases hcb : recordOf E p.block with
+    | none => simp [hcb] at h
+    | some cb =>
+    rw [hcb] at h
+    rw [hA _ cb hpb hcb]
+    exact h
+  | _ => simp only [hci] at h ⊢; exact h
 
 end Readers
 
@@ -389,6 +417,9 @@ theorem reconOfStore_le {E E' : Ixon.Env}
   addr := rfl
   unfold k us x _ h := unfoldAt_mono (Ok := fun _ => True) (fun y c _ hy => hle y c hy)
     (fun _ _ _ _ => trivial) hblob (fun _ _ => trivial) h
+  ctorOf a x _ h := ctorOfAt_mono (Ok := fun _ => True) (fun y c _ hy => hle y c hy)
+    (fun _ _ _ _ => trivial) trivial h
+  modeled b x _ h := blockRoute_grow hle x h
 
 /-- Every view is closed on every address. -/
 theorem ReconView.closedOn_true (V : ReconView) : V.ClosedOn (fun _ => True) :=
@@ -415,6 +446,9 @@ theorem reconOfStore_leOn_sub {E₀ R : Ixon.Env}
   addr := rfl
   unfold k us x hk h := unfoldAt_mono (Ok := Held R) (fun y c hy h => held_of_sub hsub hy h)
     (fun y c hy h => (hcl.1 y c (held_of_sub hsub hy h)).1) hblob hk h
+  ctorOf a x ha h := ctorOfAt_mono (Ok := Held R) (fun y c hy h => held_of_sub hsub hy h)
+    (fun y c hy h => (hcl.1 y c (held_of_sub hsub hy h)).1) ha h
+  modeled b x hb h := blockRoute_of_sub hsub hcl hb x h
 
 /-- A block's members are held with it, so `recur` over a held block names held addresses. -/
 theorem blockSelf_held {R : Ixon.Env} (hcl : UsedClosed R) {b : _root_.Address}
