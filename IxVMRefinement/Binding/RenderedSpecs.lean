@@ -90,13 +90,13 @@ def RoleTypeRenders : Prop :=
 
 /-- **One side of a structural operation's `k`-th recurrence, as the named function builds
 it**: `side` selects the side of an equation of `natOpEquations`. -/
-def OpEquationSideRenders (fn : String) (side : KExpr × KExpr → KExpr) : Prop :=
+def OpEquationSideRenders (fname : String) (side : KExpr × KExpr → KExpr) : Prop :=
   ∀ (t : Ix.Kernel.RoleTable) (r : Role) (k : Nat) (eq : KExpr × KExpr),
     (Ix.Kernel.Key.role r : KKey) ∈ Ix.Kernel.natOpNames →
     (Ix.Kernel.natOpEquations 0 (Ix.Kernel.Key.role r : KKey))[k]? = some eq → t.wf = true →
     ∀ {x_tbl res : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       TableRep t h x_tbl →
-      ObsFn W fn [x_tbl, .field (roleNum r), .field ((k : Nat) : F)] h res h' cs →
+      ObsFn W fname [x_tbl, .field (roleNum r), .field ((k : Nat) : F)] h res h' cs →
       Heap.Extends h h' ∧ RendersUpToBinderData t h' (opSideRaw (side eq)) res
 
 /-- **`KernelRoleSpec::op_equation_lhs(tbl, r, k)` builds the left side of the `k`-th
