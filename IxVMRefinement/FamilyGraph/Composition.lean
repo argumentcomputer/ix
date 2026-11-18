@@ -83,12 +83,14 @@ structure FamilyRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
     (∀ m ∈ ms.toList, ∃ r, m = Ixon.MutConst.recr r) →
     (∃ x, ConstAddrOf A c x ∧ ¬ StoredAt t envT x) →
     (∃ B, fam B = some A) ∨ ∃ B, twin A = some B
-  /-- A top-walked block of inductive types the run routes as modeled, with a constant address
-  the witness's environment does not store, has a family record (possibly empty). A block the
-  witness already stores is no unit: the fold does not step it. (`ModeledRouteAt` reads the
-  run's observations of the dispatch, so it holds of a record the dispatch never saw: the field
-  is asked of blocks of inductive types only, the records the dispatch reads.) -/
-  modeled : ∀ B cb (ms : Array Ixon.MutConst), Top B → recordOf E₀ B = some cb →
+  /-- A top-walked block of inductive types in Lean's logic the run routes as modeled, with a
+  constant address the witness's environment does not store, has a family record (possibly
+  empty). A block the witness already stores is no unit: the fold does not step it.
+  (`ModeledRouteAt` reads the run's observations of the dispatch, so it holds of a record the
+  dispatch never saw: the field is asked of blocks of inductive types only, the records the
+  dispatch reads; and of blocks in Lean's logic, since the modeled arm of `check_const` runs
+  the family check only for a safe inductive.) -/
+  modeled : ∀ B cb (ms : Array Ixon.MutConst), Top B → recordOf E₀ B = some cb → InLogic cb →
     cb.info = .muts ms → (∀ m ∈ ms.toList, ∃ ind, m = Ixon.MutConst.indc ind) →
     ModeledRouteAt calls B →
     (∃ x, ConstAddrOf B cb x ∧ ¬ StoredAt t envT x) → ∃ rb, fam B = some rb
@@ -275,7 +277,7 @@ theorem topUnitSteps_family
       (∀ m ∈ ms.toList, ∃ ind, m = Ixon.MutConst.indc ind) →
       (∃ x, ConstAddrOf A c x ∧ ¬ StoredAt t envT x) → ¬ ModeledRouteAt calls A := by
     intro ms hinfo hall hun hroute
-    obtain ⟨rb, hrb⟩ := hFR.modeled A c ms hT hc hinfo hall hroute hun
+    obtain ⟨rb, hrb⟩ := hFR.modeled A c ms hT hc hlog hinfo hall hroute hun
     rw [hfa] at hrb
     cases hrb
   -- a step is asked only at an environment that extends the witness's and stores none of the
