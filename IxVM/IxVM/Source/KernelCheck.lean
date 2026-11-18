@@ -1673,7 +1673,7 @@ def collect_index_doms := aiur_fn⟦
               (&(Lists::Node::Cons(dom,
                 collect_index_doms(rc, body, n - 1, (&(Lists::Node::Cons(dom, types))))))) } ,
             _ => {
-              match (*(KernelWhnf::whnf(rc, ty, types))) {
+              match (*(recon_whnf(rc, ty))) {
                 KernelTypes::KExprNode::Forall(dom, body, _) => {
                   (&(Lists::Node::Cons(dom,
                     collect_index_doms(rc, body, n - 1, (&(Lists::Node::Cons(dom, types))))))) } ,
@@ -1760,7 +1760,7 @@ def collect_n_doms_whnf := aiur_fn⟦
                 (rest, after) => {  ((&(Lists::Node::Cons(dom, rest))), after) } ,
               } } ,
             _ => {
-              match (*(KernelWhnf::whnf(rc, ty, types))) {
+              match (*(recon_whnf(rc, ty))) {
                 KernelTypes::KExprNode::Forall(dom, body, _) => {
                   match collect_n_doms_whnf(rc, body, n - 1, (&(Lists::Node::Cons(dom, types)))) {
                     (rest, after) => {  ((&(Lists::Node::Cons(dom, rest))), after) } ,
@@ -3294,7 +3294,7 @@ def peel_ctor_params_subst := aiur_fn⟦
               peel_ctor_params_subst(rc, body_substed, n - 1, depth,
                 spec_lift, is_aux, spec_params, j + 1, types) } ,
             _ => {
-              match (*(KernelWhnf::whnf(rc, ty, types))) {
+              match (*(recon_whnf(rc, ty))) {
                 KernelTypes::KExprNode::Forall(_, body, _) => {
                   let p = ctor_subst_param_for(j, depth, spec_lift, is_aux,
                     spec_params);
@@ -3489,6 +3489,50 @@ def build_ctor_app_params := aiur_fn⟦
     }
 ⟧
 
+  -- The head normalization of the recursor reconstruction (`collect_index_doms`,
+  -- `collect_n_doms_whnf`, `peel_ctor_params_subst`, `whnf_tele`): δ at a definition at its
+  -- level count, β one argument at a time, ζ, and a projection of a constructor application
+  -- (`KernelWhnf::red_proj`, after normalizing the projected term). It reads no role context,
+  -- no binder context and no certificate: the reconstruction is a function of the store. Any
+  -- other head (a theorem, a recursor, a quotient constant, a primitive operation, a literal) is
+  -- left as it is.
+
+def recon_whnf := aiur_fn⟦
+  fn recon_whnf(rc: KernelRoles::RoleCtx, e: KernelTypes::KExpr) -> KernelTypes::KExpr {
+      recon_whnf_spine(rc, e, (&(Lists::Node::Nil)))
+    }
+⟧
+
+def recon_whnf_spine := aiur_fn⟦
+  fn recon_whnf_spine(rc: KernelRoles::RoleCtx, head: KernelTypes::KExpr,
+                      spine: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+      match (*(head)) {
+        KernelTypes::KExprNode::App(f, a) => {
+          recon_whnf_spine(rc, f, (&(Lists::Node::Cons(a, spine)))) } ,
+        KernelTypes::KExprNode::Lam(_, body, _) => {
+          match (*(spine)) {
+            Lists::Node::Cons(a, rest) => {
+              recon_whnf_spine(rc, KernelSubst::expr_inst1(body, a, 0), rest) } ,
+            Lists::Node::Nil => {  head } ,
+          } } ,
+        KernelTypes::KExprNode::Const(addr, lvls) => {
+          match KernelWhnf::red_unfold((*(Ingress::get_ci(addr))), lvls) {
+            (1, body) => {  recon_whnf_spine(rc, body, spine) } ,
+            _ => {  KernelWhnf::apply_spine(head, spine) } ,
+          } } ,
+        KernelTypes::KExprNode::Let(_, val, body) => {
+          recon_whnf_spine(rc, KernelSubst::expr_inst1(body, val, 0), spine) } ,
+        KernelTypes::KExprNode::Proj(s, i, inner) => {
+          let iw = recon_whnf(rc, inner);
+          match KernelWhnf::red_proj(rc, s, i, iw, (&(Lists::Node::Nil))) {
+            (1, field) => {  recon_whnf_spine(rc, field, spine) } ,
+            _ => {  KernelWhnf::apply_spine((&(KernelTypes::KExprNode::Proj(s, i, iw))), spine) } ,
+          } } ,
+        _ => {  KernelWhnf::apply_spine(head, spine) } ,
+      }
+    }
+⟧
+
   -- A field type with its telescope head-normalized at every step, as Lean's kernel
   -- reads a recursive argument (`is_rec_argument`: `whnf`, then the body of each `∀`
   -- in the context extended by its domain). `types` is the context of `ty`.
@@ -3496,7 +3540,7 @@ def build_ctor_app_params := aiur_fn⟦
 def whnf_tele := aiur_fn⟦
   fn whnf_tele(rc: KernelRoles::RoleCtx, ty: KernelTypes::KExpr,
                types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
-      let w = KernelWhnf::whnf(rc, ty, types);
+      let w = recon_whnf(rc, ty);
       match (*(w)) {
         KernelTypes::KExprNode::Forall(dom, body, bl) => {
           (&(KernelTypes::KExprNode::Forall(dom,
