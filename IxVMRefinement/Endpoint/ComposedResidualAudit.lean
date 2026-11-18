@@ -9,7 +9,7 @@ that has no unconditional theorem yet. This module prints its statement (`#check
 its typing hypotheses (`#print` of `WalkedUnit` and `WalkedUnitStep`) and the axioms it
 reaches. A change to any of them fails the build.
 
-How to read it. The explicit arguments are the open obligations: the first eight are the
+How to read it. The explicit arguments are the open obligations: the first nine are the
 binding half's, the others the typing half's, for each kind of top-walked unit that has no
 step yet. The implicit argument `Run` is the binding claim layer's run predicate, which nothing
 supplies yet. A hypothesis is typed by the interface its obligation has today, so the theorem
@@ -20,9 +20,10 @@ How to change it. When a theorem produces a hypothesis, apply it inside
 same commit. When the interface of an obligation changes, retype its hypothesis the same way.
 The proof is complete when the theorem has no explicit argument.
 
-What this module does not print. A definition that a hypothesis reads (`BindingClaimExport`,
-`BasisBase`, `ClosureStep`, `FoldClauseOver`, `FoldExtra`, `UnitStep` and the others) appears by
-name only: its own module holds it. The public statement and what it reads are printed in
+What this module does not print. A definition that a hypothesis reads (`BindingClaimExportObs`,
+`BasisOver`, `AtGroups`, `ClosureStepOver`, `RoleFreeShapes`, `RoleUnitStepOver`,
+`RaisedLimitGuard`, `FoldExtra`, `UnitStep` and the others) appears by name only: its own
+module holds it. The public statement and what it reads are printed in
 `Ix.IxVM.ConsistencyAudit` and `Ix.IxVM.ConsistencyModelAudit`. The module is outside any
 namespace, so every name prints in full. -/
 
@@ -34,55 +35,37 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
     List (Aiur.Generic.SourceSemantics.Call IxVM.F) →
       Ix.Kernel.RoleTable → IxVM.Refinement.Binding.BRun → (ℕ → Ixon.Env) → Prop}
   (bindingClaimExport :
-    IxVM.Consistency.SourceSoundBounded fun calls d => IxVM.Refinement.Binding.BindingClaimExport (Run calls) calls d)
+    IxVM.Consistency.SourceSoundBounded fun calls d =>
+      IxVM.Refinement.Binding.BindingClaimExportObs (Run calls) calls d)
   (basisGroups :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.BasisBase
-        (IxVM.Refinement.Binding.FoldClauseOver IxVM.Refinement.Typing.FormerOpenTraceAt) (Run calls))
+      IxVM.Refinement.Binding.BasisOver IxVM.Refinement.Typing.FormerOpenTraceAt (Run calls))
   (groupAdmissions :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)), IxVM.Refinement.Binding.AdmitsChain (Run calls))
   (groupAdmissionReads :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)), IxVM.Refinement.Binding.AdmitsReadsChain (Run calls))
   (groupClosure :
-    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)) (t : Ix.Kernel.RoleTable)
-      (ρ : IxVM.Refinement.Binding.BRun) (Rs : ℕ → Ixon.Env),
-      Run calls t ρ Rs →
-        IxVM.Consistency.AllBound t →
-          ∀ (g : ℕ),
-            6 ≤ g →
-              g < 77 →
-                IxVM.Refinement.Binding.ClosureStep
-                  (IxVM.Refinement.Binding.FoldClauseOver IxVM.Refinement.Typing.FormerOpenTraceAt) ρ t g)
+    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
+      IxVM.Refinement.Binding.AtGroups (Run calls)
+        (IxVM.Refinement.Binding.ClosureStepOver IxVM.Refinement.Typing.FormerOpenTraceAt))
   (groupWithoutRoleUnit :
-    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)) (t : Ix.Kernel.RoleTable)
-      (ρ : IxVM.Refinement.Binding.BRun) (Rs : ℕ → Ixon.Env),
-      Run calls t ρ Rs →
-        IxVM.Consistency.AllBound t →
-          ∀ (g : ℕ),
-            6 ≤ g →
-              g < 77 →
-                IxVM.Refinement.Binding.RoleNoneFacts
-                  (IxVM.Refinement.Binding.FoldClauseOver IxVM.Refinement.Typing.FormerOpenTraceAt) t g)
+    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
+      IxVM.Refinement.Binding.AtGroups (Run calls)
+        (IxVM.Refinement.Binding.RoleFreeShapes IxVM.Refinement.Typing.FormerOpenTraceAt))
   (operationRoleUnit :
-    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)) (t : Ix.Kernel.RoleTable)
-      (ρ : IxVM.Refinement.Binding.BRun) (Rs : ℕ → Ixon.Env),
-      Run calls t ρ Rs →
-        IxVM.Consistency.AllBound t →
-          ∀ (g : ℕ),
-            6 ≤ g →
-              g < 77 →
-                IxVM.Refinement.Binding.RoleUnitStep (fun x => x ∈ IxVM.Refinement.RoleOps.opRoles)
-                  (IxVM.Refinement.Binding.FoldClauseOver IxVM.Refinement.Typing.FormerOpenTraceAt) ρ t g)
+    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
+      IxVM.Refinement.Binding.AtGroups (Run calls)
+        (IxVM.Refinement.Binding.RoleUnitStepOver (fun x => x ∈ IxVM.Refinement.RoleOps.opRoles)
+          IxVM.Refinement.Typing.FormerOpenTraceAt))
   (standardAxiomRoleUnit :
-    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)) (t : Ix.Kernel.RoleTable)
-      (ρ : IxVM.Refinement.Binding.BRun) (Rs : ℕ → Ixon.Env),
-      Run calls t ρ Rs →
-        IxVM.Consistency.AllBound t →
-          ∀ (g : ℕ),
-            6 ≤ g →
-              g < 77 →
-                IxVM.Refinement.Binding.RoleUnitStep (fun x => x ∈ IxVM.Consistency.standardAxioms)
-                  (IxVM.Refinement.Binding.FoldClauseOver IxVM.Refinement.Typing.FormerOpenTraceAt) ρ t g)
+    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
+      IxVM.Refinement.Binding.AtGroups (Run calls)
+        (IxVM.Refinement.Binding.RoleUnitStepOver (fun x => x ∈ IxVM.Consistency.standardAxioms)
+          IxVM.Refinement.Typing.FormerOpenTraceAt))
+  (raisedLimitGuard :
+    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
+      IxVM.Refinement.Binding.AtGroups (Run calls) fun x t g =>
+        IxVM.Refinement.Binding.RaisedLimitGuard IxVM.Refinement.Typing.FormerOpenTraceAt t g)
   (standaloneTheoremOrOpaque :
     IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
       fun x x_1 x_2 x_3 c => ∃ d, c.info = Ixon.ConstantInfo.defn d ∧ d.kind ≠ Ix.DefKind.defn)
