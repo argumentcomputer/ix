@@ -684,6 +684,13 @@ def op_order_scan_refs := aiur_fn⟦
               match p { Ixon::RecursorProj::Mk(_, b) => {  op_order_scan(tbl, limit, needs, b) } , } } ,
             Ixon::ConstantInfo::DPrj(p) => {
               match p { Ixon::DefinitionProj::Mk(_, b) => {  op_order_scan(tbl, limit, needs, b) } , } } ,
+            Ixon::ConstantInfo::Muts(_) => {
+              -- no mutual or nested block inside the well-founded block: its payload (family
+              -- record, advice, witnessed references) would be checked in an operation's group
+              -- with no order against the operations
+              assert_eq!(KernelModeled::block_is_modeled(a), 0,
+                "an operation reaches a mutual or nested family");
+              () } ,
             _ => {  () } ,
           };
           op_order_scan_list(tbl, limit, needs, refs, KernelClaim::const_idxs_of(c), 0) } ,
