@@ -1,0 +1,237 @@
+import IxVMRefinement.FamilyAlias.CallRekey
+import IxVMRefinement.Obs.KernelModeled3
+import IxVMRefinement.Callees.ProjAddr
+import IxVMRefinement.Callees.RouteDispatch
+import IxVMRefinement.Claim.TopProj
+import IxVMRefinement.L1.Ingress
+import IxVMRefinement.Assembly.FamilyFold
+
+/-! # The address lists `check_family` renames over
+
+`KernelModeled::check_family` renames over `src`, the concatenation of three address lists: the
+block's types (`Ingress::build_recur_addrs` of the block's members), its constructors
+(`KernelModeled::block_ctor_addrs`) and the family record's recursors
+(`KernelModeled::family_recs`). This module reads each list off its function, as the addresses
+it represents:
+
+* `member_ctor_addrs_spec`: the constructor addresses of one inductive member, from a position
+  on (`KernelCheck::projection_addr_ctor` at each);
+* `block_ctor_addrs_spec`: the constructor addresses of the block's inductive members in order
+  (`ctorAddrsFrom`);
+* `family_recs_list`: the addresses of the members of a family record that is a block of
+  recursors (`Ingress::build_recur_addrs` of its members). -/
+
+namespace IxVM.Refinement.Typing.FamilyAlias
+
+open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open Aiur.Library Aiur.Library.List
+open IxVM.Refinement.Core
+open IxVM.Consistency
+open IxVM (F)
+
+set_option linter.unusedVariables false
+
+/-! ## A member's constructors -/
+
+/-- **`KernelModeled::member_ctor_addrs`**: from position `j` on, `cnt` constructor addresses of
+the member at `p` of the block at `b`, in order. -/
+theorem member_ctor_addrs_spec {c : Ctx} {b : Bytes.Address} {xb : SourceValue F} {p n : F} :
+    ∀ (cnt j : Nat) {r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      j + cnt = ZMod.val n → Good c cs → Bytes.RepAddressRef addrTy h b xb →
+      ObsFn W "KernelModeled::member_ctor_addrs" [xb, .field p, .field n, .field (j : F)] h r h'
+        cs →
+      ∃ as : List Bytes.Address, RepList addrListEnum (Bytes.RepAddressRef addrTy) h' as r ∧
+        as.map ixAddr = (List.range' j cnt).map (cprjAddr (ixAddr b) (ZMod.val p)) ∧
+        Heap.Extends h h'
+  | 0, j, r, h, h', cs, hjn, hg, hb, ev => by
+    rcases Obs.«KernelModeled::member_ctor_addrs».obs ev with
+      ⟨op, hr, hh, -⟩ | ⟨v1, v45, v46, m48, cs56, m84, cs92, v98, op, hne, hr, hh, ev58, op133,
+        ev94, hc⟩
+    · subst hr hh
+      exact ⟨[], Lib.rep_store_nil h, rfl, Heap.Extends.snoc _ _⟩
+    · exfalso
+      have hnj : n = (j : F) := by
+        have e := SubstAux.natCast_val n
+        rw [← hjn, Nat.add_zero] at e
+        exact e.symm
+      exact hne (by rw [SubstAux.sub_ok op, hnj, sub_self])
+  | cnt + 1, j, r, h, h', cs, hjn, hg, hb, ev => by
+    have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
+    have hlt := ZMod.val_lt n
+    have hjv : ZMod.val (j : F) = j := SubstAux.val_natCast (by omega)
+    rcases Obs.«KernelModeled::member_ctor_addrs».obs ev with
+      ⟨op, hr, hh, -⟩ | ⟨v1, v45, v46, m48, cs56, m84, cs92, v98, op, hne, hr, hh, ev58, op133,
+        ev94, hc⟩
+    · exfalso
+      have e := SubstAux.sub_ok op
+      have hnj : n = (j : F) := sub_eq_zero.mp (Value.field.inj e).symm
+      rw [hnj, hjv] at hjn
+      omega
+    · subst hr hh hc
+      obtain ⟨a, ha, hax⟩ := projection_addr_ctor_step (ScopedCtx.unrestricted c) ev58 p (j : F)
+        xb b rfl (CoreGood.ofRaw (hg.sub fun x hx => by simp [hx]) fun _ _ => trivial) hb
+      have e98 : v98 = .field ((j + 1 : Nat) : F) := by
+        rw [SubstAux.add_ok op133, Nat.cast_succ]
+      subst e98
+      have x1 := ev58.heap_extends
+      obtain ⟨as, has, hmap, x2⟩ := member_ctor_addrs_spec cnt (j + 1) (by omega)
+        (hg.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy x1 hb) ev94
+      refine ⟨a :: as, Lib.rep_store_cons (Bytes.repAddressRef_heapMono₂ addrTy)
+        (Bytes.repAddressRef_heapMono₂ addrTy x2 ha) has, ?_,
+        x1.trans (x2.trans (Heap.Extends.snoc _ _))⟩
+      rw [List.range'_succ, List.map_cons, List.map_cons, hmap, hax, hjv]
+
+/-! ## The block's constructors -/
+
+private theorem repMutConst_heapMono : HeapMono₂ L1.RepMutConst :=
+  fun _ _ _ _ ext r => L1.RepMutConst.mono ext r
+
+/-- **The constructor addresses of a block's inductive members from position `p` on**, member by
+member, each member's in order. -/
+def ctorAddrsFrom (B : _root_.Address) : List Ixon.MutConst → Nat → List _root_.Address
+  | [], _ => []
+  | .indc ind :: rest, p =>
+    (List.range ind.ctors.size).map (cprjAddr B p) ++ ctorAddrsFrom B rest (p + 1)
+  | _ :: rest, p => ctorAddrsFrom B rest (p + 1)
+
+/-- **`KernelModeled::block_ctor_addrs`**: the constructor addresses of the block's members from
+position `p` on (`ctorAddrsFrom`). The members are read as the block's load represents them; the
+bounds hold at a loaded record, whose resource size is below `2^33` (`Claim.BlockLoad.record`,
+`Claim.muts_size_le`, `Claim.ctors_size_le`). -/
+theorem block_ctor_addrs_spec {c : Ctx} {b : Bytes.Address} {xb : SourceValue F} :
+    ∀ (ms : List Ixon.MutConst) (p : Nat) {x_members r : SourceValue F} {h h' : Heap F}
+      {cs : List (Call F)},
+      p + ms.length < 1099511627776 →
+      (∀ ind, Ixon.MutConst.indc ind ∈ ms → ind.ctors.size < 1099511627776) →
+      Good c cs → Bytes.RepAddressRef addrTy h b xb →
+      RepList L1.mutConstListEnum L1.RepMutConst h ms x_members →
+      ObsFn W "KernelModeled::block_ctor_addrs" [x_members, xb, .field (p : F)] h r h' cs →
+      ∃ as : List Bytes.Address, RepList addrListEnum (Bytes.RepAddressRef addrTy) h' as r ∧
+        as.map ixAddr = ctorAddrsFrom (ixAddr b) ms p ∧ Heap.Extends h h'
+  | [], p, x_members, r, h, h', cs, hp, hsz, hg, hb, hms, ev => by
+    match Obs.«KernelModeled::block_ctor_addrs».obs ev with
+    | .Nil (he24 := hr) (hm23 := hm) .. =>
+      subst hr hm
+      exact ⟨[], Lib.rep_store_nil h, rfl, Heap.Extends.snoc _ _⟩
+    | .Cons (ld12 := ld) .. =>
+      obtain ⟨_, _, he, -, -⟩ := Lib.rep_cons_of_load hms ld
+      cases he
+  | m :: rest, p, x_members, r, h, h', cs, hp, hsz, hg, hb, hms, ev => by
+    have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
+    match Obs.«KernelModeled::block_ctor_addrs».obs ev with
+    | .Nil (ld12 := ld) .. =>
+      exact absurd (Lib.rep_nil_of_load hms ld) (List.cons_ne_nil _ _)
+    | .Cons (x_ctors := x_ctors) (v124 := v124) (m127 := m127) (cs135 := cs135) (v140 := v140)
+        (m157 := m157) (cs165 := cs165) (v196 := v196) (ld12 := ld)
+        (ev167 := e1) (ev137 := e2) (op224 := op) (ev193 := e3) (ev123 := e4) (hc226 := hc) .. =>
+      subst hc
+      obtain ⟨m', rest', heq, hm, hrest⟩ := Lib.rep_cons_of_load hms ld
+      injection heq with h1 h2
+      subst h1 h2
+      cases m with
+      | defn d =>
+        obtain ⟨dv, hv, -⟩ := hm
+        simp at hv
+      | recr r' =>
+        obtain ⟨rv, hv, -⟩ := hm
+        simp at hv
+      | indc ind =>
+        obtain ⟨iv, hv, hind⟩ := hm
+        injection hv with _ _ hargs
+        injection hargs with hiv _
+        subst hiv
+        obtain ⟨typPtr, ctorsPtr, hv2, -, hctors⟩ := hind
+        injection hv2 with _ _ hargs2
+        have hx : x_ctors = ctorsPtr := by
+          have e := congrArg (fun l : List (SourceValue F) => l.getD 5 (.field 0)) hargs2
+          simpa using e
+        subst hx
+        have e1' : ObsFn W (Instance.mk "Lists::length" [.named "Ixon::Constructor" []]).symbol
+            [x_ctors] h v140 m157 cs165 := by
+          rw [Obs.Names.«Lists::length<Ixon::Constructor>».symbol]
+          exact e1
+        have hl' : RepList (Instance.mk "Lists::Node" [.named "Ixon::Constructor" []]).symbol
+            L1.RepConstructor h ind.ctors.toList x_ctors := by
+          rw [Obs.Names.«Lists::Node<Ixon::Constructor>».symbol]
+          exact hctors
+        obtain ⟨hv140, hm157⟩ := Lib.Lists.length_spec e1' hl'
+        subst hv140
+        subst m157
+        have hsz0 : ind.ctors.size < 1099511627776 := hsz ind (List.mem_cons_self ..)
+        have hlen : ind.ctors.toList.length = ind.ctors.size := Array.length_toList
+        have hpv : ZMod.val (p : F) = p := SubstAux.val_natCast (by simp at hp; omega)
+        have e2' : ObsFn W "KernelModeled::member_ctor_addrs"
+            [xb, .field (p : F), .field (ind.ctors.toList.length : F), .field ((0 : Nat) : F)]
+            h v124 m127 cs135 := by
+          rw [Nat.cast_zero]
+          exact e2
+        have x2 := e2.heap_extends
+        obtain ⟨as₁, has₁, hmap₁, -⟩ := member_ctor_addrs_spec (c := c)
+          ind.ctors.toList.length 0
+          (by rw [SubstAux.val_natCast (n := ind.ctors.toList.length) (by omega)]; omega)
+          (hg.sub fun x hx => by simp [hx]) hb e2'
+        have e196 : v196 = .field ((p + 1 : Nat) : F) := by
+          rw [SubstAux.add_ok op, Nat.cast_succ]
+        subst e196
+        have x3 := e3.heap_extends
+        obtain ⟨as₂, has₂, hmap₂, -⟩ := block_ctor_addrs_spec rest (p + 1)
+          (by simp at hp; omega)
+          (fun ind' hi => hsz ind' (List.mem_cons_of_mem _ hi))
+          (hg.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy x2 hb)
+          (RepLinkedList.mono repMutConst_heapMono x2 hrest) e3
+        refine ⟨as₁ ++ as₂, Decl.addrList_concat_spec
+          (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) x3 has₁) has₂ e4, ?_,
+          x2.trans (x3.trans e4.heap_extends)⟩
+        show _ = (List.range ind.ctors.size).map (cprjAddr (ixAddr b) p) ++
+          ctorAddrsFrom (ixAddr b) rest (p + 1)
+        rw [List.map_append, hmap₁, hmap₂, hpv, hlen, ← List.range_eq_range']
+
+/-! ## The family record's recursors -/
+
+/-- **`KernelModeled::family_recs` at a family record that is a block of recursors**: the
+addresses of its members' projection records, in order (`Ingress::build_recur_addrs`). -/
+theorem family_recs_list {calls : List (Call F)} {E₀ : Ixon.Env}
+    (hH : LoadedReads.HashedRecordsStored calls E₀) {b : Bytes.Address} {x_rb v : SourceValue F}
+    {h h' : Heap F} {cs : List (Call F)} (hb : Bytes.RepAddressRef addrTy h b x_rb)
+    (ev : ObsFn W "KernelModeled::family_recs" [x_rb] h v h' cs)
+    (hsub : ∀ cl ∈ cs, cl ∈ calls) {crb : Ixon.Constant} {rs : Array Ixon.MutConst}
+    (hrb : FamRecRecord E₀ (ixAddr b) crb rs) :
+    ∃ as : List Bytes.Address, RepList addrListEnum (Bytes.RepAddressRef addrTy) h' as v ∧
+      as.map ixAddr = rs.toList.mapIdx fun i m =>
+        projAddr (Specs.Callees.memberProjInfo (ixAddr b) i m) := by
+  match Obs.«KernelModeled::family_recs».obs ev with
+  | .Muts (m2 := m2) (m123 := m123) (cs12 := cs12) (ev14 := ev14) (ev113 := ev113)
+      (ev133 := ev133) (ev148 := ev148) (hc165 := hc) .. =>
+    have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
+    obtain ⟨cb, ms, hbl, hrep⟩ := Claim.load_block_head hb ev14
+    obtain ⟨hrec, hinfo⟩ := (hbl.mono hsub12).stored hH
+    have e1 : cb = crb := Option.some.inj (hrec.symm.trans hrb.record)
+    subst e1
+    have e2 : ms = rs := Ixon.ConstantInfo.muts.inj (hinfo.symm.trans hrb.muts)
+    subst e2
+    have ext : Heap.Extends m2 m123 := ev113.heap_extends.trans ev133.heap_extends
+    have hmems :=
+      Route.membersRep_of_repMutConstList (RepLinkedList.mono repMutConst_heapMono ext hrep)
+    have hb2 : Bytes.RepAddressRef addrTy m123 b x_rb :=
+      Bytes.repAddressRef_heapMono₂ addrTy (ev14.heap_extends.trans ext) hb
+    obtain ⟨-, as, has, hmap⟩ := L1.build_recur_addrs_spec hmems hb2 ev148
+    exact ⟨as, has, hmap⟩
+  | .Recr (cs12 := cs12) (ev14 := ev14) (hc209 := hc) .. =>
+    have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
+    obtain ⟨-, bytes, c, hsz, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
+      L1.load_verified_constant_decode_bounded hb ev14
+    have haddr' : _root_.Address.blake3Pure ⟨bytes.toArray⟩ = ixAddr b := haddr
+    have hrecb : recordOf E₀ (ixAddr b) = some c := by
+      rw [← haddr']
+      exact Claim.recordOf_of_hashed hH (Core.hashed_mono hsub12 hh)
+        (by simpa only [ByteArray.size, List.size_toArray] using hsz) hexact
+    obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
+    have hinfo_eq := (List.cons.inj (Value.construct.inj hc_eq).2.2).1
+    rw [← hinfo_eq] at hinfoRep
+    obtain ⟨rcr, hrc, -⟩ := L1.repConstantInfo_recr_inv hinfoRep
+    have e1 : c = crb := Option.some.inj (hrecb.symm.trans hrb.record)
+    subst e1
+    rw [hrb.muts] at hrc
+    cases hrc
+
+end IxVM.Refinement.Typing.FamilyAlias
