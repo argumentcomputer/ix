@@ -183,10 +183,9 @@ theorem new₁_not_axiomLike (hadm : Admits ρ t g R R') {a : _root_.Address} {c
 
 /-! ### The selected family records -/
 
-variable (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
-include hC
 
-theorem famRec_nonempty_ind {B rb : _root_.Address} (hfa : famOf B = some rb) :
+theorem famRec_nonempty_ind (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
+    {B rb : _root_.Address} (hfa : famOf B = some rb) :
     ∃ cb ms crb rs flat, FamilyOfBlock ρ.E₀ B cb ms rb crb rs flat ∧ 0 < ms.size := by
   obtain ⟨cb, ms, crb, rs, flat, hF⟩ := hC.checks.family B rb hfa
   obtain ⟨cb', ms', hcb', hms', hpos⟩ := hC.run.famNonempty B rb hfa
@@ -199,7 +198,8 @@ theorem famRec_nonempty_ind {B rb : _root_.Address} (hfa : famOf B = some rb) :
 
 /-- **No block claims a block with a selected family record**: it is a non-empty block of
 inductives, a family record a block of recursors. -/
-theorem fam_unclaimed {B rb : _root_.Address} (hfa : famOf B = some rb) :
+theorem fam_unclaimed (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
+    {B rb : _root_.Address} (hfa : famOf B = some rb) :
     ∀ B', famOf B' ≠ some B := by
   intro B' hB'
   obtain ⟨cb, ms, crb, rs, flat, hF, hpos⟩ := famRec_nonempty_ind hC hfa
@@ -219,7 +219,8 @@ theorem fam_unclaimed {B rb : _root_.Address} (hfa : famOf B = some rb) :
   cases hr
 
 /-- **One block selects a family record.** -/
-theorem fam_inj {B B' rb : _root_.Address} (hfa : famOf B = some rb) (hfa' : famOf B' = some rb) :
+theorem fam_inj (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
+    {B B' rb : _root_.Address} (hfa : famOf B = some rb) (hfa' : famOf B' = some rb) :
     B = B' := by
   obtain ⟨cb, ms, crb, rs, flat, hF, hpos⟩ := famRec_nonempty_ind hC hfa
   obtain ⟨cb', ms', crb', rs', flat', hF', hpos'⟩ := famRec_nonempty_ind hC hfa'
@@ -247,7 +248,8 @@ theorem fam_inj {B B' rb : _root_.Address} (hfa : famOf B = some rb) (hfa' : fam
 
 /-- **A block with a selected family record and its record are new in `R₁`, the record after
 the block.** -/
-theorem fam_new {B rb : _root_.Address} (hfa : famOf B = some rb) :
+theorem fam_new (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
+    {B rb : _root_.Address} (hfa : famOf B = some rb) :
     ∃ cb crb ms rs, recordOf R₁ B = some cb ∧ recordOf R₁ rb = some crb ∧
       cb.info = .muts ms ∧ crb.info = .muts rs ∧ New R R₁ B ∧ New R R₁ rb ∧
       ρ.rank g B < ρ.rank g rb := by
@@ -275,7 +277,8 @@ theorem fam_new {B rb : _root_.Address} (hfa : famOf B = some rb) :
 
 /-- **A constant address of a record new in `R₁` is owned by a unit**: the record, or the
 block that claims it, ranked below it. -/
-theorem owner_of_constAddr {D x : _root_.Address} {cD : Ixon.Constant} (hnew : New R R₁ D)
+theorem owner_of_constAddr (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
+    {D x : _root_.Address} {cD : Ixon.Constant} (hnew : New R R₁ D)
     (hcD : recordOf R₁ D = some cD) (hx : ConstAddrOf D cD x) :
     ∃ U, IsClosureUnit R R₁ famOf U ∧ FamOwns R₁ famOf U x ∧
       (U = D ∨ ρ.rank g U < ρ.rank g D) := by
@@ -291,7 +294,8 @@ theorem owner_of_constAddr {D x : _root_.Address} {cD : Ixon.Constant} (hnew : N
 
 /-- **Every new non-block record of `R₁` is owned by a unit of rank at most its own**
 (module docstring). -/
-theorem closureUnit_owner {x : _root_.Address} {cx : Ixon.Constant} (hnew : New R R₁ x)
+theorem closureUnit_owner (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
+    {x : _root_.Address} {cx : Ixon.Constant} (hnew : New R R₁ x)
     (hcx : recordOf R₁ x = some cx) (hnb : ¬ IsBlock cx) :
     ∃ U, IsClosureUnit R R₁ famOf U ∧ FamOwns R₁ famOf U x ∧
       (U = x ∨ ρ.rank g U < ρ.rank g x) := by
@@ -344,7 +348,8 @@ theorem closureUnit_owner {x : _root_.Address} {cx : Ixon.Constant} (hnew : New 
   · exact (hnb hb).elim
 
 /-- An owned address holds a record of `R₁`, new in it. -/
-theorem owned_new {A x : _root_.Address} (hA : IsClosureUnit R R₁ famOf A)
+theorem owned_new (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
+    {A x : _root_.Address} (hA : IsClosureUnit R R₁ famOf A)
     (hx : FamOwns R₁ famOf A x) :
     ∃ D cD, New R R₁ D ∧ recordOf R₁ D = some cD ∧ ConstAddrOf D cD x ∧ New R R₁ x ∧
       (∀ ax, ∀ c, recordOf R₁ x = some c → c.info ≠ .axio ax) := by
@@ -392,7 +397,8 @@ theorem owned_new {A x : _root_.Address} (hA : IsClosureUnit R R₁ famOf A)
         rcases hPp with ⟨p, h⟩ | ⟨p, h⟩ | ⟨p, h⟩ | ⟨p, h⟩ <;> (rw [h] at hi; cases hi)
 
 /-- **Two units owning one address are one unit.** -/
-theorem closureUnits_apart {A A' x : _root_.Address} (hA : IsClosureUnit R R₁ famOf A)
+theorem closureUnits_apart (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
+    {A A' x : _root_.Address} (hA : IsClosureUnit R R₁ famOf A)
     (hA' : IsClosureUnit R R₁ famOf A') (hx : FamOwns R₁ famOf A x)
     (hx' : FamOwns R₁ famOf A' x) : A = A' := by
   obtain ⟨c, hc, hxc | ⟨rb, crb, hfa, hcrb, hxr⟩⟩ := hx <;>
@@ -412,7 +418,8 @@ theorem closureUnits_apart {A A' x : _root_.Address} (hA : IsClosureUnit R R₁ 
 
 /-- **A constant address of a record new in the group is not stored by the witness's
 environment.** -/
-theorem new_constAddr_not_stored (htwf : t.wf = true) {D x : _root_.Address} {cD : Ixon.Constant}
+theorem new_constAddr_not_stored (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
+    (htwf : t.wf = true) {D x : _root_.Address} {cD : Ixon.Constant}
     (hnew : New R R' D) (hcD : recordOf R' D = some cD) (hx : ConstAddrOf D cD x) :
     ¬ StoredAt t env x := by
   intro hst
@@ -439,7 +446,8 @@ theorem new_constAddr_not_stored (htwf : t.wf = true) {D x : _root_.Address} {cD
       simp at hown
 
 /-- **A unit's owned addresses are not stored at the start.** -/
-theorem owned_not_stored (htwf : t.wf = true) {A x : _root_.Address}
+theorem owned_not_stored (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
+    (htwf : t.wf = true) {A x : _root_.Address}
     (hA : IsClosureUnit R R₁ famOf A) (hx : FamOwns R₁ famOf A x) : ¬ StoredAt t env x := by
   obtain ⟨D, cD, hnD, hcD, hxD, -⟩ := owned_new hC hA hx
   exact new_constAddr_not_stored hC htwf (new_of_closureStore hnD).1 (rec₁₂ hcD) hxD
@@ -447,7 +455,8 @@ theorem owned_not_stored (htwf : t.wf = true) {A x : _root_.Address}
 /-! ### The order -/
 
 /-- **An address held before the group that a unit needs is stored at the start.** -/
-theorem old_needed_stored {A x : _root_.Address} (hnA : New R R' A)
+theorem old_needed_stored (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
+    {A x : _root_.Address} (hnA : New R R' A)
     (hneed : ClosureNeeds ρ.E₀ famOf adv A x) (hold : (recordOf R x).isSome = true) :
     StoredAt t env x := by
   rcases hC.run.oldNeeds A x hnA hneed hold with ⟨c, n, hc, hnb, hlog, hlogB, hchk⟩ |
@@ -459,7 +468,8 @@ theorem old_needed_stored {A x : _root_.Address} (hnA : New R R' A)
     exact storedAt_of_find hci
 
 /-- **A new non-block record of rank below `A`'s is owned by a unit of rank below `A`'s.** -/
-theorem new_needed_below {A x : _root_.Address} (hnewx : New R R' x)
+theorem new_needed_below (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
+    {A x : _root_.Address} (hnewx : New R R' x)
     (hnu : ¬ NewUnit t g R R' x) (hnb : ∀ cx, recordOf ρ.E₀ x = some cx → ¬ IsBlock cx)
     (hrk : ρ.rank g x < ρ.rank g A) :
     ∃ U, IsClosureUnit R R₁ famOf U ∧ FamOwns R₁ famOf U x ∧ ρ.rank g U < ρ.rank g A := by
@@ -477,7 +487,8 @@ theorem new_needed_below {A x : _root_.Address} (hnewx : New R R' x)
 
 /-- A used reference of a record new in the group: held before, or new below it and no role
 unit's. -/
-theorem usedRef_cases {A x : _root_.Address} {c : Ixon.Constant} (hnA : New R R' A)
+theorem usedRef_cases (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
+    {A x : _root_.Address} {c : Ixon.Constant} (hnA : New R R' A)
     (hc : recordOf R' A = some c) (hused : UsedRef ρ.E₀ A x) :
     (recordOf R x).isSome = true ∨
       (New R R' x ∧ ¬ NewUnit t g R R' x ∧ ρ.rank g x < ρ.rank g A) := by
@@ -487,7 +498,8 @@ theorem usedRef_cases {A x : _root_.Address} {c : Ixon.Constant} (hnA : New R R'
   · exact Or.inl hold
 
 /-- **The order condition of the fold** (`UnitFold.NeedsEarlier`). -/
-theorem closureFold_needsEarlier {us : List _root_.Address}
+theorem closureFold_needsEarlier (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
+    {us : List _root_.Address}
     (hus : ∀ A, A ∈ us ↔ IsClosureUnit R R₁ famOf A) :
     (closureFold.{u} L t g ρ.E₀ R₁ env famOf₀ famOf adv (ρ.rank g)).NeedsEarlier env us := by
   intro A hAu x hneed
