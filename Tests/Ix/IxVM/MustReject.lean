@@ -198,7 +198,7 @@ def rejectionReasons : List (String × String) := [
   ("shapes/partial-uses-unsafe", "claim seed is unsafe or partial"),
   -- the recursor level link and the syntactic rule comparison
   ("shapes/recursor-extra-universe", levelLink),
-  ("shapes/rule-binder-domain", "a recursor rule's binder domain is not its recursor type's"),
+  ("shapes/rule-binder-domain", "a stored rule is not the generated one up to consumed wrappers"),
   ("shapes/ctor-index-assumed-block", "ctor's stored index differs from its position")]
 
 /-! ## Construction helpers -/

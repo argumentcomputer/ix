@@ -614,6 +614,27 @@ def outcomeOf (rows : List (Name × String × String)) : String :=
   | some (nm, o, r) => s!"{o} ({nm}: {(r.replace "\n" " ").take 160})"
   | none => "accept"
 
+/-- `env` with the records whose binder data the compiler left undecided given the data IxC's
+pass computes for them (`never` where it computes none), re-addressed with every record that
+names them; and the number of such records. Binder data are the prover's to choose: with
+undecided ones the program refuses a record at its first binder, before the check a fixture
+is about. -/
+def decideBinders (env : Ixon.Env) : Except String (Ixon.Env × Nat) := do
+  let mut consts := env.consts
+  let mut redone := 0
+  for (a, lc) in env.consts do
+    if let some c := lc.get? then
+      if c.binders.any (·.nodes.any (·.isUndecided)) then
+        let stripped : Ixon.Constant := { c with binders := #[] }
+        let bytes := Ixon.serConstant stripped
+        consts := consts.insert a { buf := bytes, len := bytes.size, cache := some stripped }
+        redone := redone + 1
+  if redone == 0 then return (env, 0)
+  let ctx ← Ix.ClaimContext.ofDefaultTable
+  let (env', _, _) ← Tests.Ix.IxVM.withRecordSections { env with consts }
+    (.check ctx default none) {}
+  return (env', redone)
+
 def run (leanEnv : Environment) : IO UInt32 := do
   let only? := (← IO.getEnv "IX_IV_ONLY").map (·.splitOn ",")
   let all := honest leanEnv ++ mutations leanEnv ++ (← addDeclFixtures leanEnv)
@@ -638,8 +659,14 @@ def run (leanEnv : Environment) : IO UInt32 := do
         let seeds := (f.records.flatMap refsOf).eraseDups.filter fun x => !names.contains x
         let (_, closed) := Tests.Ix.Kernel.TutorialMeta.collectDepsWithExtras leanEnv {} seeds
         let input := (closed.filter fun (x, _) => !names.contains x) ++ f.records.map fun ci => (ci.name, ci)
-        let (rawEnv, _, _) ← IO.ofExcept <|
-          Ix.Cert.compileUnchecked (Ix.CompileM.canonInput input.toArray 32)
+        -- the compile writes each record's binder data with the kernel annotator, as
+        -- `ix compile` does; where IxC's environment does not install for a mutated input,
+        -- it leaves every binder undecided
+        let canon := Ix.CompileM.canonInput input.toArray 32
+        let (annotated, data) ← try
+            pure (← IxVM.ClaimHarness.withKernelAnnotator canon, "annotated")
+          catch _ => pure (canon, "not annotated")
+        let (rawEnv, _, _) ← IO.ofExcept <| Ix.Cert.compileUnchecked annotated
         let missing := names.filter fun x => (rawEnv.getAddr? (Ix.Name.fromLeanName x)).isNone
         -- IxC
         let rows ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts rawEnv
@@ -647,7 +674,11 @@ def run (leanEnv : Environment) : IO UInt32 := do
           (rows[Ix.LeanIngress.ingressKey (Ix.Name.fromLeanName x)]?).map fun (o, r) => (x, o, r)
         let ixc := if ixcRows.isEmpty then "no rows" else outcomeOf ixcRows
         -- IxVM: a CheckEnv claim owning the fixture's records and their blocks
-        let ixonEnv ← IO.ofExcept (IxVM.ClaimHarness.withDefaultRoleBinding rawEnv)
+        let tabled ← if rawEnv.roleBinding.isSome then pure rawEnv else
+          IO.ofExcept (IxVM.ClaimHarness.withRoleTable rawEnv (← IO.ofExcept Ix.Kernel.Reader.defaultTableBytes))
+        let (decidedEnv, redone) ← IO.ofExcept (decideBinders tabled)
+        let data := if redone == 0 then data else s!"{data}, {redone} records' data recomputed"
+        let ixonEnv ← IO.ofExcept (IxVM.ClaimHarness.withDefaultRoleBinding decidedEnv)
         let mut groups : Std.HashMap Address (Array Address) := {}
         for (a, lc) in ixonEnv.consts do
           if let some c := lc.get? then
@@ -666,7 +697,7 @@ def run (leanEnv : Environment) : IO UInt32 := do
           builders := builders.push fun _ => pure { label, accept, rejectsWith, witness }
         | .error e => ixvm := s!"claim not built: {(e.replace "\n" " ").take 160}"
         let miss := if missing.isEmpty then "" else s!"\tnot compiled: {missing}"
-        IO.println s!"IV\t{f.id}\t{f.kind}\t{f.dim}\tLean={leanMsg}\tIxC={ixc}\tIxVM={ixvm}\t{f.intent}{miss}"
+        IO.println s!"IV\t{f.id}\t{f.kind}\t{f.dim}\tLean={leanMsg}\tIxC={ixc}\tIxVM={ixvm}\tbinder data: {data}\t{f.intent}{miss}"
     catch e =>
       IO.println s!"IV\t{f.id}\t{f.kind}\t{f.dim}\tERROR\t{e}"
   Tests.Ix.IxVM.runCases "ixvm-ind-variations" builders (jobs := 8)

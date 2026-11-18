@@ -317,13 +317,17 @@ def letResidualCases (fenv : Lean.Environment) : IO (Array Builder) := do
     | .error e => IO.println s!"[ixvm-batch-must-reject] let residual: block {b} has no model: {e}"
     | .ok (n, _) => IO.println s!"[ixvm-batch-must-reject] let residual: block {b}: {n} advice records"
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
-  let claim (label : String) (a : Address) (accept : Bool) : Builder :=
-    fun _ => Case.ofClaim label env (.check ctx a none) {} accept
+  let claim (label : String) (a : Address) (accept : Bool) (why : Option String := none) : Builder :=
+    fun _ => Case.ofClaim label env (.check ctx a none) {} accept why
   return #[
     claim "let-residual-control-native-plain-residual" nPlain true,
     claim "let-residual-native-residual-hides-the-parameter" nHidden false,
     claim "let-residual-native-residual-shows-another-index" nReorder false,
-    claim "let-residual-control-modeled-plain-residual" mPlain true,
+    -- the two-type control passes the constructor checks the two cases below stop at, and is
+    -- then refused for want of a model: the hand-built block has no recursor family, and the
+    -- modeller writes advice only for a block that has one
+    claim "let-residual-control-modeled-plain-residual" mPlain false
+      (some "no model advice for a mutual or nested block"),
     claim "let-residual-modeled-residual-hides-the-parameter" mHidden false,
     claim "let-residual-modeled-residual-shows-another-index" mReorder false]
 
@@ -338,7 +342,7 @@ def punitCases (fenv : Lean.Environment) : IO (Array Builder) := do
     fun _ => Case.ofClaim "punit-rec-stuck-at-level-one" env (.check ctx a1 none) {} true,
     fun _ => Case.ofClaim "punit-rec-stuck-at-a-successor-level" env (.check ctx a2 none) {} true]
 
-/-- The second batch's cases: a definition whose level-parameter count is 2^32; the witness of
+/-- Further cases: a definition whose level-parameter count is 2^32; the witness of
 an existential projected out of it (field 0 of `Exists`, a proposition, whose stored guard is
 the witness's sort); and, as control, the first component of a conjunction. -/
 def secondBatchCases (fenv : Lean.Environment) : IO (Array Builder) := do
@@ -363,7 +367,7 @@ def secondBatchCases (fenv : Lean.Environment) : IO (Array Builder) := do
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
   return #[
     fun _ => Case.ofClaim "level-count-at-2^32" env (.check ctx wideA none) {} false
-      (some "a level-parameter count is 2^32 or more"),
+      (some "u32 comparison"),
     fun _ => Case.ofClaim "projection-of-an-existential-witness" env (.check ctx projA none) {} false,
     fun _ => Case.ofClaim "control-and-first-component" env (.check ctx andA none) {} true,
     fun _ => Case.ofClaim "control-indexed-family-declared-at-a-definition" env

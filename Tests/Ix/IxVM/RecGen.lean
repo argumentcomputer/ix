@@ -486,7 +486,10 @@ def Corpus.ofEnv (env : Ixon.Env) : IO Corpus := do
   let t0 ← IO.monoMsNow
   let some binding := env.roleBinding
     | throw (IO.userError "the corpus carries no role binding")
-  let ctx ← IO.ofExcept (Ix.ClaimContext.ofBinding binding.address (bindingAssumed := true))
+  -- the claims assume the binding, or validate it when `IX_RECGEN_VALIDATE_BINDING` is set
+  let assumed := (← IO.getEnv "IX_RECGEN_VALIDATE_BINDING").isNone
+  let ctx ← IO.ofExcept (Ix.ClaimContext.ofBinding binding.address (bindingAssumed := assumed))
+  IO.println s!"[ixvm-recgen] claims {if assumed then "assume" else "validate"} the binding"
   let mut nameOf : Std.HashMap Address String := {}
   for (n, nm) in env.named.toArray do
     unless nameOf.contains nm.addr do nameOf := nameOf.insert nm.addr (toString n)

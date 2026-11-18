@@ -66,6 +66,7 @@ import Tests.Ix.IxVM.BatchMustReject
 import Tests.Ix.IxVM.AdviceMustReject
 import Tests.Ix.IxVM.QuotAdviceMustReject
 import Tests.Ix.IxVM.IndVariations
+import Tests.Ix.IxVM.RefusalControls
 import Tests.Ix.IxVM.RoleMemberCensus
 import Tests.Ix.Kernel.ReaderCoverage
 import Tests.Ix.IOIngress
@@ -267,6 +268,7 @@ def registry : List Entry := [
   .env "ixvm-advice-must-reject" (.manual "corrupted model advice for a mutual and a nested block") Tests.Ix.IxVM.AdviceMustReject.run,
   .env "ixvm-quot-advice-must-reject" (.manual "model advice whose basis references leave the quotient roles") Tests.Ix.IxVM.QuotAdviceMustReject.run,
   .env "ixvm-ind-variations" (.manual "inductive variations through Lean, the certified kernel and IxVM; IX_IV_ONLY") Tests.Ix.IxVM.IndVariations.run,
+  .env "ixvm-refusal-controls" (.manual "negative controls that reach the later refusals of the declaration checker, role validation and the field classifier") Tests.Ix.IxVM.RefusalControls.run,
   .env "ixvm-model-report" (.manual "model advice per mutual or nested block of IX_MODEL_IXE") Tests.Ix.IxVM.ModelAdvice.report,
   .env "ixvm-model-coverage" (.manual "every modeled block of IX_MODEL_IXE through IxVM") Tests.Ix.IxVM.ModelAdvice.coverage,
   .env "ixvm-model-proj" (.manual "records of IX_MODEL_IXE that project at a modeled block") Tests.Ix.IxVM.ModelAdvice.projUse,
