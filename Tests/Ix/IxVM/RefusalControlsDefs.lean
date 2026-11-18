@@ -17,9 +17,9 @@ def FstProp : propPair.1 := True
 structure HeadProj : Prop where
   h : FstProp
 
-/-- A `Prop` structure with a field of data. -/
-structure PropBox : Prop where
-  n : Nat
+/-- A proposition with one constructor that takes data: Lean generates no projection for it. -/
+inductive PropBox : Prop where
+  | mk (n : Nat)
 
 /-- `0` here; the case replaces the value by the projection of the field out of the proof. -/
 def boxValue (_ : PropBox) : Nat := 0
@@ -28,7 +28,7 @@ def boxValue (_ : PropBox) : Nat := 0
 field. -/
 theorem andFst (p q : Prop) (h : p ∧ q) : p := h.1
 
-/-- A mutual pair in `Type`, with a reduction through its recursor. -/
+/- A mutual pair in `Type`, with a reduction through its recursor. -/
 mutual
 inductive TA where
   | a : TA
