@@ -460,7 +460,10 @@ theorem nativeUnitStep_of_install {L : Ix.Kernel.Env .anon → NativeFam .anon �
   intro env Reg hext hnd hC href hfresh
   obtain ⟨blk, p₀, new, p, ty', ctorsA, caps, hO, hpin, hna, hstored, hret, hnp, hat⟩ :=
     hout env Reg hext hnd hC href hfresh
-  refine ⟨new, _, hO.nodup, hO.fresh, ?_, hO.named, hO.reads⟩
+  refine ⟨new,
+    ⟨p, ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩,
+      ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩, ctorsA⟩,
+    hO.nodup, hO.fresh, ?_, hO.named, hO.reads⟩
   intro E lim Reg' hE hC'
   obtain ⟨hOE, hcertE⟩ := hat E hE
   exact hOE.keeps hL ht hread hS hrec hpin hna hstored hret hnp (hholds E hE) hcertE hC'
@@ -526,7 +529,7 @@ theorem unitStep_nativeBlockTele {L : Ix.Kernel.Env .anon → NativeFam .anon �
         Ix.Kernel.Level.isEquiv p.resSort .zero = some true →
         BlockCert t E ⟨new ++ env.consts⟩ B) :
     UnitStep.{u} (FoldExtra.{u} L t E) t envT E₀ E lim B cb :=
-  NativeUnitStep.unitStep rfl
+  NativeUnitStep.unitStep (Stores := fun E' => E' = E) rfl
     (nativeUnitStep_of_member hL ht hS hst hrec hchk hnat htele hfree hinert hcover hcov hread
       hcert)
 
