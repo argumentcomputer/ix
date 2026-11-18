@@ -2,6 +2,7 @@ import IxVMRefinement.Binding.ClauseFold
 import IxVMRefinement.Binding.StoreCoverage
 import IxVMRefinement.Binding.Inhabit
 import IxVMRefinement.Assembly.FoldClauseSteps
+import IxVMRefinement.Decl.LateWalkedConst
 
 /-! # Inhabitants of the binding fold's interfaces over the fold's clause
 
@@ -10,6 +11,9 @@ import IxVMRefinement.Assembly.FoldClauseSteps
   its family, and the family is read off the parent's record at every store for `R`. The
   circuit's output is asked once, at the family read at that one store, with the recursor's
   reload at every store for `R`. Nothing is asked about the circuit's dispatch at another store.
+* `overUnitStep_defn`: **the step of a standalone definition, theorem or opaque record**, from
+  the walk's observed check of the record at a carried limit: the registry is kept at the same
+  registered families at every store.
 * `roleFreeShapes_of_unit`, `roleFreeShapes_natPred`: the shapes premise of a group with no role
   unit is not asked at a group that holds one; at the default order, group 7 holds `Nat.pred`.
 * `guardAt_of_noPropTable`, `raisedGuard_of_noPropTable`: the load contract's guard does not read
@@ -39,7 +43,7 @@ open IxVM.Refinement.Typing
 open Aiur.Generic.SourceSemantics (Call)
 open IxVM (F)
 open Ix.Kernel (ConstantInfo ConstantVal RecRule)
-open Ix.Kernel.Semantics (NativeFam DeclNativeRecLateRunJ)
+open Ix.Kernel.Semantics (NativeFam DeclNativeRecLateRunJ DeclRunJ IndRoutesJ)
 open Ix.Kernel.Model (rulesJ)
 open IxVM.Refinement.TableInhabit (basisEnv)
 open IxVM.Refinement.StoreInhabit (basisStore)
@@ -121,6 +125,143 @@ theorem overUnitStep_recLate {L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
     rcases hx with ⟨hxA, -⟩ | ⟨ms, i, m, hms, -, -⟩
     · rw [hxA]
       exact ⟨cn, List.mem_singleton_self _, ci₀, hname, hreads, hstored⟩
+    · have h := hinfo.symm.trans hms
+      cases h
+  · intro ci hci
+    obtain rfl := List.mem_singleton.mp hci
+    exact Or.inl ⟨A, hown, hname⟩
+
+/-! ## The step of a standalone definition record -/
+
+/-- **The step of a standalone definition, theorem or opaque record, over the fold's clause.**
+The record's check is the walk's, observed at the limit `n` (a carried limit within `G`); `Ec`
+is a record store for `R` the check is read at; `R` holds the record, only records the run
+loaded, and every blob the run loaded. One constant is installed, the declaration of the
+record's canonical annotations at the record's key. At every record store for `R` and every
+carried limit within `G` the prefix invariant is the walked-constant step's transport, the
+registry is kept at the same registered families by IxC's declaration step, and the store
+keys, the roots, the level clauses and the guard certificates are kept by a value constant at
+the key of a 32-byte address. -/
+theorem overUnitStep_defn {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    (hL : LinkLaws L) {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {G : Nat → Prop}
+    {R E₀ Ec : Ixon.Env} {envT : Ix.Kernel.Env .anon} {bAddr A : _root_.Address}
+    {c : Ixon.Constant} {d : Ixon.Definition} {n : Nat}
+    (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
+    (hRc : RecordsFor R Ec) (hst : StepStore calls t E₀ Ec)
+    (hR : recordOf R A = some c)
+    (hloaded : ∀ a lc, R.consts.get? a = some lc → E₀.consts.get? a = some lc)
+    (hblobs : ∀ x b, E₀.blobs.get? x = some b → R.blobs.get? x = some b)
+    (hinfo : c.info = .defn d) (hlogic : InLogic c)
+    (hchk : CheckedAtFullAt calls bAddr t A n)
+    (hcn : Carried (some n)) (hln : LimWithin G t (some n))
+    (hkey : Decl.KeyFree (keyOf t A))
+    (hinert : InertClause t c)
+    (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c) :
+    OverUnitStep.{u} L t G R envT E₀ A c := by
+  intro env Reg hext hnd hcl href hfresh
+  have hC₀ := hcl Ec hRc (some n) hcn hln
+  have hinv₀ : Decl.PrefixInv.{u} Ec t (some n) env := hC₀.prefixInv
+  have htwf : t.wf = true := hC₀.tableWf
+  have hc : recordOf E₀ A = some c := recordOf_of_loaded hloaded hR
+  have hbound : Bounded calls := (hst.good env none).2
+  have hrec₀ : Ix.Cert.recordAt E₀ A = some c := (hS.recordOf_eq_recordAt A).symm.trans hc
+  have hstored : Decl.UsedRefsStored t env c :=
+    usedRefsStored_of_cover (hcover env ⟨hext, href, hfresh⟩) hinert
+  obtain ⟨ty₀, val₀, ty', val', hannT, hannV, hall⟩ :=
+    checkedAtFullAt_defn_step (order_role := []) ht hbound hS hrec₀ hinfo hlogic
+      List.not_mem_nil hchk Ec hstored
+  obtain ⟨hev, hreads, hreload⟩ := hall (.regular 0)
+  have hown : ConstAddrOf A c A := Or.inl ⟨rfl, Or.inl ⟨d, hinfo⟩⟩
+  have hfreshA : env.find? (keyOf t A) = none := hfresh A hown
+  have hfreshD : ∀ ci₀ ∈ IxVM.Consistency.installs (LoadedReads.defnDecl d.kind
+      ⟨Core.keyOf t A, List.range d.lvls.toNat, ty₀⟩ val₀ (.regular 0)),
+      env.find? ci₀.name = none := by
+    intro ci₀ hci
+    rw [LoadedReads.installs_defnDecl] at hci
+    rw [List.mem_singleton.mp hci, LoadedReads.defnConst_name]
+    exact hfreshA
+  have hkeyD : ∀ ci₀ ∈ IxVM.Consistency.installs (LoadedReads.defnDecl d.kind
+      ⟨Core.keyOf t A, List.range d.lvls.toNat, ty₀⟩ val₀ (.regular 0)),
+      Decl.KeyFree ci₀.name := by
+    intro ci₀ hci
+    rw [LoadedReads.installs_defnDecl] at hci
+    rw [List.mem_singleton.mp hci, LoadedReads.defnConst_name]
+    exact hkey
+  have hskip : ∀ cv, LoadedReads.defnDecl d.kind
+      ⟨Core.keyOf t A, List.range d.lvls.toNat, ty₀⟩ val₀ (.regular 0) = .axiomDecl cv →
+      cv.name = Ix.Kernel.quotSoundName ∨ IxVM.Consistency.inertKey cv.name = true :=
+    fun cv h => absurd h (LoadedReads.defnDecl_ne_axiomDecl _ _ _ _ cv)
+  obtain ⟨-, htrans⟩ := Decl.walkedConst_step hinv₀ hev (hst.good env none) hfreshD hkeyD hskip
+  have hrun := Decl.walkedConst_declRunJ hinv₀ hev (hst.good env none) hfreshD hkeyD hskip
+  rw [LoadedReads.installs_defnDecl] at hrun
+  have hname : (LoadedReads.defnConst d.kind ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val'
+      (.regular 0)).name = keyOf t A :=
+    LoadedReads.defnConst_name _ _ _ _
+  have hval : IsValueConst (LoadedReads.defnConst d.kind
+      ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val' (.regular 0)) :=
+    isValueConst_defnConst _ _ _ _
+  obtain ⟨d₀, hd₀⟩ : ∃ d₀ : Ix.Kernel.Declaration .anon,
+      DeclRunJ rulesJ (IndRoutesJ rulesJ env) env d₀
+        ⟨LoadedReads.defnConst d.kind ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val'
+          (.regular 0) :: env.consts⟩ := by
+    rcases hrun with h0 | ⟨d₀, hd₀⟩
+    · cases h0
+    · exact ⟨d₀, hd₀⟩
+  have hfreshC : env.find? (LoadedReads.defnConst d.kind
+      ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val' (.regular 0)).name = none := by
+    rw [hname]
+    exact hfreshA
+  have hnt : ∀ T : Ix.Kernel.Key .anon, (LoadedReads.defnConst d.kind
+      ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val' (.regular 0)).name ≠
+        Ix.Kernel.projTableName T := by
+    intro T
+    rw [hname]
+    exact Decl.ne_projTableName_of_isBaseKey (Decl.isBaseKey_keyOf t A)
+  have hkeyx : ∃ x : _root_.Address, (LoadedReads.defnConst d.kind
+      ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val' (.regular 0)).name = keyOf t x ∧
+        x.hash.size = 32 :=
+    ⟨A, hname, address_size_of_record hS hc⟩
+  have hextE : Ix.Kernel.EnvExt env ⟨LoadedReads.defnConst d.kind
+      ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val' (.regular 0) :: env.consts⟩ :=
+    Ix.Kernel.EnvExt.cons hfreshC (fun T => hnt T)
+  -- The clause with the constant, at every store for `R` and every carried limit within `G`.
+  have hallC : ∀ E, RecordsFor R E → ∀ lim, Carried lim → LimWithin G t lim →
+      FoldClauseWith.{u} L t E lim ⟨LoadedReads.defnConst d.kind
+        ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val' (.regular 0) :: env.consts⟩ Reg := by
+    intro E hE lim hc' hl
+    have hC := hcl E hE lim hc' hl
+    have hinv' : Decl.PrefixInv.{u} E t lim ⟨LoadedReads.defnConst d.kind
+        ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val' (.regular 0) :: env.consts⟩ := by
+      have h := htrans E lim (hreload E (recordOf_of_recordsFor hE hR)
+        (blob_of_recordsFor hE hblobs)) hC.prefixInv
+      rw [LoadedReads.installs_defnDecl] at h
+      exact h
+    have hreg : FamRegistryWith.{u} L t E ⟨LoadedReads.defnConst d.kind
+        ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val' (.regular 0) :: env.consts⟩ Reg :=
+      hC.registry.step hL (fun V _ hm => Ix.Kernel.Model.EnvModelN.declRunJ V hm hd₀) hextE
+        (fun P cm ip cv caps hf hold _ _ _ => by
+          rw [find_ind_cons_old hval.not_ind hf] at hold
+          cases hold)
+    exact FoldClauseWith.of_prefix hinv' hreg
+      (keepsValuesKeyed_hashKeyed htwf env _ d₀ hC.hashKeyed hfreshC hval hnt hd₀ hkeyx)
+      (keepsValuesKeyed_auxRoot t env _ d₀ hC.auxRoot hfreshC hval hnt hd₀ hkeyx)
+      (keepsValuesKeyed_lvClauses t env _ d₀ ⟨hC.thmLevels, hC.storeArR⟩ hfreshC hval hnt hd₀
+        hkeyx)
+      (keepsValuesKeyed_guardCerts t E env _ d₀ hC.guard hfreshC hval hnt hd₀ hkeyx)
+  refine ⟨[LoadedReads.defnConst d.kind ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val'
+      (.regular 0)], Reg, List.nodup_singleton _, ?_, hallC, ?_, ?_, ?_⟩
+  · intro ci hci
+    obtain rfl := List.mem_singleton.mp hci
+    exact hfreshC
+  · intro ci hci
+    obtain rfl := List.mem_singleton.mp hci
+    rw [hname]
+    exact not_mem_opNames_of_keyFree hkey
+  · intro x hx
+    rcases hx with ⟨hxA, -⟩ | ⟨ms, i, m, hms, -, -⟩
+    · rw [hxA]
+      exact ⟨_, List.mem_singleton_self _, _, hname, hreads,
+        storedAs_defnConst _ _ _ _ hannT hannV⟩
     · have h := hinfo.symm.trans hms
       cases h
   · intro ci hci
