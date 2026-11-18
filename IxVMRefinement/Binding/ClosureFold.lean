@@ -127,10 +127,13 @@ fact about the run at the group (its producer is named in the lane's notes):
   walked role of an earlier group;
 * `famRefs`: an in-logic constant address a selected family record uses that is new in the group
   is a constant address of the block or of the record, or ranked below the block;
-* `famInj`: one block selects a family record with a constant address;
+* `famNonempty`: a block with a selected family record has a member (so one block selects a
+  record with a constant address, and no block selects a block that selects a family record);
+* `advNotUnit`: no advice record of a new block's family check is the new record of the group's
+  role unit;
 * `noPinned`: no constant address of a new record is at the key of a pinned basis constant;
-* `roleUnitForm`: a new record of a role unit of the group is no block and no inductive
-  projection (an operation's definition, a standard axiom);
+* `roleUnitForm`: a new record of a role unit of the group is a definition (an operation's) or an
+  axiom (a standard axiom's);
 * `keptRoles`: the record of each kept or prelude role of the group that is no role unit is in
   the group's store, no block, in Lean's logic with its block, and, if held before the group,
   checked by the run at some limit;
@@ -148,12 +151,13 @@ structure ClosureRunFacts (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' 
   famRefs : ∀ B rb x, famOf B = some rb → UsedRef ρ.E₀ rb x → NeedOk ρ.E₀ x → New R R' x →
     (∃ cb crb, recordOf R' B = some cb ∧ recordOf R' rb = some crb ∧ FamAddr B cb rb crb x) ∨
       ρ.rank g x < ρ.rank g B
-  famInj : ∀ B B' rb crb x, famOf B = some rb → famOf B' = some rb →
-    recordOf R' rb = some crb → ConstAddrOf rb crb x → B = B'
+  famNonempty : ∀ B rb, famOf B = some rb → ∃ cb ms, recordOf ρ.E₀ B = some cb ∧
+    cb.info = .muts ms ∧ 0 < ms.size
+  advNotUnit : ∀ B rb a, famOf B = some rb → adv B a → ¬ (RoleUnitAt t g a ∧ New R R' a)
   noPinned : ∀ A c x ci, New R R' A → recordOf R' A = some c → ConstAddrOf A c x →
     PinnedBasis ci → ci.name ≠ keyOf t x
   roleUnitForm : ∀ a c, RoleUnitAt t g a → New R R' a → recordOf R' a = some c →
-    (∀ ms, c.info ≠ .muts ms) ∧ ∀ p, c.info ≠ .iPrj p
+    (∃ d, c.info = .defn d) ∨ ∃ ax, c.info = .axio ax
   keptRoles : ∀ r ∈ roleGroup g, (keptRole r ∨ r ∈ preludeRoles) →
     ¬ (r ∈ RoleOps.opRoles ∨ r ∈ standardAxioms) → ∀ a, t.addressOf? r = some a →
     ∃ c, recordOf R' a = some c ∧ (∀ ms, c.info ≠ .muts ms) ∧ InLogic c ∧
