@@ -33,9 +33,10 @@ The run's payload and family selection, and what of the family form's clauses is
   of an address held before the group is a reading over that store.
 * `RemainingFamilyClauses calls bAddr t E₀`: what is not proved of the run's family checks, at
   the store sequence with the run's payload. Each field names the source it comes from.
-* `PayAdviceAt`, `PayRecordAt`, `PayloadDirectLeft`, `payloadDirect_of_left`,
+* `PayAdviceAt`, `PayContainerAt`, `PayRecordAt`, `PayloadDirectLeft`, `payloadDirect_of_left`,
   `RemainingFamilyClauses.payload`: the payload's facts at the addresses the family checks name
-  directly, with an advice record's record and kind from its check, and the payload's facts from
+  directly, with an advice record's and a container recursor's record and kind from their checks
+  (`Binding/PayloadAdvice.lean`), and the payload's facts from
   those and the stepped ones (`Binding/PayloadDirect.lean`).
 * `families_of_remaining`: the family form's clauses at a group (`ClosureFam` and
   `FamilyAdmits`), for any rank of the group's new records (`GroupRanked`). -/
@@ -92,31 +93,39 @@ def PayAdviceAt (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.
   ∃ B rb cs, (GroupReach t E₀ g B ∨ PayReach t E₀ (runPayload calls bAddr t) g B) ∧
     FamilyCallAtLim calls bAddr t B rb (some (valLimit g)) cs ∧ AdviceIn cs a
 
-/-- **The family record or a container recursor of a family check of a block group `g`
-reaches**, at the group's limit. -/
-def PayRecordAt (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
+/-- **A container recursor of a family check of a block group `g` reaches**, at the group's
+limit. -/
+def PayContainerAt (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
     (E₀ : Ixon.Env) (g : Nat) (a : _root_.Address) : Prop :=
   ∃ B rb cs, (GroupReach t E₀ g B ∨ PayReach t E₀ (runPayload calls bAddr t) g B) ∧
-    FamilyCallAtLim calls bAddr t B rb (some (valLimit g)) cs ∧ (a = rb ∨ ContainerRecIn cs a)
+    FamilyCallAtLim calls bAddr t B rb (some (valLimit g)) cs ∧ ContainerRecIn cs a
 
-/-- An address the run's payload names directly is an advice record, the family record or a
-container recursor of a family check of a block the group reaches. -/
+/-- **The family record of a family check of a block group `g` reaches**, at the group's
+limit. -/
+def PayRecordAt (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
+    (E₀ : Ixon.Env) (g : Nat) (a : _root_.Address) : Prop :=
+  ∃ B cs, (GroupReach t E₀ g B ∨ PayReach t E₀ (runPayload calls bAddr t) g B) ∧
+    FamilyCallAtLim calls bAddr t B a (some (valLimit g)) cs
+
+/-- An address the run's payload names directly is an advice record, a container recursor or the
+family record of a family check of a block the group reaches. -/
 theorem payDirect_cases {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {g : Nat} {a : _root_.Address}
     (h : PayDirect t E₀ (runPayload calls bAddr t) g a) :
-    PayAdviceAt calls bAddr t E₀ g a ∨ PayRecordAt calls bAddr t E₀ g a := by
-  obtain ⟨B, hB, rb, cs, hfc, ha | ha | ha⟩ := h
-  · exact Or.inr ⟨B, rb, cs, hB, hfc, Or.inl ha⟩
+    PayAdviceAt calls bAddr t E₀ g a ∨ PayContainerAt calls bAddr t E₀ g a ∨
+      PayRecordAt calls bAddr t E₀ g a := by
+  obtain ⟨B, hB, rb, cs, hfc, rfl | ha | ha⟩ := h
+  · exact Or.inr (Or.inr ⟨B, cs, hB, hfc⟩)
   · exact Or.inl ⟨B, rb, cs, hB, hfc, ha⟩
-  · exact Or.inr ⟨B, rb, cs, hB, hfc, Or.inr ha⟩
+  · exact Or.inr (Or.inl ⟨B, rb, cs, hB, hfc, ha⟩)
 
 /-- **What is left of the payload's facts at the addresses the run's family checks name
 directly** (`PayDirect`): the facts of `PayloadFactsOn` but a record and its kind at an advice
-record, which the advice check gives (`adviceIn_record`, `adviceIn_notAxiomLike`). Sources, all
+record and at a container recursor, which their checks give (`adviceIn_record`,
+`adviceIn_notAxiomLike`, `containerRecIn_record`, `containerRecIn_notAxiomLike`). Sources, all
 today's circuit unless said otherwise:
 * `record`: the family record is loaded by `KernelModeled::check_family` (`family_refs_ok`,
-  `Ingress::load_verified_constant`), a container recursor by `check_container_rec`
-  (`rec_family_block`'s `Ingress::get_ci`);
+  `Ingress::load_verified_constant`);
 * `blockMembers`: an advice block's members are loaded by `KernelClaim::check_muts_all`
   (`Ingress::projection_addr`, `get_ci`) and its constructors by its former's check
   (`get_ci_cprj`); the family record's by `check_recs`;
@@ -126,8 +135,7 @@ today's circuit unless said otherwise:
 * `logic`: `check_advice_record` admits only safe definitions, theorems, safe recursors and safe
   inductive blocks (`muts_all_safe`); a container recursor and the family record by their blocks'
   routes;
-* `notAxiomLike`: the family record is a block (`check_family`), a container recursor a recursor
-  (`rec_family_block` matches a recursor's `get_ci`). -/
+* `notAxiomLike`: the family record is a block (`check_family`'s `family_recs`). -/
 structure PayloadDirectLeft (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
   record : ∀ g a, PayRecordAt calls bAddr t E₀ g a → ∃ c, recordOf E₀ a = some c
@@ -154,15 +162,17 @@ theorem payloadDirect_of_left {calls : List (Call F)} {bAddr : _root_.Address}
     PayloadFactsOn t E₀ (runPayload calls bAddr t) (PayDirect t E₀ (runPayload calls bAddr t))
     where
   record := fun g a ha => by
-    rcases payDirect_cases ha with ⟨B, rb, cs, -, hfc, hadv⟩ | hr
+    rcases payDirect_cases ha with ⟨B, rb, cs, -, hfc, hadv⟩ | ⟨B, rb, cs, -, hfc, hcon⟩ | hr
     · exact adviceIn_record hC.runStore hC.hashedStored hfc hadv
+    · exact containerRecIn_record hC.runStore hC.hashedStored hfc hcon
     · exact h.record g a hr
   blockMembers := h.blockMembers
   projMember := h.projMember
   logic := h.logic
   notAxiomLike := fun g a c ha hn hc => by
-    rcases payDirect_cases ha with ⟨B, rb, cs, -, hfc, hadv⟩ | hr
+    rcases payDirect_cases ha with ⟨B, rb, cs, -, hfc, hadv⟩ | ⟨B, rb, cs, -, hfc, hcon⟩ | hr
     · exact adviceIn_notAxiomLike hC.runStore hfc hadv hc
+    · exact containerRecIn_notAxiomLike hC.runStore hfc hcon hc
     · exact h.notAxiomLike g a c hr hn hc
 
 section Run
