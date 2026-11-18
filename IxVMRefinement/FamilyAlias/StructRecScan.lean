@@ -33,7 +33,7 @@ def ScanTree.peelTol : Nat → ScanTree → ScanTree
 
 /-- **The field scan** (`se_scan_fields`): some leading `∀` domain mentions `M`, or the chain
 ends in a `let`. -/
-def ScanTree.fieldsScan (M : List _root_.Address) : ScanTree → Bool
+noncomputable def ScanTree.fieldsScan (M : List _root_.Address) : ScanTree → Bool
   | .all t b => t.mentions M || ScanTree.fieldsScan M b
   | .letE _ _ _ => true
   | .atom => false
