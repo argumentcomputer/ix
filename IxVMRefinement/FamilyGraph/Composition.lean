@@ -81,9 +81,10 @@ context: an advice record that is no projection record by its advice-record chec
 container's recursor by its check, a twin reached only through a container's recursor
 projection by a family check at its own address nested in that check (its own checks are the
 twin step's, not `InnerChecked`'s). A listed advice record of a family check that is not in the
-graph's advice owns no constant address and uses nothing in Lean's logic (a projection record of
-an earlier advice block). A family check nested in its calls lists advice of its own, which is
-not this check's. -/
+graph's advice owns no constant address (a projection record of an earlier advice block, or an
+empty block), so it installs nothing; what it uses is the advice walk's (earlier listed records
+and witnesses). A family check nested in its calls lists advice of its own, which is not this
+check's. -/
 structure FamilyChecksAt (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (lim : Option Nat)
     (fam twin : _root_.Address → Option _root_.Address)
@@ -91,8 +92,7 @@ structure FamilyChecksAt (calls : List (Call F)) (bAddr : _root_.Address)
   famCall : ∀ B rb, fam B = some rb → ModeledRouteAt calls B ∧
     ∃ cs advAs, FamilyCallOwn calls bAddr t B rb lim cs advAs ∧
       ∀ a, AdviceListedIn advAs a → adv B a ∨
-        ((∀ ca x, recordOf E₀ a = some ca → ¬ ConstAddrOf a ca x) ∧
-          ∀ x, UsedRef E₀ a x → ¬ NeedOk E₀ x)
+        ∀ ca x, recordOf E₀ a = some ca → ¬ ConstAddrOf a ca x
   twinCall : ∀ rb' B, twin rb' = some B → ∃ cs, FamilyCallAtLim calls bAddr t B rb' lim cs
   innerCall : ∀ a, Inner a → ∃ B rb cs,
     (fam B = some rb ∨ twin rb = some B) ∧ FamilyCallAtLim calls bAddr t B rb lim cs ∧
