@@ -1,4 +1,4 @@
-import IxVMRefinement.Endpoint.ComposedResidual
+import IxVMRefinement.Endpoint.WalkedKindSteps
 import IxVMRefinement.FamilyGraph.Skeleton
 import IxVMRefinement.FamilyGraph.CheckedUnit
 

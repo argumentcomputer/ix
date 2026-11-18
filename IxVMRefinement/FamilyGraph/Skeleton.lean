@@ -10,8 +10,8 @@ block's family record stored. This module proves the fold and the typing conclus
 `familyFold` from `TopGraph` and `FamilyGraph`:
 
 * `fold_steps_family`: the fold's steps from three step hypotheses: `UnitStep` for a unit with
-  no family record that is no twin, `UnitStepFam` for a block with a family record,
-  `UnitStepTwin` for a twin;
+  no family record that is no twin, `UnitStepFamily` for a block with a family record (handed
+  its advice and what the advice uses), `UnitStepTwin` for a twin;
 * `owner_of_top_const`: an unstored constant address of a top-walked record in Lean's logic is
   owned by a unit: the record itself, or, where a block claims the record as its family
   record, that block;
@@ -63,7 +63,7 @@ theorem owner_of_top_const (hG : TopGraph t E₀ seeds Top rank)
       cb, hcb, Or.inl hx⟩
 
 /-- **The steps of the fold over the family graph**, from `UnitStep` for each unit with no
-family record that is no twin, `UnitStepFam` for each block with a family record, and
+family record that is no twin, `UnitStepFamily` for each block with a family record, and
 `UnitStepTwin` for each twin. -/
 theorem fold_steps_family (hG : TopGraph t E₀ seeds Top rank)
     (hF : FamilyGraph t envT E₀ Top rank fam twin adv Inner)
@@ -79,7 +79,7 @@ theorem fold_steps_family (hG : TopGraph t E₀ seeds Top rank)
       UnitKind c → fam A = none → twin A = none → UnitStep.{u} X t envT E₀ E lim A c)
     (hstepFam : ∀ A c rb crb rs, Top A → recordOf E₀ A = some c → InLogic c → UnitKind c →
       fam A = some rb → FamRecRecord E₀ rb crb rs →
-      UnitStepFam.{u} X t envT E₀ E lim A c rb crb (adv A))
+      UnitStepFamily.{u} X t envT E₀ E lim A c rb crb (adv A))
     (hstepTwin : ∀ A c B rb crb, Walked Top Inner A → recordOf E₀ A = some c → InLogic c →
       twin A = some B → fam B = some rb → recordOf E₀ rb = some crb →
       UnitStepTwin.{u} X t envT E₀ E lim A c rb crb) :
@@ -210,10 +210,10 @@ theorem fold_steps_family (hG : TopGraph t E₀ seeds Top rank)
           hrefs hfresh
       | some B =>
         obtain ⟨rb, hrb, hne, -⟩ := hF.twinBlock A B htw
-        obtain ⟨crb, rs, hR, -⟩ := hF.famRecord B rb hrb
+        obtain ⟨crb, rs, hR⟩ := hF.famRecord B rb hrb
         have hcanon : ∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true := by
           intro x hx
-          rcases hneed x (Or.inr ⟨B, rb, crb, htw, hrb, hR.record, hx⟩) with hs | hown
+          rcases hneed x (Or.inr (Or.inl ⟨B, rb, crb, htw, hrb, hR.record, hx⟩)) with hs | hown
           · exact find_isSome_of_storedAt hs
           · exfalso
             exact hne (walked_eq_famRecord hG hF hW hc ((hOwn x).mpr hown) hrb hR.record hx)
@@ -227,7 +227,7 @@ theorem fold_steps_family (hG : TopGraph t E₀ seeds Top rank)
       hnames
     exact ⟨s', h1, h2, h3, h4, h5⟩
   | some rb =>
-    obtain ⟨crb, rs, hR, -⟩ := hF.famRecord A rb hfa
+    obtain ⟨crb, rs, hR⟩ := hF.famRecord A rb hfa
     have hOwn : ∀ x, FamAddr A c rb crb x ↔ FamOwns E₀ fam A x := by
       intro x
       constructor
@@ -274,11 +274,19 @@ theorem fold_steps_family (hG : TopGraph t E₀ seeds Top rank)
               a haU A hA x ⟨ca, hca, Or.inl hxa⟩ hown
           rw [hAa] at hrk
           exact Nat.lt_irrefl _ hrk
+    have hadvUses : ∀ a, adv A a → ∀ x, UsedRef E₀ a x →
+        (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x := by
+      intro a ha x hused
+      by_cases hok : NeedOk E₀ x
+      · rcases hneed x (Or.inr (Or.inr ⟨a, ha, hused, hok⟩)) with hs | hown
+        · exact Or.inl (find_isSome_of_storedAt hs)
+        · exact Or.inr (Or.inl ((hOwn x).mpr hown))
+      · exact Or.inr (Or.inr hok)
     have hfresh : ∀ x, FamAddr A c rb crb x → env.find? (keyOf t x) = none :=
       fun x hx => find_none_of_not_storedAt (hfr x ((hOwn x).mp hx))
     obtain ⟨new, hnd', hfresh', hinv', hX', hreads, hnames⟩ :=
       hstepFam A c rb crb rs (hF.famBlock A rb hfa) hc hlog hkind hfa hR env hextT hFI.nodup
-        hFI.inv hFI.extra hrefs hadv hfresh
+        hFI.inv hFI.extra hrefs hadv hadvUses hfresh
     have hnax : ∀ x, FamAddr A c rb crb x → ∀ c' ax, recordOf E₀ x = some c' →
         c'.info = .axio ax → False := by
       rintro x (hx | hx) c' ax hc' hinfo
@@ -335,7 +343,7 @@ variable {t : Ix.Kernel.RoleTable} {R E₀ : Ixon.Env} {envT : Ix.Kernel.Env .an
 store-relative extra clause and the witness's prefix invariant at the walk's limit only, where
 the run hashed no collision: `typing_skeleton_core_lim` over `familyFold`. A top-walked unit
 with no family record that is no twin is stepped by `UnitStep`, as is a unit checked inside a
-family check; a block with a family record by `UnitStepFam`; a twin by `UnitStepTwin`. -/
+family check; a block with a family record by `UnitStepFamily`; a twin by `UnitStepTwin`. -/
 theorem typing_skeleton_core_family {V : View} {extra : List ByteArray}
     {X : Ixon.Env → Ix.Kernel.Env .anon → Prop} {lim : Option Nat}
     {fam twin : _root_.Address → Option _root_.Address}
@@ -361,7 +369,7 @@ theorem typing_skeleton_core_family {V : View} {extra : List ByteArray}
       UnitStep.{u} (X E) t envT E₀ E lim A c)
     (hstepFam : ∀ E, StepCtx.{u} calls t R envT E₀ E → ∀ A c rb crb rs, Top A →
       recordOf E₀ A = some c → InLogic c → UnitKind c → fam A = some rb →
-      FamRecRecord E₀ rb crb rs → UnitStepFam.{u} (X E) t envT E₀ E lim A c rb crb (adv A))
+      FamRecRecord E₀ rb crb rs → UnitStepFamily.{u} (X E) t envT E₀ E lim A c rb crb (adv A))
     (hstepTwin : ∀ E, StepCtx.{u} calls t R envT E₀ E → ∀ A c B rb crb, Walked Top Inner A →
       recordOf E₀ A = some c → InLogic c → twin A = some B → fam B = some rb →
       recordOf E₀ rb = some crb → UnitStepTwin.{u} (X E) t envT E₀ E lim A c rb crb) :
