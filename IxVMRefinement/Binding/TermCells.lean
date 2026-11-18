@@ -321,12 +321,12 @@ private theorem struct_eq_cells_aux {κ : _root_.Address → KKey} {d : Nat} {Γ
           ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, he1004, _, _⟩ |
           ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, he1011, _, _⟩ |
           ⟨_, _, _, _, _, _, _, he1018, _, _⟩
-        · obtain ⟨qa, rfl, cella⟩ := ha.cell_of_load ld12
+        · obtain ⟨qa, rfl, cella⟩ := TmExact.cell_of_load ha ld12
           intro x hin
           exact (addrIn_none cella (by decide) hin).elim
         · exact absurd (Value.field.inj he79) one_ne_zero
         · exact absurd (Value.field.inj he86) one_ne_zero
-        · obtain ⟨qa, rfl, cella⟩ := ha.cell_of_load ld12
+        · obtain ⟨qa, rfl, cella⟩ := TmExact.cell_of_load ha ld12
           intro x hin
           exact (addrIn_none cella (by decide) hin).elim
         · exact absurd (Value.field.inj he152) one_ne_zero
@@ -339,8 +339,8 @@ private theorem struct_eq_cells_aux {κ : _root_.Address → KKey} {d : Nat} {Γ
             · rw [ite_eq_right hab] at haddr
               exact absurd (Value.field.inj haddr) one_ne_zero
           subst haeq
-          obtain ⟨qa, rfl, cella⟩ := ha.cell_of_load ld12
-          obtain ⟨qb, rfl, cellb⟩ := hb.cell_of_load ld183
+          obtain ⟨qa, rfl, cella⟩ := TmExact.cell_of_load ha ld12
+          obtain ⟨qb, rfl, cellb⟩ := TmExact.cell_of_load hb ld183
           intro x hin
           have e := Bytes.repAddressRef_inj U32.Goldilocks.compatible hra
             (addrIn_const_inv cella hin)
@@ -350,8 +350,8 @@ private theorem struct_eq_cells_aux {κ : _root_.Address → KKey} {d : Nat} {Γ
         · exact absurd (Value.field.inj he270) one_ne_zero
         · obtain ⟨Efa, Eaa, -, hfa, haa⟩ := ha.app_of_load ld12
           obtain ⟨Efb, Eab, -, hfb, hab⟩ := hb.app_of_load ld301
-          obtain ⟨qa, rfl, cella⟩ := ha.cell_of_load ld12
-          obtain ⟨qb, rfl, cellb⟩ := hb.cell_of_load ld301
+          obtain ⟨qa, rfl, cella⟩ := TmExact.cell_of_load ha ld12
+          obtain ⟨qb, rfl, cellb⟩ := TmExact.cell_of_load hb ld301
           subst hc376
           have e1 := ObsFn.heap_extends ev333
           have hF := (ih _ _ _ _ _ _ (by cells_lt_calls) ev333 rfl).1 rfl k Efa Efb x_fa x_fb rfl
@@ -366,8 +366,8 @@ private theorem struct_eq_cells_aux {κ : _root_.Address → KKey} {d : Nat} {Γ
         · exact absurd (Value.field.inj he388) one_ne_zero
         · obtain ⟨Ta, Ba, ℓa, -, hta, hba, -⟩ := ha.lam_of_load ld12
           obtain ⟨Tb, Bb, ℓb, -, htb, hbb, -⟩ := hb.lam_of_load ld424
-          obtain ⟨qa, rfl, cella⟩ := ha.cell_of_load ld12
-          obtain ⟨qb, rfl, cellb⟩ := hb.cell_of_load ld424
+          obtain ⟨qa, rfl, cella⟩ := TmExact.cell_of_load ha ld12
+          obtain ⟨qb, rfl, cellb⟩ := TmExact.cell_of_load hb ld424
           subst hc501
           obtain ⟨hT, hB⟩ := (ih _ _ _ _ _ _ (by cells_lt_calls) ev452 rfl).2 rfl k
             Ta Ba Tb Bb x_ta x_ba x_la x_tb x_bb x_lb rfl hta hba htb hbb
@@ -378,8 +378,8 @@ private theorem struct_eq_cells_aux {κ : _root_.Address → KKey} {d : Nat} {Γ
         · exact absurd (Value.field.inj he506) one_ne_zero
         · obtain ⟨Ta, Ba, ℓa, -, hta, hba, -⟩ := ha.forallE_of_load ld12
           obtain ⟨Tb, Bb, ℓb, -, htb, hbb, -⟩ := hb.forallE_of_load ld542
-          obtain ⟨qa, rfl, cella⟩ := ha.cell_of_load ld12
-          obtain ⟨qb, rfl, cellb⟩ := hb.cell_of_load ld542
+          obtain ⟨qa, rfl, cella⟩ := TmExact.cell_of_load ha ld12
+          obtain ⟨qb, rfl, cellb⟩ := TmExact.cell_of_load hb ld542
           subst hc619
           obtain ⟨hT, hB⟩ := (ih _ _ _ _ _ _ (by cells_lt_calls) ev570 rfl).2 rfl k
             Ta Ba Tb Bb x_da x_xa x_la x_db x_xb x_lb rfl hta hba htb hbb
@@ -390,8 +390,8 @@ private theorem struct_eq_cells_aux {κ : _root_.Address → KKey} {d : Nat} {Γ
         · exact absurd (Value.field.inj he624) one_ne_zero
         · obtain ⟨Ta, Va, Ba, -, hta, hva, hba⟩ := ha.letE_of_load ld12
           obtain ⟨Tb, Vb, Bb, -, htb, hvb, hbb⟩ := hb.letE_of_load ld660
-          obtain ⟨qa, rfl, cella⟩ := ha.cell_of_load ld12
-          obtain ⟨qb, rfl, cellb⟩ := hb.cell_of_load ld660
+          obtain ⟨qa, rfl, cella⟩ := TmExact.cell_of_load ha ld12
+          obtain ⟨qb, rfl, cellb⟩ := TmExact.cell_of_load hb ld660
           subst hc775
           have e1 := ObsFn.heap_extends ev697
           have e2 := ObsFn.heap_extends ev732
@@ -410,14 +410,14 @@ private theorem struct_eq_cells_aux {κ : _root_.Address → KKey} {d : Nat} {Γ
         · exact absurd (Value.field.inj he780) one_ne_zero
         · exact absurd (Value.field.inj he787) one_ne_zero
         · exact absurd (Value.field.inj he794) one_ne_zero
-        · obtain ⟨qa, rfl, cella⟩ := ha.cell_of_load ld12
+        · obtain ⟨qa, rfl, cella⟩ := TmExact.cell_of_load ha ld12
           intro x hin
           exact (addrIn_none cella (by decide) hin).elim
         · exact absurd (Value.field.inj he860) one_ne_zero
         · obtain ⟨aa, fa, Ea₁, rfl, -, hra, hEa₁⟩ := ha.proj_of_load ld12
           obtain ⟨ab, fb, Eb₁, rfl, -, hrb, hEb₁⟩ := hb.proj_of_load ld896
-          obtain ⟨qa, rfl, cella⟩ := ha.cell_of_load ld12
-          obtain ⟨qb, rfl, cellb⟩ := hb.cell_of_load ld896
+          obtain ⟨qa, rfl, cella⟩ := TmExact.cell_of_load ha ld12
+          obtain ⟨qb, rfl, cellb⟩ := TmExact.cell_of_load hb ld896
           subst hc999
           obtain ⟨haddr, rfl⟩ := Lib.address_eq_spec ev933 hra hrb
           have haeq : aa = ab := by
