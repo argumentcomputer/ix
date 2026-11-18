@@ -1,5 +1,6 @@
 import IxVMRefinement.FamilyAlias.RecsModeledStep
 import IxVMRefinement.FamilyAlias.StepOfSeam
+import IxVMRefinement.FamilyAlias.Selected
 import IxVMRefinement.Assembly.FoldClause
 
 /-! # The family row's step, its model half
@@ -9,8 +10,9 @@ the fold's clause with the family recursors' companions beside it, the type
 `FamilyBlockRow` asks), from the target's conclusion assembled at each environment the step is
 handed (`famStepConclusion_of_facts`) and these named premises:
 
-* `hseam`: the circuit side's seam at the step's hypotheses (the family as read and the facts of
-  the family check at the prefix);
+* `hseam`: the circuit side's seam at the step's hypotheses (the family as read, the facts of
+  the family check at the prefix, and a fact `Sel` of the check's selected annotated types and
+  right-hand sides);
 * `hkey`: key freedom of the family's addresses at every environment the step is asked at, where
   none of them is stored (the target's hypothesis; `familyKeyFree_of_shape` produces it);
 * `heqPin`: the pinned equality at every environment the step is asked at (`eqPin_of_shape`
@@ -18,7 +20,9 @@ handed (`famStepConclusion_of_facts`) and these named premises:
 * `hclaim`: a member of the block at the key of a claimed family record's constant address is a
   recursor (a fact of the family graph);
 * `hkeeps`: the prefix invariant and the fold's clause across the step's record (the companions,
-  load contract and η stability of the prefix invariant, and the arity of the stored terms).
+  load contract and η stability of the prefix invariant, and the arity of the stored terms), at
+  the record that installs the selected forms (`SelectedInstalled`), with the check's facts and
+  `Sel` at them.
 
 Everything else is proved here: the new constants are the members (a permutation of the block's
 names, `declIndRunJ_names_perm`) and the aliases, with distinct names, fresh in the prefix; each
@@ -113,6 +117,8 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
     {lim : Option Nat} {A : _root_.Address} {c : Ixon.Constant} {rb : _root_.Address}
     {crb : Ixon.Constant} {adv : _root_.Address → Prop}
     {fam : _root_.Address → Option _root_.Address}
+    {Sel : Ix.Kernel.Env .anon → List (ConstantInfo .anon) → List IxVM.Refinement.Core.KExpr →
+      List (List IxVM.Refinement.Core.KExpr) → Prop}
     (hseam : ∀ env : Ix.Kernel.Env .anon,
       (∀ ci ∈ envT.consts, ci ∈ env.consts) → (env.consts.map (·.name)).Nodup →
       Decl.PrefixInv.{u} E t lim env →
@@ -127,7 +133,8 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
       ∃ (blk : List (ConstantInfo .anon)) (adv' : FamilyAdvice)
         (tys : List IxVM.Refinement.Core.KExpr)
         (rhsss : List (List IxVM.Refinement.Core.KExpr)),
-        FamDeclReads t E₀ A c rb crb blk ∧ FamilyCheckFacts env blk adv' tys rhsss)
+        FamDeclReads t E₀ A c rb crb blk ∧ FamilyCheckFacts env blk adv' tys rhsss ∧
+          Sel env blk tys rhsss)
     (hkey : ∀ env : Ix.Kernel.Env .anon, (∀ ci ∈ envT.consts, ci ∈ env.consts) →
       (∀ x, FamAddr A c rb crb x → env.find? (keyOf t x) = none) →
       ∀ x, FamAddr A c rb crb x → Decl.KeyFree (keyOf t x))
@@ -139,24 +146,29 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
         recordOf E₀ rb' = some crb' → ConstAddrOf rb' crb' x →
         ∀ ci ∈ blk, ci.name = keyOf t x → isRecursor ci = true)
     (hkeeps : ∀ (env env₂ : Ix.Kernel.Env .anon)
-      (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon) (aliases blk : List (ConstantInfo .anon)),
+      (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon) (aliases blk : List (ConstantInfo .anon))
+      (adv' : FamilyAdvice) (tys : List IxVM.Refinement.Core.KExpr)
+      (rhsss : List (List IxVM.Refinement.Core.KExpr)),
       Decl.PrefixInv.{u} E t lim env → FoldExtra.{u} L t E env →
       (∀ ci ∈ envT.consts, ci ∈ env.consts) →
       (∀ x, UsedRef E₀ A x ∨ UsedRef E₀ rb x →
         (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x) →
       AliasGroup env h aliases → (∀ a ∈ aliases, ∃ ci ∈ blk, a.name.base = ci.name) →
-      FamDeclReads t E₀ A c rb crb blk →
+      FamDeclReads t E₀ A c rb crb blk → FamilyCheckFacts env blk adv' tys rhsss →
+      Sel env blk tys rhsss →
       DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk env₂ →
       (∀ ci ∈ blk, ∃ c', env₂.find? ci.name = some c' ∧ StoredAs c' ci) →
+      SelectedInstalled blk tys rhsss env₂ →
       Decl.PrefixInv.{u} E t lim env₂ ∧ FoldExtra.{u} L t E env₂) :
     UnitStepFamily.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
       t envT E₀ E lim A c rb crb adv := by
   intro env hext hnd hinv hX hrefs hadv1 hadv2 hfresh
-  obtain ⟨blk₀, adv', tys, rhsss, hreads₀, hF⟩ :=
+  obtain ⟨blk, adv', tys, rhsss, hreads, hF, hSel⟩ :=
     hseam env hext hnd hinv hX hrefs hadv1 hadv2 hfresh
-  obtain ⟨h, as, blk, env₂, hg, hroots, hreads, hd, hst⟩ :=
-    famStepConclusion_of_facts hF hreads₀ hinv.store.store hX.1.1.2 (heqPin env hext hnd)
+  obtain ⟨h, as, env₂, hg, hroots, hd, hst, hN, hR⟩ :=
+    famStepConclusion_installed hF hreads hinv.store.store hX.1.1.2 (heqPin env hext hnd)
       hfresh (hkey env hext hfresh)
+  have hI : SelectedInstalled blk tys rhsss env₂ := ⟨hN, hR⟩
   obtain ⟨new, henv, hperm⟩ := declIndRunJ_names_perm hd.shape
   have henv₂ : env₂ = ⟨(new ++ as) ++ env.consts⟩ := by
     rw [henv]
@@ -194,9 +206,11 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
       exact hfresh x hx
     · exact AliasGroup.fresh_prefix hg ci hci
   · rw [← henv₂]
-    exact (hkeeps env env₂ h as blk hinv hX.1 hext hrefs hg hroots hreads hd hst).1
+    exact (hkeeps env env₂ h as blk adv' tys rhsss hinv hX.1 hext hrefs hg hroots hreads hF hSel
+      hd hst hI).1
   · rw [← henv₂]
-    exact (hkeeps env env₂ h as blk hinv hX.1 hext hrefs hg hroots hreads hd hst).2
+    exact (hkeeps env env₂ h as blk adv' tys rhsss hinv hX.1 hext hrefs hg hroots hreads hF hSel
+      hd hst hI).2
   · rw [← henv₂]
     exact familyRecsModeled_famStep (A := A) (rb := rb) (c := c) (crb := crb) hX.2 hg hd hst
       (hclaim blk hreads)
