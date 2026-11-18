@@ -5,6 +5,7 @@ import IxVMRefinement.Binding.TableAdmits
 import IxVMRefinement.Binding.TableAdmitsValidate
 import IxVMRefinement.Binding.AxiomValidation
 import IxVMRefinement.Binding.GroupStores
+import IxVMRefinement.FamilyAlias.BlockRowCheck
 
 /-! # The composed statement from its open obligations
 
@@ -247,15 +248,17 @@ the use-site reading of the projection guard, a theorem (`Core.projGuardRunReadi
   a container's recursor and the kinds of an inner block; open until the circuit asserts it of
   inner references: the inert and in-logic parts of the used references, and their order (an
   advice record is no witnessed reference).
-* `familyBlock`: the step of a top-walked block with a family record, an empty one included,
-  handed its advice and what the advice uses, installs the block with its family record and
-  keeps the fold's clause with the family recursors' companions beside it (`UnitStepFamily`).
-  Stated; the model side's facts (`Decl.FamilyAlias.FamilyCheckFacts`) are kernel-checked at two
-  compiled fixtures. Producer: `FamilyAlias.FamilyStepTarget` with
-  `FamilyAlias.modelSide_of_target` on the model side (left: the companions after the step, the
-  advice's ties from `FamilyRun.checks` (its `FamilyChecksAt.famCall`) and the family record's
-  inert clause); the circuit side, from the observed family check to the facts, open until the
-  circuit's family changes.
+* `familyBlock`: what the family check of a top-walked block with a family record, an empty one
+  included, gives its step (`FamilyAlias.FamilyBlockCheckRow`): the seam to the model side's
+  facts (the family as read and `Decl.FamilyAlias.FamilyCheckFacts`, kernel-checked at two
+  compiled fixtures), the companion facts of each recursor the step stores, and the six load
+  facts at its new constants that read the family check (`FamilyAlias.FamilyLoadsCheck`). The
+  row (`FamilyBlockRow`: the step installs the block with its family record and keeps the fold's
+  clause with the family recursors' companions beside it, `UnitStepFamily`) is a theorem from it
+  (`FamilyAlias.familyBlockRow_of_check`): the block's record, the route fact at the block, the
+  claim of the recursors, key freedom, the pinned equality, the keeping of the clause and the
+  other eight load facts are proved. Producer: the circuit side, from the observed family check
+  to these facts, open until the circuit's family changes.
 * `familyTwin`: the step of a second family record of a block (a twin), handed the block's
   family record stored, installs it and keeps the fold's clause with the family recursors'
   companions beside it (`UnitStepTwin`). Stated; one accepted pair was executed. Producer open:
@@ -272,7 +275,7 @@ theorem circuitComposed_residual
         (RoleUnitStepOver.{u} (· ∈ RoleOps.opRoles) FormerOpenTraceAt))
     (familyGraph : FamilyGraphRow.{u})
     (innerChecked : InnerCheckedRow)
-    (familyBlock : FamilyBlockRow.{u} FormerOpenTraceAt)
+    (familyBlock : FamilyAlias.FamilyBlockCheckRow.{u} FormerOpenTraceAt)
     (familyTwin : FamilyTwinRow.{u} FormerOpenTraceAt) :
     CircuitComposed.{u} :=
   circuitComposed_of_parts
@@ -284,7 +287,7 @@ theorem circuitComposed_residual
     familyGraph
     (innerUnitSteps_of_innerChecked innerChecked
       (nativeBlockTelescope_checked linkLaws_formerOpenTrace Core.projGuardRunReading))
-    familyBlock familyTwin
+    (FamilyAlias.familyBlockRow_of_check linkLaws_formerOpenTrace familyBlock) familyTwin
     (standaloneDefinition_foldExtra linkLaws_formerOpenTrace)
     (standaloneTheoremOrOpaque_foldExtra linkLaws_formerOpenTrace)
     (standaloneRecursor_of_freshNotBasis freshRecursorMajorNotBasis_walked)
