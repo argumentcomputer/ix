@@ -136,10 +136,9 @@ theorem aliasInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTab
   obtain ⟨-, ⟨bsA, hstripA⟩, -⟩ := id hAT
   have hss : s' = s := by
     have e := hstripT.symm.trans hstripA
-    injection e with e
-    injection e with _ e2
-    injection e2 with e3
-    exact e3
+    have e' : (Ix.Kernel.Expr.sort s' : Ix.Kernel.Expr .anon) = .sort s :=
+      (Prod.mk.inj (Option.some.inj e)).2
+    exact Ix.Kernel.Expr.sort.inj e'
   obtain ⟨hlA, -, hall'⟩ := hCtors
   have hlenA' : ctorsA.length = ind.ctors.size := hlenA.trans hlenP
   have hfreshT : env.find? (Core.keyOf t (Core.iprjAddr B 0)) = none :=
@@ -320,12 +319,17 @@ theorem aliasInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTab
       install := ?_ }⟩
   · -- the opened head trace, at the new environment
     refine ⟨?_, ?_⟩
-    · show Decl.TracedBinders _ (p.nP + p.nIdx) _ _
-      rw [hpnP, hpnIdx]
-      exact htrB.mono (fun k ci hk => hext'.find hk)
-    · show Decl.TracedSort _ (p.nP + p.nIdx) _ p.resSort
-      rw [hpnP, hpnIdx, hpres, hss]
-      exact Decl.TracedSort.intro (htrS.mono (fun k ci hk => hext'.find hk)) (Core.LvEq.refl _)
+    · have h1 := htrB.mono (env' := _) (fun k ci hk => hext'.find hk)
+      have hcount : p.nP + p.nIdx = p₀.nP + p₀.nIdx := by rw [hpnP, hpnIdx]
+      show Decl.TracedBinders _ (p.nP + p.nIdx) _ _
+      rw [hcount]
+      exact h1
+    · have h2 := htrS.mono (env' := _) (fun k ci hk => hext'.find hk)
+      have hcount : p.nP + p.nIdx = p₀.nP + p₀.nIdx := by rw [hpnP, hpnIdx]
+      have hres : p.resSort = s := hpres.trans hss
+      show Decl.TracedSort _ (p.nP + p.nIdx) _ p.resSort
+      rw [hcount, hres]
+      exact Decl.TracedSort.intro h2 (Core.LvEq.refl _)
   · -- the family as stored
     refine { former := ?_, ctor := ?_, lenA := hlA, lenK := ?_ }
     · show (⟨_⟩ : Ix.Kernel.Env .anon).find? p.cvT.name = _
