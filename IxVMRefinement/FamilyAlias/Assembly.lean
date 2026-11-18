@@ -287,7 +287,9 @@ theorem familyRecord_of_facts {env : Env .anon} {blk : List (ConstantInfo .anon)
     exact storedAs_storedMember hk (MembersFacts.get hmfs.1 hi hty).annotated
   by_cases hrecs : recsOf blk = []
   · -- no recursor
-    refine ⟨aliasMap tbl, as, _, hg, hroots, ?_, ?_⟩
+    refine ⟨aliasMap tbl, as,
+      storeMembers ⟨as ++ env.consts⟩ (nonrecsOf blk) (tys.take (nonrecsOf blk).length), hg,
+      hroots, ?_, ?_⟩
     · set_option smartUnfolding false in
       exact ⟨hF.split, _, hmem, Or.inl ⟨hrecs, rfl⟩⟩
     intro ci hci
