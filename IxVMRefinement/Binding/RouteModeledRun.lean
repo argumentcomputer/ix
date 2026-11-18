@@ -1,5 +1,7 @@
 import IxVMRefinement.Binding.RunStepStores
-import IxVMRefinement.FamilyAlias.ClosureStep
+import IxVMRefinement.Assembly.FamilyArm
+import IxVMRefinement.Callees.RouteDispatch
+import IxVMRefinement.Binding.UnitDefn
 import IxVMRefinement.Binding.ClosureRoute
 import IxVMRefinement.Binding.ClosureFold
 
@@ -17,7 +19,7 @@ of `KernelModeled::block_is_modeled` on the block answers non-zero). Two facts c
 * `modeledRouteAt_of_blockRoute`: a block a used-closed store within the run's records routes as
   modeled is on the run's modeled route. The run is good for a record store holding that store's
   records (`RunStepStores`), and every observed dispatch answers that store's route
-  (`Route.block_is_modeled_agrees`), which is the store's (`FamilyAlias.blockRoute_recordsFor`).
+  (`Route.block_is_modeled_agrees`), which is the store's (`blockRoute_of_recordsFor`).
 -/
 
 namespace IxVM.Refinement.Binding
@@ -93,6 +95,22 @@ theorem blockRoute_closureStore_new {t : Ix.Kernel.RoleTable} {g : Nat} {R R' R�
       (fun d h => by cases m <;> simp [memberProjection] at h)
       (fun ax h => by cases m <;> simp [memberProjection] at h))]
 
+/-- **The route of a block over a record store for a store closed under what its records use**
+is its route over that store: the route reads the records at the block's references and members,
+which the closed store holds. -/
+theorem blockRoute_of_recordsFor {S E : Ixon.Env} (hS : UsedClosed S) (hE : RecordsFor S E)
+    {B : _root_.Address} {cb : Ixon.Constant} (hB : recordOf S B = some cb) :
+    Route.blockRoute E B = Route.blockRoute S B := by
+  refine blockRoute_congr hB (recordOf_of_recordsFor hE hB) (fun a ha => ?_)
+  have hRa : (recordOf S a).isSome = true := by
+    rcases ha with ⟨i, hi, hx⟩ | ⟨ms', i, m, hms', hm, hx⟩
+    · exact (hS.1 B cb hB).2 i hi a hx
+    · rw [hx]
+      exact Option.isSome_iff_exists.mpr ⟨_, (hS.2 B cb ms' hB hms' i m hm).1⟩
+  obtain ⟨ca, hca⟩ := Option.isSome_iff_exists.mp hRa
+  unfold Route.isIndAt
+  rw [recordOf_of_recordsFor hE hca, hca]
+
 /-- **A block a used-closed store within the run's records routes as modeled is on the run's
 modeled route** (module docstring). -/
 theorem modeledRouteAt_of_blockRoute {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
@@ -107,7 +125,7 @@ theorem modeledRouteAt_of_blockRoute {calls : List (Call F)} {t : Ix.Kernel.Role
     ModeledRouteAt calls B := by
   obtain ⟨Ec, hRec, hst⟩ := hstep R hRE hRb hcomm hzero
   have hrEc : Route.blockRoute Ec B = some true := by
-    rw [FamilyAlias.blockRoute_recordsFor hcl hRec hB]
+    rw [blockRoute_of_recordsFor hcl hRec hB]
     exact hroute
   intro bp r h h' cs b ev hsub hb hbB
   have g : Core.Good ⟨Ec, Ix.Kernel.Env.empty, t, none⟩ cs :=
