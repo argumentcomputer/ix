@@ -118,6 +118,27 @@ variable {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop} {t : Ix.Kernel.R
   {E : Ixon.Env} {lim : Option Nat} {env env₂ : Ix.Kernel.Env .anon}
   {Reg : NativeFam .anon → Prop}
 
+/-! ## A step that registers no family -/
+
+/-- **A step that registers no family keeps the part of the clause beside the prefix
+invariant**: the general form, for a step on any route. The step extends the model at every
+registry; it extends the environment; a family it stores new, under no basis name, is one the
+circuit does not treat as native at the store; and the keys, the roots and the level clauses
+hold at the new environment. This is what the step of a mutual or nested family hands over. -/
+theorem foldExtra_step (hL : LinkLaws L) (h : FoldExtra.{u} L t E env)
+    (hmodel : ∀ (Reg : NativeFam .anon → Prop) (V : Type u) [Ix.Kernel.SetTheory V],
+      EnvModelN V .verified env Reg → EnvModelN V .verified env₂ Reg)
+    (hext : Ix.Kernel.EnvExt env env₂)
+    (hnew : ∀ (P : _root_.Address) (cm : Ixon.Constant) (ip : Ixon.InductiveProj)
+      (cv : ConstantVal .anon) (caps : IndCaps .anon),
+      env₂.find? (keyOf t P) = some (.indInfo cv caps) → env.find? (keyOf t P) = none →
+      Ix.Cert.recordAt E P = some cm → cm.info = .iPrj ip → NativeAt E ip.block →
+      Ix.Kernel.reservedBasisNames.contains (keyOf t P) = true)
+    (hkeys₂ : HashKeyed t env₂) (haux₂ : Decl.AuxRootSynced env₂) (hlv₂ : LvClauses env₂) :
+    FoldExtra.{u} L t E env₂ := by
+  obtain ⟨⟨⟨⟨Reg, hR⟩, -⟩, -⟩, -⟩ := h
+  exact ⟨⟨⟨⟨Reg, hR.step hL (hmodel Reg) hext hnew⟩, hkeys₂⟩, haux₂⟩, hlv₂⟩
+
 /-! ## A native block's install -/
 
 /-- **A native block's install keeps the part of the clause beside the prefix invariant**,

@@ -114,7 +114,7 @@ structure LinkLaws (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) : Prop
     L env fam → L env₂ fam
   ofTele : ∀ {env : Ix.Kernel.Env .anon} {fam : NativeFam .anon}, fam.cvTa = fam.cvS →
     (∃ bs, fam.cvTa.type.stripPis (fam.p.nP + fam.p.nIdx) = some (bs, .sort fam.p.resSort)) →
-    ArRes env fam.cvTa.type → L env fam
+    TeleChecked env fam → L env fam
 
 /-- The laws hold of the link that says nothing. -/
 theorem linkLaws_true : LinkLaws (fun _ _ => True) :=
@@ -190,7 +190,7 @@ theorem FamRead.of_late (hL : LinkLaws L) (h : LateFamAt t E env fam)
       record := h.record
       retHead := hrh
       noProj := hnp
-      link := hL.ofTele h.tele h.sort htc.arRes }
+      link := hL.ofTele h.tele h.sort htc }
 
 /-- **A registered family read off a parent's record**: the family of the parent's name, with
 the member the parent's record names, its counts, its constructor count and constructor keys. -/
@@ -512,6 +512,72 @@ theorem foldExtra_of_nativeBlockXR {L : Ix.Kernel.Env .anon → NativeFam .anon 
     FamRead.of_late hL (hR.fams fam hf) hwf hlv.2 (hH fam hf).1 (hH fam hf).2,
     hR.complete, hR.model⟩, hkeys⟩, haux⟩, hlv⟩
 
+/-! ## The clause at the link that identifies the two constants -/
+
+/-- **The link that identifies a family's telescope constant with its stored former.** It holds
+of every family whose former is declared at its telescope, and of no family whose former is
+declared at a definition. -/
+def TeleLink (env : Ix.Kernel.Env .anon) (fam : NativeFam .anon) : Prop :=
+  fam.cvTa = fam.cvS
+
+/-- The identifying link satisfies the laws. -/
+theorem linkLaws_tele : LinkLaws TeleLink :=
+  ⟨fun _ h => h, fun h _ _ => h⟩
+
+/-- At the identifying link, a family read off the store is read with the telescope
+equality. -/
+theorem FamRead.toLate {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
+    {fam : NativeFam .anon} (h : FamRead TeleLink t E env fam) : LateFamAt t E env fam :=
+  { stored := h.stored
+    tele := h.link
+    lps := h.lps
+    sort := h.sort
+    isProp := h.isProp
+    kinds := h.kinds
+    nodup := h.nodup
+    ctorFields := h.ctorFields
+    record := h.record }
+
+/-- At the identifying link, a family read off a parent's record is the matched family of the
+late recursor's specifications. -/
+theorem FamReadAt.toMatched {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
+    {env : Ix.Kernel.Env .anon} {P : _root_.Address} {ip : Ixon.InductiveProj}
+    {fam : NativeFam .anon} (h : FamReadAt TeleLink t E env P ip fam) :
+    MatchedAt t E env P ip fam :=
+  ⟨h.1.toLate, h.2⟩
+
+/-- **At the identifying link, the part of the clause beside the prefix invariant gives the
+clause with the telescope equality.** -/
+theorem nativeBlockXR_of_foldExtra_tele {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
+    {env : Ix.Kernel.Env .anon} (h : FoldExtra.{u} TeleLink t E env) :
+    NativeBlockXR.{u} t E env := by
+  obtain ⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩ := h
+  exact ⟨⟨⟨⟨Reg, ⟨fun fam hf => (hR.fams fam hf).toLate, hR.complete, hR.model⟩,
+    fun fam hf => ⟨(hR.fams fam hf).retHead, (hR.fams fam hf).noProj⟩⟩, hkeys⟩, haux⟩, hlv⟩
+
+/-- **A unit step for one extra clause is a unit step for any clause equivalent to it under the
+prefix invariant.** -/
+theorem UnitStep.of_iff {X X' : Ix.Kernel.Env .anon → Prop} {t : Ix.Kernel.RoleTable}
+    {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant}
+    (hXX' : ∀ env, Decl.PrefixInv.{u} E t lim env → (X env ↔ X' env))
+    (h : UnitStep.{u} X t envT E₀ E lim A c) : UnitStep.{u} X' t envT E₀ E lim A c := by
+  intro env hext hnd hinv hX' href hfresh
+  obtain ⟨new, h1, h2, hinv', hXn, h5, h6⟩ :=
+    h env hext hnd hinv ((hXX' env hinv).mpr hX') href hfresh
+  exact ⟨new, h1, h2, hinv', (hXX' _ hinv').mp hXn, h5, h6⟩
+
+/-- **Every unit step that keeps the clause with the telescope equality keeps the clause at
+the identifying link**, at the same limit: under the prefix invariant the two are equivalent. -/
+theorem unitStep_foldExtra_tele {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .anon}
+    {E₀ E : Ixon.Env} {lim : Option Nat} {A : _root_.Address} {c : Ixon.Constant}
+    (h : UnitStep.{u} (NativeBlockXR.{u} t E) t envT E₀ E lim A c) :
+    UnitStep.{u} (FoldExtra.{u} TeleLink t E) t envT E₀ E lim A c :=
+  UnitStep.of_iff (X := NativeBlockXR.{u} t E) (X' := FoldExtra.{u} TeleLink t E)
+    (fun env hinv =>
+      ⟨foldExtra_of_nativeBlockXR linkLaws_tele hinv.store.store.wf,
+        nativeBlockXR_of_foldExtra_tele⟩) h
+
 /-- **The clause with the telescope equality has no inhabitant at an environment that stores a
 former declared at a definition.** At a stored former under no basis name, whose record is an
 inductive projection of a block the circuit treats as native, and whose stored type is not a
@@ -556,5 +622,28 @@ theorem stripPis_binder_app_ne {dom f a : Ix.Kernel.Expr .anon} {bm : Ix.Kernel.
     (Ix.Kernel.Expr.forallE dom (.app f a) bm).stripPis (n + 2) ≠ some (bs, .sort s) := by
   intro h
   simp [Ix.Kernel.Expr.stripPis] at h
+
+/-- **The clause with the telescope equality has no inhabitant once a family of the shape of
+`inductive R (α : Type) : Rel α` is stored**: a stored former whose type is one binder over an
+application, at a member with two or more parameters and indices in all, under no basis name,
+in a block the circuit treats as native. -/
+theorem not_nativeBlockXR_of_binderAppFormer {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
+    {env : Ix.Kernel.Env .anon} (ht : t.check = .ok ()) {P : _root_.Address}
+    {cm : Ixon.Constant} {ip : Ixon.InductiveProj} {cv : ConstantVal .anon}
+    {caps : IndCaps .anon} {cb : Ixon.Constant} {ms : Array Ixon.MutConst}
+    {ind : Ixon.Inductive}
+    (hf : env.find? (keyOf t P) = some (.indInfo cv caps))
+    (hres : Ix.Kernel.reservedBasisNames.contains (keyOf t P) = false)
+    (hcm : Ix.Cert.recordAt E P = some cm) (hinfo : cm.info = .iPrj ip)
+    (hnat : NativeAt E ip.block)
+    (hcb : Ix.Cert.recordAt E ip.block = some cb) (hms : cb.info = .muts ms)
+    (hind : ms[ip.idx.toNat]? = some (.indc ind))
+    {dom f a : Ix.Kernel.Expr .anon} {bm : Ix.Kernel.BinderMeta} {n : Nat}
+    (hty : cv.type = .forallE dom (.app f a) bm)
+    (hcount : ind.params.toNat + ind.indices.toNat = n + 2) :
+    ¬ NativeBlockXR.{u} t E env :=
+  not_nativeBlockXR_of_aliasFormer ht hf hres hcm hinfo hnat hcb hms hind (fun bs s => by
+    rw [hty, hcount]
+    exact stripPis_binder_app_ne n bs s)
 
 end IxVM.Refinement.Typing
