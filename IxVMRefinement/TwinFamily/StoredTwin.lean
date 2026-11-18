@@ -47,7 +47,7 @@ open IxVM (F)
 open IxVM.Refinement.Decl (twinPosRulesJ)
 open IxVM.Refinement.Typing.FamilyAlias (FamilyCallAtLim)
 open IxVM.Refinement.Binding (StoredFamilies StoredFamiliesRForm StoredFamiliesFlat
-  storedFamily_of_clause)
+  StoredFormPred storedFamily_of_clause)
 open IxVM.Refinement.Binding.FamilyFlat (FlatEntry RecordFlat BlockDerivedFlat)
 open IxVM.Refinement.Binding.FamilyOf (FamilyOfBlock)
 open Ix.Kernel (ConstantInfo)
@@ -103,7 +103,7 @@ theorem storedTwinCanon_of_block {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
 `FamilyTwinRow`, restated): for a twin `A` of a block `B` with no family record in the graph,
 whose family record the witness selects (`StoredTwinCanon`), with every selected record in the
 form `RFormS`, the twin's step with `rb` as its canonical record. -/
-def StoredTwinStepFam (RFormS : _root_.Address → _root_.Address → Prop)
+def StoredTwinStepFam (RFormS : StoredFormPred)
     (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) : Prop :=
   ∀ (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (seeds : List _root_.Address)
     (E₀ : Ixon.Env) (lim : Option Nat) (Top : _root_.Address → Prop)
@@ -113,7 +113,7 @@ def StoredTwinStepFam (RFormS : _root_.Address → _root_.Address → Prop)
       (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop),
       FamilyRun calls t envT E₀ lim Top rank fam twin adv Inner →
       StepCtx.{u} calls t R envT E₀ E →
-      ∀ famOf : _root_.Address → Option _root_.Address, StoredFamiliesRForm RFormS famOf →
+      ∀ famOf : _root_.Address → Option _root_.Address, StoredFamiliesRForm RFormS t R famOf →
       ∀ (A : _root_.Address) (c : Ixon.Constant) (B rb : _root_.Address) (crb : Ixon.Constant),
         Walked Top Inner A → recordOf E₀ A = some c → InLogic c → twin A = some B →
         fam B = none → StoredTwinCanon t R envT famOf B rb crb →
@@ -145,14 +145,14 @@ def TwinOnStoredFlat : Prop :=
 `RFormS`: `TwinSeam`'s facts, with the canonical record the witness's selected one (its family
 over the flattened family in the witness's store, in the form `RFormS`) in place of a family
 check of this run accepting it, and the twin on the same flattened family. -/
-def TwinSeamStored (RFormS : _root_.Address → _root_.Address → Prop) : Prop :=
+def TwinSeamStored (RFormS : StoredFormPred) : Prop :=
   ∀ (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
     (E₀ E R : Ixon.Env) (envT env : Ix.Kernel.Env .anon) (B rb rb' : _root_.Address)
     (cb crb crb' : Ixon.Constant) (ms rs rs' : Array Ixon.MutConst)
     (flat : List _root_.Address) (lim : Option Nat) (cs : List (Call F)),
     t.check = .ok () → LoadedReads.RunStore calls E₀ → StepCtx.{u} calls t R envT E₀ E →
     (∀ ci ∈ envT.consts, ci ∈ env.consts) → (env.consts.map (·.name)).Nodup →
-    FamilyOfBlock R B cb ms rb crb rs flat → RFormS B rb →
+    FamilyOfBlock R B cb ms rb crb rs flat → RFormS t R B rb →
     FamilyOfBlock E₀ B cb ms rb' crb' rs' flat →
     rs'.size ≠ 0 → rb' ≠ rb →
     FamilyCallAtLim calls bAddr t B rb' lim cs →
@@ -335,7 +335,7 @@ flattened family, its form and its installation (carried to every handed environ
 `familyInstalled_of_ext`); the twin is not the selected record, whose constant addresses the
 witness stores, while the step is asked where the twin's are not stored. -/
 theorem storedTwinStepFam_of {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (hL : LinkLaws L) {RFormS : _root_.Address → _root_.Address → Prop}
+    (hL : LinkLaws L) {RFormS : StoredFormPred}
     (hseam : TwinSeamStored.{u} RFormS) (hpos : TwinOnStoredFlat.{u}) :
     StoredTwinStepFam.{u} RFormS L := by
   intro calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx famOf hRF
@@ -406,7 +406,7 @@ def StoredTwinBlock (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (envT : Ix.Kernel.E
 family record (`storedTwinCanon_of_block`), whose constant addresses it stores, so the twin's
 step is a plain step (`unitStep_of_twin_stored`). -/
 theorem storedTwinUnitStep {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    {RFormS : _root_.Address → _root_.Address → Prop} (hrow : StoredTwinStepFam.{u} RFormS L)
+    {RFormS : StoredFormPred} (hrow : StoredTwinStepFam.{u} RFormS L)
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {seeds : List _root_.Address}
     {E₀ : Ixon.Env} {lim : Option Nat} {Top : _root_.Address → Prop}
     {rank : _root_.Address → Nat} (hWalk : Claim.TopWalk calls t seeds E₀ lim Top rank)
@@ -416,7 +416,7 @@ theorem storedTwinUnitStep {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
     (hFR : FamilyRun calls t envT E₀ lim Top rank fam twin adv Inner)
     (hctx : StepCtx.{u} calls t R envT E₀ E)
     {famOf : _root_.Address → Option _root_.Address} (hSF : StoredFamilies t R envT famOf)
-    (hflat : StoredFamiliesFlat t R famOf) (hRF : StoredFamiliesRForm RFormS famOf)
+    (hflat : StoredFamiliesFlat t R famOf) (hRF : StoredFamiliesRForm RFormS t R famOf)
     {A : _root_.Address} {c : Ixon.Constant} {B : _root_.Address} (hW : Walked Top Inner A)
     (hc : recordOf E₀ A = some c) (hlog : InLogic c) (htw : twin A = some B)
     (hnone : fam B = none) {cb : Ixon.Constant} (hB : recordOf R B = some cb)
@@ -433,7 +433,7 @@ theorem storedTwinUnitStep {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
 at one walk and witness): every stored twin's unit step, given the witness's stored families with
 their form and that the block of each stored twin is a stored modeled block of its store. -/
 theorem storedTwinSteps_of {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    {RFormS : _root_.Address → _root_.Address → Prop} (hrow : StoredTwinStepFam.{u} RFormS L)
+    {RFormS : StoredFormPred} (hrow : StoredTwinStepFam.{u} RFormS L)
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {seeds : List _root_.Address}
     {E₀ : Ixon.Env} {lim : Option Nat} {Top : _root_.Address → Prop}
     {rank : _root_.Address → Nat} (hWalk : Claim.TopWalk calls t seeds E₀ lim Top rank)
@@ -442,7 +442,7 @@ theorem storedTwinSteps_of {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
     {adv : _root_.Address → _root_.Address → Prop} {Inner : _root_.Address → Prop}
     (hFR : FamilyRun calls t envT E₀ lim Top rank fam twin adv Inner)
     (hfams : ∃ famOf, StoredFamilies t R envT famOf ∧ StoredFamiliesFlat t R famOf ∧
-      StoredFamiliesRForm RFormS famOf)
+      StoredFamiliesRForm RFormS t R famOf)
     (hblock : StoredTwinBlock t R envT fam twin) :
     ∀ E, StepCtx.{u} calls t R envT E₀ E → ∀ A c B, Walked Top Inner A →
       recordOf E₀ A = some c → InLogic c → twin A = some B → fam B = none →

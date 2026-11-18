@@ -21,9 +21,8 @@ pin. So the former's check is taken under any context (`FormerCheckObs`), and th
 slots and the readings are read off it as `Typing.ctorSlots_of_member` and `Typing.former_reads`
 read them off a check under a known context (`ctorSlots_of_formerObs`, `former_reads_of_obs`).
 
-This is the reading `ClosureRunFacts.oldNeeds`' third alternative asks of a constructor projection
-of an advice block held before the group (`ClosureNeeds`' third case), which no unit check
-covers: `check_muts_all` checks the block's members, not its constructors. -/
+No unit check covers these constructor projections: `check_muts_all` checks the block's members,
+not its constructors. -/
 
 namespace IxVM.Refinement.Typing
 

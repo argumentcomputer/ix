@@ -453,20 +453,43 @@ theorem owned_not_stored (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf
 
 /-! ### The order -/
 
-/-- **An address held before the group that a unit needs is stored at the start.** -/
+/-- **An address held before the group that a unit needs is stored at the start**: it holds no
+block (a reference a step needs is no block; an advice record's constant address is the record
+itself, which is no block, or a member's or a constructor's projection record of the advice
+block, which the store after the group holds), and every non-block record held before the group
+is stored (`RecordsStored`). -/
 theorem old_needed_stored (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)
     {A x : _root_.Address} (hnA : New R R' A)
     (hneed : ClosureNeeds ρ.E₀ famOf adv A x) (hold : (recordOf R x).isSome = true) :
     StoredAt t env x := by
-  rcases hC.run.oldNeeds A x hnA hneed hold with ⟨c, n, hc, hnb, hlog, hlogB, hchk⟩ |
-      ⟨r, hw, hgr, ha⟩ | ⟨ci₀, hr⟩
-  · obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp
-      (hC.walked.1 x c n hc hnb hlog hlogB hchk)
-    exact storedAt_of_find hci
-  · obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp (hC.walked.2 r x hw hgr ha)
-    exact storedAt_of_find hci
-  · obtain ⟨ci, hci, -⟩ := hC.bnd.shape.reading.stored x ⟨ci₀, hr⟩
-    exact storedAt_of_find hci
+  obtain ⟨c, hc⟩ := Option.isSome_iff_exists.mp hold
+  have hc' : recordOf R' x = some c := recordOf_of_loaded hC.admits.mono hc
+  have hc₀ : recordOf ρ.E₀ x = some c := rec₂₀ hC.admits hc'
+  have hnb : ∀ ms, c.info ≠ .muts ms := by
+    intro ms hms
+    have hok : NeedOk ρ.E₀ x → False := by
+      rintro ⟨c₁, hc₁, hnb₁, -⟩
+      exact hnb₁ ⟨ms, by rw [rec_eq hc₀ hc₁] at hms; exact hms⟩
+    rcases hneed with ⟨-, hn⟩ | ⟨_, -, -, hn⟩ | ⟨rb, a, ca, hfa, ha, hca, hx⟩ |
+        ⟨_, _, -, -, -, hn⟩
+    · exact hok hn
+    · exact hok hn
+    · obtain ⟨haR', -⟩ := hC.famAdmits.advice A rb a hfa hnA ha
+      obtain ⟨ca', hca'⟩ := Option.isSome_iff_exists.mp haR'
+      have e : ca' = ca := rec_eq (rec₂₀ hC.admits hca') hca
+      rw [e] at hca'
+      rcases hx with ⟨rfl, hst⟩ | ⟨ms', i, m, hms', hm, hx⟩
+      · rw [rec_eq hc₀ hca] at hms
+        exact standalone_not_block hst ⟨ms, hms⟩
+      · obtain ⟨h1, h2⟩ := hC.admits.usedClosed.2 a ca ms' hca' hms' i m hm
+        rcases hx with rfl | ⟨ind, j, rfl, hj, rfl⟩
+        · rw [rec_eq hc' h1] at hms
+          cases m <;> simp [memberProjection] at hms
+        · rw [rec_eq hc' (h2 ind rfl j hj)] at hms
+          simp [constructorProjection] at hms
+    · exact hok hn
+  obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp (hC.stored x c hc hnb)
+  exact storedAt_of_find hci
 
 /-- **A new non-block record of rank below `A`'s is owned by a unit of rank below `A`'s.** -/
 theorem new_needed_below (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf adv cont bAddr)

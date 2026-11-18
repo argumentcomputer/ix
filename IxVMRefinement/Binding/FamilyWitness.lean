@@ -27,9 +27,10 @@ form, through the internal part:
 * `storedFamily_of_clause`, `StoredFamiliesImport`, `storedFamiliesImport_overWFam`: the first
   import of the typing half, as a consequence of the internal part: at a stored modeled block,
   the selected family and its facts;
-* `StoredFamiliesRForm RForm famOf`: the second import (the stored-twin premise): the selected
-  family record of every stored modeled block is in the reconstruction's form at every member
-  (`RForm B rb`, a placeholder for the twin step's record-level predicate);
+* `StoredFormPred`, `StoredFamiliesRForm RFormS t R famOf`: the second import (the stored-twin
+  premise): the selected family record of every stored modeled block is in the reconstruction's
+  form at every member (`RFormS t R B rb`, the twin step's record-level predicate over the
+  witness's store);
 * `ClosureStepOverFamily`: the closure of a group with its modeled blocks' families, keeping the
   selected map: `ClosureStepOver` with the run's family checks and `FamilyAdmits` as premises. -/
 
@@ -178,13 +179,19 @@ theorem storedFamiliesImport_overWFam (L : Ix.Kernel.Env .anon → NativeFam .an
   obtain ⟨famOf, hF⟩ := hW.2
   exact ⟨famOf, fun B cb hB hroute hst => storedFamily_of_clause hF hB hroute hst⟩
 
+/-- **A predicate on a stored family record's form**, of the role table, the store that holds the
+record and its block, the block and the record: the form reads the record and the block, which
+only a store gives. -/
+abbrev StoredFormPred : Type :=
+  Ix.Kernel.RoleTable → Ixon.Env → _root_.Address → _root_.Address → Prop
+
 /-- **The second import, the stored-twin premise**: the selected family record of every stored
-modeled block is in the reconstruction's form at every member. `RForm B rb` is a placeholder for
-the record-level form predicate the twin step's producer uses (the reconstruction's own type at
-every member of the record `rb` of block `B`); the predicate's text is the twin step's. -/
-def StoredFamiliesRForm (RForm : _root_.Address → _root_.Address → Prop)
+modeled block, in the witness's store `R`, is in the reconstruction's form at every member
+(`RFormS t R B rb`, the record-level form predicate the twin step's producer uses: the
+reconstruction's own type at every member of the record `rb` of block `B`). -/
+def StoredFamiliesRForm (RFormS : StoredFormPred) (t : Ix.Kernel.RoleTable) (R : Ixon.Env)
     (famOf : _root_.Address → Option _root_.Address) : Prop :=
-  ∀ B rb, famOf B = some rb → RForm B rb
+  ∀ B rb, famOf B = some rb → RFormS t R B rb
 
 /-! ## The closure of a group with its families -/
 

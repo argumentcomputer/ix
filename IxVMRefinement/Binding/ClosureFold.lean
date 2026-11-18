@@ -22,7 +22,11 @@ in the family form, with the binding fold's invariant that the walked records ar
   checked, in Lean's logic with its block, is stored at its key, and so is the record of every
   walked role of a group of `G`. The role unit of an operation reads it after the closure. It
   reads the run record, so it sits beside the boundary invariant, in and out.
-* `ClosureStepOverFamilyW`: `ClosureStepOverFamily` with `WalkedStored` before and after.
+* `RecordsStored t R env`: every record of `R` that is no block is stored at its key. The
+  closure stores every record the group adds that is no block and no role unit's (its owner unit
+  installs it), so the records held before a group, which a new unit's step reads, are stored.
+* `ClosureStepOverFamilyW`: `ClosureStepOverFamily` with `WalkedStored` and `RecordsStored` before
+  and after.
 * `ClosureStore t g R R' R₁`: the closure's store: between `R` and `R'`, every blob of `R'`, and
   lacking only records of the group's role units.
 * `ClosureNeeds E₀ famOf adv A x`: what the step of the unit at `A` reads stored: the in-logic
@@ -52,9 +56,15 @@ open Aiur.Generic.SourceSemantics (Call)
 open IxVM (F)
 open Ix.Kernel.Semantics (NativeFam)
 
-/-- **The closure of group `g` with its families and the walked records stored**:
-`ClosureStepOverFamily` with `WalkedStored` on the groups below `g` before the group and after
-its closure. -/
+/-- **The non-block records of a store are stored**: every record of `R` that is no block is
+stored at its key in `env` (module docstring). -/
+def RecordsStored (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (env : Ix.Kernel.Env .anon) : Prop :=
+  ∀ (x : _root_.Address) (c : Ixon.Constant), recordOf R x = some c →
+    (∀ ms, c.info ≠ .muts ms) → (env.find? (keyOf t x)).isSome = true
+
+/-- **The closure of group `g` with its families, the walked records and the non-block records
+stored**: `ClosureStepOverFamily` with `WalkedStored` on the groups below `g` and
+`RecordsStored` before the group and after its closure. -/
 def ClosureStepOverFamilyW (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (ρ : BRun)
     (t : Ix.Kernel.RoleTable) (g : Nat)
     (Fam : Ixon.Env → Ixon.Env → (_root_.Address → Option _root_.Address) →
@@ -63,7 +73,7 @@ def ClosureStepOverFamilyW (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
   ∀ (R R' : Ixon.Env) (env : Ix.Kernel.Env .anon)
     (famOf₀ famOf : _root_.Address → Option _root_.Address)
     (adv cont : _root_.Address → _root_.Address → Prop),
-    BndOver.{u} L t (· < g) R env → WalkedStored ρ t (· < g) R env →
+    BndOver.{u} L t (· < g) R env → WalkedStored ρ t (· < g) R env → RecordsStored t R env →
     StoredFamilies t R env famOf₀ →
     Admits ρ t g R R' → AdmitsReads ρ t R R' →
     Fam R R' famOf adv cont → FamilyAdmits ρ t g R R' famOf adv cont →
@@ -77,7 +87,7 @@ def ClosureStepOverFamilyW (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
       StoredFamilies t R₁ env₁ famOf₁ ∧
       (∀ B rb, famOf₀ B = some rb → famOf₁ B = some rb) ∧
       (∀ B rb, famOf B = some rb → famOf₁ B = some rb) ∧
-      WalkedStored ρ t (· < g) R₁ env₁
+      WalkedStored ρ t (· < g) R₁ env₁ ∧ RecordsStored t R₁ env₁
 
 /-! ## The closure's store, the needs, the run's facts -/
 
@@ -115,9 +125,6 @@ def ClosureNeeds (E₀ : Ixon.Env) (famOf : _root_.Address → Option _root_.Add
 `Admits`, its reading clause `AdmitsReads`, the family checks and `FamilyAdmits`. Each field is a
 fact about the run at the group (its producer is named in the lane's notes):
 
-* `oldNeeds`: an address a new unit's step reads stored, held before the group, is a non-block
-  record in Lean's logic with its block that the run checked at some limit, the address of a
-  walked role of an earlier group, or an address with a reading over `R`;
 * `famRefs`: an in-logic constant address a selected family record uses that is new in the group
   is a constant address of the block or of the record, or ranked below the block;
 * `famNonempty`: a block with a selected family record has a member (so one block selects a
@@ -143,21 +150,6 @@ fact about the run at the group (its producer is named in the lane's notes):
 structure ClosureRunFacts (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : Ixon.Env)
     (famOf : _root_.Address → Option _root_.Address)
     (adv : _root_.Address → _root_.Address → Prop) : Prop where
-  /-- An address a new unit's step reads stored, held before the group, is one of: a non-block
-  record in Lean's logic with its block that the run checked at some limit (producer: the walk's
-  `KernelClaim::run_check` at the group that added it, or a check inside a family check,
-  `KernelModeled::check_advice_record`, `check_container_rec`); the address of a walked role of
-  an earlier group (producer: that role's validation, `KernelRoles::validate_role`); or an
-  address with a reading over the store before the group, which the boundary stores
-  (`ReadingOf.stored`; producer: the reading of a projection record from its block's check over
-  the used-closed store, such as a constructor projection of an advice block that
-  `KernelClaim::check_muts_all` checked inside an earlier family check). -/
-  oldNeeds : ∀ A x, New R R' A → ClosureNeeds ρ.E₀ famOf adv A x →
-    (recordOf R x).isSome = true →
-    (∃ c n, recordOf R x = some c ∧ (∀ ms, c.info ≠ .muts ms) ∧ InLogic c ∧
-      (∀ cb, recordOf R (Ix.Cert.ownerOf x c) = some cb → InLogic cb) ∧ ρ.checked x n) ∨
-    (∃ r, walkedRole r = true ∧ Ix.SpecDigest.groupOf r < g ∧ t.addressOf? r = some x) ∨
-    ∃ ci₀, IxVM.Consistency.Reads t R x ci₀
   famRefs : ∀ B rb x, famOf B = some rb → UsedRef ρ.E₀ rb x → NeedOk ρ.E₀ x → New R R' x →
     (∃ cb crb, recordOf R' B = some cb ∧ recordOf R' rb = some crb ∧ FamAddr B cb rb crb x) ∨
       ρ.rank g x < ρ.rank g B
@@ -228,7 +220,8 @@ def ClosureFam (calls : List (Call F)) (ρ : BRun) (t : Ix.Kernel.RoleTable) (g 
 /-! ## What the fold hands a step -/
 
 /-- **What the closure fold hands a step** (module docstring): the invariant, the walked records
-stored and the stored families before the group; the admission and its reading clause; the run's
+and the non-block records stored, and the stored families before the group; the admission and its
+reading clause; the run's
 family checks at the binding `bAddr`, its facts and `FamilyAdmits`; and the closure's store `R₁`,
 closed under what its records use, lacking every role-unit record new in the group. -/
 structure ClosureCtx (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (calls : List (Call F))
@@ -237,6 +230,7 @@ structure ClosureCtx (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (cal
     (adv cont : _root_.Address → _root_.Address → Prop) (bAddr : _root_.Address) : Prop where
   bnd : BndOver.{u} L t (· < g) R env
   walked : WalkedStored ρ t (· < g) R env
+  stored : RecordsStored t R env
   fams : StoredFamilies t R env famOf₀
   admits : Admits ρ t g R R'
   reads : AdmitsReads ρ t R R'

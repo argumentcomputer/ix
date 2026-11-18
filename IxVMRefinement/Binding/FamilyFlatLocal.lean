@@ -154,6 +154,123 @@ theorem keyIn_instantiate1 (v : Ix.Kernel.Expr .anon) : ∀ (e : Ix.Kernel.Expr 
     | proj => exact Or.inl (.proj _ _)
     | projBody h => exact (ih d h).imp_left .projBody
 
+/-- A key of a lifted term is a key of the term. -/
+theorem keyIn_liftLooseBVars (a : Nat) : ∀ (e : Ix.Kernel.Expr .anon) (c : Nat),
+    KeyIn k (Ix.Kernel.Expr.liftLooseBVars a c e) → KeyIn k e := by
+  intro e
+  induction e with
+  | bvar i =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    split at h <;> cases h
+  | fvar i ty _ =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    exact h
+  | sort u =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    exact h
+  | const n us =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    exact h
+  | app f x ihf ihx =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    cases h with
+    | appFn h => exact .appFn (ihf c h)
+    | appArg h => exact .appArg (ihx c h)
+  | lam t b m iht ihb =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    cases h with
+    | lamTy h => exact .lamTy (iht c h)
+    | lamBody h => exact .lamBody (ihb (c + 1) h)
+  | forallE t b m iht ihb =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    cases h with
+    | allTy h => exact .allTy (iht c h)
+    | allBody h => exact .allBody (ihb (c + 1) h)
+  | letE t v b l iht ihv ihb =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    cases h with
+    | letTy h => exact .letTy (iht c h)
+    | letVal h => exact .letVal (ihv c h)
+    | letBody h => exact .letBody (ihb (c + 1) h)
+  | lit l =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    exact h
+  | proj s i x ih =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    cases h with
+    | proj => exact .proj _ _
+    | projBody h => exact .projBody (ih c h)
+
+/-- A key of a term with a bound variable replaced by a lifted term is a key of the term or of
+the replacement. -/
+theorem keyIn_instantiate1Lift (v : Ix.Kernel.Expr .anon) : ∀ (e : Ix.Kernel.Expr .anon) (d : Nat),
+    KeyIn k (Ix.Kernel.Expr.instantiate1Lift e v d) → KeyIn k e ∨ KeyIn k v := by
+  intro e
+  induction e with
+  | bvar i =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    split at h
+    · exact Or.inr (keyIn_liftLooseBVars d v 0 h)
+    · split at h <;> cases h
+  | fvar i ty _ =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    exact Or.inl h
+  | sort u =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    exact Or.inl h
+  | const n us =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    exact Or.inl h
+  | app f x ihf ihx =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    cases h with
+    | appFn h => exact (ihf d h).imp_left .appFn
+    | appArg h => exact (ihx d h).imp_left .appArg
+  | lam t b m iht ihb =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    cases h with
+    | lamTy h => exact (iht d h).imp_left .lamTy
+    | lamBody h => exact (ihb (d + 1) h).imp_left .lamBody
+  | forallE t b m iht ihb =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    cases h with
+    | allTy h => exact (iht d h).imp_left .allTy
+    | allBody h => exact (ihb (d + 1) h).imp_left .allBody
+  | letE t x b l iht ihx ihb =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    cases h with
+    | letTy h => exact (iht d h).imp_left .letTy
+    | letVal h => exact (ihx d h).imp_left .letVal
+    | letBody h => exact (ihb (d + 1) h).imp_left .letBody
+  | lit l =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    exact Or.inl h
+  | proj s i x ih =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    cases h with
+    | proj => exact Or.inl (.proj _ _)
+    | projBody h => exact (ih d h).imp_left .projBody
+
 /-- A key of a term with its level parameters instantiated is a key of the term. -/
 theorem keyIn_instantiateLevelParams {ks : List Ix.Kernel.LevelParam} {us : List Ix.Kernel.Level} :
     ∀ (e : Ix.Kernel.Expr .anon), KeyIn k (e.instantiateLevelParams ks us) → KeyIn k e := by
@@ -256,7 +373,7 @@ theorem keyIn_of_instCtorParams : ∀ (sp : List (Ix.Kernel.Expr .anon)) {ty b :
     | forallE d body m =>
       simp only [instCtorParams] at h
       rcases keyIn_of_instCtorParams vs h hk with h1 | ⟨s, hs, h2⟩
-      · rcases keyIn_instantiate1 v body 0 h1 with h3 | h3
+      · rcases keyIn_instantiate1Lift v body 0 h1 with h3 | h3
         · exact Or.inl (.allBody h3)
         · exact Or.inr ⟨v, List.mem_cons_self, h3⟩
       · exact Or.inr ⟨s, List.mem_cons_of_mem _ hs, h2⟩
@@ -736,6 +853,59 @@ theorem derivedFlatAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {B : _root_.Ad
       obtain ⟨ho', hI⟩ := originals_leOn hV off ms os (hC.members B ms hB hm) ho
       simp only [ho, ho'] at h ⊢
       exact nestedWalk_leOn hV hC B n 0 os es hI h
+
+/-- A view answers as itself. -/
+theorem FlatView.LeOn.refl (S : _root_.Address → Prop) (V : FlatView) : V.LeOn S V :=
+  ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h, fun _ _ _ h => h, fun _ _ h => h⟩
+
+theorem nestedWalk_entryAt (hC : V.ClosedOn S) (B : _root_.Address) :
+    ∀ (n i : Nat) (acc r : List FlatEntry), (∀ x ∈ acc, EntryAt V S x) →
+      nestedWalk V B n i acc = some r → ∀ x ∈ r, EntryAt V S x := by
+  intro n
+  induction n with
+  | zero => intro i acc r _ h; simp [nestedWalk] at h
+  | succ n ih =>
+    intro i acc r hacc h
+    simp only [nestedWalk] at h
+    cases hi : acc[i]? with
+    | none =>
+      simp only [hi, Option.some.injEq] at h
+      subst h
+      exact hacc
+    | some e =>
+      simp only [hi] at h
+      have he : EntryAt V S e := hacc e (List.mem_of_getElem? hi)
+      cases hc : V.ci e.addr with
+      | none => simp [hc] at h
+      | some x =>
+        cases x with
+        | none => simp [hc] at h
+        | some info =>
+          simp only [hc] at h
+          cases hs : ctorsScan V B info e.aux e.params e.levels acc with
+          | none => simp [hs] at h
+          | some a =>
+            have hl := ctorsLoop_leOn (FlatView.LeOn.refl S V) hC B info e.aux e.params e.levels
+              (hC.ciBlk e.addr info he.addr hc) he.params (List.range info.nctors) acc a hacc hs
+            simp only [hs] at h
+            exact ih (i + 1) a r hl.2 h
+
+/-- **The entries derived over a view closed on a set holding the block are entries of the set**:
+each at an address of the set, its parameters' keys naming addresses of the set. -/
+theorem derivedFlatAt_entryAt (hC : V.ClosedOn S) {B : _root_.Address} (hB : S B) {off n : Nat}
+    {es : List FlatEntry} (h : derivedFlatAt V B off n = some es) : ∀ x ∈ es, EntryAt V S x := by
+  unfold derivedFlatAt at h
+  cases hm : V.members B with
+  | none => simp [hm] at h
+  | some ms =>
+    simp only [hm] at h
+    cases ho : originals V off ms with
+    | none => simp [ho] at h
+    | some os =>
+      obtain ⟨-, hI⟩ :=
+        originals_leOn (FlatView.LeOn.refl S V) off ms os (hC.members B ms hB hm) ho
+      simp only [ho] at h
+      exact nestedWalk_entryAt hC B n 0 os es hI h
 
 end LeOn
 
