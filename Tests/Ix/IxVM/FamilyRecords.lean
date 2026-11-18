@@ -33,7 +33,7 @@ private def hexDigit (n : Nat) : Char :=
   if n < 10 then Char.ofNat (48 + n) else Char.ofNat (87 + n)
 
 private def hex (b : ByteArray) : String :=
-  String.mk (b.data.toList.flatMap fun x => [hexDigit (x.toNat / 16), hexDigit (x.toNat % 16)])
+  String.ofList (b.data.toList.flatMap fun x => [hexDigit (x.toNat / 16), hexDigit (x.toNat % 16)])
 
 private def hexList (as : Array Address) : String :=
   ",".intercalate (as.toList.map fun a => hex a.hash)
