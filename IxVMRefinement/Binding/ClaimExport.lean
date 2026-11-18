@@ -181,8 +181,13 @@ circuit source, not as it is: in the well-founded block the scan of today stops 
 anchors in force whose records no validation walks (`RoleVal.unwalkedAnchorsInForce`), a walk
 does not, and an accepted run can check a later operation's record inside an earlier
 operation's group, where the clause fails. With the scan going on through those anchors the
-clause is the scan's assertion (`RoleVal.op_order_scan_refs_spec`, `RoleVal.ScanStopsAt`). -/
+clause is the scan's assertion (`RoleVal.op_order_scan_refs_spec`, `RoleVal.ScanStopsAt`).
+
+The stores are asked of bounded runs only (`Bounded calls`): the export consumes no other run
+(`SourceSoundBounded`), and the load specifications the clauses read are stated at a bounded
+derivation. -/
 def GroupStoresOfRun (calls : List (Call F)) : Prop :=
+  Bounded calls →
   ∀ (V : View) (extra : List ByteArray), (∀ x ∈ committedFootprint, x ∈ extra) →
     ∀ (a : _root_.Address) (tb : ByteArray) (t : Ix.Kernel.RoleTable), Hashed calls tb →
       Ix.Kernel.Admission.admitBinding Address.admissionHash ⟨a, tb⟩ = .ok t →
@@ -252,7 +257,7 @@ theorem bindingClaimExportObs_of_parts {calls : List (Call F)} {d : Digest}
   rcases Claim.noColl_or_hashedCollision V (bytes :: committedFootprint) calls with
     hcol | hnoColl
   · exact Or.inl hcol
-  rcases groupStores V (bytes :: committedFootprint) (fun x hx => List.mem_cons_of_mem _ hx)
+  rcases groupStores hb V (bytes :: committedFootprint) (fun x hx => List.mem_cons_of_mem _ hx)
     a tb t htb hadm hall hpin hval with hcol | ⟨rank, Rs, hbc, hbb, hgs⟩
   · exact Or.inl hcol
   by_cases hnc : V.HashedCollision (bytes :: committedFootprint) calls

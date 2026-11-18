@@ -100,12 +100,14 @@ structure RemainingStoreClauses (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (Pay
   blockSteps : ∀ g, 33 ≤ g → g ≤ 40 → WalkStepsOrdered t E₀ g
   payloadOps : ∀ g, 6 ≤ g → g < 41 → ∀ x, PayReach t E₀ Pay g x → OpEarlier t g x
 
-/-- **What is left of the store sequence's clauses, for a run**: at every table that bytes the
-run hashed admit at a binding address, binding every role, pinning the prelude and with every
-role of the 77 groups validated by the run, the run's records without a collision have
-`RemainingStoreClauses` at the run's payload (`runPayload`), and what is left of the run's
-family checks (`RemainingFamilyClauses`). -/
+/-- **What is left of the store sequence's clauses, for a run**: for a bounded run, at every
+table that bytes the run hashed admit at a binding address, binding every role, pinning the
+prelude and with every role of the 77 groups validated by the run, the run's records without a
+collision have `RemainingStoreClauses` at the run's payload (`runPayload`), and what is left of
+the run's family checks (`RemainingFamilyClauses`). The clauses are asked of bounded runs only
+(`Bounded calls`), the only runs the export consumes (`GroupStoresOfRun`). -/
 def RemainingStoreClausesOfRun (calls : List (Call F)) : Prop :=
+  IxVM.Consistency.Bounded calls →
   ∀ (a : _root_.Address) (tb : ByteArray) (t : Ix.Kernel.RoleTable),
     Hashed calls tb →
     Ix.Kernel.Admission.admitBinding Address.admissionHash ⟨a, tb⟩ = .ok t →
@@ -124,7 +126,7 @@ selection (`runFamOf`, `runAdv`, `runCont`), if the run's records without a coll
 theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
     (hrem : RemainingStoreClausesOfRun calls) :
     GroupStoresOfRun calls := by
-  intro V extra hextra a tb t htb hadm hall hpin hval
+  intro hbd V extra hextra a tb t htb hadm hall hpin hval
   by_cases hcol : V.HashedCollision extra calls
   · exact Or.inl hcol
   right
@@ -142,7 +144,7 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
   have hH := LoadedReads.hashedRecordsStored_of_walkedL6 hw0
   have hC : CollisionFreeRun calls (Claim.runEnv ⟨a, tb⟩ (t := t) calls) :=
     collisionFreeRun_of_no_collision hextra hcol hS hH
-  have hR := hrem a tb t htb hadm hall hpin hval hC
+  have hR := hrem hbd a tb t htb hadm hall hpin hval hC
   have hb := basisRows_of_run hC hpin hval
   have hax := axiomRoles_of_run hC hval
   have hbr : BasisRolesStored t := basisRolesStored_of_pinned hpin
