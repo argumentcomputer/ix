@@ -134,8 +134,8 @@ fact about the run at the group (its producer is named in the lane's notes):
   store routes as modeled has a selected family record (a block held before the group keeps its
   route, `blockRoute_closureStore`);
 * `readsDown`: at such a store, a reading of an address `R` holds is a reading over `R`;
-* `notInert`, `needOk`: no reference a plain unit of the group (`PlainUnitAt`) uses is an inert
-  axiom's, and every one is a reference a step needs stored (`NeedOk`);
+* `notInert`, `needOk`: no reference a plain unit of the group (`PlainUnitAt`) uses is the
+  address of an inert axiom, and every one is a reference a step needs stored (`NeedOk`);
 * `literals`: the key of the member of a plain unit that is a block of one inductive type is none
   of the four literal functions' keys. -/
 structure ClosureRunFacts (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : Ixon.Env)
