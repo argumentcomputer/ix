@@ -30,6 +30,12 @@ earlier constants only. The facts are stated the same way:
 Nothing here is the in-process modeller's: `env` stores the advice as the fold stored it from
 its records.
 
+**The renaming is IxC's** (`Expr.renameConsts`), which leaves a projection's structure name as
+it is; the circuit's `rename` renames it too. The two agree on a term with no projection at a
+member of the family (`NoProjIn`, `renameAll_eq_renameConsts_of_noProjIn`,
+`Decl/ModeledTele.lean`). A refinement of the circuit therefore owes that for each term the
+facts rename: a projection at a member's model, a definition, does not type.
+
 **What `env` is assumed to store.** Every judgement below is a derivation at `env`, and a
 derivation reads the environment only by looking constants up. So `env` stores every constant
 the derivations name:
