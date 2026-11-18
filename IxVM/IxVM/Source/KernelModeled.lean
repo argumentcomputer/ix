@@ -697,7 +697,7 @@ def container_refs_check := aiur_fn⟦
         Ixon::Constant::Mk(_, _, refs, _, _) => {
           match ib {
             Ixon::Constant::Mk(_, _, irefs, _, _) => {
-              container_refs_ok(refs, KernelClaim::const_idxs_of(c), 0, iblock, irefs,
+              container_refs_ok(refs, KernelClaim::const_idxs_of(c), 0, x, iblock, irefs,
                                 KernelClaim::const_idxs_of(ib), wset);
               assert_inner_refs_safe(rc, refs, KernelClaim::const_idxs_of(c)) } ,
           } } ,
@@ -707,6 +707,7 @@ def container_refs_check := aiur_fn⟦
 
 def container_refs_ok := aiur_fn⟦
   fn container_refs_ok(refs: Lists::List<Bytes::AddressRef>, used: Lists::List<Field>, i: Field,
+                       self: Bytes::AddressRef,
                        iblock: Bytes::AddressRef, irefs: Lists::List<Bytes::AddressRef>,
                        iused: Lists::List<Field>, wset: RBTreeMap::RBTreeMap<Field>) -> () {
       match (*(refs)) {
@@ -714,6 +715,8 @@ def container_refs_ok := aiur_fn⟦
         Lists::Node::Cons(r, rest) => {
           match KernelClaim::g_list_has(used, i) {
             1 => {
+              assert_eq!(Bytes::address_eq(r, self), 0,
+                "model advice: a container recursor references itself");
               let ok = match used_ref_has(irefs, iused, 0, r) {
                 1 => {  1 } ,
                 _ => {
@@ -743,7 +746,7 @@ def container_refs_ok := aiur_fn⟦
               () } ,
             _ => {  () } ,
           };
-          container_refs_ok(rest, used, i + 1, iblock, irefs, iused, wset) } ,
+          container_refs_ok(rest, used, i + 1, self, iblock, irefs, iused, wset) } ,
       }
     }
 ⟧
