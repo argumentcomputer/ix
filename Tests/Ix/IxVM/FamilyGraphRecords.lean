@@ -148,16 +148,20 @@ open Ix.Kernel
 
 private abbrev SRec := ConstantVal .source × Nat × Nat × List (RecRule .source)
 
-/-- IxC's in-process install of `constants`. -/
+/-- IxC's in-process install of all of `constants` (the certified compile installs only what
+its binder data needs; here every declaration of the input is installed). -/
 private def installOf (leanEnv : Lean.Environment)
     (constants : List (Lean.Name × Lean.ConstantInfo)) :
     IO Ix.Compile.KernelAnnotate.Installed := do
   let (prepared, _) ← IO.ofExcept (Ix.CompileM.prepareCertified leanEnv constants)
   let ienv := Ix.CompileM.canonInput prepared.toArray 32
   let pre ← IO.ofExcept Ix.Compile.KernelAnnotate.prelude?
-  let stop ← IO.mkRef false
-  let task ← Ix.Compile.KernelAnnotate.installTask ienv pre 32 stop
-  IO.ofExcept task.get
+  let refs := ienv.consts.toList.toArray.map fun (nc : Ix.Name × Ix.ConstantInfo) =>
+    (nc.1, (Ix.GraphM.run ienv .init (Ix.graphConst nc.2)).1)
+  let graph : Ix.Map Ix.Name (Ix.Set Ix.Name) :=
+    refs.foldl (fun out (n, rs) => out.insert n rs) {}
+  let blocks ← IO.lazyPure fun _ => Ix.CondenseM.run graph
+  IO.ofExcept (← Ix.Compile.KernelAnnotate.install ienv blocks pre 32)
 
 /-- The stored recursors with the given spellings, in their order. -/
 private def storedRecs (env : Env .source) (names : List String) : List SRec :=
@@ -355,13 +359,13 @@ def runTwin (leanEnv : Lean.Environment) : IO UInt32 := do
       {recsW.length} of {recNames.length}"
     let near := instC.fe.env.consts.filterMap fun ci =>
       let s := toString ci.name
-      if (s.splitOn "LCNF").length > 1 || (s.splitOn "rec").length > 1 then
+      if (s.splitOn "LCNF.Alt").length > 1 then
         some (s ++ (match ci with
           | .recInfo .. => ":rec" | .indInfo .. => ":ind" | .ctorInfo .. => ":ctor"
           | .defnInfo .. => ":defn" | _ => ":other"))
       else none
     IO.println s!"[ixvm-family-graph-records] twin: IxC's environment holds \
-      {instC.fe.env.consts.length} constants; sample {(instC.fe.env.consts.take 6).map (toString ·.name)}; near the family ({near.length}): {near.take 60}"
+      {instC.fe.env.consts.length} constants; named after the family ({near.length}): {near.take 12}"
     let fuel := 1000000
     let ops : Ix.Kernel.CheckerOps .source (Ix.Kernel.CheckM .source) :=
       Ix.Kernel.fueledOps .verified fuel
