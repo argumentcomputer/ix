@@ -67,7 +67,9 @@ def ContainerRecCheckIn (cs : List (Call F)) (bAddr : _root_.Address)
 witness** (module docstring). `innerCall`: every inner record was checked by the family check
 of a family record or of a twin, under the family check's own context at the walk's limit and
 one binding: an advice record that is no projection record by its advice-record check, a
-container's recursor by its check. An advice entry of a family check that is not in the graph's
+container's recursor by its check, a twin reached only through a container's recursor
+projection by a family check at its own address nested in that check (its own checks are the
+twin step's, not `InnerChecked`'s). An advice entry of a family check that is not in the graph's
 advice owns no constant address and uses nothing in Lean's logic (a projection record of an
 earlier advice block). -/
 structure FamilyRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
@@ -103,7 +105,9 @@ structure FamilyRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
   innerCall : ∃ bAddr, ∀ a, Inner a → ∃ B rb cs,
     (fam B = some rb ∨ twin rb = some B) ∧ FamilyCallAtLim calls bAddr t B rb lim cs ∧
     ((AdviceCheckIn cs bAddr t lim a ∧ ∀ c, recordOf E₀ a = some c → ¬ IsProj c) ∨
-      ContainerRecCheckIn cs bAddr t lim a)
+      ContainerRecCheckIn cs bAddr t lim a ∨
+      ∃ B' cs', twin a = some B' ∧ FamilyCallAtLim calls bAddr t B' a lim cs' ∧
+        ∀ cl ∈ cs', cl ∈ cs)
   /-- A twin of a block with no family record in the graph (a block the witness's environment
   stores) is a second record of a family record the witness's environment stores whole, each
   recursor with its model companion (from the binding half: `StoredFamiliesInstalled`). -/
