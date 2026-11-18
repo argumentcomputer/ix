@@ -325,7 +325,7 @@ theorem familySteps_of_rows (familyGraph : FamilyGraphRow.{u})
     (fun calls t seeds E₀ lim Top rank hWalk R envT fam twin adv Inner hFR => by
       obtain ⟨bAddr, hIC⟩ :=
         innerChecked calls t seeds E₀ lim Top rank hWalk R envT fam twin adv Inner hFR
-      obtain ⟨-, hW, hG⟩ := hWalk
+      obtain ⟨bAddrW, hW, hG⟩ := hWalk
       exact innerUnitSteps_of_kinds nativeBlockTelescope hG hFR.graph hIC hW.check_ok
         hW.runStore hW.hashedStored)
     familyBlock familyTwin
