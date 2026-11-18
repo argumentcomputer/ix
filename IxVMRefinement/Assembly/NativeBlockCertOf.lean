@@ -89,16 +89,17 @@ theorem blockCert_of_install (hfields : Core.CheckedSortsRunReading)
   rw [hlps', hO.cvT, hO.cvT₀.2, List.length_range]
 
 /-- **The new table's certificate, from the install's output, the sorts of its table stage and
-the reading of the checked field loop over the step's store** (`Guard.CheckedSortsReadingAt`).
-The reading has no alternative, so no goodness of the run is asked here. -/
-theorem blockCert_of_reading
+the reading of the checked field loops at the block over the step's store**
+(`Guard.CheckedSortsReadingAtBlock`: only the loop at `B` is read). The reading has no
+alternative, so no goodness of the run is asked here. -/
+theorem blockCert_of_reading_block
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {n : Nat}
     {env : Ix.Kernel.Env .anon} {B : _root_.Address} {cb : Ixon.Constant}
     {ind : Ixon.Inductive} {blk : List (ConstantInfo .anon)}
     {p₀ p : Ix.Kernel.NativeParts .anon} {new : List (ConstantInfo .anon)}
     {ty' : Ix.Kernel.Expr .anon} {ctorsA : List (ConstantVal .anon × Nat)}
     {caps : IndCaps .anon}
-    (hfields : Guard.CheckedSortsReadingAt calls E)
+    (hfields : Guard.CheckedSortsReadingAtBlock calls E B)
     (hO : NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps)
     (hS : InstallSortsChecked calls t E n env B
       ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ p₀ new p ctorsA)
@@ -119,7 +120,7 @@ theorem blockCert_of_reading
   obtain ⟨b, u, cA, sorts, hbB, hcA, hsorts, hcS, hchk⟩ := hQ hlenP (hO.nIdx₀.trans h0) hzero
   subst hcA hsorts
   -- the loop's reading at the sorts the table stage ran at
-  obtain ⟨sigs, fuel, raw, hraw, hsig, hzeros⟩ := hfields _ hchk
+  obtain ⟨sigs, fuel, raw, hraw, hsig, hzeros⟩ := hfields _ hchk hbB
   have hv0 : ZMod.val (0 : F) = 0 := ZMod.val_zero
   rw [hbB, hv0] at hraw
   rw [hO.nP₀, ← hO.nP] at hsig
@@ -143,6 +144,24 @@ theorem blockCert_of_reading
   rw [hname] at hctor
   refine ⟨cA.1, p.nP, cA.2, raw, hctor, hraw, ?_, cert⟩
   rw [hlps', hO.cvT, hO.cvT₀.2, List.length_range]
+
+/-- **The new table's certificate, from the install's output, the sorts of its table stage and
+the reading of every checked field loop over the step's store** (`Guard.CheckedSortsReadingAt`). -/
+theorem blockCert_of_reading
+    {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {n : Nat}
+    {env : Ix.Kernel.Env .anon} {B : _root_.Address} {cb : Ixon.Constant}
+    {ind : Ixon.Inductive} {blk : List (ConstantInfo .anon)}
+    {p₀ p : Ix.Kernel.NativeParts .anon} {new : List (ConstantInfo .anon)}
+    {ty' : Ix.Kernel.Expr .anon} {ctorsA : List (ConstantVal .anon × Nat)}
+    {caps : IndCaps .anon}
+    (hfields : Guard.CheckedSortsReadingAt calls E)
+    (hO : NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps)
+    (hS : InstallSortsChecked calls t E n env B
+      ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ p₀ new p ctorsA)
+    (h1 : ind.ctors.size = 1) (h0 : ind.indices.toNat = 0)
+    (hz : Ix.Kernel.Level.isEquiv p.resSort .zero = some true) :
+    BlockCert t E ⟨new ++ env.consts⟩ B :=
+  blockCert_of_reading_block (hfields.block B) hO hS h1 h0 hz
 
 /-- **The new table's certificate at a step**: from the install's output with the sorts of its
 table stage, and the three facts every walked unit's step has of its stores (the run's store,
