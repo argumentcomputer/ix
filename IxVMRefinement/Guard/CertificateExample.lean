@@ -59,8 +59,7 @@ field, `0` for `True`. -/
 def sorts : List Level := [.imax (.succ .zero) .zero, .zero]
 
 theorem eval_imax_one_zero (φ : Ix.Kernel.LevelParam → Nat) :
-    Level.eval φ (.imax (.succ .zero) .zero) = 0 := by
-  first | rfl | simp [Level.eval]
+    Level.eval φ (.imax (.succ .zero) .zero) = 0 := rfl
 
 /-- **The classifier's signature of the quantified field is `0`**, in any context, over every
 lookup that reads `Eq`'s declared type at level `1`. -/
