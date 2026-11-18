@@ -176,6 +176,28 @@ theorem tracedTele_allLevelParamsDefined {env : Env .anon} (hdef : DefnLevelsClo
 
 /-! ## The binders a term already has -/
 
+/-- A term with no free variable has every free variable below any index. -/
+theorem fvarIdxLt_of_hasFvar_false (d : Nat) :
+    ∀ {e : KExpr}, e.hasFvar = false → fvarIdxLt d e = true
+  | .fvar _ _, h => by simp [Ix.Kernel.Expr.hasFvar] at h
+  | .bvar _, _ | .sort _, _ | .const _ _, _ | .lit _, _ => rfl
+  | .app f a, h => by
+    simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at h
+    simp [fvarIdxLt, fvarIdxLt_of_hasFvar_false d h.1, fvarIdxLt_of_hasFvar_false d h.2]
+  | .lam t b _, h => by
+    simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at h
+    simp [fvarIdxLt, fvarIdxLt_of_hasFvar_false d h.1, fvarIdxLt_of_hasFvar_false d h.2]
+  | .forallE t b _, h => by
+    simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at h
+    simp [fvarIdxLt, fvarIdxLt_of_hasFvar_false d h.1, fvarIdxLt_of_hasFvar_false d h.2]
+  | .letE t v b _, h => by
+    simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at h
+    simp [fvarIdxLt, fvarIdxLt_of_hasFvar_false d h.1.1, fvarIdxLt_of_hasFvar_false d h.1.2,
+      fvarIdxLt_of_hasFvar_false d h.2]
+  | .proj _ _ e, h => by
+    simp only [Ix.Kernel.Expr.hasFvar] at h
+    simp [fvarIdxLt, fvarIdxLt_of_hasFvar_false d h]
+
 /-- **The walk keeps the leading binders its term has syntactically**: where the term opens
 its first `k` binders, the built term has the same first `k` binders. -/
 theorem OpenBinderTrace.prefixEq_of_openPis {env : Env .anon} :
