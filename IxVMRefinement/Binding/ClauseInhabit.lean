@@ -78,8 +78,8 @@ loaded, and every blob the run loaded. One constant is installed, the declaratio
 record's canonical annotations at the record's key. At every record store for `R` and every
 carried limit within `G` the prefix invariant is the walked-constant step's transport, the
 registry is kept at the same registered families by IxC's declaration step, and the store
-keys, the roots, the level clauses and the guard certificates are kept by a value constant at
-the key of a 32-byte address. -/
+keys, the roots and the level clauses are kept by a value constant at the key of a 32-byte
+address. -/
 theorem overUnitStep_defn {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hL : LinkLaws L) {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {G : Nat → Prop}
     {R E₀ Ec : Ixon.Env} {envT : Ix.Kernel.Env .anon} {bAddr A : _root_.Address}
@@ -185,7 +185,6 @@ theorem overUnitStep_defn {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
       (keepsValuesKeyed_auxRoot t env _ d₀ hC.auxRoot hfreshC hval hnt hd₀ hkeyx)
       (keepsValuesKeyed_lvClauses t env _ d₀ ⟨hC.thmLevels, hC.storeArR⟩ hfreshC hval hnt hd₀
         hkeyx)
-      (keepsValuesKeyed_guardCerts t E env _ d₀ hC.guard hfreshC hval hnt hd₀ hkeyx)
   refine ⟨[LoadedReads.defnConst d.kind ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val'
       (.regular 0)], Reg, List.nodup_singleton _, ?_, hallC, ?_, ?_, ?_⟩
   · intro ci hci

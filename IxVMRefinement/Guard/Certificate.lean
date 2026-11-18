@@ -4,7 +4,7 @@ import IxVMRefinement.Decl.Native
 import IxVMRefinement.Guard.Fields
 import IxVMRefinement.Infer.Proj
 
-/-! # The projection guard, carried as certificates over a witness store
+/-! # The projection guard, as certificates over a witness store
 
 `Ix.Kernel.ProjGuardCert` (`IxC/Kernel/Model/ProjGuardCert.lean`) is the certificate of one
 projection table: the table's guards are `structProjGuards` at field sorts whose zero-sets are
@@ -13,11 +13,14 @@ it over the stores of the proof.
 
 * `ctorRaw E B i j` (`Guard/CtorRaw.lean`): the constructor's type as the classifier reads it, a
   function of the block record `E` holds at `B` and of `E`'s literal blobs.
-* `GuardCerts t R env`: **the carried clause**. Every projection table of a propositional
-  structure that `env` stores is the table of a member whose projection record the witness
-  store `R` holds (`MemberRecordAt`), with that member's first constructor stored and the
-  table's certificate over the raw dictionary of `R`. It mentions no role context, no
-  validation limit and no run.
+* `GuardCerts t R env`: **the certificates of the stored tables, as one proposition**. Every
+  projection table of a propositional structure that `env` stores is the table of a member
+  whose projection record the witness store `R` holds (`MemberRecordAt`), with that member's
+  first constructor stored and the table's certificate over the raw dictionary of `R`. It
+  mentions no role context, no validation limit and no run. No fold carries it: a prefix carries
+  the tables' firing in its load contract (`Core.ScopedLoadFacts.projFire`), which the install
+  of a native block produces from the new table's certificate
+  (`Guard.projTableFires_of_cert_at`).
 * `GuardCerts.recordsFor`: the clause over `R` is the clause over every record store for `R`.
 * `projGuardCert_of_checkNativeTable`: **install**. The table stage of IxC's native install,
   run at field sorts `sorts` (the caller's argument), stores a table whose certificate holds as
@@ -48,7 +51,7 @@ open IxVM.Consistency
 open Ix.Kernel (Expr Level ProjTable ConstantInfo ConstantVal ProjGuardCert ProjGuardUse)
 open Ix.Kernel.GuardClassifier (Lookup)
 
-/-! ## The carried clause -/
+/-! ## The certificates of the stored tables -/
 
 /-- **The store holds the projection record of member `i` of the block at `B`, at its
 address**: a record whose content is the inductive projection `(i, B)`, with `i` a 64-bit
@@ -173,7 +176,7 @@ theorem fireSem_of_cert {R E : Ixon.Env} (hRE : Typing.RecordsFor R E)
   exact cert.fireSem (GuardRaw.ofStore_extends_recordsFor hRE)
     ⟨fun _ _ _ h => h, fun _ _ _ h => h⟩ use hf hzero
 
-/-- **Use: the carried clause and one use give `FireSem`**, over every record store `E` for the
+/-- **Use: the clause and one use give `FireSem`**, over every record store `E` for the
 witness store and at every level list. No role context and no validation limit occur: the same
 clause serves a use under any of them.
 
