@@ -9,9 +9,9 @@ file produces both at the environment `env` the closure of the operation's group
 boundary invariant below the group holding there.
 
 * `opPrefix_of_bnd`, `wfPrefix_of_bnd`: **the prefix half from the boundary invariant alone**:
-  the operation is not stored yet (`BFacts.opsAdmitted`), `Nat` literals are supported (the
+  the operation is not stored yet (`BoundaryFacts.opsAdmitted`), `Nat` literals are supported (the
   companions at the group's limit), the operations it depends on are stored as pinned (their
-  groups are earlier: `TableShape.kept` and `BFacts.opsPinned`), `Bool` has its shapes (group 6,
+  groups are earlier: `TableShape.kept` and `BoundaryFacts.opsPinned`), `Bool` has its shapes (group 6,
   `Shapes.bool`), and `Eq` is the pinned basis constant (`TableShape.pins`).
 * `opFront_of_checked`: **the definition's check from the walked check of the operation's
   record** (`KernelClaim::run_check_transitive(rc, a)` in `validate_op`): the evidence of
@@ -28,10 +28,11 @@ boundary invariant below the group holding there.
 * `opChecked_struct`, `opChecked_wf`: the two families assembled.
 
 What the observations (`EqObs`, `CertObs`) and the pinned shape (`OpTyShape`) still take from
-the circuit is the representation of the rendered specification terms: `role_type`,
-`op_equation_lhs`/`op_equation_rhs` and `op_certificate` (`KernelRoleSpec`, which have no
-generated evaluation paths) opened (`open_two_lams`, `open_foralls`) and substituted
-(`subst_const`), and the applied proof (`apply_spine`, `bvars_desc`).
+the circuit is the representation of the rendered specification terms (`role_type`,
+`op_equation_lhs`/`op_equation_rhs` and `op_certificate` of `KernelRoleSpec`, which
+`Binding/RenderedArms.lean` reads off their syntax trees) opened (`open_two_lams`,
+`open_foralls`) and substituted (`subst_const`), and the applied proof (`apply_spine`,
+`bvars_desc`).
 -/
 
 universe u
@@ -90,10 +91,10 @@ theorem op_valLimit {r : Ix.Kernel.Role} (hop : r ∈ RoleOps.opRoles) :
 
 /-- **The prefix half of an operation's check, from the boundary invariant below its group.** -/
 theorem opPrefix_of_bnd
-    {X : Ix.Kernel.RoleTable → (Nat → Prop) → Ixon.Env → Ix.Kernel.Env .anon → Prop}
+    {L : Ix.Kernel.Env .anon → Ix.Kernel.Semantics.NativeFam .anon → Prop}
     {t : Ix.Kernel.RoleTable} {g : Nat} {R : Ixon.Env} {env : Ix.Kernel.Env .anon}
     {r : Ix.Kernel.Role} (hall : AllBound t) (hgrp : roleGroup g = [r])
-    (hop : r ∈ RoleOps.opRoles) (hb : Bnd.{u} X t (· < g) R env) :
+    (hop : r ∈ RoleOps.opRoles) (hb : BndOver.{u} L t (· < g) R env) :
     RoleOps.OpPrefix env (.role r) := by
   have hrg : r ∈ roleGroup g := by rw [hgrp]; exact List.mem_singleton.mpr rfl
   have hgr : Ix.SpecDigest.groupOf r = g := groupOf_of_mem_roleGroup hrg
@@ -113,7 +114,7 @@ theorem opPrefix_of_bnd
       exact absurd (hgr ▸ hlt) (Nat.lt_irrefl g)
   -- `Nat` literals: the companions at the group's limit
   obtain ⟨E, hE⟩ := recordsFor_exists hb.shape.committed
-  have hinv := hb.facts.inv E hE (some (valLimit g)) (carried_valLimit g) (limWithin_below t g)
+  have hinv := hb.inv hE (carried_valLimit g) (limWithin_below t g)
   have hforce : ∀ X : Ix.Kernel.Role, Ix.SpecDigest.groupOf X < 7 →
       Core.Ctx.inForce ⟨E, env, t, some (valLimit g)⟩ X := fun X hX =>
     ⟨hall X, fun n hn => by
@@ -138,10 +139,10 @@ theorem opPrefix_of_bnd
 
 /-- **The prefix half of a well-founded operation's check, from the boundary invariant.** -/
 theorem wfPrefix_of_bnd
-    {X : Ix.Kernel.RoleTable → (Nat → Prop) → Ixon.Env → Ix.Kernel.Env .anon → Prop}
+    {L : Ix.Kernel.Env .anon → Ix.Kernel.Semantics.NativeFam .anon → Prop}
     {t : Ix.Kernel.RoleTable} {g : Nat} {R : Ixon.Env} {env : Ix.Kernel.Env .anon}
     {r : Ix.Kernel.Role} (hall : AllBound t) (hgrp : roleGroup g = [r])
-    (hop : r ∈ RoleOps.opRoles) (hb : Bnd.{u} X t (· < g) R env) :
+    (hop : r ∈ RoleOps.opRoles) (hb : BndOver.{u} L t (· < g) R env) :
     RoleOps.WfPrefix env (.role r) := by
   have hrg : r ∈ roleGroup g := by rw [hgrp]; exact List.mem_singleton.mpr rfl
   have hgr : Ix.SpecDigest.groupOf r = g := groupOf_of_mem_roleGroup hrg
@@ -336,12 +337,12 @@ theorem certFacts_of_obs {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Nat}
 the boundary invariant below its group, the definition's check from the walked check of the
 record, the pinned shape, and one comparison per recurrence. -/
 theorem opChecked_struct
-    {X : Ix.Kernel.RoleTable → (Nat → Prop) → Ixon.Env → Ix.Kernel.Env .anon → Prop}
+    {L : Ix.Kernel.Env .anon → Ix.Kernel.Semantics.NativeFam .anon → Prop}
     {t : Ix.Kernel.RoleTable} {g : Nat} {R : Ixon.Env} {env : Ix.Kernel.Env .anon}
     {r : Ix.Kernel.Role} {E : Ixon.Env} {lim : Nat} {ty val : Core.KExpr}
     (hall : AllBound t) (hgrp : roleGroup g = [r]) (hop : r ∈ RoleOps.opRoles)
     (hc : (Ix.Kernel.Key.role r : Core.KKey) ∈ natOpNames)
-    (hb : Bnd.{u} X t (· < g) R env) (hinv : Decl.PrefixInv.{u} E t (some lim) env)
+    (hb : BndOver.{u} L t (· < g) R env) (hinv : Decl.PrefixInv.{u} E t (some lim) env)
     (hfront : RoleOps.OpFront env ty val ty val) (hsh : RoleOps.OpTyShape (.role r) ty)
     (heqs : ∀ eq ∈ natOpEquations 0 (Ix.Kernel.Key.role r : Core.KKey),
       EqObs E t lim env (.role r) val eq) :
@@ -363,12 +364,12 @@ from the boundary invariant below its group, the definition's check, the pinned 
 certificate statement a proof term, closed, with no `let` and no level parameter, with its
 check. -/
 theorem opChecked_wf
-    {X : Ix.Kernel.RoleTable → (Nat → Prop) → Ixon.Env → Ix.Kernel.Env .anon → Prop}
+    {L : Ix.Kernel.Env .anon → Ix.Kernel.Semantics.NativeFam .anon → Prop}
     {t : Ix.Kernel.RoleTable} {g : Nat} {R : Ixon.Env} {env : Ix.Kernel.Env .anon}
     {r : Ix.Kernel.Role} {E : Ixon.Env} {lim : Nat} {ty val : Core.KExpr}
     (hall : AllBound t) (hgrp : roleGroup g = [r]) (hop : r ∈ RoleOps.opRoles)
     (hc : (Ix.Kernel.Key.role r : Core.KKey) ∈ natDivModNames)
-    (hb : Bnd.{u} X t (· < g) R env) (hinv : Decl.PrefixInv.{u} E t (some lim) env)
+    (hb : BndOver.{u} L t (· < g) R env) (hinv : Decl.PrefixInv.{u} E t (some lim) env)
     (hfront : RoleOps.OpFront env ty val ty val) (hsh : RoleOps.OpTyShape (.role r) ty)
     (hcerts : ∃ proofs : List Core.KExpr, List.Forall₂ (fun st P =>
       P.looseBVarsBounded 0 = true ∧ P.hasFvar = false ∧ Decl.noLetExpr P = true ∧
