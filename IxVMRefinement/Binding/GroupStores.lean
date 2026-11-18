@@ -83,19 +83,18 @@ this structure held as `rootsSafe`, is proved of every run: `rootsAndTheoremsSaf
 the reading clause it held as `reads`: `groupStore_reads`.)
 * `blockSteps`: in the well-founded block (groups 33 to 40, validated at limit 33, where
   `walk_ctx`'s assertion is off), every reference the group's walk follows is bound to no
-  operation of the group or a later one (`WalkStepsOrdered`). Producer: the changed
-  `KernelRoles::op_order_scan` of the final circuit batch (item 12): its regenerated observation
-  (`RoleVal.OpOrderScanStep`, in the form that also refuses, rather than enters, an operation
-  that is neither in force nor needed), the specifications of `op_order_scan_except` and of the
-  two call sites in `validate_op` and `validate_op_equations`, and an induction showing that the
-  scan follows every reference the walk follows up to a stop, behind which the records were
-  walked by an earlier group (`WalkStepsOrdered` at that group).
+  operation of the group or a later one (`WalkStepsOrdered`). Producer: the operation-order scan
+  (`KernelRoles::op_order_scan`) changed to go on through the anchors no validation walks and to
+  refuse a call at an operation neither in force nor needed, instead of entering it: its
+  regenerated observation (`RoleVal.OpOrderScanStep` in that form), the specifications of
+  `op_order_scan_except` and of the two call sites in `validate_op` and `validate_op_equations`,
+  and an induction showing that the scan follows every reference the walk follows up to a stop,
+  behind which the records were walked by an earlier group (`WalkStepsOrdered` at that group).
 * `payloadOps`: below limit 41, a record the group's payload reaches (`PayReach`: a family
   check's family record, advice records, container recursors, and what they reference that is
   not covered) is bound to no operation of the group or a later one. No walk and no scan of
-  today's circuit passes these records. Producer: the same change of `op_order_scan`, extended to
-  scan the payload's addresses (final circuit batch, item 12 extended). From limit 41 on it holds
-  of every run (`payloadOpEarlier_all`). -/
+  today's circuit passes these records. Producer: the same scan extended to the records a
+  family's payload reaches. From limit 41 on it holds of every run (`payloadOpEarlier_all`). -/
 structure RemainingStoreClauses (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (Pay : PayloadRel) :
     Prop where
   blockSteps : ∀ g, 33 ≤ g → g ≤ 40 → WalkStepsOrdered t E₀ g

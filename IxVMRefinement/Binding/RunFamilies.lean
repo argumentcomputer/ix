@@ -147,7 +147,7 @@ structure RunFactsLeft (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : I
 /-- **What is left of the run's family checks**, at the store sequence with the run's payload
 (`Rs g` below is `groupStore t E₀ (runPayload calls bAddr t) g`). Status: premises; nothing
 proves them of any run. Each field is tagged with its source: today's circuit (not yet specified),
-an item of the final circuit batch, or unknown.
+a named change of the circuit source, or unknown.
 * `payloadFacts`: the facts the store's clauses need of the payload's records (`PayloadFacts`:
   `KernelModeled::check_family`, `check_advice_record`, `advice_refs_ok`, `check_witness`,
   `check_container_rec`, `container_refs_ok`, `check_recs`). Source: per field, in
@@ -156,16 +156,18 @@ an item of the final circuit batch, or unknown.
   order has no cycle among them (content addressing, with `check_advice_record`'s refusal of a
   modeled block, of a projection of the modeled block and of a recursor projection,
   `advice_refs_ok`'s earlier advice and witnesses, and `walk_from_block`'s paths in the block's
-  dependency closure). Source: today's circuit, with batch item 13 (a container recursor
-  does not name itself among its container block's used references).
+  dependency closure). Source: today's circuit, with the change of
+  `KernelModeled::check_container_rec` that refuses a container recursor naming itself among its
+  container block's used references.
 * `modeled`, `family`, `claimed`: the fields of `GroupFamilyChecks` but `famCall`
   (`runFamOf_famCall`): the modeled arm of `KernelCheck::check_const` reaches
   `KernelModeled::check_modeled_block` and `check_family` (`modeled`); `check_family` and
   `check_recs` check the record position by position against the flattened block (`family`,
-  with the batch's refusal of an empty record under a group's validation); a new block of
-  recursors is a selected record or a second family record checked by `check_family`
-  (`claimed`). Source: `modeled` today's circuit; `family` batch items 2 and 7 (the family
-  record as the reconstruction, nested pins compared in `check_recs`); `claimed` batch item 2.
+  with a change of `check_recs` that refuses an empty record under a group's validation); a new
+  block of recursors is a selected record or a second family record checked by `check_family`
+  (`claimed`). Source: `modeled` today's circuit; `family` the change of `check_family` and
+  `check_recs` that takes the family record as the reconstruction of the block's recursors, and
+  the change that compares nested pins in `check_recs`; `claimed` the first of these changes.
 * `runFacts`: what is left of `ClosureRunFacts` at the group (`RunFactsLeft`, which names each
   field's source); `famRefs` is the rank's, `advNotUnit` and `roleUnitForm` are proved
   (`families_of_remaining`).
@@ -174,8 +176,9 @@ an item of the final circuit batch, or unknown.
 * `payloadChecked`: a new unit reached through the payload is checked at the group's limit by a
   check of a unit (`KernelClaim::run_check` in `check_advice_record`, `check_container_rec`;
   `KernelClaim::check_muts_all` for an advice block), or is a selected family record of a new
-  block (checked by `check_recs`). Source: today's circuit, with batch item 9 for what the
-  payload's records reference. -/
+  block (checked by `check_recs`). Source: today's circuit, with the walk's assertions on inner
+  references (`assert_safe_used_refs`, `assert_not_block_ref`) added to the advice, container
+  and witnessed-reference checks, for what the payload's records reference. -/
 structure RemainingFamilyClauses (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
   payloadFacts : PayloadFacts t E₀ (runPayload calls bAddr t)

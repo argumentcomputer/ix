@@ -525,16 +525,20 @@ not exported. Where each fact comes from in the source, all under the group's va
   advice block or a witness (`KernelModeled::advice_refs_ok`, `container_refs_ok`), a witness is
   walked (`check_witness` kind 0, `KernelClaim::run_check_transitive`), lies on a path from the
   block (`walk_path`, kinds 1 to 3, which loads each record it passes) or is a container recursor.
-  Source: today's circuit for the payload's addresses; batch item 9 for what they reference;
+  Source: today's circuit for the payload's addresses; for what they reference, the walk's
+  assertions on inner references (`assert_safe_used_refs`, `assert_not_block_ref`) added to the
+  advice, container and witnessed-reference checks;
 * `blockMembers`: an advice block is checked by `KernelClaim::check_muts_all`, the family record
   by `check_recs` (each member against the block's flattened family). Source: today's circuit;
 * `projMember`: an advice `IPrj`/`CPrj` record is asserted to project from an advice block
   (`check_advice_record`), and a witness of kind 3 is compared with the computed projection
   address (`KernelDefEq::compute_iprj_addr`, `KernelCheck::projection_addr_ctor`). Source:
-  today's circuit, with batch item 11 (a projection's index names a member);
+  today's circuit, with a `get_ci` call added in the four projection arms (a projection's
+  index names a member);
 * `logic`: `check_advice_record` admits only safe definitions, theorems, safe recursors and safe
   inductive blocks (`muts_all_safe`); a container recursor and the family record are checked by
-  their blocks' routes. Source: today's circuit; batch item 9 for what the payload references;
+  their blocks' routes. Source: today's circuit; for what the payload references, the same
+  assertions on inner references;
 * `notAxiomLike`: `check_advice_record` has no arm for an axiom or a quotient record; a container
   recursor is a recursor (`rec_family_block`); the family record is a block of recursors.
   Source: today's circuit for the payload's addresses. As stated, over every record `PayReach`
