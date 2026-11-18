@@ -1,4 +1,5 @@
 import IxVMRefinement.TwinFamily.Companions
+import IxVMRefinement.TwinFamily.Reload
 
 /-! # The twin step's target from facts about the twin record
 
@@ -25,7 +26,10 @@ records' members at one place are comparable either way:
   type, typed by its own front door (`twinTypeGen_of_twin_above`), and each rule carries its
   generated right-hand side (`TwinRuleGen`, typed where it is not the canonical one).
 
-Two things are not facts of the second record:
+Beside the parts, the circuit side hands what the reload of each checked twin recursor needs
+(`TwinLoadFacts`: the second record's references stored, each member loaded as its checked
+recursor), from which the reload is proved (`twinMember_reloads`). Two things are not facts of
+the second record:
 
 * the model companions: the family record is installed, so each canonical recursor has a
   companion, which the record copies to the twin (`DeclRecTwinRunJ`'s `some` branch);
@@ -197,9 +201,8 @@ one the part copies; and for each part IxC's twin record's own conjuncts but the
 terms: the front door at the positional package, no `let` in the checked type, the canonical
 recursor stored with the part's counts and rules, the level parameters, the rules' stages
 (`TwinRuleFront`), and the checked recursor storing the declared one (`ValStored`,
-`RuleStored`); and each checked recursor, once the step has stored it, reloads as itself from the
-run's store `E`. -/
-structure TwinPartsFacts (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (env : Ix.Kernel.Env .anon)
+`RuleStored`). -/
+structure TwinPartsFacts (t : Ix.Kernel.RoleTable) (env : Ix.Kernel.Env .anon)
     (rb : _root_.Address) (crb : Ixon.Constant)
     (blk : List (ConstantInfo .anon)) (ws : List (TwinRecPart .anon))
     (f : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon) : Prop where
@@ -220,8 +223,6 @@ structure TwinPartsFacts (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (env : Ix.Kern
     TwinRuleFront twinPosRulesJ env ⟨twinProv ws ++ (twinModels ws ++ env.consts)⟩ f w.cvW.name
       w.cvC.levelParams w.cvW' w.mI w.rP p.1 p.2 rC) (w.rulesW.zip w.rulesW') w.rulesC
   stored : ∀ w ∈ ws, ValStored w.cvW' w.cvW ∧ List.Forall₂ RuleStored w.rulesW' w.rulesW
-  reload : ∀ w ∈ ws, Decl.ReloadsAs E t ⟨twinRecs ws ++ (twinModels ws ++ env.consts)⟩
-    (.recInfo w.cvW' w.mI w.rP w.rulesW')
 
 /-- A constant of an environment is found under its name. -/
 theorem find_isSome_of_mem {env : Ix.Kernel.Env .anon} {ci : ConstantInfo .anon}
@@ -231,13 +232,16 @@ theorem find_isSome_of_mem {env : Ix.Kernel.Env .anon} {ci : ConstantInfo .anon}
 
 /-- **The target's conclusion from the facts** (module docstring): IxC's twin record, each
 member stored as its reading, a model companion at each member, the companions, and the reload
-of each new constant at the key of an address, after the step. -/
+of each new constant at the key of an address, after the step, given the reload of each checked
+twin recursor (`twinMember_reloads`). -/
 theorem twinTarget_of_facts {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim : Option Nat}
     {env : Ix.Kernel.Env .anon} {rb : _root_.Address} {crb : Ixon.Constant}
     {blk : List (ConstantInfo .anon)} {ws : List (TwinRecPart .anon)}
-    (hF : TwinPartsFacts t E env rb crb blk ws (Decl.twinPeerRename ws)) (hblk : blk ≠ [])
+    (hF : TwinPartsFacts t env rb crb blk ws (Decl.twinPeerRename ws)) (hblk : blk ≠ [])
     (hinst : FamilyInstalled t env rb crb)
-    (hcomp : Decl.CoreCompanions ⟨E, env, t, lim⟩) :
+    (hcomp : Decl.CoreCompanions ⟨E, env, t, lim⟩)
+    (hrel : ∀ w ∈ ws, Decl.ReloadsAs E t ⟨twinRecs ws ++ (twinModels ws ++ env.consts)⟩
+      (.recInfo w.cvW' w.mI w.rP w.rulesW')) :
     ∃ env₂ : Ix.Kernel.Env .anon,
       DeclRecTwinRunJ twinPosRulesJ env blk env₂ ∧
       (∀ ci ∈ blk, ∃ c, env₂.find? ci.name = some c ∧ StoredAs c ci) ∧
@@ -325,7 +329,7 @@ theorem twinTarget_of_facts {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim : Opti
       Ix.Kernel.Semantics.Env.find?_mem hci
     rcases List.mem_append.mp hmem with hr | hrest
     · obtain ⟨w, hw, rfl⟩ := List.mem_map.mp hr
-      exact hF.reload w hw
+      exact hrel w hw
     · rcases List.mem_append.mp hrest with hm | henv
       · obtain ⟨w, -, hmi⟩ := List.mem_filterMap.mp hm
         unfold TwinRecPart.modelInfo? at hmi
@@ -361,22 +365,39 @@ def TwinSeam (RForm : RecordFormPred) : Prop :=
     (∀ x, ConstAddrOf rb' crb' x → Decl.KeyFree (keyOf t x)) →
     ∃ (blk : List (ConstantInfo .anon)) (ws : List (TwinRecPart .anon)),
       TwinDeclReads t E₀ rb' crb' blk ∧
-      TwinPartsFacts t E env rb crb blk ws (Decl.twinPeerRename ws)
+      TwinPartsFacts t env rb crb blk ws (Decl.twinPeerRename ws) ∧
+      TwinLoadFacts t E₀ env rb' crb' ws
 
 /-- **The twin step's target from the seam** (`TwinSeam`). -/
 theorem twinStepTarget_of_facts {RForm : RecordFormPred} (hseam : TwinSeam.{u} RForm) :
     TwinStepTarget.{u} RForm := by
   intro calls bAddr t E₀ E env B rb rb' cb crb crb' ms rs' lim cs ht hRS hSS hB hrbB hrb' hsz
     hne hcall hpref hroute hinv href hinst hfresh hkey
-  obtain ⟨blk, ws, hreads, hF⟩ := hseam calls bAddr t E₀ E env B rb rb' cb crb crb' ms rs'
+  obtain ⟨blk, ws, hreads, hF, hLd⟩ := hseam calls bAddr t E₀ E env B rb rb' cb crb crb' ms rs'
     lim cs ht hRS hSS hB hrbB hrb' hsz hne hcall hpref hroute hinv href hinst hfresh hkey
   -- the record has a member, whose constant address the block reads
   have hblk : blk ≠ [] := by
     obtain ⟨m, hm⟩ : ∃ m, rs'[0]? = some m := ⟨rs'[0], by simp [Nat.pos_of_ne_zero hsz]⟩
     obtain ⟨ci, hci, -⟩ := hreads.2.2 _ (Or.inr ⟨rs', 0, m, hrb'.muts, hm, Or.inl rfl⟩)
     exact List.ne_nil_of_mem hci
+  -- each checked twin recursor reloads after the step
+  have hrelW : ∀ w ∈ ws, Decl.ReloadsAs E t ⟨twinRecs ws ++ (twinModels ws ++ env.consts)⟩
+      (.recInfo w.cvW' w.mI w.rP w.rulesW') := by
+    refine twinMember_reloads ht hSS hrb' hreads hF.block hF.front hLd
+      (fun k hk => find_isSome_append (find_isSome_append hk (twinModels ws)) (twinRecs ws))
+      fun ci hci => ?_
+    rw [hF.block] at hci
+    obtain ⟨w, hw, rfl⟩ := List.mem_map.mp hci
+    have hmem : ConstantInfo.recInfo w.cvW' w.mI w.rP w.rulesW' ∈
+        twinRecs ws ++ (twinModels ws ++ env.consts) :=
+      List.mem_append_left _ (List.mem_map.mpr ⟨w, hw, rfl⟩)
+    have h := find_isSome_of_mem (env := ⟨twinRecs ws ++ (twinModels ws ++ env.consts)⟩) hmem
+    have hn : (ConstantInfo.recInfo w.cvW' w.mI w.rP w.rulesW').name =
+        (ConstantInfo.recInfo w.cvW w.mI w.rP w.rulesW).name := (hF.front w hw).name_eq
+    rw [hn] at h
+    exact h
   obtain ⟨env₂, hrun, hstored, hmodel, hcomp, hrel⟩ :=
-    twinTarget_of_facts (lim := lim) hF hblk hinst hinv.companions
+    twinTarget_of_facts (lim := lim) hF hblk hinst hinv.companions hrelW
   exact ⟨blk, env₂, hreads, hrun, hstored, hmodel, hcomp, hrel⟩
 
 end IxVM.Refinement.Typing.TwinFamily
