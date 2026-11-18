@@ -62,7 +62,8 @@ def RecArmObs (calls : List (Call F)) (A : _root_.Address) : Prop :=
       [rc, .construct "KernelTypes::KConstantInfo" "Rec"
         [levels, type, parameters, indices, motives, minors, rules, k, unsafeFlag, block,
           position], ap] m_chk r_chk h'_chk cs_chk ∧
-    (∀ cl ∈ cs_chk, cl ∈ calls)
+    (∀ cl ∈ cs_chk, cl ∈ calls) ∧
+    Claim.FamilyCheckRefused rc block m_chk cs_chk
 
 /-- The arm of a validating run gives the observations. -/
 theorem NativeRecArm.obs {calls : List (Call F)} {bAddr : _root_.Address}
@@ -70,10 +71,10 @@ theorem NativeRecArm.obs {calls : List (Call F)} {bAddr : _root_.Address}
     (h : NativeRecArm calls bAddr t A n) : RecArmObs calls A := by
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, -, -, ha_pre, -, ev_ld, hsub_ld,
-    hld, ev_chk, hsub_chk⟩ := h
+    hld, ev_chk, hsub_chk, hfr⟩ := h
   exact ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, ha_pre, ev_ld, hsub_ld, hld,
-    ev_chk, hsub_chk⟩
+    ev_chk, hsub_chk, hfr⟩
 
 /-- The arm at a limit gives the observations. -/
 theorem RecArmRun.obs {calls : List (Call F)}
@@ -81,10 +82,10 @@ theorem RecArmRun.obs {calls : List (Call F)}
     (h : RecArmRun calls t A lim) : RecArmObs calls A := by
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, -, -, ha_pre, -, ev_ld, hsub_ld,
-    hld, ev_chk, hsub_chk⟩ := h
+    hld, ev_chk, hsub_chk, hfr⟩ := h
   exact ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, ha_pre, ev_ld, hsub_ld, hld,
-    ev_chk, hsub_chk⟩
+    ev_chk, hsub_chk, hfr⟩
 
 /-- **The arm the walk exports at any limit is the arm at that limit**: the walk's role
 context, read as the core reads it. -/
@@ -93,10 +94,10 @@ theorem recArmRun_of_limArm {calls : List (Call F)} {bAddr : _root_.Address}
     (h : Claim.RecArmLimAt calls bAddr t A lim) : RecArmRun calls t A lim := by
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, hrc_pre, hrc_m, ha_pre, ha_m, ev_ld,
-    hsub_ld, hld, ev_chk, hsub_chk⟩ := h
+    hsub_ld, hld, ev_chk, hsub_chk, hfr⟩ := h
   exact ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, hrc_pre.toRCRep, hrc_m.toRCRep,
-    ha_pre, ha_m, ev_ld, hsub_ld, hld, ev_chk, hsub_chk⟩
+    ha_pre, ha_m, ev_ld, hsub_ld, hld, ev_chk, hsub_chk, hfr⟩
 
 /-- The arm the walk exports at any limit gives the observations. -/
 theorem recArmObs_of_lim {calls : List (Call F)} {bAddr : _root_.Address}
@@ -104,10 +105,10 @@ theorem recArmObs_of_lim {calls : List (Call F)} {bAddr : _root_.Address}
     (h : Claim.RecArmLimAt calls bAddr t A lim) : RecArmObs calls A := by
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, -, -, ha_pre, -, ev_ld, hsub_ld,
-    hld, ev_chk, hsub_chk⟩ := h
+    hld, ev_chk, hsub_chk, hfr⟩ := h
   exact ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, ha_pre, ev_ld, hsub_ld, hld,
-    ev_chk, hsub_chk⟩
+    ev_chk, hsub_chk, hfr⟩
 
 /-! ## The bounds from the two loads of the arm -/
 
@@ -138,7 +139,7 @@ theorem recArmRunBounds_of_obs {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     usedRefsStored_of_cover (hcover env ⟨hstep.ext, hstep.refs, hstep.fresh⟩) hinert
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, ha_pre, ev_ld, hsub_ld,
-    hld, ev_chk, hsub_chk⟩ := harm
+    hld, ev_chk, hsub_chk, hfr⟩ := harm
   obtain ⟨rawB, cB, hszB, hhB, hbaB, hexB⟩ := get_ci_bytes_bound ha_pre ev_ld
   have hcB : cB = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hhB) hbaB hexB
   subst cB

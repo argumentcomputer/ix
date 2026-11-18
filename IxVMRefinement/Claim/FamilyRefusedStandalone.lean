@@ -167,4 +167,92 @@ theorem check_family_standalone_refused {calls cs : List (Call F)} {E₀ : Ixon.
     exact check_recs_single_refused
       (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) e1293 hlist) ev1343
 
+/-! ## The check of a standalone recursor record -/
+
+/-- **No family check under `rc` with the family record `block` succeeds** at a heap after `h`,
+its calls among `cs`. `KernelCheck::check_const`'s `Rec` arm runs such a check on its modeled
+route; at a standalone recursor record this excludes that route. -/
+def FamilyCheckRefused (rc block : SourceValue F) (h : Heap F) (cs : List (Call F)) : Prop :=
+  ∀ (fb r : SourceValue F) (h₀ h₀' : Heap F) (cs₀ : List (Call F)), Heap.Extends h h₀ →
+    (∀ cl ∈ cs₀, cl ∈ cs) →
+    ¬ ObsFn Obs.W "KernelModeled::check_family" [rc, fb, block] h₀ r h₀' cs₀
+
+/-- The load of a record that is a recursor in the run's store has the tag `Recr`. -/
+private theorem load_recr_tag {calls cs : List (Call F)} {E₀ : Ixon.Env}
+    (hS : LoadedReads.RunStore calls E₀) {ab : Bytes.Address} {x_addr : SourceValue F}
+    {tag : String} {args : List (SourceValue F)} {x_sh x_rf x_un x_bd : SourceValue F}
+    {h m : Heap F} (ha : Bytes.RepAddressRef addrTy h ab x_addr)
+    (ev : ObsFn Obs.W "Ingress::load_verified_constant" [x_addr] h
+      (.construct "Ixon::Constant" "Mk"
+        [.construct "Ixon::ConstantInfo" tag args, x_sh, x_rf, x_un, x_bd]) m cs)
+    (hsub : ∀ cl ∈ cs, cl ∈ calls)
+    {c : Ixon.Constant} {rcr : Ixon.Recursor}
+    (hc : IxVM.Consistency.recordOf E₀ (ixAddr ab) = some c) (hinfo : c.info = .recr rcr) :
+    tag = "Recr" := by
+  obtain ⟨-, bytes, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
+    L1.load_verified_constant_decode_bounded ha ev
+  have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
+    (Core.hashed_mono hsub hh) haddr hexact
+  subst hcc
+  obtain ⟨infoVal, -, -, -, -, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
+  have hinfo_eq := (List.cons.inj (Value.construct.inj hc_eq).2.2).1
+  rw [hinfo] at hinfoRep
+  obtain ⟨rv, hv, -⟩ := hinfoRep
+  exact (Value.construct.inj (hinfo_eq.trans hv)).2.1
+
+/-- **At a standalone recursor record, `Ingress::get_ci` answers a `Rec` value whose block field
+is the address it was given**: its `Recr` arm passes the address to `Convert::convert_recursor`
+as the block. -/
+theorem get_ci_recr_block {calls cs : List (Call F)} {E₀ : Ixon.Env}
+    (hS : LoadedReads.RunStore calls E₀) {ab : Bytes.Address} {x_addr ptr : SourceValue F}
+    {h h' : Heap F} (ha : Bytes.RepAddressRef addrTy h ab x_addr)
+    (ev : ObsFn Obs.W "Ingress::get_ci" [x_addr] h ptr h' cs) (hsub : ∀ cl ∈ cs, cl ∈ calls)
+    {c : Ixon.Constant} {rcr : Ixon.Recursor}
+    (hc : IxVM.Consistency.recordOf E₀ (ixAddr ab) = some c) (hinfo : c.info = .recr rcr)
+    {levels type parameters indices motives minors rules k unsafeFlag block position :
+      SourceValue F}
+    (hld : loadValue h' ptr = .ok (.construct "KernelTypes::KConstantInfo" "Rec"
+      [levels, type, parameters, indices, motives, minors, rules, k, unsafeFlag, block,
+        position])) :
+    block = x_addr := by
+  match Obs.«Ingress::get_ci».obs ev with
+  | .Defn_n0 (ev14 := ev14) (hc302 := hcs) .. | .Defn_other (ev14 := ev14) (hc423 := hcs) ..
+  | .Axio (ev14 := ev14) (hc515 := hcs) .. | .Quot (ev14 := ev14) (hc606 := hcs) ..
+  | .DPrj (ev14 := ev14) (hc675 := hcs) .. | .IPrj (ev14 := ev14) (hc750 := hcs) ..
+  | .CPrj (ev14 := ev14) (hc851 := hcs) .. | .RPrj (ev14 := ev14) (hc926 := hcs) .. =>
+    exact absurd (load_recr_tag hS ha ev14
+      (fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])) hc hinfo) (by decide)
+  | .Recr (m978 := m978) (v977 := v977) (he981 := hr) (hm980 := hh) (ev987 := conv) .. =>
+    match Obs.«Convert::convert_recursor».obs conv with
+    | .run (he237 := hv) .. =>
+      rw [hr, hh, loadValue_snoc_self m978 _, hv] at hld
+      have hargs := (Value.construct.inj (Except.ok.inj hld)).2.2
+      simp only [List.cons.injEq] at hargs
+      exact hargs.2.2.2.2.2.2.2.2.2.1.symm
+
+/-- **The family check of a standalone recursor record's checked value is refused**: the walk
+loaded the record (a recursor in the run's store) at `ap` and the loaded `Rec` value's block field
+is `ap` itself (`get_ci_recr_block`), at which no family check succeeds
+(`check_family_standalone_refused`). -/
+theorem familyCheckRefused_of_recr {calls cs_load cs_chk : List (Call F)} {E₀ : Ixon.Env}
+    (hS : LoadedReads.RunStore calls E₀) {A : _root_.Address} {c : Ixon.Constant}
+    {rcr : Ixon.Recursor} (hc : IxVM.Consistency.recordOf E₀ A = some c)
+    (hinfo : c.info = .recr rcr) {h_pre m_chk : Heap F} {rc ap ptr : SourceValue F}
+    (ha : S0.addr h_pre ap A) (ev_ld : ObsFn Obs.W "Ingress::get_ci" [ap] h_pre ptr m_chk cs_load)
+    (hsub_ld : ∀ cl ∈ cs_load, cl ∈ calls)
+    {levels type parameters indices motives minors rules k unsafeFlag block position :
+      SourceValue F}
+    (hld : loadValue m_chk ptr = .ok (.construct "KernelTypes::KConstantInfo" "Rec"
+      [levels, type, parameters, indices, motives, minors, rules, k, unsafeFlag, block,
+        position]))
+    (hsub_chk : ∀ cl ∈ cs_chk, cl ∈ calls) :
+    FamilyCheckRefused rc block m_chk cs_chk := by
+  obtain ⟨ab, hab, rfl⟩ := ha
+  have hblock := get_ci_recr_block hS hab ev_ld hsub_ld hc hinfo hld
+  subst hblock
+  intro fb r h₀ h₀' cs₀ hext hsub₀ evf
+  exact check_family_standalone_refused hS
+    (Bytes.repAddressRef_heapMono₂ addrTy (ev_ld.heap_extends.trans hext) hab) evf
+    (fun cl hcl => hsub_chk cl (hsub₀ cl hcl)) hc hinfo
+
 end IxVM.Refinement.Claim

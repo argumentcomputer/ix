@@ -2,6 +2,7 @@ import IxVMRefinement.Assembly.TypingRecParent
 import IxVMRefinement.Assembly.RecursorSyntax
 import IxVMRefinement.Assembly.ProjSafe
 import IxVMRefinement.StatementRel.LoadedReadsCanonRec
+import IxVMRefinement.Claim.FamilyRefusedStandalone
 
 /-! # The parent family read at a recursor record, from the check of the record
 
@@ -182,7 +183,8 @@ def NativeRecArm (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel
       [rc, .construct "KernelTypes::KConstantInfo" "Rec"
         [levels, type, parameters, indices, motives, minors, rules, k, unsafeFlag, block, position],
         ap] m_chk r_chk h'_chk cs_chk ∧
-    (∀ cl ∈ cs_chk, cl ∈ calls)
+    (∀ cl ∈ cs_chk, cl ∈ calls) ∧
+    Claim.FamilyCheckRefused rc block m_chk cs_chk
 
 /-- **The check of the record took the recursor arm, at the limit `lim`**: `NativeRecArm` with
 the role context read as the core reads it (`Core.RCRep`), at a validating limit `some n` or
@@ -203,7 +205,8 @@ def RecArmRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (A : _root_.Addr
       [rc, .construct "KernelTypes::KConstantInfo" "Rec"
         [levels, type, parameters, indices, motives, minors, rules, k, unsafeFlag, block, position],
         ap] m_chk r_chk h'_chk cs_chk ∧
-    (∀ cl ∈ cs_chk, cl ∈ calls)
+    (∀ cl ∈ cs_chk, cl ∈ calls) ∧
+    Claim.FamilyCheckRefused rc block m_chk cs_chk
 
 /-- The arm of a validating run is the arm at its limit. -/
 theorem NativeRecArm.run {calls : List (Call F)} {bAddr : _root_.Address}
@@ -211,10 +214,10 @@ theorem NativeRecArm.run {calls : List (Call F)} {bAddr : _root_.Address}
     (h : NativeRecArm calls bAddr t A n) : RecArmRun calls t A (some n) := by
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, hrc_pre, hrc_m, ha_pre, ha_m, ev_ld,
-    hsub_ld, hld, ev_chk, hsub_chk⟩ := h
+    hsub_ld, hld, ev_chk, hsub_chk, hfr⟩ := h
   exact ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, hrc_pre.toRCRep, hrc_m.toRCRep,
-    ha_pre, ha_m, ev_ld, hsub_ld, hld, ev_chk, hsub_chk⟩
+    ha_pre, ha_m, ev_ld, hsub_ld, hld, ev_chk, hsub_chk, hfr⟩
 
 /-- **The head of the major premise's domain is no basis name**, record-scoped: in every
 annotation of the record's type as read (positional level parameters, over the run's blobs),
@@ -276,7 +279,7 @@ theorem recParent_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     usedRefsStored_of_cover (hcover env ⟨hstep.ext, hstep.refs, hstep.fresh⟩) hinert
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, -, -, ha_pre, -, ev_ld, hsub_ld,
-    hld, ev_chk, hsub_chk⟩ := hnat
+    hld, ev_chk, hsub_chk, hfr⟩ := hnat
   obtain ⟨a', ha'_ref, haA⟩ := ha_pre
   subst haA
   -- the load of the record, traced
