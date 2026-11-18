@@ -108,4 +108,54 @@ theorem RoleValidationIn.kept_checked {calls : List (Call F)} {bAddr : _root_.Ad
   · exact RoleValidationIn.checked_bound hH hv (Or.inr hw)
   · exact absurd hs hns
 
+/-! ## The projection records of a walked block
+
+A walk checks a block member by member, and each member's check hashes the member's projection
+record and, for an inductive member, each constructor's. The claim layer reads this off the
+check evidence at any limit (`Claim.member_records`, `Claim.proj_member_of_checked`,
+`Claim.checked_not_block`); these are the same facts for a record of a walk at a group's
+validation limit: the block clause of `UsedClosed` and the clause `Admits.projMember`. -/
+
+/-- **A block a walk recorded was checked member by member.** -/
+theorem topRec_block_checked {calls : List (Call F)} {E₀ : Ixon.Env}
+    (hS : LoadedReads.RunStore calls E₀) (hH : LoadedReads.HashedRecordsStored calls E₀)
+    {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable} {lim : Option Nat}
+    (r : Claim.TopRec calls bAddr t lim) {ms : Array Ixon.MutConst}
+    (hms : r.c.info = .muts ms) :
+    ∀ k, k < ms.size → Claim.MemberCheckedLimAt calls bAddr t r.addr ms k lim := by
+  rcases r.hchecked with ⟨ms', hms', hk⟩ | hc
+  · have e : ms' = ms := by
+      rw [hms] at hms'
+      exact (Ixon.ConstantInfo.muts.inj hms').symm
+    subst e
+    exact hk
+  · exact (Claim.checked_not_block hS (topRec_recordOf hH r) hms hc).elim
+
+/-- **The member and constructor projection records of a block a walk recorded are records of
+the run's store.** -/
+theorem topRec_block_members {calls : List (Call F)} {E₀ : Ixon.Env}
+    (hS : LoadedReads.RunStore calls E₀) (hH : LoadedReads.HashedRecordsStored calls E₀)
+    {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable} {lim : Option Nat}
+    (r : Claim.TopRec calls bAddr t lim) {ms : Array Ixon.MutConst}
+    (hms : r.c.info = .muts ms) {i : Nat} {m : Ixon.MutConst} (hm : ms[i]? = some m) :
+    recordOf E₀ (memberAddr r.addr i m) = some (memberProjection r.addr i m) ∧
+      ∀ ind j, m = .indc ind → j < ind.ctors.size →
+        recordOf E₀ (ctorAddr r.addr i j) = some (constructorProjection r.addr i j) :=
+  Claim.member_records hS hH (topRec_recordOf hH r) hms hm
+    (topRec_block_checked hS hH r hms i (Array.getElem?_eq_some_iff.mp hm).1)
+
+/-- **A projection record a walk recorded is at a member's or a constructor's address of its
+block, which the run's store holds.** -/
+theorem topRec_proj_member {calls : List (Call F)} {E₀ : Ixon.Env}
+    (hS : LoadedReads.RunStore calls E₀) (hH : LoadedReads.HashedRecordsStored calls E₀)
+    {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable} {lim : Option Nat}
+    (r : Claim.TopRec calls bAddr t lim) (hpr : IsProj r.c) :
+    ∃ cb, recordOf E₀ (Ix.Cert.ownerOf r.addr r.c) = some cb ∧
+      ConstAddrOf (Ix.Cert.ownerOf r.addr r.c) cb r.addr := by
+  rcases r.hchecked with ⟨ms, hms, -⟩ | hc
+  · exfalso
+    rcases hpr with ⟨p, hp⟩ | ⟨p, hp⟩ | ⟨p, hp⟩ | ⟨p, hp⟩ <;>
+      (rw [hp] at hms; cases hms)
+  · exact Claim.proj_member_of_checked hS hH (topRec_recordOf hH r) hpr hc
+
 end IxVM.Refinement.Binding
