@@ -63,15 +63,19 @@ structure FamilyRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
   twinCall : ∀ rb' B, twin rb' = some B → ∃ bAddr cs, FamilyCallAtLim calls bAddr t B rb' lim cs
 
 /-- **Row `familyGraph`**: at every walk of an accepted typing claim and every witness of the
-table's shape, the run's family records, advice, inner records and twins. -/
+table's shape, a rank of the same walk and the run's family records, advice, inner records and
+twins at that rank. The walk constrains its rank only between top-walked addresses
+(`topWalk_of_rankOrder`); the records a family check checks are ranked by the run's family
+checks, between the walk's ranks (`topWalk_scale` leaves room). -/
 def FamilyGraphRow : Prop :=
   ∀ (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (seeds : List _root_.Address)
     (E₀ : Ixon.Env) (lim : Option Nat) (Top : _root_.Address → Prop)
     (rank : _root_.Address → Nat), Claim.TopWalk calls t seeds E₀ lim Top rank →
     ∀ (R : Ixon.Env) (envT : Ix.Kernel.Env .anon), TableShape.{u} t (fun _ => True) R envT →
-      ∃ (fam twin : _root_.Address → Option _root_.Address)
+      ∃ (rank' : _root_.Address → Nat) (fam twin : _root_.Address → Option _root_.Address)
         (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop),
-        FamilyRun calls t envT E₀ lim Top rank fam twin adv Inner
+        Claim.TopWalk calls t seeds E₀ lim Top rank' ∧
+        FamilyRun calls t envT E₀ lim Top rank' fam twin adv Inner
 
 /-- **Row `innerChecked`**: what the run gives of the records a family check checks, beside the
 graph (`InnerChecked`: checked at the walk's limit, no inert reference, used references below,
@@ -234,17 +238,18 @@ theorem topUnitSteps_family
 /-! ## The typing half's premise over the family graph -/
 
 /-- **The typing half's premise over the family graph**: at every walk and every witness of the
-table's shape, a family graph and the four kinds of step the family skeleton asks
-(`typing_skeleton_core_family_modeled`). It replaces the premise "a plain `UnitStep` of every
-top-walked unit" of `Binding.typing_skeleton_over`. -/
+table's shape, a rank of the same walk, a family graph at it and the four kinds of step the
+family skeleton asks (`typing_skeleton_core_family_modeled`). It replaces the premise "a plain
+`UnitStep` of every top-walked unit" of `Binding.typing_skeleton_over`. -/
 def FamilySteps (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (calls : List (Call F))
     (Walk : Ix.Kernel.RoleTable → List _root_.Address → Ixon.Env → Option Nat →
       (_root_.Address → Prop) → (_root_.Address → Nat) → Prop) : Prop :=
   ∀ t seeds E₀ lim Top rank, Walk t seeds E₀ lim Top rank →
     ∀ (R : Ixon.Env) (envT : Ix.Kernel.Env .anon), TableShape.{u} t (fun _ => True) R envT →
-      ∃ (fam twin : _root_.Address → Option _root_.Address)
+      ∃ (rank' : _root_.Address → Nat) (fam twin : _root_.Address → Option _root_.Address)
         (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop),
-        FamilyGraph t envT E₀ Top rank fam twin adv Inner ∧
+        Walk t seeds E₀ lim Top rank' ∧
+        FamilyGraph t envT E₀ Top rank' fam twin adv Inner ∧
         (∀ E, StepCtx.{u} calls t R envT E₀ E → ∀ A c, Top A → Unclaimed fam A →
           recordOf E₀ A = some c → InLogic c → UnitKind c → fam A = none → twin A = none →
           UnitStep.{u} (FoldExtra.{u} L t E) t envT E₀ E lim A c) ∧
@@ -296,10 +301,10 @@ theorem familySteps_of_parts {L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
         BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerTeleOther t E₀ B cb ind)
     (calls : List (Call F)) :
     FamilySteps.{u} L calls (Claim.TopWalk calls) := by
-  intro t seeds E₀ lim Top rank hWalk R envT hshape
-  obtain ⟨fam, twin, adv, Inner, hFR⟩ :=
-    familyGraph calls t seeds E₀ lim Top rank hWalk R envT hshape
-  exact ⟨fam, twin, adv, Inner, hFR.graph,
+  intro t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape
+  obtain ⟨rank, fam, twin, adv, Inner, hWalk, hFR⟩ :=
+    familyGraph calls t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape
+  exact ⟨rank, fam, twin, adv, Inner, hWalk, hFR.graph,
     topUnitSteps_family standaloneDefinition standaloneTheoremOrOpaque standaloneRecursor
       definitionBlock nativeBlockTelescope nativeBlockAlias nativeBlockOtherTelescope hWalk hFR,
     innerSteps calls t seeds E₀ lim Top rank hWalk R envT fam twin adv Inner hFR,
@@ -365,12 +370,12 @@ theorem typing_skeleton_over_family {L : Ix.Kernel.Env .anon → NativeFam .anon
     · have hF : BoundaryFacts t (fun _ => True) R envT := hW.facts.1
       obtain ⟨Reg, hR⟩ := hW.facts.2
       have hc : Carried lim := carried_of_typingLim (hlim t seeds E₀ lim Top rank hWalk)
-      obtain ⟨fam, twin, adv, Inner, hFG, hTop, hInner, hFam, hTwin⟩ :=
+      obtain ⟨rank', fam, twin, adv, Inner, hWalk', hFG, hTop, hInner, hFam, hTwin⟩ :=
         hsteps t seeds E₀ lim Top rank hWalk R envT hW.shape
       exact typing_skeleton_core_family_modeled (X := fun E => FoldExtra.{u} L t E) hW.shape
         (fun E hE => (hR E hE lim hc (limWithin_all t lim)).prefixInv) hF.whole
         (fun E hE => (hR E hE lim hc (limWithin_all t lim)).extra) ht hb hextra hnc hS
-        (hgraph t seeds E₀ lim Top rank hWalk) hFG hTop hInner hFam hTwin
+        (hgraph t seeds E₀ lim Top rank' hWalk') hFG hTop hInner hFam hTwin
 
 /-- **The composed statement with the fold's clause on both sides, the typing half over the
 family graph**: `composed_skeleton_over` with `FamilySteps` in place of the plain step. -/
