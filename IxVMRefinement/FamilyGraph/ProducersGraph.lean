@@ -332,7 +332,7 @@ theorem ownList_spec {B rb : _root_.Address}
     (h : ∃ advAs, FamilyCallOwn K.calls K.bAddr K.t B rb K.lim (K.famCalls B rb) advAs) :
     FamilyCallOwn K.calls K.bAddr K.t B rb K.lim (K.famCalls B rb) (K.ownList B rb) := by
   unfold ownList
-  rw [dif_pos h]
+  rw [dite_eq_left h]
   exact Classical.choose_spec h
 
 end FamRunCtx
