@@ -232,13 +232,12 @@ theorem fam_inj (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famOf₀ famOf
   subst e'
   have hm : ms[0]? = some ms[0] := Array.getElem?_eq_getElem hpos
   have hm' : ms'[0]? = some ms'[0] := Array.getElem?_eq_getElem hpos'
-  obtain ⟨r, hr, hmaj⟩ := hF.recursor_at (hF.originals 0 _ hm)
-  obtain ⟨r', hr', hmaj'⟩ := hF'.recursor_at (hF'.originals 0 _ hm')
+  obtain ⟨r, hr, n, hmaj⟩ := hF.recursor_at (hF.originals 0 _ hm)
+  obtain ⟨r', hr', n', hmaj'⟩ := hF'.recursor_at (hF'.originals 0 _ hm')
   rw [hr] at hr'
   have er : r = r' := Ixon.MutConst.recr.inj (Option.some.inj hr')
   subst er
-  rw [hmaj] at hmaj'
-  have ha := Option.some.inj hmaj'
+  have ha := FamilyOf.majorHeadAt_unique hmaj hmaj'
   have h1 := hF.block.members 0 _ hm
   have h2 := hF'.block.members 0 _ hm'
   rw [ha] at h1
