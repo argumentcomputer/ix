@@ -179,7 +179,7 @@ theorem load_role_table_parse {x_a x_tbl : SourceValue F} {h h₁ : Heap F}
       ha₁, hent.mono extBn, hbnd.mono extBn, hbst.mono extBn, hidx, hentE.mono extEv,
       hevE.mono extEv⟩, extEv, hentE, hevE, ev594⟩
   · rw [Ix.Kernel.RoleTable.wireWF_iff]
-    refine ⟨by decide, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨show Ix.Kernel.specVersion < 256 by decide, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp only [parsedTable, List.size_toArray, List.length_map, hlenB]
       exact UInt8.toNat_lt b3
     · simp only [parsedTable, List.size_toArray, List.length_map, hlenE]
