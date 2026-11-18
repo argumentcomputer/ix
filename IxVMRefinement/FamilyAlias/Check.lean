@@ -43,6 +43,8 @@ open Ix.Kernel.Rules (Annot Red DefEq Infer)
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
+set_option linter.unusedTactic false
+set_option linter.unreachableTactic false
 
 /-! ## Outcomes -/
 
@@ -62,8 +64,8 @@ def guardP (lbl : String) (p : Prop) [Decidable p] : Except String (PLift p) :=
 
 /-- The content of an option, with the equation that it is the content. -/
 def getSome {α : Type} (lbl : String) (o : Option α) : Except String {x : α // o = some x} :=
-  match ho : o with
-  | some x => .ok ⟨x, ho⟩
+  match o with
+  | some x => .ok ⟨x, rfl⟩
   | none => .error lbl
 
 /-! ## The alias renaming of a table -/
@@ -123,11 +125,11 @@ theorem aliasEnv_of_table {env : Env .anon} :
     intro k hk
     by_cases hkp : k = p.1
     · subst hkp
-      have hm : aliasMap (p :: rest) p.1 = p.2 := by first | exact if_pos rfl | simp [aliasMap]
+      have hm : aliasMap (p :: rest) p.1 = p.2 := ite_eq_left rfl
       rw [hm]
       exact hall p List.mem_cons_self
-    · have hm : aliasMap (p :: rest) k = aliasMap rest k := by
-        first | exact if_neg hkp | simp [aliasMap, hkp]
+    · have hm : aliasMap (p :: rest) k = aliasMap rest k :=
+        ite_eq_right hkp
       rw [hm] at hk ⊢
       exact aliasEnv_of_table (fun q hq => hall q (List.mem_cons_of_mem _ hq)) k hk
 
@@ -384,16 +386,6 @@ def provisionCheck (fuel : Nat) (h : KKey → KKey) (bn : List KKey) :
 
 /-! ## The rules -/
 
-/-- A constructor's telescope with a constant-headed residual, in the nested record's form. -/
-theorem ctorTele_of_ok {ty : KExpr} {k : Nat} (hk : Expr.ctorTeleOk ty k = true) :
-    ∃ cbinders cbody0, ty.stripPis k = some (cbinders, cbody0) ∧
-      (match cbody0.getAppFn with
-       | .const _ _ => true | _ => false) = true := by
-  unfold Expr.ctorTeleOk at hk
-  split at hk
-  · next bs body heq => exact ⟨bs, body, heq, hk⟩
-  · exact nomatch hk
-
 /-- A canonical rule's theorem record, in the record's package: the theorem copy at the `iota`
 key, its literal shape, and the rule's judgements. -/
 def iotaThmCheck (fuel : Nat) (h : KKey → KKey) (bn : List KKey) (env' : Env .anon)
@@ -513,7 +505,10 @@ def iotaThmNCheck (fuel : Nat) (h : KKey → KKey) (bn : List KKey) (env' : Env 
     (op.1.2.getAppArgs.getD 2 (.bvar 0)) (Expr.mkAppN (rhsA.renameConsts (blockRen bn)) op.1.1)
     (op.1.2.getAppArgs.getD 0 (.bvar 0)) (op.1.2.getAppArgs.getD 1 (.bvar 0))
   return ⟨⟨hshape, cvt.1, op.1.1, op.1.2, cvt.2, hl.down, op.2, he.down, h3.down,
-    g1.down, g2.down, g3.down, Expr.ErasedEq.of_eq g4.down, ctorTele_of_ok g5.down,
+    g1.down, g2.down, g3.down, Expr.ErasedEq.of_eq g4.down,
+    (by
+      obtain ⟨bs, body, c, us, hs, hb⟩ := Expr.ctorTeleOk_head g5.down
+      exact ⟨bs, body, hs, by first | (rw [hb]; done) | (rw [hb]; rfl) | simp [hb]⟩),
     k1.1.1, k1.1.2, k3.1.1, k3.1.2, k4.1.1, k4.1.2, k5.1.1, k5.1.2, k6.1.1, k6.1.2,
     k1.2, k2.down, k3.2, k4.2, ⟨k5.2, k6.2, k6c.down⟩,
     k7.1.1, k7.1.2, k7.2, k8.down, k9.down⟩⟩
@@ -557,7 +552,7 @@ def ruleCheck (fuel : Nat) (h : KKey → KKey) (bn : List KKey) (env' : Env .ano
           ⟨cvj, cnP, cnF, rhsA, hctor, h2.down, h3.down, h4.down,
             annot_of_annotates (IxVM.Consistency.annotates_of_check h5.down) h4.down h3.down 0,
             h6.down, h7.down, h8.down, ⟨ht'.1, ht'.2⟩, .nested lvls pins, rfl,
-            Or.inr ⟨eq_false_of_ne_true hp, lvls, pins, rfl, ht.down⟩⟩⟩
+            Or.inr ⟨Bool.eq_false_of_ne_true hp, lvls, pins, rfl, ht.down⟩⟩⟩
       | none => .error "rule: neither canonical nor of the certified nested shape"
   | _ => .error "rule: the constructor is not stored"
 
@@ -616,7 +611,9 @@ def famRecordCheck (fuel : Nat) (tbl : List (KKey × KKey)) (envAl : Env .anon)
     (block = nonrecsOf block ++ recsOf block)
   let mem ← membersCheck fuel (aliasMap tbl) (block.map (·.name)) envAl hA (nonrecsOf block) tysM
   if hnil : (recsOf block).isEmpty = true then
-    return ⟨mem.1, hA, hsplit.down, mem.1, mem.2.2, Or.inl ⟨List.isEmpty_iff.mp hnil, rfl⟩⟩
+    return ⟨mem.1, hA, by
+      set_option smartUnfolding false in
+      exact ⟨hsplit.down, mem.1, mem.2.2, Or.inl ⟨List.isEmpty_iff.mp hnil, rfl⟩⟩⟩
   else do
     let heq ← guardP "block: the pinned equality is not stored"
       (mem.1.find? eqName = some eqA)
@@ -624,8 +621,11 @@ def famRecordCheck (fuel : Nat) (tbl : List (KKey × KKey)) (envAl : Env .anon)
       (recsOf block) tysR
     let fold ← recsFoldCheck fuel (aliasMap tbl) (block.map (·.name)) mem.1 prov.2.1 mem.1
       prov.1.2 rhsss
-    return ⟨fold.1, hA, hsplit.down, mem.1, mem.2.2,
-      Or.inr ⟨fun he => hnil (List.isEmpty_iff.mpr he), heq.down, prov.1.1, prov.1.2, prov.2.2, fold.2⟩⟩
+    return ⟨fold.1, hA, by
+      set_option smartUnfolding false in
+      exact ⟨hsplit.down, mem.1, mem.2.2,
+        Or.inr ⟨fun he => hnil (List.isEmpty_iff.mpr he), heq.down, prov.1.1, prov.1.2, prov.2.2,
+          fold.2⟩⟩⟩
 
 /-- **A successful check is a proof**: the alias renaming moves stored aliases only, and the
 renamed record holds over the family package, at the environment the check returns. -/
@@ -687,8 +687,7 @@ def aliasGroupCheck (env : Env .anon) :
       subst hh
       exact AliasGroup.cons ih.down hperm.down (Option.isNone_iff_eq_none.mp hfr.down)
         (auxKey_ne_projTableName hd.down) src.2 hlps.down htf.down htp.down htr.down htb.down
-        hty.down (by first | exact if_pos rfl | simp [aliasMap, auxKey])
-        (fun x hx => by first | exact if_neg hx | (simp only [aliasMap]; exact if_neg hx))⟩
+        hty.down (ite_eq_left rfl) (fun x hx => ite_eq_right hx)⟩
   | _, _ => .error "alias group: the table and the aliases do not correspond"
 
 /-- **A successful check is an alias group.** -/
