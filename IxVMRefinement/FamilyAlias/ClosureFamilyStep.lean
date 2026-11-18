@@ -14,8 +14,8 @@ fold's form of `FamilyBlockCheck`):
   recursor at its selected type at every record store for the closure's store
   (`FamRecsCompanion`), at the prefix, over a record store for the closure's store that the run's
   calls are good for;
-* `recRefs`: no reference the family record uses is an inert axiom's, and each is one a step
-  needs stored.
+* `recRefs`: each reference the family record uses is covered at the group's validation limit,
+  or is one a step needs stored.
 
 The step is taken once, over a store `Ec` the run is good for (`BindingRun.stepStores`) at the
 group's validation limit; the new constants (`famStepConclusion_installed`: the members as the
@@ -239,8 +239,9 @@ side's, open until the circuit's family changes, as the fields of `FamilyBlockCh
   each of them);
 * `recRefs`: from `KernelModeled::check_family`'s `family_refs_ok`, whose
   `assert_inner_refs_safe` covers every reference the family record uses
-  (`KernelClaim::assert_safe_used_refs`, with `KernelRoles::assert_ref_allowed`, and
-  `assert_used_not_block`, with `KernelClaim::assert_not_block_ref`). -/
+  (`KernelClaim::assert_safe_used_refs`, which reads the safety of the record and its owner unless
+  `KernelRoles::walk_covered` answers `1`, and `assert_used_not_block`, with
+  `KernelClaim::assert_not_block_ref`). -/
 structure ClosureFamilyFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
     (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (g : Nat) (R₁ : Ixon.Env)
     (envT : Ix.Kernel.Env .anon) (E₀ : Ixon.Env) (B : _root_.Address) (cb : Ixon.Constant)
@@ -268,11 +269,13 @@ structure ClosureFamilyFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       (∀ ms rs, cb.info = .muts ms → crb.info = .muts rs →
         FamilyTysCanon t E₀ B cb ms rb crb rs blk tys rhsss) ∧
       ∀ E : Ixon.Env, RecordsFor R₁ E → FamRecsCompanion E t env blk tys
-  /-- No reference the family record uses is an inert axiom's, and each is one a step needs
-  stored (a record of the run's store, no block, in Lean's logic with its block). With the step's
-  need hypothesis and the family's addresses stored after the step, the family record's
+  /-- Each reference the family record uses is covered at the group's validation limit (its
+  role's group is below the group, so the fold's table environment stores it) or is one a step
+  needs stored (a record of the run's store, no block, in Lean's logic with its block). With the
+  step's need hypothesis and the family's addresses stored after the step, the family record's
   references are stored after it. -/
-  recRefs : ∀ x, UsedRef E₀ rb x → ¬ IxVM.Consistency.InertAt t x ∧ NeedOk E₀ x
+  recRefs : ∀ x, UsedRef E₀ rb x →
+    Claim.CoveredAt t (some (Binding.valLimit g)) x ∨ NeedOk E₀ x
 
 /-- **The family check's facts at every new block of a group's closure with its selected family
 record**, at the binders of `Binding.ClosureFamilySteps`. -/
@@ -486,15 +489,24 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
   have husedR : Decl.UsedRefsStored t ⟨(new ++ as) ++ env.consts⟩ crb := by
     intro i hi x hx
     have hu : UsedRef ρ.E₀ rb x := usedRef_of_idx hcrb₀ hi hx
-    rcases hrefs x (Or.inr hu) with hs | hf | hn
-    · obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hs
+    have hold : (env.find? (keyOf t x)).isSome = true →
+        ∃ ci, (⟨(new ++ as) ++ env.consts⟩ : Ix.Kernel.Env .anon).find? (keyOf t x) = some ci := by
+      intro hs
+      obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hs
       obtain ⟨hmem', hname⟩ := find?_mem_name hci
       have hs' := find?_isSome_of_mem (E := ⟨(new ++ as) ++ env.consts⟩)
         (List.mem_append_right (new ++ as) hmem')
       rw [hname] at hs'
       exact Option.isSome_iff_exists.mp hs'
-    · exact famFound_of_step hreads hst₂ x hf
-    · exact absurd (hF.recRefs x hu).2 hn
+    rcases hF.recRefs x hu with hcov | hneed
+    · -- covered at the group's validation limit: its role's group is below the group
+      obtain ⟨ci, hci, hname⟩ := coveredAt_stored hC.bnd.shape htwf
+        (fun r hr => Nat.lt_of_lt_of_le (hr _ rfl) (Binding.valLimit_le g)) hcov
+      exact hold (find_isSome_of_storedAt ⟨ci, hext ci (hextT ci hci), hname⟩)
+    · rcases hrefs x (Or.inr hu) with hs | hf | hn
+      · exact hold hs
+      · exact famFound_of_step hreads hst₂ x hf
+      · exact absurd hneed hn
   -- the seam of the loads, at the installation from the selected forms
   have hcanonM : FamilyMembersCanon t ρ.E₀ B cb ms rb crb rs ⟨(new ++ as) ++ env.consts⟩ :=
     familyMembersCanon_of_tys ht hB hRB hFacts hreads (hTys ms rs hB.muts hRB.muts) hN hR husedR
