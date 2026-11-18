@@ -14,9 +14,10 @@ block (a twin). `FamilyGraph` states what the typing fold reads of all this besi
   environment does not store, that no block claims as its family record (`IsUnit`). A block's
   unit owns the block's constant addresses and its family record's (`FamOwns`).
 * **Families.** `fam B = some rb`: the block `B` installs the family record `rb`. The record is
-  a block of recursors with at least one member (an empty block of recursors is no family),
-  claimed by one block; the block is a unit; where the record is itself checked it comes after
-  its block (`famAfter`). A reference the family record uses is stored by the witness's
+  a block of recursors, empty where the family has no recursor (the block is then stepped by
+  the family step at a record that owns nothing); one block claims a record with a constant
+  address; the block is a unit; where the record is itself checked it comes after its block
+  (`famAfter`). A reference the family record uses is stored by the witness's
   environment, covered, a constant address of the block or of the record, or owned by a checked
   unclaimed record of rank below the block's (`OwnedBelow`). The last case is what a nested
   family needs: the constructors of the container it nests through are constant addresses of
@@ -86,12 +87,15 @@ structure FamilyGraph (t : Ix.Kernel.RoleTable) (envT : Ix.Kernel.Env .anon) (E�
   address the witness's environment does not store. -/
   famUnit : ∀ B rb, fam B = some rb → Unclaimed fam B ∧
     ∃ cb, recordOf E₀ B = some cb ∧ InLogic cb ∧ ∃ x, ConstAddrOf B cb x ∧ ¬ StoredAt t envT x
-  /-- A family record is a block of recursors with at least one member. -/
-  famRecord : ∀ B rb, fam B = some rb → ∃ crb rs, FamRecRecord E₀ rb crb rs ∧ rs.size ≠ 0
+  /-- A family record is a block of recursors, possibly empty (the family record of a modeled
+  block whose family has no recursor). -/
+  famRecord : ∀ B rb, fam B = some rb → ∃ crb rs, FamRecRecord E₀ rb crb rs
   /-- A family record that is itself checked comes after its block. -/
   famAfter : ∀ B rb, fam B = some rb → Walked Top Inner rb → rank B < rank rb
-  /-- One block claims a family record. -/
-  famInj : ∀ B B' rb, fam B = some rb → fam B' = some rb → B = B'
+  /-- One block claims a family record with a constant address. (The empty block of recursors
+  has one address, so two blocks may claim it; it owns nothing.) -/
+  famInj : ∀ B B' rb x crb, fam B = some rb → fam B' = some rb → recordOf E₀ rb = some crb →
+    ConstAddrOf rb crb x → B = B'
   /-- The witness's environment stores no constant address of a family record. -/
   famFresh : ∀ B rb crb x, fam B = some rb → recordOf E₀ rb = some crb →
     ConstAddrOf rb crb x → ¬ StoredAt t envT x
@@ -145,7 +149,7 @@ theorem familyGraph_none {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .anon} 
   famUnit := fun _ _ h => nomatch h
   famRecord := fun _ _ h => nomatch h
   famAfter := fun _ _ h => nomatch h
-  famInj := fun _ _ _ h => nomatch h
+  famInj := fun _ _ _ _ _ h => nomatch h
   famFresh := fun _ _ _ _ h => nomatch h
   famClosed := fun _ _ _ h => nomatch h
   advEarlier := fun _ _ h => False.elim h
@@ -322,7 +326,7 @@ theorem walked_eq_famRecord (hG : TopGraph t E₀ seeds Top rank)
     {c crb : Ixon.Constant} {x : _root_.Address} (hW : Walked Top Inner A)
     (hc : recordOf E₀ A = some c) (hx : ConstAddrOf A c x) (hrb : fam B = some rb)
     (hcrb : recordOf E₀ rb = some crb) (hxr : ConstAddrOf rb crb x) : A = rb := by
-  obtain ⟨crb', rs, hR, -⟩ := hF.famRecord B rb hrb
+  obtain ⟨crb', rs, hR⟩ := hF.famRecord B rb hrb
   have hcc : crb' = crb := Option.some.inj (hR.record.symm.trans hcrb)
   subst hcc
   obtain ⟨P, hP, hPp, hPo⟩ := hR.constAddr hxr
@@ -353,8 +357,8 @@ theorem owns_apart_family (hG : TopGraph t E₀ seeds Top rank)
   · have hAr : A' = rb := walked_eq_famRecord hG hF hW' hc' hown' hrb hcrb hxr
     rw [← hAr] at hrb
     exact (hU' A hrb).elim
-  · obtain ⟨crb₁, rs, hR, -⟩ := hF.famRecord A rb hrb
-    obtain ⟨crb₂, rs', hR', -⟩ := hF.famRecord A' rb' hrb'
+  · obtain ⟨crb₁, rs, hR⟩ := hF.famRecord A rb hrb
+    obtain ⟨crb₂, rs', hR'⟩ := hF.famRecord A' rb' hrb'
     have h1 : crb₁ = crb := Option.some.inj (hR.record.symm.trans hcrb)
     have h2 : crb₂ = crb' := Option.some.inj (hR'.record.symm.trans hcrb')
     subst h1 h2
@@ -364,7 +368,7 @@ theorem owns_apart_family (hG : TopGraph t E₀ seeds Top rank)
     subst hPP
     have hrr : rb = rb' := hPo.symm.trans hPo'
     subst hrr
-    exact hF.famInj A A' rb hrb hrb'
+    exact hF.famInj A A' rb x _ hrb hrb' hR.record hxr
 
 /-- **A checked, unclaimed record that owns an in-logic address the witness's environment does
 not store is a unit.** -/
@@ -411,7 +415,7 @@ theorem top_ownedBelow (hG : TopGraph t E₀ seeds Top rank)
     rcases kind_cases cx with hsa | hpr | hbl
     · refine ⟨x, Or.inl hTx, ?_, hrk, cx, hcx, Or.inl (Or.inl ⟨rfl, hsa⟩)⟩
       intro B hB
-      obtain ⟨crb, rs, hR, -⟩ := hF.famRecord B x hB
+      obtain ⟨crb, rs, hR⟩ := hF.famRecord B x hB
       have hcc : crb = cx := Option.some.inj (hR.record.symm.trans hcx)
       rw [← hcc] at hsa
       exact standalone_not_block hsa ⟨rs, hR.muts⟩

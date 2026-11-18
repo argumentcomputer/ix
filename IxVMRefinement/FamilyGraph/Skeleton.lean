@@ -210,7 +210,7 @@ theorem fold_steps_family (hG : TopGraph t E₀ seeds Top rank)
           hrefs hfresh
       | some B =>
         obtain ⟨rb, hrb, hne, -⟩ := hF.twinBlock A B htw
-        obtain ⟨crb, rs, hR, -⟩ := hF.famRecord B rb hrb
+        obtain ⟨crb, rs, hR⟩ := hF.famRecord B rb hrb
         have hcanon : ∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true := by
           intro x hx
           rcases hneed x (Or.inr (Or.inl ⟨B, rb, crb, htw, hrb, hR.record, hx⟩)) with hs | hown
@@ -227,7 +227,7 @@ theorem fold_steps_family (hG : TopGraph t E₀ seeds Top rank)
       hnames
     exact ⟨s', h1, h2, h3, h4, h5⟩
   | some rb =>
-    obtain ⟨crb, rs, hR, -⟩ := hF.famRecord A rb hfa
+    obtain ⟨crb, rs, hR⟩ := hF.famRecord A rb hfa
     have hOwn : ∀ x, FamAddr A c rb crb x ↔ FamOwns E₀ fam A x := by
       intro x
       constructor
