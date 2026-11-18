@@ -74,7 +74,10 @@ theorem typing_skeleton_core_family_modeled {V : View} {extra : List ByteArray}
       recordOf E₀ A = some c → InLogic c → twin A = some B → fam B = some rb →
       recordOf E₀ rb = some crb →
       UnitStepTwin.{u} (fun env => X E env ∧ FamilyRecsModeled t E₀ fam env) t envT E₀ E lim
-        A c rb crb) :
+        A c rb crb)
+    (hstepTwinStored : ∀ E, StepCtx.{u} calls t R envT E₀ E → ∀ A c B, Walked Top Inner A →
+      recordOf E₀ A = some c → InLogic c → twin A = some B → fam B = none →
+      UnitStep.{u} (fun env => X E env ∧ FamilyRecsModeled t E₀ fam env) t envT E₀ E lim A c) :
     ConsistentReadOver.{u} calls t R envT seeds := by
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
   exact typing_skeleton_core_family
@@ -87,7 +90,7 @@ theorem typing_skeleton_core_family_modeled {V : View} {extra : List ByteArray}
     (fun E hctx A c hI hU hc hlog hk hfa htw =>
       TwinFamily.unitStep_keepsFamilyRecsModeled hG hF hroles (Or.inr hI) hU hc
         (hstepInner E hctx A c hI hU hc hlog hk hfa htw))
-    hstepFam hstepTwin
+    hstepFam hstepTwin hstepTwinStored
 
 end Skeleton
 
