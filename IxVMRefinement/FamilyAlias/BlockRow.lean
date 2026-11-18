@@ -92,13 +92,15 @@ theorem famModeled_of_route {E₀ E : Ixon.Env} {A rb : _root_.Address} {c crb :
   famModeled_at hB hrb (fun x _ d hd => hrun x d hd) hmod
 
 /-- **What the circuit side hands the step of the block at `A` with its family record at
-`rb`** (module docstring). -/
+`rb`** (module docstring). The companion and load facts are asked at the record that installs the
+family check's selected forms (`SelectedInstalled`), with the check's facts and what the check
+gives of those forms (`SelectedForms`). -/
 structure FamilyBlockCircuit (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
     (t : Ix.Kernel.RoleTable) (envT : Ix.Kernel.Env .anon) (E₀ E : Ixon.Env) (lim : Option Nat)
     (A : _root_.Address) (c : Ixon.Constant) (rb : _root_.Address) (crb : Ixon.Constant)
     (adv : _root_.Address → Prop) (fam : _root_.Address → Option _root_.Address) : Prop where
-  /-- The seam: the family as read and the facts of its check, at each environment the step is
-  handed. -/
+  /-- The seam: the family as read, the facts of its check and what it gives of its selected
+  forms, at each environment the step is handed. -/
   seam : ∀ env : Ix.Kernel.Env .anon,
     (∀ ci ∈ envT.consts, ci ∈ env.consts) → (env.consts.map (·.name)).Nodup →
     Decl.PrefixInv.{u} E t lim env →
@@ -113,33 +115,40 @@ structure FamilyBlockCircuit (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
     ∃ (blk : List (ConstantInfo .anon)) (adv' : FamilyAdvice)
       (tys : List IxVM.Refinement.Core.KExpr)
       (rhsss : List (List IxVM.Refinement.Core.KExpr)),
-      FamDeclReads t E₀ A c rb crb blk ∧ FamilyCheckFacts env blk adv' tys rhsss
+      FamDeclReads t E₀ A c rb crb blk ∧ FamilyCheckFacts env blk adv' tys rhsss ∧
+        SelectedForms t E₀ E A c rb crb env blk tys rhsss
   /-- The block's record is a block of inductives. -/
   block : ∃ ms, FamBlockRecord E₀ A c ms
   /-- The route fact at the block. -/
   route : ModeledAt E A
   /-- The companion facts of each recursor the step stores. -/
   recs : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
-    (aliases blk new : List (ConstantInfo .anon)),
+    (aliases blk new : List (ConstantInfo .anon)) (adv' : FamilyAdvice)
+    (tys : List IxVM.Refinement.Core.KExpr) (rhsss : List (List IxVM.Refinement.Core.KExpr)),
     Decl.PrefixInv.{u} E t lim env → AliasGroup env h aliases →
     FamDeclReads t E₀ A c rb crb blk →
+    FamilyCheckFacts env blk adv' tys rhsss → SelectedForms t E₀ E A c rb crb env blk tys rhsss →
     DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
     (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
       StoredAs c' ci) →
+    SelectedInstalled blk tys rhsss ⟨new ++ env.consts⟩ →
     ∀ cv mI rP rls, ConstantInfo.recInfo cv mI rP rls ∈ new →
       RecCompanionFacts ⟨E, ⟨new ++ env.consts⟩, t, lim⟩ cv mI rP rls
   /-- The load facts that reach the step's new constants, at an environment that extends the
   witness's and is handed what the two records use. -/
   loads : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
-    (aliases blk new : List (ConstantInfo .anon)),
+    (aliases blk new : List (ConstantInfo .anon)) (adv' : FamilyAdvice)
+    (tys : List IxVM.Refinement.Core.KExpr) (rhsss : List (List IxVM.Refinement.Core.KExpr)),
     Decl.PrefixInv.{u} E t lim env → (∀ ci ∈ envT.consts, ci ∈ env.consts) →
     (∀ x, UsedRef E₀ A x ∨ UsedRef E₀ rb x →
       (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x) →
     AliasGroup env h aliases →
     FamDeclReads t E₀ A c rb crb blk →
+    FamilyCheckFacts env blk adv' tys rhsss → SelectedForms t E₀ E A c rb crb env blk tys rhsss →
     DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
     (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
       StoredAs c' ci) →
+    SelectedInstalled blk tys rhsss ⟨new ++ env.consts⟩ →
     NewLoads (appCtx ⟨E, env, t, lim⟩ new).stored new
 
 /-- **The circuit side's facts at every block with a family record**, at the hypotheses of the
@@ -195,9 +204,9 @@ theorem familyBlockRow_of_circuit {L : Ix.Kernel.Env .anon → NativeFam .anon �
     rcases hx with hx | hx
     · exact TwinFamily.constAddr_hash_size_of_block hB.muts hx
     · exact TwinFamily.constAddr_hash_size_of_block hrb.muts hx
-  exact unitStepFamily_of_facts hC.seam (familyKeyFree_of_shape hctx.shape ht)
-    (familyEqPin_of_shape hctx.shape) hcl
-    (famStepKeeps_foldExtra hL hsz (famModeled_of_route hB hrb hctx.runRecord hC.route) hC.recs
-      hC.loads)
+  exact unitStepFamily_of_facts (Sel := SelectedForms t E₀ E A c rb crb) hC.seam
+    (familyKeyFree_of_shape hctx.shape ht) (familyEqPin_of_shape hctx.shape) hcl
+    (famStepKeeps_foldExtra (Sel := SelectedForms t E₀ E A c rb crb) hL hsz
+      (famModeled_of_route hB hrb hctx.runRecord hC.route) hC.recs hC.loads)
 
 end IxVM.Refinement.Typing.FamilyAlias

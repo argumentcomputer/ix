@@ -21,6 +21,7 @@ import Tests.Ix.Compile.GroundRefusal
 import Tests.Ix.Compile.SelectedClosure
 import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CheckerSupport
+import Tests.Ix.Compile.ClosureBinding
 import Tests.Ix.Compile.PackUnits
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
@@ -375,6 +376,7 @@ def registry : List Entry := [
   .runner "compiler-selected-closure-e2e" (.ci .compilerClosures) Tests.Ix.Compile.SelectedClosure.run,
   .runner "compile-closure-whole" (.ci .compilerClosures) Tests.Ix.Compile.ClosureWhole.run,
   .runner "checker-support-regression" (.ci .compilerClosures) Tests.Ix.Compile.CheckerSupport.run,
+  .runner "closure-binding-diagnosis" (.manual "the role binding a closure's artifact is read under: three compiles of three closures with the certified checker's verdicts; needs `lake build kernel-check-ixe`") Tests.Ix.Compile.ClosureBinding.run,
   .runner "pack-units" (.ci .compilerClosures) Tests.Ix.Compile.PackUnits.run,
   -- The existing eight IxC selected-producer pins and their subject budgets.
   .runner "tc-pins" (.ci .compilerClosures) Tests.Tc.Pins.run,

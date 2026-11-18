@@ -37,7 +37,7 @@ The proof is complete when the theorem has no explicit argument.
 
 What this module does not print. A definition that a hypothesis reads
 (`RemainingStoreClausesOfRun`, `BindingRun`, `AtGroups`,
-`ClosureFamilySteps`, `ClosureTwinSteps`, `RoleFreeShapes`, `CertProjFree`,
+`FamilyAlias.ClosureFamilyCheck`, `ClosureTwinSteps`, `RoleFreeShapes`, `CertProjFree`,
 `FamilyGraphInnerOwed`,
 `FamilyBlockCheckRow`, `FamilyTwinRow`, `FoldExtra`, `UnitStep` and the others) appears by name only: its own
 module holds it. The public statement and what it reads are printed in
@@ -54,7 +54,7 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
   (closureFamilySteps :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
       IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
-        (IxVM.Refinement.Binding.ClosureFamilySteps IxVM.Refinement.Typing.FormerOpenTraceAt calls))
+        (IxVM.Refinement.Typing.FamilyAlias.ClosureFamilyCheck IxVM.Refinement.Typing.FormerOpenTraceAt calls))
   (closureTwinSteps :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
       IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
