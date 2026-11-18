@@ -168,12 +168,12 @@ variable {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
 
 theorem groupStore_six : groupStore t E₀ 6 = basisStore := by
   unfold groupStore
-  rw [if_pos (Nat.le_refl 6)]
+  rw [ite_eq_left (Nat.le_refl 6)]
 
 theorem groupStore_above {g : Nat} (hg : 6 < g) :
     groupStore t E₀ g = recordsAt E₀ (StoredBelow t E₀ g) := by
   unfold groupStore
-  rw [if_neg (Nat.not_le_of_lt hg)]
+  rw [ite_eq_right (Nat.not_le_of_lt hg)]
 
 /-- **The store at group 6 is the basis store**, entry by entry. -/
 theorem groupStore_basis_consts (x : _root_.Address) :
