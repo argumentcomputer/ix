@@ -96,8 +96,9 @@ theorem AliasGroup.names_nodup {env : Ix.Kernel.Env .anon}
 theorem find?_mem_name {E : Ix.Kernel.Env .anon} {k : Ix.Kernel.Key .anon}
     {c : ConstantInfo .anon} (h : E.find? k = some c) : c ∈ E.consts ∧ c.name = k := by
   have h' : E.consts.find? (·.name == k) = some c := h
-  have hp : (c.name == k) = true := List.find?_some h'
-  exact ⟨List.mem_of_find?_eq_some h', beq_iff_eq.mp hp⟩
+  refine ⟨List.mem_of_find?_eq_some h', ?_⟩
+  have hp := List.find?_some h'
+  simpa using hp
 
 /-- A constant of an environment makes its key found. -/
 theorem find?_isSome_of_mem {E : Ix.Kernel.Env .anon} {c : ConstantInfo .anon}
@@ -174,7 +175,7 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
   refine ⟨new ++ as, ?_, ?_, ?_, ⟨?_, ?_⟩, ?_, ?_⟩
   · -- distinct names
     rw [List.map_append]
-    refine List.nodup_append.mpr ⟨hperm.nodup_iff.mpr hreads.1, hg.names_nodup, ?_⟩
+    refine List.nodup_append.mpr ⟨hperm.nodup_iff.mpr hreads.1, AliasGroup.names_nodup hg, ?_⟩
     intro k hk k' hk' heq
     obtain ⟨ci, hci, rfl⟩ := List.mem_map.mp hk
     obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hk'
@@ -185,7 +186,7 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
     · obtain ⟨x, hx, hk⟩ := hmemb ci hci
       rw [hk]
       exact hfresh x hx
-    · exact hg.fresh_prefix ci hci
+    · exact AliasGroup.fresh_prefix hg ci hci
   · rw [← henv₂]
     exact (hkeeps env env₂ h as blk hinv hX.1 hg hroots hreads hd hst).1
   · rw [← henv₂]
@@ -206,7 +207,7 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
     · rcases List.mem_append.mp hmem with hmem | hmem
       · exact List.mem_append_left _ hmem
       · exfalso
-        exact hnotalias _ (by rw [hk']; exact Decl.isBaseKey_keyOf t x') c' hmem
+        exact hnotalias (keyOf t x') (Decl.isBaseKey_keyOf t x') c' hmem
           (hname.trans hk')
     · exfalso
       have h1 := find?_isSome_of_mem (E := env) hmem
