@@ -339,8 +339,7 @@ theorem familyRun_of (K : FamRunCtx) {rank' : _root_.Address → Nat}
       ∀ B rb rb', K.fam B = some rb → K.twin rb' = some B → K.Pref B rb := by
   refine ⟨{ graph := ?graph, claimed := ?claimed, modeled := ?modeled,
             famInd := ?famInd,
-            checks := ⟨K.bAddr, { famCall := ?famCall, twinCall := ?twinCall,
-              innerCall := ?innerCall }⟩,
+            checks := ⟨K.bAddr, ?famCall, ?twinCall, ?innerCall⟩,
             storedTwin := hST }, ?form⟩
   case graph =>
     exact
