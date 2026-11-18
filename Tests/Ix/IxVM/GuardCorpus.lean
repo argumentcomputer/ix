@@ -358,11 +358,13 @@ def runFamilies (cp : Corpus) (out : System.FilePath) : IO UInt32 := do
   -- `IX_GUARD_CORPUS_TYPES_ONLY`: each claim owns the inductive block and its projections only;
   -- the family check runs on the block's own arm and reads the family record through the advice
   let typesOnly := (← IO.getEnv "IX_GUARD_CORPUS_TYPES_ONLY").isSome
+  -- `IX_GUARD_CORPUS_EXERCISE`: the function an accepted family claim must call
+  let exercise := (← IO.getEnv "IX_GUARD_CORPUS_EXERCISE").getD "KernelModeled::check_family"
   let cases : Array Builder := rep.advice.map fun (b, adv) => fun _ => do
     let owned := groups.getD b #[] ++ (if typesOnly then #[] else groups.getD adv.layout.recBlock #[])
     let (_, witness) ← buildShardCheckEnvWitness env owned (assumeBinding := true)
     return { label := s!"family {blockName b}: {owned.size} owned, {adv.records.size} advice records",
-             accept := true, exercises := some "KernelModeled::check_family",
+             accept := true, exercises := some exercise,
              expectedFftCost := pin, witness }
   -- a claim that reaches a modeled block through a type and none of its recursors, with
   -- the models attached: `autoParam`, whose type names `Lean.Syntax`
@@ -374,6 +376,28 @@ def runFamilies (cp : Corpus) (out : System.FilePath) : IO UInt32 := do
     | none => #[]
   let rc ← runCases "ixvm-guard-corpus-families" (cases ++ reach) (jobs := 6)
   return if rc == 0 && withPayload == rep.blocks.size then 0 else 1
+
+/-- Full-context typing claims at three family recursors of the corpus (the two whose advice
+names a container recursor that is a family recursor, and the one with wrappers): an ordinary
+`check` claim, no assumption root, no user axioms, once with the binding validated and once
+assumed. The family claims of `runFamilies` assume the binding and own a block with an
+assumption root; these are the scope of the public typing claim. -/
+def runScope (cp : Corpus) : IO UInt32 := do
+  let (sub, _) ← IO.ofExcept (familyClosure cp)
+  let (generated, _) ← IO.ofExcept (IxVM.Model.generateReport { sub with modelsAttached := false })
+  let env := { generated with consts := cp.env.consts }
+  let mut cases : Array Builder := #[]
+  for name in ["Lean.Elab.InfoTree.rec", "Lean.Widget.MsgEmbed.rec", "Lean.Compiler.LCNF.Alt.rec"] do
+    let some addr := env.getAddr? (Ix.Name.fromLeanName name.toName)
+      | throw (IO.userError s!"missing compiled recursor {name}")
+    for assumed in [false, true] do
+      let ctx := { cp.ctx with bindingAssumed := assumed, axioms := none, literalClass := false }
+      let mode := if assumed then "assumed" else "validated"
+      cases := cases.push fun _ => do
+        let witness ← buildClaimWitness env (.check ctx addr none)
+        return { label := s!"{name}, binding {mode}, no assumption leaves", accept := true,
+                 exercises := some "KernelCheck::canonical_rules_at_pos", witness }
+  runCases "ixvm-guard-corpus-scope" cases (jobs := 1)
 
 /-- Claims that reach `Lean.Syntax` and no recursor of it, with no model served: `autoParam`
 (its type names `Lean.Syntax`), then theorems of the corpus whose closure, of at most
@@ -662,6 +686,7 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     IO.println s!"[ixvm-guard-corpus] {path}: {env.consts.size} records"
     runStatic env out
   | "families" => runFamilies (← Corpus.load path) out
+  | "scope" => runScope (← Corpus.load path)
   | "syntax" => runSyntax (← Corpus.load path)
   | "reach" => runReach (← Corpus.load path)
   | "blockrefs" => runBlockRefs leanEnv path out

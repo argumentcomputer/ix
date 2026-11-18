@@ -1598,8 +1598,9 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
   | ind fuel ih =>
     refine ⟨?_, ?_⟩
     · intro lim x_rc x_addr r addr h h' calls hfuel hrc ha ev
-      obtain ⟨m2, cs12, x_info, w39, x_refs, w40, w41, v539, m540, cs542, v548, m549, cs559, cs589, v594, m611, cs619,
-        ev14, sg547, ev561, ev621, ev591, hc636⟩ := Obs.«KernelClaim::run_check_transitive».obs ev
+      obtain ⟨m2, cs12, x_info, w39, x_refs, w40, w41, v539, m540, cs542, v548, m549, cs559, v_quot,
+        m_quot, cs_quot, cs589, v594, m611, cs619, ev14, sg547, ev561, ev_quot, ev621, ev591, hc636⟩ :=
+        Obs.«KernelClaim::run_check_transitive».obs ev
       obtain ⟨ext1, rawBytes, c, hsz, hh_load, hblk, hde, hdeExact, hrep, _⟩ :=
         load_verified_constant_de ha ev14
       have hseg : Heap.Extends m2 m540 ∧
@@ -1767,7 +1768,7 @@ private theorem run_check_transitive_fuel_aux {t : Ix.Kernel.RoleTable} {bAddr :
             .inr (hchk.mono (fun cl hcl => by rw [hc636, hc538]; simp [hcl])),
             [], by simp [RecsClosed], by simp, fun hne => absurd hown_self hne⟩
       obtain ⟨ext_seg, hchk_self, recs_blk, hcl_blk, hdep_blk, hown_blk⟩ := hseg
-      have ext_guard : Heap.Extends m540 m549 := ev561.heap_extends
+      have ext_guard : Heap.Extends m540 m_quot := ev561.heap_extends.trans ev_quot.heap_extends
       obtain ⟨ext_idx, hidxs⟩ := const_idxs_of_spec (hrep.mono (ext_seg.trans ext_guard)) ev621
       have hrefs_rep :
           RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem m611 c.refs.toList x_refs := by
@@ -2020,8 +2021,9 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
       rw [map_addr_walkedRec_mono]
       exact hmem
     · intro lim x_rc x_addr r addr h h' calls hfuel hrc ha ev
-      obtain ⟨m2, cs12, x_info, w39, x_refs, w40, w41, v699, m700, cs702, v708, m709, cs719, cs749, v754, m771, cs779,
-        ev14, sg707, ev721, ev781, ev751, hc796⟩ := Obs.«KernelClaim::env_walk_all».obs ev
+      obtain ⟨m2, cs12, x_info, w39, x_refs, w40, w41, v699, m700, cs702, v708, m709, cs719, v_quot,
+        m_quot, cs_quot, cs749, v754, m771, cs779, ev14, sg707, ev721, ev_quot, ev781, ev751, hc796⟩ :=
+        Obs.«KernelClaim::env_walk_all».obs ev
       obtain ⟨ext1, rawBytes, c, hsz, hh_load, hblk, hde, hdeExact, hrep, _⟩ :=
         load_verified_constant_de ha ev14
       have hseg : V.HashedCollision extra calls ∨
@@ -2215,7 +2217,7 @@ private theorem env_walk_fuel_aux {V : View} {extra : List ByteArray}
             [], by simp [RecsClosed], by simp, fun hne => absurd hown_self hne⟩
       rcases hseg with hcoll | ⟨ext_seg, hchk_self, recs_blk, hcl_blk, hdep_blk, hown_blk⟩
       · exact .inl hcoll
-      have ext_guard : Heap.Extends m700 m709 := ev721.heap_extends
+      have ext_guard : Heap.Extends m700 m_quot := ev721.heap_extends.trans ev_quot.heap_extends
       obtain ⟨ext_idx, hidxs⟩ := const_idxs_of_spec (hrep.mono (ext_seg.trans ext_guard)) ev781
       have hrefs_rep :
           RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem m771 c.refs.toList x_refs := by

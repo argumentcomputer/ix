@@ -16,4 +16,8 @@ inductive Box (α : Type) where
 inductive BT where
   | node : Box BT → BT
 
+/-- A tree nested through two containers: two auxiliary members. -/
+inductive PT where
+  | node : List PT → Option PT → PT
+
 end Tests.Ix.IxVM.FamilyGraphDefs

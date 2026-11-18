@@ -341,15 +341,18 @@ private theorem subst_const_aux (κ : _root_.Address → KKey) (d : Nat) (Γ : N
         rw [substConstAll_instShift hvc]
         exact .letE (by simp) (((x1.mono ext2).mono ext3).mono ext4) ((x2.mono ext3).mono ext4)
           (x3.mono ext4)
-      | .Proj (ld12 := ld) (he640 := hr) (hm639 := hm) (ev672 := e1) (hc697 := hc) .. =>
+      | .Proj (ld12 := ld) (ev_fcagpdzw := aeq) (he640 := hr) (hm639 := hm) (ev672 := e1)
+          (hc697 := hc) .. =>
         have ext2 := ext_snoc hm
         subst hc hr hm
         obtain ⟨s, i, Es, hxi, hXe, ra, hes⟩ := hX.proj_of_load ld
         subst hXe hxi
         have : Resolved (κ (ixAddr s)) := ⟨hX.proj_key_ne⟩
         have : ProjPermitted κ (ixAddr s) := hX.proj_permitted ld ra
-        have ext1 := e1.heap_extends
-        have x1 := ih _ _ _ _ _ _ lt_calls e1 rfl _ k Es rfl hes ha hv
+        have ext0 := aeq.heap_extends
+        have ext1 := ext0.trans e1.heap_extends
+        have x1 := ih _ _ _ _ _ _ lt_calls e1 rfl _ k Es rfl (hes.mono ext0)
+          (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha) (hv.mono ext0)
         show Tm κ d Γ _ k (.proj (κ (ixAddr s)) (ZMod.val i)
           (Expr.substConstAll (κ (ixAddr b)) val Es)) _
         exact .proj (by simp) (Bytes.repAddressRef_heapMono₂ addrTy (ext1.trans ext2) ra)

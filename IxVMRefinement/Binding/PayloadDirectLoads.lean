@@ -467,36 +467,45 @@ section FamilyRecord
 variable {calls : List (Call F)} {E₀ : Ixon.Env} {bAddr : _root_.Address}
   {t : Ix.Kernel.RoleTable}
 
+private theorem ext_snocEq {h m : Heap F} {v : SourceValue F} (e : m = h ++ [v]) :
+    Heap.Extends h m := by
+  rw [e]; exact Heap.Extends.snoc h v
+
 /-- **`KernelModeled::check_recs` loads every recursor address of its list as a recursor with the
 unsafe flag `0`.** -/
 private theorem check_recs_safe
     {x_rc x_ta x_src x_dst x_aset x_n x_np x_uo x_bnl x_fam : SourceValue F} :
-    ∀ (as : List Bytes.Address) {x_recs x_models x_s x_k r : SourceValue F} {h h' : Heap F}
-      {cs : List (Call F)},
+    ∀ (as : List Bytes.Address) {x_recs x_models x_s x_k x_form r : SourceValue F}
+      {h h' : Heap F} {cs : List (Call F)},
       RepList Core.addrListEnum (Bytes.RepAddressRef Core.addrTy) h as x_recs →
       ObsFn Obs.W "KernelModeled::check_recs"
         [x_rc, x_ta, x_recs, x_models, x_src, x_dst, x_aset, x_s, x_n, x_k, x_np, x_uo, x_bnl,
-          x_fam] h r h' cs →
+          x_fam, x_form] h r h' cs →
       ∀ b ∈ as, ∃ (x_b p : SourceValue F) (h₁ h₂ : Heap F) (cs₁ : List (Call F))
         (nl ty np ni nm nmin rules kf w₁ w₂ : SourceValue F),
         Bytes.RepAddressRef Core.addrTy h₁ b x_b ∧
         ObsFn Obs.W "Ingress::get_ci" [x_b] h₁ p h₂ cs₁ ∧ (∀ cl ∈ cs₁, cl ∈ cs) ∧
         loadValue h₂ p = .ok (.construct "KernelTypes::KConstantInfo" "Rec"
           [nl, ty, np, ni, nm, nmin, rules, kf, .field 0, w₁, w₂])
-  | [], _, _, _, _, _, _, _, _, _, _ => fun b hb => nomatch hb
-  | a :: rest, x_recs, x_models, x_s, x_k, r, h, h', cs, hrep, ev => by
+  | [], _, _, _, _, _, _, _, _, _, _, _ => fun b hb => nomatch hb
+  | a :: rest, x_recs, x_models, x_s, x_k, x_form, r, h, h', cs, hrep, ev => by
     match Obs.«KernelModeled::check_recs».obs ev with
     | .Nil (ld12 := ld12) .. => exact absurd (Lib.rep_nil_of_load hrep ld12) (by simp)
     | .Cons (m561 := m561) (m627 := m627) (m892 := m892) (ld12 := ld12) (ev82 := ev82)
         (ld76 := ld76) (heq217 := heq217) (ev298 := ev298) (ev359 := ev359) (ev345 := ev345)
         (ev403 := ev403) (ev485 := ev485) (ev523 := ev523) (ev571 := ev571) (hm635 := hm635)
-        (ev608 := ev608) (ev652 := ev652) (ev681 := ev681) (ev710 := ev710) (ev807 := ev807)
-        (ev764 := ev764) (ev850 := ev850) (ev904 := ev904) (ev1016 := ev1016)
-        (hc1137 := hc) .. =>
+        (ev608 := ev608) (ev652 := ev652) (ev681 := ev681) (ev710 := ev710)
+        (hm_odcsfbbr := hmA) (ev_uprevpxl := evA) (ev_svgicqcr := evB) (hm_owdmgqhw := hmB)
+        (ev_oqkxxxxs := evC) (ev_eejlfykm := evD) (ev_uoyvrvop := evE) (ev_akrqpecc := evF)
+        (ev_uoummlhs := evG) (ev_tjosvhyt := evH) (ev850 := ev850) (ev904 := ev904)
+        (ev1016 := ev1016) (hc1137 := hc) .. =>
       obtain ⟨z, zs, he, hz, hzs⟩ := Lib.rep_cons_of_load hrep ld12
       injection he with he1 he2
       subst he1 he2
-      have e627 : Heap.Extends m561 m627 := by rw [hm635]; exact Heap.Extends.snoc m561 _
+      have e627 : Heap.Extends m561 m627 :=
+        (ext_snocEq hmA).trans (evA.heap_extends.trans (evB.heap_extends.trans
+          ((ext_snocEq hmB).trans (evC.heap_extends.trans (evD.heap_extends.trans
+            (evE.heap_extends.trans (evF.heap_extends.trans (ext_snocEq hm635))))))))
       have ext : Heap.Extends h m892 := by
         refine ev82.heap_extends.trans ?_
         refine ev298.heap_extends.trans ?_
@@ -511,8 +520,8 @@ private theorem check_recs_safe
         refine ev652.heap_extends.trans ?_
         refine ev681.heap_extends.trans ?_
         refine ev710.heap_extends.trans ?_
-        refine ev807.heap_extends.trans ?_
-        refine ev764.heap_extends.trans ?_
+        refine evG.heap_extends.trans ?_
+        refine evH.heap_extends.trans ?_
         refine ev850.heap_extends.trans ?_
         exact ev904.heap_extends
       have htl := check_recs_safe rest
@@ -532,25 +541,27 @@ and `KernelModeled::check_recs` on the list it returns, at a later heap. -/
 private theorem familyCall_recs_obs {B rb : _root_.Address} {lim : Option Nat}
     {cs : List (Call F)} (hfc : FamilyAlias.FamilyCallAtLim calls bAddr t B rb lim cs) :
     ∃ (b : Bytes.Address) (h₁ h₂ h₃ h₄ : Heap F) (x_rb v r₂ : SourceValue F)
-      (x_rc x_ta x_models x_src x_dst x_aset x_s x_n x_k x_np x_uo x_bnl x_fam : SourceValue F)
-      (cs₁ cs₂ : List (Call F)),
+      (x_rc x_ta x_models x_src x_dst x_aset x_s x_n x_k x_np x_uo x_bnl x_fam x_form :
+        SourceValue F) (cs₁ cs₂ : List (Call F)),
       Core.ixAddr b = rb ∧ Bytes.RepAddressRef Core.addrTy h₁ b x_rb ∧
       ObsFn Obs.W "KernelModeled::family_recs" [x_rb] h₁ v h₂ cs₁ ∧ (∀ cl ∈ cs₁, cl ∈ calls) ∧
       Heap.Extends h₂ h₃ ∧
       ObsFn Obs.W "KernelModeled::check_recs"
-        [x_rc, x_ta, v, x_models, x_src, x_dst, x_aset, x_s, x_n, x_k, x_np, x_uo, x_bnl, x_fam]
-        h₃ r₂ h₄ cs₂ ∧ (∀ cl ∈ cs₂, cl ∈ calls) := by
+        [x_rc, x_ta, v, x_models, x_src, x_dst, x_aset, x_s, x_n, x_k, x_np, x_uo, x_bnl, x_fam,
+          x_form] h₃ r₂ h₄ cs₂ ∧ (∀ cl ∈ cs₂, cl ∈ calls) := by
   obtain ⟨h, h', rc, xb, xrb, r, -, -, ⟨b, hb, rfl⟩, ev, -, hsub⟩ := hfc
   match Obs.«KernelModeled::check_family».obs ev with
   | .run (m105 := m105) (m784 := m784) (m840 := m840) (m1293 := m1293) (sg112 := sg112)
-      (ev126 := ev126) (ev148 := ev148) (ev194 := ev194) (ev231 := ev231) (ev266 := ev266)
-      (ev309 := ev309) (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465)
-      (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664) (ev686 := ev686)
-      (ev716 := ev716) (ev759 := ev759) (ev817 := ev817) (ev796 := ev796) (ev852 := ev852)
-      (ev874 := ev874) (ev896 := ev896) (ev960 := ev960) (ev939 := ev939) (ev1011 := ev1011)
-      (ev990 := ev990) (ev1041 := ev1041) (ev1095 := ev1095) (ev1149 := ev1149)
-      (ev1203 := ev1203) (ev1267 := ev1267) (ev1246 := ev1246) (ev1305 := ev1305)
-      (ev1343 := ev1343) (hc1474 := hc) .. =>
+      (ev126 := ev126) (ev148 := ev148) (ev194 := ev194) (ev_yqjbwijz := evo) (ev231 := ev231)
+      (ev266 := ev266) (ev309 := ev309) (ev344 := ev344) (ev403 := ev403) (ev435 := ev435)
+      (ev465 := ev465) (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
+      (ev686 := ev686) (ev716 := ev716) (ev759 := ev759) (ev817 := ev817) (ev796 := ev796)
+      (ev852 := ev852) (ev_ursqbimm := evr) (ev874 := ev874) (ev896 := ev896) (ev960 := ev960)
+      (ev939 := ev939) (ev1011 := ev1011) (ev990 := ev990) (ev_edyzsqzv := evm1)
+      (ev_gkddqxhv := evcc) (ev_ittpynob := evm2) (ev_biaifgpd := evm3) (ev1203 := ev1203)
+      (ev_cwwgzxtj := evfl) (ev1246 := ev1246) (ev_mitevvsv := evln) (ev_rqpeovbn := evz1)
+      (ev_xrhmaojz := evz2) (ev_whimdwjd := evvg) (ev1305 := ev1305) (ev1343 := ev1343)
+      (hc1474 := hc) .. =>
     have e0 : Heap.Extends h m105 := by
       match sg112 with
       | .Nil (ev15 := ev15) (he33 := he33) .. =>
@@ -562,6 +573,7 @@ private theorem familyCall_recs_obs {B rb : _root_.Address} {lim : Option Nat}
       refine ev126.heap_extends.trans ?_
       refine ev148.heap_extends.trans ?_
       refine ev194.heap_extends.trans ?_
+      refine evo.heap_extends.trans ?_
       refine ev231.heap_extends.trans ?_
       refine ev266.heap_extends.trans ?_
       refine ev309.heap_extends.trans ?_
@@ -579,20 +591,26 @@ private theorem familyCall_recs_obs {B rb : _root_.Address} {lim : Option Nat}
       refine ev817.heap_extends.trans ?_
       exact ev796.heap_extends
     have e1293 : Heap.Extends m840 m1293 := by
+      refine evr.heap_extends.trans ?_
       refine ev874.heap_extends.trans ?_
       refine ev896.heap_extends.trans ?_
       refine ev960.heap_extends.trans ?_
       refine ev939.heap_extends.trans ?_
       refine ev1011.heap_extends.trans ?_
       refine ev990.heap_extends.trans ?_
-      refine ev1041.heap_extends.trans ?_
-      refine ev1095.heap_extends.trans ?_
-      refine ev1149.heap_extends.trans ?_
+      refine evm1.heap_extends.trans ?_
+      refine evcc.heap_extends.trans ?_
+      refine evm2.heap_extends.trans ?_
+      refine evm3.heap_extends.trans ?_
       refine ev1203.heap_extends.trans ?_
-      refine ev1267.heap_extends.trans ?_
+      refine evfl.heap_extends.trans ?_
       refine ev1246.heap_extends.trans ?_
+      refine evln.heap_extends.trans ?_
+      refine evz1.heap_extends.trans ?_
+      refine evz2.heap_extends.trans ?_
+      refine evvg.heap_extends.trans ?_
       exact ev1305.heap_extends
-    exact ⟨b, m784, m840, m1293, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, rfl,
+    exact ⟨b, m784, m840, m1293, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, rfl,
       Bytes.repAddressRef_heapMono₂ Core.addrTy e784 hb, ev852,
       fun cl hcl => hsub cl (by rw [hc]; simp [hcl]), e1293, ev1343,
       fun cl hcl => hsub cl (by rw [hc]; simp [hcl])⟩
@@ -694,7 +712,7 @@ theorem familyCall_record_facts (hS : LoadedReads.RunStore calls E₀)
           ∀ i m, ms[i]? = some m →
             recordOf E₀ (memberAddr rb i m) = some (memberProjection rb i m)) := by
   obtain ⟨b, h₁, h₂, h₃, h₄, x_rb, v, r₂, x_rc, x_ta, x_models, x_src, x_dst, x_aset, x_s, x_n,
-    x_k, x_np, x_uo, x_bnl, x_fam, cs₁, cs₂, rfl, hb, ev_fr, hsub₁, ext, ev_cr, hsub₂⟩ :=
+    x_k, x_np, x_uo, x_bnl, x_fam, x_form, cs₁, cs₂, rfl, hb, ev_fr, hsub₁, ext, ev_cr, hsub₂⟩ :=
     familyCall_recs_obs hfc
   have hloads := fun (as : List Bytes.Address)
       (has : RepList Core.addrListEnum (Bytes.RepAddressRef Core.addrTy) h₂ as v) =>
@@ -865,11 +883,12 @@ theorem adviceRecord_logic (hS : LoadedReads.RunStore calls E₀)
     {c : Ixon.Constant} (hc : recordOf E₀ (Core.ixAddr ab) = some c)
     (hnb : ∀ ms, c.info ≠ .muts ms) : InLogic c := by
   match Obs.«KernelModeled::check_advice_record».obs ev with
-  | .run (m2 := m2) (cs12 := cs12) (x_info := x_info) (ev14 := ev14) (sg952 := sg952)
-      (hc1011 := hc1011) .. =>
+  | .run (m2 := m2) (cs12 := cs12) (x_info := x_info) (ev14 := ev14)
+      (ev_yqjbwijz := ev_ord) (sg952 := sg952) (hc1011 := hc1011) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
     obtain ⟨-, bytes, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded ha ev14
+      L1.load_verified_constant_decode_bounded
+        (Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ord.heap_extends ha) ev14
     have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
       (Core.hashed_mono hsub12 hh) haddr hexact
     subst hcc
@@ -955,11 +974,13 @@ theorem adviceBlock_memberObs (hS : LoadedReads.RunStore calls E₀)
       ∀ ind, ms.toList.head? = some (.indc ind) → ind.isUnsafe = false := by
   match Obs.«KernelModeled::check_advice_record».obs ev with
   | .run (m2 := m2) (cs12 := cs12) (x_info := x_info) (cs947 := cs947) (ev14 := ev14)
-      (sg952 := sg952) (hc1011 := hc1011) .. =>
+      (ev_yqjbwijz := ev_ord) (sg952 := sg952) (hc1011 := hc1011) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
     have hsub947 : ∀ cl ∈ cs947, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
-    obtain ⟨msPtr, hxm, hlist, -⟩ := Decl.load_block_info hS ha ev14 hsub12 hc hms
-    have ext1 : Heap.Extends h m2 := ev14.heap_extends
+    obtain ⟨msPtr, hxm, hlist, -⟩ :=
+      Decl.load_block_info hS (Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ord.heap_extends ha)
+        ev14 hsub12 hc hms
+    have ext1 : Heap.Extends h m2 := ev_ord.heap_extends.trans ev14.heap_extends
     match sg952 with
     | .Defn_Definition_Safe (hv81 := hv) .. =>
       exact absurd (Value.construct.inj (hv.symm.trans hxm)).2.1 (by decide)

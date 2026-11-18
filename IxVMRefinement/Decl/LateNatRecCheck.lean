@@ -312,12 +312,12 @@ theorem late_nat_rec_check_spec {c : ScopedCtx} (hc : ScopedCoreFacts c)
       v750, x758, m784, cs792, v810, m811, cs821, v825, m827, v839, x846, m865, cs873,
       v876, m879, cs887, m906, v925, m926, cs936, v941, m959, cs967, v971, m1002,
       v1044, m1045, cs1055, v1152, m1153, cs1163, m1193, v1246, m1249, cs1257,
-      v1283, m1284, cs1294, m1317, cs1345, v1361, m1455, cs1463,
+      v1283, m1284, cs1294, m1317, m_peer, cs1345, v1361, m1455, cs1463,
       hv11, hv81, op159, heq162, heq189, heq217, ev231, sg306, hm318, hm332, sg389,
       op435, hm447, ev403, ev464, hm492, ev560, ev588, ev546, ev525, hm653, hm676, ev617,
       op773, op765, ev749, ev794, ev735, ev714, hm835, op861, op853, ev889, hm914, ev875, ev823,
       op993, ev969, hm1010, ev938, ev1057, hm1201, ev1165, ev1259, heq1282,
-      hm1325, ev1296, ev1465, ev1347, hcalls⟩
+      hm1325, hm_peer, ev1296, ev1465, ev1347, hcalls⟩
   subst hcalls
   -- Unify `Rec` and `Induct` constructor fields
   injection hv11 with _ _ hr_args
@@ -683,7 +683,8 @@ theorem late_nat_rec_check_spec {c : ScopedCtx} (hc : ScopedCoreFacts c)
     WrapRelSem.of_posOf_perm (rlps_perm k large) hwrap_ty_pos
   -- Step 7: the peer search answers the recursor itself; `build_rec_lvls_list`;
   -- `nat_check_rules` under the keying `κ₂`
-  have ext_1249_1317 : Heap.Extends m1249 m1317 := by rw [hm1325]; exact Heap.Extends.snoc _ _
+  have ext_1249_1317 : Heap.Extends m1249 m_peer := by
+    rw [hm_peer, hm1325]; exact (Heap.Extends.snoc _ _).trans (Heap.Extends.snoc _ _)
   have ext_h_1317 := ext_h_1153.trans (ev1259.heap_extends.trans ext_1249_1317)
   have hgood_peer : Good c.toCtx cs1294 := hgood.raw.sub (fun x hx => by simp [hx])
   obtain ⟨hv1283, _⟩ := find_peer_standalone_spec hc.loads hrecblk hcst hgood_peer

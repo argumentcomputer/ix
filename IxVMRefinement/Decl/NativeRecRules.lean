@@ -144,37 +144,35 @@ theorem rlvls_eq_subst_params (k : Nat) (large : Bool) :
     simpa [posLevels] using hpos
 
 private theorem find_peer_rec_seg1_heap_extends
-    {e0 e1 e2 e3 e4 e5 e6 e7 e8 e9 e10 e11 : SourceValue F}
+    {e0 e1 e2 e3 e4 e5 e6 e7 e8 e9 e10 e11 e12 : SourceValue F}
     {h : Heap F} {r : SourceValue F} {h' : Heap F} {cs : List (Call F)}
     (sg : Obs.«KernelCheck::find_peer_rec_spec_walk».Seg1
-      e0 e1 e2 e3 e4 e5 e6 e7 e8 e9 e10 e11 h r h' cs) :
+      e0 e1 e2 e3 e4 e5 e6 e7 e8 e9 e10 e11 e12 h r h' cs) :
     Heap.Extends h h' := by
-  cases sg with
-  | Rec_Induct_n1_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ ev1 ev2 _ ev3 _ _ hh _ =>
+  match sg with
+  | .Rec_Induct_n1_n0 (ev216 := ev1) (ev273 := ev2) (ev367 := ev3) (he413 := hh) .. =>
     subst hh
     exact ev1.heap_extends.trans (ev2.heap_extends.trans ev3.heap_extends)
-  | Rec_Induct_n1_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ ev1 ev2 _ ev3 _ ev4 ev5 _ =>
-    exact ev1.heap_extends.trans (ev2.heap_extends.trans
-      (ev3.heap_extends.trans (ev4.heap_extends.trans ev5.heap_extends)))
-  | Rec_Induct_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ ev1 ev2 _ ev3 _ _ hh _ =>
+  | .Rec_Induct_n1_other (ev216 := ev1) (ev273 := ev2) (ev367 := ev3) (ev432 := ev4)
+      (ev_csmixmzg := ev5) (ev_zxqvbypw := ev6) (ev_vyjmrjll := ev7) .. =>
+    exact ev1.heap_extends.trans (ev2.heap_extends.trans (ev3.heap_extends.trans
+      (ev4.heap_extends.trans (ev5.heap_extends.trans (ev6.heap_extends.trans
+        ev7.heap_extends)))))
+  | .Rec_Induct_other (ev216 := ev1) (ev273 := ev2) (ev367 := ev3) (he509 := hh) .. =>
     subst hh
     exact ev1.heap_extends.trans (ev2.heap_extends.trans ev3.heap_extends)
-  | Rec_other_n1_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ ev1 ev2 _ _ ev3 _ _ hh _ =>
+  | .Rec_other_n1_n0 (ev216 := ev1) (ev273 := ev2) (ev528 := ev3) (he574 := hh) .. =>
     subst hh
     exact ev1.heap_extends.trans (ev2.heap_extends.trans ev3.heap_extends)
-  | Rec_other_n1_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ ev1 ev2 _ _ ev3 _ ev4 ev5 _ =>
-    exact ev1.heap_extends.trans (ev2.heap_extends.trans
-      (ev3.heap_extends.trans (ev4.heap_extends.trans ev5.heap_extends)))
-  | Rec_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ ev1 ev2 _ _ ev3 _ _ hh _ =>
+  | .Rec_other_n1_other (ev216 := ev1) (ev273 := ev2) (ev528 := ev3) (ev593 := ev4)
+      (ev_hgtaewrk := ev5) (ev_svabrqkr := ev6) (ev_qskuhyzy := ev7) .. =>
+    exact ev1.heap_extends.trans (ev2.heap_extends.trans (ev3.heap_extends.trans
+      (ev4.heap_extends.trans (ev5.heap_extends.trans (ev6.heap_extends.trans
+        ev7.heap_extends)))))
+  | .Rec_other_other (ev216 := ev1) (ev273 := ev2) (ev528 := ev3) (he670 := hh) .. =>
     subst hh
     exact ev1.heap_extends.trans (ev2.heap_extends.trans ev3.heap_extends)
-  | other _ _ hh _ =>
+  | .other (he677 := hh) .. =>
     subst hh
     exact Heap.Extends.refl _
 
@@ -184,7 +182,7 @@ private theorem find_peer_rec_seg1_heap_extends
 theorem find_peer_recursor_two_spec {c : Ctx} (hc : CoreFacts c)
     {cst : Ixon.Constant} {ind : Ixon.Inductive} {rec_m : Ixon.Recursor}
     {b₀ bRec : Bytes.Address}
-    {x_block x_t x_sp x_aux x_self r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    {x_block x_t x_sp x_us x_aux x_self r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hrec_at : Ix.Cert.recordAt c.E (ixAddr b₀) = some cst)
     (hcst_info : cst.info = .muts #[.indc ind, .recr rec_m])
     (hbRec_addr : ixAddr bRec = rprjAddr (ixAddr b₀) 1)
@@ -192,7 +190,7 @@ theorem find_peer_recursor_two_spec {c : Ctx} (hc : CoreFacts c)
     (hb₀ : Bytes.RepAddressRef addrTy h b₀ x_block)
     (hbRec : Bytes.RepAddressRef addrTy h bRec x_self)
     (ev : ObsFn W "KernelCheck::find_peer_recursor_with_spec"
-      [x_block, x_t, x_sp, x_aux, x_self] h r h' cs) :
+      [x_block, x_t, x_sp, x_us, x_aux, x_self] h r h' cs) :
     ∃ bOut : Bytes.Address,
       Bytes.RepAddressRef addrTy h' bOut r ∧ ixAddr bOut = ixAddr bRec := by
   match Obs.«KernelCheck::find_peer_recursor_with_spec».obs ev with
@@ -239,8 +237,8 @@ theorem find_peer_recursor_two_spec {c : Ctx} (hc : CoreFacts c)
       injection heq with h1 _; subst h1
       rcases hm0 with ⟨x0, hx0⟩
       exact absurd hx0 (by simp [Specs.Callees.mutCtor])
-    | .Cons_other (x_m := xm0) (x_rest := xrest1) (cs796 := cs_w1) (v806 := vpos1)
-        (ld12 := ld0) (op869 := op_pos1) (ev798 := ev_walk1) (hc871 := hc_w0) .. =>
+    | .Cons_other (x_m := xm0) (x_rest := xrest1) (cs796 := cs_w1) (v_uiltijht := vpos1)
+        (ld12 := ld0) (op_tikqqobg := op_pos1) (ev798 := ev_walk1) (hc871 := hc_w0) .. =>
       subst hc_w0
       obtain ⟨_, _, heq0, _, hms1⟩ := RepList.cons_of_load hms ld0
       injection heq0 with _ htl0; subst htl0
@@ -273,9 +271,9 @@ theorem find_peer_recursor_two_spec {c : Ctx} (hc : CoreFacts c)
         rw [hbRec_addr]
         exact hbOut_addr
       | .Cons_Recr_other (x_rest := xrest2) (m64 := m64) (cs74 := cs_pa) (m102 := m102)
-          (cs115 := cs_gci) (m680 := m680) (cs682 := cs_sg) (cs713 := cs_w2) (v723 := vpos2)
+          (cs115 := cs_gci) (m680 := m680) (cs682 := cs_sg) (cs713 := cs_w2) (v_fgheehtv := vpos2)
           (ld12 := ld1) (ev76 := ev_pa) (ev117 := ev_gci) (sg687 := sg1)
-          (op786 := op_pos2) (ev715 := ev_walk2) (hc788 := hc_w1) .. =>
+          (op_ojlhvlfm := op_pos2) (ev715 := ev_walk2) (hc788 := hc_w1) .. =>
         subst hc_w1
         obtain ⟨_, _, heq1, _, hms2⟩ := RepList.cons_of_load hms1 ld1
         injection heq1 with _ htl1; subst htl1
@@ -629,10 +627,10 @@ theorem nat_check_rules_spec {c : Ctx}
         (w141 := w141) (w142 := w142) (w143 := w143) (w144 := w144)
         (w145 := w145) (w146 := w146) (x_c_nf := x_c_nf) (w147 := w147)
         (v227 := v227) (m230 := m230) (cs238 := cs_wrap)
-        (v241 := v241) (m244 := m244) (cs252 := cs_rhs)
+        (v_yqkrjnfn := v241) (m_dtvbfoeu := m244) (cs_fxmvzdtz := cs_rhs)
         (cs384 := cs_rec) (v401 := v401)
         (ld12 := ld0) (ev113 := ev_cprj) (ld107 := ld_ctor) (heq215 := heq_nf)
-        (ev254 := ev_rhs) (ev240 := ev_wrap) (heq380 := heq_w1)
+        (ev_nryuxiev := ev_rhs) (ev240 := ev_wrap) (heq380 := heq_w1)
         (op513 := op_j1) (ev386 := ev_rec) (hc515 := hc) .. =>
       subst hc heq_w1
       cases hrules with
@@ -973,7 +971,7 @@ private theorem wrap_rel_appHeadConstLvls {a_g a_d : Bytes.Address} {ls_g ls_d :
     ∀ {xg xd : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       AppHeadConstLvls h a_g ls_g xg →
       AppHeadConstLvls h a_d ls_d xd →
-      ObsFn W "KernelCheck::wrap_rel" [xg, xd] h (.field 1) h' cs →
+      ObsFn W "KernelCheck::wrap_rel" [.field 0, xg, xd] h (.field 1) h' cs →
       ls_g = ls_d := by
   intro xg xd h h' cs hg hd ev
   induction hg generalizing xd h' cs with
@@ -1085,7 +1083,7 @@ private theorem wrap_rel_forallDomHeadLvls
       Good c cs →
       ForallDomHeadLvls (keyOf c.t) 0 (fun _ => default) h T a_g ls_g m k xg →
       ForallRightHeadLvls h a_d ls_d m xd →
-      ObsFn W "KernelCheck::wrap_rel" [xg, xd] h (.field 1) h' cs →
+      ObsFn W "KernelCheck::wrap_rel" [.field 0, xg, xd] h (.field 1) h' cs →
       ls_g = ls_d
   | 0, k, xg, xd, h, h', cs, hgood, hg, hd, ev => by
     cases hg with
@@ -1128,16 +1126,19 @@ private theorem wrap_rel_forallDomHeadLvls
           | .n1_n1 (m2 := m2) (cs48 := cs48) (ev15 := ev15) (ev50 := ev50) (hc93 := hc93) .. =>
             have e1 := ev15.heap_extends
             match Obs.«KernelCheck::wrap_dom».obsx ev50 with
-            | .other_other_other (he174 := he) .. =>
+            | .other_n0_other_other (he_vjzsmrqa := he) .. =>
               exact absurd (Value.field.inj he) one_ne_zero
+            | .other_other_n1_bind (hne_trdykyhf := hsm) ..
+            | .other_other_other (hne_trdykyhf := hsm) .. =>
+              exact absurd rfl hsm
             | .Let (ld12 := ld12) .. =>
               cases hhead_g with
               | const cg _ _ | app cg _ =>
                 exact (load_cell_ne (e1.getElem?_eq cg) ld12 (by decide)).elim
-            | .other_n1 (ev79 := ev105) .. =>
+            | .other_n0_n1 (ev_teknbelh := ev105) .. =>
               exact wrap_rel_appHeadConstLvls (hhead_g.mono e1) (hhead_d.mono e1) ev105
-            | .other_other_n1_bind (m66 := m92) (cs119 := cs145)
-                (ev79 := ev105) (ev121 := ev147) (hc170 := hc196) .. =>
+            | .other_n0_other_n1_bind (m_fwvfxwkq := m92) (cs_szysaksf := cs145)
+                (ev_teknbelh := ev105) (ev_tyrbnlfr := ev147) (hc_uuoaavue := hc196) .. =>
               have hgood_cw : Good c cs145 :=
                 hgood.sub (fun z hz => by subst hc539 hc93 hc196; simp [hz])
               match Obs.«KernelCheck::consume_wrapper».obsx ev147 with
@@ -1319,12 +1320,12 @@ theorem nat_rec_check_spec {c : Ctx} (hc : CoreFacts c)
       v750, x758, m784, cs792, v810, m811, cs821, v825, m827, v839, x846, m865, cs873,
       v876, m879, cs887, m906, v925, m926, cs936, v941, m959, cs967, v971, m1002,
       v1044, m1045, cs1055, v1152, m1153, cs1163, m1193, v1246, m1249, cs1257,
-      v1283, m1284, cs1294, m1317, cs1345, v1361, m1455, cs1463,
+      v1283, m1284, cs1294, m1317, m_peer, cs1345, v1361, m1455, cs1463,
       hv11, hv81, op159, heq162, heq189, heq217, ev231, sg306, hm318, hm332, sg389,
       op435, hm447, ev403, ev464, hm492, ev560, ev588, ev546, ev525, hm653, hm676, ev617,
       op773, op765, ev749, ev794, ev735, ev714, hm835, op861, op853, ev889, hm914, ev875, ev823,
       op993, ev969, hm1010, ev938, ev1057, hm1201, ev1165, ev1259, heq1282,
-      hm1325, ev1296, ev1465, ev1347, hc⟩
+      hm1325, hm_peer, ev1296, ev1465, ev1347, hc⟩
   subst hc
   -- Unify `Rec` and `Induct` constructor fields
   injection hv11 with _ _ hr_args
@@ -1679,7 +1680,8 @@ theorem nat_rec_check_spec {c : Ctx} (hc : CoreFacts c)
   have hwrap_ty : WrapRelSem c.env.find? recTy rec_ty₀ :=
     WrapRelSem.of_posOf_perm (rlps_perm k large) hwrap_ty_pos
   -- Step 7: `find_peer_recursor_with_spec`, `build_rec_lvls_list`, `nat_check_rules`
-  have ext_1249_1317 : Heap.Extends m1249 m1317 := by rw [hm1325]; exact Heap.Extends.snoc _ _
+  have ext_1249_1317 : Heap.Extends m1249 m_peer := by
+    rw [hm_peer, hm1325]; exact (Heap.Extends.snoc _ _).trans (Heap.Extends.snoc _ _)
   have ext_h_1317 := ext_h_1153.trans (ev1259.heap_extends.trans ext_1249_1317)
   have hgood_peer : Good c cs1294 := hgood.sub (fun x hx => by simp [hx])
   obtain ⟨bOut, hbOut_1284, hbOut_addr⟩ :=
