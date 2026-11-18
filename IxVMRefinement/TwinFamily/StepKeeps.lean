@@ -1,20 +1,21 @@
 import IxVMRefinement.TwinFamily.Step
+import IxVMRefinement.TwinFamily.StoreAr
 import IxVMRefinement.Assembly.NativeBlockLoads
 import IxVMRefinement.Assembly.FoldClause
 import IxVMRefinement.L1.Hashed
 
 /-! # The carried clause across the twin record
 
-The twin's unit step (`unitStepTwin_of_target`) takes the keeping of the prefix invariant and of
-the clause beside it across IxC's twin record (`TwinStepKeeps`). This module proves it at the
-fold's clause (`FoldExtra`), from three facts about the step's new constants that the twin
+The twin's unit step (`unitStepTwin_of_installed`) takes the keeping of the prefix invariant and
+of the clause beside it across IxC's twin record (`TwinStepKeeps`). This module proves it at
+the fold's clause (`FoldExtra`), from two facts about the step's new constants that the twin
 record does not carry:
 
-* the stored terms stay arity-correct (`TwinKeepsStoreAr`, the statement in `Target.lean`);
 * the role and record companions of the scoped core at the environment after the step;
 * each new constant at the key of an address reloads as itself (`Decl.ReloadsAs`).
 
-Everything else is the twin record's: the model in every set theory (`envModelN_twinStep`), the
+Everything else is the twin record's: the arity of the stored terms (`twinKeepsStoreAr`,
+`StoreAr.lean`), the model in every set theory (`envModelN_twinStep`), the
 store facts (`declStoreInv_twinStep`), the theorems' level parameters (`thmLevels_twinStep`),
 the strong store facts and the η facts (the step adds no projection table and no inductive),
 the registry (the extension keeps every registered family's reading and adds no inductive), the
@@ -272,11 +273,11 @@ end Clause
 
 /-! ## The keeping the twin's step takes -/
 
-/-- **The keeping of the fold's clause across the twin record**, from the arity statement and,
+/-- **The keeping of the fold's clause across the twin record**, from,
 at every environment the twin's step is handed, the companions after the step and the reload of
 each new constant at the key of an address. -/
 theorem twinStepKeeps_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (hL : LinkLaws L) (hAr : TwinKeepsStoreAr) {t : Ix.Kernel.RoleTable}
+    (hL : LinkLaws L) {t : Ix.Kernel.RoleTable}
     {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} {lim : Option Nat} {A : _root_.Address}
     {c : Ixon.Constant} (hsz : ∀ x, ConstAddrOf A c x → x.hash.size = 32)
     (hcomp : ∀ (env env₂ : Ix.Kernel.Env .anon) (blk : List (ConstantInfo .anon)),
@@ -300,7 +301,7 @@ theorem twinStepKeeps_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon →
     obtain ⟨x, hx, hn, -⟩ := hreads.2.1 ci hci
     exact ⟨x, hn, hsz x hx⟩
   have hC' : FoldClauseWith.{u} L t E lim env₂ Reg :=
-    foldClauseWith_twinStep hL hC hrun hkeyed (hAr env env₂ blk hrun hC.storeArR)
+    foldClauseWith_twinStep hL hC hrun hkeyed (twinKeepsStoreAr env env₂ blk hrun hC.storeArR)
       (hcomp env env₂ blk hinv hreads hrun hstored)
       (hreload env env₂ blk hinv hreads hrun hstored)
   exact ⟨hC'.prefixInv, hC'.extra⟩
