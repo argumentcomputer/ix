@@ -17,6 +17,10 @@ that preserves lookups. No termination assumption or closedness condition is nee
 additionally records the existing rules certificate for every step, so it supplies both the
 operational trace and `Rules.Red` without asserting that every beta redex is licensed.
 
+This strategy uses the rules tier's substitution on opened kernel terms. It must not be
+identified with raw heap substitution on loose de Bruijn arguments, which requires
+`instantiate1Lift` (as used by `GuardClassifier.head`).
+
 These statements compare operational traces, not arbitrary `Rules.Red` derivations. A consumer
 must retain the traces from both computations; forgetting either trace to `Rules.Red` is not
 sufficient to use the uniqueness result.
@@ -175,7 +179,8 @@ theorem Certified.mkAppN {env : Env md} {d : Nat} {e r : Expr md}
   | cons a args ih => exact ih (h.appFn a)
 
 /-- One definition followed by a licensed beta step is a certified trace. Its body may contain
-free variables or loose de Bruijn indices: this is an operational statement at any depth. -/
+free variables: this is a relational statement at any depth, whose semantic consumers retain
+the usual scope premises. -/
 theorem Certified.alias_beta {env : Env md} {d : Nat} {n : Key md} {us : List Level}
     {ty body a : Expr md} {mb : BinderMeta}
     (hdef : unfoldDefinition env (.const n us) = some (.lam ty body mb))

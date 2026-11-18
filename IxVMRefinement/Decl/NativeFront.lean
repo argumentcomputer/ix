@@ -1,3 +1,4 @@
+import IxVMRefinement.Assembly.GuardHeadRep
 import IxVMRefinement.Core.RawRecords
 import IxVMRefinement.Decl.NativeEnv
 import IxVMRefinement.Callees.ProjAddr
@@ -1319,28 +1320,28 @@ theorem get_result_sort_level_scoped_bounded_spec {c : ScopedCtx} [c.TableKeyed]
         ∀ bs s, E.stripPis n = some (bs, .sort s) → LvEq s ℓ
   | 0, d, Γ, E, rc, pe, types, r, h, h', cs, _, hrc, hty, hsc, hef, hlf, hgood, hE, ev => by
     match Obs.«KernelCheck::get_result_sort_level».obs ev with
-    | .n0 (cs12 := cs12) (ev14 := ev_w) (ld64 := ld) (he78 := hr) (he79 := hh) (hc80 := hc) .. =>
+    | .n0 (cs12 := cs12) (ev14 := ev_w) (ld55 := ld) (he69 := hr) (he70 := hh) (hc71 := hc) .. =>
       subst hc hr hh
       have hg1 : CoreGood c cs12 := hgood.sub (fun x hx => by simp [hx])
-      obtain ⟨E', hE', hred⟩ := scoped_core_whnf hrc hty hsc hef hlf hg1 ev_w hE
+      obtain ⟨E', hE', hrigid⟩ := Core.GuardData.head_rep ⟨hef, hlf⟩ hg1 hE ev_w
       obtain ⟨u, rfl, ℓ, hℓ, huℓ⟩ := hE'.sort_of_load ld
       refine ⟨ℓ, hℓ, fun bs s hst => ?_⟩
       simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at hst
       obtain ⟨rfl, rfl⟩ := hst
-      have hsort := Red.sort_eq hred
+      have hsort := hrigid rfl
       injection hsort with hsu
       subst hsu
       exact huℓ
-    | .other (hne82 := hne) .. => exact absurd rfl hne
+    | .other (hne73 := hne) .. => exact absurd rfl hne
   | m + 1, d, Γ, E, rc, pe, types, r, h, h', cs, hlt, hrc, hty, hsc, hef, hlf, hgood, hE, ev => by
     match Obs.«KernelCheck::get_result_sort_level».obs ev with
-    | .n0 (hv52 := hv) .. => exact absurd hv (succ_field_ne_zero_bounded hlt)
-    | .other (cs12 := cs12) (x_body := xbody) (cs124 := cs2) (m161 := m3) (ev14 := ev_w)
-        (ld97 := ld) (op158 := op) (hm169 := hm3) (ev126 := ev_rec) (hc189 := hc) .. =>
+    | .n0 (hv43 := hv) .. => exact absurd hv (succ_field_ne_zero_bounded hlt)
+    | .other (cs12 := cs12) (x_body := xbody) (cs115 := cs2) (m152 := m3) (ev14 := ev_w)
+        (ld88 := ld) (op149 := op) (hm160 := hm3) (ev117 := ev_rec) (hc180 := hc) .. =>
       subst hc
       have hg1 : CoreGood c cs12 := hgood.sub (fun x hx => by simp [hx])
       have hg2 : CoreGood c cs2 := hgood.sub (fun x hx => by simp [hx])
-      obtain ⟨E', hE', hred⟩ := scoped_core_whnf hrc hty hsc hef hlf hg1 ev_w hE
+      obtain ⟨E', hE', hrigid⟩ := Core.GuardData.head_rep ⟨hef, hlf⟩ hg1 hE ev_w
       obtain ⟨T, B, _, rfl, hT, hB, _⟩ := hE'.forallE_of_load ld
       have ext_w := ev_w.heap_extends
       obtain ⟨ext_push, hty', hsc'⟩ := push_binder_types hT (hty.mono ext_w) hsc
@@ -1353,7 +1354,7 @@ theorem get_result_sort_level_scoped_bounded_spec {c : ScopedCtx} [c.TableKeyed]
       refine ⟨ℓ, hℓ, fun bs s hst => ?_⟩
       cases E with
       | forallE dom₀ bo₀ m₀ =>
-        obtain ⟨rfl, rfl, rfl⟩ := Red.forallE_eq hred
+        obtain ⟨rfl, rfl, rfl⟩ := Expr.forallE.inj (hrigid rfl)
         simp only [Expr.stripPis, Option.map_eq_some_iff] at hst
         obtain ⟨⟨bs₁, body₁⟩, hst₁, hst⟩ := hst
         simp only [Prod.mk.injEq] at hst
@@ -3649,9 +3650,9 @@ private theorem ctor_zero_all_go {t : Ix.Kernel.RoleTable}
       have hj_eq := nat_eq_of_field_eq (by decide) (by omega) hsub_op
       omega
     | .other (m34 := m34) (p41 := p41) (cs47 := cs_cprj) (x_cty := xcty)
-        (m125 := m125) (cs165 := cs_rec) (v171 := v171)
-        (ev49 := ev_cprj) (ld43 := ld_ctor) (ev137 := ev_cz)
-        (op208 := op_add) (ev167 := ev_rec) (hc224 := hc) .. =>
+        (m162 := m162) (cs202 := cs_rec) (v208 := v208)
+        (ev49 := ev_cprj) (ld43 := ld_ctor) (ev136 := ev_params) (ev174 := ev_cz)
+        (op245 := op_add) (ev204 := ev_rec) (hc261 := hc) .. =>
       obtain ⟨c_j, cvCa₀, hc_j, hcA_j, hvs_j, hload_j⟩ := hcload.2 j (by omega)
       have hsub_cprj : ∀ x ∈ cs_cprj, x ∈ cs_root := fun x hx => hsub x (by simp [hc, hx])
       have hsub_rec : ∀ x ∈ cs_rec, x ∈ cs_root := fun x hx => hsub x (by simp [hc, hx])
@@ -3661,7 +3662,7 @@ private theorem ctor_zero_all_go {t : Ix.Kernel.RoleTable}
       injection ld_ctor with hval; injection hval with _ _ h1
       injection h1 with _ h1; injection h1 with hcty_eq _
       cases hcty_eq.symm
-      have e1 := ev_cprj.heap_extends
+      have e1 := ev_cprj.heap_extends.trans ev_params.heap_extends
       have e2 := ev_cz.heap_extends
       by_cases hkj : k = j
       · subst hkj
@@ -3681,10 +3682,10 @@ private theorem ctor_zero_all_go {t : Ix.Kernel.RoleTable}
           intro a ha
           rw [hT_eq] at ha
           exact nat_keyOf_injective hwf ha
-        exact ctor_zero_ok_raw_go hκ_inj (nP + c_j.2) hstR hstE hdoms hcty_raw
+        exact ctor_zero_ok_raw_go hκ_inj (nP + c_j.2) hstR hstE hdoms (hcty_raw.mono ev_params.heap_extends)
           (Bytes.repAddressRef_heapMono₂ addrTy e1 hpt)
           (repKLevel_heapMono₂ e1 hpind) ev_cz
-      · have hv171 : v171 = .field ((j + 1 : Nat) : F) := evalBinOp_add_nat j 1 op_add
+      · have hv171 : v208 = .field ((j + 1 : Nat) : F) := evalBinOp_add_nat j 1 op_add
         rw [hv171] at ev_rec
         exact ctor_zero_all_go hwf hlps_ctors hT_eq hcload hctor_sp hnCtors_lt
           m (j + 1) (by omega) hsub_rec
@@ -3991,12 +3992,12 @@ private theorem check_inductive_shape_ctors_go (hLevels : IxVM.Consistency.Level
         (m356 := m356) (cs366 := cs_es) (m387 := m387)
         (m400 := m400) (m430 := m430) (cs440 := cs_pa)
         (m476 := m476) (cs486 := cs_rt) (m546 := m546) (cs556 := cs_fu)
-        (m646 := m646) (cs648 := cs_sg) (cs695 := cs_rec) (v708 := v670)
+        (m592 := m_prop) (m716 := m646) (cs718 := cs_sg) (cs765 := cs_rec) (v778 := v670)
         (ev49 := ev_cprj) (ld43 := ld_ctor) (ev154 := ev_aeq)
         (heq261 := heq_nl) (heq289 := heq_np)
         (ev331 := ev_ws) (hm395 := hm387) (ev368 := ev_es) (ev412 := ev_saf)
-        (ev442 := ev_pa) (ev488 := ev_rt) (ev558 := ev_fu) (sg653 := sg_pos)
-        (ev667 := ev_hash) (op792 := op_add) (ev697 := ev_rec) (hc794 := hc) .. =>
+        (ev442 := ev_pa) (ev488 := ev_rt) (ev558 := ev_fu) (ev604 := ev_prop) (sg723 := sg_pos)
+        (ev737 := ev_hash) (op862 := op_add) (ev767 := ev_rec) (hc864 := hc) .. =>
       obtain ⟨c_j, cvCa₀, hc_j, hcA_j, hvs_j, hload_j⟩ := hcload.2 j (by omega)
       have hc_mem : c_j ∈ ctors := List.mem_of_getElem? hc_j
       have hc_nf_lt : c_j.2 < 2147483648 := hnF_lt c_j hc_mem
@@ -4091,7 +4092,7 @@ private theorem check_inductive_shape_ctors_go (hLevels : IxVM.Consistency.Level
             (repKLevel_heapMono₂ e_to_fu hpind)
             (hcty_exact_m34.mono e_from_m34_to_m476).toTm hnt_476 ev_fu
         have e_fu := ev_fu.heap_extends
-        have e_from_m34_to_m546 := e_from_m34_to_m476.trans e_fu
+        have e_from_m34_to_m546 := (e_from_m34_to_m476.trans e_fu).trans ev_prop.heap_extends
         have e_to_pos := e_cprj.trans e_from_m34_to_m546
         have hpos_ext :
             (∀ i < c_j.2,
@@ -4099,7 +4100,7 @@ private theorem check_inductive_shape_ctors_go (hLevels : IxVM.Consistency.Level
                Ix.Kernel.recFieldKind T lps nP nIdx i (cbs.getD (nP + i) default).1 ≠ .unsupported) ∧
               ((cbs.getD (nP + i) default).1.mentionsConst T = false ∨
                RawRecSpine T (rcbs.getD (nP + i) default).1 (cbs.getD (nP + i) default).1)) ∧
-            Heap.Extends m546 m646 := by
+            Heap.Extends m_prop m646 := by
           cases sg_pos with
           | other hne _ _ _ => exact absurd rfl hne
           | n0 cs_pos _ ev_pos hc_sg =>
@@ -4262,16 +4263,16 @@ theorem nativeFront_pass (hLevels : IxVM.Consistency.Levels) (hCore : IxVM.Consi
   | .Thm (hv526 := hv) .. => injection hv with _ hc _; exact absurd hc (by decide)
   | .Opaque (hv825 := hv) .. => injection hv with _ hc _; exact absurd hc (by decide)
   | .Quot (hv1076 := hv) .. => injection hv with _ hc _; exact absurd hc (by decide)
-  | .Ctor_n0_n0 (hne1936 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Ctor_n0_other (hne1936 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Ctor_other_n0 (hne1936 := hne) ..
-  | .Ctor_other_other (hne1936 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Rec_n0 (hne1936 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
-  | .Rec_other (hne1936 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Ctor_n0_n0 (hne1984 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Ctor_n0_other (hne1984 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Ctor_other_n0 (hne1984 := hne) ..
+  | .Ctor_other_other (hne1984 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Rec_n0 (hne1984 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
+  | .Rec_other (hne1984 := hne) .. => exact absurd rfl (hne [_, _, _, _, _, _, _, _] rfl)
   | .Induct_other_n0 (x_ind_block := xblk) (v1491 := vmod) (cs1503 := cs_mod)
-      (hv1240 := hv_ind) (ev1505 := ev_mod) (hne1635 := hne_mod) (hc1926 := hc) ..
+      (hv1240 := hv_ind) (ev1505 := ev_mod) (hne1635 := hne_mod) (hc1974 := hc) ..
   | .Induct_other_other (x_ind_block := xblk) (v1491 := vmod) (cs1503 := cs_mod)
-      (hv1240 := hv_ind) (ev1505 := ev_mod) (hne1635 := hne_mod) (hc1935 := hc) .. =>
+      (hv1240 := hv_ind) (ev1505 := ev_mod) (hne1635 := hne_mod) (hc1983 := hc) .. =>
     injection hv_ind with _ _ hxs
     injection hxs with _ hxs; injection hxs with _ hxs; injection hxs with _ hxs
     injection hxs with _ hxs; injection hxs with _ hxs; injection hxs with _ hxs
