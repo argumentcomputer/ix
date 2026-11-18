@@ -163,7 +163,7 @@ theorem indRecsFoldRenRunJ_of_aliased {env E envM envSelf : Env .anon} {g h : KK
       | nil => rfl
       | cons _ _ => cases rhsss <;> cases thss <;> exact False.elim ha
     subst hnil
-    exact ⟨acc, rfl, fun _ _ => rfl, fun _ hci => nomatch hci,
+    exact ⟨acc, rfl, fun _ _ => rfl, (fun _ hci => nomatch hci),
       fun i _ _ _ _ _ _ hi => by simp at hi⟩
   | cons c rest ih =>
     intro tysR rhsss thss acc ha hmf hbn hnd
