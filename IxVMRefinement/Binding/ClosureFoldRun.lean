@@ -459,11 +459,13 @@ theorem old_needed_stored (hC : ClosureCtx.{u} L calls ρ t g R R' R₁ env famO
     (hneed : ClosureNeeds ρ.E₀ famOf adv A x) (hold : (recordOf R x).isSome = true) :
     StoredAt t env x := by
   rcases hC.run.oldNeeds A x hnA hneed hold with ⟨c, n, hc, hnb, hlog, hlogB, hchk⟩ |
-      ⟨r, hw, hgr, ha⟩
+      ⟨r, hw, hgr, ha⟩ | ⟨ci₀, hr⟩
   · obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp
       (hC.walked.1 x c n hc hnb hlog hlogB hchk)
     exact storedAt_of_find hci
   · obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp (hC.walked.2 r x hw hgr ha)
+    exact storedAt_of_find hci
+  · obtain ⟨ci, hci, -⟩ := hC.bnd.shape.reading.stored x ⟨ci₀, hr⟩
     exact storedAt_of_find hci
 
 /-- **A new non-block record of rank below `A`'s is owned by a unit of rank below `A`'s.** -/
