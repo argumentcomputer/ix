@@ -65,9 +65,22 @@ theorem innerCheckedRow_of (refs : InnerRefsChecked) (shape : AdviceBlockShape) 
   obtain ⟨bAddr, hcall⟩ := hFR.innerCall
   obtain ⟨bW, hW, hG⟩ := hWalk
   have hS := hW.runStore
+  -- a twin reached through a container projection is the twin step's, not this row's
+  have hcall' : ∀ a, Inner a → twin a = none → ∃ B rb cs,
+      (fam B = some rb ∨ twin rb = some B) ∧ FamilyCallAtLim calls bAddr t B rb lim cs ∧
+      ((AdviceCheckIn cs bAddr t lim a ∧ ∀ c, recordOf E₀ a = some c → ¬ IsProj c) ∨
+        ContainerRecCheckIn cs bAddr t lim a) := by
+    intro a hI htw
+    obtain ⟨B, rb, cs, hor, hfc, hk⟩ := hcall a hI
+    refine ⟨B, rb, cs, hor, hfc, ?_⟩
+    rcases hk with hk | hk | ⟨B', cs', htw', -⟩
+    · exact Or.inl hk
+    · exact Or.inr hk
+    · rw [htw] at htw'
+      cases htw'
   refine ⟨bAddr, ⟨?_, ?_, ?_, ?_⟩⟩
-  · intro a c hI hc
-    obtain ⟨B, rb, cs, -, hfc, hk⟩ := hcall a hI
+  · intro a c hI htw hc
+    obtain ⟨B, rb, cs, -, hfc, hk⟩ := hcall' a hI htw
     have hcs : ∀ cl ∈ cs, cl ∈ calls := by
       obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hsub⟩ := hfc
       exact hsub
@@ -81,11 +94,11 @@ theorem innerCheckedRow_of (refs : InnerRefsChecked) (shape : AdviceBlockShape) 
           (fun cl h => hcs cl (hsub₁ cl h)) hc hms).1⟩
     · exact Or.inr (Decl.containerRec_checked hS hrc haddr ev
         (fun cl h => hcs cl (hsub₁ cl h))).1
-  · intro a x hI hu
-    obtain ⟨B, rb, cs, -, hfc, hk⟩ := hcall a hI
+  · intro a x hI htw hu
+    obtain ⟨B, rb, cs, -, hfc, hk⟩ := hcall' a hI htw
     exact (refs calls t E₀ lim bAddr B rb cs a hS hfc hk x hu).1
-  · intro a x hI hu
-    obtain ⟨B, rb, cs, -, hfc, hk⟩ := hcall a hI
+  · intro a x hI htw hu
+    obtain ⟨B, rb, cs, -, hfc, hk⟩ := hcall' a hI htw
     obtain ⟨-, hcov | hok, hnown⟩ := refs calls t E₀ lim bAddr B rb cs a hS hfc hk x hu
     · exact Or.inr (Or.inl hcov)
     · rcases hFR.graph.innerClosed a x hI hu hok with hst | hcov | ⟨c, hc, hx⟩ | hob
@@ -94,7 +107,7 @@ theorem innerCheckedRow_of (refs : InnerRefsChecked) (shape : AdviceBlockShape) 
       · exact absurd hx (hnown c hc)
       · exact Or.inr (Or.inr ⟨hok, hob⟩)
   · intro a c ms hI hU htw hc hms hnd h0
-    obtain ⟨B, rb, cs, -, hfc, hk⟩ := hcall a hI
+    obtain ⟨B, rb, cs, -, hfc, hk⟩ := hcall' a hI htw
     have hcs : ∀ cl ∈ cs, cl ∈ calls := by
       obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hsub⟩ := hfc
       exact hsub

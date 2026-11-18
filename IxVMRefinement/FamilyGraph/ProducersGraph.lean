@@ -325,7 +325,8 @@ structure FamilyRanked (K : FamRunCtx) (rank' : _root_.Address → Nat) : Prop w
 restated against the stored family the binding fold exposes). -/
 def StoredTwinField (K : FamRunCtx) : Prop :=
   ∀ rb' B, K.twin rb' = some B → K.fam B = none →
-    ∃ rb crb, (∀ x, ConstAddrOf rb crb x → StoredAt K.t K.envT x) ∧ FamilyInstalled K.t K.envT rb crb
+    ∃ rb crb, (∀ x, ConstAddrOf rb crb x → StoredAt K.t K.envT x) ∧
+      FamilyInstalled K.t K.envT rb crb
 
 /-! ## The family run at the choices -/
 
@@ -422,7 +423,8 @@ theorem familyRun_of (K : FamRunCtx) {rank' : _root_.Address → Nat}
     refine ⟨K.bAddr, fun a h => ?_⟩
     obtain ⟨-, -, B, rb, hor, hchk⟩ := h
     exact ⟨B, rb, K.famCalls B rb, hor,
-      FamRunCtx.famCalls_spec (FamRunCtx.famCheck_of_inner hor), hchk⟩
+      FamRunCtx.famCalls_spec (FamRunCtx.famCheck_of_inner hor),
+      hchk.elim Or.inl fun h => Or.inr (Or.inl h)⟩
   case form =>
     intro B rb rb' h ht
     obtain ⟨hTr, hRB, -, hU, hFC', -⟩ := FamRunCtx.twin_some ht
