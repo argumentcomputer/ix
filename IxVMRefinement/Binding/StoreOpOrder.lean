@@ -1,6 +1,7 @@
 import IxVMRefinement.Binding.StoreStanding
 import IxVMRefinement.Binding.OpValidation
 import IxVMRefinement.RoleVal.GroupWalkOrder
+import IxVMRefinement.RoleVal.OpOrderScan
 
 /-! # The operation order of a group's new records
 
@@ -68,7 +69,7 @@ theorem op_walksBound {r : Ix.Kernel.Role} (hop : r ∈ RoleOps.opRoles) :
 theorem valLimit_of_lt {g : Nat} (h : g < 33) : valLimit g = g := by
   show RoleVal.groupValLimit g = g
   unfold RoleVal.groupValLimit
-  rw [if_pos h]
+  simp [h]
 
 theorem valLimit_ge_of_ge {g : Nat} (h : 41 ≤ g) : 41 ≤ valLimit g := by
   show 41 ≤ RoleVal.groupValLimit g
