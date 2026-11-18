@@ -78,13 +78,14 @@ theorem closureStore_blobs : (closureStore t g R R').blobs = R'.blobs := by
 
 theorem closureStore_none {x : _root_.Address} (hx : NewUnit t g R R' x) :
     (closureStore t g R R').consts.get? x = none := by
-  have hex : ∃ a, NewUnit t g R R' a := ⟨x, hx⟩
-  have e : Classical.choose hex = x := roleUnitAt_unique (Classical.choose_spec hex).1 hx.1
   unfold closureStore
-  rw [dif_pos hex]
-  show (R'.consts.erase (Classical.choose hex)).get? x = none
-  rw [e, Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_erase]
-  simp
+  split
+  · next h =>
+    have e : Classical.choose h = x := roleUnitAt_unique (Classical.choose_spec h).1 hx.1
+    show (R'.consts.erase (Classical.choose h)).get? x = none
+    rw [e, Std.HashMap.get?_eq_getElem?, Std.HashMap.getElem?_erase]
+    simp
+  · next h => exact absurd ⟨x, hx⟩ h
 
 theorem closureStore_get {x : _root_.Address} (hx : ¬ NewUnit t g R R' x) :
     (closureStore t g R R').consts.get? x = R'.consts.get? x := by
