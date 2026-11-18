@@ -1,5 +1,6 @@
 import IxVMRefinement.Endpoint.WalkedKindSteps
 import IxVMRefinement.FamilyGraph.Composition
+import IxVMRefinement.Assembly.NativeBlockWalked
 
 /-! # The composed statement from its open obligations
 
@@ -46,11 +47,13 @@ Proved inside, with no hypothesis left:
   recursor (`standaloneRecursor_of_freshNotBasis`, with `freshRecursorMajorNotBasis_walked`), a
   block of one inductive type on the native route whose former is declared at a definition
   (`nativeBlockAlias_walked`), and one whose former reads as a telescope of another length,
-  which the circuit refuses (`nativeBlockOtherTelescope_step`);
+  which the circuit refuses (`nativeBlockOtherTelescope_step`); and, from the use-site reading
+  of the projection guard alone, one whose former is declared at its telescope (the ordinary
+  inductive type), for every checked unit (`nativeBlockTelescope_checked`) and every top-walked
+  one (`nativeBlockTelescope_walked`);
 * the step of a record checked inside a family check, by the step of its kind
   (`innerUnitSteps_of_innerChecked`, through `innerUnitSteps_of_kinds`): each proved kind is
-  stated once for every checked unit, and the top-walked form of the telescope block's step is
-  an instance of its checked form (`walkedUnitStep_of_checked`);
+  stated once for every checked unit;
 * on the binding side, everything `binding_skeleton_over` proves from its named hypotheses: the
   fold over the 77 groups, the step of a group from its parts, the raise past a group, the
   table's well-formedness from the claim's admission, and the witness on every group;
@@ -68,11 +71,10 @@ the invariant at the basis groups and the two admission chains are its projectio
   its prelude pin, and the stores of a run; the claim's decode is proved); and at each group of
   a run the closure, the stored shapes where the group has no role unit, and the role unit of
   an operation and of a standard axiom;
-* typing: the step of every checked block of one inductive type on the native route whose
-  former is declared at its telescope (`CheckedUnitStep`); what an accepted run gives of its
-  family records, advice and twins (`FamilyGraphRow`) and of the records a family check checks
-  (`InnerCheckedRow`); the step of a top-walked block with its family record
-  (`FamilyBlockRow`) and the step of a twin (`FamilyTwinRow`).
+* typing: the use-site reading of the projection guard (`Core.ProjGuardRunReading`); what an
+  accepted run gives of its family records, advice and twins (`FamilyGraphRow`) and of the
+  records a family check checks (`InnerCheckedRow`); the step of a top-walked block with its
+  family record (`FamilyBlockRow`) and the step of a twin (`FamilyTwinRow`).
 
 The typing half takes nothing from the binding half but the table witness at `OverW L`, so no
 further hypothesis joins the two.
@@ -212,13 +214,14 @@ role unit, the role unit of an operation and the role unit of a standard axiom.
 
 The last five hypotheses are the typing half's.
 
-* `nativeBlockTelescope`: the step of every checked block of one inductive type on the native
-  route whose former is declared at its telescope (the ordinary inductive type), at the limit of
-  its member's check; its top-walked form is an instance (`walkedUnitStep_of_checked`), and it
-  steps such a block inside a family check too. Stated; its producer is the native block's step,
-  to be stated at the fold's clause, at every limit and for every checked unit: the certificate
-  at the install is proved from the run store (`blockCert_of_runStore`); the use-site reading
-  of the projection guard (`Core.ProjGuardRunReading`) is open.
+* `projGuardRunReading`: the use-site reading of the projection guard: a run of the projection
+  guard at a propositional structure's table, within the registry's induction, reads as the
+  guard's use at the stored raw type of the structure's constructor (`ProjGuardUse`), the run's
+  own hashed collision being the only alternative (`Core.ProjGuardRunReading`). It is the one premise of the step of a block of one inductive
+  type on the native route whose former is declared at its telescope (the ordinary inductive
+  type), at every checked unit (`nativeBlockTelescope_checked`) and at every top-walked one
+  (`nativeBlockTelescope_walked`). Stated; producer open: trace lemmas of the classifier
+  restated below the registry's induction.
 * `familyGraph`: at every walk of an accepted typing claim and every witness of the table's
   shape, the run's family records, advice, inner records and twins form a family graph in which
   every top-walked non-empty block of recursors is a family record or a twin, every top-walked
@@ -244,9 +247,9 @@ The last five hypotheses are the typing half's.
   keeps the fold's clause with the family recursors' companions beside it (`UnitStepFamily`).
   Stated; the model side's facts (`Decl.FamilyAlias.FamilyCheckFacts`) are kernel-checked at two
   compiled fixtures. Producer: `FamilyAlias.FamilyStepTarget` with
-  `FamilyAlias.modelSide_of_target` on the model side (left: the companions after the step, the advice's ties from `FamilyRun.famCall`
-  and the family record's inert clause); the circuit side, from the observed family check to
-  the facts, open until the circuit's family changes.
+  `FamilyAlias.modelSide_of_target` on the model side (left: the companions after the step, the
+  advice's ties from `FamilyRun.famCall` and the family record's inert clause); the circuit
+  side, from the observed family check to the facts, open until the circuit's family changes.
 * `familyTwin`: the step of a second family record of a block (a twin), handed the block's
   family record stored, installs it and keeps the fold's clause with the family recursors'
   companions beside it (`UnitStepTwin`). Stated; one accepted pair was executed. Producer open:
@@ -266,10 +269,7 @@ theorem circuitComposed_residual
     (standardAxiomRoleUnit : ∀ calls,
       AtGroups (BindingRun calls)
         (RoleUnitStepOver.{u} (· ∈ standardAxioms) FormerOpenTraceAt))
-    (nativeBlockTelescope :
-      CheckedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun calls t E₀ B cb =>
-        ∃ ind : Ixon.Inductive,
-          BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerAtTele t E₀ B cb ind)
+    (projGuardRunReading : Core.ProjGuardRunReading)
     (familyGraph : FamilyGraphRow.{u})
     (innerChecked : InnerCheckedRow)
     (familyBlock : FamilyBlockRow.{u} FormerOpenTraceAt)
@@ -280,13 +280,15 @@ theorem circuitComposed_residual
     (fun calls => basisOver_bindingRun FormerOpenTraceAt calls) admitsChain_bindingRun
     admitsReadsChain_bindingRun
     groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit
-    familyGraph (innerUnitSteps_of_innerChecked innerChecked nativeBlockTelescope)
+    familyGraph
+    (innerUnitSteps_of_innerChecked innerChecked
+      (nativeBlockTelescope_checked linkLaws_formerOpenTrace projGuardRunReading))
     familyBlock familyTwin
     (standaloneDefinition_foldExtra linkLaws_formerOpenTrace)
     (standaloneTheoremOrOpaque_foldExtra linkLaws_formerOpenTrace)
     (standaloneRecursor_of_freshNotBasis freshRecursorMajorNotBasis_walked)
     (definitionBlock_of_nonempty (definitionBlock_foldExtra linkLaws_formerOpenTrace))
-    (walkedUnitStep_of_checked nativeBlockTelescope)
+    (nativeBlockTelescope_walked linkLaws_formerOpenTrace projGuardRunReading)
     nativeBlockAlias_walked
     nativeBlockOtherTelescope_step
 

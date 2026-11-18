@@ -12,8 +12,9 @@ form of a kind's step for every checked unit) and the axioms it reaches. A chang
 fails the build.
 
 How to read it. The explicit arguments are the open obligations: the first seven are the
-binding half's, the others the typing half's: the step of the one kind of checked unit that has
-no step yet, and the typing fold's rows over the family graph (the run's family graph, the
+binding half's, the others the typing half's: the use-site reading of the projection guard (the
+one premise of the ordinary inductive block's step), and the typing fold's rows over the
+family graph (the run's family graph, the
 records a family check checks, the step of a block with its family record and the step of a
 twin). The binding half's run predicate is `IxVM.Refinement.Binding.BindingRun`. The first
 three arguments are the parts of the binding claim's export that remain: the loaded table's
