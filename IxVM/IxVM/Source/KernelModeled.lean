@@ -757,8 +757,8 @@ def projection_of_ref_block := aiur_fn⟦
       match c {
         Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
-            Ixon::ConstantInfo::IPrj(_) => {  ref_projects_from(irefs, iused, 0, projection_block(c)) } ,
-            Ixon::ConstantInfo::CPrj(_) => {  ref_projects_from(irefs, iused, 0, projection_block(c)) } ,
+            Ixon::ConstantInfo::IPrj(_) => {  Ingress::get_ci(r); ref_projects_from(irefs, iused, 0, projection_block(c)) } ,
+            Ixon::ConstantInfo::CPrj(_) => {  Ingress::get_ci(r); ref_projects_from(irefs, iused, 0, projection_block(c)) } ,
             _ => {  0 } ,
           } } ,
       }
@@ -789,8 +789,8 @@ def is_projection_of := aiur_fn⟦
       match c {
         Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
-            Ixon::ConstantInfo::IPrj(_) => {  Bytes::address_eq(projection_block(c), block) } ,
-            Ixon::ConstantInfo::CPrj(_) => {  Bytes::address_eq(projection_block(c), block) } ,
+            Ixon::ConstantInfo::IPrj(_) => {  Ingress::get_ci(r); Bytes::address_eq(projection_block(c), block) } ,
+            Ixon::ConstantInfo::CPrj(_) => {  Ingress::get_ci(r); Bytes::address_eq(projection_block(c), block) } ,
             Ixon::ConstantInfo::RPrj(_) => {  Bytes::address_eq(projection_block(c), block) } ,
             _ => {  0 } ,
           } } ,
@@ -946,14 +946,29 @@ def assert_inner_refs_safe := aiur_fn⟦
     }
 ⟧
 
+  -- No address of the recursor family record is bound to a role: an honest table binds no role at
+  -- a mutual or nested family's recursor (the condition the modeled type and constructor assert).
+
+def assert_no_role := aiur_fn⟦
+  fn assert_no_role(rc: KernelRoles::RoleCtx, xs: Lists::List<Bytes::AddressRef>) -> () {
+      match (*(xs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(x, rest) => {
+          assert_eq!(KernelRoles::role_index_of(rc, x), 0,
+            "a modeled recursor is bound to a role");
+          assert_no_role(rc, rest) } ,
+      }
+    }
+⟧
+
 def projection_of_advice := aiur_fn⟦
   fn projection_of_advice(r: Bytes::AddressRef, aset: RBTreeMap::RBTreeMap<Field>) -> Field {
       let c = Ingress::load_verified_constant(r);
       match c {
         Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
-            Ixon::ConstantInfo::IPrj(_) => {  KernelClaim::addr_set_member(projection_block(c), aset) } ,
-            Ixon::ConstantInfo::CPrj(_) => {  KernelClaim::addr_set_member(projection_block(c), aset) } ,
+            Ixon::ConstantInfo::IPrj(_) => {  Ingress::get_ci(r); KernelClaim::addr_set_member(projection_block(c), aset) } ,
+            Ixon::ConstantInfo::CPrj(_) => {  Ingress::get_ci(r); KernelClaim::addr_set_member(projection_block(c), aset) } ,
             _ => {  0 } ,
           } } ,
       }
@@ -1013,6 +1028,7 @@ def check_family := aiur_fn⟦
               let ctor_addrs = block_ctor_addrs(members, block, 0);
               let (ctor_models, s7) = get_addrs(s6, Lists::length(ctor_addrs));
               let rec_addrs = family_recs(rec_block);
+              assert_no_role(rc, rec_addrs);
               let n_recs = Lists::length(rec_addrs);
               let (rec_models, s8) = get_addrs(s7, n_recs);
               let src = Lists::concat(type_addrs, Lists::concat(ctor_addrs, rec_addrs));
@@ -1396,8 +1412,8 @@ def family_refs_go := aiur_fn⟦
                   let own = match rc0 {
                     Ixon::Constant::Mk(info, _, _, _, _) => {
                       match info {
-                        Ixon::ConstantInfo::IPrj(_) => {  Bytes::address_eq(projection_block(rc0), block) } ,
-                        Ixon::ConstantInfo::CPrj(_) => {  Bytes::address_eq(projection_block(rc0), block) } ,
+                        Ixon::ConstantInfo::IPrj(_) => {  Ingress::get_ci(r); Bytes::address_eq(projection_block(rc0), block) } ,
+                        Ixon::ConstantInfo::CPrj(_) => {  Ingress::get_ci(r); Bytes::address_eq(projection_block(rc0), block) } ,
                         _ => {  0 } ,
                       } } ,
                   };
@@ -2029,7 +2045,7 @@ def defeq_lam_tele := aiur_fn⟦
               match (*(p)) {
                 KernelTypes::KExprNode::Forall(dp, bp, _) => {
                   assert_eq!(KernelDefEq::k_is_def_eq(rc, dl, dp, ctx), 1, "rule domain mismatch");
-                  defeq_lam_tele(rc, bl, bp, n - 1, (&(Lists::Node::Cons(dl, ctx)))) } ,
+                  defeq_lam_tele(rc, bl, bp, n - 1, (&(Lists::Node::Cons(dp, ctx)))) } ,
               } } ,
           } } ,
       }

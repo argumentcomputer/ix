@@ -610,11 +610,17 @@ def assert_op_reached_in_order := aiur_fn⟦
     }
 ⟧
 
-  -- Inside the well-founded block: what `a` references, up to the records whose roles are in
-  -- force (each checked in its own group's validation, under the same rule), reaches an
-  -- operation only if that operation's group is below `limit` or among `needs`, the needs of
-  -- the group being validated. A referenced operation is not entered: its own validation
-  -- scanned its closure.
+  -- Inside the well-founded block: what `a` references, up to the records at which the scan
+  -- stops, reaches an operation only if that operation's group is below `limit` or among
+  -- `needs`, the needs of the group being validated. A referenced operation is not entered: its
+  -- own validation scanned its closure. The scan stops at a role-bound record in force that is
+  -- no operation, unless the role is an anchor whose validation does not walk its record
+  -- (`anchor_walked` answers 0): the record of a walked role, of a walked anchor and what a
+  -- standard axiom's record references were walked in their own group, below the block, where
+  -- every reference to an operation is to one in force; the quotient package is bound at
+  -- committed records; no walk passes an inert axiom. An anchor no validation walks has had no
+  -- such walk, and the walk of this validation does not stop at it, so the scan goes on into
+  -- what its record references.
 
 def op_order_scan := aiur_fn⟦
   fn op_order_scan(tbl: RoleTable, limit: Field, needs: Lists::List<Field>, a: Bytes::AddressRef) -> () {
@@ -632,6 +638,11 @@ def op_order_scan := aiur_fn⟦
               };
               assert_eq!(ok, 1, "an operation reaches an operation its group does not need");
               () } ,
+            1 => {
+              match in_force * anchor_walked(r) {
+                1 => {  () } ,
+                _ => {  op_order_scan_refs(tbl, limit, needs, a) } ,
+              } } ,
             _ => {
               match in_force {
                 1 => {  () } ,
