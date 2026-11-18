@@ -28,9 +28,9 @@ open Ix.Kernel (Expr Level LevelParam)
 set_option maxHeartbeats 1600000
 set_option linter.unusedVariables false
 
-/-- **`nat_former_tele` keeps the term**, for any binder count in the field's range: at depth `d` with the context `types`, a term
-whose first `k` binders are `∀`s is represented by the result, with every head step it takes on
-a non-`Forall` node read through the scoped core. -/
+/-- **`nat_former_tele` keeps the term**, for any binder count in the field's range: at depth
+`d` with the context `types`, a term whose first `k` binders are `∀`s is represented by the
+result, with every head step it takes on a non-`Forall` node read through the scoped core. -/
 theorem scoped_nat_former_tele_bounded {c : ScopedCtx} (hc : ScopedCoreFacts c) :
     ∀ (k : Nat) {d : Nat} {Γ : Nat → KExpr} {E : KExpr}
       {x_rc x_ty x_types r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},

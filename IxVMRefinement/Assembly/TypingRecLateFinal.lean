@@ -61,9 +61,11 @@ abbrev lateRecLps (rc : Ixon.Recursor) (ind : Ixon.Inductive) : List Ix.Kernel.L
 /-- **The check's output at the recursor's own parent** (module docstring). The circuit's
 evidence at the record: `hS`, `hcov`, `hst` (the run's store, its hashed records, the step's
 store), `hc`, `hinfo`, `hlogic` (the record, a recursor, in Lean's logic), `hnat` (its check
-took the recursor arm at the limit `lim`), `hkey`, `hinert`, `hcover` (its key free, no inert
-axiom used, the cover clause). At a step environment: the level clauses, the parent the circuit
-read with its tie to the record, and the family the registry reads off that parent's record. -/
+took the recursor arm at the limit `lim`), `hkey`, `hinert`, `hcover` (its key free, no
+inert axiom used, the cover clause). At a step environment: the level clauses, the parent the
+circuit read with its tie to the record, and the family the registry reads off that parent's
+record. No count bound is asked: the arm's two loads give the bounds the comparison reads
+(`recArmRunBounds_of_arm`, and those `rec_front_arm` keeps). -/
 theorem recLateOutAll_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
     {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
     {c : Ixon.Constant} {rc : Ixon.Recursor}

@@ -21,8 +21,9 @@ arm:
   and sort runs on the type pointer;
 * the native recursor comparison (`Decl.late_nat_rec_check_spec_traced`, instantiated at the
   prefix keying for the type and at `lateRuleKey` for the rules, at the stored former's loaded
-  type and the binders the family records for its telescope constant): the generated type and its relation
-  with the canonical type, the generated rules and their relation with the canonical rules;
+  type and the binders the family records for its telescope constant): the generated type and
+  its relation with the canonical type, the generated rules and their relation with the
+  canonical rules;
 * the level arguments of the head of the major premise's domain (`Decl.front_maj`).
 
 The universe offset `nat_rec_check` receives is the large-eliminator bit
