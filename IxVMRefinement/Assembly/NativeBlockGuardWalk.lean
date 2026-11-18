@@ -317,12 +317,6 @@ theorem peel_open (c : ScopedCtx) (Γ0 : Nat → KExpr) :
 
 /-! ## The field walk, read twice -/
 
-/-- **`proj_guard_walk` read opened and raw**: on a heap term read opened at depth `d` (`E`) and
-raw at local depth `kr` (`R`), with `K = fidx` fields left, the walk computes the fold of
-`ls ++ selDeps lus flags` onto `lus[K]`, where `lus[j]` is semantically the sort of a full-grade
-derivation of the `j`-th domain IxC's `openPisAtFvars` opens from `E` at `d`, and `flags[j]` is
-set wherever the raw body after the `j`-th binder of `R` has a loose occurrence of its
-variable. The walk starts at a `Forall` cell. -/
 /-- The explicit classifier comparison keeps the ordinary sort inference and its level. -/
 theorem checked_sort_scoped (c : ScopedCtx) (hc : ScopedCoreFacts c)
     {d : Nat} {Γ : Nat → KExpr} {E : KExpr} {rc e ctx r : SourceValue F}
@@ -341,6 +335,12 @@ theorem checked_sort_scoped (c : ScopedCtx) (hc : ScopedCoreFacts c)
   exact ⟨stype, u, level, hi, hred,
     hl.mono (ev2.heap_extends.trans (ev4.heap_extends.trans ev3.heap_extends)), heq⟩
 
+/-- **`proj_guard_walk` read opened and raw**: on a heap term read opened at depth `d` (`E`) and
+raw at local depth `kr` (`R`), with `K = fidx` fields left, the walk computes the fold of
+`ls ++ selDeps lus flags` onto `lus[K]`, where `lus[j]` is semantically the sort of a full-grade
+derivation of the `j`-th domain IxC's `openPisAtFvars` opens from `E` at `d`, and `flags[j]` is
+set wherever the raw body after the `j`-th binder of `R` has a loose occurrence of its
+variable. The walk starts at a `Forall` cell. -/
 theorem walk_open (c : ScopedCtx) (hc : ScopedCoreFacts c) (Γ0 : Nat → KExpr) :
     ∀ (K : Nat) {x_rc x_ty x_ctx x_deps r : SourceValue F} {h h' : Heap F}
       {calls : List (Call F)} (k : F), ZMod.val k = K → CoreGood c calls →
