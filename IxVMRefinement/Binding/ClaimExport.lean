@@ -246,6 +246,8 @@ theorem bindingClaimExportObs_of_parts {calls : List (Call F)} {d : Digest}
   rcases groupStores V (bytes :: committedFootprint) (fun x hx => List.mem_cons_of_mem _ hx)
     a tb t htb hadm hall hpin hval with hcol | ⟨rank, Rs, hbc, hbb, hgs⟩
   · exact Or.inl hcol
+  by_cases hnc : V.HashedCollision (bytes :: committedFootprint) calls
+  · exact Or.inl hnc
   have hw0 : Claim.WalkedL6 calls t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) [] :=
     Claim.walkedL6_envOfRecs (seeds := []) hnoColl [] hadm (by simp)
       (by intro r hr; cases hr)
@@ -263,7 +265,9 @@ theorem bindingClaimExportObs_of_parts {calls : List (Call F)} {d : Digest}
       basisBlobs := hbb
       admits := fun g hg6 hg =>
         admits_observed_of_checked (hgs g hg6 hg).1 (hval g hg)
-      reads := fun g hg6 hg => admitsReads_observed_of_checked (hgs g hg6 hg).2 }
+      reads := fun g hg6 hg => admitsReads_observed_of_checked (hgs g hg6 hg).2
+      stepStores := runStepStores_of_noCollision t (LoadedReads.RunStore.of_walkedL6 hload hw0) hb
+        (fun x hx => List.mem_cons_of_mem _ hx) hnc }
 
 /-- **The claim export of the residual theorem, from the four named parts for every bounded
 run**: the decode of the claim is taken from the observed `verify_claim` derivation. -/
