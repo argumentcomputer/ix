@@ -206,20 +206,19 @@ theorem FamLoadCtx.iprj_block (hL : FamLoadCtx C new A cb ms rb crb rs) {b : _ro
   have hinfo := (hL.held b hbh).1 i cm hrec'
   rcases hk with ⟨i', ind, -, -, h'⟩ | ⟨i', ind, j', -, -, -, h'⟩ | ⟨p, h'⟩
   · rw [h'] at hinfo
-    injection hinfo with hp
-    injection hp with _ hblk
-    exact hblk.symm
+    exact (congrArg Ixon.InductiveProj.block (Ixon.ConstantInfo.iPrj.inj hinfo)).symm
   · rw [h'] at hinfo
-    cases hinfo
+    exact nomatch hinfo
   · rw [h'] at hinfo
-    cases hinfo
+    exact nomatch hinfo
 
 /-- **A hashed block whose constructor projection address is a family address is the family's
 block**, at an inductive member of it with the same index. -/
 theorem FamLoadCtx.cprj_block (hL : FamLoadCtx C new A cb ms rb crb rs) {b : _root_.Address}
     (hbh : Core.HashedBlockAt C.E b) {i j : Nat} {x : _root_.Address}
     (hx : FamAddr A cb rb crb x) (hy : Core.cprjAddr b i j = x) :
-    b = A ∧ ∃ i' ind, ms[i']? = some (.indc ind) ∧ i.toUInt64 = i'.toUInt64 := by
+    b = A ∧ ∃ (i' : Nat) (ind : Ixon.Inductive), ms[i']? = some (.indc ind) ∧
+      i.toUInt64 = i'.toUInt64 := by
   obtain ⟨cm, hrec, hk⟩ := hL.recordOf_at hx
   have hrec' : Ix.Cert.recordAt C.E (Core.cprjAddr b i j) = some cm := by
     rw [hy]
@@ -227,13 +226,13 @@ theorem FamLoadCtx.cprj_block (hL : FamLoadCtx C new A cb ms rb crb rs) {b : _ro
   have hinfo := (hL.held b hbh).2 i j cm hrec'
   rcases hk with ⟨i', ind, -, -, h'⟩ | ⟨i', ind, j', hget, -, -, h'⟩ | ⟨p, h'⟩
   · rw [h'] at hinfo
-    cases hinfo
+    exact nomatch hinfo
   · rw [h'] at hinfo
-    injection hinfo with hp
-    injection hp with hidx _ hblk
-    exact ⟨hblk.symm, i', ind, hget, hidx.symm⟩
+    have hp := Ixon.ConstantInfo.cPrj.inj hinfo
+    exact ⟨(congrArg Ixon.ConstructorProj.block hp).symm, i', ind, hget,
+      (congrArg Ixon.ConstructorProj.idx hp).symm⟩
   · rw [h'] at hinfo
-    cases hinfo
+    exact nomatch hinfo
 
 /-- The longer context's key at an address that is the key of a family address is the table's:
 the two addresses are one. -/
