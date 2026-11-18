@@ -115,7 +115,7 @@ theorem check_family_standalone_refused {calls cs : List (Call F)} {E₀ : Ixon.
         have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
           (Core.hashed_mono hsub12 hh) haddr hexact
         subst hcc
-        obtain ⟨infoVal, -, -, -, -, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
+        obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
         have hinfo_eq := (List.cons.inj (Value.construct.inj hc_eq).2.2).1
         rw [hinfo] at hinfoRep
         obtain ⟨rv, hv, -⟩ := hinfoRep
@@ -194,7 +194,7 @@ private theorem load_recr_tag {calls cs : List (Call F)} {E₀ : Ixon.Env}
   have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
     (Core.hashed_mono hsub hh) haddr hexact
   subst hcc
-  obtain ⟨infoVal, -, -, -, -, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
+  obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
   have hinfo_eq := (List.cons.inj (Value.construct.inj hc_eq).2.2).1
   rw [hinfo] at hinfoRep
   obtain ⟨rv, hv, -⟩ := hinfoRep
