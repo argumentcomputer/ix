@@ -64,14 +64,15 @@ structure IndData where
 /-- **What the reconstruction reads of a store**: `get_ci` at an inductive's address, a
 constructor's type and parameter count (`get_ci_cprj`), a constructor's constant address
 (`projection_addr_ctor`), the key a constant's address reads as, the address a key names, and a
-definition's value at given levels (the unfolding `whnf` performs). -/
+definition's value at given levels (the unfolding `whnf` performs). Each answer is `none` where
+the circuit's load fails, so a store that holds more answers the same where the first answers. -/
 structure ReconView where
   ind : _root_.Address → Option IndData
   ctor : _root_.Address → Nat → Nat → Option (KExpr × Nat)
   ctorAddr : _root_.Address → Nat → Nat → _root_.Address
   key : _root_.Address → KKey
   addr : KKey → Option _root_.Address
-  unfold : KKey → List KLevel → Option KExpr
+  unfold : KKey → List KLevel → Option (Option KExpr)
 
 /-- `get_ci` at an inductive type's address of the store: through its projection record, the
 member of its block, its type read over the block's tables. -/
@@ -121,8 +122,11 @@ def ctorAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (b : _root_.Address) (i c : 
 
 /-- A definition's level count and value at a constant address of the store (`get_ci`'s `Defn`,
 read with positional level parameters): a standalone definition record, or a definition member
-of a block. Theorems and opaque constants are not unfolded. -/
-def defnAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) : Option (Nat × KExpr) :=
+of a block. `none` where the circuit's load fails (no record, an unreadable value); `some none` at
+a constant `whnf` does not unfold by a definition step (a theorem, an opaque constant, any other
+kind). -/
+def defnAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) :
+    Option (Option (Nat × KExpr)) :=
   match recordOf E a with
   | none => none
   | some c =>
@@ -131,8 +135,8 @@ def defnAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) : Optio
       match d.kind with
       | .defn =>
         ((exprReader t (fun x => E.blobs.get? x) c id (soloSelf t a)).read d.value).toOption.map
-          fun v => (d.lvls.toNat, v)
-      | _ => none
+          fun v => some (d.lvls.toNat, v)
+      | _ => some none
     | .dPrj p =>
       match recordOf E p.block with
       | none => none
@@ -144,23 +148,26 @@ def defnAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) : Optio
             match d.kind with
             | .defn =>
               ((exprReader t (fun x => E.blobs.get? x) cb id (blockSelf t p.block ms)).read
-                d.value).toOption.map fun v => (d.lvls.toNat, v)
-            | _ => none
+                d.value).toOption.map fun v => some (d.lvls.toNat, v)
+            | _ => some none
           | _ => none
         | _ => none
-    | _ => none
+    | _ => some none
 
 /-- `red_unfold` at a key: the definition's value with its level parameters instantiated, when the
-levels' count is the definition's. -/
+levels' count is the definition's (`some none` when no definition step applies, `none` where the
+load fails). -/
 def unfoldAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (k : KKey) (us : List KLevel) :
-    Option KExpr :=
+    Option (Option KExpr) :=
   match keyAddr t k with
-  | none => none
+  | none => some none
   | some a =>
     match defnAt t E a with
     | none => none
-    | some (n, v) =>
-      if us.length = n then some (v.instantiateLevelParams (List.range n) us) else none
+    | some none => some none
+    | some (some (n, v)) =>
+      if us.length = n then some (some (v.instantiateLevelParams (List.range n) us))
+      else some none
 
 /-- **The readings of the store `E`** under the role table `t`. -/
 def ReconView.ofStore (t : Ix.Kernel.RoleTable) (E : Ixon.Env) : ReconView :=
@@ -168,22 +175,35 @@ def ReconView.ofStore (t : Ix.Kernel.RoleTable) (E : Ixon.Env) : ReconView :=
 
 /-! ## Head normalization: the δβ head strategy -/
 
+/-- The body of a λ. -/
+def lamBody : KExpr → Option KExpr
+  | .lam _ b _ => some b
+  | _ => none
+
+/-- The binder at the head of a term: its domain, body and datum. -/
+def isForall : KExpr → Option (KExpr × KExpr × Ix.Kernel.BinderMeta)
+  | .forallE d b m => some (d, b, m)
+  | _ => none
+
 /-- One head step: a definition unfolded at a constant, β at a λ applied (the circuit's
 substitution, which lifts the argument past the binders it crosses), or a step of an
-application's function. -/
-def headStep (V : ReconView) : KExpr → Option KExpr
+application's function. `some none`: no step applies; `none`: a load fails. -/
+def headStep (V : ReconView) : KExpr → Option (Option KExpr)
   | .const k us => V.unfold k us
-  | .app (.lam _ b _) a => some (Ix.Kernel.Expr.instantiate1Lift b a 0)
-  | .app f a => (headStep V f).map fun f' => .app f' a
-  | _ => none
+  | .app f a =>
+    match lamBody f with
+    | some b => some (some (Ix.Kernel.Expr.instantiate1Lift b a 0))
+    | none => (headStep V f).map (Option.map fun f' => .app f' a)
+  | _ => some none
 
 /-- **Head normalization** at a fuel of steps: head steps until none applies. -/
 def hnf (V : ReconView) : Nat → KExpr → Option KExpr
   | 0, _ => none
   | n + 1, e =>
     match headStep V e with
-    | none => some e
-    | some e' => hnf V n e'
+    | none => none
+    | some none => some e
+    | some (some e') => hnf V n e'
 
 /-! ## Building terms -/
 
@@ -235,17 +255,24 @@ def peelAll : KExpr → List KExpr × KExpr
 
 /-! ## Telescopes -/
 
+/-- The head binder of a telescope, head-normalizing where it is not syntactically one (`some none`
+when the head normal form is no binder). -/
+def binderOf (V : ReconView) (f : Nat) (ty : KExpr) :
+    Option (Option (KExpr × KExpr × Ix.Kernel.BinderMeta)) :=
+  match isForall ty with
+  | some p => some (some p)
+  | none => (hnf V f ty).map isForall
+
 /-- **`collect_n_doms_whnf`, `collect_index_doms`**: the first `n` binder domains of a telescope,
 head-normalizing where it is not syntactically a binder, and what follows them; fewer domains when
 the head normal form is no binder. -/
 def collectDoms (V : ReconView) (f : Nat) : Nat → KExpr → Option (List KExpr × KExpr)
   | 0, ty => some ([], ty)
-  | n + 1, .forallE d b _ => (collectDoms V f n b).map fun p => (d :: p.1, p.2)
   | n + 1, ty =>
-    match hnf V f ty with
+    match binderOf V f ty with
     | none => none
-    | some (.forallE d b _) => (collectDoms V f n b).map fun p => (d :: p.1, p.2)
-    | some _ => some ([], ty)
+    | some none => some ([], ty)
+    | some (some (d, b, _)) => (collectDoms V f n b).map fun p => (d :: p.1, p.2)
 
 /-- `subst_param_for`: the term a type's parameter `j` is instantiated by in a motive: the
 recursor's parameter, or at an auxiliary the entry's parameter. -/
@@ -262,10 +289,12 @@ def substParamFor (j nrp : Nat) (aux : Bool) (sp : List KExpr) : KExpr :=
 def peelMotiveParams (nrp : Nat) (aux : Bool) (sp : List KExpr) :
     Nat → Nat → KExpr → Option KExpr
   | 0, _, ty => some ty
-  | n + 1, j, .forallE _ b _ =>
-    peelMotiveParams nrp aux sp n (j + 1)
-      (Ix.Kernel.Expr.instantiate1Lift b (substParamFor j nrp aux sp) 0)
-  | _ + 1, _, _ => none
+  | n + 1, j, ty =>
+    match isForall ty with
+    | some (_, b, _) =>
+      peelMotiveParams nrp aux sp n (j + 1)
+        (Ix.Kernel.Expr.instantiate1Lift b (substParamFor j nrp aux sp) 0)
+    | none => none
 
 /-- `ctor_subst_param_for`: the term a constructor's parameter `j` is instantiated by. -/
 def ctorSubstParamFor (j depth specLift : Nat) (aux : Bool) (sp : List KExpr) : KExpr :=
@@ -281,12 +310,9 @@ instantiated (`ctorSubstParamFor`), head-normalizing where it is not syntactical
 def peelCtorParams (V : ReconView) (f depth specLift : Nat) (aux : Bool) (sp : List KExpr) :
     Nat → Nat → KExpr → Option KExpr
   | 0, _, ty => some ty
-  | n + 1, j, .forallE _ b _ =>
-    peelCtorParams V f depth specLift aux sp n (j + 1)
-      (Ix.Kernel.Expr.instantiate1Lift b (ctorSubstParamFor j depth specLift aux sp) 0)
   | n + 1, j, ty =>
-    match hnf V f ty with
-    | some (.forallE _ b _) =>
+    match binderOf V f ty with
+    | some (some (_, b, _)) =>
       peelCtorParams V f depth specLift aux sp n (j + 1)
         (Ix.Kernel.Expr.instantiate1Lift b (ctorSubstParamFor j depth specLift aux sp) 0)
     | _ => none
@@ -298,8 +324,10 @@ def whnfTele (V : ReconView) (f : Nat) : Nat → KExpr → Option KExpr
   | n + 1, e =>
     match hnf V f e with
     | none => none
-    | some (.forallE d b m) => (whnfTele V f n b).map fun b' => .forallE d b' m
-    | some w => some w
+    | some w =>
+      match isForall w with
+      | some (d, b, m) => (whnfTele V f n b).map fun b' => .forallE d b' m
+      | none => some w
 
 /-! ## Fields and their inductive hypotheses -/
 
@@ -319,15 +347,13 @@ def flatFindMatching (es : List FlatEntry) (a : _root_.Address) (us : List KLeve
 
 /-- **`is_rec_field_peel`**: a head-normalized field telescope ends in an entry of the flattened
 family, at the position returned. -/
-def isRecField (V : ReconView) (es : List FlatEntry) (liftBy : Nat) : KExpr → Option Nat
-  | .forallE _ b _ => isRecField V es liftBy b
-  | e =>
-    match Ix.Kernel.Expr.getAppFn e with
-    | .const k us =>
-      match V.addr k with
-      | some a => flatFindMatching es a us (Ix.Kernel.Expr.getAppArgs e) liftBy
-      | none => none
-    | _ => none
+def isRecField (V : ReconView) (es : List FlatEntry) (liftBy : Nat) (e : KExpr) : Option Nat :=
+  match Ix.Kernel.Expr.getAppFn (peelAll e).2 with
+  | .const k us =>
+    match V.addr k with
+    | some a => flatFindMatching es a us (Ix.Kernel.Expr.getAppArgs (peelAll e).2) liftBy
+    | none => none
+  | _ => none
 
 /-- **`walk_fields_classify`**: a constructor's fields after its parameters: their domains, the
 recursive ones (field index, and the entry), the return type, and each field's type
@@ -473,9 +499,13 @@ canonical_at`): its first level parameter for a large eliminator, otherwise zero
 def elimLevel (off : Nat) : KLevel :=
   if off = 1 then .param 0 else .zero
 
-/-- `build_flat_own_params`: each entry's parameter count. -/
-def flatOwnParams (V : ReconView) (es : List FlatEntry) : List Nat :=
-  es.map fun e => ((V.ind e.addr).map IndData.np).getD 0
+/-- `build_flat_own_params`: each entry's parameter count (every entry an inductive type). -/
+def flatOwnParams (V : ReconView) : List FlatEntry → Option (List Nat)
+  | [] => some []
+  | e :: es =>
+    match V.ind e.addr, flatOwnParams V es with
+    | some i, some ns => some (i.np :: ns)
+    | _, _ => none
 
 /-! ## The reconstructed recursor type -/
 
@@ -496,25 +526,28 @@ def recTypeAt (V : ReconView) (f : Nat) (es : List FlatEntry) (off nP k : Nat) :
       match collectDoms V f nP (prim.ty.instantiateLevelParams (List.range pUs.length) pUs) with
       | none => none
       | some (paramDoms, _) =>
-        match allMotives V f elim nP es 0,
-            allMinors V f es (flatOwnParams V es) nP nMot nP elim es 0 0 with
-        | some motDoms, some minDoms =>
-          let nMin := minDoms.length
-          match peelMotiveParams nP ek.aux ek.params self.np 0
-              (self.ty.instantiateLevelParams (List.range ek.levels.length) ek.levels) with
+        match allMotives V f elim nP es 0, flatOwnParams V es with
+        | some motDoms, some fop =>
+          match allMinors V f es fop nP nMot nP elim es 0 0 with
           | none => none
-          | some selfAfter =>
-            match collectDoms V f nI selfAfter with
+          | some minDoms =>
+            let nMin := minDoms.length
+            match peelMotiveParams nP ek.aux ek.params self.np 0
+                (self.ty.instantiateLevelParams (List.range ek.levels.length) ek.levels) with
             | none => none
-            | some (idxRaw, _) =>
-              let pre := nP + nMot + nMin + nI
-              let head : KExpr := .const (V.key ek.addr) ek.levels
-              let withArgs := if ek.aux then specParamsLifted head ek.params (nMot + nMin + nI)
-                else appBVarsDec head nP (pre - 1)
-              let concl : KExpr := .app (conclIndices (.bvar (pre - (nP + k))) nI) (.bvar 0)
-              some (wrapForalls (wrapForalls (wrapForalls (wrapForalls
-                (.forallE (appBVarsDown withArgs nI) concl (bmeta elim))
-                (liftIndices idxRaw (nMot + nMin)) elim) minDoms elim) motDoms elim) paramDoms elim)
+            | some selfAfter =>
+              match collectDoms V f nI selfAfter with
+              | none => none
+              | some (idxRaw, _) =>
+                let pre := nP + nMot + nMin + nI
+                let head : KExpr := .const (V.key ek.addr) ek.levels
+                let withArgs := if ek.aux then specParamsLifted head ek.params (nMot + nMin + nI)
+                  else appBVarsDec head nP (pre - 1)
+                let concl : KExpr := .app (conclIndices (.bvar (pre - (nP + k))) nI) (.bvar 0)
+                some (wrapForalls (wrapForalls (wrapForalls (wrapForalls
+                  (.forallE (appBVarsDown withArgs nI) concl (bmeta elim))
+                  (liftIndices idxRaw (nMot + nMin)) elim) minDoms elim) motDoms elim)
+                  paramDoms elim)
         | _, _ => none
     | _, _ => none
   | _, _ => none
@@ -585,8 +618,13 @@ def ruleBodies (V : ReconView) (f : Nat) (es : List FlatEntry) (fop : List Nat)
           (b :: ·)
 
 /-- `ctors_before_pos`: the constructors of the entries before position `k`. -/
-def ctorsBefore (V : ReconView) (es : List FlatEntry) (k : Nat) : Nat :=
-  ((es.take k).map fun e => ((V.ind e.addr).map IndData.nctors).getD 0).sum
+def ctorsBefore (V : ReconView) : List FlatEntry → Nat → Option Nat
+  | _, 0 => some 0
+  | [], _ + 1 => some 0
+  | e :: es, k + 1 =>
+    match V.ind e.addr, ctorsBefore V es k with
+    | some i, some n => some (i.nctors + n)
+    | _, _ => none
 
 /-- **`populate_rules`**: the rule bodies of the recursor at entry `k`, with `nP` parameters,
 `nMot` motives, `nMin` minors and `nl` level parameters, whose peer recursors (one for each
@@ -596,12 +634,12 @@ def ruleBodiesAt (V : ReconView) (f : Nat) (es : List FlatEntry) (off nP nMot nM
   match es[k]? with
   | none => none
   | some ek =>
-    match V.ind ek.addr with
-    | none => none
-    | some self =>
-      ruleBodies V f es (flatOwnParams V es) peers nP nMot nMin ek.levels
+    match V.ind ek.addr, flatOwnParams V es, ctorsBefore V es k with
+    | some self, some fop, some cb =>
+      ruleBodies V f es fop peers nP nMot nMin ek.levels
         ((List.range nl).map Ix.Kernel.Level.param) ek.aux ek.params (elimLevel off) self.blk
-        self.idx (ctorsBefore V es k) (List.range self.nctors)
+        self.idx cb (List.range self.nctors)
+    | _, _, _ => none
 
 /-! ## A stored rule against the reconstruction -/
 
@@ -628,7 +666,10 @@ def RuleFollows (ty : KExpr) (nP nMot nMin minor nf : Nat) (elim : KLevel) (rhs 
 /-! ## The record-level form -/
 
 /-- The constant addresses of a record's members, in order: the record's own recursors, the peers
-of its rules. -/
+of its rules. The circuit's peer of an entry (`build_peer_recs`, `find_peer_recursor_with_spec`)
+is the first recursor of the record whose major premise names the entry's address, and at an
+auxiliary also its parameters and levels; `RecordFlat` ties recursor `k` to entry `k` with its
+parameters and levels, so over entries that differ the peer of entry `k` is recursor `k`. -/
 def recAddrs (rb : _root_.Address) (rs : Array Ixon.MutConst) : List _root_.Address :=
   rs.toList.zipIdx.map fun p => memberAddr rb p.2 p.1
 
@@ -639,16 +680,17 @@ reconstructed body, under the λs `ty` gives, with the record's own recursors as
 def MemberRecon (TyRel : KExpr → KExpr → Prop) (t : Ix.Kernel.RoleTable) (E : Ixon.Env)
     (rb : _root_.Address) (crb : Ixon.Constant) (rs : Array Ixon.MutConst) (es : List FlatEntry)
     (off fuel k : Nat) (r : Ixon.Recursor) : Prop :=
-  ∃ (ty R : KExpr) (bodies : List KExpr),
+  ∃ (ty R : KExpr) (bodies : List KExpr) (cbk : Nat),
     (exprReader t (fun x => E.blobs.get? x) crb id (blockSelf t rb rs)).read r.typ = .ok ty ∧
     recTypeAt (ReconView.ofStore t E) fuel es off r.params.toNat k = some R ∧ TyRel ty R ∧
     ruleBodiesAt (ReconView.ofStore t E) fuel es off r.params.toNat r.motives.toNat
       r.minors.toNat r.lvls.toNat k (recAddrs rb rs) = some bodies ∧
+    ctorsBefore (ReconView.ofStore t E) es k = some cbk ∧
     ∀ (c : Nat) (ru : Ixon.RecursorRule), r.rules[c]? = some ru →
       ∃ rhs cb, (exprReader t (fun x => E.blobs.get? x) crb id (blockSelf t rb rs)).read ru.rhs =
           .ok rhs ∧ bodies[c]? = some cb ∧
         RuleFollows ty r.params.toNat r.motives.toNat r.minors.toNat
-          (ctorsBefore (ReconView.ofStore t E) es k + c) ru.fields.toNat (elimLevel off) rhs cb
+          (cbk + c) ru.fields.toNat (elimLevel off) rhs cb
 
 /-- **The family record's reconstruction, with a relation for the types**: the record `rb` of the
 block `B` in the store `E` is a block of members over the flattened family `es` (`RecordFlat`),
