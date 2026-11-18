@@ -3203,15 +3203,39 @@ theorem RefWalkedUnderCtxIn.mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.A
     h₁, h₂, h₃, x_rc, x_b, rc', r_w, cs_c, cs_w, hrc, hb, evc, evw,
     fun cl hm => hsub cl (hs cl hm)⟩
 
+/-- **The run's safety guard on a certificate's references, as observed**: the
+`KernelClaim::assert_safe_refs_except` call on the references and the used indices of the
+record `c`, the operation's address `a` excluded, under `Claim.RCFullRep t bAddr n`, among
+`calls`. -/
+def CertRefsGuardedIn (calls : List (Call F)) (bAddr : _root_.Address)
+    (t : Ix.Kernel.RoleTable) (n : Nat) (a : _root_.Address) (c : Ixon.Constant) : Prop :=
+  ∃ (h h' : Heap F) (x_rc x_refs x_used x_a r : SourceValue F) (cs : List (Call F)),
+    Claim.RCFullRep t bAddr n h x_rc ∧
+    RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem h c.refs.toList x_refs ∧
+    RepList Obs.Names.«Lists::Node<Field>» Claim.RepBoundedIdx h (S0.usedRefIdxs c) x_used ∧
+    S0.addr h x_a a ∧
+    ObsFn W "KernelClaim::assert_safe_refs_except" [x_rc, x_refs, x_used, x_a] h r h' cs ∧
+    ∀ cl ∈ cs, cl ∈ calls
+
+theorem CertRefsGuardedIn.mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {n : Nat} {a : _root_.Address} {c : Ixon.Constant}
+    (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (hg : CertRefsGuardedIn cs₁ bAddr t n a c) :
+    CertRefsGuardedIn cs₂ bAddr t n a c := by
+  obtain ⟨h, h', x_rc, x_refs, x_used, x_a, r, cs, hrc, hr, hi, ha, ev, hs⟩ := hg
+  exact ⟨h, h', x_rc, x_refs, x_used, x_a, r, cs, hrc, hr, hi, ha, ev,
+    fun cl hm => hsub cl (hs cl hm)⟩
+
 /-- **What an operation's validation walks of one certificate `thm`, as observed**, the
-operation at `a`: the certificate's record is bytes the run hashed that decode to `c`, and
-every reference `c` uses other than `a` was walked under the context `walk_ctx` gave it. The
-certificate's own record is not walked. -/
+operation at `a`: the certificate's record is bytes the run hashed that decode to `c`, the run
+guarded the references `c` uses other than `a` (`CertRefsGuardedIn`), and every reference `c`
+uses other than `a` was walked under the context `walk_ctx` gave it. The certificate's own
+record is not walked. -/
 def CertRefsWalkedIn (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (n : Nat) (thm a : _root_.Address) : Prop :=
   ∃ (rawBytes : ByteArray) (c : Ixon.Constant),
     rawBytes.size < 4294967296 ∧ Hashed calls rawBytes ∧ Address.blake3Pure rawBytes = thm ∧
     Ixon.deConstantExact rawBytes = .ok c ∧
+    CertRefsGuardedIn calls bAddr t n a c ∧
     ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ S0.usedRefIdxs c →
       c.refs.toList[j] ≠ a → RefWalkedUnderCtxIn calls bAddr t n c.refs.toList[j]
 
@@ -3219,8 +3243,8 @@ theorem CertRefsWalkedIn.mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Addr
     {t : Ix.Kernel.RoleTable} {n : Nat} {thm a : _root_.Address}
     (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (hv : CertRefsWalkedIn cs₁ bAddr t n thm a) :
     CertRefsWalkedIn cs₂ bAddr t n thm a := by
-  obtain ⟨rawBytes, c, hsz, hh, hb, hde, hw⟩ := hv
-  exact ⟨rawBytes, c, hsz, Claim.hashed_mono hsub hh, hb, hde,
+  obtain ⟨rawBytes, c, hsz, hh, hb, hde, hg, hw⟩ := hv
+  exact ⟨rawBytes, c, hsz, Claim.hashed_mono hsub hh, hb, hde, hg.mono hsub,
     fun j hj hu hne => (hw j hj hu hne).mono hsub⟩
 
 private theorem walk_refs_except_observed {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
@@ -3369,7 +3393,8 @@ private theorem validate_op_equations_observed {t : Ix.Kernel.RoleTable}
             (m728 := scopeHeap) (m809 := idxHeap) (m831 := walkHeap) (cs887 := walkCalls)
             (ev56 := roleRun) (hv442 := proofShape) (ev462 := rawRun)
             (ev631 := ciRun) (ld625 := ciLoad) (ev702 := substRun) (ev740 := scopeRun)
-            (ev821 := idxRun) (ev843 := guardRun) (ev889 := walkRun) (hc1225 := segCalls) .. =>
+            (ev821 := idxRun) (ev843 := guardRun) (ev889 := walkRun)
+            (hc1225 := segCalls) .. =>
           have extRole := roleRun.heap_extends
           have extRaw := rawRun.heap_extends
           have extToScope := ciRun.heap_extends.trans (substRun.heap_extends.trans scopeRun.heap_extends)
@@ -3381,6 +3406,15 @@ private theorem validate_op_equations_observed {t : Ix.Kernel.RoleTable}
             obtain ⟨_, rawBytes, c, hsz, hh_raw, hblk, _, hdeExact, hrep, _⟩ :=
               Claim.load_verified_constant_de ha_raw rawRun
             obtain ⟨extIdx, hidxs⟩ := Claim.const_idxs_of_spec (hrep.mono extToScope) idxRun
+            have extRawIdx : Heap.Extends rawHeap idxHeap := extToScope.trans extIdx
+            have hrefs_idx : RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem idxHeap
+                c.refs.toList refsPtr := by
+              obtain ⟨_, _, refsVal, _, _, hv_c, _, _, hr_list, _, _⟩ := hrep
+              injection hv_c with _ _ hargs_c
+              simp only [List.cons.injEq] at hargs_c
+              rw [← hargs_c.2.2.1] at hr_list
+              exact repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ extRawIdx hr_list
+            have extIdxH : Heap.Extends h idxHeap := extRole.trans (extRaw.trans extRawIdx)
             have extRawWalk : Heap.Extends rawHeap walkHeap :=
               extToScope.trans (extIdx.trans guardRun.heap_extends)
             have hrefs_rep : RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem walkHeap
@@ -3403,6 +3437,8 @@ private theorem validate_op_equations_observed {t : Ix.Kernel.RoleTable}
             injection he with hthm
             subst hthm
             exact ⟨rawBytes, c, hsz, Claim.hashed_mono hsub_raw hh_raw, hblk, hdeExact,
+              ⟨_, _, _, _, _, _, _, _, hrc.mono extIdxH, hrefs_idx, hidxs,
+                S0.addr_mono extIdxH ha, guardRun, fun cl hm => by rw [segCalls]; simp [hm]⟩,
               fun j hj hu hne =>
                 (hwalk j hj (by rw [Nat.zero_add]; exact hu) hne).mono hsub_w⟩
       obtain ⟨ext1, hhead⟩ := hseg
