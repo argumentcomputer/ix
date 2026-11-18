@@ -16,7 +16,11 @@ reads that check at the keying of the closure's environment (`OpRefine.CertObs`)
   operation's address, is no block (`walk_refs_except`'s `assert_not_block_ref`).
 * `certObs_of_seg`, `certObs_of_evidence`: one certificate from the entry at its index; every
   certificate from the walk of the evidence list.
-* `CertProjFree`: no certificate projects the operation (the one premise left).
+* `CertProjFree`: the substitution of the operation's value into a certificate's proof meets no
+  projection of the operation (the one premise left). `certProjFree_of_inventory`: it follows
+  from the same inequality at every projection index of the record's value and sharing table.
+  `certProjFree_of_subst`: it follows from every successful `subst_const` reaching no
+  projection at the address it replaces.
 * `opCertFacts_of_projFree`: `OpCertFacts` from it; `operationRoleUnitW_of_projFree`.
 -/
 
@@ -358,21 +362,31 @@ def CertRefsStoredAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
       c.refs.toList[i]? = some (ixAddr x) → x ≠ b → Claim.NotBlockIn calls (ixAddr x) →
       ∃ ci, env.find? (keyOf t (ixAddr x)) = some ci
 
-/-- **The certificate's proof projects no structure at the operation's address `b`.** -/
+/-- **The substitution into the certificate's proof meets no projection at the operation's
+address `b`**: a call of `KernelSubst::subst_const` in the run, on a conversion `p` of the
+certificate's value with the operation's address as its second argument, reaches (`ProjIn`, at
+the call's output heap) no projection whose structure is at `b`. -/
 def CertProjFreeAt (calls : List (Call F)) (b : Bytes.Address) (thm : _root_.Address) : Prop :=
   ∀ (rawBytes : ByteArray) (c : Ixon.Constant), Hashed calls rawBytes →
     rawBytes.size < 4294967296 → Address.blake3Pure rawBytes = thm →
     Ixon.deConstantExact rawBytes = .ok c →
-    ∀ d : Ixon.Definition, c.info = .defn d → ∀ x : Bytes.Address,
-      L1.PrjUsed c.refs.toList c.sharing.toList d.value (ixAddr x) → x ≠ b
+    ∀ d : Ixon.Definition, c.info = .defn d →
+    ∀ (recurAddrs : List _root_.Address) (univs : List Ixon.Univ)
+      (blobs : List (_root_.Address × ByteArray)) (bound : Nat) (h : Heap F) (p : SourceValue F),
+      L1.RawConvExpr c.refs.toList recurAddrs univs c.sharing.toList blobs h bound d.value p →
+    ∀ (x_a x_v res : SourceValue F) (h' : Heap F) (cs : List (Call F)),
+      (⟨"KernelSubst::subst_const", [p, x_a, x_v], h⟩ : Call F) ∈ calls →
+      ObsFn W "KernelSubst::subst_const" [p, x_a, x_v] h res h' cs →
+      Bytes.RepAddressRef addrTy h b x_a →
+    ∀ x : Bytes.Address, ProjIn h' p x → x ≠ b
 
 set_option maxHeartbeats 6400000 in
 /-- **One certificate, from the check `validate_op_equations` makes at its index**: at a
 well-founded operation, the entry at index `k` of the evidence checks the `k`-th certificate
 statement (`OpRefine.CertObs`) with a proof term closed, with no `let` and no level parameter,
 at the keying of the closure's environment `env`. Besides the premises of `certStmt_open`: the
-certificate's used references stored (`CertRefsStoredAt`) and its proof projecting no structure
-at the operation's address (`CertProjFreeAt`). -/
+certificate's used references stored (`CertRefsStoredAt`) and the substitution into its proof
+meeting no projection at the operation's address (`CertProjFreeAt`). -/
 theorem certObs_of_seg {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {r : Role}
     (hmem : (Ix.Kernel.Key.role r : KKey) ∈ Ix.Kernel.natDivModNames)
     (hp1 : RolesAux.evalLitTable (RolesAux.matchArms IxVM.KernelRoleSpec.op_evidence_is_proof.body)
@@ -414,7 +428,8 @@ theorem certObs_of_seg {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {r : Ro
     exact (zero_ne_one (Value.field.inj hbad)).elim
   | .other_Proof_other (heq1904 := hbad) .. => exact (zero_ne_one (Value.field.inj hbad)).elim
   | .other_Proof_Defn_Theorem (x_thm := xthm) (w496 := w496) (x_nlvls := xnl) (w646 := w646)
-      (x_pval := xpval) (v689 := v689) (m690 := m690) (v808 := v808) (m831 := m831)
+      (x_pval := xpval) (m615 := m615) (v689 := v689) (m690 := m690) (v808 := v808)
+      (m831 := m831)
       (v876 := v876) (m877 := m877) (x_eqn := xeqn)
       (x_types := xtypes) (v1123 := v1123) (m1124 := m1124) (v1152 := v1152) (m1163 := m1163)
       (v1175 := v1175) (cs629 := cs629) (cs460 := cs460) (cs887 := cs887) (cs1148 := cs1148)
@@ -451,6 +466,8 @@ theorem certObs_of_seg {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {r : Ro
     have hsub460 : ∀ cl ∈ cs460, cl ∈ calls := fun cl hm => hsub cl (by rw [hc]; simp [hm])
     have hsub629 : ∀ cl ∈ cs629, cl ∈ calls := fun cl hm => hsub cl (by rw [hc]; simp [hm])
     have hsub887 : ∀ cl ∈ cs887, cl ∈ calls := fun cl hm => hsub cl (by rw [hc]; simp [hm])
+    have hcallS : (⟨"KernelSubst::subst_const", [xpval, x_a, x_val], m615⟩ : Call F) ∈ calls :=
+      hsub _ (by rw [hc]; simp)
     -- the loaded record: hashed bytes at the certificate's address, a definition
     obtain ⟨-, rawBytes', c', hsz', hh', hbl', -, hdeE', hrep', -⟩ :=
       Claim.load_verified_constant_de ⟨thmB, hthB, rfl⟩ ev462
@@ -551,8 +568,10 @@ theorem certObs_of_seg {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {r : Ro
       · rcases L1.RawConvExpr.addrIn_used rval690 x h1 with hr | hr
         · exact huse_of x hr hne
         · cases hr
-      · have hne : x ≠ b := hnoproj (ixAddr thmB) hev0 rawBytes c (Claim.hashed_mono hsub629 hh)
-          hsz' haddr hex d hinfo' x (L1.RawConvExpr.projIn_prj rval690 x h1)
+      · -- a projection the substitution meets: read off its own call
+        have hne : x ≠ b := hnoproj (ixAddr thmB) hev0 rawBytes c (Claim.hashed_mono hsub629 hh)
+          hsz' haddr hex d hinfo' _ _ _ _ _ _ rval _ _ _ _ _ hcallS ev702
+          (Bytes.repAddressRef_heapMono₂ addrTy ext615 hb) x h1
         exact huse_of x (L1.RawConvExpr.projIn_used rval690 x h1) hne
     -- the proof term at the closure's keying
     have hPs : TmC cx.stored.κ m690 (Expr.substConstAll (.role r) val X) v689 :=
@@ -658,11 +677,16 @@ theorem certObs_of_evidence {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ()) {r
 
 /-! ## `OpCertFacts` from the one premise left -/
 
-/-- **No certificate of a well-founded operation projects the operation**: for an operation `r`
-bound at `a` and a certificate `thm` in its evidence whose record in the run's store is a
-standalone definition, no projection in the certificate's value, or in a shared subexpression,
-has its structure at `a`. Producer: `KernelSubst::subst_const`'s projection arm refusing a
-projection whose structure address is the address of the operation it replaces. -/
+/-- **No certificate of a well-founded operation projects the operation where the operation is
+substituted into its proof**: for an operation `r` bound at `a` and a certificate `thm` in its
+evidence whose record in the run's store is a standalone definition, a call of
+`KernelSubst::subst_const` in the run on a conversion `p` of the certificate's value, with `a`
+as its second argument, reaches no projection whose structure is at `a`: every projection
+reached from `p` through applications, binders, `let`s and projection arguments at the call's
+output heap (`ProjIn`, the cells the substitution visits) has its structure elsewhere. A shared
+expression of the record that the value does not reach is not constrained. Producer:
+`KernelSubst::subst_const`'s projection arm refusing a projection whose structure address is
+the address of the operation it replaces (`certProjFree_of_subst`). -/
 def CertProjFree (calls : List (Call F)) : Prop :=
   ∀ (t : Ix.Kernel.RoleTable) (ρ : BRun) (Rs : Nat → Ixon.Env), BindingRun calls t ρ Rs →
     ∀ (r : Role) (a : _root_.Address), r ∈ RoleOps.opRoles → t.addressOf? r = some a →
@@ -670,7 +694,48 @@ def CertProjFree (calls : List (Call F)) : Prop :=
       (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
     ∀ (c : Ixon.Constant) (d : Ixon.Definition), IxVM.Consistency.recordOf ρ.E₀ thm = some c →
       c.info = .defn d →
-    ∀ x : _root_.Address, L1.PrjUsed c.refs.toList c.sharing.toList d.value x → x ≠ a
+    ∀ (recurAddrs : List _root_.Address) (univs : List Ixon.Univ)
+      (blobs : List (_root_.Address × ByteArray)) (bound : Nat) (h : Heap F) (p : SourceValue F),
+      L1.RawConvExpr c.refs.toList recurAddrs univs c.sharing.toList blobs h bound d.value p →
+    ∀ (x_a x_v res : SourceValue F) (h' : Heap F) (cs : List (Call F)),
+      (⟨"KernelSubst::subst_const", [p, x_a, x_v], h⟩ : Call F) ∈ calls →
+      ObsFn W "KernelSubst::subst_const" [p, x_a, x_v] h res h' cs →
+    ∀ b : Bytes.Address, ixAddr b = a → Bytes.RepAddressRef addrTy h b x_a →
+    ∀ x : Bytes.Address, ProjIn h' p x → x ≠ b
+
+/-- **`CertProjFree` from the substitution's own refusal**: if every successful
+`KernelSubst::subst_const(e, a, v)` reaches, at its output heap, no projection whose structure
+is at the address `a` holds, then `CertProjFree` holds of every call list. The premise is what
+the projection arm's refusal of a projection at the substituted address gives, read off the
+substitution's observation. -/
+theorem certProjFree_of_subst
+    (hsub : ∀ (e a v r : SourceValue F) (h h' : Heap F) (cs : List (Call F))
+      (b x : Bytes.Address), ObsFn W "KernelSubst::subst_const" [e, a, v] h r h' cs →
+      Bytes.RepAddressRef addrTy h b a → ProjIn h' e x → x ≠ b) :
+    ∀ calls : List (Call F), CertProjFree calls := by
+  intro calls t ρ Rs hrun r a hr ha arr thm harr hthm c d hc hd recurAddrs univs blobs bound h p
+    rp x_a x_v res h' cs _ ev b _ hb x hx
+  exact hsub p x_a x_v res h h' cs b x ev hb hx
+
+/-- **`CertProjFree` is implied by the inequality at every projection index of the record**: a
+projection a conversion of the value reaches has its structure at a projection's structure
+index of the value or of a shared expression (`RawConvExpr.projIn_prj`). The converse fails at
+a shared expression the value does not reach. -/
+theorem certProjFree_of_inventory {calls : List (Call F)}
+    (hinv : ∀ (t : Ix.Kernel.RoleTable) (ρ : BRun) (Rs : Nat → Ixon.Env),
+      BindingRun calls t ρ Rs →
+      ∀ (r : Role) (a : _root_.Address), r ∈ RoleOps.opRoles → t.addressOf? r = some a →
+      ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm : _root_.Address),
+        (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
+      ∀ (c : Ixon.Constant) (d : Ixon.Definition),
+        IxVM.Consistency.recordOf ρ.E₀ thm = some c → c.info = .defn d →
+      ∀ x : _root_.Address, L1.PrjUsed c.refs.toList c.sharing.toList d.value x → x ≠ a) :
+    CertProjFree calls := by
+  intro t ρ Rs hrun r a hr ha arr thm harr hthm c d hc hd recurAddrs univs blobs bound h p rp
+    x_a x_v res h' cs _ ev b hb _ x hx hxb
+  exact hinv t ρ Rs hrun r a hr ha arr thm harr hthm c d hc hd (ixAddr x)
+    (L1.RawConvExpr.projIn_prj (rp.mono ev.heap_extends (fun _ hm => hm)) x hx)
+    (by rw [hxb]; exact hb)
 
 private theorem evList_length'' {es : List (Ix.Kernel.Evidence _root_.Address)}
     {l r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -944,14 +1009,15 @@ theorem opCertFacts_of_projFree {calls : List (Call F)} (hpf : CertProjFree call
             fun cb hcb => hox cb (recordOf_sub hadm.loaded _ cb (OpInstall.recordOf_up hadds hcb))
           exact Option.isSome_iff_exists.mp (hws.1 (ixAddr x) cx (valLimit g) hcx₁ hnm hlx hown₁ hchk)
       have hnoprojD : ∀ thm, Ix.Kernel.Evidence.proof thm ∈ es → CertProjFreeAt calls b thm := by
-        intro thm hthm rawBytes c₁ hh hsz hbl hde d₁ hinfo₁ x hpu hxb
+        intro thm hthm rawBytes c₁ hh hsz hbl hde d₁ hinfo₁ rA uA bA nA hS pS rS xA xV rV hS' csS
+          hmS evS hbS x hpj
         obtain ⟨arr, harr, hthmA⟩ := hesT thm hthm
         have hrecThm : IxVM.Consistency.recordOf ρ.E₀ thm = some c₁ := by
           rw [← hbl]
           exact Claim.recordOf_hashed hrun.runStore hrun.hashedStored hh hsz
             (L1.deConstant_of_deConstantExact hde) hde
         exact hpf t ρ Rs hrun r (ixAddr b) hop had arr thm harr hthmA c₁ d₁ hrecThm hinfo₁
-          (ixAddr x) hpu (by rw [hxb])
+          rA uA bA nA hS pS rS xA xV rV hS' csS hmS evS b rfl hbS x hpj
       have hall := certObs_of_evidence (Ec := Ec) (env := env₁) (lim := valLimit g) (val := val)
         ht hmem hp1 hrun.runStore
         (Claim.RCFullRep.toRCRep (hrc.mono (exth_111.trans ext111_463)))
