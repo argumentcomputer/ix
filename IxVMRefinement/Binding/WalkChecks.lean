@@ -1,5 +1,6 @@
 import IxVMRefinement.Binding.ClaimExport
 import IxVMRefinement.RoleVal.GroupWalkLim
+import IxVMRefinement.Claim.TopProj
 
 /-! # What the observed validation of a role gives a group's admission
 
