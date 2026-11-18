@@ -114,7 +114,7 @@ theorem adviceRecord_checked {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
 /-- **An observed advice-record check is at no axiom and no quotient record**: the check's arms
 are a definition's, a recursor's, a block's and an inductive or constructor projection's, and the
 arm of the loaded value is the arm of the stored record. -/
-theorem adviceRecord_kind {lim : Option Nat} {calls cs : List (Call F)} {E₀ : Ixon.Env}
+theorem adviceRecord_kind {calls cs : List (Call F)} {E₀ : Ixon.Env}
     (hS : LoadedReads.RunStore calls E₀)
     {x_rc x_a x_aset x_wset r : SourceValue F} {h h' : Heap F} {ab : Bytes.Address}
     (ha : Bytes.RepAddressRef addrTy h ab x_a)

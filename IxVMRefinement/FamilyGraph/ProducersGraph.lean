@@ -439,7 +439,11 @@ theorem FamRunCtx.innerKind_of {K : FamRunCtx} {seeds : List _root_.Address}
   · obtain ⟨c', rs, hc', hrs, -, -⟩ := hN.1.2.1
     have e : c' = c := Option.some.inj (hc'.symm.trans hc)
     subst e
-    exact ⟨fun ax h => by rw [hrs] at h; cases h, fun q h => by rw [hrs] at h; cases h⟩
+    refine ⟨fun ax hax => ?_, fun q hq => ?_⟩
+    · rw [hrs] at hax
+      cases hax
+    · rw [hrs] at hq
+      cases hq
 
 /-- **The rank of the family graph** at a rank `rank'`: the walk's edges kept (a used reference
 of a top-walked record is top-walked below it or covered; a projection record's block is below
