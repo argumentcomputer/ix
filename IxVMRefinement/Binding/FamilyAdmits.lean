@@ -13,7 +13,9 @@ the binding fold's family form needs of a group beside `Admits`:
 
 * `ContainerRecIn cs x`: a check of the container recursor at `x` among the calls `cs`;
 * `GroupFamilyChecks calls bAddr t E₀ g R R' famOf adv cont`: what the run's family checks give at
-  group `g`: every new block the run routes as modeled has a selected family record `famOf B`,
+  group `g`: every new block of inductive types in Lean's logic that the run routes as modeled,
+  where a member's check at the group's limit ran the dispatch, has a selected family record
+  `famOf B`,
   the one its family check accepted at the group's validation limit, with that check's advice
   `adv B` and container recursors `cont B`; the selected record is the block's family, position by
   position over the flattened family (`FamilyOfBlock`: complete, so the binding's family check must
@@ -51,9 +53,17 @@ structure GroupFamilyChecks (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (g : Nat) (R R' : Ixon.Env)
     (famOf : _root_.Address → Option _root_.Address)
     (adv cont : _root_.Address → _root_.Address → Prop) : Prop where
-  /-- Every block new in the group that the run routes as modeled has a selected family
-  record. -/
-  modeled : ∀ B, New R R' B → ModeledRouteAt calls B → ∃ rb, famOf B = some rb
+  /-- Every block of inductive types in Lean's logic, new in the group, that the run routes as
+  modeled has a selected family record, where a member's check at the group's validation limit
+  shows the dispatch ran on it. (`ModeledRouteAt` reads the run's observations of the dispatch,
+  so it holds of a record the dispatch never saw: the field is asked of blocks of inductive
+  types in Lean's logic, the records the modeled arm of `check_const` reaches, and only where
+  the check of a member at the group's limit ran that arm's dispatch.) -/
+  modeled : ∀ B cb (ms : Array Ixon.MutConst), New R R' B → recordOf E₀ B = some cb →
+    InLogic cb → cb.info = .muts ms → (∀ m ∈ ms.toList, ∃ ind, m = Ixon.MutConst.indc ind) →
+    ModeledRouteAt calls B →
+    (∃ k, k < ms.size ∧ Claim.MemberCheckedLimAt calls bAddr t B ms k (some (valLimit g))) →
+    ∃ rb, famOf B = some rb
   /-- The selected record is the one the family check of the new block accepted, under the
   group's validation context; `adv B` and `cont B` hold the check's advice records and
   container recursors. -/
