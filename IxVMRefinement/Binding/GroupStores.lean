@@ -19,10 +19,11 @@ clauses that are left, named in `RemainingStoreClauses`.
   (`IxVMRefinement.Binding.StoreFieldsRun`):
   the basis rows are records the run loaded as the basis store holds them (`basisRows_of_run`),
   and the record a standard axiom is bound to is a safe axiom record (`axiomRoles_of_run`).
-* `groupStoresOfRun_of_remaining`: `GroupStoresOfRun calls` from `RemainingStoreClauses` at
-  the run's records, in the alternative without a collision. Every other clause of every
-  group's admission is proved: the rank is `walkRank` over a closed list of the records the
-  group's validations walked.
+* `RemainingStoreClausesOfRun calls`: `RemainingStoreClauses` at the run's records, at every
+  table the run's binding claim admits and validates, in the alternative without a collision.
+* `groupStoresOfRun_of_remaining`: `GroupStoresOfRun calls` from `RemainingStoreClausesOfRun`.
+  Every other clause of every group's admission is proved: the rank is `walkRank` over a closed
+  list of the records the group's validations walked.
 -/
 
 set_option linter.unusedVariables false
@@ -91,18 +92,25 @@ structure RemainingStoreClauses (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Pr
     recordOf (groupStore t E₀ (g + 1)) A = some c → ConstAddrOf A c x →
     Reads t E₀ x ci₀ → Reads t (groupStore t E₀ (g + 1)) x ci₀
 
+/-- **What is left of the store sequence's clauses, for a run**: at every table that bytes the
+run hashed admit at a binding address, binding every role, pinning the prelude and with every
+role of the 77 groups validated by the run, the run's records without a collision have
+`RemainingStoreClauses`. -/
+def RemainingStoreClausesOfRun (calls : List (Call F)) : Prop :=
+  ∀ (a : _root_.Address) (tb : ByteArray) (t : Ix.Kernel.RoleTable),
+    Hashed calls tb →
+    Ix.Kernel.Admission.admitBinding Address.admissionHash ⟨a, tb⟩ = .ok t →
+    AllBound t → PreludePinned t →
+    (∀ g, g < 77 → ∀ r ∈ roleGroup g, RoleValidationIn calls a t g r) →
+    CollisionFreeRun calls (Claim.runEnv ⟨a, tb⟩ (t := t) calls) →
+    RemainingStoreClauses t (Claim.runEnv ⟨a, tb⟩ (t := t) calls)
+
 /-- **The stores of a binding run, from what is left of the sequence's clauses**: for every run,
 `GroupStoresOfRun calls` with the stores `groupStore t E₀` over the run's records and the rank
 `walkRank` over a closed list of the records each group's validations walked, if the run's
-records without a collision have `RemainingStoreClauses`. -/
+records without a collision have `RemainingStoreClauses` (`RemainingStoreClausesOfRun`). -/
 theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
-    (hrem : ∀ (a : _root_.Address) (tb : ByteArray) (t : Ix.Kernel.RoleTable),
-      Hashed calls tb →
-      Ix.Kernel.Admission.admitBinding Address.admissionHash ⟨a, tb⟩ = .ok t →
-      AllBound t → PreludePinned t →
-      (∀ g, g < 77 → ∀ r ∈ roleGroup g, RoleValidationIn calls a t g r) →
-      CollisionFreeRun calls (Claim.runEnv ⟨a, tb⟩ (t := t) calls) →
-      RemainingStoreClauses t (Claim.runEnv ⟨a, tb⟩ (t := t) calls)) :
+    (hrem : RemainingStoreClausesOfRun calls) :
     GroupStoresOfRun calls := by
   intro V extra hextra a tb t htb hadm hall hpin hval
   by_cases hcol : V.HashedCollision extra calls
