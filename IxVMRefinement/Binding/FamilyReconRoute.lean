@@ -319,9 +319,9 @@ theorem blockRoute_mono_on {E E' : Ixon.Env} {B : _root_.Address} {cb : Ixon.Con
             exact Or.inr ⟨ms, n, m, hms, hm, hxm⟩))) y hy
     simp only [recordRoute, hms, mutsRoute] at hx' ⊢
     split at hx'
-    · next h0 => rw [h0]; exact hx'
-    · next h1 => rw [h1]; exact hone x hx'
-    · next n h2 => rw [h2]; exact hx'
+    · exact hx'
+    · exact hone x hx'
+    · exact hx'
   · rw [recordRoute_of_not_muts (fun ms h => hmu ⟨ms, h⟩)] at hx'
     rw [recordRoute_of_not_muts (fun ms h => hmu ⟨ms, h⟩)]
     exact hx'
