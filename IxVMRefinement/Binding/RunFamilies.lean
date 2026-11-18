@@ -412,6 +412,10 @@ a named change of the circuit source, or unknown.
   (`check_nested_aux`: the record's entries, `build_flat_block`, are the derived ones,
   `nested_walk`, in order), with `check_recs` (entry `k` at recursor `k`), at the offset
   `block_elim` computes.
+* `familyForm`: the field `GroupFamilyChecks.familyForm`: the selected record's reconstruction
+  form. Source: `check_recs`' form state under the group's validation (the reconstruction
+  comparison in `canonical_rules_at_pos`), in the regenerated observations of
+  `KernelModeled::check_family` and `check_recs`.
 * `runFacts`: what is left of `ClosureRunFacts` at the group (`RunFactsLeft`, which names each
   field's source); `famRefs` is the rank's, `advNotUnit`, `roleUnitForm` and `keptRoles` are proved
   (`families_of_remaining`).
@@ -444,6 +448,8 @@ structure RemainingFamilyClauses (calls : List (Call F)) (bAddr : _root_.Address
       (off : Nat),
       FamilyOfBlock E₀ B cb ms rb crb rs (es.map FamilyFlat.FlatEntry.addr) ∧
       FamilyFlat.RecordFlat t E₀ rb crb rs es ∧ FamilyFlat.BlockDerivedFlat t E₀ B off es
+  familyForm : ∀ g, 6 ≤ g → g < 77 → ∀ B rb, runFamOf calls bAddr t E₀ g B = some rb →
+    FamilyRecon.RFormS t E₀ B rb
   claimed : ∀ g, 6 ≤ g → g < 77 → ∀ (A : _root_.Address) (c : Ixon.Constant)
     (rs' : Array Ixon.MutConst),
     New (groupStore t E₀ (runPayload calls bAddr t) g)
@@ -791,6 +797,7 @@ theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRows
         famCall := runFamOf_famCall
         family := hR.family g hg6 hg
         familyFlat := hR.familyFlat g hg6 hg
+        familyForm := hR.familyForm g hg6 hg
         claimed := hR.claimed g hg6 hg }
   · exact
       { famRefs := hrank.famRefs
