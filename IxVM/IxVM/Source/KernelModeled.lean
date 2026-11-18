@@ -1709,6 +1709,15 @@ def check_recs := aiur_fn⟦
               -- condition the refinement states.
               assert_eq!(expr_mentions_addrs(ty, fam), 0,
                 "a modeled recursor's type mentions its own family");
+              -- the renaming to the model leaves its parameter domains as they are, and no
+              -- parameter argument of its major premise mentions a motive or a minor premise:
+              -- a rule's pins are over the parameters only
+              let (_, pdoms) = peel_collect(ty, rnp, (&(Lists::Node::Nil)));
+              let (_, pdoms_m) = peel_collect(rename(ty, src, dst), rnp, (&(Lists::Node::Nil)));
+              assert_eq!(KernelCheck::spec_params_ptr_eq(pdoms, pdoms_m), 1,
+                "a modeled recursor's parameter domain names a member of its family");
+              let (_, _, pins) = rec_major_pins(ty, (rnp + nmot) + nmin, ni);
+              let _pins_over_params = lower_pins(pins, nmot + nmin);
               KernelInfer::k_ensure_sort(rc, ty, (&(Lists::Node::Nil)));
               KernelCheck::assert_safety(0, ty);
               KernelCheck::assert_safety_rules(0, rules);
