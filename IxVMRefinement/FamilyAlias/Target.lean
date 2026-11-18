@@ -75,7 +75,9 @@ def FamDeclReads (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (B : _root_.Address
 
 /-- **The family step's target.** The hypotheses are the accepted family call on the modeled
 route at any limit, the prefix invariant at that limit, the needs of the two records, their inert
-clauses, the stored advice, freshness and key freedom. The conclusion is an alias group at
+clauses, the stored advice and what an advice record uses, the pinned equality stored (every
+environment a step is asked at extends a valid table's, `eqPin_of_shape`), freshness and key
+freedom. The conclusion is an alias group at
 derived keys over the prefix (each alias a definition whose value is a stored constant at the
 alias's own level parameters), each alias rooted at a member of the block, the family's
 declaration as read, IxC's renamed record at the model keys over `famJ h` (positional
@@ -99,6 +101,9 @@ def FamilyStepTarget : Prop :=
     InertClause t cb → InertClause t crb →
     (∀ a, AdviceIn cs a → ∀ ca, recordOf E₀ a = some ca → ∀ x, ConstAddrOf a ca x →
       (env.find? (keyOf t x)).isSome = true) →
+    (∀ a, AdviceIn cs a → ∀ x, UsedRef E₀ a x →
+      (env.find? (keyOf t x)).isSome = true ∨ FamAddr B cb rb crb x ∨ ¬ NeedOk E₀ x) →
+    env.find? Ix.Kernel.eqName = some Ix.Kernel.eqA →
     (∀ x, FamAddr B cb rb crb x → env.find? (keyOf t x) = none) →
     (∀ x, FamAddr B cb rb crb x → Decl.KeyFree (keyOf t x)) →
     ∃ (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
