@@ -247,7 +247,8 @@ def ContWitness (cs : List (Call F)) (B x : _root_.Address) : Prop :=
   container's recursor, at position 0. -/
 def LocalAt (B rb : _root_.Address) (cs : List (Call F)) (a : _root_.Address) (p : Nat) :
     Prop :=
-  (∃ advAs (k : Nat) b, FamilyCallOwn K.calls K.bAddr K.t B rb K.lim cs advAs ∧ advAs[k]? = some b ∧
+  (∃ advAs, ∃ k : Nat, ∃ b, FamilyCallOwn K.calls K.bAddr K.t B rb K.lim cs advAs ∧
+      advAs[k]? = some b ∧
       Core.ixAddr b = a ∧ p = k + 1 ∧ ∃ ca x, recordOf K.E₀ a = some ca ∧ ConstAddrOf a ca x) ∨
     (p = 0 ∧ K.ContWitness cs B a ∧ ¬ Covered K.t a ∧
       ∃ ca, recordOf K.E₀ a = some ca ∧ Standalone ca) ∨
