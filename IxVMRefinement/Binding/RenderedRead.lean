@@ -1,6 +1,7 @@
 import IxVMRefinement.Binding.RenderedSpecs
 import IxVMRefinement.RoleVal.GroupAdmit
 import IxVMRefinement.Obs.Names
+import IxVMRefinement.Binding.TermCells
 
 /-! # Reading a rendered specification off the function's syntax tree
 
@@ -125,7 +126,11 @@ inductive Reads (t : Ix.Kernel.RoleTable) (h : Heap F) : Rendered → SourceValu
   | tm {e : KExpr} {sp : Nat} {v : SourceValue F}
       (rep : ∀ (d : Nat) (Γ : Nat → KExpr) (k : Nat), closedBelow k e = true →
         Decl.TmExact (keyOf t) d Γ h k e v)
-      (spine : OpOpen.ForallSpine h sp v) : Reads t h (.tm e sp) v
+      (spine : OpOpen.ForallSpine h sp v)
+      (cells : ∀ (h₂ : Heap F), Heap.Extends h h₂ → ∀ x, AddrIn h₂ v x →
+        ∃ r, t.addressOf? r = some (ixAddr x) ∧
+          ∀ P, e.constsResolveBy P = true → P (Ix.Kernel.Key.role r) = true) :
+      Reads t h (.tm e sp) v
 
 theorem Reads.mono {t : Ix.Kernel.RoleTable} {h h' : Heap F} {s : Rendered} {v : SourceValue F}
     (ext : Heap.Extends h h') (rd : Reads t h s v) : Reads t h' s v := by
@@ -135,7 +140,9 @@ theorem Reads.mono {t : Ix.Kernel.RoleTable} {h h' : Heap F} {s : Rendered} {v :
   | addr ra had => exact .addr (Bytes.repAddressRef_heapMono₂ addrTy ext ra) had
   | lvl rep => exact .lvl (rep.mono ext)
   | lvls rep => exact .lvls (rep.mono ext)
-  | tm rep spine => exact .tm (fun d Γ k hk => (rep d Γ k hk).mono ext) (spine.mono ext)
+  | tm rep spine cells =>
+    exact .tm (fun d Γ k hk => (rep d Γ k hk).mono ext) (spine.mono ext)
+      (fun h₂ e₂ x hin => cells h₂ (ext.trans e₂) x hin)
 
 theorem readsAll_mono {t : Ix.Kernel.RoleTable} {h h' : Heap F} {rs : List Rendered}
     {vs : List (SourceValue F)} (ext : Heap.Extends h h')
@@ -313,7 +320,9 @@ theorem readSort_sound (hn : readSort xs = some s)
     | cons r1 r2 =>
       cases r2
       cases r1 with
-      | lvl rep => exact .tm (fun d Γ k _ => .sort cell rep) (.zero _)
+      | lvl rep =>
+        exact .tm (fun d Γ k _ => .sort cell rep) (.zero _)
+          (fun h₂ e₂ x hin => (addrIn_none (e₂.getElem?_eq cell) (by decide) hin).elim)
   · cases hn
 
 theorem readConst_sound (htwf : t.wf = true) (hn : readConst xs = some s)
@@ -331,10 +340,15 @@ theorem readConst_sound (htwf : t.wf = true) (hn : readConst xs = some s)
         | addr ra had =>
           cases r2a with
           | lvls reps =>
-            refine .tm (fun d Γ k _ => ?_) (.zero _)
-            have hk := keyOf_of_addressOf htwf had
-            rw [← hk]
-            exact .const cell ra reps
+            refine .tm (fun d Γ k _ => ?_) (.zero _) (fun h₂ e₂ x hin => ?_)
+            · have hk := keyOf_of_addressOf htwf had
+              rw [← hk]
+              exact .const cell ra reps
+            · have e := Bytes.repAddressRef_inj U32.Goldilocks.compatible
+                (Bytes.repAddressRef_heapMono₂ addrTy e₂ ra)
+                (addrIn_const_inv (e₂.getElem?_eq cell) hin)
+              subst e
+              exact ⟨_, had, fun P hP => hP⟩
   · cases hn
 
 theorem readApp_sound (hn : readApp xs = some s)
@@ -349,12 +363,21 @@ theorem readApp_sound (hn : readApp xs = some s)
       | cons r2a r2b =>
         cases r2b
         cases r1 with
-        | tm repf _ =>
+        | tm repf _ cf =>
           cases r2a with
-          | tm repa _ =>
-            refine .tm (fun d Γ k hk => ?_) (.zero _)
-            simp only [closedBelow, Bool.and_eq_true] at hk
-            exact .app cell (repf d Γ k hk.1) (repa d Γ k hk.2)
+          | tm repa _ ca =>
+            refine .tm (fun d Γ k hk => ?_) (.zero _) (fun h₂ e₂ x hin => ?_)
+            · simp only [closedBelow, Bool.and_eq_true] at hk
+              exact .app cell (repf d Γ k hk.1) (repa d Γ k hk.2)
+            · rcases addrIn_app_inv (e₂.getElem?_eq cell) hin with h1 | h1
+              · obtain ⟨r, hr, hP⟩ := cf h₂ e₂ x h1
+                exact ⟨r, hr, fun P hp => hP P (by
+                  simp only [Ix.Kernel.Expr.constsResolveBy, Bool.and_eq_true] at hp
+                  exact hp.1)⟩
+              · obtain ⟨r, hr, hP⟩ := ca h₂ e₂ x h1
+                exact ⟨r, hr, fun P hp => hP P (by
+                  simp only [Ix.Kernel.Expr.constsResolveBy, Bool.and_eq_true] at hp
+                  exact hp.2)⟩
   · cases hn
 
 theorem readBVar_sound (hn : readBVar xs = some s)
@@ -371,10 +394,37 @@ theorem readBVar_sound (hn : readBVar xs = some s)
         cases r1 with
         | num =>
           refine .tm (fun d Γ k hk => ?_) (.zero _)
+            (fun h₂ e₂ x hin => (addrIn_none (e₂.getElem?_eq cell) (by decide) hin).elim)
           simp only [closedBelow, decide_eq_true_eq] at hk
           exact .bvarLocal cell hsmall hk
     · cases hn
   · cases hn
+
+/-- The cells of a binder term are those of its two parts, each a role a part names. -/
+private theorem binder_cells {t : Ix.Kernel.RoleTable} {h₂ : Heap F} {tp bp : SourceValue F}
+    {x : Bytes.Address} {T B : KExpr} {m : Ix.Kernel.BinderMeta}
+    (hin : AddrIn h₂ tp x ∨ AddrIn h₂ bp x)
+    (cT : AddrIn h₂ tp x → ∃ r, t.addressOf? r = some (ixAddr x) ∧
+      ∀ P, T.constsResolveBy P = true → P (Ix.Kernel.Key.role r) = true)
+    (cB : AddrIn h₂ bp x → ∃ r, t.addressOf? r = some (ixAddr x) ∧
+      ∀ P, B.constsResolveBy P = true → P (Ix.Kernel.Key.role r) = true) :
+    (∃ r, t.addressOf? r = some (ixAddr x) ∧
+      ∀ P, (Ix.Kernel.Expr.lam T B m : KExpr).constsResolveBy P = true →
+        P (Ix.Kernel.Key.role r) = true) ∧
+    (∃ r, t.addressOf? r = some (ixAddr x) ∧
+      ∀ P, (Ix.Kernel.Expr.forallE T B m : KExpr).constsResolveBy P = true →
+        P (Ix.Kernel.Key.role r) = true) := by
+  rcases hin with h1 | h1
+  · obtain ⟨r, hr, hP⟩ := cT h1
+    exact ⟨⟨r, hr, fun P hp => hP P (by
+        simp only [Ix.Kernel.Expr.constsResolveBy, Bool.and_eq_true] at hp; exact hp.1)⟩,
+      ⟨r, hr, fun P hp => hP P (by
+        simp only [Ix.Kernel.Expr.constsResolveBy, Bool.and_eq_true] at hp; exact hp.1)⟩⟩
+  · obtain ⟨r, hr, hP⟩ := cB h1
+    exact ⟨⟨r, hr, fun P hp => hP P (by
+        simp only [Ix.Kernel.Expr.constsResolveBy, Bool.and_eq_true] at hp; exact hp.2)⟩,
+      ⟨r, hr, fun P hp => hP P (by
+        simp only [Ix.Kernel.Expr.constsResolveBy, Bool.and_eq_true] at hp; exact hp.2)⟩⟩
 
 theorem readLam_sound (hn : readLam xs = some s)
     (cell : h[addr]? = some (.construct kexprEnum "Lam" vs))
@@ -390,14 +440,16 @@ theorem readLam_sound (hn : readLam xs = some s)
         | cons r3a r3b =>
           cases r3b
           cases r1 with
-          | tm repT _ =>
+          | tm repT _ cT =>
             cases r2a with
-            | tm repB _ =>
+            | tm repB _ cB =>
               cases r3a with
               | lvl repl =>
-                refine .tm (fun d Γ k hk => ?_) (.zero _)
-                simp only [closedBelow, Bool.and_eq_true] at hk
-                exact .lam cell (repT d Γ k hk.1) (repB d Γ (k + 1) hk.2) repl
+                refine .tm (fun d Γ k hk => ?_) (.zero _) (fun h₂ e₂ x hin => ?_)
+                · simp only [closedBelow, Bool.and_eq_true] at hk
+                  exact .lam cell (repT d Γ k hk.1) (repB d Γ (k + 1) hk.2) repl
+                · exact (binder_cells (addrIn_lam_inv (e₂.getElem?_eq cell) hin)
+                    (cT h₂ e₂ x) (cB h₂ e₂ x)).1
   · cases hn
 
 theorem readForall_sound (hn : readForall xs = some s)
@@ -414,14 +466,17 @@ theorem readForall_sound (hn : readForall xs = some s)
         | cons r3a r3b =>
           cases r3b
           cases r1 with
-          | tm repT _ =>
+          | tm repT _ cT =>
             cases r2a with
-            | tm repB spB =>
+            | tm repB spB cB =>
               cases r3a with
               | lvl repl =>
                 refine .tm (fun d Γ k hk => ?_) (.succ (loadValue_enum_cell cell) spB)
-                simp only [closedBelow, Bool.and_eq_true] at hk
-                exact .forallE cell (repT d Γ k hk.1) (repB d Γ (k + 1) hk.2) repl
+                  (fun h₂ e₂ x hin => ?_)
+                · simp only [closedBelow, Bool.and_eq_true] at hk
+                  exact .forallE cell (repT d Γ k hk.1) (repB d Γ (k + 1) hk.2) repl
+                · exact (binder_cells (addrIn_forall_inv (e₂.getElem?_eq cell) hin)
+                    (cT h₂ e₂ x) (cB h₂ e₂ x)).2
   · cases hn
 
 /-- **A stored cell represents what its node reads as**, when its arguments represent what they
@@ -883,9 +938,65 @@ theorem renders_of_armReadsAs {t : Ix.Kernel.RoleTable} (htwf : t.wf = true)
         have dArm' : ObsExpr W [] locals e h res h' cs := dArm
         obtain ⟨x1, rd⟩ := readExpr_sound htwf readDepth hre henv dArm'
         cases rd with
-        | tm rep spine =>
+        | tm rep spine _ =>
           have hT : Decl.TmCExact (keyOf t) h' T res := fun d Γ => rep d Γ 0 hcl
           exact ⟨x1, Exists.intro T ⟨hT, her⟩, forallSpine_of_le spine hsp⟩
+      | _ => simp [hb, hre] at hread
+
+/-- Erasing binder data keeps the constants a term names. -/
+theorem constsResolveBy_erasePw (P : KKey → Bool) (e : KExpr) :
+    e.erasePw.constsResolveBy P = e.constsResolveBy P := by
+  induction e <;> simp_all [Ix.Kernel.Expr.erasePw, Ix.Kernel.Expr.constsResolveBy]
+
+/-- **The cells of the selected arm's term are the addresses of the roles `T₀` names.** Under
+the premises of `renders_of_armReadsAs`: every cell of the returned term is the address the
+table binds a role to, and that role's key is one `T₀` names (every predicate all of `T₀`'s
+constants satisfy holds of it). -/
+theorem cells_of_armReadsAs {t : Ix.Kernel.RoleTable} (htwf : t.wf = true)
+    {arms : List (Generic.Pattern F × Generic.Expr F)} {key : F} {T₀ : KExpr} {sp : Nat}
+    (hread : armReadsAs arms (ZMod.val key) T₀ sp = true)
+    {x_tbl : SourceValue F} {locals : Environment F Nat}
+    (hloc : List.find? (fun p => p.1 == "tbl") locals = some ("tbl", x_tbl))
+    {h : Heap F} {res : SourceValue F} {h' : Heap F} {cs : List (Call F)}
+    {bs : Environment F Nat} {body : Generic.Expr F}
+    (htbl : TableRep t h x_tbl)
+    (sel : selectArm W [] h (.field key) arms = Except.ok (some (bs, body)))
+    (dArm : ObsExpr W [] (bs ++ locals) body h res h' cs) :
+    ∀ x, AddrIn h' res x → ∃ r, t.addressOf? r = some (ixAddr x) ∧
+      ∀ P, T₀.constsResolveBy P = true → P (Ix.Kernel.Key.role r) = true := by
+  unfold armReadsAs at hread
+  cases hb : litArmBody (ZMod.val key) arms with
+  | none => simp [hb] at hread
+  | some e =>
+    cases hre : readExpr readDepth [("tbl", .table)] e with
+    | none => simp [hb, hre] at hread
+    | some s =>
+      cases s with
+      | tm T sp' =>
+        simp only [hb, hre, Bool.and_eq_true, decide_eq_true_eq] at hread
+        obtain ⟨⟨hcl, her⟩, hsp⟩ := hread
+        obtain ⟨hbs, hbody⟩ := selectArm_litArmBody hb sel
+        subst hbs
+        rw [hbody] at dArm
+        have henv : EnvReads t h [("tbl", .table)] locals := by
+          intro x r hx
+          have hx' : (if "tbl" = x then some Rendered.table else none) = some r := hx
+          by_cases hxt : "tbl" = x
+          · rw [ite_eq_left hxt] at hx'
+            cases hx'
+            subst hxt
+            exact ⟨x_tbl, hloc, .table htbl⟩
+          · rw [ite_eq_right hxt] at hx'
+            cases hx'
+        have dArm' : ObsExpr W [] locals e h res h' cs := dArm
+        obtain ⟨-, rd⟩ := readExpr_sound htwf readDepth hre henv dArm'
+        cases rd with
+        | tm rep spine cells =>
+          intro x hin
+          obtain ⟨r, hr, hP⟩ := cells h' (Heap.Extends.refl _) x hin
+          refine ⟨r, hr, fun P hp => hP P ?_⟩
+          rw [← constsResolveBy_erasePw P T, her, constsResolveBy_erasePw]
+          exact hp
       | _ => simp [hb, hre] at hread
 
 end IxVM.Refinement.Binding
