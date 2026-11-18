@@ -71,7 +71,7 @@ fn call_wrapper(s: &mut String, id: usize, f: &NativeFunction) {
      a: [B::Element; {n}]) -> Result<[B::Element; {m}], Failed> {{\n\
      match rt.begin::<{n}, {m}>(caller, pc, {id}, &a)? {{\n\
      Begin::Cached(row) => {{ let mut o = [rt.field().zero(); {m}]; \
-     o.copy_from_slice(rt.output({id}, row)); Ok(o) }}\n\
+     rt.read_output({id}, row, &mut o); Ok(o) }}\n\
      Begin::Started(row) => grow(65536 + 2 * {regs} * ::core::mem::size_of::<B::Element>(), \
      || f_{id}::<B>(rt, row, a)),\n}}\n}}",
     regs = f.registers
@@ -185,6 +185,101 @@ fn closed_forms(program: &aiur::Program) -> Vec<Option<ClosedForm>> {
     .collect()
 }
 
+/// The registers `op` reads, when it is a call, store or load: each one's
+/// first access usually misses the cache (an index bucket, a row or a cell).
+fn miss_reads(op: &NativeOp) -> Option<&[usize]> {
+  match op {
+    NativeOp::Call { args, .. } => Some(args),
+    NativeOp::Store { value, .. } => Some(value),
+    NativeOp::Load { pointer, .. } => Some(std::slice::from_ref(pointer)),
+    _ => None,
+  }
+}
+
+/// The registers `op` writes.
+fn op_writes(op: &NativeOp) -> &[usize] {
+  match op {
+    NativeOp::Literal { dest, .. }
+    | NativeOp::Neg { dest, .. }
+    | NativeOp::Binary { dest, .. }
+    | NativeOp::Store { dest, .. } => std::slice::from_ref(dest),
+    NativeOp::Copy { dest, .. }
+    | NativeOp::Call { dest, .. }
+    | NativeOp::Map { dest, .. }
+    | NativeOp::Load { dest, .. }
+    | NativeOp::Hint { dest, .. } => dest,
+    _ => &[],
+  }
+}
+
+/// The calls, stores and loads of the block at `start` whose first access
+/// can be prefetched before another one runs: those whose operands are
+/// final before an earlier call, store or load of the block. Each is keyed
+/// by the entry after which its operands are final (`None`: the block's
+/// start), where its prefetch is emitted, so the misses of independent
+/// accesses overlap instead of following one another.
+fn early_prefetches(
+  entries: &[aiur::native::NativeEntry],
+  start: usize,
+  leader: impl Fn(usize) -> bool,
+) -> std::collections::BTreeMap<Option<usize>, Vec<usize>> {
+  let mut block = vec![];
+  let mut i = start;
+  loop {
+    block.push(i);
+    let e = &entries[i];
+    if matches!(
+      e.op,
+      NativeOp::Jump { .. } | NativeOp::Return { .. } | NativeOp::Fail { .. }
+    ) {
+      break;
+    }
+    match e.next {
+      Some(n) if !leader(n) => i = n,
+      _ => break,
+    }
+  }
+  let mut early = std::collections::BTreeMap::<_, Vec<_>>::new();
+  // The position after which each register was last written, and the
+  // position of the last call, store or load.
+  let mut written = std::collections::HashMap::new();
+  let mut last_miss = None;
+  for (position, &i) in block.iter().enumerate() {
+    let op = &entries[i].op;
+    if let Some(reads) = miss_reads(op) {
+      let ready = reads.iter().filter_map(|r| written.get(r)).copied().max();
+      if last_miss.is_some_and(|miss| ready.is_none_or(|ready| ready < miss)) {
+        early.entry(ready.map(|p: usize| block[p])).or_default().push(i);
+      }
+      last_miss = Some(position);
+    }
+    for &r in op_writes(op) {
+      written.insert(r, position);
+    }
+  }
+  early
+}
+
+/// Emit the prefetch of `e`'s first access.
+fn prefetch(s: &mut String, id: usize, e: &aiur::native::NativeEntry) {
+  let pc = e.pc;
+  let _ = match &e.op {
+    NativeOp::Call { function, args, .. } => writeln!(
+      s,
+      "rt.prefetch_call::<{}>({function}, &[{}]);",
+      args.len(),
+      regs(args)
+    ),
+    NativeOp::Store { value, .. } => {
+      writeln!(s, "rt.prefetch_store::<{}>(&[{}]);", value.len(), regs(value))
+    },
+    NativeOp::Load { pointer, .. } => {
+      writeln!(s, "rt.prefetch_load({id}, {pc}, r[{pointer}]);")
+    },
+    _ => Ok(()),
+  };
+}
+
 fn body(
   s: &mut String,
   plan: &NativePlan,
@@ -230,8 +325,41 @@ fn body(
     let _ = writeln!(s, "r[{r}] = fd.from_u64({v});");
   }
   s.push_str("let mut s: usize = 0;\nloop {\nmatch s {\n");
+  let closed_map = |op: &NativeOp| match op {
+    NativeOp::Map { function, .. } => closed[*function - functions]
+      .as_ref()
+      .map(|form| (*function, form.radix.iter().product::<u64>())),
+    _ => None,
+  };
   for start in (0..entries.len()).filter(|&i| leader(i)) {
     let _ = writeln!(s, "{start} => {{");
+    // Each block fetches the counters of the fixed tables it counts once.
+    let mut tallied = std::collections::BTreeMap::new();
+    let mut i = start;
+    loop {
+      let e = &entries[i];
+      if let Some((map, rows)) = closed_map(&e.op) {
+        tallied.insert(map, rows);
+      }
+      if matches!(
+        e.op,
+        NativeOp::Jump { .. } | NativeOp::Return { .. } | NativeOp::Fail { .. }
+      ) {
+        break;
+      }
+      match e.next {
+        Some(n) if !leader(n) => i = n,
+        _ => break,
+      }
+    }
+    for (map, rows) in &tallied {
+      let _ =
+        writeln!(s, "let t_{map} = unsafe {{ rt.tally::<{rows}>({map}) }};");
+    }
+    let early = early_prefetches(entries, start, leader);
+    for &j in early.get(&None).into_iter().flatten() {
+      prefetch(s, id, &entries[j]);
+    }
     let mut i = start;
     loop {
       let e = &entries[i];
@@ -324,7 +452,7 @@ fn body(
             });
           let _ = write!(
             code,
-            "if {bounds} {{ rt.count_map({id}, {pc}, {function}, ({row}) as usize)?; "
+            "if {bounds} {{ t_{function}.bump(({row}) as usize); "
           );
           if args.len() == 1 {
             code.push_str("let b = 0u64; ");
@@ -404,6 +532,9 @@ fn body(
           let _ = writeln!(s, "return Err(rt.fail({id}, {pc}, {message:?}));");
           terminated = true;
         },
+      }
+      for &j in early.get(&Some(i)).into_iter().flatten() {
+        prefetch(s, id, &entries[j]);
       }
       if terminated {
         break;

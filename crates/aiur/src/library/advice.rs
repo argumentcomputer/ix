@@ -8,9 +8,9 @@ use super::io::{StreamAdvice, metadata_entry};
 use crate::{
   bytecode::Type,
   field::FieldBackend,
-  hints::{HintChannels, HintEntry},
+  hints::{ArenaData, DeviceArenas, HintChannels, HintEntry},
 };
-use std::{collections::HashSet, sync::Arc};
+use std::{borrow::Cow, collections::HashSet, sync::Arc};
 
 /// Channels are numbered below this limit, as for the JSON stream adapter.
 pub const CHANNEL_LIMIT: u64 = 256;
@@ -278,6 +278,31 @@ impl<B: FieldBackend> Advice<B> {
   }
 }
 
+/// The payload arenas as a read channel's [`DeviceArenas`].
+struct PayloadArenas<B: FieldBackend> {
+  field: B,
+  arenas: Arc<[Arena<B::Element>]>,
+}
+
+impl<B: FieldBackend> DeviceArenas for PayloadArenas<B> {
+  fn arenas(&self) -> Vec<ArenaData<'_>> {
+    self
+      .arenas
+      .iter()
+      .map(|arena| match arena {
+        Arena::Bytes(bytes) => ArenaData::Bytes(bytes),
+        Arena::Words(words) => ArenaData::Words(Cow::Owned(
+          words.iter().map(|&w| self.field.to_u64(w)).collect(),
+        )),
+      })
+      .collect()
+  }
+
+  fn identity(&self) -> *const () {
+    Arc::as_ptr(&self.arenas).cast()
+  }
+}
+
 impl<B: FieldBackend> StreamAdvice<B> for Advice<B> {
   fn register_read<const N: usize>(
     &self,
@@ -290,6 +315,7 @@ impl<B: FieldBackend> StreamAdvice<B> for Advice<B> {
     }
     let arenas = self.arenas.clone();
     let field = self.field;
+    let device = Arc::new(PayloadArenas { field, arenas: arenas.clone() });
     channels.insert_fixed::<2, N>(
       name,
       Type::Tuple { items: vec![Type::Field; 2] },
@@ -311,7 +337,8 @@ impl<B: FieldBackend> StreamAdvice<B> for Advice<B> {
           .and_then(|arena| arena.read::<B, N>(field, offset))
           .ok_or_else(|| "missing hint data: IO read out of bounds".into())
       },
-    )
+    )?;
+    channels.set_device_arenas(name, device)
   }
 
   fn metadata(

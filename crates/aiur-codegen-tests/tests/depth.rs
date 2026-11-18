@@ -56,14 +56,14 @@ fn same_heights(program: &CheckedProgram, a: &Execution, b: &Execution) {
   for (key, output) in a.queries.iter() {
     let name = program.callable_name(key.function).unwrap();
     assert_eq!(
-      multiplicity(b, key.function, key.args),
+      multiplicity(b, key.function, &key.args),
       Some(output.multiplicity),
       "{name}{:?}",
       key.args
     );
     assert_eq!(
-      a.query_depth(key.function, key.args),
-      b.query_depth(key.function, key.args),
+      a.query_depth(key.function, &key.args),
+      b.query_depth(key.function, &key.args),
       "{name}{:?}",
       key.args
     );
@@ -245,4 +245,26 @@ fn cache_hits_within_an_scc_raise_heights() {
   assert_eq!(split.query_depth(even, &[6]), Some(0));
   assert_eq!(split.query_depth(odd, &[7]), Some(0));
   assert_eq!(split.query_depth(outer, &[6]), Some(0));
+}
+
+/// A generated executor records the same row references
+/// ([`aiur::refs`]) as the interpreter, and recording them changes no other
+/// part of the record.
+#[test]
+fn native_records_the_interpreters_row_references() {
+  let (mut program, trace) = fixture();
+  program.record_refs(|_| true, &aiur::trace::lookup_aliases(&trace));
+  assert!(program.records_refs());
+  let (plain, _) = fixture();
+  let prepared = program.prepare_hints(&[]).unwrap();
+  let native = prepared.bind_native::<Depth>().unwrap();
+  for (entry, x) in [("Depth::run", 12), ("Depth::top", 5)] {
+    let a = prepared.execute(entry, vec![x]).unwrap();
+    let b = native.execute(entry, vec![x]).unwrap();
+    record_diff(&a, &b).unwrap_or_else(|e| panic!("{entry}({x}): {e}"));
+    assert!(a.storage_usage().query_refs_bytes > 0, "{entry}: no references");
+    let without = plain.execute(entry, vec![x]).unwrap();
+    let error = record_diff(&a, &without).unwrap_err();
+    assert!(error.contains("references"), "{entry}: {error}");
+  }
 }

@@ -5,6 +5,8 @@
 pub mod artifact;
 pub mod budget;
 pub mod bytecode;
+mod chunks;
+mod prefetch;
 pub mod execute;
 mod ffi;
 pub mod field;
@@ -12,6 +14,7 @@ pub mod field;
 pub mod function_profile;
 pub mod hints;
 mod host;
+mod index;
 pub mod ixon;
 pub mod library;
 pub mod maps;
@@ -19,6 +22,7 @@ pub mod memory;
 #[cfg(feature = "native")]
 pub mod native;
 pub mod query;
+pub mod refs;
 pub mod shared;
 mod table;
 pub mod trace;

@@ -25,6 +25,7 @@ import Ix.Cli.VerifyCmd
 import Ix.Cli.VerifyHostCmd
 import Ix.Cli.ServeCmd
 import Ix.Cli.ConnectCmd
+import Ix.Runtime.Allocator
 import Ix
 
 /-! CLI entry point for the `ix` executable. -/
@@ -65,6 +66,7 @@ def ixCmd : Cli.Cmd := `[Cli|
 ]
 
 def main (args : List String) : IO UInt32 := do
+  Ix.Runtime.configureAllocator ()
   if args.isEmpty then
     ixCmd.printHelp
     return 0

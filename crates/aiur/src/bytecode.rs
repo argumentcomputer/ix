@@ -223,6 +223,36 @@ impl Layout {
       },
     }
   }
+  /// Whether each word of a value of this layout is always below 2^32:
+  /// pointers (ROM addresses, below [`crate::budget::MAX_ROWS`]), enum tags,
+  /// and enum payload words that every constructor fills with one of those
+  /// or pads with zero. Values breaking this are not values of the layout.
+  pub(crate) fn narrow_words(&self, out: &mut Vec<bool>) {
+    match self {
+      Self::Field => out.push(false),
+      Self::Pointer => out.push(true),
+      Self::Tuple { items, .. } => {
+        for item in items {
+          item.narrow_words(out);
+        }
+      },
+      Self::Enum { constructors, payload, .. } => {
+        if constructors.len() > 1 {
+          out.push(true);
+        }
+        let start = out.len();
+        out.resize(start + payload, true);
+        let mut words = vec![];
+        for constructor in constructors {
+          words.clear();
+          constructor.narrow_words(&mut words);
+          for (out, &narrow) in out[start..].iter_mut().zip(&words) {
+            *out &= narrow;
+          }
+        }
+      },
+    }
+  }
   #[inline]
   pub(crate) fn has_shape_checks(&self) -> bool {
     match self {
@@ -398,6 +428,42 @@ mod layout_tests {
       );
     }
   }
+
+  #[test]
+  fn narrow_words_follow_pointers_tags_and_payload_positions() {
+    let ptr = || Type::Ptr { target: Box::new(Type::Field) };
+    let ctor = |fields: Vec<Type>| Constructor { name: "C".into(), fields };
+    let enums = vec![
+      Enum {
+        name: "Refs".into(),
+        constructors: vec![
+          ctor(vec![ptr()]),
+          ctor(vec![ptr(), ptr()]),
+          ctor(vec![]),
+        ],
+      },
+      Enum {
+        name: "Mixed".into(),
+        constructors: vec![ctor(vec![ptr(), ptr()]), ctor(vec![Type::Field])],
+      },
+      Enum { name: "Wrap".into(), constructors: vec![ctor(vec![ptr()])] },
+    ];
+    let words = |t: Type| {
+      let mut out = vec![];
+      t.layout(&enums, &mut vec![]).unwrap().narrow_words(&mut out);
+      out
+    };
+    let named = |name: &str| Type::Enum { name: name.into() };
+    assert_eq!(words(named("Refs")), [true, true, true]);
+    assert_eq!(words(named("Mixed")), [true, false, true]);
+    assert_eq!(words(named("Wrap")), [true]);
+    assert_eq!(
+      words(Type::Tuple {
+        items: vec![ptr(), Type::Field, named("Mixed"), named("Wrap")]
+      }),
+      [true, false, true, false, true, true]
+    );
+  }
 }
 
 /// Validated bytecode plus prebuilt indexes shared by all maps using a table.
@@ -420,6 +486,9 @@ pub struct CheckedProgram<B: FieldBackend = PrimeField> {
   /// Each function's SCC among the depth circuits of a trace plan, when
   /// execution records honest heights ([`CheckedProgram::track_depth`]).
   pub(crate) depth: Option<std::sync::Arc<[u32]>>,
+  /// Which functions' rows record their references, when any do
+  /// ([`CheckedProgram::record_refs`]).
+  pub(crate) refs: Option<std::sync::Arc<crate::refs::RefPlan>>,
   #[cfg(feature = "native")]
   pub(crate) native_fingerprint: std::sync::OnceLock<String>,
 }
@@ -916,6 +985,7 @@ impl Program {
       execution_functions,
       initial_registers,
       depth: None,
+      refs: None,
       #[cfg(feature = "native")]
       native_fingerprint: std::sync::OnceLock::new(),
     })

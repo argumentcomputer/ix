@@ -555,6 +555,93 @@ pub enum Begin {
   Started(usize),
 }
 
+type Narrow = u16;
+
+/// Call counts of one fixed table's rows, kept outside the record while
+/// generated code runs. A row counts in a `u16` and carries each wrap into
+/// a `u64`, so the counters calls touch at random take a quarter of the
+/// cache a `u64` per row would; the arrays are added into the table's
+/// record when the execution succeeds ([`Runtime::merge_tallies`]). They
+/// are reached only through raw pointers, never through a reference, so
+/// [`Tally`] handles stay valid while generated code borrows the runtime.
+struct TallyStore {
+  narrow: std::ptr::NonNull<Narrow>,
+  wraps: std::ptr::NonNull<u64>,
+  rows: usize,
+}
+
+impl TallyStore {
+  fn new(rows: usize) -> Self {
+    let narrow =
+      Box::into_raw(vec![Narrow::default(); rows].into_boxed_slice());
+    let wraps = Box::into_raw(vec![0u64; rows].into_boxed_slice());
+    // SAFETY: `Box::into_raw` never returns null.
+    unsafe {
+      Self {
+        narrow: std::ptr::NonNull::new_unchecked(narrow.cast()),
+        wraps: std::ptr::NonNull::new_unchecked(wraps.cast()),
+        rows,
+      }
+    }
+  }
+
+  /// The total count of `row`.
+  fn count(&self, row: usize) -> Option<u64> {
+    assert!(row < self.rows);
+    // SAFETY: both arrays have `rows` entries.
+    let (narrow, wraps) = unsafe {
+      (*self.narrow.as_ptr().add(row), *self.wraps.as_ptr().add(row))
+    };
+    u64::try_from((u128::from(wraps) << Narrow::BITS) + u128::from(narrow)).ok()
+  }
+}
+
+impl Drop for TallyStore {
+  fn drop(&mut self) {
+    // SAFETY: both arrays came from `Box::into_raw` with `rows` entries and
+    // are freed only here.
+    unsafe {
+      drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+        self.narrow.as_ptr(),
+        self.rows,
+      )));
+      drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+        self.wraps.as_ptr(),
+        self.rows,
+      )));
+    }
+  }
+}
+
+/// A handle to the counters of a fixed table with `ROWS` rows
+/// ([`Runtime::tally`]), for generated code that computes a call's row and
+/// outputs itself.
+#[derive(Clone, Copy)]
+pub struct Tally<const ROWS: usize> {
+  narrow: std::ptr::NonNull<Narrow>,
+  wraps: std::ptr::NonNull<u64>,
+}
+
+impl<const ROWS: usize> Tally<ROWS> {
+  /// Count one call that selected `row`. A `u64` total cannot overflow
+  /// within one execution, so no overflow check is made here; the totals
+  /// are checked when they are added into the record.
+  #[inline(always)]
+  pub fn bump(self, row: usize) {
+    assert!(row < ROWS, "fixed-table row out of range");
+    // SAFETY: `Runtime::tally` handed out this handle for arrays of `ROWS`
+    // entries, which outlive every use its contract allows.
+    unsafe {
+      let narrow = self.narrow.as_ptr().add(row);
+      let count = (*narrow).wrapping_add(1);
+      *narrow = count;
+      if count == 0 {
+        *self.wraps.as_ptr().add(row) += 1;
+      }
+    }
+  }
+}
+
 /// A failed operation. The error itself is held by the [`Runtime`]
 /// ([`Runtime::take_failure`]); keeping `Result`s one word wide keeps the
 /// many `?` branches in generated code small.
@@ -575,6 +662,15 @@ pub struct Runtime<'a, B: FieldBackend> {
   /// last: its function's SCC and its height so far, one more than its
   /// highest finished or cached callee in the same SCC.
   heights: Vec<(u32, u64)>,
+  /// Which functions record row references, when any do.
+  refs: Option<&'a crate::refs::RefPlan>,
+  /// While references are recorded, one entry per pending query, innermost
+  /// last: its function's reference sites if it records them, its row and
+  /// where its pending references start.
+  frames: Vec<(Option<&'a crate::refs::FunctionRefs>, usize, usize)>,
+  pending: crate::refs::Pending,
+  /// The counters [`Self::tally`] handed out, by callable index.
+  tallies: Vec<Option<TallyStore>>,
 }
 
 impl<'a, B: FieldBackend> Runtime<'a, B> {
@@ -686,6 +782,7 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
         let height = table.depth(row);
         self.raise_cached(sccs, caller, function, height);
       }
+      self.note(caller, pc, row)?;
       return Ok(Begin::Cached(row));
     }
     match table.start(args, outputs, hash) {
@@ -693,10 +790,52 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
         if let Some(sccs) = self.sccs {
           self.heights.push((sccs[function], 0));
         }
+        if let Some(plan) = self.refs {
+          self.note(caller, pc, row)?;
+          let refs = plan.functions[function].as_ref();
+          self.frames.push((refs, row, self.pending.mark()));
+        }
         Ok(Begin::Started(row))
       },
-      Err(e) => Err(self.raise(e.into())),
+      Err(crate::budget::StorageError::Resource(e)) => {
+        Err(self.raise(e.into()))
+      },
+      Err(crate::budget::StorageError::Invalid(e)) => {
+        Err(self.fail(caller, pc, e))
+      },
     }
+  }
+
+  /// Records that the pending query of `function`, the innermost one, read
+  /// row or address `value` at `pc`, when its function records references.
+  #[inline(always)]
+  fn note(&mut self, function: usize, pc: usize, value: usize) -> Result<(), Failed> {
+    if let Some(&(Some(refs), row, _)) = self.frames.last() {
+      let site = refs.site(pc);
+      match refs.encode(site, value) {
+        Some(reference) => self.pending.push(reference),
+        None => self.wide(function, row, site, value)?,
+      }
+    }
+    Ok(())
+  }
+
+  #[cold]
+  #[inline(never)]
+  fn wide(
+    &mut self,
+    function: usize,
+    row: usize,
+    site: u16,
+    value: usize,
+  ) -> Result<(), Failed> {
+    let table = &mut self.record.queries.tables[function];
+    if let Some(refs) = &mut table.refs
+      && let Err(e) = refs.wide(row, site, value, &table.budget)
+    {
+      return Err(self.raise(e.into()));
+    }
+    Ok(())
   }
 
   /// A cache hit within the caller's SCC bounds the caller's height, as a
@@ -737,10 +876,15 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
     }
   }
 
-  /// The output of a completed query.
+  /// Write the output of a completed query into `output`.
   #[inline(always)]
-  pub fn output(&self, function: usize, row: usize) -> &[B::Element] {
-    self.record.queries.tables[function].output(row).output
+  pub fn read_output(
+    &self,
+    function: usize,
+    row: usize,
+    output: &mut [B::Element],
+  ) {
+    self.record.queries.tables[function].read_output(row, output);
   }
 
   /// Validate and record the result of `function`'s pending `row`, returned
@@ -771,9 +915,31 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
     {
       return Err(self.fail(function, pc, &e));
     }
-    self.record.queries.tables[function].finish(row, output);
+    match self.record.queries.tables[function].finish(row, output) {
+      Ok(()) => {},
+      Err(crate::budget::StorageError::Resource(e)) => {
+        return Err(self.raise(e.into()));
+      },
+      Err(crate::budget::StorageError::Invalid(e)) => {
+        return Err(self.fail(function, pc, e));
+      },
+    }
     if self.sccs.is_some() {
       self.finish_height(function, row);
+    }
+    if self.refs.is_some()
+      && let Some((_, finished, mark)) = self.frames.pop()
+    {
+      debug_assert_eq!(finished, row);
+      let table = &mut self.record.queries.tables[function];
+      if let Some(refs) = &mut table.refs {
+        let budget = &table.budget;
+        if let Err(e) =
+          self.pending.take(mark, |pending| refs.finish(row, pending, budget))
+        {
+          return Err(self.raise(e.into()));
+        }
+      }
     }
     Ok(())
   }
@@ -796,28 +962,58 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
     }
   }
 
-  /// Count a call from `caller` at `pc` to the fixed table `map` whose row
-  /// the generated code computed along with its outputs. Generators use this
-  /// only for maps whose outputs they verified against every table row.
+  /// The counters of the fixed table `map`, which has `ROWS` rows, for
+  /// generated code that has verified the table's outputs against every
+  /// row and so computes a call's row and outputs itself.
+  ///
+  /// # Safety
+  ///
+  /// The handle must not be used after this runtime is dropped.
   #[inline(always)]
-  pub fn count_map(
-    &mut self,
-    caller: usize,
-    pc: usize,
-    map: usize,
-    row: usize,
-  ) -> Result<(), Failed> {
-    let record = self.record.queries.tables[map].static_map.as_mut().unwrap();
-    match record.counts.get_mut(row) {
-      Some(count) if *count < u64::MAX => {
-        *count += 1;
-        Ok(())
-      },
-      Some(_) => Err(self.fail(caller, pc, "map multiplicity overflow")),
-      None => {
-        Err(self.fail(caller, pc, "map override row index out of bounds"))
-      },
+  pub unsafe fn tally<const ROWS: usize>(&mut self, map: usize) -> Tally<ROWS> {
+    let store = match self.tallies.get(map) {
+      Some(Some(store)) => store,
+      _ => self.new_tally(map),
+    };
+    assert_eq!(store.rows, ROWS, "fixed-table row count mismatch");
+    Tally { narrow: store.narrow, wraps: store.wraps }
+  }
+
+  #[cold]
+  #[inline(never)]
+  fn new_tally(&mut self, map: usize) -> &TallyStore {
+    let rows = self.record.queries.tables[map]
+      .static_map
+      .as_ref()
+      .expect("a tallied callable is a fixed table")
+      .counts
+      .len();
+    if self.tallies.len() <= map {
+      self.tallies.resize_with(map + 1, || None);
     }
+    self.tallies[map].insert(TallyStore::new(rows))
+  }
+
+  /// Add the counts [`Self::tally`] handed out into the record.
+  fn merge_tallies(&mut self) -> Result<(), ExecutionError> {
+    let overflow = || ExecutionError {
+      function: "<native>".into(),
+      instruction: 0,
+      resource: None,
+      message: "map multiplicity overflow".into(),
+    };
+    for (map, store) in self.tallies.iter().enumerate() {
+      let Some(store) = store else { continue };
+      let record = self.record.queries.tables[map].static_map.as_mut().unwrap();
+      for (row, count) in record.counts.iter_mut().enumerate() {
+        *count = store
+          .count(row)
+          .and_then(|n| count.checked_add(n))
+          .ok_or_else(overflow)?;
+      }
+    }
+    self.tallies.clear();
+    Ok(())
   }
 
   /// Evaluate the hint site at `function`/`pc`.
@@ -833,6 +1029,34 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
     match site.evaluate(key, output, self.program.field) {
       Ok(()) => Ok(()),
       Err(message) => Err(self.fail(function, pc, &message)),
+    }
+  }
+
+  /// Start loading what [`Self::begin`] for `function(args)` reads first,
+  /// for generated code that has work to do before the call.
+  #[inline(always)]
+  pub fn prefetch_call<const N: usize>(
+    &self,
+    function: usize,
+    args: &[B::Element; N],
+  ) {
+    self.record.queries.tables[function].prefetch(args);
+  }
+
+  /// Start loading what [`Self::store`] of `values` reads first.
+  #[inline(always)]
+  pub fn prefetch_store<const N: usize>(&self, values: &[B::Element; N]) {
+    self.record.memory.prefetch_intern(values);
+  }
+
+  /// Start loading the cell [`Self::load`] at `function`/`pc` reads.
+  #[inline(always)]
+  pub fn prefetch_load(&self, function: usize, pc: usize, pointer: B::Element) {
+    let memory_type = self.program.steps[function][pc].memory_type;
+    if let Ok(address) = usize::try_from(self.program.field.to_u64(pointer))
+      && let Some(cell) = self.record.memory.cell(memory_type, address)
+    {
+      self.record.memory.prefetch_cell(cell);
     }
   }
 
@@ -852,12 +1076,12 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
     {
       return Err(self.fail(function, pc, &e));
     }
-    let index = match self.record.memory.intern(
+    let cell = match self.record.memory.intern(
       memory_type,
       values,
       program.field.modulus(),
     ) {
-      Ok(index) => index,
+      Ok(cell) => cell,
       Err(crate::budget::StorageError::Resource(e)) => {
         return Err(self.raise(e.into()));
       },
@@ -865,9 +1089,9 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
         return Err(self.fail(function, pc, e));
       },
     };
-    let address = self.record.memory.address(index) as u64;
-    self.bump_rom(index)?;
-    Ok(program.field.from_u64(address))
+    self.bump_rom(cell)?;
+    self.note(function, pc, cell.address)?;
+    Ok(program.field.from_u64(cell.address as u64))
   }
 
   /// Load the ROM cell at `pointer` with the type of `function`/`pc`.
@@ -884,18 +1108,18 @@ impl<'a, B: FieldBackend> Runtime<'a, B> {
     let Ok(address) = usize::try_from(program.field.to_u64(pointer)) else {
       return Err(self.fail(function, pc, "ROM address overflow"));
     };
-    let Some(index) = self.record.memory.index_for_type(memory_type, address)
-    else {
+    let Some(cell) = self.record.memory.cell(memory_type, address) else {
       return Err(self.fail(function, pc, "dangling pointer"));
     };
-    self.bump_rom(index)?;
-    let entry = self.record.memory.get(index).unwrap();
-    output.copy_from_slice(entry.cell.value);
+    output.copy_from_slice(self.record.memory.words(cell));
+    self.bump_rom(cell)?;
+    self.note(function, pc, address)?;
     Ok(())
   }
 
-  fn bump_rom(&mut self, index: usize) -> Result<(), Failed> {
-    let count = self.record.memory.multiplicity_mut(index);
+  #[inline(always)]
+  fn bump_rom(&mut self, cell: crate::memory::CellAt) -> Result<(), Failed> {
+    let count = self.record.memory.count_mut(cell);
     match count.checked_add(1) {
       Some(next) => {
         *count = next;
@@ -1031,6 +1255,10 @@ impl<B: FieldBackend, K: Kernel> NativeExecutor<'_, '_, B, K> {
       failure: None,
       sccs: program.depth.as_deref(),
       heights: vec![],
+      refs: program.refs.as_deref(),
+      frames: vec![],
+      pending: crate::refs::Pending::default(),
+      tallies: vec![],
       record: Execution {
         hints: hints.bindings.clone(),
         output: vec![],
@@ -1064,8 +1292,12 @@ impl<B: FieldBackend, K: Kernel> NativeExecutor<'_, '_, B, K> {
         return Err(rt.take_failure());
       }
     }
+    rt.merge_tallies()?;
     rt.record.output = output;
     rt.record.native_stack_bytes = stack_bytes();
+    rt.record.queries.drop_prefetched();
+    rt.record.memory.drop_prefetched();
+    rt.record.queries.compact_refs()?;
     Ok(rt.record)
   }
 }
@@ -1141,6 +1373,9 @@ pub fn record_diff<B: FieldBackend>(
             return Err(format!("function {function}: row {row} differs"));
           }
         }
+        if x.refs != y.refs {
+          return Err(format!("function {function}: row references differ"));
+        }
       },
       _ => return Err(format!("callable {function}: kinds differ")),
     }
@@ -1162,6 +1397,51 @@ pub fn record_diff<B: FieldBackend>(
     }
   }
   Ok(())
+}
+
+/// A BLAKE3 digest of everything [`record_diff`] compares, in row order, so
+/// two records from separate processes can be checked for equality.
+pub fn record_digest<B: FieldBackend>(record: &Execution<B>) -> blake3::Hash {
+  use std::hash::{Hash, Hasher};
+  struct Blake3(blake3::Hasher);
+  impl Hasher for Blake3 {
+    fn finish(&self) -> u64 {
+      unreachable!("only the BLAKE3 digest is read")
+    }
+    fn write(&mut self, bytes: &[u8]) {
+      self.0.update(bytes);
+    }
+  }
+  let mut h = Blake3(blake3::Hasher::new());
+  record.output.hash(&mut h);
+  record.instructions.hash(&mut h);
+  record.queries.tables.len().hash(&mut h);
+  for table in &record.queries.tables {
+    if let Some(map) = &table.static_map {
+      map.counts.hash(&mut h);
+      continue;
+    }
+    table.len().hash(&mut h);
+    table.depths_len().hash(&mut h);
+    let mut buffer = vec![];
+    for row in 0..table.len() {
+      table.input_in(row, &mut buffer).hash(&mut h);
+      table.output_in(row, &mut buffer).hash(&mut h);
+      table.count(row).hash(&mut h);
+      table.depth(row).hash(&mut h);
+    }
+    if let Some(refs) = &table.refs {
+      format!("{refs:?}").hash(&mut h);
+    }
+  }
+  record.memory.len().hash(&mut h);
+  for entry in record.memory.iter() {
+    entry.address.hash(&mut h);
+    entry.multiplicity.hash(&mut h);
+    entry.cell.value.hash(&mut h);
+    format!("{:?}", entry.cell.r#type).hash(&mut h);
+  }
+  h.0.finalize()
 }
 
 #[cfg(test)]

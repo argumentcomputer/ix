@@ -3,9 +3,9 @@
 use crate::{
   bytecode::Type,
   field::FieldBackend,
-  hints::{HintChannels, HintEntry},
+  hints::{ArenaData, DeviceArenas, HintChannels, HintEntry},
 };
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 /// One input stream: a channel, its key, and the values read under it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -144,6 +144,30 @@ impl<B: FieldBackend> Arenas<'_, B> {
   }
 }
 
+/// Field-element arenas as a read channel's [`DeviceArenas`].
+pub struct Values<B: FieldBackend> {
+  pub field: B,
+  pub values: Arc<Vec<Vec<B::Element>>>,
+}
+
+impl<B: FieldBackend> DeviceArenas for Values<B> {
+  fn arenas(&self) -> Vec<ArenaData<'_>> {
+    self
+      .values
+      .iter()
+      .map(|arena| {
+        ArenaData::Words(Cow::Owned(
+          arena.iter().map(|&w| self.field.to_u64(w)).collect(),
+        ))
+      })
+      .collect()
+  }
+
+  fn identity(&self) -> *const () {
+    Arc::as_ptr(&self.values).cast()
+  }
+}
+
 impl<B: FieldBackend> StreamAdvice<B> for Arenas<'_, B> {
   fn register_read<const N: usize>(
     &self,
@@ -156,6 +180,7 @@ impl<B: FieldBackend> StreamAdvice<B> for Arenas<'_, B> {
     }
     let values = self.values.clone();
     let field = self.field;
+    let device = Arc::new(Values { field, values: values.clone() });
     channels.insert_fixed::<2, N>(
       name,
       Type::Tuple { items: vec![Type::Field; 2] },
@@ -178,7 +203,8 @@ impl<B: FieldBackend> StreamAdvice<B> for Arenas<'_, B> {
           .ok_or("missing hint data: IO read out of bounds")?;
         Ok(std::array::from_fn(|i| row[i]))
       },
-    )
+    )?;
+    channels.set_device_arenas(name, device)
   }
 
   /// Reads use the shared vectors above, including when hints are replayed

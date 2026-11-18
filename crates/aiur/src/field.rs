@@ -40,6 +40,16 @@ pub trait FieldBackend: Copy + Debug + Send + Sync + 'static {
   )]
   fn from_u64(self, value: u64) -> Self::Element;
   fn to_u64(self, value: Self::Element) -> u64;
+  /// The element whose canonical value is `value`, a value below the
+  /// modulus.
+  #[allow(
+    clippy::wrong_self_convention,
+    reason = "conversion needs the selected runtime backend"
+  )]
+  #[inline(always)]
+  fn from_canonical_u64(self, value: u64) -> Self::Element {
+    self.from_u64(value)
+  }
   fn add(self, a: Self::Element, b: Self::Element) -> Self::Element;
   fn sub(self, a: Self::Element, b: Self::Element) -> Self::Element;
   fn neg(self, a: Self::Element) -> Self::Element;
@@ -178,6 +188,10 @@ impl FieldBackend for PrimeField {
     value % self.modulus
   }
   fn to_u64(self, value: u64) -> u64 {
+    value
+  }
+  #[inline(always)]
+  fn from_canonical_u64(self, value: u64) -> u64 {
     value
   }
   fn add(self, a: u64, b: u64) -> u64 {

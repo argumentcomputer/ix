@@ -100,19 +100,19 @@ fn run_request<B: FieldBackend>(
       .ok_or("missing root query")?
       .0;
     let trace =
-      plan.generate(&record, &request.entry, root.args, request.pad_trace)?;
+      plan.generate(&record, &request.entry, &root.args, request.pad_trace)?;
     if request.compare_reference
       && trace
         != plan.generate_reference(
           &record,
           &request.entry,
-          root.args,
+          &root.args,
           request.pad_trace,
         )?
     {
       return Err("compiled population differs from reference writer".into());
     }
-    plan.check(&record, &trace, &request.entry, root.args)?;
+    plan.check(&record, &trace, &request.entry, &root.args)?;
     Some(trace)
   } else {
     None
@@ -140,8 +140,8 @@ fn run_request<B: FieldBackend>(
   w.list(&queries, |w, (input, output)| {
     w.usize(input.function);
     w.str(program.callable_name(input.function).unwrap_or_default());
-    words(w, input.args);
-    words(w, output.output);
+    words(w, &input.args);
+    words(w, &output.output);
     w.nat(output.multiplicity);
   });
   let memory: Vec<_> = record.memory.iter().collect();

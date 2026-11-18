@@ -33,6 +33,48 @@ struct Channel<F> {
   output_type: Type,
   function: Arc<HintFunction<F>>,
   fixed: Option<(usize, usize, Arc<HintBinder<F>>)>,
+  arenas: Option<Arc<dyn DeviceArenas>>,
+}
+
+/// One arena of [`DeviceArenas`], as canonical words or as bytes (each the
+/// word of its value).
+pub enum ArenaData<'a> {
+  Bytes(&'a [u8]),
+  Words(std::borrow::Cow<'a, [u64]>),
+}
+
+impl ArenaData<'_> {
+  pub fn len(&self) -> usize {
+    match self {
+      Self::Bytes(bytes) => bytes.len(),
+      Self::Words(words) => words.len(),
+    }
+  }
+
+  pub fn is_empty(&self) -> bool {
+    self.len() == 0
+  }
+
+  /// Bytes a copy of this arena occupies.
+  pub fn bytes(&self) -> usize {
+    match self {
+      Self::Bytes(bytes) => bytes.len(),
+      Self::Words(words) => words.len() * 8,
+    }
+  }
+}
+
+/// The data of a read channel in a form a device can evaluate it from:
+/// numbered arenas of values. Binding it to a channel asserts that the
+/// channel's provider answers key `[arena, offset]` with output width `n` by
+/// the `n` values of that arena from `offset`, and fails exactly when they
+/// are not all present (an arena past [`Self::arenas`]'s end is empty).
+pub trait DeviceArenas: Send + Sync {
+  /// The arenas, by number.
+  fn arenas(&self) -> Vec<ArenaData<'_>>;
+  /// Identifies the data: channels bound to one source report the same
+  /// address.
+  fn identity(&self) -> *const ();
 }
 
 /// Host-defined code providers. Names are resolved only by `prepare_hint_channels`.
@@ -73,8 +115,24 @@ impl<F> HintChannels<F> {
         output_type,
         function: Arc::new(function),
         fixed: None,
+        arenas: None,
       },
     );
+    Ok(())
+  }
+
+  /// Declares that channel `name`, already inserted, reads `arenas` as
+  /// [`DeviceArenas`] describes, so a device can evaluate it.
+  pub fn set_device_arenas(
+    &mut self,
+    name: &str,
+    arenas: Arc<dyn DeviceArenas>,
+  ) -> Result<(), String> {
+    let channel = self
+      .channels
+      .get_mut(name)
+      .ok_or_else(|| format!("unknown hint channel {name:?}"))?;
+    channel.arenas = Some(arenas);
     Ok(())
   }
 
@@ -112,6 +170,7 @@ impl<F> HintChannels<F> {
           Ok(())
         }),
         fixed: Some((INPUTS, OUTPUTS, binder)),
+        arenas: None,
       },
     );
     Ok(())
@@ -123,6 +182,8 @@ pub(crate) struct HintSite<F = u64> {
   // Data answers have already passed validation; code answers have not.
   pub(crate) output_layout: Option<Layout>,
   pub(crate) registers: Option<Arc<RegisterHint<F>>>,
+  /// The provider's data, when a device can evaluate it.
+  pub(crate) arenas: Option<Arc<dyn DeviceArenas>>,
 }
 
 impl<F: Copy> HintSite<F> {
@@ -259,6 +320,7 @@ impl<B: FieldBackend> CheckedProgram<B> {
                 function: provider.function.clone(),
                 output_layout: Some(layout),
                 registers,
+                arenas: provider.arenas.clone(),
               }
             } else if let Some(rows) =
               data.get(&(channel.clone(), key_type.clone()))
@@ -277,12 +339,14 @@ impl<B: FieldBackend> CheckedProgram<B> {
                 }),
                 output_layout: None,
                 registers: None,
+                arenas: None,
               }
             } else {
               HintSite {
                 function: Arc::new(|_, _| Err("missing hint provider".into())),
                 output_layout: None,
                 registers: None,
+                arenas: None,
               }
             };
             Ok(Some(site))
