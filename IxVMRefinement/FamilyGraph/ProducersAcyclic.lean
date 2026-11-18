@@ -1045,21 +1045,30 @@ end Potential
 /-- **The ranking, from what the batch's functions give**: at every walk and witness, the edges
 `FamEdge` order the family graph (`rankEdges_of`, `famEdge_acyclic`), and the number of the run's
 store's addresses below an address is a rank of it (`familyRanked_of_edges`). -/
-theorem familyRanking_of (Pref : _root_.Address → _root_.Address → Prop)
+theorem familyRanking_of (Pref : RunPref)
     (batch : AtWalk.{u} Pref fun K _ => BatchGives K) : FamilyRanking.{u} Pref := by
   intro calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape
   have hB := batch calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape
   exact ⟨_, familyRanked_of_edges hW
     (rankEdges_of hW hG hB hshape (FamRunCtx.famEdge_acyclic hW hG hB))⟩
 
-/-- **Row `familyGraph` from what the run's functions give**, the ranking proved: the batch's
-(`BatchGives`), the facts of unchanged functions not yet proved here (`NoBatchFields`), and the
-stored twins' field (to be restated). -/
-theorem familyGraphRow_of_batch (Pref : _root_.Address → _root_.Address → Prop)
+/-- **Row `familyGraph` with the selector's form fact, from what the run's functions give**, the
+ranking proved: the batch's (`BatchGives`), the facts of unchanged functions not yet proved here
+(`NoBatchFields`), and the stored twins' field (to be restated). -/
+theorem familyGraphRowPref_of_batch (Pref : RunPref)
+    (batch : AtWalk.{u} Pref fun K _ => BatchGives K)
+    (noBatch : AtWalk.{u} Pref fun K _ => NoBatchFields K)
+    (storedTwin : AtWalk.{u} Pref fun K _ => StoredTwinField K) :
+    FamilyGraphRowPref.{u} Pref :=
+  familyGraphRowPref_of_parts Pref batch noBatch (familyRanking_of Pref batch) storedTwin
+
+/-- **Row `familyGraph` from what the run's functions give**, the ranking proved
+(`familyGraphRowPref_of_batch` without the form fact). -/
+theorem familyGraphRow_of_batch (Pref : RunPref)
     (batch : AtWalk.{u} Pref fun K _ => BatchGives K)
     (noBatch : AtWalk.{u} Pref fun K _ => NoBatchFields K)
     (storedTwin : AtWalk.{u} Pref fun K _ => StoredTwinField K) :
     FamilyGraphRow.{u} :=
-  familyGraphRow_of_parts Pref batch noBatch (familyRanking_of Pref batch) storedTwin
+  familyGraphRow_of_pref (familyGraphRowPref_of_batch Pref batch noBatch storedTwin)
 
 end IxVM.Refinement.Typing
