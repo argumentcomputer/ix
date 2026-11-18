@@ -184,7 +184,7 @@ theorem assert_first_args_atoms :
       have := Decl.nat_eq_of_field_eq_bounded (by decide) (by omega) hzero
       omega
     | .other (ld44 := ldc) (ld73 := ldb) (op192 := opi) (ev153 := evr) .. =>
-      obtain ⟨z, zs, rfl, hz, hzs⟩ := RepList.cons_of_load hTs ldc
+      obtain ⟨z, zs, rfl, hz, hzs⟩ := Core.RepList.cons_of_load hTs ldc
       have hza : z = .atom := treeAt_atom_of_bvar hz ldb
       have hv := Decl.evalBinOp_add_nat i 1 opi
       subst hv
@@ -233,7 +233,7 @@ theorem ctor_return_tree {T : ScanTree} {pcty pnl pblk r : SourceValue F} {nP nI
     have hlen : B.args.length = nP + nI :=
       Decl.nat_eq_of_field_eq_bounded (by omega) hnPI heq_len
     have hat := assert_first_args_atoms nP (i := 0) (by omega) (by omega) hAs147 ev_bv
-    exact ⟨B, hpeel, ⟨a, ha⟩, hlen, hat⟩
+    exact ⟨B, hpeel, ⟨Core.ixAddr a, ha⟩, hlen, hat⟩
 
 /-! ## The walk's check of a modeled member -/
 
@@ -304,7 +304,7 @@ theorem modeledCtor_trees {calls : List (Call F)} {c : Core.Ctx} (hg : Core.Good
   have hiEq : ind' = ind := by
     have e : (#[Ixon.MutConst.indc ind] : Array Ixon.MutConst).toList[0]? = some (.indc ind) :=
       rfl
-    exact (Ixon.MutConst.indc.inj (Option.some.inj (hms.symm.trans e))).symm
+    exact Ixon.MutConst.indc.inj (Option.some.inj (hms.symm.trans e))
   subst ind'
   have hvv : v₀ = v := Except.ok.inj (hld₀.symm.trans hld)
   subst v₀
@@ -343,7 +343,7 @@ theorem modeledCtor_trees {calls : List (Call F)} {c : Core.Ctx} (hg : Core.Good
   have hind₂ : ind₂ = ind := by
     have e : (#[Ixon.MutConst.indc ind] : Array Ixon.MutConst).toList[0]? = some (.indc ind) :=
       rfl
-    exact (Ixon.MutConst.indc.inj (Option.some.inj (hms₂.symm.trans e))).symm
+    exact Ixon.MutConst.indc.inj (Option.some.inj (hms₂.symm.trans e))
   subst ind₂
   rw [hval_j] at hct₂
   have hctj : ind.ctors[j]? = some ct := by
