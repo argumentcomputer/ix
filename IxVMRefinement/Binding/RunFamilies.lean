@@ -117,7 +117,10 @@ end Run
   `KernelModeled::check_modeled_block` and `check_family`; a block's route over the closure's
   store against the route the circuit read; not specified.
 * `readsDown`: today's circuit with the run's store (`LoadedReads.RunStore`): a reading of a held
-  address reads held records (`readsIn_of_agree`); not assembled for the closure's store. -/
+  address reads held records (`readsIn_of_agree`); not assembled for the closure's store.
+* `notInert`, `needOk`, `literals`, `famNotInert`, `famNeedOk`: the producers are in each field's
+  docstring (the group's walk; the walk's reference assertions run on the payload's records for
+  payload records; the literal roles' validations at or below group 45). -/
 structure RunFactsLeft (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : Ixon.Env)
     (famOf : _root_.Address → Option _root_.Address)
     (adv : _root_.Address → _root_.Address → Prop) : Prop where
@@ -134,6 +137,45 @@ structure RunFactsLeft (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : I
     Route.blockRoute R₁ B = some true → ∃ rb, famOf B = some rb
   readsDown : ∀ R₁ x ci₀, ClosureStore t g R R' R₁ → (recordOf R x).isSome = true →
     IxVM.Consistency.Reads t R₁ x ci₀ → IxVM.Consistency.Reads t R x ci₀
+  /-- No reference a plain unit uses is an inert axiom's. Producer: the group's walk.
+  `KernelRoles::assert_ref_allowed` admits a reference bound to an inert role whose group is at or
+  above the group's validation limit (`Claim.refAllowed_inert`); such a reference is excluded by
+  `check_const`'s axiom arm with the inert role's own validation. For the records of the
+  group's payload (advice records, container recursors), the circuit asserts nothing of their
+  references until the advice and container checks run the walk's reference assertions on them
+  (`KernelClaim::assert_safe_used_refs`, `assert_not_block_ref`). -/
+  notInert : ∀ A c x, PlainUnitAt t g R R' famOf A c → UsedRef ρ.E₀ A x → ¬ InertAt t x
+  /-- Every reference a plain unit uses is one a step needs stored: a record of the run's store,
+  no block, in Lean's logic with its block. Producer: the group's walk
+  (`KernelClaim::assert_not_block_ref`, `assert_safe_used_refs`); for the records of the group's
+  payload, the same assertions once the advice and container checks run them on their records'
+  references. -/
+  needOk : ∀ A c x, PlainUnitAt t g R R' famOf A c → UsedRef ρ.E₀ A x → NeedOk ρ.E₀ x
+  /-- The key of the member of a plain unit that is a block of one inductive type is none of the
+  keys of the four literal functions (`String.ofList`, `List.nil`, `List.cons`, `Char.ofNat`), which
+  the step of a block whose former is declared at a definition reads apart. Producer: above
+  group 45 the four roles' records are held before the group (`Admits.kept` at their groups) and
+  the member's projection record is new, so the addresses and keys differ; at or below group 45,
+  the four roles' validations (their records are no inductive projection), not proved. -/
+  literals : ∀ A c ind, PlainUnitAt t g R R' famOf A c → c.info = .muts #[.indc ind] →
+    keyOf t (memberAddr A 0 (.indc ind)) ≠ Ix.Kernel.stringOfListName ∧
+    keyOf t (memberAddr A 0 (.indc ind)) ≠ Ix.Kernel.listNilName ∧
+    keyOf t (memberAddr A 0 (.indc ind)) ≠ Ix.Kernel.listConsName ∧
+    keyOf t (memberAddr A 0 (.indc ind)) ≠ Ix.Kernel.charOfNatName
+  /-- No reference the block of a selected family record uses, the block new in the group, is an
+  inert axiom's. Producer: the group's walk at the block, a new walked unit checked at the group's
+  validation limit (`FamilyAdmits.checked`; the block is claimed by no block):
+  `KernelRoles::assert_ref_allowed` admits a reference bound to an inert role whose group is at or
+  above the group's validation limit (`Claim.refAllowed_inert`), and such a reference is excluded
+  by `KernelCheck::check_const`'s axiom arm with the inert role's own validation, as for
+  `notInert`. -/
+  famNotInert : ∀ B rb x, famOf B = some rb → New R R' B → UsedRef ρ.E₀ B x → ¬ InertAt t x
+  /-- Every reference the block of a selected family record uses, the block new in the group, is
+  one a step needs stored: a record of the run's store, no block, in Lean's logic with its block.
+  Producer: the group's walk at the block, a new walked unit checked at the group's validation
+  limit (`KernelClaim::assert_not_block_ref`, `KernelClaim::assert_safe_used_refs`), as for
+  `needOk`. -/
+  famNeedOk : ∀ B rb x, famOf B = some rb → New R R' B → UsedRef ρ.E₀ B x → NeedOk ρ.E₀ x
 
 /-- **What is left of the run's family checks**, at the store sequence with the run's payload
 (`Rs g` below is `groupStore t E₀ (runPayload calls bAddr t) g`). Status: premises; nothing
@@ -404,7 +446,12 @@ theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRows
         roleUnitForm := roleUnitForm_of_run hC hb hax hcheck hg6 hval
         keptRoles := keptRoles_of_run hC hb hroots hg6 hval hw
         routeNew := hL.routeNew
-        readsDown := hL.readsDown }
+        readsDown := hL.readsDown
+        notInert := hL.notInert
+        needOk := hL.needOk
+        literals := hL.literals
+        famNotInert := hL.famNotInert
+        famNeedOk := hL.famNeedOk }
   · exact
       { famNew := fun B rb h hB => ⟨hR.famNew g hg6 hg B rb h, hrank.fam B rb h hB⟩
         advice := fun B rb a h hB ha => by
