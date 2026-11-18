@@ -161,42 +161,65 @@ def TwinKeepsStoreAr : Prop :=
 
 /-! ## The clause that hands the twin its block's family record -/
 
-/-- **Every stored recursor at a member of a block of recursors has a model companion.** The
-family step establishes it for the recursors it stores, the twin step for its own, and no other
-step stores a recursor at such an address. With it, the twin's step finds the block's family
-record installed (`familyInstalled_of_clause`). -/
+/-- **A stored member of a block's family record is a recursor with a model companion.** For
+every family record a block claims (`fam B = some rb`): where the environment stores a constant
+at a constant address of the record, it is a recursor and has a model companion. The family step
+establishes it for the recursors it stores; no other unit stores at such an address (a unit is
+claimed by no block, so it shares no constant address with a family record), so every other step
+keeps it; the witness's environment stores no constant address of a family record, so it holds
+there. With it, the twin's step, which is handed its block's family record stored, finds it
+installed (`familyInstalled_of_clause`). -/
 def FamilyRecsModeled (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
-    (env : Ix.Kernel.Env .anon) : Prop :=
-  ∀ (rb x : _root_.Address) (crb : Ixon.Constant) (rs : Array Ixon.MutConst)
-    (cv : ConstantVal .anon) (mI rP : Nat) (rules : List (RecRule .anon)),
-    FamRecRecord E₀ rb crb rs → ConstAddrOf rb crb x →
-    env.find? (keyOf t x) = some (.recInfo cv mI rP rules) → HasModel env (keyOf t x)
+    (fam : _root_.Address → Option _root_.Address) (env : Ix.Kernel.Env .anon) : Prop :=
+  ∀ (B rb x : _root_.Address) (crb : Ixon.Constant),
+    fam B = some rb → recordOf E₀ rb = some crb → ConstAddrOf rb crb x →
+    (env.find? (keyOf t x)).isSome = true →
+    (∃ cv mI rP rules, env.find? (keyOf t x) = some (.recInfo cv mI rP rules)) ∧
+      HasModel env (keyOf t x)
 
-/-- The clause is kept by a step that stores no recursor at a member of a block of recursors
-beside recursors with a model companion. -/
+/-- The clause is kept by a step that keeps every stored constant and stores, at a constant
+address of a claimed family record, only a recursor with a model companion. -/
 theorem FamilyRecsModeled.step {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
-    {env env₂ : Ix.Kernel.Env .anon} (h : FamilyRecsModeled t E₀ env)
+    {fam : _root_.Address → Option _root_.Address} {env env₂ : Ix.Kernel.Env .anon}
+    (h : FamilyRecsModeled t E₀ fam env)
     (hfind : ∀ {k : Ix.Kernel.Key .anon} {c : ConstantInfo .anon},
       env.find? k = some c → env₂.find? k = some c)
-    (hnew : ∀ (k : Ix.Kernel.Key .anon) (cv : ConstantVal .anon) (mI rP : Nat)
-      (rules : List (RecRule .anon)), env₂.find? k = some (.recInfo cv mI rP rules) →
-      env.find? k = some (.recInfo cv mI rP rules) ∨ HasModel env₂ k) :
-    FamilyRecsModeled t E₀ env₂ := by
-  intro rb x crb rs cv mI rP rules hR hx hf
-  rcases hnew _ cv mI rP rules hf with hold | hm
-  · exact (h rb x crb rs cv mI rP rules hR hx hold).mono hfind
-  · exact hm
+    (hnew : ∀ (B rb x : _root_.Address) (crb : Ixon.Constant),
+      fam B = some rb → recordOf E₀ rb = some crb → ConstAddrOf rb crb x →
+      (env₂.find? (keyOf t x)).isSome = true → env.find? (keyOf t x) = none →
+      (∃ cv mI rP rules, env₂.find? (keyOf t x) = some (.recInfo cv mI rP rules)) ∧
+        HasModel env₂ (keyOf t x)) :
+    FamilyRecsModeled t E₀ fam env₂ := by
+  intro B rb x crb hrb hcrb hx hs
+  cases hold : env.find? (keyOf t x) with
+  | none => exact hnew B rb x crb hrb hcrb hx hs hold
+  | some c =>
+    obtain ⟨⟨cv, mI, rP, rules, hf⟩, hm⟩ := h B rb x crb hrb hcrb hx (by rw [hold]; rfl)
+    rw [hold] at hf
+    refine ⟨⟨cv, mI, rP, rules, ?_⟩, hm.mono hfind⟩
+    rw [← hf]
+    exact hfind hold
 
-/-- **With the clause, a family record whose recursors are stored as recursors is installed.** -/
+/-- **The clause at an environment that stores no constant address of a claimed family
+record**, the witness's environment in particular (`FamilyGraph.famFresh`). -/
+theorem familyRecsModeled_of_fresh {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
+    {fam : _root_.Address → Option _root_.Address} {env : Ix.Kernel.Env .anon}
+    (hfr : ∀ B rb crb x, fam B = some rb → recordOf E₀ rb = some crb → ConstAddrOf rb crb x →
+      ¬ StoredAt t env x) :
+    FamilyRecsModeled t E₀ fam env := by
+  intro B rb x crb hrb hcrb hx hs
+  obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hs
+  exact (hfr B rb crb x hrb hcrb hx (storedAt_of_find hci)).elim
+
+/-- **With the clause, a claimed family record whose constant addresses are stored is
+installed.** -/
 theorem familyInstalled_of_clause {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
-    {env : Ix.Kernel.Env .anon} {rb : _root_.Address} {crb : Ixon.Constant}
-    {rs : Array Ixon.MutConst} (h : FamilyRecsModeled t E₀ env) (hR : FamRecRecord E₀ rb crb rs)
-    (hstored : ∀ x, ConstAddrOf rb crb x →
-      ∃ cv mI rP rules, env.find? (keyOf t x) = some (.recInfo cv mI rP rules)) :
-    FamilyInstalled t env rb crb := by
-  intro x hx
-  obtain ⟨cv, mI, rP, rules, hf⟩ := hstored x hx
-  exact ⟨⟨cv, mI, rP, rules, hf⟩, h rb x crb rs cv mI rP rules hR hx hf⟩
+    {fam : _root_.Address → Option _root_.Address} {env : Ix.Kernel.Env .anon}
+    {B rb : _root_.Address} {crb : Ixon.Constant} (h : FamilyRecsModeled t E₀ fam env)
+    (hrb : fam B = some rb) (hcrb : recordOf E₀ rb = some crb)
+    (hstored : ∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true) :
+    FamilyInstalled t env rb crb :=
+  fun x hx => h B rb x crb hrb hcrb hx (hstored x hx)
 
 /-! ## The generated terms of IxC's twin record -/
 

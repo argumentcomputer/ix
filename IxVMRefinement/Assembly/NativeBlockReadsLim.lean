@@ -1,5 +1,6 @@
 import IxVMRefinement.Assembly.NativeBlockReads
 import IxVMRefinement.Claim.TopDefn
+import IxVMRefinement.Claim.TopValue
 
 /-! # The member check of a one-type block, read at either role context
 
@@ -11,7 +12,8 @@ beside the earlier ones, with the same proofs: none of them reads the role conte
 and the one that types the former does so at the context of the given limit.
 
 * `Assembly.checkedLimAt_loadedL1`: a checked record's load, with the check on the loaded value.
-* `memberCheckedLimAt_checkedLimAt`: a checked member is checked at its constant address.
+* A checked member is checked at its constant address: `memberCheckedLimAt_checkedLimAt`, stated
+  in `Claim/TopValue.lean`.
 * `ctorSlots_of_member_lim`, `former_reads_lim`, `blockReads_of_member_lim`,
   `blockReads_shape_lim`, `nativeParts_of_member_lim`, `former_scope_lim`, `member_bounds_lim`:
   the block's readings, the recognised parts at a former declared at its telescope, the scope
@@ -70,52 +72,6 @@ theorem checkedLimAt_loadedL1
     hhash, hblake, hloaded, hL1, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩
 
 end IxVM.Refinement.Assembly
-
-namespace IxVM.Refinement.Typing
-
-open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
-open IxVM (F)
-open IxVM.Refinement.Obs
-open IxVM.Consistency
-
-section Checked
-
-variable {t : Ix.Kernel.RoleTable} {calls : List (Call F)}
-
-/-- **A checked block member is checked at its constant address, under the same role
-context.** -/
-theorem memberCheckedLimAt_checkedLimAt (hbound : Bounded calls) {bAddr B : _root_.Address}
-    {ms : Array Ixon.MutConst} {k : Nat} {mc : Ixon.MutConst} {lim : Option Nat}
-    (hm : Claim.MemberCheckedLimAt calls bAddr t B ms k lim) (hk : ms[k]? = some mc) :
-    Claim.CheckedLimAt calls bAddr t (memberAddr B k mc) lim := by
-  obtain ⟨h_pa, h_pre, m_chk, h'_chk, rc, x_members, x_block, ap, ptr, v, r_chk,
-    cs_pa, cs_load, cs_chk, hmem, hblk, ev_pa, hcl_pa, hsub_pa,
-    hrc_pre, hrc_m, ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := hm
-  have hlen : ms.toList.length < 2 ^ 39 :=
-    RomBound.bounded_length_lt hbound hcl_pa (List.Mem.head _) hmem
-  have hk_lt : k < ms.toList.length := by
-    have hk_sz : k < ms.size := (Array.getElem?_eq_some_iff.mp hk).1
-    simpa using hk_sz
-  have hk_val : ((k : F)).val = k :=
-    ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
-  obtain ⟨b', hb', rfl⟩ := hblk
-  obtain ⟨-, -, -, mc', a', hget', ha', hproj, hhashed⟩ :=
-    L1.projection_addr_hashed_spec hmem hb' ev_pa
-  rw [hk_val] at hget' hproj hhashed
-  have hget_list : ms.toList[k]? = some mc := by simpa using hk
-  rw [hget_list] at hget'
-  cases hget'
-  have haddr : Core.S0.addr h_pre ap (memberAddr (Core.ixAddr b') k mc) :=
-    ⟨a', ha', hproj.trans (LoadedReads.memberAddr_eq_projAddr _ k mc).symm⟩
-  exact ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
-    hrc_pre, hrc_m, haddr, Core.S0.addr_mono ev_ld.heap_extends haddr,
-    ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩
-
-variable {E₀ : Ixon.Env}
-
-end Checked
-
-end IxVM.Refinement.Typing
 
 namespace IxVM.Refinement.Typing
 

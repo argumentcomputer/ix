@@ -11,13 +11,14 @@ type (`IndMembersRunJ`). This module gives that run from the members' facts.
   stored before it: its name is fresh and is no reserved, projection or model key; its annotated
   type resolves; on it the block renaming followed by the alias renaming is the renaming to the
   advice; and the environment stores its alias.
+* `storeMembers`: the environment after the listed members are stored.
 * `indMembersRunJ_of_facts`: from the members' facts and `MembersReady`, the run of the record
-  over the family package, the environment it leaves, and that this environment extends the
-  prefix and stores the aliases the renaming moves.
+  over the family package to that environment, and that it extends the prefix and stores the
+  aliases the renaming moves.
 
 `MembersReady`, like `AliasesReady`, is a condition on names and on what an environment stores;
-its derivation from the facts' scope field and the freshness of the family's names is not in
-this module. -/
+its derivation from the facts' scope field and the freshness of the family's names is in
+`FamilyAlias/MembersFromScope.lean`. -/
 
 namespace IxVM.Refinement.Decl.FamilyAlias
 
@@ -60,17 +61,23 @@ def MembersReady (g h : KKey → KKey) (bn : List KKey) :
     MembersReady g h bn ⟨storedMember ci tyA :: env'.consts⟩ rest tys
   | _, _, _ => True
 
+/-- **The environment after the listed members are stored**, each as the record stores it, in
+the list's order (the last member is the newest constant). -/
+def storeMembers : Env .anon → List (ConstantInfo .anon) → List KExpr → Env .anon
+  | env', ci :: rest, tyA :: tys => storeMembers ⟨storedMember ci tyA :: env'.consts⟩ rest tys
+  | env', _, _ => env'
+
 /-- **The types and constructors of a family, installed from their facts.** `env` is the prefix,
-`env'` the environment the first member is stored in. -/
+`env'` the environment the first member is stored in; the run leaves the members stored as the
+record stores them (`storeMembers`). -/
 theorem indMembersRunJ_of_facts {env : Env .anon} {g h : KKey → KKey} {bn : List KKey}
     (hwf : EnvWF env) :
     ∀ (ms : List (ConstantInfo .anon)) (tys : List KExpr) (env' : Env .anon),
       ms.all isTypeOrCtor = true → MembersFacts env g ms tys →
       EnvExt env env' → AliasEnv env' h → MembersReady g h bn env' ms tys →
-      ∃ envM : Env .anon,
-        IndMembersRunJ (renameJ (blockRen bn) (famJ h)) bn {} env' ms envM ∧
-        EnvExt env envM ∧ AliasEnv envM h
-  | [], [], env', _, _, hext, hA, _ => ⟨env', rfl, hext, hA⟩
+      IndMembersRunJ (renameJ (blockRen bn) (famJ h)) bn {} env' ms (storeMembers env' ms tys) ∧
+        EnvExt env (storeMembers env' ms tys) ∧ AliasEnv (storeMembers env' ms tys) h
+  | [], [], env', _, _, hext, hA, _ => ⟨rfl, hext, hA⟩
   | [], _ :: _, _, _, hm, _, _, _ => nomatch hm
   | _ :: _, [], _, _, hm, _, _, _ => nomatch hm
   | ci :: rest, tyA :: tys, env', hk, hm, hext, hA, hr => by
@@ -91,11 +98,15 @@ theorem indMembersRunJ_of_facts {env : Env .anon} {g h : KKey → KKey} {bn : Li
       hext.trans (envExt_cons_fresh hfresh' hnpt')
     have hA' : AliasEnv ⟨storedMember ci tyA :: env'.consts⟩ h :=
       hA.mono (fun hf => Ix.Kernel.Env.find?_cons_of_fresh hfresh' hf)
-    obtain ⟨envM, hrun, hextM, hAM⟩ :=
+    obtain ⟨hrun, hextM, hAM⟩ :=
       indMembersRunJ_of_facts hwf rest tys _ hk'.2 hrestF hext' hA' hready
+    have hcons : storeMembers env' (ci :: rest) (tyA :: tys) =
+        storeMembers ⟨storedMember ci tyA :: env'.consts⟩ rest tys := rfl
+    rw [hcons]
+    refine ⟨?_, hextM, hAM⟩
     cases ci with
-    | indInfo cv caps => exact ⟨envM, ⟨_, hmv, hrun⟩, hextM, hAM⟩
-    | ctorInfo cv nP nF => exact ⟨envM, ⟨_, hmv, hrun⟩, hextM, hAM⟩
+    | indInfo cv caps => exact ⟨_, hmv, hrun⟩
+    | ctorInfo cv nP nF => exact ⟨_, hmv, hrun⟩
     | axiomInfo _ => exact absurd hk'.1 (by simp [isTypeOrCtor])
     | defnInfo _ _ _ => exact absurd hk'.1 (by simp [isTypeOrCtor])
     | thmInfo _ _ => exact absurd hk'.1 (by simp [isTypeOrCtor])

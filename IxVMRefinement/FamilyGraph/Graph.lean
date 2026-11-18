@@ -14,9 +14,10 @@ block (a twin). `FamilyGraph` states what the typing fold reads of all this besi
   environment does not store, that no block claims as its family record (`IsUnit`). A block's
   unit owns the block's constant addresses and its family record's (`FamOwns`).
 * **Families.** `fam B = some rb`: the block `B` installs the family record `rb`. The record is
-  a block of recursors with at least one member (an empty block of recursors is no family),
-  claimed by one block; the block is a unit; where the record is itself checked it comes after
-  its block (`famAfter`). A reference the family record uses is stored by the witness's
+  a block of recursors, empty where the family has no recursor (the block is then stepped by
+  the family step at a record that owns nothing); one block claims a record with a constant
+  address; the block is a unit; where the record is itself checked it comes after its block
+  (`famAfter`). A reference the family record uses is stored by the witness's
   environment, covered, a constant address of the block or of the record, or owned by a checked
   unclaimed record of rank below the block's (`OwnedBelow`). The last case is what a nested
   family needs: the constructors of the container it nests through are constant addresses of
@@ -86,12 +87,15 @@ structure FamilyGraph (t : Ix.Kernel.RoleTable) (envT : Ix.Kernel.Env .anon) (E�
   address the witness's environment does not store. -/
   famUnit : ∀ B rb, fam B = some rb → Unclaimed fam B ∧
     ∃ cb, recordOf E₀ B = some cb ∧ InLogic cb ∧ ∃ x, ConstAddrOf B cb x ∧ ¬ StoredAt t envT x
-  /-- A family record is a block of recursors with at least one member. -/
-  famRecord : ∀ B rb, fam B = some rb → ∃ crb rs, FamRecRecord E₀ rb crb rs ∧ rs.size ≠ 0
+  /-- A family record is a block of recursors, possibly empty (the family record of a modeled
+  block whose family has no recursor). -/
+  famRecord : ∀ B rb, fam B = some rb → ∃ crb rs, FamRecRecord E₀ rb crb rs
   /-- A family record that is itself checked comes after its block. -/
   famAfter : ∀ B rb, fam B = some rb → Walked Top Inner rb → rank B < rank rb
-  /-- One block claims a family record. -/
-  famInj : ∀ B B' rb, fam B = some rb → fam B' = some rb → B = B'
+  /-- One block claims a family record with a constant address. (The empty block of recursors
+  has one address, so two blocks may claim it; it owns nothing.) -/
+  famInj : ∀ B B' rb x crb, fam B = some rb → fam B' = some rb → recordOf E₀ rb = some crb →
+    ConstAddrOf rb crb x → B = B'
   /-- The witness's environment stores no constant address of a family record. -/
   famFresh : ∀ B rb crb x, fam B = some rb → recordOf E₀ rb = some crb →
     ConstAddrOf rb crb x → ¬ StoredAt t envT x
@@ -145,7 +149,7 @@ theorem familyGraph_none {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .anon} 
   famUnit := fun _ _ h => nomatch h
   famRecord := fun _ _ h => nomatch h
   famAfter := fun _ _ h => nomatch h
-  famInj := fun _ _ _ h => nomatch h
+  famInj := fun _ _ _ _ _ h => nomatch h
   famFresh := fun _ _ _ _ h => nomatch h
   famClosed := fun _ _ _ h => nomatch h
   advEarlier := fun _ _ h => False.elim h
@@ -160,13 +164,15 @@ theorem familyGraph_none {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .anon} 
 /-! ## The fold with twins -/
 
 /-- **What a unit needs**: what `FamNeeds` lists (the in-logic constant addresses its record or
-its family record uses, and the constant addresses of its advice), and, for a twin, the
-constant addresses of the family record of its block. -/
+its family record uses, and the constant addresses of its advice); for a twin, the constant
+addresses of the family record of its block; and the in-logic constant addresses an advice
+record of its family check uses. -/
 def FamilyNeeds (E₀ : Ixon.Env) (fam twin : _root_.Address → Option _root_.Address)
     (adv : _root_.Address → _root_.Address → Prop) (A x : _root_.Address) : Prop :=
   FamNeeds E₀ fam adv A x ∨
-    ∃ B rb crb, twin A = some B ∧ fam B = some rb ∧ recordOf E₀ rb = some crb ∧
-      ConstAddrOf rb crb x
+    (∃ B rb crb, twin A = some B ∧ fam B = some rb ∧ recordOf E₀ rb = some crb ∧
+      ConstAddrOf rb crb x) ∨
+    ∃ a, adv A a ∧ UsedRef E₀ a x ∧ NeedOk E₀ x
 
 /-- **The typing run as a system of units, with family records and twins**: `typingFoldFam`
 with the needs `FamilyNeeds`. -/
@@ -214,6 +220,41 @@ def UnitStepTwin (X : Ix.Kernel.Env .anon → Prop) (t : Ix.Kernel.RoleTable)
       (∀ x, ConstAddrOf A c x →
         ∃ ci ∈ new, ∃ ci₀, ci.name = keyOf t x ∧ Reads t E₀ x ci₀ ∧ StoredAs ci ci₀) ∧
       ∀ ci ∈ new, (∃ x, ConstAddrOf A c x ∧ ci.name = keyOf t x) ∨ ∃ k s, ci.name = .aux k s
+
+/-- **The step of a block that installs its family record with it, over the family graph.**
+`UnitStepFam` handed in addition what each advice record of the block's family check uses,
+stored (unless it is a constant address of the block or of its family record, or no in-logic
+constant address of the run's store): the advice is checked before the block, so its units have
+stored what it uses by the time the block is stepped (`needs_earlier_family`). -/
+def UnitStepFamily (X : Ix.Kernel.Env .anon → Prop) (t : Ix.Kernel.RoleTable)
+    (envT : Ix.Kernel.Env .anon) (E₀ E : Ixon.Env) (lim : Option Nat) (A : _root_.Address)
+    (c : Ixon.Constant) (rb : _root_.Address) (crb : Ixon.Constant)
+    (adv : _root_.Address → Prop) : Prop :=
+  ∀ env : Ix.Kernel.Env .anon,
+    (∀ ci ∈ envT.consts, ci ∈ env.consts) → (env.consts.map (·.name)).Nodup →
+    Decl.PrefixInv.{u} E t lim env → X env →
+    (∀ x, UsedRef E₀ A x ∨ UsedRef E₀ rb x →
+      (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x) →
+    (∀ a, adv a → ∀ ca, recordOf E₀ a = some ca → ∀ x, ConstAddrOf a ca x →
+      (env.find? (keyOf t x)).isSome = true) →
+    (∀ a, adv a → ∀ x, UsedRef E₀ a x →
+      (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x) →
+    (∀ x, FamAddr A c rb crb x → env.find? (keyOf t x) = none) →
+    ∃ new : List (ConstantInfo .anon),
+      (new.map (·.name)).Nodup ∧ (∀ ci ∈ new, env.find? ci.name = none) ∧
+      Decl.PrefixInv.{u} E t lim ⟨new ++ env.consts⟩ ∧ X ⟨new ++ env.consts⟩ ∧
+      (∀ x, FamAddr A c rb crb x →
+        ∃ ci ∈ new, ∃ ci₀, ci.name = keyOf t x ∧ Reads t E₀ x ci₀ ∧ StoredAs ci ci₀) ∧
+      ∀ ci ∈ new, (∃ x, FamAddr A c rb crb x ∧ ci.name = keyOf t x) ∨ ∃ k s, ci.name = .aux k s
+
+/-- A step that does not read what the advice uses is one that is handed it. -/
+theorem unitStepFamily_of_unitStepFam {X : Ix.Kernel.Env .anon → Prop}
+    {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env}
+    {lim : Option Nat} {A : _root_.Address} {c : Ixon.Constant} {rb : _root_.Address}
+    {crb : Ixon.Constant} {adv : _root_.Address → Prop}
+    (h : UnitStepFam.{u} X t envT E₀ E lim A c rb crb adv) :
+    UnitStepFamily.{u} X t envT E₀ E lim A c rb crb adv :=
+  fun env hext hnd hinv hX hrefs hadv _ hfresh => h env hext hnd hinv hX hrefs hadv hfresh
 
 /-! ## What the fold reads of the graph -/
 
@@ -285,7 +326,7 @@ theorem walked_eq_famRecord (hG : TopGraph t E₀ seeds Top rank)
     {c crb : Ixon.Constant} {x : _root_.Address} (hW : Walked Top Inner A)
     (hc : recordOf E₀ A = some c) (hx : ConstAddrOf A c x) (hrb : fam B = some rb)
     (hcrb : recordOf E₀ rb = some crb) (hxr : ConstAddrOf rb crb x) : A = rb := by
-  obtain ⟨crb', rs, hR, -⟩ := hF.famRecord B rb hrb
+  obtain ⟨crb', rs, hR⟩ := hF.famRecord B rb hrb
   have hcc : crb' = crb := Option.some.inj (hR.record.symm.trans hcrb)
   subst hcc
   obtain ⟨P, hP, hPp, hPo⟩ := hR.constAddr hxr
@@ -316,8 +357,8 @@ theorem owns_apart_family (hG : TopGraph t E₀ seeds Top rank)
   · have hAr : A' = rb := walked_eq_famRecord hG hF hW' hc' hown' hrb hcrb hxr
     rw [← hAr] at hrb
     exact (hU' A hrb).elim
-  · obtain ⟨crb₁, rs, hR, -⟩ := hF.famRecord A rb hrb
-    obtain ⟨crb₂, rs', hR', -⟩ := hF.famRecord A' rb' hrb'
+  · obtain ⟨crb₁, rs, hR⟩ := hF.famRecord A rb hrb
+    obtain ⟨crb₂, rs', hR'⟩ := hF.famRecord A' rb' hrb'
     have h1 : crb₁ = crb := Option.some.inj (hR.record.symm.trans hcrb)
     have h2 : crb₂ = crb' := Option.some.inj (hR'.record.symm.trans hcrb')
     subst h1 h2
@@ -327,7 +368,7 @@ theorem owns_apart_family (hG : TopGraph t E₀ seeds Top rank)
     subst hPP
     have hrr : rb = rb' := hPo.symm.trans hPo'
     subst hrr
-    exact hF.famInj A A' rb hrb hrb'
+    exact hF.famInj A A' rb x _ hrb hrb' hR.record hxr
 
 /-- **A checked, unclaimed record that owns an in-logic address the witness's environment does
 not store is a unit.** -/
@@ -374,7 +415,7 @@ theorem top_ownedBelow (hG : TopGraph t E₀ seeds Top rank)
     rcases kind_cases cx with hsa | hpr | hbl
     · refine ⟨x, Or.inl hTx, ?_, hrk, cx, hcx, Or.inl (Or.inl ⟨rfl, hsa⟩)⟩
       intro B hB
-      obtain ⟨crb, rs, hR, -⟩ := hF.famRecord B x hB
+      obtain ⟨crb, rs, hR⟩ := hF.famRecord B x hB
       have hcc : crb = cx := Option.some.inj (hR.record.symm.trans hcx)
       rw [← hcc] at hsa
       exact standalone_not_block hsa ⟨rs, hR.muts⟩
@@ -390,10 +431,39 @@ theorem top_ownedBelow (hG : TopGraph t E₀ seeds Top rank)
     · exact absurd hbl hnb
   · exact Or.inl hcov
 
+/-- **What a checked record uses and the witness's environment does not store is a constant
+address of the record, or owned by a unit of smaller rank**: a top-walked record by the walk's
+closure (`top_ownedBelow`), a record checked inside a family check by `innerClosed`; a covered
+reference is stored. -/
+theorem walked_usedRef_cases (hG : TopGraph t E₀ seeds Top rank)
+    (hF : FamilyGraph t envT E₀ Top rank fam twin adv Inner)
+    (hshape : TableShape.{u} t (fun _ => True) R envT) (htwf : t.wf = true)
+    (hus : ∀ A, A ∈ us ↔ IsUnit t envT E₀ Top Inner fam A) {a x : _root_.Address}
+    (hW : Walked Top Inner a) (hu : UsedRef E₀ a x) (hok : NeedOk E₀ x)
+    (hst : ¬ StoredAt t envT x) :
+    (∃ c, recordOf E₀ a = some c ∧ ConstAddrOf a c x) ∨
+      ∃ b ∈ us, FamOwns E₀ fam b x ∧ rank b < rank a := by
+  have h3 : Covered t x ∨ (∃ c, recordOf E₀ a = some c ∧ ConstAddrOf a c x) ∨
+      OwnedBelow E₀ Top Inner rank fam (rank a) x := by
+    rcases hW with hT | hI
+    · rcases top_ownedBelow hG hF hT hu hok with h | h
+      · exact Or.inl h
+      · exact Or.inr (Or.inr h)
+    · rcases hF.innerClosed a x hI hu hok with h | h | h | h
+      · exact absurd h hst
+      · exact Or.inl h
+      · exact Or.inr (Or.inl h)
+      · exact Or.inr (Or.inr h)
+  rcases h3 with hcov | h | hob
+  · exact absurd (covered_stored hshape htwf hcov) hst
+  · exact Or.inl h
+  · exact Or.inr (earlier_of_ownedBelow hG hF hus hob hok hst)
+
 /-- **Every address a unit needs is stored by the witness's environment, owned by the unit, or
 owned by a unit of smaller rank**: the references of its record (top-walked or checked inside a
-family check), those of its family record, the constant addresses of its advice, and, for a
-twin, those of its block's family record. -/
+family check), those of its family record, the constant addresses of its advice, for a twin
+those of its block's family record, and what an advice record of its family check uses (the
+advice record's own constant addresses are its unit's, of smaller rank). -/
 theorem needs_earlier_family (hG : TopGraph t E₀ seeds Top rank)
     (hF : FamilyGraph t envT E₀ Top rank fam twin adv Inner)
     (hshape : TableShape.{u} t (fun _ => True) R envT) (htwf : t.wf = true)
@@ -404,22 +474,10 @@ theorem needs_earlier_family (hG : TopGraph t E₀ seeds Top rank)
   rcases Classical.em (StoredAt t envT x) with hst | hst
   · exact Or.inl hst
   · rcases hneed with (⟨hu | ⟨rb, hrb, hur⟩, hok⟩ | ⟨a, ca, ha, hca, hxa⟩) |
-      ⟨B, rb, crb, htw, hrb, hcrb, hxr⟩
-    · have h3 : Covered t x ∨ (∃ c, recordOf E₀ A = some c ∧ ConstAddrOf A c x) ∨
-          OwnedBelow E₀ Top Inner rank fam (rank A) x := by
-        rcases hW with hT | hI
-        · rcases top_ownedBelow hG hF hT hu hok with h | h
-          · exact Or.inl h
-          · exact Or.inr (Or.inr h)
-        · rcases hF.innerClosed A x hI hu hok with h | h | h | h
-          · exact absurd h hst
-          · exact Or.inl h
-          · exact Or.inr (Or.inl h)
-          · exact Or.inr (Or.inr h)
-      rcases h3 with hcov | ⟨c, hc, hx⟩ | hob
-      · exact absurd (covered_stored hshape htwf hcov) hst
+      ⟨B, rb, crb, htw, hrb, hcrb, hxr⟩ | ⟨a, ha, hua, hok⟩
+    · rcases walked_usedRef_cases hG hF hshape htwf hus hW hu hok hst with ⟨c, hc, hx⟩ | hb
       · exact Or.inr (Or.inl ⟨c, hc, Or.inl hx⟩)
-      · exact Or.inr (Or.inr (earlier_of_ownedBelow hG hF hus hob hok hst))
+      · exact Or.inr (Or.inr hb)
     · rcases hF.famClosed A rb x hrb hur hok with h | hcov | ⟨cb, hcb, hxB⟩ | ⟨crb, hcrb, hxr⟩ |
         hob
       · exact absurd h hst
@@ -435,6 +493,12 @@ theorem needs_earlier_family (hG : TopGraph t E₀ seeds Top rank)
       exact Or.inr (Or.inr ⟨B,
         (hus B).mpr ⟨Or.inl (hF.famBlock B rb hrb), hUB, cB, hcB, hlogB, x₀, hx₀, hun⟩,
         ⟨cB, hcB, Or.inr ⟨rb, crb, hrb, hcrb, hxr⟩⟩, hrk⟩)
+    · obtain ⟨hWa, hUa, hrk, hloga⟩ := hF.advEarlier A a ha
+      rcases walked_usedRef_cases hG hF hshape htwf hus hWa hua hok hst with
+        ⟨ca, hca, hxa⟩ | ⟨b, hb, hown, hrkb⟩
+      · exact Or.inr (Or.inr ⟨a, (hus a).mpr ⟨hWa, hUa, ca, hca, hloga ca hca, x, hxa, hst⟩,
+          ⟨ca, hca, Or.inl hxa⟩, hrk⟩)
+      · exact Or.inr (Or.inr ⟨b, hb, hown, Nat.lt_trans hrkb hrk⟩)
 
 /-- **A unit's own constant addresses are all unstored**: one is, and a block is stored
 whole. -/
