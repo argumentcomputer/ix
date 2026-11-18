@@ -82,7 +82,9 @@ theorem fold_steps_family (hG : TopGraph t E₀ seeds Top rank)
       UnitStepFamily.{u} X t envT E₀ E lim A c rb crb (adv A))
     (hstepTwin : ∀ A c B rb crb, Walked Top Inner A → recordOf E₀ A = some c → InLogic c →
       twin A = some B → fam B = some rb → recordOf E₀ rb = some crb →
-      UnitStepTwin.{u} X t envT E₀ E lim A c rb crb) :
+      UnitStepTwin.{u} X t envT E₀ E lim A c rb crb)
+    (hstepTwinStored : ∀ A c B, Walked Top Inner A → recordOf E₀ A = some c → InLogic c →
+      twin A = some B → fam B = none → UnitStep.{u} X t envT E₀ E lim A c) :
     (familyFold.{u} X t E₀ R E lim rank fam twin adv).Steps envT us := by
   intro env A hA hinv hext hneed hfr
   have hFI : FoldInv.{u} X t E₀ R E lim env := hinv
@@ -209,16 +211,18 @@ theorem fold_steps_family (hG : TopGraph t E₀ seeds Top rank)
         exact hstep A c hW hU hc hlog hkind hfa htw env hextT hFI.nodup hFI.inv hFI.extra
           hrefs hfresh
       | some B =>
-        obtain ⟨rb, hrb, hne, -⟩ := hF.twinBlock A B htw
-        obtain ⟨crb, rs, hR⟩ := hF.famRecord B rb hrb
-        have hcanon : ∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true := by
-          intro x hx
-          rcases hneed x (Or.inr (Or.inl ⟨B, rb, crb, htw, hrb, hR.record, hx⟩)) with hs | hown
-          · exact find_isSome_of_storedAt hs
-          · exfalso
-            exact hne (walked_eq_famRecord hG hF hW hc ((hOwn x).mpr hown) hrb hR.record hx)
-        exact hstepTwin A c B rb crb hW hc hlog htw hrb hR.record env hextT hFI.nodup hFI.inv
-          hFI.extra hrefs hcanon hfresh
+        rcases hF.twinBlock A B htw with ⟨rb, hrb, hne, -⟩ | hnone
+        · obtain ⟨crb, rs, hR⟩ := hF.famRecord B rb hrb
+          have hcanon : ∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true := by
+            intro x hx
+            rcases hneed x (Or.inr (Or.inl ⟨B, rb, crb, htw, hrb, hR.record, hx⟩)) with hs | hown
+            · exact find_isSome_of_storedAt hs
+            · exfalso
+              exact hne (walked_eq_famRecord hG hF hW hc ((hOwn x).mpr hown) hrb hR.record hx)
+          exact hstepTwin A c B rb crb hW hc hlog htw hrb hR.record env hextT hFI.nodup hFI.inv
+            hFI.extra hrefs hcanon hfresh
+        · exact hstepTwinStored A c B hW hc hlog htw hnone env hextT hFI.nodup hFI.inv
+            hFI.extra hrefs hfresh
     obtain ⟨new, hnd', hfresh', hinv', hX', hreads, hnames⟩ := hstepped
     obtain ⟨s', h1, h2, h3, h4, h5⟩ := hfinish new (ConstAddrOf A c) hOwn hnd' hfresh' hinv' hX'
       (fun x hx => by
@@ -372,7 +376,10 @@ theorem typing_skeleton_core_family {V : View} {extra : List ByteArray}
       FamRecRecord E₀ rb crb rs → UnitStepFamily.{u} (X E) t envT E₀ E lim A c rb crb (adv A))
     (hstepTwin : ∀ E, StepCtx.{u} calls t R envT E₀ E → ∀ A c B rb crb, Walked Top Inner A →
       recordOf E₀ A = some c → InLogic c → twin A = some B → fam B = some rb →
-      recordOf E₀ rb = some crb → UnitStepTwin.{u} (X E) t envT E₀ E lim A c rb crb) :
+      recordOf E₀ rb = some crb → UnitStepTwin.{u} (X E) t envT E₀ E lim A c rb crb)
+    (hstepTwinStored : ∀ E, StepCtx.{u} calls t R envT E₀ E → ∀ A c B, Walked Top Inner A →
+      recordOf E₀ A = some c → InLogic c → twin A = some B → fam B = none →
+      UnitStep.{u} (X E) t envT E₀ E lim A c) :
     ConsistentReadOver.{u} calls t R envT seeds := by
   have htwf : t.wf = true := by
     unfold Ix.Kernel.RoleTable.wf
@@ -411,7 +418,7 @@ theorem typing_skeleton_core_family {V : View} {extra : List ByteArray}
       (owns_apart_family hG hF hus) (fresh_at_family hG hF hwhole hrun hus)
       (needs_earlier_family hG hF hshape htwf hus)
       (fold_steps_family hG hF hshape htwf hroles hwhole hrun hus hstep
-        (hstepFam E hctx) (hstepTwin E hctx))
+        (hstepFam E hctx) (hstepTwin E hctx) (hstepTwinStored E hctx))
   have hFI : FoldInv.{u} (X E) t E₀ R E lim env := hinv
   have hextT : ∀ ci ∈ envT.consts, ci ∈ env.consts := hext
   refine ⟨E₀, env, hload, hFI.nodup, hextT, hFI.prov, ?_,
