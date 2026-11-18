@@ -2,6 +2,7 @@ import IxVMRefinement.Binding.FamilyStep
 import IxVMRefinement.Binding.FamilyAdmits
 import IxVMRefinement.Binding.Glue
 import IxVMRefinement.Callees.RouteDispatch
+import IxVMRefinement.Binding.FamilyFlat
 
 /-! # What the binding fold's family form gives the witness, and what the typing half imports
 
@@ -58,6 +59,21 @@ structure StoredFamilies (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (env : Ix.Kern
   /-- The selected record is stored whole, each recursor with its model companion. -/
   installed : ∀ B rb crb, famOf B = some rb → recordOf R rb = some crb →
     (∀ x, ConstAddrOf rb crb x → StoredAt t env x) ∧ FamilyInstalled t env rb crb
+
+/-- **The selected records' flattened families, entry by entry**: the selected record of a block
+is the block's family over the flattened family `es` (by the entries' addresses), reads `es`
+position by position with its parameters and levels (`FamilyFlat.RecordFlat`), and `es` is the
+flattened family derived from the block's constructors (`FamilyFlat.BlockDerivedFlat`, at the
+block's elimination offset). Producer: the binding run's family check of the block, whose
+`check_nested_aux` asserts with the changed `aux_all_in` that the record's entries are the derived
+ones in order. It is to become the conclusion of `StoredFamilies.family` once the run's family
+checks (`GroupFamilyChecks.family`) carry it. -/
+def StoredFamiliesFlat (t : Ix.Kernel.RoleTable) (R : Ixon.Env)
+    (famOf : _root_.Address → Option _root_.Address) : Prop :=
+  ∀ B rb, famOf B = some rb → ∃ (cb crb : Ixon.Constant) (ms rs : Array Ixon.MutConst)
+    (es : List FamilyFlat.FlatEntry) (off : Nat),
+    FamilyOfBlock R B cb ms rb crb rs (es.map FamilyFlat.FlatEntry.addr) ∧
+    FamilyFlat.RecordFlat t R rb crb rs es ∧ FamilyFlat.BlockDerivedFlat t R B off es
 
 /-- **The witness's internal part with its stored families**: `OverW L` and one selected family
 map. -/
