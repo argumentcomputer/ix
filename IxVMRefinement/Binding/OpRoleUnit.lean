@@ -15,7 +15,8 @@ at the store with the operation's record and the environment with the operation 
   operation's check facts (`RoleOps.OpChecked`), the stored type
   and value annotating the record's reading, the reading itself, the record a standalone
   definition at an address of 32 bytes, and the stored constant the one every load of the
-  record represents. With `RunStepStores` it is the premise of this file.
+  record represents. It is the premise of this file; the record stores are the run predicate's
+  (`BindingRun.stepStores`).
 * `operationRoleUnit_of_validation`: the role unit's step from that premise, by the install
   step (`OpInstall.roleOp_step`).
 * `operationRoleUnit`: the same at the link the composed fold carries, in the form the composed
@@ -42,9 +43,8 @@ clause), which at an operation is `validate_op`:
 * the prefix half from the invariant (`OpRefine.opPrefix_of_bnd`, `OpRefine.wfPrefix_of_bnd`).
 
 All of these read the circuit's calls at a record store for the closure's store that the run's
-calls are good for (`Typing.StepStore`). The run predicate does not hand one, so the facts are
-asked under `RunStepStores` at the run's store, the one proposition every step of the binding
-fold takes for it.
+calls are good for (`Typing.StepStore`). The facts are asked under `RunStepStores` at the run's
+store, which the run predicate holds (`BindingRun.stepStores`).
 -/
 
 universe u
@@ -83,14 +83,12 @@ def OpValidationFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
 
 /-- **The operations' role unit, from the validation facts.** -/
 theorem operationRoleUnit_of_validation {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (hL : LinkLaws L) {calls : List (Call F)}
-    (hst : ∀ t ρ Rs, BindingRun calls t ρ Rs → RunStepStores calls t ρ.E₀)
-    (hv : OpValidationFacts.{u} L calls) :
+    (hL : LinkLaws L) {calls : List (Call F)} (hv : OpValidationFacts.{u} L calls) :
     AtGroups (BindingRun calls)
       (RoleUnitStepOver.{u} (fun x => x ∈ RoleOps.opRoles) L) := by
   intro t ρ Rs hrun hall ht g h6 h77 r a R R₁ R' env₁ hgrp hop ha hadm hreads hb hadds
   obtain ⟨ty₀, val₀, ty, val, tyD, valD, hint, hc, hty, hval, hrd, hsolo, hsize, hreload⟩ :=
-    hv t ρ Rs hrun (hst t ρ Rs hrun) hall ht g r a R R₁ R' env₁ h6 h77 hgrp hop ha hadm hreads hb
+    hv t ρ Rs hrun hrun.stepStores hall ht g r a R R₁ R' env₁ h6 h77 hgrp hop ha hadm hreads hb
       hadds
   exact ⟨RoleOps.installed env₁ (.role r) ty val hint, fun ci hci => List.mem_cons_of_mem _ hci,
     OpInstall.roleOp_step hL hall hgrp hop ha hadm hb hadds hc hty hval hrd hsolo hsize hreload⟩
@@ -98,11 +96,9 @@ theorem operationRoleUnit_of_validation {L : Ix.Kernel.Env .anon → NativeFam .
 /-- **The operations' role unit at the link the composed fold carries**, in the form the
 composed residual takes it. -/
 theorem operationRoleUnit
-    (hst : ∀ (calls : List (Call F)) t ρ Rs, BindingRun calls t ρ Rs →
-      RunStepStores calls t ρ.E₀)
     (hv : ∀ calls : List (Call F), OpValidationFacts.{u} FormerOpenTraceAt calls) :
     ∀ calls : List (Call F), AtGroups (BindingRun calls)
       (RoleUnitStepOver.{u} (fun x => x ∈ RoleOps.opRoles) FormerOpenTraceAt) :=
-  fun calls => operationRoleUnit_of_validation linkLaws_formerOpenTrace (hst calls) (hv calls)
+  fun calls => operationRoleUnit_of_validation linkLaws_formerOpenTrace (hv calls)
 
 end IxVM.Refinement.Binding

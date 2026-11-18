@@ -23,7 +23,7 @@ hypothesis `standardAxiomRoleUnit`.
   raise.
 * `AxiomValidationFacts L calls`: what the run's validation of a standard axiom
   (`KernelRoles::validate_standard_axiom`) gives the step, at every binding run with its record
-  stores (`RunStepStores`).
+  stores (`RunStepStores`, the run predicate's `BindingRun.stepStores`).
 * `standardAxiomRoleUnit_of_validation`, `standardAxiomRoleUnit`: the role unit of the standard
   axioms, from those facts.
 
@@ -581,13 +581,11 @@ def AxiomValidationFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
 
 /-- **The standard axioms' role unit, from the validation facts.** -/
 theorem standardAxiomRoleUnit_of_validation {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (hL : LinkLaws L) {calls : List (Call F)}
-    (hst : ∀ t ρ Rs, BindingRun calls t ρ Rs → RunStepStores calls t ρ.E₀)
-    (hv : AxiomValidationFacts.{u} L calls) :
+    (hL : LinkLaws L) {calls : List (Call F)} (hv : AxiomValidationFacts.{u} L calls) :
     AtGroups (BindingRun calls) (RoleUnitStepOver.{u} (· ∈ standardAxioms) L) := by
   intro t ρ Rs hrun hall ht g h6 h77 r a R R₁ R' env₁ hgrp hstd ha hadm hreads hb hadds
   obtain ⟨lps, tyD, ty, hcv, hpin, hnaux, hty, hrd, hsolo, hsize, hreload⟩ :=
-    hv t ρ Rs hrun (hst t ρ Rs hrun) hall ht g r a R R₁ R' env₁ h6 h77 hgrp hstd ha hadm hreads
+    hv t ρ Rs hrun hrun.stepStores hall ht g r a R R₁ R' env₁ h6 h77 hgrp hstd ha hadm hreads
       hb hadds
   cases hf : env₁.find? (Ix.Kernel.Key.role r) with
   | none =>
@@ -600,12 +598,9 @@ theorem standardAxiomRoleUnit_of_validation {L : Ix.Kernel.Env .anon → NativeF
 /-- **The standard axioms' role unit at the link the composed fold carries**, in the form the
 composed residual takes it. -/
 theorem standardAxiomRoleUnit
-    (hst : ∀ (calls : List (Call F)) t ρ Rs, BindingRun calls t ρ Rs →
-      RunStepStores calls t ρ.E₀)
     (hv : ∀ calls : List (Call F), AxiomValidationFacts.{u} FormerOpenTraceAt calls) :
     ∀ calls : List (Call F), AtGroups (BindingRun calls)
       (RoleUnitStepOver.{u} (· ∈ standardAxioms) FormerOpenTraceAt) :=
-  fun calls =>
-    standardAxiomRoleUnit_of_validation linkLaws_formerOpenTrace (hst calls) (hv calls)
+  fun calls => standardAxiomRoleUnit_of_validation linkLaws_formerOpenTrace (hv calls)
 
 end IxVM.Refinement.Binding.AxiomInstall
