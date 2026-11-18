@@ -91,7 +91,7 @@ private theorem find_fst_of_mem_nodup {l : List (Ix.Kernel.Role × _root_.Addres
       rcases List.mem_cons.mp hm with hhead | htail
       · injection hhead with hr _
         subst hr
-        exact absurd (beq_self_eq_true r') heq
+        exact absurd (beq_self_eq_true ro) heq
       · exact ih hnd.2 htail
 
 theorem roles_nodup {α : Type} {l : List (Ix.Kernel.Role × α)}
