@@ -132,8 +132,8 @@ fact about the run at the group (its producer is named in the lane's notes):
 * `advNotUnit`: no advice record of a new block's family check is the new record of the group's
   role unit;
 * `noPinned`: no constant address of a new record is at the key of a pinned basis constant;
-* `roleUnitForm`: a new record of a role unit of the group is a definition (an operation's) or an
-  axiom (a standard axiom's);
+* `roleUnitForm`: a new record of a role unit of the group is an operation's definition or a
+  standard axiom's record;
 * `keptRoles`: the record of each kept or prelude role of the group that is no role unit is in
   the group's store, no block, in Lean's logic with its block, and, if held before the group,
   checked by the run at some limit;
