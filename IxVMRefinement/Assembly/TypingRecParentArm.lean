@@ -15,6 +15,7 @@ module supplies those inputs from the walk's check of the record:
 * `native_rec_route_calls`: the three runs of the member check's route, each within the member
   check's calls;
 * `NativeRecArm`: the walk loaded the recursor record and checked the loaded `Rec` value;
+* `RecArmRun`: the same at any limit, the role context read as the core reads it;
 * `RecMajorNotBasis`: the head key of the major premise's domain, in every annotation of the
   record's type as read, is no basis name (the record-scoped form of the basis hypothesis);
 * `majorKey_of_piDomAt`: the head of the major premise's domain is the record's major key;
@@ -183,6 +184,38 @@ def NativeRecArm (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel
         ap] m_chk r_chk h'_chk cs_chk ∧
     (∀ cl ∈ cs_chk, cl ∈ calls)
 
+/-- **The check of the record took the recursor arm, at the limit `lim`**: `NativeRecArm` with
+the role context read as the core reads it (`Core.RCRep`), at a validating limit `some n` or
+under an assumed binding (`none`). The check of a recursor record reads nothing else of the
+role context, so one statement serves both validators. -/
+def RecArmRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (A : _root_.Address)
+    (lim : Option Nat) : Prop :=
+  ∃ (h_pre m_chk h'_chk : Heap F) (rc ap ptr r_chk : SourceValue F)
+    (levels type parameters indices motives minors rules k unsafeFlag block position : SourceValue F)
+    (cs_load cs_chk : List (Call F)),
+    Core.RCRep t lim h_pre rc ∧ Core.RCRep t lim m_chk rc ∧
+    Core.S0.addr h_pre ap A ∧ Core.S0.addr m_chk ap A ∧
+    ObsFn Obs.W "Ingress::get_ci" [ap] h_pre ptr m_chk cs_load ∧
+    (∀ cl ∈ cs_load, cl ∈ calls) ∧
+    loadValue m_chk ptr = .ok (.construct "KernelTypes::KConstantInfo" "Rec"
+      [levels, type, parameters, indices, motives, minors, rules, k, unsafeFlag, block, position]) ∧
+    ObsFn Obs.W "KernelCheck::check_const"
+      [rc, .construct "KernelTypes::KConstantInfo" "Rec"
+        [levels, type, parameters, indices, motives, minors, rules, k, unsafeFlag, block, position],
+        ap] m_chk r_chk h'_chk cs_chk ∧
+    (∀ cl ∈ cs_chk, cl ∈ calls)
+
+/-- The arm of a validating run is the arm at its limit. -/
+theorem NativeRecArm.run {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {A : _root_.Address} {n : Nat}
+    (h : NativeRecArm calls bAddr t A n) : RecArmRun calls t A (some n) := by
+  obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
+    minors, rules, kf, uns, block, position, cs_load, cs_chk, hrc_pre, hrc_m, ha_pre, ha_m, ev_ld,
+    hsub_ld, hld, ev_chk, hsub_chk⟩ := h
+  exact ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
+    minors, rules, kf, uns, block, position, cs_load, cs_chk, hrc_pre.toRCRep, hrc_m.toRCRep,
+    ha_pre, ha_m, ev_ld, hsub_ld, hld, ev_chk, hsub_chk⟩
+
 /-- **The head of the major premise's domain is no basis name**, record-scoped: in every
 annotation of the record's type as read (positional level parameters, over the run's blobs),
 the key heading the major premise's domain (`majorKey`) is no reserved basis name. The circuit's
@@ -227,17 +260,16 @@ no basis name whose record is an inductive projection of a native block. Inputs:
 store and the step's store, the record, the check of the record at the walk's limit, the
 record's used references stored (`hinert`, `hcover`), and the record-scoped basis hypothesis. -/
 theorem recParent_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlim : lim = some n)
-    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     (hres : RecMajorNotBasis t E₀ A c rc)
     (env : Ix.Kernel.Env .anon) (hstep : StepAt.{u} t envT E₀ E lim A c env) :
     ∃ P ip, RecParent t E env P ip := by
-  subst hlim
-  have hgood : Core.Good ⟨E, env, t, some n⟩ calls := hst.good env (some n)
+  have hgood : Core.Good ⟨E, env, t, lim⟩ calls := hst.good env lim
   have hbound : Bounded calls := hgood.2
   have hrec₀ : Ix.Cert.recordAt E₀ A = some c := (hS.recordOf_eq_recordAt A).symm.trans hc
   have hstored : Decl.UsedRefsStored t env c :=
@@ -290,7 +322,7 @@ theorem recParent_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
   obtain ⟨E', hann, htm⟩ := rty.toTmC (κ := Core.keyOf t) (ps := List.range rc.lvls.toNat)
     (by simp) (by simpa using hlvls) (LoadedReads.readCtx_keyAt_inv ht _)
     (fun i x m k hx => by simp at hx) hblob hrd hlbb hdef
-  have htmS := Decl.tmC_stored_of_usedRefs (E₀ := E) (env := env) (lim := some n) rty
+  have htmS := Decl.tmC_stored_of_usedRefs (E₀ := E) (env := env) (lim := lim) rty
     (recr_typ_usedRefs hinfo) hstored htm
   rw [Decl.posOf_range] at htmS
   -- the route of the member check

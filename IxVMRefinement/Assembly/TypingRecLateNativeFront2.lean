@@ -27,7 +27,7 @@ front theorem (`TypingRecLateNativeFront.lean`) assembles:
 * `front_rules_canon`: the rules read under `ps` have canonical rules, represented under the rule
   keying `lateRuleKey` (a used reference is stored; the only `recur` address is the recursor's);
 * `front_parent_former`: the parent's loaded type is the stored former's;
-* `front_ctor_loads`: the constructor loads of the member, as the comparison reads them
+* `front_ctor_loads_count`: the constructor loads of the member, as the comparison reads them
   (`NatCtorLoadT`);
 * `Decl.front_maj`: the level arguments of the head of the major premise's domain, from the
   member check's scan of the type and the comparison's level clause.
@@ -176,7 +176,7 @@ headed by the constant `κ a_d` at `ls_d`. -/
 theorem front_rec_to_parent_addr_head_lvls {κ : _root_.Address → KKey}
     {np nm nmi ni : Nat} {E : KExpr} {x_ty r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
-    (hsum_lt : np + nm + nmi + ni < 4294967296)
+    (hsum_lt : np + nm + nmi + ni < 18446744069414584321)
     (hT : TmExact κ 0 (fun _ => default) h 0 E x_ty)
     (ev : ObsFn W "KernelCheck::rec_to_parent_addr"
       [x_ty, .field (np : F), .field (nm : F), .field (nmi : F), .field (ni : F)]
@@ -199,7 +199,7 @@ theorem front_rec_to_parent_addr_head_lvls {κ : _root_.Address → KKey}
     simp only [evalBinOp, Except.ok.injEq, Nat.cast_add] at op16 ⊢; exact op16.symm
   rw [hv1] at ev50
   have hval : ZMod.val (((np + nm + nmi + ni : Nat) : F)) = np + nm + nmi + ni :=
-    ZMod.val_natCast_of_lt (Nat.lt_trans hsum_lt (by decide))
+    ZMod.val_natCast_of_lt hsum_lt
   obtain ⟨rfl, bs₀, B_peel, hstrip₀, hB_peel, hwrap_peel⟩ :=
     front_peel_n_foralls_exact (np + nm + nmi + ni) hval hT ev50
   cases hB_peel with
@@ -244,7 +244,7 @@ comparison's level clause on the same pointer, the domain of binder `np + 1 + nm
 declared type is headed by a constant at the family's level parameters `List.range k`. -/
 theorem front_maj {κ : _root_.Address → KKey} {k : Nat} {large : Bool} {np nmi ni : Nat}
     {tyC : KExpr} {x_ty r : SourceValue F} {h h' h₂ : Heap F} {cs : List (Call F)}
-    (hsum : np + 1 + nmi + ni < 4294967296)
+    (hsum : np + 1 + nmi + ni < 18446744069414584321)
     (hT : TmExact κ 0 (fun _ => default) h 0
       (posOf (if large then k :: List.range k else List.range k) tyC) x_ty)
     (ev : ObsFn W "KernelCheck::rec_to_parent_addr"
@@ -328,7 +328,7 @@ blobs, its binder tree, the type's binder plan), the scope run and the sort run 
 pointer, and the member check's scan of the type; the record's address and block field and the
 heaps from the record's load (`ldHeap`) on. -/
 def RecFrontAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
-    (bAddr : _root_.Address) (n : Nat) (A : _root_.Address) (c : Ixon.Constant)
+    (lim : Option Nat) (A : _root_.Address) (c : Ixon.Constant)
     (rc : Ixon.Recursor) (P : _root_.Address) (ip : Ixon.InductiveProj)
     (ind : Ixon.Inductive) : Prop :=
   ∃ (rcv apv parentV tyPtr rulesPtr blkPtr tyPtrP unsP blkPtrP pointer result scopeResult
@@ -338,7 +338,7 @@ def RecFrontAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.En
     (ldHeap scopeBefore scopeAfter sortAfter memberHeap scanHeap loadedHeap canonHeap
       final : Heap F)
     (ldCalls scopeCalls sortCalls scanCalls loadCalls canonCalls : List (Call F)),
-    Claim.RCFullRep t bAddr n ldHeap rcv ∧
+    Core.RCRep t lim ldHeap rcv ∧
     Bytes.RepAddressRef Core.addrTy ldHeap bA apv ∧ Core.ixAddr bA = A ∧
     Bytes.RepAddressRef Core.addrTy ldHeap bR blkPtr ∧ Core.ixAddr bR = A ∧
     L1.HashedPairs ldCalls blobs ∧ (∀ cl ∈ ldCalls, cl ∈ calls) ∧
@@ -398,11 +398,11 @@ def RecFrontAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.En
 /-- **The arm at the tied parent, in full** (the derivation of `rec_arm_of_arm`, with
 `check_const_rec_arm` in place of `check_const_rec_route`, keeping the record's load). -/
 theorem rec_front_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlim : lim = some n)
-    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
     {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
@@ -411,10 +411,9 @@ theorem rec_front_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E 
     {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (hcb : Ix.Cert.recordAt E ip.block = some cb) (hms : cb.info = .muts ms)
     (hind : ms[ip.idx.toNat]? = some (.indc ind)) :
-    RecFrontAt calls t E₀ bAddr n A c rc P ip ind := by
-  subst hlim
+    RecFrontAt calls t E₀ lim A c rc P ip ind := by
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
-  have hgood : Core.Good ⟨E, env, t, some n⟩ calls := hst.good env (some n)
+  have hgood : Core.Good ⟨E, env, t, lim⟩ calls := hst.good env lim
   have hbound : Bounded calls := hgood.2
   have hrec₀ : Ix.Cert.recordAt E₀ A = some c := (hS.recordOf_eq_recordAt A).symm.trans hc
   have hstored : Decl.UsedRefsStored t env c :=
@@ -467,7 +466,7 @@ theorem rec_front_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E 
   obtain ⟨E', hann, htm⟩ := rty.toTmC (κ := Core.keyOf t) (ps := List.range rc.lvls.toNat)
     (by simp) (by simpa using hlvls) (LoadedReads.readCtx_keyAt_inv ht _)
     (fun i x m k hx => by simp at hx) hblob hrd hlbb hdef
-  have htmS := Decl.tmC_stored_of_usedRefs (E₀ := E) (env := env) (lim := some n) rty
+  have htmS := Decl.tmC_stored_of_usedRefs (E₀ := E) (env := env) (lim := lim) rty
     (recr_typ_usedRefs hinfo) hstored htm
   rw [Decl.posOf_range] at htmS
   have hextM : Heap.Extends m_chk mH :=
@@ -486,7 +485,7 @@ theorem rec_front_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E 
     native_rec_member_full evM
   have hsScan' : ∀ x ∈ scanCalls, x ∈ calls := fun x hx => hsub_chk x (hsubM x (hsScan x hx))
   have hsLoad' : ∀ x ∈ loadCalls, x ∈ calls := fun x hx => hsub_chk x (hsubM x (hsLoad x hx))
-  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, some n⟩
+  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, lim⟩
   have hcS : Core.ScopedCoreFacts cS := hstep.inv.scopedCoreFacts
   have htmM := htmS.mono hextM
   obtain ⟨a, dom, us, ha, hpi, hhead⟩ := Decl.scopedCalleesSpec cS hcS .rec_to_parent_addr _ _ _
@@ -506,7 +505,7 @@ theorem rec_front_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E 
     Option.some.inj (hmajP.symm.trans ((majorKey_annotates_eq (rc := rc) hann' hann).trans hmajA))
   have hPa : P = Core.ixAddr a := keyOf_inj hroles hkeys
   subst hPa
-  have hgL : Core.Good ⟨E, env, t, some n⟩ loadCalls := hgood.sub hsLoad'
+  have hgL : Core.Good ⟨E, env, t, lim⟩ loadCalls := hgood.sub hsLoad'
   obtain ⟨rawP, cP, hhP, hbaP, hexP, -, hresP⟩ := L1.get_ci_block_trace_spec hgL.2 ha evLoad
   have hrecP : recordOf E (Core.ixAddr a) = some cm := by
     rw [recordOf_eq_recordAt_of_decoded hst.decoded]
@@ -560,7 +559,7 @@ theorem rec_front_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E 
 converted type (no `recur` address) represents the canonical annotation of its reading under
 `ps` exactly, under the keying of the prefix that stores the references the record uses. -/
 theorem front_type_canon {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
-    {E₀ E : Ixon.Env} {env : Ix.Kernel.Env .anon} {n : Nat}
+    {E₀ E : Ixon.Env} {env : Ix.Kernel.Env .anon} {lim : Option Nat}
     {A : _root_.Address} {c : Ixon.Constant} {rc : Ixon.Recursor}
     (hinfo : c.info = .recr rc) (hstored : Decl.UsedRefsStored t env c)
     (hrunBlob : ∀ a b, E₀.blobs.get? a = some b → E.blobs.get? a = some b)
@@ -580,7 +579,7 @@ theorem front_type_canon {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
     (hlbb : ty.looseBVarsBounded 0 = true) (hdef : ty.allLevelParamsDefined ps = true) :
     ∃ tyC : Ix.Kernel.Expr .anon,
       LoadedReads.canonAnn c ps 0 rc.typ ty = some tyC ∧ Annotates tyC ty ∧
-      Decl.TmCExact (Core.Ctx.stored ⟨E, env, t, some n⟩).κ h (Core.posOf ps tyC) tyPtr := by
+      Decl.TmCExact (Core.Ctx.stored ⟨E, env, t, lim⟩).κ h (Core.posOf ps tyC) tyPtr := by
   have hty' : (Ix.Kernel.Reader.MemberReader.mk' (readCtx t (fun x => E.blobs.get? x)) c
       (Ix.Kernel.Reader.recParam ps) (soloSelf t A)).read rc.typ = .ok ty :=
     ReaderReads.exprReader_mono hrunBlob hty
@@ -601,27 +600,27 @@ theorem front_type_canon {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
     · rcases rty.addrIn_used a hin with hu | hr
       · obtain ⟨i, hi | ⟨s, hs, his⟩, hr⟩ := hu
         · obtain ⟨ci, hci⟩ := hstored i (recr_typ_usedRefs hinfo i hi) _ hr
-          exact Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hci
+          exact Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hci
         · have hmem : i ∈ usedRefIdxs c := by
             unfold usedRefIdxs
             exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨s, hs, his⟩)
           obtain ⟨ci, hci⟩ := hstored i hmem _ hr
-          exact Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hci
+          exact Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hci
       · simp at hr
     · obtain ⟨i, hi | ⟨s, hs, his⟩, hr⟩ := rty.projIn_used a hp
       · obtain ⟨ci, hci⟩ := hstored i (recr_typ_usedRefs hinfo i hi) _ hr
-        exact Core.Ctx.stored_projPermitted_of_find (c := ⟨E, env, t, some n⟩) hci
+        exact Core.Ctx.stored_projPermitted_of_find (c := ⟨E, env, t, lim⟩) hci
       · have hmem : i ∈ usedRefIdxs c := by
           unfold usedRefIdxs
           exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨s, hs, his⟩)
         obtain ⟨ci, hci⟩ := hstored i hmem _ hr
-        exact Core.Ctx.stored_projPermitted_of_find (c := ⟨E, env, t, some n⟩) hci
+        exact Core.Ctx.stored_projPermitted_of_find (c := ⟨E, env, t, lim⟩) hci
 
 /-- **The declared recursor checked at the step's environment**: the scope run and the sort run
 on the type pointer, where the pointer represents the canonical annotation exactly under the
 prefix's keying. -/
 theorem front_constantValCheck {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
-    {env : Ix.Kernel.Env .anon} {n : Nat} (hinv : Decl.PrefixInv.{u} E t (some n) env)
+    {env : Ix.Kernel.Env .anon} {lim : Option Nat} (hinv : Decl.PrefixInv.{u} E t lim env)
     (hlv : LvClauses env) {A : _root_.Address} {ps : List Ix.Kernel.LevelParam}
     {ty tyC : Ix.Kernel.Expr .anon} {nlv : Nat}
     (hnl : ps.length = nlv) (hps : ps.length < 4294967296)
@@ -630,16 +629,16 @@ theorem front_constantValCheck {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
     (hfv : ty.hasFvar = false) (hfresh : env.find? (keyOf t A) = none)
     (hbasis : Ix.Kernel.reservedBasisNames.contains (keyOf t A) = false)
     {h h₁ h₃ : Heap F} {tyPtr rcv r₁ r₂ : SourceValue F} {cs₁ cs₂ : List (Call F)}
-    (htm : Decl.TmCExact (Core.Ctx.stored ⟨E, env, t, some n⟩).κ h (Core.posOf ps tyC) tyPtr)
+    (htm : Decl.TmCExact (Core.Ctx.stored ⟨E, env, t, lim⟩).κ h (Core.posOf ps tyC) tyPtr)
     (ev_ws : ObsFn Obs.W "KernelCheck::validate_expr_well_scoped"
       [tyPtr, .field 0, .field (nlv : F)] h r₁ h₁ cs₁)
-    (hrc : Core.RCRep t (some n) (h₁ ++ [.construct Core.kexprListEnum "Nil" []]) rcv)
-    (hgood : Core.Good ⟨E, env, t, some n⟩ cs₂)
+    (hrc : Core.RCRep t lim (h₁ ++ [.construct Core.kexprListEnum "Nil" []]) rcv)
+    (hgood : Core.Good ⟨E, env, t, lim⟩ cs₂)
     (ev_sort : ObsFn Obs.W "KernelInfer::k_ensure_sort"
       [rcv, tyPtr, .ptr (.enum Core.kexprListEnum) h₁.length]
       (h₁ ++ [.construct Core.kexprListEnum "Nil" []]) r₂ h₃ cs₂) :
     Ix.Kernel.Semantics.ConstantValCheckJ rulesJ env ⟨keyOf t A, ps, ty⟩ ⟨keyOf t A, ps, tyC⟩ :=
-  (constantValCheckJ_of_prefix_lv (c := Core.Ctx.stored ⟨E, env, t, some n⟩)
+  (constantValCheckJ_of_prefix_lv (c := Core.Ctx.stored ⟨E, env, t, lim⟩)
     (Γ := fun _ => default)
     (cv := ⟨keyOf t A, ps, ty⟩) (cv' := ⟨keyOf t A, ps, tyC⟩) hinv hlv ⟨rfl, rfl, hann⟩
     ⟨by
@@ -656,7 +655,7 @@ theorem front_constantValCheck {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
 traced rules represent their canonical rules under `lateRuleKey`, where every reference the
 record uses is stored and the only `recur` address is the recursor's own. -/
 theorem front_rules_canon {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
-    {E₀ E : Ixon.Env} {env : Ix.Kernel.Env .anon} {n : Nat}
+    {E₀ E : Ixon.Env} {env : Ix.Kernel.Env .anon} {lim : Option Nat}
     {A : _root_.Address} {c : Ixon.Constant} {rc : Ixon.Recursor}
     (hinfo : c.info = .recr rc) (hstored : Decl.UsedRefsStored t env c)
     (hrunBlob : ∀ a b, E₀.blobs.get? a = some b → E.blobs.get? a = some b)
@@ -678,7 +677,7 @@ theorem front_rules_canon {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
       LoadedReads.canonRules c ps rc.k rc.params.toNat (0 + 1) rc.rules.toList rules =
         some rlsC ∧
       List.Forall₂ RuleStored rlsC rules ∧
-      Core.RulesRep (lateRuleKey ⟨E, env, t, some n⟩ A) h ps 0 rulesPtr rlsC := by
+      Core.RulesRep (lateRuleKey ⟨E, env, t, lim⟩ A) h ps 0 rulesPtr rlsC := by
   have hrd' : List.Forall₂ (fun ru rl₀ => rl₀.nfields = ru.fields.toNat ∧
       (exprReader t (fun x => E.blobs.get? x) c (Ix.Kernel.Reader.recParam ps)
         (soloSelf t A)).read ru.rhs = .ok rl₀.rhs ∧
@@ -691,7 +690,7 @@ theorem front_rules_canon {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
   have hre : ∀ ru ∈ rc.rules.toList, ∀ (q : SourceValue F) (X : Core.KExpr),
       L1.RawConvExpr c.refs.toList [A] c.univs.toList c.sharing.toList blobs h 4294967295
         ru.rhs q → Core.TmC (Core.keyOf t) h X q →
-        Core.TmC (lateRuleKey ⟨E, env, t, some n⟩ A) h X q := by
+        Core.TmC (lateRuleKey ⟨E, env, t, lim⟩ A) h X q := by
     intro ru hru q X raw rep
     have used : ∀ x, L1.RefUsed c.refs.toList c.sharing.toList ru.rhs x →
         ∃ ci, env.find? (Core.keyOf t x) = some ci := by
@@ -705,8 +704,8 @@ theorem front_rules_canon {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
     refine raw.tmC_rekey rep (fun x hu => ?_) (fun x hu => ?_)
     · rcases hu with hu | hr
       · obtain ⟨ci, hci⟩ := used x hu
-        have hκ := Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hci
-        have hne : (Core.Ctx.stored ⟨E, env, t, some n⟩).κ x ≠ Core.unresolvedKey := by
+        have hκ := Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hci
+        have hne : (Core.Ctx.stored ⟨E, env, t, lim⟩).κ x ≠ Core.unresolvedKey := by
           rw [hκ]; exact Core.Resolved.ne
         rw [lateRuleKey_keep _ A x hne, hκ]
       · have hxA : x = A := by simpa using hr
@@ -714,37 +713,39 @@ theorem front_rules_canon {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
         exact lateRuleKey_self _ A
     · obtain ⟨ci, hci⟩ := used x hu
       exact Core.ProjPermitted.of_keep (lateRuleKey_keep _ A)
-        (Core.Ctx.stored_projPermitted_of_find (c := ⟨E, env, t, some n⟩) hci)
+        (Core.Ctx.stored_projPermitted_of_find (c := ⟨E, env, t, lim⟩) hci)
   obtain ⟨rls, hcR, hstR, hrr, -⟩ := LoadedReads.rules_canon ht hperm hps hselfk hagree built
-    (lateRuleKey ⟨E, env, t, some n⟩ A) rc.k rc.params.toNat hrulesTr hre hrd'
+    (lateRuleKey ⟨E, env, t, lim⟩ A) rc.k rc.params.toNat hrulesTr hre hrd'
   exact ⟨rls, hcR, hstR, hrr⟩
 
 /-! ## The parent's type and the constructor loads -/
 
 /-- **The parent's loaded type is the stored former's**: the scoped `get_ci` at the parent
-answers the stored former, whose type at positions is the family's telescope constant's. -/
+answers the stored former, whose type at positions the pointer represents. Nothing is said of
+the family's telescope constant: the comparison reads it through the recorded binders. -/
 theorem front_parent_former {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
-    {env : Ix.Kernel.Env .anon} {n : Nat}
-    (hcS : Core.ScopedCoreFacts (Core.Ctx.stored ⟨E, env, t, some n⟩))
-    {fam : NativeFam .anon} (hat : LateFamAt t E env fam) {P : _root_.Address}
+    {env : Ix.Kernel.Env .anon} {lim : Option Nat}
+    (hcS : Core.ScopedCoreFacts (Core.Ctx.stored ⟨E, env, t, lim⟩))
+    {fam : NativeFam .anon} (hfam : NativeFamStored env fam)
+    (hlps : fam.cvS.levelParams = fam.p.cvT.levelParams) {P : _root_.Address}
     (hname : fam.p.cvT.name = keyOf t P) {k : Nat}
     (hk : fam.p.cvT.levelParams = List.range k)
     {parentV pointer : SourceValue F} {bT : Bytes.Address} (hbT' : Core.ixAddr bT = P)
     {scanHeap loadedHeap : Heap F} {loadCalls : List (Call F)}
-    (hgL : Core.Good ⟨E, env, t, some n⟩ loadCalls)
+    (hgL : Core.Good ⟨E, env, t, lim⟩ loadCalls)
     (hbT : Bytes.RepAddressRef Core.addrTy scanHeap bT parentV)
     (evLoad : ObsFn Obs.W "Ingress::get_ci" [parentV] scanHeap pointer loadedHeap loadCalls)
     {nl tyPtrP np ni nc u blk idx : SourceValue F}
     (hldP : loadValue loadedHeap pointer = .ok (.construct "KernelTypes::KConstantInfo" "Induct"
       [nl, tyPtrP, np, ni, nc, u, blk, idx])) :
-    Core.TmC (Core.Ctx.stored ⟨E, env, t, some n⟩).κ loadedHeap fam.cvTa.type tyPtrP := by
-  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, some n⟩
+    Core.TmC (Core.Ctx.stored ⟨E, env, t, lim⟩).κ loadedHeap fam.cvS.type tyPtrP := by
+  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, lim⟩
   have hformer : env.find? (Core.keyOf t P) =
       some (.indInfo fam.cvS (Ix.Kernel.nativeCaps fam.p)) := by
     rw [LoadedReads.keyOf_eq, ← hname]
-    exact hat.stored.former
+    exact hfam.former
   have hκP : cS.κ P = Core.keyOf t P :=
-    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hformer
+    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hformer
   obtain ⟨ci, hfind, hptr⟩ := Core.get_ci_step cS hcS evLoad parentV bT rfl trivial
     (by rw [hbT', hκP]; exact Core.Resolved.ne)
     (Core.CoreGood.ofRaw hgL (fun _ _ => trivial)) hbT
@@ -760,41 +761,42 @@ theorem front_parent_former {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
   obtain ⟨hcvEq, -⟩ := Ix.Kernel.ConstantInfo.indInfo.inj hcv
   subst hcvEq
   obtain ⟨-, -, -, htm⟩ := hval
-  rw [hat.lps, hk, Decl.posOf_range] at htm
-  rw [hat.tele]
+  rw [hlps, hk, Decl.posOf_range] at htm
   exact htm
 
 /-- **The constructor loads of the member, as the comparison reads them**: every scoped
 `get_ci_cprj` load of constructor `j` of member `idx` of the block at `bP`, within calls good
-for the step's store, answers the stored constructor `j` of the family: its key, its field count,
-and its stored type at positions. -/
-theorem front_ctor_loads {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
-    {env : Ix.Kernel.Env .anon} {n : Nat}
-    (hcS : Core.ScopedCoreFacts (Core.Ctx.stored ⟨E, env, t, some n⟩))
+for the step's store, answers the stored constructor `j` of the family: its key, its field count
+with the bound the load contract keeps (`Core.CIRep.ctor_fields`), and its stored type at
+positions. The member index and the constructor count are asked at what the parent's load
+gives. -/
+theorem front_ctor_loads_count {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
+    {env : Ix.Kernel.Env .anon} {lim : Option Nat}
+    (hcS : Core.ScopedCoreFacts (Core.Ctx.stored ⟨E, env, t, lim⟩))
     {fam : NativeFam .anon} (hfam : NativeFamStored env fam) {k : Nat}
     (hk : fam.p.cvT.levelParams = List.range k)
-    {bP : Bytes.Address} {idx : Nat} (hidx : idx < 4294967296)
-    (hlen : fam.ctorsA.length < 4294967296)
+    {bP : Bytes.Address} {idx : Nat} (hidx : idx < 72057594037927936)
+    (hlen : fam.ctorsA.length < 72057594037927936)
     (hnames : ∀ (j : Nat) (cA : ConstantVal .anon × Nat), fam.ctorsA[j]? = some cA →
       cA.1.name = keyOf t (Core.cprjAddr (Core.ixAddr bP) idx j))
     {x_block : SourceValue F} {cs : List (Call F)}
-    (hgood : Core.Good ⟨E, env, t, some n⟩ cs) :
-    Decl.NatCtorLoadT (Core.Ctx.stored ⟨E, env, t, some n⟩).κ bP idx k (lateCtorsInfo fam)
+    (hgood : Core.Good ⟨E, env, t, lim⟩ cs) :
+    Decl.NatCtorLoadT (Core.Ctx.stored ⟨E, env, t, lim⟩).κ bP idx k (lateCtorsInfo fam)
       x_block cs := by
   intro j hj p9 h m2 cs15 w45 x_cty0 w46 w47 w48 w49 x_nf w50 hsub hb ev hld info hinfo
   obtain ⟨cA, ks, hcA, hks, rfl⟩ := front_lateCtorsInfo_getElem? hinfo
   have hjlt : j < fam.ctorsA.length := (List.getElem?_eq_some_iff.mp hcA).1
   obtain ⟨hfindN, hlpsC, -⟩ := hfam.ctor j cA hcA
   rw [hnames j cA hcA, ← LoadedReads.keyOf_eq] at hfindN
-  have hκ : (Core.Ctx.stored ⟨E, env, t, some n⟩).κ (Core.cprjAddr (Core.ixAddr bP) idx j) =
+  have hκ : (Core.Ctx.stored ⟨E, env, t, lim⟩).κ (Core.cprjAddr (Core.ixAddr bP) idx j) =
       Core.keyOf t (Core.cprjAddr (Core.ixAddr bP) idx j) :=
-    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hfindN
+    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hfindN
   have hidxv : ZMod.val ((idx : Nat) : F) = idx :=
     ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
   have hjv : ZMod.val ((j : Nat) : F) = j :=
     ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
-  have hfind' : (Core.Ctx.stored ⟨E, env, t, some n⟩).env.find?
-      ((Core.Ctx.stored ⟨E, env, t, some n⟩).κ (Core.cprjAddr (Core.ixAddr bP)
+  have hfind' : (Core.Ctx.stored ⟨E, env, t, lim⟩).env.find?
+      ((Core.Ctx.stored ⟨E, env, t, lim⟩).κ (Core.cprjAddr (Core.ixAddr bP)
         (ZMod.val ((idx : Nat) : F)) (ZMod.val ((j : Nat) : F)))) =
       some (.ctorInfo cA.1 fam.p.nP cA.2) := by
     rw [hidxv, hjv, hκ]
@@ -806,12 +808,12 @@ theorem front_ctor_loads {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
   rw [hld] at hv
   injection hv with hv
   rw [← hv] at hrep
-  obtain ⟨cv', nP', nF', hci, hvr, -, hnf', -, -⟩ := Core.CIRep.ctor_fields hrep
+  obtain ⟨cv', nP', nF', hci, hvr, -, hnf', hcounts, -⟩ := Core.CIRep.ctor_fields hrep
   obtain ⟨rfl, rfl, rfl⟩ := Ix.Kernel.ConstantInfo.ctorInfo.inj hci
   obtain ⟨-, -, -, htmC⟩ := hvr
   rw [hlpsC, hk] at htmC
-  refine ⟨?_, hnf', htmC 0 (fun _ => default)⟩
-  show cA.1.name = (Core.Ctx.stored ⟨E, env, t, some n⟩).κ
+  refine ⟨?_, hnf', hcounts.2, htmC 0 (fun _ => default)⟩
+  show cA.1.name = (Core.Ctx.stored ⟨E, env, t, lim⟩).κ
     (Core.cprjAddr (Core.ixAddr bP) idx j)
   rw [hκ, hnames j cA hcA, LoadedReads.keyOf_eq]
 

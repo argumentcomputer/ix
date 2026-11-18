@@ -2,8 +2,8 @@ import IxVMRefinement.Decl.LateNatRecCheckT
 
 /-! # The native recursor comparison of a late recursor, stated on the telescope builder's output
 
-`late_nat_rec_check_specT` asks that the loaded parent type is syntactically a telescope: its
-proof reads the output of `KernelCheck::nat_former_tele` as the input unchanged. A family
+The comparison as first stated asked that the loaded parent type be syntactically a telescope:
+its proof read the output of `KernelCheck::nat_former_tele` as the input unchanged. A family
 declared at a type that only head-reduces to a telescope does not satisfy that. Everything after
 the builder's call reads only what the builder's output represents, so the comparison is
 restated here with the premise there: `NatFormerTeleReads` says which term the builder's output
@@ -14,7 +14,12 @@ represents, given the term its input represents.
 parameters are renamed to positions, and concludes the comparison for the recursor generated
 from `tty₀`. For a syntactic telescope the premise holds with `tty₀ = pty₀`
 (`NatFormerTeleReads.of_strip`), which gives back the earlier statement
-(`late_nat_rec_check_spec_syntactic`). -/
+(`late_nat_rec_check_spec_syntactic`).
+
+The counts are asked at what an accepted run gives: the member index, the parameter, index and
+constructor counts below `2^56` (`UInt64::to_field` at the parent's load), the recursor's level
+count below `2^32` (`Convert::lvls_to_field`), and each constructor's field count below `2^56`
+where its load is observed (`NatCtorLoadT`). -/
 
 namespace IxVM.Refinement.Decl
 
@@ -41,10 +46,10 @@ def NatFormerTeleReads (c : ScopedCtx) (n : Nat) (A B : KExpr) : Prop :=
 
 /-- On a term whose first `n` nodes are `∀`s the builder returns the term. -/
 theorem NatFormerTeleReads.of_strip {c : ScopedCtx} (hc : ScopedCoreFacts c) {n : Nat}
-    {A : KExpr} (hn : n < 4294967296) (hs : (A.stripPis n).isSome = true) :
+    {A : KExpr} (hn : n < 18446744069414584321) (hs : (A.stripPis n).isSome = true) :
     NatFormerTeleReads c n A A := by
   intro x_rc x_ty x_types r h h' cs hrc htypes hgood hA ev
-  exact (scoped_nat_former_tele_spec hc n hn hs hrc htypes (ghostScoped_zero _) hgood hA ev).2
+  exact (scoped_nat_former_tele_bounded hc n hn hs hrc htypes (ghostScoped_zero _) hgood hA ev).2
 
 private theorem natTeleRec_getAppFn_mkAppN_eq : ∀ (As : List KExpr) (f : KExpr),
     (Expr.mkAppN f As).getAppFn = f.getAppFn
@@ -92,7 +97,7 @@ private theorem natTeleRec_forallDomHeadLvls_replace_pis
     {T : KKey} {a : Bytes.Address} {ls : List KLevel} {m : Nat} :
     ∀ (cnt : Nat) {k : Nat} {tele : KExpr} {ppw ptele pb r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
-      cnt < 2147483648 →
+      cnt < 18446744069414584321 →
       Tm κ d Γ h k tele ptele →
       ForallDomHeadLvls κ d Γ h T a ls m (k + cnt) pb →
       ObsFn W "KernelCheck::nat_replace_pis"
@@ -107,7 +112,7 @@ private theorem natTeleRec_forallDomHeadLvls_replace_pis
     | .other_other (hne19 := hne) .. => exact (hne rfl).elim
   | cnt + 1, k, tele, ppw, ptele, pb, r, h, h', cs, hcnt, htele, hpb, ev => by
     have hne0 : (.field ((cnt + 1 : Nat) : F) : SourceValue F) ≠ .field 0 :=
-      succ_field_ne_zero (by omega)
+      succ_field_ne_zero_bounded hcnt
     match Obs.«KernelCheck::nat_replace_pis».obs ev with
     | .n0 (hv14 := hv) .. =>
       exact absurd hv hne0
@@ -154,13 +159,12 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
     (hT : c.κ (ixAddr bT) = T)
     (hκ₂_inj : ∀ a : Bytes.Address, κ₂ (ixAddr a) = T → a = bT)
     (hRec : κ₂ (ixAddr bRec) = recC)
-    (hidx : idx < 4294967296)
+    (hidx : idx < 72057594037927936)
     (hCres : ∀ i, i < ctors_info.length → c.κ (cprjAddr (ixAddr b₀) idx i) ≠ unresolvedKey)
-    (hk_lt : k < 2147483648)
-    (hnP_lt : nP < 2147483648)
-    (hnIdx_lt : nIdx < 2147483648)
-    (hnCtors_lt : ctors_info.length < 2147483648)
-    (hnall_lt : nP + 1 + ctors_info.length + nIdx + 1 < 4294967296)
+    (hk_lt : k + (if large then 1 else 0) < 4294967296)
+    (hnP_lt : nP < 72057594037927936)
+    (hnIdx_lt : nIdx < 72057594037927936)
+    (hnCtors_lt : ctors_info.length < 72057594037927936)
     (hlps_pty : pty₀.allLevelParamsDefined (List.range k) = true)
     (hsT₀ : tty₀.stripPis (nP + nIdx) = some (tbs₀, tsort₀))
     (hwf_all : ∀ info ∈ ctors_info,
@@ -280,7 +284,7 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
   have hlps_219 : RepKLevelList m219 clvls v218 :=
     nat_build_param_lvls_range_spec
       (by dsimp only [uoff]; cases large <;> simp only [Bool.false_eq_true, ↓reduceIte] <;>
-        have := hk_lt <;> omega)
+        simp only [Bool.false_eq_true, ↓reduceIte] at hk_lt <;> omega)
       ev231
   have hseg1 : RepKLevel m299 ℓ_c v298 ∧ Heap.Extends m219 m299 ∧ cs301 = [] := by
     cases sg306 with
@@ -363,7 +367,7 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
   have htty_390 : Tm c.κ 0 (fun _ => default) m391 0 (posOf rlps' tty₀) v390 :=
     htele (hrc.mono ext_h_439) htypes hgood_ft (htm_381.mono ext_382_439) ev403
   obtain ⟨hm452_eq, tbsP, itele_pos, hsT_pos, _, hitele0⟩ :=
-    peel_n_foralls_tm_spec nP (by omega) htty_390 ev464
+    peel_n_foralls_tm_bounded nP (by omega) htty_390 ev464
   have hitele_tm : Tm c.κ 0 (fun _ => default) m452 nP itele_pos v451 := by
     rw [hm452_eq]
     simpa [Nat.zero_add] using hitele0
@@ -381,9 +385,9 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
       (RepKLevelList.mono hlps_219
         (ext_219_299.trans (ext_299_324.trans (ext_324_308.trans (ext_308_452.trans ext_452_482)))))
       (LvEqList.refl _)
-  have hps_m1 := nat_ps_at_spec (κ := c.κ) (d := 0) (Γ := fun _ => default)
+  have hps_m1 := nat_ps_at_bounded (κ := c.κ) (d := 0) (Γ := fun _ => default)
     nP nIdx (nP + nIdx) (by omega) (by omega) ev560
-  have hps_m2 := nat_ps_at_spec (κ := c.κ) (d := 0) (Γ := fun _ => default)
+  have hps_m2 := nat_ps_at_bounded (κ := c.κ) (d := 0) (Γ := fun _ => default)
     nIdx 0 (nP + nIdx) (by omega) (by omega) ev588
   have hcat_m := kexpr_list_concat_spec' ev546 (tmRepList_mono ev588.heap_extends hps_m1) hps_m2
   have ext_482_536 := ev560.heap_extends.trans (ev588.heap_extends.trans ev546.heap_extends)
@@ -413,16 +417,16 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
   have ext_452_645 := ext_452_482.trans
     (ext_482_536.trans (ev525.heap_extends.trans (ext_513_668.trans ext_668_645)))
   obtain ⟨motiveTy, hmot_ite, hmot_tm⟩ :=
-    nat_replace_pis_spec nIdx (by omega) hnever_645
+    nat_replace_pis_bounded nIdx (by omega) hnever_645
       (hitele_tm.mono ext_452_645) hmot_body_645 ev617
   simp only [↓reduceIte] at hmot_ite
   have hmot_eq : cMotiveTyI T clvls ℓ_c nP nIdx itele_pos = some motiveTy := hmot_ite
   -- Step 4: `major` (`v925`)
   rw [evalBinOp_add_one n op773] at op765
   rw [evalBinOp_add_nat (n + 1) nIdx op765] at ev749
-  have hps_j1 := nat_ps_at_spec (κ := c.κ) (d := 0) (Γ := fun _ => default)
+  have hps_j1 := nat_ps_at_bounded (κ := c.κ) (d := 0) (Γ := fun _ => default)
     nP (n + 1 + nIdx) (nP + (n + 1) + nIdx) (by omega) (by omega) ev749
-  have hps_j2 := nat_ps_at_spec (κ := c.κ) (d := 0) (Γ := fun _ => default)
+  have hps_j2 := nat_ps_at_bounded (κ := c.κ) (d := 0) (Γ := fun _ => default)
     nIdx 0 (nP + (n + 1) + nIdx) (by omega) (by omega) ev794
   have hcat_j := kexpr_list_concat_spec' ev735 (tmRepList_mono ev794.heap_extends hps_j1) hps_j2
   have ext_482_725 := ext_482_536.trans (ev525.heap_extends.trans (ext_513_668.trans
@@ -454,14 +458,14 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
   have hbvar_mot_j : Tm c.κ 0 (fun _ => default) m827 (nP + (n + 1) + nIdx + 1)
       (.bvar (nIdx + n + 1)) (.ptr (.enum kexprEnum) m702.length) := by
     rw [hm835]
-    exact tm_bvarLocal_nat (by simp) (by dsimp only [n]; omega) (by dsimp only [n]; omega)
-  have hps_idx1 := nat_ps_at_spec (κ := c.κ) (d := 0) (Γ := fun _ => default)
+    exact tm_bvarLocal_nat_bounded (by simp) (by dsimp only [n]; omega) (by dsimp only [n]; omega)
+  have hps_idx1 := nat_ps_at_bounded (κ := c.κ) (d := 0) (Γ := fun _ => default)
     nIdx 1 (nP + (n + 1) + nIdx + 1) (by omega) (by dsimp only [n]; omega) ev889
   have ext_879_906 : Heap.Extends m879 m906 := by rw [hm914]; exact Heap.Extends.snoc _ _
   have hbvar0_906 : Tm c.κ 0 (fun _ => default) m906 (nP + (n + 1) + nIdx + 1)
       (.bvar 0) (.ptr (.enum kexprEnum) m879.length) := by
     rw [hm914]
-    exact tm_bvarLocal_nat (n := 0) (by simp) (by omega) (by omega)
+    exact tm_bvarLocal_nat_bounded (n := 0) (by simp) (by omega) (by omega)
   have hsnoc_j := SubstAux.ksnoc
     (R := fun h E p => Tm c.κ 0 (fun _ => default) h (nP + (n + 1) + nIdx + 1) E p)
     (fun _ _ _ _ ext r => Tm.mono ext r) ev875
@@ -474,7 +478,7 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
   have ext_702_811 := ext_702_827.trans (ext_827_865.trans ev823.heap_extends)
   have ext_452_811 := ext_452_482.trans
     (ext_482_725.trans (ev714.heap_extends.trans ext_702_811))
-  have hitele_lift := expr_lift_local_spec (Nat.zero_le nP) (by omega) (by decide)
+  have hitele_lift := expr_lift_local_bounded (Nat.zero_le nP) (by omega) (by decide)
     hbnd_lj (hitele_tm.mono ext_452_811) ev969
   have ext_959_1002 : Heap.Extends m959 m1002 := by rw [hm1010]; exact Heap.Extends.snoc _ _
   have ext_299_1002 := ext_299_513.trans (ext_513_668.trans (ext_668_645.trans
@@ -499,7 +503,7 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
       (by simp [cFamI, natTeleRec_getAppFn_mkAppN_eq]; rfl)
       (hfam_head.mono (ext_702_811.trans (ev969.heap_extends.trans ext_959_1002)))
   obtain ⟨major, hmaj_ite, hmaj_tm⟩ :=
-    nat_replace_pis_spec nIdx (by omega) hpw_1002
+    nat_replace_pis_bounded nIdx (by omega) hpw_1002
       (hitele_lift.mono ext_959_1002) hmaj_core ev938
   have hmaj_head :=
     natTeleRec_forallDomHeadLvls_replace_pis nIdx (by omega)
@@ -528,7 +532,7 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
       m926 v1044 m1045 cs1055 := by
     simpa using ev1057
   obtain ⟨minors, hmin_eq, hmin_tm⟩ :=
-    natT_minors_spec (c := c.toCtx) hT hκ_inj hidx hCres (by omega) hwf_all n 0 (by omega)
+    natT_minors_spec (c := c.toCtx) hT hκ_inj hidx hCres (by omega) hnP_lt hwf_all n 0 (by omega)
       hload_min hhead_min hgood_min hbnd_min
       (Bytes.repAddressRef_heapMono₂ addrTy ext_h_926 hb₀_blk)
       (Bytes.repAddressRef_heapMono₂ addrTy ext_h_926 hbT)
@@ -537,7 +541,7 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
       hmaj_tm' ev1057'
   have hmin_head :=
     natI_forallDomHeadLvls_minors (κ := c.κ) (idx := idx) (nIdx := nIdx) (large := large)
-      hnCtors_lt n 0 (by omega) hmaj_head' (by simpa using ev1057)
+      (by omega) n 0 (by omega) hmaj_head' (by simpa using ev1057)
   simp only [Bool.false_eq_true, ↓reduceIte, List.drop_zero, Nat.add_zero] at hmin_eq hmin_tm hmin_head
   have ext_1045_1193 : Heap.Extends m1045 m1193 := by rw [hm1201]; exact Heap.Extends.snoc _ _
   have ext_605_1193 := ev749.heap_extends.trans (ev794.heap_extends.trans
@@ -563,7 +567,7 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
     rw [← hm452_eq]
     exact ext_452_645.trans (ev617.heap_extends.trans ext_605_1193)
   obtain ⟨recTy_c, hrecTy_ite, hrecTy_tm⟩ :=
-    nat_replace_pis_spec nP (by omega) hpw_1193
+    nat_replace_pis_bounded nP (by omega) hpw_1193
       (htty_390.mono ext_391_1193) hforall_mot ev1165
   have hrecTy_head :=
     natTeleRec_forallDomHeadLvls_replace_pis nP (by omega)
@@ -630,7 +634,7 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
   have hrlvls_1455 := build_rec_lvls_list_spec
     (by dsimp only [rlps']; cases large <;>
       simp only [Bool.false_eq_true, ↓reduceIte, List.length_cons, List.length_range] <;>
-      have := hk_lt <;> omega) ev1465
+      simp only [Bool.false_eq_true, ↓reduceIte] at hk_lt <;> omega) ev1465
   have ext_h_1455 := ext_h_1317.trans (ev1296.heap_extends.trans ev1465.heap_extends)
   have ext_605_1455 := ext_605_1193.trans (ev1165.heap_extends.trans
     (ev1259.heap_extends.trans (ext_1249_1317.trans
@@ -679,8 +683,8 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
   have h0_j : 0 + j < ctors_info.length := by simpa using hj
   simpa using hrules_ok j hlt h0_j
 
-/-- **The comparison for a loaded parent type that is syntactically a telescope**: the statement
-of `late_nat_rec_check_specT`, as the instance of `late_nat_rec_check_spec_of_tele` at
+/-- **The comparison for a loaded parent type that is syntactically a telescope**: the
+comparison as first stated, as the instance of `late_nat_rec_check_spec_of_tele` at
 `pty₀ = tty₀` with the builder read by `NatFormerTeleReads.of_strip`. -/
 theorem late_nat_rec_check_spec_syntactic {c : ScopedCtx} (hc : ScopedCoreFacts c)
     (hall : ∀ cl, c.allowed cl)
@@ -704,13 +708,12 @@ theorem late_nat_rec_check_spec_syntactic {c : ScopedCtx} (hc : ScopedCoreFacts 
     (hT : c.κ (ixAddr bT) = T)
     (hκ₂_inj : ∀ a : Bytes.Address, κ₂ (ixAddr a) = T → a = bT)
     (hRec : κ₂ (ixAddr bRec) = recC)
-    (hidx : idx < 4294967296)
+    (hidx : idx < 72057594037927936)
     (hCres : ∀ i, i < ctors_info.length → c.κ (cprjAddr (ixAddr b₀) idx i) ≠ unresolvedKey)
-    (hk_lt : k < 2147483648)
-    (hnP_lt : nP < 2147483648)
-    (hnIdx_lt : nIdx < 2147483648)
-    (hnCtors_lt : ctors_info.length < 2147483648)
-    (hnall_lt : nP + 1 + ctors_info.length + nIdx + 1 < 4294967296)
+    (hk_lt : k + (if large then 1 else 0) < 4294967296)
+    (hnP_lt : nP < 72057594037927936)
+    (hnIdx_lt : nIdx < 72057594037927936)
+    (hnCtors_lt : ctors_info.length < 72057594037927936)
     (hlps_tty : tty₀.allLevelParamsDefined (List.range k) = true)
     (hsT₀ : tty₀.stripPis (nP + nIdx) = some (tbs₀, tsort₀))
     (hwf_all : ∀ info ∈ ctors_info,
@@ -768,7 +771,7 @@ theorem late_nat_rec_check_spec_syntactic {c : ScopedCtx} (hc : ScopedCoreFacts 
   exact late_nat_rec_check_spec_of_tele hc hall hkeep hwl₂ (pty₀ := tty₀) (tty₀ := tty₀)
     (hT_ind := hT_ind) (hrecblk := hrecblk) (hcst := hcst) (hT := hT) (hκ₂_inj := hκ₂_inj)
     (hRec := hRec) (hidx := hidx) (hCres := hCres) (hk_lt := hk_lt) (hnP_lt := hnP_lt)
-    (hnIdx_lt := hnIdx_lt) (hnCtors_lt := hnCtors_lt) (hnall_lt := hnall_lt)
+    (hnIdx_lt := hnIdx_lt) (hnCtors_lt := hnCtors_lt)
     (hlps_pty := hlps_tty) (hsT₀ := hsT₀) (hwf_all := hwf_all) (hrls_len := hrls_len)
     (hload := hload) (hhead := hhead) (hgood := hgood) (hrc := hrc) (hb₀_blk := hb₀_blk)
     (hbRB := hbRB) (hbT := hbT) (hbRec := hbRec) (hpty := hpty)

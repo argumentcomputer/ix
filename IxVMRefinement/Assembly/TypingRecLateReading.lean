@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.TypingRecLateFamilyKey
+import IxVMRefinement.Assembly.TypingRecLatePinsAt
 
 /-! # The reading of a late recursor record
 
@@ -47,12 +48,12 @@ checked on the native arm, with its parent `P` (record `iPrj ip`, member `ind` o
 `tyC` of `ty`, and the declared/generated relation of the generated recursor type with `tyC`,
 the record at `A` declares the recursor of those parts (`Reads`). -/
 theorem rec_reads_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hcov : LoadedReads.HashedRecordsStored calls E₀) (hst : StepStore calls t E₀ E)
     (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlogic : InLogic c)
-    (hlim : lim = some n) (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
     {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
@@ -61,7 +62,9 @@ theorem rec_reads_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (hcb : Ix.Cert.recordAt E ip.block = some cb) (hms : cb.info = .muts ms)
     (hind : ms[ip.idx.toNat]? = some (.indc ind))
-    {fam : Ix.Kernel.Semantics.NativeFam .anon} (hm : MatchedAt t E env P ip fam)
+    {fam : Ix.Kernel.Semantics.NativeFam .anon}
+    {L : Ix.Kernel.Env .anon → Ix.Kernel.Semantics.NativeFam .anon → Prop}
+    (hm : FamReadAt L t E env P ip fam)
     {ty tyC recTy : Ix.Kernel.Expr .anon} {rules : List (Ix.Kernel.RecRule .anon)}
     (hty : (exprReader t (fun x => E₀.blobs.get? x) c
         (Ix.Kernel.Reader.recParam (Ix.Kernel.Reader.recLps
@@ -83,11 +86,11 @@ theorem rec_reads_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
       (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat)
       (rc.params.toNat + rc.motives.toNat + rc.minors.toNat) rules) := by
   -- the counts
-  obtain ⟨hpar, -, hmot, hrsz, -⟩ := rec_counts_of_arm ht hS hst hc hinfo hlim hnat hinert
+  obtain ⟨hpar, -, hmot, hrsz, -⟩ := rec_counts_of_arm ht hS hst hc hinfo hnat hinert
     hcover hstep hcm hcmi htie hcb hms hind
   -- the parent's block in Lean's logic, and the parent's key an inductive's key of the run's store
   obtain ⟨hlogicB, -⟩ := hm.1.logic_lvls ht hm.2.1 hcm hcmi hcb hms hind
-  obtain ⟨-, -, hIK⟩ := rec_major_indKeyAt ht hS hcov hst hc hinfo hlim hnat hinert hcover
+  obtain ⟨-, -, hIK⟩ := rec_major_indKeyAt ht hS hcov hst hc hinfo hnat hinert hcover
     hstep hcm hcmi htie hcb hms hind hlogicB
   -- the major key of the reading
   obtain ⟨tyP, htyP, hmajP⟩ := rec_major_key_reading ht hS hst hc hinfo hnat htie

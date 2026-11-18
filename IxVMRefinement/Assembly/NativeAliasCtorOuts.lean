@@ -2,7 +2,11 @@ import IxVMRefinement.Assembly.NativeAliasIndex
 import IxVMRefinement.Assembly.NativeAliasZeroFields
 import IxVMRefinement.Assembly.NativeAliasTeleStable
 import IxVMRefinement.Assembly.NativeBlockCtorOuts
+import IxVMRefinement.Assembly.NativeBlockOutsNamed
+import IxVMRefinement.Assembly.NativeBlockRetHead
 import IxVMRefinement.Assembly.NativeAliasTele
+import IxVMRefinement.Assembly.NativeAliasTeleCheck
+import IxVMRefinement.Assembly.NativeBlockReadsLim
 
 /-! # Both typed stages of a native block at a former declared at a definition
 
@@ -27,10 +31,22 @@ derivations), so `aliasOuts_of_member` reads both stages on one inversion:
   telescope constant is the declared former and `s` its sort; otherwise `s` is the level the
   result-sort walk left at the pointer the constructor loop reads (`RepKLevel.det`).
 
-`aliasOuts_of_member_checked` discharges the conversion interface from the current program
+`aliasOuts_of_member_traced` discharges the conversion interface from the current program
 and also retains the actual guard-produced alternative: the telescope is the stored former,
 or every staged constructor satisfies `ctorZeroOk`. Parameter cases come from the actual
 parameter-head guard; field cases come from the same constructor positivity observations.
+
+**The telescope constant is the traced term.** At a former declared at a definition the
+telescope constant's type is the term the builder's walk produces on kernel terms
+(`Decl.former_tele_at_traced`), which the built heap term represents at the term seam, and its
+sort is the level the result-sort walk reaches (`Decl.get_result_sort_level_traced`). So the
+conclusion also holds the two facts a later recursor run reads of the family
+(`Decl.TracedBinders`, `Decl.OpenSortTrace`), exactly. IxC's from-scratch check of that
+constant takes its level parameters from the walk (`Decl.tracedTele_allLevelParamsDefined`) and
+its sort typing from the circuit's `k_ensure_sort` (`Decl.constantValCheckJ_of_tm`); the
+parameters it shares with the stored former are the walk's (`Decl.TracedBinders.openPisAtFvars`).
+The conclusion names the stored former and the stored constructors by their canonical
+annotations. `aliasOuts_of_member_checked` forgets the additions.
 -/
 
 namespace IxVM.Refinement.Typing
@@ -140,7 +156,7 @@ theorem ctorStageCoreFacts_of_block_indexed {t : Ix.Kernel.RoleTable} (ht : t.ch
 member-check inversion that supplies both typed stages. This is actual observed evidence;
 its result level is related to the telescope stage's level. -/
 def AliasGuardAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E : Ixon.Env)
-    (env : Ix.Kernel.Env .anon) (n : Nat) (B : _root_.Address) (p₀ : Ix.Kernel.NativeParts .anon)
+    (env : Ix.Kernel.Env .anon) (lim : Option Nat) (B : _root_.Address) (p₀ : Ix.Kernel.NativeParts .anon)
     (cvS : ConstantVal .anon) (ctorsA : List (ConstantVal .anon × Nat))
     (rawTypes : List (Ix.Kernel.Expr .anon)) (s : Ix.Kernel.Level) : Prop :=
   ValStored cvS p₀.cvT ∧ p₀.nP + p₀.nIdx < 18446744069414584321 ∧
@@ -150,7 +166,7 @@ def AliasGuardAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E : Ixon.Env
     Core.ixAddr b = B ∧ p₀.cvT.name = Core.keyOf t (Core.iprjAddr B 0) ∧
     Decl.StagedCtorLoads (Core.keyOf t) t b p₀.nP 0 root p₀.ctors ctorsA rawTypes ∧
     (∀ c ∈ p₀.ctors, c.1.levelParams = List.range c.1.levelParams.length) ∧
-    (∀ cl ∈ root, cl ∈ calls) ∧ Core.Good ⟨E, env, t, some n⟩ root ∧
+    (∀ cl ∈ root, cl ∈ calls) ∧ Core.Good ⟨E, env, t, lim⟩ root ∧
     (∀ cl ∈ guardCalls, cl ∈ root) ∧
     Decl.TmExact (Core.keyOf t) 0 (fun _ => default) h 0 cvS.type tyPtr ∧
     Bytes.RepAddressRef Core.addrTy h b blkPtr ∧ KernelLevels.RepKLevel h level levelPtr ∧
@@ -167,19 +183,22 @@ the prefix as `cvS`; the telescope constant `cvTa` of the former stage (`AliasTe
 `s`, opening its parameters as `cvS` does at a family with a constructor; and at every recursion
 flag the constructors' outputs at the constructor stage staged at `s`, with IxC's later-use
 condition on the annotated constructors. Both stages are read on one inversion of the shape
-stage, so `s` is the sort at which the constructor loop compares the fields. -/
-theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {n : Nat}
+stage, so `s` is the sort at which the constructor loop compares the fields. The telescope
+constant has the traced binders of the stored former's type and `s` is its traced sort; the
+stored former and the stored constructors are the canonical annotations of the record's
+readings (module docstring). -/
+theorem aliasOuts_of_member_traced {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
+    {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {lim : Option Nat}
     {env : Ix.Kernel.Env .anon} {blk : List (ConstantInfo .anon)}
     {p₀ : Ix.Kernel.NativeParts .anon}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
     (hrec : BlockUnitRecord E₀ B cb ind)
-    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
+    (hchk : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim)
     (hnat : NativeRouteAt calls B) (hblk : BlockReadings t E₀ B ind blk)
     (hp₀ : Ix.Kernel.Model.nativePartsAt? ind.params.toNat ind.indices.toNat blk = some p₀)
     (hnIdx : p₀.nIdx = ind.indices.toNat)
     (hindex : ind.indices.toNat ≠ 0 ∨ FormerAtAlias t E₀ B cb ind)
-    (hinv : Decl.PrefixInv.{u} E t (some n) env) (hstored : Decl.UsedRefsStored t env cb)
+    (hinv : Decl.PrefixInv.{u} E t lim env) (hstored : Decl.UsedRefsStored t env cb)
     (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
@@ -200,7 +219,7 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
               (p₀.toInductiveShape.withSort s) isRec) :: env.consts⟩
             p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx s cvS.type
             (rawTypes.getD j default) c cA sorts) ∧
-      AliasGuardAt calls t E env n B p₀ cvS ctorsA rawTypes s ∧
+      AliasGuardAt calls t E env lim B p₀ cvS ctorsA rawTypes s ∧
       (cvTa = cvS ∨ ∀ cA ∈ ctorsA,
         Ix.Kernel.Semantics.ctorZeroOk p₀.cvT.name (Ix.Kernel.Level.zeronessOf s) cA.1.type = true) ∧
       ind.indices.toNat ≠ 0 ∧
@@ -210,13 +229,41 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
              (cbs.getD (p₀.nP + i) default).1 = .recursive ∨
            Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
              (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
-          Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false) := by
+          Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false) ∧
+      Decl.TracedBinders env (p₀.nP + p₀.nIdx) cvS.type cvTa.type ∧
+      Decl.OpenSortTrace env 0 (p₀.nP + p₀.nIdx) cvS.type s ∧
+      (∃ ty₀ ty' : Ix.Kernel.Expr .anon,
+        (exprReader t (fun x => E₀.blobs.get? x) cb id
+          (blockSelf t B #[.indc ind])).read ind.typ = .ok ty₀ ∧
+        ty₀.looseBVarsBounded 0 = true ∧
+        ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
+        LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
+          ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ
+          ty₀ = some ty' ∧
+        p₀.cvT = ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty₀⟩ ∧
+        cvS = ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ ∧
+        p₀.nP = ind.params.toNat ∧ p₀.ctors.length = ind.ctors.size ∧
+        ind.params.toNat < 2 ^ 56 ∧ ind.indices.toNat < 2 ^ 56 ∧ ind.ctors.size < 2 ^ 56) ∧
+      (∀ j c, p₀.ctors[j]? = some c → ∃ (ct : Ixon.Constructor) (cty' : Ix.Kernel.Expr .anon),
+        ind.ctors[j]? = some ct ∧ ct.cidx.toNat = j ∧ ct.params.toNat = ind.params.toNat ∧
+        ct.lvls.toNat = ind.lvls.toNat ∧
+        c.1.name = keyOf t (ctorAddr B 0 j) ∧ c.1.levelParams = List.range ct.lvls.toNat ∧
+        c.2 = ct.fields.toNat ∧
+        (exprReader t (fun x => E₀.blobs.get? x) cb id
+          (blockSelf t B #[.indc ind])).read ct.typ = .ok c.1.type ∧
+        c.1.type.looseBVarsBounded 0 = true ∧
+        c.1.type.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
+        LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
+          (((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val (0 : F)) :
+            Nat) : F) + 1 + ((j : Nat) : F)) ct.typ c.1.type = some cty' ∧
+        ctorsA[j]? = some (⟨c.1.name, c.1.levelParams, cty'⟩, c.2)) ∧
+      BlockRawRetHead t E B ind cb := by
   have hconv : FormerTeleConv := formerTeleConv_of_program
   have hbound : Bounded calls := (hst.good env none).2
   have htwf : t.wf = true := hinv.tableWf
-  have hgood : Core.Good ⟨E, env, t, some n⟩ calls := hst.good env (some n)
-  obtain ⟨ty₀, caps, cs, rfl, hty, hlen, hcs⟩ := blockReads_shape ht hbound hS hrec hchk hblk
-  obtain ⟨hlbb, hdef, hfv⟩ := former_scope hbound hS hrec hchk hty
+  have hgood : Core.Good ⟨E, env, t, lim⟩ calls := hst.good env lim
+  obtain ⟨ty₀, caps, cs, rfl, hty, hlen, hcs⟩ := blockReads_shape_lim ht hbound hS hrec hchk hblk
+  obtain ⟨hlbb, hdef, hfv⟩ := former_scope_lim hbound hS hrec hchk hty
   have hblockE : recordOf E B = some cb :=
     (recordOf_eq_recordAt_of_decoded hst.decoded B).trans (hst.runRecord B cb hrec.record)
   have hprojE : recordOf E (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind)) :=
@@ -262,12 +309,12 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
     rw [← hlenP]
     exact (List.getElem?_eq_some_iff.mp hc).1
   -- the navigation of the member's check
-  have hchkA := mutsMemberAt_checkedAt (mc := .indc ind) hbound hchk (by rfl)
+  have hchkA := memberCheckedLimAt_checkedLimAt (mc := .indc ind) hbound hchk (by rfl)
   obtain ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk, hrc_pre, hrc_m, ha_pre,
     ha_m, ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := hchkA
   obtain ⟨a, ha, hax⟩ := ha_pre
-  have hg_ld : Core.Good ⟨E, env, t, some n⟩ cs_load := hgood.sub hsub_ld
-  have hg_chk : Core.Good ⟨E, env, t, some n⟩ cs_chk := hgood.sub hsub_chk
+  have hg_ld : Core.Good ⟨E, env, t, lim⟩ cs_load := hgood.sub hsub_ld
+  have hg_chk : Core.Good ⟨E, env, t, lim⟩ cs_chk := hgood.sub hsub_chk
   have h0' : (⟨(0 : Nat).toUInt64, B⟩ : Ixon.InductiveProj).idx.toNat = 0 := by
     show ((0 : Nat).toUInt64).toNat = 0
     decide
@@ -313,7 +360,7 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
     LoadedReads.annotation_canon_exact ht hlvls (LoadedReads.blockSelf_key t B #[.indc ind])
       hagree rty built planned trace htyE hlbb hdef
   -- the former, checked at the prefix
-  obtain ⟨ty', hcT, hann, hcheck, -⟩ := formerChecked_of_member ht hst hinv hblockE hrec.muts
+  obtain ⟨ty', hcT, hann, hcheck, -⟩ := formerChecked_of_member_lim ht hst hinv hblockE hrec.muts
     hprojE hchk htyE hlbb hdef hfv hstored hfreshT hfreeT
   have hty'₁ : ty'₁ = ty' := Option.some.inj (hcT₁.symm.trans hcT)
   rw [hty'₁] at htmT
@@ -348,7 +395,7 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
     · refine hstored i ?_ x hr
       unfold usedRefIdxs
       exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨s, hs, his⟩)
-  let cP : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, some n⟩
+  let cP : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, lim⟩
   let κP := cP.κ
   have hextM : Heap.Extends m_chk prelude.mentionsBefore :=
     prelude.initialExtended.trans prelude.scope_to_mentions
@@ -357,7 +404,7 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
     intro a' hin
     rcases rty.addrIn_used a' hin with hu | hr
     · obtain ⟨ci, hci⟩ := used _ hu
-      exact Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hci
+      exact Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hci
     · exfalso
       obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp hr
       obtain ⟨m, hm, hxm⟩ := LoadedReads.blockRecurAddrs_get hk
@@ -369,7 +416,7 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
       subst hmm
       rw [LoadedReads.memberAddr_indc] at hxm
       have hxm' : Core.ixAddr a' = Core.iprjAddr B 0 := hxm
-      have hscan := mentions_block_cells (c := ⟨E, env, t, some n⟩) hst.decoded hblockE hrec.muts
+      have hscan := mentions_block_cells (c := ⟨E, env, t, lim⟩) hst.decoded hblockE hrec.muts
         hprojE hb_eq hin hextM (prelude.blocksRep hb_rep) prelude.mentionsRun
         (hg_chk.sub prelude.mentionsSubset)
       rcases hscan with hp | hne
@@ -381,7 +428,7 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
       Core.ProjPermitted (Core.keyOf t) (Core.ixAddr a') → Core.ProjPermitted κP (Core.ixAddr a') := by
     intro a' hp _
     obtain ⟨ci, hci⟩ := used _ (rty.projIn_used a' hp)
-    exact Core.Ctx.stored_projPermitted_of_find (c := ⟨E, env, t, some n⟩) hci
+    exact Core.Ctx.stored_projPermitted_of_find (c := ⟨E, env, t, lim⟩) hci
   have htmP : Decl.TmCExact κP m_chk (Core.posOf (List.range ind.lvls.toNat) ty') tyPtr :=
     TmCExact.rekey htmT hagreeP hpermP
   rw [Decl.posOf_range] at htmP
@@ -413,7 +460,7 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
   -- the former stage: the telescope constant and its sort
   have hgS : ∀ cs', (∀ x ∈ cs', x ∈ cs_chk) → Core.CoreGood cP cs' := fun cs' hs =>
     Core.CoreGood.ofRaw (hg_chk.sub hs) (fun _ _ => trivial)
-  have hrcP : Core.RCRep t (some n) m_chk rc := hrc_m.toRCRep
+  have hrcP : Core.RCRep t lim m_chk rc := hrc_m.toRCRep
   have hef := hinv.scopedCoreFacts.1
   have hlf := hinv.loads
   have hPI : ind.params.toNat + ind.indices.toNat < 18446744069414584321 := by omega
@@ -453,12 +500,15 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
         ∀ tfvs r₁, Ix.Kernel.openPisAtFvars ind.params.toNat ty' 0 = some (tfvs, r₁) →
           ∃ r₂, Ix.Kernel.openPisAtFvars ind.params.toNat cvTa.type 0 = some (tfvs, r₂)) ∧
       ((∃ bs, ty'.stripPis (ind.params.toNat + ind.indices.toNat) = some (bs, .sort s)) ∨
-        KernelLevels.RepKLevel shape.ctorBefore s shape.sortLevel) ∧
+        ∃ ℓ', KernelLevels.RepKLevel shape.ctorBefore ℓ' shape.sortLevel ∧ Core.LvEq s ℓ') ∧
       (cvTa = ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ ∨
         ∃ testResult testAfter testCalls,
           ObsFn Core.W "KernelCheck::former_is_tele"
             [tyPtr, .field ((ind.params.toNat + ind.indices.toNat : Nat) : F)]
-            shape.guardAfter testResult testAfter testCalls ∧ testResult ≠ .field 1) := by
+            shape.guardAfter testResult testAfter testCalls ∧ testResult ≠ .field 1) ∧
+      Decl.TracedBinders env (ind.params.toNat + ind.indices.toNat) ty' cvTa.type ∧
+      Decl.OpenSortTrace env 0 (ind.params.toNat + ind.indices.toNat) ty' s := by
+    have hfvT : Decl.fvarIdxLt 0 ty' = true := Decl.fvarIdxLt_of_hasFvar_false 0 htype.1
     rcases hconv _ _ _ _ _ _ _ _ _ teleRun with
       ⟨m2, cs13, evIs, -, -, -⟩ |
       ⟨v1, m2, cs13, tele, m46, cs56, v105, m106, cs116, v142, m143, cs153, mD, csD,
@@ -467,66 +517,62 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
       obtain ⟨-, bs, s, hstT, -⟩ := Decl.former_is_tele_one_bounded_spec
         (ind.params.toNat + ind.indices.toNat) hPI ((htmP 0 (fun _ => default)).mono e_ga) evIs
       exact ⟨_, s, aliasTele_of_tele hcheck hstT, fun _ tfvs r₁ hop => ⟨r₁, hop⟩,
-        Or.inl ⟨bs, hstT⟩, Or.inl rfl⟩
-    · -- a former declared at a definition: the built telescope, ending in the walk's level
+        Or.inl ⟨bs, hstT⟩, Or.inl rfl,
+        Decl.TracedBinders.of_strip env (by rw [hstT]; rfl) hfvT htype.2.2.2,
+        Decl.OpenSortTrace.of_strip env s _ ⟨bs, hstT⟩⟩
+    · -- a former declared at a definition: the telescope the walk builds, ending in the
+      -- level the result-sort walk reaches
       have e_m2 : Heap.Extends m_chk (m2 ++ [.construct Core.kexprListEnum "Nil" []]) :=
         e_ga.trans (evIs.heap_extends.trans (Heap.Extends.snoc _ _))
-      obtain ⟨⟨R, hR⟩, hshapeT, hcells⟩ := Decl.former_tele_at_spec (c := cP)
+      have hcP : Core.ScopedCoreFacts cP := hinv.scopedCoreFacts
+      have hdefs : Ix.Kernel.HeadDeltaBeta.DefnLevelsClosed env :=
+        Ix.Kernel.HeadDeltaBeta.DefnLevelsClosed.of_envWF hinv.store.store.wf
+      -- the two walks, on the kernel term the stored former's type pointer represents
+      obtain ⟨s, ℓ', hsortTr, hℓ', hsℓ'⟩ := Decl.get_result_sort_level_traced hcP
+        (ind.params.toNat + ind.indices.toNat) hPI (hrcP.mono e_sb)
+        (by rw [shape.nilTypes]; exact Decl.typesRep_alloc_nil κP (fun _ => default) native.before)
+        (Decl.ghostScoped_zero _) (hgS _ shape.sortSubset)
+        ((htmP 0 (fun _ => default)).toTm.mono e_sb) shape.sortRun
+      obtain ⟨Z, Y, hZ, ⟨bs, hstZ⟩, hY, hpre⟩ := Decl.former_tele_at_traced hcP
         (ind.params.toNat + ind.indices.toNat) hPI (hrcP.mono e_m2)
-        (Decl.typesRep_alloc_nil κP (fun _ => default) m2) (Decl.ghostScoped_zero _) hef hlf
+        (Decl.typesRep_alloc_nil κP (fun _ => default) m2) (Decl.ghostScoped_zero _)
         (hgS cs56 (fun x hx => hteleSub x (by rw [hcsT]; simp [hx])))
         ((htmP 0 (fun _ => default)).toTm.mono e_m2)
-        (hℓ.mono (shape.guardRun.heap_extends.trans
-          (evIs.heap_extends.trans (Heap.Extends.snoc _ _)))) evAt
-      obtain ⟨E', hE'⟩ := Decl.Tm.exactify hR
+        (hℓ'.mono (shape.guardRun.heap_extends.trans
+          (evIs.heap_extends.trans (Heap.Extends.snoc _ _)))) hsℓ' evAt
+      have htraced : Decl.TracedBinders env (ind.params.toNat + ind.indices.toNat) ty' Z :=
+        Decl.TracedBinders.intro hY hpre
       have e_ws : Heap.Extends m46 (m106 ++ [.construct Core.kexprListEnum "Nil" []]) :=
         evWs.heap_extends.trans (Heap.Extends.snoc _ _)
       have e_dq : Heap.Extends m46 (m143 ++ [.construct Core.kexprListEnum "Nil" []]) :=
         e_ws.trans (evSort.heap_extends.trans (Heap.Extends.snoc _ _))
-      have e_end : Heap.Extends m46 shape.ctorBefore := by
-        rw [hhD]
-        exact e_dq.trans evDq.heap_extends
       have e_m46 : Heap.Extends m_chk m46 := e_m2.trans evAt.heap_extends
-      -- its shape and its end sort
-      obtain ⟨bs, l, hstE, hlrep⟩ := Decl.TeleShape.stripPis_exact
-        (ind.params.toNat + ind.indices.toNat) hshapeT hE'
-      -- checked from scratch at the prefix
-      have hlbbE : E'.looseBVarsBounded 0 = true := hE'.toTm.looseBVarsBounded
-      have hfvE : E'.hasFvar = false := Decl.Tm.hasFvar_false hE'.toTm
-      have hannE : Annotates E' E' := Decl.annotates_refl_of_noLetExpr
-        (hE'.noLet (fun _ hlt => absurd hlt (Nat.not_lt_zero _)))
-      have hvE : Decl.ValRepExact κP m46 (.field (ind.lvls.toNat : F)) tele
-          ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, E'⟩ := by
-        refine ⟨by simp, by simpa using hlvls, by simp, ?_⟩
-        show Decl.TmCExact κP m46 (Core.posOf (List.range ind.lvls.toNat) E') tele
-        rw [Decl.posOf_range]
-        exact fun d Γ => hE'.of_depth_zero d
-      obtain ⟨checkedT, -⟩ := Decl.constantValCheckJ_of_scoped (c := cP)
-        (cv := ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, E'⟩)
-        (cv' := ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, E'⟩)
-        ⟨rfl, rfl, hannE⟩ hvE hlbbE hfvE hfreshT hfreeT.1
+      -- checked from scratch at the prefix: its level parameters are the walk's, its sort
+      -- typing the circuit's
+      have hlpdZ : Z.allLevelParamsDefined (List.range ind.lvls.toNat) = true :=
+        Decl.tracedTele_allLevelParamsDefined hdefs htype.2.1 htraced hsortTr hstZ
+      have checkedT := Decl.constantValCheckJ_of_tm (c := cP)
+        (name := Core.keyOf t (Core.iprjAddr B 0)) hlpdZ hfreshT hfreeT.1
         (Decl.isProjFnShape_of_isBaseKey (Decl.isBaseKey_keyOf t _)) hinv.store.store
-        (Decl.PosSortLift.of_range rfl) evWs e_ws (hrcP.mono (e_m46.trans e_ws))
+        (hrcP.mono (e_m46.trans e_ws))
         (Decl.typesRep_alloc_nil κP (fun _ => default) m106) hef hlf
-        (hgS cs153 (fun x hx => hteleSub x (by rw [hcsT]; simp [hx]))) evSort
+        (hgS cs153 (fun x hx => hteleSub x (by rw [hcsT]; simp [hx]))) (hZ.mono e_ws) evSort
       -- convertible with the declared former's annotated type
-      have hdq : Ix.Kernel.Rules.DefEq env 0 ty' E' :=
+      have hdq : Ix.Kernel.Rules.DefEq env 0 ty' Z :=
         Decl.scoped_core_defeq (c := cP) (hrcP.mono (e_m46.trans e_dq))
           (Decl.typesRep_alloc_nil κP (fun _ => default) m143) (Decl.ghostScoped_zero _) hef hlf
           (hgS csD (fun x hx => hteleSub x (by rw [hcsT]; simp [hx]))) evDq
           ((htmP 0 (fun _ => default)).toTm.mono (e_m46.trans e_dq))
-          (hE'.toTm.mono e_dq)
-      refine ⟨⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, E'⟩, l,
-        ⟨⟨E', checkedT⟩, ⟨bs, hstE⟩, hdq⟩, ?_, Or.inr (hlrep.mono e_end), Or.inr ⟨v1, m2, cs13, evIs, hne1⟩⟩
-      -- the parameters, at a family with a constructor
+          (hZ.mono e_dq)
+      refine ⟨⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, Z⟩, s,
+        ⟨⟨Z, checkedT⟩, ⟨bs, hstZ⟩, hdq⟩, ?_,
+        Or.inr ⟨ℓ', hℓ'.mono (shape.guardRun.heap_extends.trans shape.guardToCtors), hsℓ'⟩,
+        Or.inr ⟨v1, m2, cs13, evIs, hne1⟩, htraced, hsortTr⟩
+      -- the parameters, at a family with a constructor: the walk keeps the binders the
+      -- stored former's type has syntactically
       intro hnc tfvs r₁ hop
-      obtain ⟨H, hH, hfc⟩ := Decl.check_inductive_shape_ctors_param_cells hnc (by omega)
-        (by omega) ctorRun₀
-      have hTC := hcells ind.params.toNat H (by omega) (e_end.trans hH) hfc
-      have hpre := Decl.TeleCells.prefixEq ind.params.toNat hTC
-        ((htmP 0 (fun _ => default)).mono (e_ctor.trans hH)) (hE'.mono (e_end.trans hH))
-      exact Decl.PrefixEq.openPisAtFvars ind.params.toNat hpre hop
-  obtain ⟨cvTa, s, hAT, hparam, hsortRel, hchoice⟩ := hstage
+      exact Decl.TracedBinders.openPisAtFvars htraced hfvT htype.2.2.2 hop
+  obtain ⟨cvTa, s, hAT, hparam, hsortRel, hchoice, htracedB, htracedS⟩ := hstage
   obtain ⟨⟨tyT, htyT⟩, -, -⟩ := id hAT
   -- the constructor count, from the former's direct load
   obtain ⟨srcA, hsrcA⟩ := canonicalRecord_value hst.decoded hrecA
@@ -534,13 +580,13 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
     rw [hsrcA]
     rfl
   obtain ⟨par, parArg, mid, inner, hparEq, -, hparRep, hdirect, hinner, -⟩ :=
-    L1.get_ci_iPrj_subcall (base := ⟨E, env, t, some n⟩) srcA hshapeA ha hg_ld ev_ld
+    L1.get_ci_iPrj_subcall (base := ⟨E, env, t, lim⟩) srcA hshapeA ha hg_ld ev_ld
   rw [h0', Nat.cast_zero] at hdirect
   have hblockPar : recordOf E (Core.ixAddr par) = some cb := by
     rw [hparEq]
     exact hblockE
   obtain ⟨srcB, hsrcB⟩ := canonicalRecord_value hst.decoded hblockPar
-  obtain ⟨-, -, -, hc39⟩ := L1.get_ci_iprj_header_bounds (base := ⟨E, env, t, some n⟩) (i := 0)
+  obtain ⟨-, -, -, hc39⟩ := L1.get_ci_iprj_header_bounds (base := ⟨E, env, t, lim⟩) (i := 0)
     (members := #[.indc ind]) srcB (by rw [hsrcB]; exact hrec.muts)
     (by rw [ZMod.val_zero]; rfl) (hg_ld.sub hinner) hparRep hdirect
   -- each slot of the loop loads its constructor and scopes its type
@@ -582,7 +628,7 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
     have h5E := ReaderReads.exprReader_mono (fun x b hb => hst.runBlob x b hb) h5
     exact ⟨h2, tyj, h5E, hclosed k ct tyj hk hct h5E⟩
   -- the constructor family, chosen once
-  obtain ⟨ctorsA, rawTypes, hcload_gen⟩ := stagedCtorLoads_of_block (nP := p₀.nP) ht hg_chk
+  obtain ⟨ctorsA, rawTypes, hnamedA, hrawA, hcload_gen⟩ := stagedCtorLoads_of_block_raw (nP := p₀.nP) ht hg_chk
     hblockB hrec.muts hinlogic.2 hc56 hlenP (by
       intro j cv hcv
       obtain ⟨ct, h1, h2, -, h4, hc1, hc2, h5⟩ := hctor j cv hcv
@@ -602,14 +648,14 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
   let cvS : ConstantVal .anon := ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩
   have hused : ∀ caps₁ : Ix.Kernel.IndCaps .anon, ∀ i ∈ usedRefIdxs cb, ∀ x,
       cb.refs.toList[i]? = some x →
-      (Decl.ctorStage ⟨E, env, t, some n⟩ cvS caps₁).κ x = Core.keyOf t x ∧
-        Core.ProjPermitted (Decl.ctorStage ⟨E, env, t, some n⟩ cvS caps₁).κ x := by
+      (Decl.ctorStage ⟨E, env, t, lim⟩ cvS caps₁).κ x = Core.keyOf t x ∧
+        Core.ProjPermitted (Decl.ctorStage ⟨E, env, t, lim⟩ cvS caps₁).κ x := by
     intro caps₁ i hi x hx
     obtain ⟨ci, hci⟩ := hstored i hi x hx
     exact ctorStage_of_find (cvF := cvS) hfreshT hnt hci
   have hrecur : ∀ caps₁ : Ix.Kernel.IndCaps .anon,
       ∀ x ∈ L1.blockRecurAddrs B (#[.indc ind] : Array Ixon.MutConst).toList,
-      (Decl.ctorStage ⟨E, env, t, some n⟩ cvS caps₁).κ x = Core.keyOf t x := by
+      (Decl.ctorStage ⟨E, env, t, lim⟩ cvS caps₁).κ x = Core.keyOf t x := by
     intro caps₁ x hx
     obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp hx
     obtain ⟨m, hm, rfl⟩ := LoadedReads.blockRecurAddrs_get hk
@@ -644,21 +690,21 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
   have hcovChk : L1.CanonicalHashCoverage E cs_chk := fun bytes value hh hsz hdec =>
     hcov bytes value (Core.hashed_mono hsub_chk hh) hsz hdec
   have hraw_at : ∀ env' : Ix.Kernel.Env .anon,
-      Core.RawRecordFacts (L1.traceRecordCtx ⟨E, env', t, some n⟩ cs_chk) ∧
-      Decl.OneTypePeerReads (L1.traceRecordCtx ⟨E, env', t, some n⟩ cs_chk) b p₀.cvT.name
+      Core.RawRecordFacts (L1.traceRecordCtx ⟨E, env', t, lim⟩ cs_chk) ∧
+      Decl.OneTypePeerReads (L1.traceRecordCtx ⟨E, env', t, lim⟩ cs_chk) b p₀.cvT.name
         p₀.cvT.levelParams.length p₀.nP p₀.nIdx p₀.ctors.length 0 := by
     intro env'
-    refine ⟨L1.rawRecordFacts_of_hashed_trace (base := ⟨E, env', t, some n⟩) ev_chk hg_chk hcovChk,
+    refine ⟨L1.rawRecordFacts_of_hashed_trace (base := ⟨E, env', t, lim⟩) ev_chk hg_chk hcovChk,
       ?_⟩
     obtain ⟨srcF, hsrcF⟩ := canonicalRecord_value hst.decoded
       (show recordOf E (Core.iprjAddr (Core.ixAddr b) (ZMod.val (0 : F))) =
         some (memberProjection B 0 (.indc ind)) by rw [ZMod.val_zero, hb_eq]; exact hprojE)
     obtain ⟨srcB', hsrcB'⟩ := canonicalRecord_value hst.decoded hblockB
-    have hpeer := Assembly.native_peer_reads (raw := L1.traceRecordCtx ⟨E, env', t, some n⟩ cs_chk)
+    have hpeer := Assembly.native_peer_reads (raw := L1.traceRecordCtx ⟨E, env', t, lim⟩ cs_chk)
       (block := b) (i := 0) srcB' srcF
       (by rw [hsrcF, ZMod.val_zero, hb_eq]; rfl) (by rw [hsrcB']; exact hrec.muts) hmem0
       (Assembly.native_inductives_singleton (Nat.le_of_eq rfl) hmem0) htwf
-    have hT : (L1.traceRecordCtx ⟨E, env', t, some n⟩ cs_chk).κ
+    have hT : (L1.traceRecordCtx ⟨E, env', t, lim⟩ cs_chk).κ
         (Core.iprjAddr (Core.ixAddr b) (ZMod.val (0 : F))) = p₀.cvT.name := by
       rw [hcvT, ZMod.val_zero, hb_eq]
       rfl
@@ -708,7 +754,7 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
       ⟨by rw [h256]; exact hp56, by rw [h256]; exact hi56, by rw [h256]; exact hc56⟩
       htyE hlbb hdef hctysE hstored hcT hfreshT hunit hfreeT.1 htype (hidxS s)
     let caps₁ := Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort s) isRec
-    let cS := Decl.ctorStage ⟨E, env, t, some n⟩ cvS caps₁
+    let cS := Decl.ctorStage ⟨E, env, t, lim⟩ cvS caps₁
     have hcload := hcload_gen cS.κ (hused caps₁) (by rw [hb_eq]; exact hrecur caps₁)
     -- the former's type at the stage
     have htmS : Decl.TmCExact cS.κ m_chk (Core.posOf (List.range ind.lvls.toNat) ty') tyPtr := by
@@ -741,10 +787,11 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
       (by omega) (hrc_m.toRCRep.mono e_sort) (hformer.mono e_sort) hcore.1
       (Core.CoreGood.ofRaw (hg_chk.sub shape.sortSubset) (fun _ _ => trivial)) hcore.2
     have hlveq : Core.LvEq s ind_lvl := by
-      rcases hsortRel with ⟨bs, hstS⟩ | hrep
+      rcases hsortRel with ⟨bs, hstS⟩ | ⟨ℓ', hrep, hsl⟩
       · exact hsame bs s hstS
-      · rw [KernelLevels.RepKLevel.det hrep hlvRep]
-        exact Core.LvEq.refl _
+      · have he := KernelLevels.RepKLevel.det hlvRep hrep
+        rw [he]
+        exact hsl
     -- the loop at the stage
     have hfnF : ∀ c ∈ p₀.ctors, c.2 < 72057594037927936 := by
       intro c hc
@@ -820,16 +867,16 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
   have hAT' : AliasTele env p₀.cvT cvS cvTa (p₀.nP + p₀.nIdx) s := by
     rw [hcvT, hnP, hnIdx]
     exact hAT
-  have hguardAt : AliasGuardAt calls t E env n B p₀ cvS ctorsA rawTypes s := by
+  have hguardAt : AliasGuardAt calls t E env lim B p₀ cvS ctorsA rawTypes s := by
     have hvalS : ValStored cvS p₀.cvT := by
       rw [hcvT]
       exact ⟨rfl, rfl, hann⟩
     have hlevel : Core.LvEq s ℓ := by
-      rcases hsortRel with ⟨bs, hstS⟩ | hrep
+      rcases hsortRel with ⟨bs, hstS⟩ | ⟨ℓ', hrep, hsl⟩
       · exact hℓTele bs s hstS
       · have he := (hℓ.mono (shape.guardRun.heap_extends.trans shape.guardToCtors)).det hrep
         rw [he]
-        exact Core.LvEq.refl _
+        exact hsl
     have htmGuard := htmT 0 (fun _ => default)
     rw [Decl.posOf_range] at htmGuard
     have hguard := shape.guardRun
@@ -878,12 +925,12 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
       have htmGuard := htmT 0 (fun _ => default)
       rw [Decl.posOf_range] at htmGuard
       have hlevel : Core.LvEq s ℓ := by
-        rcases hsortRel with ⟨bs, hstS⟩ | hrep
+        rcases hsortRel with ⟨bs, hstS⟩ | ⟨ℓ', hrep, hsl⟩
         · exact hℓTele bs s hstS
         · have he := (hℓ.mono (shape.guardRun.heap_extends.trans shape.guardToCtors)).det hrep
           rw [he]
-          exact Core.LvEq.refl _
-      have hguard := Decl.former_decl_ok_observed_from_fields (c := ⟨E, env, t, some n⟩)
+          exact hsl
+      have hguard := Decl.former_decl_ok_observed_from_fields (c := ⟨E, env, t, lim⟩)
         (nIdx := p₀.nIdx) htwf (by rw [hnP, hnIdx]; exact hPI)
         (by rw [hlenP]; exact hc39) hg_chk.2
         (by rw [hb_eq]; exact hTname)
@@ -905,8 +952,60 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
         have hz := hzeros j (List.getElem?_eq_some_iff.mp hj).1 cA hj
         rw [← Core.zeronessOf_congr hlevel] at hz
         exact hz
+  -- the stored constructors, named by their canonical annotations
+  have hperN : ∀ j c, p₀.ctors[j]? = some c →
+      ∃ (ct : Ixon.Constructor) (cty' : Ix.Kernel.Expr .anon),
+        ind.ctors[j]? = some ct ∧ ct.cidx.toNat = j ∧ ct.params.toNat = ind.params.toNat ∧
+        ct.lvls.toNat = ind.lvls.toNat ∧
+        c.1.name = keyOf t (ctorAddr B 0 j) ∧ c.1.levelParams = List.range ct.lvls.toNat ∧
+        c.2 = ct.fields.toNat ∧
+        (exprReader t (fun x => E₀.blobs.get? x) cb id
+          (blockSelf t B #[.indc ind])).read ct.typ = .ok c.1.type ∧
+        c.1.type.looseBVarsBounded 0 = true ∧
+        c.1.type.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
+        LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
+          (((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList (ZMod.val (0 : F)) :
+            Nat) : F) + 1 + ((j : Nat) : F)) ct.typ c.1.type = some cty' ∧
+        ctorsA[j]? = some (⟨c.1.name, c.1.levelParams, cty'⟩, c.2) := by
+    intro j c hc
+    obtain ⟨ct, h1, h2, h3, h4, hc1, hc2, h5⟩ := hctor j c hc
+    have h5E := ReaderReads.exprReader_mono (fun x b hb => hst.runBlob x b hb) h5
+    obtain ⟨hl, hd⟩ := hclosed j ct c.1.type (hjlt hc) h1 h5E
+    obtain ⟨ct', cty', hct', hcan, hA⟩ := hnamedA j c hc
+    have hctEq : ct' = ct := Option.some.inj (hct'.symm.trans h1)
+    rw [hctEq] at hcan
+    exact ⟨ct, cty', h1, h2, h4, h3, congrArg ConstantVal.name hc1,
+      congrArg ConstantVal.levelParams hc1, hc2, h5, hl, hd, hcan, hA⟩
+  -- the constructors return literally on every raw image
+  have hRawRet : BlockRawRetHead t E B ind cb := by
+    obtain ⟨sortssF, -, houtF⟩ := houts false
+    refine ⟨hblockE, hprojE, hrec.muts, hc56, fun j hj => ?_⟩
+    have hjP : j < p₀.ctors.length := by
+      rw [hlenP]
+      exact hj
+    obtain ⟨c, cA, sorts, hc, -, -, hout_j⟩ := houtF j hjP
+    obtain ⟨ct, hct, hcidx, -, -, -, hcf, hread⟩ := hctor j c hc
+    have hreadE := ReaderReads.exprReader_mono (fun x b hb => hst.runBlob x b hb) hread
+    obtain ⟨hl, hd⟩ := hclosed j ct c.1.type hj hct hreadE
+    obtain ⟨ct', R', hct', hrc, hrj⟩ := hrawA j c hc
+    have hctEq : ct' = ct := Option.some.inj (hct'.symm.trans hct)
+    rw [hctEq] at hrc hrj
+    obtain ⟨rcbs, rargs, -, -, hstR, -⟩ := hout_j.residual
+    have hget : rawTypes.getD j default = Core.posOf (List.range ct.lvls.toNat) R' := by
+      rw [List.getD_eq_getElem?_getD, hrj]
+      rfl
+    rw [hget, hnP, hcf, hcvT] at hstR
+    exact ⟨ct, c.1.type, R', rcbs, rargs, hct, hcidx, hreadE, hl, hd, hrc, hstR⟩
+  have htracedB' : Decl.TracedBinders env (p₀.nP + p₀.nIdx) cvS.type cvTa.type := by
+    rw [hnP, hnIdx]
+    exact htracedB
+  have htracedS' : Decl.OpenSortTrace env 0 (p₀.nP + p₀.nIdx) cvS.type s := by
+    rw [hnP, hnIdx]
+    exact htracedS
   refine ⟨cvS, cvTa, s, ctorsA, rawTypes, hcheckT, hAT', hTname.symm, htyT.name_eq,
-    htyT.levelParams_eq, hcloadT.1, hparam', houts, hguardAt, hzeroChoice, hn, ?_⟩
+    htyT.levelParams_eq, hcloadT.1, hparam', houts, hguardAt, hzeroChoice, hn, ?_, htracedB',
+    htracedS', ⟨ty₀, ty', hty, hlbb, hdef, hcT, hcvT, rfl, hnP, hlenP,
+      by rw [h256]; exact hp56, by rw [h256]; exact hi56, by rw [h256]; exact hc56⟩, hperN, hRawRet⟩
   -- the later-use condition, from the loop's positivity scans
   intro cA hcA cbs body hstrip i hi hkind
   obtain ⟨j, hjA⟩ := List.mem_iff_getElem?.mp hcA
@@ -956,32 +1055,34 @@ theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleT
   obtain ⟨-, htyv, -⟩ := hval
   have hlpsA : cvCa₀.levelParams = List.range ind.lvls.toNat := by
     rw [hvs.2.1, (hlps_ctors c (List.mem_of_getElem? hc)).1, hcvT]
-  have hcty : Decl.RawTmExact (L1.traceRecordCtx ⟨E, env, t, some n⟩ cs_chk).κ 0
+  have hcty : Decl.RawTmExact (L1.traceRecordCtx ⟨E, env, t, lim⟩ cs_chk).κ 0
       (fun _ => default) h2 0 (rawTypes.getD j default) cvCa₀.type tyv := by
     have h := (hrawT 0 (fun _ => default)).mono e12
     rw [hlpsA, Decl.posOf_range, ← htyv] at h
     exact h
   rw [← hnP] at ev_pos
-  exact Decl.check_positivity_later_spec (c := L1.traceRecordCtx ⟨E, env, t, some n⟩ cs_chk)
+  exact Decl.check_positivity_later_spec (c := L1.traceRecordCtx ⟨E, env, t, lim⟩ cs_chk)
     (by rw [hnP]; omega) (hraw_at env).2 (hraw_at env).1 (hg_chk.sub hsub2)
     (L1.traceRecordCtx_coverage _ hsub2) hcty hout_j.noProj hstR hstA
     (Bytes.repAddressRef_heapMono₂ Core.addrTy (ev_load.heap_extends.trans e12) hbp) ev_pos
     i hi hmen
 
 
-/-- The retained-guard result, forgetting only the newly produced zero-ness alternative. -/
-theorem aliasOuts_of_member_guard {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {n : Nat}
+/-- **The former stage and the constructor stage of a native block at a former declared at a
+definition, from its walked check**: `aliasOuts_of_member_traced` without the traced binders,
+the traced sort and the canonical names of the stored constants. -/
+theorem aliasOuts_of_member_checked {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
+    {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {lim : Option Nat}
     {env : Ix.Kernel.Env .anon} {blk : List (ConstantInfo .anon)}
     {p₀ : Ix.Kernel.NativeParts .anon}
-    (hconv : FormerTeleConv)
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
     (hrec : BlockUnitRecord E₀ B cb ind)
-    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
+    (hchk : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim)
     (hnat : NativeRouteAt calls B) (hblk : BlockReadings t E₀ B ind blk)
     (hp₀ : Ix.Kernel.Model.nativePartsAt? ind.params.toNat ind.indices.toNat blk = some p₀)
-    (hnIdx : p₀.nIdx = ind.indices.toNat) (hn : ind.indices.toNat ≠ 0)
-    (hinv : Decl.PrefixInv.{u} E t (some n) env) (hstored : Decl.UsedRefsStored t env cb)
+    (hnIdx : p₀.nIdx = ind.indices.toNat)
+    (hindex : ind.indices.toNat ≠ 0 ∨ FormerAtAlias t E₀ B cb ind)
+    (hinv : Decl.PrefixInv.{u} E t lim env) (hstored : Decl.UsedRefsStored t env cb)
     (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
@@ -1002,7 +1103,56 @@ theorem aliasOuts_of_member_guard {calls : List (Call F)} {t : Ix.Kernel.RoleTab
               (p₀.toInductiveShape.withSort s) isRec) :: env.consts⟩
             p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx s cvS.type
             (rawTypes.getD j default) c cA sorts) ∧
-      AliasGuardAt calls t E env n B p₀ cvS ctorsA rawTypes s ∧
+      AliasGuardAt calls t E env lim B p₀ cvS ctorsA rawTypes s ∧
+      (cvTa = cvS ∨ ∀ cA ∈ ctorsA,
+        Ix.Kernel.Semantics.ctorZeroOk p₀.cvT.name (Ix.Kernel.Level.zeronessOf s) cA.1.type = true) ∧
+      ind.indices.toNat ≠ 0 ∧
+      (∀ cA ∈ ctorsA, ∀ cbs body, cA.1.type.stripPis (p₀.nP + cA.2) = some (cbs, body) →
+        ∀ i < cA.2,
+          (Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
+             (cbs.getD (p₀.nP + i) default).1 = .recursive ∨
+           Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
+             (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
+          Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false) := by
+  obtain ⟨cvS, cvTa, s, ctorsA, rawTypes, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, -⟩ :=
+    aliasOuts_of_member_traced ht hS hst hrec hchk hnat hblk hp₀ hnIdx hindex hinv hstored hP
+      hkeys hfresh hfree hcov haux
+  exact ⟨cvS, cvTa, s, ctorsA, rawTypes, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12⟩
+
+/-- The retained-guard result, forgetting only the newly produced zero-ness alternative. -/
+theorem aliasOuts_of_member_guard {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
+    {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {lim : Option Nat}
+    {env : Ix.Kernel.Env .anon} {blk : List (ConstantInfo .anon)}
+    {p₀ : Ix.Kernel.NativeParts .anon}
+    (hconv : FormerTeleConv)
+    (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
+    (hrec : BlockUnitRecord E₀ B cb ind)
+    (hchk : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim)
+    (hnat : NativeRouteAt calls B) (hblk : BlockReadings t E₀ B ind blk)
+    (hp₀ : Ix.Kernel.Model.nativePartsAt? ind.params.toNat ind.indices.toNat blk = some p₀)
+    (hnIdx : p₀.nIdx = ind.indices.toNat) (hn : ind.indices.toNat ≠ 0)
+    (hinv : Decl.PrefixInv.{u} E t lim env) (hstored : Decl.UsedRefsStored t env cb)
+    (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
+    (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
+    (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
+    (hcov : L1.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env) :
+    ∃ (cvS cvTa : ConstantVal .anon) (s : Ix.Kernel.Level)
+      (ctorsA : List (ConstantVal .anon × Nat)) (rawTypes : List (Ix.Kernel.Expr .anon)),
+      Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ env p₀.cvT cvS ∧
+      AliasTele env p₀.cvT cvS cvTa (p₀.nP + p₀.nIdx) s ∧
+      cvS.name = p₀.cvT.name ∧ cvTa.name = cvS.name ∧ cvTa.levelParams = cvS.levelParams ∧
+      ctorsA.length = p₀.ctors.length ∧
+      (p₀.ctors ≠ [] → ∀ tfvs r₁, Ix.Kernel.openPisAtFvars p₀.nP cvS.type 0 = some (tfvs, r₁) →
+        ∃ r₂, Ix.Kernel.openPisAtFvars p₀.nP cvTa.type 0 = some (tfvs, r₂)) ∧
+      (∀ isRec : Bool, ∃ sortss : List (List Ix.Kernel.Level),
+        sortss.length = p₀.ctors.length ∧
+        ∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
+          sortss[j]? = some sorts ∧
+          Decl.NativeCtorOut ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
+              (p₀.toInductiveShape.withSort s) isRec) :: env.consts⟩
+            p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx s cvS.type
+            (rawTypes.getD j default) c cA sorts) ∧
+      AliasGuardAt calls t E env lim B p₀ cvS ctorsA rawTypes s ∧
       (∀ cA ∈ ctorsA, ∀ cbs body, cA.1.type.stripPis (p₀.nP + cA.2) = some (cbs, body) →
         ∀ i < cA.2,
           (Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
@@ -1018,17 +1168,17 @@ theorem aliasOuts_of_member_guard {calls : List (Call F)} {t : Ix.Kernel.RoleTab
 
 /-- The original two-stage result, forgetting only the retained guard observation. -/
 theorem aliasOuts_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {n : Nat}
+    {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {lim : Option Nat}
     {env : Ix.Kernel.Env .anon} {blk : List (ConstantInfo .anon)}
     {p₀ : Ix.Kernel.NativeParts .anon}
     (hconv : FormerTeleConv)
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
     (hrec : BlockUnitRecord E₀ B cb ind)
-    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
+    (hchk : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim)
     (hnat : NativeRouteAt calls B) (hblk : BlockReadings t E₀ B ind blk)
     (hp₀ : Ix.Kernel.Model.nativePartsAt? ind.params.toNat ind.indices.toNat blk = some p₀)
     (hnIdx : p₀.nIdx = ind.indices.toNat) (hn : ind.indices.toNat ≠ 0)
-    (hinv : Decl.PrefixInv.{u} E t (some n) env) (hstored : Decl.UsedRefsStored t env cb)
+    (hinv : Decl.PrefixInv.{u} E t lim env) (hstored : Decl.UsedRefsStored t env cb)
     (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
