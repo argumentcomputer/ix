@@ -191,9 +191,10 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
         | _ => pure ()
   IO.println s!"GC\tinfo\tbefore the structure: {installed} basis and inductive declarations \
     installed, {declined} declined, {unread} records not read"
-  let stage ← match found with
-    | none => gcLine "checkNativeTable at [imax 1 0, 0]" false
-        "the reader produced no inductive block at the key of P"
+  let stage ←
+    match found with
+    | none =>
+      gcLine "checkNativeTable at [imax 1 0, 0]" false "no inductive block at the key of P"
     | some (envP, block, nP) => tableStage envP block nP
   let ok := readings && stage
   IO.println s!"[ixvm-guard-certificate] {if ok then "every check passed" else "a check FAILED"} \
