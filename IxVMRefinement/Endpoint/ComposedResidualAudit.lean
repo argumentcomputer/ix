@@ -11,7 +11,7 @@ takes the kinds of a top-walked unit in, and of `CheckedUnitFact` and `CheckedUn
 form of a kind's step for every checked unit) and the axioms it reaches. A change to any of them
 fails the build.
 
-How to read it. The explicit arguments are the open obligations: the first five are the
+How to read it. The explicit arguments are the open obligations: the first four are the
 binding half's, the others the typing half's: the typing fold's rows over the family graph (the
 run's family graph, the records a family check checks, the step of a block with its family record and the step of a
 twin). The binding half's run predicate is `IxVM.Refinement.Binding.BindingRun`. The first
@@ -55,11 +55,6 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
       IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
         (IxVM.Refinement.Binding.RoleUnitStepOver (fun x => x ∈ IxVM.Refinement.RoleOps.opRoles)
-          IxVM.Refinement.Typing.FormerOpenTraceAt))
-  (standardAxiomRoleUnit :
-    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
-        (IxVM.Refinement.Binding.RoleUnitStepOver (fun x => x ∈ IxVM.Consistency.standardAxioms)
           IxVM.Refinement.Typing.FormerOpenTraceAt))
   (familyGraph : IxVM.Refinement.Typing.FamilyGraphRow) (innerChecked : IxVM.Refinement.Typing.InnerCheckedRow)
   (familyBlock : IxVM.Refinement.Typing.FamilyBlockRow IxVM.Refinement.Typing.FormerOpenTraceAt)

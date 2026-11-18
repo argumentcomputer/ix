@@ -100,6 +100,39 @@ theorem roleTypeRenders : RoleTypeRenders := by
   obtain ⟨x1, hren, -⟩ := renders_of_armReadsAs htwf hread (by simp) htbl sel dArm
   exact ⟨x1, hren⟩
 
+/-- **The cells of `role_type(tbl, r)` are the addresses of the roles its specified type
+names**: every cell of the returned term is the address the table binds a role to whose key
+the specified type names. -/
+theorem roleType_cells {t : Ix.Kernel.RoleTable} {r : Role} {T₀ : KExpr}
+    (hspec : specTypeRaw r = some T₀) (htwf : t.wf = true) {x_tbl res : SourceValue F}
+    {h h' : Heap F} {cs : List (Call F)} (htbl : TableRep t h x_tbl)
+    (ev : ObsFn W "KernelRoleSpec::role_type" [x_tbl, .field (roleNum r)] h res h' cs) :
+    ∀ x, AddrIn h' res x → ∃ r', t.addressOf? r' = some (ixAddr x) ∧
+      ∀ P, T₀.constsResolveBy P = true → P (Ix.Kernel.Key.role r') = true := by
+  have hread : armReadsAs (RolesAux.matchArms IxVM.KernelRoleSpec.role_type.body)
+      (ZMod.val (roleNum r)) T₀ 0 = true := by
+    rw [RolesAux.val_roleNum]
+    have hall : (match specTypeRaw r with
+        | none => true
+        | some T₀ => armReadsAs (RolesAux.matchArms IxVM.KernelRoleSpec.role_type.body)
+            r.idx T₀ 0) = true :=
+      List.all_eq_true.mp roleTypeArmsRead_true r (Role.mem_all r)
+    rw [hspec] at hall
+    exact hall
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.role_type.lookup
+    role_type_noControl ev
+  have hp : (IxVM.KernelRoleSpec.role_type.params.map fun (n, t) =>
+      (n, (t.subst []).toCore)).map Prod.fst = ["tbl", "r"] := rfl
+  have hb : IxVM.KernelRoleSpec.role_type.body =
+      .matchValue (.var "r") (RolesAux.matchArms IxVM.KernelRoleSpec.role_type.body) := rfl
+  rw [hp, hb] at d0
+  obtain ⟨vr, m0, bs, body, c1, c2, dScrut, sel, dArm, -⟩ := d0.matchValue_inv
+  obtain ⟨lr, hm0, -⟩ := dScrut.var_inv
+  simp at lr
+  subst vr
+  subst m0
+  exact cells_of_armReadsAs htwf hread (by simp) htbl sel dArm
+
 /-! ## The functions keyed by a role and an index -/
 
 /-- The key an arm of a rendered `match 64 * r + k` is selected at. -/
