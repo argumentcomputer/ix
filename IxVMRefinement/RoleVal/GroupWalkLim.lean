@@ -311,4 +311,35 @@ theorem ValidateRoleIn.lim_walks {calls : List (Call F)} {bAddr : _root_.Address
   rw [Claim.map_addr_topRec_mono]
   exact hmem
 
+/-! ## The evidence theorems of a role specified by equations -/
+
+/-- **What an observed walk records, with its limit**: a closed list of records each checked
+under the role context at the walk's limit, holding the walked address. -/
+theorem RunCheckFullIn.lim_walks {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {n : Nat} {addr : _root_.Address}
+    (hv : RunCheckFullIn calls bAddr t n addr) :
+    ∃ recs : List (Claim.TopRec calls bAddr t (some n)),
+      Claim.TopRecsClosed recs ∧ addr ∈ recs.map (·.addr) := by
+  obtain ⟨h_w, h_w', rc, ap, r_w, cs_w, hrc, ha, ev, hsub⟩ := hv
+  obtain ⟨-, recs, hmem, hcl, -⟩ :=
+    Claim.run_check_transitive_lim_spec (lim := some n)
+      (show Claim.RCLimRep t bAddr (some n) h_w rc from hrc) ha ev
+  refine ⟨recs.map (Claim.TopRec.mono hsub), hcl.mono hsub, ?_⟩
+  rw [Claim.map_addr_topRec_mono]
+  exact hmem
+
+/-- **The evidence theorems of a role specified by equations, walked at the group's validation
+limit**: each `.proof thm` entry of the role's evidence is a record of a closed list of records
+checked under the role context at the group's validation limit. -/
+theorem ValidateRoleIn.eqns_evidence_walks {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.Role}
+    (hv : ValidateRoleIn calls bAddr t g ro) (h5 : roleSpecKindNat ro = 5)
+    {arr : Array (Ix.Kernel.Evidence _root_.Address)} {thm : _root_.Address}
+    (hm : (ro, arr) ∈ t.evidence.toList) (hthm : Ix.Kernel.Evidence.proof thm ∈ arr.toList) :
+    ∃ recs : List (Claim.TopRec calls bAddr t (some (groupValLimit g))),
+      Claim.TopRecsClosed recs ∧ thm ∈ recs.map (·.addr) := by
+  obtain ⟨h, h', x_rc, x_tbl, res, cs, hrc, htbl, ev, hsub⟩ := hv
+  exact ((validate_role_eqns_evidence_observed hrc htbl ev h5 arr thm hm hthm).mono
+    hsub).lim_walks
+
 end IxVM.Refinement.RoleVal
