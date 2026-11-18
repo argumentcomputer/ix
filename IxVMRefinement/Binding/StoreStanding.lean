@@ -98,7 +98,7 @@ theorem GroupReach.root_or_allowed (hC : CollisionFreeRun calls E₀) {g : Nat}
     have hused : i ∈ Core.S0.usedRefIdxs c := by
       rw [Assembly.usedRefIdxs_eq]
       exact hi
-    have hxl : c.refs.toList[i]'hlt' = x := by simpa using hxe
+    have hxl : c.refs.toList[i]'hlt' = a := by simpa using hxe
     have hal := (hrefs i hlt' hused).1
     rw [hxl] at hal
     exact hal
@@ -110,7 +110,7 @@ theorem GroupReach.root_or_allowed (hC : CollisionFreeRun calls E₀) {g : Nat}
     rw [hya] at hrec
     have ec : c = y.c := Option.some.inj (hc.symm.trans hrec)
     rw [ec] at hi hx
-    exact ((hw.closed y hy).2 i (by rw [Assembly.usedRefIdxs_eq]; exact hi) x hx).1
+    exact ((hw.closed y hy).2 i (by rw [Assembly.usedRefIdxs_eq]; exact hi) a hx).1
   | @owner a' c ha' hc hp =>
     right; left
     obtain ⟨y, hy, hya⟩ := ha'.listed hC.hashedStored hw
@@ -144,7 +144,7 @@ theorem GroupReach.root_or_allowed (hC : CollisionFreeRun calls E₀) {g : Nat}
       rw [ec] at hi hx
       obtain ⟨hlt, hxe⟩ := Array.getElem?_eq_some_iff.mp hx
       have hlt' : i < c.refs.toList.length := by simpa using hlt
-      have hxl : c.refs.toList[i]'hlt' = x := by simpa using hxe
+      have hxl : c.refs.toList[i]'hlt' = a := by simpa using hxe
       have hne' : c.refs.toList[i]'hlt' ≠ a₀ := by
         rw [hxl]
         intro e
@@ -159,7 +159,7 @@ theorem GroupReach.root_or_allowed (hC : CollisionFreeRun calls E₀) {g : Nat}
       rw [hya] at hrec
       have ec : c = y.c := Option.some.inj (hc.symm.trans hrec)
       rw [ec] at hi hx
-      exact ((hcl' y hy).2 i (by rw [Assembly.usedRefIdxs_eq]; exact hi) x hx).1
+      exact ((hcl' y hy).2 i (by rw [Assembly.usedRefIdxs_eq]; exact hi) a hx).1
 
 /-- **`Admits.standing`**: a new axiom or quotient record of a group's admission is the record of
 a standard axiom of the group. -/
