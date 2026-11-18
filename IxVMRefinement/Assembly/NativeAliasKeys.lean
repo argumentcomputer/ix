@@ -41,9 +41,13 @@ theorem alias_literal_keys_distinct {t : Ix.Kernel.RoleTable} (hwf : t.wf = true
     Core.keyOf t address ≠ Ix.Kernel.listNilName ∧
     Core.keyOf t address ≠ Ix.Kernel.listConsName ∧
     Core.keyOf t address ≠ Ix.Kernel.charOfNatName := by
-  exact ⟨fresh_key_ne_storedRole hwf shape prefixExtension distinct fresh (by decide +kernel),
-    fresh_key_ne_storedRole hwf shape prefixExtension distinct fresh (by decide +kernel),
-    fresh_key_ne_storedRole hwf shape prefixExtension distinct fresh (by decide +kernel),
-    fresh_key_ne_storedRole hwf shape prefixExtension distinct fresh (by decide +kernel)⟩
+  exact ⟨fresh_key_ne_storedRole hwf shape prefixExtension distinct fresh
+      (.inl (.inl (.inr (by decide +kernel)))),
+    fresh_key_ne_storedRole hwf shape prefixExtension distinct fresh
+      (.inl (.inl (.inr (by decide +kernel)))),
+    fresh_key_ne_storedRole hwf shape prefixExtension distinct fresh
+      (.inl (.inl (.inr (by decide +kernel)))),
+    fresh_key_ne_storedRole hwf shape prefixExtension distinct fresh
+      (.inl (.inl (.inr (by decide +kernel))))⟩
 
 end IxVM.Refinement.Typing

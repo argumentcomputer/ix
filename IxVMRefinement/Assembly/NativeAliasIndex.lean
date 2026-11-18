@@ -39,7 +39,7 @@ theorem raw_telescope_of_cells {κ : _root_.Address → KKey} {d : Nat} {Γ : Na
   | 0, h, k, R, E, p, level, rep, shape => by
     obtain ⟨sort, rfl⟩ := raw_sort_of_load rep shape
     exact ⟨[], sort, rfl⟩
-  | n + 1, h, k, R, E, p, level, rep, ⟨dom, body, meta, loaded, tail⟩ => by
+  | n + 1, h, k, R, E, p, level, rep, ⟨dom, body, metaPtr, loaded, tail⟩ => by
     obtain ⟨RD, RB, D, B, sort, rfl, rfl, _, represented, _⟩ := rep.forallE_of_load loaded
     obtain ⟨binders, result, stripped⟩ := raw_telescope_of_cells n represented tail
     exact ⟨(RD, bmeta sort) :: binders, result, by simp [Expr.stripPis, stripped]⟩
@@ -56,18 +56,18 @@ open Ix.Kernel (Expr)
 theorem RawShape.strip_sort_left : ∀ {n : Nat} {E R : KExpr} {binders} {sort},
     RawShape E R → R.stripPis n = some (binders, .sort sort) →
     ∃ original, E.stripPis n = some (original, .sort sort)
-  | 0, E, R, binders, sort, shape, stripped => by
+  | 0, E, R, binders, level, shape, stripped => by
     simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at stripped
     obtain ⟨rfl, rfl⟩ := stripped
     cases shape
     exact ⟨[], rfl⟩
-  | n + 1, E, R, binders, sort, shape, stripped => by
+  | n + 1, E, R, binders, level, shape, stripped => by
     cases shape <;> simp only [Expr.stripPis, Option.map_eq_some_iff, reduceCtorEq] at stripped
-    rename_i D D' B B' meta meta' dom body
+    rename_i D D' B B' binderMeta binderMeta' dom body
     obtain ⟨⟨tail, residual⟩, next, equal⟩ := stripped
     obtain ⟨_, rfl⟩ := Prod.mk.inj equal
     obtain ⟨original, reconstructed⟩ := body.strip_sort_left next
-    exact ⟨(D, meta) :: original, by simp [Expr.stripPis, reconstructed]⟩
+    exact ⟨(D, binderMeta) :: original, by simp [Expr.stripPis, reconstructed]⟩
 
 /-- A checked former whose raw reader syntax is not a telescope must have nonzero indices. -/
 theorem alias_indices_of_guard {κ : _root_.Address → KKey} {Γ : Nat → KExpr}

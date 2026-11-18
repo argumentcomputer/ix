@@ -12,7 +12,7 @@ namespace IxVM.Refinement.L1
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
-open IxVM.Consistency
+open IxVM.Consistency hiding keyOf
 open IxVM.Refinement.Core
 
 /-- Two actual byte strings hashed at one address agree when their common trace has no
