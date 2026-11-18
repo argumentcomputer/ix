@@ -19,7 +19,7 @@ The constants are consumed in four ways only, and this module restates the lemma
   `peel_n_foralls_rawTm_bounded`, `scoped_nat_former_tele_bounded`, `nat_ps_at_bounded`,
   `nat_replace_pis_bounded`), the member
   and constructor indices of a projection address (`projection_addr_ctor_bounded`), and the
-  cut-off of a lift (`expr_lift_local_bounded`, `nat_idx_at_bounded`);
+  cut-off of a lift (`expr_lift_local_bounded`, `nat_idx_at_bounded`, `nat_tele_at_bounded`);
 * **a positive counter is not zero in the field** (`succ_field_ne_zero_bounded`), below the
   modulus;
 * **a represented bound variable** has an index below `2^63` (`Core.Tm.bvarLocal`;
@@ -30,7 +30,8 @@ The constants are consumed in four ways only, and this module restates the lemma
 One hypothesis of the earlier chain is a fact of the run and not a count read off a record:
 the length of the telescope of a recursive field. The run builds that telescope as a list and
 passes it to `nat_tele_at`; `teleRep_length_lt` bounds it below `2^39` at that call, by the
-bound on the run's memory.
+bound on the run's memory, and `nat_tele_at_of_call` is the specification of that call with no
+hypothesis on the length.
 
 The level-parameter builders (`nat_build_param_lvls_range_spec`, `build_rec_lvls_list_spec`)
 keep `2^32`: that bound is the one `Convert::lvls_to_field` asserts.
@@ -420,5 +421,135 @@ theorem teleRep_length_lt {calls : List (Call F)} (bounded : IxVM.Consistency.Bo
     {tele : List (KExpr × Ix.Kernel.BinderMeta)}
     (rep : TeleRep κ d Γ c.heap k tele p) : tele.length < 549755813888 :=
   RomBound.bounded_length_lt bounded called argument rep.toRepListTrue
+
+/-- `KernelCheck::nat_tele_at` along a telescope, at any target depth below `2^62`
+(`nat_tele_at_go` asks it below `2^32`). -/
+theorem nat_tele_at_go_bounded {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
+    {k_base nF o i l : Nat} {ℓ : KLevel} (hi : i ≤ nF) :
+    ∀ {tele_rem : List (KExpr × Ix.Kernel.BinderMeta)} (m : Nat)
+      {ppw ptele r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      k_base + o + nF + l + m + tele_rem.length < 4611686018427387904 →
+      IxVM.Consistency.Bounded cs →
+      RepKLevel h ℓ ppw →
+      TeleRep κ 0 Γ₀ h (k_base + i + m) tele_rem ptele →
+      ObsFn W "KernelCheck::nat_tele_at"
+        [.field (nF : F), .field (o : F), .field (i : F), .field (l : F),
+          ppw, ptele, .field (m : F)] h r h' cs →
+      TeleRep κ 0 Γ₀ h' (k_base + o + nF + l + m)
+        ((List.range tele_rem.length).map fun idx =>
+          (Ix.Kernel.structIdxAt nF o i l (m + idx) (tele_rem.getD idx default).1, bmeta ℓ)) r := by
+  intro tele_rem
+  induction tele_rem with
+  | nil =>
+    intro m ppw ptele r h h' cs _ _ _ htele ev
+    match Obs.«KernelCheck::nat_tele_at».obs ev with
+    | .Nil (he24 := hr) (hm23 := hm) .. =>
+      subst hr hm
+      exact .nil (by simp)
+    | .Cons (ld12 := ld) .. =>
+      cases htele with | nil cell => exact (load_cell_ne cell ld (by decide)).elim
+  | cons b rest ih =>
+    intro m ppw ptele r h h' cs hlt hbnd hpw htele ev
+    have hlist_eq :
+        List.map
+          ((fun idx =>
+            (Ix.Kernel.structIdxAt nF o i l (m + idx) ((b :: rest).getD idx default).1, bmeta ℓ)) ∘
+            Nat.succ)
+          (List.range rest.length) =
+        List.map
+          (fun idx =>
+            (Ix.Kernel.structIdxAt nF o i l (m + 1 + idx) (rest.getD idx default).1, bmeta ℓ))
+          (List.range rest.length) := by
+      apply List.map_congr_left
+      intro idx _
+      dsimp only [Function.comp_apply]
+      rw [List.getD_cons_succ, show m + idx.succ = m + 1 + idx by omega]
+    cases htele with
+    | cons cell ht hl_hd hrest =>
+      match Obs.«KernelCheck::nat_tele_at».obs ev with
+      | .Nil (ld12 := ld) .. => exact (load_cell_ne cell ld (by decide)).elim
+      | .Cons (x_rest := xrest) (m94 := m94) (v82 := v82) (v91 := v91) (cs102 := cs1)
+          (m161 := m161) (cs169 := cs2)
+          (ld12 := ld) (he77 := hr) (hm76 := hm) (ev104 := ev1) (op234 := op)
+          (ev171 := ev2) (hc236 := hc) .. =>
+        subst hc hr hm
+        obtain ⟨-, hxs⟩ := load_cell cell ld
+        injection hxs with htup hxs; injection hxs with hrest_eq
+        injection htup with hlist
+        injection hlist with h1 _
+        subst h1 hrest_eq
+        rw [evalBinOp_add_one m op] at ev2
+        have hbnd1 : IxVM.Consistency.Bounded cs1 :=
+          RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
+        have hbnd2 : IxVM.Consistency.Bounded cs2 :=
+          RomBound.bounded_mono hbnd (fun x hx => by simp [hx])
+        have hhd := nat_idx_at_bounded hi (by simp at hlt; omega) hbnd1 ht ev1
+        have hrest_m94 := hrest.mono ev1.heap_extends
+        rw [show k_base + i + m + 1 = k_base + i + (m + 1) by omega] at hrest_m94
+        have htl := ih (m + 1)
+          (by simp at hlt; omega) hbnd2
+          (repKLevel_heapMono₂ ev1.heap_extends hpw) hrest_m94 ev2
+        have ext_end : Heap.Extends m161
+            (m161 ++ [.construct teleListEnum "Cons" [.tuple [v91, ppw], v82]]) :=
+          Heap.Extends.snoc _ _
+        simp only [List.length_cons, List.range_succ_eq_map, List.map_cons, List.map_map,
+          Nat.add_zero, List.getD_cons_zero]
+        have htl_ext := htl.mono ext_end
+        rw [show k_base + o + nF + l + (m + 1) = k_base + o + nF + l + m + 1 by omega] at htl_ext
+        rw [hlist_eq]
+        exact .cons (by simp) ((hhd.mono ev2.heap_extends).mono ext_end)
+          (repKLevel_heapMono₂ (ev1.heap_extends.trans (ev2.heap_extends.trans ext_end)) hpw)
+          htl_ext
+
+
+/-- `KernelCheck::nat_tele_at` at `k = 0` computes
+`Ix.Kernel.structTeleAt nF o i l ℓ.zeronessOf tele`, at any target depth below `2^62`
+(`nat_tele_at_spec` asks it below `2^32`). -/
+theorem nat_tele_at_bounded {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
+    {k_base nF o i l : Nat} {ℓ : KLevel} {tele : List (KExpr × Ix.Kernel.BinderMeta)}
+    {ppw ptele r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hi : i ≤ nF)
+    (hlt : k_base + o + nF + l + tele.length < 4611686018427387904)
+    (hbnd : IxVM.Consistency.Bounded cs)
+    (hpw : RepKLevel h ℓ ppw)
+    (htele : TeleRep κ 0 Γ₀ h (k_base + i) tele ptele)
+    (ev : ObsFn W "KernelCheck::nat_tele_at"
+      [.field (nF : F), .field (o : F), .field (i : F), .field (l : F),
+        ppw, ptele, .field 0] h r h' cs) :
+    TeleRep κ 0 Γ₀ h' (k_base + o + nF + l)
+      (Ix.Kernel.structTeleAt nF o i l ℓ.zeronessOf tele) r := by
+  have ev' : ObsFn W "KernelCheck::nat_tele_at"
+      [.field (nF : F), .field (o : F), .field (i : F), .field (l : F),
+        ppw, ptele, .field ((0 : Nat) : F)] h r h' cs := by
+    simpa using ev
+  have hgo := nat_tele_at_go_bounded hi 0 (by omega) hbnd hpw (by simpa using htele) ev'
+  simpa [Ix.Kernel.structTeleAt, bmeta] using hgo
+
+/-- **`nat_tele_at` at a call of a bounded run, with no hypothesis on the telescope's length.**
+The caller's run is bounded and makes the call, so the telescope it passes has fewer than `2^39`
+binders (`teleRep_length_lt`); with the binder depth before the telescope below `2^61`, the
+depth the lifts work at stays below `2^62`. This is how the bound on the telescope of a
+recursive field is obtained inside the specification of `nat_ih_pis`, where the earlier chain
+took it from its caller. -/
+theorem nat_tele_at_of_call {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
+    {k_base nF o i l : Nat} {ℓ : KLevel} {tele : List (KExpr × Ix.Kernel.BinderMeta)}
+    {ppw ptele r : SourceValue F} {h h' : Heap F} {cs calls : List (Call F)}
+    (hi : i ≤ nF)
+    (hbase : k_base + o + nF + l < 2305843009213693952)
+    (bounded : IxVM.Consistency.Bounded calls)
+    (called : (⟨"KernelCheck::nat_tele_at",
+      [.field (nF : F), .field (o : F), .field (i : F), .field (l : F), ppw, ptele, .field 0],
+      h⟩ : Call F) ∈ calls)
+    (hbnd : IxVM.Consistency.Bounded cs)
+    (hpw : RepKLevel h ℓ ppw)
+    (htele : TeleRep κ 0 Γ₀ h (k_base + i) tele ptele)
+    (ev : ObsFn W "KernelCheck::nat_tele_at"
+      [.field (nF : F), .field (o : F), .field (i : F), .field (l : F),
+        ppw, ptele, .field 0] h r h' cs) :
+    TeleRep κ 0 Γ₀ h' (k_base + o + nF + l)
+      (Ix.Kernel.structTeleAt nF o i l ℓ.zeronessOf tele) r := by
+  have hlen : tele.length < 549755813888 :=
+    teleRep_length_lt bounded called (by simp) htele
+  exact nat_tele_at_bounded hi (by omega) hbnd hpw htele ev
 
 end IxVM.Refinement.Decl

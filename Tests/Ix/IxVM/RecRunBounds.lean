@@ -22,6 +22,13 @@ of a type whose recursive field has a telescope.
 
 It is executed evidence, not a kernel proof: nothing here enters a theorem. Lines of the
 record report start with `RB`; the exit code is `0` only if every check and every case passed.
+
+With `IX_REC_RUN_BOUNDS_CONTROLS=1` the suite runs three controls in place of its cases, and
+must then fail on each: the structure's recursor claimed as having called a function that
+builds an induction hypothesis from a telescope (the structure has no recursive field), as
+having called the family check of a mutual or nested block (its family is native), and as
+having called a function the program does not have. They show that "having called" is checked
+by the host that runs the cases.
 -/
 
 namespace Tests.Ix.IxVM.RecRunBounds
@@ -108,6 +115,12 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
   let mut ok := true
   for n in families do
     ok := (← recordBounds env n) && ok
+  if (← IO.getEnv "IX_REC_RUN_BOUNDS_CONTROLS") == some "1" then
+    let controls : Array Builder :=
+      #["KernelCheck::nat_tele_at", "KernelModeled::check_family",
+        "KernelCheck::no_such_function"].map
+        fun callee _ => recursorCase env "Two" false callee
+    return (← runCases "ixvm-rec-run-bounds" controls (jobs := 4) (circuit := some true))
   let mut cases : Array Builder := #[]
   for n in families do
     for assumed in [false, true] do
