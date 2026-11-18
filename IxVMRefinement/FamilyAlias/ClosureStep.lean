@@ -1,4 +1,5 @@
 import IxVMRefinement.FamilyAlias.BlockRowCheck
+import IxVMRefinement.FamilyAlias.TysCanon
 import IxVMRefinement.Binding.ClosureUnitDispatch
 
 /-! # The closure's step of a new block with its family record, at the binding fold's clause
@@ -8,20 +9,24 @@ its selected family record (`Binding.ClosureFamilySteps`), at every group of eve
 from what the family check of the block gives at the closure (`ClosureFamilyCheck`, the binding
 fold's form of `FamilyBlockCheck`):
 
-* `seam`: the family as read and the facts of its check, at the prefix, over a record store for
-  the closure's store that the run's calls are good for;
-* `recs`: the companion facts of each recursor the step stores, at every record store for the
-  closure's store and every carried limit within the groups below the group;
-* `canon`: each new inductive, constructor and recursor stored in the canonical annotated form
-  the circuit loads, and the references the family record uses stored.
+* `seam`: the family as read, the facts of its check, the selected annotated types and
+  right-hand sides as the circuit loads them (`FamilyTysCanon`), and the companion facts of each
+  recursor at its selected type at every record store for the closure's store
+  (`FamRecsCompanion`), at the prefix, over a record store for the closure's store that the run's
+  calls are good for;
+* `recRefs`: no reference the family record uses is an inert axiom's, and each is one a step
+  needs stored.
 
 The step is taken once, over a store `Ec` the run is good for (`BindingRun.stepStores`) at the
-group's validation limit; the new constants (`famStepConclusion_of_facts`) do not depend on the
-store. The fold's clause is then kept with the same registry at every record store for the
-closure's store and every carried limit within the groups (`famStepKeeps_with`): the block is
-modeled at each of them (its route over the closure's store, which is closed under what its
-records use, `blockRoute_recordsFor`), and the load facts hold there (`famLoadCtx_at`). What the
-step reads of the run beside the three facts:
+group's validation limit; the new constants (`famStepConclusion_installed`: the members as the
+record installs them from the selected `tys` and `rhsss`) do not depend on the store. The seam of
+the loads (`FamilyMembersCanon`) holds at that installation (`familyMembersCanon_of_tys`). The
+fold's clause is then kept with the same registry at every record store for the closure's store
+and every carried limit within the groups (`famStepKeeps_with`): the block is modeled at each of
+them (its route over the closure's store, which is closed under what its records use,
+`blockRoute_recordsFor`), the load facts hold there (`famLoadCtx_at`), and so do the companion
+facts of each new recursor (`recCompanionFacts_of_tys`, with the store invariant after the step).
+What the step reads of the run beside the two facts:
 
 * the check of the block at the group's validation limit (`FamilyAdmits.checked`, the block being
   claimed by no block) and its first member's dispatch, on the modeled route of the block's family
@@ -226,17 +231,23 @@ side's, open until the circuit's family changes, as the fields of `FamilyBlockCh
 
 * `seam`: from `KernelModeled::check_family` and the readers of its loads, over a record store
   for `R₁` the run's calls are good for, at the group's validation limit; the block's inert
-  clause is handed (the run's facts, `ClosureRunFacts.famNotInert`);
-* `recs`: from `KernelModeled::check_recs`, at every record store for `R₁` and every carried limit
-  within the groups below `g` (the clause the step keeps is asked at each of them);
-* `canon`: the members' and recursors' loads of `check_family` and `check_recs`
-  (`FamilyMembersCanon`), and the references the family record uses stored (the walk's reference
-  assertions at the witnessed branch of `KernelModeled::family_refs_go`). -/
+  clause is handed (the run's facts, `ClosureRunFacts.famNotInert`); with the family as read and
+  the selected `tys` and `rhsss`, the members' and recursors' loads of `members_val` and
+  `check_recs` at those selected forms (`FamilyTysCanon`), and the companion facts of each
+  recursor at its selected type from `KernelModeled::check_recs` and `check_rules`
+  (`FamRecsCompanion`), at every record store for `R₁` (the clause the step keeps is asked at
+  each of them);
+* `recRefs`: from `KernelModeled::check_family`'s `family_refs_ok`, whose
+  `assert_inner_refs_safe` covers every reference the family record uses
+  (`KernelClaim::assert_safe_used_refs`, with `KernelRoles::assert_ref_allowed`, and
+  `assert_used_not_block`, with `KernelClaim::assert_not_block_ref`). -/
 structure ClosureFamilyFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
     (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (g : Nat) (R₁ : Ixon.Env)
     (envT : Ix.Kernel.Env .anon) (E₀ : Ixon.Env) (B : _root_.Address) (cb : Ixon.Constant)
     (rb : _root_.Address) (crb : Ixon.Constant) (adv : _root_.Address → Prop) : Prop where
-  /-- The seam: the family as read and the facts of its check, at each environment the step is
+  /-- The seam: the family as read, the facts of its check, the selected annotated types and
+  right-hand sides as the circuit loads them, and the companion facts of each recursor of the
+  family at its selected type at every record store for `R₁`, at each environment the step is
   handed, over a record store the run is good for. -/
   seam : ∀ Ec : Ixon.Env, RecordsFor R₁ Ec → StepStore calls t E₀ Ec →
     ∀ env : Ix.Kernel.Env .anon,
@@ -253,36 +264,15 @@ structure ClosureFamilyFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
     ∃ (blk : List (ConstantInfo .anon)) (adv' : FamilyAdvice)
       (tys : List IxVM.Refinement.Core.KExpr)
       (rhsss : List (List IxVM.Refinement.Core.KExpr)),
-      FamDeclReads t E₀ B cb rb crb blk ∧ FamilyCheckFacts env blk adv' tys rhsss
-  /-- The companion facts of each recursor the step stores, at every record store for `R₁` and
-  every carried limit within the groups below `g`. -/
-  recs : ∀ E : Ixon.Env, RecordsFor R₁ E → ∀ lim : Option Nat, Binding.Carried lim →
-    LimWithin (· < g) t lim →
-    ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
-      (aliases blk new : List (ConstantInfo .anon)),
-    Decl.PrefixInv.{u} E t lim env → (∀ ci ∈ envT.consts, ci ∈ env.consts) →
-    AliasGroup env h aliases → FamDeclReads t E₀ B cb rb crb blk →
-    DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
-    (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
-      StoredAs c' ci) →
-    ∀ cv mI rP rls, ConstantInfo.recInfo cv mI rP rls ∈ new →
-      RecCompanionFacts ⟨E, ⟨new ++ env.consts⟩, t, lim⟩ cv mI rP rls
-  /-- The seam of the loads: each new inductive, constructor and recursor stored in the canonical
-  annotated form the circuit loads, and the references the family record uses stored, at an
-  environment that extends the witness's and is handed what the two records use. -/
-  canon : ∀ Ec : Ixon.Env, RecordsFor R₁ Ec → StepStore calls t E₀ Ec →
-    ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
-      (aliases blk new : List (ConstantInfo .anon)),
-    Decl.PrefixInv.{u} Ec t (some (Binding.valLimit g)) env →
-    (∀ ci ∈ envT.consts, ci ∈ env.consts) →
-    (∀ x, UsedRef E₀ B x ∨ UsedRef E₀ rb x →
-      (env.find? (keyOf t x)).isSome = true ∨ FamAddr B cb rb crb x ∨ ¬ NeedOk E₀ x) →
-    AliasGroup env h aliases → FamDeclReads t E₀ B cb rb crb blk →
-    DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
-    (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
-      StoredAs c' ci) →
-    ∀ ms rs, cb.info = .muts ms → crb.info = .muts rs →
-      FamilyMembersCanon t E₀ B cb ms rb crb rs ⟨new ++ env.consts⟩
+      FamDeclReads t E₀ B cb rb crb blk ∧ FamilyCheckFacts env blk adv' tys rhsss ∧
+      (∀ ms rs, cb.info = .muts ms → crb.info = .muts rs →
+        FamilyTysCanon t E₀ B cb ms rb crb rs blk tys rhsss) ∧
+      ∀ E : Ixon.Env, RecordsFor R₁ E → FamRecsCompanion E t env blk tys
+  /-- No reference the family record uses is an inert axiom's, and each is one a step needs
+  stored (a record of the run's store, no block, in Lean's logic with its block). With the step's
+  need hypothesis and the family's addresses stored after the step, the family record's
+  references are stored after it. -/
+  recRefs : ∀ x, UsedRef E₀ rb x → ¬ IxVM.Consistency.InertAt t x ∧ NeedOk E₀ x
 
 /-- **The family check's facts at every new block of a group's closure with its selected family
 record**, at the binders of `Binding.ClosureFamilySteps`. -/
@@ -435,12 +425,12 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
   intro env Reg hext hnd hcl hrefs hadv1 hadv2 hfresh
   have hClc := hcl Ec hRc (some (Binding.valLimit g)) (Binding.carried_valLimit g)
     (Binding.limWithin_below t g)
-  obtain ⟨blk₀, adv', tys, rhsss, hreads₀, hFacts⟩ :=
+  obtain ⟨blk, adv', tys, rhsss, hreads, hFacts, hTys, hComp⟩ :=
     hF.seam Ec hRc hst env hext hnd hClc.prefixInv hClc.extra hinert hrefs hadv1 hadv2 hfresh
   have heq : env.find? Ix.Kernel.eqName = some Ix.Kernel.eqA :=
     eqPin_of_shape hC.bnd.shape (fun ci hci => hext ci (hextT ci hci)) hnd
-  obtain ⟨h, as, blk, env₂, hg, hroots, hreads, hd, hst₂⟩ :=
-    famStepConclusion_of_facts hFacts hreads₀ hClc.store hClc.auxRoot heq hfresh hkey
+  obtain ⟨h, as, env₂, hg, hroots, hd, hst₂, hN, hR⟩ :=
+    famStepConclusion_installed hFacts hreads hClc.store hClc.auxRoot heq hfresh hkey
   obtain ⟨new, henv, hperm⟩ := declIndRunJ_names_perm hd.shape
   have henv₂ : env₂ = ⟨(new ++ as) ++ env.consts⟩ := by
     rw [henv]
@@ -476,14 +466,47 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
       exact Option.isSome_iff_exists.mp hs'
     · exact famFound_of_step hreads hst₂ x hf
     · exact absurd (hC.run.famNeedOk B rb x hfam hnB' hu) hn
-  refine ⟨new ++ as, Reg, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · -- distinct names
+  -- the family record's references stored after the step
+  have husedR : Decl.UsedRefsStored t ⟨(new ++ as) ++ env.consts⟩ crb := by
+    intro i hi x hx
+    have hu : UsedRef ρ.E₀ rb x := usedRef_of_idx hcrb₀ hi hx
+    rcases hrefs x (Or.inr hu) with hs | hf | hn
+    · obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hs
+      obtain ⟨hmem', hname⟩ := find?_mem_name hci
+      have hs' := find?_isSome_of_mem (E := ⟨(new ++ as) ++ env.consts⟩)
+        (List.mem_append_right (new ++ as) hmem')
+      rw [hname] at hs'
+      exact Option.isSome_iff_exists.mp hs'
+    · exact famFound_of_step hreads hst₂ x hf
+    · exact absurd (hF.recRefs x hu).2 hn
+  -- the seam of the loads, at the installation from the selected forms
+  have hcanonM : FamilyMembersCanon t ρ.E₀ B cb ms rb crb rs ⟨(new ++ as) ++ env.consts⟩ :=
+    familyMembersCanon_of_tys ht hB hRB hFacts hreads (hTys ms rs hB.muts hRB.muts) hN hR husedR
+  -- the new constants' names are distinct
+  have hndNA : ((new ++ as).map (·.name)).Nodup := by
     rw [List.map_append]
     refine List.nodup_append.mpr ⟨hperm.nodup_iff.mpr hreads.1, AliasGroup.names_nodup hg, ?_⟩
     intro k hk k' hk' heq'
     obtain ⟨ci, hci, rfl⟩ := List.mem_map.mp hk
     obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hk'
     exact hnotalias _ (hbaseN ci hci) a ha heq'.symm
+  -- each new constant an alias (a definition) or under a member's name
+  have hnameNA : ∀ c ∈ new ++ as, (∃ cv v hint, c = ConstantInfo.defnInfo cv v hint) ∨
+      ∃ ci ∈ blk, c.name = ci.name := by
+    intro c hc
+    rcases List.mem_append.mp hc with hc | hc
+    · have hk : c.name ∈ blk.map (·.name) := hperm.subset (List.mem_map.mpr ⟨c, hc, rfl⟩)
+      obtain ⟨ci, hci, hn⟩ := List.mem_map.mp hk
+      exact Or.inr ⟨ci, hci, hn.symm⟩
+    · exact Or.inl (AliasGroup.defn_of_mem hg c hc).1
+  -- the stored rules' facts after the step
+  have hna : ∀ ci ∈ blk, Decl.NonAuxKey ci.name := fun ci hci => by
+    obtain ⟨x, -, hk, -⟩ := hreads.2.1 ci hci
+    rw [hk]
+    exact Decl.isBaseKey_iff_nonAuxKey.mp (Decl.isBaseKey_keyOf t x)
+  have hSrec : Ix.Kernel.RecCtorsStored (⟨(new ++ as) ++ env.consts⟩ : Ix.Kernel.Env .anon) :=
+    (Decl.FamilyAlias.foldStoreInv_famStep hg hreads.2.2.2 hna hd hClc.foldStore).store.rec_ctors
+  refine ⟨new ++ as, Reg, hndNA, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- fresh in the prefix
     intro ci hci
     rcases List.mem_append.mp hci with hci | hci
@@ -506,14 +529,12 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
         (fun i m hm => hEof E hE _ (Or.inr (Or.inr ⟨rs, i, m, hRB.muts, hm, Or.inl rfl⟩)) _
           (hRB.members i m hm))
         (modeledAt_of_blockRoute (hrouteE E hE)) hfree (hrouteE E hE) htrees hCE.prefixInv hg
-        hreads hd hst₂ hused
-        (hF.canon Ec hRc hst env h as blk (new ++ as) hClc.prefixInv hext hrefs hg hreads hd hst₂
-          ms rs hB.muts hRB.muts)
+        hreads hd hst₂ hused hcanonM
     exact famStepKeeps_with hL hsz
       (famModeled_at hB hRB (fun x hx d hd => hE.2.1 x d (hheld x hx d hd))
         (modeledAt_of_blockRoute (hrouteE E hE)))
       hCE hg hroots hreads hd
-      (hF.recs E hE lim hcE hlE env h as blk (new ++ as) hCE.prefixInv hext hg hreads hd hst₂)
+      (recCompanionFacts_of_tys hFacts hndNA hnameNA hN hR hSrec (hComp E hE))
       hLC.newLoads
   · -- no constant at an operation's key
     intro ci hci
