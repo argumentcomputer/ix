@@ -43,8 +43,31 @@ set_option linter.unusedVariables false
 
 /-! ## What the run gives of its families, and the rows -/
 
+/-- **An advice-record check of the record at `a` among the calls `cs`**, under a role context
+at `lim` with the table at the binding `bAddr`. -/
+def AdviceCheckIn (cs : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
+    (lim : Option Nat) (a : _root_.Address) : Prop :=
+  ∃ (h h' : Aiur.Generic.SourceSemantics.Heap F)
+    (rc xa seen wset r : Aiur.Generic.SourceSemantics.SourceValue F) (cs₁ : List (Call F)),
+    Claim.RCLimRep t bAddr lim h rc ∧ Core.S0.addr h xa a ∧
+    Aiur.Generic.SourceSemantics.ObsFn Obs.W "KernelModeled::check_advice_record"
+      [rc, xa, seen, wset] h r h' cs₁ ∧ (∀ cl ∈ cs₁, cl ∈ cs)
+
+/-- **A container recursor's check of the record at `a` among the calls `cs`**, under a role
+context at `lim` with the table at the binding `bAddr`. -/
+def ContainerRecCheckIn (cs : List (Call F)) (bAddr : _root_.Address)
+    (t : Ix.Kernel.RoleTable) (lim : Option Nat) (a : _root_.Address) : Prop :=
+  ∃ (h h' : Aiur.Generic.SourceSemantics.Heap F)
+    (rc xa ib r : Aiur.Generic.SourceSemantics.SourceValue F) (cs₁ : List (Call F)),
+    Claim.RCLimRep t bAddr lim h rc ∧ Core.S0.addr h xa a ∧
+    Aiur.Generic.SourceSemantics.ObsFn Obs.W "KernelModeled::check_container_rec"
+      [rc, xa, ib] h r h' cs₁ ∧ (∀ cl ∈ cs₁, cl ∈ cs)
+
 /-- **What an accepted run gives of its family records, advice and twins, at a walk and a
-witness** (module docstring). An advice entry of a family check that is not in the graph's
+witness** (module docstring). `innerCall`: every inner record was checked by the family check
+of a family record or of a twin, under the family check's own context at the walk's limit and
+one binding: an advice record that is no projection record by its advice-record check, a
+container's recursor by its check. An advice entry of a family check that is not in the graph's
 advice owns no constant address and uses nothing in Lean's logic (a projection record of an
 earlier advice block). -/
 structure FamilyRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
@@ -61,6 +84,10 @@ structure FamilyRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
         ((∀ ca x, recordOf E₀ a = some ca → ¬ ConstAddrOf a ca x) ∧
           ∀ x, UsedRef E₀ a x → ¬ NeedOk E₀ x)
   twinCall : ∀ rb' B, twin rb' = some B → ∃ bAddr cs, FamilyCallAtLim calls bAddr t B rb' lim cs
+  innerCall : ∃ bAddr, ∀ a, Inner a → ∃ B rb cs,
+    (fam B = some rb ∨ twin rb = some B) ∧ FamilyCallAtLim calls bAddr t B rb lim cs ∧
+    ((AdviceCheckIn cs bAddr t lim a ∧ ∀ c, recordOf E₀ a = some c → ¬ IsProj c) ∨
+      ContainerRecCheckIn cs bAddr t lim a)
 
 /-- **Row `familyGraph`**: at every walk of an accepted typing claim and every witness of the
 table's shape, a rank of the same walk and the run's family records, advice, inner records and
