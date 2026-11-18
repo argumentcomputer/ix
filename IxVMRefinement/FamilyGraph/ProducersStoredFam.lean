@@ -268,6 +268,17 @@ theorem FamRunCtx.twin_routed {K : FamRunCtx} (hB : BatchGives K) {rb' B : _root
   · exact FamRunCtx.twinOf_route ht
   · exact hB.routed rb' B hn
 
+/-- **What the selector gives a twin of a block with a family record**: the block's family record
+is non-empty, and in the preferred form when the twin is (the selector takes a complete record
+first, then one in the preferred form; a twin is a complete record of a family check of the
+block). -/
+theorem FamRunCtx.twin_canonical {K : FamRunCtx} {B rb rb' : _root_.Address}
+    (hf : K.fam B = some rb) (ht : K.twin rb' = some B) :
+    RecBlock K.E₀ rb ∧ (K.Pref B rb' → K.Pref B rb) := by
+  obtain ⟨-, -, hrec, hpref⟩ := FamRunCtx.fam_some hf
+  obtain ⟨hRB, -, -, hFC⟩ := FamRunCtx.twin_facts ht
+  exact ⟨hrec ⟨rb', hFC, hRB⟩, fun hp => hpref ⟨rb', hFC, hRB, hp⟩⟩
+
 /-- **What the stored twins' block fact reads of the witness** (premise; each field names its
 source). Asked of the block of a twin with no family record. That the run routes the block as
 modeled and that it is in Lean's logic are the run's (`FamRunCtx.twin_routed`,
