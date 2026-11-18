@@ -154,6 +154,123 @@ theorem keyIn_instantiate1 (v : Ix.Kernel.Expr .anon) : ∀ (e : Ix.Kernel.Expr 
     | proj => exact Or.inl (.proj _ _)
     | projBody h => exact (ih d h).imp_left .projBody
 
+/-- A key of a lifted term is a key of the term. -/
+theorem keyIn_liftLooseBVars (a : Nat) : ∀ (e : Ix.Kernel.Expr .anon) (c : Nat),
+    KeyIn k (Ix.Kernel.Expr.liftLooseBVars a c e) → KeyIn k e := by
+  intro e
+  induction e with
+  | bvar i =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    split at h <;> cases h
+  | fvar i ty _ =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    exact h
+  | sort u =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    exact h
+  | const n us =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    exact h
+  | app f x ihf ihx =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    cases h with
+    | appFn h => exact .appFn (ihf c h)
+    | appArg h => exact .appArg (ihx c h)
+  | lam t b m iht ihb =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    cases h with
+    | lamTy h => exact .lamTy (iht c h)
+    | lamBody h => exact .lamBody (ihb (c + 1) h)
+  | forallE t b m iht ihb =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    cases h with
+    | allTy h => exact .allTy (iht c h)
+    | allBody h => exact .allBody (ihb (c + 1) h)
+  | letE t v b l iht ihv ihb =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    cases h with
+    | letTy h => exact .letTy (iht c h)
+    | letVal h => exact .letVal (ihv c h)
+    | letBody h => exact .letBody (ihb (c + 1) h)
+  | lit l =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    exact h
+  | proj s i x ih =>
+    intro c h
+    simp only [Ix.Kernel.Expr.liftLooseBVars] at h
+    cases h with
+    | proj => exact .proj _ _
+    | projBody h => exact .projBody (ih c h)
+
+/-- A key of a term with a bound variable replaced by a lifted term is a key of the term or of
+the replacement. -/
+theorem keyIn_instantiate1Lift (v : Ix.Kernel.Expr .anon) : ∀ (e : Ix.Kernel.Expr .anon) (d : Nat),
+    KeyIn k (Ix.Kernel.Expr.instantiate1Lift e v d) → KeyIn k e ∨ KeyIn k v := by
+  intro e
+  induction e with
+  | bvar i =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    split at h
+    · exact Or.inr (keyIn_liftLooseBVars d v 0 h)
+    · split at h <;> cases h
+  | fvar i ty _ =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    exact Or.inl h
+  | sort u =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    exact Or.inl h
+  | const n us =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    exact Or.inl h
+  | app f x ihf ihx =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    cases h with
+    | appFn h => exact (ihf d h).imp_left .appFn
+    | appArg h => exact (ihx d h).imp_left .appArg
+  | lam t b m iht ihb =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    cases h with
+    | lamTy h => exact (iht d h).imp_left .lamTy
+    | lamBody h => exact (ihb (d + 1) h).imp_left .lamBody
+  | forallE t b m iht ihb =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    cases h with
+    | allTy h => exact (iht d h).imp_left .allTy
+    | allBody h => exact (ihb (d + 1) h).imp_left .allBody
+  | letE t x b l iht ihx ihb =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    cases h with
+    | letTy h => exact (iht d h).imp_left .letTy
+    | letVal h => exact (ihx d h).imp_left .letVal
+    | letBody h => exact (ihb (d + 1) h).imp_left .letBody
+  | lit l =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    exact Or.inl h
+  | proj s i x ih =>
+    intro d h
+    simp only [Ix.Kernel.Expr.instantiate1Lift] at h
+    cases h with
+    | proj => exact Or.inl (.proj _ _)
+    | projBody h => exact (ih d h).imp_left .projBody
+
 /-- A key of a term with its level parameters instantiated is a key of the term. -/
 theorem keyIn_instantiateLevelParams {ks : List Ix.Kernel.LevelParam} {us : List Ix.Kernel.Level} :
     ∀ (e : Ix.Kernel.Expr .anon), KeyIn k (e.instantiateLevelParams ks us) → KeyIn k e := by
@@ -256,7 +373,7 @@ theorem keyIn_of_instCtorParams : ∀ (sp : List (Ix.Kernel.Expr .anon)) {ty b :
     | forallE d body m =>
       simp only [instCtorParams] at h
       rcases keyIn_of_instCtorParams vs h hk with h1 | ⟨s, hs, h2⟩
-      · rcases keyIn_instantiate1 v body 0 h1 with h3 | h3
+      · rcases keyIn_instantiate1Lift v body 0 h1 with h3 | h3
         · exact Or.inl (.allBody h3)
         · exact Or.inr ⟨v, List.mem_cons_self, h3⟩
       · exact Or.inr ⟨s, List.mem_cons_of_mem _ hs, h2⟩

@@ -332,11 +332,13 @@ def exprSize : Ix.Kernel.Expr .anon → Nat
 
 /-- One constructor of `ctors_scan`: its type at the entry's levels, past the parameters (a type
 of the block, `peel_n_foralls`) or with the parameters instantiated (an auxiliary,
-`inst_ctor_params`), scanned. -/
+`inst_ctor_params`), scanned. The circuit's `expr_inst1` lifts the argument past the binders it
+crosses, and an auxiliary's parameters are terms over the recursor's parameters, so the
+substitution is the lifting one (`instantiate1Lift`). -/
 def instCtorParams : Ix.Kernel.Expr .anon → List (Ix.Kernel.Expr .anon) →
     Option (Ix.Kernel.Expr .anon)
   | t, [] => some t
-  | .forallE _ b _, v :: vs => instCtorParams (Ix.Kernel.Expr.instantiate1 b v 0) vs
+  | .forallE _ b _, v :: vs => instCtorParams (Ix.Kernel.Expr.instantiate1Lift b v 0) vs
   | _, _ :: _ => none
 
 /-- A constructor type's body at an entry: past the `np` parameters at a type of the block, the
