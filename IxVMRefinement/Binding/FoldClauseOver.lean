@@ -106,7 +106,7 @@ theorem foldClause_basis_at (L : Ix.Kernel.Env .anon → NativeFam .anon → Pro
     FoldClauseWith.{u} L t E lim basisEnv (fun _ => False) :=
   FoldClauseWith.of_prefix (prefixInv_basis_at ht hpre hall hE hlim)
     (famRegistryWith_basis L t E) (hashKeyed_basis_at ht hpre) auxRootSynced_basisEnv
-    lvClauses_basisEnv (Guard.guardCerts_of_noTable basisEnv_noProjTable)
+    lvClauses_basisEnv
 
 /-- **The binding fold's form of the clause at the environment of the pins.** -/
 theorem foldClauseOver_basis_at (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)

@@ -79,7 +79,7 @@ theorem bndOver_of_beforeRaise (hall : AllBound t) (hg : g < 77)
   have hinv : Decl.PrefixInv.{u} E t lim env :=
     prefixInv_lower htop (fun r hf => inForce_top hall hc hw hf)
   exact FoldClauseWith.of_prefix hinv h0.registry h0.hashKeyed h0.auxRoot
-    ⟨h0.thmLevels, h0.storeArR⟩ h0.guard
+    ⟨h0.thmLevels, h0.storeArR⟩
 
 /-- **The invariant before the raise at a group with no role unit**: the invariant below `g`,
 the group's kept and prelude roles stored as their records declare them, the stored shapes

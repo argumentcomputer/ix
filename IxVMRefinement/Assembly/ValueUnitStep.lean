@@ -85,9 +85,9 @@ theorem ValueUnitStep.unitStep {L : Ix.Kernel.Env .anon → NativeFam .anon → 
     (hE : Stores E) (h : ValueUnitStep.{u} L t envT E₀ Stores E lim A c) :
     UnitStep.{u} (FoldExtra.{u} L t E) t envT E₀ E lim A c := by
   intro env hext hnd hinv hX href hfresh
-  obtain ⟨⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩, hg⟩ := hX
+  obtain ⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩ := hX
   have hC : FoldClauseWith.{u} L t E lim env Reg :=
-    FoldClauseWith.of_prefix hinv hR hkeys haux hlv hg
+    FoldClauseWith.of_prefix hinv hR hkeys haux hlv
   obtain ⟨new, hnd', hfr, hkeep, hnamed, hreads⟩ := h env Reg hext hnd hC href hfresh
   have hC' := hkeep E lim Reg hE hC
   refine ⟨new, hnd', hfr, hC'.prefixInv, hC'.extra, hreads, ?_⟩
@@ -226,8 +226,7 @@ theorem memberInstall {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ Ec
 /-- **A value constant at the key of a 32-byte address, installed along its declaration step,
 keeps the clause at the same registry**, given the prefix invariant past it. The registry is
 kept at the same registered families by IxC's declaration step (`EnvModelN.declRunJ`); the
-store keys, the roots, the level clauses and the guard certificates by a value constant at such
-a key. -/
+store keys, the roots and the level clauses by a value constant at such a key. -/
 theorem FoldClauseWith.consValue {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hL : LinkLaws L) {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim : Option Nat}
     {env : Ix.Kernel.Env .anon} {Reg : NativeFam .anon → Prop}
@@ -251,7 +250,6 @@ theorem FoldClauseWith.consValue {L : Ix.Kernel.Env .anon → NativeFam .anon �
     (keepsValuesKeyed_auxRoot t env _ d₀ h.auxRoot hfresh hval hnt hd₀ hkeyx)
     (keepsValuesKeyed_lvClauses t env _ d₀ ⟨h.thmLevels, h.storeArR⟩ hfresh hval hnt hd₀
       hkeyx)
-    (keepsValuesKeyed_guardCerts t E env _ d₀ h.guard hfresh hval hnt hd₀ hkeyx)
 
 /-! ## The step of a standalone definition, theorem or opaque record -/
 
