@@ -71,6 +71,7 @@ import Tests.Ix.IxVM.GuardCertificate
 import Tests.Ix.IxVM.RecRunBounds
 import Tests.Ix.IxVM.FamilyRecords
 import Tests.Ix.IxVM.FamilyGraphRecords
+import Tests.Ix.IxVM.TwinPairRecords
 import Tests.Ix.IxVM.AliasBlock
 import Tests.Ix.IxVM.ValueRecords
 import Tests.Ix.IxVM.TelescopeBlock
@@ -280,6 +281,7 @@ def registry : List Entry := [
   .env "ixvm-rec-run-bounds" (.manual "three compiled native recursors through the program, and the count bounds of the run evaluated on their records") Tests.Ix.IxVM.RecRunBounds.run,
   .env "ixvm-family-records" (.manual "the compiled records and model advice of a nested and an indexed family; IX_FAMILY_RECORDS_OUT writes them") Tests.Ix.IxVM.FamilyRecords.run,
   .env "ixvm-family-graph-records" (.manual "the compiled records of two nested families and of a second recursor record of a family; IX_FAMILY_GRAPH_OUT writes them") Tests.Ix.IxVM.FamilyGraphRecords.run,
+  .env "ixvm-twin-pair" (.manual "a second recursor record of a family against the first at the compiled keys: the member comparisons and IxC's twin check in both orders; IX_TWIN_PAIR_OUT writes a fixture") Tests.Ix.IxVM.TwinPairRecords.run,
   .env "ixvm-alias-block" (.manual "a family whose former is declared at a definition, and its recursor, through the program in both validator modes") Tests.Ix.IxVM.AliasBlock.run,
   .env "ixvm-value-records" (.manual "a compiled theorem and opaque constant and an assembled block of definitions through the program, under a validated and an assumed binding") Tests.Ix.IxVM.ValueRecords.run,
   .env "ixvm-telescope-block" (.manual "an inductive type declared at its telescope, a structure-like proposition and their recursors through the program in both validator modes") Tests.Ix.IxVM.TelescopeBlock.run,
