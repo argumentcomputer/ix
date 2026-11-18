@@ -366,7 +366,7 @@ theorem provisionRecsRunJ_storeAr :
     subst hs
     subst hc
     exact ⟨hML, fun _ hm => nomatch hm⟩
-  | envAcc, ci :: rest, envSelf, checked, ⟨cvA, mI, rP, rules, rest', -, hmv, hprov, hchk⟩,
+  | envAcc, ci :: rest, envSelf, checked, ⟨cvA, mI, rP, rules, rest', _, hmv, hprov, hchk⟩,
       hML, hlen => by
     obtain ⟨har, hsuf, cm, hcm, hcml⟩ := memberValRunJ_arRes hmv hML
     have hML' : ModelLen ⟨.recInfo cvA mI rP [] :: envAcc.consts⟩ bn :=
@@ -487,7 +487,7 @@ theorem lenExt_provision_fold {J J' : Judgements .anon} {bn : List KKey}
     rw [hfo]
     exact hlen
   | envP, ci :: rest, envSelf, checked, envF, out,
-      ⟨cvA, mI, rP, rules, rest', -, hmv, hprov, hchk⟩, hfold, hlen => by
+      ⟨cvA, mI, rP, rules, rest', _, hmv, hprov, hchk⟩, hfold, hlen => by
     subst hchk
     obtain ⟨rules', -, hfold'⟩ := hfold
     exact lenExt_provision_fold hprov hfold' (LenExt.cons hlen rfl rfl)
