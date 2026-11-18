@@ -6,6 +6,9 @@ import IxVMRefinement.Binding.TableAdmitsValidate
 import IxVMRefinement.Binding.AxiomValidation
 import IxVMRefinement.Binding.GroupStores
 import IxVMRefinement.FamilyAlias.BlockRowCheck
+import IxVMRefinement.FamilyGraph.CompositionFam
+import IxVMRefinement.Binding.RoleUnitW
+import IxVMRefinement.Binding.BasisWalked
 
 /-! # The composed statement from its open obligations
 
@@ -194,6 +197,83 @@ theorem circuitComposed_of_parts
     (basisGroups callsB) (groupAdmissions callsB) (groupAdmissionReads callsB)
     (groupClosure callsB) (groupWithoutRoleUnit callsB) (operationRoleUnit callsB)
     (standardAxiomRoleUnit callsB) hbA
+    (Claim.claimPhase_typing evA)
+    (fun _ _ _ _ _ _ h => by
+      obtain ⟨_, hW, _⟩ := h
+      exact hW.topLim)
+    (fun _ _ _ _ _ _ h => Claim.TopWalk.graph h)
+    (familySteps_of_parts familyGraph innerSteps familyBlock familyTwin standaloneDefinition
+      standaloneTheoremOrOpaque standaloneRecursor definitionBlock nativeBlockTelescope
+      nativeBlockAlias nativeBlockOtherTelescope callsA)
+
+/-- **The public statement from the parts of the two halves with the binding half's family form,
+for any link.** As `circuitComposed_of_parts`, with the binding half's hypotheses those of
+`Binding.binding_skeleton_overW` for every bounded run: the invariant at the six basis groups
+with the walked records stored and a stored family map (`BasisOverW`); at each group a family
+selection with the run's family checks `Fam` and their store side (`FamiliesChain`); the closure
+in the family form (`ClosureStepOverFamilyW`, with the run's family checks of the group); and the
+role units of an operation and of a standard axiom keeping the walked records and the map
+(`RoleUnitStepOverW`). The two halves meet at the witness with its stored families
+(`composed_skeleton_over_familyW`). -/
+theorem circuitComposed_of_partsFam
+    {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    {Run : List (Call F) → Ix.Kernel.RoleTable → BRun → (Nat → Ixon.Env) → Prop}
+    {Fam : List (Call F) → BRun → Ix.Kernel.RoleTable → Nat → Ixon.Env → Ixon.Env →
+      (_root_.Address → Option _root_.Address) → (_root_.Address → _root_.Address → Prop) →
+      (_root_.Address → _root_.Address → Prop) → Prop}
+    (bindingClaimExport :
+      SourceSoundBounded fun calls d => BindingClaimExportObs (Run calls) calls d)
+    (basisGroups : ∀ calls, BasisOverW.{u} L (Run calls))
+    (groupAdmissions : ∀ calls, AdmitsChain (Run calls))
+    (groupAdmissionReads : ∀ calls, AdmitsReadsChain (Run calls))
+    (groupFamilies : ∀ calls, FamiliesChain (Run calls) (Fam calls))
+    (groupClosure : ∀ calls, AtGroups (Run calls) fun ρ t g =>
+      ClosureStepOverFamilyW.{u} L ρ t g (Fam calls ρ t g))
+    (groupWithoutRoleUnit : ∀ calls, AtGroups (Run calls) (RoleFreeShapes.{u} L))
+    (operationRoleUnit :
+      ∀ calls, AtGroups (Run calls) (RoleUnitStepOverW.{u} (· ∈ RoleOps.opRoles) L))
+    (standardAxiomRoleUnit :
+      ∀ calls, AtGroups (Run calls) (RoleUnitStepOverW.{u} (· ∈ standardAxioms) L))
+    (familyGraph : FamilyGraphRow.{u})
+    (innerSteps : ∀ (calls : List (Call F)) t seeds E₀ lim Top rank,
+      Claim.TopWalk calls t seeds E₀ lim Top rank →
+      ∀ (R : Ixon.Env) (envT : Ix.Kernel.Env .anon)
+        (fam twin : _root_.Address → Option _root_.Address)
+        (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop),
+        FamilyRun calls t envT E₀ lim Top rank fam twin adv Inner →
+        ∀ E, StepCtx.{u} calls t R envT E₀ E → ∀ A c, Inner A → Unclaimed fam A →
+          recordOf E₀ A = some c → InLogic c → UnitKind c → fam A = none → twin A = none →
+          UnitStep.{u} (FoldExtra.{u} L t E) t envT E₀ E lim A c)
+    (familyBlock : FamilyBlockRow.{u} L) (familyTwin : FamilyTwinRow.{u} L)
+    (standaloneDefinition : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind = .defn)
+    (standaloneTheoremOrOpaque : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind ≠ .defn)
+    (standaloneRecursor : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ rc : Ixon.Recursor, c.info = .recr rc)
+    (definitionBlock : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ ms : Array Ixon.MutConst, c.info = .muts ms ∧ DefnBlock ms)
+    (nativeBlockTelescope : WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
+      ∃ ind : Ixon.Inductive,
+        BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerAtTele t E₀ B cb ind)
+    (nativeBlockAlias : WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
+      ∃ ind : Ixon.Inductive,
+        BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerAtAlias t E₀ B cb ind)
+    (nativeBlockOtherTelescope : WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
+      ∃ ind : Ixon.Inductive,
+        BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerTeleOther t E₀ B cb ind) :
+    CircuitComposed.{u} := by
+  unfold CircuitComposed
+  refine circuitSound_of_bounded l0 ?_
+  intro dB valueB heapB callsB evB hbB
+  show CircuitSound fun callsA dA => ComposedSpec.{u} callsA callsB dA dB
+  refine circuitSound_of_bounded l0 ?_
+  intro dA valueA heapA callsA evA hbA
+  show ComposedSpec.{u} callsA callsB dA dB
+  exact composed_skeleton_over_familyW (bindingClaimExport dB valueB heapB callsB evB hbB)
+    (basisGroups callsB) (groupAdmissions callsB) (groupAdmissionReads callsB)
+    (groupFamilies callsB) (groupClosure callsB) (groupWithoutRoleUnit callsB)
+    (operationRoleUnit callsB) (standardAxiomRoleUnit callsB) hbA
     (Claim.claimPhase_typing evA)
     (fun _ _ _ _ _ _ h => by
       obtain ⟨_, hW, _⟩ := h
