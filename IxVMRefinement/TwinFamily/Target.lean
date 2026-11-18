@@ -84,6 +84,17 @@ def CanonReconForm (t : Ix.Kernel.RoleTable) (env : Ix.Kernel.Env .anon) (rb : _
     env.find? (keyOf t x) = some (.recInfo cv mI rP rules) →
     cv.type = (recon x).1 ∧ rules.map (·.rhs) = (recon x).2
 
+/-- **The block's family record, as the run checked it**: `rb`'s record in the run's store is
+a family record (`FamRecRecord`) that a family check of the block `B` in the run accepted. The
+canonical recursor of each part of a second record is the member of `rb` at the part's place in
+`B`'s family; this is what ties the two. For a family record in the graph (`fam B = some rb`)
+the graph's producer gives it; for a family the witness stores it is not available (the
+record may be only in the witness's store), and the stored case is open. -/
+def FamRecOfBlock (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
+    (B rb : _root_.Address) (crb : Ixon.Constant) : Prop :=
+  ∃ (rs : Array Ixon.MutConst) (bAddr : _root_.Address) (lim : Option Nat) (cs : List (Call F)),
+    FamRecRecord E₀ rb crb rs ∧ FamilyCallAtLim calls bAddr t B rb lim cs
+
 /-- **The twin step's target.** The hypotheses are the accepted family check of the block `B`
 with the second record `rb'` on the modeled route, at any limit; the prefix invariant at that
 limit; what the second record uses, stored; the block's family record `rb` installed (wherever
@@ -99,7 +110,8 @@ def TwinStepTarget (recon : _root_.Address → KExpr × List KExpr) : Prop :=
     (cb crb crb' : Ixon.Constant) (ms rs' : Array Ixon.MutConst) (lim : Option Nat)
     (cs : List (Call F)),
     t.check = .ok () → LoadedReads.RunStore calls E₀ → StepStore calls t E₀ E →
-    FamBlockRecord E₀ B cb ms → FamRecRecord E₀ rb' crb' rs' →
+    FamBlockRecord E₀ B cb ms → FamRecOfBlock calls t E₀ B rb crb →
+    FamRecRecord E₀ rb' crb' rs' →
     rs'.size ≠ 0 → rb' ≠ rb →
     FamilyCallAtLim calls bAddr t B rb' lim cs →
     ModeledRouteAt calls B →

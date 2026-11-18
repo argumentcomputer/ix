@@ -290,34 +290,38 @@ theorem twinTarget_of_facts {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim : Opti
       exact hDR
     exact ⟨hF.canonical w hw, hrc, DW, DR, hDW, hDC, hfn, hargs⟩
 
-/-- **The twin step's target from a producer of the facts**: at every hypothesis of the target
-but the canonical record's form, the circuit side hands the second record's declaration as read
-and the facts of its parts. -/
+/-- **The circuit-side seam of the twin step**: at every hypothesis of the target but the
+canonical record's form, the second record's declaration as read and the facts of its parts. -/
+def TwinSeam (recon : _root_.Address → KExpr × List KExpr) : Prop :=
+  ∀ (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
+    (E₀ E : Ixon.Env) (env : Ix.Kernel.Env .anon) (B rb rb' : _root_.Address)
+    (cb crb crb' : Ixon.Constant) (ms rs' : Array Ixon.MutConst) (lim : Option Nat)
+    (cs : List (Call F)),
+    t.check = .ok () → LoadedReads.RunStore calls E₀ → StepStore calls t E₀ E →
+    FamBlockRecord E₀ B cb ms → FamRecOfBlock calls t E₀ B rb crb →
+    FamRecRecord E₀ rb' crb' rs' →
+    rs'.size ≠ 0 → rb' ≠ rb →
+    FamilyCallAtLim calls bAddr t B rb' lim cs →
+    ModeledRouteAt calls B →
+    Decl.PrefixInv.{u} E t lim env →
+    (∀ x, UsedRef E₀ rb' x →
+      (env.find? (keyOf t x)).isSome = true ∨ ConstAddrOf rb' crb' x ∨ ¬ NeedOk E₀ x) →
+    FamilyInstalled t env rb crb →
+    InertClause t crb' →
+    (∀ x, ConstAddrOf rb' crb' x → env.find? (keyOf t x) = none) →
+    (∀ x, ConstAddrOf rb' crb' x → Decl.KeyFree (keyOf t x)) →
+    ∃ (blk : List (ConstantInfo .anon)) (ws : List (TwinRecPart .anon)),
+      TwinDeclReads t E₀ rb' crb' blk ∧
+      TwinPartsFacts t env rb crb recon blk ws (Decl.twinPeerRename ws)
+
+/-- **The twin step's target from the seam** (`TwinSeam`). -/
 theorem twinStepTarget_of_facts {recon : _root_.Address → KExpr × List KExpr}
-    (hseam : ∀ (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
-      (E₀ E : Ixon.Env) (env : Ix.Kernel.Env .anon) (B rb rb' : _root_.Address)
-      (cb crb crb' : Ixon.Constant) (ms rs' : Array Ixon.MutConst) (lim : Option Nat)
-      (cs : List (Call F)),
-      t.check = .ok () → LoadedReads.RunStore calls E₀ → StepStore calls t E₀ E →
-      FamBlockRecord E₀ B cb ms → FamRecRecord E₀ rb' crb' rs' →
-      rs'.size ≠ 0 → rb' ≠ rb →
-      FamilyCallAtLim calls bAddr t B rb' lim cs →
-      ModeledRouteAt calls B →
-      Decl.PrefixInv.{u} E t lim env →
-      (∀ x, UsedRef E₀ rb' x →
-        (env.find? (keyOf t x)).isSome = true ∨ ConstAddrOf rb' crb' x ∨ ¬ NeedOk E₀ x) →
-      FamilyInstalled t env rb crb →
-      InertClause t crb' →
-      (∀ x, ConstAddrOf rb' crb' x → env.find? (keyOf t x) = none) →
-      (∀ x, ConstAddrOf rb' crb' x → Decl.KeyFree (keyOf t x)) →
-      ∃ (blk : List (ConstantInfo .anon)) (ws : List (TwinRecPart .anon)),
-        TwinDeclReads t E₀ rb' crb' blk ∧
-        TwinPartsFacts t env rb crb recon blk ws (Decl.twinPeerRename ws)) :
+    (hseam : TwinSeam.{u} recon) :
     TwinStepTarget.{u} recon := by
-  intro calls bAddr t E₀ E env B rb rb' cb crb crb' ms rs' lim cs ht hRS hSS hB hrb' hsz
+  intro calls bAddr t E₀ E env B rb rb' cb crb crb' ms rs' lim cs ht hRS hSS hB hrbB hrb' hsz
     hne hcall hroute hinv href hinst hform hinert hfresh hkey
   obtain ⟨blk, ws, hreads, hF⟩ := hseam calls bAddr t E₀ E env B rb rb' cb crb crb' ms rs'
-    lim cs ht hRS hSS hB hrb' hsz hne hcall hroute hinv href hinst hinert hfresh hkey
+    lim cs ht hRS hSS hB hrbB hrb' hsz hne hcall hroute hinv href hinst hinert hfresh hkey
   -- the record has a member, whose constant address the block reads
   have hblk : blk ≠ [] := by
     obtain ⟨m, hm⟩ : ∃ m, rs'[0]? = some m := ⟨rs'[0], by simp [Nat.pos_of_ne_zero hsz]⟩

@@ -96,6 +96,7 @@ theorem unitStepTwin_of_installed {recon : _root_.Address → Core.KExpr × List
     {c cb crb : Ixon.Constant} {ms rs' : Array Ixon.MutConst} {cs : List (Call F)}
     (ht : t.check = .ok ()) (hRS : LoadedReads.RunStore calls E₀)
     (hSS : StepStore calls t E₀ E) (hB : FamBlockRecord E₀ B cb ms)
+    (hrbB : FamRecOfBlock calls t E₀ B rb crb)
     (hA : FamRecRecord E₀ A c rs') (hsz : rs'.size ≠ 0)
     (hne : A ≠ rb) (hcall : FamilyCallAtLim calls bAddr t B A lim cs)
     (hroute : ModeledRouteAt calls B) (hinert : InertClause t c)
@@ -113,7 +114,7 @@ theorem unitStepTwin_of_installed {recon : _root_.Address → Core.KExpr × List
   intro env hext hnd hinv hX href hrbS hfresh
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
   obtain ⟨blk, env₂, hreads, hrun, hstored, hmodel, hcomp⟩ :=
-    hT calls bAddr t E₀ E env B rb A cb crb c ms rs' lim cs ht hRS hSS hB hA hsz hne
+    hT calls bAddr t E₀ E env B rb A cb crb c ms rs' lim cs ht hRS hSS hB hrbB hA hsz hne
       hcall hroute hinv href (hinst env hext hnd hinv hX hrbS)
       (hform env hext hnd hinv hX hrbS) hinert hfresh hkey
   obtain ⟨hinv₂, hX₂⟩ :=
@@ -201,6 +202,7 @@ theorem unitStepTwin_of_target {recon : _root_.Address → Core.KExpr × List Co
     {c cb crb : Ixon.Constant} {ms rs' : Array Ixon.MutConst} {cs : List (Call F)}
     (ht : t.check = .ok ()) (hRS : LoadedReads.RunStore calls E₀)
     (hSS : StepStore calls t E₀ E) (hB : FamBlockRecord E₀ B cb ms)
+    (hrbB : FamRecOfBlock calls t E₀ B rb crb)
     (hcrb : recordOf E₀ rb = some crb) (hA : FamRecRecord E₀ A c rs') (hsz : rs'.size ≠ 0)
     (hne : A ≠ rb) (hcall : FamilyCallAtLim calls bAddr t B A lim cs)
     (hroute : ModeledRouteAt calls B) (hinert : InertClause t c)
@@ -213,7 +215,7 @@ theorem unitStepTwin_of_target {recon : _root_.Address → Core.KExpr × List Co
     (hkeep : TwinStepKeeps.{u} X t envT E₀ E lim A c) :
     UnitStepTwin.{u} (fun env => X env ∧ FamilyRecsModeled t E₀ fam env) t envT E₀ E lim A c
       rb crb :=
-  unitStepTwin_of_installed hT ht hRS hSS hB hA hsz hne hcall hroute hinert hkey
+  unitStepTwin_of_installed hT ht hRS hSS hB hrbB hA hsz hne hcall hroute hinert hkey
     (fun env _ _ _ hXe hrbS => familyInstalled_of_clause hXe.2 hfam hcrb hrbS) hform
     hkeep.and_familyRecsModeled
 
