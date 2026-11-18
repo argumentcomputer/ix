@@ -1,5 +1,7 @@
 import IxVMRefinement.Decl.NativeRec
 import IxVMRefinement.Callees.ProjAddr
+import IxVMRefinement.Core.Certs
+import IxVMRefinement.Assembly.GuardHeadRep
 import Batteries.Tactic.OpenPrivate
 
 /-! # The native recursor's generators at counts in the field's range
@@ -14,7 +16,8 @@ The constants are consumed in four ways only, and this module restates the lemma
 
 * **a natural's cast to the field is the natural**, which holds below the field's modulus
   `18446744069414584321`: the loop counters (`peel_n_foralls_tm_bounded`,
-  `peel_n_foralls_rawTm_bounded`, `nat_ps_at_bounded`, `nat_replace_pis_bounded`), the member
+  `peel_n_foralls_rawTm_bounded`, `scoped_nat_former_tele_bounded`, `nat_ps_at_bounded`,
+  `nat_replace_pis_bounded`), the member
   and constructor indices of a projection address (`projection_addr_ctor_bounded`), and the
   cut-off of a lift (`expr_lift_local_bounded`, `nat_idx_at_bounded`);
 * **a positive counter is not zero in the field** (`succ_field_ne_zero_bounded`), below the
@@ -226,6 +229,91 @@ theorem nat_replace_pis_bounded {κ : _root_.Address → KKey} {d : Nat} {Γ : N
         by simp [Expr.pisToLamsPw, hout', bmeta],
         .lam (by simp) ((ht.mono ev'.heap_extends).mono ext_end)
           (htm'.mono ext_end) (repKLevel_heapMono₂ (ev'.heap_extends.trans ext_end) hpw)⟩
+
+/-- **`nat_former_tele` keeps the term**, for any binder count in the field's range
+(`scoped_nat_former_tele_spec` asks `k < 2^32`): at depth `d` with the context `types`, a term
+whose first `k` binders are `∀`s is represented by the result, with every head step it takes on
+a non-`Forall` node read through the scoped core. -/
+theorem scoped_nat_former_tele_bounded {c : ScopedCtx} (hc : ScopedCoreFacts c) :
+    ∀ (k : Nat) {d : Nat} {Γ : Nat → KExpr} {E : KExpr}
+      {x_rc x_ty x_types r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      k < 18446744069414584321 → (E.stripPis k).isSome = true →
+      RCRep c.t c.lim h x_rc → TypesRep c.κ Γ h d x_types → GhostScoped Γ d →
+      CoreGood c cs → Tm c.κ d Γ h 0 E x_ty →
+      ObsFn W "KernelCheck::nat_former_tele" [x_rc, x_ty, .field (k : F), x_types] h r h' cs →
+      Heap.Extends h h' ∧ Tm c.κ d Γ h' 0 E r
+  | 0, d, Γ, E, x_rc, x_ty, x_types, r, h, h', cs, _, _, _, _, _, _, hE, ev => by
+    match Obs.«KernelCheck::nat_former_tele».obs ev with
+    | .n0 (he16 := hr) (he17 := hh) .. =>
+      subst hr hh
+      exact ⟨Heap.Extends.refl _, hE⟩
+    | .other_Forall (hne19 := hne) .. => exact absurd rfl hne
+    | .other_other (hne19 := hne) .. => exact absurd rfl hne
+  | m + 1, d, Γ, E, x_rc, x_ty, x_types, r, h, h', cs, hlt, hs, hrc, hty, hsc, hgood, hE, ev => by
+    obtain ⟨T, B, mE, rfl⟩ : ∃ T B mE, E = .forallE T B mE := by
+      cases E with
+      | forallE T B mE => exact ⟨T, B, mE, rfl⟩
+      | bvar _ | fvar _ _ | sort _ | const _ _ | app _ _ | lam _ _ _ | letE _ _ _ _
+      | lit _ | proj _ _ _ => simp [Ix.Kernel.Expr.stripPis] at hs
+    have hsB : (B.stripPis m).isSome = true := by
+      simpa only [Ix.Kernel.Expr.stripPis, Option.isSome_map] using hs
+    have hsB' : ((B.instantiate1 (.fvar d T)).stripPis m).isSome = true :=
+      Specs.Whnf.stripPis_isSome_instantiate1 _ m B 0 hsB
+    match Obs.«KernelCheck::nat_former_tele».obs ev with
+    | .n0 (hv14 := hv14) .. => exact absurd hv14 (succ_field_ne_zero_bounded hlt)
+    | .other_Forall (x_d := x_d) (x_b := x_b) (x_m := x_m) (v66 := v66) (m76 := m76)
+        (cs84 := cs84) (v89 := v89) (ld34 := ld34) (he61 := hr) (hm60 := hh')
+        (op118 := op118) (hm129 := hm121) (ev86 := ev_rec) (hc156 := hcs) .. =>
+      obtain ⟨T', B', ℓ, hEq, hT, hB, hℓ⟩ := hE.forallE_of_load ld34
+      injection hEq with hT_eq hB_eq hm_eq
+      subst hT_eq hB_eq hm_eq
+      rw [evalBinOp_sub_succ m op118] at ev_rec
+      obtain ⟨e_push, htypes', hsc'⟩ := push_binder_types hT hty hsc
+      subst hm121
+      have hB_open := (hB.mono e_push).open_body (Ghost.extend_at Γ d T)
+        (Ghost.extend_below Γ d T)
+      have hgood_rec : CoreGood c cs84 := hgood.sub (by rw [hcs]; intro x hx; simp [hx])
+      obtain ⟨e_rec, hrec⟩ := scoped_nat_former_tele_bounded hc m (by omega) hsB'
+        (hrc.mono e_push) htypes' hsc' hgood_rec hB_open ev_rec
+      have hclose := tm_close (Γ' := Γ) (fun j hj => (Ghost.extend_below Γ d T j hj).symm) hrec
+      rw [abstract1_instantiate1_cancel T 0 (tm_fvarIdxLt hB) hB.looseBVarsBounded] at hclose
+      subst hr hh'
+      have e_out : Heap.Extends m76
+          (m76 ++ [.construct "KernelTypes::KExprNode" "Forall" [x_d, v66, x_m]]) :=
+        Heap.Extends.snoc _ _
+      have e_all := e_push.trans (e_rec.trans e_out)
+      refine ⟨e_all, ?_⟩
+      exact .forallE (by simp) (hT.mono e_all) (hclose.mono e_out) (repKLevel_heapMono₂ e_all hℓ)
+    | .other_other (m162 := m162) (p169 := p169) (cs175 := cs175) (x_d := x_d) (x_b := x_b)
+        (x_m := x_m) (v220 := v229) (m230 := m239) (cs238 := cs247) (v243 := v252)
+        (ld171 := ld171) (ev177 := ev_whnf) (he215 := hr) (hm214 := hh') (op272 := op281)
+        (hm283 := hm284) (ev240 := ev_rec) (hc310 := hcs) .. =>
+      have hgood_w : CoreGood c cs175 := hgood.sub (by rw [hcs]; intro x hx; simp [hx])
+      obtain ⟨te', hte', hrigid⟩ := Core.GuardData.head_rep hc hgood_w hE ev_whnf
+      have hte_eq := hrigid rfl
+      subst hte_eq
+      have e_w := ev_whnf.heap_extends
+      obtain ⟨T', B', ℓ, hEq, hT, hB, hℓ⟩ := hte'.forallE_of_load ld171
+      injection hEq with hT_eq hB_eq hm_eq
+      subst hT_eq hB_eq hm_eq
+      rw [evalBinOp_sub_succ m op281] at ev_rec
+      obtain ⟨e_push, htypes', hsc'⟩ := push_binder_types hT (hty.mono e_w) hsc
+      subst hm284
+      have hB_open := (hB.mono e_push).open_body (Ghost.extend_at Γ d T)
+        (Ghost.extend_below Γ d T)
+      have hgood_rec : CoreGood c cs247 := hgood.sub (by rw [hcs]; intro x hx; simp [hx])
+      obtain ⟨e_rec, hrec⟩ := scoped_nat_former_tele_bounded hc m (by omega) hsB'
+        ((hrc.mono e_w).mono e_push) htypes' hsc' hgood_rec hB_open ev_rec
+      have hclose := tm_close (Γ' := Γ) (fun j hj => (Ghost.extend_below Γ d T j hj).symm) hrec
+      rw [abstract1_instantiate1_cancel T 0 (tm_fvarIdxLt hB) hB.looseBVarsBounded] at hclose
+      subst hr hh'
+      have e_out : Heap.Extends m239
+          (m239 ++ [.construct "KernelTypes::KExprNode" "Forall" [x_d, v229, x_m]]) :=
+        Heap.Extends.snoc _ _
+      have e_all := e_w.trans (e_push.trans (e_rec.trans e_out))
+      refine ⟨e_all, ?_⟩
+      exact .forallE (by simp) ((hT.mono e_push).mono (e_rec.trans e_out))
+        (hclose.mono e_out) (repKLevel_heapMono₂ (e_push.trans (e_rec.trans e_out)) hℓ)
 
 /-! ## The address of a constructor projection -/
 

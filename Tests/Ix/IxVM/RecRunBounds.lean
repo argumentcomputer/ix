@@ -31,16 +31,16 @@ open IxVM.ClaimHarness
 private def defs (n : String) : Lean.Name := `Tests.Ix.IxVM.RecRunBoundsDefs ++ n.toName
 
 /-- A typing claim on the recursor of the family `n`, which the program must accept having
-called `fn`. -/
-private def recursorCase (env : Ixon.Env) (n : String) (assumed : Bool) (fn : String) :
+called `callee`. -/
+private def recursorCase (env : Ixon.Env) (n : String) (assumed : Bool) (callee : String) :
     Except String Case := do
   let some target := env.getAddr? (Ix.Name.fromLeanName (defs (n ++ ".rec")))
     | throw s!"{defs (n ++ ".rec")} is not in the Ixon environment"
   let ctx ← Ix.ClaimContext.ofEnv env assumed
   let how := if assumed then "typing, binding assumed" else "typing, binding validated"
-  let c ← Case.ofClaim s!"{how}: {n}.rec, having called {fn}" env (.check ctx target none) {}
+  let c ← Case.ofClaim s!"{how}: {n}.rec, having called {callee}" env (.check ctx target none) {}
     true none
-  return { c with exercises := some fn }
+  return { c with exercises := some callee }
 
 /-- One line of the record report. -/
 private def line (name : String) (ok : Bool) (detail : String) : IO Bool := do
@@ -112,10 +112,10 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
   for n in families do
     for assumed in [false, true] do
       cases := cases.push (fun _ => recursorCase env n assumed "KernelCheck::nat_rec_check")
-  for fn in inverted do
-    cases := cases.push (fun _ => recursorCase env "Vec" false fn)
-  for fn in ["KernelCheck::nat_ih_pis", "KernelCheck::nat_tele_at"] do
-    cases := cases.push (fun _ => recursorCase env "Tree" false fn)
+  for callee in inverted do
+    cases := cases.push (fun _ => recursorCase env "Vec" false callee)
+  for callee in ["KernelCheck::nat_ih_pis", "KernelCheck::nat_tele_at"] do
+    cases := cases.push (fun _ => recursorCase env "Tree" false callee)
   let code ← runCases "ixvm-rec-run-bounds" cases (jobs := 4) (circuit := some true)
   IO.println s!"[ixvm-rec-run-bounds] records: \
     {if ok then "every check passed" else "a check FAILED"} (executed evidence, not a kernel \
