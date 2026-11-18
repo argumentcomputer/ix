@@ -393,7 +393,7 @@ theorem read_role_bindings_parse :
                 intro e
                 subst e
                 exact hfresh w hbw
-              exact Claim.mem_insSorted_of_ne hbw hne
+              exact mem_insSorted_of_ne hbw hne
             rcases hm with h0 | ⟨ro', hm', hw⟩
             · exact hold ((hidxL b w).mpr (.inl h0))
             · simp only [List.mem_append, List.mem_singleton, Prod.mk.injEq] at hm'
@@ -414,7 +414,7 @@ theorem read_role_bindings_parse :
         obtain ⟨extR, lbR, restR, roleR, byAddrR, sR, nxtR, entsR, esR, htupR, hlenR, hbsR, hsR,
           hascR, hnxtR1, hnxtR2, hrangeR, hentR, hbndR, hbstR, hidxR⟩ :=
           ih ((n' + 1) - ((n' + 1) / 2 + 1)) (by omega) (by omega) (ro.idx + 1) _
-            (by omega) hbstM hvalsM (hs2.mono ext_ins) ev537
+            (by omega) hbstM hvalsM (L1.Stream.mono ext_ins hs2) ev537
         simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupR
         obtain ⟨rfl, rfl, rfl, rfl⟩ := htupR
         -- the node
