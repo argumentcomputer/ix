@@ -363,13 +363,16 @@ the use-site reading of the projection guard, a theorem (`Core.projGuardRunReadi
 * `familyBlock`: what the family check of a top-walked block with a family record, an empty one
   included, gives its step (`FamilyAlias.FamilyBlockCheckRow`): the seam to the model side's
   facts (the family as read and `Decl.FamilyAlias.FamilyCheckFacts`, kernel-checked at two
-  compiled fixtures), the companion facts of each recursor the step stores, and the six load
-  facts at its new constants that read the family check (`FamilyAlias.FamilyLoadsCheck`). The
+  compiled fixtures), the companion facts of each recursor the step stores, and the three load
+  facts at its new constants that read the family check (`FamilyAlias.FamilyLoadsCheck`: the
+  annotated loads of the members, of the constructor projections and of the inductive
+  projections). The
   row (`FamilyBlockRow`: the step installs the block with its family record and keeps the fold's
   clause with the family recursors' companions beside it, `UnitStepFamily`) is a theorem from it
   (`FamilyAlias.familyBlockRow_of_check`): the block's record, the route fact at the block, the
   claim of the recursors, key freedom, the pinned equality, the keeping of the clause and the
-  other eight load facts are proved. Producer: the circuit side, from the observed family check
+  other eleven load facts (the unit-like and eta facts among them) are proved. Producer: the
+  circuit side, from the observed family check
   to these facts, open until the circuit's family changes.
 * `familyTwin`: the step of a second family record of a block (a twin), handed the block's
   family record stored, installs it and keeps the fold's clause with the family recursors'
