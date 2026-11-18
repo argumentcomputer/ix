@@ -12,7 +12,9 @@ import IxVMRefinement.Assembly.TypingKeyFree
 named hypotheses, one for each obligation of the proof that has no unconditional theorem yet.
 It claims nothing by itself: a hypothesis is typed by the interface its obligation has today,
 whether or not that interface can be met. It fixes how the parts compose, and what is left.
-A hypothesis is deleted when a theorem produces it.
+A hypothesis is deleted when a theorem produces it. Its statement is printed in
+`IxVMRefinement.Endpoint.ComposedResidualAudit`, which fails to build when the statement
+changes.
 
 The chain. `CircuitComposed` follows from the two halves of the deployed circuit for one
 internal part `Facts` (`circuitComposed_of_halves`); a half of the circuit follows from the same
