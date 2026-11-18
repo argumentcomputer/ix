@@ -3,6 +3,8 @@ import IxVMRefinement.Binding.ClosureFold
 import IxVMRefinement.Binding.StoreOpOrder
 import IxVMRefinement.RoleVal.BoundSafety
 import IxVMRefinement.FamilyGraph.ProducersModeled
+import IxVMRefinement.Obs.KernelModeled2
+import IxVMRefinement.Obs.KernelModeled3
 
 /-! # The family checks of a binding run, group by group
 
@@ -15,7 +17,9 @@ The run's payload and family selection, and what of the family form's clauses is
   routed as modeled, with a family check at the group's limit, selects the family record of one
   such check; the advice and container recursors of a block are those of its checks.
   `runFamOf_famCall`: the clause `GroupFamilyChecks.famCall` of that selection;
-  `modeled_of_run`: the clause `GroupFamilyChecks.modeled` of every run.
+  `modeled_of_run`: the clause `GroupFamilyChecks.modeled` of every run;
+  `familyCall_block_nonempty`, `famNonempty_of_run`: the block of a family check is a non-empty
+  block of the run's store.
 * `RemainingFamilyClauses calls bAddr t E₀`: what is not proved of the run's family checks, at
   the store sequence with the run's payload. Each field names the source it comes from.
 * `families_of_remaining`: the family form's clauses at a group (`ClosureFam` and
@@ -125,18 +129,78 @@ theorem modeled_of_run (hC : CollisionFreeRun calls E₀) (g : Nat) :
   rw [dite_eq_left h]
   exact ⟨_, rfl⟩
 
+/-- **The block of an observed family check is a non-empty block of the run's store**:
+`KernelModeled::check_family` loads the block's record (`Ingress::load_verified_constant`) in its
+one arm, a block (`Muts`), and `KernelModeled::block_nparams` has no arm for an empty member
+list. -/
+theorem familyCall_block_nonempty (hS : LoadedReads.RunStore calls E₀)
+    (hH : LoadedReads.HashedRecordsStored calls E₀) {B rb : _root_.Address} {lim : Option Nat}
+    {cs : List (Call F)} (hfc : FamilyCallAtLim calls bAddr t B rb lim cs) :
+    ∃ cb ms, recordOf E₀ B = some cb ∧ cb.info = .muts ms ∧ 0 < ms.size := by
+  obtain ⟨h, h', rc, xb, xrb, r, -, ⟨b, hb, rfl⟩, -, ev, -, hsub⟩ := hfc
+  match Obs.«KernelModeled::check_family».obs ev with
+  | .run (m105 := m105) (m501 := m501) (m589 := m589) (m624 := m624) (x_members := x_members)
+      (cs511 := cs511) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+      (ev231 := ev231) (ev266 := ev266) (ev309 := ev309) (ev344 := ev344) (ev403 := ev403)
+      (ev435 := ev435) (ev465 := ev465) (ev513 := ev513) (ev601 := ev601) (ev634 := ev634)
+      (ev664 := ev664) (hc1474 := hc) .. =>
+    have e0 : Heap.Extends h m105 := by
+      match sg112 with
+      | .Nil (ev15 := ev15) (he33 := he33) .. =>
+        rw [he33]
+        exact ev15.heap_extends
+      | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
+    have e453 := e0.trans (ev126.heap_extends.trans (ev148.heap_extends.trans
+      (ev194.heap_extends.trans (ev231.heap_extends.trans (ev266.heap_extends.trans
+      (ev309.heap_extends.trans (ev344.heap_extends.trans (ev403.heap_extends.trans
+      (ev435.heap_extends.trans ev465.heap_extends)))))))))
+    have hsub511 : ∀ cl ∈ cs511, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
+    obtain ⟨-, bytes, c, hsz, hh, haddr, hex, hde, -, -, -, -, -, cRep⟩ :=
+      L1.load_verified_constant_decode_bounded
+        (Bytes.repAddressRef_heapMono₂ Core.addrTy e453 hb) ev513
+    obtain ⟨lc, hget, -, hlc⟩ := hH ⟨bytes.toArray⟩ c (Core.hashed_mono hsub511 hh)
+      (by simpa only [ByteArray.size, List.size_toArray] using hsz) hde hex
+    have haddr' : Address.blake3Pure ⟨bytes.toArray⟩ = Core.ixAddr b := haddr
+    have hrec : recordOf E₀ (Core.ixAddr b) = some c := by
+      rw [hS.recordOf_eq_recordAt]
+      unfold Ix.Cert.recordAt
+      rw [← haddr', hget]
+      exact hlc
+    obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
+    have hinfo_eq := (List.cons.inj (Value.construct.inj hc_eq).2.2).1
+    rw [← hinfo_eq] at hinfoRep
+    obtain ⟨ms, hms, hrep⟩ := L1.repConstantInfo_muts_inv hinfoRep
+    refine ⟨c, ms, hrec, hms, ?_⟩
+    match Obs.«KernelModeled::block_nparams».obs ev664 with
+    | .run (ld12 := ld12) .. =>
+      have e624 : Heap.Extends m501 m624 := ev601.heap_extends.trans ev634.heap_extends
+      obtain ⟨z, zs, hz, -, -⟩ :=
+        Lib.rep_cons_of_load (RepLinkedList.mono L1.repMutConst_heapMono₂ e624 hrep) ld12
+      have hlen : ms.toList.length = zs.length + 1 := by rw [hz]; rfl
+      rw [← Array.length_toList, hlen]
+      exact Nat.succ_pos _
+
+/-- **`ClosureRunFacts.famNonempty` of every run**: the selected record's block had a family check
+at the group's limit (`runFamOf_spec`), so it is a non-empty block of the run's store
+(`familyCall_block_nonempty`). -/
+theorem famNonempty_of_run (hC : CollisionFreeRun calls E₀) {g : Nat} :
+    ∀ B rb, runFamOf calls bAddr t E₀ g B = some rb →
+      ∃ cb ms, recordOf E₀ B = some cb ∧ cb.info = .muts ms ∧ 0 < ms.size := by
+  intro B rb h
+  obtain ⟨-, -, cs, hcs⟩ := runFamOf_spec h
+  exact familyCall_block_nonempty hC.runStore hC.hashedStored hcs
+
 end Run
 
 /-- **What is left of `ClosureRunFacts`** at a group: its fields but `famRefs` (the rank's,
 `GroupRanked.famRefs`), `advNotUnit` (`advNotUnit_of_run`), `roleUnitForm`
-(`roleUnitForm_of_run`) and `keptRoles` (`keptRoles_of_run`), which are proved. Each field's source:
+(`roleUnitForm_of_run`), `keptRoles` (`keptRoles_of_run`) and `famNonempty`
+(`famNonempty_of_run`), which are proved. Each field's source:
 * `oldNeeds`: today's circuit, not specified: an address a new unit's step reads that is held
   before the group was checked at the limit of the group that added it (the walk's
   `KernelClaim::run_check` at that group; for a payload record, its family check), or is a
   walked role's record; the step's reading set (`ClosureNeeds`) is wider than what the walk of
   the unit reads, through the family record's and the advice's references.
-* `famNonempty`: today's circuit: `KernelModeled::check_family` loads the block's members and
-  `check_recs` compares the record entry by entry against the flattened block; not specified.
 * `noPinned`: unknown; it is a statement about the basis pins and the keys of the new records
   (`PinnedBasis`), for which no reading of the circuit is written.
 * `routeNew`: today's circuit: the modeled arm of `KernelCheck::check_const` reaches
@@ -155,8 +219,6 @@ structure RunFactsLeft (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : I
     (∃ c n, recordOf R x = some c ∧ (∀ ms, c.info ≠ .muts ms) ∧ InLogic c ∧
       (∀ cb, recordOf R (Ix.Cert.ownerOf x c) = some cb → InLogic cb) ∧ ρ.checked x n) ∨
     ∃ r, walkedRole r = true ∧ Ix.SpecDigest.groupOf r < g ∧ t.addressOf? r = some x
-  famNonempty : ∀ B rb, famOf B = some rb → ∃ cb ms, recordOf ρ.E₀ B = some cb ∧
-    cb.info = .muts ms ∧ 0 < ms.size
   noPinned : ∀ A c x ci, New R R' A → recordOf R' A = some c → ConstAddrOf A c x →
     PinnedBasis ci → ci.name ≠ keyOf t x
   routeNew : ∀ R₁ B, ClosureStore t g R R' R₁ → New R R' B →
@@ -459,7 +521,7 @@ theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRows
   · exact
       { oldNeeds := hL.oldNeeds
         famRefs := hrank.famRefs
-        famNonempty := hL.famNonempty
+        famNonempty := famNonempty_of_run hC
         advNotUnit := advNotUnit_of_run hC hb hax hR hg6 hg hw hpay
         noPinned := hL.noPinned
         roleUnitForm := roleUnitForm_of_run hC hb hax hcheck hg6 hval
