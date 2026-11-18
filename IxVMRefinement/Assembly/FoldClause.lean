@@ -1,4 +1,5 @@
 import IxVMRefinement.Assembly.NativeBlockFinalRetHead
+import IxVMRefinement.Guard.Certificate
 import IxC.Kernel.Model.Inductives.NativeAtRecLate
 
 /-! # The one clause the declaration folds carry
@@ -17,15 +18,18 @@ states it once, with the model held once.
 * `FoldClauseWith L t E lim env Reg`, `FoldClause L t E lim env`: the clause. Its first part is
   IxC's: one model in every set theory keeping every registered family's data (`EnvModelN`), and
   the store facts IxC keeps along every declaration step. The rest is what the refinement reads
-  beside them: the registry read off the store, the keys, and the circuit's loads against the
-  store at the limit.
+  beside them: the registry read off the store, the keys, the projection guards as certificates
+  per projection table (`Guard.GuardCerts`, which mentions no limit), and the circuit's loads
+  against the store at the limit.
 * `FoldExtra L t E env` and `foldClause_iff`: the clause is the prefix invariant together with
   the part beside it, in the shape a unit step takes its extra clause. The prefix invariant's own
   model is rebuilt from the clause (`FoldClauseWith.prefixInv`), so it is not a second datum.
+  `FoldCore L t E env` is that part without the guard certificates: the registry, the store
+  keys, the roots and the level clauses.
 
 Also here: the registry's reading at a parent (`FamRegistryWith.at_parent`), its steps
 (`FamRegistryWith.step`, `.install`), the empty registry (`famRegistryWith_of_noFamily`), the
-passage from the clause with the telescope equality (`foldExtra_of_nativeBlockXR`), and the fact
+passage from the clause with the telescope equality (`foldCore_of_nativeBlockXR`), and the fact
 that the clause with the telescope equality has no inhabitant at an environment that stores a
 former declared at a definition (`not_nativeBlockXR_of_aliasFormer`).
 -/
@@ -408,17 +412,25 @@ structure FoldClauseWith (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
   companions : Decl.CoreCompanions ⟨E, env, t, lim⟩
   /-- The scoped load contract at the prefix context. -/
   loads : Core.ScopedLoadFacts (Core.Ctx.stored ⟨E, env, t, lim⟩)
+  /-- The projection guards of the stored tables, certified over the store. No limit occurs. -/
+  guard : Guard.GuardCerts t E env
 
 /-- **The clause a declaration fold carries**: some registry, chosen before the set theory. -/
 def FoldClause (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (t : Ix.Kernel.RoleTable)
     (E : Ixon.Env) (lim : Option Nat) (env : Ix.Kernel.Env .anon) : Prop :=
   ∃ Reg : NativeFam .anon → Prop, FoldClauseWith.{u} L t E lim env Reg
 
-/-- **The part of the clause beside the prefix invariant**, in the shape a unit step takes its
-extra clause: the registry, the store keys, the roots and the level clauses. -/
-abbrev FoldExtra (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (t : Ix.Kernel.RoleTable)
+/-- **The part of the clause beside the prefix invariant, without the guard certificates**: the
+registry, the store keys, the roots and the level clauses. -/
+abbrev FoldCore (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (t : Ix.Kernel.RoleTable)
     (E : Ixon.Env) (env : Ix.Kernel.Env .anon) : Prop :=
   ((FamRegistry.{u} L t E env ∧ HashKeyed t env) ∧ Decl.AuxRootSynced env) ∧ LvClauses env
+
+/-- **The part of the clause beside the prefix invariant**, in the shape a unit step takes its
+extra clause: `FoldCore` and the projection guards' certificates over the store. -/
+abbrev FoldExtra (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (t : Ix.Kernel.RoleTable)
+    (E : Ixon.Env) (env : Ix.Kernel.Env .anon) : Prop :=
+  FoldCore.{u} L t E env ∧ Guard.GuardCerts t E env
 
 section Clause
 
@@ -456,16 +468,21 @@ theorem FoldClauseWith.registry (h : FoldClauseWith.{u} L t E lim env Reg) :
     FamRegistryWith.{u} L t E env Reg :=
   ⟨h.fams, h.complete, h.model⟩
 
+/-- The registry, the store keys, the roots and the level clauses of the clause. -/
+theorem FoldClauseWith.core (h : FoldClauseWith.{u} L t E lim env Reg) :
+    FoldCore.{u} L t E env :=
+  ⟨⟨⟨⟨Reg, h.registry⟩, h.hashKeyed⟩, h.auxRoot⟩, h.thmLevels, h.storeArR⟩
+
 /-- The part of the clause beside the prefix invariant. -/
 theorem FoldClauseWith.extra (h : FoldClauseWith.{u} L t E lim env Reg) :
     FoldExtra.{u} L t E env :=
-  ⟨⟨⟨⟨Reg, h.registry⟩, h.hashKeyed⟩, h.auxRoot⟩, h.thmLevels, h.storeArR⟩
+  ⟨h.core, h.guard⟩
 
 /-- **The clause from the prefix invariant and the part beside it.** The prefix invariant's own
 model is not read. -/
 theorem FoldClauseWith.of_prefix (hinv : Decl.PrefixInv.{u} E t lim env)
     (hR : FamRegistryWith.{u} L t E env Reg) (hkeys : HashKeyed t env)
-    (haux : Decl.AuxRootSynced env) (hlv : LvClauses env) :
+    (haux : Decl.AuxRootSynced env) (hlv : LvClauses env) (hg : Guard.GuardCerts t E env) :
     FoldClauseWith.{u} L t E lim env Reg :=
   { model := hR.model
     store := hinv.store.store
@@ -486,27 +503,30 @@ theorem FoldClauseWith.of_prefix (hinv : Decl.PrefixInv.{u} E t lim env)
     unresolved := hinv.unresolved
     tableWf := hinv.tableWf
     companions := hinv.companions
-    loads := hinv.loads }
+    loads := hinv.loads
+    guard := hg }
 
 /-- **The clause is the prefix invariant together with the part beside it.** -/
 theorem foldClause_iff :
-    FoldClause.{u} L t E lim env ↔ Decl.PrefixInv.{u} E t lim env ∧ FoldExtra.{u} L t E env := by
+    FoldClause.{u} L t E lim env ↔
+      Decl.PrefixInv.{u} E t lim env ∧ FoldExtra.{u} L t E env := by
   constructor
   · rintro ⟨Reg, h⟩
     exact ⟨h.prefixInv, h.extra⟩
-  · rintro ⟨hinv, ⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩
-    exact ⟨Reg, FoldClauseWith.of_prefix hinv hR hkeys haux hlv⟩
+  · rintro ⟨hinv, ⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩, hg⟩
+    exact ⟨Reg, FoldClauseWith.of_prefix hinv hR hkeys haux hlv hg⟩
 
 end Clause
 
 /-! ## From the clause with the telescope equality -/
 
-/-- **The clause with the telescope equality gives the part beside the prefix invariant**,
+/-- **The clause with the telescope equality gives the registry, the store keys, the roots
+and the level clauses at any link**,
 where the stored constants are well formed: every registered family is read without the
 equality (`FamRead.of_late`). -/
-theorem foldExtra_of_nativeBlockXR {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+theorem foldCore_of_nativeBlockXR {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hL : LinkLaws L) {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
-    (hwf : Ix.Kernel.EnvWF env) (h : NativeBlockXR.{u} t E env) : FoldExtra.{u} L t E env := by
+    (hwf : Ix.Kernel.EnvWF env) (h : NativeBlockXR.{u} t E env) : FoldCore.{u} L t E env := by
   obtain ⟨⟨⟨⟨Reg, hR, hH⟩, hkeys⟩, haux⟩, hlv⟩ := h
   exact ⟨⟨⟨⟨Reg, fun fam hf =>
     FamRead.of_late hL (hR.fams fam hf) hwf hlv.2 (hH fam hf).1 (hH fam hf).2,
@@ -546,10 +566,10 @@ theorem FamReadAt.toMatched {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
     MatchedAt t E env P ip fam :=
   ⟨h.1.toLate, h.2⟩
 
-/-- **At the identifying link, the part of the clause beside the prefix invariant gives the
-clause with the telescope equality.** -/
-theorem nativeBlockXR_of_foldExtra_tele {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
-    {env : Ix.Kernel.Env .anon} (h : FoldExtra.{u} TeleLink t E env) :
+/-- **At the identifying link, the registry, the store keys, the roots and the level clauses
+give the clause with the telescope equality.** -/
+theorem nativeBlockXR_of_foldCore_tele {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
+    {env : Ix.Kernel.Env .anon} (h : FoldCore.{u} TeleLink t E env) :
     NativeBlockXR.{u} t E env := by
   obtain ⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩ := h
   exact ⟨⟨⟨⟨Reg, ⟨fun fam hf => (hR.fams fam hf).toLate, hR.complete, hR.model⟩,
@@ -567,16 +587,18 @@ theorem UnitStep.of_iff {X X' : Ix.Kernel.Env .anon → Prop} {t : Ix.Kernel.Rol
     h env hext hnd hinv ((hXX' env hinv).mpr hX') href hfresh
   exact ⟨new, h1, h2, hinv', (hXX' _ hinv').mp hXn, h5, h6⟩
 
-/-- **Every unit step that keeps the clause with the telescope equality keeps the clause at
-the identifying link**, at the same limit: under the prefix invariant the two are equivalent. -/
-theorem unitStep_foldExtra_tele {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .anon}
+/-- **Every unit step that keeps the clause with the telescope equality keeps the registry,
+the store keys, the roots and the level clauses at the identifying link**, at the same limit:
+under the prefix invariant the two are equivalent. The guard certificates are not among them:
+the clause with the telescope equality does not hold them.-/
+theorem unitStep_foldCore_tele {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .anon}
     {E₀ E : Ixon.Env} {lim : Option Nat} {A : _root_.Address} {c : Ixon.Constant}
     (h : UnitStep.{u} (NativeBlockXR.{u} t E) t envT E₀ E lim A c) :
-    UnitStep.{u} (FoldExtra.{u} TeleLink t E) t envT E₀ E lim A c :=
-  UnitStep.of_iff (X := NativeBlockXR.{u} t E) (X' := FoldExtra.{u} TeleLink t E)
+    UnitStep.{u} (FoldCore.{u} TeleLink t E) t envT E₀ E lim A c :=
+  UnitStep.of_iff (X := NativeBlockXR.{u} t E) (X' := FoldCore.{u} TeleLink t E)
     (fun env hinv =>
-      ⟨foldExtra_of_nativeBlockXR linkLaws_tele hinv.store.store.wf,
-        nativeBlockXR_of_foldExtra_tele⟩) h
+      ⟨foldCore_of_nativeBlockXR linkLaws_tele hinv.store.store.wf,
+        nativeBlockXR_of_foldCore_tele⟩) h
 
 /-- **The clause with the telescope equality has no inhabitant at an environment that stores a
 former declared at a definition.** At a stored former under no basis name, whose record is an

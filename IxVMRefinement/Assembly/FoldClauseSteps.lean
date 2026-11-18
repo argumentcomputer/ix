@@ -11,10 +11,14 @@ half is kept by IxC's own lemmas from the step's judgement: `EnvModelN.declRunJ`
 `StoreArR` lemma for the store facts. The rest is kept from what the step reads off its run.
 
 * A value step (a definition, a theorem, an axiom at the key of a 32-byte address, along its
-  declaration judgement): `keepsValuesJ_famRegistry`, `keepsValuesKeyed_foldExtra`,
-  `foldExtra_cons_thm`; the skeleton's step for a definition record at either role context,
-  `unitStep_defn_foldExtra`.
-* A native block's install: `foldExtra_install` (the general form), `foldExtra_nativeNoRec` (a
+  declaration judgement): `keepsValuesJ_famRegistry`, `keepsValuesKeyed_foldCore`,
+  `keepsValuesKeyed_foldExtra`, `foldExtra_cons_thm`; the skeleton's step for a definition
+  record at either role context, `unitStep_defn_foldExtra`.
+* The projection guards' certificates: a constant that is neither a constructor nor a
+  projection table keeps them (`guardCerts_cons`, `keepsValuesKeyed_guardCerts`); along any
+  extension they are kept for the tables stored before and supplied for the tables stored new
+  (`guardCerts_step`).
+* A native block's install: `foldCore_install` (the general form), `foldCore_nativeNoRec` (a
   former declared at its telescope, from `NativeNoRecFacts`), `FoldClauseWith.nativeAt` (a
   former declared at a definition, from `NativeAtFacts`). `NativeAtFacts.famStage` reads the
   telescope constant's facts, the stored former's level parameters and the telescope off the
@@ -42,6 +46,75 @@ open Ix.Kernel.Semantics (NativeFam NativeFamStored DeclRunJ IndRoutesJ DeclNati
   SumIndRunJ Judgements)
 open Ix.Kernel.Model (rulesJ EnvModelN EnvModelT ArRes StoreArR)
 
+/-! ## The projection guards' certificates along a step -/
+
+/-- A lookup past a constant stored in front that is not the constant found. -/
+theorem find_cons_ne {env : Ix.Kernel.Env .anon} {ci x : ConstantInfo .anon} {k : Key .anon}
+    (hne : ci ≠ x) (hf : (⟨ci :: env.consts⟩ : Ix.Kernel.Env .anon).find? k = some x) :
+    env.find? k = some x := by
+  rw [Ix.Kernel.Env.find?_cons] at hf
+  split at hf
+  · exact absurd (Option.some.inj hf) hne
+  · exact hf
+
+/-- **A constant stored in front that is neither a constructor nor a projection table keeps the
+certificates**: both lookups the certificates read are lookups of the environment before. -/
+theorem guardCerts_cons {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
+    {ci : ConstantInfo .anon} (h : Guard.GuardCerts t E env)
+    (hctor : ∀ cv nP nF, ci ≠ .ctorInfo cv nP nF) (hproj : ∀ tbl, ci ≠ .projInfo tbl) :
+    Guard.GuardCerts t E ⟨ci :: env.consts⟩ := by
+  intro B i tbl cvC nP nF htbl hc hprop
+  exact h B i tbl cvC nP nF (find_cons_ne (hproj tbl) htbl)
+    (find_cons_ne (hctor cvC nP nF) hc) hprop
+
+/-- **The certificates along a step that extends the environment.** For a table the
+environment stored before, the certificate is the one held, provided the constructor the
+certificate is read at was stored before too (`hold`: a constructor found at the key of
+constructor `0` of a member whose table was stored before was itself stored before). For a
+table stored new, the step supplies the certificate (`hnew`). -/
+theorem guardCerts_step {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
+    {env env₂ : Ix.Kernel.Env .anon} (h : Guard.GuardCerts t E env)
+    (hext : Ix.Kernel.EnvExt env env₂)
+    (hold : ∀ (B : _root_.Address) (i : Nat) (tbl : Ix.Kernel.ProjTable .anon)
+      (cvC : ConstantVal .anon) (nP nF : Nat),
+      env.find? (Ix.Kernel.projTableName (Core.keyOf t (Core.iprjAddr B i))) =
+        some (.projInfo tbl) →
+      env₂.find? (Core.keyOf t (Core.cprjAddr B i 0)) = some (.ctorInfo cvC nP nF) →
+      (env.find? (Core.keyOf t (Core.cprjAddr B i 0))).isSome = true)
+    (hnew : ∀ (B : _root_.Address) (i : Nat) (tbl : Ix.Kernel.ProjTable .anon)
+      (cvC : ConstantVal .anon) (nP nF : Nat),
+      env₂.find? (Ix.Kernel.projTableName (Core.keyOf t (Core.iprjAddr B i))) =
+        some (.projInfo tbl) →
+      env.find? (Ix.Kernel.projTableName (Core.keyOf t (Core.iprjAddr B i))) = none →
+      env₂.find? (Core.keyOf t (Core.cprjAddr B i 0)) = some (.ctorInfo cvC nP nF) →
+      Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true →
+      ∃ raw, Guard.ctorRaw E B i 0 = some raw ∧
+        tbl.levelParams = List.range tbl.levelParams.length ∧
+        Ix.Kernel.ProjGuardCert (GuardRaw.ofStore E) raw cvC.type tbl) :
+    Guard.GuardCerts t E env₂ := by
+  intro B i tbl cvC nP nF htbl hc hprop
+  cases hT : env.find? (Ix.Kernel.projTableName (Core.keyOf t (Core.iprjAddr B i))) with
+  | none => exact hnew B i tbl cvC nP nF htbl hT hc hprop
+  | some x =>
+    have h₂ := hext.find hT
+    rw [htbl] at h₂
+    have hx : x = .projInfo tbl := (Option.some.inj h₂).symm
+    rw [hx] at hT
+    obtain ⟨y, hy⟩ := Option.isSome_iff_exists.mp (hold B i tbl cvC nP nF hT hc)
+    have h₃ := hext.find hy
+    rw [hc] at h₃
+    have hyc : y = .ctorInfo cvC nP nF := (Option.some.inj h₃).symm
+    rw [hyc] at hy
+    exact h B i tbl cvC nP nF hT hy hprop
+
+/-- **A value constant keeps the certificates.** -/
+theorem keepsValuesKeyed_guardCerts (t : Ix.Kernel.RoleTable) (E : Ixon.Env) :
+    KeepsValuesKeyed t (Guard.GuardCerts t E) := by
+  intro env ci d hX _ hval _ _ _
+  refine guardCerts_cons hX (fun cv nP nF he => ?_) (fun tbl he => ?_)
+  · rcases hval with ⟨_, _, _, h⟩ | ⟨_, _, h⟩ | ⟨_, h⟩ <;> (rw [h] at he; cases he)
+  · rcases hval with ⟨_, _, _, h⟩ | ⟨_, _, h⟩ | ⟨_, h⟩ <;> (rw [h] at he; cases he)
+
 /-! ## Value steps -/
 
 /-- **A declaration step that stores one constant that is no inductive type keeps the
@@ -68,13 +141,20 @@ theorem keepsValuesJ_famRegistry {L : Ix.Kernel.Env .anon → NativeFam .anon �
     KeepsValuesJ (FamRegistry.{u} L t E) :=
   fun _ _ _ h hfresh hval hnt hd => h.cons_declRunJ hL hd hfresh hnt hval.not_ind
 
+/-- **A value step at the key of a 32-byte address keeps the registry, the store keys, the roots
+and the level clauses.** -/
+theorem keepsValuesKeyed_foldCore {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    (hL : LinkLaws L) {t : Ix.Kernel.RoleTable}
+    (htwf : t.wf = true) (E : Ixon.Env) : KeepsValuesKeyed t (FoldCore.{u} L t E) :=
+  ((((keepsValuesJ_famRegistry hL t E).keyed t).and (keepsValuesKeyed_hashKeyed htwf)).and
+    (keepsValuesKeyed_auxRoot t)).and (keepsValuesKeyed_lvClauses t)
+
 /-- **A value step at the key of a 32-byte address keeps the part of the clause beside the
 prefix invariant.** -/
 theorem keepsValuesKeyed_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hL : LinkLaws L) {t : Ix.Kernel.RoleTable}
     (htwf : t.wf = true) (E : Ixon.Env) : KeepsValuesKeyed t (FoldExtra.{u} L t E) :=
-  ((((keepsValuesJ_famRegistry hL t E).keyed t).and (keepsValuesKeyed_hashKeyed htwf)).and
-    (keepsValuesKeyed_auxRoot t)).and (keepsValuesKeyed_lvClauses t)
+  (keepsValuesKeyed_foldCore hL htwf E).and (keepsValuesKeyed_guardCerts t E)
 
 /-- **A theorem stored at the key of a 32-byte address, along its declaration step, keeps the
 part of the clause beside the prefix invariant.** -/
@@ -120,12 +200,12 @@ variable {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop} {t : Ix.Kernel.R
 
 /-! ## A step that registers no family -/
 
-/-- **A step that registers no family keeps the part of the clause beside the prefix
-invariant**: the general form, for a step on any route. The step extends the model at every
+/-- **A step that registers no family keeps the registry, the store keys, the roots and the
+level clauses**: the general form, for a step on any route. The step extends the model at every
 registry; it extends the environment; a family it stores new, under no basis name, is one the
 circuit does not treat as native at the store; and the keys, the roots and the level clauses
 hold at the new environment. This is what the step of a mutual or nested family hands over. -/
-theorem foldExtra_step (hL : LinkLaws L) (h : FoldExtra.{u} L t E env)
+theorem foldCore_step (hL : LinkLaws L) (h : FoldCore.{u} L t E env)
     (hmodel : ∀ (Reg : NativeFam .anon → Prop) (V : Type u) [Ix.Kernel.SetTheory V],
       EnvModelN V .verified env Reg → EnvModelN V .verified env₂ Reg)
     (hext : Ix.Kernel.EnvExt env env₂)
@@ -135,25 +215,26 @@ theorem foldExtra_step (hL : LinkLaws L) (h : FoldExtra.{u} L t E env)
       Ix.Cert.recordAt E P = some cm → cm.info = .iPrj ip → NativeAt E ip.block →
       Ix.Kernel.reservedBasisNames.contains (keyOf t P) = true)
     (hkeys₂ : HashKeyed t env₂) (haux₂ : Decl.AuxRootSynced env₂) (hlv₂ : LvClauses env₂) :
-    FoldExtra.{u} L t E env₂ := by
+    FoldCore.{u} L t E env₂ := by
   obtain ⟨⟨⟨⟨Reg, hR⟩, -⟩, -⟩, -⟩ := h
   exact ⟨⟨⟨⟨Reg, hR.step hL (hmodel Reg) hext hnew⟩, hkeys₂⟩, haux₂⟩, hlv₂⟩
 
 /-! ## A native block's install -/
 
-/-- **A native block's install keeps the part of the clause beside the prefix invariant**,
-registering its family: the general form, from the step's registering model extension, the
+/-- **A native block's install keeps the registry, the store keys, the roots and the level
+clauses**, registering its family: the general form, from the step's registering model
+extension, the
 family read off the store at the new environment, the one new inductive type, and the keys,
 roots and level clauses at the new environment. -/
-theorem foldExtra_install (hL : LinkLaws L) {fam : NativeFam .anon}
-    (h : FoldExtra.{u} L t E env)
+theorem foldCore_install (hL : LinkLaws L) {fam : NativeFam .anon}
+    (h : FoldCore.{u} L t E env)
     (hmodel : ∀ (Reg : NativeFam .anon → Prop) (V : Type u) [Ix.Kernel.SetTheory V],
       EnvModelN V .verified env Reg → EnvModelN V .verified env₂ (fun f => Reg f ∨ f = fam))
     (hext : Ix.Kernel.EnvExt env env₂) (hread : FamRead L t E env₂ fam)
     (hnewInd : ∃ new : List (ConstantInfo .anon), env₂ = ⟨new ++ env.consts⟩ ∧
       ∀ ci ∈ new, ∀ cv caps, ci = .indInfo cv caps → cv = fam.cvS)
     (hkeys₂ : HashKeyed t env₂) (haux₂ : Decl.AuxRootSynced env₂) (hlv₂ : LvClauses env₂) :
-    FoldExtra.{u} L t E env₂ := by
+    FoldCore.{u} L t E env₂ := by
   obtain ⟨⟨⟨⟨Reg, hR⟩, -⟩, -⟩, -⟩ := h
   exact ⟨⟨⟨⟨_, hR.install hL (hmodel Reg) hext hread hnewInd⟩, hkeys₂⟩, haux₂⟩, hlv₂⟩
 
@@ -161,16 +242,16 @@ theorem foldExtra_install (hL : LinkLaws L) {fam : NativeFam .anon}
 clause beside the prefix invariant.** The family's reading with the telescope equality
 (`lateFamAt_of_install`) is read without it; the roots and the level clauses are the
 install's. -/
-theorem foldExtra_nativeNoRec (hL : LinkLaws L) {blk : List (ConstantInfo .anon)} {nP : Nat}
+theorem foldCore_nativeNoRec (hL : LinkLaws L) {blk : List (ConstantInfo .anon)} {nP : Nat}
     {p₀ : Ix.Kernel.NativeParts .anon} {fam : NativeFam .anon}
-    (h : FoldExtra.{u} L t E env) (hfacts : NativeNoRecFacts env env₂ blk nP p₀ fam)
+    (h : FoldCore.{u} L t E env) (hfacts : NativeNoRecFacts env env₂ blk nP p₀ fam)
     (hpin : Ix.Kernel.basisPinHit blk = none) (hna : Decl.DeclNonAux (.indDecl blk nP))
     (hwf : Ix.Kernel.EnvWF env₂) (hat : LateFamAt t E env₂ fam)
     (hrh : FamIxonRetHead t E fam) (hnp : BlockFamCtorNoProj fam)
-    (hkeys₂ : HashKeyed t env₂) : FoldExtra.{u} L t E env₂ := by
+    (hkeys₂ : HashKeyed t env₂) : FoldCore.{u} L t E env₂ := by
   have hlv₂ : LvClauses env₂ := NativeNoRecFacts.lvClauses hpin hfacts h.2
   have haux₂ : Decl.AuxRootSynced env₂ := NativeNoRecFacts.auxRootSynced hpin hna hfacts h.1.2
-  exact foldExtra_install hL h (fun Reg V _ hm => hfacts.register V hm) hfacts.envExt
+  exact foldCore_install hL h (fun Reg V _ hm => hfacts.register V hm) hfacts.envExt
     (FamRead.of_late hL hat hwf hlv₂.2 hrh hnp) hfacts.newInd hkeys₂ haux₂ hlv₂
 
 /-- **The only inductive type the install at a given index count stores new is the family's
@@ -255,6 +336,7 @@ theorem FoldClauseWith.nativeAt (hL : LinkLaws L) {blk : List (ConstantInfo .ano
       env.find? k = none → k ≠ Core.unresolvedKey)
     (hloads : Core.ScopedLoadFacts (Core.Ctx.stored ⟨E, env₂, t, lim⟩))
     (heta : Decl.EtaStable env₂) (hkeys₂ : HashKeyed t env₂)
+    (hguard₂ : Guard.GuardCerts t E env₂)
     (hread : FamRead L t E env₂ fam) :
     FoldClauseWith.{u} L t E lim env₂ (fun f => Reg f ∨ f = fam) := by
   have hinv₂ : Decl.PrefixInv.{u} E t lim env₂ :=
@@ -266,6 +348,7 @@ theorem FoldClauseWith.nativeAt (hL : LinkLaws L) {blk : List (ConstantInfo .ano
     hkeys₂ (Decl.auxRootSynced_step_declRunJA h.auxRoot hna hd)
     ⟨Ix.Kernel.Model.thmLevels_declRunJA h.thmLevels hd,
       Ix.Kernel.Model.storeArR_nativeAtRunJ h.storeArR hfacts.runJ⟩
+    hguard₂
 
 /-! ## A late recursor for a registered family -/
 
@@ -471,7 +554,8 @@ theorem FoldClauseWith.lateRec (hL : LinkLaws L) {fam : NativeFam .anon}
       tableWf := h.tableWf
       companions := hcomp
       loads := Decl.storedLoads_cons_value (c := ⟨E, env, t, lim⟩) h.loads hname hfresh hnt
-        hind hctor hproj h.etaStable hreload }
+        hind hctor hproj h.etaStable hreload
+      guard := guardCerts_cons h.guard hctor hproj }
 
 end Steps
 
@@ -492,10 +576,10 @@ theorem unitStep_recLate_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon 
       RecLateOut t E₀ E A env fam) :
     UnitStep.{u} (FoldExtra.{u} L t E) t envT E₀ E lim A c := by
   intro env hext hnd hinv hX href hfresh
-  obtain ⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩ := hX
+  obtain ⟨⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩, hg⟩ := hX
   have hstep : StepAt.{u} t envT E₀ E lim A c env := ⟨hext, hnd, hinv, href, hfresh⟩
   have hC : FoldClauseWith.{u} L t E lim env Reg :=
-    FoldClauseWith.of_prefix hinv hR hkeys haux hlv
+    FoldClauseWith.of_prefix hinv hR hkeys haux hlv hg
   obtain ⟨P, ip, hpar, hQ⟩ := hparent env hstep
   obtain ⟨⟨cvP, capsP, hfP⟩, hres, ⟨cm, hcm, hcmi⟩, hnat⟩ := hpar
   obtain ⟨fam, hReg, hread⟩ := hR.at_parent ht hfP hres hcm hcmi hnat
