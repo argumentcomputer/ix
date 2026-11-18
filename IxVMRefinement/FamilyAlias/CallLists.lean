@@ -83,6 +83,9 @@ theorem member_ctor_addrs_spec {c : Ctx} {b : Bytes.Address} {xb : SourceValue F
 
 /-! ## The block's constructors -/
 
+private theorem repMutConst_heapMono : HeapMono₂ L1.RepMutConst :=
+  fun _ _ _ _ ext r => L1.RepMutConst.mono ext r
+
 /-- **The constructor addresses of a block's inductive members from position `p` on**, member by
 member, each member's in order. -/
 def ctorAddrsFrom (B : _root_.Address) : List Ixon.MutConst → Nat → List _root_.Address
@@ -173,7 +176,7 @@ theorem block_ctor_addrs_spec {c : Ctx} {b : Bytes.Address} {xb : SourceValue F}
           (by simp at hp; omega)
           (fun ind' hi => hsz ind' (List.mem_cons_of_mem _ hi))
           (hg.sub fun x hx => by simp [hx]) (Bytes.repAddressRef_heapMono₂ addrTy x2 hb)
-          (RepLinkedList.mono (fun _ _ _ _ ext r => L1.RepMutConst.mono ext r) x2 hrest) e3
+          (RepLinkedList.mono repMutConst_heapMono x2 hrest) e3
         refine ⟨as₁ ++ as₂, Decl.addrList_concat_spec
           (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) x3 has₁) has₂ e4, ?_,
           x2.trans (x3.trans e4.heap_extends)⟩
@@ -195,7 +198,8 @@ theorem family_recs_list {calls : List (Call F)} {E₀ : Ixon.Env}
       as.map ixAddr = rs.toList.mapIdx fun i m =>
         projAddr (Specs.Callees.memberProjInfo (ixAddr b) i m) := by
   match Obs.«KernelModeled::family_recs».obs ev with
-  | .Muts (m2 := m2) (cs12 := cs12) (ev14 := ev14) (ev148 := ev148) (hc165 := hc) .. =>
+  | .Muts (m2 := m2) (m123 := m123) (cs12 := cs12) (ev14 := ev14) (ev113 := ev113)
+      (ev133 := ev133) (ev148 := ev148) (hc165 := hc) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
     obtain ⟨cb, ms, hbl, hrep⟩ := Claim.load_block_head hb ev14
     obtain ⟨hrec, hinfo⟩ := (hbl.mono hsub12).stored hH
@@ -203,9 +207,11 @@ theorem family_recs_list {calls : List (Call F)} {E₀ : Ixon.Env}
     subst e1
     have e2 : ms = rs := Ixon.ConstantInfo.muts.inj (hinfo.symm.trans hrb.muts)
     subst e2
-    have hmems := Route.membersRep_of_repMutConstList hrep
-    have hb2 : Bytes.RepAddressRef addrTy m2 b x_rb :=
-      Bytes.repAddressRef_heapMono₂ addrTy ev14.heap_extends hb
+    have ext : Heap.Extends m2 m123 := ev113.heap_extends.trans ev133.heap_extends
+    have hmems :=
+      Route.membersRep_of_repMutConstList (RepLinkedList.mono repMutConst_heapMono ext hrep)
+    have hb2 : Bytes.RepAddressRef addrTy m123 b x_rb :=
+      Bytes.repAddressRef_heapMono₂ addrTy (ev14.heap_extends.trans ext) hb
     obtain ⟨-, as, has, hmap⟩ := L1.build_recur_addrs_spec hmems hb2 ev148
     exact ⟨as, has, hmap⟩
   | .Recr (cs12 := cs12) (ev14 := ev14) (hc209 := hc) .. =>
