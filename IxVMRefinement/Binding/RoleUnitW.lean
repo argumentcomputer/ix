@@ -81,8 +81,8 @@ theorem storedFamilies_roleUnit {t : Ix.Kernel.RoleTable} {a : _root_.Address}
     (hback : ∀ x, StoredAt t env' x → StoredAt t env₁ x ∨ x = a)
     (hinst : ∀ rb crb, FamilyInstalled t env₁ rb crb → FamilyInstalled t env' rb crb)
     (h : StoredFamilies t R₁ env₁ famOf) : StoredFamilies t R' env' famOf := by
-  refine storedFamilies_grow (fun x c hx => OpInstall.recordOf_up hadds hx) hc'
-    (fun B cb hB hroute hstored => ?_) hst hinst h
+  refine storedFamilies_grow (fun x c hx => OpInstall.recordOf_up hadds hx)
+    (fun x b hx => (hadds.2.2 x b).mpr hx) hc' (fun B cb hB hroute hstored => ?_) hst hinst h
   have hmuts : ∃ ms, cb.info = .muts ms := by
     by_contra hn
     have hnm : ∀ ms, cb.info ≠ .muts ms := fun ms e => hn ⟨ms, e⟩

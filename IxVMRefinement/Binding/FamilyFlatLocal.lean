@@ -21,7 +21,9 @@ Over stores:
 * `blockDerivedFlat_grow`: a store that holds the records and blobs of the first derives the same
   entries (`ofStore_le`);
 * `RecordFlat.of_blobs`: the record's entries read the same over a store holding the first's
-  blobs (the reading is over the record's own tables and the blobs). -/
+  blobs (the reading is over the record's own tables and the blobs);
+* `familyOfBlock_of_closed`: the family of a block over a store closed under block members that
+  holds the block and its family record (the readers read the two records only). -/
 
 namespace IxVM.Refinement.Binding.FamilyFlat
 
@@ -1095,3 +1097,35 @@ theorem RecordFlat.of_blobs {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env}
 end Store
 
 end IxVM.Refinement.Binding.FamilyFlat
+
+namespace IxVM.Refinement.Binding
+
+open IxVM.Consistency
+open IxVM.Refinement.Binding.FamilyOf (FamilyOfBlock)
+
+/-- **The family of a block over a store closed under block members that holds the block and its
+family record**: the readers read the two records only. -/
+theorem familyOfBlock_of_closed {E S : Ixon.Env} {B rb : _root_.Address}
+    {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst} {flat : List _root_.Address}
+    (hS : UsedClosed S) (hB : recordOf S B = some cb) (hrb : recordOf S rb = some crb)
+    (h : FamilyOfBlock E B cb ms rb crb rs flat) : FamilyOfBlock S B cb ms rb crb rs flat where
+  block := {
+    record := hB
+    muts := h.block.muts
+    indcs := h.block.indcs
+    logic := h.block.logic
+    members := fun i m hm => (hS.2 B cb ms hB h.block.muts i m hm).1
+    ctors := fun i ind j hm hj => (hS.2 B cb ms hB h.block.muts i _ hm).2 ind rfl j hj }
+  record := {
+    record := hrb
+    muts := h.record.muts
+    recrs := h.record.recrs
+    logic := h.record.logic
+    members := fun i m hm => (hS.2 rb crb rs hrb h.record.muts i m hm).1 }
+  covers := h.covers
+  originals := h.originals
+  motives := h.motives
+  carriers := h.carriers
+  major := h.major
+
+end IxVM.Refinement.Binding

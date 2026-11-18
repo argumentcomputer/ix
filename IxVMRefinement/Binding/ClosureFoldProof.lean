@@ -17,7 +17,10 @@ is the fold's result (`closureFold_run`). What is left after the fold:
   extends the environment (`opsPinned_findExt`, `shapes_findExt`);
 * the group's kept roles stored as their records declare them: a record held before the group
   was checked, so the walked records stored it (`WalkedStored`); a new one is owned by a unit;
-* the stored families: the group's selection joined to the map before it (`joinFam`);
+* the stored families: the group's selection joined to the map before it (`joinFam`), the
+  selected records' flattened families carried to the closure's store: the group's from the run's
+  store (`storedFamiliesFlat_of_sub`), the earlier ones from the store before the group
+  (`storedFamiliesFlat_grow`);
 * `WalkedStored` after the closure: the new records' owners stored them, the old ones were stored.
 
 Also here:
@@ -25,8 +28,7 @@ Also here:
 * the `findExt` lemmas: the shapes, the operations' pinned types and `stdAxiomOk` are kept by an
   extension that keeps every lookup that succeeds (IxC's `EnvExt` also asks about projection
   tables, which the fold does not track);
-* `familyOfBlock_of_closed`: the family of a block over a store closed under block members that
-  holds the block and its family record. -/
+* `joinFam`: the family map after a group. -/
 
 universe u
 
@@ -182,32 +184,7 @@ theorem shapes_findExt
 
 end FindExt
 
-/-! ## The family of a block over a closed store, and the joined family map -/
-
-/-- **The family of a block over a store closed under block members that holds the block and its
-family record**: the readers read the two records only. -/
-theorem familyOfBlock_of_closed {E S : Ixon.Env} {B rb : _root_.Address}
-    {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst} {flat : List _root_.Address}
-    (hS : UsedClosed S) (hB : recordOf S B = some cb) (hrb : recordOf S rb = some crb)
-    (h : FamilyOfBlock E B cb ms rb crb rs flat) : FamilyOfBlock S B cb ms rb crb rs flat where
-  block := {
-    record := hB
-    muts := h.block.muts
-    indcs := h.block.indcs
-    logic := h.block.logic
-    members := fun i m hm => (hS.2 B cb ms hB h.block.muts i m hm).1
-    ctors := fun i ind j hm hj => (hS.2 B cb ms hB h.block.muts i _ hm).2 ind rfl j hj }
-  record := {
-    record := hrb
-    muts := h.record.muts
-    recrs := h.record.recrs
-    logic := h.record.logic
-    members := fun i m hm => (hS.2 rb crb rs hrb h.record.muts i m hm).1 }
-  covers := h.covers
-  originals := h.originals
-  motives := h.motives
-  carriers := h.carriers
-  major := h.major
+/-! ## The joined family map -/
 
 /-- **The family map after a group**: the group's selection, else the map before the group. -/
 def joinFam (famOf famOf₀ : _root_.Address → Option _root_.Address) (B : _root_.Address) :
@@ -454,7 +431,7 @@ theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       fun r hr hp a ha => keptAt r hr (Or.inr hp) (prelude_not_unit r hp) a ha⟩
   case fams =>
     refine ⟨fun B cb hcb hroute hst => ?_, fun B rb h => ?_, fun B rb cb h hcb x hx => ?_,
-      fun B rb crb h hcrb => ?_⟩
+      fun B rb crb h hcrb => ?_, ?_⟩
     · cases hRB : recordOf R B with
       | none =>
         obtain ⟨rb, hrb⟩ :=
@@ -525,6 +502,18 @@ theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       rcases joinFam_cases h with hfa | ⟨-, h₀⟩
       · exact Or.inr hfa
       · exact Or.inl h₀
+    · have hheld : ∀ B rb, famOf B = some rb →
+          (recordOf (closureStore t g R R') B).isSome = true ∧
+            (recordOf (closureStore t g R R') rb).isSome = true := by
+        intro B rb hfa
+        obtain ⟨cb, crb, _ms, _rs, hcb, hcrb, -⟩ := fam_new hC hfa
+        exact ⟨Option.isSome_iff_exists.mpr ⟨cb, hcb⟩, Option.isSome_iff_exists.mpr ⟨crb, hcrb⟩⟩
+      exact storedFamiliesFlat_join
+        (storedFamiliesFlat_of_sub ht htwf (fun y c hy => rec₂₀ hadm (rec₁₂ hy)) hC.closed
+          (fun y b hy => hspec.blobs y b (hrd.blobs y b hy)) hheld hGFC.familyFlat)
+        (storedFamiliesFlat_grow (fun y c hy => recordOf_closureStore_of_R hadm hy) hspec.le₁.2
+          hC.closed hSF.flat)
+        (fun B rb h => (joinFam_cases h).imp id And.right)
   case walked =>
     refine ⟨fun x c n hc hnb hlog hlogB hchk => ?_, fun r x hw hgr ha =>
       hsomeFind _ (hW.2 r x hw hgr ha)⟩
