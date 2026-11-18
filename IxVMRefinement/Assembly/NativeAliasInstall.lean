@@ -22,9 +22,10 @@ universe u
 set_option maxHeartbeats 1600000
 set_option linter.unusedVariables false
 
-/-- Assemble the native alias install from its observed stage outputs and typing-prefix facts. -/
-theorem nativeAtFacts_of_alias_outs {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
-    {E₀ E R : Ixon.Env} {envT : Ix.Kernel.Env .anon} {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
+/-- Assemble the native alias install from its observed stage outputs, at a prefix where the
+family's key is none of the four literal-function keys. -/
+theorem nativeAtFacts_of_alias_outs_keys {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {E₀ E : Ixon.Env} {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
     {n : Nat} (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hst : StepStore calls t E₀ E) (hrec : BlockUnitRecord E₀ B cb ind)
     (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
@@ -33,10 +34,12 @@ theorem nativeAtFacts_of_alias_outs {calls : List (Call F)} {t : Ix.Kernel.RoleT
     (hp₀ : Ix.Kernel.Model.nativePartsAt? ind.params.toNat ind.indices.toNat blk = some p₀)
     (hnd : (p₀.ctors.map (·.1.name)).Nodup)
     (hindexed : p₀.nIdx ≠ 0)
-    (shape : TableShape.{u} t (fun _ => True) R envT)
     {env : Ix.Kernel.Env .anon}
-    (prefixExtension : ∀ ci ∈ envT.consts, ci ∈ env.consts)
-    (distinct : (env.consts.map (·.name)).Nodup) (hinv : Decl.PrefixInv.{u} E t (some n) env)
+    (hliterals : Core.keyOf t (memberAddr B 0 (.indc ind)) ≠ Ix.Kernel.stringOfListName ∧
+      Core.keyOf t (memberAddr B 0 (.indc ind)) ≠ Ix.Kernel.listNilName ∧
+      Core.keyOf t (memberAddr B 0 (.indc ind)) ≠ Ix.Kernel.listConsName ∧
+      Core.keyOf t (memberAddr B 0 (.indc ind)) ≠ Ix.Kernel.charOfNatName)
+    (hinv : Decl.PrefixInv.{u} E t (some n) env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (haux : Decl.AuxRootSynced env)
     {cvS cvTa : ConstantVal .anon} {s : Ix.Kernel.Level}
@@ -136,12 +139,63 @@ theorem nativeAtFacts_of_alias_outs {calls : List (Call F)} {t : Ix.Kernel.RoleT
   have hshapeT : cvS.name.isProjFnShape = false := by
     rw [hnameS, hTname]
     exact Decl.isProjFnShape_of_isBaseKey (Decl.isBaseKey_keyOf t _)
-  have hliterals := alias_literal_keys_distinct (address := memberAddr B 0 (.indc ind)) htwf shape
-    prefixExtension distinct (by rw [LoadedReads.keyOf_eq, ← hTname]; exact hfreshT)
   rw [LoadedReads.keyOf_eq, ← hTname, ← hnameS] at hliterals
   exact Decl.nativeAtFacts_of_alias_stage hp₀ hnd hinv.store.store hcheckT htele hindexed
     hparam hliterals hnameS (by rw [hnameS]; exact hfreshT) hshapeT hlenA hformerRead hout
     hfv_ctors hfresh_ctors hshape_ctors hT_ctors hfn htbl hunused
+
+/-- Assemble the native alias install from its observed stage outputs and typing-prefix facts:
+the full table and the prefix's freshness separate the family's key from the literal-function
+keys. -/
+theorem nativeAtFacts_of_alias_outs {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {E₀ E R : Ixon.Env} {envT : Ix.Kernel.Env .anon} {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
+    {n : Nat} (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
+    (hst : StepStore calls t E₀ E) (hrec : BlockUnitRecord E₀ B cb ind)
+    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
+    {blk : List (ConstantInfo .anon)} (hblk : BlockReadings t E₀ B ind blk)
+    {p₀ : Ix.Kernel.NativeParts .anon}
+    (hp₀ : Ix.Kernel.Model.nativePartsAt? ind.params.toNat ind.indices.toNat blk = some p₀)
+    (hnd : (p₀.ctors.map (·.1.name)).Nodup)
+    (hindexed : p₀.nIdx ≠ 0)
+    (shape : TableShape.{u} t (fun _ => True) R envT)
+    {env : Ix.Kernel.Env .anon}
+    (prefixExtension : ∀ ci ∈ envT.consts, ci ∈ env.consts)
+    (distinct : (env.consts.map (·.name)).Nodup) (hinv : Decl.PrefixInv.{u} E t (some n) env)
+    (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
+    (haux : Decl.AuxRootSynced env)
+    {cvS cvTa : ConstantVal .anon} {s : Ix.Kernel.Level}
+    {ctorsA : List (ConstantVal .anon × Nat)} {rawTypes : List (Ix.Kernel.Expr .anon)}
+    (hcheckT : Ix.Kernel.Semantics.ConstantValCheckJ Ix.Kernel.Model.rulesJ env p₀.cvT cvS)
+    (htele : AliasTele env p₀.cvT cvS cvTa (p₀.nP + p₀.nIdx) s)
+    (hparam : p₀.ctors ≠ [] → ∀ tfvs residual,
+      Ix.Kernel.openPisAtFvars p₀.nP cvS.type 0 = some (tfvs, residual) →
+      ∃ residual', Ix.Kernel.openPisAtFvars p₀.nP cvTa.type 0 = some (tfvs, residual'))
+    (hformerRead : cvTa = cvS ∨ ∀ ctor ∈ ctorsA,
+      Ix.Kernel.Semantics.ctorZeroOk p₀.cvT.name s.zeronessOf ctor.1.type = true)
+    (hnameS : cvS.name = p₀.cvT.name) (hlenA : ctorsA.length = p₀.ctors.length)
+    (hout : ∀ isRec : Bool, ∃ sortss : List (List Ix.Kernel.Level),
+      sortss.length = p₀.ctors.length ∧
+      ∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
+        sortss[j]? = some sorts ∧
+        Decl.NativeCtorOut ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
+            (p₀.toInductiveShape.withSort s) isRec) :: env.consts⟩
+          p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx s cvS.type
+          (rawTypes.getD j default) c cA sorts)
+    (hunused : ∀ cA ∈ ctorsA, ∀ cbs body,
+      cA.1.type.stripPis (p₀.nP + cA.2) = some (cbs, body) →
+      ∀ i < cA.2,
+        (Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
+           (cbs.getD (p₀.nP + i) default).1 = .recursive ∨
+         Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
+           (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
+        Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false) :
+    ∃ env₂ p, NativeAtFacts env env₂ blk ind.params.toNat ind.indices.toNat p₀
+      ⟨p, cvS, cvTa, ctorsA⟩ :=
+  nativeAtFacts_of_alias_outs_keys ht hS hst hrec hchk hblk hp₀ hnd hindexed
+    (alias_literal_keys_distinct (address := memberAddr B 0 (.indc ind)) hinv.tableWf shape
+      prefixExtension distinct
+      (hfresh _ (Or.inr ⟨_, 0, .indc ind, hrec.muts, rfl, Or.inl rfl⟩)))
+    hinv hfresh haux hcheckT htele hparam hformerRead hnameS hlenA hout hunused
 
 /-- The actual alias member check constructs its native install and named family. -/
 theorem nativeAtFacts_of_alias_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E R : Ixon.Env} {envT : Ix.Kernel.Env .anon}

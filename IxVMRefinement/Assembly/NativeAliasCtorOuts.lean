@@ -239,7 +239,9 @@ theorem aliasOuts_of_member_traced {calls : List (Call F)} {t : Ix.Kernel.RoleTa
           ((L1.mutsRootOffset (#[.indc ind] : Array Ixon.MutConst).toList 0 : Nat) : F) ind.typ
           ty₀ = some ty' ∧
         p₀.cvT = ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty₀⟩ ∧
-        cvS = ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩) ∧
+        cvS = ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ ∧
+        p₀.nP = ind.params.toNat ∧ p₀.ctors.length = ind.ctors.size ∧
+        ind.params.toNat < 2 ^ 56 ∧ ind.indices.toNat < 2 ^ 56 ∧ ind.ctors.size < 2 ^ 56) ∧
       (∀ j c, p₀.ctors[j]? = some c → ∃ (ct : Ixon.Constructor) (cty' : Ix.Kernel.Expr .anon),
         ind.ctors[j]? = some ct ∧ ct.cidx.toNat = j ∧ ct.params.toNat = ind.params.toNat ∧
         ct.lvls.toNat = ind.lvls.toNat ∧
@@ -979,7 +981,8 @@ theorem aliasOuts_of_member_traced {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     exact htracedS
   refine ⟨cvS, cvTa, s, ctorsA, rawTypes, hcheckT, hAT', hTname.symm, htyT.name_eq,
     htyT.levelParams_eq, hcloadT.1, hparam', houts, hguardAt, hzeroChoice, hn, ?_, htracedB',
-    htracedS', ⟨ty₀, ty', hty, hlbb, hdef, hcT, hcvT, rfl⟩, hperN⟩
+    htracedS', ⟨ty₀, ty', hty, hlbb, hdef, hcT, hcvT, rfl, hnP, hlenP,
+      by rw [h256]; exact hp56, by rw [h256]; exact hi56, by rw [h256]; exact hc56⟩, hperN⟩
   -- the later-use condition, from the loop's positivity scans
   intro cA hcA cbs body hstrip i hi hkind
   obtain ⟨j, hjA⟩ := List.mem_iff_getElem?.mp hcA
