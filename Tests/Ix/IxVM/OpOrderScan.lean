@@ -16,7 +16,9 @@ given one more, unused, reference. Must be accepted: the unchanged default table
 to `True` with no further reference; a reference to an operation in force; a reference to an
 operation among the group's needs; a reference to a later role that is no operation. Must be
 refused at the scan: a reference to a later operation, directly, through an unbound record,
-through a record bound to `True`, and through a record bound to `Lean.reduceBool`.
+through a record bound to `True`, and through a record bound to `Lean.reduceBool`. Must be
+refused at the substitution of the operation's value (`KernelSubst::subst_const`): a certificate
+whose proof projects through the operation itself.
 
 With `IX_OP_ORDER_DEFAULT_ONLY` set, only the unchanged default table's claim runs.
 -/
@@ -175,6 +177,27 @@ private def extraCase (label : String) (r target : Ix.Kernel.Role) : Except Stri
   let env ← withRoleTable env table.toBytes
   bindingCase s!"binding: a certificate of {repr r} references {repr target}, {label}" env true
 
+/-- The first well-founded operation's certificate with its proof under a projection whose
+structure is the operation itself (`.prj a 0 proof`): the substitution of the operation's value
+into the proof must refuse it (`KernelSubst::subst_const`). -/
+private def projThroughOpCase : Except String Case := do
+  let env ← base
+  let table ← Ix.Kernel.Reader.defaultTable
+  let (rA, index, cert, _) ← firstAndLast table
+  let some a := table.addressOf? rA | throw "the operation is unbound"
+  let some c := env.getConst? cert | throw "missing certificate"
+  let .defn d := c.info | throw "the certificate is no definition"
+  let (refs, i) := match c.refs.findIdx? (· == a) with
+    | some j => (c.refs, j.toUInt64)
+    | none => (c.refs.push a, c.refs.size.toUInt64)
+  let (env, replacement) := put env { c with
+    info := .defn { d with value := .prj i 0 d.value }, refs := refs }
+  let table := withCertificate table rA index replacement
+  table.check
+  let env ← withRoleTable env table.toBytes
+  bindingCase s!"binding: a certificate of {repr rA} projects through {repr rA} itself" env false
+    (some "an operation's certificate projects through the operation")
+
 def run : IO UInt32 := do
   if (← IO.getEnv "IX_OP_ORDER_DEFAULT_ONLY").isSome then
     return (← runCases "ixvm-op-order-scan" #[fun _ => defaultCase] (jobs := 1)
@@ -191,7 +214,8 @@ def run : IO UInt32 := do
     fun _ => trueCase "direct",
     fun _ => trueCase "unbound",
     fun _ => trueCase "true",
-    fun _ => reduceBoolCase]
+    fun _ => reduceBoolCase,
+    fun _ => projThroughOpCase]
   runCases "ixvm-op-order-scan" cases (jobs := 4) (circuit := some true)
 
 end Tests.Ix.IxVM.OpOrderScan
