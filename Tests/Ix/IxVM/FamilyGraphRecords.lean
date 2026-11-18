@@ -353,6 +353,15 @@ def runTwin (leanEnv : Lean.Environment) : IO UInt32 := do
     let recsW := storedRecs instW.fe.env spellings
     IO.println s!"[ixvm-family-graph-records] twin: stored recursors found: {recsC.length} and \
       {recsW.length} of {recNames.length}"
+    let near := instC.fe.env.consts.filterMap fun ci =>
+      let s := toString ci.name
+      if (s.splitOn "LCNF.Alt").length > 1 then
+        some (s ++ (match ci with
+          | .recInfo .. => ":rec" | .indInfo .. => ":ind" | .ctorInfo .. => ":ctor"
+          | .defnInfo .. => ":defn" | _ => ":other"))
+      else none
+    IO.println s!"[ixvm-family-graph-records] twin: IxC's environment holds \
+      {instC.fe.env.consts.length} constants; near the family: {near.take 40}"
     let fuel := 1000000
     let ops : Ix.Kernel.CheckerOps .source (Ix.Kernel.CheckM .source) :=
       Ix.Kernel.fueledOps .verified fuel
