@@ -52,7 +52,10 @@ def refusedByDesign : List (String × String) := [
   ("p-mutual-nonrec-thm", "no projection at a member of a mutual or nested block"),
   ("h-nested-binder", "a nested occurrence under a binder has no model"),
   ("a-redex-rec", "a field that mentions the block only where reduction erases it"),
-  ("a-phantom-def", "a field that mentions the block only where reduction erases it")]
+  ("a-phantom-def", "a field that mentions the block only where reduction erases it"),
+  -- positivity on the native route reads the field as stored: an occurrence of the block
+  -- under a definition's head is refused, though it is the block itself after unfolding
+  ("a-rec-behind-def", "a recursive occurrence behind a definition")]
 
 /-- Mutations Lean's replay refuses whose forged record does not reach the claim: the
 compiler does not write it, or the claim builder leaves it out as unsafe. The claim then
