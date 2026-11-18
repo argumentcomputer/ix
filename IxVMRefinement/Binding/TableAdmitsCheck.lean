@@ -12,6 +12,7 @@ equations having an entry. The converse of the readings in `Core.Roles` and
 namespace IxVM.Refinement.Binding
 
 set_option linter.unusedVariables false
+set_option linter.unnecessarySeqFocus false
 
 /-- A loop in `Except` over a body that continues at every element succeeds. -/
 theorem forIn_ok_of_yield {ε α : Type} :
