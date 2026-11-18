@@ -351,7 +351,7 @@ theorem unitStep_formerTeleOther {X : Ix.Kernel.Env .anon → Prop} {calls : Lis
   have hstored : Decl.UsedRefsStored t env cb :=
     usedRefsStored_of_cover (hcover env ⟨hext, href, hfresh⟩) hinert
   have hm : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim :=
-    Claim.membersChecked_of_block hS hrec.record hrec.muts hchk 0 (by decide)
+    Claim.membersChecked_of_block hS hrec.record hrec.muts hchk 0 (by simp)
   have hfreshT : env.find? (Core.keyOf t (Core.iprjAddr B 0)) = none :=
     hfresh _ (Or.inr ⟨_, 0, .indc ind, hrec.muts, rfl, Or.inl rfl⟩)
   exact formerTeleOther_false.{u} ht hst hinv hrec hm hnat hstored hfreshT hother
