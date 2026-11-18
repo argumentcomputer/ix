@@ -8,9 +8,10 @@ import IxVMRefinement.Assembly.TypingBasisProj
 
 `familyBlockRow_of_check`: the residual theorem's row `familyBlock` (`FamilyBlockRow`) from the
 circuit side's facts that read the family check (`FamilyBlockCheckRow`): the seam, the
-companion facts of each recursor the step stores, and the six load facts at its new constants
-that read the family check (`FamilyLoadsCheck`; the other eight are `FamLoadCtx.newLoads`, from
-the store, the records and the route fact, `famLoadCtx_of_step`). The other two facts
+companion facts of each recursor the step stores, and the three load facts at its new constants
+that read the family check (`FamilyLoadsCheck`; the other eleven are `FamLoadCtx.newLoads`, from
+the store, the records, the route fact and the walk's check of the block,
+`famLoadCtx_of_step`). The other two facts
 `familyBlockRow_of_circuit` takes from the circuit side are proved at the row:
 
 * `famBlockRecord_of_run`: the block's record is a block of inductives with its member and
@@ -20,11 +21,13 @@ the store, the records and the route fact, `famLoadCtx_of_step`). The other two 
   block's first member (`MemberCheckedLimAt.dispatch`), the dispatch's functionality and the
   run's coverage (`modeledAt_of_modeledRoute`);
 
-and `hclaim` is `familyClaimRow`. Two of the load facts need the run beyond the route fact:
+and `hclaim` is `familyClaimRow`. Three of the load facts need the run beyond the route fact:
 `famUnitFree_of_run` (a block of one inductive whose member has no index and one constructor
 has a field in it: the dispatch at the store answers `1`, `famBlockRoute_of_run`, while the
 walk's modeled constructor loop gives a field-less constructor the shape the dispatch answers `0`
-at, `modeledCtor_trees`), and the stored constructor's counts (`storedAs_ctor`). -/
+at, `modeledCtor_trees`), the stored constructor's counts (`storedAs_ctor`), and the
+constructors' shapes at a block of one inductive (`famCtorTrees_of_run`), which with the
+dispatch's answer `1` refute the recursion scan's answer `0` at its member. -/
 
 universe u
 
@@ -216,7 +219,7 @@ theorem famUnitFree_of_run {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   have hdec : L1.EnvDecoded E := hctx.recordsFor.1
   have hrec : ∀ a d, recordOf E₀ a = some d → recordOf E a = some d := fun a d hd' =>
     (recordOf_eq_recordAt_of_decoded hdec a).trans (hctx.runRecord a d hd')
-  obtain ⟨ct', T, Bd, hct', hET, hpeel, hhd, hlen, hat⟩ :=
+  obtain ⟨ct', T, Bd, hct', -, hET, hpeel, hhd, hlen, hat⟩ :=
     modeledCtor_trees (c := ⟨E, Ix.Kernel.Env.empty, t, none⟩)
       (hctx.good Ix.Kernel.Env.empty none) (hrec _ _ hc) hmuts
       (hrec _ _ (hB.members 0 (.indc ind) rfl)) hmod hm0 0 (by omega)
@@ -239,6 +242,53 @@ theorem famUnitFree_of_run {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   rw [blockRoute_one (hrec _ _ hc) hmuts hctl, hans] at hR
   exact Bool.false_ne_true (Option.some.inj hR)
 
+/-- **The constructors' shapes at a block of one inductive at the family row**: the walk's check
+of the member ran the modeled constructor loop (the route fact refutes the native branch), whose
+return-type check gives each constructor's stored type, read as the dispatch reads it, a
+telescope of its parameters and fields into a constant applied to `params + indices` arguments,
+the first `params` of them atoms (`modeledCtor_trees`). -/
+theorem famCtorTrees_of_run {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {seeds : List _root_.Address} {E₀ : Ixon.Env} {lim : Option Nat}
+    {Top : _root_.Address → Prop} {rank : _root_.Address → Nat} {R : Ixon.Env}
+    {envT : Ix.Kernel.Env .anon} {E : Ixon.Env}
+    {fam twin : _root_.Address → Option _root_.Address}
+    {adv : _root_.Address → _root_.Address → Prop} {Inner : _root_.Address → Prop}
+    (hTW : Claim.TopWalk calls t seeds E₀ lim Top rank)
+    (hrun : FamilyRun calls t envT E₀ lim Top rank fam twin adv Inner)
+    (hctx : StepCtx.{u} calls t R envT E₀ E)
+    {A rb : _root_.Address} {c : Ixon.Constant} (hTop : Top A) (hc : recordOf E₀ A = some c)
+    (hlog : InLogic c) (hfam : fam A = some rb) :
+    ∀ ind, c.info = .muts #[.indc ind] → ∀ j < ind.ctors.size,
+      ∃ (ct : Ixon.Constructor) (T Bd : Route.ScanTree),
+        ind.ctors[j]? = some ct ∧ ct.params.toNat = ind.params.toNat ∧
+        Route.ExprTree c.refs.toList
+          (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
+          c.sharing.toList 4294967295 ct.typ T ∧
+        T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
+        Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
+        ∀ k < ct.params.toNat, Bd.args[k]? = some .atom := by
+  intro ind hmuts
+  have hmod := famModeledAt_of_run hTW hrun hctx hTop hc hfam
+  obtain ⟨ms, hB⟩ := famBlockRecord_of_run hTW hrun hTop hc hlog hfam
+  have hms : ms = #[.indc ind] := Ixon.ConstantInfo.muts.inj (hB.muts.symm.trans hmuts)
+  subst hms
+  obtain ⟨bAddr, hW, -⟩ := hTW
+  have hchk : (∃ ms, c.info = .muts ms ∧
+        ∀ k, k < ms.size → Claim.MemberCheckedLimAt calls bAddr t A ms k lim) ∨
+      Claim.CheckedLimAt calls bAddr t A lim := by
+    obtain ⟨c', hc', h⟩ := hW.checked A hTop
+    have e3 : c' = c := Option.some.inj (hc'.symm.trans hc)
+    rw [e3] at h
+    exact h
+  have hm0 : Claim.MemberCheckedLimAt calls bAddr t A #[.indc ind] 0 lim :=
+    Claim.membersChecked_of_block hW.runStore hc hmuts hchk 0 Nat.zero_lt_one
+  have hdec : L1.EnvDecoded E := hctx.recordsFor.1
+  have hrec : ∀ a d, recordOf E₀ a = some d → recordOf E a = some d := fun a d hd' =>
+    (recordOf_eq_recordAt_of_decoded hdec a).trans (hctx.runRecord a d hd')
+  exact modeledCtor_trees (c := ⟨E, Ix.Kernel.Env.empty, t, none⟩)
+    (hctx.good Ix.Kernel.Env.empty none) (hrec _ _ hc) hmuts
+    (hrec _ _ (hB.members 0 (.indc ind) rfl)) hmod hm0
+
 /-- **The stored constant of a declared constructor is a constructor with its counts.** -/
 theorem storedAs_ctor {ci : ConstantInfo .anon} {cv₀ : ConstantVal .anon} {nP nF : Nat}
     (h : StoredAs ci (.ctorInfo cv₀ nP nF)) : ∃ cv, ci = .ctorInfo cv nP nF := by
@@ -259,14 +309,26 @@ record is taken at: the store's records at the two records' addresses (the run's
 route fact, the new constants: the members at the keys of the two records' constant addresses
 (`famStep_consts`, `FamDeclReads`), the aliases definitions at derived keys; the first
 constructor of a block of one inductive stored with the record's counts (its reading and
-`StoredAs`); and `hfree`, a field in that constructor where the member has no index and one
-constructor (`famUnitFree_of_run`). -/
+`StoredAs`); `hfree`, a field in that constructor where the member has no index and one
+constructor (`famUnitFree_of_run`); the dispatch's answer `1` at the store
+(`famBlockRoute_of_run`); the constructors' shapes at a block of one inductive
+(`famCtorTrees_of_run`); the registry's facts at the prefix (`PrefixInv.scopedCoreFacts`). -/
 theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
     {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} (hctx : StepCtx.{u} calls t R envT E₀ E)
     {A rb : _root_.Address} {c crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
     (hB : FamBlockRecord E₀ A c ms) (hrb : FamRecRecord E₀ rb crb rs) (hroute : ModeledAt E A)
     (hfree : ∀ ind, c.info = .muts #[.indc ind] → ind.indices.toNat = 0 →
       ind.ctors.size = 1 → ∀ ct, ind.ctors[0]? = some ct → ct.fields.toNat ≠ 0)
+    (hrouteT : Route.blockRoute E A = some true)
+    (htrees : ∀ ind, c.info = .muts #[.indc ind] → ∀ j < ind.ctors.size,
+      ∃ (ct : Ixon.Constructor) (T Bd : Route.ScanTree),
+        ind.ctors[j]? = some ct ∧ ct.params.toNat = ind.params.toNat ∧
+        Route.ExprTree c.refs.toList
+          (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
+          c.sharing.toList 4294967295 ct.typ T ∧
+        T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
+        Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
+        ∀ k < ct.params.toNat, Bd.args[k]? = some .atom)
     {lim : Option Nat} {env : Ix.Kernel.Env .anon} {h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon}
     {aliases blk new : List (ConstantInfo .anon)} (hinv : Decl.PrefixInv.{u} E t lim env)
     (hg : AliasGroup env h aliases) (hreads : FamDeclReads t E₀ A c rb crb blk)
@@ -345,7 +407,10 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
         have e5 : c'' = ci := Option.some.inj (hf''.symm.trans hci)
         subst c''
         rw [hci₀eq] at hsa
-        exact storedAs_ctor hsa }
+        exact storedAs_ctor hsa
+      routeTrue := hrouteT
+      ctorTrees := fun ind hms => htrees ind (hB.muts.trans (by rw [hms]))
+      core := hinv.scopedCoreFacts }
 
 /-- **What the circuit side's family check hands the step of the block at `A` with its family
 record at `rb`**: the seam, the companion facts of each recursor the step stores, and the load
@@ -419,14 +484,16 @@ theorem familyBlockCircuitRow_of_check {L : Ix.Kernel.Env .anon → NativeFam .a
   obtain ⟨ms, hB⟩ := famBlockRecord_of_run hTW hrun hTop hc hlog hfam
   have hroute : ModeledAt E A := famModeledAt_of_run hTW hrun hctx hTop hc hfam
   have hfree := famUnitFree_of_run hTW hrun hctx hTop hc hlog hfam
+  have hrouteT := famBlockRoute_of_run hTW hrun hctx hTop hc hfam
+  have htrees := famCtorTrees_of_run hTW hrun hctx hTop hc hlog hfam
   exact
     { seam := hK.seam
       block := ⟨ms, hB⟩
       route := hroute
       recs := hK.recs
       loads := fun env h aliases blk new hinv hg hreads hd hst =>
-        (famLoadCtx_of_step hctx hB hrb hroute hfree hinv hg hreads hd hst).newLoads
-          (hK.loads env h aliases blk new hinv hg hreads hd hst) }
+        (famLoadCtx_of_step hctx hB hrb hroute hfree hrouteT htrees hinv hg hreads hd
+          hst).newLoads (hK.loads env h aliases blk new hinv hg hreads hd hst) }
 
 /-- **The row `familyBlock` from the facts of the family check** (module docstring). -/
 theorem familyBlockRow_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
