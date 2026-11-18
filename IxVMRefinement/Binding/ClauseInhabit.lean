@@ -260,6 +260,7 @@ theorem admits_bool_observed {calls : List (Call F)} {bAddr : _root_.Address}
   kept := admits_bool.kept
   opsOwn := admits_bool.opsOwn
   unitsLast := admits_bool.unitsLast
+  evidenceRefs := admits_bool.evidenceRefs
 
 /-- The reading clause of the `Bool` group's admission: the run's records are the store's. -/
 theorem admitsReads_bool : AdmitsReads boolRun ctab basisStore boolStore where
