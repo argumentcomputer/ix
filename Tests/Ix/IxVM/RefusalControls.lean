@@ -53,6 +53,10 @@ private def put (env : Ixon.Env) (c : Ixon.Constant)
 
 private def prj (info : Ixon.ConstantInfo) : Ixon.Constant := ⟨info, #[], #[], #[], #[]⟩
 
+/-- A safe constructor, the first of its type, with inherited field modes. -/
+private def ctor (fields : UInt64) (typ : E) (params : UInt64 := 0) : Ixon.Constructor :=
+  { isUnsafe := false, lvls := 0, cidx := 0, params, fields, typ }
+
 private def base : Except String Ixon.Env := do
   withRoleTable {} (← Ix.Kernel.Reader.defaultTableBytes)
 
@@ -100,7 +104,7 @@ private def twoTypeList (env : Ixon.Env) (table : Ix.Kernel.RoleTable) :
   let some lb := env.getConst? lp.block | throw "List's block is missing"
   let .muts ms := lb.info | throw "List's block is not a mutual record"
   unless ms.size == 1 && lp.idx == 0 do throw "List's block has more than one member"
-  let some (.indc ind) := ms[0]? | throw "List's member is not an inductive"
+  let some (Ixon.MutConst.indc ind) := ms[(0 : Nat)]? | throw "List's member is not an inductive"
   let some typeData := lb.binders.find? fun b => !b.shared && b.index == 0
     | throw "List's type carries no binder data"
   let peerRoot := (1 + ind.ctors.size).toUInt64
@@ -214,7 +218,7 @@ private def projectionField (env : Ixon.Env) (assumed : Bool) : Except String Ca
   let ctorType : E := .all pair (.all (.prj 0 0 (.var 0)) (.app (.recur 0 #[]) (.var 1)))
   let family : Ixon.Inductive := {
     isUnsafe := false, lvls := 0, params := 1, indices := 0, typ := .all pair (.sort 0),
-    ctors := #[{ isUnsafe := false, lvls := 0, cidx := 0, params := 1, fields := 1, typ := ctorType }] }
+    ctors := #[ctor 1 ctorType (params := 1)] }
   -- binder data: `W`'s type lands in `Type`; the constructor's two binders bind into `W p`
   let block : Ixon.Constant := ⟨.muts #[.indc family], #[], #[prod], #[.zero],
     #[⟨false, 0, 0, #[.never {}]⟩, ⟨false, 1, 0, #[.zero {}, .zero {}]⟩]⟩
@@ -241,8 +245,7 @@ private def depthCase (n : Nat) (assumed : Bool) : Except String Case := do
     #[.zero, .succ .zero], #[]⟩
   let family : Ixon.Inductive := {
     isUnsafe := false, lvls := 0, params := 0, indices := 0, typ := .sort 0,
-    ctors := #[{ isUnsafe := false, lvls := 0, cidx := 0, params := 0, fields := 1,
-                 typ := .all (.ref 0 #[]) (.recur 0 #[]) }] }
+    ctors := #[ctor 1 (.all (.ref 0 #[]) (.recur 0 #[]))] }
   let (env, b) := put env ⟨.muts #[.indc family], #[], #[q], #[.zero],
     #[⟨false, 1, 0, #[.zero {}]⟩]⟩
   let (env, w) := put env (prj (.iPrj ⟨0, b⟩))
@@ -357,10 +360,9 @@ private def inertMutual (which : Nat) (assumed : Bool) : Except String Case := d
   let punit ← addressOf table .punit
   let unit ← addressOf table .punitUnit
   let block : Ixon.Constant := ⟨.muts #[
-      .indc ⟨false, 0, 0, 0, .sort 0, #[{ isUnsafe := false, lvls := 0, cidx := 0, params := 0,
-        fields := 1, typ := .all (.recur 1 #[]) (.recur 0 #[]) }]⟩,
-      .indc ⟨false, 0, 0, 0, .sort 0, #[{ isUnsafe := false, lvls := 0, cidx := 0, params := 0,
-        fields := 1, typ := .all (.all (.recur 0 #[]) (.ref 0 #[])) (.recur 1 #[]) }]⟩],
+      .indc ⟨false, 0, 0, 0, .sort 0, #[ctor 1 (.all (.recur 1 #[]) (.recur 0 #[]))]⟩,
+      .indc ⟨false, 0, 0, 0, .sort 0,
+        #[ctor 1 (.all (.all (.recur 0 #[]) (.ref 0 #[])) (.recur 1 #[]))]⟩],
     #[], #[falseA], #[.succ .zero],
     #[⟨false, 1, 0, #[.never {}]⟩, ⟨false, 3, 0, #[.never {}, .zero {}]⟩]⟩
   let (env, b) := put env block
@@ -405,8 +407,8 @@ private def inertIndexed (which : Nat) (assumed : Bool) : Except String Case := 
   let punit ← addressOf table .punit
   let unit ← addressOf table .punitUnit
   let iBlock : Ixon.Constant := ⟨.muts #[
-      .indc ⟨false, 0, 0, 1, .all (.sort 0) (.sort 0), #[{ isUnsafe := false, lvls := 0, cidx := 0,
-        params := 0, fields := 0, typ := .app (.recur 0 #[]) (.ref 0 #[]) }]⟩],
+      .indc ⟨false, 0, 0, 1, .all (.sort 0) (.sort 0),
+        #[ctor 0 (.app (.recur 0 #[]) (.ref 0 #[]))]⟩],
     #[], #[nat], #[.succ .zero], #[⟨false, 0, 0, #[.never {}]⟩]⟩
   let (env, ib) := put env iBlock
   let (env, i) := put env (prj (.iPrj ⟨0, ib⟩))
@@ -415,8 +417,7 @@ private def inertIndexed (which : Nat) (assumed : Bool) : Except String Case := 
   let mkType (bad : E) : E :=
     .all (.all (.app (.ref 0 #[]) bad) (.ref 1 #[])) (.all (.all bad (.ref 2 #[])) bad)
   let block : Ixon.Constant := ⟨.muts #[
-      .indc ⟨false, 0, 0, 0, .sort 0, #[{ isUnsafe := false, lvls := 0, cidx := 0, params := 0,
-        fields := 2, typ := mkType (.recur 0 #[]) }]⟩],
+      .indc ⟨false, 0, 0, 0, .sort 0, #[ctor 2 (mkType (.recur 0 #[]))]⟩],
     #[], #[i, nat, falseA], #[.succ .zero],
     #[⟨false, 1, 0, #[.never {}, .never {}, .never {}, .zero {}]⟩]⟩
   let (env, b) := put env block
