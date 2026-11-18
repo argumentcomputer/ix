@@ -143,22 +143,23 @@ fun X Kind =>
                         IxVM.Refinement.LoadedReads.RunStore calls E₀ →
                           IxVM.Refinement.LoadedReads.HashedRecordsStored calls E₀ →
                             IxVM.Refinement.Typing.StepStore calls t E₀ E →
-                              IxVM.Refinement.Typing.InertClause t c →
-                                (∀ (env : Ix.Kernel.Env Ix.Kernel.Mode.anon),
-                                    IxVM.Refinement.Typing.HandedRefs t envT E₀ A c env →
-                                      IxVM.Refinement.Typing.CoverAt t env c) →
-                                  (∃ ms,
-                                        c.info = Ixon.ConstantInfo.muts ms ∧
-                                          ∀ k < ms.size,
-                                            IxVM.Refinement.Claim.MemberCheckedLimAt calls bAddr t A ms k lim) ∨
-                                      IxVM.Refinement.Claim.CheckedLimAt calls bAddr t A lim →
-                                    (∀ (x : Address),
-                                        IxVM.Refinement.Typing.ConstAddrOf A c x →
-                                          ¬IxVM.Refinement.Typing.StoredAt t envT x) →
+                              IxVM.Refinement.L1.CanonicalHashCoverage E calls →
+                                IxVM.Refinement.Typing.InertClause t c →
+                                  (∀ (env : Ix.Kernel.Env Ix.Kernel.Mode.anon),
+                                      IxVM.Refinement.Typing.HandedRefs t envT E₀ A c env →
+                                        IxVM.Refinement.Typing.CoverAt t env c) →
+                                    (∃ ms,
+                                          c.info = Ixon.ConstantInfo.muts ms ∧
+                                            ∀ k < ms.size,
+                                              IxVM.Refinement.Claim.MemberCheckedLimAt calls bAddr t A ms k lim) ∨
+                                        IxVM.Refinement.Claim.CheckedLimAt calls bAddr t A lim →
                                       (∀ (x : Address),
                                           IxVM.Refinement.Typing.ConstAddrOf A c x →
-                                            IxVM.Refinement.Decl.KeyFree (IxVM.Consistency.keyOf t x)) →
-                                        IxVM.Refinement.Typing.UnitStep (X t E) t envT E₀ E lim A c
+                                            ¬IxVM.Refinement.Typing.StoredAt t envT x) →
+                                        (∀ (x : Address),
+                                            IxVM.Refinement.Typing.ConstAddrOf A c x →
+                                              IxVM.Refinement.Decl.KeyFree (IxVM.Consistency.keyOf t x)) →
+                                          IxVM.Refinement.Typing.UnitStep (X t E) t envT E₀ E lim A c
 -/
 #guard_msgs in
 #print IxVM.Refinement.Endpoint.WalkedUnitStep
