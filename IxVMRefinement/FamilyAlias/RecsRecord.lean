@@ -80,8 +80,9 @@ theorem iotaRulesRenRunJ_of_aliased {env E envM envSelf : Env .anon} {g h : KKey
     ∀ (rules : List (RecRule .anon)) (rhss : List KExpr) (thms : List KKey) (j : Nat),
       RulesAliased env E g blk tys bn recKey lps tyA mI rP j rules rhss thms →
       ∃ rules', IotaRulesRenRunJ (famJ h) envM envSelf (blockRen bn) recKey lps tyA mI rP j
-          rules rules' ∧ List.Forall₂ IxVM.Consistency.RuleStored rules' rules
-  | [], [], [], _, _ => ⟨[], rfl, List.Forall₂.nil⟩
+          rules rules' ∧ List.Forall₂ IxVM.Consistency.RuleStored rules' rules ∧
+          List.Forall₂ (fun (r' : RecRule .anon) rhsA => r'.rhs = rhsA) rules' rhss
+  | [], [], [], _, _ => ⟨[], rfl, List.Forall₂.nil, List.Forall₂.nil⟩
   | [], [], _ :: _, _, ha => nomatch ha
   | [], _ :: _, _, _, ha => nomatch ha
   | _ :: _, [], _, _, ha => nomatch ha
@@ -91,12 +92,13 @@ theorem iotaRulesRenRunJ_of_aliased {env E envM envSelf : Env .anon} {g h : KKey
     have hiota : envM.find? (iotaKey recKey j) = E.find? (iotaKey recKey j) := by
       obtain ⟨_, _, _, _, _, _, _, _, hfind⟩ := hr
       exact (hR.iotaFound _ _ _ hfind).trans hfind.symm
-    obtain ⟨r', hrec, hst⟩ := iotaRuleRenRunJ_of_aliased hr hR.wf hR.store hperm hR.out hR.moves
+    obtain ⟨r', hrec, hst, hrhs⟩ := iotaRuleRenRunJ_of_aliased hr hR.wf hR.store hperm hR.out hR.moves
       hR.target hR.fixes hrecbn hR.members htyF htyB htyL htyR (hR.ctor r.ctor) hiota hR.ext
       hR.aliasEnv hR.stored
-    obtain ⟨rest', hrecs, hsts⟩ := iotaRulesRenRunJ_of_aliased hR hperm hrecbn htyF htyB htyL
+    obtain ⟨rest', hrecs, hsts, hrhss⟩ := iotaRulesRenRunJ_of_aliased hR hperm hrecbn htyF htyB htyL
       htyR rs rhss thms (j + 1) hrest
-    exact ⟨r' :: rest', ⟨r', rest', hrec, hrecs, rfl⟩, List.Forall₂.cons hst hsts⟩
+    exact ⟨r' :: rest', ⟨r', rest', hrec, hrecs, rfl⟩, List.Forall₂.cons hst hsts,
+      List.Forall₂.cons hrhs hrhss⟩
 
 /-! ## The recursors of a family -/
 
@@ -144,7 +146,14 @@ theorem indRecsFoldRenRunJ_of_aliased {env E envM envSelf : Env .anon} {g h : KK
       (∀ ci ∈ recs, bn.contains ci.name = true) → (recs.map (·.name)).Nodup →
       ∃ out, IndRecsFoldRenRunJ (famJ h) bn envM envSelf acc (provisioned recs tysR) out ∧
         (∀ k, k ∉ recs.map (·.name) → out.find? k = acc.find? k) ∧
-        (∀ ci ∈ recs, ∃ c, out.find? ci.name = some c ∧ IxVM.Consistency.StoredAs c ci) := by
+        (∀ ci ∈ recs, ∃ c, out.find? ci.name = some c ∧ IxVM.Consistency.StoredAs c ci) ∧
+        (∀ (i : Nat) (cv : ConstantVal .anon) (mI rP : Nat) (rules : List (RecRule .anon))
+          (tyA : KExpr) (rhss : List KExpr),
+          recs[i]? = some (.recInfo cv mI rP rules) → tysR[i]? = some tyA → rhsss[i]? = some rhss →
+          ∃ rules' : List (RecRule .anon),
+            out.find? cv.name = some (.recInfo ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules') ∧
+            List.Forall₂ IxVM.Consistency.RuleStored rules' rules ∧
+            List.Forall₂ (fun (r' : RecRule .anon) rhsA => r'.rhs = rhsA) rules' rhss) := by
   intro recs
   induction recs with
   | nil =>
@@ -154,7 +163,8 @@ theorem indRecsFoldRenRunJ_of_aliased {env E envM envSelf : Env .anon} {g h : KK
       | nil => rfl
       | cons _ _ => cases rhsss <;> cases thss <;> exact False.elim ha
     subst hnil
-    exact ⟨acc, rfl, fun _ _ => rfl, fun _ hci => nomatch hci⟩
+    exact ⟨acc, rfl, fun _ _ => rfl, (fun _ hci => nomatch hci),
+      fun i _ _ _ _ _ _ hi => by simp at hi⟩
   | cons c rest ih =>
     intro tysR rhsss thss acc ha hmf hbn hnd
     obtain ⟨cv, mI, rP, rules, tyA, tysR', rhss, rhsss', ths, thss', rfl, rfl, rfl, rfl, hra,
@@ -162,12 +172,12 @@ theorem indRecsFoldRenRunJ_of_aliased {env E envM envSelf : Env .anon} {g h : KK
     obtain ⟨hMF, hmfrest⟩ := hmf
     obtain ⟨hhead, hndrest⟩ := List.nodup_cons.mp hnd
     obtain ⟨htyF, htyB, htyL⟩ := hMF.annotated_scope hR.wf
-    obtain ⟨rules', hrules, hst⟩ := iotaRulesRenRunJ_of_aliased hR hMF.perm
+    obtain ⟨rules', hrules, hst, hrhs⟩ := iotaRulesRenRunJ_of_aliased hR hMF.perm
       (hbn _ List.mem_cons_self) htyF htyB htyL (hMF.renamed_resolves hR.wf) rules rhss ths 0 hra
-    obtain ⟨out, hfold, hkeep, hstored⟩ := ih tysR' rhsss' thss'
+    obtain ⟨out, hfold, hkeep, hstored, hstoredF⟩ := ih tysR' rhsss' thss'
       ⟨.recInfo ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules' :: acc.consts⟩ hrest hmfrest
       (fun ci hci => hbn ci (List.mem_cons_of_mem _ hci)) hndrest
-    refine ⟨out, ⟨rules', hrules, hfold⟩, ?_, ?_⟩
+    refine ⟨out, ⟨rules', hrules, hfold⟩, ?_, ?_, ?_⟩
     · intro k hk
       have hk1 : k ∉ rest.map (·.name) := fun h => hk (List.mem_cons_of_mem _ h)
       have hne : (ConstantInfo.recInfo ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules' :
@@ -178,5 +188,15 @@ theorem indRecsFoldRenRunJ_of_aliased {env E envM envSelf : Env .anon} {g h : KK
       · refine ⟨_, (hkeep _ hhead).trans (Ix.Kernel.Env.find?_cons_self _ acc), ?_⟩
         exact ⟨⟨rfl, rfl, hMF.annotated⟩, rfl, rfl, hst⟩
       · exact hstored ci hci
+    · intro i cv' mI' rP' rls' tyA' rhss'' hi hti hri
+      cases i with
+      | zero =>
+        simp only [List.getElem?_cons_zero, Option.some.injEq] at hi hti hri
+        injection hi with e1 e2 e3 e4
+        subst e1 e2 e3 e4 hti hri
+        exact ⟨rules', (hkeep _ hhead).trans (Ix.Kernel.Env.find?_cons_self _ acc), hst, hrhs⟩
+      | succ i =>
+        simp only [List.getElem?_cons_succ] at hi hti hri
+        exact hstoredF i cv' mI' rP' rls' tyA' rhss'' hi hti hri
 
 end IxVM.Refinement.Decl.FamilyAlias

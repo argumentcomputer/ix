@@ -415,18 +415,27 @@ theorem famUsedStored {t : Ix.Kernel.RoleTable} {R E₀ : Ixon.Env}
     · exact absurd (hneed i hi x hx (hinert i hi x hx) hcov) hn
 
 /-- **What the family step gives the load facts** (`FamLoadCtx`), at each environment the step's
-record is taken at: the store's records at the two records' addresses (the run's, decoded), the
-route fact, the new constants: the members at the keys of the two records' constant addresses
+record is taken at and at any decoded store `E` that holds the run's blobs and the run's records at
+the two blocks and their projections: those records, the route fact at `E`, the new constants:
+the members at the keys of the two records' constant addresses
 (`famStep_consts`, `FamDeclReads`), the aliases definitions at derived keys; the first
 constructor of a block of one inductive stored with the record's counts (its reading and
 `StoredAs`); `hfree`, a field in that constructor where the member has no index and one
 constructor (`famUnitFree_of_run`); the dispatch's answer `1` at the store
 (`famBlockRoute_of_run`); the constructors' shapes at a block of one inductive
 (`famCtorTrees_of_run`); the registry's facts at the prefix (`PrefixInv.scopedCoreFacts`). -/
-theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} (hctx : StepCtx.{u} calls t R envT E₀ E)
+theorem famLoadCtx_at {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} (hdec : L1.EnvDecoded E)
+    (hblob : ∀ a b, E₀.blobs.get? a = some b → E.blobs.get? a = some b)
     {A rb : _root_.Address} {c crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
-    (hB : FamBlockRecord E₀ A c ms) (hrb : FamRecRecord E₀ rb crb rs) (hroute : ModeledAt E A)
+    (hB : FamBlockRecord E₀ A c ms) (hrb : FamRecRecord E₀ rb crb rs)
+    (hEA : recordOf E A = some c)
+    (hEm : ∀ i m, ms[i]? = some m → recordOf E (memberAddr A i m) = some (memberProjection A i m))
+    (hEc : ∀ i ind j, ms[i]? = some (.indc ind) → j < ind.ctors.size →
+      recordOf E (ctorAddr A i j) = some (constructorProjection A i j))
+    (hErb : recordOf E rb = some crb)
+    (hErm : ∀ i m, rs[i]? = some m →
+      recordOf E (memberAddr rb i m) = some (memberProjection rb i m))
+    (hroute : ModeledAt E A)
     (hfree : ∀ ind, c.info = .muts #[.indc ind] → ind.indices.toNat = 0 →
       ind.ctors.size = 1 → ∀ ct, ind.ctors[0]? = some ct → ct.fields.toNat ≠ 0)
     (hrouteT : Route.blockRoute E A = some true)
@@ -448,9 +457,6 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
     (hused : Decl.UsedRefsStored t ⟨new ++ env.consts⟩ c)
     (hcanon : FamilyMembersCanon t E₀ A c ms rb crb rs ⟨new ++ env.consts⟩) :
     FamLoadCtx ⟨E, env, t, lim⟩ new A c ms rb crb rs := by
-  have hdec : L1.EnvDecoded E := hctx.recordsFor.1
-  have hrec : ∀ a d, recordOf E₀ a = some d → recordOf E a = some d := fun a d hd' =>
-    (recordOf_eq_recordAt_of_decoded hdec a).trans (hctx.runRecord a d hd')
   obtain ⟨new', henv, hnewN, -⟩ := famStep_consts hd
   have h2 : new ++ env.consts = (new' ++ aliases) ++ env.consts := congrArg Ix.Kernel.Env.consts henv
   have hnew : new = new' ++ aliases := List.append_cancel_right h2
@@ -462,10 +468,10 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
       indcs := hB.indcs
       rmuts := hrb.muts
       recrs := hrb.recrs
-      members := fun i m hm => hrec _ _ (hB.members i m hm)
-      ctors := fun i ind j hm hj => hrec _ _ (hB.ctors i ind j hm hj)
-      rmembers := fun i m hm => hrec _ _ (hrb.members i m hm)
-      record := hrec _ _ hB.record
+      members := hEm
+      ctors := hEc
+      rmembers := hErm
+      record := hEA
       route := hroute
       newName := by
         intro cn hcn
@@ -562,7 +568,7 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
           rw [← constVal_eta hn' hl']
         exact ⟨ty₀, cv.type, caps,
           ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
-            (blob' := fun y => E.blobs.get? y) hctx.runBlob hty,
+            (blob' := fun y => E.blobs.get? y) hblob hty,
           hlbb, hdef, hcan, hf''.trans (congrArg some ecv)⟩
       ctorForm := by
         intro i ind j ct hi hj hm hct
@@ -610,9 +616,9 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
           rw [← constVal_eta hn' hl']
         exact ⟨hcj, ty₀, cv.type,
           ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
-            (blob' := fun y => E.blobs.get? y) hctx.runBlob hty,
+            (blob' := fun y => E.blobs.get? y) hblob hty,
           hlbb, hdef, hcan, hf''.trans (congrArg some ecv)⟩
-      rrecord := hrec _ _ hrb.record
+      rrecord := hErb
       usedRecs := hcanon.usedRecs
       recForm := by
         intro p rc hpb hm
@@ -670,11 +676,47 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
             exact ⟨rfl, hread⟩) hrules
         exact ⟨ps, ty, rules, cv', rules', by rw [hps]; exact Decl.recLps_perm_range _ _,
           ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
-            (blob' := fun y => E.blobs.get? y) hctx.runBlob hty,
+            (blob' := fun y => E.blobs.get? y) hblob hty,
           TwinFamily.lforall₂_mono (fun ru rl₀ hr => ⟨hr.1,
             ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
-              (blob' := fun y => E.blobs.get? y) hctx.runBlob hr.2⟩) hrules₁,
+              (blob' := fun y => E.blobs.get? y) hblob hr.2⟩) hrules₁,
           hML, hf''.trans (congrArg some ecv)⟩ }
+
+/-- **The load facts' context at the step's store** (`famLoadCtx_at` at a store that holds the
+run's records and blobs). -/
+theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
+    {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} (hctx : StepCtx.{u} calls t R envT E₀ E)
+    {A rb : _root_.Address} {c crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
+    (hB : FamBlockRecord E₀ A c ms) (hrb : FamRecRecord E₀ rb crb rs) (hroute : ModeledAt E A)
+    (hfree : ∀ ind, c.info = .muts #[.indc ind] → ind.indices.toNat = 0 →
+      ind.ctors.size = 1 → ∀ ct, ind.ctors[0]? = some ct → ct.fields.toNat ≠ 0)
+    (hrouteT : Route.blockRoute E A = some true)
+    (htrees : ∀ ind, c.info = .muts #[.indc ind] → ∀ j < ind.ctors.size,
+      ∃ (ct : Ixon.Constructor) (T Bd : Route.ScanTree),
+        ind.ctors[j]? = some ct ∧ ct.params.toNat = ind.params.toNat ∧
+        Route.ExprTree c.refs.toList
+          (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
+          c.sharing.toList 4294967295 ct.typ T ∧
+        T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
+        Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
+        ∀ k < ct.params.toNat, Bd.args[k]? = some .atom)
+    {lim : Option Nat} {env : Ix.Kernel.Env .anon} {h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon}
+    {aliases blk new : List (ConstantInfo .anon)} (hinv : Decl.PrefixInv.{u} E t lim env)
+    (hg : AliasGroup env h aliases) (hreads : FamDeclReads t E₀ A c rb crb blk)
+    (hd : DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩)
+    (hst : ∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
+      StoredAs c' ci)
+    (hused : Decl.UsedRefsStored t ⟨new ++ env.consts⟩ c)
+    (hcanon : FamilyMembersCanon t E₀ A c ms rb crb rs ⟨new ++ env.consts⟩) :
+    FamLoadCtx ⟨E, env, t, lim⟩ new A c ms rb crb rs :=
+  have hdec : L1.EnvDecoded E := hctx.recordsFor.1
+  have hrec : ∀ a d, recordOf E₀ a = some d → recordOf E a = some d := fun a d hd' =>
+    (recordOf_eq_recordAt_of_decoded hdec a).trans (hctx.runRecord a d hd')
+  famLoadCtx_at hdec hctx.runBlob hB hrb (hrec _ _ hB.record)
+    (fun i m hm => hrec _ _ (hB.members i m hm))
+    (fun i ind j hm hj => hrec _ _ (hB.ctors i ind j hm hj))
+    (hrec _ _ hrb.record) (fun i m hm => hrec _ _ (hrb.members i m hm)) hroute hfree hrouteT htrees
+    hinv hg hreads hd hst hused hcanon
 
 /-- **What the circuit side's family check hands the step of the block at `A` with its family
 record at `rb`**: the seam, the companion facts of each recursor the step stores, and the seam

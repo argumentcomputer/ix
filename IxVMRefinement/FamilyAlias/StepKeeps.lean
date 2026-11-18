@@ -167,6 +167,112 @@ theorem coreCompanions_append_recs {c : Core.Ctx} (h : Decl.CoreCompanions c)
 
 /-! ## The keeping -/
 
+/-- **The fold's clause across the family step, at one registry**: the clause at the prefix with
+the registry `Reg` gives the clause after the step with the same registry (the step registers no
+family: no inductive it stores is at an address whose projection record names a block the circuit
+treats as native, `hmod`), from the record, the addresses' length, the companion facts of each
+new recursor and the load facts at the new constants. -/
+theorem famStepKeeps_with {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    (hL : LinkLaws L) {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
+    {lim : Option Nat} {A rb : _root_.Address} {c crb : Ixon.Constant}
+    (hsz : ∀ x, FamAddr A c rb crb x → x.hash.size = 32)
+    (hmod : ∀ x, FamAddr A c rb crb x → ∀ (cm : Ixon.Constant) (ip : Ixon.InductiveProj),
+      Ix.Cert.recordAt E x = some cm → cm.info = .iPrj ip → ¬ NativeAt E ip.block)
+    {env : Ix.Kernel.Env .anon} {Reg : NativeFam .anon → Prop}
+    {h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon} {as blk new : List (ConstantInfo .anon)}
+    (hC : FoldClauseWith.{u} L t E lim env Reg) (hg : AliasGroup env h as)
+    (hroots : ∀ a ∈ as, ∃ ci ∈ blk, a.name.base = ci.name)
+    (hreads : FamDeclReads t E₀ A c rb crb blk)
+    (hd : DeclIndRenRunJ (famJ h) ⟨as ++ env.consts⟩ blk ⟨new ++ env.consts⟩)
+    (hrecs : ∀ cv mI rP rls, ConstantInfo.recInfo cv mI rP rls ∈ new →
+      RecCompanionFacts ⟨E, ⟨new ++ env.consts⟩, t, lim⟩ cv mI rP rls)
+    (hloads : NewLoads (appCtx ⟨E, env, t, lim⟩ new).stored new) :
+    FoldClauseWith.{u} L t E lim ⟨new ++ env.consts⟩ Reg := by
+  have hna : ∀ ci ∈ blk, Decl.NonAuxKey ci.name := fun ci hci => by
+    obtain ⟨x, -, hk, -⟩ := hreads.2.1 ci hci
+    rw [hk]
+    exact Decl.isBaseKey_iff_nonAuxKey.mp (Decl.isBaseKey_keyOf t x)
+  obtain ⟨new', henv, hnewN, -⟩ := famStep_consts hd
+  have hnew : new = new' ++ as := by
+    have h2 : new ++ env.consts = (new' ++ as) ++ env.consts :=
+      congrArg Ix.Kernel.Env.consts henv
+    exact List.append_cancel_right h2
+  subst hnew
+  have hext : Ix.Kernel.EnvExt env ⟨(new' ++ as) ++ env.consts⟩ :=
+    (Decl.FamilyAlias.AliasGroup.envExt hg).trans (Ix.Kernel.Semantics.declIndRenRunJ_envExt hd)
+  have hS₂ : Decl.FoldStoreInv ⟨(new' ++ as) ++ env.consts⟩ :=
+    Decl.FamilyAlias.foldStoreInv_famStep hg hreads.2.2.2 hna hd hC.foldStore
+  have hAr : Ix.Kernel.Model.StoreArR ⟨(new' ++ as) ++ env.consts⟩ :=
+    Decl.FamilyAlias.familyKeepsStoreAr env _ h as blk hg hd hC.storeArR
+  have hTL : Ix.Kernel.ThmLevels ⟨(new' ++ as) ++ env.consts⟩ :=
+    Decl.FamilyAlias.thmLevels_famStep hg hd hC.thmLevels
+  have hroot : Decl.AuxRootSynced ⟨(new' ++ as) ++ env.consts⟩ :=
+    Decl.FamilyAlias.auxRootSynced_famStep hC.auxRoot hna hroots hd
+  have hES : Decl.EtaStable ⟨(new' ++ as) ++ env.consts⟩ :=
+    etaStable_famStep hC.etaStable hC.etaCtorStored hg hd
+  have hmemName : ∀ ci ∈ new', ∃ x, FamAddr A c rb crb x ∧ ci.name = keyOf t x := by
+    intro ci hci
+    obtain ⟨ci₀, hci₀, hn⟩ := hnewN ci hci
+    obtain ⟨x, hx, hk, -⟩ := hreads.2.1 ci₀ hci₀
+    exact ⟨x, hx, hn.trans hk⟩
+  have hAl := AliasGroup.defn_of_mem hg
+  have hnres : ∀ cn ∈ new' ++ as, cn.name ≠ Core.unresolvedKey := by
+    intro cn hcn
+    rcases List.mem_append.mp hcn with hm | hm
+    · obtain ⟨x, -, hk⟩ := hmemName cn hm
+      rw [hk]
+      exact (Core.Resolved.ne : Core.keyOf t x ≠ Core.unresolvedKey)
+    · intro he
+      exact (hAl cn hm).2 (.aux (.role default) .projTable) he
+  exact
+    { model := fun V _ => Decl.FamilyAlias.envModelN_famStep hg hd V (hC.model V)
+      store := hS₂.store
+      recShape := hS₂.recShape
+      recK := hS₂.recK
+      thmTyped := hS₂.thmTyped
+      etaTowers := hS₂.etaTowers
+      thmLevels := hTL
+      storeArR := hAr
+      strong := hS₂.strongProps
+      fams := fun f hf => (hC.fams f hf).ext hL hext
+      complete := by
+        intro P cm ip cv caps hf hr hcm hinfo hnat
+        cases hold : env.find? (keyOf t P) with
+        | some ci =>
+          have h₂ := hext.find hold
+          rw [hf] at h₂
+          obtain rfl := Option.some.inj h₂
+          exact hC.complete P cm ip cv caps hold hr hcm hinfo hnat
+        | none =>
+          exfalso
+          rcases find?_append_cases (new' ++ as) hf with hm | ho
+          · rcases List.mem_append.mp hm with hm' | hm'
+            · obtain ⟨x, hx, hk⟩ := hmemName _ hm'
+              have hP : P = x :=
+                Core.keyOf_inj hC.tableWf ((Core.WhnfAux.name_of_find hf).symm.trans hk)
+              subst hP
+              exact hmod P hx cm ip hcm hinfo hnat
+            · obtain ⟨⟨cv', v, hint, he⟩, -⟩ := hAl _ hm'
+              exact nomatch he
+          · rw [hold] at ho
+            exact nomatch ho
+      hashKeyed := HashKeyed.append hC.tableWf hC.hashKeyed (fun ci hci => by
+        rcases List.mem_append.mp hci with hm | hm
+        · obtain ⟨x, hx, hk⟩ := hmemName ci hm
+          exact Or.inl ⟨x, hk, hsz x hx⟩
+        · obtain ⟨n, d, hn⟩ := AliasGroup.name_aux hg ci hm
+          exact Or.inr fun y he => keyOf_nonAux t y n d (he.symm.trans hn))
+      auxRoot := hroot
+      etaCtorStored := hS₂.etaCtorStored
+      etaShape := hS₂.etaShape
+      etaStable := hES
+      unresolved := unresolved_append hC.unresolved hnres
+      tableWf := hC.tableWf
+      companions := coreCompanions_append_recs (c := ⟨E, env, t, lim⟩) hC.companions hC.store
+        hext hrecs
+      loads := storedLoads_append (c := ⟨E, env, t, lim⟩) hC.loads hext hnres hC.etaStable
+        hloads }
+
 /-- **The keeping the family row's step takes** (`hkeeps` of `unitStepFamily_of_facts`), at the
 fold's clause (module docstring). -/
 theorem famStepKeeps_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
@@ -209,84 +315,11 @@ theorem famStepKeeps_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon → 
   intro env env₂ h as blk hinv hX hextT hrefs hg hroots hreads hd hst
   obtain ⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩ := hX
   have hC : FoldClauseWith.{u} L t E lim env Reg := FoldClauseWith.of_prefix hinv hR hkeys haux hlv
-  have hna : ∀ ci ∈ blk, Decl.NonAuxKey ci.name := fun ci hci => by
-    obtain ⟨x, -, hk, -⟩ := hreads.2.1 ci hci
-    rw [hk]
-    exact Decl.isBaseKey_iff_nonAuxKey.mp (Decl.isBaseKey_keyOf t x)
-  have hext : Ix.Kernel.EnvExt env env₂ :=
-    (Decl.FamilyAlias.AliasGroup.envExt hg).trans (Ix.Kernel.Semantics.declIndRenRunJ_envExt hd)
-  have hS₂ : Decl.FoldStoreInv env₂ :=
-    Decl.FamilyAlias.foldStoreInv_famStep hg hreads.2.2.2 hna hd hC.foldStore
-  have hAr : Ix.Kernel.Model.StoreArR env₂ :=
-    Decl.FamilyAlias.familyKeepsStoreAr env env₂ h as blk hg hd hC.storeArR
-  have hTL : Ix.Kernel.ThmLevels env₂ := Decl.FamilyAlias.thmLevels_famStep hg hd hC.thmLevels
-  have hroot : Decl.AuxRootSynced env₂ :=
-    Decl.FamilyAlias.auxRootSynced_famStep hC.auxRoot hna hroots hd
-  have hES : Decl.EtaStable env₂ := etaStable_famStep hC.etaStable hC.etaCtorStored hg hd
-  obtain ⟨new, henv, hnewN, -⟩ := famStep_consts hd
-  have hmemName : ∀ ci ∈ new, ∃ x, FamAddr A c rb crb x ∧ ci.name = keyOf t x := by
-    intro ci hci
-    obtain ⟨ci₀, hci₀, hn⟩ := hnewN ci hci
-    obtain ⟨x, hx, hk, -⟩ := hreads.2.1 ci₀ hci₀
-    exact ⟨x, hx, hn.trans hk⟩
-  have hAl := AliasGroup.defn_of_mem hg
-  have hnres : ∀ cn ∈ new ++ as, cn.name ≠ Core.unresolvedKey := by
-    intro cn hcn
-    rcases List.mem_append.mp hcn with hm | hm
-    · obtain ⟨x, -, hk⟩ := hmemName cn hm
-      rw [hk]
-      exact (Core.Resolved.ne : Core.keyOf t x ≠ Core.unresolvedKey)
-    · intro he
-      exact (hAl cn hm).2 (.aux (.role default) .projTable) he
+  obtain ⟨new, henv, -, -⟩ := famStep_consts hd
   subst henv
-  have hC' : FoldClauseWith.{u} L t E lim ⟨(new ++ as) ++ env.consts⟩ Reg :=
-    { model := fun V _ => Decl.FamilyAlias.envModelN_famStep hg hd V (hC.model V)
-      store := hS₂.store
-      recShape := hS₂.recShape
-      recK := hS₂.recK
-      thmTyped := hS₂.thmTyped
-      etaTowers := hS₂.etaTowers
-      thmLevels := hTL
-      storeArR := hAr
-      strong := hS₂.strongProps
-      fams := fun f hf => (hC.fams f hf).ext hL hext
-      complete := by
-        intro P cm ip cv caps hf hr hcm hinfo hnat
-        cases hold : env.find? (keyOf t P) with
-        | some ci =>
-          have h₂ := hext.find hold
-          rw [hf] at h₂
-          obtain rfl := Option.some.inj h₂
-          exact hC.complete P cm ip cv caps hold hr hcm hinfo hnat
-        | none =>
-          exfalso
-          rcases find?_append_cases (new ++ as) hf with hm | ho
-          · rcases List.mem_append.mp hm with hm' | hm'
-            · obtain ⟨x, hx, hk⟩ := hmemName _ hm'
-              have hP : P = x :=
-                Core.keyOf_inj hC.tableWf ((Core.WhnfAux.name_of_find hf).symm.trans hk)
-              subst hP
-              exact hmod P hx cm ip hcm hinfo hnat
-            · obtain ⟨⟨cv', v, hint, he⟩, -⟩ := hAl _ hm'
-              exact nomatch he
-          · rw [hold] at ho
-            exact nomatch ho
-      hashKeyed := HashKeyed.append hC.tableWf hC.hashKeyed (fun ci hci => by
-        rcases List.mem_append.mp hci with hm | hm
-        · obtain ⟨x, hx, hk⟩ := hmemName ci hm
-          exact Or.inl ⟨x, hk, hsz x hx⟩
-        · obtain ⟨n, d, hn⟩ := AliasGroup.name_aux hg ci hm
-          exact Or.inr fun y he => keyOf_nonAux t y n d (he.symm.trans hn))
-      auxRoot := hroot
-      etaCtorStored := hS₂.etaCtorStored
-      etaShape := hS₂.etaShape
-      etaStable := hES
-      unresolved := unresolved_append hC.unresolved hnres
-      tableWf := hC.tableWf
-      companions := coreCompanions_append_recs (c := ⟨E, env, t, lim⟩) hC.companions hC.store
-        hext (hrecs env h as blk (new ++ as) hinv hg hreads hd hst)
-      loads := storedLoads_append (c := ⟨E, env, t, lim⟩) hC.loads hext hnres hC.etaStable
-        (hloads env h as blk (new ++ as) hinv hextT hrefs hg hreads hd hst) }
+  have hC' := famStepKeeps_with hL hsz hmod hC hg hroots hreads hd
+    (hrecs env h as blk (new ++ as) hinv hg hreads hd hst)
+    (hloads env h as blk (new ++ as) hinv hextT hrefs hg hreads hd hst)
   exact ⟨hC'.prefixInv, hC'.extra⟩
 
 end IxVM.Refinement.Typing.FamilyAlias

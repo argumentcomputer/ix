@@ -20,10 +20,11 @@ from the map:
   it and the other rows;
 * `storedTwinField_of_block`: the stored twins' field from the map, given that the block of each
   stored twin is a stored modeled block of the witness's store (`TwinFamily.StoredTwinBlock`);
-* `FamRunCtx.twinBlock_stored`, `StoredTwinReads`, `storedTwinBlock_of_reads`: that block fact
-  from the selector (a twin's block with no family record has its constant addresses stored), the
-  agreement, and four reads of the run and the witness (`StoredTwinReads`, each field with its
-  source);
+* `FamRunCtx.twinBlock_stored`, `FamRunCtx.twin_routed`, `StoredTwinReads`,
+  `storedTwinBlock_of_reads`: that block fact from the selector (a twin's block with no family
+  record has its constant addresses stored), the run's facts (every twin's block routed as
+  modeled and in Lean's logic: `BatchGives.routed`, `BatchGives.inLogic`), the agreement, and two
+  reads of the witness (`StoredTwinReads`, each field with its source);
 * `FamilyGraphInnerOwedFam`, `familyGraphRowInnerFam_of_owed`: what the graph row and the inner
   records are owed at the witness with its map: `StoredTwinReads` in place of `StoredTwinField`;
 * `circuitComposed_of_partsFamInnerW`: the public statement with the typing half at
@@ -259,8 +260,29 @@ theorem FamRunCtx.twinOf_route {K : FamRunCtx} {rb' B : _root_.Address} (h : K.T
     ModeledRouteAt K.calls B :=
   h.2.2.2.2.2.2.1
 
-/-- **What the stored twins' block fact reads of the run and the witness** (premise; each field
-names its source). Asked of the block of a twin with no family record. -/
+/-- **Every twin's block is routed as modeled**: a top-walked twin's by `FamRunCtx.TwinOf`, a
+nested twin's by `check_const`'s `Rec` arm (`BatchGives.routed`). -/
+theorem FamRunCtx.twin_routed {K : FamRunCtx} (hB : BatchGives K) {rb' B : _root_.Address}
+    (h : K.twin rb' = some B) : ModeledRouteAt K.calls B := by
+  rcases FamRunCtx.twin_some h with ht | hn
+  · exact FamRunCtx.twinOf_route ht
+  · exact hB.routed rb' B hn
+
+/-- **What the selector gives a twin of a block with a family record**: the block's family record
+is non-empty, and in the preferred form when the twin is (the selector takes a complete record
+first, then one in the preferred form; a twin is a complete record of a family check of the
+block). -/
+theorem FamRunCtx.twin_canonical {K : FamRunCtx} {B rb rb' : _root_.Address}
+    (hf : K.fam B = some rb) (ht : K.twin rb' = some B) :
+    RecBlock K.E₀ rb ∧ (K.Pref B rb' → K.Pref B rb) := by
+  obtain ⟨-, -, hrec, hpref⟩ := FamRunCtx.fam_some hf
+  obtain ⟨hRB, -, -, hFC⟩ := FamRunCtx.twin_facts ht
+  exact ⟨hrec ⟨rb', hFC, hRB⟩, fun hp => hpref ⟨rb', hFC, hRB, hp⟩⟩
+
+/-- **What the stored twins' block fact reads of the witness** (premise; each field names its
+source). Asked of the block of a twin with no family record. That the run routes the block as
+modeled and that it is in Lean's logic are the run's (`FamRunCtx.twin_routed`,
+`BatchGives.inLogic`). -/
 structure StoredTwinReads (K : FamRunCtx) (R : Ixon.Env) : Prop where
   /-- The witness's store holds the block. INFERRED from the witness: the block's constant
   addresses are stored by its environment (`FamRunCtx.twinBlock_stored`), whose constants are
@@ -268,27 +290,17 @@ structure StoredTwinReads (K : FamRunCtx) (R : Ixon.Env) : Prop where
   under a projection's block (`TableShape.usedClosed`). Not proved here. -/
   record : ∀ rb' B, K.twin rb' = some B → K.fam B = none → ∃ cb, recordOf R B = some cb
   /-- The witness's store routes the block as modeled. INFERRED: the run routes it as modeled
-  (`routed`), the run's dispatch agrees with `Route.blockRoute` at a step's store
+  (`FamRunCtx.twin_routed`), the run's dispatch agrees with `Route.blockRoute` at a step's store
   (`FamilyAlias.famBlockRoute_of_run` reads it so at a family record's block), and the
   witness's store agrees with the step's store on what the route reads (`RecordsFor`,
   `TableShape.usedClosed`, `Binding.blockRoute_storeCongr`). Not proved here. -/
   route : ∀ rb' B, K.twin rb' = some B → K.fam B = none → Route.blockRoute R B = some true
-  /-- The run routes the block as modeled. Proved for a top-walked twin's block
-  (`FamRunCtx.twinOf_route`). For a nested twin's block: the `Rec` arm of `check_const`, once
-  the refusal of a modeled recursor is removed from it, runs `check_family` on the recursor's
-  family block only after the dispatch answered the modeled route (to be added beside
-  `BatchGives.recArm`). -/
-  routed : ∀ rb' B, K.twin rb' = some B → K.fam B = none → ModeledRouteAt K.calls B
-  /-- The block is in Lean's logic. Source: the `Rec` arm of `check_const` as above, with the
-  modeled `Induct` arm's guard (`check_modeled_block` runs only for a safe inductive, today
-  `KernelCheck.lean:3940-3941`); a twin's family check is the `Rec` arm's. -/
-  inLogic : ∀ rb' B, K.twin rb' = some B → K.fam B = none →
-    ∀ cb, recordOf K.E₀ B = some cb → InLogic cb
 
 /-- **The block of every stored twin is a stored modeled block of the witness's store**, from
-the reads and the agreement of the two stores: the witness's record of the block is the run's,
-whose constant addresses are stored (`FamRunCtx.twinBlock_stored`). -/
-theorem storedTwinBlock_of_reads {K : FamRunCtx} {R : Ixon.Env} (hagree : RecordsAgree K.E₀ R)
+the run's facts, the reads and the agreement of the two stores: the witness's record of the
+block is the run's, whose constant addresses are stored (`FamRunCtx.twinBlock_stored`). -/
+theorem storedTwinBlock_of_reads {K : FamRunCtx} {R : Ixon.Env} (hB : BatchGives K)
+    (hagree : RecordsAgree K.E₀ R)
     (hr : StoredTwinReads K R) : StoredTwinBlock K.t R K.envT K.fam K.twin := by
   intro rb' B htw hnone
   obtain ⟨cb, hcb⟩ := hr.record rb' B htw hnone
@@ -300,8 +312,8 @@ theorem storedTwinBlock_of_reads {K : FamRunCtx} {R : Ixon.Env} (hagree : Record
   have e : cb₀ = cb := hagree B cb₀ cb hcb₀ hcb
   rw [← e] at hcb
   exact ⟨cb₀, hcb, hr.route rb' B htw hnone,
-    fun x hx => FamRunCtx.twinBlock_stored htw hnone (hr.routed rb' B htw hnone)
-      (hr.inLogic rb' B htw hnone) cb₀ x hcb₀ hx⟩
+    fun x hx => FamRunCtx.twinBlock_stored htw hnone (FamRunCtx.twin_routed hB htw)
+      (hB.inLogic rb' B htw) cb₀ x hcb₀ hx⟩
 
 /-! ## What the graph row is owed at the witness with its stored families -/
 
@@ -341,7 +353,7 @@ theorem familyGraphRowInnerFam_of_owed {Pref : RunPref} (h : FamilyGraphInnerOwe
   obtain ⟨hFR, -⟩ :=
     familyRun_of ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ hB hW
       (noBatchFields_of _ hW) hR
-      (storedTwinField_of_block hSF (storedTwinBlock_of_reads hagree hreads))
+      (storedTwinField_of_block hSF (storedTwinBlock_of_reads hB hagree hreads))
   have hWalk' : Claim.TopWalk calls t seeds E₀ lim Top rank' :=
     topWalk_of_edges ⟨bAddr, hW, hG⟩ hR.closed hR.owner
   exact ⟨rank', _, _, _, _, hWalk', hFR, bAddr, innerChecked_of_gives hWalk' hFR

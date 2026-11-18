@@ -56,7 +56,7 @@ theorem iotaRuleRenRunJ_of_aliased
     (hext : EnvExt env envSelf) (hA : AliasEnv envSelf h)
     (hstored : ∀ k, (env.find? (g k)).isSome = true → (envSelf.find? k).isSome = true) :
     ∃ r', IotaRuleRenRunJ (famJ h) envM envSelf (blockRen bn) recKey lps tyA mI rP j r r' ∧
-      IxVM.Consistency.RuleStored r' r := by
+      IxVM.Consistency.RuleStored r' r ∧ r'.rhs = rhsA := by
   obtain ⟨cvj, cnP, cnF, lvls, pins, cvt, vt, hw, hfindA⟩ := hra
   obtain ⟨hctorM, hctyR⟩ := hctor cvj cnP cnF hw.ctor
   have hmono : ∀ k, (env.find? k).isSome = true → (envSelf.find? k).isSome = true := by
@@ -366,7 +366,7 @@ theorem iotaRuleRenRunJ_of_aliased
     have hdP' := defEqListJ_renameJ_of_renamed hext hA hdP
       (map_fvarTypeD_agree (map_take_agree cnP hfvsPa)) hcdomsPa
     refine ⟨_, ⟨cvj, cnP, cnF, rhsA, hctorM, hw.nfields, hw.bounded, hw.closed, hann, hw.levels,
-      hrhsRes, hw.lams, htyped, .plain, rfl, Or.inl ⟨hplain, rfl, ?_⟩⟩, rfl, rfl, hw.annotated⟩
+      hrhsRes, hw.lams, htyped, .plain, rfl, Or.inl ⟨hplain, rfl, ?_⟩⟩, ⟨rfl, rfl, hw.annotated⟩, rfl⟩
     refine ⟨_, fvs, Expr.app (.app (.app (.const eqName [ℓ]) α) lhs') rhsS, hcvt, rfl, hopc,
       heq', rfl, ?_⟩
     exact ⟨hfn', hlen', htake',
@@ -406,7 +406,7 @@ theorem iotaRuleRenRunJ_of_aliased
     have htl' := typedListJ_famJ_of_renamed hext hA htl hpinsPa hcdomsPa hpinLF
     refine ⟨_, ⟨cvj, cnP, cnF, rhsA, hctorM, hw.nfields, hw.bounded, hw.closed, hann, hw.levels,
       hrhsRes, hw.lams, htyped, .nested lvls pins, rfl,
-      Or.inr ⟨Bool.eq_false_iff.mpr hplain, lvls, pins, rfl, hnrs, ?_⟩⟩, rfl, rfl, hw.annotated⟩
+      Or.inr ⟨Bool.eq_false_iff.mpr hplain, lvls, pins, rfl, hnrs, ?_⟩⟩, ⟨rfl, rfl, hw.annotated⟩, rfl⟩
     refine ⟨_, fvs, Expr.app (.app (.app (.const eqName [ℓ]) α) lhs') rhsS, hcvt, rfl, hopc,
       heq', rfl, ?_⟩
     exact ⟨hfn', hlen', htake',

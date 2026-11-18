@@ -36,17 +36,18 @@ open IxVM.Refinement.Decl.FamilyAlias (AliasGroup famJ FamilyAdvice FamilyCheckF
 set_option linter.unusedVariables false
 
 /-- **The route fact at each inductive the family step stores**, from the route fact at the
-block: the record the step's store holds at a family address is the run's (a member's or a
-constructor's projection), so an inductive projection there names the block. -/
-theorem famModeled_of_route {E₀ E : Ixon.Env} {A rb : _root_.Address} {c crb : Ixon.Constant}
+block, at a store that holds the run's records at the family's addresses: the record there is a
+member's or a constructor's projection, so an inductive projection there names the block. -/
+theorem famModeled_at {E₀ E : Ixon.Env} {A rb : _root_.Address} {c crb : Ixon.Constant}
     {ms rs : Array Ixon.MutConst} (hB : FamBlockRecord E₀ A c ms) (hrb : FamRecRecord E₀ rb crb rs)
-    (hrun : ∀ a d, recordOf E₀ a = some d → Ix.Cert.recordAt E a = some d)
+    (hrun : ∀ x, FamAddr A c rb crb x → ∀ d, recordOf E₀ x = some d →
+      Ix.Cert.recordAt E x = some d)
     (hmod : ModeledAt E A) :
     ∀ x, FamAddr A c rb crb x → ∀ (cm : Ixon.Constant) (ip : Ixon.InductiveProj),
       Ix.Cert.recordAt E x = some cm → cm.info = .iPrj ip → ¬ NativeAt E ip.block := by
   intro x hx cm ip hcm hinfo
   have key : ∀ {d : Ixon.Constant}, recordOf E₀ x = some d → cm = d := fun hd => by
-    have h1 := hrun _ _ hd
+    have h1 := hrun x hx _ hd
     rw [hcm] at h1
     exact Option.some.inj h1
   rcases hx with ⟨⟨-, hs⟩ | ⟨ms', i, m, hinfo', hget, hxm | ⟨ind, j, hind, hj, hxc⟩⟩⟩ |
@@ -79,6 +80,16 @@ theorem famModeled_of_route {E₀ E : Ixon.Env} {A rb : _root_.Address} {c crb :
     obtain ⟨r, hr⟩ := hrb.recrs m (by simpa using Array.mem_of_getElem? hget)
     rw [hind] at hr
     exact nomatch hr
+
+/-- **The route fact at each inductive the family step stores**, at a store that holds the run's
+records (`famModeled_at`). -/
+theorem famModeled_of_route {E₀ E : Ixon.Env} {A rb : _root_.Address} {c crb : Ixon.Constant}
+    {ms rs : Array Ixon.MutConst} (hB : FamBlockRecord E₀ A c ms) (hrb : FamRecRecord E₀ rb crb rs)
+    (hrun : ∀ a d, recordOf E₀ a = some d → Ix.Cert.recordAt E a = some d)
+    (hmod : ModeledAt E A) :
+    ∀ x, FamAddr A c rb crb x → ∀ (cm : Ixon.Constant) (ip : Ixon.InductiveProj),
+      Ix.Cert.recordAt E x = some cm → cm.info = .iPrj ip → ¬ NativeAt E ip.block :=
+  famModeled_at hB hrb (fun x _ d hd => hrun x d hd) hmod
 
 /-- **What the circuit side hands the step of the block at `A` with its family record at
 `rb`** (module docstring). -/
