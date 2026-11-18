@@ -16,11 +16,13 @@ twins, advice and inner records with `FamilyRun`. This module makes the choices 
   family checks at the walk's binding and limit, one in the preferred form where there is one;
 * `FamRunCtx.twin`: a top-walked non-empty block of recursors with such an address that no block
   claims is a twin of a top-walked modeled block of inductive types it is the record of a family
-  check of;
+  check of; so is one the walk did not reach whose family check is nested in the calls of a
+  reached family check (`Reached`: of a family record or of a twin; a container's recursor
+  checked through its projection runs the family check of its block of recursors);
 * `FamRunCtx.adv`: an advice record with a constant address among the calls of the installed
   family check; `FamRunCtx.Inner`: a record with a constant address that the walk did not reach,
   checked as advice (no projection record) or as a container's recursor by the family check of a
-  family record or of a twin;
+  family record or of a twin, or a nested twin;
 * `BatchGives`: what the functions the circuit batch changes must give, one field per function;
 * `FamRunCtx.famCheck_of_walk`: a block the fold steps with a family record had a family check
   at the walk's binding and limit (`familyCheck_of_walk`);
@@ -77,6 +79,12 @@ theorem RecBlock.not_indBlock {E₀ : Ixon.Env} {A : _root_.Address} (hr : RecBl
   have e' : rs = ms := Ixon.ConstantInfo.muts.inj (hrs.symm.trans hms)
   subst e'
   exact muts_indc_recr_absurd hpos hall hallr
+
+/-- A non-empty block of recursors has a constant address. -/
+theorem RecBlock.constAddr {E₀ : Ixon.Env} {a : _root_.Address} (h : RecBlock E₀ a) :
+    ∃ c x, recordOf E₀ a = some c ∧ ConstAddrOf a c x := by
+  obtain ⟨c, rs, hc, hrs, hpos, -⟩ := h
+  exact ⟨c, _, hc, constAddr_member0 hrs hpos⟩
 
 /-- A family record is no non-empty block of inductive types. -/
 theorem FamRecRecord.not_indBlock {E₀ : Ixon.Env} {rb : _root_.Address} {crb : Ixon.Constant}
@@ -153,10 +161,37 @@ def TwinOf (rb' B : _root_.Address) : Prop :=
   K.Top rb' ∧ RecBlock K.E₀ rb' ∧ K.Unstored rb' ∧ Unclaimed K.fam rb' ∧ K.FamCheck B rb' ∧
     K.Top B ∧ ModeledRouteAt K.calls B ∧ IndBlock K.E₀ B
 
+/-- **A candidate for a nested twin**: a non-empty block of recursors with a constant address the
+witness's environment does not store, that the walk did not reach and no block claims. -/
+def NestedCand (a : _root_.Address) : Prop :=
+  ¬ K.Top a ∧ RecBlock K.E₀ a ∧ K.Unstored a ∧ Unclaimed K.fam a
+
+/-- **A family check of the block at `B` with the record at `rb` whose calls hold a family check
+of the block at `B'` with the record at `a`**, both at the walk's binding and limit. -/
+def NestedCheck (B rb B' a : _root_.Address) : Prop :=
+  ∃ cs, FamilyCallAtLim K.calls K.bAddr K.t B rb K.lim cs ∧
+    ∃ cs', FamilyCallAtLim K.calls K.bAddr K.t B' a K.lim cs' ∧ ∀ cl ∈ cs', cl ∈ cs
+
+/-- **The family checks the run reaches**: of a block's family record, of a top-walked twin, and,
+nested in the calls of a reached one, of a candidate for a nested twin (a container's recursor
+checked through its projection runs the family check of the projection's block of recursors). -/
+inductive Reached : _root_.Address → _root_.Address → Prop
+  | fam {B rb : _root_.Address} : K.fam B = some rb → Reached B rb
+  | top {B rb : _root_.Address} : K.TwinOf rb B → Reached B rb
+  | nested {B rb B' a : _root_.Address} : Reached B rb → K.NestedCand a →
+      K.NestedCheck B rb B' a → Reached B' a
+
+/-- **`a` is a nested twin of the block at `B'`**: a candidate whose family check with the block
+`B'` is nested in the calls of a reached family check. -/
+def NestedTwinOf (a B' : _root_.Address) : Prop :=
+  K.NestedCand a ∧ ∃ B rb, K.Reached B rb ∧ K.NestedCheck B rb B' a
+
 open Classical in
-/-- **The block a twin is a second family record of.** -/
+/-- **The block a twin is a second family record of**: of a top-walked twin, or else of a nested
+twin. -/
 noncomputable def twin (rb' : _root_.Address) : Option _root_.Address :=
-  if h : ∃ B, K.TwinOf rb' B then some (Classical.choose h) else none
+  if h : ∃ B, K.TwinOf rb' B then some (Classical.choose h)
+  else if h' : ∃ B, K.NestedTwinOf rb' B then some (Classical.choose h') else none
 
 open Classical in
 /-- **The calls of one family check of the block at `B` with the record at `rb`.** -/
@@ -171,13 +206,14 @@ def adv (B a : _root_.Address) : Prop :=
 
 /-- **The inner records**: a record with a constant address that the walk did not reach,
 checked at the walk's binding and limit, by the family check of a family record or of a twin, as
-advice that is no projection record or as a container's recursor. -/
+advice that is no projection record or as a container's recursor; or a nested twin. -/
 def Inner (a : _root_.Address) : Prop :=
   ¬ K.Top a ∧ (∃ ca x, recordOf K.E₀ a = some ca ∧ ConstAddrOf a ca x) ∧
-    ∃ B rb, (K.fam B = some rb ∨ K.twin rb = some B) ∧
+    ((∃ B rb, (K.fam B = some rb ∨ K.twin rb = some B) ∧
       ((AdviceCheckIn (K.famCalls B rb) K.bAddr K.t K.lim a ∧
           ∀ c, recordOf K.E₀ a = some c → ¬ IsProj c) ∨
-        ContainerRecCheckIn (K.famCalls B rb) K.bAddr K.t K.lim a)
+        ContainerRecCheckIn (K.famCalls B rb) K.bAddr K.t K.lim a)) ∨
+      ∃ B', K.NestedTwinOf a B')
 
 variable {K}
 
@@ -216,15 +252,22 @@ theorem fam_of {B rb : _root_.Address} (hB : K.FamBlock B) (hc : K.FamCheck B rb
   · rw [dite_eq_right hp]
     exact ⟨_, rfl⟩
 
-theorem twin_some {rb' B : _root_.Address} (h : K.twin rb' = some B) : K.TwinOf rb' B := by
+theorem twin_some {rb' B : _root_.Address} (h : K.twin rb' = some B) :
+    K.TwinOf rb' B ∨ K.NestedTwinOf rb' B := by
   unfold twin at h
   by_cases hc : ∃ B, K.TwinOf rb' B
   · rw [dite_eq_left hc] at h
     have e := Option.some.inj h
     subst e
-    exact Classical.choose_spec hc
+    exact Or.inl (Classical.choose_spec hc)
   · rw [dite_eq_right hc] at h
-    cases h
+    by_cases hn : ∃ B, K.NestedTwinOf rb' B
+    · rw [dite_eq_left hn] at h
+      have e := Option.some.inj h
+      subst e
+      exact Or.inr (Classical.choose_spec hn)
+    · rw [dite_eq_right hn] at h
+      cases h
 
 theorem twin_of {rb' B : _root_.Address} (h : K.TwinOf rb' B) : ∃ B', K.twin rb' = some B' := by
   have hc : ∃ B, K.TwinOf rb' B := ⟨B, h⟩
@@ -232,12 +275,38 @@ theorem twin_of {rb' B : _root_.Address} (h : K.TwinOf rb' B) : ∃ B', K.twin r
   rw [dite_eq_left hc]
   exact ⟨_, rfl⟩
 
+theorem nestedTwin_of {rb' B : _root_.Address} (h : K.NestedTwinOf rb' B) :
+    ∃ B', K.twin rb' = some B' := by
+  unfold twin
+  by_cases hc : ∃ B, K.TwinOf rb' B
+  · rw [dite_eq_left hc]
+    exact ⟨_, rfl⟩
+  · have hn : ∃ B, K.NestedTwinOf rb' B := ⟨B, h⟩
+    rw [dite_eq_right hc, dite_eq_left hn]
+    exact ⟨_, rfl⟩
+
+/-- **What every twin is**: a non-empty block of recursors with a constant address the witness's
+environment does not store, that no block claims, the record of a family check of its block at
+the walk's binding and limit. -/
+theorem twin_facts {rb' B : _root_.Address} (h : K.twin rb' = some B) :
+    RecBlock K.E₀ rb' ∧ K.Unstored rb' ∧ Unclaimed K.fam rb' ∧ K.FamCheck B rb' := by
+  rcases twin_some h with ⟨-, hRB, hUn, hU, hFC, -⟩ |
+    ⟨⟨_, hRB, hUn, hU⟩, _, _, _, _, _, cs', hc', _⟩
+  · exact ⟨hRB, hUn, hU, hFC⟩
+  · exact ⟨hRB, hUn, hU, cs', hc'⟩
+
 theorem famCheck_of_inner {B rb : _root_.Address} (h : K.fam B = some rb ∨ K.twin rb = some B) :
     K.FamCheck B rb := by
   rcases h with h | h
   · exact (fam_some h).2.1
-  · obtain ⟨-, -, -, -, hc, -⟩ := twin_some h
-    exact hc
+  · exact (twin_facts h).2.2.2
+
+/-- **A twin the walk did not reach is an inner record** (a nested twin). -/
+theorem inner_of_twin {rb' B : _root_.Address} (h : K.twin rb' = some B) (hT : ¬ K.Top rb') :
+    K.Inner rb' := by
+  rcases twin_some h with hto | hn
+  · exact absurd hto.1 hT
+  · exact ⟨hT, hn.1.2.1.constAddr, Or.inr ⟨B, hn⟩⟩
 
 end FamRunCtx
 
@@ -342,13 +411,38 @@ def StoredTwinField (K : FamRunCtx) : Prop :=
 
 /-! ## The family run at the choices -/
 
-/-- **`FamilyRun` at the choices**, and rule (c)'s fact: a block that has a twin has its family
-record in the preferred form. -/
+/-- **A non-empty block of recursors is the record of family checks of one block** (the batch's
+`blockOf`). -/
+theorem FamRunCtx.block_unique {K : FamRunCtx} (hB : BatchGives K) {B₁ B₂ rb : _root_.Address}
+    (hRB : RecBlock K.E₀ rb) (h₁ : K.FamCheck B₁ rb) (h₂ : K.FamCheck B₂ rb) : B₁ = B₂ := by
+  obtain ⟨c, rs, hc, hrs, hpos, -⟩ := hRB
+  exact hB.blockOf B₁ B₂ rb c _ h₁ h₂ hc (constAddr_member0 hrs hpos)
+
+/-- **A reached family check is of a family record or of a twin**: a top-walked twin and a
+nested twin are the records of family checks of one block each, the block `twin` names. -/
+theorem FamRunCtx.reached_famOrTwin {K : FamRunCtx} (hB : BatchGives K) {B rb : _root_.Address}
+    (h : K.Reached B rb) : K.fam B = some rb ∨ K.twin rb = some B := by
+  cases h with
+  | fam h => exact Or.inl h
+  | top h =>
+    obtain ⟨B₁, h₁⟩ := FamRunCtx.twin_of h
+    have e := FamRunCtx.block_unique hB h.2.1 (FamRunCtx.twin_facts h₁).2.2.2 h.2.2.2.2.1
+    subst e
+    exact Or.inr h₁
+  | nested hR hc hn =>
+    obtain ⟨B₁, h₁⟩ := FamRunCtx.nestedTwin_of (K := K) (rb' := rb) (B := B) ⟨hc, _, _, hR, hn⟩
+    obtain ⟨_, _, cs', hc', _⟩ := hn
+    have e := FamRunCtx.block_unique hB hc.2.1 (FamRunCtx.twin_facts h₁).2.2.2 ⟨cs', hc'⟩
+    subst e
+    exact Or.inr h₁
+
+/-- **`FamilyRun` at the choices**, and rule (c)'s fact: a block that has a top-walked twin has
+its family record in the preferred form (the batch's `form` speaks of top-walked twins). -/
 theorem familyRun_of (K : FamRunCtx) {rank' : _root_.Address → Nat}
     (hB : BatchGives K) (hMC : ∀ B, K.FamBlock B → ∃ rb, K.FamCheck B rb)
     (hO : NoBatchFields K) (hR : FamilyRanked K rank') (hST : StoredTwinField K) :
     FamilyRun K.calls K.t K.envT K.E₀ K.lim K.Top rank' K.fam K.twin K.adv K.Inner ∧
-      ∀ B rb rb', K.fam B = some rb → K.twin rb' = some B → K.Pref B rb := by
+      ∀ B rb rb', K.fam B = some rb → K.twin rb' = some B → K.Top rb' → K.Pref B rb := by
   refine ⟨{ graph := ?graph, claimed := ?claimed, modeled := ?modeled,
             famInd := ?famInd,
             checks := ⟨K.bAddr, ?famCall, ?twinCall, ?innerCall⟩,
@@ -378,7 +472,7 @@ theorem familyRun_of (K : FamRunCtx) {rank' : _root_.Address → Nat}
       innerKind := hO.innerKind
       innerClosed := hR.innerClosed
       twinBlock := fun rb' B h => by
-        obtain ⟨-, -, -, hU, -⟩ := FamRunCtx.twin_some h
+        obtain ⟨-, -, hU, -⟩ := FamRunCtx.twin_facts h
         cases hf : K.fam B with
         | none => exact Or.inr rfl
         | some rb =>
@@ -386,13 +480,16 @@ theorem familyRun_of (K : FamRunCtx) {rank' : _root_.Address → Nat}
           subst e
           exact hU B hf
       twinWalked := fun rb' B h => by
-        obtain ⟨hT, hRB, -, hU, -⟩ := FamRunCtx.twin_some h
-        refine ⟨Or.inl hT, hU, ?_⟩
-        cases hf : K.fam rb' with
-        | none => rfl
-        | some r => exact (hRB.not_indBlock (FamRunCtx.fam_some hf).1.2.2.1).elim
+        obtain ⟨hRB, -, hU, -⟩ := FamRunCtx.twin_facts h
+        refine ⟨?_, hU, ?_⟩
+        · by_cases hT : K.Top rb'
+          · exact Or.inl hT
+          · exact Or.inr (FamRunCtx.inner_of_twin h hT)
+        · cases hf : K.fam rb' with
+          | none => rfl
+          | some r => exact (hRB.not_indBlock (FamRunCtx.fam_some hf).1.2.2.1).elim
       twinRecord := fun rb' B h => by
-        obtain ⟨-, ⟨c, rs', hc, hrs', hpos, -⟩, -, -, hFC, -⟩ := FamRunCtx.twin_some h
+        obtain ⟨⟨c, rs', hc, hrs', hpos, -⟩, -, -, hFC⟩ := FamRunCtx.twin_facts h
         obtain ⟨crb, rs, hF⟩ := hO.record B rb' hFC
         have e : crb = c := Option.some.inj (hF.record.symm.trans hc)
         subst e
@@ -435,17 +532,24 @@ theorem familyRun_of (K : FamRunCtx) {rank' : _root_.Address → Nat}
       exact Or.inr ⟨hno, hO.adviceNoAddr B rb a h ha hno⟩
   case twinCall =>
     intro rb' B h
-    obtain ⟨-, -, -, -, hFC, -⟩ := FamRunCtx.twin_some h
+    obtain ⟨-, -, -, hFC⟩ := FamRunCtx.twin_facts h
     exact ⟨K.famCalls B rb', FamRunCtx.famCalls_spec hFC⟩
   case innerCall =>
     intro a h
-    obtain ⟨-, -, B, rb, hor, hchk⟩ := h
-    exact ⟨B, rb, K.famCalls B rb, hor,
-      FamRunCtx.famCalls_spec (FamRunCtx.famCheck_of_inner hor),
-      hchk.elim Or.inl fun h => Or.inr (Or.inl h)⟩
+    obtain ⟨hnT, -, ⟨B, rb, hor, hchk⟩ | ⟨B', hN⟩⟩ := h
+    · exact ⟨B, rb, K.famCalls B rb, hor,
+        FamRunCtx.famCalls_spec (FamRunCtx.famCheck_of_inner hor),
+        hchk.elim Or.inl fun h => Or.inr (Or.inl h)⟩
+    · -- a nested twin: its family check is in the calls of a reached one
+      obtain ⟨B'', htw⟩ := FamRunCtx.nestedTwin_of hN
+      rcases FamRunCtx.twin_some htw with hto | hN''
+      · exact absurd hto.1 hnT
+      · obtain ⟨-, B, rb, hReach, cs, hcB, cs', hc', hsub⟩ := hN''
+        exact ⟨B, rb, cs, FamRunCtx.reached_famOrTwin hB hReach, hcB,
+          Or.inr (Or.inr ⟨B'', cs', htw, hc', hsub⟩)⟩
   case form =>
-    intro B rb rb' h ht
-    obtain ⟨hTr, hRB, -, hU, hFC', -⟩ := FamRunCtx.twin_some ht
+    intro B rb rb' h ht hTr
+    obtain ⟨hRB, -, hU, hFC'⟩ := FamRunCtx.twin_facts ht
     obtain ⟨-, hFC, hpref⟩ := FamRunCtx.fam_some h
     have hne : rb ≠ rb' := fun e => by
       subst e
