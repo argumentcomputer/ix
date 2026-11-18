@@ -276,16 +276,16 @@ theorem consumeOf_congr {W : KKey → Option (Option Nat)} (hd : Option KKey) {l
         · rw [hlen]
           intro h
           by_cases hk : k = some (r₀.length + 1)
-          · rw [if_pos hk] at h; cases h
-          · rw [if_neg hk]
+          · rw [ite_eq_left hk] at h; cases h
+          · rw [ite_eq_right hk]
         · rw [hlen]
           intro a h
           by_cases hk : k = some (r₀.length + 1)
-          · rw [if_pos hk] at h
-            rw [if_pos hk]
+          · rw [ite_eq_left hk] at h
+            rw [ite_eq_left hk]
             cases h
             exact ⟨a₁, rfl, ha⟩
-          · rw [if_neg hk] at h; cases h
+          · rw [ite_eq_right hk] at h; cases h
 
 /-- **`consume_wrapper` up to levels**: terms equal up to levels consume alike, to terms equal up
 to levels. -/
@@ -430,13 +430,13 @@ theorem consumeAt_wrapper
         rw [hw] at hc
         simp only [Option.map_some, Option.some.injEq] at hc
         by_cases hk : k = some (rest.length + 1)
-        · rw [if_pos hk] at hc
+        · rw [ite_eq_left hk] at hc
           simp only [Option.some.injEq] at hc
           subst hc
           subst hk
           have hA := hW w _ hw
           simp [Ix.Kernel.Semantics.consumeWrapper, hfn, hl, hA]
-        · rw [if_neg hk] at hc
+        · rw [ite_eq_right hk] at hc
           cases hc
 
 theorem Consumes.toWrapDom
