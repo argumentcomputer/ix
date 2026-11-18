@@ -356,7 +356,7 @@ theorem owned_new {A x : _root_.Address} (hA : IsClosureUnit R R₁ famOf A)
       · subst he
         refine ⟨hnD, fun ax c' hc' hi => ?_⟩
         exact new₁_not_axiomLike hC.admits hnD hc' (Or.inl ⟨ax, hi⟩)
-      · refine ⟨⟨by rw [hP]; rfl, ?_⟩, fun ax c' hc' hi => ?_⟩
+      · refine ⟨⟨Option.isSome_iff_exists.mpr ⟨P, hP⟩, ?_⟩, fun ax c' hc' hi => ?_⟩
         · cases hR : recordOf R x with
           | none => rfl
           | some p₀ =>
@@ -377,7 +377,7 @@ theorem owned_new {A x : _root_.Address} (hA : IsClosureUnit R R₁ famOf A)
     rcases constAddr_record hC.closed hcrb' hxr with ⟨he, hs⟩ | ⟨-, P, hP, hPp, hPo⟩
     · subst he
       exact (standalone_not_block hs ⟨rs, hrs⟩).elim
-    · refine ⟨rb, crb', hnrb, hcrb', hxr, ⟨by rw [hP]; rfl, ?_⟩, fun ax c' hc' hi => ?_⟩
+    · refine ⟨rb, crb', hnrb, hcrb', hxr, ⟨Option.isSome_iff_exists.mpr ⟨P, hP⟩, ?_⟩, fun ax c' hc' hi => ?_⟩
       · cases hR : recordOf R x with
         | none => rfl
         | some p₀ =>
@@ -425,7 +425,7 @@ theorem new_constAddr_not_stored (htwf : t.wf = true) {D x : _root_.Address} {cD
   · rw [htbl] at hna
     exact hna tbl.structName .projTable rfl
   · exact hC.run.noPinned D cD x ci hnew hcD hx hpin hname
-  · have haa : a = x := keyOf_inj htwf ((keptIn_name hk).symm.trans hname)
+  · have haa : a = x := Core.keyOf_inj htwf ((keptIn_name hk).symm.trans hname)
     subst haa
     obtain ⟨-, ci₀, ⟨c₀, hc₀, -⟩, -⟩ := hk
     rcases constAddr_record hC.admits.usedClosed hcD hx with ⟨he, -⟩ | ⟨-, P, hP, -, hPo⟩
