@@ -14,7 +14,8 @@ the members' checks:
   prefix (`usedRefsStored_append`).
 
 The step itself is `valueUnitStep_defnBlock` (`Assembly/ValueUnitStep.lean`), stated once for
-the typing fold and the binding fold.
+the typing fold and the binding fold. `MembersDone` is the state of the step for an arbitrary
+clause after the first members (`unitStep_defnBlockJ`, `Assembly/LateValueStep.lean`).
 -/
 
 universe u
@@ -71,5 +72,21 @@ theorem usedRefsStored_append {t : Ix.Kernel.RoleTable} {env : Ix.Kernel.Env .an
   induction acc with
   | nil => exact h
   | cons cn acc ih => exact LoadedReads.usedRefsStored_cons cn ih
+
+/-- **The members `0, …, m - 1` installed**, in index order, at the front of `env`: the
+installed constants `acc` have distinct fresh keys, the prefix keeps the invariant and the
+extra clause, each of the members has a constant storing a reading of its address, and each
+installed constant is at the key of one of them. -/
+structure MembersDone (X : Ix.Kernel.Env .anon → Prop) (t : Ix.Kernel.RoleTable)
+    (E₀ E : Ixon.Env) (lim : Option Nat) (env : Ix.Kernel.Env .anon) (B : _root_.Address)
+    (ms : Array Ixon.MutConst) (m : Nat) (acc : List (ConstantInfo .anon)) : Prop where
+  nodup : (acc.map (·.name)).Nodup
+  fresh : ∀ ci ∈ acc, env.find? ci.name = none
+  inv : Decl.PrefixInv.{u} E t lim ⟨acc ++ env.consts⟩
+  extra : X ⟨acc ++ env.consts⟩
+  done : ∀ i mi, i < m → ms[i]? = some mi → ∃ ci ∈ acc, ∃ ci₀,
+    ci.name = keyOf t (memberAddr B i mi) ∧ Reads t E₀ (memberAddr B i mi) ci₀ ∧
+      StoredAs ci ci₀
+  named : ∀ ci ∈ acc, ∃ i mi, i < m ∧ ms[i]? = some mi ∧ ci.name = keyOf t (memberAddr B i mi)
 
 end IxVM.Refinement.Typing
