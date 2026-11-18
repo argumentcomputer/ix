@@ -403,12 +403,17 @@ end FamRunCtx
 
 /-! ### The kinds of reference a family check admits -/
 
-/-- **The basis roles a payload may name as a witness of kind 0** (`basis_role_allowed`: role
-indices 0-3, 8-13, 32-37 and 39): `Nat` with its constructors and recursor, `Eq`, `Eq.refl`,
-`Eq.rec`, `PUnit`, `PUnit.unit`, `PUnit.rec`, the quotient package, `String` and `Char`. -/
+/-- **The basis roles a payload may name as a witness of kind 0**: `basis_role_allowed` less
+`String` (37) and `Char` (39), batch candidate item 19 (role indices 0-3, 8-13 and 32-36): `Nat`
+with its constructors and recursor, `Eq`, `Eq.refl`, `Eq.rec`, `PUnit`, `PUnit.unit`, `PUnit.rec`,
+the quotient package. Each is walked (so covered) or a role of the quotient package. `String` and
+`Char`, which `75d3512f6` still admits, are anchors, neither walked nor pinned: a top-walked record
+using one could lie above the block of the family check that witnessed it. This is the one place
+the choice is made; the fields `familyRefs`, `adviceRefs` and `contWitness` read it through
+`WitBase`. -/
 def basisRoles : List Ix.Kernel.Role :=
   [.nat, .natZero, .natSucc, .natRec, .eq, .eqRefl, .eqRec, .punit, .punitUnit, .punitRec,
-    .quot, .quotMk, .quotLift, .quotInd, .quotSound, .string, .char]
+    .quot, .quotMk, .quotLift, .quotInd, .quotSound]
 
 namespace FamRunCtx
 

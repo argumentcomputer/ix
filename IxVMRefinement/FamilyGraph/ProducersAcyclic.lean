@@ -317,7 +317,7 @@ theorem FamRunCtx.localAt_notProj {B rb : _root_.Address} {cs : List (Call F)}
     {a : _root_.Address} {p : Nat} (h : K.LocalAt B rb cs a p) :
     ∃ c, recordOf K.E₀ a = some c ∧ ¬ IsProj c := by
   rcases h with ⟨-, -, -, -, -, -, -, ca, x, hca, hx⟩ | ⟨-, -, -, ca, hca, hs⟩ |
-    ⟨-, -, -, ca, -, -, hca, hx⟩
+    ⟨-, -, x, ca, -, -, hca, hx⟩
   · exact ⟨ca, hca, constAddr_not_proj hx⟩
   · exact ⟨ca, hca, notProj_of_standalone hs⟩
   · exact ⟨ca, hca, constAddr_not_proj hx⟩
@@ -615,8 +615,8 @@ theorem FamRunCtx.cont_bound
     have := transGen_rank_lt hW hiB
     exact Or.inl (by show rank ib + 1 < rank B + 1; omega)
 
-/-- The basis roles are walked or of the quotient package. -/
 set_option maxRecDepth 100000 in
+/-- The basis roles are walked or of the quotient package. -/
 theorem basisRoles_walked_or_quot :
     ∀ r ∈ basisRoles, walkedRole r = true ∨ quotRole r = true := by
   decide +kernel
@@ -845,7 +845,7 @@ theorem FamRunCtx.localAt_pos {B rb : _root_.Address} {cs : List (Call F)}
     {rs : Array Ixon.MutConst} (hc : recordOf K.E₀ a = some c) (hrs : c.info = .muts rs) :
     0 < rs.size := by
   rcases h with ⟨-, -, -, -, -, -, -, ca, x, hca, hx⟩ | ⟨-, -, -, ca, hca, hs⟩ |
-    ⟨-, -, -, ca, -, -, hca, hx⟩
+    ⟨-, -, x, ca, -, -, hca, hx⟩
   · rw [hc] at hca
     cases hca
     exact constAddr_muts_pos hrs hx
@@ -914,6 +914,90 @@ theorem FamRunCtx.inner_plain (hB : BatchGives K) {a : _root_.Address} (hI : K.I
       · exact ⟨B, rb, cs, 0, hS, Or.inr (Or.inl ⟨rfl, hwit, hcov, cx, hcx, hs⟩)⟩
   · exact absurd (FamRunCtx.nestedTwin_of hN) htw
 
+/-- A block before its checked family record: anchored at the block, one step past the block's
+potential in the fourth number; an empty family record has no edge out. -/
+theorem FamRunCtx.famRec_pot
+    (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    {B rb : _root_.Address} (h : K.fam B = some rb) :
+    PotLt (K.pot rank B) (K.pot rank rb) ∨ ∀ w, ¬ FamEdge K rank rb w := by
+  obtain ⟨crb, rs, hF⟩ := hB.record B rb (FamRunCtx.fam_some h).2.1
+  by_cases hpos : 0 < rs.size
+  · have hRB : RecBlock K.E₀ rb := ⟨crb, rs, hF.record, hF.muts, hpos, hF.recrs⟩
+    rw [FamRunCtx.pot_scopeRec hG hB (FamRunCtx.scope_of_fam h) hRB,
+      FamRunCtx.pot_scope hG hB (FamRunCtx.scope_of_fam h)]
+    exact Or.inl (potLt_fourth (by decide))
+  · exact Or.inr fun w hw' => hpos (FamRunCtx.out_nonempty hW hG hw' hF.record hF.muts)
+
+/-- A block before its twin: the twin is anchored at the block. -/
+theorem FamRunCtx.twinRec_pot (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    {B rb' : _root_.Address} (h : K.twin rb' = some B) :
+    PotLt (K.pot rank B) (K.pot rank rb') := by
+  obtain ⟨cs', hS'⟩ := FamRunCtx.twin_scope h
+  rw [FamRunCtx.pot_scopeRec hG hB hS' (FamRunCtx.twin_facts h).1,
+    FamRunCtx.pot_scope hG hB hS']
+  exact potLt_fourth (by decide)
+
+/-- A local record before its scope's block. -/
+theorem FamRunCtx.loc_pot
+    (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    {B rb : _root_.Address} {cs : List (Call F)} {a : _root_.Address} {p : Nat}
+    (hS : K.ScopeAt B rb cs) (hl : K.LocalAt B rb cs a p) :
+    PotLt (K.pot rank a) (K.pot rank B) := by
+  rw [FamRunCtx.pot_scope hG hB hS]
+  exact (FamRunCtx.local_bound hW hG hB hS hl).lt_block 0
+
+/-- A top-walked owner below the block of every scope check an inner record (no twin) is local to,
+before that record. -/
+theorem FamRunCtx.owner_pot
+    (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    {D a : _root_.Address} (hI : K.Inner a) (htw : ¬ ∃ B', K.twin a = some B')
+    (hT : K.Top D)
+    (hall : ∀ B rb cs p, K.ScopeAt B rb cs → K.LocalAt B rb cs a p → rank D < rank B) :
+    PotLt (K.pot rank D) (K.pot rank a) := by
+  obtain ⟨hnp, hnq, hnr, B, rb, cs, p, hS, hl⟩ := FamRunCtx.inner_plain hB hI htw
+  rw [FamRunCtx.pot_nproj hnp]
+  rcases FamRunCtx.mu_spec (K := K) (rank := rank)
+      ⟨rank B, Or.inr ⟨B, rb, cs, p, hS, hl, rfl⟩⟩ with
+    ⟨hTa, -⟩ | ⟨B', rb', cs', p', hS', hl', hmu⟩
+  · exact (hI.1 hTa).elim
+  · have h1 := hall B' rb' cs' p' hS' hl'
+    have h2 := FamRunCtx.pot_fst_le hW hG hB hT
+    have h3 := FamRunCtx.pot0_fst (K := K) (rank := rank) hnq hnr
+    exact Or.inl (by omega)
+
+/-- A local record of an inner record's first scope check (no twin), at an earlier position,
+before that record. -/
+theorem FamRunCtx.earlier_pot
+    (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    {B rb : _root_.Address} {cs : List (Call F)} {a₁ a₂ : _root_.Address} {p₁ p₂ : Nat}
+    (hI : K.Inner a₂) (htw : ¬ ∃ B', K.twin a₂ = some B') (hS : K.ScopeAt B rb cs)
+    (hl₁ : K.LocalAt B rb cs a₁ p₁) (hl₂ : K.LocalAt B rb cs a₂ p₂) (hp : p₁ < p₂)
+    (hall : ∀ B' rb' cs' p', K.ScopeAt B' rb' cs' → K.LocalAt B' rb' cs' a₂ p' →
+      rank B < rank B' ∨ (rank B = rank B' ∧ p₂ ≤ p')) :
+    PotLt (K.pot rank a₁) (K.pot rank a₂) := by
+  obtain ⟨hnp, hnq, hnr, -⟩ := FamRunCtx.inner_plain hB hI htw
+  rw [FamRunCtx.pot_nproj hnp]
+  -- the first scope check attains the least anchor and the least position
+  have hmu : K.mu rank a₂ = rank B := by
+    have hle := FamRunCtx.mu_le (K := K) (rank := rank)
+      (Or.inr ⟨B, rb, cs, p₂, hS, hl₂, rfl⟩ : K.Anchor rank a₂ (rank B))
+    rcases FamRunCtx.mu_spec (K := K) (rank := rank)
+        ⟨rank B, Or.inr ⟨B, rb, cs, p₂, hS, hl₂, rfl⟩⟩ with
+      ⟨hTa, -⟩ | ⟨B', rb', cs', p', hS', hl', hmu⟩
+    · exact (hI.1 hTa).elim
+    · rcases hall B' rb' cs' p' hS' hl' with h | ⟨h, -⟩ <;> omega
+  have hat : K.AtMu rank a₂ p₂ := ⟨B, rb, cs, hS, hl₂, hmu.symm⟩
+  have hnu : K.nu rank a₂ = p₂ := by
+    have hle := FamRunCtx.nu_le hat
+    obtain ⟨B', rb', cs', hS', hl', hrk⟩ := FamRunCtx.nu_spec ⟨p₂, hat⟩
+    rcases hall B' rb' cs' _ hS' hl' with h | ⟨-, h⟩ <;> omega
+  rw [FamRunCtx.pot0_at hnq hnr ⟨p₂, hat⟩, hmu, hnu]
+  exact (FamRunCtx.local_bound hW hG hB hS hl₁).lt_local hp
+
 /-- **The potential grows along every edge into a record with an edge out.** -/
 theorem FamRunCtx.edge_pot
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
@@ -922,53 +1006,12 @@ theorem FamRunCtx.edge_pot
     PotLt (K.pot rank z) (K.pot rank y) ∨ ∀ w, ¬ FamEdge K rank y w := by
   cases h with
   | walk h => exact Or.inl (FamRunCtx.walk_pot hW hG hB h)
-  | @famRec B rb h hw =>
-    obtain ⟨crb, rs, hF⟩ := hB.record B rb (FamRunCtx.fam_some h).2.1
-    by_cases hpos : 0 < rs.size
-    · have hRB : RecBlock K.E₀ rb := ⟨crb, rs, hF.record, hF.muts, hpos, hF.recrs⟩
-      rw [FamRunCtx.pot_scopeRec hG hB (FamRunCtx.scope_of_fam h) hRB,
-        FamRunCtx.pot_scope hG hB (FamRunCtx.scope_of_fam h)]
-      refine Or.inl ?_
-      exact potLt_fourth (by decide)
-    · exact Or.inr fun w hw' => hpos (FamRunCtx.out_nonempty hW hG hw' hF.record hF.muts)
-  | @twinRec B rb' h =>
-    obtain ⟨cs', hS'⟩ := FamRunCtx.twin_scope h
-    rw [FamRunCtx.pot_scopeRec hG hB hS' (FamRunCtx.twin_facts h).1,
-      FamRunCtx.pot_scope hG hB hS']
-    refine Or.inl ?_
-    exact potLt_fourth (by decide)
-  | @loc B rb cs a p hS hl =>
-    rw [FamRunCtx.pot_scope hG hB hS]
-    exact Or.inl ((FamRunCtx.local_bound hW hG hB hS hl).lt_block 0)
-  | @owner D a x hI htw hT hall hu hown =>
-    obtain ⟨hnp, hnq, hnr, B, rb, cs, p, hS, hl⟩ := FamRunCtx.inner_plain hB hI htw
-    rw [FamRunCtx.pot_nproj hnp]
-    rcases FamRunCtx.mu_spec (K := K) (rank := rank) ⟨rank B, Or.inr ⟨B, rb, cs, p, hS, hl, rfl⟩⟩
-      with ⟨hTa, -⟩ | ⟨B', rb', cs', p', hS', hl', hmu⟩
-    · exact (hI.1 hTa).elim
-    · have h1 := hall B' rb' cs' p' hS' hl'
-      have h2 := FamRunCtx.pot_fst_le hW hG hB hT
-      have h3 := FamRunCtx.pot0_fst (K := K) (rank := rank) hnq hnr
-      exact Or.inl (Or.inl (by omega))
-  | @earlier B rb cs a₁ a₂ x p₁ p₂ hI htw hS hl₁ hl₂ hp hall hu hown =>
-    obtain ⟨hnp, hnq, hnr, -⟩ := FamRunCtx.inner_plain hB hI htw
-    rw [FamRunCtx.pot_nproj hnp]
-    -- the first scope check attains the least anchor and the least position
-    have hmu : K.mu rank a₂ = rank B := by
-      have hle := FamRunCtx.mu_le (K := K) (rank := rank)
-        (Or.inr ⟨B, rb, cs, p₂, hS, hl₂, rfl⟩ : K.Anchor rank a₂ (rank B))
-      rcases FamRunCtx.mu_spec (K := K) (rank := rank)
-          ⟨rank B, Or.inr ⟨B, rb, cs, p₂, hS, hl₂, rfl⟩⟩
-        with ⟨hTa, -⟩ | ⟨B', rb', cs', p', hS', hl', hmu⟩
-      · exact (hI.1 hTa).elim
-      · rcases hall B' rb' cs' p' hS' hl' with h | ⟨h, -⟩ <;> omega
-    have hat : K.AtMu rank a₂ p₂ := ⟨B, rb, cs, hS, hl₂, hmu.symm⟩
-    have hnu : K.nu rank a₂ = p₂ := by
-      have hle := FamRunCtx.nu_le hat
-      obtain ⟨B', rb', cs', hS', hl', hrk⟩ := FamRunCtx.nu_spec ⟨p₂, hat⟩
-      rcases hall B' rb' cs' _ hS' hl' with h | ⟨-, h⟩ <;> omega
-    rw [FamRunCtx.pot0_at hnq hnr ⟨p₂, hat⟩, hmu, hnu]
-    exact Or.inl ((FamRunCtx.local_bound hW hG hB hS hl₁).lt_local hp)
+  | famRec h _ => exact FamRunCtx.famRec_pot hW hG hB h
+  | twinRec h => exact Or.inl (FamRunCtx.twinRec_pot hG hB h)
+  | loc hS hl => exact Or.inl (FamRunCtx.loc_pot hW hG hB hS hl)
+  | owner hI htw hT hall _ _ => exact Or.inl (FamRunCtx.owner_pot hW hG hB hI htw hT hall)
+  | earlier hI htw hS hl₁ hl₂ hp hall _ _ =>
+    exact Or.inl (FamRunCtx.earlier_pot hW hG hB hI htw hS hl₁ hl₂ hp hall)
 
 /-- **The family graph's edges have no cycle**: along a chain into a record with an edge out the
 potential grows (`edge_pot`), and every record of a cycle has an edge out. -/
