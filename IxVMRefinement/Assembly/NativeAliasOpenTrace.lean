@@ -1,3 +1,4 @@
+import IxVMRefinement.Decl.NativeRec
 import IxVMRefinement.Assembly.NativeAliasRecPrefix
 import IxC.Kernel.Model.HeadDeltaBetaLevels
 

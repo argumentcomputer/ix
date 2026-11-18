@@ -443,7 +443,7 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
       (RepKLevelList.mono hlps_219
         (ext_219_299.trans (ext_299_324.trans (ext_324_308.trans
           (ext_308_452.trans (ext_452_482.trans ext_482_725))))))
-  have hfam_head := natTRec_nat_app_n_head hT_head2 hcat_j ev714
+  have hfam_head := natTeleRec_nat_app_n_head hT_head2 hcat_j ev714
   have hfam_j' : Tm c.κ 0 (fun _ => default) m702 (nP + (n + 1) + nIdx)
       (cFamI T clvls nP nIdx (n + 1) 0) v701 := by
     simpa [cFamI] using hfam_j
@@ -495,13 +495,13 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
         T bT clvls 0 ((nP + (n + 1)) + nIdx) (.ptr (.enum kexprEnum) m959.length) :=
     .zero (by rw [hm1010]; simp; exact ⟨rfl, rfl⟩)
       (hfam_j'.mono (ext_702_811.trans (ev969.heap_extends.trans ext_959_1002)))
-      (by simp [cFamI, natTRec_getAppFn_mkAppN_eq]; rfl)
+      (by simp [cFamI, natTeleRec_getAppFn_mkAppN_eq]; rfl)
       (hfam_head.mono (ext_702_811.trans (ev969.heap_extends.trans ext_959_1002)))
   obtain ⟨major, hmaj_ite, hmaj_tm⟩ :=
     nat_replace_pis_spec nIdx (by omega) hpw_1002
       (hitele_lift.mono ext_959_1002) hmaj_core ev938
   have hmaj_head :=
-    natTRec_forallDomHeadLvls_replace_pis nIdx (by omega)
+    natTeleRec_forallDomHeadLvls_replace_pis nIdx (by omega)
       (hitele_lift.mono ext_959_1002) hmaj_core_head ev938
   simp only [↓reduceIte] at hmaj_ite
   have hmaj_tm' : Tm c.κ 0 (fun _ => default) m926 (nP + 1 + n) major v925 := by
@@ -565,7 +565,7 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
     nat_replace_pis_spec nP (by omega) hpw_1193
       (htty_390.mono ext_391_1193) hforall_mot ev1165
   have hrecTy_head :=
-    natTRec_forallDomHeadLvls_replace_pis nP (by omega)
+    natTeleRec_forallDomHeadLvls_replace_pis nP (by omega)
       (htty_390.mono ext_391_1193) hforall_mot_head ev1165
   have hrecTy_head' :
       ForallDomHeadLvls c.κ 0 (fun _ => default) m1153
