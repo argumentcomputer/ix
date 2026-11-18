@@ -12,7 +12,8 @@ their members' records, and the quotient package), and at the environment of the
   key of a pinned basis role (`StoreInhabit.keys_pinned`, decided over the rows), which a table
   that pins the prelude binds there too (`keyOf_basis'`), and the environment of the pins stores
   every basis role (`StoreInhabit.basisEnv_find`); the walked roles of the basis groups are basis
-  roles (`StoreInhabit.groupRole_basis`).
+  roles (`StoreInhabit.groupRole_basis`). `recordsStored_basis`: the same for every non-block
+  row, checked or not.
 * `storedFamilies_basis`: **the empty family map**, since no basis block routes as modeled
   (`blockRoute_basisStore_ne_true`). Each basis block references nothing outside itself and has
   at most one inductive member (`basisRows_blocksClosed`, decided over the rows). The route of a
@@ -225,6 +226,34 @@ theorem walkedStored_basis {ρ : BRun} {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
     rw [hkey]
     exact Option.isSome_iff_exists.mpr ⟨ci, hfind⟩
 
+/-- **The non-block records stored at the basis**: every basis row that is no block is at the key
+of a pinned basis role, which the environment of the pins stores (as in `walkedStored_basis`),
+at every store with the basis rows' entries. -/
+theorem recordsStored_basis {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
+    (ht : t.check = .ok ()) (hpre : PreludePinned t)
+    (hc : ∀ a, basisStore.consts.get? a = R.consts.get? a) :
+    RecordsStored t R basisEnv := by
+  intro x c hx hnb
+  rw [← recordOf_storeCongr hc] at hx
+  have hF : (StoreInhabit.isMutsInfo c.info || StoreInhabit.isBasisKey (keyOf ctab x)) = true :=
+    List.all_eq_true.mp StoreInhabit.keys_pinned (x, c) (StoreInhabit.store_record_inv hx)
+  have hnm : StoreInhabit.isMutsInfo c.info = false := by
+    cases hi : c.info with
+    | muts ms => exact absurd hi (hnb ms)
+    | defn _ => rfl
+    | axio _ => rfl
+    | quot _ => rfl
+    | recr _ => rfl
+    | dPrj _ => rfl
+    | iPrj _ => rfl
+    | cPrj _ => rfl
+    | rPrj _ => rfl
+  rw [hnm, Bool.false_or] at hF
+  obtain ⟨r, hrole, hkey⟩ := StoreInhabit.isBasisKey_role hF
+  obtain ⟨ci, hfind, -⟩ := StoreInhabit.basisEnv_find hrole
+  rw [(keyOf_basis' ht hpre hrole).mpr hkey]
+  exact Option.isSome_iff_exists.mpr ⟨ci, hfind⟩
+
 /-- **The empty family map is stored** at a store none of whose blocks routes as modeled. -/
 theorem storedFamilies_basis {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
     {env : Ix.Kernel.Env .anon} (hroute : ∀ B, blockRoute R B ≠ some true) :
@@ -250,7 +279,8 @@ theorem basisOverW_of_run (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
   have hc' : ∀ a, basisStore.consts.get? a = (Rs 6).consts.get? a := fun a => (hc a).symm
   have hb' : ∀ a, basisStore.blobs.get? a = (Rs 6).blobs.get? a := fun a => (hb a).symm
   refine ⟨basisEnv, bndOver_storeCongr hc' hb' (bndOver_basis_at L ht hpre hall),
-    walkedStored_basis ht hpre hc', fun _ => none, storedFamilies_basis fun B => ?_⟩
+    walkedStored_basis ht hpre hc', recordsStored_basis ht hpre hc', fun _ => none,
+    storedFamilies_basis fun B => ?_⟩
   rw [blockRoute_storeCongr hc' B]
   exact blockRoute_basisStore_ne_true B
 

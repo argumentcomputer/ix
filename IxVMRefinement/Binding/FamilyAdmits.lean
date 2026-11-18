@@ -2,6 +2,7 @@ import IxVMRefinement.Binding.FamilyOf
 import IxVMRefinement.Binding.Defs
 import IxVMRefinement.FamilyAlias.Target
 import IxVMRefinement.Binding.FamilyFlat
+import IxVMRefinement.Binding.FamilyRecon
 
 /-! # A group's admission with modeled blocks: the family checks and the store
 
@@ -85,6 +86,14 @@ structure GroupFamilyChecks (calls : List (Call F)) (bAddr : _root_.Address)
       (ms rs : Array Ixon.MutConst) (es : List FamilyFlat.FlatEntry) (off : Nat),
     FamilyOfBlock E₀ B cb ms rb crb rs (es.map FamilyFlat.FlatEntry.addr) ∧
     FamilyFlat.RecordFlat t E₀ rb crb rs es ∧ FamilyFlat.BlockDerivedFlat t E₀ B off es
+  /-- The selected record's reconstruction form: the record is the block's family over the
+  flattened family derived from the block, and each of its recursors is the block's reconstruction
+  at its position, its type the reconstructed type (`build_rec_type`) and each rule following the
+  reconstructed body (`populate_rules`), up to the semantic equality of levels. `check_family`'s
+  `check_recs` under the group's validation: `canonical_rules_at_pos` refuses the full-consumption
+  arm in a context that validates a group (`rc_validates_group`), so every member's declared type
+  is structurally the reconstruction; `compare_rules` checks every rule. -/
+  familyForm : ∀ B rb, famOf B = some rb → FamilyRecon.RFormS t E₀ B rb
   /-- A new non-empty block of recursors is a selected family record, or was checked as a
   second family record of a block (a twin). -/
   claimed : ∀ (A : _root_.Address) (c : Ixon.Constant) (rs' : Array Ixon.MutConst),

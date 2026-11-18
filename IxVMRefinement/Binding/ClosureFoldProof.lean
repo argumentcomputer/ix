@@ -21,7 +21,8 @@ is the fold's result (`closureFold_run`). What is left after the fold:
   selected records' flattened families carried to the closure's store: the group's from the run's
   store (`storedFamiliesFlat_of_sub`), the earlier ones from the store before the group
   (`storedFamiliesFlat_grow`);
-* `WalkedStored` after the closure: the new records' owners stored them, the old ones were stored.
+* `WalkedStored` and `RecordsStored` after the closure: the new records' owners stored them, the
+  old ones were stored.
 
 Also here:
 
@@ -239,14 +240,15 @@ theorem stored_keptIn {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
 /-- **The closure fold with the family form** (`ClosureFoldStatement`). -/
 theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) :
     ClosureFoldStatement.{u} L := by
-  intro calls ρ t g hg6 hg hall ht hunit hfam htwin R R' env famOf₀ famOf adv cont hb hW hSF hadm hrd
-    hFam hFA
+  intro calls ρ t g hg6 hg hall ht hunit hfam htwin R R' env famOf₀ famOf adv cont hb hW hRS hSF
+    hadm hrd hFam hFA
   obtain ⟨⟨bAddr, hGFC⟩, hRF⟩ := hFam
   have htwf : t.wf = true := wf_of_check ht
   have hspec := closureStore_spec (t := t) (g := g) hadm
   have hC : ClosureCtx.{u} L calls ρ t g R R' (closureStore t g R R') env famOf₀ famOf adv cont
       bAddr :=
-    { bnd := hb, walked := hW, fams := hSF, admits := hadm, reads := hrd, checks := hGFC,
+    { bnd := hb, walked := hW, stored := hRS, fams := hSF, admits := hadm, reads := hrd,
+      checks := hGFC,
       run := hRF, famAdmits := hFA, store := hspec,
       closed := closureStore_usedClosed hadm hb.shape.usedClosed hRF.roleUnitForm,
       noUnit := fun a hu hn => closureStore_none ⟨hu, hn⟩ }
@@ -301,7 +303,7 @@ theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
     rw [joinFam_none hnone]
     exact h
   refine ⟨closureStore t g R R', env₁, joinFam famOf famOf₀, hspec.le₁, hspec.le₂, hspec.blobs,
-    hspec.units, hext, ?bnd, ?kept, ?fams, hf₀, fun B rb h => joinFam_some h, ?walked⟩
+    hspec.units, hext, ?bnd, ?kept, ?fams, hf₀, fun B rb h => joinFam_some h, ?walked, ?stored⟩
   case bnd =>
     refine ⟨?shape, hI.clause, ?facts⟩
     case shape =>
@@ -523,6 +525,17 @@ theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       rw [e] at hRx
       exact hsomeFind _ (hW.1 x c n hRx hnb hlog
         (fun cb hcb => hlogB cb (recordOf_closureStore_of_R hadm hcb)) hchk)
+    | none =>
+      obtain ⟨ci, hci, -⟩ := newStored x c ⟨Option.isSome_iff_exists.mpr ⟨c, hc⟩, hRx⟩ hc
+        (fun ⟨ms, hms⟩ => hnb ms hms)
+      exact Option.isSome_iff_exists.mpr ⟨ci, hci⟩
+  case stored =>
+    intro x c hc hnb
+    cases hRx : recordOf R x with
+    | some c₀ =>
+      have e : c₀ = c := rec_eq (recordOf_closureStore_of_R hadm hRx) hc
+      rw [e] at hRx
+      exact hsomeFind _ (hRS x c hRx hnb)
     | none =>
       obtain ⟨ci, hci, -⟩ := newStored x c ⟨Option.isSome_iff_exists.mpr ⟨c, hc⟩, hRx⟩ hc
         (fun ⟨ms, hms⟩ => hnb ms hms)

@@ -15,7 +15,12 @@ and concludes (`ClosureStepOverFamilyW`) and which the typing half imports:
 
 Here:
 
-* `BndOverW L ρ t G R env`: the invariant `BndOver ∧ WalkedStored ρ ∧ ∃ famOf, StoredFamilies`;
+* `BndOverW L ρ t G R env`: the invariant
+  `BndOver ∧ WalkedStored ρ ∧ RecordsStored ∧ ∃ famOf, StoredFamilies`; `RecordsStored` (every
+  non-block record of the store is stored) passes through a group: the closure stores what it adds
+  (`ClosureStepOverFamilyW`), a role unit's record is at a kept role's key, which the invariant
+  before the raise stores (`recordsStored_roleUnit`), and a group with no role unit keeps the
+  closure's entries;
 * `RoleUnitStepOverW P L ρ t g`: the step of a group whose one role is a role unit, handed beside
   `RoleUnitStepOver`'s premises the store before the group within the closure's store
   (`StoreLe R R₁`), the walked records stored at the closure's store and one stored family map
@@ -60,6 +65,7 @@ structure BndOverW (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (ρ : 
     Prop where
   bnd : BndOver.{u} L t G R env
   walked : WalkedStored ρ t G R env
+  stored : RecordsStored t R env
   fams : ∃ famOf, StoredFamilies t R env famOf
 
 /-- **The step of a group whose one role is a role unit, with the family form** (module
@@ -102,6 +108,53 @@ theorem walkedStored_storeCongr {ρ : BRun} {t : Ix.Kernel.RoleTable} {G : Nat �
   rw [← recordOf_storeCongr hc] at hx
   exact h.1 x c n hx hnb hlog
     (fun cb hcb => hlogB cb (by rw [← recordOf_storeCongr hc]; exact hcb)) hchk
+
+/-- **The non-block records stored depend on the store only through its records.** -/
+theorem recordsStored_storeCongr {t : Ix.Kernel.RoleTable} {R R' : Ixon.Env}
+    {env : Ix.Kernel.Env .anon} (hc : ∀ a, R.consts.get? a = R'.consts.get? a)
+    (h : RecordsStored t R env) : RecordsStored t R' env := by
+  intro x c hx hnb
+  rw [← recordOf_storeCongr hc] at hx
+  exact h x c hx hnb
+
+set_option maxRecDepth 100000 in
+private theorem opRoles_walked : RoleOps.opRoles.all (fun r => walkedRole r) = true := by
+  decide +kernel
+
+/-- **The non-block records stored after a role unit's step**: a record held at the closure's
+store was stored there, and the environment grows; the role unit's record is at the key of a kept
+role of the group (an operation is a walked role, a standard axiom a kept role), which the
+invariant before the raise past the group stores. -/
+theorem recordsStored_roleUnit {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    {t : Ix.Kernel.RoleTable} {g : Nat} {r : Ix.Kernel.Role} {a : _root_.Address}
+    {R₁ R' : Ixon.Env} {env₁ env' : Ix.Kernel.Env .anon} (htwf : t.wf = true)
+    (hr : r ∈ roleGroup g) (hk : r ∈ RoleOps.opRoles ∨ r ∈ standardAxioms)
+    (ha : t.addressOf? r = some a) (hadds : AddsAt R₁ R' a)
+    (hext : ∀ ci ∈ env₁.consts, ci ∈ env'.consts) (hB : BeforeRaise.{u} L t g R' env')
+    (h : RecordsStored t R₁ env₁) : RecordsStored t R' env' := by
+  intro x c hx hnb
+  cases h' : R'.consts.get? x with
+  | none =>
+    unfold recordOf at hx
+    rw [h'] at hx
+    cases hx
+  | some lc =>
+    rcases hadds.2.1 x lc h' with h₁ | hxa
+    · have hx₁ : recordOf R₁ x = some c := by
+        unfold recordOf at hx ⊢
+        rw [h₁]
+        rw [h'] at hx
+        exact hx
+      obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp (h x c hx₁ hnb)
+      exact Option.isSome_iff_exists.mpr ⟨ci, find_of_ext hext hB.shape.reading.nodup hci⟩
+    · have hkr : keptRole r := by
+        rcases hk with hop | hs
+        · exact Or.inl (Or.inl (List.all_eq_true.mp opRoles_walked r hop))
+        · exact Or.inr hs
+      obtain ⟨ci, hci, -⟩ := hB.shape.kept g r a (Nat.lt_succ_self g) hr hkr ha
+      have hkey : keyOf t a = Ix.Kernel.Key.role r := Core.keyOf_of_addressOf htwf ha
+      rw [hxa, hkey]
+      exact Option.isSome_iff_exists.mpr ⟨ci, hci⟩
 
 /-- **The route of a block depends on the store only through its records.** -/
 theorem blockRoute_storeCongr {R R' : Ixon.Env}
@@ -269,9 +322,9 @@ theorem groupStepOverW_of_parts {L : Ix.Kernel.Env .anon → NativeFam .anon →
     (hax : RoleUnitStepOverW.{u} (· ∈ standardAxioms) L ρ t g) :
     GroupStepOverW.{u} L Fam ρ t g := by
   intro R R' env famOf adv cont hW hadm hrd hFam hFA
-  obtain ⟨hb, hws, famOf₀, hsf⟩ := hW
-  obtain ⟨R₁, env₁, famOf₁, hRR₁, hR₁R', hblobs, hunit, hext, hb₁, hkept, hsf₁, -, -, hws₁⟩ :=
-    hcl R R' env famOf₀ famOf adv cont hb hws hsf hadm hrd hFam hFA
+  obtain ⟨hb, hws, hrs, famOf₀, hsf⟩ := hW
+  obtain ⟨R₁, env₁, famOf₁, hRR₁, hR₁R', hblobs, hunit, hext, hb₁, hkept, hsf₁, -, -, hws₁,
+    hrs₁⟩ := hcl R R' env famOf₀ famOf adv cont hb hws hrs hsf hadm hrd hFam hFA
   by_cases hu : ∃ r ∈ roleGroup g, r ∈ RoleOps.opRoles ∨ r ∈ standardAxioms
   · obtain ⟨r, hr, hk⟩ := hu
     have hsingle : roleGroup g = [r] := roleGroup_unit hr hk
@@ -288,15 +341,17 @@ theorem groupStepOverW_of_parts {L : Ix.Kernel.Env .anon → NativeFam .anon →
         have er : r' = r := List.mem_singleton.mp hr'
         rw [er, ha] at ha'
         exact Or.inr (Option.some.inj ha').symm
-    rcases hk with hk | hk
+    rcases hk with hk' | hk'
     · obtain ⟨env', hext', hB', hws', hsf'⟩ :=
-        hop r a R R₁ R' env₁ famOf₁ hsingle hk ha hadm hrd hb₁ hadds hRR₁ hws₁ hsf₁
+        hop r a R R₁ R' env₁ famOf₁ hsingle hk' ha hadm hrd hb₁ hadds hRR₁ hws₁ hsf₁
       exact ⟨env', fun ci h => hext' ci (hext ci h),
-        ⟨bndOver_of_beforeRaise hall hg hB', hws', famOf₁, hsf'⟩⟩
+        ⟨bndOver_of_beforeRaise hall hg hB', hws',
+          recordsStored_roleUnit htwf hr (Or.inl hk') ha hadds hext' hB' hrs₁, famOf₁, hsf'⟩⟩
     · obtain ⟨env', hext', hB', hws', hsf'⟩ :=
-        hax r a R R₁ R' env₁ famOf₁ hsingle hk ha hadm hrd hb₁ hadds hRR₁ hws₁ hsf₁
+        hax r a R R₁ R' env₁ famOf₁ hsingle hk' ha hadm hrd hb₁ hadds hRR₁ hws₁ hsf₁
       exact ⟨env', fun ci h => hext' ci (hext ci h),
-        ⟨bndOver_of_beforeRaise hall hg hB', hws', famOf₁, hsf'⟩⟩
+        ⟨bndOver_of_beforeRaise hall hg hB', hws',
+          recordsStored_roleUnit htwf hr (Or.inr hk') ha hadds hext' hB' hrs₁, famOf₁, hsf'⟩⟩
   · have hnu : ∀ r ∈ roleGroup g, ¬ (r ∈ RoleOps.opRoles ∨ r ∈ standardAxioms) :=
       fun r hr hk => hu ⟨r, hr, hk⟩
     have hshapes : Shapes (· < g + 1) env₁ := hnone hnu R R₁ R' env₁ hadm hrd hR₁R' hb₁ hkept
@@ -328,7 +383,8 @@ theorem groupStepOverW_of_parts {L : Ix.Kernel.Env .anon → NativeFam .anon →
           rw [h₁] at this
           cases this
     exact ⟨env₁, hext, ⟨bndOver_storeCongr hsame hsameB hb₂, walkedStored_storeCongr hsame hws₂,
-      famOf₁, storedFamilies_storeCongr hsame hsameB hadm.usedClosed hsf₁⟩⟩
+      recordsStored_storeCongr hsame hrs₁, famOf₁,
+      storedFamilies_storeCongr hsame hsameB hadm.usedClosed hsf₁⟩⟩
 
 /-! ## The fold and the witness -/
 
