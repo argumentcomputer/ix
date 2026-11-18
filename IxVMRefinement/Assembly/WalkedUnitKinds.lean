@@ -1,5 +1,6 @@
 import IxVMRefinement.Endpoint.ComposedResidual
 import IxVMRefinement.Assembly.BlockRouteFunctional
+import IxVMRefinement.FamilyGraph.Graph
 
 /-! # The kinds of a top-walked unit, in the shape the composed statement asks them
 
@@ -20,6 +21,11 @@ statement, or produces one from strictly smaller ones.
 * `recursorWithoutNativeParent_of_parts`: at a validating walk, a standalone recursor record
   whose check found no native parent at some environment has a major premise headed by a
   reserved basis name; what is left beside it is the walk at the assumed limit.
+* `constAddrOf_emptyBlock`, `not_isUnit_emptyBlock`: an empty block has no constant address,
+  so it is no unit of the family graph (`IsUnit`).
+* `walkedUnit_byFamilyRecord`: a kind of block split by whether the family graph gives the
+  block a family record; a modeled block whose only accepted family record is empty is the
+  case without one.
 -/
 
 universe u
@@ -151,5 +157,63 @@ theorem recursorWithoutNativeParent_of_parts
         hlog hkind ht hS hcov hst hcanon hinert hcover hchk hns hkeys rc hinfo hres
   · exact atAssumedLimit calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc hlog
       hkind ht hS hcov hst hcanon hinert hcover hchk hns hkeys rc hinfo hl hneg
+
+
+/-! ## The line-up with the family graph's units -/
+
+/-- **An empty block has no constant address.** -/
+theorem constAddrOf_emptyBlock {A x : _root_.Address} {c : Ixon.Constant}
+    {ms : Array Ixon.MutConst} (hc : c.info = .muts ms) (h0 : ms.size = 0) :
+    ¬ ConstAddrOf A c x := by
+  intro hx
+  rcases hx with ⟨-, hs⟩ | ⟨ms', i, m, hms, hm, -⟩
+  · rcases hs with ⟨d, hd⟩ | ⟨rc, hr⟩ | ⟨ax, ha⟩ | ⟨q, hq⟩
+    · rw [hc] at hd
+      cases hd
+    · rw [hc] at hr
+      cases hr
+    · rw [hc] at ha
+      cases ha
+    · rw [hc] at hq
+      cases hq
+  · have e : ms = ms' := Ixon.ConstantInfo.muts.inj (hc.symm.trans hms)
+    subst e
+    have := (Array.getElem?_eq_some_iff.mp hm).1
+    omega
+
+/-- **An empty block is no unit of the family graph**: a unit has a constant address. -/
+theorem not_isUnit_emptyBlock {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .anon}
+    {E₀ : Ixon.Env} {Top Inner : _root_.Address → Prop}
+    {fam : _root_.Address → Option _root_.Address} {A : _root_.Address} {c : Ixon.Constant}
+    {ms : Array Ixon.MutConst} (hrec : recordOf E₀ A = some c) (hc : c.info = .muts ms)
+    (h0 : ms.size = 0) : ¬ IsUnit t envT E₀ Top Inner fam A := by
+  rintro ⟨-, -, c', hc', -, x, hx, -⟩
+  have e : c' = c := Option.some.inj (hc'.symm.trans hrec)
+  rw [e] at hx
+  exact constAddrOf_emptyBlock hc h0 hx
+
+/-- **A fact about the units of a kind, split by whether the family graph gives the block a
+family record.** A modeled block whose only accepted family record is empty has none
+(`FamilyGraph.famRecord` excludes empty recursor blocks): it is the second case, whose step
+installs the block's own constants and no recursor. -/
+theorem walkedUnit_byFamilyRecord (fam : _root_.Address → Option _root_.Address)
+    {Kind : List (Call F) → Ix.Kernel.RoleTable → Ixon.Env → _root_.Address → Ixon.Constant →
+      Prop}
+    {Goal : List (Call F) → Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Ixon.Env → Ixon.Env →
+      Option Nat → _root_.Address → Ixon.Constant → Prop}
+    (withFamilyRecord :
+      WalkedUnit.{u} (fun calls t E₀ B cb => Kind calls t E₀ B cb ∧ ∃ rb, fam B = some rb) Goal)
+    (withoutFamilyRecord :
+      WalkedUnit.{u} (fun calls t E₀ B cb => Kind calls t E₀ B cb ∧ fam B = none) Goal) :
+    WalkedUnit.{u} Kind Goal := by
+  intro calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc hlog hkind ht hS hcov
+    hst hcanon hinert hcover hchk hns hkeys
+  cases hf : fam A with
+  | none =>
+    exact withoutFamilyRecord calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc
+      hlog ⟨hkind, hf⟩ ht hS hcov hst hcanon hinert hcover hchk hns hkeys
+  | some rb =>
+    exact withFamilyRecord calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc
+      hlog ⟨hkind, rb, hf⟩ ht hS hcov hst hcanon hinert hcover hchk hns hkeys
 
 end IxVM.Refinement.Endpoint
