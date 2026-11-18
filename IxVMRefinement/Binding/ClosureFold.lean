@@ -170,12 +170,14 @@ structure ClosureRunFacts (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' 
   above the group's validation limit (`Claim.refAllowed_inert`); such a reference is excluded by
   `check_const`'s axiom arm with the inert role's own validation. For the records of the
   group's payload (advice records, container recursors), the circuit asserts nothing of their
-  references before batch item 9. -/
+  references until the advice and container checks run the walk's reference assertions on them
+  (`KernelClaim::assert_safe_used_refs`, `assert_not_block_ref`). -/
   notInert : ∀ A c x, PlainUnitAt t g R R' famOf A c → UsedRef ρ.E₀ A x → ¬ InertAt t x
   /-- Every reference a plain unit uses is one a step needs stored: a record of the run's store,
   no block, in Lean's logic with its block. Producer: the group's walk
   (`KernelClaim::assert_not_block_ref`, `assert_safe_used_refs`); for the records of the group's
-  payload, batch item 9. -/
+  payload, the same assertions once the advice and container checks run them on their records'
+  references. -/
   needOk : ∀ A c x, PlainUnitAt t g R R' famOf A c → UsedRef ρ.E₀ A x → NeedOk ρ.E₀ x
   /-- The key of the member of a plain unit that is a block of one inductive type is none of the
   keys of the four literal functions (`String.ofList`, `List.nil`, `List.cons`, `Char.ofNat`), which
