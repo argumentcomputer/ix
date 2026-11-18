@@ -28,7 +28,7 @@ folds consume, and proves it from what the block's check gives.
   holds of the family at every store that holds the record.
 * `AliasInstallOut.keeps`: **the install keeps the fold's clause at the opened head trace**, at
   every store that holds the block's records, every limit and every registry, registering the
-  family. It discharges the six facts `FoldClauseWith.aliasInstall` asks at the new
+  family. It discharges the five facts `FoldClauseWith.aliasInstall` asks at the new
   environment.
 * `AliasUnitStep`: **the step, stated once.** From the clause at the store and the limit of the
   block's check: new constants and one family, with the clause kept at every admitted store,
@@ -468,11 +468,7 @@ theorem AliasInstallOut.keeps {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
       retHead := famIxonRetHead_of_holds ht hH hrec.muts hO.retHead hO.famName
       noProj := hO.noProj
       link := trivial }
-  have hidxF : fam.p.nIdx ≠ 0 := by
-    rw [hO.nIdx]
-    exact hO.indexed
-  exact hC.aliasInstall hO.facts hO.pin hO.nonAux hres hloads heta hkeys₂
-    (hO.facts.noTable hidxF) hread hO.trace
+  exact hC.aliasInstall hO.facts hO.pin hO.nonAux hres hloads heta hkeys₂ hread hO.trace
 
 /-! ## The step, stated once -/
 
@@ -514,9 +510,9 @@ theorem AliasUnitStep.unitStep {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .
     (h : AliasUnitStep.{u} t envT E₀ Stores E lim B cb) :
     UnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt t E) t envT E₀ E lim B cb := by
   intro env hext hnd hinv hX href hfresh
-  obtain ⟨⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩, hg⟩ := hX
+  obtain ⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩ := hX
   have hC : FoldClauseWith.{u} FormerOpenTraceAt t E lim env Reg :=
-    FoldClauseWith.of_prefix hinv hR hkeys haux hlv hg
+    FoldClauseWith.of_prefix hinv hR hkeys haux hlv
   obtain ⟨new, fam, hnd', hfr, hkeep, hnamed, hreads⟩ := h env Reg hext hnd hC href hfresh
   have hC' := hkeep E lim Reg hE hC
   refine ⟨new, hnd', hfr, hC'.prefixInv, hC'.extra, hreads, ?_⟩

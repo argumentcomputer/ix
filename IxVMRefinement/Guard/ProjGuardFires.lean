@@ -18,8 +18,9 @@ from the certificates of the stored tables.
   certificate over a store that decodes its records, or over a witness store, and the reading
   give `Core.ProjTableFires` at that store, or at every record store for the witness store: the
   table fires at every context over the store, whatever its limit and call scope.
-* `Guard.projTablesFire_of_certs`: every stored table, from the carried certificates
-  (`Guard.GuardCerts`).
+* `Guard.projTablesFire_of_certs`: every stored table, from the certificates of all of them
+  (`Guard.GuardCerts`). No fold uses this form: a prefix keeps the firing itself, and an
+  install adds the new table's from its own certificate.
 * `Guard.projGuardFires_of_certs`: the firing at one context, directly.
 
 The three premises `Guard.GuardCerts.fireSem` asks beside the observation are discharged from
@@ -176,8 +177,8 @@ theorem projTableFires_of_cert (hread : Core.ProjGuardRunReading) {t : Ix.Kernel
   projTableFires_of_cert_at hread hRE.1 (hmem.recordsFor hRE) (ctorRaw_recordsFor hRE hraw) hpos
     (cert.mono (GuardRaw.ofStore_extends_recordsFor hRE))
 
-/-- **The carried certificates and the reading of a run give the limit-free firing of every
-stored table**, over each record store for the witness store. -/
+/-- **The certificates of the stored tables and the reading of a run give the limit-free firing
+of every stored table**, over each record store for the witness store. -/
 theorem projTablesFire_of_certs (hread : Core.ProjGuardRunReading) {t : Ix.Kernel.RoleTable}
     {R E : Ixon.Env} {env : Ix.Kernel.Env .anon} (hRE : Typing.RecordsFor R E)
     (hcerts : GuardCerts t R env) : Core.ProjTablesFire t E env := by

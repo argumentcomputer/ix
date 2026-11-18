@@ -14,11 +14,6 @@ half is kept by IxC's own lemmas from the step's judgement: `EnvModelN.declRunJ`
   declaration judgement): `keepsValuesJ_famRegistry`, `keepsValuesKeyed_foldCore`,
   `keepsValuesKeyed_foldExtra`, `foldExtra_cons_thm`; the skeleton's step for a definition
   record at either role context, `unitStep_defn_foldExtra`.
-* The projection guards' certificates: the clause names each table's member with the table,
-  so a step that stores no projection table keeps them (`guardCerts_noTable`,
-  `guardCerts_cons`, `keepsValuesKeyed_guardCerts`), and the install of a block member keeps
-  them given its own table's certificate (`guardCerts_step`, `guardCerts_install`,
-  `foldExtra_nativeNoRec`).
 * A native block's install: `foldCore_install` (the general form), `foldCore_nativeNoRec` (a
   former declared at its telescope, from `NativeNoRecFacts`), `FoldClauseWith.nativeAt` (a
   former declared at a definition, from `NativeAtFacts`). `NativeAtFacts.famStage` reads the
@@ -46,105 +41,6 @@ open Ix.Kernel (ConstantInfo ConstantVal IndCaps Key RecRule)
 open Ix.Kernel.Semantics (NativeFam NativeFamStored DeclRunJ IndRoutesJ DeclNativeRecLateRunJ
   SumIndRunJ Judgements)
 open Ix.Kernel.Model (rulesJ EnvModelN EnvModelT ArRes StoreArR)
-
-/-! ## The projection guards' certificates along a step -/
-
-/-- A lookup past a constant stored in front that is not the constant found. -/
-theorem find_cons_ne {env : Ix.Kernel.Env .anon} {ci x : ConstantInfo .anon} {k : Key .anon}
-    (hne : ci ≠ x) (hf : (⟨ci :: env.consts⟩ : Ix.Kernel.Env .anon).find? k = some x) :
-    env.find? k = some x := by
-  rw [Ix.Kernel.Env.find?_cons] at hf
-  split at hf
-  · exact absurd (Option.some.inj hf) hne
-  · exact hf
-
-/-- **The certificates along a step that extends the environment.** A table stored before keeps
-the member the clause holds for it, that member's constructor and its certificate: the clause
-names the member with the table, so nothing is asked of the constants the step stores. For a
-table stored new the step supplies the member, its record in the store, its constructor and the
-certificate. -/
-theorem guardCerts_step {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
-    {env env₂ : Ix.Kernel.Env .anon} (h : Guard.GuardCerts t E env)
-    (hext : Ix.Kernel.EnvExt env env₂)
-    (hnew : ∀ (k : Key .anon) (tbl : Ix.Kernel.ProjTable .anon),
-      env₂.find? (Ix.Kernel.projTableName k) = some (.projInfo tbl) →
-      env.find? (Ix.Kernel.projTableName k) = none →
-      Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true →
-      ∃ (B : _root_.Address) (i : Nat) (cvC : ConstantVal .anon) (nP nF : Nat)
-        (raw : Ix.Kernel.Expr .anon),
-        k = Core.keyOf t (Core.iprjAddr B i) ∧ Guard.MemberRecordAt E B i ∧
-        env₂.find? (Core.keyOf t (Core.cprjAddr B i 0)) = some (.ctorInfo cvC nP nF) ∧
-        Guard.ctorRaw E B i 0 = some raw ∧
-        tbl.levelParams = List.range tbl.levelParams.length ∧
-        Ix.Kernel.ProjGuardCert (GuardRaw.ofStore E) raw cvC.type tbl) :
-    Guard.GuardCerts t E env₂ := by
-  intro k tbl htbl hprop
-  cases hT : env.find? (Ix.Kernel.projTableName k) with
-  | none => exact hnew k tbl htbl hT hprop
-  | some x =>
-    have h₂ := hext.find hT
-    rw [htbl] at h₂
-    have hx : x = .projInfo tbl := (Option.some.inj h₂).symm
-    rw [hx] at hT
-    obtain ⟨B, i, cvC, nP, nF, raw, hk, hrec, hctor, hraw, hpos, cert⟩ := h k tbl hT hprop
-    exact ⟨B, i, cvC, nP, nF, raw, hk, hrec, hext.find hctor, hraw, hpos, cert⟩
-
-/-- **A step that stores no projection table keeps the certificates.** This is every value
-step, every recursor, every install of a family with an index or with other than one
-constructor, and every step of a mutual or nested family. -/
-theorem guardCerts_noTable {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
-    {env env₂ : Ix.Kernel.Env .anon} (h : Guard.GuardCerts t E env)
-    (hext : Ix.Kernel.EnvExt env env₂)
-    (hno : ∀ (k : Key .anon) (tbl : Ix.Kernel.ProjTable .anon),
-      env₂.find? (Ix.Kernel.projTableName k) = some (.projInfo tbl) →
-      env.find? (Ix.Kernel.projTableName k) = none → False) :
-    Guard.GuardCerts t E env₂ :=
-  guardCerts_step h hext (fun k tbl hf hn _ => (hno k tbl hf hn).elim)
-
-/-- **A constant stored in front that is no projection table keeps the certificates.** -/
-theorem guardCerts_cons {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
-    {ci : ConstantInfo .anon} (h : Guard.GuardCerts t E env)
-    (hext : Ix.Kernel.EnvExt env ⟨ci :: env.consts⟩) (hproj : ∀ tbl, ci ≠ .projInfo tbl) :
-    Guard.GuardCerts t E ⟨ci :: env.consts⟩ :=
-  guardCerts_noTable h hext (fun k tbl hf hn => by
-    rw [find_cons_ne (hproj tbl) hf] at hn
-    cases hn)
-
-/-- **The install of a block member keeps the certificates.** The step extends the environment;
-the only projection table it stores new is the member's (`hone`); the store holds the member's
-projection record (`hrec`); and, where the new table's structure sort passes the zero test, the
-member's first constructor is stored and the table has its certificate at that constructor's
-raw telescope (`hcert`, the install's own certificate). No fact about the tables stored before
-is asked. -/
-theorem guardCerts_install {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
-    {env env₂ : Ix.Kernel.Env .anon} (h : Guard.GuardCerts t E env)
-    (hext : Ix.Kernel.EnvExt env env₂) {B : _root_.Address} {i : Nat}
-    (hone : ∀ (k : Key .anon) (tbl : Ix.Kernel.ProjTable .anon),
-      env₂.find? (Ix.Kernel.projTableName k) = some (.projInfo tbl) →
-      env.find? (Ix.Kernel.projTableName k) = none → k = Core.keyOf t (Core.iprjAddr B i))
-    (hrec : Guard.MemberRecordAt E B i)
-    (hcert : ∀ tbl : Ix.Kernel.ProjTable .anon,
-      env₂.find? (Ix.Kernel.projTableName (Core.keyOf t (Core.iprjAddr B i))) =
-        some (.projInfo tbl) →
-      Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true →
-      ∃ (cvC : ConstantVal .anon) (nP nF : Nat) (raw : Ix.Kernel.Expr .anon),
-        env₂.find? (Core.keyOf t (Core.cprjAddr B i 0)) = some (.ctorInfo cvC nP nF) ∧
-        Guard.ctorRaw E B i 0 = some raw ∧
-        tbl.levelParams = List.range tbl.levelParams.length ∧
-        Ix.Kernel.ProjGuardCert (GuardRaw.ofStore E) raw cvC.type tbl) :
-    Guard.GuardCerts t E env₂ :=
-  guardCerts_step h hext (fun k tbl hf hn hprop => by
-    have hk := hone k tbl hf hn
-    subst hk
-    obtain ⟨cvC, nP, nF, raw, hctor, hraw, hpos, cert⟩ := hcert tbl hf hprop
-    exact ⟨B, i, cvC, nP, nF, raw, rfl, hrec, hctor, hraw, hpos, cert⟩)
-
-/-- **A value constant keeps the certificates.** -/
-theorem keepsValuesKeyed_guardCerts (t : Ix.Kernel.RoleTable) (E : Ixon.Env) :
-    KeepsValuesKeyed t (Guard.GuardCerts t E) := by
-  intro env ci d hX hfresh hval hnt _ _
-  refine guardCerts_cons hX (Ix.Kernel.EnvExt.cons hfresh (fun _ => hnt _)) (fun tbl he => ?_)
-  rcases hval with ⟨_, _, _, h⟩ | ⟨_, _, h⟩ | ⟨_, h⟩ <;> (rw [h] at he; cases he)
 
 /-! ## Value steps -/
 
@@ -185,7 +81,7 @@ prefix invariant.** -/
 theorem keepsValuesKeyed_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hL : LinkLaws L) {t : Ix.Kernel.RoleTable}
     (htwf : t.wf = true) (E : Ixon.Env) : KeepsValuesKeyed t (FoldExtra.{u} L t E) :=
-  (keepsValuesKeyed_foldCore hL htwf E).and (keepsValuesKeyed_guardCerts t E)
+  keepsValuesKeyed_foldCore hL htwf E
 
 /-- **A theorem stored at the key of a 32-byte address, along its declaration step, keeps the
 part of the clause beside the prefix invariant.** -/
@@ -286,33 +182,17 @@ theorem foldCore_nativeNoRec (hL : LinkLaws L) {blk : List (ConstantInfo .anon)}
     (FamRead.of_late hL hat hwf hlv₂.2 hrh hnp) hfacts.newInd hkeys₂ haux₂ hlv₂
 
 /-- **The install of a block whose former is declared at its telescope keeps the part of the
-clause beside the prefix invariant, the guard certificates included.** Beside the inputs of
-`foldCore_nativeNoRec`: the only projection table the install stores new is the member's
-(`hone`), the store holds the member's projection record (`hrec`), and the new table, where its
-structure sort passes the zero test, has its certificate (`hcert`). -/
+clause beside the prefix invariant** (`foldCore_nativeNoRec` under the name of that part). The
+new projection table's firing is not here: it is in the load contract at the environment after
+the install, which the install's step produces from the table's certificate. -/
 theorem foldExtra_nativeNoRec (hL : LinkLaws L) {blk : List (ConstantInfo .anon)} {nP : Nat}
     {p₀ : Ix.Kernel.NativeParts .anon} {fam : NativeFam .anon}
     (h : FoldExtra.{u} L t E env) (hfacts : NativeNoRecFacts env env₂ blk nP p₀ fam)
     (hpin : Ix.Kernel.basisPinHit blk = none) (hna : Decl.DeclNonAux (.indDecl blk nP))
     (hwf : Ix.Kernel.EnvWF env₂) (hat : LateFamAt t E env₂ fam)
     (hrh : FamIxonRetHead t E fam) (hnp : BlockFamCtorNoProj fam)
-    (hkeys₂ : HashKeyed t env₂) {B : _root_.Address} {i : Nat}
-    (hone : ∀ (k : Key .anon) (tbl : Ix.Kernel.ProjTable .anon),
-      env₂.find? (Ix.Kernel.projTableName k) = some (.projInfo tbl) →
-      env.find? (Ix.Kernel.projTableName k) = none → k = Core.keyOf t (Core.iprjAddr B i))
-    (hrec : Guard.MemberRecordAt E B i)
-    (hcert : ∀ tbl : Ix.Kernel.ProjTable .anon,
-      env₂.find? (Ix.Kernel.projTableName (Core.keyOf t (Core.iprjAddr B i))) =
-        some (.projInfo tbl) →
-      Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true →
-      ∃ (cvC : ConstantVal .anon) (nP nF : Nat) (raw : Ix.Kernel.Expr .anon),
-        env₂.find? (Core.keyOf t (Core.cprjAddr B i 0)) = some (.ctorInfo cvC nP nF) ∧
-        Guard.ctorRaw E B i 0 = some raw ∧
-        tbl.levelParams = List.range tbl.levelParams.length ∧
-        Ix.Kernel.ProjGuardCert (GuardRaw.ofStore E) raw cvC.type tbl) :
-    FoldExtra.{u} L t E env₂ :=
-  ⟨foldCore_nativeNoRec hL h.1 hfacts hpin hna hwf hat hrh hnp hkeys₂,
-    guardCerts_install h.2 hfacts.envExt hone hrec hcert⟩
+    (hkeys₂ : HashKeyed t env₂) : FoldExtra.{u} L t E env₂ :=
+  foldCore_nativeNoRec hL h hfacts hpin hna hwf hat hrh hnp hkeys₂
 
 /-- **The only inductive type the install at a given index count stores new is the family's
 stored former.** -/
@@ -396,7 +276,6 @@ theorem FoldClauseWith.nativeAt (hL : LinkLaws L) {blk : List (ConstantInfo .ano
       env.find? k = none → k ≠ Core.unresolvedKey)
     (hloads : Core.ScopedLoadFacts (Core.Ctx.stored ⟨E, env₂, t, lim⟩))
     (heta : Decl.EtaStable env₂) (hkeys₂ : HashKeyed t env₂)
-    (hguard₂ : Guard.GuardCerts t E env₂)
     (hread : FamRead L t E env₂ fam) :
     FoldClauseWith.{u} L t E lim env₂ (fun f => Reg f ∨ f = fam) := by
   have hinv₂ : Decl.PrefixInv.{u} E t lim env₂ :=
@@ -408,7 +287,6 @@ theorem FoldClauseWith.nativeAt (hL : LinkLaws L) {blk : List (ConstantInfo .ano
     hkeys₂ (Decl.auxRootSynced_step_declRunJA h.auxRoot hna hd)
     ⟨Ix.Kernel.Model.thmLevels_declRunJA h.thmLevels hd,
       Ix.Kernel.Model.storeArR_nativeAtRunJ h.storeArR hfacts.runJ⟩
-    hguard₂
 
 /-! ## A late recursor for a registered family -/
 
@@ -614,8 +492,7 @@ theorem FoldClauseWith.lateRec (hL : LinkLaws L) {fam : NativeFam .anon}
       tableWf := h.tableWf
       companions := hcomp
       loads := Decl.storedLoads_cons_value (c := ⟨E, env, t, lim⟩) h.loads hname hfresh hnt
-        hind hctor hproj h.etaStable hreload
-      guard := guardCerts_cons h.guard hext hproj }
+        hind hctor hproj h.etaStable hreload }
 
 end Steps
 
@@ -636,10 +513,10 @@ theorem unitStep_recLate_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon 
       RecLateOut t E₀ E A env fam) :
     UnitStep.{u} (FoldExtra.{u} L t E) t envT E₀ E lim A c := by
   intro env hext hnd hinv hX href hfresh
-  obtain ⟨⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩, hg⟩ := hX
+  obtain ⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩ := hX
   have hstep : StepAt.{u} t envT E₀ E lim A c env := ⟨hext, hnd, hinv, href, hfresh⟩
   have hC : FoldClauseWith.{u} L t E lim env Reg :=
-    FoldClauseWith.of_prefix hinv hR hkeys haux hlv hg
+    FoldClauseWith.of_prefix hinv hR hkeys haux hlv
   obtain ⟨P, ip, hpar, hQ⟩ := hparent env hstep
   obtain ⟨⟨cvP, capsP, hfP⟩, hres, ⟨cm, hcm, hcmi⟩, hnat⟩ := hpar
   obtain ⟨fam, hReg, hread⟩ := hR.at_parent ht hfP hres hcm hcmi hnat
