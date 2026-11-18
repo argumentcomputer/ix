@@ -1,5 +1,6 @@
 import IxVMRefinement.FamilyGraph.CheckedKinds
 import IxVMRefinement.FamilyGraph.SkeletonModeled
+import IxVMRefinement.Assembly.AdviceListed
 
 /-! # The typing half composed over the family graph
 
@@ -64,22 +65,24 @@ def ContainerRecCheckIn (cs : List (Call F)) (bAddr : _root_.Address)
       [rc, xa, ib] h r h' cs₁ ∧ (∀ cl ∈ cs₁, cl ∈ cs)
 
 /-- **The run's family checks at one binding `bAddr`**, at the walk's limit: the family check
-of each family record (on the modeled route of its block), with its advice entries; the family
-check of each twin; and the check of each inner record. `innerCall`: every inner record was
+of each family record (on the modeled route of its block), with the advice records listed to an
+advice walk among its calls at the walk's binding and limit (`AdviceListedIn`); the family check
+of each twin; and the check of each inner record. `innerCall`: every inner record was
 checked by the family check of a family record or of a twin, under the family check's own
 context: an advice record that is no projection record by its advice-record check, a
 container's recursor by its check, a twin reached only through a container's recursor
 projection by a family check at its own address nested in that check (its own checks are the
-twin step's, not `InnerChecked`'s). An advice entry of a family check that is not in the graph's
-advice owns no constant address and uses nothing in Lean's logic (a projection record of an
-earlier advice block). -/
+twin step's, not `InnerChecked`'s). A listed advice record of a family check that is not in the
+graph's advice owns no constant address and uses nothing in Lean's logic (a projection record of
+an earlier advice block). An advice-record check nested under another context (a covered role's
+validation walk at a group limit) is no listed record of a walk at the walk's limit. -/
 structure FamilyChecksAt (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (lim : Option Nat)
     (fam twin : _root_.Address → Option _root_.Address)
     (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop) : Prop where
   famCall : ∀ B rb, fam B = some rb → ModeledRouteAt calls B ∧
     ∃ cs, FamilyCallAtLim calls bAddr t B rb lim cs ∧
-      ∀ a, AdviceIn cs a → adv B a ∨
+      ∀ a, AdviceListedIn cs bAddr t lim a → adv B a ∨
         ((∀ ca x, recordOf E₀ a = some ca → ¬ ConstAddrOf a ca x) ∧
           ∀ x, UsedRef E₀ a x → ¬ NeedOk E₀ x)
   twinCall : ∀ rb' B, twin rb' = some B → ∃ cs, FamilyCallAtLim calls bAddr t B rb' lim cs
