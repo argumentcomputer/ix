@@ -13,7 +13,8 @@ the argument, and substitutes the value of a `let`.
 
 `definition_value_unfold` names the result of the definition arm: it represents the stored
 value instantiated at the constant's own level parameters, which is what
-`Ix.Kernel.unfoldDefinition` returns at that constant. `head_trace` then says that the result
+`Ix.Kernel.unfoldDefinition` returns at that constant. `declared_type_inst` is the same for the
+classifier's other load, the declared type of a constant at a level list. `head_trace` then says that the result
 of `head` represents the end of a `HeadDeltaBeta.Trace` from the term its input represents, and
 that this end is a sort, `∀` or `λ`, hence has no further head step
 (`normal_of_rigidHead`): by `Trace.normal_unique` the represented result is determined by the
@@ -102,6 +103,71 @@ theorem definition_value_unfold {c : ScopedCtx} (hc : ScopedCoreFacts c)
         some (V.instantiateLevelParams cv.levelParams us) := by
       simpa only [Ix.Kernel.Expr.mkAppN] using unfold_const_mkAppN [] found hlenus
     exact ⟨cv, V, hint, found, hlenus, hd, hinst.of_depth_zero d⟩
+
+/-- **`declared_type` is the declared type at the levels.** The loaded constant has as many
+level parameters as the level list has levels, and the result represents its declared type
+instantiated at its own level parameters by any list `us` pointwise semantically equal to the
+represented list. -/
+theorem declared_type_inst {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {d : Nat} {Γ : Nat → KExpr} {a : Bytes.Address} {us ps : List KLevel}
+    {ap params r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hg : CoreGood c cs) (ha : Bytes.RepAddressRef addrTy h a ap)
+    (resolved : c.κ (ixAddr a) ≠ unresolvedKey) (parameters : RepKLevelList h ps params)
+    (hus : LvEqList us ps)
+    (ev : ObsFn W "KernelGuard::declared_type" [ap, params] h r h' cs) :
+    ∃ ci : Ix.Kernel.ConstantInfo .anon,
+      c.env.find? (c.κ (ixAddr a)) = some ci ∧
+      us.length = ci.toConstantVal.levelParams.length ∧
+      Tm c.κ d Γ h' 0
+        (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams us) r := by
+  match Obs.«KernelGuard::declared_type».obs ev with
+  | .run (v1 := value) (m2 := loaded) (p9 := ptr) (cs15 := loadCalls)
+      (cs68 := countCalls) (cs83 := instCalls) (v86 := typePtr) (m60 := beforeType)
+      (m89 := beforeInst) (cs97 := typeCalls) (ev17 := load) (ld11 := shape)
+      (ev50 := length) (ev70 := count) (heq79 := arity)
+      (ev99 := getType) (ev85 := inst) (hc115 := events) .. =>
+    have loadInside : ∀ cl ∈ loadCalls, cl ∈ cs := by
+      intro cl member; rw [events]; simp [member]
+    have countInside : ∀ cl ∈ countCalls, cl ∈ cs := by
+      intro cl member; rw [events]; simp [member]
+    have typeInside : ∀ cl ∈ typeCalls, cl ∈ cs := by
+      intro cl member; rw [events]; simp [member]
+    have allowed : c.allowed ⟨"Ingress::get_ci", [ap], h⟩ :=
+      hg.allAllowed _ (by rw [events]; simp)
+    obtain ⟨ci, found, actual, loadedValue, represented⟩ :=
+      get_ci_step c hc load ap a rfl allowed resolved (hg.sub loadInside) ha
+    rw [shape] at loadedValue
+    have same := Except.ok.inj loadedValue
+    subst actual
+    have psLoaded := parameters.mono load.heap_extends
+    obtain ⟨lengthValue, _⟩ :=
+      ProjAux.levels_length length ⟨ps, psLoaded, LvEqList.refl ps⟩
+    have countSpec := Registry.induction c (scoped_steps c hc) (.infer .const_num_lvls)
+      _ _ _ _ _ count
+    obtain ⟨countValue, _⟩ := countSpec value ci rfl (hg.sub countInside)
+      (represented.mono length.heap_extends)
+    have psBound : ps.length < 549755813888 := by
+      have bound := RomBound.bounded_length_lt hg.2
+        (c := ⟨Obs.Names.«Lists::length<&KernelTypes::KLevelNode>», [params], loaded⟩)
+        (p := params) (by rw [events]; simp) (by simp) psLoaded
+      simpa using bound
+    obtain ⟨_, _, _, _, _, valRep⟩ := represented.head
+    have levelsBound : ci.toConstantVal.levelParams.length < 4294967296 := valRep.2.1
+    rw [lengthValue, countValue] at arity
+    have arityExact : ps.length = ci.toConstantVal.levelParams.length :=
+      (NatAux.natCast_inj (by omega) (by omega)).mp (NatAux.field_inj arity)
+    have beforeExtension := length.heap_extends.trans count.heap_extends
+    have typeSpec := Registry.induction c (scoped_steps c hc) (.infer .const_type_of)
+      _ _ _ _ _ getType
+    obtain ⟨typeRep, _⟩ := typeSpec value ci rfl (hg.sub typeInside)
+      (represented.mono beforeExtension)
+    have extension := beforeExtension.trans getType.heap_extends
+    have hlenus : us.length = ci.toConstantVal.levelParams.length :=
+      (SubstAux.evalEqList_length (hus (fun _ => 0))).trans arityExact
+    have hinst := expr_inst_raw_tm (Γ := Γ) (typeRep 0 Γ)
+      ⟨ps, psLoaded.mono extension, hus⟩ inst
+    rw [WhnfAux.posOf_ilp_perm valRep.2.2.1 hlenus] at hinst
+    exact ⟨ci, found, hlenus, hinst.of_depth_zero d⟩
 
 private theorem head_trace_go {c : ScopedCtx} (hc : ScopedCoreFacts c) :
     ∀ fuel : Nat, ∀ {d : Nat} {Γ : Nat → KExpr} {E : KExpr}
