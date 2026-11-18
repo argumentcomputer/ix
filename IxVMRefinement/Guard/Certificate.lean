@@ -1,5 +1,5 @@
 import IxC.Kernel.Model.ProjGuardCert
-import IxVMRefinement.Assembly.GuardRawLookup
+import IxVMRefinement.Guard.CtorRaw
 import IxVMRefinement.Decl.Native
 import IxVMRefinement.Guard.Fields
 import IxVMRefinement.Infer.Proj
@@ -11,9 +11,8 @@ projection table: the table's guards are `structProjGuards` at field sorts whose
 those of the field classifier's signatures of the constructor's raw telescope. This file places
 it over the stores of the proof.
 
-* `ctorRaw E B i j`: the constructor's type as the classifier reads it, a function of the block
-  record `E` holds at `B` and of `E`'s literal blobs. It is kept by every record store for a
-  witness store (`ctorRaw_recordsFor`).
+* `ctorRaw E B i j` (`Guard/CtorRaw.lean`): the constructor's type as the classifier reads it, a
+  function of the block record `E` holds at `B` and of `E`'s literal blobs.
 * `GuardCerts t R env`: **the carried clause**. Every projection table of a propositional
   structure that `env` stores has its certificate over the raw dictionary of the witness store
   `R`. It mentions no role context, no validation limit and no run.
@@ -21,7 +20,10 @@ it over the stores of the proof.
 * `projGuardCert_of_checkNativeTable`: **install**. The table stage of IxC's native install,
   run at field sorts `sorts` (the caller's argument), stores a table whose certificate holds as
   soon as those sorts have the zero-sets of the classifier's signatures. The sorts to pass are
-  the ones the installing run's checked field loop computed.
+  the rules-tier sorts of the field domains that the reading of the installing run's checked
+  field loop yields (`GuardData.check_prop_fields_sorts`). The levels the circuit itself
+  computes are simplified (`level_imax a 0 = 0`): they equal those sorts at every assignment,
+  not as syntax, which is all the certificate reads of them.
 * `GuardCerts.fireSem`: **use**. The clause over `R`, and one use observed over any record store
   `E` for `R`, give `Rules.FireSem` at the use's levels. The store `E` is constrained by
   `Typing.RecordsFor R E` alone, and no limit occurs.
@@ -43,42 +45,6 @@ namespace IxVM.Refinement.Guard
 open IxVM.Consistency
 open Ix.Kernel (Expr Level ProjTable ConstantInfo ConstantVal ProjGuardCert ProjGuardUse)
 open Ix.Kernel.GuardClassifier (Lookup)
-
-/-! ## The constructor's raw telescope -/
-
-/-- **The type of constructor `j` of member `i` of the block `E` holds at `B`, as the field
-classifier reads it**: address keys, the constructor's own level parameters, `let` nodes kept,
-binder data erased. A function of the block record and of the literal blobs. -/
-noncomputable def ctorRaw (E : Ixon.Env) (B : _root_.Address) (i j : Nat) :
-    Option (Expr .anon) :=
-  (GuardRaw.memberRoot (recordOf E) B i (GuardRaw.constructorType j)).bind
-    (GuardRaw.readRoot (fun x => E.blobs.get? x))
-
-private theorem recordOf_eq_recordAt {E : Ixon.Env} (hd : L1.EnvDecoded E)
-    (a : _root_.Address) : recordOf E a = Ix.Cert.recordAt E a := by
-  unfold recordOf Ix.Cert.recordAt
-  cases hget : E.consts.get? a with
-  | none => rfl
-  | some lc =>
-    obtain ⟨c, hc, hdec⟩ := hd a lc hget
-    change (Ixon.deConstantExact lc.rawBytes).toOption = lc.get?
-    rw [hdec, hc]
-    rfl
-
-/-- A record store for `R` holds every record of `R` that decodes. -/
-theorem recordOf_recordsFor {R E : Ixon.Env} (h : Typing.RecordsFor R E) :
-    ∀ a c, recordOf R a = some c → recordOf E a = some c :=
-  fun a c hc => (recordOf_eq_recordAt h.1 a).trans (h.2.1 a c hc)
-
-/-- **The raw telescope is the same over every record store for `R`.** -/
-theorem ctorRaw_recordsFor {R E : Ixon.Env} (h : Typing.RecordsFor R E)
-    {B : _root_.Address} {i j : Nat} {raw : Expr .anon}
-    (hr : ctorRaw R B i j = some raw) : ctorRaw E B i j = some raw := by
-  unfold ctorRaw at hr ⊢
-  obtain ⟨root, hroot, hread⟩ := Option.bind_eq_some_iff.mp hr
-  exact Option.bind_eq_some_iff.mpr
-    ⟨root, GuardRaw.memberRoot_mono (recordOf_recordsFor h) hroot,
-      GuardRaw.readRoot_mono h.2.2.1 hread⟩
 
 /-! ## The carried clause -/
 
