@@ -223,6 +223,27 @@ theorem TopWalkCore.otherBlock_cases
     · exact hge
   · exact Or.inr ⟨hpos, hr⟩
 
+/-- **The five kinds of a top-walked block record**: an empty block; a non-empty block of
+definitions; a block of one inductive type; a block of two or more inductive types; a
+non-empty block of recursors. An empty block has no constant address, so it is no unit of the
+fold and its step installs nothing (`Typing.unitStep_emptyBlock`). -/
+theorem TopWalkCore.block_cases
+    (hW : TopWalkCore calls bAddr t seeds E₀ lim Top rank) {B : _root_.Address}
+    {c : Ixon.Constant} {ms : Array Ixon.MutConst}
+    (hT : Top B) (hc : recordOf E₀ B = some c) (hcm : c.info = .muts ms) :
+    ms.size = 0 ∨ (0 < ms.size ∧ Typing.DefnBlock ms) ∨
+      (∃ ind : Ixon.Inductive, ms = #[.indc ind]) ∨
+      (2 ≤ ms.size ∧ ∀ m ∈ ms.toList, ∃ i, m = Ixon.MutConst.indc i) ∨
+      (0 < ms.size ∧ ∀ m ∈ ms.toList, ∃ r, m = Ixon.MutConst.recr r) := by
+  rcases Nat.eq_zero_or_pos ms.size with h0 | hp
+  · exact Or.inl h0
+  · by_cases hd : Typing.DefnBlock ms
+    · exact Or.inr (Or.inl ⟨hp, hd⟩)
+    · by_cases hone : ∃ ind : Ixon.Inductive, ms = #[.indc ind]
+      · exact Or.inr (Or.inr (Or.inl hone))
+      · exact Or.inr (Or.inr (Or.inr
+          (hW.otherBlock_cases hT hc hcm hd (fun ind h => hone ⟨ind, h⟩))))
+
 end Walk
 
 end IxVM.Refinement.Claim
@@ -407,6 +428,32 @@ theorem modeledRouteAt_of_multi (ht : t.check = .ok ()) (hst : StepStore calls t
     (hst.good Ix.Kernel.Env.empty none) hmod, hmod⟩
 
 end Blocks
+
+/-- **The step of an empty block installs nothing**, for every carried clause and at every
+limit: an empty block has no constant address, so the environment the step is asked at is
+the environment after it. -/
+theorem unitStep_emptyBlock {X : Ix.Kernel.Env .anon → Prop} {t : Ix.Kernel.RoleTable}
+    {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {ms : Array Ixon.MutConst} (hc : c.info = .muts ms)
+    (h0 : ms.size = 0) : UnitStep.{u} X t envT E₀ E lim A c := by
+  intro env hext hnd hinv hXe href hfresh
+  have hno : ∀ x, ¬ ConstAddrOf A c x := by
+    intro x hx
+    rcases hx with ⟨-, hs⟩ | ⟨ms', i, m, hms, hm, -⟩
+    · rcases hs with ⟨d, hd⟩ | ⟨rc, hr⟩ | ⟨ax, ha⟩ | ⟨q, hq⟩
+      · rw [hc] at hd
+        cases hd
+      · rw [hc] at hr
+        cases hr
+      · rw [hc] at ha
+        cases ha
+      · rw [hc] at hq
+        cases hq
+    · have e : ms = ms' := Ixon.ConstantInfo.muts.inj (hc.symm.trans hms)
+      subst e
+      have := (Array.getElem?_eq_some_iff.mp hm).1
+      omega
+  exact ⟨[], by simp, by simp, hinv, hXe, fun x hx => (hno x hx).elim, by simp⟩
 
 /-! ## The family of a standalone recursor record -/
 

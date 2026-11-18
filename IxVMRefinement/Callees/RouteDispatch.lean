@@ -224,7 +224,7 @@ theorem exprTree?_of {refs recurAddrs : List _root_.Address} {sharing : List Ixo
     exprTree? refs recurAddrs sharing e = some T := by
   have hex : ∃ T, ExprTree refs recurAddrs sharing 4294967295 e T := ⟨T, hT⟩
   unfold exprTree?
-  rw [dif_pos hex]
+  rw [dite_eq_left hex]
   exact congrArg some (ExprTree.functional (Classical.choose_spec hex) hT)
 
 /-! ## The scan of the constructors -/
@@ -705,7 +705,7 @@ theorem record_route_agrees {E : Ixon.Env} {b : Bytes.Address} {bp r : SourceVal
       have := (List.getElem?_eq_some_iff.mp hmj).1
       omega
     -- the members' addresses
-    have ext2 : Heap.Extends h m90 := ev14.heap_extends
+    have ext2 := ev14.heap_extends
     obtain ⟨ext3, mems, hmemsRep, hmap⟩ := L1.build_recur_addrs_spec
       (membersRep_of_repMutConstList hmsRep) (Bytes.repAddressRef_heapMono₂ addrTy ext2 hb) ev179
     rw [← L1.blockRecurAddrs_eq_mapIdx] at hmap
