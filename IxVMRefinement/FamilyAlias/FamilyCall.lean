@@ -244,9 +244,8 @@ closure's store is closed under what its records use, and holds the family recor
 theorem closureFamilyCheck_of_call {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hcall : FamilyCallRow.{u} L) :
     ∀ calls, Binding.AtGroups (Binding.BindingRun calls) (ClosureFamilyCheck.{u} L calls) := by
-  intro calls t ρ Rs hrun hall ht g hg6 hg
-  intro R R' R₁ env₀ envT famOf₀ famOf adv cont bAddr B rb cb crb hC hextT hndT hnB hcb hunc
-    hfam hcrb hfrT
+  intro calls t ρ Rs hrun hall ht g hg6 hg R R' R₁ env₀ envT famOf₀ famOf adv cont bAddr B rb cb
+    crb hC hextT hndT hnB hcb hunc hfam hcrb hfrT
   have hS : LoadedReads.RunStore calls ρ.E₀ := hrun.runStore
   have hloaded : ∀ a lr, R₁.consts.get? a = some lr → ρ.E₀.consts.get? a = some lr :=
     fun a lr h => hC.admits.loaded a lr (hC.store.le₂.1 a lr h)
