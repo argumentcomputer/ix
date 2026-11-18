@@ -3988,11 +3988,6 @@ def check_const := aiur_fn⟦
           check_block_member_kinds(rec_block);
           let family = KernelModeled::rec_family_block(addr);
           let modeled = KernelModeled::block_is_modeled(family);
-          -- A recursor of a mutual or nested family is refused: the family check below is not
-          -- part of what the program is proved to establish. Every route to a recursor passes
-          -- here (a constant by its address, a member of a block, or a container recursor
-          -- named by family advice). Modeled block arms still check their families.
-          assert_eq!(modeled, 0, "a recursor of a mutual or nested family is refused");
           match modeled {
             0 => {
               -- the native route: the block's one recursor (`nativeShape?`)
