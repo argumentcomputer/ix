@@ -30,9 +30,12 @@ what a run's admission of one group establishes, and the step from one to the ne
 * `Admits ρ t g R R'`: what the run's admission of group `g` establishes about the store: `R'`
   is `R` and the records walked for `g`, all loaded by the run, with the store clauses of
   `TableShape`; every new record is reached through used references of smaller rank or stored
-  ones; every new unit is checked at `groupValLimit g`; the group's roles are validated and
-  their kept records are in `R'`; no new record is an operation's other than the group's
-  own; and `R'` holds the records the proofs in the evidence of the group's roles use.
+  ones; the group's roles are validated and their kept records are in `R'`; no new record is
+  an operation's other than the group's own; and `R'` holds the records the proofs in the
+  evidence of the group's roles use. That a new unit was checked at `groupValLimit g` is not a
+  clause here: a block's selected family record is checked by the block's family check, which
+  is no check of a unit, so the check clause names the group's family selection
+  (`FamilyAdmits.checked`, `IxVMRefinement.Binding.FamilyAdmits`).
 * `StepCore X ρ t G g`: the step on any needs-closed `G` holding the group of every bound role
   in force at `groupValLimit g`: from `Bnd` on `G` and `Admits` to `Bnd` on `G` and `g`.
   `StepInstance` is one step taken at concrete data, for non-vacuity.
@@ -205,7 +208,8 @@ def IsAxiomLike (c : Ixon.Constant) : Prop :=
 /-- **What the run's admission of group `g` establishes about the store**, from `R` (the
 groups admitted before) to `R'` (module docstring). The new records are those the walk of the
 group's roots reached and `R` did not hold, the projection records of new blocks, and the
-record of the group's standard axiom. -/
+record of the group's standard axiom. The check of the new units is the clause
+`FamilyAdmits.checked`, beside this one. -/
 structure Admits (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : Ixon.Env) : Prop where
   /-- `R'` holds what `R` holds. -/
   mono : ∀ a lc, R.consts.get? a = some lc → R'.consts.get? a = some lc
@@ -234,9 +238,6 @@ structure Admits (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : Ixon.En
     ∃ r ∈ roleGroup g, r ∈ standardAxioms ∧ t.addressOf? r = some a
   /-- A new record is in Lean's logic. -/
   logic : ∀ a c, New R R' a → recordOf R' a = some c → InLogic c
-  /-- Every new unit (definition, recursor or block) was checked at the group's limit. -/
-  checked : ∀ a c, New R R' a → recordOf R' a = some c → UnitKind c →
-    ρ.checked a (valLimit g)
   /-- Every role of the group was validated. -/
   validated : ∀ r ∈ roleGroup g, ρ.validated g r
   /-- The record of every kept or prelude role of the group is held by `R'`. -/
