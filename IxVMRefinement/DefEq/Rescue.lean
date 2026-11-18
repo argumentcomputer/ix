@@ -602,7 +602,7 @@ bytes (`UInt64::from_field`) and the block address, with empty tables, serialize
 (`put_constant`) and hashed (`bytes_to_addr`): its address is `iprjAddr`. The run hashed those
 bytes, so a record of `c.E` there has them as its bytes (`load_escape`, under `CoreGood`), and
 decodes to that record (`LoadFacts.canonical`). -/
-theorem compute_iprj_addr_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem compute_iprj_addr_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::compute_iprj_addr" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.compute_iprj_addr c args h r h' calls := by
@@ -787,7 +787,7 @@ loaded constant is an inductive (`get_ci`) with no index, at a block with at mos
 field) and not recursive (`struct_is_rec`); its parameters are certified (`family_params`). The
 capabilities are the install's (`LoadFacts.unitLike`); the family's telescope at the
 positional levels is its type at its own parameters, which permute the positions (`ValRep`). -/
-theorem is_unit_like_type_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem is_unit_like_type_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::is_unit_like_type" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.is_unit_like_type c args h r h' calls := by
@@ -946,7 +946,7 @@ for, with at least one field and a never-zero sort (`type_sort_never`), not recu
 field compares with its projection of `t` (`compare_struct_fields`). The capabilities, the
 projection table and the constructor application's type are the install's (`LoadFacts.eta`,
 `EnvFacts.etaTowers`, `EnvFacts.etaType`). -/
-theorem try_eta_struct_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem try_eta_struct_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_eta_struct" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_eta_struct c args h r h' calls := by

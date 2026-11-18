@@ -37,11 +37,12 @@ theorem unitStep_nativeBlock_held {calls : List (Call F)} {t : Ix.Kernel.RoleTab
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
     (hcov : L1.CanonicalHashCoverage E calls)
-    (hguard : ∀ (env : Ix.Kernel.Env .anon) (new blk : List (ConstantInfo .anon))
+    (hread : Core.ProjGuardRunReading)
+    (hcert : ∀ (env : Ix.Kernel.Env .anon) (new blk : List (ConstantInfo .anon))
       (p₀ p : Ix.Kernel.NativeParts .anon) (ty' : Ix.Kernel.Expr .anon)
       (ctorsA : List (ConstantVal .anon × Nat)) (caps : IndCaps .anon),
       NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps →
-      BlockGuard ⟨E, env, t, some n⟩ new B)
+      BlockCert t E ⟨new ++ env.consts⟩ B)
     (heta : ∀ (env : Ix.Kernel.Env .anon) (new blk : List (ConstantInfo .anon))
       (p₀ p : Ix.Kernel.NativeParts .anon) (ty' : Ix.Kernel.Expr .anon)
       (ctorsA : List (ConstantVal .anon × Nat)) (caps : IndCaps .anon),
@@ -50,7 +51,7 @@ theorem unitStep_nativeBlock_held {calls : List (Call F)} {t : Ix.Kernel.RoleTab
       BlockEta ⟨E, env, t, some n⟩ new) :
     UnitStep.{u} (NativeBlockX.{u} t E) t envT E₀ E lim B cb :=
   unitStep_nativeBlock ht hS hst hrec hchk hlim hnat htele hkey hinert hcover
-    (hashedBlockProjectionsHeld_of_decoded hst.decoded) hcov hguard heta
+    (hashedBlockProjectionsHeld_of_decoded hst.decoded) hcov hread hcert heta
 
 /-- The committed table binds every role to a 32-byte address. -/
 theorem ctab_bound_size : ∀ p ∈ ctab.bound.toList, p.2.hash.size = 32 := by

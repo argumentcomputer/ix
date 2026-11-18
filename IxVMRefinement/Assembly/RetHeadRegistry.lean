@@ -30,8 +30,7 @@ Kept by every step that keeps the registry:
 * `RetHeadRegistry.nativeNoRec`: a native block's install, which registers its family, given
   the family's two facts;
 * `late_prefixInv_step_rh`, `unitStep_recLate_rh`: the late recursor's step, whose registry is
-  the one it was handed; the step's second interface receives the family's two facts;
-* `unitStep_defn_lateRH`, `unitStep_defnBlock_lateRH`: the definition steps.
+  the one it was handed; the step's second interface receives the family's two facts.
 -/
 
 universe u
@@ -300,44 +299,5 @@ theorem unitStep_recLate_rh {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
   · intro ci hci
     obtain rfl := List.mem_singleton.mp hci
     exact Or.inl ⟨A, hown, hname⟩
-
-/-! ## The definition steps -/
-
-/-- **`UnitStep` for a standalone definition record, keeping the clause** together with a
-clause `Y` kept by storing a value constant (`unitStep_defn_late` for the clause). -/
-theorem unitStep_defn_lateRH {Y : Ix.Kernel.Env .anon → Prop} {calls : List (Call F)}
-    {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon}
-    {lim : Option Nat} {bAddr A : _root_.Address} {c : Ixon.Constant} {d : Ixon.Definition}
-    {n : Nat}
-    (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
-    (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .defn d) (hlogic : InLogic c)
-    (hchk : CheckedAtFullAt calls bAddr t A n) (hlim : lim = some n)
-    (hkey : Decl.KeyFree (keyOf t A))
-    (hinert : InertClause t c)
-    (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
-    (hY : KeepsValues Y) :
-    UnitStep.{u} (fun env => RetHeadRegistry.{u} t E env ∧ Y env) t envT E₀ E lim A c :=
-  unitStep_defnJ ht hS hst hc hinfo hlogic hchk hlim hkey hinert hcover
-    ((keepsValuesJ_retHeadRegistry t E).and hY.toJ)
-
-/-- **`UnitStep` for a block of definitions, keeping the clause** together with a clause `Y`
-kept by storing a value constant (`unitStep_defnBlock_late` for the clause). -/
-theorem unitStep_defnBlock_lateRH {Y : Ix.Kernel.Env .anon → Prop} {calls : List (Call F)}
-    {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {bAddr B : _root_.Address} {cb : Ixon.Constant}
-    {ms : Array Ixon.MutConst} {n : Nat} {envT : Ix.Kernel.Env .anon} {lim : Option Nat}
-    (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
-    (hcov : LoadedReads.HashedRecordsStored calls E₀) (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ B = some cb) (hmuts : cb.info = .muts ms) (hlogic : InLogic cb)
-    (hdefs : DefnBlock ms)
-    (hchk : ∀ k, k < ms.size → MutsMemberCheckedAtFullAt calls bAddr t B ms k n)
-    (hlim : lim = some n)
-    (hkey : ∀ i m, ms[i]? = some m → Decl.KeyFree (keyOf t (memberAddr B i m)))
-    (hinert : InertClause t cb)
-    (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hY : KeepsValues Y) :
-    UnitStep.{u} (fun env => RetHeadRegistry.{u} t E env ∧ Y env) t envT E₀ E lim B cb :=
-  unitStep_defnBlockJ ht hS hcov hst hc hmuts hlogic hdefs hchk hlim hkey hinert hcover
-    ((keepsValuesJ_retHeadRegistry t E).and hY.toJ)
 
 end IxVM.Refinement.Typing

@@ -144,7 +144,7 @@ theorem pisNv_of_strip (ks : List Ix.Kernel.LevelParam) (vs : List KLevel) :
 end WhnfAux
 
 /-- `KernelWhnf::red_proj`: tag `1` is `Red.proj` at the structure's projection table. -/
-theorem red_proj_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem red_proj_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::red_proj" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.red_proj c args h r h' calls := by

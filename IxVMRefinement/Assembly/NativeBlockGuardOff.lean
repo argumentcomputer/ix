@@ -1,8 +1,8 @@
 import IxVMRefinement.Assembly.NativeBlockFinal
 
-/-! # The new table's guard clause off structure-like propositions
+/-! # The new table's firing off structure-like propositions
 
-`BlockGuard` (`NativeBlockTableOf.lean`) speaks of a projection table found at the projection
+`BlockFire` (`NativeBlockTableOf.lean`) speaks of a projection table found at the projection
 table name of the new family, and only where the table's sort tests equal to zero. The install
 puts a table in front only at one constructor and no index (`checkNativeTable`), with the
 family's sort as the table's; the prefix stores no table at that name (the former's key is fresh,
@@ -12,7 +12,7 @@ is a one-constructor, index-free family whose sort tests equal to zero:
 * `checkNativeTable_cases`: the table check either keeps the environment or puts in front one
   table, at one constructor and no index, with the family's name and sort;
 * `NativeInstallOut.table_struct`: a projection table among the new constants is that table;
-* `blockGuard_of_install_off`: `BlockGuard` off one-constructor, index-free propositional
+* `blockFire_of_install_off`: `BlockFire` off one-constructor, index-free propositional
   families.
 -/
 
@@ -88,12 +88,12 @@ theorem NativeInstallOut.table_struct {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.E
     subst hm
     exact ⟨hO.lenA.symm.trans hlen, hO.nIdx.symm.trans hidx, hsort⟩
 
-/-- **The guard clause off one-constructor, index-free propositional families**: where the
+/-- **The firing off one-constructor, index-free propositional families**: where the
 block has more or fewer than one constructor, or an index, or a sort that does not test equal to
-zero, `BlockGuard` holds — no table at the family's table name meets its premises. Inputs: the
+zero, `BlockFire` holds — no table at the family's table name meets its premises. Inputs: the
 install read off the member check, the prefix's projection names (`AuxRootSynced`, the fold's
 carried clause) and the freshness of the former's key. -/
-theorem blockGuard_of_install_off {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {n : Nat}
+theorem blockFire_of_install_off {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {n : Nat}
     {env : Ix.Kernel.Env .anon} {B : _root_.Address} {cb : Ixon.Constant}
     {ind : Ixon.Inductive} {blk : List (ConstantInfo .anon)} {p₀ p : Ix.Kernel.NativeParts .anon}
     {new : List (ConstantInfo .anon)} {ty' : Ix.Kernel.Expr .anon}
@@ -103,14 +103,10 @@ theorem blockGuard_of_install_off {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} 
     (hfreshT : env.find? (Core.keyOf t (Core.iprjAddr B 0)) = none)
     (hoff : ¬ (ind.ctors.size = 1 ∧ ind.indices.toNat = 0 ∧
       Ix.Kernel.Level.isEquiv p.resSort .zero = some true)) :
-    BlockGuard ⟨E, env, t, some n⟩ new B := by
-  unfold BlockGuard
-  intro i hi j cvC nP nF tbl hC hTb hz
+    BlockFire ⟨E, env, t, some n⟩ new B := by
+  unfold BlockFire
+  intro tbl hTb hz
   exfalso
-  have hκ : (appCtx ⟨E, env, t, some n⟩ new).stored.κ (Core.iprjAddr B 0) =
-      Core.keyOf t (Core.iprjAddr B 0) :=
-    appCtx_key_of_find (c := ⟨E, env, t, some n⟩) (new := new) hO.formerFind
-  rw [hκ] at hTb
   rcases find?_append_cases (env := env) new hTb with hm | hold
   · obtain ⟨h1, h2, h3⟩ := hO.table_struct hm
     rw [h3] at hz

@@ -451,14 +451,17 @@ theorem stagedLoads_cons_former {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
             hld hblk
         · exact h₁.inductBlock addr ptr h h' cs a b nl ty np ni nc u blk i ev trivial hold good
             ha hld hblk
-      projTablesGuard := by
+      projCtorTele := by
         intro bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hctor' htbl
         obtain ⟨hc₁, -⟩ := ctorOld hctor'
         have ei := keep _
           (h₁.ctorIndRes _ _ _ _ _ _ (L1.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
         rw [ei] at htbl
-        exact h₁.projTablesGuard bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hc₁
+        exact h₁.projCtorTele bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hc₁
           (consCtx_find_old (c := c) (cn := .indInfo cvF caps) htbl (fun e => by cases e))
+      projFire := h₁.projFire.keep (fun _ _ hf => hext.find hf)
+        (fun _ tbl htbl =>
+          consCtx_find_old (c := c) (cn := .indInfo cvF caps) htbl (fun e => by cases e))
       canonical := h₁.canonical
       storedRes := by
         intro a ci hf

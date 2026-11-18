@@ -255,7 +255,7 @@ theorem quotLift_substPW (u0 u1 : KLevel) :
 
 /-- **`Quot.lift`'s ι**: `Red.iota` at the stored `Quot.lift`, then the right-hand side's six
 `β`s. -/
-theorem quot_lift_red (c : ScopedCtx) (hc : ScopedCoreFacts c) {d : Nat} {a b : Bytes.Address}
+theorem quot_lift_red (c : ScopedCtx) (hc : ScopedCoreBase c) {d : Nat} {a b : Bytes.Address}
     {us mus : List KLevel} {As QA : List KExpr} {a3 q2 : KExpr}
     (haddr : c.t.addressOf? .quotLift = some (ixAddr a)) (hin : c.inForce .quotLift)
     (hmk : c.t.addressOf? .quotMk = some (ixAddr b))
@@ -372,7 +372,7 @@ theorem quot_lift_red (c : ScopedCtx) (hc : ScopedCoreFacts c) {d : Nat} {a b : 
 
 /-- **`Quot.ind`'s ι**: `Red.iota` at the stored `Quot.ind`, then the right-hand side's five
 `β`s. -/
-theorem quot_ind_red (c : ScopedCtx) (hc : ScopedCoreFacts c) {d : Nat} {a b : Bytes.Address}
+theorem quot_ind_red (c : ScopedCtx) (hc : ScopedCoreBase c) {d : Nat} {a b : Bytes.Address}
     {us mus : List KLevel} {As QA : List KExpr} {a3 q2 : KExpr}
     (haddr : c.t.addressOf? .quotInd = some (ixAddr a)) (hin : c.inForce .quotInd)
     (hmk : c.t.addressOf? .quotMk = some (ixAddr b))
@@ -482,7 +482,7 @@ eliminator's count, the major is head-normalized (`whnf`) to `Quot.mk` (by its r
 arguments at the eliminator's first level, `quot_certs` certifies the walks, and the result is
 the function (`Quot.lift`) or the minor premise (`Quot.ind`) applied to the packed element and
 the rest of the spine. -/
-theorem red_quot_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)} {h h' : Heap F}
+theorem red_quot_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::red_quot" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.red_quot c args h r h' calls := by
@@ -901,7 +901,7 @@ private theorem quot_certs_seg1 {c : ScopedCtx} {calls cs60 : List (Call F)} (ih
   · subst he55
     exact ⟨Heap.Extends.refl _, fun hv => absurd (he54.symm.trans hv) (by simp)⟩
 
-private theorem quot_certs_seg2 (c : ScopedCtx) (hc : ScopedCoreFacts c) {calls cs320 : List (Call F)}
+private theorem quot_certs_seg2 (c : ScopedCtx) (hc : ScopedCoreBase c) {calls cs320 : List (Call F)}
     (ih : IH c calls) (good : CoreGood c calls) (hsub : ∀ z ∈ cs320, z ∈ calls)
     (hle : cs320.length ≤ calls.length)
     {v57 rc il addr lvls ra mk mklvls ma types : SourceValue F} {m58 m318 : Heap F}
@@ -1034,7 +1034,7 @@ private theorem quot_certs_seg2 (c : ScopedCtx) (hc : ScopedCoreFacts c) {calls 
 /-- **`KernelWhnf::quot_certs`**: the eliminator's walk (gated by `Quot.lift`'s never-zero motive
 level, or certified together with the last `β`'s conversion), then `Quot.mk`'s walk (gated by its
 never-zero level, or certified). -/
-theorem quot_certs_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem quot_certs_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::quot_certs" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.quot_certs c args h r h' calls := by
