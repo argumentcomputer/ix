@@ -43,20 +43,20 @@ set_option linter.unusedVariables false
 
 /-- **Every lookup of `env` is found by `env₂` at the same level count.** -/
 def LenExt (env env₂ : Env .anon) : Prop :=
-  ∀ {n : KKey} {ci : ConstantInfo .anon}, env.find? n = some ci →
+  ∀ (n : KKey) (ci : ConstantInfo .anon), env.find? n = some ci →
     ∃ ci', env₂.find? n = some ci' ∧
       ci'.toConstantVal.levelParams.length = ci.toConstantVal.levelParams.length
 
 theorem LenExt.of_find {env env₂ : Env .anon}
     (h : ∀ {n : KKey} {ci : ConstantInfo .anon}, env.find? n = some ci →
       env₂.find? n = some ci) : LenExt env env₂ :=
-  fun hf => ⟨_, h hf, rfl⟩
+  fun _ _ hf => ⟨_, h hf, rfl⟩
 
 theorem LenExt.trans {e₁ e₂ e₃ : Env .anon} (h₁ : LenExt e₁ e₂) (h₂ : LenExt e₂ e₃) :
     LenExt e₁ e₃ := by
   intro n ci hf
-  obtain ⟨ci₂, hf₂, hl₂⟩ := h₁ hf
-  obtain ⟨ci₃, hf₃, hl₃⟩ := h₂ hf₂
+  obtain ⟨ci₂, hf₂, hl₂⟩ := h₁ _ _ hf
+  obtain ⟨ci₃, hf₃, hl₃⟩ := h₂ _ _ hf₂
   exact ⟨ci₃, hf₃, hl₃.trans hl₂⟩
 
 /-- Two conses whose heads have one name and one level count. -/
@@ -73,7 +73,7 @@ theorem LenExt.cons {env env₂ : Env .anon} (h : LenExt env env₂) {a b : Cons
     rw [← ha, hn]
     exact Ix.Kernel.Env.find?_cons_self b env₂
   · rename_i ha
-    obtain ⟨ci', hf', hl'⟩ := h hf
+    obtain ⟨ci', hf', hl'⟩ := h _ _ hf
     refine ⟨ci', ?_, hl'⟩
     rw [Ix.Kernel.EnvExt.find?_cons_ne (fun e => ha (hn.trans e))]
     exact hf'
@@ -81,7 +81,7 @@ theorem LenExt.cons {env env₂ : Env .anon} (h : LenExt env env₂) {a b : Cons
 /-- Arity and resolution are kept where lookups are kept at their level counts. -/
 theorem arRes_lenExt {env env₂ : Env .anon} (h : LenExt env env₂) {e : KExpr}
     (he : ArRes env e) : ArRes env₂ e :=
-  Ix.Kernel.Model.arRes_mono_len (fun hf => h hf) he
+  Ix.Kernel.Model.arRes_mono_len (fun hf => h _ _ hf) he
 
 /-! ## Renamings that keep level counts -/
 
@@ -421,7 +421,7 @@ theorem iotaRuleRenRunJ_storeAr {f : KKey → KKey} {env' envSelf : Env .anon} {
     rw [Ix.Kernel.Model.arOk_liftLooseBVars] at hlift
     refine ⟨hlift, Ix.Kernel.Expr.constsResolve_of_find (fun n hn => ?_) (hpins p hp).2.2.1⟩
     obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hn
-    obtain ⟨ci', h2, -⟩ := hlen hci
+    obtain ⟨ci', h2, -⟩ := hlen _ _ hci
     rw [h2]
     rfl
 
