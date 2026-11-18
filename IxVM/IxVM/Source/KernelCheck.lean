@@ -2705,12 +2705,13 @@ def check_rec_header_lets := aiur_fn⟦
   -- modeled block's family-wide one): the level link, the type up to definitional
   -- equality against the reconstruction, and every rule syntactically the
   -- reconstruction's. Nothing here reads model advice, so no reduction a recursor
-  -- performs depends on it.
+  -- performs depends on it. `form` is the form the family record's members before this one
+  -- take (`canonical_rules_at_pos`); returns it with this member's.
 
 def check_recursor_canonical_at := aiur_fn⟦
   fn check_recursor_canonical_at(rc: KernelRoles::RoleCtx, rec_ci: KernelTypes::KConstantInfo, addr: Bytes::AddressRef,
                                  parent_ci: KernelTypes::KConstantInfo, parent_addr: Bytes::AddressRef,
-                                 univ_offset: Field, block_nlvls: Field) -> () {
+                                 univ_offset: Field, block_nlvls: Field, form: Field) -> Field {
       match rec_ci {
         KernelTypes::KConstantInfo::Rec(nlvls, ty, n_p, n_i, n_mot, n_min, rules,
                             _k_flag, _uns, rec_block_addr, _rec_idx) => {
@@ -2749,17 +2750,17 @@ def check_recursor_canonical_at := aiur_fn⟦
                   canonical_rules_at_pos(rc, flat, self_pos, num_ctors,
                     parent_block_addr, parent_ind_idx, n_p, n_mot, n_min,
                     rec_lvls_list, peer_recs, flat_own_params, rules,
-                    ty, pty, pnlvls, pni, elim_level, univ_offset) } ,
+                    ty, pty, pnlvls, pni, elim_level, univ_offset, form) } ,
                 _ => {
                   match flat_find_pos(flat, parent_addr, 0) {
                     (1, self_pos) => {
                       canonical_rules_at_pos(rc, flat, self_pos, num_ctors,
                         parent_block_addr, parent_ind_idx, n_p, n_mot,
                         n_min, rec_lvls_list, peer_recs, flat_own_params,
-                        rules, ty, pty, pnlvls, pni, elim_level, univ_offset) } ,
+                        rules, ty, pty, pnlvls, pni, elim_level, univ_offset, form) } ,
                   } } ,
               } } ,
-            _ => {  () } ,
+            _ => {  form } ,
           } } ,
       }
     }
@@ -2775,18 +2776,37 @@ def canonical_rules_at_pos := aiur_fn⟦
                                    flat_own_params: Lists::List<Field>,
                                    rules: Lists::List<KernelTypes::KRecRule>,
                                    ty: KernelTypes::KExpr, pty: KernelTypes::KExpr, pnlvls: Field, pni: Field,
-                                   elim_level: KernelTypes::KLevel, univ_offset: Field) -> () {
+                                   elim_level: KernelTypes::KLevel, univ_offset: Field,
+                                   form: Field) -> Field {
       match flat_member_at(flat, self_pos) {
         (_, is_aux, spec_params, occ_us) => {
 
           let canonical_ty = build_rec_type(rc, pty, pnlvls, n_p, pni, elim_level,
             univ_offset, flat, flat_own_params, self_pos);
-          let same_ty = match kexpr_struct_eq(canonical_ty, ty) {
-            1 => {  1 } ,
-            _ => {  wrap_rel(1, canonical_ty, ty) } ,
+          -- the declared type is the reconstruction or its full consumption, and the family record
+          -- takes one of the two for all its members. `form` is 0 while every member before this
+          -- one is in both (it has no consumable wrapper, so the two coincide), 1 once one is the
+          -- reconstruction only, 2 once one is the full consumption only.
+          let form2 = match kexpr_struct_eq(canonical_ty, ty) {
+            1 => {
+              match form {
+                1 => {  1 } ,
+                _ => {
+                  match wrap_rel(1, canonical_ty, ty) {
+                    1 => {  form } ,
+                    _ => {
+                      assert_eq!(form, 0,
+                        "a family recursor record takes the full consumption at one member and the reconstruction at another");
+                      1 } ,
+                  } } ,
+              } } ,
+            _ => {
+              assert_eq!(wrap_rel(1, canonical_ty, ty), 1,
+                "recursor declared type is neither the canonical reconstruction nor its full consumption");
+              assert_eq!(Fields::is_zero(form - 1), 0,
+                "a family recursor record takes the reconstruction at one member and the full consumption at another");
+              2 } ,
           };
-          assert_eq!(same_ty, 1,
-            "recursor declared type is neither the canonical reconstruction nor its full consumption");
 
           let canon_n_motives = Lists::length(flat);
           let canon_n_minors = Lists::length(build_all_minors(rc, flat,
@@ -2802,7 +2822,8 @@ def canonical_rules_at_pos := aiur_fn⟦
             spec_params, 0, elim_level);
           compare_rules(rules, canonical, n_p, n_mot, n_min,
             parent_block_addr, parent_ind_idx, num_ctors, 0, elim_level,
-            ty, self_ctors_offset) } ,
+            ty, self_ctors_offset);
+          form2 } ,
       }
     }
 ⟧

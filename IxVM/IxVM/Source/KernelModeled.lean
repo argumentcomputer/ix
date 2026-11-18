@@ -1083,7 +1083,7 @@ def check_family := aiur_fn⟦
               -- the block's members, and witnessed members of its closure
               family_refs_ok(rc, rec_block, block, wset);
               let s9 = check_recs(rc, type_addrs, rec_addrs, rec_models, src, dst, aset, s8,
-                                  n_recs, 0, np, univ_offset, bnl, rec_addrs);
+                                  n_recs, 0, np, univ_offset, bnl, rec_addrs, 0);
               let Lists::Node::Nil = (*(s9));
               () } ,
           } } ,
@@ -1708,7 +1708,7 @@ def check_recs := aiur_fn⟦
                 src: Lists::List<Bytes::AddressRef>, dst: Lists::List<Bytes::AddressRef>,
                 aset: RBTreeMap::RBTreeMap<Field>, s: Bytes::Stream,
                 n_recs: Field, k: Field, np: Field, univ_offset: Field, bnl: Field,
-                fam: Lists::List<Bytes::AddressRef>) -> Bytes::Stream {
+                fam: Lists::List<Bytes::AddressRef>, form: Field) -> Bytes::Stream {
       match (*(recs)) {
         Lists::Node::Nil => {  s } ,
         Lists::Node::Cons(r, rest) => {
@@ -1751,13 +1751,15 @@ def check_recs := aiur_fn⟦
               KernelCheck::assert_safety(0, ty);
               KernelCheck::assert_safety_rules(0, rules);
               let parent = KernelCheck::rec_to_parent_addr(ty, rnp, nmot, nmin, ni);
-              KernelCheck::check_recursor_canonical_at(rc, rci, r, (*(Ingress::get_ci(parent))),
-                parent, univ_offset, bnl);
+              -- the family record takes one form for all its members (`form`, carried from the
+              -- members before this one)
+              let form2 = KernelCheck::check_recursor_canonical_at(rc, rci, r, (*(Ingress::get_ci(parent))),
+                parent, univ_offset, bnl, form);
               -- the header as plain syntax, as a native recursor's
               KernelCheck::check_rec_header_lets(ty, rnp, nmot, nmin, ni);
               let s2 = check_rules(rc, rm, nl, ty, rnp + nmot + nmin, ni, rules, src, dst, aset, s);
               check_recs(rc, type_addrs, rest, mrest, src, dst, aset, s2, n_recs, k + 1, np,
-                         univ_offset, bnl, fam) } ,
+                         univ_offset, bnl, fam, form2) } ,
           } } ,
       }
     }
