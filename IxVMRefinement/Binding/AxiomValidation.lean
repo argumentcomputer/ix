@@ -241,14 +241,16 @@ theorem axiomValidationFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       hrd.blobs x bs (hrun.runStore.blob_of_table hloaded hsub45 hbt x bs hm)
     obtain ⟨ty₀, hty, hreads, -⟩ :=
       LoadedReads.axio_reading ht (store := IxVM.Consistency.recordOf R')
-        (blob := fun x => R'.blobs.get? x) hcR' hinfo hlogic (by rw [hkeya]; exact hinert)
+        (blob := fun x => R'.blobs.get? x) hcR' hinfo hlogic (by
+          have e : IxVM.Consistency.keyOf t a = Ix.Kernel.Key.role r := hkeya
+          rw [e]; exact hinert)
         hblobR hrawV
     obtain ⟨hnl, tyPtr, hvV, rawT⟩ := hrawV
     -- the axiom's checks
     match Obs.«KernelRoles::validate_standard_axiom».obs ev290 with
-    | .run (hv15 := hci) (ev72 := e72) (hm136 := hm) (ev109 := e109) (ev174 := e174)
-        (ev153 := e153) (hc388 := hca) (m60 := b60) (m128 := b128) (m97 := b97) (m164 := b164)
-        (cs107 := cs_es) .. =>
+    | .run (m60 := b60) (m97 := b97) (cs107 := cs_es) (m128 := b128) (m164 := b164)
+        (hv15 := hci) (ev72 := e72) (hm136 := hm) (ev109 := e109) (ev174 := e174)
+        (ev153 := e153) (hc388 := hca) .. =>
       have hcia := (Value.construct.inj (hvV.symm.trans (hvv31.trans hci))).2.2
       injection hcia with hnlE hcia2
       injection hcia2 with htyE hcia3
@@ -434,7 +436,8 @@ theorem axiomValidationFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
 /-- **The residual's hypothesis `standardAxiomRoleUnit`, with no premise.** -/
 theorem standardAxiomRoleUnit_closed :
     ∀ calls : List (Call F), AtGroups (BindingRun calls)
-      (RoleUnitStepOver.{u} (· ∈ IxVM.Consistency.standardAxioms) FormerOpenTraceAt) :=
-  AxiomInstall.standardAxiomRoleUnit (fun calls => axiomValidationFacts FormerOpenTraceAt calls)
+      (RoleUnitStepOver.{u} (· ∈ IxVM.Consistency.standardAxioms) Typing.FormerOpenTraceAt) :=
+  AxiomInstall.standardAxiomRoleUnit
+    (fun calls => axiomValidationFacts Typing.FormerOpenTraceAt calls)
 
 end IxVM.Refinement.Binding
