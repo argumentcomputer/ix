@@ -122,8 +122,9 @@ fact about the run at the group (its producer is named in the lane's notes):
 * `keptRoles`: the record of each kept or prelude role of the group that is no role unit is in
   the group's store, no block, in Lean's logic with its block, and, if held before the group,
   checked by the run at some limit;
-* `routeRead`: at a store between `R` and `R'` lacking only role-unit records, a block the store
-  routes as modeled has a selected family record if new, and is so routed by `R` if old;
+* `routeNew`: at a store between `R` and `R'` lacking only role-unit records, a new block the
+  store routes as modeled has a selected family record (a block held before the group keeps its
+  route, `blockRoute_closureStore`);
 * `readsDown`: at such a store, a reading of an address `R` holds is a reading over `R`. -/
 structure ClosureRunFacts (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : Ixon.Env)
     (famOf : _root_.Address → Option _root_.Address)
@@ -148,9 +149,8 @@ structure ClosureRunFacts (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' 
     ∃ c, recordOf R' a = some c ∧ (∀ ms, c.info ≠ .muts ms) ∧ InLogic c ∧
       (∀ cb, recordOf R' (Ix.Cert.ownerOf a c) = some cb → InLogic cb) ∧
       ((recordOf R a).isSome = true → ∃ n, ρ.checked a n)
-  routeRead : ∀ R₁ B, ClosureStore t g R R' R₁ → Route.blockRoute R₁ B = some true →
-    (New R R' B → ∃ rb, famOf B = some rb) ∧
-    ((recordOf R B).isSome = true → Route.blockRoute R B = some true)
+  routeNew : ∀ R₁ B, ClosureStore t g R R' R₁ → New R R' B →
+    Route.blockRoute R₁ B = some true → ∃ rb, famOf B = some rb
   readsDown : ∀ R₁ x ci₀, ClosureStore t g R R' R₁ → (recordOf R x).isSome = true →
     Reads t R₁ x ci₀ → Reads t R x ci₀
 

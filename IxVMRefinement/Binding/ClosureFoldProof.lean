@@ -1,5 +1,6 @@
 import IxVMRefinement.Binding.ClosureFoldSteps
 import IxVMRefinement.Binding.OpInstall
+import IxVMRefinement.Binding.ClosureRoute
 
 /-! # The closure fold with the family form: the proof
 
@@ -454,10 +455,10 @@ theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
   case fams =>
     refine ⟨fun B cb hcb hroute hst => ?_, fun B rb h => ?_, fun B rb cb h hcb x hx => ?_,
       fun B rb crb h hcrb => ?_⟩
-    · obtain ⟨hnew, hold⟩ := hRF.routeRead _ B hspec hroute
-      cases hRB : recordOf R B with
+    · cases hRB : recordOf R B with
       | none =>
-        obtain ⟨rb, hrb⟩ := hnew ⟨Option.isSome_iff_exists.mpr ⟨cb, rec₁₂ hcb⟩, hRB⟩
+        obtain ⟨rb, hrb⟩ :=
+          hRF.routeNew _ B hspec ⟨Option.isSome_iff_exists.mpr ⟨cb, rec₁₂ hcb⟩, hRB⟩ hroute
         exact ⟨rb, joinFam_some hrb⟩
       | some cb₀ =>
         have e : cb₀ = cb := rec_eq (recordOf_closureStore_of_R hadm hRB) hcb
@@ -473,8 +474,10 @@ theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
             have hR := hnD.2
             rw [hRB] at hR
             cases hR
-        obtain ⟨rb, hrb⟩ :=
-          hSF.selected B cb hRB (hold (Option.isSome_iff_exists.mpr ⟨cb, hRB⟩)) hstR
+        have hrouteR : Route.blockRoute R B = some true := by
+          rw [← blockRoute_closureStore hadm hb.shape.usedClosed hRB]
+          exact hroute
+        obtain ⟨rb, hrb⟩ := hSF.selected B cb hRB hrouteR hstR
         exact ⟨rb, hf₀ B rb hrb⟩
     · rcases joinFam_cases h with hfa | ⟨-, h₀⟩
       · obtain ⟨cb, ms, crb, rs, flat, hF⟩ := hGFC.family B rb hfa
