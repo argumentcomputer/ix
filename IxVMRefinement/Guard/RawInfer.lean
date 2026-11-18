@@ -29,7 +29,11 @@ def RawTypeAt (c : ScopedCtx) (κ : _root_.Address → KKey) (rootCalls : List (
     ObsFn W "KernelInfer::const_type_of" [value] beforeType typePtr beforeInst typeCalls ∧
     Heap.Extends loaded beforeInst ∧ RawExprRep κ beforeInst 0 raw typePtr ∧
     (∀ call ∈ loadCalls, call ∈ rootCalls) ∧ (∀ call ∈ typeCalls, call ∈ rootCalls) ∧
-    output = raw.instantiateLevelParams (List.range parameters.length) parameters
+    output = raw.instantiateLevelParams (List.range parameters.length) parameters ∧
+    parameters.length < 549755813888 ∧
+    ∃ (beforeCount afterCount : Heap F) (countCalls : List (Call F)),
+      ObsFn W "KernelInfer::const_num_lvls" [value] beforeCount
+        (.field (parameters.length : F)) afterCount countCalls
 
 /-- The successful data strategy implemented by infer_shape, independently of its fuel. -/
 inductive RawInferTrace (types delta : KKey → List KLevel → KExpr → Prop) :
@@ -141,7 +145,8 @@ private theorem infer_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved
       have inside : ∀ call ∈ children, call ∈ calls := by intro call member; rw [events]; simp [member]
       obtain ⟨ci, origin, ptr, value, typePtr, loadedHeap, beforeType, beforeInst, loadCalls,
         typeCalls, instCalls, found, arity, load, member, node, getType, originRep, extension,
-        inst, loadSubset, typeSubset, _, resultRep⟩ := declared_type_keyed_raw_origin rawKey facts
+        inst, loadSubset, typeSubset, _, resultRep, countBound, countObserved⟩ :=
+          declared_type_keyed_raw_origin rawKey facts
           (good.sub inside) addressRep scopedRep.const_key_ne paramsRep declared
       have typeOrigin : RawTypeAt c rawKey rootCalls (rawKey (ixAddr address)) parameters
           (origin.instantiateLevelParams (List.range parameters.length) parameters) := by
@@ -149,7 +154,8 @@ private theorem infer_raw_go (rawKey : _root_.Address → KKey) [∀ a, Resolved
           loadCalls, typeCalls, rfl, found, arity, addressRep, load, subset _ (inside _ member),
           node, getType, extension, originRep,
           fun call member => subset call (inside call (loadSubset call member)),
-          fun call member => subset call (inside call (typeSubset call member)), rfl⟩
+          fun call member => subset call (inside call (typeSubset call member)), rfl,
+          countBound, countObserved⟩
       exact ⟨0, _, resultRep, .const typeOrigin⟩
     | .other_App (cs207 := first) (cs256 := heads) (cs306 := instCalls) (ld60 := loaded)
         (ev209 := child) (ev258 := norm) (ld252 := forallNode) (ev308 := inst) (hc332 := events) .. =>
