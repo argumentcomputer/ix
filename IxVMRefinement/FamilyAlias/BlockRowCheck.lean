@@ -8,10 +8,11 @@ import IxVMRefinement.Assembly.TypingBasisProj
 
 `familyBlockRow_of_check`: the residual theorem's row `familyBlock` (`FamilyBlockRow`) from the
 circuit side's facts that read the family check (`FamilyBlockCheckRow`): the seam, the
-companion facts of each recursor the step stores, and the three load facts at its new constants
-that read the family check (`FamilyLoadsCheck`; the other eleven are `FamLoadCtx.newLoads`, from
-the store, the records, the route fact and the walk's check of the block,
-`famLoadCtx_of_step`). The other two facts
+companion facts of each recursor the step stores, and the seam of the loads
+(`FamilyMembersCanon`: each new constant stored in the canonical annotated form the circuit
+loads, and the references the two records use stored). The fourteen load facts at the step's
+new constants are `FamLoadCtx.newLoads`, from that seam, the store, the records, the route fact
+and the walk's check of the block (`famLoadCtx_of_step`). The other two facts
 `familyBlockRow_of_circuit` takes from the circuit side are proved at the row:
 
 * `famBlockRecord_of_run`: the block's record is a block of inductives with its member and
@@ -623,8 +624,8 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
           hML, hf''.trans (congrArg some ecv)⟩ }
 
 /-- **What the circuit side's family check hands the step of the block at `A` with its family
-record at `rb`**: the seam, the companion facts of each recursor the step stores, and the load
-facts that reach its new constants (the fields of `FamilyBlockCircuit` that read the family
+record at `rb`**: the seam, the companion facts of each recursor the step stores, and the seam
+of the loads at its new constants (what the fields of `FamilyBlockCircuit` read of the family
 check). -/
 structure FamilyBlockCheck (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
     (t : Ix.Kernel.RoleTable) (envT : Ix.Kernel.Env .anon) (E₀ E : Ixon.Env) (lim : Option Nat)
@@ -668,15 +669,6 @@ structure FamilyBlockCheck (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
       StoredAs c' ci) →
     ∀ ms rs, c.info = .muts ms → crb.info = .muts rs →
       FamilyMembersCanon t E₀ A c ms rb crb rs ⟨new ++ env.consts⟩
-  /-- The load facts at the step's new constants that read the family check. -/
-  loads : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
-    (aliases blk new : List (ConstantInfo .anon)),
-    Decl.PrefixInv.{u} E t lim env → AliasGroup env h aliases →
-    FamDeclReads t E₀ A c rb crb blk →
-    DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
-    (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
-      StoredAs c' ci) →
-    FamilyLoadsCheck (appCtx ⟨E, env, t, lim⟩ new).stored new
 
 /-- **The facts of the family check at every block with a family record**, at the hypotheses of
 the row `familyBlock`. -/
@@ -714,8 +706,7 @@ theorem familyBlockCircuitRow_of_check {L : Ix.Kernel.Env .anon → NativeFam .a
       recs := hK.recs
       loads := fun env h aliases blk new hinv hg hreads hd hst =>
         (famLoadCtx_of_step hctx hB hrb hroute hfree hrouteT htrees hinv hg hreads hd hst
-          (hK.canon env h aliases blk new hinv hg hreads hd hst ms rs hB.muts hrb.muts)).newLoads
-          (hK.loads env h aliases blk new hinv hg hreads hd hst) }
+          (hK.canon env h aliases blk new hinv hg hreads hd hst ms rs hB.muts hrb.muts)).newLoads }
 
 /-- **The row `familyBlock` from the facts of the family check** (module docstring). -/
 theorem familyBlockRow_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}

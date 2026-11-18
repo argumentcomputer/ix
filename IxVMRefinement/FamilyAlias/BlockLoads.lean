@@ -4,14 +4,14 @@ import IxVMRefinement.Assembly.NativeBlockNewFacts
 import IxVMRefinement.L1.HashedBlock
 import IxVMRefinement.TwinFamily.Reload
 
-/-! # The load facts at the family step's new constants that do not read the family check
+/-! # The load facts at the family step's new constants
 
 `NewLoads` (`Assembly/NativeBlockLoads.lean`) asks, at the environment after the family step,
 each field of the load contract whose load or stored constant is new. The step stores the
 block's inductives and constructors and the family record's recursors at the keys of their
-constant addresses, and the aliases (definitions) at derived keys. Ten fields hold from the
-records at those addresses, the store, the route fact at the block and the walk's check of the
-block, with no fact of the family check (`FamLoadCtx.newLoads`); eleven fields in all:
+constant addresses, and the aliases (definitions) at derived keys. All fourteen fields hold
+(`FamLoadCtx.newLoads`). Eleven hold from the records at those addresses, the store, the route
+fact at the block and the walk's check of the block, with no fact of the family check:
 
 * `projFire`: the step stores no projection table;
 * `inductRecord`, `inductBlock`, `ctorIndRes`: a load of a new inductive reads the member's
@@ -35,13 +35,13 @@ block, with no fact of the family check (`FamLoadCtx.newLoads`); eleven fields i
   inductive refutes (`struct_is_rec_one`, `FamilyAlias/StructRecScan.lean`: the dispatch's nested
   occurrence is in a field that mentions the member).
 
-Two more hold from the seam `FamilyMembersCanon` (the family check stores each new inductive and
-constructor in the canonical annotated form the circuit loads, `LoadedReads.canonAnn` of its
-reading, and the block's used references are stored): `getIprj` and `getCprj`, through the
-stored constants' shapes (`FamLoadCtx.indForm`, `ctorForm`) and the canonical loads
+Three hold from the seam `FamilyMembersCanon` (the family check stores each new constant in the
+canonical annotated form the circuit loads, `LoadedReads.canonAnn` of its reading, and the
+references the two records use are stored). `getIprj` and `getCprj`, through the stored
+constants' shapes (`FamLoadCtx.indForm`, `ctorForm`) and the canonical loads
 (`LoadedReads.get_ci_iprj_load_canon`, `get_ci_cprj_load_canon`).
 
-The last one, `getCI` (the load of a new constant at its key), holds from the same seam: at an
+`getCI` (the load of a new constant at its key): at an
 inductive or a constructor projection (`FamLoadCtx.getCI_iprj`, `getCI_cprj`: the load's trace
 bounds the record's indices, `LoadedReads.get_ci_iprj_canon`, `get_ci_cprj_canon`), and at a
 recursor projection of the family record, where the seam gives the stored recursor's loaded form
@@ -59,24 +59,6 @@ open IxVM (F)
 open Ix.Kernel (ConstantInfo ConstantVal IndCaps)
 
 set_option linter.unusedVariables false
-
-/-! ## The fields that read the family check -/
-
-section Check
-open IxVM.Refinement.Core
-
-/-- **The load fact at a recursor projection of the family record**, as the family check would
-give it directly: the load of a new constant at its key where the address holds a recursor
-projection record. `FamLoadCtx.newLoads` no longer reads it (`FamLoadCtx.getCI_rprj`). -/
-structure FamilyLoadsCheck (c : ScopedCtx) (new : List (ConstantInfo .anon)) : Prop where
-  getCI : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
-    ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → Good c.toCtx cs →
-    Bytes.RepAddressRef addrTy h a addr → (∃ cn ∈ new, cn.name = keyOf c.t (ixAddr a)) →
-    (∃ (cm : Ixon.Constant) (p : Ixon.RecursorProj),
-      IxVM.Consistency.recordOf c.E (ixAddr a) = some cm ∧ cm.info = .rPrj p) →
-      ∃ ci, c.env.find? (c.κ (ixAddr a)) = some ci ∧ CIPtrRep c.κ h' ptr ci
-
-end Check
 
 /-! ## What the step's store and records give -/
 
@@ -708,10 +690,8 @@ theorem nativeAt_of_proj_ctor {c : Core.Ctx} {cs : List (Call F)} (hg : Core.Goo
   have hg' : Core.Good c cs23 := hg.sub fun cl hcl => by simp [hc52, hc45, hcl]
   exact ⟨bp, h, m15, cs23, b, ev25, hg'.1, hg'.2, hb, rfl⟩
 
-/-- **The load facts at the family step's new constants** from those that read the family check
-(module docstring). -/
-theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs)
-    (hK : FamilyLoadsCheck (appCtx C new).stored new) :
+/-- **The load facts at the family step's new constants** (module docstring). -/
+theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs) :
     NewLoads (appCtx C new).stored new where
   getCI := by
     intro addr ptr h h' cs a ev good ha hn
