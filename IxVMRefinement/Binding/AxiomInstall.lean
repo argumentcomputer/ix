@@ -23,7 +23,7 @@ hypothesis `standardAxiomRoleUnit`.
   raise.
 * `AxiomValidationFacts L calls`: what the run's validation of a standard axiom
   (`KernelRoles::validate_standard_axiom`) gives the step, at every binding run with its record
-  stores (`RunStepStores`).
+  stores (`RunStepStores`, the run predicate's `BindingRun.stepStores`).
 * `standardAxiomRoleUnit_of_validation`, `standardAxiomRoleUnit`: the role unit of the standard
   axioms, from those facts.
 
@@ -549,11 +549,14 @@ theorem roleAxiom_stored {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
 /-- **What a binding run's validation of a standard axiom gives the fold**: at every group `g`
 whose one role is the standard axiom `r` bound at `a`, every admission of `g` by the run from
 `R` to `R'`, and every store `R₁` and environment `env₁` with the invariant below `g` such that
-`R'` is `R₁` and the record at `a`: the axiom's declaration checked at `env₁` (its declared type
-`tyD` elaborates to a sort, stored as `ty`), the stored signature matching the kernel's pin, the
-declared type naming no derived key, `ty` annotating `tyD`, the record at `a` an axiom record
-reading as the declaration, at an address of 32 bytes, and the stored constant the one every
-load of the record represents.
+`R'` is `R₁` and the record at `a`: the record at `a` is an axiom record; and where `env₁` does
+not store the axiom's key, the axiom's declaration checked at `env₁` (its declared type `tyD`
+elaborates to a sort, stored as `ty`), the stored signature matching the kernel's pin, the
+declared type naming no derived key, `ty` annotating `tyD`, the record at `a` reading as the
+declaration, at an address of 32 bytes, and the stored constant the one every load of the record
+represents. Where `env₁` already stores the key (`AddsAt` allows `R₁` to hold the record), the
+step needs only the record's shape (`roleAxiom_stored`); the declaration's check asserts the
+key fresh, so it is asked only where it is.
 
 From the run: `KernelRoles::validate_standard_axiom` (`KernelRoles.lean:926`) asserts the record
 an axiom with no unsafe flag, its type well scoped (`validate_expr_well_scoped`) and a sort under
@@ -569,28 +572,28 @@ def AxiomValidationFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
       6 ≤ g → g < 77 → roleGroup g = [r] → r ∈ standardAxioms → t.addressOf? r = some a →
       Admits ρ t g R R' → AdmitsReads ρ t R R' → BndOver.{u} L t (· < g) R₁ env₁ →
       AddsAt R₁ R' a →
-      ∃ (lps : List Ix.Kernel.LevelParam) (tyD ty : Core.KExpr),
-        Ix.Kernel.Semantics.ConstantValRunJ Ix.Kernel.Model.rulesJ env₁
-          ⟨.role r, lps, tyD⟩ ty ∧
-        Ix.Kernel.ConstantVal.matchesPin ⟨.role r, lps, ty⟩ (stdAxiomPin r) = true ∧
-        tyD.RefsIn Decl.NonAuxKey ∧ Annotates ty tyD ∧
-        Reads t R' a (.axiomInfo ⟨.role r, lps, tyD⟩) ∧
-        (∃ c ax, recordOf R' a = some c ∧ c.info = .axio ax) ∧ a.hash.size = 32 ∧
-        ∀ E, RecordsFor R' E →
-          Decl.ReloadsAs E t (axInstalled env₁ r lps ty) (.axiomInfo ⟨.role r, lps, ty⟩)
+      (∃ c ax, recordOf R' a = some c ∧ c.info = .axio ax) ∧
+      (env₁.find? (Ix.Kernel.Key.role r) = none →
+        ∃ (lps : List Ix.Kernel.LevelParam) (tyD ty : Core.KExpr),
+          Ix.Kernel.Semantics.ConstantValRunJ Ix.Kernel.Model.rulesJ env₁
+            ⟨.role r, lps, tyD⟩ ty ∧
+          Ix.Kernel.ConstantVal.matchesPin ⟨.role r, lps, ty⟩ (stdAxiomPin r) = true ∧
+          tyD.RefsIn Decl.NonAuxKey ∧ Annotates ty tyD ∧
+          Reads t R' a (.axiomInfo ⟨.role r, lps, tyD⟩) ∧ a.hash.size = 32 ∧
+          ∀ E, RecordsFor R' E →
+            Decl.ReloadsAs E t (axInstalled env₁ r lps ty) (.axiomInfo ⟨.role r, lps, ty⟩))
 
 /-- **The standard axioms' role unit, from the validation facts.** -/
 theorem standardAxiomRoleUnit_of_validation {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (hL : LinkLaws L) {calls : List (Call F)}
-    (hst : ∀ t ρ Rs, BindingRun calls t ρ Rs → RunStepStores calls t ρ.E₀)
-    (hv : AxiomValidationFacts.{u} L calls) :
+    (hL : LinkLaws L) {calls : List (Call F)} (hv : AxiomValidationFacts.{u} L calls) :
     AtGroups (BindingRun calls) (RoleUnitStepOver.{u} (· ∈ standardAxioms) L) := by
   intro t ρ Rs hrun hall ht g h6 h77 r a R R₁ R' env₁ hgrp hstd ha hadm hreads hb hadds
-  obtain ⟨lps, tyD, ty, hcv, hpin, hnaux, hty, hrd, hsolo, hsize, hreload⟩ :=
-    hv t ρ Rs hrun (hst t ρ Rs hrun) hall ht g r a R R₁ R' env₁ h6 h77 hgrp hstd ha hadm hreads
+  obtain ⟨hsolo, hfresh⟩ :=
+    hv t ρ Rs hrun hrun.stepStores hall ht g r a R R₁ R' env₁ h6 h77 hgrp hstd ha hadm hreads
       hb hadds
   cases hf : env₁.find? (Ix.Kernel.Key.role r) with
   | none =>
+    obtain ⟨lps, tyD, ty, hcv, hpin, hnaux, hty, hrd, hsize, hreload⟩ := hfresh hf
     exact ⟨axInstalled env₁ r lps ty, fun ci hci => List.mem_cons_of_mem _ hci,
       roleAxiom_step hL hall hgrp hstd ha hadm hb hadds hf hcv hpin hnaux hty hrd hsolo hsize
         hreload⟩
@@ -600,12 +603,9 @@ theorem standardAxiomRoleUnit_of_validation {L : Ix.Kernel.Env .anon → NativeF
 /-- **The standard axioms' role unit at the link the composed fold carries**, in the form the
 composed residual takes it. -/
 theorem standardAxiomRoleUnit
-    (hst : ∀ (calls : List (Call F)) t ρ Rs, BindingRun calls t ρ Rs →
-      RunStepStores calls t ρ.E₀)
     (hv : ∀ calls : List (Call F), AxiomValidationFacts.{u} FormerOpenTraceAt calls) :
     ∀ calls : List (Call F), AtGroups (BindingRun calls)
       (RoleUnitStepOver.{u} (· ∈ standardAxioms) FormerOpenTraceAt) :=
-  fun calls =>
-    standardAxiomRoleUnit_of_validation linkLaws_formerOpenTrace (hst calls) (hv calls)
+  fun calls => standardAxiomRoleUnit_of_validation linkLaws_formerOpenTrace (hv calls)
 
 end IxVM.Refinement.Binding.AxiomInstall

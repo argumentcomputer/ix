@@ -279,7 +279,7 @@ theorem get_ci_induct_head {x_addr r : SourceValue F} {h h' : Heap F} {calls : L
     subst v722 m731
     obtain ⟨b, hb_eq, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk_ix
     have hb_eq' : Core.ixAddr b = blk := hb_eq
-    obtain ⟨cb, ms, ind, hbl, hmem, nl', ty', np', ni', u', hld'⟩ := get_ci_iprj_head hb_rep ev720
+    obtain ⟨cb, ms, ind, hbl, hmem, nl', ty', np', ni', hld'⟩ := get_ci_iprj_head hb_rep ev720
     rw [L1.val_cast_u56_ing hidx56] at hmem
     have hv := Except.ok.inj (hld.symm.trans hld')
     injection hv with _ _ hargs
