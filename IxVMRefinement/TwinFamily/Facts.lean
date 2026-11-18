@@ -399,7 +399,7 @@ theorem twinStepTarget_of_facts {RForm : RecordFormPred} (hseam : TwinSeam.{u} R
   have hblock : ds.map (fun d => ConstantInfo.recInfo d.cvW d.mI d.rP d.rulesW) =
       (Decl.mkTwinRecParts env ds).map (fun w => .recInfo w.cvW w.mI w.rP w.rulesW) := by
     unfold Decl.mkTwinRecParts
-    exact (List.map_map ..).symm
+    simp only [List.map_map] <;> rfl
   obtain ⟨ws, hws⟩ : ∃ ws, ws = Decl.mkTwinRecParts env ds := ⟨_, rfl⟩
   rw [← hws] at hF hLd hmodel hblock
   obtain ⟨blk, hb⟩ : ∃ blk, blk = ds.map (fun d => ConstantInfo.recInfo d.cvW d.mI d.rP d.rulesW) :=
