@@ -14,8 +14,10 @@ it over the stores of the proof.
 * `ctorRaw E B i j` (`Guard/CtorRaw.lean`): the constructor's type as the classifier reads it, a
   function of the block record `E` holds at `B` and of `E`'s literal blobs.
 * `GuardCerts t R env`: **the carried clause**. Every projection table of a propositional
-  structure that `env` stores has its certificate over the raw dictionary of the witness store
-  `R`. It mentions no role context, no validation limit and no run.
+  structure that `env` stores is the table of a member whose projection record the witness
+  store `R` holds (`MemberRecordAt`), with that member's first constructor stored and the
+  table's certificate over the raw dictionary of `R`. It mentions no role context, no
+  validation limit and no run.
 * `GuardCerts.recordsFor`: the clause over `R` is the clause over every record store for `R`.
 * `projGuardCert_of_checkNativeTable`: **install**. The table stage of IxC's native install,
   run at field sorts `sorts` (the caller's argument), stores a table whose certificate holds as
@@ -48,23 +50,57 @@ open Ix.Kernel.GuardClassifier (Lookup)
 
 /-! ## The carried clause -/
 
-/-- **The projection guards of `env`, certified over the witness store `R`**: for every block
-address `B` and member `i` whose projection table `env` stores, with the constructor `env`
-stores for it, if the table's structure sort passes the zero test, the table has its
-certificate over `R`'s raw dictionary at the constructor's raw telescope read from `R`, and
-its level parameters are the positions `0, …, k - 1` (the numbering of the classifier's raw
-syntax and of the levels a run computes).
+/-- **The store holds the projection record of member `i` of the block at `B`, at its
+address**: a record whose content is the inductive projection `(i, B)`, with `i` a 64-bit
+index. A member is named by this record, not by the address alone: the address is a hash, and
+two members with one address have one record. -/
+def MemberRecordAt (S : Ixon.Env) (B : _root_.Address) (i : Nat) : Prop :=
+  ∃ cm : Ixon.Constant, recordOf S (Core.iprjAddr B i) = some cm ∧
+    cm.info = .iPrj ⟨i.toUInt64, B⟩ ∧ i.toUInt64.toNat = i
 
-The clause mentions no role context, no validation limit and no run: the role table enters
-only through the keys of the two lookups in `env`. -/
+/-- The record is held by every record store for the store. -/
+theorem MemberRecordAt.recordsFor {R E : Ixon.Env} {B : _root_.Address} {i : Nat}
+    (h : MemberRecordAt R B i) (hRE : Typing.RecordsFor R E) : MemberRecordAt E B i :=
+  let ⟨cm, hcm, hinfo, hi⟩ := h
+  ⟨cm, recordOf_recordsFor hRE _ _ hcm, hinfo, hi⟩
+
+/-- **Two members with one projection address are one member**, where the store holds the
+record of the first and any record it holds at the second's address is the second's projection
+(what holds at every block a run hashed). -/
+theorem MemberRecordAt.eq_of_addr {S : Ixon.Env} {B B' : _root_.Address} {i i' : Nat}
+    (h : MemberRecordAt S B i)
+    (hproj : ∀ cm : Ixon.Constant, recordOf S (Core.iprjAddr B' i') = some cm →
+      cm.info = .iPrj ⟨i'.toUInt64, B'⟩)
+    (hi' : i'.toUInt64.toNat = i') (haddr : Core.iprjAddr B' i' = Core.iprjAddr B i) :
+    B' = B ∧ i' = i := by
+  obtain ⟨cm, hcm, hinfo, hi⟩ := h
+  have h1 := hproj cm (by rw [haddr]; exact hcm)
+  rw [hinfo] at h1
+  have h2 := Ixon.ConstantInfo.iPrj.inj h1
+  have hB : B = B' := congrArg Ixon.InductiveProj.block h2
+  have hidx : i.toUInt64 = i'.toUInt64 := congrArg Ixon.InductiveProj.idx h2
+  exact ⟨hB.symm, (hi'.symm.trans (congrArg UInt64.toNat hidx.symm)).trans hi⟩
+
+/-- **The projection guards of `env`, certified over the witness store `R`**: every projection
+table `env` stores whose structure sort passes the zero test is the table of a member `(B, i)`
+whose projection record `R` holds: the table's key is the key of the member's projection
+address, `env` stores the member's first constructor, and the table has its certificate over
+`R`'s raw dictionary at that constructor's raw telescope read from `R`, with level parameters
+the positions `0, …, k - 1` (the numbering of the classifier's raw syntax and of the levels a
+run computes).
+
+The member is given with the table, as the record the store holds; it is not quantified over
+every pair whose address has the table's key. The clause mentions no role context, no
+validation limit and no run. -/
 def GuardCerts (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (env : Ix.Kernel.Env .anon) : Prop :=
-  ∀ (B : _root_.Address) (i : Nat) (tbl : ProjTable .anon) (cvC : ConstantVal .anon)
-    (nP nF : Nat),
-    env.find? (Ix.Kernel.projTableName (Core.keyOf t (Core.iprjAddr B i))) =
-      some (.projInfo tbl) →
-    env.find? (Core.keyOf t (Core.cprjAddr B i 0)) = some (.ctorInfo cvC nP nF) →
+  ∀ (k : Ix.Kernel.Key .anon) (tbl : ProjTable .anon),
+    env.find? (Ix.Kernel.projTableName k) = some (.projInfo tbl) →
     Level.isEquiv tbl.structSort .zero = some true →
-    ∃ raw, ctorRaw R B i 0 = some raw ∧
+    ∃ (B : _root_.Address) (i : Nat) (cvC : ConstantVal .anon) (nP nF : Nat)
+      (raw : Expr .anon),
+      k = Core.keyOf t (Core.iprjAddr B i) ∧ MemberRecordAt R B i ∧
+      env.find? (Core.keyOf t (Core.cprjAddr B i 0)) = some (.ctorInfo cvC nP nF) ∧
+      ctorRaw R B i 0 = some raw ∧
       tbl.levelParams = List.range tbl.levelParams.length ∧
       ProjGuardCert (GuardRaw.ofStore R) raw cvC.type tbl
 
@@ -73,17 +109,17 @@ store is constrained by `Typing.RecordsFor` alone. -/
 theorem GuardCerts.recordsFor {t : Ix.Kernel.RoleTable} {R E : Ixon.Env}
     {env : Ix.Kernel.Env .anon} (h : GuardCerts t R env) (hRE : Typing.RecordsFor R E) :
     GuardCerts t E env := by
-  intro B i tbl cvC nP nF htbl hctor hprop
-  obtain ⟨raw, hraw, hpos, cert⟩ := h B i tbl cvC nP nF htbl hctor hprop
-  exact ⟨raw, ctorRaw_recordsFor hRE hraw, hpos,
-    cert.mono (GuardRaw.ofStore_extends_recordsFor hRE)⟩
+  intro k tbl htbl hprop
+  obtain ⟨B, i, cvC, nP, nF, raw, hk, hrec, hctor, hraw, hpos, cert⟩ := h k tbl htbl hprop
+  exact ⟨B, i, cvC, nP, nF, raw, hk, hrec.recordsFor hRE, hctor, ctorRaw_recordsFor hRE hraw,
+    hpos, cert.mono (GuardRaw.ofStore_extends_recordsFor hRE)⟩
 
 /-- An environment that stores no projection table carries the clause over every store. -/
 theorem guardCerts_of_noTable {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
     {env : Ix.Kernel.Env .anon}
     (h : ∀ (k : Ix.Kernel.Key .anon) (tbl : ProjTable .anon),
       env.find? k ≠ some (.projInfo tbl)) : GuardCerts t R env :=
-  fun _ _ tbl _ _ _ htbl _ _ => (h _ tbl htbl).elim
+  fun _ tbl htbl _ => (h _ tbl htbl).elim
 
 /-! ## Install -/
 
@@ -139,14 +175,24 @@ theorem fireSem_of_cert {R E : Ixon.Env} (hRE : Typing.RecordsFor R E)
 
 /-- **Use: the carried clause and one use give `FireSem`**, over every record store `E` for the
 witness store and at every level list. No role context and no validation limit occur: the same
-clause serves a use under any of them. -/
+clause serves a use under any of them.
+
+The use names the member by the block `B` and the index `i` its run read. `hproj` and `hi` tie
+that pair to the member the clause holds for the table: any record `E` holds at the member's
+projection address is the member's projection (true of every block a run hashed, for a store
+that decodes its records), and the index is a 64-bit one (true of an index read from a field
+element). The table's well-formedness makes keys identify addresses. -/
 theorem GuardCerts.fireSem {t : Ix.Kernel.RoleTable} {R E : Ixon.Env}
     {env : Ix.Kernel.Env .anon} (h : GuardCerts t R env) (hRE : Typing.RecordsFor R E)
+    (htwf : t.wf = true)
     {B : _root_.Address} {i : Nat} {tbl : ProjTable .anon} {cvC : ConstantVal .anon}
     {nP nF : Nat}
     (htbl : env.find? (Ix.Kernel.projTableName (Core.keyOf t (Core.iprjAddr B i))) =
       some (.projInfo tbl))
     (hctor : env.find? (Core.keyOf t (Core.cprjAddr B i 0)) = some (.ctorInfo cvC nP nF))
+    (hproj : ∀ cm : Ixon.Constant, recordOf E (Core.iprjAddr B i) = some cm →
+      cm.info = .iPrj ⟨i.toUInt64, B⟩)
+    (hi : i.toUInt64.toNat = i)
     {raw' : Expr .anon} {f : Nat} {g : Level} {us : List Level}
     (hraw' : ctorRaw E B i 0 = some raw')
     (use : ProjGuardUse (GuardRaw.ofStore E) raw' cvC.type tbl.numParams f g)
@@ -155,7 +201,15 @@ theorem GuardCerts.fireSem {t : Ix.Kernel.RoleTable} {R E : Ixon.Env}
       Level.eval φ (Level.subst (List.range us.length) us g) = 0) :
     Ix.Kernel.Rules.FireSem (tbl.entry f) us := by
   intro hprop
-  obtain ⟨raw, hraw, hpos, cert⟩ := h B i tbl cvC nP nF htbl hctor hprop
+  obtain ⟨B₀, i₀, cvC₀, nP₀, nF₀, raw, hk, hrec, hctor₀, hraw, hpos, cert⟩ :=
+    h _ tbl htbl hprop
+  have haddr : Core.iprjAddr B i = Core.iprjAddr B₀ i₀ := Core.keyOf_inj htwf hk
+  obtain ⟨hB, hii⟩ := (hrec.recordsFor hRE).eq_of_addr hproj hi haddr
+  subst hB
+  subst hii
+  rw [hctor] at hctor₀
+  have hcv : cvC = cvC₀ := (Ix.Kernel.ConstantInfo.ctorInfo.inj (Option.some.inj hctor₀)).1
+  subst hcv
   have hlp : tbl.levelParams = List.range us.length := by rw [hus]; exact hpos
   refine fireSem_of_cert hRE hraw cert hraw' use hf (fun φ => ?_) hprop
   rw [hlp]
