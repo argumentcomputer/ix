@@ -40,7 +40,10 @@ This module models `wrap_rel` at `sm = 1`, mirroring the circuit (`KernelCheck.l
 Fidelity points (for the observations of `wrap_rel`, `wrap_dom` and `consume_wrapper`):
 `lam_first_arity` tests a λ's datum against `Succ(Zero)` syntactically and the model tests its
 zero-ness for `never`; on a converted value the two agree, since `binder_level` gives `Succ(Zero)`
-exactly at a `Never` node and the other nodes give a level that can be zero. `get_ci`'s `Defn` arm
+exactly at a `Never` node and the other nodes give a level that can be zero. The model reads the
+value canonically (`defnAt`, `loadedAt`), with the data of the record's binder blocks: the raw
+reader gives every λ the datum `never`, so over it every `λ x₁ … xₖ, x₁` would count as a
+wrapper. `get_ci`'s `Defn` arm
 is the definition kind of any safety (`convert_definition`), `defnAt`'s `some (some _)`. A key with
 no address (`keyAddr` answers `none`) names no wrapper; the circuit's terms hold addresses. -/
 
@@ -55,10 +58,11 @@ set_option linter.unusedVariables false
 /-! ## Wrappers and their consumption -/
 
 /-- **The wrapper arity `get_ci` gives at a constant**: at the key's address, the stored
-definition's value read as `λ x₁ … xₖ, x₁` with every λ's datum `never` (`lam_first_arity`), or
-`some none` at a constant of another kind (or no wrapper value); `none` where the load fails. The
-level parameters are not read. -/
-def wrapAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (w : KKey) : Option (Option Nat) :=
+definition's value, in the canonical reading, as `λ x₁ … xₖ, x₁` with every λ's datum `never`
+(`lam_first_arity`), or `some none` at a constant of another kind (or no wrapper value); `none`
+where the load fails. The level parameters are not read. -/
+noncomputable def wrapAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (w : KKey) :
+    Option (Option Nat) :=
   match keyAddr t w with
   | none => some none
   | some a =>

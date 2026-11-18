@@ -263,6 +263,7 @@ theorem storedFamilies_basis {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
   blockStored := fun B rb cb h => nomatch h
   installed := fun B rb crb h => nomatch h
   flat := storedFamiliesFlat_none
+  form := storedFamiliesForm_none
 
 /-! ## The basis hypothesis -/
 

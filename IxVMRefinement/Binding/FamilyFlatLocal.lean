@@ -16,8 +16,12 @@ Over stores:
 * `blockDerivedFlat_of_closed_sub`: a sub-store of `E₀` closed under used references and owners
   (`UsedClosed`) that holds the block and `E₀`'s blobs derives the same entries: the addresses
   the store holds are such a set, since a constructor type's keys are the keys of references its
-  block uses or of the block's own members (`read_keys`), and the role table's keys name their
-  addresses (`keyAddr_keyOf`);
+  block uses or of the block's own members (`read_keys`; the canonical reading has the raw
+  reading's keys, `keyIn_of_loadedAt`), and the role table's keys name their addresses
+  (`keyAddr_keyOf`);
+* `loadedAt_inv`, `loadedAt_of`, `loadedAt_mono`, `keyIn_of_loadedAt`: the canonical reading is
+  the binder annotation of the raw reading, so it reads the same over more blobs and names only
+  the raw reading's keys (`keyIn_of_applyBinderTrace`);
 * `blockDerivedFlat_grow`: a store that holds the records and blobs of the first derives the same
   entries (`ofStore_le`);
 * `RecordFlat.of_blobs`: the record's entries read the same over a store holding the first's
@@ -412,6 +416,142 @@ theorem keyIn_of_occParamsLower : ∀ (xs : List (Ix.Kernel.Expr .anon)) (d : Na
           exact ⟨x, List.mem_cons_self, keyIn_lowerBVars d x 0 hk⟩
         · obtain ⟨x', hx', hk'⟩ := keyIn_of_occParamsLower xs d hr y hy hk
           exact ⟨x', List.mem_cons_of_mem _ hx', hk'⟩
+
+/-- **A key of a binder-annotated term is a key of the term** (`L1.applyBinderTrace`: the binder
+data rewritten, each `let` read as its reduct). -/
+theorem keyIn_of_applyBinderTrace (md : Ix.Kernel.Level → Ix.Kernel.BinderMeta) :
+    ∀ (e : Ix.Kernel.Expr .anon) (levels : List Ix.Kernel.Level) (e' : Ix.Kernel.Expr .anon)
+      (rest : List Ix.Kernel.Level),
+      L1.applyBinderTrace md e levels = some (e', rest) → KeyIn k e' → KeyIn k e := by
+  intro e
+  induction e with
+  | bvar i =>
+    intro levels e' rest h hk
+    simp only [L1.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨h1, -⟩ := h
+    subst h1
+    exact hk
+  | fvar i ty ih =>
+    intro levels e' rest h hk
+    cases hx : L1.applyBinderTrace md ty levels with
+    | none => simp [L1.applyBinderTrace, hx] at h
+    | some r =>
+      obtain ⟨ty', rem⟩ := r
+      simp only [L1.applyBinderTrace, hx, Option.bind_eq_bind, Option.bind_some, Option.pure_def,
+        Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨h1, -⟩ := h
+      subst h1
+      cases hk with
+      | fvarTy h2 => exact .fvarTy (ih _ _ _ hx h2)
+  | sort l =>
+    intro levels e' rest h hk
+    simp only [L1.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨h1, -⟩ := h
+    subst h1
+    exact hk
+  | const c us =>
+    intro levels e' rest h hk
+    simp only [L1.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨h1, -⟩ := h
+    subst h1
+    exact hk
+  | app f a ihf iha =>
+    intro levels e' rest h hk
+    cases h1 : L1.applyBinderTrace md f levels with
+    | none => simp [L1.applyBinderTrace, h1] at h
+    | some r1 =>
+      obtain ⟨f', a1⟩ := r1
+      cases h2 : L1.applyBinderTrace md a a1 with
+      | none => simp [L1.applyBinderTrace, h1, h2] at h
+      | some r2 =>
+        obtain ⟨a', a2⟩ := r2
+        simp only [L1.applyBinderTrace, h1, h2, Option.bind_eq_bind, Option.bind_some,
+          Option.pure_def, Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨h3, -⟩ := h
+        subst h3
+        cases hk with
+        | appFn h4 => exact .appFn (ihf _ _ _ h1 h4)
+        | appArg h4 => exact .appArg (iha _ _ _ h2 h4)
+  | lam dom body m ihd ihb =>
+    intro levels e' rest h hk
+    cases levels with
+    | nil => simp [L1.applyBinderTrace] at h
+    | cons level remaining =>
+      cases h1 : L1.applyBinderTrace md dom remaining with
+      | none => simp [L1.applyBinderTrace, h1] at h
+      | some r1 =>
+        obtain ⟨d', a1⟩ := r1
+        cases h2 : L1.applyBinderTrace md body a1 with
+        | none => simp [L1.applyBinderTrace, h1, h2] at h
+        | some r2 =>
+          obtain ⟨b', a2⟩ := r2
+          simp only [L1.applyBinderTrace, h1, h2, Option.bind_eq_bind, Option.bind_some,
+            Option.pure_def, Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨h3, -⟩ := h
+          subst h3
+          cases hk with
+          | lamTy h4 => exact .lamTy (ihd _ _ _ h1 h4)
+          | lamBody h4 => exact .lamBody (ihb _ _ _ h2 h4)
+  | forallE dom body m ihd ihb =>
+    intro levels e' rest h hk
+    cases levels with
+    | nil => simp [L1.applyBinderTrace] at h
+    | cons level remaining =>
+      cases h1 : L1.applyBinderTrace md dom remaining with
+      | none => simp [L1.applyBinderTrace, h1] at h
+      | some r1 =>
+        obtain ⟨d', a1⟩ := r1
+        cases h2 : L1.applyBinderTrace md body a1 with
+        | none => simp [L1.applyBinderTrace, h1, h2] at h
+        | some r2 =>
+          obtain ⟨b', a2⟩ := r2
+          simp only [L1.applyBinderTrace, h1, h2, Option.bind_eq_bind, Option.bind_some,
+            Option.pure_def, Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨h3, -⟩ := h
+          subst h3
+          cases hk with
+          | allTy h4 => exact .allTy (ihd _ _ _ h1 h4)
+          | allBody h4 => exact .allBody (ihb _ _ _ h2 h4)
+  | letE ty v b m ihty ihv ihb =>
+    intro levels e' rest h hk
+    cases h1 : L1.applyBinderTrace md ty levels with
+    | none => simp [L1.applyBinderTrace, h1] at h
+    | some r1 =>
+      obtain ⟨ty', a1⟩ := r1
+      cases h2 : L1.applyBinderTrace md v a1 with
+      | none => simp [L1.applyBinderTrace, h1, h2] at h
+      | some r2 =>
+        obtain ⟨v', a2⟩ := r2
+        cases h3 : L1.applyBinderTrace md b a2 with
+        | none => simp [L1.applyBinderTrace, h1, h2, h3] at h
+        | some r3 =>
+          obtain ⟨b', a3⟩ := r3
+          simp only [L1.applyBinderTrace, h1, h2, h3, Option.bind_eq_bind, Option.bind_some,
+            Option.pure_def, Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨h4, -⟩ := h
+          subst h4
+          rcases keyIn_instantiate1Lift v' b' 0 hk with h5 | h5
+          · exact .letBody (ihb _ _ _ h3 h5)
+          · exact .letVal (ihv _ _ _ h2 h5)
+  | lit l =>
+    intro levels e' rest h hk
+    simp only [L1.applyBinderTrace, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨h1, -⟩ := h
+    subst h1
+    exact hk
+  | proj s i inner ih =>
+    intro levels e' rest h hk
+    cases hx : L1.applyBinderTrace md inner levels with
+    | none => simp [L1.applyBinderTrace, hx] at h
+    | some r =>
+      obtain ⟨inner', rem⟩ := r
+      simp only [L1.applyBinderTrace, hx, Option.bind_eq_bind, Option.bind_some, Option.pure_def,
+        Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨h1, -⟩ := h
+      subst h1
+      cases hk with
+      | proj => exact .proj _ _
+      | projBody h2 => exact .projBody (ih _ _ _ hx h2)
 
 end Keys
 
@@ -926,6 +1066,53 @@ theorem except_toOption_eq_some {ε α : Type} {x : Except ε α} {a : α} :
       cases h
       rfl
 
+section Loaded
+
+variable {t : Ix.Kernel.RoleTable} {blob blob' : _root_.Address → Option ByteArray}
+  {src : Ixon.Constant} {self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon))}
+  {nl : Nat} {root : IxVM.F} {e : Ixon.Expr} {x : Ix.Kernel.Expr .anon}
+
+/-- **The canonical reading is the annotation of a raw reading.** -/
+theorem loadedAt_inv (h : loadedAt t blob src self nl root e = some x) :
+    ∃ e₀, (exprReader t blob src id self).read e = .ok e₀ ∧
+      LoadedReads.canonAnn src (List.range nl) root e e₀ = some x := by
+  unfold loadedAt at h
+  cases hr : (exprReader t blob src id self).read e with
+  | error err => rw [hr] at h; simp [Except.toOption] at h
+  | ok e₀ =>
+    rw [hr] at h
+    exact ⟨e₀, rfl, h⟩
+
+theorem loadedAt_of {e₀ : Ix.Kernel.Expr .anon}
+    (hr : (exprReader t blob src id self).read e = .ok e₀)
+    (hc : LoadedReads.canonAnn src (List.range nl) root e e₀ = some x) :
+    loadedAt t blob src self nl root e = some x := by
+  unfold loadedAt
+  rw [hr]
+  exact hc
+
+/-- **The canonical reading over more blobs is the same**: the raw reading is, and the annotation
+reads only the record. -/
+theorem loadedAt_mono (hb : ∀ y b, blob y = some b → blob' y = some b)
+    (h : loadedAt t blob src self nl root e = some x) :
+    loadedAt t blob' src self nl root e = some x := by
+  obtain ⟨e₀, hr, hc⟩ := loadedAt_inv h
+  exact loadedAt_of (exprReader_mono hb hr) hc
+
+/-- **A key of the canonical reading is a key of the raw reading.** -/
+theorem keyIn_of_loadedAt {k : Ix.Kernel.Key .anon}
+    (h : loadedAt t blob src self nl root e = some x) (hk : KeyIn k x) :
+    ∃ e₀, (exprReader t blob src id self).read e = .ok e₀ ∧ KeyIn k e₀ := by
+  obtain ⟨e₀, hr, hc⟩ := loadedAt_inv h
+  refine ⟨e₀, hr, ?_⟩
+  unfold LoadedReads.canonAnn at hc
+  obtain ⟨plan, -, hb⟩ := Option.bind_eq_some_iff.mp hc
+  obtain ⟨⟨x', rest⟩, hb', hx⟩ := Option.map_eq_some_iff.mp hb
+  subst hx
+  exact keyIn_of_applyBinderTrace _ e₀ plan x' rest hb' hk
+
+end Loaded
+
 theorem indInfoAt_inv {E : Ixon.Env} {a : _root_.Address} {i : IndInfo}
     (h : indInfoAt E a = some (some i)) :
     ∃ c p cb ms ind, recordOf E a = some c ∧ c.info = .iPrj p ∧ recordOf E p.block = some cb ∧
@@ -1009,7 +1196,8 @@ theorem ctorTypeAt_inv {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {b : _root_.Addr
     {i c : Nat} {x : Ix.Kernel.Expr .anon} (h : ctorTypeAt t E b i c = some x) :
     ∃ cb ms ind ctor, recordOf E b = some cb ∧ cb.info = .muts ms ∧
       ms[i]? = some (.indc ind) ∧ ind.ctors[c]? = some ctor ∧
-      (exprReader t (fun y => E.blobs.get? y) cb id (blockSelf t b ms)).read ctor.typ = .ok x := by
+      loadedAt t (fun y => E.blobs.get? y) cb (blockSelf t b ms) ctor.lvls.toNat
+        (mutsRoot ms i + 1 + ((c : Nat) : IxVM.F)) ctor.typ = some x := by
   unfold ctorTypeAt at h
   obtain ⟨cb, hcb⟩ : ∃ cb, recordOf E b = some cb := by
     cases hcb : recordOf E b with
@@ -1035,18 +1223,18 @@ theorem ctorTypeAt_inv {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {b : _root_.Addr
     | none => simp [hct] at h
     | some ctor => exact ⟨ctor, rfl⟩
   simp only [hct] at h
-  exact ⟨cb, ms, ind, ctor, hcb, hci, hm, hct, except_toOption_eq_some.mp h⟩
+  exact ⟨cb, ms, ind, ctor, hcb, hci, hm, hct, h⟩
 
 theorem ctorTypeAt_of {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {b : _root_.Address}
     {i c : Nat} {x : Ix.Kernel.Expr .anon} {cb : Ixon.Constant} {ms : Array Ixon.MutConst}
     {ind : Ixon.Inductive} {ctor : Ixon.Constructor} (hcb : recordOf E b = some cb)
     (hci : cb.info = .muts ms) (hm : ms[i]? = some (.indc ind)) (hct : ind.ctors[c]? = some ctor)
-    (hr : (exprReader t (fun y => E.blobs.get? y) cb id (blockSelf t b ms)).read ctor.typ =
-      .ok x) :
+    (hr : loadedAt t (fun y => E.blobs.get? y) cb (blockSelf t b ms) ctor.lvls.toNat
+      (mutsRoot ms i + 1 + ((c : Nat) : IxVM.F)) ctor.typ = some x) :
     ctorTypeAt t E b i c = some x := by
   unfold ctorTypeAt
   simp only [hcb, hci, hm, hct]
-  exact except_toOption_eq_some.mpr hr
+  exact hr
 
 theorem membersAt_inv {E : Ixon.Env} {b : _root_.Address} {ms : List _root_.Address}
     (h : membersAt E b = some ms) :
@@ -1131,7 +1319,7 @@ theorem ofStore_le {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env}
     show ctorTypeAt t E' b i c = some x
     obtain ⟨cb, ms, ind, ctor, hcb, hci, hm, hct, hr⟩ :=
       ctorTypeAt_inv (h : ctorTypeAt t E b i c = some x)
-    exact ctorTypeAt_of (hle b cb hcb) hci hm hct (exprReader_mono hblob hr)
+    exact ctorTypeAt_of (hle b cb hcb) hci hm hct (loadedAt_mono hblob hr)
   members b x h := by
     show membersAt E' b = some x
     obtain ⟨cb, arr, hcb, hci, rfl⟩ := membersAt_inv (h : membersAt E b = some x)
@@ -1165,7 +1353,7 @@ theorem ofStore_leOn_sub {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env}
     obtain ⟨cb, ms, ind, ctor, hcb, hci, hm, hct, hr⟩ :=
       ctorTypeAt_inv (h : ctorTypeAt t E₀ b i c = some x)
     exact ctorTypeAt_of ((recordOf_eq_of_held hsub hb).trans hcb) hci hm hct
-      (exprReader_mono hblob hr)
+      (loadedAt_mono hblob hr)
   members b x hb h := by
     show membersAt R b = some x
     obtain ⟨cb, arr, hcb, hci, rfl⟩ := membersAt_inv (h : membersAt E₀ b = some x)
@@ -1226,8 +1414,9 @@ theorem ofStore_closedOn_sub {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env}
       simp only [usedRefIdxs, hci]
       exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨.indc ind, hmem, hmut⟩)
     intro k hk a ha
+    obtain ⟨e₀, hr₀, hk₀⟩ := keyIn_of_loadedAt hr hk
     obtain ⟨z, hz, rfl⟩ := read_keys checked (P := fun k => ∃ z, Held R z ∧ k = keyOf t z)
-      (fun j hj y hy => ⟨y, (hcl.1 b cb hcbR).2 j hj y hy, rfl⟩) hself he hr k hk
+      (fun j hj y hy => ⟨y, (hcl.1 b cb hcbR).2 j hj y hy, rfl⟩) hself he hr₀ k hk₀
     have e : a = z := Option.some.inj (ha.symm.trans (keyAddr_keyOf hwf z))
     rw [e]
     exact hz
@@ -1262,7 +1451,7 @@ theorem RecordFlat.of_blobs {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env}
     {es : List FlatEntry} (h : RecordFlat t E rb crb rs es) : RecordFlat t E' rb crb rs es := by
   intro k r e hr he
   obtain ⟨ty, d, h1, h2, h3, h4⟩ := h k r e hr he
-  exact ⟨ty, d, exprReader_mono hblob h1, h2, h3, h4⟩
+  exact ⟨ty, d, loadedAt_mono hblob h1, h2, h3, h4⟩
 
 end Store
 

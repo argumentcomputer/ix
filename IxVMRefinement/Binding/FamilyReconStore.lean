@@ -4,11 +4,13 @@ import IxVMRefinement.Binding.FamilyReconLocal
 
 * `indDataAt_mono`, `ctorAt_mono`, `defnAt_mono`, `unfoldAt_mono`: a store that holds the
   first's records at the addresses read (and at a projection's block) and its blobs answers the
-  same wherever the first answers.
+  same wherever the first answers (the canonical reading reads the record and the blobs only,
+  `loadedAt_mono`).
 * `reconOfStore_le`: a store holding the records and blobs of `E` answers as `E` everywhere;
   `reconOfStore_leOn_sub`, `reconOfStore_closedOn_sub`: a sub-store of `E₀` closed under used
   references and owners, holding `E₀`'s blobs, answers as `E₀` at the addresses it holds, and
-  what `E₀` answers there names only addresses it holds (`read_keys`).
+  what `E₀` answers there names only addresses it holds (`read_keys`, through the raw reading
+  under the canonical one: `keyIn_of_loadedAt`, `keys_held_of_loaded`).
 * **`RFormS.grow`**, **`RFormS.of_sub`**: the record-level form passes to a larger store and to a
   used-closed sub-store of the run's store that holds the block and the record. -/
 
@@ -62,11 +64,11 @@ theorem indDataAt_mono
         cases m with
         | indc ind =>
           simp only [hm] at h ⊢
-          cases hr : (exprReader t (fun y => E.blobs.get? y) cb id
-              (blockSelf t p.block ms)).read ind.typ with
-          | error e => rw [hr] at h; simp [Except.toOption] at h
-          | ok ty =>
-            rw [exprReader_mono hblob hr]
+          cases hr : loadedAt t (fun y => E.blobs.get? y) cb (blockSelf t p.block ms)
+              ind.lvls.toNat (mutsRoot ms p.idx.toNat) ind.typ with
+          | none => rw [hr] at h; simp at h
+          | some ty =>
+            rw [loadedAt_mono hblob hr]
             rw [hr] at h
             exact h
         | defn _ => simp [hm] at h
@@ -99,11 +101,11 @@ theorem ctorAt_mono
         | none => simp [hct] at h
         | some ctor =>
           simp only [hct] at h ⊢
-          cases hr : (exprReader t (fun y => E.blobs.get? y) cb id (blockSelf t b ms)).read
-              ctor.typ with
-          | error e => rw [hr] at h; simp [Except.toOption] at h
-          | ok ty =>
-            rw [exprReader_mono hblob hr]
+          cases hr : loadedAt t (fun y => E.blobs.get? y) cb (blockSelf t b ms) ctor.lvls.toNat
+              (mutsRoot ms i + 1 + ((j : Nat) : IxVM.F)) ctor.typ with
+          | none => rw [hr] at h; simp at h
+          | some ty =>
+            rw [loadedAt_mono hblob hr]
             rw [hr] at h
             exact h
       | defn _ => simp [hm] at h
@@ -129,10 +131,11 @@ theorem defnAt_mono
     cases hk : d.kind with
     | defn =>
       simp only [hk] at h ⊢
-      cases hr : (exprReader t (fun y => E.blobs.get? y) c id (soloSelf t a)).read d.value with
-      | error e => rw [hr] at h; simp [Except.toOption] at h
-      | ok v =>
-        rw [exprReader_mono hblob hr]
+      cases hr : loadedAt t (fun y => E.blobs.get? y) c (soloSelf t a) d.lvls.toNat 1
+          d.value with
+      | none => rw [hr] at h; simp at h
+      | some v =>
+        rw [loadedAt_mono hblob hr]
         rw [hr] at h
         exact h
     | _ => simp only [hk] at h ⊢; exact h
@@ -160,11 +163,11 @@ theorem defnAt_mono
           cases hk : d.kind with
           | defn =>
             simp only [hk] at h ⊢
-            cases hr : (exprReader t (fun y => E.blobs.get? y) cb id
-                (blockSelf t p.block ms)).read d.value with
-            | error e => rw [hr] at h; simp [Except.toOption] at h
-            | ok v =>
-              rw [exprReader_mono hblob hr]
+            cases hr : loadedAt t (fun y => E.blobs.get? y) cb (blockSelf t p.block ms)
+                d.lvls.toNat (mutsRoot ms p.idx.toNat + 1) d.value with
+            | none => rw [hr] at h; simp at h
+            | some v =>
+              rw [loadedAt_mono hblob hr]
               rw [hr] at h
               exact h
           | _ => simp only [hk] at h ⊢; exact h
@@ -202,8 +205,8 @@ variable {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
 theorem indDataAt_inv {a : _root_.Address} {i : IndData} (h : indDataAt t E a = some i) :
     ∃ c p cb ms ind, recordOf E a = some c ∧ c.info = .iPrj p ∧ recordOf E p.block = some cb ∧
       cb.info = .muts ms ∧ ms[p.idx.toNat]? = some (.indc ind) ∧
-      (exprReader t (fun y => E.blobs.get? y) cb id (blockSelf t p.block ms)).read ind.typ =
-        .ok i.ty ∧ i.blk = p.block := by
+      loadedAt t (fun y => E.blobs.get? y) cb (blockSelf t p.block ms) ind.lvls.toNat
+        (mutsRoot ms p.idx.toNat) ind.typ = some i.ty ∧ i.blk = p.block := by
   unfold indDataAt at h
   cases hc : recordOf E a with
   | none => simp [hc] at h
@@ -227,12 +230,12 @@ theorem indDataAt_inv {a : _root_.Address} {i : IndData} (h : indDataAt t E a = 
         cases m with
         | indc ind =>
           simp only [hm] at h
-          cases hr : (exprReader t (fun y => E.blobs.get? y) cb id
-              (blockSelf t p.block ms)).read ind.typ with
-          | error e => rw [hr] at h; simp [Except.toOption] at h
-          | ok ty =>
+          cases hr : loadedAt t (fun y => E.blobs.get? y) cb (blockSelf t p.block ms)
+              ind.lvls.toNat (mutsRoot ms p.idx.toNat) ind.typ with
+          | none => rw [hr] at h; simp at h
+          | some ty =>
             rw [hr] at h
-            simp only [Except.toOption, Option.some.injEq] at h
+            simp only [Option.some.injEq] at h
             subst h
             exact ⟨c, p, cb, ms, ind, rfl, hci, hcb, hcbi, hm, hr, rfl⟩
         | defn _ => simp [hm] at h
@@ -244,8 +247,8 @@ theorem ctorAt_inv {b : _root_.Address} {i j : Nat} {ty : KExpr} {np : Nat}
     (h : ctorAt t E b i j = some (ty, np)) :
     ∃ cb ms ind ctor, recordOf E b = some cb ∧ cb.info = .muts ms ∧
       ms[i]? = some (.indc ind) ∧ ind.ctors[j]? = some ctor ∧
-      (exprReader t (fun y => E.blobs.get? y) cb id (blockSelf t b ms)).read ctor.typ =
-        .ok ty := by
+      loadedAt t (fun y => E.blobs.get? y) cb (blockSelf t b ms) ctor.lvls.toNat
+        (mutsRoot ms i + 1 + ((j : Nat) : IxVM.F)) ctor.typ = some ty := by
   unfold ctorAt at h
   cases hcb : recordOf E b with
   | none => simp [hcb] at h
@@ -265,12 +268,12 @@ theorem ctorAt_inv {b : _root_.Address} {i j : Nat} {ty : KExpr} {np : Nat}
         | none => simp [hct] at h
         | some ctor =>
           simp only [hct] at h
-          cases hr : (exprReader t (fun y => E.blobs.get? y) cb id (blockSelf t b ms)).read
-              ctor.typ with
-          | error e => rw [hr] at h; simp [Except.toOption] at h
-          | ok ty' =>
+          cases hr : loadedAt t (fun y => E.blobs.get? y) cb (blockSelf t b ms) ctor.lvls.toNat
+              (mutsRoot ms i + 1 + ((j : Nat) : IxVM.F)) ctor.typ with
+          | none => rw [hr] at h; simp at h
+          | some ty' =>
             rw [hr] at h
-            simp only [Except.toOption, Option.some.injEq, Prod.mk.injEq] at h
+            simp only [Option.some.injEq, Prod.mk.injEq] at h
             obtain ⟨rfl, -⟩ := h
             exact ⟨cb, ms, ind, ctor, rfl, hcbi, hm, hct, hr⟩
       | defn _ => simp [hm] at h
@@ -281,11 +284,12 @@ theorem defnAt_inv {a : _root_.Address} {n : Nat} {v : KExpr}
     (h : defnAt t E a = some (some (n, v))) :
     ∃ c, recordOf E a = some c ∧
       ((∃ d, c.info = .defn d ∧
-          (exprReader t (fun y => E.blobs.get? y) c id (soloSelf t a)).read d.value = .ok v) ∨
+          loadedAt t (fun y => E.blobs.get? y) c (soloSelf t a) d.lvls.toNat 1 d.value =
+            some v) ∨
         (∃ p cb ms d, c.info = .dPrj p ∧ recordOf E p.block = some cb ∧ cb.info = .muts ms ∧
           ms[p.idx.toNat]? = some (.defn d) ∧
-          (exprReader t (fun y => E.blobs.get? y) cb id (blockSelf t p.block ms)).read d.value =
-            .ok v)) := by
+          loadedAt t (fun y => E.blobs.get? y) cb (blockSelf t p.block ms) d.lvls.toNat
+            (mutsRoot ms p.idx.toNat + 1) d.value = some v)) := by
   unfold defnAt at h
   cases hc : recordOf E a with
   | none => simp [hc] at h
@@ -299,11 +303,12 @@ theorem defnAt_inv {a : _root_.Address} {n : Nat} {v : KExpr}
     cases hk : d.kind with
     | defn =>
       simp only [hk] at h
-      cases hr : (exprReader t (fun y => E.blobs.get? y) c id (soloSelf t a)).read d.value with
-      | error e => rw [hr] at h; simp [Except.toOption] at h
-      | ok w =>
+      cases hr : loadedAt t (fun y => E.blobs.get? y) c (soloSelf t a) d.lvls.toNat 1
+          d.value with
+      | none => rw [hr] at h; simp at h
+      | some w =>
         rw [hr] at h
-        simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+        simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
         obtain ⟨-, rfl⟩ := h
         exact Or.inl ⟨d, rfl, hr⟩
     | _ => simp [hk] at h
@@ -326,12 +331,12 @@ theorem defnAt_inv {a : _root_.Address} {n : Nat} {v : KExpr}
           cases hk : d.kind with
           | defn =>
             simp only [hk] at h
-            cases hr : (exprReader t (fun y => E.blobs.get? y) cb id
-                (blockSelf t p.block ms)).read d.value with
-            | error e => rw [hr] at h; simp [Except.toOption] at h
-            | ok w =>
+            cases hr : loadedAt t (fun y => E.blobs.get? y) cb (blockSelf t p.block ms)
+                d.lvls.toNat (mutsRoot ms p.idx.toNat + 1) d.value with
+            | none => rw [hr] at h; simp at h
+            | some w =>
               rw [hr] at h
-              simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+              simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
               obtain ⟨-, rfl⟩ := h
               exact Or.inr ⟨p, cb, ms, d, rfl, hcb, hcbi, hm, hr⟩
           | _ => simp [hk] at h
@@ -456,6 +461,22 @@ theorem keys_held_of_read {E₀ R : Ixon.Env} (checked : t.check = .ok ()) (hwf 
   rw [e]
   exact hz
 
+/-- **The keys the canonical reading of a held record makes name held addresses**: they are
+keys of the raw reading (`keyIn_of_loadedAt`). -/
+theorem keys_held_of_loaded {E₀ R : Ixon.Env} (checked : t.check = .ok ()) (hwf : t.wf = true)
+    (hcl : UsedClosed R) {src : Ixon.Constant} {y0 : _root_.Address}
+    (hsrc : recordOf R y0 = some src)
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon))}
+    (hself : ∀ (j : Nat) (k : Ix.Kernel.Key .anon), self j = some (Except.ok k) →
+      ∃ z, Held R z ∧ k = keyOf t z)
+    {e : Ixon.Expr} (he : ∀ j ∈ exprRefIdxs e, j ∈ usedRefIdxs src)
+    {blob : _root_.Address → Option ByteArray} {nl : Nat} {root : IxVM.F} {v : KExpr}
+    (h : loadedAt t blob src self nl root e = some v) :
+    RKeysAt (ReconView.ofStore t E₀) (Held R) v := by
+  intro k hk a ha
+  obtain ⟨e₀, hr₀, hk₀⟩ := keyIn_of_loadedAt h hk
+  exact keys_held_of_read (E₀ := E₀) checked hwf hcl hsrc hself he hr₀ k hk₀ a ha
+
 /-- **What `E₀` answers at the addresses a used-closed sub-store holds names only addresses it
 holds**: an inductive's block is its owner; the keys of an inductive's type, of a constructor's
 type and of a definition's value are keys of references their records use or of the members of
@@ -478,7 +499,7 @@ theorem reconOfStore_closedOn_sub {E₀ R : Ixon.Env} (checked : t.check = .ok (
       simp only [Ix.Cert.ownerOf, hci] at h1
       exact h1
     have hcbR := held_of_sub hsub hpb hcb
-    exact keys_held_of_read checked hwf hcl hcbR (blockSelf_held hcl hcbR hcbi)
+    exact keys_held_of_loaded checked hwf hcl hcbR (blockSelf_held hcl hcbR hcbi)
       (fun j hj => mem_used_of_member hcbi hm j (List.mem_append_left _ hj)) hr
   ctorTy b i c ty np hb h := by
     obtain ⟨cb, ms, ind, ctor, hcb, hcbi, hm, hct, hr⟩ :=
@@ -487,7 +508,7 @@ theorem reconOfStore_closedOn_sub {E₀ R : Ixon.Env} (checked : t.check = .ok (
     have hcmem : ctor ∈ ind.ctors.toList :=
       List.mem_of_getElem? (show ind.ctors.toList[c]? = some ctor by
         rw [Array.getElem?_toList]; exact hct)
-    exact keys_held_of_read checked hwf hcl hcbR (blockSelf_held hcl hcbR hcbi)
+    exact keys_held_of_loaded checked hwf hcl hcbR (blockSelf_held hcl hcbR hcbi)
       (fun j hj => mem_used_of_member hcbi hm j
         (List.mem_append_right _ (List.mem_flatMap.mpr ⟨ctor, hcmem, hj⟩))) hr
   unfold k us v hk h := by
@@ -498,7 +519,7 @@ theorem reconOfStore_closedOn_sub {E₀ R : Ixon.Env} (checked : t.check = .ok (
     intro k' hk' a' ha'
     have hk'' := keyIn_instantiateLevelParams w hk'
     rcases hdef with ⟨d, hci, hr⟩ | ⟨p, cb, ms, d, hci, hcb, hcbi, hm, hr⟩
-    · refine keys_held_of_read checked hwf hcl hcR ?_ (fun j hj => ?_) hr k' hk'' a' ha'
+    · refine keys_held_of_loaded checked hwf hcl hcR ?_ (fun j hj => ?_) hr k' hk'' a' ha'
       · intro j k hs
         unfold soloSelf at hs
         split at hs
@@ -512,7 +533,7 @@ theorem reconOfStore_closedOn_sub {E₀ R : Ixon.Env} (checked : t.check = .ok (
         simp only [Ix.Cert.ownerOf, hci] at h1
         exact h1
       have hcbR := held_of_sub hsub hpb hcb
-      exact keys_held_of_read checked hwf hcl hcbR (blockSelf_held hcl hcbR hcbi)
+      exact keys_held_of_loaded checked hwf hcl hcbR (blockSelf_held hcl hcbR hcbi)
         (fun j hj => mem_used_of_member hcbi hm j (List.mem_append_right _ hj)) hr k' hk'' a' ha'
 
 end Views
@@ -530,10 +551,10 @@ theorem memberRecon_transport {TyRel : KExpr → KExpr → Prop} {t : Ix.Kernel.
     (h : MemberRecon TyRel t E rb crb rs es off fuel k r) :
     MemberRecon TyRel t E' rb crb rs es off fuel k r := by
   obtain ⟨ty, R, bodies, cbk, hty, hR, hrel, hb, hcb, hrules⟩ := h
-  refine ⟨ty, R, bodies, cbk, exprReader_mono hblob hty, recTypeAt_leOn hV hC hE hR, hrel,
+  refine ⟨ty, R, bodies, cbk, loadedAt_mono hblob hty, recTypeAt_leOn hV hC hE hR, hrel,
     ruleBodiesAt_leOn hV hC hE hb, ctorsBefore_leOn hV es k cbk hE hcb, fun c ru hru => ?_⟩
   obtain ⟨rhs, cb, hrhs, hcbody, hf⟩ := hrules c ru hru
-  exact ⟨rhs, cb, exprReader_mono hblob hrhs, hcbody, hf⟩
+  exact ⟨rhs, cb, loadedAt_mono hblob hrhs, hcbody, hf⟩
 
 /-- **The record-level form passes to a store that holds the first's records and blobs.** -/
 theorem RFormS.grow {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env}
