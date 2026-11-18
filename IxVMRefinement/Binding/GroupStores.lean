@@ -209,6 +209,7 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
   · exact ⟨_, _, _, families_of_remaining (rk := fun g => Classical.choose (hrk g)) hC hb hax hRF
       hcheck hroots hpin hg6 hg (hvalAll g) (Classical.choose_spec (hws g))
       (Classical.choose_spec (hrk g) hg6 hg) (payloadOpEarlier_all hRS.payloadOps g hg6)
+      (groupStore_usedClosed_all hC hb hbr hax hP hws g hg6)
       (groupStore_usedClosed_all hC hb hbr hax hP hws (g + 1) (Nat.le_succ_of_le hg6))⟩
 
 end IxVM.Refinement.Binding
