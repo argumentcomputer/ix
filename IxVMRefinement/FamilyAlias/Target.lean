@@ -24,7 +24,7 @@ records are stored at keys of their own, and each model key of the record is a d
 advice constant. It is stated at any limit of the role context (`lim : Option Nat`: validating at
 a group limit, or assumed); the conclusion mentions no limit.
 
-`modelSide_of_target` takes the conclusion's four conjuncts and nothing else. It gives the
+`modelSide_of_target` takes the conclusion's first four conjuncts and nothing else. It gives the
 declaration layer's invariant after the block in every set theory, a model companion at every
 recursor the block stores, and the constants the step adds: the block's members under their own
 names, and the aliases. -/
@@ -78,8 +78,10 @@ route at any limit, the prefix invariant at that limit, the needs of the two rec
 clauses, the stored advice, freshness and key freedom. The conclusion is an alias group at
 derived keys over the prefix (each alias a definition whose value is a stored constant at the
 alias's own level parameters), each alias rooted at a member of the block, the family's
-declaration as read, and IxC's renamed record at the model keys over `famJ h` (positional
-derivations on the terms with the aliases renamed to their targets). -/
+declaration as read, IxC's renamed record at the model keys over `famJ h` (positional
+derivations on the terms with the aliases renamed to their targets), and each member stored
+after the block as a constant that stores its reading (`StoredAs`: what a unit step hands the
+fold for each constant address of the two records). -/
 def FamilyStepTarget : Prop :=
   ∀ (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
     (E₀ E : Ixon.Env) (env : Ix.Kernel.Env .anon) (B rb : _root_.Address)
@@ -104,7 +106,8 @@ def FamilyStepTarget : Prop :=
       AliasGroup env h aliases ∧
       (∀ a ∈ aliases, ∃ ci ∈ blk, a.name.base = ci.name) ∧
       FamDeclReads t E₀ B cb rb crb blk ∧
-      DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk env₂
+      DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk env₂ ∧
+      (∀ ci ∈ blk, ∃ c, env₂.find? ci.name = some c ∧ StoredAs c ci)
 
 /-- **The model side of the record** (proved): from an alias group and the renamed record over
 the family package, the fold invariant holds after the block in every set theory, and every

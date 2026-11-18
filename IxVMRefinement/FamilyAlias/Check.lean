@@ -641,6 +641,53 @@ theorem famRecord_of_check {fuel : Nat} {tbl : List (KKey × KKey)} {envAl : Env
     cases hc'
   | ok r => exact ⟨r.1, r.2⟩
 
+/-! ## The members as stored -/
+
+/-- A proof that each listed constant is stored in `env₂` under its name as a constant that
+stores it (`IxVM.Consistency.StoredAs`: the annotated type, and a recursor's rules with their
+annotated right-hand sides), if the search finds one. -/
+def storedBlockCheck (env₂ : Env .anon) :
+    (blk : List (ConstantInfo .anon)) →
+    Except String (PLift (∀ ci ∈ blk, ∃ c, env₂.find? ci.name = some c ∧
+      IxVM.Consistency.StoredAs c ci))
+  | [] => .ok ⟨fun _ hc => nomatch hc⟩
+  | ci :: rest => do
+    let c ← getSome "block: a member is not stored after the block" (env₂.find? ci.name)
+    match IxVM.Consistency.storedAsCheck 4096 c.1 ci with
+    | some p =>
+      let ih ← storedBlockCheck env₂ rest
+      return ⟨fun x hx => by
+        rcases List.mem_cons.mp hx with rfl | hx
+        · exact ⟨c.1, c.2, p.down⟩
+        · exact ih.down x hx⟩
+    | none => .error "block: a stored member does not store its reading"
+
+/-- **The family step's record, searched**: the renamed record over the family package
+(`famRecordCheck`), and each member of the block stored after it as a constant that stores the
+member as read. -/
+def famStepCheck (fuel : Nat) (tbl : List (KKey × KKey)) (envAl : Env .anon)
+    (block : List (ConstantInfo .anon)) (tysM tysR : List KExpr) (rhsss : List (List KExpr)) :
+    Except String {env₂ : Env .anon // AliasEnv envAl (aliasMap tbl) ∧
+      DeclIndRenRunJ (famJ (aliasMap tbl)) envAl block env₂ ∧
+      ∀ ci ∈ block, ∃ c, env₂.find? ci.name = some c ∧ IxVM.Consistency.StoredAs c ci} := do
+  let r ← famRecordCheck fuel tbl envAl block tysM tysR rhsss
+  let s ← storedBlockCheck r.1 block
+  return ⟨r.1, r.2.1, r.2.2, s.down⟩
+
+/-- **A successful check of the step is a proof.** -/
+theorem famStep_of_check {fuel : Nat} {tbl : List (KKey × KKey)} {envAl : Env .anon}
+    {block : List (ConstantInfo .anon)} {tysM tysR : List KExpr} {rhsss : List (List KExpr)}
+    (hc : isOk (famStepCheck fuel tbl envAl block tysM tysR rhsss) = true) :
+    ∃ env₂ : Env .anon, AliasEnv envAl (aliasMap tbl) ∧
+      DeclIndRenRunJ (famJ (aliasMap tbl)) envAl block env₂ ∧
+      ∀ ci ∈ block, ∃ c, env₂.find? ci.name = some c ∧ IxVM.Consistency.StoredAs c ci := by
+  cases hr : famStepCheck fuel tbl envAl block tysM tysR rhsss with
+  | error e =>
+    rw [hr] at hc
+    have hc' : false = true := hc
+    cases hc'
+  | ok r => exact ⟨r.1, r.2⟩
+
 /-! ## The alias group -/
 
 /-- A derived key that is not a projection table's. -/
