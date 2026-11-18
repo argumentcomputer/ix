@@ -2,6 +2,7 @@ import IxVMRefinement.Claim.TopSeed
 import IxVMRefinement.Claim.TopRefs
 import IxVMRefinement.Claim.TopDecode
 import IxVMRefinement.Claim.TopWalkCheck
+import IxVMRefinement.Claim.RefSafety
 import IxVMRefinement.Assembly.TypingSkeleton
 import IxVMRefinement.Assembly.TypingDefnStep
 import IxVMRefinement.StatementRel.LoadedReadsWalked
@@ -63,6 +64,8 @@ structure TopWalkCore (calls : List (Call F)) (bAddr : _root_.Address)
   refsNotInert : ∀ a x, Top a → Typing.UsedRef E₀ a x → ¬ InertAt t x
   refsNotBlock : ∀ a x, Top a → Typing.UsedRef E₀ a x → ¬ Typing.Covered t x →
     ∀ c, recordOf E₀ x = some c → ¬ Typing.IsBlock c
+  safeRefs : ∀ a x, Top a → SourceSafe E₀ a → Typing.UsedRef E₀ a x →
+    ¬ Typing.Covered t x → SourceSafe E₀ x
 
 /-- The store of the run's hashed records and blobs at the binding `b`. -/
 noncomputable def runEnv (b : Ix.Kernel.Admission.Binding) {t : Ix.Kernel.RoleTable}
@@ -150,7 +153,8 @@ theorem topWalkCore_of_recs
       seedNotInert := fun a ha => (hseedOk a ha).notInert
       checked := ?_
       refsNotInert := ?_
-      refsNotBlock := ?_ }
+      refsNotBlock := ?_
+      safeRefs := ?_ }
   · rintro a ⟨r, hr, rfl⟩
     exact ⟨r.c, hrec r hr⟩
   · rintro a x hTa ⟨c, i, hc, hi, hx⟩
@@ -188,6 +192,12 @@ theorem topWalkCore_of_recs
       have hcx' : cx = r'.c := huniq r' hr' cx hcx
       exact hn ms (hc' ▸ hcx' ▸ hms)
     · exact hncov ⟨ro, hof, hw⟩
+
+  · rintro a x hTa hsafe ⟨c, i, hc, hi, hx⟩ hncov
+    obtain ⟨r, hr, rfl, _, rfl⟩ := hmin a c hTa hc
+    exact r.hguard.safe hS hH (hrec r hr) hsafe i hi x (by simpa using hx)
+      (by rintro ⟨ro, hof, hw, _⟩; exact hncov ⟨ro, hof, hw⟩)
+
 
 end Build
 
