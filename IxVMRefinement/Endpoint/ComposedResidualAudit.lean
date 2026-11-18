@@ -38,8 +38,8 @@ The proof is complete when the theorem has no explicit argument.
 What this module does not print. A definition that a hypothesis reads
 (`RemainingStoreClausesOfRun`, `BindingRun`, `AtGroups`,
 `FamilyAlias.ClosureFamilyCheck`, `ClosureTwinSteps`, `RoleFreeShapes`, `CertProjFree`,
-`FamilyGraphInnerOwed`,
-`FamilyBlockCheckRow`, `FamilyTwinRow`, `FoldExtra`, `UnitStep` and the others) appears by name only: its own
+`FamilyGraphInnerOwedFam`, `FamilyRecon.RFormS`,
+`FamilyBlockCheckRow`, `FamilyTwinRowFam`, `FoldExtra`, `UnitStep` and the others) appears by name only: its own
 module holds it. The public statement and what it reads are printed in
 `Ix.IxVM.ConsistencyAudit` and `Ix.IxVM.ConsistencyModelAudit`. The module is outside any
 namespace, so every name prints in full. -/
@@ -65,9 +65,11 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
         (IxVM.Refinement.Binding.RoleFreeShapes IxVM.Refinement.Typing.FormerOpenTraceAt))
   (certProjFree :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)), IxVM.Refinement.Binding.CertProjFree calls)
-  (Pref : IxVM.Refinement.Typing.RunPref) (familyGraph : IxVM.Refinement.Typing.FamilyGraphInnerOwed Pref)
+  (Pref : IxVM.Refinement.Typing.RunPref) (familyGraph : IxVM.Refinement.Typing.FamilyGraphInnerOwedFam Pref)
   (familyBlock : IxVM.Refinement.Typing.FamilyAlias.FamilyBlockCheckRow IxVM.Refinement.Typing.FormerOpenTraceAt)
-  (familyTwin : IxVM.Refinement.Typing.FamilyTwinRow IxVM.Refinement.Typing.FormerOpenTraceAt) :
+  (familyTwin :
+    IxVM.Refinement.Typing.TwinFamily.FamilyTwinRowFam IxVM.Refinement.Binding.FamilyRecon.RFormS
+      IxVM.Refinement.Typing.FormerOpenTraceAt) :
   IxVM.Consistency.CircuitComposed
 -/
 #guard_msgs in

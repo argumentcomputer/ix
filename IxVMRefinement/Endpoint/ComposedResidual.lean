@@ -15,6 +15,7 @@ import IxVMRefinement.FamilyGraph.ProducersAcyclic
 import IxVMRefinement.FamilyGraph.ProducersInner
 import IxVMRefinement.Binding.OpCertObs
 import IxVMRefinement.FamilyAlias.ClosureFamilyStep
+import IxVMRefinement.FamilyGraph.ProducersStoredFam
 
 /-! # The composed statement from its open obligations
 
@@ -377,14 +378,18 @@ ordinary inductive type takes the use-site reading of the projection guard, a th
 (`Core.projGuardRunReading`).
 
 * `familyGraph`: what the run's family graph and the records its family checks check are owed
-  at the twin preference `Pref` (`Typing.FamilyGraphInnerOwed`): at every walk of an accepted
+  at the twin preference `Pref` (`Typing.FamilyGraphInnerOwedFam`): at every walk of an accepted
   typing claim and every witness of the table's shape, at the run's choices, the facts the
   circuit's functions give (`Typing.BatchGives`, the reference facts the ranking reads among
-  them), the stored twins' field (`Typing.StoredTwinField`), and what is owed of the records a
+  them), the witness's reads of a stored twin's canonical record (`Typing.StoredTwinReads`: the
+  stored twin's block is the one the binding side's stored family map selects), and what is owed
+  of the records a
   family check checks (`Typing.InnerOwed`: no inert used reference, a covered or in-logic used
   reference, and no address listed twice by a family check's own advice walk). The obligation
   holds at any `Pref`, since it reads it only through the selector's choice of the family
-  records and the twins. Proved from it (`Typing.familyGraphRowInner_of_owed`): the row
+  records and the twins. Proved from it (`Typing.familyGraphRowInnerFamT_of_owed`), at one
+  binding with its family checks, the stored twins' blocks and the selected canonical record's
+  completeness with the preference carried to it: the row
   `FamilyGraphRow`, in which the run's family records, advice, inner records and twins form a
   family graph where every top-walked non-empty block of recursors is a family record or a
   twin, every top-walked block on the modeled route has a family record, and each family record
@@ -397,7 +402,7 @@ ordinary inductive type takes the use-site reading of the projection guard, a th
   facts (`Typing.FamRunCtx.inner_ownRef`). The choices, the graph, the ranking with its
   acyclicity, and the facts of the functions that the circuit's family changes leave alone are
   proved. Producer open: the fields read off the circuit's functions as the family changes leave
-  them, the stored twins' field, from the binding side's stored families, the inner records'
+  them, the witness's reads of the stored twins' records, the inner records'
   inert and in-logic facts from the assertion on the used references of the records a family
   check checks (`assert_inner_refs_safe`), and the advice walk's refusal of a listed address seen
   before, read through the set lookup.
@@ -418,9 +423,15 @@ ordinary inductive type takes the use-site reading of the projection guard, a th
   the circuit's family changes.
 * `familyTwin`: the step of a second family record of a block (a twin), handed the block's
   family record stored, installs it and keeps the fold's clause with the family recursors'
-  companions beside it (`UnitStepTwin`). Stated; one accepted pair was executed. Producer open:
-  the step from `TwinFamily.TwinStepTarget` through `TwinFamily.familyInstalled_of_clause`, and
-  the target from `Decl.FamilyAlias.FamilyCheckFacts`. -/
+  companions beside it, at the concrete record form (`TwinFamily.FamilyTwinRowFam` at
+  `Binding.FamilyRecon.RFormS`: every recursor's type is the circuit's reconstruction at its
+  position and every rule follows the reconstructed body, both read canonically). In the stored
+  case the canonical record is the one the binding side's stored family map selects, with its
+  flattened family derived from the block and its form; that every selected record has the form
+  is a theorem (`Typing.storedFormAt_recon`). Stated; one accepted pair was executed. Producer
+  open: the step from `TwinFamily.TwinStepTarget` through `TwinFamily.familyInstalled_of_clause`,
+  the target from `Decl.FamilyAlias.FamilyCheckFacts`, and the twin's comparison with the
+  canonical record (its type part is `Binding.FamilyRecon.wrapRel_of_recon`). -/
 theorem circuitComposed_residual
     (groupStores : ∀ calls, RemainingStoreClausesOfRun calls)
     (closureFamilySteps :
@@ -432,11 +443,11 @@ theorem circuitComposed_residual
       ∀ calls, AtGroups (BindingRun calls) (RoleFreeShapes.{u} FormerOpenTraceAt))
     (certProjFree : ∀ calls, Binding.CertProjFree calls)
     (Pref : RunPref)
-    (familyGraph : FamilyGraphInnerOwed.{u} Pref)
+    (familyGraph : FamilyGraphInnerOwedFam.{u} Pref)
     (familyBlock : FamilyAlias.FamilyBlockCheckRow.{u} FormerOpenTraceAt)
-    (familyTwin : FamilyTwinRow.{u} FormerOpenTraceAt) :
+    (familyTwin : TwinFamily.FamilyTwinRowFam.{u} FamilyRecon.RFormS FormerOpenTraceAt) :
     CircuitComposed.{u} :=
-  circuitComposed_of_partsFamInner (Run := BindingRun) (Fam := ClosureFam)
+  circuitComposed_of_partsFamInnerWT (Run := BindingRun) (Fam := ClosureFam)
     (bindingClaimExport_of_table_and_stores Binding.loadedTableAdmits
       Binding.loadedTablePinsPrelude fun calls => groupStoresOfRun_of_remaining (groupStores calls))
     (fun calls => basisOverW_bindingRun FormerOpenTraceAt calls) admitsChain_bindingRun
@@ -445,7 +456,7 @@ theorem circuitComposed_residual
       (FamilyAlias.closureFamilySteps_of_checkRow closureFamilySteps) closureTwinSteps)
     groupWithoutRoleUnit (Binding.operationRoleUnitW_of_projFree.{u} certProjFree)
     Binding.standardAxiomRoleUnitW_closed
-    (familyGraphRowInner_of_owed familyGraph)
+    (familyGraphRowInnerFamT_of_owed familyGraph) storedFormAt_recon
     (innerStepsChecked_of_kinds
       (nativeBlockTelescope_checked linkLaws_formerOpenTrace Core.projGuardRunReading))
     (FamilyAlias.familyBlockRow_of_check linkLaws_formerOpenTrace familyBlock) familyTwin
