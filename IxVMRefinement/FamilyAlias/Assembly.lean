@@ -339,8 +339,9 @@ theorem familyRecord_of_facts {env : Env .anon} {blk : List (ConstantInfo .anon)
       (storeMembers ⟨as ++ env.consts⟩ (nonrecsOf blk) (tys.take (nonrecsOf blk).length))
       hrecsA hmfs.2
       (fun ci hci => hblk ci (hRmem ci hci)) hRnd
-    refine ⟨aliasMap tbl, as, out, hg, hroots,
-      ⟨hF.split, _, hmem, Or.inr ⟨hrecs, heqM, _, _, hprov, hfold⟩⟩, ?_⟩
+    refine ⟨aliasMap tbl, as, out, hg, hroots, ?_, ?_⟩
+    · set_option smartUnfolding false in
+      exact ⟨hF.split, _, hmem, Or.inr ⟨fun he => hrecs he, heqM, _, _, hprov, hfold⟩⟩
     intro ci hci
     have hci' : ci ∈ nonrecsOf blk ++ recsOf blk := by rw [← hF.split]; exact hci
     rcases List.mem_append.mp hci' with hci' | hci'
