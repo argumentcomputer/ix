@@ -1,4 +1,5 @@
 import IxVMRefinement.Binding.FamilyOf
+import IxVMRefinement.Binding.FamilyReconModel
 import IxVMRefinement.StatementRel.LoadedReadsCanon
 
 /-! # A block's flattened family, entry by entry: read off a family record, derived from the block
@@ -20,8 +21,9 @@ at the expression's root (`LoadedReads.canonAnn`, the form every `get_ci` load r
 `let`s.
 
 * `mutsRoot`, `loadedAt`: the root of a block member's expressions, and the canonical reading.
-* `FlatEntry`; `RecordFlat t E rb crb rs es`: recursor `k` of the record has its major premise
-  over entry `k`, at its parameters and levels.
+* `FlatEntry` (with `peelForalls`, in `FamilyReconModel` under this namespace);
+  `RecordFlat t E rb crb rs es`: recursor `k` of the record has its major premise over entry `k`,
+  at its parameters and levels.
 * `FlatView`: what the derivation reads of a store (the circuit's `get_ci`, `get_ci_cprj`,
   `build_flat_originals`, and a key's address); `FlatView.ofStore t E` reads them off the store.
 * The derivation, mirroring the circuit: `mentions` (`expr_mentions_block`, `caddr_is_peer`),
@@ -65,24 +67,6 @@ noncomputable def loadedAt (t : Ix.Kernel.RoleTable) (blob : _root_.Address → 
   | some e₀ => IxVM.Refinement.LoadedReads.canonAnn src (List.range nl) root e e₀
 
 /-! ## Entries, and the record's -/
-
-/-- **An entry of a block's flattened family** (the circuit's `(type, is auxiliary, parameters,
-levels)`, in the kernel terms and levels the refinement relates the circuit's to): the type at the
-position, whether it is an auxiliary (a type of a nested occurrence's block) or one of the
-block's own types, the parameters it is taken at (an auxiliary's, terms over the recursor's
-parameters; none for the block's own types) and its levels (at the recursor's level
-parameters). -/
-structure FlatEntry where
-  addr : _root_.Address
-  aux : Bool
-  params : List (Ix.Kernel.Expr .anon)
-  levels : List Ix.Kernel.Level
-
-/-- The body after exactly `n` leading binders (`peel_n_foralls`). -/
-def peelForalls : Nat → Ix.Kernel.Expr .anon → Option (Ix.Kernel.Expr .anon)
-  | 0, e => some e
-  | n + 1, .forallE _ b _ => peelForalls n b
-  | _ + 1, _ => none
 
 /-- The domain of the binder after `n` leading binders (a recursor's major premise's type, at
 `n = params + motives + minors + indices`). -/
