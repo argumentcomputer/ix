@@ -91,11 +91,9 @@ theorem FamRead.withLink {L₀ L : Ix.Kernel.Env .anon → NativeFam .anon → P
 opened head trace**, registering its family.
 
 `hfacts` is IxC's record of the install at the registered family; its telescope constant is the
-traced term of the stored former. `hres`, `hloads`, `heta`, `hkeys₂`, `hnoTable` and `hread`
-are what the block's unit step reads off its run at the new environment (`hread` is the
-family's reading with nothing said of the link; `hnoTable` says the install stores no
-projection table, which holds because such a family has an index, and is all the guard
-certificates need).
+traced term of the stored former. `hres`, `hloads`, `heta`, `hkeys₂` and `hread` are what the
+block's unit step reads off its run at the new environment (`hread` is the family's reading
+with nothing said of the link).
 
 `hfollow` is the one premise no theorem produces yet: the registered telescope constant has the
 traced binders of the stored former's type and the family's sort is the traced sort. It follows
@@ -110,14 +108,11 @@ theorem FoldClauseWith.aliasInstall {blk : List (ConstantInfo .anon)} {nP nIdx :
       env.find? k = none → k ≠ Core.unresolvedKey)
     (hloads : Core.ScopedLoadFacts (Core.Ctx.stored ⟨E, env₂, t, lim⟩))
     (heta : Decl.EtaStable env₂) (hkeys₂ : HashKeyed t env₂)
-    (hnoTable : ∀ (k : Key .anon) (tbl : Ix.Kernel.ProjTable .anon),
-      env₂.find? (Ix.Kernel.projTableName k) = some (.projInfo tbl) →
-      env.find? (Ix.Kernel.projTableName k) = none → False)
     (hread : FamRead (fun _ _ => True) t E env₂ fam)
     (hfollow : FormerOpenTraceAt env₂ fam) :
     FoldClauseWith.{u} FormerOpenTraceAt t E lim env₂ (fun f => Reg f ∨ f = fam) :=
   h.nativeAt linkLaws_formerOpenTrace hfacts hpin hna hres hloads heta hkeys₂
-    (guardCerts_noTable h.guard hfacts.envExt hnoTable) (hread.withLink hfollow)
+    (hread.withLink hfollow)
 
 end
 
