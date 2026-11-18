@@ -1,0 +1,249 @@
+import IxVMRefinement.Binding.GroupRank
+import IxVMRefinement.Binding.ClosureFold
+
+/-! # The family checks of a binding run, group by group
+
+The run's payload and family selection, and what of the family form's clauses is left.
+
+* `runPayload calls bAddr t`: the payload of the run's family checks: at group `g`, the family
+  check of the block at `B` under the context at `valLimit g` names `a` as its family record, an
+  advice record or a container recursor.
+* `runFamOf`, `runAdv`, `runCont`: the family selection of group `g`: a block new in the group,
+  routed as modeled, with a family check at the group's limit, selects the family record of one
+  such check; the advice and container recursors of a block are those of its checks.
+  `runFamOf_famCall`: the clause `GroupFamilyChecks.famCall` of that selection.
+* `RemainingFamilyClauses calls bAddr t E₀`: what is not proved of the run's family checks, at
+  the store sequence with the run's payload. Each field names the source it comes from.
+* `families_of_remaining`: the family form's clauses at a group (`ClosureFam` and
+  `FamilyAdmits`), for any rank of the group's new records (`GroupRanked`). -/
+
+set_option linter.unusedVariables false
+
+namespace IxVM.Refinement.Binding
+
+open IxVM.Consistency
+open IxVM.Refinement.Typing
+open IxVM.Refinement.Typing.FamilyAlias (FamilyCallAtLim)
+open IxVM.Refinement.Binding.FamilyOf (FamilyOfBlock)
+open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open Aiur.Library
+open IxVM (F)
+
+/-- **The payload of a run's family checks** (module docstring). -/
+def runPayload (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable) :
+    PayloadRel := fun g B a =>
+  ∃ rb cs, FamilyCallAtLim calls bAddr t B rb (some (valLimit g)) cs ∧
+    (a = rb ∨ AdviceIn cs a ∨ ContainerRecIn cs a)
+
+/-- **A family check of the block at `B` with the record at `rb` at group `g`'s limit.** -/
+def FamCallAt (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
+    (g : Nat) (B rb : _root_.Address) : Prop :=
+  ∃ cs, FamilyCallAtLim calls bAddr t B rb (some (valLimit g)) cs
+
+open Classical in
+/-- **The family selection of group `g`** (module docstring). -/
+noncomputable def runFamOf (calls : List (Call F)) (bAddr : _root_.Address)
+    (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (g : Nat) (B : _root_.Address) :
+    Option _root_.Address :=
+  if h : New (groupStore t E₀ (runPayload calls bAddr t) g)
+      (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) B ∧ ModeledRouteAt calls B ∧
+      ∃ rb, FamCallAt calls bAddr t g B rb then
+    some (Classical.choose h.2.2)
+  else none
+
+/-- **The advice of a block's family checks at group `g`.** -/
+def runAdv (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
+    (g : Nat) (B a : _root_.Address) : Prop :=
+  ∃ rb cs, FamilyCallAtLim calls bAddr t B rb (some (valLimit g)) cs ∧ AdviceIn cs a
+
+/-- **The container recursors of a block's family checks at group `g`.** -/
+def runCont (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
+    (g : Nat) (B x : _root_.Address) : Prop :=
+  ∃ rb cs, FamilyCallAtLim calls bAddr t B rb (some (valLimit g)) cs ∧ ContainerRecIn cs x
+
+section Run
+
+variable {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
+  {E₀ : Ixon.Env}
+
+theorem runFamOf_spec {g : Nat} {B rb : _root_.Address}
+    (h : runFamOf calls bAddr t E₀ g B = some rb) :
+    New (groupStore t E₀ (runPayload calls bAddr t) g)
+        (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) B ∧
+      ModeledRouteAt calls B ∧ FamCallAt calls bAddr t g B rb := by
+  unfold runFamOf at h
+  split at h
+  · rename_i hc
+    have e := Option.some.inj h
+    subst e
+    exact ⟨hc.1, hc.2.1, Classical.choose_spec hc.2.2⟩
+  · cases h
+
+/-- The selected record is in the group's payload. -/
+theorem runFamOf_payload {g : Nat} {B rb : _root_.Address}
+    (h : runFamOf calls bAddr t E₀ g B = some rb) : runPayload calls bAddr t g B rb := by
+  obtain ⟨-, -, cs, hcs⟩ := runFamOf_spec h
+  exact ⟨rb, cs, hcs, Or.inl rfl⟩
+
+/-- **`GroupFamilyChecks.famCall` of the run's selection.** -/
+theorem runFamOf_famCall {g : Nat} :
+    ∀ B rb, runFamOf calls bAddr t E₀ g B = some rb →
+      New (groupStore t E₀ (runPayload calls bAddr t) g)
+          (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) B ∧ ModeledRouteAt calls B ∧
+      ∃ cs, FamilyCallAtLim calls bAddr t B rb (some (valLimit g)) cs ∧
+        (∀ a, AdviceIn cs a → runAdv calls bAddr t g B a) ∧
+        (∀ x, ContainerRecIn cs x → runCont calls bAddr t g B x) := by
+  intro B rb h
+  obtain ⟨hn, hm, cs, hcs⟩ := runFamOf_spec h
+  exact ⟨hn, hm, cs, hcs, fun a ha => ⟨rb, cs, hcs, ha⟩, fun x hx => ⟨rb, cs, hcs, hx⟩⟩
+
+end Run
+
+/-- **What is left of the run's family checks**, at the store sequence with the run's payload
+(`Rs g` below is `groupStore t E₀ (runPayload calls bAddr t) g`). Status: premises; nothing
+proves them of any run.
+* `payloadFacts`: the facts the store's clauses need of the payload's records (`PayloadFacts`:
+  `KernelModeled::check_family`, `check_advice_record`, `advice_refs_ok`, `check_witness`,
+  `check_container_rec`, `container_refs_ok`, `check_recs`).
+* `payloadRanked`: at a group with a payload, a rank of its new records (`GroupRanked`): the
+  order has no cycle among them (content addressing, with `check_advice_record`'s refusal of a
+  modeled block, of a projection of the modeled block and of a recursor projection,
+  `advice_refs_ok`'s earlier advice and witnesses, and `walk_from_block`'s paths in the block's
+  dependency closure).
+* `modeled`, `family`, `claimed`: the fields of `GroupFamilyChecks` but `famCall`
+  (`runFamOf_famCall`): the modeled arm of `KernelCheck::check_const` reaches
+  `KernelModeled::check_modeled_block` and `check_family` (`modeled`); `check_family` and
+  `check_recs` check the record position by position against the flattened block (`family`,
+  with the batch's refusal of an empty record under a group's validation); a new block of
+  recursors is a selected record or a second family record checked by `check_family`
+  (`claimed`).
+* `runFacts`: `ClosureRunFacts` at any rank of the group (its `famRefs` is the rank's).
+* `famNew`: the selected record of a new block is new in the group.
+* `payloadChecked`: a new unit reached through the payload is checked at the group's limit by a
+  check of a unit (`KernelClaim::run_check` in `check_advice_record`, `check_container_rec`;
+  `KernelClaim::check_muts_all` for an advice block), or is a selected family record of a new
+  block (checked by `check_recs`). -/
+structure RemainingFamilyClauses (calls : List (Call F)) (bAddr : _root_.Address)
+    (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
+  payloadFacts : PayloadFacts t E₀ (runPayload calls bAddr t)
+  payloadRanked : ∀ g, 6 ≤ g → g < 77 → (∃ B a, runPayload calls bAddr t g B a) →
+    ∃ rank, GroupRanked t E₀ (runPayload calls bAddr t) g (runFamOf calls bAddr t E₀ g)
+      (runAdv calls bAddr t g) (runCont calls bAddr t g) rank
+  modeled : ∀ g, 6 ≤ g → g < 77 → ∀ B cb (ms : Array Ixon.MutConst),
+    New (groupStore t E₀ (runPayload calls bAddr t) g)
+      (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) B →
+    recordOf E₀ B = some cb → InLogic cb → cb.info = .muts ms →
+    (∀ m ∈ ms.toList, ∃ ind, m = Ixon.MutConst.indc ind) → ModeledRouteAt calls B →
+    (∃ k, k < ms.size ∧ Claim.MemberCheckedLimAt calls bAddr t B ms k (some (valLimit g))) →
+    ∃ rb, runFamOf calls bAddr t E₀ g B = some rb
+  family : ∀ g, 6 ≤ g → g < 77 → ∀ B rb, runFamOf calls bAddr t E₀ g B = some rb →
+    ∃ cb ms crb rs flat, FamilyOfBlock E₀ B cb ms rb crb rs flat
+  claimed : ∀ g, 6 ≤ g → g < 77 → ∀ (A : _root_.Address) (c : Ixon.Constant)
+    (rs' : Array Ixon.MutConst),
+    New (groupStore t E₀ (runPayload calls bAddr t) g)
+      (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) A →
+    recordOf E₀ A = some c → c.info = .muts rs' → 0 < rs'.size →
+    (∀ m ∈ rs'.toList, ∃ r, m = Ixon.MutConst.recr r) →
+    (∃ B, runFamOf calls bAddr t E₀ g B = some A) ∨
+      ∃ B cs, FamilyCallAtLim calls bAddr t B A (some (valLimit g)) cs
+  runFacts : ∀ g, 6 ≤ g → g < 77 → ∀ rk : Nat → _root_.Address → Nat,
+    GroupRanked t E₀ (runPayload calls bAddr t) g (runFamOf calls bAddr t E₀ g)
+      (runAdv calls bAddr t g) (runCont calls bAddr t g) (rk g) →
+    ClosureRunFacts (observedRun calls bAddr t E₀ rk) t g
+      (groupStore t E₀ (runPayload calls bAddr t) g)
+      (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) (runFamOf calls bAddr t E₀ g)
+      (runAdv calls bAddr t g)
+  famNew : ∀ g, 6 ≤ g → g < 77 → ∀ B rb, runFamOf calls bAddr t E₀ g B = some rb →
+    New (groupStore t E₀ (runPayload calls bAddr t) g)
+      (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) rb
+  payloadChecked : ∀ g, 6 ≤ g → g < 77 → ∀ a c,
+    PayReach t E₀ (runPayload calls bAddr t) g a →
+    New (groupStore t E₀ (runPayload calls bAddr t) g)
+      (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) a →
+    recordOf (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) a = some c → UnitKind c →
+    UnitCheckedAt calls bAddr t E₀ a (some (valLimit g)) ∨
+      ∃ B, runFamOf calls bAddr t E₀ g B = some a ∧
+        New (groupStore t E₀ (runPayload calls bAddr t) g)
+          (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) B
+
+section Families
+
+variable {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
+  {E₀ : Ixon.Env}
+
+/-- **An address the family check of a selected block names is held after the group**: the
+selected block is a block record (`FamilyOfBlock.block`), so the group reaches it by its walk or
+through its payload, and the address is reached through the payload. -/
+theorem runPayload_held (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
+    (hax : AxiomRolesDeclared t E₀) (hR : RemainingFamilyClauses calls bAddr t E₀) {g : Nat}
+    (hg6 : 6 ≤ g) (hg : g < 77)
+    {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
+    (hw : GroupWalked calls bAddr t E₀ g recs) {B rb a : _root_.Address}
+    (hfam : runFamOf calls bAddr t E₀ g B = some rb)
+    (hpay : runPayload calls bAddr t g B a) :
+    (recordOf (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) a).isSome = true := by
+  have hP := hR.payloadFacts
+  obtain ⟨hnew, -, -⟩ := runFamOf_spec hfam
+  obtain ⟨-, -, -, hadd, -⟩ := new_groupStore hb hg6 hnew
+  obtain ⟨cb, ms, crb, rs, flat, hF⟩ := hR.family g hg6 hg B rb hfam
+  have hB := hF.block
+  have hreach : PayReach t E₀ (runPayload calls bAddr t) g a := by
+    rcases groupAdds_cases hC hax hw hadd with ⟨hra, -⟩ | ⟨-, -, -, -, p, hp, hproj, -⟩ |
+        ⟨-, -, -, -, c₂, ax, hc₂, hinfo, -⟩ | hpa
+    · exact PayReach.payload hra hpay
+    · have e : p = cb := Option.some.inj (hp.symm.trans hB.record)
+      rw [e] at hproj
+      exact (proj_not_block hproj ⟨ms, hB.muts⟩).elim
+    · have e : c₂ = cb := Option.some.inj (hc₂.symm.trans hB.record)
+      rw [e, hB.muts] at hinfo
+      cases hinfo
+    · rcases payAdds_cases hP hpa with ⟨hrB, -⟩ | ⟨-, -, -, -, -, p, hp, hproj, -⟩
+      · exact PayReach.payloadOf hrB hpay
+      · have e : p = cb := Option.some.inj (hp.symm.trans hB.record)
+        rw [e] at hproj
+        exact (proj_not_block hproj ⟨ms, hB.muts⟩).elim
+  obtain ⟨c, hc⟩ := hP.record g a hreach
+  rw [(groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mpr
+    ⟨storedBelow_of_adds hg6 (GroupAdds.payReach hreach), hc⟩]
+  rfl
+
+/-- **The family form's clauses at a group**, for a rank of its new records. -/
+theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
+    (hax : AxiomRolesDeclared t E₀) (hR : RemainingFamilyClauses calls bAddr t E₀)
+    {rk : Nat → _root_.Address → Nat} {g : Nat} (hg6 : 6 ≤ g) (hg : g < 77)
+    {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
+    (hw : GroupWalked calls bAddr t E₀ g recs)
+    (hrank : GroupRanked t E₀ (runPayload calls bAddr t) g (runFamOf calls bAddr t E₀ g)
+      (runAdv calls bAddr t g) (runCont calls bAddr t g) (rk g)) :
+    ClosureFam calls (observedRun calls bAddr t E₀ rk) t g
+        (groupStore t E₀ (runPayload calls bAddr t) g)
+        (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) (runFamOf calls bAddr t E₀ g)
+        (runAdv calls bAddr t g) (runCont calls bAddr t g) ∧
+      FamilyAdmits (observedRun calls bAddr t E₀ rk) t g
+        (groupStore t E₀ (runPayload calls bAddr t) g)
+        (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) (runFamOf calls bAddr t E₀ g)
+        (runAdv calls bAddr t g) (runCont calls bAddr t g) := by
+  refine ⟨⟨⟨bAddr, ?_⟩, hR.runFacts g hg6 hg rk hrank⟩, ?_⟩
+  · exact
+      { modeled := hR.modeled g hg6 hg
+        famCall := runFamOf_famCall
+        family := hR.family g hg6 hg
+        claimed := hR.claimed g hg6 hg }
+  · exact
+      { famNew := fun B rb h hB => ⟨hR.famNew g hg6 hg B rb h, hrank.fam B rb h hB⟩
+        advice := fun B rb a h hB ha => by
+          obtain ⟨rb', cs, hcs, hin⟩ := ha
+          exact ⟨runPayload_held hC hb hax hR hg6 hg hw h ⟨rb', cs, hcs, Or.inr (Or.inl hin)⟩,
+            fun hn => hrank.advice B rb a h hB ⟨rb', cs, hcs, hin⟩ hn⟩
+        container := fun B rb x h hB hx => by
+          obtain ⟨rb', cs, hcs, hin⟩ := hx
+          exact ⟨runPayload_held hC hb hax hR hg6 hg hw h ⟨rb', cs, hcs, Or.inr (Or.inr hin)⟩,
+            fun hn => hrank.container B rb x h hB ⟨rb', cs, hcs, hin⟩ hn⟩
+        checked := fun a c hn hc hu => by
+          rcases groupStore_checked hC hb hax hR.payloadFacts hg6 hw a c hn hc hu with h | h
+          · exact Or.inl h
+          · exact hR.payloadChecked g hg6 hg a c h hn hc hu }
+
+end Families
+
+end IxVM.Refinement.Binding

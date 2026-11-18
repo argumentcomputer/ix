@@ -151,7 +151,8 @@ def LoadedTablePinsPrelude : Prop :=
 pinned and every role's validation observed, the run hashed a collision, or there are a rank and
 a sequence of stores over the run's records that starts at the committed basis rows and has, at
 each group from 6 to 76, every clause of the group's admission but the validation of its roles
-(`checkedRun`), and the reading clause.
+(`checkedRun`), and the reading clause, and the family form's clauses for the observed run record
+(`ClosureFam`, `FamilyAdmits`: one family selection per group).
 
 The collision alternative is part of the statement because several clauses of `Admits` hold of
 a run's records only where the run hashed no collision, and nowhere else: that a store is
@@ -195,7 +196,14 @@ def GroupStoresOfRun (calls : List (Call F)) : Prop :=
             Admits (checkedRun calls a t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) rank) t g
               (Rs g) (Rs (g + 1)) ∧
             AdmitsReads (checkedRun calls a t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) rank) t
-              (Rs g) (Rs (g + 1))
+              (Rs g) (Rs (g + 1)) ∧
+            ∃ famOf adv cont,
+              ClosureFam calls
+                (observedRun calls a t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) rank) t g (Rs g)
+                (Rs (g + 1)) famOf adv cont ∧
+              FamilyAdmits
+                (observedRun calls a t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) rank) t g (Rs g)
+                (Rs (g + 1)) famOf adv cont
 
 /-! ## What the observed validation of a binding gives -/
 
@@ -266,9 +274,10 @@ theorem bindingClaimExportObs_of_parts {calls : List (Call F)} {d : Digest}
       basisBlobs := hbb
       admits := fun g hg6 hg =>
         admits_observed_of_checked (hgs g hg6 hg).1 (hval g hg)
-      reads := fun g hg6 hg => admitsReads_observed_of_checked (hgs g hg6 hg).2
+      reads := fun g hg6 hg => admitsReads_observed_of_checked (hgs g hg6 hg).2.1
       stepStores := runStepStores_of_noCollision t (LoadedReads.RunStore.of_walkedL6 hload hw0) hb
-        (fun x hx => List.mem_cons_of_mem _ hx) hnc }
+        (fun x hx => List.mem_cons_of_mem _ hx) hnc
+      families := fun g hg6 hg => (hgs g hg6 hg).2.2 }
 
 /-- **The claim export of the residual theorem, from the four named parts for every bounded
 run**: the decode of the claim is taken from the observed `verify_claim` derivation. -/

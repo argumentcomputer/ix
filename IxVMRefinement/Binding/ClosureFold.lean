@@ -1,6 +1,5 @@
 import IxVMRefinement.Binding.FamilyWitness
-import IxVMRefinement.Binding.RunPredicate
-import IxVMRefinement.Binding.OpRoleUnit
+import IxVMRefinement.Binding.WalkedStored
 
 /-! # The closure of a group with its modeled blocks' families: the fold's statement
 
@@ -19,7 +18,7 @@ is no role unit. Each record is installed by the step of its kind, at the closur
 The statement is `ClosureFoldStatement`: from the three step premises, the closure of every group
 in the family form, with the binding fold's invariant that the walked records are stored.
 
-* `WalkedStored ρ t G R env` (`Binding/OpRoleUnit.lean`): every non-block record of `R` the run
+* `WalkedStored ρ t G R env` (`Binding/WalkedStored.lean`): every non-block record of `R` the run
   checked, in Lean's logic with its block, is stored at its key, and so is the record of every
   walked role of a group of `G`. The role unit of an operation reads it after the closure. It
   reads the run record, so it sits beside the boundary invariant, in and out.
@@ -248,23 +247,5 @@ def ClosureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) 
     ClosureUnitSteps.{u} L calls ρ t g → ClosureFamilySteps.{u} L calls ρ t g →
     ClosureTwinSteps.{u} L calls ρ t g →
     ClosureStepOverFamilyW.{u} L ρ t g (ClosureFam calls ρ t g)
-
-/-- **The residual's closure hypothesis in the family form**, at the binding run predicate: the
-closure of every group of every run, in the family form with the walked records stored. -/
-def GroupClosureFamily (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) : Prop :=
-  ∀ calls, AtGroups (BindingRun calls) fun ρ t g =>
-    ClosureStepOverFamilyW.{u} L ρ t g (ClosureFam calls ρ t g)
-
-/-- **The residual's closure hypothesis from the fold and the three step premises at every
-group of every run.** -/
-theorem groupClosureFamily_of_fold {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (fold : ClosureFoldStatement.{u} L)
-    (unitSteps : ∀ calls, AtGroups (BindingRun calls) (ClosureUnitSteps.{u} L calls))
-    (familySteps : ∀ calls, AtGroups (BindingRun calls) (ClosureFamilySteps.{u} L calls))
-    (twinSteps : ∀ calls, AtGroups (BindingRun calls) (ClosureTwinSteps.{u} L calls)) :
-    GroupClosureFamily.{u} L := by
-  intro calls t ρ Rs hrun hall ht g hg6 hg
-  exact fold calls ρ t g hg6 hg hall ht (unitSteps calls t ρ Rs hrun hall ht g hg6 hg)
-    (familySteps calls t ρ Rs hrun hall ht g hg6 hg) (twinSteps calls t ρ Rs hrun hall ht g hg6 hg)
 
 end IxVM.Refinement.Binding
