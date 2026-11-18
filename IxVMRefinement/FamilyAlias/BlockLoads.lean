@@ -40,7 +40,10 @@ reading, and the block's used references are stored): `getIprj` and `getCprj`, t
 stored constants' shapes (`FamLoadCtx.indForm`, `ctorForm`) and the canonical loads
 (`LoadedReads.get_ci_iprj_load_canon`, `get_ci_cprj_load_canon`).
 
-The last one is `FamilyLoadsCheck`: `getCI`, the load of a new constant at its key. -/
+The last one, `getCI` (the load of a new constant at its key), holds from the same seam at an
+inductive or a constructor projection (`FamLoadCtx.getCI_iprj`, `getCI_cprj`: the load's trace
+bounds the record's indices, `LoadedReads.get_ci_iprj_canon`, `get_ci_cprj_canon`); at a
+recursor projection of the family record it is `FamilyLoadsCheck`. -/
 
 universe u
 
@@ -58,14 +61,17 @@ set_option linter.unusedVariables false
 section Check
 open IxVM.Refinement.Core
 
-/-- **The load facts at the family step's new constants that read the family check**: the field
+/-- **The load facts at the family step's new constants that read the family check**: the part
 of `NewLoads` the store, the records, the route fact, the walk's check of the block and the
-loaded forms of the inductives and constructors (`FamilyMembersCanon`) do not give (module
-docstring). -/
+loaded forms of the inductives and constructors (`FamilyMembersCanon`) do not give: the load of
+a new constant at its key where the address holds a recursor projection record (the family
+record's recursors; module docstring). -/
 structure FamilyLoadsCheck (c : ScopedCtx) (new : List (ConstantInfo .anon)) : Prop where
   getCI : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
     ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → Good c.toCtx cs →
     Bytes.RepAddressRef addrTy h a addr → (∃ cn ∈ new, cn.name = keyOf c.t (ixAddr a)) →
+    (∃ (cm : Ixon.Constant) (p : Ixon.RecursorProj),
+      IxVM.Consistency.recordOf c.E (ixAddr a) = some cm ∧ cm.info = .rPrj p) →
       ∃ ci, c.env.find? (c.κ (ixAddr a)) = some ci ∧ CIPtrRep c.κ h' ptr ci
 
 end Check
@@ -433,6 +439,107 @@ theorem FamLoadCtx.blockStored (hL : FamLoadCtx C new A cb ms rb crb rs) :
   obtain ⟨m, hm, hye⟩ := LoadedReads.blockRecurAddrs_get hk
   exact hL.found y (Or.inl (Or.inr ⟨ms, k, m, hL.muts, hm, Or.inl hye⟩))
 
+/-- **A load of a new inductive at its constant address represents the stored inductive**: the
+load reads the member's projection record and, through it, the family's block (its trace bounds
+the record's member index); the member at that index is stored at its key as the canonical
+constant of its reading (`FamLoadCtx.indForm`), which the load represents
+(`LoadedReads.get_ci_iprj_canon` at the environment after the step). -/
+theorem FamLoadCtx.getCI_iprj (hL : FamLoadCtx C new A cb ms rb crb rs)
+    {addr ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {a : Bytes.Address}
+    (ev : ObsFn Core.W "Ingress::get_ci" [addr] h ptr h' cs) (good : Core.Good (appCtx C new) cs)
+    (ha : Bytes.RepAddressRef Core.addrTy h a addr) {i : Nat} {ind : Ixon.Inductive}
+    (hget : ms[i]? = some (.indc ind)) (hx : Core.ixAddr a = memberAddr A i (.indc ind)) :
+    ∃ ci, (appCtx C new).env.find? ((appCtx C new).stored.κ (Core.ixAddr a)) = some ci ∧
+      Core.CIPtrRep (appCtx C new).stored.κ h' ptr ci := by
+  have hrec : recordOf C.E (Core.ixAddr a) = some (memberProjection A i (.indc ind)) := by
+    rw [hx]
+    exact hL.members i _ hget
+  have hinfo : (memberProjection A i (.indc ind)).info = .iPrj ⟨i.toUInt64, A⟩ := rfl
+  -- the member at the record's index, bounded, from the load's trace
+  obtain ⟨rawBytes, c', hh, haddr, hex, -, hres⟩ := L1.get_ci_block_trace_spec good.2 ha ev
+  obtain ⟨lc, hgetc, hdec⟩ := LoadedReads.recordOf_inv hrec
+  have hb : rawBytes = lc.rawBytes := Core.load_escape hgetc good.1 rawBytes hh haddr
+  have hc : c' = memberProjection A i (.indc ind) := by
+    rw [hb, hdec] at hex
+    exact (Except.ok.inj hex).symm
+  have hinfo' : c'.info = .iPrj ⟨i.toUInt64, A⟩ := (congrArg Ixon.Constant.info hc).trans hinfo
+  unfold L1.GetCIBlockTraceResult at hres
+  rw [hinfo'] at hres
+  obtain ⟨hidx, blkBytes, cb', ms', ind', _, _, _, _, hhB, haB, hexB, hcb', hms', -⟩ := hres
+  rw [hL.block_eq good.1 hhB haB hexB] at hcb'
+  have e2 : ms' = ms := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hL.muts)
+  rw [e2] at hms'
+  have hi64 : i.toUInt64.toNat < UInt64.size := Nat.lt_trans hidx (by decide)
+  have hm' : ms[i.toUInt64.toNat]? = some (.indc ind') := by
+    rw [← Array.getElem?_toList]
+    exact hms'
+  -- the stored member and the load's canonical constant
+  obtain ⟨ty₀, ty', caps, hty, hlbb, hdef, hcan, hfind⟩ := hL.indForm _ ind' hi64 hm'
+  obtain ⟨haddr', ty'', hcT, -, -, hrepS⟩ := LoadedReads.get_ci_iprj_canon hL.check good.1 good.2
+    ha ev hrec hinfo hL.record hL.muts hm' hty hlbb hdef
+  have e3 : ty'' = ty' := Option.some.inj (hcT.symm.trans hcan)
+  have hxa : Core.ixAddr a = Core.iprjAddr A i.toUInt64.toNat := haddr'
+  have hrep := hrepS (appCtx C new).env C.lim hL.used hL.blockStored caps
+  rw [e3, hxa] at hrep
+  rw [hxa, Core.Ctx.stored_key_of_find (c := appCtx C new) hfind]
+  exact ⟨_, hfind, hrep⟩
+
+/-- **A load of a new constructor at its constant address represents the stored constructor**:
+the load reads the constructor's projection record and, through it, the family's block (its
+trace bounds the record's member and constructor indices and gives the constructor at them); it
+is stored at its key as the canonical constant of its reading (`FamLoadCtx.ctorForm`), which the
+load represents (`LoadedReads.get_ci_cprj_canon` at the environment after the step). -/
+theorem FamLoadCtx.getCI_cprj (hL : FamLoadCtx C new A cb ms rb crb rs)
+    {addr ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {a : Bytes.Address}
+    (ev : ObsFn Core.W "Ingress::get_ci" [addr] h ptr h' cs) (good : Core.Good (appCtx C new) cs)
+    (ha : Bytes.RepAddressRef Core.addrTy h a addr) {i j : Nat} {ind : Ixon.Inductive}
+    (hget : ms[i]? = some (.indc ind)) (hj : j < ind.ctors.size)
+    (hx : Core.ixAddr a = ctorAddr A i j) :
+    ∃ ci, (appCtx C new).env.find? ((appCtx C new).stored.κ (Core.ixAddr a)) = some ci ∧
+      Core.CIPtrRep (appCtx C new).stored.κ h' ptr ci := by
+  have hrec : recordOf C.E (Core.ixAddr a) = some (constructorProjection A i j) := by
+    rw [hx]
+    exact hL.ctors i ind j hget hj
+  have hinfo : (constructorProjection A i j).info = .cPrj ⟨i.toUInt64, j.toUInt64, A⟩ := rfl
+  -- the member and constructor at the record's indices, bounded, from the load's trace
+  obtain ⟨rawBytes, c', hh, haddr, hex, -, hres⟩ := L1.get_ci_block_trace_spec good.2 ha ev
+  obtain ⟨lc, hgetc, hdec⟩ := LoadedReads.recordOf_inv hrec
+  have hb : rawBytes = lc.rawBytes := Core.load_escape hgetc good.1 rawBytes hh haddr
+  have hc : c' = constructorProjection A i j := by
+    rw [hb, hdec] at hex
+    exact (Except.ok.inj hex).symm
+  have hinfo' : c'.info = .cPrj ⟨i.toUInt64, j.toUInt64, A⟩ :=
+    (congrArg Ixon.Constant.info hc).trans hinfo
+  unfold L1.GetCIBlockTraceResult at hres
+  rw [hinfo'] at hres
+  obtain ⟨hidx, hcidx, blkBytes, cb', ms', ind', ct', _, _, _, _, hhB, haB, hexB, hcb', hms',
+    hcts, -⟩ := hres
+  rw [hL.block_eq good.1 hhB haB hexB] at hcb'
+  have e2 : ms' = ms := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hL.muts)
+  rw [e2] at hms'
+  have hi64 : i.toUInt64.toNat < UInt64.size := Nat.lt_trans hidx (by decide)
+  have hj64 : j.toUInt64.toNat < UInt64.size := Nat.lt_trans hcidx (by decide)
+  have hm' : ms[i.toUInt64.toNat]? = some (.indc ind') := by
+    rw [← Array.getElem?_toList]
+    exact hms'
+  have hct : ind'.ctors[j.toUInt64.toNat]? = some ct' := by
+    rw [← Array.getElem?_toList]
+    exact hcts
+  -- the stored constructor and the load's canonical constant
+  obtain ⟨hcj, ty₀, ty', hty, hlbb, hdef, hcan, hfind⟩ :=
+    hL.ctorForm _ ind' _ ct' hi64 hj64 hm' hct
+  obtain ⟨haddr', ty'', hcT, -, -, hrepS⟩ := LoadedReads.get_ci_cprj_canon hL.check good.1 good.2
+    ha ev hrec hinfo hL.record hL.muts hm' hct hcj hty hlbb hdef
+  have e3 : ty'' = ty' := Option.some.inj (hcT.symm.trans hcan)
+  have hxa : Core.ixAddr a = Core.cprjAddr A i.toUInt64.toNat j.toUInt64.toNat := haddr'
+  have hself : ∃ ci, (appCtx C new).env.find? (Core.keyOf C.t (Core.ixAddr a)) = some ci := by
+    rw [hxa]
+    exact ⟨_, hfind⟩
+  have hrep := hrepS (appCtx C new).env C.lim hL.used hL.blockStored hself
+  rw [e3, hxa] at hrep
+  rw [hxa, Core.Ctx.stored_key_of_find (c := appCtx C new) hfind]
+  exact ⟨_, hfind, hrep⟩
+
 /-- **At a block of two or more inductives no good run answers `block_is_multi = 0`**, at the
 registry's facts of the prefix context (`multi_not_zero`, read from the facts alone). -/
 theorem multi_not_zero_core {C : Core.Ctx} (core : Core.ScopedCoreFacts (Core.Ctx.stored C))
@@ -465,7 +572,36 @@ theorem nativeAt_of_proj_ctor {c : Core.Ctx} {cs : List (Call F)} (hg : Core.Goo
 theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs)
     (hK : FamilyLoadsCheck (appCtx C new).stored new) :
     NewLoads (appCtx C new).stored new where
-  getCI := hK.getCI
+  getCI := by
+    intro addr ptr h h' cs a ev good ha hn
+    obtain ⟨cn, hcn, hname⟩ := hn
+    rcases hL.newName cn hcn with ⟨x, hx, hx'⟩ | ⟨-, n, d, hnd⟩
+    · have hax : Core.ixAddr a = x := Core.keyOf_inj hL.wf (hname.symm.trans hx')
+      rcases hx with ⟨⟨-, hs⟩ | ⟨ms', i, m, hinfo', hget, hxm | ⟨ind, j, hind, hj, hxc⟩⟩⟩ |
+          ⟨⟨-, hs⟩ | ⟨rs', i, m, hinfo', hget, hxm | ⟨ind, j, hind, hj, hxc⟩⟩⟩
+      · exact (standalone_not_block hs ⟨ms, hL.muts⟩).elim
+      · have e : ms' = ms := Ixon.ConstantInfo.muts.inj (hinfo'.symm.trans hL.muts)
+        rw [e] at hget
+        obtain ⟨ind, rfl⟩ := hL.indcs m (by simpa using Array.mem_of_getElem? hget)
+        exact hL.getCI_iprj ev good ha hget (hax.trans hxm)
+      · have e : ms' = ms := Ixon.ConstantInfo.muts.inj (hinfo'.symm.trans hL.muts)
+        rw [e, hind] at hget
+        exact hL.getCI_cprj ev good ha hget hj (hax.trans hxc)
+      · exact (standalone_not_block hs ⟨rs, hL.rmuts⟩).elim
+      · have e : rs' = rs := Ixon.ConstantInfo.muts.inj (hinfo'.symm.trans hL.rmuts)
+        rw [e] at hget
+        obtain ⟨r, rfl⟩ := hL.recrs m (by simpa using Array.mem_of_getElem? hget)
+        have hrec : recordOf C.E (Core.ixAddr a) = some (memberProjection rb i (.recr r)) := by
+          rw [hax, hxm]
+          exact hL.rmembers i _ hget
+        exact hK.getCI addr ptr h h' cs a ev good ha ⟨cn, hcn, hname⟩
+          ⟨memberProjection rb i (.recr r), ⟨i.toUInt64, rb⟩, hrec, rfl⟩
+      · have e : rs' = rs := Ixon.ConstantInfo.muts.inj (hinfo'.symm.trans hL.rmuts)
+        rw [e] at hget
+        obtain ⟨r, hr⟩ := hL.recrs m (by simpa using Array.mem_of_getElem? hget)
+        rw [hind] at hr
+        exact nomatch hr
+    · exact (keyOf_nonAux C.t (Core.ixAddr a) n d (hname.symm.trans hnd)).elim
   getCprj := by
     intro bp ptr i j h h' cs b ev hfam good hb
     have hbh := L1.hashedBlockAt_of_get_ci_cprj good hb ev
