@@ -1,0 +1,239 @@
+{
+  "base_commit": "7e2f2e778c201b0910f99dd2b12d1878cff7b396",
+  "branch": "ap/frontend-aiur-benchmark",
+  "platform": "Linux-7.0.0-1014-aws-x86_64-with-glibc2.39",
+  "cpu": "Intel(R) Xeon(R) 6975P-C",
+  "lean_toolchain": "leanprover/lean4:v4.34.1",
+  "rust_toolchain": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "backend": {
+    "name": "multi-stark",
+    "revision": "acfc370a2e74affcb7e8ee218fbbaf80b9da1eef",
+    "features": [
+      "parallel"
+    ],
+    "cuda": false
+  },
+  "measured_at_utc": "2026-11-18T17:44:20.020253+00:00",
+  "fixture": "Benchmarks/Fixtures/FrontendPair.ix",
+  "source": "namespace Demo\n\nstructure Pair (α : Type) : Type where\n  fst : α\n  snd : α\n\ntheorem swap_fst {α : Type} (a b : α) :\n    Eq (swap (Pair.mk a b)).fst b := by\n  rfl\n\ndef swap {α : Type} (p : Pair α) : Pair α :=\n  let x := p.fst;\n  { fst := p.snd, snd := x }\n\ndef keep {α : Type} (!1 x : α) : ! α := x\n\nend Demo\n",
+  "source_bytes": 319,
+  "source_declarations": 4,
+  "elaborated_constants_including_prelude": 126,
+  "parser_environment": "defaultParserEnv",
+  "prelude_seeded": true,
+  "features": [
+    "namespace",
+    "parameterized structure",
+    "generated constructor, projections and recursors",
+    "implicit type arguments",
+    "field projection notation",
+    "inferred let type",
+    "record literal",
+    "forward-reference dependency scheduling",
+    "Eq theorem with by rfl",
+    "linear/unique binder and unique result annotations"
+  ],
+  "not_exercised": [
+    "recursive definitions",
+    "pattern matching",
+    "user typeclasses and instances",
+    "custom notation/macros",
+    "borrowing",
+    "multi-module imports"
+  ],
+  "method": "Actual Claim.eval normalizing a Boolean frontend predicate to true, with dependency frontier and role binding assumed; generic Rust Aiur bytecode executor, grouped IxVM, CPU.",
+  "notes": [
+    "One measured execution per case; execution times are single samples, not medians.",
+    "Parsing checks acceptance and six top-level syntax nodes; full elaboration checks exact swap and theorem types/bodies, structure member shape/presence, and keep type/body/resource metadata.",
+    "Host times are native Lean frontend executions; Eval times run the same frontend computations through IxVM.",
+    "System construction, Ixon dependency closure compilation and witness preparation are excluded from execution times and reported separately.",
+    "Full elaboration stops before output-environment compilation to Ixon and before the separate addressed resource checker.",
+    "unique_rows counts dynamic function/memory rows. The unpadded FFT estimator also includes fixed Bytes1/Bytes2 tables.",
+    "No STARK proof was generated for this fixture, and no direct Aiur implementation/comparison was attempted.",
+    "Output checks reject a mutated swap body, removed ownership annotations, and a false theorem."
+  ],
+  "virtual_memory_limit_bytes": 274877906944,
+  "commands": [
+    "lake build bench-frontend-eval",
+    "ulimit -v 268435456; lake env .lake/build/bin/bench-frontend-eval representative 1"
+  ],
+  "file_sha256": {
+    "Benchmarks/FrontendRepresentative.lean": "1020caf9a807b0af68d73f0edcc942b9bb0d19fff13848b68b8d152ed1f53b69",
+    "Benchmarks/FrontendEval.lean": "269e7cbdbcc46ee7db1be3473f791efde233a79bfe5c1f65ae2f5d1be840be67",
+    "Benchmarks/Fixtures/FrontendPair.ix": "4fc3f63cc55d4ad56d07b44845698b3899cfb67e1a5f3e0876986e1aa3b7680e",
+    "lakefile.lean": "54946ab92e19452d46442c799e8784c02b666d36400e907ce8e3f0d8d795d74a"
+  },
+  "cases": {
+    "representative-parse": {
+      "witness": {
+        "ms": 26437,
+        "input": "467faf9017384a346500a1615364d9d1d20af6397c66674582426b7b239a6b50",
+        "output": "3c3ce29a4f7000ba2d8a5cbfc4523e7e47d68100f2123acb510ae358a1e58b44"
+      },
+      "exec_ns": 115447220064,
+      "unique_rows": 312820980,
+      "total_hits": 929362106,
+      "fft_cost": 1225231671059.953,
+      "dynamic_fft_cost": 1225124337427.953,
+      "exec_seconds": 115.447220064,
+      "sample_count": 1,
+      "top_circuits": [
+        {
+          "circuit": "has_bvar_in_range",
+          "rows": 40488378,
+          "width": 53,
+          "fft_cost": 274382295775.28778
+        },
+        {
+          "circuit": "expr_inst_many",
+          "rows": 59842085,
+          "width": 31,
+          "fft_cost": 241784275767.3046
+        },
+        {
+          "circuit": "expr_inst_many_walk",
+          "rows": 43715675,
+          "width": 34,
+          "fft_cost": 190201658130.54556
+        },
+        {
+          "circuit": "expr_has_bvar_at",
+          "rows": 13174322,
+          "width": 34,
+          "fft_cost": 53444381599.95266
+        },
+        {
+          "circuit": "memory[3]",
+          "rows": 26398022,
+          "width": 16,
+          "fft_cost": 53015520316.15073
+        },
+        {
+          "circuit": "peel_beta",
+          "rows": 11299599,
+          "width": 32,
+          "fft_cost": 42766303286.941925
+        },
+        {
+          "circuit": "list_snoc.Ptr.KExprNode",
+          "rows": 15476712,
+          "width": 22,
+          "fft_cost": 41217510120.411934
+        },
+        {
+          "circuit": "whnf_with_spine",
+          "rows": 7618098,
+          "width": 42,
+          "fft_cost": 36847291653.61305
+        },
+        {
+          "circuit": "expr_inst_many_bvar",
+          "rows": 10041333,
+          "width": 24,
+          "fft_cost": 28388190876.078026
+        },
+        {
+          "circuit": "list_drop.Ptr.Expr",
+          "rows": 11548772,
+          "width": 20,
+          "fft_cost": 27510602470.644844
+        }
+      ]
+    },
+    "representative-elab": {
+      "witness": {
+        "ms": 61263,
+        "input": "b79cf5b146d44765f21f91472758cfa1c94c051849865ba39fad803c9d204295",
+        "output": "3c3ce29a4f7000ba2d8a5cbfc4523e7e47d68100f2123acb510ae358a1e58b44"
+      },
+      "exec_ns": 199455863979,
+      "unique_rows": 494860529,
+      "total_hits": 1431068828,
+      "fft_cost": 2319624667551.017,
+      "dynamic_fft_cost": 2319517333919.017,
+      "exec_seconds": 199.455863979,
+      "sample_count": 1,
+      "top_circuits": [
+        {
+          "circuit": "has_bvar_in_range",
+          "rows": 151556378,
+          "width": 53,
+          "fft_cost": 1103550040271.0261
+        },
+        {
+          "circuit": "expr_inst_many",
+          "rows": 70643826,
+          "width": 31,
+          "fft_cost": 288048739767.37024
+        },
+        {
+          "circuit": "expr_inst_many_walk",
+          "rows": 51647474,
+          "width": 34,
+          "fft_cost": 226823984793.30005
+        },
+        {
+          "circuit": "expr_has_bvar_at",
+          "rows": 25878250,
+          "width": 34,
+          "fft_cost": 109265482480.86014
+        },
+        {
+          "circuit": "memory[3]",
+          "rows": 32750262,
+          "width": 16,
+          "fft_cost": 66587840852.8898
+        },
+        {
+          "circuit": "peel_beta",
+          "rows": 13538717,
+          "width": 32,
+          "fft_cost": 51805819784.61712
+        },
+        {
+          "circuit": "list_snoc.Ptr.KExprNode",
+          "rows": 19118689,
+          "width": 22,
+          "fft_cost": 51557996272.28991
+        },
+        {
+          "circuit": "whnf_with_spine",
+          "rows": 9102582,
+          "width": 42,
+          "fft_cost": 44518428560.80839
+        },
+        {
+          "circuit": "expr_inst_many_bvar",
+          "rows": 11892793,
+          "width": 24,
+          "fft_cost": 33970931993.356865
+        },
+        {
+          "circuit": "list_drop.Ptr.Expr",
+          "rows": 13794874,
+          "width": 20,
+          "fft_cost": 33214785749.62009
+        }
+      ]
+    }
+  },
+  "preparation": {
+    "system": {
+      "ms": 104,
+      "circuits": 371
+    },
+    "closure": {
+      "ms": 3049,
+      "constants": 7437
+    }
+  },
+  "host_one_shot_ns": {
+    "representative-parse": 264144,
+    "representative-elab": 1776785
+  },
+  "validation": {
+    "wrong_body": "rejected",
+    "missing_contract": "rejected",
+    "false_theorem": "rejected"
+  }
+}

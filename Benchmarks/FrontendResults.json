@@ -1,0 +1,765 @@
+{
+  "base_commit": "7e2f2e778c201b0910f99dd2b12d1878cff7b396",
+  "branch": "ap/frontend-aiur-benchmark",
+  "source": "def id (x : Type) : Type := x",
+  "source_bytes": 29,
+  "platform": "Linux-7.0.0-1014-aws-x86_64-with-glibc2.39",
+  "lean_toolchain": "leanprover/lean4:v4.34.1",
+  "method": "Generic Rust Aiur bytecode executor, grouped IxVM, CPU; dependency frontier and role binding assumed for Eval. Unpadded FFT estimates, not measured proof times.",
+  "prelude_seeded": false,
+  "measured_at_utc": "2026-11-18T16:23:08.688985+00:00",
+  "cpu": "Intel(R) Xeon(R) 6975P-C",
+  "rust_toolchain": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "backend": {
+    "name": "multi-stark",
+    "revision": "acfc370a2e74affcb7e8ee218fbbaf80b9da1eef",
+    "features": [
+      "parallel"
+    ],
+    "cuda": false
+  },
+  "commands": [
+    "lake build bench-frontend-eval",
+    "lake env .lake/build/bin/bench-frontend-eval all 3",
+    "lake env .lake/build/bin/bench-frontend-eval direct 3 --prove"
+  ],
+  "file_sha256": {
+    "Benchmarks/FrontendEval.lean": "8f51374efbd46ffb2db8f2a3f82ecc3929c823b61397a8c0bedeaaed8ca95170",
+    "Benchmarks/FrontendDirect.lean": "1bcf34a5169b97869ceab1322463f8c0ad5438f1ab803a38e0e80bd0c66740b3",
+    "lakefile.lean": "146173dca52060bc10201f57c687df9d08d074c4838cc3c7dc1e5226d35a9506"
+  },
+  "notes": [
+    "Eval claims normalize a Boolean predicate to true. The elaboration predicate checks both the actual declaration type and body.",
+    "The frontend measurement stops before compilation to Ixon and serialization/hashing of an output environment.",
+    "parse/elab/hinted use a focused parser environment, matching the upstream reduction example; default uses defaultParserEnv.",
+    "All cases disable prelude seeding because Type requires no imported constants.",
+    "Direct Aiur supports only the small identity-declaration grammar in FrontendDirect.lean, not the full frontend.",
+    "Direct Aiur range-checks and BLAKE3-authenticates the source bytes against a public digest.",
+    "unique_rows counts dynamic function/memory rows; FFT cost also includes the fixed Bytes1 and Bytes2 tables.",
+    "FFT work is the unpadded repository estimator, not measured proving time. No Eval STARK proofs were generated.",
+    "Execution times include generic Rust bytecode execution/FFI overhead but exclude system, closure, and witness preparation.",
+    "Direct proof timings are one sample with default commitment/FRI parameters (logBlowup=2, 100 queries, 20 query PoW bits).",
+    "The benchmark target isolates Blake3 Rust symbols to avoid allocator interposition with ix-ffi; production targets are unchanged."
+  ],
+  "host_one_shot_ns": {
+    "parse": 65687,
+    "elab": 92741,
+    "hinted": 22227
+  },
+  "preparation": {
+    "system": {
+      "ms": 105,
+      "circuits": 371
+    },
+    "closure": {
+      "ms": 3878,
+      "constants": 7516
+    }
+  },
+  "direct_validation": {
+    "differential_cases": "12",
+    "forged_digest": "rejected",
+    "non_bytes": "rejected"
+  },
+  "cases": {
+    "control": {
+      "samples": [
+        {
+          "exec_ns": 238987662,
+          "unique_rows": 25853,
+          "total_hits": 48069,
+          "fft_cost": 185149719.275716,
+          "dynamic_fft_cost": 77816087.275717
+        },
+        {
+          "exec_ns": 220438470,
+          "unique_rows": 25853,
+          "total_hits": 48069,
+          "fft_cost": 185149719.275716,
+          "dynamic_fft_cost": 77816087.275717
+        },
+        {
+          "exec_ns": 218440158,
+          "unique_rows": 25853,
+          "total_hits": 48069,
+          "fft_cost": 185149719.275716,
+          "dynamic_fft_cost": 77816087.275717
+        }
+      ],
+      "top_circuits": [
+        {
+          "circuit": "Bytes2",
+          "rows": 65536,
+          "width": 20,
+          "fft_cost": 107216896.0
+        },
+        {
+          "circuit": "blake3_compress",
+          "rows": 744,
+          "width": 735,
+          "fft_cost": 26141488.021332
+        },
+        {
+          "circuit": "memory[3]",
+          "rows": 11056,
+          "width": 16,
+          "fft_cost": 12278830.660055
+        },
+        {
+          "circuit": "ixvm_group_16",
+          "rows": 1680,
+          "width": 135,
+          "fft_cost": 12210434.417033
+        },
+        {
+          "circuit": "blake3_compress_chunks",
+          "rows": 5385,
+          "width": 29,
+          "fft_cost": 9871975.543726
+        },
+        {
+          "circuit": "ixvm_group_12",
+          "rows": 734,
+          "width": 124,
+          "fft_cost": 4358620.065944
+        },
+        {
+          "circuit": "assert_byte_stream",
+          "rows": 2658,
+          "width": 28,
+          "fft_cost": 4328971.779857
+        },
+        {
+          "circuit": "rbtree_map_balance_fix.G",
+          "rows": 499,
+          "width": 122,
+          "fft_cost": 2746179.915065
+        },
+        {
+          "circuit": "memory[6]",
+          "rows": 878,
+          "width": 19,
+          "fft_cost": 847197.413375
+        },
+        {
+          "circuit": "read_role_bindings",
+          "rows": 207,
+          "width": 100,
+          "fft_cost": 812835.900101
+        }
+      ],
+      "median_exec_ms": 220.43847,
+      "unique_rows": 25853,
+      "total_hits": 48069,
+      "fft_cost": 185149719.275716,
+      "dynamic_fft_cost": 77816087.275717
+    },
+    "parse": {
+      "samples": [
+        {
+          "exec_ns": 9996729947,
+          "unique_rows": 28499866,
+          "total_hits": 75549114,
+          "fft_cost": 98288186323.9532,
+          "dynamic_fft_cost": 98180852691.9532
+        },
+        {
+          "exec_ns": 9899050054,
+          "unique_rows": 28499866,
+          "total_hits": 75549114,
+          "fft_cost": 98288186323.9532,
+          "dynamic_fft_cost": 98180852691.9532
+        },
+        {
+          "exec_ns": 9865919347,
+          "unique_rows": 28499866,
+          "total_hits": 75549114,
+          "fft_cost": 98288186323.9532,
+          "dynamic_fft_cost": 98180852691.9532
+        }
+      ],
+      "top_circuits": [
+        {
+          "circuit": "blake3_compress",
+          "rows": 226808,
+          "width": 735,
+          "fft_cost": 14847381641.684465
+        },
+        {
+          "circuit": "memory[3]",
+          "rows": 4363201,
+          "width": 16,
+          "fft_cost": 7856189661.428618
+        },
+        {
+          "circuit": "expr_inst_many",
+          "rows": 2292233,
+          "width": 31,
+          "fft_cost": 7589331206.065159
+        },
+        {
+          "circuit": "expr_inst_many_walk",
+          "rows": 1721877,
+          "width": 34,
+          "fft_cost": 6125824709.673117
+        },
+        {
+          "circuit": "has_bvar_in_range",
+          "rows": 1096100,
+          "width": 53,
+          "fft_cost": 5915592750.108719
+        },
+        {
+          "circuit": "blake3_compress_chunks",
+          "rows": 1680124,
+          "width": 29,
+          "fft_cost": 5098537491.397108
+        },
+        {
+          "circuit": "expr_lbr",
+          "rows": 772639,
+          "width": 35,
+          "fft_cost": 2672481903.050915
+        },
+        {
+          "circuit": "get_expr",
+          "rows": 394346,
+          "width": 65,
+          "fft_cost": 2396621373.572216
+        },
+        {
+          "circuit": "assert_byte_stream",
+          "rows": 774766,
+          "width": 28,
+          "fft_cost": 2149879700.306619
+        },
+        {
+          "circuit": "list_snoc.Ptr.KExprNode",
+          "rows": 937921,
+          "width": 22,
+          "fft_cost": 2080591802.634054
+        }
+      ],
+      "median_exec_ms": 9899.050054,
+      "unique_rows": 28499866,
+      "total_hits": 75549114,
+      "fft_cost": 98288186323.9532,
+      "dynamic_fft_cost": 98180852691.9532
+    },
+    "elab": {
+      "samples": [
+        {
+          "exec_ns": 11364423987,
+          "unique_rows": 32352752,
+          "total_hits": 84893211,
+          "fft_cost": 115318573048.67279,
+          "dynamic_fft_cost": 115211239416.67279
+        },
+        {
+          "exec_ns": 11278264495,
+          "unique_rows": 32352752,
+          "total_hits": 84893211,
+          "fft_cost": 115318573048.67279,
+          "dynamic_fft_cost": 115211239416.67279
+        },
+        {
+          "exec_ns": 11361129526,
+          "unique_rows": 32352752,
+          "total_hits": 84893211,
+          "fft_cost": 115318573048.67279,
+          "dynamic_fft_cost": 115211239416.67279
+        }
+      ],
+      "top_circuits": [
+        {
+          "circuit": "blake3_compress",
+          "rows": 272312,
+          "width": 735,
+          "fft_cost": 18090165782.716965
+        },
+        {
+          "circuit": "has_bvar_in_range",
+          "rows": 1861455,
+          "width": 53,
+          "fft_cost": 10423068015.39032
+        },
+        {
+          "circuit": "memory[3]",
+          "rows": 5092975,
+          "width": 16,
+          "fft_cost": 9261097196.16428
+        },
+        {
+          "circuit": "expr_inst_many",
+          "rows": 2511983,
+          "width": 31,
+          "fft_cost": 8368322869.208641
+        },
+        {
+          "circuit": "expr_inst_many_walk",
+          "rows": 1884693,
+          "width": 34,
+          "fft_cost": 6746829049.784988
+        },
+        {
+          "circuit": "blake3_compress_chunks",
+          "rows": 2011242,
+          "width": 29,
+          "fft_cost": 6179038257.639853
+        },
+        {
+          "circuit": "expr_lbr",
+          "rows": 853965,
+          "width": 35,
+          "fft_cost": 2975357566.97315
+        },
+        {
+          "circuit": "get_expr",
+          "rows": 453786,
+          "width": 65,
+          "fft_cost": 2787737673.96928
+        },
+        {
+          "circuit": "assert_byte_stream",
+          "rows": 925563,
+          "width": 28,
+          "fft_cost": 2601568809.086794
+        },
+        {
+          "circuit": "list_snoc.Ptr.KExprNode",
+          "rows": 1025694,
+          "width": 22,
+          "fft_cost": 2289860404.103142
+        }
+      ],
+      "median_exec_ms": 11361.129526,
+      "unique_rows": 32352752,
+      "total_hits": 84893211,
+      "fft_cost": 115318573048.67279,
+      "dynamic_fft_cost": 115211239416.67279
+    },
+    "hinted": {
+      "samples": [
+        {
+          "exec_ns": 10416197465,
+          "unique_rows": 30037434,
+          "total_hits": 79258305,
+          "fft_cost": 105065808710.17296,
+          "dynamic_fft_cost": 104958475078.17296
+        },
+        {
+          "exec_ns": 10532651079,
+          "unique_rows": 30037434,
+          "total_hits": 79258305,
+          "fft_cost": 105065808710.17296,
+          "dynamic_fft_cost": 104958475078.17296
+        },
+        {
+          "exec_ns": 10445164279,
+          "unique_rows": 30037434,
+          "total_hits": 79258305,
+          "fft_cost": 105065808710.17296,
+          "dynamic_fft_cost": 104958475078.17296
+        }
+      ],
+      "top_circuits": [
+        {
+          "circuit": "blake3_compress",
+          "rows": 246648,
+          "width": 735,
+          "fft_cost": 16255816338.822977
+        },
+        {
+          "circuit": "memory[3]",
+          "rows": 4677960,
+          "width": 16,
+          "fft_cost": 8460539031.2251
+        },
+        {
+          "circuit": "expr_inst_many",
+          "rows": 2385810,
+          "width": 31,
+          "fft_cost": 7920501260.761924
+        },
+        {
+          "circuit": "has_bvar_in_range",
+          "rows": 1377414,
+          "width": 53,
+          "fft_cost": 7554131856.333677
+        },
+        {
+          "circuit": "expr_inst_many_walk",
+          "rows": 1791374,
+          "width": 34,
+          "fft_cost": 6390454409.674204
+        },
+        {
+          "circuit": "blake3_compress_chunks",
+          "rows": 1826320,
+          "width": 29,
+          "fft_cost": 5574063203.716976
+        },
+        {
+          "circuit": "expr_lbr",
+          "rows": 807228,
+          "width": 35,
+          "fft_cost": 2801047192.725828
+        },
+        {
+          "circuit": "get_expr",
+          "rows": 419184,
+          "width": 65,
+          "fft_cost": 2559578517.301534
+        },
+        {
+          "circuit": "assert_byte_stream",
+          "rows": 839868,
+          "width": 28,
+          "fft_cost": 2344216406.893598
+        },
+        {
+          "circuit": "list_snoc.Ptr.KExprNode",
+          "rows": 976635,
+          "width": 22,
+          "fft_cost": 2172739998.42084
+        }
+      ],
+      "median_exec_ms": 10445.164279,
+      "unique_rows": 30037434,
+      "total_hits": 79258305,
+      "fft_cost": 105065808710.17296,
+      "dynamic_fft_cost": 104958475078.17296
+    },
+    "default": {
+      "samples": [
+        {
+          "exec_ns": 17836879614,
+          "unique_rows": 53514557,
+          "total_hits": 146859319,
+          "fft_cost": 191296433417.6229,
+          "dynamic_fft_cost": 191189099785.6229
+        },
+        {
+          "exec_ns": 17889660916,
+          "unique_rows": 53514557,
+          "total_hits": 146859319,
+          "fft_cost": 191296433417.6229,
+          "dynamic_fft_cost": 191189099785.6229
+        },
+        {
+          "exec_ns": 18070009381,
+          "unique_rows": 53514557,
+          "total_hits": 146859319,
+          "fft_cost": 191296433417.6229,
+          "dynamic_fft_cost": 191189099785.6229
+        }
+      ],
+      "top_circuits": [
+        {
+          "circuit": "has_bvar_in_range",
+          "rows": 5037782,
+          "width": 53,
+          "fft_cost": 30126211799.177643
+        },
+        {
+          "circuit": "expr_inst_many",
+          "rows": 5998894,
+          "width": 31,
+          "fft_cost": 21152226771.806133
+        },
+        {
+          "circuit": "blake3_compress",
+          "rows": 276944,
+          "width": 735,
+          "fft_cost": 18422643815.494083
+        },
+        {
+          "circuit": "expr_inst_many_walk",
+          "rows": 4454191,
+          "width": 34,
+          "fft_cost": 16884699762.593906
+        },
+        {
+          "circuit": "memory[3]",
+          "rows": 6783278,
+          "width": 16,
+          "fft_cost": 12559131330.055485
+        },
+        {
+          "circuit": "blake3_compress_chunks",
+          "rows": 2042716,
+          "width": 29,
+          "fft_cost": 6282369575.674403
+        },
+        {
+          "circuit": "list_snoc.Ptr.KExprNode",
+          "rows": 2209590,
+          "width": 22,
+          "fft_cost": 5202011661.912302
+        },
+        {
+          "circuit": "expr_lbr",
+          "rows": 1392631,
+          "width": 35,
+          "fft_cost": 5024113782.799919
+        },
+        {
+          "circuit": "expr_has_bvar_at",
+          "rows": 1426412,
+          "width": 34,
+          "fft_cost": 5008807343.915809
+        },
+        {
+          "circuit": "peel_beta",
+          "rows": 1355097,
+          "width": 32,
+          "fft_cost": 4465307979.729544
+        }
+      ],
+      "median_exec_ms": 17889.660916,
+      "unique_rows": 53514557,
+      "total_hits": 146859319,
+      "fft_cost": 191296433417.6229,
+      "dynamic_fft_cost": 191189099785.6229
+    },
+    "direct-hash": {
+      "samples": [
+        {
+          "exec_ns": 14516646,
+          "unique_rows": 194,
+          "total_hits": 293,
+          "fft_cost": 107529246.509511,
+          "dynamic_fft_cost": 195614.509511
+        }
+      ],
+      "top_circuits": [
+        {
+          "circuit": "Bytes2",
+          "rows": 65536,
+          "width": 20,
+          "fft_cost": 107216896.0
+        },
+        {
+          "circuit": "Bytes1",
+          "rows": 256,
+          "width": 11,
+          "fft_cost": 116736.0
+        },
+        {
+          "circuit": "blake3_compress",
+          "rows": 8,
+          "width": 735,
+          "fft_cost": 88840.0
+        },
+        {
+          "circuit": "memory[3]",
+          "rows": 94,
+          "width": 16,
+          "fft_cost": 52674.508165
+        },
+        {
+          "circuit": "blake3_compress_chunks",
+          "rows": 30,
+          "width": 29,
+          "fft_cost": 22424.974091
+        },
+        {
+          "circuit": "pad_block",
+          "rows": 36,
+          "width": 18,
+          "fft_cost": 18046.557005
+        },
+        {
+          "circuit": "assert_byte_stream",
+          "rows": 15,
+          "width": 28,
+          "fft_cost": 8744.470251
+        },
+        {
+          "circuit": "bytes_to_block",
+          "rows": 1,
+          "width": 269,
+          "fft_cost": 1385.0
+        },
+        {
+          "circuit": "blake3_finish",
+          "rows": 1,
+          "width": 180,
+          "fft_cost": 916.0
+        },
+        {
+          "circuit": "blake3_compress_layer",
+          "rows": 1,
+          "width": 157,
+          "fft_cost": 801.0
+        }
+      ],
+      "median_exec_ms": 14.516646,
+      "unique_rows": 194,
+      "total_hits": 293,
+      "fft_cost": 107529246.509511,
+      "dynamic_fft_cost": 195614.509511
+    },
+    "direct": {
+      "samples": [
+        {
+          "exec_ns": 23497887,
+          "unique_rows": 301,
+          "total_hits": 535,
+          "fft_cost": 107596767.142534,
+          "dynamic_fft_cost": 263135.142534
+        },
+        {
+          "exec_ns": 21430216,
+          "unique_rows": 301,
+          "total_hits": 535,
+          "fft_cost": 107596767.142534,
+          "dynamic_fft_cost": 263135.142534
+        },
+        {
+          "exec_ns": 20191608,
+          "unique_rows": 301,
+          "total_hits": 535,
+          "fft_cost": 107596767.142534,
+          "dynamic_fft_cost": 263135.142534
+        }
+      ],
+      "top_circuits": [
+        {
+          "circuit": "Bytes2",
+          "rows": 65536,
+          "width": 20,
+          "fft_cost": 107216896.0
+        },
+        {
+          "circuit": "Bytes1",
+          "rows": 256,
+          "width": 11,
+          "fft_cost": 116736.0
+        },
+        {
+          "circuit": "blake3_compress",
+          "rows": 8,
+          "width": 735,
+          "fft_cost": 88840.0
+        },
+        {
+          "circuit": "memory[3]",
+          "rows": 106,
+          "width": 16,
+          "fft_cost": 60868.765455
+        },
+        {
+          "circuit": "blake3_compress_chunks",
+          "rows": 30,
+          "width": 29,
+          "fft_cost": 22424.974091
+        },
+        {
+          "circuit": "pad_block",
+          "rows": 36,
+          "width": 18,
+          "fft_cost": 18046.557005
+        },
+        {
+          "circuit": "scan_ident",
+          "rows": 21,
+          "width": 26,
+          "fft_cost": 12747.026564
+        },
+        {
+          "circuit": "is_letter",
+          "rows": 10,
+          "width": 65,
+          "fft_cost": 11596.266308
+        },
+        {
+          "circuit": "skip_space",
+          "rows": 20,
+          "width": 25,
+          "fft_cost": 11524.820237
+        },
+        {
+          "circuit": "assert_byte_stream",
+          "rows": 15,
+          "width": 28,
+          "fft_cost": 8744.470251
+        }
+      ],
+      "proof": {
+        "prove_ms": 171,
+        "verify_ms": 10,
+        "bytes": 2210039
+      },
+      "median_exec_ms": 21.430216,
+      "unique_rows": 301,
+      "total_hits": 535,
+      "fft_cost": 107596767.142534,
+      "dynamic_fft_cost": 263135.142534
+    }
+  },
+  "witness_preparation": {
+    "control": {
+      "case": "control",
+      "ms": 18837,
+      "input": "3c3ce29a4f7000ba2d8a5cbfc4523e7e47d68100f2123acb510ae358a1e58b44",
+      "output": "3c3ce29a4f7000ba2d8a5cbfc4523e7e47d68100f2123acb510ae358a1e58b44"
+    },
+    "parse": {
+      "case": "parse",
+      "ms": 27027,
+      "input": "1f11d394c1863280abe24817a4ad78926337e6d8e3384464acd039ea58aaf1f1",
+      "output": "3c3ce29a4f7000ba2d8a5cbfc4523e7e47d68100f2123acb510ae358a1e58b44"
+    },
+    "elab": {
+      "case": "elab",
+      "ms": 59833,
+      "input": "6f206a41a5ef77a246549ca315669a3fc12c657bc5e7f88d0191c086b240c9ed",
+      "output": "3c3ce29a4f7000ba2d8a5cbfc4523e7e47d68100f2123acb510ae358a1e58b44"
+    },
+    "hinted": {
+      "case": "hinted",
+      "ms": 62014,
+      "input": "ca76ae93a3e44b24d45226026d44b8a159003e28da8ad8c60c57218c175cbbd8",
+      "output": "3c3ce29a4f7000ba2d8a5cbfc4523e7e47d68100f2123acb510ae358a1e58b44"
+    },
+    "default": {
+      "case": "default",
+      "ms": 58948,
+      "input": "ca42882c5170a10d297e80936d7fab003f3ed835dd9010af74690a2641042bab",
+      "output": "3c3ce29a4f7000ba2d8a5cbfc4523e7e47d68100f2123acb510ae358a1e58b44"
+    }
+  },
+  "ratios_vs_direct": {
+    "control": {
+      "execution": 10.286339157757439,
+      "unique_rows": 85.89036544850498,
+      "total_fft_cost": 1.720773999003587,
+      "dynamic_fft_cost": 295.72669969638247
+    },
+    "parse": {
+      "execution": 461.9202183496423,
+      "unique_rows": 94683.94019933554,
+      "total_fft_cost": 913.486426536871,
+      "dynamic_fft_cost": 373119.49953346554
+    },
+    "elab": {
+      "execution": 530.1453576576176,
+      "unique_rows": 107484.22591362127,
+      "total_fft_cost": 1071.7661516345531,
+      "dynamic_fft_cost": 437840.56476525636
+    },
+    "hinted": {
+      "execution": 487.403593085576,
+      "unique_rows": 99792.13953488372,
+      "total_fft_cost": 976.4773747429765,
+      "dynamic_fft_cost": 398876.6915259567
+    },
+    "default": {
+      "execution": 834.7867756442586,
+      "unique_rows": 177789.22591362125,
+      "total_fft_cost": 1777.901311516279,
+      "dynamic_fft_cost": 726581.3982293116
+    }
+  }
+}

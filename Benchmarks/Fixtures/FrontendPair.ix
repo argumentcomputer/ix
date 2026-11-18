@@ -1,0 +1,17 @@
+namespace Demo
+
+structure Pair (α : Type) : Type where
+  fst : α
+  snd : α
+
+theorem swap_fst {α : Type} (a b : α) :
+    Eq (swap (Pair.mk a b)).fst b := by
+  rfl
+
+def swap {α : Type} (p : Pair α) : Pair α :=
+  let x := p.fst;
+  { fst := p.snd, snd := x }
+
+def keep {α : Type} (!1 x : α) : ! α := x
+
+end Demo

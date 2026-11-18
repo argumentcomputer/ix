@@ -221,6 +221,43 @@ lean_exe «bench-ixvm» where
   root := `Benchmarks.IxVM
   supportInterpreter := true
 
+target frontend_bench_fixture pkg : FilePath := do
+  inputTextFile (pkg.dir / "Benchmarks" / "Fixtures" / "FrontendPair.ix")
+
+lean_lib FrontendBench where
+  roots := #[`Benchmarks.FrontendDirect, `Benchmarks.FrontendRepresentative,
+    `Benchmarks.FrontendRaw, `Benchmarks.FrontendWire,
+    `Benchmarks.FrontendMatchedData, `Benchmarks.FrontendMatchedRaw, `Benchmarks.FrontendMatched,
+    `Benchmarks.FrontendMatchedTests, `Benchmarks.FrontendFull, `Benchmarks.FrontendFullExport]
+  extraDepTargets := #[`frontend_bench_fixture]
+
+/-- Isolate Blake3's Rust runtime from ix-ffi's mimalloc runtime. Export only
+its C FFI: exporting Rust/alloc symbols lets the two archives interpose on
+each other's allocation and deallocation paths. This is benchmark-local. -/
+target frontend_bench_blake3_shared pkg : FilePath := do
+  let some lib ← findLeanLib? `Blake3Rust
+    | error "Blake3Rust library not found"
+  let dep ← lib.shared.fetch
+  if !System.Platform.isLinux then return dep.map (·.path)
+  let output := pkg.buildDir / "lib" / "libfrontend_bench_blake3.so"
+  let archive := lib.pkg.dir / "rust" / "target" / "release" / "libblake3_rs.a"
+  let cc ← getLeanCc
+  buildFileAfterDep output dep (fun _ => do
+    let exports := output.withExtension "exports"
+    IO.FS.writeFile exports "{ global: rs_blake3_*; local: *; };\n"
+    proc { cmd := cc.toString, args := #["-shared", "-fPIC", "-Wl,--whole-archive",
+      archive.toString, "-Wl,--no-whole-archive", "-Wl,-Bsymbolic",
+      s!"-Wl,--version-script={exports}", "-Wl,--gc-sections", "-o", output.toString] }
+  ) (extraDepTrace := pure <| .ofHash (pureHash "isolated-blake3-v1"))
+
+lean_exe «bench-frontend-eval» where
+  root := `Benchmarks.FrontendEval
+  supportInterpreter := true
+  moreLinkObjs := #[ix_rs, frontend_bench_blake3_shared]
+  -- The Rust shared library uses the host libc; Lean's link-time sysroot
+  -- intentionally contains older libc symbol versions.
+  moreLinkArgs := if System.Platform.isLinux then #["-Wl,--allow-shlib-undefined"] else #[]
+
 lean_exe «bench-shardmap» where
   root := `Benchmarks.ShardMap
 
