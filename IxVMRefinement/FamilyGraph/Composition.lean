@@ -47,8 +47,8 @@ set_option linter.unusedVariables false
 at `lim` with the table at the binding `bAddr`. -/
 def AdviceCheckIn (cs : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
     (lim : Option Nat) (a : _root_.Address) : Prop :=
-  ∃ (h h' : Aiur.Generic.SourceSemantics.Heap F)
-    (rc xa seen wset r : Aiur.Generic.SourceSemantics.SourceValue F) (cs₁ : List (Call F)),
+  ∃ (h h' : Aiur.Heap F)
+    (rc xa seen wset r : Aiur.SourceValue F) (cs₁ : List (Call F)),
     Claim.RCLimRep t bAddr lim h rc ∧ Core.S0.addr h xa a ∧
     Aiur.Generic.SourceSemantics.ObsFn Obs.W "KernelModeled::check_advice_record"
       [rc, xa, seen, wset] h r h' cs₁ ∧ (∀ cl ∈ cs₁, cl ∈ cs)
@@ -57,8 +57,8 @@ def AdviceCheckIn (cs : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.R
 context at `lim` with the table at the binding `bAddr`. -/
 def ContainerRecCheckIn (cs : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (lim : Option Nat) (a : _root_.Address) : Prop :=
-  ∃ (h h' : Aiur.Generic.SourceSemantics.Heap F)
-    (rc xa ib r : Aiur.Generic.SourceSemantics.SourceValue F) (cs₁ : List (Call F)),
+  ∃ (h h' : Aiur.Heap F)
+    (rc xa ib r : Aiur.SourceValue F) (cs₁ : List (Call F)),
     Claim.RCLimRep t bAddr lim h rc ∧ Core.S0.addr h xa a ∧
     Aiur.Generic.SourceSemantics.ObsFn Obs.W "KernelModeled::check_container_rec"
       [rc, xa, ib] h r h' cs₁ ∧ (∀ cl ∈ cs₁, cl ∈ cs)
