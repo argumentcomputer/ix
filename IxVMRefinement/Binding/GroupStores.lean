@@ -1,5 +1,6 @@
 import IxVMRefinement.Binding.StoreStanding
 import IxVMRefinement.Binding.BasisAt
+import IxVMRefinement.Binding.RootSafety
 import IxVMRefinement.Assembly.TypingBasisInv
 
 /-! # The stores of a binding run: the sequence and what is left of its clauses
@@ -12,9 +13,10 @@ clauses that are left, named in `RemainingStoreClauses`.
 * `basisRolesStored_of_pinned`: at a table that pins the prelude, the bound record of a walked
   role of a group below 6 is a basis row.
 * `RemainingStoreClauses t E₀`: what is not proved of the sequence: three clauses (`opsOwn`,
-  `unitsLast`, and the reading clause of `AdmitsReads`) and the safety of the roots
-  (`RootsSafe`), from which the clauses `logic` and `standing` are proved (`logic_of_rootsSafe`,
-  `standing_of_rootsSafe`). The two facts
+  `unitsLast`, and the reading clause of `AdmitsReads`). The safety of the roots
+  (`RootsAndTheoremsSafe`, `rootsAndTheoremsSafe_of_run`; with `certRefs_of_run`, `RootsSafe`)
+  is proved of every run (`IxVMRefinement.Binding.RootSafety`), and the clauses `logic`
+  and `standing` are proved (`logic_of_rootsSafe`, `standing_of_rootsSafe`). The two facts
   about the run's records the proved clauses read are proved
   (`IxVMRefinement.Binding.StoreFieldsRun`):
   the basis rows are records the run loaded as the basis store holds them (`basisRows_of_run`),
@@ -60,18 +62,8 @@ theorem basisRolesStored_of_pinned {t : Ix.Kernel.RoleTable} (hpre : PreludePinn
 
 /-- **What is left of the store sequence's clauses**, over the run's records `E₀`.
 
-Status: stated only; nothing proves any field of any run.
-* `rootsSafe`: the record bound to a role whose validation walks it is in Lean's logic with its
-  block, and so are the theorem of a proof in the evidence of a definition specified by
-  equations and the references a certificate in an operation's evidence uses (`RootsSafe`).
-  The clause `logic` follows from it (`logic_of_rootsSafe`,
-  `IxVMRefinement.Binding.StoreLogic`): a walked record's references are guarded against a safe
-  source (`Claim.RecordRefsIn.safe`). Its producer is the roles' validations
-  (`KernelRoles::assert_safe_role`, the `Safe` match of `validate_op` and `validate_eqns`) with
-  `KernelCheck::check_block_member_kinds` for the block of a projection record; for the
-  evidence, the `Thm` match on `Ingress::get_ci` of an equation theorem (a theorem record, or a
-  projection into a block of uniform safety) and `KernelClaim::assert_safe_refs_except` on a
-  certificate's references.
+Status: stated only; nothing proves any field of any run. (The safety of the roots, which this
+structure held as `rootsSafe`, is proved of every run: `rootsAndTheoremsSafe_of_run`.)
 * `opsOwn`, `unitsLast`: no new record is another group's operation, and none uses the record
   of a role unit of the group: below the well-founded block from
   `KernelRoles::assert_op_reached_in_order` in `KernelRoles::walk_ctx`, in the block from
@@ -80,7 +72,6 @@ Status: stated only; nothing proves any field of any run.
 * `reads`: a reading over the run's records of a constant address of a new record is a reading
   over the store after the group. -/
 structure RemainingStoreClauses (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
-  rootsSafe : RootsSafe t E₀
   opsOwn : ∀ g, 6 ≤ g → g < 77 → ∀ a r,
     New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a → t.addressOf? r = some a →
     r ∈ RoleOps.opRoles → r ∈ roleGroup g
@@ -134,6 +125,8 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
   have hb := basisRows_of_run hC hpin hval
   have hax := axiomRoles_of_run hC hval
   have hbr : BasisRolesStored t := basisRolesStored_of_pinned hpin
+  have hroots : RootsSafe t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) :=
+    RootsSafe.of_run hC hval (rootsAndTheoremsSafe_of_run hC hval)
   have hvalAll : ∀ g, ∀ r ∈ roleGroup g, RoleValidationIn calls a t g r := by
     intro g r hr
     by_cases hg : g < 77
@@ -158,8 +151,9 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
         rankUsed := groupStore_rankUsed hC hb hbr hax hws hg6 hw
         rankOwner := groupStore_rankOwner hC hb hax hg6 hw
         projMember := groupStore_projMember hC hb hax hg6 hw
-        standing := standing_of_rootsSafe hC hb hpin hval hR.rootsSafe g hg6 hg
-        logic := logic_of_rootsSafe hC hb hval hR.rootsSafe g hg6 hg
+        standing := standing_of_rootsSafe hC hb hpin hval hroots
+          g hg6 hg
+        logic := logic_of_rootsSafe hC hb hval hroots g hg6 hg
         checked := groupStore_checked hC hb hax hg6 hw
         validated := fun _ _ => trivial
         kept := groupStore_kept hC hb hax hg6 hw
