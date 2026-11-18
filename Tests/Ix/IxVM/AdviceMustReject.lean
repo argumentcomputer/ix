@@ -5,6 +5,7 @@ public import Ix.IxVM.Model
 public import Tests.Ix.IxVM.Harness
 public import Tests.Ix.IxVM.ModelAdvice
 public import Tests.Ix.IxVMFixtures
+public import Ix.SpecDigest
 
 /-! # Must-reject advice for the modeled route
 
@@ -21,7 +22,11 @@ program to reject a claim that needs the block:
 * advice that names the block itself, and a public member in a model slot;
 * the payload of another block, a payload naming a claimed definition as the
   recursor family, no payload, a payload naming a record the store lacks;
-* an oversized payload (an advice count far beyond its bytes).
+* an oversized payload (an advice count far beyond its bytes);
+* under a binding whose `Nat.add` record also names `Even`, so that the validation of
+  `Nat.add`'s group (limit 8) checks Even's family: the record bound to `Nat.mul`, an operation
+  of a later group, as the first advice record (the operation order at a payload record; the same
+  binding with the advice unchanged is accepted).
 
 With the unmodified advice the same claims on the block's types are accepted
 (`ixvm-model-advice`). A claim on the family's recursor is refused at the recursor
@@ -95,7 +100,41 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     #[(badThmA, badThm)]
   let otherBlock := variant evenB advT.layout.ser
   let definitionFamily := variant evenB { pE with recBlock := natAdd }.ser
-  let cases : Array Builder := #[
+  -- a binding whose `Nat.add` (group 8, validated at limit 8) is the default record with one
+  -- more, unused, reference to `Even` (a sharing entry): the validation's walk of `Nat.add`
+  -- reaches `Even`, whose family is checked there with its payload; with `Nat.mul`'s record
+  -- (group 10, an operation not yet in force) as the payload's first advice record, the order
+  -- assertion at the advice address must refuse it (`KernelRoles::assert_in_order`); with the
+  -- payload unchanged, the same binding is accepted (control)
+  let table ← IO.ofExcept Ix.Kernel.Reader.defaultTable
+  let roleAt (r : Ix.Kernel.Role) : IO Address := match table.bound.find? (·.1 == r) with
+    | some (_, a) => pure a
+    | none => throw (IO.userError s!"role {repr r} is not bound")
+  let addA ← roleAt .natAdd
+  let mulA ← roleAt .natMul
+  let some addC := env.getConst? addA | throw (IO.userError "the record bound to Nat.add is not stored")
+  let addX : Ixon.Constant := { addC with
+    sharing := addC.sharing.push (.ref addC.refs.size.toUInt64 #[]), refs := addC.refs.push even }
+  let addXA := Address.blake3 (Ixon.serConstant addX)
+  let tableX : Ix.Kernel.RoleTable :=
+    { table with bound := table.bound.map fun (r, b) => (r, if r == .natAdd then addXA else b) }
+  IO.ofExcept tableX.check
+  let hinted := match env.anonHints[addA]? with
+    | some h => { env with anonHints := env.anonHints.insert addXA h }
+    | none => env
+  let envX ← IO.ofExcept (withRoleTable (hinted.storeConst addXA addX) tableX.toBytes)
+  let some bindingX := envX.roleBinding | throw (IO.userError "the rebound environment has no binding")
+  let spec ← IO.ofExcept Ix.SpecDigest.specDigest
+  let envLater := { envX with models := envX.models.insert evenB { pE with advice := #[mulA] ++ pE.advice }.ser }
+  let orderCases : Array Builder := #[
+    fun _ => Case.ofClaim
+      "advice must-reject: Nat.add's record reaches Even, whose advice lists Nat.mul's record (a later operation)"
+      envLater (.binding spec bindingX.address) (accept := false)
+      (rejectsWith := some "an operation is reached before its group is validated"),
+    fun _ => Case.ofClaim
+      "advice must-reject control: Nat.add's record reaches Even, with Even's advice unchanged"
+      envX (.binding spec bindingX.address)]
+  let cases : Array Builder := orderCases ++ #[
     caseOn "a type's slot holds a constructor's model" (variant evenB
       { pE with typeModels := pE.typeModels.set! 0 ctorModel }.ser) even (some "model type mismatch"),
     caseOn "two iota theorems swapped" swapped even none,
