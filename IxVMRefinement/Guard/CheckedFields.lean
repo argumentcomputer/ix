@@ -1,4 +1,5 @@
-import IxVMRefinement.Guard.Fields
+import IxVMRefinement.Guard.FieldTraces
+import IxVMRefinement.Assembly.GuardRawLookup
 
 /-! # The classifier's field loop at a constructor, with the sorts it checked
 
@@ -10,7 +11,10 @@ IxC's table stage at them has to keep them together with the run they came from.
 
 * `CheckedFieldsAt c calls b i nP nF cty u sorts`: the run data of the field loop at the first
   constructor of member `i` of the block at `b`, inside the run `calls`, together with the
-  facts of `check_prop_fields_sorts` at these `sorts`. Its run data are the hypotheses of
+  facts of `check_prop_fields_traces` at these `sorts`: their `FieldSortsJ` witness, the raw
+  telescope the walked type pointer reads as under address keys, the classifier's field
+  traces of that telescope over the loop's own loads, and the zero-set agreement of each sort
+  with its field's signature. Its run data are the hypotheses of
   `Core.CheckedFieldsReading` (`Guard/Certificate.lean`): the loop's observation on the type
   pointer of the constructor the run loaded, the load itself, and the goodness of both.
 * `checkedFieldsAt_of_run`: the loop's observation gives sorts with `CheckedFieldsAt`.
@@ -61,8 +65,12 @@ def CheckedFieldsAt (c : ScopedCtx) (calls : List (Call F)) (b : Bytes.Address) 
     Heap.Extends m h ∧ (∀ cl ∈ cs, cl ∈ calls) ∧ (∀ cl ∈ cs₀, cl ∈ calls) ∧
     Ix.Kernel.Semantics.FieldSortsJ Ix.Kernel.Model.rulesJ c.env true false u nP fvs [] nF
       sorts ∧
-    ∀ j < nF, ∃ fv v, fvs[j]? = some fv ∧ sorts[j]? = some v ∧
-      CheckedSortAt c h cs (nP + j) fv.fvarTypeD v
+    ∃ (R : KExpr) (signatures : List KLevel),
+      Decl.RawExprRep (keyOf GuardRaw.addressTable) h 0 R p ∧
+      Decl.RawFieldTraces (Decl.RawTypeAt c (keyOf GuardRaw.addressTable) cs)
+        (Decl.RawDeltaAt c (keyOf GuardRaw.addressTable) cs) nP nF [] R signatures ∧
+      ∀ j < nF, ∀ φ : Ix.Kernel.LevelParam → Nat,
+        Level.eval φ (sorts.getD j .zero) = 0 ↔ Level.eval φ (signatures.getD j .zero) = 0
 
 /-- The sorts of `CheckedFieldsAt` have their `FieldSortsJ` witness at the telescope the loop
 opened. -/
@@ -117,10 +125,14 @@ theorem checkedFieldsAt_of_run {c : ScopedCtx} (hc : ScopedCoreFacts c)
       Ix.Kernel.Semantics.FieldSortsJ Ix.Kernel.Model.rulesJ c.env true false u nP fvs [] nF
         sorts ∧
       CheckedFieldsAt c calls b i nP nF E u sorts := by
-  obtain ⟨sorts, sorted, checked⟩ :=
-    check_prop_fields_sorts hc hp hf opened openedFields hg hrc hE represented zero ev
+  obtain ⟨R, (physical : Decl.RawExprRep (keyOf GuardRaw.addressTable) h 0 R p)⟩ :=
+    Decl.RawExprRep.ofOpenTm_keyed (keyOf GuardRaw.addressTable) hE
+  obtain ⟨sorts, signatures, sorted, traces, zeros⟩ :=
+    check_prop_fields_traces (keyOf GuardRaw.addressTable) hc hp hf opened openedFields hg
+      (fun _ member => member) hrc hE physical represented zero ev
   exact ⟨sorts, sorted, Γ, residual, body, parameters, fvs, rc, level, p, r, np, nf, h, h', cs,
     bp, ptr, w₁, w₃, w₄, w₅, w₆, w₇, w₈, h₀, m, cs₀, hp, hf, opened, openedFields, hg, hrc, hE,
-    represented, zero, ev, load, good₀, hb, ld, hext, hin, hin₀, sorted, checked⟩
+    represented, zero, ev, load, good₀, hb, ld, hext, hin, hin₀, sorted, R, signatures,
+    physical, traces, zeros⟩
 
 end IxVM.Refinement.Core.GuardData

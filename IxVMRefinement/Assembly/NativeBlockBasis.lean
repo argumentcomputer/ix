@@ -1,11 +1,8 @@
 import IxVMRefinement.Assembly.NativeBlockFinal
 import IxVMRefinement.Assembly.TypingBasisInv
 
-/-! # The native block step: the hashed-projection input derived, and its clauses at the basis
+/-! # The earlier native block step's clauses at the basis
 
-* `unitStep_nativeBlock_held`: `unitStep_nativeBlock` without its input
-  `HashedBlockProjectionsHeld E`, which every store whose records decode has
-  (`hashedBlockProjectionsHeld_of_decoded`; the step's store decodes, `StepStore.decoded`);
 * `hashKeyed_basisEnv`: the store-key clause at the environment of the pins under the committed
   table (every key there is a role key, and the table binds roles to 32-byte addresses);
 * `nativeBlockX_basisEnv`: the step's whole carried clause at the environment of the pins;
@@ -23,35 +20,6 @@ open IxVM.Refinement.TableInhabit (basisEnv basisRoleOrder)
 open Ix.Kernel (ConstantInfo ConstantVal IndCaps)
 
 universe u
-
-/-- **`UnitStep` for a one-type native inductive block without its recursor, the hashed-projection
-input derived from the step's store.** -/
-theorem unitStep_nativeBlock_held {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
-    {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr B : _root_.Address}
-    {cb : Ixon.Constant} {ind : Ixon.Inductive} {n : Nat}
-    (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hrec : BlockUnitRecord E₀ B cb ind)
-    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n) (hlim : lim = some n)
-    (hnat : NativeRouteAt calls B) (htele : FormerAtTele t E₀ B cb ind)
-    (hkey : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
-    (hinert : InertClause t cb)
-    (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hcov : L1.CanonicalHashCoverage E calls)
-    (hread : Core.ProjGuardRunReading)
-    (hcert : ∀ (env : Ix.Kernel.Env .anon) (new blk : List (ConstantInfo .anon))
-      (p₀ p : Ix.Kernel.NativeParts .anon) (ty' : Ix.Kernel.Expr .anon)
-      (ctorsA : List (ConstantVal .anon × Nat)) (caps : IndCaps .anon),
-      NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps →
-      BlockCert t E ⟨new ++ env.consts⟩ B)
-    (heta : ∀ (env : Ix.Kernel.Env .anon) (new blk : List (ConstantInfo .anon))
-      (p₀ p : Ix.Kernel.NativeParts .anon) (ty' : Ix.Kernel.Expr .anon)
-      (ctorsA : List (ConstantVal .anon × Nat)) (caps : IndCaps .anon),
-      Decl.PrefixInv.{u} E t (some n) env →
-      NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps →
-      BlockEta ⟨E, env, t, some n⟩ new) :
-    UnitStep.{u} (NativeBlockX.{u} t E) t envT E₀ E lim B cb :=
-  unitStep_nativeBlock ht hS hst hrec hchk hlim hnat htele hkey hinert hcover
-    (hashedBlockProjectionsHeld_of_decoded hst.decoded) hcov hread hcert heta
 
 /-- The committed table binds every role to a 32-byte address. -/
 theorem ctab_bound_size : ∀ p ∈ ctab.bound.toList, p.2.hash.size = 32 := by

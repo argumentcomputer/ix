@@ -42,7 +42,8 @@ theorem definition_value_keyed_raw_origin (rawKey : _root_.Address → KKey)
       RawExprRep rawKey loaded 0 R value ∧ Heap.Extends loaded beforeInst ∧
       ObsFn W "KernelGuard::expr_inst_raw" [value, params] beforeInst r h' instCalls ∧
       (∀ cl ∈ loadCalls, cl ∈ cs) ∧ (∀ cl ∈ instCalls, cl ∈ cs) ∧
-      RawExprRep rawKey h' 0 (R.instantiateLevelParams (List.range ps.length) ps) r := by
+      RawExprRep rawKey h' 0 (R.instantiateLevelParams (List.range ps.length) ps) r ∧
+      nl = .field (ps.length : F) ∧ ps.length < 549755813888 := by
   match Obs.«KernelGuard::definition_value».obs ev with
   | .run (m2 := loaded) (p9 := ptr) (cs15 := loadCalls)
       (x_nl := nl) (w29 := ty) (x_value := value) (w30 := flag) (w31 := hintPtr)
@@ -74,7 +75,8 @@ theorem definition_value_keyed_raw_origin (rawKey : _root_.Address → KKey)
       loadCalls, instCalls, found, arityExact, load, (by rw [events]; simp), shape, raw, length.heap_extends,
       inst, loadInside, instInside,
       (raw.mono length.heap_extends).instLevels
-        (psLoaded.mono length.heap_extends) inst⟩
+        (psLoaded.mono length.heap_extends) inst,
+      (by rw [arityExact]; exact valRep.1), psBound⟩
 
 /-- Declared-type classification retains the actual root pointer and exact positional universe
 substitution for every loaded constant kind. -/
@@ -96,7 +98,11 @@ theorem declared_type_keyed_raw_origin (rawKey : _root_.Address → KKey)
       ObsFn W "KernelGuard::expr_inst_raw" [typePtr, params] beforeInst r h' instCalls ∧
       (∀ cl ∈ loadCalls, cl ∈ cs) ∧ (∀ cl ∈ typeCalls, cl ∈ cs) ∧
       (∀ cl ∈ instCalls, cl ∈ cs) ∧
-      RawExprRep rawKey h' 0 (R.instantiateLevelParams (List.range ps.length) ps) r := by
+      RawExprRep rawKey h' 0 (R.instantiateLevelParams (List.range ps.length) ps) r ∧
+      ps.length < 549755813888 ∧
+      ∃ (beforeCount afterCount : Heap F) (countCalls : List (Call F)),
+        ObsFn W "KernelInfer::const_num_lvls" [value] beforeCount (.field (ps.length : F))
+          afterCount countCalls := by
   match Obs.«KernelGuard::declared_type».obs ev with
   | .run (v1 := value) (m2 := loaded) (p9 := ptr) (cs15 := loadCalls)
       (cs68 := countCalls) (cs83 := instCalls) (v86 := typePtr) (m60 := beforeType)
@@ -120,6 +126,8 @@ theorem declared_type_keyed_raw_origin (rawKey : _root_.Address → KKey)
       _ _ _ _ _ count
     obtain ⟨countValue, _⟩ := countSpec value ci rfl (hg.sub countInside)
       (represented.mono length.heap_extends)
+    have countAt := count
+    rw [countValue] at countAt
     have psBound : ps.length < 549755813888 := by
       have bound := RomBound.bounded_length_lt hg.2
         (c := ⟨Obs.Names.«Lists::length<&KernelTypes::KLevelNode>», [params], loaded⟩)
@@ -139,6 +147,7 @@ theorem declared_type_keyed_raw_origin (rawKey : _root_.Address → KKey)
     have extension := beforeExtension.trans getType.heap_extends
     exact ⟨ci, R, ptr, value, typePtr, loaded, beforeType, beforeInst, loadCalls, typeCalls,
       instCalls, found, arityExact, load, (by rw [events]; simp), shape, getType, raw, extension, inst,
-      loadInside, typeInside, instInside, raw.instLevels (psLoaded.mono extension) inst⟩
+      loadInside, typeInside, instInside, raw.instLevels (psLoaded.mono extension) inst,
+      psBound, _, _, _, (by rw [arityExact]; exact countAt)⟩
 
 end IxVM.Refinement.Core.GuardData
