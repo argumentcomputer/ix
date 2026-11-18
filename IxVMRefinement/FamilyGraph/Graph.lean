@@ -130,9 +130,11 @@ structure FamilyGraph (t : Ix.Kernel.RoleTable) (envT : Ix.Kernel.Env .anon) (E�
     StoredAt t envT x ∨ Covered t x ∨
       (∃ c, recordOf E₀ a = some c ∧ ConstAddrOf a c x) ∨
       OwnedBelow E₀ Top Inner rank fam (rank a) x
-  /-- A twin is a second family record of a block with a family record, after the block. -/
+  /-- A twin is a second family record of a block with a family record, after the block; or of
+  a block with none in the graph (one the witness's environment stores with its family record,
+  so the twin needs nothing of this fold for it). -/
   twinBlock : ∀ rb' B, twin rb' = some B →
-    ∃ rb, fam B = some rb ∧ rb' ≠ rb ∧ rank B < rank rb'
+    (∃ rb, fam B = some rb ∧ rb' ≠ rb ∧ rank B < rank rb') ∨ fam B = none
   /-- A twin is checked, is no block's family record, and has no family record of its own. -/
   twinWalked : ∀ rb' B, twin rb' = some B →
     Walked Top Inner rb' ∧ Unclaimed fam rb' ∧ fam rb' = none
@@ -488,11 +490,13 @@ theorem needs_earlier_family (hG : TopGraph t E₀ seeds Top rank)
     · obtain ⟨hWa, hUa, hrk, hloga⟩ := hF.advEarlier A a ha
       exact Or.inr (Or.inr ⟨a, (hus a).mpr ⟨hWa, hUa, ca, hca, hloga ca hca, x, hxa, hst⟩,
         ⟨ca, hca, Or.inl hxa⟩, hrk⟩)
-    · obtain ⟨rb₀, hrb₀, -, hrk⟩ := hF.twinBlock A B htw
-      obtain ⟨hUB, cB, hcB, hlogB, x₀, hx₀, hun⟩ := hF.famUnit B rb hrb
-      exact Or.inr (Or.inr ⟨B,
-        (hus B).mpr ⟨Or.inl (hF.famBlock B rb hrb), hUB, cB, hcB, hlogB, x₀, hx₀, hun⟩,
-        ⟨cB, hcB, Or.inr ⟨rb, crb, hrb, hcrb, hxr⟩⟩, hrk⟩)
+    · rcases hF.twinBlock A B htw with ⟨rb₀, hrb₀, -, hrk⟩ | hnone
+      · obtain ⟨hUB, cB, hcB, hlogB, x₀, hx₀, hun⟩ := hF.famUnit B rb hrb
+        exact Or.inr (Or.inr ⟨B,
+          (hus B).mpr ⟨Or.inl (hF.famBlock B rb hrb), hUB, cB, hcB, hlogB, x₀, hx₀, hun⟩,
+          ⟨cB, hcB, Or.inr ⟨rb, crb, hrb, hcrb, hxr⟩⟩, hrk⟩)
+      · rw [hnone] at hrb
+        cases hrb
     · obtain ⟨hWa, hUa, hrk, hloga⟩ := hF.advEarlier A a ha
       rcases walked_usedRef_cases hG hF hshape htwf hus hWa hua hok hst with
         ⟨ca, hca, hxa⟩ | ⟨b, hb, hown, hrkb⟩

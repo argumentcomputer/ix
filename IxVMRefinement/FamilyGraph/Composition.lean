@@ -36,7 +36,7 @@ open IxVM (F)
 open Ix.Kernel.Semantics (NativeFam)
 open IxVM.Refinement.Binding
 open IxVM.Refinement.Endpoint
-open TwinFamily (FamilyRecsModeled)
+open TwinFamily (FamilyRecsModeled FamilyInstalled)
 open FamilyAlias (FamilyCallAtLim)
 
 set_option linter.unusedVariables false
@@ -76,8 +76,18 @@ structure FamilyRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
     (fam twin : _root_.Address → Option _root_.Address)
     (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop) : Prop where
   graph : FamilyGraph t envT E₀ Top rank fam twin adv Inner
-  claimed : RecursorBlocksClaimed E₀ Top fam twin
-  modeled : ∀ B, Top B → ModeledRouteAt calls B → ∃ rb, fam B = some rb
+  /-- A top-walked non-empty block of recursors with a constant address the witness's
+  environment does not store is a block's family record or a twin. -/
+  claimed : ∀ (A : _root_.Address) (c : Ixon.Constant) (ms : Array Ixon.MutConst), Top A →
+    recordOf E₀ A = some c → c.info = .muts ms → 0 < ms.size →
+    (∀ m ∈ ms.toList, ∃ r, m = Ixon.MutConst.recr r) →
+    (∃ x, ConstAddrOf A c x ∧ ¬ StoredAt t envT x) →
+    (∃ B, fam B = some A) ∨ ∃ B, twin A = some B
+  /-- A top-walked block the run routes as modeled, with a constant address the witness's
+  environment does not store, has a family record (possibly empty). A block the witness
+  already stores is no unit: the fold does not step it. -/
+  modeled : ∀ B cb, Top B → recordOf E₀ B = some cb → ModeledRouteAt calls B →
+    (∃ x, ConstAddrOf B cb x ∧ ¬ StoredAt t envT x) → ∃ rb, fam B = some rb
   famCall : ∀ B rb, fam B = some rb → ModeledRouteAt calls B ∧
     ∃ bAddr cs, FamilyCallAtLim calls bAddr t B rb lim cs ∧
       ∀ a, AdviceIn cs a → adv B a ∨
@@ -88,6 +98,11 @@ structure FamilyRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
     (fam B = some rb ∨ twin rb = some B) ∧ FamilyCallAtLim calls bAddr t B rb lim cs ∧
     ((AdviceCheckIn cs bAddr t lim a ∧ ∀ c, recordOf E₀ a = some c → ¬ IsProj c) ∨
       ContainerRecCheckIn cs bAddr t lim a)
+  /-- A twin of a block with no family record in the graph (a block the witness's environment
+  stores) is a second record of a family record the witness's environment stores whole, each
+  recursor with its model companion (from the binding half: `StoredFamiliesInstalled`). -/
+  storedTwin : ∀ rb' B, twin rb' = some B → fam B = none →
+    ∃ rb crb, (∀ x, ConstAddrOf rb crb x → StoredAt t envT x) ∧ FamilyInstalled t envT rb crb
 
 /-- **Row `familyGraph`**: at every walk of an accepted typing claim and every witness of the
 table's shape, a rank of the same walk and the run's family records, advice, inner records and
@@ -136,7 +151,10 @@ def FamilyBlockRow (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) : Prop
           t envT E₀ E lim A c rb crb (adv A)
 
 /-- **Row `familyTwin`**: the step of a second family record of a block, handed the block's
-family record stored, at the fold's clause with the family recursors' companions beside it. -/
+family record stored, at the fold's clause with the family recursors' companions beside it.
+The block's family record is the graph's (`fam B = some rb`, installed by the block's unit
+earlier in the fold), or one the witness's environment stores whole with its companions
+(`fam B = none`, `FamilyRun.storedTwin`). -/
 def FamilyTwinRow (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) : Prop :=
   ∀ (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (seeds : List _root_.Address)
     (E₀ : Ixon.Env) (lim : Option Nat) (Top : _root_.Address → Prop)
@@ -148,9 +166,27 @@ def FamilyTwinRow (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) : Prop 
       StepCtx.{u} calls t R envT E₀ E →
       ∀ (A : _root_.Address) (c : Ixon.Constant) (B rb : _root_.Address) (crb : Ixon.Constant),
         Walked Top Inner A → recordOf E₀ A = some c → InLogic c → twin A = some B →
-        fam B = some rb → recordOf E₀ rb = some crb →
+        ((fam B = some rb ∧ recordOf E₀ rb = some crb) ∨
+          (fam B = none ∧ (∀ x, ConstAddrOf rb crb x → StoredAt t envT x) ∧
+            FamilyInstalled t envT rb crb)) →
         UnitStepTwin.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
           t envT E₀ E lim A c rb crb
+
+/-- A twin's step at a family record the witness's environment stores is a plain step: every
+environment the fold reaches extends the witness's, so the record's addresses are found. -/
+theorem unitStep_of_twin_stored {X : Ix.Kernel.Env .anon → Prop} {t : Ix.Kernel.RoleTable}
+    {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} {lim : Option Nat} {A rb : _root_.Address}
+    {c crb : Ixon.Constant} (hst : ∀ x, ConstAddrOf rb crb x → StoredAt t envT x)
+    (h : UnitStepTwin.{u} X t envT E₀ E lim A c rb crb) : UnitStep.{u} X t envT E₀ E lim A c :=
+  fun env hext hnd hinv hX hrefs hfresh => h env hext hnd hinv hX hrefs
+    (fun x hx => by
+      obtain ⟨ci, hci, hname⟩ := hst x hx
+      exact find_isSome_of_storedAt ⟨ci, hext ci hci, hname⟩) hfresh
+
+/-- The first member's address of a non-empty block is a constant address of it. -/
+theorem constAddr_member0 {A : _root_.Address} {c : Ixon.Constant} {ms : Array Ixon.MutConst}
+    (hinfo : c.info = .muts ms) (h0 : 0 < ms.size) : ConstAddrOf A c (memberAddr A 0 ms[0]) :=
+  Or.inr ⟨ms, 0, ms[0], hinfo, Array.getElem?_eq_getElem h0, Or.inl rfl⟩
 
 /-! ## The top-walked units without a family record -/
 
@@ -231,11 +267,23 @@ theorem topUnitSteps_family
       ht hW.runStore hW.hashedStored hctx.toStepStore hcanon hinert hcover hchk hns
       (fun x hx => keyFree_of_not_stored hctx.shape ht (hns x hx))
       env hext hnd hinv hXe href hfresh
-  have hnoFam : ¬ ModeledRouteAt calls A := by
-    intro hroute
-    obtain ⟨rb, hrb⟩ := hFR.modeled A hT hroute
+  have hnoFam : (∃ x, ConstAddrOf A c x ∧ ¬ StoredAt t envT x) → ¬ ModeledRouteAt calls A := by
+    intro hun hroute
+    obtain ⟨rb, hrb⟩ := hFR.modeled A c hT hc hroute hun
     rw [hfa] at hrb
     cases hrb
+  -- a step is asked only at an environment that extends the witness's and stores none of the
+  -- record's constant addresses, so a record the witness stores at an address needs none
+  have byUnit : ∀ x, ConstAddrOf A c x → (¬ StoredAt t envT x → False) →
+      UnitStep.{u} (X t E) t envT E₀ E lim A c := by
+    intro x hx hcontra env hext _ _ _ _ hfresh
+    exfalso
+    refine hcontra fun hst => ?_
+    obtain ⟨ci, hci, hname⟩ := hst
+    have hs : (env.find? (keyOf t x)).isSome = true :=
+      find_isSome_of_storedAt ⟨ci, hext ci hci, hname⟩
+    rw [hfresh x hx] at hs
+    simp at hs
   rcases hk with ⟨d, hinfo⟩ | ⟨rc, hinfo⟩ | ⟨ms, hinfo⟩
   · by_cases hkind : d.kind = .defn
     · exact step standaloneDefinition ⟨d, hinfo, hkind⟩
@@ -254,13 +302,21 @@ theorem topUnitSteps_family
           · exact step nativeBlockTelescope ⟨ind, hrec, hnat, htele⟩
           · exact step nativeBlockAlias ⟨ind, hrec, hnat, halias⟩
           · exact step nativeBlockOtherTelescope ⟨ind, hrec, hnat, hother⟩
-        · exact (hnoFam (modeled_of_offNativeRoute hW.runStore hctx.toStepStore hcanon hrec hchk
-            hnat).1).elim
-      · exfalso
-        rcases hW.otherBlock_cases hT hc hinfo hdefs (fun ind h => hone ⟨ind, h⟩) with
+        · have hx0 := constAddr_member0 (A := A) hinfo (by simp)
+          exact byUnit _ hx0 fun hns =>
+            hnoFam ⟨_, hx0, hns⟩ (modeled_of_offNativeRoute hW.runStore hctx.toStepStore hcanon
+              hrec hchk hnat).1
+      · rcases hW.otherBlock_cases hT hc hinfo hdefs (fun ind h => hone ⟨ind, h⟩) with
           ⟨hsize, hall⟩ | ⟨hpos, hall⟩
-        · exact hnoFam (modeledRouteAt_of_multi ht hctx.toStepStore hc hinfo hsize hall).1
-        · exact no_plain_recursorBlock hFR.claimed hT hc hinfo hpos hall hU htw
+        · have hx0 := constAddr_member0 (A := A) hinfo (by omega)
+          exact byUnit _ hx0 fun hns =>
+            hnoFam ⟨_, hx0, hns⟩ (modeledRouteAt_of_multi ht hctx.toStepStore hc hinfo hsize hall).1
+        · have hx0 := constAddr_member0 (A := A) hinfo hpos
+          exact byUnit _ hx0 fun hns => by
+            rcases hFR.claimed A c ms hT hc hinfo hpos hall ⟨_, hx0, hns⟩ with ⟨B, hB⟩ | ⟨B, hB⟩
+            · exact hU B hB
+            · rw [htw] at hB
+              cases hB
 
 /-! ## The typing half's premise over the family graph -/
 
@@ -292,7 +348,11 @@ def FamilySteps (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (calls : 
           recordOf E₀ A = some c → InLogic c → twin A = some B → fam B = some rb →
           recordOf E₀ rb = some crb →
           UnitStepTwin.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
-            t envT E₀ E lim A c rb crb)
+            t envT E₀ E lim A c rb crb) ∧
+        (∀ E, StepCtx.{u} calls t R envT E₀ E → ∀ A c B, Walked Top Inner A →
+          recordOf E₀ A = some c → InLogic c → twin A = some B → fam B = none →
+          UnitStep.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
+            t envT E₀ E lim A c)
 
 /-- **The typing half's premise from the rows**, for any link: the graph row, the step of the
 units a family check checks (`innerSteps`), the family block and twin rows, and the kinds of the
@@ -336,7 +396,14 @@ theorem familySteps_of_parts {L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       definitionBlock nativeBlockTelescope nativeBlockAlias nativeBlockOtherTelescope hWalk hFR,
     innerSteps calls t seeds E₀ lim Top rank hWalk R envT fam twin adv Inner hFR,
     fun E => familyBlock calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR,
-    fun E => familyTwin calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR⟩
+    fun E hctx A c B rb crb hW hc hlog htw hrb hcrb =>
+      familyTwin calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx A c B
+        rb crb hW hc hlog htw (Or.inl ⟨hrb, hcrb⟩),
+    fun E hctx A c B hW hc hlog htw hnone => by
+      obtain ⟨rb, crb, hst, hinst⟩ := hFR.storedTwin A B htw hnone
+      exact unitStep_of_twin_stored hst
+        (familyTwin calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx A c
+          B rb crb hW hc hlog htw (Or.inr ⟨hnone, hst, hinst⟩))⟩
 
 /-- **The typing half's premise from the rows at the opened head trace**: the proved kinds of
 the plain fold are passed in, the telescope block's step is stated once for every checked unit
@@ -397,12 +464,12 @@ theorem typing_skeleton_over_family {L : Ix.Kernel.Env .anon → NativeFam .anon
     · have hF : BoundaryFacts t (fun _ => True) R envT := hW.facts.1
       obtain ⟨Reg, hR⟩ := hW.facts.2
       have hc : Carried lim := carried_of_typingLim (hlim t seeds E₀ lim Top rank hWalk)
-      obtain ⟨rank', fam, twin, adv, Inner, hWalk', hFG, hTop, hInner, hFam, hTwin⟩ :=
-        hsteps t seeds E₀ lim Top rank hWalk R envT hW.shape
+      obtain ⟨rank', fam, twin, adv, Inner, hWalk', hFG, hTop, hInner, hFam, hTwin,
+        hTwinStored⟩ := hsteps t seeds E₀ lim Top rank hWalk R envT hW.shape
       exact typing_skeleton_core_family_modeled (X := fun E => FoldExtra.{u} L t E) hW.shape
         (fun E hE => (hR E hE lim hc (limWithin_all t lim)).prefixInv) hF.whole
         (fun E hE => (hR E hE lim hc (limWithin_all t lim)).extra) ht hb hextra hnc hS
-        (hgraph t seeds E₀ lim Top rank' hWalk') hFG hTop hInner hFam hTwin
+        (hgraph t seeds E₀ lim Top rank' hWalk') hFG hTop hInner hFam hTwin hTwinStored
 
 /-- **The composed statement with the fold's clause on both sides, the typing half over the
 family graph**: `composed_skeleton_over` with `FamilySteps` in place of the plain step. -/
