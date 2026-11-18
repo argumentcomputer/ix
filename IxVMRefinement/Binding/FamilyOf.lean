@@ -26,17 +26,18 @@ An entry is the type's address; two auxiliaries over one container (at different
 are told apart by their position, which the circuit reads off the record and checks against the
 constructors' nested occurrences.
 
-The readers `motiveCarrier` and `majorHead` follow sharing and read a head constant by its
+The readers `motiveCarrierAt` and `majorHeadAt` follow sharing and read a head constant by its
 reference, as a family record names the types of its block (a record of its own). They are total,
-with fuel. -/
+with a fuel bounding the binder telescope and the application spine they walk. The circuit's
+readers (`last_binder_dom`, `collect_spine`) follow the expression structurally, bounded only by
+the record's size, so the structure reads at some fuel: a reader that answers at one fuel answers
+the same at every larger one (`motiveCarrierAt_mono`, `majorHeadAt_mono`), and the answers at two
+fuels agree (`motiveCarrierAt_unique`, `majorHeadAt_unique`). -/
 
 namespace IxVM.Refinement.Binding.FamilyOf
 
 open IxVM.Consistency
 open IxVM.Refinement.Typing (FamBlockRecord FamRecRecord)
-
-/-- The fuel of the readers: more than any binder telescope or application spine they walk. -/
-def fuel : Nat := 65536
 
 /-- A sharing reference followed, at most `n` times, to a node that is none. -/
 def unshare (c : Ixon.Constant) : Nat → Ixon.Expr → Ixon.Expr
@@ -84,25 +85,27 @@ def spineHead (c : Ixon.Constant) : Nat → Ixon.Expr → Ixon.Expr
     | .app f _ => spineHead c n f
     | h => h
 
-/-- The constant at the head of a term, named by reference. -/
-def refHead (c : Ixon.Constant) (e : Ixon.Expr) : Option _root_.Address :=
-  match spineHead c fuel e with
+/-- The constant at the head of a term, named by reference, at the fuel `n`. -/
+def refHeadAt (c : Ixon.Constant) (n : Nat) (e : Ixon.Expr) : Option _root_.Address :=
+  match spineHead c n e with
   | .ref i _ => c.refs[i.toNat]?
   | _ => none
 
-/-- **The carrier of motive `i`** of the recursor `r` of the record `c`: the constant heading the
-last binder domain of the motive's type (the type the motive is over). -/
-def motiveCarrier (c : Ixon.Constant) (r : Ixon.Recursor) (i : Nat) : Option _root_.Address := do
+/-- **The carrier of motive `i`** of the recursor `r` of the record `c`, at the fuel `n`: the
+constant heading the last binder domain of the motive's type (the type the motive is over). -/
+def motiveCarrierAt (c : Ixon.Constant) (r : Ixon.Recursor) (i n : Nat) :
+    Option _root_.Address := do
   let e ← peel c (r.params.toNat + i) r.typ
   let m ← domOf c e
-  let d ← lastDom c fuel m
-  refHead c d
+  let d ← lastDom c n m
+  refHeadAt c n d
 
-/-- **The head of the major premise's type** of the recursor `r` of the record `c`. -/
-def majorHead (c : Ixon.Constant) (r : Ixon.Recursor) : Option _root_.Address := do
+/-- **The head of the major premise's type** of the recursor `r` of the record `c`, at the fuel
+`n`. -/
+def majorHeadAt (c : Ixon.Constant) (r : Ixon.Recursor) (n : Nat) : Option _root_.Address := do
   let e ← peel c (r.params.toNat + r.motives.toNat + r.minors.toNat + r.indices.toNat) r.typ
   let d ← domOf c e
-  refHead c d
+  refHeadAt c n d
 
 /-- **`rb` is the family record of the block `B`, position by position over the flattened family
 `flat`, in the store `E`** (module docstring). `flat` lists the type each position eliminates,
@@ -120,12 +123,13 @@ structure FamilyOfBlock (E : Ixon.Env) (B : _root_.Address) (cb : Ixon.Constant)
   /-- One complete family: each recursor has one motive per entry. -/
   motives : ∀ (k : Nat) (r : Ixon.Recursor), rs[k]? = some (Ixon.MutConst.recr r) →
     r.motives.toNat = flat.length
-  /-- The carriers: in every recursor, motive `j` is over entry `j`. -/
+  /-- The carriers: in every recursor, motive `j` is over entry `j` (read at some fuel). -/
   carriers : ∀ (k : Nat) (r : Ixon.Recursor), rs[k]? = some (Ixon.MutConst.recr r) →
-    ∀ (j : Nat) (a : _root_.Address), flat[j]? = some a → motiveCarrier crb r j = some a
-  /-- The correspondence: the recursor at position `k` eliminates entry `k`. -/
+    ∀ (j : Nat) (a : _root_.Address), flat[j]? = some a → ∃ n, motiveCarrierAt crb r j n = some a
+  /-- The correspondence: the recursor at position `k` eliminates entry `k` (read at some
+  fuel). -/
   major : ∀ (k : Nat) (r : Ixon.Recursor) (a : _root_.Address),
-    rs[k]? = some (Ixon.MutConst.recr r) → flat[k]? = some a → majorHead crb r = some a
+    rs[k]? = some (Ixon.MutConst.recr r) → flat[k]? = some a → ∃ n, majorHeadAt crb r n = some a
 
 /-- **Every position of the flattened family holds a recursor, and it eliminates that position's
 entry**: the correspondence a twin's parts are matched by, auxiliary positions included. -/
@@ -133,7 +137,8 @@ theorem FamilyOfBlock.recursor_at {E : Ixon.Env} {B rb : _root_.Address}
     {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst} {flat : List _root_.Address}
     (h : FamilyOfBlock E B cb ms rb crb rs flat) {k : Nat} {a : _root_.Address}
     (hk : flat[k]? = some a) :
-    ∃ r : Ixon.Recursor, rs[k]? = some (Ixon.MutConst.recr r) ∧ majorHead crb r = some a := by
+    ∃ r : Ixon.Recursor, rs[k]? = some (Ixon.MutConst.recr r) ∧
+      ∃ n, majorHeadAt crb r n = some a := by
   have hkf : k < flat.length := by
     rcases Nat.lt_or_ge k flat.length with hlt | hge
     · exact hlt
@@ -177,11 +182,10 @@ theorem FamilyOfBlock.constAddr_of_nonempty {E : Ixon.Env} {B rb : _root_.Addres
 
 /-! ## The readers' fuel
 
-The readers walk a binder telescope and an application spine with the fixed fuel `fuel`; the
-circuit's readers (`last_binder_dom`, `collect_spine`) follow the expression structurally. A
-reader that answers at some fuel answers the same at every larger one, so raising the fuel, or
-deriving it from the record, keeps every answer read so far, and the answers at two fuels agree.
-What a fixed fuel cannot give is an answer the circuit reads past it. -/
+The readers walk a binder telescope and an application spine with a fuel; the circuit's readers
+(`last_binder_dom`, `collect_spine`) follow the expression structurally. A reader that answers at
+some fuel answers the same at every larger one, so the answers at two fuels agree: what
+`FamilyOfBlock` reads at some fuel is determined, as a fixed reader's answer would be. -/
 
 /-- **`lastDom` answers the same at every larger fuel.** -/
 theorem lastDom_mono (c : Ixon.Constant) (d : Ixon.Expr) :
@@ -235,14 +239,6 @@ theorem spineHead_mono (c : Ixon.Constant) :
     | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | lam _ _ | all _ _
     | letE _ _ _ _ _ | share _ => rfl
 
-/-- The constant at the head of a term, named by reference, at the fuel `n`. -/
-def refHeadAt (c : Ixon.Constant) (n : Nat) (e : Ixon.Expr) : Option _root_.Address :=
-  match spineHead c n e with
-  | .ref i _ => c.refs[i.toNat]?
-  | _ => none
-
-theorem refHead_eq (c : Ixon.Constant) (e : Ixon.Expr) : refHead c e = refHeadAt c fuel e := rfl
-
 /-- **`refHeadAt` answers the same at every larger fuel.** -/
 theorem refHeadAt_mono {c : Ixon.Constant} {n m : Nat} {e : Ixon.Expr} {a : _root_.Address}
     (h : refHeadAt c n e = some a) (hle : n ≤ m) : refHeadAt c m e = some a := by
@@ -254,26 +250,6 @@ theorem refHeadAt_mono {c : Ixon.Constant} {n m : Nat} {e : Ixon.Expr} {a : _roo
   unfold refHeadAt at h ⊢
   rw [spineHead_mono c n m e hna hle]
   exact h
-
-/-- The carrier of motive `i` at the fuel `n` (`motiveCarrier` at `fuel`). -/
-def motiveCarrierAt (c : Ixon.Constant) (r : Ixon.Recursor) (i n : Nat) :
-    Option _root_.Address := do
-  let e ← peel c (r.params.toNat + i) r.typ
-  let m ← domOf c e
-  let d ← lastDom c n m
-  refHeadAt c n d
-
-/-- The head of the major premise's type at the fuel `n` (`majorHead` at `fuel`). -/
-def majorHeadAt (c : Ixon.Constant) (r : Ixon.Recursor) (n : Nat) : Option _root_.Address := do
-  let e ← peel c (r.params.toNat + r.motives.toNat + r.minors.toNat + r.indices.toNat) r.typ
-  let d ← domOf c e
-  refHeadAt c n d
-
-theorem motiveCarrier_eq (c : Ixon.Constant) (r : Ixon.Recursor) (i : Nat) :
-    motiveCarrier c r i = motiveCarrierAt c r i fuel := rfl
-
-theorem majorHead_eq (c : Ixon.Constant) (r : Ixon.Recursor) :
-    majorHead c r = majorHeadAt c r fuel := rfl
 
 /-- **`motiveCarrierAt` answers the same at every larger fuel.** -/
 theorem motiveCarrierAt_mono {c : Ixon.Constant} {r : Ixon.Recursor} {i n m : Nat}
