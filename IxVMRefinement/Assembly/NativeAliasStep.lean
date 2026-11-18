@@ -164,6 +164,8 @@ structure AliasInstallOut (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (env : Ix.
     fam.ctorsA[j]? = some cA → cA.2 = c.2
   /-- No stored constructor type projects out of the family. -/
   noProj : BlockFamCtorNoProj fam
+  /-- The constructors of the member return literally: a fact about the block's record. -/
+  retHead : BlockCtorIxonRetHead cb ind
   /-- The new constants: distinct names, fresh, each at the key of a constant address of the
   record, which is an address of 32 bytes, and at each such address a constant that stores a
   reading of it over the run's records. -/
@@ -363,15 +365,13 @@ theorem famIxonRetHead_of_holds {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
 
 /-- **The install of a block whose former is declared at a definition keeps the fold's clause
 at the opened head trace**, at every store that holds the block's records, every limit and
-every registry, registering its family (module docstring). `hret` is the constructors' literal
-return, a fact about the block's record. -/
+every registry, registering its family (module docstring). -/
 theorem AliasInstallOut.keeps {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     {env : Ix.Kernel.Env .anon} {B : _root_.Address} {cb : Ixon.Constant}
     {ind : Ixon.Inductive} {blk : List (ConstantInfo .anon)}
     {p₀ : Ix.Kernel.NativeParts .anon} {new : List (ConstantInfo .anon)}
     {fam : NativeFam .anon} {caps : IndCaps .anon}
     (ht : t.check = .ok ()) (hrec : BlockUnitRecord E₀ B cb ind)
-    (hret : BlockCtorIxonRetHead cb ind)
     (hO : AliasInstallOut t E₀ env B cb ind blk p₀ new fam caps)
     {E : Ixon.Env} {lim : Option Nat} {Reg : NativeFam .anon → Prop}
     (hH : HoldsBlock E₀ E B cb ind)
@@ -470,7 +470,7 @@ theorem AliasInstallOut.keeps {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
       nodup := hO.nodupA
       ctorFields := hO.ctorFields
       record := hrecord
-      retHead := famIxonRetHead_of_holds ht hH hrec.muts hret hO.famName
+      retHead := famIxonRetHead_of_holds ht hH hrec.muts hO.retHead hO.famName
       noProj := hO.noProj
       link := trivial }
   have hidxF : fam.p.nIdx ≠ 0 := by
@@ -530,12 +530,10 @@ theorem AliasUnitStep.unitStep {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .
   exact Or.inl ⟨x, hx, hn⟩
 
 /-- **The step from the install's output** at each environment the step is asked at: the
-clause is kept at every store that holds the block's records. `hret` is the constructors'
-literal return, a fact about the block's record. -/
+clause is kept at every store that holds the block's records. -/
 theorem aliasUnitStep_of_install {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .anon}
     {E₀ Ec : Ixon.Env} {lc : Option Nat} {B : _root_.Address} {cb : Ixon.Constant}
     {ind : Ixon.Inductive} (ht : t.check = .ok ()) (hrec : BlockUnitRecord E₀ B cb ind)
-    (hret : BlockCtorIxonRetHead cb ind)
     (hout : ∀ (env : Ix.Kernel.Env .anon) (Reg : NativeFam .anon → Prop),
       (∀ ci ∈ envT.consts, ci ∈ env.consts) → (env.consts.map (·.name)).Nodup →
       FoldClauseWith.{u} FormerOpenTraceAt t Ec lc env Reg →
@@ -549,7 +547,7 @@ theorem aliasUnitStep_of_install {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env
   intro env Reg hext hnd hC href hfresh
   obtain ⟨blk, p₀, new, fam, caps, hO⟩ := hout env Reg hext hnd hC href hfresh
   refine ⟨new, fam, hO.nodup, hO.fresh,
-    fun E lim Reg' hH hC' => hO.keeps ht hrec hret hH hC', ?_, hO.reads⟩
+    fun E lim Reg' hH hC' => hO.keeps ht hrec hH hC', ?_, hO.reads⟩
   intro ci hci
   obtain ⟨x, hx, hn, -⟩ := hO.named ci hci
   exact ⟨x, hx, hn⟩

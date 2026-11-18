@@ -70,15 +70,14 @@ theorem _root_.IxVM.Refinement.Typing.AliasUnitStep.overUnitStep {t : Ix.Kernel.
 
 
 /-- **The binding fold's step of a block whose former is declared at a definition, from the
-walk's facts.** The member's check is the walk's, observed under a role context at the limit
-`n` (a carried limit within `G`); `Ec` is a record store for `R` the check is read at; `R`
+walk's facts.** The member's check is the walk's, observed under the role context at the limit
+`lim` (a carried limit within `G`); `Ec` is a record store for `R` the check is read at; `R`
 holds the block's records and every blob the run loaded. `hliterals` separates the family's
-key from the four literal-function keys; `hret` is the constructors' literal return, a fact
-about the block's record. -/
+key from the four literal-function keys. -/
 theorem overUnitStep_nativeBlockAlias {calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)}
     {t : Ix.Kernel.RoleTable} {G : Nat → Prop} {R E₀ Ec : Ixon.Env}
     {envT : Ix.Kernel.Env .anon} {bAddr B : _root_.Address} {cb : Ixon.Constant}
-    {ind : Ixon.Inductive} {n : Nat}
+    {ind : Ixon.Inductive} {lim : Option Nat}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hRc : RecordsFor R Ec) (hst : StepStore calls t E₀ Ec)
     (hrec : BlockUnitRecord E₀ B cb ind)
@@ -87,8 +86,8 @@ theorem overUnitStep_nativeBlockAlias {calls : List (Aiur.Generic.SourceSemantic
     (hRctors : ∀ j < ind.ctors.size,
       recordOf R (ctorAddr B 0 j) = some (constructorProjection B 0 j))
     (hblobs : ∀ x b, E₀.blobs.get? x = some b → R.blobs.get? x = some b)
-    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
-    (hcn : Carried (some n)) (hln : LimWithin G t (some n))
+    (hchk : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim)
+    (hcn : Carried lim) (hln : LimWithin G t lim)
     (hnat : NativeRouteAt calls B) (halias : FormerAtAlias t E₀ B cb ind)
     (hliterals : Core.keyOf t (memberAddr B 0 (.indc ind)) ≠ Ix.Kernel.stringOfListName ∧
       Core.keyOf t (memberAddr B 0 (.indc ind)) ≠ Ix.Kernel.listNilName ∧
@@ -97,12 +96,10 @@ theorem overUnitStep_nativeBlockAlias {calls : List (Aiur.Generic.SourceSemantic
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hcov : L1.CanonicalHashCoverage Ec calls)
-    (hret : BlockCtorIxonRetHead cb ind) :
+    (hcov : L1.CanonicalHashCoverage Ec calls) :
     OverUnitStep.{u} FormerOpenTraceAt t G R envT E₀ B cb :=
   AliasUnitStep.overUnitStep hRc hcn hln
     (fun E hE => holdsBlock_of_recordsFor hE hRblock hRformer hRctors hblobs) hfree
-    (aliasUnitStep_of_member ht hS hst hrec hchk hnat halias hliterals hfree hinert hcover hcov
-      hret)
+    (aliasUnitStep_of_member ht hS hst hrec hchk hnat halias hliterals hfree hinert hcover hcov)
 
 end IxVM.Refinement.Binding

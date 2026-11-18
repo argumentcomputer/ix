@@ -1,6 +1,7 @@
 import IxVMRefinement.Assembly.NativeAliasStep
 import IxVMRefinement.Assembly.NativeAliasInstall
 import IxVMRefinement.Assembly.NativeBlockInstallOf
+import IxVMRefinement.Assembly.NativeAliasRetHead
 
 /-! # The install of a block whose former is declared at a definition, from its walked check
 
@@ -13,7 +14,7 @@ telescope (`aliasOuts_of_member_traced`), IxC's install at the registered family
   is the stored constructors and the stored former in front of the prefix, with the former at
   the family's own capability record; the completed record, the telescope's sort and the
   constructors' stage are read off IxC's record.
-* `aliasInstallOut_of_member`: the output, at a check under a role context at a group limit.
+* `aliasInstallOut_of_member`: the output, at a check under the role context of either validator.
   The family's key is asked to be none of the four literal-function keys (`hliterals`): the
   typing fold has it from the full table (`alias_literal_keys_distinct`).
 * `aliasUnitStep_of_member`: **the step, stated once**, from the walk's facts.
@@ -84,17 +85,17 @@ theorem NativeAtFacts.env_of_indexed {env env₂ : Ix.Kernel.Env .anon}
 prefix, read off the member check** (module docstring). -/
 theorem aliasInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ E : Ixon.Env} {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
-    {n : Nat} {env : Ix.Kernel.Env .anon}
+    {lim : Option Nat} {env : Ix.Kernel.Env .anon}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
     (hrec : BlockUnitRecord E₀ B cb ind)
-    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
+    (hchk : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim)
     (hnat : NativeRouteAt calls B) (halias : FormerAtAlias t E₀ B cb ind)
     (hliterals : Core.keyOf t (memberAddr B 0 (.indc ind)) ≠ Ix.Kernel.stringOfListName ∧
       Core.keyOf t (memberAddr B 0 (.indc ind)) ≠ Ix.Kernel.listNilName ∧
       Core.keyOf t (memberAddr B 0 (.indc ind)) ≠ Ix.Kernel.listConsName ∧
       Core.keyOf t (memberAddr B 0 (.indc ind)) ≠ Ix.Kernel.charOfNatName)
     (hndE : (env.consts.map (·.name)).Nodup)
-    (hinv : Decl.PrefixInv.{u} E t (some n) env) (hstored : Decl.UsedRefsStored t env cb)
+    (hinv : Decl.PrefixInv.{u} E t lim env) (hstored : Decl.UsedRefsStored t env cb)
     (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
@@ -105,13 +106,13 @@ theorem aliasInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTab
   have hbound : Bounded calls := (hst.good env none).2
   have htwf : t.wf = true := hinv.tableWf
   have hP : HashedBlockProjectionsHeld E := hashedBlockProjectionsHeld_of_decoded hst.decoded
-  obtain ⟨ty₀r, csr, -, -, -, hall⟩ := blockReads_of_member ht hbound hS hrec hchk
+  obtain ⟨ty₀r, csr, -, -, -, hall⟩ := blockReads_of_member_lim ht hbound hS hrec hchk
   obtain ⟨hblk, hpin, hna⟩ := hall {}
   obtain ⟨p₀, hp₀, hnd₀, hnIdx₀⟩ :=
-    nativePartsAt_of_member ht hbound hS hrec hchk halias hblk hfree
+    nativePartsAt_of_member_lim ht hbound hS hrec hchk halias hblk hfree
   obtain ⟨cvS, cvTa, s, ctorsA, rawTypes, hcheckS, hAT, hnameS, -, -, hlenA, hparam, houts, -,
     hzero, hidx, hunused, htrB, htrS,
-    ⟨ty₀, ty', hty, hlbb, hdef, hcT, hcvT, hcvS, hnP₀, hlenP, hp56, hi56, hc56⟩, hper⟩ :=
+    ⟨ty₀, ty', hty, hlbb, hdef, hcT, hcvT, hcvS, hnP₀, hlenP, hp56, hi56, hc56⟩, hper, hRawRet⟩ :=
     aliasOuts_of_member_traced ht hS hst hrec hchk hnat hblk hp₀ hnIdx₀ (.inr halias) hinv
       hstored hP hkeys hfresh hfree hcov haux
   have hidx₀ : p₀.nIdx ≠ 0 := by
@@ -309,6 +310,7 @@ theorem aliasInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTab
         exact hnd₀
       ctorFields := fun j c cA hc hcA => (hall' j c cA hc hcA).1
       noProj := ?_
+      retHead := blockCtorIxonRetHead_of_raw ht hS hst hrec hchk hRawRet
       nodup := by
         have h := hndAll
         rw [List.map_append] at h
@@ -462,16 +464,15 @@ theorem aliasInstallOut_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTab
 /-! ## The step -/
 
 /-- **The unit step of a block whose former is declared at a definition, stated once, from the
-walk's facts**: the member's check under a role context at the group limit `n`, read at the
+walk's facts**: the member's check under the role context of either validator, read at the
 store `E`. The clause is kept at every store that holds the block's records, every limit and
-every registry. `hliterals` separates the family's key from the four literal-function keys;
-`hret` is the constructors' literal return, a fact about the block's record. -/
+every registry. `hliterals` separates the family's key from the four literal-function keys. -/
 theorem aliasUnitStep_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon} {bAddr B : _root_.Address}
-    {cb : Ixon.Constant} {ind : Ixon.Inductive} {n : Nat}
+    {cb : Ixon.Constant} {ind : Ixon.Inductive} {lim : Option Nat}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
     (hrec : BlockUnitRecord E₀ B cb ind)
-    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
+    (hchk : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim)
     (hnat : NativeRouteAt calls B) (halias : FormerAtAlias t E₀ B cb ind)
     (hliterals : Core.keyOf t (memberAddr B 0 (.indc ind)) ≠ Ix.Kernel.stringOfListName ∧
       Core.keyOf t (memberAddr B 0 (.indc ind)) ≠ Ix.Kernel.listNilName ∧
@@ -480,10 +481,9 @@ theorem aliasUnitStep_of_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hcov : L1.CanonicalHashCoverage E calls)
-    (hret : BlockCtorIxonRetHead cb ind) :
-    AliasUnitStep.{u} t envT E₀ (fun E' => HoldsBlock E₀ E' B cb ind) E (some n) B cb :=
-  aliasUnitStep_of_install ht hrec hret fun env Reg hext hnd hC href hfresh =>
+    (hcov : L1.CanonicalHashCoverage E calls) :
+    AliasUnitStep.{u} t envT E₀ (fun E' => HoldsBlock E₀ E' B cb ind) E lim B cb :=
+  aliasUnitStep_of_install ht hrec fun env Reg hext hnd hC href hfresh =>
     aliasInstallOut_of_member ht hS hst hrec hchk hnat halias hliterals hnd hC.prefixInv
       (usedRefsStored_of_cover (hcover env ⟨hext, href, hfresh⟩) hinert) hC.hashKeyed hfresh
       hfree hcov hC.auxRoot
@@ -493,19 +493,17 @@ the fold's clause at the opened head trace**: the typing fold's step, from the w
 The full table separates the family's key from the literal-function keys. -/
 theorem unitStep_nativeBlockAlias {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {R E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon} {lim : Option Nat}
-    {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {n : Nat}
+    {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hctx : StepCtx.{u} calls t R envT E₀ E)
     (hrec : BlockUnitRecord E₀ B cb ind)
-    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n) (hlim : lim = some n)
+    (hchk : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim)
     (hnat : NativeRouteAt calls B) (halias : FormerAtAlias t E₀ B cb ind)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
     (hinert : InertClause t cb)
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hcov : L1.CanonicalHashCoverage E calls)
-    (hret : BlockCtorIxonRetHead cb ind) :
+    (hcov : L1.CanonicalHashCoverage E calls) :
     UnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt t E) t envT E₀ E lim B cb := by
-  subst hlim
   have hst : StepStore calls t E₀ E := hctx.toStepStore
   have htwf : t.wf = true := by
     unfold Ix.Kernel.RoleTable.wf
@@ -515,7 +513,7 @@ theorem unitStep_nativeBlockAlias {calls : List (Call F)} {t : Ix.Kernel.RoleTab
   have hliterals := alias_literal_keys_distinct (address := memberAddr B 0 (.indc ind)) htwf
     hctx.shape hext hnd (hfresh _ (Or.inr ⟨_, 0, .indc ind, hrec.muts, rfl, Or.inl rfl⟩))
   exact AliasUnitStep.unitStep (HoldsBlock.of_stepStore hst hrec)
-    (aliasUnitStep_of_member ht hS hst hrec hchk hnat halias hliterals hfree hinert hcover hcov
-      hret) env hext hnd hinv hX href hfresh
+    (aliasUnitStep_of_member ht hS hst hrec hchk hnat halias hliterals hfree hinert hcover hcov)
+      env hext hnd hinv hX href hfresh
 
 end IxVM.Refinement.Typing
