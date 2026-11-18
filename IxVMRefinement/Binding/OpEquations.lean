@@ -258,4 +258,143 @@ theorem subst_const_cells (κ : _root_.Address → KKey) (d : Nat) (Γ : Nat →
         | @proj _ _ _ _ _ _ _ _ _ cell =>
           exact n6 _ rfl (Option.some.inj ((cell_load' cell ld).symm.trans cell)))
 
+
+/-! ## A recurrence side's rendered term -/
+
+/-- **A rigid term**: no binder and no free variable. -/
+def pwRigid : KExpr → Bool
+  | .bvar _ | .sort _ | .const _ _ | .lit _ => true
+  | .app f a => pwRigid f && pwRigid a
+  | _ => false
+
+/-- **A term that is a rigid term up to binder data is that term.** -/
+theorem eq_of_erasePw_rigid : ∀ (L : KExpr), pwRigid L = true → ∀ (T : KExpr),
+    T.erasePw = L.erasePw → T = L
+  | .bvar _, _, T, h => by
+    cases T <;> simp only [Ix.Kernel.Expr.erasePw] at h <;> first | exact h | exact nomatch h
+  | .sort _, _, T, h => by
+    cases T <;> simp only [Ix.Kernel.Expr.erasePw] at h <;> first | exact h | exact nomatch h
+  | .const _ _, _, T, h => by
+    cases T <;> simp only [Ix.Kernel.Expr.erasePw] at h <;> first | exact h | exact nomatch h
+  | .lit _, _, T, h => by
+    cases T <;> simp only [Ix.Kernel.Expr.erasePw] at h <;> first | exact h | exact nomatch h
+  | .app f a, hL, T, h => by
+    simp only [pwRigid, Bool.and_eq_true] at hL
+    cases T with
+    | app f' a' =>
+      simp only [Ix.Kernel.Expr.erasePw] at h
+      injection h with h1 h2
+      rw [eq_of_erasePw_rigid f hL.1 f' h1, eq_of_erasePw_rigid a hL.2 a' h2]
+    | _ => simp only [Ix.Kernel.Expr.erasePw] at h; exact nomatch h
+  | .fvar _ _, hL, _, _ => by simp [pwRigid] at hL
+  | .lam _ _ _, hL, _, _ => by simp [pwRigid] at hL
+  | .forallE _ _ _, hL, _, _ => by simp [pwRigid] at hL
+  | .letE _ _ _ _, hL, _, _ => by simp [pwRigid] at hL
+  | .proj _ _ _, hL, _, _ => by simp [pwRigid] at hL
+
+/-- **A recurrence side closed over its two variables has the shape `open_two_lams` reads**:
+`λ (x y : Nat), L` with a rigid `L` that opens to the side. -/
+def sideShapeOk (l : KExpr) : Bool :=
+  match opSideRaw l with
+  | .lam A (.lam B L _) _ =>
+    decide (A = OpOpen.natTy) && decide (B = OpOpen.natTy) && pwRigid L &&
+      decide (OpOpen.open₂ OpOpen.natTy OpOpen.natTy L = l)
+  | _ => false
+
+set_option maxRecDepth 100000 in
+/-- Every side of every recurrence has that shape (decided over the seven operations). -/
+theorem sideShape_all : ∀ c ∈ Ix.Kernel.natOpNames, ∀ eq ∈ Ix.Kernel.natOpEquations 0 c,
+    sideShapeOk eq.1 = true ∧ sideShapeOk eq.2 = true := by
+  decide +kernel
+
+theorem sideShape_spec {l : KExpr} (h : sideShapeOk l = true) :
+    ∃ L m₁ m₂, opSideRaw l = .lam OpOpen.natTy (.lam OpOpen.natTy L m₂) m₁ ∧
+      pwRigid L = true ∧ OpOpen.open₂ OpOpen.natTy OpOpen.natTy L = l := by
+  unfold sideShapeOk at h
+  split at h
+  · rename_i A B L m₂ m₁ hraw
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨hA, hB⟩, hr⟩, ho⟩ := h
+    subst hA hB
+    exact ⟨L, m₁, m₂, hraw, hr, ho⟩
+  · cases h
+
+/-- **A rendered side is the closed side up to the binders' data**, so it is
+`λ (x y : Nat), L` itself with the binders' data of the rendering. -/
+theorem rendered_side_shape {l T : KExpr} (hs : sideShapeOk l = true)
+    (hT : T.erasePw = (opSideRaw l).erasePw) :
+    ∃ L m₁ m₂, T = .lam OpOpen.natTy (.lam OpOpen.natTy L m₂) m₁ ∧ pwRigid L = true ∧
+      OpOpen.open₂ OpOpen.natTy OpOpen.natTy L = l := by
+  obtain ⟨L, m₁, m₂, hraw, hr, ho⟩ := sideShape_spec hs
+  rw [hraw] at hT
+  cases T with
+  | lam A X ma =>
+    simp only [Ix.Kernel.Expr.erasePw] at hT
+    injection hT with hA hX _
+    cases X with
+    | lam B L' mb =>
+      simp only [Ix.Kernel.Expr.erasePw] at hX
+      injection hX with hB hL _
+      have eA := eq_of_erasePw_rigid OpOpen.natTy rfl A hA
+      have eB := eq_of_erasePw_rigid OpOpen.natTy rfl B hB
+      have eL := eq_of_erasePw_rigid L hr L' hL
+      subst eA eB eL
+      exact ⟨L', ma, mb, rfl, hr, ho⟩
+    | _ => simp only [Ix.Kernel.Expr.erasePw] at hX; exact nomatch hX
+  | _ => simp only [Ix.Kernel.Expr.erasePw] at hT; exact nomatch hT
+
+/-- **The cells of a rendered left side** are the addresses of the roles the side names. -/
+theorem opEquationLhs_cells {t : Ix.Kernel.RoleTable} {r : Ix.Kernel.Role} {k : Nat}
+    {eq : KExpr × KExpr} (hmem : (Ix.Kernel.Key.role r : KKey) ∈ Ix.Kernel.natOpNames)
+    (hget : (Ix.Kernel.natOpEquations 0 (Ix.Kernel.Key.role r : KKey))[k]? = some eq)
+    (htwf : t.wf = true) {x_tbl res : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (htbl : TableRep t h x_tbl)
+    (ev : ObsFn W "KernelRoleSpec::op_equation_lhs"
+      [x_tbl, .field (roleNum r), .field ((k : Nat) : F)] h res h' cs) :
+    ∀ x, AddrIn h' res x → ∃ r', t.addressOf? r' = some (ixAddr x) ∧
+      ∀ P, (opSideRaw eq.1).constsResolveBy P = true → P (Ix.Kernel.Key.role r') = true := by
+  obtain ⟨hk, hread⟩ := opSide_read opEquationLhsArmsRead_true hmem hget
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.op_equation_lhs.lookup
+    op_equation_lhs_noControl ev
+  have hp : (IxVM.KernelRoleSpec.op_equation_lhs.params.map fun (n, t) =>
+      (n, (t.subst []).toCore)).map Prod.fst = ["tbl", "r", "k"] := rfl
+  have hb : IxVM.KernelRoleSpec.op_equation_lhs.body =
+      .matchValue (.binary .add (.binary .mul (.literal 64) (.var "r")) (.var "k"))
+        (RolesAux.matchArms IxVM.KernelRoleSpec.op_equation_lhs.body) := rfl
+  rw [hp, hb] at d0
+  obtain ⟨bs, body, cs', sel, dArm⟩ :=
+    keyed_match_inv (a := roleNum r) (b := ((k : Nat) : F)) (by simp) (by simp) d0
+  have hread' : armReadsAs (RolesAux.matchArms IxVM.KernelRoleSpec.op_equation_lhs.body)
+      (ZMod.val (64 * roleNum r + ((k : Nat) : F))) (opSideRaw eq.1) 0 = true := by
+    rw [val_key r hk]
+    exact hread
+  exact cells_of_armReadsAs htwf hread' (by simp) htbl sel dArm
+
+/-- **The cells of a rendered right side** are the addresses of the roles the side names. -/
+theorem opEquationRhs_cells {t : Ix.Kernel.RoleTable} {r : Ix.Kernel.Role} {k : Nat}
+    {eq : KExpr × KExpr} (hmem : (Ix.Kernel.Key.role r : KKey) ∈ Ix.Kernel.natOpNames)
+    (hget : (Ix.Kernel.natOpEquations 0 (Ix.Kernel.Key.role r : KKey))[k]? = some eq)
+    (htwf : t.wf = true) {x_tbl res : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (htbl : TableRep t h x_tbl)
+    (ev : ObsFn W "KernelRoleSpec::op_equation_rhs"
+      [x_tbl, .field (roleNum r), .field ((k : Nat) : F)] h res h' cs) :
+    ∀ x, AddrIn h' res x → ∃ r', t.addressOf? r' = some (ixAddr x) ∧
+      ∀ P, (opSideRaw eq.2).constsResolveBy P = true → P (Ix.Kernel.Key.role r') = true := by
+  obtain ⟨hk, hread⟩ := opSide_read opEquationRhsArmsRead_true hmem hget
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelRoleSpec.op_equation_rhs.lookup
+    op_equation_rhs_noControl ev
+  have hp : (IxVM.KernelRoleSpec.op_equation_rhs.params.map fun (n, t) =>
+      (n, (t.subst []).toCore)).map Prod.fst = ["tbl", "r", "k"] := rfl
+  have hb : IxVM.KernelRoleSpec.op_equation_rhs.body =
+      .matchValue (.binary .add (.binary .mul (.literal 64) (.var "r")) (.var "k"))
+        (RolesAux.matchArms IxVM.KernelRoleSpec.op_equation_rhs.body) := rfl
+  rw [hp, hb] at d0
+  obtain ⟨bs, body, cs', sel, dArm⟩ :=
+    keyed_match_inv (a := roleNum r) (b := ((k : Nat) : F)) (by simp) (by simp) d0
+  have hread' : armReadsAs (RolesAux.matchArms IxVM.KernelRoleSpec.op_equation_rhs.body)
+      (ZMod.val (64 * roleNum r + ((k : Nat) : F))) (opSideRaw eq.2) 0 = true := by
+    rw [val_key r hk]
+    exact hread
+  exact cells_of_armReadsAs htwf hread' (by simp) htbl sel dArm
+
 end IxVM.Refinement.Binding
