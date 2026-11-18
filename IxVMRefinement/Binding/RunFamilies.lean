@@ -14,6 +14,7 @@ import IxVMRefinement.Binding.RouteModeledRun
 import IxVMRefinement.Binding.RootSafety
 import IxVMRefinement.Binding.PayloadDirect
 import IxVMRefinement.Binding.PayloadAdvice
+import IxVMRefinement.Binding.PayloadDirectLoads
 
 /-! # The family checks of a binding run, group by group
 
@@ -35,9 +36,10 @@ The run's payload and family selection, and what of the family form's clauses is
   the store sequence with the run's payload. Each field names the source it comes from.
 * `PayAdviceAt`, `PayContainerAt`, `PayRecordAt`, `PayloadDirectLeft`, `payloadDirect_of_left`,
   `RemainingFamilyClauses.payload`: the payload's facts at the addresses the family checks name
-  directly, with an advice record's and a container recursor's record and kind from their checks
-  (`Binding/PayloadAdvice.lean`), and the payload's facts from
-  those and the stepped ones (`Binding/PayloadDirect.lean`).
+  directly, from the family checks' own loads (`Binding/PayloadAdvice.lean`,
+  `Binding/PayloadDirectLoads.lean`) but an advice projection's member address and a container
+  recursor's logic, and the payload's facts from those and the stepped ones
+  (`Binding/PayloadDirect.lean`).
 * `families_of_remaining`: the family form's clauses at a group (`ClosureFam` and
   `FamilyAdmits`), for any rank of the group's new records (`GroupRanked`). -/
 
@@ -120,60 +122,99 @@ theorem payDirect_cases {calls : List (Call F)} {bAddr : _root_.Address}
   · exact Or.inr (Or.inl ⟨B, rb, cs, hB, hfc, ha⟩)
 
 /-- **What is left of the payload's facts at the addresses the run's family checks name
-directly** (`PayDirect`): the facts of `PayloadFactsOn` but a record and its kind at an advice
-record and at a container recursor, which their checks give (`adviceIn_record`,
-`adviceIn_notAxiomLike`, `containerRecIn_record`, `containerRecIn_notAxiomLike`). Sources, all
-today's circuit unless said otherwise:
-* `record`: the family record is loaded by `KernelModeled::check_family` (`family_refs_ok`,
-  `Ingress::load_verified_constant`);
-* `blockMembers`: an advice block's members are loaded by `KernelClaim::check_muts_all`
-  (`Ingress::projection_addr`, `get_ci`) and its constructors by its former's check
-  (`get_ci_cprj`); the family record's by `check_recs`;
-* `projMember`: an advice `IPrj`/`CPrj` record needs a `get_ci` in `check_advice_record`'s
-  projection arms (a change of the circuit source); a container recursor's projection record is
-  loaded by `rec_family_block`'s `get_ci`;
-* `logic`: `check_advice_record` admits only safe definitions, theorems, safe recursors and safe
-  inductive blocks (`muts_all_safe`); a container recursor and the family record by their blocks'
-  routes;
-* `notAxiomLike`: the family record is a block (`check_family`'s `family_recs`). -/
+directly** (`PayDirect`). The family checks' own loads give the rest (`payloadDirect_of_left`,
+`Binding/PayloadAdvice.lean`, `Binding/PayloadDirectLoads.lean`): the family record's record, kind,
+logic and member projections (`familyCall_record_facts`: `family_recs`, `build_recur_addrs`,
+`check_recs`); an advice record's record, kind and logic, and an advice block's member and
+constructor projections (`adviceCheck_logic`, `adviceCheck_block`: `check_advice_record`'s arms,
+`muts_all_safe`, `check_muts_all`); a container recursor's record and kind, that it is no block,
+and a projection among them at its block's member address (`rec_family_block`'s `get_ci`).
+Each field left names its producer:
+* `projMember`: an advice record that is an inductive or a constructor projection is at a member's
+  or a constructor's address of its block. Producer: `Ingress::get_ci` at the record in
+  `KernelModeled::check_advice_record`'s `IPrj` and `CPrj` arms, a change of the circuit source
+  (`Claim.proj_member_of_load` reads it); today's arms only check that the block is earlier
+  advice.
+* `containerLogic`: a container recursor is in Lean's logic. Producer:
+  `KernelModeled::check_container_rec` asserting the recursor's unsafe flag `0`, a change of the
+  circuit source. Today's circuit checks a container recursor on the native route
+  (`KernelCheck::check_const`'s `Rec` arm, `check_recursor_member`, which read no flag), so an
+  unsafe recursor record of a native block in the modeled block's closure passes as a witness of
+  kind 2. -/
 structure PayloadDirectLeft (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
-  record : ∀ g a, PayRecordAt calls bAddr t E₀ g a → ∃ c, recordOf E₀ a = some c
-  blockMembers : ∀ g B c ms, PayDirect t E₀ (runPayload calls bAddr t) g B →
-    recordOf E₀ B = some c → c.info = .muts ms → ∀ i m, ms[i]? = some m →
-      recordOf E₀ (memberAddr B i m) = some (memberProjection B i m) ∧
-      ∀ ind j, m = .indc ind → j < ind.ctors.size →
-        recordOf E₀ (ctorAddr B i j) = some (constructorProjection B i j)
-  projMember : ∀ g a c, PayDirect t E₀ (runPayload calls bAddr t) g a →
-    recordOf E₀ a = some c → IsProj c →
+  projMember : ∀ g a c, PayAdviceAt calls bAddr t E₀ g a → recordOf E₀ a = some c → IsProj c →
     ∃ cb, recordOf E₀ (Ix.Cert.ownerOf a c) = some cb ∧ ConstAddrOf (Ix.Cert.ownerOf a c) cb a
-  logic : ∀ g a c, PayDirect t E₀ (runPayload calls bAddr t) g a → recordOf E₀ a = some c →
+  containerLogic : ∀ g a c, PayContainerAt calls bAddr t E₀ g a → recordOf E₀ a = some c →
     InLogic c
-  notAxiomLike : ∀ g a c, PayRecordAt calls bAddr t E₀ g a →
-    New (groupStore t E₀ (runPayload calls bAddr t) g)
-      (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) a →
-    recordOf E₀ a = some c → ¬ IsAxiomLike c
 
 /-- **The payload's facts at the addresses the run's family checks name directly**, from what is
-left of them: at an advice record, its record and kind from the advice check. -/
+left of them (`PayloadDirectLeft`) and the family checks' own loads. -/
 theorem payloadDirect_of_left {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} (hC : CollisionFreeRun calls E₀)
     (h : PayloadDirectLeft calls bAddr t E₀) :
     PayloadFactsOn t E₀ (runPayload calls bAddr t) (PayDirect t E₀ (runPayload calls bAddr t))
     where
   record := fun g a ha => by
-    rcases payDirect_cases ha with ⟨B, rb, cs, -, hfc, hadv⟩ | ⟨B, rb, cs, -, hfc, hcon⟩ | hr
+    rcases payDirect_cases ha with ⟨B, rb, cs, -, hfc, hadv⟩ | ⟨B, rb, cs, -, hfc, hcon⟩ |
+        ⟨B, cs, -, hfc⟩
     · exact adviceIn_record hC.runStore hC.hashedStored hfc hadv
     · exact containerRecIn_record hC.runStore hC.hashedStored hfc hcon
-    · exact h.record g a hr
-  blockMembers := h.blockMembers
-  projMember := h.projMember
-  logic := h.logic
+    · obtain ⟨c, hc, -⟩ := familyCall_record_facts hC.runStore hC.hashedStored hfc
+      exact ⟨c, hc⟩
+  blockMembers := fun g B c ms hB hc hms => by
+    rcases payDirect_cases hB with ⟨B', rb, cs, -, hfc, hadv⟩ | ⟨B', rb, cs, -, hfc, hcon⟩ |
+        ⟨B', cs, -, hfc⟩
+    · exact (adviceCheck_block t hC.runStore hC.hashedStored
+        (adviceCheckObs_of_familyCall hfc hadv) hc hms).2
+    · exact (containerRecIn_notBlock hC.runStore hfc hcon hc ms hms).elim
+    · obtain ⟨c₀, hc₀, -, hshape⟩ := familyCall_record_facts hC.runStore hC.hashedStored hfc
+      have e : c₀ = c := Option.some.inj (hc₀.symm.trans hc)
+      subst e
+      rcases hshape with ⟨rcr, hr⟩ | ⟨ms₀, hms₀, hall, hmem⟩
+      · cases hr.symm.trans hms
+      · have e' : ms₀ = ms := Ixon.ConstantInfo.muts.inj (hms₀.symm.trans hms)
+        subst e'
+        intro i m hm
+        refine ⟨hmem i m hm, fun ind j hind _ => ?_⟩
+        have hmL : ms₀.toList[i]? = some m := by rw [Array.getElem?_toList]; exact hm
+        obtain ⟨r, hr⟩ := hall m (List.mem_of_getElem? hmL)
+        rw [hind] at hr
+        cases hr
+  projMember := fun g a c ha hc hp => by
+    rcases payDirect_cases ha with hadv | ⟨B, rb, cs, -, hfc, hcon⟩ | ⟨B, cs, -, hfc⟩
+    · exact h.projMember g a c hadv hc hp
+    · exact containerRecIn_projMember hC.runStore hC.hashedStored hfc hcon hc hp
+    · obtain ⟨c₀, hc₀, -, hshape⟩ := familyCall_record_facts hC.runStore hC.hashedStored hfc
+      have e : c₀ = c := Option.some.inj (hc₀.symm.trans hc)
+      subst e
+      exfalso
+      rcases hshape with ⟨rcr, hr⟩ | ⟨ms, hms, -, -⟩
+      · rcases hp with ⟨_, hq⟩ | ⟨_, hq⟩ | ⟨_, hq⟩ | ⟨_, hq⟩ <;> cases hr.symm.trans hq
+      · exact proj_not_block hp ⟨ms, hms⟩
+  logic := fun g a c ha hc => by
+    rcases payDirect_cases ha with ⟨B, rb, cs, -, hfc, hadv⟩ | hcon | ⟨B, cs, -, hfc⟩
+    · exact adviceCheck_logic t hC.runStore hC.hashedStored
+        (adviceCheckObs_of_familyCall hfc hadv) hc
+    · exact h.containerLogic g a c hcon hc
+    · obtain ⟨c₀, hc₀, hl, -⟩ := familyCall_record_facts hC.runStore hC.hashedStored hfc
+      rw [← Option.some.inj (hc₀.symm.trans hc)]
+      exact hl
   notAxiomLike := fun g a c ha hn hc => by
-    rcases payDirect_cases ha with ⟨B, rb, cs, -, hfc, hadv⟩ | ⟨B, rb, cs, -, hfc, hcon⟩ | hr
+    rcases payDirect_cases ha with ⟨B, rb, cs, -, hfc, hadv⟩ | ⟨B, rb, cs, -, hfc, hcon⟩ |
+        ⟨B, cs, -, hfc⟩
     · exact adviceIn_notAxiomLike hC.runStore hfc hadv hc
     · exact containerRecIn_notAxiomLike hC.runStore hfc hcon hc
-    · exact h.notAxiomLike g a c hr hn hc
+    · obtain ⟨c₀, hc₀, -, hshape⟩ := familyCall_record_facts hC.runStore hC.hashedStored hfc
+      have e : c₀ = c := Option.some.inj (hc₀.symm.trans hc)
+      subst e
+      rcases hshape with ⟨rcr, hr⟩ | ⟨ms, hms, -, -⟩
+      · rintro (⟨ax, hax⟩ | ⟨q, hq⟩)
+        · cases hr.symm.trans hax
+        · cases hr.symm.trans hq
+      · rintro (⟨ax, hax⟩ | ⟨q, hq⟩)
+        · cases hms.symm.trans hax
+        · cases hms.symm.trans hq
 
 section Run
 
@@ -485,8 +526,9 @@ proves them of any run. Each field is tagged with its source: today's circuit (n
 a named change of the circuit source, or unknown.
 * `payloadDirect`, `payloadSteps`: the facts the store's clauses need of the payload's records
   (`PayloadFacts`, which follows from the two with the advice check's own facts,
-  `RemainingFamilyClauses.payload`). `payloadDirect`: at the addresses the family checks name
-  (`PayloadDirectLeft`, which names each field's source). `payloadSteps`: at the addresses reached
+  `RemainingFamilyClauses.payload`). `payloadDirect`: at the addresses the family checks name,
+  what their own loads do not give (`PayloadDirectLeft`, which names each field's producer, both
+  changes of the circuit source). `payloadSteps`: at the addresses reached
   from those by an uncovered used reference or a projection's block (`PayStep`): what
   `KernelModeled::advice_refs_ok`, `family_refs_go` and `container_refs_ok` admit (an earlier
   advice record, a projection of an advice block, a used reference of the block or a projection
