@@ -212,9 +212,10 @@ private def secondRecordConjuncts (fuel : Nat) (env : Env .source) (canon : List
       tyTyped := tyTyped && !cvW'.type.hasFvar &&
         cvW'.type.allLevelParamsDefined cvC.levelParams && cvW'.type.constsResolve env &&
         cvW'.type.looseBVarsBounded 0 && okOf (inferTypeCore .verified env fuel 0 cvW'.type)
-      parts := parts ++ [{ raw := cvW, annotated := cvW', canonical := cvC,
-        canonicalKey := cvC.name, majorIndex := mI, rulePrefix := rP, rawRules := rulesW,
-        canonicalRules := rulesC, model? := model? }]
+      parts := parts ++ [{
+        raw := cvW, annotated := cvW', canonical := cvC, canonicalKey := cvC.name,
+        majorIndex := mI, rulePrefix := rP, rawRules := rulesW, canonicalRules := rulesC,
+        model? := model? }]
   let added := NativeTwin.provision parts ++ NativeTwin.models parts
   let nodup := decide ((added.map (·.name)).Nodup)
   let fresh := added.all fun ci => (env.find? ci.name).isNone
