@@ -175,4 +175,158 @@ theorem FamilyOfBlock.constAddr_of_nonempty {E : Ixon.Env} {B rb : _root_.Addres
   exact ⟨memberAddr rb 0 rs[0], Or.inr ⟨rs, 0, rs[0], h.record.muts,
     Array.getElem?_eq_getElem hr0, Or.inl rfl⟩⟩
 
+/-! ## The readers' fuel
+
+The readers walk a binder telescope and an application spine with the fixed fuel `fuel`; the
+circuit's readers (`last_binder_dom`, `collect_spine`) follow the expression structurally. A
+reader that answers at some fuel answers the same at every larger one, so raising the fuel, or
+deriving it from the record, keeps every answer read so far, and the answers at two fuels agree.
+What a fixed fuel cannot give is an answer the circuit reads past it. -/
+
+/-- **`lastDom` answers the same at every larger fuel.** -/
+theorem lastDom_mono (c : Ixon.Constant) (d : Ixon.Expr) :
+    ∀ (n m : Nat) (e : Ixon.Expr), lastDom c n e = some d → n ≤ m → lastDom c m e = some d := by
+  intro n
+  induction n with
+  | zero =>
+    intro m e h _
+    simp [lastDom] at h
+  | succ n ih =>
+    intro m e h hle
+    obtain ⟨m, rfl⟩ : ∃ m', m = m' + 1 := ⟨m - 1, by omega⟩
+    simp only [lastDom] at h ⊢
+    cases hn : node c e with
+    | all d' b =>
+      simp only [hn] at h ⊢
+      cases hb : node c b with
+      | all x y =>
+        simp only [hb] at h ⊢
+        exact ih m b h (by omega)
+      | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | app _ _ | lam _ _
+      | letE _ _ _ _ _ | share _ =>
+        simp only [hb] at h ⊢
+        exact h
+    | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | app _ _ | lam _ _
+    | letE _ _ _ _ _ | share _ =>
+      simp only [hn] at h <;> cases h
+
+/-- **`spineHead` answers the same at every larger fuel once it reached a node that is no
+application.** -/
+theorem spineHead_mono (c : Ixon.Constant) :
+    ∀ (n m : Nat) (e : Ixon.Expr), (∀ f a, spineHead c n e ≠ .app f a) → n ≤ m →
+      spineHead c m e = spineHead c n e := by
+  intro n
+  induction n with
+  | zero =>
+    intro m e hna _
+    cases m with
+    | zero => rfl
+    | succ m =>
+      simp only [spineHead] at hna ⊢
+      cases hn : node c e with
+      | app f a => exact absurd hn (hna f a)
+      | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | lam _ _ | all _ _
+      | letE _ _ _ _ _ | share _ => rfl
+  | succ n ih =>
+    intro m e hna hle
+    obtain ⟨m, rfl⟩ : ∃ m', m = m' + 1 := ⟨m - 1, by omega⟩
+    simp only [spineHead] at hna ⊢
+    cases hn : node c e with
+    | app f a =>
+      simp only [hn] at hna ⊢
+      exact ih m f hna (by omega)
+    | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | lam _ _ | all _ _
+    | letE _ _ _ _ _ | share _ => rfl
+
+/-- The constant at the head of a term, named by reference, at the fuel `n`. -/
+def refHeadAt (c : Ixon.Constant) (n : Nat) (e : Ixon.Expr) : Option _root_.Address :=
+  match spineHead c n e with
+  | .ref i _ => c.refs[i.toNat]?
+  | _ => none
+
+theorem refHead_eq (c : Ixon.Constant) (e : Ixon.Expr) : refHead c e = refHeadAt c fuel e := rfl
+
+/-- **`refHeadAt` answers the same at every larger fuel.** -/
+theorem refHeadAt_mono {c : Ixon.Constant} {n m : Nat} {e : Ixon.Expr} {a : _root_.Address}
+    (h : refHeadAt c n e = some a) (hle : n ≤ m) : refHeadAt c m e = some a := by
+  have hna : ∀ f x, spineHead c n e ≠ .app f x := by
+    intro f x hfx
+    unfold refHeadAt at h
+    rw [hfx] at h
+    simp at h
+  unfold refHeadAt at h ⊢
+  rw [spineHead_mono c n m e hna hle]
+  exact h
+
+/-- The carrier of motive `i` at the fuel `n` (`motiveCarrier` at `fuel`). -/
+def motiveCarrierAt (c : Ixon.Constant) (r : Ixon.Recursor) (i n : Nat) :
+    Option _root_.Address := do
+  let e ← peel c (r.params.toNat + i) r.typ
+  let m ← domOf c e
+  let d ← lastDom c n m
+  refHeadAt c n d
+
+/-- The head of the major premise's type at the fuel `n` (`majorHead` at `fuel`). -/
+def majorHeadAt (c : Ixon.Constant) (r : Ixon.Recursor) (n : Nat) : Option _root_.Address := do
+  let e ← peel c (r.params.toNat + r.motives.toNat + r.minors.toNat + r.indices.toNat) r.typ
+  let d ← domOf c e
+  refHeadAt c n d
+
+theorem motiveCarrier_eq (c : Ixon.Constant) (r : Ixon.Recursor) (i : Nat) :
+    motiveCarrier c r i = motiveCarrierAt c r i fuel := rfl
+
+theorem majorHead_eq (c : Ixon.Constant) (r : Ixon.Recursor) :
+    majorHead c r = majorHeadAt c r fuel := rfl
+
+/-- **`motiveCarrierAt` answers the same at every larger fuel.** -/
+theorem motiveCarrierAt_mono {c : Ixon.Constant} {r : Ixon.Recursor} {i n m : Nat}
+    {a : _root_.Address} (h : motiveCarrierAt c r i n = some a) (hle : n ≤ m) :
+    motiveCarrierAt c r i m = some a := by
+  unfold motiveCarrierAt at h ⊢
+  cases hp : peel c (r.params.toNat + i) r.typ with
+  | none => simp [hp] at h
+  | some e =>
+    cases hd : domOf c e with
+    | none => simp [hp, hd] at h
+    | some mm =>
+      cases hl : lastDom c n mm with
+      | none => simp [hp, hd, hl] at h
+      | some d =>
+        have hl' : lastDom c m mm = some d := lastDom_mono c d n m mm hl hle
+        simp [hp, hd, hl] at h
+        simp [hp, hd, hl']
+        exact refHeadAt_mono h hle
+
+/-- **`majorHeadAt` answers the same at every larger fuel.** -/
+theorem majorHeadAt_mono {c : Ixon.Constant} {r : Ixon.Recursor} {n m : Nat}
+    {a : _root_.Address} (h : majorHeadAt c r n = some a) (hle : n ≤ m) :
+    majorHeadAt c r m = some a := by
+  unfold majorHeadAt at h ⊢
+  cases hp : peel c (r.params.toNat + r.motives.toNat + r.minors.toNat + r.indices.toNat)
+    r.typ with
+  | none => simp [hp] at h
+  | some e =>
+    cases hd : domOf c e with
+    | none => simp [hp, hd] at h
+    | some d =>
+      simp [hp, hd] at h
+      simp [hp, hd]
+      exact refHeadAt_mono h hle
+
+/-- **The carrier read at two fuels is one.** -/
+theorem motiveCarrierAt_unique {c : Ixon.Constant} {r : Ixon.Recursor} {i n n' : Nat}
+    {a a' : _root_.Address} (h : motiveCarrierAt c r i n = some a)
+    (h' : motiveCarrierAt c r i n' = some a') : a = a' := by
+  have e1 := motiveCarrierAt_mono h (Nat.le_max_left n n')
+  have e2 := motiveCarrierAt_mono h' (Nat.le_max_right n n')
+  exact Option.some.inj (e1.symm.trans e2)
+
+/-- **The major premise's head read at two fuels is one.** -/
+theorem majorHeadAt_unique {c : Ixon.Constant} {r : Ixon.Recursor} {n n' : Nat}
+    {a a' : _root_.Address} (h : majorHeadAt c r n = some a)
+    (h' : majorHeadAt c r n' = some a') : a = a' := by
+  have e1 := majorHeadAt_mono h (Nat.le_max_left n n')
+  have e2 := majorHeadAt_mono h' (Nat.le_max_right n n')
+  exact Option.some.inj (e1.symm.trans e2)
+
 end IxVM.Refinement.Binding.FamilyOf
