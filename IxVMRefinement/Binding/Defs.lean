@@ -16,8 +16,8 @@ what a run's admission of one group establishes, and the step from one to the ne
   limits 34 to 40 or 42 to 45: the well-founded block is validated at 33 and the literal
   support at 41.
 * `BFacts t G R env`: the internal part of the invariant. The prefix invariant at every
-  carried limit within `G` and every record store for `R` (`inv`); the projection-table guard
-  at every limit (`guard`); blocks stored whole (`whole`); every stored operation stored as
+  carried limit within `G` and every record store for `R` (`inv`); blocks stored whole
+  (`whole`); every stored operation stored as
   pinned (`opsPinned`) and only for an admitted group (`opsAdmitted`); and the stored shapes the
   later groups read (`shapes`: `Bool` and its constructors for the operations, the seven
   literal-support types for the literal rule, `Iff` and `Nonempty` for the standard axioms).
@@ -37,12 +37,9 @@ what a run's admission of one group establishes, and the step from one to the ne
   in force at `groupValLimit g`: from `Bnd` on `G` and `Admits` to `Bnd` on `G` and `g`.
   `StepInstance` is one step taken at concrete data, for non-vacuity.
 
-Why `guard` is at every limit. The guard of `projTablesGuard` depends on the limit only through
-the role context the circuit's `proj_guard` is called with. The typing statement's internal part
-(`Typing.Facts` on every group) asks for the prefix invariant at every limit, including the ones
-no context carries, and a limit can be lowered only with the guard at the lower limit
-(`Raise.lean`). So the guard is carried at every limit, and the prefix invariant at the carried
-ones.
+The firing of the stored projection tables is inside the prefix invariant's load contract and
+names no limit (`Core.ProjTablesFire`), so the invariant is carried at the carried limits only
+and a limit is lowered with no further input (`Raise.lean`).
 -/
 
 universe u
@@ -86,40 +83,9 @@ theorem limWithin_below (t : Ix.Kernel.RoleTable) (g : Nat) :
     LimWithin (· < g) t (some (valLimit g)) :=
   fun _ _ hr => Nat.lt_of_lt_of_le (hr _ rfl) (valLimit_le g)
 
-/-! ## The guard of `projTablesGuard`, and the roles that resolve -/
+/-! ## The roles that resolve -/
 
-section Guard
-
-/-- **The guard of `projTablesGuard`** at a scoped context: the field of
-`Core.ScopedLoadFacts`, stated alone. It is the one field of the load contract that reads the
-context's limit (through the role context `proj_guard` is called with) apart from `roleRes`. -/
-def ProjGuard (c : Core.ScopedCtx) : Prop :=
-  ∀ (bp ip ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
-      (b : Bytes.Address) (i : F),
-    ObsFn Core.W "KernelModeled::proj_ctor" [bp, ip] h ptr h' cs → Core.Good c.toCtx cs →
-    Bytes.RepAddressRef Core.addrTy h b bp → ip = .field i →
-    ∀ (j : Nat) (cvC : Ix.Kernel.ConstantVal .anon) (nP nF : Nat)
-      (tbl : Ix.Kernel.ProjTable .anon),
-      c.env.find? (c.κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) j)) =
-        some (.ctorInfo cvC nP nF) →
-      c.env.find? (Ix.Kernel.projTableName (c.κ (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)))) =
-        some (.projInfo tbl) →
-      Ix.Kernel.Expr.ctorTeleOk cvC.type (nP + nF) = true ∧
-      (Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true →
-        ∀ (f : F) (rc bp' rg : SourceValue F) (hg hg' : Heap F) (csg : List (Call F))
-          (g : Core.KLevel) (us : List Core.KLevel),
-          ZMod.val f < nF → us.length = tbl.levelParams.length →
-          ObsFn Core.W "KernelInfer::proj_guard" [rc, bp', .field i, .field f] hg rg hg' csg →
-          Core.Good c.toCtx csg → Core.RCRep c.t c.lim hg rc →
-          Bytes.RepAddressRef Core.addrTy hg b bp' →
-          IxVM.Refinement.KernelLevels.RepKLevel hg' g rg →
-          (∀ φ, Ix.Kernel.Level.eval φ
-            (Ix.Kernel.Level.subst (List.range us.length) us g) = 0) →
-          ∀ φ, Ix.Kernel.Level.eval φ
-            (Ix.Kernel.Level.subst tbl.levelParams us (tbl.entry (ZMod.val f)).fieldSort) = 0)
-
-theorem projGuard_of_loads {c : Core.ScopedCtx} (h : Core.ScopedLoadFacts c) : ProjGuard c :=
-  h.projTablesGuard
+section RoleRes
 
 /-- **Every fabricated role in force resolves**: the `roleRes` field of
 `Core.ScopedLoadFacts`, stated alone. -/
@@ -130,21 +96,7 @@ def RoleResAt (c : Core.ScopedCtx) : Prop :=
 theorem roleResAt_of_loads {c : Core.ScopedCtx} (h : Core.ScopedLoadFacts c) : RoleResAt c :=
   h.roleRes
 
-end Guard
-
-/-- **The guard at the prefix context** of `env` over the store `E`, at the limit `lim`. -/
-def GuardAt (E : Ixon.Env) (t : Ix.Kernel.RoleTable) (lim : Option Nat)
-    (env : Ix.Kernel.Env .anon) : Prop :=
-  ProjGuard (Core.Ctx.stored ⟨E, env, t, lim⟩)
-
-/-- **The guard holds where no projection table is stored.** -/
-theorem guardAt_of_noTable {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : Option Nat}
-    {env : Ix.Kernel.Env .anon}
-    (h : ∀ (k : Ix.Kernel.Key .anon) (tbl : Ix.Kernel.ProjTable .anon),
-      env.find? k ≠ some (.projInfo tbl)) :
-    GuardAt E t lim env := by
-  intro bp ip ptr hh hh' cs b i _ _ _ _ j cvC nP nF tbl _ htbl
-  exact (h _ tbl htbl).elim
+end RoleRes
 
 /-! ## Stored shapes -/
 
@@ -192,8 +144,6 @@ structure BFacts (t : Ix.Kernel.RoleTable) (G : Nat → Prop) (R : Ixon.Env)
   /-- The prefix invariant at every carried limit within `G`, for every record store for `R`. -/
   inv : ∀ E, RecordsFor R E → ∀ lim, Carried lim → LimWithin G t lim →
     Decl.PrefixInv.{u} E t lim env
-  /-- The projection-table guard at every limit. -/
-  guard : ∀ E, RecordsFor R E → ∀ lim, GuardAt E t lim env
   /-- A block is stored whole (`Typing.Facts.whole`). -/
   whole : ∀ E, RecordsFor R E →
     ∀ (a B : _root_.Address) (c cb : Ixon.Constant) (ms : Array Ixon.MutConst),

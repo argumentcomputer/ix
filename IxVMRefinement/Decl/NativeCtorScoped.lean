@@ -285,7 +285,8 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
         have hcty_pa : Tm cR.κ 0 (fun _ => default) m400 0 cvCa₀.type xcty :=
           (hcty_exact_m34.mono (e_aeq.trans (e_ws.trans (e_nil.trans (e_es.trans e_saf))))).toTm
         have hdoms_sh : StructDomsShared cR.env ta cvCa₀.type nP :=
-          check_param_agreement_scoped_spec (c := cC) (by omega) (hrc.mono e_to_pa) hef₁ loads hg_pa
+          check_param_agreement_scoped_spec (c := cC) (by omega) (hrc.mono e_to_pa) hef₁
+            loads.toScopedLoadBase (ScopedCoreFacts.fires ⟨hef₁, loads⟩) hg_pa
             (hta.mono e_to_pa) hcty_pa ev_pa
         have e_pa := ev_pa.heap_extends
         have e_from_m34_to_m430 :=
@@ -317,7 +318,8 @@ theorem native_ctor_scoped_runs (hLevels : IxVM.Consistency.Levels)
         have e_to_fu := e_cprj.trans e_from_m34_to_m476
         obtain ⟨sorts_j, hfsorts_j⟩ :=
           check_field_universes_scoped_spec hLevels (c := cC) (by omega) hlveq hinf₀ hopP hopF hopAll
-            (hrc.mono e_to_fu) hef₁ loads hg_fu
+            (hrc.mono e_to_fu) hef₁ loads.toScopedLoadBase (ScopedCoreFacts.fires ⟨hef₁, loads⟩)
+            hg_fu
             (repKLevel_heapMono₂ e_to_fu hpind)
             (hcty_exact_m34.mono e_from_m34_to_m476).toTm hnt_476 ev_fu
         have e_fu := ev_fu.heap_extends

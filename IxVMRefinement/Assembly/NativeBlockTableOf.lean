@@ -11,9 +11,9 @@ import IxVMRefinement.Decl.NativeEnv
 block's install without its recursor, from the install with the family named (the telescope
 constant is the stored former, the constructors are `ctorsA`), the new constants as the store
 reads them (`BlockInstall`), the prefix invariant, and the freshness of the former's key. The
-bundle's `guard` clause is not derived here: it is taken as the named input `BlockGuard` (the
-circuit's `proj_guard` recomputes the field sorts at each use, the table's guards are the sorts the
-install fixed; relating them needs that two inferred sorts of one domain agree in zero-ness).
+bundle's `fire` clause is not derived here: it is taken as the named input `BlockFire` (the
+firing of the new table at every context, which the table's certificate gives with the reading
+of a `proj_guard` run).
 
 * `table`: `Decl.checkNativeTable_struct_inv` at the one constructor (no index); the stored
   constructor found among the new constants; the entries' head data from the store invariant
@@ -39,28 +39,20 @@ open Ix.Kernel (ConstantInfo ConstantVal IndCaps)
 set_option maxHeartbeats 1600000
 set_option linter.unusedVariables false
 
-/-- **The guard clause of the new projection table**: the field `BlockTable.guard`, as a named
-input (module docstring). -/
-def BlockGuard (c : Core.Ctx) (new : List (ConstantInfo .anon)) (B : _root_.Address) : Prop :=
-  ∀ (i : F), ZMod.val i = 0 → ∀ (j : Nat) (cvC : ConstantVal .anon) (nP nF : Nat)
-      (tbl : Ix.Kernel.ProjTable .anon),
-    (appCtx c new).env.find? ((appCtx c new).stored.κ (Core.cprjAddr B 0 j)) =
-      some (.ctorInfo cvC nP nF) →
-    (appCtx c new).env.find?
-        (Ix.Kernel.projTableName ((appCtx c new).stored.κ (Core.iprjAddr B 0))) =
+/-- **The firing of the new projection table**: the field `BlockTable.fire`, as a named input
+(module docstring). Where the family's sort passes the zero test, the table the install stores
+at the family's table name fires at every context over the role table and the store, with the
+family's first constructor as the install stores it. No limit occurs. -/
+def BlockFire (c : Core.Ctx) (new : List (ConstantInfo .anon)) (B : _root_.Address) : Prop :=
+  ∀ tbl : Ix.Kernel.ProjTable .anon,
+    (appCtx c new).env.find? (Ix.Kernel.projTableName (Core.keyOf c.t (Core.iprjAddr B 0))) =
       some (.projInfo tbl) →
     Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true →
-    ∀ (f : F) (rc bp' rg : SourceValue F) (hg hg' : Heap F) (csg : List (Call F))
-      (g : Core.KLevel) (us : List Core.KLevel) (b : Bytes.Address),
-      ZMod.val f < nF → us.length = tbl.levelParams.length →
-      ObsFn Core.W "KernelInfer::proj_guard" [rc, bp', .field i, .field f] hg rg hg' csg →
-      Core.Good (appCtx c new) csg → Core.RCRep c.t c.lim hg rc →
-      Bytes.RepAddressRef Core.addrTy hg b bp' → Core.ixAddr b = B →
-      IxVM.Refinement.KernelLevels.RepKLevel hg' g rg →
-      (∀ φ, Ix.Kernel.Level.eval φ
-        (Ix.Kernel.Level.subst (List.range us.length) us g) = 0) →
-      ∀ φ, Ix.Kernel.Level.eval φ
-        (Ix.Kernel.Level.subst tbl.levelParams us (tbl.entry (ZMod.val f)).fieldSort) = 0
+    ∃ (cvC : ConstantVal .anon) (nP nF : Nat),
+      (appCtx c new).env.find? (Core.keyOf c.t (Core.cprjAddr B 0 0)) =
+        some (.ctorInfo cvC nP nF) ∧
+      Core.ProjTableFires c.t c.E (Core.keyOf c.t (Core.iprjAddr B 0)) tbl
+        (Core.keyOf c.t (Core.cprjAddr B 0 0)) cvC
 
 /-! ## Telescope facts -/
 
@@ -304,7 +296,7 @@ them (`hI`), the prefix invariant, the block's pins and keys (`hpin`, `hna`, fro
 `blockReads_of_member`), the install with the family named (`hfacts`, with the recognised
 former `hcvT`, its counts `hnP`/`hnIdx` and the stored constructors `hlenA`/`hctorsA`: the
 conclusions of `ctorOuts_of_member_named` and `nativeNoRecFacts_of_outs_named`), the freshness
-of the former's key, and the guard clause. -/
+of the former's key, and the firing of the new table. -/
 theorem blockTable_of_install {c : Core.Ctx} {new : List (ConstantInfo .anon)}
     {B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {caps : IndCaps .anon}
     {blk : List (ConstantInfo .anon)} {p₀ p : Ix.Kernel.NativeParts .anon}
@@ -323,7 +315,7 @@ theorem blockTable_of_install {c : Core.Ctx} {new : List (ConstantInfo .anon)}
       cA.1.name = Core.keyOf c.t (Core.cprjAddr B 0 j) ∧
         cA.1.levelParams = List.range ind.lvls.toNat)
     (hfreshT : c.env.find? (Core.keyOf c.t (Core.iprjAddr B 0)) = none)
-    (hguard : BlockGuard c new B) :
+    (hfire : BlockFire c new B) :
     BlockTable c new B ind := by
   have hnaKeys : ∀ ci ∈ blk, Decl.NonAuxKey ci.name := fun ci hci =>
     (hna.1 ci (by simpa [IxVM.Consistency.installs, hpin] using hci)).1
@@ -348,7 +340,7 @@ theorem blockTable_of_install {c : Core.Ctx} {new : List (ConstantInfo .anon)}
   obtain ⟨hnewC, hnewT⟩ := new_mem_of_checkNativeTable hTbl
   have hstoredCtor : ∀ cA ∈ ctorsB, (appCtx c new).env.find? cA.1.name =
       some (.ctorInfo cA.1 q.nP cA.2) := fun cA hcA => hI.newFind _ (hnewC cA hcA)
-  refine ⟨?_, ?_, ?_, ?_, hguard⟩
+  refine ⟨?_, ?_, ?_, ?_, hfire⟩
   · -- table
     intro hi0 hs1
     have hlen1 : ctorsB.length = 1 := hlenA.trans hs1

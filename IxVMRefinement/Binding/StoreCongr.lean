@@ -115,8 +115,6 @@ theorem bfacts_storeCongr {t : Ix.Kernel.RoleTable} {G : Nat → Prop}
     BFacts.{u} t G R' env where
   inv := fun E hE =>
     h.inv E (recordsFor_storeCongr (fun a => (hc a).symm) (fun a => (hb a).symm) hE)
-  guard := fun E hE =>
-    h.guard E (recordsFor_storeCongr (fun a => (hc a).symm) (fun a => (hb a).symm) hE)
   whole := fun E hE =>
     h.whole E (recordsFor_storeCongr (fun a => (hc a).symm) (fun a => (hb a).symm) hE)
   opsPinned := h.opsPinned

@@ -191,6 +191,10 @@ structure ScopedCoreFacts (c : ScopedCtx) : Prop where
 theorem ScopedCoreFacts.base {c : ScopedCtx} (hc : ScopedCoreFacts c) : ScopedCoreBase c :=
   ⟨hc.env, hc.loads.toScopedLoadBase⟩
 
+/-- A lemma stated before the registry takes the facts a prefix carries: they are read as their
+part before the registry. -/
+instance {c : ScopedCtx} : Coe (ScopedCoreFacts c) (ScopedCoreBase c) := ⟨ScopedCoreFacts.base⟩
+
 /-- The firing of the projection guards at the context, read off the load contract. -/
 theorem ScopedCoreFacts.fires {c : ScopedCtx} (hc : ScopedCoreFacts c) : ProjGuardFires c :=
   hc.loads.projFire.fires hc.base
@@ -241,17 +245,6 @@ theorem ScopedCoreFacts.res_of_role {c : ScopedCtx} (hc : ScopedCoreFacts c)
     {r : Ix.Kernel.Role} {a : _root_.Address} (hb : c.t.addressOf? r = some a)
     (hf : c.inForce r) (hi : fabricatedRole r = true) : c.κ a ≠ unresolvedKey :=
   hc.base.res_of_role hb hf hi
-
-/-- `resolve_key` also reads the resolution off the facts a prefix carries. -/
-macro_rules
-  | `(tactic| resolve_key) => `(tactic| first
-      | with_reducible (first
-        | exact ScopedCoreFacts.res_of_find (by assumption) (by assumption)
-        | exact ScopedCoreFacts.res_of_ind (by assumption) (by assumption) (by assumption)
-        | exact ScopedCoreFacts.res_of_ctor (by assumption) (by assumption) (by assumption)
-            (by assumption))
-      | exact ScopedCoreFacts.res_of_role (by with_reducible assumption)
-          (by with_reducible assumption) (by with_reducible assumption) (by decide))
 
 /-! ## The unrestricted contract of the seams instance -/
 

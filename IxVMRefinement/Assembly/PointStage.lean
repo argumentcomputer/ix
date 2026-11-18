@@ -439,7 +439,7 @@ theorem stagedLoads_append_formers {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
             hld hblk
         · exact h₁.inductBlock addr ptr h h' cs a b nl ty np ni nc u blk i ev trivial hold good
             ha hld hblk
-      projTablesGuard := by
+      projCtorTele := by
         intro bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hctor' htbl
         obtain ⟨hc₁, -⟩ := ctorOld hctor'
         have ei := keep _
@@ -451,7 +451,13 @@ theorem stagedLoads_append_formers {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
           · obtain ⟨cv, caps, e⟩ := hind _ hm
             cases e
           · exact ho
-        exact h₁.projTablesGuard bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hc₁ htbl₁
+        exact h₁.projCtorTele bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hc₁ htbl₁
+      projFire := by
+        refine h₁.projFire.keep (fun _ _ hf => hext.find hf) (fun k tbl htbl => ?_)
+        rcases find?_append_cases (env := c.env) newF htbl with hm | ho
+        · obtain ⟨cv, caps, e⟩ := hind _ hm
+          cases e
+        · exact ho
       canonical := h₁.canonical
       storedRes := by
         intro a ci hf

@@ -9,7 +9,7 @@ that has no unconditional theorem yet. This module prints its statement (`#check
 its typing hypotheses (`#print` of `WalkedUnit` and `WalkedUnitStep`) and the axioms it
 reaches. A change to any of them fails the build.
 
-How to read it. The explicit arguments are the open obligations: the first nine are the
+How to read it. The explicit arguments are the open obligations: the first eight are the
 binding half's, the others the typing half's, for each kind of top-walked unit that has no
 step yet. The implicit argument `Run` is the binding claim layer's run predicate, which nothing
 supplies yet. A hypothesis is typed by the interface its obligation has today, so the theorem
@@ -22,7 +22,7 @@ The proof is complete when the theorem has no explicit argument.
 
 What this module does not print. A definition that a hypothesis reads (`BindingClaimExportObs`,
 `BasisOver`, `AtGroups`, `ClosureStepOver`, `RoleFreeShapes`, `RoleUnitStepOver`,
-`RaisedLimitGuard`, `FoldExtra`, `UnitStep` and the others) appears by name only: its own
+`FoldExtra`, `UnitStep` and the others) appears by name only: its own
 module holds it. The public statement and what it reads are printed in
 `Ix.IxVM.ConsistencyAudit` and `Ix.IxVM.ConsistencyModelAudit`. The module is outside any
 namespace, so every name prints in full. -/
@@ -62,10 +62,6 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
       IxVM.Refinement.Binding.AtGroups (Run calls)
         (IxVM.Refinement.Binding.RoleUnitStepOver (fun x => x ∈ IxVM.Consistency.standardAxioms)
           IxVM.Refinement.Typing.FormerOpenTraceAt))
-  (raisedLimitGuard :
-    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.AtGroups (Run calls) fun x t g =>
-        IxVM.Refinement.Binding.RaisedLimitGuard IxVM.Refinement.Typing.FormerOpenTraceAt t g)
   (standaloneTheoremOrOpaque :
     IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
       fun x x_1 x_2 x_3 c => ∃ d, c.info = Ixon.ConstantInfo.defn d ∧ d.kind ≠ Ix.DefKind.defn)
