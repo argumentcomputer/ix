@@ -95,11 +95,11 @@ theorem fireSem_of_cert_use {E E' : Ixon.Env}
     Ix.Kernel.Rules.FireSem (tbl.entry f) us := by
   have common := GuardRaw.common_lookup hr hb
   have lift : ∀ {X : Ixon.Env} {r : Expr .anon},
-      (∀ a c, recordOf X a = some c → ReaderReads.storeOver E E' a = some c) →
-      (∀ a bs, X.blobs.get? a = some bs → ReaderReads.blobOver E E' a = some bs) →
+      (∀ a c, recordOf X a = some c → storeOver E E' a = some c) →
+      (∀ a bs, X.blobs.get? a = some bs → blobOver E E' a = some bs) →
       ctorRaw X B i 0 = some r →
-      (GuardRaw.memberRoot (ReaderReads.storeOver E E') B i (GuardRaw.constructorType 0)).bind
-        (GuardRaw.readRoot (ReaderReads.blobOver E E')) = some r := by
+      (GuardRaw.memberRoot (storeOver E E') B i (GuardRaw.constructorType 0)).bind
+        (GuardRaw.readRoot (blobOver E E')) = some r := by
     intro X r hs hbl h
     unfold ctorRaw at h
     obtain ⟨root, hroot, hread⟩ := Option.bind_eq_some_iff.mp h
