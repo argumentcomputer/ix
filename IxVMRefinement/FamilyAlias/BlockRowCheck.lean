@@ -212,7 +212,7 @@ theorem famUnitFree_of_run {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     rw [e3] at h
     exact h
   have hm0 : Claim.MemberCheckedLimAt calls bAddr t A #[.indc ind] 0 lim :=
-    Claim.membersChecked_of_block hW.runStore hc hmuts hchk 0 (by decide)
+    Claim.membersChecked_of_block hW.runStore hc hmuts hchk 0 Nat.zero_lt_one
   have hdec : L1.EnvDecoded E := hctx.recordsFor.1
   have hrec : ∀ a d, recordOf E₀ a = some d → recordOf E a = some d := fun a d hd' =>
     (recordOf_eq_recordAt_of_decoded hdec a).trans (hctx.runRecord a d hd')
