@@ -22,7 +22,8 @@ theorems, `Binding.loadedTableAdmits` and `Binding.loadedTablePinsPrelude`). The
 two of the closure's steps in the family form (a block with its family record, a twin; the step
 of a unit with no family record and no twin is a theorem,
 `Binding.closureUnitSteps_bindingRun`), then the stored shapes of a group with no role unit and
-the role unit of an operation in the family form. The run predicate holds the prelude pin, the store after the
+that no certificate of a well-founded operation projects the operation (the role unit of an
+operation in the family form is a theorem from it). The run predicate holds the prelude pin, the store after the
 basis groups, the admission of each group with its reading clause and the group's family checks,
 so the fold's hypotheses about those are its projections and are not listed; the basis groups'
 family form and the standard axioms' role unit are theorems. A hypothesis is typed
@@ -36,7 +37,7 @@ The proof is complete when the theorem has no explicit argument.
 
 What this module does not print. A definition that a hypothesis reads
 (`RemainingStoreClausesOfRun`, `BindingRun`, `AtGroups`,
-`ClosureFamilySteps`, `ClosureTwinSteps`, `RoleFreeShapes`, `RoleUnitStepOverW`,
+`ClosureFamilySteps`, `ClosureTwinSteps`, `RoleFreeShapes`, `CertProjFree`,
 `FamilyGraphInnerOwed`,
 `FamilyBlockCheckRow`, `FamilyTwinRow`, `FoldExtra`, `UnitStep` and the others) appears by name only: its own
 module holds it. The public statement and what it reads are printed in
@@ -62,11 +63,8 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
       IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
         (IxVM.Refinement.Binding.RoleFreeShapes IxVM.Refinement.Typing.FormerOpenTraceAt))
-  (operationRoleUnit :
-    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
-        (IxVM.Refinement.Binding.RoleUnitStepOverW (fun x => x ∈ IxVM.Refinement.RoleOps.opRoles)
-          IxVM.Refinement.Typing.FormerOpenTraceAt))
+  (certProjFree :
+    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)), IxVM.Refinement.Binding.CertProjFree calls)
   (Pref : IxVM.Refinement.Typing.RunPref) (familyGraph : IxVM.Refinement.Typing.FamilyGraphInnerOwed Pref)
   (familyBlock : IxVM.Refinement.Typing.FamilyAlias.FamilyBlockCheckRow IxVM.Refinement.Typing.FormerOpenTraceAt)
   (familyTwin : IxVM.Refinement.Typing.FamilyTwinRow IxVM.Refinement.Typing.FormerOpenTraceAt) :
