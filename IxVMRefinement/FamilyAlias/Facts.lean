@@ -45,10 +45,9 @@ the derivations name:
 2. the constants outside the advice that the advice uses (the payload's witnessed references):
    the records of basis roles, members of the block's dependency closure, and the types,
    constructors and recursors of the containers a nested block nests through;
-3. what the terms of the block and of its family record name outside the family;
-4. the pinned equality, where the family has a recursor.
+3. what the terms of the block and of its family record name outside the family.
 
-No field names the first three beyond the models and the theorems; the constructors of a
+No field names these beyond the models and the theorems; the constructors of a
 container appear as `RuleCtor`'s first case. The order of these constants in `env` is not read.
 What is assumed is that all of them are stored before the alias group and the block are. The
 check itself runs them in this order, each at the family check's own role context, hence at one
@@ -56,8 +55,15 @@ limit: the witnesses (a basis role's record with its closure; a container's recu
 advice records in the payload's order, each of which uses only earlier advice, projections of
 earlier advice blocks and witnessed references.
 
-A family record with no recursor is covered as stated: `recs` and `eqStored` are then empty
-conditions, and `adv.thms` is empty.
+A family record with no recursor is covered as stated: `recs` is then an empty condition, and
+`adv.thms` is empty.
+
+**The pinned equality is not among the facts.** IxC's record asks that the pinned equality be
+stored wherever the family has a recursor. The check reads the equality's address only inside
+a rule's statement, so it establishes nothing where no recursor has a rule. That lookup is a
+premise of whoever uses the facts: every environment a family step is asked at extends the
+environment of a valid table, which holds the pinned blocks whole (`eqPin_of_shape`,
+`FamilyAlias/EqPin.lean`).
 
 **The circuit this is stated against** is the family check with a family recursor's declared
 type accepted only as the reconstruction or its full consumption and the auxiliary members in
@@ -324,9 +330,7 @@ sides of each recursor's rules. `env` stores the advice.
   ones. For a recursor this is `expr_mentions_addrs(ty, fam) = 0` in `check_recs`. For a type
   and a constructor it **needs change 2**: the same assertion on a type's type against every
   member, and on a constructor's type against the constructors and the recursors;
-* `recs`: each rule of each recursor against its theorem (`check_recs`, `check_rules`);
-* `eqStored`: the pinned equality is stored (the statements are equations at the equality
-  role's address, `check_iota_rule`). -/
+* `recs`: each rule of each recursor against its theorem (`check_recs`, `check_rules`). -/
 structure FamilyCheckFacts (env : Env .anon) (blk : List (ConstantInfo .anon))
     (adv : FamilyAdvice) (tys : List KExpr) (rhsss : List (List KExpr)) : Prop where
   split : blk = nonrecsOf blk ++ recsOf blk
@@ -336,6 +340,5 @@ structure FamilyCheckFacts (env : Env .anon) (blk : List (ConstantInfo .anon))
   typesScoped : typesScopedB (blk.map (·.name)) tys = true
   recs : RecsFacts env adv.ren blk tys (recsOf blk) (tys.drop (nonrecsOf blk).length) rhsss
     adv.thms
-  eqStored : recsOf blk ≠ [] → env.find? eqName = some eqA
 
 end IxVM.Refinement.Decl.FamilyAlias

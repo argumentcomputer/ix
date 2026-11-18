@@ -328,9 +328,7 @@ def familyFactsCheck (fuel : Nat) (env : Env .anon) (blk : List (ConstantInfo .a
     (typesScopedB (blk.map (·.name)) tys = true)
   let h6 ← recsFactsCheck fuel env adv.ren blk tys (recsOf blk)
     (tys.drop (nonrecsOf blk).length) rhsss adv.thms
-  let h7 ← guardP "family: the pinned equality is not stored"
-    (recsOf blk ≠ [] → env.find? eqName = some eqA)
-  return ⟨⟨h1.down, h2.down, h3.down, h4.down, h5.down, h6.down, h7.down⟩⟩
+  return ⟨⟨h1.down, h2.down, h3.down, h4.down, h5.down, h6.down⟩⟩
 
 /-- **A successful check is a proof of the facts.** -/
 theorem familyFacts_of_check {fuel : Nat} {env : Env .anon} {blk : List (ConstantInfo .anon)}
