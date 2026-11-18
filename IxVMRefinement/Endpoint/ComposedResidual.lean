@@ -1,6 +1,8 @@
 import IxVMRefinement.Endpoint.WalkedKindSteps
 import IxVMRefinement.FamilyGraph.Composition
 import IxVMRefinement.Assembly.NativeBlockWalked
+import IxVMRefinement.Binding.TableAdmits
+import IxVMRefinement.Binding.TableAdmitsValidate
 
 /-! # The composed statement from its open obligations
 
@@ -200,12 +202,13 @@ theorem circuitComposed_of_parts
 are proved passed in. The binding claim layer's run predicate is `Binding.BindingRun`, by the
 run's calls.
 
-The first seven hypotheses are the binding half's. Three are the parts of the claim's export
-that remain (`Binding.bindingClaimExport_of_table_and_stores`; the claim's decode is proved,
-`Claim.verify_claim_decode_binding_spec`): that the table a binding run loads is the admitted
-table of bytes the run hashed (`tableAdmits`), that such a table binding every role pins the
-prelude (`preludePins`), and the stores of a run, with every clause of each group's admission
-but the observed validation of its roles (`groupStores`). The invariant at the six basis groups
+The first five hypotheses are the binding half's. One is the part of the claim's export that
+remains (`Binding.bindingClaimExport_of_table_and_stores`; the claim's decode is proved,
+`Claim.verify_claim_decode_binding_spec`, and so are the other two parts: that the table a
+binding run loads is the admitted table of bytes the run hashed, `Binding.loadedTableAdmits`,
+and that such a table binding every role pins the prelude, `Binding.loadedTablePinsPrelude`):
+the stores of a run, with every clause of each group's admission but the observed validation
+of its roles (`groupStores`). The invariant at the six basis groups
 and the two admission chains are projections of the run predicate (`basisOver_bindingRun`,
 `admitsChain_bindingRun`, `admitsReadsChain_bindingRun`). The other four are, for every bounded
 run and each group from 6 to 76 of it, the closure, the stored shapes where the group has no
@@ -248,8 +251,6 @@ the use-site reading of the projection guard, a theorem (`Core.projGuardRunReadi
   the step from `TwinFamily.TwinStepTarget` through `TwinFamily.familyInstalled_of_clause`, and
   the target from `Decl.FamilyAlias.FamilyCheckFacts`. -/
 theorem circuitComposed_residual
-    (tableAdmits : LoadedTableAdmits)
-    (preludePins : LoadedTablePinsPrelude)
     (groupStores : ∀ calls, GroupStoresOfRun calls)
     (groupClosure :
       ∀ calls, AtGroups (BindingRun calls) (ClosureStepOver.{u} FormerOpenTraceAt))
@@ -267,7 +268,8 @@ theorem circuitComposed_residual
     (familyTwin : FamilyTwinRow.{u} FormerOpenTraceAt) :
     CircuitComposed.{u} :=
   circuitComposed_of_parts
-    (bindingClaimExport_of_table_and_stores tableAdmits preludePins groupStores)
+    (bindingClaimExport_of_table_and_stores Binding.loadedTableAdmits
+      Binding.loadedTablePinsPrelude groupStores)
     (fun calls => basisOver_bindingRun FormerOpenTraceAt calls) admitsChain_bindingRun
     admitsReadsChain_bindingRun
     groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit
