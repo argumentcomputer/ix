@@ -337,10 +337,10 @@ theorem twinTarget_of_facts {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim : Opti
 
 /-- **The circuit-side seam of the twin step**, at a record form `RForm`: at every hypothesis of
 the target, the second record's declaration as read and the facts of its parts. What the circuit
-side needs of the second record's references beyond the hypotheses (that none is an inert
-axiom's) it takes from the second record's own family check. Where the family record is in the
-form `RForm` whenever the second record is, and `RForm` is the reconstruction's form at every
-member, each part's canonical member is above it (`CanonAbove`). -/
+side needs of the second record's references beyond the hypotheses (that none is the reference of
+an inert axiom) it takes from the second record's own family check. Where the family record is
+in the form `RForm` whenever the second record is, and `RForm` is the reconstruction's form at
+every member, each part's canonical member is above it (`CanonAbove`). -/
 def TwinSeam (RForm : RecordFormPred) : Prop :=
   ∀ (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
     (E₀ E : Ixon.Env) (env : Ix.Kernel.Env .anon) (B rb rb' : _root_.Address)
