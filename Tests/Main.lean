@@ -19,6 +19,7 @@ import Tests.Ix.Compile.KernelReportTests
 import Tests.Ix.Compile.LeanReportTests
 import Tests.Ix.Compile.GroundRefusal
 import Tests.Ix.Compile.SelectedClosure
+import Tests.Ix.CollectDependencies
 import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CheckerSupport
 import Tests.Ix.Compile.ClosureBinding
@@ -168,6 +169,8 @@ def registry : List Entry := [
   -- selected closures (`collectSelectedDeps`): whole logical units, a
   -- matcher's unit, mutual siblings, checker support from `Role.deps`
   .suite "compiler-selected-closure" .primary Tests.Ix.Compile.SelectedClosure.suite,
+  -- the raw dependency collector (`Lean.collectDependenciesMany`) lists a mutual family once
+  .suite "collect-dependencies" .primary Tests.Ix.CollectDependencies.suite,
   -- the formal IxVM program holds no address literal but its specification digest
   .suite "prim-addrs" .primary Tests.Ix.Kernel.PrimAddrs.suite,
   -- every IO byte the IxVM and multi-stark programs read is range-checked
