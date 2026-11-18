@@ -456,11 +456,56 @@ def runInner (leanEnv : Lean.Environment) : IO UInt32 := do
                  exercises := some "KernelModeled::check_advice_record", witness }
   runCases "ixvm-family-graph-records" cases (jobs := 2)
 
+/-- Payload edits of the `List`-nested tree's advice, each one more advice entry or witnessed
+reference than the accepted payload: the record at the role of `sorryAx` as a basis-role
+witness; the same record as an advice record; a dependency path that ends at a block record. The
+first two must be rejected; the third is expected to be accepted (a path is only followed). -/
+def runProbe (leanEnv : Lean.Environment) : IO UInt32 := do
+  let first := recordDefs "T"
+  let env0 ← loadSharedIxonEnv #[first, first.str "rec", first.str "rec_1"] leanEnv
+  let (env, rep) ← IO.ofExcept (IxVM.Model.generateReport
+    { env0 with models := {}, modelRecords := {}, modelHints := {}, modelBlobs := {},
+                modelDeps := {}, modelsAttached := false })
+  let ty ← lookupAddr env first
+  let some block := (env.getConst? ty).bind IxVM.Model.projectionBlock?
+    | throw (IO.userError "the tree is not a member of a block")
+  let some (_, adv) := rep.advice.find? (·.1 == block)
+    | throw (IO.userError "the tree's block has no model advice")
+  let p := adv.layout
+  let sorryA ← lookupAddr env `sorryAx
+  let some sorryC := env.getConst? sorryA | throw (IO.userError "no record for sorryAx")
+  let listA ← lookupAddr env `List
+  let some listB := (env.getConst? listA).bind IxVM.Model.projectionBlock?
+    | throw (IO.userError "List is not a member of a block")
+  let some blockRec := env.getConst? block | throw (IO.userError "no block record")
+  let some j := blockRec.refs.findIdx? (· == listA)
+    | throw (IO.userError "the block does not reference List")
+  IO.println s!"[ixvm-family-graph-records] probe: block {block}, sorryAx {sorryA}, List's block \
+    {listB} at reference {j}"
+  let variant (bytes : ByteArray) : Ixon.Env :=
+    { env with models := env.models.insert block bytes,
+               modelRecords := env.modelRecords.insert sorryA sorryC,
+               modelDeps := env.modelDeps.insert block ((env.modelDeps.getD block #[]).push sorryA) }
+  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
+  let probe (label : String) (bytes : ByteArray) (accept : Bool) (why : Option String) :
+      Builder := fun _ =>
+    Case.ofClaim s!"probe-{label}" (variant bytes) (.check ctx ty none) (accept := accept)
+      (rejectsWith := why)
+  runCases "ixvm-family-graph-records" (jobs := 2) #[
+    probe "control" p.ser true none,
+    probe "inert-axiom-as-basis-witness"
+      { p with witnesses := p.witnesses.push (sorryA, 0, [], []) }.ser false
+      (some "a reference to a role outside the basis"),
+    probe "inert-axiom-as-advice" { p with advice := p.advice.push sorryA }.ser false none,
+    probe "path-witness-ending-at-a-block"
+      { p with witnesses := p.witnesses.push (listB, 1, [j + 1, 0], []) }.ser true none]
+
 /-- The two nested families; with `IX_FAMILY_TWIN` set, the second recursor record; with
 `IX_FAMILY_INNER` set, the checks two family checks run on their advice. -/
 def run (leanEnv : Lean.Environment) : IO UInt32 := do
   if (← IO.getEnv "IX_FAMILY_TWIN").isSome then return (← runTwin leanEnv)
   if (← IO.getEnv "IX_FAMILY_INNER").isSome then return (← runInner leanEnv)
+  if (← IO.getEnv "IX_FAMILY_PROBE").isSome then return (← runProbe leanEnv)
   let names := families.foldl (fun acc f => acc ++ f.2.2.1) #[]
   let missing := names.filter (!leanEnv.constants.contains ·)
   unless missing.isEmpty do
