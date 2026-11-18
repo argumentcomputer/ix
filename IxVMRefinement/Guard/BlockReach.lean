@@ -87,6 +87,7 @@ theorem convExpr_keysIn {md : Ix.Kernel.Mode} {ecx : ECx md} {tbl : Array (ReadM
     obtain ⟨ev, hv, h⟩ := except_bind_ok.mp h
     simp only [pure, Except.pure, Except.ok.injEq] at h
     subst v
+    change KeysIn P ev
     exact convExpr_keysIn hkey hself htbl x (fun j hj => hI j (List.mem_cons_of_mem _ hj)) hv
   | .str i, _, v, h => by
     simp only [convExpr] at h
