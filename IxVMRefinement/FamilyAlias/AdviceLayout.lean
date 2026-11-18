@@ -1,4 +1,4 @@
-import IxVMRefinement.FamilyAlias.Check
+import IxVMRefinement.FamilyAlias.RuleCopy
 
 /-! # From IxC's modeled install to the advice layout
 
@@ -17,11 +17,11 @@ functions of the environment IxC's fold stores (`ModeledFamily`):
 * `familyAliases`: the alias group. The alias of a member keeps the model's declared type (the
   member's annotated type renamed to the model keys) and its level parameters, and its value is
   the advice constant at those parameters.
-* **The rule copy** (`ruleCopy`): the alias at an `iota` key keeps the stored statement, with the
-  binder domains of its telescope renamed to the advice keys. Its head (the recursor's model key),
-  the head of its major premise and a nested rule's pins stay over the model keys, as the record's
-  literal conjuncts read them; the binder domains are over the advice keys, so that the alias
-  renaming fixes the leaf annotations of the opened statement.
+* **The rule copy** (`ruleCopy`): the alias at an `iota` key is the copy of the advice statement
+  (`ruleCopyOfAdvice`, `FamilyAlias/RuleCopy.lean`): the advice theorem's type with the head of
+  its left side, the head of its major premise and a nested rule's pins over the model keys, as
+  the record's literal conjuncts read them. Its binder domains stay over the advice keys, so that
+  the alias renaming fixes the leaf annotations of the opened statement.
 * `familyTable`, `annotatedTypes`, `annotatedRules`: the alias table and the annotated data the
   record search takes.
 
@@ -114,11 +114,6 @@ def advicePrefix (m : ModeledFamily) : List (ConstantInfo .anon) :=
     else if m.isModelKey c.name then adviceConst m.adviceRen c
     else some c
 
-/-- The binder domains of a statement's telescope, renamed. -/
-def renameDomains (g : KKey → KKey) : KExpr → KExpr
-  | .forallE ty body mb => .forallE (ty.renameConsts g) (renameDomains g body) mb
-  | e => e
-
 /-- The alias at a model key: a definition by the advice constant at the alias's own level
 parameters. -/
 def aliasAt (g : KKey → KKey) (k : KKey) (lps : List LevelParam) (ty : KExpr) :
@@ -134,16 +129,28 @@ def memberAlias (m : ModeledFamily) (x : KKey) : Option (ConstantInfo .anon) :=
   (storedAt m (auxKey x .model)).map fun c =>
     aliasAt m.adviceRen (auxKey x .model) c.toConstantVal.levelParams c.toConstantVal.type
 
-/-- **The rule copy**: the stored statement of rule `j` of recursor `x`, its telescope's binder
-domains renamed to the advice keys. -/
-def ruleCopy (m : ModeledFamily) (x : KKey) (j : Nat) : Option (ConstantInfo .anon) :=
+/-- The major premise of a stored rule's copy, by the rule's fire mode. -/
+def ruleMajor (f : KKey → KKey) (r : RecRule .anon) : KExpr → KExpr :=
+  match r.fire with
+  | .plain => plainMajor (f r.ctor)
+  | .nested _ pins => nestedMajor f r.nfields pins
+  | .inert => id
+
+/-- **The rule copy** of rule `j` of recursor `x`, stored as `r`: the copy of the advice statement,
+which is the statement IxC stores at the `iota` key with its constants renamed to the advice keys
+and its level parameters at positions. -/
+def ruleCopy (m : ModeledFamily) (x : KKey) (j : Nat) (r : RecRule .anon) :
+    Option (ConstantInfo .anon) :=
   (storedAt m (auxKey (auxKey x .model) (.iota j))).map fun c =>
     aliasAt m.adviceRen (auxKey (auxKey x .model) (.iota j)) c.toConstantVal.levelParams
-      (renameDomains m.adviceRen c.toConstantVal.type)
+      (ruleCopyOfAdvice c.toConstantVal.levelParams x (ruleMajor (blockRen m.names) r)
+        (posOf c.toConstantVal.levelParams (c.toConstantVal.type.renameConsts m.adviceRen)))
 
 /-- The rule copies of a member: none unless it is a recursor. -/
-def ruleCopies (m : ModeledFamily) : ConstantInfo .anon → List (ConstantInfo .anon)
-  | .recInfo cv _ _ rules => (List.range rules.length).filterMap (ruleCopy m cv.name)
+def ruleCopies (m : ModeledFamily) (c : ConstantInfo .anon) : List (ConstantInfo .anon) :=
+  match storedAt m c.name with
+  | some (.recInfo cv _ _ rules) =>
+    rules.zipIdx.filterMap fun p => ruleCopy m cv.name p.2 p.1
   | _ => []
 
 /-- **The alias group of the family**, newest first: the rule copies, then the members' aliases

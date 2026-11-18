@@ -1,11 +1,11 @@
-import IxVMRefinement.FamilyAlias.AdviceLayout
+import IxVMRefinement.FamilyAlias.Check
 
 /-! # The rule copy, from the advice statement
 
-`FamilyAlias/AdviceLayout.lean` reads the rule copy off the statement IxC stores at the `iota`
-key (`ruleCopy`). A producer on the circuit's side has the advice statement instead: the theorem
-record's type, read with its level parameters at positions, over the advice keys. This module
-states the copy as a function of that statement (`ruleCopyOfAdvice`):
+The alias at an `iota` key of the family record is a copy of the advice theorem of the rule. A
+producer on the circuit's side has the advice statement: the theorem record's type, read with its
+level parameters at positions, over the advice keys. This module states the copy as a function
+of that statement (`ruleCopyOfAdvice`):
 
 * the statement's level parameters are renamed back from positions (`invPosOf`);
 * every binder domain of its telescope, the equation's type and its right side are kept, over the
