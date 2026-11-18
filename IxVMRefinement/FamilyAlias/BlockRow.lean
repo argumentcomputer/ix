@@ -10,8 +10,8 @@ import IxVMRefinement.FamilyGraph.Composition
 * `FamilyBlockCircuitRow`: what the circuit side hands the step of a block with its family
   record (`FamilyBlockCircuit`): the seam at each environment the step is handed (the family as
   read and the facts of its check), the block's record as a block of inductives, the route fact
-  at each inductive the step stores, the companion facts of each recursor it stores, and the load
-  facts that reach its new constants;
+  at the block (`ModeledAt E A`), the companion facts of each recursor the step stores, and the
+  load facts that reach its new constants;
 * `FamilyClaimRow`: a member of the block at the key of a claimed family record's constant
   address is a recursor (`hclaim`).
 
@@ -33,6 +33,51 @@ open IxVM.Refinement.Typing.TwinFamily (FamilyRecsModeled)
 open IxVM.Refinement.Decl.FamilyAlias (AliasGroup famJ FamilyAdvice FamilyCheckFacts isRecursor)
 
 set_option linter.unusedVariables false
+
+/-- **The route fact at each inductive the family step stores**, from the route fact at the
+block: the record the step's store holds at a family address is the run's (a member's or a
+constructor's projection), so an inductive projection there names the block. -/
+theorem famModeled_of_route {E₀ E : Ixon.Env} {A rb : _root_.Address} {c crb : Ixon.Constant}
+    {ms rs : Array Ixon.MutConst} (hB : FamBlockRecord E₀ A c ms) (hrb : FamRecRecord E₀ rb crb rs)
+    (hrun : ∀ a d, recordOf E₀ a = some d → Ix.Cert.recordAt E a = some d)
+    (hmod : ModeledAt E A) :
+    ∀ x, FamAddr A c rb crb x → ∀ (cm : Ixon.Constant) (ip : Ixon.InductiveProj),
+      Ix.Cert.recordAt E x = some cm → cm.info = .iPrj ip → ¬ NativeAt E ip.block := by
+  intro x hx cm ip hcm hinfo
+  have key : ∀ {d : Ixon.Constant}, recordOf E₀ x = some d → cm = d := fun hd => by
+    have h1 := hrun _ _ hd
+    rw [hcm] at h1
+    exact Option.some.inj h1
+  rcases hx with ⟨⟨-, hs⟩ | ⟨ms', i, m, hinfo', hget, hxm | ⟨ind, j, hind, hj, hxc⟩⟩⟩ |
+      ⟨⟨-, hs⟩ | ⟨rs', i, m, hinfo', hget, hxm | ⟨ind, j, hind, hj, hxc⟩⟩⟩
+  · exact (standalone_not_block hs ⟨ms, hB.muts⟩).elim
+  · have hmm : ms' = ms := Ixon.ConstantInfo.muts.inj (hinfo'.symm.trans hB.muts)
+    subst hmm
+    obtain ⟨ind, rfl⟩ := hB.indcs m (by simpa using Array.mem_of_getElem? hget)
+    have hc : cm = memberProjection A i (.indc ind) := key (by rw [hxm]; exact hB.members i _ hget)
+    subst hc
+    have hip : ip = ⟨i.toUInt64, A⟩ := (Ixon.ConstantInfo.iPrj.inj hinfo).symm
+    rw [hip]
+    exact hmod
+  · have hmm : ms' = ms := Ixon.ConstantInfo.muts.inj (hinfo'.symm.trans hB.muts)
+    subst hmm
+    subst hind
+    have hc : cm = constructorProjection A i j := key (by rw [hxc]; exact hB.ctors i ind j hget hj)
+    subst hc
+    simp [constructorProjection] at hinfo
+  · exact (standalone_not_block hs ⟨rs, hrb.muts⟩).elim
+  · have hmm : rs' = rs := Ixon.ConstantInfo.muts.inj (hinfo'.symm.trans hrb.muts)
+    subst hmm
+    obtain ⟨r, rfl⟩ := hrb.recrs m (by simpa using Array.mem_of_getElem? hget)
+    have hc : cm = memberProjection rb i (.recr r) :=
+      key (by rw [hxm]; exact hrb.members i _ hget)
+    subst hc
+    simp [memberProjection] at hinfo
+  · have hmm : rs' = rs := Ixon.ConstantInfo.muts.inj (hinfo'.symm.trans hrb.muts)
+    subst hmm
+    obtain ⟨r, hr⟩ := hrb.recrs m (by simpa using Array.mem_of_getElem? hget)
+    rw [hind] at hr
+    exact nomatch hr
 
 /-- **What the circuit side hands the step of the block at `A` with its family record at
 `rb`** (module docstring). -/
@@ -59,9 +104,8 @@ structure FamilyBlockCircuit (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       FamDeclReads t E₀ A c rb crb blk ∧ FamilyCheckFacts env blk adv' tys rhsss
   /-- The block's record is a block of inductives. -/
   block : ∃ ms, FamBlockRecord E₀ A c ms
-  /-- The route fact at each inductive the step stores. -/
-  modeled : ∀ x, FamAddr A c rb crb x → ∀ (cm : Ixon.Constant) (ip : Ixon.InductiveProj),
-    Ix.Cert.recordAt E x = some cm → cm.info = .iPrj ip → ¬ NativeAt E ip.block
+  /-- The route fact at the block. -/
+  route : ModeledAt E A
   /-- The companion facts of each recursor the step stores. -/
   recs : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
     (aliases blk new : List (ConstantInfo .anon)),
@@ -137,6 +181,7 @@ theorem familyBlockRow_of_circuit {L : Ix.Kernel.Env .anon → NativeFam .anon �
     · exact TwinFamily.constAddr_hash_size_of_block hrb.muts hx
   exact unitStepFamily_of_facts hC.seam (familyKeyFree_of_shape hctx.shape ht)
     (familyEqPin_of_shape hctx.shape) hcl
-    (famStepKeeps_foldExtra hL hsz hC.modeled hC.recs hC.loads)
+    (famStepKeeps_foldExtra hL hsz (famModeled_of_route hB hrb hctx.runRecord hC.route) hC.recs
+      hC.loads)
 
 end IxVM.Refinement.Typing.FamilyAlias
