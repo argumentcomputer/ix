@@ -287,7 +287,9 @@ theorem familyRecord_of_facts {env : Env .anon} {blk : List (ConstantInfo .anon)
     exact storedAs_storedMember hk (MembersFacts.get hmfs.1 hi hty).annotated
   by_cases hrecs : recsOf blk = []
   · -- no recursor
-    refine ⟨aliasMap tbl, as, _, hg, hroots, ⟨hF.split, _, hmem, Or.inl ⟨hrecs, rfl⟩⟩, ?_⟩
+    refine ⟨aliasMap tbl, as, _, hg, hroots, ?_, ?_⟩
+    · set_option smartUnfolding false in
+      exact ⟨hF.split, _, hmem, Or.inl ⟨hrecs, rfl⟩⟩
     intro ci hci
     have hci' : ci ∈ nonrecsOf blk ++ recsOf blk := by rw [← hF.split]; exact hci
     rw [hrecs, List.append_nil] at hci'
@@ -350,3 +352,61 @@ theorem familyRecord_of_facts {env : Env .anon} {blk : List (ConstantInfo .anon)
     · exact hstoredR ci hci'
 
 end IxVM.Refinement.Decl.FamilyAlias
+
+namespace IxVM.Refinement.Typing.FamilyAlias
+
+open IxVM.Consistency
+open Ix.Kernel (ConstantInfo ConstantVal)
+open Ix.Kernel.Semantics (DeclIndRenRunJ)
+open IxVM.Refinement.Decl.FamilyAlias (AliasGroup famJ FamilyAdvice FamilyCheckFacts
+  familyRecord_of_facts)
+
+/-- **The family step's conclusion from the family check's facts**: `FamilyStepTarget`'s
+conclusion, from the facts at the family as read (`FamDeclReads`), the prefix's store invariant
+and root synchronization, the pinned equality, and the target's own freshness and key-freedom
+hypotheses on the family's addresses. -/
+theorem famStepConclusion_of_facts {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
+    {B rb : _root_.Address} {cb crb : Ixon.Constant} {env : Ix.Kernel.Env .anon}
+    {blk : List (ConstantInfo .anon)} {adv : FamilyAdvice}
+    {tys : List IxVM.Refinement.Core.KExpr} {rhsss : List (List IxVM.Refinement.Core.KExpr)}
+    (hF : FamilyCheckFacts env blk adv tys rhsss)
+    (hreads : FamDeclReads t E₀ B cb rb crb blk)
+    (hsi : Ix.Kernel.Open.StoreInv env) (hroot : Decl.AuxRootSynced env)
+    (heq : env.find? Ix.Kernel.eqName = some Ix.Kernel.eqA)
+    (hfresh : ∀ x, FamAddr B cb rb crb x → env.find? (keyOf t x) = none)
+    (hfree : ∀ x, FamAddr B cb rb crb x → Decl.KeyFree (keyOf t x)) :
+    ∃ (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
+      (aliases blk' : List (ConstantInfo .anon)) (env₂ : Ix.Kernel.Env .anon),
+      AliasGroup env h aliases ∧
+      (∀ a ∈ aliases, ∃ ci ∈ blk', a.name.base = ci.name) ∧
+      FamDeclReads t E₀ B cb rb crb blk' ∧
+      DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk' env₂ ∧
+      (∀ ci ∈ blk', ∃ c, env₂.find? ci.name = some c ∧ StoredAs c ci) := by
+  have hmem : ∀ ci ∈ blk, ∃ x, FamAddr B cb rb crb x ∧ ci.name = keyOf t x := by
+    intro ci hci
+    obtain ⟨x, hx, hk, -⟩ := hreads.2.1 ci hci
+    exact ⟨x, hx, hk⟩
+  have hbase : ∀ ci ∈ blk, Decl.isBaseKey ci.name = true := by
+    intro ci hci
+    obtain ⟨x, -, hk⟩ := hmem ci hci
+    rw [hk]
+    exact Decl.isBaseKey_keyOf t x
+  have hfr : ∀ ci ∈ blk, env.find? ci.name = none := by
+    intro ci hci
+    obtain ⟨x, hx, hk⟩ := hmem ci hci
+    rw [hk]
+    exact hfresh x hx
+  have hkey : ∀ ci ∈ blk, Decl.isBaseKey ci.name = true ∧
+      Ix.Kernel.reservedBasisNames.contains ci.name = false := by
+    intro ci hci
+    obtain ⟨x, hx, hk⟩ := hmem ci hci
+    refine ⟨hbase ci hci, ?_⟩
+    rw [hk]
+    exact (hfree x hx).1
+  obtain ⟨h, as, env₂, hg, hroots, hd, hst⟩ := familyRecord_of_facts hF hsi hreads.1 hkey hfr
+    (fun ci hci => hroot.fresh_auxKey (hbase ci hci) (hfr ci hci) .model)
+    (fun ci hci j => hroot.fresh_auxKey2 (hbase ci hci) (hfr ci hci) .model (.iota j))
+    heq
+  exact ⟨h, as, blk, env₂, hg, hroots, hreads, hd, hst⟩
+
+end IxVM.Refinement.Typing.FamilyAlias
