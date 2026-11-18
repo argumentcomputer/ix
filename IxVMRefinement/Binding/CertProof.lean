@@ -477,14 +477,16 @@ private theorem subst_const_raw_aux (κ : _root_.Address → KKey) (a v : Source
             · exact Or.inr (Or.inl ⟨.letBody hc₂ hf', hne⟩)
             · exact Or.inr (Or.inr (.letBody hc₂ hp))
       | .Proj (m662 := m₂) (v646 := r₁) (x_s := xs) (x_i := xi) (ld12 := ld) (he640 := hr)
-          (hm639 := hm) (ev672 := e1) (hc697 := hc) .. =>
+          (ev_fcagpdzw := aeq) (hm639 := hm) (ev672 := e1) (hc697 := hc) .. =>
         have ext2 := cert_ext_snoc hm
-        have ext1 := e1.heap_extends
+        have ext0 := aeq.heap_extends
+        have ext1 := ext0.trans e1.heap_extends
         subst hc hr hm
         obtain ⟨s, i, Es, hxi, hXe, ra, hes, hres, hperm⟩ := hX.proj_of_load ld
         obtain ⟨addr, he, hcell⟩ := hX.cell_of_load ld
         subst hxi hXe he
-        obtain ⟨t1, c1⟩ := ih _ _ _ _ _ _ cert_lt_calls e1 rfl _ Es rfl hes ha hv
+        obtain ⟨t1, c1⟩ := ih _ _ _ _ _ _ cert_lt_calls e1 rfl _ Es rfl (hes.mono ext0)
+          (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha) (hv.mono ext0)
         refine ⟨?_, fun h₂ ext x hin => ?_⟩
         · show TmR κ _ (.proj (κ (ixAddr s)) (ZMod.val i)
             (Expr.substConstAll (κ (ixAddr b)) val Es)) _
