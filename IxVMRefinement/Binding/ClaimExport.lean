@@ -163,11 +163,14 @@ after the basis groups being the committed rows. A producer splits on the altern
 (`Claim.noColl_or_hashedCollision` and the committed footprint) and proves the clauses in the
 branch without a collision.
 
-Status: stated only. No store sequence over the records of an observed run has been exhibited,
-for the default table or any other; what is proved of every run is what the walks give a
-producer (`RoleValidationIn.kept_checked`, `topRec_block_members`, `topRec_proj_member`,
-`RoleVal.ValidateRoleIn.axiom_refs`, `RoleVal.ValidateRoleIn.eqns_evidence_walks`), and at the
-default table the store clauses of the `Bool` group over the committed rows.
+Status: stated only; it is not proved of any run, the default table's included. A store
+sequence over the records of an observed run is defined (`groupStore`, in
+`IxVMRefinement.Binding.RunStores`) and this statement is reduced to what is not proved of that
+sequence (`groupStoresOfRun_of_remaining`, `RemainingStoreClauses`, in
+`IxVMRefinement.Binding.GroupStores`): that the run loaded the basis rows, that a standard
+axiom's record is a safe axiom record, and the clauses `standing`, `logic`, `opsOwn`,
+`unitsLast` and the reading clause. The other clauses are proved of the sequence for every run
+in the alternative without a collision.
 
 The clause `Admits.opsOwn` (no new record of a group is an operation's other than the group's
 own) is stated against `KernelRoles::op_order_scan` as it will be after the next change of the
