@@ -2,6 +2,7 @@ import IxVMRefinement.Assembly.NativeBlockUnitStep
 import IxVMRefinement.Assembly.NativeAliasStepOver
 import IxVMRefinement.Binding.ClauseInvariant
 import IxVMRefinement.Binding.UnitDefn
+import IxVMRefinement.Guard.BlockReading
 
 /-! # The step of a block whose former is declared at its telescope, in the binding fold's form
 
@@ -195,5 +196,38 @@ theorem overUnitStep_nativeBlockTele {L : Ix.Kernel.Env .anon → NativeFam .ano
       hread (fun E hE => holdsBlock_of_recordsFor hE hRblock hRformer hRctors hblobs)
       (fun h1 h0 env new blk p₀ p ty' ctorsA caps hO hSorts hz E hE =>
         (blockCert_of_reading_lim hfieldsR hO hSorts h1 h0 hz).recordsFor hE))
+
+/-- **The same step from the closure of the witness store**: the field loop's reading at `B`
+over `R` (`hfieldsR` above) holds because `R` agrees with the run's store on what it holds, is
+closed under what its records use (`UsedClosed`), holds `B` and the run's blobs, and the run's
+store holds what the run hashed (`Guard.checkedSortsReadingAtBlock_of_usedClosed`). -/
+theorem overUnitStep_nativeBlockTele_closed {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    (hL : LinkLaws L) {calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)}
+    {t : Ix.Kernel.RoleTable} {G : Nat → Prop} {R E₀ Ec : Ixon.Env}
+    {envT : Ix.Kernel.Env .anon} {bAddr B : _root_.Address} {cb : Ixon.Constant}
+    {ind : Ixon.Inductive} {lim : Option Nat}
+    (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
+    (hH : LoadedReads.HashedRecordsStored calls E₀)
+    (hRc : RecordsFor R Ec) (hst : StepStore calls t E₀ Ec)
+    (hrec : BlockUnitRecord E₀ B cb ind)
+    (hRrun : ∀ a c, recordOf R a = some c → recordOf E₀ a = some c) (hRclosed : UsedClosed R)
+    (hRblock : recordOf R B = some cb)
+    (hRformer : recordOf R (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind)))
+    (hRctors : ∀ j < ind.ctors.size,
+      recordOf R (ctorAddr B 0 j) = some (constructorProjection B 0 j))
+    (hblobs : ∀ x b, E₀.blobs.get? x = some b → R.blobs.get? x = some b)
+    (hchk : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim)
+    (hcn : Carried lim) (hln : LimWithin G t lim)
+    (hnat : NativeRouteAt calls B) (htele : FormerAtTele t E₀ B cb ind)
+    (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
+    (hinert : InertClause t cb)
+    (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
+    (hcov : L1.CanonicalHashCoverage Ec calls)
+    (hread : Core.ProjGuardRunReading) :
+    OverUnitStep.{u} L t G R envT E₀ B cb :=
+  overUnitStep_nativeBlockTele hL ht hS hRc hst hrec hRblock hRformer hRctors hblobs hchk hcn hln
+    hnat htele hfree hinert hcover hcov hread
+    (Guard.checkedSortsReadingAtBlock_of_usedClosed hS hH hRrun hRclosed
+      (by rw [hRblock]; rfl) hblobs)
 
 end IxVM.Refinement.Binding

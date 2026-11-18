@@ -7,16 +7,18 @@ group's admission that read what the group's validations walked.
 
 * `GroupWalked calls bAddr t E₀ g recs`: `recs` is a closed list of records walked under the
   role context at the group's validation limit that holds the bound record of every role of the
-  group whose validation walks it, and every reference of the group's standard axiom that is
-  not covered. `groupWalked_exists` produces one from the observed validations of the group's
-  roles.
+  group whose validation walks it, every reference of the group's standard axiom that is
+  not covered, and every reference that is not covered of a proof in the evidence of a role of
+  the group, other than the role's own address (`roleEvidence_walked`). `groupWalked_exists`
+  produces one from the observed validations of the group's roles.
 * `GroupReach.listed`: an address the group's admission reaches is a record of the list.
 * `walkRank recs`: the rank of an address in the group's admission: the least depth of a record
   of the list at it, and one more than every depth for an address the list does not hold (a
   projection record added beside its block, the group's standard axiom).
 * The clauses, each for `groupStore t E₀ g` and `groupStore t E₀ (g + 1)`: `groupStore_kept`,
   `groupStore_checked`, `groupStore_rankUsed`, `groupStore_rankOwner`,
-  `groupStore_projMember`, `groupStore_usedClosed` (one step) and `groupStore_usedClosed_all`.
+  `groupStore_projMember`, `groupStore_usedClosed` (one step), `groupStore_usedClosed_all` and
+  `groupStore_evidenceRefs`.
 
 Two premises are named and not produced here:
 
@@ -83,16 +85,174 @@ structure GroupWalked (calls : List (Call F)) (bAddr : _root_.Address)
     ∀ a, t.addressOf? r = some a → ∃ x ∈ recs, x.addr = a
   axiomRefs : ∀ r ∈ roleGroup g, r ∈ standardAxioms → ∀ a, t.addressOf? r = some a →
     ∀ x, UsedRef E₀ a x → ¬ Claim.CoveredAt t (some (valLimit g)) x → ∃ y ∈ recs, y.addr = x
+  evidenceRefs : ∀ r ∈ roleGroup g, ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address))
+    (thm x : _root_.Address), (r, arr) ∈ t.evidence.toList →
+    Ix.Kernel.Evidence.proof thm ∈ arr.toList → UsedRef E₀ thm x → t.addressOf? r ≠ some x →
+    ¬ Claim.CoveredAt t (some (valLimit g)) x → ∃ y ∈ recs, y.addr = x
+
+/-- The table a role's validation reads is well formed. -/
+theorem RoleValidationIn.wf {g : Nat} {r : Ix.Kernel.Role}
+    (hv : RoleValidationIn calls bAddr t g r) : t.wf = true := by
+  obtain ⟨h, h', x_rc, x_tbl, res, cs, hrc, htbl, ev, hsub⟩ := hv
+  exact htbl.1
+
+set_option maxRecDepth 100000 in
+/-- A role with equations is an operation (kind 2) or a definition specified by equations
+(kind 5). -/
+theorem specKind_of_roleHasEquations {ro : Ix.Kernel.Role}
+    (he : RoleVal.roleHasEquations ro = true) :
+    RoleVal.roleSpecKindNat ro = 2 ∨ RoleVal.roleSpecKindNat ro = 5 := by
+  cases ro <;> first | exact absurd he (by decide) | decide
+
+/-- **The roles with evidence**: at a well-formed table a role with an evidence entry is an
+operation or a definition specified by equations. -/
+theorem evidence_specKind (hwf : t.wf = true) {r : Ix.Kernel.Role}
+    {arr : Array (Ix.Kernel.Evidence _root_.Address)} (hm : (r, arr) ∈ t.evidence.toList) :
+    RoleVal.roleSpecKindNat r = 2 ∨ RoleVal.roleSpecKindNat r = 5 :=
+  specKind_of_roleHasEquations (RoleVal.evidence_roleHasEquations_of_wf hwf hm)
+
+/-- **Closed lists for the entries of a list, joined**: one closed list that holds, for every
+entry, the addresses the entry's own list holds. -/
+theorem topRecs_cover {α : Type} {lim : Option Nat} (P : α → _root_.Address → Prop) :
+    ∀ (es : List α), (∀ e ∈ es, ∃ recs : List (Claim.TopRec calls bAddr t lim),
+      Claim.TopRecsClosed recs ∧ ∀ x, P e x → ∃ y ∈ recs, y.addr = x) →
+    ∃ recs : List (Claim.TopRec calls bAddr t lim), Claim.TopRecsClosed recs ∧
+      ∀ e ∈ es, ∀ x, P e x → ∃ y ∈ recs, y.addr = x
+  | [], _ => ⟨[], by simp [Claim.TopRecsClosed], fun e he => by cases he⟩
+  | e :: es, h => by
+    obtain ⟨r₁, hc₁, h₁⟩ := h e (List.mem_cons.mpr (Or.inl rfl))
+    obtain ⟨r₂, hc₂, h₂⟩ := topRecs_cover P es (fun e' he' => h e' (List.mem_cons_of_mem _ he'))
+    refine ⟨r₁ ++ r₂, hc₁.append hc₂, fun e' he' x hx => ?_⟩
+    rcases List.mem_cons.mp he' with h' | h'
+    · rw [h'] at hx
+      obtain ⟨y, hy, hya⟩ := h₁ x hx
+      exact ⟨y, List.mem_append_left _ hy, hya⟩
+    · obtain ⟨y, hy, hya⟩ := h₂ e' h' x hx
+      exact ⟨y, List.mem_append_right _ hy, hya⟩
+
+/-- **The references the proofs in a role's evidence use**, other than the role's own address
+and not covered at the group's validation limit, are records of a closed list walked under the
+role context at the group's validation limit: an equation theorem is walked with its closure
+(`RoleVal.ValidateRoleIn.eqns_evidence_walks`), a certificate's references one by one
+(`RoleVal.ValidateRoleIn.op_certificate_walks`). -/
+theorem roleEvidence_walked (hH : LoadedReads.HashedRecordsStored calls E₀) {g : Nat}
+    {r : Ix.Kernel.Role} (hv : RoleValidationIn calls bAddr t g r) :
+    ∃ recs : List (Claim.TopRec calls bAddr t (some (valLimit g))), Claim.TopRecsClosed recs ∧
+      ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm x : _root_.Address),
+        (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
+        UsedRef E₀ thm x → t.addressOf? r ≠ some x →
+        ¬ Claim.CoveredAt t (some (valLimit g)) x → ∃ y ∈ recs, y.addr = x := by
+  have hwf := hv.wf
+  have hv' : RoleVal.ValidateRoleIn calls bAddr t g r := hv
+  by_cases hex : ∃ arr₀, (r, arr₀) ∈ t.evidence.toList
+  swap
+  · exact ⟨[], by simp [Claim.TopRecsClosed], fun arr _ _ hm => absurd ⟨arr, hm⟩ hex⟩
+  obtain ⟨arr₀, hm₀⟩ := hex
+  rcases evidence_specKind hwf hm₀ with h2 | h5
+  · -- an operation: the references of each certificate, other than the operation's address
+    obtain ⟨a, had, -⟩ := (RoleValidationIn.walks hv).1
+    have hcover := topRecs_cover (calls := calls) (bAddr := bAddr) (t := t)
+      (lim := some (valLimit g))
+      (fun (e : Ix.Kernel.Evidence _root_.Address) (x : _root_.Address) =>
+        ∃ thm, e = .proof thm ∧ UsedRef E₀ thm x ∧ x ≠ a ∧
+          ¬ Claim.CoveredAt t (some (valLimit g)) x) arr₀.toList
+    obtain ⟨recs, hcl, hcov⟩ := hcover (by
+      intro e he
+      cases e with
+      | defeq =>
+        refine ⟨[], by simp [Claim.TopRecsClosed], fun x hx => ?_⟩
+        obtain ⟨_, h, _⟩ := hx
+        cases h
+      | proof thm =>
+        obtain ⟨rawBytes, c, hsz, hh, hbl, hde, hw⟩ :=
+          RoleVal.ValidateRoleIn.op_certificate_walks hv' h2 had hm₀ he
+        have hrec : recordOf E₀ thm = some c := by
+          obtain ⟨lc, hget, hraw, -⟩ :=
+            hH rawBytes c hh hsz (L1.deConstant_of_deConstantExact hde) hde
+          rw [hbl] at hget
+          unfold recordOf
+          rw [hget]
+          simp [hraw, hde, Except.toOption]
+        have hidx := topRecs_cover (calls := calls) (bAddr := bAddr) (t := t)
+          (lim := some (valLimit g))
+          (fun (j : Nat) (x : _root_.Address) => ∃ hj : j < c.refs.toList.length,
+            j ∈ Core.S0.usedRefIdxs c ∧ c.refs.toList[j] = x ∧ x ≠ a ∧
+              ¬ Claim.CoveredAt t (some (valLimit g)) x) (List.range c.refs.toList.length)
+        obtain ⟨recs, hcl, hj⟩ := hidx (by
+          intro j _
+          by_cases hP : ∃ hj : j < c.refs.toList.length, j ∈ Core.S0.usedRefIdxs c ∧
+              c.refs.toList[j] ≠ a ∧ ¬ Claim.CoveredAt t (some (valLimit g)) c.refs.toList[j]
+          · obtain ⟨hjl, hju, hjne, hjnc⟩ := hP
+            rcases hw j hjl hju hjne with hcov' | ⟨recs, hcl, hmem⟩
+            · exact absurd hcov' hjnc
+            · refine ⟨recs, hcl, fun x hx => ?_⟩
+              obtain ⟨_, _, hxe, _, _⟩ := hx
+              obtain ⟨y, hy, hya⟩ := List.mem_map.mp hmem
+              exact ⟨y, hy, hya.trans hxe⟩
+          · refine ⟨[], by simp [Claim.TopRecsClosed], fun x hx => ?_⟩
+            obtain ⟨hjl, hju, hxe, hxa, hnc⟩ := hx
+            exact (hP ⟨hjl, hju, by rw [hxe]; exact hxa, by rw [hxe]; exact hnc⟩).elim)
+        refine ⟨recs, hcl, fun x hx => ?_⟩
+        obtain ⟨thm', heq, hu, hxa, hnc⟩ := hx
+        have e : thm' = thm := (Ix.Kernel.Evidence.proof.inj heq).symm
+        rw [e] at hu
+        obtain ⟨c', i, hc', hi, hx⟩ := hu
+        have ec : c' = c := Option.some.inj (hc'.symm.trans hrec)
+        rw [ec] at hi hx
+        obtain ⟨hlt, hxe⟩ := Array.getElem?_eq_some_iff.mp hx
+        have hlt' : i < c.refs.toList.length := by simpa using hlt
+        exact hj i (List.mem_range.mpr hlt') x
+          ⟨hlt', by rw [Assembly.usedRefIdxs_eq]; exact hi, by simpa using hxe, hxa, hnc⟩)
+    refine ⟨recs, hcl, fun arr thm x hm hthm hu hne hnc => ?_⟩
+    have e := RoleVal.evidence_eq_of_wf hwf hm hm₀
+    rw [e] at hthm
+    have hxa : x ≠ a := fun hx => hne (by rw [hx]; exact had)
+    exact hcov _ hthm x ⟨thm, rfl, hu, hxa, hnc⟩
+  · -- a definition specified by equations: each theorem with its closure
+    have hcover := topRecs_cover (calls := calls) (bAddr := bAddr) (t := t)
+      (lim := some (valLimit g))
+      (fun (e : Ix.Kernel.Evidence _root_.Address) (x : _root_.Address) => e = .proof x)
+      arr₀.toList
+    obtain ⟨recs, hcl, hcov⟩ := hcover (by
+      intro e he
+      cases e with
+      | defeq =>
+        refine ⟨[], by simp [Claim.TopRecsClosed], fun x hx => ?_⟩
+        cases hx
+      | proof thm =>
+        obtain ⟨recs, hcl, hmem⟩ := RoleVal.ValidateRoleIn.eqns_evidence_walks hv' h5 hm₀ he
+        refine ⟨recs, hcl, fun x hx => ?_⟩
+        have e : thm = x := Ix.Kernel.Evidence.proof.inj hx
+        rw [e] at hmem
+        obtain ⟨y, hy, hya⟩ := List.mem_map.mp hmem
+        exact ⟨y, hy, hya⟩)
+    refine ⟨recs, hcl, fun arr thm x hm hthm hu hne hnc => ?_⟩
+    have e := RoleVal.evidence_eq_of_wf hwf hm hm₀
+    rw [e] at hthm
+    obtain ⟨y, hy, hya⟩ := hcov _ hthm thm rfl
+    obtain ⟨c', i, hc', hi, hx⟩ := hu
+    have hrec := topRec_recordOf hH y
+    rw [hya] at hrec
+    have ec : c' = y.c := Option.some.inj (hc'.symm.trans hrec)
+    rw [ec] at hi hx
+    obtain ⟨-, hrest⟩ := (hcl y hy).2 i (by rw [Assembly.usedRefIdxs_eq]; exact hi) x hx
+    rcases hrest with ⟨-, r', hr', e', -⟩ | hcov'
+    · exact ⟨r', hr', e'⟩
+    · exact absurd hcov' hnc
 
 /-- **The walks of one role**: from its observed validation, a closed list that holds its bound
-record if the validation walks it, and the references of its record that are not covered if it
-is a standard axiom. -/
+record if the validation walks it, the references of its record that are not covered if it
+is a standard axiom, and the references the proofs in its evidence use (`roleEvidence_walked`). -/
 theorem roleWalked_exists (hH : LoadedReads.HashedRecordsStored calls E₀) {g : Nat}
     {r : Ix.Kernel.Role} (hv : RoleValidationIn calls bAddr t g r) :
     ∃ recs : List (Claim.TopRec calls bAddr t (some (valLimit g))), Claim.TopRecsClosed recs ∧
       ((RoleVal.roleWalksBound r = true ∨ RoleVal.anchorWalked r = true) →
         ∀ a, t.addressOf? r = some a → ∃ x ∈ recs, x.addr = a) ∧
       (r ∈ standardAxioms → ∀ a, t.addressOf? r = some a → ∀ x, UsedRef E₀ a x →
+        ¬ Claim.CoveredAt t (some (valLimit g)) x → ∃ y ∈ recs, y.addr = x) ∧
+      (∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm x : _root_.Address),
+        (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
+        UsedRef E₀ thm x → t.addressOf? r ≠ some x →
         ¬ Claim.CoveredAt t (some (valLimit g)) x → ∃ y ∈ recs, y.addr = x) := by
   have h1 : ∃ recs₁ : List (Claim.TopRec calls bAddr t (some (valLimit g))),
       Claim.TopRecsClosed recs₁ ∧
@@ -141,10 +301,14 @@ theorem roleWalked_exists (hH : LoadedReads.HashedRecordsStored calls E₀) {g :
     · exact ⟨[], by simp [Claim.TopRecsClosed], fun h => absurd h hs⟩
   obtain ⟨recs₁, hc₁, hw₁⟩ := h1
   obtain ⟨recs₂, hc₂, hw₂⟩ := h2
-  refine ⟨recs₁ ++ recs₂, hc₁.append hc₂, fun hw a ha => ?_, fun hs a ha x hu hnc => ?_⟩
+  obtain ⟨recs₃, hc₃, hw₃⟩ := roleEvidence_walked hH hv
+  refine ⟨recs₁ ++ recs₂ ++ recs₃, (hc₁.append hc₂).append hc₃, fun hw a ha => ?_,
+    fun hs a ha x hu hnc => ?_, fun arr thm x hm hthm hu hne hnc => ?_⟩
   · obtain ⟨x, hx, e⟩ := hw₁ hw a ha
-    exact ⟨x, List.mem_append_left _ hx, e⟩
+    exact ⟨x, List.mem_append_left _ (List.mem_append_left _ hx), e⟩
   · obtain ⟨y, hy, e⟩ := hw₂ hs a ha x hu hnc
+    exact ⟨y, List.mem_append_left _ (List.mem_append_right _ hy), e⟩
+  · obtain ⟨y, hy, e⟩ := hw₃ arr thm x hm hthm hu hne hnc
     exact ⟨y, List.mem_append_right _ hy, e⟩
 
 /-- **A group's validations walked a closed list holding the group's roots.** -/
@@ -157,20 +321,24 @@ theorem groupWalked_exists (hH : LoadedReads.HashedRecordsStored calls E₀) {g 
         (∀ r ∈ rs, (RoleVal.roleWalksBound r = true ∨ RoleVal.anchorWalked r = true) →
           ∀ a, t.addressOf? r = some a → ∃ x ∈ recs, x.addr = a) ∧
         (∀ r ∈ rs, r ∈ standardAxioms → ∀ a, t.addressOf? r = some a → ∀ x, UsedRef E₀ a x →
+          ¬ Claim.CoveredAt t (some (valLimit g)) x → ∃ y ∈ recs, y.addr = x) ∧
+        (∀ r ∈ rs, ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address)) (thm x : _root_.Address),
+          (r, arr) ∈ t.evidence.toList → Ix.Kernel.Evidence.proof thm ∈ arr.toList →
+          UsedRef E₀ thm x → t.addressOf? r ≠ some x →
           ¬ Claim.CoveredAt t (some (valLimit g)) x → ∃ y ∈ recs, y.addr = x) := by
     intro rs
     induction rs with
     | nil =>
       intro _
       exact ⟨[], by simp [Claim.TopRecsClosed], (fun r hr => by cases hr),
-        (fun r hr => by cases hr)⟩
+        (fun r hr => by cases hr), (fun r hr => by cases hr)⟩
     | cons r rs ih =>
       intro hsub
-      obtain ⟨recs, hcl, hw, hs⟩ := ih (fun r' hr' => hsub r' (List.mem_cons_of_mem _ hr'))
-      obtain ⟨recs', hcl', hw', hs'⟩ :=
+      obtain ⟨recs, hcl, hw, hs, he⟩ := ih (fun r' hr' => hsub r' (List.mem_cons_of_mem _ hr'))
+      obtain ⟨recs', hcl', hw', hs', he'⟩ :=
         roleWalked_exists (E₀ := E₀) hH (hval r (hsub r (List.mem_cons.mpr (Or.inl rfl))))
       refine ⟨recs' ++ recs, hcl'.append hcl, fun r₁ hr₁ hwk a ha => ?_,
-        fun r₁ hr₁ hst a ha x hu hnc => ?_⟩
+        fun r₁ hr₁ hst a ha x hu hnc => ?_, fun r₁ hr₁ arr thm x hm hthm hu hne hnc => ?_⟩
       · rcases List.mem_cons.mp hr₁ with e | hr₁
         · rw [e] at hwk ha
           obtain ⟨x, hx, e'⟩ := hw' hwk a ha
@@ -183,8 +351,14 @@ theorem groupWalked_exists (hH : LoadedReads.HashedRecordsStored calls E₀) {g 
           exact ⟨y, List.mem_append_left _ hy, e'⟩
         · obtain ⟨y, hy, e'⟩ := hs r₁ hr₁ hst a ha x hu hnc
           exact ⟨y, List.mem_append_right _ hy, e'⟩
-  obtain ⟨recs, hcl, hw, hs⟩ := haux (roleGroup g) (fun _ h => h)
-  exact ⟨recs, ⟨hcl, hw, hs⟩⟩
+      · rcases List.mem_cons.mp hr₁ with e | hr₁
+        · rw [e] at hm hne
+          obtain ⟨y, hy, e'⟩ := he' arr thm x hm hthm hu hne hnc
+          exact ⟨y, List.mem_append_left _ hy, e'⟩
+        · obtain ⟨y, hy, e'⟩ := he r₁ hr₁ arr thm x hm hthm hu hne hnc
+          exact ⟨y, List.mem_append_right _ hy, e'⟩
+  obtain ⟨recs, hcl, hw, hs, he⟩ := haux (roleGroup g) (fun _ h => h)
+  exact ⟨recs, ⟨hcl, hw, hs, he⟩⟩
 
 /-- **An address the group's admission reaches is a record of the group's walk.** -/
 theorem GroupReach.listed (hH : LoadedReads.HashedRecordsStored calls E₀) {g : Nat}
@@ -215,6 +389,7 @@ theorem GroupReach.listed (hH : LoadedReads.HashedRecordsStored calls E₀) {g :
     obtain ⟨r', hr', e, -⟩ := (hw.closed r hr).1 hp
     rw [hra] at e
     exact ⟨r', hr', e⟩
+  | evidenceRef hr hm hthm hu hne hnc => exact hw.evidenceRefs _ hr _ _ _ hm hthm hu hne hnc
 
 /-! ## The rank -/
 
@@ -703,6 +878,34 @@ theorem groupStore_usedClosed_all (hC : CollisionFreeRun calls E₀) (hb : Basis
       exact StoreInhabit.store_usedClosed
     · obtain ⟨recs, hw⟩ := hws n
       exact groupStore_usedClosed hC hb hbr hax hws (by omega) hw (ih (by omega))
+
+/-- **`Admits.evidenceRefs`**: the store after a group's admission holds the record at every
+reference a proof in the evidence of a role of the group uses, other than the role's own
+address: a reference covered at the group's validation limit was held before, any other is
+reached by the group's admission. -/
+theorem groupStore_evidenceRefs (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
+    (hbr : BasisRolesStored t) (hax : AxiomRolesDeclared t E₀)
+    (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs) {g : Nat} (hg : 6 ≤ g)
+    {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
+    (hw : GroupWalked calls bAddr t E₀ g recs) :
+    ∀ r ∈ roleGroup g, ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address))
+      (thm x : _root_.Address), (r, arr) ∈ t.evidence.toList →
+      Ix.Kernel.Evidence.proof thm ∈ arr.toList → UsedRef E₀ thm x →
+      t.addressOf? r ≠ some x → (recordOf (groupStore t E₀ (g + 1)) x).isSome = true := by
+  intro r hr arr thm x hm hthm hu hne
+  have h6 : 6 ≤ g + 1 := Nat.le_succ_of_le hg
+  by_cases hcov : Claim.CoveredAt t (some (valLimit g)) x
+  · have hs : StoredBelow t E₀ g x := storedBelow_of_covered hbr hcov
+    obtain ⟨cx, hcx⟩ := storedBelow_record hC hb hax hws hs
+    rw [(groupStore_recordOf hb h6).mpr ⟨storedBelow_succ hs, hcx⟩]
+    rfl
+  · have hrx : GroupReach t E₀ g x := GroupReach.evidenceRef hr hm hthm hu hne hcov
+    obtain ⟨y, hy, hya⟩ := hrx.listed hC.hashedStored hw
+    have hcx : recordOf E₀ x = some y.c := by
+      rw [← hya]
+      exact topRec_recordOf hC.hashedStored y
+    rw [(groupStore_recordOf hb h6).mpr ⟨storedBelow_of_adds hg (Or.inl hrx), hcx⟩]
+    rfl
 
 end Walk
 

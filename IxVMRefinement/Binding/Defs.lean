@@ -31,8 +31,8 @@ what a run's admission of one group establishes, and the step from one to the ne
   is `R` and the records walked for `g`, all loaded by the run, with the store clauses of
   `TableShape`; every new record is reached through used references of smaller rank or stored
   ones; every new unit is checked at `groupValLimit g`; the group's roles are validated and
-  their kept records are in `R'`; and no new record is an operation's other than the group's
-  own.
+  their kept records are in `R'`; no new record is an operation's other than the group's
+  own; and `R'` holds the records the proofs in the evidence of the group's roles use.
 * `StepCore X ρ t G g`: the step on any needs-closed `G` holding the group of every bound role
   in force at `groupValLimit g`: from `Bnd` on `G` and `Admits` to `Bnd` on `G` and `g`.
   `StepInstance` is one step taken at concrete data, for non-vacuity.
@@ -248,6 +248,13 @@ structure Admits (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : Ixon.En
   operation's own address (`assert_op_reached_in_order`, `op_order_scan`) and an axiom whose
   role is not in force (`check_const`'s axiom arm). So the role units come last. -/
   unitsLast : ∀ x a, New R R' x → UsedRef R' x a → ¬ RoleUnitAt t g a
+  /-- The record at every used reference of a proof in the evidence of a role of the group,
+  other than the role's own record, is held by `R'`: the validation walks them (a certificate's
+  references by `walk_refs_except`, an equation theorem with its closure). -/
+  evidenceRefs : ∀ r ∈ roleGroup g, ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address))
+    (thm x : _root_.Address), (r, arr) ∈ t.evidence.toList →
+    Ix.Kernel.Evidence.proof thm ∈ arr.toList → UsedRef ρ.E₀ thm x →
+    t.addressOf? r ≠ some x → (recordOf R' x).isSome = true
 
 /-! ## The step -/
 
