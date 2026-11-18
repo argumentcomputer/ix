@@ -16,6 +16,8 @@ import Tests.Ix.Compile.KernelReport
     (`compileInputFromEnv`, then `compileEnvFold`) for fixtures without
     source contracts, with the configured sharing limits. The harness
     compares raw artifacts before CLI role finalization and resource checks.
+  - `certifiedClosure`: the closure as `ix compile` compiles it (binder data on),
+    before finalization; the artifact the certified checker is run on.
   - `rustClosure`/`rustCheck`: the certified compile
     (`compileCertifiedPrepared`, before finalization)
     of the same prepared constants, and its byte comparison with the Lean
@@ -87,6 +89,26 @@ def compileClosure (env : Environment) (closure : List (Name × ConstantInfo))
     m.insert n (e.refusal split.2.contains)
   let bytes ← IO.ofExcept (Ixon.serEnv ixon)
   return { bytes, env := ixon, cenv := { cenv with ungrounded } }
+
+/-- **The closure as `ix compile` compiles it**, before finalization: the certified
+compile with binder data (`Ix.CompileM.compileCertified`), every record with its
+binder-data section. This is the artifact `certify` checks. An artifact with no
+role binding is read under the default role table
+(`Ix.KernelCheck.Binding.context`), which binds the records of this compile; the
+Lean entry's records (`compileClosure`) carry the undecided section, so their role
+constants are other records than the table's, and the checker refuses the basis
+blocks, `propext`, the quotient and the `Nat` literals among them. Throws on a
+refusal or a failed constant. -/
+def certifiedClosure (env : Environment) (closure : List (Name × ConstantInfo))
+    (workers : Nat := 32) : IO (Ixon.Env × ByteArray) := do
+  let out ← match ← Ix.CompileM.compileCertified env closure workers with
+    | .ok out => pure out
+    | .error e => throw (IO.userError s!"certified compile: {e}")
+  let failures := out.failures.toMap
+  unless failures.isEmpty do
+    throw (IO.userError s!"certified compile: {failures.size} constant(s) failed, first \
+      {failures.toList.head?.map (·.1.pretty)}")
+  return (out.env, ← IO.ofExcept (Ixon.serEnv out.env))
 
 /-- The certified compile of the same prepared constants as `compileClosure`,
 written to `path` before CLI finalization. Partial output is allowed, so the
