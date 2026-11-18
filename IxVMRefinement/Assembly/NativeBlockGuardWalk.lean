@@ -7,6 +7,7 @@ import IxVMRefinement.Decl.NativeRec
 import IxVMRefinement.Decl.Common
 import IxVMRefinement.Decl.NativeFront
 import IxVMRefinement.L1.Stream
+import IxVMRefinement.Guard.UseWalk
 import IxC.Kernel.Verify.Inductives.StructBody
 
 /-! # A functional spec of the circuit's projection guard
@@ -123,117 +124,13 @@ open Aiur.Library Aiur.Library.List
 open Ix.Kernel.Rules (Red Infer)
 open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList)
 
-/-! ## The guard's fold -/
-
-/-- **The levels a guard joins**: the entries of `lus` at the positions `flags` marks, in
-order. -/
-def selDeps : List KLevel → List Bool → List KLevel
-  | _, [] => []
-  | ls, b :: bs => (if b then [ls.headD .zero] else []) ++ selDeps ls.tail bs
-
-/-- **`structProjGuards`' fold is the fold of the joined levels.** -/
-theorem foldl_range_selDeps :
-    ∀ (flags : List Bool) (lus : List KLevel) (acc : KLevel),
-      (List.range flags.length).foldl
-          (fun acc j => if flags.getD j false then Ix.Kernel.Level.max acc (lus.getD j .zero)
-            else acc) acc =
-        (selDeps lus flags).foldl (fun a b => Ix.Kernel.Level.max a b) acc
-  | [], lus, acc => rfl
-  | b :: bs, lus, acc => by
-    rw [List.length_cons, List.range_succ_eq_map, List.foldl_cons, List.foldl_map]
-    cases lus with
-    | nil =>
-      cases b
-      · exact foldl_range_selDeps bs [] acc
-      · exact foldl_range_selDeps bs [] (Ix.Kernel.Level.max acc .zero)
-    | cons l ls =>
-      cases b
-      · exact foldl_range_selDeps bs ls acc
-      · exact foldl_range_selDeps bs ls (Ix.Kernel.Level.max acc l)
+/-! The guard's fold (`selDeps`, `foldl_range_selDeps`, `fold_eq`) and the telescope steps
+(`openPisAtFvars_succ_forallE`, `stripPis_succ_forallE` and their converses) are in
+`Guard/UseWalk.lean`. -/
 
 private theorem klevel_node_eq' :
     Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>» =
       IxVM.Refinement.KernelLevels.klevelListEnum := by decide +kernel
-
-/-- **`proj_guard_fold` joins the list onto the accumulator, in order.** -/
-theorem fold_eq :
-    ∀ {ls : List KLevel} {h h' : Heap F} {x_acc x_deps r : SourceValue F}
-      {calls : List (Call F)} {acc : KLevel},
-      ObsFn W "KernelInfer::proj_guard_fold" [x_acc, x_deps] h r h' calls →
-      RepKLevel h acc x_acc → RepKLevelList h ls x_deps →
-      RepKLevel h' (ls.foldl (fun a b => Ix.Kernel.Level.max a b) acc) r := by
-  intro ls
-  induction ls with
-  | nil =>
-    intro h h' x_acc x_deps r calls acc ev hacc hls
-    rcases Obs.«KernelInfer::proj_guard_fold».obs ev with
-      ⟨_, he21, he22, _⟩ |
-      ⟨x_d, x_rest, cs44, m50, ld12, _, _, _⟩
-    · subst he21 he22
-      exact hacc
-    · rw [klevel_node_eq'] at ld12
-      cases hls with
-      | nil cell => exact (load_cell_ne cell ld12 (by decide)).elim
-  | cons d0 ls' ih =>
-    intro h h' x_acc x_deps r calls acc ev hacc hls
-    rcases Obs.«KernelInfer::proj_guard_fold».obs ev with
-      ⟨ld12, _, _, _⟩ |
-      ⟨x_d, x_rest, cs44, m50, ld12, hm58, ev46, _⟩
-    · rw [klevel_node_eq'] at ld12
-      cases hls with
-      | cons cell _ _ => exact (load_cell_ne cell ld12 (by decide)).elim
-    · rw [klevel_node_eq'] at ld12
-      obtain ⟨d1, ls1, heq, hd, hrest⟩ := RepList.cons_of_load hls ld12
-      injection heq with hd_eq hls_eq
-      subst hd_eq hls_eq hm58
-      have ext := Heap.Extends.snoc h (.construct "KernelTypes::KLevelNode" "Max" [x_acc, x_d])
-      have hmax : RepKLevel (h ++ [.construct "KernelTypes::KLevelNode" "Max" [x_acc, x_d]])
-          (.max acc d0) (.ptr (.enum "KernelTypes::KLevelNode") h.length) :=
-        .max List.getElem?_concat_length (hacc.mono ext) (hd.mono ext)
-      exact ih ev46 hmax (RepKLevelList.mono hrest ext)
-
-/-! ## Telescope steps -/
-
-theorem openPisAtFvars_succ_forallE {n : Nat} {D B : KExpr} {m : Ix.Kernel.BinderMeta} {i : Nat}
-    {xs : List KExpr} {body : KExpr}
-    (h : Ix.Kernel.openPisAtFvars (n + 1) (.forallE D B m) i = some (xs, body)) :
-    ∃ fvs, xs = .fvar i D :: fvs ∧
-      Ix.Kernel.openPisAtFvars n (B.instantiate1 (.fvar i D)) (i + 1) = some (fvs, body) := by
-  simp only [Ix.Kernel.openPisAtFvars] at h
-  split at h
-  · next fvs' e' h' =>
-    simp only [Option.some.injEq, Prod.mk.injEq] at h
-    obtain ⟨rfl, rfl⟩ := h
-    exact ⟨fvs', rfl, h'⟩
-  · exact nomatch h
-
-theorem openPisAtFvars_succ_forallE_of {n : Nat} {D B : KExpr} {m : Ix.Kernel.BinderMeta}
-    {i : Nat} {fvs : List KExpr} {body : KExpr}
-    (h : Ix.Kernel.openPisAtFvars n (B.instantiate1 (.fvar i D)) (i + 1) = some (fvs, body)) :
-    Ix.Kernel.openPisAtFvars (n + 1) (.forallE D B m) i = some (.fvar i D :: fvs, body) := by
-  first
-    | (simp only [Ix.Kernel.openPisAtFvars, h]; done)
-    | (simp [Ix.Kernel.openPisAtFvars, h]; done)
-    | (simp only [Ix.Kernel.openPisAtFvars]; rw [h])
-
-theorem stripPis_succ_forallE {k : Nat} {D B : KExpr} {m : Ix.Kernel.BinderMeta}
-    {bs : List (KExpr × Ix.Kernel.BinderMeta)} {rest : KExpr}
-    (h : (Ix.Kernel.Expr.forallE D B m).stripPis (k + 1) = some (bs, rest)) :
-    ∃ bs', B.stripPis k = some (bs', rest) := by
-  simp only [Ix.Kernel.Expr.stripPis, Option.map_eq_some_iff] at h
-  obtain ⟨⟨bs', rest'⟩, h', heq⟩ := h
-  simp only [Prod.mk.injEq] at heq
-  obtain ⟨-, rfl⟩ := heq
-  exact ⟨bs', h'⟩
-
-theorem stripPis_succ_forallE_of {k : Nat} {D B : KExpr} {m : Ix.Kernel.BinderMeta}
-    {bs : List (KExpr × Ix.Kernel.BinderMeta)} {rest : KExpr}
-    (h : B.stripPis k = some (bs, rest)) :
-    (Ix.Kernel.Expr.forallE D B m).stripPis (k + 1) = some ((D, m) :: bs, rest) := by
-  first
-    | (simp only [Ix.Kernel.Expr.stripPis, h, Option.map_some']; done)
-    | (simp [Ix.Kernel.Expr.stripPis, h]; done)
-    | (rw [Ix.Kernel.Expr.stripPis, h]; rfl)
 
 /-! ## The parameter peel, read twice -/
 
