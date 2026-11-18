@@ -3,6 +3,7 @@ import IxVMRefinement.Binding.ClauseFold
 import IxVMRefinement.Claim.TopSafeExport
 import IxVMRefinement.Assembly.NativeAliasFormer
 import IxVMRefinement.Assembly.TypingDefnBlock
+import IxVMRefinement.Assembly.ValueUnitStep
 import IxVMRefinement.Assembly.FoldClauseSteps
 import IxVMRefinement.Assembly.FoldClauseAlias
 import IxVMRefinement.Assembly.TypingRecParentTie
@@ -49,6 +50,10 @@ Proved inside, with no hypothesis left:
 * the case split of a unit by the form of its record (`unitSteps_of_kinds`);
 * the step of a standalone definition, at either limit (`standaloneDefinition_foldExtra`, from
   `unitStep_defn_foldExtra`);
+* the step of a standalone theorem or opaque record and the step of a non-empty block of
+  definitions, at either limit (`standaloneTheoremOrOpaque_foldExtra`,
+  `definitionBlock_foldExtra`, from the value step stated once for both folds,
+  `ValueUnitStep`);
 * the step of a standalone recursor, at any limit, up to one fact
   (`standaloneRecursor_of_freshNotBasis`, from `unitStep_recLate_walked`): the check's output
   at the family the registry reads at the parent that heads the record's major premise
@@ -91,13 +96,12 @@ store sequence is not fixed):
   and of a standard axiom, and the load contract's guard at the limits a closed group brings
   within range;
 * typing, for a top-walked unit by the form of its record (`WalkedUnit`, `WalkedUnitStep`, in
-  `IxVMRefinement.Endpoint.WalkedUnit`): the step of a standalone theorem or opaque; for a
-  standalone recursor at an address the witness's environment does not store, that a native
-  parent heading its major premise is no basis family (`RecMajorFreshNotBasis`); the step of a
-  non-empty block of definitions; of a block of one inductive type on the native route whose
-  former is declared at its telescope; and, given that the block is modeled at the step's
-  store, of a block of one inductive type on the modeled route and of a block of two or more
-  inductive types on the modeled route; the step of a non-empty block of recursors.
+  `IxVMRefinement.Endpoint.WalkedUnit`): for a standalone recursor at an address the witness's
+  environment does not store, that a native parent heading its major premise is no basis
+  family (`RecMajorFreshNotBasis`); the step of a block of one inductive type on the native
+  route whose former is declared at its telescope; and, given that the block is modeled at the
+  step's store, of a block of one inductive type on the modeled route and of a block of two or
+  more inductive types on the modeled route; the step of a non-empty block of recursors.
 
 The typing half takes nothing from the binding half but the table witness at `OverW L`, so no
 further hypothesis joins the two.
@@ -232,6 +236,43 @@ theorem standaloneDefinition_foldExtra
   have hown : ConstAddrOf A c A := Or.inl ⟨rfl, Or.inl ⟨d, hinfo⟩⟩
   exact unitStep_defn_foldExtra hL ht hS hst hc hinfo hlog hk hchk' (hkeys A hown) hinert hcover
 
+/-- **The step of a top-walked standalone theorem or opaque record keeps the fold's clause**, at
+the walk's limit, for any link that satisfies the link laws. -/
+theorem standaloneTheoremOrOpaque_foldExtra
+    {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop} (hL : LinkLaws L) :
+    WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind ≠ .defn := by
+  intro calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc hlog hkind ht hS hcov
+    hst hcanon hinert hcover hchk hns hkeys
+  obtain ⟨d, hinfo, hk⟩ := hkind
+  have hchk' : Claim.CheckedLimAt calls bAddr t A lim := by
+    rcases hchk with ⟨ms, hms, -⟩ | h
+    · have e := hinfo.symm.trans hms
+      cases e
+    · exact h
+  exact unitStep_value_foldExtra hL ht hS hst hc hinfo hlog hchk' hkeys hinert hcover
+
+/-- **The step of a top-walked non-empty block of definitions keeps the fold's clause**, at the
+walk's limit, for any link that satisfies the link laws. A block record is checked member by
+member: the walk's check of the record itself does not arise (`Claim.checked_not_block`). The
+step holds of the empty block as well (`unitStep_defnBlock_foldExtra`); the kind is the one the
+composed statement asks. -/
+theorem definitionBlock_foldExtra
+    {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop} (hL : LinkLaws L) :
+    WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ ms : Array Ixon.MutConst, c.info = .muts ms ∧ 0 < ms.size ∧ DefnBlock ms := by
+  intro calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc hlog hkind ht hS hcov
+    hst hcanon hinert hcover hchk hns hkeys
+  obtain ⟨ms, hmuts, -, hdefs⟩ := hkind
+  have hchk' : ∀ k, k < ms.size → Claim.MemberCheckedLimAt calls bAddr t A ms k lim := by
+    rcases hchk with ⟨ms', hms', h⟩ | h
+    · have e : ms = ms' := Ixon.ConstantInfo.muts.inj (hmuts.symm.trans hms')
+      rw [e]
+      exact h
+    · exact (Claim.checked_not_block hS hc hmuts h).elim
+  exact unitStep_defnBlock_foldExtra hL ht hS hcov hst hc hmuts hlog hdefs hchk' hkeys hinert
+    hcover
+
 /-- **The step of a top-walked standalone recursor keeps the fold's clause**, at the walk's
 limit and at the opened head trace, from one fact: at a record whose address the witness's
 environment does not store, a native parent that heads the major premise is at no reserved
@@ -330,12 +371,11 @@ for every bounded run: the claim export with the observed run record; the invari
 basis groups; the admission of each group and its reading clause; and at each group from 6 to
 76 of a run the closure, the stored shapes where the group has no role unit, the role unit of
 an operation, the role unit of a standard axiom and the guard at the raised limits. The other
-seven are the typing half's, for a top-walked unit: the step of a standalone theorem or
-opaque; for a standalone recursor at a fresh address, that a native parent heading its major
-premise is no basis family; the step of a non-empty block of definitions; of a one-type native
-block whose former is declared at its telescope; of a one-type block and of a block of two or
-more inductive types on the modeled route, each given that the block is modeled at the step's
-store; and of a non-empty block of recursors. -/
+five are the typing half's, for a top-walked unit: for a standalone recursor at a fresh
+address, that a native parent heading its major premise is no basis family; the step of a
+one-type native block whose former is declared at its telescope; of a one-type block and of a
+block of two or more inductive types on the modeled route, each given that the block is
+modeled at the step's store; and of a non-empty block of recursors. -/
 theorem circuitComposed_residual
     {Run : List (Call F) → Ix.Kernel.RoleTable → BRun → (Nat → Ixon.Env) → Prop}
     (bindingClaimExport :
@@ -352,16 +392,10 @@ theorem circuitComposed_residual
       AtGroups (Run calls) (RoleUnitStepOver.{u} (· ∈ standardAxioms) FormerOpenTraceAt))
     (raisedLimitGuard : ∀ calls,
       AtGroups (Run calls) (fun _ t g => RaisedLimitGuard.{u} FormerOpenTraceAt t g))
-    (standaloneTheoremOrOpaque :
-      WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun _ _ _ _ c =>
-        ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind ≠ .defn)
     (freshRecursorMajorNotBasis :
       WalkedUnit.{u} (fun _ _ _ _ c => ∃ rc : Ixon.Recursor, c.info = .recr rc)
         fun _ t envT E₀ E lim A c => ∀ rc : Ixon.Recursor, c.info = .recr rc →
           RecMajorFreshNotBasis.{u} t envT E₀ E lim A c rc)
-    (definitionBlock :
-      WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun _ _ _ _ c =>
-        ∃ ms : Array Ixon.MutConst, c.info = .muts ms ∧ 0 < ms.size ∧ DefnBlock ms)
     (nativeBlockTelescope :
       WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun calls t E₀ B cb =>
         ∃ ind : Ixon.Inductive,
@@ -387,9 +421,9 @@ theorem circuitComposed_residual
   circuitComposed_of_parts bindingClaimExport basisGroups groupAdmissions groupAdmissionReads
     groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit raisedLimitGuard
     (standaloneDefinition_foldExtra linkLaws_formerOpenTrace)
-    standaloneTheoremOrOpaque
+    (standaloneTheoremOrOpaque_foldExtra linkLaws_formerOpenTrace)
     (standaloneRecursor_of_freshNotBasis freshRecursorMajorNotBasis)
-    (definitionBlock_of_nonempty definitionBlock)
+    (definitionBlock_of_nonempty (definitionBlock_foldExtra linkLaws_formerOpenTrace))
     nativeBlockTelescope
     nativeBlockAlias_walked
     nativeBlockOtherTelescope_step
