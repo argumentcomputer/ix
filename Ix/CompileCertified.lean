@@ -170,8 +170,9 @@ canonical environment carries the annotator over its input and that task
 (`Ix.Compile.KernelAnnotate.annotator`): the compile writes every record's binder
 data from it (`Ix.CompileM.withBinderSection`), only a record the reading leaves
 waits for the install, and the certified result is the compile of that
-environment. Once no record can read the install (after the compile, unless the
-annotator is kept), an unfinished install is abandoned. With `binderData`, binder data are
+environment. After the compile, the install is waited for whether or not a record read
+it, so that whether the compile is refused does not depend on timing; it is abandoned
+only when the compile itself throws. With `binderData`, binder data are
 always present on safe records: a safe record with an undecided binder does not compile
 (`Ix.CompileM.sectionFor`), and an install that left a safe declaration out (its ingest
 failed, or it names a constant the install lacks: an incomplete input) refuses the compile.
@@ -213,24 +214,18 @@ def compileCertifiedPrepared (prepared : List (Lean.Name × Lean.ConstantInfo))
     throw e
   let t2 ← IO.monoMsNow
   log s!"compileReport: {t2 - t1}ms"
-  -- no record reads the install after the compile, unless the annotator is kept
-  unless keepAnnotator do abandon.set true
+  -- the install is always waited for, and a failed one refuses the compile whether or not a
+  -- record read it: the outcome does not depend on how far the install got during the compile
   if let some task := install? then
-    if ← IO.hasFinished task then
-      match task.get with
-      | .ok installed =>
-        log s!"binder data: installed {installed.installed} declarations, {installed.failures.size} \
-          refused ({installed.lenient} of them entered without their checks), phase A in \
-          {installed.waves} waves; phases (ms) {installed.times}; \
-          {installed.endMs - installed.startMs}ms, ready {installed.endMs - t1}ms into the compile"
-        for (name, why) in installed.failures.extract 0 20 do
-          log s!"binder data: the kernel refused {name}: {(why.replace "\n" " ").take 200}"
-      | .error e =>
-        -- abandoned after the compile, no record read it; any other error refuses the compile
-        unless e == Ix.Compile.KernelAnnotate.abandoned do
-          return .error s!"binder data: IxC's environment is not installed: {e}"
-    else
-      log "binder data: no record was left to the walk; the install was not waited for"
+    match ← IO.wait task with
+    | .ok installed =>
+      log s!"binder data: installed {installed.installed} declarations, {installed.failures.size} \
+        refused ({installed.lenient} of them entered without their checks), phase A in \
+        {installed.waves} waves; phases (ms) {installed.times}; \
+        {installed.endMs - installed.startMs}ms, ready {installed.endMs - t1}ms into the compile"
+      for (name, why) in installed.failures.extract 0 20 do
+        log s!"binder data: the kernel refused {name}: {(why.replace "\n" " ").take 200}"
+    | .error e => return .error s!"binder data: IxC's environment is not installed: {e}"
   let (ixe, failures) ← match report.val with
     | .ok out => pure out
     | .error e => return .error e
