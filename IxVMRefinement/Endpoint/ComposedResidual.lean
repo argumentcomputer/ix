@@ -9,6 +9,9 @@ import IxVMRefinement.Assembly.TypingRecParentTie
 import IxVMRefinement.Assembly.TypingRecLateRegistered
 import IxVMRefinement.Assembly.TypingKeyFree
 import IxVMRefinement.Assembly.RawQueryCoverage
+import IxVMRefinement.Assembly.NativeAliasWalked
+import IxVMRefinement.Assembly.WalkedUnitKinds
+import IxVMRefinement.Endpoint.WalkedUnit
 
 /-! # The composed statement from its open obligations
 
@@ -63,6 +66,17 @@ Proved inside, with no hypothesis left:
   `0`). When the source stops refusing those recursors, these five lemmas stop building at
   exactly those paths, the parent of `recParent_of_arm_tied` is no longer always native, and
   the recursor of a mutual or nested family is a case of its own, for the family's step;
+* the step of a block of one inductive type on the native route whose former is declared at a
+  definition, at either limit (`nativeBlockAlias_walked`);
+* the step of a block of one inductive type on the native route whose former reads as a
+  telescope of another length: the circuit refuses the block
+  (`nativeBlockOtherTelescope_step`);
+* the step of an empty block, which installs nothing (inside `definitionBlock_of_nonempty`);
+* that a block of one inductive type off the native route is on the modeled route in the run
+  and at the step's store (`oneTypeBlockOffNativeRoute_of_modeled`), and that a block which
+  is no block of definitions and no block of one inductive type is a block of two or more
+  inductive types on the modeled route or a non-empty block of recursors, a block of mixed
+  kinds being refused (`otherBlock_of_kinds`);
 * on the binding side, everything `composed_skeleton_over` proves from its named hypotheses:
   the fold over the 77 groups, the step of a group from its parts, the raise past a group, the
   table's well-formedness from the claim's admission, and the witness on every group.
@@ -76,12 +90,14 @@ store sequence is not fixed):
   closure, the stored shapes where the group has no role unit, the role unit of an operation
   and of a standard axiom, and the load contract's guard at the limits a closed group brings
   within range;
-* typing, for a top-walked unit by the form of its record (`WalkedUnit`, `WalkedUnitStep`): the
-  step of a standalone theorem or opaque; for a standalone recursor at an address the
-  witness's environment does not store, that a native parent heading its major premise is no
-  basis family (`RecMajorFreshNotBasis`); the step of a block of definitions; of a block of one inductive type on the native
-  route, by the three cases of its former's reading (`formerAt_cases`); of a block of one
-  inductive type off the native route; of any other block.
+* typing, for a top-walked unit by the form of its record (`WalkedUnit`, `WalkedUnitStep`, in
+  `IxVMRefinement.Endpoint.WalkedUnit`): the step of a standalone theorem or opaque; for a
+  standalone recursor at an address the witness's environment does not store, that a native
+  parent heading its major premise is no basis family (`RecMajorFreshNotBasis`); the step of a
+  non-empty block of definitions; of a block of one inductive type on the native route whose
+  former is declared at its telescope; and, given that the block is modeled at the step's
+  store, of a block of one inductive type on the modeled route and of a block of two or more
+  inductive types on the modeled route; the step of a non-empty block of recursors.
 
 The typing half takes nothing from the binding half but the table witness at `OverW L`, so no
 further hypothesis joins the two.
@@ -101,49 +117,6 @@ open IxVM (F)
 open Ix.Kernel.Semantics (NativeFam)
 
 /-! ## The typing half -/
-
-/-- **A fact about every top-walked unit of one kind**, as the composition asks it. `Kind`
-reads the run's calls, the table, the run's store, the unit's address and its record; `Goal`
-also reads the witness's environment, the store the step runs against and the walk's limit.
-For a walk export at the binding `bAddr`, the assembly's reading of it, a step context and a
-top-walked record `c` at `A` in Lean's logic of that kind, the producer of `Goal` is handed
-what holds of every unit whose step is asked: the table's check, the run store, that the run's
-hashed records are stored, the store the step runs against and that it holds every record the
-run hashed with its exact decoding, that no reference the record uses is an inert axiom's, the
-cover clause at every environment the skeleton hands the step, the walk's check of the record
-at the walk's limit (every member of a block, or the record), that the witness's environment
-stores none of the record's constant addresses, and that their keys are free. -/
-def WalkedUnit
-    (Kind : List (Call F) → Ix.Kernel.RoleTable → Ixon.Env → _root_.Address → Ixon.Constant →
-      Prop)
-    (Goal : List (Call F) → Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Ixon.Env → Ixon.Env →
-      Option Nat → _root_.Address → Ixon.Constant → Prop) : Prop :=
-  ∀ (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
-    (seeds : List _root_.Address) (E₀ : Ixon.Env) (lim : Option Nat)
-    (Top : _root_.Address → Prop) (rank : _root_.Address → Nat),
-    Claim.TopWalkCore calls bAddr t seeds E₀ lim Top rank → TopGraph t E₀ seeds Top rank →
-    ∀ (R : Ixon.Env) (envT : Ix.Kernel.Env .anon) (E : Ixon.Env),
-      StepCtx.{u} calls t R envT E₀ E →
-      ∀ (A : _root_.Address) (c : Ixon.Constant),
-        Top A → recordOf E₀ A = some c → InLogic c → Kind calls t E₀ A c →
-        t.check = .ok () → LoadedReads.RunStore calls E₀ →
-        LoadedReads.HashedRecordsStored calls E₀ → StepStore calls t E₀ E →
-        L1.CanonicalHashCoverage E calls →
-        InertClause t c → (∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c) →
-        ((∃ ms, c.info = .muts ms ∧
-            ∀ k, k < ms.size → Claim.MemberCheckedLimAt calls bAddr t A ms k lim) ∨
-          Claim.CheckedLimAt calls bAddr t A lim) →
-        (∀ x, ConstAddrOf A c x → ¬ StoredAt t envT x) →
-        (∀ x, ConstAddrOf A c x → Decl.KeyFree (keyOf t x)) →
-        Goal calls t envT E₀ E lim A c
-
-/-- **The step of every top-walked unit of one kind**: `WalkedUnit` at the unit's step for the
-carried clause `X` at the step's store, at the walk's limit. -/
-def WalkedUnitStep
-    (X : Ix.Kernel.RoleTable → Ixon.Env → Ix.Kernel.Env .anon → Prop)
-    (Kind : List (Call F) → Ix.Kernel.RoleTable → Ixon.Env → _root_.Address → Ixon.Constant →
-      Prop) : Prop :=
-  WalkedUnit.{u} Kind fun _ t envT E₀ E lim A c => UnitStep.{u} (X t E) t envT E₀ E lim A c
 
 /-- **The step of every top-walked unit, from the step of each kind.** The premises common to
 all kinds are read off the walk, and the unit's record is split by its form: a definition
@@ -350,16 +323,19 @@ theorem circuitComposed_of_parts
       nativeBlockOtherTelescope oneTypeBlockOffNativeRoute otherBlock)
 
 /-- **The public statement from the open obligations** (module docstring):
-`circuitComposed_of_parts` at the opened head trace `FormerOpenTraceAt`, with the step of a
-standalone definition proved and the step of a standalone recursor reduced to one fact.
-`Run` is the binding claim layer's run predicate, by the run's calls. The first nine
-hypotheses are the binding half's, for every bounded run: the claim export with the observed
-run record; the invariant at the six basis groups; the admission of each group and its reading
-clause; and at each group from 6 to 76 of a run the closure, the stored shapes where the group
-has no role unit, the role unit of an operation, the role unit of a standard axiom and the
-guard at the raised limits. The other eight are the typing half's, for a top-walked unit of
-each remaining kind: its step, and for a standalone recursor at a fresh address that a native
-parent heading its major premise is no basis family. -/
+`circuitComposed_of_parts` at the opened head trace `FormerOpenTraceAt`, with the steps that
+are proved passed in and the others reduced to smaller ones. `Run` is the binding claim
+layer's run predicate, by the run's calls. The first nine hypotheses are the binding half's,
+for every bounded run: the claim export with the observed run record; the invariant at the six
+basis groups; the admission of each group and its reading clause; and at each group from 6 to
+76 of a run the closure, the stored shapes where the group has no role unit, the role unit of
+an operation, the role unit of a standard axiom and the guard at the raised limits. The other
+seven are the typing half's, for a top-walked unit: the step of a standalone theorem or
+opaque; for a standalone recursor at a fresh address, that a native parent heading its major
+premise is no basis family; the step of a non-empty block of definitions; of a one-type native
+block whose former is declared at its telescope; of a one-type block and of a block of two or
+more inductive types on the modeled route, each given that the block is modeled at the step's
+store; and of a non-empty block of recursors. -/
 theorem circuitComposed_residual
     {Run : List (Call F) → Ix.Kernel.RoleTable → BRun → (Nat → Ixon.Env) → Prop}
     (bindingClaimExport :
@@ -385,33 +361,39 @@ theorem circuitComposed_residual
           RecMajorFreshNotBasis.{u} t envT E₀ E lim A c rc)
     (definitionBlock :
       WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun _ _ _ _ c =>
-        ∃ ms : Array Ixon.MutConst, c.info = .muts ms ∧ DefnBlock ms)
+        ∃ ms : Array Ixon.MutConst, c.info = .muts ms ∧ 0 < ms.size ∧ DefnBlock ms)
     (nativeBlockTelescope :
       WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun calls t E₀ B cb =>
         ∃ ind : Ixon.Inductive,
           BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerAtTele t E₀ B cb ind)
-    (nativeBlockAlias :
-      WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun calls t E₀ B cb =>
-        ∃ ind : Ixon.Inductive,
-          BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerAtAlias t E₀ B cb ind)
-    (nativeBlockOtherTelescope :
-      WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun calls t E₀ B cb =>
-        ∃ ind : Ixon.Inductive,
-          BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerTeleOther t E₀ B cb ind)
-    (oneTypeBlockOffNativeRoute :
-      WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun calls _ E₀ B cb =>
-        ∃ ind : Ixon.Inductive, BlockUnitRecord E₀ B cb ind ∧ ¬ NativeRouteAt calls B)
-    (otherBlock :
+    (oneTypeBlockModeled :
+      WalkedUnit.{u} (fun calls _ E₀ B cb =>
+          ∃ ind : Ixon.Inductive, BlockUnitRecord E₀ B cb ind ∧ ModeledRouteAt calls B)
+        fun _ t envT E₀ E lim B cb =>
+          ModeledAt E B →
+            UnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt t E) t envT E₀ E lim B cb)
+    (mutualBlock :
+      WalkedUnit.{u} (fun calls _ _ B cb =>
+          ∃ ms : Array Ixon.MutConst, cb.info = .muts ms ∧ 2 ≤ ms.size ∧
+            (∀ m ∈ ms.toList, ∃ i, m = Ixon.MutConst.indc i) ∧ ModeledRouteAt calls B)
+        fun _ t envT E₀ E lim B cb =>
+          ModeledAt E B →
+            UnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt t E) t envT E₀ E lim B cb)
+    (recursorBlock :
       WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun _ _ _ _ c =>
-        ∃ ms : Array Ixon.MutConst, c.info = .muts ms ∧ ¬ DefnBlock ms ∧
-          ∀ ind : Ixon.Inductive, ms ≠ #[.indc ind]) :
+        ∃ ms : Array Ixon.MutConst, c.info = .muts ms ∧ 0 < ms.size ∧
+          ∀ m ∈ ms.toList, ∃ r, m = Ixon.MutConst.recr r) :
     CircuitComposed.{u} :=
   circuitComposed_of_parts bindingClaimExport basisGroups groupAdmissions groupAdmissionReads
     groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit raisedLimitGuard
     (standaloneDefinition_foldExtra linkLaws_formerOpenTrace)
     standaloneTheoremOrOpaque
     (standaloneRecursor_of_freshNotBasis freshRecursorMajorNotBasis)
-    definitionBlock nativeBlockTelescope nativeBlockAlias nativeBlockOtherTelescope
-    oneTypeBlockOffNativeRoute otherBlock
+    (definitionBlock_of_nonempty definitionBlock)
+    nativeBlockTelescope
+    nativeBlockAlias_walked
+    nativeBlockOtherTelescope_step
+    (oneTypeBlockOffNativeRoute_of_modeled oneTypeBlockModeled)
+    (otherBlock_of_kinds mutualBlock recursorBlock)
 
 end IxVM.Refinement.Endpoint
