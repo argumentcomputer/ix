@@ -419,10 +419,26 @@ def projectionBlock? (c : Ixon.Constant) : Option Address :=
   | .dPrj p => some p.block
   | _ => none
 
+/-- A role whose record a validation walks (`KernelRoles::role_admission_checks`, read by
+`KernelModeled::addr_covered`): a block member outside the quotient package, an operation, or
+a definition specified by equations. The top-level walk does not enter a record bound to one,
+so a witness reached past one, or at one, must be bound to such a role itself
+(`KernelModeled::assert_covered_past`). -/
+def coveredRole (r : Ix.Kernel.Role) : Bool :=
+  let quotPackage : Bool := match r with
+    | .quot | .quotMk | .quotLift | .quotInd | .quotSound => true
+    | _ => false
+  match r.spec (md := .anon) with
+  | .block .. => !quotPackage
+  | .ops .. | .eqns .. => true
+  | _ => false
+
 /-- Breadth-first search of the dependency closure the claim walk visits from
 `root` (used references, projection to block), recording each record's
-predecessor and step (`0` projection to block, `j + 1` the `j`-th reference). -/
-def depsSearch (look : Address → Option Ixon.Constant) (root : Address) (limit : Nat := 400000) :
+predecessor and step (`0` projection to block, `j + 1` the `j`-th reference).
+The search does not enter a record `avoid` answers `true` for. -/
+def depsSearch (look : Address → Option Ixon.Constant) (root : Address) (limit : Nat := 400000)
+    (avoid : Address → Bool := fun _ => false) :
     Std.HashMap Address (Address × Nat) := Id.run do
   let mut parent : Std.HashMap Address (Address × Nat) := {}
   let mut seen : Std.HashSet Address := ({} : Std.HashSet Address).insert root
@@ -438,7 +454,7 @@ def depsSearch (look : Address → Option Ixon.Constant) (root : Address) (limit
     for (r, j) in c.refs.zipIdx do
       if used.contains j then nexts := nexts.push (r, j + 1)
     for (n, st) in nexts do
-      unless seen.contains n do
+      unless seen.contains n || avoid n do
         seen := seen.insert n
         parent := parent.insert n (a, st)
         queue := queue.push n
@@ -561,15 +577,28 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
       unless used.contains j do continue
       if aset.contains r || outside.contains r then continue
       outside := outside.push r
+  -- the records bound to a covered role (`coveredRole`)
+  let coveredAt : Std.HashSet Address := table.bound.foldl
+    (fun s (r, a) => if coveredRole r then s.insert a else s) {}
+  let covered (a : Address) : Bool := coveredAt.contains a
   let parent := depsSearch look b
+  -- the same search through uncovered records only
+  let parentU := depsSearch look b (avoid := covered)
   -- a path of one step or more: the block itself is not in its closure
   let pathFrom (x : Address) : Option (List Nat) := (pathTo parent b x).filter (!·.isEmpty)
+  -- a path the circuit accepts for a witness `x` stopping at `stop`
+  -- (`KernelModeled::assert_covered_past`): no record on it covered, the stop included, or any
+  -- path for a covered `x`
+  let pathOk (x stop : Address) : Option (List Nat) :=
+    (pathTo parentU b stop).filter (!·.isEmpty) <|> (if covered x then pathFrom stop else none)
   let roleOf (x : Address) : Option Nat := do
     let (r, _) ← table.bound.find? (·.2 == x)
     Ix.Kernel.Role.all.idxOf? r
-  -- the witness of one outside reference: (address, kind, path, extra)
-  let classify (x : Address) : Except String (Address × Nat × List Nat × List Nat) := do
-    if let some steps := pathFrom x then
+  -- the witness of one outside reference: (address, kind, path, extra), with the paths `path`
+  -- gives
+  let classifyBy (path : Address → Address → Option (List Nat)) (x : Address) :
+      Except String (Address × Nat × List Nat × List Nat) := do
+    if let some steps := path x x then
       return (x, 1, steps, [])
     else if (roleOf x).any basisRoleAllowed then
       return (x, 0, [], [])
@@ -578,7 +607,7 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
         | .cPrj p => some (p.block, p.idx.toNat, p.cidx.toNat + 1)
         | _ => none) then
       -- a type or constructor of a block in the closure (its block's walk checks it)
-      let some steps := pathFrom pb
+      let some steps := path x pb
         | throw s!"outside projection {x} is of a block outside the closure"
       return (x, 3, steps, [idx, c1])
     else
@@ -589,9 +618,15 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
         | _ => none
       let some ref := ref? | throw s!"outside reference {x} is neither in the closure nor a basis role"
       let some entry := cx.index.recs[ref]? | throw s!"outside recursor {x} is not indexed"
-      let some steps := pathFrom entry.block
+      let some steps := path x entry.block
         | throw s!"outside recursor {x} eliminates a block outside the closure"
       return (x, 2, steps, [])
+  -- a witness by a path the circuit accepts; failing that, by the search's shortest path (the
+  -- circuit refuses it: no witness of `x` passes `assert_covered_past`)
+  let classify (x : Address) : Except String (Address × Nat × List Nat × List Nat) :=
+    match classifyBy pathOk x with
+    | .ok w => .ok w
+    | .error _ => classifyBy (fun _ stop => pathFrom stop) x
   let mut deps : Array Address := (records.map (·.1)).push fk.recBlock
   let mut witnesses : Array (Address × Nat × List Nat × List Nat) := #[]
   for x in outside do
@@ -615,14 +650,17 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
     let some entry := cx.index.recs[ref]? | continue
     let some ibc := look entry.block | continue
     let iused := usedIdxs ibc
-    let (iusedRefs, irefBlocks) : Std.HashSet Address × Std.HashSet Address :=
-      ibc.refs.zipIdx.foldl (fun (ur, ib) (q, j) =>
+    -- the blocks the used references project from, and those an uncovered one projects from
+    -- (`KernelModeled::ref_projects_from`: a hit through a covered used reference counts only
+    -- for a covered reference)
+    let (iusedRefs, irefBlocks, irefBlocksU) :
+        Std.HashSet Address × Std.HashSet Address × Std.HashSet Address :=
+      ibc.refs.zipIdx.foldl (fun (ur, ib, ibu) (q, j) =>
         if iused.contains j then
-          let ib := match (look q).bind projectionBlock? with
-            | some pb => ib.insert pb
-            | none => ib
-          (ur.insert q, ib)
-        else (ur, ib)) ({}, {})
+          (match (look q).bind projectionBlock? with
+           | some pb => (ur.insert q, ib.insert pb, if covered q then ibu else ibu.insert pb)
+           | none => (ur.insert q, ib, ibu))
+        else (ur, ib, ibu)) ({}, {}, {})
     let used := usedIdxs fam
     for (r, j) in fam.refs.zipIdx do
       unless used.contains j do continue
@@ -634,7 +672,8 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
         | .iPrj p => some p.block
         | .cPrj p => some p.block
         | _ => none
-      if icBlock.any irefBlocks.contains then continue
+      if icBlock.any (fun pb => irefBlocksU.contains pb || (covered r && irefBlocks.contains pb)) then
+        continue
       extra := extra.push r
   -- likewise the block's own recursor family: its used references that the circuit cannot
   -- place by the block (`KernelModeled::family_refs_ok`: a used reference of the block, a
@@ -647,14 +686,14 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
       | .cPrj p => some p.block
       | .rPrj p => some p.block
       | _ => none
-    let (busedRefs, brefBlocks) : Std.HashSet Address × Std.HashSet Address :=
-      bc.refs.zipIdx.foldl (fun (br, bb) (q, j) =>
+    let (busedRefs, brefBlocks, brefBlocksU) :
+        Std.HashSet Address × Std.HashSet Address × Std.HashSet Address :=
+      bc.refs.zipIdx.foldl (fun (br, bb, bbu) (q, j) =>
         if bused.contains j then
-          let bb := match (look q).bind typeCtorRecBlock with
-            | some pb => bb.insert pb
-            | none => bb
-          (br.insert q, bb)
-        else (br, bb)) ({}, {})
+          (match (look q).bind typeCtorRecBlock with
+           | some pb => (br.insert q, bb.insert pb, if covered q then bbu else bbu.insert pb)
+           | none => (br.insert q, bb, bbu))
+        else (br, bb, bbu)) ({}, {}, {})
     let used := usedIdxs fam
     for (r, j) in fam.refs.zipIdx do
       unless used.contains j do continue
@@ -666,7 +705,8 @@ def blockAdvice (table : Ix.Kernel.RoleTable) (look : Address → Option Ixon.Co
         | .iPrj p => some p.block
         | .cPrj p => some p.block
         | _ => none
-      if icBlock.any brefBlocks.contains then continue
+      if icBlock.any (fun pb => brefBlocksU.contains pb || (covered r && brefBlocks.contains pb)) then
+        continue
       extra := extra.push r
   for x in extra do
     let w ← classify x
