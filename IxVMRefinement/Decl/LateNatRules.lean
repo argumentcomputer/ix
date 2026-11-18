@@ -750,6 +750,7 @@ theorem natI_ih_apps_spec {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
       -- the telescope is a list the run passes to `Lists::length`: fewer than `2^39` binders
       have hm_lt : m < 549755813888 :=
         teleRep_length_lt_of_call hbnd ev_len (by simp) htele_m47
+      have hm_lt' : (Ix.Kernel.structFieldTeleOf Ecty nP nF i).length < 549755813888 := hm_lt
       have hlt_m' : nP + 1 + n + nF + m < 4611686018427387904 := by omega
       obtain ⟨hv97, hm98⟩ := tele_length_spec ev_len htele_m47
       rw [hm98] at ev_psP

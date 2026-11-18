@@ -27,7 +27,7 @@ front theorem (`TypingRecLateNativeFront.lean`) assembles:
 * `front_rules_canon`: the rules read under `ps` have canonical rules, represented under the rule
   keying `lateRuleKey` (a used reference is stored; the only `recur` address is the recursor's);
 * `front_parent_former`: the parent's loaded type is the stored former's;
-* `front_ctor_loads`: the constructor loads of the member, as the comparison reads them
+* `front_ctor_loads_count`: the constructor loads of the member, as the comparison reads them
   (`NatCtorLoadT`);
 * `Decl.front_maj`: the level arguments of the head of the major premise's domain, from the
   member check's scan of the type and the comparison's level clause.
@@ -770,7 +770,7 @@ for the step's store, answers the stored constructor `j` of the family: its key,
 with the bound the load contract keeps (`Core.CIRep.ctor_fields`), and its stored type at
 positions. The member index and the constructor count are asked at what the parent's load
 gives. -/
-theorem front_ctor_loads {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
+theorem front_ctor_loads_count {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
     {env : Ix.Kernel.Env .anon} {lim : Option Nat}
     (hcS : Core.ScopedCoreFacts (Core.Ctx.stored ⟨E, env, t, lim⟩))
     {fam : NativeFam .anon} (hfam : NativeFamStored env fam) {k : Nat}

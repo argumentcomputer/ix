@@ -19,7 +19,7 @@ walk observed at the record, at every validation limit:
   Its hypotheses are those `rec_front_arm` takes, with the limit free;
 
 The field count of each constructor is bounded where its load is observed
-(`Decl.NatCtorLoadT`, `front_ctor_loads`), and the telescope of a recursive field where the
+(`Decl.NatCtorLoadT`, `front_ctor_loads_count`), and the telescope of a recursive field where the
 run passes it on (`Decl.teleRep_length_lt`).
 -/
 

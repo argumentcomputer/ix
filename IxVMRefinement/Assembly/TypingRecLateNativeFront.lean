@@ -295,7 +295,7 @@ theorem rec_native_front {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
   have hsN : ∀ x ∈ natCalls, x ∈ calls := fun x hx => hsCanon x (hsNat x hx)
   have hload : Decl.NatCtorLoadT (Core.Ctx.stored ⟨E, env, t, lim⟩).κ bP ip.idx.toNat
       ind.lvls.toNat (lateCtorsInfo fam) blkPtrP natCalls :=
-    front_ctor_loads hcS hat.stored hL1 hidx56 (by rw [hlenC]; exact hcP) hnamesB
+    front_ctor_loads_count hcS hat.stored hL1 hidx56 (by rw [hlenC]; exact hcP) hnamesB
       (hgood.sub hsN)
   have hrecB : recordOf (⟨E, env, t, lim⟩ : Core.Ctx).E (Core.ixAddr bP) = some cb := by
     show recordOf E (Core.ixAddr bP) = some cb
