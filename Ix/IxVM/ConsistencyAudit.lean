@@ -23,13 +23,14 @@ circuit follows from the same half of every bounded source derivation, `SourceSo
 (`IxVM.Consistency.circuitSound_of_bounded`).
 
 What this module does not freeze. A definition the statements read from another module
-appears here by name only. `Ix.IxVM.Refinement.Audit` freezes the ones of
-`Ix.IxVM.Refinement.Statement` (`CircuitSound`, `Hashed`, `View.HashedCollision`,
-`packDigest`, `Digest`, `digestValue`, `verifyClaim`) and `View`. The kernel's definitions
-(`Ix.Kernel.Model`, `Ix.Kernel.Denotes`, `Ix.Kernel.SetTheory`,
-`Ix.Kernel.Admission.admitBinding`, the expression reader, the pinned basis, the committed
-role data), the role schedule (`Ix.SpecDigest.groups`), the claim and Ixon formats and the
-circuit `IxVM.source` are not frozen here. -/
+appears here by name only. `Ix.IxVM.ConsistencyModelAudit` freezes what "has a model" means:
+`Ix.Kernel.SetTheory`, `Ix.Kernel.Model`, its laws and `Ix.Kernel.Denotes`.
+`Ix.IxVM.Refinement.Audit` freezes the definitions of `Ix.IxVM.Refinement.Statement`
+(`CircuitSound`, `Hashed`, `View.HashedCollision`, `packDigest`, `Digest`, `digestValue`,
+`verifyClaim`) and `View`. The kernel's other definitions (`Ix.Kernel.Admission.admitBinding`,
+the expression reader, the pinned basis, the committed role data, terms and environments),
+the role schedule (`Ix.SpecDigest.groups`), the claim and Ixon formats and the circuit
+`IxVM.source` are not frozen. -/
 
 /-! ## The statements -/
 
