@@ -19,10 +19,10 @@ proves it with the twin's per-member step.
   `StoredFamilies`.
 * `StoredTwinStepFam RFormS L`: the stored case of the twin row restated: the canonical record
   is the witness's selected one, with the selected records' form `RFormS`.
-* `TwinOnStoredFlat`: the positional identity across the two records. The twin's own family check
-  reads it as the block's family over the same flattened family as the stored record's. Two
-  records' positions agree only if the circuit derives the auxiliaries' order from the block,
-  not from the record; until then it is read off each record and compared as a set.
+* `TwinOnStoredFlat`: the positional identity across the two records. The stored record's
+  flattened family is the one derived from the block, entry by entry with parameters and levels
+  (`Binding.StoredFamiliesFlat`); the twin's own family check reads the twin's record as the
+  block's family over the same entries.
 * `TwinSeamStored RFormS`: what the circuit side hands for a twin of a stored family: the facts
   `TwinSeam` hands, with the canonical record supplied by the witness instead of by a family
   check of this run.
