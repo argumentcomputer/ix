@@ -291,7 +291,9 @@ theorem axiomValidationFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       have htbl97 : TableRep t b97 x_tbl := htblR.mono (hhm32.trans ext97)
       have hpinE : ty'.erasePw = T₀.erasePw :=
         typePinned_erasePw htwf hT htbl97 (htm.mono ext97) e174 e153
-      obtain ⟨e67, -⟩ := const_num_lvls_fields ev80
+      have ev80' := ev80
+      rw [← hvv31, hvV] at ev80'
+      obtain ⟨e67, -⟩ := const_num_lvls_fields ev80'
       obtain ⟨e68, -, hlt8⟩ := role_levels_spec hn₀ ev100
       have hnn : ax.lvls.toNat = n₀ := by
         have hf' : ((ax.lvls.toNat : Nat) : F) = ((n₀ : Nat) : F) :=
@@ -384,7 +386,8 @@ theorem axiomValidationFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
           ReaderReads.exprReader_mono (fun x b' h₂ => hE.2.2.1 x b' h₂) hty
         obtain ⟨ty'', tyPtr'', blobs'', hcanon'', -, ⟨u'', hld''⟩, hnl'', rty'', htm''⟩ :=
           LoadedReads.get_ci_axio_canon_raw ht hgood₁.1 ha₁ ev₁ hrecE hinfo htyE' hlbb hdef
-        obtain rfl : ty'' = ty' := Option.some.inj (hcanon''.symm.trans hcanon)
+        have ety : ty'' = ty' := Option.some.inj (hcanon''.symm.trans hcanon)
+        rw [ety] at htm''
         have hvr : Decl.ValRepExact (keyOf t) h₁' (.field (ax.lvls.toNat : F)) tyPtr''
             (⟨.role r, List.range ax.lvls.toNat, ty'⟩ : Ix.Kernel.ConstantVal .anon) :=
           LoadedReads.valRepExact_range hnl'' (by rw [Decl.posOf_range]; exact htm'')
@@ -410,7 +413,8 @@ theorem axiomValidationFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
         hrefs, hann, ?_,
         Typing.address_size_of_record hrun.runStore hcE, hreload⟩
       have hr := hreads
-      rw [hkeya] at hr
+      have ek : IxVM.Consistency.keyOf t a = Ix.Kernel.Key.role r := hkeya
+      rw [ek] at hr
       exact hr
   | n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
     obtain ⟨hsk_f, -⟩ := RoleVal.role_spec_kind_spec ev124
