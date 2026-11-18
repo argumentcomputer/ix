@@ -1,5 +1,5 @@
 import Ix.IxVM.Consistency.L0
-import IxVMRefinement.Binding.ClauseFold
+import IxVMRefinement.Binding.ClaimDecode
 import IxVMRefinement.Claim.TopSafeExport
 import IxVMRefinement.Assembly.NativeAliasFormer
 import IxVMRefinement.Assembly.TypingDefnBlock
@@ -86,16 +86,21 @@ Proved inside, with no hypothesis left:
   kinds being refused (`otherBlock_of_kinds`);
 * on the binding side, everything `composed_skeleton_over` proves from its named hypotheses:
   the fold over the 77 groups, the step of a group from its parts, the raise past a group, the
-  table's well-formedness from the claim's admission, and the witness on every group.
+  table's well-formedness from the claim's admission, and the witness on every group;
+* of the binding claim's export (`Binding.bindingClaimExport_of_table_and_stores`): the
+  claim's decode (an accepted `binding` claim's run calls the binding's validation on the
+  claimed address, `Claim.verify_claim_decode_binding_spec`), that the table binds every role,
+  the observed validation of every role of every group, and the run's store.
 
-Left as hypotheses, for a run predicate `Run` that the binding claim layer is to supply (the
-run record is the observed one, `observedRun`; the predicate relating it to the table and the
-store sequence is not fixed):
+Left as hypotheses, at the binding claim layer's run predicate `Binding.BindingRun` (the run
+record is the observed one, `observedRun`; the predicate holds the table's prelude pin, the
+store after the six basis groups and the admission of each group with its reading clause, so
+the invariant at the basis groups and the two admission chains are its projections):
 
-* binding: the claim export with the observed run record; the invariant at the six basis
-  groups; the admission of each group and its reading clause; and at each group of a run the
-  closure, the stored shapes where the group has no role unit, and the role unit of an
-  operation and of a standard axiom;
+* binding: the three parts of the claim's export that remain (the loaded table's admission,
+  its prelude pin, and the stores of a run; the claim's decode is proved); and at each group of
+  a run the closure, the stored shapes where the group has no role unit, and the role unit of
+  an operation and of a standard axiom;
 * typing, for a top-walked unit by the form of its record (`WalkedUnit`, `WalkedUnitStep`, in
   `IxVMRefinement.Endpoint.WalkedUnit`): the step of a block of one inductive type on the native
   route whose former is declared at its telescope; and, given that the block is modeled at the
@@ -374,30 +379,36 @@ theorem circuitComposed_of_parts
 
 /-- **The public statement from the open obligations** (module docstring):
 `circuitComposed_of_parts` at the opened head trace `FormerOpenTraceAt`, with the steps that
-are proved passed in and the others reduced to smaller ones. `Run` is the binding claim
-layer's run predicate, by the run's calls. The first eight hypotheses are the binding half's,
-for every bounded run: the claim export with the observed run record; the invariant at the six
-basis groups; the admission of each group and its reading clause; and at each group from 6 to
-76 of a run the closure, the stored shapes where the group has no role unit, the role unit of
-an operation and the role unit of a standard axiom. The other four are the typing half's, for a
-top-walked unit: the step of a one-type native block whose former is declared at its
-telescope; of a one-type block and of a block of two or more inductive types on the modeled
-route, each given that the block is modeled at the step's store; and of a non-empty block of
-recursors. -/
+are proved passed in and the others reduced to smaller ones. The binding claim layer's run
+predicate is `Binding.BindingRun`, by the run's calls. The first seven hypotheses are the
+binding half's. Three are the parts of the claim's export that remain
+(`Binding.bindingClaimExport_of_table_and_stores`; the claim's decode is proved,
+`Claim.verify_claim_decode_binding_spec`): that the table a binding run loads is the admitted
+table of bytes the run hashed (`tableAdmits`), that such a table binding every role pins the
+prelude (`preludePins`), and the stores of a run, with every clause of each group's admission
+but the observed validation of its roles (`groupStores`). The invariant at the six basis groups
+and the two admission chains are projections of the run predicate (`basisOver_bindingRun`,
+`admitsChain_bindingRun`, `admitsReadsChain_bindingRun`). The other four are, for every bounded
+run and each group from 6 to 76 of it, the closure, the stored shapes where the group has no
+role unit, the role unit of an operation and the role unit of a standard axiom. The last four
+hypotheses are the typing half's, for a top-walked unit: the step of a one-type native block
+whose former is declared at its telescope; of a one-type block and of a block of two or more
+inductive types on the modeled route, each given that the block is modeled at the step's
+store; and of a non-empty block of recursors. -/
 theorem circuitComposed_residual
-    {Run : List (Call F) → Ix.Kernel.RoleTable → BRun → (Nat → Ixon.Env) → Prop}
-    (bindingClaimExport :
-      SourceSoundBounded fun calls d => BindingClaimExportObs (Run calls) calls d)
-    (basisGroups : ∀ calls, BasisOver.{u} FormerOpenTraceAt (Run calls))
-    (groupAdmissions : ∀ calls, AdmitsChain (Run calls))
-    (groupAdmissionReads : ∀ calls, AdmitsReadsChain (Run calls))
-    (groupClosure : ∀ calls, AtGroups (Run calls) (ClosureStepOver.{u} FormerOpenTraceAt))
+    (tableAdmits : LoadedTableAdmits)
+    (preludePins : LoadedTablePinsPrelude)
+    (groupStores : ∀ calls, GroupStoresOfRun calls)
+    (groupClosure :
+      ∀ calls, AtGroups (BindingRun calls) (ClosureStepOver.{u} FormerOpenTraceAt))
     (groupWithoutRoleUnit :
-      ∀ calls, AtGroups (Run calls) (RoleFreeShapes.{u} FormerOpenTraceAt))
+      ∀ calls, AtGroups (BindingRun calls) (RoleFreeShapes.{u} FormerOpenTraceAt))
     (operationRoleUnit : ∀ calls,
-      AtGroups (Run calls) (RoleUnitStepOver.{u} (· ∈ RoleOps.opRoles) FormerOpenTraceAt))
+      AtGroups (BindingRun calls)
+        (RoleUnitStepOver.{u} (· ∈ RoleOps.opRoles) FormerOpenTraceAt))
     (standardAxiomRoleUnit : ∀ calls,
-      AtGroups (Run calls) (RoleUnitStepOver.{u} (· ∈ standardAxioms) FormerOpenTraceAt))
+      AtGroups (BindingRun calls)
+        (RoleUnitStepOver.{u} (· ∈ standardAxioms) FormerOpenTraceAt))
     (nativeBlockTelescope :
       WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun calls t E₀ B cb =>
         ∃ ind : Ixon.Inductive,
@@ -420,7 +431,10 @@ theorem circuitComposed_residual
         ∃ ms : Array Ixon.MutConst, c.info = .muts ms ∧ 0 < ms.size ∧
           ∀ m ∈ ms.toList, ∃ r, m = Ixon.MutConst.recr r) :
     CircuitComposed.{u} :=
-  circuitComposed_of_parts bindingClaimExport basisGroups groupAdmissions groupAdmissionReads
+  circuitComposed_of_parts
+    (bindingClaimExport_of_table_and_stores tableAdmits preludePins groupStores)
+    (fun calls => basisOver_bindingRun FormerOpenTraceAt calls) admitsChain_bindingRun
+    admitsReadsChain_bindingRun
     groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit
     (standaloneDefinition_foldExtra linkLaws_formerOpenTrace)
     (standaloneTheoremOrOpaque_foldExtra linkLaws_formerOpenTrace)
