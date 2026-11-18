@@ -11,6 +11,7 @@ import IxVMRefinement.StatementRel.StoreInhabit
 import IxVMRefinement.Binding.ReadsLocal
 import IxVMRefinement.Binding.ReadsLiteralFree
 import IxVMRefinement.Binding.RouteModeledRun
+import IxVMRefinement.Binding.RootSafety
 
 /-! # The family checks of a binding run, group by group
 
@@ -294,7 +295,9 @@ theorem routeNew_of_run (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded
       rcases Nat.eq_zero_or_pos ms.size with h0 | h
       · exfalso
         apply hind
-        rw [List.eq_nil_of_length_eq_zero (by rw [Array.length_toList]; exact h0)]
+        have hnil : ms.toList = [] :=
+          List.eq_nil_of_length_eq_zero (by rw [Array.length_toList]; exact h0)
+        rw [hnil]
         rfl
       · exact h
     obtain ⟨xk, rk, h₁, h₂, cs₁, hak, evk, hsubk⟩ :=
