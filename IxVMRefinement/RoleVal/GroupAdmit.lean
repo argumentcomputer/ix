@@ -3170,11 +3170,23 @@ theorem validate_role_eqns_evidence_observed {t : Ix.Kernel.RoleTable}
 
 /-! ## The observed walk of an operation's certificate references -/
 
+/-- **The run asked whether the reference `b` is allowed, as observed**: the
+`KernelRoles::assert_ref_allowed` call on `b` under `Claim.RCFullRep t bAddr n`, among
+`calls`. -/
+def RefAllowedObsIn (calls : List (Call F)) (bAddr : _root_.Address)
+    (t : Ix.Kernel.RoleTable) (n : Nat) (b : _root_.Address) : Prop :=
+  ∃ (h h' : Heap F) (x_rc x_b r : SourceValue F) (cs : List (Call F)),
+    Claim.RCFullRep t bAddr n h x_rc ∧ S0.addr h x_b b ∧
+    ObsFn W "KernelRoles::assert_ref_allowed" [x_rc, x_b] h r h' cs ∧
+    ∀ cl ∈ cs, cl ∈ calls
+
 /-- **The run walked the reference `b` under the context `KernelRoles::walk_ctx` gives it, as
-observed**: the `walk_ctx` call on `b` under `Claim.RCFullRep t bAddr n`, and the
-`KernelClaim::run_check_transitive` call on `b` under the context it returned, among `calls`. -/
+observed**: the reference was asked about (`RefAllowedObsIn`), and the `walk_ctx` call on `b`
+under `Claim.RCFullRep t bAddr n`, and the `KernelClaim::run_check_transitive` call on `b` under
+the context it returned, are among `calls`. -/
 def RefWalkedUnderCtxIn (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (n : Nat) (b : _root_.Address) : Prop :=
+  RefAllowedObsIn calls bAddr t n b ∧
   ∃ (h₁ h₂ h₃ : Heap F) (x_rc x_b rc' r_w : SourceValue F) (cs_c cs_w : List (Call F)),
     Claim.RCFullRep t bAddr n h₁ x_rc ∧ S0.addr h₁ x_b b ∧
     ObsFn W "KernelRoles::walk_ctx" [x_rc, x_b] h₁ rc' h₂ cs_c ∧
@@ -3185,8 +3197,10 @@ theorem RefWalkedUnderCtxIn.mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.A
     {t : Ix.Kernel.RoleTable} {n : Nat} {b : _root_.Address}
     (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (hv : RefWalkedUnderCtxIn cs₁ bAddr t n b) :
     RefWalkedUnderCtxIn cs₂ bAddr t n b := by
-  obtain ⟨h₁, h₂, h₃, x_rc, x_b, rc', r_w, cs_c, cs_w, hrc, hb, evc, evw, hs⟩ := hv
-  exact ⟨h₁, h₂, h₃, x_rc, x_b, rc', r_w, cs_c, cs_w, hrc, hb, evc, evw,
+  obtain ⟨⟨h, h', x_rc₀, x_b₀, r₀, cs₀, hrc₀, hb₀, ev₀, hs₀⟩,
+    h₁, h₂, h₃, x_rc, x_b, rc', r_w, cs_c, cs_w, hrc, hb, evc, evw, hs⟩ := hv
+  exact ⟨⟨h, h', x_rc₀, x_b₀, r₀, cs₀, hrc₀, hb₀, ev₀, fun cl hm => hsub cl (hs₀ cl hm)⟩,
+    h₁, h₂, h₃, x_rc, x_b, rc', r_w, cs_c, cs_w, hrc, hb, evc, evw,
     fun cl hm => hsub cl (hs cl hm)⟩
 
 /-- **What an operation's validation walks of one certificate `thm`, as observed**, the
@@ -3255,8 +3269,10 @@ private theorem walk_refs_except_observed {t : Ix.Kernel.RoleTable} {bAddr : _ro
           have e1 : Heap.Extends h m181 :=
             ev128.heap_extends.trans (ev159.heap_extends.trans ev193.heap_extends)
           have hsub_w : ∀ cl ∈ cs205, cl ∈ cs267 := fun cl hm => by rw [hc245]; simp [hm]
+          have hsub_a : ∀ cl ∈ cs126, cl ∈ cs267 := fun cl hm => by rw [hc245]; simp [hm]
           exact ⟨e1.trans (ev221.heap_extends.trans ev207.heap_extends), fun _ _ =>
-            ⟨_, _, _, _, _, _, _, _, _, hrc.mono e1, S0.addr_mono e1 hb_rep, ev221, ev207,
+            ⟨⟨_, _, _, _, _, _, hrc, hb_rep, ev128, hsub_a⟩,
+              _, _, _, _, _, _, _, _, _, hrc.mono e1, S0.addr_mono e1 hb_rep, ev221, ev207,
               hsub_w⟩⟩
         | n1_other m43 x51 y52 m53 cs62 y82 cs92 v115 m116 cs126 v145 m146 cs157
             ev64 ev94 _ _ ev128 ev159 hne246 _ _ _ =>

@@ -28,8 +28,8 @@ How to change it. When a theorem produces a hypothesis, apply it inside
 same commit. When the interface of an obligation changes, retype its hypothesis the same way.
 The proof is complete when the theorem has no explicit argument.
 
-What this module does not print. A definition that a hypothesis reads (`GroupStoresOfRun`,
-`BindingRun`, `AtGroups`, `ClosureStepOver`,
+What this module does not print. A definition that a hypothesis reads
+(`RemainingStoreClausesOfRun`, `BindingRun`, `AtGroups`, `ClosureStepOver`,
 `RoleFreeShapes`, `RoleUnitStepOver`, `FamilyGraphRow`, `InnerCheckedRow`, `FamilyBlockRow`,
 `FamilyTwinRow`, `FoldExtra`, `UnitStep` and the others) appears by name only: its own
 module holds it. The public statement and what it reads are printed in
@@ -41,7 +41,8 @@ namespace, so every name prints in full. -/
 /--
 info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
   (groupStores :
-    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)), IxVM.Refinement.Binding.GroupStoresOfRun calls)
+    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
+      IxVM.Refinement.Binding.RemainingStoreClausesOfRun calls)
   (groupClosure :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
       IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)

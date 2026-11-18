@@ -183,7 +183,7 @@ theorem roleEvidence_walked (hH : LoadedReads.HashedRecordsStored calls E₀) {g
           by_cases hP : ∃ hj : j < c.refs.toList.length, j ∈ Core.S0.usedRefIdxs c ∧
               c.refs.toList[j] ≠ a ∧ ¬ Claim.CoveredAt t (some (valLimit g)) c.refs.toList[j]
           · obtain ⟨hjl, hju, hjne, hjnc⟩ := hP
-            rcases hw j hjl hju hjne with hcov' | ⟨recs, hcl, hmem⟩
+            rcases (hw j hjl hju hjne).2 with hcov' | ⟨recs, hcl, hmem⟩
             · exact absurd hcov' hjnc
             · refine ⟨recs, hcl, fun x hx => ?_⟩
               obtain ⟨_, _, hxe, _, _⟩ := hx
