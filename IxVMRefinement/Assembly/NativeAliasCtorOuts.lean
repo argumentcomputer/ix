@@ -231,7 +231,7 @@ theorem aliasOuts_of_member_traced {calls : List (Call F)} {t : Ix.Kernel.RoleTa
       Decl.TracedBinders env (p₀.nP + p₀.nIdx) cvS.type cvTa.type ∧
       Decl.OpenSortTrace env 0 (p₀.nP + p₀.nIdx) cvS.type s ∧
       (∃ ty₀ ty' : Ix.Kernel.Expr .anon,
-        (exprReader t (fun x => E.blobs.get? x) cb id
+        (exprReader t (fun x => E₀.blobs.get? x) cb id
           (blockSelf t B #[.indc ind])).read ind.typ = .ok ty₀ ∧
         ty₀.looseBVarsBounded 0 = true ∧
         ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
@@ -245,7 +245,7 @@ theorem aliasOuts_of_member_traced {calls : List (Call F)} {t : Ix.Kernel.RoleTa
         ct.lvls.toNat = ind.lvls.toNat ∧
         c.1.name = keyOf t (ctorAddr B 0 j) ∧ c.1.levelParams = List.range ct.lvls.toNat ∧
         c.2 = ct.fields.toNat ∧
-        (exprReader t (fun x => E.blobs.get? x) cb id
+        (exprReader t (fun x => E₀.blobs.get? x) cb id
           (blockSelf t B #[.indc ind])).read ct.typ = .ok c.1.type ∧
         c.1.type.looseBVarsBounded 0 = true ∧
         c.1.type.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
@@ -954,7 +954,7 @@ theorem aliasOuts_of_member_traced {calls : List (Call F)} {t : Ix.Kernel.RoleTa
         ct.lvls.toNat = ind.lvls.toNat ∧
         c.1.name = keyOf t (ctorAddr B 0 j) ∧ c.1.levelParams = List.range ct.lvls.toNat ∧
         c.2 = ct.fields.toNat ∧
-        (exprReader t (fun x => E.blobs.get? x) cb id
+        (exprReader t (fun x => E₀.blobs.get? x) cb id
           (blockSelf t B #[.indc ind])).read ct.typ = .ok c.1.type ∧
         c.1.type.looseBVarsBounded 0 = true ∧
         c.1.type.allLevelParamsDefined (List.range ct.lvls.toNat) = true ∧
@@ -970,7 +970,7 @@ theorem aliasOuts_of_member_traced {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     have hctEq : ct' = ct := Option.some.inj (hct'.symm.trans h1)
     rw [hctEq] at hcan
     exact ⟨ct, cty', h1, h2, h4, h3, congrArg ConstantVal.name hc1,
-      congrArg ConstantVal.levelParams hc1, hc2, h5E, hl, hd, hcan, hA⟩
+      congrArg ConstantVal.levelParams hc1, hc2, h5, hl, hd, hcan, hA⟩
   have htracedB' : Decl.TracedBinders env (p₀.nP + p₀.nIdx) cvS.type cvTa.type := by
     rw [hnP, hnIdx]
     exact htracedB
@@ -979,7 +979,7 @@ theorem aliasOuts_of_member_traced {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     exact htracedS
   refine ⟨cvS, cvTa, s, ctorsA, rawTypes, hcheckT, hAT', hTname.symm, htyT.name_eq,
     htyT.levelParams_eq, hcloadT.1, hparam', houts, hguardAt, hzeroChoice, hn, ?_, htracedB',
-    htracedS', ⟨ty₀, ty', htyE, hlbb, hdef, hcT, hcvT, rfl⟩, hperN⟩
+    htracedS', ⟨ty₀, ty', hty, hlbb, hdef, hcT, hcvT, rfl⟩, hperN⟩
   -- the later-use condition, from the loop's positivity scans
   intro cA hcA cbs body hstrip i hi hkind
   obtain ⟨j, hjA⟩ := List.mem_iff_getElem?.mp hcA
