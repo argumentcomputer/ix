@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 // TODO: Decide between SHA-256 and BLAKE3 for artifact/cache metadata.
 // Coordinate Rust/Go encodings and any catalog or envelope key-ID changes;
 // proof-protocol hashes have separate compatibility requirements.
+const artifactBuffer = 4 << 20
+
 type artifact struct {
 	SHA256 string
 	Bytes  int64
@@ -67,8 +70,10 @@ func readVerified(path string, expected artifact, value io.ReaderFrom) error {
 		return err
 	}
 	defer f.Close()
+	// Decoders issue many small reads; buffer them before the hash.
+	r := bufio.NewReaderSize(f, artifactBuffer)
 	hash := sha256.New()
-	n, err := value.ReadFrom(io.TeeReader(io.LimitReader(f, expected.Bytes+1), hash))
+	n, err := value.ReadFrom(io.TeeReader(io.LimitReader(r, expected.Bytes+1), hash))
 	if err != nil {
 		return err
 	}
@@ -76,7 +81,7 @@ func readVerified(path string, expected artifact, value io.ReaderFrom) error {
 		return fmt.Errorf("decoded artifact differs: %s", path)
 	}
 	var extra [1]byte
-	if n, err := f.Read(extra[:]); n != 0 || err != io.EOF {
+	if n, err := r.Read(extra[:]); n != 0 || err != io.EOF {
 		return fmt.Errorf("trailing artifact bytes: %s", path)
 	}
 	return nil

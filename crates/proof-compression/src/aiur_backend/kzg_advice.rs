@@ -31,6 +31,7 @@ pub const CLAIMS_MAGIC: &[u8; 8] = b"IXAUCL01";
 pub const POLICY_MAGIC: &[u8; 8] = b"IXAUKL01";
 pub const MAX_BYTES: usize = 64 << 20;
 pub const FOLD_DOMAIN: &[u8] = b"ix/aiur/kzg/fold/v1\0";
+pub const TRANSCRIPT_FOLD_DOMAIN: &[u8] = b"ix/aiur/kzg/fold-transcript/v1\0";
 
 pub fn digest_words(digest: &[u8; 32]) -> [Scalar; 8] {
   std::array::from_fn(|i| {
@@ -81,6 +82,39 @@ pub fn fold_challenge(
   }
 }
 
+/// Native reference for `CompressBNPacked::fold`'s weight. `transcript` must
+/// be the predecessor verifier's final transcript (after `[W₂]`); the weight is
+/// its next challenge after the domain tag, policy, statement, little-endian
+/// stage, predecessor key digest and the four points. Deriving it does not
+/// verify either operand.
+pub fn transcript_fold_challenge(
+  transcript: &crate::kzg::KzgTranscript,
+  policy: &[u8; 32],
+  statement: &[u8; 32],
+  stage: u32,
+  key: &[u8; 32],
+  previous: &[G1Affine; 2],
+  current: &[G1Affine; 2],
+) -> Result<Scalar, String> {
+  use multi_stark::traits::Transcript;
+  let mut writer = Writer(TRANSCRIPT_FOLD_DOMAIN.to_vec());
+  writer.0.extend(policy);
+  writer.0.extend(statement);
+  writer.0.extend(stage.to_le_bytes());
+  writer.0.extend(key);
+  for point in previous.iter().chain(current) {
+    writer.point(point)?;
+  }
+  let mut transcript = transcript.clone();
+  transcript.observe_bytes(&writer.0);
+  let scalar = transcript.sample_challenge();
+  if scalar == Bn254.zero() {
+    Err("zero compression fold challenge".into())
+  } else {
+    Ok(scalar)
+  }
+}
+
 /// Candidate canonical scalar bytes and subtraction limbs. The source parser
 /// checks their ranges, recomposition and final borrow independently.
 pub fn register(hints: &mut HintChannels<Scalar>) -> Result<(), String> {
@@ -104,6 +138,19 @@ pub fn register(hints: &mut HintChannels<Scalar>) -> Result<(), String> {
     |[value]| {
       let bytes = value.0.into_bigint().to_bytes_le();
       Ok(std::array::from_fn(|i| Bn254.from_u64(u64::from(bytes[i]))))
+    },
+  )?;
+  hints.insert_fixed::<2, 1>(
+    "kzg.io.div",
+    Type::Tuple { items: vec![Type::Field; 2] },
+    Type::Field,
+    |[value, divisor]| {
+      let value = Bn254.try_to_u64(value)?;
+      let divisor = Bn254.try_to_u64(divisor)?;
+      if divisor == 0 {
+        return Err("KZG division by zero".into());
+      }
+      Ok([Bn254.from_u64(value / divisor)])
     },
   )?;
   let fields4 = Type::Tuple { items: vec![Type::Field; 4] };
@@ -463,6 +510,24 @@ impl Inputs {
           .and_then(|bytes| bytes.get(offset))
           .ok_or("KZG byte read out of bounds")?;
         Ok([Bn254.from_u64(u64::from(*byte))])
+      },
+    )?;
+    let channels = self.channels.clone();
+    hints.insert_fixed::<2, 4>(
+      "kzg.io.read4",
+      Type::Tuple { items: vec![Type::Field; 2] },
+      Type::Tuple { items: vec![Type::Field; 4] },
+      move |[channel, offset]| {
+        let channel = usize::try_from(Bn254.try_to_u64(channel)?)
+          .map_err(|error| error.to_string())?;
+        let offset = usize::try_from(Bn254.try_to_u64(offset)?)
+          .map_err(|error| error.to_string())?;
+        let word = channel
+          .checked_sub(1)
+          .and_then(|i| channels.get(i))
+          .and_then(|bytes| bytes.get(offset..offset.checked_add(4)?))
+          .ok_or("KZG word read out of bounds")?;
+        Ok(std::array::from_fn(|i| Bn254.from_u64(u64::from(word[i]))))
       },
     )
   }

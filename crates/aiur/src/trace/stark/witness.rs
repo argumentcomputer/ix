@@ -118,6 +118,11 @@ pub(super) struct LookupPlan {
   widths: Vec<usize>,
 }
 impl LookupPlan {
+  /// Argument width of every lookup slot.
+  pub(super) fn widths(&self) -> &[usize] {
+    &self.widths
+  }
+
   pub(super) fn compile(graph: &ConstraintGraph<Val>) -> Result<Self, String> {
     let mut values = Vec::with_capacity(graph.lookup_prefix_len);
     let mut arithmetic = vec![];
@@ -576,34 +581,48 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     ci: usize,
     trace: &RowMajorMatrix<Val>,
   ) -> LookupValues<Val> {
-    let plan = &self.lookup_plans[ci];
-    let mut builder = LookupValues::builder(trace.height(), &plan.widths);
-    let mut writers = builder.rows_mut();
-    let fixed = self.system.circuits[ci].preprocessed.as_ref();
-    let populate = |worker: &mut Worker<B::Element>,
-                    batch: usize,
-                    lookups: &mut [LookupRowMut<'_, Val>]| {
-      for (i, lookup) in lookups.iter_mut().enumerate() {
-        let r = batch * ROW_BATCH + i;
-        let row = &trace.values[r * trace.width..(r + 1) * trace.width];
-        let fixed_row =
-          fixed.map_or(&[][..], |f| &f.values[r * f.width..(r + 1) * f.width]);
-        plan.fill(row, fixed_row, worker, lookup);
-      }
-    };
-    #[cfg(feature = "parallel")]
-    writers.par_chunks_mut(ROW_BATCH).enumerate().for_each_init(
-      Worker::<B::Element>::default,
-      |worker, (batch, lookups)| populate(worker, batch, lookups),
-    );
-    #[cfg(not(feature = "parallel"))]
-    {
-      let mut worker = Worker::<B::Element>::default();
-      for (batch, lookups) in writers.chunks_mut(ROW_BATCH).enumerate() {
-        populate(&mut worker, batch, lookups);
-      }
-    }
-    drop(writers);
-    builder.finish()
+    trace_lookups(
+      &self.lookup_plans[ci],
+      trace,
+      self.system.circuits[ci].preprocessed.as_ref(),
+    )
   }
+}
+
+/// Every lookup message of `trace` under `plan`, with `fixed` the circuit's
+/// fixed matrix (row for row).
+pub(super) fn trace_lookups(
+  plan: &LookupPlan,
+  trace: &RowMajorMatrix<Val>,
+  fixed: Option<&RowMajorMatrix<Val>>,
+) -> LookupValues<Val> {
+  let mut builder = LookupValues::builder(trace.height(), &plan.widths);
+  let mut writers = builder.rows_mut();
+  let populate = |worker: &mut Worker<Val>,
+                  batch: usize,
+                  lookups: &mut [LookupRowMut<'_, Val>]| {
+    for (i, lookup) in lookups.iter_mut().enumerate() {
+      let r = batch * ROW_BATCH + i;
+      let row = &trace.values[r * trace.width..(r + 1) * trace.width];
+      let fixed_row =
+        fixed.map_or(&[][..], |f| &f.values[r * f.width..(r + 1) * f.width]);
+      plan.fill(row, fixed_row, worker, lookup);
+    }
+  };
+  #[cfg(feature = "parallel")]
+  writers
+    .par_chunks_mut(ROW_BATCH)
+    .enumerate()
+    .for_each_init(Worker::<Val>::default, |worker, (batch, lookups)| {
+      populate(worker, batch, lookups)
+    });
+  #[cfg(not(feature = "parallel"))]
+  {
+    let mut worker = Worker::<Val>::default();
+    for (batch, lookups) in writers.chunks_mut(ROW_BATCH).enumerate() {
+      populate(&mut worker, batch, lookups);
+    }
+  }
+  drop(writers);
+  builder.finish()
 }

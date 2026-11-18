@@ -43,14 +43,13 @@ fn load_plan(path: PathBuf) -> TracePlan<'static, Bn254> {
 fn plan() -> &'static TracePlan<'static, Bn254> {
   static PLAN: OnceLock<TracePlan<'static, Bn254>> = OnceLock::new();
   PLAN.get_or_init(|| {
-    load_plan(
-      std::env::var_os("IX_AIUR_KZG_SOURCE_ARTIFACT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-          PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../aiur/tests/fixtures/kzg-source.ixa")
-        }),
-    )
+    load_plan(std::env::var_os("IX_AIUR_KZG_SOURCE_ARTIFACT").map_or_else(
+      || {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+          .join("../aiur/tests/fixtures/kzg-source.ixa")
+      },
+      PathBuf::from,
+    ))
   })
 }
 fn maps() -> &'static MapOverrides<Scalar> {
@@ -582,3 +581,101 @@ fn source_fold_matches_domain_bound_native_challenge() {
   );
 }
 
+#[test]
+#[ignore = "two recursive source-verifier proofs; run explicitly after capacity preflight"]
+fn compression_proves_two_stages_with_one_key_and_policy() {
+  let statement = digest(b"two recursive Aiur compression stages");
+  let mut claim = vec![Bn254.one(), Bn254.from_u64(31)];
+  claim.extend([Bn254.zero(); 8]);
+  claim.extend(wire::digest_words(&statement));
+  let base = constant_claim(claim);
+  let base_key = wire::key_bytes(&base.key).unwrap();
+  let config = |height| {
+    KzgConfig::with_max_trace_len(srs(height), CAP, 8)
+      .with_streaming_lookups()
+      .with_streaming_quotient()
+  };
+  let mut backend = Backend::new(plan(), config(1 << 16)).unwrap();
+  let recursive_key = VerifyingKey::from_system(backend.system()).unwrap();
+  let recursive_key = wire::key_bytes(&recursive_key).unwrap();
+  let blank =
+    backend.claim(COMPRESS, &[Bn254.zero(); 17], &[Bn254.zero(); 4]).unwrap();
+  assert_eq!(blank.len(), 23);
+  let entry = u32::try_from(Bn254.try_to_u64(blank[1]).unwrap()).unwrap();
+  let policy = wire::Policy::new(
+    backend.system().config.pcs().verifier_params(),
+    digest(&base_key),
+    31,
+    digest(&recursive_key),
+    entry,
+  )
+  .unwrap();
+  let mut inputs = wire::Inputs::new(
+    base_key,
+    wire::claims_bytes(&base.claims).unwrap(),
+    wire::proof_bytes(&base.proof).unwrap(),
+    policy.to_bytes(),
+  )
+  .unwrap();
+  let compiler = Compiler::new(plan()).unwrap();
+  for stage in 1..=2 {
+    let args = compression_args(&policy, stage, &statement);
+    let record = execute(COMPRESS, args.clone(), &inputs).unwrap();
+    assert!(pair_check(
+      wire::decode_accumulator(&record.output).unwrap(),
+      &base.srs
+    ));
+    let heights = compiler.row_counts(&record).unwrap();
+    let height = *heights.iter().max().unwrap();
+    let cells: usize = heights
+      .iter()
+      .zip(compiler.inputs())
+      .map(|(height, input)| height * input.main_width)
+      .sum();
+    eprintln!(
+      "recursive stage {stage}: {cells} main cells, max height {height}"
+    );
+    if let Some(directory) = std::env::var_os("IX_AIUR_KZG_RECURSION_REPORT") {
+      let directory = PathBuf::from(directory);
+      std::fs::create_dir_all(&directory).unwrap();
+      let mut circuits: Vec<_> = heights.iter().zip(compiler.inputs()).zip(compiler.names())
+        .map(|((height, input), name)| serde_json::json!({"name":name,"height":height,"width":input.main_width,"cells":height*input.main_width})).collect();
+      circuits
+        .sort_by_key(|row| std::cmp::Reverse(row["cells"].as_u64().unwrap()));
+      let report = serde_json::json!({"stage":stage,"main_cells":cells,"max_height":height,"circuits":circuits});
+      std::fs::write(
+        directory.join(format!("stage-{stage}.json")),
+        serde_json::to_vec_pretty(&report).unwrap(),
+      )
+      .unwrap();
+    }
+    assert!(
+      height <= 1 << 23 && cells <= 600_000_000,
+      "recursive regression exceeds focused capacity"
+    );
+    backend = Backend::new(plan(), config(height.max(1 << 16))).unwrap();
+    assert_eq!(
+      wire::key_bytes(&VerifyingKey::from_system(backend.system()).unwrap())
+        .unwrap(),
+      recursive_key
+    );
+    let witness = backend.generate(&record, COMPRESS, &args).unwrap();
+    let proof =
+      backend.prove(COMPRESS, &args, &record.output, witness).unwrap();
+    backend.verify(COMPRESS, &args, &record.output, &proof).unwrap();
+    let claim = backend.claim(COMPRESS, &args, &record.output).unwrap();
+    inputs = wire::Inputs::new(
+      recursive_key.clone(),
+      wire::claims_bytes(&[claim]).unwrap(),
+      wire::proof_bytes(&proof).unwrap(),
+      policy.to_bytes(),
+    )
+    .unwrap();
+    if stage == 1 {
+      assert!(
+        execute(COMPRESS, compression_args(&policy, 3, &statement), &inputs)
+          .is_err()
+      );
+    }
+  }
+}

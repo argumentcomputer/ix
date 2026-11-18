@@ -8,7 +8,7 @@ use ix_proof_compression::{
       ACCUMULATOR_ENTRY, AccumulatorProgram, Configuration, Program,
       statement_arguments,
     },
-    plonk::{Exporter, FORMAT, TERMINAL_FORMAT, public_bytes},
+    plonk::scs,
   },
   kzg::{Srs, VerifierParams},
 };
@@ -57,42 +57,19 @@ fn terminal_export_binds_private_outputs_configuration_and_original_statement()
     .collect();
   let public =
     program.plan().public_args(&record, ACCUMULATOR_ENTRY, &arguments).unwrap();
-  let exporter = Exporter::terminal(
+  let stage = scs::stage(
     program.plan(),
-    &capacities,
-    &public,
-    &record.output,
-    &fixture.configuration,
-  )
-  .unwrap();
-  assert_eq!(exporter.schema().format, TERMINAL_FORMAT);
-  assert_eq!(exporter.schema().public_inputs, 2);
-  assert_eq!(exporter.schema().private_outputs, 18);
-  assert!(exporter.schema().pairing.is_some());
-  let generic = Exporter::new(
-    program.plan(),
+    &compiler,
     &capacities,
     ACCUMULATOR_ENTRY,
     &public,
     &record.output,
   )
   .unwrap();
-  assert_eq!(generic.schema().format, FORMAT);
-  assert_eq!(generic.schema().public_inputs, 20);
-  assert_eq!(generic.schema().private_outputs, 0);
-  assert!(generic.schema().pairing.is_none());
-
-  let witness = exporter.binary_witness(&record, &arguments).unwrap();
-  let public_count = u32::from_be_bytes(witness[..4].try_into().unwrap());
-  let secret_count = u32::from_be_bytes(witness[4..8].try_into().unwrap());
-  let main_cells: usize =
-    exporter.schema().circuits.iter().map(|c| c.rows * c.main_width).sum();
-  assert_eq!(public_count, 2);
-  assert_eq!(usize::try_from(secret_count).unwrap(), main_cells + 18);
-  assert_eq!(
-    &witness[witness.len() - 18 * 32..],
-    public_bytes(&record.output).unwrap()
-  );
+  assert_eq!(stage["public_inputs"], 2);
+  assert_eq!(stage["private_outputs"], 18);
+  scs::pairing(program.plan(), ACCUMULATOR_ENTRY, &fixture.configuration)
+    .unwrap();
 
   let wrong_srs =
     Srs::unsafe_dev_setup_prefix(64, (1 << 24) - 1, b"wrong terminal anchors");
@@ -108,16 +85,10 @@ fn terminal_export_binds_private_outputs_configuration_and_original_statement()
   let wrong_configuration =
     Configuration::new(&policy, &parameters, 1, true).unwrap();
   assert!(
-    Exporter::terminal(
-      program.plan(),
-      &capacities,
-      &public,
-      &record.output,
-      &wrong_configuration
-    )
-    .err()
-    .unwrap()
-    .contains("trusted configuration")
+    scs::pairing(program.plan(), ACCUMULATOR_ENTRY, &wrong_configuration)
+      .err()
+      .unwrap()
+      .contains("trusted configuration")
   );
 
   let mut package = WidePackage::decode(&bytes).unwrap();
@@ -134,11 +105,9 @@ fn terminal_export_binds_private_outputs_configuration_and_original_statement()
     AccumulatorProgram::from_bytes(&changed, blake3::hash(&changed).as_bytes())
       .unwrap();
   assert!(
-    Exporter::terminal(
+    scs::pairing(
       changed_program.plan(),
-      &capacities,
-      &public,
-      &record.output,
+      ACCUMULATOR_ENTRY,
       &fixture.configuration
     )
     .err()

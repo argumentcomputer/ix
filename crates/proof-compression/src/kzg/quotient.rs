@@ -13,8 +13,8 @@ use multi_stark::traits::Field;
 use multi_stark::traits::batch_inverse;
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn evaluate_coset(
-  input: &QuotientCommitInput<'_, KzgConfig>,
+pub(super) fn evaluate_coset<SC: super::pcs::CoefficientConfig>(
+  input: &QuotientCommitInput<'_, SC>,
   pass: &super::quotient_plan::Pass,
   domain: Radix2Coset,
   fixed: Option<&RowMajorMatrix<Scalar>>,

@@ -17,8 +17,12 @@ pub mod fq_relation;
 pub mod g1;
 pub mod kzg;
 pub mod kzg_advice;
+pub mod kzg_packed_advice;
+pub mod ladder;
 pub mod pairing;
 pub mod plonk;
+pub mod template;
+pub mod wide;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Bn254;

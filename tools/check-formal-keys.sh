@@ -18,8 +18,6 @@
 # then commit the new pins on their own, saying why the circuits changed.
 # Regenerate them with
 #   tools/check-formal-keys.sh --update
-# The pin file is part of the verify-path fingerprint, so tools/check-verify-path.sh
-# then needs its re-pin review too.
 #
 # Usage: tools/check-formal-keys.sh [--update]
 set -euo pipefail

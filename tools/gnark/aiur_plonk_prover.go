@@ -3,15 +3,17 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"sync"
 	"time"
 
@@ -21,39 +23,17 @@ import (
 	"github.com/consensys/gnark/backend/solidity"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/constraint"
+	csbn254 "github.com/consensys/gnark/constraint/bn254"
 )
 
 const aiurMaxPublic = 1 << 15
 const aiurMaxSecret = aiurMaxDomain
 const aiurMaxWitnessBytes = 12 + 32*(aiurMaxSecret+aiurMaxPublic)
-const aiurManifestFormat = "ix-aiur-plonk-artifacts-v1"
-
-type aiurPreparation struct {
-	Schema                                           json.RawMessage
-	Circuit                                          string
-	CircuitHash                                      artifact
-	Info                                             circuitInfo
-	SRS, SRSBLAKE3, Lagrange, LagrangeSHA256, Output string
-}
 
 type aiurManifest struct {
-	Format, SchemaSHA256, SRSBLAKE3 string
-	Info                            circuitInfo
-	Files                           map[string]artifact
-}
-
-func aiurDimensions(s *aiurSchema) (int, error) {
-	if err := s.validate(); err != nil {
-		return 0, err
-	}
-	if s.PublicInputs > aiurMaxPublic {
-		return 0, fmt.Errorf("too many Aiur public fields")
-	}
-	secret := s.PrivateOutputs
-	for _, c := range s.Circuits {
-		secret += c.Rows * c.MainWidth
-	}
-	return secret, nil
+	Format, ScsSHA256, PairingSHA256, SRSBLAKE3 string
+	Info                                        circuitInfo
+	Files                                       map[string]artifact
 }
 
 func validateAiurInfo(info circuitInfo) error {
@@ -64,112 +44,16 @@ func validateAiurInfo(info circuitInfo) error {
 }
 
 func (m *aiurManifest) validate() error {
-	if m.Format != aiurManifestFormat || m.Files == nil {
+	if m.Format != aiurScsManifestFormat || m.Files == nil {
 		return fmt.Errorf("invalid Aiur PLONK manifest")
 	}
 	if err := validateAiurInfo(m.Info); err != nil {
 		return err
 	}
-	for _, digest := range []string{m.SchemaSHA256, m.SRSBLAKE3} {
-		if _, err := unhex(digest, 32); err != nil {
-			return err
-		}
-	}
-	for _, name := range []string{"schema.json", "circuit.bin", "proving-key.bin", "verifying-key.bin", "PlonkVerifier.sol"} {
-		file := m.Files[name]
-		if file.Bytes < 1 || file.Bytes > 1<<40 {
-			return fmt.Errorf("invalid Aiur artifact size: %s", name)
-		}
-		if _, err := unhex(file.SHA256, 32); err != nil {
-			return err
-		}
-	}
-	if m.Files["schema.json"].SHA256 != m.SchemaSHA256 || m.Files["schema.json"].Bytes > 16<<20 || m.Files["verifying-key.bin"].Bytes > 1<<20 {
-		return fmt.Errorf("invalid Aiur schema or key metadata")
-	}
-	return nil
+	return m.validateScs()
 }
 
-func prepareAiur(request *aiurPreparation) (*aiurManifest, error) {
-	if request.Output == "" || request.Circuit == "" || request.SRS == "" || request.Lagrange == "" {
-		return nil, fmt.Errorf("Aiur preparation requires explicit artifact paths")
-	}
-	if request.CircuitHash.Bytes < 1 || request.CircuitHash.Bytes > 1<<40 {
-		return nil, fmt.Errorf("invalid compiled Aiur circuit size")
-	}
-	if _, err := unhex(request.CircuitHash.SHA256, 32); err != nil {
-		return nil, err
-	}
-	if len(request.Schema) > 16<<20 {
-		return nil, fmt.Errorf("Aiur schema is too large")
-	}
-	var schema aiurSchema
-	if err := decodeReader(bytes.NewReader(request.Schema), &schema); err != nil {
-		return nil, err
-	}
-	secret, err := aiurDimensions(&schema)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateAiurInfo(request.Info); err != nil {
-		return nil, err
-	}
-	phase := time.Now()
-	ccs := plonk.NewCS(curveID)
-	if err := readVerified(request.Circuit, request.CircuitHash, ccs); err != nil {
-		return nil, err
-	}
-	if ccs.GetNbConstraints() != request.Info.Constraints || ccs.GetNbPublicVariables() != schema.PublicInputs || schema.PublicInputs != request.Info.PublicInputs || ccs.GetNbSecretVariables() != secret || len(ccs.GetCommitments().CommitmentIndexes()) != 1 {
-		return nil, fmt.Errorf("compiled Aiur circuit differs from its trusted metadata")
-	}
-	log.Printf("aiur-plonk prepare phase=circuit-load seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
-	phase = time.Now()
-	srs, err := readSRS(request.SRS, request.SRSBLAKE3, request.Info.Domain)
-	if err != nil {
-		return nil, err
-	}
-	log.Printf("aiur-plonk prepare phase=srs-load seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
-	phase = time.Now()
-	lagrange, err := loadLagrange(srs, request.Info.Domain, request.Lagrange, request.LagrangeSHA256)
-	if err != nil {
-		return nil, err
-	}
-	log.Printf("aiur-plonk prepare phase=lagrange seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
-	phase = time.Now()
-	pk, vk, err := plonk.Setup(ccs, srs, lagrange)
-	if err != nil {
-		return nil, err
-	}
-	log.Printf("aiur-plonk prepare phase=key-setup seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
-	phase = time.Now()
-	if err := atomicFile(filepath.Join(request.Output, "schema.json"), func(w io.Writer) error { _, err := w.Write(request.Schema); return err }); err != nil {
-		return nil, err
-	}
-	for _, item := range []struct {
-		name  string
-		value io.WriterTo
-	}{{"circuit.bin", ccs}, {"proving-key.bin", pk}, {"verifying-key.bin", vk}} {
-		if err := atomicFile(filepath.Join(request.Output, item.name), func(w io.Writer) error { _, err := item.value.WriteTo(w); return err }); err != nil {
-			return nil, err
-		}
-	}
-	if err := atomicFile(filepath.Join(request.Output, "PlonkVerifier.sol"), func(w io.Writer) error { return vk.ExportSolidity(w) }); err != nil {
-		return nil, err
-	}
-	hash := sha256.Sum256(request.Schema)
-	m := &aiurManifest{Format: aiurManifestFormat, SchemaSHA256: hex.EncodeToString(hash[:]), SRSBLAKE3: request.SRSBLAKE3, Info: request.Info, Files: map[string]artifact{}}
-	for _, name := range []string{"schema.json", "circuit.bin", "proving-key.bin", "verifying-key.bin", "PlonkVerifier.sol"} {
-		item, err := fileHash(filepath.Join(request.Output, name))
-		if err != nil {
-			return nil, err
-		}
-		m.Files[name] = item
-	}
-	log.Printf("aiur-plonk prepare phase=artifact-write seconds=%.6f domain=%d", time.Since(phase).Seconds(), request.Info.Domain)
-	return m, m.validate()
-}
-
-// The authenticated schema fixes both counts. Validate them and the exact byte
+// The prepared input layout fixes both counts. Validate them and the exact byte
 // length before gnark allocates its vector; gnark then checks every field word.
 func decodeAiurWitness(data []byte, public, secret int) (witness.Witness, error) {
 	if public < 0 || public > aiurMaxPublic || secret < 0 || secret > aiurMaxSecret || len(data) != 12+32*(public+secret) {
@@ -211,6 +95,8 @@ type aiurProver struct {
 	public, secret int
 	cleanup        func() error
 	closed, failed bool
+	// traceReady is closed when a background trace precomputation ends.
+	traceReady chan struct{}
 }
 
 func openAiurProver(dir string, metadata []byte, config backendConfig) (*aiurProver, error) {
@@ -221,31 +107,25 @@ func openAiurProver(dir string, metadata []byte, config backendConfig) (*aiurPro
 	if err := m.validate(); err != nil {
 		return nil, err
 	}
-	data, err := readDescription(filepath.Join(dir, "schema.json"))
+	public, secret, err := aiurScsDimensions(dir, &m)
 	if err != nil {
 		return nil, err
 	}
-	hash := sha256.Sum256(data)
-	if hex.EncodeToString(hash[:]) != m.SchemaSHA256 || int64(len(data)) != m.Files["schema.json"].Bytes {
-		return nil, fmt.Errorf("Aiur schema identity differs")
-	}
-	var schema aiurSchema
-	if err := decodeReader(bytes.NewReader(data), &schema); err != nil {
-		return nil, err
-	}
-	secret, err := aiurDimensions(&schema)
-	if err != nil {
-		return nil, err
-	}
-	p := &aiurProver{ccs: plonk.NewCS(curveID), pk: plonk.NewProvingKey(curveID), vk: new(nativeVerifyingKey), public: schema.PublicInputs, secret: secret}
+	p := &aiurProver{ccs: plonk.NewCS(curveID), pk: plonk.NewProvingKey(curveID), vk: new(nativeVerifyingKey), public: public, secret: secret}
 	for _, item := range []struct {
 		name  string
 		value io.ReaderFrom
-	}{{"circuit.bin", p.ccs}, {"proving-key.bin", p.pk}, {"verifying-key.bin", p.vk}} {
+	}{{"circuit.bin", p.ccs}, {"verifying-key.bin", p.vk}} {
 		if err := readVerified(filepath.Join(dir, item.name), m.Files[item.name], item.value); err != nil {
 			return nil, err
 		}
 	}
+	phase := time.Now()
+	source, err := loadAiurProvingKey(dir, m.Files["proving-key.bin"], &p.pk)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("aiur-plonk open phase=proving-key source=%s seconds=%.6f", source, time.Since(phase).Seconds())
 	if p.public != m.Info.PublicInputs || p.ccs.GetNbPublicVariables() != p.public || p.ccs.GetNbSecretVariables() != p.secret || p.ccs.GetNbConstraints() != m.Info.Constraints || len(p.ccs.GetCommitments().CommitmentIndexes()) != 1 || p.vk.Size != m.Info.Domain || p.vk.NbPublicVariables != uint64(p.public) || len(p.vk.Qcp) != 1 {
 		return nil, fmt.Errorf("Aiur circuit/key dimensions differ")
 	}
@@ -253,13 +133,36 @@ func openAiurProver(dir string, metadata []byte, config backendConfig) (*aiurPro
 	if _, err := p.pk.VerifyingKey().(io.WriterTo).WriteTo(&encoded); err != nil {
 		return nil, err
 	}
-	hash = sha256.Sum256(encoded.Bytes())
+	hash := sha256.Sum256(encoded.Bytes())
 	if hex.EncodeToString(hash[:]) != m.Files["verifying-key.bin"].SHA256 {
 		return nil, fmt.Errorf("Aiur proving key embeds another verifier")
 	}
 	p.cleanup, err = configureBackend(p.pk, config)
 	if err != nil {
 		return nil, err
+	}
+	// The trace (selectors and permutation, about 16 GB at 2^25) depends only
+	// on the circuit; a gnark that can precompute it builds it in the
+	// background, while the prover waits for its witness, instead of inside
+	// the first Prove. IX_PLONK_TRACE_AFTER=FILE delays it until FILE exists,
+	// so that it does not add to an earlier stage's memory peak.
+	if precompute, ok := p.pk.(interface{ PrecomputeTrace(*csbn254.SparseR1CS) }); ok {
+		if spr, ok := p.ccs.(*csbn254.SparseR1CS); ok {
+			p.traceReady = make(chan struct{})
+			after := os.Getenv("IX_PLONK_TRACE_AFTER")
+			go func() {
+				defer close(p.traceReady)
+				for after != "" {
+					if _, err := os.Stat(after); err == nil {
+						break
+					}
+					time.Sleep(20 * time.Millisecond)
+				}
+				phase := time.Now()
+				precompute.PrecomputeTrace(spr)
+				log.Printf("aiur-plonk open phase=trace seconds=%.6f", time.Since(phase).Seconds())
+			}()
+		}
 	}
 	return p, nil
 }
@@ -283,7 +186,15 @@ func (p *aiurProver) prove(data, expected []byte) ([]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	if p.traceReady != nil {
+		<-p.traceReady
+	}
+	stopProfile, err := startCPUProfile()
+	if err != nil {
+		return nil, nil, err
+	}
 	proof, err := plonk.Prove(p.ccs, p.pk, w, solidity.WithProverTargetSolidityVerifier(backend.PLONK))
+	stopProfile()
 	if err != nil {
 		p.failed = true
 		return nil, nil, err
@@ -303,6 +214,32 @@ func (p *aiurProver) prove(data, expected []byte) ([]byte, []byte, error) {
 	}
 	return out.Bytes(), proof.(*nativeProof).MarshalSolidity(), nil
 }
+
+// startCPUProfile writes a Go CPU profile of the proving call to the file
+// named by IX_PLONK_CPU_PROFILE (only the first proof of a process, since a
+// later one would overwrite it); without it, it does nothing.
+func startCPUProfile() (func(), error) {
+	path := os.Getenv("IX_PLONK_CPU_PROFILE")
+	if path == "" {
+		return func() {}, nil
+	}
+	if _, err := os.Stat(path); err == nil {
+		return func() {}, nil
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := pprof.StartCPUProfile(file); err != nil {
+		file.Close()
+		return nil, err
+	}
+	return func() {
+		pprof.StopCPUProfile()
+		file.Close()
+	}, nil
+}
+
 func (p *aiurProver) close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -343,4 +280,66 @@ func verifyAiurProof(key, trustedDigest, proof, expected, anchors []byte) error 
 		return err
 	}
 	return plonk.Verify(p, vk, public, solidity.WithVerifierTargetSolidityVerifier(backend.PLONK))
+}
+
+// loadAiurProvingKey reads the proving key from its uncompressed encoding
+// `proving-key.raw` when present and identical to the digest-pinned
+// compressed one, and otherwise from `proving-key.bin`, writing the raw
+// encoding for later loads. The raw file is decoded with gnark's checked
+// reader (curve and subgroup membership), then re-encoded in the canonical
+// compressed form, whose length and SHA-256 must be the manifest's
+// `proving-key.bin`: a corrupted or substituted raw file is never used.
+func loadAiurProvingKey(dir string, pinned artifact, pk *plonk.ProvingKey) (string, error) {
+	raw := filepath.Join(dir, "proving-key.raw")
+	if loaded, err := readRawProvingKey(raw, pinned); err == nil {
+		*pk = loaded
+		return "raw", nil
+	} else if !os.IsNotExist(err) {
+		log.Printf("aiur-plonk open raw proving key rejected: %v", err)
+	}
+	loaded := plonk.NewProvingKey(curveID)
+	if err := readVerified(filepath.Join(dir, "proving-key.bin"), pinned, loaded); err != nil {
+		return "", err
+	}
+	*pk = loaded
+	if err := atomicFile(raw, func(w io.Writer) error {
+		b := bufio.NewWriterSize(w, artifactBuffer)
+		if _, err := loaded.WriteRawTo(b); err != nil {
+			return err
+		}
+		return b.Flush()
+	}); err != nil {
+		log.Printf("aiur-plonk open raw proving key not written: %v", err)
+	}
+	return "compressed", nil
+}
+
+func readRawProvingKey(path string, pinned artifact) (plonk.ProvingKey, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	r := bufio.NewReaderSize(f, artifactBuffer)
+	pk := plonk.NewProvingKey(curveID)
+	if _, err := pk.ReadFrom(r); err != nil {
+		return nil, err
+	}
+	var extra [1]byte
+	if n, err := r.Read(extra[:]); n != 0 || err != io.EOF {
+		return nil, fmt.Errorf("trailing raw proving key bytes")
+	}
+	hash := sha256.New()
+	b := bufio.NewWriterSize(hash, artifactBuffer)
+	n, err := pk.WriteTo(b)
+	if err != nil {
+		return nil, err
+	}
+	if err := b.Flush(); err != nil {
+		return nil, err
+	}
+	if n != pinned.Bytes || hex.EncodeToString(hash.Sum(nil)) != pinned.SHA256 {
+		return nil, fmt.Errorf("raw proving key differs from the pinned key")
+	}
+	return pk, nil
 }

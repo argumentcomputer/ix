@@ -121,7 +121,11 @@ pub(super) fn fixed_tables<B: WitnessField>(
   Ok(result)
 }
 
-fn pair_lookups(count: usize, height: usize, log_blowup: usize) -> bool {
+pub(super) fn pair_lookups(
+  count: usize,
+  height: usize,
+  log_blowup: usize,
+) -> bool {
   if log_blowup == 0 || count < 2 || height == 0 {
     return false;
   }
@@ -135,6 +139,12 @@ fn pair_lookups(count: usize, height: usize, log_blowup: usize) -> bool {
 }
 
 impl FixedTable {
+  /// The maps sharing this table, as indices into the program's maps; the
+  /// table's count column `k` belongs to map `maps()[k]`.
+  pub(super) fn maps(&self) -> &[usize] {
+    &self.maps
+  }
+
   pub(super) fn witness(&self, counts: &[Vec<u64>]) -> RowMajorMatrix<Val> {
     let mut values = Vec::with_capacity(self.maps.len() * self.height);
     for row in 0..self.height {

@@ -158,7 +158,12 @@ impl CommittedMatrix {
     self.columns.len()
   }
 
-  fn new(domain: Radix2Coset, columns: Vec<Column>) -> Self {
+  /// Coefficient columns, in matrix column order.
+  pub(super) fn coefficient_columns(&self) -> &[Column] {
+    &self.columns
+  }
+
+  pub(super) fn new(domain: Radix2Coset, columns: Vec<Column>) -> Self {
     let constants = columns
       .par_iter()
       .map(|column| {
@@ -402,6 +407,35 @@ impl KzgProverData {
   }
 }
 
+/// Prover data that keeps each committed matrix as coefficient columns, so
+/// lookup and quotient constructions can read committed rounds directly.
+pub(crate) trait CoefficientData: Sync {
+  fn matrix(&self, index: usize) -> Option<&CommittedMatrix>;
+}
+
+impl CoefficientData for KzgProverData {
+  fn matrix(&self, index: usize) -> Option<&CommittedMatrix> {
+    self.matrices.get(index)
+  }
+}
+
+/// A configuration over BN254 scalars whose PCS retains coefficient columns.
+pub(crate) trait CoefficientConfig:
+  multi_stark::config::ProofConfig<
+    Challenge = Scalar,
+    Pcs: Pcs<F = Scalar, Domain = Radix2Coset, ProverData: CoefficientData>,
+  >
+{
+}
+
+impl<SC> CoefficientConfig for SC where
+  SC: multi_stark::config::ProofConfig<
+      Challenge = Scalar,
+      Pcs: Pcs<F = Scalar, Domain = Radix2Coset, ProverData: CoefficientData>,
+    >
+{
+}
+
 #[derive(Debug)]
 pub enum KzgError {
   /// Commitment/opened-value dimensions disagree with the rounds.
@@ -446,7 +480,15 @@ impl KzgPcs {
     domain: Radix2Coset,
     selected: &[usize],
   ) -> RowMajorMatrix<Scalar> {
-    let matrix = &data.matrices[idx];
+    self.evaluate_matrix_columns(&data.matrices[idx], domain, selected)
+  }
+
+  pub(super) fn evaluate_matrix_columns(
+    &self,
+    matrix: &CommittedMatrix,
+    domain: Radix2Coset,
+    selected: &[usize],
+  ) -> RowMajorMatrix<Scalar> {
     assert!(
       domain.size() >= matrix.domain.size(),
       "evaluation domain ({}) is smaller than the committed trace ({})",
@@ -629,7 +671,7 @@ impl KzgPcs {
     );
   }
 
-  fn prover_srs(&self) -> &Srs {
+  pub(super) fn prover_srs(&self) -> &Srs {
     self.srs.as_deref().expect("proving requires the full SRS")
   }
 
@@ -638,13 +680,13 @@ impl KzgPcs {
     self.srs_owner.as_ref().expect("proving requires the full SRS")
   }
 
-  /// Commit device-generated coefficient columns of one trace-sized matrix.
+  /// Device-generated coefficient columns of one trace-sized matrix.
   #[cfg(feature = "cuda")]
-  pub(super) fn commit_trace_coefficients(
+  pub(super) fn coefficient_matrix(
     &self,
     trace_log_size: usize,
     columns: Vec<Vec<Fr>>,
-  ) -> KzgProverData {
+  ) -> CommittedMatrix {
     let n = 1usize
       .checked_shl(u32::try_from(trace_log_size).expect("trace log size"))
       .unwrap();
@@ -653,28 +695,47 @@ impl KzgPcs {
     );
     assert!(!columns.is_empty());
     assert!(columns.iter().all(|column| column.len() == n));
-    let matrix = CommittedMatrix::new(
+    CommittedMatrix::new(
       Radix2Coset {
         log_size: trace_log_size,
         shift: multi_stark::traits::Algebra::<Scalar>::ONE,
       },
       columns.into_iter().map(Column::from).collect(),
-    );
-    let commitments = self.commit_matrix_columns(&matrix);
-    KzgProverData {
-      commitment: KzgCommitment(vec![commitments]),
-      matrices: vec![matrix],
-    }
+    )
   }
 
-  #[cfg(feature = "cuda")]
-  pub(super) fn commit_quotient_coefficients(
-    &self,
-    trace_log_size: usize,
-    columns: Vec<Vec<Fr>>,
-  ) -> KzgProverData {
-    assert!(!columns.is_empty() && columns.len() <= self.max_quotient_degree);
-    self.commit_trace_coefficients(trace_log_size, columns)
+  /// Commit one coefficient matrix as a single-matrix round.
+  pub(super) fn commit_matrix(&self, matrix: CommittedMatrix) -> KzgProverData {
+    let commitment = KzgCommitment(vec![self.commit_matrix_columns(&matrix)]);
+    KzgProverData { commitment, matrices: vec![matrix] }
+  }
+
+  /// Interpolate quotient evaluations over `quotient_domain` and split
+  /// `Q(X) = Σₖ X^{k·n}·cₖ(X)` into trace-sized slices: slice k of
+  /// coordinate d is column `k·D + d`, the order the verifier's
+  /// ζ-recombination reads.
+  pub(super) fn interpolate_quotient(
+    quotient_domain: Radix2Coset,
+    evaluations: RowMajorMatrix<Scalar>,
+    quotient_degree: usize,
+  ) -> CommittedMatrix {
+    let big = quotient_domain.size();
+    assert!(quotient_degree != 0 && big.is_multiple_of(quotient_degree));
+    let n = big / quotient_degree;
+    let coefficients =
+      Self::interpolate_columns(quotient_domain, evaluations).columns;
+    let columns = (0..quotient_degree)
+      .flat_map(|k| {
+        coefficients.iter().map(move |c| c.slice(k * n..(k + 1) * n))
+      })
+      .collect();
+    CommittedMatrix::new(
+      Radix2Coset {
+        log_size: p3_util::log2_strict_usize(n),
+        shift: multi_stark::traits::Algebra::<Scalar>::ONE,
+      },
+      columns,
+    )
   }
 
   /// The arkworks FFT domain realizing one of ours.
@@ -755,7 +816,7 @@ impl KzgPcs {
     }
   }
 
-  fn msm(&self, coeffs: &[Fr]) -> G1Projective {
+  pub(super) fn msm(&self, coeffs: &[Fr]) -> G1Projective {
     assert!(
       coeffs.len() <= self.verifier.max_trace_len(),
       "polynomial length {} exceeds the trace cap ({})",
@@ -819,7 +880,7 @@ impl KzgPcs {
   }
 
   /// Interpolate each column of `matrix` over `domain`.
-  fn interpolate_columns(
+  pub(super) fn interpolate_columns(
     domain: Radix2Coset,
     matrix: RowMajorMatrix<Scalar>,
   ) -> CommittedMatrix {
@@ -948,26 +1009,10 @@ impl Pcs for KzgPcs {
     let matrices: Vec<CommittedMatrix> = quotients
       .into_iter()
       .map(|(quotient_domain, evaluations, quotient_degree)| {
-        let big = quotient_domain.size();
-        debug_assert_eq!(big % quotient_degree, 0);
-        let n = big / quotient_degree;
-        let coefficient_columns =
-          Self::interpolate_columns(quotient_domain, evaluations).columns;
-        // Slice `Q(X) = Σₖ X^{k·n}·cₖ(X)`: slice k of coordinate d
-        // is coefficient range [k·n, (k+1)·n), laid out as column
-        // `k·D + d` — the order the verifier's ζ-recombination
-        // reads.
-        let columns: Vec<Column> = (0..quotient_degree)
-          .flat_map(|k| {
-            coefficient_columns.iter().map(move |c| c.slice(k * n..(k + 1) * n))
-          })
-          .collect();
-        CommittedMatrix::new(
-          Radix2Coset {
-            log_size: p3_util::log2_strict_usize(n),
-            shift: multi_stark::traits::Algebra::<Scalar>::ONE,
-          },
-          columns,
+        Self::interpolate_quotient(
+          quotient_domain,
+          evaluations,
+          quotient_degree,
         )
       })
       .collect();
@@ -1292,7 +1337,7 @@ impl Pcs for KzgPcs {
 impl KzgPcs {
   /// The witness commitment `[(p(X) − p(z)) / (X − z)]·G` of one folded
   /// opening polynomial.
-  fn witness(&self, combined: Vec<Fr>, z: Fr) -> G1Projective {
+  pub(super) fn witness(&self, combined: Vec<Fr>, z: Fr) -> G1Projective {
     #[cfg(feature = "cuda")]
     if combined.len() >= 1 << 16 {
       let witness = if cuda::srs_residency::enabled() {
@@ -1323,7 +1368,7 @@ fn eval_poly_serial(coeffs: &[Fr], z: Fr) -> Fr {
 }
 
 /// Evaluate coefficient blocks independently, then fold at z^block_size.
-fn eval_poly(coeffs: &[Fr], z: Fr) -> Fr {
+pub(super) fn eval_poly(coeffs: &[Fr], z: Fr) -> Fr {
   if coeffs.len() <= POLYNOMIAL_BLOCK {
     return eval_poly_serial(coeffs, z);
   }
@@ -1334,9 +1379,8 @@ fn eval_poly(coeffs: &[Fr], z: Fr) -> Fr {
   eval_poly_serial(&blocks, z.pow([POLYNOMIAL_BLOCK as u64]))
 }
 
-/// Synthetic division, reusing the input allocation. Block boundary carries
-/// are suffix evaluations; the second pass runs independently in each block.
-fn divide_by_linear(mut p: Vec<Fr>, z: Fr) -> Vec<Fr> {
+/// `⌊p / (X − z)⌋`, on the device for large polynomials.
+fn divide_by_linear(p: Vec<Fr>, z: Fr) -> Vec<Fr> {
   if p.len() <= 1 {
     return Vec::new();
   }
@@ -1350,6 +1394,17 @@ fn divide_by_linear(mut p: Vec<Fr>, z: Fr) -> Vec<Fr> {
     reason = "small polynomial",
     "KZG opening using CPU division"
   );
+  divide_by_linear_host(p, z)
+}
+
+/// Synthetic division on the host, reusing the input allocation. Block
+/// boundary carries are suffix evaluations; the second pass runs
+/// independently in each block. Callers dividing many polynomials use it
+/// directly to avoid one device round trip per polynomial.
+pub(super) fn divide_by_linear_host(mut p: Vec<Fr>, z: Fr) -> Vec<Fr> {
+  if p.len() <= 1 {
+    return Vec::new();
+  }
   let n = p.len() - 1;
   if n <= POLYNOMIAL_BLOCK {
     let mut carry = Fr::ZERO;

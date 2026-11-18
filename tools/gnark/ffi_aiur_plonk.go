@@ -13,35 +13,6 @@ import (
 	"runtime/cgo"
 )
 
-//export ix_gnark_aiur_compile
-func ix_gnark_aiur_compile(schema C.ix_gnark_view, path C.ix_gnark_view) C.ix_gnark_result {
-	return compileFFI(schema, path, compileAiur)
-}
-
-//export ix_gnark_aiur_prepare
-func ix_gnark_aiur_prepare(request C.ix_gnark_view) C.ix_gnark_result {
-	return guarded(func() (result C.ix_gnark_result, err error) {
-		data, err := borrowed(request, 17<<20)
-		if err != nil {
-			return result, err
-		}
-		var input aiurPreparation
-		if err := decodeReader(bytes.NewReader(data), &input); err != nil {
-			return result, err
-		}
-		metadata, err := prepareAiur(&input)
-		if err != nil {
-			return result, err
-		}
-		encoded, err := json.Marshal(metadata)
-		if err != nil {
-			return result, err
-		}
-		result.data, result.len = buffer(encoded)
-		return result, nil
-	})
-}
-
 //export ix_gnark_aiur_open
 func ix_gnark_aiur_open(directory, metadata C.ix_gnark_view, options C.ix_gnark_backend) C.ix_gnark_result {
 	return guarded(func() (result C.ix_gnark_result, err error) {
@@ -101,5 +72,53 @@ func ix_gnark_aiur_verify(key, pin, proof, public, anchors C.ix_gnark_view) C.ix
 			}
 		}
 		return result, verifyAiurProof(values[0], values[1], values[2], values[3], values[4])
+	})
+}
+
+//export ix_gnark_aiur_scs_compile
+func ix_gnark_aiur_scs_compile(request C.ix_gnark_view) C.ix_gnark_result {
+	return guarded(func() (result C.ix_gnark_result, err error) {
+		data, err := borrowed(request, 1<<20)
+		if err != nil {
+			return result, err
+		}
+		var input aiurScsCompileRequest
+		if err := decodeReader(bytes.NewReader(data), &input); err != nil {
+			return result, err
+		}
+		info, err := compileAiurScs(&input)
+		if err != nil {
+			return result, err
+		}
+		encoded, err := json.Marshal(info)
+		if err != nil {
+			return result, err
+		}
+		result.data, result.len = buffer(encoded)
+		return result, nil
+	})
+}
+
+//export ix_gnark_aiur_scs_prepare
+func ix_gnark_aiur_scs_prepare(request C.ix_gnark_view) C.ix_gnark_result {
+	return guarded(func() (result C.ix_gnark_result, err error) {
+		data, err := borrowed(request, 1<<20)
+		if err != nil {
+			return result, err
+		}
+		var input aiurScsPreparation
+		if err := decodeReader(bytes.NewReader(data), &input); err != nil {
+			return result, err
+		}
+		metadata, err := prepareAiurScs(&input)
+		if err != nil {
+			return result, err
+		}
+		encoded, err := json.Marshal(metadata)
+		if err != nil {
+			return result, err
+		}
+		result.data, result.len = buffer(encoded)
+		return result, nil
 	})
 }

@@ -23,8 +23,14 @@ use multi_stark::{
   lookup::{logup_max_degree, stage2_width},
   system::extension_params,
 };
-use serde::Serialize;
-use stark_verifier::compress_wrap::{Input, STATEMENT_BYTES, Statement};
+use multi_stark::{
+  p3_field::{PrimeCharacteristicRing, PrimeField64},
+  types::Val,
+};
+use serde::{Deserialize, Serialize};
+use stark_verifier::compress_wrap::{
+  self as wrap, Input, Layout, STATEMENT_BYTES, Statement,
+};
 use std::{sync::Arc, time::Instant};
 
 pub const ENTRY: &str = "CompressGL::verify_root";
@@ -50,6 +56,9 @@ impl Executed<'_> {
   }
   pub const fn record(&self) -> &Execution<Bn254> {
     &self.record
+  }
+  pub fn args(&self) -> &[Scalar] {
+    &self.args
   }
 }
 
@@ -449,6 +458,112 @@ impl Wrapper {
       verification_seconds: started.elapsed().as_secs_f64(),
     })
   }
+}
+
+const WRAP_POLICY_DOMAIN: &[u8] = b"ix/compress-gl/wrap-predecessor/v1\0";
+
+/// A fixed `CompressWrap` predecessor for CompressGL: one wrapper artifact and
+/// key, proven at one normalized layout. CompressGL then verifies wrapper
+/// proofs of a single shape instead of raw roots whose shape follows the
+/// aggregated program.
+///
+/// CompressGL's statement names the wrapper key and the wrapper claim. That
+/// claim is `prefix ++ root.arguments()`, so the root statement determines the
+/// CompressGL statement through [`Self::statement_for`] without the wrapper.
+/// The layout is enforced at admission; CompressGL itself accepts any shape.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WrapPolicy {
+  pub artifact_blake3: String,
+  pub key_blake3: String,
+  pub layout_blake3: String,
+  pub claim_prefix: [u64; 2],
+}
+
+impl WrapPolicy {
+  pub fn new(wrapper: &wrap::Wrapper, layout: &Layout) -> Result<Self, String> {
+    wrapper.validate_layout(layout)?;
+    let claim = wrapper
+      .claim_for(&Statement { key_digest: [0; 32], claims_digest: [0; 32] })?;
+    let [call, callable, ..] = claim.as_slice() else {
+      return Err("compression wrapper claim is too short".into());
+    };
+    Ok(Self {
+      artifact_blake3: hex(wrapper.artifact_digest()),
+      key_blake3: hex(wrapper.key_digest()),
+      layout_blake3: hex(&layout.blake3()?),
+      claim_prefix: [call.as_canonical_u64(), callable.as_canonical_u64()],
+    })
+  }
+
+  pub fn digest(&self) -> Result<[u8; 32], String> {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(WRAP_POLICY_DOMAIN);
+    hasher
+      .update(&serde_json::to_vec(self).map_err(|error| error.to_string())?);
+    Ok(*hasher.finalize().as_bytes())
+  }
+
+  /// The serialized wrapper claim a root statement must produce.
+  pub fn claims_for(&self, root: &Statement) -> Vec<u8> {
+    let claim = self
+      .claim_prefix
+      .into_iter()
+      .chain(root.arguments())
+      .map(Val::from_u64)
+      .collect();
+    stark_verifier::claims_bytes(&[claim])
+  }
+
+  /// The CompressGL statement for an authorized root statement.
+  pub fn statement_for(&self, root: &Statement) -> Result<Statement, String> {
+    Ok(Statement {
+      key_digest: *blake3::Hash::from_hex(&self.key_blake3)
+        .map_err(|error| error.to_string())?
+        .as_bytes(),
+      claims_digest: *blake3::hash(&self.claims_for(root)).as_bytes(),
+    })
+  }
+
+  /// Accept a wrapper proof as CompressGL input only if it was produced by
+  /// the pinned wrapper at the pinned layout for `root`, then verify it again
+  /// as the generic STARK input CompressGL executes.
+  pub fn admit(
+    &self,
+    wrapper: &wrap::Wrapper,
+    layout: &Layout,
+    root: &Statement,
+    key: &[u8],
+    claims: &[u8],
+    proof: &[u8],
+  ) -> Result<Input, String> {
+    if self.artifact_blake3 != hex(wrapper.artifact_digest())
+      || self.key_blake3 != hex(wrapper.key_digest())
+      || key != wrapper.key_bytes()
+    {
+      return Err("wrapper differs from the CompressGL predecessor pin".into());
+    }
+    if self.layout_blake3 != hex(&layout.blake3()?) {
+      return Err("wrapper layout differs from the CompressGL pin".into());
+    }
+    let expected = self.claims_for(root);
+    if claims != expected
+      || expected != stark_verifier::claims_bytes(&[wrapper.claim_for(root)?])
+    {
+      return Err("wrapper claim differs from the root statement".into());
+    }
+    wrapper.verify_normalized(root, proof, layout)?;
+    let input =
+      Input::from_bytes(key, *blake3::hash(key).as_bytes(), claims, proof)?;
+    if input.statement() != &self.statement_for(root)? {
+      return Err("wrapper input statement differs from its policy".into());
+    }
+    Ok(input)
+  }
+}
+
+fn hex(digest: &[u8; 32]) -> String {
+  blake3::Hash::from_bytes(*digest).to_hex().to_string()
 }
 
 fn arguments(statement: &Statement) -> Vec<Scalar> {

@@ -48,17 +48,56 @@ fn quotient_degree(
     .ok_or_else(|| "quotient degree overflow".into())
 }
 
-fn lookup_group_size(graph: &ConstraintGraph<Scalar>) -> Result<usize, String> {
-  let budget = quotient_degree(graph, 1)?;
-  let mut best = (stage2_width(graph.lookups.len(), 1, 1), 1);
-  // Chunk boundaries can make a larger group cheaper in degree than a smaller
-  // one. Every supported size must be checked against the circuit's own budget.
+/// Opt-in quotient-degree budget for lookup grouping. When set to a power of
+/// two `B`, each circuit's group size minimizes its committed column count
+/// (stage-2 columns plus quotient chunks) with quotient degree at most
+/// `max(B, degree at group size 1)`. Unset keeps every circuit's quotient
+/// degree at its group-size-1 value. Grouping is part of the verifying key, so
+/// prover and verifier must build their systems under the same setting.
+/// Callers that do not pass a budget explicitly read this variable.
+const LOOKUP_QUOTIENT_BUDGET_ENV: &str = "IX_AIUR_KZG_LOOKUP_QUOTIENT_BUDGET";
+
+pub(super) fn lookup_quotient_budget_from_env() -> Result<Option<usize>, String>
+{
+  let Ok(value) = std::env::var(LOOKUP_QUOTIENT_BUDGET_ENV) else {
+    return Ok(None);
+  };
+  match value.parse::<usize>() {
+    Ok(budget) if budget.is_power_of_two() => Ok(Some(budget)),
+    _ => Err(format!(
+      "{LOOKUP_QUOTIENT_BUDGET_ENV} must be a power of two, got {value:?}"
+    )),
+  }
+}
+
+pub(super) fn lookup_group_size(
+  graph: &ConstraintGraph<Scalar>,
+  budget: Option<usize>,
+) -> Result<usize, String> {
+  let lookups = graph.lookups.len();
+  let base = quotient_degree(graph, 1)?;
+  let Some(budget) = budget else {
+    let mut best = (stage2_width(lookups, 1, 1), 1);
+    // Chunk boundaries can make a larger group cheaper in degree than a
+    // smaller one. Every supported size is checked against the circuit's own
+    // group-size-1 degree.
+    for size in 2..=MAX_LOOKUP_GROUP {
+      if quotient_degree(graph, size)? == base {
+        best = best.min((stage2_width(lookups, size, 1), size));
+      }
+    }
+    return Ok(best.1);
+  };
+  let budget = budget.max(base);
+  let mut best = (stage2_width(lookups, 1, 1) + base, base, 1);
   for size in 2..=MAX_LOOKUP_GROUP {
-    if quotient_degree(graph, size)? == budget {
-      best = best.min((stage2_width(graph.lookups.len(), size, 1), size));
+    let quotient = quotient_degree(graph, size)?;
+    if quotient <= budget {
+      best =
+        best.min((stage2_width(lookups, size, 1) + quotient, quotient, size));
     }
   }
-  Ok(best.1)
+  Ok(best.2)
 }
 
 fn lower(polynomial: &Polynomial<FieldWord>) -> Expr<Scalar> {
@@ -91,6 +130,16 @@ pub(super) fn evaluate(
 }
 
 pub(super) fn build(plan: &TracePlan<'_, Bn254>) -> Result<Lowered, String> {
+  build_with(plan, lookup_quotient_budget_from_env()?)
+}
+
+pub(super) fn build_with(
+  plan: &TracePlan<'_, Bn254>,
+  budget: Option<usize>,
+) -> Result<Lowered, String> {
+  if budget.is_some_and(|budget| !budget.is_power_of_two()) {
+    return Err("lookup quotient budget must be a power of two".into());
+  }
   let layout = plan.layout()?;
   let artifact = plan.artifact();
   let callable = |name: &str| {
@@ -224,7 +273,7 @@ pub(super) fn build(plan: &TracePlan<'_, Bn254>) -> Result<Lowered, String> {
     let graph = input.compile_graph(&params).map_err(|error| {
       format!("{name}: invalid compiler circuit: {error:?}")
     })?;
-    input.lookup_group_size = lookup_group_size(&graph)?;
+    input.lookup_group_size = lookup_group_size(&graph, budget)?;
   }
   Ok(Lowered {
     inputs,
@@ -381,7 +430,7 @@ mod tests {
       assert_eq!(quotient_degree(&graph, size).unwrap(), 4);
     }
     assert_eq!(quotient_degree(&graph, 5).unwrap(), 2);
-    assert_eq!(lookup_group_size(&graph).unwrap(), 5);
+    assert_eq!(lookup_group_size(&graph, None).unwrap(), 5);
   }
 
   #[test]
@@ -389,13 +438,23 @@ mod tests {
     let graph = graph(&[1; 6]);
     assert_eq!(quotient_degree(&graph, 1).unwrap(), 1);
     assert_eq!(quotient_degree(&graph, 2).unwrap(), 2);
-    assert_eq!(lookup_group_size(&graph).unwrap(), 1);
+    assert_eq!(lookup_group_size(&graph, None).unwrap(), 1);
   }
 
   #[test]
   fn equal_width_choices_use_the_smallest_group() {
     let graph = graph(&[0; 6]);
-    assert_eq!(lookup_group_size(&graph).unwrap(), 6);
-    assert_eq!(lookup_group_size(&self::graph(&[])).unwrap(), 1);
+    assert_eq!(lookup_group_size(&graph, None).unwrap(), 6);
+    assert_eq!(lookup_group_size(&self::graph(&[]), None).unwrap(), 1);
+  }
+
+  #[test]
+  fn quotient_budget_trades_lookup_columns_for_quotient_chunks() {
+    let graph = graph(&[1; 6]);
+    assert_eq!(lookup_group_size(&graph, Some(1)).unwrap(), 1);
+    assert_eq!(lookup_group_size(&graph, Some(2)).unwrap(), 2);
+    assert_eq!(lookup_group_size(&graph, Some(4)).unwrap(), 2);
+    let graph = self::graph(&[0; 6]);
+    assert_eq!(lookup_group_size(&graph, Some(2)).unwrap(), 6);
   }
 }

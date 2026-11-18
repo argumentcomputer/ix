@@ -1,6 +1,6 @@
 //! Compilation through the pinned gnark sparse PLONK backend.
 
-use super::{Schema, public_bytes};
+use super::public_bytes;
 use crate::kzg::Scalar;
 pub use crate::pipeline::gnark::{Artifact, Backend, Proof};
 use serde::{Deserialize, Serialize};
@@ -46,36 +46,6 @@ impl Drop for Response {
   }
 }
 
-/// Compile the trusted schema and persist its constraint system. The exact
-/// PLONK domain is checked against the Ignition ceremony limit before writing.
-/// Preparation separately checks the loaded SRS has all `domain + 3` powers.
-pub fn compile(schema: &Schema, output: &Path) -> Result<CircuitInfo> {
-  let schema = serde_json::to_vec(schema)?;
-  if schema.len() > 16 << 20 {
-    return Err("Aiur PLONK schema exceeds the 16 MiB bridge limit".into());
-  }
-  let path = output.to_str().ok_or("gnark paths must be UTF-8")?.as_bytes();
-  let view =
-    |data: &[u8]| raw::ix_gnark_view { data: data.as_ptr(), len: data.len() };
-  // The synchronous archive call retains no Rust buffers.
-  let response =
-    Response(unsafe { raw::ix_gnark_aiur_compile(view(&schema), view(path)) });
-  if !response.0.error.is_null() {
-    // The response owns this bounded buffer until it is dropped.
-    let message = unsafe {
-      std::slice::from_raw_parts(response.0.error, response.0.error_len)
-    };
-    return Err(String::from_utf8_lossy(message).into_owned().into());
-  }
-  if response.0.data.is_null() || response.0.len == 0 {
-    return Err("gnark returned empty compile metadata".into());
-  }
-  // Metadata remains alive throughout deserialization.
-  let bytes =
-    unsafe { std::slice::from_raw_parts(response.0.data, response.0.len) };
-  Ok(serde_json::from_slice(bytes)?)
-}
-
 impl Response {
   fn checked(result: raw::ix_gnark_result) -> Result<Self> {
     let response = Self(result);
@@ -107,20 +77,59 @@ fn path(path: &Path) -> Result<&[u8]> {
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct Manifest {
   pub format: String,
-  #[serde(rename = "SchemaSHA256")]
-  pub schema_sha256: String,
+  #[serde(rename = "ScsSHA256")]
+  pub scs_sha256: String,
+  #[serde(rename = "PairingSHA256")]
+  pub pairing_sha256: String,
   #[serde(rename = "SRSBLAKE3")]
   pub srs_blake3: String,
   pub info: CircuitInfo,
   pub files: BTreeMap<String, Artifact>,
 }
 
-/// Hashes and the schema come from trusted compilation; the SRS receipt must
-/// come independently from the admitted parameter loader.
+/// An `ix-aiur-scs-v1` file and the terminal's pairing configuration, each
+/// with the SHA-256 it is pinned to.
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
-pub struct Preparation<'a> {
-  pub schema: &'a Schema,
+pub struct ScsSource<'a> {
+  pub scs: &'a Path,
+  #[serde(rename = "ScsSHA256")]
+  pub scs_sha256: &'a str,
+  pub pairing: &'a Path,
+  #[serde(rename = "PairingSHA256")]
+  pub pairing_sha256: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct ScsCompile<'a> {
+  #[serde(flatten)]
+  source: &'a ScsSource<'a>,
+  output: &'a Path,
+}
+
+/// Compile the Lean-exported constraint system: one gnark constraint per
+/// file gate, gnark's pairing gadget on the outputs and the commitment over
+/// the file's commit list.
+pub fn compile_scs(
+  source: &ScsSource<'_>,
+  output: &Path,
+) -> Result<CircuitInfo> {
+  let bytes = serde_json::to_vec(&ScsCompile { source, output })?;
+  // The native call retains no pointers into the serialized request.
+  let response =
+    Response::checked(unsafe { raw::ix_gnark_aiur_scs_compile(view(&bytes)) })?;
+  Ok(serde_json::from_slice(response.bytes())?)
+}
+
+/// [`Preparation`] of a circuit compiled by [`compile_scs`]. The prepared
+/// directory also holds the file's input layout (`inputs.json`, see
+/// [`super::scs::Inputs`]) and the pairing configuration.
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ScsPreparation<'a> {
+  #[serde(flatten)]
+  pub source: &'a ScsSource<'a>,
   pub circuit: &'a Path,
   pub circuit_hash: &'a Artifact,
   pub info: &'a CircuitInfo,
@@ -134,11 +143,11 @@ pub struct Preparation<'a> {
   pub output: &'a Path,
 }
 
-pub fn prepare(request: &Preparation<'_>) -> Result<Manifest> {
+pub fn prepare_scs(request: &ScsPreparation<'_>) -> Result<Manifest> {
   let bytes = serde_json::to_vec(request)?;
   // The native call retains no pointers into the serialized request.
   let response =
-    Response::checked(unsafe { raw::ix_gnark_aiur_prepare(view(&bytes)) })?;
+    Response::checked(unsafe { raw::ix_gnark_aiur_scs_prepare(view(&bytes)) })?;
   Ok(serde_json::from_slice(response.bytes())?)
 }
 

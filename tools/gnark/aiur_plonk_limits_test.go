@@ -27,14 +27,6 @@ func TestAiurIgnitionDomainBoundary(t *testing.T) {
 	if err := validateAiurInfo(info); err == nil {
 		t.Fatal("accepted the next domain beyond the ceremony")
 	}
-	schema := aiurSchema{Format: aiurPlonkFormat, Circuits: []aiurChip{{Rows: aiurMaxDomain, MainWidth: 1}}}
-	if err := schema.validate(); err != nil {
-		t.Fatal(err)
-	}
-	schema.Circuits[0].Rows *= 2
-	if err := schema.validate(); err == nil {
-		t.Fatal("accepted an oversized row capacity")
-	}
 }
 
 func TestAiurLargeDomainRequiresThreeOpeningPowersBeforeAllocation(t *testing.T) {

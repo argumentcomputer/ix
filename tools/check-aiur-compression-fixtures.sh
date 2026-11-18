@@ -20,8 +20,9 @@ targets=(
   aiur/bn254_fq_products_fixture aiur/bn254_pairing_fixture
   aiur/bn254_preparation_check aiur/emulated_goldilocks_fixture aiur/wide_artifact_fixture
   aiur/table_uniqueness_checks
-  multiStark/kzg_xof_fixture multiStark/kzg_source_fixture
+  multiStark/kzg_xof_fixture multiStark/kzg_source_fixture multiStark/kzg_packed_export
   multiStark/compress_final_export multiStark/MultiStark
+  multiStark/compress_narrow_fixed_export multiStark/compress_final_narrow_export
 )
 lake build --wfail "${targets[@]}"
 lake env Aiur/.lake/build/bin/table_uniqueness_checks
@@ -44,6 +45,7 @@ wide_artifact_fixture bn254-wide
 FIXTURES
 lake env MultiStark/.lake/build/bin/kzg_xof_fixture "$fixtures/kzg-xof.ixa" "${check_args[@]}"
 lake env MultiStark/.lake/build/bin/kzg_source_fixture "$fixtures/kzg-source.ixa" "${check_args[@]}"
+lake env MultiStark/.lake/build/bin/kzg_packed_export "$fixtures/kzg-packed-shplonk.ixa" "${check_args[@]}"
 
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT

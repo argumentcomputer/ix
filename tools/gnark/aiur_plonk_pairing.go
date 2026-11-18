@@ -8,32 +8,12 @@ import (
 	"github.com/consensys/gnark/std/math/emulated"
 )
 
-const aiurTerminalFormat = "ix-aiur-plonk-terminal-v1"
 const aiurTerminalOutputs = 18
 
 type aiurPairing struct {
 	Curve    string     `json:"curve"`
 	Encoding string     `json:"encoding"`
 	G2       [][]string `json:"g2"`
-}
-
-func (s *aiurSchema) validateOutputContract() error {
-	switch s.Format {
-	case aiurPlonkFormat:
-		if s.PrivateOutputs != 0 || s.Pairing != nil {
-			return fmt.Errorf("generic Aiur schema cannot carry terminal outputs or pairing")
-		}
-	case aiurTerminalFormat:
-		if s.PublicInputs != 2 || s.PrivateOutputs != aiurTerminalOutputs || s.Pairing == nil {
-			return fmt.Errorf("terminal Aiur schema requires two public fields and eighteen private pairing outputs")
-		}
-		if _, err := s.Pairing.anchors(); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("unsupported Aiur PLONK format")
-	}
-	return nil
 }
 
 func (p *aiurPairing) anchors() ([2]nativeG2, error) {

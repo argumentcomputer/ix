@@ -13,10 +13,11 @@ fn empty_trace(
   } else {
     height.checked_next_power_of_two().ok_or("trace height overflow")?
   };
-  Ok(RowMajorMatrix::new(
-    vec![Scalar::ZERO; padded.checked_mul(width).ok_or("trace size overflow")?],
-    width,
-  ))
+  let len = padded.checked_mul(width).ok_or("trace size overflow")?;
+  // Filled in parallel: a serial fill of the largest traces takes seconds.
+  let values: Vec<Scalar> =
+    (0..len).into_par_iter().map(|_| Scalar::ZERO).collect();
+  Ok(RowMajorMatrix::new(values, width))
 }
 
 pub(super) struct Packing<'p, 'a, 'm> {

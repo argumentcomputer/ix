@@ -22,6 +22,10 @@ use std::sync::Arc;
 
 pub const ENTRY: &str = "CompressFinal::verify_v1";
 pub const ACCUMULATOR_ENTRY: &str = "CompressFinal::verify_accumulator_v1";
+/// Terminal over the fixed-key narrow stage: one fixed predecessor key and
+/// stage (`CompressFinalNarrow`).
+pub const NARROW_ACCUMULATOR_ENTRY: &str =
+  "CompressFinalNarrow::verify_accumulator_v1";
 pub const ACCUMULATOR_WORDS: usize = 18;
 
 pub struct Program {
@@ -199,6 +203,41 @@ impl Configuration {
     allow_gl: bool,
   ) -> Result<Self, String> {
     let min_stage = if allow_gl { 1 } else { 2 };
+    Self::from_policy(
+      policy.digest(),
+      policy.anchor_bytes(),
+      parameters,
+      min_stage,
+      max_stage,
+    )
+  }
+
+  /// The narrow-stage terminal's configuration: its stage interval is the
+  /// one terminal stage, after the narrow stage the predecessor key proves.
+  pub fn narrow(
+    policy: &crate::aiur_backend::compress_bn::PackedPolicy,
+    parameters: &VerifierParams,
+    terminal_stage: u32,
+  ) -> Result<Self, String> {
+    if terminal_stage < 2 {
+      return Err("the narrow terminal follows a narrow stage".into());
+    }
+    Self::from_policy(
+      policy.digest(),
+      policy.anchor_bytes(),
+      parameters,
+      terminal_stage,
+      terminal_stage,
+    )
+  }
+
+  fn from_policy(
+    policy_digest: [u8; 32],
+    policy_anchors: &[u8; 128],
+    parameters: &VerifierParams,
+    min_stage: u32,
+    max_stage: u32,
+  ) -> Result<Self, String> {
     if max_stage < min_stage {
       return Err("invalid final stage interval".into());
     }
@@ -215,7 +254,7 @@ impl Configuration {
     let anchors: [u8; 128] = anchors
       .try_into()
       .map_err(|_error| "unexpected G2 anchor encoding width")?;
-    if &anchors != policy.anchor_bytes() {
+    if &anchors != policy_anchors {
       return Err("final policy and pairing anchors differ".into());
     }
     let lines = fixed_lines(points)?;
@@ -231,7 +270,7 @@ impl Configuration {
       *blake3::hash(&parameters.to_bytes().map_err(|error| error.to_string())?)
         .as_bytes();
     Ok(Self {
-      policy_digest: policy.digest(),
+      policy_digest,
       anchors,
       anchor_coordinates,
       parameters_digest,
@@ -245,16 +284,24 @@ impl Configuration {
     self.policy_digest
   }
 
+  /// `entry` is one of the two accumulator entries; its module's fixed
+  /// configuration row must equal this configuration.
   pub(crate) fn terminal_coordinates(
     &self,
     plan: &TracePlan<'_, Bn254>,
+    entry: &str,
   ) -> Result<[[String; 4]; 2], String> {
+    let name = match entry {
+      ACCUMULATOR_ENTRY => "CompressFinal::configuration_outputs",
+      NARROW_ACCUMULATOR_ENTRY => "CompressFinalNarrow::configuration_outputs",
+      _ => return Err("entry has no terminal pairing contract".into()),
+    };
     let table = plan
       .program()
       .program()
       .tables
       .iter()
-      .find(|table| table.name == "CompressFinal::configuration_outputs")
+      .find(|table| table.name == name)
       .ok_or("terminal artifact has no fixed configuration")?;
     let mut expected =
       crate::aiur_backend::kzg_advice::digest_words(&self.policy_digest)

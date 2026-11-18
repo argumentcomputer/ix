@@ -10,7 +10,7 @@ use super::{
   compress_gl::CircuitSize,
   fq, g1,
   kzg::{Backend, Compiler, MAX_TOTAL_ROWS, VerifyingKey},
-  kzg_advice as wire,
+  kzg_advice as wire, kzg_packed_advice as packed_wire,
 };
 use crate::kzg::{
   KzgConfig, Scalar, TranscriptKind, VerifierParams,
@@ -30,6 +30,14 @@ use multi_stark::{
 };
 use serde::Serialize;
 use std::{num::NonZeroU32, sync::Arc, time::Instant};
+
+mod packed;
+pub use packed::{
+  PACKED_CHAIN_ENTRY, PACKED_CHAIN_POLICY_MAGIC, PACKED_NARROW_FIXED_ENTRY,
+  PackedCapacity, PackedGlProven, PackedGlProver, PackedPolicy, PackedProof,
+  PackedProven, PackedProver, decompose, fold_packed, plan_copies,
+  plan_copies_of,
+};
 
 pub const ENTRY: &str = "CompressBN::compress_v1";
 pub const ARGUMENTS: usize = 17;
@@ -164,15 +172,22 @@ struct AuthorizedKey {
   entry: u32,
 }
 
+/// `gl_packed` marks a packed chain policy (`IXAUKG01`), whose stage-one
+/// predecessor is a packed CompressGL proof.
 struct Policy {
   anchors: [u8; 128],
   gl: AuthorizedKey,
   bn: AuthorizedKey,
+  gl_packed: bool,
 }
 
 impl Policy {
   fn decode(bytes: &[u8], expected: PolicyDigest) -> Result<Self, String> {
-    if bytes.len() != POLICY_BYTES || !bytes.starts_with(wire::POLICY_MAGIC) {
+    let gl_packed = bytes.len() == POLICY_BYTES
+      && bytes.starts_with(PACKED_CHAIN_POLICY_MAGIC);
+    if !gl_packed
+      && (bytes.len() != POLICY_BYTES || !bytes.starts_with(wire::POLICY_MAGIC))
+    {
       return Err("invalid CompressBN policy encoding".into());
     }
     if blake3::hash(bytes).as_bytes() != expected.as_bytes() {
@@ -188,6 +203,7 @@ impl Policy {
       anchors: bytes[8..136].try_into().unwrap(),
       gl: key(136),
       bn: key(172),
+      gl_packed,
     })
   }
 
@@ -212,6 +228,30 @@ impl Input {
     proof: Vec<u8>,
     policy: Vec<u8>,
   ) -> Result<Self, String> {
+    Self::new(expected, key, claims, proof, policy, false)
+  }
+
+  /// Input of the packed entries under a packed chain policy: every
+  /// predecessor, the CompressGL proof at stage one included, is a
+  /// packed-SHPLONK proof.
+  pub fn from_packed_source(
+    expected: PublicInputs,
+    key: Vec<u8>,
+    claims: Vec<u8>,
+    proof: Vec<u8>,
+    policy: Vec<u8>,
+  ) -> Result<Self, String> {
+    Self::new(expected, key, claims, proof, policy, true)
+  }
+
+  fn new(
+    expected: PublicInputs,
+    key: Vec<u8>,
+    claims: Vec<u8>,
+    proof: Vec<u8>,
+    policy: Vec<u8>,
+    packed_bn: bool,
+  ) -> Result<Self, String> {
     if [&key, &claims, &proof, &policy]
       .iter()
       .any(|bytes| bytes.len() > wire::MAX_BYTES)
@@ -219,11 +259,25 @@ impl Input {
       return Err("CompressBN source input exceeds 64 MiB".into());
     }
     let authorized = Policy::decode(&policy, expected.policy)?;
+    if authorized.gl_packed != packed_bn {
+      return Err(
+        "packed CompressBN entries take exactly the packed chain policy".into(),
+      );
+    }
+    let packed = packed_bn;
+    let (key_magic, proof_magic) = if packed {
+      (packed_wire::KEY_MAGIC, packed_wire::PROOF_MAGIC)
+    } else {
+      (wire::KEY_MAGIC, wire::PROOF_MAGIC)
+    };
     let predecessor = authorized.predecessor(expected.stage);
     if blake3::hash(&key).as_bytes() != &predecessor.digest {
       return Err(
         "CompressBN predecessor key differs from the trusted policy".into(),
       );
+    }
+    if !key.starts_with(key_magic) {
+      return Err("invalid CompressBN source key tag".into());
     }
     if source_anchors(&key)? != authorized.anchors {
       return Err(
@@ -231,7 +285,7 @@ impl Input {
       );
     }
     check_previous(&claims, expected, predecessor.entry)?;
-    if !proof.starts_with(wire::PROOF_MAGIC) {
+    if !proof.starts_with(proof_magic) {
       return Err("invalid CompressBN source proof tag".into());
     }
     Ok(Self {
@@ -255,6 +309,7 @@ pub struct Wrapper {
   maps: MapOverrides<Scalar>,
   artifact_digest: [u8; 32],
   entry: u32,
+  entry_name: &'static str,
 }
 
 pub struct Executed<'a> {
@@ -314,7 +369,14 @@ impl Profile {
   /// Materialized lookup tuples coexist with the trace matrices when lookup
   /// streaming is disabled. Prover workspaces and allocator slack are separate.
   pub fn trace_bytes(&self, config: &KzgConfig) -> Result<usize, String> {
-    let concrete = if config.uses_streaming_lookups() {
+    self.trace_bytes_streaming(config.uses_streaming_lookups())
+  }
+
+  pub fn trace_bytes_streaming(
+    &self,
+    streaming_lookups: bool,
+  ) -> Result<usize, String> {
+    let concrete = if streaming_lookups {
       0
     } else {
       self
@@ -342,6 +404,14 @@ impl TraceLimits {
     profile: &Profile,
     config: &KzgConfig,
   ) -> Result<(), String> {
+    self.check_streaming(profile, config.uses_streaming_lookups())
+  }
+
+  pub fn check_streaming(
+    self,
+    profile: &Profile,
+    streaming_lookups: bool,
+  ) -> Result<(), String> {
     if !self.max_height.is_power_of_two()
       || self.max_height > 1 << 28
       || self.max_total_rows == 0
@@ -350,7 +420,7 @@ impl TraceLimits {
     {
       return Err("invalid CompressBN trace limits".into());
     }
-    let trace_bytes = profile.trace_bytes(config)?;
+    let trace_bytes = profile.trace_bytes_streaming(streaming_lookups)?;
     if profile.max_height > self.max_height
       || profile.total_rows > self.max_total_rows
       || trace_bytes > self.max_trace_bytes
@@ -405,6 +475,21 @@ impl Wrapper {
     bytes: &[u8],
     expected_digest: &[u8; 32],
   ) -> Result<Self, String> {
+    Self::from_bytes_with_entry(bytes, expected_digest, ENTRY)
+  }
+
+  /// `entry` is [`ENTRY`], [`PACKED_CHAIN_ENTRY`] or
+  /// [`PACKED_NARROW_FIXED_ENTRY`]; all share the public call.
+  pub fn from_bytes_with_entry(
+    bytes: &[u8],
+    expected_digest: &[u8; 32],
+    entry_name: &'static str,
+  ) -> Result<Self, String> {
+    if ![ENTRY, PACKED_CHAIN_ENTRY, PACKED_NARROW_FIXED_ENTRY]
+      .contains(&entry_name)
+    {
+      return Err("unknown CompressBN entry".into());
+    }
     let artifact_digest = *blake3::hash(bytes).as_bytes();
     if &artifact_digest != expected_digest {
       return Err("CompressBN artifact differs from the trusted pin".into());
@@ -414,10 +499,10 @@ impl Wrapper {
       package.trace.ok_or("CompressBN needs a compiler trace artifact")?;
     let mut program = package.program.check_with(Bn254)?;
     program.track_depth(&trace)?;
-    program.entry(ENTRY)?;
+    program.entry(entry_name)?;
     let plan = TracePlan::new(Arc::new(program), trace)?;
     let claim = plan.public_claim(
-      ENTRY,
+      entry_name,
       &[Bn254.zero(); ARGUMENTS],
       &[Bn254.zero(); 4],
     )?;
@@ -430,7 +515,7 @@ impl Wrapper {
       .map_err(|_error| "CompressBN callable exceeds u32")?;
     let mut maps = MapOverrides::new();
     aiur::library::u8::register_maps(plan.program(), &mut maps)?;
-    Ok(Self { plan, maps, artifact_digest, entry })
+    Ok(Self { plan, maps, artifact_digest, entry, entry_name })
   }
 
   pub const fn artifact_digest(&self) -> &[u8; 32] {
@@ -450,7 +535,11 @@ impl Wrapper {
     public: PublicInputs,
     accumulator: &Accumulator,
   ) -> Result<Vec<Scalar>, String> {
-    self.plan.public_claim(ENTRY, &public.arguments(), accumulator.words())
+    self.plan.public_claim(
+      self.entry_name,
+      &public.arguments(),
+      accumulator.words(),
+    )
   }
 
   /// Trusted proving powers, public capacity and transcript settings come from
@@ -512,7 +601,11 @@ impl Wrapper {
       .map_err(|error| error.to_string())?
       .ok_or("CompressBN record reservation unavailable")?;
     let record = prepared
-      .execute_reserved(ENTRY, input.public.arguments().to_vec(), &reservation)
+      .execute_reserved(
+        self.entry_name,
+        input.public.arguments().to_vec(),
+        &reservation,
+      )
       .map_err(|error| error.to_string())?;
     reservation.finish_execution();
     let accumulator = Accumulator::from_words(&record.output)?;
@@ -526,13 +619,32 @@ impl Wrapper {
   }
 
   pub fn profile(&self, execution: &Executed<'_>) -> Result<Profile, String> {
+    self.profile_with(execution, &Compiler::new(&self.plan)?)
+  }
+
+  /// [`Self::profile`] under an explicit lookup quotient-degree budget.
+  pub fn profile_with_budget(
+    &self,
+    execution: &Executed<'_>,
+    lookup_quotient_budget: Option<usize>,
+  ) -> Result<Profile, String> {
+    self.profile_with(
+      execution,
+      &Compiler::with_lookup_budget(&self.plan, lookup_quotient_budget)?,
+    )
+  }
+
+  fn profile_with(
+    &self,
+    execution: &Executed<'_>,
+    compiler: &Compiler<'_, 'static>,
+  ) -> Result<Profile, String> {
     if execution.artifact_digest != self.artifact_digest {
       return Err(
         "CompressBN execution belongs to another compiler artifact".into(),
       );
     }
     let started = Instant::now();
-    let compiler = Compiler::new(&self.plan)?;
     let heights = compiler.row_counts(&execution.record)?;
     let params = extension_params::<KzgConfig>();
     let mut circuits = Vec::with_capacity(heights.len());
@@ -693,11 +805,16 @@ impl Wrapper {
     let setup_seconds = started.elapsed().as_secs_f64();
     let args = execution.input.public.arguments();
     let started = Instant::now();
-    let witness = backend.generate(&execution.record, ENTRY, &args)?;
+    let witness =
+      backend.generate(&execution.record, self.entry_name, &args)?;
     let trace_seconds = started.elapsed().as_secs_f64();
     let started = Instant::now();
-    let proof =
-      backend.prove(ENTRY, &args, execution.accumulator.words(), witness)?;
+    let proof = backend.prove(
+      self.entry_name,
+      &args,
+      execution.accumulator.words(),
+      witness,
+    )?;
     let proving_seconds = started.elapsed().as_secs_f64();
     let started = Instant::now();
     let claim = self.claim(execution.input.public, &execution.accumulator)?;
@@ -749,8 +866,12 @@ fn check_proving_capacity(
   Ok(())
 }
 
+/// Per-column and packed source keys share the layout up to the anchors:
+/// magic, seed blob, trace cap, quotient budget, generator, anchors.
 fn source_anchors(key: &[u8]) -> Result<[u8; 128], String> {
-  if !key.starts_with(wire::KEY_MAGIC) {
+  if !key.starts_with(wire::KEY_MAGIC)
+    && !key.starts_with(packed_wire::KEY_MAGIC)
+  {
     return Err("invalid CompressBN source key tag".into());
   }
   let seed_bytes = u32::from_le_bytes(

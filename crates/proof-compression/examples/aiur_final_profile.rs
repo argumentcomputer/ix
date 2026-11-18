@@ -3,15 +3,11 @@
 
 #[path = "aiur_final_fixture/input.rs"]
 mod input;
-#[cfg(feature = "plonk")]
-#[path = "aiur_pairing_profile/plonk_cost.rs"]
-mod plonk_cost;
 
 use ix_proof_compression::{
   aiur_backend::{
     kzg::{Backend, Compiler},
     pairing::final_program::{ENTRY, Program, statement_arguments},
-    plonk::Exporter,
   },
   kzg::{KzgConfig, Srs},
 };
@@ -20,14 +16,11 @@ use std::{fs, path::PathBuf, sync::Arc, time::Instant};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
   let args: Vec<_> = std::env::args().skip(1).collect();
   if args.len() < 2
-    || args[2..].iter().any(|flag| {
-      !matches!(
-        flag.as_str(),
-        "--prove-kzg" | "--estimate-plonk" | "--compile-plonk"
-      )
-    })
+    || args[2..].iter().any(|flag| !matches!(flag.as_str(), "--prove-kzg"))
   {
-    return Err("usage: aiur_final_profile ARTIFACT NEW_OUTPUT [--prove-kzg] [--estimate-plonk] [--compile-plonk]".into());
+    return Err(
+      "usage: aiur_final_profile ARTIFACT NEW_OUTPUT [--prove-kzg]".into(),
+    );
   }
   let directory = PathBuf::from(&args[1]);
   fs::create_dir(&directory)?;
@@ -55,15 +48,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .zip(compiler.inputs())
     .map(|(height, input)| height * input.main_width)
     .sum();
-  let public = program.plan().public_args(&record, ENTRY, &inputs)?;
-  let exporter =
-    Exporter::new(program.plan(), &capacities, ENTRY, &public, &record.output)?;
   let mut report = serde_json::json!({
     "format":"ix-aiur-final-fixture-cost-v1", "scope":"development regression, not Init compression",
     "artifact_blake3":blake3::hash(&bytes).to_hex().as_str(),
     "execution_seconds":execution,"main_cells":cells,"max_height":capacities.iter().max(),
-    "public_fields":exporter.schema().public_inputs,
-    "schema_bytes":serde_json::to_vec(exporter.schema())?.len(),
+    "public_fields":program.plan().public_claim(ENTRY, &program.plan().public_args(&record, ENTRY, &inputs)?, &record.output)?.len() - 2,
   });
   fs::write(directory.join("cost.json"), serde_json::to_vec_pretty(&report)?)?;
   if args.iter().any(|flag| flag == "--prove-kzg") {
@@ -88,27 +77,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       directory.join("cost.json"),
       serde_json::to_vec_pretty(&report)?,
     )?;
-  }
-  if args
-    .iter()
-    .any(|flag| flag == "--estimate-plonk" || flag == "--compile-plonk")
-  {
-    #[cfg(feature = "plonk")]
-    {
-      if args.iter().any(|flag| flag == "--estimate-plonk") {
-        report["plonk_estimate"] =
-          plonk_cost::estimate(exporter.schema(), &directory)?;
-      }
-      if args.iter().any(|flag| flag == "--compile-plonk") {
-        let info = ix_proof_compression::aiur_backend::plonk::gnark::compile(
-          exporter.schema(),
-          &directory.join("circuit.bin"),
-        )?;
-        report["plonk"] = serde_json::json!({"constraints":info.constraints,"domain":info.domain});
-      }
-    }
-    #[cfg(not(feature = "plonk"))]
-    return Err("PLONK sizing requires --features plonk".into());
   }
   fs::write(directory.join("cost.json"), serde_json::to_vec_pretty(&report)?)?;
   println!("{}", serde_json::to_string_pretty(&report)?);

@@ -39,6 +39,32 @@ pub fn circuit_inputs(
   Ok(circuits::build(plan)?.inputs)
 }
 
+/// [`circuit_inputs`] under an explicit lookup quotient-degree budget instead
+/// of `IX_AIUR_KZG_LOOKUP_QUOTIENT_BUDGET`; `None` keeps every circuit's
+/// quotient degree at its group-size-one value.
+pub fn circuit_inputs_with_budget(
+  plan: &TracePlan<'_, Bn254>,
+  lookup_quotient_budget: Option<usize>,
+) -> Result<Vec<CircuitInputs<Scalar>>, String> {
+  Ok(circuits::build_with(plan, lookup_quotient_budget)?.inputs)
+}
+
+/// The lookup group size the compiler lowering selects for `input` under
+/// `lookup_quotient_budget` (see [`circuit_inputs_with_budget`]), for
+/// circuits built outside that lowering.
+pub fn lookup_group_size(
+  input: &CircuitInputs<Scalar>,
+  lookup_quotient_budget: Option<usize>,
+) -> Result<usize, String> {
+  if lookup_quotient_budget.is_some_and(|budget| !budget.is_power_of_two()) {
+    return Err("lookup quotient budget must be a power of two".into());
+  }
+  let graph = input
+    .compile_graph(&extension_params::<KzgConfig>())
+    .map_err(|error| format!("invalid circuit: {error:?}"))?;
+  circuits::lookup_group_size(&graph, lookup_quotient_budget)
+}
+
 pub struct Backend<'p, 'a> {
   plan: &'p TracePlan<'a, Bn254>,
   system: System<KzgConfig>,
@@ -250,12 +276,28 @@ pub struct Compiler<'p, 'a> {
 
 impl<'p, 'a> Compiler<'p, 'a> {
   pub fn new(plan: &'p TracePlan<'a, Bn254>) -> Result<Self, String> {
-    let lowered = circuits::build(plan)?;
+    Ok(Self::from_lowered(plan, circuits::build(plan)?))
+  }
+
+  pub fn with_lookup_budget(
+    plan: &'p TracePlan<'a, Bn254>,
+    lookup_quotient_budget: Option<usize>,
+  ) -> Result<Self, String> {
+    Ok(Self::from_lowered(
+      plan,
+      circuits::build_with(plan, lookup_quotient_budget)?,
+    ))
+  }
+
+  fn from_lowered(
+    plan: &'p TracePlan<'a, Bn254>,
+    lowered: circuits::Lowered,
+  ) -> Self {
     let function_widths = lowered.inputs[..lowered.function_circuits]
       .iter()
       .map(|input| input.main_width)
       .collect();
-    Ok(Self { plan, lowered, function_widths })
+    Self { plan, lowered, function_widths }
   }
 
   pub fn inputs(&self) -> &[CircuitInputs<Scalar>] {
@@ -280,6 +322,22 @@ impl<'p, 'a> Compiler<'p, 'a> {
   /// reads query and ROM counts without populating rows or lookup witnesses;
   /// it estimates storage for the record and does not validate its arithmetic.
   pub fn row_counts(
+    &self,
+    record: &Execution<Bn254>,
+  ) -> Result<Vec<usize>, String> {
+    let mut heights = self.raw_row_counts(record)?;
+    for height in &mut heights {
+      if *height != 0 {
+        *height =
+          height.checked_next_power_of_two().ok_or("trace height overflow")?;
+      }
+    }
+    Ok(heights)
+  }
+
+  /// Rows each circuit's execution fills, before power-of-two padding.
+  /// Fixed tables report their full height.
+  pub fn raw_row_counts(
     &self,
     record: &Execution<Bn254>,
   ) -> Result<Vec<usize>, String> {
@@ -322,13 +380,18 @@ impl<'p, 'a> Compiler<'p, 'a> {
         )?;
       heights[memory_start + bucket] = count;
     }
-    for height in &mut heights {
-      if *height != 0 {
-        *height =
-          height.checked_next_power_of_two().ok_or("trace height overflow")?;
-      }
-    }
     Ok(heights)
+  }
+
+  /// Function circuits come first; tables and ROM circuits follow them.
+  pub fn function_circuits(&self) -> usize {
+    self.lowered.function_circuits
+  }
+
+  /// Per fixed map table circuit (in circuit order, after the function
+  /// circuits): its fixed maps, one main count column each.
+  pub fn map_tables(&self) -> Vec<Vec<usize>> {
+    self.lowered.tables.iter().map(|t| t.maps.clone()).collect()
   }
 
   pub fn generate(
@@ -349,8 +412,8 @@ impl<'p, 'a> Compiler<'p, 'a> {
   }
 }
 
-fn check_shape(
-  system: &System<KzgConfig>,
+pub(crate) fn check_shape<C: ProofConfig>(
+  system: &System<C>,
   active: &[bool],
   degrees: &[u8],
 ) -> Result<(), String> {

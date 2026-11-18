@@ -2,7 +2,10 @@ use aiur::{
   artifact::WidePackage, bytecode::Type, field::FieldBackend,
   hints::HintChannels, maps::MapOverrides,
 };
-use ix_proof_compression::{aiur_backend::Bn254, kzg::Scalar};
+use ix_proof_compression::{
+  aiur_backend::{Bn254, kzg_advice},
+  kzg::Scalar,
+};
 use std::sync::Arc;
 
 #[test]
@@ -14,9 +17,10 @@ fn compiled_blake3_xof_matches_native_block_and_chunk_boundaries() {
   let program = package.program.check_with(Bn254).unwrap();
   let mut maps = MapOverrides::new();
   aiur::library::u8::register_maps(&program, &mut maps).unwrap();
-  for length in
-    [0usize, 1, 63, 64, 65, 1023, 1024, 1025, 2048, 3072, 4097, 5121, 6145]
-  {
+  for length in [
+    0usize, 1, 2, 3, 63, 64, 65, 66, 1023, 1024, 1025, 1026, 2048, 3072, 4097,
+    5121, 6145,
+  ] {
     let input: Arc<[u8]> = (0..length)
       .map(|i| u8::try_from((i * 73 + 19) % 256).unwrap())
       .collect::<Vec<_>>()
@@ -30,9 +34,11 @@ fn compiled_blake3_xof_matches_native_block_and_chunk_boundaries() {
       .iter()
       .map(|bytes| Bn254.from_u64(u64::from(u32::from_le_bytes(*bytes))))
       .collect();
+    let hashed = blake3::hash(&input);
     let mut channels = HintChannels::new();
     aiur::library::u32::register(&mut channels, Bn254).unwrap();
     aiur::library::u64::register(&mut channels, Bn254).unwrap();
+    kzg_advice::register(&mut channels).unwrap();
     channels
       .insert_fixed::<1, 1>(
         "kzg.test.byte",
@@ -52,6 +58,22 @@ fn compiled_blake3_xof_matches_native_block_and_chunk_boundaries() {
       .unwrap()
       .with_map_overrides(&maps)
       .unwrap();
+    let words = executor
+      .execute(
+        "KzgXofTest::run_input",
+        vec![Bn254.from_u64(u64::try_from(length).unwrap())],
+      )
+      .unwrap()
+      .output;
+    let digest: Vec<Scalar> = hashed
+      .as_bytes()
+      .as_chunks::<4>()
+      .0
+      .iter()
+      .map(|bytes| Bn254.from_u64(u64::from(u32::from_le_bytes(*bytes))))
+      .collect();
+    assert_eq!(words[..24], expected[..], "word-stream XOF, length {length}");
+    assert_eq!(words[24..], digest[..], "word-stream hash, length {length}");
     let record = executor
       .execute(
         "KzgXofTest::run",

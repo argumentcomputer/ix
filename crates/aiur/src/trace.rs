@@ -842,6 +842,14 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       let size =
         matrix.height.checked_mul(matrix.width).ok_or("trace size overflow")?;
       matrix.values.try_reserve_exact(size).map_err(|e| e.to_string())?;
+      // Filled in parallel: a serial fill of the largest chips takes seconds.
+      #[cfg(feature = "parallel")]
+      {
+        use rayon::prelude::*;
+        let zero = self.program.field.zero();
+        matrix.values.par_extend((0..size).into_par_iter().map(|_| zero));
+      }
+      #[cfg(not(feature = "parallel"))]
       matrix.values.resize(size, self.program.field.zero());
       matrix.multiplicities.resize(matrix.height, 0);
     }

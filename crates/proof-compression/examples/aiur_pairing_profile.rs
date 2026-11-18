@@ -12,31 +12,19 @@ use ix_proof_compression::{
     Bn254, fq, g1,
     kzg::{Backend, Compiler},
     pairing,
-    plonk::Exporter,
   },
   kzg::{KzgConfig, srs::gnark},
 };
 use p3_matrix::Matrix;
 use std::{fs, path::PathBuf, sync::Arc, time::Instant};
 
-#[cfg(feature = "plonk")]
-#[path = "aiur_pairing_profile/plonk_cost.rs"]
-mod plonk_cost;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
   let arguments: Vec<_> = std::env::args().skip(1).collect();
   if arguments.len() < 2 {
-    return Err("usage: aiur_pairing_profile ARTIFACT NEW_OUTPUT [--ignition] [--prove-kzg] [--compile-plonk] [--estimate-plonk] [--chunks]".into());
+    return Err("usage: aiur_pairing_profile ARTIFACT NEW_OUTPUT [--ignition] [--prove-kzg] [--chunks]".into());
   }
   for flag in &arguments[2..] {
-    if !matches!(
-      flag.as_str(),
-      "--ignition"
-        | "--prove-kzg"
-        | "--compile-plonk"
-        | "--estimate-plonk"
-        | "--chunks"
-    ) {
+    if !matches!(flag.as_str(), "--ignition" | "--prove-kzg" | "--chunks") {
       return Err(format!("unknown pairing profile option: {flag}").into());
     }
   }
@@ -107,39 +95,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   );
   fs::write(out.join("cost.json"), serde_json::to_vec_pretty(&report)?)?;
   drop(traces);
-  if arguments.iter().any(|arg| arg == "--compile-plonk") {
-    let exporter =
-      Exporter::new(&plan, &capacities, entry, &public, &record.output)?;
-    fs::write(out.join("schema.json"), serde_json::to_vec(exporter.schema())?)?;
-    #[cfg(feature = "plonk")]
-    {
-      let start = Instant::now();
-      let info = ix_proof_compression::aiur_backend::plonk::gnark::compile(
-        exporter.schema(),
-        &out.join("circuit.bin"),
-      )?;
-      report["plonk"] = serde_json::json!({"domain":info.domain,"constraints":info.constraints,"public_inputs":info.public_inputs,"commitments":info.commitments,"compile_seconds":start.elapsed().as_secs_f64()});
-      fs::write(
-        out.join("witness.json"),
-        serde_json::to_vec(&exporter.witness(&record, &args)?)?,
-      )?;
-    }
-    #[cfg(not(feature = "plonk"))]
-    return Err("--compile-plonk requires the plonk feature".into());
-  }
-  if arguments.iter().any(|arg| arg == "--estimate-plonk") {
-    let exporter =
-      Exporter::new(&plan, &capacities, entry, &public, &record.output)?;
-    #[cfg(feature = "plonk")]
-    {
-      report["plonk_estimate"] = plonk_cost::estimate(exporter.schema(), &out)?;
-    }
-    #[cfg(not(feature = "plonk"))]
-    {
-      let _ = exporter;
-      return Err("--estimate-plonk requires the plonk feature".into());
-    }
-  }
   if arguments.iter().any(|arg| arg == "--prove-kzg") {
     let height = *capacities.iter().max().ok_or("empty trace capacity")?;
     let prefix = height.checked_mul(8).ok_or("SRS prefix overflow")?.max(2);
