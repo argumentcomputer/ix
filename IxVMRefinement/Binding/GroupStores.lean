@@ -1,4 +1,4 @@
-import IxVMRefinement.Binding.StoreClausesWalk
+import IxVMRefinement.Binding.StoreFieldsRun
 import IxVMRefinement.Binding.BasisAt
 import IxVMRefinement.Assembly.TypingBasisInv
 
@@ -11,10 +11,11 @@ clauses that are left, named in `RemainingStoreClauses`.
 
 * `basisRolesStored_of_pinned`: at a table that pins the prelude, the bound record of a walked
   role of a group below 6 is a basis row.
-* `RemainingStoreClauses t E₀`: what is not proved of the sequence. Two facts about the run's
-  records (the basis rows are records the run loaded as the basis store holds them; the record
-  a standard axiom is bound to is a safe axiom record) and five clauses (`standing`, `logic`,
-  `opsOwn`, `unitsLast`, and the reading clause of `AdmitsReads`).
+* `RemainingStoreClauses t E₀`: what is not proved of the sequence. One fact about the run's
+  records (the basis rows are records the run loaded as the basis store holds them) and five
+  clauses (`standing`, `logic`, `opsOwn`, `unitsLast`, and the reading clause of
+  `AdmitsReads`). That the record a standard axiom is bound to is a safe axiom record is proved
+  (`axiomRoles_of_run`, `IxVMRefinement.Binding.StoreFieldsRun`).
 * `groupStoresOfRun_of_remaining`: `GroupStoresOfRun calls` from `RemainingStoreClauses` at
   the run's records, in the alternative without a collision. Every other clause of every
   group's admission is proved: the rank is `walkRank` over a closed list of the records the
@@ -60,9 +61,6 @@ Status: stated only; nothing proves any field of any run.
   the validation of the groups below 6 at a table that pins the prelude: each of those
   validations loads its role's record, the pin fixes the address, and the alternative without a
   collision fixes the bytes.
-* `axiomRoles`: the record a standard axiom is bound to is a safe axiom record of the run:
-  `KernelRoles::validate_standard_axiom` matches the loaded constant as an axiom and asserts it
-  safe.
 * `standing`, `logic`: a new axiom or quotient record is the group's standard axiom; a new
   record is in Lean's logic. The walk's check of an axiom record asks for a standing role in
   force; a walked record's references are guarded against a safe source
@@ -76,7 +74,6 @@ Status: stated only; nothing proves any field of any run.
   over the store after the group. -/
 structure RemainingStoreClauses (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
   basisRows : BasisRowsLoaded E₀
-  axiomRoles : AxiomRolesDeclared t E₀
   standing : ∀ g, 6 ≤ g → g < 77 → ∀ a c,
     New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a →
     recordOf (groupStore t E₀ (g + 1)) a = some c → IsAxiomLike c →
@@ -128,7 +125,7 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
     collisionFreeRun_of_no_collision hextra hcol hS hH
   have hR := hrem a tb t htb hadm hall hpin hval hC
   have hb := hR.basisRows
-  have hax := hR.axiomRoles
+  have hax := axiomRoles_of_run hC hval
   have hbr : BasisRolesStored t := basisRolesStored_of_pinned hpin
   have hvalAll : ∀ g, ∀ r ∈ roleGroup g, RoleValidationIn calls a t g r := by
     intro g r hr
