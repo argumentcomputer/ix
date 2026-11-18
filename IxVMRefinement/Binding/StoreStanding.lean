@@ -133,7 +133,7 @@ theorem GroupReach.root_or_allowed (hC : CollisionFreeRun calls E₀) {g : Nat}
     have hv' : RoleVal.ValidateRoleIn calls bAddr t g r := hv
     rcases evidence_specKind hv.wf hm with h2 | h5
     · obtain ⟨a₀, had, -⟩ := (RoleValidationIn.walks hv).1
-      obtain ⟨rawBytes, c, hsz, hh, hbl, hde, hwk⟩ :=
+      obtain ⟨rawBytes, c, hsz, hh, hbl, hde, -, hwk⟩ :=
         RoleVal.ValidateRoleIn.op_certificate_walks hv' h2 had hm hthm
       have hrec : recordOf E₀ thm = some c := by
         rw [← hbl]
