@@ -269,7 +269,7 @@ theorem ctorAnswer_mono_on {isInd isInd' : _root_.Address → Option Bool}
     | some B =>
       rw [hp] at hx
       simp only at hx ⊢
-      unfold ctorBody at hx ⊢
+      unfold Route.ctorBody at hx ⊢
       cases hm : B.mentions M with
       | false => rw [hm] at hx; exact hx
       | true =>
