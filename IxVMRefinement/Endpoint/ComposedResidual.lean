@@ -315,7 +315,9 @@ binding run loads is the admitted table of bytes the run hashed, `Binding.loaded
 and that such a table binding every role pins the prelude, `Binding.loadedTablePinsPrelude`):
 the stores of a run, with every clause of each group's admission but the observed validation
 of its roles, reduced to what is left of their clauses over the run's records
-(`groupStores`, `Binding.RemainingStoreClausesOfRun`: `opsOwn` and `unitsLast`; the store
+(`groupStores`, `Binding.RemainingStoreClausesOfRun`: the operation-order scan's facts
+`blockSteps` and `payloadOps`, from which the clauses `opsOwn` and `unitsLast` are proved,
+`Binding.groupStore_opsOwn` and `Binding.groupStore_unitsLast`; the store
 sequence and every other clause are proved, `Binding.groupStoresOfRun_of_remaining`, among them
 the safety of the roots, `Binding.rootsAndTheoremsSafe_of_run`, and the reading clause,
 `Binding.groupStore_reads`; with them the family clauses of each group's store and checks,
@@ -355,9 +357,9 @@ ordinary inductive type takes the use-site reading of the projection guard, a th
   block of recursors is a family record or a twin, every top-walked block on the modeled route
   has a family record, and each family record and twin had its family check at the walk's limit
   (`FamilyRun`). The choices, the graph, the ranking with its acyclicity, and the facts of the
-  functions that the circuit's family changes leave alone are proved. Producer open: the batch's
-  fields, from the circuit's functions as they are to be changed, and the stored twins' field,
-  from the binding side's stored families.
+  functions that the circuit's family changes leave alone are proved. Producer open: the fields
+  read off the circuit's functions as the family changes leave them, and the stored twins'
+  field, from the binding side's stored families.
 * `innerChecked`: at every walk and every such run, each record checked inside a family check
   was checked at the walk's limit, uses no inert axiom's reference, uses only references that
   the witness's environment stores, that are covered, or that a checked record of smaller rank
