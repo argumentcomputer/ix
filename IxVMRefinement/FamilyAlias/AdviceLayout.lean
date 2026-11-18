@@ -27,6 +27,13 @@ functions of the environment IxC's fold stores (`ModeledFamily`):
 
 The advice keys are the ones a family lists (`advice`: the addresses of its compiled advice
 records), or placeholders (`adviceAddress`: an address made of the model constant's position).
+
+The layout of the model is not, in general, what the fold stores for the compiled advice records:
+the advice encoder normalizes universe levels, so a constant the modeller writes with a level such
+as `max (max 1 1) 1` is stored from its record with `1`. The two agree on the level parameters and
+the types of the member models and of the rule theorems, which is all the record reads of the
+advice. A family may carry the stored prefix itself (`advicePre`); the rule copies are then built
+from the statements that prefix stores.
 -/
 
 namespace IxVM.Refinement.Decl.FamilyAlias
@@ -48,6 +55,9 @@ structure ModeledFamily where
   /-- the advice keys, where they are known: pairs (model key, key of the advice constant);
   placeholders by position otherwise -/
   advice : Option (List (KKey × KKey)) := none
+  /-- the prefix as the fold stores the readings of the compiled advice records, where it is
+  known, newest first; the layout of the model otherwise -/
+  advicePre : Option (List (ConstantInfo .anon)) := none
 
 namespace ModeledFamily
 
@@ -121,9 +131,16 @@ def adviceConst (g : KKey → KKey) : ConstantInfo .anon → Option (ConstantInf
 
 /-- **The prefix in the advice layout**, newest first. -/
 def advicePrefix (m : ModeledFamily) : List (ConstantInfo .anon) :=
-  m.beforeBlock.filterMap fun c =>
-    if m.isModelKey c.name then adviceConst m.adviceRen c
-    else some c
+  match m.advicePre with
+  | some p => p
+  | none =>
+    m.beforeBlock.filterMap fun c =>
+      if m.isModelKey c.name then adviceConst m.adviceRen c
+      else some c
+
+/-- The advice constant of a model key, in the prefix. -/
+def adviceAt (m : ModeledFamily) (k : KKey) : Option (ConstantInfo .anon) :=
+  (advicePrefix m).find? (·.name == m.adviceRen k)
 
 /-- The alias at a model key: a definition by the advice constant at the alias's own level
 parameters. -/
@@ -147,15 +164,18 @@ def ruleMajor (f : KKey → KKey) (r : RecRule .anon) : KExpr → KExpr :=
   | .nested _ pins => nestedMajor f r.nfields pins
   | .inert => id
 
-/-- **The rule copy** of rule `j` of recursor `x`, stored as `r`: the copy of the advice statement,
-which is the statement IxC stores at the `iota` key with its constants renamed to the advice keys
-and its level parameters at positions. -/
+/-- **The rule copy** of rule `j` of recursor `x`, stored as `r`: the copy of the advice statement
+the prefix stores at the rule theorem's advice key, at the level parameters IxC stores the
+theorem with. -/
 def ruleCopy (m : ModeledFamily) (x : KKey) (j : Nat) (r : RecRule .anon) :
     Option (ConstantInfo .anon) :=
-  (storedAt m (auxKey (auxKey x .model) (.iota j))).map fun c =>
-    aliasAt m.adviceRen (auxKey (auxKey x .model) (.iota j)) c.toConstantVal.levelParams
+  match storedAt m (auxKey (auxKey x .model) (.iota j)),
+      adviceAt m (auxKey (auxKey x .model) (.iota j)) with
+  | some c, some a =>
+    some (aliasAt m.adviceRen (auxKey (auxKey x .model) (.iota j)) c.toConstantVal.levelParams
       (ruleCopyOfAdvice c.toConstantVal.levelParams x (ruleMajor (blockRen m.names) r)
-        (posOf c.toConstantVal.levelParams (c.toConstantVal.type.renameConsts m.adviceRen)))
+        a.toConstantVal.type))
+  | _, _ => none
 
 /-- The rule copies of a member: none unless it is a recursor. -/
 def ruleCopies (m : ModeledFamily) (c : ConstantInfo .anon) : List (ConstantInfo .anon) :=
