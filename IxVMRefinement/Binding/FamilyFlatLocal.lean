@@ -854,6 +854,59 @@ theorem derivedFlatAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {B : _root_.Ad
       simp only [ho, ho'] at h ⊢
       exact nestedWalk_leOn hV hC B n 0 os es hI h
 
+/-- A view answers as itself. -/
+theorem FlatView.LeOn.refl (S : _root_.Address → Prop) (V : FlatView) : V.LeOn S V :=
+  ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h, fun _ _ _ h => h, fun _ _ h => h⟩
+
+theorem nestedWalk_entryAt (hC : V.ClosedOn S) (B : _root_.Address) :
+    ∀ (n i : Nat) (acc r : List FlatEntry), (∀ x ∈ acc, EntryAt V S x) →
+      nestedWalk V B n i acc = some r → ∀ x ∈ r, EntryAt V S x := by
+  intro n
+  induction n with
+  | zero => intro i acc r _ h; simp [nestedWalk] at h
+  | succ n ih =>
+    intro i acc r hacc h
+    simp only [nestedWalk] at h
+    cases hi : acc[i]? with
+    | none =>
+      simp only [hi, Option.some.injEq] at h
+      subst h
+      exact hacc
+    | some e =>
+      simp only [hi] at h
+      have he : EntryAt V S e := hacc e (List.mem_of_getElem? hi)
+      cases hc : V.ci e.addr with
+      | none => simp [hc] at h
+      | some x =>
+        cases x with
+        | none => simp [hc] at h
+        | some info =>
+          simp only [hc] at h
+          cases hs : ctorsScan V B info e.aux e.params e.levels acc with
+          | none => simp [hs] at h
+          | some a =>
+            have hl := ctorsLoop_leOn (FlatView.LeOn.refl S V) hC B info e.aux e.params e.levels
+              (hC.ciBlk e.addr info he.addr hc) he.params (List.range info.nctors) acc a hacc hs
+            simp only [hs] at h
+            exact ih (i + 1) a r hl.2 h
+
+/-- **The entries derived over a view closed on a set holding the block are entries of the set**:
+each at an address of the set, its parameters' keys naming addresses of the set. -/
+theorem derivedFlatAt_entryAt (hC : V.ClosedOn S) {B : _root_.Address} (hB : S B) {off n : Nat}
+    {es : List FlatEntry} (h : derivedFlatAt V B off n = some es) : ∀ x ∈ es, EntryAt V S x := by
+  unfold derivedFlatAt at h
+  cases hm : V.members B with
+  | none => simp [hm] at h
+  | some ms =>
+    simp only [hm] at h
+    cases ho : originals V off ms with
+    | none => simp [ho] at h
+    | some os =>
+      obtain ⟨-, hI⟩ :=
+        originals_leOn (FlatView.LeOn.refl S V) off ms os (hC.members B ms hB hm) ho
+      simp only [ho] at h
+      exact nestedWalk_entryAt hC B n 0 os es hI h
+
 end LeOn
 
 /-! ## The readings of a store -/
