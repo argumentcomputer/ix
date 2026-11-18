@@ -1,5 +1,7 @@
 # Compression as Aiur programs
 
+> **Historical (2026-11-15).** This document is the original proposal and checkpoint log. The supported pipeline, formats, verification surface and soundness index are in [aiur-compression-architecture.md](aiur-compression-architecture.md).
+
 Proof compression turns an Ix aggregate root (a Goldilocks/BLAKE3 STARK) into
 a small BN254 proof. Today every stage after the root is a hand-written
 circuit (`crates/proof-compression`). This document sketches the same pipeline
@@ -1231,3 +1233,18 @@ height `2^24`; the returned pairing is correct, but the execution is far above
 the exporter and performance budgets. No proving traces or full PLONK circuit
 were allocated for that input. Reducing intermediate proof width and its
 verification work remains necessary before the complete pipeline can run.
+
+## 28. Narrow recursion proposal
+
+The actual Init terminal (734,887,425 main cells) shows that per-column KZG
+with one AIR per function makes each recursive proof carry about 4,400
+commitments. Local optimizations cannot reach the hand-written `2^24` final
+circuit. [Fewer commitments](aiur-narrow-recursion.md) compares SP1 and ZisK
+and surveys the options:
+
+- packing columns into shared KZG polynomials, opened with one SHPLONK batch:
+  about 22–85 G1 points per Init-sized proof, with no compiler change;
+- narrow layouts compiled from Aiur verifiers;
+- cheaper per-commitment arithmetic.
+
+That proposal is under review; nothing in it is implemented.

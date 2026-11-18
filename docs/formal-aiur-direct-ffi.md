@@ -177,9 +177,7 @@ aggregation <identity hex> <key digest hex>
   digests, whichever artifact was selected.
 - **Updating.** `lake exe formal-keys` derives the file from the checkout's
   programs; `tools/check-formal-keys.sh` fails when it differs from the
-  committed pins (CI runs it), and `--update` rewrites them. The pin file
-  is hashed into the verify-path fingerprint, so a re-pin goes through that
-  review as well.
+  committed pins (CI runs it), and `--update` rewrites them.
 
 ## Identities
 
@@ -215,9 +213,7 @@ use the system handle the command selected for key derivation and native
 verification and never one chosen by the controller's result. The selection
 and acceptance entry points changed signature (`compiledArtifact`,
 `artifact`, `aggregationArtifact`, `verifierArtifact`,
-`FormalAggregate.context`, `FormalAggregate.identity`, `verifyWrapper`), and
-`Tests/VerifyPath.lean` adds the linked compiler's roots; the pin needs the
-verify-path review.
+`FormalAggregate.context`, `FormalAggregate.identity`, `verifyWrapper`).
 
 ## Checks
 
