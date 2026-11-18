@@ -355,13 +355,13 @@ def runTwin (leanEnv : Lean.Environment) : IO UInt32 := do
       {recsW.length} of {recNames.length}"
     let near := instC.fe.env.consts.filterMap fun ci =>
       let s := toString ci.name
-      if (s.splitOn "LCNF.Alt").length > 1 then
+      if (s.splitOn "LCNF").length > 1 || (s.splitOn "rec").length > 1 then
         some (s ++ (match ci with
           | .recInfo .. => ":rec" | .indInfo .. => ":ind" | .ctorInfo .. => ":ctor"
           | .defnInfo .. => ":defn" | _ => ":other"))
       else none
     IO.println s!"[ixvm-family-graph-records] twin: IxC's environment holds \
-      {instC.fe.env.consts.length} constants; near the family: {near.take 40}"
+      {instC.fe.env.consts.length} constants; sample {(instC.fe.env.consts.take 6).map (toString ·.name)}; near the family ({near.length}): {near.take 60}"
     let fuel := 1000000
     let ops : Ix.Kernel.CheckerOps .source (Ix.Kernel.CheckM .source) :=
       Ix.Kernel.fueledOps .verified fuel
