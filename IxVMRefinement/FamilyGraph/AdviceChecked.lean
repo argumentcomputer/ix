@@ -111,6 +111,51 @@ theorem adviceRecord_checked {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     | .CPrj (hv869 := hv) .. =>
       rcases htagOf _ _ hv with e | e | e | e <;> exact absurd e (by decide)
 
+/-- **An observed advice-record check is at no axiom and no quotient record**: the check's arms
+are a definition's, a recursor's, a block's and an inductive or constructor projection's, and the
+arm of the loaded value is the arm of the stored record. -/
+theorem adviceRecord_kind {lim : Option Nat} {calls cs : List (Call F)} {E₀ : Ixon.Env}
+    (hS : LoadedReads.RunStore calls E₀)
+    {x_rc x_a x_aset x_wset r : SourceValue F} {h h' : Heap F} {ab : Bytes.Address}
+    (ha : Bytes.RepAddressRef addrTy h ab x_a)
+    (ev : ObsFn Obs.W "KernelModeled::check_advice_record" [x_rc, x_a, x_aset, x_wset] h r h' cs)
+    (hsub : ∀ cl ∈ cs, cl ∈ calls)
+    {c : Ixon.Constant} (hc : IxVM.Consistency.recordOf E₀ (ixAddr ab) = some c) :
+    (∀ ax, c.info ≠ .axio ax) ∧ ∀ q, c.info ≠ .quot q := by
+  match Obs.«KernelModeled::check_advice_record».obs ev with
+  | .run (m2 := m2) (cs12 := cs12) (x_info := x_info) (cs947 := cs947) (ev14 := ev14)
+      (sg952 := sg952) (hc1011 := hc1011) .. =>
+    have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
+    obtain ⟨ext1, bytes, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
+      L1.load_verified_constant_decode_bounded ha ev14
+    have hrec₀ : Ix.Cert.recordAt E₀ (ixAddr ab) = some c :=
+      (hS.recordOf_eq_recordAt _).symm.trans hc
+    have hcc : c' = c := hS.record_eq hrec₀ (hashed_mono hsub12 hh) haddr hexact
+    rw [hcc] at cRep
+    obtain ⟨infoVal, shPtr, rfPtr, unPtr, bdPtr, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
+    have hinfo_eq : x_info = infoVal := by
+      have h1 := (Value.construct.inj hc_eq).2.2
+      exact (List.cons.inj h1).1
+    rw [← hinfo_eq] at hinfoRep
+    -- the check's arm names the tag of the loaded value, which is neither `Axio` nor `Quot`
+    have harm : ∀ (tag : String) (args : List (SourceValue F)),
+        x_info = .construct "Ixon::ConstantInfo" tag args → tag ≠ "Axio" ∧ tag ≠ "Quot" := by
+      intro tag args hx
+      match sg952 with
+      | .Defn_Definition_Safe (hv81 := hv) .. | .Defn_Definition_other (hv81 := hv) ..
+      | .Defn_Theorem (hv81 := hv) .. | .Defn_Opaque (hv81 := hv) .. | .Recr (hv403 := hv) ..
+      | .Muts (hv598 := hv) .. | .IPrj (hv790 := hv) .. | .CPrj (hv869 := hv) .. =>
+        have e := (Value.construct.inj (hx.symm.trans hv)).2.1
+        subst e
+        exact ⟨by decide, by decide⟩
+    refine ⟨fun ax hax => ?_, fun q hq => ?_⟩
+    · rw [hax] at hinfoRep
+      obtain ⟨av, hv, -⟩ := hinfoRep
+      exact (harm _ _ hv).1 rfl
+    · rw [hq] at hinfoRep
+      obtain ⟨qv, hv, -⟩ := hinfoRep
+      exact (harm _ _ hv).2 rfl
+
 /-- **Every listed advice address had its advice-record check observed**, at an extension of
 the walk's heap where the address is still read, with its calls among the walk's. -/
 theorem check_advice_records_obs {rc wset : SourceValue F} :
