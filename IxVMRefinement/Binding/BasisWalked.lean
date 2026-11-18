@@ -138,7 +138,7 @@ theorem oneRoute_ne_true {E : Ixon.Env} {B : _root_.Address} {cb : Ixon.Constant
 
 theorem mutsRoute_ne_true {E : Ixon.Env} {B : _root_.Address} {cb : Ixon.Constant}
     {ms : Array Ixon.MutConst} (hrefs : cb.refs.toList = [])
-    (hone : (ms.toList.filter Specs.Callees.isIndc).length ≤ 1) :
+    (hone : (ms.toList.filter Core.Specs.Callees.isIndc).length ≤ 1) :
     mutsRoute E B cb ms ≠ some true := by
   unfold mutsRoute
   split
@@ -151,7 +151,8 @@ theorem mutsRoute_ne_true {E : Ixon.Env} {B : _root_.Address} {cb : Ixon.Constan
 /-- **A record that, if a block, references nothing and has at most one inductive member.** -/
 def basisBlockClosed (c : Ixon.Constant) : Bool :=
   match c.info with
-  | .muts ms => decide (c.refs.toList = [] ∧ (ms.toList.filter Specs.Callees.isIndc).length ≤ 1)
+  | .muts ms =>
+    decide (c.refs.toList = [] ∧ (ms.toList.filter Core.Specs.Callees.isIndc).length ≤ 1)
   | _ => true
 
 set_option maxRecDepth 100000 in
@@ -174,7 +175,7 @@ theorem blockRoute_basisStore_ne_true (B : _root_.Address) :
     cases hi : cb.info with
     | muts ms =>
       have hok' : decide (cb.refs.toList = [] ∧
-          (ms.toList.filter Specs.Callees.isIndc).length ≤ 1) = true := by
+          (ms.toList.filter Core.Specs.Callees.isIndc).length ≤ 1) = true := by
         unfold basisBlockClosed at hok
         rw [hi] at hok
         exact hok
