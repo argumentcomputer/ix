@@ -123,7 +123,7 @@ theorem read_evidence_entries_parse :
         by simp [hlen], ?_, ?_, ?_, hs'.mono ext2⟩
       · intro e he
         rcases List.mem_cons.mp he with rfl | he
-        · simp [Ix.Kernel.RoleTable.Evidence.wide, ixAddr]
+        · simp [Ix.Kernel.RoleTable.Evidence.wide, ixAddr, ByteArray.size]
         · exact hwide e he
       · have hb1 : bs1 = a'.toList ++ bs1.drop 32 := by
           rw [← ha', takeAddress_toList hlen_a, List.take_append_drop]
