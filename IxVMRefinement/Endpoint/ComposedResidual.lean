@@ -1,6 +1,8 @@
 import IxVMRefinement.Endpoint.WalkedKindSteps
 import IxVMRefinement.FamilyGraph.Composition
 import IxVMRefinement.Assembly.NativeBlockWalked
+import IxVMRefinement.Binding.TableAdmits
+import IxVMRefinement.Binding.TableAdmitsValidate
 
 /-! # The composed statement from its open obligations
 
@@ -71,9 +73,8 @@ the invariant at the basis groups and the two admission chains are its projectio
   its prelude pin, and the stores of a run; the claim's decode is proved); and at each group of
   a run the closure, the stored shapes where the group has no role unit, and the role unit of
   an operation and of a standard axiom;
-* typing: the use-site reading of the projection guard (`Core.ProjGuardRunReading`); what an
-  accepted run gives of its family records, advice and twins (`FamilyGraphRow`) and of the
-  records a family check checks (`InnerCheckedRow`); the step of a top-walked block with its
+* typing: what an accepted run gives of its family records, advice and twins
+  (`FamilyGraphRow`) and of the records a family check checks (`InnerCheckedRow`); the step of a top-walked block with its
   family record (`FamilyBlockRow`) and the step of a twin (`FamilyTwinRow`).
 
 The typing half takes nothing from the binding half but the table witness at `OverW L`, so no
@@ -201,27 +202,21 @@ theorem circuitComposed_of_parts
 are proved passed in. The binding claim layer's run predicate is `Binding.BindingRun`, by the
 run's calls.
 
-The first seven hypotheses are the binding half's. Three are the parts of the claim's export
-that remain (`Binding.bindingClaimExport_of_table_and_stores`; the claim's decode is proved,
-`Claim.verify_claim_decode_binding_spec`): that the table a binding run loads is the admitted
-table of bytes the run hashed (`tableAdmits`), that such a table binding every role pins the
-prelude (`preludePins`), and the stores of a run, with every clause of each group's admission
-but the observed validation of its roles (`groupStores`). The invariant at the six basis groups
+The first five hypotheses are the binding half's. One is the part of the claim's export that
+remains (`Binding.bindingClaimExport_of_table_and_stores`; the claim's decode is proved,
+`Claim.verify_claim_decode_binding_spec`, and so are the other two parts: that the table a
+binding run loads is the admitted table of bytes the run hashed, `Binding.loadedTableAdmits`,
+and that such a table binding every role pins the prelude, `Binding.loadedTablePinsPrelude`):
+the stores of a run, with every clause of each group's admission but the observed validation
+of its roles (`groupStores`). The invariant at the six basis groups
 and the two admission chains are projections of the run predicate (`basisOver_bindingRun`,
 `admitsChain_bindingRun`, `admitsReadsChain_bindingRun`). The other four are, for every bounded
 run and each group from 6 to 76 of it, the closure, the stored shapes where the group has no
 role unit, the role unit of an operation and the role unit of a standard axiom.
 
-The last five hypotheses are the typing half's.
+The last four hypotheses are the typing half's. The step of the ordinary inductive type takes
+the use-site reading of the projection guard, a theorem (`Core.projGuardRunReading`).
 
-* `projGuardRunReading`: the use-site reading of the projection guard: a run of the projection
-  guard at a propositional structure's table, within the registry's induction, reads as the
-  guard's use at the stored raw type of the structure's constructor (`ProjGuardUse`), the run's
-  own hashed collision being the only alternative (`Core.ProjGuardRunReading`). It is the one premise of the step of a block of one inductive
-  type on the native route whose former is declared at its telescope (the ordinary inductive
-  type), at every checked unit (`nativeBlockTelescope_checked`) and at every top-walked one
-  (`nativeBlockTelescope_walked`). Stated; producer open: trace lemmas of the classifier
-  restated below the registry's induction.
 * `familyGraph`: at every walk of an accepted typing claim and every witness of the table's
   shape, the run's family records, advice, inner records and twins form a family graph in which
   every top-walked non-empty block of recursors is a family record or a twin, every top-walked
@@ -256,8 +251,6 @@ The last five hypotheses are the typing half's.
   the step from `TwinFamily.TwinStepTarget` through `TwinFamily.familyInstalled_of_clause`, and
   the target from `Decl.FamilyAlias.FamilyCheckFacts`. -/
 theorem circuitComposed_residual
-    (tableAdmits : LoadedTableAdmits)
-    (preludePins : LoadedTablePinsPrelude)
     (groupStores : ∀ calls, GroupStoresOfRun calls)
     (groupClosure :
       ∀ calls, AtGroups (BindingRun calls) (ClosureStepOver.{u} FormerOpenTraceAt))
@@ -269,26 +262,26 @@ theorem circuitComposed_residual
     (standardAxiomRoleUnit : ∀ calls,
       AtGroups (BindingRun calls)
         (RoleUnitStepOver.{u} (· ∈ standardAxioms) FormerOpenTraceAt))
-    (projGuardRunReading : Core.ProjGuardRunReading)
     (familyGraph : FamilyGraphRow.{u})
     (innerChecked : InnerCheckedRow)
     (familyBlock : FamilyBlockRow.{u} FormerOpenTraceAt)
     (familyTwin : FamilyTwinRow.{u} FormerOpenTraceAt) :
     CircuitComposed.{u} :=
   circuitComposed_of_parts
-    (bindingClaimExport_of_table_and_stores tableAdmits preludePins groupStores)
+    (bindingClaimExport_of_table_and_stores Binding.loadedTableAdmits
+      Binding.loadedTablePinsPrelude groupStores)
     (fun calls => basisOver_bindingRun FormerOpenTraceAt calls) admitsChain_bindingRun
     admitsReadsChain_bindingRun
     groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit
     familyGraph
     (innerUnitSteps_of_innerChecked innerChecked
-      (nativeBlockTelescope_checked linkLaws_formerOpenTrace projGuardRunReading))
+      (nativeBlockTelescope_checked linkLaws_formerOpenTrace Core.projGuardRunReading))
     familyBlock familyTwin
     (standaloneDefinition_foldExtra linkLaws_formerOpenTrace)
     (standaloneTheoremOrOpaque_foldExtra linkLaws_formerOpenTrace)
     (standaloneRecursor_of_freshNotBasis freshRecursorMajorNotBasis_walked)
     (definitionBlock_of_nonempty (definitionBlock_foldExtra linkLaws_formerOpenTrace))
-    (nativeBlockTelescope_walked linkLaws_formerOpenTrace projGuardRunReading)
+    (nativeBlockTelescope_walked linkLaws_formerOpenTrace Core.projGuardRunReading)
     nativeBlockAlias_walked
     nativeBlockOtherTelescope_step
 

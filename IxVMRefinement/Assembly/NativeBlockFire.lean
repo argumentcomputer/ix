@@ -14,7 +14,8 @@ table fires at every context over the role table and the store.
   (`Ix.Kernel.ProjGuardCert`) over the store's raw dictionary. It is the premise `hcert` of
   `foldExtra_nativeNoRec` at the block's one member.
 * `blockFire_of_cert`: the certificate and the reading of a `proj_guard` run
-  (`Core.ProjGuardRunReading`) give `BlockFire`. The member's projection record is the one the
+  (`Core.ProjGuardRunReading`) give `BlockFire`; `blockFire_of_cert_run`: the same with the
+  reading discharged by its theorem `Core.projGuardRunReading`. The member's projection record is the one the
   install read (`BlockInstall.formerRec`); the store decodes its records.
 -/
 
@@ -50,5 +51,14 @@ theorem blockFire_of_cert (hread : Core.ProjGuardRunReading) {c : Core.Ctx}
   obtain ⟨cvC, nP, nF, raw, hctor, hraw, hpos, cert⟩ := hcert tbl htbl hprop
   exact ⟨cvC, nP, nF, hctor,
     Guard.projTableFires_of_cert_at hread hI.decoded ⟨_, hI.formerRec, rfl, by decide⟩ hraw hpos cert⟩
+
+/-- **The new table fires, from its certificate**: the reading of a use is a theorem
+(`Core.projGuardRunReading`), so the certificate alone gives `BlockFire`. -/
+theorem blockFire_of_cert_run {c : Core.Ctx}
+    {new : List (ConstantInfo .anon)} {B : _root_.Address} {cb : Ixon.Constant}
+    {ind : Ixon.Inductive} {caps : IndCaps .anon}
+    (hI : BlockInstall c new B cb ind caps)
+    (hcert : BlockCert c.t c.E (appCtx c new).env B) : BlockFire c new B :=
+  blockFire_of_cert Core.projGuardRunReading hI hcert
 
 end IxVM.Refinement.Typing

@@ -529,7 +529,7 @@ theorem blockCert_of_reading_lim
     {p₀ p : Ix.Kernel.NativeParts .anon} {new : List (ConstantInfo .anon)}
     {ty' : Ix.Kernel.Expr .anon} {ctorsA : List (ConstantVal .anon × Nat)}
     {caps : IndCaps .anon}
-    {Er : Ixon.Env} (hfields : Guard.CheckedSortsReadingAt calls Er)
+    {Er : Ixon.Env} (hfields : Guard.CheckedSortsReadingAtBlock calls Er B)
     (hO : NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps)
     (hS : InstallSortsCheckedLim calls t E lim env B
       ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ p₀ new p ctorsA)
@@ -550,7 +550,7 @@ theorem blockCert_of_reading_lim
   obtain ⟨b, u, cA, sorts, hbB, hcA, hsorts, hcS, hchk⟩ := hQ hlenP (hO.nIdx₀.trans h0) hzero
   subst hcA hsorts
   -- the loop's reading at the sorts the table stage ran at
-  obtain ⟨sigs, fuel, raw, hraw, hsig, hzeros⟩ := hfields _ hchk
+  obtain ⟨sigs, fuel, raw, hraw, hsig, hzeros⟩ := hfields _ hchk hbB
   have hv0 : ZMod.val (0 : F) = 0 := ZMod.val_zero
   rw [hbB, hv0] at hraw
   rw [hO.nP₀, ← hO.nP] at hsig

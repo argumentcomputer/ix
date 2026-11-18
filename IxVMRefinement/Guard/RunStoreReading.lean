@@ -352,4 +352,26 @@ theorem CheckedSortsReadingAt.stepStore {calls : List (Call F)} {t : Ix.Kernel.R
   exact Option.bind_eq_some_iff.mpr
     ⟨root, GuardRaw.memberRoot_mono records hroot, GuardRaw.readRoot_mono hst.runBlob hread⟩
 
+/-- **The reading of the checked field loops at one block**: `CheckedSortsReadingAt` asked only of
+the loops whose block is `B`. A store that holds `B` and what the loops at `B` load has it,
+whatever it lacks of the records the loops at other blocks load. -/
+def CheckedSortsReadingAtBlock (calls : List (Call F)) (E : Ixon.Env) (B : _root_.Address) :
+    Prop :=
+  ∀ (c : ScopedCtx) {b : Bytes.Address} {i : F} {nP nF : Nat} {cty : KExpr} {u : KLevel}
+    {sorts : List KLevel},
+    GuardData.CheckedFieldsAt c calls b i nP nF cty u sorts → Core.ixAddr b = B →
+    ∃ (sigs : List KLevel) (fuel : Nat) (raw : KExpr),
+      Guard.ctorRaw E (ixAddr b) (ZMod.val i) 0 = some raw ∧
+      Ix.Kernel.GuardClassifier.fieldSignatures (GuardRaw.ofStore E) fuel nP nF [] raw =
+        some sigs ∧
+      ∀ j, j < nF → ∀ φ : Ix.Kernel.LevelParam → Nat,
+        Ix.Kernel.Level.eval φ (sorts.getD j .zero) = 0 ↔
+          Ix.Kernel.Level.eval φ (sigs.getD j .zero) = 0
+
+/-- The reading of every loop gives the reading of the loops at any one block. -/
+theorem CheckedSortsReadingAt.block {calls : List (Call F)} {E : Ixon.Env}
+    (reading : CheckedSortsReadingAt calls E) (B : _root_.Address) :
+    CheckedSortsReadingAtBlock calls E B :=
+  fun c _ _ _ _ _ _ _ checked _ => reading c checked
+
 end IxVM.Refinement.Guard

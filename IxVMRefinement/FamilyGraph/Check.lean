@@ -556,7 +556,7 @@ theorem familyGraph_of_checks {d : GraphData} {t : Ix.Kernel.RoleTable} {E₀ : 
     · exact Or.inr (Or.inr (Or.inr (ownedBelow_of_P h)))
   · intro rb' B hT
     obtain ⟨rb, hrb, hne, hrk⟩ := kTBlock (rb', B) (assoc_mem hT)
-    exact ⟨rb, Option.mem_def.mp hrb, hne, hrk⟩
+    exact Or.inl ⟨rb, Option.mem_def.mp hrb, hne, hrk⟩
   · intro rb' B hT
     obtain ⟨hW, hU, hnone⟩ := kTWalked (rb', B) (assoc_mem hT)
     exact ⟨hW, unclaimed_of_P hU, hnone⟩
