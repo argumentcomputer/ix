@@ -2801,6 +2801,10 @@ def canonical_rules_at_pos := aiur_fn⟦
                   } } ,
               } } ,
             _ => {
+              -- a family record the binding's validation checks (a role context of a group's
+              -- validation, whose limit is below the group count) is the reconstruction itself
+              assert_eq!(KernelRoles::rc_validates_group(rc), 0,
+                "a family record checked in a group's validation is not the canonical reconstruction");
               assert_eq!(wrap_rel(1, canonical_ty, ty), 1,
                 "recursor declared type is neither the canonical reconstruction nor its full consumption");
               assert_eq!(Fields::is_zero(form - 1), 0,

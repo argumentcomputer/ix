@@ -402,6 +402,20 @@ def role_ctx_is_assumed := aiur_fn⟦
     }
 ⟧
 
+  -- Whether `rc` is a group's validation context: a validating context whose limit is below the
+  -- group count (`group_admit`'s and `walk_ctx`'s), not a typing claim's (`group_count()`) nor
+  -- an assumed one.
+
+def rc_validates_group := aiur_fn⟦
+  fn rc_validates_group(rc: RoleCtx) -> Field {
+      match (*(rc)) {
+        RoleCtxNode::Mk(_, limit, _) => {
+          UInt32::less_than_fields(limit, KernelRoleSpec::group_count()) } ,
+        RoleCtxNode::Assumed(_, _) => {  0 } ,
+      }
+    }
+⟧
+
 def role_ctx_binding := aiur_fn⟦
   fn role_ctx_binding(rc: RoleCtx) -> Bytes::AddressRef {
       match (*(role_ctx_table(rc))) {
