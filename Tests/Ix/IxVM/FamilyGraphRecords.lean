@@ -395,9 +395,72 @@ def runTwin (leanEnv : Lean.Environment) : IO UInt32 := do
     IO.FS.writeFile path s!"twin {hex blockC.hash} {hex rbC.hash} {hex rbW.hash}\n"
   return if rc == 0 && sameBlock && secondRecord && judged then 0 else 1
 
-/-- The two nested families, and, with `IX_FAMILY_TWIN` set, the second recursor record. -/
+/-- A census of a block's payload: its advice records by the arm of the advice check that reads
+them, and its witnessed references by kind. -/
+private def payloadCensus (adv : IxVM.Model.BlockAdvice) : String :=
+  let count (p : Ixon.Constant → Bool) : Nat := (adv.records.filter fun (_, c) => p c).size
+  let defs := count fun c => match c.info with
+    | .defn d => (match d.kind with | .defn => true | _ => false)
+    | _ => false
+  let thms := count fun c => match c.info with
+    | .defn d => (match d.kind with | .thm => true | _ => false)
+    | _ => false
+  let recs := count fun c => match c.info with | .recr _ => true | _ => false
+  let blocks := count fun c => match c.info with | .muts _ => true | _ => false
+  let members := adv.records.foldl (init := 0) fun n (_, c) =>
+    match c.info with | .muts ms => n + ms.size | _ => n
+  let projs := count fun c => match c.info with | .iPrj _ | .cPrj _ => true | _ => false
+  let w (k : Nat) : Nat := (adv.layout.witnesses.filter fun (_, kind, _, _) => kind == k).size
+  s!"{adv.records.size} advice records ({defs} definitions, {thms} theorems, {recs} recursors, \
+    {blocks} blocks with {members} members, {projs} projections), \
+    {adv.layout.witnesses.size} witnessed references ({w 0} basis roles, {w 1} closure members, \
+    {w 2} container recursors, {w 3} projections)"
+
+/-- The checks two family checks run on their advice: the block claim of a `List`-nested tree
+and of a mutual pair, each under an assumed and under a validated binding, with the census of
+each payload. Every claim must be accepted and must have called the advice-record check. The
+case file is kept under `IX_TEST_OUTPUT_DIR`, so that it can be rerun with the host's function
+statistics. -/
+def runInner (leanEnv : Lean.Environment) : IO UInt32 := do
+  let fams : List (String × Lean.Name × Array Lean.Name) :=
+    [("NestedTree", recordDefs "T",
+       #[recordDefs "T", (recordDefs "T").str "rec", (recordDefs "T").str "rec_1"]),
+     ("IndexedPair", recordDefs "EvT",
+       #[recordDefs "EvT", recordDefs "OdT", (recordDefs "EvT").str "rec",
+         (recordDefs "OdT").str "rec"])]
+  IO.println s!"[ixvm-family-graph-records] inner: artifact {← programArtifact}"
+  IO.println s!"[ixvm-family-graph-records] inner: host {← programHost}"
+  let mut cases : Array Builder := #[]
+  for (label, first, names) in fams do
+    let env0 ← loadSharedIxonEnv names leanEnv
+    let (env, rep) ← IO.ofExcept (IxVM.Model.generateReport
+      { env0 with models := {}, modelRecords := {}, modelHints := {}, modelBlobs := {},
+                  modelDeps := {}, modelsAttached := false })
+    let ty ← lookupAddr env first
+    let some block := (env.getConst? ty).bind IxVM.Model.projectionBlock?
+      | throw (IO.userError s!"{first} is not a member of a block")
+    let some (_, adv) := rep.advice.find? (·.1 == block)
+      | throw (IO.userError s!"the block of {first} has no model advice")
+    let mut owned : Array Address := #[block]
+    for (a, lc) in env.consts do
+      if let some c := lc.get? then
+        if IxVM.Model.projectionBlock? c == some block then owned := owned.push a
+    IO.println s!"[ixvm-family-graph-records] inner {label}: block {block}, {owned.size} owned, \
+      {payloadCensus adv}"
+    let ownedAll := owned
+    for assume in [true, false] do
+      let mode := if assume then "assumed" else "validated"
+      cases := cases.push fun _ => do
+        let (_, witness) ← buildShardCheckEnvWitness env ownedAll (assumeBinding := assume)
+        return { label := s!"inner-{label}-{mode}", accept := true,
+                 exercises := some "KernelModeled::check_advice_record", witness }
+  runCases "ixvm-family-graph-records" cases (jobs := 2)
+
+/-- The two nested families; with `IX_FAMILY_TWIN` set, the second recursor record; with
+`IX_FAMILY_INNER` set, the checks two family checks run on their advice. -/
 def run (leanEnv : Lean.Environment) : IO UInt32 := do
   if (← IO.getEnv "IX_FAMILY_TWIN").isSome then return (← runTwin leanEnv)
+  if (← IO.getEnv "IX_FAMILY_INNER").isSome then return (← runInner leanEnv)
   let names := families.foldl (fun acc f => acc ++ f.2.2.1) #[]
   let missing := names.filter (!leanEnv.constants.contains ·)
   unless missing.isEmpty do

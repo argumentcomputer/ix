@@ -39,7 +39,6 @@ set_option linter.unusedVariables false
 namespace IxVM.Refinement.Typing
 
 open IxVM.Consistency
-open IxVM.Refinement.Core
 open Aiur.Generic.SourceSemantics (Call)
 open IxVM (F)
 open Ix.Kernel.Semantics (NativeFam)
