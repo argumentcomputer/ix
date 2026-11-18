@@ -163,10 +163,10 @@ theorem load_role_table_parse {x_a x_tbl : SourceValue F} {h h₁ : Heap F}
   -- the node
   subst hm629
   have extN : Heap.Extends (m582 ++ [.construct rtEnum "Mk" [x_a, x_by_role, x_by_addr,
-      x_evidence]]) m666 := ev678.heap_extends
-  have extEv : Heap.Extends m512 m666 :=
+      x_evidence]]) h₁ := ev678.heap_extends
+  have extEv : Heap.Extends m512 h₁ :=
     ev594.heap_extends.trans ((Heap.Extends.snoc m582 _).trans extN)
-  have extBn : Heap.Extends m392 m666 :=
+  have extBn :=
     ev488.heap_extends.trans (ev546.heap_extends.trans (ev524.heap_extends.trans extEv))
   have hlenB' : lb.length.toUInt8 = b3 := by
     rw [hlenB, Ix.Kernel.RoleTable.toNat_toUInt8]
