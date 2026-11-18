@@ -10,8 +10,8 @@ registry before the store (`FoldClauseOver`), and the interfaces of the steps in
 * `BoundaryFacts t G R env`: what the invariant holds beside the public shape and the clause:
   blocks stored whole, the stored operations pinned and of admitted groups, the stored shapes.
   The prefix invariant is not a field: it is read off the clause (`BndOver.inv`). No guard at a
-  limit is a field either: the clause holds the projection guards as certificates, and its load
-  contract the firing of every stored projection table, and neither names a limit.
+  limit is a field either: the clause's load contract holds the firing of every stored
+  projection table, and that names no limit.
 * `BndOver L t G R env`: the boundary invariant: `TableShape`, `FoldClauseOver L`,
   `BoundaryFacts`. `OverW L` is the internal part of the table witness it gives.
 * `OverUnitStep L t G R envT E₀ A c`: **the step of one closure unit**. From the clause at one
