@@ -17,9 +17,11 @@ form, through the internal part:
   position over the flattened family (`FamilyOfBlock`: one recursor per entry, the block's types
   first, so non-empty for a non-empty block; each recursor eliminating its position's entry,
   auxiliary positions included), stored whole, each recursor with its model companion
-  (`FamilyInstalled`), and its flattened family entry by entry, derived from the block and read
-  off the record (`StoredFamiliesFlat`). Only a complete record is selected: an empty family
-  record is no canonical source, and the binding never stores a modeled block with one alone;
+  (`FamilyInstalled`), its flattened family entry by entry, derived from the block and read
+  off the record (`StoredFamiliesFlat`), and its reconstruction form (`StoredFamiliesRForm` at
+  `FamilyRecon.RFormS`: each recursor the block's reconstruction at its position). Only a
+  complete record is selected: an empty family record is no canonical source, and the binding
+  never stores a modeled block with one alone;
 * `storedFamiliesFlat_grow`, `storedFamiliesFlat_of_sub`, `storedFamiliesFlat_join`,
   `storedFamiliesFlat_none`: the flattened families across the fold's stores (a larger store, a
   used-closed sub-store of the run's store, a joined map, no selection);
@@ -30,7 +32,8 @@ form, through the internal part:
 * `StoredFormPred`, `StoredFamiliesRForm RFormS t R famOf`: the second import (the stored-twin
   premise): the selected family record of every stored modeled block is in the reconstruction's
   form at every member (`RFormS t R B rb`, the twin step's record-level predicate over the
-  witness's store);
+  witness's store); `StoredFamilies.form` is it at `FamilyRecon.RFormS`, carried across the fold's
+  stores by `FamilyWitnessForm`;
 * `ClosureStepOverFamily`: the closure of a group with its modeled blocks' families, keeping the
   selected map: `ClosureStepOver` with the run's family checks and `FamilyAdmits` as premises. -/
 
@@ -63,6 +66,20 @@ def StoredFamiliesFlat (t : Ix.Kernel.RoleTable) (R : Ixon.Env)
     FamilyOfBlock R B cb ms rb crb rs (es.map FamilyFlat.FlatEntry.addr) ∧
     FamilyFlat.RecordFlat t R rb crb rs es ∧ FamilyFlat.BlockDerivedFlat t R B off es
 
+/-- **A predicate on a stored family record's form**, of the role table, the store that holds the
+record and its block, the block and the record: the form reads the record and the block, which
+only a store gives. -/
+abbrev StoredFormPred : Type :=
+  Ix.Kernel.RoleTable → Ixon.Env → _root_.Address → _root_.Address → Prop
+
+/-- **The second import, the stored-twin premise**: the selected family record of every stored
+modeled block, in the witness's store `R`, is in the reconstruction's form at every member
+(`RFormS t R B rb`, the record-level form predicate the twin step's producer uses: the
+reconstruction's own type at every member of the record `rb` of block `B`). -/
+def StoredFamiliesRForm (RFormS : StoredFormPred) (t : Ix.Kernel.RoleTable) (R : Ixon.Env)
+    (famOf : _root_.Address → Option _root_.Address) : Prop :=
+  ∀ B rb, famOf B = some rb → RFormS t R B rb
+
 /-- **The family the witness installed for each stored modeled block** (module docstring). -/
 structure StoredFamilies (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (env : Ix.Kernel.Env .anon)
     (famOf : _root_.Address → Option _root_.Address) : Prop where
@@ -82,6 +99,10 @@ structure StoredFamilies (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (env : Ix.Kern
   /-- The selected records' flattened families, entry by entry, derived from the block and read
   off the record, in `R`. -/
   flat : StoredFamiliesFlat t R famOf
+  /-- The selected records' reconstruction form in `R`: each record is the block's family over
+  the flattened family derived from the block, and each of its recursors is the block's
+  reconstruction at its position (`FamilyRecon.RFormS`). -/
+  form : StoredFamiliesRForm FamilyRecon.RFormS t R famOf
 
 /-! ## The flattened families across stores -/
 
@@ -178,20 +199,6 @@ theorem storedFamiliesImport_overWFam (L : Ix.Kernel.Env .anon → NativeFam .an
   intro t R env hW
   obtain ⟨famOf, hF⟩ := hW.2
   exact ⟨famOf, fun B cb hB hroute hst => storedFamily_of_clause hF hB hroute hst⟩
-
-/-- **A predicate on a stored family record's form**, of the role table, the store that holds the
-record and its block, the block and the record: the form reads the record and the block, which
-only a store gives. -/
-abbrev StoredFormPred : Type :=
-  Ix.Kernel.RoleTable → Ixon.Env → _root_.Address → _root_.Address → Prop
-
-/-- **The second import, the stored-twin premise**: the selected family record of every stored
-modeled block, in the witness's store `R`, is in the reconstruction's form at every member
-(`RFormS t R B rb`, the record-level form predicate the twin step's producer uses: the
-reconstruction's own type at every member of the record `rb` of block `B`). -/
-def StoredFamiliesRForm (RFormS : StoredFormPred) (t : Ix.Kernel.RoleTable) (R : Ixon.Env)
-    (famOf : _root_.Address → Option _root_.Address) : Prop :=
-  ∀ B rb, famOf B = some rb → RFormS t R B rb
 
 /-! ## The closure of a group with its families -/
 

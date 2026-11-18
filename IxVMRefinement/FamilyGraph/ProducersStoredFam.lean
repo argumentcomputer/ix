@@ -35,7 +35,9 @@ from the map:
   (`FamilyChecksAt`), the block of every stored twin a stored modeled block of the witness's store
   (`StoredTwinBlock`), and, at a block with a family record and a twin, the record non-empty and
   in the preferred form when the twin is (`FamRunCtx.twin_canonical`);
-* `StoredFormAt RFormS`: the selected records of every witness in the form `RFormS` (premise);
+* `StoredFormAt RFormS`: the selected records of every witness in the form `RFormS`;
+  `storedFormAt_recon`: it at the reconstruction's form `FamilyRecon.RFormS`, from the stored
+  families (`StoredFamilies.form`);
 * `familyStepsFam_of_graphInnerT`, `circuitComposed_of_partsFamInnerWT`: the typing half's premise
   and the public statement with the twin row's stored case at the witness's selected record
   (`TwinFamily.FamilyTwinRowFam`): the graph case from the row at the graph's record, the stored
@@ -485,16 +487,22 @@ theorem circuitComposed_of_partsFamInnerW
 
 /-! ## The twin row's stored case at the witness's selected record -/
 
-/-- **Every witness's selected family records are in the form `RFormS`** (premise).
-`RFormS t R B rb` is the twin seam's record-level form over the witness's store (the
-reconstruction's own type at every member of the record `rb` of the block `B`). Producer: the
-binding run's family check of each selected record, carried by the stored families once the form
-predicate is concrete; open until then. -/
+/-- **Every witness's selected family records are in the form `RFormS`**. `RFormS t R B rb` is
+the twin seam's record-level form over the witness's store (the reconstruction's own type at every
+member of the record `rb` of the block `B`). At the concrete form `FamilyRecon.RFormS` it is a
+theorem (`storedFormAt_recon`): the stored families carry it (`StoredFamilies.form`). -/
 def StoredFormAt (RFormS : StoredFormPred) : Prop :=
   ∀ (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (envT : Ix.Kernel.Env .anon)
     (famOf : _root_.Address → Option _root_.Address),
     TableShape.{u} t (fun _ => True) R envT → StoredFamilies t R envT famOf →
     StoredFamiliesRForm RFormS t R famOf
+
+/-- **The selected records of every witness are in the reconstruction's form**: the stored
+families carry it (`StoredFamilies.form`), from the binding run's family check of each selected
+record under its group's validation (`GroupFamilyChecks.familyForm`), kept by the binding fold
+(`FamilyWitnessForm`). -/
+theorem storedFormAt_recon : StoredFormAt.{u} FamilyRecon.RFormS :=
+  fun _ _ _ _ _ hSF => hSF.form
 
 /-- **The typing half's premise at the witness with its stored families, the twin row's stored
 case at the witness's selected record**: as `familyStepsFam_of_graphInner`, the twin conjunct
