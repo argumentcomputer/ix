@@ -366,7 +366,7 @@ theorem iotaRuleRenRunJ_of_aliased
     have hdP' := defEqListJ_renameJ_of_renamed hext hA hdP
       (map_fvarTypeD_agree (map_take_agree cnP hfvsPa)) hcdomsPa
     refine ⟨_, ⟨cvj, cnP, cnF, rhsA, hctorM, hw.nfields, hw.bounded, hw.closed, hann, hw.levels,
-      hrhsRes, hw.lams, htyped, .plain, rfl, Or.inl ⟨hplain, rfl, ?_⟩⟩, rfl, rfl, hw.annotated, rfl⟩
+      hrhsRes, hw.lams, htyped, .plain, rfl, Or.inl ⟨hplain, rfl, ?_⟩⟩, ⟨rfl, rfl, hw.annotated⟩, rfl⟩
     refine ⟨_, fvs, Expr.app (.app (.app (.const eqName [ℓ]) α) lhs') rhsS, hcvt, rfl, hopc,
       heq', rfl, ?_⟩
     exact ⟨hfn', hlen', htake',
@@ -406,7 +406,7 @@ theorem iotaRuleRenRunJ_of_aliased
     have htl' := typedListJ_famJ_of_renamed hext hA htl hpinsPa hcdomsPa hpinLF
     refine ⟨_, ⟨cvj, cnP, cnF, rhsA, hctorM, hw.nfields, hw.bounded, hw.closed, hann, hw.levels,
       hrhsRes, hw.lams, htyped, .nested lvls pins, rfl,
-      Or.inr ⟨Bool.eq_false_iff.mpr hplain, lvls, pins, rfl, hnrs, ?_⟩⟩, rfl, rfl, hw.annotated, rfl⟩
+      Or.inr ⟨Bool.eq_false_iff.mpr hplain, lvls, pins, rfl, hnrs, ?_⟩⟩, ⟨rfl, rfl, hw.annotated⟩, rfl⟩
     refine ⟨_, fvs, Expr.app (.app (.app (.const eqName [ℓ]) α) lhs') rhsS, hcvt, rfl, hopc,
       heq', rfl, ?_⟩
     exact ⟨hfn', hlen', htake',
