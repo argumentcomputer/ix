@@ -1,4 +1,5 @@
 import IxVMRefinement.Guard.Certificate
+import IxVMRefinement.Guard.CertificateExampleData
 
 /-! # The guard certificate at a propositional structure with a quantified field
 
@@ -33,30 +34,9 @@ namespace IxVM.Refinement.Guard.QuantifiedField
 open Ix.Kernel (Expr Level ProjTable ConstantVal ProjGuardCert ProjGuardUse)
 open Ix.Kernel.GuardClassifier
 
-/-- `Eq.{u} : {α : Sort u} → α → α → Prop` at the level `u`, as the raw dictionary answers. -/
-def eqType (u : Level) : Expr .anon :=
-  .forallE (.sort u)
-    (.forallE (.bvar 0) (.forallE (.bvar 1) (.sort .zero) default) default) default
-
 section
 
 variable (aNat aEq aTrue aP : _root_.Address)
-
-/-- `∀ n : Nat, @Eq.{1} Nat n n`, raw. -/
-def quantifiedField : Expr .anon :=
-  .forallE (.const (.id aNat) [])
-    (.app (.app (.app (.const (.id aEq) [.succ .zero]) (.const (.id aNat) [])) (.bvar 0))
-      (.bvar 0))
-    default
-
-/-- The constructor's raw telescope: `(h : ∀ n : Nat, n = n) → (k : True) → P`. -/
-def ctorType : Expr .anon :=
-  .forallE (quantifiedField aNat aEq)
-    (.forallE (.const (.id aTrue) []) (.const (.id aP) []) default) default
-
-/-- The sorts ordinary inference gives the two field domains: `imax 1 0` for the quantified
-field, `0` for `True`. -/
-def sorts : List Level := [.imax (.succ .zero) .zero, .zero]
 
 theorem eval_imax_one_zero (φ : Ix.Kernel.LevelParam → Nat) :
     Level.eval φ (.imax (.succ .zero) .zero) = 0 := rfl
