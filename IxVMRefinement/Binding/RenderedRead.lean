@@ -112,8 +112,193 @@ def closedBelow : Nat → KExpr → Bool
   | _, .lit _ => false
   | _, .proj _ _ _ => false
 
+/-- **A heap term with no `Let` and no `Proj` cell**: the pointer is to a `Srt`, `Const` or `BVar`
+cell, or to an `App`, `Lam` or `Forall` cell whose term arguments are such terms. Such a term is
+its image cell by cell: no cell hides under a `let`'s ζ-reduct, and no cell of it heads a
+projection. It stays so on every larger heap (`LetProjFree.mono`). -/
+inductive LetProjFree (h : Heap F) : SourceValue F → Prop where
+  | sort {addr : Nat} {lp : SourceValue F}
+      (cell : h[addr]? = some (.construct kexprEnum "Srt" [lp])) :
+      LetProjFree h (.ptr (.enum kexprEnum) addr)
+  | const {addr : Nat} {ap lsp : SourceValue F}
+      (cell : h[addr]? = some (.construct kexprEnum "Const" [ap, lsp])) :
+      LetProjFree h (.ptr (.enum kexprEnum) addr)
+  | bvar {addr : Nat} {i : F}
+      (cell : h[addr]? = some (.construct kexprEnum "BVar" [.field i])) :
+      LetProjFree h (.ptr (.enum kexprEnum) addr)
+  | app {addr : Nat} {fp ap : SourceValue F}
+      (cell : h[addr]? = some (.construct kexprEnum "App" [fp, ap]))
+      (rf : LetProjFree h fp) (ra : LetProjFree h ap) :
+      LetProjFree h (.ptr (.enum kexprEnum) addr)
+  | lam {addr : Nat} {tp bp lp : SourceValue F}
+      (cell : h[addr]? = some (.construct kexprEnum "Lam" [tp, bp, lp]))
+      (rt : LetProjFree h tp) (rb : LetProjFree h bp) :
+      LetProjFree h (.ptr (.enum kexprEnum) addr)
+  | forallE {addr : Nat} {tp bp lp : SourceValue F}
+      (cell : h[addr]? = some (.construct kexprEnum "Forall" [tp, bp, lp]))
+      (rt : LetProjFree h tp) (rb : LetProjFree h bp) :
+      LetProjFree h (.ptr (.enum kexprEnum) addr)
+
+theorem LetProjFree.mono {h h' : Heap F} {p : SourceValue F} (ext : Heap.Extends h h')
+    (hp : LetProjFree h p) : LetProjFree h' p := by
+  induction hp with
+  | sort cell => exact .sort (ext.getElem?_eq cell)
+  | const cell => exact .const (ext.getElem?_eq cell)
+  | bvar cell => exact .bvar (ext.getElem?_eq cell)
+  | app cell _ _ ihf iha => exact .app (ext.getElem?_eq cell) ihf iha
+  | lam cell _ _ iht ihb => exact .lam (ext.getElem?_eq cell) iht ihb
+  | forallE cell _ _ iht ihb => exact .forallE (ext.getElem?_eq cell) iht ihb
+
+private theorem cell_ctor_eq {h : Heap F} {addr : Nat} {n n' : String}
+    {xs ys : List (SourceValue F)}
+    (c₁ : h[addr]? = some (.construct kexprEnum n xs))
+    (c₂ : h[addr]? = some (.construct kexprEnum n' ys)) : n = n' ∧ xs = ys := by
+  have := Option.some.inj (c₁.symm.trans c₂)
+  injection this with _ hn hx
+  exact ⟨hn, hx⟩
+
+/-- The cell of a term with no `Let` and no `Proj` cell is none of `Let`, `Proj`, `Lit`. -/
+theorem LetProjFree.cell_ok {h : Heap F} {addr : Nat} {n : String} {xs : List (SourceValue F)}
+    (hp : LetProjFree h (.ptr (.enum kexprEnum) addr))
+    (cell : h[addr]? = some (.construct kexprEnum n xs)) :
+    n ≠ "Let" ∧ n ≠ "Proj" ∧ n ≠ "Lit" := by
+  have hn : n = "Srt" ∨ n = "Const" ∨ n = "BVar" ∨ n = "App" ∨ n = "Lam" ∨ n = "Forall" := by
+    cases hp with
+    | sort c' => exact Or.inl (cell_ctor_eq cell c').1
+    | const c' => exact Or.inr (Or.inl (cell_ctor_eq cell c').1)
+    | bvar c' => exact Or.inr (Or.inr (Or.inl (cell_ctor_eq cell c').1))
+    | app c' _ _ => exact Or.inr (Or.inr (Or.inr (Or.inl (cell_ctor_eq cell c').1)))
+    | lam c' _ _ => exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl (cell_ctor_eq cell c').1))))
+    | forallE c' _ _ =>
+      exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (cell_ctor_eq cell c').1))))
+  rcases hn with rfl | rfl | rfl | rfl | rfl | rfl <;> exact ⟨by decide, by decide, by decide⟩
+
+theorem LetProjFree.app_inv {h : Heap F} {addr : Nat} {fp ap : SourceValue F}
+    (hp : LetProjFree h (.ptr (.enum kexprEnum) addr))
+    (cell : h[addr]? = some (.construct kexprEnum "App" [fp, ap])) :
+    LetProjFree h fp ∧ LetProjFree h ap := by
+  cases hp with
+  | app c' rf ra =>
+    have hxs := (cell_ctor_eq cell c').2
+    simp only [List.cons.injEq, and_true] at hxs
+    obtain ⟨rfl, rfl⟩ := hxs
+    exact ⟨rf, ra⟩
+  | sort c' | const c' | bvar c' => exact absurd (cell_ctor_eq cell c').1 (by decide)
+  | lam c' _ _ | forallE c' _ _ => exact absurd (cell_ctor_eq cell c').1 (by decide)
+
+theorem LetProjFree.lam_inv {h : Heap F} {addr : Nat} {tp bp lp : SourceValue F}
+    (hp : LetProjFree h (.ptr (.enum kexprEnum) addr))
+    (cell : h[addr]? = some (.construct kexprEnum "Lam" [tp, bp, lp])) :
+    LetProjFree h tp ∧ LetProjFree h bp := by
+  cases hp with
+  | lam c' rt rb =>
+    have hxs := (cell_ctor_eq cell c').2
+    simp only [List.cons.injEq, and_true] at hxs
+    obtain ⟨rfl, rfl, -⟩ := hxs
+    exact ⟨rt, rb⟩
+  | sort c' | const c' | bvar c' => exact absurd (cell_ctor_eq cell c').1 (by decide)
+  | app c' _ _ | forallE c' _ _ => exact absurd (cell_ctor_eq cell c').1 (by decide)
+
+theorem LetProjFree.forall_inv {h : Heap F} {addr : Nat} {tp bp lp : SourceValue F}
+    (hp : LetProjFree h (.ptr (.enum kexprEnum) addr))
+    (cell : h[addr]? = some (.construct kexprEnum "Forall" [tp, bp, lp])) :
+    LetProjFree h tp ∧ LetProjFree h bp := by
+  cases hp with
+  | forallE c' rt rb =>
+    have hxs := (cell_ctor_eq cell c').2
+    simp only [List.cons.injEq, and_true] at hxs
+    obtain ⟨rfl, rfl, -⟩ := hxs
+    exact ⟨rt, rb⟩
+  | sort c' | const c' | bvar c' => exact absurd (cell_ctor_eq cell c').1 (by decide)
+  | app c' _ _ | lam c' _ _ => exact absurd (cell_ctor_eq cell c').1 (by decide)
+
+/-- A term with no `Let` and no `Proj` cell points to a term cell. -/
+theorem LetProjFree.ptr {h : Heap F} {p : SourceValue F} (hp : LetProjFree h p) :
+    ∃ addr n xs, p = .ptr (.enum kexprEnum) addr ∧
+      h[addr]? = some (.construct kexprEnum n xs) := by
+  cases hp with
+  | sort cell | const cell | bvar cell => exact ⟨_, _, _, rfl, cell⟩
+  | app cell _ _ | lam cell _ _ | forallE cell _ _ => exact ⟨_, _, _, rfl, cell⟩
+
+private theorem cell_of_load {h : Heap F} {addr : Nat} {n : String} {xs : List (SourceValue F)}
+    {v : SourceValue F} (cell : h[addr]? = some (.construct kexprEnum n xs))
+    (hl : loadValue h (.ptr (.enum kexprEnum) addr) = .ok v) : h[addr]? = some v := by
+  rw [loadValue_enum_cell cell] at hl
+  injection hl with hv
+  rw [← hv]
+  exact cell
+
+/-- The two parts of a `Lam` cell a term with no `Let` and no `Proj` cell loads. -/
+theorem LetProjFree.lam_of_load {h : Heap F} {p tp bp lp : SourceValue F}
+    (hp : LetProjFree h p) (ld : loadValue h p = .ok (.construct kexprEnum "Lam" [tp, bp, lp])) :
+    LetProjFree h tp ∧ LetProjFree h bp := by
+  obtain ⟨addr, n, xs, rfl, cell⟩ := hp.ptr
+  exact hp.lam_inv (cell_of_load cell ld)
+
+/-- The two parts of a `Forall` cell a term with no `Let` and no `Proj` cell loads. -/
+theorem LetProjFree.forall_of_load {h : Heap F} {p tp bp lp : SourceValue F}
+    (hp : LetProjFree h p)
+    (ld : loadValue h p = .ok (.construct kexprEnum "Forall" [tp, bp, lp])) :
+    LetProjFree h tp ∧ LetProjFree h bp := by
+  obtain ⟨addr, n, xs, rfl, cell⟩ := hp.ptr
+  exact hp.forall_inv (cell_of_load cell ld)
+
+/-- **A term with no `Let` and no `Proj` cell heads no projection.** -/
+theorem LetProjFree.not_projIn {h : Heap F} {p : SourceValue F} {x : Bytes.Address}
+    (m : ProjIn h p x) : LetProjFree h p → False := by
+  induction m with
+  | head cell _ => exact fun hp => (hp.cell_ok cell).2.1 rfl
+  | projArg cell _ _ => exact fun hp => (hp.cell_ok cell).2.1 rfl
+  | appFn cell _ ih => exact fun hp => ih (hp.app_inv cell).1
+  | appArg cell _ ih => exact fun hp => ih (hp.app_inv cell).2
+  | lamTy cell _ ih => exact fun hp => ih (hp.lam_inv cell).1
+  | lamBody cell _ ih => exact fun hp => ih (hp.lam_inv cell).2
+  | forallTy cell _ ih => exact fun hp => ih (hp.forall_inv cell).1
+  | forallBody cell _ ih => exact fun hp => ih (hp.forall_inv cell).2
+  | letTy cell _ _ | letVal cell _ _ | letBody cell _ _ =>
+    exact fun hp => (hp.cell_ok cell).1 rfl
+
+/-- **The cells of a term with no `Let` and no `Proj` cell are constants its image names**: every
+predicate all the image's constants satisfy holds of the key of each cell. -/
+theorem LetProjFree.addrIn_named {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+    {h : Heap F} {k : Nat} {E : KExpr} {p : SourceValue F} (rep : Tm κ d Γ h k E p) :
+    LetProjFree h p → ∀ x, AddrIn h p x →
+      ∀ P, E.constsResolveBy P = true → P (κ (ixAddr x)) = true := by
+  induction rep with
+  | bvarLocal cell => exact fun _ x hin => (addrIn_none cell (by decide) hin).elim
+  | bvarFree cell => exact fun _ x hin => (addrIn_none cell (by decide) hin).elim
+  | sort cell => exact fun _ x hin => (addrIn_none cell (by decide) hin).elim
+  | const cell ra rls hus =>
+    intro _ x hin P hP
+    have e := Bytes.repAddressRef_inj U32.Goldilocks.compatible ra (addrIn_const_inv cell hin)
+    subst e
+    simpa only [Ix.Kernel.Expr.constsResolveBy] using hP
+  | app cell _ _ ihf iha =>
+    intro hp x hin P hP
+    simp only [Ix.Kernel.Expr.constsResolveBy, Bool.and_eq_true] at hP
+    rcases addrIn_app_inv cell hin with h1 | h1
+    · exact ihf (hp.app_inv cell).1 x h1 P hP.1
+    · exact iha (hp.app_inv cell).2 x h1 P hP.2
+  | lam cell _ _ _ iht ihb =>
+    intro hp x hin P hP
+    simp only [Ix.Kernel.Expr.constsResolveBy, Bool.and_eq_true] at hP
+    rcases addrIn_lam_inv cell hin with h1 | h1
+    · exact iht (hp.lam_inv cell).1 x h1 P hP.1
+    · exact ihb (hp.lam_inv cell).2 x h1 P hP.2
+  | forallE cell _ _ _ iht ihb =>
+    intro hp x hin P hP
+    simp only [Ix.Kernel.Expr.constsResolveBy, Bool.and_eq_true] at hP
+    rcases addrIn_forall_inv cell hin with h1 | h1
+    · exact iht (hp.forall_inv cell).1 x h1 P hP.1
+    · exact ihb (hp.forall_inv cell).2 x h1 P hP.2
+  | letE cell => exact fun hp => ((hp.cell_ok cell).1 rfl).elim
+  | litNat cell => exact fun hp => ((hp.cell_ok cell).2.2 rfl).elim
+  | litStr cell => exact fun hp => ((hp.cell_ok cell).2.2 rfl).elim
+  | proj cell => exact fun hp => ((hp.cell_ok cell).2.1 rfl).elim
+
 /-- **A value represents what was read**, on the heap `h`, under the keying of the table `t`. A
-term is represented exactly at every binder depth that closes it. -/
+term is represented exactly at every binder depth that closes it, its cells are addresses of
+roles it names, and its pointer reaches no `Let` and no `Proj` cell. -/
 inductive Reads (t : Ix.Kernel.RoleTable) (h : Heap F) : Rendered → SourceValue F → Prop where
   | num {i : F} : Reads t h (.num i) (.field i)
   | table {v : SourceValue F} (rep : TableRep t h v) : Reads t h .table v
@@ -129,7 +314,8 @@ inductive Reads (t : Ix.Kernel.RoleTable) (h : Heap F) : Rendered → SourceValu
       (spine : OpOpen.ForallSpine h sp v)
       (cells : ∀ (h₂ : Heap F), Heap.Extends h h₂ → ∀ x, AddrIn h₂ v x →
         ∃ r, t.addressOf? r = some (ixAddr x) ∧
-          ∀ P, e.constsResolveBy P = true → P (Ix.Kernel.Key.role r) = true) :
+          ∀ P, e.constsResolveBy P = true → P (Ix.Kernel.Key.role r) = true)
+      (plain : LetProjFree h v) :
       Reads t h (.tm e sp) v
 
 theorem Reads.mono {t : Ix.Kernel.RoleTable} {h h' : Heap F} {s : Rendered} {v : SourceValue F}
@@ -140,9 +326,9 @@ theorem Reads.mono {t : Ix.Kernel.RoleTable} {h h' : Heap F} {s : Rendered} {v :
   | addr ra had => exact .addr (Bytes.repAddressRef_heapMono₂ addrTy ext ra) had
   | lvl rep => exact .lvl (rep.mono ext)
   | lvls rep => exact .lvls (rep.mono ext)
-  | tm rep spine cells =>
+  | tm rep spine cells plain =>
     exact .tm (fun d Γ k hk => (rep d Γ k hk).mono ext) (spine.mono ext)
-      (fun h₂ e₂ x hin => cells h₂ (ext.trans e₂) x hin)
+      (fun h₂ e₂ x hin => cells h₂ (ext.trans e₂) x hin) (plain.mono ext)
 
 theorem readsAll_mono {t : Ix.Kernel.RoleTable} {h h' : Heap F} {rs : List Rendered}
     {vs : List (SourceValue F)} (ext : Heap.Extends h h')
@@ -323,6 +509,7 @@ theorem readSort_sound (hn : readSort xs = some s)
       | lvl rep =>
         exact .tm (fun d Γ k _ => .sort cell rep) (.zero _)
           (fun h₂ e₂ x hin => (addrIn_none (e₂.getElem?_eq cell) (by decide) hin).elim)
+          (.sort cell)
   · cases hn
 
 theorem readConst_sound (htwf : t.wf = true) (hn : readConst xs = some s)
@@ -340,7 +527,7 @@ theorem readConst_sound (htwf : t.wf = true) (hn : readConst xs = some s)
         | addr ra had =>
           cases r2a with
           | lvls reps =>
-            refine .tm (fun d Γ k _ => ?_) (.zero _) (fun h₂ e₂ x hin => ?_)
+            refine .tm (fun d Γ k _ => ?_) (.zero _) (fun h₂ e₂ x hin => ?_) (.const cell)
             · have hk := keyOf_of_addressOf htwf had
               rw [← hk]
               exact .const cell ra reps
@@ -363,10 +550,10 @@ theorem readApp_sound (hn : readApp xs = some s)
       | cons r2a r2b =>
         cases r2b
         cases r1 with
-        | tm repf _ cf =>
+        | tm repf _ cf pf =>
           cases r2a with
-          | tm repa _ ca =>
-            refine .tm (fun d Γ k hk => ?_) (.zero _) (fun h₂ e₂ x hin => ?_)
+          | tm repa _ ca pa =>
+            refine .tm (fun d Γ k hk => ?_) (.zero _) (fun h₂ e₂ x hin => ?_) (.app cell pf pa)
             · simp only [closedBelow, Bool.and_eq_true] at hk
               exact .app cell (repf d Γ k hk.1) (repa d Γ k hk.2)
             · rcases addrIn_app_inv (e₂.getElem?_eq cell) hin with h1 | h1
@@ -395,6 +582,7 @@ theorem readBVar_sound (hn : readBVar xs = some s)
         | num =>
           refine .tm (fun d Γ k hk => ?_) (.zero _)
             (fun h₂ e₂ x hin => (addrIn_none (e₂.getElem?_eq cell) (by decide) hin).elim)
+            (.bvar cell)
           simp only [closedBelow, decide_eq_true_eq] at hk
           exact .bvarLocal cell hsmall hk
     · cases hn
@@ -440,12 +628,13 @@ theorem readLam_sound (hn : readLam xs = some s)
         | cons r3a r3b =>
           cases r3b
           cases r1 with
-          | tm repT _ cT =>
+          | tm repT _ cT pT =>
             cases r2a with
-            | tm repB _ cB =>
+            | tm repB _ cB pB =>
               cases r3a with
               | lvl repl =>
                 refine .tm (fun d Γ k hk => ?_) (.zero _) (fun h₂ e₂ x hin => ?_)
+                  (.lam cell pT pB)
                 · simp only [closedBelow, Bool.and_eq_true] at hk
                   exact .lam cell (repT d Γ k hk.1) (repB d Γ (k + 1) hk.2) repl
                 · exact (binder_cells (addrIn_lam_inv (e₂.getElem?_eq cell) hin)
@@ -466,13 +655,13 @@ theorem readForall_sound (hn : readForall xs = some s)
         | cons r3a r3b =>
           cases r3b
           cases r1 with
-          | tm repT _ cT =>
+          | tm repT _ cT pT =>
             cases r2a with
-            | tm repB spB cB =>
+            | tm repB spB cB pB =>
               cases r3a with
               | lvl repl =>
                 refine .tm (fun d Γ k hk => ?_) (.succ (loadValue_enum_cell cell) spB)
-                  (fun h₂ e₂ x hin => ?_)
+                  (fun h₂ e₂ x hin => ?_) (.forallE cell pT pB)
                 · simp only [closedBelow, Bool.and_eq_true] at hk
                   exact .forallE cell (repT d Γ k hk.1) (repB d Γ (k + 1) hk.2) repl
                 · exact (binder_cells (addrIn_forall_inv (e₂.getElem?_eq cell) hin)
@@ -899,7 +1088,8 @@ theorem forallSpine_of_le {h : Heap F} {m : Nat} {v : SourceValue F}
 /-- **The selected arm of a rendered `match` returns the specified term.** When the arm at the
 key reads as `T₀` up to binder data, the observed evaluation of the arm the `match` selects at
 that key extends the heap and returns a pointer that represents, exactly and under the table's
-keying, a term that is `T₀` up to its binders' data, along `sp` leading `Forall` cells. -/
+keying, a term that is `T₀` up to its binders' data, along `sp` leading `Forall` cells, and
+that reaches no `Let` and no `Proj` cell. -/
 theorem renders_of_armReadsAs {t : Ix.Kernel.RoleTable} (htwf : t.wf = true)
     {arms : List (Generic.Pattern F × Generic.Expr F)} {key : F} {T₀ : KExpr} {sp : Nat}
     (hread : armReadsAs arms (ZMod.val key) T₀ sp = true)
@@ -910,7 +1100,8 @@ theorem renders_of_armReadsAs {t : Ix.Kernel.RoleTable} (htwf : t.wf = true)
     (htbl : TableRep t h x_tbl)
     (sel : selectArm W [] h (.field key) arms = Except.ok (some (bs, body)))
     (dArm : ObsExpr W [] (bs ++ locals) body h res h' cs) :
-    Heap.Extends h h' ∧ RendersUpToBinderData t h' T₀ res ∧ OpOpen.ForallSpine h' sp res := by
+    Heap.Extends h h' ∧ RendersUpToBinderData t h' T₀ res ∧ OpOpen.ForallSpine h' sp res ∧
+      LetProjFree h' res := by
   unfold armReadsAs at hread
   cases hb : litArmBody (ZMod.val key) arms with
   | none => simp [hb] at hread
@@ -938,9 +1129,9 @@ theorem renders_of_armReadsAs {t : Ix.Kernel.RoleTable} (htwf : t.wf = true)
         have dArm' : ObsExpr W [] locals e h res h' cs := dArm
         obtain ⟨x1, rd⟩ := readExpr_sound htwf readDepth hre henv dArm'
         cases rd with
-        | tm rep spine _ =>
+        | tm rep spine _ plain =>
           have hT : Decl.TmCExact (keyOf t) h' T res := fun d Γ => rep d Γ 0 hcl
-          exact ⟨x1, Exists.intro T ⟨hT, her⟩, forallSpine_of_le spine hsp⟩
+          exact ⟨x1, Exists.intro T ⟨hT, her⟩, forallSpine_of_le spine hsp, plain⟩
       | _ => simp [hb, hre] at hread
 
 /-- Erasing binder data keeps the constants a term names. -/
@@ -991,7 +1182,7 @@ theorem cells_of_armReadsAs {t : Ix.Kernel.RoleTable} (htwf : t.wf = true)
         have dArm' : ObsExpr W [] locals e h res h' cs := dArm
         obtain ⟨-, rd⟩ := readExpr_sound htwf readDepth hre henv dArm'
         cases rd with
-        | tm rep spine cells =>
+        | tm rep spine cells _ =>
           intro x hin
           obtain ⟨r, hr, hP⟩ := cells h' (Heap.Extends.refl _) x hin
           refine ⟨r, hr, fun P hp => hP P ?_⟩

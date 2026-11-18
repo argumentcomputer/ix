@@ -183,7 +183,7 @@ theorem keyed_match_inv {arms : List (Generic.Pattern F × Generic.Expr F)}
   exact ⟨bs, body, c6, sel, d9⟩
 
 /-- **A function keyed by a role and an index returns the specified term**, when the arm at the
-key reads as it. -/
+key reads as it: a pointer that reaches no `Let` and no `Proj` cell. -/
 theorem keyed_renders {t : Ix.Kernel.RoleTable} (htwf : t.wf = true)
     {arms : List (Generic.Pattern F × Generic.Expr F)} {r : Role} {k : Nat} (hk : k < 64)
     {T₀ : KExpr} {sp : Nat} (hread : armReadsAs arms (64 * r.idx + k) T₀ sp = true)
@@ -193,7 +193,8 @@ theorem keyed_renders {t : Ix.Kernel.RoleTable} (htwf : t.wf = true)
       (["tbl", "r", "k"].zip [x_tbl, .field (roleNum r), .field ((k : Nat) : F)])
       (.matchValue (.binary .add (.binary .mul (.literal 64) (.var "r")) (.var "k")) arms)
       h res h' cs) :
-    Heap.Extends h h' ∧ RendersUpToBinderData t h' T₀ res ∧ OpOpen.ForallSpine h' sp res := by
+    Heap.Extends h h' ∧ RendersUpToBinderData t h' T₀ res ∧ OpOpen.ForallSpine h' sp res ∧
+      LetProjFree h' res := by
   obtain ⟨bs, body, cs', sel, dArm⟩ :=
     keyed_match_inv (a := roleNum r) (b := ((k : Nat) : F)) (by simp) (by simp) d0
   have hread' : armReadsAs arms (ZMod.val (64 * roleNum r + ((k : Nat) : F))) T₀ sp = true := by
@@ -321,6 +322,7 @@ theorem opCertificateRenders : OpCertificateRenders := by
       .matchValue (.binary .add (.binary .mul (.literal 64) (.var "r")) (.var "k"))
         (RolesAux.matchArms IxVM.KernelRoleSpec.op_certificate.body) := rfl
   rw [hp, hb] at d0
-  exact keyed_renders htwf hk.1 hk.2 htbl d0
+  obtain ⟨x1, hren, hsp, -⟩ := keyed_renders htwf hk.1 hk.2 htbl d0
+  exact ⟨x1, hren, hsp⟩
 
 end IxVM.Refinement.Binding
