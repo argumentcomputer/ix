@@ -223,7 +223,7 @@ theorem overUnitStep_defn {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     ⟨A, hname, address_size_of_record hS hc⟩
   have hextE : Ix.Kernel.EnvExt env ⟨LoadedReads.defnConst d.kind
       ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val' (.regular 0) :: env.consts⟩ :=
-    Ix.Kernel.EnvExt.cons hfreshC (fun T => hnt T)
+    Ix.Kernel.EnvExt.cons hfreshC (fun _ => hnt _)
   -- The clause with the constant, at every store for `R` and every carried limit within `G`.
   have hallC : ∀ E, RecordsFor R E → ∀ lim, Carried lim → LimWithin G t lim →
       FoldClauseWith.{u} L t E lim ⟨LoadedReads.defnConst d.kind
