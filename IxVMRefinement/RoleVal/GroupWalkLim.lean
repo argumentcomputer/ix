@@ -344,17 +344,20 @@ theorem ValidateRoleIn.eqns_evidence_walks {calls : List (Call F)} {bAddr : _roo
 
 /-! ## The references of an operation's certificates -/
 
-/-- **A reference walked under the context `walk_ctx` gives it, at the limit**: the reference
-is bound to a walked role in force at the limit (`Claim.CoveredAt`: its own group walks it, and
-`walk_ctx` hands the walk that group's context), or it is a record of a closed list of records
-checked under the role context at the limit. -/
+/-- **A reference walked under the context `walk_ctx` gives it, at the limit**: it was asked
+about (`Claim.RefAllowedIn`), and it is bound to a walked role in force at the limit
+(`Claim.CoveredAt`: its own group walks it, and `walk_ctx` hands the walk that group's context),
+or it is a record of a closed list of records checked under the role context at the limit. -/
 theorem RefWalkedUnderCtxIn.lim_walks {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {n : Nat} {b : _root_.Address}
     (hv : RefWalkedUnderCtxIn calls bAddr t n b) :
-    Claim.CoveredAt t (some n) b ∨
+    Claim.RefAllowedIn calls t bAddr (some n) b ∧
+    (Claim.CoveredAt t (some n) b ∨
       ∃ recs : List (Claim.TopRec calls bAddr t (some n)),
-        Claim.TopRecsClosed recs ∧ b ∈ recs.map (·.addr) := by
-  obtain ⟨h₁, h₂, h₃, x_rc, x_b, rc', r_w, cs_c, cs_w, hrc, hb, evc, evw, hsub⟩ := hv
+        Claim.TopRecsClosed recs ∧ b ∈ recs.map (·.addr)) := by
+  obtain ⟨⟨h₀, h₀', x_rc₀, x_b₀, r₀, cs₀, hrc₀, hb₀, ev₀, hs₀⟩,
+    h₁, h₂, h₃, x_rc, x_b, rc', r_w, cs_c, cs_w, hrc, hb, evc, evw, hsub⟩ := hv
+  refine ⟨⟨h₀, h₀', x_rc₀, x_b₀, r₀, cs₀, hrc₀, hb₀, ev₀, hs₀⟩, ?_⟩
   obtain ⟨ext, hcase⟩ :=
     Claim.walk_ctx_lim_spec (lim := some n)
       (show Claim.RCLimRep t bAddr (some n) h₁ x_rc from hrc) hb evc
@@ -371,10 +374,10 @@ theorem RefWalkedUnderCtxIn.lim_walks {calls : List (Call F)} {bAddr : _root_.Ad
 
 /-- **The references of an operation's certificate, walked at the group's validation limit**:
 for a `.proof thm` entry of the operation's evidence, the certificate's record is bytes the
-validation hashed, and each reference it uses other than the operation's own address is bound
-to a walked role in force at the limit, or is a record of a closed list of records checked
-under the role context at the group's validation limit. The certificate's record is not
-walked. -/
+validation hashed, and each reference it uses other than the operation's own address was asked
+about (`Claim.RefAllowedIn`) and is bound to a walked role in force at the limit, or is a record
+of a closed list of records checked under the role context at the group's validation limit. The
+certificate's record is not walked. -/
 theorem ValidateRoleIn.op_certificate_walks {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.Role}
     (hv : ValidateRoleIn calls bAddr t g ro) (h2 : roleSpecKindNat ro = 2)
@@ -386,9 +389,10 @@ theorem ValidateRoleIn.op_certificate_walks {calls : List (Call F)} {bAddr : _ro
       Ixon.deConstantExact rawBytes = .ok c ∧
       ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ S0.usedRefIdxs c →
         c.refs.toList[j] ≠ a →
-        Claim.CoveredAt t (some (groupValLimit g)) c.refs.toList[j] ∨
+        Claim.RefAllowedIn calls t bAddr (some (groupValLimit g)) c.refs.toList[j] ∧
+        (Claim.CoveredAt t (some (groupValLimit g)) c.refs.toList[j] ∨
           ∃ recs : List (Claim.TopRec calls bAddr t (some (groupValLimit g))),
-            Claim.TopRecsClosed recs ∧ c.refs.toList[j] ∈ recs.map (·.addr) := by
+            Claim.TopRecsClosed recs ∧ c.refs.toList[j] ∈ recs.map (·.addr)) := by
   obtain ⟨h, h', x_rc, x_tbl, res, cs, hrc, htbl, ev, hsub⟩ := hv
   obtain ⟨rawBytes, c, hsz, hh, hb, hde, hw⟩ :=
     (validate_role_op_certificates_observed hrc htbl ev h2 arr thm a ha hm hthm).mono hsub
