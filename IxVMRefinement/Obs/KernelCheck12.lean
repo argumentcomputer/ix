@@ -324,7 +324,7 @@ inductive «KernelCheck::check_const».Path (x_rc x_ci x_addr : SourceValue F) (
       (he2719 : h' = m2641)
       (hc2720 : calls = ((⟨"KernelCheck::is_unsafe_ci", [x_ci], h⟩ : Call F) :: (cs12 ++ ((⟨"KernelCheck::validate_expr_well_scoped", [x_ty, (.field 0), x_nlvls], m2⟩ : Call F) :: (cs2043 ++ ((⟨"KernelInfer::k_ensure_sort", [x_rc, x_ty, (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2033).length)], m2101⟩ : Call F) :: (cs2080 ++ ((⟨"KernelCheck::assert_safety", [v1, x_ty], m2070⟩ : Call F) :: (cs2124 ++ ((⟨"KernelCheck::ctor_parent_ind_ci", [x_block_addr, x_ind_idx], m2114⟩ : Call F) :: (cs2157 ++ ((⟨"KernelCheck::check_ctor_return_type", [x_ty, x_num_params, x_ind_n_indices, x_num_fields, x_ind_nlvls, x_block_addr, x_ind_idx], m2144⟩ : Call F) :: (cs2330 ++ ((⟨"KernelModeled::block_is_modeled", [x_block_addr], m2320⟩ : Call F) :: (cs2401 ++ ((⟨"KernelRoles::role_index_of", [x_rc, x_addr], m2390⟩ : Call F) :: cs2649))))))))))))))))
   | Rec_n0
-      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (x_nlvls : SourceValue F) (x_ty : SourceValue F) (w2729 : SourceValue F) (w2730 : SourceValue F) (x_n_mot : SourceValue F) (w2731 : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (x_rec_uns : SourceValue F) (x_rec_block : SourceValue F) (w2732 : SourceValue F) (v2788 : SourceValue F) (m2789 : Heap F) (cs2799 : List (Call F)) (v2825 : SourceValue F) (m2826 : Heap F) (cs2836 : List (Call F)) (m2857 : Heap F) (v2869 : SourceValue F) (m2870 : Heap F) (cs2880 : List (Call F)) (v2899 : SourceValue F) (m2900 : Heap F) (cs2910 : List (Call F)) (v2929 : SourceValue F) (m2930 : Heap F) (cs2940 : List (Call F)) (v2951 : SourceValue F) (m2952 : Heap F) (cs2962 : List (Call F)) (m2974 : Heap F) (cs2984 : List (Call F)) (cs3039 : List (Call F))
+      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (x_nlvls : SourceValue F) (x_ty : SourceValue F) (w2729 : SourceValue F) (w2730 : SourceValue F) (x_n_mot : SourceValue F) (w2731 : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (x_rec_uns : SourceValue F) (x_rec_block : SourceValue F) (w2732 : SourceValue F) (v2788 : SourceValue F) (m2789 : Heap F) (cs2799 : List (Call F)) (v2825 : SourceValue F) (m2826 : Heap F) (cs2836 : List (Call F)) (m2857 : Heap F) (v2869 : SourceValue F) (m2870 : Heap F) (cs2880 : List (Call F)) (v2899 : SourceValue F) (m2900 : Heap F) (cs2910 : List (Call F)) (v2929 : SourceValue F) (m2930 : Heap F) (cs2940 : List (Call F)) (v2951 : SourceValue F) (m2952 : Heap F) (cs2962 : List (Call F)) (m2974 : Heap F) (cs2984 : List (Call F)) (cs3066 : List (Call F))
       (ev14 : ObsFn W "KernelCheck::is_unsafe_ci" [x_ci] h v1 m2 cs12)
       (hne264 : ∀ vs : List (SourceValue F), vs.length = 3 → (x_ci : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Axiom" vs)
       (hne521 : ∀ vs : List (SourceValue F), vs.length = 5 → (x_ci : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Defn" vs)
@@ -342,11 +342,11 @@ inductive «KernelCheck::check_const».Path (x_rc x_ci x_addr : SourceValue F) (
       (ev2942 : ObsFn W "KernelCheck::check_block_member_kinds" [x_rec_block] m2900 v2929 m2930 cs2940)
       (ev2964 : ObsFn W "KernelModeled::rec_family_block" [x_addr] m2930 v2951 m2952 cs2962)
       (ev2986 : ObsFn W "KernelModeled::block_is_modeled" [v2951] m2952 (.field 0) m2974 cs2984)
-      (heq3035 : (x_n_mot : SourceValue F) = (.field 1))
-      (ev3041 : ObsFn W "KernelCheck::check_recursor_member" [x_rc, x_ci, x_addr] m2974 r h' cs3039)
-      (hc3066 : calls = ((⟨"KernelCheck::is_unsafe_ci", [x_ci], h⟩ : Call F) :: (cs12 ++ ((⟨"KernelCheck::validate_expr_well_scoped", [x_ty, (.field 0), x_nlvls], m2⟩ : Call F) :: (cs2799 ++ ((⟨"KernelInfer::k_ensure_sort", [x_rc, x_ty, (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2789).length)], m2857⟩ : Call F) :: (cs2836 ++ ((⟨"KernelCheck::assert_safety", [v1, x_ty], m2826⟩ : Call F) :: (cs2880 ++ ((⟨"KernelCheck::assert_safety_rules", [v1, x_rules], m2870⟩ : Call F) :: (cs2910 ++ ((⟨"KernelCheck::check_block_member_kinds", [x_rec_block], m2900⟩ : Call F) :: (cs2940 ++ ((⟨"KernelModeled::rec_family_block", [x_addr], m2930⟩ : Call F) :: (cs2962 ++ ((⟨"KernelModeled::block_is_modeled", [v2951], m2952⟩ : Call F) :: (cs2984 ++ ((⟨"KernelCheck::check_recursor_member", [x_rc, x_ci, x_addr], m2974⟩ : Call F) :: cs3039))))))))))))))))))
+      (heq3062 : (x_n_mot : SourceValue F) = (.field 1))
+      (ev3068 : ObsFn W "KernelCheck::check_recursor_member" [x_rc, x_ci, x_addr] m2974 r h' cs3066)
+      (hc3093 : calls = ((⟨"KernelCheck::is_unsafe_ci", [x_ci], h⟩ : Call F) :: (cs12 ++ ((⟨"KernelCheck::validate_expr_well_scoped", [x_ty, (.field 0), x_nlvls], m2⟩ : Call F) :: (cs2799 ++ ((⟨"KernelInfer::k_ensure_sort", [x_rc, x_ty, (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2789).length)], m2857⟩ : Call F) :: (cs2836 ++ ((⟨"KernelCheck::assert_safety", [v1, x_ty], m2826⟩ : Call F) :: (cs2880 ++ ((⟨"KernelCheck::assert_safety_rules", [v1, x_rules], m2870⟩ : Call F) :: (cs2910 ++ ((⟨"KernelCheck::check_block_member_kinds", [x_rec_block], m2900⟩ : Call F) :: (cs2940 ++ ((⟨"KernelModeled::rec_family_block", [x_addr], m2930⟩ : Call F) :: (cs2962 ++ ((⟨"KernelModeled::block_is_modeled", [v2951], m2952⟩ : Call F) :: (cs2984 ++ ((⟨"KernelCheck::check_recursor_member", [x_rc, x_ci, x_addr], m2974⟩ : Call F) :: cs3066))))))))))))))))))
   | Rec_other
-      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (x_nlvls : SourceValue F) (x_ty : SourceValue F) (w2729 : SourceValue F) (w2730 : SourceValue F) (x_n_mot : SourceValue F) (w2731 : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (x_rec_uns : SourceValue F) (x_rec_block : SourceValue F) (w2732 : SourceValue F) (v2788 : SourceValue F) (m2789 : Heap F) (cs2799 : List (Call F)) (v2825 : SourceValue F) (m2826 : Heap F) (cs2836 : List (Call F)) (m2857 : Heap F) (v2869 : SourceValue F) (m2870 : Heap F) (cs2880 : List (Call F)) (v2899 : SourceValue F) (m2900 : Heap F) (cs2910 : List (Call F)) (v2929 : SourceValue F) (m2930 : Heap F) (cs2940 : List (Call F)) (v2951 : SourceValue F) (m2952 : Heap F) (cs2962 : List (Call F)) (v2973 : SourceValue F) (m2974 : Heap F) (cs2984 : List (Call F)) (cs3128 : List (Call F))
+      (v1 : SourceValue F) (m2 : Heap F) (cs12 : List (Call F)) (x_nlvls : SourceValue F) (x_ty : SourceValue F) (w2729 : SourceValue F) (w2730 : SourceValue F) (x_n_mot : SourceValue F) (w2731 : SourceValue F) (x_rules : SourceValue F) (x_k_flag : SourceValue F) (x_rec_uns : SourceValue F) (x_rec_block : SourceValue F) (w2732 : SourceValue F) (v2788 : SourceValue F) (m2789 : Heap F) (cs2799 : List (Call F)) (v2825 : SourceValue F) (m2826 : Heap F) (cs2836 : List (Call F)) (m2857 : Heap F) (v2869 : SourceValue F) (m2870 : Heap F) (cs2880 : List (Call F)) (v2899 : SourceValue F) (m2900 : Heap F) (cs2910 : List (Call F)) (v2929 : SourceValue F) (m2930 : Heap F) (cs2940 : List (Call F)) (v2951 : SourceValue F) (m2952 : Heap F) (cs2962 : List (Call F)) (v2973 : SourceValue F) (m2974 : Heap F) (cs2984 : List (Call F)) (cs3155 : List (Call F))
       (ev14 : ObsFn W "KernelCheck::is_unsafe_ci" [x_ci] h v1 m2 cs12)
       (hne264 : ∀ vs : List (SourceValue F), vs.length = 3 → (x_ci : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Axiom" vs)
       (hne521 : ∀ vs : List (SourceValue F), vs.length = 5 → (x_ci : SourceValue F) ≠ .construct "KernelTypes::KConstantInfo" "Defn" vs)
@@ -364,11 +364,11 @@ inductive «KernelCheck::check_const».Path (x_rc x_ci x_addr : SourceValue F) (
       (ev2942 : ObsFn W "KernelCheck::check_block_member_kinds" [x_rec_block] m2900 v2929 m2930 cs2940)
       (ev2964 : ObsFn W "KernelModeled::rec_family_block" [x_addr] m2930 v2951 m2952 cs2962)
       (ev2986 : ObsFn W "KernelModeled::block_is_modeled" [v2951] m2952 v2973 m2974 cs2984)
-      (hne3067 : (v2973 : SourceValue F) ≠ (.field 0))
-      (heq3097 : (x_k_flag : SourceValue F) = (.field 0))
-      (heq3124 : (x_rec_uns : SourceValue F) = (.field 0))
-      (ev3130 : ObsFn W "KernelModeled::check_family" [x_rc, v2951, x_rec_block] m2974 r h' cs3128)
-      (hc3155 : calls = ((⟨"KernelCheck::is_unsafe_ci", [x_ci], h⟩ : Call F) :: (cs12 ++ ((⟨"KernelCheck::validate_expr_well_scoped", [x_ty, (.field 0), x_nlvls], m2⟩ : Call F) :: (cs2799 ++ ((⟨"KernelInfer::k_ensure_sort", [x_rc, x_ty, (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2789).length)], m2857⟩ : Call F) :: (cs2836 ++ ((⟨"KernelCheck::assert_safety", [v1, x_ty], m2826⟩ : Call F) :: (cs2880 ++ ((⟨"KernelCheck::assert_safety_rules", [v1, x_rules], m2870⟩ : Call F) :: (cs2910 ++ ((⟨"KernelCheck::check_block_member_kinds", [x_rec_block], m2900⟩ : Call F) :: (cs2940 ++ ((⟨"KernelModeled::rec_family_block", [x_addr], m2930⟩ : Call F) :: (cs2962 ++ ((⟨"KernelModeled::block_is_modeled", [v2951], m2952⟩ : Call F) :: (cs2984 ++ ((⟨"KernelModeled::check_family", [x_rc, v2951, x_rec_block], m2974⟩ : Call F) :: cs3128))))))))))))))))))
+      (hne3094 : (v2973 : SourceValue F) ≠ (.field 0))
+      (heq3124 : (x_k_flag : SourceValue F) = (.field 0))
+      (heq3151 : (x_rec_uns : SourceValue F) = (.field 0))
+      (ev3157 : ObsFn W "KernelModeled::check_family" [x_rc, v2951, x_rec_block] m2974 r h' cs3155)
+      (hc3182 : calls = ((⟨"KernelCheck::is_unsafe_ci", [x_ci], h⟩ : Call F) :: (cs12 ++ ((⟨"KernelCheck::validate_expr_well_scoped", [x_ty, (.field 0), x_nlvls], m2⟩ : Call F) :: (cs2799 ++ ((⟨"KernelInfer::k_ensure_sort", [x_rc, x_ty, (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m2789).length)], m2857⟩ : Call F) :: (cs2836 ++ ((⟨"KernelCheck::assert_safety", [v1, x_ty], m2826⟩ : Call F) :: (cs2880 ++ ((⟨"KernelCheck::assert_safety_rules", [v1, x_rules], m2870⟩ : Call F) :: (cs2910 ++ ((⟨"KernelCheck::check_block_member_kinds", [x_rec_block], m2900⟩ : Call F) :: (cs2940 ++ ((⟨"KernelModeled::rec_family_block", [x_addr], m2930⟩ : Call F) :: (cs2962 ++ ((⟨"KernelModeled::block_is_modeled", [v2951], m2952⟩ : Call F) :: (cs2984 ++ ((⟨"KernelModeled::check_family", [x_rc, v2951, x_rec_block], m2974⟩ : Call F) :: cs3155))))))))))))))))))
 
 /-- **Every observed derivation of `KernelCheck::check_const` takes one of its paths.** -/
 theorem «KernelCheck::check_const».obs {x_rc x_ci x_addr : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -1745,10 +1745,10 @@ theorem «KernelCheck::check_const».obs {x_rc x_ci x_addr : SourceValue F} {h h
                     obtain ⟨v3021, vs3029, m3030, c3031, c3032, rfl, d3033, a3034, rfl⟩ := a3027.cons_inv
                     obtain ⟨rfl, rfl, rfl⟩ := d3033.literal_inv
                     obtain ⟨rfl, rfl, rfl⟩ := a3034.nil_inv
-                    obtain ⟨heq3035, rfl⟩ := Builtin.assertEq_inv ap3019
+                    obtain ⟨heq3062, rfl⟩ := Builtin.assertEq_inv ap3019
                     obtain rfl := matchPattern_wildcard_inv mt3015
-                    obtain ⟨vs3036, m3037, c3038, cs3039, a3040, ev3041, rfl⟩ := d3016.call_inv
-                    rw [instanceName_plain_some] at ev3041
+                    obtain ⟨vs3036, m3037, c3038, cs3066, a3040, ev3068, rfl⟩ := d3016.call_inv
+                    rw [instanceName_plain_some] at ev3068
                     obtain ⟨v3042, vs3045, m3046, c3047, c3048, rfl, d3049, a3050, rfl⟩ := a3040.cons_inv
                     obtain ⟨l3051, rfl, rfl⟩ := d3049.var_inv
                     simp at l3051
@@ -1762,9 +1762,9 @@ theorem «KernelCheck::check_const».obs {x_rc x_ci x_addr : SourceValue F} {h h
                     simp at l3065
                     subst l3065
                     obtain ⟨rfl, rfl, rfl⟩ := a3064.nil_inv
-                    try simp only [Value.type, List.map_cons, List.map_nil] at ev14 hne264 hne521 hne820 hne1071 hne1235 hne1984 hne2722 hv2727 ev2801 hm2865 ev2838 ev2882 ev2912 ev2942 ev2964 ev2986 heq3035 ev3041 ⊢
-                    exact «KernelCheck::check_const».Path.Rec_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 hne264 hne521 hne820 hne1071 hne1235 hne1984 hne2722 hv2727 ev2801 hm2865 ev2838 ev2882 ev2912 ev2942 ev2964 ev2986 heq3035 ev3041 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-                  · have hne3067 := MatchesConst.none_inv (MatchesConst.literal 0) nm3006
+                    try simp only [Value.type, List.map_cons, List.map_nil] at ev14 hne264 hne521 hne820 hne1071 hne1235 hne1984 hne2722 hv2727 ev2801 hm2865 ev2838 ev2882 ev2912 ev2942 ev2964 ev2986 heq3062 ev3068 ⊢
+                    exact «KernelCheck::check_const».Path.Rec_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 hne264 hne521 hne820 hne1071 hne1235 hne1984 hne2722 hv2727 ev2801 hm2865 ev2838 ev2882 ev2912 ev2942 ev2964 ev2986 heq3062 ev3068 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                  · have hne3094 := MatchesConst.none_inv (MatchesConst.literal 0) nm3006
                     rcases selectArm_cons_inv sel3007 with ⟨mt3068, rfl⟩ | ⟨nm3069, sel3070⟩
                     · obtain rfl := matchPattern_wildcard_inv mt3068
                       obtain ⟨v3071, m3072, bs3073, c3074, c3075, d3076, mt3077, d3078, rfl⟩ := d3003.letValue_inv
@@ -1776,7 +1776,7 @@ theorem «KernelCheck::check_const».obs {x_rc x_ci x_addr : SourceValue F} {h h
                       obtain ⟨v3083, vs3091, m3092, c3093, c3094, rfl, d3095, a3096, rfl⟩ := a3089.cons_inv
                       obtain ⟨rfl, rfl, rfl⟩ := d3095.literal_inv
                       obtain ⟨rfl, rfl, rfl⟩ := a3096.nil_inv
-                      obtain ⟨heq3097, rfl⟩ := Builtin.assertEq_inv ap3081
+                      obtain ⟨heq3124, rfl⟩ := Builtin.assertEq_inv ap3081
                       obtain rfl := matchPattern_wildcard_inv mt3077
                       obtain ⟨v3098, m3099, bs3100, c3101, c3102, d3103, mt3104, d3105, rfl⟩ := d3078.letValue_inv
                       obtain ⟨vs3106, a3107, ap3108⟩ := d3103.builtin_inv
@@ -1787,10 +1787,10 @@ theorem «KernelCheck::check_const».obs {x_rc x_ci x_addr : SourceValue F} {h h
                       obtain ⟨v3110, vs3118, m3119, c3120, c3121, rfl, d3122, a3123, rfl⟩ := a3116.cons_inv
                       obtain ⟨rfl, rfl, rfl⟩ := d3122.literal_inv
                       obtain ⟨rfl, rfl, rfl⟩ := a3123.nil_inv
-                      obtain ⟨heq3124, rfl⟩ := Builtin.assertEq_inv ap3108
+                      obtain ⟨heq3151, rfl⟩ := Builtin.assertEq_inv ap3108
                       obtain rfl := matchPattern_wildcard_inv mt3104
-                      obtain ⟨vs3125, m3126, c3127, cs3128, a3129, ev3130, rfl⟩ := d3105.call_inv
-                      rw [instanceName_plain_some] at ev3130
+                      obtain ⟨vs3125, m3126, c3127, cs3155, a3129, ev3157, rfl⟩ := d3105.call_inv
+                      rw [instanceName_plain_some] at ev3157
                       obtain ⟨v3131, vs3134, m3135, c3136, c3137, rfl, d3138, a3139, rfl⟩ := a3129.cons_inv
                       obtain ⟨l3140, rfl, rfl⟩ := d3138.var_inv
                       simp at l3140
@@ -1804,8 +1804,8 @@ theorem «KernelCheck::check_const».obs {x_rc x_ci x_addr : SourceValue F} {h h
                       simp at l3154
                       subst l3154
                       obtain ⟨rfl, rfl, rfl⟩ := a3153.nil_inv
-                      try simp only [Value.type, List.map_cons, List.map_nil] at ev14 hne264 hne521 hne820 hne1071 hne1235 hne1984 hne2722 hv2727 ev2801 hm2865 ev2838 ev2882 ev2912 ev2942 ev2964 ev2986 hne3067 heq3097 heq3124 ev3130 ⊢
-                      exact «KernelCheck::check_const».Path.Rec_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 hne264 hne521 hne820 hne1071 hne1235 hne1984 hne2722 hv2727 ev2801 hm2865 ev2838 ev2882 ev2912 ev2942 ev2964 ev2986 hne3067 heq3097 heq3124 ev3130 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                      try simp only [Value.type, List.map_cons, List.map_nil] at ev14 hne264 hne521 hne820 hne1071 hne1235 hne1984 hne2722 hv2727 ev2801 hm2865 ev2838 ev2882 ev2912 ev2942 ev2964 ev2986 hne3094 heq3124 heq3151 ev3157 ⊢
+                      exact «KernelCheck::check_const».Path.Rec_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev14 hne264 hne521 hne820 hne1071 hne1235 hne1984 hne2722 hv2727 ev2801 hm2865 ev2838 ev2882 ev2912 ev2942 ev2964 ev2986 hne3094 heq3124 heq3151 ev3157 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                     · exact (matchPattern_wildcard_none nm3069).elim
                 · have hne3156 := matchPattern_construct_none (by trivial) nm2724
                   simp only [Names.n11677430323439928978] at hne3156

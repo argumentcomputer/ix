@@ -1372,29 +1372,29 @@ theorem «KernelModeled::aux_count».obs {x_flat : SourceValue F} {h h' : Heap F
       exact (selectArm_nil_inv sel26).elim
 
 /-- The `let`-bound match of `KernelModeled::aux_all_in` at `[2, 2, 1, 1, 0]`: one constructor per combination of selected arms. -/
-inductive «KernelModeled::aux_all_in».Seg1 (e0_a2 e1_is_aux2 e2_s2 e3_u2 e4_a e5_is_aux e6_s e7_u e8_m2 e9_rest2 e10_m e11_rest e12_derived e13_flat : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+inductive «KernelModeled::aux_all_in».Seg_hvafxrfh (e0_a2 e1_is_aux2 e2_s2 e3_u2 e4_a e5_is_aux e6_s e7_u e8_m2 e9_rest2 e10_m e11_rest e12_derived e13_flat : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | n0
-      (op193 : evalBinOp .sub (e5_is_aux : SourceValue F) (e1_is_aux2 : SourceValue F) = .ok (.field 0))
-      (he200 : r = (.field 1))
-      (he201 : h' = h)
-      (hc202 : calls = [])
+      (op_gxspxtsl : evalBinOp .sub (e5_is_aux : SourceValue F) (e1_is_aux2 : SourceValue F) = .ok (.field 0))
+      (he_xobgtpqp : r = (.field 1))
+      (he_adblzuth : h' = h)
+      (hc_bnpbtccd : calls = [])
   | other
-      (v177 : SourceValue F)
-      (op193 : evalBinOp .sub (e5_is_aux : SourceValue F) (e1_is_aux2 : SourceValue F) = .ok v177)
-      (hne203 : (v177 : SourceValue F) ≠ (.field 0))
-      (he207 : r = (.field 0))
-      (he208 : h' = h)
-      (hc209 : calls = [])
+      (v_layxicfa : SourceValue F)
+      (op_gxspxtsl : evalBinOp .sub (e5_is_aux : SourceValue F) (e1_is_aux2 : SourceValue F) = .ok v_layxicfa)
+      (hne_pepbjhcb : (v_layxicfa : SourceValue F) ≠ (.field 0))
+      (he_ovmnibkh : r = (.field 0))
+      (he_zcmmniuz : h' = h)
+      (hc_fbvnpoyl : calls = [])
 
 /-- **Every observed derivation of the `let`-bound match of `KernelModeled::aux_all_in` at `[2, 2, 1, 1, 0]` takes one of its paths.** -/
-theorem «KernelModeled::aux_all_in».seg1 {e0_a2 e1_is_aux2 e2_s2 e3_u2 e4_a e5_is_aux e6_s e7_u e8_m2 e9_rest2 e10_m e11_rest e12_derived e13_flat : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+theorem «KernelModeled::aux_all_in».seg_hvafxrfh {e0_a2 e1_is_aux2 e2_s2 e3_u2 e4_a e5_is_aux e6_s e7_u e8_m2 e9_rest2 e10_m e11_rest e12_derived e13_flat : SourceValue F} {h h' : Heap F} {r : SourceValue F}
     {calls : List (Call F)}
     (d0 : ObsExpr W [] [("a2", e0_a2), ("is_aux2", e1_is_aux2), ("s2", e2_s2), ("u2", e3_u2), ("a", e4_a), ("is_aux", e5_is_aux), ("s", e6_s), ("u", e7_u), ("m2", e8_m2), ("rest2", e9_rest2), ("m", e10_m), ("rest", e11_rest), ("derived", e12_derived), ("flat", e13_flat)] (Expr.sub IxVM.KernelModeled.aux_all_in.body [2, 2, 1, 1, 0]) h r h' calls) :
-    «KernelModeled::aux_all_in».Seg1 e0_a2 e1_is_aux2 e2_s2 e3_u2 e4_a e5_is_aux e6_s e7_u e8_m2 e9_rest2 e10_m e11_rest e12_derived e13_flat h r h' calls := by
+    «KernelModeled::aux_all_in».Seg_hvafxrfh e0_a2 e1_is_aux2 e2_s2 e3_u2 e4_a e5_is_aux e6_s e7_u e8_m2 e9_rest2 e10_m e11_rest e12_derived e13_flat h r h' calls := by
   simp only [Expr.sub, Expr.childAt, Expr.children, IxVM.KernelModeled.aux_all_in, List.map_cons, List.map_nil] at d0
-  obtain ⟨v177, m178, bs179, body180, c181, c182, d183, sel184, d185, rfl⟩ := d0.matchValue_inv
-  obtain ⟨x186, y187, m188, c189, c190, d191, d192, op193, rfl⟩ := d183.binary_inv
+  obtain ⟨v_layxicfa, m178, bs179, body180, c181, c182, d183, sel184, d185, rfl⟩ := d0.matchValue_inv
+  obtain ⟨x186, y187, m188, c189, c190, d191, d192, op_gxspxtsl, rfl⟩ := d183.binary_inv
   obtain ⟨l194, rfl, rfl⟩ := d191.var_inv
   simp at l194
   subst l194
@@ -1405,12 +1405,12 @@ theorem «KernelModeled::aux_all_in».seg1 {e0_a2 e1_is_aux2 e2_s2 e3_u2 e4_a e5
   · obtain ⟨hv199, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt196
     subst hv199
     obtain ⟨rfl, rfl, rfl⟩ := d185.literal_inv
-    exact «KernelModeled::aux_all_in».Seg1.n0 op193 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-  · have hne203 := MatchesConst.none_inv (MatchesConst.literal 0) nm197
+    exact «KernelModeled::aux_all_in».Seg_hvafxrfh.n0 op_gxspxtsl rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne_pepbjhcb := MatchesConst.none_inv (MatchesConst.literal 0) nm197
     rcases selectArm_cons_inv sel198 with ⟨mt204, rfl⟩ | ⟨nm205, sel206⟩
     · obtain rfl := matchPattern_wildcard_inv mt204
       obtain ⟨rfl, rfl, rfl⟩ := d185.literal_inv
-      exact «KernelModeled::aux_all_in».Seg1.other _ op193 hne203 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      exact «KernelModeled::aux_all_in».Seg_hvafxrfh.other _ op_gxspxtsl hne_pepbjhcb rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
     · exact (matchPattern_wildcard_none nm205).elim
 
 /-- The evaluation paths of `KernelModeled::aux_all_in`: one constructor per combination of selected arms. -/
@@ -1418,53 +1418,53 @@ inductive «KernelModeled::aux_all_in».Path (x_derived x_flat : SourceValue F) 
     (calls : List (Call F)) : Prop where
   | Nil_Nil
       (ld12 : loadValue h x_derived = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Nil" []))
-      (ld31 : loadValue h x_flat = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Nil" []))
-      (he39 : r = (.field 1))
-      (he40 : h' = h)
-      (hc41 : calls = [])
+      (ld_neljdsge : loadValue h x_flat = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Nil" []))
+      (he_jzigibgj : r = (.field 1))
+      (he_tejwmihu : h' = h)
+      (hc_ythkvspc : calls = [])
   | Nil_other
-      (v20 : SourceValue F)
+      (v_rgpxdtog : SourceValue F)
       (ld12 : loadValue h x_derived = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Nil" []))
-      (ld31 : loadValue h x_flat = .ok v20)
-      (hne42 : ∀ vs : List (SourceValue F), vs.length = 0 → (v20 : SourceValue F) ≠ .construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Nil" vs)
-      (he46 : r = (.field 0))
-      (he47 : h' = h)
-      (hc48 : calls = [])
+      (ld_neljdsge : loadValue h x_flat = .ok v_rgpxdtog)
+      (hne_nazlygkb : ∀ vs : List (SourceValue F), vs.length = 0 → (v_rgpxdtog : SourceValue F) ≠ .construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Nil" vs)
+      (he_wvxbakec : r = (.field 0))
+      (he_splfyked : h' = h)
+      (hc_cjvthxta : calls = [])
   | Cons_Nil
       (x_m : SourceValue F) (x_rest : SourceValue F)
       (ld12 : loadValue h x_derived = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Cons" [x_m, x_rest]))
-      (ld77 : loadValue h x_flat = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Nil" []))
-      (he85 : r = (.field 0))
-      (he86 : h' = h)
-      (hc87 : calls = [])
+      (ld_uplwbryy : loadValue h x_flat = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Nil" []))
+      (he_sgufhwvg : r = (.field 0))
+      (he_jxmwndcr : h' = h)
+      (hc_vowwlvlq : calls = [])
   | Cons_Cons_n1
-      (x_rest : SourceValue F) (x_rest2 : SourceValue F) (x_a : SourceValue F) (x_is_aux : SourceValue F) (x_s : SourceValue F) (x_u : SourceValue F) (x_a2 : SourceValue F) (x_is_aux2 : SourceValue F) (x_s2 : SourceValue F) (x_u2 : SourceValue F) (v210 : SourceValue F) (m211 : Heap F) (cs213 : List (Call F)) (m220 : Heap F) (x227 : SourceValue F) (y228 : SourceValue F) (m229 : Heap F) (x235 : SourceValue F) (y236 : SourceValue F) (x243 : SourceValue F) (m245 : Heap F) (cs254 : List (Call F)) (cs277 : List (Call F)) (cs299 : List (Call F)) (cs335 : List (Call F))
+      (x_rest : SourceValue F) (x_rest2 : SourceValue F) (x_a : SourceValue F) (x_is_aux : SourceValue F) (x_s : SourceValue F) (x_u : SourceValue F) (x_a2 : SourceValue F) (x_is_aux2 : SourceValue F) (x_s2 : SourceValue F) (x_u2 : SourceValue F) (v_tfdgfqle : SourceValue F) (m_kqoqokqw : Heap F) (cs_zwpeivep : List (Call F)) (m_amkbubcp : Heap F) (x_zcwzwspd : SourceValue F) (y_egeynabu : SourceValue F) (m_xqmnavxk : Heap F) (x_gpyqswde : SourceValue F) (y_ufwxbbmc : SourceValue F) (x_axeiwlra : SourceValue F) (m_moscjgst : Heap F) (cs_kifhgiao : List (Call F)) (cs_xdvbbibg : List (Call F)) (cs_ocskxvii : List (Call F)) (cs_einggfpt : List (Call F))
       (ld12 : loadValue h x_derived = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Cons" [(.tuple [x_a, x_is_aux, x_s, x_u]), x_rest]))
-      (ld77 : loadValue h x_flat = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Cons" [(.tuple [x_a2, x_is_aux2, x_s2, x_u2]), x_rest2]))
-      (sg218 : «KernelModeled::aux_all_in».Seg1 x_a2 x_is_aux2 x_s2 x_u2 x_a x_is_aux x_s x_u (.tuple [x_a2, x_is_aux2, x_s2, x_u2]) x_rest2 (.tuple [x_a, x_is_aux, x_s, x_u]) x_rest x_derived x_flat h v210 m211 cs213)
-      (ev256 : ObsFn W "Bytes::address_eq" [x_a, x_a2] m211 x243 m245 cs254)
-      (op250 : evalBinOp .mul (x243 : SourceValue F) (v210 : SourceValue F) = .ok x235)
-      (ev279 : ObsFn W "KernelCheck::spec_params_ptr_eq" [x_s, x_s2] m245 y236 m229 cs277)
-      (op242 : evalBinOp .mul (x235 : SourceValue F) (y236 : SourceValue F) = .ok x227)
-      (ev301 : ObsFn W "KernelCheck::level_list_struct_eq" [x_u, x_u2] m229 y228 m220 cs299)
-      (op234 : evalBinOp .mul (x227 : SourceValue F) (y228 : SourceValue F) = .ok (.field 1))
-      (ev337 : ObsFn W "KernelModeled::aux_all_in" [x_rest, x_rest2] m220 r h' cs335)
-      (hc354 : calls = (cs213 ++ ((⟨"Bytes::address_eq", [x_a, x_a2], m211⟩ : Call F) :: (cs254 ++ ((⟨"KernelCheck::spec_params_ptr_eq", [x_s, x_s2], m245⟩ : Call F) :: (cs277 ++ ((⟨"KernelCheck::level_list_struct_eq", [x_u, x_u2], m229⟩ : Call F) :: (cs299 ++ ((⟨"KernelModeled::aux_all_in", [x_rest, x_rest2], m220⟩ : Call F) :: cs335)))))))))
+      (ld_uplwbryy : loadValue h x_flat = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Cons" [(.tuple [x_a2, x_is_aux2, x_s2, x_u2]), x_rest2]))
+      (sg_epcagqqc : «KernelModeled::aux_all_in».Seg_hvafxrfh x_a2 x_is_aux2 x_s2 x_u2 x_a x_is_aux x_s x_u (.tuple [x_a2, x_is_aux2, x_s2, x_u2]) x_rest2 (.tuple [x_a, x_is_aux, x_s, x_u]) x_rest x_derived x_flat h v_tfdgfqle m_kqoqokqw cs_zwpeivep)
+      (ev_klxwuqqf : ObsFn W "Bytes::address_eq" [x_a, x_a2] m_kqoqokqw x_axeiwlra m_moscjgst cs_kifhgiao)
+      (op_cayfomme : evalBinOp .mul (x_axeiwlra : SourceValue F) (v_tfdgfqle : SourceValue F) = .ok x_gpyqswde)
+      (ev_yqmfliuw : ObsFn W "KernelCheck::spec_params_ptr_eq" [x_s, x_s2] m_moscjgst y_ufwxbbmc m_xqmnavxk cs_xdvbbibg)
+      (op_syczidlw : evalBinOp .mul (x_gpyqswde : SourceValue F) (y_ufwxbbmc : SourceValue F) = .ok x_zcwzwspd)
+      (ev_okkobfax : ObsFn W "KernelCheck::level_list_struct_eq" [x_u, x_u2] m_xqmnavxk y_egeynabu m_amkbubcp cs_ocskxvii)
+      (op_xdkfoznu : evalBinOp .mul (x_zcwzwspd : SourceValue F) (y_egeynabu : SourceValue F) = .ok (.field 1))
+      (ev_zzxrtlvt : ObsFn W "KernelModeled::aux_all_in" [x_rest, x_rest2] m_amkbubcp r h' cs_einggfpt)
+      (hc_llamfqbn : calls = (cs_zwpeivep ++ ((⟨"Bytes::address_eq", [x_a, x_a2], m_kqoqokqw⟩ : Call F) :: (cs_kifhgiao ++ ((⟨"KernelCheck::spec_params_ptr_eq", [x_s, x_s2], m_moscjgst⟩ : Call F) :: (cs_xdvbbibg ++ ((⟨"KernelCheck::level_list_struct_eq", [x_u, x_u2], m_xqmnavxk⟩ : Call F) :: (cs_ocskxvii ++ ((⟨"KernelModeled::aux_all_in", [x_rest, x_rest2], m_amkbubcp⟩ : Call F) :: cs_einggfpt)))))))))
   | Cons_Cons_other
-      (x_rest : SourceValue F) (x_rest2 : SourceValue F) (x_a : SourceValue F) (x_is_aux : SourceValue F) (x_s : SourceValue F) (x_u : SourceValue F) (x_a2 : SourceValue F) (x_is_aux2 : SourceValue F) (x_s2 : SourceValue F) (x_u2 : SourceValue F) (v210 : SourceValue F) (m211 : Heap F) (cs213 : List (Call F)) (v219 : SourceValue F) (m220 : Heap F) (x227 : SourceValue F) (y228 : SourceValue F) (m229 : Heap F) (x235 : SourceValue F) (y236 : SourceValue F) (x243 : SourceValue F) (m245 : Heap F) (cs254 : List (Call F)) (cs277 : List (Call F)) (cs299 : List (Call F))
+      (x_rest : SourceValue F) (x_rest2 : SourceValue F) (x_a : SourceValue F) (x_is_aux : SourceValue F) (x_s : SourceValue F) (x_u : SourceValue F) (x_a2 : SourceValue F) (x_is_aux2 : SourceValue F) (x_s2 : SourceValue F) (x_u2 : SourceValue F) (v_tfdgfqle : SourceValue F) (m_kqoqokqw : Heap F) (cs_zwpeivep : List (Call F)) (v_wztwtxef : SourceValue F) (m_amkbubcp : Heap F) (x_zcwzwspd : SourceValue F) (y_egeynabu : SourceValue F) (m_xqmnavxk : Heap F) (x_gpyqswde : SourceValue F) (y_ufwxbbmc : SourceValue F) (x_axeiwlra : SourceValue F) (m_moscjgst : Heap F) (cs_kifhgiao : List (Call F)) (cs_xdvbbibg : List (Call F)) (cs_ocskxvii : List (Call F))
       (ld12 : loadValue h x_derived = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Cons" [(.tuple [x_a, x_is_aux, x_s, x_u]), x_rest]))
-      (ld77 : loadValue h x_flat = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Cons" [(.tuple [x_a2, x_is_aux2, x_s2, x_u2]), x_rest2]))
-      (sg218 : «KernelModeled::aux_all_in».Seg1 x_a2 x_is_aux2 x_s2 x_u2 x_a x_is_aux x_s x_u (.tuple [x_a2, x_is_aux2, x_s2, x_u2]) x_rest2 (.tuple [x_a, x_is_aux, x_s, x_u]) x_rest x_derived x_flat h v210 m211 cs213)
-      (ev256 : ObsFn W "Bytes::address_eq" [x_a, x_a2] m211 x243 m245 cs254)
-      (op250 : evalBinOp .mul (x243 : SourceValue F) (v210 : SourceValue F) = .ok x235)
-      (ev279 : ObsFn W "KernelCheck::spec_params_ptr_eq" [x_s, x_s2] m245 y236 m229 cs277)
-      (op242 : evalBinOp .mul (x235 : SourceValue F) (y236 : SourceValue F) = .ok x227)
-      (ev301 : ObsFn W "KernelCheck::level_list_struct_eq" [x_u, x_u2] m229 y228 m220 cs299)
-      (op234 : evalBinOp .mul (x227 : SourceValue F) (y228 : SourceValue F) = .ok v219)
-      (hne355 : (v219 : SourceValue F) ≠ (.field 1))
-      (he359 : r = (.field 0))
-      (he360 : h' = m220)
-      (hc361 : calls = (cs213 ++ ((⟨"Bytes::address_eq", [x_a, x_a2], m211⟩ : Call F) :: (cs254 ++ ((⟨"KernelCheck::spec_params_ptr_eq", [x_s, x_s2], m245⟩ : Call F) :: (cs277 ++ ((⟨"KernelCheck::level_list_struct_eq", [x_u, x_u2], m229⟩ : Call F) :: cs299)))))))
+      (ld_uplwbryy : loadValue h x_flat = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Cons" [(.tuple [x_a2, x_is_aux2, x_s2, x_u2]), x_rest2]))
+      (sg_epcagqqc : «KernelModeled::aux_all_in».Seg_hvafxrfh x_a2 x_is_aux2 x_s2 x_u2 x_a x_is_aux x_s x_u (.tuple [x_a2, x_is_aux2, x_s2, x_u2]) x_rest2 (.tuple [x_a, x_is_aux, x_s, x_u]) x_rest x_derived x_flat h v_tfdgfqle m_kqoqokqw cs_zwpeivep)
+      (ev_klxwuqqf : ObsFn W "Bytes::address_eq" [x_a, x_a2] m_kqoqokqw x_axeiwlra m_moscjgst cs_kifhgiao)
+      (op_cayfomme : evalBinOp .mul (x_axeiwlra : SourceValue F) (v_tfdgfqle : SourceValue F) = .ok x_gpyqswde)
+      (ev_yqmfliuw : ObsFn W "KernelCheck::spec_params_ptr_eq" [x_s, x_s2] m_moscjgst y_ufwxbbmc m_xqmnavxk cs_xdvbbibg)
+      (op_syczidlw : evalBinOp .mul (x_gpyqswde : SourceValue F) (y_ufwxbbmc : SourceValue F) = .ok x_zcwzwspd)
+      (ev_okkobfax : ObsFn W "KernelCheck::level_list_struct_eq" [x_u, x_u2] m_xqmnavxk y_egeynabu m_amkbubcp cs_ocskxvii)
+      (op_xdkfoznu : evalBinOp .mul (x_zcwzwspd : SourceValue F) (y_egeynabu : SourceValue F) = .ok v_wztwtxef)
+      (hne_gpnzqlow : (v_wztwtxef : SourceValue F) ≠ (.field 1))
+      (he_bsftqnhj : r = (.field 0))
+      (he_ebdszdzr : h' = m_amkbubcp)
+      (hc_jqpmhazn : calls = (cs_zwpeivep ++ ((⟨"Bytes::address_eq", [x_a, x_a2], m_kqoqokqw⟩ : Call F) :: (cs_kifhgiao ++ ((⟨"KernelCheck::spec_params_ptr_eq", [x_s, x_s2], m_moscjgst⟩ : Call F) :: (cs_xdvbbibg ++ ((⟨"KernelCheck::level_list_struct_eq", [x_u, x_u2], m_xqmnavxk⟩ : Call F) :: cs_ocskxvii)))))))
 
 /-- **Every observed derivation of `KernelModeled::aux_all_in` takes one of its paths.** -/
 theorem «KernelModeled::aux_all_in».obs {x_derived x_flat : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -1483,8 +1483,8 @@ theorem «KernelModeled::aux_all_in».obs {x_derived x_flat : SourceValue F} {h 
     rw [Names.n4088021409581841604] at hv18
     subst hv18
     obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml19
-    obtain ⟨v20, m21, bs22, body23, c24, c25, d26, sel27, d28, rfl⟩ := d9.matchValue_inv
-    obtain ⟨p29, d30, ld31⟩ := d26.load_inv
+    obtain ⟨v_rgpxdtog, m21, bs22, body23, c24, c25, d26, sel27, d28, rfl⟩ := d9.matchValue_inv
+    obtain ⟨p29, d30, ld_neljdsge⟩ := d26.load_inv
     obtain ⟨l32, rfl, rfl⟩ := d30.var_inv
     simp at l32
     subst l32
@@ -1494,13 +1494,13 @@ theorem «KernelModeled::aux_all_in».obs {x_derived x_flat : SourceValue F} {h 
       subst hv37
       obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml38
       obtain ⟨rfl, rfl, rfl⟩ := d28.literal_inv
-      exact «KernelModeled::aux_all_in».Path.Nil_Nil ld12 ld31 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-    · have hne42 := matchPattern_construct_none (by trivial) nm34
-      simp only [Names.n4088021409581841604] at hne42
+      exact «KernelModeled::aux_all_in».Path.Nil_Nil ld12 ld_neljdsge rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne_nazlygkb := matchPattern_construct_none (by trivial) nm34
+      simp only [Names.n4088021409581841604] at hne_nazlygkb
       rcases selectArm_cons_inv sel35 with ⟨mt43, rfl⟩ | ⟨nm44, sel45⟩
       · obtain rfl := matchPattern_wildcard_inv mt43
         obtain ⟨rfl, rfl, rfl⟩ := d28.literal_inv
-        exact «KernelModeled::aux_all_in».Path.Nil_other _ ld12 ld31 hne42 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        exact «KernelModeled::aux_all_in».Path.Nil_other _ ld12 ld_neljdsge hne_nazlygkb rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
       · exact (matchPattern_wildcard_none nm44).elim
   · have hne49 := matchPattern_construct_none (by trivial) nm15
     simp only [Names.n4088021409581841604] at hne49
@@ -1514,7 +1514,7 @@ theorem «KernelModeled::aux_all_in».obs {x_derived x_flat : SourceValue F} {h 
       obtain rfl := matchPattern_bind_inv mt64
       obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml65
       obtain ⟨v66, m67, bs68, body69, c70, c71, d72, sel73, d74, rfl⟩ := d9.matchValue_inv
-      obtain ⟨p75, d76, ld77⟩ := d72.load_inv
+      obtain ⟨p75, d76, ld_uplwbryy⟩ := d72.load_inv
       obtain ⟨l78, rfl, rfl⟩ := d76.var_inv
       simp at l78
       subst l78
@@ -1524,7 +1524,7 @@ theorem «KernelModeled::aux_all_in».obs {x_derived x_flat : SourceValue F} {h 
         subst hv83
         obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml84
         obtain ⟨rfl, rfl, rfl⟩ := d74.literal_inv
-        exact «KernelModeled::aux_all_in».Path.Cons_Nil _ _ ld12 ld77 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        exact «KernelModeled::aux_all_in».Path.Cons_Nil _ _ ld12 ld_uplwbryy rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
       · have hne88 := matchPattern_construct_none (by trivial) nm80
         simp only [Names.n4088021409581841604] at hne88
         rcases selectArm_cons_inv sel81 with ⟨mt89, rfl⟩ | ⟨nm90, sel91⟩
@@ -1568,16 +1568,16 @@ theorem «KernelModeled::aux_all_in».obs {x_derived x_flat : SourceValue F} {h 
               obtain ⟨x_u2, vs172, b173, b174, rfl, mt175, ml176, rfl⟩ := matchListWith_cons_inv ml171
               obtain rfl := matchPattern_bind_inv mt175
               obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml176
-              obtain ⟨v210, m211, bs212, cs213, c214, d215, mt216, d217, rfl⟩ := d149.letValue_inv
-              have sg218 := «KernelModeled::aux_all_in».seg1 d215
+              obtain ⟨v_tfdgfqle, m_kqoqokqw, bs212, cs_zwpeivep, c214, d215, mt216, d217, rfl⟩ := d149.letValue_inv
+              have sg_epcagqqc := «KernelModeled::aux_all_in».seg_hvafxrfh d215
               clear d215
               obtain rfl := matchPattern_bind_inv mt216
-              obtain ⟨v219, m220, bs221, c222, c223, d224, mt225, d226, rfl⟩ := d217.letValue_inv
-              obtain ⟨x227, y228, m229, c230, c231, d232, d233, op234, rfl⟩ := d224.binary_inv
-              obtain ⟨x235, y236, m237, c238, c239, d240, d241, op242, rfl⟩ := d232.binary_inv
-              obtain ⟨x243, y244, m245, c246, c247, d248, d249, op250, rfl⟩ := d240.binary_inv
-              obtain ⟨vs251, m252, c253, cs254, a255, ev256, rfl⟩ := d248.call_inv
-              rw [instanceName_plain_some] at ev256
+              obtain ⟨v_wztwtxef, m_amkbubcp, bs221, c222, c223, d224, mt225, d226, rfl⟩ := d217.letValue_inv
+              obtain ⟨x_zcwzwspd, y_egeynabu, m_xqmnavxk, c230, c231, d232, d233, op_xdkfoznu, rfl⟩ := d224.binary_inv
+              obtain ⟨x_gpyqswde, y_ufwxbbmc, m237, c238, c239, d240, d241, op_syczidlw, rfl⟩ := d232.binary_inv
+              obtain ⟨x_axeiwlra, y244, m_moscjgst, c246, c247, d248, d249, op_cayfomme, rfl⟩ := d240.binary_inv
+              obtain ⟨vs251, m252, c253, cs_kifhgiao, a255, ev_klxwuqqf, rfl⟩ := d248.call_inv
+              rw [instanceName_plain_some] at ev_klxwuqqf
               obtain ⟨v257, vs259, m260, c261, c262, rfl, d263, a264, rfl⟩ := a255.cons_inv
               obtain ⟨l265, rfl, rfl⟩ := d263.var_inv
               simp at l265
@@ -1590,8 +1590,8 @@ theorem «KernelModeled::aux_all_in».obs {x_derived x_flat : SourceValue F} {h 
               obtain ⟨l273, rfl, rfl⟩ := d249.var_inv
               simp at l273
               subst l273
-              obtain ⟨vs274, m275, c276, cs277, a278, ev279, rfl⟩ := d241.call_inv
-              rw [instanceName_plain_some] at ev279
+              obtain ⟨vs274, m275, c276, cs_xdvbbibg, a278, ev_yqmfliuw, rfl⟩ := d241.call_inv
+              rw [instanceName_plain_some] at ev_yqmfliuw
               obtain ⟨v280, vs282, m283, c284, c285, rfl, d286, a287, rfl⟩ := a278.cons_inv
               obtain ⟨l288, rfl, rfl⟩ := d286.var_inv
               simp at l288
@@ -1601,8 +1601,8 @@ theorem «KernelModeled::aux_all_in».obs {x_derived x_flat : SourceValue F} {h 
               simp at l295
               subst l295
               obtain ⟨rfl, rfl, rfl⟩ := a294.nil_inv
-              obtain ⟨vs296, m297, c298, cs299, a300, ev301, rfl⟩ := d233.call_inv
-              rw [instanceName_plain_some] at ev301
+              obtain ⟨vs296, m297, c298, cs_ocskxvii, a300, ev_okkobfax, rfl⟩ := d233.call_inv
+              rw [instanceName_plain_some] at ev_okkobfax
               obtain ⟨v302, vs304, m305, c306, c307, rfl, d308, a309, rfl⟩ := a300.cons_inv
               obtain ⟨l310, rfl, rfl⟩ := d308.var_inv
               simp at l310
@@ -1620,8 +1620,8 @@ theorem «KernelModeled::aux_all_in».obs {x_derived x_flat : SourceValue F} {h 
               rcases selectArm_cons_inv sel325 with ⟨mt328, rfl⟩ | ⟨nm329, sel330⟩
               · obtain ⟨hv331, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt328
                 subst hv331
-                obtain ⟨vs332, m333, c334, cs335, a336, ev337, rfl⟩ := d326.call_inv
-                rw [instanceName_plain_some] at ev337
+                obtain ⟨vs332, m333, c334, cs_einggfpt, a336, ev_zzxrtlvt, rfl⟩ := d326.call_inv
+                rw [instanceName_plain_some] at ev_zzxrtlvt
                 obtain ⟨v338, vs340, m341, c342, c343, rfl, d344, a345, rfl⟩ := a336.cons_inv
                 obtain ⟨l346, rfl, rfl⟩ := d344.var_inv
                 simp at l346
@@ -1631,12 +1631,12 @@ theorem «KernelModeled::aux_all_in».obs {x_derived x_flat : SourceValue F} {h 
                 simp at l353
                 subst l353
                 obtain ⟨rfl, rfl, rfl⟩ := a352.nil_inv
-                exact «KernelModeled::aux_all_in».Path.Cons_Cons_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 ld77 sg218 ev256 op250 ev279 op242 ev301 op234 ev337 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-              · have hne355 := MatchesConst.none_inv (MatchesConst.literal 1) nm329
+                exact «KernelModeled::aux_all_in».Path.Cons_Cons_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 ld_uplwbryy sg_epcagqqc ev_klxwuqqf op_cayfomme ev_yqmfliuw op_syczidlw ev_okkobfax op_xdkfoznu ev_zzxrtlvt (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+              · have hne_gpnzqlow := MatchesConst.none_inv (MatchesConst.literal 1) nm329
                 rcases selectArm_cons_inv sel330 with ⟨mt356, rfl⟩ | ⟨nm357, sel358⟩
                 · obtain rfl := matchPattern_wildcard_inv mt356
                   obtain ⟨rfl, rfl, rfl⟩ := d326.literal_inv
-                  exact «KernelModeled::aux_all_in».Path.Cons_Cons_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 ld77 sg218 ev256 op250 ev279 op242 ev301 op234 hne355 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                  exact «KernelModeled::aux_all_in».Path.Cons_Cons_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 ld_uplwbryy sg_epcagqqc ev_klxwuqqf op_cayfomme ev_yqmfliuw op_syczidlw ev_okkobfax op_xdkfoznu hne_gpnzqlow rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                 · exact (matchPattern_wildcard_none nm357).elim
             · have hne362 := matchPattern_tuple_none (by trivial) nm152
               exact (selectArm_nil_inv sel153).elim

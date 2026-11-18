@@ -2327,20 +2327,20 @@ theorem «KernelCheck::check_recursor_canonical_at».obsx {x_rc x_rec_ci x_addr 
 inductive «KernelCheck::canonical_rules_at_pos».Path (x_rc x_flat x_self_pos x_num_ctors x_parent_block_addr x_parent_ind_idx x_n_p x_n_mot x_n_min x_rec_lvls_list x_peer_recs x_flat_own_params x_rules x_ty x_pty x_pnlvls x_pni x_elim_level x_univ_offset : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | run
-      (m2 : Heap F) (cs13 : List (Call F)) (w38 : SourceValue F) (x_is_aux : SourceValue F) (x_spec_params : SourceValue F) (x_occ_us : SourceValue F) (v59 : SourceValue F) (m60 : Heap F) (cs70 : List (Call F)) (v164 : SourceValue F) (m167 : Heap F) (cs175 : List (Call F)) (v201 : SourceValue F) (m202 : Heap F) (cs212 : List (Call F)) (v223 : SourceValue F) (m224 : Heap F) (cs234 : List (Call F)) (v237 : SourceValue F) (m239 : Heap F) (cs247 : List (Call F)) (v362 : SourceValue F) (m363 : Heap F) (cs373 : List (Call F)) (v399 : SourceValue F) (m400 : Heap F) (cs410 : List (Call F)) (cs551 : List (Call F))
+      (m2 : Heap F) (cs13 : List (Call F)) (w38 : SourceValue F) (x_is_aux : SourceValue F) (x_spec_params : SourceValue F) (x_occ_us : SourceValue F) (v59 : SourceValue F) (m60 : Heap F) (cs70 : List (Call F)) (v_qyxorqlf : SourceValue F) (m_ueagycep : Heap F) (cs_zvhcwwes : List (Call F)) (v223 : SourceValue F) (m224 : Heap F) (cs234 : List (Call F)) (v245 : SourceValue F) (m246 : Heap F) (cs256 : List (Call F)) (v259 : SourceValue F) (m261 : Heap F) (cs269 : List (Call F)) (v384 : SourceValue F) (m385 : Heap F) (cs395 : List (Call F)) (v421 : SourceValue F) (m422 : Heap F) (cs432 : List (Call F)) (cs573 : List (Call F))
       (ev15 : ObsFn W "KernelCheck::flat_member_at" [x_flat, x_self_pos] h (.tuple [w38, x_is_aux, x_spec_params, x_occ_us]) m2 cs13)
       (ev72 : ObsFn W "KernelCheck::build_rec_type" [x_rc, x_pty, x_pnlvls, x_n_p, x_pni, x_elim_level, x_univ_offset, x_flat, x_flat_own_params, x_self_pos] m2 v59 m60 cs70)
-      (ev177 : ObsFn W "KernelCheck::wrap_rel" [v59, x_ty] m60 v164 m167 cs175)
-      (heq200 : (v164 : SourceValue F) = (.field 1))
-      (ev214 : ObsFn W Names.«Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» [x_flat] m167 v201 m202 cs212)
-      (ev249 : ObsFn W "KernelCheck::build_all_minors" [x_rc, x_flat, x_flat_own_params, x_n_p, v201, x_n_p, x_elim_level] m202 v237 m239 cs247)
-      (ev236 : ObsFn W Names.«Lists::length<&KernelTypes::KExprNode>» [v237] m239 v223 m224 cs234)
-      (heq333 : (x_n_mot : SourceValue F) = v201)
-      (heq361 : (x_n_min : SourceValue F) = v223)
-      (ev375 : ObsFn W "KernelCheck::ctors_before_pos" [x_flat, x_self_pos, (.field 0)] m224 v362 m363 cs373)
-      (ev412 : ObsFn W "KernelCheck::populate_rules" [x_rc, x_num_ctors, v362, x_parent_block_addr, x_parent_ind_idx, x_n_p, x_n_mot, x_n_min, x_occ_us, x_rec_lvls_list, x_flat, x_peer_recs, x_flat_own_params, x_is_aux, x_spec_params, (.field 0), x_elim_level] m363 v399 m400 cs410)
-      (ev553 : ObsFn W "KernelCheck::compare_rules" [x_rules, v399, x_n_p, x_n_mot, x_n_min, x_parent_block_addr, x_parent_ind_idx, x_num_ctors, (.field 0), x_elim_level, x_ty, v362] m400 r h' cs551)
-      (hc649 : calls = ((⟨"KernelCheck::flat_member_at", [x_flat, x_self_pos], h⟩ : Call F) :: (cs13 ++ ((⟨"KernelCheck::build_rec_type", [x_rc, x_pty, x_pnlvls, x_n_p, x_pni, x_elim_level, x_univ_offset, x_flat, x_flat_own_params, x_self_pos], m2⟩ : Call F) :: (cs70 ++ ((⟨"KernelCheck::wrap_rel", [v59, x_ty], m60⟩ : Call F) :: (cs175 ++ ((⟨Names.«Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>», [x_flat], m167⟩ : Call F) :: (cs212 ++ ((⟨"KernelCheck::build_all_minors", [x_rc, x_flat, x_flat_own_params, x_n_p, v201, x_n_p, x_elim_level], m202⟩ : Call F) :: (cs247 ++ ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [v237], m239⟩ : Call F) :: (cs234 ++ ((⟨"KernelCheck::ctors_before_pos", [x_flat, x_self_pos, (.field 0)], m224⟩ : Call F) :: (cs373 ++ ((⟨"KernelCheck::populate_rules", [x_rc, x_num_ctors, v362, x_parent_block_addr, x_parent_ind_idx, x_n_p, x_n_mot, x_n_min, x_occ_us, x_rec_lvls_list, x_flat, x_peer_recs, x_flat_own_params, x_is_aux, x_spec_params, (.field 0), x_elim_level], m363⟩ : Call F) :: (cs410 ++ ((⟨"KernelCheck::compare_rules", [x_rules, v399, x_n_p, x_n_mot, x_n_min, x_parent_block_addr, x_parent_ind_idx, x_num_ctors, (.field 0), x_elim_level, x_ty, v362], m400⟩ : Call F) :: cs551))))))))))))))))))
+      (ev_ysvpuasx : ObsFn W "KernelCheck::wrap_rel" [v59, x_ty] m60 v_qyxorqlf m_ueagycep cs_zvhcwwes)
+      (heq_cgbumzgv : (v_qyxorqlf : SourceValue F) = (.field 1))
+      (ev236 : ObsFn W Names.«Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» [x_flat] m_ueagycep v223 m224 cs234)
+      (ev271 : ObsFn W "KernelCheck::build_all_minors" [x_rc, x_flat, x_flat_own_params, x_n_p, v223, x_n_p, x_elim_level] m224 v259 m261 cs269)
+      (ev258 : ObsFn W Names.«Lists::length<&KernelTypes::KExprNode>» [v259] m261 v245 m246 cs256)
+      (heq355 : (x_n_mot : SourceValue F) = v223)
+      (heq383 : (x_n_min : SourceValue F) = v245)
+      (ev397 : ObsFn W "KernelCheck::ctors_before_pos" [x_flat, x_self_pos, (.field 0)] m246 v384 m385 cs395)
+      (ev434 : ObsFn W "KernelCheck::populate_rules" [x_rc, x_num_ctors, v384, x_parent_block_addr, x_parent_ind_idx, x_n_p, x_n_mot, x_n_min, x_occ_us, x_rec_lvls_list, x_flat, x_peer_recs, x_flat_own_params, x_is_aux, x_spec_params, (.field 0), x_elim_level] m385 v421 m422 cs432)
+      (ev575 : ObsFn W "KernelCheck::compare_rules" [x_rules, v421, x_n_p, x_n_mot, x_n_min, x_parent_block_addr, x_parent_ind_idx, x_num_ctors, (.field 0), x_elim_level, x_ty, v384] m422 r h' cs573)
+      (hc671 : calls = ((⟨"KernelCheck::flat_member_at", [x_flat, x_self_pos], h⟩ : Call F) :: (cs13 ++ ((⟨"KernelCheck::build_rec_type", [x_rc, x_pty, x_pnlvls, x_n_p, x_pni, x_elim_level, x_univ_offset, x_flat, x_flat_own_params, x_self_pos], m2⟩ : Call F) :: (cs70 ++ ((⟨"KernelCheck::wrap_rel", [v59, x_ty], m60⟩ : Call F) :: (cs_zvhcwwes ++ ((⟨Names.«Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>», [x_flat], m_ueagycep⟩ : Call F) :: (cs234 ++ ((⟨"KernelCheck::build_all_minors", [x_rc, x_flat, x_flat_own_params, x_n_p, v223, x_n_p, x_elim_level], m224⟩ : Call F) :: (cs269 ++ ((⟨Names.«Lists::length<&KernelTypes::KExprNode>», [v259], m261⟩ : Call F) :: (cs256 ++ ((⟨"KernelCheck::ctors_before_pos", [x_flat, x_self_pos, (.field 0)], m246⟩ : Call F) :: (cs395 ++ ((⟨"KernelCheck::populate_rules", [x_rc, x_num_ctors, v384, x_parent_block_addr, x_parent_ind_idx, x_n_p, x_n_mot, x_n_min, x_occ_us, x_rec_lvls_list, x_flat, x_peer_recs, x_flat_own_params, x_is_aux, x_spec_params, (.field 0), x_elim_level], m385⟩ : Call F) :: (cs432 ++ ((⟨"KernelCheck::compare_rules", [x_rules, v421, x_n_p, x_n_mot, x_n_min, x_parent_block_addr, x_parent_ind_idx, x_num_ctors, (.field 0), x_elim_level, x_ty, v384], m422⟩ : Call F) :: cs573))))))))))))))))))
 
 /-- **Every observed derivation of `KernelCheck::canonical_rules_at_pos` takes one of its paths.** -/
 theorem «KernelCheck::canonical_rules_at_pos».obs {x_rc x_flat x_self_pos x_num_ctors x_parent_block_addr x_parent_ind_idx x_n_p x_n_mot x_n_min x_rec_lvls_list x_peer_recs x_flat_own_params x_rules x_ty x_pty x_pnlvls x_pni x_elim_level x_univ_offset : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -2420,9 +2420,9 @@ theorem «KernelCheck::canonical_rules_at_pos».obs {x_rc x_flat x_self_pos x_nu
     obtain rfl := matchPattern_bind_inv mt65
     obtain ⟨v153, m154, bs155, c156, c157, d158, mt159, d160, rfl⟩ := d66.letValue_inv
     obtain ⟨vs161, a162, ap163⟩ := d158.builtin_inv
-    obtain ⟨v164, vs166, m167, c168, c169, rfl, d170, a171, rfl⟩ := a162.cons_inv
-    obtain ⟨vs172, m173, c174, cs175, a176, ev177, rfl⟩ := d170.call_inv
-    rw [instanceName_plain_some] at ev177
+    obtain ⟨v_qyxorqlf, vs166, m_ueagycep, c168, c169, rfl, d170, a171, rfl⟩ := a162.cons_inv
+    obtain ⟨vs172, m173, c174, cs_zvhcwwes, a176, ev_ysvpuasx, rfl⟩ := d170.call_inv
+    rw [instanceName_plain_some] at ev_ysvpuasx
     obtain ⟨v178, vs180, m181, c182, c183, rfl, d184, a185, rfl⟩ := a176.cons_inv
     obtain ⟨l186, rfl, rfl⟩ := d184.var_inv
     simp at l186
@@ -2435,23 +2435,23 @@ theorem «KernelCheck::canonical_rules_at_pos».obs {x_rc x_flat x_self_pos x_nu
     obtain ⟨v165, vs194, m195, c196, c197, rfl, d198, a199, rfl⟩ := a171.cons_inv
     obtain ⟨rfl, rfl, rfl⟩ := d198.literal_inv
     obtain ⟨rfl, rfl, rfl⟩ := a199.nil_inv
-    obtain ⟨heq200, rfl⟩ := Builtin.assertEq_inv ap163
+    obtain ⟨heq_cgbumzgv, rfl⟩ := Builtin.assertEq_inv ap163
     obtain rfl := matchPattern_wildcard_inv mt159
-    obtain ⟨v201, m202, bs203, c204, c205, d206, mt207, d208, rfl⟩ := d160.letValue_inv
-    obtain ⟨vs209, m210, c211, cs212, a213, ev214, rfl⟩ := d206.call_inv
-    rw [Names.n14888783904625504901] at ev214
+    obtain ⟨v223, m224, bs203, c204, c205, d206, mt207, d208, rfl⟩ := d160.letValue_inv
+    obtain ⟨vs209, m210, c211, cs234, a213, ev236, rfl⟩ := d206.call_inv
+    rw [Names.n14888783904625504901] at ev236
     obtain ⟨v215, vs216, m217, c218, c219, rfl, d220, a221, rfl⟩ := a213.cons_inv
     obtain ⟨l222, rfl, rfl⟩ := d220.var_inv
     simp at l222
     subst l222
     obtain ⟨rfl, rfl, rfl⟩ := a221.nil_inv
     obtain rfl := matchPattern_bind_inv mt207
-    obtain ⟨v223, m224, bs225, c226, c227, d228, mt229, d230, rfl⟩ := d208.letValue_inv
-    obtain ⟨vs231, m232, c233, cs234, a235, ev236, rfl⟩ := d228.call_inv
-    rw [Names.n6682477127133607924] at ev236
-    obtain ⟨v237, vs238, m239, c240, c241, rfl, d242, a243, rfl⟩ := a235.cons_inv
-    obtain ⟨vs244, m245, c246, cs247, a248, ev249, rfl⟩ := d242.call_inv
-    rw [instanceName_plain_some] at ev249
+    obtain ⟨v245, m246, bs225, c226, c227, d228, mt229, d230, rfl⟩ := d208.letValue_inv
+    obtain ⟨vs231, m232, c233, cs256, a235, ev258, rfl⟩ := d228.call_inv
+    rw [Names.n6682477127133607924] at ev258
+    obtain ⟨v259, vs238, m261, c240, c241, rfl, d242, a243, rfl⟩ := a235.cons_inv
+    obtain ⟨vs244, m245, c246, cs269, a248, ev271, rfl⟩ := d242.call_inv
+    rw [instanceName_plain_some] at ev271
     obtain ⟨v250, vs257, m258, c259, c260, rfl, d261, a262, rfl⟩ := a248.cons_inv
     obtain ⟨l263, rfl, rfl⟩ := d261.var_inv
     simp at l263
@@ -2494,7 +2494,7 @@ theorem «KernelCheck::canonical_rules_at_pos».obs {x_rc x_flat x_self_pos x_nu
     simp at l332
     subst l332
     obtain ⟨rfl, rfl, rfl⟩ := a331.nil_inv
-    obtain ⟨heq333, rfl⟩ := Builtin.assertEq_inv ap316
+    obtain ⟨heq355, rfl⟩ := Builtin.assertEq_inv ap316
     obtain rfl := matchPattern_wildcard_inv mt312
     obtain ⟨v334, m335, bs336, c337, c338, d339, mt340, d341, rfl⟩ := d313.letValue_inv
     obtain ⟨vs342, a343, ap344⟩ := d339.builtin_inv
@@ -2507,11 +2507,11 @@ theorem «KernelCheck::canonical_rules_at_pos».obs {x_rc x_flat x_self_pos x_nu
     simp at l360
     subst l360
     obtain ⟨rfl, rfl, rfl⟩ := a359.nil_inv
-    obtain ⟨heq361, rfl⟩ := Builtin.assertEq_inv ap344
+    obtain ⟨heq383, rfl⟩ := Builtin.assertEq_inv ap344
     obtain rfl := matchPattern_wildcard_inv mt340
-    obtain ⟨v362, m363, bs364, c365, c366, d367, mt368, d369, rfl⟩ := d341.letValue_inv
-    obtain ⟨vs370, m371, c372, cs373, a374, ev375, rfl⟩ := d367.call_inv
-    rw [instanceName_plain_some] at ev375
+    obtain ⟨v384, m385, bs364, c365, c366, d367, mt368, d369, rfl⟩ := d341.letValue_inv
+    obtain ⟨vs370, m371, c372, cs395, a374, ev397, rfl⟩ := d367.call_inv
+    rw [instanceName_plain_some] at ev397
     obtain ⟨v376, vs379, m380, c381, c382, rfl, d383, a384, rfl⟩ := a374.cons_inv
     obtain ⟨l385, rfl, rfl⟩ := d383.var_inv
     simp at l385
@@ -2524,9 +2524,9 @@ theorem «KernelCheck::canonical_rules_at_pos».obs {x_rc x_flat x_self_pos x_nu
     obtain ⟨rfl, rfl, rfl⟩ := d397.literal_inv
     obtain ⟨rfl, rfl, rfl⟩ := a398.nil_inv
     obtain rfl := matchPattern_bind_inv mt368
-    obtain ⟨v399, m400, bs401, c402, c403, d404, mt405, d406, rfl⟩ := d369.letValue_inv
-    obtain ⟨vs407, m408, c409, cs410, a411, ev412, rfl⟩ := d404.call_inv
-    rw [instanceName_plain_some] at ev412
+    obtain ⟨v421, m422, bs401, c402, c403, d404, mt405, d406, rfl⟩ := d369.letValue_inv
+    obtain ⟨vs407, m408, c409, cs432, a411, ev434, rfl⟩ := d404.call_inv
+    rw [instanceName_plain_some] at ev434
     obtain ⟨v413, vs430, m431, c432, c433, rfl, d434, a435, rfl⟩ := a411.cons_inv
     obtain ⟨l436, rfl, rfl⟩ := d434.var_inv
     simp at l436
@@ -2559,7 +2559,7 @@ theorem «KernelCheck::canonical_rules_at_pos».obs {x_rc x_flat x_self_pos x_nu
     obtain ⟨l485, rfl, rfl⟩ := d483.var_inv
     simp at l485
     subst l485
-    obtain ⟨v421, vs486, m487, c488, c489, rfl, d490, a491, rfl⟩ := a484.cons_inv
+    obtain ⟨v_421, vs486, m487, c488, c489, rfl, d490, a491, rfl⟩ := a484.cons_inv
     obtain ⟨l492, rfl, rfl⟩ := d490.var_inv
     simp at l492
     subst l492
@@ -2595,8 +2595,8 @@ theorem «KernelCheck::canonical_rules_at_pos».obs {x_rc x_flat x_self_pos x_nu
     subst l547
     obtain ⟨rfl, rfl, rfl⟩ := a546.nil_inv
     obtain rfl := matchPattern_bind_inv mt405
-    obtain ⟨vs548, m549, c550, cs551, a552, ev553, rfl⟩ := d406.call_inv
-    rw [instanceName_plain_some] at ev553
+    obtain ⟨vs548, m549, c550, cs573, a552, ev575, rfl⟩ := d406.call_inv
+    rw [instanceName_plain_some] at ev575
     obtain ⟨v554, vs566, m567, c568, c569, rfl, d570, a571, rfl⟩ := a552.cons_inv
     obtain ⟨l572, rfl, rfl⟩ := d570.var_inv
     simp at l572
@@ -2644,7 +2644,7 @@ theorem «KernelCheck::canonical_rules_at_pos».obs {x_rc x_flat x_self_pos x_nu
     simp at l648
     subst l648
     obtain ⟨rfl, rfl, rfl⟩ := a647.nil_inv
-    exact «KernelCheck::canonical_rules_at_pos».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev15 ev72 ev177 heq200 ev214 ev249 ev236 heq333 heq361 ev375 ev412 ev553 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n14888783904625504901, Names.n6682477127133607924])
+    exact «KernelCheck::canonical_rules_at_pos».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev15 ev72 ev_ysvpuasx heq_cgbumzgv ev236 ev271 ev258 heq355 heq383 ev397 ev434 ev575 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, Names.n14888783904625504901, Names.n6682477127133607924])
   · have hne650 := matchPattern_tuple_none (by trivial) nm33
     exact (selectArm_nil_inv sel34).elim
 
