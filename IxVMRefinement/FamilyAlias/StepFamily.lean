@@ -31,6 +31,7 @@ namespace IxVM.Refinement.Typing.FamilyAlias
 open IxVM.Consistency
 open Ix.Kernel (ConstantInfo ConstantVal)
 open Ix.Kernel.Semantics (NativeFam DeclIndRenRunJ DeclIndRunJ Judgements)
+open IxVM.Refinement.Typing.TwinFamily (FamilyRecsModeled)
 open IxVM.Refinement.Decl.FamilyAlias (AliasGroup famJ FamilyAdvice FamilyCheckFacts isRecursor
   auxKey_ne_of_isBaseKey find?_append_none indMembersRunJ_consts_eq'
   indRecsFoldRunJ_consts_eq' provisionRecsRunJ_names_eq')

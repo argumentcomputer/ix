@@ -22,6 +22,7 @@ namespace IxVM.Refinement.Typing.FamilyAlias
 open IxVM.Consistency
 open Ix.Kernel (ConstantInfo ConstantVal)
 open Ix.Kernel.Semantics (DeclIndRenRunJ)
+open IxVM.Refinement.Typing.TwinFamily (FamilyRecsModeled)
 open IxVM.Refinement.Decl.FamilyAlias (AliasGroup famJ isRecursor auxKey_ne_of_isBaseKey
   find?_append_none)
 
@@ -57,7 +58,7 @@ theorem familyRecsModeled_famStep {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
   have hext : Ix.Kernel.EnvExt env env₂ :=
     hg.envExt.trans (Ix.Kernel.Semantics.declIndRenRunJ_envExt hd)
   obtain ⟨new, henv₂, hnew, -⟩ := famStep_consts hd
-  refine FamilyRecsModeled.step hX (fun hc => hext.find hc) ?_
+  refine IxVM.Refinement.Typing.TwinFamily.FamilyRecsModeled.step hX (fun hc => hext.find hc) ?_
   intro B' rb' x crb' hrb hcrb hx hs hold
   have hbase : Decl.isBaseKey (keyOf t x) = true := Decl.isBaseKey_keyOf t x
   -- the new key is a member's
