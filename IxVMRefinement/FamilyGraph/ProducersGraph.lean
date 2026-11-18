@@ -159,10 +159,10 @@ def FamBlock (B : _root_.Address) : Prop :=
 open Classical in
 /-- **The family record a block installs**: the record of a family check of the block; a
 complete one where there is one, and among those one in the preferred form where there is one
-(else one in the preferred form, else any). "Complete" is read as non-empty (`RecBlock`): under
-the batch's B1′ (`check_family` asserts `n_recs = 0 ∨ n_recs = |flat|`) a non-empty family
-record is one recursor per member of the flattened block; the consumer that needs completeness
-states B1′ where it uses it. -/
+(else one in the preferred form, else any). "Complete" is read as non-empty (`RecBlock`): once
+`check_family` asserts `n_recs = 0 ∨ n_recs = |flat|` a non-empty family record is one recursor
+per member of the flattened block; the consumer that needs completeness states that assertion
+where it uses it. -/
 noncomputable def fam (B : _root_.Address) : Option _root_.Address :=
   if h : K.FamBlock B ∧ ∃ rb, K.FamCheck B rb then
     if hp : ∃ rb, K.FamCheck B rb ∧ RecBlock K.E₀ rb ∧ K.Pref B rb then
@@ -441,11 +441,12 @@ end FamRunCtx
 /-! ### The kinds of reference a family check admits -/
 
 /-- **The basis roles a payload may name as a witness of kind 0**: `basis_role_allowed` less
-`String` (37) and `Char` (39), batch candidate item 19 (role indices 0-3, 8-13 and 32-36): `Nat`
-with its constructors and recursor, `Eq`, `Eq.refl`, `Eq.rec`, `PUnit`, `PUnit.unit`, `PUnit.rec`,
-the quotient package. Each is walked (so covered) or a role of the quotient package. `String` and
-`Char`, which `75d3512f6` still admits, are anchors, neither walked nor pinned: a top-walked record
-using one could lie above the block of the family check that witnessed it. This is the one place
+`String` (37) and `Char` (39), the two arms its change removes (role indices 0-3, 8-13 and
+32-36): `Nat` with its constructors and recursor, `Eq`, `Eq.refl`, `Eq.rec`, `PUnit`,
+`PUnit.unit`, `PUnit.rec`, the quotient package. Each is walked (so covered) or a role of the
+quotient package. `String` and `Char`, which the present `basis_role_allowed` admits, are
+anchors, neither walked nor pinned: a top-walked record using one could lie above the block of
+the family check that witnessed it. This is the one place
 the choice is made; the fields `familyRefs`, `adviceRefs` and `contWitness` read it through
 `WitBase`. -/
 def basisRoles : List Ix.Kernel.Role :=
@@ -463,13 +464,14 @@ def DepStep (y z : _root_.Address) : Prop :=
     (UsedRef K.E₀ z y ∨ ∃ c, recordOf K.E₀ z = some c ∧ IsProj c ∧ y = Ix.Cert.ownerOf z c)
 
 /-- **A dependency path of one step or more from `B` to `x`** through no covered record (its stop
-included): what `walk_from_block` walks when its path passed no covered record (item 16). -/
+included): what `walk_from_block` walks when its path passed no covered record (the changed
+`walk_path`, which flags a covered record on the path). -/
 def DepPath (B x : _root_.Address) : Prop :=
   Relation.TransGen K.DepStep x B
 
 /-- **A type or constructor of a block that a used reference of `A` projects from**
 (`projection_of_ref_block`, `ref_projects_from`): covered where that used reference is covered
-(item 16). -/
+(the changed `ref_projects_from`). -/
 def ProjOfRef (A x : _root_.Address) : Prop :=
   ∃ q cq cD, UsedRef K.E₀ A q ∧ recordOf K.E₀ q = some cq ∧ IsProj cq ∧
     recordOf K.E₀ (Ix.Cert.ownerOf q cq) = some cD ∧ ConstAddrOf (Ix.Cert.ownerOf q cq) cD x ∧
@@ -532,16 +534,16 @@ structure BatchGives (K : FamRunCtx) : Prop where
   list (`FamilyOwnAdvice`, the walk it makes itself on its payload's advice). -/
   ownWalk : ∀ B rb, K.FamCheck B rb →
     ∃ advAs, FamilyCallOwn K.calls K.bAddr K.t B rb K.lim (K.famCalls B rb) advAs
-  /-- `family_refs_go` (with item 16's `ref_projects_from`) and `check_witness` (item 16), read
+  /-- `family_refs_go` (with the changed `ref_projects_from`) and the changed `check_witness`, read
   through `check_family`'s unfolding: a reference the record of a scope check uses is a reference
   of its block's closure (`BlockRef`), or a witness of the check (`WitBase`, or a container's
   recursor). -/
   familyRefs : ∀ B rb cs, K.ScopeAt B rb cs → ∀ x, UsedRef K.E₀ rb x →
     K.BlockRef B x ∨ K.WitBase B x ∨ K.ContWitness cs B x
   /-- `check_advice_records`, `check_advice_record` and `advice_refs_ok` (with
-  `projection_of_advice` and the projection arms' reading of the member), and `check_witness`
-  (item 16), read through `check_family`'s unfolding: a reference the `k`-th advice record of a
-  scope check's own list uses is an earlier listed record that is no projection record, a
+  `projection_of_advice` and the projection arms' reading of the member), and the changed
+  `check_witness`, read through `check_family`'s unfolding: a reference the `k`-th advice record
+  of a scope check's own list uses is an earlier listed record that is no projection record, a
   constant address of an earlier listed record, or a witness of the check. -/
   adviceRefs : ∀ B rb cs advAs, K.ScopeAt B rb cs →
     FamilyCallOwn K.calls K.bAddr K.t B rb K.lim cs advAs → ∀ (k : Nat) b, advAs[k]? = some b →
@@ -551,7 +553,7 @@ structure BatchGives (K : FamRunCtx) : Prop where
       (∃ j b' c', j < k ∧ advAs[j]? = some b' ∧ recordOf K.E₀ (Core.ixAddr b') = some c' ∧
           ConstAddrOf (Core.ixAddr b') c' x) ∨
       K.WitBase B x ∨ K.ContWitness cs B x
-  /-- `check_witness`'s kind 2 (item 16: the path's stop, no covered record passed for a witness
+  /-- The changed `check_witness`'s kind 2 (the path's stop, no covered record passed for a witness
   bound to no walked role), `check_container_rec`, `run_check`'s `Rec` arm (the family check of a
   recursor block's family), `rec_family_block` and `check_block_member_kinds`, and
   `container_recs_refs` with `container_refs_ok`, read through `check_family`'s unfolding: a
@@ -576,7 +578,7 @@ structure BatchGives (K : FamRunCtx) : Prop where
     crb.info = .muts rs → 0 < rs.size →
     ∃ cb x, recordOf K.E₀ B = some cb ∧ ConstAddrOf B cb x ∧ ¬ Covered K.t x ∧
       UsedRef K.E₀ rb x
-  /-- Quotient-bound records (item 17: `assert_quot_record_refs` in `run_check_transitive` and
+  /-- Quotient-bound records (the new `assert_quot_record_refs` in `run_check_transitive` and
   `env_walk_all`): a top-walked record bound to a role of the quotient package is standalone, and
   every reference it uses is covered or bound to a role of the quotient package. -/
   quotBound : ∀ x ro c, K.Top x → quotRole ro = true → K.t.addressOf? ro = some x →
@@ -600,8 +602,8 @@ structure BatchGives (K : FamRunCtx) : Prop where
   /-- `check_advice_record`'s `Muts` arm, which asserts `muts_indc_count(members)` equals the
   member count (every member inductive), read through `check_family`'s unfolding: an advice
   record a scope check's own advice walk lists is no non-empty block of recursors. The arm is in
-  today's circuit (READ, `IxVM/IxVM/Source/KernelModeled.lean:840-842`; batch candidate
-  `75d3512f6`, `:902-907`, unchanged), so this is provable now from the observation of
+  today's circuit (READ, `IxVM/IxVM/Source/KernelModeled.lean:840-842`; unchanged by the
+  circuit changes), so this is provable now from the observation of
   `check_advice_record`, as `Decl.adviceRecord_kind` reads its arms; not yet proved here. -/
   listedNotRec : ∀ B rb cs advAs (k : Nat) b, K.ScopeAt B rb cs →
     FamilyCallOwn K.calls K.bAddr K.t B rb K.lim cs advAs → advAs[k]? = some b →
@@ -724,10 +726,10 @@ theorem FamRunCtx.innerKind_of {K : FamRunCtx} {seeds : List _root_.Address}
 of a top-walked record is top-walked below it or covered; a projection record's block is below
 it), a family record the run checked after its block, advice before its block, a twin after its
 block, and what a family record and an inner record use stored, covered, their own, or owned
-below them (the latter two from the batch's `family_refs_go`, `assert_inner_refs_safe`,
-`check_advice_record` and `container_refs_ok`, with item 11, a projection reference names a
-member of its block, through the ranking). Only the walk's edges are kept, not every comparison
-of the walk's rank: two top-walked records without an edge may change order. -/
+below them (the latter two from the changed `family_refs_go`, `assert_inner_refs_safe`,
+`check_advice_record` and `container_refs_ok`, with the change that makes a projection reference
+name a member of its block, through the ranking). Only the walk's edges are kept, not every
+comparison of the walk's rank: two top-walked records without an edge may change order. -/
 structure FamilyRanked (K : FamRunCtx) (rank' : _root_.Address → Nat) : Prop where
   closed : ∀ a x, K.Top a → UsedRef K.E₀ a x → (K.Top x ∧ rank' x < rank' a) ∨ Covered K.t x
   owner : ∀ a c, K.Top a → recordOf K.E₀ a = some c → IsProj c →
@@ -963,9 +965,10 @@ def FamilyRanking (Pref : RunPref) : Prop :=
 
 /-- **Row `familyGraph` with the selector's form fact**: as `FamilyGraphRow`, and at the binding
 of the run's family checks, a block with a twin in the preferred form has its family record in
-the preferred form and complete (non-empty; under B1′ that is one recursor per member of the
-flattened block). The residual's row is retyped to this statement once the record-level form is
-concrete (`FamilyGraphRow` follows from it: `familyGraphRow_of_pref`). -/
+the preferred form and complete (non-empty; once `check_family` asserts
+`n_recs = 0 ∨ n_recs = |flat|`, that is one recursor per member of the flattened block). The
+residual's row is retyped to this statement once the record-level form is concrete
+(`FamilyGraphRow` follows from it: `familyGraphRow_of_pref`). -/
 def FamilyGraphRowPref (Pref : RunPref) : Prop :=
   ∀ (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (seeds : List _root_.Address)
     (E₀ : Ixon.Env) (lim : Option Nat) (Top : _root_.Address → Prop)
