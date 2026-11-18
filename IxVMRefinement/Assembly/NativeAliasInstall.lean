@@ -136,9 +136,9 @@ theorem nativeAtFacts_of_alias_outs {calls : List (Call F)} {t : Ix.Kernel.RoleT
   have hshapeT : cvS.name.isProjFnShape = false := by
     rw [hnameS, hTname]
     exact Decl.isProjFnShape_of_isBaseKey (Decl.isBaseKey_keyOf t _)
-  have hliterals := alias_literal_keys_distinct htwf shape prefixExtension distinct
-    (by rw [← hTname]; exact hfreshT)
-  rw [← hTname, ← hnameS] at hliterals
+  have hliterals := alias_literal_keys_distinct (address := memberAddr B 0 (.indc ind)) htwf shape
+    prefixExtension distinct (by rw [LoadedReads.keyOf_eq, ← hTname]; exact hfreshT)
+  rw [LoadedReads.keyOf_eq, ← hTname, ← hnameS] at hliterals
   exact Decl.nativeAtFacts_of_alias_stage hp₀ hnd hinv.store.store hcheckT htele hindexed
     hparam hliterals hnameS (by rw [hnameS]; exact hfreshT) hshapeT hlenA hformerRead hout
     hfv_ctors hfresh_ctors hshape_ctors hT_ctors hfn htbl hunused
