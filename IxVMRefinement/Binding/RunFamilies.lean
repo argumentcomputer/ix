@@ -2,6 +2,7 @@ import IxVMRefinement.Binding.GroupRank
 import IxVMRefinement.Binding.ClosureFold
 import IxVMRefinement.Binding.StoreOpOrder
 import IxVMRefinement.RoleVal.BoundSafety
+import IxVMRefinement.FamilyGraph.ProducersModeled
 
 /-! # The family checks of a binding run, group by group
 
@@ -13,7 +14,8 @@ The run's payload and family selection, and what of the family form's clauses is
 * `runFamOf`, `runAdv`, `runCont`: the family selection of group `g`: a block new in the group,
   routed as modeled, with a family check at the group's limit, selects the family record of one
   such check; the advice and container recursors of a block are those of its checks.
-  `runFamOf_famCall`: the clause `GroupFamilyChecks.famCall` of that selection.
+  `runFamOf_famCall`: the clause `GroupFamilyChecks.famCall` of that selection;
+  `modeled_of_run`: the clause `GroupFamilyChecks.modeled` of every run.
 * `RemainingFamilyClauses calls bAddr t E₀`: what is not proved of the run's family checks, at
   the store sequence with the run's payload. Each field names the source it comes from.
 * `families_of_remaining`: the family form's clauses at a group (`ClosureFam` and
@@ -98,6 +100,30 @@ theorem runFamOf_famCall {g : Nat} :
   intro B rb h
   obtain ⟨hn, hm, cs, hcs⟩ := runFamOf_spec h
   exact ⟨hn, hm, cs, hcs, fun a ha => ⟨rb, cs, hcs, ha⟩, fun x hx => ⟨rb, cs, hcs, hx⟩⟩
+
+/-- **`GroupFamilyChecks.modeled` of every run**: the check of a member of a new block of
+inductive types in Lean's logic on the modeled route, at the group's limit, ran the family check
+of the record the block's payload names (`familyCallLim_of_member`: `Ingress::get_ci` returns the
+member's inductive with its unsafe flag `0`, the dispatch's non-zero answer refutes
+`KernelCheck::check_const`'s native arm, and the modeled arm ends in
+`KernelModeled::check_modeled_block`'s `check_family`), so the group's selection has a record for
+the block. -/
+theorem modeled_of_run (hC : CollisionFreeRun calls E₀) (g : Nat) :
+    ∀ B cb (ms : Array Ixon.MutConst),
+      New (groupStore t E₀ (runPayload calls bAddr t) g)
+        (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) B →
+      recordOf E₀ B = some cb → InLogic cb → cb.info = .muts ms →
+      (∀ m ∈ ms.toList, ∃ ind, m = Ixon.MutConst.indc ind) → ModeledRouteAt calls B →
+      (∃ k, k < ms.size ∧ Claim.MemberCheckedLimAt calls bAddr t B ms k (some (valLimit g))) →
+      ∃ rb, runFamOf calls bAddr t E₀ g B = some rb := by
+  rintro B cb ms hnew hcb hlog hmuts hall hmod ⟨k, -, hk⟩
+  obtain ⟨rb, cs, hfc⟩ := familyCallLim_of_member hC.runStore hcb hmuts hlog hall hk hmod
+  have h : New (groupStore t E₀ (runPayload calls bAddr t) g)
+      (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) B ∧ ModeledRouteAt calls B ∧
+      ∃ rb, FamCallAt calls bAddr t g B rb := ⟨hnew, hmod, rb, cs, hfc⟩
+  unfold runFamOf
+  rw [dif_pos h]
+  exact ⟨_, rfl⟩
 
 end Run
 
@@ -192,13 +218,12 @@ a named change of the circuit source, or unknown.
   dependency closure). Source: today's circuit, with the change of
   `KernelModeled::check_container_rec` that refuses a container recursor naming itself among its
   container block's used references.
-* `modeled`, `family`, `claimed`: the fields of `GroupFamilyChecks` but `famCall`
-  (`runFamOf_famCall`): the modeled arm of `KernelCheck::check_const` reaches
-  `KernelModeled::check_modeled_block` and `check_family` (`modeled`); `check_family` and
+* `family`, `claimed`: the fields of `GroupFamilyChecks` but `famCall` (`runFamOf_famCall`) and
+  `modeled` (`modeled_of_run`): `check_family` and
   `check_recs` check the record position by position against the flattened block (`family`,
   with a change of `check_recs` that refuses an empty record under a group's validation); a new
   block of recursors is a selected record or a second family record checked by `check_family`
-  (`claimed`). Source: `modeled` today's circuit; `family` the change of `check_family` and
+  (`claimed`). Source: `family` the change of `check_family` and
   `check_recs` that takes the family record as the reconstruction of the block's recursors, and
   the change that compares nested pins in `check_recs`; `claimed` the first of these changes.
 * `runFacts`: what is left of `ClosureRunFacts` at the group (`RunFactsLeft`, which names each
@@ -218,13 +243,6 @@ structure RemainingFamilyClauses (calls : List (Call F)) (bAddr : _root_.Address
   payloadRanked : ∀ g, 6 ≤ g → g < 77 → (∃ B a, runPayload calls bAddr t g B a) →
     ∃ rank, GroupRanked t E₀ (runPayload calls bAddr t) g (runFamOf calls bAddr t E₀ g)
       (runAdv calls bAddr t g) (runCont calls bAddr t g) rank
-  modeled : ∀ g, 6 ≤ g → g < 77 → ∀ B cb (ms : Array Ixon.MutConst),
-    New (groupStore t E₀ (runPayload calls bAddr t) g)
-      (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) B →
-    recordOf E₀ B = some cb → InLogic cb → cb.info = .muts ms →
-    (∀ m ∈ ms.toList, ∃ ind, m = Ixon.MutConst.indc ind) → ModeledRouteAt calls B →
-    (∃ k, k < ms.size ∧ Claim.MemberCheckedLimAt calls bAddr t B ms k (some (valLimit g))) →
-    ∃ rb, runFamOf calls bAddr t E₀ g B = some rb
   family : ∀ g, 6 ≤ g → g < 77 → ∀ B rb, runFamOf calls bAddr t E₀ g B = some rb →
     ∃ cb ms crb rs flat, FamilyOfBlock E₀ B cb ms rb crb rs flat
   claimed : ∀ g, 6 ≤ g → g < 77 → ∀ (A : _root_.Address) (c : Ixon.Constant)
@@ -411,7 +429,8 @@ theorem keptRoles_of_run (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoade
 
 /-- **The family form's clauses at a group**, for a rank of its new records: `ClosureRunFacts`
 from what is left of it (`RemainingFamilyClauses.runFacts`), the rank's `famRefs`, and
-`advNotUnit`, `roleUnitForm` proved of the run. -/
+`advNotUnit`, `roleUnitForm`, `keptRoles` proved of the run; `GroupFamilyChecks.modeled` and
+`famCall` proved of the run. -/
 theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
     (hax : AxiomRolesDeclared t E₀) (hR : RemainingFamilyClauses calls bAddr t E₀)
     (hcheck : t.check = .ok ()) (hroots : RootsSafe t E₀)
@@ -433,7 +452,7 @@ theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRows
   have hL := hR.runFacts g hg6 hg rk
   refine ⟨⟨⟨bAddr, ?_⟩, ?_⟩, ?_⟩
   · exact
-      { modeled := hR.modeled g hg6 hg
+      { modeled := modeled_of_run hC g
         famCall := runFamOf_famCall
         family := hR.family g hg6 hg
         claimed := hR.claimed g hg6 hg }
