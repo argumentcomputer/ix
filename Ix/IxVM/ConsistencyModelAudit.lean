@@ -12,21 +12,24 @@ every definition of `IxC.Kernel.Denotes` and `IxC.Kernel.SetTheory.Core` that th
 reads through them: the denotation relation `Denotes`, and the model's laws `IotaLaw` (with
 `IotaRule`), `UnitLikeLaw`, `ProjLaw`, `ProjTypeLaw`, `EtaFnLaw`, `NatLitLaw`, `NatAddLaw` and
 `GradedLaw`, with their auxiliaries. The four structurally recursive functions among them are
-frozen by their unfolding equations (`#check`). `#guard_kernel_axioms` freezes the axioms the
-two reach: none for `SetTheory`; `propext`, `Classical.choice` and `Quot.sound` for `Model`. A
-change to any of them fails the build, so what a model is cannot drift silently. The module
-is outside any namespace, so every name prints in full.
+frozen by their unfolding equations (`#check`). It also freezes the set-theoretic operators
+these are stated with, which are definitions derived from the fields of `SetTheory`
+(`Ix.Kernel.SetTheory.empty`, `app`, `univ`, `sfst`, `ssnd`, `pt`, `eqv`;
+`Ix.Kernel.SetModel.piR`, `lamR`), and every definition those are defined by, down to the
+fields. `#guard_kernel_axioms` freezes the axioms the two roots reach: none for `SetTheory`;
+`propext`, `Classical.choice` and `Quot.sound` for `Model`. A change to any of them fails the
+build, so what a model is cannot drift silently. The module is outside any namespace, so
+every name prints in full.
 
 The module imports the kernel's denotation module and the axiom check only: it builds whether
 or not the consistency proof, or the statement, does.
 
 What this module does not freeze. A definition read from another module appears here by name
-only: the set-theoretic operators derived from the axioms (`Ix.Kernel.SetTheory.empty`, `app`,
-`univ`, `sfst`, `ssnd`, `pt`, `eqv`; `Ix.Kernel.SetModel.piR`, `lamR`), the kernel's terms and
-environments (`Ix.Kernel.Expr`, `Env`, `ConstantInfo`, `Level.eval`, `Level.substFn`,
-`Expr.instantiateLevelParams`, `Expr.stripPis`, `Env.findProj?`), `PropWhen.holds`, the
-literal constructors (`natLitToConstructor`, `strLitToConstructor`) and the basis names
-(`falseName`, `eqName`, `punitName`, `natAddName` and the others). -/
+only: the kernel's terms and environments (`Ix.Kernel.Expr`, `Env`, `ConstantInfo`,
+`Level.eval`, `Level.substFn`, `Expr.instantiateLevelParams`, `Expr.stripPis`,
+`Env.findProj?`), `PropWhen.holds`, the literal constructors (`natLitToConstructor`,
+`strLitToConstructor`) and the basis names (`falseName`, `eqName`, `punitName`, `natAddName`
+and the others). -/
 
 /-! ## The set theory and the model -/
 
@@ -668,6 +671,208 @@ fun {V} mem u =>
 -/
 #guard_msgs in
 #print Ix.Kernel.IsTGUniverse
+
+/-! ## The operators they are stated with
+
+`Denotes`, `Model` and the laws are stated with set-theoretic operators that are definitions,
+not fields of `SetTheory`: application to an argument, the universe tower, the empty set, the
+proof point, truth values, pairs and their projections, and the two regimes of `∀` and `λ`.
+They are frozen here with every definition they are in turn defined by, down to the fields of
+`SetTheory`. Where a definition chooses a witness (`Classical.choose`), it is printed with the
+proof it chooses from (`pp.proofs`), and the statement of that proof is frozen beside it. -/
+
+/-! ### `IxC.Kernel.SetTheory.Derive.Sigma` -/
+
+/--
+info: @[irreducible] def Ix.Kernel.SetTheory.sfst.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V → V :=
+fun {V} [Ix.Kernel.SetTheory V] p =>
+  if h : ∃ a b, p = Ix.Kernel.SetTheory.kpair a b then Classical.choose h else Ix.Kernel.SetTheory.pt
+-/
+#guard_msgs in
+#print Ix.Kernel.SetTheory.sfst
+
+/--
+info: @[irreducible] def Ix.Kernel.SetTheory.ssnd.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V → V :=
+fun {V} [Ix.Kernel.SetTheory V] p =>
+  if h : ∃ a b, p = Ix.Kernel.SetTheory.kpair a b then Classical.choose (Ix.Kernel.SetTheory.ssnd._proof_1 p h)
+  else Ix.Kernel.SetTheory.pt
+-/
+#guard_msgs in
+set_option pp.proofs true in
+#print Ix.Kernel.SetTheory.ssnd
+
+/--
+info: @Ix.Kernel.SetTheory.ssnd._proof_1 : ∀ {V : Type u_1} [inst : Ix.Kernel.SetTheory V] (p : V)
+  (h : ∃ a b, p = Ix.Kernel.SetTheory.kpair a b), ∃ b, p = Ix.Kernel.SetTheory.kpair (Classical.choose h) b
+-/
+#guard_msgs in
+#check @Ix.Kernel.SetTheory.ssnd._proof_1
+
+/-! ### `IxC.Kernel.SetModel.Ops` -/
+
+/--
+info: def Ix.Kernel.SetModel.piR.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → Nat → V → (V → V) → V :=
+fun {V} [Ix.Kernel.SetTheory V] v A B =>
+  if v = 0 then
+    Ix.Kernel.SetTheory.truthVal (∀ (x : V), Ix.Kernel.SetTheory.Mem x A → ∃ y, Ix.Kernel.SetTheory.Mem y (B x))
+  else Ix.Kernel.SetTheory.piSet A B
+-/
+#guard_msgs in
+#print Ix.Kernel.SetModel.piR
+
+/--
+info: def Ix.Kernel.SetModel.lamR.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → Nat → V → (V → V) → V :=
+fun {V} [Ix.Kernel.SetTheory V] v A F => if v = 0 then Ix.Kernel.SetTheory.pt else Ix.Kernel.SetTheory.graph F A
+-/
+#guard_msgs in
+#print Ix.Kernel.SetModel.lamR
+
+/-! ### `IxC.Kernel.SetTheory.Derive.Univ` -/
+
+/--
+info: @[irreducible] def Ix.Kernel.SetTheory.univ.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → Nat → V :=
+fun {V} [Ix.Kernel.SetTheory V] x =>
+  match x with
+  | 0 => Ix.Kernel.SetTheory.univZero
+  | n.succ => Ix.Kernel.SetTheory.univChain (n + 2)
+-/
+#guard_msgs in
+#print Ix.Kernel.SetTheory.univ
+
+/-! ### `IxC.Kernel.SetTheory.Derive.Graphs` -/
+
+/--
+info: def Ix.Kernel.SetTheory.graph.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → (V → V) → V → V :=
+fun {V} [Ix.Kernel.SetTheory V] F A => Ix.Kernel.SetTheory.image (fun x => Ix.Kernel.SetTheory.kpair x (F x)) A
+-/
+#guard_msgs in
+#print Ix.Kernel.SetTheory.graph
+
+/--
+info: @[irreducible] def Ix.Kernel.SetTheory.app.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V → V → V :=
+fun {V} [Ix.Kernel.SetTheory V] f a =>
+  if f = Ix.Kernel.SetTheory.pt then Ix.Kernel.SetTheory.pt
+  else
+    Ix.Kernel.SetTheory.sUnion
+      (Ix.Kernel.SetTheory.sep (Ix.Kernel.SetTheory.sUnion (Ix.Kernel.SetTheory.sUnion f)) fun y =>
+        Ix.Kernel.SetTheory.Mem (Ix.Kernel.SetTheory.kpair a y) f)
+-/
+#guard_msgs in
+#print Ix.Kernel.SetTheory.app
+
+/--
+info: def Ix.Kernel.SetTheory.sigmaPairs.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V → (V → V) → V :=
+fun {V} [Ix.Kernel.SetTheory V] A B =>
+  Ix.Kernel.SetTheory.sUnion
+    (Ix.Kernel.SetTheory.image (fun x => Ix.Kernel.SetTheory.image (fun y => Ix.Kernel.SetTheory.kpair x y) (B x)) A)
+-/
+#guard_msgs in
+#print Ix.Kernel.SetTheory.sigmaPairs
+
+/--
+info: def Ix.Kernel.SetTheory.piSet.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V → (V → V) → V :=
+fun {V} [Ix.Kernel.SetTheory V] A B =>
+  Ix.Kernel.SetTheory.sep (Ix.Kernel.SetTheory.power (Ix.Kernel.SetTheory.sigmaPairs A B)) fun f =>
+    ∀ (x : V),
+      Ix.Kernel.SetTheory.Mem x A →
+        ∃ y,
+          Ix.Kernel.SetTheory.Mem (Ix.Kernel.SetTheory.kpair x y) f ∧
+            ∀ (y' : V), Ix.Kernel.SetTheory.Mem (Ix.Kernel.SetTheory.kpair x y') f → y' = y
+-/
+#guard_msgs in
+#print Ix.Kernel.SetTheory.piSet
+
+/-! ### `IxC.Kernel.SetTheory.Derive.Pt` -/
+
+/--
+info: @[irreducible] def Ix.Kernel.SetTheory.ptTag.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V :=
+fun {V} [Ix.Kernel.SetTheory V] =>
+  Ix.Kernel.SetTheory.upair Ix.Kernel.SetTheory.empty
+    (Ix.Kernel.SetTheory.sing (Ix.Kernel.SetTheory.sing Ix.Kernel.SetTheory.empty))
+-/
+#guard_msgs in
+#print Ix.Kernel.SetTheory.ptTag
+
+/--
+info: @[irreducible] def Ix.Kernel.SetTheory.pt.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V :=
+fun {V} [Ix.Kernel.SetTheory V] => Ix.Kernel.SetTheory.sing Ix.Kernel.SetTheory.ptTag
+-/
+#guard_msgs in
+#print Ix.Kernel.SetTheory.pt
+
+/--
+info: @[irreducible] def Ix.Kernel.SetTheory.unitSet.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V :=
+fun {V} [Ix.Kernel.SetTheory V] => Ix.Kernel.SetTheory.sing Ix.Kernel.SetTheory.pt
+-/
+#guard_msgs in
+#print Ix.Kernel.SetTheory.unitSet
+
+/--
+info: def Ix.Kernel.SetTheory.univZero.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V :=
+fun {V} [Ix.Kernel.SetTheory V] => Ix.Kernel.SetTheory.power Ix.Kernel.SetTheory.unitSet
+-/
+#guard_msgs in
+#print Ix.Kernel.SetTheory.univZero
+
+/--
+info: def Ix.Kernel.SetTheory.truthVal.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → Prop → V :=
+fun {V} [Ix.Kernel.SetTheory V] p => if p then Ix.Kernel.SetTheory.unitSet else Ix.Kernel.SetTheory.empty
+-/
+#guard_msgs in
+#print Ix.Kernel.SetTheory.truthVal
+
+/--
+info: @[irreducible] def Ix.Kernel.SetTheory.eqv.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V → V → V :=
+fun {V} [Ix.Kernel.SetTheory V] x y => Ix.Kernel.SetTheory.truthVal (x = y)
+-/
+#guard_msgs in
+#print Ix.Kernel.SetTheory.eqv
+
+/-! ### `IxC.Kernel.SetTheory.Derive.Pair` -/
+
+/--
+info: def Ix.Kernel.SetTheory.sing.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V → V :=
+fun {V} [Ix.Kernel.SetTheory V] a => Ix.Kernel.SetTheory.upair a a
+-/
+#guard_msgs in
+#print Ix.Kernel.SetTheory.sing
+
+/--
+info: def Ix.Kernel.SetTheory.kpair.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V → V → V :=
+fun {V} [Ix.Kernel.SetTheory V] a b =>
+  Ix.Kernel.SetTheory.upair (Ix.Kernel.SetTheory.sing a) (Ix.Kernel.SetTheory.upair a b)
+-/
+#guard_msgs in
+#print Ix.Kernel.SetTheory.kpair
+
+/-! ### `IxC.Kernel.SetTheory.Derive.Sep` -/
+
+/--
+info: def Ix.Kernel.SetTheory.sep.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V → (V → Prop) → V :=
+fun {V} [Ix.Kernel.SetTheory V] a p =>
+  if h : ∃ x, Ix.Kernel.SetTheory.Mem x a ∧ p x then
+    Ix.Kernel.SetTheory.image (fun x => if p x then x else Classical.choose h) a
+  else Ix.Kernel.SetTheory.empty
+-/
+#guard_msgs in
+#print Ix.Kernel.SetTheory.sep
+
+/-! ### `IxC.Kernel.SetTheory.Derive.Empty` -/
+
+/--
+info: @Ix.Kernel.SetTheory.empty_exists : ∀ {V : Type u_1} [inst : Ix.Kernel.SetTheory V],
+  ∃ e, ∀ (z : V), ¬Ix.Kernel.SetTheory.Mem z e
+-/
+#guard_msgs in
+#check @Ix.Kernel.SetTheory.empty_exists
+
+/--
+info: @[irreducible] def Ix.Kernel.SetTheory.empty.{u} : {V : Type u} → [Ix.Kernel.SetTheory V] → V :=
+fun {V} [Ix.Kernel.SetTheory V] => Classical.choose Ix.Kernel.SetTheory.empty_exists
+-/
+#guard_msgs in
+set_option pp.proofs true in
+#print Ix.Kernel.SetTheory.empty
 
 /-! ## Axioms
 
