@@ -172,7 +172,7 @@ private theorem split_cases {ps pa : Prop} {E B : KExpr} {k : Nat}
   | add ha _ => exact .inr (.inr ha)
 
 /-- `natLitSupported` from a role in force whose block holds `Nat`, `Nat.zero` and `Nat.succ`. -/
-private theorem natLit_of_natBlock {c : ScopedCtx} (hc : ScopedCoreFacts c) {r : Ix.Kernel.Role}
+private theorem natLit_of_natBlock {c : ScopedCtx} (hc : ScopedCoreBase c) {r : Ix.Kernel.Role}
     (hr : c.inForce r) (h0 : Ix.Kernel.Role.nat ∈ r.block)
     (h1 : Ix.Kernel.Role.natZero ∈ r.block) (h2 : Ix.Kernel.Role.natSucc ∈ r.block) :
     Ix.Kernel.natLitSupported c.env = true :=
@@ -180,13 +180,13 @@ private theorem natLit_of_natBlock {c : ScopedCtx} (hc : ScopedCoreFacts c) {r :
     (ScopedCtx.inForce_of_block_or_dep hc.env.tableWf hr (.inl h1))
     (ScopedCtx.inForce_of_block_or_dep hc.env.tableWf hr (.inl h2))
 
-private theorem natLit_of_natAdd {c : ScopedCtx} (hc : ScopedCoreFacts c) (hr : c.inForce .natAdd) :
+private theorem natLit_of_natAdd {c : ScopedCtx} (hc : ScopedCoreBase c) (hr : c.inForce .natAdd) :
     Ix.Kernel.natLitSupported c.env = true :=
   natLit_of_natBlock hc
     (ScopedCtx.inForce_of_block_or_dep (s := .nat) hc.env.tableWf hr (.inr (by decide)))
     (by decide) (by decide) (by decide)
 
-private theorem natLit_of_natSucc {c : ScopedCtx} (hc : ScopedCoreFacts c) (hr : c.inForce .natSucc) :
+private theorem natLit_of_natSucc {c : ScopedCtx} (hc : ScopedCoreBase c) (hr : c.inForce .natSucc) :
     Ix.Kernel.natLitSupported c.env = true :=
   natLit_of_natBlock hc
     (ScopedCtx.inForce_of_block_or_dep (s := .nat) hc.env.tableWf hr (.inl (by decide)))
@@ -196,7 +196,7 @@ private theorem natLit_of_natSucc {c : ScopedCtx} (hc : ScopedCoreFacts c) (hr :
 literals at one offset are one term; otherwise a step's role is in force, which gives the
 guards, and both sides reduce to successor towers over their bases (`DefEq.redBoth`), which
 compare by congruence. -/
-private theorem defEq_of_offsets {c : ScopedCtx} (hc : ScopedCoreFacts c) {d : Nat} {A B BA BB : KExpr}
+private theorem defEq_of_offsets {c : ScopedCtx} (hc : ScopedCoreBase c) {d : Nat} {A B BA BB : KExpr}
     {k : Nat} (ha : Specs.DefEq.OffsetSplit (c.inForce .natSucc) (c.inForce .natAdd) A BA k)
     (hb : Specs.DefEq.OffsetSplit (c.inForce .natSucc) (c.inForce .natAdd) B BB k)
     (hab : DefEq c.env d BA BB) : DefEq c.env d A B := by
@@ -444,7 +444,7 @@ theorem try_eta_swap_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : 
 /-- `KernelDefEq::is_nat_zero`: a literal whose limbs are zero (`klimbs_is_zero`), or a
 constant at an address the table binds to `Nat.zero`, in force (`role_is`), at no levels
 (`lvls_empty`); the key of that address is the role's (`keyOf_of_addressOf`). -/
-theorem is_nat_zero_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem is_nat_zero_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::is_nat_zero" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.is_nat_zero c args h r h' calls := by
@@ -490,7 +490,7 @@ theorem is_nat_zero_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (
 `klimbs_succ`), and a `Nat.add` application with a `Nat` literal right-hand side peels that
 literal (`role_is`, `klimbs_add`). Every `0`-tagged path returns the input and the empty limb
 list. -/
-theorem nat_offset_of_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem nat_offset_of_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::nat_offset_of" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.nat_offset_of c args h r h' calls := by
@@ -628,7 +628,7 @@ theorem nat_offset_of_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List
 /-- `KernelDefEq::try_def_eq_nat`: both sides zero readings (`DefEq.refl`, `DefEq.natZero`,
 `DefEq.symm`), or both split at one offset (`nat_offset_of`, `klimbs_eq`) with definitionally
 equal bases, carried back through successor towers (`defEq_of_offsets`). -/
-theorem try_def_eq_nat_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem try_def_eq_nat_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::try_def_eq_nat" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.try_def_eq_nat c args h r h' calls := by

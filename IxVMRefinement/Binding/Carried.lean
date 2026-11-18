@@ -236,7 +236,6 @@ limit is within the 77 groups, and every role's group is one of them. -/
 theorem bfacts_all_groups {t : Ix.Kernel.RoleTable} {R : Ixon.Env} {env : Ix.Kernel.Env .anon}
     (h : BFacts.{u} t (· < 77) R env) : BFacts.{u} t (fun _ => True) R env where
   inv := fun E hE lim hc _ => h.inv E hE lim hc (limWithin_77 t lim)
-  guard := h.guard
   whole := h.whole
   opsPinned := h.opsPinned
   opsAdmitted := fun _ _ _ => trivial

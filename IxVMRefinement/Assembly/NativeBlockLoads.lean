@@ -217,7 +217,7 @@ structure NewLoads (c : ScopedCtx) (new : List (ConstantInfo .anon)) : Prop wher
     ∃ (cb : Ixon.Constant) (xs : Array Ixon.MutConst) (ind : Ixon.Inductive),
       Ix.Cert.recordAt c.E (ixAddr b) = some cb ∧ cb.info = .muts xs ∧
       xs[ZMod.val i]? = some (.indc ind)
-  projTablesGuard : ∀ (bp ip ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
+  projCtorTele : ∀ (bp ip ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
       (b : Bytes.Address) (i : F),
     ObsFn W "KernelModeled::proj_ctor" [bp, ip] h ptr h' cs → Good c.toCtx cs →
     Bytes.RepAddressRef addrTy h b bp → ip = .field i →
@@ -227,18 +227,15 @@ structure NewLoads (c : ScopedCtx) (new : List (ConstantInfo .anon)) : Prop wher
       c.env.find? (Ix.Kernel.projTableName (c.κ (iprjAddr (ixAddr b) (ZMod.val i)))) =
         some (.projInfo tbl) →
       (ConstantInfo.ctorInfo cvC nP nF ∈ new ∨ ConstantInfo.projInfo tbl ∈ new) →
-      Ix.Kernel.Expr.ctorTeleOk cvC.type (nP + nF) = true ∧
-      (Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true →
-        ∀ (f : F) (rc bp' rg : SourceValue F) (hg hg' : Heap F) (csg : List (Call F))
-          (g : KLevel) (us : List KLevel),
-          ZMod.val f < nF → us.length = tbl.levelParams.length →
-          ObsFn W "KernelInfer::proj_guard" [rc, bp', .field i, .field f] hg rg hg' csg →
-          Good c.toCtx csg → RCRep c.t c.lim hg rc → Bytes.RepAddressRef addrTy hg b bp' →
-          IxVM.Refinement.KernelLevels.RepKLevel hg' g rg →
-          (∀ φ, Ix.Kernel.Level.eval φ
-            (Ix.Kernel.Level.subst (List.range us.length) us g) = 0) →
-          ∀ φ, Ix.Kernel.Level.eval φ
-            (Ix.Kernel.Level.subst tbl.levelParams us (tbl.entry (ZMod.val f)).fieldSort) = 0)
+      Ix.Kernel.Expr.ctorTeleOk cvC.type (nP + nF) = true
+  /-- A projection table of a propositional structure the install stores new fires at every
+  context, with its stored constructor. -/
+  projFire : ∀ (k : KKey) (tbl : Ix.Kernel.ProjTable .anon),
+    ConstantInfo.projInfo tbl ∈ new →
+    c.env.find? (Ix.Kernel.projTableName k) = some (.projInfo tbl) →
+    Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true →
+    ∃ (kc : KKey) (cvC : Ix.Kernel.ConstantVal .anon) (nP nF : Nat),
+      c.env.find? kc = some (.ctorInfo cvC nP nF) ∧ ProjTableFires c.t c.E k tbl kc cvC
   ctorIndRes : ∀ (b : _root_.Address) (i j : Nat) (cv : Ix.Kernel.ConstantVal .anon)
       (nP nF : Nat), HashedBlockAt c.E b →
     c.env.find? (c.κ (cprjAddr b i j)) = some (.ctorInfo cv nP nF) →
@@ -498,10 +495,10 @@ theorem storedLoads_append {c : Ctx} {new : List (ConstantInfo .anon)}
             hblk
         · exact h₁.inductBlock addr ptr h h' cs a b nl ty np ni nc u blk i ev trivial hold good
             ha hld hblk
-      projTablesGuard := by
+      projCtorTele := by
         intro bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hctor' htbl
         by_cases hm : ConstantInfo.ctorInfo cvC nP nF ∈ new ∨ ConstantInfo.projInfo tbl ∈ new
-        · exact hnew.projTablesGuard bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hctor'
+        · exact hnew.projCtorTele bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hctor'
             htbl hm
         · obtain ⟨hc₁, -⟩ := old hctor' (fun e => hm (Or.inl e))
           have ei := keep _
@@ -512,7 +509,14 @@ theorem storedLoads_append {c : Ctx} {new : List (ConstantInfo .anon)}
             rcases find?_append_cases (env := c.env) new htbl with hm' | ho
             · exact absurd hm' (fun e => hm (Or.inr e))
             · exact ho
-          exact h₁.projTablesGuard bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hc₁ htbl₁
+          exact h₁.projCtorTele bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hc₁ htbl₁
+      projFire := by
+        refine h₁.projFire.step (fun _ _ hf => hext.find hf) (fun k tbl htbl hprop => ?_)
+        by_cases hm : ConstantInfo.projInfo tbl ∈ new
+        · exact Or.inr (hnew.projFire k tbl hm htbl hprop)
+        · rcases find?_append_cases (env := c.env) new htbl with hm' | ho
+          · exact absurd hm' hm
+          · exact Or.inl ho
       canonical := h₁.canonical
       storedRes := by
         intro a ci hf

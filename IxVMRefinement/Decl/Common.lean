@@ -1655,6 +1655,20 @@ theorem scoped_core_defeq {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
     [rc, a, b, types] h (.field 1) h' cs ev rc a b types rfl hgood hrc d Γ
       ⟨hty, hsc⟩ ta tb hta htb NatAux.field_one_ne_zero
 
+/-- Scoped definitional equality from the facts stated before the registry and the firing of the
+projection guards at the context. `scoped_core_defeq` reads both off the load contract a prefix
+carries; the unrestricted contract of the seams instance gives them at its own context. -/
+theorem scoped_core_defeq_of_fires {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
+    {rc types a b : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {ta tb : KExpr}
+    (hrc : RCRep c.t c.lim h rc) (hty : TypesRep c.κ Γ h d types) (hsc : GhostScoped Γ d)
+    (hef : CoreEnvFacts c.toCtx) (hlf : ScopedLoadBase c) (hfire : ProjGuardFires c)
+    (hgood : CoreGood c cs)
+    (ev : ObsFn W "KernelDefEq::k_is_def_eq" [rc, a, b, types] h (.field 1) h' cs)
+    (hta : Tm c.κ d Γ h 0 ta a) (htb : Tm c.κ d Γ h 0 tb b) : DefEq c.env d ta tb :=
+  Registry.induction c (scoped_steps_base c ⟨hef, hlf⟩ hfire) (.defEq .k_is_def_eq)
+    [rc, a, b, types] h (.field 1) h' cs ev rc a b types rfl hgood hrc d Γ
+      ⟨hty, hsc⟩ ta tb hta htb NatAux.field_one_ne_zero
+
 /-- Actual scoped type inference uses the concrete registry, without a public `S0.ctx` witness. -/
 theorem scoped_core_infer {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
     {rc types e r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {te : KExpr}
@@ -1677,6 +1691,22 @@ theorem scoped_core_ensure_sort {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
       RepKLevel h' ℓ r ∧ LvEq u ℓ := by
   obtain ⟨stype, u, hinf, hred, ℓ, hℓ, heq⟩ :=
     Registry.induction c (scoped_steps c ⟨hef, hlf⟩) (.infer .k_ensure_sort)
+      [rc, e, types] h r h' cs ev rc e types rfl hgood hrc d Γ ⟨hty, hsc⟩ te hte
+  exact ⟨stype, u, ℓ, hinf, hred, hℓ, heq⟩
+
+/-- The scoped sort checker from the facts stated before the registry and the firing of the
+projection guards at the context (see `scoped_core_defeq_of_fires`). -/
+theorem scoped_core_ensure_sort_of_fires {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
+    {rc types e r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {te : KExpr}
+    (hrc : RCRep c.t c.lim h rc) (hty : TypesRep c.κ Γ h d types) (hsc : GhostScoped Γ d)
+    (hef : CoreEnvFacts c.toCtx) (hlf : ScopedLoadBase c) (hfire : ProjGuardFires c)
+    (hgood : CoreGood c cs)
+    (ev : ObsFn W "KernelInfer::k_ensure_sort" [rc, e, types] h r h' cs)
+    (hte : Tm c.κ d Γ h 0 te e) :
+    ∃ stype u ℓ, Infer c.env .full d te stype ∧ Red c.env d stype (.sort u) ∧
+      RepKLevel h' ℓ r ∧ LvEq u ℓ := by
+  obtain ⟨stype, u, hinf, hred, ℓ, hℓ, heq⟩ :=
+    Registry.induction c (scoped_steps_base c ⟨hef, hlf⟩ hfire) (.infer .k_ensure_sort)
       [rc, e, types] h r h' cs ev rc e types rfl hgood hrc d Γ ⟨hty, hsc⟩ te hte
   exact ⟨stype, u, ℓ, hinf, hred, hℓ, heq⟩
 

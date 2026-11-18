@@ -13,7 +13,7 @@ below `g`) to the top carried limit below `g + 1`.
   well-founded block, every role of `g` with its companion fact and, if fabricated, its key
   stored; at the end of the well-founded block (group 40), the eight operations stored as pinned;
   at the end of the literal block (group 45), the string literal support and the literal roles'
-  keys. Elsewhere the top limit does not change, or (group 76) only the guard is needed.
+  keys. Elsewhere the top limit does not change, or (group 76) nothing is needed.
 * `prefixInv_top_succ`: the raise, by block (`Raise.lean`).
 * `bnd_close`: the invariant below `g + 1` from the invariant below `g` and the group's facts.
 * `raiseAt_of_noOps`: `RaiseAt` at a group from 6 on with no operation, from its fabricated
@@ -64,12 +64,12 @@ structure RaiseAt (t : Ix.Kernel.RoleTable) (env : Ix.Kernel.Env .anon) (g : Nat
 /-- **The prefix invariant from the top limit below `g` to the top limit below `g + 1`**, by
 block. -/
 theorem prefixInv_top_succ {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {env : Ix.Kernel.Env .anon}
-    {g : Nat} (hg : g < 77) (h : Decl.PrefixInv.{u} E t (topLim g) env) (hr : RaiseAt t env g)
-    (hgd : GuardAt E t (topLim (g + 1)) env) : Decl.PrefixInv.{u} E t (topLim (g + 1)) env := by
+    {g : Nat} (hg : g < 77) (h : Decl.PrefixInv.{u} E t (topLim g) env) (hr : RaiseAt t env g) :
+    Decl.PrefixInv.{u} E t (topLim (g + 1)) env := by
   by_cases h1 : g < 33
   · rw [topLim_le33 (Nat.le_of_lt h1)] at h
-    rw [topLim_le33 (show g + 1 ≤ 33 by omega)] at hgd ⊢
-    exact prefixInv_raise_succ h (hr.succ h1) hgd
+    rw [topLim_le33 (show g + 1 ≤ 33 by omega)]
+    exact prefixInv_raise_succ h (hr.succ h1)
   by_cases h2 : g < 40
   · rw [topLim_wfBlock (show 33 ≤ g by omega) (show g ≤ 40 by omega)] at h
     rw [topLim_wfBlock (show 33 ≤ g + 1 by omega) (show g + 1 ≤ 40 by omega)]
@@ -77,8 +77,8 @@ theorem prefixInv_top_succ {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {env : Ix.Ke
   by_cases h3 : g = 40
   · subst h3
     rw [topLim_wfBlock (show 33 ≤ 40 by omega) (show 40 ≤ 40 by omega)] at h
-    rw [topLim_litBlock (show 41 ≤ 40 + 1 by omega) (show 40 + 1 ≤ 45 by omega)] at hgd ⊢
-    exact prefixInv_raise_wf h (hr.wf rfl) hgd
+    rw [topLim_litBlock (show 41 ≤ 40 + 1 by omega) (show 40 + 1 ≤ 45 by omega)]
+    exact prefixInv_raise_wf h (hr.wf rfl)
   by_cases h4 : g < 45
   · rw [topLim_litBlock (show 41 ≤ g by omega) (show g ≤ 45 by omega)] at h
     rw [topLim_litBlock (show 41 ≤ g + 1 by omega) (show g + 1 ≤ 45 by omega)]
@@ -86,8 +86,8 @@ theorem prefixInv_top_succ {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {env : Ix.Ke
   by_cases h5 : g = 45
   · subst h5
     rw [topLim_litBlock (show 41 ≤ 45 by omega) (show 45 ≤ 45 by omega)] at h
-    rw [topLim_tailBlock (show 46 ≤ 45 + 1 by omega) (show 45 + 1 ≤ 76 by omega)] at hgd ⊢
-    exact prefixInv_raise_literal h (hr.literal rfl).1 (hr.literal rfl).2 hgd
+    rw [topLim_tailBlock (show 46 ≤ 45 + 1 by omega) (show 45 + 1 ≤ 76 by omega)]
+    exact prefixInv_raise_literal h (hr.literal rfl).1 (hr.literal rfl).2
   by_cases h6 : g < 76
   · rw [topLim_tailBlock (show 46 ≤ g by omega) (show g ≤ 76 by omega)] at h
     rw [topLim_tailBlock (show 46 ≤ g + 1 by omega) (show g + 1 ≤ 76 by omega)]
@@ -95,8 +95,8 @@ theorem prefixInv_top_succ {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {env : Ix.Ke
   · have h7 : g = 76 := by omega
     subst h7
     rw [topLim_tailBlock (show 46 ≤ 76 by omega) (show 76 ≤ 76 by omega)] at h
-    rw [topLim_none (show 77 ≤ 76 + 1 by omega)] at hgd ⊢
-    exact prefixInv_raise_tail h none hgd
+    rw [topLim_none (show 77 ≤ 76 + 1 by omega)]
+    exact prefixInv_raise_tail h none
 
 /-! ## Closing a group -/
 
@@ -123,7 +123,7 @@ theorem bnd_close
     have h0 : Decl.PrefixInv.{u} E t (topLim g) env := by
       rw [topLim_valLimit hg]
       exact hf.inv E hE _ (carried_valLimit g) (limWithin_below t g)
-    exact prefixInv_top_succ hg h0 hraise (hf.guard E hE _)
+    exact prefixInv_top_succ hg h0 hraise
   refine ⟨?_, ?_, hX hb.extra⟩
   · exact {
       needsClosed := fun k hk r hr => by
@@ -156,8 +156,7 @@ theorem bnd_close
           exact hprel r hr hp a ha
       model := hs.model }
   · exact {
-      inv := bfacts_inv_of_top hall htop hf.guard
-      guard := hf.guard
+      inv := bfacts_inv_of_top hall htop
       whole := hf.whole
       opsPinned := hf.opsPinned
       opsAdmitted := fun r hr hst => Nat.lt_succ_of_lt (hf.opsAdmitted r hr hst)

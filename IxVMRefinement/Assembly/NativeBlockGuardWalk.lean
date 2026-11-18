@@ -1,4 +1,4 @@
-import IxVMRefinement.Assembly.NativeBlockGuardSyn
+import IxVMRefinement.Assembly.NativeBlockGuardOff
 import IxVMRefinement.Obs.KernelGuard
 import IxVMRefinement.Assembly.NativeBlockStage
 import IxVMRefinement.Assembly.NativeBlockNewFacts
@@ -36,8 +36,6 @@ annotation named).
   load represents a constructor whose level parameters are positions.
 * `projGuard_fieldSorts`: the spec at the constructor stage of a native block's install, for the
   constructor the environment after the install stores at the block's constructor key.
-* `projGuardWalkAt_of_install`: the same as `ProjGuardWalkAt` (`NativeBlockGuardSyn.lean`) at a
-  one-constructor install.
 -/
 
 set_option maxHeartbeats 1600000
@@ -955,51 +953,6 @@ theorem projGuard_fieldSorts {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
   exact Core.GuardWalk.proj_guard_open (Decl.ctorStage ⟨E, env, t, some n⟩ cvS capsS) hcore
     good ev hrc hload hf hgR
 
-/-- **The circuit's guard runs at a one-constructor install, in IxC's terms** (`ProjGuardWalkAt`),
-with the sorts derived at the constructor stage `⟨.indInfo cvS capsS :: env.consts⟩`, whose
-scoped core facts are the input `hcore`. -/
-theorem projGuardWalkAt_of_install {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {n : Nat}
-    {env : Ix.Kernel.Env .anon} {B : _root_.Address} {cb : Ixon.Constant}
-    {ind : Ixon.Inductive} {blk : List (ConstantInfo .anon)} {p₀ p : Ix.Kernel.NativeParts .anon}
-    {new : List (ConstantInfo .anon)} {ty' : Ix.Kernel.Expr .anon}
-    {ctorsA : List (ConstantVal .anon × Nat)} {caps : IndCaps .anon}
-    (hO : NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps)
-    (hsize : ind.ctors.size = 1)
-    (hstored : Decl.UsedRefsStored t env cb)
-    (hfreshT : env.find? (Core.keyOf t (Core.iprjAddr B 0)) = none)
-    {cvS : ConstantVal .anon} {capsS : IndCaps .anon}
-    (hcvS : cvS.name = Core.keyOf t (Core.iprjAddr B 0))
-    (hcore : Core.ScopedCoreFacts (Decl.ctorStage ⟨E, env, t, some n⟩ cvS capsS)) :
-    ∀ cA ∈ ctorsA,
-      ProjGuardWalkAt E env t n new B ⟨.indInfo cvS capsS :: env.consts⟩ cA p.nP := by
-  intro cA hcA
-  obtain ⟨j, hj⟩ := List.mem_iff_getElem?.mp hcA
-  have hjlt : j < ctorsA.length := (List.getElem?_eq_some_iff.mp hj).1
-  have hj0 : j = 0 := by
-    rw [hO.lenA, hsize] at hjlt
-    omega
-  subst hj0
-  obtain ⟨ct, cty', hct, -, -, hA⟩ := hO.ctors 0 (by omega)
-  rw [hA] at hj
-  injection hj with hj
-  subst hj
-  have hfindA := hO.ctorFind _ hcA
-  have hκC : (appCtx ⟨E, env, t, some n⟩ new).stored.κ (Core.cprjAddr B 0 0) =
-      Core.keyOf t (Core.cprjAddr B 0 0) :=
-    appCtx_key_of_find (c := ⟨E, env, t, some n⟩) (new := new) hfindA
-  unfold ProjGuardWalkAt
-  intro i f rc bp' rg hg hg' csg g b hi hf ev good hrc hb hbB hgr
-  have hC : (appCtx ⟨E, env, t, some n⟩ new).env.find?
-      ((appCtx ⟨E, env, t, some n⟩ new).stored.κ (Core.cprjAddr B 0 0)) =
-      some (.ctorInfo ⟨Core.keyOf t (Core.cprjAddr B 0 0), List.range ct.lvls.toNat, cty'⟩
-        p.nP ct.fields.toNat) := by
-    rw [hκC]
-    exact hfindA
-  obtain ⟨lus, flags, h1, h2, h3, -, -⟩ :=
-    projGuard_fieldSorts hO.install (by omega) hstored hfreshT hcvS hcore hi hC hf ev good hrc
-      hb hbB hgr
-  exact ⟨lus, flags, h1, h2, h3⟩
-
 /-! ## The constructor stage's core facts at the install -/
 
 /-- **A checked constant's type is closed, bounded, defined at its level parameters and resolved
@@ -1093,26 +1046,5 @@ theorem ctorStageEnv_find {env : Ix.Kernel.Env .anon} {cvS : ConstantVal .anon}
     cases hf
   rw [ite_eq_right hne]
   exact hf
-
-/-- **The circuit's guard runs at a one-constructor install, in IxC's terms, from the step's
-data**: `projGuardWalkAt_of_install` at the install's constructor stage
-(`ctorStageCoreFacts_of_install`). The stage's environment keeps the prefix's lookups
-(`ctorStageEnv_find`). -/
-theorem projGuardWalkAt_of_step {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {n : Nat}
-    {env : Ix.Kernel.Env .anon} {B : _root_.Address} {cb : Ixon.Constant}
-    {ind : Ixon.Inductive} {blk : List (ConstantInfo .anon)} {p₀ p : Ix.Kernel.NativeParts .anon}
-    {new : List (ConstantInfo .anon)} {ty' : Ix.Kernel.Expr .anon}
-    {ctorsA : List (ConstantVal .anon × Nat)} {caps : IndCaps .anon}
-    (hO : NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps)
-    (hsize : ind.ctors.size = 1)
-    (hinv : Decl.PrefixInv E t (some n) env) (hkeys : HashKeyed t env)
-    (hstored : Decl.UsedRefsStored t env cb)
-    (hfreshT : env.find? (Core.keyOf t (Core.iprjAddr B 0)) = none) :
-    ∀ cA ∈ ctorsA, ProjGuardWalkAt E env t n new B
-      ⟨.indInfo ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ caps ::
-        env.consts⟩ cA p.nP :=
-  projGuardWalkAt_of_install
-    (cvS := ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩) (capsS := caps)
-    hO hsize hstored hfreshT rfl (ctorStageCoreFacts_of_install hO hinv hkeys hstored hfreshT)
 
 end IxVM.Refinement.Typing

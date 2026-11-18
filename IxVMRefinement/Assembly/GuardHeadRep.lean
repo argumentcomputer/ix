@@ -2,6 +2,7 @@ import IxVMRefinement.Assembly.GuardRawRep
 import IxVMRefinement.Callees.Loads
 import IxVMRefinement.Core.Steps.Whnf
 import IxVMRefinement.Infer.Basic
+import IxVMRefinement.Core.ProjFire
 
 /-! # Scoped representation preservation by the classifier head operation
 
@@ -19,8 +20,9 @@ open IxVM.Refinement.KernelLevels (RepKLevelList)
 
 set_option maxHeartbeats 2400000
 
-/-- Actual definition loading and structural substitution return a represented expression. -/
-theorem definition_value_rep {c : ScopedCtx} (hc : ScopedCoreFacts c)
+/-- Actual definition loading and structural substitution return a represented expression, from
+the facts stated before the registry. -/
+theorem definition_value_rep_base {c : ScopedCtx} (hc : ScopedCoreBase c)
     {d : Nat} {Γ : Nat → KExpr} {a : Bytes.Address} {ps : List KLevel}
     {ap params r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hg : CoreGood c cs) (ha : Bytes.RepAddressRef addrTy h a ap)
@@ -59,6 +61,16 @@ private theorem const_type_rep {κ : _root_.Address → KKey} {ci : Ix.Kernel.Co
     rw [he, hh]
     exact hci.ty_of_eq hv
 
+/-- Actual definition loading and structural substitution return a represented expression. -/
+theorem definition_value_rep {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {d : Nat} {Γ : Nat → KExpr} {a : Bytes.Address} {ps : List KLevel}
+    {ap params r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hg : CoreGood c cs) (ha : Bytes.RepAddressRef addrTy h a ap)
+    (hr : c.κ (ixAddr a) ≠ unresolvedKey) (hp : RepKLevelList h ps params)
+    (ev : ObsFn W "KernelGuard::definition_value" [ap, params] h r h' cs) :
+    ∃ E, Tm c.κ d Γ h' 0 E r :=
+  definition_value_rep_base hc.base hg ha hr hp ev
+
 /-- The declared-type branch has the same weak representation guarantee. -/
 theorem declared_type_rep {c : ScopedCtx} (hc : ScopedCoreFacts c)
     {d : Nat} {Γ : Nat → KExpr} {a : Bytes.Address} {ps : List KLevel}
@@ -73,7 +85,7 @@ theorem declared_type_rep {c : ScopedCtx} (hc : ScopedCoreFacts c)
     have hsub : ∀ cl ∈ loads, cl ∈ cs := by intro cl hm; rw [allCalls]; simp [hm]
     have hallow : c.allowed ⟨"Ingress::get_ci", [ap], h⟩ :=
       hg.allAllowed _ (by rw [allCalls]; simp)
-    obtain ⟨ci, -, ptr⟩ := get_ci_step c hc load ap a rfl hallow hr (hg.sub hsub) ha
+    obtain ⟨ci, -, ptr⟩ := get_ci_step c hc.base load ap a rfl hallow hr (hg.sub hsub) ha
     obtain ⟨v, hv, hci⟩ := ptr
     rw [ld] at hv
     have he := Except.ok.inj hv
@@ -88,7 +100,7 @@ def rigidHead : KExpr → Bool
   | .sort _ | .forallE .. | .lam .. => true
   | _ => false
 
-private theorem head_rep_go {c : ScopedCtx} (hc : ScopedCoreFacts c) :
+private theorem head_rep_go {c : ScopedCtx} (hc : ScopedCoreBase c) :
     ∀ fuel : Nat, ∀ {d : Nat} {Γ : Nat → KExpr} {E : KExpr}
       {p budget r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       cs.length ≤ fuel → CoreGood c cs → Tm c.κ d Γ h 0 E p →
@@ -115,7 +127,7 @@ private theorem head_rep_go {c : ScopedCtx} (hc : ScopedCoreFacts c) :
         rw [allCalls] at hlen
         simp only [List.length_cons, List.length_append] at hlen
         omega
-      obtain ⟨V, hV⟩ := definition_value_rep hc (hg.sub hload) ha hE.const_key_ne hp value
+      obtain ⟨V, hV⟩ := definition_value_rep_base hc (hg.sub hload) ha hE.const_key_ne hp value
       obtain ⟨E', hE', -⟩ := ih children.length hlt (Nat.le_refl _) (hg.sub hsub) hV child
       exact ⟨E', hE', fun hfalse => nomatch hfalse⟩
     | .other_App (cs236 := first) (cs300 := subs) (cs286 := children)
@@ -158,6 +170,16 @@ private theorem head_rep_go {c : ScopedCtx} (hc : ScopedCoreFacts c) :
       rw [instShift_eq_instantiate1 hV.looseBVarsBounded 0 B]
       exact ih children.length hlt (Nat.le_refl _) (hg.sub hsub) hi child
 
+/-- Actual classifier head computation preserves representation, and preserves a rigid input,
+from the facts stated before the registry. The conclusion is deliberately independent of
+`Rules.Red`. -/
+theorem head_rep_base {c : ScopedCtx} (hc : ScopedCoreBase c)
+    {d : Nat} {Γ : Nat → KExpr} {E : KExpr} {p budget r : SourceValue F}
+    {h h' : Heap F} {cs : List (Call F)} (hg : CoreGood c cs) (hE : Tm c.κ d Γ h 0 E p)
+    (ev : ObsFn W "KernelGuard::head" [p, budget] h r h' cs) :
+    ∃ E', Tm c.κ d Γ h' 0 E' r ∧ (rigidHead E = true → E' = E) :=
+  head_rep_go hc cs.length (Nat.le_refl _) hg hE ev
+
 /-- Actual classifier head computation preserves representation, and preserves a rigid input.
 The conclusion is deliberately independent of `Rules.Red`. -/
 theorem head_rep {c : ScopedCtx} (hc : ScopedCoreFacts c)
@@ -165,6 +187,6 @@ theorem head_rep {c : ScopedCtx} (hc : ScopedCoreFacts c)
     {h h' : Heap F} {cs : List (Call F)} (hg : CoreGood c cs) (hE : Tm c.κ d Γ h 0 E p)
     (ev : ObsFn W "KernelGuard::head" [p, budget] h r h' cs) :
     ∃ E', Tm c.κ d Γ h' 0 E' r ∧ (rigidHead E = true → E' = E) :=
-  head_rep_go hc cs.length (Nat.le_refl _) hg hE ev
+  head_rep_base hc.base hg hE ev
 
 end IxVM.Refinement.Core.GuardData
