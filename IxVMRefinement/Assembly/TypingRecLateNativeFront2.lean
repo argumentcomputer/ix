@@ -799,7 +799,7 @@ theorem front_ctor_loads {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
       some (.ctorInfo cA.1 fam.p.nP cA.2) := by
     rw [hidxv, hjv, hκ]
     exact hfindN
-  obtain ⟨-, hctor⟩ := Core.get_ci_cprj_step _ hcS ev x_block ((idx : Nat) : F)
+  obtain ⟨-, hctor⟩ := Core.get_ci_cprj_step _ hcS.base ev x_block ((idx : Nat) : F)
     ((j : Nat) : F) bP rfl trivial (Or.inr ⟨_, _, _, _, hfind'⟩)
     (Core.CoreGood.ofRaw (hgood.sub hsub) (fun _ _ => trivial)) hb
   obtain ⟨v, hv, hrep⟩ := hctor _ _ _ hfind'

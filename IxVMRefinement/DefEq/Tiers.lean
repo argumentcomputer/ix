@@ -316,7 +316,7 @@ theorem try_same_proj_head_app_step (c : ScopedCtx) {args : List (SourceValue F)
 list; otherwise the inputs lowered past their unused innermost `g` opened variables, compared
 at depth `d - g` under the trimmed shorter list, and the `DefEq` moved back to `d`
 (`DefEq.lift`, which fixes the scoped images). -/
-theorem k_def_eq_rebase_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem k_def_eq_rebase_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_def_eq_rebase" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_def_eq_rebase c args h r h' calls := by

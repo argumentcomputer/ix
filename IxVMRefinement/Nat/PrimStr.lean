@@ -91,7 +91,7 @@ theorem repKLevelList_zero_of {h m2 m41 m17 : Heap F}
 
 /-- **A role's constant**, stored as a `Const` node of the address a role lookup returned: closed,
 keyed by the role (the address is bound to it, and the table binds no address twice). -/
-theorem tmc_role_const {c : ScopedCtx} (hc : ScopedCoreFacts c) {ro : Ix.Kernel.Role} {m h₂ : Heap F}
+theorem tmc_role_const {c : ScopedCtx} (hc : ScopedCoreBase c) {ro : Ix.Kernel.Role} {m h₂ : Heap F}
     {ap lsp : SourceValue F} {a : Bytes.Address} {ls : List KLevel}
     (ra : RepAddr m a ap) (hb : c.t.addressOf? ro = some (ixAddr a))
     (hres : c.κ (ixAddr a) ≠ unresolvedKey)
@@ -109,7 +109,7 @@ theorem tmc_role_const {c : ScopedCtx} (hc : ScopedCoreFacts c) {ro : Ix.Kernel.
 
 /-- **A role's constant at the empty level list**: a stored `Nil` level list, then the `Const`
 node. -/
-theorem tmc_role_const_nil {c : ScopedCtx} (hc : ScopedCoreFacts c) {ro : Ix.Kernel.Role} {m m₁ h₂ : Heap F}
+theorem tmc_role_const_nil {c : ScopedCtx} (hc : ScopedCoreBase c) {ro : Ix.Kernel.Role} {m m₁ h₂ : Heap F}
     {ap : SourceValue F} {a : Bytes.Address}
     (ra : RepAddr m a ap) (hb : c.t.addressOf? ro = some (ixAddr a))
     (hres : c.κ (ixAddr a) ≠ unresolvedKey)
@@ -218,7 +218,7 @@ end PrimStrAux
 
 /-- `KernelNatPrim::mk_bool`: the constant of `Bool.false` at `g = 0`, else of `Bool.true`, at
 the address `role_addr` returns (keyed by the role), at an empty level list. -/
-theorem mk_bool_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)} {h h' : Heap F}
+theorem mk_bool_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::mk_bool" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.mk_bool c args h r h' calls := by
@@ -390,7 +390,7 @@ theorem klimbs_from_g_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' :
 /-- `KernelNatPrim::str_lit_to_ctor`: the closed constructor form of the string the bytes decode
 to, over the constants of the roles `role_used_implicitly` returns; `String.ofList` in force
 brings `String` into force, hence the string support. -/
-theorem str_lit_to_ctor_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem str_lit_to_ctor_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelNatPrim::str_lit_to_ctor" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.str_lit_to_ctor c args h r h' calls := by

@@ -1312,7 +1312,7 @@ theorem get_result_sort_level_scoped_bounded_spec {c : ScopedCtx} [c.TableKeyed]
       TypesRep c.κ Γ h d types →
       GhostScoped Γ d →
       CoreEnvFacts c.toCtx →
-      ScopedLoadFacts c →
+      ScopedLoadBase c →
       CoreGood c cs →
       Tm c.κ d Γ h 0 E pe →
       ObsFn W "KernelCheck::get_result_sort_level" [rc, pe, .field (n : F), types] h r h' cs →
@@ -1323,7 +1323,7 @@ theorem get_result_sort_level_scoped_bounded_spec {c : ScopedCtx} [c.TableKeyed]
     | .n0 (cs12 := cs12) (ev14 := ev_w) (ld55 := ld) (he69 := hr) (he70 := hh) (hc71 := hc) .. =>
       subst hc hr hh
       have hg1 : CoreGood c cs12 := hgood.sub (fun x hx => by simp [hx])
-      obtain ⟨E', hE', hrigid⟩ := Core.GuardData.head_rep ⟨hef, hlf⟩ hg1 hE ev_w
+      obtain ⟨E', hE', hrigid⟩ := Core.GuardData.head_rep_base ⟨hef, hlf⟩ hg1 hE ev_w
       obtain ⟨u, rfl, ℓ, hℓ, huℓ⟩ := hE'.sort_of_load ld
       refine ⟨ℓ, hℓ, fun bs s hst => ?_⟩
       simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at hst
@@ -1341,7 +1341,7 @@ theorem get_result_sort_level_scoped_bounded_spec {c : ScopedCtx} [c.TableKeyed]
       subst hc
       have hg1 : CoreGood c cs12 := hgood.sub (fun x hx => by simp [hx])
       have hg2 : CoreGood c cs2 := hgood.sub (fun x hx => by simp [hx])
-      obtain ⟨E', hE', hrigid⟩ := Core.GuardData.head_rep ⟨hef, hlf⟩ hg1 hE ev_w
+      obtain ⟨E', hE', hrigid⟩ := Core.GuardData.head_rep_base ⟨hef, hlf⟩ hg1 hE ev_w
       obtain ⟨T, B, _, rfl, hT, hB, _⟩ := hE'.forallE_of_load ld
       have ext_w := ev_w.heap_extends
       obtain ⟨ext_push, hty', hsc'⟩ := push_binder_types hT (hty.mono ext_w) hsc
@@ -1372,7 +1372,7 @@ theorem get_result_sort_level_scoped_spec {c : ScopedCtx} [c.TableKeyed] :
       TypesRep c.κ Γ h d types →
       GhostScoped Γ d →
       CoreEnvFacts c.toCtx →
-      ScopedLoadFacts c →
+      ScopedLoadBase c →
       CoreGood c cs →
       Tm c.κ d Γ h 0 E pe →
       ObsFn W "KernelCheck::get_result_sort_level" [rc, pe, .field (n : F), types] h r h' cs →
@@ -1397,7 +1397,7 @@ theorem get_result_sort_level_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx
         ∀ bs s, E.stripPis n = some (bs, .sort s) → LvEq s ℓ := by
   intro n d Γ E rc pe types r h h' cs hlt hrc hty hsc hef hlf hg hE ev
   exact get_result_sort_level_scoped_spec (c := ScopedCtx.unrestricted c) n hlt hrc hty hsc
-    hef.toCoreEnvFacts (ScopedLoadFacts.ofUnrestricted rfl hef hlf) (CoreGood.unrestricted hg) hE ev
+    hef.toCoreEnvFacts (ScopedLoadBase.ofUnrestricted rfl hef hlf) (CoreGood.unrestricted hg) hE ev
 
 theorem mkAppN_not_forallE :
     ∀ (H : KExpr), (∀ d b m, H ≠ .forallE d b m) →
@@ -2400,7 +2400,8 @@ private theorem check_param_agreement_go_scoped_spec {c : ScopedCtx} [c.TableKey
       TypesRep c.κ Γ h d types →
       GhostScoped Γ d →
       CoreEnvFacts c.toCtx →
-      ScopedLoadFacts c →
+      ScopedLoadBase c →
+      ProjGuardFires c →
       CoreGood c cs →
       Tm c.κ d Γ h 0 ta_open pta →
       Tm c.κ d Γ h 0 (instOpen tfvs_pre 0 tb_raw) ptb →
@@ -2414,14 +2415,14 @@ private theorem check_param_agreement_go_scoped_spec {c : ScopedCtx} [c.TableKey
           tfvs_suf[k]? = some fv ∧
           DefEq c.env (d + k) fv.fvarTypeD
             (instOpen ((tfvs_pre ++ tfvs_suf).take (d + k)) 0 (cbs_suf.getD k default).1)
-  | 0, _, _, _, ta_open, tb_raw, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ev => by
+  | 0, _, _, _, ta_open, tb_raw, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ev => by
     match Obs.«KernelCheck::check_param_agreement_go».obs ev with
     | .n0 .. =>
       exact ⟨[], ta_open, [], tb_raw, rfl, rfl, fun _ hk => absurd hk (Nat.not_lt_zero _)⟩
     | .other (hne20 := hne) .. =>
       exact absurd rfl hne
   | m + 1, d, Γ, tfvs_pre, ta_open, tb_raw, rc, pta, ptb, types, r, h, h', cs,
-      hdm, hlen, hvs_pre, hrc, hty, hsc, hef, hlf, hgood, hta, htb, ev => by
+      hdm, hlen, hvs_pre, hrc, hty, hsc, hef, hlf, hfire, hgood, hta, htb, ev => by
     match Obs.«KernelCheck::check_param_agreement_go».obs ev with
     | .n0 (hv14 := hv0) .. =>
       exact absurd hv0 (succ_field_ne_zero_bounded (by omega))
@@ -2437,7 +2438,7 @@ private theorem check_param_agreement_go_scoped_spec {c : ScopedCtx} [c.TableKey
       have hg_de : CoreGood c cs_de := hgood.sub (fun x hx => by simp [hx])
       have hg_go : CoreGood c cs_go := hgood.sub (fun x hx => by simp [hx])
       have hde : DefEq c.env d Da Db :=
-        scoped_core_defeq hrc hty hsc hef hlf hg_de ev_de hDa hDb
+        scoped_core_defeq_of_fires hrc hty hsc hef hlf hfire hg_de ev_de hDa hDb
       have ext_de := ev_de.heap_extends
       obtain ⟨ext_cons, hty', hsc'⟩ :=
         push_binder_types (hDa.mono ext_de) (hty.mono ext_de) hsc
@@ -2463,7 +2464,7 @@ private theorem check_param_agreement_go_scoped_spec {c : ScopedCtx} [c.TableKey
           exact ⟨d, Da, hv⟩
       obtain ⟨tfvs_suf, trest, cbs_suf, cbody, hop_suf, hst_suf, hdoms_suf⟩ :=
         check_param_agreement_go_scoped_spec m (by omega) hlen' hvs'
-          (hrc.mono ext_all) hty' hsc' hef hlf hg_go hBa_open hBb_open₀ ev_go
+          (hrc.mono ext_all) hty' hsc' hef hlf hfire hg_go hBa_open hBb_open₀ ev_go
       refine ⟨fv :: tfvs_suf, trest, (db_raw, bmeta ℓb) :: cbs_suf, cbody, ?_, ?_, ?_⟩
       · simp [Ix.Kernel.openPisAtFvars, fv, hop_suf]
       · simp [Expr.stripPis, hst_suf]
@@ -2490,7 +2491,8 @@ theorem check_param_agreement_scoped_spec {c : ScopedCtx} [c.TableKeyed]
     (hn : n < 144115188075855872)
     (hrc : RCRep c.t c.lim h rc)
     (hef : CoreEnvFacts c.toCtx)
-    (hlf : ScopedLoadFacts c)
+    (hlf : ScopedLoadBase c)
+    (hfire : ProjGuardFires c)
     (hgood : CoreGood c cs)
     (hta : Tm c.κ 0 Γ h 0 ta pta)
     (htb : Tm c.κ 0 Γ h 0 tb ptb)
@@ -2506,7 +2508,7 @@ theorem check_param_agreement_scoped_spec {c : ScopedCtx} [c.TableKeyed]
     obtain ⟨tfvs, trest, cbs, cbody, hop, hst, hdoms⟩ :=
       check_param_agreement_go_scoped_spec n (d := 0) (tfvs_pre := []) (tb_raw := tb)
         (by omega) rfl (fun _ hv => nomatch hv) (hrc.mono ext) hty (ghostScoped_zero Γ)
-        hef hlf hg_go (hta.mono ext) (htb.mono ext) ev_go
+        hef hlf hfire hg_go (hta.mono ext) (htb.mono ext) ev_go
     refine ⟨tfvs, trest, hop, fun i hi => ?_⟩
     obtain ⟨fv, hfv, hde⟩ := hdoms i hi
     rw [Nat.zero_add, List.nil_append] at hde
@@ -2525,7 +2527,8 @@ theorem check_param_agreement_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx
     (ev : ObsFn W "KernelCheck::check_param_agreement" [rc, pta, ptb, .field (n : F)] h r h' cs) :
     StructDomsShared c.env ta tb n := by
   exact check_param_agreement_scoped_spec (c := ScopedCtx.unrestricted c) (by omega) hrc
-    hef.toCoreEnvFacts (ScopedLoadFacts.ofUnrestricted rfl hef hlf) (CoreGood.unrestricted hgood) hta htb ev
+    hef.toCoreEnvFacts (ScopedLoadBase.ofUnrestricted rfl hef hlf) hlf.projGuardFires
+    (CoreGood.unrestricted hgood) hta htb ev
 
 /-! ## Constructor residual opening and `check_field_universes` -/
 
@@ -2709,7 +2712,8 @@ private theorem check_field_universes_inner_scoped_spec (hLevels : IxVM.Consiste
       TypesRep c.κ Γ h d types →
       GhostScoped Γ d →
       CoreEnvFacts c.toCtx →
-      ScopedLoadFacts c →
+      ScopedLoadBase c →
+      ProjGuardFires c →
       CoreGood c cs →
       RepKLevel h ind_lvl pind →
       Tm c.κ d Γ h 0 crest pty →
@@ -2723,7 +2727,7 @@ private theorem check_field_universes_inner_scoped_spec (hLevels : IxVM.Consiste
           Red c.env (d + i) ty (.sort u) ∧
           (∀ φ, Level.eval φ u ≤ Level.eval φ resSort)
   | 0, d, Γ, crest, xFvs, args, rc, pty, pind, types, r, h, h', cs,
-      hop, _, _, _, _, _, _, _, hpty, _, ev => by
+      hop, _, _, _, _, _, _, _, _, hpty, _, ev => by
     simp only [Ix.Kernel.openPisAtFvars, Option.some.injEq, Prod.mk.injEq] at hop
     obtain ⟨rfl, rfl⟩ := hop
     match Obs.«KernelCheck::check_field_universes_inner».obs ev with
@@ -2733,7 +2737,7 @@ private theorem check_field_universes_inner_scoped_spec (hLevels : IxVM.Consiste
       obtain ⟨D, B, ℓ, heq, _⟩ := hpty.forallE_of_load ld
       exact absurd heq (mkAppN_const_not_forallE T us args D B (bmeta ℓ))
   | m + 1, d, Γ, crest, xFvs, args, rc, pty, pind, types, r, h, h', cs,
-      hop, hrc, hty, hsc, hef, hlf, hgood, hpind, hpty, hnt, ev => by
+      hop, hrc, hty, hsc, hef, hlf, hfire, hgood, hpind, hpty, hnt, ev => by
     match Obs.«KernelCheck::check_field_universes_inner».obs ev with
     | .other (ld12 := ld) (hne183 := hne) .. =>
       exact (hnt.succ_not_other ld hne).elim
@@ -2753,7 +2757,7 @@ private theorem check_field_universes_inner_scoped_spec (hLevels : IxVM.Consiste
         have hg_leq : CoreGood c cs_leq := hgood.sub (fun x hx => by simp [hx])
         have hg_in : CoreGood c cs_in := hgood.sub (fun x hx => by simp [hx])
         obtain ⟨sdom, u₀, ℓ_dom, hinf_d, hred_d, hrep_dom, hlveq_dom⟩ :=
-          scoped_core_ensure_sort hrc hty hsc hef hlf hg_es ev_es hD
+          scoped_core_ensure_sort_of_fires hrc hty hsc hef hlf hfire hg_es ev_es hD
         have e1 := ev_es.heap_extends
         have e2 := ev_leq.heap_extends
         have hleq_lvl := levels_leq_one hLevels ev_leq hg_leq.2 hrep_dom
@@ -2776,7 +2780,7 @@ private theorem check_field_universes_inner_scoped_spec (hLevels : IxVM.Consiste
         have hnt_B : NoTopLetSpine m m154 xbody := hnt_B₀.mono ext_all
         obtain ⟨sorts', hlen', hsorts'⟩ :=
           check_field_universes_inner_scoped_spec hLevels hlveq m hop'
-            (hrc.mono ext_all) hty' hsc' hef hlf hg_in
+            (hrc.mono ext_all) hty' hsc' hef hlf hfire hg_in
             (repKLevel_heapMono₂ ext_all hpind) hB_open hnt_B ev_in
         refine ⟨u₀ :: sorts', by simp [hlen'], fun i hi => ?_⟩
         cases i with
@@ -2805,7 +2809,8 @@ theorem check_field_universes_scoped_spec (hLevels : IxVM.Consistency.Levels)
       some (fvsP ++ xFvs, Expr.mkAppN (.const T us) (fvsP ++ idxArgs)))
     (hrc : RCRep c.t c.lim h rc)
     (hef : CoreEnvFacts c.toCtx)
-    (hlf : ScopedLoadFacts c)
+    (hlf : ScopedLoadBase c)
+    (hfire : ProjGuardFires c)
     (hgood : CoreGood c cs)
     (hpind : RepKLevel h ind_lvl pind)
     (hcty : Tm c.κ 0 Γ h 0 cty pcty)
@@ -2864,7 +2869,7 @@ theorem check_field_universes_scoped_spec (hLevels : IxVM.Consistency.Levels)
     obtain ⟨rfl, rfl⟩ := hopP'
     obtain ⟨sorts, hlen, hsorts⟩ :=
       check_field_universes_inner_scoped_spec hLevels hlveq nF hopF
-        hrc' hty' hsc' hef hlf (hg_sk.sub hsub')
+        hrc' hty' hsc' hef hlf hfire (hg_sk.sub hsub')
         (repKLevel_heapMono₂ (ext.trans ext') hpind) hcrest' hnt' ev_in
     refine ⟨sorts, hlen, fun i hi => ?_⟩
     obtain ⟨fv, ty, u, hfv, hu, hinf, hred, hleq⟩ := hsorts i hi
@@ -2897,7 +2902,8 @@ theorem check_field_universes_spec (hLevels : IxVM.Consistency.Levels)
         nP xFvs idxArgs nF sorts := by
   exact check_field_universes_scoped_spec hLevels (c := ScopedCtx.unrestricted c)
     (by omega) hlveq hinf_cty hopP hopF hopAll hrc hef.toCoreEnvFacts
-    (ScopedLoadFacts.ofUnrestricted rfl hef hlf) (CoreGood.unrestricted hgood) hpind hcty hnt ev
+    (ScopedLoadBase.ofUnrestricted rfl hef hlf) hlf.projGuardFires (CoreGood.unrestricted hgood)
+    hpind hcty hnt ev
 
 /-! ## Strict positivity (`check_positivity` → `recFieldKind ≠ .negative ∧ ≠ .unsupported`) -/
 

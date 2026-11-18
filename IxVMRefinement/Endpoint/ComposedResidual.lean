@@ -60,9 +60,8 @@ store sequence is not fixed):
 
 * binding: the claim export with the observed run record; the invariant at the six basis
   groups; the admission of each group and its reading clause; and at each group of a run the
-  closure, the stored shapes where the group has no role unit, the role unit of an operation
-  and of a standard axiom, and the load contract's guard at the limits a closed group brings
-  within range;
+  closure, the stored shapes where the group has no role unit, and the role unit of an
+  operation and of a standard axiom;
 * typing, for a top-walked unit by the form of its record (`WalkedUnit`, `WalkedUnitStep`): the
   step of a standalone theorem or opaque; for a standalone recursor, the check's output at a
   native parent's registered family, and the step where no such parent heads the major
@@ -285,12 +284,12 @@ theorem standaloneRecursor_of_parts
 
 /-- **The public statement from the parts of the two halves, for any link.** `L` is the link
 of the fold's clause and `Run` the binding claim layer's run predicate, by the run's calls. The
-first nine hypotheses are the binding half's, those of `composed_skeleton_over` for every
+first eight hypotheses are the binding half's, those of `composed_skeleton_over` for every
 bounded run: the claim export with the observed run record; the invariant at the six basis
 groups; the admission of each group and its reading clause; and at each group from 6 to 76 of
 a run the closure, the stored shapes where the group has no role unit, the role unit of an
-operation, the role unit of a standard axiom and the guard at the raised limits. The other
-nine are the typing half's: the step of a top-walked unit of each kind. -/
+operation and the role unit of a standard axiom. The other nine are the typing half's: the
+step of a top-walked unit of each kind. -/
 theorem circuitComposed_of_parts
     {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     {Run : List (Call F) → Ix.Kernel.RoleTable → BRun → (Nat → Ixon.Env) → Prop}
@@ -305,8 +304,6 @@ theorem circuitComposed_of_parts
       ∀ calls, AtGroups (Run calls) (RoleUnitStepOver.{u} (· ∈ RoleOps.opRoles) L))
     (standardAxiomRoleUnit :
       ∀ calls, AtGroups (Run calls) (RoleUnitStepOver.{u} (· ∈ standardAxioms) L))
-    (raisedLimitGuard :
-      ∀ calls, AtGroups (Run calls) (fun _ t g => RaisedLimitGuard.{u} L t g))
     (standaloneDefinition : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
       ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind = .defn)
     (standaloneTheoremOrOpaque : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
@@ -340,7 +337,7 @@ theorem circuitComposed_of_parts
   exact composed_skeleton_over (bindingClaimExport dB valueB heapB callsB evB hbB)
     (basisGroups callsB) (groupAdmissions callsB) (groupAdmissionReads callsB)
     (groupClosure callsB) (groupWithoutRoleUnit callsB) (operationRoleUnit callsB)
-    (standardAxiomRoleUnit callsB) (raisedLimitGuard callsB) hbA
+    (standardAxiomRoleUnit callsB) hbA
     (Claim.claimPhase_typing evA)
     (fun _ _ _ _ _ _ h => by
       obtain ⟨_, hW, _⟩ := h
@@ -353,13 +350,12 @@ theorem circuitComposed_of_parts
 /-- **The public statement from the open obligations** (module docstring):
 `circuitComposed_of_parts` at the opened head trace `FormerOpenTraceAt`, with the step of a
 standalone definition proved and the step of a standalone recursor reduced to its two parts.
-`Run` is the binding claim layer's run predicate, by the run's calls. The first nine
+`Run` is the binding claim layer's run predicate, by the run's calls. The first eight
 hypotheses are the binding half's, for every bounded run: the claim export with the observed
 run record; the invariant at the six basis groups; the admission of each group and its reading
 clause; and at each group from 6 to 76 of a run the closure, the stored shapes where the group
-has no role unit, the role unit of an operation, the role unit of a standard axiom and the
-guard at the raised limits. The other nine are the typing half's, for a top-walked unit of
-each remaining kind: its step, and for a standalone recursor the check's output at a native
+has no role unit, the role unit of an operation and the role unit of a standard axiom. The
+other nine are the typing half's, for a top-walked unit of each remaining kind: its step, and for a standalone recursor the check's output at a native
 parent's registered family and the step where no native parent heads its major premise. -/
 theorem circuitComposed_residual
     {Run : List (Call F) → Ix.Kernel.RoleTable → BRun → (Nat → Ixon.Env) → Prop}
@@ -375,8 +371,6 @@ theorem circuitComposed_residual
       AtGroups (Run calls) (RoleUnitStepOver.{u} (· ∈ RoleOps.opRoles) FormerOpenTraceAt))
     (standardAxiomRoleUnit : ∀ calls,
       AtGroups (Run calls) (RoleUnitStepOver.{u} (· ∈ standardAxioms) FormerOpenTraceAt))
-    (raisedLimitGuard : ∀ calls,
-      AtGroups (Run calls) (fun _ t g => RaisedLimitGuard.{u} FormerOpenTraceAt t g))
     (standaloneTheoremOrOpaque :
       WalkedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) fun _ _ _ _ c =>
         ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind ≠ .defn)
@@ -416,7 +410,7 @@ theorem circuitComposed_residual
           ∀ ind : Ixon.Inductive, ms ≠ #[.indc ind]) :
     CircuitComposed.{u} :=
   circuitComposed_of_parts bindingClaimExport basisGroups groupAdmissions groupAdmissionReads
-    groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit raisedLimitGuard
+    groupClosure groupWithoutRoleUnit operationRoleUnit standardAxiomRoleUnit
     (standaloneDefinition_foldExtra linkLaws_formerOpenTrace)
     standaloneTheoremOrOpaque
     (standaloneRecursor_of_parts linkLaws_formerOpenTrace recursorAtNativeParent

@@ -10,11 +10,6 @@ check evidence is read at one store `Ec` for `R` that the run's calls are good f
 transport of the prefix invariant to every store and every limit at which the new record
 reloads. At a store `E` for `R` it reloads: `E` decodes its records, holds the record of `R` at
 `A`, and holds every blob of the run's store when `R` does.
-
-The guard of `projTablesGuard` is kept at every limit by constants that are no constructor and
-no projection table (`guardAt_append`): the guard's premises at the longer environment name a
-stored constructor and a stored projection table, both stored already, under the same keys. The
-key of the structure is resolved by the prefix's load contract (`ctorIndRes`, at any limit).
 -/
 
 universe u
@@ -107,74 +102,6 @@ theorem not_mem_opNames_of_keyFree {k : Ix.Kernel.Key .anon} (h : Decl.KeyFree k
     rw [h.2.2] at h2
     cases h2
 
-/-! ## The guard after constants that are no constructor and no projection table -/
-
-/-- **The guard is kept by fresh constants that are no constructor and no projection table**,
-at any limit, given the prefix invariant at some limit (for the unresolved key and the
-resolution of a stored constructor's inductive, which do not read the limit). The guard's
-premises at the longer environment name a stored constructor and a stored projection table:
-both are constants of `env`, and the keys of their addresses are the same. -/
-theorem guardAt_append {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim lim₀ : Option Nat}
-    {env : Ix.Kernel.Env .anon} {new : List (Ix.Kernel.ConstantInfo .anon)}
-    (hg : GuardAt E t lim env) (hinv : Decl.PrefixInv.{u} E t lim₀ env)
-    (hfresh : ∀ ci ∈ new, env.find? ci.name = none)
-    (hkind : ∀ ci ∈ new, NoCtorProj ci) :
-    GuardAt E t lim ⟨new ++ env.consts⟩ := by
-  have hctor : ∀ {k : Ix.Kernel.Key .anon} {cv : Ix.Kernel.ConstantVal .anon} {nP nF : Nat},
-      (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? k = some (.ctorInfo cv nP nF) →
-        env.find? k = some (.ctorInfo cv nP nF) := by
-    intro k cv nP nF h
-    rcases find_append_cases _ h with hm | he
-    · exact absurd rfl ((hkind _ hm).1 cv nP nF)
-    · exact he
-  have hproj : ∀ {k : Ix.Kernel.Key .anon} {tbl : Ix.Kernel.ProjTable .anon},
-      (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? k = some (.projInfo tbl) →
-        env.find? k = some (.projInfo tbl) := by
-    intro k tbl h
-    rcases find_append_cases _ h with hm | he
-    · exact absurd rfl ((hkind _ hm).2 tbl)
-    · exact he
-  intro bp ip ptr hh hh' cs b i ev good hb hip j cvC nP nF tbl hc htbl
-  -- The constructor is stored by `env`, at the table's key of its address.
-  have hcx := hctor hc
-  have hres' : (Core.Ctx.stored ⟨E, ⟨new ++ env.consts⟩, t, lim⟩).κ
-      (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) j) ≠ Core.unresolvedKey := by
-    intro e
-    rw [e, hinv.unresolved] at hcx
-    cases hcx
-  have ek' := (Core.Ctx.stored ⟨E, ⟨new ++ env.consts⟩, t, lim⟩).key_eq hres'
-  rw [ek'] at hcx
-  have ek : (Core.Ctx.stored ⟨E, env, t, lim⟩).κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) j) =
-      Core.keyOf t (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) j) :=
-    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hcx
-  have ek₀ : (Core.Ctx.stored ⟨E, env, t, lim₀⟩).κ
-      (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) j) =
-      Core.keyOf t (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) j) :=
-    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim₀⟩) hcx
-  -- Its inductive resolves (the prefix's load contract), so the structure's key is the same.
-  have hbh : Core.HashedBlockAt E (Core.ixAddr b) := L1.hashedBlockAt_of_proj_ctor good ev hb hip
-  have hr₀ : (Core.Ctx.stored ⟨E, env, t, lim₀⟩).κ (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)) ≠
-      Core.unresolvedKey := by
-    refine hinv.loads.ctorIndRes (Core.ixAddr b) (ZMod.val i) j cvC nP nF hbh ?_
-    rw [ek₀]
-    exact hcx
-  obtain ⟨ci, hci⟩ := Core.Ctx.stored_key_ne hr₀ (Core.iprjAddr_not_marker _ _)
-  have ey' : (Core.Ctx.stored ⟨E, ⟨new ++ env.consts⟩, t, lim⟩).κ
-      (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)) =
-      Core.keyOf t (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)) :=
-    Core.Ctx.stored_key_of_find (c := ⟨E, ⟨new ++ env.consts⟩, t, lim⟩)
-      (find_append_of_find hfresh hci)
-  have ey : (Core.Ctx.stored ⟨E, env, t, lim⟩).κ (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)) =
-      Core.keyOf t (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)) :=
-    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hci
-  rw [ey'] at htbl
-  have htbl₀ := hproj htbl
-  refine hg bp ip ptr hh hh' cs b i ev good hb hip j cvC nP nF tbl ?_ ?_
-  · rw [ek]
-    exact hcx
-  · rw [ey]
-    exact htbl₀
-
 /-! ## The step of a standalone definition, theorem or opaque record -/
 
 /-- **`BUnitStep` for a standalone definition, theorem or opaque record.** The inputs about the
@@ -182,8 +109,8 @@ record and its check are `unitStep_defn`'s. About the stores: `Ec` is a store fo
 step's check is read at (`StepStore`); `R` holds the record at `A`, only records the run loaded,
 and every blob the run loaded. The unit installs one constant, the declaration of the record's
 canonical annotations at the record's key; its prefix invariant at every store for `R` and every
-limit is the walked-constant step's transport, the guard is `guardAt_append`, and the extra
-clause at every store is kept by a value constant. -/
+limit is the walked-constant step's transport, and the extra clause at every store is kept by a
+value constant. -/
 theorem bUnitStep_defn {Y : Ixon.Env → Ix.Kernel.Env .anon → Prop} {calls : List (Call F)}
     {t : Ix.Kernel.RoleTable} {R E₀ Ec : Ixon.Env} {envT : Ix.Kernel.Env .anon}
     {bAddr A : _root_.Address} {c : Ixon.Constant} {d : Ixon.Definition} {n : Nat}
@@ -199,7 +126,7 @@ theorem bUnitStep_defn {Y : Ixon.Env → Ix.Kernel.Env .anon → Prop} {calls : 
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     (hY : ∀ E, KeepsValues (Y E)) :
     BUnitStep.{u} Y t R envT E₀ n A c := by
-  intro env hext hnd hinv hguard hYe href hfresh
+  intro env hext hnd hinv hYe href hfresh
   have hc : recordOf E₀ A = some c := recordOf_of_loaded hloaded hR
   have hbound : Bounded calls := (hst.good env none).2
   have hrec₀ : Ix.Cert.recordAt E₀ A = some c := (hS.recordOf_eq_recordAt A).symm.trans hc
@@ -240,17 +167,12 @@ theorem bUnitStep_defn {Y : Ixon.Env → Ix.Kernel.Env .anon → Prop} {calls : 
     rw [hname]
     exact hfreshA
   refine ⟨[LoadedReads.defnConst d.kind ⟨keyOf t A, List.range d.lvls.toNat, ty'⟩ val'
-      (.regular 0)], List.nodup_singleton _, hfreshN, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro E hE lim hinvE _
+      (.regular 0)], List.nodup_singleton _, hfreshN, ?_, ?_, ?_, ?_, ?_⟩
+  · intro E hE lim hinvE
     have h := htrans E lim (hreload E (recordOf_of_recordsFor hE hR)
       (blob_of_recordsFor hE hblobs)) hinvE
     rw [LoadedReads.installs_defnDecl] at h
     exact h
-  · intro E hE lim
-    refine guardAt_append (hguard E hE lim) (hinv E hE) hfreshN ?_
-    intro ci hci
-    obtain rfl := List.mem_singleton.mp hci
-    exact noCtorProj_of_isValueConst hval
   · intro E hE
     exact hY E env _ (hYe E hE) (by rw [hname]; exact hfreshA) hval
   · intro ci hci

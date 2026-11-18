@@ -13,7 +13,7 @@ context, word for word.
   basis role (`fabricated_basis`), whose pin is stored.
 * `basis_indRecord`, `basis_recordShape`, `basis_canonical`: the record facts of every decoded
   store (`Decl.prefixLoadFacts_of_empty`'s, which do not read the environment).
-* `basis_projTablesGuard`: vacuous, no projection table is stored.
+* `basis_projCtorTele`, `basis_projFire`: vacuous, no projection table is stored.
 * `basis_inductRecord`, `basis_inductBlock`: a load at a stored address reads the committed
   row there (the store holds it, and the calls hash no collision with the store), and the
   block that row names is a row too.
@@ -178,7 +178,7 @@ theorem basisEnv_noTable {k : Ix.Kernel.Key .anon} {tbl : Ix.Kernel.ProjTable .a
   have h1 := List.all_eq_true.mp basisEnv_noTowers _ (basisEnv_find_mem h).1
   exact absurd h1 (by simp [Ix.Kernel.ConstantInfo.isTowerEntry])
 
-theorem basis_projTablesGuard (E : Ixon.Env) (lim : Option Nat) :
+theorem basis_projCtorTele (E : Ixon.Env) (lim : Option Nat) :
     ∀ (bp ip ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
       (b : Bytes.Address) (i : F),
     ObsFn W "KernelModeled::proj_ctor" [bp, ip] h ptr h' cs → Good (bctx E lim).stored.toCtx cs →
@@ -190,21 +190,14 @@ theorem basis_projTablesGuard (E : Ixon.Env) (lim : Option Nat) :
       (bctx E lim).stored.env.find?
           (Ix.Kernel.projTableName ((bctx E lim).stored.κ (iprjAddr (ixAddr b) (ZMod.val i)))) =
         some (.projInfo tbl) →
-      Ix.Kernel.Expr.ctorTeleOk cvC.type (nP + nF) = true ∧
-      (Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true →
-        ∀ (f : F) (rc bp' rg : SourceValue F) (hg hg' : Heap F) (csg : List (Call F))
-          (g : KLevel) (us : List KLevel),
-          ZMod.val f < nF → us.length = tbl.levelParams.length →
-          ObsFn W "KernelInfer::proj_guard" [rc, bp', .field i, .field f] hg rg hg' csg →
-          Good (bctx E lim).stored.toCtx csg → RCRep (bctx E lim).stored.t (bctx E lim).stored.lim hg rc →
-          Bytes.RepAddressRef addrTy hg b bp' →
-          IxVM.Refinement.KernelLevels.RepKLevel hg' g rg →
-          (∀ φ, Ix.Kernel.Level.eval φ
-            (Ix.Kernel.Level.subst (List.range us.length) us g) = 0) →
-          ∀ φ, Ix.Kernel.Level.eval φ
-            (Ix.Kernel.Level.subst tbl.levelParams us (tbl.entry (ZMod.val f)).fieldSort) = 0) := by
+      Ix.Kernel.Expr.ctorTeleOk cvC.type (nP + nF) = true := by
   intro bp ip ptr h h' cs b i _ _ _ _ j cvC nP nF tbl _ htbl
   exact (basisEnv_noTable htbl).elim
+
+/-- Every projection table the environment of the pins stores fires: it stores none. -/
+theorem basis_projFire (E : Ixon.Env) (lim : Option Nat) :
+    ProjTablesFire (bctx E lim).stored.t (bctx E lim).stored.E (bctx E lim).stored.env :=
+  projTablesFire_of_noTable fun _ _ h => basisEnv_noTable h
 
 /-! ## Loads at stored addresses -/
 

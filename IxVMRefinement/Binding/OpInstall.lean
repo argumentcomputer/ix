@@ -30,9 +30,8 @@ are one: `g + 1`, below the well-founded block (one raise past the group,
 `prefixInv_raise_wf`).
 
 Also here: `recordsFor_exists` (a record store for every store that agrees with the committed
-prelude rows: the merged store over no run), `guardAt_cons` (the projection-table guard kept by
-one more constant that is no constructor and no projection table, at every limit), and the store
-transfers between `R₁` and `R'` (`keptIn_up`, `reads_down`).
+prelude rows: the merged store over no run) and the store transfers between `R₁` and `R'`
+(`keptIn_up`, `reads_down`).
 -/
 
 universe u
@@ -100,42 +99,12 @@ theorem recordsFor_exists {R : Ixon.Env} (hcomm : AgreesCommitted R) : ∃ E, Re
     · exact hnh _ hh
     · exact hnh _ hh
 
-/-! ## The projection-table guard, one constant later -/
+/-! ## The keying of a prefix context -/
 
 /-- The keying of a prefix context does not read the limit. -/
 theorem stored_κ_lim (E : Ixon.Env) (env : Ix.Kernel.Env .anon) (t : Ix.Kernel.RoleTable)
     (lim lim' : Option Nat) :
     (Core.Ctx.stored ⟨E, env, t, lim⟩).κ = (Core.Ctx.stored ⟨E, env, t, lim'⟩).κ := rfl
-
-/-- **The guard is kept by one more constant that is no constructor and no projection table**,
-at every limit, given the load contract of the shorter prefix at any one limit (its constructor
-clauses do not read the limit). -/
-theorem guardAt_cons {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim lim₀ : Option Nat}
-    {env : Ix.Kernel.Env .anon} {cn : Ix.Kernel.ConstantInfo .anon}
-    (hl : Core.ScopedLoadFacts (Core.Ctx.stored ⟨E, env, t, lim₀⟩))
-    (hfresh : env.find? cn.name = none)
-    (hnt : ∀ T : Core.KKey, cn.name ≠ Ix.Kernel.projTableName T)
-    (hctor : ∀ cv nP nF, cn ≠ .ctorInfo cv nP nF) (hproj : ∀ tbl, cn ≠ .projInfo tbl)
-    (hg : GuardAt E t lim env) : GuardAt E t lim ⟨cn :: env.consts⟩ := by
-  have hext := Decl.consCtx_ext (c := ⟨E, env, t, lim₀⟩) hfresh hnt
-  intro bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hctor' htbl
-  have hctor₀ : (Decl.consCtx ⟨E, env, t, lim₀⟩ cn).env.find?
-      ((Decl.consCtx ⟨E, env, t, lim₀⟩ cn).stored.κ
-        (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) j)) = some (.ctorInfo cvC nP nF) := hctor'
-  obtain ⟨hc₁, -⟩ := Decl.consCtx_old (c := ⟨E, env, t, lim₀⟩) hl hext hctor₀
-    (fun e => hctor cvC nP nF e.symm)
-  have ei := Decl.consCtx_keep (c := ⟨E, env, t, lim₀⟩) hext _
-    (hl.ctorIndRes _ _ _ _ _ _ (L1.hashedBlockAt_of_proj_ctor good ev hb hip) hc₁)
-  have ei' : (Core.Ctx.stored ⟨E, ⟨cn :: env.consts⟩, t, lim⟩).κ
-      (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)) =
-      (Core.Ctx.stored ⟨E, env, t, lim⟩).κ (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)) := ei
-  rw [ei'] at htbl
-  have htbl₀ : (Decl.consCtx ⟨E, env, t, lim₀⟩ cn).env.find?
-      (Ix.Kernel.projTableName
-        ((Core.Ctx.stored ⟨E, env, t, lim⟩).κ (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)))) =
-      some (.projInfo tbl) := htbl
-  exact hg bp ip ptr h h' cs b i ev good hb hip j cvC nP nF tbl hc₁
-    (Decl.consCtx_find_old (c := ⟨E, env, t, lim₀⟩) htbl₀ (fun e => hproj tbl e.symm))
 
 /-! ## The environment after the operation -/
 
@@ -616,16 +585,6 @@ theorem roleOp_step {Y : Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Prop} {
       Decl.PrefixInv.{u} E t lim (RoleOps.installed env₁ (.role r) ty val hint) :=
     fun E hE lim hc hw => prefixInv_installed
       (hb.facts.inv E (recordsFor_down hadds hE) lim hc hw) ha hchk hty hval (hreload E hE)
-  -- the guard at every limit
-  have hguard : ∀ E, RecordsFor R' E → ∀ lim,
-      GuardAt E t lim (RoleOps.installed env₁ (.role r) ty val hint) := by
-    intro E hE lim
-    have hE₁ := recordsFor_down hadds hE
-    have hl := (hb.facts.inv E hE₁ (some (valLimit g)) (carried_valLimit g)
-      (limWithin_below t g)).loads
-    exact guardAt_cons (cn := .defnInfo ⟨.role r, [], ty⟩ val hint) hl hfresh
-      (fun _ => Decl.ne_projTableName_of_isBaseKey hbase) (fun _ _ _ e => nomatch e)
-      (fun _ e => nomatch e) (hb.facts.guard E hE₁ lim)
   -- the prefix invariant at every carried limit within the groups up to `g`
   have hinv : ∀ E, RecordsFor R' E → ∀ lim, Carried lim →
       LimWithin (fun k => k < g ∨ k = g) t lim →
@@ -643,7 +602,7 @@ theorem roleOp_step {Y : Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Prop} {
           rw [ite_eq_left hlt]
         have h0 := hinvA E hE (some g) (Or.inr (Or.inr ⟨g, by rw [hvg]⟩))
           (fun r' _ hr' => hr' g rfl)
-        refine prefixInv_raise_succ h0 (fun r'' hr'' _ => ?_) (hguard E hE (some (g + 1)))
+        refine prefixInv_raise_succ h0 (fun r'' hr'' _ => ?_)
         rw [hgrp, List.mem_singleton] at hr''
         subst hr''
         refine ⟨Or.inl (RoleOps.op_companion hint hchk), fun _ a' ha' => ?_⟩
@@ -663,7 +622,7 @@ theorem roleOp_step {Y : Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Prop} {
         subst hg40
         have h0 := hinvA E hE (some 33) (Or.inr (Or.inr ⟨33, by decide⟩))
           (fun r' _ hr' => Nat.lt_trans (hr' 33 rfl) (by norm_num))
-        refine prefixInv_raise_wf h0 (fun r'' hr'' hbd => ?_) (hguard E hE (some 41))
+        refine prefixInv_raise_wf h0 (fun r'' hr'' hbd => ?_)
         obtain ⟨⟨hg1, hg2⟩, hop''⟩ := wf_group r'' hr''
         have hopN'' : (Ix.Kernel.Key.role r'' : Core.KKey) ∈ RoleOps.opNames := by
           rw [RoleOps.opNames_eq_map]
@@ -764,7 +723,6 @@ theorem roleOp_step {Y : Ix.Kernel.RoleTable → Ix.Kernel.Env .anon → Prop} {
   refine ⟨hshape, ?_, hY⟩
   exact {
     inv := hinv
-    guard := hguard
     whole := fun E hE x B c cb ms hfx hrec hown hne hrecB hmuts => by
       by_cases hk : keyOf t x = Ix.Kernel.Key.role r
       · have hx := hkey_role x hk

@@ -1,4 +1,5 @@
 import IxVMRefinement.Core.CallScope
+import IxVMRefinement.Core.ProjFire
 import IxVMRefinement.Obs.KernelCheck
 /-! # The peer recursor of a standalone recursor record
 
