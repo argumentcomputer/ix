@@ -1,6 +1,7 @@
 import IxVMRefinement.Binding.ClosureFoldSteps
 import IxVMRefinement.Binding.OpInstall
 import IxVMRefinement.Binding.ClosureRoute
+import IxVMRefinement.Binding.FamilyWitnessForm
 
 /-! # The closure fold with the family form: the proof
 
@@ -18,9 +19,10 @@ is the fold's result (`closureFold_run`). What is left after the fold:
 * the group's kept roles stored as their records declare them: a record held before the group
   was checked, so the walked records stored it (`WalkedStored`); a new one is owned by a unit;
 * the stored families: the group's selection joined to the map before it (`joinFam`), the
-  selected records' flattened families carried to the closure's store: the group's from the run's
-  store (`storedFamiliesFlat_of_sub`), the earlier ones from the store before the group
-  (`storedFamiliesFlat_grow`);
+  selected records' flattened families and reconstruction forms carried to the closure's store:
+  the group's from the run's store (`storedFamiliesFlat_of_sub`, `storedFamiliesForm_of_sub`), the
+  earlier ones from the store before the group (`storedFamiliesFlat_grow`,
+  `storedFamiliesForm_grow`);
 * `WalkedStored` and `RecordsStored` after the closure: the new records' owners stored them, the
   old ones were stored.
 
@@ -432,8 +434,14 @@ theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
     exact ⟨fun r hr hk hnu a ha => keptAt r hr (Or.inl hk) hnu a ha,
       fun r hr hp a ha => keptAt r hr (Or.inr hp) (prelude_not_unit r hp) a ha⟩
   case fams =>
+    have hheld : ∀ B rb, famOf B = some rb →
+        (recordOf (closureStore t g R R') B).isSome = true ∧
+          (recordOf (closureStore t g R R') rb).isSome = true := by
+      intro B rb hfa
+      obtain ⟨cb, crb, _ms, _rs, hcb, hcrb, -⟩ := fam_new hC hfa
+      exact ⟨Option.isSome_iff_exists.mpr ⟨cb, hcb⟩, Option.isSome_iff_exists.mpr ⟨crb, hcrb⟩⟩
     refine ⟨fun B cb hcb hroute hst => ?_, fun B rb h => ?_, fun B rb cb h hcb x hx => ?_,
-      fun B rb crb h hcrb => ?_, ?_⟩
+      fun B rb crb h hcrb => ?_, ?_, ?_⟩
     · cases hRB : recordOf R B with
       | none =>
         obtain ⟨rb, hrb⟩ :=
@@ -504,17 +512,17 @@ theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       rcases joinFam_cases h with hfa | ⟨-, h₀⟩
       · exact Or.inr hfa
       · exact Or.inl h₀
-    · have hheld : ∀ B rb, famOf B = some rb →
-          (recordOf (closureStore t g R R') B).isSome = true ∧
-            (recordOf (closureStore t g R R') rb).isSome = true := by
-        intro B rb hfa
-        obtain ⟨cb, crb, _ms, _rs, hcb, hcrb, -⟩ := fam_new hC hfa
-        exact ⟨Option.isSome_iff_exists.mpr ⟨cb, hcb⟩, Option.isSome_iff_exists.mpr ⟨crb, hcrb⟩⟩
-      exact storedFamiliesFlat_join
+    · exact storedFamiliesFlat_join
         (storedFamiliesFlat_of_sub ht htwf (fun y c hy => rec₂₀ hadm (rec₁₂ hy)) hC.closed
           (fun y b hy => hspec.blobs y b (hrd.blobs y b hy)) hheld hGFC.familyFlat)
         (storedFamiliesFlat_grow (fun y c hy => recordOf_closureStore_of_R hadm hy) hspec.le₁.2
           hC.closed hSF.flat)
+        (fun B rb h => (joinFam_cases h).imp id And.right)
+    · exact storedFamiliesForm_join
+        (storedFamiliesForm_of_sub ht htwf (fun y c hy => rec₂₀ hadm (rec₁₂ hy)) hC.closed
+          (fun y b hy => hspec.blobs y b (hrd.blobs y b hy)) hheld hGFC.familyForm)
+        (storedFamiliesForm_grow (fun y c hy => recordOf_closureStore_of_R hadm hy) hspec.le₁.2
+          hSF.form)
         (fun B rb h => (joinFam_cases h).imp id And.right)
   case walked =>
     refine ⟨fun x c n hc hnb hlog hlogB hchk => ?_, fun r x hw hgr ha =>

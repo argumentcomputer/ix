@@ -6,14 +6,16 @@ import IxVMRefinement.Binding.FamilyReconStore
 The binding fold's stored families carry, for every selected family record, the record-level
 form its family check leaves it in (`FamilyRecon.RFormS`): the record is the block's family over
 the flattened family derived from the block, and each recursor is the block's reconstruction at
-its position. These are the transports a field `StoredFamilies.form` needs, as
-`storedFamiliesFlat_*` are for `StoredFamilies.flat`:
+its position. These are the transports of the field `StoredFamilies.form`, as
+`storedFamiliesFlat_*` are for `StoredFamilies.flat`, each used by one of its producers:
 
-* `storedFamiliesForm_none`: the empty map;
+* `storedFamiliesForm_none`: the empty map (the basis, `storedFamilies_basis`);
 * `storedFamiliesForm_grow`: to a store holding the records and blobs of the first (growth, a
-  role unit, store congruence);
+  role unit and store congruence, `storedFamilies_grow`; the families before a group in the
+  closure);
 * `storedFamiliesForm_of_sub`: from the run's store to a used-closed sub-store holding the
-  selected blocks and records and the run store's blobs (the closure's group);
+  selected blocks and records and the run store's blobs (the group's own families in the
+  closure, from `GroupFamilyChecks.familyForm`);
 * `storedFamiliesForm_join`: a map selecting from two maps (the closure's join). -/
 
 namespace IxVM.Refinement.Binding

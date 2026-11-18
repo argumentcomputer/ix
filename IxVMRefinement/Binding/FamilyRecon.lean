@@ -14,7 +14,11 @@ and states the record-level form a family check of a group's validation leaves a
 * `ReconView`: what the reconstruction reads of a store (an inductive's level count, type,
   parameter, index and constructor counts, block and position; a constructor's type and
   parameter count and constant address; the key of an address and the address of a key; a
-  definition's value at levels); `ReconView.ofStore t E`.
+  definition's value at levels); `ReconView.ofStore t E`. Every term read off a record, on
+  either side of the comparison, is the canonical reading (`FamilyFlat.loadedAt`): the form
+  `get_ci` loads, with the binder data of the record's binder blocks at the expression's root and
+  a `let` read as its reduct. (The raw reader gives every binder the datum `never`, which the
+  reconstruction's binders, at the elimination level, never equal.)
 * `hnf`: the head normalization the reconstruction performs (`whnf` in `collect_n_doms_whnf`,
   `collect_index_doms`, `peel_ctor_params_subst`, `whnf_tele`), modelled as the δβ head
   strategy: a definition unfolded at a head constant, β at a λ applied, the function of an
@@ -34,9 +38,10 @@ and states the record-level form a family check of a group's validation leaves a
   (`populate_rules`, `ctors_before_pos`). Every head normalization takes one fuel.
 * `LamsAlong`, `RuleFollows` (`compare_rules`, `rule_lam_doms`): a stored rule is the body under
   the λs of the recursor type's leading binders and of its minor premise's fields.
-* `MemberRecon TyRel`: a recursor of the record, at its position `k`, relates its declared type to
-  the reconstructed type by `TyRel` and each rule follows the reconstructed body, with the
-  record's own recursors as the peers. **`RFormS`**: the record is the block's family over the
+* `MemberRecon TyRel`: a recursor of the record, at its position `k`, relates its declared type
+  (canonical reading at the member's root) to the reconstructed type by `TyRel` and each rule
+  (canonical reading at its root) follows the reconstructed body, with the record's own recursors
+  as the peers. **`RFormS`**: the record is the block's family over the
   flattened family derived from the block, and every recursor's declared type is the
   reconstructed one, up to the semantic equality of levels (`Core.ExprLvEq`). -/
 
@@ -75,8 +80,10 @@ structure ReconView where
   unfold : KKey → List KLevel → Option (Option KExpr)
 
 /-- `get_ci` at an inductive type's address of the store: through its projection record, the
-member of its block, its type read over the block's tables. -/
-def indDataAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) : Option IndData :=
+member of its block, its type in the canonical reading over the block's tables at the member's
+root (`loadedAt`). -/
+noncomputable def indDataAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) :
+    Option IndData :=
   match recordOf E a with
   | none => none
   | some c =>
@@ -89,8 +96,8 @@ def indDataAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) : Op
         | .muts ms =>
           match ms[p.idx.toNat]? with
           | some (.indc ind) =>
-            match ((exprReader t (fun x => E.blobs.get? x) cb id
-                (blockSelf t p.block ms)).read ind.typ).toOption with
+            match loadedAt t (fun x => E.blobs.get? x) cb (blockSelf t p.block ms)
+                ind.lvls.toNat (mutsRoot ms p.idx.toNat) ind.typ with
             | none => none
             | some ty =>
               some ⟨ind.lvls.toNat, ty, ind.params.toNat, ind.indices.toNat, ind.ctors.size,
@@ -99,10 +106,10 @@ def indDataAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) : Op
         | _ => none
     | _ => none
 
-/-- `get_ci_cprj blk i c`: constructor `c` of member `i` of the block at `b`, its type read over
-the block's tables, and its parameter count. -/
-def ctorAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (b : _root_.Address) (i c : Nat) :
-    Option (KExpr × Nat) :=
+/-- `get_ci_cprj blk i c`: constructor `c` of member `i` of the block at `b`, its type in the
+canonical reading over the block's tables at the constructor's root, and its parameter count. -/
+noncomputable def ctorAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (b : _root_.Address)
+    (i c : Nat) : Option (KExpr × Nat) :=
   match recordOf E b with
   | none => none
   | some cb =>
@@ -113,19 +120,20 @@ def ctorAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (b : _root_.Address) (i c : 
         match ind.ctors[c]? with
         | none => none
         | some ctor =>
-          match ((exprReader t (fun x => E.blobs.get? x) cb id (blockSelf t b ms)).read
-              ctor.typ).toOption with
+          match loadedAt t (fun x => E.blobs.get? x) cb (blockSelf t b ms) ctor.lvls.toNat
+              (mutsRoot ms i + 1 + ((c : Nat) : IxVM.F)) ctor.typ with
           | none => none
           | some ty => some (ty, ctor.params.toNat)
       | _ => none
     | _ => none
 
 /-- A definition's level count and value at a constant address of the store (`get_ci`'s `Defn`,
-read with positional level parameters): a standalone definition record, or a definition member
-of a block. `none` where the circuit's load fails (no record, an unreadable value); `some none` at
-a constant `whnf` does not unfold by a definition step (a theorem, an opaque constant, any other
-kind). -/
-def defnAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) :
+in the canonical reading with positional level parameters: a standalone record's value at root
+`1`, a block member's at its root plus `1`): a standalone definition record, or a definition
+member of a block. `none` where the circuit's load fails (no record, an unreadable value);
+`some none` at a constant `whnf` does not unfold by a definition step (a theorem, an opaque
+constant, any other kind). -/
+noncomputable def defnAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) :
     Option (Option (Nat × KExpr)) :=
   match recordOf E a with
   | none => none
@@ -134,7 +142,7 @@ def defnAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) :
     | .defn d =>
       match d.kind with
       | .defn =>
-        ((exprReader t (fun x => E.blobs.get? x) c id (soloSelf t a)).read d.value).toOption.map
+        (loadedAt t (fun x => E.blobs.get? x) c (soloSelf t a) d.lvls.toNat 1 d.value).map
           fun v => some (d.lvls.toNat, v)
       | _ => some none
     | .dPrj p =>
@@ -147,8 +155,8 @@ def defnAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) :
           | some (.defn d) =>
             match d.kind with
             | .defn =>
-              ((exprReader t (fun x => E.blobs.get? x) cb id (blockSelf t p.block ms)).read
-                d.value).toOption.map fun v => some (d.lvls.toNat, v)
+              (loadedAt t (fun x => E.blobs.get? x) cb (blockSelf t p.block ms) d.lvls.toNat
+                (mutsRoot ms p.idx.toNat + 1) d.value).map fun v => some (d.lvls.toNat, v)
             | _ => some none
           | _ => none
         | _ => none
@@ -157,7 +165,8 @@ def defnAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) :
 /-- `red_unfold` at a key: the definition's value with its level parameters instantiated, when the
 levels' count is the definition's (`some none` when no definition step applies, `none` where the
 load fails). -/
-def unfoldAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (k : KKey) (us : List KLevel) :
+noncomputable def unfoldAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (k : KKey)
+    (us : List KLevel) :
     Option (Option KExpr) :=
   match keyAddr t k with
   | none => some none
@@ -170,7 +179,7 @@ def unfoldAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (k : KKey) (us : List KLev
       else some none
 
 /-- **The readings of the store `E`** under the role table `t`. -/
-def ReconView.ofStore (t : Ix.Kernel.RoleTable) (E : Ixon.Env) : ReconView :=
+noncomputable def ReconView.ofStore (t : Ix.Kernel.RoleTable) (E : Ixon.Env) : ReconView :=
   ⟨indDataAt t E, ctorAt t E, IxVM.Consistency.ctorAddr, keyOf t, keyAddr t, unfoldAt t E⟩
 
 /-! ## Head normalization: the δβ head strategy -/
@@ -673,22 +682,25 @@ parameters and levels, so over entries that differ the peer of entry `k` is recu
 def recAddrs (rb : _root_.Address) (rs : Array Ixon.MutConst) : List _root_.Address :=
   rs.toList.zipIdx.map fun p => memberAddr rb p.2 p.1
 
-/-- **A recursor of the record `rb` against the reconstruction at its position `k`**: its type
-reads (over the record's tables, positional level parameters) to `ty`, related by `TyRel` to the
-reconstructed type at `k`; and each of its rules reads to a right-hand side that follows the
-reconstructed body, under the λs `ty` gives, with the record's own recursors as the peers. -/
+/-- **A recursor of the record `rb` against the reconstruction at its position `k`**: its type,
+in the canonical reading over the record's tables at the member's root (`loadedAt`, positional
+level parameters, the binder data of the record's binder blocks: the form `check_recs` loads), is
+`ty`, related by `TyRel` to the reconstructed type at `k`; and each rule `c`'s right-hand side, in
+the canonical reading at the root after the type's plus `c`, follows the reconstructed body under
+the λs `ty` gives, with the record's own recursors as the peers. -/
 def MemberRecon (TyRel : KExpr → KExpr → Prop) (t : Ix.Kernel.RoleTable) (E : Ixon.Env)
     (rb : _root_.Address) (crb : Ixon.Constant) (rs : Array Ixon.MutConst) (es : List FlatEntry)
     (off fuel k : Nat) (r : Ixon.Recursor) : Prop :=
   ∃ (ty R : KExpr) (bodies : List KExpr) (cbk : Nat),
-    (exprReader t (fun x => E.blobs.get? x) crb id (blockSelf t rb rs)).read r.typ = .ok ty ∧
+    loadedAt t (fun x => E.blobs.get? x) crb (blockSelf t rb rs) r.lvls.toNat (mutsRoot rs k)
+      r.typ = some ty ∧
     recTypeAt (ReconView.ofStore t E) fuel es off r.params.toNat k = some R ∧ TyRel ty R ∧
     ruleBodiesAt (ReconView.ofStore t E) fuel es off r.params.toNat r.motives.toNat
       r.minors.toNat r.lvls.toNat k (recAddrs rb rs) = some bodies ∧
     ctorsBefore (ReconView.ofStore t E) es k = some cbk ∧
     ∀ (c : Nat) (ru : Ixon.RecursorRule), r.rules[c]? = some ru →
-      ∃ rhs cb, (exprReader t (fun x => E.blobs.get? x) crb id (blockSelf t rb rs)).read ru.rhs =
-          .ok rhs ∧ bodies[c]? = some cb ∧
+      ∃ rhs cb, loadedAt t (fun x => E.blobs.get? x) crb (blockSelf t rb rs) r.lvls.toNat
+          (mutsRoot rs k + 1 + ((c : Nat) : IxVM.F)) ru.rhs = some rhs ∧ bodies[c]? = some cb ∧
         RuleFollows ty r.params.toNat r.motives.toNat r.minors.toNat
           (cbk + c) ru.fields.toNat (elimLevel off) rhs cb
 
@@ -708,7 +720,8 @@ def RecordReconWith (TyRel : KExpr → KExpr → Prop) (t : Ix.Kernel.RoleTable)
 /-- **The record-level form a group's validation leaves a family record in**
 (`canonical_rules_at_pos` with `rc_validates_group`: the state-2 arm is refused, so every
 member's declared type is structurally the reconstruction): `RecordReconWith` at the semantic
-equality of levels. The twin seam's canonical record is above every record the circuit accepts
+equality of levels, every term read off the store in the canonical reading (`loadedAt`), as the
+circuit loads it. The twin seam's canonical record is above every record the circuit accepts
 for the block, which is the reconstruction or its full consumption at each member. -/
 def RFormS (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B rb : _root_.Address) : Prop :=
   RecordReconWith ExprLvEq t E B rb

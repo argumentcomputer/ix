@@ -207,6 +207,7 @@ theorem storedFamilies_grow {t : Ix.Kernel.RoleTable} {R₁ R' : Ixon.Env}
     obtain ⟨hs, hi⟩ := h.installed B rb crb hrb hrb₁
     exact ⟨fun x hx => hst x (hs x hx), hinst rb crb hi⟩
   flat := storedFamiliesFlat_grow hle hblob hclosed h.flat
+  form := storedFamiliesForm_grow hle hblob h.form
 
 /-- **The stored families depend on the store only through its records and blobs**, at a store
 closed under what its records use. -/
