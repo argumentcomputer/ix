@@ -571,19 +571,21 @@ def check_witness := aiur_fn⟦
           s } ,
         1 => {
           let (n, s2) = get_count(s);
-          let (stop, s3) = walk_from_block(block, s2, n);
+          let (stop, s3, passed) = walk_from_block(rc, block, s2, n);
           assert_eq!(Bytes::address_eq(stop, x), 1, "model advice: a dependency path ends elsewhere");
           -- a projection the path ends at names a member of its block
           projection_member(x);
+          assert_covered_past(rc, passed, x);
           s3 } ,
         2 => {
           let (n, s2) = get_count(s);
-          let (iblock, s3) = walk_from_block(block, s2, n);
+          let (iblock, s3, passed) = walk_from_block(rc, block, s2, n);
           check_container_rec(rc, x, iblock);
+          assert_covered_past(rc, passed, x);
           s3 } ,
         3 => {
           let (n, s2) = get_count(s);
-          let (iblock, s3) = walk_from_block(block, s2, n);
+          let (iblock, s3, passed) = walk_from_block(rc, block, s2, n);
           let (idx, s4) = get_count(s3);
           let (c1, s5) = get_count(s4);
           let expected = match c1 {
@@ -595,6 +597,7 @@ def check_witness := aiur_fn⟦
           -- the address is computed from the indices; the record's reading checks that they
           -- name a member (and a constructor) of the block
           Ingress::get_ci(x);
+          assert_covered_past(rc, passed, x);
           s5 } ,
       }
     }
@@ -625,20 +628,27 @@ def projection_member := aiur_fn⟦
   -- dependency closure, which by content addressing cannot contain the block.
 
 def walk_from_block := aiur_fn⟦
-  fn walk_from_block(block: Bytes::AddressRef, s: Bytes::Stream, n: Field) -> (Bytes::AddressRef, Bytes::Stream) {
+  fn walk_from_block(rc: KernelRoles::RoleCtx, block: Bytes::AddressRef, s: Bytes::Stream, n: Field)
+        -> (Bytes::AddressRef, Bytes::Stream, Field) {
       assert_eq!(Fields::is_zero(n), 0, "model advice: an empty dependency path");
-      walk_path(block, s, n)
+      walk_path(rc, block, s, n, 0)
     }
 ⟧
 
   -- A path through the dependency closure the claim walk visits from `cur`: step 0 goes
   -- from a projection record to its block, step `j + 1` to the record's `j`-th reference,
-  -- which it must use as a constant.
+  -- which it must use as a constant. `passed` is whether the path has reached a covered record (one
+  -- bound to a role whose record a validation walks), its stop included.
 
 def walk_path := aiur_fn⟦
-  fn walk_path(cur: Bytes::AddressRef, s: Bytes::Stream, n: Field) -> (Bytes::AddressRef, Bytes::Stream) {
+  fn walk_path(rc: KernelRoles::RoleCtx, cur: Bytes::AddressRef, s: Bytes::Stream, n: Field,
+               passed: Field) -> (Bytes::AddressRef, Bytes::Stream, Field) {
       match n {
-        0 => {  (cur, s) } ,
+        0 => {
+          -- the stop counts too: a covered block reached as a container's or a projection's
+          -- block by a used-reference step
+          let cov = addr_covered(rc, cur);
+          (cur, s, passed + cov - passed * cov) } ,
         _ => {
           let (st, s2) = get_count(s);
           let c = Ingress::load_verified_constant(cur);
@@ -652,7 +662,8 @@ def walk_path := aiur_fn⟦
                   Lists::lookup(refs, st - 1) } ,
               } } ,
           };
-          walk_path(next, s2, n - 1) } ,
+          let cov = addr_covered(rc, cur);
+          walk_path(rc, next, s2, n - 1, passed + cov - passed * cov) } ,
       }
     }
 ⟧
@@ -723,7 +734,7 @@ def container_refs_check := aiur_fn⟦
         Ixon::Constant::Mk(_, _, refs, _, _) => {
           match ib {
             Ixon::Constant::Mk(_, _, irefs, _, _) => {
-              container_refs_ok(refs, KernelClaim::const_idxs_of(c), 0, x, iblock, irefs,
+              container_refs_ok(rc, refs, KernelClaim::const_idxs_of(c), 0, x, iblock, irefs,
                                 KernelClaim::const_idxs_of(ib), wset);
               assert_inner_refs_safe(rc, refs, KernelClaim::const_idxs_of(c)) } ,
           } } ,
@@ -732,7 +743,7 @@ def container_refs_check := aiur_fn⟦
 ⟧
 
 def container_refs_ok := aiur_fn⟦
-  fn container_refs_ok(refs: Lists::List<Bytes::AddressRef>, used: Lists::List<Field>, i: Field,
+  fn container_refs_ok(rc: KernelRoles::RoleCtx, refs: Lists::List<Bytes::AddressRef>, used: Lists::List<Field>, i: Field,
                        self: Bytes::AddressRef,
                        iblock: Bytes::AddressRef, irefs: Lists::List<Bytes::AddressRef>,
                        iused: Lists::List<Field>, wset: RBTreeMap::RBTreeMap<Field>) -> () {
@@ -749,7 +760,7 @@ def container_refs_ok := aiur_fn⟦
                   match is_projection_of(r, iblock) {
                     1 => {  1 } ,
                     _ => {
-                      match projection_of_ref_block(r, irefs, iused) {
+                      match projection_of_ref_block(rc, r, irefs, iused) {
                         1 => {  1 } ,
                         _ => {
                           match KernelClaim::addr_set_member(r, wset) {
@@ -772,7 +783,7 @@ def container_refs_ok := aiur_fn⟦
               () } ,
             _ => {  () } ,
           };
-          container_refs_ok(rest, used, i + 1, self, iblock, irefs, iused, wset) } ,
+          container_refs_ok(rc, rest, used, i + 1, self, iblock, irefs, iused, wset) } ,
       }
     }
 ⟧
@@ -780,14 +791,14 @@ def container_refs_ok := aiur_fn⟦
   -- Is `r` a type or constructor of the block one of `irefs` projects from?
 
 def projection_of_ref_block := aiur_fn⟦
-  fn projection_of_ref_block(r: Bytes::AddressRef, irefs: Lists::List<Bytes::AddressRef>,
+  fn projection_of_ref_block(rc: KernelRoles::RoleCtx, r: Bytes::AddressRef, irefs: Lists::List<Bytes::AddressRef>,
                              iused: Lists::List<Field>) -> Field {
       let c = Ingress::load_verified_constant(r);
       match c {
         Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
-            Ixon::ConstantInfo::IPrj(_) => {  Ingress::get_ci(r); ref_projects_from(irefs, iused, 0, projection_block(c)) } ,
-            Ixon::ConstantInfo::CPrj(_) => {  Ingress::get_ci(r); ref_projects_from(irefs, iused, 0, projection_block(c)) } ,
+            Ixon::ConstantInfo::IPrj(_) => {  Ingress::get_ci(r); ref_projects_from(rc, r, irefs, iused, 0, projection_block(c)) } ,
+            Ixon::ConstantInfo::CPrj(_) => {  Ingress::get_ci(r); ref_projects_from(rc, r, irefs, iused, 0, projection_block(c)) } ,
             _ => {  0 } ,
           } } ,
       }
@@ -795,18 +806,24 @@ def projection_of_ref_block := aiur_fn⟦
 ⟧
 
 def ref_projects_from := aiur_fn⟦
-  fn ref_projects_from(irefs: Lists::List<Bytes::AddressRef>, iused: Lists::List<Field>, i: Field,
+  fn ref_projects_from(rc: KernelRoles::RoleCtx, r: Bytes::AddressRef,
+                       irefs: Lists::List<Bytes::AddressRef>, iused: Lists::List<Field>, i: Field,
                        block: Bytes::AddressRef) -> Field {
       match (*(irefs)) {
         Lists::Node::Nil => {  0 } ,
         Lists::Node::Cons(q, rest) => {
+          -- a hit through a covered used reference counts only for a covered `r`
           let hit = match KernelClaim::g_list_has(iused, i) {
-            1 => {  is_projection_of(q, block) } ,
+            1 => {
+              match is_projection_of(q, block) {
+                1 => {  1 - addr_covered(rc, q) * (1 - addr_covered(rc, r)) } ,
+                _ => {  0 } ,
+              } } ,
             _ => {  0 } ,
           };
           match hit {
             1 => {  1 } ,
-            _ => {  ref_projects_from(rest, iused, i + 1, block) } ,
+            _ => {  ref_projects_from(rc, r, rest, iused, i + 1, block) } ,
           } } ,
       }
     }
@@ -989,6 +1006,32 @@ def assert_no_role := aiur_fn⟦
           assert_eq!(KernelRoles::role_index_of(rc, x), 0,
             "a modeled recursor is bound to a role");
           assert_no_role(rc, rest) } ,
+      }
+    }
+⟧
+
+  -- Covered: bound to a role whose record a validation walks (`role_admission_checks`). The
+  -- top-level walk does not enter a covered record, so what lies past one is not top-walked: a
+  -- witness reached past one must be covered itself.
+
+def addr_covered := aiur_fn⟦
+  fn addr_covered(rc: KernelRoles::RoleCtx, a: Bytes::AddressRef) -> Field {
+      let r1 = KernelRoles::role_index_of(rc, a);
+      match r1 {
+        0 => {  0 } ,
+        _ => {  KernelRoles::role_admission_checks(r1 - 1) } ,
+      }
+    }
+⟧
+
+def assert_covered_past := aiur_fn⟦
+  fn assert_covered_past(rc: KernelRoles::RoleCtx, passed: Field, x: Bytes::AddressRef) -> () {
+      match passed {
+        0 => {  () } ,
+        _ => {
+          assert_eq!(addr_covered(rc, x), 1,
+            "model advice: a witness past a role-bound record is not bound to a role");
+          () } ,
       }
     }
 ⟧
@@ -1429,7 +1472,7 @@ def family_refs_ok := aiur_fn⟦
         Ixon::Constant::Mk(_, _, refs, _, _) => {
           match bc {
             Ixon::Constant::Mk(_, _, irefs, _, _) => {
-              family_refs_go(refs, KernelClaim::const_idxs_of(rcst), 0, block, irefs,
+              family_refs_go(rc, refs, KernelClaim::const_idxs_of(rcst), 0, block, irefs,
                              KernelClaim::const_idxs_of(bc), wset);
               assert_inner_refs_safe(rc, refs, KernelClaim::const_idxs_of(rcst)) } ,
           } } ,
@@ -1438,7 +1481,7 @@ def family_refs_ok := aiur_fn⟦
 ⟧
 
 def family_refs_go := aiur_fn⟦
-  fn family_refs_go(refs: Lists::List<Bytes::AddressRef>, used: Lists::List<Field>, i: Field,
+  fn family_refs_go(rc: KernelRoles::RoleCtx, refs: Lists::List<Bytes::AddressRef>, used: Lists::List<Field>, i: Field,
                     block: Bytes::AddressRef, irefs: Lists::List<Bytes::AddressRef>,
                     iused: Lists::List<Field>, wset: RBTreeMap::RBTreeMap<Field>) -> () {
       match (*(refs)) {
@@ -1461,7 +1504,7 @@ def family_refs_go := aiur_fn⟦
                   match own {
                     1 => {  1 } ,
                     _ => {
-                      match projection_of_ref_block(r, irefs, iused) {
+                      match projection_of_ref_block(rc, r, irefs, iused) {
                         1 => {  1 } ,
                         _ => {  KernelClaim::addr_set_member(r, wset) } ,
                       } } ,
@@ -1471,7 +1514,7 @@ def family_refs_go := aiur_fn⟦
               () } ,
             _ => {  () } ,
           };
-          family_refs_go(rest, used, i + 1, block, irefs, iused, wset) } ,
+          family_refs_go(rc, rest, used, i + 1, block, irefs, iused, wset) } ,
       }
     }
 ⟧
