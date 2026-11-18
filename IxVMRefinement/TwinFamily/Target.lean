@@ -1,4 +1,5 @@
 import IxVMRefinement.Decl.TwinRec
+import IxVMRefinement.Decl.ModeledAux
 import IxVMRefinement.FamilyAlias.Target
 import IxVMRefinement.FamilyGraph.Graph
 import IxC.Kernel.Model.FoldLate
@@ -96,7 +97,8 @@ abbrev RecordFormPred : Type :=
 check of the block `B` with the second record `rb'` on the modeled route, at any limit, and the
 family check of `B` with its family record `rb` under the same binding and limit; that the
 family record is in the form `RForm` where the second record is (the graph's choice of the
-family record); the prefix invariant at that limit; what the second record uses, stored; the
+family record); the prefix invariant at that limit, with every stored derived key's root stored
+(`Decl.AuxRootSynced`, a part of the fold's clause); what the second record uses, stored; the
 block's family record installed (wherever the record itself is: in the run's store, or, for a
 stored family, in the witness's); freshness and key freedom of the second record's constant
 addresses. The conclusion is the second record's declaration as read, IxC's twin record for it
@@ -115,7 +117,7 @@ def TwinStepTarget (RForm : RecordFormPred) : Prop :=
     FamilyCallAtLim calls bAddr t B rb' lim cs →
     (RForm calls bAddr t E₀ B rb' lim → RForm calls bAddr t E₀ B rb lim) →
     ModeledRouteAt calls B →
-    Decl.PrefixInv.{u} E t lim env →
+    Decl.PrefixInv.{u} E t lim env → Decl.AuxRootSynced env →
     (∀ x, UsedRef E₀ rb' x →
       (env.find? (keyOf t x)).isSome = true ∨ ConstAddrOf rb' crb' x ∨ ¬ NeedOk E₀ x) →
     FamilyInstalled t env rb crb →

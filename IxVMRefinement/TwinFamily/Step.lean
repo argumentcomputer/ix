@@ -109,13 +109,14 @@ theorem unitStepTwin_of_installed {RForm : RecordFormPred} (hT : TwinStepTarget.
       (env.consts.map (·.name)).Nodup → Decl.PrefixInv.{u} E t lim env → X env →
       (∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true) →
       FamilyInstalled t env rb crb)
+    (haux : ∀ env : Ix.Kernel.Env .anon, X env → Decl.AuxRootSynced env)
     (hkeep : TwinStepKeeps.{u} X t envT E₀ E lim A c) :
     UnitStepTwin.{u} X t envT E₀ E lim A c rb crb := by
   intro env hext hnd hinv hX href hrbS hfresh
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
   obtain ⟨blk, env₂, hreads, hrun, hstored, hmodel, hcomp, hrel⟩ :=
     hT calls bAddr t E₀ E env B rb A cb crb c ms rs' lim cs ht hRS hSS hB hrbB hA hsz hne
-      hcall hpref hroute hinv href (hinst env hext hnd hinv hX hrbS) hfresh hkey
+      hcall hpref hroute hinv (haux env hX) href (hinst env hext hnd hinv hX hrbS) hfresh hkey
   obtain ⟨hinv₂, hX₂⟩ :=
     hkeep env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp hrel
   obtain ⟨ws, henv, hnd₂, hfr₂, hnames, hrecs, hmods⟩ := twinRun_parts hrun
@@ -207,11 +208,12 @@ theorem unitStepTwin_of_target {RForm : RecordFormPred} (hT : TwinStepTarget.{u}
     (hpref : RForm calls bAddr t E₀ B A lim → RForm calls bAddr t E₀ B rb lim)
     (hroute : ModeledRouteAt calls B)
     (hkey : ∀ x, ConstAddrOf A c x → Decl.KeyFree (keyOf t x)) (hfam : fam B = some rb)
+    (haux : ∀ env : Ix.Kernel.Env .anon, X env → Decl.AuxRootSynced env)
     (hkeep : TwinStepKeeps.{u} X t envT E₀ E lim A c) :
     UnitStepTwin.{u} (fun env => X env ∧ FamilyRecsModeled t E₀ fam env) t envT E₀ E lim A c
       rb crb :=
   unitStepTwin_of_installed hT ht hRS hSS hB hrbB hA hsz hne hcall hpref hroute hkey
     (fun env _ _ _ hXe hrbS => familyInstalled_of_clause hXe.2 hfam hcrb hrbS)
-    hkeep.and_familyRecsModeled
+    (fun env hXe => haux env hXe.1) hkeep.and_familyRecsModeled
 
 end IxVM.Refinement.Typing.TwinFamily

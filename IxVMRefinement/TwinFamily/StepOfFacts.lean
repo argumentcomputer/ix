@@ -50,7 +50,7 @@ theorem unitStepTwin_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon → P
     UnitStepTwin.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
       t envT E₀ E lim A c rb crb :=
   unitStepTwin_of_installed (twinStepTarget_of_facts hseam) ht hRS hSS hB hrbB hA hsz hne
-    hcall hpref hroute hkey hinst
+    hcall hpref hroute hkey hinst (fun env hXe => hXe.1.1.2)
     (twinStepKeeps_foldExtra (t := t) (envT := envT) (E₀ := E₀) (E := E) (lim := lim) hL
       fun x hx => constAddr_hash_size_of_block hA.muts hx).and_familyRecsModeled
 
