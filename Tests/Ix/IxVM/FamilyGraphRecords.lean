@@ -458,8 +458,8 @@ def runInner (leanEnv : Lean.Environment) : IO UInt32 := do
 
 /-- Payload edits of the `List`-nested tree's advice, each one more advice entry or witnessed
 reference than the accepted payload: the record at the role of `sorryAx` as a basis-role
-witness; the same record as an advice record; a dependency path that ends at a block record. The
-first two must be rejected; the third is expected to be accepted (a path is only followed). -/
+witness; the same record as an advice record; a dependency path that ends at a block record. All
+three must be rejected: a witness's stop is read, and a block record is no reference. -/
 def runProbe (leanEnv : Lean.Environment) : IO UInt32 := do
   let first := recordDefs "T"
   let env0 ← loadSharedIxonEnv #[first, first.str "rec", first.str "rec_1"] leanEnv
@@ -498,7 +498,8 @@ def runProbe (leanEnv : Lean.Environment) : IO UInt32 := do
       (some "a reference to a role outside the basis"),
     probe "inert-axiom-as-advice" { p with advice := p.advice.push sorryA }.ser false none,
     probe "path-witness-ending-at-a-block"
-      { p with witnesses := p.witnesses.push (listB, 1, [j + 1, 0], []) }.ser true none]
+      { p with witnesses := p.witnesses.push (listB, 1, [j + 1, 0], []) }.ser false
+      (some "a reference names a block record")]
 
 /-! ## Family records that must be refused -/
 
