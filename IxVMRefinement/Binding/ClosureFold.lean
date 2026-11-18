@@ -94,6 +94,15 @@ def IsTwinShape (c : Ixon.Constant) : Prop :=
   ∃ rs : Array Ixon.MutConst, c.info = .muts rs ∧ 0 < rs.size ∧
     ∀ m ∈ rs.toList, ∃ r, m = Ixon.MutConst.recr r
 
+/-- **A new unit of the group that the plain step installs**: a record new in the group, a
+definition, a recursor or a block, no record of a role unit of the group, with no selected family
+record, claimed by no block as its family record, and of no twin's shape. -/
+def PlainUnitAt (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : Ixon.Env)
+    (famOf : _root_.Address → Option _root_.Address) (A : _root_.Address) (c : Ixon.Constant) :
+    Prop :=
+  New R R' A ∧ recordOf R' A = some c ∧ UnitKind c ∧ ¬ RoleUnitAt t g A ∧ famOf A = none ∧
+    (∀ B, famOf B ≠ some A) ∧ ¬ IsTwinShape c
+
 /-- **What the step of the unit at `A` reads stored** (module docstring). -/
 def ClosureNeeds (E₀ : Ixon.Env) (famOf : _root_.Address → Option _root_.Address)
     (adv : _root_.Address → _root_.Address → Prop) (A x : _root_.Address) : Prop :=
@@ -124,7 +133,11 @@ fact about the run at the group (its producer is named in the lane's notes):
 * `routeNew`: at a store between `R` and `R'` lacking only role-unit records, a new block the
   store routes as modeled has a selected family record (a block held before the group keeps its
   route, `blockRoute_closureStore`);
-* `readsDown`: at such a store, a reading of an address `R` holds is a reading over `R`. -/
+* `readsDown`: at such a store, a reading of an address `R` holds is a reading over `R`;
+* `notInert`, `needOk`: no reference a plain unit of the group (`PlainUnitAt`) uses is an inert
+  axiom's, and every one is a reference a step needs stored (`NeedOk`);
+* `literals`: the key of the member of a plain unit that is a block of one inductive type is none
+  of the four literal functions' keys. -/
 structure ClosureRunFacts (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : Ixon.Env)
     (famOf : _root_.Address → Option _root_.Address)
     (adv : _root_.Address → _root_.Address → Prop) : Prop where
@@ -152,6 +165,29 @@ structure ClosureRunFacts (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' 
     Route.blockRoute R₁ B = some true → ∃ rb, famOf B = some rb
   readsDown : ∀ R₁ x ci₀, ClosureStore t g R R' R₁ → (recordOf R x).isSome = true →
     Reads t R₁ x ci₀ → Reads t R x ci₀
+  /-- No reference a plain unit uses is an inert axiom's. Producer: the group's walk.
+  `KernelRoles::assert_ref_allowed` admits a reference bound to an inert role whose group is at or
+  above the group's validation limit (`Claim.refAllowed_inert`); such a reference is excluded by
+  `check_const`'s axiom arm with the inert role's own validation. For the records of the
+  group's payload (advice records, container recursors), the circuit asserts nothing of their
+  references before batch item 9. -/
+  notInert : ∀ A c x, PlainUnitAt t g R R' famOf A c → UsedRef ρ.E₀ A x → ¬ InertAt t x
+  /-- Every reference a plain unit uses is one a step needs stored: a record of the run's store,
+  no block, in Lean's logic with its block. Producer: the group's walk
+  (`KernelClaim::assert_not_block_ref`, `assert_safe_used_refs`); for the records of the group's
+  payload, batch item 9. -/
+  needOk : ∀ A c x, PlainUnitAt t g R R' famOf A c → UsedRef ρ.E₀ A x → NeedOk ρ.E₀ x
+  /-- The key of the member of a plain unit that is a block of one inductive type is none of the
+  keys of the four literal functions (`String.ofList`, `List.nil`, `List.cons`, `Char.ofNat`), which
+  the step of a block whose former is declared at a definition reads apart. Producer: above
+  group 45 the four roles' records are held before the group (`Admits.kept` at their groups) and
+  the member's projection record is new, so the addresses and keys differ; at or below group 45,
+  the four roles' validations (their records are no inductive projection), not proved. -/
+  literals : ∀ A c ind, PlainUnitAt t g R R' famOf A c → c.info = .muts #[.indc ind] →
+    keyOf t (memberAddr A 0 (.indc ind)) ≠ Ix.Kernel.stringOfListName ∧
+    keyOf t (memberAddr A 0 (.indc ind)) ≠ Ix.Kernel.listNilName ∧
+    keyOf t (memberAddr A 0 (.indc ind)) ≠ Ix.Kernel.listConsName ∧
+    keyOf t (memberAddr A 0 (.indc ind)) ≠ Ix.Kernel.charOfNatName
 
 /-- **What the run gives at group `g` beside the admission and `FamilyAdmits`**: the family
 checks at one binding and the run facts. The family form's `Fam`. -/
