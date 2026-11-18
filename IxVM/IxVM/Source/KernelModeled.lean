@@ -577,6 +577,9 @@ def check_witness := aiur_fn⟦
           assert_eq!(Bytes::address_eq(stop, x), 1, "model advice: a dependency path ends elsewhere");
           -- a projection the path ends at names a member of its block
           projection_member(x);
+          -- and the stop is read whatever its kind (a family check nested in a payload check may
+          -- be of a block no walk reaches, so nothing else loads it)
+          Ingress::get_ci(x);
           assert_covered_past(rc, passed, x);
           s3 } ,
         2 => {
