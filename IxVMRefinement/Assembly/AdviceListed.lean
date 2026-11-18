@@ -105,6 +105,33 @@ def FamilyCallOwn (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kerne
     (⟨"KernelModeled::check_family", [rc, xb, xrb], h⟩ : Call F) ∈ calls ∧
     (∀ cl ∈ cs, cl ∈ calls)
 
+/-- **The family check's own advice walk**: a `check_advice_records` call under the family check's
+role context, at an extension of the family check's heap where the list is read, with its calls
+among the family check's. -/
+theorem FamilyOwnAdvice.walk {x_rc x_block x_rec_block : SourceValue F} {h : Heap F}
+    {r : SourceValue F} {h' : Heap F} {calls : List (Call F)} {advAs : List Bytes.Address}
+    (w : FamilyOwnAdvice x_rc x_block x_rec_block h r h' calls advAs) :
+    ∃ (m m' : Heap F) (xadv seen wset v : SourceValue F) (cs₁ : List (Call F)),
+      Heap.Extends h m ∧ RepList addrListEnum (Bytes.RepAddressRef addrTy) m advAs xadv ∧
+      ObsFn Obs.W "KernelModeled::check_advice_records" [x_rc, xadv, seen, wset] m v m' cs₁ ∧
+      ∀ cl ∈ cs₁, cl ∈ calls := by
+  match w with
+  | .run (m105 := m105) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+      (ev231 := ev231) (ev266 := ev266) (ev309 := ev309) (ev344 := ev344) (ev403 := ev403)
+      (ev435 := ev435) (ev465 := ev465) (hc1474 := hc) (hadv := hadv) .. =>
+    have e0 : Heap.Extends h m105 := by
+      match sg112 with
+      | .Nil (ev15 := ev15) (he33 := he33) .. =>
+        rw [he33]
+        exact ev15.heap_extends
+      | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
+    refine ⟨_, _, _, _, _, _, _, e0.trans (ev126.heap_extends.trans (ev148.heap_extends.trans
+      (ev194.heap_extends.trans (ev231.heap_extends.trans (ev266.heap_extends.trans
+      (ev309.heap_extends.trans (ev344.heap_extends.trans (ev403.heap_extends.trans
+      ev435.heap_extends)))))))), hadv, ev465, fun cl hcl => ?_⟩
+    rw [hc]
+    simp [hcl]
+
 /-- **An advice record listed by a family check itself**: an address of the family check's own
 advice list. -/
 def AdviceListedIn (advAs : List Bytes.Address) (a : _root_.Address) : Prop :=

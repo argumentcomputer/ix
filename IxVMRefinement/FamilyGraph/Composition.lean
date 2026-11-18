@@ -44,6 +44,14 @@ set_option linter.unusedVariables false
 
 /-! ## What the run gives of its families, and the rows -/
 
+/-- A family check with its own advice list is a family check at its limit. -/
+theorem FamilyCallOwn.toLim {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {B rb : _root_.Address} {lim : Option Nat} {cs : List (Call F)}
+    {advAs} (hown : FamilyCallOwn calls bAddr t B rb lim cs advAs) :
+    FamilyCallAtLim calls bAddr t B rb lim cs := by
+  obtain ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev, -, hmem, hsub⟩ := hown
+  exact ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev, hmem, hsub⟩
+
 /-- **An advice-record check of the record at `a` among the calls `cs`**, under a role context
 at `lim` with the table at the binding `bAddr`. -/
 def AdviceCheckIn (cs : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
@@ -65,24 +73,24 @@ def ContainerRecCheckIn (cs : List (Call F)) (bAddr : _root_.Address)
       [rc, xa, ib] h r h' cs₁ ∧ (∀ cl ∈ cs₁, cl ∈ cs)
 
 /-- **The run's family checks at one binding `bAddr`**, at the walk's limit: the family check
-of each family record (on the modeled route of its block), with the advice records listed to an
-advice walk among its calls at the walk's binding and limit (`AdviceListedIn`); the family check
-of each twin; and the check of each inner record. `innerCall`: every inner record was
+of each family record (on the modeled route of its block), with the advice records its own advice
+walk lists (`FamilyCallOwn`, `AdviceListedIn`); the family check of each twin; and the check of
+each inner record. `innerCall`: every inner record was
 checked by the family check of a family record or of a twin, under the family check's own
 context: an advice record that is no projection record by its advice-record check, a
 container's recursor by its check, a twin reached only through a container's recursor
 projection by a family check at its own address nested in that check (its own checks are the
 twin step's, not `InnerChecked`'s). A listed advice record of a family check that is not in the
 graph's advice owns no constant address and uses nothing in Lean's logic (a projection record of
-an earlier advice block). An advice-record check nested under another context (a covered role's
-validation walk at a group limit) is no listed record of a walk at the walk's limit. -/
+an earlier advice block). A family check nested in its calls lists advice of its own, which is
+not this check's. -/
 structure FamilyChecksAt (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (lim : Option Nat)
     (fam twin : _root_.Address → Option _root_.Address)
     (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop) : Prop where
   famCall : ∀ B rb, fam B = some rb → ModeledRouteAt calls B ∧
-    ∃ cs, FamilyCallAtLim calls bAddr t B rb lim cs ∧
-      ∀ a, AdviceListedIn cs bAddr t lim a → adv B a ∨
+    ∃ cs advAs, FamilyCallOwn calls bAddr t B rb lim cs advAs ∧
+      ∀ a, AdviceListedIn advAs a → adv B a ∨
         ((∀ ca x, recordOf E₀ a = some ca → ¬ ConstAddrOf a ca x) ∧
           ∀ x, UsedRef E₀ a x → ¬ NeedOk E₀ x)
   twinCall : ∀ rb' B, twin rb' = some B → ∃ cs, FamilyCallAtLim calls bAddr t B rb' lim cs
@@ -153,8 +161,8 @@ theorem FamilyRun.famRecAt {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨crb', rs, hF⟩ := hFR.graph.famRecord B rb h
   have e : crb' = crb := Option.some.inj (hF.record.symm.trans hcrb)
   subst e
-  obtain ⟨-, cs, hcs, -⟩ := hC.famCall B rb h
-  exact ⟨rs, cs, hF, hcs⟩
+  obtain ⟨-, cs, advAs, hcs, -⟩ := hC.famCall B rb h
+  exact ⟨rs, cs, hF, hcs.toLim⟩
 
 /-- **Row `familyGraph`**: at every walk of an accepted typing claim and every witness of the
 table's shape, a rank of the same walk and the run's family records, advice, inner records and
