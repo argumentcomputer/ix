@@ -138,7 +138,17 @@ def LoadedTablePinsPrelude : Prop :=
 pinned and every role's validation observed, the run hashed a collision, or there are a rank and
 a sequence of stores over the run's records that starts at the committed basis rows and has, at
 each group from 6 to 76, every clause of the group's admission but the validation of its roles
-(`checkedRun`), and the reading clause. -/
+(`checkedRun`), and the reading clause.
+
+The collision alternative is part of the statement because several clauses of `Admits` hold of
+a run's records only where the run hashed no collision, and nowhere else: that a store is
+authentic (`hashed`), that it agrees with the committed prelude records (`committed`, which is
+why `extra` holds the committed footprint), that it holds nothing at the zero address
+(`zeroFree`), and that the record a store holds at an address is the one the run checked there
+(`checked`, `kept`, the rank clauses). The same holds of the first two conjuncts, the store
+after the basis groups being the committed rows. A producer splits on the alternative first
+(`Claim.noColl_or_hashedCollision` and the committed footprint) and proves the clauses in the
+branch without a collision. -/
 def GroupStoresOfRun (calls : List (Call F)) : Prop :=
   ∀ (V : View) (extra : List ByteArray), (∀ x ∈ committedFootprint, x ∈ extra) →
     ∀ (a : _root_.Address) (tb : ByteArray) (t : Ix.Kernel.RoleTable), Hashed calls tb →
