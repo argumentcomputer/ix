@@ -576,16 +576,27 @@ def stmtTag (kind : String) (p : Pattern F) (x : Expr F) : String :=
   | .bind n => s!"{kind} {n}"
   | _ => s!"{kind} {patShape p} = {anchor x}"
 
-/-- A statement of a block: its tag, what it binds its pattern to, and the rest of the block. -/
-def stmt? : Expr F → Option (String × Expr F × Expr F)
-  | .letValue p x b => some (stmtTag "let" p x, x, b)
-  | .matchValue x [(p, b)] => some (stmtTag "match" p x, x, b)
+/-- A statement of a block: its tag, its pattern, what the pattern is bound to, and the rest of
+the block. -/
+def stmt? : Expr F → Option (String × Pattern F × Expr F × Expr F)
+  | .letValue p x b => some (stmtTag "let" p x, p, x, b)
+  | .matchValue x [(p, b)] => some (stmtTag "match" p x, p, x, b)
   | _ => none
+
+/-- A pattern with its variables' names. -/
+partial def patText : Pattern F → String
+  | .bind n => n
+  | .load p => "*" ++ patText p
+  | .tuple ps => "(" ++ ", ".intercalate (ps.map patText) ++ ")"
+  | .array ps => "[" ++ ", ".intercalate (ps.map patText) ++ "]"
+  | .construct t c ps | .constructAs _ t c ps =>
+    tyStr t ++ "." ++ c ++ "(" ++ ", ".intercalate (ps.map patText) ++ ")"
+  | p => patShape p
 
 /-- The tags of the statements of the block that `e` heads, in order. -/
 partial def blockTags (e : Expr F) : List String :=
   match stmt? e with
-  | some (t, _, b) => t :: blockTags b
+  | some (t, _, _, b) => t :: blockTags b
   | none => []
 
 /-- The tags that several statements of the block share. -/
@@ -602,11 +613,13 @@ partial def deep (e : Expr F) : String :=
   own ++ "(" ++ ", ".intercalate (e.children.map deep) ++ ")"
 
 /-- A node's tag in its place. A statement has its statement tag; where several statements of
-the block share that tag (`dups`), each also a hash of what it binds its pattern to, in full:
-they are told apart by content, not by order, unless they are equal. -/
+the block share that tag (`dups`), each also a hash of its pattern with the variables' names
+and of what the pattern is bound to, in full: they are told apart by content, not by order,
+unless they are equal. -/
 def placeTag (dups : List String) (e : Expr F) : String :=
   match stmt? e with
-  | some (t, x, _) => if dups.contains t then s!"{t} [{hex (strHash (deep x))}]" else t
+  | some (t, p, x, _) =>
+    if dups.contains t then s!"{t} [{hex (strHash (patText p ++ " = " ++ deep x))}]" else t
   | none => nodeTag e
 
 /-- The leaf: the call list's equation, then the path's constructor (of the inductive `ind`). -/
