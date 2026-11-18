@@ -237,4 +237,97 @@ theorem ValidateRoleIn.axiom_record {calls : List (Call F)} {bAddr : _root_.Addr
     validate_role_axiom_record htbl ev hk
   exact ⟨a, rawBytes, c, ax, had, hsz, Claim.hashed_mono hsub hh, hblk, hde, hdeE, hinfo, hsafe⟩
 
+/-- **The safety guard of a standard axiom's record, in the role's validation**: the record at
+the role's bound address is decoded from bytes the validation hashed, and the validation
+observed `KernelClaim::assert_safe_record_refs` on it under the role context at the group's
+validation limit (`Claim.RecordRefsIn`). -/
+theorem validate_role_axiom_guard {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {g : Nat} {ro : Ix.Kernel.Role}
+    {x_rc x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : Claim.RCFullRep t bAddr (groupValLimit g) h x_rc)
+    (htbl : Claim.TableFullRep t bAddr h x_tbl)
+    (ev : ObsFn W "KernelRoles::validate_role" [x_rc, x_tbl, .field (roleNum ro)] h r h' calls)
+    (hk : roleSpecKindNat ro = 3) :
+    ∃ (a : _root_.Address) (rawBytes : ByteArray) (c : Ixon.Constant),
+      t.addressOf? ro = some a ∧ rawBytes.size < 4294967296 ∧ Hashed calls rawBytes ∧
+      Address.blake3Pure rawBytes = a ∧ Ixon.deConstant rawBytes = .ok c ∧
+      Ixon.deConstantExact rawBytes = .ok c ∧
+      Claim.RecordRefsIn calls t bAddr (some (groupValLimit g)) a c := by
+  cases Obs.«KernelRoles::validate_role».obs ev with
+  | n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [hk] at hsk_f
+    exact absurd (Value.field.inj hsk_f) (by decide)
+  | n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [hk] at hsk_f
+    exact absurd (Value.field.inj hsk_f) (by decide)
+  | n2 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [hk] at hsk_f
+    exact absurd (Value.field.inj hsk_f) (by decide)
+  | n4 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [hk] at hsk_f
+    exact absurd (Value.field.inj hsk_f) (by decide)
+  | n5 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
+    obtain ⟨hsk_f, _⟩ := role_spec_kind_spec ev124
+    rw [hk] at hsk_f
+    exact absurd (Value.field.inj hsk_f) (by decide)
+  | n3 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs288
+      ev14 ev47 _ ev80 ev100 _ ev124 ev290 hc323 =>
+    obtain ⟨ext_ba, a, ha_m2, had⟩ := role_bound_addr_uncond htbl.toTableRep ev14
+    have ext_h_m111 : Heap.Extends h m111 :=
+      ext_ba.trans (ev47.heap_extends.trans (ev80.heap_extends.trans
+        (ev100.heap_extends.trans ev124.heap_extends)))
+    match Obs.«KernelRoles::validate_standard_axiom».obs ev290 with
+    | .run (m60 := b60) (m128 := b128) (m141 := b141) (m207 := b207) (m192 := b192)
+        (m304 := b304) (cs202 := cs_ld) (cs290 := cs_g) (ev72 := e72) (hm136 := hm)
+        (ev109 := e109) (ev174 := e174) (ev153 := e153) (ev217 := e217) (ev204 := e204)
+        (ev314 := e314) (ev292 := e292) (hc388 := hca) .. =>
+      have ext_snoc : Heap.Extends b60 b128 := by
+        rw [hm]
+        exact Heap.Extends.snoc b60 _
+      have ext_a : Heap.Extends m111 b141 :=
+        e72.heap_extends.trans (ext_snoc.trans (e109.heap_extends.trans
+          (e174.heap_extends.trans e153.heap_extends)))
+      obtain ⟨ext_ba2, a', ha', had'⟩ :=
+        role_bound_addr_uncond ((htbl.mono (ext_h_m111.trans ext_a)).toTableRep) e217
+      have ha_eq : a' = a := by
+        rw [had] at had'
+        exact (Option.some.inj had').symm
+      subst ha_eq
+      obtain ⟨ext_ld, rawBytes, c, hsz, hh_load, hblk, hde, hdeExact, hrep, _⟩ :=
+        Claim.load_verified_constant_de ha' e204
+      have ext_192 : Heap.Extends h b192 :=
+        ext_h_m111.trans (ext_a.trans (ext_ba2.trans ext_ld))
+      obtain ⟨ext_ba3, a'', ha'', had''⟩ :=
+        role_bound_addr_uncond ((htbl.mono ext_192).toTableRep) e314
+      have ha_eq' : a'' = a' := by
+        rw [had] at had''
+        exact Option.some.inj had''
+      subst ha_eq'
+      have hrc304 : Claim.RCLimRep t bAddr (some (groupValLimit g)) b304 x_rc :=
+        hrc.mono (ext_192.trans ext_ba3)
+      have hsub_g : ∀ cl ∈ cs_g, cl ∈ calls := fun cl hm' => by
+        rw [hc323]; simp [show cl ∈ cs288 by rw [hca]; simp [hm']]
+      have hsub_ld : ∀ cl ∈ cs_ld, cl ∈ calls := fun cl hm' => by
+        rw [hc323]; simp [show cl ∈ cs288 by rw [hca]; simp [hm']]
+      exact ⟨a'', rawBytes, c, had, hsz, Claim.hashed_mono hsub_ld hh_load, hblk, hde, hdeExact,
+        _, _, _, _, _, _, _, hrc304, ha'', hrep.mono ext_ba3, e292, hsub_g⟩
+
+/-- **The same from the observed validation of the role.** -/
+theorem ValidateRoleIn.axiom_guard {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.Role}
+    (hv : ValidateRoleIn calls bAddr t g ro) (hk : roleSpecKindNat ro = 3) :
+    ∃ (a : _root_.Address) (rawBytes : ByteArray) (c : Ixon.Constant),
+      t.addressOf? ro = some a ∧ rawBytes.size < 4294967296 ∧ Hashed calls rawBytes ∧
+      Address.blake3Pure rawBytes = a ∧ Ixon.deConstant rawBytes = .ok c ∧
+      Ixon.deConstantExact rawBytes = .ok c ∧
+      Claim.RecordRefsIn calls t bAddr (some (groupValLimit g)) a c := by
+  obtain ⟨h, h', x_rc, x_tbl, res, cs, hrc, htbl, ev, hsub⟩ := hv
+  obtain ⟨a, rawBytes, c, had, hsz, hh, hblk, hde, hdeE, hg⟩ :=
+    validate_role_axiom_guard hrc htbl ev hk
+  exact ⟨a, rawBytes, c, had, hsz, Claim.hashed_mono hsub hh, hblk, hde, hdeE, hg.mono hsub⟩
+
 end IxVM.Refinement.RoleVal
