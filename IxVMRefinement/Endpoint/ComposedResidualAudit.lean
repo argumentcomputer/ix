@@ -76,35 +76,37 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
         c.info = Ixon.ConstantInfo.recr rc → IxVM.Refinement.Typing.RecMajorFreshNotBasis t envT E₀ E lim A c rc)
   (definitionBlock :
     IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
-      fun x x_1 x_2 x_3 c => ∃ ms, c.info = Ixon.ConstantInfo.muts ms ∧ IxVM.Refinement.Typing.DefnBlock ms)
+      fun x x_1 x_2 x_3 c =>
+      ∃ ms, c.info = Ixon.ConstantInfo.muts ms ∧ 0 < ms.size ∧ IxVM.Refinement.Typing.DefnBlock ms)
   (nativeBlockTelescope :
     IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
       fun calls t E₀ B cb =>
       ∃ ind,
         IxVM.Refinement.Typing.BlockUnitRecord E₀ B cb ind ∧
           IxVM.Refinement.Typing.NativeRouteAt calls B ∧ IxVM.Refinement.Typing.FormerAtTele t E₀ B cb ind)
-  (nativeBlockAlias :
-    IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
-      fun calls t E₀ B cb =>
-      ∃ ind,
-        IxVM.Refinement.Typing.BlockUnitRecord E₀ B cb ind ∧
-          IxVM.Refinement.Typing.NativeRouteAt calls B ∧ IxVM.Refinement.Typing.FormerAtAlias t E₀ B cb ind)
-  (nativeBlockOtherTelescope :
-    IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
-      fun calls t E₀ B cb =>
-      ∃ ind,
-        IxVM.Refinement.Typing.BlockUnitRecord E₀ B cb ind ∧
-          IxVM.Refinement.Typing.NativeRouteAt calls B ∧ IxVM.Refinement.Typing.FormerTeleOther t E₀ B cb ind)
-  (oneTypeBlockOffNativeRoute :
-    IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
-      fun calls x E₀ B cb =>
-      ∃ ind, IxVM.Refinement.Typing.BlockUnitRecord E₀ B cb ind ∧ ¬IxVM.Refinement.Typing.NativeRouteAt calls B)
-  (otherBlock :
+  (oneTypeBlockModeled :
+    IxVM.Refinement.Endpoint.WalkedUnit
+      (fun calls x E₀ B cb =>
+        ∃ ind, IxVM.Refinement.Typing.BlockUnitRecord E₀ B cb ind ∧ IxVM.Refinement.Typing.ModeledRouteAt calls B)
+      fun x t envT E₀ E lim B cb =>
+      IxVM.Refinement.Typing.ModeledAt E B →
+        IxVM.Refinement.Typing.UnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt t E)
+          t envT E₀ E lim B cb)
+  (mutualBlock :
+    IxVM.Refinement.Endpoint.WalkedUnit
+      (fun calls x x_1 B cb =>
+        ∃ ms,
+          cb.info = Ixon.ConstantInfo.muts ms ∧
+            2 ≤ ms.size ∧
+              (∀ m ∈ ms.toList, ∃ i, m = Ixon.MutConst.indc i) ∧ IxVM.Refinement.Typing.ModeledRouteAt calls B)
+      fun x t envT E₀ E lim B cb =>
+      IxVM.Refinement.Typing.ModeledAt E B →
+        IxVM.Refinement.Typing.UnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt t E)
+          t envT E₀ E lim B cb)
+  (recursorBlock :
     IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
       fun x x_1 x_2 x_3 c =>
-      ∃ ms,
-        c.info = Ixon.ConstantInfo.muts ms ∧
-          ¬IxVM.Refinement.Typing.DefnBlock ms ∧ ∀ (ind : Ixon.Inductive), ms ≠ #[Ixon.MutConst.indc ind]) :
+      ∃ ms, c.info = Ixon.ConstantInfo.muts ms ∧ 0 < ms.size ∧ ∀ m ∈ ms.toList, ∃ r, m = Ixon.MutConst.recr r) :
   IxVM.Consistency.CircuitComposed
 -/
 #guard_msgs in
