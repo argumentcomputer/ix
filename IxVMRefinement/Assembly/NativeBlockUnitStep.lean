@@ -23,8 +23,8 @@ record store for its witness store.
 * `famRead_of_install`: the family the install names, read off the store at the environment
   after the install.
 * `FoldClauseWith.nativeNoRec`: the install keeps the clause at one store, limit and registry,
-  from IxC's record of the install, the load contract, the store keys, the certificates and
-  the family read off the store at the new environment.
+  from IxC's record of the install, the load contract, the store keys and the family read
+  off the store at the new environment.
 * `NativeInstallOut.keeps`: the install's output at a store gives the clause there after the
   install, at every limit and registry. The projection table of a structure-like proposition
   fires by its certificate over the store (`BlockCert`, an input) and the reading of a
@@ -135,8 +135,7 @@ registering its family, at one store, limit and registry. From the clause before
 record of the install (`NativeNoRecFacts`): the model step registers the family, the prefix
 invariant is `PrefixInv.nativeNoRec_eta`, the roots and the level clauses are IxC's. What the
 step reads off its run: the load contract at the new environment, that the new keys resolve
-and are keys of 32-byte addresses or of none, the certificates of the stored tables, and the
-family read off the store there. -/
+and are keys of 32-byte addresses or of none, and the family read off the store there. -/
 theorem FoldClauseWith.nativeNoRec {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hL : LinkLaws L) {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim : Option Nat}
     {env env₂ : Ix.Kernel.Env .anon} {Reg : NativeFam .anon → Prop}
@@ -148,8 +147,7 @@ theorem FoldClauseWith.nativeNoRec {L : Ix.Kernel.Env .anon → NativeFam .anon 
     (hres : ∀ (k : Core.KKey) (ci : ConstantInfo .anon), env₂.find? k = some ci →
       env.find? k = none → k ≠ Core.unresolvedKey)
     (hloads : Core.ScopedLoadFacts (Core.Ctx.stored ⟨E, env₂, t, lim⟩))
-    (hkeys₂ : HashKeyed t env₂) (hguard₂ : Guard.GuardCerts t E env₂)
-    (hread : FamRead L t E env₂ fam) :
+    (hkeys₂ : HashKeyed t env₂) (hread : FamRead L t E env₂ fam) :
     FoldClauseWith.{u} L t E lim env₂ (fun f => Reg f ∨ f = fam) := by
   have hinv₂ : Decl.PrefixInv.{u} E t lim env₂ :=
     PrefixInv.nativeNoRec_eta h.prefixInv hfacts hpin hna hres hloads
@@ -157,7 +155,7 @@ theorem FoldClauseWith.nativeNoRec {L : Ix.Kernel.Env .anon → NativeFam .anon 
     (h.registry.install hL (fun V _ hm => hfacts.register V hm) hfacts.envExt hread
       hfacts.newInd)
     hkeys₂ (NativeNoRecFacts.auxRootSynced hpin hna hfacts h.auxRoot)
-    (NativeNoRecFacts.lvClauses hpin hfacts ⟨h.thmLevels, h.storeArR⟩) hguard₂
+    (NativeNoRecFacts.lvClauses hpin hfacts ⟨h.thmLevels, h.storeArR⟩)
 
 /-! ## The new family read off the store -/
 
@@ -400,23 +398,7 @@ theorem NativeInstallOut.keeps {L : Ix.Kernel.Env .anon → NativeFam .anon → 
         ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩, ctorsA⟩ :=
     famRead_of_install hL hrec hO hinv₂.store.store.wf hlv₂.2
       (famIxonRetHead_of_holds ht hH hrec.muts hret hfamT) hnp
-  -- the certificates of the stored tables
-  have hone : ∀ (k : Ix.Kernel.Key .anon) (tbl : Ix.Kernel.ProjTable .anon),
-      (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? (Ix.Kernel.projTableName k) =
-        some (.projInfo tbl) →
-      env.find? (Ix.Kernel.projTableName k) = none → k = Core.keyOf t (Core.iprjAddr B 0) := by
-    intro k tbl hf hn
-    rcases find?_append_cases (env := env) new hf with hm | hold
-    · have hname : Ix.Kernel.projTableName tbl.structName = Ix.Kernel.projTableName k :=
-        Core.WhnfAux.name_of_find hf
-      rw [← Ix.Kernel.projTableName_inj hname]
-      exact hO.tableName tbl hm
-    · rw [hn] at hold
-      cases hold
-  have hguard₂ : Guard.GuardCerts t E ⟨new ++ env.consts⟩ :=
-    guardCerts_install hC.guard hO.facts.envExt (B := B) (i := 0) hone
-      ⟨_, hH.former, rfl, by decide⟩ hcertAll
-  exact hC.nativeNoRec hL hO.facts hpin hna hres hloads hkeys₂ hguard₂ hreadF
+  exact hC.nativeNoRec hL hO.facts hpin hna hres hloads hkeys₂ hreadF
 
 /-! ## The install's output from the walk's member check -/
 
@@ -535,9 +517,9 @@ theorem NativeUnitStep.unitStep {L : Ix.Kernel.Env .anon → NativeFam .anon →
     (h : NativeUnitStep.{u} L t envT E₀ Stores E lim B cb) :
     UnitStep.{u} (FoldExtra.{u} L t E) t envT E₀ E lim B cb := by
   intro env hext hnd hinv hX href hfresh
-  obtain ⟨⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩, hg⟩ := hX
+  obtain ⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩ := hX
   have hC : FoldClauseWith.{u} L t E lim env Reg :=
-    FoldClauseWith.of_prefix hinv hR hkeys haux hlv hg
+    FoldClauseWith.of_prefix hinv hR hkeys haux hlv
   obtain ⟨new, fam, hnd', hfr, hkeep, hnamed, hreads⟩ := h env Reg hext hnd hC href hfresh
   have hC' := hkeep E lim Reg hE hC
   exact ⟨new, hnd', hfr, hC'.prefixInv, hC'.extra, hreads, hnamed⟩
