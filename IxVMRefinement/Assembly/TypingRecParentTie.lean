@@ -9,8 +9,11 @@ interface must receive the parent the route read, not any registered family.
 
 * `RecMajorTie`: the key heading the major premise's domain, in an annotation of the reading of
   the record's type, is the parent's key;
+* `RecMajorFreshNotBasis`: where the record's own key is not stored, a native parent that
+  heads its major premise is at no reserved basis name;
 * `recParent_of_route_tied`, `recParent_of_arm_tied`: the route gives the parent with that tie
-  (the route's scan returns the head of the major premise's domain of the represented type);
+  (the route's scan returns the head of the major premise's domain of the represented type),
+  at any validation limit;
 * `unitStep_recLate_of_tied`: `unitStep_recLate_of` with a predicate `Q` on the parent, produced
   with it and handed to the second interface.
 -/

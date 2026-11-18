@@ -16,10 +16,13 @@ restriction off those runs:
   and the parent's count bounds;
 * `get_result_sort_level_any_spec`: `get_result_sort_level_scoped_bounded_spec` without the
   table-keyed instance, which its proof does not use (the prefix keying is not table-keyed);
+* `Decl.ResultSortReads`, `FormerSortReads`: what the result-sort walk answers on a term, as a
+  statement about every observed run; for a syntactic telescope it holds by reading
+  (`ResultSortReads.of_strip`), and a registered family gives it from its recorded walk;
 * `ciRep_induct_fields`, `eval_ne_zero_of_posOf`, `evalBinOp_add_inv`, `nat_rec_check_levels`;
 * `canonical_full_elim`: from the canonical run, at a record with one level more than its
-  parent, the parent type's result sort is never zero or the parent has fewer than two
-  constructors;
+  parent, the level the result-sort walk answers on the parent's type is never zero or the
+  parent has fewer than two constructors;
 * `rec_elim_of_arm`: the restriction at the family read off the tied parent.
 -/
 
