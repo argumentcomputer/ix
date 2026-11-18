@@ -179,7 +179,7 @@ theorem ctor_zero_all_bounded_head {t : Ix.Kernel.RoleTable}
       have hsub_op : (.field ((0 : Nat) : F) : SourceValue F) =
           .field (((ctors.length - j : Nat) : F)) := by
         simpa using evalBinOp_sub_nat (by omega : j ≤ ctors.length) op
-      have hj_eq := nat_eq_of_field_eq (by decide) (by omega) hsub_op
+      have hj_eq := nat_eq_of_field_eq_bounded (by decide) (by omega) hsub_op
       omega
     | .other (m34 := m34) (p41 := p41) (cs47 := cs_cprj) (x_cty := xcty)
         (m162 := m162) (cs202 := cs_rec) (v208 := v208)
