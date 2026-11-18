@@ -2,6 +2,7 @@ import IxVMRefinement.FamilyAlias.BlockRow
 import IxVMRefinement.FamilyAlias.StructRecScan
 import IxVMRefinement.Assembly.NativeBlockNewFacts
 import IxVMRefinement.L1.HashedBlock
+import IxVMRefinement.TwinFamily.Reload
 
 /-! # The load facts at the family step's new constants that do not read the family check
 
@@ -40,10 +41,13 @@ reading, and the block's used references are stored): `getIprj` and `getCprj`, t
 stored constants' shapes (`FamLoadCtx.indForm`, `ctorForm`) and the canonical loads
 (`LoadedReads.get_ci_iprj_load_canon`, `get_ci_cprj_load_canon`).
 
-The last one, `getCI` (the load of a new constant at its key), holds from the same seam at an
+The last one, `getCI` (the load of a new constant at its key), holds from the same seam: at an
 inductive or a constructor projection (`FamLoadCtx.getCI_iprj`, `getCI_cprj`: the load's trace
-bounds the record's indices, `LoadedReads.get_ci_iprj_canon`, `get_ci_cprj_canon`); at a
-recursor projection of the family record it is `FamilyLoadsCheck`. -/
+bounds the record's indices, `LoadedReads.get_ci_iprj_canon`, `get_ci_cprj_canon`), and at a
+recursor projection of the family record, where the seam gives the stored recursor's loaded form
+(`TwinFamily.TwinMemberLoaded`) and the family record's references stored
+(`FamLoadCtx.getCI_rprj`: `LoadedReads.get_ci_rprj_canon`, then `ciRep_recr_rules` for the
+rules' install bits). -/
 
 universe u
 
@@ -61,11 +65,9 @@ set_option linter.unusedVariables false
 section Check
 open IxVM.Refinement.Core
 
-/-- **The load facts at the family step's new constants that read the family check**: the part
-of `NewLoads` the store, the records, the route fact, the walk's check of the block and the
-loaded forms of the inductives and constructors (`FamilyMembersCanon`) do not give: the load of
-a new constant at its key where the address holds a recursor projection record (the family
-record's recursors; module docstring). -/
+/-- **The load fact at a recursor projection of the family record**, as the family check would
+give it directly: the load of a new constant at its key where the address holds a recursor
+projection record. `FamLoadCtx.newLoads` no longer reads it (`FamLoadCtx.getCI_rprj`). -/
 structure FamilyLoadsCheck (c : ScopedCtx) (new : List (ConstantInfo .anon)) : Prop where
   getCI : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
     ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → Good c.toCtx cs →
@@ -81,16 +83,29 @@ end Check
 section
 open IxVM.Consistency
 
-/-- **The circuit loads each new inductive and constructor in its canonical annotated form** (the
-seam of the loads; the family check stores what it loads). At the environment `env` after the
-step: the references the block `cb` (members `ms`, at `A`) uses are stored; and for each inductive
-member and each of its constructors, read over the store `E₀`'s blobs as `ty₀` and stored at its
-key, the reading is closed with its level parameters defined and the stored type is the canonical
-annotation of the reading at the member's root (`LoadedReads.canonAnn`). The stored constant's
-kind, name, level parameters and counts are the reading's (`StoredAs`), not part of the seam. -/
+/-- **The circuit loads each new constant of the family step in its canonical annotated form**
+(the seam of the loads; the family check stores what it loads). At the environment `env` after
+the step: the references the block `cb` (members `ms`, at `A`) and the family record `crb`
+(members `rs`, at `rb`) use are stored; each inductive member and each of its constructors, read
+over the store `E₀`'s blobs as `ty₀` and stored at its key, has a closed reading with its level
+parameters defined, and its stored type is the canonical annotation of the reading at the
+member's root (`LoadedReads.canonAnn`); each recursor member of the family record, read as a
+recursor and stored at its key, is loaded as the stored recursor (`TwinFamily.TwinMemberLoaded`).
+The stored constant's kind, name, level parameters and counts are the reading's (`StoredAs`),
+not part of the seam. -/
 structure FamilyMembersCanon (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (A : _root_.Address)
-    (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (env : Ix.Kernel.Env .anon) : Prop where
+    (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (rb : _root_.Address) (crb : Ixon.Constant)
+    (rs : Array Ixon.MutConst) (env : Ix.Kernel.Env .anon) : Prop where
+  /-- The references the block uses are stored. Producer: open. The walk gives, at the
+  top-walked block, the inert clause (`Claim.TopWalkCore.inertClause`) and `NeedOk` of each
+  uncovered used reference (`Claim.TopWalk.need`); a covered one is stored by the witness's
+  environment (`coverAt_of_graph`). With the step's need hypothesis (a needed reference is stored
+  or a family address) and the family addresses stored after the step, that gives this field;
+  the load fields' binders do not receive the need hypothesis today. -/
   used : Decl.UsedRefsStored t env cb
+  /-- Each inductive member is stored in the canonical annotated form of its reading. Producer:
+  the circuit side; the family check's load of the member (`Ingress::get_ci_iprj`), which stores
+  what it loads. -/
   ind : ∀ (i : Nat) (ind : Ixon.Inductive) (ty₀ : Ix.Kernel.Expr .anon) (cv : ConstantVal .anon)
       (caps : IndCaps .anon), i < UInt64.size → ms[i]? = some (.indc ind) →
     (exprReader t (fun x => E₀.blobs.get? x) cb id (blockSelf t A ms)).read ind.typ = .ok ty₀ →
@@ -99,6 +114,9 @@ structure FamilyMembersCanon (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (A : _r
       ty₀.allLevelParamsDefined (List.range ind.lvls.toNat) = true ∧
       LoadedReads.canonAnn cb (List.range ind.lvls.toNat)
         ((L1.mutsRootOffset ms.toList i : Nat) : F) ind.typ ty₀ = some cv.type
+  /-- Each constructor is stored in the canonical annotated form of its reading. Producer: the
+  circuit side; the family check's load of the constructor (`Ingress::get_ci_cprj`), which stores
+  what it loads. -/
   ctor : ∀ (i : Nat) (ind : Ixon.Inductive) (j : Nat) (ct : Ixon.Constructor)
       (ty₀ : Ix.Kernel.Expr .anon) (cv : ConstantVal .anon) (nP nF : Nat),
     i < UInt64.size → j < UInt64.size → ms[i]? = some (.indc ind) → ind.ctors[j]? = some ct →
@@ -109,6 +127,27 @@ structure FamilyMembersCanon (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (A : _r
       LoadedReads.canonAnn cb (List.range ct.lvls.toNat)
         (((L1.mutsRootOffset ms.toList i : Nat) : F) + 1 + ((j : Nat) : F)) ct.typ ty₀ =
         some cv.type
+  /-- The references the family record uses are stored. Producer: open. No walk reaches the
+  family record: the family check would have to assert, at each reference its recursors use,
+  what the walk asserts of a walked record's (the reference allowed, no block, the record and its
+  owner safe), which gives its inert clause and `NeedOk`; with the step's need hypothesis and the
+  family addresses stored after the step, that gives this field. -/
+  usedRecs : Decl.UsedRefsStored t env crb
+  /-- Each recursor member of the family record, read as the recursor `cv` (rules `rules₀`) and
+  stored at its key as `cv'` (rules `rules'`), is loaded as the stored recursor: the reading's
+  level count, scope and K clause, the stored type the canonical annotation of the read type at
+  the member's root, the stored rules the canonical rules' field counts and right-hand sides
+  (`TwinFamily.TwinMemberLoaded`). Producer: the circuit side; the family check's load of the
+  recursor (`Ingress::get_ci` at its projection record), which stores what it loads. -/
+  recLoaded : ∀ (p : Ixon.RecursorProj) (rc : Ixon.Recursor) (cv : ConstantVal .anon)
+      (mI rP : Nat) (rules₀ : List (Ix.Kernel.RecRule .anon)) (cv' : ConstantVal .anon)
+      (mI' rP' : Nat) (rules' : List (Ix.Kernel.RecRule .anon)),
+    p.block = rb → rs[p.idx.toNat]? = some (.recr rc) →
+    RecReads t (recordOf E₀) (fun x => E₀.blobs.get? x) crb (blockSelf t rb rs)
+      (keyOf t (memberAddr rb p.idx.toNat (.recr rc))) rc (.recInfo cv mI rP rules₀) →
+    env.find? (keyOf t (memberAddr rb p.idx.toNat (.recr rc))) =
+      some (.recInfo cv' mI' rP' rules') →
+    TwinFamily.TwinMemberLoaded crb rs p rc cv.levelParams cv.type rules₀ cv' rules'
 
 /-- **What the family step gives the load facts**, at the prefix context `C` and the new constants
 `new`: a well-formed table, a decoded store that holds a hashed block's projection records, the
@@ -116,7 +155,8 @@ block `cb` (members `ms`) at `A` and the family record `crb` (members `rs`) at `
 projection records, the route fact at `A`, every new constant at the key of a constant address of
 the two records or a definition at a derived key, and every such address stored; at a block of
 one inductive, the first constructor stored with the record's counts, and a field in it where
-the member has no index and one constructor. -/
+the member has no index and one constructor; the stored forms of the members, constructors and
+recursors, and the references the two records use stored. -/
 structure FamLoadCtx (C : Core.Ctx) (new : List (ConstantInfo .anon)) (A : _root_.Address)
     (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (rb : _root_.Address) (crb : Ixon.Constant)
     (rs : Array Ixon.MutConst) : Prop where
@@ -193,6 +233,30 @@ structure FamLoadCtx (C : Core.Ctx) (new : List (ConstantInfo .anon)) (A : _root
       (appCtx C new).env.find? (Core.keyOf C.t (Core.cprjAddr A i j)) =
         some (.ctorInfo ⟨Core.keyOf C.t (Core.cprjAddr A i j), List.range ct.lvls.toNat, ty'⟩
           ct.params.toNat ct.fields.toNat)
+  /-- The family record at its address. -/
+  rrecord : recordOf C.E rb = some crb
+  /-- The references the family record uses are stored after the step. -/
+  usedRecs : Decl.UsedRefsStored C.t (appCtx C new).env crb
+  /-- Each recursor member of the family record is stored at its key with its reading's level
+  parameters and counts, the canonical annotation of its read type, and rules with the field
+  counts and right-hand sides of its canonical rules (`TwinFamily.TwinMemberLoaded`). -/
+  recForm : ∀ (p : Ixon.RecursorProj) (rc : Ixon.Recursor), p.block = rb →
+    rs[p.idx.toNat]? = some (.recr rc) →
+    ∃ (ps : List Ix.Kernel.LevelParam) (ty₀ : Ix.Kernel.Expr .anon)
+      (rules₀ : List (Ix.Kernel.RecRule .anon)) (cv' : ConstantVal .anon)
+      (rules' : List (Ix.Kernel.RecRule .anon)),
+      ps.Perm (List.range ps.length) ∧
+      (exprReader C.t (fun x => C.E.blobs.get? x) crb (Ix.Kernel.Reader.recParam ps)
+        (blockSelf C.t rb rs)).read rc.typ = .ok ty₀ ∧
+      List.Forall₂ (fun (ru : Ixon.RecursorRule) (rl₀ : Ix.Kernel.RecRule .anon) =>
+        rl₀.nfields = ru.fields.toNat ∧
+        (exprReader C.t (fun x => C.E.blobs.get? x) crb (Ix.Kernel.Reader.recParam ps)
+          (blockSelf C.t rb rs)).read ru.rhs = .ok rl₀.rhs) rc.rules.toList rules₀ ∧
+      TwinFamily.TwinMemberLoaded crb rs p rc ps ty₀ rules₀ cv' rules' ∧
+      (appCtx C new).env.find? (Core.keyOf C.t (Core.rprjAddr rb p.idx.toNat)) =
+        some (.recInfo ⟨Core.keyOf C.t (Core.rprjAddr rb p.idx.toNat), ps, cv'.type⟩
+          (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat)
+          (rc.params.toNat + rc.motives.toNat + rc.minors.toNat) rules')
 
 variable {C : Core.Ctx} {new : List (ConstantInfo .anon)} {A rb : _root_.Address}
   {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
@@ -540,6 +604,83 @@ theorem FamLoadCtx.getCI_cprj (hL : FamLoadCtx C new A cb ms rb crb rs)
   rw [hxa, Core.Ctx.stored_key_of_find (c := appCtx C new) hfind]
   exact ⟨_, hfind, hrep⟩
 
+/-- **The family record's block is stored after the step**: every member address is a family
+address. -/
+theorem FamLoadCtx.rblockStored (hL : FamLoadCtx C new A cb ms rb crb rs) :
+    LoadedReads.BlockStored C.t (appCtx C new).env rb rs := by
+  intro y hy
+  obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp hy
+  obtain ⟨m, hm, hye⟩ := LoadedReads.blockRecurAddrs_get hk
+  exact hL.found y (Or.inr (Or.inr ⟨rs, k, m, hL.rmuts, hm, Or.inl hye⟩))
+
+/-- **A load of a new recursor at its constant address represents the stored recursor**: the
+load reads the member's projection record and, through it, the family record (its trace gives
+the recursor at the record's member index); that recursor is stored at its key with the reading's
+level parameters and counts, the canonical annotation of its read type and rules agreeing with
+its canonical rules on field counts and right-hand sides (`FamLoadCtx.recForm`); the load
+represents the canonical constant (`LoadedReads.get_ci_rprj_canon` at the environment after the
+step), and so the stored one (`ciRep_recr_rules`). -/
+theorem FamLoadCtx.getCI_rprj (hL : FamLoadCtx C new A cb ms rb crb rs)
+    {addr ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {a : Bytes.Address}
+    (ev : ObsFn Core.W "Ingress::get_ci" [addr] h ptr h' cs) (good : Core.Good (appCtx C new) cs)
+    (ha : Bytes.RepAddressRef Core.addrTy h a addr) {i : Nat} {r : Ixon.Recursor}
+    (hget : rs[i]? = some (.recr r)) (hx : Core.ixAddr a = memberAddr rb i (.recr r)) :
+    ∃ ci, (appCtx C new).env.find? ((appCtx C new).stored.κ (Core.ixAddr a)) = some ci ∧
+      Core.CIPtrRep (appCtx C new).stored.κ h' ptr ci := by
+  have hrec : recordOf C.E (Core.ixAddr a) = some (memberProjection rb i (.recr r)) := by
+    rw [hx]
+    exact hL.rmembers i _ hget
+  have hinfo : (memberProjection rb i (.recr r)).info = .rPrj ⟨i.toUInt64, rb⟩ := rfl
+  -- the recursor at the record's index, from the load's trace
+  obtain ⟨rawBytes, c', hh, haddr, hex, -, hres⟩ := L1.get_ci_block_trace_spec good.2 ha ev
+  obtain ⟨lc, hgetc, hdec⟩ := LoadedReads.recordOf_inv hrec
+  have hb : rawBytes = lc.rawBytes := Core.load_escape hgetc good.1 rawBytes hh haddr
+  have hc : c' = memberProjection rb i (.recr r) := by
+    rw [hb, hdec] at hex
+    exact (Except.ok.inj hex).symm
+  have hinfo' : c'.info = .rPrj ⟨i.toUInt64, rb⟩ := (congrArg Ixon.Constant.info hc).trans hinfo
+  unfold L1.GetCIBlockTraceResult at hres
+  rw [hinfo'] at hres
+  obtain ⟨-, blkBytes, cb', rs', rc', _, _, _, hhB, haB, hexB, hcb', hms', -⟩ := hres
+  obtain ⟨lcB, hgetB, hdecB⟩ := LoadedReads.recordOf_inv hL.rrecord
+  have hbB : blkBytes = lcB.rawBytes := Core.load_escape hgetB good.1 blkBytes hhB haB
+  rw [hbB, hdecB] at hexB
+  have e1 : cb' = crb := (Except.ok.inj hexB).symm
+  rw [e1] at hcb'
+  have e2 : rs' = rs := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hL.rmuts)
+  rw [e2] at hms'
+  have hm' : rs[i.toUInt64.toNat]? = some (.recr rc') := by
+    rw [← Array.getElem?_toList]
+    exact hms'
+  -- the stored recursor and the load's canonical constant
+  obtain ⟨ps, ty₀, rules₀, cv', rules', hperm, hty, hrules₀, hML, hfind⟩ :=
+    hL.recForm ⟨i.toUInt64, rb⟩ rc' rfl hm'
+  have hrules : List.Forall₂ (fun (ru : Ixon.RecursorRule) (rl₀ : Ix.Kernel.RecRule .anon) =>
+      rl₀.nfields = ru.fields.toNat ∧
+      (exprReader C.t (fun x => C.E.blobs.get? x) crb (Ix.Kernel.Reader.recParam ps)
+        (blockSelf C.t rb rs)).read ru.rhs = .ok rl₀.rhs ∧
+      rl₀.rhs.looseBVarsBounded 0 = true ∧ rl₀.rhs.allLevelParamsDefined ps = true)
+      rc'.rules.toList rules₀ :=
+    TwinFamily.lforall₂_mono (fun ru rl₀ h => ⟨h.1.1, h.1.2, h.2.1, h.2.2⟩)
+      (TwinFamily.lforall₂_and_mem hrules₀ hML.rulesScoped)
+  obtain ⟨haddr', ty', rls, hcT, hcR, -, -, -, hrepS⟩ := LoadedReads.get_ci_rprj_canon hL.check
+    good.1 good.2 ha ev hrec hinfo hL.rrecord hL.rmuts hm' hML.lvls hperm hty hML.tyBounded
+    hML.tyLevels hrules hML.kOne
+  obtain ⟨rls₂, hcR₂, hagree, hK⟩ := hML.rules
+  have e4 : rls = rls₂ := Option.some.inj (hcR.symm.trans hcR₂)
+  rw [← e4] at hagree hK
+  have e3 : ty' = cv'.type := Option.some.inj (hcT.symm.trans hML.ty)
+  obtain ⟨v, hld, hv⟩ := hrepS (appCtx C new).env C.lim hL.usedRecs hL.rblockStored
+  have hv' := ciRep_recr_rules hv hagree hK
+  have hxa : Core.ixAddr a = Core.rprjAddr rb i.toUInt64.toNat := haddr'
+  have hfind' : (appCtx C new).env.find? (Core.keyOf C.t (Core.rprjAddr rb i.toUInt64.toNat)) =
+      some (.recInfo ⟨Core.keyOf C.t (Core.rprjAddr rb i.toUInt64.toNat), ps, cv'.type⟩
+        (rc'.params.toNat + rc'.motives.toNat + rc'.minors.toNat + rc'.indices.toNat)
+        (rc'.params.toNat + rc'.motives.toNat + rc'.minors.toNat) rules') := hfind
+  rw [e3, hxa] at hv'
+  rw [hxa, Core.Ctx.stored_key_of_find (c := appCtx C new) hfind']
+  exact ⟨_, hfind', ⟨v, hld, hv'⟩⟩
+
 /-- **At a block of two or more inductives no good run answers `block_is_multi = 0`**, at the
 registry's facts of the prefix context (`multi_not_zero`, read from the facts alone). -/
 theorem multi_not_zero_core {C : Core.Ctx} (core : Core.ScopedCoreFacts (Core.Ctx.stored C))
@@ -591,11 +732,7 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs)
       · have e : rs' = rs := Ixon.ConstantInfo.muts.inj (hinfo'.symm.trans hL.rmuts)
         rw [e] at hget
         obtain ⟨r, rfl⟩ := hL.recrs m (by simpa using Array.mem_of_getElem? hget)
-        have hrec : recordOf C.E (Core.ixAddr a) = some (memberProjection rb i (.recr r)) := by
-          rw [hax, hxm]
-          exact hL.rmembers i _ hget
-        exact hK.getCI addr ptr h h' cs a ev good ha ⟨cn, hcn, hname⟩
-          ⟨memberProjection rb i (.recr r), ⟨i.toUInt64, rb⟩, hrec, rfl⟩
+        exact hL.getCI_rprj ev good ha hget (hax.trans hxm)
       · have e : rs' = rs := Ixon.ConstantInfo.muts.inj (hinfo'.symm.trans hL.rmuts)
         rw [e] at hget
         obtain ⟨r, hr⟩ := hL.recrs m (by simpa using Array.mem_of_getElem? hget)

@@ -336,6 +336,24 @@ theorem storedAs_ctor_val {ci : ConstantInfo .anon} {cv₀ : ConstantVal .anon} 
   | recInfo _ _ _ _ => exact False.elim h2
   | projInfo _ => exact False.elim h2
 
+/-- **The stored constant of a declared recursor is a recursor with its name, level parameters
+and counts.** -/
+theorem storedAs_rec {ci : ConstantInfo .anon} {cv₀ : ConstantVal .anon} {mI rP : Nat}
+    {rls₀ : List (Ix.Kernel.RecRule .anon)} (h : StoredAs ci (.recInfo cv₀ mI rP rls₀)) :
+    ∃ cv rls, ci = .recInfo cv mI rP rls ∧ cv.name = cv₀.name ∧
+      cv.levelParams = cv₀.levelParams := by
+  obtain ⟨⟨hn, hl, -⟩, h2⟩ := h
+  cases ci with
+  | recInfo cv mI' rP' rls =>
+    obtain ⟨e1, e2, -⟩ := h2
+    exact ⟨cv, rls, by rw [e1, e2], hn, hl⟩
+  | axiomInfo _ => exact False.elim h2
+  | defnInfo _ _ _ => exact False.elim h2
+  | thmInfo _ _ => exact False.elim h2
+  | indInfo _ _ => exact False.elim h2
+  | ctorInfo _ _ _ => exact False.elim h2
+  | projInfo _ => exact False.elim h2
+
 /-- A constant value with the given name and level parameters. -/
 theorem constVal_eta {cv : ConstantVal .anon} {n : Ix.Kernel.Key .anon}
     {lps : List Ix.Kernel.LevelParam} (hn : cv.name = n) (hl : cv.levelParams = lps) :
@@ -374,7 +392,7 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
     (hd : DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩)
     (hst : ∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
       StoredAs c' ci)
-    (hcanon : FamilyMembersCanon t E₀ A c ms ⟨new ++ env.consts⟩) :
+    (hcanon : FamilyMembersCanon t E₀ A c ms rb crb rs ⟨new ++ env.consts⟩) :
     FamLoadCtx ⟨E, env, t, lim⟩ new A c ms rb crb rs := by
   have hdec : L1.EnvDecoded E := hctx.recordsFor.1
   have hrec : ∀ a d, recordOf E₀ a = some d → recordOf E a = some d := fun a d hd' =>
@@ -539,7 +557,70 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
         exact ⟨hcj, ty₀, cv.type,
           ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
             (blob' := fun y => E.blobs.get? y) hctx.runBlob hty,
-          hlbb, hdef, hcan, hf''.trans (congrArg some ecv)⟩ }
+          hlbb, hdef, hcan, hf''.trans (congrArg some ecv)⟩
+      rrecord := hrec _ _ hrb.record
+      usedRecs := hcanon.usedRecs
+      recForm := by
+        intro p rc hpb hm
+        obtain ⟨pidx, pblk⟩ := p
+        have hpb' : pblk = rb := hpb
+        subst pblk
+        have hx : FamAddr A c rb crb (memberAddr rb pidx.toNat (.recr rc)) :=
+          Or.inr (Or.inr ⟨rs, pidx.toNat, .recr rc, hrb.muts, hm, Or.inl rfl⟩)
+        obtain ⟨ci₀, hci₀, hk⟩ := hreads.2.2.1 _ hx
+        obtain ⟨y, -, hy, hry⟩ := hreads.2.1 ci₀ hci₀
+        have hyx : y = memberAddr rb pidx.toNat (.recr rc) :=
+          Core.keyOf_inj hinv.tableWf (hy.symm.trans hk)
+        rw [hyx] at hry
+        -- the reading at the recursor's projection record
+        have hP : recordOf E₀ (memberAddr rb pidx.toNat (.recr rc)) =
+            some (memberProjection rb pidx.toNat (.recr rc)) := hrb.members pidx.toNat _ hm
+        have hpi : (pidx.toNat).toUInt64 = pidx := UInt64.ofNat_toNat
+        have hinfo : (memberProjection rb pidx.toNat (.recr rc)).info = .rPrj ⟨pidx, rb⟩ := by
+          show Ixon.ConstantInfo.rPrj ⟨(pidx.toNat).toUInt64, rb⟩ = .rPrj ⟨pidx, rb⟩
+          rw [hpi]
+        obtain ⟨cb', rs', rc', hMA, hRR⟩ := TwinFamily.reads_rprj hP hinfo hry
+        obtain ⟨hcb', hrs', hmem', -, -, -⟩ := hMA
+        have e1 : cb' = crb := Option.some.inj (hcb'.symm.trans hrb.record)
+        rw [e1] at hrs' hRR
+        have e2 : rs' = rs := Ixon.ConstantInfo.muts.inj (hrs'.symm.trans hrb.muts)
+        rw [e2] at hmem' hRR
+        have e3 : rc' = rc := Ixon.MutConst.recr.inj (Option.some.inj (hmem'.symm.trans hm))
+        rw [e3] at hRR
+        -- the stored recursor
+        obtain ⟨c'', hf'', hsa⟩ := hst ci₀ hci₀
+        rw [hk] at hf''
+        obtain ⟨tyP, ty, kF, kM, B', Bm, i', im, ind, indM, ps, rules, h1, h2, h3, h4, h5, hps,
+          hty, h6, hrules, hci₀eq⟩ := id hRR
+        subst hci₀eq
+        obtain ⟨cv', rules', hcv, hn, hl⟩ := storedAs_rec hsa
+        subst hcv
+        -- what the circuit side owes of the member
+        have hML := hcanon.recLoaded ⟨pidx, rb⟩ rc _ _ _ rules cv' _ _ rules' rfl hm hRR hf''
+        have hn' : cv'.name = Core.keyOf t (Core.rprjAddr rb pidx.toNat) := hn
+        have hl' : cv'.levelParams = ps := hl
+        have ecv : ConstantInfo.recInfo cv'
+            (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat)
+            (rc.params.toNat + rc.motives.toNat + rc.minors.toNat) rules' =
+            .recInfo ⟨Core.keyOf t (Core.rprjAddr rb pidx.toNat), ps, cv'.type⟩
+              (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat)
+              (rc.params.toNat + rc.motives.toNat + rc.minors.toNat) rules' := by
+          rw [← constVal_eta hn' hl']
+        have hrules₁ : List.Forall₂ (fun (ru : Ixon.RecursorRule) (rl₀ : Ix.Kernel.RecRule .anon) =>
+            rl₀.nfields = ru.fields.toNat ∧
+            (exprReader t (fun y => E₀.blobs.get? y) crb (Ix.Kernel.Reader.recParam ps)
+              (blockSelf t rb rs)).read ru.rhs = .ok rl₀.rhs) rc.rules.toList rules :=
+          TwinFamily.lforall₂_of_zipIdx (fun q rl hq => by
+            obtain ⟨rhs, hread, hrl⟩ := hq
+            subst hrl
+            exact ⟨rfl, hread⟩) hrules
+        exact ⟨ps, ty, rules, cv', rules', by rw [hps]; exact Decl.recLps_perm_range _ _,
+          ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
+            (blob' := fun y => E.blobs.get? y) hctx.runBlob hty,
+          TwinFamily.lforall₂_mono (fun ru rl₀ hr => ⟨hr.1,
+            ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
+              (blob' := fun y => E.blobs.get? y) hctx.runBlob hr.2⟩) hrules₁,
+          hML, hf''.trans (congrArg some ecv)⟩ }
 
 /-- **What the circuit side's family check hands the step of the block at `A` with its family
 record at `rb`**: the seam, the companion facts of each recursor the step stores, and the load
@@ -576,8 +657,8 @@ structure FamilyBlockCheck (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
       StoredAs c' ci) →
     ∀ cv mI rP rls, ConstantInfo.recInfo cv mI rP rls ∈ new →
       RecCompanionFacts ⟨E, ⟨new ++ env.consts⟩, t, lim⟩ cv mI rP rls
-  /-- The seam of the loads: the circuit loads each new inductive and constructor in its
-  canonical annotated form. -/
+  /-- The seam of the loads: the circuit loads each new inductive, constructor and recursor in
+  its canonical annotated form, and the references the two records use are stored. -/
   canon : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
     (aliases blk new : List (ConstantInfo .anon)),
     Decl.PrefixInv.{u} E t lim env → AliasGroup env h aliases →
@@ -585,7 +666,8 @@ structure FamilyBlockCheck (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
     DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
     (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
       StoredAs c' ci) →
-    ∀ ms, c.info = .muts ms → FamilyMembersCanon t E₀ A c ms ⟨new ++ env.consts⟩
+    ∀ ms rs, c.info = .muts ms → crb.info = .muts rs →
+      FamilyMembersCanon t E₀ A c ms rb crb rs ⟨new ++ env.consts⟩
   /-- The load facts at the step's new constants that read the family check. -/
   loads : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
     (aliases blk new : List (ConstantInfo .anon)),
@@ -632,7 +714,7 @@ theorem familyBlockCircuitRow_of_check {L : Ix.Kernel.Env .anon → NativeFam .a
       recs := hK.recs
       loads := fun env h aliases blk new hinv hg hreads hd hst =>
         (famLoadCtx_of_step hctx hB hrb hroute hfree hrouteT htrees hinv hg hreads hd hst
-          (hK.canon env h aliases blk new hinv hg hreads hd hst ms hB.muts)).newLoads
+          (hK.canon env h aliases blk new hinv hg hreads hd hst ms rs hB.muts hrb.muts)).newLoads
           (hK.loads env h aliases blk new hinv hg hreads hd hst) }
 
 /-- **The row `familyBlock` from the facts of the family check** (module docstring). -/
