@@ -10,9 +10,10 @@ public import Ix.Cli.CompressCmd
 
   With `--ixe` and `--ixes`, every manifest shard's claim is proven and its
   proof address printed: one leaf proof per shard, which `ix verify --ixes`
-  checks and `ix aggregate` joins. `--aggregate` (CPU), `--lanes` (GPUs) or
-  `--compress` instead prove the leaves and their recursive joins through one
-  resident controller and print the verified root.
+  checks and `ix aggregate` joins. `--aggregate`, `--lanes` or `--compress`
+  instead prove the leaves and their recursive joins through one resident
+  controller and print the verified root: one lane per visible GPU by
+  default, or `--jobs` CPU lanes on a host without GPUs.
 -/
 
 public section
@@ -88,8 +89,8 @@ def proveCmd : Cli.Cmd := `[Cli|
     "range" : Nat; "Rejected: the aggregate controller never wraps a single claim; claims join directly."
     "no-cache"; "With --aggregate/--lanes: bypass aggregate cache reads and writes; leaf proofs still follow --no-index."
     "fresh"; "Bypass prior leaf, aggregation and compression proofs, replacing their cache entries with newly verified results. Reuse parameters, proving keys and fixed preprocessing. Incompatible with --skip-proven."
-    "jobs" : Nat; "Aiur: CPU prover lanes for manifest claims or --aggregate (default 1; 0 uses available cores). One shared execution pool; the RAM budget and prover threads are divided among lanes."
-    "aggregate"; "Aiur: prove manifest claims and their joins on the aggregate controller (CPU lanes, --jobs), check the root against the manifest's expected statement, and print it. Requires --ixe and --ixes. --lanes selects this automatically on GPUs, and --compress implies it."
+    "jobs" : Nat; "Aiur: CPU prover lanes for manifest claims, or for --aggregate on a host without GPUs (default 1; 0 uses available cores). With --aggregate, passing it proves on the CPU even when GPUs are present. One shared execution pool; prover threads are divided among lanes."
+    "aggregate"; "Aiur: prove manifest claims and their joins on the aggregate controller (one lane per visible GPU, or --jobs CPU lanes without GPUs), check the root against the manifest's expected statement, and print it. Requires --ixe and --ixes. --lanes and --compress imply it."
     "report" : String; "Aiur: write per-part plans, timings and persisted proof addresses to this JSON file (with --ixes). With --aggregate/--lanes only the verified root is written; progress is the controller's `[lanes]` log."
     "shard-rows" : Nat; "Aiur: maximum rows per function/memory chip per trace shard (power of two; default 0, which lets the planner choose the largest shards within the RAM budget and, on CUDA, the device cell budget AIUR_TRACE_SHARD_MAX_CELLS, default 1.5e9, and 2^23 rows). Small caps multiply recursive verification work."
     "keep-going";       "Continue past failures and report them at the end instead of halting on the first."
@@ -106,8 +107,8 @@ def proveCmd : Cli.Cmd := `[Cli|
     "exec-only";        "Execute each shard and measure its projected prover peak, splitting over-budget shards as usual, but never start a STARK. The cheap way to audit a partition's split behavior at scale."
     "trace-shards";     "With --shards-only, --shard or --shards (always on when aggregating): prove an over-budget shard as a batch of trace shards that each fit --max-ram, from one execution, instead of cutting it into parts; a shard no trace-shard count can fit stops the run rather than being cut. With --exec-only, reports the planned shard count and the heaviest shard's projected peak without proving."
     "retention" : String; "With --trace-shards: what the batch keeps between its two rounds — `retain` (every shard's stage 1, nothing recomputed), `regenerate` (headers only; each shard rebuilt for round two), or `auto` (default: retain when the RAM model says the retained batch fits --max-ram). Fixing it lets one plan be measured under both policies."
-    "lanes" : Nat;      "With --ixes and --trace-shards: prove on N GPUs using a shared execution pool. --max-ram and --exec-jobs are per-GPU values. Environment claims exceeding the 128 GiB record ceiling (AIUR_RECORD_MAX_BYTES overrides it) are bisected automatically. Rerunning resumes the checkpointed partition and completed proofs. --out-ixes writes the final partition. Prints the verified root address on stdout."
-    "exec-jobs" : Nat;  "Concurrent executions ahead of the provers. Aiur defaults to --jobs; with --aggregate/--lanes the value is per lane and 0 (the default) divides the available cores among the lanes. Records and prover workspaces share --max-ram."
+    "lanes" : Nat;      "With --ixes: prove on N GPUs using a shared execution pool (default with --aggregate or --compress: every visible GPU). --max-ram is the whole process's budget. Environment claims exceeding the 128 GiB record ceiling (AIUR_RECORD_MAX_BYTES overrides it) are bisected automatically. Rerunning resumes the checkpointed partition and completed proofs. --out-ixes writes the final partition. Prints the verified root address on stdout."
+    "exec-jobs" : Nat;  "Optional cap on concurrent executions per lane (default 0: no cap beyond the available cores divided among the lanes). Memory decides how many run: with --aggregate/--lanes, up to 3 per GPU lane start as before; more start only while their predicted records (the `ix shard` record model, or the record --out-ixes measured last time), the records awaiting proof and one record share kept free for overshoot fit the record pool. Records and prover workspaces share --max-ram."
     "plan-only";        "Aiur: print selected manifest leaves and RAM reservations without execution."
     "skip-proven";      "With --ixes: before executing a leaf, look its claim up in the shard-proof index (`~/.ix/cache/formal-shard-proofs/<claim-digest>`); a recorded proof that decodes, bundles exactly that claim and verifies natively is reused — its address printed, nothing executed — instead of proving again. How a partially proved partition resumes after a refinement. Aggregation always resumes this way."
     "no-index";         "Neither read nor write the shard-proof index (every persisted proof is normally recorded there under its claim digest)."
@@ -115,7 +116,7 @@ def proveCmd : Cli.Cmd := `[Cli|
     "compression-out" : String; "With --compress: directory for compression stage files; --fresh replaces prior stages there."
     "dev-kzg-srs";      "With --compress: generate local development inner KZG parameters. Final Groth16/PLONK proofs also require --dev-final-srs."
     "dev-final-srs"; "With --compress groth16 or plonk: generate and cache local development final keys. With --dev-kzg-srs, no Ignition parameters are required."
-    "max-ram" : Nat;    "Aiur: total RAM budget across --jobs in GiB, default 85% of available memory."
+    "max-ram" : Nat;    "Aiur: the whole process's RAM budget in GiB, across all --jobs or --lanes (default: MemTotal less 20%). Pass it only to prove under less, such as a harness's cgroup limit."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to prove. With none, iterate every named constant in the env (sorted)."

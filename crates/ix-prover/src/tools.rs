@@ -14,11 +14,13 @@ use std::{path::Path, time::Instant};
 /// The prefix of a formal IxVM proof as stored in an `Ixon.Proof`.
 pub const IXVM_MAGIC: &[u8] = b"IXAIUR2\0";
 
-/// Available host memory in bytes, when known, and logical cores.
-pub fn resources() -> (Option<u64>, usize) {
+/// The default host budget in bytes ([`planning::default_budget`]), when
+/// known, logical cores, and GPUs ([`planning::gpu_count`]).
+pub fn resources() -> (Option<u64>, usize, usize) {
   (
-    planning::available_memory(),
+    planning::default_budget(),
     std::thread::available_parallelism().map_or(1, usize::from),
+    planning::gpu_count(),
   )
 }
 
@@ -265,6 +267,14 @@ pub fn plan(
     return Err("claim verifier returned a value".into());
   }
   let batch = backend.plan_batch(&record, options)?;
+  #[cfg(feature = "cuda")]
+  if std::env::var_os("AIUR_SHARD_IMAGE_REPORT").is_some() {
+    let layout = batch.layout.as_ref().ok_or("plan has no shard layout")?;
+    eprintln!(
+      "[aiur] shard images {}",
+      backend.shard_image_report(&record, layout)?
+    );
+  }
   let mut report = json!({"plan":batch, "execution_seconds":execute,
     "storage":record.storage_usage(),
     "execution_statistics":backend.execution_statistics(&record),
@@ -273,6 +283,14 @@ pub fn plan(
     "executor":ran, "verified":false});
   for (key, value) in bound.report {
     report[key] = value;
+  }
+  if let Some(path) = std::env::var_os("AIUR_INDEX_SIZES_OUT") {
+    std::fs::write(path, record.index_sizes())
+      .map_err(|e| format!("cannot write index sizes: {e}"))?;
+  }
+  if std::env::var_os("AIUR_RECORD_DIGEST").is_some() {
+    report["record_digest"] =
+      aiur::native::record_digest(&record).to_string().into();
   }
   println!("{report}");
   Ok(Outcome { status: 0, plan: Some(Planned::of(&batch, true)), report })

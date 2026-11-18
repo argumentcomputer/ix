@@ -87,6 +87,14 @@ def wrapInvocation (ctx : Keys) (wrapper : Ixon.Proof) : IO (ByteArray × ByteAr
   let inv := FormalAiur.invocation (Aggr.pubInput ctx.allowed claimBytes) io "MultiStark::ix_aggr"
   return (raw, inv)
 
+/-- The coverage-checked manifest at `path` over `env`, pruned of empty
+shards, with each remaining shard's constant count. -/
+def manifestOf (env : Ixon.Env) (path : String) :
+    IO (Ix.Shard.IxesManifestView × Array Nat) := do
+  let view ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile path))
+  unless ← Ix.Shard.shardsCover env view.shards do throw (IO.userError "invalid manifest coverage")
+  IO.ofExcept (view.pruneEmpty env)
+
 /-- The root statement a compressed proof of `claim` must expose: the public
 claim of the backend's `MultiStark::ix_aggr` entrypoint, serialized as one
 batch claim. -/
@@ -106,9 +114,7 @@ def manifest (p : Cli.Parsed) (override : Option String := none) : IO (Ixon.Env 
   let some envPath := (p.flag? "ixe").map (·.as! String) | throw (IO.userError "aggregate requires --ixe")
   let some path := override.orElse (fun _ => (p.flag? "ixes").map (·.as! String)) | throw (IO.userError "aggregate requires --ixes")
   let env ← IO.ofExcept (IxVM.ClaimHarness.withDefaultRoleBinding (← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile envPath))))
-  let view ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile path))
-  unless ← Ix.Shard.shardsCover env view.shards do throw (IO.userError "invalid manifest coverage")
-  let (view, counts) ← IO.ofExcept (view.pruneEmpty env)
+  let (view, counts) ← manifestOf env path
   return (env, view, counts)
 
 /-- The wrapper of a proof the controller returned: decoded from `bytes`
@@ -122,20 +128,53 @@ def resultWrapper (address : Address) (bytes : ByteArray := .empty) : IO Ixon.Pr
     pure bytes
   IO.ofExcept (Ixon.Proof.de bytes)
 
-/-- The acceptance check of `ix verify --aggregate`, applied to a root that
-the untrusted controller produced: the root statement `manifestPath` folds to
-is recomputed from the environment, every constant is audited, and the
-proof must verify against exactly that claim under the certified artifacts. -/
-def accept (p : Cli.Parsed) (ctx : Context) (manifestPath : String) (wrapper : Ixon.Proof) :
-    IO Nat := do
-  let (env, view, _) ← manifest p manifestPath
+/-- The part of `accept` that depends only on the environment and a
+manifest: the manifest as parsed, the root statement it folds to and the
+audited count of constants it covers. -/
+structure Expected where
+  source : Ix.Shard.IxesManifestView
+  root : Aggr.CheckEnvTrees
+  count : Nat
+
+def expected (p : Cli.Parsed) (env : Ixon.Env) (manifestPath : String) : IO Expected := do
+  let (view, _) ← manifestOf env manifestPath
+  let source ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifestPath))
   let above := ((p.flag? "structural-above").map (·.as! Nat)).getD defaultStructuralAbove
   let root ← IO.ofExcept (Reference.expectedFromManifest env view above)
   let count ← IO.ofExcept (auditAggregateConstants env root)
-  unless wrapper.claim == root.claim do
+  return { source, root, count }
+
+/-- The acceptance check of `ix verify --aggregate`, applied to a root that
+the untrusted controller produced: the root statement `manifestPath` folds to
+is recomputed from the environment, every constant is audited, and the
+proof must verify against exactly that claim under the certified artifacts.
+`env`, when given, is `--ixe` as `manifest` decodes it. `early` is
+`expected` of that environment computed from another manifest, typically
+while the controller ran; it stands in for the recomputation only when that
+manifest has the same shards and aggregation tree as `manifestPath`, which are
+all the statement depends on. -/
+def accept (p : Cli.Parsed) (ctx : Context) (manifestPath : String) (wrapper : Ixon.Proof)
+    (env : Option Ixon.Env := none) (early : Option (Except IO.Error Expected) := none) :
+    IO Nat := do
+  let start ← IO.monoMsNow
+  let reusable ← match early with
+    | some (.ok e) => do
+      let parsed ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifestPath))
+      pure <| if parsed.shards == e.source.shards
+          && parsed.aggregationTree == e.source.aggregationTree
+        then some e else none
+    | _ => pure none
+  let e ← match reusable, env with
+    | some e, _ => pure e
+    | none, some env => expected p env manifestPath
+    | none, none => do expected p (← manifest p manifestPath).1 manifestPath
+  unless wrapper.claim == e.root.claim do
     throw (IO.userError "the controller's root does not prove the manifest's statement")
   verifyWrapper ctx .aggr wrapper
-  return count
+  let ms := (← IO.monoMsNow) - start
+  IO.eprintln s!"[aiur aggregate] acceptance {ms / 1000}.{ms % 1000 / 100}s, statement \
+    {if reusable.isSome then "computed while proving" else "recomputed"}"
+  return e.count
 
 /-- The acceptance check of `ix aggregate --subtree`/`--reprove-slot`, applied
 to the proof the untrusted controller produced for plan slot `slot`: the
@@ -196,15 +235,22 @@ def runController (p : Cli.Parsed) (onRoot : Address → IO Unit := fun _ => pur
   let ctx ← context p
   let binding ← bindingProof p ctx env true
   let options ← hostOptions p
-  let gpu := p.hasFlag "lanes"
-  let lanes ← if gpu then pure (((p.flag? "lanes").map (·.as! Nat)).getD 1) else jobCount p
+  -- One lane per GPU unless --lanes or --jobs says otherwise; on a host
+  -- without GPUs, --jobs CPU lanes.
+  let first := ((← IO.getEnv "MULTI_STARK_CUDA_DEVICE").bind String.toNat?).getD 0
+  let gpus := (← resources).gpus - first
+  let gpu := p.hasFlag "lanes" || (gpus > 0 && !p.hasFlag "jobs")
+  let lanes ← match (p.flag? "lanes").map (·.as! Nat) with
+    | some n => pure n
+    | none => if gpu then pure gpus else jobCount p
   if lanes == 0 then throw (IO.userError "--lanes must be positive")
-  -- Legacy's units: --max-ram is per GPU with --lanes and the total with
-  -- --jobs; omitted, the controller detects the host's allowance.
-  let maxRam := match (p.flag? "max-ram").map (·.as! Nat) with
-    | some gib => if gpu then gib * 1024^3 else gib * 1024^3 / lanes
-    | none => 0
+  let options := if gpu && options.device.isNone then { options with device := some first }
+    else options
+  -- --max-ram is the process-wide budget across all lanes; omitted, the
+  -- controller uses MemTotal less the 20% host reservation.
+  let maxRam := ((p.flag? "max-ram").map (·.as! Nat)).map (· * 1024^3) |>.getD 0
   let above := ((p.flag? "structural-above").map (·.as! Nat)).getD defaultStructuralAbove
+  let early ← IO.asTask (prio := .dedicated) (expected p env ixes)
   IO.FS.withTempDir fun scratch => do
     let out := ((p.flag? "out-ixes").map (·.as! String)).getD (scratch / "proven.ixes").toString
     let config : FormalProver.LaneConfig := {
@@ -218,7 +264,7 @@ def runController (p : Cli.Parsed) (onRoot : Address → IO Unit := fun _ => pur
       | throw (IO.userError "the controller returned claims instead of a root")
     let address : Address := ⟨bytes⟩
     let root := toString address
-    let count ← accept p ctx out (← resultWrapper address)
+    let count ← accept p ctx out (← resultWrapper address) env (some (← IO.wait early))
     IO.println s!"[aiur aggregate] verified coverage of {count} constants, no undischarged assumptions"
     if let some flag := p.flag? "report" then
       IO.FS.writeFile (flag.as! String) (Json.mkObj [("schema", toJson "ix-formal-pipeline/1"),
@@ -277,7 +323,7 @@ def run (p : Cli.Parsed) : IO UInt32 := do
       IO.eprintln s!"[aiur aggregate] slot {slot} still assumes its role binding: only a full \
         root discharges it, so {address} is not a discharged root"
   | none =>
-    let count ← accept p ctx ixes wrapper
+    let count ← accept p ctx ixes wrapper env
     IO.println s!"[aiur aggregate] verified coverage of {count} constants, no undischarged assumptions"
   IO.println address
   return 0

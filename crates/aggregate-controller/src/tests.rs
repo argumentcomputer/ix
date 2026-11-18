@@ -4,6 +4,7 @@ use ixon::shard::ShardInfo;
 use ixon::{Axiom, Constant, ConstantInfo, Expr};
 use std::sync::Arc;
 
+mod admission;
 mod lanes;
 mod plan;
 mod prepare;
@@ -160,5 +161,6 @@ fn shard(id: u32, block: Address) -> ShardInfo {
     cross_ingress: 0,
     assumption_root: None,
     measured_peak_bytes: 0,
+    measured_record_bytes: 0,
   }
 }

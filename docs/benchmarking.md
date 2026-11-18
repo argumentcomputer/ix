@@ -169,7 +169,7 @@ and, if selected, its env row.
 | backend | rows | what it measures | tool |
 |---|---|---|---|
 | `ixvm` | constant | formal Aiur execution of the certified IxVM claim verifier, no proving, in one `bench-ixvm` process per constant that loads the env and programs once, outside every timed window: `execute-time` (the texray `aiur/execute` span around binding and executing the claim) and `peak-rss` (the process's peak, sampled over the execution) | `bench-ixvm --ixe <env>.ixe --const <name>` |
-| `ixvm` | env | the same execution over the whole env: `ix shard --max-ram 100` partitions it (outside the timed window), then one `ix check` executes every shard's claim, one job per core: `execute-time` (the wall clock of that concurrent execution, after the env load, which `ix check --batch-time` records), `peak-rss`, `shards` | `ix check --ixe <env>.ixe --ixes <manifest> --jobs 0` |
+| `ixvm` | env | the same execution over the whole env: `ix shard` partitions it for the runner's default budget, `MemTotal` less 20% (outside the timed window), then one `ix check` executes every shard's claim, one job per core: `execute-time` (the wall clock of that concurrent execution, after the env load, which `ix check --batch-time` records), `peak-rss`, `shards` | `ix check --ixe <env>.ixe --ixes <manifest> --jobs 0` |
 | `ixvm prove` | constant | the constant proven end to end, in the same `bench-ixvm` process after its execution: it extracts a one-constant env and splits it into two shards (setup, untimed; aggregation needs a join), proves both claims and joins them into a root on the in-process aggregate controller with no proof reused from the index or cache (`prove-time`, `prove-peak-rss`, `prove-proof-size`, and `prove-trace-shards`: the trace shards of the two claim proofs), checks the root proves the env's statement, and verifies it (`verify-time`) | `bench-ixvm --ixe <env>.ixe --const <name> --mode prove` |
 | `ixvm compress` | constant | executes and proves the constant (as `ixvm prove`), then `ix compress` compresses the root to KZG with development parameters (`compress-time`, `compress-peak-rss`, `compress-proof-size`) and verifies it (`compress-verify-time`) | `ix compress <root> --dev-kzg-srs` |
 | `ixvm-ooc` | constant | out-of-circuit Lean kernel (`IxC`) over each constant's full closure, user axioms admitted as the `ixvm` claim context admits them: `check-time` wraps only the check — the env loads once, outside every row's timed window, and the rows share that process, so they report no peak RSS of their own | `ix check-lean --anon --allow-user-axioms --consts-file` |
@@ -224,6 +224,9 @@ into the row as it completes. The env row reads the batch's wall clock from
 The tools set no memory limit of their own. CI runs every `ix bench run`
 through `.github/scripts/memory-cap`: a `systemd-run --user --scope` with
 cgroup-v2 `MemoryMax` at the runner's RAM minus 15 GiB and swap disabled.
+The provers do not read that cap: they plan for `MemTotal` less 20%, which
+stays below it on the 256 GiB runners, so the tools need no `--max-ram`.
+A harness with a tighter cap passes it as `--max-ram`.
 At the cap the kernel OOM-kills the largest process in the scope, the
 measured tool, with SIGKILL (exit 137), and `ix bench run` survives it. The
 `ixvm` constant rows run one `bench-ixvm` per constant, with execution and

@@ -14,9 +14,12 @@ public import Ix.Cli.RefineCmd
   relation that generates each shard's thin frontier, i.e. its real
   ingress), then a global rebalance post-pass toward equal predicted
   Aiur FFT cost (fitted model — constants and provenance in
-  `ixon::shard::STATIC_OWNED_PER_BYTE`). `--shards N` fixes the
-  count; `--max-ram G` seeds it from the same static block-shape score,
-  mildly superlinear in both library scale and inverse RAM budget.
+  `ixon::shard::STATIC_OWNED_PER_BYTE`). By default the count is seeded
+  from the same static block-shape score for the host budget `ix prove`
+  runs under (`MemTotal` less the 20% host reservation), so no flag is
+  needed and both commands agree. `--max-ram G` sizes it for a different
+  process budget, with the same meaning as `ix prove --max-ram`; `--shards N`
+  fixes the count.
 
   Writes a `.ixes` manifest and prints a what-if report. The
   partitioner is self-contained — no external graph-library dependency.
@@ -113,7 +116,6 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
       base ++ ".ixes"
   let shardsFlag : Option Nat := (p.flag? "shards").map (·.as! Nat)
   let maxRam     : Option Nat := (p.flag? "max-ram").map (·.as! Nat)
-  let execJobs   : Nat := ((p.flag? "exec-jobs").map (·.as! Nat)).getD 3
 
   match shardsFlag, maxRam with
   | some n, _ =>
@@ -121,18 +123,17 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
       p.printError "error: --shards must be positive"; return 1
     IO.println s!"Sharding {envPath} into {n} shards \
       (static strategy, balance ±{balancePct}%)"
-    rsShardEnvStaticFFI envPath n.toUSize 0 balancePct.toUInt64
-      outPath execJobs.toUSize
+    rsShardEnvStaticFFI envPath n.toUSize 0 balancePct.toUInt64 outPath
   | none, some gib =>
     if gib == 0 then
       p.printError "error: --max-ram must be positive"; return 1
-    IO.println s!"Sharding {envPath} for a {gib} GiB prover budget \
+    IO.println s!"Sharding {envPath} for a {gib} GiB process budget \
       (static block-shape seed, balance ±{balancePct}%)"
-    rsShardEnvStaticFFI envPath 0 gib.toUInt64 balancePct.toUInt64
-      outPath execJobs.toUSize
+    rsShardEnvStaticFFI envPath 0 gib.toUInt64 balancePct.toUInt64 outPath
   | none, none =>
-    p.printError "error: ix shard requires --shards N or --max-ram G"
-    return 1
+    IO.println s!"Sharding {envPath} for the default process budget, \
+      MemTotal less 20% (static block-shape seed, balance ±{balancePct}%)"
+    rsShardEnvStaticFFI envPath 0 0 balancePct.toUInt64 outPath
   if !outPath.isEmpty then
     IO.println s!"[shard] wrote {outPath}"
   return 0
@@ -142,12 +143,11 @@ end Ix.Cli.ShardCmd
 open Ix.Cli.ShardCmd Ix.Cli.RefineCmd in
 def shardCmd : Cli.Cmd := `[Cli|
   "shard" VIA runShardCmd;
-  "Partition a `.ixe` env into shards using the static strategy (`--shards N` or `--max-ram G`, no kernel run)"
+  "Partition a `.ixe` env into shards using the static strategy (no kernel run), sized for the host budget `ix prove` uses by default"
 
   FLAGS:
-    shards       : Nat;    "Fixed number of shards N (overrides --max-ram sizing)"
-    "max-ram"    : Nat;    "Per-shard prover-RAM budget, GiB. Seed the shard count from the `.ixe` block-shape score (serialized block size + a superlinear large-body term)."
-    "exec-jobs"  : Nat;    "CUDA build, static strategy with --max-ram: the claim executions ahead of each prover the run will use (`ix prove --lanes --exec-jobs`), which sets the record share the seed fits (default 3, the calibration's)."
+    shards       : Nat;    "Fixed number of shards N (overrides budget sizing)"
+    "max-ram"    : Nat;    "Process RAM budget in GiB to size the partition for, with the same meaning as `ix prove --max-ram` (default: MemTotal less 20%). Pass it only when proving under a different budget, such as a harness's cgroup limit."
     balance      : Nat;    "Per-bisection balance tolerance, percent (default 5)"
     out          : String; "Output .ixes manifest path (default: env base name + `.ixes`, e.g. init.ixe → init.ixes)"
 

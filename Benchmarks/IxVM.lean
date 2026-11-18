@@ -81,13 +81,13 @@ def prove (p : Cli.Parsed) (ctx : FormalAggregate.Context) (ixe name out : Strin
   let manifest := (dir / "env.ixes").toString
   let proven := (dir / "proven.ixes").toString
   Ix.KernelCheck.rsEnvExtractFFI ixe #[name] one true
-  Ix.KernelCheck.rsShardEnvStaticFFI one Ix.Cli.BenchCmd.proveShards.toUSize 0 5 manifest 3
+  Ix.KernelCheck.rsShardEnvStaticFFI one Ix.Cli.BenchCmd.proveShards.toUSize 0 5 manifest
   let (_, handle) ← Ix.Check.loadBoundIxe one
   let options ← hostOptions p
   let lanes := Ix.Cli.BenchCmd.proveShards
   let config : FormalProver.LaneConfig := {
     manifest, lanes, device := options.device
-    maxRamBytes := ((p.flag? "max-ram").map (·.as! Nat)).map (· * 1024^3 / lanes) |>.getD 0
+    maxRamBytes := ((p.flag? "max-ram").map (·.as! Nat)).map (· * 1024^3) |>.getD 0
     execJobs := 0, structuralAbove := defaultStructuralAbove, outManifest := some proven
     select := none, bindingProof := none, options := options.job
     useCache := false, useIndex := false, claimsOnly := false, assumeBinding := false }
@@ -174,7 +174,7 @@ def benchIxvmCmd : Cli.Cmd := `[Cli|
     json            : String; "Benchmark results JSON to merge the constant's row into"
     mode            : String; "execute (default) or prove"
     "root-out"      : String; "With --mode prove: write the verified root's store address here"
-    "max-ram"       : Nat;    "Total RAM budget in GiB for execution and the controller's lanes (default: 85% of available memory)"
+    "max-ram"       : Nat;    "Total RAM budget in GiB for execution and the controller's lanes (default: MemTotal less 20%)"
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources"
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources"
 ]

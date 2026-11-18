@@ -228,16 +228,16 @@ include `fri_parameter_bytes`, so caches follow the parameters actually used.
 
 All provers share one allocation-phase planner. It accounts for fixed tables,
 source matrices, lookup buffers, commitment data and retained shard state,
-with a 25% allowance. CUDA plans charge host RAM only for witnesses and
+with no host allowance beyond the budget's 20% reservation. CUDA plans charge host RAM only for witnesses and
 upload staging, since commitment, stage two and openings stay on the device.
 It conservatively includes the observed RSS even after the execution record
 is dropped. This is an estimate, not a hard allocator limit or a calibrated
 peak-RSS bound. The execution itself happens before the record can be
 measured. An earlier artifact/fixed-table estimate rejects budgets that
 splitting cannot satisfy. Generated matrix sizes are checked against the plan
-before proving. `--max-ram` is the RAM budget in GiB (per GPU with
-`--lanes`); without it, 85% of available host memory is used, respecting a
-root-mounted cgroup v2 limit. Shard rows default to `0`: the planner chooses
+before proving. `--max-ram` is the whole process's RAM budget in GiB, across
+all lanes; without it, `MemTotal` less 20% is used, and neither free memory
+nor cgroup limits are read. Shard rows default to `0`: the planner chooses
 the largest shards that fit the budget. CUDA runs also bound each shard's
 committed cells by `AIUR_TRACE_SHARD_MAX_CELLS` (1.5 billion, sized for a
 96 GB device). An explicit `--shard-rows` caps rows; small caps multiply
@@ -255,7 +255,7 @@ prints their proofs; flags that only matter to an aggregate root, such as
 `--binding-proof`, are rejected there. `ix check --ram-budget` and
 `ix prove --exec-only` execute and plan each selected shard without proving,
 cutting an over-budget shard into whole blocks, and `ix shard refine` runs
-the same loop with a per-leaf budget (85% of available memory by default),
+the same loop with a per-leaf budget (`MemTotal` less 20% by default),
 keeping every leaf that already has a verified proof in the shard-proof
 index. Their reports use `ix-formal-run/1` and contain per-part plans,
 timings and failures. A failed run does not publish a refined manifest and

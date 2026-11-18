@@ -348,7 +348,7 @@ def hostOptions (p : Cli.Parsed) (shares : Nat := 1) : IO HostOptions := do
   let gib := maxRam.orElse fun _ => ((p.flag? "ram-budget").map (·.as! Nat)).filter (· != 0)
   let ram ← match gib with
     | some n => pure (n * 1024^3)
-    | none => pure (((← resources).availableBytes.getD (8 * 1024^3)) * 85 / 100)
+    | none => pure ((← resources).budgetBytes.getD (8 * 1024^3))
   let device ← match (p.flag? "gpu-device").map (·.as! Nat) with
     | some n => pure (some n)
     | none => do
@@ -661,9 +661,7 @@ private def proveManifest (p : Cli.Parsed) (ixvm : Selected) (options : HostOpti
     let some id := view.shardIds[k]? | throw (IO.userError s!"shard {k} out of range")
     pure id
   let lanes := if options.device.isSome then 1 else max 1 jobs
-  let maxRam := match (p.flag? "max-ram").map (·.as! Nat) with
-    | some gib => gib * 1024^3 / lanes
-    | none => 0
+  let maxRam := ((p.flag? "max-ram").map (·.as! Nat)).map (· * 1024^3) |>.getD 0
   let aggr ← (← aggregationArtifact p ixvm.registry).system
   let config : FormalProver.LaneConfig := {
     manifest, lanes, device := options.device, maxRamBytes := maxRam

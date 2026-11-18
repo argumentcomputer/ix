@@ -135,7 +135,7 @@ def backendSpecs : List BackendSpec := [
   -- constant row is one `bench-ixvm` process: the env and programs load
   -- once, outside every timed window; `execute-time` is the `aiur/execute`
   -- span (bind + run) and `peak-rss` the process's peak over it. The env
-  -- row shards the env with `ix shard --max-ram 100` (setup, outside the
+  -- row shards the env with `ix shard`'s default budget (setup, outside the
   -- measured window), then one `ix check --ixes` executes every shard's
   -- claim across all cores; its `execute-time` is that execution's wall
   -- clock and `shards` counts the partition. `throughput` is the constants
@@ -332,15 +332,15 @@ def saveBaseline (out : String) (params : String) : IO Unit := do
     IO.FS.writeFile s!"{dir}/{params}.prev.json" (← IO.FS.readFile base)
   IO.FS.writeFile base (← IO.FS.readFile out)
 
-/-- The `ixvm` env row: seed the partition for the runner's RAM from the
-    env's static block-shape score (setup, outside the measured window),
+/-- The `ixvm` env row: seed the partition for the runner's default host
+    budget (`MemTotal` less 20%) from the env's static block-shape score (setup, outside the measured window),
     then one `ix check` executes every shard's claim, one job per core.
     `execute-time` is the wall clock of that concurrent execution, which
     `ix check --batch-time` records after the env load with the constants
     the shards own; `throughput` is those constants over that time. -/
 def runIxvmEnv (ix ixe out env : String) : IO Unit := do
   let manifest := s!"{env}-exec.ixes"
-  let exit ← runTool ix #["shard", ixe, "--max-ram", "100", "--out", manifest]
+  let exit ← runTool ix #["shard", ixe, "--out", manifest]
   if exit != 0 then
     IO.eprintln s!"[bench] ix shard failed (exit {exit})"
     return

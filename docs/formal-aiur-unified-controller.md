@@ -99,8 +99,9 @@ picks what to prove next:
 
 `crates/aggregate-controller` depends on `ixon`, `ix-common`, `record-pool`,
 `rayon`, `rustc-hash` and `blake3`. No prover is in its dependency graph.
-Shard types (`ShardManifest`, `static_block_profile`, `bisect_leaves`,
-`RAM_USABLE_FRAC`) come from `ixon::shard` (`crates/ixon/src/shard.rs`).
+Shard types (`ShardManifest`, `static_block_profile`, `bisect_leaves`) come
+from `ixon::shard` (`crates/ixon/src/shard.rs`); the default host budget
+(`MemTotal` less 20%) comes from `record_pool::host`.
 
 | Module (`crates/aggregate-controller/src/`) | Contents |
 |---|---|
@@ -302,14 +303,16 @@ therefore serialize a run.
 
 | Input | Formal value |
 |---|---|
-| `resident_bytes` | `planning::resident_memory() · 5/4`, measured after the lanes are built |
+| `resident_bytes` | `planning::resident_memory()`, measured after the lanes are built |
 | Lane workspace | `cell_workspace(cells)`, or `AIUR_HOST_WORKSPACE_BYTES` |
 | Per-record ceiling | 128 GiB (`DEFAULT_RECORD_MAX_BYTES`), overridden by `AIUR_RECORD_MAX_BYTES` |
 | Advice charge | Advice and hint maps, charged before allocation |
 
-`--max-ram` is per GPU with `--lanes` and the total with `--jobs`. When it is
-omitted, the controller detects the host's allowance. `--exec-jobs` is per
-lane, and 0 divides the cores among the lanes. Each lane plans within its
+`--max-ram` is the whole process's budget across all lanes. When it is
+omitted, the budget is `MemTotal` less 20%, the only margin; the controller
+reads neither free memory nor cgroup limits. Lanes default to one per
+visible GPU. `--exec-jobs` is per lane, and 0 divides the cores among the
+lanes. Each lane plans within its
 fixed workspace share, with no borrowing between lanes.
 
 ## 5. Advice streams and parity

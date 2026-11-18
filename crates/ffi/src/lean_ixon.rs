@@ -100,42 +100,13 @@ pub extern "C" fn rs_aiur_env_handle_from_bytes(
   }
 }
 
-/// FFI: the detected prover/execution RAM budget in bytes
-/// ([`ixon::shard::RAM_USABLE_FRAC`] of `MemAvailable`), or `0` when
+/// FFI: the default host budget in bytes, `MemTotal` less the one host
+/// reservation (`aiur::trace::stark::planning::default_budget`), or `0` when
 /// `/proc/meminfo` is unreadable.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_aiur_detected_ram_budget() -> LeanIOResult<LeanOwned> {
-  let bytes = detected_ram_budget().unwrap_or(0);
-  LeanIOResult::ok(LeanOwned::box_u64(bytes as u64))
-}
-
-fn trace_shard_max_cells() -> usize {
-  std::env::var("AIUR_TRACE_SHARD_MAX_CELLS")
-    .ok()
-    .and_then(|v| v.parse::<usize>().ok())
-    .unwrap_or(0)
-}
-
-fn record_budget(max_ram_bytes: usize, cells: usize) -> usize {
-  max_ram_bytes.saturating_sub(2 * 8 * cells + (256 << 20))
-}
-
-fn record_share(max_ram_bytes: usize, cells: usize, in_flight: usize) -> usize {
-  record_budget(max_ram_bytes, cells) / in_flight.max(1)
-}
-
-#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
-#[allow(clippy::cast_sign_loss)]
-fn detected_ram_budget() -> Option<usize> {
-  available_ram_bytes()
-    .map(|b| (b as f64 * ixon::shard::RAM_USABLE_FRAC) as usize)
-}
-
-fn available_ram_bytes() -> Option<usize> {
-  let s = std::fs::read_to_string("/proc/meminfo").ok()?;
-  let rest = s.lines().find_map(|l| l.strip_prefix("MemAvailable:"))?;
-  let kib: usize = rest.trim().trim_end_matches("kB").trim().parse().ok()?;
-  Some(kib * 1024)
+  let bytes = aiur::trace::stark::planning::default_budget().unwrap_or(0);
+  LeanIOResult::ok(LeanOwned::box_u64(bytes))
 }
 
 /// FFI: extract the named constants' dependency closure from a serialized
@@ -283,14 +254,25 @@ pub extern "C" fn rs_shard_env_static(
   ram_gib: u64,
   balance_pct: u64,
   out_path: LeanString<LeanBorrowed<'_>>,
-  exec_ahead: usize,
 ) -> LeanIOResult<LeanOwned> {
   let path = env_path.to_string();
-  if requested_shards == 0 && ram_gib == 0 {
-    return LeanIOResult::error_string(
-      "rs_shard_env_static: pass a positive shard count or RAM budget",
-    );
-  }
+  // The process budget `ix prove` would run under: `--max-ram`, otherwise
+  // `MemTotal` less the host reservation. Unused when the count is fixed.
+  let budget = if ram_gib > 0 {
+    usize::try_from(ram_gib << 30).unwrap_or(usize::MAX)
+  } else if requested_shards > 0 {
+    0
+  } else {
+    match aiur::trace::stark::planning::default_budget() {
+      Some(bytes) => usize::try_from(bytes).unwrap_or(usize::MAX),
+      None => {
+        return LeanIOResult::error_string(
+          "rs_shard_env_static: cannot read MemTotal; pass --max-ram or --shards",
+        );
+      },
+    }
+  };
+  let budget_gib = u64::try_from(budget >> 30).unwrap_or(u64::MAX);
   let balance = (balance_pct as f64) / 100.0;
   let out = out_path.to_string();
   let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
@@ -317,27 +299,35 @@ pub extern "C" fn rs_shard_env_static(
     requested_shards
   } else if cfg!(feature = "cuda") {
     // The trace-shard prover: seed against one execution's record share,
-    // computed as `ix prove --lanes` computes it.
-    let cells = trace_shard_max_cells();
-    let budget = usize::try_from(ram_gib << 30).unwrap_or(usize::MAX);
-    let share = record_share(budget, cells, exec_ahead + 2);
+    // derived from the machine as `ix prove` derives its lanes and budget.
+    let cells = match aiur::trace::stark::planning::configured_cells() {
+      Ok(cells) => usize::try_from(cells).unwrap_or(usize::MAX),
+      Err(e) => {
+        return LeanIOResult::error_string(&format!(
+          "rs_shard_env_static: {e}"
+        ));
+      },
+    };
+    let gpus = aiur::trace::stark::planning::gpu_count();
+    let workspace =
+      aggregate_controller::lanes::cell_workspace(cells).unwrap_or(usize::MAX);
+    let ixon::shard::RecordShare { share, records } =
+      ixon::shard::record_share(budget, workspace, gpus);
     let tenths =
       u32::try_from(share.saturating_mul(10) >> 30).unwrap_or(u32::MAX);
     let share_gib = f64::from(tenths) / 10.0;
     let bytes = ixon::shard::static_env_bytes(&profile);
-    let n = ixon::shard::gpu_seed_shards(&profile, share_gib);
+    let n = ixon::shard::gpu_seed_shards(&profile, share);
     eprintln!(
-      "[shard] trace-shard seed (cuda build): bytes={bytes:.4e}; round({} x (bytes/{:.4e}) x ({} GiB / {share_gib:.1} GiB record share: {ram_gib} GiB per worker, {cells} cells, {exec_ahead} executions ahead)) -> {n} shard(s) (heuristic; the record cap names any shard over its share)",
-      ixon::shard::GPU_SEED_REFERENCE_SHARDS,
-      ixon::shard::GPU_SEED_REFERENCE_BYTES,
-      ixon::shard::GPU_SEED_REFERENCE_SHARE_GIB,
+      "[shard] trace-shard seed (cuda build): bytes={bytes:.4e}; round({:.0} record B/B x bytes / {share_gib:.1} GiB record share: {budget_gib} GiB budget, {cells} cells, {gpus} GPU(s), {records} records held) -> {n} shard(s) (heuristic; the record cap names any shard over its share)",
+      ixon::shard::RECORD_BYTES_PER_OWNED_BYTE * ixon::shard::RECORD_STORAGE_FACTOR,
     );
     n
   } else {
     let score = ixon::shard::static_env_score(&profile);
-    let n = ixon::shard::static_seed_shards(&profile, ram_gib);
+    let n = ixon::shard::static_seed_shards(&profile, budget_gib);
     eprintln!(
-      "[shard] static seed (cpu prover model): score={score:.3e}; round({} x (score/{:.3e})^{:.2} x ({}/{ram_gib})^{:.2}) -> {n} shard(s) (heuristic; gated execution corrects every boundary)",
+      "[shard] static seed (cpu prover model): score={score:.3e}; round({} x (score/{:.3e})^{:.2} x ({}/{budget_gib})^{:.2}) -> {n} shard(s) (heuristic; gated execution corrects every boundary)",
       ixon::shard::STATIC_SEED_REFERENCE_SHARDS,
       ixon::shard::STATIC_SEED_REFERENCE_SCORE,
       ixon::shard::STATIC_SEED_SCORE_EXPONENT,

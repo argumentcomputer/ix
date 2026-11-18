@@ -57,8 +57,17 @@ private def compressProof (p : Cli.Parsed) (addr : Address) (wrapper : Ixon.Proo
   -- compression verifier is derived for; the statement must belong to them.
   let layout ← Compression.releaseRootLayout vk
   Compression.checkReleaseStatement (Ix.Claim.ser wrapper.claim) statement
-  IO.eprintln s!"Normalizing aggregate root {addr} for compression."
-  let root ← FormalCompress.normalize p ctx wrapper layout
+  -- A root normalized earlier into `<out>/root` (`ix compress normalize`, for
+  -- instance by a CPU build when the wrap exceeds one device) is reused; the
+  -- pipeline refuses a `root/` whose key, statement or layout differ from
+  -- this proof's.
+  let normalized := System.FilePath.mk out / "root" / "root-proof.bin"
+  let root ← if !opts.fresh && (← normalized.pathExists) then do
+      IO.eprintln s!"Reusing the normalized root in {normalized}."
+      IO.FS.readBinFile normalized
+    else do
+      IO.eprintln s!"Normalizing aggregate root {addr} for compression."
+      FormalCompress.normalize p ctx wrapper layout
   Compression.releaseGpuMemory
   IO.eprintln s!"Compressing aggregate root {addr} with {setup}."
   let proof ← Compression.compress vk root (Ix.Claim.ser wrapper.claim) statement
@@ -109,7 +118,7 @@ def compressCmd : Cli.Cmd := `[Cli|
     "fresh"; "Replace prior compression stages in --out (or the default output) with newly generated proofs. Reuse parameters, proving keys and fixed preprocessing."
     "out" : String; "Output directory for the stage proofs (default ~/.ix/compression/<root>). Rerunning with the same directory reuses every stage whose proof still verifies."
     "root-vk" : String; "Trusted root verifier key; omit to use the current aggregate backend."
-    "max-ram" : Nat; "RAM budget in GiB for proving the normalized root (default 85% of available memory)."
+    "max-ram" : Nat; "RAM budget in GiB for proving the normalized root (default MemTotal less 20%)."
     "gpu-device" : Nat; "Prove the normalized root on this CUDA device (requires a CUDA build)."
     "dev-kzg-srs"; "Generate local development parameters for inner KZG. With --groth16 or --plonk, also requires --dev-final-srs."
     "dev-final-srs"; "Generate and cache local development Groth16 or PLONK keys for the selected inner verifier. With --dev-kzg-srs, no Ignition parameters are required."

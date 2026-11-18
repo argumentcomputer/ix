@@ -197,7 +197,8 @@ deterministically from the record, circuit system and explicit budget:
    population placement changes the planner's estimates.
 
 `plan_layout` models the maximum simultaneous allocations of each phase,
-with a 25% margin:
+with no margin of its own (the host budget already holds the one 10%
+reservation, `prover-resource-defaults.md`):
 
 - prepared-record metadata (slices, member spans, map input indexes);
 - per-shard host stage-one cells, counting only circuits populated on the

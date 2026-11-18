@@ -104,6 +104,7 @@ def IxesManifestView.pruneEmpty (view : IxesManifestView)
   let mut shards : Array (Array Address) := #[]
   let mut shardIds : Array Nat := #[]
   let mut measuredPeakBytes : Array Nat := #[]
+  let mut measuredRecordBytes : Array Nat := #[]
   let mut keptCounts : Array Nat := #[]
   for (count, oldIdx) in counts.mapIdx fun oldIdx count => (count, oldIdx) do
     if count != 0 then
@@ -115,10 +116,12 @@ def IxesManifestView.pruneEmpty (view : IxesManifestView)
       shards := shards.push blocks
       shardIds := shardIds.push originalId
       measuredPeakBytes := measuredPeakBytes.push ((view.measuredPeakBytes[oldIdx]?).getD 0)
+      measuredRecordBytes := measuredRecordBytes.push ((view.measuredRecordBytes[oldIdx]?).getD 0)
       keptCounts := keptCounts.push count
   let some aggregationTree := view.aggregationTree.pruneAndRemap remap
     | throw "aggregate: manifest has no shard owning an environment constant"
-  pure ({ shards, shardIds, aggregationTree, measuredPeakBytes }, keptCounts)
+  pure ({ shards, shardIds, aggregationTree, measuredPeakBytes, measuredRecordBytes },
+    keptCounts)
 
 /-- The `CheckEnv` claim digest a shard's proof commits to — reconstructed
     deterministically from the env + the shard's owned blocks. Matches the

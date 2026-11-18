@@ -12,21 +12,23 @@ describes the trust split and the backend trait in detail.
 ## Commands
 
 ```sh
-# Manifest claims only: two CPU prover lanes, four executions ahead of them.
-# Prints one `shard-id address` line per claim.
-ix prove --ixe env.ixe --ixes env.ixes --jobs 2 --exec-jobs 4 \
-  --max-ram 64 --out-ixes proven.ixes --report claims.json
+# Partition for the budget and GPUs `ix prove` will use (no flags needed).
+ix shard env.ixe --out env.ixes
+
+# Manifest claims only, on two CPU prover lanes. Prints one
+# `shard-id address` line per claim.
+ix prove --ixe env.ixe --ixes env.ixes --jobs 2 \
+  --out-ixes proven.ixes --report claims.json
 ix verify --ixe env.ixe --ixes proven.ixes CLAIM_PROOF...
 
-# Claims, joins and the root on CPU lanes; prints the accepted root.
-ix prove --aggregate --ixe env.ixe --ixes env.ixes --jobs 2 --exec-jobs 4 \
-  --trace-shards --max-ram 192 --out-ixes completed.ixes
+# Claims, joins and the root, one lane per visible GPU (CPU lanes on a host
+# without GPUs); prints the accepted root.
+ix prove --aggregate --ixe env.ixe --ixes env.ixes --out-ixes completed.ixes
 ix verify --aggregate --ixe env.ixe --ixes completed.ixes ROOT_ADDRESS
 
-# The same pipeline on four CUDA lanes, starting at device zero.
-# Here --max-ram and --exec-jobs are per GPU.
-ix prove --lanes 4 --gpu-device 0 --ixe env.ixe --ixes env.ixes \
-  --trace-shards --max-ram 96 --exec-jobs 3 --out-ixes completed.ixes
+# The same pipeline on two CPU lanes even though GPUs are present.
+ix prove --aggregate --jobs 2 --ixe env.ixe --ixes env.ixes \
+  --out-ixes completed.ixes
 
 # Fold already proven claims (or one subtree of the plan) into a root.
 ix aggregate --ixe env.ixe --ixes env.ixes --trace-shards CLAIM_PROOF...
@@ -237,15 +239,17 @@ one bounded queue shared by all lanes; prepared records go to the next free
 lane, joins first. Lanes refill as individual jobs finish, without a wave
 barrier.
 
-The host budget is `--max-ram` (per GPU with `--lanes`, total with
-`--jobs`), or 85% of available memory when omitted, capped by a visible
-cgroup v2 limit. From it the controller reserves:
+The host budget is `MemTotal` less 20%, or `--max-ram` (the whole
+process's budget in GiB, across all lanes) when given; the prover reads
+neither free memory nor cgroup limits (`prover-resource-defaults.md` §3.1).
+From it the controller reserves:
 
 - one fixed prover workspace per lane, sized from the committed-cell limit
   as `ceil((16 × cells + 256 MiB) × 43 / 40)` bytes
   (`AIUR_HOST_WORKSPACE_BYTES` overrides it);
-- the resident artifacts and backends, with a 25% margin;
-- 10% headroom.
+- the resident artifacts and backends, as measured once they are loaded.
+
+The 20% taken from `MemTotal` is the only margin.
 
 The rest is a shared `record-pool` for execution records. Records charge
 arena, ROM, index, fixed-table and frame growth, and advice, to their

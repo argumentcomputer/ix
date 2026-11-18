@@ -40,7 +40,7 @@ def aggregateCmd : Cli.Cmd := `[Cli|
     "no-write";      "Do not change the proof store or aggregate cache; useful with --reprove-slot for a read-only spot check."
     "reprove-slot" : Nat; "Recompute exactly Stage 2 slot N from verified cached immediate children, bypassing that slot's cache entry."
     "jobs" : Nat;    "Maximum concurrent aggregate slots (Aiur default 1; 0 uses available cores). Budget and CPU threads are divided among jobs."
-    "max-ram" : Nat; "Total in-flight RAM budget in GiB (Aiur default 85% of available memory). Aiur rejects slots that cannot fit through trace sharding."
+    "max-ram" : Nat; "Total in-flight RAM budget in GiB (default MemTotal less 20%). Aiur rejects slots that cannot fit through trace sharding."
     "structural-above" : Nat; "Use structural joins when a node contains more than N subject leaves (default 0: every join)."
     "direct-joins";  "Accepted for compatibility; the aggregate controller always joins claims directly."
     "trace-shards";  "Prove each slot as a batch of trace shards within its share of --max-ram (the budget divided by --jobs) instead of one unbudgeted proof; a slot no shard count can fit fails the run."

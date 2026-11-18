@@ -70,7 +70,7 @@ def proveBindingCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     out : String; "Where to write the proof (an `Ixon.Proof`; default `binding-<binding hash>.proof`). It is also persisted to `~/.ix/store/`."
-    "max-ram" : Nat; "Prover RAM budget in GiB (default 0: 85% of MemAvailable); over-budget executions prove as trace shards."
+    "max-ram" : Nat; "Prover RAM budget in GiB (default 0: MemTotal less 20%); over-budget executions prove as trace shards."
     "aiur-artifact" : String; "Trusted exported formal IxVM artifact; otherwise compile/cache local sources."
     "aiur-artifact-digest" : String; "Refuse an IxVM artifact whose BLAKE3 digest is not this one."
     "gpu-device" : Nat; "Use this CUDA device with the Aiur host (requires a CUDA build)."

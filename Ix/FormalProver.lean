@@ -126,10 +126,12 @@ structure JobOptions where
   device : Option Nat := none
   retention : Retention := .auto
 
-/-- Available host memory, when known, and logical cores. -/
+/-- The default host budget (`MemTotal` less the 20% host reservation), when
+known, logical cores, and the GPUs this build can prove on. -/
 structure Resources where
-  availableBytes : Option Nat
+  budgetBytes : Option Nat
   cores : Nat
+  gpus : Nat
 
 /-- What a job's plan decided: its estimated peaks and whether it fits; a
 caller that splits claims splits into `suggestedParts` when `canSplit`. -/
@@ -148,8 +150,9 @@ structure Outcome where
   report : String
   status : UInt32
 
-/-- `ix prove --lanes` as configured. `maxRamBytes` zero detects the host's
-allowance. `select` restricts a `claimsOnly` run to these shard ids. A
+/-- `ix prove --lanes` as configured. `maxRamBytes` is the process-wide host
+budget across all lanes; zero uses the default budget (`MemTotal` less the
+20% host reservation). `select` restricts a `claimsOnly` run to these shard ids. A
 `bindingProof` is the store address of the environment's `Binding` proof:
 claims assume their binding and the root discharges it. -/
 structure LaneConfig where

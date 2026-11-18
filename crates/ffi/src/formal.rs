@@ -155,13 +155,13 @@ extern "C" fn rs_formal_request_buffers(
   })
 }
 
-/// `Ix.FormalProver.resources : IO Resources`: available bytes, when known,
-/// and logical cores.
+/// `Ix.FormalProver.resources : IO Resources`: the default host budget in
+/// bytes, when known, logical cores and GPUs.
 #[unsafe(no_mangle)]
 extern "C" fn rs_formal_resources() -> LeanIOResult<LeanOwned> {
   io(|| {
-    let (available, cores) = tools::resources();
-    Ok(records::resources(available, cores))
+    let (budget, cores, gpus) = tools::resources();
+    Ok(records::resources(budget, cores, gpus))
   })
 }
 

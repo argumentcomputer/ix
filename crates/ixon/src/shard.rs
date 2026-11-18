@@ -86,8 +86,6 @@ pub const COST_PER_WHNF: u64 = 1_797_600;
 pub const COST_PER_DEF_EQ: u64 = 567_100;
 /// Calibrated instruction weight per arena-interning step.
 pub const COST_PER_INTERN: u64 = 28_400;
-/// Fraction of host RAM considered usable when sizing shards.
-pub const RAM_USABLE_FRAC: f64 = 0.85;
 
 /// Compute the weighted cycle estimate for a single [`BlockEntry`].
 pub fn block_step_cost(b: &BlockEntry) -> u64 {
@@ -2065,6 +2063,11 @@ pub struct ShardInfo {
   /// emitted from a run that executed the shard; 0 = unmeasured (planner
   /// output). The scheduling signal: STARK prove wall is ~linear in it.
   pub measured_peak_bytes: u64,
+  /// Counted bytes of this shard's claim execution record, as the aggregate
+  /// controller measured it when it last executed the claim; 0 =
+  /// unmeasured. The controller admits a claim with a measured size by that
+  /// size instead of [`predicted_record_bytes`].
+  pub measured_record_bytes: u64,
 }
 
 /// The sharding manifest: the partition plus its cost metrics. Assumption-tree
@@ -2133,6 +2136,7 @@ impl ShardManifest {
         cross_ingress,
         assumption_root: None,
         measured_peak_bytes: 0,
+        measured_record_bytes: 0,
       });
     }
     ShardManifest {
@@ -2277,6 +2281,16 @@ impl ShardManifest {
     } else {
       out.push(0);
     }
+    // Trailing measured-records section, after the peaks: presence byte, then
+    // one u64 LE per retained shard. Written only when some claim's record
+    // was measured, so manifests without measurements keep the earlier
+    // layout byte for byte.
+    if retained.iter().any(|s| s.measured_record_bytes != 0) {
+      out.push(1);
+      for sh in &retained {
+        out.extend_from_slice(&sh.measured_record_bytes.to_le_bytes());
+      }
+    }
     out
   }
 
@@ -2332,6 +2346,7 @@ impl ShardManifest {
         cross_ingress,
         assumption_root,
         measured_peak_bytes: 0,
+        measured_record_bytes: 0,
       });
     }
     // Optional trailing tree section. Absent (end-of-input) on pre-tree
@@ -2365,9 +2380,26 @@ impl ShardManifest {
         },
       }
     }
+    // Optional trailing measured-records section; absent on manifests no
+    // run has measured, and on those written before it existed.
+    if c.remaining() > 0 {
+      match c.u8()? {
+        0 => {},
+        1 => {
+          for sh in &mut shards {
+            sh.measured_record_bytes = c.u64()?;
+          }
+        },
+        tag => {
+          return Err(format!(
+            "ixes: invalid measured-records presence tag {tag}"
+          ));
+        },
+      }
+    }
     if c.remaining() > 0 {
       return Err(format!(
-        "ixes: {} trailing bytes after the measured-peaks section",
+        "ixes: {} trailing bytes after the measured-records section",
         c.remaining()
       ));
     }
@@ -2529,25 +2561,117 @@ pub const GPU_SEED_REFERENCE_SHARDS: f64 = 78.0;
 /// Record share of the reference calibration, GiB.
 pub const GPU_SEED_REFERENCE_SHARE_GIB: f64 = 41.4;
 
-/// Seed count for the trace-shard prover: the reference count scaled by
-/// serialized block bytes and inversely by the record share, so the
-/// seed owns the reference's bytes per shard at the reference share.
+/// Record bytes a claim's execution holds per serialized byte its shard
+/// owns, as the trace-shard seed is calibrated: the reference share spread
+/// over the reference shard's owned bytes,
+/// `41.4 GiB × 78 / 1,468,041,216 B ≈ 2,362`. At this slope a shard owning
+/// the reference's bytes per shard is predicted at exactly the share it was
+/// sized for.
+pub const RECORD_BYTES_PER_OWNED_BYTE: f64 = GPU_SEED_REFERENCE_SHARE_GIB
+  * (1u64 << 30) as f64
+  * GPU_SEED_REFERENCE_SHARDS
+  / GPU_SEED_REFERENCE_BYTES;
+
+/// Record bytes per serialized byte of a claim's frontier (the foreign
+/// blocks its members reference, `ShardInfo::cross_ingress`): a third of
+/// [`RECORD_BYTES_PER_OWNED_BYTE`]. Fitted with the owned slope held at the
+/// seed's: least squares of `record − 2,362 · owned` against frontier bytes
+/// over the 74 claims of two measured Mathlib runs (55 claims on 2026-11-04,
+/// 19 on 2026-11-16, 1 GPU, 1.5e9 cells) gives 786 bytes per byte (889 and
+/// 463 per run). Frontier blocks are ingested (hashed and parsed) but not
+/// typechecked, so they cost less record than owned bytes. On those claims
+/// the owned-only model under-predicts (actual/predicted median 1.12, p90
+/// 1.38, max 2.04); with this term the median is 0.97, p90 1.24, max 1.72.
+pub const RECORD_BYTES_PER_FRONTIER_BYTE: f64 =
+  RECORD_BYTES_PER_OWNED_BYTE / 3.0;
+
+/// Records relative to the ones [`predicted_record_bytes`] was fitted on,
+/// whose executions stored query rows as 64-bit field elements, query counts
+/// and heights as `u64`s, ROM cells with 40 bytes of bookkeeping beside their
+/// words, and storage that grew by doubling. With `u32` pointer and enum-tag
+/// columns in query rows (field-element columns stay 64-bit), `u32` counts
+/// and heights, 16-byte ROM cells and chunked storage, Init claim 0's query
+/// and ROM storage (identical contents) is charged 20.34 GB instead of
+/// 27.84 GB (0.731); the four Init claims take 0.730-0.736.
+pub const RECORD_STORAGE_FACTOR: f64 = 0.74;
+
+/// The predicted execution record of a claim owning `owned` serialized
+/// bytes with a frontier of `frontier` bytes. The one record model: the
+/// trace-shard seed sizes shards with it ([`gpu_seed_shards`]) and the
+/// aggregate controller admits executions by it.
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+#[allow(clippy::cast_sign_loss)] // both terms are non-negative; `as` saturates
+pub fn predicted_record_bytes(owned: u64, frontier: u64) -> u64 {
+  (RECORD_BYTES_PER_OWNED_BYTE * owned as f64
+    + RECORD_BYTES_PER_FRONTIER_BYTE * frontier as f64) as u64
+}
+
+/// Executions per GPU the record share is sized for: the one tuning
+/// constant of the joint sizing (`docs/prover-resource-defaults.md` §4).
+///
+/// Claim and join executions together take about twice as long as their
+/// proofs (Init, one GPU: claims 105 s against 52 s, joins 50 s against
+/// 30 s), so about 1.9 executions keep a GPU busy; executions running
+/// together are 12–18% slower than alone, and three leave that headroom.
+/// Admission does not cap executions at this count: it charges each its
+/// predicted record, so lighter claims run more at once and heavier ones
+/// fewer.
+pub const EXECUTIONS_PER_GPU: usize = 3;
+
+/// The record share `s` of a process budget, and the records it is divided
+/// among.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RecordShare {
+  /// Bytes of one record share.
+  pub share: usize,
+  /// Records held at once that the budget is divided among.
+  pub records: usize,
+}
+
+/// The share of a `budget`-byte process budget one claim's record is sized
+/// for, with `gpus` lanes (one CPU lane when `gpus` is 0) each proving
+/// within `lane_workspace` bytes: every lane's workspace comes first, and
+/// the rest is divided among [`EXECUTIONS_PER_GPU`] executing records per
+/// GPU (one on a CPU host) plus one queued and one being proven per lane.
+/// `ix shard` seeds with this share and `ix prove` admits against it, so
+/// both derive the same `s` from the same inputs.
+pub fn record_share(
+  budget: usize,
+  lane_workspace: usize,
+  gpus: usize,
+) -> RecordShare {
+  let lanes = gpus.max(1);
+  let executing = if gpus == 0 { 1 } else { EXECUTIONS_PER_GPU * gpus };
+  let records = executing + 2 * lanes;
+  let workspace = lane_workspace.saturating_mul(lanes);
+  RecordShare { share: budget.saturating_sub(workspace) / records, records }
+}
+
+/// Seed count for the trace-shard prover: enough shards that a shard
+/// owning an equal part of the environment's serialized bytes is predicted
+/// ([`predicted_record_bytes`] at the current storage layout,
+/// [`RECORD_STORAGE_FACTOR`], before a cut has a frontier) at the record
+/// share `share` in bytes, the prediction admission charges. At the
+/// reference share it cuts Mathlib into 58 shards: the reference's 78 at
+/// the storage layout the slope was fitted on.
 ///
 /// A claim's execution record is close to linear in the bytes its shard
-/// owns, about 1,700 bytes of record per serialized byte, from Mathlib's
-/// ordinary shards (18.8 MB, 29.3 GiB) to Anthropic FLT's single-constant
-/// outliers (58.5 MB, 89.5 GiB), so matching bytes per shard reproduces
-/// the reference's record distribution. The static score's per-block
-/// `size^1.5` term is deliberately left out: it dominates environments
-/// with multi-megabyte proof bodies (93% of FLT's score) while their
-/// measured records stay linear, and would seed them several times too
-/// fine. Like [`static_seed_shards`] it is a seed, not a bound; the
+/// owns, from Mathlib's ordinary shards (18.8 MB, 29.3 GiB) to Anthropic
+/// FLT's single-constant outliers (58.5 MB, 89.5 GiB), so matching bytes
+/// per shard reproduces the reference's record distribution. The static
+/// score's per-block `size^1.5` term is deliberately left out: it dominates
+/// environments with multi-megabyte proof bodies (93% of FLT's score) while
+/// their measured records stay linear, and would seed them several times
+/// too fine. Like [`static_seed_shards`] it is a seed, not a bound; the
 /// record cap names any shard whose record exceeds its share, and atomic
 /// blocks above the share are isolated by the balance-weight cap.
-pub fn gpu_seed_shards(profile: &BlockProfile, share_gib: f64) -> usize {
-  let scaled = GPU_SEED_REFERENCE_SHARDS
-    * (static_env_bytes(profile) / GPU_SEED_REFERENCE_BYTES)
-    * (GPU_SEED_REFERENCE_SHARE_GIB / share_gib.max(f64::EPSILON));
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+#[allow(clippy::cast_sign_loss)] // a positive ratio, rounded
+pub fn gpu_seed_shards(profile: &BlockProfile, share: usize) -> usize {
+  let predicted = predicted_record_bytes(static_env_bytes(profile) as u64, 0)
+    as f64
+    * RECORD_STORAGE_FACTOR;
+  let scaled = predicted / share.max(1) as f64;
   (scaled.round().max(1.0) as usize).min(profile.num_blocks().max(1))
 }
 
@@ -2932,7 +3056,8 @@ impl ShardManifest {
   /// subtree over its parts; a source without a tree first gets the balanced
   /// tree its Lean consumer would have used. `measured` (empty, or one value
   /// per source shard) overrides the carried-forward peak of unsplit shards
-  /// where nonzero.
+  /// where nonzero. Unsplit shards keep their measured record size; parts
+  /// start unmeasured.
   ///
   /// The whole new partition is validated as an exact, disjoint cover of the
   /// profile's blocks. Returns the refined manifest (unsealed: the caller
@@ -2996,7 +3121,7 @@ impl ShardManifest {
 
     // The new shard list in id order: slots 0..n keep their ids (part 0 of a
     // refined leaf inherits the leaf's), then the extra parts are appended.
-    let mut new_shards: Vec<(&[Address], u64)> = Vec::with_capacity(n);
+    let mut new_shards: Vec<(&[Address], u64, u64)> = Vec::with_capacity(n);
     let mut part_ids: Vec<Vec<u32>> = vec![Vec::new(); refinements.len()];
     for sh in &self.shards {
       match by_id.get(&sh.id) {
@@ -3006,11 +3131,11 @@ impl ShardManifest {
             .copied()
             .filter(|&p| p != 0)
             .unwrap_or(sh.measured_peak_bytes);
-          new_shards.push((&sh.blocks, carried));
+          new_shards.push((&sh.blocks, carried, sh.measured_record_bytes));
         },
         Some(&i) => {
           let r = &refinements[i];
-          new_shards.push((&r.parts[0], r.part_peaks[0]));
+          new_shards.push((&r.parts[0], r.part_peaks[0], 0));
           part_ids[i].push(sh.id);
         },
       }
@@ -3023,7 +3148,7 @@ impl ShardManifest {
       for (part, &peak) in r.parts.iter().zip(&r.part_peaks).skip(1) {
         let new_id = u32::try_from(new_shards.len())
           .map_err(|_| "refine: too many shards".to_string())?;
-        new_shards.push((part, peak));
+        new_shards.push((part, peak, 0));
         part_ids[i].push(new_id);
       }
     }
@@ -3036,7 +3161,7 @@ impl ShardManifest {
       .map(|(i, b)| (&b.addr, i as u32))
       .collect();
     let mut shard_of = vec![u32::MAX; profile.num_blocks()];
-    for (k, (blocks, _)) in new_shards.iter().enumerate() {
+    for (k, (blocks, ..)) in new_shards.iter().enumerate() {
       for a in *blocks {
         let Some(&b) = block_id.get(a) else {
           return Err(format!(
@@ -3065,8 +3190,9 @@ impl ShardManifest {
 
     let mut manifest =
       ShardManifest::build(profile, &shard_of, new_shards.len());
-    for (sh, (_, peak)) in manifest.shards.iter_mut().zip(&new_shards) {
+    for (sh, (_, peak, record)) in manifest.shards.iter_mut().zip(&new_shards) {
       sh.measured_peak_bytes = *peak;
+      sh.measured_record_bytes = *record;
     }
     let all_ids: Vec<u32> = (0..n as u32).collect();
     let mut tree = self
@@ -3819,6 +3945,99 @@ mod tests {
       q2.shards.iter().map(|s| s.measured_peak_bytes).collect::<Vec<_>>(),
       [5, 7, 9]
     );
+  }
+
+  #[test]
+  fn measured_records_roundtrip_and_follow_unsplit_shards() {
+    let (p, mut m) = three_way();
+    let planner = m.to_bytes();
+    assert_eq!(ShardManifest::from_bytes(&planner).unwrap(), m);
+    m.shards[0].measured_record_bytes = 40 << 30;
+    m.shards[2].measured_record_bytes = 3;
+    let measured = m.to_bytes();
+    assert_eq!(measured.len(), planner.len() + 1 + 3 * 8);
+    assert_eq!(measured[..planner.len()], planner[..]);
+    assert_eq!(ShardManifest::from_bytes(&measured).unwrap(), m);
+    let mut bad = measured.clone();
+    bad[planner.len()] = 2;
+    assert!(ShardManifest::from_bytes(&bad).is_err());
+    bad = measured.clone();
+    bad.push(0);
+    assert!(ShardManifest::from_bytes(&bad).is_err());
+    let explicit_zero = [planner.as_slice(), &[0]].concat();
+    assert_eq!(ShardManifest::from_bytes(&explicit_zero).unwrap().shards, {
+      let mut unmeasured = m.shards.clone();
+      for shard in &mut unmeasured {
+        shard.measured_record_bytes = 0;
+      }
+      unmeasured
+    });
+    let split = LeafRefinement {
+      id: 0,
+      parts: halves(&m.shards[0].blocks),
+      part_peaks: vec![0, 0],
+    };
+    let (q, ids) = m.refine(&p, &[split], &[]).unwrap();
+    assert_eq!(ids, vec![vec![0, 3]]);
+    assert_eq!(
+      q.shards.iter().map(|s| s.measured_record_bytes).collect::<Vec<_>>(),
+      [0, 0, 3, 0]
+    );
+  }
+
+  #[test]
+  fn seed_and_admission_share_one_record_model() {
+    let gib = 1usize << 30;
+    // The reference calibration: 78 shards of the reference bytes at a
+    // 41.4 GiB share, each predicted at that share.
+    let per_shard =
+      (GPU_SEED_REFERENCE_BYTES / GPU_SEED_REFERENCE_SHARDS) as u64;
+    let reference_share = (GPU_SEED_REFERENCE_SHARE_GIB * gib as f64) as u64;
+    let predicted = predicted_record_bytes(per_shard, 0);
+    assert!(predicted.abs_diff(reference_share) < 1 << 20);
+    let mut b = ProfileBuilder::new();
+    let blocks = 312u32;
+    let size = (GPU_SEED_REFERENCE_BYTES / f64::from(blocks)) as u32;
+    for i in 0..blocks {
+      b.block(addr_u32(i), 1, size, 1, ops(1));
+    }
+    let profile = b.finish();
+    assert_eq!(gpu_seed_shards(&profile, reference_share as usize), 58);
+    // Whatever share the seed is given, a shard owning an equal part of the
+    // environment is predicted within half a shard's worth of that share.
+    for share_gib in [20usize, 40, 72] {
+      let share = share_gib * gib;
+      let n = gpu_seed_shards(&profile, share);
+      let owned = (static_env_bytes(&profile) / n as f64) as u64;
+      let predicted =
+        predicted_record_bytes(owned, 0) as f64 * RECORD_STORAGE_FACTOR;
+      let tolerance = share as f64 * (0.5 / n as f64) / (1.0 - 0.5 / n as f64);
+      assert!(
+        (predicted - share as f64).abs() <= tolerance + 1.0,
+        "{share_gib} GiB: {n} shards, predicted {predicted}"
+      );
+    }
+    // The frontier is charged at a third of an owned byte.
+    assert_eq!(
+      predicted_record_bytes(3_000_000, 3_000_000),
+      predicted_record_bytes(4_000_000, 0)
+    );
+  }
+
+  #[test]
+  fn record_share_divides_the_budget_after_workspaces() {
+    let gib = 1usize << 30;
+    let workspace = 26_088_568_116usize;
+    let one = record_share(249 * gib, workspace, 1);
+    assert_eq!(one.records, EXECUTIONS_PER_GPU + 2);
+    assert_eq!(one.share, (249 * gib - workspace) / one.records);
+    let four = record_share(980 * gib, workspace, 4);
+    assert_eq!(four.records, 4 * EXECUTIONS_PER_GPU + 8);
+    assert_eq!(four.share, (980 * gib - 4 * workspace) / four.records);
+    let cpu = record_share(480 * gib, workspace, 0);
+    assert_eq!(cpu.records, 3);
+    assert_eq!(cpu.share, (480 * gib - workspace) / 3);
+    assert_eq!(record_share(gib, workspace, 1).share, 0);
   }
 
   #[test]

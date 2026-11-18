@@ -92,7 +92,7 @@ def normalizeCmd : Cli.Cmd := `[Cli|
     "aiur-artifact-digest" : String; "Require the IxVM artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AIUR_ARTIFACT_DIGEST)."
     "aggr-artifact" : String; "Trusted formal aggregation artifact; otherwise compile/cache local sources."
     "aggr-artifact-digest" : String; "Require the aggregation artifact's BLAKE3 digest to equal these 64 hex digits (or IX_AGGR_ARTIFACT_DIGEST)."
-    "max-ram" : Nat; "RAM budget in GiB for proving the normalized root (default 85% of available memory)."
+    "max-ram" : Nat; "RAM budget in GiB for proving the normalized root (default MemTotal less 20%)."
     "gpu-device" : Nat; "Prove the normalized root on this CUDA device (requires a CUDA build)."
 
   ARGS:

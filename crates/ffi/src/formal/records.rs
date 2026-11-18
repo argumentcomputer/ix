@@ -29,8 +29,8 @@ lean_ffi::lean_inductive! {
   LeanProtocolParameters [ { num_obj: 4 } ];
   /// `maxRows`, `maxRamBytes`, `device`; `retention`.
   LeanJobOptions [ { num_obj: 3, num_8: 1 } ];
-  /// `availableBytes`, `cores`.
-  LeanResources [ { num_obj: 2 } ];
+  /// `budgetBytes`, `cores`, `gpus`.
+  LeanResources [ { num_obj: 3 } ];
   /// `suggestedParts`, `generationPeakBytes`, `provingPeakBytes`; `fits`,
   /// `canSplit`.
   LeanPlanSummary [ { num_obj: 3, num_8: 2 } ];
@@ -300,12 +300,14 @@ pub(super) fn outcome(
 }
 
 pub(super) fn resources(
-  available: Option<u64>,
+  budget: Option<u64>,
   cores: usize,
+  gpus: usize,
 ) -> LeanResources<LeanOwned> {
   let result = LeanResources::alloc(0);
-  result.set_obj(0, some_or_none(available.map(lean_nat)));
+  result.set_obj(0, some_or_none(budget.map(lean_nat)));
   result.set_obj(1, lean_nat(cores as u64));
+  result.set_obj(2, lean_nat(gpus as u64));
   result
 }
 

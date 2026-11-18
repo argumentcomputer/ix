@@ -2,17 +2,27 @@
 //!
 //! Claims and ready joins execute through one bounded queue. Prepared
 //! records go to the next available GPU, with joins taking priority.
-//! Record reservations follow their storage through both proving rounds.
-//! Under memory pressure executions wait for capacity; mutual blocking
-//! cancels the youngest waiter so the selected execution can finish.
+//! An execution starts only when the record pool admits it: as the fixed
+//! three-per-GPU policy did up to that count, and beyond it by its predicted
+//! record (`admission`), keeping one record share free for executions that
+//! outgrow their predictions. Record reservations follow their storage
+//! through both proving rounds. Under memory pressure executions wait for
+//! capacity; mutual blocking cancels the youngest waiter so the selected
+//! execution can finish.
 
+pub(crate) mod admission;
 mod checkpoint;
 mod limits;
+mod memory_trace;
 mod queue;
-use limits::{HostBudget, cgroup_memory_limit};
+use admission::{
+  AdmissionStats, Basis, Prediction, aggregation_prediction,
+  claim_prediction,
+};
+use limits::HostBudget;
 use queue::WorkQueue;
 
-pub use limits::{cell_workspace, detected_ram_budget};
+pub use limits::cell_workspace;
 
 use std::collections::{BTreeSet, VecDeque};
 use std::fs;
@@ -41,10 +51,12 @@ use crate::{format_gib, panic_text};
 
 pub struct Config {
   pub lanes: usize,
-  /// Per-GPU host budget in bytes, multiplied by `lanes`; 0 detects one
-  /// process-wide allowance.
+  /// Process-wide host budget in bytes across all lanes; 0 uses
+  /// [`record_pool::host::default_budget`].
   pub max_ram_bytes: usize,
-  /// Preparation threads per GPU, combined into one process-wide pool.
+  /// A cap on executions per GPU, combined into one process-wide pool of
+  /// executor threads; 0 is the available cores divided among the lanes.
+  /// Memory admission, not this count, decides how many run at once.
   pub exec_jobs: usize,
   pub fold: FoldPolicy,
   /// Reuse and publish verified aggregate proofs in the aggregate cache.
@@ -134,7 +146,7 @@ enum PassOutcome {
   Refine(Vec<u32>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Work {
   Claim(usize),
   Join(usize),
@@ -168,7 +180,7 @@ enum Event<S> {
   ExecutionStarted { executor: usize, work: Work },
   Prepared { executor: usize, work: Work, record_bytes: usize, secs: f64 },
   PrepAvailable,
-  PrepFailed { executor: usize, work: Work, failure: PrepareFailure },
+  PrepFailed { executor: usize, work: Work, failure: PrepareFailure, secs: f64 },
   Proving { worker: usize, work: Work },
   Proven { worker: usize, work: Work, result: Result<Arc<S>, String> },
   RootProven { worker: usize, result: Result<String, String> },
@@ -303,7 +315,12 @@ fn prepare_loop<B: Backend>(
         let _ = events.send(Event::PrepAvailable);
       },
       Err(failure) => {
-        let _ = events.send(Event::PrepFailed { executor, work, failure });
+        let _ = events.send(Event::PrepFailed {
+          executor,
+          work,
+          failure,
+          secs: began.elapsed().as_secs_f64(),
+        });
       },
     }
   }
@@ -420,12 +437,18 @@ fn prove_loop<B: Backend>(
               Ok(Some(proof)) => Some(proof),
               // No single-shard plan: an ordinary wrap may still shrink a
               // two-shard root.
-              Ok(None) if shards <= 2 => Some(
-                backend.wrap_root(lane, run, &root, current, &reservation)?,
-              ),
+              Ok(None) if shards <= 2 => Some(backend.wrap_root(
+                lane,
+                run,
+                &root,
+                current,
+                &reservation,
+              )?),
               Ok(None) => None,
               Err(error) => {
-                eprintln!("[lanes] root stays at {shards} trace shards: {error}");
+                eprintln!(
+                  "[lanes] root stays at {shards} trace shards: {error}"
+                );
                 None
               },
             };
@@ -597,8 +620,10 @@ pub fn run<B: Backend>(
   };
   let mut profile = None;
   let mut pool_stats = PoolStats::default();
+  let mut admission = AdmissionStats::default();
   loop {
-    match run_manifest(
+    let mut measured = FxHashMap::default();
+    let outcome = run_manifest(
       cfg,
       backend,
       env,
@@ -609,11 +634,29 @@ pub fn run<B: Backend>(
       binding.as_ref(),
       started,
       &mut pool_stats,
-    )? {
+      &mut admission,
+      &mut measured,
+    )?;
+    // Measured records replace predictions in this run's later passes and
+    // in the partition it writes, so the next run admits by them.
+    for shard in &mut manifest.shards {
+      if let Some(&bytes) = measured.get(&shard.id) {
+        shard.measured_record_bytes = bytes;
+      }
+    }
+    match outcome {
       PassOutcome::Complete { root, unproven } => {
         if let Some(path) = &cfg.out_manifest {
           checkpoint::write_atomic(path, &manifest.to_bytes())?;
-          say(&format!("final partition: {}", path.display()));
+          say(&format!(
+            "final partition, with {} measured claim records: {}",
+            manifest
+              .shards
+              .iter()
+              .filter(|shard| shard.measured_record_bytes != 0)
+              .count(),
+            path.display()
+          ));
         }
         say(&format!(
           "record pool: peak granted {} GiB, {} growth waits ({:.1}s summed across executions), {} contention retries",
@@ -622,6 +665,10 @@ pub fn run<B: Backend>(
           pool_stats.wait_time.as_secs_f64(),
           pool_stats.retries,
         ));
+        say(
+          &admission
+            .summary(pool_stats.freezes, pool_stats.frozen_time.as_secs_f64()),
+        );
         let coverage = if unproven == 0 {
           String::new()
         } else {
@@ -714,10 +761,21 @@ struct Pass<B: Backend> {
   index_dir: Option<PathBuf>,
   /// CPU execution threads shared by every lane.
   executions: usize,
+  /// The record share `s` `ix shard` sizes claims for, also the overshoot
+  /// buffer admission keeps free.
+  share: usize,
+  /// Executor threads that are admitted as the fixed policy admitted them,
+  /// whatever their predictions: [`ixon::shard::EXECUTIONS_PER_GPU`] per
+  /// lane, at most the executor threads.
+  guaranteed: usize,
+  /// Each shard's predicted record, by prepared shard index.
+  claim_predictions: Vec<Prediction>,
   /// The process-wide host limit, the prover budget of every slot.
   wrap_budget: Option<usize>,
   claims_only: bool,
   pool: RecordPool,
+  /// What the host budget sets aside outside the pool.
+  accounted: memory_trace::Accounted,
   lanes: Vec<B::Lane>,
 }
 
@@ -829,40 +887,62 @@ fn plan_pass<B: Backend>(
   let workspace = backend
     .lane_workspace_bytes(cells)
     .ok_or("prover workspace budget overflow")?;
-  let cgroup_limit = cgroup_memory_limit();
   let host = HostBudget::new(
     cfg.lanes,
-    executions,
     cfg.max_ram_bytes,
-    detected_ram_budget(),
-    cgroup_limit,
+    record_pool::host::default_budget(),
     workspace,
     backend.resident_bytes(),
   )?;
+  // The share `ix shard` sizes claims for, from the same budget, workspace
+  // and lane count; resident memory is outside it, as `ix shard` loads no
+  // prover.
+  let ixon::shard::RecordShare { share, records: held } =
+    ixon::shard::record_share(host.limit, host.workspace, cfg.lanes);
+  // Root wraps and the binding discharge, which run once nothing else
+  // executes, are admitted with one share up front.
   let pool = RecordPool::for_provers(
     host.records,
-    host.initial,
+    share.clamp(1, host.records),
     ProverBudget { trace_cells: cells, host_workspace: host.workspace },
   )
-  .with_record_limit(record_max_bytes);
+  .with_record_limit(record_max_bytes)
+  .with_buffer(share);
+  let guaranteed =
+    (ixon::shard::EXECUTIONS_PER_GPU * cfg.lanes).min(executions);
+  let by_id: FxHashMap<u32, &ixon::shard::ShardInfo> =
+    manifest.shards.iter().map(|shard| (shard.id, shard)).collect();
+  let claim_predictions = prepared
+    .shards
+    .iter()
+    .map(|shard| {
+      by_id
+        .get(&shard.original_id)
+        .map(|info| claim_prediction(info))
+        .ok_or_else(|| {
+          format!("claim {} is not in the manifest", shard.original_id)
+        })
+    })
+    .collect::<Result<Vec<_>, String>>()?;
   say(&format!(
-    "host budget {} GiB process-wide (requested {} GiB per GPU, visible cgroup limit {}): {} GiB shared records, {} GiB workspace per GPU, {} GiB headroom{}; {executions} CPU executions, {} prepared queue slots; {} GiB initial reservation, growth waits for shared capacity; {cells} trace cells",
+    "host budget {} GiB process-wide ({}): {} GiB shared records, {} GiB workspace per GPU{}; record share {} GiB ({held} records held: {} executing per GPU, one queued and one proving per lane); executions admitted as the fixed policy up to {} at once, beyond that by predicted record with one share kept free for overshoot, on up to {executions} executor threads; {} prepared queue slots; {cells} trace cells",
     format_gib(host.limit),
-    format_gib(cfg.max_ram_bytes),
-    cgroup_limit.map_or_else(
-      || "unlimited or unavailable".into(),
-      |bytes| format!("{} GiB", format_gib(bytes))
-    ),
+    if cfg.max_ram_bytes == 0 {
+      format!("MemTotal less {}% reserved", record_pool::host::RESERVED_PERCENT)
+    } else {
+      "--max-ram".into()
+    },
     format_gib(host.records),
     format_gib(host.workspace),
-    format_gib(host.headroom),
     if host.resident == 0 {
       String::new()
     } else {
       format!(", {} GiB resident", format_gib(host.resident))
     },
+    format_gib(share),
+    ixon::shard::EXECUTIONS_PER_GPU,
+    guaranteed,
     cfg.lanes,
-    format_gib(host.initial.min(pool.record_limit())),
   ));
   say(&format!(
     "per-record ceiling {} GiB; oversized environment claims are bisected automatically",
@@ -881,9 +961,16 @@ fn plan_pass<B: Backend>(
     cache_dir,
     index_dir,
     executions,
+    share,
+    guaranteed,
+    claim_predictions,
     wrap_budget: Some(host.limit),
     claims_only: cfg.claims_only,
     pool,
+    accounted: memory_trace::Accounted {
+      workspace: host.workspace * cfg.lanes,
+      resident: host.resident,
+    },
     lanes,
   })
 }
@@ -1004,6 +1091,15 @@ struct Scheduler<'a, B: Backend> {
   to_split: BTreeSet<u32>,
   root_address: Option<String>,
   failure: Option<String>,
+  /// The measured record of each plan slot executed in this pass.
+  slot_record: Vec<Option<usize>>,
+  largest_aggregation: Option<usize>,
+  /// The prediction each queued or executing unit was admitted by.
+  predictions: FxHashMap<Work, Prediction>,
+  executing: usize,
+  admission: AdmissionStats,
+  /// Measured claim records by manifest shard id.
+  measured: FxHashMap<u32, u64>,
 }
 
 impl<'a, B: Backend> Scheduler<'a, B> {
@@ -1038,6 +1134,12 @@ impl<'a, B: Backend> Scheduler<'a, B> {
       to_split: BTreeSet::new(),
       root_address: None,
       failure: None,
+      slot_record: vec![None; pass.specs.len()],
+      largest_aggregation: None,
+      predictions: FxHashMap::default(),
+      executing: 0,
+      admission: AdmissionStats { share: pass.share, ..Default::default() },
+      measured: FxHashMap::default(),
     }
   }
 
@@ -1094,29 +1196,56 @@ impl<'a, B: Backend> Scheduler<'a, B> {
     }
   }
 
-  /// The proven inputs `work` joins.
-  fn children(&self, work: Work) -> Vec<Arc<BackendSlot<B>>> {
-    let (l, r) = match work {
-      Work::Claim(_) => return Vec::new(),
+  /// The plan slots `work` joins.
+  fn inputs(&self, work: Work) -> Option<(usize, usize)> {
+    match work {
+      Work::Claim(_) => None,
       Work::Join(slot) => {
         let PlanOp::Join(l, r) = self.pass.specs[slot].op else {
           unreachable!()
         };
-        (l, r)
+        Some((l, r))
       },
-      Work::Root => (self.pass.root_left, self.pass.root_right),
-    };
+      Work::Root => Some((self.pass.root_left, self.pass.root_right)),
+    }
+  }
+
+  /// The proven inputs `work` joins.
+  fn children(&self, work: Work) -> Vec<Arc<BackendSlot<B>>> {
+    let Some((l, r)) = self.inputs(work) else { return Vec::new() };
     vec![self.slots[l].clone().unwrap(), self.slots[r].clone().unwrap()]
   }
 
-  /// Accounts for `work` having left for an executor.
-  fn queued(&mut self, work: Work) {
+  /// The record `work` is admitted by.
+  fn predict(&self, work: Work) -> Prediction {
+    match (work, self.inputs(work)) {
+      (Work::Claim(shard), _) => self.pass.claim_predictions[shard],
+      (_, Some((l, r))) => aggregation_prediction(
+        self.largest_aggregation,
+        [self.slot_record[l], self.slot_record[r]],
+      ),
+      (_, None) => unreachable!("an aggregation has inputs"),
+    }
+  }
+
+  /// Executor threads holding work: executing, or holding an executed
+  /// record until the prepared queue takes it.
+  fn busy_executors(&self) -> usize {
+    self.pass.executions - self.free_executors
+  }
+
+  /// Accounts for `work` having left for an executor, admitted by
+  /// `prediction`.
+  fn queued(&mut self, work: Work, prediction: Prediction) {
     self.free_executors -= 1;
     self.in_flight += 1;
+    self.predictions.insert(work, prediction);
     say(&format!(
-      "{} dispatched at +{}s",
+      "{} dispatched at +{}s: predicted record {}, charge {} GiB",
       self.work_name(work),
-      self.elapsed()
+      self.elapsed(),
+      prediction.describe(),
+      format_gib(prediction.bytes.min(self.pass.pool.record_limit())),
     ));
     match work {
       Work::Claim(_) => {
@@ -1136,23 +1265,48 @@ impl<'a, B: Backend> Scheduler<'a, B> {
 
   fn handle(&mut self, event: BackendEvent<B>) {
     match event {
-      Event::ExecutionStarted { executor, work } => say(&format!(
-        "executor {executor}: {} execution started at +{}s",
-        self.work_name(work),
-        self.elapsed(),
-      )),
-      Event::Prepared { executor, work, record_bytes, secs } => say(&format!(
-        "executor {executor}: {} executed in {secs:.1}s, record {record_bytes} B ({} GiB) at +{}s",
-        self.work_name(work),
-        format_gib(record_bytes),
-        self.elapsed(),
-      )),
+      Event::ExecutionStarted { executor, work } => {
+        self.executing += 1;
+        self.admission.peak_executing =
+          self.admission.peak_executing.max(self.executing);
+        say(&format!(
+          "executor {executor}: {} execution started at +{}s ({} executing)",
+          self.work_name(work),
+          self.elapsed(),
+          self.executing,
+        ));
+      },
+      Event::Prepared { executor, work, record_bytes, secs } => {
+        self.executing -= 1;
+        self.executed(work, record_bytes);
+        let predicted = self.predictions.remove(&work);
+        #[allow(clippy::cast_precision_loss)]
+        let against = predicted.map_or_else(String::new, |prediction| {
+          format!(
+            ", predicted {} GiB, actual/predicted {:.2}",
+            format_gib(prediction.bytes),
+            record_bytes as f64 / prediction.bytes.max(1) as f64
+          )
+        });
+        say(&format!(
+          "executor {executor}: {} executed in {secs:.1}s, record {record_bytes} B ({} GiB{against}) at +{}s",
+          self.work_name(work),
+          format_gib(record_bytes),
+          self.elapsed(),
+        ));
+      },
       Event::PrepAvailable => {
         self.free_executors += 1;
       },
-      Event::PrepFailed { executor, work, failure } => {
+      Event::PrepFailed { executor, work, failure, secs } => {
+        self.executing -= 1;
+        self.predictions.remove(&work);
         self.free_executors += 1;
         self.in_flight -= 1;
+        if matches!(failure, PrepareFailure::MemoryContention) {
+          self.admission.cancellations += 1;
+          self.admission.discarded_secs += secs;
+        }
         self.prep_failed(executor, work, failure);
       },
       Event::Proving { worker, work } => say(&format!(
@@ -1194,6 +1348,40 @@ impl<'a, B: Backend> Scheduler<'a, B> {
           self.root_address = Some(address);
         },
         Err(error) => self.failure = Some(format!("root: {error}")),
+      },
+    }
+  }
+
+  /// Records `work`'s measured record for later predictions and the run's
+  /// summary.
+  fn executed(&mut self, work: Work, bytes: usize) {
+    let predicted = self.predictions.get(&work).map(|p| p.bytes);
+    match work {
+      Work::Claim(shard) => {
+        let model = self.pass.claim_predictions[shard];
+        if model.basis == Basis::Model {
+          self.admission.model.push((model.bytes, bytes));
+        }
+        self.slot_record[self.pass.leaf_slot[shard]] = Some(bytes);
+        self.measured.insert(
+          self.pass.prepared.shards[shard].original_id,
+          u64::try_from(bytes).unwrap_or(u64::MAX),
+        );
+        if let Some(predicted) = predicted {
+          self.admission.claims.push((predicted, bytes));
+        }
+      },
+      Work::Join(_) | Work::Root => {
+        let slot = match work {
+          Work::Join(slot) => slot,
+          _ => self.pass.root_slot,
+        };
+        self.slot_record[slot] = Some(bytes);
+        self.largest_aggregation =
+          Some(self.largest_aggregation.map_or(bytes, |b| b.max(bytes)));
+        if let Some(predicted) = predicted {
+          self.admission.aggregations.push((predicted, bytes));
+        }
       },
     }
   }
@@ -1264,11 +1452,15 @@ fn run_manifest<B: Backend>(
   binding: Option<&BindingProof<B>>,
   started: Instant,
   pool_stats: &mut PoolStats,
+  admission: &mut AdmissionStats,
+  measured: &mut FxHashMap<u32, u64>,
 ) -> Result<PassOutcome, String> {
   let pass =
     plan_pass(cfg, backend, env, manifest, cache_root, record_max_bytes)?;
   let resumed = resume_pass(backend, &pass);
   let run = pass.run();
+  let _memory_trace =
+    memory_trace::MemoryTrace::start(&pass.pool, pass.accounted, started);
 
   let (events_tx, events_rx) = mpsc::channel::<BackendEvent<B>>();
   let prep_queue = WorkQueue::<Prep<B>>::new(pass.executions);
@@ -1324,9 +1516,11 @@ fn run_manifest<B: Backend>(
         let Some(work) = scheduler.next_work() else {
           break;
         };
+        // A ready join that does not fit holds back the claims behind it.
+        let prediction = scheduler.predict(work);
         let Some(reservation) = pass
           .pool
-          .try_admit()
+          .admit(prediction.bytes, scheduler.busy_executors() < pass.guaranteed)
           .map_err(|e| format!("record admission: {e:?}"))?
         else {
           break;
@@ -1342,7 +1536,7 @@ fn run_manifest<B: Backend>(
               if matches!(work, Work::Claim(_)) { "claim" } else { "join" };
             format!("execution queue closed before a {kind} was queued")
           })?;
-        scheduler.queued(work);
+        scheduler.queued(work, prediction);
         if work == Work::Root && verdict.is_none() {
           let (leaves, pass) = (scheduler.leaves(), &pass);
           verdict =
@@ -1371,6 +1565,8 @@ fn run_manifest<B: Backend>(
       }
     }
     drop(_shutdown);
+    admission.merge(std::mem::take(&mut scheduler.admission));
+    measured.extend(scheduler.measured.drain());
     if let Some(error) = scheduler.failure {
       return Err(format!(
         "{error}; rerun the same command to resume from what was persisted"
@@ -1400,5 +1596,7 @@ fn run_manifest<B: Backend>(
   pool_stats.waits += stats.waits;
   pool_stats.wait_time += stats.wait_time;
   pool_stats.retries += stats.retries;
+  pool_stats.freezes += stats.freezes;
+  pool_stats.frozen_time += stats.frozen_time;
   outcome
 }

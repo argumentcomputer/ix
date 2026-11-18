@@ -28,7 +28,10 @@ use aiur::{
   Execution,
   field::FieldBackend,
   library::advice::AdviceBuilder,
-  trace::stark::{BatchProof, ShardFeed, fri_parameter_bytes, planning},
+  trace::stark::{
+    BatchProof, ShardFeed, fri_parameter_bytes, planning,
+    streaming::HostPrepared,
+  },
 };
 use ix_common::address::Address;
 use ixon::witness::WitnessRequest;
@@ -88,6 +91,8 @@ pub struct LaneConfig {
   pub device: Option<i32>,
   /// Zero detects the host's allowance.
   pub max_ram_bytes: usize,
+  /// A cap on executions per lane; zero leaves memory admission to decide,
+  /// on the cores divided among the lanes.
   pub exec_jobs: usize,
   pub structural_above: usize,
   pub use_cache: bool,
@@ -270,38 +275,99 @@ impl Formal {
     Ok((args, record))
   }
 
-  /// Plans `record` within the lane workspace and proves it on `lane`.
-  fn prove(
+  /// Planner options of a proof on `lane` within a `workspace`-byte host
+  /// budget, as one trace shard when `single_shard`.
+  fn lane_options(
     &self,
     lane: &Lane,
-    kind: ChildKind,
-    record: &Execution<Field>,
-    entry: &str,
-    args: &[Element],
-  ) -> Result<FormalProof, String> {
-    self.prove_within(lane, kind, record, entry, args, false, self.workspace)
-  }
-
-  /// [`Self::prove`] within a `workspace`-byte host budget, as one trace
-  /// shard when `single_shard` (see `planning::Options::single_shard`).
-  #[allow(clippy::too_many_arguments)]
-  fn prove_within(
-    &self,
-    lane: &Lane,
-    kind: ChildKind,
-    record: &Execution<Field>,
-    entry: &str,
-    args: &[Element],
     single_shard: bool,
     workspace: usize,
-  ) -> Result<FormalProof, String> {
-    let prover = &lane.provers[index(kind)];
+  ) -> planning::Options {
     let mut options = self.options.clone();
     options.device = lane.device;
     options.single_shard = single_shard;
     let budget = workspace as u64;
     options.max_ram_bytes =
       Some(options.max_ram_bytes.unwrap_or(budget).min(budget));
+    options
+  }
+
+  /// The host-only preparation of `record` for proving `entry(args)` with
+  /// `lane`'s `kind` prover under `options`, charged to `reservation` when
+  /// given. Needs no device, so an executor runs it before the record waits
+  /// for a lane.
+  ///
+  /// Host depth range counts leave out the circuits the device populates,
+  /// which planning decides: a device record that does not fit at the host
+  /// layout falls back to host population. Planning here as the prover
+  /// will makes that decision before the counts, and since it depends only
+  /// on the record, the options and the device's total memory, the prover's
+  /// own planning repeats it; if it ever differs, the prover recounts.
+  #[allow(clippy::too_many_arguments)]
+  fn prepare_host(
+    &self,
+    lane: &Lane,
+    kind: ChildKind,
+    record: Execution<Field>,
+    entry: &str,
+    args: &[Element],
+    options: &planning::Options,
+    reservation: Option<&RecordReservation>,
+  ) -> Result<HostPrepared<Field>, PrepareFailure> {
+    let prover = &lane.provers[index(kind)];
+    // A planning error surfaces when the prover plans the record again.
+    let _ = prover.plan_record(&record, options, 0);
+    let prepared = prover.prepare_host(record, entry, args)?;
+    if let Some(reservation) = reservation {
+      reservation.reserve(prepared.retained_bytes()).map_err(resource)?;
+    }
+    Ok(prepared)
+  }
+
+  /// Prepares `record` on `lane` and proves it there, for records executed
+  /// on the lane's own thread.
+  #[allow(clippy::too_many_arguments)]
+  fn prove_record(
+    &self,
+    lane: &Lane,
+    kind: ChildKind,
+    record: Execution<Field>,
+    entry: &str,
+    args: &[Element],
+    single_shard: bool,
+    workspace: usize,
+  ) -> Result<FormalProof, String> {
+    let options = self.lane_options(lane, single_shard, workspace);
+    let prepared = lane.pool.install(|| {
+      self.prepare_host(lane, kind, record, entry, args, &options, None)
+    })?;
+    self.prove_within(lane, kind, &prepared, single_shard, workspace)
+  }
+
+  /// Plans `prepared` within the lane workspace and proves it on `lane`.
+  fn prove(
+    &self,
+    lane: &Lane,
+    kind: ChildKind,
+    prepared: &HostPrepared<Field>,
+  ) -> Result<FormalProof, String> {
+    self.prove_within(lane, kind, prepared, false, self.workspace)
+  }
+
+  /// [`Self::prove`] within a `workspace`-byte host budget, as one trace
+  /// shard when `single_shard` (see `planning::Options::single_shard`).
+  fn prove_within(
+    &self,
+    lane: &Lane,
+    kind: ChildKind,
+    prepared: &HostPrepared<Field>,
+    single_shard: bool,
+    workspace: usize,
+  ) -> Result<FormalProof, String> {
+    let prover = &lane.provers[index(kind)];
+    let record = prepared.record();
+    let options = self.lane_options(lane, single_shard, workspace);
+    let budget = workspace as u64;
     let batch = prover.plan_record(record, &options, 0)?;
     if single_shard {
       eprintln!(
@@ -323,10 +389,8 @@ impl Formal {
       .as_ref()
       .ok_or("the proving plan has no incremental layout")?;
     let run = lane.pool.install(|| {
-      prover.prove_incremental_fed(
-        record,
-        entry,
-        args,
+      prover.prove_prepared(
+        prepared,
         &[],
         layout,
         batch.retention(),
@@ -353,6 +417,39 @@ impl Formal {
       batch.max_rows,
       batch.device_peak_bytes,
     );
+    if std::env::var_os("AIUR_POPULATION_REPORT").is_some() {
+      let population = &run.population;
+      let rounds: Vec<String> = population
+        .rounds
+        .iter()
+        .map(|r| {
+          format!(
+            "round {}: wall {:.1}s, allocation {:.1}s, fill {:.1}s, lookups {:.1}s",
+            r.round,
+            r.wall_seconds,
+            r.allocation_seconds,
+            r.fill_seconds,
+            r.lookup_seconds
+          )
+        })
+        .collect();
+      eprintln!(
+        "[lanes]   population: preparation {:.1}s; {}",
+        population.preparation_seconds,
+        rounds.join("; ")
+      );
+      for circuit in population.top_circuits.iter().take(8) {
+        eprintln!(
+          "[lanes]   {}: {:.1}s (allocation {:.1}s, fill {:.1}s), {} real rows, {} padded cells",
+          circuit.circuit,
+          circuit.seconds,
+          circuit.allocation_seconds,
+          circuit.fill_seconds,
+          circuit.real_rows,
+          circuit.padded_cells
+        );
+      }
+    }
     FormalProof::new(kind, &run.proof)
   }
 }
@@ -408,13 +505,12 @@ impl Identity for Formal {
 pub struct ClaimRecord {
   claim: ixon::Claim,
   claim_bytes: Vec<u8>,
-  args: Vec<Element>,
-  record: Execution<Field>,
+  prepared: HostPrepared<Field>,
 }
 
 pub enum Staged {
   Cached(FormalProof, Address),
-  Executed { args: Vec<Element>, record: Box<Execution<Field>> },
+  Executed(Box<HostPrepared<Field>>),
 }
 
 impl Backend for Formal {
@@ -452,8 +548,7 @@ impl Backend for Formal {
   }
 
   fn resident_bytes(&self) -> usize {
-    let resident = planning::resident_memory().saturating_mul(5).div_ceil(4);
-    usize::try_from(resident).unwrap_or(usize::MAX)
+    usize::try_from(planning::resident_memory()).unwrap_or(usize::MAX)
   }
 
   fn lane_workspace_bytes(&self, _cells: usize) -> Option<usize> {
@@ -464,7 +559,7 @@ impl Backend for Formal {
 
   fn execute_claim(
     &self,
-    _lane: &Lane,
+    lane: &Lane,
     env: &ixon::Env,
     owned: &[Address],
     expected: &ixon::Claim,
@@ -495,14 +590,23 @@ impl Backend for Formal {
     .map_err(prep_failure)?;
     drop(advice);
     let (args, record) = self.execute_bound(0, bound, reservation)?;
+    let prepared = self.prepare_host(
+      lane,
+      ChildKind::Ixvm,
+      record,
+      IXVM_ENTRY,
+      &args,
+      &self.lane_options(lane, false, self.workspace),
+      Some(reservation),
+    )?;
     let mut claim_bytes = Vec::new();
     expected.put(&mut claim_bytes);
-    Ok(ClaimRecord { claim: expected.clone(), claim_bytes, args, record })
+    Ok(ClaimRecord { claim: expected.clone(), claim_bytes, prepared })
   }
 
   fn execute_aggregate(
     &self,
-    _lane: &Lane,
+    lane: &Lane,
     run: Run<'_, Vec<u64>>,
     slot: usize,
     children: &[Arc<BackendSlot<Self>>],
@@ -542,7 +646,17 @@ impl Backend for Formal {
     };
     let args = self.public_input(&spec.statement.claim_bytes);
     let (args, record) = self.execute_streams(&streams, &args, reservation)?;
-    Ok(Staged::Executed { args, record: Box::new(record) })
+    drop(streams);
+    let prepared = self.prepare_host(
+      lane,
+      ChildKind::Aggr,
+      record,
+      AGGR_ENTRY,
+      &args,
+      &self.lane_options(lane, false, self.workspace),
+      Some(reservation),
+    )?;
+    Ok(Staged::Executed(Box::new(prepared)))
   }
 
   fn prove_claim(
@@ -550,9 +664,9 @@ impl Backend for Formal {
     lane: &Lane,
     record: ClaimRecord,
   ) -> Result<ProvenClaim<FormalProof>, String> {
-    let ClaimRecord { claim, claim_bytes, args, record } = record;
-    let proof =
-      self.prove(lane, ChildKind::Ixvm, &record, IXVM_ENTRY, &args)?;
+    let ClaimRecord { claim, claim_bytes, prepared } = record;
+    let proof = self.prove(lane, ChildKind::Ixvm, &prepared)?;
+    drop(prepared);
     Ok(ProvenClaim { claim, claim_bytes, proof })
   }
 
@@ -566,10 +680,10 @@ impl Backend for Formal {
     let spec = run.specs.get(slot).ok_or("missing aggregate slot spec")?;
     let (proof, proof_address) = match staged {
       Staged::Cached(proof, address) => (proof, Some(address)),
-      Staged::Executed { args, record } => {
-        let proof =
-          self.prove(lane, ChildKind::Aggr, &record, AGGR_ENTRY, &args)?;
-        drop(record);
+      Staged::Executed(prepared) => {
+        let proof = self.prove(lane, ChildKind::Aggr, &prepared)?;
+        let args = prepared.args().to_vec();
+        drop(prepared);
         let outer: Vec<u64> = lane.provers[1]
           .claim(AGGR_ENTRY, &args, &[])?
           .iter()
@@ -622,7 +736,15 @@ impl Backend for Formal {
     let (args, record) = self
       .execute_streams(&streams, &args, reservation)
       .map_err(String::from)?;
-    self.prove(lane, ChildKind::Aggr, &record, AGGR_ENTRY, &args)
+    self.prove_record(
+      lane,
+      ChildKind::Aggr,
+      record,
+      AGGR_ENTRY,
+      &args,
+      false,
+      self.workspace,
+    )
   }
 
   fn wrap_root_single(
@@ -649,10 +771,10 @@ impl Backend for Formal {
     // The last wrap runs alone, after every other record is released, so it
     // may use twice the lane workspace for its one shard.
     self
-      .prove_within(
+      .prove_record(
         lane,
         ChildKind::Aggr,
-        &record,
+        record,
         AGGR_ENTRY,
         &args,
         true,
@@ -697,9 +819,15 @@ impl Backend for Formal {
       .execute_streams(&streams, &args, reservation)
       .map_err(String::from)?;
     drop(streams);
-    let proof =
-      self.prove(lane, ChildKind::Aggr, &record, AGGR_ENTRY, &args)?;
-    drop(record);
+    let proof = self.prove_record(
+      lane,
+      ChildKind::Aggr,
+      record,
+      AGGR_ENTRY,
+      &args,
+      false,
+      self.workspace,
+    )?;
     let outer: Vec<u64> = lane.provers[1]
       .claim(AGGR_ENTRY, &args, &[])?
       .iter()
@@ -990,9 +1118,15 @@ pub fn normalize_root(
     .map_err(String::from)?;
   drop(streams);
   let lanes = backend.lanes(1)?;
-  let normalized =
-    backend.prove(&lanes[0], ChildKind::Aggr, &record, AGGR_ENTRY, &args)?;
-  drop(record);
+  let normalized = backend.prove_record(
+    &lanes[0],
+    ChildKind::Aggr,
+    record,
+    AGGR_ENTRY,
+    &args,
+    false,
+    backend.workspace,
+  )?;
   backend
     .verify(ChildKind::Aggr, &outer, &normalized)
     .map_err(|e| format!("normalized root: {e}"))?;
