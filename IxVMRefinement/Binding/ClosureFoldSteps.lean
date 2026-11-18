@@ -84,7 +84,7 @@ theorem closure_finish
     obtain ⟨ci, hci, ci₀, hname, hr, hst⟩ := hreads x hx
     exact ⟨ci, hci, hname, ci₀, reads_owned hC hA hx hr, hst⟩
   have hkept : ∀ x, FamOwns R₁ famOf A x → ∀ ci ∈ new, ci.name = keyOf t x →
-      KeptIn t (recordOf R₁) (fun y => R₁.blobs.get? y) x ci := by
+      KeptIn t (recordOf R₁) (fun y => (R₁).blobs.get? y) x ci := by
     intro x hx ci hci hname
     obtain ⟨ci', hci', hname', ci₀, hr, hst⟩ := hreads₁ x hx
     have hcc : ci' = ci := eq_of_name_eq hnd hci' hci (hname'.trans hname.symm)
@@ -103,7 +103,7 @@ theorem closure_finish
     · exact Or.inl ⟨ci, hold, hname⟩
   have hprov : ∀ ci ∈ (claimedEnv ⟨new ++ s.consts⟩).consts,
       (∃ tbl, ci = .projInfo tbl) ∨ PinnedBasis ci ∨
-        ∃ a, KeptIn t (recordOf R₁) (fun y => R₁.blobs.get? y) a ci := by
+        ∃ a, KeptIn t (recordOf R₁) (fun y => (R₁).blobs.get? y) a ci := by
     intro ci hci
     obtain ⟨hmem, hkeep⟩ := List.mem_filter.mp hci
     rcases List.mem_append.mp hmem with hnew | hold
