@@ -224,23 +224,25 @@ def rhsss : List (List KExpr) :=
 theorem group_ok : isOk (aliasGroupCheck ⟨pre⟩ tbl aliases) = true := by decide +kernel
 
 set_option maxHeartbeats 40000000 in
-/-- **The search for the renamed record over the family package succeeds** (evaluated). -/
+/-- **The search for the renamed record over the family package succeeds, and each member is
+stored after the block as a constant that stores it** (evaluated). -/
 theorem record_ok :
-    isOk (famRecordCheck 200 tbl ⟨aliases ++ pre⟩ blk tysM tysR rhsss) = true := by
+    isOk (famStepCheck 200 tbl ⟨aliases ++ pre⟩ blk tysM tysR rhsss) = true := by
   decide +kernel
 
 /-- Each alias is rooted at a member of the block (evaluated). -/
 theorem roots_ok : ∀ a ∈ aliases, ∃ ci ∈ blk, a.name.base = ci.name := by decide +kernel
 
 /-- **The family step's conclusion holds of this family**: an alias group over the prefix, each
-alias rooted at a member of the block, and IxC's renamed record of the block over the family
-package at the environment that stores the aliases. -/
+alias rooted at a member of the block, IxC's renamed record of the block over the family package
+at the environment that stores the aliases, and each member stored as its reading. -/
 theorem inhabited :
     ∃ (h : KKey → KKey) (as : List (ConstantInfo .anon)) (env₂ : Env .anon),
       AliasGroup ⟨pre⟩ h as ∧ (∀ a ∈ as, ∃ ci ∈ blk, a.name.base = ci.name) ∧
-      DeclIndRenRunJ (famJ h) ⟨as ++ pre⟩ blk env₂ := by
-  obtain ⟨env₂, -, hd⟩ := famRecord_of_check record_ok
-  exact ⟨aliasMap tbl, aliases, env₂, aliasGroup_of_check group_ok, roots_ok, hd⟩
+      DeclIndRenRunJ (famJ h) ⟨as ++ pre⟩ blk env₂ ∧
+      (∀ ci ∈ blk, ∃ c, env₂.find? ci.name = some c ∧ IxVM.Consistency.StoredAs c ci) := by
+  obtain ⟨env₂, -, hd, hs⟩ := famStep_of_check record_ok
+  exact ⟨aliasMap tbl, aliases, env₂, aliasGroup_of_check group_ok, roots_ok, hd, hs⟩
 
 /-- No basis pin hits the block (evaluated). -/
 theorem pin_ok : Ix.Kernel.basisPinHit blk = none := by decide +kernel
@@ -257,7 +259,7 @@ theorem model_side :
       (∀ (k : KKey) (c : ConstantVal .anon) (mI rP : Nat) (rules : List (RecRule .anon)),
         env₂.find? k = some (.recInfo c mI rP rules) →
         (⟨aliases ++ pre⟩ : Env .anon).find? k = none → Ix.Kernel.Model.HasModel env₂ k) := by
-  obtain ⟨env₂, -, hd⟩ := famRecord_of_check record_ok
+  obtain ⟨env₂, -, hd, -⟩ := famStep_of_check record_ok
   exact ⟨env₂, hd,
     fullDeclInv_famStep (aliasGroup_of_check group_ok) pin_ok
       (fun ci hci => isBaseKey_iff_nonAuxKey.mp (base_ok ci hci)) roots_ok hd,
