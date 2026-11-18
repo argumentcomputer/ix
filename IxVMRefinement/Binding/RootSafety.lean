@@ -22,7 +22,7 @@ import IxVMRefinement.StatementRel.LoadedReadsTrace
   (`eqnsEvidence`): its load returned a `Thm` value (`RoleVal.GetThmCiIn`), so it is a theorem
   record or a theorem member of a block whose member-kind check passed.
 
-`rootsAndTheoremsSafe_of_run` is the field `rootsSafe` of `RemainingStoreClauses`.
+`rootsAndTheoremsSafe_of_run` proves what `RemainingStoreClauses` held as its field `rootsSafe`.
 -/
 
 set_option maxHeartbeats 8000000
@@ -933,7 +933,7 @@ private theorem roleHasEquations_of_kind5 (r : Ix.Kernel.Role) :
 
 /-- **The walked roots and the equation theorems of a run are in Lean's logic**
 (`RootsAndTheoremsSafe`), for a run that validates every role of the 77 groups and has a
-collision-free store: the field `rootsSafe` of `RemainingStoreClauses`, with no premise. -/
+collision-free store, with no further premise. -/
 theorem rootsAndTheoremsSafe_of_run {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} (hC : CollisionFreeRun calls E₀)
     (hval : ∀ g, g < 77 → ∀ r ∈ roleGroup g, RoleValidationIn calls bAddr t g r) :
