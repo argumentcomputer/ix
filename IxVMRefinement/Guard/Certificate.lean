@@ -1,6 +1,7 @@
 import IxC.Kernel.Model.ProjGuardCert
 import IxVMRefinement.Assembly.GuardRawLookup
 import IxVMRefinement.Decl.Native
+import IxVMRefinement.Guard.Fields
 import IxVMRefinement.Infer.Proj
 
 /-! # The projection guard, carried as certificates over a witness store
@@ -24,11 +25,15 @@ it over the stores of the proof.
 * `GuardCerts.fireSem`: **use**. The clause over `R`, and one use observed over any record store
   `E` for `R`, give `Rules.FireSem` at the use's levels. The store `E` is constrained by
   `Typing.RecordsFor R E` alone, and no limit occurs.
-* `ProjGuardUseReading`: the statement that remains to be proved about the circuit: a run of
-  `KernelInfer::proj_guard` at a propositional structure's table yields the use observation
-  `Ix.Kernel.ProjGuardUse` over the context's store. It has the hypotheses of
-  `Core.ProjAux.proj_guard_rep` and the table's lookups; it is stated where the guard is
-  consumed, at the consuming run's own context and limit.
+* `CheckedFieldsReading`, `ProjGuardUseReading`: the two statements that remain to be proved
+  about the circuit (definitions, not theorems). The first reads the installing run's checked
+  field loop as the hypotheses of the install theorem; it has the hypotheses of
+  `Core.GuardData.check_prop_fields_sorts` and the load of the constructor. The second reads a
+  run of `KernelInfer::proj_guard` at a propositional structure's table as the use observation
+  `Ix.Kernel.ProjGuardUse` over the context's store; it has the hypotheses of
+  `Core.ProjAux.proj_guard_rep` and the table's lookups, and is stated where the guard is
+  consumed, at the consuming run's own context and limit. Both allow the store's internal
+  collision as the alternative, as the raw dictionary's readings of a load do.
 -/
 
 set_option linter.unusedVariables false
@@ -223,7 +228,44 @@ def ProjGuardUseReading : Prop :=
       some (.projInfo tbl))
     (hprop : Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true)
     (hf : ZMod.val f < nF) {g : KLevel} (hg : RepKLevel h' g r),
+    L1.EnvInternalCollision c.E ∨
     ∃ raw, Guard.ctorRaw c.E (ixAddr b) (ZMod.val i) 0 = some raw ∧
       Ix.Kernel.ProjGuardUse (GuardRaw.ofStore c.E) raw cvC.type tbl.numParams (ZMod.val f) g
+
+/-- **What the installing run's checked field loop has to be read as** (the statement left to
+the refinement of the runtime classifier at the install): under the hypotheses of
+`GuardData.check_prop_fields_sorts`, where the type pointer the loop walks is the type field
+of the constructor the run loaded for member `i` of the block at `b`, there are field sorts
+with their `FieldSortsJ` witness (the sorts to run IxC's table stage at) whose zero-sets are
+those of the classifier's signatures of the constructor's raw telescope read from the
+context's store. Its second to fourth conjuncts are the hypotheses of
+`Guard.projGuardCert_of_checkNativeTable`. -/
+def CheckedFieldsReading : Prop :=
+  ∀ (c : ScopedCtx) (hc : ScopedCoreFacts c) {nP nF : Nat} {Γ : Nat → KExpr}
+    {E residual body : KExpr} {parameters fvs : List KExpr}
+    {rc level p r : SourceValue F} {np nf : F} {h h' : Heap F} {cs : List (Call F)}
+    {u : KLevel} (hp : np.val = nP) (hf : nf.val = nF)
+    (opened : Ix.Kernel.openPisAtFvars nP E 0 = some (parameters, residual))
+    (openedFields : Ix.Kernel.openPisAtFvars nF residual nP = some (fvs, body))
+    (hg : CoreGood c cs) (hrc : c.rc h rc) (hE : Tm c.κ 0 Γ h 0 E p)
+    (represented : RepKLevel h u level) (zero : ∀ φ, Ix.Kernel.Level.eval φ u = 0)
+    (ev : ObsFn W "KernelGuard::check_prop_fields"
+      [rc, level, .field 1, .field 0, p, .field np, .field nf] h r h' cs)
+    {b : Bytes.Address} {i : F} {bp ptr w₁ w₃ w₄ w₅ w₆ w₇ w₈ : SourceValue F}
+    {h₀ m : Heap F} {cs₀ : List (Call F)}
+    (load : ObsFn W "Ingress::get_ci_cprj" [bp, .field i, .field 0] h₀ ptr m cs₀)
+    (good₀ : CoreGood c cs₀) (hb : Bytes.RepAddressRef addrTy h₀ b bp)
+    (ld : loadValue m ptr = .ok (.construct kciEnum "Ctor" [w₁, p, w₃, w₄, w₅, w₆, w₇, w₈]))
+    (hext : Heap.Extends m h),
+    L1.EnvInternalCollision c.E ∨
+    ∃ (sorts sigs : List KLevel) (fuel : Nat) (raw : KExpr),
+      Ix.Kernel.Semantics.FieldSortsJ Ix.Kernel.Model.rulesJ c.env true false u nP fvs [] nF
+        sorts ∧
+      Guard.ctorRaw c.E (ixAddr b) (ZMod.val i) 0 = some raw ∧
+      Ix.Kernel.GuardClassifier.fieldSignatures (GuardRaw.ofStore c.E) fuel nP nF [] raw =
+        some sigs ∧
+      ∀ j, j < nF → ∀ φ : Ix.Kernel.LevelParam → Nat,
+        Ix.Kernel.Level.eval φ (sorts.getD j .zero) = 0 ↔
+          Ix.Kernel.Level.eval φ (sigs.getD j .zero) = 0
 
 end IxVM.Refinement.Core
