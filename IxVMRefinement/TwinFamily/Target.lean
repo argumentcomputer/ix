@@ -71,20 +71,47 @@ def FamilyInstalled (t : Ix.Kernel.RoleTable) (env : Ix.Kernel.Env .anon) (rb : 
     (∃ cv mI rP rules, env.find? (keyOf t x) = some (.recInfo cv mI rP rules)) ∧
     HasModel env (keyOf t x)
 
+/-- **The canonical record of a block that has a twin is in the reconstruction's form**: each
+recursor of the block's family record `rb` that the environment stores has the type and the
+rule right-hand sides of the reconstruction `recon x` at its constant address `x` (the circuit
+regenerates a family recursor from its block; `recon` is that regeneration at the canonical
+record's own peers). For a family installed by the run, it comes from the canonical record's
+own comparison with the reconstruction, the graph choosing as canonical the record that keeps
+the wrappers; for a family the witness stores, from the witness. -/
+def CanonReconForm (t : Ix.Kernel.RoleTable) (env : Ix.Kernel.Env .anon) (rb : _root_.Address)
+    (crb : Ixon.Constant) (recon : _root_.Address → KExpr × List KExpr) : Prop :=
+  ∀ x, ConstAddrOf rb crb x → ∀ cv mI rP rules,
+    env.find? (keyOf t x) = some (.recInfo cv mI rP rules) →
+    cv.type = (recon x).1 ∧ rules.map (·.rhs) = (recon x).2
+
+/-- **The block's family record, as the run checked it**: `rb`'s record in the run's store is
+a family record (`FamRecRecord`) that a family check of the block `B` in the run accepted. The
+canonical recursor of each part of a second record is the member of `rb` at the part's place in
+`B`'s family; this is what ties the two. For a family record in the graph (`fam B = some rb`)
+the graph's producer gives it; for a family the witness stores it is not available (the
+record may be only in the witness's store), and the stored case is open. -/
+def FamRecOfBlock (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
+    (B rb : _root_.Address) (crb : Ixon.Constant) : Prop :=
+  ∃ (rs : Array Ixon.MutConst) (bAddr : _root_.Address) (lim : Option Nat) (cs : List (Call F)),
+    FamRecRecord E₀ rb crb rs ∧ FamilyCallAtLim calls bAddr t B rb lim cs
+
 /-- **The twin step's target.** The hypotheses are the accepted family check of the block `B`
 with the second record `rb'` on the modeled route, at any limit; the prefix invariant at that
-limit; what the second record uses, stored; the block's family record `rb` installed; the inert
-clause; freshness and key freedom of the second record's constant addresses. The conclusion is
-the second record's declaration as read, IxC's twin record for it over the positional package,
-each member stored after the step as a constant that stores its reading, and a model companion
-at each member. -/
-def TwinStepTarget : Prop :=
+limit; what the second record uses, stored; the block's family record `rb` installed (wherever
+the record itself is: in the run's store, or, for a stored family, in the witness's), in the
+reconstruction's form; the inert clause; freshness and key freedom of the second record's
+constant addresses. The conclusion is the second record's declaration as read, IxC's twin
+record for it over the positional package, each member stored after the step as a constant
+that stores its reading, a model companion at each member, and the scoped core's role and
+record companions after the step. -/
+def TwinStepTarget (recon : _root_.Address → KExpr × List KExpr) : Prop :=
   ∀ (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
     (E₀ E : Ixon.Env) (env : Ix.Kernel.Env .anon) (B rb rb' : _root_.Address)
-    (cb crb crb' : Ixon.Constant) (ms rs rs' : Array Ixon.MutConst) (lim : Option Nat)
+    (cb crb crb' : Ixon.Constant) (ms rs' : Array Ixon.MutConst) (lim : Option Nat)
     (cs : List (Call F)),
     t.check = .ok () → LoadedReads.RunStore calls E₀ → StepStore calls t E₀ E →
-    FamBlockRecord E₀ B cb ms → FamRecRecord E₀ rb crb rs → FamRecRecord E₀ rb' crb' rs' →
+    FamBlockRecord E₀ B cb ms → FamRecOfBlock calls t E₀ B rb crb →
+    FamRecRecord E₀ rb' crb' rs' →
     rs'.size ≠ 0 → rb' ≠ rb →
     FamilyCallAtLim calls bAddr t B rb' lim cs →
     ModeledRouteAt calls B →
@@ -92,6 +119,7 @@ def TwinStepTarget : Prop :=
     (∀ x, UsedRef E₀ rb' x →
       (env.find? (keyOf t x)).isSome = true ∨ ConstAddrOf rb' crb' x ∨ ¬ NeedOk E₀ x) →
     FamilyInstalled t env rb crb →
+    CanonReconForm t env rb crb recon →
     InertClause t crb' →
     (∀ x, ConstAddrOf rb' crb' x → env.find? (keyOf t x) = none) →
     (∀ x, ConstAddrOf rb' crb' x → Decl.KeyFree (keyOf t x)) →
@@ -99,7 +127,8 @@ def TwinStepTarget : Prop :=
       TwinDeclReads t E₀ rb' crb' blk ∧
       DeclRecTwinRunJ twinPosRulesJ env blk env₂ ∧
       (∀ ci ∈ blk, ∃ c, env₂.find? ci.name = some c ∧ StoredAs c ci) ∧
-      (∀ ci ∈ blk, HasModel env₂ ci.name)
+      (∀ ci ∈ blk, HasModel env₂ ci.name) ∧
+      Decl.CoreCompanions ⟨E, env₂, t, lim⟩
 
 /-! ## What the fold gets from the conclusion -/
 
