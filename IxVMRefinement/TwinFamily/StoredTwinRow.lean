@@ -23,7 +23,7 @@ namespace IxVM.Refinement.Typing.TwinFamily
 open IxVM.Consistency
 open Aiur.Generic.SourceSemantics (Call)
 open IxVM (F)
-open IxVM.Refinement.Binding (StoredFamiliesRForm)
+open IxVM.Refinement.Binding (StoredFamiliesRForm StoredFormPred)
 open Ix.Kernel.Semantics (NativeFam)
 
 set_option linter.unusedVariables false
@@ -32,7 +32,7 @@ set_option linter.unusedVariables false
 a second family record `A` of a block `B`, handed the block's family record: the graph's
 (`fam B = some rb`), or, for a block with no family record in the graph, the record the witness
 selects for it (`StoredTwinCanon`), with every selected record in the form `RFormS`. -/
-def FamilyTwinRowFam (RFormS : _root_.Address → _root_.Address → Prop)
+def FamilyTwinRowFam (RFormS : StoredFormPred)
     (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) : Prop :=
   ∀ (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (seeds : List _root_.Address)
     (E₀ : Ixon.Env) (lim : Option Nat) (Top : _root_.Address → Prop)
@@ -42,7 +42,7 @@ def FamilyTwinRowFam (RFormS : _root_.Address → _root_.Address → Prop)
       (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop),
       FamilyRun calls t envT E₀ lim Top rank fam twin adv Inner →
       StepCtx.{u} calls t R envT E₀ E →
-      ∀ famOf : _root_.Address → Option _root_.Address, StoredFamiliesRForm RFormS famOf →
+      ∀ famOf : _root_.Address → Option _root_.Address, StoredFamiliesRForm RFormS t R famOf →
       ∀ (A : _root_.Address) (c : Ixon.Constant) (B rb : _root_.Address) (crb : Ixon.Constant),
         Walked Top Inner A → recordOf E₀ A = some c → InLogic c → twin A = some B →
         ((fam B = some rb ∧ recordOf E₀ rb = some crb) ∨
@@ -62,7 +62,7 @@ theorem familyTwinRowFam_of {L : Ix.Kernel.Env .anon → NativeFam .anon → Pro
         (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop),
         FamilyRun calls t envT E₀ lim Top rank fam twin adv Inner →
         TwinFormAt RForm calls t E₀ lim fam twin adv Inner)
-    {RFormS : _root_.Address → _root_.Address → Prop} (hseamS : TwinSeamStored.{u} RFormS)
+    {RFormS : StoredFormPred} (hseamS : TwinSeamStored.{u} RFormS)
     (hpos : TwinOnStoredFlat.{u}) :
     FamilyTwinRowFam.{u} RFormS L := by
   intro calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx famOf hRF A c B
@@ -76,7 +76,7 @@ theorem familyTwinRowFam_of {L : Ix.Kernel.Env .anon → NativeFam .anon → Pro
 
 /-- **The stored case is the row's second disjunct.** -/
 theorem storedTwinStepFam_of_row {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    {RFormS : _root_.Address → _root_.Address → Prop} (h : FamilyTwinRowFam.{u} RFormS L) :
+    {RFormS : StoredFormPred} (h : FamilyTwinRowFam.{u} RFormS L) :
     StoredTwinStepFam.{u} RFormS L :=
   fun calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx famOf hRF A c B
     rb crb hW hc hlog htw hnone hcanon =>
@@ -84,14 +84,14 @@ theorem storedTwinStepFam_of_row {L : Ix.Kernel.Env .anon → NativeFam .anon �
       crb hW hc hlog htw (Or.inr ⟨hnone, hcanon⟩)
 
 /-- **The empty map selects no record**, so every selected record is in any form. -/
-theorem storedFamiliesRForm_none (RFormS : _root_.Address → _root_.Address → Prop) :
-    StoredFamiliesRForm RFormS (fun _ => none) :=
+theorem storedFamiliesRForm_none (RFormS : StoredFormPred) {t : Ix.Kernel.RoleTable}
+    {R : Ixon.Env} : StoredFamiliesRForm RFormS t R (fun _ => none) :=
   fun _ _ h => nomatch h
 
 /-- **The graph case of the restated row**, at the empty map (the composition's twin conjunct
 with the graph's family record). -/
 theorem familyTwinStep_graph_of_row {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    {RFormS : _root_.Address → _root_.Address → Prop} (h : FamilyTwinRowFam.{u} RFormS L)
+    {RFormS : StoredFormPred} (h : FamilyTwinRowFam.{u} RFormS L)
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {seeds : List _root_.Address}
     {E₀ : Ixon.Env} {lim : Option Nat} {Top : _root_.Address → Prop}
     {rank : _root_.Address → Nat} (hWalk : Claim.TopWalk calls t seeds E₀ lim Top rank)
