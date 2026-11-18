@@ -401,12 +401,12 @@ def memB (M : List _root_.Address) (a : _root_.Address) : Bool :=
 theorem memB_pos {M : List _root_.Address} {a : _root_.Address} (h : a ∈ M) :
     memB M a = true := by
   unfold memB
-  exact if_pos h
+  exact ite_eq_left h
 
 theorem memB_neg {M : List _root_.Address} {a : _root_.Address} (h : a ∉ M) :
     memB M a = false := by
   unfold memB
-  exact if_neg h
+  exact ite_eq_right h
 
 theorem memB_cons_ne {M : List _root_.Address} {a b : _root_.Address} (hne : a ≠ b) :
     memB (b :: M) a = memB M a := by
@@ -462,7 +462,7 @@ theorem se_addr_in_exact :
       obtain ⟨hr1, rfl⟩ := Lib.address_eq_spec ev54 ha hb
       have hab : a = b := by
         by_contra hne
-        rw [if_neg hne] at hr1
+        rw [ite_eq_right hne] at hr1
         exact NatAux.field_one_ne_zero hr1
       subst hab
       refine ⟨?_, he76⟩
@@ -473,7 +473,7 @@ theorem se_addr_in_exact :
       obtain ⟨hr1, rfl⟩ := Lib.address_eq_spec ev54 ha hb
       have hab : a ≠ b := by
         intro e
-        rw [if_pos e] at hr1
+        rw [ite_eq_left e] at hr1
         exact hne78 hr1
       obtain ⟨hr, hh⟩ := ih ha hms' ev87
       refine ⟨?_, hh⟩
