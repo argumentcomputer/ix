@@ -416,6 +416,41 @@ structure PartResult where
   result : JobResult
   constants : Nat := 0
 
+/-- The claim a distributed proof of `env` (bound, `withDefaultRoleBinding`) states:
+`checkEnv` of the environment's canonical tree (`envCanonicalTree`), returned with it,
+under the environment's own context. An environment with user axioms is refused. Its
+claim's run checks every owned leaf on the record that runs the claim
+(`KernelClaim::walk_leaves_transitive`), not through the `check_owned` calls that the
+distributed prover assigns to the workers' records, so it does not divide among workers. -/
+def distributedClaim (env : Ixon.Env) (assumeBinding : Bool) :
+    Except String (Ix.Claim × Ix.AssumptionTree) := do
+  let ctx ← Ix.ClaimContext.ofEnv env assumeBinding
+  if ctx.axioms.isSome then
+    throw s!"--distributed does not support an environment with user axioms (it has \
+      {(Ix.ClaimContext.userAxioms env).size} safe axiom(s) its role binding does not bind): \
+      the claim then checks every constant on one record, so its work does not divide among \
+      the workers. Prove the environment without --distributed."
+  let some tree := envCanonicalTree env | throw "empty environment"
+  return (Ix.Claim.checkEnv ctx tree.root none, tree)
+
+/-- The byte scope of a distributed worker that owns `owned`: the closure of its owned
+constants, the primitives and the role binding's constants. -/
+def distributedScope (env : Ixon.Env) (owned : Array Address) : Std.HashSet Address :=
+  closureFromRoots env (owned ++ Ix.primAddrSet.toArray.filter env.consts.contains ++ bindingRoots env)
+
+/-- The input streams of a distributed worker whose byte scope is `scope`: the role binding
+and the records, blobs, hints and model advice in the scope, and for the first worker,
+which runs the claim, also `claim` and the trees its run reads (`seedClaimTrees`, with the
+claim's owned tree `tree`). -/
+def distributedStreams (env : Ixon.Env) (claim : Ix.Claim) (tree : Ix.AssumptionTree)
+    (scope : Std.HashSet Address) (first : Bool) : Except String Aiur.IOBuffer := do
+  let mut io := addEntries env scope.contains (seedBinding env default)
+  if first then
+    let bytes := Ix.Claim.ser claim
+    io := io.extend 0 (packedDigestKey (Address.blake3 bytes)) (bytes.data.map Aiur.G.ofUInt8)
+    io ← seedClaimTrees env claim (({} : Std.HashMap Address Ix.AssumptionTree).insert tree.root tree) io
+  return io
+
 private def runDistributed (p : Cli.Parsed) (artifactPath : String) (options : HostOptions)
     (ixe manifest : String) : IO UInt32 := do
   for flag in #["shard", "shards", "lanes", "jobs"] do
@@ -423,16 +458,16 @@ private def runDistributed (p : Cli.Parsed) (artifactPath : String) (options : H
   let env ← IO.ofExcept (withDefaultRoleBinding (← IO.ofExcept (Ixon.deEnvAnon (← IO.FS.readBinFile ixe))))
   let some binding := env.roleBinding | throw (IO.userError "distributed environment carries no role binding")
   let assumeBinding := p.hasFlag "assume-binding"
-  let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env assumeBinding)
+  -- the claim, or the refusal of an environment the route does not support, before any
+  -- worker starts
+  let (claim, tree) ← IO.ofExcept (distributedClaim env assumeBinding)
   let view ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest))
   unless ← Ix.Shard.shardsCover env view.shards do throw (IO.userError "invalid manifest coverage")
   -- every shard's owned constants in one pass over the environment
   let indexed := ((Ix.Shard.ownedConstsPer env view.shards).mapIdx fun i owned => (i, owned)).filter (!·.2.isEmpty)
   let owners := indexed.map (·.2)
   if owners.isEmpty then throw (IO.userError "distributed environment has no owned constants")
-  let primitives := Ix.primAddrSet.toArray.filter env.consts.contains
-  let bRoots := bindingRoots env
-  let scopes := owners.map fun owned => closureFromRoots env (owned ++ primitives ++ bRoots)
+  let scopes := owners.map (distributedScope env)
   let jobs ← executionJobs p owners.size
   if p.hasFlag "plan-only" then
     for i in [:owners.size] do
@@ -441,8 +476,6 @@ private def runDistributed (p : Cli.Parsed) (artifactPath : String) (options : H
       IO.println s!"worker {i}: {owners[i]!.size} constants, {scopes[i]!.size} in byte scope; potential callers {callers}"
     IO.println s!"[aiur distributed] {min jobs owners.size} execution workers; replay one record at a time for batch proving"
     return 0
-  let some tree := envCanonicalTree env | throw (IO.userError "empty environment")
-  let claim := Ix.Claim.checkEnv ctx tree.root none
   let bytes := Ix.Claim.ser claim
   let digest := Address.blake3 bytes
   let args := packedDigestKey digest
@@ -460,10 +493,7 @@ private def runDistributed (p : Cli.Parsed) (artifactPath : String) (options : H
   IO.FS.withTempDir fun dir => do
     let mut workers := #[]
     for i in [:owners.size] do
-      let mut io := addEntries env scopes[i]!.contains (seedBinding env default)
-      if i == 0 then
-        io := io.extend 0 args (bytes.data.map Aiur.G.ofUInt8)
-        io := io.extend 1 (tree.root.hash.data.map Aiur.G.ofUInt8) (tree.ser.data.map Aiur.G.ofUInt8)
+      let io ← IO.ofExcept (distributedStreams env claim tree scopes[i]! (i == 0))
       let input := dir / s!"worker-{i}.ixi"
       IO.FS.writeBinFile input (invocation args io)
       workers := workers.push (Json.mkObj [("input", toJson input.toString),
