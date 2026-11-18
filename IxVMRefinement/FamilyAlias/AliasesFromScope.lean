@@ -158,7 +158,7 @@ theorem aliasesReady_of_scope {env : Env .anon} {g : KKey → KKey} {bn : List K
           rw [hk]
           exact hst.stored k (hdone k hmk hb)
         | false =>
-          have hk : blockRen bn k = k := ite_eq_right (by simp [hb])
+          have hk : blockRen bn k = k := ite_eq_right (by rw [hb]; exact Bool.false_ne_true)
           rw [hk]
           rw [hout k hb] at hgk
           exact hmono k hgk) hmres
@@ -173,7 +173,7 @@ theorem aliasesReady_of_scope {env : Env .anon} {g : KKey → KKey} {bn : List K
           rw [hk]
           exact hst.target k (hdone k hmk hb)
         | false =>
-          have hk : blockRen bn k = k := ite_eq_right (by simp [hb])
+          have hk : blockRen bn k = k := ite_eq_right (by rw [hb]; exact Bool.false_ne_true)
           rw [hk, hout k hb]
           rcases stored_of_mentions tyA hmres hmk with hs | hs
           · rw [hout k hb] at hs
