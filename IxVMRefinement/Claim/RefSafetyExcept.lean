@@ -66,7 +66,7 @@ private theorem safe_used_refs_set_seg_spec
   | .n1_n1 (ev56 := ev56) (ev91 := ev91) (he115 := hh) .. =>
     obtain ⟨rfl, _⟩ := g_list_has_spec idxs hi hidx ev56
     obtain ⟨hm, rfl⟩ := addr_set_member_set_spec hab hex ev91
-    refine ⟨by rw [hh]; first | exact Heap.Extends.refl _ | skip, fun _ hnS _ => ?_⟩
+    refine ⟨by rw [hh], fun _ hnS _ => ?_⟩
     exact (hnS (hab' ▸ hm rfl)).elim
   | .other (ev56 := ev56) (hne332 := hn) (he339 := hh) .. =>
     refine ⟨?_, fun hm _ _ => ?_⟩
