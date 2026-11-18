@@ -338,6 +338,10 @@ def boolRun : BRun where
 theorem group6_noUnits : ∀ r ∈ roleGroup 6, r ∉ RoleOps.opRoles ∧ r ∉ standardAxioms := by
   decide +kernel
 
+/-- No role of the `Bool` group has equations, so none has evidence (decided). -/
+theorem group6_noEquations : ∀ r ∈ roleGroup 6, RoleVal.roleHasEquations r = false := by
+  decide +kernel
+
 /-- **The admission of the `Bool` group at the default table**, from the basis store to the
 store of the 29 rows. -/
 theorem admits_bool : Admits boolRun ctab 6 basisStore boolStore where
@@ -459,6 +463,11 @@ theorem admits_bool : Admits boolRun ctab 6 basisStore boolStore where
     rcases hop with h1 | h1
     · exact h.1 h1
     · exact h.2 h1
+  evidenceRefs := by
+    intro r hr arr thm x hm
+    have h := RoleVal.evidence_roleHasEquations_of_wf Typing.committedTable_wf hm
+    rw [group6_noEquations r hr] at h
+    cases h
 
 /-! ## The boundary invariant's other fields at the `Bool` environment -/
 

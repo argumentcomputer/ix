@@ -1,5 +1,6 @@
 import IxVMRefinement.Binding.ClauseFold
 import IxVMRefinement.StatementRel.LoadedReadsWalked
+import IxVMRefinement.Binding.RunStepStores
 
 /-! # The run predicate of an accepted binding claim
 
@@ -65,6 +66,9 @@ structure BindingRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (ρ : BRu
   admits : ∀ g, 6 ≤ g → g < 77 → Admits ρ t g (Rs g) (Rs (g + 1))
   /-- The reading clause of each group's admission. -/
   reads : ∀ g, 6 ≤ g → g < 77 → AdmitsReads ρ t (Rs g) (Rs (g + 1))
+  /-- Every store within the run's records that agrees with the committed rows and holds
+  nothing at the zero address is held by a record store the run's calls are good for. -/
+  stepStores : RunStepStores calls t ρ.E₀
 
 /-- **The invariant at the six basis groups, for a binding run.** -/
 theorem basisOver_bindingRun (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)

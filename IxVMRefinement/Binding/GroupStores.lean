@@ -1,4 +1,4 @@
-import IxVMRefinement.Binding.StoreClausesWalk
+import IxVMRefinement.Binding.StoreLogic
 import IxVMRefinement.Binding.BasisAt
 import IxVMRefinement.Assembly.TypingBasisInv
 
@@ -11,10 +11,13 @@ clauses that are left, named in `RemainingStoreClauses`.
 
 * `basisRolesStored_of_pinned`: at a table that pins the prelude, the bound record of a walked
   role of a group below 6 is a basis row.
-* `RemainingStoreClauses t E₀`: what is not proved of the sequence. Two facts about the run's
-  records (the basis rows are records the run loaded as the basis store holds them; the record
-  a standard axiom is bound to is a safe axiom record) and five clauses (`standing`, `logic`,
-  `opsOwn`, `unitsLast`, and the reading clause of `AdmitsReads`).
+* `RemainingStoreClauses t E₀`: what is not proved of the sequence: four clauses (`standing`,
+  `opsOwn`, `unitsLast`, and the reading clause of `AdmitsReads`) and the safety of the roots
+  (`RootsSafe`), from which the clause `logic` is proved (`logic_of_rootsSafe`). The two facts
+  about the run's records the proved clauses read are proved
+  (`IxVMRefinement.Binding.StoreFieldsRun`):
+  the basis rows are records the run loaded as the basis store holds them (`basisRows_of_run`),
+  and the record a standard axiom is bound to is a safe axiom record (`axiomRoles_of_run`).
 * `groupStoresOfRun_of_remaining`: `GroupStoresOfRun calls` from `RemainingStoreClauses` at
   the run's records, in the alternative without a collision. Every other clause of every
   group's admission is proved: the rank is `walkRank` over a closed list of the records the
@@ -56,17 +59,19 @@ theorem basisRolesStored_of_pinned {t : Ix.Kernel.RoleTable} (hpre : PreludePinn
 /-- **What is left of the store sequence's clauses**, over the run's records `E₀`.
 
 Status: stated only; nothing proves any field of any run.
-* `basisRows`: the run's store holds the basis rows as the basis store does. Its producer is
-  the validation of the groups below 6 at a table that pins the prelude: each of those
-  validations loads its role's record, the pin fixes the address, and the alternative without a
-  collision fixes the bytes.
-* `axiomRoles`: the record a standard axiom is bound to is a safe axiom record of the run:
-  `KernelRoles::validate_standard_axiom` matches the loaded constant as an axiom and asserts it
-  safe.
-* `standing`, `logic`: a new axiom or quotient record is the group's standard axiom; a new
-  record is in Lean's logic. The walk's check of an axiom record asks for a standing role in
-  force; a walked record's references are guarded against a safe source
-  (`Claim.RecordRefsIn.safe`), and a root's safety is asserted by its role's validation.
+* `standing`: a new axiom or quotient record is the group's standard axiom. The walk's check of
+  an axiom record asks for a standing role in force.
+* `rootsSafe`: the record bound to a role whose validation walks it is in Lean's logic with its
+  block, and so are the theorem of a proof in the evidence of a definition specified by
+  equations and the references a certificate in an operation's evidence uses (`RootsSafe`).
+  The clause `logic` follows from it (`logic_of_rootsSafe`,
+  `IxVMRefinement.Binding.StoreLogic`): a walked record's references are guarded against a safe
+  source (`Claim.RecordRefsIn.safe`). Its producer is the roles' validations
+  (`KernelRoles::assert_safe_role`, the `Safe` match of `validate_op` and `validate_eqns`) with
+  `KernelCheck::check_block_member_kinds` for the block of a projection record; for the
+  evidence, the `Thm` match on `Ingress::get_ci` of an equation theorem (a theorem record, or a
+  projection into a block of uniform safety) and `KernelClaim::assert_safe_refs_except` on a
+  certificate's references.
 * `opsOwn`, `unitsLast`: no new record is another group's operation, and none uses the record
   of a role unit of the group: below the well-founded block from
   `KernelRoles::assert_op_reached_in_order` in `KernelRoles::walk_ctx`, in the block from
@@ -75,15 +80,11 @@ Status: stated only; nothing proves any field of any run.
 * `reads`: a reading over the run's records of a constant address of a new record is a reading
   over the store after the group. -/
 structure RemainingStoreClauses (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
-  basisRows : BasisRowsLoaded E₀
-  axiomRoles : AxiomRolesDeclared t E₀
   standing : ∀ g, 6 ≤ g → g < 77 → ∀ a c,
     New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a →
     recordOf (groupStore t E₀ (g + 1)) a = some c → IsAxiomLike c →
     ∃ r ∈ roleGroup g, r ∈ standardAxioms ∧ t.addressOf? r = some a
-  logic : ∀ g, 6 ≤ g → g < 77 → ∀ a c,
-    New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a →
-    recordOf (groupStore t E₀ (g + 1)) a = some c → InLogic c
+  rootsSafe : RootsSafe t E₀
   opsOwn : ∀ g, 6 ≤ g → g < 77 → ∀ a r,
     New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a → t.addressOf? r = some a →
     r ∈ RoleOps.opRoles → r ∈ roleGroup g
@@ -127,8 +128,8 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
   have hC : CollisionFreeRun calls (Claim.runEnv ⟨a, tb⟩ (t := t) calls) :=
     collisionFreeRun_of_no_collision hextra hcol hS hH
   have hR := hrem a tb t htb hadm hall hpin hval hC
-  have hb := hR.basisRows
-  have hax := hR.axiomRoles
+  have hb := basisRows_of_run hC hpin hval
+  have hax := axiomRoles_of_run hC hval
   have hbr : BasisRolesStored t := basisRolesStored_of_pinned hpin
   have hvalAll : ∀ g, ∀ r ∈ roleGroup g, RoleValidationIn calls a t g r := by
     intro g r hr
@@ -155,12 +156,13 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
         rankOwner := groupStore_rankOwner hC hb hax hg6 hw
         projMember := groupStore_projMember hC hb hax hg6 hw
         standing := hR.standing g hg6 hg
-        logic := hR.logic g hg6 hg
+        logic := logic_of_rootsSafe hC hb hval hR.rootsSafe g hg6 hg
         checked := groupStore_checked hC hb hax hg6 hw
         validated := fun _ _ => trivial
         kept := groupStore_kept hC hb hax hg6 hw
         opsOwn := hR.opsOwn g hg6 hg
-        unitsLast := hR.unitsLast g hg6 hg }
+        unitsLast := hR.unitsLast g hg6 hg
+        evidenceRefs := groupStore_evidenceRefs hC hb hbr hax hws hg6 hw }
   · exact
       { blobs := groupStore_reads_blobs (Nat.lt_succ_of_le hg6)
         reads := hR.reads g hg6 hg }
