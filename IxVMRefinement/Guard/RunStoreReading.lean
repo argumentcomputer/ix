@@ -186,7 +186,7 @@ theorem typeAnswer_runStore {c : ScopedCtx} {calls rootCalls : List (Call F)} {E
     (hpar : LoadParentsHeld calls E₀) (hbound : IxVM.Consistency.Bounded rootCalls)
     (hsub : ∀ cl ∈ rootCalls, cl ∈ calls)
     {key : KKey} {ps : List KLevel} {out : KExpr}
-    (answer : RawTypeAt c (keyOf GuardRaw.addressTable) rootCalls key ps out) :
+    (answer : RawTypeAt c (Core.keyOf GuardRaw.addressTable) rootCalls key ps out) :
     (GuardRaw.ofStore E₀).typeOf key ps = some out.eraseMeta := by
   obtain ⟨address, ci, raw, ap, ptr, value, typePtr, before, loaded, beforeType, beforeInst,
     loadCalls, typeCalls, rfl, -, -, addressRep, load, -, node, getType, extension,
@@ -212,7 +212,7 @@ theorem valueAnswer_runStore {c : ScopedCtx} {calls rootCalls : List (Call F)} {
     (hpar : LoadParentsHeld calls E₀) (hbound : IxVM.Consistency.Bounded rootCalls)
     (hsub : ∀ cl ∈ rootCalls, cl ∈ calls)
     {key : KKey} {ps : List KLevel} {out : KExpr}
-    (answer : RawDeltaAt c (keyOf GuardRaw.addressTable) rootCalls key ps out) :
+    (answer : RawDeltaAt c (Core.keyOf GuardRaw.addressTable) rootCalls key ps out) :
     (GuardRaw.ofStore E₀).valueOf key ps = some out.eraseMeta := by
   obtain ⟨address, cv, body, raw, hint, ap, ptr, levels, ty, value, safety, hintPtr, before,
     loaded, loadCalls, rfl, -, -, addressRep, load, -, node, ⟨image, physical⟩, loadSubset, rfl,
@@ -249,7 +249,7 @@ theorem ctorRaw_runStore {calls cs₀ : List (Call F)} {E₀ : Ixon.Env}
     (hb : Bytes.RepAddressRef addrTy h₀ b bp)
     (ld : loadValue m ptr = .ok (.construct kciEnum "Ctor" [w₁, p, w₃, w₄, w₅, w₆, w₇, w₈]))
     (hext : Heap.Extends m h) {k : Nat} {R : KExpr}
-    (physical : RawExprRep (keyOf GuardRaw.addressTable) h k R p) :
+    (physical : RawExprRep (Core.keyOf GuardRaw.addressTable) h k R p) :
     Guard.ctorRaw E₀ (ixAddr b) (ZMod.val i) 0 = some R.eraseMeta := by
   obtain ⟨-, -, -, blkBytes, cb, ms, ind, ct, table, v, hashedBlock, blockAddress, exact,
     -, shape, member, constructor, hashedBlobs, loadedValue, rawCtor⟩ :=
@@ -266,7 +266,8 @@ theorem ctorRaw_runStore {calls cs₀ : List (Call F)} {E₀ : Ixon.Env}
     hS.hashed_inj (Core.hashed_mono hsub hashedBlock) hashedRun'
       (blockAddress.trans address'.symm)
   have record : recordOf E₀ (ixAddr b) = some cb := by
-    have held : E₀.consts.get? (ixAddr b) = some lc := by rw [← address']; exact stored
+    have sameAddress : Address.blake3Pure ⟨bytes.toArray⟩ = ixAddr b := address'
+    have held : E₀.consts.get? (ixAddr b) = some lc := by rw [← sameAddress]; exact stored
     apply Typing.recordOf_of_get held
     rw [bytesEq, ← sameBytes]
     exact exact
