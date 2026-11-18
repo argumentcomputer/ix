@@ -95,8 +95,7 @@ theorem projGuardFires_of_certs (hread : Core.ProjGuardUseReading) {c : Core.Sco
     (hcerts : GuardCerts c.t R c.env) (hnocol : ¬ L1.EnvInternalCollision c.E) :
     Core.ProjGuardFires c := by
   intro calls0 ih x_rc x_block r h h' calls i f hlt0 good ev b hrc hb cvT caps hind cm hrec hinfo
-    cvC nP nF tbl hctor htbl hnF hf g hg us hus hzero
-  intro hprop
+    cvC nP nF tbl hctor htbl hnF hf g hg us hus hzero hprop
   have hprop' : Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true := hprop
   have hkI : c.κ (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)) =
       Core.keyOf c.t (Core.iprjAddr (Core.ixAddr b) (ZMod.val i)) :=
