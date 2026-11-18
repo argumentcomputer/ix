@@ -205,7 +205,8 @@ theorem recordOf_of_holdsBytes {E₀ : Ixon.Env} {x : Addr} {P : Ixon.Constant}
     unfold recordOf
     simp only [hget, Option.bind_some]
   have h2 : (Ixon.deConstantExact lc.rawBytes).toOption = some P := by
-    rw [hb, Ixon.Verify.deConstantExact_serConstant P hwf] <;> rfl
+    rw [hb, Ixon.Verify.deConstantExact_serConstant P hwf]
+    rfl
   exact h1.trans h2
 
 theorem memberProjection_wireWF (B : Addr) (hB : B.hash.size = 32) (i : Nat)
