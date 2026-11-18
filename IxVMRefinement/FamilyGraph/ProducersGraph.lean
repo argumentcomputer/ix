@@ -254,8 +254,8 @@ structure BatchGives (K : FamRunCtx) : Prop where
   blockOf : ∀ B B' rb crb x, K.FamCheck B rb → K.FamCheck B' rb → recordOf K.E₀ rb = some crb →
     ConstAddrOf rb crb x → B = B'
   /-- `canonical_rules_at_pos`, rule (c): of two family records of one block, the second
-  top-walked, one is in the preferred form (a declared recursor type is the reconstruction or its
-  full consumption, so two records of one family are that pair). -/
+  top-walked, one is in the preferred form. Under review: the prototype's comparison chooses
+  per recursor, so two records may mix the forms; the statement waits for that ruling. -/
   form : ∀ B rb rb', K.FamCheck B rb → K.FamCheck B rb' → rb ≠ rb' → K.Top rb' →
     RecBlock K.E₀ rb' → K.Pref B rb ∨ K.Pref B rb'
   /-- `check_family` with the batch's `assert_no_role` (no role bound at a family recursor) and
@@ -296,13 +296,18 @@ structure NoBatchFields (K : FamRunCtx) : Prop where
   innerKind : ∀ a c, K.Inner a → recordOf K.E₀ a = some c →
     (∀ ax, c.info ≠ .axio ax) ∧ ∀ q, c.info ≠ .quot q
 
-/-- **The rank of the family graph** at a rank `rank'`: the walk's order kept, a family record
-the run checked after its block, advice before its block, a twin after its block's family
-record's block, and what a family record and an inner record use stored, covered, their own, or
-owned below them (the latter two from the batch's `family_refs_go`, `assert_inner_refs_safe`,
-`check_advice_record` and `container_refs_ok`, through the ranking). -/
-structure FamilyRanked (K : FamRunCtx) (rank rank' : _root_.Address → Nat) : Prop where
-  order : ∀ a x, K.Top a → K.Top x → rank x < rank a → rank' x < rank' a
+/-- **The rank of the family graph** at a rank `rank'`: the walk's edges kept (a used reference
+of a top-walked record is top-walked below it or covered; a projection record's block is below
+it), a family record the run checked after its block, advice before its block, a twin after its
+block, and what a family record and an inner record use stored, covered, their own, or owned
+below them (the latter two from the batch's `family_refs_go`, `assert_inner_refs_safe`,
+`check_advice_record` and `container_refs_ok`, with item 11, a projection reference names a
+member of its block, through the ranking). Only the walk's edges are kept, not every comparison
+of the walk's rank: two top-walked records without an edge may change order. -/
+structure FamilyRanked (K : FamRunCtx) (rank' : _root_.Address → Nat) : Prop where
+  closed : ∀ a x, K.Top a → UsedRef K.E₀ a x → (K.Top x ∧ rank' x < rank' a) ∨ Covered K.t x
+  owner : ∀ a c, K.Top a → recordOf K.E₀ a = some c → IsProj c →
+    K.Top (Ix.Cert.ownerOf a c) ∧ rank' (Ix.Cert.ownerOf a c) < rank' a
   after : ∀ B rb, K.fam B = some rb → Walked K.Top K.Inner rb → rank' B < rank' rb
   advBelow : ∀ B a, K.adv B a → rank' a < rank' B
   twinAfter : ∀ rb' B rb, K.twin rb' = some B → K.fam B = some rb → rank' B < rank' rb'
@@ -326,13 +331,13 @@ def StoredTwinField (K : FamRunCtx) : Prop :=
 
 /-- **`FamilyRun` at the choices**, and rule (c)'s fact: a block that has a twin has its family
 record in the preferred form. -/
-theorem familyRun_of (K : FamRunCtx) {rank rank' : _root_.Address → Nat}
-    (hB : BatchGives K) (hO : NoBatchFields K) (hR : FamilyRanked K rank rank')
+theorem familyRun_of (K : FamRunCtx) {rank' : _root_.Address → Nat}
+    (hB : BatchGives K) (hO : NoBatchFields K) (hR : FamilyRanked K rank')
     (hST : StoredTwinField K) :
     FamilyRun K.calls K.t K.envT K.E₀ K.lim K.Top rank' K.fam K.twin K.adv K.Inner ∧
       ∀ B rb rb', K.fam B = some rb → K.twin rb' = some B → K.Pref B rb := by
   refine ⟨{ graph := ?graph, claimed := ?claimed, modeled := ?modeled, famCall := ?famCall,
-    twinCall := ?twinCall, innerCall := ?innerCall, storedTwin := hST }, ?form⟩
+            twinCall := ?twinCall, innerCall := ?innerCall, storedTwin := hST }, ?form⟩
   case graph =>
     exact
     { famBlock := fun B rb h => (FamRunCtx.fam_some h).1.1
@@ -441,11 +446,27 @@ def AtWalk (Pref : _root_.Address → _root_.Address → Prop)
     ∀ (R : Ixon.Env) (envT : Ix.Kernel.Env .anon), TableShape.{u} t (fun _ => True) R envT →
       P ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref⟩ rank
 
+/-- **The walk at another rank that keeps its edges**: a used reference of a top-walked record
+top-walked below it or covered, a projection record's block below it. -/
+theorem topWalk_of_edges {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {seeds : List _root_.Address} {E₀ : Ixon.Env} {lim : Option Nat}
+    {Top : _root_.Address → Prop} {rank rank' : _root_.Address → Nat}
+    (h : Claim.TopWalk calls t seeds E₀ lim Top rank)
+    (hclosed : ∀ a x, Top a → UsedRef E₀ a x → (Top x ∧ rank' x < rank' a) ∨ Covered t x)
+    (howner : ∀ a c, Top a → recordOf E₀ a = some c → IsProj c →
+      Top (Ix.Cert.ownerOf a c) ∧ rank' (Ix.Cert.ownerOf a c) < rank' a) :
+    Claim.TopWalk calls t seeds E₀ lim Top rank' := by
+  obtain ⟨bAddr, hW, hG⟩ := h
+  exact ⟨bAddr, ⟨hW.topLim, hW.table, hW.runStore, hW.hashedStored, hW.seedsTop, hW.record,
+    hclosed, howner, hW.seedLogic, hW.seedNotInert, hW.checked, hW.refsNotInert, hW.refsNotBlock,
+    hW.safeRefs⟩, ⟨hG.seedsTop, hG.record, hclosed, howner, hG.members, hG.projMember,
+    hG.standing, hG.seedLogic⟩⟩
+
 /-- **The ranking**: at every walk and witness, a rank of the family graph at the choices (one
-lemma: the walk's order with advice before its block and a block before its family record or
+lemma: the walk's edges with advice before its block and a block before its family record or
 twin, re-ranked topologically; not yet proved here). -/
 def FamilyRanking (Pref : _root_.Address → _root_.Address → Prop) : Prop :=
-  AtWalk.{u} Pref fun K rank => ∃ rank', FamilyRanked K rank rank'
+  AtWalk.{u} Pref fun K _ => ∃ rank', FamilyRanked K rank'
 
 /-- **Row `familyGraph` from what the run's functions give**: the batch's (`BatchGives`), the
 facts of unchanged functions not yet proved here (`NoBatchFields`), the ranking, and the stored
@@ -463,6 +484,6 @@ theorem familyGraphRow_of_parts (Pref : _root_.Address → _root_.Address → Pr
     (batch calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape)
     (noBatch calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape) hR
     (storedTwin calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape)
-  exact ⟨rank', _, _, _, _, topWalk_of_rankOrder ⟨bAddr, hW, hG⟩ hR.order, hFR⟩
+  exact ⟨rank', _, _, _, _, topWalk_of_edges ⟨bAddr, hW, hG⟩ hR.closed hR.owner, hFR⟩
 
 end IxVM.Refinement.Typing
