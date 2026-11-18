@@ -520,6 +520,16 @@ def runProbe (leanEnv : Lean.Environment) : IO UInt32 := do
     let (dRefsUnsafeA, dRefsUnsafe) := bareDefn .safe rNat (.ref 1 #[]) #[natA, dUnsafeA] #[]
     -- `dBlock : Nat := <List's block record>` (a term naming a block (Muts) address)
     let (dBlockA, dBlock) := bareDefn .safe rNat (.ref 1 #[]) #[natA, listB] #[]
+    -- an inductive projection of a real block with an out-of-range member index (`IPrj(99, D)`):
+    -- `is_projection_of`/`projection_of_advice` check the block but not that the index names a member
+    let iprBad : Ixon.Constant :=
+      { info := .iPrj ⟨99, listB⟩, sharing := #[], refs := #[], univs := #[], binders := #[] }
+    let iprBadA := IxVM.Model.addressOf iprBad
+    -- `dProjUse : Nat := <IPrj(99,D)>` uses the out-of-range projection in a term (should fail in get_ci)
+    let (dProjUseA, dProjUse) := bareDefn .safe rNat (.ref 1 #[]) #[natA, iprBadA] #[]
+    -- `dProjDead : Sort 1 := Sort 0` carries the out-of-range projection as a dead (unused) reference
+    -- (no term reaches it), so the circuit never reads it (should be accepted, benign)
+    let (dProjDeadA, dProjDead) := bareDefn .safe (.sort 1) (.sort 0) #[iprBadA] #[.zero, .succ .zero]
     -- a used reference of the block, for a one-step dependency path that cannot reach an axiom
     let usedSet := IxVM.Model.usedIdxs blockRec
     let jAny? := (blockRec.refs.zipIdx.find? fun (_, k) => usedSet.contains k).map (·.2)
@@ -568,6 +578,14 @@ def runProbe (leanEnv : Lean.Environment) : IO UInt32 := do
       -- (iii) an advice term naming a block (Muts) record's address
       cases := cases.push (probe "advice-term-names-a-block" #[(dBlockA, dBlock)]
         { p with advice := p.advice.push dBlockA } false none)
+      -- an out-of-range inductive projection `IPrj(99, D)`: used in an advice term (must reject),
+      -- and carried as a dead unused reference (benign: never read)
+      cases := cases.push (probe "out-of-range-projection-used-in-advice-term"
+        #[(iprBadA, iprBad), (dProjUseA, dProjUse)]
+        { p with advice := p.advice.push dProjUseA } false none)
+      cases := cases.push (probe "out-of-range-projection-dead-ref-in-advice"
+        #[(iprBadA, iprBad), (dProjDeadA, dProjDead)]
+        { p with advice := p.advice.push dProjDeadA } true none)
       -- the known benign case: a kind-1 path ending at a block record (an unused witness)
       if let some jList := jList? then
         cases := cases.push (probe "path-witness-ending-at-a-block" #[]
