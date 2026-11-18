@@ -274,52 +274,64 @@ theorem famStepKeeps_with {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
         hloads }
 
 /-- **The keeping the family row's step takes** (`hkeeps` of `unitStepFamily_of_facts`), at the
-fold's clause (module docstring). -/
+fold's clause (module docstring), at the record that installs the family check's selected forms,
+with the check's facts and a fact `Sel` of the selected forms handed to `hrecs` and `hloads`. -/
 theorem famStepKeeps_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     (hL : LinkLaws L) {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env}
     {lim : Option Nat} {A rb : _root_.Address} {c crb : Ixon.Constant}
+    {Sel : Ix.Kernel.Env .anon → List (ConstantInfo .anon) → List IxVM.Refinement.Core.KExpr →
+      List (List IxVM.Refinement.Core.KExpr) → Prop}
     (hsz : ∀ x, FamAddr A c rb crb x → x.hash.size = 32)
     (hmod : ∀ x, FamAddr A c rb crb x → ∀ (cm : Ixon.Constant) (ip : Ixon.InductiveProj),
       Ix.Cert.recordAt E x = some cm → cm.info = .iPrj ip → ¬ NativeAt E ip.block)
     (hrecs : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
-      (aliases blk new : List (ConstantInfo .anon)),
+      (aliases blk new : List (ConstantInfo .anon)) (adv' : Decl.FamilyAlias.FamilyAdvice)
+      (tys : List IxVM.Refinement.Core.KExpr) (rhsss : List (List IxVM.Refinement.Core.KExpr)),
       Decl.PrefixInv.{u} E t lim env → AliasGroup env h aliases →
       FamDeclReads t E₀ A c rb crb blk →
+      Decl.FamilyAlias.FamilyCheckFacts env blk adv' tys rhsss → Sel env blk tys rhsss →
       DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
       (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
         StoredAs c' ci) →
+      SelectedInstalled blk tys rhsss ⟨new ++ env.consts⟩ →
       ∀ cv mI rP rls, ConstantInfo.recInfo cv mI rP rls ∈ new →
         RecCompanionFacts ⟨E, ⟨new ++ env.consts⟩, t, lim⟩ cv mI rP rls)
     (hloads : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
-      (aliases blk new : List (ConstantInfo .anon)),
+      (aliases blk new : List (ConstantInfo .anon)) (adv' : Decl.FamilyAlias.FamilyAdvice)
+      (tys : List IxVM.Refinement.Core.KExpr) (rhsss : List (List IxVM.Refinement.Core.KExpr)),
       Decl.PrefixInv.{u} E t lim env → (∀ ci ∈ envT.consts, ci ∈ env.consts) →
       (∀ x, UsedRef E₀ A x ∨ UsedRef E₀ rb x →
         (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x) →
       AliasGroup env h aliases →
       FamDeclReads t E₀ A c rb crb blk →
+      Decl.FamilyAlias.FamilyCheckFacts env blk adv' tys rhsss → Sel env blk tys rhsss →
       DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
       (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
         StoredAs c' ci) →
+      SelectedInstalled blk tys rhsss ⟨new ++ env.consts⟩ →
       NewLoads (appCtx ⟨E, env, t, lim⟩ new).stored new) :
     ∀ (env env₂ : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
-      (aliases blk : List (ConstantInfo .anon)),
+      (aliases blk : List (ConstantInfo .anon)) (adv' : Decl.FamilyAlias.FamilyAdvice)
+      (tys : List IxVM.Refinement.Core.KExpr) (rhsss : List (List IxVM.Refinement.Core.KExpr)),
       Decl.PrefixInv.{u} E t lim env → FoldExtra.{u} L t E env →
       (∀ ci ∈ envT.consts, ci ∈ env.consts) →
       (∀ x, UsedRef E₀ A x ∨ UsedRef E₀ rb x →
         (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x) →
       AliasGroup env h aliases → (∀ a ∈ aliases, ∃ ci ∈ blk, a.name.base = ci.name) →
       FamDeclReads t E₀ A c rb crb blk →
+      Decl.FamilyAlias.FamilyCheckFacts env blk adv' tys rhsss → Sel env blk tys rhsss →
       DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk env₂ →
       (∀ ci ∈ blk, ∃ c', env₂.find? ci.name = some c' ∧ StoredAs c' ci) →
+      SelectedInstalled blk tys rhsss env₂ →
       Decl.PrefixInv.{u} E t lim env₂ ∧ FoldExtra.{u} L t E env₂ := by
-  intro env env₂ h as blk hinv hX hextT hrefs hg hroots hreads hd hst
+  intro env env₂ h as blk adv' tys rhsss hinv hX hextT hrefs hg hroots hreads hF hSel hd hst hI
   obtain ⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩ := hX
   have hC : FoldClauseWith.{u} L t E lim env Reg := FoldClauseWith.of_prefix hinv hR hkeys haux hlv
   obtain ⟨new, henv, -, -⟩ := famStep_consts hd
   subst henv
   have hC' := famStepKeeps_with hL hsz hmod hC hg hroots hreads hd
-    (hrecs env h as blk (new ++ as) hinv hg hreads hd hst)
-    (hloads env h as blk (new ++ as) hinv hextT hrefs hg hreads hd hst)
+    (hrecs env h as blk (new ++ as) adv' tys rhsss hinv hg hreads hF hSel hd hst hI)
+    (hloads env h as blk (new ++ as) adv' tys rhsss hinv hextT hrefs hg hreads hF hSel hd hst hI)
   exact ⟨hC'.prefixInv, hC'.extra⟩
 
 end IxVM.Refinement.Typing.FamilyAlias

@@ -44,7 +44,10 @@ import IxC.Kernel.Roles
   - every Named entry of a closure's output equals the whole compile's;
   - the reversed subset is byte-identical;
   - the output decompiles to its source;
-  - the certified checker accepts each root's owning record.
+  - the certified checker accepts each root's owning record in the closure
+    as `ix compile` compiles it, with binder data
+    (`ClosureHarness.certifiedClosure`; the Lean entry's records carry no
+    binder data, so they are not the records the default role table binds).
 
   Ported from a9cf3607 `Tests/Ix/Compile/SelectedClosure.lean`:
   - The "ordinary and scoped collectors agree" checks are replaced by
@@ -274,7 +277,8 @@ selected closure of `seedSets`, by the Lean pipeline; the Rust compile of
 each closure is byte-identical; each closure's Named entries are the whole
 compile's; the reversed subset is byte-identical; the output decompiles to
 its source; and the certified checker accepts each root's owning record (an
-accept, not a documented decline). Files go to a temporary directory, kept
+accept, not a documented decline) in the closure's certified compile with
+binder data (`certifiedClosure`). Files go to a temporary directory, kept
 and printed on failure. -/
 def run : IO UInt32 := do
   let env ← getFileEnv fixture
@@ -305,10 +309,12 @@ def run : IO UInt32 := do
       errors := errors.push "the reversed subset changed the bytes"
     let (decompileErrors, summary) ← decompileCheck env closure out
     errors := errors ++ decompileErrors.map (s!"{label}: {·}")
-    -- certification means accept, not a documented decline
-    let certReport ← certify dir s!"selected-{i}" out.bytes
+    -- certification means accept, not a documented decline, of the closure as
+    -- `ix compile` compiles it (binder data on; `certifiedClosure`)
+    let (certEnv, certBytes) ← certifiedClosure env closure
+    let certReport ← certify dir s!"selected-{i}" certBytes
     for seed in seeds do
-      match verdictOf certReport out.env seed with
+      match verdictOf certReport certEnv seed with
       | .error e => errors := errors.push s!"{label}: {e}"
       | .ok v =>
         unless v.outcome == "accept" do
