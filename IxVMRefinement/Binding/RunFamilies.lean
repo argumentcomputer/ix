@@ -490,8 +490,8 @@ theorem keptRoles_of_run (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoade
     rw [← hxa]
     exact unitCheckedAt_of_topRec hC.hashedStored x
 
-/-- The names of the pinned basis constants are keys of basis roles. -/
 set_option maxRecDepth 100000 in
+/-- The names of the pinned basis constants are keys of basis roles. -/
 private theorem pinned_names_basis (kind : Ix.Kernel.BasisKind) :
     ∀ n ∈ (kind.declsA (md := .anon)).map (·.name),
       n ∈ TableInhabit.basisRoleOrder.map Ix.Kernel.Key.role := by
