@@ -11,7 +11,8 @@ handed (`famStepConclusion_of_facts`) and these named premises:
 
 * `hseam`: the circuit side's seam at the step's hypotheses (the family as read and the facts of
   the family check at the prefix);
-* `hkey`: key freedom of the family's addresses (the target's hypothesis; the row hands none);
+* `hkey`: key freedom of the family's addresses at every environment the step is asked at, where
+  none of them is stored (the target's hypothesis; `familyKeyFree_of_shape` produces it);
 * `heqPin`: the pinned equality at every environment the step is asked at (`eqPin_of_shape`
   with the step context's table shape);
 * `hclaim`: a member of the block at the key of a claimed family record's constant address is a
@@ -127,7 +128,9 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
         (tys : List IxVM.Refinement.Core.KExpr)
         (rhsss : List (List IxVM.Refinement.Core.KExpr)),
         FamDeclReads t E₀ A c rb crb blk ∧ FamilyCheckFacts env blk adv' tys rhsss)
-    (hkey : ∀ x, FamAddr A c rb crb x → Decl.KeyFree (keyOf t x))
+    (hkey : ∀ env : Ix.Kernel.Env .anon, (∀ ci ∈ envT.consts, ci ∈ env.consts) →
+      (∀ x, FamAddr A c rb crb x → env.find? (keyOf t x) = none) →
+      ∀ x, FamAddr A c rb crb x → Decl.KeyFree (keyOf t x))
     (heqPin : ∀ env : Ix.Kernel.Env .anon,
       (∀ ci ∈ envT.consts, ci ∈ env.consts) → (env.consts.map (·.name)).Nodup →
       env.find? Ix.Kernel.eqName = some Ix.Kernel.eqA)
@@ -150,7 +153,7 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
     hseam env hext hnd hinv hX hrefs hadv1 hadv2 hfresh
   obtain ⟨h, as, blk, env₂, hg, hroots, hreads, hd, hst⟩ :=
     famStepConclusion_of_facts hF hreads₀ hinv.store.store hX.1.1.2 (heqPin env hext hnd)
-      hfresh hkey
+      hfresh (hkey env hext hfresh)
   obtain ⟨new, henv, hperm⟩ := declIndRunJ_names_perm hd.shape
   have henv₂ : env₂ = ⟨(new ++ as) ++ env.consts⟩ := by
     rw [henv]
