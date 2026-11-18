@@ -37,10 +37,11 @@ theorem adviceIn_record (hS : LoadedReads.RunStore calls E₀)
   obtain ⟨x_rc, x_a, x_aset, x_wset, r, h, h', cs', ab, hab, rfl, ev, hsub⟩ :=
     adviceCheckObs_of_familyCall hfc ha
   match Obs.«KernelModeled::check_advice_record».obs ev with
-  | .run (cs12 := cs12) (ev14 := ev14) (hc1011 := hc1011) .. =>
+  | .run (cs12 := cs12) (ev14 := ev14) (ev_yqjbwijz := ev_ord) (hc1011 := hc1011) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
     obtain ⟨-, bytes, c, hsz, hh, haddr, hex, hde, -, -, -, -, -, -⟩ :=
-      L1.load_verified_constant_decode_bounded hab ev14
+      L1.load_verified_constant_decode_bounded
+        (Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ord.heap_extends hab) ev14
     obtain ⟨lc, hget, -, hlc⟩ := hH ⟨bytes.toArray⟩ c (Core.hashed_mono hsub12 hh)
       (by simpa only [ByteArray.size, List.size_toArray] using hsz) hde hex
     have haddr' : Address.blake3Pure ⟨bytes.toArray⟩ = Core.ixAddr ab := haddr

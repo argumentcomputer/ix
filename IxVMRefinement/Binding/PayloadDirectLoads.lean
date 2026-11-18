@@ -865,11 +865,12 @@ theorem adviceRecord_logic (hS : LoadedReads.RunStore calls E₀)
     {c : Ixon.Constant} (hc : recordOf E₀ (Core.ixAddr ab) = some c)
     (hnb : ∀ ms, c.info ≠ .muts ms) : InLogic c := by
   match Obs.«KernelModeled::check_advice_record».obs ev with
-  | .run (m2 := m2) (cs12 := cs12) (x_info := x_info) (ev14 := ev14) (sg952 := sg952)
-      (hc1011 := hc1011) .. =>
+  | .run (m2 := m2) (cs12 := cs12) (x_info := x_info) (ev14 := ev14)
+      (ev_yqjbwijz := ev_ord) (sg952 := sg952) (hc1011 := hc1011) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
     obtain ⟨-, bytes, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded ha ev14
+      L1.load_verified_constant_decode_bounded
+        (Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ord.heap_extends ha) ev14
     have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
       (Core.hashed_mono hsub12 hh) haddr hexact
     subst hcc
@@ -955,11 +956,13 @@ theorem adviceBlock_memberObs (hS : LoadedReads.RunStore calls E₀)
       ∀ ind, ms.toList.head? = some (.indc ind) → ind.isUnsafe = false := by
   match Obs.«KernelModeled::check_advice_record».obs ev with
   | .run (m2 := m2) (cs12 := cs12) (x_info := x_info) (cs947 := cs947) (ev14 := ev14)
-      (sg952 := sg952) (hc1011 := hc1011) .. =>
+      (ev_yqjbwijz := ev_ord) (sg952 := sg952) (hc1011 := hc1011) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
     have hsub947 : ∀ cl ∈ cs947, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
-    obtain ⟨msPtr, hxm, hlist, -⟩ := Decl.load_block_info hS ha ev14 hsub12 hc hms
-    have ext1 : Heap.Extends h m2 := ev14.heap_extends
+    obtain ⟨msPtr, hxm, hlist, -⟩ :=
+      Decl.load_block_info hS (Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ord.heap_extends ha)
+        ev14 hsub12 hc hms
+    have ext1 : Heap.Extends h m2 := ev_ord.heap_extends.trans ev14.heap_extends
     match sg952 with
     | .Defn_Definition_Safe (hv81 := hv) .. =>
       exact absurd (Value.construct.inj (hv.symm.trans hxm)).2.1 (by decide)

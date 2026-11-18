@@ -50,11 +50,13 @@ theorem adviceRecord_checked {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     Claim.CheckedLimAt calls bAddr t (ixAddr ab) lim := by
   match Obs.«KernelModeled::check_advice_record».obs ev with
   | .run (m2 := m2) (cs12 := cs12) (x_info := x_info) (cs947 := cs947) (ev14 := ev14)
-      (sg952 := sg952) (hc1011 := hc1011) .. =>
+      (ev_yqjbwijz := ev_ord) (sg952 := sg952) (hc1011 := hc1011) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
     have hsub947 : ∀ cl ∈ cs947, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
+    have ext0 := ev_ord.heap_extends
     obtain ⟨ext1, bytes, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded ha ev14
+      L1.load_verified_constant_decode_bounded (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha) ev14
+    replace ext1 := ext0.trans ext1
     have hrec₀ : Ix.Cert.recordAt E₀ (ixAddr ab) = some c :=
       (hS.recordOf_eq_recordAt _).symm.trans hc
     have hcc : c' = c := hS.record_eq hrec₀ (hashed_mono hsub12 hh) haddr hexact
@@ -124,10 +126,11 @@ theorem adviceRecord_kind {calls cs : List (Call F)} {E₀ : Ixon.Env}
     (∀ ax, c.info ≠ .axio ax) ∧ ∀ q, c.info ≠ .quot q := by
   match Obs.«KernelModeled::check_advice_record».obs ev with
   | .run (m2 := m2) (cs12 := cs12) (x_info := x_info) (cs947 := cs947) (ev14 := ev14)
-      (sg952 := sg952) (hc1011 := hc1011) .. =>
+      (ev_yqjbwijz := ev_ord) (sg952 := sg952) (hc1011 := hc1011) .. =>
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1011]; simp [hcl])
     obtain ⟨ext1, bytes, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
-      L1.load_verified_constant_decode_bounded ha ev14
+      L1.load_verified_constant_decode_bounded
+        (Bytes.repAddressRef_heapMono₂ addrTy ev_ord.heap_extends ha) ev14
     have hrec₀ : Ix.Cert.recordAt E₀ (ixAddr ab) = some c :=
       (hS.recordOf_eq_recordAt _).symm.trans hc
     have hcc : c' = c := hS.record_eq hrec₀ (hashed_mono hsub12 hh) haddr hexact
@@ -169,15 +172,17 @@ theorem check_advice_records_obs {rc wset : SourceValue F} :
         (∀ cl ∈ cs₁, cl ∈ cs)
   | [], _, _, _, _, _, _, _, _ => fun b hb => nomatch hb
   | a :: rest, x_advice, x_seen, r, h, h', cs, hadv_rep, ev => by
-    cases Obs.«KernelModeled::check_advice_records».obs ev with
-    | Nil ld12 _ _ _ =>
+    match Obs.«KernelModeled::check_advice_records».obs ev with
+    | .Nil (ld12 := ld12) .. =>
       cases Lib.rep_nil_of_load hadv_rep ld12
-    | Cons x_a x_rest v52 m55 cs63 v89 m90 cs100 cs138 v143 m160 cs168
-        ld12 ev65 heq88 ev102 ev170 ev140 hc201 =>
+    | .Cons (x_a := x_a) (m_aiikskik := m55) (v89 := v89) (m90 := m90) (cs100 := cs100)
+        (m160 := m160) (ld12 := ld12) (ev_mfihupbr := ev65) (ev_xzbngsxs := ev65w)
+        (ev102 := ev102) (ev170 := ev170) (ev140 := ev140) (hc201 := hc201) .. =>
       obtain ⟨a', rest', heq_cons, ha_rep, hrest_rep⟩ := Lib.rep_cons_of_load hadv_rep ld12
       injection heq_cons with ha_eq hrest_eq
       subst ha_eq hrest_eq
-      have ext_55 : Heap.Extends h m55 := ObsFn.heap_extends ev65
+      have ext_55 : Heap.Extends h m55 :=
+        (ObsFn.heap_extends ev65).trans (ObsFn.heap_extends ev65w)
       have ext_160 : Heap.Extends h m160 :=
         ext_55.trans ((ObsFn.heap_extends ev102).trans (ObsFn.heap_extends ev170))
       have hrec := check_advice_records_obs rest
