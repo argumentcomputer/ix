@@ -42,7 +42,7 @@ theorem addr_set_member_set_spec {S : List _root_.Address} {b : Bytes.Address}
     simp only [hf] at hr
     exact absurd (Value.field.inj hr) one_ne_zero
   | some p =>
-    have hp1 : p.1 = b := of_decide_eq_true (List.find?_some hf)
+    have hp1 : p.1 = b := by simpa using List.find?_some hf
     have hpm : p ∈ es := List.mem_of_find?_eq_some hf
     exact (hmem b).mp ⟨p.2, by rw [← hp1]; exact hpm⟩
 
@@ -66,7 +66,7 @@ private theorem safe_used_refs_set_seg_spec
   | .n1_n1 (ev56 := ev56) (ev91 := ev91) (he115 := hh) .. =>
     obtain ⟨rfl, _⟩ := g_list_has_spec idxs hi hidx ev56
     obtain ⟨hm, rfl⟩ := addr_set_member_set_spec hab hex ev91
-    refine ⟨by rw [hh]; exact Heap.Extends.refl _, fun _ hnS _ => ?_⟩
+    refine ⟨by rw [hh]; first | exact Heap.Extends.refl _ | skip, fun _ hnS _ => ?_⟩
     exact (hnS (hab' ▸ hm rfl)).elim
   | .other (ev56 := ev56) (hne332 := hn) (he339 := hh) .. =>
     refine ⟨?_, fun hm _ _ => ?_⟩
