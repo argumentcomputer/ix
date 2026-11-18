@@ -374,7 +374,8 @@ theorem RefWalkedUnderCtxIn.lim_walks {calls : List (Call F)} {bAddr : _root_.Ad
 
 /-- **The references of an operation's certificate, walked at the group's validation limit**:
 for a `.proof thm` entry of the operation's evidence, the certificate's record is bytes the
-validation hashed, and each reference it uses other than the operation's own address was asked
+validation hashed, the run guarded its references other than the operation's address
+(`CertRefsGuardedIn`), and each reference it uses other than the operation's own address was asked
 about (`Claim.RefAllowedIn`) and is bound to a walked role in force at the limit, or is a record
 of a closed list of records checked under the role context at the group's validation limit. The
 certificate's record is not walked. -/
@@ -387,6 +388,7 @@ theorem ValidateRoleIn.op_certificate_walks {calls : List (Call F)} {bAddr : _ro
     ∃ (rawBytes : ByteArray) (c : Ixon.Constant),
       rawBytes.size < 4294967296 ∧ Hashed calls rawBytes ∧ Address.blake3Pure rawBytes = thm ∧
       Ixon.deConstantExact rawBytes = .ok c ∧
+      CertRefsGuardedIn calls bAddr t (groupValLimit g) a c ∧
       ∀ j : Nat, (hj : j < c.refs.toList.length) → j ∈ S0.usedRefIdxs c →
         c.refs.toList[j] ≠ a →
         Claim.RefAllowedIn calls t bAddr (some (groupValLimit g)) c.refs.toList[j] ∧
@@ -394,8 +396,8 @@ theorem ValidateRoleIn.op_certificate_walks {calls : List (Call F)} {bAddr : _ro
           ∃ recs : List (Claim.TopRec calls bAddr t (some (groupValLimit g))),
             Claim.TopRecsClosed recs ∧ c.refs.toList[j] ∈ recs.map (·.addr)) := by
   obtain ⟨h, h', x_rc, x_tbl, res, cs, hrc, htbl, ev, hsub⟩ := hv
-  obtain ⟨rawBytes, c, hsz, hh, hb, hde, hw⟩ :=
+  obtain ⟨rawBytes, c, hsz, hh, hb, hde, hg, hw⟩ :=
     (validate_role_op_certificates_observed hrc htbl ev h2 arr thm a ha hm hthm).mono hsub
-  exact ⟨rawBytes, c, hsz, hh, hb, hde, fun j hj hu hne => (hw j hj hu hne).lim_walks⟩
+  exact ⟨rawBytes, c, hsz, hh, hb, hde, hg, fun j hj hu hne => (hw j hj hu hne).lim_walks⟩
 
 end IxVM.Refinement.RoleVal

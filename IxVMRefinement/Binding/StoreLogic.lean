@@ -48,6 +48,22 @@ structure RootsSafe (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
     Ix.Kernel.Evidence.proof thm ∈ arr.toList → UsedRef E₀ thm x → t.addressOf? r ≠ some x →
     ¬ Claim.CoveredAt t (some (valLimit (Ix.SpecDigest.groupOf r))) x → Claim.SourceSafe E₀ x
 
+/-- **The walked roots and the equation theorems are in Lean's logic**: the fields `bound` and
+`eqnsEvidence` of `RootsSafe`. Its third field is a theorem of every run (`certRefs_of_run`). -/
+structure RootsAndTheoremsSafe (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
+  bound : ∀ r, (RoleVal.roleWalksBound r = true ∨ RoleVal.anchorWalked r = true) →
+    ∀ a, t.addressOf? r = some a → Claim.SourceSafe E₀ a
+  eqnsEvidence : ∀ (r : Ix.Kernel.Role) (arr : Array (Ix.Kernel.Evidence _root_.Address))
+    (thm : _root_.Address), RoleVal.roleSpecKindNat r = 5 → (r, arr) ∈ t.evidence.toList →
+    Ix.Kernel.Evidence.proof thm ∈ arr.toList → Claim.SourceSafe E₀ thm
+
+/-- **Every role's group is one of the 77.** -/
+theorem groupOf_lt_groups (r : Ix.Kernel.Role) : Ix.SpecDigest.groupOf r < 77 := by
+  by_contra hge
+  have hmem := role_mem_roleGroup r
+  rw [roleGroup_eq_nil (by rw [groups_length]; omega)] at hmem
+  cases hmem
+
 /-- A safe axiom record is safe with its owner (itself). -/
 theorem axiom_sourceSafe {E₀ : Ixon.Env} {a : _root_.Address} {c : Ixon.Constant}
     {ax : Ixon.Axiom} (hc : recordOf E₀ a = some c) (hi : c.info = .axio ax)
@@ -208,6 +224,56 @@ theorem logic_of_rootsSafe (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoa
   have hax := axiomRoles_of_run hC hval
   obtain ⟨recs, hw⟩ := groupWalked_exists hC.hashedStored (hval g hg)
   exact groupStore_logic hC hb hax hg6 hw (groupReach_sourceSafe_of_run hC hval hroots hg hw)
+
+/-- **The references a certificate uses are in Lean's logic** (`RootsSafe.certRefs`), for a run
+that validates every role: the operation's validation guards every used reference of the
+certificate other than the operation's address (`KernelClaim::assert_safe_refs_except`,
+`Claim.assert_safe_refs_except_spec`), whatever the certificate's own flags. -/
+theorem certRefs_of_run (hC : CollisionFreeRun calls E₀)
+    (hval : ∀ g, g < 77 → ∀ r ∈ roleGroup g, RoleValidationIn calls bAddr t g r) :
+    ∀ (r : Ix.Kernel.Role) (arr : Array (Ix.Kernel.Evidence _root_.Address))
+      (thm x : _root_.Address), RoleVal.roleSpecKindNat r = 2 → (r, arr) ∈ t.evidence.toList →
+      Ix.Kernel.Evidence.proof thm ∈ arr.toList → UsedRef E₀ thm x → t.addressOf? r ≠ some x →
+      ¬ Claim.CoveredAt t (some (valLimit (Ix.SpecDigest.groupOf r))) x →
+      Claim.SourceSafe E₀ x := by
+  intro r arr thm x h2 hm hthm hu hne hnc
+  have hv := hval _ (groupOf_lt_groups r) r (role_mem_roleGroup r)
+  have hv' : RoleVal.ValidateRoleIn calls bAddr t (Ix.SpecDigest.groupOf r) r := hv
+  obtain ⟨a₀, had, -⟩ := (RoleValidationIn.walks hv).1
+  obtain ⟨rawBytes, c, hsz, hh, hbl, hde, hg, -⟩ :=
+    RoleVal.ValidateRoleIn.op_certificate_walks hv' h2 had hm hthm
+  have hrec : recordOf E₀ thm = some c := by
+    rw [← hbl]
+    exact Claim.recordOf_hashed hC.runStore hC.hashedStored hh hsz
+      (L1.deConstant_of_deConstantExact hde) hde
+  obtain ⟨c', i, hc', hi, hx⟩ := hu
+  have ec : c' = c := Option.some.inj (hc'.symm.trans hrec)
+  rw [ec] at hi hx
+  obtain ⟨hlt, hxe⟩ := Array.getElem?_eq_some_iff.mp hx
+  have hlt' : i < c.refs.toList.length := by simpa using hlt
+  have hxl : c.refs.toList[i]'hlt' = x := by simpa using hxe
+  obtain ⟨h₁, h₁', x_rc, x_refs, x_used, x_a, r₁, cs₁, hrc, hrefs, hidx, ha, ev, hs⟩ := hg
+  have hbnd : c.refs.toList.length < 8589934592 := by
+    have hres := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound rawBytes c hde
+    have hrs : c.refs.size ≤ c.resourceSize := by
+      dsimp [Ixon.Constant.resourceSize]
+      omega
+    rw [Array.length_toList]
+    omega
+  have hsafe := Claim.assert_safe_refs_except_spec
+    (lim := some (valLimit (Ix.SpecDigest.groupOf r))) hC.runStore hbnd hrc hrefs hidx ha ev hs
+    i hlt' (by rw [Assembly.usedRefIdxs_eq]; exact hi)
+    (by rw [hxl]; intro e; exact hne (by rw [e]; exact had))
+    (by rw [hxl]; exact hnc)
+  rw [hxl] at hsafe
+  exact hsafe
+
+/-- **The roots' safety of a run**, from the walked roots and the equation theorems: the
+certificates' references are a theorem of the run (`certRefs_of_run`). -/
+theorem RootsSafe.of_run (hC : CollisionFreeRun calls E₀)
+    (hval : ∀ g, g < 77 → ∀ r ∈ roleGroup g, RoleValidationIn calls bAddr t g r)
+    (h : RootsAndTheoremsSafe t E₀) : RootsSafe t E₀ :=
+  ⟨h.bound, h.eqnsEvidence, certRefs_of_run hC hval⟩
 
 end Run
 

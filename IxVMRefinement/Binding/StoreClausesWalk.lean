@@ -164,7 +164,7 @@ theorem roleEvidence_walked (hH : LoadedReads.HashedRecordsStored calls E₀) {g
         obtain ⟨_, h, _⟩ := hx
         cases h
       | proof thm =>
-        obtain ⟨rawBytes, c, hsz, hh, hbl, hde, hw⟩ :=
+        obtain ⟨rawBytes, c, hsz, hh, hbl, hde, -, hw⟩ :=
           RoleVal.ValidateRoleIn.op_certificate_walks hv' h2 had hm₀ he
         have hrec : recordOf E₀ thm = some c := by
           obtain ⟨lc, hget, hraw, -⟩ :=
