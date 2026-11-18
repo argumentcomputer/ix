@@ -12,10 +12,12 @@ may store a modeled block without any recursor), so they come from the binding f
 form, through the internal part:
 
 * `StoredFamilies t R env famOf`: one selected family record per stored modeled block, indexed
-  by the block (`famOf B`): its record in the witness's store `R`, the block's family member by
-  member (`FamilyOfBlock`: one recursor per type at least, so non-empty for a non-empty block,
-  with each type's recursor at the type's position), stored whole, each recursor with its model
-  companion (`FamilyInstalled`);
+  by the block (`famOf B`): its record in the witness's store `R`, the block's family position by
+  position over the flattened family (`FamilyOfBlock`: one recursor per entry, the block's types
+  first, so non-empty for a non-empty block; each recursor eliminating its position's entry,
+  auxiliary positions included), stored whole, each recursor with its model companion
+  (`FamilyInstalled`). Only a complete record is selected: an empty family record is no canonical
+  source, and the binding never stores a modeled block with one alone (batch candidate B1″);
 * `OverWFam L`: the internal part with the stored families beside it, one map for the witness;
 * `storedFamily_of_clause`, `StoredFamiliesImport`, `storedFamiliesImport_overWFam`: the first
   import of the typing half, as a consequence of the internal part: at a stored modeled block,
@@ -47,8 +49,9 @@ structure StoredFamilies (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (env : Ix.Kern
   selected family record. -/
   selected : ∀ B cb, recordOf R B = some cb → Route.blockRoute R B = some true →
     (∀ x, ConstAddrOf B cb x → StoredAt t env x) → ∃ rb, famOf B = some rb
-  /-- The selected record is the block's family, member by member, in `R`. -/
-  family : ∀ B rb, famOf B = some rb → ∃ cb ms crb rs, FamilyOfBlock R B cb ms rb crb rs
+  /-- The selected record is the block's family, position by position over the flattened family,
+  in `R`. -/
+  family : ∀ B rb, famOf B = some rb → ∃ cb ms crb rs flat, FamilyOfBlock R B cb ms rb crb rs flat
   /-- A block with a selected family is stored. -/
   blockStored : ∀ B rb cb, famOf B = some rb → recordOf R B = some cb →
     ∀ x, ConstAddrOf B cb x → StoredAt t env x
@@ -68,17 +71,18 @@ theorem storedFamily_of_clause {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
     (h : StoredFamilies t R env famOf) {B : _root_.Address} {cb : Ixon.Constant}
     (hB : recordOf R B = some cb) (hroute : Route.blockRoute R B = some true)
     (hst : ∀ x, ConstAddrOf B cb x → StoredAt t env x) :
-    ∃ rb ms crb rs, famOf B = some rb ∧ FamilyOfBlock R B cb ms rb crb rs ∧
+    ∃ rb ms crb rs flat, famOf B = some rb ∧ FamilyOfBlock R B cb ms rb crb rs flat ∧
       (∀ x, ConstAddrOf rb crb x → StoredAt t env x) ∧ FamilyInstalled t env rb crb := by
   obtain ⟨rb, hrb⟩ := h.selected B cb hB hroute hst
-  obtain ⟨cb', ms, crb, rs, hf⟩ := h.family B rb hrb
+  obtain ⟨cb', ms, crb, rs, flat, hf⟩ := h.family B rb hrb
   have e : cb' = cb := Option.some.inj (hf.block.record.symm.trans hB)
   subst e
   obtain ⟨hstored, hinst⟩ := h.installed B rb crb hrb hf.record.record
-  exact ⟨rb, ms, crb, rs, hrb, hf, hstored, hinst⟩
+  exact ⟨rb, ms, crb, rs, flat, hrb, hf, hstored, hinst⟩
 
 /-- **The typing half's first import** at the witnesses of the internal part `W`: one selected
-family map, and at every stored modeled block its family, member by member, stored whole with its
+family map, and at every stored modeled block its family, position by position over the flattened
+family, stored whole with its
 companions. -/
 def StoredFamiliesImport
     (W : Ix.Kernel.RoleTable → (Nat → Prop) → Ixon.Env → Ix.Kernel.Env .anon → Prop) : Prop :=
@@ -87,7 +91,7 @@ def StoredFamiliesImport
     ∃ famOf : _root_.Address → Option _root_.Address,
       ∀ B cb, recordOf R B = some cb → Route.blockRoute R B = some true →
         (∀ x, ConstAddrOf B cb x → StoredAt t env x) →
-        ∃ rb ms crb rs, famOf B = some rb ∧ FamilyOfBlock R B cb ms rb crb rs ∧
+        ∃ rb ms crb rs flat, famOf B = some rb ∧ FamilyOfBlock R B cb ms rb crb rs flat ∧
           (∀ x, ConstAddrOf rb crb x → StoredAt t env x) ∧ FamilyInstalled t env rb crb
 
 /-- **The first import holds at the internal part with its stored families.** -/

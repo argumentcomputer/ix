@@ -15,9 +15,11 @@ the binding fold's family form needs of a group beside `Admits`:
 * `GroupFamilyChecks calls bAddr t E₀ g R R' famOf adv cont`: what the run's family checks give at
   group `g`: every new block the run routes as modeled has a selected family record `famOf B`,
   the one its family check accepted at the group's validation limit, with that check's advice
-  `adv B` and container recursors `cont B`; the selected record is the block's family member by
-  member (`FamilyOfBlock`); and a new non-empty block of recursors is a selected family record
-  or was checked as a second family record of a block (a twin);
+  `adv B` and container recursors `cont B`; the selected record is the block's family, position by
+  position over the flattened family (`FamilyOfBlock`: complete, so the binding's family check must
+  refuse an empty record under a group's validation, batch candidate B1″); and a new non-empty
+  block of recursors is a selected family record or was checked as a second family record of a
+  block (a twin);
 * `FamilyAdmits ρ t g R R' famOf adv cont`: what the group's store holds and in what order: the
   family record of a new block is new, ranked after its block (the block's unit owns it); the
   advice records and container recursors are in the store, and those new in the group are ranked
@@ -58,8 +60,10 @@ structure GroupFamilyChecks (calls : List (Call F)) (bAddr : _root_.Address)
   famCall : ∀ B rb, famOf B = some rb → New R R' B ∧ ModeledRouteAt calls B ∧
     ∃ cs, FamilyCallAtLim calls bAddr t B rb (some (valLimit g)) cs ∧
       (∀ a, AdviceIn cs a → adv B a) ∧ (∀ x, ContainerRecIn cs x → cont B x)
-  /-- The selected record is the block's family, member by member, in the run's store. -/
-  family : ∀ B rb, famOf B = some rb → ∃ cb ms crb rs, FamilyOfBlock E₀ B cb ms rb crb rs
+  /-- The selected record is the block's family, position by position over the flattened family,
+  in the run's store. -/
+  family : ∀ B rb, famOf B = some rb →
+    ∃ cb ms crb rs flat, FamilyOfBlock E₀ B cb ms rb crb rs flat
   /-- A new non-empty block of recursors is a selected family record, or was checked as a
   second family record of a block (a twin). -/
   claimed : ∀ (A : _root_.Address) (c : Ixon.Constant) (rs' : Array Ixon.MutConst),
@@ -82,9 +86,11 @@ structure FamilyAdmits (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : I
   before the block. -/
   container : ∀ B rb x, famOf B = some rb → New R R' B → cont B x →
     (recordOf R' x).isSome = true ∧ (New R R' x → ρ.rank g x < ρ.rank g B)
-  /-- A new unit was checked at the group's limit, or is a selected family record. -/
+  /-- A new unit was checked at the group's limit by a check of a unit, or is the selected family
+  record of a block new in the group: installed with that block by its step, checked by the
+  block's family check (`GroupFamilyChecks.famCall`), which is no check of a unit. -/
   checked : ∀ a c, New R R' a → recordOf R' a = some c → UnitKind c →
-    ρ.checked a (valLimit g) ∨ ∃ B, famOf B = some a
+    ρ.checked a (valLimit g) ∨ ∃ B, famOf B = some a ∧ New R R' B
 
 /-- **The family record of a new block is held by the group's store, with its member
 projections**: from `famNew` and the store's closure under block members. -/
