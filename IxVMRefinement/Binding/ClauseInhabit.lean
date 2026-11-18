@@ -274,8 +274,9 @@ theorem bndOver_bool (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
   have hraise : RaiseAt ctab boolEnv 6 :=
     raiseAt_of_noOps (Nat.le_refl 6) (fun r hr hop => hnu r hr (Or.inl hop)) hfab
       (fun h => absurd h (by decide))
-  have hset : (fun k => k < 6 ∨ k = 6) = (fun k : Nat => k < 6 + 1) :=
-    funext fun k => propext (by omega)
+  have hset : (fun k => k < 6 ∨ k = 6) = (fun k : Nat => k < 6 + 1) := by
+    funext k
+    exact propext (by omega)
   have hshape : TableShape.{u} ctab (· < 6 + 1) boolStore boolEnv := by
     have h := BoolInhabit.tableShape_bool.{u}
     rw [hset] at h
