@@ -487,6 +487,7 @@ theorem BlockLoad.inLogic {E₀ : Ixon.Env} (hS : LoadedReads.RunStore calls E�
   intro cb hcb
   obtain ⟨hrec1, hinfo1⟩ := hbl.stored hH
   have e : cb₁ = cb := Option.some.inj (hrec1.symm.trans hcb)
+  subst e
   obtain ⟨x, r, h₁, h₂, cs₁, ha, ev, hsub⟩ := hk
   exact Assembly.block_inLogic_of_member_kinds hS ha ev hsub
     ((hS.recordOf_eq_recordAt B).symm.trans hrec1) hinfo1 hm
