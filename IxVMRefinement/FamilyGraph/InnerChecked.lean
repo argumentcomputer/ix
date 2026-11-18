@@ -284,8 +284,8 @@ theorem adviceBlock_shape {lim : Option Nat} {calls cs : List (Call F)} {E₀ : 
         cases m with
         | indc ind =>
           exact ⟨ind, Array.toList_inj.mp (by rw [hl])⟩
-        | defn d => exact absurd hcnt (by decide)
-        | recr rc => exact absurd hcnt (by decide)
+        | defn d => exact absurd (show (0 : Nat) = 1 from hcnt) (by decide)
+        | recr rc => exact absurd (show (0 : Nat) = 1 from hcnt) (by decide)
       | _ :: _ :: _ =>
         rw [hl] at hcnt hle
         simp only [List.length_cons] at hcnt
