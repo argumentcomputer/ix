@@ -37,12 +37,12 @@ theorem relEnv_le {env : Env .anon} {Rel : Key .anon}
     Ix.Kernel.Env.find?_cons (c := relConst Rel) (env := Env.empty) (n := k)
   rw [hcons] at hf
   by_cases hk : Rel = k
-  · rw [if_pos hk] at hf
+  · rw [ite_eq_left hk] at hf
     have hci : relConst Rel = ci := Option.some.inj hf
     subst hci
     subst hk
     exact hRel
-  · rw [if_neg hk] at hf
+  · rw [ite_eq_right hk] at hf
     cases hf
 
 /-- **The record of a registered family, from the runs of the block check on the relation
