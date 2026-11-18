@@ -574,11 +574,39 @@ def anchor : Expr F → String
   | .matchValue x _ => "match " ++ nodeTag x
   | e => nodeTag e
 
-/-- A node's tag in its place: a statement by what it binds and to what. -/
-def placeTag : Expr F → String
-  | .letValue p x _ => s!"let {patText p} = {anchor x}"
-  | .matchValue x [(p, _)] => s!"match {anchor x} as {patText p}"
-  | e => nodeTag e
+/-- A statement of a block: its tag (what it binds and to what), what it binds its pattern to,
+and the rest of the block. -/
+def stmt? : Expr F → Option (String × Expr F × Expr F)
+  | .letValue p x b => some (s!"let {patText p} = {anchor x}", x, b)
+  | .matchValue x [(p, b)] => some (s!"match {anchor x} as {patText p}", x, b)
+  | _ => none
+
+/-- The tags of the statements of the block that `e` heads, in order. -/
+partial def blockTags (e : Expr F) : List String :=
+  match stmt? e with
+  | some (t, _, b) => t :: blockTags b
+  | none => []
+
+/-- The tags that several statements of the block share. -/
+def blockDups (e : Expr F) : List String :=
+  let ts := blockTags e
+  (ts.filter fun t => ts.count t > 1).eraseDups
+
+/-- An expression in full: statements by what they bind, matches by their arms' shapes. -/
+partial def deep (e : Expr F) : String :=
+  let own := match e with
+    | .letValue p _ _ => "let " ++ patText p
+    | .matchValue _ arms => "match [" ++ " | ".intercalate (arms.map fun (p, _) => patShape p) ++ "]"
+    | e => nodeTag e
+  own ++ "(" ++ ", ".intercalate (e.children.map deep) ++ ")"
+
+/-- A node's tag in its place. A statement is tagged by what it binds and to what; where
+several statements of the block share that tag (`dups`), each also by a hash of what it binds
+its pattern to, in full: they are told apart by content, not by order, unless they are equal. -/
+def placeTag (dups : List String) (e : Expr F) : String :=
+  match stmt? e with
+  | some (t, x, _) => if dups.contains t then s!"{t} [{hex (strHash (deep x))}]" else t
+  | none => nodeTag e
 
 /-- The leaf: the call list's equation, then the path's constructor (of the inductive `ind`). -/
 def leaf (sc ind : String) (segs : List Seg) : M (List String) := do
@@ -657,12 +685,18 @@ mutual
   /-- Invert derivation `d` of `e` (input heap `hin`; destinations `dv`, `dh`),
   then continue with the call segments. -/
   partial def inv (sc0 : String) (e : Expr F) (d : String) (env : Env) (hin dv dh : T) (k : K) :
-      M (List String) := do
+      M (List String) :=
+    invIn (blockDups e) sc0 e d env hin dv dh k
+
+  /-- `inv` inside a block: `dups` are the tags that several of the block's statements share,
+  `sc0` is the block's place. -/
+  partial def invIn (dups : List String) (sc0 : String) (e : Expr F) (d : String) (env : Env)
+      (hin dv dh : T) (k : K) : M (List String) := do
     let s ← get
     if s.work ≥ 20000 then throw "too large"
     set { s with work := s.work + 1 }
-    -- the node's place; a statement's body continues in the enclosing place `sc0`
-    let sc := sc0 ++ "/" ++ placeTag e
+    -- the node's place; a statement's body continues in the block's place `sc0`
+    let sc := sc0 ++ "/" ++ placeTag dups e
     let fresh := fresh sc
     let binder := binder sc
     let assign := assign sc
@@ -820,21 +854,21 @@ mutual
         k segs
       return [s!"obtain ⟨{x}, {c}, {d'}, {tp}, rfl⟩ := {d}.hint_inv"] ++ rest
     | .letValue pat x b =>
-      if ← segmentable x then return ← letSegment sc0 sc e pat x b d env hin dv dh k
+      if ← segmentable x then return ← letSegment dups sc0 sc e pat x b d env hin dv dh k
       let v ← binder "v" "SourceValue F"; let m ← binder "m" "Heap F"
       let bs ← fresh "bs"; let c1 ← fresh "c"; let c2 ← fresh "c"
       let dx ← fresh "d"; let mt ← fresh "mt"; let db ← fresh "d"
       let rest ← inv sc x dx env hin (.v v) (.v m) fun s1 => do
         let (pl, binds) ← patInv (sc ++ "/pat") (.v v) pat mt (.v m)
         if ← isDead then return pl
-        return pl ++ (← inv sc0 b db (binds ++ env) (.v m) dv dh fun s2 => k (s1 ++ s2))
+        return pl ++ (← invIn dups sc0 b db (binds ++ env) (.v m) dv dh fun s2 => k (s1 ++ s2))
       return [s!"obtain ⟨{v}, {m}, {bs}, {c1}, {c2}, {dx}, {mt}, {db}, rfl⟩ := {d}.letValue_inv"] ++ rest
     | .matchValue x arms =>
       let v ← binder "v" "SourceValue F"; let m ← binder "m" "Heap F"
       let bs ← fresh "bs"; let body ← fresh "body"; let c1 ← fresh "c"; let c2 ← fresh "c"
       let dx ← fresh "d"; let sel ← fresh "sel"; let db ← fresh "d"
       let rest ← inv (sc ++ "/on") x dx env hin (.v v) (.v m) fun s1 =>
-        invArms sc0 sc arms (arms.length > 1) (arms.length ≥ tableArms) sel db env (.v v) (.v m) dv dh
+        invArms dups sc0 sc arms (arms.length > 1) (arms.length ≥ tableArms) sel db env (.v v) (.v m) dv dh
           fun s2 => k (s1 ++ s2)
       return [s!"obtain ⟨{v}, {m}, {bs}, {body}, {c1}, {c2}, {dx}, {sel}, {db}, rfl⟩ := {d}.matchValue_inv"] ++
         rest
@@ -847,7 +881,7 @@ mutual
   segment is stated over the whole local environment, entry by entry, in the
   evaluation's order (`bindings ++ locals`, as the generator's `binds ++ env`), so
   that the derivation of `x` instantiates it by unification alone. -/
-  partial def letSegment (sc0 sc : String) (e : Expr F) (pat : Pattern F) (x b : Expr F) (d : String)
+  partial def letSegment (dups : List String) (sc0 sc : String) (e : Expr F) (pat : Pattern F) (x b : Expr F) (d : String)
       (env : Env) (hin dv dh : T) (k : K) : M (List String) := do
     let fresh := fresh sc
     let binder := binder sc
@@ -866,7 +900,7 @@ mutual
       [.s " ", .t hin, .s " ", .t (.v v), .s " ", .t (.v m), .s s!" {c1}"]) sg
     let (pl, binds) ← patInv (sc ++ "/pat") (.v v) pat mt (.v m)
     let rest ← if ← isDead then pure pl else
-      pure (pl ++ (← inv sc0 b db (binds ++ env) (.v m) dv dh fun s2 => k ([Seg.sub c1] ++ s2)))
+      pure (pl ++ (← invIn dups sc0 b db (binds ++ env) (.v m) dv dh fun s2 => k ([Seg.sub c1] ++ s2)))
     return [s!"obtain ⟨{v}, {m}, {bs}, {c1}, {c2}, {dx}, {mt}, {db}, rfl⟩ := {d}.letValue_inv",
       s!"have {sg} := «{s.fname}».{segName.decapitalize} {dx}", s!"clear {dx}"] ++ rest
 
@@ -923,7 +957,7 @@ mutual
   table (`table`: a dispatch of at least `tableArms` arms) whose scrutinee is a
   parameter, a matched arm drops the negations of the earlier arms: its own equation
   `x = template` implies them, and keeping them makes the paths quadratic. -/
-  partial def invArms (sc0 sc : String) (arms : List (Pattern F × Expr F)) (multi table : Bool)
+  partial def invArms (dups : List String) (sc0 sc : String) (arms : List (Pattern F × Expr F)) (multi table : Bool)
       (sel db : String) (env : Env) (V heap dv dh : T) (k : K) : M (List String) := do
     match arms with
     | [] => return [s!"exact (selectArm_nil_inv {sel}).elim"]
@@ -946,11 +980,12 @@ mutual
           modifyPath fun q => { q with facts := q.facts.filter fun (_, _, _, subj) =>
             match subj with | some u => u.resolve q.subst != Vr | none => true }
       let pos ← if ← isDead then pure [] else
-        inv (if multi then arm else sc0) b db (binds ++ env) heap dv dh k
+        if multi then inv arm b db (binds ++ env) heap dv dh k
+        else invIn dups sc0 b db (binds ++ env) heap dv dh k
       modify fun s => { s with path := saved }
       let (nl, dead) ← negArm arm V p nm
       let negRest ← if dead then pure [] else
-        invArms sc0 sc rest multi table sel' db env V heap dv dh k
+        invArms dups sc0 sc rest multi table sel' db env V heap dv dh k
       modify fun s => { s with path := saved }
       return [s!"rcases selectArm_cons_inv {sel} with ⟨{mt}, rfl⟩ | ⟨{nm}, {sel'}⟩"] ++
         bullet (pl ++ pos) ++ bullet (nl ++ negRest)
