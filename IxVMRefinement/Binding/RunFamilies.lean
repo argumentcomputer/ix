@@ -1,6 +1,7 @@
 import IxVMRefinement.Binding.GroupRank
 import IxVMRefinement.Binding.ClosureFold
 import IxVMRefinement.Binding.StoreOpOrder
+import IxVMRefinement.RoleVal.BoundSafety
 
 /-! # The family checks of a binding run, group by group
 
@@ -101,8 +102,8 @@ theorem runFamOf_famCall {g : Nat} :
 end Run
 
 /-- **What is left of `ClosureRunFacts`** at a group: its fields but `famRefs` (the rank's,
-`GroupRanked.famRefs`), `advNotUnit` (`advNotUnit_of_run`) and `roleUnitForm`
-(`roleUnitForm_of_run`), which are proved. Each field's source:
+`GroupRanked.famRefs`), `advNotUnit` (`advNotUnit_of_run`), `roleUnitForm`
+(`roleUnitForm_of_run`) and `keptRoles` (`keptRoles_of_run`), which are proved. Each field's source:
 * `oldNeeds`: today's circuit, not specified: an address a new unit's step reads that is held
   before the group was checked at the limit of the group that added it (the walk's
   `KernelClaim::run_check` at that group; for a payload record, its family check), or is a
@@ -112,11 +113,6 @@ end Run
   `check_recs` compares the record entry by entry against the flattened block; not specified.
 * `noPinned`: unknown; it is a statement about the basis pins and the keys of the new records
   (`PinnedBasis`), for which no reading of the circuit is written.
-* `keptRoles`: today's circuit: the record is held (`groupStore_kept`), in Lean's logic with its
-  block (`RootsSafe.bound`), and checked at the group's limit (the root's walked record,
-  `unitCheckedAt_of_topRec`); not exported is that the bound record is no block record:
-  `get_ci`'s head at the bound address (`Claim.GetCIHead`, no arm for a block), which
-  `RoleVal.ValidateRoleIn.bound_loaded` drops.
 * `routeNew`: today's circuit: the modeled arm of `KernelCheck::check_const` reaches
   `KernelModeled::check_modeled_block` and `check_family`; a block's route over the closure's
   store against the route the circuit read; not specified.
@@ -134,11 +130,6 @@ structure RunFactsLeft (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : I
     cb.info = .muts ms ∧ 0 < ms.size
   noPinned : ∀ A c x ci, New R R' A → recordOf R' A = some c → ConstAddrOf A c x →
     PinnedBasis ci → ci.name ≠ keyOf t x
-  keptRoles : ∀ r ∈ roleGroup g, (keptRole r ∨ r ∈ preludeRoles) →
-    ¬ (r ∈ RoleOps.opRoles ∨ r ∈ standardAxioms) → ∀ a, t.addressOf? r = some a →
-    ∃ c, recordOf R' a = some c ∧ (∀ ms, c.info ≠ .muts ms) ∧ InLogic c ∧
-      (∀ cb, recordOf R' (Ix.Cert.ownerOf a c) = some cb → InLogic cb) ∧
-      ((recordOf R a).isSome = true → ∃ n, ρ.checked a n)
   routeNew : ∀ R₁ B, ClosureStore t g R R' R₁ → New R R' B →
     Route.blockRoute R₁ B = some true → ∃ rb, famOf B = some rb
   readsDown : ∀ R₁ x ci₀, ClosureStore t g R R' R₁ → (recordOf R x).isSome = true →
@@ -169,7 +160,7 @@ a named change of the circuit source, or unknown.
   `check_recs` that takes the family record as the reconstruction of the block's recursors, and
   the change that compares nested pins in `check_recs`; `claimed` the first of these changes.
 * `runFacts`: what is left of `ClosureRunFacts` at the group (`RunFactsLeft`, which names each
-  field's source); `famRefs` is the rank's, `advNotUnit` and `roleUnitForm` are proved
+  field's source); `famRefs` is the rank's, `advNotUnit`, `roleUnitForm` and `keptRoles` are proved
   (`families_of_remaining`).
 * `famNew`: the selected record of a new block is new in the group. Source: unknown (no reading
   of the circuit excludes a family record an earlier group stored).
@@ -321,12 +312,67 @@ theorem advNotUnit_of_run (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoad
   · obtain ⟨c, ax, hc, hi, -⟩ := hax r hs a had
     exact hR.payloadFacts.notAxiomLike g a c hreach hc (Or.inl ⟨ax, hi⟩)
 
+/-- **`ClosureRunFacts.keptRoles` of every run**: the record of a kept or prelude role of the group
+that is no role unit is the record its validation walked (`kept_walked`, `GroupWalked.roots`), so
+the store after the group holds it; it is no block record (`Ingress::get_ci` at the bound address,
+`RoleVal.ValidateRoleIn.bound_load_safe`, has no arm for a block); it is in Lean's logic with its
+block (`RootsSafe.bound`); and it was checked at the group's limit (`unitCheckedAt_of_topRec`). -/
+theorem keptRoles_of_run (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
+    (hroots : RootsSafe t E₀) {Pay : PayloadRel} {rk : Nat → _root_.Address → Nat} {g : Nat}
+    (hg6 : 6 ≤ g) (hval : ∀ r ∈ roleGroup g, RoleValidationIn calls bAddr t g r)
+    {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
+    (hw : GroupWalked calls bAddr t E₀ g recs) :
+    ∀ r ∈ roleGroup g, (keptRole r ∨ r ∈ preludeRoles) →
+      ¬ (r ∈ RoleOps.opRoles ∨ r ∈ standardAxioms) → ∀ a, t.addressOf? r = some a →
+      ∃ c, recordOf (groupStore t E₀ Pay (g + 1)) a = some c ∧ (∀ ms, c.info ≠ .muts ms) ∧
+        InLogic c ∧
+        (∀ cb, recordOf (groupStore t E₀ Pay (g + 1)) (Ix.Cert.ownerOf a c) = some cb →
+          InLogic cb) ∧
+        ((recordOf (groupStore t E₀ Pay g) a).isSome = true →
+          ∃ n, (observedRun calls bAddr t E₀ rk).checked a n) := by
+  intro r hr hk hnot a had
+  have h6 : 6 ≤ g + 1 := Nat.le_succ_of_le hg6
+  have hgr : 6 ≤ Ix.SpecDigest.groupOf r := by
+    rw [groupOf_of_mem_roleGroup hr]
+    exact hg6
+  have hwk : RoleVal.roleWalksBound r = true ∨ RoleVal.anchorWalked r = true := by
+    rcases kept_walked hgr hk with h | h | h
+    · exact Or.inl h
+    · exact Or.inr h
+    · exact absurd (Or.inr h) hnot
+  obtain ⟨x, hx, hxa⟩ := hw.roots r hr hwk a had
+  have hE : recordOf E₀ a = some x.c := by
+    rw [← hxa]
+    exact topRec_recordOf hC.hashedStored x
+  have hsafe := hroots.bound r hwk a had
+  refine ⟨x.c, (groupStore_recordOf hb h6).mpr
+    ⟨storedBelow_of_adds hg6 (GroupAdds.reach (GroupReach.root hr hwk had)), hE⟩, ?_,
+    (hsafe x.c hE).1, fun cb hcb => (hsafe x.c hE).2 cb ((groupStore_recordOf hb h6).mp hcb).2,
+    fun _ => ⟨valLimit g, ?_⟩⟩
+  · intro ms hms
+    obtain ⟨a', had', h₀, h₁, ap, ptr, v, cs, ha, ev, hsub, -, -⟩ :=
+      RoleVal.ValidateRoleIn.bound_load_safe
+        (show RoleVal.ValidateRoleIn calls bAddr t g r from hval r hr)
+        (RoleVal.roleSpecKind_of_walked r hwk)
+    have e : a' = a := Option.some.inj (had'.symm.trans had)
+    rw [e] at ha
+    obtain ⟨ab, hab, hab'⟩ := ha
+    rw [← hab'] at hE
+    obtain ⟨raw, c', -, hh, hba, hx', -, hhead⟩ := Claim.get_ci_head hab ev
+    have hcc : c' = x.c := hC.runStore.record_eq
+      ((hC.runStore.recordOf_eq_recordAt _).symm.trans hE) (Core.hashed_mono hsub hh) hba hx'
+    rw [hcc] at hhead
+    exact hhead.notMuts ms hms
+  · show UnitCheckedAt calls bAddr t E₀ a (some (valLimit g))
+    rw [← hxa]
+    exact unitCheckedAt_of_topRec hC.hashedStored x
+
 /-- **The family form's clauses at a group**, for a rank of its new records: `ClosureRunFacts`
 from what is left of it (`RemainingFamilyClauses.runFacts`), the rank's `famRefs`, and
 `advNotUnit`, `roleUnitForm` proved of the run. -/
 theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
     (hax : AxiomRolesDeclared t E₀) (hR : RemainingFamilyClauses calls bAddr t E₀)
-    (hcheck : t.check = .ok ())
+    (hcheck : t.check = .ok ()) (hroots : RootsSafe t E₀)
     {rk : Nat → _root_.Address → Nat} {g : Nat} (hg6 : 6 ≤ g) (hg : g < 77)
     (hval : ∀ r ∈ roleGroup g, RoleValidationIn calls bAddr t g r)
     {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
@@ -356,7 +402,7 @@ theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRows
         advNotUnit := advNotUnit_of_run hC hb hax hR hg6 hg hw hpay
         noPinned := hL.noPinned
         roleUnitForm := roleUnitForm_of_run hC hb hax hcheck hg6 hval
-        keptRoles := hL.keptRoles
+        keptRoles := keptRoles_of_run hC hb hroots hg6 hval hw
         routeNew := hL.routeNew
         readsDown := hL.readsDown }
   · exact
