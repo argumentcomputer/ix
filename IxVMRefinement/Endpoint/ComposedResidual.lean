@@ -357,10 +357,12 @@ and each group from 6 to 76 of it:
 * the stored shapes where the group has no role unit;
 * `certProjFree`: no certificate of a well-founded operation projects the operation: for an
   operation bound at `a` and a certificate in its evidence whose record in the run's store is a
-  standalone definition, no projection in the certificate's value, or in a shared
-  subexpression, has its structure at `a` (`Binding.CertProjFree`). Producer open:
-  `KernelSubst::subst_const`'s projection arm refusing a projection whose structure address is
-  the address of the operation it replaces. From it the role unit of an operation in the family
+  standalone definition, the call of `KernelSubst::subst_const` on a conversion of the
+  certificate's value meets no projection whose structure is at `a` (`ProjIn` at the call's
+  output heap); a shared expression the value does not reach is not constrained
+  (`Binding.CertProjFree`). Producer open: `KernelSubst::subst_const`'s projection arm refusing a
+  projection whose structure address is the address of the operation it replaces, through
+  `Binding.certProjFree_of_subst`. From it the role unit of an operation in the family
   form is proved (`Binding.operationRoleUnitW_of_projFree`, `Binding.RoleUnitStepOverW`: handed
   the closure's store, the walked records stored there and the stored family map, it keeps
   both), through the operations' certificate facts (`Binding.opCertFacts_of_projFree`).
