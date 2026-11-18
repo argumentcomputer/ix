@@ -21,6 +21,16 @@ certificates (`validate_op_equations`). This file reads those observations.
 * `op_walk_facts`: **the walk**: the record is checked under the group's role context at the
   group's validation limit, and each reference it uses is a checked record in Lean's logic that
   is no block, or the address of a walked role of an earlier group.
+* `Typing.checkedLimAt_defn_canon`: `Typing.checkedLimAt_defn_step` with the reading and the
+  canonical annotations exposed (the stored terms are the ones every load represents).
+* `opFront_of_checkedLim`: the definition's check (`RoleOps.OpFront`) at the closure's
+  environment from that check evidence.
+* `OpEquationFacts`: what `validate_op_equations` gives: one comparison per recurrence
+  (`OpRefine.EqObs`) or one checked proof per certificate statement (`OpRefine.CertObs`).
+* `opValidationFactsW_of_equations`: **`OpValidationFactsW` from `OpEquationFacts`**: the record
+  is new (the closure's coverage would otherwise store the operation, which the invariant below
+  the group excludes), its references are stored (`usedRefsStored_of_walkedStored`), the check,
+  the pin, the reading over the store after the group, and the reload.
 -/
 
 universe u
@@ -348,5 +358,370 @@ theorem op_walk_facts {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {ρ : BR
   · left
     rw [← hr'x]
     exact hc
+
+end IxVM.Refinement.Binding
+
+/-! ## The definition's check, with the canonical annotations -/
+
+namespace IxVM.Refinement.Typing
+
+open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open IxVM (F)
+open IxVM.Refinement.Obs
+open IxVM.Consistency
+
+variable {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {E₀ : Ixon.Env}
+
+/-- **`checkedLimAt_defn_step` with the reading and the canonical annotations exposed**: the
+walk's check of a standalone definition gives the reading of its type and value over the run's
+store, their scoping, the stored terms as the canonical annotations of the reading
+(`canonAnn`, the terms every load of the record represents), and the check evidence at the
+prefix's keying. -/
+theorem checkedLimAt_defn_canon (ht : t.check = .ok ()) (hbound : Bounded calls)
+    (hS : LoadedReads.RunStore calls E₀) {bAddr a : _root_.Address}
+    {order_role : List _root_.Address} {c : Ixon.Constant} {d : Ixon.Definition}
+    (hrec : Ix.Cert.recordAt E₀ a = some c) (hinfo : c.info = .defn d) (hlogic : InLogic c)
+    (hkind : d.kind = .defn)
+    (hnot_role : a ∉ order_role) {lim : Option Nat} (hchk : Claim.CheckedLimAt calls bAddr t a lim)
+    (Ecore : Ixon.Env) {env : Ix.Kernel.Env .anon} (hstored : Decl.UsedRefsStored t env c) :
+    ∃ (ty₀ val₀ ty' val' : Ix.Kernel.Expr .anon),
+      (exprReader t (fun x => E₀.blobs.get? x) c id (soloSelf t a)).read d.typ = .ok ty₀ ∧
+      (exprReader t (fun x => E₀.blobs.get? x) c id (soloSelf t a)).read d.value = .ok val₀ ∧
+      ty₀.looseBVarsBounded 0 = true ∧
+      ty₀.allLevelParamsDefined (List.range d.lvls.toNat) = true ∧
+      val₀.looseBVarsBounded 0 = true ∧
+      val₀.allLevelParamsDefined (List.range d.lvls.toNat) = true ∧
+      LoadedReads.canonAnn c (List.range d.lvls.toNat) 0 d.typ ty₀ = some ty' ∧
+      LoadedReads.canonAnn c (List.range d.lvls.toNat) (0 + 1) d.value val₀ = some val' ∧
+      Annotates ty' ty₀ ∧ Annotates val' val₀ ∧
+      ∀ hn : Ix.Kernel.ReducibilityHint,
+        Decl.CheckedDefnAtLim (Core.Ctx.stored ⟨Ecore, env, t, lim⟩).κ lim calls t
+          bAddr Ecore order_role
+          (LoadedReads.defnDecl d.kind ⟨Core.keyOf t a, List.range d.lvls.toNat, ty₀⟩ val₀ hn)
+          (LoadedReads.defnDecl d.kind ⟨Core.keyOf t a, List.range d.lvls.toNat, ty'⟩ val'
+            hn) := by
+  have hsafe : Ix.Kernel.Reader.safetyDecline d = none := by
+    have hl := hlogic
+    unfold InLogic at hl
+    rw [hinfo] at hl
+    exact hl
+  obtain ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
+    hrc_pre, hrc_m, ha_pre, ha_m, ev_ld, hcl_ld, hsub_ld, hld, ev_chk, hcl_chk, hsub_chk⟩ := hchk
+  obtain ⟨a', ha'_ref, rfl⟩ := ha_pre
+  obtain ⟨rawBytes, c', hh, hba, hex, hres⟩ := L1.get_ci_trace_spec ha'_ref ev_ld
+  have hc : c = c' := (hS.record_eq hrec (Core.hashed_mono hsub_ld hh) hba hex).symm
+  subst hc
+  unfold L1.GetCITraceResult at hres
+  rw [hinfo] at hres
+  obtain ⟨blobs, tree, v', hhp, built, hld', htr⟩ := hres
+  rw [hld] at hld'
+  injection hld' with hvv
+  subst hvv
+  have hblob : ∀ x bs, (x, bs) ∈ blobs → E₀.blobs.get? x = some bs := by
+    intro x bs hm
+    obtain ⟨hhx, hxa⟩ := hhp (x, bs) hm
+    have hhx' : Hashed cs_load bs := hhx
+    have hxa' : Address.blake3Pure bs = x := hxa
+    have hrun := hS.blobs bs (Core.hashed_mono hsub_ld hhx')
+    rw [hxa'] at hrun
+    exact hrun
+  obtain ⟨raw', ty₀, val₀, hty, hval, hreads, -⟩ :=
+    LoadedReads.defn_reading (store := recordOf E₀) (blob := fun x => E₀.blobs.get? x) ht
+      (hS.recordOf_of_recordAt hrec) hinfo hlogic hblob htr.toRaw
+  obtain ⟨h1, h2, h3, h4⟩ :=
+    LoadedReads.checkedDefn_scope_lim ht hbound hkind hsafe hblob raw' hty hval ev_chk
+      hsub_chk
+  have hrecur : L1.defnRecurAddrs d (Core.ixAddr a') = [] := by
+    have hf := (L1.defnIsUnsafeCI_eq_false_iff d).mpr hsafe
+    simp [L1.defnRecurAddrs, hf]
+  rw [hrecur] at htr
+  obtain ⟨hnlvls, tyPtr, valPtr, hint, planT, planV, hv, rty, rval, hpT, hpV, hlT, hlV⟩ := htr
+  subst hv
+  have hagree : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs :=
+    L1.BlobReadAgreement.of_mem hblob
+  obtain ⟨ty', hcT, hannT, htmT⟩ :=
+    LoadedReads.annotation_canon ht hnlvls hagree rty built hpT hlT hty h1 h2
+  obtain ⟨val', hcV, hannV, htmV⟩ :=
+    LoadedReads.annotation_canon ht hnlvls hagree rval built hpV hlV hval h3 h4
+  have heT : ∀ i, i ∈ exprRefIdxs d.typ → i ∈ usedRefIdxs c := by
+    intro i hi
+    unfold usedRefIdxs
+    rw [hinfo]
+    exact List.mem_append_right _ (List.mem_append_left _ hi)
+  have heV : ∀ i, i ∈ exprRefIdxs d.value → i ∈ usedRefIdxs c := by
+    intro i hi
+    unfold usedRefIdxs
+    rw [hinfo]
+    exact List.mem_append_right _ (List.mem_append_right _ hi)
+  have htmT' := Decl.tmC_stored_of_usedRefs (E₀ := Ecore) (lim := lim) rty heT hstored htmT
+  have htmV' := Decl.tmC_stored_of_usedRefs (E₀ := Ecore) (lim := lim) rval heV hstored htmV
+  refine ⟨ty₀, val₀, ty', val', hty, hval, h1, h2, h3, h4, hcT, hcV, hannT, hannV, fun hn => ?_⟩
+  exact LoadedReads.checkedDefn_at_lim (E := Ecore) (order_role := order_role)
+    (decl_addr := Core.ixAddr a') hnot_role hkind hsafe hrc_m.toRCRep hnlvls h1 h2 h3 h4 hannT
+    hannV htmT' htmV' ev_chk hsub_chk hn
+
+end IxVM.Refinement.Typing
+
+namespace IxVM.Refinement.Binding
+
+open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open Aiur.Library
+open IxVM (F)
+open IxVM.Refinement.Core
+open Ix.Kernel (Role)
+open Ix.Kernel.Semantics (NativeFam)
+
+/-! ## The definition's check at the closure's environment -/
+
+private theorem typesRep_nil' (κ : _root_.Address → KKey) (Γ : Nat → KExpr)
+    {m m_pre : Aiur.Heap F}
+    (hm : m = m_pre ++
+      [.construct IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []]) :
+    TypesRep κ Γ m 0
+      (.ptr (.enum IxVM.Refinement.Obs.Names.«Lists::Node<&KernelTypes::KExprNode>»)
+        m_pre.length) := by
+  rw [hm]
+  exact Decl.typesRep_alloc_nil κ Γ m_pre
+
+/-- **The definition's check of an operation's record, from the walk's check at the group's
+limit** (`OpRefine.opFront_of_checked` over `Decl.CheckedDefnAtLim`, the form
+`Typing.checkedLimAt_defn_canon` gives). -/
+theorem opFront_of_checkedLim {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {bAddr : _root_.Address} {E : Ixon.Env} {order_role : List _root_.Address} {lim : Nat}
+    {env : Ix.Kernel.Env .anon} {d d' : Ix.Kernel.Declaration .anon} {k : KKey}
+    {ty₀ val₀ ty val : KExpr} {hn : Ix.Kernel.ReducibilityHint}
+    (hinv : Decl.PrefixInv.{u} E t (some lim) env)
+    (hchk : Decl.CheckedDefnAtLim (Ctx.stored ⟨E, env, t, some lim⟩).κ (some lim) calls t
+      bAddr E order_role d d')
+    (hgood : Good ⟨E, env, t, none⟩ calls)
+    (hd : d = .defnDecl ⟨k, [], ty₀⟩ val₀ hn) (hd' : d' = .defnDecl ⟨k, [], ty⟩ val hn) :
+    RoleOps.OpFront env ty val ty val := by
+  cases hchk with
+  | @defnDecl a nlvls ty₀' val₀' ty' val' hn' m_pre1 m_es m_es' m_pre2 m_kc m_kc'
+      x_rc x_ty x_val v_sort r_kc cs_es cs_kc
+      hnot_role _ _ hty_def _ hval_def hty_ann hval_ann hty'_def hval'_def
+      hm_es hty_tmc_es hrc_es ev_es _ hsub_es
+      _ hm_kc hty_tmc_kc hval_tmc_kc hrc_kc ev_kc _ hsub_kc =>
+    simp only [Ix.Kernel.Declaration.defnDecl.injEq, Ix.Kernel.ConstantVal.mk.injEq] at hd hd'
+    obtain ⟨⟨-, -, e1⟩, e2, -⟩ := hd
+    obtain ⟨⟨-, hl, e3⟩, e4, -⟩ := hd'
+    subst e1
+    subst e2
+    subst e3
+    subst e4
+    have hn0 : nlvls = 0 := by
+      cases nlvls with
+      | zero => rfl
+      | succ n => exact absurd hl (by simp [List.range_succ])
+    subst hn0
+    let c : ScopedCtx := Ctx.stored ⟨E, env, t, some lim⟩
+    have hgood_c : Good c.toCtx calls := hgood
+    obtain ⟨hef, hlf⟩ := hinv.scopedCoreFacts
+    have hty_tmc_es' : TmC c.κ m_es ty' x_ty := by
+      have h := hty_tmc_es
+      rwa [Decl.posOf_range 0 ty'] at h
+    have hty_tmc_kc' : TmC c.κ m_kc ty' x_ty := by
+      have h := hty_tmc_kc
+      rwa [Decl.posOf_range 0 ty'] at h
+    have hval_tmc_kc' : TmC c.κ m_kc val' x_val := by
+      have h := hval_tmc_kc
+      rwa [Decl.posOf_range 0 val'] at h
+    obtain ⟨-, hty_nfv, hty_bvs, hty_an⟩ := OpRefine.tmC_props hty_tmc_es'
+    obtain ⟨-, hval_nfv, hval_bvs, hval_an⟩ := OpRefine.tmC_props hval_tmc_kc'
+    obtain ⟨stype, u', _, hinf_ty, hred_ty, _, _⟩ :=
+      Decl.scoped_core_ensure_sort (c := c) hrc_es (typesRep_nil' c.κ _ hm_es)
+        (Decl.ghostScoped_zero _) hef hlf
+        (CoreGood.ofRaw (hgood_c.sub hsub_es) (fun _ _ => trivial)) ev_es
+        (hty_tmc_es' 0 (fun _ => .sort .zero))
+    obtain ⟨vtype, hinf_val, hde_val⟩ :=
+      Decl.scoped_core_check (c := c) hrc_kc (typesRep_nil' c.κ _ hm_kc)
+        (Decl.ghostScoped_zero _) hef hlf
+        (CoreGood.ofRaw (hgood_c.sub hsub_kc) (fun _ _ => trivial)) ev_kc
+        (hval_tmc_kc' 0 (fun _ => .sort .zero)) (hty_tmc_kc' 0 (fun _ => .sort .zero))
+    exact ⟨hty_bvs, hty_nfv, hty_an, hty'_def, ⟨stype, u', hinf_ty, hred_ty⟩,
+      hval_bvs, hval_nfv, hval_an, hval'_def, ⟨vtype, hinf_val, hde_val⟩⟩
+
+/-! ## The recurrences and the certificates -/
+
+/-- **What the run's comparison of an operation's recurrences, or check of its certificates,
+gives at the closure's environment** (the last part of `validate_op`: `validate_op_equations`):
+at a binding run, an operation's group, its admission, the closure's store and environment
+with the closure's coverage, a record store for the store after the group the run's calls are
+good for, the record (a definition with no universe parameter, in Lean's logic), the reading of
+its value and the stored value (its canonical annotation), and the record's references stored:
+one comparison per recurrence (`OpRefine.EqObs`) for a structural operation, and one checked
+proof per certificate statement (`OpRefine.CertObs`) for a well-founded one. -/
+def OpEquationFacts (calls : List (Call F)) : Prop :=
+  ∀ (t : Ix.Kernel.RoleTable) (ρ : BRun) (Rs : Nat → Ixon.Env), BindingRun calls t ρ Rs →
+    t.check = .ok () →
+    ∀ (g : Nat) (r : Role) (a : _root_.Address) (R R₁ R' Ec : Ixon.Env)
+      (env₁ : Ix.Kernel.Env .anon) (c : Ixon.Constant) (d : Ixon.Definition) (val₀ val : KExpr),
+      6 ≤ g → g < 77 → IxVM.Consistency.roleGroup g = [r] → r ∈ RoleOps.opRoles → t.addressOf? r = some a →
+      Admits ρ t g R R' → AdmitsReads ρ t R R' → AddsAt R₁ R' a →
+      WalkedStored ρ t (· < g) R₁ env₁ →
+      Typing.RecordsFor R' Ec → Typing.StepStore calls t ρ.E₀ Ec →
+      Decl.PrefixInv.{u} Ec t (some (valLimit g)) env₁ →
+      IxVM.Consistency.recordOf ρ.E₀ a = some c → c.info = .defn d → d.lvls.toNat = 0 →
+      IxVM.Consistency.InLogic c →
+      (IxVM.Consistency.exprReader t (fun x => ρ.E₀.blobs.get? x) c id
+        (IxVM.Consistency.soloSelf t a)).read d.value = .ok val₀ →
+      val₀.looseBVarsBounded 0 = true → val₀.allLevelParamsDefined [] = true →
+      LoadedReads.canonAnn c [] (0 + 1) d.value val₀ = some val →
+      Decl.UsedRefsStored t env₁ c →
+      ((Ix.Kernel.Key.role r : KKey) ∈ Ix.Kernel.natOpNames →
+          ∀ eq ∈ Ix.Kernel.natOpEquations 0 (Ix.Kernel.Key.role r : KKey),
+            OpRefine.EqObs Ec t (valLimit g) env₁ (.role r) val eq) ∧
+      ((Ix.Kernel.Key.role r : KKey) ∈ Ix.Kernel.natDivModNames →
+          ∃ proofs : List KExpr, List.Forall₂ (fun st P =>
+            P.looseBVarsBounded 0 = true ∧ P.hasFvar = false ∧ Decl.noLetExpr P = true ∧
+              P.allLevelParamsDefined [] = true ∧
+              OpRefine.CertObs Ec t (valLimit g) env₁ (.role r) val st P)
+            (Ix.Kernel.divModCertStmts (Ix.Kernel.Key.role r : KKey)) proofs)
+
+/-! ## The validation facts -/
+
+set_option maxHeartbeats 3200000 in
+/-- **`OpValidationFactsW` from the recurrences' and certificates' facts** (module docstring):
+the record and its reading, the pin, the definition's check, the reload, from the observed
+validation; the recurrences and certificates from `OpEquationFacts`. -/
+theorem opValidationFactsW_of_equations (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
+    (calls : List (Call F)) (heqs : OpEquationFacts.{u} calls) :
+    OpValidationFactsW.{u} L calls := by
+  intro t ρ Rs hrun hss hall ht g r a R R₁ R' env₁ h6 h77 hgrp hop ha hadm hrd hb hadds hle hws
+  have htwf : t.wf = true := wf_of_check ht
+  have hrg : r ∈ IxVM.Consistency.roleGroup g := by rw [hgrp]; exact List.mem_singleton.mpr rfl
+  have hgr : Ix.SpecDigest.groupOf r = g := OpInstall.groupOf_of_mem_roleGroup hrg
+  have hkeya : keyOf t a = Ix.Kernel.Key.role r := keyOf_of_addressOf htwf ha
+  have hkeya' : IxVM.Consistency.keyOf t a = Ix.Kernel.Key.role r := hkeya
+  obtain ⟨bAddr, tb, -, -, hρ⟩ := hrun.observed
+  have hval : RoleVal.ValidateRoleIn calls bAddr t g r := by
+    have e : ρ.validated = (observedRun calls bAddr t ρ.E₀ ρ.rank).validated :=
+      congrArg BRun.validated hρ
+    have h1 := hadm.validated r hrg
+    rw [e] at h1
+    exact h1
+  obtain ⟨a', c, d, ha', hcE, hinfo, hkind, hsafety, hlv0, hpin⟩ :=
+    validate_role_op_obs ht hrun.runStore hrun.hashedStored hval hop
+  have ea : a' = a := Option.some.inj (ha'.symm.trans ha)
+  rw [ea] at hcE hpin
+  have hlogic : IxVM.Consistency.InLogic c := by
+    unfold IxVM.Consistency.InLogic
+    rw [hinfo]
+    show Ix.Kernel.Reader.safetyDecline d = none
+    unfold Ix.Kernel.Reader.safetyDecline
+    rw [hkind, hsafety]
+    rfl
+  have hcR' : IxVM.Consistency.recordOf R' a = some c := by
+    obtain ⟨c₁, hc₁⟩ := Option.isSome_iff_exists.mp
+      (hadm.kept r hrg (Or.inl (OpInstall.op_kept hop).1) a ha)
+    have h1 := recordOf_sub hadm.loaded a c₁ hc₁
+    rw [hcE] at h1
+    rw [hc₁, Option.some.inj h1]
+  obtain ⟨hchk, hrefs⟩ := op_walk_facts hrun hρ hval hop ha hadm hcE hinfo hlogic hcR'
+  have ho : Ix.Cert.ownerOf a c = a := by simp [Ix.Cert.ownerOf, hinfo]
+  -- the record is new: the closure's coverage would store the operation
+  have hR₁ : IxVM.Consistency.recordOf R₁ a = none := by
+    cases h₁ : IxVM.Consistency.recordOf R₁ a with
+    | none => rfl
+    | some c₁ =>
+      exfalso
+      have e₁ : c₁ = c := Option.some.inj ((OpInstall.recordOf_up hadds h₁).symm.trans hcR')
+      rw [e₁] at h₁
+      have hown : ∀ cb, IxVM.Consistency.recordOf R₁ (Ix.Cert.ownerOf a c) = some cb →
+          IxVM.Consistency.InLogic cb := by
+        intro cb hcb
+        rw [ho, h₁] at hcb
+        cases hcb
+        exact hlogic
+      have hchkρ : ρ.checked a (valLimit g) := by
+        have e₅ : ρ.checked = (observedRun calls bAddr t ρ.E₀ ρ.rank).checked :=
+          congrArg BRun.checked hρ
+        rw [e₅]
+        exact Or.inl hchk
+      have hst := hws.1 a c (valLimit g) h₁ (fun ms h => by rw [hinfo] at h; cases h) hlogic
+        hown hchkρ
+      rw [hkeya'] at hst
+      have hlt : Ix.SpecDigest.groupOf r < g := hb.facts.opsAdmitted r hop hst
+      omega
+  have hnew : New R R' a := by
+    refine ⟨by rw [hcR']; rfl, ?_⟩
+    cases h : IxVM.Consistency.recordOf R a with
+    | none => rfl
+    | some c₀ =>
+      exfalso
+      have h' := recordOf_sub hle.1 a c₀ h
+      rw [hR₁] at h'
+      cases h'
+  have hunit : RoleUnitAt t g a := ⟨r, hrg, ha, Or.inl hop⟩
+  have hstored : Decl.UsedRefsStored t env₁ c :=
+    usedRefsStored_of_walkedStored hadm hadds hws hnew hunit hcR' hrefs
+  -- a record store for the store after the group
+  obtain ⟨Ec, hEc, hst⟩ := hss R' hadm.loaded hadm.loadedBlobs hadm.committed hadm.zeroFree
+  have hrecA : Ix.Cert.recordAt ρ.E₀ a = some c := by
+    rw [← hrun.runStore.recordOf_eq_recordAt]
+    exact hcE
+  obtain ⟨ty₀, val₀, ty, val, hty, hvl, h1, h2, h3, h4, hcT, hcV, hannT, hannV, hcheck⟩ :=
+    Typing.checkedLimAt_defn_canon (order_role := []) ht hrun.bounded hrun.runStore hrecA hinfo
+      hlogic hkind (by simp) hchk Ec hstored
+  have hrange : List.range d.lvls.toNat = [] := by rw [hlv0]; rfl
+  have hinv : Decl.PrefixInv.{u} Ec t (some (valLimit g)) env₁ :=
+    hb.inv (OpInstall.recordsFor_down hadds hEc) (carried_valLimit g) (limWithin_below t g)
+  have hgood : Good ⟨Ec, env₁, t, none⟩ calls := hst.good env₁ none
+  have hfront : RoleOps.OpFront env₁ ty val ty val :=
+    opFront_of_checkedLim (k := Ix.Kernel.Key.role r) (ty₀ := ty₀) (val₀ := val₀) (ty := ty)
+      (val := val) (hn := .opaque) hinv (hcheck .opaque) hgood
+      (by simp only [LoadedReads.defnDecl, hkind, hrange, hkeya])
+      (by simp only [LoadedReads.defnDecl, hkind, hrange, hkeya])
+  -- the pin
+  have hblobEc : ∀ x b, ρ.E₀.blobs.get? x = some b → Ec.blobs.get? x = some b :=
+    fun x b hx => hEc.2.2.1 x b (hrd.blobs x b hx)
+  have hcEc : IxVM.Consistency.recordOf Ec a = some c :=
+    (Typing.recordOf_eq_recordAt_of_decoded hEc.1 a).trans (hEc.2.1 a c hcR')
+  have h2' : ty₀.allLevelParamsDefined [] = true := by rw [hrange] at h2; exact h2
+  have h4' : val₀.allLevelParamsDefined [] = true := by rw [hrange] at h4; exact h4
+  have hsh : RoleOps.OpTyShape (.role r) ty :=
+    hpin Ec env₁ ty₀ val₀ hgood hcEc (ReaderReads.exprReader_mono hblobEc hty)
+      (ReaderReads.exprReader_mono hblobEc hvl) h1 h2' h3 h4' ty hannT
+  -- the check facts
+  have hcV' : LoadedReads.canonAnn c [] (0 + 1) d.value val₀ = some val := by
+    rw [hrange] at hcV; exact hcV
+  obtain ⟨hstruct, hwf⟩ := heqs t ρ Rs hrun ht g r a R R₁ R' Ec env₁ c d val₀ val h6 h77 hgrp hop
+    ha hadm hrd hadds hws hEc hst hinv hcE hinfo hlv0 hlogic hvl h3 h4' hcV' hstored
+  have hchecked : RoleOps.OpChecked env₁ (.role r) ty val ty val := by
+    have hopN : (Ix.Kernel.Key.role r : KKey) ∈ RoleOps.opNames := by
+      rw [RoleOps.opNames_eq_map]
+      exact List.mem_map.mpr ⟨r, hop, rfl⟩
+    rcases RoleOps.mem_opNames.mp hopN with hs | hw
+    · exact OpRefine.opChecked_struct hall hgrp hop hs hb hinv hfront hsh (hstruct hs)
+    · exact OpRefine.opChecked_wf hall hgrp hop hw hb hinv hfront hsh (hwf hw)
+  -- the reading over the store after the group
+  have hreads : IxVM.Consistency.Reads t R' a (.defnInfo ⟨.role r, [], ty₀⟩ val₀ .opaque) := by
+    refine ⟨c, hcR', ?_⟩
+    rw [hinfo]
+    show IxVM.Consistency.InLogic c ∧ ∃ ty value,
+      (IxVM.Consistency.exprReader t (fun x => R'.blobs.get? x) c id
+        (IxVM.Consistency.soloSelf t a)).read d.typ = .ok ty ∧
+      (IxVM.Consistency.exprReader t (fun x => R'.blobs.get? x) c id
+        (IxVM.Consistency.soloSelf t a)).read d.value = .ok value ∧
+      IxVM.Consistency.DefnShape d.kind
+        ⟨IxVM.Consistency.keyOf t a, List.range d.lvls.toNat, ty⟩ value
+        (.defnInfo ⟨.role r, [], ty₀⟩ val₀ .opaque)
+    refine ⟨hlogic, ty₀, val₀, ReaderReads.exprReader_mono hrd.blobs hty,
+      ReaderReads.exprReader_mono hrd.blobs hvl, ?_⟩
+    rw [hkind, hrange, hkeya']
+    show ∃ hint, _ = _
+    exact ⟨.opaque, rfl⟩
+  refine ⟨ty, val, ty, val, ty₀, val₀, .opaque, hchecked, hannT, hannV, hreads,
+    ⟨c, d, hcR', hinfo⟩, Typing.address_size_of_record hrun.runStore hcE, ?_⟩
+  -- the reload
+  intro E hE
+  have hrecE : IxVM.Consistency.recordOf E a = some c :=
+    (Typing.recordOf_eq_recordAt_of_decoded hE.1 a).trans (hE.2.1 a c hcR')
+  have hbl : ∀ x b, ρ.E₀.blobs.get? x = some b → E.blobs.get? x = some b :=
+    fun x b hx => hE.2.2.1 x b (hrd.blobs x b hx)
+  have hrl := LoadedReads.reloadsAs_defn_cons ht hrecE hinfo hlogic hbl hty hvl h1 h2 h3 h4
+    hstored (LoadedReads.canonDefn_eq (key := IxVM.Consistency.keyOf t a) (hn := .opaque) hcT hcV)
+  rw [hkind, hrange, hkeya'] at hrl
+  exact hrl
 
 end IxVM.Refinement.Binding
