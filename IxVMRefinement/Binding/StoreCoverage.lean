@@ -79,11 +79,14 @@ structure WalkedCovered (ρ : BRun) (t : Ix.Kernel.RoleTable) (Rs : Nat → Ixon
   /-- A record of the final store is the run's record at its address. -/
   loaded : ∀ a c, recordOf (Rs 77) a = some c → recordOf ρ.E₀ a = some c
   /-- A record of the final store that the basis store does not hold was admitted by a group,
-  and if it is a unit the run checked it at that group's validation limit, or it is the family
-  record the group selected for a block new in it. -/
+  and if it is a unit of no twin's shape (no non-empty block of recursors only) the run checked
+  it at that group's validation limit, or it is the family record the group selected for a block
+  new in it. -/
   checked : ∀ a c, recordOf (Rs 77) a = some c → recordOf (Rs 6) a = none →
     ∃ g, 6 ≤ g ∧ g < 77 ∧ New (Rs g) (Rs (g + 1)) a ∧
-      (UnitKind c → ρ.checked a (valLimit g) ∨ ∃ B, famOf g B = some a ∧ New (Rs g) (Rs (g + 1)) B)
+      (UnitKind c → ¬ (∃ rs : Array Ixon.MutConst, c.info = .muts rs ∧ 0 < rs.size ∧
+          ∀ m ∈ rs.toList, ∃ r, m = Ixon.MutConst.recr r) →
+        ρ.checked a (valLimit g) ∨ ∃ B, famOf g B = some a ∧ New (Rs g) (Rs (g + 1)) B)
 
 section Chain
 
@@ -104,8 +107,8 @@ theorem recordOf_chain_mono
     exact recordOf_of_loaded (hadm n (by omega) (by omega)).mono (ih (by omega))
 
 /-- A record of a store past the basis that the basis store does not hold was admitted by an
-earlier group, which checked it if it is a unit or selected it as the family record of a block
-new in the group. -/
+earlier group, which checked it if it is a unit of no twin's shape or selected it as the family
+record of a block new in the group. -/
 theorem admitted_of_chain
     (hadm : ∀ g, 6 ≤ g → g < 77 → Admits ρ t g (Rs g) (Rs (g + 1)))
     (hfam : ∀ g, 6 ≤ g → g < 77 → ∃ adv cont : _root_.Address → _root_.Address → Prop,
@@ -113,8 +116,9 @@ theorem admitted_of_chain
     {a : _root_.Address} {c : Ixon.Constant} (h6 : recordOf (Rs 6) a = none) :
     ∀ n, 6 ≤ n → n ≤ 77 → recordOf (Rs n) a = some c →
       ∃ g, 6 ≤ g ∧ g < n ∧ New (Rs g) (Rs (g + 1)) a ∧
-        (UnitKind c → ρ.checked a (valLimit g) ∨
-          ∃ B, famOf g B = some a ∧ New (Rs g) (Rs (g + 1)) B) := by
+        (UnitKind c → ¬ (∃ rs : Array Ixon.MutConst, c.info = .muts rs ∧ 0 < rs.size ∧
+            ∀ m ∈ rs.toList, ∃ r, m = Ixon.MutConst.recr r) →
+          ρ.checked a (valLimit g) ∨ ∃ B, famOf g B = some a ∧ New (Rs g) (Rs (g + 1)) B) := by
   intro n hn
   induction n, hn using Nat.le_induction with
   | base =>
@@ -127,7 +131,7 @@ theorem admitted_of_chain
     | none =>
       have hnew : New (Rs n) (Rs (n + 1)) a := ⟨by rw [h]; rfl, hprev⟩
       obtain ⟨adv, cont, hF⟩ := hfam n hn (by omega)
-      exact ⟨n, hn, Nat.lt_succ_self n, hnew, fun hu => hF.checked a c hnew h hu⟩
+      exact ⟨n, hn, Nat.lt_succ_self n, hnew, fun hu htw => hF.checked a c hnew h hu htw⟩
     | some c' =>
       have hup := recordOf_of_loaded (hadm n hn (by omega)).mono hprev
       have hcc : c' = c := Option.some.inj (hup.symm.trans h)

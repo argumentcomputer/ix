@@ -456,7 +456,7 @@ theorem closureUnitSteps_of_run {calls : List (Call F)} {t : Ix.Kernel.RoleTable
     ⟨hnA', hc', hk, not_roleUnit_of_held hC (by rw [hc]; rfl) hnA', hfa, hunc, hntw⟩
   -- the check at the group's validation limit
   have hchkA : ρ.checked A (valLimit g) := by
-    rcases hC.famAdmits.checked A c hnA' hc' hk with h | ⟨B, hB, -⟩
+    rcases hC.famAdmits.checked A c hnA' hc' hk hntw with h | ⟨B, hB, -⟩
     · exact h
     · exact (hunc B hB).elim
   obtain ⟨bAddr', hiff⟩ := hrun.checked_iff

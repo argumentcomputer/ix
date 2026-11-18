@@ -356,8 +356,24 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
       (fun a v h => hst.runRecord a v ((hS.recordOf_eq_recordAt a).trans h))
   -- the check of the block at the group's validation limit
   have hkind : UnitKind cb := Or.inr (Or.inr ⟨ms, hB.muts⟩)
+  -- a block of inductive types has no twin's shape
+  have hntw : ¬ (∃ rs : Array Ixon.MutConst, cb.info = .muts rs ∧ 0 < rs.size ∧
+      ∀ m ∈ rs.toList, ∃ r, m = Ixon.MutConst.recr r) := by
+    rintro ⟨rs, hrs, hpos, hrecs⟩
+    have e : rs = ms := Ixon.ConstantInfo.muts.inj (hrs.symm.trans hB.muts)
+    subst e
+    obtain ⟨m, hm⟩ : ∃ m, m ∈ rs.toList := by
+      cases hl : rs.toList with
+      | nil =>
+        have h0 : rs.size = 0 := by rw [← Array.length_toList, hl]; rfl
+        exact absurd hpos (by omega)
+      | cons m _ => exact ⟨m, by simp⟩
+    obtain ⟨r, hr⟩ := hrecs m hm
+    obtain ⟨ind, hind⟩ := hB.indcs m hm
+    rw [hr] at hind
+    cases hind
   have hchkB : ρ.checked B (Binding.valLimit g) := by
-    rcases hC.famAdmits.checked B cb hnB' hcb' hkind with h | ⟨B', hB', -⟩
+    rcases hC.famAdmits.checked B cb hnB' hcb' hkind hntw with h | ⟨B', hB', -⟩
     · exact h
     · exact (hunc B' hB').elim
   obtain ⟨bAddr', hiff⟩ := hrun.checked_iff

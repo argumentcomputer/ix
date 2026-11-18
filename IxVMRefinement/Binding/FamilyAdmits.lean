@@ -120,10 +120,14 @@ structure FamilyAdmits (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : I
   before the block. -/
   container : ∀ B rb x, famOf B = some rb → New R R' B → cont B x →
     (recordOf R' x).isSome = true ∧ (New R R' x → ρ.rank g x < ρ.rank g B)
-  /-- A new unit was checked at the group's limit by a check of a unit, or is the selected family
-  record of a block new in the group: installed with that block by its step, checked by the
-  block's family check (`GroupFamilyChecks.famCall`), which is no check of a unit. -/
+  /-- A new unit of no twin's shape (no non-empty block of recursors only: `IsTwinShape`, written
+  out, whose definition comes later in the import order) was checked at the group's limit by a
+  check of a unit, or is the selected family record of a block new in the group: installed with
+  that block by its step, checked by the block's family check (`GroupFamilyChecks.famCall`),
+  which is no check of a unit. A unit of a twin's shape is a family record (`claimed`). -/
   checked : ∀ a c, New R R' a → recordOf R' a = some c → UnitKind c →
+    ¬ (∃ rs : Array Ixon.MutConst, c.info = .muts rs ∧ 0 < rs.size ∧
+      ∀ m ∈ rs.toList, ∃ r, m = Ixon.MutConst.recr r) →
     ρ.checked a (valLimit g) ∨ ∃ B, famOf B = some a ∧ New R R' B
 
 /-- **The family record of a new block is held by the group's store, with its member

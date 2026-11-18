@@ -376,6 +376,7 @@ theorem routeNew_of_run (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded
       New (groupStore t E₀ (runPayload calls bAddr t) g)
         (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) a →
       recordOf (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) a = some c → UnitKind c →
+      ¬ IsTwinShape c →
       UnitCheckedAt calls bAddr t E₀ a (some (valLimit g)) ∨
         ∃ B cs, FamilyCallAtLim calls bAddr t B a (some (valLimit g)) cs) :
     ∀ R₁ B, ClosureStore t g (groupStore t E₀ (runPayload calls bAddr t) g)
@@ -470,9 +471,17 @@ theorem routeNew_of_run (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded
     rw [e, hms] at hinfo
     cases hinfo
   · rcases payAdds_cases hP hpa with ⟨hrB, -⟩ | ⟨-, -, -, -, -, p, hp, hproj, -⟩
-    · -- a block the payload reaches: checked at the group's limit, or a selected family record,
-      -- which is a recursor record or a block of recursors
-      rcases hpc B c₁ hrB hnew hcR' (Or.inr (Or.inr ⟨ms, hms⟩)) with hU | ⟨B', cs, hfc⟩
+    · -- a block the payload reaches, with an inductive member, so of no twin's shape: checked at
+      -- the group's limit, or a family record, which is a recursor record or a block of recursors
+      have hntw : ¬ IsTwinShape c₁ := by
+        rintro ⟨rs, hrs, -, hrecs⟩
+        have e : rs = ms := Ixon.ConstantInfo.muts.inj (hrs.symm.trans hms)
+        subst e
+        apply hind
+        exact List.filter_eq_nil_iff.mpr fun m hm => by
+          obtain ⟨d, rfl⟩ := hrecs m hm
+          simp [Core.Specs.Callees.isIndc, Core.isIndc]
+      rcases hpc B c₁ hrB hnew hcR' (Or.inr (Or.inr ⟨ms, hms⟩)) hntw with hU | ⟨B', cs, hfc⟩
       · exact hfromU hU
       · exfalso
         obtain ⟨c₀, hc₀, -, hshape⟩ := familyCall_record_facts hC.runStore hC.hashedStored hfc
@@ -596,8 +605,10 @@ a named change of the circuit source, or unknown.
   (`families_of_remaining`).
 * `famNew`: the selected record of a new block is new in the group. Source: unknown (no reading
   of the circuit excludes a family record an earlier group stored).
-* `payloadChecked`: a new unit reached through the payload is checked at the group's limit by a
-  check of a unit (`KernelClaim::run_check` in `check_advice_record`, `check_container_rec`;
+* `payloadChecked`: a new unit reached through the payload, of no twin's shape (`IsTwinShape`: a
+  non-empty block of recursors only, which a container's projection may reach in a family record
+  that only `check_recs` traverses; such a record is `claimed`'s), is checked at the group's limit
+  by a check of a unit (`KernelClaim::run_check` in `check_advice_record`, `check_container_rec`;
   `KernelClaim::check_muts_all` for an advice block), or is a selected family record of a new
   block (checked by `check_recs`). Source: today's circuit, with the walk's assertions on inner
   references (`assert_safe_used_refs`, `assert_not_block_ref`) added to the advice, container
@@ -641,6 +652,7 @@ structure RemainingFamilyClauses (calls : List (Call F)) (bAddr : _root_.Address
     New (groupStore t E₀ (runPayload calls bAddr t) g)
       (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) a →
     recordOf (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) a = some c → UnitKind c →
+    ¬ IsTwinShape c →
     UnitCheckedAt calls bAddr t E₀ a (some (valLimit g)) ∨
       ∃ B, runFamOf calls bAddr t E₀ g B = some a ∧
         New (groupStore t E₀ (runPayload calls bAddr t) g)
@@ -979,7 +991,7 @@ theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRows
         keptRoles := keptRoles_of_run hC hb hroots hg6 hval hw
         routeNew := routeNew_of_run hC hb hax (hR.payload hC) hstep hg6 hw hcl hunits
           (roleUnitForm_of_run hC hb hax hcheck hg6 hval) hlogic
-          (fun a c hr hn hc hu => (hR.payloadChecked g hg6 hg a c hr hn hc hu).imp id
+          (fun a c hr hn hc hu htw => (hR.payloadChecked g hg6 hg a c hr hn hc hu htw).imp id
             fun ⟨B, hB, _⟩ => by
               obtain ⟨-, -, cs, hfc⟩ := runFamOf_spec hB
               exact ⟨B, cs, hfc⟩)
@@ -1002,10 +1014,10 @@ theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRows
           obtain ⟨rb', cs, hcs, hin⟩ := hx
           exact ⟨runPayload_held hC hb hax hR hg6 hg hw h ⟨rb', cs, hcs, Or.inr (Or.inr hin)⟩,
             fun hn => hrank.container B rb x h hB ⟨rb', cs, hcs, hin⟩ hn⟩
-        checked := fun a c hn hc hu => by
+        checked := fun a c hn hc hu htw => by
           rcases groupStore_checked hC hb hax (hR.payload hC) hg6 hw a c hn hc hu with h | h
           · exact Or.inl h
-          · exact hR.payloadChecked g hg6 hg a c h hn hc hu }
+          · exact hR.payloadChecked g hg6 hg a c h hn hc hu htw }
 
 end Families
 
