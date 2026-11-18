@@ -64,9 +64,9 @@ theorem eq_three_of_length {α : Type} (d : α) (l : List α) (h : l.length = 3)
     l = [l.getD 0 d, l.getD 1 d, l.getD 2 d] := by
   match l, h with
   | [a, b, c], _ => rfl
-  | [], h => exact absurd h (by decide)
-  | [_], h => exact absurd h (by decide)
-  | [_, _], h => exact absurd h (by decide)
+  | [], h => exact absurd h (by simp)
+  | [_], h => exact absurd h (by simp)
+  | [_, _], h => exact absurd h (by simp)
   | _ :: _ :: _ :: _ :: l, h =>
     exact absurd h (by simp only [List.length_cons] <;> omega)
 
