@@ -13,6 +13,7 @@ import IxVMRefinement.Binding.ClosureFamilyRun
 import IxVMRefinement.Binding.ClosureUnitDispatch
 import IxVMRefinement.FamilyGraph.ProducersAcyclic
 import IxVMRefinement.FamilyGraph.ProducersInner
+import IxVMRefinement.Binding.OpCertObs
 
 /-! # The composed statement from its open obligations
 
@@ -107,7 +108,9 @@ families are its projections):
 * binding: the part of the claim's export that remains, what is left of the clauses of the
   stores of a run and of its family checks (`RemainingStoreClausesOfRun`); and at each group of
   a run the closure's two remaining steps (a block with its family record, a twin), the stored
-  shapes where the group has no role unit, and the role unit of an operation in the family form;
+  shapes where the group has no role unit, and that no certificate of a well-founded operation
+  projects the operation (from which the role unit of an operation in the family form is
+  proved);
 * typing: what an accepted run's family records, advice, twins and the records a family check
   checks are owed at the run's choices (`FamilyGraphInnerOwed`, from which `FamilyGraphRow` and
   the inner checks at the same choices are proved); the step of a top-walked block with its
@@ -344,8 +347,15 @@ and each group from 6 to 76 of it:
   its circuit side after the circuit's family changes); `closureTwinSteps`, the step of a new
   second family record (`Binding.ClosureTwinSteps`; open, after the circuit's family changes);
 * the stored shapes where the group has no role unit;
-* the role unit of an operation in the family form (`Binding.RoleUnitStepOverW`: handed the
-  closure's store, the walked records stored there and the stored family map, it keeps both).
+* `certProjFree`: no certificate of a well-founded operation projects the operation: for an
+  operation bound at `a` and a certificate in its evidence whose record in the run's store is a
+  standalone definition, no projection in the certificate's value, or in a shared
+  subexpression, has its structure at `a` (`Binding.CertProjFree`). Producer open:
+  `KernelSubst::subst_const`'s projection arm refusing a projection whose structure address is
+  the address of the operation it replaces. From it the role unit of an operation in the family
+  form is proved (`Binding.operationRoleUnitW_of_projFree`, `Binding.RoleUnitStepOverW`: handed
+  the closure's store, the walked records stored there and the stored family map, it keeps
+  both), through the operations' certificate facts (`Binding.opCertFacts_of_projFree`).
 
 The role unit of a standard axiom is proved in that form (`Binding.standardAxiomRoleUnitW_closed`,
 from the axiom's observed validation, `Binding.axiomValidationFacts`).
@@ -409,9 +419,7 @@ theorem circuitComposed_residual
       ∀ calls, AtGroups (BindingRun calls) (ClosureTwinSteps.{u} FormerOpenTraceAt calls))
     (groupWithoutRoleUnit :
       ∀ calls, AtGroups (BindingRun calls) (RoleFreeShapes.{u} FormerOpenTraceAt))
-    (operationRoleUnit : ∀ calls,
-      AtGroups (BindingRun calls)
-        (RoleUnitStepOverW.{u} (· ∈ RoleOps.opRoles) FormerOpenTraceAt))
+    (certProjFree : ∀ calls, Binding.CertProjFree calls)
     (Pref : RunPref)
     (familyGraph : FamilyGraphInnerOwed.{u} Pref)
     (familyBlock : FamilyAlias.FamilyBlockCheckRow.{u} FormerOpenTraceAt)
@@ -424,7 +432,8 @@ theorem circuitComposed_residual
     admitsReadsChain_bindingRun (fun _ _ _ _ h => h.families)
     (groupClosureFamily_of_steps Binding.closureUnitSteps_bindingRun closureFamilySteps
       closureTwinSteps)
-    groupWithoutRoleUnit operationRoleUnit Binding.standardAxiomRoleUnitW_closed
+    groupWithoutRoleUnit (Binding.operationRoleUnitW_of_projFree.{u} certProjFree)
+    Binding.standardAxiomRoleUnitW_closed
     (familyGraphRowInner_of_owed familyGraph)
     (innerStepsChecked_of_kinds
       (nativeBlockTelescope_checked linkLaws_formerOpenTrace Core.projGuardRunReading))
