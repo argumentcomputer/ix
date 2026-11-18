@@ -4,6 +4,7 @@ import IxVMRefinement.Binding.RootSafety
 import IxVMRefinement.Binding.StoreReads
 import IxVMRefinement.Assembly.TypingBasisInv
 import IxVMRefinement.Binding.RunFamilies
+import IxVMRefinement.Binding.StoreOpOrder
 
 /-! # The stores of a binding run: the sequence and what is left of its clauses
 
@@ -15,8 +16,11 @@ clauses that are left, named in `RemainingStoreClauses`.
 
 * `basisRolesStored_of_pinned`: at a table that pins the prelude, the bound record of a walked
   role of a group below 6 is a basis row.
-* `RemainingStoreClauses t E₀ Pay`: what is not proved of the sequence: two clauses (`opsOwn`,
-  `unitsLast`). The reading clause of `AdmitsReads` is proved (`groupStore_reads`). The safety
+* `RemainingStoreClauses t E₀ Pay`: what is not proved of the sequence: two facts of the
+  operation order the circuit does not check today (`blockSteps`, in the well-founded block;
+  `payloadOps`, the records the payload reaches), from which the clauses `opsOwn` and
+  `unitsLast` are proved (`IxVMRefinement.Binding.StoreOpOrder`). The reading clause of
+  `AdmitsReads` is proved (`groupStore_reads`). The safety
   of the roots
   (`RootsAndTheoremsSafe`, `rootsAndTheoremsSafe_of_run`; with `certRefs_of_run`, `RootsSafe`)
   is proved of every run (`IxVMRefinement.Binding.RootSafety`), and the clauses `logic`
@@ -67,24 +71,35 @@ theorem basisRolesStored_of_pinned {t : Ix.Kernel.RoleTable} (hpre : PreludePinn
     exact absurd hrec (by simp)
   | some lc => rfl
 
-/-- **What is left of the store sequence's clauses**, over the run's records `E₀`.
+/-- **What is left of the store sequence's clauses**, over the run's records `E₀`: two facts about
+the operation order that the circuit does not check today. With them the clauses `opsOwn` and
+`unitsLast` are proved at every group (`groupStore_opsOwn`, `groupStore_unitsLast`,
+`IxVMRefinement.Binding.StoreOpOrder`): below the well-founded block from
+`KernelRoles::assert_op_reached_in_order` in `KernelRoles::walk_ctx`, from limit 41 on because
+every operation is in force (`walkStepsOrdered_of_run`).
 
-Status: stated only; nothing proves any field of any run. (The safety of the roots, which this
-structure held as `rootsSafe`, is proved of every run: `rootsAndTheoremsSafe_of_run`; so is the
-reading clause it held as `reads`: `groupStore_reads`.)
-* `opsOwn`, `unitsLast`: no new record is another group's operation, and none uses the record
-  of a role unit of the group: below the well-founded block from
-  `KernelRoles::assert_op_reached_in_order` in `KernelRoles::walk_ctx`, in the block from
-  `KernelRoles::op_order_scan` as it will be after the next change of the circuit source
-  (`RoleVal.OpOrderScanStep`). -/
+Status: stated only; nothing proves either field of any run. (The safety of the roots, which
+this structure held as `rootsSafe`, is proved of every run: `rootsAndTheoremsSafe_of_run`; so is
+the reading clause it held as `reads`: `groupStore_reads`.)
+* `blockSteps`: in the well-founded block (groups 33 to 40, validated at limit 33, where
+  `walk_ctx`'s assertion is off), every reference the group's walk follows is bound to no
+  operation of the group or a later one (`WalkStepsOrdered`). Producer: the changed
+  `KernelRoles::op_order_scan` of the final circuit batch (item 12): its regenerated observation
+  (`RoleVal.OpOrderScanStep`, in the form that also refuses, rather than enters, an operation
+  that is neither in force nor needed), the specifications of `op_order_scan_except` and of the
+  two call sites in `validate_op` and `validate_op_equations`, and an induction showing that the
+  scan follows every reference the walk follows up to a stop, behind which the records were
+  walked by an earlier group (`WalkStepsOrdered` at that group).
+* `payloadOps`: below limit 41, a record the group's payload reaches (`PayReach`: a family
+  check's family record, advice records, container recursors, and what they reference that is
+  not covered) is bound to no operation of the group or a later one. No walk and no scan of
+  today's circuit passes these records. Producer: the same change of `op_order_scan`, extended to
+  scan the payload's addresses (final circuit batch, item 12 extended). From limit 41 on it holds
+  of every run (`payloadOpEarlier_all`). -/
 structure RemainingStoreClauses (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (Pay : PayloadRel) :
     Prop where
-  opsOwn : ∀ g, 6 ≤ g → g < 77 → ∀ a r,
-    New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) a → t.addressOf? r = some a →
-    r ∈ RoleOps.opRoles → r ∈ roleGroup g
-  unitsLast : ∀ g, 6 ≤ g → g < 77 → ∀ x a,
-    New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) x →
-    UsedRef (groupStore t E₀ Pay (g + 1)) x a → ¬ RoleUnitAt t g a
+  blockSteps : ∀ g, 33 ≤ g → g ≤ 40 → WalkStepsOrdered t E₀ g
+  payloadOps : ∀ g, 6 ≤ g → g < 41 → ∀ x, PayReach t E₀ Pay g x → OpEarlier t g x
 
 /-- **What is left of the store sequence's clauses, for a run**: at every table that bytes the
 run hashed admit at a binding address, binding every role, pinning the prelude and with every
@@ -182,8 +197,12 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
         logic := logic_of_rootsSafe hC hb hP hval hroots g hg6 hg
         validated := fun _ _ => trivial
         kept := groupStore_kept hC hb hax hg6 hw
-        opsOwn := hRS.opsOwn g hg6 hg
-        unitsLast := hRS.unitsLast g hg6 hg
+        opsOwn := groupStore_opsOwn hC hb hax hP hcheck hvalAll hg6 hw
+          (walkStepsOrdered_all hC hvalAll hRS.blockSteps g)
+          (payloadOpEarlier_all hRS.payloadOps g hg6)
+        unitsLast := groupStore_unitsLast hC hb hax hP hg6 (hvalAll g) hw
+          (walkStepsOrdered_all hC hvalAll hRS.blockSteps g)
+          (payloadOpEarlier_all hRS.payloadOps g hg6)
         evidenceRefs := groupStore_evidenceRefs hC hb hbr hax hP hws hg6 hw }
   · exact
       { blobs := groupStore_reads_blobs (Nat.lt_succ_of_le hg6)
