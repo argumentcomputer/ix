@@ -282,7 +282,8 @@ theorem NativeShapeCalls.resultSort {base : Ctx} {rc typePtr blockArg index safe
     CoreGood.ofRaw (good.sub shape.sortSubset) (fun _ member => member)
   obtain ⟨level, levelRep, sameSort⟩ := get_result_sort_level_scoped_bounded_spec
     (c := nativeShapeSortCtx base shape) (params + indices) bound
-    (roles.mono shape.initial_to_sort) types (ghostScoped_zero _) facts loads covered
+    (roles.mono shape.initial_to_sort) types (ghostScoped_zero _) facts loads.toScopedLoadBase
+    covered
     (represented.mono shape.initial_to_sort) shape.sortRun
   exact ⟨level, KernelLevels.repKLevel_heapMono₂
     (shape.guardRun.heap_extends.trans shape.guardToCtors) levelRep, sameSort⟩

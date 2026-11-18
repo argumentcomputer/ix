@@ -81,7 +81,7 @@ theorem limWithin_none (t : Ix.Kernel.RoleTable) : LimWithin (· < 77) t none :=
 
 /-- **The invariant on the 77 groups gives a table witness on every group**, for the internal
 part `FactsWith X`: the prefix invariant at every limit is lowered from the one at no limit (a
-carried limit within the 77 groups), with the guard at that limit. -/
+carried limit within the 77 groups). -/
 theorem witness_of_bnd
     {X : Ix.Kernel.RoleTable → (Nat → Prop) → Ixon.Env → Ix.Kernel.Env .anon → Prop}
     {t : Ix.Kernel.RoleTable} {R : Ixon.Env} {env : Ix.Kernel.Env .anon}
@@ -94,7 +94,7 @@ theorem witness_of_bnd
   have hF : Facts.{u} t (fun _ => True) R env :=
     { inv := fun E hE lim _ =>
         prefixInv_lower (h.facts.inv E hE none (Or.inl rfl) (limWithin_none t))
-          (fun r hf => ⟨hf.1, fun n (hn : none = some n) => nomatch hn⟩) (h.facts.guard E hE lim)
+          (fun r hf => ⟨hf.1, fun n (hn : none = some n) => nomatch hn⟩)
       whole := h.facts.whole }
   exact ⟨hF, hX h.extra⟩
 

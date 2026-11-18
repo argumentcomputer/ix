@@ -1,4 +1,4 @@
-import IxVMRefinement.Endpoint.ComposedResidual
+import IxVMRefinement.Endpoint.WalkedUnit
 import IxVMRefinement.Assembly.BlockRouteFunctional
 import IxVMRefinement.FamilyGraph.Graph
 
@@ -18,9 +18,6 @@ statement, or produces one from strictly smaller ones.
 * `otherBlock_of_kinds`: a block that is no block of definitions and no block of one inductive
   type is a block of two or more inductive types, which is on the modeled route in the run and
   at the step's store, or a non-empty block of recursors. A block of mixed kinds is refused.
-* `recursorWithoutNativeParent_of_parts`: at a validating walk, a standalone recursor record
-  whose check found no native parent at some environment has a major premise headed by a
-  reserved basis name; what is left beside it is the walk at the assumed limit.
 * `constAddrOf_emptyBlock`, `not_isUnit_emptyBlock`: an empty block has no constant address,
   so it is no unit of the family graph (`IsUnit`).
 * `walkedUnit_byFamilyRecord`: a kind of block split by whether the family graph gives the
@@ -120,44 +117,6 @@ theorem otherBlock_of_kinds
       ⟨ms, hcm, hsize, hall, hroute⟩ ht hS hcov hst hcanon hinert hcover hchk hns hkeys hmod
   · exact recursorBlock calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc hlog
       ⟨ms, hcm, hpos, hall⟩ ht hS hcov hst hcanon hinert hcover hchk hns hkeys
-
-/-- **The step of a standalone recursor record whose check found no native parent, from its
-two parts.** At a validating walk the check of the record finds, at every environment the
-step is asked at, the parent heading the major premise, a stored former that the circuit
-dispatched natively, unless the head of the major premise is a reserved basis name
-(`recParent_of_arm_tied`): a recursor of a mutual or nested family is refused. So what is left
-is the record whose major premise is headed by a basis name, and the walk at the assumed
-limit. -/
-theorem recursorWithoutNativeParent_of_parts
-    (majorAtBasisName :
-      WalkedUnit.{u} (fun _ _ _ _ c => ∃ rc : Ixon.Recursor, c.info = .recr rc)
-        fun _ t envT E₀ E lim A c => ∀ rc : Ixon.Recursor, c.info = .recr rc →
-          ¬ RecMajorNotBasis t E₀ A c rc → UnitStep.{u} (X t E) t envT E₀ E lim A c)
-    (atAssumedLimit :
-      WalkedUnit.{u} (fun _ _ _ _ c => ∃ rc : Ixon.Recursor, c.info = .recr rc)
-        fun _ t envT E₀ E lim A c => ∀ rc : Ixon.Recursor, c.info = .recr rc → lim = none →
-          ¬ (∀ env, StepAt.{u} t envT E₀ E lim A c env →
-              ∃ P ip, RecParent t E env P ip ∧ RecMajorTie t E₀ A c rc P) →
-          UnitStep.{u} (X t E) t envT E₀ E lim A c) :
-    WalkedUnit.{u} (fun _ _ _ _ c => ∃ rc : Ixon.Recursor, c.info = .recr rc)
-      fun _ t envT E₀ E lim A c => ∀ rc : Ixon.Recursor, c.info = .recr rc →
-        ¬ (∀ env, StepAt.{u} t envT E₀ E lim A c env →
-            ∃ P ip, RecParent t E env P ip ∧ RecMajorTie t E₀ A c rc P) →
-        UnitStep.{u} (X t E) t envT E₀ E lim A c := by
-  intro calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc hlog hkind ht hS hcov
-    hst hcanon hinert hcover hchk hns hkeys rc hinfo hneg
-  rcases hW.topLim with hl | hl
-  · by_cases hres : RecMajorNotBasis t E₀ A c rc
-    · exfalso
-      subst hl
-      exact hneg fun env hstep =>
-        recParent_of_arm_tied ht hS hst hc hinfo rfl (hW.nativeRecArm hT hc hinfo) hinert
-          hcover hres env hstep
-    · exact majorAtBasisName calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc
-        hlog hkind ht hS hcov hst hcanon hinert hcover hchk hns hkeys rc hinfo hres
-  · exact atAssumedLimit calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc hlog
-      hkind ht hS hcov hst hcanon hinert hcover hchk hns hkeys rc hinfo hl hneg
-
 
 /-! ## The line-up with the family graph's units -/
 

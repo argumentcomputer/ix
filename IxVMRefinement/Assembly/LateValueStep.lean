@@ -2,16 +2,20 @@ import IxVMRefinement.Assembly.LateRegistry
 import IxVMRefinement.Decl.LateWalkedConst
 import IxVMRefinement.Assembly.TypingDefnBlock
 
-/-! # The step of a definition record, keeping a clause along its declaration step
+/-! # The step of a definition record at a validating context, keeping a clause along its declaration step
 
-`unitStep_defn` keeps an extra clause `X` that storing a value constant keeps by itself
-(`KeepsValues`). The registry of native families (`LateRegistry`) is not such a clause: it
-holds a model of the environment, which the declaration step extends. `unitStep_defnJ` is
-`unitStep_defn` for a clause kept along the declaration step (`KeepsValuesJ`); the step is
-`Decl.walkedConst_declRunJ` of the same check evidence. `unitStep_defn_late` is it for the
-registry together with any clause kept by a value constant alone. `memberStepJ`,
-`unitStep_defnBlockJ` and `unitStep_defnBlock_late` are the same for a block of definitions
-(`unitStep_defnBlock`, its members installed one at a time).
+A clause of the fold that holds a model of the environment (the registry of native families)
+is not kept by storing a value constant alone: the declaration step extends the model.
+`unitStep_defnJ` is the step of a standalone definition, theorem or opaque record for a clause
+kept along the step of the declaration judgement (`KeepsValuesJ`), with the record's check read
+at a validating role context (`lim = some n`); the declaration step is
+`Decl.walkedConst_declRunJ` of the same check evidence. `memberStepJ` and
+`unitStep_defnBlockJ` are the same for a block of definitions, its members installed one at a
+time.
+
+The steps over the fold's own clause, at a validating or an assuming context and for both
+folds, are `valueUnitStep_defn` and `valueUnitStep_defnBlock` (`Assembly/ValueUnitStep.lean`);
+the composed statement uses those.
 -/
 
 universe u
@@ -28,8 +32,7 @@ open Ix.Kernel.Semantics (DeclRunJ IndRoutesJ)
 open Ix.Kernel.Model (rulesJ)
 
 /-- **`UnitStep` for a standalone definition, theorem or opaque record, for a clause kept
-along the declaration step.** As `unitStep_defn`, with `KeepsValuesJ X` for
-`KeepsValues X`. -/
+along the declaration step** (`KeepsValuesJ X`), at a validating role context. -/
 theorem unitStep_defnJ {X : Ix.Kernel.Env .anon → Prop} {calls : List (Call F)}
     {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon}
     {lim : Option Nat} {bAddr A : _root_.Address} {c : Ixon.Constant} {d : Ixon.Definition}
@@ -110,24 +113,6 @@ theorem unitStep_defnJ {X : Ix.Kernel.Env .anon → Prop} {calls : List (Call F)
     obtain rfl := List.mem_singleton.mp hci
     exact Or.inl ⟨A, hown, hname⟩
 
-/-- **`UnitStep` for a standalone definition record, keeping the registry of native families**
-together with a clause `Y` kept by storing a value constant. -/
-theorem unitStep_defn_late {Y : Ix.Kernel.Env .anon → Prop} {calls : List (Call F)}
-    {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon}
-    {lim : Option Nat} {bAddr A : _root_.Address} {c : Ixon.Constant} {d : Ixon.Definition}
-    {n : Nat}
-    (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
-    (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .defn d) (hlogic : InLogic c)
-    (hchk : CheckedAtFullAt calls bAddr t A n) (hlim : lim = some n)
-    (hkey : Decl.KeyFree (keyOf t A))
-    (hinert : InertClause t c)
-    (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
-    (hY : KeepsValues Y) :
-    UnitStep.{u} (fun env => LateRegistry.{u} t E env ∧ Y env) t envT E₀ E lim A c :=
-  unitStep_defnJ ht hS hst hc hinfo hlogic hchk hlim hkey hinert hcover
-    ((keepsValuesJ_lateRegistry t E).and hY.toJ)
-
 /-! ## A block of definitions -/
 
 section Block
@@ -137,7 +122,9 @@ variable {X : Ix.Kernel.Env .anon → Prop} {calls : List (Call F)} {t : Ix.Kern
   {ms : Array Ixon.MutConst} {n : Nat}
 
 /-- **The step of one member of a definition block, for a clause kept along the declaration
-step**: `memberStep` with `KeepsValuesJ X`. -/
+step** (`KeepsValuesJ X`): at a prefix with the invariant at the limit of the member's check,
+the clause, the block's used references stored and the member's key fresh, one constant at the
+member's key, storing a reading of the member's address, keeps both. -/
 theorem memberStepJ (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hcov : LoadedReads.HashedRecordsStored calls E₀) (hst : StepStore calls t E₀ E)
     (hrecB : Ix.Cert.recordAt E₀ B = some cb) (hmuts : cb.info = .muts ms)
@@ -208,8 +195,9 @@ theorem memberStepJ (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E�
   rw [hname]
   exact Decl.ne_projTableName_of_isBaseKey (Decl.isBaseKey_keyOf t (memberAddr B k (.defn d)))
 
-/-- **`UnitStep` for a block of definitions, for a clause kept along the declaration step**:
-`unitStep_defnBlock` with `KeepsValuesJ X` (the members installed by `memberStepJ`). -/
+/-- **`UnitStep` for a block of definitions, for a clause kept along the declaration step**
+(`KeepsValuesJ X`), at a validating role context: the members are installed in index order by
+`memberStepJ`. -/
 theorem unitStep_defnBlockJ {envT : Ix.Kernel.Env .anon} {lim : Option Nat}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hcov : LoadedReads.HashedRecordsStored calls E₀) (hst : StepStore calls t E₀ E)
@@ -319,24 +307,6 @@ theorem unitStep_defnBlockJ {envT : Ix.Kernel.Env .anon} {lim : Option Nat}
   · intro ci hci
     obtain ⟨i, mi, -, hmi, hn⟩ := hacc.named ci hci
     exact Or.inl ⟨memberAddr B i mi, Or.inr ⟨ms, i, mi, hmuts, hmi, Or.inl rfl⟩, hn⟩
-
-/-- **`UnitStep` for a block of definitions, keeping the registry of native families**
-together with a clause `Y` kept by storing a value constant. -/
-theorem unitStep_defnBlock_late {Y : Ix.Kernel.Env .anon → Prop} {envT : Ix.Kernel.Env .anon}
-    {lim : Option Nat}
-    (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
-    (hcov : LoadedReads.HashedRecordsStored calls E₀) (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ B = some cb) (hmuts : cb.info = .muts ms) (hlogic : InLogic cb)
-    (hdefs : DefnBlock ms)
-    (hchk : ∀ k, k < ms.size → MutsMemberCheckedAtFullAt calls bAddr t B ms k n)
-    (hlim : lim = some n)
-    (hkey : ∀ i m, ms[i]? = some m → Decl.KeyFree (keyOf t (memberAddr B i m)))
-    (hinert : InertClause t cb)
-    (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hY : KeepsValues Y) :
-    UnitStep.{u} (fun env => LateRegistry.{u} t E env ∧ Y env) t envT E₀ E lim B cb :=
-  unitStep_defnBlockJ ht hS hcov hst hc hmuts hlogic hdefs hchk hlim hkey hinert hcover
-    ((keepsValuesJ_lateRegistry t E).and hY.toJ)
 
 end Block
 

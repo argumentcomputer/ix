@@ -8,8 +8,8 @@ after a native block's install, from
 * `BlockInstall` (the new constants as the store reads them): `getCI`, `getCprj`, `getIprj`,
   `inductRecord`, `inductBlock`, `ctorIndRes`, `unitLike`, `unitLikeRaw`
   (`NativeBlockNewFacts.lean`);
-* `BlockTable` (the new projection table): `projTables`, `projTablesAt`, `projTablesGuard`
-  (`NativeBlockNewTable.lean`; the guard conjunct is the table's named clause `guard`);
+* `BlockTable` (the new projection table): `projTables`, `projTablesAt`, `projCtorTele`,
+  `projFire` (`NativeBlockNewTable.lean`; the firing is the table's named clause `fire`);
 * `BlockEta`: the two η fields at the new family, as named inputs. What they need beyond the
   install: the capability conjunct reads `caps.eta = true`, i.e. that the family is not a
   proposition (from the use's never-zero sort) and that IxC's recursion flag `nativeIsRec kinds`
@@ -94,7 +94,8 @@ theorem BlockInstall.newLoads {c : Ctx} {new : List (ConstantInfo .anon)} {B : _
     eta := hE.eta
     etaIota := hE.etaIota
     inductBlock := hI.newInductBlock
-    projTablesGuard := hI.newProjTablesGuard hT
+    projCtorTele := hI.newProjCtorTele hT
+    projFire := hT.newProjFire
     ctorIndRes := hI.newCtorIndRes }
 
 end IxVM.Refinement.Typing

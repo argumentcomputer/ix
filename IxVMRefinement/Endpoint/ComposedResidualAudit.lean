@@ -9,14 +9,11 @@ that has no unconditional theorem yet. This module prints its statement (`#check
 its typing hypotheses (`#print` of `WalkedUnit` and `WalkedUnitStep`) and the axioms it
 reaches. A change to any of them fails the build.
 
-How to read it. The explicit arguments are the open obligations: the first six are the
+How to read it. The explicit arguments are the open obligations: the first eight are the
 binding half's, the others the typing half's, for each kind of top-walked unit that has no
-step yet. The binding half's run predicate is `IxVM.Refinement.Binding.BindingRun`: the claim
-export has to produce it from an accepted run, and it holds the table's prelude pin, the store
-after the basis groups and the admission of each group with its reading clause, so the fold's
-hypotheses about those are its projections and are no longer listed. A hypothesis is typed by
-the interface its obligation has today, so the theorem claims nothing by itself; it fixes how
-the parts compose and what is left.
+step yet. The implicit argument `Run` is the binding claim layer's run predicate, which nothing
+supplies yet. A hypothesis is typed by the interface its obligation has today, so the theorem
+claims nothing by itself; it fixes how the parts compose and what is left.
 
 How to change it. When a theorem produces a hypothesis, apply it inside
 `circuitComposed_residual`, delete the hypothesis and update the expected output here in the
@@ -25,7 +22,7 @@ The proof is complete when the theorem has no explicit argument.
 
 What this module does not print. A definition that a hypothesis reads (`BindingClaimExportObs`,
 `BasisOver`, `AtGroups`, `ClosureStepOver`, `RoleFreeShapes`, `RoleUnitStepOver`,
-`RaisedLimitGuard`, `FoldExtra`, `UnitStep` and the others) appears by name only: its own
+`FoldExtra`, `UnitStep` and the others) appears by name only: its own
 module holds it. The public statement and what it reads are printed in
 `Ix.IxVM.ConsistencyAudit` and `Ix.IxVM.ConsistencyModelAudit`. The module is outside any
 namespace, so every name prints in full. -/
@@ -34,70 +31,66 @@ namespace, so every name prints in full. -/
 
 /--
 info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
+  {Run :
+    List (Aiur.Generic.SourceSemantics.Call IxVM.F) →
+      Ix.Kernel.RoleTable → IxVM.Refinement.Binding.BRun → (ℕ → Ixon.Env) → Prop}
   (bindingClaimExport :
     IxVM.Consistency.SourceSoundBounded fun calls d =>
-      IxVM.Refinement.Binding.BindingClaimExportObs (IxVM.Refinement.Binding.BindingRun calls) calls d)
+      IxVM.Refinement.Binding.BindingClaimExportObs (Run calls) calls d)
+  (basisGroups :
+    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
+      IxVM.Refinement.Binding.BasisOver IxVM.Refinement.Typing.FormerOpenTraceAt (Run calls))
+  (groupAdmissions :
+    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)), IxVM.Refinement.Binding.AdmitsChain (Run calls))
+  (groupAdmissionReads :
+    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)), IxVM.Refinement.Binding.AdmitsReadsChain (Run calls))
   (groupClosure :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
+      IxVM.Refinement.Binding.AtGroups (Run calls)
         (IxVM.Refinement.Binding.ClosureStepOver IxVM.Refinement.Typing.FormerOpenTraceAt))
   (groupWithoutRoleUnit :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
+      IxVM.Refinement.Binding.AtGroups (Run calls)
         (IxVM.Refinement.Binding.RoleFreeShapes IxVM.Refinement.Typing.FormerOpenTraceAt))
   (operationRoleUnit :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
+      IxVM.Refinement.Binding.AtGroups (Run calls)
         (IxVM.Refinement.Binding.RoleUnitStepOver (fun x => x ∈ IxVM.Refinement.RoleOps.opRoles)
           IxVM.Refinement.Typing.FormerOpenTraceAt))
   (standardAxiomRoleUnit :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
+      IxVM.Refinement.Binding.AtGroups (Run calls)
         (IxVM.Refinement.Binding.RoleUnitStepOver (fun x => x ∈ IxVM.Consistency.standardAxioms)
           IxVM.Refinement.Typing.FormerOpenTraceAt))
-  (raisedLimitGuard :
-    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls) fun x t g =>
-        IxVM.Refinement.Binding.RaisedLimitGuard IxVM.Refinement.Typing.FormerOpenTraceAt t g)
-  (standaloneTheoremOrOpaque :
-    IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
-      fun x x_1 x_2 x_3 c => ∃ d, c.info = Ixon.ConstantInfo.defn d ∧ d.kind ≠ Ix.DefKind.defn)
-  (freshRecursorMajorNotBasis :
-    IxVM.Refinement.Endpoint.WalkedUnit (fun x x_1 x_2 x_3 c => ∃ rc, c.info = Ixon.ConstantInfo.recr rc)
-      fun x t envT E₀ E lim A c =>
-      ∀ (rc : Ixon.Recursor),
-        c.info = Ixon.ConstantInfo.recr rc → IxVM.Refinement.Typing.RecMajorFreshNotBasis t envT E₀ E lim A c rc)
-  (definitionBlock :
-    IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
-      fun x x_1 x_2 x_3 c => ∃ ms, c.info = Ixon.ConstantInfo.muts ms ∧ IxVM.Refinement.Typing.DefnBlock ms)
   (nativeBlockTelescope :
     IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
       fun calls t E₀ B cb =>
       ∃ ind,
         IxVM.Refinement.Typing.BlockUnitRecord E₀ B cb ind ∧
           IxVM.Refinement.Typing.NativeRouteAt calls B ∧ IxVM.Refinement.Typing.FormerAtTele t E₀ B cb ind)
-  (nativeBlockAlias :
-    IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
-      fun calls t E₀ B cb =>
-      ∃ ind,
-        IxVM.Refinement.Typing.BlockUnitRecord E₀ B cb ind ∧
-          IxVM.Refinement.Typing.NativeRouteAt calls B ∧ IxVM.Refinement.Typing.FormerAtAlias t E₀ B cb ind)
-  (nativeBlockOtherTelescope :
-    IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
-      fun calls t E₀ B cb =>
-      ∃ ind,
-        IxVM.Refinement.Typing.BlockUnitRecord E₀ B cb ind ∧
-          IxVM.Refinement.Typing.NativeRouteAt calls B ∧ IxVM.Refinement.Typing.FormerTeleOther t E₀ B cb ind)
-  (oneTypeBlockOffNativeRoute :
-    IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
-      fun calls x E₀ B cb =>
-      ∃ ind, IxVM.Refinement.Typing.BlockUnitRecord E₀ B cb ind ∧ ¬IxVM.Refinement.Typing.NativeRouteAt calls B)
-  (otherBlock :
+  (oneTypeBlockModeled :
+    IxVM.Refinement.Endpoint.WalkedUnit
+      (fun calls x E₀ B cb =>
+        ∃ ind, IxVM.Refinement.Typing.BlockUnitRecord E₀ B cb ind ∧ IxVM.Refinement.Typing.ModeledRouteAt calls B)
+      fun x t envT E₀ E lim B cb =>
+      IxVM.Refinement.Typing.ModeledAt E B →
+        IxVM.Refinement.Typing.UnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt t E)
+          t envT E₀ E lim B cb)
+  (mutualBlock :
+    IxVM.Refinement.Endpoint.WalkedUnit
+      (fun calls x x_1 B cb =>
+        ∃ ms,
+          cb.info = Ixon.ConstantInfo.muts ms ∧
+            2 ≤ ms.size ∧
+              (∀ m ∈ ms.toList, ∃ i, m = Ixon.MutConst.indc i) ∧ IxVM.Refinement.Typing.ModeledRouteAt calls B)
+      fun x t envT E₀ E lim B cb =>
+      IxVM.Refinement.Typing.ModeledAt E B →
+        IxVM.Refinement.Typing.UnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt t E)
+          t envT E₀ E lim B cb)
+  (recursorBlock :
     IxVM.Refinement.Endpoint.WalkedUnitStep (IxVM.Refinement.Typing.FoldExtra IxVM.Refinement.Typing.FormerOpenTraceAt)
       fun x x_1 x_2 x_3 c =>
-      ∃ ms,
-        c.info = Ixon.ConstantInfo.muts ms ∧
-          ¬IxVM.Refinement.Typing.DefnBlock ms ∧ ∀ (ind : Ixon.Inductive), ms ≠ #[Ixon.MutConst.indc ind]) :
+      ∃ ms, c.info = Ixon.ConstantInfo.muts ms ∧ 0 < ms.size ∧ ∀ m ∈ ms.toList, ∃ r, m = Ixon.MutConst.recr r) :
   IxVM.Consistency.CircuitComposed
 -/
 #guard_msgs in

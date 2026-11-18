@@ -139,7 +139,7 @@ theorem CIRep.ctor_fields {κ : _root_.Address → KKey} {h : Heap F}
 /-- **`Red.iota` from the circuit's checks**: the recursor stored at `k` and its rule `rl` for
 the major's constructor (`rl.ctor`), with the comparisons `iota_cmp` makes and the
 certificates `iota_certs` gives, fire. -/
-theorem iota_fire (c : ScopedCtx) (hc : ScopedCoreFacts c) {d : Nat} {k : KKey}
+theorem iota_fire (c : ScopedCtx) (hc : ScopedCoreBase c) {d : Nat} {k : KKey}
     {cv : Ix.Kernel.ConstantVal .anon} {mI rP : Nat}
     {rls : List (Ix.Kernel.RecRule .anon)} {rl : Ix.Kernel.RecRule .anon} {us usj : List KLevel}
     {cvj : Ix.Kernel.ConstantVal .anon} {nP nF : Nat} {As MA : List KExpr}
@@ -346,7 +346,7 @@ the major premise's head (the guard); the rule at the constructor's index, at a 
 constructor's arity and levels, fires when the comparisons (`iota_cmp`) and the certificates
 (`iota_certs`) answer; the reduct is the rule's right-hand side at the recursor's levels applied
 to the prefix, the constructor's fields and the rest of the spine (`Red.iota`, `iota_fire`). -/
-theorem red_iota_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)} {h h' : Heap F}
+theorem red_iota_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::red_iota" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.red_iota c args h r h' calls := by

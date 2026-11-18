@@ -195,7 +195,7 @@ theorem inst_subs_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Hea
 /-- `KernelInfer::k_infer_lit`: the constant of the bound `Nat` role (`role_addr`) or `String`
 role (`role_used_implicitly`) at no levels; `Infer.natLit`/`Infer.strLit` with the literal
 support of the roles in force. -/
-theorem k_infer_lit_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem k_infer_lit_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::k_infer_lit" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_lit c args h r h' calls := by

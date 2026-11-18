@@ -18,12 +18,13 @@ Proved from the observed `KernelRoles::validate_binding` call (`RoleVal.validate
   (`Claim.runEnv`, `LoadedReads.RunStore`, `LoadedReads.HashedRecordsStored`), in the
   alternative where the run hashed no collision.
 
-Left as named parts, each a closed statement about observed runs:
+Named parts, each a closed statement about observed runs. The first is proved in
+`IxVMRefinement.Binding.ClaimDecode` (`bindingClaimDecodes_of_run`); the other three are open:
 
 * `BindingClaimDecodes calls d`: an accepted `binding spec a` claim's run holds the observed
   `validate_binding` call on `a`, or hashed a collision. It is arm 10 of
   `KernelClaim::run_claim`, which has no generated observation; the typing arms were inverted by
-  hand (`Claim.verify_claim_decode_typing_spec`).
+  hand (`Claim.verify_claim_decode_typing_spec`), and so is this one.
 * `LoadedTableAdmits`: the value `load_role_table` returns in a binding run represents the
   table that bytes the run hashed admit at the binding address. `Claim.load_role_table_spec` is
   this for a table given in advance; here the table has to come from the parse, and its
@@ -115,7 +116,13 @@ def BindingClaimDecodes (calls : List (Call F)) (d : Digest) : Prop :=
 
 /-- **The table a binding run loads is the admitted table of bytes the run hashed**: for the
 three calls of `KernelRoles::validate_binding` on the address `a`, there are bytes the load
-hashed that admit at `a` as a table the loaded value represents. -/
+hashed that admit at `a` as a table the loaded value represents.
+
+Status: stated only. Nothing proves it of any run, the default table's included: for that run
+it is known that the claim is accepted (by execution) and that the default table's bytes admit
+(a theorem), not that the value the load returned represents that table. It is stated over the
+three calls, not over the load alone, because the representation holds the table's
+well-formedness, whose evidence clauses the circuit establishes in the roles' validations. -/
 def LoadedTableAdmits : Prop :=
   ∀ (a : _root_.Address) (x_a x_tbl v r : SourceValue F) (h h₁ h₂ h' : Heap F)
     (cs₁ cs₂ cs₃ : List (Call F)),
@@ -127,7 +134,13 @@ def LoadedTableAdmits : Prop :=
       Ix.Kernel.Admission.admitBinding Address.admissionHash ⟨a, tb⟩ = .ok t ∧
       Claim.TableFullRep t a h₁ x_tbl
 
-/-- **A loaded table that binds every role pins the prelude.** -/
+/-- **A loaded table that binds every role pins the prelude.**
+
+Status: stated only, as a statement about runs. Its conclusion is a theorem at the default
+table (`StoreInhabit.preludePinned_default`), so for the default table's run it holds as soon
+as the loaded table is identified with the default one (`LoadedTableAdmits`). In general it is
+the loop `KernelRoles::assert_basis_pinned`, which compares a pinned role's address only where
+the load already finds the role bound. -/
 def LoadedTablePinsPrelude : Prop :=
   ∀ (a : _root_.Address) (x_a x_tbl : SourceValue F) (h h₁ : Heap F) (cs₁ : List (Call F))
     (t : Ix.Kernel.RoleTable),
@@ -148,7 +161,21 @@ why `extra` holds the committed footprint), that it holds nothing at the zero ad
 (`checked`, `kept`, the rank clauses). The same holds of the first two conjuncts, the store
 after the basis groups being the committed rows. A producer splits on the alternative first
 (`Claim.noColl_or_hashedCollision` and the committed footprint) and proves the clauses in the
-branch without a collision. -/
+branch without a collision.
+
+Status: stated only. No store sequence over the records of an observed run has been exhibited,
+for the default table or any other; what is proved of every run is what the walks give a
+producer (`RoleValidationIn.kept_checked`, `topRec_block_members`, `topRec_proj_member`,
+`RoleVal.ValidateRoleIn.axiom_refs`, `RoleVal.ValidateRoleIn.eqns_evidence_walks`), and at the
+default table the store clauses of the `Bool` group over the committed rows.
+
+The clause `Admits.opsOwn` (no new record of a group is an operation's other than the group's
+own) is stated against `KernelRoles::op_order_scan` as it will be after the next change of the
+circuit source, not as it is: in the well-founded block the scan of today stops at seventeen
+anchors in force whose records no validation walks (`RoleVal.unwalkedAnchorsInForce`), a walk
+does not, and an accepted run can check a later operation's record inside an earlier
+operation's group, where the clause fails. With the scan going on through those anchors the
+clause is the scan's assertion (`RoleVal.op_order_scan_refs_spec`, `RoleVal.ScanStopsAt`). -/
 def GroupStoresOfRun (calls : List (Call F)) : Prop :=
   ∀ (V : View) (extra : List ByteArray), (∀ x ∈ committedFootprint, x ∈ extra) →
     ∀ (a : _root_.Address) (tb : ByteArray) (t : Ix.Kernel.RoleTable), Hashed calls tb →

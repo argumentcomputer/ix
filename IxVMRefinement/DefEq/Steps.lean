@@ -10,7 +10,7 @@ import IxVMRefinement.DefEq.ProofIrrel
 every function of `KernelDefEq` meets its registered spec, from the induction hypothesis at its
 derivation's calls. The step lemmas are in `Core/Steps/DefEq.lean` (the ordered tiers' entry and
 spine congruence) and `DefEq/{Delta,Tiers,Offsets,Rescue,ProofIrrel}.lean`; those that read the
-role table, the environment or the loads take the context's facts (`ScopedCoreFacts c`). -/
+role table, the environment or the loads take the context's facts (`ScopedCoreBase c`). -/
 
 namespace IxVM.Refinement.Core
 
@@ -24,7 +24,7 @@ def DefEqStepAt (c : ScopedCtx) (f : Specs.DefEq.Fn) : Prop :=
       (Fn.defEq f).spec c args h r h' cs
 
 /-- **One step per function of the `DefEq` family.** -/
-theorem defEq_step (c : ScopedCtx) (hc : ScopedCoreFacts c) :
+theorem defEq_step (c : ScopedCtx) (hc : ScopedCoreBase c) :
     ∀ (f : Specs.DefEq.Fn) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)), ObsFn W (Fn.defEq f).name args h r h' cs → IH c cs →
       (Fn.defEq f).spec c args h r h' cs
