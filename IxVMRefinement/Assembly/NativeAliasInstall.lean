@@ -1,6 +1,7 @@
 import IxVMRefinement.Assembly.NativeAliasAssemble
 import IxVMRefinement.Assembly.NativeAliasCtorOuts
 import IxVMRefinement.Assembly.NativeAliasKeys
+import IxVMRefinement.Assembly.NativeAliasFormerLim
 
 /-! # Actual alias installation at a typing prefix
 
@@ -26,9 +27,9 @@ set_option linter.unusedVariables false
 family's key is none of the four literal-function keys. -/
 theorem nativeAtFacts_of_alias_outs_keys {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ E : Ixon.Env} {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
-    {n : Nat} (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
+    {lim : Option Nat} (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hst : StepStore calls t E₀ E) (hrec : BlockUnitRecord E₀ B cb ind)
-    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
+    (hchk : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim)
     {blk : List (ConstantInfo .anon)} (hblk : BlockReadings t E₀ B ind blk)
     {p₀ : Ix.Kernel.NativeParts .anon}
     (hp₀ : Ix.Kernel.Model.nativePartsAt? ind.params.toNat ind.indices.toNat blk = some p₀)
@@ -39,7 +40,7 @@ theorem nativeAtFacts_of_alias_outs_keys {calls : List (Call F)} {t : Ix.Kernel.
       Core.keyOf t (memberAddr B 0 (.indc ind)) ≠ Ix.Kernel.listNilName ∧
       Core.keyOf t (memberAddr B 0 (.indc ind)) ≠ Ix.Kernel.listConsName ∧
       Core.keyOf t (memberAddr B 0 (.indc ind)) ≠ Ix.Kernel.charOfNatName)
-    (hinv : Decl.PrefixInv.{u} E t (some n) env)
+    (hinv : Decl.PrefixInv.{u} E t lim env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (haux : Decl.AuxRootSynced env)
     {cvS cvTa : ConstantVal .anon} {s : Ix.Kernel.Level}
@@ -72,7 +73,7 @@ theorem nativeAtFacts_of_alias_outs_keys {calls : List (Call F)} {t : Ix.Kernel.
       ⟨p, cvS, cvTa, ctorsA⟩ := by
   have hbound : Bounded calls := (hst.good env none).2
   have htwf : t.wf = true := hinv.tableWf
-  obtain ⟨ty₀, caps, cs, rfl, hty, hlen, hcs⟩ := blockReads_shape ht hbound hS hrec hchk hblk
+  obtain ⟨ty₀, caps, cs, rfl, hty, hlen, hcs⟩ := blockReads_shape_lim ht hbound hS hrec hchk hblk
   obtain ⟨caps₀, hshape, -, -, -, -, -⟩ := nativePartsAt?_inv hp₀
   injection hshape with hhead hcs_eq
   injection hhead with hcv _
@@ -149,9 +150,9 @@ the full table and the prefix's freshness separate the family's key from the lit
 keys. -/
 theorem nativeAtFacts_of_alias_outs {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ E R : Ixon.Env} {envT : Ix.Kernel.Env .anon} {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
-    {n : Nat} (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
+    {lim : Option Nat} (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hst : StepStore calls t E₀ E) (hrec : BlockUnitRecord E₀ B cb ind)
-    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
+    (hchk : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim)
     {blk : List (ConstantInfo .anon)} (hblk : BlockReadings t E₀ B ind blk)
     {p₀ : Ix.Kernel.NativeParts .anon}
     (hp₀ : Ix.Kernel.Model.nativePartsAt? ind.params.toNat ind.indices.toNat blk = some p₀)
@@ -160,7 +161,7 @@ theorem nativeAtFacts_of_alias_outs {calls : List (Call F)} {t : Ix.Kernel.RoleT
     (shape : TableShape.{u} t (fun _ => True) R envT)
     {env : Ix.Kernel.Env .anon}
     (prefixExtension : ∀ ci ∈ envT.consts, ci ∈ env.consts)
-    (distinct : (env.consts.map (·.name)).Nodup) (hinv : Decl.PrefixInv.{u} E t (some n) env)
+    (distinct : (env.consts.map (·.name)).Nodup) (hinv : Decl.PrefixInv.{u} E t lim env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (haux : Decl.AuxRootSynced env)
     {cvS cvTa : ConstantVal .anon} {s : Ix.Kernel.Level}
@@ -199,24 +200,24 @@ theorem nativeAtFacts_of_alias_outs {calls : List (Call F)} {t : Ix.Kernel.RoleT
 
 /-- The actual alias member check constructs its native install and named family. -/
 theorem nativeAtFacts_of_alias_member {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E R : Ixon.Env} {envT : Ix.Kernel.Env .anon}
-    {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {n : Nat}
+    {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {lim : Option Nat}
     {env : Ix.Kernel.Env .anon} {blk : List (ConstantInfo .anon)}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
     (hrec : BlockUnitRecord E₀ B cb ind)
-    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n)
+    (hchk : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim)
     (hnat : NativeRouteAt calls B) (hblk : BlockReadings t E₀ B ind blk)
     (halias : FormerAtAlias t E₀ B cb ind)
     (shape : TableShape.{u} t (fun _ => True) R envT)
     (prefixExtension : ∀ ci ∈ envT.consts, ci ∈ env.consts)
     (distinct : (env.consts.map (·.name)).Nodup)
-    (hinv : Decl.PrefixInv.{u} E t (some n) env) (hstored : Decl.UsedRefsStored t env cb)
+    (hinv : Decl.PrefixInv.{u} E t lim env) (hstored : Decl.UsedRefsStored t env cb)
     (hP : HashedBlockProjectionsHeld E) (hkeys : HashKeyed t env)
     (hfresh : ∀ x, ConstAddrOf B cb x → env.find? (keyOf t x) = none)
     (hfree : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
     (hcov : L1.CanonicalHashCoverage E calls) (haux : Decl.AuxRootSynced env) :
     ∃ p₀ env₂ fam, NativeAtFacts env env₂ blk ind.params.toNat ind.indices.toNat p₀ fam := by
   obtain ⟨p₀, recognised, constructorNames, indices⟩ :=
-    nativePartsAt_of_member ht (hst.good env none).2 hS hrec hchk halias hblk hfree
+    nativePartsAt_of_member_lim ht (hst.good env none).2 hS hrec hchk halias hblk hfree
   obtain ⟨cvS, cvTa, s, ctorsA, rawTypes, checked, tele, named, _, _, count,
     parameters, outputs, _, zero, indexed, unused⟩ := aliasOuts_of_member_checked ht hS hst hrec hchk
       hnat hblk recognised indices (.inr halias) hinv hstored hP hkeys hfresh hfree hcov haux
