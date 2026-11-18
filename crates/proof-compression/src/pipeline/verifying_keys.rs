@@ -20,19 +20,19 @@ pub(super) const FIRST_LOG_HEIGHT: usize = 24;
 /// Serialized aggregation backend key whose roots the layout normalizes: the
 /// formal aggregation program under `aiur::trace::stark::Parameters::DEFAULT`.
 const ROOT_VK_BLAKE3: &str =
-  "f6d00e0451de46e218aa17a93924ae8714d87c7ebe61301470fccc55b409b44e";
+  "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86";
 /// The root layout (`.ixl`, see `FixedRoot`) and its content address.
 const LAYOUT: &[u8] =
-  include_bytes!("../../verifying-keys/0.3/root-layout.ixl");
+  include_bytes!("../../verifying-keys/bench-local/root-layout.ixl");
 const LAYOUT_BLAKE3: &str =
-  "d5817b2acf708e901d81cf27dff53a3bfe2e0be8704fd023f3c394484afe0485";
+  "5825f714cfba645c6e0045f919c7e8eb1828e13623014b28ebc3a6b5e6a56ed2";
 
 /// Backend and entrypoint words of the aggregation program, the statement
 /// prefix every compressed claim of this release carries
 /// ([`statement::backend_prefix`] of the IxVM and aggregation keys).
 pub(super) const STATEMENT_PREFIX: [u64; 10] = [
-  1, 0, 2745045187, 3484230291, 1932183560, 3896061441, 1995940351, 2501828570,
-  1794737524, 3355008152,
+  1, 0, 3308587199, 651115644, 350308976, 881839093, 2020502317, 1911867442,
+  2516550726, 2420721769,
 ];
 
 pub(super) const RECURSIVE_VK: &[u8] =
@@ -114,7 +114,8 @@ pub(super) fn check_release_prefix(words: &statement::Statement) -> Result<()> {
     return Err(
       format!(
         "the statement's aggregation backend differs from the one verifying \
-         keys {VERSION} were derived for"
+         keys {VERSION} were derived for: prefix {:?}",
+        &words[..10]
       )
       .into(),
     );

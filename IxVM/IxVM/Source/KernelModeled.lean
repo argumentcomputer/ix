@@ -19,11 +19,13 @@ that the prover supplies as advice.
   two payloads. A block's types, constructors and its *whole* recursor family record
   are therefore validated together against one payload (`check_family(block, rec_block)`),
   and a recursor is accepted only through the call for its own family record.
-* **Use sites** (`KernelInfer`, `KernelInferOnly`, `KernelWhnf`, `KernelDefEq`) call
-  `assert_proj_allowed`, `block_is_modeled` and `fire_ok`: no `.proj`, structure eta or
-  unit-like conversion at a member of a modeled block, and the iota step of a modeled
-  recursor compares the constructor's parameters and levels with the recursor's
-  (`paramsBlind := false`).
+* **Use sites** (`KernelWhnf`, `KernelDefEq`) call `block_is_multi`, `block_is_modeled`
+  and `fire_ok`: no structure eta or unit-like conversion at a member of a block of two or
+  more types, and the iota step of a modeled recursor compares the constructor's
+  parameters and levels with the recursor's (`paramsBlind := false`). `.proj` is typed at
+  a member of a modeled block as at a native one (`KernelInfer::k_infer_proj`), as Lean's
+  `infer_proj` types it at any single-constructor inductive: from the member's own
+  constructor record, whose type `check_family` validated against its model.
 
 Payload layout (bytes; counts are TagN0, addresses 32 bytes):
 
@@ -273,28 +275,6 @@ def last_binder_dom := aiur_fn⟦
 ⟧
 
   -- ## Use sites
-
-  -- `.proj` is typed only at members of native blocks: the kernel installs no projection
-  -- table for a mutual block, and IxVM checks no projection model.
-
-def assert_proj_allowed := aiur_fn⟦
-  fn assert_proj_allowed(block: Bytes::AddressRef) -> () {
-      assert_eq!(block_is_modeled(block), 0,
-        "projection on a member of a mutual or nested block");
-      ()
-    }
-⟧
-
-  -- The structure's constructor, at a native block only: the projection sites call this
-  -- in place of `Ingress::get_ci_cprj`, memoized per structure, so the gate adds nothing to
-  -- their rows.
-
-def proj_ctor := aiur_fn⟦
-  fn proj_ctor(block: Bytes::AddressRef, ind_idx: Field) -> &KernelTypes::KConstantInfo {
-      assert_proj_allowed(block);
-      Ingress::get_ci_cprj(block, ind_idx, 0)
-    }
-⟧
 
 def ind_is_modeled := aiur_fn⟦
   fn ind_is_modeled(ind_addr: Bytes::AddressRef) -> Field {
