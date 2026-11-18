@@ -1,4 +1,5 @@
-import IxVMRefinement.Binding.ClauseFold
+import IxVMRefinement.Binding.RunPredicate
+import IxVMRefinement.Assembly.NativeAliasOpenTrace
 
 /-! # The stored shapes after a group that holds no shape role
 
