@@ -55,7 +55,8 @@ equations has an entry. -/
 def ValidationsCheckEvidence : Prop :=
   ∀ (t : Ix.Kernel.RoleTable) (x_tbl v r : SourceValue F) (h₁ h₂ h' : Heap F)
     (cs₂ cs₃ : List (Call F)),
-    Core.TableRep t h₁ x_tbl → (t.evidence.toList.map (·.1)).Nodup → AllBound t →
+    Core.TableRep t h₁ x_tbl → (t.evidence.toList.map (·.1)).Nodup →
+    (∀ p ∈ t.evidence.toList, p.2.size < 256) → AllBound t →
     ObsFn Core.W "KernelRoles::assert_all_roles_bound" [x_tbl, .field 0] h₁ v h₂ cs₂ →
     ObsFn Core.W "KernelRoles::admit_all_groups" [x_tbl, .field 0] h₂ r h' cs₃ →
     (∀ p ∈ t.evidence.toList, RoleVal.roleHasEquations p.1 = true →
@@ -184,7 +185,9 @@ theorem loadedTableAdmits_of (hval : ValidationsCheckEvidence)
       rw [e] at hlt
       exact Nat.lt_irrefl _ hlt))
   -- the evidence clauses
-  obtain ⟨hvA, hvB⟩ := hval t x_tbl v r h₁ h₂ h' cs₂ cs₃ htrep hend hallb ev_bound ev_admit
+  have hsz : ∀ p ∈ t.evidence.toList, p.2.size < 256 := fun p hp =>
+    (((Ix.Kernel.RoleTable.wireWF_iff t).mp hwire).2.2.2.2.1 p hp).1
+  obtain ⟨hvA, hvB⟩ := hval t x_tbl v r h₁ h₂ h' cs₂ cs₃ htrep hend hsz hallb ev_bound ev_admit
   have hheq := hhas le evEnts evMap vE hE hE' csE hentE hevE ev_eq
   have hevc : ∀ p ∈ t.evidence.toList,
       ((Ix.Kernel.Role.spec (md := .anon)) p.1).evidenceAllowed.isEmpty = false ∧

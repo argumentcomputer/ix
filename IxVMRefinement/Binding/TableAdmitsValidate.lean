@@ -179,7 +179,7 @@ theorem eqns_table (ro : Ix.Kernel.Role) :
           (RolesAux.matchArms IxVM.KernelRoleSpec.eqns_equation_count.body) (roleNum ro) with
       | some n => decide (0 < n.val) &&
           (((Ix.Kernel.Role.spec (md := .anon)) ro).evidenceAllowed.length == n.val) &&
-          (List.range n.val).all (fun k => condKeys.contains (64 * ro.idx + k) ||
+          (List.range n.val).all (fun k => decide (64 * ro.idx + k ∈ condKeys) ||
             (((Ix.Kernel.Role.spec (md := .anon)) ro).evidenceAllowed[k]? == some none)) &&
           ((Ix.Kernel.Role.spec (md := .anon)) ro).evidenceAllowed.all (· != some true)
       | none => false) = true := by
@@ -319,5 +319,251 @@ theorem validate_eqns_equations_kinds {ro : Ix.Kernel.Role} :
       | succ i =>
         have := htail i (by simp at hi; omega) hdef
         rwa [show k + (i + 1) = k + 1 + i by omega]
+
+/-! ## A role's validation checks its evidence -/
+
+/-- **The evidence of `ro` in `t` matches its equations.** -/
+def EvidenceOk (t : Ix.Kernel.RoleTable) (ro : Ix.Kernel.Role) : Prop :=
+  ∃ arr : Array (Ix.Kernel.Evidence _root_.Address), (ro, arr) ∈ t.evidence.toList ∧
+    (arr.size == ((Ix.Kernel.Role.spec (md := .anon)) ro).evidenceAllowed.length &&
+      (arr.toList.zip ((Ix.Kernel.Role.spec (md := .anon)) ro).evidenceAllowed).all
+        (fun x => x.1.allowedBy x.2)) = true
+
+private theorem evList_length {es : List (Ix.Kernel.Evidence _root_.Address)}
+    {l r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (ev : ObsFn W Obs.Names.«Lists::length<KernelRoles::RoleEvidence>» [l] h r h' cs)
+    (hl : RepList evListEnum EvRep h es l) :
+    r = .field (es.length : F) ∧ h' = h := by
+  have ev' : ObsFn W (Instance.mk "Lists::length" [.named "KernelRoles::RoleEvidence" []]).symbol
+      [l] h r h' cs := by
+    rw [Obs.Names.«Lists::length<KernelRoles::RoleEvidence>».symbol]; exact ev
+  have hl' : RepList (Instance.mk "Lists::Node" [.named "KernelRoles::RoleEvidence" []]).symbol
+      EvRep h es l := by
+    rw [Obs.Names.«Lists::Node<KernelRoles::RoleEvidence>».symbol]; exact hl
+  exact Lib.Lists.length_spec ev' hl'
+
+theorem all_zip_of_getElem :
+    ∀ {es : List (Ix.Kernel.Evidence _root_.Address)} {ks : List (Option Bool)},
+      (∀ i (h1 : i < es.length) (h2 : i < ks.length), es[i].allowedBy ks[i] = true) →
+      (es.zip ks).all (fun x => x.1.allowedBy x.2) = true
+  | [], _, _ => rfl
+  | _ :: _, [], _ => rfl
+  | e :: es, k :: ks, h => by
+    simp only [List.zip_cons_cons, List.all_cons, Bool.and_eq_true]
+    exact ⟨h 0 (by simp) (by simp),
+      all_zip_of_getElem (fun i h1 h2 => h (i + 1) (by simp; omega) (by simp; omega))⟩
+
+private theorem eq_of_mem_nodup_fst {α β : Type} :
+    ∀ {l : List (α × β)} {k : α} {v₁ v₂ : β},
+      (l.map (·.1)).Nodup → (k, v₁) ∈ l → (k, v₂) ∈ l → v₁ = v₂
+  | [], _, _, _, _, h1, _ => by cases h1
+  | (a, b) :: ls, k, v₁, v₂, hnd, h1, h2 => by
+    rw [List.map_cons, List.nodup_cons] at hnd
+    rcases List.mem_cons.mp h1 with heq1 | ht1
+    · injection heq1 with hk hv1
+      subst hk hv1
+      rcases List.mem_cons.mp h2 with heq2 | ht2
+      · injection heq2 with _ hv2
+        exact hv2.symm
+      · exact absurd (List.mem_map_of_mem (f := (·.1)) ht2) hnd.1
+    · rcases List.mem_cons.mp h2 with heq2 | ht2
+      · injection heq2 with hk _
+        subst hk
+        exact absurd (List.mem_map_of_mem (f := (·.1)) ht1) hnd.1
+      · exact eq_of_mem_nodup_fst hnd.2 ht1 ht2
+
+/-- The evidence the lookup found, with its length the count. -/
+theorem found_of_len {t : Ix.Kernel.RoleTable} {ro : Ix.Kernel.Role}
+    {es : List (Ix.Kernel.Evidence _root_.Address)} {n : F}
+    (hsz : ∀ p ∈ t.evidence.toList, p.2.size < 256)
+    (hes : es = [] ∨ ∃ arr, (ro, arr) ∈ t.evidence.toList ∧ arr.toList = es)
+    (heq : (Value.field (es.length : F) : SourceValue F) = .field n) (hn0 : 0 < n.val) :
+    ∃ arr, (ro, arr) ∈ t.evidence.toList ∧ arr.toList = es ∧ arr.size = n.val := by
+  rcases hes with rfl | ⟨arr, hmem, harr⟩
+  · exfalso
+    have hz := congrArg ZMod.val (Value.field.inj heq)
+    simp only [List.length_nil, Nat.cast_zero, ZMod.val_zero] at hz
+    omega
+  · refine ⟨arr, hmem, harr, ?_⟩
+    have hz := congrArg ZMod.val (Value.field.inj heq)
+    have hlt : arr.size < 256 := by simpa using hsz _ hmem
+    rw [← harr, Array.length_toList, Claim.val_of_lt_u32 (by omega)] at hz
+    exact hz
+
+/-- **A role with equations: its observed validation checks its evidence.** -/
+theorem validate_role_evidence {t : Ix.Kernel.RoleTable} {ro : Ix.Kernel.Role}
+    {x_rc x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (htbl : TableRep t h x_tbl) (hsz : ∀ p ∈ t.evidence.toList, p.2.size < 256)
+    (he : RoleVal.roleHasEquations ro = true)
+    (ev : ObsFn W "KernelRoles::validate_role" [x_rc, x_tbl, .field (roleNum ro)] h r h'
+      calls) :
+    EvidenceOk t ro := by
+  let c₀ : Ctx := { E := default, env := default, t := t, lim := none }
+  have hk25 := kind_of_equations he
+  have hkind : ∀ {c : Nat}, c < 6 →
+      (Value.field (c : F) : SourceValue F) = .field (RoleVal.roleSpecKindNat ro : F) →
+      RoleVal.roleSpecKindNat ro = c := fun hc hh =>
+    (Claim.natCast_inj_of_lt_u32 (by omega) (by have := kind_lt ro; omega)
+      (Value.field.inj hh)).symm
+  cases Obs.«KernelRoles::validate_role».obs ev with
+  | n0 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs140
+      ev14 ev47 ld41 ev80 ev100 _ ev124 ev142 hc183 =>
+    obtain ⟨hsk_f, _⟩ := RoleVal.role_spec_kind_spec ev124
+    have := hkind (c := 0) (by decide) (by simpa using hsk_f)
+    omega
+  | n1 v1 m2 cs12 v31 m32 p39 cs45 _ _ _ _ _ _ _ _ _ ev14 ev47 ld41 _ _ _ ev124 _ hc227 =>
+    obtain ⟨hsk_f, _⟩ := RoleVal.role_spec_kind_spec ev124
+    have := hkind (c := 1) (by decide) (by simpa using hsk_f)
+    omega
+  | n3 v1 m2 cs12 v31 m32 p39 cs45 _ _ _ _ _ _ _ _ _ ev14 ev47 ld41 _ _ _ ev124 _ hc323 =>
+    obtain ⟨hsk_f, _⟩ := RoleVal.role_spec_kind_spec ev124
+    have := hkind (c := 3) (by decide) (by simpa using hsk_f)
+    omega
+  | n4 v1 m2 cs12 v31 m32 p39 cs45 _ _ _ _ _ _ _ _ _ ev14 ev47 ld41 _ _ _ ev124 _ hc367 =>
+    obtain ⟨hsk_f, _⟩ := RoleVal.role_spec_kind_spec ev124
+    have := hkind (c := 4) (by decide) (by simpa using hsk_f)
+    omega
+  | n2 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs236
+      ev14 ev47 ld41 ev80 ev100 _ ev124 ev238 hc279 =>
+    obtain ⟨hsk_f, _⟩ := RoleVal.role_spec_kind_spec ev124
+    have hsk : RoleVal.roleSpecKindNat ro = 2 := hkind (by decide) (by simpa using hsk_f)
+    obtain ⟨ext_ba, a, ha_m2, had⟩ := RoleVal.role_bound_addr_uncond htbl ev14
+    have ext_m111 : Heap.Extends m2 m111 :=
+      ev47.heap_extends.trans (ev80.heap_extends.trans
+        (ev100.heap_extends.trans ev124.heap_extends))
+    match Obs.«KernelRoles::validate_op».obs ev238 with
+    | .other (heq575 := hbad) .. => exact (zero_ne_one (Value.field.inj hbad)).elim
+    | .Defn (m2 := rawHeap) (m200 := m102_op) (m209 := m111_op) (m260 := m162)
+        (m391 := m_sg2) (ev14 := rawLoad) (sg207 := sg109) (ev242 := ev144) (ev221 := ev123)
+        (ev272 := ev174) (sg398 := sg2) (ev412 := ev204) (ev453 := ev245) (ev473 := ev265)
+        (heq482 := heq274) (ev488 := ev280) .. =>
+      have ext_safe : Heap.Extends rawHeap m102_op := by
+        cases sg109 with
+        | Safe _ _ he64 _ => rw [he64]
+        | other _ heq95 _ _ _ => exact absurd (Value.field.inj heq95) zero_ne_one
+      have ext_sg : Heap.Extends m111 m102_op := rawLoad.heap_extends.trans ext_safe
+      have ext_sg2 : Heap.Extends m162 m_sg2 := by
+        cases sg2 with
+        | n1 _ _ _ _ _ _ _ _ _ e1 e2 e3 e4 _ =>
+          exact e1.heap_extends.trans (e2.heap_extends.trans (e3.heap_extends.trans
+            e4.heap_extends))
+        | other _ _ _ e1 _ _ he' _ => rw [he']; exact e1.heap_extends
+      have ext_w : Heap.Extends m111 m111_op :=
+        ext_sg.trans (ev144.heap_extends.trans ev123.heap_extends)
+      have htbl_sg2 : TableRep c₀.t m_sg2 x_tbl :=
+        htbl.mono (ext_ba.trans (ext_m111.trans (ext_w.trans (ev174.heap_extends.trans ext_sg2))))
+      obtain ⟨es, hlist, hes⟩ :=
+        role_evidence_step (ScopedCtx.unrestricted c₀) ev204 x_tbl ro rfl htbl_sg2
+      obtain ⟨rfl, rfl⟩ := evList_length ev245 hlist
+      have htab := op_table ro
+      rw [hsk] at htab
+      cases hn : RolesAux.evalLitTable
+          (RolesAux.matchArms IxVM.KernelRoleSpec.op_equation_count.body) (roleNum ro) with
+      | none => simp [hn] at htab
+      | some n =>
+        cases hpp : RolesAux.evalLitTable
+            (RolesAux.matchArms IxVM.KernelRoleSpec.op_evidence_is_proof.body) (roleNum ro) with
+        | none => simp [hn, hpp] at htab
+        | some pp =>
+          simp only [hn, hpp, bne_self_eq_false, Bool.false_or, Bool.and_eq_true,
+            decide_eq_true_eq, beq_iff_eq] at htab
+          obtain ⟨hn0, hkinds⟩ := htab
+          obtain ⟨rfl, -⟩ := op_equation_count_val hn ev265
+          obtain ⟨arr, hmem, harr, hsize⟩ := found_of_len hsz hes heq274 hn0
+          have hk := validate_op_equations_kinds hpp
+            (repList_heapMono₂ evListEnum evRep_heapMono₂
+              (ev245.heap_extends.trans ev265.heap_extends) hlist) ev280
+          refine ⟨arr, hmem, ?_⟩
+          rw [hkinds, harr]
+          simp only [Bool.and_eq_true, beq_iff_eq, List.length_replicate]
+          refine ⟨hsize, all_zip_of_getElem (fun i h1 h2 => ?_)⟩
+          rw [List.getElem_replicate]
+          exact hk _ (List.getElem_mem h1)
+  | n5 v1 m2 cs12 v31 m32 p39 cs45 v67 v68 m70 cs78 m90 cs98 m111 cs122 cs376
+      ev14 ev47 ld41 ev80 ev100 _ ev124 ev378 hc419 =>
+    obtain ⟨hsk_f, _⟩ := RoleVal.role_spec_kind_spec ev124
+    have hsk : RoleVal.roleSpecKindNat ro = 5 := hkind (by decide) (by simpa using hsk_f)
+    obtain ⟨ext_ba, a, ha_m2, had⟩ := RoleVal.role_bound_addr_uncond htbl ev14
+    have ext_m111 : Heap.Extends m2 m111 :=
+      ev47.heap_extends.trans (ev80.heap_extends.trans
+        (ev100.heap_extends.trans ev124.heap_extends))
+    obtain ⟨_, _, _, _, _, _, m101_eq, _, _, m130_eq, _, _, m151_eq, _, _, m182_eq, _,
+      v209, m210, cs220, v239, m240, cs250, v280, v281, m283, cs291, m303, cs311, cs326,
+      _, sg108, ev140, _, ev192, ev163, ev222, ev252, ev293, ev313, heq322, ev328, hc368⟩ :=
+      Obs.«KernelRoles::validate_eqns».obs ev378
+    have ext_sg : Heap.Extends m111 m101_eq := by
+      cases sg108 with
+      | Safe _ _ he63 _ => rw [he63]
+      | other _ heq94 _ _ _ => exact absurd (Value.field.inj heq94) zero_ne_one
+    have ext_w : Heap.Extends m111 m151_eq :=
+      ext_sg.trans (ev140.heap_extends.trans (ev192.heap_extends.trans ev163.heap_extends))
+    have htbl_m210 : TableRep c₀.t m210 x_tbl :=
+      htbl.mono (ext_ba.trans (ext_m111.trans (ext_w.trans ev222.heap_extends)))
+    obtain ⟨es, hlist, hes⟩ :=
+      role_evidence_step (ScopedCtx.unrestricted c₀) ev252 x_tbl ro rfl htbl_m210
+    obtain ⟨rfl, rfl⟩ := evList_length ev293 hlist
+    have htab := eqns_table ro
+    rw [hsk] at htab
+    cases hn : RolesAux.evalLitTable
+        (RolesAux.matchArms IxVM.KernelRoleSpec.eqns_equation_count.body) (roleNum ro) with
+    | none => simp [hn] at htab
+    | some n =>
+      simp only [hn, bne_self_eq_false, Bool.false_or, Bool.and_eq_true, decide_eq_true_eq,
+        beq_iff_eq, List.all_eq_true, List.mem_range, Bool.or_eq_true, bne_iff_ne] at htab
+      obtain ⟨⟨⟨hn0, hlen⟩, hcond⟩, hnot⟩ := htab
+      obtain ⟨rfl, -⟩ := eqns_equation_count_val hn ev313
+      obtain ⟨arr, hmem, harr, hsize⟩ := found_of_len hsz hes heq322 hn0
+      have hlenes : es.length = n.val := by rw [← harr, Array.length_toList, hsize]
+      have hk := validate_eqns_equations_kinds 0 (by omega)
+        (repList_heapMono₂ evListEnum evRep_heapMono₂
+          (ev293.heap_extends.trans ev313.heap_extends) hlist)
+        (by rw [Nat.cast_zero]; exact ev328)
+      refine ⟨arr, hmem, ?_⟩
+      rw [harr]
+      simp only [Bool.and_eq_true, beq_iff_eq]
+      refine ⟨by rw [hsize, hlen], all_zip_of_getElem (fun i h1 h2 => ?_)⟩
+      generalize hK : ((Ix.Kernel.Role.spec (md := .anon)) ro).evidenceAllowed = kinds at *
+      cases hei : es[i] with
+      | defeq =>
+        have hnc := hk i h1 hei
+        rw [Nat.zero_add] at hnc
+        rcases hcond i (by omega) with hc | hc
+        · exact absurd hc hnc
+        · rw [List.getElem?_eq_getElem h2] at hc
+          rw [Option.some.inj hc]
+          rfl
+      | proof thm =>
+        have hne := hnot _ (List.getElem_mem h2)
+        cases hk' : kinds[i] with
+        | none => rfl
+        | some b =>
+          cases b with
+          | false => rfl
+          | true => exact absurd hk' hne
+
+/-! ## The theorems -/
+
+/-- **`ValidationsCheckEvidence` holds of every observed run.** -/
+theorem validationsCheckEvidence : ValidationsCheckEvidence := by
+  intro t x_tbl v r h₁ h₂ h' cs₂ cs₃ htrep hend hsz hallb ev_bound ev_admit
+  have hraw : ∀ ro, ValidateRoleRaw h₂ x_tbl ro := fun ro =>
+    admit_all_groups_raw 77 0 rfl (by rw [Nat.cast_zero]; exact ev_admit) _ (Nat.zero_le _)
+      (RoleVal.groupOf_lt_77 ro) ro (RoleVal.mem_groupRoles_groupOf ro)
+  have hok : ∀ ro, RoleVal.roleHasEquations ro = true → EvidenceOk t ro := by
+    intro ro hro
+    obtain ⟨rc, r', h, h'', cs, ext, ev⟩ := hraw ro
+    exact validate_role_evidence (htrep.mono (ev_bound.heap_extends.trans ext)) hsz hro ev
+  refine ⟨fun p hp hpe => ?_, fun ro hro => ?_⟩
+  · obtain ⟨arr, harr, hcond⟩ := hok p.1 hpe
+    have e : arr = p.2 := eq_of_mem_nodup_fst hend harr hp
+    subst e
+    exact hcond
+  · obtain ⟨arr, harr, -⟩ := hok ro hro
+    exact List.mem_map.mpr ⟨(ro, arr), harr, rfl⟩
+
+/-- **The table a binding run loads is the admitted table of bytes the run hashed**, for every
+observed run: the residual theorem's hypothesis `tableAdmits`. -/
+theorem loadedTableAdmits : LoadedTableAdmits :=
+  loadedTableAdmits_of_validations validationsCheckEvidence
 
 end IxVM.Refinement.Binding
