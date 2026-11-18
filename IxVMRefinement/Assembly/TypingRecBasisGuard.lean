@@ -73,7 +73,7 @@ theorem basis_rec_pair_spec {fam rcr : Ix.Kernel.Role} {f g : F}
     have hsame : a' = r' := by
       by_cases hs : a' = r'
       · exact hs
-      · rw [if_neg hs] at hv
+      · rw [ite_eq_right hs] at hv
         exact absurd (Value.field.inj (asserted.symm.trans hv)) one_ne_zero
     have e : aR = A := hrR.symm.trans ((congrArg Core.ixAddr hsame.symm).trans haA)
     rw [haR, e]
@@ -83,7 +83,7 @@ theorem basis_rec_pair_spec {fam rcr : Ix.Kernel.Role} {f g : F}
     obtain ⟨hv, -⟩ := Lib.address_eq_spec eqFam hp' hf'
     have hPF : P = aF := Option.some.inj (hbound.symm.trans haF)
     have hsame : p' = f' := Decl.ixAddr_injective (hpP.trans (hPF.trans hfF.symm))
-    rw [if_pos hsame] at hv
+    rw [ite_eq_left hsame] at hv
     exact absurd hv differs
 
 /-- **The guard, inverted**: on a represented parent address and a represented record address,

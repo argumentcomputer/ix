@@ -154,12 +154,8 @@ private theorem rowNotInductive_spec {r : Ix.Kernel.Role} (h : rowNotInductiveB 
         exact Bool.noConfusion (show false = true from hea')
       | false =>
         refine ⟨e, he, ?_, ?_⟩
-        · first
-            | exact congrArg some ha.symm
-            | exact hadr.trans (congrArg some ha.symm)
-        · first
-            | rfl
-            | exact hi
+        · exact congrArg some ha.symm
+        · exact hi
 
 private theorem reservedNameOk_role {r : Ix.Kernel.Role}
     (h : reservedNameOk (.role r) = true) :
@@ -216,7 +212,7 @@ theorem recMajorFreshNotBasis_of_arm {calls : List (Call F)} {t : Ix.Kernel.Role
     (hkey : Decl.KeyFree (keyOf t A)) :
     RecMajorFreshNotBasis.{u} t envT E₀ E lim A c rc := by
   intro env P ip hstep hfP hrecP hnatP htie
-  refine eq_false_of_ne_true (fun hres => ?_)
+  refine Bool.eq_false_of_ne_true (fun hres => ?_)
   have htwf : t.wf = true := by
     unfold Ix.Kernel.RoleTable.wf
     rw [ht]
@@ -249,7 +245,7 @@ theorem recMajorFreshNotBasis_of_arm {calls : List (Call F)} {t : Ix.Kernel.Role
     have hok : reservedNameOk (.role r) = true :=
       Classical.byContradiction fun hne =>
         Bool.noConfusion ((contains_false_of_all reservedNameOk _ reservedBasisNames_ok
-          (eq_false_of_ne_true hne)).symm.trans hres)
+          (Bool.eq_false_of_ne_true hne)).symm.trans hres)
     obtain ⟨hpre, hcase⟩ := reservedNameOk_role hok
     have hcP : RoleVal.committedDefaultRoleTable.addressOf? r = some P :=
       (hpinEq r hpre).symm.trans haP
