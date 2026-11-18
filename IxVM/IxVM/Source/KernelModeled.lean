@@ -573,6 +573,8 @@ def check_witness := aiur_fn⟦
           let (n, s2) = get_count(s);
           let (stop, s3) = walk_from_block(block, s2, n);
           assert_eq!(Bytes::address_eq(stop, x), 1, "model advice: a dependency path ends elsewhere");
+          -- a projection the path ends at names a member of its block
+          projection_member(x);
           s3 } ,
         2 => {
           let (n, s2) = get_count(s);
@@ -590,7 +592,31 @@ def check_witness := aiur_fn⟦
           };
           assert_eq!(Bytes::address_eq(expected, x), 1,
             "model advice: a projection witness names another member");
+          -- the address is computed from the indices; the record's reading checks that they
+          -- name a member (and a constructor) of the block
+          Ingress::get_ci(x);
           s5 } ,
+      }
+    }
+⟧
+
+  -- A projection record names a member of its block: its reading (`Ingress::get_ci`) refuses
+  -- a missing member, a member of another kind and a missing constructor. Any other record is
+  -- left as it is. A witnessed reference or an advice record is admitted with this read, so
+  -- that a projection admitted from either set names a member.
+
+def projection_member := aiur_fn⟦
+  fn projection_member(x: Bytes::AddressRef) -> () {
+      let c = Ingress::load_verified_constant(x);
+      match c {
+        Ixon::Constant::Mk(info, _, _, _, _) => {
+          match info {
+            Ixon::ConstantInfo::IPrj(_) => {  Ingress::get_ci(x); () } ,
+            Ixon::ConstantInfo::CPrj(_) => {  Ingress::get_ci(x); () } ,
+            Ixon::ConstantInfo::RPrj(_) => {  Ingress::get_ci(x); () } ,
+            Ixon::ConstantInfo::DPrj(_) => {  Ingress::get_ci(x); () } ,
+            _ => {  () } ,
+          } } ,
       }
     }
 ⟧
@@ -794,7 +820,7 @@ def is_projection_of := aiur_fn⟦
           match info {
             Ixon::ConstantInfo::IPrj(_) => {  Ingress::get_ci(r); Bytes::address_eq(projection_block(c), block) } ,
             Ixon::ConstantInfo::CPrj(_) => {  Ingress::get_ci(r); Bytes::address_eq(projection_block(c), block) } ,
-            Ixon::ConstantInfo::RPrj(_) => {  Bytes::address_eq(projection_block(c), block) } ,
+            Ixon::ConstantInfo::RPrj(_) => {  Ingress::get_ci(r); Bytes::address_eq(projection_block(c), block) } ,
             _ => {  0 } ,
           } } ,
       }
@@ -865,10 +891,13 @@ def check_advice_record := aiur_fn⟦
             Ixon::ConstantInfo::IPrj(_) => {
               assert_eq!(KernelClaim::addr_set_member(projection_block(c), aset), 1,
                 "model advice: a projection of a block that is not advice");
+              -- and it names a member of that block
+              Ingress::get_ci(a);
               () } ,
             Ixon::ConstantInfo::CPrj(_) => {
               assert_eq!(KernelClaim::addr_set_member(projection_block(c), aset), 1,
                 "model advice: a projection of a block that is not advice");
+              Ingress::get_ci(a);
               () } ,
           };
           advice_refs_ok(refs, KernelClaim::const_idxs_of(c), 0, aset, wset);
