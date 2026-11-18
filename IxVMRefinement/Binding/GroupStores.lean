@@ -72,13 +72,14 @@ reading clause it held as `reads`: `groupStore_reads`.)
   `KernelRoles::assert_op_reached_in_order` in `KernelRoles::walk_ctx`, in the block from
   `KernelRoles::op_order_scan` as it will be after the next change of the circuit source
   (`RoleVal.OpOrderScanStep`). -/
-structure RemainingStoreClauses (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
+structure RemainingStoreClauses (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (Pay : PayloadRel) :
+    Prop where
   opsOwn : ∀ g, 6 ≤ g → g < 77 → ∀ a r,
-    New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a → t.addressOf? r = some a →
+    New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) a → t.addressOf? r = some a →
     r ∈ RoleOps.opRoles → r ∈ roleGroup g
   unitsLast : ∀ g, 6 ≤ g → g < 77 → ∀ x a,
-    New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) x →
-    UsedRef (groupStore t E₀ (g + 1)) x a → ¬ RoleUnitAt t g a
+    New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) x →
+    UsedRef (groupStore t E₀ Pay (g + 1)) x a → ¬ RoleUnitAt t g a
 
 /-- **What is left of the store sequence's clauses, for a run**: at every table that bytes the
 run hashed admit at a binding address, binding every role, pinning the prelude and with every
@@ -91,7 +92,7 @@ def RemainingStoreClausesOfRun (calls : List (Call F)) : Prop :=
     AllBound t → PreludePinned t →
     (∀ g, g < 77 → ∀ r ∈ roleGroup g, RoleValidationIn calls a t g r) →
     CollisionFreeRun calls (Claim.runEnv ⟨a, tb⟩ (t := t) calls) →
-    RemainingStoreClauses t (Claim.runEnv ⟨a, tb⟩ (t := t) calls)
+    RemainingStoreClauses t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) noPayload
 
 /-- **The stores of a binding run, from what is left of the sequence's clauses**: for every run,
 `GroupStoresOfRun calls` with the stores `groupStore t E₀` over the run's records and the rank
@@ -132,10 +133,11 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
     · exact hval g hg r hr
     · rw [roleGroup_eq_nil (by rw [groups_length]; omega)] at hr
       cases hr
+  have hP := payloadFacts_none t (Claim.runEnv ⟨a, tb⟩ (t := t) calls)
   have hws : ∀ k, ∃ recs, GroupWalked calls a t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) k recs :=
     fun k => groupWalked_exists hH (hvalAll k)
   refine ⟨fun g x => walkRank (Classical.choose (hws g)) x,
-    groupStore t (Claim.runEnv ⟨a, tb⟩ (t := t) calls), groupStore_basis_consts,
+    groupStore t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) noPayload, groupStore_basis_consts,
     groupStore_basis_blobs, fun g hg6 hg => ⟨?_, ?_⟩⟩
   · have hw := Classical.choose_spec (hws g)
     exact
@@ -144,22 +146,23 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
         loaded := groupStore_loaded hb (Nat.le_succ_of_le hg6)
         loadedBlobs := groupStore_loadedBlobs (Nat.lt_succ_of_le hg6)
         hashed := groupStore_hashed hS hb (Nat.lt_succ_of_le hg6)
-        usedClosed := groupStore_usedClosed_all hC hb hbr hax hws (g + 1) (Nat.le_succ_of_le hg6)
+        usedClosed :=
+          groupStore_usedClosed_all hC hb hbr hax hP hws (g + 1) (Nat.le_succ_of_le hg6)
         committed := groupStore_committed hC hb (Nat.le_succ_of_le hg6)
         zeroFree := groupStore_zeroFree hC hb (Nat.lt_succ_of_le hg6)
-        rankUsed := groupStore_rankUsed hC hb hbr hax hws hg6 hw
-        rankOwner := groupStore_rankOwner hC hb hax hg6 hw
-        projMember := groupStore_projMember hC hb hax hg6 hw
-        standing := standing_of_rootsSafe hC hb hpin hval hroots
+        rankUsed := groupStore_rankUsed hC hb hbr hax hP hws hg6 hw (fun _ _ h => h)
+        rankOwner := groupStore_rankOwner hC hb hax hg6 hw (fun _ _ h => h)
+        projMember := groupStore_projMember hC hb hax hP hg6 hw
+        standing := standing_of_rootsSafe hC hb hpin hP hval hroots
           g hg6 hg
-        logic := logic_of_rootsSafe hC hb hval hroots g hg6 hg
+        logic := logic_of_rootsSafe hC hb hP hval hroots g hg6 hg
         validated := fun _ _ => trivial
         kept := groupStore_kept hC hb hax hg6 hw
         opsOwn := hR.opsOwn g hg6 hg
         unitsLast := hR.unitsLast g hg6 hg
-        evidenceRefs := groupStore_evidenceRefs hC hb hbr hax hws hg6 hw }
+        evidenceRefs := groupStore_evidenceRefs hC hb hbr hax hP hws hg6 hw }
   · exact
       { blobs := groupStore_reads_blobs (Nat.lt_succ_of_le hg6)
-        reads := groupStore_reads hcheck hC hb hbr hax hws hg6 }
+        reads := groupStore_reads hcheck hC hb hbr hax hP hws hg6 }
 
 end IxVM.Refinement.Binding

@@ -15,11 +15,17 @@ group's admission that read what the group's validations walked.
 * `walkRank recs`: the rank of an address in the group's admission: the least depth of a record
   of the list at it, and one more than every depth for an address the list does not hold (a
   projection record added beside its block, the group's standard axiom).
-* The clauses, each for `groupStore t E₀ g` and `groupStore t E₀ (g + 1)`: `groupStore_kept`,
+* The clauses, each for `groupStore t E₀ Pay g` and `groupStore t E₀ Pay (g + 1)`:
+  `groupStore_kept`,
   `groupStore_rankUsed`, `groupStore_rankOwner`, `groupStore_projMember`,
   `groupStore_usedClosed` (one step), `groupStore_usedClosed_all` and
   `groupStore_evidenceRefs`; and `groupStore_checked`, the check of every new unit of this store,
   the unit's half of `FamilyAdmits.checked` (the admission has no check clause of its own).
+
+What a group's payload adds (`PayAdds`) is read through `PayloadFacts t E₀ Pay`, the facts the
+clauses need of the records the payload reaches, which no walk reaches (`payAdds_cases`); with no
+payload they hold (`payloadFacts_none`). `groupStore_rankUsed` and `groupStore_rankOwner` are the
+walk's rank, stated at a group without payload.
 
 Two premises are named and not produced here:
 
@@ -71,7 +77,7 @@ theorem ownerOf_of_not_proj {a : _root_.Address} {c : Ixon.Constant} (h : ¬ IsP
 section Walk
 
 variable {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
-  {E₀ : Ixon.Env}
+  {E₀ : Ixon.Env} {Pay : PayloadRel}
 
 /-! ## The records a group's validations walked -/
 
@@ -502,19 +508,97 @@ def AxiomRolesDeclared (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop :=
   ∀ r ∈ standardAxioms, ∀ a, t.addressOf? r = some a →
     ∃ c ax, recordOf E₀ a = some c ∧ c.info = .axio ax ∧ ax.isUnsafe = false
 
+/-! ## The records the payload adds -/
+
+/-- **What the store's clauses need of the records a group's payload reaches**, at every group:
+the payload's records are records of the run; a block reached so has its member and constructor
+projection records; a projection record reached so is at a member's or a constructor's address
+of its block; each such record is in Lean's logic; none is an axiom or quotient record.
+
+Status: premises, not proved of any run. No walk of the group reaches these records: the family
+check of the block reads them (`KernelModeled::check_family`), and what it establishes of each is
+not exported. Where each fact comes from in the source, all under the group's validation context:
+* `record`: `Ingress::load_verified_constant` in `KernelModeled::check_advice_record` (an advice
+  record), `KernelModeled::check_container_rec` through `KernelClaim::run_check` (a container
+  recursor), `KernelModeled::check_family`'s load of the family record (`check_recs`); a used
+  reference of a payload record that is not covered is an advice record, a projection of an
+  advice block or a witness (`KernelModeled::advice_refs_ok`, `container_refs_ok`), a witness is
+  walked (`check_witness` kind 0, `KernelClaim::run_check_transitive`), lies on a path from the
+  block (`walk_path`, kinds 1 to 3, which loads each record it passes) or is a container recursor;
+* `blockMembers`: an advice block is checked by `KernelClaim::check_muts_all`, the family record
+  by `check_recs` (each member against the block's flattened family);
+* `projMember`: an advice `IPrj`/`CPrj` record is asserted to project from an advice block
+  (`check_advice_record`), and a witness of kind 3 is compared with the computed projection
+  address (`KernelDefEq::compute_iprj_addr`, `KernelCheck::projection_addr_ctor`);
+* `logic`: `check_advice_record` admits only safe definitions, theorems, safe recursors and safe
+  inductive blocks (`muts_all_safe`); a container recursor and the family record are checked by
+  their blocks' routes;
+* `notAxiomLike`: `check_advice_record` has no arm for an axiom or a quotient record; a container
+  recursor is a recursor (`rec_family_block`); the family record is a block of recursors. -/
+structure PayloadFacts (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (Pay : PayloadRel) : Prop where
+  record : ∀ g a, PayReach t E₀ Pay g a → ∃ c, recordOf E₀ a = some c
+  blockMembers : ∀ g B c ms, PayReach t E₀ Pay g B → recordOf E₀ B = some c → c.info = .muts ms →
+    ∀ i m, ms[i]? = some m →
+      recordOf E₀ (memberAddr B i m) = some (memberProjection B i m) ∧
+      ∀ ind j, m = .indc ind → j < ind.ctors.size →
+        recordOf E₀ (ctorAddr B i j) = some (constructorProjection B i j)
+  projMember : ∀ g a c, PayReach t E₀ Pay g a → recordOf E₀ a = some c → IsProj c →
+    ∃ cb, recordOf E₀ (Ix.Cert.ownerOf a c) = some cb ∧ ConstAddrOf (Ix.Cert.ownerOf a c) cb a
+  logic : ∀ g a c, PayReach t E₀ Pay g a → recordOf E₀ a = some c → InLogic c
+  notAxiomLike : ∀ g a c, PayReach t E₀ Pay g a → recordOf E₀ a = some c → ¬ IsAxiomLike c
+
+/-- **With no payload there is nothing to assume.** -/
+theorem payloadFacts_none (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) :
+    PayloadFacts t E₀ noPayload where
+  record := fun _ _ h => (PayReach.none h).elim
+  blockMembers := fun _ _ _ _ h => (PayReach.none h).elim
+  projMember := fun _ _ _ h => (PayReach.none h).elim
+  logic := fun _ _ _ h => (PayReach.none h).elim
+  notAxiomLike := fun _ _ _ h => (PayReach.none h).elim
+
+/-- **What the payload of a group adds** is a record reached through the payload, or a
+projection record beside a block reached so. -/
+theorem payAdds_cases (hP : PayloadFacts t E₀ Pay) {g : Nat} {a : _root_.Address}
+    (h : PayAdds t E₀ Pay g a) :
+    (PayReach t E₀ Pay g a ∧ ∃ c, recordOf E₀ a = some c) ∨
+    (∃ B cB, PayReach t E₀ Pay g B ∧ recordOf E₀ B = some cB ∧ IsBlock cB ∧
+      ∃ p, recordOf E₀ a = some p ∧ IsProj p ∧ Ix.Cert.ownerOf a p = B ∧ p.refs = #[] ∧
+        ConstAddrOf B cB a) := by
+  rcases h with hr | ⟨B, cB, hB, hcB, ⟨ms, hms⟩, hca⟩
+  · exact Or.inl ⟨hr, hP.record g a hr⟩
+  · refine Or.inr ⟨B, cB, hB, hcB, ⟨ms, hms⟩, ?_⟩
+    rcases hca with ⟨-, hst⟩ | ⟨ms', i, m, hms', hm, hx⟩
+    · exact (standalone_not_block hst ⟨ms, hms⟩).elim
+    · have e : ms' = ms := by
+        rw [hms] at hms'
+        exact (Ixon.ConstantInfo.muts.inj hms').symm
+      rw [e] at hm
+      obtain ⟨h1, h2⟩ := hP.blockMembers g B cB ms hB hcB hms i m hm
+      rcases hx with hx | ⟨ind, j, hind, hj, hx⟩
+      · rw [hx]
+        exact ⟨_, h1, memberProjection_isProj _ _ _, ownerOf_memberProjection _ _ _ _,
+          by cases m <;> rfl, Or.inr ⟨ms, i, m, hms, hm, Or.inl rfl⟩⟩
+      · rw [hx]
+        exact ⟨_, h2 ind j hind hj, constructorProjection_isProj _ _ _,
+          ownerOf_constructorProjection _ _ _ _, rfl,
+          Or.inr ⟨ms, i, m, hms, hm, Or.inr ⟨ind, j, hind, hj, rfl⟩⟩⟩
+
 /-- **What the admission of a group adds is a record of the group's walk, a projection record
-beside a walked block, or the group's standard axiom.** -/
+beside a walked block, the group's standard axiom, or what its payload adds.** -/
 theorem groupAdds_cases (hC : CollisionFreeRun calls E₀) (hax : AxiomRolesDeclared t E₀)
     {g : Nat} {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
     (hw : GroupWalked calls bAddr t E₀ g recs) {a : _root_.Address}
-    (h : GroupAdds t E₀ g a) :
+    (h : GroupAdds t E₀ Pay g a) :
     (GroupReach t E₀ g a ∧ ∃ r ∈ recs, r.addr = a) ∨
     (∃ r ∈ recs, GroupReach t E₀ g r.addr ∧ IsBlock r.c ∧
       ∃ p, recordOf E₀ a = some p ∧ IsProj p ∧ Ix.Cert.ownerOf a p = r.addr ∧ p.refs = #[] ∧
         ConstAddrOf r.addr r.c a) ∨
     (∃ ro ∈ roleGroup g, ro ∈ standardAxioms ∧ t.addressOf? ro = some a ∧
-      ∃ c ax, recordOf E₀ a = some c ∧ c.info = .axio ax ∧ ax.isUnsafe = false) := by
-  rcases h with hr | ⟨B, cB, hB, hcB, ⟨ms, hms⟩, hca⟩ | ⟨ro, hro, hs, had⟩
+      ∃ c ax, recordOf E₀ a = some c ∧ c.info = .axio ax ∧ ax.isUnsafe = false) ∨
+    PayAdds t E₀ Pay g a := by
+  rcases h with (hr | ⟨B, cB, hB, hcB, ⟨ms, hms⟩, hca⟩ | ⟨ro, hro, hs, had⟩) | hpay
+  rotate_right
+  · exact Or.inr (Or.inr (Or.inr hpay))
   · exact Or.inl ⟨hr, hr.listed hC.hashedStored hw⟩
   · obtain ⟨y, hy, hyB⟩ := hB.listed hC.hashedStored hw
     have hrec := topRec_recordOf hC.hashedStored y
@@ -539,11 +623,11 @@ theorem groupAdds_cases (hC : CollisionFreeRun calls E₀) (hax : AxiomRolesDecl
           ownerOf_constructorProjection _ _ _ _, rfl,
           Or.inr ⟨ms, i, m, hms, hm, Or.inr ⟨ind, j, hind, hj, rfl⟩⟩⟩
   · obtain ⟨c, ax, hc, hinfo, hsafe⟩ := hax ro hs a had
-    exact Or.inr (Or.inr ⟨ro, hro, hs, had, c, ax, hc, hinfo, hsafe⟩)
+    exact Or.inr (Or.inr (Or.inl ⟨ro, hro, hs, had, c, ax, hc, hinfo, hsafe⟩))
 
 /-- **A covered reference is held by the store before the group.** -/
 theorem storedBelow_of_covered (hbr : BasisRolesStored t) {g : Nat} {x : _root_.Address}
-    (hcov : Claim.CoveredAt t (some (valLimit g)) x) : StoredBelow t E₀ g x := by
+    (hcov : Claim.CoveredAt t (some (valLimit g)) x) : StoredBelow t E₀ Pay g x := by
   obtain ⟨r, had, hw, hlt⟩ := hcov
   have hlt' : Ix.SpecDigest.groupOf r < g :=
     Nat.lt_of_lt_of_le (hlt (valLimit g) rfl) (valLimit_le g)
@@ -553,35 +637,38 @@ theorem storedBelow_of_covered (hbr : BasisRolesStored t) {g : Nat} {x : _root_.
       rw [← Claim.walkedRole_eq_roleWalksBound]
       exact hw
     exact Or.inr ⟨Ix.SpecDigest.groupOf r, Nat.le_of_not_lt h6, hlt',
-      Or.inl (GroupReach.root (role_mem_roleGroup r) (Or.inl hwb) had)⟩
+      GroupAdds.reach (GroupReach.root (role_mem_roleGroup r) (Or.inl hwb) had)⟩
 
 /-- **A stored address holds a record of the run.** -/
 theorem storedBelow_record (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
-    (hax : AxiomRolesDeclared t E₀)
+    (hax : AxiomRolesDeclared t E₀) (hP : PayloadFacts t E₀ Pay)
     (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs) {g : Nat} {x : _root_.Address}
-    (h : StoredBelow t E₀ g x) : ∃ c, recordOf E₀ x = some c := by
+    (h : StoredBelow t E₀ Pay g x) : ∃ c, recordOf E₀ x = some c := by
   rcases h with hbas | ⟨k, hk6, hk, hadd⟩
   · obtain ⟨lc, hlc⟩ := Option.isSome_iff_exists.mp hbas
     obtain ⟨c, hmem, -⟩ := StoreInhabit.store_get?_inv hlc
-    have h6 : recordOf (groupStore t E₀ 6) x = some c := by
+    have h6 : recordOf (groupStore t E₀ Pay 6) x = some c := by
       rw [groupStore_six]
       exact StoreInhabit.store_record_of_mem hmem
     exact ⟨c, ((groupStore_recordOf hb (Nat.le_refl 6)).mp h6).2⟩
   · obtain ⟨recs, hw⟩ := hws k
     rcases groupAdds_cases hC hax hw hadd with ⟨-, r, hr, hra⟩ | ⟨r, hr, -, -, p, hp, -⟩ |
-        ⟨ro, hro, hs, had, c, ax, hc, -⟩
+        ⟨ro, hro, hs, had, c, ax, hc, -⟩ | hpay
     · rw [← hra]
       exact ⟨r.c, topRec_recordOf hC.hashedStored r⟩
     · exact ⟨p, hp⟩
     · exact ⟨c, hc⟩
+    · rcases payAdds_cases hP hpay with ⟨-, hrec⟩ | ⟨-, -, -, -, -, p, hp, -⟩
+      · exact hrec
+      · exact ⟨p, hp⟩
 
 /-- **An address the group adds is new in its admission or was held before.** -/
 theorem new_or_stored (hb : BasisRowsLoaded E₀) {g : Nat} (hg : 6 ≤ g) {x : _root_.Address}
-    {c : Ixon.Constant} (hadd : GroupAdds t E₀ g x) (hc : recordOf E₀ x = some c) :
-    New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) x ∨
-      (recordOf (groupStore t E₀ g) x).isSome = true := by
+    {c : Ixon.Constant} (hadd : GroupAdds t E₀ Pay g x) (hc : recordOf E₀ x = some c) :
+    New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) x ∨
+      (recordOf (groupStore t E₀ Pay g) x).isSome = true := by
   have h6 : 6 ≤ g + 1 := Nat.le_succ_of_le hg
-  by_cases hs : StoredBelow t E₀ g x
+  by_cases hs : StoredBelow t E₀ Pay g x
   · right
     rw [(groupStore_recordOf hb hg).mpr ⟨hs, hc⟩]
     rfl
@@ -589,7 +676,7 @@ theorem new_or_stored (hb : BasisRowsLoaded E₀) {g : Nat} (hg : 6 ≤ g) {x : 
     refine ⟨?_, ?_⟩
     · rw [(groupStore_recordOf hb h6).mpr ⟨storedBelow_of_adds hg hadd, hc⟩]
       rfl
-    · cases hr : recordOf (groupStore t E₀ g) x with
+    · cases hr : recordOf (groupStore t E₀ Pay g) x with
       | none => rfl
       | some c' => exact absurd ((groupStore_recordOf hb hg).mp hr).1 hs
 
@@ -602,45 +689,52 @@ theorem groupStore_kept (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded
     {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
     (hw : GroupWalked calls bAddr t E₀ g recs) :
     ∀ r ∈ roleGroup g, (keptRole r ∨ r ∈ preludeRoles) → ∀ a, t.addressOf? r = some a →
-      (recordOf (groupStore t E₀ (g + 1)) a).isSome = true := by
+      (recordOf (groupStore t E₀ Pay (g + 1)) a).isSome = true := by
   intro r hr hk a had
   have h6 : 6 ≤ g + 1 := Nat.le_succ_of_le hg
   have hgr : 6 ≤ Ix.SpecDigest.groupOf r := by
     rw [groupOf_of_mem_roleGroup hr]
     exact hg
-  have hadds : GroupAdds t E₀ g a ∧ ∃ c, recordOf E₀ a = some c := by
+  have hadds : GroupAdds t E₀ Pay g a ∧ ∃ c, recordOf E₀ a = some c := by
     rcases kept_walked hgr hk with hwk | hwk | hs
     · obtain ⟨x, hx, hxa⟩ := hw.roots r hr (Or.inl hwk) a had
-      refine ⟨Or.inl (GroupReach.root hr (Or.inl hwk) had), x.c, ?_⟩
+      refine ⟨GroupAdds.reach (GroupReach.root hr (Or.inl hwk) had), x.c, ?_⟩
       rw [← hxa]
       exact topRec_recordOf hC.hashedStored x
     · obtain ⟨x, hx, hxa⟩ := hw.roots r hr (Or.inr hwk) a had
-      refine ⟨Or.inl (GroupReach.root hr (Or.inr hwk) had), x.c, ?_⟩
+      refine ⟨GroupAdds.reach (GroupReach.root hr (Or.inr hwk) had), x.c, ?_⟩
       rw [← hxa]
       exact topRec_recordOf hC.hashedStored x
     · obtain ⟨c, ax, hc, -, -⟩ := hax r hs a had
-      exact ⟨Or.inr (Or.inr ⟨r, hr, hs, had⟩), c, hc⟩
+      exact ⟨GroupAdds.stdAxiom hr hs had, c, hc⟩
   obtain ⟨hadd, c, hc⟩ := hadds
   rw [(groupStore_recordOf hb h6).mpr ⟨storedBelow_of_adds hg hadd, hc⟩]
   rfl
 
-/-- **Every new unit of the store was checked** under the role context at the group's
-validation limit: every address this store adds is reached by the group's walk, so the first
-alternative of `FamilyAdmits.checked` holds at each new unit. -/
+/-- **Every new unit of the store that its walk adds was checked** under the role context at
+the group's validation limit; a new unit the walk does not add is reached through the group's
+payload (whose check is the payload's family check: `FamilyAdmits.checked`). -/
 theorem groupStore_checked (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
-    (hax : AxiomRolesDeclared t E₀) {g : Nat} (hg : 6 ≤ g)
+    (hax : AxiomRolesDeclared t E₀) (hP : PayloadFacts t E₀ Pay) {g : Nat} (hg : 6 ≤ g)
     {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
     (hw : GroupWalked calls bAddr t E₀ g recs) :
-    ∀ a c, New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a →
-      recordOf (groupStore t E₀ (g + 1)) a = some c → UnitKind c →
-      UnitCheckedAt calls bAddr t E₀ a (some (valLimit g)) := by
+    ∀ a c, New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) a →
+      recordOf (groupStore t E₀ Pay (g + 1)) a = some c → UnitKind c →
+      UnitCheckedAt calls bAddr t E₀ a (some (valLimit g)) ∨ PayReach t E₀ Pay g a := by
   intro a c hnew hc hunit
   have h6 : 6 ≤ g + 1 := Nat.le_succ_of_le hg
   obtain ⟨-, -, -, hadd, -⟩ := new_groupStore hb hg hnew
   have hE : recordOf E₀ a = some c := ((groupStore_recordOf hb h6).mp hc).2
   rcases groupAdds_cases hC hax hw hadd with ⟨-, r, hr, hra⟩ | ⟨r, hr, -, -, p, hp, hproj, -⟩ |
-      ⟨ro, hro, hs, had, c₂, ax, hc₂, hinfo, -⟩
-  · rw [← hra]
+      ⟨ro, hro, hs, had, c₂, ax, hc₂, hinfo, -⟩ | hpay
+  rotate_right
+  · rcases payAdds_cases hP hpay with ⟨hr, -⟩ | ⟨-, -, -, -, -, p, hp, hproj, -⟩
+    · exact Or.inr hr
+    · have e : p = c := Option.some.inj (hp.symm.trans hE)
+      rw [e] at hproj
+      exact (unitKind_not_proj hunit hproj).elim
+  · left
+    rw [← hra]
     exact unitCheckedAt_of_topRec hC.hashedStored r
   · have e : p = c := Option.some.inj (hp.symm.trans hE)
     rw [e] at hproj
@@ -652,15 +746,16 @@ theorem groupStore_checked (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoa
 /-- **`Admits.rankUsed`**: a reference a new record uses is new at a smaller rank, or held
 before. -/
 theorem groupStore_rankUsed (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
-    (hbr : BasisRolesStored t) (hax : AxiomRolesDeclared t E₀)
+    (hbr : BasisRolesStored t) (hax : AxiomRolesDeclared t E₀) (hP : PayloadFacts t E₀ Pay)
     (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs) {g : Nat} (hg : 6 ≤ g)
     {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
-    (hw : GroupWalked calls bAddr t E₀ g recs) :
-    ∀ a x, New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a →
-      UsedRef (groupStore t E₀ (g + 1)) a x →
-      (New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) x ∧
+    (hw : GroupWalked calls bAddr t E₀ g recs)
+    (hnp : ∀ B a, ¬ Pay g B a) :
+    ∀ a x, New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) a →
+      UsedRef (groupStore t E₀ Pay (g + 1)) a x →
+      (New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) x ∧
           walkRank recs x < walkRank recs a) ∨
-        (recordOf (groupStore t E₀ g) x).isSome = true := by
+        (recordOf (groupStore t E₀ Pay g) x).isSome = true := by
   intro a x hnew hused
   have h6 : 6 ≤ g + 1 := Nat.le_succ_of_le hg
   obtain ⟨-, -, -, hadd, -⟩ := new_groupStore hb hg hnew
@@ -669,13 +764,15 @@ theorem groupStore_rankUsed (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLo
   have huE : UsedRef E₀ a x := ⟨c, i, hE, hi, hx⟩
   by_cases hcov : Claim.CoveredAt t (some (valLimit g)) x
   · right
-    have hs : StoredBelow t E₀ g x := storedBelow_of_covered hbr hcov
-    obtain ⟨cx, hcx⟩ := storedBelow_record hC hb hax hws hs
+    have hs : StoredBelow t E₀ Pay g x := storedBelow_of_covered hbr hcov
+    obtain ⟨cx, hcx⟩ := storedBelow_record hC hb hax hP hws hs
     rw [(groupStore_recordOf hb hg).mpr ⟨hs, hcx⟩]
     rfl
   · have hreach : GroupReach t E₀ g x ∧ walkRank recs x < walkRank recs a := by
       rcases groupAdds_cases hC hax hw hadd with ⟨hra, hl⟩ |
-          ⟨r, hr, -, -, p, hp, -, -, hrefs, -⟩ | ⟨ro, hro, hs, had, -⟩
+          ⟨r, hr, -, -, p, hp, -, -, hrefs, -⟩ | ⟨ro, hro, hs, had, -⟩ | hpay
+      rotate_right
+      · exact (hpay.noPayload hnp).elim
       · exact ⟨GroupReach.ref hra huE hcov,
           walkRank_used_lt hC.hashedStored hw hl hE hi hx hcov⟩
       · exfalso
@@ -693,7 +790,7 @@ theorem groupStore_rankUsed (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLo
     have hcx : recordOf E₀ x = some y.c := by
       rw [← hya]
       exact topRec_recordOf hC.hashedStored y
-    rcases new_or_stored hb hg (Or.inl hrx) hcx with hn | hs
+    rcases new_or_stored hb hg (GroupAdds.reach hrx) hcx with hn | hs
     · exact Or.inl ⟨hn, hlt⟩
     · exact Or.inr hs
 
@@ -702,12 +799,13 @@ before. -/
 theorem groupStore_rankOwner (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
     (hax : AxiomRolesDeclared t E₀) {g : Nat} (hg : 6 ≤ g)
     {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
-    (hw : GroupWalked calls bAddr t E₀ g recs) :
-    ∀ a c, New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a →
-      recordOf (groupStore t E₀ (g + 1)) a = some c → IsProj c →
-      (New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) (Ix.Cert.ownerOf a c) ∧
+    (hw : GroupWalked calls bAddr t E₀ g recs)
+    (hnp : ∀ B a, ¬ Pay g B a) :
+    ∀ a c, New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) a →
+      recordOf (groupStore t E₀ Pay (g + 1)) a = some c → IsProj c →
+      (New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) (Ix.Cert.ownerOf a c) ∧
           walkRank recs (Ix.Cert.ownerOf a c) < walkRank recs a) ∨
-        (recordOf (groupStore t E₀ g) (Ix.Cert.ownerOf a c)).isSome = true := by
+        (recordOf (groupStore t E₀ Pay g) (Ix.Cert.ownerOf a c)).isSome = true := by
   intro a c hnew hc hp
   have h6 : 6 ≤ g + 1 := Nat.le_succ_of_le hg
   obtain ⟨-, -, -, hadd, -⟩ := new_groupStore hb hg hnew
@@ -715,7 +813,9 @@ theorem groupStore_rankOwner (hC : CollisionFreeRun calls E₀) (hb : BasisRowsL
   have hown : GroupReach t E₀ g (Ix.Cert.ownerOf a c) ∧
       walkRank recs (Ix.Cert.ownerOf a c) < walkRank recs a := by
     rcases groupAdds_cases hC hax hw hadd with ⟨hra, hl⟩ |
-        ⟨r, hr, hrB, -, p, hp', -, hown, -, -⟩ | ⟨ro, hro, hs, had, c₂, ax, hc₂, hinfo, -⟩
+        ⟨r, hr, hrB, -, p, hp', -, hown, -, -⟩ | ⟨ro, hro, hs, had, c₂, ax, hc₂, hinfo, -⟩ | hpay
+    rotate_right
+    · exact (hpay.noPayload hnp).elim
     · exact ⟨GroupReach.owner hra hE hp, walkRank_owner_lt hC.hashedStored hw hl hE hp⟩
     · have e : p = c := Option.some.inj (hp'.symm.trans hE)
       rw [e] at hown
@@ -734,30 +834,38 @@ theorem groupStore_rankOwner (hC : CollisionFreeRun calls E₀) (hb : BasisRowsL
   have hcx : recordOf E₀ (Ix.Cert.ownerOf a c) = some y.c := by
     rw [← hya]
     exact topRec_recordOf hC.hashedStored y
-  rcases new_or_stored hb hg (Or.inl hro) hcx with hn | hs
+  rcases new_or_stored hb hg (GroupAdds.reach hro) hcx with hn | hs
   · exact Or.inl ⟨hn, hlt⟩
   · exact Or.inr hs
 
 /-- **`Admits.projMember`**: a new projection record is at a member's or a constructor's
 address of its block, which the store after the admission holds. -/
 theorem groupStore_projMember (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
-    (hax : AxiomRolesDeclared t E₀) {g : Nat} (hg : 6 ≤ g)
+    (hax : AxiomRolesDeclared t E₀) (hP : PayloadFacts t E₀ Pay) {g : Nat} (hg : 6 ≤ g)
     {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
     (hw : GroupWalked calls bAddr t E₀ g recs) :
-    ∀ a c, New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a →
-      recordOf (groupStore t E₀ (g + 1)) a = some c → IsProj c →
-      ∃ cb, recordOf (groupStore t E₀ (g + 1)) (Ix.Cert.ownerOf a c) = some cb ∧
+    ∀ a c, New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) a →
+      recordOf (groupStore t E₀ Pay (g + 1)) a = some c → IsProj c →
+      ∃ cb, recordOf (groupStore t E₀ Pay (g + 1)) (Ix.Cert.ownerOf a c) = some cb ∧
         ConstAddrOf (Ix.Cert.ownerOf a c) cb a := by
   intro a c hnew hc hp
   have h6 : 6 ≤ g + 1 := Nat.le_succ_of_le hg
   obtain ⟨-, -, -, hadd, -⟩ := new_groupStore hb hg hnew
   have hE : recordOf E₀ a = some c := ((groupStore_recordOf hb h6).mp hc).2
-  have hblock : GroupReach t E₀ g (Ix.Cert.ownerOf a c) ∧
+  have hblock : GroupAdds t E₀ Pay g (Ix.Cert.ownerOf a c) ∧
       ∃ cb, recordOf E₀ (Ix.Cert.ownerOf a c) = some cb ∧
         ConstAddrOf (Ix.Cert.ownerOf a c) cb a := by
     rcases groupAdds_cases hC hax hw hadd with ⟨hra, r, hr, hra'⟩ |
-        ⟨r, hr, hrB, -, p, hp', -, hown, -, hca⟩ | ⟨ro, hro, hs, had, c₂, ax, hc₂, hinfo, -⟩
-    · refine ⟨GroupReach.owner hra hE hp, ?_⟩
+        ⟨r, hr, hrB, -, p, hp', -, hown, -, hca⟩ | ⟨ro, hro, hs, had, c₂, ax, hc₂, hinfo, -⟩ |
+        hpay
+    rotate_right
+    · rcases payAdds_cases hP hpay with ⟨hra, -⟩ | ⟨B, cB, hB, hcB, -, p, hp', -, hown, -, hca⟩
+      · exact ⟨GroupAdds.payReach (PayReach.owner hra hE hp), hP.projMember g a c hra hE hp⟩
+      · have e : p = c := Option.some.inj (hp'.symm.trans hE)
+        rw [e] at hown
+        rw [hown]
+        exact ⟨GroupAdds.payReach hB, cB, hcB, hca⟩
+    · refine ⟨GroupAdds.reach (GroupReach.owner hra hE hp), ?_⟩
       have hrec := topRec_recordOf hC.hashedStored r
       rw [hra'] at hrec
       have ec : c = r.c := Option.some.inj (hE.symm.trans hrec)
@@ -770,43 +878,86 @@ theorem groupStore_projMember (hC : CollisionFreeRun calls E₀) (hb : BasisRows
     · have e : p = c := Option.some.inj (hp'.symm.trans hE)
       rw [e] at hown
       rw [hown]
-      exact ⟨hrB, r.c, topRec_recordOf hC.hashedStored r, hca⟩
+      exact ⟨GroupAdds.reach hrB, r.c, topRec_recordOf hC.hashedStored r, hca⟩
     · exfalso
       have e : c₂ = c := Option.some.inj (hc₂.symm.trans hE)
       rw [e] at hinfo
       exact proj_not_axiom hp hinfo
   obtain ⟨hro, cb, hcb, hca⟩ := hblock
-  exact ⟨cb, (groupStore_recordOf hb h6).mpr ⟨storedBelow_of_adds hg (Or.inl hro), hcb⟩, hca⟩
+  exact ⟨cb, (groupStore_recordOf hb h6).mpr ⟨storedBelow_of_adds hg hro, hcb⟩, hca⟩
+
+/-- **A reference a new record uses is held after the group**: covered, it was held before;
+otherwise the group reaches it, by its walk or through its payload. -/
+theorem groupStore_used_held (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
+    (hbr : BasisRolesStored t) (hax : AxiomRolesDeclared t E₀) (hP : PayloadFacts t E₀ Pay)
+    (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs) {g : Nat} (hg : 6 ≤ g)
+    {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
+    (hw : GroupWalked calls bAddr t E₀ g recs) :
+    ∀ a x, New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) a →
+      UsedRef (groupStore t E₀ Pay (g + 1)) a x →
+      (recordOf (groupStore t E₀ Pay (g + 1)) x).isSome = true := by
+  intro a x hnew hused
+  have h6 : 6 ≤ g + 1 := Nat.le_succ_of_le hg
+  obtain ⟨-, -, -, hadd, -⟩ := new_groupStore hb hg hnew
+  obtain ⟨c, i, hc, hi, hx⟩ := hused
+  have hE : recordOf E₀ a = some c := ((groupStore_recordOf hb h6).mp hc).2
+  have huE : UsedRef E₀ a x := ⟨c, i, hE, hi, hx⟩
+  have hheld : ∀ y, StoredBelow t E₀ Pay (g + 1) y →
+      (recordOf (groupStore t E₀ Pay (g + 1)) y).isSome = true := by
+    intro y hy
+    obtain ⟨cy, hcy⟩ := storedBelow_record hC hb hax hP hws hy
+    rw [(groupStore_recordOf hb h6).mpr ⟨hy, hcy⟩]
+    rfl
+  by_cases hcov : Claim.CoveredAt t (some (valLimit g)) x
+  · exact hheld x (storedBelow_succ (storedBelow_of_covered hbr hcov))
+  · apply hheld x
+    apply storedBelow_of_adds hg
+    rcases groupAdds_cases hC hax hw hadd with ⟨hra, -⟩ |
+        ⟨r, hr, -, -, p, hp, -, -, hrefs, -⟩ | ⟨ro, hro, hs, had, -⟩ | hpay
+    · exact GroupAdds.reach (GroupReach.ref hra huE hcov)
+    · exfalso
+      have e : p = c := Option.some.inj (hp.symm.trans hE)
+      rw [e] at hrefs
+      rw [hrefs] at hx
+      simp at hx
+    · exact GroupAdds.reach (GroupReach.axiomRef hro hs had huE hcov)
+    · rcases payAdds_cases hP hpay with ⟨hra, -⟩ | ⟨-, -, -, -, -, p, hp, -, -, hrefs, -⟩
+      · exact GroupAdds.payReach (PayReach.ref hra huE hcov)
+      · exfalso
+        have e : p = c := Option.some.inj (hp.symm.trans hE)
+        rw [e] at hrefs
+        rw [hrefs] at hx
+        simp at hx
 
 /-- **`Admits.usedClosed`, one step**: the store after a group's admission is closed under what
 its records use, if the store before it is. -/
 theorem groupStore_usedClosed (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
-    (hbr : BasisRolesStored t) (hax : AxiomRolesDeclared t E₀)
+    (hbr : BasisRolesStored t) (hax : AxiomRolesDeclared t E₀) (hP : PayloadFacts t E₀ Pay)
     (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs) {g : Nat} (hg : 6 ≤ g)
     {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
-    (hw : GroupWalked calls bAddr t E₀ g recs) (hprev : UsedClosed (groupStore t E₀ g)) :
-    UsedClosed (groupStore t E₀ (g + 1)) := by
+    (hw : GroupWalked calls bAddr t E₀ g recs) (hprev : UsedClosed (groupStore t E₀ Pay g)) :
+    UsedClosed (groupStore t E₀ Pay (g + 1)) := by
   have h6 : 6 ≤ g + 1 := Nat.le_succ_of_le hg
-  have hmono : ∀ x cx, recordOf (groupStore t E₀ g) x = some cx →
-      recordOf (groupStore t E₀ (g + 1)) x = some cx := by
+  have hmono : ∀ x cx, recordOf (groupStore t E₀ Pay g) x = some cx →
+      recordOf (groupStore t E₀ Pay (g + 1)) x = some cx := by
     intro x cx h
     obtain ⟨hs, hE⟩ := (groupStore_recordOf hb hg).mp h
     exact (groupStore_recordOf hb h6).mpr ⟨storedBelow_succ hs, hE⟩
-  have hmonoS : ∀ x, (recordOf (groupStore t E₀ g) x).isSome = true →
-      (recordOf (groupStore t E₀ (g + 1)) x).isSome = true := by
+  have hmonoS : ∀ x, (recordOf (groupStore t E₀ Pay g) x).isSome = true →
+      (recordOf (groupStore t E₀ Pay (g + 1)) x).isSome = true := by
     intro x h
     obtain ⟨cx, hcx⟩ := Option.isSome_iff_exists.mp h
     rw [hmono x cx hcx]
     rfl
-  have hnewOf : ∀ x cx, recordOf (groupStore t E₀ (g + 1)) x = some cx →
-      ¬ StoredBelow t E₀ g x →
-      New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) x ∧ GroupAdds t E₀ g x := by
+  have hnewOf : ∀ x cx, recordOf (groupStore t E₀ Pay (g + 1)) x = some cx →
+      ¬ StoredBelow t E₀ Pay g x →
+      New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) x ∧ GroupAdds t E₀ Pay g x := by
     intro x cx hcx hold
-    have hnew : New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) x := by
+    have hnew : New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) x := by
       refine ⟨?_, ?_⟩
       · rw [hcx]
         rfl
-      · cases hr : recordOf (groupStore t E₀ g) x with
+      · cases hr : recordOf (groupStore t E₀ Pay g) x with
         | none => rfl
         | some c' => exact absurd ((groupStore_recordOf hb hg).mp hr).1 hold
     obtain ⟨-, -, -, hadd, -⟩ := new_groupStore hb hg hnew
@@ -814,28 +965,40 @@ theorem groupStore_usedClosed (hC : CollisionFreeRun calls E₀) (hb : BasisRows
   obtain ⟨hp1, hp2⟩ := hprev
   refine ⟨fun a c hc => ?_, fun B c ms hc hms i m hm => ?_⟩
   · have hE : recordOf E₀ a = some c := ((groupStore_recordOf hb h6).mp hc).2
-    by_cases hold : StoredBelow t E₀ g a
+    by_cases hold : StoredBelow t E₀ Pay g a
     · obtain ⟨ho, hu⟩ := hp1 a c ((groupStore_recordOf hb hg).mpr ⟨hold, hE⟩)
       exact ⟨hmonoS _ ho, fun i hi x hx => hmonoS _ (hu i hi x hx)⟩
     · obtain ⟨hnew, -⟩ := hnewOf a c hc hold
       refine ⟨?_, fun i hi x hx => ?_⟩
       · by_cases hpr : IsProj c
-        · rcases groupStore_rankOwner hC hb hax hg hw a c hnew hc hpr with ⟨hn, -⟩ | hs
-          · exact hn.1
-          · exact hmonoS _ hs
+        · obtain ⟨cb, hcb, -⟩ := groupStore_projMember hC hb hax hP hg hw a c hnew hc hpr
+          rw [hcb]
+          rfl
         · rw [ownerOf_of_not_proj hpr, hc]
           rfl
-      · rcases groupStore_rankUsed hC hb hbr hax hws hg hw a x hnew ⟨c, i, hc, hi, hx⟩ with
-            ⟨hn, -⟩ | hs
-        · exact hn.1
-        · exact hmonoS _ hs
+      · exact groupStore_used_held hC hb hbr hax hP hws hg hw a x hnew ⟨c, i, hc, hi, hx⟩
   · have hE : recordOf E₀ B = some c := ((groupStore_recordOf hb h6).mp hc).2
-    by_cases hold : StoredBelow t E₀ g B
+    by_cases hold : StoredBelow t E₀ Pay g B
     · obtain ⟨h1, h2⟩ := hp2 B c ms ((groupStore_recordOf hb hg).mpr ⟨hold, hE⟩) hms i m hm
       exact ⟨hmono _ _ h1, fun ind hind j hj => hmono _ _ (h2 ind hind j hj)⟩
     · obtain ⟨-, hadd⟩ := hnewOf B c hc hold
       rcases groupAdds_cases hC hax hw hadd with ⟨hrB, r, hr, hrB'⟩ |
-          ⟨r, hr, -, -, p, hp, hproj, -⟩ | ⟨ro, hro, hs, had, c₂, ax, hc₂, hinfo, -⟩
+          ⟨r, hr, -, -, p, hp, hproj, -⟩ | ⟨ro, hro, hs, had, c₂, ax, hc₂, hinfo, -⟩ | hpay
+      rotate_right
+      · rcases payAdds_cases hP hpay with ⟨hrB, -⟩ | ⟨-, -, -, -, -, p, hp, hproj, -⟩
+        · obtain ⟨h1, h2⟩ := hP.blockMembers g B c ms hrB hE hms i m hm
+          have hca1 : GroupAdds t E₀ Pay g (memberAddr B i m) :=
+            Or.inr (Or.inr ⟨B, c, hrB, hE, ⟨ms, hms⟩, Or.inr ⟨ms, i, m, hms, hm, Or.inl rfl⟩⟩)
+          refine ⟨(groupStore_recordOf hb h6).mpr ⟨storedBelow_of_adds hg hca1, h1⟩,
+            fun ind hind j hj => ?_⟩
+          have hca2 : GroupAdds t E₀ Pay g (ctorAddr B i j) :=
+            Or.inr (Or.inr ⟨B, c, hrB, hE, ⟨ms, hms⟩,
+              Or.inr ⟨ms, i, m, hms, hm, Or.inr ⟨ind, j, hind, hj, rfl⟩⟩⟩)
+          exact (groupStore_recordOf hb h6).mpr ⟨storedBelow_of_adds hg hca2, h2 ind j hind hj⟩
+        · exfalso
+          have e : p = c := Option.some.inj (hp.symm.trans hE)
+          rw [e] at hproj
+          exact proj_not_block hproj ⟨ms, hms⟩
       · have hrec := topRec_recordOf hC.hashedStored r
         rw [hrB'] at hrec
         have ec : c = r.c := Option.some.inj (hE.symm.trans hrec)
@@ -844,13 +1007,14 @@ theorem groupStore_usedClosed (hC : CollisionFreeRun calls E₀) (hb : BasisRows
           exact hms
         obtain ⟨h1, h2⟩ := topRec_block_members hC.runStore hC.hashedStored r hms' hm
         rw [hrB'] at h1 h2
-        have hca1 : GroupAdds t E₀ g (memberAddr B i m) :=
-          Or.inr (Or.inl ⟨B, c, hrB, hE, ⟨ms, hms⟩, Or.inr ⟨ms, i, m, hms, hm, Or.inl rfl⟩⟩)
+        have hca1 : GroupAdds t E₀ Pay g (memberAddr B i m) :=
+          Or.inl (Or.inr (Or.inl ⟨B, c, hrB, hE, ⟨ms, hms⟩,
+            Or.inr ⟨ms, i, m, hms, hm, Or.inl rfl⟩⟩))
         refine ⟨(groupStore_recordOf hb h6).mpr ⟨storedBelow_of_adds hg hca1, h1⟩,
           fun ind hind j hj => ?_⟩
-        have hca2 : GroupAdds t E₀ g (ctorAddr B i j) :=
-          Or.inr (Or.inl ⟨B, c, hrB, hE, ⟨ms, hms⟩,
-            Or.inr ⟨ms, i, m, hms, hm, Or.inr ⟨ind, j, hind, hj, rfl⟩⟩⟩)
+        have hca2 : GroupAdds t E₀ Pay g (ctorAddr B i j) :=
+          Or.inl (Or.inr (Or.inl ⟨B, c, hrB, hE, ⟨ms, hms⟩,
+            Or.inr ⟨ms, i, m, hms, hm, Or.inr ⟨ind, j, hind, hj, rfl⟩⟩⟩))
         exact (groupStore_recordOf hb h6).mpr ⟨storedBelow_of_adds hg hca2, h2 ind j hind hj⟩
       · exfalso
         have e : p = c := Option.some.inj (hp.symm.trans hE)
@@ -865,9 +1029,9 @@ theorem groupStore_usedClosed (hC : CollisionFreeRun calls E₀) (hb : BasisRows
 /-- **`Admits.usedClosed`**: every store of the sequence is closed under what its records
 use. -/
 theorem groupStore_usedClosed_all (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
-    (hbr : BasisRolesStored t) (hax : AxiomRolesDeclared t E₀)
+    (hbr : BasisRolesStored t) (hax : AxiomRolesDeclared t E₀) (hP : PayloadFacts t E₀ Pay)
     (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs) :
-    ∀ g, 6 ≤ g → UsedClosed (groupStore t E₀ g) := by
+    ∀ g, 6 ≤ g → UsedClosed (groupStore t E₀ Pay g) := by
   intro g
   induction g with
   | zero =>
@@ -879,26 +1043,26 @@ theorem groupStore_usedClosed_all (hC : CollisionFreeRun calls E₀) (hb : Basis
     · rw [h, groupStore_six]
       exact StoreInhabit.store_usedClosed
     · obtain ⟨recs, hw⟩ := hws n
-      exact groupStore_usedClosed hC hb hbr hax hws (by omega) hw (ih (by omega))
+      exact groupStore_usedClosed hC hb hbr hax hP hws (by omega) hw (ih (by omega))
 
 /-- **`Admits.evidenceRefs`**: the store after a group's admission holds the record at every
 reference a proof in the evidence of a role of the group uses, other than the role's own
 address: a reference covered at the group's validation limit was held before, any other is
 reached by the group's admission. -/
 theorem groupStore_evidenceRefs (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
-    (hbr : BasisRolesStored t) (hax : AxiomRolesDeclared t E₀)
+    (hbr : BasisRolesStored t) (hax : AxiomRolesDeclared t E₀) (hP : PayloadFacts t E₀ Pay)
     (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs) {g : Nat} (hg : 6 ≤ g)
     {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
     (hw : GroupWalked calls bAddr t E₀ g recs) :
     ∀ r ∈ roleGroup g, ∀ (arr : Array (Ix.Kernel.Evidence _root_.Address))
       (thm x : _root_.Address), (r, arr) ∈ t.evidence.toList →
       Ix.Kernel.Evidence.proof thm ∈ arr.toList → UsedRef E₀ thm x →
-      t.addressOf? r ≠ some x → (recordOf (groupStore t E₀ (g + 1)) x).isSome = true := by
+      t.addressOf? r ≠ some x → (recordOf (groupStore t E₀ Pay (g + 1)) x).isSome = true := by
   intro r hr arr thm x hm hthm hu hne
   have h6 : 6 ≤ g + 1 := Nat.le_succ_of_le hg
   by_cases hcov : Claim.CoveredAt t (some (valLimit g)) x
-  · have hs : StoredBelow t E₀ g x := storedBelow_of_covered hbr hcov
-    obtain ⟨cx, hcx⟩ := storedBelow_record hC hb hax hws hs
+  · have hs : StoredBelow t E₀ Pay g x := storedBelow_of_covered hbr hcov
+    obtain ⟨cx, hcx⟩ := storedBelow_record hC hb hax hP hws hs
     rw [(groupStore_recordOf hb h6).mpr ⟨storedBelow_succ hs, hcx⟩]
     rfl
   · have hrx : GroupReach t E₀ g x := GroupReach.evidenceRef hr hm hthm hu hne hcov
@@ -906,7 +1070,7 @@ theorem groupStore_evidenceRefs (hC : CollisionFreeRun calls E₀) (hb : BasisRo
     have hcx : recordOf E₀ x = some y.c := by
       rw [← hya]
       exact topRec_recordOf hC.hashedStored y
-    rw [(groupStore_recordOf hb h6).mpr ⟨storedBelow_of_adds hg (Or.inl hrx), hcx⟩]
+    rw [(groupStore_recordOf hb h6).mpr ⟨storedBelow_of_adds hg (GroupAdds.reach hrx), hcx⟩]
     rfl
 
 end Walk

@@ -22,16 +22,17 @@ open IxVM (F)
 
 /-- **`AdmitsReads.reads` for one group of a run**, at a table that checks. -/
 theorem groupStore_reads {calls : List (Call F)} {bAddr : _root_.Address}
-    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} (ht : t.check = .ok ())
+    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {Pay : PayloadRel} (ht : t.check = .ok ())
     (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀) (hbr : BasisRolesStored t)
-    (hax : AxiomRolesDeclared t E₀) (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs)
+    (hax : AxiomRolesDeclared t E₀) (hP : PayloadFacts t E₀ Pay)
+    (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs)
     {g : Nat} (hg6 : 6 ≤ g) :
-    ∀ A c x ci₀, New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) A →
-      recordOf (groupStore t E₀ (g + 1)) A = some c → ConstAddrOf A c x →
-      Reads t E₀ x ci₀ → Reads t (groupStore t E₀ (g + 1)) x ci₀ := by
+    ∀ A c x ci₀, New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) A →
+      recordOf (groupStore t E₀ Pay (g + 1)) A = some c → ConstAddrOf A c x →
+      Reads t E₀ x ci₀ → Reads t (groupStore t E₀ Pay (g + 1)) x ci₀ := by
   intro A c x ci₀ _ hc hx hr
-  have hcl := groupStore_usedClosed_all hC hb hbr hax hws (g + 1) (Nat.le_succ_of_le hg6)
-  have hheld : (recordOf (groupStore t E₀ (g + 1)) x).isSome = true := by
+  have hcl := groupStore_usedClosed_all hC hb hbr hax hP hws (g + 1) (Nat.le_succ_of_le hg6)
+  have hheld : (recordOf (groupStore t E₀ Pay (g + 1)) x).isSome = true := by
     rcases hx with ⟨hxA, -⟩ | ⟨ms, i, m, hms, hm, hxm | ⟨ind, j, hmi, hj, hxc⟩⟩
     · rw [hxA, hc]
       rfl
