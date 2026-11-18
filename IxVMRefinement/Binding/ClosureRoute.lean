@@ -117,7 +117,7 @@ theorem nestedN_congr {isInd isInd' : _root_.Address → Option Bool} {M : List 
     simp only [nestedN]
     have hH : ∀ a, leafIn a (ScanTree.app f x).head → isInd a = isInd' a :=
       fun a ha => h a (leafIn_head ha)
-    have e1 := nestedN_congr n _ hH
+    have e1 := nestedN_congr (M := M) n _ hH
     have e2 : (ScanTree.app f x).args.map (nestedN isInd M n) =
         (ScanTree.app f x).args.map (nestedN isInd' M n) :=
       List.map_congr_left (fun A hA => nestedN_congr n A (fun a ha => h a (leafIn_args hA ha)))
