@@ -600,7 +600,7 @@ theorem nativeUnitStep_of_member {L : Ix.Kernel.Env .anon → NativeFam .anon �
   intro E' hE'
   subst hE'
   exact ⟨hO, fun h1 h0 hz =>
-    blockCert_of_reading_lim (Guard.checkedSortsReadingAt_of_stepStore hS hrecs hst) hO hSorts h1
+    blockCert_of_reading_lim ((Guard.checkedSortsReadingAt_of_stepStore hS hrecs hst).block _) hO hSorts h1
       h0 hz⟩
 
 /-- **`UnitStep` for a one-type native inductive block whose former is declared at its
