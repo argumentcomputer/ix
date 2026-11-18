@@ -2376,7 +2376,7 @@ def nat_check_rules := aiur_fn⟦
           assert_eq!(cidx, j, "recursor rule is out of ctor order");
           let KernelTypes::KConstantInfo::Ctor(_, _, _, _, _, _, c_nf, _) = (*(Ingress::get_ci_cprj(block, idx, j)));
           assert_eq!(rnf, c_nf, "recursor rule field count differs from the ctor's");
-          assert_eq!(wrap_rel(nat_rule_rhs(block, idx, t, lps, np, ni, pw, n, univ_offset, tty, motive_ty,
+          assert_eq!(wrap_rel(0, nat_rule_rhs(block, idx, t, lps, np, ni, pw, n, univ_offset, tty, motive_ty,
                                            rec, rlvls, j), rhs), 1,
             "native recursor: a stored rule is not the generated one up to consumed wrappers");
           nat_check_rules(rest, block, idx, t, lps, np, ni, pw, n, univ_offset, tty, motive_ty, rec, rlvls, j + 1) } ,
@@ -2419,7 +2419,7 @@ def nat_rec_check := aiur_fn⟦
         (&(KernelTypes::KExprNode::Forall(fam1, concl, pw))), 0);
       let minors = nat_minors(block, idx, parent_addr, lps, n_p, n_i, pw, num_ctors, univ_offset, 0, major, 0);
       let gen_ty = nat_replace_pis(pw, n_p, tty, (&(KernelTypes::KExprNode::Forall(motive_ty, minors, pw))), 0);
-      assert_eq!(wrap_rel(gen_ty, ty), 1,
+      assert_eq!(wrap_rel(0, gen_ty, ty), 1,
         "native recursor: the stored type is not the generated one up to consumed wrappers");
       let rec_c = find_peer_recursor_with_spec(rec_block_addr, parent_addr, (&(Lists::Node::Nil)), 0, addr);
       nat_check_rules(rules, block, idx, parent_addr, lps, n_p, n_i, pw, num_ctors, univ_offset, tty,
@@ -2439,15 +2439,15 @@ def nat_rec_check := aiur_fn⟦
   -- argument.
 
 def wrap_rel := aiur_fn⟦
-  fn wrap_rel(g: KernelTypes::KExpr, d: KernelTypes::KExpr) -> Field {
+  fn wrap_rel(sm: Field, g: KernelTypes::KExpr, d: KernelTypes::KExpr) -> Field {
       match (*(g)) {
         KernelTypes::KExprNode::Let(t, v, b) => {
           match (*(d)) {
             KernelTypes::KExprNode::Let(t2, v2, b2) => {
-              match wrap_rel(t, t2) {
+              match wrap_rel(sm, t, t2) {
                 1 => {
-                  match wrap_rel(v, v2) {
-                    1 => {  wrap_rel(b, b2) } ,
+                  match wrap_rel(sm, v, v2) {
+                    1 => {  wrap_rel(sm, b, b2) } ,
                     _ => {  0 } ,
                   } } ,
                 _ => {  0 } ,
@@ -2462,24 +2462,24 @@ def wrap_rel := aiur_fn⟦
                 KernelTypes::KExprNode::App(f, a) => {
                   match (*(d)) {
                     KernelTypes::KExprNode::App(f2, a2) => {
-                      match wrap_rel(f, f2) { 1 => {  wrap_rel(a, a2) } , _ => {  0 } , } } ,
+                      match wrap_rel(sm, f, f2) { 1 => {  wrap_rel(sm, a, a2) } , _ => {  0 } , } } ,
                     _ => {  0 } ,
                   } } ,
                 KernelTypes::KExprNode::Lam(t, b, m) => {
                   match (*(d)) {
-                    KernelTypes::KExprNode::Lam(t2, b2, m2) => {  wrap_binder(t, b, m, t2, b2, m2) } ,
+                    KernelTypes::KExprNode::Lam(t2, b2, m2) => {  wrap_binder(sm, t, b, m, t2, b2, m2) } ,
                     _ => {  0 } ,
                   } } ,
                 KernelTypes::KExprNode::Forall(t, b, m) => {
                   match (*(d)) {
-                    KernelTypes::KExprNode::Forall(t2, b2, m2) => {  wrap_binder(t, b, m, t2, b2, m2) } ,
+                    KernelTypes::KExprNode::Forall(t2, b2, m2) => {  wrap_binder(sm, t, b, m, t2, b2, m2) } ,
                     _ => {  0 } ,
                   } } ,
                 KernelTypes::KExprNode::Proj(s, i, e) => {
                   match (*(d)) {
                     KernelTypes::KExprNode::Proj(s2, i2, e2) => {
                       match Bytes::address_eq(s, s2) * Fields::is_zero(i - i2) {
-                        1 => {  wrap_rel(e, e2) } ,
+                        1 => {  wrap_rel(sm, e, e2) } ,
                         _ => {  0 } ,
                       } } ,
                     _ => {  0 } ,
@@ -2492,12 +2492,12 @@ def wrap_rel := aiur_fn⟦
 ⟧
 
 def wrap_binder := aiur_fn⟦
-  fn wrap_binder(t: KernelTypes::KExpr, b: KernelTypes::KExpr, m: KernelTypes::KLevel,
+  fn wrap_binder(sm: Field, t: KernelTypes::KExpr, b: KernelTypes::KExpr, m: KernelTypes::KLevel,
                  t2: KernelTypes::KExpr, b2: KernelTypes::KExpr, m2: KernelTypes::KLevel) -> Field {
       match KernelLevels::pw_eq(m, m2) {
         1 => {
-          match wrap_dom(t, t2) {
-            1 => {  wrap_rel(b, b2) } ,
+          match wrap_dom(sm, t, t2) {
+            1 => {  wrap_rel(sm, b, b2) } ,
             _ => {  0 } ,
           } } ,
         _ => {  0 } ,
@@ -2506,16 +2506,24 @@ def wrap_binder := aiur_fn⟦
 ⟧
 
 def wrap_dom := aiur_fn⟦
-  fn wrap_dom(t: KernelTypes::KExpr, t2: KernelTypes::KExpr) -> Field {
+  fn wrap_dom(sm: Field, t: KernelTypes::KExpr, t2: KernelTypes::KExpr) -> Field {
       match (*(t)) {
-        KernelTypes::KExprNode::Let(_, _, _) => {  wrap_rel(t, t2) } ,
+        KernelTypes::KExprNode::Let(_, _, _) => {  wrap_rel(sm, t, t2) } ,
         _ => {
-          match wrap_rel(t, t2) {
-            1 => {  1 } ,
+          match sm {
+            0 => {
+              match wrap_rel(sm, t, t2) {
+                1 => {  1 } ,
+                _ => {
+                  match consume_wrapper(t) {
+                    (1, a) => {  wrap_dom(sm, a, t2) } ,
+                    _ => {  0 } ,
+                  } } ,
+              } } ,
             _ => {
               match consume_wrapper(t) {
-                (1, a) => {  wrap_dom(a, t2) } ,
-                _ => {  0 } ,
+                (1, a) => {  wrap_dom(sm, a, t2) } ,
+                _ => {  wrap_rel(sm, t, t2) } ,
               } } ,
           } } ,
       }
@@ -2773,8 +2781,12 @@ def canonical_rules_at_pos := aiur_fn⟦
 
           let canonical_ty = build_rec_type(rc, pty, pnlvls, n_p, pni, elim_level,
             univ_offset, flat, flat_own_params, self_pos);
-          assert_eq!(wrap_rel(canonical_ty, ty), 1,
-            "recursor's declared type is not the canonical reconstruction up to consumed wrappers");
+          let same_ty = match kexpr_struct_eq(canonical_ty, ty) {
+            1 => {  1 } ,
+            _ => {  wrap_rel(1, canonical_ty, ty) } ,
+          };
+          assert_eq!(same_ty, 1,
+            "recursor declared type is neither the canonical reconstruction nor its full consumption");
 
           let canon_n_motives = Lists::length(flat);
           let canon_n_minors = Lists::length(build_all_minors(rc, flat,
