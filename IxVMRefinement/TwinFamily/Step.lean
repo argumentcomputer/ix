@@ -66,7 +66,8 @@ theorem twinRun_parts {J : Judgements .anon} {env env₂ : Ix.Kernel.Env .anon}
 
 /-- **The keeping the twin's step needs**: across a twin record of the second record `A` (as
 the target gives it: the record's declaration as read, IxC's record at the positional package,
-each member stored as its reading with a model companion), from an environment the twin's step
+each member stored as its reading with a model companion, the companions after the step, and
+the reload of each new constant at the key of an address), from an environment the twin's step
 is handed, the prefix invariant and the clause `X` are kept. -/
 def TwinStepKeeps (X : Ix.Kernel.Env .anon → Prop) (t : Ix.Kernel.RoleTable)
     (envT : Ix.Kernel.Env .anon) (E₀ E : Ixon.Env) (lim : Option Nat) (A : _root_.Address)
@@ -82,43 +83,42 @@ def TwinStepKeeps (X : Ix.Kernel.Env .anon → Prop) (t : Ix.Kernel.RoleTable)
     (∀ ci ∈ blk, ∃ c', env₂.find? ci.name = some c' ∧ StoredAs c' ci) →
     (∀ ci ∈ blk, HasModel env₂ ci.name) →
     Decl.CoreCompanions ⟨E, env₂, t, lim⟩ →
+    (∀ ci, env₂.find? ci.name = some ci → env.find? ci.name = none →
+      ∀ x, ci.name = keyOf t x → Decl.ReloadsAs E t env₂ ci) →
     Decl.PrefixInv.{u} E t lim env₂ ∧ X env₂
 
 
 /-- **The twin's unit step from its target, at a clause that gives the block's family record
-installed**: from the target, the run facts it takes, the family record installed and in the
-reconstruction's form at every environment the step is handed (`hinst`, `hform`: wherever they
-come from), and the keeping of the clause. -/
-theorem unitStepTwin_of_installed {recon : _root_.Address → Core.KExpr × List Core.KExpr}
-    (hT : TwinStepTarget.{u} recon) {X : Ix.Kernel.Env .anon → Prop}
+installed**: from the target, the run facts it takes, the family record installed at every
+environment the step is handed (`hinst`: wherever it comes from), and the keeping of the
+clause. -/
+theorem unitStepTwin_of_installed {RForm : RecordFormPred} (hT : TwinStepTarget.{u} RForm)
+    {X : Ix.Kernel.Env .anon → Prop}
     {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
     {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} {lim : Option Nat} {A B rb : _root_.Address}
     {c cb crb : Ixon.Constant} {ms rs' : Array Ixon.MutConst} {cs : List (Call F)}
     (ht : t.check = .ok ()) (hRS : LoadedReads.RunStore calls E₀)
     (hSS : StepStore calls t E₀ E) (hB : FamBlockRecord E₀ B cb ms)
-    (hrbB : FamRecOfBlock calls t E₀ B rb crb)
+    (hrbB : FamRecOfBlock calls bAddr t E₀ B rb crb lim)
     (hA : FamRecRecord E₀ A c rs') (hsz : rs'.size ≠ 0)
     (hne : A ≠ rb) (hcall : FamilyCallAtLim calls bAddr t B A lim cs)
-    (hroute : ModeledRouteAt calls B) (hinert : InertClause t c)
+    (hpref : RForm calls bAddr t E₀ B A lim → RForm calls bAddr t E₀ B rb lim)
+    (hroute : ModeledRouteAt calls B)
     (hkey : ∀ x, ConstAddrOf A c x → Decl.KeyFree (keyOf t x))
     (hinst : ∀ env : Ix.Kernel.Env .anon, (∀ ci ∈ envT.consts, ci ∈ env.consts) →
       (env.consts.map (·.name)).Nodup → Decl.PrefixInv.{u} E t lim env → X env →
       (∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true) →
       FamilyInstalled t env rb crb)
-    (hform : ∀ env : Ix.Kernel.Env .anon, (∀ ci ∈ envT.consts, ci ∈ env.consts) →
-      (env.consts.map (·.name)).Nodup → Decl.PrefixInv.{u} E t lim env → X env →
-      (∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true) →
-      CanonReconForm t env rb crb recon)
+    (haux : ∀ env : Ix.Kernel.Env .anon, X env → Decl.AuxRootSynced env)
     (hkeep : TwinStepKeeps.{u} X t envT E₀ E lim A c) :
     UnitStepTwin.{u} X t envT E₀ E lim A c rb crb := by
   intro env hext hnd hinv hX href hrbS hfresh
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
-  obtain ⟨blk, env₂, hreads, hrun, hstored, hmodel, hcomp⟩ :=
+  obtain ⟨blk, env₂, hreads, hrun, hstored, hmodel, hcomp, hrel⟩ :=
     hT calls bAddr t E₀ E env B rb A cb crb c ms rs' lim cs ht hRS hSS hB hrbB hA hsz hne
-      hcall hroute hinv href (hinst env hext hnd hinv hX hrbS)
-      (hform env hext hnd hinv hX hrbS) hinert hfresh hkey
+      hcall hpref hroute hinv (haux env hX) href (hinst env hext hnd hinv hX hrbS) hfresh hkey
   obtain ⟨hinv₂, hX₂⟩ :=
-    hkeep env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp
+    hkeep env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp hrel
   obtain ⟨ws, henv, hnd₂, hfr₂, hnames, hrecs, hmods⟩ := twinRun_parts hrun
   subst henv
   have hrecName : ∀ ci ∈ twinRecs ws, ∃ ci₀ ∈ blk, ci₀.name = ci.name := by
@@ -156,10 +156,10 @@ theorem TwinStepKeeps.and_familyRecsModeled {X : Ix.Kernel.Env .anon → Prop}
     {A : _root_.Address} {c : Ixon.Constant} {fam : _root_.Address → Option _root_.Address}
     (h : TwinStepKeeps.{u} X t envT E₀ E lim A c) :
     TwinStepKeeps.{u} (fun env => X env ∧ FamilyRecsModeled t E₀ fam env) t envT E₀ E lim A c := by
-  intro env env₂ blk hext hnd hinv hXe href hfresh hreads hrun hstored hmodel hcomp
+  intro env env₂ blk hext hnd hinv hXe href hfresh hreads hrun hstored hmodel hcomp hrel
   obtain ⟨hX, hfm⟩ := hXe
   obtain ⟨hinv₂, hX₂⟩ :=
-    h env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp
+    h env env₂ blk hext hnd hinv hX href hfresh hreads hrun hstored hmodel hcomp hrel
   obtain ⟨ws, henv, hnd₂, hfr₂, hnames, hrecs, hmods⟩ := twinRun_parts hrun
   subst henv
   have hgrow : Ix.Kernel.Grows (fun k => env.find? k = none) env
@@ -194,29 +194,26 @@ theorem TwinStepKeeps.and_familyRecsModeled {X : Ix.Kernel.Env .anon → Prop}
 /-- **The twin's unit step from its target at the clause `X ∧ FamilyRecsModeled`**, for a block
 whose family record this fold installed (`fam B = some rb`): the clause gives the family record
 installed (`familyInstalled_of_clause`). -/
-theorem unitStepTwin_of_target {recon : _root_.Address → Core.KExpr × List Core.KExpr}
-    (hT : TwinStepTarget.{u} recon) {X : Ix.Kernel.Env .anon → Prop}
+theorem unitStepTwin_of_target {RForm : RecordFormPred} (hT : TwinStepTarget.{u} RForm)
+    {X : Ix.Kernel.Env .anon → Prop}
     {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
     {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} {lim : Option Nat}
     {fam : _root_.Address → Option _root_.Address} {A B rb : _root_.Address}
     {c cb crb : Ixon.Constant} {ms rs' : Array Ixon.MutConst} {cs : List (Call F)}
     (ht : t.check = .ok ()) (hRS : LoadedReads.RunStore calls E₀)
     (hSS : StepStore calls t E₀ E) (hB : FamBlockRecord E₀ B cb ms)
-    (hrbB : FamRecOfBlock calls t E₀ B rb crb)
+    (hrbB : FamRecOfBlock calls bAddr t E₀ B rb crb lim)
     (hcrb : recordOf E₀ rb = some crb) (hA : FamRecRecord E₀ A c rs') (hsz : rs'.size ≠ 0)
     (hne : A ≠ rb) (hcall : FamilyCallAtLim calls bAddr t B A lim cs)
-    (hroute : ModeledRouteAt calls B) (hinert : InertClause t c)
+    (hpref : RForm calls bAddr t E₀ B A lim → RForm calls bAddr t E₀ B rb lim)
+    (hroute : ModeledRouteAt calls B)
     (hkey : ∀ x, ConstAddrOf A c x → Decl.KeyFree (keyOf t x)) (hfam : fam B = some rb)
-    (hform : ∀ env : Ix.Kernel.Env .anon, (∀ ci ∈ envT.consts, ci ∈ env.consts) →
-      (env.consts.map (·.name)).Nodup → Decl.PrefixInv.{u} E t lim env →
-      (X env ∧ FamilyRecsModeled t E₀ fam env) →
-      (∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true) →
-      CanonReconForm t env rb crb recon)
+    (haux : ∀ env : Ix.Kernel.Env .anon, X env → Decl.AuxRootSynced env)
     (hkeep : TwinStepKeeps.{u} X t envT E₀ E lim A c) :
     UnitStepTwin.{u} (fun env => X env ∧ FamilyRecsModeled t E₀ fam env) t envT E₀ E lim A c
       rb crb :=
-  unitStepTwin_of_installed hT ht hRS hSS hB hrbB hA hsz hne hcall hroute hinert hkey
-    (fun env _ _ _ hXe hrbS => familyInstalled_of_clause hXe.2 hfam hcrb hrbS) hform
-    hkeep.and_familyRecsModeled
+  unitStepTwin_of_installed hT ht hRS hSS hB hrbB hA hsz hne hcall hpref hroute hkey
+    (fun env _ _ _ hXe hrbS => familyInstalled_of_clause hXe.2 hfam hcrb hrbS)
+    (fun env hXe => haux env hXe.1) hkeep.and_familyRecsModeled
 
 end IxVM.Refinement.Typing.TwinFamily
