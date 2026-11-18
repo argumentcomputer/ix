@@ -62,7 +62,7 @@ theorem convExpr_keys
     cases hk
   | var i =>
     intro _ v h k hk
-    simp only [convExpr, Expr.mkBvar] at h
+    simp only [convExpr, Expr.mkBvar_eq] at h
     cases Except.ok.inj h
     cases hk
   | ref i us =>
@@ -188,9 +188,9 @@ theorem buildShareTblGo_keys
     intro i v hi
     rw [Array.getElem?_push] at hi
     by_cases hsize : i = acc.size
-    · rw [if_pos hsize] at hi
+    · rw [ite_eq_left hsize] at hi
       exact convExpr_keys hkey hself hacc e (hes e List.mem_cons_self) v (Option.some.inj hi)
-    · rw [if_neg hsize] at hi
+    · rw [ite_eq_right hsize] at hi
       exact hacc i v hi
 
 end Keys
