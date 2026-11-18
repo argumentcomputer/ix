@@ -666,8 +666,9 @@ private def runOrientation (fuel : Nat) (canon twin : Variant) (out? : Option Sy
           "of their addresses. `env` is IxC's own environment over the canonical variant's records and\n" ++
           "model advice (its reader and phase A of its fold), restricted to the constants the check\n" ++
           "reads: those the second record names, the canonical recursors with their model companions, the\n" ++
-          "wrappers the canonical terms use, and what their types (and definitions' values) name, in the\n" ++
-          "environment's order. That these data are what the records store was executed, not proved."
+          "wrappers the canonical terms use, and what their types name (and a wrapper's value, or every\n" ++
+          "definition's value where the check needs them), in the environment's order. That these data\n" ++
+          "are what the records store was executed, not proved."
         let (text, ok) := fixtureModule fuel envR blk summary
         let path := dir / "LcnfAltPair.lean"
         IO.FS.writeFile path text
