@@ -152,7 +152,8 @@ theorem recordsStored_roleUnit {L : Ix.Kernel.Env .anon → NativeFam .anon → 
         · exact Or.inl (Or.inl (List.all_eq_true.mp opRoles_walked r hop))
         · exact Or.inr hs
       obtain ⟨ci, hci, -⟩ := hB.shape.kept g r a (Nat.lt_succ_self g) hr hkr ha
-      rw [hxa, Core.keyOf_of_addressOf htwf ha]
+      have hkey : keyOf t a = Ix.Kernel.Key.role r := Core.keyOf_of_addressOf htwf ha
+      rw [hxa, hkey]
       exact Option.isSome_iff_exists.mpr ⟨ci, hci⟩
 
 /-- **The route of a block depends on the store only through its records.** -/
