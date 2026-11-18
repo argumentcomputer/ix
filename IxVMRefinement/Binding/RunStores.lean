@@ -167,7 +167,7 @@ def GroupAdds (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (Pay : PayloadRel) (g 
   WalkAdds t E₀ g a ∨ PayAdds t E₀ Pay g a
 
 /-- **Without a payload at the group, nothing is reached through it.** -/
-theorem PayReach.noPayload {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {Pay : PayloadRel}
+theorem PayReach.false_of_empty {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {Pay : PayloadRel}
     {g : Nat} (hnp : ∀ B a, ¬ Pay g B a) {a : _root_.Address} (h : PayReach t E₀ Pay g a) :
     False := by
   induction h with
@@ -178,14 +178,14 @@ theorem PayReach.noPayload {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {Pay : Pa
 
 theorem PayReach.none {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {g : Nat} {a : _root_.Address}
     (h : PayReach t E₀ noPayload g a) : False :=
-  PayReach.noPayload (fun _ _ h => h) h
+  PayReach.false_of_empty (fun _ _ h => h) h
 
-theorem PayAdds.noPayload {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {Pay : PayloadRel}
+theorem PayAdds.false_of_empty {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {Pay : PayloadRel}
     {g : Nat} (hnp : ∀ B a, ¬ Pay g B a) {a : _root_.Address} (h : PayAdds t E₀ Pay g a) :
     False := by
   rcases h with h | ⟨_, _, h, _⟩
-  · exact h.noPayload hnp
-  · exact h.noPayload hnp
+  · exact h.false_of_empty hnp
+  · exact h.false_of_empty hnp
 
 theorem GroupAdds.reach {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {Pay : PayloadRel} {g : Nat}
     {a : _root_.Address} (h : GroupReach t E₀ g a) : GroupAdds t E₀ Pay g a :=

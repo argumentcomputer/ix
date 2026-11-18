@@ -772,7 +772,7 @@ theorem groupStore_rankUsed (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLo
       rcases groupAdds_cases hC hax hw hadd with ⟨hra, hl⟩ |
           ⟨r, hr, -, -, p, hp, -, -, hrefs, -⟩ | ⟨ro, hro, hs, had, -⟩ | hpay
       rotate_right
-      · exact (hpay.noPayload hnp).elim
+      · exact (hpay.false_of_empty hnp).elim
       · exact ⟨GroupReach.ref hra huE hcov,
           walkRank_used_lt hC.hashedStored hw hl hE hi hx hcov⟩
       · exfalso
@@ -815,7 +815,7 @@ theorem groupStore_rankOwner (hC : CollisionFreeRun calls E₀) (hb : BasisRowsL
     rcases groupAdds_cases hC hax hw hadd with ⟨hra, hl⟩ |
         ⟨r, hr, hrB, -, p, hp', -, hown, -, -⟩ | ⟨ro, hro, hs, had, c₂, ax, hc₂, hinfo, -⟩ | hpay
     rotate_right
-    · exact (hpay.noPayload hnp).elim
+    · exact (hpay.false_of_empty hnp).elim
     · exact ⟨GroupReach.owner hra hE hp, walkRank_owner_lt hC.hashedStored hw hl hE hp⟩
     · have e : p = c := Option.some.inj (hp'.symm.trans hE)
       rw [e] at hown
