@@ -170,8 +170,8 @@ theorem coreCompanions_append_recs {c : Core.Ctx} (h : Decl.CoreCompanions c)
 /-- **The keeping the family row's step takes** (`hkeeps` of `unitStepFamily_of_facts`), at the
 fold's clause (module docstring). -/
 theorem famStepKeeps_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (hL : LinkLaws L) {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {lim : Option Nat}
-    {A rb : _root_.Address} {c crb : Ixon.Constant}
+    (hL : LinkLaws L) {t : Ix.Kernel.RoleTable} {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env}
+    {lim : Option Nat} {A rb : _root_.Address} {c crb : Ixon.Constant}
     (hsz : ∀ x, FamAddr A c rb crb x → x.hash.size = 32)
     (hmod : ∀ x, FamAddr A c rb crb x → ∀ (cm : Ixon.Constant) (ip : Ixon.InductiveProj),
       Ix.Cert.recordAt E x = some cm → cm.info = .iPrj ip → ¬ NativeAt E ip.block)
@@ -186,7 +186,10 @@ theorem famStepKeeps_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon → 
         RecCompanionFacts ⟨E, ⟨new ++ env.consts⟩, t, lim⟩ cv mI rP rls)
     (hloads : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
       (aliases blk new : List (ConstantInfo .anon)),
-      Decl.PrefixInv.{u} E t lim env → AliasGroup env h aliases →
+      Decl.PrefixInv.{u} E t lim env → (∀ ci ∈ envT.consts, ci ∈ env.consts) →
+      (∀ x, UsedRef E₀ A x ∨ UsedRef E₀ rb x →
+        (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x) →
+      AliasGroup env h aliases →
       FamDeclReads t E₀ A c rb crb blk →
       DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
       (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
@@ -195,12 +198,15 @@ theorem famStepKeeps_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon → 
     ∀ (env env₂ : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
       (aliases blk : List (ConstantInfo .anon)),
       Decl.PrefixInv.{u} E t lim env → FoldExtra.{u} L t E env →
+      (∀ ci ∈ envT.consts, ci ∈ env.consts) →
+      (∀ x, UsedRef E₀ A x ∨ UsedRef E₀ rb x →
+        (env.find? (keyOf t x)).isSome = true ∨ FamAddr A c rb crb x ∨ ¬ NeedOk E₀ x) →
       AliasGroup env h aliases → (∀ a ∈ aliases, ∃ ci ∈ blk, a.name.base = ci.name) →
       FamDeclReads t E₀ A c rb crb blk →
       DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk env₂ →
       (∀ ci ∈ blk, ∃ c', env₂.find? ci.name = some c' ∧ StoredAs c' ci) →
       Decl.PrefixInv.{u} E t lim env₂ ∧ FoldExtra.{u} L t E env₂ := by
-  intro env env₂ h as blk hinv hX hg hroots hreads hd hst
+  intro env env₂ h as blk hinv hX hextT hrefs hg hroots hreads hd hst
   obtain ⟨⟨⟨⟨Reg, hR⟩, hkeys⟩, haux⟩, hlv⟩ := hX
   have hC : FoldClauseWith.{u} L t E lim env Reg := FoldClauseWith.of_prefix hinv hR hkeys haux hlv
   have hna : ∀ ci ∈ blk, Decl.NonAuxKey ci.name := fun ci hci => by
@@ -280,7 +286,7 @@ theorem famStepKeeps_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon → 
       companions := coreCompanions_append_recs (c := ⟨E, env, t, lim⟩) hC.companions hC.store
         hext (hrecs env h as blk (new ++ as) hinv hg hreads hd hst)
       loads := storedLoads_append (c := ⟨E, env, t, lim⟩) hC.loads hext hnres hC.etaStable
-        (hloads env h as blk (new ++ as) hinv hg hreads hd hst) }
+        (hloads env h as blk (new ++ as) hinv hextT hrefs hg hreads hd hst) }
   exact ⟨hC'.prefixInv, hC'.extra⟩
 
 end IxVM.Refinement.Typing.FamilyAlias
