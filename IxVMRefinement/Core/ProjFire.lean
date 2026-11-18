@@ -63,7 +63,8 @@ def ProjGuardFires (c : ScopedCtx) : Prop :=
       some (.ctorInfo cvC nP nF))
     (htbl : c.env.find? (Ix.Kernel.projTableName (c.κ (iprjAddr (ixAddr b) (ZMod.val i)))) =
       some (.projInfo tbl))
-    (hnF : tbl.numFields = nF) (hf : ZMod.val f < nF) {g : KLevel} (hg : RepKLevel h' g r)
+    (hnP : tbl.numParams = nP) (hnF : tbl.numFields = nF) (hf : ZMod.val f < nF)
+    {g : KLevel} (hg : RepKLevel h' g r)
     {us : List KLevel} (hus : us.length = tbl.levelParams.length)
     (hzero : ∀ φ : Ix.Kernel.LevelParam → Nat,
       Ix.Kernel.Level.eval φ (Ix.Kernel.Level.subst (List.range us.length) us g) = 0),
@@ -100,7 +101,8 @@ def ProjTableFires (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (k : KKey)
       {cvC' : Ix.Kernel.ConstantVal .anon} {nP nF : Nat}
       (hctor : c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) =
         some (.ctorInfo cvC' nP nF))
-      (hnF : tbl.numFields = nF) (hf : ZMod.val f < nF) {g : KLevel} (hg : RepKLevel h' g r)
+      (hnP : tbl.numParams = nP) (hnF : tbl.numFields = nF) (hf : ZMod.val f < nF)
+      {g : KLevel} (hg : RepKLevel h' g r)
       {us : List KLevel} (hus : us.length = tbl.levelParams.length)
       (hzero : ∀ φ : Ix.Kernel.LevelParam → Nat,
         Ix.Kernel.Level.eval φ (Ix.Kernel.Level.subst (List.range us.length) us g) = 0),
@@ -121,12 +123,12 @@ context's own core facts. -/
 theorem ProjTablesFire.fires {c : ScopedCtx} (hT : ProjTablesFire c.t c.E c.env)
     (hc : ScopedCoreBase c) : ProjGuardFires c := by
   intro calls0 ih x_rc x_block r h h' calls i f hlt0 good ev b hrc hb x_blockC ptrC hC hC' csC
-    evC goodC hbC cvT caps hind cm hrec hinfo cvC nP nF tbl hctor htbl hnF hf g hg us hus hzero
-    hprop
+    evC goodC hbC cvT caps hind cm hrec hinfo cvC nP nF tbl hctor htbl hnP hnF hf g hg us hus
+    hzero hprop
   have hprop' : Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true := hprop
   obtain ⟨kc, cvC₀, nP₀, nF₀, hkc, hfires⟩ := hT _ tbl htbl hprop'
   exact hfires c rfl rfl hc htbl ⟨nP₀, nF₀, hkc⟩ ih hlt0 good ev hrc hb hind hrec hinfo rfl hctor
-    hnF hf hg hus hzero hprop
+    hnP hnF hf hg hus hzero hprop
 
 /-- **A step of the environment keeps the tables firing**: the step keeps every lookup, and a
 table of a propositional structure it stores new comes with its stored constructor and its own
@@ -254,8 +256,8 @@ load of the member's constructor. -/
 theorem LoadFacts.projGuardFires {c : Ctx} (hl : LoadFacts c) :
     ProjGuardFires (ScopedCtx.unrestricted c) := by
   intro calls0 ih x_rc x_block r h h' calls i f hlt0 good ev b hrc hb x_blockC ptrC hC hC' csC
-    evC goodC hbC cvT caps hind cm hrec hinfo cvC nP nF tbl hctor htbl hnF hf g hg us hus hzero
-    hprop φ
+    evC goodC hbC cvT caps hind cm hrec hinfo cvC nP nF tbl hctor htbl hnP hnF hf g hg us hus
+    hzero hprop φ
   have hprop' : Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true := hprop
   exact (hl.projTablesGuard x_blockC (.field i) ptrC hC hC' csC b i evC goodC hbC rfl 0 cvC nP nF
     tbl hctor htbl).2 hprop' f x_rc x_block r h h' calls g us hf hus ev good.raw hrc hb hg hzero φ

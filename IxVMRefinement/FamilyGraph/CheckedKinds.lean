@@ -181,10 +181,12 @@ structure InnerChecked (calls : List (Call F)) (bAddr : _root_.Address)
     StoredAt t envT x ∨ Covered t x ∨
       (NeedOk E₀ x ∧ OwnedBelow E₀ Top Inner rank fam (rank a) x)
   /-- A block among them that no block claims and that is no twin is empty, a block of
-  definitions, or one inductive type on the native route. -/
+  definitions, or one inductive type that the run's dispatch put on the native route (an
+  observation answering `0`; at a step's context every observation answers so,
+  `nativeRouteAt_of_nativeObs`). -/
   blocks : ∀ a c ms, Inner a → Unclaimed fam a → twin a = none → recordOf E₀ a = some c →
     c.info = .muts ms → ¬ DefnBlock ms → ms.size ≠ 0 →
-    (∃ ind : Ixon.Inductive, ms = #[.indc ind]) ∧ NativeRouteAt calls a
+    (∃ ind : Ixon.Inductive, ms = #[.indc ind]) ∧ Claim.NativeObsAt calls a
 
 section Inner
 
@@ -296,7 +298,9 @@ theorem innerUnitSteps_of_kinds
     · exact step (definitionBlock_checked linkLaws_formerOpenTrace) ⟨ms, hinfo, hdefs⟩
     · by_cases h0 : ms.size = 0
       · exact unitStep_emptyBlock hinfo h0
-      · obtain ⟨⟨ind, hms⟩, hnat⟩ := hI.blocks A c ms hIA hU htw hc hinfo hdefs h0
+      · obtain ⟨⟨ind, hms⟩, hobs⟩ := hI.blocks A c ms hIA hU htw hc hinfo hdefs h0
+        have hnat : NativeRouteAt calls A :=
+          nativeRouteAt_of_nativeObs (c := ⟨E, envT, t, lim⟩) (hctx.good envT lim) hcanon hobs
         rw [hms] at hinfo
         have hmem := hF.innerMembers A c #[.indc ind] hIA hc hinfo 0 (.indc ind) (by rfl)
         have hrec : BlockUnitRecord E₀ A c ind :=

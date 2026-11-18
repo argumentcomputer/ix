@@ -163,11 +163,15 @@ after the basis groups being the committed rows. A producer splits on the altern
 (`Claim.noColl_or_hashedCollision` and the committed footprint) and proves the clauses in the
 branch without a collision.
 
-Status: stated only. No store sequence over the records of an observed run has been exhibited,
-for the default table or any other; what is proved of every run is what the walks give a
-producer (`RoleValidationIn.kept_checked`, `topRec_block_members`, `topRec_proj_member`,
-`RoleVal.ValidateRoleIn.axiom_refs`, `RoleVal.ValidateRoleIn.eqns_evidence_walks`), and at the
-default table the store clauses of the `Bool` group over the committed rows.
+Status: stated only; it is not proved of any run, the default table's included. A store
+sequence over the records of an observed run is defined (`groupStore`, in
+`IxVMRefinement.Binding.RunStores`) and this statement is reduced to what is not proved of that
+sequence (`groupStoresOfRun_of_remaining`, `RemainingStoreClauses`, in
+`IxVMRefinement.Binding.GroupStores`): that the record bound to a role whose validation walks
+it is in Lean's logic with its block (`RootsSafe`, from which the clause `logic` is proved), and
+the clauses `standing`, `opsOwn`, `unitsLast` and the reading clause. The other clauses are
+proved of the sequence for every run in the alternative without a collision, with the two facts
+about the run's records they read (`basisRows_of_run`, `axiomRoles_of_run`).
 
 The clause `Admits.opsOwn` (no new record of a group is an operation's other than the group's
 own) is stated against `KernelRoles::op_order_scan` as it will be after the next change of the
@@ -242,6 +246,8 @@ theorem bindingClaimExportObs_of_parts {calls : List (Call F)} {d : Digest}
   rcases groupStores V (bytes :: committedFootprint) (fun x hx => List.mem_cons_of_mem _ hx)
     a tb t htb hadm hall hpin hval with hcol | ⟨rank, Rs, hbc, hbb, hgs⟩
   · exact Or.inl hcol
+  by_cases hnc : V.HashedCollision (bytes :: committedFootprint) calls
+  · exact Or.inl hnc
   have hw0 : Claim.WalkedL6 calls t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) [] :=
     Claim.walkedL6_envOfRecs (seeds := []) hnoColl [] hadm (by simp)
       (by intro r hr; cases hr)
@@ -259,7 +265,9 @@ theorem bindingClaimExportObs_of_parts {calls : List (Call F)} {d : Digest}
       basisBlobs := hbb
       admits := fun g hg6 hg =>
         admits_observed_of_checked (hgs g hg6 hg).1 (hval g hg)
-      reads := fun g hg6 hg => admitsReads_observed_of_checked (hgs g hg6 hg).2 }
+      reads := fun g hg6 hg => admitsReads_observed_of_checked (hgs g hg6 hg).2
+      stepStores := runStepStores_of_noCollision t (LoadedReads.RunStore.of_walkedL6 hload hw0) hb
+        (fun x hx => List.mem_cons_of_mem _ hx) hnc }
 
 /-- **The claim export of the residual theorem, from the four named parts for every bounded
 run**: the decode of the claim is taken from the observed `verify_claim` derivation. -/

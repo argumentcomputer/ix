@@ -1,4 +1,5 @@
 import IxVMRefinement.Guard.Certificate
+import IxVMRefinement.Guard.UseReading
 
 /-! # The firing of a projection guard at a use, from the certificates and the reading of a run
 
@@ -6,18 +7,19 @@ The registry's projection step consumes `Core.ProjGuardFires c`, and a prefix ca
 `Core.ProjTablesFire` for the tables it stores (`Core/ProjFire.lean`). This file produces both
 from the certificates of the stored tables.
 
-* `Core.ProjGuardRunReading`: **the statement left about a use**, aimed at what the run itself
-  excludes. Under the facts stated before the registry and the registry's induction hypothesis,
-  a run of `KernelInfer::proj_guard` at a propositional structure's table hashed a collision
-  with the context's store, or the level it returns is a use observation
-  (`Ix.Kernel.ProjGuardUse`) over the context's store at the constructor's raw telescope read
-  from that store. The run's goodness is among the hypotheses, so the alternative is excluded
-  where the statement is used; no fact about the store is asked beside it. It gives the
-  interface's `Core.ProjGuardUseReading` (`ProjGuardRunReading.reading`).
+* `Core.ProjGuardRunReading`: **the reading of a use**, over the run's own store. Under the
+  facts stated before the registry and the registry's induction hypothesis, a run of
+  `KernelInfer::proj_guard` at a propositional structure's table, whose parameter and field
+  counts are its stored constructor's, is a use observation (`Ix.Kernel.ProjGuardUse`) over the
+  raw dictionary of every run store of the run, at the constructor's raw telescope read from that
+  store. It is a theorem: `Core.projGuardRunReading` (`Guard.projGuardUse_of_run`).
 * `Guard.projTableFires_of_cert_at`, `Guard.projTableFires_of_cert`: one table. Its
   certificate over a store that decodes its records, or over a witness store, and the reading
   give `Core.ProjTableFires` at that store, or at every record store for the witness store: the
-  table fires at every context over the store, whatever its limit and call scope.
+  table fires at every context over the store, whatever its limit and call scope. The use is
+  read over a store built from the use's own run (`exists_runStore_of_noCollision`), which agrees
+  with the certificate's store on what both hold (`runStore_agree`), and the firing follows from
+  the two (`fireSem_of_cert_use`).
 * `Guard.projTablesFire_of_certs`: every stored table, from the certificates of all of them
   (`Guard.GuardCerts`). No fold uses this form: a prefix keeps the firing itself, and an
   install adds the new table's from its own certificate.
@@ -37,13 +39,12 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.KernelLevels (RepKLevel)
 
-/-- **What a run of `KernelInfer::proj_guard` at a propositional structure's table has to be
-read as, with the run's own hashed collision as the only alternative.** The hypotheses are
-those of `ProjGuardUseReading`, over the facts stated before the registry (`ScopedCoreBase`):
-no firing of any table is assumed at the context, the registry's induction hypothesis covers
-the run's own calls. The alternative is refuted by the run's goodness (`CoreGood.noCollision`),
-which is among the hypotheses; it is kept in the statement to say what the reading of the
-classifier's loads may rest on. -/
+/-- **What a run of `KernelInfer::proj_guard` at a propositional structure's table is**, read
+over the run's own store. The hypotheses are what the projection step has in hand, over the
+facts stated before the registry (`ScopedCoreBase`): no firing of any table is assumed at the
+context, and the registry's induction hypothesis covers the run's own calls. The conclusion is
+the use observation over the raw dictionary of every run store of the run (a store that holds
+the records the run hashed, `LoadedReads.RunStore`, `LoadedReads.HashedRecordsStored`). -/
 def ProjGuardRunReading : Prop :=
   ∀ (c : ScopedCtx) (hc : ScopedCoreBase c) {calls0 : List (Call F)} (ih : IH c calls0)
     {x_rc x_block r : SourceValue F} {h h' : Heap F} {calls : List (Call F)} {i f : F}
@@ -58,19 +59,18 @@ def ProjGuardRunReading : Prop :=
     (htbl : c.env.find? (Ix.Kernel.projTableName (c.κ (iprjAddr (ixAddr b) (ZMod.val i)))) =
       some (.projInfo tbl))
     (hprop : Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true)
-    (hf : ZMod.val f < nF) {g : KLevel} (hg : RepKLevel h' g r),
-    View.HashedCollision { env := c.E } [] calls ∨
-    ∃ raw, Guard.ctorRaw c.E (ixAddr b) (ZMod.val i) 0 = some raw ∧
-      Ix.Kernel.ProjGuardUse (GuardRaw.ofStore c.E) raw cvC.type tbl.numParams (ZMod.val f) g
+    (hnP : tbl.numParams = nP) (hnF : tbl.numFields = nF)
+    (hf : ZMod.val f < nF) {g : KLevel} (hg : RepKLevel h' g r)
+    {E' : Ixon.Env}, LoadedReads.RunStore calls E' → LoadedReads.HashedRecordsStored calls E' →
+    ∃ raw, Guard.ctorRaw E' (ixAddr b) (ZMod.val i) 0 = some raw ∧
+      Ix.Kernel.ProjGuardUse (GuardRaw.ofStore E') raw cvC.type tbl.numParams (ZMod.val f) g
 
-/-- The reading aimed at the run's hashed collision gives the reading with the store's internal
-collision as the alternative: the run's goodness refutes the first. -/
-theorem ProjGuardRunReading.reading (hread : ProjGuardRunReading) : ProjGuardUseReading := by
+/-- **The reading of a use holds** (`Guard.projGuardUse_of_run`). -/
+theorem projGuardRunReading : ProjGuardRunReading := by
   intro c hc calls0 ih x_rc x_block r h h' calls i f hlt0 good ev b hrc hb hres cvC nP nF tbl
-    hctor htbl hprop hf g hg
-  rcases hread c hc.base ih hlt0 good ev hrc hb hres hctor htbl hprop hf hg with hcol | huse
-  · exact absurd hcol good.noCollision
-  · exact Or.inr huse
+    hctor htbl hprop hnP hnF hf g hg E' hS hcov
+  exact Guard.projGuardUse_of_run hc ih hlt0 good ev hrc hb hres hctor htbl hprop hnP hnF hf hg
+    hS hcov
 
 end IxVM.Refinement.Core
 
@@ -110,7 +110,7 @@ theorem projTableFires_of_cert_at (hread : Core.ProjGuardRunReading) {t : Ix.Ker
     Core.ProjTableFires t E (Core.keyOf t (Core.iprjAddr B i)) tbl
       (Core.keyOf t (Core.cprjAddr B i 0)) cvC := by
   intro c ht hE hc htblc hctorc calls0 ih x_rc x_block r h h' calls j f hlt0 good ev b hrc hb
-    cvT caps hind cm hrec hinfo hk cvC' nP nF hctor hnF hf g hg us hus hzero hprop
+    cvT caps hind cm hrec hinfo hk cvC' nP nF hctor hnP hnF hf g hg us hus hzero hprop
   subst ht
   subst hE
   obtain ⟨nP₀, nF₀, hkc⟩ := hctorc
@@ -139,29 +139,27 @@ theorem projTableFires_of_cert_at (hread : Core.ProjGuardRunReading) {t : Ix.Ker
       (c.κ (Core.iprjAddr (Core.ixAddr b) (ZMod.val j)))) = some (.projInfo tbl) := by
     rw [hk]
     exact htblc
-  rcases hread c hc ih hlt0 good ev hrc hb (Or.inl ⟨cvT, caps, hind⟩) hctor htbl hprop' hf hg with
-    hcol | ⟨raw', hraw', use⟩
-  · exact absurd hcol good.noCollision
-  · have h1 : c.env.find? (Core.keyOf c.t (Core.cprjAddr (Core.ixAddr b) (ZMod.val j) 0)) =
-        some (.ctorInfo cvC' nP nF) := by
-      rw [← hkC]
-      exact hctor
-    rw [hkc] at h1
-    have hcv : cvC = cvC' := (Ix.Kernel.ConstantInfo.ctorInfo.inj (Option.some.inj h1)).1
-    subst hcv
-    have hfT : ZMod.val f < tbl.numFields := by
-      rw [hnF]
-      exact hf
-    have hlp : tbl.levelParams = List.range us.length := by
-      rw [hus]
-      exact hpos
-    have hsame : raw' = raw := Option.some.inj (hraw'.symm.trans hraw)
-    subst hsame
-    refine ProjGuardCert.fireSem (common := GuardRaw.ofStore c.E) cert
-      ⟨fun _ _ _ h => h, fun _ _ _ h => h⟩ ⟨fun _ _ _ h => h, fun _ _ _ h => h⟩ use hfT
-      (fun φ => ?_) hprop
-    rw [hlp]
-    exact hzero φ
+  -- the use, read over a store built from its own run
+  obtain ⟨E', hS, hcov⟩ := exists_runStore_of_noCollision good.noCollision
+  obtain ⟨raw', hraw', use⟩ := hread c hc ih hlt0 good ev hrc hb (Or.inl ⟨cvT, caps, hind⟩) hctor
+    htbl hprop' hnP hnF hf hg hS hcov
+  have hagree := runStore_agree hS good.noCollision
+  have h1 : c.env.find? (Core.keyOf c.t (Core.cprjAddr (Core.ixAddr b) (ZMod.val j) 0)) =
+      some (.ctorInfo cvC' nP nF) := by
+    rw [← hkC]
+    exact hctor
+  rw [hkc] at h1
+  have hcv : cvC = cvC' := (Ix.Kernel.ConstantInfo.ctorInfo.inj (Option.some.inj h1)).1
+  subst hcv
+  have hfT : ZMod.val f < tbl.numFields := by
+    rw [hnF]
+    exact hf
+  have hlp : tbl.levelParams = List.range us.length := by
+    rw [hus]
+    exact hpos
+  refine fireSem_of_cert_use hagree.1 hagree.2 hraw cert hraw' use hfT (fun φ => ?_) hprop
+  rw [hlp]
+  exact hzero φ
 
 /-- **A certified table fires at every context over a record store for the certificate's
 witness store**: the certificate, the member's record and the raw telescope move to the record
