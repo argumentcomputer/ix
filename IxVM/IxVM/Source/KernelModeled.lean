@@ -757,8 +757,8 @@ def projection_of_ref_block := aiur_fn⟦
       match c {
         Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
-            Ixon::ConstantInfo::IPrj(_) => {  ref_projects_from(irefs, iused, 0, projection_block(c)) } ,
-            Ixon::ConstantInfo::CPrj(_) => {  ref_projects_from(irefs, iused, 0, projection_block(c)) } ,
+            Ixon::ConstantInfo::IPrj(_) => {  Ingress::get_ci(r); ref_projects_from(irefs, iused, 0, projection_block(c)) } ,
+            Ixon::ConstantInfo::CPrj(_) => {  Ingress::get_ci(r); ref_projects_from(irefs, iused, 0, projection_block(c)) } ,
             _ => {  0 } ,
           } } ,
       }
@@ -789,8 +789,8 @@ def is_projection_of := aiur_fn⟦
       match c {
         Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
-            Ixon::ConstantInfo::IPrj(_) => {  Bytes::address_eq(projection_block(c), block) } ,
-            Ixon::ConstantInfo::CPrj(_) => {  Bytes::address_eq(projection_block(c), block) } ,
+            Ixon::ConstantInfo::IPrj(_) => {  Ingress::get_ci(r); Bytes::address_eq(projection_block(c), block) } ,
+            Ixon::ConstantInfo::CPrj(_) => {  Ingress::get_ci(r); Bytes::address_eq(projection_block(c), block) } ,
             Ixon::ConstantInfo::RPrj(_) => {  Bytes::address_eq(projection_block(c), block) } ,
             _ => {  0 } ,
           } } ,
@@ -952,8 +952,8 @@ def projection_of_advice := aiur_fn⟦
       match c {
         Ixon::Constant::Mk(info, _, _, _, _) => {
           match info {
-            Ixon::ConstantInfo::IPrj(_) => {  KernelClaim::addr_set_member(projection_block(c), aset) } ,
-            Ixon::ConstantInfo::CPrj(_) => {  KernelClaim::addr_set_member(projection_block(c), aset) } ,
+            Ixon::ConstantInfo::IPrj(_) => {  Ingress::get_ci(r); KernelClaim::addr_set_member(projection_block(c), aset) } ,
+            Ixon::ConstantInfo::CPrj(_) => {  Ingress::get_ci(r); KernelClaim::addr_set_member(projection_block(c), aset) } ,
             _ => {  0 } ,
           } } ,
       }
@@ -1396,8 +1396,8 @@ def family_refs_go := aiur_fn⟦
                   let own = match rc0 {
                     Ixon::Constant::Mk(info, _, _, _, _) => {
                       match info {
-                        Ixon::ConstantInfo::IPrj(_) => {  Bytes::address_eq(projection_block(rc0), block) } ,
-                        Ixon::ConstantInfo::CPrj(_) => {  Bytes::address_eq(projection_block(rc0), block) } ,
+                        Ixon::ConstantInfo::IPrj(_) => {  Ingress::get_ci(r); Bytes::address_eq(projection_block(rc0), block) } ,
+                        Ixon::ConstantInfo::CPrj(_) => {  Ingress::get_ci(r); Bytes::address_eq(projection_block(rc0), block) } ,
                         _ => {  0 } ,
                       } } ,
                   };
