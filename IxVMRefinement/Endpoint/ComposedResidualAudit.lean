@@ -14,8 +14,8 @@ fails the build.
 How to read it. The explicit arguments are the open obligations, except `Pref`, a parameter
 (the twin preference, a relation, not a proposition): the first five are the
 binding half's, the others the typing half's: the typing fold's rows over the family graph (what
-the run's family graph is owed, the records a family check checks, the step of a block with its
-family record and the step of a twin). The binding half's run predicate is `IxVM.Refinement.Binding.BindingRun`. The first
+the run's family graph and the records its family checks check are owed, the step of a block
+with its family record and the step of a twin). The binding half's run predicate is `IxVM.Refinement.Binding.BindingRun`. The first
 argument is the part of the binding claim's export that remains: the stores of a run and the
 family clauses of its family checks (the loaded table's admission and its prelude pin are
 theorems, `Binding.loadedTableAdmits` and `Binding.loadedTablePinsPrelude`). The next two are
@@ -37,7 +37,7 @@ The proof is complete when the theorem has no explicit argument.
 What this module does not print. A definition that a hypothesis reads
 (`RemainingStoreClausesOfRun`, `BindingRun`, `AtGroups`,
 `ClosureFamilySteps`, `ClosureTwinSteps`, `RoleFreeShapes`, `RoleUnitStepOverW`,
-`FamilyGraphRow`, `InnerCheckedRow`,
+`FamilyGraphInnerOwed`,
 `FamilyBlockCheckRow`, `FamilyTwinRow`, `FoldExtra`, `UnitStep` and the others) appears by name only: its own
 module holds it. The public statement and what it reads are printed in
 `Ix.IxVM.ConsistencyAudit` and `Ix.IxVM.ConsistencyModelAudit`. The module is outside any
@@ -67,8 +67,7 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
       IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
         (IxVM.Refinement.Binding.RoleUnitStepOverW (fun x => x ∈ IxVM.Refinement.RoleOps.opRoles)
           IxVM.Refinement.Typing.FormerOpenTraceAt))
-  (Pref : IxVM.Refinement.Typing.RunPref) (familyGraph : IxVM.Refinement.Typing.FamilyGraphOwed Pref)
-  (innerChecked : IxVM.Refinement.Typing.InnerCheckedRow)
+  (Pref : IxVM.Refinement.Typing.RunPref) (familyGraph : IxVM.Refinement.Typing.FamilyGraphInnerOwed Pref)
   (familyBlock : IxVM.Refinement.Typing.FamilyAlias.FamilyBlockCheckRow IxVM.Refinement.Typing.FormerOpenTraceAt)
   (familyTwin : IxVM.Refinement.Typing.FamilyTwinRow IxVM.Refinement.Typing.FormerOpenTraceAt) :
   IxVM.Consistency.CircuitComposed
