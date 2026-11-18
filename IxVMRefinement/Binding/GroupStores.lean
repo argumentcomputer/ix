@@ -159,7 +159,7 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
     · rw [roleGroup_eq_nil (by rw [groups_length]; omega)] at hr
       cases hr
   obtain ⟨hRS, hRF⟩ := hR
-  have hP := hRF.payloadFacts
+  have hP := hRF.payload hC
   have hws : ∀ k, ∃ recs, GroupWalked calls a t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) k recs :=
     fun k => groupWalked_exists hH (hvalAll k)
   have hrk : ∀ g, ∃ r : _root_.Address → Nat, 6 ≤ g → g < 77 →
