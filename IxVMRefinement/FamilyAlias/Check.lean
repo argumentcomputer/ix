@@ -123,10 +123,11 @@ theorem aliasEnv_of_table {env : Env .anon} :
     intro k hk
     by_cases hkp : k = p.1
     · subst hkp
-      have hm : aliasMap (p :: rest) p.1 = p.2 := by simp [aliasMap]
+      have hm : aliasMap (p :: rest) p.1 = p.2 := by first | exact if_pos rfl | simp [aliasMap]
       rw [hm]
       exact hall p List.mem_cons_self
-    · have hm : aliasMap (p :: rest) k = aliasMap rest k := by simp [aliasMap, hkp]
+    · have hm : aliasMap (p :: rest) k = aliasMap rest k := by
+        first | exact if_neg hkp | simp [aliasMap, hkp]
       rw [hm] at hk ⊢
       exact aliasEnv_of_table (fun q hq => hall q (List.mem_cons_of_mem _ hq)) k hk
 
@@ -639,5 +640,66 @@ theorem famRecord_of_check {fuel : Nat} {tbl : List (KKey × KKey)} {envAl : Env
     have hc' : false = true := hc
     cases hc'
   | ok r => exact ⟨r.1, r.2⟩
+
+/-! ## The alias group -/
+
+/-- A derived key that is not a projection table's. -/
+theorem auxKey_ne_projTableName {n : KKey} {d : Derived} (hd : d ≠ .projTable) (T : KKey) :
+    auxKey n d ≠ Ix.Kernel.projTableName T := by
+  intro heq
+  have heq' : Key.aux n d = Key.aux T Derived.projTable := heq
+  exact hd (Key.aux.inj heq').2
+
+/-- **A proof that the listed definitions are an alias group over `env` for the table's
+renaming, if the search finds one.** The table lists the aliases in the list's order, newest
+first: each a definition at a derived key by its target at the definition's own level
+parameters. -/
+def aliasGroupCheck (env : Env .anon) :
+    (tbl : List (KKey × KKey)) → (as : List (ConstantInfo .anon)) →
+    Except String (PLift (AliasGroup env (aliasMap tbl) as))
+  | [], [] => .ok ⟨AliasGroup.nil (fun _ => rfl)⟩
+  | (.aux n d, tgt) :: tbl, .defnInfo ⟨k, lps, ty⟩ v hint :: as => do
+    let ih ← aliasGroupCheck env tbl as
+    let hshape ← guardP "alias group: an alias is not the definition of its key by its target"
+      (k = auxKey n d ∧ v = .const tgt (lps.map .param) ∧ hint = .abbrev)
+    let hperm ← guardP "alias group: level parameters are not a permutation of the positions"
+      (lps.Perm (List.range lps.length))
+    let hfr ← guardP "alias group: an alias key is stored"
+      (((⟨as ++ env.consts⟩ : Env .anon).find? (auxKey n d)).isNone = true)
+    let hd ← guardP "alias group: a projection table's key" (d ≠ .projTable)
+    let src ← getSome "alias group: a target is not stored"
+      ((⟨as ++ env.consts⟩ : Env .anon).find? tgt)
+    let hlps ← guardP "alias group: a target's level parameters are not the positions"
+      (src.1.toConstantVal.levelParams = List.range lps.length)
+    let htf ← guardP "alias group: free variable in an alias type" (ty.hasFvar = false)
+    let htp ← guardP "alias group: level parameters of an alias type"
+      (ty.allLevelParamsDefined lps = true)
+    let htr ← guardP "alias group: constants of an alias type"
+      (ty.constsResolve (⟨as ++ env.consts⟩ : Env .anon) = true)
+    let htb ← guardP "alias group: loose bound variable in an alias type"
+      (ty.looseBVarsBounded 0 = true)
+    let hty ← guardP "alias group: an alias type is not its target's type at positions"
+      (posOf lps (ty.renameConsts (aliasMap tbl)) = src.1.toConstantVal.type)
+    return ⟨by
+      obtain ⟨hk, hv, hh⟩ := hshape.down
+      subst hk
+      subst hv
+      subst hh
+      exact AliasGroup.cons ih.down hperm.down (Option.isNone_iff_eq_none.mp hfr.down)
+        (auxKey_ne_projTableName hd.down) src.2 hlps.down htf.down htp.down htr.down htb.down
+        hty.down (by first | exact if_pos rfl | simp [aliasMap, auxKey])
+        (fun x hx => by first | exact if_neg hx | (simp only [aliasMap]; exact if_neg hx))⟩
+  | _, _ => .error "alias group: the table and the aliases do not correspond"
+
+/-- **A successful check is an alias group.** -/
+theorem aliasGroup_of_check {env : Env .anon} {tbl : List (KKey × KKey)}
+    {as : List (ConstantInfo .anon)} (hc : isOk (aliasGroupCheck env tbl as) = true) :
+    AliasGroup env (aliasMap tbl) as := by
+  cases hr : aliasGroupCheck env tbl as with
+  | error e =>
+    rw [hr] at hc
+    have hc' : false = true := hc
+    cases hc'
+  | ok r => exact r.down
 
 end IxVM.Refinement.Decl.FamilyAlias
