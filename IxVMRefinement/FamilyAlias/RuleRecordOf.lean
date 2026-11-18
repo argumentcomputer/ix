@@ -55,7 +55,8 @@ theorem iotaRuleRenRunJ_of_aliased
     (hiota : envM.find? (iotaKey recKey j) = E.find? (iotaKey recKey j))
     (hext : EnvExt env envSelf) (hA : AliasEnv envSelf h)
     (hstored : ∀ k, (env.find? (g k)).isSome = true → (envSelf.find? k).isSome = true) :
-    ∃ r', IotaRuleRenRunJ (famJ h) envM envSelf (blockRen bn) recKey lps tyA mI rP j r r' := by
+    ∃ r', IotaRuleRenRunJ (famJ h) envM envSelf (blockRen bn) recKey lps tyA mI rP j r r' ∧
+      IxVM.Consistency.RuleStored r' r := by
   obtain ⟨cvj, cnP, cnF, lvls, pins, cvt, vt, hw, hfindA⟩ := hra
   obtain ⟨hctorM, hctyR⟩ := hctor cvj cnP cnF hw.ctor
   have hmono : ∀ k, (env.find? k).isSome = true → (envSelf.find? k).isSome = true := by
@@ -362,11 +363,14 @@ theorem iotaRuleRenRunJ_of_aliased
     rw [← map_fvarTypeD_renameConsts'] at hdP
     have hdP' := defEqListJ_renameJ_of_renamed hext hA hdP
       (map_fvarTypeD_agree (map_take_agree cnP hfvsPa)) hcdomsPa
-    refine ⟨_, cvj, cnP, cnF, rhsA, hctorM, hw.nfields, hw.bounded, hw.closed, hann, hw.levels,
-      hrhsRes, hw.lams, htyped, .plain, rfl, Or.inl ⟨hplain, rfl, ?_⟩⟩
+    refine ⟨_, ⟨cvj, cnP, cnF, rhsA, hctorM, hw.nfields, hw.bounded, hw.closed, hann, hw.levels,
+      hrhsRes, hw.lams, htyped, .plain, rfl, Or.inl ⟨hplain, rfl, ?_⟩⟩, rfl, rfl, hw.annotated⟩
     refine ⟨_, fvs, Expr.app (.app (.app (.const eqName [ℓ]) α) lhs') rhsS, hcvt, rfl, hopc,
       heq', rfl, ?_⟩
-    exact ⟨hfn', hlen', htake', by rw [hlast']; exact beq_self_eq_true _, hw.ctorTele,
+    exact ⟨hfn', hlen', htake',
+      by show (lhs'.getAppArgs.getLastD (.bvar 0) == _) = true
+         rw [hlast']
+         exact beq_self_eq_true _, hw.ctorTele,
       cdomsF, cresF, rdomsF, fvsP, cdomsP, crestP, xFvsP, crest2, ldoms, lrestF, hcdF, hcresFl,
       hrdF, hopP, hcdP, hopX, ldomsL, lrest2, hlam, hdP', hruns'⟩
   · /- a nested rule -/
@@ -388,7 +392,7 @@ theorem iotaRuleRenRunJ_of_aliased
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp ha
       have hagree : l₀.2.renameConsts (fun k => h (blockRen bn k)) = l₀.2.renameConsts g := by
         rcases Ix.Kernel.fvarLeaves_instSpine (rP - 1) hl₀ with hl₁ | ⟨x, hx, hl₁⟩
-        · rw [Ix.Kernel.Verify.fvarLeaves_eq_nil_of_not_hasFvar (hw.pins_scope p hp).1] at hl₁
+        · rw [Ix.Kernel.Expr.fvarLeaves_eq_nil_of_not_hasFvar (hw.pins_scope p hp).1] at hl₁
           exact nomatch hl₁
         · have hxa : x.renameConsts (fun k => h (blockRen bn k)) = x.renameConsts g :=
             List.map_inj_left.mp hfvsPa x (List.mem_of_mem_take hx)
@@ -398,12 +402,15 @@ theorem iotaRuleRenRunJ_of_aliased
       show (l₀.2.renameConsts (blockRen bn)).renameConsts h = l₀.2.renameConsts (blockRen bn)
       rw [renameConsts_comp, hagree, hg0, hf0]
     have htl' := typedListJ_famJ_of_renamed hext hA htl hpinsPa hcdomsPa hpinLF
-    refine ⟨_, cvj, cnP, cnF, rhsA, hctorM, hw.nfields, hw.bounded, hw.closed, hann, hw.levels,
+    refine ⟨_, ⟨cvj, cnP, cnF, rhsA, hctorM, hw.nfields, hw.bounded, hw.closed, hann, hw.levels,
       hrhsRes, hw.lams, htyped, .nested lvls pins, rfl,
-      Or.inr ⟨Bool.eq_false_iff.mpr hplain, lvls, pins, rfl, hnrs, ?_⟩⟩
+      Or.inr ⟨Bool.eq_false_iff.mpr hplain, lvls, pins, rfl, hnrs, ?_⟩⟩, rfl, rfl, hw.annotated⟩
     refine ⟨_, fvs, Expr.app (.app (.app (.const eqName [ℓ]) α) lhs') rhsS, hcvt, rfl, hopc,
       heq', rfl, ?_⟩
-    exact ⟨hfn', hlen', htake', by rw [hlast']; exact Ix.Kernel.Expr.ErasedEq.rfl _,
+    exact ⟨hfn', hlen', htake',
+      by show Expr.ErasedEq (lhs'.getAppArgs.getLastD (.bvar 0)) _
+         rw [hlast']
+         exact Ix.Kernel.Expr.ErasedEq.rfl _,
       ⟨cbs, cbody, hcs, by rw [hcb]⟩, cdomsF, cresF, rdomsF, lrestF, fvsP, crest2, cdomsP,
       crestP, xFvsP, ldoms, hcdF, hcresFl, hrdF, hopP, ⟨hcdP, hopX, beq_iff_eq.mpr hldl⟩,
       ldomsL, lrest2, hlam, htl', hruns'⟩
