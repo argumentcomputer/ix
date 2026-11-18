@@ -745,5 +745,5 @@ theorem formerChecked_of_member_lim {calls : List (Call F)} {t : Ix.Kernel.RoleT
       prelude.sortRun
   rw [Decl.posOf_range] at inferred
   exact ⟨ty', hcT, hannT, checked, sty, u, inferred, reduced⟩
-former is stored at the capability record of that completed record. -/
+
 end IxVM.Refinement.Typing
