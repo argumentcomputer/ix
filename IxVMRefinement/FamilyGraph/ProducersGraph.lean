@@ -179,18 +179,20 @@ def NestedCheck (B rb B' a : _root_.Address) : Prop :=
     ∃ cs', FamilyCallAtLim K.calls K.bAddr K.t B' a K.lim cs' ∧ ∀ cl ∈ cs', cl ∈ cs
 
 /-- **The family checks the run reaches**: of a block's family record, of a top-walked twin, and,
-nested in the calls of a reached one, of a candidate for a nested twin (a container's recursor
-checked through its projection runs the family check of the projection's block of recursors). -/
+nested in the calls of a reached one, of a candidate for a nested twin with a top-walked non-empty
+block of inductive types (a container's recursor checked through its projection runs the family
+check of the projection's block of recursors, whose block the witness's path reached). -/
 inductive Reached : _root_.Address → _root_.Address → Prop
   | fam {B rb : _root_.Address} : K.fam B = some rb → Reached B rb
   | top {B rb : _root_.Address} : K.TwinOf rb B → Reached B rb
-  | nested {B rb B' a : _root_.Address} : Reached B rb → K.NestedCand a →
-      K.NestedCheck B rb B' a → Reached B' a
+  | nested {B rb B' a : _root_.Address} : Reached B rb → K.NestedCand a → K.Top B' →
+      IndBlock K.E₀ B' → K.NestedCheck B rb B' a → Reached B' a
 
-/-- **`a` is a nested twin of the block at `B'`**: a candidate whose family check with the block
-`B'` is nested in the calls of a reached family check. -/
+/-- **`a` is a nested twin of the block at `B'`**: a candidate whose family check with the
+top-walked non-empty block of inductive types `B'` is nested in the calls of a reached family
+check. -/
 def NestedTwinOf (a B' : _root_.Address) : Prop :=
-  K.NestedCand a ∧ ∃ B rb, K.Reached B rb ∧ K.NestedCheck B rb B' a
+  K.NestedCand a ∧ K.Top B' ∧ IndBlock K.E₀ B' ∧ ∃ B rb, K.Reached B rb ∧ K.NestedCheck B rb B' a
 
 open Classical in
 /-- **The block a twin is a second family record of**: of a top-walked twin, or else of a nested
@@ -217,15 +219,53 @@ def adv (B a : _root_.Address) : Prop :=
   ∃ rb, K.fam B = some rb ∧ AdviceListedIn (K.ownList B rb) a ∧
     ∃ ca x, recordOf K.E₀ a = some ca ∧ ConstAddrOf a ca x
 
-/-- **The inner records**: a record with a constant address that the walk did not reach,
-checked at the walk's binding and limit, by the family check of a family record or of a twin, as
-advice that is no projection record or as a container's recursor; or a nested twin. -/
+/-! ### Scope checks and their local records -/
+
+/-- **A scope check**: a family check at the walk's binding and limit with the calls `cs`, of a
+top-walked non-empty block of inductive types, whose calls are among those of a reached family
+check (the reached checks themselves, and the family checks nested in their calls). -/
+def ScopeAt (B rb : _root_.Address) (cs : List (Call F)) : Prop :=
+  FamilyCallAtLim K.calls K.bAddr K.t B rb K.lim cs ∧ K.Top B ∧ IndBlock K.E₀ B ∧
+    ∃ B₀ rb₀ cs₀, K.Reached B₀ rb₀ ∧ FamilyCallAtLim K.calls K.bAddr K.t B₀ rb₀ K.lim cs₀ ∧
+      ∀ cl ∈ cs, cl ∈ cs₀
+
+/-- **A witness of kind 2 (a container's recursor) of the block at `B` among the calls `cs`**:
+a `check_witness` call with the block `B`, the witness `x` and the kind 2, under a role context at
+the walk's limit with the table at its binding. Only `check_family` calls `check_witnesses`, and
+only `check_witnesses` calls `check_witness`, with the family check's own block. -/
+def ContWitness (cs : List (Call F)) (B x : _root_.Address) : Prop :=
+  ∃ (h : Aiur.Heap F) (rc xb xx s : Aiur.SourceValue F),
+    Claim.RCLimRep K.t K.bAddr K.lim h rc ∧ Core.S0.addr h xb B ∧ Core.S0.addr h xx x ∧
+    (⟨"KernelModeled::check_witness", [rc, xb, xx, .field 2, s], h⟩ : Call F) ∈ cs
+
+/-- **A local record of the family check of `B` with `rb` and the calls `cs`, at a position**:
+- an advice record with a constant address that the check's own advice walk lists, at position
+  `k + 1` for the list's `k`-th entry;
+- a standalone record bound to no walked role that the check witnesses as a container's
+  recursor, at position 0;
+- a twin, one of whose constant addresses, bound to no walked role, the check witnesses as a
+  container's recursor, at position 0. -/
+def LocalAt (B rb : _root_.Address) (cs : List (Call F)) (a : _root_.Address) (p : Nat) :
+    Prop :=
+  (∃ advAs (k : Nat) b, FamilyCallOwn K.calls K.bAddr K.t B rb K.lim cs advAs ∧ advAs[k]? = some b ∧
+      Core.ixAddr b = a ∧ p = k + 1 ∧ ∃ ca x, recordOf K.E₀ a = some ca ∧ ConstAddrOf a ca x) ∨
+    (p = 0 ∧ K.ContWitness cs B a ∧ ¬ Covered K.t a ∧
+      ∃ ca, recordOf K.E₀ a = some ca ∧ Standalone ca) ∨
+    (p = 0 ∧ (∃ B', K.twin a = some B') ∧
+      ∃ x ca, K.ContWitness cs B x ∧ ¬ Covered K.t x ∧ recordOf K.E₀ a = some ca ∧
+        ConstAddrOf a ca x)
+
+/-- **The inner records**: a record with a constant address that the walk did not reach, and
+that a scope check's own advice walk lists, or that a scope check witnesses as a container's
+recursor when it is standalone, bound to no walked role and has a constant address the witness's
+environment does not store; or a nested twin. -/
 def Inner (a : _root_.Address) : Prop :=
   ¬ K.Top a ∧ (∃ ca x, recordOf K.E₀ a = some ca ∧ ConstAddrOf a ca x) ∧
-    ((∃ B rb, (K.fam B = some rb ∨ K.twin rb = some B) ∧
-      ((AdviceCheckIn (K.famCalls B rb) K.bAddr K.t K.lim a ∧
-          ∀ c, recordOf K.E₀ a = some c → ¬ IsProj c) ∨
-        ContainerRecCheckIn (K.famCalls B rb) K.bAddr K.t K.lim a)) ∨
+    ((∃ B rb cs, K.ScopeAt B rb cs ∧
+        ((∃ advAs, FamilyCallOwn K.calls K.bAddr K.t B rb K.lim cs advAs ∧
+            AdviceListedIn advAs a) ∨
+          (K.ContWitness cs B a ∧ K.Unstored a ∧ ¬ Covered K.t a ∧
+            ∃ ca, recordOf K.E₀ a = some ca ∧ Standalone ca))) ∨
       ∃ B', K.NestedTwinOf a B')
 
 variable {K}
@@ -304,7 +344,7 @@ the walk's binding and limit. -/
 theorem twin_facts {rb' B : _root_.Address} (h : K.twin rb' = some B) :
     RecBlock K.E₀ rb' ∧ K.Unstored rb' ∧ Unclaimed K.fam rb' ∧ K.FamCheck B rb' := by
   rcases twin_some h with ⟨-, hRB, hUn, hU, hFC, -⟩ |
-    ⟨⟨_, hRB, hUn, hU⟩, _, _, _, _, _, cs', hc', _⟩
+    ⟨⟨_, hRB, hUn, hU⟩, _, _, _, _, _, _, _, cs', hc', _⟩
   · exact ⟨hRB, hUn, hU, hFC⟩
   · exact ⟨hRB, hUn, hU, cs', hc'⟩
 
@@ -319,7 +359,8 @@ theorem inner_of_twin {rb' B : _root_.Address} (h : K.twin rb' = some B) (hT : �
     K.Inner rb' := by
   rcases twin_some h with hto | hn
   · exact absurd hto.1 hT
-  · exact ⟨hT, hn.1.2.1.constAddr, Or.inr ⟨B, hn⟩⟩
+  · obtain ⟨c, x, hc, hx⟩ := hn.1.2.1.constAddr
+    exact ⟨hT, ⟨c, x, hc, hx⟩, Or.inr ⟨B, hn⟩⟩
 
 /-- A record with a constant address is no projection record. -/
 theorem _root_.IxVM.Refinement.Typing.constAddr_not_proj {A x : _root_.Address}
@@ -334,6 +375,76 @@ theorem ownList_spec {B rb : _root_.Address}
   unfold ownList
   rw [dite_eq_left h]
   exact Classical.choose_spec h
+
+/-- **A block's family check is a scope check**, with the calls the choices fix. -/
+theorem scope_of_fam {B rb : _root_.Address} (h : K.fam B = some rb) :
+    K.ScopeAt B rb (K.famCalls B rb) := by
+  obtain ⟨⟨hT, -, hIB, -⟩, hFC, -⟩ := fam_some h
+  exact ⟨famCalls_spec hFC, hT, hIB, B, rb, K.famCalls B rb, .fam h, famCalls_spec hFC,
+    fun _ hcl => hcl⟩
+
+/-- **A listed advice record is checked by an advice-record check among the family check's
+calls**, under the family check's role context (`Decl.check_advice_records_obs` on the family
+check's own advice walk). -/
+theorem adviceCheck_of_listed {B rb : _root_.Address} {cs : List (Call F)} {advAs}
+    {a : _root_.Address}
+    (hown : FamilyCallOwn K.calls K.bAddr K.t B rb K.lim cs advAs)
+    (ha : AdviceListedIn advAs a) : AdviceCheckIn cs K.bAddr K.t K.lim a := by
+  obtain ⟨b, hb, hba⟩ := ha
+  obtain ⟨hh, hh', rc, xb, xrb, r, hrc, -, -, -, hw, -, -⟩ := hown
+  obtain ⟨m, m', xadv, seen, wset, v, cs₁, ext, hrep, ev, hsub⟩ := hw.walk
+  obtain ⟨x_a, seen₁, r₁, h₁, h₁', cs₂, e₁, hrep₁, ev₁, hsub₂⟩ :=
+    Decl.check_advice_records_obs _ hrep ev b hb
+  exact ⟨h₁, h₁', rc, x_a, seen₁, wset, r₁, cs₂, hrc.mono (ext.trans e₁), ⟨b, hrep₁, hba⟩, ev₁,
+    fun cl hcl => hsub cl (hsub₂ cl hcl)⟩
+
+end FamRunCtx
+
+/-! ### The kinds of reference a family check admits -/
+
+/-- **The basis roles a payload may name as a witness of kind 0** (`basis_role_allowed`: role
+indices 0-3, 8-13, 32-37 and 39): `Nat` with its constructors and recursor, `Eq`, `Eq.refl`,
+`Eq.rec`, `PUnit`, `PUnit.unit`, `PUnit.rec`, the quotient package, `String` and `Char`. -/
+def basisRoles : List Ix.Kernel.Role :=
+  [.nat, .natZero, .natSucc, .natRec, .eq, .eqRefl, .eqRec, .punit, .punitUnit, .punitRec,
+    .quot, .quotMk, .quotLift, .quotInd, .quotSound, .string, .char]
+
+namespace FamRunCtx
+
+variable (K : FamRunCtx)
+
+/-- **A step of a dependency path** (`walk_path`), between records bound to no walked role: from
+the record at `z` to a reference it uses, or from a projection record to its block. -/
+def DepStep (y z : _root_.Address) : Prop :=
+  ¬ Covered K.t z ∧ ¬ Covered K.t y ∧
+    (UsedRef K.E₀ z y ∨ ∃ c, recordOf K.E₀ z = some c ∧ IsProj c ∧ y = Ix.Cert.ownerOf z c)
+
+/-- **A dependency path of one step or more from `B` to `x`** through no covered record (its stop
+included): what `walk_from_block` walks when its path passed no covered record (item 16). -/
+def DepPath (B x : _root_.Address) : Prop :=
+  Relation.TransGen K.DepStep x B
+
+/-- **A type or constructor of a block that a used reference of `A` projects from**
+(`projection_of_ref_block`, `ref_projects_from`): covered where that used reference is covered
+(item 16). -/
+def ProjOfRef (A x : _root_.Address) : Prop :=
+  ∃ q cq cD, UsedRef K.E₀ A q ∧ recordOf K.E₀ q = some cq ∧ IsProj cq ∧
+    recordOf K.E₀ (Ix.Cert.ownerOf q cq) = some cD ∧ ConstAddrOf (Ix.Cert.ownerOf q cq) cD x ∧
+    (Covered K.t q → Covered K.t x)
+
+/-- **A reference of a block's closure** (`used_ref_has`, `is_projection_of`,
+`projection_of_ref_block`): a used reference of the block at `A`, a constant address of it, or a
+type or constructor of a block one of its used references projects from. -/
+def BlockRef (A x : _root_.Address) : Prop :=
+  UsedRef K.E₀ A x ∨ (∃ cA, recordOf K.E₀ A = some cA ∧ ConstAddrOf A cA x) ∨ K.ProjOfRef A x
+
+/-- **A witness of the family check of `B` of a kind other than 2** (`check_witness` with item
+16): bound to a basis role (kind 0), covered (a witness reached past a covered record), the stop
+of a dependency path from `B` (kind 1), or a constant address of the stop of one (kind 3, a
+projection address the record's reading checks). -/
+def WitBase (B x : _root_.Address) : Prop :=
+  (∃ ro ∈ basisRoles, K.t.addressOf? ro = some x) ∨ Covered K.t x ∨ K.DepPath B x ∨
+    ∃ ib cib, K.DepPath B ib ∧ recordOf K.E₀ ib = some cib ∧ ConstAddrOf ib cib x
 
 end FamRunCtx
 
@@ -383,6 +494,71 @@ structure BatchGives (K : FamRunCtx) : Prop where
   list (`FamilyOwnAdvice`, the walk it makes itself on its payload's advice). -/
   ownWalk : ∀ B rb, K.FamCheck B rb →
     ∃ advAs, FamilyCallOwn K.calls K.bAddr K.t B rb K.lim (K.famCalls B rb) advAs
+  /-- `family_refs_go` (with item 16's `ref_projects_from`) and `check_witness` (item 16), read
+  through `check_family`'s unfolding: a reference the record of a scope check uses is a reference
+  of its block's closure (`BlockRef`), or a witness of the check (`WitBase`, or a container's
+  recursor). -/
+  familyRefs : ∀ B rb cs, K.ScopeAt B rb cs → ∀ x, UsedRef K.E₀ rb x →
+    K.BlockRef B x ∨ K.WitBase B x ∨ K.ContWitness cs B x
+  /-- `check_advice_records`, `check_advice_record` and `advice_refs_ok` (with
+  `projection_of_advice` and the projection arms' reading of the member), and `check_witness`
+  (item 16), read through `check_family`'s unfolding: a reference the `k`-th advice record of a
+  scope check's own list uses is an earlier listed record that is no projection record, a
+  constant address of an earlier listed record, or a witness of the check. -/
+  adviceRefs : ∀ B rb cs advAs, K.ScopeAt B rb cs →
+    FamilyCallOwn K.calls K.bAddr K.t B rb K.lim cs advAs → ∀ (k : Nat) b, advAs[k]? = some b →
+    ∀ x, UsedRef K.E₀ (Core.ixAddr b) x →
+      (∃ j b', j < k ∧ advAs[j]? = some b' ∧ Core.ixAddr b' = x ∧
+          ∀ c, recordOf K.E₀ x = some c → ¬ IsProj c) ∨
+      (∃ j b' c', j < k ∧ advAs[j]? = some b' ∧ recordOf K.E₀ (Core.ixAddr b') = some c' ∧
+          ConstAddrOf (Core.ixAddr b') c' x) ∨
+      K.WitBase B x ∨ K.ContWitness cs B x
+  /-- `check_witness`'s kind 2 (item 16: the path's stop, no covered record passed for a witness
+  bound to no walked role), `check_container_rec`, `run_check`'s `Rec` arm (the family check of a
+  recursor block's family), `rec_family_block` and `check_block_member_kinds`, and
+  `container_recs_refs` with `container_refs_ok`, read through `check_family`'s unfolding: a
+  container's recursor a scope check witnesses, bound to no walked role, is checked by
+  `check_container_rec` among the check's calls; the block its family eliminates is a non-empty
+  block of inductive types reached from the scope's block by a dependency path; a standalone one
+  uses only references of that block's closure and witnesses of the check of kinds other than 2;
+  any other is a constant address of a non-empty block of recursors whose family check with that
+  block is among the scope check's calls. -/
+  contWitness : ∀ B rb cs x, K.ScopeAt B rb cs → K.ContWitness cs B x → ¬ Covered K.t x →
+    ∃ ib, K.DepPath B ib ∧ IndBlock K.E₀ ib ∧ ContainerRecCheckIn cs K.bAddr K.t K.lim x ∧
+      (∀ cx, recordOf K.E₀ x = some cx → Standalone cx →
+        ∀ y, UsedRef K.E₀ x y → K.BlockRef ib y ∨ K.WitBase B y) ∧
+      ((∃ cx, recordOf K.E₀ x = some cx ∧ Standalone cx) ∨
+        ∃ a ca cs', recordOf K.E₀ a = some ca ∧ ConstAddrOf a ca x ∧ RecBlock K.E₀ a ∧
+          FamilyCallAtLim K.calls K.bAddr K.t ib a K.lim cs' ∧ ∀ cl ∈ cs', cl ∈ cs)
+  /-- `canonical_rules_at_pos` (a family record's recursor types are the reconstruction over its
+  block's types) and `check_const`'s modeled `Induct` arm (a modeled inductive is bound to no
+  role): a non-empty record of a scope check uses a constant address of its block bound to no
+  walked role. -/
+  recUsesBlock : ∀ B rb cs, K.ScopeAt B rb cs → ∀ crb rs, recordOf K.E₀ rb = some crb →
+    crb.info = .muts rs → 0 < rs.size →
+    ∃ cb x, recordOf K.E₀ B = some cb ∧ ConstAddrOf B cb x ∧ ¬ Covered K.t x ∧
+      UsedRef K.E₀ rb x
+  /-- Quotient-bound records (item 17: `assert_quot_record_refs` in `run_check_transitive` and
+  `env_walk_all`): a top-walked record bound to a role of the quotient package is standalone, and
+  every reference it uses is covered or bound to a role of the quotient package. -/
+  quotBound : ∀ x ro c, K.Top x → quotRole ro = true → K.t.addressOf? ro = some x →
+    recordOf K.E₀ x = some c → Standalone c ∧ ∀ y, UsedRef K.E₀ x y →
+      Covered K.t y ∨ ∃ ro', quotRole ro' = true ∧ K.t.addressOf? ro' = some y
+  /-- `check_advice_record`'s `Muts` arm (an advice block is not modeled) and the callers of
+  `check_family` (`check_modeled_block` from the modeled `Induct` and `Ctor` arms, `run_check`'s
+  `Rec` arm, each on a modeled block): the block of a scope check is listed by no scope check's
+  own advice walk. -/
+  listedNotScope : ∀ B rb cs B' rb' cs' advAs (k : Nat) b, K.ScopeAt B rb cs →
+    K.ScopeAt B' rb' cs' → FamilyCallOwn K.calls K.bAddr K.t B' rb' K.lim cs' advAs → advAs[k]? = some b →
+    Core.ixAddr b ≠ B
+  /-- `check_advice_record`'s arms (an advice block is a block of inductive types), read through
+  `check_family`'s unfolding: an advice record with a constant address that a scope check's own
+  advice walk lists is no family check's record (`adviceChecked`'s first part, for every scope
+  check). -/
+  listedUnclaimed : ∀ B rb cs advAs (k : Nat) b, K.ScopeAt B rb cs →
+    FamilyCallOwn K.calls K.bAddr K.t B rb K.lim cs advAs → advAs[k]? = some b →
+    (∃ ca x, recordOf K.E₀ (Core.ixAddr b) = some ca ∧ ConstAddrOf (Core.ixAddr b) ca x) →
+    Unclaimed K.fam (Core.ixAddr b)
 
 /-- **An advice record of a block is top-walked or inner**: the family check's own advice walk
 runs under the family check's role context, at the walk's limit, and checks every listed record
@@ -392,18 +568,10 @@ theorem FamRunCtx.adv_walked {K : FamRunCtx} (hB : BatchGives K) {B a : _root_.A
     (h : K.adv B a) : K.Top a ∨ K.Inner a := by
   by_cases hT : K.Top a
   · exact Or.inl hT
-  · obtain ⟨rb, hrb, ⟨b, hb, hba⟩, ca, x, hca, hx⟩ := h
-    obtain ⟨hh, hh', rc, xb, xrb, r, hrc, -, -, -, hw, -, -⟩ :=
-      FamRunCtx.ownList_spec (hB.ownWalk B rb (FamRunCtx.fam_some hrb).2.1)
-    obtain ⟨m, m', xadv, seen, wset, v, cs₁, ext, hrep, ev, hsub⟩ := hw.walk
-    obtain ⟨x_a, seen₁, r₁, h₁, h₁', cs₂, e₁, hrep₁, ev₁, hsub₂⟩ :=
-      Decl.check_advice_records_obs _ hrep ev b hb
-    refine Or.inr ⟨hT, ⟨ca, x, hca, hx⟩, Or.inl ⟨B, rb, Or.inl hrb, Or.inl
-      ⟨⟨h₁, h₁', rc, x_a, seen₁, wset, r₁, cs₂, hrc.mono (ext.trans e₁), ⟨b, hrep₁, hba⟩, ev₁,
-        fun cl hcl => hsub cl (hsub₂ cl hcl)⟩, fun c hc => ?_⟩⟩⟩
-    have e : c = ca := Option.some.inj (hc.symm.trans hca)
-    subst e
-    exact constAddr_not_proj hx
+  · obtain ⟨rb, hrb, hl, ca, x, hca, hx⟩ := h
+    exact Or.inr ⟨hT, ⟨ca, x, hca, hx⟩, Or.inl ⟨B, rb, K.famCalls B rb,
+      FamRunCtx.scope_of_fam hrb, Or.inl ⟨K.ownList B rb,
+        FamRunCtx.ownList_spec (hB.ownWalk B rb (FamRunCtx.fam_some hrb).2.1), hl⟩⟩⟩
 
 /-- **A block the fold steps with a family record had a family check at the walk's binding and
 limit** (`check_const`'s safe `Induct` arms and `check_modeled_block`, read off the check of the
@@ -422,8 +590,8 @@ structure NoBatchFields (K : FamRunCtx) : Prop where
   /-- `check_container_rec`, through `rec_family_block`, whose `Ingress::get_ci` has the `Rec`
   arm only: a container's recursor checked by a family check is no axiom and no quotient
   record. -/
-  containerKind : ∀ B rb a c, (K.fam B = some rb ∨ K.twin rb = some B) →
-    ContainerRecCheckIn (K.famCalls B rb) K.bAddr K.t K.lim a → recordOf K.E₀ a = some c →
+  containerKind : ∀ (cs : List (Call F)) a c, ContainerRecCheckIn cs K.bAddr K.t K.lim a →
+    (∀ cl ∈ cs, cl ∈ K.calls) → recordOf K.E₀ a = some c →
     (∀ ax, c.info ≠ .axio ax) ∧ ∀ q, c.info ≠ .quot q
 
 /-- **The member and constructor projection records of an inner block are in the store**: an
@@ -440,19 +608,20 @@ theorem FamRunCtx.innerMembers_of {K : FamRunCtx} {seeds : List _root_.Address}
         ∀ ind j, m = .indc ind → j < ind.ctors.size →
           recordOf K.E₀ (ctorAddr B i j) = some (constructorProjection B i j) := by
   intro B c ms hI hc hms i m hm
-  obtain ⟨-, -, ⟨B₀, rb, hor, hchk⟩ | ⟨B', hN⟩⟩ := hI
-  · have hcs : ∀ cl ∈ K.famCalls B₀ rb, cl ∈ K.calls := by
-      obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hsub⟩ :=
-        FamRunCtx.famCalls_spec (FamRunCtx.famCheck_of_inner hor)
+  obtain ⟨-, -, ⟨B₀, rb, cs, hS, hchk⟩ | ⟨B', hN⟩⟩ := hI
+  · have hcs : ∀ cl ∈ cs, cl ∈ K.calls := by
+      obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hsub⟩ := hS.1
       exact hsub
-    rcases hchk with ⟨⟨h, h', rc, xa, seen, wset, r, cs₁, hrc, ⟨ab, hab, rfl⟩, ev, hsub₁⟩, -⟩ |
-      ⟨h, h', rc, xa, ib, r, cs₁, hrc, haddr, ev, hsub₁⟩
-    · have hchkB := (Decl.adviceBlock_checked hW.runStore hrc hab ev
+    rcases hchk with ⟨advAs, hown, hl⟩ | ⟨-, -, -, ca, hca, hs⟩
+    · obtain ⟨h, h', rc, xa, seen, wset, r, cs₁, hrc, ⟨ab, hab, rfl⟩, ev, hsub₁⟩ :=
+        FamRunCtx.adviceCheck_of_listed hown hl
+      have hchkB := (Decl.adviceBlock_checked hW.runStore hrc hab ev
         (fun cl h => hcs cl (hsub₁ cl h)) hc hms).1 i (Array.getElem?_eq_some_iff.mp hm).1
       exact Claim.member_records hW.runStore hW.hashedStored hc hms hm hchkB
-    · exact absurd hms ((Decl.containerRec_checked hW.runStore hrc haddr ev
-        (fun cl h => hcs cl (hsub₁ cl h))).2 c hc ms)
-  · obtain ⟨_, _, _, _, _, _, cs', hc', _⟩ := hN
+    · have e : ca = c := Option.some.inj (hca.symm.trans hc)
+      subst e
+      exact (standalone_not_block hs ⟨ms, hms⟩).elim
+  · obtain ⟨_, _, _, _, _, _, _, _, cs', hc', _⟩ := hN
     obtain ⟨crb, rs, hF⟩ := hB.record B' B ⟨cs', hc'⟩
     have e : crb = c := Option.some.inj (hF.record.symm.trans hc)
     subst e
@@ -470,19 +639,20 @@ nested twin is a block. -/
 theorem FamRunCtx.innerKind_of {K : FamRunCtx} {seeds : List _root_.Address}
     {rank : _root_.Address → Nat}
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hO : NoBatchFields K) :
+    (hB : BatchGives K) (hO : NoBatchFields K) :
     ∀ a c, K.Inner a → recordOf K.E₀ a = some c →
       (∀ ax, c.info ≠ .axio ax) ∧ ∀ q, c.info ≠ .quot q := by
   intro a c hI hc
-  obtain ⟨-, -, ⟨B₀, rb, hor, hchk⟩ | ⟨B', hN⟩⟩ := hI
-  · rcases hchk with ⟨⟨h, h', rc, xa, seen, wset, r, cs₁, hrc, ⟨ab, hab, rfl⟩, ev, hsub₁⟩, -⟩ |
-      hcont
-    · have hcs : ∀ cl ∈ K.famCalls B₀ rb, cl ∈ K.calls := by
-        obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hsub⟩ :=
-          FamRunCtx.famCalls_spec (FamRunCtx.famCheck_of_inner hor)
-        exact hsub
+  obtain ⟨-, -, ⟨B₀, rb, cs, hS, hchk⟩ | ⟨B', hN⟩⟩ := hI
+  · have hcs : ∀ cl ∈ cs, cl ∈ K.calls := by
+      obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hsub⟩ := hS.1
+      exact hsub
+    rcases hchk with ⟨advAs, hown, hl⟩ | ⟨hwit, -, hcov, -⟩
+    · obtain ⟨h, h', rc, xa, seen, wset, r, cs₁, hrc, ⟨ab, hab, rfl⟩, ev, hsub₁⟩ :=
+        FamRunCtx.adviceCheck_of_listed hown hl
       exact Decl.adviceRecord_kind hW.runStore hab ev (fun cl h => hcs cl (hsub₁ cl h)) hc
-    · exact hO.containerKind B₀ rb a c hor hcont hc
+    · obtain ⟨ib, -, -, hcont, -⟩ := hB.contWitness B₀ rb cs a hS hwit hcov
+      exact hO.containerKind cs a c hcont hcs hc
   · obtain ⟨c', rs, hc', hrs, -, -⟩ := hN.1.2.1
     have e : c' = c := Option.some.inj (hc'.symm.trans hc)
     subst e
@@ -544,8 +714,9 @@ theorem FamRunCtx.reached_famOrTwin {K : FamRunCtx} (hB : BatchGives K) {B rb : 
     have e := FamRunCtx.block_unique hB h.2.1 (FamRunCtx.twin_facts h₁).2.2.2 h.2.2.2.2.1
     subst e
     exact Or.inr h₁
-  | nested hR hc hn =>
-    obtain ⟨B₁, h₁⟩ := FamRunCtx.nestedTwin_of (K := K) (rb' := rb) (B := B) ⟨hc, _, _, hR, hn⟩
+  | nested hR hc hT hI hn =>
+    obtain ⟨B₁, h₁⟩ :=
+      FamRunCtx.nestedTwin_of (K := K) (rb' := rb) (B := B) ⟨hc, hT, hI, _, _, hR, hn⟩
     obtain ⟨_, _, cs', hc', _⟩ := hn
     have e := FamRunCtx.block_unique hB hc.2.1 (FamRunCtx.twin_facts h₁).2.2.2 ⟨cs', hc'⟩
     subst e
@@ -585,7 +756,7 @@ theorem familyRun_of (K : FamRunCtx) {rank' : _root_.Address → Nat}
         obtain ⟨-, ⟨ca, x, hca, -⟩, -⟩ := h
         exact ⟨ca, hca⟩
       innerMembers := FamRunCtx.innerMembers_of hW hB
-      innerKind := FamRunCtx.innerKind_of hW hO
+      innerKind := FamRunCtx.innerKind_of hW hB hO
       innerClosed := hR.innerClosed
       twinBlock := fun rb' B h => by
         obtain ⟨-, -, hU, -⟩ := FamRunCtx.twin_facts h
@@ -653,15 +824,27 @@ theorem familyRun_of (K : FamRunCtx) {rank' : _root_.Address → Nat}
     exact ⟨K.famCalls B rb', FamRunCtx.famCalls_spec hFC⟩
   case innerCall =>
     intro a h
-    obtain ⟨hnT, -, ⟨B, rb, hor, hchk⟩ | ⟨B', hN⟩⟩ := h
-    · exact ⟨B, rb, K.famCalls B rb, hor,
-        FamRunCtx.famCalls_spec (FamRunCtx.famCheck_of_inner hor),
-        hchk.elim Or.inl fun h => Or.inr (Or.inl h)⟩
+    obtain ⟨hnT, ⟨ca, x, hca, hx⟩, ⟨B, rb, cs, hS, hchk⟩ | ⟨B', hN⟩⟩ := h
+    · -- a local record of a scope check, whose calls are among a reached check's
+      obtain ⟨B₀, rb₀, cs₀, hR, hc₀, hsub⟩ := hS.2.2.2
+      refine ⟨B₀, rb₀, cs₀, FamRunCtx.reached_famOrTwin hB hR, hc₀, ?_⟩
+      rcases hchk with ⟨advAs, hown, hl⟩ | ⟨hwit, -, hcov, -⟩
+      · obtain ⟨h, h', rc, xa, seen, wset, r, cs₁, hrc, hxa, ev, hsub₁⟩ :=
+          FamRunCtx.adviceCheck_of_listed hown hl
+        refine Or.inl ⟨⟨h, h', rc, xa, seen, wset, r, cs₁, hrc, hxa, ev,
+          fun cl hcl => hsub cl (hsub₁ cl hcl)⟩, fun c hc => ?_⟩
+        have e : c = ca := Option.some.inj (hc.symm.trans hca)
+        subst e
+        exact constAddr_not_proj hx
+      · obtain ⟨ib, -, -, ⟨h, h', rc, xa, xib, r, cs₁, hrc, hxa, ev, hsub₁⟩, -⟩ :=
+          hB.contWitness B rb cs a hS hwit hcov
+        exact Or.inr (Or.inl ⟨h, h', rc, xa, xib, r, cs₁, hrc, hxa, ev,
+          fun cl hcl => hsub cl (hsub₁ cl hcl)⟩)
     · -- a nested twin: its family check is in the calls of a reached one
       obtain ⟨B'', htw⟩ := FamRunCtx.nestedTwin_of hN
       rcases FamRunCtx.twin_some htw with hto | hN''
       · exact absurd hto.1 hnT
-      · obtain ⟨-, B, rb, hReach, cs, hcB, cs', hc', hsub⟩ := hN''
+      · obtain ⟨-, -, -, B, rb, hReach, cs, hcB, cs', hc', hsub⟩ := hN''
         exact ⟨B, rb, cs, FamRunCtx.reached_famOrTwin hB hReach, hcB,
           Or.inr (Or.inr ⟨B'', cs', htw, hc', hsub⟩)⟩
   case form =>
