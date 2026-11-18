@@ -822,6 +822,10 @@ def validate_member := aiur_fn⟦
   fn validate_member(rc: RoleCtx, tbl: RoleTable, r: Field, a: Bytes::AddressRef,
         ci: KernelTypes::KConstantInfo) -> () {
       assert_safe_role(ci);
+      -- the member's type is closed over its levels, as the anchors' and axioms' validators
+      -- check it, before it is compared with the pinned type
+      KernelCheck::validate_expr_well_scoped(KernelInfer::const_type_of(ci), 0,
+        KernelInfer::const_num_lvls(ci));
       assert_type_pinned(KernelInfer::const_type_of(ci), KernelRoleSpec::role_type(tbl, r));
       match KernelRoleSpec::role_member_kind(r) {
         0 => {
@@ -852,7 +856,25 @@ def validate_member := aiur_fn⟦
           } } ,
         2 => {
           match ci {
-            KernelTypes::KConstantInfo::Rec(_, _, _, _, _, _, _, _, _, _, _) => {
+            KernelTypes::KConstantInfo::Rec(_, _, np, ni, nmot, nmin, _, _, _, _, _) => {
+              -- the recursors of `Iff` and `Nonempty`: the major premise's index and the rules'
+              -- prefix are the pinned ones (the level count is the pinned type's,
+              -- `validate_role`)
+              match r {
+                25 => {
+                  assert_eq!(((np + nmot) + nmin) + ni, 4,
+                    "a bound recursor's major premise is not at its pinned index");
+                  assert_eq!((np + nmot) + nmin, 4,
+                    "a bound recursor's rules' prefix is not its pinned length");
+                  () } ,
+                28 => {
+                  assert_eq!(((np + nmot) + nmin) + ni, 3,
+                    "a bound recursor's major premise is not at its pinned index");
+                  assert_eq!((np + nmot) + nmin, 3,
+                    "a bound recursor's rules' prefix is not its pinned length");
+                  () } ,
+                _ => {  () } ,
+              };
               KernelClaim::run_check_transitive(rc, a) } ,
           } } ,
         3 => {
