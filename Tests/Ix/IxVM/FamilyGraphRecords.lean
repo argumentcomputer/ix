@@ -2,6 +2,8 @@ import Tests.Ix.IxVM.Harness
 import Tests.Ix.IxVM.FamilyGraphDefs
 import Tests.Ix.IxVM.FamilyRecordsDefs
 import Ix.IxVM.Model
+import Ix.Compile.KernelAnnotate
+import IxC.Kernel.Inductives.TwinInstall
 
 /-! # The compiled records of two nested families, for the family graph
 
@@ -129,9 +131,136 @@ private def wrapRecursor (leanEnv : Lean.Environment) (rv : Lean.RecursorVal) :
         | _ => #[]
       { r with rhs := wrapRuleGo leanEnv lo hi aps 0 r.rhs } }
 
+
+/-! ## IxC's twin record for the second recursor record, evaluated in source mode
+
+IxC's in-process install (`Ix.Compile.KernelAnnotate`, the one the certified compile runs for
+the binder data) gives the environment that stores the family as compiled. The recursors of the
+other variant, taken as IxC stores them and renamed to fresh keys, are a second recursor block
+for it. `secondRecordConjuncts` evaluates, with IxC's executable functions, each conjunct of
+IxC's twin record (`Ix.Kernel.Semantics.DeclRecTwinRunJ` at the package of runs) for that block:
+the generated type is the second record's own checked type, and a rule's generated right-hand
+side is the second record's rule with the canonical peers. -/
+
+section Judgement
+
+open Ix.Kernel
+
+private abbrev SRec := ConstantVal .source × Nat × Nat × List (RecRule .source)
+
+/-- IxC's in-process install of `constants`. -/
+private def installOf (leanEnv : Lean.Environment)
+    (constants : List (Lean.Name × Lean.ConstantInfo)) :
+    IO Ix.Compile.KernelAnnotate.Installed := do
+  let (prepared, _) ← IO.ofExcept (Ix.CompileM.prepareCertified leanEnv constants)
+  let ienv := Ix.CompileM.canonInput prepared.toArray 32
+  let pre ← IO.ofExcept Ix.Compile.KernelAnnotate.prelude?
+  let stop ← IO.mkRef false
+  let task ← Ix.Compile.KernelAnnotate.installTask ienv pre 32 stop
+  IO.ofExcept task.get
+
+/-- The stored recursors with the given spellings, in their order. -/
+private def storedRecs (env : Env .source) (names : List String) : List SRec :=
+  names.filterMap fun s => env.consts.findSome? fun ci =>
+    match ci with
+    | .recInfo cv mI rP rules => if toString cv.name == s then some (cv, mI, rP, rules) else none
+    | _ => none
+
+private def secondKey (k : Key .source) : Key .source :=
+  match k with
+  | .id nm => .id (.str nm "second")
+  | k => .aux k .implRec
+
+/-- The recursors as a block at fresh keys, their peers renamed with them. -/
+private def secondBlock (recs : List SRec) : List (ConstantInfo .source) :=
+  let names := recs.map (·.1.name)
+  let f : Key .source → Key .source := fun k => if names.contains k then secondKey k else k
+  recs.map fun (cv, mI, rP, rules) =>
+    .recInfo { cv with name := f cv.name } mI rP
+      (rules.map fun r => { r with rhs := r.rhs.renameConsts f })
+
+private def okOf {α : Type} (x : CheckM .source α) : Bool :=
+  match x with
+  | .ok _ => true
+  | .error _ => false
+
+/-- Each conjunct of IxC's twin record for `block` as a second record of the stored recursors
+`canon` of `env`, evaluated at fuel `fuel`. -/
+private def secondRecordConjuncts (fuel : Nat) (env : Env .source) (canon : List SRec)
+    (block : List (ConstantInfo .source)) : Except String (List (String × Bool) × Nat) := do
+  let ops : CheckerOps .source (CheckM .source) := fueledOps .verified fuel
+  let mut parts : List (NativeTwin.Part .source) := []
+  let mut lf := true
+  let mut counts := true
+  let mut lps := true
+  let mut model := true
+  let mut tyAbove := true
+  let mut tyTyped := true
+  for (ci, (cvC, mIC, rPC, rulesC)) in block.zip canon do
+    let .recInfo cvW mI rP rulesW := ci | throw "the block holds a constant that is no recursor"
+    match checkConstantVal ops env cvW with
+    | .error e => throw s!"the front door refuses {cvW.name}: {e}"
+    | .ok cvW' =>
+      lf := lf && Semantics.letFree cvW'.type
+      counts := counts && mI == mIC && rP == rPC && rulesW.length == rulesC.length
+      lps := lps && cvW.levelParams == cvC.levelParams
+      let model? := match env.find? (auxKey cvC.name .model) with
+        | some (.defnInfo cv value hint) => some (cv, value, hint)
+        | _ => none
+      model := model && model?.isSome
+      tyAbove := tyAbove && Semantics.wrapRelOk env.find? cvW'.type cvC.type
+      tyTyped := tyTyped && !cvW'.type.hasFvar &&
+        cvW'.type.allLevelParamsDefined cvC.levelParams && cvW'.type.constsResolve env &&
+        cvW'.type.looseBVarsBounded 0 && okOf (inferTypeCore .verified env fuel 0 cvW'.type)
+      parts := parts ++ [{ raw := cvW, annotated := cvW', canonical := cvC,
+        canonicalKey := cvC.name, majorIndex := mI, rulePrefix := rP, rawRules := rulesW,
+        canonicalRules := rulesC, model? := model? }]
+  let added := NativeTwin.provision parts ++ NativeTwin.models parts
+  let nodup := decide ((added.map (·.name)).Nodup)
+  let fresh := added.all fun ci => (env.find? ci.name).isNone
+  let envSelf := NativeTwin.selfEnv env parts
+  let checked ← match NativeTwin.checkPartsRules ops env envSelf parts with
+    | .ok c => pure c
+    | .error e => throw s!"a rule's stage fails: {e}"
+  let f := NativeTwin.peerRename parts
+  let back : Key .source → Key .source := fun k =>
+    match parts.find? (fun p => p.raw.name == k) with
+    | some p => p.canonicalKey
+    | none => k
+  let mut ruleAbove := true
+  let mut ruleRenamed := true
+  let mut ruleTyped := true
+  let mut nrules := 0
+  for p in checked do
+    for (rW', rC) in p.checkedRules.zip p.canonicalRules do
+      nrules := nrules + 1
+      let g := rW'.rhs.renameConsts back
+      ruleAbove := ruleAbove && Semantics.wrapRelOk env.find? g rC.rhs
+      ruleRenamed := ruleRenamed && Semantics.wrapRelOk env.find? (g.renameConsts f) rW'.rhs
+      ruleTyped := ruleTyped && !g.hasFvar && g.allLevelParamsDefined p.canonical.levelParams &&
+        g.constsResolve env && g.looseBVarsBounded 0 &&
+        okOf (inferTypeCore .verified env fuel 0 g)
+  return ([("the block is not empty and each member is a recursor", !block.isEmpty),
+    ("each front door accepts (checkConstantVal)", true),
+    ("each checked type has no let", lf),
+    ("each canonical recursor is stored with the member's counts and rule count", counts),
+    ("the level parameters are the canonical recursor's", lps),
+    ("each canonical recursor has its model companion", model),
+    ("the new names are distinct", nodup), ("the new names are fresh", fresh),
+    ("generated type := the member's checked type: WrapRel to the canonical type", tyAbove),
+    ("generated type: closed, level-closed, resolved, bounded, inferred", tyTyped),
+    ("each rule's stage (constructor, counts, annotation, scoping, no let, shape)", true),
+    ("generated rule := the member's rule at the canonical peers: WrapRel to the canonical rule",
+      ruleAbove),
+    ("generated rule, renamed to the member's peers: WrapRel to the member's rule", ruleRenamed),
+    ("generated rule: closed, level-closed, resolved, bounded, inferred", ruleTyped)], nrules)
+
+end Judgement
+
 /-- The certified compile of the closure of `names`, each constant passed through `edit`. -/
 private def compileWith (leanEnv : Lean.Environment) (names : Array Lean.Name)
-    (edit : Lean.Name × Lean.ConstantInfo → Lean.Name × Lean.ConstantInfo) : IO Ixon.Env := do
+    (edit : Lean.Name × Lean.ConstantInfo → Lean.Name × Lean.ConstantInfo) :
+    IO (Ixon.Env × List (Lean.Name × Lean.ConstantInfo)) := do
   let roots := withModeledRecursors
     ((names ++ synthesizedPrimNames ++ roleNames).filter leanEnv.constants.contains) leanEnv
   let constants := (collectCertifiedClosure roots leanEnv).map edit
@@ -142,7 +271,7 @@ private def compileWith (leanEnv : Lean.Environment) (names : Array Lean.Name)
       let fMap := out.failures.toMap
       throw (IO.userError s!"the certified compile: {fMap.size} constants failed: \
         {Ix.CompileM.recordedFailures fMap}")
-    IO.ofExcept (withDefaultRoleBinding out.env)
+    return (← IO.ofExcept (withDefaultRoleBinding out.env), constants)
 
 /-- The block of `first`, its recursor family record as the modeller names it, and the block's
 own addresses (the block and its projections), in `env` with its model advice. -/
@@ -190,8 +319,8 @@ def runTwin (leanEnv : Lean.Environment) : IO UInt32 := do
     | _ => false
   IO.println s!"[ixvm-family-graph-records] twin: recursors whose type changes: {changed.length} \
     of {recNames.length}"
-  let envC0 ← compileWith leanEnv names id
-  let envW0 ← compileWith leanEnv names edit
+  let (envC0, constantsC) ← compileWith leanEnv names id
+  let (envW0, constantsW) ← compileWith leanEnv names edit
   let (envC, blockC, rbC, ownedC, nAdvC) ← familyOf envC0 first
   let (envW, blockW, rbW, ownedW, nAdvW) ← familyOf envW0 first
   IO.println s!"[ixvm-family-graph-records] twin: as Lean has it: block {blockC}, recursor \
@@ -210,9 +339,49 @@ def runTwin (leanEnv : Lean.Environment) : IO UInt32 := do
         return { label := s!"family of {first}, {label}: {owned.size} owned",
                  accept := true, exercises := some exercise, witness }
   let rc ← runCases "ixvm-family-graph-records" cases (jobs := 2)
+  let mut judged := true
+  if (← IO.getEnv "IX_FAMILY_TWIN_JUDGE").isSome then
+    let instC ← installOf leanEnv constantsC
+    let instW ← installOf leanEnv constantsW
+    IO.println s!"[ixvm-family-graph-records] twin: IxC's install, as Lean has it: \
+      {instC.installed} declarations, {instC.failures.size} refused, {instC.lenient} entered \
+      without their checks; autoParams kept: {instW.installed}, {instW.failures.size}, \
+      {instW.lenient}"
+    let spellings := recNames.map toString
+    let recsC := storedRecs instC.fe.env spellings
+    let recsW := storedRecs instW.fe.env spellings
+    IO.println s!"[ixvm-family-graph-records] twin: stored recursors found: {recsC.length} and \
+      {recsW.length} of {recNames.length}"
+    let fuel := 1000000
+    let ops : Ix.Kernel.CheckerOps .source (Ix.Kernel.CheckM .source) :=
+      Ix.Kernel.fueledOps .verified fuel
+    -- IxC's own executable twin check, in both directions
+    let verdict (env : Ix.Kernel.Env .source) (block : List (Ix.Kernel.ConstantInfo .source)) :
+        String :=
+      match Ix.Kernel.NativeTwin.check ops env block with
+      | .ok _ => "accepted"
+      | .error e => s!"declined: {((toString e).replace "\n" " ").take 160}"
+    let keptOverLean := verdict instC.fe.env (secondBlock recsW)
+    let leanOverKept := verdict instW.fe.env (secondBlock recsC)
+    IO.println s!"[ixvm-family-graph-records] twin: IxC's executable twin check, the record with \
+      the autoParams kept as a second record of Lean's: {keptOverLean}"
+    IO.println s!"[ixvm-family-graph-records] twin: IxC's executable twin check, Lean's record as \
+      a second record of the one with the autoParams kept: {leanOverKept}"
+    match secondRecordConjuncts fuel instC.fe.env recsC (secondBlock recsW) with
+    | .error e =>
+      IO.eprintln s!"[ixvm-family-graph-records] twin: the twin record's conjuncts: {e}"
+      judged := false
+    | .ok (cs, nrules) =>
+      for (name, b) in cs do
+        IO.println s!"[ixvm-family-graph-records] twin record, {name}: {b}"
+        judged := judged && b
+      IO.println s!"[ixvm-family-graph-records] twin record: {recsW.length} recursors, {nrules} \
+        rules, every conjunct {judged}"
+    judged := judged && recsC.length == recNames.length && recsW.length == recNames.length &&
+      leanOverKept == "accepted"
   if let some path ← IO.getEnv "IX_FAMILY_TWIN_OUT" then
     IO.FS.writeFile path s!"twin {hex blockC.hash} {hex rbC.hash} {hex rbW.hash}\n"
-  return if rc == 0 && sameBlock && secondRecord then 0 else 1
+  return if rc == 0 && sameBlock && secondRecord && judged then 0 else 1
 
 /-- The two nested families, and, with `IX_FAMILY_TWIN` set, the second recursor record. -/
 def run (leanEnv : Lean.Environment) : IO UInt32 := do
