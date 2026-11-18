@@ -142,9 +142,9 @@ impl<B: FieldBackend> Builder<B> {
     self.shared.insert(op, value);
     value
   }
-  fn expr(&mut self, p: &Polynomial) -> Value<B::Element> {
+  fn expr(&mut self, p: &Polynomial<B::Word>) -> Value<B::Element> {
     match p {
-      Polynomial::Const(v) => Value::Constant(self.field.from_u64(*v)),
+      Polynomial::Const(v) => Value::Constant(self.field.from_word(*v)),
       Polynomial::Var(i) => self.logical[*i],
       Polynomial::Add(xs) | Polynomial::Sub(xs) | Polynomial::Mul(xs) => {
         let a = self.expr(&xs[0]);
@@ -157,7 +157,7 @@ impl<B: FieldBackend> Builder<B> {
       },
     }
   }
-  fn exprs(&mut self, ps: &[Polynomial]) -> Vec<Value<B::Element>> {
+  fn exprs(&mut self, ps: &[Polynomial<B::Word>]) -> Vec<Value<B::Element>> {
     ps.iter().map(|p| self.expr(p)).collect()
   }
   fn assign(
@@ -177,7 +177,7 @@ impl<B: FieldBackend> Builder<B> {
 
 impl<B: FieldBackend> FillPlan<B> {
   pub(super) fn compile(
-    plan: &FunctionPlan,
+    plan: &FunctionPlan<B::Word>,
     callables: &FxHashMap<String, usize>,
     program: &CheckedProgram<B>,
   ) -> Self {
@@ -358,14 +358,23 @@ impl<B: FieldBackend> FillPlan<B> {
           buffer.clear();
           buffer.extend(values.iter().map(|v| v.get(scratch)));
           scratch[k.start] = field.from_u64(
-            record.memory.address_of(buffer).ok_or("missing recorded store")?
-              as u64,
+            u64::try_from(
+              record
+                .memory
+                .address_of(buffer)
+                .ok_or("missing recorded store")?,
+            )
+            .map_err(|_error| "ROM address overflow")?,
           );
         },
         Node::Load { address, .. } => {
-          let address = usize::try_from(field.to_u64(address.get(scratch)))
-            .ok()
-            .ok_or("ROM address overflow")?;
+          let address = usize::try_from(
+            field
+              .try_to_u64(address.get(scratch))
+              .map_err(|_error| "ROM address overflow")?,
+          )
+          .ok()
+          .ok_or("ROM address overflow")?;
           let cell = &record
             .memory
             .get_by_width(k.width, address)
@@ -399,7 +408,7 @@ impl<B: FieldBackend> FillPlan<B> {
   }
 }
 
-impl<B: FieldBackend> FillPlan<B> {
+impl<B: FieldBackend<Word = u64>> FillPlan<B> {
   /// This plan in the stable description schema; `plan` is the function's
   /// artifact plan, which names its hint sites.
   pub(super) fn describe(
@@ -570,7 +579,7 @@ pub(super) mod device {
     pub outputs: u32,
   }
 
-  impl<B: FieldBackend> FillPlan<B> {
+  impl<B: FieldBackend<Word = u64>> FillPlan<B> {
     /// The plan's kernels and column writes, writing physical `column`s, or
     /// `None` when a kernel needs a callable or hint site without a device
     /// implementation. `rom(width)` is the lookup slot of that width's ROM.

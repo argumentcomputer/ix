@@ -1,6 +1,7 @@
 module
 public import Ix.Cli.FormalAiur
 public import Ix.Cli.Compression
+public import Ix.Cli.AiurCompression
 public import Ix.Aggr.Verification
 
 /-! The formal recursive verifier's identity, its trusted acceptance check
@@ -259,6 +260,7 @@ def runController (p : Cli.Parsed) (onRoot : Address → IO Unit := fun _ => pur
       structuralAbove := above, outManifest := some out, select := none
       bindingProof := binding.map (·.1.hash), options := options.job
       useCache := !(p.hasFlag "no-cache"), useIndex := !(p.hasFlag "no-index")
+      fresh := p.hasFlag "fresh"
       claimsOnly := false, assumeBinding := false }
     let .root bytes _ ← FormalProver.proveLanes ctx.ixvmSystem ctx.aggrSystem handle config
       | throw (IO.userError "the controller returned claims instead of a root")
@@ -269,6 +271,7 @@ def runController (p : Cli.Parsed) (onRoot : Address → IO Unit := fun _ => pur
     if let some flag := p.flag? "report" then
       IO.FS.writeFile (flag.as! String) (Json.mkObj [("schema", toJson "ix-formal-pipeline/1"),
         ("root", toJson root), ("jobs", toJson lanes), ("proved_leaves", toJson true),
+        ("constants", toJson count),
         ("verified", toJson true)]).pretty
     IO.println root
     onRoot address
@@ -362,11 +365,23 @@ def verify (p : Cli.Parsed) : IO UInt32 := do
     let some addr := Address.fromString hex | throw (IO.userError "invalid aggregate address")
     let wrapper ← Compression.readProof addr
     unless expected.all (· == wrapper.claim) do throw (IO.userError "aggregate does not match the requested environment/manifest")
+    if AiurCompression.selected p && !AiurCompression.isCompressed wrapper.proof then
+      throw (IO.userError "expected an Aiur compression envelope for the supplied verifier")
     if Compression.isCompressed wrapper.proof then
       let .checkEnv .. := wrapper.claim
         | throw (IO.userError s!"aggregate proof {addr} does not bundle a CheckEnv claim")
-      let rc ← Compression.verifyProof addr wrapper (p.hasFlag "dev-srs")
-      if rc != 0 then return rc
+      if AiurCompression.isCompressed wrapper.proof then
+        let opts ← AiurCompression.options p
+        let ctx ← match ctx? with
+          | some c => pure c
+          | none =>
+            let c ← context p
+            ctx? := some c
+            pure c
+        AiurCompression.verifyProof opts addr wrapper ctx.aggr.key (statementBytes ctx.toKeys wrapper.claim) (p.hasFlag "dev-srs")
+      else
+        let rc ← Compression.verifyProof addr wrapper (p.hasFlag "dev-srs")
+        if rc != 0 then return rc
     else
       let ctx ← match ctx? with
         | some c => pure c

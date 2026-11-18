@@ -56,4 +56,60 @@ def tableRowsNodup [DecidableEq α] (rows : List (Constant α)) : Bool :=
     tableRowsNodup rows = decide rows.Nodup :=
   by unfold tableRowsNodup; split <;> simp [nodupByKey_eq]
 
+private def nodupTasks [DecidableEq α] : List α → List (Task Bool)
+  | [] => []
+  | row :: rows => (Task.spawn fun _ => decide (row ∉ rows)) :: nodupTasks rows
+
+private def parallelNodup [DecidableEq α] (rows : List α) : Bool :=
+  (nodupTasks rows).all fun result => result.get
+
+private theorem parallelNodup_eq [DecidableEq α] (rows : List α) :
+    parallelNodup rows = decide rows.Nodup := by
+  induction rows with
+  | nil => rfl
+  | cons row rows ih =>
+      change (decide (row ∉ rows) && parallelNodup rows) = decide (row :: rows).Nodup
+      rw [ih]
+      simp only [List.nodup_cons, Bool.decide_and]
+
+private def scalarRow (value : α) : Constant α := .tuple [.field value]
+
+/-- The round-trip check permits scalar comparison without sharing nested
+row objects between workers. Non-scalar rows retain the general check. -/
+private def scalarRowsNodup [DecidableEq α] (rows : List (Constant α))
+    (values : List α) : Bool :=
+  if rows = values.map scalarRow then parallelNodup values else decide rows.Nodup
+
+private theorem scalarRowsNodup_eq [DecidableEq α] (rows : List (Constant α))
+    (values : List α) : scalarRowsNodup rows values = decide rows.Nodup := by
+  unfold scalarRowsNodup
+  split
+  next h =>
+    rw [parallelNodup_eq, h]
+    simp [List.Nodup, List.pairwise_map, scalarRow]
+  · rfl
+
+/-- Large unary tables share immutable scalar suffixes between independent
+membership checks. Small tables avoid task-allocation overhead. -/
+private def tableRowsNodupParallel [DecidableEq α] (rows : List (Constant α)) : Bool :=
+  match rows with
+  | .tuple [_] :: _ =>
+      if rows.length ≤ 1024 then decide rows.Nodup else
+      scalarRowsNodup rows (rows.filterMap fun | .tuple [.field value] => some value | _ => none)
+  | _ => nodupByKey tableRowKey rows
+
+private theorem tableRowsNodupParallel_eq [DecidableEq α] (rows : List (Constant α)) :
+    tableRowsNodupParallel rows = decide rows.Nodup := by
+  unfold tableRowsNodupParallel
+  split
+  · split
+    · rfl
+    · exact scalarRowsNodup_eq _ _
+  · exact nodupByKey_eq _ _
+
+@[csimp] theorem tableRowsNodup_eq_parallel :
+    @tableRowsNodup = @tableRowsNodupParallel := by
+  funext α inst rows
+  rw [tableRowsNodup_eq, tableRowsNodupParallel_eq]
+
 end Aiur

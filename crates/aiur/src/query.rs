@@ -276,7 +276,9 @@ impl<B: FieldBackend> QueryTable<B> {
     for ((&value, low), &(slot, mask)) in
       values.iter().zip(start..start + values.len()).zip(high)
     {
-      let value = field.to_u64(value);
+      let value = field
+        .try_to_u64(value)
+        .map_err(|_| StorageError::Invalid(NARROW_OVERFLOW))?;
       words[low] = value as u32;
       if mask == 0 {
         overflow |= value >> 32;
@@ -295,7 +297,10 @@ impl<B: FieldBackend> QueryTable<B> {
   /// `out`, which is the table's stride long.
   #[cfg(feature = "cuda")]
   #[inline(always)]
-  pub(crate) fn row_words(&self, row: usize, out: &mut [u64]) {
+  pub(crate) fn row_words(&self, row: usize, out: &mut [u64])
+  where
+    B: FieldBackend<Word = u64>,
+  {
     debug_assert!(self.static_map.is_none());
     if self.columns.packed {
       self.unpack(row, 0, out, |value| value);
@@ -435,7 +440,10 @@ impl<B: FieldBackend> QueryTable<B> {
     args.iter().zip(words).zip(high).fold(
       true,
       |equal, ((&arg, &low), &(slot, mask))| {
-        let value = self.field.to_u64(arg);
+        // A value beyond 64 bits was never packed, so it matches no row.
+        let Ok(value) = self.field.try_to_u64(arg) else {
+          return false;
+        };
         equal
           & (low == value as u32)
           & (words[slot as usize] & mask == (value >> 32) as u32)
@@ -454,7 +462,8 @@ impl<B: FieldBackend> QueryTable<B> {
       return (hash, None);
     }
     if let [key] = args
-      && let Ok(key) = usize::try_from(self.field.to_u64(*key))
+      && let Ok(key) = self.field.try_to_u64(*key)
+      && let Ok(key) = usize::try_from(key)
       && let Some(&row) = self.dense_index.get(key)
       && row != u32::MAX
     {
@@ -470,7 +479,8 @@ impl<B: FieldBackend> QueryTable<B> {
   #[inline(always)]
   pub(crate) fn prefetch(&self, args: &[B::Element]) {
     if let [key] = args
-      && let Ok(key) = usize::try_from(self.field.to_u64(*key))
+      && let Ok(key) = self.field.try_to_u64(*key)
+      && let Ok(key) = usize::try_from(key)
       && key < self.dense_index.len()
     {
       crate::index::prefetch(&raw const self.dense_index[key]);
@@ -529,7 +539,8 @@ impl<B: FieldBackend> QueryTable<B> {
     self.index.insert(tag(hash), entry);
     drop(replaced);
     if let [key] = args
-      && let Ok(key) = usize::try_from(field.to_u64(*key))
+      && let Ok(key) = field.try_to_u64(*key)
+      && let Ok(key) = usize::try_from(key)
     {
       // Bound space by observed table size, with a small startup allowance
       // and an absolute 4 MiB ceiling. Never allocate in
@@ -727,6 +738,16 @@ impl<B: FieldBackend> QueryMap<B> {
       Some(map) => map.counts.iter().all(|&count| count == 0),
       None => table.len() == 0,
     })
+  }
+  /// Multiplicities in the original fixed map's row order, including unused
+  /// rows. Function callables and unknown IDs have no fixed counts.
+  pub fn fixed_counts(&self, callable: usize) -> Option<&[u64]> {
+    self.tables.get(callable)?.static_map.as_ref().map(|map| &*map.counts)
+  }
+  /// Stored rows for one callable. Fixed maps include unused rows; function
+  /// callables count distinct memoized queries, without scanning their payloads.
+  pub fn callable_rows(&self, callable: usize) -> Option<usize> {
+    self.tables.get(callable).map(QueryTable::len)
   }
   pub fn get(
     &self,

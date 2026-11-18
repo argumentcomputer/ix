@@ -1,0 +1,525 @@
+{
+  "format": "ix-compress-wrap-layout-v1",
+  "version": 3,
+  "grouping": "m16384w64",
+  "artifact_blake3": "9db8e6585bfc730ba7859e0c387f26daebdc1ae3625eebed76d6f4da7364d548",
+  "layout": {
+    "key_blake3": "1bc0cd05e3d1ad8d0cf6248dc8f398a007cb845b571b2d1cf66d67cc6ba6ad3f",
+    "log_heights": [
+      1,
+      19,
+      20,
+      19,
+      19,
+      17,
+      17,
+      20,
+      20,
+      20,
+      17,
+      20,
+      19,
+      19,
+      21,
+      16,
+      18,
+      20,
+      8,
+      16,
+      10,
+      21,
+      15,
+      5,
+      17,
+      19,
+      9,
+      20,
+      5,
+      7,
+      2,
+      17,
+      14
+    ],
+    "memory_circuits": [
+      [
+        3,
+        21
+      ],
+      [
+        4,
+        22
+      ],
+      [
+        5,
+        23
+      ],
+      [
+        6,
+        24
+      ],
+      [
+        7,
+        25
+      ],
+      [
+        8,
+        26
+      ],
+      [
+        10,
+        27
+      ],
+      [
+        11,
+        28
+      ],
+      [
+        12,
+        29
+      ],
+      [
+        26,
+        30
+      ],
+      [
+        32,
+        31
+      ],
+      [
+        34,
+        32
+      ]
+    ],
+    "claim_len": 18,
+    "lowering": "lean-wide-v1"
+  },
+  "layout_blake3": "81b62471a48b5ec89dc0e5c9c80bc483919c36ec74c17637054c0cf030cfa65e",
+  "sizing": {
+    "admission": {
+      "circuits": [
+        {
+          "fixed": false,
+          "log_height": 1,
+          "name": "CompressWrap::verify_root",
+          "rows": 1
+        },
+        {
+          "fixed": false,
+          "log_height": 19,
+          "name": "StarkIO::read_byte_stream",
+          "rows": 273499
+        },
+        {
+          "fixed": false,
+          "log_height": 20,
+          "name": "Blake3::compress",
+          "rows": 811072
+        },
+        {
+          "fixed": false,
+          "log_height": 19,
+          "name": "Blake3::compress_chunks",
+          "rows": 459154
+        },
+        {
+          "fixed": false,
+          "log_height": 19,
+          "name": "SystemDeserialize::read_vk_u8",
+          "rows": 273337
+        },
+        {
+          "fixed": false,
+          "log_height": 17,
+          "name": "SystemDeserialize::read_vk_u16",
+          "rows": 110400
+        },
+        {
+          "fixed": false,
+          "log_height": 17,
+          "name": "UInt32::less_than_fields",
+          "rows": 72851
+        },
+        {
+          "fixed": false,
+          "log_height": 20,
+          "name": "ProofDeserialize::read_u64_at",
+          "rows": 679797
+        },
+        {
+          "fixed": false,
+          "log_height": 20,
+          "name": "ProofDeserialize::read_u64_vec_n",
+          "rows": 583037
+        },
+        {
+          "fixed": false,
+          "log_height": 20,
+          "name": "${\"name\":\"Lists::length\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":8}}]}",
+          "rows": 518080
+        },
+        {
+          "fixed": false,
+          "log_height": 17,
+          "name": "StarkHash::b3_rows_chunks",
+          "rows": 68347
+        },
+        {
+          "fixed": false,
+          "log_height": 20,
+          "name": "Pcs::rows_pop",
+          "rows": 547155
+        },
+        {
+          "fixed": false,
+          "log_height": 19,
+          "name": "Pcs::select_rows",
+          "rows": 378036
+        },
+        {
+          "fixed": false,
+          "log_height": 19,
+          "name": "Pcs::bucket_update",
+          "rows": 326596
+        },
+        {
+          "fixed": false,
+          "log_height": 21,
+          "name": "Pcs::ro_fold",
+          "rows": 1048304
+        },
+        {
+          "fixed": false,
+          "log_height": 16,
+          "name": "G_cold1",
+          "rows": 33154
+        },
+        {
+          "fixed": false,
+          "log_height": 18,
+          "name": "G_cold0",
+          "rows": 243676
+        },
+        {
+          "fixed": false,
+          "log_height": 20,
+          "name": "G_mid",
+          "rows": 681232
+        },
+        {
+          "fixed": true,
+          "log_height": 8,
+          "name": "<table:UInt8::byte_inputs>",
+          "rows": 256
+        },
+        {
+          "fixed": true,
+          "log_height": 16,
+          "name": "<table:UInt8::pair_inputs>",
+          "rows": 65536
+        },
+        {
+          "fixed": true,
+          "log_height": 10,
+          "name": "<table:UInt8::sum_inputs>",
+          "rows": 1024
+        },
+        {
+          "fixed": true,
+          "log_height": 21,
+          "name": "<ROM:3>",
+          "rows": 999348
+        },
+        {
+          "fixed": true,
+          "log_height": 15,
+          "name": "<ROM:4>",
+          "rows": 16066
+        },
+        {
+          "fixed": true,
+          "log_height": 5,
+          "name": "<ROM:5>",
+          "rows": 22
+        },
+        {
+          "fixed": true,
+          "log_height": 17,
+          "name": "<ROM:6>",
+          "rows": 94602
+        },
+        {
+          "fixed": true,
+          "log_height": 19,
+          "name": "<ROM:7>",
+          "rows": 326396
+        },
+        {
+          "fixed": true,
+          "log_height": 9,
+          "name": "<ROM:8>",
+          "rows": 267
+        },
+        {
+          "fixed": true,
+          "log_height": 20,
+          "name": "<ROM:10>",
+          "rows": 525134
+        },
+        {
+          "fixed": true,
+          "log_height": 5,
+          "name": "<ROM:11>",
+          "rows": 25
+        },
+        {
+          "fixed": true,
+          "log_height": 7,
+          "name": "<ROM:12>",
+          "rows": 77
+        },
+        {
+          "fixed": true,
+          "log_height": 2,
+          "name": "<ROM:26>",
+          "rows": 2
+        },
+        {
+          "fixed": true,
+          "log_height": 17,
+          "name": "<ROM:32>",
+          "rows": 112144
+        },
+        {
+          "fixed": true,
+          "log_height": 14,
+          "name": "<ROM:34>",
+          "rows": 13527
+        }
+      ]
+    },
+    "row_bounds": {
+      "assumptions": "root key = pinned aggregate key, one trace shard, max root height <= 2^22; memoisation hits treated as structural (see summary)",
+      "circuits": [
+        {
+          "driver": "key",
+          "max_rows": 1,
+          "name": "CompressWrap::verify_root",
+          "rows": 1
+        },
+        {
+          "driver": "key",
+          "max_rows": 273499,
+          "name": "StarkIO::read_byte_stream",
+          "rows": 273499
+        },
+        {
+          "driver": "group: key=3, proof=17",
+          "max_rows": 34809,
+          "name": "G_cold1",
+          "rows": 33154
+        },
+        {
+          "driver": "proof",
+          "max_rows": 851626,
+          "name": "Blake3::compress",
+          "rows": 811072
+        },
+        {
+          "driver": "proof",
+          "max_rows": 482112,
+          "name": "Blake3::compress_chunks",
+          "rows": 459154
+        },
+        {
+          "driver": "group: key=11, proof=118, heights=11",
+          "max_rows": 256417,
+          "name": "G_cold0",
+          "rows": 243676
+        },
+        {
+          "driver": "group: key=5, proof=15, heights=2",
+          "max_rows": 711465,
+          "name": "G_mid",
+          "rows": 681232
+        },
+        {
+          "driver": "key",
+          "max_rows": 273337,
+          "name": "SystemDeserialize::read_vk_u8",
+          "rows": 273337
+        },
+        {
+          "driver": "key",
+          "max_rows": 110400,
+          "name": "SystemDeserialize::read_vk_u16",
+          "rows": 110400
+        },
+        {
+          "driver": "heights",
+          "max_rows": 83779,
+          "name": "UInt32::less_than_fields",
+          "rows": 72851
+        },
+        {
+          "driver": "proof",
+          "max_rows": 713787,
+          "name": "ProofDeserialize::read_u64_at",
+          "rows": 679797
+        },
+        {
+          "driver": "proof",
+          "max_rows": 612189,
+          "name": "ProofDeserialize::read_u64_vec_n",
+          "rows": 583037
+        },
+        {
+          "driver": "proof",
+          "max_rows": 543984,
+          "name": "${\"name\":\"Lists::length\",\"types\":[{\"array\":{\"element\":\"field\",\"length\":8}}]}",
+          "rows": 518080
+        },
+        {
+          "driver": "proof",
+          "max_rows": 71765,
+          "name": "StarkHash::b3_rows_chunks",
+          "rows": 68347
+        },
+        {
+          "driver": "proof",
+          "max_rows": 574513,
+          "name": "Pcs::rows_pop",
+          "rows": 547155
+        },
+        {
+          "driver": "heights",
+          "max_rows": 434742,
+          "name": "Pcs::select_rows",
+          "rows": 378036
+        },
+        {
+          "driver": "heights",
+          "max_rows": 375586,
+          "name": "Pcs::bucket_update",
+          "rows": 326596
+        },
+        {
+          "driver": "proof",
+          "max_rows": 1100720,
+          "name": "Pcs::ro_fold",
+          "rows": 1048304
+        },
+        {
+          "driver": "fixed_table",
+          "max_rows": 256,
+          "name": "<table:UInt8::byte_inputs>",
+          "rows": 256
+        },
+        {
+          "driver": "fixed_table",
+          "max_rows": 65536,
+          "name": "<table:UInt8::pair_inputs>",
+          "rows": 65536
+        },
+        {
+          "driver": "fixed_table",
+          "max_rows": 1024,
+          "name": "<table:UInt8::sum_inputs>",
+          "rows": 1024
+        },
+        {
+          "driver": "rom",
+          "max_rows": 1049316,
+          "name": "<ROM:3>",
+          "rows": 999348
+        },
+        {
+          "driver": "rom",
+          "max_rows": 16870,
+          "name": "<ROM:4>",
+          "rows": 16066
+        },
+        {
+          "driver": "rom",
+          "max_rows": 24,
+          "name": "<ROM:5>",
+          "rows": 22
+        },
+        {
+          "driver": "rom",
+          "max_rows": 99333,
+          "name": "<ROM:6>",
+          "rows": 94602
+        },
+        {
+          "driver": "rom",
+          "max_rows": 342716,
+          "name": "<ROM:7>",
+          "rows": 326396
+        },
+        {
+          "driver": "rom",
+          "max_rows": 281,
+          "name": "<ROM:8>",
+          "rows": 267
+        },
+        {
+          "driver": "rom",
+          "max_rows": 551391,
+          "name": "<ROM:10>",
+          "rows": 525134
+        },
+        {
+          "driver": "rom",
+          "max_rows": 27,
+          "name": "<ROM:11>",
+          "rows": 25
+        },
+        {
+          "driver": "rom",
+          "max_rows": 81,
+          "name": "<ROM:12>",
+          "rows": 77
+        },
+        {
+          "driver": "rom",
+          "max_rows": 3,
+          "name": "<ROM:26>",
+          "rows": 2
+        },
+        {
+          "driver": "rom",
+          "max_rows": 117752,
+          "name": "<ROM:32>",
+          "rows": 112144
+        },
+        {
+          "driver": "rom",
+          "max_rows": 14204,
+          "name": "<ROM:34>",
+          "rows": 13527
+        }
+      ],
+      "deltas": {
+        "fixed_table": 0.0,
+        "heights": 0.15,
+        "key": 0.0,
+        "proof": 0.05,
+        "rom": 0.05
+      },
+      "drivers": {
+        "fixed_table": "preprocessed table, fixed height",
+        "heights": "per-query work repeated per distinct root height (bucket build/update, row selection by height): Init has 20 distinct heights, at most 22 at max height 2^21 and 23 at 2^22; bound +15%",
+        "key": "rows fixed by the pinned aggregate key and 18-word claim (key/claim byte stream, VK and constraint-graph deserialisation): identical for every admissible root",
+        "proof": "rows driven by root proof contents: openings are fixed by the key when all circuits are active; Merkle paths and FRI rounds grow with log max root height (+1 height <= ~3%); bound +5%",
+        "rom": "distinct stored values of this width, proportional to proof contents; bound +5%"
+      },
+      "rule": "max_rows = Init rows x (1 + delta(driver)); groups sum member bounds"
+    },
+    "rule": "each resizable circuit at the smallest power of two covering both the sizing root's rows and its row bound; fixed tables at their preprocessed height",
+    "sizing_root": {
+      "root_claims_blake3": "c67d7ce5ac847836c4962eef2eadc71de89c08577e63d25f1982a145c09a6908",
+      "root_key_blake3": "55f0b8b04acdc211e249b538adcdab95fec15de6c9504ba875ffb52b1f1f8e86",
+      "root_proof_blake3": "552154c3622f5c737366dbe379a7b7e97560f20865410d142d65fc58bec64399"
+    }
+  }
+}

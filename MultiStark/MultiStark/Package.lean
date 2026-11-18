@@ -16,6 +16,8 @@ open Aiur
 def recursionEntry : String := "MultiStark::verify_multi_stark_proof"
 /-- The aggregator's entry point. -/
 def aggregateEntry : String := "MultiStark::ix_aggr"
+/-- The root compression wrapper's entry point. -/
+def compressWrapEntry : String := "CompressWrap::verify_root"
 
 /-- The program (`aggregateProgram` with `aggregate`, else
 `recursionProgram`), its entry point and its identity digest. -/
@@ -24,13 +26,11 @@ def selected (aggregate : Bool) : Modules.Program MultiStark.F × String × Stri
     (MultiStark.aggregateProgram, MultiStark.aggregateEntry, MultiStark.aggregateDigest)
   else (MultiStark.recursionProgram, MultiStark.recursionEntry, MultiStark.recursionDigest)
 
-/-- The selected program's compiled package (`Aiur.Artifact.package`): its
+/-- A program's compiled package (`Aiur.Artifact.package`): its
 bytecode and, with `trace`, its certified circuits and population plans, with
 the function groups `groups`. -/
-def compilePackage (aggregate : Bool)
-    (groups : List (String × List String) := MultiStark.functionGroups)
-    (trace : Bool := true) : IO ByteArray := do
-  let (source, entry, _) := MultiStark.selected aggregate
+private def compileSource (source : Modules.Program MultiStark.F) (entry : String)
+    (groups : List (String × List String)) (trace : Bool) : IO ByteArray := do
   let prepared ← IO.ofExcept (Modules.prepare source [entry])
   let exported ← IO.ofExcept prepared.exportExecution
   let (exported, circuits) ← if trace then do
@@ -39,5 +39,18 @@ def compilePackage (aggregate : Bool)
       pure (exported, some circuits)
     else pure (exported, none)
   IO.ofExcept (Artifact.package exported MultiStark.modulus ZMod.val circuits)
+
+/-- Compile the selected recursive or aggregation program. -/
+def compilePackage (aggregate : Bool)
+    (groups : List (String × List String) := MultiStark.functionGroups)
+    (trace : Bool := true) : IO ByteArray := do
+  let (source, entry, _) := MultiStark.selected aggregate
+  compileSource source entry groups trace
+
+/-- Compile the compression wrapper with the same verifier groups and depth pass. -/
+def compileCompressWrapPackage
+    (groups : List (String × List String) := MultiStark.functionGroups)
+    (trace : Bool := true) : IO ByteArray :=
+  compileSource compressWrapProgram compressWrapEntry groups trace
 
 end MultiStark

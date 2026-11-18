@@ -10,7 +10,7 @@ import (
 )
 
 func TestNativeSRSRoundTrip(t *testing.T) {
-	srs, err := kzg.NewSRS(8, big.NewInt(7))
+	srs, err := kzg.NewSRS(7, big.NewInt(7))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,5 +37,18 @@ func TestNativeSRSRoundTrip(t *testing.T) {
 	}
 	if err := writeSRS(path, srs); err == nil {
 		t.Fatal("replaced an existing release")
+	}
+}
+
+func TestExactRetainedPowerCounts(t *testing.T) {
+	for _, n := range []int{2, 3, 7, 1 << 26, (1 << 26) + 3, 100800000} {
+		if !validPowerCount(n) {
+			t.Fatalf("rejected valid count %d", n)
+		}
+	}
+	for _, n := range []int{-1, 0, 1, 100800001} {
+		if validPowerCount(n) {
+			t.Fatalf("accepted invalid count %d", n)
+		}
 	}
 }

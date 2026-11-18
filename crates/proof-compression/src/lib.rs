@@ -1,5 +1,6 @@
 //! FRI and KZG proof compression for Ix.
 
+pub mod aiur_backend;
 mod circuit_metadata;
 pub mod foreign;
 pub mod fri;

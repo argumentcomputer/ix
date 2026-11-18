@@ -5,7 +5,7 @@
 //! hints. Constraints and exact integer message balance can be checked separately.
 use crate::bytecode::{CheckedProgram, Instruction, Type};
 use crate::execute::Execution;
-use crate::field::{FieldBackend, PrimeField};
+use crate::field::{FieldBackend, PrimeField, Word};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -64,15 +64,15 @@ pub fn lookup_aliases(trace: &TraceArtifact) -> Vec<Vec<usize>> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Polynomial {
-  Const(u64),
+pub enum Polynomial<F = u64> {
+  Const(F),
   Var(usize),
-  Add(Box<[Polynomial; 2]>),
-  Sub(Box<[Polynomial; 2]>),
-  Mul(Box<[Polynomial; 2]>),
+  Add(Box<[Polynomial<F>; 2]>),
+  Sub(Box<[Polynomial<F>; 2]>),
+  Mul(Box<[Polynomial<F>; 2]>),
 }
 
-impl Polynomial {
+impl<W: Word> Polynomial<W> {
   fn visit(&self, f: &mut impl FnMut(usize)) {
     match self {
       Self::Var(v) => f(*v),
@@ -83,7 +83,7 @@ impl Polynomial {
       },
     }
   }
-  fn validate<B: FieldBackend>(
+  pub fn validate<B: FieldBackend<Word = W>>(
     &self,
     width: usize,
     field: B,
@@ -102,13 +102,13 @@ impl Polynomial {
       _ => Ok(()),
     }
   }
-  pub(crate) fn eval<B: FieldBackend>(
+  pub(crate) fn eval<B: FieldBackend<Word = W>>(
     &self,
     row: &[B::Element],
     field: B,
   ) -> B::Element {
     match self {
-      Self::Const(v) => field.from_u64(*v),
+      Self::Const(v) => field.from_word(*v),
       Self::Var(v) => row[*v],
       Self::Add(xs) => {
         field.add(xs[0].eval(row, field), xs[1].eval(row, field))
@@ -125,36 +125,36 @@ impl Polynomial {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
-pub enum Action {
+pub enum Action<F = u64> {
   Assign {
     dest: Vec<usize>,
-    values: Vec<Polynomial>,
+    values: Vec<Polynomial<F>>,
   },
   Inverse {
     dest: usize,
-    value: Polynomial,
+    value: Polynomial<F>,
   },
   Choose {
     dest: Vec<usize>,
-    tests: Vec<Vec<Polynomial>>,
+    tests: Vec<Vec<Polynomial<F>>>,
   },
   Failure {
     dest: Vec<usize>,
-    differences: Vec<Polynomial>,
+    differences: Vec<Polynomial<F>>,
   },
   Call {
     name: String,
-    args: Vec<Polynomial>,
+    args: Vec<Polynomial<F>>,
     dest: Vec<usize>,
   },
   Store {
     r#type: Type,
-    values: Vec<Polynomial>,
+    values: Vec<Polynomial<F>>,
     dest: usize,
   },
   Load {
     r#type: Type,
-    address: Polynomial,
+    address: Polynomial<F>,
     dest: Vec<usize>,
   },
   Hint {
@@ -163,12 +163,12 @@ pub enum Action {
     instruction: usize,
     r#type: Type,
     key_type: Type,
-    key: Vec<Polynomial>,
+    key: Vec<Polynomial<F>>,
     dest: Vec<usize>,
   },
 }
 
-impl Action {
+impl<W> Action<W> {
   fn dest(&self) -> &[usize] {
     match self {
       Self::Assign { dest, .. }
@@ -182,7 +182,7 @@ impl Action {
       },
     }
   }
-  fn expressions(&self) -> Vec<&Polynomial> {
+  fn expressions(&self) -> Vec<&Polynomial<W>> {
     match self {
       Self::Assign { values, .. } | Self::Store { values, .. } => {
         values.iter().collect()
@@ -198,51 +198,51 @@ impl Action {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct PopulationStep {
-  pub guard: Polynomial,
-  pub action: Action,
+pub struct PopulationStep<F = u64> {
+  pub guard: Polynomial<F>,
+  pub action: Action<F>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct ColumnWrite {
+pub struct ColumnWrite<F = u64> {
   pub column: usize,
   pub source: usize,
-  pub guard: Polynomial,
+  pub guard: Polynomial<F>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct FunctionPlan {
+pub struct FunctionPlan<F = u64> {
   pub name: String,
   pub chip: String,
   pub witnesses: usize,
   pub inputs: Vec<usize>,
   pub output: Vec<usize>,
-  pub steps: Vec<PopulationStep>,
-  pub writes: Vec<ColumnWrite>,
+  pub steps: Vec<PopulationStep<F>>,
+  pub writes: Vec<ColumnWrite<F>>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct Send {
+pub struct Send<F = u64> {
   pub channel: String,
-  pub args: Vec<Polynomial>,
+  pub args: Vec<Polynomial<F>>,
   pub result: Vec<usize>,
-  pub enable: Polynomial,
+  pub enable: Polynomial<F>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct MemoryLookup {
+pub struct MemoryLookup<F = u64> {
   pub r#type: Type,
-  pub address: Polynomial,
-  pub values: Vec<Polynomial>,
-  pub enable: Polynomial,
+  pub address: Polynomial<F>,
+  pub values: Vec<Polynomial<F>>,
+  pub enable: Polynomial<F>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct Chip {
+pub struct Chip<F = u64> {
   pub name: String,
   pub width: usize,
   /// The last physical column is the proved row-activation selector.
   pub activation: usize,
   pub inputs: Vec<usize>,
-  pub output: Vec<Polynomial>,
-  pub constraints: Vec<Polynomial>,
-  pub sends: Vec<Send>,
-  pub memory: Vec<MemoryLookup>,
+  pub output: Vec<Polynomial<F>>,
+  pub constraints: Vec<Polynomial<F>>,
+  pub sends: Vec<Send<F>>,
+  pub memory: Vec<MemoryLookup<F>>,
   /// How the depth pass (Track A, H1) extended this circuit. Absent for a
   /// hand-written circuit: no depth column and only plain slots.
   #[serde(default)]
@@ -282,50 +282,50 @@ pub struct ChipDepth {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct TraceArtifact {
+pub struct TraceArtifact<F = u64> {
   pub version: u32,
-  pub modulus: u64,
+  pub modulus: F,
   /// Bit widths of the gap limbs, low limb first (`[16, 8]`: gaps below
   /// `2^24`). Each width `w` has the fixed map `Depth::range{w}`.
   #[serde(default)]
   pub limbs: Vec<usize>,
-  pub functions: Vec<FunctionPlan>,
-  pub chips: Vec<Chip>,
+  pub functions: Vec<FunctionPlan<F>>,
+  pub chips: Vec<Chip<F>>,
   /// Physical function groups emitted by the Lean layout pass. Clearing this
   /// list selects the identical logical program with singleton circuits.
   #[serde(default)]
-  pub groups: Vec<FunctionGroup>,
+  pub groups: Vec<FunctionGroup<F>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GroupWrite {
+pub struct GroupWrite<F = u64> {
   pub column: usize,
-  pub value: Polynomial,
+  pub value: Polynomial<F>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct GroupMember {
+pub struct GroupMember<F = u64> {
   pub name: String,
   pub columns: Vec<usize>,
   pub selector: usize,
-  pub writes: Vec<GroupWrite>,
+  pub writes: Vec<GroupWrite<F>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct GroupLookup {
-  pub enable: Polynomial,
-  pub args: Vec<Polynomial>,
+pub struct GroupLookup<F = u64> {
+  pub enable: Polynomial<F>,
+  pub args: Vec<Polynomial<F>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-pub struct FunctionGroup {
+pub struct FunctionGroup<F = u64> {
   pub name: String,
   pub width: usize,
-  pub activation: Polynomial,
-  pub constraints: Vec<Polynomial>,
-  pub receive: Vec<Polynomial>,
-  pub sends: Vec<GroupLookup>,
-  pub members: Vec<GroupMember>,
+  pub activation: Polynomial<F>,
+  pub constraints: Vec<Polynomial<F>>,
+  pub receive: Vec<Polynomial<F>>,
+  pub sends: Vec<GroupLookup<F>>,
+  pub members: Vec<GroupMember<F>>,
 }
 
 /// Where one function's logical columns land in its physical circuit. A
@@ -333,13 +333,13 @@ pub struct FunctionGroup {
 /// `selector` set to one, then each group write in order (evaluated over the
 /// row written so far), then the multiplicity in the last column.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Placement {
+pub struct Placement<W = u64> {
   pub grouped: bool,
   /// Index among the function circuits, in [`Layout::circuits`] order.
   pub circuit: usize,
   pub columns: Vec<usize>,
   pub selector: usize,
-  pub writes: Vec<GroupWrite>,
+  pub writes: Vec<GroupWrite<W>>,
 }
 
 /// The artifact source of one physical function circuit.
@@ -354,9 +354,9 @@ pub enum FunctionCircuit {
 /// The certified physical placement of every chip: function circuits are
 /// emitted in chip order, a group at its first member chip.
 #[derive(Clone, Debug)]
-pub struct Layout {
+pub struct Layout<W = u64> {
   /// By chip index.
-  pub placements: Vec<Placement>,
+  pub placements: Vec<Placement<W>>,
   pub circuits: Vec<FunctionCircuit>,
 }
 
@@ -396,11 +396,11 @@ pub struct PopulationTimings {
 /// A checked plan is tied to the immutable checked execution program.
 pub struct TracePlan<'a, B: FieldBackend = PrimeField> {
   program: crate::shared::Shared<'a, CheckedProgram<B>>,
-  artifact: TraceArtifact,
+  artifact: TraceArtifact<B::Word>,
   callables: FxHashMap<String, usize>,
   members: Vec<usize>,
   fills: Vec<plan::FillPlan<B>>,
-  depth: depth::DepthPlan,
+  depth: depth::DepthPlan<B::Word>,
 }
 
 fn indices(xs: &[usize], width: usize) -> Result<(), String> {
@@ -414,7 +414,7 @@ fn indices(xs: &[usize], width: usize) -> Result<(), String> {
 impl<'a, B: FieldBackend> TracePlan<'a, B> {
   pub fn new(
     program: impl Into<crate::shared::Shared<'a, CheckedProgram<B>>>,
-    mut artifact: TraceArtifact,
+    mut artifact: TraceArtifact<B::Word>,
   ) -> Result<Self, String> {
     let shared = program.into();
     let program = &*shared;
@@ -623,7 +623,7 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     Ok(Self { program: shared, artifact, callables, members, fills, depth })
   }
 
-  pub fn artifact(&self) -> &TraceArtifact {
+  pub fn artifact(&self) -> &TraceArtifact<B::Word> {
     &self.artifact
   }
 
@@ -636,8 +636,63 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     &self.members
   }
 
+  pub fn callable_id(&self, name: &str) -> Option<usize> {
+    self.callables.get(name).copied()
+  }
+
+  /// Each depth range table's count-vector index and global callable index.
+  /// Global callable indices include functions before static maps.
+  pub fn depth_range_tables(
+    &self,
+  ) -> impl Iterator<Item = (usize, usize)> + '_ {
+    self
+      .depth
+      .tables
+      .iter()
+      .enumerate()
+      .map(|(index, table)| (index, table.map))
+  }
+
+  /// The ordinary Aiur call message, including a recursive entry's public
+  /// depth word. Its typed arguments and result are checked independently of
+  /// any execution record.
+  pub fn public_claim(
+    &self,
+    entry: &str,
+    args: &[B::Element],
+    output: &[B::Element],
+  ) -> Result<Vec<B::Element>, String> {
+    let id = self.program.entry(entry)?.function;
+    let chip = &self.artifact.chips[self.members[id]];
+    let (inputs, depth) = self.entry_args(id, args);
+    let field = self.program.field;
+    self.program.inputs[id].validate(inputs, field)?;
+    self.program.outputs[id].validate(output, field)?;
+    if chip.depth.column.is_some() && depth.is_none() {
+      return Err(format!(
+        "{entry} is recursive: its public claim needs a depth word after its arguments"
+      ));
+    }
+    if depth.is_some_and(|value| !field.valid(value)) {
+      return Err("noncanonical public depth word".into());
+    }
+    let callable = u64::try_from(self.callables[&chip.name])
+      .map_err(|error| format!("callable index: {error}"))?;
+    if !field.contains(B::Word::from(callable)) {
+      return Err("callable index reaches field characteristic".into());
+    }
+    let mut claim = Vec::with_capacity(
+      2 + inputs.len() + usize::from(depth.is_some()) + output.len(),
+    );
+    claim.extend([field.one(), field.from_u64(callable)]);
+    claim.extend_from_slice(inputs);
+    claim.extend(depth);
+    claim.extend_from_slice(output);
+    Ok(claim)
+  }
+
   /// The physical placement of every chip, validated against the groups.
-  pub fn layout(&self) -> Result<Layout, String> {
+  pub fn layout(&self) -> Result<Layout<B::Word>, String> {
     let artifact = &self.artifact;
     let mut grouped = FxHashMap::default();
     for (gi, group) in artifact.groups.iter().enumerate() {
@@ -650,7 +705,7 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
         }
       }
     }
-    let mut placements: Vec<Option<Placement>> =
+    let mut placements: Vec<Option<Placement<B::Word>>> =
       (0..artifact.chips.len()).map(|_| None).collect();
     let mut circuits = vec![];
     let mut emitted = vec![false; artifact.groups.len()];
@@ -708,8 +763,8 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
   fn validate_member(
     &self,
     width: usize,
-    member: &GroupMember,
-    source: &Chip,
+    member: &GroupMember<B::Word>,
+    source: &Chip<B::Word>,
   ) -> Result<(), String> {
     if member.columns.len() != source.width
       || member.selector >= width
@@ -829,6 +884,14 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       let size =
         matrix.height.checked_mul(matrix.width).ok_or("trace size overflow")?;
       matrix.values.try_reserve_exact(size).map_err(|e| e.to_string())?;
+      // Filled in parallel: a serial fill of the largest chips takes seconds.
+      #[cfg(feature = "parallel")]
+      {
+        use rayon::prelude::*;
+        let zero = self.program.field.zero();
+        matrix.values.par_extend((0..size).into_par_iter().map(|_| zero));
+      }
+      #[cfg(not(feature = "parallel"))]
       matrix.values.resize(size, self.program.field.zero());
       matrix.multiplicities.resize(matrix.height, 0);
     }
@@ -852,6 +915,12 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     let field = self.program.field;
     timings.bind_seconds = start.elapsed().as_secs_f64();
     let start = std::time::Instant::now();
+    #[cfg(feature = "parallel")]
+    if !reference {
+      let ranges = self.fill_parallel(record, &mut matrices)?;
+      timings.fill_seconds = start.elapsed().as_secs_f64();
+      return Ok(Trace { matrices, ranges });
+    }
     for (function, plan) in self.artifact.functions.iter().enumerate() {
       let table = &record.queries.tables[function];
       let matrix = &mut matrices[self.members[function]];
@@ -979,10 +1048,13 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
                 );
               },
               Action::Load { address, dest, .. } => {
-                let address =
-                  usize::try_from(field.to_u64(address.eval(&scratch, field)))
-                    .ok()
-                    .ok_or("ROM address overflow")?;
+                let address = usize::try_from(
+                  field
+                    .try_to_u64(address.eval(&scratch, field))
+                    .map_err(|_error| "ROM address overflow")?,
+                )
+                .ok()
+                .ok_or("ROM address overflow")?;
                 let cell = &record
                   .memory
                   .get_by_width(dest.len(), address)
@@ -1046,6 +1118,65 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     Ok(Trace { matrices, ranges })
   }
 
+  #[cfg(feature = "parallel")]
+  fn fill_parallel(
+    &self,
+    record: &Execution<B>,
+    matrices: &mut [Matrix<B::Element>],
+  ) -> Result<RangeCounts, String> {
+    let field = self.program.field;
+    let mut offsets = vec![0usize; matrices.len()];
+    let mut ranges = RangeCounts::default();
+    for (function, plan) in self.artifact.functions.iter().enumerate() {
+      let chip = self.members[function];
+      let table = &record.queries.tables[function];
+      let matrix = &mut matrices[chip];
+      let start = offsets[chip];
+      let end = start + table.len();
+      let values = &mut matrix.values[start * matrix.width..end * matrix.width];
+      let counts = &mut matrix.multiplicities[start..end];
+      let init = || {
+        (vec![field.zero(); plan.witnesses], Vec::new(), RangeCounts::default())
+      };
+      let local = values
+        .par_chunks_mut(matrix.width)
+        .zip(counts.par_iter_mut())
+        .enumerate()
+        .try_fold(init, |mut state, (query, (row, count))| {
+          *count = table.count(query);
+          row[self.artifact.chips[chip].activation] = field.one();
+          self.fills[function]
+            .fill(
+              record,
+              (table, query),
+              &mut state.0,
+              &mut state.1,
+              row,
+            )
+            .and_then(|()| {
+              self.depth.fill(
+                chip,
+                record,
+                table.depth(query),
+                row,
+                field,
+                &mut state.1,
+                &mut state.2,
+              )
+            })
+            .map_err(|error| format!("{} query {query}: {error}", plan.name))?;
+          Ok::<_, String>(state)
+        })
+        .try_reduce(init, |mut left, right| {
+          left.2 = left.2.merge(right.2);
+          Ok(left)
+        })?;
+      ranges = ranges.merge(local.2);
+      offsets[chip] = end;
+    }
+    Ok(ranges)
+  }
+
   fn validate_record_shape(&self, record: &Execution<B>) -> Result<(), String> {
     if !std::sync::Arc::ptr_eq(&record.hints.program, &self.program.program) {
       return Err("hint providers belong to another program".into());
@@ -1088,7 +1219,7 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
         if depth == u64::from(u32::MAX) {
           return Err("query record depth overflows".into());
         }
-        if !self.program.field.contains(depth) {
+        if !self.program.field.contains(B::Word::from(depth)) {
           return Err("query record depth reaches field characteristic".into());
         }
       }
@@ -1144,11 +1275,11 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
       .try_for_each(validate_table)?;
     #[cfg(not(feature = "parallel"))]
     record.queries.tables.iter().enumerate().try_for_each(validate_table)?;
-    if record
-      .memory
-      .iter()
-      .any(|m| m.address as u128 >= u128::from(self.program.field.modulus()))
-    {
+    if record.memory.iter().any(|m| {
+      u64::try_from(m.address).map_or(true, |address| {
+        !self.program.field.contains(B::Word::from(address))
+      })
+    }) {
       return Err("ROM exceeds field capacity".into());
     }
     let validate_memory = |m: crate::memory::MemoryEntryRef<'_, B::Element>| {
@@ -1226,7 +1357,11 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
     })
   }
 
-  fn claim(&self, chip: &Chip, row: &[B::Element]) -> Claim<B::Element> {
+  fn claim(
+    &self,
+    chip: &Chip<B::Word>,
+    row: &[B::Element],
+  ) -> Claim<B::Element> {
     Claim {
       channel: self.callables[&chip.name],
       args: chip.inputs.iter().map(|&i| row[i]).collect(),
@@ -1237,7 +1372,11 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
         .collect(),
     }
   }
-  fn send_claim(&self, send: &Send, row: &[B::Element]) -> Claim<B::Element> {
+  fn send_claim(
+    &self,
+    send: &Send<B::Word>,
+    row: &[B::Element],
+  ) -> Claim<B::Element> {
     Claim {
       channel: self.callables[&send.channel],
       args: send.args.iter().map(|p| p.eval(row, self.program.field)).collect(),
@@ -1310,10 +1449,13 @@ impl<'a, B: FieldBackend> TracePlan<'a, B> {
           if cell.enable.eval(row, field) != field.one() {
             continue;
           }
-          let address =
-            usize::try_from(field.to_u64(cell.address.eval(row, field)))
-              .ok()
-              .ok_or("ROM address overflow")?;
+          let address = usize::try_from(
+            field
+              .try_to_u64(cell.address.eval(row, field))
+              .map_err(|_error| "ROM address overflow")?,
+          )
+          .ok()
+          .ok_or("ROM address overflow")?;
           let value = &record
             .memory
             .get_by_width(cell.values.len(), address)

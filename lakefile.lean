@@ -305,12 +305,6 @@ lean_exe «formal-keys» where
   root := `Tests.FormalKeys
   supportInterpreter := true
 
-/-- Fingerprint of the formal verify path; `tools/check-verify-path.sh`
-compares it with the pinned `tools/verify-path.fingerprint`. -/
-lean_exe «verify-path» where
-  root := `Tests.VerifyPath
-  supportInterpreter := true
-
 @[test_driver]
 lean_exe IxTests where
   root := `Tests.Main

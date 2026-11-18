@@ -332,7 +332,7 @@ fn validate_preamble<C: AsRef<[Val]>>(
   Ok(())
 }
 
-fn verify(
+pub(super) fn verify(
   system: &System<GoldilocksBlake3Config>,
   log_blowup: usize,
   claims: &[Vec<Val>],

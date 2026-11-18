@@ -63,6 +63,8 @@ pub struct Config {
   pub use_cache: bool,
   /// Reuse and publish claim proofs in the shard-proof index.
   pub use_index: bool,
+  /// Bypass persisted proofs while publishing newly verified replacements.
+  pub fresh: bool,
   pub out_manifest: Option<PathBuf>,
   /// The content-addressed store; `None` is `~/.ix/store`.
   pub store_dir: Option<PathBuf>,
@@ -100,6 +102,7 @@ impl Config {
       fold: FoldPolicy { structural_above, direct_joins: true },
       use_cache: true,
       use_index: true,
+      fresh: false,
       out_manifest: None,
       store_dir: None,
       cache_root: None,
@@ -759,6 +762,7 @@ struct Pass<B: Backend> {
   store_dir: PathBuf,
   cache_dir: Option<PathBuf>,
   index_dir: Option<PathBuf>,
+  fresh: bool,
   /// CPU execution threads shared by every lane.
   executions: usize,
   /// The record share `s` `ix shard` sizes claims for, also the overshoot
@@ -792,6 +796,7 @@ impl<B: Backend> Pass<B> {
       owner_by_address: &self.prepared.owner_by_address,
       store_dir: &self.store_dir,
       cache_dir: self.cache_dir.as_deref(),
+      reuse_cache: !self.fresh,
       write_outputs: true,
       wrap_budget: self.wrap_budget,
       reprove_slot: None,
@@ -960,6 +965,7 @@ fn plan_pass<B: Backend>(
     store_dir,
     cache_dir,
     index_dir,
+    fresh: cfg.fresh,
     executions,
     share,
     guaranteed,
@@ -994,7 +1000,7 @@ fn resume_pass<B: Backend>(
   // Cached joins from the root down retire their subtrees.
   let mut slots: Vec<Option<Arc<BackendSlot<B>>>> = vec![None; count];
   let mut retired = vec![false; count];
-  let joins = if pass.claims_only { 0 } else { pass.root_slot };
+  let joins = if pass.claims_only || pass.fresh { 0 } else { pass.root_slot };
   for index in (0..joins).rev() {
     let spec = &pass.specs[index];
     if retired[index] || spec.kind != ChildKind::Aggr {
@@ -1040,6 +1046,9 @@ fn resume_pass<B: Backend>(
   let resumed: Vec<Option<BackendSlot<B>>> = (0..shards)
     .into_par_iter()
     .map(|shard| {
+      if pass.fresh {
+        return None;
+      }
       let index_dir = pass.index_dir.as_deref()?;
       resume_leaf(backend, lane, run, index_dir, pass.leaf_slot[shard], shard)
     })

@@ -21,6 +21,9 @@ pub mod lean_iroh;
 pub mod texray;
 pub mod unsigned;
 
+mod aiur_chain;
+mod aiur_ladder;
+mod aiur_compression;
 pub mod catalog;
 mod compression;
 pub mod formal;

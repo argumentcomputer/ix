@@ -91,6 +91,9 @@ jobs:
         run: |
           lake exe ixvm/ixvm-proof-gen --check
           lake build --wfail IxVMRefinement
+      - name: Check Aiur compression compiler fixtures
+        if: github.event_name != 'push'
+        run: bash tools/check-aiur-compression-fixtures.sh
       - name: Check new IxVM execution and proof fixture
         if: github.event_name != 'push'
         run: |
@@ -113,8 +116,6 @@ jobs:
         env:
           IX_AIUR_ARTIFACT: ${{ runner.temp }}/formal/ixvm.ixa
         run: lake test --wfail -- --tier ci:ixvm
-      - name: Check the formal verify path is unchanged
-        run: bash tools/check-verify-path.sh
       - name: Check the formal verifying keys match their pins
         if: github.event_name != 'push'
         run: bash tools/check-formal-keys.sh

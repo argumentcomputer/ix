@@ -4,6 +4,7 @@
 use crate::bytecode::Type;
 use crate::chunks::Chunks;
 use crate::index::{RowIndex, tag};
+use crate::field::Word;
 use serde::{Serialize, Serializer};
 use std::hash::{Hash, Hasher};
 
@@ -129,6 +130,13 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
       bucket.words.drop_prefetched(&self.budget);
       bucket.cells.drop_prefetched(&self.budget);
     }
+  }
+
+  /// Distinct interned cells per payload width, including empty width buckets.
+  pub fn width_counts(
+    &self,
+  ) -> impl ExactSizeIterator<Item = (usize, usize)> + '_ {
+    self.widths.iter().copied().zip(self.buckets.iter().map(|bucket| bucket.cells.len()))
   }
 
   pub(crate) fn storage_usage(&self) -> (usize, usize, usize) {
@@ -271,11 +279,11 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
   /// The index holds each cell's address, not its record index, so a
   /// repeated store reads the index and the words only.
   #[inline]
-  pub(crate) fn intern(
+  pub(crate) fn intern<W: Word>(
     &mut self,
     type_id: usize,
     words: &[F],
-    modulus: u64,
+    modulus: W,
   ) -> Result<CellAt, crate::budget::StorageError> {
     debug_assert_eq!(words.len(), self.types[type_id].1);
     let bucket_id = self.type_buckets[type_id];
@@ -292,7 +300,7 @@ impl<F: Copy + Eq + Hash + Send + Sync> Memory<F> {
     let address = bucket.cells.len();
     // Record indices are below `u32::MAX` ([`crate::budget::MAX_ROWS`]),
     // and a width's addresses are at most its record indices.
-    if address as u64 >= modulus {
+    if W::from(address as u64) >= modulus {
       return Err("ROM exceeds field capacity".into());
     }
     bucket.words.reserve(&self.budget)?;
@@ -358,16 +366,16 @@ mod tests {
       .into_iter(),
     );
     for value in 0..1024 {
-      memory.intern(2, &[value, 0], 65537).unwrap();
-      memory.intern(3, &[], 65537).unwrap();
-      let cell = memory.intern(0, &[1023 - value], 65537).unwrap();
-      let alias = memory.intern(1, &[1023 - value], 65537).unwrap();
+      memory.intern(2, &[value, 0], 65537u64).unwrap();
+      memory.intern(3, &[], 65537u64).unwrap();
+      let cell = memory.intern(0, &[1023 - value], 65537u64).unwrap();
+      let alias = memory.intern(1, &[1023 - value], 65537u64).unwrap();
       assert_eq!((alias.bucket, alias.address), (cell.bucket, cell.address));
     }
     assert_eq!(memory.len(), 2049);
     let mut copy = memory.clone();
     for value in 1024..4096 {
-      copy.intern(0, &[value], 65537).unwrap();
+      copy.intern(0, &[value], 65537u64).unwrap();
     }
     // Independently scan the record: indices refer to cells, not allocations
     // or the other width's local address, even after clone/arena/hash growth.
@@ -389,8 +397,8 @@ mod tests {
     let unit = Type::Tuple { items: vec![] };
     let mut memory =
       Memory::new([(Type::Field, 1), (unit.clone(), 0)].into_iter());
-    memory.intern(0, &[7], 17).unwrap();
-    memory.intern(1, &[], 17).unwrap();
+    memory.intern(0, &[7], 17u64).unwrap();
+    memory.intern(1, &[], 17u64).unwrap();
     *memory.multiplicity_mut(0) = 3;
     *memory.multiplicity_mut(1) = 1;
     assert!(memory.get(2).is_none());
@@ -417,5 +425,31 @@ mod tests {
     let mut copy = memory.clone();
     *copy.multiplicity_mut(0) = 8;
     assert_eq!(memory.get(0).unwrap().multiplicity, 3);
+  }
+
+  #[test]
+  fn wide_modulus_and_payloads_preserve_addresses_and_identity() {
+    use crate::FieldWord;
+
+    let modulus = FieldWord::from_limbs_le([0, 2, 0, 0]);
+    let low = FieldWord::from(7);
+    let high = FieldWord::from_limbs_le([7, 1, 0, 0]);
+    let mut memory = Memory::new([(Type::Field, 1)].into_iter());
+    let low_cell = memory.intern(0, &[low], modulus).unwrap();
+    let high_cell = memory.intern(0, &[high], modulus).unwrap();
+    assert_ne!(low_cell.address, high_cell.address);
+    let again = memory.intern(0, &[high], modulus).unwrap();
+    assert_eq!((again.bucket, again.address), (high_cell.bucket, high_cell.address));
+    assert_eq!(memory.address_of(&[low]), Some(0));
+    assert_eq!(memory.address_of(&[high]), Some(1));
+    assert_eq!(memory.words(high_cell), &[high]);
+
+    let mut limited = Memory::new([(Type::Field, 1)].into_iter());
+    for value in 0..2 {
+      limited.intern(0, &[value], FieldWord::from(2)).unwrap();
+    }
+    assert!(limited.intern(0, &[2], FieldWord::from(2)).is_err());
+    assert_eq!(limited.len(), 2);
+    assert_eq!(limited.intern(0, &[1], FieldWord::from(2)).unwrap().address, 1);
   }
 }

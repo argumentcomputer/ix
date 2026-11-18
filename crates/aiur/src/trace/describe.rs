@@ -430,7 +430,7 @@ impl PopulationDescription {
   }
 }
 
-impl<B: FieldBackend> TracePlan<'_, B> {
+impl<B: FieldBackend<Word = u64>> TracePlan<'_, B> {
   /// The population description of this plan and its certified layout.
   pub fn describe(&self) -> Result<PopulationDescription, String> {
     let layout = self.layout()?;
@@ -517,14 +517,17 @@ impl<B: FieldBackend> TracePlan<'_, B> {
   /// Circuit `chip`'s depth section, as the host writer fills it
   /// ([`super::depth::DepthPlan::fill`]): exact checks first, then gap and
   /// external slots, over the physical `columns` of its placement.
-  fn describe_depth(&self, chip: usize, columns: &[usize]) -> DepthDescription {
+  fn describe_depth(&self, chip: usize, columns: &[usize]) -> DepthDescription
+  where
+    B: FieldBackend<Word = u64>,
+  {
     use super::depth::Kind;
     let depth = &self.depth;
     let fill = &depth.fills[chip];
     let names = |callees: &[usize]| {
       callees.iter().map(|&f| self.artifact.functions[f].name.clone()).collect()
     };
-    let physical = |p: &Polynomial| physical_columns(p, columns);
+    let physical = |p: &Polynomial<B::Word>| physical_columns(p, columns);
     let exact = fill.exact.iter().map(|e| DepthSlotDescription {
       kind: DepthSlotKind::Exact,
       callees: names(&e.callees),
@@ -558,15 +561,18 @@ impl<B: FieldBackend> TracePlan<'_, B> {
 }
 
 /// `p` over the physical columns `columns[c]` of its columns `c`.
-fn physical_columns(p: &Polynomial, columns: &[usize]) -> Polynomial {
-  let pair = |xs: &[Polynomial; 2]| {
+fn physical_columns<W: Clone>(
+  p: &Polynomial<W>,
+  columns: &[usize],
+) -> Polynomial<W> {
+  let pair = |xs: &[Polynomial<W>; 2]| {
     Box::new([
       physical_columns(&xs[0], columns),
       physical_columns(&xs[1], columns),
     ])
   };
   match p {
-    Polynomial::Const(v) => Polynomial::Const(*v),
+    Polynomial::Const(v) => Polynomial::Const(v.clone()),
     Polynomial::Var(c) => Polynomial::Var(columns[*c]),
     Polynomial::Add(xs) => Polynomial::Add(pair(xs)),
     Polynomial::Sub(xs) => Polynomial::Sub(pair(xs)),

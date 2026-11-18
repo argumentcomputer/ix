@@ -89,6 +89,8 @@ pub struct Run<'a, C> {
   pub owner_by_address: &'a FxHashMap<Address, usize>,
   pub store_dir: &'a Path,
   pub cache_dir: Option<&'a Path>,
+  /// Read persisted aggregate proofs; publication still uses `cache_dir`.
+  pub reuse_cache: bool,
   pub write_outputs: bool,
   /// The prover budget of one slot when its execution is proven as trace
   /// shards; `None` proves unsharded and unbudgeted.

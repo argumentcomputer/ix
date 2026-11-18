@@ -7,12 +7,13 @@ pub const MIN_MODULUS: u64 = 3 * (1_u64 << 32);
 
 // Hint answers are raw: an operand above 32 bits is truncated to its low word,
 // and the source library's constraints reject any answer that is then wrong.
+// Values wider than u64 are rejected instead of discarding high field limbs.
 #[allow(clippy::cast_possible_truncation)]
 pub fn register<B: FieldBackend>(
   channels: &mut HintChannels<B::Element>,
   field: B,
 ) -> Result<(), String> {
-  if field.modulus() < MIN_MODULUS {
+  if field.modulus() < MIN_MODULUS.into() {
     return Err(format!(
       "u32 arithmetic requires a field modulus >= {MIN_MODULUS}"
     ));
@@ -23,7 +24,7 @@ pub fn register<B: FieldBackend>(
     Type::Field,
     bytes.clone(),
     #[inline(always)]
-    move |input| Ok(bytes_of(field.to_u64(input[0]) as u32, field)),
+    move |input| Ok(bytes_of(field.try_to_u64(input[0])? as u32, field)),
   )?;
   channels.insert_fixed::<2, 4>(
     "u32.sub",
@@ -32,8 +33,8 @@ pub fn register<B: FieldBackend>(
     #[inline(always)]
     move |input| {
       Ok(bytes_of(
-        (field.to_u64(input[0]) as u32)
-          .wrapping_sub(field.to_u64(input[1]) as u32),
+        (field.try_to_u64(input[0])? as u32)
+          .wrapping_sub(field.try_to_u64(input[1])? as u32),
         field,
       ))
     },
@@ -47,8 +48,10 @@ pub fn register<B: FieldBackend>(
     Type::Tuple { items: vec![bytes; 3] },
     #[inline(always)]
     move |input| {
-      let (a, b) =
-        (field.to_u64(input[0]) as u32, field.to_u64(input[1]) as u32);
+      let (a, b) = (
+        field.try_to_u64(input[0])? as u32,
+        field.try_to_u64(input[1])? as u32,
+      );
       let a_bytes = bytes_of(a, field);
       let delta = bytes_of(a.wrapping_sub(b), field);
       let b_bytes = bytes_of(b, field);
@@ -77,8 +80,10 @@ fn register_sum<const INPUTS: usize, B: FieldBackend>(
       for word in input.as_chunks::<4>().0 {
         let mut bytes = [0u8; 4];
         for (byte, &value) in bytes.iter_mut().zip(word) {
-          *byte = u8::try_from(field.to_u64(value))
+          *byte = field
+            .try_to_u64(value)
             .ok()
+            .and_then(|word| u8::try_from(word).ok())
             .ok_or("non-byte u32 sum operand")?;
         }
         sum = sum.wrapping_add(u32::from_le_bytes(bytes));

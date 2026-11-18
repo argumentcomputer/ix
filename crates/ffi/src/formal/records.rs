@@ -37,8 +37,8 @@ lean_ffi::lean_inductive! {
   /// `plan`, `report`; `status`.
   LeanOutcome [ { num_obj: 2, num_32: 1 } ];
   /// `manifest` … `options` (ten objects); `useCache`, `useIndex`,
-  /// `claimsOnly`, `assumeBinding`.
-  LeanLaneConfig [ { num_obj: 10, num_8: 4 } ];
+  /// `claimsOnly`, `assumeBinding`, `fresh`.
+  LeanLaneConfig [ { num_obj: 10, num_8: 5 } ];
   LeanLaneResult [
     { num_obj: 2 },  // root: `address`, `claimTraceShards`
     { num_obj: 1 },  // claims
@@ -200,6 +200,7 @@ pub(super) fn lane_config(
     use_index: flag(c.get_num_8(1))?,
     claims_only: flag(c.get_num_8(2))?,
     assume_binding: flag(c.get_num_8(3))?,
+    fresh: flag(c.get_num_8(4))?,
   })
 }
 

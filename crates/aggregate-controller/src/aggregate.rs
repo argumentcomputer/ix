@@ -492,6 +492,7 @@ where
     owner_by_address: &prepared.owner_by_address,
     store_dir: &store_dir,
     cache_dir,
+    reuse_cache: true,
     write_outputs: cfg.write_outputs,
     wrap_budget: None,
     reprove_slot: cfg.reprove_slot,

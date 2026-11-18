@@ -2,7 +2,10 @@
 //! output.
 
 use super::*;
-use crate::kzg::{config::KzgConfig, field::Scalar, pcs::CommittedMatrix};
+use crate::kzg::{
+  field::Scalar,
+  pcs::{CoefficientConfig, CoefficientData, CommittedMatrix},
+};
 use multi_stark::config::QuotientCommitInput;
 use multi_stark::expr::{RowOffset, Source};
 use multi_stark::graph::{ConstraintGraph, Node, NodeId};
@@ -305,10 +308,10 @@ pub(super) fn pass_columns(
   Some((columns, count))
 }
 
-pub(super) fn matrix(
-  data: (&crate::kzg::pcs::KzgProverData, usize),
+pub(super) fn matrix<D: CoefficientData>(
+  data: (&D, usize),
 ) -> Option<&CommittedMatrix> {
-  data.0.matrices.get(data.1)
+  data.0.matrix(data.1)
 }
 
 pub(super) fn allocation<T>(count: usize) -> Option<usize> {
@@ -364,15 +367,15 @@ pub(super) fn views<'a>(
   Some(all)
 }
 
-pub(in crate::kzg) fn coefficients(
-  input: &QuotientCommitInput<'_, KzgConfig>,
+pub(in crate::kzg) fn coefficients<SC: CoefficientConfig>(
+  input: &QuotientCommitInput<'_, SC>,
   alpha: Scalar,
 ) -> Option<Vec<Vec<Fr>>> {
   coefficients_with_mode(input, alpha, settings().passes)
 }
 
-pub(super) fn coefficients_with_mode(
-  input: &QuotientCommitInput<'_, KzgConfig>,
+pub(super) fn coefficients_with_mode<SC: CoefficientConfig>(
+  input: &QuotientCommitInput<'_, SC>,
   alpha: Scalar,
   mode: PassMode,
 ) -> Option<Vec<Vec<Fr>>> {

@@ -13,20 +13,27 @@ unsafe def main (args : List String) : IO Unit := do
   let groups := if args.contains "--ungrouped" then [] else MultiStark.functionGroups
   let mode := args.headD "check"
   unless ["check", "digest", "export", "export-trace", "grouping-snapshot"].contains mode do
-    throw (IO.userError "usage: stark-export check|digest|export|export-trace|grouping-snapshot [output] [--aggregate]")
+    throw (IO.userError "usage: stark-export check|digest|export|export-trace|grouping-snapshot [output] [--aggregate|--compress-wrap]")
   let aggregate := args.contains "--aggregate"
-  let (source, entry, digest) := MultiStark.selected aggregate
+  let compressWrap := args.contains "--compress-wrap"
+  if aggregate && compressWrap then
+    throw (IO.userError "--aggregate and --compress-wrap select different programs")
+  let (source, entry, digest) := if compressWrap then
+      (MultiStark.compressWrapProgram, MultiStark.compressWrapEntry, MultiStark.compressWrapDigest)
+    else MultiStark.selected aggregate
   if mode == "digest" then
     IO.println digest
     return
-  IO.eprintln s!"MultiStark {if aggregate then "aggregate" else "recursion"} program {digest}"
+  let label := if compressWrap then "compress-wrap" else if aggregate then "aggregate" else "recursion"
+  IO.eprintln s!"MultiStark {label} program {digest}"
   if mode == "export" || mode == "export-trace" then
     let trace := mode == "export-trace"
     IO.eprintln (if trace
       then "Compiling recursive verifier bytecode, circuits and witness population plans..."
       else "Compiling recursive verifier bytecode...")
-    let package ← MultiStark.compilePackage aggregate groups trace
-    let path := args[1]?.getD "/tmp/ix-recursion.ixa"
+    let package ← if compressWrap then MultiStark.compileCompressWrapPackage groups trace
+      else MultiStark.compilePackage aggregate groups trace
+    let path := args[1]?.getD (if compressWrap then "/tmp/ix-compress-wrap.ixa" else "/tmp/ix-recursion.ixa")
     Artifact.write path package
     IO.eprintln s!"Wrote {path}"
     return

@@ -79,7 +79,7 @@ type Accelerator struct {
 	context                                        *nativeContext
 	bases                                          [2]registeredBasis
 	domain                                         uint64
-	parameters                                     [27]nativeParameters
+	parameters                                     [28]nativeParameters
 	closed                                         bool
 	closeErr                                       error
 	finalStats                                     Stats
@@ -99,8 +99,8 @@ func Attach(pk *native.ProvingKey, config Config) (*Accelerator, error) {
 		return nil, fmt.Errorf("CUDA PLONK needs an unattached proving key")
 	}
 	n := pk.Vk.Size
-	if n < 2 || n > 1<<24 || n&(n-1) != 0 || uint64(len(pk.Kzg.G1)) != n+3 || uint64(len(pk.KzgLagrange.G1)) != n {
-		return nil, fmt.Errorf("CUDA PLONK requires N<=2^24 and exact N+3/N proving bases")
+	if n < 2 || n > 1<<25 || n&(n-1) != 0 || uint64(len(pk.Kzg.G1)) != n+3 || uint64(len(pk.KzgLagrange.G1)) != n {
+		return nil, fmt.Errorf("CUDA PLONK requires N<=2^25 and exact N+3/N proving bases")
 	}
 	if config.Device < 0 || config.Device > math.MaxInt32 || config.MSMStrategy > MSMMask {
 		return nil, fmt.Errorf("invalid CUDA PLONK device or MSM strategy")
@@ -286,7 +286,7 @@ func (a *Accelerator) MultiExp(points []curve.G1Affine, scalars []fr.Element) (r
 }
 
 func (a *Accelerator) checkDomain(domain *fft.Domain) error {
-	if domain == nil || domain.Cardinality < 2 || domain.Cardinality > 1<<26 || domain.Cardinality&(domain.Cardinality-1) != 0 {
+	if domain == nil || domain.Cardinality < 2 || domain.Cardinality > 1<<27 || domain.Cardinality&(domain.Cardinality-1) != 0 {
 		return fmt.Errorf("unsupported CUDA PLONK domain")
 	}
 	parameters := a.parameters[bits.TrailingZeros64(domain.Cardinality)]
@@ -351,7 +351,7 @@ func (a *Accelerator) numeratorConfig(in *native.NumeratorInput) (quotientConfig
 		return config, err
 	}
 	n, m := in.Domain0.Cardinality, in.Domain1.Cardinality
-	if n != a.domain || n > 1<<24 || m%n != 0 || (m/n != 4 && m/n != 8) || len(in.Qcp) != len(in.Pi) || len(in.Qcp) > 16 {
+	if n != a.domain || n > 1<<25 || m%n != 0 || (m/n != 4 && m/n != 8) || len(in.Qcp) != len(in.Pi) || len(in.Qcp) > 16 {
 		return config, fmt.Errorf("unsupported CUDA PLONK quotient shape")
 	}
 	var root fr.Element

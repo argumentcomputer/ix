@@ -42,6 +42,7 @@ pub mod streaming;
 mod tables;
 #[cfg(test)]
 mod tests;
+pub mod wide;
 mod witness;
 #[cfg(test)]
 pub use batch::StageOne;
@@ -52,7 +53,7 @@ pub use statistics::{CircuitMeasurements, ExecutionStatistics};
 
 /// Conversion at this concrete proving adapter only. The native configuration
 /// writes its existing field values directly into multi-stark's matrices.
-pub trait WitnessField: FieldBackend {
+pub trait WitnessField: FieldBackend<Word = u64> {
   fn into_stark(value: Self::Element) -> Val;
   /// The elements as Goldilocks words, not necessarily canonical; borrowed
   /// when the representation already is one.
@@ -233,6 +234,117 @@ fn degree(e: &Expr<Val>) -> usize {
   }
 }
 
+/// Match fixed domains, bound total unit lookup consumers below the
+/// characteristic and total rows by [`MAX_BATCH_ROWS`]. Root caps cover
+/// every active matrix, including height 1.
+fn check_system_shape(
+  system: &System<GoldilocksBlake3Config>,
+  parameters: Parameters,
+  active: &[bool],
+  degrees: &[u8],
+) -> Result<(), String> {
+  if active.len() != system.circuits.len() || !active.contains(&true) {
+    return Err("invalid circuit activation".into());
+  }
+  let mut degrees = degrees.iter();
+  let mut budget = 1u64; // one public root
+  let mut rows = 0u64;
+  for (circuit, &on) in system.circuits.iter().zip(active) {
+    if !on {
+      if circuit.preprocessed_height != 0 {
+        return Err("inactive fixed table".into());
+      }
+      continue;
+    }
+    let log = *degrees.next().ok_or("missing trace height")?;
+    // Goldilocks has 2-adicity 32. Include the commitment blowup.
+    if usize::from(log) + parameters.log_blowup > 32 {
+      return Err("trace domain exceeds Goldilocks capacity".into());
+    }
+    let height = 1u64 << log;
+    if circuit.preprocessed_height != 0
+      && circuit.preprocessed_height as u64 != height
+    {
+      return Err("fixed table height mismatch".into());
+    }
+    rows += height;
+    if rows > MAX_BATCH_ROWS {
+      return Err("trace rows exceed the batch row bound (2^39)".into());
+    }
+    budget = height
+      .checked_mul(circuit.num_lookups.max(1) as u64)
+      .and_then(|n| budget.checked_add(n))
+      .filter(|&n| n < Val::ORDER_U64)
+      .ok_or("lookup count reaches field characteristic")?;
+  }
+  if degrees.next().is_some() {
+    return Err("extra trace heights".into());
+  }
+  Ok(())
+}
+
+/// Reject constraint degrees the blowup cannot hold (before `System::new`'s
+/// assertion), build the system, then group lookup messages wherever the
+/// circuit's quotient degree already suffices. Grouping reduces stage 2
+/// without making its FFTs or the quotient FFT larger, and is decided on the
+/// compiled (constant-folded) degrees.
+fn build_system(
+  inputs: Vec<CircuitInputs<Val>>,
+  names: &[String],
+  parameters: Parameters,
+  device: Option<i32>,
+) -> Result<
+  (System<GoldilocksBlake3Config>, ProverKey<GoldilocksBlake3Config>),
+  String,
+> {
+  let max_degree = (1 << parameters.log_blowup) + 1;
+  for (input, name) in inputs.iter().zip(names) {
+    let user_degree = input.constraints.iter().map(degree).max().unwrap_or(0);
+    let lookup_degree = input
+      .lookups
+      .iter()
+      .map(|l| {
+        (l.args.iter().map(degree).max().unwrap_or(0) + 1)
+          .max(degree(&l.multiplicity))
+      })
+      .max()
+      .unwrap_or(1);
+    if user_degree.max(lookup_degree) > max_degree {
+      return Err(format!(
+        "{name}: increase log_blowup for constraint degree {}",
+        user_degree.max(lookup_degree)
+      ));
+    }
+  }
+  let config = GoldilocksBlake3Config::with_device(
+    parameters.commitment(),
+    parameters.fri(),
+    device,
+  );
+  let (mut system, key) = System::new(config, inputs);
+  for circuit in &mut system.circuits {
+    let quotient = circuit.quotient_degree();
+    for group in
+      (2..=multi_stark::lookup::MAX_LOOKUP_GROUP.min(circuit.num_lookups)).rev()
+    {
+      let max_degree = circuit
+        .graph
+        .max_constraint_degree
+        .max(logup_max_degree(&circuit.graph, group))
+        as usize;
+      if (max_degree.max(2) - 1).next_power_of_two() <= quotient {
+        circuit.lookup_group_size = group;
+        circuit.stage_2_width = stage2_width(circuit.num_lookups, group, 2);
+        circuit.constraint_count = circuit.graph.zeros.len()
+          + logup_constraint_count(circuit.num_lookups, group, 2);
+        circuit.max_constraint_degree = max_degree;
+        break;
+      }
+    }
+  }
+  Ok((system, key))
+}
+
 impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
   pub fn new(
     plan: impl Into<Shared<'p, TracePlan<'a, B>>>,
@@ -381,56 +493,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       parameters.log_blowup,
     )?;
     rom.append_circuits(&mut inputs, &mut names, segmented_memory)?;
-    // Fail with an error before System::new's degree assertion. Grouping
-    // is tuned below using the backend's compiled (constant-folded) degrees.
-    let max_degree = (1 << parameters.log_blowup) + 1;
-    for (input, name) in inputs.iter().zip(&names) {
-      let user_degree = input.constraints.iter().map(degree).max().unwrap_or(0);
-      let lookup_degree = input
-        .lookups
-        .iter()
-        .map(|l| {
-          (l.args.iter().map(degree).max().unwrap_or(0) + 1)
-            .max(degree(&l.multiplicity))
-        })
-        .max()
-        .unwrap_or(1);
-      if user_degree.max(lookup_degree) > max_degree {
-        return Err(format!(
-          "{name}: increase log_blowup for constraint degree {}",
-          user_degree.max(lookup_degree)
-        ));
-      }
-    }
-    let config = GoldilocksBlake3Config::with_device(
-      parameters.commitment(),
-      parameters.fri(),
-      device,
-    );
-    let (mut system, key) = System::new(config, inputs);
-    // Group messages only if the existing quotient degree suffices. This
-    // reduces stage 2 without making its FFTs or the quotient FFT larger.
-    for circuit in &mut system.circuits {
-      let quotient = circuit.quotient_degree();
-      for group in (2..=multi_stark::lookup::MAX_LOOKUP_GROUP
-        .min(circuit.num_lookups))
-        .rev()
-      {
-        let max_degree = circuit
-          .graph
-          .max_constraint_degree
-          .max(logup_max_degree(&circuit.graph, group))
-          as usize;
-        if (max_degree.max(2) - 1).next_power_of_two() <= quotient {
-          circuit.lookup_group_size = group;
-          circuit.stage_2_width = stage2_width(circuit.num_lookups, group, 2);
-          circuit.constraint_count = circuit.graph.zeros.len()
-            + logup_constraint_count(circuit.num_lookups, group, 2);
-          circuit.max_constraint_degree = max_degree;
-          break;
-        }
-      }
-    }
+    let (system, key) = build_system(inputs, &names, parameters, device)?;
     let lookup_plans = system
       .circuits
       .iter()
@@ -777,48 +840,9 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Ok((active, degrees))
   }
 
-  /// Match fixed domains, bound total unit lookup consumers below the
-  /// characteristic and total rows by [`MAX_BATCH_ROWS`]. Root caps cover
-  /// every active matrix, including height 1.
+  /// [`check_system_shape`] of this backend's system.
   fn check_shape(&self, active: &[bool], degrees: &[u8]) -> Result<(), String> {
-    if active.len() != self.system.circuits.len() || !active.contains(&true) {
-      return Err("invalid circuit activation".into());
-    }
-    let mut degrees = degrees.iter();
-    let mut budget = 1u64; // one public root
-    let mut rows = 0u64;
-    for (circuit, &on) in self.system.circuits.iter().zip(active) {
-      if !on {
-        if circuit.preprocessed_height != 0 {
-          return Err("inactive fixed table".into());
-        }
-        continue;
-      }
-      let log = *degrees.next().ok_or("missing trace height")?;
-      // Goldilocks has 2-adicity 32. Include the commitment blowup.
-      if usize::from(log) + self.parameters.log_blowup > 32 {
-        return Err("trace domain exceeds Goldilocks capacity".into());
-      }
-      let height = 1u64 << log;
-      if circuit.preprocessed_height != 0
-        && circuit.preprocessed_height as u64 != height
-      {
-        return Err("fixed table height mismatch".into());
-      }
-      rows += height;
-      if rows > MAX_BATCH_ROWS {
-        return Err("trace rows exceed the batch row bound (2^39)".into());
-      }
-      budget = height
-        .checked_mul(circuit.num_lookups.max(1) as u64)
-        .and_then(|n| budget.checked_add(n))
-        .filter(|&n| n < Val::ORDER_U64)
-        .ok_or("lookup count reaches field characteristic")?;
-    }
-    if degrees.next().is_some() {
-      return Err("extra trace heights".into());
-    }
-    Ok(())
+    check_system_shape(&self.system, self.parameters, active, degrees)
   }
 
   /// Prove an already prepared witness. A malformed witness may produce an

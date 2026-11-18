@@ -81,7 +81,7 @@ def releaseAccepts (home : System.FilePath) : IO Unit := do
 public def run : IO Unit := do
   unless (← Ix.Cli.Compression.curve) == "bn254" do
     throw <| IO.userError "unexpected compression curve"
-  for tag in ["IXCMP", "IXBN"] do
+  for tag in ["IXCMP", "IXBN", "IXACG", "IXAUCH"] do
     unless Ix.Cli.Compression.isCompressed tag.toUTF8 do
       throw <| IO.userError s!"unrecognized compressed proof family: {tag}"
   let home ← IO.FS.createTempDir
@@ -102,6 +102,10 @@ public def run : IO Unit := do
     let otherAddr ← putProof home (Ixon.Proof.ser other)
     rejects home #["compress", toString old, "--groth16", "--plonk"]
       "choose at most one"
+    rejects home #["compress", toString old, "--aiur-chain", "missing-chain.json",
+      "--aiur-gl", "gl.ixa", "--dev-kzg-srs"] "cannot be combined"
+    rejects home #["verify", toString old, "--aiur-chain", "missing-chain.json"]
+      "requires --aggregate"
     rejects home #["prove", "--ixe", "missing.ixe", "--ixes", "missing.ixes",
       "--compress", "fri"] "unknown compression output"
     rejects home #["compress", toString old, "--dev-final-srs"]

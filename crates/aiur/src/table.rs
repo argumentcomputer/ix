@@ -20,7 +20,7 @@ fn position<B: FieldBackend>(
   }
   let mut index = 0;
   for (&bound, &word) in bounds.iter().zip(key) {
-    let word = field.to_u64(word);
+    let word = field.try_to_u64(word).ok()?;
     if word >= bound {
       return None;
     }
@@ -36,15 +36,25 @@ impl<B: FieldBackend> TableIndex<B> {
     field: B,
   ) -> Result<Self, String> {
     let mut bounds = vec![0; rows.first().map_or(0, Vec::len)];
+    let mut dense = true;
     for row in rows {
+      if row.len() != bounds.len() {
+        return Err("map input row width mismatch".into());
+      }
       for (bound, word) in bounds.iter_mut().zip(row) {
-        *bound = (*bound).max(field.to_u64(*word).saturating_add(1));
+        if let Ok(value) = field.try_to_u64(*word)
+          && let Some(end) = value.checked_add(1)
+        {
+          *bound = (*bound).max(end);
+        } else {
+          dense = false;
+        }
       }
     }
     let size = bounds.iter().try_fold(1usize, |n, &bound| {
       n.checked_mul(usize::try_from(bound).ok()?)
     });
-    if size == Some(rows.len()) && !rows.is_empty() {
+    if dense && size == Some(rows.len()) && !rows.is_empty() {
       let mut positions = vec![usize::MAX; rows.len()];
       for (row, key) in rows.iter().enumerate() {
         let index =
@@ -99,6 +109,9 @@ mod tests {
     for rows in
       [vec![vec![0], vec![0]], vec![vec![1], vec![1]], vec![vec![], vec![]]]
     {
+      assert!(TableIndex::new(&rows, PrimeField::new(97).unwrap()).is_err());
+    }
+    for rows in [vec![vec![0], vec![1, 2]], vec![vec![1, 2], vec![0]]] {
       assert!(TableIndex::new(&rows, PrimeField::new(97).unwrap()).is_err());
     }
   }

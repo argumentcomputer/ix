@@ -102,10 +102,10 @@ module Pcs {
       match (*(bits)) {
         Lists::Node::Nil => {  1 } ,
         Lists::Node::Cons(b, rest) => {
-          let half = exp_by_bits(base * base, rest);
+          let half = exp_by_bits(Goldilocks::gl_mul(base, base), rest);
           match b {
             0 => {  half } ,
-            _ => {  base * half } ,
+            _ => {  Goldilocks::gl_mul(base, half) } ,
           } } ,
       }
     }
@@ -113,14 +113,14 @@ module Pcs {
   fn fri_fold2(index_bits: Lists::List<Field>, log_height: Field, beta: ProofDeserialize::Ext, e0: ProofDeserialize::Ext, e1: ProofDeserialize::Ext) -> ProofDeserialize::Ext {
       let g = StarkVerifier::two_adic_gen(log_height + 1);
       let s = exp_by_bits(g, glist_rev(index_bits, (&(Lists::Node::Nil))));
-      let two_s = s + s;
+      let two_s = Goldilocks::gl_add(s, s);
       let t1 = Goldilocks::eg_div(Goldilocks::eg_add(e0, e1), [2, 0]);
       let t2 = Goldilocks::eg_mul(beta, Goldilocks::eg_div(Goldilocks::eg_sub(e0, e1), [two_s, 0]));
       Goldilocks::eg_add(t1, t2)
     }
 
   inline fn ro_x(index_bits: Lists::List<Field>, log_height: Field) -> Goldilocks::Goldilocks {
-      7 * exp_by_bits(StarkVerifier::two_adic_gen(log_height), glist_rev(index_bits, (&(Lists::Node::Nil))))
+      Goldilocks::gl_mul(7, exp_by_bits(StarkVerifier::two_adic_gen(log_height), glist_rev(index_bits, (&(Lists::Node::Nil)))))
     }
 
   fn ro_fold(p_x: Lists::List<UInt64::U64>, p_z: Lists::List<ProofDeserialize::Ext>, alpha: ProofDeserialize::Ext, s: ProofDeserialize::Ext, ap: ProofDeserialize::Ext)

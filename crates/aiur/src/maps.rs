@@ -190,7 +190,7 @@ impl<F> MapOverrides<F> {
 }
 
 pub(crate) struct PreparedMap<B: FieldBackend = PrimeField> {
-  pub(crate) program: Arc<Program>,
+  pub(crate) program: Arc<Program<B::Word>>,
   tables: Arc<Vec<Vec<Vec<B::Element>>>>,
   pub(crate) id: usize,
   input_width: usize,

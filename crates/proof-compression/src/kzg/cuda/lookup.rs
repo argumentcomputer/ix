@@ -3,7 +3,10 @@
 
 use super::quotient::{self, Column, Instruction, Lookup, Program, allocation};
 use super::*;
-use crate::kzg::{config::KzgConfig, field::Scalar, pcs::CommittedMatrix};
+use crate::kzg::{
+  field::Scalar,
+  pcs::{CoefficientConfig, CommittedMatrix},
+};
 use multi_stark::config::LookupCommitInput;
 use multi_stark::traits::Algebra;
 
@@ -69,16 +72,16 @@ fn memory_bound(
   .try_fold(0usize, usize::checked_add)
 }
 
-pub(in crate::kzg) fn coefficients(
-  input: &LookupCommitInput<'_, KzgConfig>,
+pub(in crate::kzg) fn coefficients<SC: CoefficientConfig>(
+  input: &LookupCommitInput<'_, SC>,
   beta: Scalar,
   gamma: Scalar,
 ) -> Option<(Vec<Vec<Fr>>, Scalar)> {
   coefficients_with_mode(input, beta, gamma, settings().passes)
 }
 
-pub(super) fn coefficients_with_mode(
-  input: &LookupCommitInput<'_, KzgConfig>,
+pub(super) fn coefficients_with_mode<SC: CoefficientConfig>(
+  input: &LookupCommitInput<'_, SC>,
   beta: Scalar,
   gamma: Scalar,
   mode: PassMode,

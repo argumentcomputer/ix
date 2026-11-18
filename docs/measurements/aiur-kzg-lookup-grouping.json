@@ -1,0 +1,732 @@
+{
+  "format": "ix-aiur-kzg-lookup-grouping-v1",
+  "date_utc": "2026-11-13",
+  "protocol_changed": false,
+  "compiled_verifier_keys_change": true,
+  "selection": "Enumerate every size1..8, retain exactly the group1 actual quotient degree of each physical circuit, then minimize(stage2_width, group_size). No global quotient capacity is spent.",
+  "source_state": {
+    "git_head": "c21d367f391c22e12cf33d6c72ce0d4ee15ebda9",
+    "fq_sha256": "961702939a0b5c26dcd51a79b225211b94469d0d6a647f3d7467d64ae89ff5b5",
+    "prior_evidence_preserved": "target/fused-arithmetic/grouping-init"
+  },
+  "artifact": "target/prefix-init-grouping/ungrouped.ixa",
+  "artifact_blake3": "6601afd8e5a390ea6ce21880bb99317abe0f4ce58ca43419e3de95aee38ef5c3",
+  "init": {
+    "totals": {
+      "after_active_aux_columns": 2109,
+      "after_aux_cells": 195896619,
+      "after_aux_columns": 2133,
+      "after_main_aux_quotient_cells": 788563296,
+      "before_active_aux_columns": 2459,
+      "before_aux_cells": 260336206,
+      "before_aux_columns": 2483,
+      "before_main_aux_quotient_cells": 853002883,
+      "foreign_tuner_commitment_evaluation_cost_saved_bytes": 33600,
+      "main_cells_unchanged": 554749846,
+      "quotient_cells_unchanged": 37916831,
+      "saved_aux_cells": 64439587,
+      "saved_aux_field_bytes": 2062066784
+    },
+    "group_histogram": {
+      "1": 157,
+      "2": 23,
+      "5": 1
+    },
+    "before_trace_bytes": 26116513920,
+    "after_trace_bytes": 24054447136,
+    "height": 8388608
+  },
+  "small": {
+    "totals": {
+      "after_active_aux_columns": 2099,
+      "after_aux_cells": 887711,
+      "after_aux_columns": 2133,
+      "after_main_aux_quotient_cells": 2619314,
+      "before_active_aux_columns": 2449,
+      "before_aux_cells": 989773,
+      "before_aux_columns": 2483,
+      "before_main_aux_quotient_cells": 2721376,
+      "foreign_tuner_commitment_evaluation_cost_saved_bytes": 33600,
+      "main_cells_unchanged": 1591287,
+      "quotient_cells_unchanged": 140316,
+      "saved_aux_cells": 102062,
+      "saved_aux_field_bytes": 3265984
+    },
+    "group_histogram": {
+      "1": 157,
+      "2": 23,
+      "5": 1
+    },
+    "before_trace_bytes": 116354176,
+    "after_trace_bytes": 113088192,
+    "height": 65536
+  },
+  "range80": {
+    "after_aux_columns": 6,
+    "after_max_constraint_degree": 2,
+    "after_quotient_degree": 1,
+    "base_constraint_degree": 2,
+    "before_aux_columns": 6,
+    "before_max_constraint_degree": 2,
+    "groups": [
+      {
+        "aux_columns": 6,
+        "group": 1,
+        "max_degree": 2,
+        "quotient_degree": 1,
+        "within_original_quotient": true
+      },
+      {
+        "aux_columns": 3,
+        "group": 2,
+        "max_degree": 3,
+        "quotient_degree": 2,
+        "within_original_quotient": false
+      },
+      {
+        "aux_columns": 2,
+        "group": 3,
+        "max_degree": 4,
+        "quotient_degree": 4,
+        "within_original_quotient": false
+      },
+      {
+        "aux_columns": 2,
+        "group": 4,
+        "max_degree": 5,
+        "quotient_degree": 4,
+        "within_original_quotient": false
+      },
+      {
+        "aux_columns": 2,
+        "group": 5,
+        "max_degree": 6,
+        "quotient_degree": 8,
+        "within_original_quotient": false
+      },
+      {
+        "aux_columns": 1,
+        "group": 6,
+        "max_degree": 7,
+        "quotient_degree": 8,
+        "within_original_quotient": false
+      },
+      {
+        "aux_columns": 1,
+        "group": 7,
+        "max_degree": 7,
+        "quotient_degree": 8,
+        "within_original_quotient": false
+      },
+      {
+        "aux_columns": 1,
+        "group": 8,
+        "max_degree": 7,
+        "quotient_degree": 8,
+        "within_original_quotient": false
+      }
+    ],
+    "height": 8388608,
+    "lookups": 6,
+    "name": "BN254Fq::range80",
+    "quotient_degree": 1,
+    "saved_aux_cells": 0,
+    "selected_group": 1
+  },
+  "largest_savings": [
+    {
+      "after_aux_columns": 113,
+      "after_max_constraint_degree": 3,
+      "after_quotient_degree": 2,
+      "base_constraint_degree": 3,
+      "before_aux_columns": 226,
+      "before_max_constraint_degree": 3,
+      "groups": [
+        {
+          "aux_columns": 226,
+          "group": 1,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 113,
+          "group": 2,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 76,
+          "group": 3,
+          "max_degree": 4,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 57,
+          "group": 4,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 46,
+          "group": 5,
+          "max_degree": 6,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 38,
+          "group": 6,
+          "max_degree": 7,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 33,
+          "group": 7,
+          "max_degree": 8,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 29,
+          "group": 8,
+          "max_degree": 9,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        }
+      ],
+      "height": 262144,
+      "lookups": 226,
+      "name": "Blake3::compress",
+      "quotient_degree": 2,
+      "saved_aux_cells": 29622272,
+      "selected_group": 2
+    },
+    {
+      "after_aux_columns": 14,
+      "after_max_constraint_degree": 3,
+      "after_quotient_degree": 2,
+      "base_constraint_degree": 3,
+      "before_aux_columns": 69,
+      "before_max_constraint_degree": 3,
+      "groups": [
+        {
+          "aux_columns": 69,
+          "group": 1,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 35,
+          "group": 2,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 23,
+          "group": 3,
+          "max_degree": 4,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 18,
+          "group": 4,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 14,
+          "group": 5,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 12,
+          "group": 6,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 10,
+          "group": 7,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 9,
+          "group": 8,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        }
+      ],
+      "height": 524288,
+      "lookups": 69,
+      "name": "BN254G1::add",
+      "quotient_degree": 2,
+      "saved_aux_cells": 28835840,
+      "selected_group": 5
+    },
+    {
+      "after_aux_columns": 3,
+      "after_max_constraint_degree": 3,
+      "after_quotient_degree": 2,
+      "base_constraint_degree": 3,
+      "before_aux_columns": 6,
+      "before_max_constraint_degree": 3,
+      "groups": [
+        {
+          "aux_columns": 6,
+          "group": 1,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 3,
+          "group": 2,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 2,
+          "group": 3,
+          "max_degree": 4,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 2,
+          "group": 4,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 2,
+          "group": 5,
+          "max_degree": 6,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 6,
+          "max_degree": 7,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 7,
+          "max_degree": 7,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 8,
+          "max_degree": 7,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        }
+      ],
+      "height": 1048576,
+      "lookups": 6,
+      "name": "Blake3::compress_chunks",
+      "quotient_degree": 2,
+      "saved_aux_cells": 3145728,
+      "selected_group": 2
+    },
+    {
+      "after_aux_columns": 2,
+      "after_max_constraint_degree": 3,
+      "after_quotient_degree": 2,
+      "base_constraint_degree": 3,
+      "before_aux_columns": 4,
+      "before_max_constraint_degree": 3,
+      "groups": [
+        {
+          "aux_columns": 4,
+          "group": 1,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 2,
+          "group": 2,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 2,
+          "group": 3,
+          "max_degree": 4,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 4,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 5,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 6,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 7,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 8,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        }
+      ],
+      "height": 1048576,
+      "lookups": 4,
+      "name": "KzgBlake3::read_block",
+      "quotient_degree": 2,
+      "saved_aux_cells": 2097152,
+      "selected_group": 2
+    },
+    {
+      "after_aux_columns": 3,
+      "after_max_constraint_degree": 3,
+      "after_quotient_degree": 2,
+      "base_constraint_degree": 2,
+      "before_aux_columns": 5,
+      "before_max_constraint_degree": 3,
+      "groups": [
+        {
+          "aux_columns": 5,
+          "group": 1,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 3,
+          "group": 2,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 2,
+          "group": 3,
+          "max_degree": 4,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 2,
+          "group": 4,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 5,
+          "max_degree": 7,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 6,
+          "max_degree": 7,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 7,
+          "max_degree": 7,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 8,
+          "max_degree": 7,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        }
+      ],
+      "height": 262144,
+      "lookups": 5,
+      "name": "KzgIO::fields_to_bytes",
+      "quotient_degree": 2,
+      "saved_aux_cells": 524288,
+      "selected_group": 2
+    },
+    {
+      "after_aux_columns": 6,
+      "after_max_constraint_degree": 3,
+      "after_quotient_degree": 2,
+      "base_constraint_degree": 3,
+      "before_aux_columns": 11,
+      "before_max_constraint_degree": 3,
+      "groups": [
+        {
+          "aux_columns": 11,
+          "group": 1,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 6,
+          "group": 2,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 4,
+          "group": 3,
+          "max_degree": 4,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 3,
+          "group": 4,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 3,
+          "group": 5,
+          "max_degree": 6,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 2,
+          "group": 6,
+          "max_degree": 7,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 2,
+          "group": 7,
+          "max_degree": 8,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 2,
+          "group": 8,
+          "max_degree": 9,
+          "quotient_degree": 8,
+          "within_original_quotient": false
+        }
+      ],
+      "height": 16384,
+      "lookups": 11,
+      "name": "KzgBlake3::chunk",
+      "quotient_degree": 2,
+      "saved_aux_cells": 81920,
+      "selected_group": 2
+    },
+    {
+      "after_aux_columns": 2,
+      "after_max_constraint_degree": 3,
+      "after_quotient_degree": 2,
+      "base_constraint_degree": 3,
+      "before_aux_columns": 4,
+      "before_max_constraint_degree": 3,
+      "groups": [
+        {
+          "aux_columns": 4,
+          "group": 1,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 2,
+          "group": 2,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 2,
+          "group": 3,
+          "max_degree": 4,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 4,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 5,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 6,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 7,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 8,
+          "max_degree": 5,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        }
+      ],
+      "height": 16384,
+      "lookups": 4,
+      "name": "KzgAlgebra::lookup_fingerprint",
+      "quotient_degree": 2,
+      "saved_aux_cells": 32768,
+      "selected_group": 2
+    },
+    {
+      "after_aux_columns": 2,
+      "after_max_constraint_degree": 3,
+      "after_quotient_degree": 2,
+      "base_constraint_degree": 3,
+      "before_aux_columns": 3,
+      "before_max_constraint_degree": 3,
+      "groups": [
+        {
+          "aux_columns": 3,
+          "group": 1,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 2,
+          "group": 2,
+          "max_degree": 3,
+          "quotient_degree": 2,
+          "within_original_quotient": true
+        },
+        {
+          "aux_columns": 1,
+          "group": 3,
+          "max_degree": 4,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 4,
+          "max_degree": 4,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 5,
+          "max_degree": 4,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 6,
+          "max_degree": 4,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 7,
+          "max_degree": 4,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        },
+        {
+          "aux_columns": 1,
+          "group": 8,
+          "max_degree": 4,
+          "quotient_degree": 4,
+          "within_original_quotient": false
+        }
+      ],
+      "height": 16384,
+      "lookups": 3,
+      "name": "Blake3::pad_block",
+      "quotient_degree": 2,
+      "saved_aux_cells": 16384,
+      "selected_group": 2
+    }
+  ],
+  "validation": {
+    "selector_unit_tests": 3,
+    "grouped_key_proof_and_aiur_source_tests": 2,
+    "existing_backend_tests": 6,
+    "portable_codec_tests": 2,
+    "count_tests": 1,
+    "clippy": "pass with -D warnings",
+    "selection_verified_against_current_compiler": true,
+    "actual_quotient_domains_unchanged": true,
+    "forged_group5_opening": "Both native verification and the Aiur-returned accumulator pairing reject an altered opening point."
+  },
+  "scope": "Exact auxiliary widths and cells from saved source-execution heights, validated against the current Compiler choices. Main, fixed and quotient cells are unchanged. No large grouped-lookup proving-time or peak-memory measurement.",
+  "key_preparation": "GL and BN KZG key digests change. Fresh key/policy preparation must use this lowering; historical portable keys still carry their original group sizes for independent verification.",
+  "reproduce": [
+    "cargo test --release --locked -p ix-proof-compression --lib aiur_backend::kzg::circuits::tests",
+    "cargo test --release --locked -p ix-proof-compression --test aiur_lookup_grouping --test aiur_kzg --test aiur_kzg_codec --test aiur_kzg_counts",
+    "target/prefix-init-grouping/auto_lookup_profile target/prefix-init-grouping/ungrouped.ixa target/prefix-init-grouping/init-baseline/report.json NEW_OUTPUT"
+  ]
+}

@@ -12,6 +12,7 @@
 //! them. Readers ([`Nodes`], [`Rows`]) check safety only: references point
 //! back and in range, constants and row values lie below the modulus, and
 //! pools and expanded sizes are bounded. They accept non-canonical pools.
+use super::{Version, WireField};
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -31,8 +32,8 @@ pub(super) const MAX_EXPANDED_ROWS: u64 = 1 << 28;
 
 /// One pool node. Operands are indices of earlier nodes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(super) enum Node {
-  Const(u64),
+pub(super) enum Node<F = u64> {
+  Const(F),
   Var(usize),
   Add(usize, usize),
   Sub(usize, usize),
@@ -41,13 +42,13 @@ pub(super) enum Node {
 
 /// Builds the canonical node pool of the polynomials interned into it.
 #[derive(Debug, Default)]
-pub(super) struct Interner {
-  nodes: Vec<Node>,
-  index: FxHashMap<Node, usize>,
+pub(super) struct Interner<F = u64> {
+  nodes: Vec<Node<F>>,
+  index: FxHashMap<Node<F>, usize>,
 }
 
-impl Interner {
-  fn node(&mut self, node: Node) -> usize {
+impl<F: WireField> Interner<F> {
+  fn node(&mut self, node: Node<F>) -> usize {
     let next = self.nodes.len();
     *self.index.entry(node).or_insert_with(|| {
       self.nodes.push(node);
@@ -57,7 +58,7 @@ impl Interner {
 
   /// The index of `polynomial`'s root, adding the nodes not yet present.
   /// Walks the tree without recursion.
-  pub(super) fn intern(&mut self, polynomial: &Polynomial) -> usize {
+  pub(super) fn intern(&mut self, polynomial: &Polynomial<F>) -> usize {
     let mut pending = vec![(polynomial, false)];
     let mut done: Vec<usize> = Vec::new();
     while let Some((p, expanded)) = pending.pop() {
@@ -93,7 +94,7 @@ impl Interner {
       match node {
         Node::Const(value) => {
           w.u8(0);
-          w.nat(value);
+          value.put(w);
         },
         Node::Var(var) => {
           w.u8(1);
@@ -115,18 +116,19 @@ impl Interner {
 
 /// A node pool read from an artifact, from which polynomials are expanded.
 #[derive(Debug)]
-pub(super) struct Nodes {
-  nodes: Vec<Node>,
+pub(super) struct Nodes<F = u64> {
+  nodes: Vec<Node<F>>,
   /// Each node's expanded size, saturating at `u64::MAX`.
   sizes: Vec<u64>,
   expanded: u64,
 }
 
-impl Nodes {
+impl<F: WireField> Nodes<F> {
   /// Read a pool. Constants must lie below `modulus` when one is given.
   pub(super) fn read(
     r: &mut Reader<'_>,
-    modulus: Option<u64>,
+    modulus: Option<F>,
+    format: Version,
   ) -> Result<Self, String> {
     let count = pool_count(r, "polynomial node")?;
     let mut nodes = Vec::with_capacity(count);
@@ -134,12 +136,12 @@ impl Nodes {
     for index in 0..count {
       let node = match r.tag("polynomial node", 5)? {
         0 => {
-          let value = r.nat()?;
+          let value = F::read(r, format)?;
           if let Some(modulus) = modulus
             && value >= modulus
           {
             return Err(r.error(format!(
-              "field element {value} is not below the modulus {modulus}"
+              "field element {value:?} is not below the modulus {modulus:?}"
             )));
           }
           Node::Const(value)
@@ -171,7 +173,7 @@ impl Nodes {
   pub(super) fn poly(
     &mut self,
     r: &mut Reader<'_>,
-  ) -> Result<Polynomial, String> {
+  ) -> Result<Polynomial<F>, String> {
     let root = r.usize()?;
     let Some(&size) = self.sizes.get(root) else {
       return Err(r.error(format!(
@@ -189,9 +191,9 @@ impl Nodes {
   }
 
   /// The tree rooted at `root`, built without recursion.
-  fn build(&self, root: usize) -> Polynomial {
+  fn build(&self, root: usize) -> Polynomial<F> {
     let mut pending = vec![(root, false)];
-    let mut built: Vec<Polynomial> = Vec::new();
+    let mut built: Vec<Polynomial<F>> = Vec::new();
     while let Some((index, expanded)) = pending.pop() {
       let node = self.nodes[index];
       let polynomial = match node {
@@ -244,13 +246,13 @@ fn pool_count(r: &mut Reader<'_>, what: &str) -> Result<usize, String> {
 
 /// Builds the canonical row pool of a program's tables.
 #[derive(Debug, Default)]
-pub(super) struct RowInterner<'a> {
-  rows: Vec<&'a [u64]>,
-  index: FxHashMap<&'a [u64], usize>,
+pub(super) struct RowInterner<'a, F = u64> {
+  rows: Vec<&'a [F]>,
+  index: FxHashMap<&'a [F], usize>,
 }
 
-impl<'a> RowInterner<'a> {
-  pub(super) fn intern(&mut self, row: &'a [u64]) -> usize {
+impl<'a, F: WireField> RowInterner<'a, F> {
+  pub(super) fn intern(&mut self, row: &'a [F]) -> usize {
     let next = self.rows.len();
     *self.index.entry(row).or_insert_with(|| {
       self.rows.push(row);
@@ -260,27 +262,31 @@ impl<'a> RowInterner<'a> {
 
   /// `rows = list(nats)`.
   pub(super) fn put(&self, w: &mut Writer) {
-    w.list(&self.rows, |w, row| w.nats(row));
+    w.list(&self.rows, |w, row| super::put_field_values(w, row));
   }
 }
 
 /// A row pool read from an artifact, from which tables are expanded.
 #[derive(Debug)]
-pub(super) struct Rows {
-  rows: Vec<Vec<u64>>,
+pub(super) struct Rows<F = u64> {
+  rows: Vec<Vec<F>>,
   expanded: u64,
 }
 
-impl Rows {
+impl<F: WireField> Rows<F> {
   /// Read a pool whose values must lie below `modulus`.
-  pub(super) fn read(r: &mut Reader<'_>, modulus: u64) -> Result<Self, String> {
+  pub(super) fn read(
+    r: &mut Reader<'_>,
+    modulus: F,
+    format: Version,
+  ) -> Result<Self, String> {
     let count = pool_count(r, "table row")?;
     let mut rows = Vec::with_capacity(count);
     for _ in 0..count {
-      let row = r.nats()?;
+      let row = super::field_values(r, format, None)?;
       if let Some(value) = row.iter().find(|&&value| value >= modulus) {
         return Err(r.error(format!(
-          "table value {value} is not below the modulus {modulus}"
+          "table value {value:?} is not below the modulus {modulus:?}"
         )));
       }
       rows.push(row);
@@ -292,7 +298,7 @@ impl Rows {
   pub(super) fn table(
     &mut self,
     r: &mut Reader<'_>,
-  ) -> Result<Vec<Vec<u64>>, String> {
+  ) -> Result<Vec<Vec<F>>, String> {
     r.list(|r| {
       let index = r.usize()?;
       let Some(row) = self.rows.get(index) else {

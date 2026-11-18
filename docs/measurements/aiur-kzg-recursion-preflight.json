@@ -1,0 +1,1109 @@
+{
+  "circuits": [
+    {
+      "cells": 805306368,
+      "height": 67108864,
+      "name": "BN254Fq::range80",
+      "width": 12
+    },
+    {
+      "cells": 263192576,
+      "height": 524288,
+      "name": "Blake3::compress",
+      "width": 502
+    },
+    {
+      "cells": 218103808,
+      "height": 16777216,
+      "name": "BN254Fq::range84",
+      "width": 13
+    },
+    {
+      "cells": 150994944,
+      "height": 8388608,
+      "name": "BN254Fq::sub",
+      "width": 18
+    },
+    {
+      "cells": 117440512,
+      "height": 4194304,
+      "name": "BN254Fq::mul",
+      "width": 28
+    },
+    {
+      "cells": 97517568,
+      "height": 1048576,
+      "name": "BN254G1::add",
+      "width": 93
+    },
+    {
+      "cells": 75497472,
+      "height": 8388608,
+      "name": "BN254Fq::from_limbs",
+      "width": 9
+    },
+    {
+      "cells": 50331648,
+      "height": 8388608,
+      "name": "<ROM:3>",
+      "width": 6
+    },
+    {
+      "cells": 46137344,
+      "height": 4194304,
+      "name": "KzgTranscript::reverse_onto",
+      "width": 11
+    },
+    {
+      "cells": 45088768,
+      "height": 1048576,
+      "name": "KzgMsm::add_points",
+      "width": 43
+    },
+    {
+      "cells": 37748736,
+      "height": 2097152,
+      "name": "Blake3::compress_chunks",
+      "width": 18
+    },
+    {
+      "cells": 33554432,
+      "height": 2097152,
+      "name": "KzgBlake3::read_block",
+      "width": 16
+    },
+    {
+      "cells": 26214400,
+      "height": 1048576,
+      "name": "KzgMsm::split",
+      "width": 25
+    },
+    {
+      "cells": 25165824,
+      "height": 2097152,
+      "name": "KzgIO::read_stream",
+      "width": 12
+    },
+    {
+      "cells": 18874368,
+      "height": 1048576,
+      "name": "BN254Fq::inverse",
+      "width": 18
+    },
+    {
+      "cells": 14680064,
+      "height": 1048576,
+      "name": "<ROM:11>",
+      "width": 14
+    },
+    {
+      "cells": 10485760,
+      "height": 2097152,
+      "name": "KzgIO::byte",
+      "width": 5
+    },
+    {
+      "cells": 7340032,
+      "height": 1048576,
+      "name": "<ROM:4>",
+      "width": 7
+    },
+    {
+      "cells": 6127616,
+      "height": 32768,
+      "name": "Blake3::compress_block",
+      "width": 187
+    },
+    {
+      "cells": 5767168,
+      "height": 524288,
+      "name": "KzgIO::fields_to_bytes",
+      "width": 11
+    },
+    {
+      "cells": 5767168,
+      "height": 524288,
+      "name": "${\"name\":\"Lists::concat\",\"types\":[\"field\"]}",
+      "width": 11
+    },
+    {
+      "cells": 5341184,
+      "height": 32768,
+      "name": "KzgBlake3::chunk",
+      "width": 163
+    },
+    {
+      "cells": 4587520,
+      "height": 131072,
+      "name": "KzgMsm::table_rows",
+      "width": 35
+    },
+    {
+      "cells": 4292608,
+      "height": 32768,
+      "name": "Blake3::bytes_to_block",
+      "width": 131
+    },
+    {
+      "cells": 2359296,
+      "height": 131072,
+      "name": "${\"name\":\"Lists::drop\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+      "width": 18
+    },
+    {
+      "cells": 2195456,
+      "height": 32768,
+      "name": "KzgIO::read32",
+      "width": 67
+    },
+    {
+      "cells": 2097152,
+      "height": 131072,
+      "name": "${\"name\":\"Lists::lookup\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+      "width": 16
+    },
+    {
+      "cells": 1638400,
+      "height": 32768,
+      "name": "KzgAlgebra::eval_at",
+      "width": 50
+    },
+    {
+      "cells": 1441792,
+      "height": 131072,
+      "name": "KzgIO::u32",
+      "width": 11
+    },
+    {
+      "cells": 1343488,
+      "height": 16384,
+      "name": "BN254G1::point_list_bytes",
+      "width": 82
+    },
+    {
+      "cells": 1245184,
+      "height": 65536,
+      "name": "KzgMsm::limb",
+      "width": 19
+    },
+    {
+      "cells": 1179648,
+      "height": 65536,
+      "name": "BN254Fq::add",
+      "width": 18
+    },
+    {
+      "cells": 1146880,
+      "height": 16384,
+      "name": "KzgTranscript::observe_field",
+      "width": 70
+    },
+    {
+      "cells": 1146880,
+      "height": 32768,
+      "name": "<ROM:32>",
+      "width": 35
+    },
+    {
+      "cells": 1048576,
+      "height": 32768,
+      "name": "KzgDeserialize::node",
+      "width": 32
+    },
+    {
+      "cells": 983040,
+      "height": 32768,
+      "name": "KzgDeserialize::nodes",
+      "width": 30
+    },
+    {
+      "cells": 983040,
+      "height": 65536,
+      "name": "<ROM:12>",
+      "width": 15
+    },
+    {
+      "cells": 737280,
+      "height": 4096,
+      "name": "Blake3::next_layer",
+      "width": 180
+    },
+    {
+      "cells": 737280,
+      "height": 16384,
+      "name": "KzgIO::point",
+      "width": 45
+    },
+    {
+      "cells": 688128,
+      "height": 8192,
+      "name": "BN254G1::from_bytes",
+      "width": 84
+    },
+    {
+      "cells": 655360,
+      "height": 16384,
+      "name": "KzgTranscript::observe_bytes",
+      "width": 40
+    },
+    {
+      "cells": 606208,
+      "height": 16384,
+      "name": "KzgIO::scalar_from_bytes",
+      "width": 37
+    },
+    {
+      "cells": 606208,
+      "height": 16384,
+      "name": "KzgIO::scalar",
+      "width": 37
+    },
+    {
+      "cells": 589824,
+      "height": 16384,
+      "name": "KzgIO::scalar_bytes",
+      "width": 36
+    },
+    {
+      "cells": 589824,
+      "height": 4096,
+      "name": "KzgBlake3::chaining",
+      "width": 144
+    },
+    {
+      "cells": 589824,
+      "height": 16384,
+      "name": "<ROM:33>",
+      "width": 36
+    },
+    {
+      "cells": 524288,
+      "height": 8192,
+      "name": "BN254G1::double",
+      "width": 64
+    },
+    {
+      "cells": 524288,
+      "height": 65536,
+      "name": "<table:UInt8::pair_inputs>",
+      "width": 8
+    },
+    {
+      "cells": 491520,
+      "height": 32768,
+      "name": "KzgAlgebra::lookup_fingerprint",
+      "width": 15
+    },
+    {
+      "cells": 458752,
+      "height": 32768,
+      "name": "UInt32::less_than_fields",
+      "width": 14
+    },
+    {
+      "cells": 458752,
+      "height": 65536,
+      "name": "${\"name\":\"Lists::is_empty\",\"types\":[\"field\"]}",
+      "width": 7
+    },
+    {
+      "cells": 458752,
+      "height": 16384,
+      "name": "KzgPcs::fold_pairs",
+      "width": 28
+    },
+    {
+      "cells": 446464,
+      "height": 4096,
+      "name": "<ROM:106>",
+      "width": 109
+    },
+    {
+      "cells": 442368,
+      "height": 8192,
+      "name": "BN254G1::from_raw",
+      "width": 54
+    },
+    {
+      "cells": 425984,
+      "height": 32768,
+      "name": "${\"name\":\"Lists::drop\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}",
+      "width": 13
+    },
+    {
+      "cells": 425984,
+      "height": 32768,
+      "name": "KzgDeserialize::ids",
+      "width": 13
+    },
+    {
+      "cells": 393216,
+      "height": 16384,
+      "name": "KzgMsm::prepare",
+      "width": 24
+    },
+    {
+      "cells": 376832,
+      "height": 16384,
+      "name": "KzgPcs::prepend_pairs",
+      "width": 23
+    },
+    {
+      "cells": 360448,
+      "height": 8192,
+      "name": "BN254G1::to_bytes",
+      "width": 44
+    },
+    {
+      "cells": 360448,
+      "height": 32768,
+      "name": "${\"name\":\"Lists::lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}",
+      "width": 11
+    },
+    {
+      "cells": 327680,
+      "height": 16384,
+      "name": "${\"name\":\"Lists::reverse_acc\",\"types\":[{\"tuple\":{\"items\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}},\"field\"]}}]}",
+      "width": 20
+    },
+    {
+      "cells": 327680,
+      "height": 16384,
+      "name": "KzgDeserialize::points",
+      "width": 20
+    },
+    {
+      "cells": 294912,
+      "height": 32768,
+      "name": "<ROM:6>",
+      "width": 9
+    },
+    {
+      "cells": 278528,
+      "height": 16384,
+      "name": "${\"name\":\"Lists::length\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+      "width": 17
+    },
+    {
+      "cells": 278528,
+      "height": 8192,
+      "name": "BN254G1::fq_bytes",
+      "width": 34
+    },
+    {
+      "cells": 229376,
+      "height": 8192,
+      "name": "KzgAlgebra::group_summary",
+      "width": 28
+    },
+    {
+      "cells": 196608,
+      "height": 16384,
+      "name": "KzgDeserialize::scalars",
+      "width": 12
+    },
+    {
+      "cells": 180224,
+      "height": 16384,
+      "name": "KzgTranscript::observe_fields",
+      "width": 11
+    },
+    {
+      "cells": 163840,
+      "height": 16384,
+      "name": "${\"name\":\"Lists::drop\",\"types\":[\"field\"]}",
+      "width": 10
+    },
+    {
+      "cells": 163840,
+      "height": 32768,
+      "name": "KzgDeserialize::check_child",
+      "width": 5
+    },
+    {
+      "cells": 163840,
+      "height": 16384,
+      "name": "<ROM:7>",
+      "width": 10
+    },
+    {
+      "cells": 151552,
+      "height": 4096,
+      "name": "<ROM:34>",
+      "width": 37
+    },
+    {
+      "cells": 147456,
+      "height": 16384,
+      "name": "Blake3::pad_block",
+      "width": 9
+    },
+    {
+      "cells": 147456,
+      "height": 16384,
+      "name": "${\"name\":\"Lists::length\",\"types\":[\"field\"]}",
+      "width": 9
+    },
+    {
+      "cells": 147456,
+      "height": 16384,
+      "name": "BN254G1::scalar_limbs",
+      "width": 9
+    },
+    {
+      "cells": 147456,
+      "height": 16384,
+      "name": "KzgMsm::finish",
+      "width": 9
+    },
+    {
+      "cells": 141312,
+      "height": 2048,
+      "name": "KzgBlake3::parent",
+      "width": 69
+    },
+    {
+      "cells": 139264,
+      "height": 4096,
+      "name": "KzgAlgebra::fold_lookups",
+      "width": 34
+    },
+    {
+      "cells": 131072,
+      "height": 16384,
+      "name": "${\"name\":\"Lists::lookup\",\"types\":[\"field\"]}",
+      "width": 8
+    },
+    {
+      "cells": 106496,
+      "height": 8192,
+      "name": "KzgMsm::table",
+      "width": 13
+    },
+    {
+      "cells": 81920,
+      "height": 8192,
+      "name": "BN254G1::sign",
+      "width": 10
+    },
+    {
+      "cells": 76544,
+      "height": 128,
+      "name": "KzgBlake3::rounds",
+      "width": 598
+    },
+    {
+      "cells": 73728,
+      "height": 4096,
+      "name": "KzgDeserialize::lookups",
+      "width": 18
+    },
+    {
+      "cells": 65536,
+      "height": 4096,
+      "name": "KzgAlgebra::fold_roots",
+      "width": 16
+    },
+    {
+      "cells": 61440,
+      "height": 2048,
+      "name": "KzgBlake3::chunks",
+      "width": 30
+    },
+    {
+      "cells": 43008,
+      "height": 2048,
+      "name": "KzgPcs::observe_rows",
+      "width": 21
+    },
+    {
+      "cells": 40960,
+      "height": 4096,
+      "name": "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+      "width": 10
+    },
+    {
+      "cells": 40960,
+      "height": 2048,
+      "name": "KzgPcs::add_batch",
+      "width": 20
+    },
+    {
+      "cells": 38912,
+      "height": 1024,
+      "name": "KzgPcs::matrices",
+      "width": 38
+    },
+    {
+      "cells": 32768,
+      "height": 4096,
+      "name": "${\"name\":\"Lists::is_empty\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+      "width": 8
+    },
+    {
+      "cells": 31744,
+      "height": 1024,
+      "name": "BN254G1::row_list_bytes",
+      "width": 31
+    },
+    {
+      "cells": 30720,
+      "height": 2048,
+      "name": "KzgBlake3::next_layer",
+      "width": 15
+    },
+    {
+      "cells": 30720,
+      "height": 2048,
+      "name": "KzgDeserialize::scalar_rows",
+      "width": 15
+    },
+    {
+      "cells": 26368,
+      "height": 256,
+      "name": "KzgShape::walk",
+      "width": 103
+    },
+    {
+      "cells": 22528,
+      "height": 1024,
+      "name": "KzgTranscript::observe_u64",
+      "width": 22
+    },
+    {
+      "cells": 20480,
+      "height": 1024,
+      "name": "UInt64::wrapping_succ",
+      "width": 20
+    },
+    {
+      "cells": 19456,
+      "height": 1024,
+      "name": "UInt64::is_zero",
+      "width": 19
+    },
+    {
+      "cells": 19456,
+      "height": 1024,
+      "name": "KzgPcs::observe_matrices",
+      "width": 19
+    },
+    {
+      "cells": 19200,
+      "height": 256,
+      "name": "KzgMsm::windows",
+      "width": 75
+    },
+    {
+      "cells": 17408,
+      "height": 256,
+      "name": "KzgShape::consume",
+      "width": 68
+    },
+    {
+      "cells": 16640,
+      "height": 256,
+      "name": "KzgAlgebra::verify_frames",
+      "width": 65
+    },
+    {
+      "cells": 15360,
+      "height": 1024,
+      "name": "KzgDeserialize::point_rows",
+      "width": 15
+    },
+    {
+      "cells": 15360,
+      "height": 1024,
+      "name": "KzgDeserialize::opening_matrices",
+      "width": 15
+    },
+    {
+      "cells": 15104,
+      "height": 256,
+      "name": "KzgDeserialize::circuits",
+      "width": 59
+    },
+    {
+      "cells": 13312,
+      "height": 1024,
+      "name": "KzgPcs::observe_logs",
+      "width": 13
+    },
+    {
+      "cells": 12288,
+      "height": 1024,
+      "name": "KzgShape::rows_width",
+      "width": 12
+    },
+    {
+      "cells": 12288,
+      "height": 1024,
+      "name": "KzgPcs::commitments",
+      "width": 12
+    },
+    {
+      "cells": 12288,
+      "height": 1024,
+      "name": "KzgIO::read_bytes",
+      "width": 12
+    },
+    {
+      "cells": 11264,
+      "height": 1024,
+      "name": "<ROM:8>",
+      "width": 11
+    },
+    {
+      "cells": 8192,
+      "height": 1024,
+      "name": "KzgAlgebra::first_row",
+      "width": 8
+    },
+    {
+      "cells": 8192,
+      "height": 1024,
+      "name": "<ROM:5>",
+      "width": 8
+    },
+    {
+      "cells": 7424,
+      "height": 256,
+      "name": "KzgVerifier::observe_shape",
+      "width": 29
+    },
+    {
+      "cells": 7168,
+      "height": 256,
+      "name": "<ROM:25>",
+      "width": 28
+    },
+    {
+      "cells": 5376,
+      "height": 256,
+      "name": "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Circuit\"}}]}",
+      "width": 21
+    },
+    {
+      "cells": 5120,
+      "height": 512,
+      "name": "KzgDeserialize::group_count",
+      "width": 10
+    },
+    {
+      "cells": 4848,
+      "height": 16,
+      "name": "KzgBlake3::compress_full",
+      "width": 303
+    },
+    {
+      "cells": 4608,
+      "height": 256,
+      "name": "<ROM:15>",
+      "width": 18
+    },
+    {
+      "cells": 4544,
+      "height": 32,
+      "name": "Blake3::compress_layer",
+      "width": 142
+    },
+    {
+      "cells": 4096,
+      "height": 512,
+      "name": "KzgAlgebra::next_row",
+      "width": 8
+    },
+    {
+      "cells": 4096,
+      "height": 256,
+      "name": "<ROM:13>",
+      "width": 16
+    },
+    {
+      "cells": 3328,
+      "height": 256,
+      "name": "<ROM:10>",
+      "width": 13
+    },
+    {
+      "cells": 3072,
+      "height": 256,
+      "name": "KzgIO::equal_bytes",
+      "width": 12
+    },
+    {
+      "cells": 2816,
+      "height": 256,
+      "name": "KzgAlgebra::fingerprint",
+      "width": 11
+    },
+    {
+      "cells": 2688,
+      "height": 32,
+      "name": "KzgPcs::observe_witnesses",
+      "width": 84
+    },
+    {
+      "cells": 2304,
+      "height": 256,
+      "name": "KzgAlgebra::exp_power2",
+      "width": 9
+    },
+    {
+      "cells": 1928,
+      "height": 8,
+      "name": "KzgBlake3::xof96",
+      "width": 241
+    },
+    {
+      "cells": 1568,
+      "height": 32,
+      "name": "KzgPcs::collect",
+      "width": 49
+    },
+    {
+      "cells": 1360,
+      "height": 8,
+      "name": "KzgTranscript::sample",
+      "width": 170
+    },
+    {
+      "cells": 1280,
+      "height": 128,
+      "name": "BN254G1::bytes64",
+      "width": 10
+    },
+    {
+      "cells": 1024,
+      "height": 256,
+      "name": "<table:UInt8::byte_inputs>",
+      "width": 4
+    },
+    {
+      "cells": 1024,
+      "height": 1024,
+      "name": "<table:UInt8::sum_inputs>",
+      "width": 1
+    },
+    {
+      "cells": 896,
+      "height": 64,
+      "name": "KzgBlake3::root",
+      "width": 14
+    },
+    {
+      "cells": 676,
+      "height": 4,
+      "name": "Blake3::finish",
+      "width": 169
+    },
+    {
+      "cells": 621,
+      "height": 1,
+      "name": "CompressBN::fold",
+      "width": 621
+    },
+    {
+      "cells": 528,
+      "height": 8,
+      "name": "KzgTranscript::reduce64",
+      "width": 66
+    },
+    {
+      "cells": 384,
+      "height": 32,
+      "name": "UInt64::from_field",
+      "width": 12
+    },
+    {
+      "cells": 320,
+      "height": 32,
+      "name": "UInt64::to_field",
+      "width": 10
+    },
+    {
+      "cells": 301,
+      "height": 1,
+      "name": "CompressBN::step_v1",
+      "width": 301
+    },
+    {
+      "cells": 256,
+      "height": 32,
+      "name": "KzgAlgebra::two_adic_gen",
+      "width": 8
+    },
+    {
+      "cells": 224,
+      "height": 32,
+      "name": "KzgShape::power2",
+      "width": 7
+    },
+    {
+      "cells": 212,
+      "height": 4,
+      "name": "KzgMsm::msm",
+      "width": 53
+    },
+    {
+      "cells": 120,
+      "height": 8,
+      "name": "KzgPcs::observe_rounds",
+      "width": 15
+    },
+    {
+      "cells": 120,
+      "height": 8,
+      "name": "KzgPcs::observe_openings",
+      "width": 15
+    },
+    {
+      "cells": 108,
+      "height": 4,
+      "name": "KzgIO::magic",
+      "width": 27
+    },
+    {
+      "cells": 100,
+      "height": 1,
+      "name": "KzgTranscript::derive",
+      "width": 100
+    },
+    {
+      "cells": 96,
+      "height": 16,
+      "name": "${\"name\":\"Lists::reverse\",\"types\":[{\"tuple\":{\"items\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}},\"field\"]}}]}",
+      "width": 6
+    },
+    {
+      "cells": 95,
+      "height": 1,
+      "name": "CompressBN::previous",
+      "width": 95
+    },
+    {
+      "cells": 92,
+      "height": 4,
+      "name": "BN254G1::commitment_bytes",
+      "width": 23
+    },
+    {
+      "cells": 88,
+      "height": 1,
+      "name": "BN254G1Encoding::from_chunks",
+      "width": 88
+    },
+    {
+      "cells": 84,
+      "height": 1,
+      "name": "BN254G1Encoding::to_chunks",
+      "width": 84
+    },
+    {
+      "cells": 82,
+      "height": 1,
+      "name": "KzgVerifier::verify",
+      "width": 82
+    },
+    {
+      "cells": 72,
+      "height": 2,
+      "name": "KzgIO::digest",
+      "width": 36
+    },
+    {
+      "cells": 64,
+      "height": 8,
+      "name": "KzgTranscript::observe_commitment",
+      "width": 8
+    },
+    {
+      "cells": 57,
+      "height": 1,
+      "name": "KzgPcs::reduce",
+      "width": 57
+    },
+    {
+      "cells": 44,
+      "height": 4,
+      "name": "KzgDeserialize::supported_power",
+      "width": 11
+    },
+    {
+      "cells": 41,
+      "height": 1,
+      "name": "KzgDeserialize::proof",
+      "width": 41
+    },
+    {
+      "cells": 38,
+      "height": 2,
+      "name": "CompressBN::take8",
+      "width": 19
+    },
+    {
+      "cells": 37,
+      "height": 1,
+      "name": "KzgDeserialize::key",
+      "width": 37
+    },
+    {
+      "cells": 36,
+      "height": 1,
+      "name": "KzgShape::frames",
+      "width": 36
+    },
+    {
+      "cells": 36,
+      "height": 2,
+      "name": "BN254G1Encoding::chunk_bytes",
+      "width": 18
+    },
+    {
+      "cells": 32,
+      "height": 4,
+      "name": "KzgDeserialize::quotient_degree",
+      "width": 8
+    },
+    {
+      "cells": 32,
+      "height": 4,
+      "name": "KzgDeserialize::commitment",
+      "width": 8
+    },
+    {
+      "cells": 32,
+      "height": 4,
+      "name": "KzgDeserialize::openings",
+      "width": 8
+    },
+    {
+      "cells": 30,
+      "height": 2,
+      "name": "KzgTranscript::observe_claim_rows",
+      "width": 15
+    },
+    {
+      "cells": 29,
+      "height": 1,
+      "name": "KzgDeserialize::policy",
+      "width": 29
+    },
+    {
+      "cells": 28,
+      "height": 4,
+      "name": "KzgIO::channel",
+      "width": 7
+    },
+    {
+      "cells": 28,
+      "height": 2,
+      "name": "KzgAlgebra::claims_accumulator",
+      "width": 14
+    },
+    {
+      "cells": 26,
+      "height": 1,
+      "name": "UInt64::sub_with_borrow",
+      "width": 26
+    },
+    {
+      "cells": 24,
+      "height": 1,
+      "name": "CompressBN::compress_v1",
+      "width": 24
+    },
+    {
+      "cells": 19,
+      "height": 1,
+      "name": "KzgPcs::rounds",
+      "width": 19
+    },
+    {
+      "cells": 14,
+      "height": 2,
+      "name": "KzgShape::power_log",
+      "width": 7
+    },
+    {
+      "cells": 9,
+      "height": 1,
+      "name": "KzgTranscript::observe_claims",
+      "width": 9
+    },
+    {
+      "cells": 9,
+      "height": 1,
+      "name": "KzgDeserialize::claims",
+      "width": 9
+    },
+    {
+      "cells": 8,
+      "height": 1,
+      "name": "KzgIO::blob",
+      "width": 8
+    },
+    {
+      "cells": 7,
+      "height": 1,
+      "name": "KzgTranscript::start",
+      "width": 7
+    },
+    {
+      "cells": 5,
+      "height": 1,
+      "name": "KzgIO::finish",
+      "width": 5
+    },
+    {
+      "cells": 0,
+      "height": 0,
+      "name": "KzgVerifier::verify_deferred",
+      "width": 198
+    },
+    {
+      "cells": 0,
+      "height": 0,
+      "name": "KzgTest::read_scalar",
+      "width": 5
+    },
+    {
+      "cells": 0,
+      "height": 0,
+      "name": "KzgTest::scalar_bytes",
+      "width": 35
+    },
+    {
+      "cells": 0,
+      "height": 0,
+      "name": "KzgTest::transcript",
+      "width": 45
+    },
+    {
+      "cells": 0,
+      "height": 0,
+      "name": "KzgTest::msm2",
+      "width": 52
+    },
+    {
+      "cells": 0,
+      "height": 0,
+      "name": "KzgTest::accumulator",
+      "width": 28
+    },
+    {
+      "cells": 0,
+      "height": 0,
+      "name": "KzgTest::fold",
+      "width": 129
+    }
+  ],
+  "main_cells": 2111189304,
+  "max_height": 67108864,
+  "stage": 2,
+  "format": "ix-aiur-kzg-recursion-preflight-v1",
+  "scope": "Second execution of the generic KZG verifier, verifying its first-stage proof over a small development predecessor; not Init",
+  "proof_generated": false,
+  "capacity_failure": "Maximum height exceeds the selected 2^24 public capacity and the focused regression bound. No second-stage traces were allocated or proved."
+}

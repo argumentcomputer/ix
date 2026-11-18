@@ -56,7 +56,7 @@ fn execute_request(
   }
 }
 
-fn run_request<B: FieldBackend>(
+fn run_request<B: FieldBackend<Word = u64>>(
   program: Program,
   trace: Option<TraceArtifact>,
   hints: &[HintEntry],

@@ -1,0 +1,942 @@
+{
+  "format": "ix-aiur-kzg-grouping-multiple-inputs-v1",
+  "date_utc": "2026-11-12",
+  "scope": "Two workloads, unchanged column KZG protocol and pre-paired-carry arithmetic. Larger workload executes the verifier on an actual prior grouped verifier proof. No larger proving trace or full Init proof is constructed.",
+  "protocol_changed": false,
+  "source_arithmetic_commit": "ac3d341fa166f4f8656292f0cf2b502e4ea862d3",
+  "small": {
+    "input": {
+      "claims_blake3": "692cfcee6e75aa8e44850a4d9140a157d770cd2ce680633d2eb0d2bc698cd0cd",
+      "key_blake3": "c75a8dcc1a238e1b3870afa0fad164d47e4e3ff4bc6fdd8b7362926b32232341",
+      "proof_blake3": "be84132464f4fa608ffe485b20ace5bc8118befa82a6bac9869515d367bfedae",
+      "proof_bytes": 3339,
+      "proof_curve_points": 26
+    },
+    "baseline": {
+      "active_circuits": 166,
+      "fixed_cells": 1054976,
+      "lookup_commitments": 1845,
+      "main_commitments": 6963,
+      "maximum_main_height": 524288,
+      "padded_lookup_cells": 7173852,
+      "padded_main_cells": 11929538,
+      "padded_quotient_cells": 1116680,
+      "quotient_commitments": 236,
+      "unpadded_main_cells": 8226625
+    },
+    "grouped": {
+      "active_circuits": 58,
+      "fixed_cells": 1054976,
+      "lookup_commitments": 886,
+      "main_commitments": 3233,
+      "maximum_main_height": 524288,
+      "padded_lookup_cells": 7015185,
+      "padded_main_cells": 11487262,
+      "padded_quotient_cells": 1132573,
+      "quotient_commitments": 91,
+      "unpadded_main_cells": 9099502
+    },
+    "artifact_blake3": "70657397700a87799e6ff37d394f8ae61485979b6e3a08cf07b7bf3253b1538b",
+    "outer_proof": {
+      "changed_output_rejected": true,
+      "key_blake3": "bbc8aba472cb238f0e8e1c88cbf3d28efd51a919dc9b122cb070e8a94775a968",
+      "max_trace_height": 1048576,
+      "portable_verification": true,
+      "proof_blake3": "aaed88bc5b566a3c82eb1f496dce8f168fa6b54e6388fa259dabfcc98b483a06",
+      "proof_bytes": 313192,
+      "scope": "Actual proof of this Aiur verifier execution using the existing column KZG PCS and explicit development setup; not Init",
+      "variable_g1_points": 4226
+    }
+  },
+  "larger": {
+    "input": {
+      "call_blake3": "f8ef0029daf605be6bc4d79bfc7a76c028c35f8ec1b82c3019e4a06849f309bc",
+      "key_blake3": "9c06bed6d9337ac342714c168725c1f47206ef05b5e6ba69657f31873aaa57dd",
+      "proof_blake3": "430b9f23ed4748ffd1d85898dfab8db35ce2733d95d34b928d37b5a3c678f27f",
+      "proof_bytes": 299070
+    },
+    "baseline": {
+      "fixed_cells": 1054976,
+      "lookup_cells": 428740440,
+      "main_cells": 747613222,
+      "quotient_cells": 69336722,
+      "quotient_degree": 236,
+      "stage1_width": 6963,
+      "stage2_width": 1845
+    },
+    "previous_policy": {
+      "fixed_cells": 1054976,
+      "lookup_cells": 528898101,
+      "main_cells": 1010164102,
+      "quotient_cells": 88136961,
+      "quotient_degree": 82,
+      "stage1_width": 3063,
+      "stage2_width": 860
+    },
+    "grouped": {
+      "fixed_cells": 1054976,
+      "lookup_cells": 421615157,
+      "main_cells": 736158854,
+      "quotient_cells": 73778945,
+      "quotient_degree": 91,
+      "stage1_width": 3233,
+      "stage2_width": 886
+    },
+    "max_height": 33554432,
+    "same_output": true
+  },
+  "search": {
+    "profiles": [
+      [
+        "target/grouping/counts.json",
+        "target/grouping/shapes.json"
+      ],
+      [
+        "target/grouping/larger-ungrouped/profile.json",
+        "target/grouping/larger-ungrouped/profile.json"
+      ]
+    ],
+    "optimized": [
+      2847,
+      39,
+      10308438,
+      914120727,
+      698024902,
+      84123394807
+    ],
+    "initial": [
+      6577,
+      147,
+      10750714,
+      931794938,
+      709479270,
+      84254652098
+    ],
+    "dimensions": [
+      "stage1_columns",
+      "function_circuits",
+      "cells_0",
+      "fft_0",
+      "cells_1",
+      "fft_1"
+    ],
+    "circuits": [
+      {
+        "shape": [
+          198,
+          53,
+          1
+        ],
+        "members": [
+          "KzgVerifier::verify_deferred"
+        ],
+        "cost": [
+          198,
+          1,
+          198,
+          759,
+          198,
+          759
+        ]
+      },
+      {
+        "shape": [
+          214,
+          54,
+          2
+        ],
+        "members": [
+          "KzgIO::channel",
+          "Blake3::compress_layer",
+          "Blake3::next_layer",
+          "KzgVerifier::verify",
+          "KzgShape::frames",
+          "KzgShape::walk",
+          "UInt64::sub_with_borrow",
+          "KzgShape::power_log",
+          "KzgTranscript::start",
+          "KzgTranscript::observe_claims",
+          "KzgPcs::observe_witnesses",
+          "KzgMsm::msm",
+          "KzgIO::blob",
+          "KzgDeserialize::proof"
+        ],
+        "cost": [
+          214,
+          1,
+          6848,
+          130944,
+          219136,
+          8368128
+        ]
+      },
+      {
+        "shape": [
+          28,
+          8,
+          2
+        ],
+        "members": [
+          "UInt32::less_than_fields",
+          "KzgIO::fields_to_bytes",
+          "KzgMsm::split"
+        ],
+        "cost": [
+          28,
+          1,
+          229376,
+          12877824,
+          14680064,
+          1201668096
+        ]
+      },
+      {
+        "shape": [
+          12,
+          4,
+          2
+        ],
+        "members": [
+          "KzgIO::read_stream"
+        ],
+        "cost": [
+          12,
+          1,
+          98304,
+          6488064,
+          12582912,
+          1270874112
+        ]
+      },
+      {
+        "shape": [
+          509,
+          226,
+          2
+        ],
+        "members": [
+          "Blake3::compress",
+          "Blake3::bytes_to_block",
+          "Blake3::compress_block",
+          "KzgTranscript::observe_field"
+        ],
+        "cost": [
+          509,
+          1,
+          1042432,
+          49969152,
+          66715648,
+          4941545472
+        ]
+      },
+      {
+        "shape": [
+          19,
+          6,
+          2
+        ],
+        "members": [
+          "Blake3::compress_chunks",
+          "KzgIO::u32"
+        ],
+        "cost": [
+          19,
+          1,
+          77824,
+          4325376,
+          9961472,
+          872939520
+        ]
+      },
+      {
+        "shape": [
+          651,
+          194,
+          2
+        ],
+        "members": [
+          "Blake3::finish",
+          "KzgShape::consume",
+          "KzgTranscript::sample",
+          "KzgBlake3::xof96",
+          "KzgBlake3::compress_full",
+          "KzgBlake3::rounds",
+          "KzgPcs::reduce",
+          "KzgDeserialize::key",
+          "BN254G1Encoding::to_chunks"
+        ],
+        "cost": [
+          651,
+          1,
+          83328,
+          2283648,
+          166656,
+          5219328
+        ]
+      },
+      {
+        "shape": [
+          97,
+          10,
+          2
+        ],
+        "members": [
+          "UInt64::is_zero",
+          "KzgIO::scalar_from_bytes",
+          "KzgVerifier::observe_shape",
+          "KzgTranscript::observe_claim_rows",
+          "KzgBlake3::parent",
+          "KzgBlake3::chunks",
+          "KzgTranscript::reduce64",
+          "KzgAlgebra::exp_power2",
+          "KzgAlgebra::fold_lookups",
+          "KzgPcs::rounds",
+          "KzgPcs::observe_rounds",
+          "KzgDeserialize::supported_power"
+        ],
+        "cost": [
+          97,
+          1,
+          12416,
+          299904,
+          794624,
+          35561472
+        ]
+      },
+      {
+        "shape": [
+          11,
+          3,
+          2
+        ],
+        "members": [
+          "Blake3::pad_block",
+          "${\"name\":\"Lists::is_empty\",\"types\":[\"field\"]}",
+          "KzgDeserialize::check_child"
+        ],
+        "cost": [
+          11,
+          1,
+          5632,
+          254976,
+          720896,
+          57409536
+        ]
+      },
+      {
+        "shape": [
+          20,
+          2,
+          2
+        ],
+        "members": [
+          "UInt64::wrapping_succ"
+        ],
+        "cost": [
+          20,
+          1,
+          80,
+          672,
+          10240,
+          365568
+        ]
+      },
+      {
+        "shape": [
+          44,
+          41,
+          2
+        ],
+        "members": [
+          "UInt64::from_field",
+          "UInt64::to_field",
+          "${\"name\":\"Lists::length\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}",
+          "BN254G1::fq_bytes",
+          "KzgPcs::matrices"
+        ],
+        "cost": [
+          44,
+          1,
+          5632,
+          240768,
+          360448,
+          28532736
+        ]
+      },
+      {
+        "shape": [
+          87,
+          36,
+          2
+        ],
+        "members": [
+          "KzgShape::rows_width",
+          "BN254G1::row_list_bytes",
+          "BN254G1::point_list_bytes",
+          "KzgIO::read32"
+        ],
+        "cost": [
+          87,
+          1,
+          22272,
+          783360,
+          1425408,
+          87588864
+        ]
+      },
+      {
+        "shape": [
+          22,
+          4,
+          2
+        ],
+        "members": [
+          "${\"name\":\"Lists::length\",\"types\":[\"field\"]}",
+          "${\"name\":\"Lists::lookup\",\"types\":[\"field\"]}",
+          "KzgMsm::limb"
+        ],
+        "cost": [
+          22,
+          1,
+          11264,
+          420864,
+          720896,
+          44630016
+        ]
+      },
+      {
+        "shape": [
+          30,
+          9,
+          2
+        ],
+        "members": [
+          "KzgShape::power2",
+          "BN254G1::bytes64",
+          "KzgBlake3::root",
+          "KzgBlake3::next_layer",
+          "KzgAlgebra::claims_accumulator",
+          "${\"name\":\"Lists::reverse\",\"types\":[{\"tuple\":{\"items\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}},\"field\"]}}]}",
+          "KzgIO::finish",
+          "KzgDeserialize::commitment",
+          "KzgDeserialize::point_rows",
+          "KzgDeserialize::openings"
+        ],
+        "cost": [
+          30,
+          1,
+          1920,
+          50304,
+          30720,
+          1333248
+        ]
+      },
+      {
+        "shape": [
+          15,
+          5,
+          2
+        ],
+        "members": [
+          "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+          "KzgDeserialize::ids"
+        ],
+        "cost": [
+          15,
+          1,
+          1920,
+          66048,
+          245760,
+          16711680
+        ]
+      },
+      {
+        "shape": [
+          52,
+          18,
+          2
+        ],
+        "members": [
+          "KzgTranscript::observe_bytes",
+          "KzgIO::scalar_bytes",
+          "BN254G1::to_bytes",
+          "${\"name\":\"Lists::drop\",\"types\":[\"field\"]}",
+          "KzgIO::point",
+          "KzgIO::scalar"
+        ],
+        "cost": [
+          52,
+          1,
+          26624,
+          1029120,
+          1703936,
+          109510656
+        ]
+      },
+      {
+        "shape": [
+          11,
+          4,
+          1
+        ],
+        "members": [
+          "KzgTranscript::reverse_onto"
+        ],
+        "cost": [
+          11,
+          1,
+          360448,
+          25198592,
+          11534336,
+          1073741824
+        ]
+      },
+      {
+        "shape": [
+          7,
+          6,
+          1
+        ],
+        "members": [
+          "BN254Fq::range80"
+        ],
+        "cost": [
+          7,
+          1,
+          3670016,
+          450363392,
+          234881024,
+          37882953728
+        ]
+      },
+      {
+        "shape": [
+          34,
+          5,
+          2
+        ],
+        "members": [
+          "${\"name\":\"Lists::length\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Circuit\"}}]}",
+          "KzgPcs::observe_openings",
+          "KzgPcs::prepend_pairs",
+          "KzgDeserialize::quotient_degree",
+          "KzgDeserialize::scalar_rows",
+          "KzgDeserialize::claims"
+        ],
+        "cost": [
+          34,
+          1,
+          4352,
+          117120,
+          278528,
+          13836288
+        ]
+      },
+      {
+        "shape": [
+          16,
+          4,
+          2
+        ],
+        "members": [
+          "KzgTranscript::observe_fields",
+          "${\"name\":\"Lists::lookup\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}",
+          "${\"name\":\"Lists::drop\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Node\"}}]}"
+        ],
+        "cost": [
+          16,
+          1,
+          4096,
+          150528,
+          1048576,
+          76283904
+        ]
+      },
+      {
+        "shape": [
+          26,
+          4,
+          2
+        ],
+        "members": [
+          "KzgTranscript::observe_commitment",
+          "KzgAlgebra::two_adic_gen",
+          "KzgAlgebra::fold_roots",
+          "${\"name\":\"Lists::is_empty\",\"types\":[{\"named\":{\"args\":[],\"name\":\"KzgDeserialize::Lookup\"}}]}",
+          "KzgDeserialize::points"
+        ],
+        "cost": [
+          26,
+          1,
+          3328,
+          92928,
+          212992,
+          10960896
+        ]
+      },
+      {
+        "shape": [
+          169,
+          12,
+          2
+        ],
+        "members": [
+          "BN254G1::commitment_bytes",
+          "KzgBlake3::chaining",
+          "KzgBlake3::chunk",
+          "KzgAlgebra::next_row",
+          "KzgTranscript::observe_u64",
+          "KzgIO::magic"
+        ],
+        "cost": [
+          169,
+          1,
+          43264,
+          1139712,
+          1384448,
+          59203584
+        ]
+      },
+      {
+        "shape": [
+          19,
+          5,
+          2
+        ],
+        "members": [
+          "BN254G1::sign",
+          "${\"name\":\"Lists::drop\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}"
+        ],
+        "cost": [
+          19,
+          1,
+          19456,
+          872448,
+          1245184,
+          88866816
+        ]
+      },
+      {
+        "shape": [
+          47,
+          5,
+          2
+        ],
+        "members": [
+          "${\"name\":\"Lists::concat\",\"types\":[\"field\"]}",
+          "KzgMsm::table_rows",
+          "KzgMsm::add_points"
+        ],
+        "cost": [
+          47,
+          1,
+          385024,
+          17989632,
+          24641536,
+          1679818752
+        ]
+      },
+      {
+        "shape": [
+          31,
+          13,
+          2
+        ],
+        "members": [
+          "KzgBlake3::read_block",
+          "BN254Fq::mul"
+        ],
+        "cost": [
+          31,
+          1,
+          1015808,
+          71172096,
+          65011712,
+          6366953472
+        ]
+      },
+      {
+        "shape": [
+          105,
+          35,
+          2
+        ],
+        "members": [
+          "KzgAlgebra::fingerprint",
+          "KzgAlgebra::verify_frames",
+          "KzgPcs::collect",
+          "KzgMsm::windows",
+          "BN254G1::from_bytes",
+          "BN254G1::from_raw",
+          "KzgDeserialize::circuits"
+        ],
+        "cost": [
+          105,
+          1,
+          26880,
+          887808,
+          860160,
+          46104576
+        ]
+      },
+      {
+        "shape": [
+          17,
+          4,
+          2
+        ],
+        "members": [
+          "KzgAlgebra::first_row",
+          "KzgDeserialize::group_count",
+          "KzgDeserialize::scalars"
+        ],
+        "cost": [
+          17,
+          1,
+          2176,
+          68736,
+          139264,
+          8085504
+        ]
+      },
+      {
+        "shape": [
+          50,
+          10,
+          2
+        ],
+        "members": [
+          "KzgAlgebra::eval_at"
+        ],
+        "cost": [
+          50,
+          1,
+          6400,
+          173568,
+          1638400,
+          94765056
+        ]
+      },
+      {
+        "shape": [
+          38,
+          6,
+          2
+        ],
+        "members": [
+          "KzgAlgebra::group_summary",
+          "KzgPcs::observe_matrices",
+          "KzgPcs::observe_rows",
+          "KzgPcs::fold_pairs",
+          "KzgMsm::prepare"
+        ],
+        "cost": [
+          38,
+          1,
+          9728,
+          297984,
+          622592,
+          33226752
+        ]
+      },
+      {
+        "shape": [
+          16,
+          4,
+          2
+        ],
+        "members": [
+          "KzgAlgebra::lookup_fingerprint",
+          "KzgMsm::table"
+        ],
+        "cost": [
+          16,
+          1,
+          2048,
+          66048,
+          262144,
+          16711680
+        ]
+      },
+      {
+        "shape": [
+          37,
+          9,
+          2
+        ],
+        "members": [
+          "KzgPcs::commitments",
+          "KzgPcs::observe_logs",
+          "KzgPcs::add_batch",
+          "${\"name\":\"Lists::reverse_acc\",\"types\":[{\"tuple\":{\"items\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}},\"field\"]}}]}",
+          "BN254G1::scalar_limbs",
+          "KzgDeserialize::lookups",
+          "KzgDeserialize::opening_matrices"
+        ],
+        "cost": [
+          37,
+          1,
+          9472,
+          310272,
+          606208,
+          34603008
+        ]
+      },
+      {
+        "shape": [
+          98,
+          13,
+          2
+        ],
+        "members": [
+          "BN254G1::add",
+          "BN254G1::double",
+          "BN254Fq::add",
+          "${\"name\":\"Lists::lookup\",\"types\":[{\"tuple\":{\"items\":[{\"array\":{\"element\":\"field\",\"length\":4}},{\"array\":{\"element\":\"field\",\"length\":4}},\"field\"]}}]}"
+        ],
+        "cost": [
+          98,
+          1,
+          802816,
+          36839424,
+          51380224,
+          3442999296
+        ]
+      },
+      {
+        "shape": [
+          9,
+          9,
+          1
+        ],
+        "members": [
+          "BN254Fq::from_limbs"
+        ],
+        "cost": [
+          9,
+          1,
+          589824,
+          63176704,
+          37748736,
+          5553258496
+        ]
+      },
+      {
+        "shape": [
+          8,
+          8,
+          1
+        ],
+        "members": [
+          "BN254Fq::range84"
+        ],
+        "cost": [
+          8,
+          1,
+          1048576,
+          120848384,
+          67108864,
+          10452205568
+        ]
+      },
+      {
+        "shape": [
+          19,
+          5,
+          2
+        ],
+        "members": [
+          "BN254Fq::inverse",
+          "BN254Fq::sub"
+        ],
+        "cost": [
+          19,
+          1,
+          622592,
+          41680896,
+          79691776,
+          7801405440
+        ]
+      },
+      {
+        "shape": [
+          14,
+          4,
+          2
+        ],
+        "members": [
+          "KzgMsm::finish",
+          "KzgIO::read_bytes"
+        ],
+        "cost": [
+          14,
+          1,
+          7168,
+          310272,
+          114688,
+          7127040
+        ]
+      },
+      {
+        "shape": [
+          5,
+          2,
+          1
+        ],
+        "members": [
+          "KzgIO::byte"
+        ],
+        "cost": [
+          5,
+          1,
+          40960,
+          2908160,
+          5242880,
+          570425344
+        ]
+      },
+      {
+        "shape": [
+          30,
+          4,
+          2
+        ],
+        "members": [
+          "KzgDeserialize::nodes"
+        ],
+        "cost": [
+          30,
+          1,
+          3840,
+          103680,
+          983040,
+          56426496
+        ]
+      },
+      {
+        "shape": [
+          32,
+          12,
+          2
+        ],
+        "members": [
+          "KzgDeserialize::node"
+        ],
+        "cost": [
+          32,
+          1,
+          4096,
+          130560,
+          1048576,
+          71172096
+        ]
+      }
+    ]
+  },
+  "policy": "aiur-kzg-grouping-multi-policy.json",
+  "conclusions": [
+    "The first policy increased larger-workload main cells to1,010,164,102 and must not be adopted as a default.",
+    "The revised policy satisfies the original cell and FFT budgets for both profiles; actual dimensions agree with the model.",
+    "The larger workload still requires maxheight2^25 and736,158,854 main cells. Further compiler/library work is required; no capacity workaround is introduced."
+  ]
+}
