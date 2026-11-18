@@ -87,4 +87,25 @@ theorem kept_walked {r : Ix.Kernel.Role} (hg : 6 ≤ Ix.SpecDigest.groupOf r)
   · exact Or.inr (Or.inr (Or.inl ha))
   · exact Or.inr (Or.inr (Or.inr hp))
 
+/-- **The record of a kept or prelude role of a group from 6 on, other than a standard axiom,
+is a record of the run's store checked at the group's validation limit**, with the closed list
+of records its walk checked there: what `Admits.kept` and `Admits.checked` ask of the run for
+that role, from the role's observed validation. -/
+theorem RoleValidationIn.kept_checked {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {g : Nat} {r : Ix.Kernel.Role} {E₀ : Ixon.Env}
+    (hH : LoadedReads.HashedRecordsStored calls E₀) (hg6 : 6 ≤ g) (hr : r ∈ roleGroup g)
+    (hk : keptRole r ∨ r ∈ preludeRoles) (hns : r ∉ standardAxioms)
+    (hv : RoleValidationIn calls bAddr t g r) :
+    ∃ (a : _root_.Address) (recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))),
+      t.addressOf? r = some a ∧ Claim.TopRecsClosed recs ∧ a ∈ recs.map (·.addr) ∧
+      ∀ x ∈ recs, recordOf E₀ x.addr = some x.c ∧
+        UnitCheckedAt calls bAddr t E₀ x.addr (some (valLimit g)) := by
+  have hgr : 6 ≤ Ix.SpecDigest.groupOf r := by
+    rw [groupOf_of_mem_roleGroup hr]
+    exact hg6
+  rcases kept_walked hgr hk with hw | hw | hs
+  · exact RoleValidationIn.checked_bound hH hv (Or.inl hw)
+  · exact RoleValidationIn.checked_bound hH hv (Or.inr hw)
+  · exact absurd hs hns
+
 end IxVM.Refinement.Binding
