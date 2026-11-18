@@ -17,6 +17,156 @@ namespace IxVM.Refinement.Obs
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open IxVM (F)
 
+/-- The evaluation paths of `KernelClaim::check_ctor_entries`: one constructor per combination of selected arms. -/
+inductive «KernelClaim::check_ctor_entries».Path (x_real_list x_claimed : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Nil
+      (ld12 : loadValue h x_claimed = .ok (.construct Names.«Lists::Node<([Field; 8], KernelClaim::RevealConstructorInfo)>» "Nil" []))
+      (he22 : r = (.tuple []))
+      (he23 : h' = h)
+      (hc24 : calls = [])
+  | Cons
+      (x_rest : SourceValue F) (x_idx : SourceValue F) (x_info : SourceValue F) (v68 : SourceValue F) (m69 : Heap F) (cs79 : List (Call F)) (cs109 : List (Call F))
+      (ld12 : loadValue h x_claimed = .ok (.construct Names.«Lists::Node<([Field; 8], KernelClaim::RevealConstructorInfo)>» "Cons" [(.tuple [x_idx, x_info]), x_rest]))
+      (ev81 : ObsFn W "KernelClaim::check_ctor_entry" [x_real_list, x_idx, x_info] h v68 m69 cs79)
+      (ev111 : ObsFn W "KernelClaim::check_ctor_entries" [x_real_list, x_rest] m69 r h' cs109)
+      (hc128 : calls = ((⟨"KernelClaim::check_ctor_entry", [x_real_list, x_idx, x_info], h⟩ : Call F) :: (cs79 ++ ((⟨"KernelClaim::check_ctor_entries", [x_real_list, x_rest], m69⟩ : Call F) :: cs109))))
+
+/-- **Every observed derivation of `KernelClaim::check_ctor_entries` takes one of its paths.** -/
+theorem «KernelClaim::check_ctor_entries».obs {x_real_list x_claimed : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "KernelClaim::check_ctor_entries" [x_real_list, x_claimed] h r h' calls) :
+    «KernelClaim::check_ctor_entries».Path x_real_list x_claimed h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.check_ctor_entries.lookup
+    (by simp [IxVM.KernelClaim.check_ctor_entries, ControlLower.hasControl]) ev
+  simp only [IxVM.KernelClaim.check_ctor_entries] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨p10, d11, ld12⟩ := d7.load_inv
+  obtain ⟨l13, rfl, rfl⟩ := d11.var_inv
+  simp at l13
+  subst l13
+  rcases selectArm_cons_inv sel8 with ⟨mt14, rfl⟩ | ⟨nm15, sel16⟩
+  · obtain ⟨vs17, hv18, -, ml19⟩ := matchPattern_construct_inv mt14
+    rw [Names.n592332587969836369] at hv18
+    subst hv18
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml19
+    obtain ⟨vs20, a21, rfl⟩ := d9.tuple_inv
+    obtain ⟨rfl, rfl, rfl⟩ := a21.nil_inv
+    exact «KernelClaim::check_ctor_entries».Path.Nil ld12 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne25 := matchPattern_construct_none (by trivial) nm15
+    simp only [Names.n592332587969836369] at hne25
+    rcases selectArm_cons_inv sel16 with ⟨mt26, rfl⟩ | ⟨nm27, sel28⟩
+    · obtain ⟨vs29, hv30, -, ml31⟩ := matchPattern_construct_inv mt26
+      rw [Names.n592332587969836369] at hv30
+      subst hv30
+      obtain ⟨x_entry, vs32, b33, b34, rfl, mt35, ml36, rfl⟩ := matchListWith_cons_inv ml31
+      obtain rfl := matchPattern_bind_inv mt35
+      obtain ⟨x_rest, vs37, b38, b39, rfl, mt40, ml41, rfl⟩ := matchListWith_cons_inv ml36
+      obtain rfl := matchPattern_bind_inv mt40
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml41
+      obtain ⟨v42, m43, bs44, body45, c46, c47, d48, sel49, d50, rfl⟩ := d9.matchValue_inv
+      obtain ⟨l51, rfl, rfl⟩ := d48.var_inv
+      simp at l51
+      subst l51
+      rcases selectArm_cons_inv sel49 with ⟨mt52, rfl⟩ | ⟨nm53, sel54⟩
+      · obtain ⟨vs55, hv56, -, ml57⟩ := matchPattern_tuple_inv mt52
+        subst hv56
+        obtain ⟨x_idx, vs58, b59, b60, rfl, mt61, ml62, rfl⟩ := matchListWith_cons_inv ml57
+        obtain rfl := matchPattern_bind_inv mt61
+        obtain ⟨x_info, vs63, b64, b65, rfl, mt66, ml67, rfl⟩ := matchListWith_cons_inv ml62
+        obtain rfl := matchPattern_bind_inv mt66
+        obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml67
+        obtain ⟨v68, m69, bs70, c71, c72, d73, mt74, d75, rfl⟩ := d50.letValue_inv
+        obtain ⟨vs76, m77, c78, cs79, a80, ev81, rfl⟩ := d73.call_inv
+        rw [instanceName_plain_some] at ev81
+        obtain ⟨v82, vs85, m86, c87, c88, rfl, d89, a90, rfl⟩ := a80.cons_inv
+        obtain ⟨l91, rfl, rfl⟩ := d89.var_inv
+        simp at l91
+        subst l91
+        obtain ⟨v83, vs92, m93, c94, c95, rfl, d96, a97, rfl⟩ := a90.cons_inv
+        obtain ⟨l98, rfl, rfl⟩ := d96.var_inv
+        simp at l98
+        subst l98
+        obtain ⟨v84, vs99, m100, c101, c102, rfl, d103, a104, rfl⟩ := a97.cons_inv
+        obtain ⟨l105, rfl, rfl⟩ := d103.var_inv
+        simp at l105
+        subst l105
+        obtain ⟨rfl, rfl, rfl⟩ := a104.nil_inv
+        obtain rfl := matchPattern_wildcard_inv mt74
+        obtain ⟨vs106, m107, c108, cs109, a110, ev111, rfl⟩ := d75.call_inv
+        rw [instanceName_plain_some] at ev111
+        obtain ⟨v112, vs114, m115, c116, c117, rfl, d118, a119, rfl⟩ := a110.cons_inv
+        obtain ⟨l120, rfl, rfl⟩ := d118.var_inv
+        simp at l120
+        subst l120
+        obtain ⟨v113, vs121, m122, c123, c124, rfl, d125, a126, rfl⟩ := a119.cons_inv
+        obtain ⟨l127, rfl, rfl⟩ := d125.var_inv
+        simp at l127
+        subst l127
+        obtain ⟨rfl, rfl, rfl⟩ := a126.nil_inv
+        exact «KernelClaim::check_ctor_entries».Path.Cons _ _ _ _ _ _ _ ld12 ev81 ev111 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · have hne129 := matchPattern_tuple_none (by trivial) nm53
+        exact (selectArm_nil_inv sel54).elim
+    · have hne130 := matchPattern_construct_none (by trivial) nm27
+      simp only [Names.n592332587969836369] at hne130
+      exact (selectArm_nil_inv sel28).elim
+
+/-- The evaluation paths of `KernelClaim::check_opt_ctor_entries`: one constructor per combination of selected arms. -/
+inductive «KernelClaim::check_opt_ctor_entries».Path (x_real_list x_opt : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | None
+      (hv15 : x_opt = (.construct Names.«Options::Option<&Lists::Node<([Field; 8], KernelClaim::RevealConstructorInfo)>>» "None" []))
+      (he19 : r = (.tuple []))
+      (he20 : h' = h)
+      (hc21 : calls = [])
+  | Some
+      (x_claimed : SourceValue F) (cs37 : List (Call F))
+      (hne22 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_opt : SourceValue F) ≠ .construct Names.«Options::Option<&Lists::Node<([Field; 8], KernelClaim::RevealConstructorInfo)>>» "None" vs)
+      (hv27 : x_opt = (.construct Names.«Options::Option<&Lists::Node<([Field; 8], KernelClaim::RevealConstructorInfo)>>» "Some" [x_claimed]))
+      (ev39 : ObsFn W "KernelClaim::check_ctor_entries" [x_real_list, x_claimed] h r h' cs37)
+      (hc56 : calls = ((⟨"KernelClaim::check_ctor_entries", [x_real_list, x_claimed], h⟩ : Call F) :: cs37))
+
+/-- **Every observed derivation of `KernelClaim::check_opt_ctor_entries` takes one of its paths.** -/
+theorem «KernelClaim::check_opt_ctor_entries».obs {x_real_list x_opt : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "KernelClaim::check_opt_ctor_entries" [x_real_list, x_opt] h r h' calls) :
+    «KernelClaim::check_opt_ctor_entries».Path x_real_list x_opt h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.KernelClaim.check_opt_ctor_entries.lookup
+    (by simp [IxVM.KernelClaim.check_opt_ctor_entries, ControlLower.hasControl]) ev
+  simp only [IxVM.KernelClaim.check_opt_ctor_entries] at d0
+  obtain ⟨v1, m2, bs3, body4, c5, c6, d7, sel8, d9, rfl⟩ := d0.matchValue_inv
+  obtain ⟨l10, rfl, rfl⟩ := d7.var_inv
+  simp at l10
+  subst l10
+  rcases selectArm_cons_inv sel8 with ⟨mt11, rfl⟩ | ⟨nm12, sel13⟩
+  · obtain ⟨vs14, hv15, -, ml16⟩ := matchPattern_construct_inv mt11
+    rw [Names.n13162578294183459510] at hv15
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml16
+    obtain ⟨vs17, a18, rfl⟩ := d9.tuple_inv
+    obtain ⟨rfl, rfl, rfl⟩ := a18.nil_inv
+    exact «KernelClaim::check_opt_ctor_entries».Path.None hv15 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne22 := matchPattern_construct_none (by trivial) nm12
+    simp only [Names.n13162578294183459510] at hne22
+    rcases selectArm_cons_inv sel13 with ⟨mt23, rfl⟩ | ⟨nm24, sel25⟩
+    · obtain ⟨vs26, hv27, -, ml28⟩ := matchPattern_construct_inv mt23
+      rw [Names.n13162578294183459510] at hv27
+      obtain ⟨x_claimed, vs29, b30, b31, rfl, mt32, ml33, rfl⟩ := matchListWith_cons_inv ml28
+      obtain rfl := matchPattern_bind_inv mt32
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml33
+      obtain ⟨vs34, m35, c36, cs37, a38, ev39, rfl⟩ := d9.call_inv
+      rw [instanceName_plain_some] at ev39
+      obtain ⟨v40, vs42, m43, c44, c45, rfl, d46, a47, rfl⟩ := a38.cons_inv
+      obtain ⟨l48, rfl, rfl⟩ := d46.var_inv
+      simp at l48
+      subst l48
+      obtain ⟨v41, vs49, m50, c51, c52, rfl, d53, a54, rfl⟩ := a47.cons_inv
+      obtain ⟨l55, rfl, rfl⟩ := d53.var_inv
+      simp at l55
+      subst l55
+      obtain ⟨rfl, rfl, rfl⟩ := a54.nil_inv
+      exact «KernelClaim::check_opt_ctor_entries».Path.Some _ _ hne22 hv27 ev39 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne57 := matchPattern_construct_none (by trivial) nm24
+      simp only [Names.n13162578294183459510] at hne57
+      exact (selectArm_nil_inv sel25).elim
+
 /-- The evaluation paths of `KernelClaim::check_mut_const`: one constructor per combination of selected arms. -/
 inductive «KernelClaim::check_mut_const».Path (x_real x_claimed : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where

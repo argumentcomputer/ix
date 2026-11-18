@@ -5,8 +5,9 @@ import IxVMRefinement.Assembly.TypingRecLateStored
 `check_const_rec_route` exports the scope check and the member check of the `Rec` arm. The late
 step also reads two more of the arm's facts:
 
-* the record declares one motive (the arm asserts `n_mot = 1` before the member check: a
-  recursor of a mutual or nested family is refused);
+* the record declares one motive (the native route asserts `n_mot = 1` before the member check;
+  the modeled route runs the family check at the value's block field, which `hfr` refuses, as
+  it is at a standalone recursor record: `Claim.familyCheckRefused_of_recr`);
 * the type is checked as a sort (`k_ensure_sort(rc, ty, [])`, in the empty context allocated
   after the scope check), the run from which the recursor's declared type is checked at the
   prefix (`ConstantValCheckJ`).
@@ -38,7 +39,8 @@ theorem check_const_rec_arm
     (observed : ObsFn Obs.W "KernelCheck::check_const"
       [rc, .construct "KernelTypes::KConstantInfo" "Rec"
         [levels, type, parameters, indices, motives, minors, rules, k, unsafeFlag, block,
-          position], addr] h result h' calls) :
+          position], addr] h result h' calls)
+    (hfr : Claim.FamilyCheckRefused rc block h calls) :
     motives = .field 1 ∧
     ∃ (scopeBefore scopeAfter sortAfter memberHeap : Heap F)
       (scopeResult sortResult : SourceValue F)
@@ -78,8 +80,20 @@ theorem check_const_rec_arm
   | .Ctor_other_other (hv1989 := shape) .. =>
     injection shape with _ tag _
     exact absurd tag (by decide)
-  | .Rec_other (heq3021 := native) (hne3094 := modeled) .. =>
-    exact absurd native modeled
+  | .Rec_other (m2789 := m2789) (m2857 := m2857) (ev14 := ev14) (hv2727 := shape)
+      (ev2801 := ev2801) (hm2865 := hm2865) (ev2838 := ev2838) (ev2882 := ev2882)
+      (ev2912 := ev2912) (ev2942 := ev2942) (ev2964 := ev2964) (ev2986 := ev2986)
+      (ev3157 := evf) (hc3182 := hcs) .. =>
+    -- the modeled route runs the family check at the value's block field, which is refused
+    injection shape with _ _ entries
+    simp only [List.cons.injEq] at entries
+    obtain ⟨-, -, -, -, -, -, -, -, -, hblock, -⟩ := entries
+    subst hblock
+    have enil : Heap.Extends m2789 m2857 := by rw [hm2865]; exact Heap.Extends.snoc m2789 _
+    exact (hfr _ _ _ _ _ (ev14.heap_extends.trans (ev2801.heap_extends.trans (enil.trans
+      (ev2838.heap_extends.trans (ev2882.heap_extends.trans (ev2912.heap_extends.trans
+      (ev2942.heap_extends.trans (ev2964.heap_extends.trans ev2986.heap_extends))))))))
+      (fun cl hcl => by rw [hcs]; simp [hcl]) evf).elim
   | .Rec_n0 (m2 := scopeBefore) (m2789 := scopeAfter) (m2857 := sortBefore)
       (m2826 := sortAfter) (v2825 := sortResult) (cs2836 := sortCalls)
       (m2870 := safeAfter) (m2900 := rulesAfter) (m2930 := kindsAfter)

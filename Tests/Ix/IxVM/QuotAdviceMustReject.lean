@@ -16,6 +16,7 @@ circuit to refuse a claim that needs the block:
 
 * `propext` (an axiom role outside the basis);
 * `True` (a role outside the basis);
+* `String` and `Char` (anchors, witnessed by a dependency path, not as basis references);
 * an address bound to no role.
 
 The unmodified advice is accepted at the type (control). A claim on the recursor is refused at
@@ -50,6 +51,8 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     | throw (IO.userError "the advice has no basis witness for Quot.sound")
   let propext ← roleAddr .propext
   let trueA ← roleAddr .true
+  let stringA ← roleAddr .string
+  let charA ← roleAddr .char
   let unbound := Address.blake3 "an address no role binds".toUTF8
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
   let witnessAt (x : Address) : Payload := { p with witnesses := p.witnesses.set! i (x, 0, [], []) }
@@ -61,6 +64,9 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     caseOn "propext as a basis reference" (witnessAt propext) even
       "a reference to a role outside the basis",
     caseOn "True as a basis reference" (witnessAt trueA) even "a reference to a role outside the basis",
+    caseOn "String as a basis reference" (witnessAt stringA) even
+      "a reference to a role outside the basis",
+    caseOn "Char as a basis reference" (witnessAt charA) even "a reference to a role outside the basis",
     caseOn "an unbound address as a basis reference" (witnessAt unbound) even
       "a basis reference is not bound to a role",
     fun u => do

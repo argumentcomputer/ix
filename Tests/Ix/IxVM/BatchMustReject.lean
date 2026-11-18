@@ -198,8 +198,10 @@ def auxCases (fenv : Lean.Environment) : IO (Array Builder) := do
   return #[
     atRecursor "control-T1-erased-option-occurrence" env ctx r1A true,
     atRecursor "control-T2" env ctx r2A true,
+    -- the modeller gives the crafted family no advice, so the claim at its recursor is refused
+    -- where the advice is read
     atRecursor "extra-auxiliary-motive" crafted ctxC craftedRec false
-      (some "auxiliary members are not the constructors' nested occurrences"),
+      (some "no model advice for a mutual or nested block"),
     fun _ => Case.ofClaim "control-T1-erased-option-occurrence, at the type" env
       (.check ctx t1A none) {} true,
     fun _ => Case.ofClaim "control-T2, at the type" env (.check ctx t2A none) {} true,

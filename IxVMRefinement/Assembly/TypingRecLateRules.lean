@@ -122,7 +122,7 @@ theorem rec_canon_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     usedRefsStored_of_cover (hcover env ⟨hstep.ext, hstep.refs, hstep.fresh⟩) hinert
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, -, hrcM, ha_pre, -, ev_ld, hsub_ld,
-    hld, ev_chk, hsub_chk⟩ := hnat
+    hld, ev_chk, hsub_chk, hfr⟩ := hnat
   -- the record has few rules
   obtain ⟨rawB, cB, hszB, hhB, hbaB, hexB⟩ := get_ci_bytes_bound ha_pre ev_ld
   have hcB : cB = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hhB) hbaB hexB
@@ -159,7 +159,7 @@ theorem rec_canon_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     (blob := fun x => E₀.blobs.get? x) ht (param := id) (self := soloSelf t (Core.ixAddr a'))
     rty (fun i x hx => by simp at hx) hblob
   obtain ⟨sB, sA, mH, sR, sCs, mCs, hextS, evS, hmemS, hextM, evM, hsubM⟩ :=
-    check_const_rec_route ev_chk
+    check_const_rec_route ev_chk hfr
   obtain ⟨-, hlbb, hdef⟩ := Assembly.validate_expr_well_scoped_spec
     (cx := readCtx t (fun x => E₀.blobs.get? x)) (self := soloSelf t (Core.ixAddr a'))
     hbound hlvls rty hextS htyP evS (hsub_chk _ hmemS)
@@ -343,7 +343,7 @@ theorem nat_rec_check_rules_run
       (ev794 := ev794) (ev735 := ev735) (ev714 := ev714) (hm835 := hm835) (ev889 := ev889)
       (hm914 := hm914) (ev875 := ev875) (ev823 := ev823) (ev969 := ev969) (hm1010 := hm1010)
       (ev938 := ev938) (ev1057 := ev1057) (hm1201 := hm1201) (ev1165 := ev1165)
-      (ev1259 := ev1259) (hm1325 := hm1325) (ev1296 := ev1296) (ev1465 := ev1465)
+      (ev1259 := ev1259) (hm1325 := hm1325) (hm_euasjrux := hm_peer) (ev1296 := ev1296) (ev1465 := ev1465)
       (ev1347 := ev1347) (hc1487 := children) .. =>
     injection recShape with _ _ recFields
     simp only [List.cons.injEq, and_true] at recFields
@@ -373,7 +373,8 @@ theorem nat_rec_check_rules_run
         (ext_of_eq_snoc hm1010).trans <| ev938.heap_extends.trans <|
         ev1057.heap_extends.trans <| (ext_of_eq_snoc hm1201).trans <|
         ev1165.heap_extends.trans <| ev1259.heap_extends.trans <|
-        (ext_of_eq_snoc hm1325).trans <| ev1296.heap_extends.trans ev1465.heap_extends
+        (ext_of_eq_snoc hm1325).trans <| (ext_of_eq_snoc hm_peer).trans <|
+        ev1296.heap_extends.trans ev1465.heap_extends
     refine ⟨_, _, _, _, _, _, _, _, ext, ev1347, ?_⟩
     intro call member
     rw [children]
@@ -443,7 +444,7 @@ theorem nat_check_rules_fields {c : Core.ScopedCtx} (hc : Core.ScopedCoreFacts c
       match Obs.«KernelCheck::nat_check_rules».obs ev with
       | .Nil (ld12 := ld) .. => exact (ruleCell_not_nil cell ld).elim
       | .Cons (m98 := mC) (m230 := mR) (cs111 := csC) (cs384 := csRec) (v401 := vNext)
-          (ld12 := ld) (ev113 := evC) (ld107 := ldC) (heq215 := hnfEq) (ev254 := evRhs)
+          (ld12 := ld) (ev113 := evC) (ld107 := ldC) (heq215 := hnfEq) (ev_nryuxiev := evRhs)
           (ev240 := evWrap) (op513 := hjNext) (ev386 := evRec) (hc515 := hcalls) .. =>
         obtain ⟨hrnf, hrest⟩ := ruleCell_load cell ld
         have hjlt : j < 18446744069414584321 := by
