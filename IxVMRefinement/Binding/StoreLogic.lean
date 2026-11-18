@@ -82,7 +82,7 @@ theorem axiom_sourceSafe {E₀ : Ixon.Env} {a : _root_.Address} {c : Ixon.Consta
 section Run
 
 variable {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
-  {E₀ : Ixon.Env}
+  {E₀ : Ixon.Env} {Pay : PayloadRel}
 
 /-- A used reference in the index form the guard reads. -/
 private theorem usedRef_guard_form {E₀ : Ixon.Env} {a x : _root_.Address} {c : Ixon.Constant}
@@ -163,17 +163,23 @@ theorem groupReach_sourceSafe (hC : CollisionFreeRun calls E₀) (hax : AxiomRol
 /-- **`Admits.logic` for one group**: a record new in the group's admission is in Lean's
 logic. -/
 theorem groupStore_logic (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
-    (hax : AxiomRolesDeclared t E₀) {g : Nat} (hg : 6 ≤ g)
+    (hax : AxiomRolesDeclared t E₀) (hP : PayloadFacts t E₀ Pay) {g : Nat} (hg : 6 ≤ g)
     {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
     (hw : GroupWalked calls bAddr t E₀ g recs)
     (hsafe : ∀ a, GroupReach t E₀ g a → Claim.SourceSafe E₀ a) :
-    ∀ a c, New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a →
-      recordOf (groupStore t E₀ (g + 1)) a = some c → InLogic c := by
+    ∀ a c, New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) a →
+      recordOf (groupStore t E₀ Pay (g + 1)) a = some c → InLogic c := by
   intro a c hnew hc
   obtain ⟨-, -, -, hadd, -⟩ := new_groupStore hb hg hnew
   have hE : recordOf E₀ a = some c := ((groupStore_recordOf hb (Nat.le_succ_of_le hg)).mp hc).2
   rcases groupAdds_cases hC hax hw hadd with ⟨hr, -⟩ | ⟨r, hr, -, -, p, hp, hproj, -⟩ |
-      ⟨ro, hro, hs, had, c₂, ax, hc₂, hinfo, hsf⟩
+      ⟨ro, hro, hs, had, c₂, ax, hc₂, hinfo, hsf⟩ | hpay
+  rotate_right
+  · rcases payAdds_cases hP hpay with ⟨hr, -⟩ | ⟨-, -, -, -, -, p, hp, hproj, -⟩
+    · exact hP.logic g a c hr hE
+    · have e : p = c := Option.some.inj (hp.symm.trans hE)
+      subst e
+      rcases hproj with ⟨q, hq⟩ | ⟨q, hq⟩ | ⟨q, hq⟩ | ⟨q, hq⟩ <;> simp only [InLogic, hq]
   · exact (hsafe a hr c hE).1
   · have e : p = c := Option.some.inj (hp.symm.trans hE)
     subst e
@@ -216,15 +222,16 @@ theorem groupReach_sourceSafe_of_run (hC : CollisionFreeRun calls E₀)
 
 /-- **`Admits.logic` for every group of a run**, from the safety of the roots. -/
 theorem logic_of_rootsSafe (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
+    (hP : PayloadFacts t E₀ Pay)
     (hval : ∀ g, g < 77 → ∀ r ∈ roleGroup g, RoleValidationIn calls bAddr t g r)
     (hroots : RootsSafe t E₀) :
     ∀ g, 6 ≤ g → g < 77 → ∀ a c,
-      New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a →
-      recordOf (groupStore t E₀ (g + 1)) a = some c → InLogic c := by
+      New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) a →
+      recordOf (groupStore t E₀ Pay (g + 1)) a = some c → InLogic c := by
   intro g hg6 hg
   have hax := axiomRoles_of_run hC hval
   obtain ⟨recs, hw⟩ := groupWalked_exists hC.hashedStored (hval g hg)
-  exact groupStore_logic hC hb hax hg6 hw (groupReach_sourceSafe_of_run hC hval hroots hg hw)
+  exact groupStore_logic hC hb hax hP hg6 hw (groupReach_sourceSafe_of_run hC hval hroots hg hw)
 
 /-- **The references a certificate uses are in Lean's logic** (`RootsSafe.certRefs`), for a run
 that validates every role: the operation's validation guards every used reference of the
