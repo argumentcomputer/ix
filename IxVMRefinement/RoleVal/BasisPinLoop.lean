@@ -198,7 +198,7 @@ theorem assert_basis_pinned_loop {h₀ : Heap F} {tbl : SourceValue F}
           rw [heq193] at hv
           by_cases hab : a = b₀
           · rw [ha₀, ← hix, hab]
-          · rw [if_neg hab] at hv
+          · simp only [hab, ↓reduceIte] at hv
             exact absurd (Value.field.inj hv) one_ne_zero
         | other v81 m82 y91 cs102 ev104 op97 hne199 _ _ _ =>
           exfalso
@@ -250,14 +250,15 @@ theorem load_role_table_bindings {x_a x_tbl : SourceValue F} {h h₁ : Heap F}
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at ht3
   obtain ⟨rfl, rfl⟩ := ht3
   obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev427
-  have hbst0 : Claim.RBTreeBST .field m356 []
+  have hbst0 : ∀ hh : Heap F, Claim.RBTreeBST .field hh []
       (.construct Obs.Names.«RBTreeMap::RBTreeMap<Field>» "Nil" []) := by
+    intro hh
     change Claim.RBTreeBST .field _ [] (.construct addrMapEnum "Nil" [])
     rw [← Claim.rbtreeEnum_field]
     exact Claim.RBTreeBST.nil .field _
   obtain ⟨extB, lb, rest, roleMap, byAddr', restPtr, nxt', ents, es', htup, -, -, -, hasc, -, -,
     -, hent, hbnd, hbst, hidx⟩ :=
-    read_role_bindings_parse b3.toNat (UInt8.toNat_lt b3) 0 [] (by omega) hbst0 (by simp) hs3
+    read_role_bindings_parse b3.toNat (UInt8.toNat_lt b3) 0 [] (by omega) (hbst0 _) (by simp) hs3
       (by rw [Nat.cast_zero]; exact ev404)
   simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
   obtain ⟨rfl, rfl, -, -⟩ := htup
