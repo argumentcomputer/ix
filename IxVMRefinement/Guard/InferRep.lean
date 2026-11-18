@@ -17,10 +17,10 @@ open Aiur.Library
 open IxVM (F)
 open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList)
 
+set_option linter.unusedVariables false in
 /-- **`KernelInfer::types_lookup` meets its spec at every derivation**, with no induction
 hypothesis: its one callee is `expr_lift`, whose spec holds of every derivation
 (`SubstAux.gall`). -/
-set_option linter.unusedVariables false in
 theorem _root_.IxVM.Refinement.Core.types_lookup_spec (c : ScopedCtx)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::types_lookup" args h r h' calls) :

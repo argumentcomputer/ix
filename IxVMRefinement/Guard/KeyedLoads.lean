@@ -18,9 +18,9 @@ namespace IxVM.Refinement.Core
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 
+set_option linter.unusedVariables false in
 /-- `KernelInfer::const_num_lvls` meets its spec at every derivation: it reads the loaded
 constant's first field and calls nothing, so no induction hypothesis is needed. -/
-set_option linter.unusedVariables false in
 theorem const_num_lvls_spec (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::const_num_lvls" args h r h' calls) :
@@ -38,9 +38,9 @@ theorem const_num_lvls_spec (c : ScopedCtx) {args : List (SourceValue F)} {h h' 
     ⟨x_n, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv, he, hh, -⟩
   all_goals exact ⟨he.trans (hci.nl_of_eq hv), hh⟩
 
+set_option linter.unusedVariables false in
 /-- `KernelInfer::const_type_of` meets its spec at every derivation: it reads the loaded
 constant's second field and calls nothing. -/
-set_option linter.unusedVariables false in
 theorem const_type_of_spec (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::const_type_of" args h r h' calls) :
