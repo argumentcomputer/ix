@@ -83,11 +83,17 @@ theorem valLimit_ge_of_ge {g : Nat} (h : 41 ≤ g) : 41 ≤ valLimit g := by
     · split <;> omega
 
 set_option maxRecDepth 100000 in
-/-- **No basis row is an axiom record** (decided over the rows). -/
-theorem basisRows_not_axiom :
+/-- **A basis row that is an axiom record is the record a basis role is bound to** under the
+default table (decided over the rows; it is `Quot.sound`'s). -/
+theorem basisRows_axiom_bound :
     StoreInhabit.basisRows.all (fun e => match e.2.info with
-      | .axio _ => false
+      | .axio _ => TableInhabit.basisRoleOrder.any (fun r => ctab.addressOf? r == some e.1)
       | _ => true) = true := by
+  decide +kernel
+
+set_option maxRecDepth 100000 in
+/-- No standard axiom is a basis role (decided). -/
+theorem stdAxiom_not_basisRole : ∀ r ∈ standardAxioms, r ∉ TableInhabit.basisRoleOrder := by
   decide +kernel
 
 /-- **At most one role is bound at an address**, under a well-formed table. -/
@@ -405,12 +411,13 @@ theorem stdAxiom_unreached (hC : CollisionFreeRun calls E₀) (hax : AxiomRolesD
   have := valLimit_le g
   omega
 
-/-- **A standard axiom's record is held by no store before its group**: no basis row is an axiom
-record (`basisRows_not_axiom`), and the first group from 6 that would add it does not: its walk
-does not reach it (`stdAxiom_unreached`), a projection record or another group's standard axiom
-is not it, and its payload would reach it new there (`PayloadFacts.notAxiomLike`). -/
+/-- **A standard axiom's record is held by no store before its group**: a basis row that is an
+axiom record is the record of a basis role (`basisRows_axiom_bound`, at a table pinning the
+prelude), no standard axiom; and the first group from 6 that would add it does not: its walk does
+not reach it (`stdAxiom_unreached`), a projection record or another group's standard axiom is not
+it, and its payload would reach it new there (`PayloadFacts.notAxiomLike`). -/
 theorem stdAxiom_not_storedBelow (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
-    (hax : AxiomRolesDeclared t E₀) (hP : PayloadFacts t E₀ Pay)
+    (hax : AxiomRolesDeclared t E₀) (hP : PayloadFacts t E₀ Pay) (hpin : PreludePinned t)
     (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs) (hwf : t.wf = true)
     {r : Ix.Kernel.Role} (hs : r ∈ standardAxioms) {a : _root_.Address}
     (had : t.addressOf? r = some a) {g : Nat} (hg : g ≤ Ix.SpecDigest.groupOf r) :
@@ -425,9 +432,16 @@ theorem stdAxiom_not_storedBelow (hC : CollisionFreeRun calls E₀) (hb : BasisR
       exact StoreInhabit.store_record_of_mem hmem
     have hE₀ := ((groupStore_recordOf hb (Nat.le_refl 6)).mp h6).2
     have e : c₀ = c := Option.some.inj (hE₀.symm.trans hc)
-    have hall := List.all_eq_true.mp basisRows_not_axiom (a, c₀) hmem
+    have hall := List.all_eq_true.mp basisRows_axiom_bound (a, c₀) hmem
     rw [e] at hall
-    simp [hi] at hall
+    simp only [hi, List.any_eq_true, beq_iff_eq] at hall
+    obtain ⟨r', hr', hb'⟩ := hall
+    have had' : t.addressOf? r' = some a := by
+      rw [addressOf_basis hpin hr']
+      exact hb'
+    have e' : r = r' := addressOf_role_inj hwf had had'
+    rw [← e'] at hr'
+    exact stdAxiom_not_basisRole r hs hr'
   have key : ∀ k, 6 ≤ k → k < Ix.SpecDigest.groupOf r → ¬ GroupAdds t E₀ Pay k a := by
     intro k
     induction k using Nat.strong_induction_on with
@@ -528,7 +542,7 @@ axiom, which the group's admission does not reach (`stdAxiom_unreached`), and wh
 does not reach: it is new in the group (`stdAxiom_not_storedBelow`), and no record new in the group
 the payload reaches is an axiom record (`PayloadFacts.notAxiomLike`). -/
 theorem groupStore_unitsLast (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
-    (hax : AxiomRolesDeclared t E₀) (hP : PayloadFacts t E₀ Pay)
+    (hax : AxiomRolesDeclared t E₀) (hP : PayloadFacts t E₀ Pay) (hpin : PreludePinned t)
     (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs) {g : Nat} (hg : 6 ≤ g)
     (hval : ∀ r ∈ roleGroup g, RoleValidationIn calls bAddr t g r)
     {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
@@ -556,7 +570,7 @@ theorem groupStore_unitsLast (hC : CollisionFreeRun calls E₀) (hb : BasisRowsL
     omega
   have hnotP : r ∈ standardAxioms → PayReach t E₀ Pay g a → False := fun hs hpr => by
     obtain ⟨c', ax, hc', hi, -⟩ := hax r hs a had
-    have hnot := stdAxiom_not_storedBelow hC hb hax hP hws hwf hs had (Nat.le_of_eq hgr.symm)
+    have hnot := stdAxiom_not_storedBelow hC hb hax hP hpin hws hwf hs had (Nat.le_of_eq hgr.symm)
     have hnew : New (groupStore t E₀ Pay g) (groupStore t E₀ Pay (g + 1)) a := by
       refine ⟨?_, ?_⟩
       · rw [(groupStore_recordOf hb h6).mpr
@@ -571,7 +585,7 @@ theorem groupStore_unitsLast (hC : CollisionFreeRun calls E₀) (hb : BasisRowsL
   · rcases hkind with hop | hs
     · exact hnotE (hsteps.refs x a hra huE hnc) hop
     · exact stdAxiom_unreached hC hax hw hwf (Nat.le_of_eq hgr.symm) hs had
-      (GroupReach.ref hra huE hnc)
+        (GroupReach.ref hra huE hnc)
   · obtain ⟨c', i, hc', hi, hx⟩ := huE
     have e : c' = p := Option.some.inj (hc'.symm.trans hp)
     rw [e, hrefs] at hx
@@ -579,7 +593,7 @@ theorem groupStore_unitsLast (hC : CollisionFreeRun calls E₀) (hb : BasisRowsL
   · rcases hkind with hop | hs'
     · exact hnotE (axiomSteps_ordered hC hval ro hro hs x hadx a huE hnc) hop
     · exact stdAxiom_unreached hC hax hw hwf (Nat.le_of_eq hgr.symm) hs' had
-      (GroupReach.axiomRef hro hs hadx huE hnc)
+        (GroupReach.axiomRef hro hs hadx huE hnc)
   · rcases payAdds_cases hP hpay' with ⟨hpr, -⟩ | ⟨-, -, -, -, -, p, hp, -, -, hrefs, -⟩
     · have hpa : PayReach t E₀ Pay g a := PayReach.ref hpr huE hnc
       rcases hkind with hop | hs
