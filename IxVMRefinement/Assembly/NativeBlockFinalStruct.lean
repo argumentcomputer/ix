@@ -1,10 +1,11 @@
-import IxVMRefinement.Assembly.NativeBlockFinalEta
+import IxVMRefinement.Assembly.NativeBlockEtaFields
 import IxVMRefinement.Assembly.NativeBlockGuardOff
 import IxVMRefinement.Assembly.NativeBlockBasis
 
 /-! # The per-record step of a native inductive block: what remains is the `Prop`-structure table
 
-`unitStep_nativeBlock_struct`: `unitStep_nativeBlock` with
+`unitStep_nativeBlock_struct`: the step of a one-type native block at the earlier carried clause
+(`NativeBlockX`) and a group limit, with
 * no η input (the η fields are produced, `blockEta_of_install`);
 * no hashed-projection input (every decoded store has it, `hashedBlockProjectionsHeld_of_decoded`;
   the step's store decodes);
@@ -13,9 +14,9 @@ import IxVMRefinement.Assembly.NativeBlockBasis
   elsewhere the table's firing holds with nothing to certify (`blockFire_of_install_off`, from
   the carried projection-name clause and the former's freshness).
 
-The proof is `unitStep_nativeBlock_eta`'s body with those three inputs produced in place: the
-certificate and η inputs of the earlier statements quantify over every prefix and do not hand
-their producers the carried clauses at that prefix.
+The three inputs are produced in place: stated beside the step they would quantify over every
+prefix and would not hand their producers the carried clauses at that prefix. The step at the
+fold's clause and at either role context is `unitStep_nativeBlockTele`.
 -/
 
 set_option maxHeartbeats 4000000
