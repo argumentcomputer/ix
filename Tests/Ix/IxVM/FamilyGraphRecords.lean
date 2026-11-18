@@ -5,7 +5,7 @@ import Ix.IxVM.Model
 import Ix.Compile.KernelAnnotate
 import IxC.Kernel.Inductives.TwinInstall
 
-/-! # The compiled records of two nested families, for the family graph
+/-! # The compiled records of two nested families and of a second recursor record
 
 `ixvm-family-graph-records` compiles a tree nested through a user container and a `List`-nested
 tree with Ix's compiler, generates the model advice of their blocks
@@ -16,7 +16,14 @@ With `IX_FAMILY_GRAPH_OUT` set to a file, it writes what it compiled there, one 
 hexadecimal: the role table's bytes (`table`), every record with its address (`rec`: the
 environment's, then the advice's), and for each family its block's address, its recursor family
 record's address and the addresses of its advice records (`fam`). The statements about the
-family graph are evaluated on this file. -/
+family graph are evaluated on this file.
+
+With `IX_FAMILY_TWIN` set, the suite instead builds a second recursor record for the block of
+`Lean.Compiler.LCNF.Alt` (its recursors with the `autoParam`s of the constructors' fields kept,
+compiled by the same pipeline), checks that the block's record is the same and the recursor
+record another, and submits the block's claim once with each record's advice; both must be
+accepted. With `IX_FAMILY_TWIN_JUDGE` it also evaluates, in source mode and with IxC's
+executable functions, the conjuncts of IxC's twin record for the second record. -/
 
 namespace Tests.Ix.IxVM.FamilyGraphRecords
 
@@ -357,15 +364,6 @@ def runTwin (leanEnv : Lean.Environment) : IO UInt32 := do
     let recsW := storedRecs instW.fe.env spellings
     IO.println s!"[ixvm-family-graph-records] twin: stored recursors found: {recsC.length} and \
       {recsW.length} of {recNames.length}"
-    let near := instC.fe.env.consts.filterMap fun ci =>
-      let s := toString ci.name
-      if (s.splitOn "LCNF.Alt").length > 1 then
-        some (s ++ (match ci with
-          | .recInfo .. => ":rec" | .indInfo .. => ":ind" | .ctorInfo .. => ":ctor"
-          | .defnInfo .. => ":defn" | _ => ":other"))
-      else none
-    IO.println s!"[ixvm-family-graph-records] twin: IxC's environment holds \
-      {instC.fe.env.consts.length} constants; named after the family ({near.length}): {near.take 12}"
     let fuel := 1000000
     let ops : Ix.Kernel.CheckerOps .source (Ix.Kernel.CheckM .source) :=
       Ix.Kernel.fueledOps .verified fuel
