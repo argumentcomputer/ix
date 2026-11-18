@@ -84,16 +84,26 @@ def FamRecOfBlock (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kerne
   ∃ (rs : Array Ixon.MutConst) (cs : List (Call F)),
     FamRecRecord E₀ rb crb rs ∧ FamilyCallAtLim calls bAddr t B rb lim cs
 
-/-- **The twin step's target.** The hypotheses are the accepted family check of the block `B`
-with the second record `rb'` on the modeled route, at any limit, and the family check of `B`
-with its family record `rb` under the same binding and limit; the prefix invariant at that
-limit; what the second record uses, stored; the block's family record installed (wherever the
-record itself is: in the run's store, or, for a stored family, in the witness's); freshness and
-key freedom of the second record's constant addresses. The conclusion is the second record's
-declaration as read, IxC's twin record for it over the positional package, each member stored
-after the step as a constant that stores its reading, a model companion at each member, and the
-scoped core's role and record companions after the step. -/
-def TwinStepTarget : Prop :=
+/-- **A predicate on a family record's form, as a family check of its block accepts it**, of the
+run's calls, the binding, the role table, the run's store, the block, the record and the limit.
+The form rule (c) prefers (the reconstruction's at every member) is one; the circuit's
+record-level form check fixes it. -/
+abbrev RecordFormPred : Type :=
+  List (Call F) → _root_.Address → Ix.Kernel.RoleTable → Ixon.Env → _root_.Address →
+    _root_.Address → Option Nat → Prop
+
+/-- **The twin step's target**, at a record form `RForm`. The hypotheses are the accepted family
+check of the block `B` with the second record `rb'` on the modeled route, at any limit, and the
+family check of `B` with its family record `rb` under the same binding and limit; that the
+family record is in the form `RForm` where the second record is (the graph's choice of the
+family record); the prefix invariant at that limit; what the second record uses, stored; the
+block's family record installed (wherever the record itself is: in the run's store, or, for a
+stored family, in the witness's); freshness and key freedom of the second record's constant
+addresses. The conclusion is the second record's declaration as read, IxC's twin record for it
+over the positional package, each member stored after the step as a constant that stores its
+reading, a model companion at each member, the scoped core's role and record companions after
+the step, and the reload of each new constant at the key of an address. -/
+def TwinStepTarget (RForm : RecordFormPred) : Prop :=
   ∀ (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
     (E₀ E : Ixon.Env) (env : Ix.Kernel.Env .anon) (B rb rb' : _root_.Address)
     (cb crb crb' : Ixon.Constant) (ms rs' : Array Ixon.MutConst) (lim : Option Nat)
@@ -103,6 +113,7 @@ def TwinStepTarget : Prop :=
     FamRecRecord E₀ rb' crb' rs' →
     rs'.size ≠ 0 → rb' ≠ rb →
     FamilyCallAtLim calls bAddr t B rb' lim cs →
+    (RForm calls bAddr t E₀ B rb' lim → RForm calls bAddr t E₀ B rb lim) →
     ModeledRouteAt calls B →
     Decl.PrefixInv.{u} E t lim env →
     (∀ x, UsedRef E₀ rb' x →
@@ -115,7 +126,9 @@ def TwinStepTarget : Prop :=
       DeclRecTwinRunJ twinPosRulesJ env blk env₂ ∧
       (∀ ci ∈ blk, ∃ c, env₂.find? ci.name = some c ∧ StoredAs c ci) ∧
       (∀ ci ∈ blk, HasModel env₂ ci.name) ∧
-      Decl.CoreCompanions ⟨E, env₂, t, lim⟩
+      Decl.CoreCompanions ⟨E, env₂, t, lim⟩ ∧
+      (∀ ci, env₂.find? ci.name = some ci → env.find? ci.name = none →
+        ∀ x, ci.name = keyOf t x → Decl.ReloadsAs E t env₂ ci)
 
 /-! ## What the fold gets from the conclusion -/
 
