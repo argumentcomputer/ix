@@ -152,6 +152,7 @@ end IxVM.Refinement.Core
 namespace IxVM.Refinement.Guard
 
 open IxVM.Consistency
+open Ix.Kernel (Expr ProjTable ConstantVal ProjGuardCert)
 
 /-- In a store whose records decode exactly, the exact decoding of the stored bytes is the
 decoded cache. -/
