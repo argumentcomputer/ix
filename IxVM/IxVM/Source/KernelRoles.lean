@@ -582,6 +582,34 @@ def role_admission_checks := aiur_fn⟦
     }
 ⟧
 
+def addr_quot_bound := aiur_fn⟦
+  fn addr_quot_bound(rc: RoleCtx, a: Bytes::AddressRef) -> Field {
+      let r1 = role_index_of(rc, a);
+      match r1 {
+        0 => {  0 } ,
+        _ => {
+          match (r1 - 1) - KernelRoleSpec::role_quot() {
+            0 => {  1 } ,
+            1 => {  1 } ,
+            2 => {  1 } ,
+            3 => {  1 } ,
+            4 => {  1 } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
+def addr_walked_role := aiur_fn⟦
+  fn addr_walked_role(rc: RoleCtx, a: Bytes::AddressRef) -> Field {
+      let r1 = role_index_of(rc, a);
+      match r1 {
+        0 => {  0 } ,
+        _ => {  role_admission_checks(r1 - 1) } ,
+      }
+    }
+⟧
+
 def walk_ctx := aiur_fn⟦
   fn walk_ctx(rc: RoleCtx, a: Bytes::AddressRef) -> RoleCtx {
       match (*(rc)) {
