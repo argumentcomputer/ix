@@ -208,7 +208,8 @@ theorem lastDom_mono (c : Ixon.Constant) (d : Ixon.Expr) :
         exact h
     | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | app _ _ | lam _ _
     | letE _ _ _ _ _ | share _ =>
-      simp only [hn] at h <;> cases h
+      simp only [hn] at h
+      cases h
 
 /-- **`spineHead` answers the same at every larger fuel once it reached a node that is no
 application.** -/
@@ -223,10 +224,6 @@ theorem spineHead_mono (c : Ixon.Constant) :
     | zero => rfl
     | succ m =>
       simp only [spineHead] at hna ⊢
-      try (cases hn : node c e with
-        | app f a => exact absurd hn (hna f a)
-        | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | lam _ _ | all _ _
-        | letE _ _ _ _ _ | share _ => rfl)
   | succ n ih =>
     intro m e hna hle
     obtain ⟨m, rfl⟩ : ∃ m', m = m' + 1 := ⟨m - 1, by omega⟩
