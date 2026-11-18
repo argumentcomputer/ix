@@ -1,6 +1,7 @@
 import IxVMRefinement.Binding.OpInstall
 import IxVMRefinement.Binding.RunPredicate
 import IxVMRefinement.Binding.RunStepStores
+import IxVMRefinement.Binding.WalkedStored
 import IxVMRefinement.Assembly.FoldClauseAlias
 
 /-! # The operations' role unit of the binding fold
@@ -81,24 +82,9 @@ def OpValidationFacts (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
           Decl.ReloadsAs E t (RoleOps.installed env₁ (.role r) ty val hint)
             (.defnInfo ⟨.role r, [], ty⟩ val hint)
 
-/-- **The run's checked records are stored**: every record of `R` that is no block, that the run
-checked under a role context at some limit, and that is in Lean's logic with its block, is
-stored at its key in `env`; and the role of every walked role of a group of `G` is stored. The
-closure of a group establishes it for the records its walk reached; the operations' validation
-facts read it at the references of the operation's record and of its certificates' proofs,
-which the validation walks. -/
-def WalkedStored (ρ : BRun) (t : Ix.Kernel.RoleTable) (G : Nat → Prop) (R : Ixon.Env)
-    (env : Ix.Kernel.Env .anon) : Prop :=
-  (∀ (x : _root_.Address) (c : Ixon.Constant) (n : Nat), recordOf R x = some c →
-    (∀ ms, c.info ≠ .muts ms) → InLogic c →
-    (∀ cb, recordOf R (Ix.Cert.ownerOf x c) = some cb → InLogic cb) → ρ.checked x n →
-    (env.find? (keyOf t x)).isSome = true) ∧
-  (∀ (r : Ix.Kernel.Role) (x : _root_.Address), walkedRole r = true →
-    G (Ix.SpecDigest.groupOf r) → t.addressOf? r = some x →
-    (env.find? (keyOf t x)).isSome = true)
-
 /-- **`OpValidationFacts` with the closure's coverage handed**: the same facts, at every store
-and environment after the closure that also satisfy `WalkedStored`. -/
+and environment after the closure that also satisfy `WalkedStored` and hold the store before
+the group (`StoreLe R R₁`, so that the operation's record is new). -/
 def OpValidationFactsW (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
     (calls : List (Call F)) : Prop :=
   ∀ (t : Ix.Kernel.RoleTable) (ρ : BRun) (Rs : Nat → Ixon.Env),
@@ -107,7 +93,7 @@ def OpValidationFactsW (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
       (env₁ : Ix.Kernel.Env .anon),
       6 ≤ g → g < 77 → roleGroup g = [r] → r ∈ RoleOps.opRoles → t.addressOf? r = some a →
       Admits ρ t g R R' → AdmitsReads ρ t R R' → BndOver.{u} L t (· < g) R₁ env₁ →
-      AddsAt R₁ R' a → WalkedStored ρ t (· < g) R₁ env₁ →
+      AddsAt R₁ R' a → StoreLe R R₁ → WalkedStored ρ t (· < g) R₁ env₁ →
       ∃ (ty₀ val₀ ty val tyD valD : Core.KExpr) (hint : Ix.Kernel.ReducibilityHint),
         RoleOps.OpChecked env₁ (.role r) ty₀ val₀ ty val ∧
         Annotates ty tyD ∧ Annotates val valD ∧

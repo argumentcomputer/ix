@@ -7,9 +7,9 @@ import IxVMRefinement.L1.HashedBlock
 `NewLoads` (`Assembly/NativeBlockLoads.lean`) asks, at the environment after the family step,
 each field of the load contract whose load or stored constant is new. The step stores the
 block's inductives and constructors and the family record's recursors at the keys of their
-constant addresses, and the aliases (definitions) at derived keys. Eight fields hold from the
-records at those addresses, the store and the route fact at the block, with no fact of the
-family check (`FamLoadCtx.newLoads`):
+constant addresses, and the aliases (definitions) at derived keys. Ten fields hold from the
+records at those addresses, the store, the route fact at the block and the walk's check of the
+block, with no fact of the family check (`FamLoadCtx.newLoads`):
 
 * `projFire`: the step stores no projection table;
 * `inductRecord`, `inductBlock`, `ctorIndRes`: a load of a new inductive reads the member's
@@ -17,12 +17,19 @@ family check (`FamLoadCtx.newLoads`):
 * `projTables`, `projTablesAt`, `projCtorTele`, `eta`: each is handed an observation that the
   block of a new inductive or constructor is on the native route (`block_is_modeled` answering
   `0`, directly or inside `proj_ctor`); that block is the family's (a hashed block holds its own
-  projection records), which is modeled at the store: the hypotheses are refuted.
+  projection records), which is modeled at the store: the hypotheses are refuted;
+* `unitLike`, `unitLikeRaw`: their conclusions ask the unit-like bit, unset at the step; their
+  hypotheses are refuted. The loaded inductive is a member of the family's block
+  (`FamLoadCtx.member_of_load`), a block of at most one inductive (`FewInductives`), whose member
+  has no index and one constructor with no field (the load's counts and, for `unitLike`, the
+  stored constructor's field count, `FamLoadCtx.ctorCounts`; for `unitLikeRaw`, the zero-field
+  load). A modeled block of one inductive has no such constructor (`FamLoadCtx.unitFree`: the
+  dispatch's scan answers `0` at it, `FamilyAlias/UnitFree.lean`).
 
-The other six are `FamilyLoadsCheck`: the loads of the new constants (`getCI`, `getIprj`,
+The other four are `FamilyLoadsCheck`: the loads of the new constants (`getCI`, `getIprj`,
 `getCprj`: the circuit loads a member's canonical annotated form, which the family check's
-stored types have to be) and the three capability fields (`unitLike`, `unitLikeRaw`,
-`etaIota`), whose conclusions ask the capability bits the step stores as unset. -/
+stored types have to be) and `etaIota`, whose conclusion asks the η bit the step stores as
+unset. -/
 
 universe u
 
@@ -40,8 +47,9 @@ set_option linter.unusedVariables false
 section Check
 open IxVM.Refinement.Core
 
-/-- **The load facts at the family step's new constants that read the family check**: the six
-fields of `NewLoads` the store and the route fact do not give (module docstring). -/
+/-- **The load facts at the family step's new constants that read the family check**: the four
+fields of `NewLoads` the store, the records and the route fact do not give (module
+docstring). -/
 structure FamilyLoadsCheck (c : ScopedCtx) (new : List (ConstantInfo .anon)) : Prop where
   getCI : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
     ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → Good c.toCtx cs →
@@ -61,35 +69,6 @@ structure FamilyLoadsCheck (c : ScopedCtx) (new : List (ConstantInfo .anon)) : P
       FamNew c new (ixAddr b) (ZMod.val i) → Good c.toCtx cs →
     Bytes.RepAddressRef addrTy h b bp →
       ∃ ci, c.env.find? (c.κ (iprjAddr (ixAddr b) (ZMod.val i))) = some ci ∧ CIPtrRep c.κ h' ptr ci
-  unitLike : ∀ (ap ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address)
-      (nl ty u blk : SourceValue F) (p i : F) (b : Bytes.Address)
-      (cvT : Ix.Kernel.ConstantVal .anon) (caps : Ix.Kernel.IndCaps .anon)
-      (cvC : Ix.Kernel.ConstantVal .anon) (nPc : Nat),
-    ObsFn W "Ingress::get_ci" [ap] h ptr h' cs → Good c.toCtx cs → Bytes.RepAddressRef addrTy h a ap →
-    loadValue h' ptr = .ok (.construct kciEnum "Induct"
-      [nl, ty, .field p, .field 0, .field 1, u, blk, .field i]) →
-    Bytes.RepAddressRef addrTy h' b blk →
-    c.env.find? (c.κ (ixAddr a)) = some (.indInfo cvT caps) →
-    FewInductives c.toCtx (ixAddr b) →
-    c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0)) = some (.ctorInfo cvC nPc 0) →
-    (ConstantInfo.indInfo cvT caps ∈ new ∨ ConstantInfo.ctorInfo cvC nPc 0 ∈ new) →
-    caps.unitlike = true ∧ caps.unitParams = ZMod.val p ∧
-      (Ix.Kernel.reservedBasisNames.contains (c.κ (ixAddr a)) = false ∨
-        (ZMod.val p = 0 ∧ ∀ us, Ix.Kernel.isUnitLikeTy c.env (.const (c.κ (ixAddr a)) us) = true))
-  unitLikeRaw : ∀ (ap ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
-      (a : Bytes.Address) (nl ty u blk : SourceValue F) (p i : F) (b : Bytes.Address)
-      (cvT : Ix.Kernel.ConstantVal .anon) (caps : Ix.Kernel.IndCaps .anon),
-    ObsFn W "Ingress::get_ci" [ap] h ptr h' cs →
-    Good c.toCtx cs → Bytes.RepAddressRef addrTy h a ap →
-    loadValue h' ptr = .ok (.construct kciEnum "Induct"
-      [nl, ty, .field p, .field 0, .field 1, u, blk, .field i]) →
-    Bytes.RepAddressRef addrTy h' b blk →
-    c.env.find? (c.κ (ixAddr a)) = some (.indInfo cvT caps) →
-    ConstantInfo.indInfo cvT caps ∈ new → FewInductives c.toCtx (ixAddr b) →
-    ZeroFieldCtorLoad c b i → NonrecursiveLoad c a →
-    caps.unitlike = true ∧ caps.unitParams = ZMod.val p ∧
-      (Ix.Kernel.reservedBasisNames.contains (c.κ (ixAddr a)) = false ∨
-        (ZMod.val p = 0 ∧ ∀ us, Ix.Kernel.isUnitLikeTy c.env (.const (c.κ (ixAddr a)) us) = true))
   etaIota : ∀ (pp ptr nl ty u blk : SourceValue F) (h1 h2 : Heap F) (cs1 : List (Call F))
       (pa b : Bytes.Address) (i m : F) (cvT cvc : Ix.Kernel.ConstantVal .anon)
       (caps : Ix.Kernel.IndCaps .anon) (cnP cnF : Nat) (us : List KLevel) (l : KLevel),
@@ -127,7 +106,9 @@ open IxVM.Consistency
 `new`: a well-formed table, a decoded store that holds a hashed block's projection records, the
 block `cb` (members `ms`) at `A` and the family record `crb` (members `rs`) at `rb` with their
 projection records, the route fact at `A`, every new constant at the key of a constant address of
-the two records or a definition at a derived key, and every such address stored. -/
+the two records or a definition at a derived key, and every such address stored; at a block of
+one inductive, the first constructor stored with the record's counts, and a field in it where
+the member has no index and one constructor. -/
 structure FamLoadCtx (C : Core.Ctx) (new : List (ConstantInfo .anon)) (A : _root_.Address)
     (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (rb : _root_.Address) (crb : Ixon.Constant)
     (rs : Array Ixon.MutConst) : Prop where
@@ -149,6 +130,15 @@ structure FamLoadCtx (C : Core.Ctx) (new : List (ConstantInfo .anon)) (A : _root
     ((∃ cv v hint, cn = .defnInfo cv v hint) ∧ ∃ n d, cn.name = Ix.Kernel.auxKey n d)
   found : ∀ x, FamAddr A cb rb crb x →
     ∃ ci, (appCtx C new).env.find? (Core.keyOf C.t x) = some ci
+  /-- A block of one inductive with no index and one constructor, modeled at the store: that
+  constructor has a field. -/
+  unitFree : ∀ ind, ms = #[.indc ind] → ind.indices.toNat = 0 → ind.ctors.size = 1 →
+    ∀ ct, ind.ctors[0]? = some ct → ct.fields.toNat ≠ 0
+  /-- The constant stored at the key of the first constructor of a block of one inductive has
+  the record's parameter and field counts. -/
+  ctorCounts : ∀ ind ct, ms = #[.indc ind] → ind.ctors[0]? = some ct → ∀ ci,
+    (appCtx C new).env.find? (Core.keyOf C.t (Core.cprjAddr A 0 0)) = some ci →
+    ∃ cv, ci = .ctorInfo cv ct.params.toNat ct.fields.toNat
 
 variable {C : Core.Ctx} {new : List (ConstantInfo .anon)} {A rb : _root_.Address}
   {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
@@ -265,6 +255,117 @@ theorem FamLoadCtx.famNew_block (hL : FamLoadCtx C new A cb ms rb crb rs) {b : _
       Core.WhnfAux.name_of_find hf
     exact (hL.cprj_block hbh hx (hL.kappa_eq (hn.symm.trans hname))).1
 
+/-- **A hashed block whose member projection address is a family address is the family's
+block**, at an inductive member of it with the same index. -/
+theorem FamLoadCtx.iprj_block_idx (hL : FamLoadCtx C new A cb ms rb crb rs) {b : _root_.Address}
+    (hbh : Core.HashedBlockAt C.E b) {i : Nat} {x : _root_.Address} (hx : FamAddr A cb rb crb x)
+    (hy : Core.iprjAddr b i = x) :
+    b = A ∧ ∃ (i' : Nat) (ind : Ixon.Inductive), ms[i']? = some (.indc ind) ∧
+      i.toUInt64 = i'.toUInt64 := by
+  obtain ⟨cm, hrec, hk⟩ := hL.recordOf_at hx
+  have hrec' : Ix.Cert.recordAt C.E (Core.iprjAddr b i) = some cm := by
+    rw [hy]
+    exact recordAt_of_recordOf hL.decoded hrec
+  have hinfo := (hL.held b hbh).1 i cm hrec'
+  rcases hk with ⟨i', ind, hget, -, h'⟩ | ⟨i', ind, j', -, -, -, h'⟩ | ⟨p, h'⟩
+  · rw [h'] at hinfo
+    have hp := Ixon.ConstantInfo.iPrj.inj hinfo
+    exact ⟨(congrArg Ixon.InductiveProj.block hp).symm, i', ind, hget,
+      (congrArg Ixon.InductiveProj.idx hp).symm⟩
+  · rw [h'] at hinfo
+    exact nomatch hinfo
+  · rw [h'] at hinfo
+    exact nomatch hinfo
+
+/-- **A block of the family's of at most one inductive is a block of one inductive.** -/
+theorem FamLoadCtx.one_of_few (hL : FamLoadCtx C new A cb ms rb crb rs)
+    (hfew : Core.FewInductives (appCtx C new) A) {i' : Nat} {ind : Ixon.Inductive}
+    (hget : ms[i']? = some (.indc ind)) : ms = #[.indc ind] := by
+  have hle := hfew cb ms (recordAt_of_recordOf hL.decoded hL.record) hL.muts
+  have hf : ms.toList.filter Core.isIndc = ms.toList := by
+    apply List.filter_eq_self.mpr
+    intro m hm
+    obtain ⟨ind', rfl⟩ := hL.indcs m hm
+    rfl
+  rw [hf, Array.length_toList] at hle
+  have hlt : i' < ms.size := (Array.getElem?_eq_some_iff.mp hget).1
+  obtain ⟨m, hm⟩ := Claim.array_of_size_one ms (by omega)
+  subst hm
+  have hi : i' = 0 := by
+    have h1 : i' < 1 := hlt
+    omega
+  subst hi
+  have e : m = .indc ind := by simpa using hget
+  rw [e]
+
+/-- **An inductive loaded at a member of the family's block, where the block is of at most one
+inductive**: the loaded inductive is the block's only member, at index `0`, where the load's
+inductive or its first constructor is new. -/
+theorem FamLoadCtx.member_of_load (hL : FamLoadCtx C new A cb ms rb crb rs)
+    {ap ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {a b : Bytes.Address}
+    {nl ty np ni nc u blk : SourceValue F} {i : F}
+    (ev : ObsFn Core.W "Ingress::get_ci" [ap] h ptr h' cs) (good : Core.Good (appCtx C new) cs)
+    (ha : Bytes.RepAddressRef Core.addrTy h a ap)
+    (hld : loadValue h' ptr = .ok (.construct Core.kciEnum "Induct"
+      [nl, ty, np, ni, nc, u, blk, .field i]))
+    (hb : Bytes.RepAddressRef Core.addrTy h' b blk)
+    (hnew : (∃ cvT caps, (appCtx C new).env.find? ((appCtx C new).stored.κ (Core.ixAddr a)) =
+        some (.indInfo cvT caps) ∧ ConstantInfo.indInfo cvT caps ∈ new) ∨
+      (∃ cvC nPc nF, (appCtx C new).env.find? ((appCtx C new).stored.κ
+        (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) 0)) = some (.ctorInfo cvC nPc nF) ∧
+        ConstantInfo.ctorInfo cvC nPc nF ∈ new))
+    (hfew : Core.FewInductives (appCtx C new) (Core.ixAddr b)) :
+    Core.ixAddr b = A ∧ ZMod.val i = 0 ∧
+      ∃ ind, ms = #[.indc ind] ∧ Core.ixAddr a = Core.iprjAddr A 0 := by
+  have hx := get_ci_induct_addr ev good.2 ha hld hb
+  have hbh := L1.hashedBlockAt_of_get_ci_induct good ev ha hld hb
+  obtain ⟨hbA, i', ind, hget, hidx⟩ : Core.ixAddr b = A ∧ ∃ (i' : Nat) (ind : Ixon.Inductive),
+      ms[i']? = some (.indc ind) ∧ (ZMod.val i).toUInt64 = i'.toUInt64 := by
+    rcases hnew with ⟨cvT, caps, hfT, hm⟩ | ⟨cvC, nPc, nF, hfC, hm⟩
+    · obtain ⟨x, hx', hname⟩ := hL.member_name hm (fun _ _ _ h => nomatch h)
+      have hn : cvT.name = (appCtx C new).stored.κ (Core.ixAddr a) :=
+        Core.WhnfAux.name_of_find hfT
+      have hax : Core.ixAddr a = x := hL.kappa_eq (hn.symm.trans hname)
+      exact hL.iprj_block_idx hbh hx' (hx.symm.trans hax)
+    · obtain ⟨x, hx', hname⟩ := hL.member_name hm (fun _ _ _ h => nomatch h)
+      have hn : cvC.name =
+          (appCtx C new).stored.κ (Core.cprjAddr (Core.ixAddr b) (ZMod.val i) 0) :=
+        Core.WhnfAux.name_of_find hfC
+      exact hL.cprj_block hbh hx' (hL.kappa_eq (hn.symm.trans hname))
+  rw [hbA] at hfew
+  have hms := hL.one_of_few hfew hget
+  have hi0 : i' = 0 := by
+    rw [hms] at hget
+    have h1 : i' < 1 := (Array.getElem?_eq_some_iff.mp hget).1
+    omega
+  subst hi0
+  have hval : ZMod.val i = 0 := toUInt64_zero_of_lt (val_lt_uint64 i) hidx
+  exact ⟨hbA, hval, ind, hms, by rw [hx, hbA, hval]⟩
+
+/-- **The counts of the only member of a block of one inductive, as a load of it reads them.** -/
+theorem FamLoadCtx.member_counts (hL : FamLoadCtx C new A cb ms rb crb rs)
+    {ind : Ixon.Inductive} (hms : ms = #[.indc ind])
+    {ap ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {a : Bytes.Address}
+    {nl ty u blk : SourceValue F} {p m n i : F}
+    (ev : ObsFn Core.W "Ingress::get_ci" [ap] h ptr h' cs) (good : Core.Good (appCtx C new) cs)
+    (ha : Bytes.RepAddressRef Core.addrTy h a ap)
+    (hld : loadValue h' ptr = .ok (.construct Core.kciEnum "Induct"
+      [nl, ty, .field p, .field m, .field n, u, blk, .field i]))
+    (hxa : Core.ixAddr a = Core.iprjAddr A 0) :
+    ZMod.val m = ind.indices.toNat ∧ ZMod.val n = ind.ctors.size := by
+  subst hms
+  obtain ⟨tyPtr, blkPtr, hld₀, -, hi56, hc56⟩ := former_get_ci_value (E := C.E) good.1 good.2 ha
+    ev (by rw [hxa]; exact hL.members 0 (.indc ind) rfl) hL.record hL.muts
+  rw [hld₀] at hld
+  have hv := Except.ok.inj hld
+  injection hv with _ _ hargs
+  injection hargs with _ hargs
+  injection hargs with _ hargs
+  injection hargs with _ hargs
+  injection hargs with hni hargs
+  injection hargs with hnc _
+  exact ⟨field_count_eq hi56 hni, field_count_eq hc56 hnc⟩
+
 /-- **`proj_ctor` observes the native route at its block**: it asserts `block_is_modeled = 0`. -/
 theorem nativeAt_of_proj_ctor {c : Core.Ctx} {cs : List (Call F)} (hg : Core.Good c cs)
     {b : Bytes.Address} {bp ip ptr : SourceValue F} {h h' : Heap F}
@@ -317,8 +418,80 @@ theorem FamLoadCtx.newLoads (hL : FamLoadCtx C new A cb ms rb crb rs)
     have hnat : NativeAt C.E (Core.ixAddr b) := ⟨bp, h, h', cs, b, ev, good.1, good.2, hb, rfl⟩
     rw [hbA] at hnat
     exact hL.route hnat
-  unitLike := hK.unitLike
-  unitLikeRaw := hK.unitLikeRaw
+  unitLike := by
+    intro ap ptr h h' cs a nl ty u blk p i b cvT caps cvC nPc ev good ha hld hb hfT hfew hfC hm
+    exfalso
+    obtain ⟨hbA, hval, ind, hms, hxa⟩ := hL.member_of_load ev good ha hld hb
+      (hm.imp (fun hm => ⟨cvT, caps, hfT, hm⟩) (fun hm => ⟨cvC, nPc, 0, hfC, hm⟩)) hfew
+    obtain ⟨hidx, hsz⟩ := hL.member_counts hms ev good ha hld hxa
+    rw [ZMod.val_zero] at hidx
+    rw [ZMod.val_one] at hsz
+    obtain ⟨ct, hct⟩ : ∃ ct, ind.ctors[0]? = some ct := by
+      obtain ⟨x, hx⟩ := Claim.array_of_size_one ind.ctors hsz.symm
+      exact ⟨x, by simp [hx]⟩
+    have hx0 : FamAddr A cb rb crb (Core.cprjAddr A 0 0) :=
+      Or.inl (Or.inr ⟨ms, 0, .indc ind, hL.muts, by subst hms; rfl,
+        Or.inr ⟨ind, 0, rfl, by omega, rfl⟩⟩)
+    obtain ⟨ci₀, hf₀⟩ := hL.found _ hx0
+    have hκ := Core.Ctx.stored_key_of_find (c := appCtx C new) hf₀
+    rw [hbA, hval, hκ] at hfC
+    obtain ⟨cv, hcv⟩ := hL.ctorCounts ind ct hms hct _ hfC
+    injection hcv with _ _ hnf
+    exact hL.unitFree ind hms hidx.symm hsz.symm ct hct hnf.symm
+  unitLikeRaw := by
+    intro ap ptr h h' cs a nl ty u blk p i b cvT caps ev good ha hld hb hfT hm hfew hz hnr
+    exfalso
+    obtain ⟨hbA, hval, ind, hms, hxa⟩ := hL.member_of_load ev good ha hld hb
+      (Or.inl ⟨cvT, caps, hfT, hm⟩) hfew
+    obtain ⟨hidx, hsz⟩ := hL.member_counts hms ev good ha hld hxa
+    rw [ZMod.val_zero] at hidx
+    rw [ZMod.val_one] at hsz
+    obtain ⟨ct, hct⟩ : ∃ ct, ind.ctors[0]? = some ct := by
+      obtain ⟨x, hx⟩ := Claim.array_of_size_one ind.ctors hsz.symm
+      exact ⟨x, by simp [hx]⟩
+    -- the zero-field load reads constructor `0` of the block's record
+    obtain ⟨-, -, -, blkBytes, cb', ms', ind', ct', blobs, v', hh, haddr, hexB, -, hcb', hms',
+      hct', -, hldv, hraw⟩ := L1.get_ci_cprj_spec hz.good.2 hz.blockRep hz.observed
+    obtain ⟨lcB, hgetB, hdecB⟩ := LoadedReads.recordOf_inv hL.record
+    have hbB : blkBytes = lcB.rawBytes :=
+      Core.load_escape hgetB hz.good.1 blkBytes hh (haddr.trans hbA)
+    have e1 : cb' = cb := by
+      rw [hbB, hdecB] at hexB
+      exact (Except.ok.inj hexB).symm
+    subst cb'
+    have e2 : ms' = #[.indc ind] := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans (hms ▸ hL.muts))
+    subst ms'
+    rw [hval] at hms'
+    have e3 : ind' = ind := by
+      have e : (#[Ixon.MutConst.indc ind] : Array Ixon.MutConst).toList[0]? = some (.indc ind) :=
+        rfl
+      exact Ixon.MutConst.indc.inj (Option.some.inj (hms'.symm.trans e))
+    subst ind'
+    rw [ZMod.val_zero] at hct'
+    have e4 : ct' = ct := by
+      have e : ind.ctors.toList[0]? = some ct := by
+        rw [Array.getElem?_toList]
+        exact hct
+      exact Option.some.inj (hct'.symm.trans e)
+    subst ct'
+    obtain ⟨nl', ty', blk', idx', cidx', np', u', hz0⟩ := hz.zeroFields
+    rw [hldv] at hz0
+    obtain ⟨-, -, -, hf56, -, tyPtrC, blkPtrC, bC, -, -, hvC, -⟩ := hraw
+    rw [hvC] at hz0
+    have hv := Except.ok.inj hz0
+    injection hv with _ _ hargs
+    injection hargs with _ hargs
+    injection hargs with _ hargs
+    injection hargs with _ hargs
+    injection hargs with _ hargs
+    injection hargs with _ hargs
+    injection hargs with _ hargs
+    injection hargs with hnf _
+    have hf0 : ct.fields.toNat = 0 := by
+      have e := field_count_eq hf56 hnf
+      rw [ZMod.val_zero] at e
+      exact e.symm
+    exact hL.unitFree ind hms hidx.symm hsz.symm ct hct hf0
   eta := by
     intro ac b sa i j cvc cvT caps cnP cnF us l bp ptr nl ty np u blk idx h1 h2 cs1 hfC hcn hpos
       ev good hb hld hfT hmod hsort hnz hrec hsa hnew

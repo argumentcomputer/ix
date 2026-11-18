@@ -4,10 +4,11 @@ import IxVMRefinement.Claim.TopProj
 
 /-! # What the observed validation of a role gives a group's admission
 
-`Admits ρ t g R R'` asks, of the run, that every new unit was checked at the group's validation
-limit (`checked`) and that the record of every kept or prelude role of the group is held
-(`kept`). This file reads both off the observed validation of a role (`RoleValidationIn`), for
-the observed run record.
+A group's admission asks, of the run, that every new unit was checked at the group's validation
+limit or is a block's selected family record (`FamilyAdmits.checked`), and that the record of
+every kept or prelude role of the group is held (`Admits.kept`). This file reads the check and
+the holding off the observed validation of a role (`RoleValidationIn`), for the observed run
+record.
 
 * `unitCheckedAt_of_topRec`: a record a walk at a limit recorded is the run store's record at
   its address, and its unit was checked under the role context at that limit
@@ -90,8 +91,8 @@ theorem kept_walked {r : Ix.Kernel.Role} (hg : 6 ≤ Ix.SpecDigest.groupOf r)
 
 /-- **The record of a kept or prelude role of a group from 6 on, other than a standard axiom,
 is a record of the run's store checked at the group's validation limit**, with the closed list
-of records its walk checked there: what `Admits.kept` and `Admits.checked` ask of the run for
-that role, from the role's observed validation. -/
+of records its walk checked there: what `Admits.kept` and the first alternative of
+`FamilyAdmits.checked` ask of the run for that role, from the role's observed validation. -/
 theorem RoleValidationIn.kept_checked {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {g : Nat} {r : Ix.Kernel.Role} {E₀ : Ixon.Env}
     (hH : LoadedReads.HashedRecordsStored calls E₀) (hg6 : 6 ≤ g) (hr : r ∈ roleGroup g)
