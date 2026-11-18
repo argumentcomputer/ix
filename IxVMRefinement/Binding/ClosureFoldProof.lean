@@ -261,8 +261,8 @@ theorem stored_keptIn {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
 /-- **The closure fold with the family form** (`ClosureFoldStatement`). -/
 theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) :
     ClosureFoldStatement.{u} L := by
-  intro calls ρ t g hg6 hg hall ht hunit hfam htwin
-  intro R R' env famOf₀ famOf adv cont hb hW hSF hadm hrd hFam hFA
+  intro calls ρ t g hg6 hg hall ht hunit hfam htwin R R' env famOf₀ famOf adv cont hb hW hSF hadm hrd
+    hFam hFA
   obtain ⟨⟨bAddr, hGFC⟩, hRF⟩ := hFam
   have htwf : t.wf = true := wf_of_check ht
   have hspec := closureStore_spec (t := t) (g := g) hadm
