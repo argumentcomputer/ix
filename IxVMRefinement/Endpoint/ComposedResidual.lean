@@ -5,6 +5,7 @@ import IxVMRefinement.Assembly.NativeAliasFormer
 import IxVMRefinement.Assembly.TypingDefnBlock
 import IxVMRefinement.Assembly.TypingDefnLimKeyed
 import IxVMRefinement.Assembly.TypingKeyFree
+import IxVMRefinement.Assembly.RawQueryCoverage
 
 /-! # The composed statement from its open obligations
 
@@ -29,7 +30,8 @@ Proved inside, with no hypothesis left:
 * the typing claim's export, the walk's limit and the assembly's reading of the walk
   (`Claim.claimPhase_typing`, `TopWalkCore.topLim`, `Claim.TopWalk.graph`);
 * what every unit's step reads of the walk (`unitSteps_of_kinds`): the table's check, the run
-  store, the store the step runs against, the inert clause, the cover clause (from
+  store, the store the step runs against and its coverage of the run's hashed records
+  (`canonicalHashCoverage_frame`), the inert clause, the cover clause (from
   `coverAt_of_graph` and `Claim.TopWalk.need`), the check of the record at the walk's limit,
   that the witness's environment stores none of the record's constant addresses and that
   their keys are free (`keyFree_of_not_stored`), and for a block of one inductive type its
@@ -76,7 +78,8 @@ the run's calls, the table, the run's store, the unit's address and its record. 
 export at the binding `bAddr`, the assembly's reading of it, a step context and a top-walked
 record `c` at `A` in Lean's logic of that kind, the step is handed what holds of every unit:
 the table's check, the run store, that the run's hashed records are stored, the store the step
-runs against, that no reference the record uses is an inert axiom's, the cover clause at every
+runs against and that it holds every record the run hashed with its exact decoding, that no
+reference the record uses is an inert axiom's, the cover clause at every
 environment the skeleton hands the step, the walk's check of the record at the walk's limit
 (every member of a block, or the record), that the witness's environment stores none of the
 record's constant addresses, and that their keys are free. It must give the unit's step for
@@ -95,6 +98,7 @@ def WalkedUnitStep
         Top A → recordOf E₀ A = some c → InLogic c → Kind calls t E₀ A c →
         t.check = .ok () → LoadedReads.RunStore calls E₀ →
         LoadedReads.HashedRecordsStored calls E₀ → StepStore calls t E₀ E →
+        L1.CanonicalHashCoverage E calls →
         InertClause t c → (∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c) →
         ((∃ ms, c.info = .muts ms ∧
             ∀ k, k < ms.size → Claim.MemberCheckedLimAt calls bAddr t A ms k lim) ∨
@@ -147,6 +151,16 @@ theorem unitSteps_of_kinds
   have hinert : InertClause t c := hW.inertClause hT hc
   have hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c :=
     coverAt_of_graph hG hctx.shape htwf hT hc hneed
+  have hcanon₀ : L1.CanonicalHashCoverage E₀ calls := by
+    intro bytes value hashed size exactRead
+    obtain ⟨entry, stored, bytesEq, cached⟩ := hW.hashedStored bytes value hashed size
+      (L1.deConstant_of_deConstantExact exactRead) exactRead
+    refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
+    rw [bytesEq]
+    exact exactRead
+  have hcanon : L1.CanonicalHashCoverage E calls :=
+    Assembly.canonicalHashCoverage_frame hcanon₀ hctx.recordsFor.1
+      (fun a v h => hctx.runRecord a v ((hW.runStore.recordOf_eq_recordAt a).trans h))
   have hchk : (∃ ms, c.info = .muts ms ∧
         ∀ k, k < ms.size → Claim.MemberCheckedLimAt calls bAddr t A ms k lim) ∨
       Claim.CheckedLimAt calls bAddr t A lim := by
@@ -166,7 +180,7 @@ theorem unitSteps_of_kinds
       rw [hfresh x hx] at hs
       simp at hs
     exact h calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc hlog hkind
-      ht hW.runStore hW.hashedStored hctx.toStepStore hinert hcover hchk hns
+      ht hW.runStore hW.hashedStored hctx.toStepStore hcanon hinert hcover hchk hns
       (fun x hx => keyFree_of_not_stored hctx.shape ht (hns x hx))
       env hext hnd hinv hXe href hfresh
   rcases hk with ⟨d, hinfo⟩ | ⟨rc, hinfo⟩ | ⟨ms, hinfo⟩
@@ -199,7 +213,7 @@ theorem standaloneDefinition_of_keepsValuesKeyed
     WalkedUnitStep.{u} X fun _ _ _ _ c =>
       ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind = .defn := by
   intro calls bAddr t seeds E₀ lim Top rank hW hG R envT E hctx A c hT hc hlog hkind ht hS hcov
-    hst hinert hcover hchk hns hkeys
+    hst hcanon hinert hcover hchk hns hkeys
   obtain ⟨d, hinfo, hk⟩ := hkind
   have htwf : t.wf = true := by
     unfold Ix.Kernel.RoleTable.wf
