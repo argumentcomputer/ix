@@ -46,9 +46,8 @@ theorem get_count_stream {s x_n x_s2 : SourceValue F} {bytes : List UInt8} {h h'
     obtain ⟨-, hy⟩ := htup
     obtain ⟨-, hx⟩ := hr
     subst hh hm
-    refine ⟨_, ?_⟩
     rw [hx, hy]
-    exact L1.Stream.mono e2.heap_extends hrest
+    exact ⟨_, L1.Stream.mono e2.heap_extends hrest⟩
 
 /-- **`IxonDeserialize::read_byte`** leaves a stream: the tail of the stream's first cell. -/
 theorem read_byte_stream {s x_b x_s2 : SourceValue F} {bytes : List UInt8} {h h' : Heap F}
