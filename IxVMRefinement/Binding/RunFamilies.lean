@@ -309,14 +309,14 @@ theorem routeNew_of_run (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded
       apply hind
       exact List.filter_eq_nil_iff.mpr fun m hm => by
         obtain ⟨d, rfl⟩ := hdefs m hm
-        simp [Core.Specs.Callees.isIndc]
+        simp [Core.Specs.Callees.isIndc, Core.isIndc]
     · exact modeled_of_run hC g B c₁ ms hnew hcE (hlogic B c₁ hnew hcR') hms hinds hmod
         ⟨0, hpos, hmem 0 hpos⟩
     · exfalso
       apply hind
       exact List.filter_eq_nil_iff.mpr fun m hm => by
         obtain ⟨d, rfl⟩ := hrecs m hm
-        simp [Core.Specs.Callees.isIndc]
+        simp [Core.Specs.Callees.isIndc, Core.isIndc]
   · have e : p = c₁ := Option.some.inj (hp.symm.trans hcE)
     rw [e] at hproj
     exact (proj_not_block hproj ⟨ms, hms⟩).elim
