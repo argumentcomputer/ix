@@ -304,10 +304,10 @@ sides of each recursor's rules. `env` stores the advice.
   recursors);
 * `table`: the advice names a model for each member, in order (`get_addrs`, three times);
 * `members`: each member against its model (`members_val`, three times);
-* `scoped`: a member's annotated type names, of the family's members, only earlier ones. For a
-  recursor this is `expr_mentions_addrs(ty, fam) = 0` in `check_recs`. For a type and a
-  constructor `(change)`: the same assertion on a type's type against every member, and on a
-  constructor's type against the constructors and the recursors;
+* `typesScoped`: a member's annotated type names, of the family's members, only earlier
+  ones. For a recursor this is `expr_mentions_addrs(ty, fam) = 0` in `check_recs`. For a type
+  and a constructor `(change)`: the same assertion on a type's type against every member, and
+  on a constructor's type against the constructors and the recursors;
 * `recs`: each rule of each recursor against its theorem (`check_recs`, `check_rules`);
 * `eqStored`: the pinned equality is stored (the statements are equations at the equality
   role's address, `check_iota_rule`). -/
@@ -317,7 +317,7 @@ structure FamilyCheckFacts (env : Env .anon) (blk : List (ConstantInfo .anon))
   kinds : (nonrecsOf blk).all isTypeOrCtor = true
   table : adv.models.map (·.1) = blk.map (·.name)
   members : MembersFacts env adv.ren blk tys
-  scoped : typesScopedB (blk.map (·.name)) tys = true
+  typesScoped : typesScopedB (blk.map (·.name)) tys = true
   recs : RecsFacts env adv.ren blk tys (recsOf blk) (tys.drop (nonrecsOf blk).length) rhsss
     adv.thms
   eqStored : recsOf blk ≠ [] → env.find? eqName = some eqA
