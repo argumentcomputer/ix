@@ -18,7 +18,8 @@ key the environment stores (`keysAgree_basis`), and differ only where it stores 
 * The prefix invariant: the declaration layer's, store, unresolved-key and η fields do not
   read the table; the load contract carries over by `scopedLoadFacts_table`; the companions by
   `coreCompanions_table` (a stored recursor's major head and rule constructors are basis keys,
-  decided); `roleRes` and the guard are proved at `t` as at the default table.
+  decided); `roleRes` is proved at `t` as at the default table, and no projection table is
+  stored.
 * The public shape: the store clauses do not read the table; the kept and prelude clauses are
   the pins; `ReadingOf.stored` reads the key of a basis role's record, the same under `t`.
 * `basisBase_at`: the fold's basis hypothesis (`BasisBase`) for every run whose table is well
@@ -220,7 +221,7 @@ theorem prefixInv_basis_at (ht : t.check = .ok ()) (hpre : PreludePinned t)
       (inForce_of_allBound ClosedFacts.defaultTable_allBound)
       (majorHead_keys ht hpre) (ruleCtor_keys ht hpre)
     loads := scopedLoadFacts_table (keysAgree_basis ht hpre) h.loads (roleRes_basis_at ht hlim)
-      (guardAt_of_noTable basisEnv_noProjTable)
+      (Core.projTablesFire_of_noTable fun k tbl => basisEnv_noProjTable _ tbl)
     etaStable := h.etaStable }
 
 /-! ## The public shape at `t` -/
@@ -295,7 +296,6 @@ theorem bfacts_basis_at (ht : t.check = .ok ()) (hpre : PreludePinned t) (hall :
   obtain ⟨hpin, hnone⟩ := opsPinned_of_names basisEnv_names ops_not_basisRoles
   exact {
     inv := fun E hE lim _ hlim => prefixInv_basis_at ht hpre hall hE hlim
-    guard := fun E _ lim => guardAt_of_noTable basisEnv_noProjTable
     whole := fun E hE a B c cb ms hfa hra hown hne hrB hms =>
       blockStored_basis_at ht hpre (basis_facts.{0}.whole E hE a B c cb ms
         (by rw [← find_keyOf_basis ht hpre]; exact hfa) hra hown hne hrB hms)

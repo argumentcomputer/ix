@@ -21,7 +21,7 @@ the circuit keeps (`mk_nat_offset_stuck`, `mk_nat_binop_stuck`).
 reads (`role_is`, `role_addr`, `role_used_implicitly`) is bound; the roles of its block and its
 dependencies are then bound too (`RoleTable.check`, through `EnvFacts.tableWf`), and the key of a
 bound address is its role (`keyOf`, no address bound twice). A proof of a spec below reads those
-facts from `ScopedCoreFacts`; the one environment guard a spec states is `strLitSupported`, which
+facts from `ScopedCoreBase`; the one environment guard a spec states is `strLitSupported`, which
 `str_lit_to_ctor` gives and `str_lit_delta_step` takes. -/
 
 namespace IxVM.Refinement.Core.Specs.Nat

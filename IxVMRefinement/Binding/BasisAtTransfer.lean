@@ -5,10 +5,10 @@ import IxVMRefinement.Binding.Defs
 The scoped load contract `Core.ScopedLoadFacts` of a prefix context (`Core.Ctx.stored`) reads
 the role table through the context's keying, which resolves exactly the addresses whose key
 the environment stores (and the markers of those addresses), through `roleRes`, and through
-the guard's role context. Two tables whose keys agree wherever the environment stores one
+the firing of the stored projection tables. Two tables whose keys agree wherever the environment stores one
 (`KeysAgree`) give keyings that agree at every address that is no marker and resolve the same
-addresses. So every field of the contract but `roleRes` and the guard carries over from one
-table to the other (`scopedLoadFacts_table`).
+addresses. So every field of the contract but `roleRes` and the firing of the stored tables
+carries over from one table to the other (`scopedLoadFacts_table`).
 
 * `ciRep_rekey_off`: a loaded constant represented under one keying is represented under
   another that agrees with it off the markers and permits the same projections (the markers'
@@ -185,13 +185,13 @@ end KeysAgree
 /-! ## The load contract under another table -/
 
 /-- **The load contract of a prefix under another role table** whose keys agree with the
-first's wherever the environment stores: every field but `roleRes` and the guard carries
-over. -/
+first's wherever the environment stores: every field but `roleRes` and the firing of the stored
+projection tables carries over. -/
 theorem scopedLoadFacts_table {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
     {t₁ t₂ : Ix.Kernel.RoleTable} {lim : Option Nat} (hk : KeysAgree env t₁ t₂)
     (h : Core.ScopedLoadFacts (Core.Ctx.stored ⟨E, env, t₁, lim⟩))
     (hres : RoleResAt (Core.Ctx.stored ⟨E, env, t₂, lim⟩))
-    (hguard : ProjGuard (Core.Ctx.stored ⟨E, env, t₂, lim⟩)) :
+    (hfire : Core.ProjTablesFire t₂ E env) :
     Core.ScopedLoadFacts (Core.Ctx.stored ⟨E, env, t₂, lim⟩) := by
   have hI : ∀ a : Bytes.Address, (Core.Ctx.stored ⟨E, env, t₂, lim⟩).κ (Core.ixAddr a) =
       (Core.Ctx.stored ⟨E, env, t₁, lim⟩).κ (Core.ixAddr a) :=
@@ -282,7 +282,12 @@ theorem scopedLoadFacts_table {E : Ixon.Env} {env : Ix.Kernel.Env .anon}
       intro addr ptr h₀ h₁ cs a b nl ty np ni nc u blk i ev hal hne hg ha hld hblk
       rw [hI] at hne
       exact h.inductBlock addr ptr h₀ h₁ cs a b nl ty np ni nc u blk i ev hal hne hg ha hld hblk
-    projTablesGuard := hguard
+    projCtorTele := by
+      intro bp ip ptr h₀ h₁ cs b i ev hg hb hip j cvC nP nF tbl hc htbl
+      rw [hCP] at hc
+      rw [hIP] at htbl
+      exact h.projCtorTele bp ip ptr h₀ h₁ cs b i ev hg hb hip j cvC nP nF tbl hc htbl
+    projFire := hfire
     canonical := h.canonical
     storedRes := fun a ci hf => by
       rw [Core.Ctx.stored_key_of_find (c := ⟨E, env, t₂, lim⟩) hf]

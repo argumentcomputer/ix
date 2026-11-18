@@ -12,9 +12,6 @@ recursor `cn` is the circuit's output at the record and the environment, and for
 store for `R` matches at the parent, the late relation holds with `cn` and `cn` reloads there.
 The parent read at the choice store `Ec` is a parent at every store for `R` when `R` holds its
 record and the native route's answer stands at every store for `R` (`hnative`).
-
-A recursor is no constructor and no projection table, so the guard is kept at every limit
-(`guardAt_append`).
 -/
 
 universe u
@@ -67,7 +64,7 @@ theorem bUnitStep_recLate {t : Ix.Kernel.RoleTable} {R E₀ Ec : Ixon.Env}
     (hout : ∀ env P ip, StepAt.{u} t envT E₀ Ec (some n) A c env → RecParent t Ec env P ip →
       Q P → BRecLateOut t R E₀ A env P ip) :
     BUnitStep.{u} (fun E => LateRegistry.{u} t E) t R envT E₀ n A c := by
-  intro env hext hnd hinv hguard hYe href hfresh
+  intro env hext hnd hinv hYe href hfresh
   have hstep : StepAt.{u} t envT E₀ Ec (some n) A c env := ⟨hext, hnd, hinv Ec hRc, href, hfresh⟩
   obtain ⟨P, ip, hpar, hQ⟩ := hparent env hstep
   obtain ⟨cmR, hcmR⟩ := Option.isSome_iff_exists.mp (hheld env P ip hpar)
@@ -99,22 +96,14 @@ theorem bUnitStep_recLate {t : Ix.Kernel.RoleTable} {R E₀ Ec : Ixon.Env}
   obtain ⟨famc, hfamc, hatc, hnamePc, hmatchc⟩ := hRegc.at_parent ht hfP hres hcm hcmi hnat
   obtain ⟨⟨cvRc, mIc, rPc, rulesc, hrunc⟩, -⟩ := hall Ec hRc famc ⟨hatc, hnamePc, hmatchc⟩
   obtain ⟨hfreshN, -, -, cvx, ax, bx, rsx, hcn⟩ := late_head hrunc
-  have hkind : NoCtorProj cn := by
-    rw [hcn]
-    exact ⟨(fun _ _ _ e => nomatch e), (fun _ e => nomatch e)⟩
   have hown : ConstAddrOf A c A := Or.inl ⟨rfl, Or.inr (Or.inl ⟨rc, hinfo⟩)⟩
   have hfreshL : ∀ ci ∈ [cn], env.find? ci.name = none := by
     intro ci hci
     obtain rfl := List.mem_singleton.mp hci
     exact hfreshN
-  refine ⟨[cn], List.nodup_singleton _, hfreshL, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro E hE lim hinvE _
+  refine ⟨[cn], List.nodup_singleton _, hfreshL, ?_, ?_, ?_, ?_, ?_⟩
+  · intro E hE lim hinvE
     exact (hlate E hE lim hinvE (hYe E hE)).1
-  · intro E hE lim
-    refine guardAt_append (hguard E hE lim) (hinv E hE) hfreshL ?_
-    intro ci hci
-    obtain rfl := List.mem_singleton.mp hci
-    exact hkind
   · intro E hE
     exact (hlate E hE (some n) (hinv E hE) (hYe E hE)).2
   · intro ci hci

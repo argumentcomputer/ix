@@ -78,8 +78,8 @@ theorem RawRecordFacts.inductBlock {c : ScopedCtx} (facts : RawRecordFacts c)
   exact ⟨cb, xs, ind, hcb, hxs, hind⟩
 
 /-- The semantic core's load contract also supplies its raw query identities. -/
-theorem ScopedLoadFacts.rawRecords {c : ScopedCtx} (hres : ∀ a, c.κ a ≠ unresolvedKey)
-    (facts : ScopedLoadFacts c) :
+theorem ScopedLoadBase.rawRecords {c : ScopedCtx} (hres : ∀ a, c.κ a ≠ unresolvedKey)
+    (facts : ScopedLoadBase c) :
     RawRecordFacts c where
   inductiveRead := by
     intro addr ptr h h' cs a nl ty np ni nc u blk idx ev allowed good ha loaded

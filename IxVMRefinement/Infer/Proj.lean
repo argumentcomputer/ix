@@ -1,4 +1,5 @@
 import IxVMRefinement.Infer.Basic
+import IxVMRefinement.Core.ProjFire
 import IxVMRefinement.Infer.Close
 import IxVMRefinement.Infer.ProjBody
 import IxVMRefinement.Whnf.Proj
@@ -595,7 +596,7 @@ theorem lv_snoc {ls : List KLevel} {l : KLevel} {lp vp r : SourceValue F} {h h' 
   rw [Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol, klevel_node_eq] at hres
   exact hres
 
-theorem ind_params_eq (c : ScopedCtx) (hc : ScopedCoreFacts c)
+theorem ind_params_eq (c : ScopedCtx) (hc : ScopedCoreBase c)
     {addr ptr nl ty ni nc u blk : SourceValue F} {h1 h2 : Heap F} {cs : List (Call F)}
     {s b : Bytes.Address} {nPS nP : Nat} {i : F}
     (ev : ObsFn W "Ingress::get_ci" [addr] h1 ptr h2 cs)
@@ -631,6 +632,30 @@ theorem ind_params_eq (c : ScopedCtx) (hc : ScopedCoreFacts c)
   have hnP_eq : nP = ind.params.toNat := hnP_ind cb xs ind hcb hmuts hindc
   rw [← hnP_eq] at hnp_eq
   exact (NatAux.natCast_inj (by omega) (by omega)).mp (NatAux.field_inj hnp_eq)
+
+/-- **The store's record at a loaded structure's address is the projection of the member the
+load names**: the member index and the block the `Induct` value carries are those of the
+inductive projection record the store holds at the address. -/
+theorem ind_member_record (c : ScopedCtx) (hc : ScopedCoreBase c)
+    {addr ptr nl ty np ni nc u blk : SourceValue F} {h1 h2 : Heap F} {cs : List (Call F)}
+    {s b : Bytes.Address} {i : F}
+    (ev : ObsFn W "Ingress::get_ci" [addr] h1 ptr h2 cs)
+    (allowed : c.allowedTop "Ingress::get_ci" [addr] h1) (res : c.κ (ixAddr s) ≠ unresolvedKey)
+    (good : CoreGood c cs)
+    (hs : Bytes.RepAddressRef addrTy h1 s addr)
+    (ld : loadValue h2 ptr = .ok (.construct kciEnum "Induct"
+      [nl, ty, np, ni, nc, u, blk, .field i]))
+    (hb : Bytes.RepAddressRef addrTy h2 b blk) :
+    ∃ cm : Ixon.Constant, Ix.Cert.recordAt c.E (ixAddr s) = some cm ∧
+      cm.info = .iPrj ⟨(ZMod.val i).toUInt64, ixAddr b⟩ := by
+  obtain ⟨cm, b', i', hcm, hb', hi', hinfo⟩ :=
+    hc.loads.inductRecord addr ptr h1 h2 cs s nl ty np ni nc u blk (.field i)
+      ev allowed res good.raw hs ld
+  have hi_eq : i' = i := (NatAux.field_inj hi').symm
+  subst i'
+  have hb_eq : b' = b := IxVMRep.repAddressRef_det U32.Goldilocks.compatible hb' hb
+  subst b'
+  exact ⟨cm, hcm, hinfo⟩
 
 theorem peel_n_foralls_with_types_rep (c : ScopedCtx) (N : Nat) :
     ∀ {x_e x_n x_types r x_after x_ctx : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
@@ -953,7 +978,7 @@ end ProjAux
 
 /-- **Shared projection inference step** at grade `g` (`.full` for `k_infer_proj`, `.io` for
 `k_infer_only_core`'s `.Proj` arm). -/
-theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
+theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreBase c) (hfire : ProjGuardFires c)
     {g : Ix.Kernel.Rules.Grade} {calls : List (Call F)} (ih : IH c calls) (good : CoreGood c calls)
     {x_rc x_struct_addr x_fidx x_e1 x_types r : SourceValue F} {h h' : Heap F}
     {d : Nat} {Γ : Nat → KExpr} {s : Bytes.Address} {fi : F} {PE : KExpr}
@@ -1143,8 +1168,8 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
       ev209 g207.raw hs159 (by rw [← hni0, ← heq301, ← hidx_eq]; exact ld203) hbS
       0 cvC nP nF
       hfindC hbindC
-  obtain ⟨hteleC, hguard_eq⟩ :=
-    hc.loads.projTablesGuard x_block_addr x_ind_idx p364 m194 m357 cs370 bS iS
+  have hteleC : Ix.Kernel.Expr.ctorTeleOk cvC.type (nP + nF) = true :=
+    hc.loads.projCtorTele x_block_addr x_ind_idx p364 m194 m357 cs370 bS iS
       ev372 g370.raw hbS hidx_eq 0 cvC nP nF tbl hfindC htbl
   have ld203' : loadValue m194 p201 = .ok (.construct kciEnum "Induct"
       [x_ind_nlvls, x_ind_ty, .field (nPS : F), x_n_indices, x_num_ctors, w234,
@@ -1154,6 +1179,16 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
   have hnPS_eq : nPS = nP :=
     ProjAux.ind_params_eq c hc ev209 (good.allowedTop (by simp_all)) (by resolve_key) g207
       hs159 ld203' hbS hnPS hnP hnP_ind
+  have allowed209 : c.allowedTop "Ingress::get_ci" [x_head_addr] m159 := good.allowedTop (by simp)
+  obtain ⟨cmS, hrecS0, hinfoS⟩ :=
+    ProjAux.ind_member_record c hc ev209 allowed209 hresS g207 hs159 ld203' hbS
+  have hrecS : Ix.Cert.recordAt c.E (iprjAddr (ixAddr bS) (ZMod.val iS)) = some cmS := by
+    rw [← hsaddr]
+    exact hrecS0
+  have hindS : c.env.find? (c.κ (iprjAddr (ixAddr bS) (ZMod.val iS))) =
+      some (.indInfo cvS caps) := by
+    rw [← hkS0]
+    exact hfindS
   rw [hnPS_eq] at hp_eq hArgs_nPS hpis
   have E548 : Heap.Extends h m548 := E510.trans e560
   -- 7. Field index in range and projected type agreement
@@ -1235,11 +1270,11 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c)
     have hg0_us : ∀ ψ, Ix.Kernel.Level.eval ψ
         (Ix.Kernel.Level.subst (List.range us.length) us g_lvl) = 0 :=
       fun ψ => (WhnfAux.lvEq_subst_range (fun _ => rfl) hEq ψ).trans (hg0 ψ)
-    exact hguard_eq heqv fi x_rc x_block_addr v614 m548 m618 cs626 g_lvl us hltF husT
-      ev628' g626.raw hrc548 hbS548 hg_lvl hg0_us φ
+    exact hfire ih (by lt_calls) g626 ev628' hrc548 hbS548 ev372' g370.raw hbS hindS hrecS hinfoS
+      hfindC htbl hnFt hltF hg_lvl husT hg0_us heqv φ
 
 /-- `KernelInfer::k_infer_proj`: full-grade projection inference (`Infer.proj`). -/
-theorem k_infer_proj_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
+theorem k_infer_proj_step (c : ScopedCtx) (hc : ScopedCoreBase c) (hfire : ProjGuardFires c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::k_infer_proj" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_proj c args h r h' calls := by
@@ -1258,7 +1293,7 @@ theorem k_infer_proj_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
   have g12 : CoreGood c cs12 := good.sub fun x hx => by rw [hc716]; simp [hx]
   have hlt520 : cs520.length < calls.length := by rw [hc716]; lt_calls
   have g520 : CoreGood c cs520 := good.sub fun x hx => by rw [hc716]; simp [hx]
-  refine infer_proj_common c hc ih good hrc hfi htypes ha hperm hPE hc716 ?_ ev52 ev91 ld127
+  refine infer_proj_common c hc hfire ih good hrc hfi htypes ha hperm hPE hc716 ?_ ev52 ev91 ld127
     ev169 heq192 ev209 ld203 heq301 ev315 ev372 ld366 heq478 ev492 ?_ ev560 ev628 ?_ ev679 ev613
     he714 he715
   · obtain ⟨TPE, hTPE, hinf⟩ := ih.get (.infer .k_infer) hlt12 ev14 rc e1 types rfl g12

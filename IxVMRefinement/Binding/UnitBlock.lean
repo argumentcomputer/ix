@@ -125,7 +125,7 @@ theorem bUnitStep_defnBlock {Y : Ixon.Env → Ix.Kernel.Env .anon → Prop}
     (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
     (hY : ∀ E, KeepsValues (Y E)) :
     BUnitStep.{u} Y t R envT E₀ n B cb := by
-  intro env hext hnd hinv hguard hYe href hfresh
+  intro env hext hnd hinv hYe href hfresh
   have hc : recordOf E₀ B = some cb := recordOf_of_loaded hloaded hR
   have hbound : Bounded calls := (hst.good env none).2
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
@@ -223,11 +223,8 @@ theorem bUnitStep_defnBlock {Y : Ixon.Env → Ix.Kernel.Env .anon → Prop}
         · obtain ⟨i, mj, hi, hmj, hn⟩ := hacc.named ci hci'
           exact ⟨i, mj, Nat.lt_succ_of_lt hi, hmj, hn⟩
   obtain ⟨acc, hacc⟩ := hfold ms.size (Nat.le_refl _)
-  refine ⟨acc, hacc.nodup, hacc.fresh, fun E hE lim h _ => hacc.trans E hE lim h, ?_,
+  refine ⟨acc, hacc.nodup, hacc.fresh, fun E hE lim h => hacc.trans E hE lim h,
     hacc.extra, ?_, ?_, ?_⟩
-  · intro E hE lim
-    exact guardAt_append (hguard E hE lim) (hinv E hE) hacc.fresh
-      (fun ci hci => noCtorProj_of_isValueConst (hacc.value ci hci))
   · intro ci hci
     obtain ⟨i, mi, -, hmi, hn⟩ := hacc.named ci hci
     rw [hn]
