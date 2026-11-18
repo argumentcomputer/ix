@@ -8,9 +8,10 @@ import IxVMRefinement.Assembly.TypingBasisProj
 
 `familyBlockRow_of_check`: the residual theorem's row `familyBlock` (`FamilyBlockRow`) from the
 circuit side's facts that read the family check (`FamilyBlockCheckRow`): the seam, the
-companion facts of each recursor the step stores, and the six load facts at its new constants
-that read the family check (`FamilyLoadsCheck`; the other eight are `FamLoadCtx.newLoads`, from
-the store, the records and the route fact, `famLoadCtx_of_step`). The other two facts
+companion facts of each recursor the step stores, and the three load facts at its new constants
+that read the family check (`FamilyLoadsCheck`; the other eleven are `FamLoadCtx.newLoads`, from
+the store, the records, the route fact and the walk's check of the block,
+`famLoadCtx_of_step`). The other two facts
 `familyBlockRow_of_circuit` takes from the circuit side are proved at the row:
 
 * `famBlockRecord_of_run`: the block's record is a block of inductives with its member and
@@ -20,11 +21,13 @@ the store, the records and the route fact, `famLoadCtx_of_step`). The other two 
   block's first member (`MemberCheckedLimAt.dispatch`), the dispatch's functionality and the
   run's coverage (`modeledAt_of_modeledRoute`);
 
-and `hclaim` is `familyClaimRow`. Two of the load facts need the run beyond the route fact:
+and `hclaim` is `familyClaimRow`. Three of the load facts need the run beyond the route fact:
 `famUnitFree_of_run` (a block of one inductive whose member has no index and one constructor
 has a field in it: the dispatch at the store answers `1`, `famBlockRoute_of_run`, while the
 walk's modeled constructor loop gives a field-less constructor the shape the dispatch answers `0`
-at, `modeledCtor_trees`), and the stored constructor's counts (`storedAs_ctor`). -/
+at, `modeledCtor_trees`), the stored constructor's counts (`storedAs_ctor`), and the
+constructors' shapes at a block of one inductive (`famCtorTrees_of_run`), which with the
+dispatch's answer `1` refute the recursion scan's answer `0` at its member. -/
 
 universe u
 
@@ -216,7 +219,7 @@ theorem famUnitFree_of_run {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   have hdec : L1.EnvDecoded E := hctx.recordsFor.1
   have hrec : ∀ a d, recordOf E₀ a = some d → recordOf E a = some d := fun a d hd' =>
     (recordOf_eq_recordAt_of_decoded hdec a).trans (hctx.runRecord a d hd')
-  obtain ⟨ct', T, Bd, hct', hET, hpeel, hhd, hlen, hat⟩ :=
+  obtain ⟨ct', T, Bd, hct', -, hET, hpeel, hhd, hlen, hat⟩ :=
     modeledCtor_trees (c := ⟨E, Ix.Kernel.Env.empty, t, none⟩)
       (hctx.good Ix.Kernel.Env.empty none) (hrec _ _ hc) hmuts
       (hrec _ _ (hB.members 0 (.indc ind) rfl)) hmod hm0 0 (by omega)
@@ -239,6 +242,53 @@ theorem famUnitFree_of_run {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   rw [blockRoute_one (hrec _ _ hc) hmuts hctl, hans] at hR
   exact Bool.false_ne_true (Option.some.inj hR)
 
+/-- **The constructors' shapes at a block of one inductive at the family row**: the walk's check
+of the member ran the modeled constructor loop (the route fact refutes the native branch), whose
+return-type check gives each constructor's stored type, read as the dispatch reads it, a
+telescope of its parameters and fields into a constant applied to `params + indices` arguments,
+the first `params` of them atoms (`modeledCtor_trees`). -/
+theorem famCtorTrees_of_run {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {seeds : List _root_.Address} {E₀ : Ixon.Env} {lim : Option Nat}
+    {Top : _root_.Address → Prop} {rank : _root_.Address → Nat} {R : Ixon.Env}
+    {envT : Ix.Kernel.Env .anon} {E : Ixon.Env}
+    {fam twin : _root_.Address → Option _root_.Address}
+    {adv : _root_.Address → _root_.Address → Prop} {Inner : _root_.Address → Prop}
+    (hTW : Claim.TopWalk calls t seeds E₀ lim Top rank)
+    (hrun : FamilyRun calls t envT E₀ lim Top rank fam twin adv Inner)
+    (hctx : StepCtx.{u} calls t R envT E₀ E)
+    {A rb : _root_.Address} {c : Ixon.Constant} (hTop : Top A) (hc : recordOf E₀ A = some c)
+    (hlog : InLogic c) (hfam : fam A = some rb) :
+    ∀ ind, c.info = .muts #[.indc ind] → ∀ j < ind.ctors.size,
+      ∃ (ct : Ixon.Constructor) (T Bd : Route.ScanTree),
+        ind.ctors[j]? = some ct ∧ ct.params.toNat = ind.params.toNat ∧
+        Route.ExprTree c.refs.toList
+          (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
+          c.sharing.toList 4294967295 ct.typ T ∧
+        T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
+        Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
+        ∀ k < ct.params.toNat, Bd.args[k]? = some .atom := by
+  intro ind hmuts
+  have hmod := famModeledAt_of_run hTW hrun hctx hTop hc hfam
+  obtain ⟨ms, hB⟩ := famBlockRecord_of_run hTW hrun hTop hc hlog hfam
+  have hms : ms = #[.indc ind] := Ixon.ConstantInfo.muts.inj (hB.muts.symm.trans hmuts)
+  subst hms
+  obtain ⟨bAddr, hW, -⟩ := hTW
+  have hchk : (∃ ms, c.info = .muts ms ∧
+        ∀ k, k < ms.size → Claim.MemberCheckedLimAt calls bAddr t A ms k lim) ∨
+      Claim.CheckedLimAt calls bAddr t A lim := by
+    obtain ⟨c', hc', h⟩ := hW.checked A hTop
+    have e3 : c' = c := Option.some.inj (hc'.symm.trans hc)
+    rw [e3] at h
+    exact h
+  have hm0 : Claim.MemberCheckedLimAt calls bAddr t A #[.indc ind] 0 lim :=
+    Claim.membersChecked_of_block hW.runStore hc hmuts hchk 0 Nat.zero_lt_one
+  have hdec : L1.EnvDecoded E := hctx.recordsFor.1
+  have hrec : ∀ a d, recordOf E₀ a = some d → recordOf E a = some d := fun a d hd' =>
+    (recordOf_eq_recordAt_of_decoded hdec a).trans (hctx.runRecord a d hd')
+  exact modeledCtor_trees (c := ⟨E, Ix.Kernel.Env.empty, t, none⟩)
+    (hctx.good Ix.Kernel.Env.empty none) (hrec _ _ hc) hmuts
+    (hrec _ _ (hB.members 0 (.indc ind) rfl)) hmod hm0
+
 /-- **The stored constant of a declared constructor is a constructor with its counts.** -/
 theorem storedAs_ctor {ci : ConstantInfo .anon} {cv₀ : ConstantVal .anon} {nP nF : Nat}
     (h : StoredAs ci (.ctorInfo cv₀ nP nF)) : ∃ cv, ci = .ctorInfo cv nP nF := by
@@ -254,25 +304,77 @@ theorem storedAs_ctor {ci : ConstantInfo .anon} {cv₀ : ConstantVal .anon} {nP 
   | recInfo _ _ _ _ => exact False.elim h2
   | projInfo _ => exact False.elim h2
 
+/-- **The stored constant of a declared inductive is an inductive with its name and level
+parameters.** -/
+theorem storedAs_ind {ci : ConstantInfo .anon} {cv₀ : ConstantVal .anon}
+    {caps₀ : Ix.Kernel.IndCaps .anon} (h : StoredAs ci (.indInfo cv₀ caps₀)) :
+    ∃ cv caps, ci = .indInfo cv caps ∧ cv.name = cv₀.name ∧ cv.levelParams = cv₀.levelParams := by
+  obtain ⟨⟨hn, hl, -⟩, h2⟩ := h
+  cases ci with
+  | indInfo cv caps => exact ⟨cv, caps, rfl, hn, hl⟩
+  | axiomInfo _ => exact False.elim h2
+  | defnInfo _ _ _ => exact False.elim h2
+  | thmInfo _ _ => exact False.elim h2
+  | ctorInfo _ _ _ => exact False.elim h2
+  | recInfo _ _ _ _ => exact False.elim h2
+  | projInfo _ => exact False.elim h2
+
+/-- **The stored constant of a declared constructor is a constructor with its name, level
+parameters and counts.** -/
+theorem storedAs_ctor_val {ci : ConstantInfo .anon} {cv₀ : ConstantVal .anon} {nP nF : Nat}
+    (h : StoredAs ci (.ctorInfo cv₀ nP nF)) :
+    ∃ cv, ci = .ctorInfo cv nP nF ∧ cv.name = cv₀.name ∧ cv.levelParams = cv₀.levelParams := by
+  obtain ⟨⟨hn, hl, -⟩, h2⟩ := h
+  cases ci with
+  | ctorInfo cv nP' nF' =>
+    obtain ⟨e1, e2⟩ := h2
+    exact ⟨cv, by rw [e1, e2], hn, hl⟩
+  | axiomInfo _ => exact False.elim h2
+  | defnInfo _ _ _ => exact False.elim h2
+  | thmInfo _ _ => exact False.elim h2
+  | indInfo _ _ => exact False.elim h2
+  | recInfo _ _ _ _ => exact False.elim h2
+  | projInfo _ => exact False.elim h2
+
+/-- A constant value with the given name and level parameters. -/
+theorem constVal_eta {cv : ConstantVal .anon} {n : Ix.Kernel.Key .anon}
+    {lps : List Ix.Kernel.LevelParam} (hn : cv.name = n) (hl : cv.levelParams = lps) :
+    cv = ⟨n, lps, cv.type⟩ := by
+  subst hn hl
+  rfl
+
 /-- **What the family step gives the load facts** (`FamLoadCtx`), at each environment the step's
 record is taken at: the store's records at the two records' addresses (the run's, decoded), the
 route fact, the new constants: the members at the keys of the two records' constant addresses
 (`famStep_consts`, `FamDeclReads`), the aliases definitions at derived keys; the first
 constructor of a block of one inductive stored with the record's counts (its reading and
-`StoredAs`); and `hfree`, a field in that constructor where the member has no index and one
-constructor (`famUnitFree_of_run`). -/
+`StoredAs`); `hfree`, a field in that constructor where the member has no index and one
+constructor (`famUnitFree_of_run`); the dispatch's answer `1` at the store
+(`famBlockRoute_of_run`); the constructors' shapes at a block of one inductive
+(`famCtorTrees_of_run`); the registry's facts at the prefix (`PrefixInv.scopedCoreFacts`). -/
 theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
     {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} (hctx : StepCtx.{u} calls t R envT E₀ E)
     {A rb : _root_.Address} {c crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
     (hB : FamBlockRecord E₀ A c ms) (hrb : FamRecRecord E₀ rb crb rs) (hroute : ModeledAt E A)
     (hfree : ∀ ind, c.info = .muts #[.indc ind] → ind.indices.toNat = 0 →
       ind.ctors.size = 1 → ∀ ct, ind.ctors[0]? = some ct → ct.fields.toNat ≠ 0)
+    (hrouteT : Route.blockRoute E A = some true)
+    (htrees : ∀ ind, c.info = .muts #[.indc ind] → ∀ j < ind.ctors.size,
+      ∃ (ct : Ixon.Constructor) (T Bd : Route.ScanTree),
+        ind.ctors[j]? = some ct ∧ ct.params.toNat = ind.params.toNat ∧
+        Route.ExprTree c.refs.toList
+          (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
+          c.sharing.toList 4294967295 ct.typ T ∧
+        T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
+        Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
+        ∀ k < ct.params.toNat, Bd.args[k]? = some .atom)
     {lim : Option Nat} {env : Ix.Kernel.Env .anon} {h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon}
     {aliases blk new : List (ConstantInfo .anon)} (hinv : Decl.PrefixInv.{u} E t lim env)
     (hg : AliasGroup env h aliases) (hreads : FamDeclReads t E₀ A c rb crb blk)
     (hd : DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩)
     (hst : ∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
-      StoredAs c' ci) :
+      StoredAs c' ci)
+    (hcanon : FamilyMembersCanon t E₀ A c ms ⟨new ++ env.consts⟩) :
     FamLoadCtx ⟨E, env, t, lim⟩ new A c ms rb crb rs := by
   have hdec : L1.EnvDecoded E := hctx.recordsFor.1
   have hrec : ∀ a d, recordOf E₀ a = some d → recordOf E a = some d := fun a d hd' =>
@@ -345,7 +447,99 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
         have e5 : c'' = ci := Option.some.inj (hf''.symm.trans hci)
         subst c''
         rw [hci₀eq] at hsa
-        exact storedAs_ctor hsa }
+        exact storedAs_ctor hsa
+      routeTrue := hrouteT
+      ctorTrees := fun ind hms => htrees ind (hB.muts.trans (by rw [hms]))
+      core := hinv.scopedCoreFacts
+      check := Core.RoleClosure.check_ok_of_wf hinv.tableWf
+      used := hcanon.used
+      indForm := by
+        intro i ind hi hm
+        have hx : FamAddr A c rb crb (Core.iprjAddr A i) :=
+          Or.inl (Or.inr ⟨ms, i, .indc ind, hB.muts, hm, Or.inl rfl⟩)
+        obtain ⟨ci₀, hci₀, hk⟩ := hreads.2.2.1 _ hx
+        obtain ⟨y, -, hy, hry⟩ := hreads.2.1 ci₀ hci₀
+        have hyx : y = Core.iprjAddr A i := Core.keyOf_inj hinv.tableWf (hy.symm.trans hk)
+        rw [hyx] at hry
+        obtain ⟨c', hc', hR⟩ := hry
+        have e : c' = memberProjection A i (.indc ind) :=
+          Option.some.inj (hc'.symm.trans (hB.members i (.indc ind) hm))
+        subst e
+        have hinfo : (memberProjection A i (.indc ind)).info = .iPrj ⟨i.toUInt64, A⟩ := rfl
+        rw [hinfo] at hR
+        obtain ⟨cb', ms', ind', ⟨hcb', hms', hind', -, -, -⟩, ty₀, caps₀, hty, hci₀eq⟩ := hR
+        have e1 : cb' = c := Option.some.inj (hcb'.symm.trans hB.record)
+        subst e1
+        have e2 : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hB.muts)
+        subst e2
+        have hm' : ms'[(i.toUInt64).toNat]? = some (.indc ind) := by
+          rw [toNat_toUInt64_of_lt hi]
+          exact hm
+        have e3 : ind' = ind := Ixon.MutConst.indc.inj (Option.some.inj (hind'.symm.trans hm'))
+        subst e3
+        obtain ⟨c'', hf'', hsa⟩ := hst ci₀ hci₀
+        rw [hk] at hf''
+        rw [hci₀eq] at hsa
+        obtain ⟨cv, caps, hcv, hn, hl⟩ := storedAs_ind hsa
+        subst hcv
+        obtain ⟨hlbb, hdef, hcan⟩ := hcanon.ind i ind' ty₀ cv caps hi hm hty hf''
+        have hn' : cv.name = Core.keyOf t (Core.iprjAddr A i) := hn
+        have hl' : cv.levelParams = List.range ind'.lvls.toNat := hl
+        have ecv : (ConstantInfo.indInfo cv caps) =
+            .indInfo ⟨Core.keyOf t (Core.iprjAddr A i), List.range ind'.lvls.toNat, cv.type⟩ caps := by
+          rw [← constVal_eta hn' hl']
+        exact ⟨ty₀, cv.type, caps,
+          ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
+            (blob' := fun y => E.blobs.get? y) hctx.runBlob hty,
+          hlbb, hdef, hcan, hf''.trans (congrArg some ecv)⟩
+      ctorForm := by
+        intro i ind j ct hi hj hm hct
+        have hjlt : j < ind.ctors.size := (Array.getElem?_eq_some_iff.mp hct).1
+        have hx : FamAddr A c rb crb (Core.cprjAddr A i j) :=
+          Or.inl (Or.inr ⟨ms, i, .indc ind, hB.muts, hm, Or.inr ⟨ind, j, rfl, hjlt, rfl⟩⟩)
+        obtain ⟨ci₀, hci₀, hk⟩ := hreads.2.2.1 _ hx
+        obtain ⟨y, -, hy, hry⟩ := hreads.2.1 ci₀ hci₀
+        have hyx : y = Core.cprjAddr A i j := Core.keyOf_inj hinv.tableWf (hy.symm.trans hk)
+        rw [hyx] at hry
+        obtain ⟨c', hc', hR⟩ := hry
+        have e : c' = constructorProjection A i j :=
+          Option.some.inj (hc'.symm.trans (hB.ctors i ind j hm hjlt))
+        subst e
+        have hinfo : (constructorProjection A i j).info =
+            .cPrj ⟨i.toUInt64, j.toUInt64, A⟩ := rfl
+        rw [hinfo] at hR
+        obtain ⟨cb', ms', ind', ct', hcb', hms', hind', hct', hcidx, -, -, -, ty₀, hty, hci₀eq⟩ := hR
+        have e1 : cb' = c := Option.some.inj (hcb'.symm.trans hB.record)
+        subst e1
+        have e2 : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hB.muts)
+        subst e2
+        have hm' : ms'[(i.toUInt64).toNat]? = some (.indc ind) := by
+          rw [toNat_toUInt64_of_lt hi]
+          exact hm
+        have e3 : ind' = ind := Ixon.MutConst.indc.inj (Option.some.inj (hind'.symm.trans hm'))
+        subst e3
+        have hct2 : ind'.ctors[(j.toUInt64).toNat]? = some ct := by
+          rw [toNat_toUInt64_of_lt hj]
+          exact hct
+        have e4 : ct' = ct := Option.some.inj (hct'.symm.trans hct2)
+        subst e4
+        have hcj : ct'.cidx.toNat = j := hcidx.trans (toNat_toUInt64_of_lt hj)
+        obtain ⟨c'', hf'', hsa⟩ := hst ci₀ hci₀
+        rw [hk] at hf''
+        rw [hci₀eq] at hsa
+        obtain ⟨cv, hcv, hn, hl⟩ := storedAs_ctor_val hsa
+        subst hcv
+        obtain ⟨hlbb, hdef, hcan⟩ := hcanon.ctor i ind' j ct' ty₀ cv _ _ hi hj hm hct hty hf''
+        have hn' : cv.name = Core.keyOf t (Core.cprjAddr A i j) := hn
+        have hl' : cv.levelParams = List.range ct'.lvls.toNat := hl
+        have ecv : (ConstantInfo.ctorInfo cv ct'.params.toNat ct'.fields.toNat) =
+            .ctorInfo ⟨Core.keyOf t (Core.cprjAddr A i j), List.range ct'.lvls.toNat, cv.type⟩
+              ct'.params.toNat ct'.fields.toNat := by
+          rw [← constVal_eta hn' hl']
+        exact ⟨hcj, ty₀, cv.type,
+          ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
+            (blob' := fun y => E.blobs.get? y) hctx.runBlob hty,
+          hlbb, hdef, hcan, hf''.trans (congrArg some ecv)⟩ }
 
 /-- **What the circuit side's family check hands the step of the block at `A` with its family
 record at `rb`**: the seam, the companion facts of each recursor the step stores, and the load
@@ -382,6 +576,16 @@ structure FamilyBlockCheck (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
       StoredAs c' ci) →
     ∀ cv mI rP rls, ConstantInfo.recInfo cv mI rP rls ∈ new →
       RecCompanionFacts ⟨E, ⟨new ++ env.consts⟩, t, lim⟩ cv mI rP rls
+  /-- The seam of the loads: the circuit loads each new inductive and constructor in its
+  canonical annotated form. -/
+  canon : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
+    (aliases blk new : List (ConstantInfo .anon)),
+    Decl.PrefixInv.{u} E t lim env → AliasGroup env h aliases →
+    FamDeclReads t E₀ A c rb crb blk →
+    DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
+    (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
+      StoredAs c' ci) →
+    ∀ ms, c.info = .muts ms → FamilyMembersCanon t E₀ A c ms ⟨new ++ env.consts⟩
   /-- The load facts at the step's new constants that read the family check. -/
   loads : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
     (aliases blk new : List (ConstantInfo .anon)),
@@ -419,13 +623,16 @@ theorem familyBlockCircuitRow_of_check {L : Ix.Kernel.Env .anon → NativeFam .a
   obtain ⟨ms, hB⟩ := famBlockRecord_of_run hTW hrun hTop hc hlog hfam
   have hroute : ModeledAt E A := famModeledAt_of_run hTW hrun hctx hTop hc hfam
   have hfree := famUnitFree_of_run hTW hrun hctx hTop hc hlog hfam
+  have hrouteT := famBlockRoute_of_run hTW hrun hctx hTop hc hfam
+  have htrees := famCtorTrees_of_run hTW hrun hctx hTop hc hlog hfam
   exact
     { seam := hK.seam
       block := ⟨ms, hB⟩
       route := hroute
       recs := hK.recs
       loads := fun env h aliases blk new hinv hg hreads hd hst =>
-        (famLoadCtx_of_step hctx hB hrb hroute hfree hinv hg hreads hd hst).newLoads
+        (famLoadCtx_of_step hctx hB hrb hroute hfree hrouteT htrees hinv hg hreads hd hst
+          (hK.canon env h aliases blk new hinv hg hreads hd hst ms hB.muts)).newLoads
           (hK.loads env h aliases blk new hinv hg hreads hd hst) }
 
 /-- **The row `familyBlock` from the facts of the family check** (module docstring). -/
