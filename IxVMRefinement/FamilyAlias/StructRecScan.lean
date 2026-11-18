@@ -1,4 +1,5 @@
 import IxVMRefinement.FamilyAlias.UnitFree
+import IxVMRefinement.Assembly.NativeBlockRecScanRaw
 
 /-! # The recursion scan finds a modeled block's nested occurrence
 
@@ -14,7 +15,11 @@ recursion scan answers `1` there.
 * `nestedN_true_mentions`, `nestedN_spine_ne_true`, `fieldsScan_of_nested`, `ctorAnswer_true`:
   the pure part;
 * `se_peel_tol_tree`, `se_scan_fields_tree`, `scan_ctors_tree`: the runs of the recursion scan on
-  terms of a given shape, at an answer other than `1`. -/
+  terms of a given shape, at an answer other than `1`;
+* `mentions_mono`, `fieldsScan_mono`: the scans' answer `1` survives a larger member list;
+* `struct_is_rec_one`: at a block of one inductive with one constructor and no index, modeled at
+  the store (the dispatch answers `1`), whose constructor has the walk's return shape, no good run
+  of the recursion scan at the member answers other than `1`. -/
 
 namespace IxVM.Refinement.Route
 
@@ -472,5 +477,233 @@ theorem scan_ctors_tree (K : Nat) :
         rw [e]
         exact evc
     · exact absurd he274 hr
+
+/-! ## A larger member list -/
+
+/-- **A term that mentions an address of `M` mentions one of any list holding `M`'s.** -/
+theorem mentions_mono {M M' : List _root_.Address} (hMM : ∀ a ∈ M, a ∈ M') :
+    ∀ T : ScanTree, T.mentions M = true → T.mentions M' = true := by
+  intro T
+  induction T with
+  | atom => intro h; simp [ScanTree.mentions] at h
+  | const a =>
+    intro h
+    change memB M a = true at h
+    change memB M' a = true
+    have ha : a ∈ M := by
+      by_contra hn
+      rw [memB_neg hn] at h
+      exact Bool.false_ne_true h
+    exact memB_pos (hMM a ha)
+  | app f x ihf ihx =>
+    intro h
+    simp only [ScanTree.mentions, Bool.or_eq_true] at h ⊢
+    rcases h with h | h
+    · exact Or.inl (ihf h)
+    · exact Or.inr (ihx h)
+  | lam t b iht ihb =>
+    intro h
+    simp only [ScanTree.mentions, Bool.or_eq_true] at h ⊢
+    rcases h with h | h
+    · exact Or.inl (iht h)
+    · exact Or.inr (ihb h)
+  | all t b iht ihb =>
+    intro h
+    simp only [ScanTree.mentions, Bool.or_eq_true] at h ⊢
+    rcases h with h | h
+    · exact Or.inl (iht h)
+    · exact Or.inr (ihb h)
+  | letE t v b iht ihv ihb =>
+    intro h
+    simp only [ScanTree.mentions, Bool.or_eq_true] at h ⊢
+    rcases h with h | h | h
+    · exact Or.inl (iht h)
+    · exact Or.inr (Or.inl (ihv h))
+    · exact Or.inr (Or.inr (ihb h))
+  | proj x ihx =>
+    intro h
+    simp only [ScanTree.mentions] at h ⊢
+    exact ihx h
+
+/-- **The field scan's answer `1` against `M` holds against any list holding `M`'s.** -/
+theorem fieldsScan_mono {M M' : List _root_.Address} (hMM : ∀ a ∈ M, a ∈ M') :
+    ∀ T : ScanTree, T.fieldsScan M = true → T.fieldsScan M' = true := by
+  intro T
+  induction T with
+  | all t b _ ihb =>
+    intro h
+    simp only [ScanTree.fieldsScan, Bool.or_eq_true] at h ⊢
+    rcases h with h | h
+    · exact Or.inl (mentions_mono hMM t h)
+    · exact Or.inr (ihb h)
+  | letE _ _ _ _ _ _ => intro _; simp [ScanTree.fieldsScan]
+  | atom => intro h; simp [ScanTree.fieldsScan] at h
+  | const _ => intro h; simp [ScanTree.fieldsScan] at h
+  | app _ _ _ _ => intro h; simp [ScanTree.fieldsScan] at h
+  | lam _ _ _ _ => intro h; simp [ScanTree.fieldsScan] at h
+  | proj _ _ => intro h; simp [ScanTree.fieldsScan] at h
+
+/-! ## The recursion scan at a modeled block of one inductive -/
+
+/-- **At a modeled block of one inductive with one constructor and no index, the recursion scan
+at the member answers `1`.** The store holds the block `cb` at `A` with its one member `ind` and
+the member's projection record; the dispatch answers `1` there (`blockRoute`), so the scan
+`ctors_nested` finds a nested occurrence in the constructor `ct` after its parameters
+(`ctorAnswer_true`). The walk's return-type check gives `ct`'s type, after its parameters and
+fields, a constant applied to atoms (no index), so the occurrence is in a field domain, which
+mentions the member (`fieldsScan_of_nested`). A run of `KernelWhnf::struct_is_rec` at the
+member's address answering other than `1` loads the block's member list, which holds the member's
+address (`struct_block_member_addrs`), and scans the constructor loaded at slot `0`, whose type
+has the shape of `ct`'s (`get_ci_cprj`, `ExprTree.functional`): its field scan answers `0`
+(`scan_ctors_tree`). -/
+theorem struct_is_rec_one {C : Core.Ctx} (core : Core.ScopedCoreFacts (Core.Ctx.stored C))
+    (hdec : L1.EnvDecoded C.E) {A : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
+    (hrecord : recordOf C.E A = some cb) (hmuts : cb.info = .muts #[.indc ind])
+    (hproj : recordOf C.E (Core.iprjAddr A 0) = some (memberProjection A 0 (.indc ind)))
+    (hroute : blockRoute C.E A = some true)
+    (hidx : ind.indices.toNat = 0) (hsz : ind.ctors.size = 1)
+    (hshape : ∃ (ct : Ixon.Constructor) (T Bd : ScanTree),
+      ind.ctors[0]? = some ct ∧ ct.params.toNat = ind.params.toNat ∧
+      ExprTree cb.refs.toList (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList)
+        cb.sharing.toList 4294967295 ct.typ T ∧
+      T.peel (ct.params.toNat + ct.fields.toNat) = some Bd ∧ (∃ a, Bd.head = .const a) ∧
+      Bd.args.length = ct.params.toNat + ind.indices.toNat ∧
+      ∀ k < ct.params.toNat, Bd.args[k]? = some .atom)
+    {sp v : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {pa : Bytes.Address}
+    (ev : ObsFn Core.W "KernelWhnf::struct_is_rec" [sp] h v h' cs) (hv : v ≠ .field 1)
+    (good : Core.Good C cs) (hpa : Bytes.RepAddressRef Core.addrTy h pa sp)
+    (hxa : Core.ixAddr pa = Core.iprjAddr A 0) : False := by
+  obtain ⟨ct, T', Bd', hct0, hparN, hET', hpeel', hhd, hlen, hat⟩ := hshape
+  have hctl : ind.ctors.toList = [ct] := by
+    obtain ⟨x, hx⟩ := Claim.array_of_size_one ind.ctors hsz
+    rw [hx] at hct0
+    have e5 : x = ct := by simpa using hct0
+    simp [hx, e5]
+  -- the dispatch at the store: the one constructor answers `1`
+  have hR := hroute
+  rw [blockRoute_one hrecord hmuts hctl] at hR
+  have hans : ctorAnswer (isIndAt C.E)
+      (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList) cb.refs.toList
+      cb.sharing.toList ct = some true := by
+    rcases orElse_eq_true hR with h1 | h1
+    · exact h1
+    · cases h1
+  obtain ⟨T, Bd, hET, hpeelP, hnest⟩ := ctorAnswer_true hans
+  have eT : T' = T := ExprTree.functional hET' hET
+  subst T'
+  -- the walk's shape: after the fields, a constant applied to atoms
+  rw [hidx, Nat.add_zero] at hlen
+  have hargs : ∀ X ∈ Bd'.args, X = .atom := by
+    intro X hX
+    obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp hX
+    have hklt : k < Bd'.args.length := (List.getElem?_eq_some_iff.mp hk).1
+    rw [hat k (by omega)] at hk
+    exact (Option.some.inj hk).symm
+  rw [peel_add ct.params.toNat ct.fields.toNat hpeelP] at hpeel'
+  have hfs : Bd.fieldsScan
+      (L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList) = true :=
+    fieldsScan_of_nested (isIndAt C.E) _ hhd hargs ct.fields.toNat Bd.size Bd hpeel' hnest
+  -- the observed recursion scan: the parent's load, the member list, the member scan
+  obtain ⟨m2, p9, cs15, w42, w43, w44, w45, w46, w47, x_block, w48, m90, v116, m117, cs127, cs149,
+    ev17, hs15, ld11, e2_90, ev129, hs127, ev151, hs149⟩ := Core.rs_is_rec ev hv
+  have e17 := ObsFn.heap_extends ev17
+  have g15 := good.sub hs15
+  obtain ⟨b, i0, -, hb2, -, hinfo⟩ := get_ci_induct_record hdec g15.1 g15.2 ev17 hpa ld11
+    (by rw [hxa]; exact hproj)
+  have hbA : Core.ixAddr b = A := by
+    have h0 : (memberProjection A 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, A⟩ := rfl
+    rw [h0] at hinfo
+    injection hinfo with hpp
+    injection hpp with _ hb
+    exact hb.symm
+  have g127 := good.sub hs127
+  obtain ⟨xs, hxs, hmem, -⟩ := Core.Registry.induction (Core.Ctx.stored C)
+    (Core.scoped_steps _ core) (.whnf .struct_block_member_addrs) [sp, x_block]
+    m90 v116 m117 cs127 ev129 sp x_block rfl (Core.CoreGood.ofRaw g127 (fun _ _ => trivial)) pa b
+    (Core.se_addrRep_mono (e17.trans e2_90) hpa) (Core.se_addrRep_mono e2_90 hb2) cb
+    (by rw [hbA]; exact recordAt_of_recordOf hdec hrecord)
+  obtain ⟨a₀, ha₀, hxa₀⟩ := hmem #[.indc ind] hmuts 0 ind (by simp)
+  rw [hbA] at hxa₀
+  obtain ⟨xm, ptr1, h1, h2, cs1, v1, -, hrep1, ev1, hs1, ld1, hscan⟩ :=
+    Core.rs_scan_members (cs149.length + 1) (Nat.lt_succ_self _) ev151 hxs hxs hv a₀ ha₀
+  have g1 := good.sub (fun x hx => hs149 x (hs1 x hx))
+  have hproj₀ : recordOf C.E (Core.ixAddr a₀) = some (memberProjection A 0 (.indc ind)) := by
+    rw [hxa₀]
+    exact hproj
+  obtain ⟨tyPtr0, blkPtr, hld1, hp56, hi56, hc56⟩ :=
+    former_get_ci_value g1.1 g1.2 hrep1 ev1 hproj₀ hrecord hmuts
+  have hv1 := Except.ok.inj (ld1.symm.trans hld1)
+  obtain ⟨rr, h3, cs3, ev3, hs3, hrr, -, hxs2⟩ := hscan _ _ _ _ _ _ _ _ hv1
+  obtain ⟨b', i1, -, hb'2, -, hinfo'⟩ := get_ci_induct_record hdec g1.1 g1.2 ev1 hrep1 hld1 hproj₀
+  have hb'A : Core.ixAddr b' = A := by
+    have h0 : (memberProjection A 0 (.indc ind)).info = .iPrj ⟨(0 : Nat).toUInt64, A⟩ := rfl
+    rw [h0] at hinfo'
+    injection hinfo' with hpp
+    injection hpp with _ hb
+    exact hb.symm
+  -- the constructor loaded at slot `0`
+  have hK : ZMod.val ((ind.ctors.size : F) - 0) = ind.ctors.size := by
+    rw [sub_zero]
+    exact ZMod.val_natCast_of_lt (Nat.lt_trans hc56 (by decide))
+  obtain ⟨hh1, hh2, ptrc, csc, nlc, tyc, restc, ehc, evc, hsc, ldc, hfc⟩ :=
+    scan_ctors_tree ind.ctors.size hK ev3 hxs2 hrr 0 (by omega)
+  have gc := good.sub (fun x hx => hs149 x (hs3 x (hsc x hx)))
+  have hb'1 : Bytes.RepAddressRef Core.addrTy hh1 b' blkPtr := Core.se_addrRep_mono ehc hb'2
+  obtain ⟨-, -, -, blkBytes, cb₂, ms₂, ind₂, ct₂, blobs, v₂, hhB, haB, hexB, -, hcb₂, hms₂, hct₂,
+    -, hldv₂, hraw₂⟩ := L1.get_ci_cprj_spec gc.2 hb'1 evc
+  obtain ⟨lcB, hgetB, hdecB⟩ := LoadedReads.recordOf_inv hrecord
+  have hbB : blkBytes = lcB.rawBytes := Core.load_escape hgetB gc.1 blkBytes hhB (haB.trans hb'A)
+  have e1 : cb₂ = cb := by
+    rw [hbB, hdecB] at hexB
+    exact (Except.ok.inj hexB).symm
+  subst cb₂
+  have e2 : ms₂ = #[.indc ind] := Ixon.ConstantInfo.muts.inj (hcb₂.symm.trans hmuts)
+  subst ms₂
+  have hv0 : ZMod.val ((0 : Nat) : F) = 0 := by simp
+  rw [hv0] at hms₂
+  have e3 : ind₂ = ind := by
+    have e : (#[Ixon.MutConst.indc ind] : Array Ixon.MutConst).toList[0]? = some (.indc ind) :=
+      rfl
+    exact Ixon.MutConst.indc.inj (Option.some.inj (hms₂.symm.trans e))
+  subst ind₂
+  have hct₂' : ind.ctors.toList[0]? = some ct₂ := by
+    have hcz : ZMod.val ((0 : F) + ((0 : Nat) : F)) = 0 := by simp
+    rw [← hcz]
+    exact hct₂
+  rw [hctl] at hct₂'
+  have e4 : ct₂ = ct := by simpa using hct₂'.symm
+  subst ct₂
+  have hv2 : v₂ = .construct Core.kciEnum "Ctor" (nlc :: tyc :: restc) :=
+    Except.ok.inj (hldv₂.symm.trans ldc)
+  obtain ⟨-, -, -, -, -, tyPtrC, blkPtrC, bC, -, -, hvC, rtyC⟩ := hraw₂
+  rw [hvC] at hv2
+  injection hv2 with _ _ hargs2
+  injection hargs2 with _ hargs2
+  injection hargs2 with htyc _
+  obtain ⟨T₂, hET₂, hTA⟩ := treeAt_of_rawConv rtyC
+  rw [hb'A] at hET₂
+  have eT2 : T₂ = T := ExprTree.functional hET₂ hET
+  subst T₂
+  rw [htyc] at hTA
+  have hf := hfc T hTA
+  rw [ZMod.val_natCast_of_lt (Nat.lt_trans hp56 (by decide)), ← hparN,
+    peelTol_of_peel _ hpeelP] at hf
+  -- the member list holds the member's address
+  have hMM : ∀ x ∈ L1.blockRecurAddrs A (#[.indc ind] : Array Ixon.MutConst).toList,
+      x ∈ xs.map Core.ixAddr := by
+    intro x hx
+    obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp hx
+    obtain ⟨m, hm, rfl⟩ := LoadedReads.blockRecurAddrs_get hk
+    have hk0 : k = 0 := by
+      have hlt : k < 1 := (Array.getElem?_eq_some_iff.mp hm).1
+      omega
+    subst hk0
+    have hmm : m = .indc ind := by simpa using hm.symm
+    subst hmm
+    rw [LoadedReads.memberAddr_indc, ← hxa₀]
+    exact List.mem_map_of_mem ha₀
+  have ht := fieldsScan_mono hMM Bd hfs
+  rw [hf] at ht
+  exact Bool.false_ne_true ht
 
 end IxVM.Refinement.Typing.FamilyAlias
