@@ -165,19 +165,17 @@ theorem groupStore_logic (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoade
     subst e
     simp only [InLogic, hinfo, hsf]
 
-/-- **`Admits.logic` for every group of a run**, from the safety of the roots. -/
-theorem logic_of_rootsSafe (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
+/-- **Every address a group's admission reaches is in Lean's logic with its block**, for a run
+whose roots are: the guards `groupReach_sourceSafe` reads, from the group's validations. -/
+theorem groupReach_sourceSafe_of_run (hC : CollisionFreeRun calls E₀)
     (hval : ∀ g, g < 77 → ∀ r ∈ roleGroup g, RoleValidationIn calls bAddr t g r)
-    (hroots : RootsSafe t E₀) :
-    ∀ g, 6 ≤ g → g < 77 → ∀ a c,
-      New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a →
-      recordOf (groupStore t E₀ (g + 1)) a = some c → InLogic c := by
-  intro g hg6 hg
+    (hroots : RootsSafe t E₀) {g : Nat} (hg : g < 77)
+    {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
+    (hw : GroupWalked calls bAddr t E₀ g recs) :
+    ∀ a, GroupReach t E₀ g a → Claim.SourceSafe E₀ a := by
   have hax := axiomRoles_of_run hC hval
-  obtain ⟨recs, hw⟩ := groupWalked_exists hC.hashedStored (hval g hg)
-  refine groupStore_logic hC hb hax hg6 hw
-    (groupReach_sourceSafe hC hax hw ?_ ?_ (fun r hr arr hm =>
-      evidence_specKind (hval g hg r hr).wf hm) hroots)
+  refine groupReach_sourceSafe hC hax hw ?_ ?_ (fun r hr arr hm =>
+      evidence_specKind (hval g hg r hr).wf hm) hroots
   · intro r hr hs a had
     obtain ⟨a', raw, c, had', hsz, hh, hblk, hde, hdeE, hguard⟩ :=
       RoleVal.ValidateRoleIn.axiom_guard
@@ -198,6 +196,18 @@ theorem logic_of_rootsSafe (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoa
     · have hgd := y.hguard
       rw [hya] at hgd
       exact hgd
+
+/-- **`Admits.logic` for every group of a run**, from the safety of the roots. -/
+theorem logic_of_rootsSafe (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
+    (hval : ∀ g, g < 77 → ∀ r ∈ roleGroup g, RoleValidationIn calls bAddr t g r)
+    (hroots : RootsSafe t E₀) :
+    ∀ g, 6 ≤ g → g < 77 → ∀ a c,
+      New (groupStore t E₀ g) (groupStore t E₀ (g + 1)) a →
+      recordOf (groupStore t E₀ (g + 1)) a = some c → InLogic c := by
+  intro g hg6 hg
+  have hax := axiomRoles_of_run hC hval
+  obtain ⟨recs, hw⟩ := groupWalked_exists hC.hashedStored (hval g hg)
+  exact groupStore_logic hC hb hax hg6 hw (groupReach_sourceSafe_of_run hC hval hroots hg hw)
 
 end Run
 
