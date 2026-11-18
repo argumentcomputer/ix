@@ -1641,7 +1641,7 @@ theorem scoped_core_whnf {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
     (ev : ObsFn W "KernelWhnf::whnf" [rc, e, types] h r h' cs)
     (hte : Tm c.κ d Γ h 0 te e) :
     ∃ te', Tm c.κ d Γ h' 0 te' r ∧ Red c.env d te te' :=
-  Registry.induction c (scoped_steps c (hlf.coreFacts hef) (hlf.fires hef)) (.whnf .whnf)
+  Registry.induction c (scoped_steps c ⟨hef, hlf⟩) (.whnf .whnf)
     [rc, e, types] h r h' cs ev rc e types rfl hgood hrc d Γ ⟨hty, hsc⟩ te hte
 
 /-- Actual scoped definitional equality uses only the selected core calls. -/
@@ -1651,7 +1651,7 @@ theorem scoped_core_defeq {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
     (hef : CoreEnvFacts c.toCtx) (hlf : ScopedLoadFacts c) (hgood : CoreGood c cs)
     (ev : ObsFn W "KernelDefEq::k_is_def_eq" [rc, a, b, types] h (.field 1) h' cs)
     (hta : Tm c.κ d Γ h 0 ta a) (htb : Tm c.κ d Γ h 0 tb b) : DefEq c.env d ta tb :=
-  Registry.induction c (scoped_steps c (hlf.coreFacts hef) (hlf.fires hef)) (.defEq .k_is_def_eq)
+  Registry.induction c (scoped_steps c ⟨hef, hlf⟩) (.defEq .k_is_def_eq)
     [rc, a, b, types] h (.field 1) h' cs ev rc a b types rfl hgood hrc d Γ
       ⟨hty, hsc⟩ ta tb hta htb NatAux.field_one_ne_zero
 
@@ -1663,7 +1663,7 @@ theorem scoped_core_infer {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
     (ev : ObsFn W "KernelInfer::k_infer" [rc, e, types] h r h' cs)
     (hte : Tm c.κ d Γ h 0 te e) :
     ∃ tt, Tm c.κ d Γ h' 0 tt r ∧ Infer c.env .full d te tt :=
-  Registry.induction c (scoped_steps c (hlf.coreFacts hef) (hlf.fires hef)) (.infer .k_infer)
+  Registry.induction c (scoped_steps c ⟨hef, hlf⟩) (.infer .k_infer)
     [rc, e, types] h r h' cs ev rc e types rfl hgood hrc d Γ ⟨hty, hsc⟩ te hte
 
 /-- The scoped sort checker retains its actual typing and semantic level certificate. -/
@@ -1676,7 +1676,7 @@ theorem scoped_core_ensure_sort {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
     ∃ stype u ℓ, Infer c.env .full d te stype ∧ Red c.env d stype (.sort u) ∧
       RepKLevel h' ℓ r ∧ LvEq u ℓ := by
   obtain ⟨stype, u, hinf, hred, ℓ, hℓ, heq⟩ :=
-    Registry.induction c (scoped_steps c (hlf.coreFacts hef) (hlf.fires hef)) (.infer .k_ensure_sort)
+    Registry.induction c (scoped_steps c ⟨hef, hlf⟩) (.infer .k_ensure_sort)
       [rc, e, types] h r h' cs ev rc e types rfl hgood hrc d Γ ⟨hty, hsc⟩ te hte
   exact ⟨stype, u, ℓ, hinf, hred, hℓ, heq⟩
 
@@ -1688,7 +1688,7 @@ theorem scoped_core_check {c : ScopedCtx} {Γ : Nat → KExpr} {d : Nat}
     (ev : ObsFn W "KernelInfer::k_check" [rc, e, x, types] h r h' cs)
     (hte : Tm c.κ d Γ h 0 te e) (htx : Tm c.κ d Γ h 0 tx x) :
     ∃ tt, Infer c.env .full d te tt ∧ DefEq c.env d tt tx :=
-  Registry.induction c (scoped_steps c (hlf.coreFacts hef) (hlf.fires hef)) (.infer .k_check)
+  Registry.induction c (scoped_steps c ⟨hef, hlf⟩) (.infer .k_check)
     [rc, e, x, types] h r h' cs ev rc e x types rfl hgood hrc d Γ ⟨hty, hsc⟩ te tx hte htx
 
 /-- Legacy collision-free `whnf` compatibility through public `Core S₀`. Actual scoped

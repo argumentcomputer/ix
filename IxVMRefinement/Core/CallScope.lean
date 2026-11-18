@@ -220,7 +220,7 @@ theorem HashedBlockAt.of_good {c : Ctx} {cs : List (Call F)} (hg : Good c cs) {b
 conditional on actual stored records, and native eta observations carry their own evidence.
 
 This is the load contract without the firing of the projection guards: it is stated before the
-registry, and it is the part the registry's own facts (`ScopedCoreFacts`) hold. The contract a
+registry, and it is the part the registry's own facts (`ScopedCoreBase`) hold. The contract a
 prefix carries (`ScopedLoadFacts`, `Core/ProjFire.lean`) adds the firing of every stored
 projection table. -/
 structure ScopedLoadBase (c : ScopedCtx) : Prop where
@@ -532,12 +532,12 @@ theorem ScopedLoadBase.ofUnrestricted {c : ScopedCtx} (hk : c.key = keyOf c.t)
   roleRes := fun _ _ _ _ _ => Resolved.ne }
 
 /-- Context evidence for actual scoped registry runs. -/
-structure ScopedCoreFacts (c : ScopedCtx) : Prop where
+structure ScopedCoreBase (c : ScopedCtx) : Prop where
   env : CoreEnvFacts c.toCtx
   loads : ScopedLoadBase c
 
-theorem ScopedCoreFacts.ofUnrestricted {c : Ctx} (h : CoreFacts c) :
-    ScopedCoreFacts (ScopedCtx.unrestricted c) :=
+theorem ScopedCoreBase.ofUnrestricted {c : Ctx} (h : CoreFacts c) :
+    ScopedCoreBase (ScopedCtx.unrestricted c) :=
   ⟨h.env.toCoreEnvFacts, ScopedLoadBase.ofUnrestricted rfl h.env h.loads⟩
 
 /-! ## Resolution at the load sites
@@ -554,20 +554,20 @@ private theorem find?_name_eq {env : Ix.Kernel.Env .anon} {k : KKey}
   simpa using this
 
 /-- What the environment stores under the context's keying resolves. -/
-theorem ScopedCoreFacts.res_of_find {c : ScopedCtx} (hc : ScopedCoreFacts c)
+theorem ScopedCoreBase.res_of_find {c : ScopedCtx} (hc : ScopedCoreBase c)
     {a : _root_.Address} {ci : Ix.Kernel.ConstantInfo .anon}
     (h : c.env.find? (c.κ a) = some ci) : c.κ a ≠ unresolvedKey :=
   hc.loads.findRes a ci h
 
 /-- A key the environment stores under the table's keying resolves, and the context keys it as
 the table does. -/
-theorem ScopedCoreFacts.key_of_stored {c : ScopedCtx} (hc : ScopedCoreFacts c)
+theorem ScopedCoreBase.key_of_stored {c : ScopedCtx} (hc : ScopedCoreBase c)
     {a : _root_.Address} {ci : Ix.Kernel.ConstantInfo .anon}
     (h : c.env.find? (keyOf c.t a) = some ci) : c.κ a = keyOf c.t a :=
   c.key_eq (hc.loads.storedRes a ci h)
 
 /-- **The inductive a stored inductive names resolves**: the name is the stored key. -/
-theorem ScopedCoreFacts.res_of_ind {c : ScopedCtx} (hc : ScopedCoreFacts c)
+theorem ScopedCoreBase.res_of_ind {c : ScopedCtx} (hc : ScopedCoreBase c)
     {a b : _root_.Address} {i : Nat} {cv : Ix.Kernel.ConstantVal .anon}
     {caps : Ix.Kernel.IndCaps .anon}
     (hfind : c.env.find? (c.κ a) = some (.indInfo cv caps))
@@ -577,7 +577,7 @@ theorem ScopedCoreFacts.res_of_ind {c : ScopedCtx} (hc : ScopedCoreFacts c)
   exact hc.res_of_find hfind
 
 /-- **The inductive of a stored constructor resolves.** -/
-theorem ScopedCoreFacts.res_of_ctor {c : ScopedCtx} (hc : ScopedCoreFacts c)
+theorem ScopedCoreBase.res_of_ctor {c : ScopedCtx} (hc : ScopedCoreBase c)
     {a b : _root_.Address} {i j : Nat} {cv : Ix.Kernel.ConstantVal .anon} {nP nF : Nat}
     (hfind : c.env.find? (c.κ a) = some (.ctorInfo cv nP nF))
     (hname : cv.name = c.κ (cprjAddr b i j)) (hb : HashedBlockAt c.E b) :
@@ -610,7 +610,7 @@ theorem ScopedCtx.famAt_of_ctor {c : ScopedCtx} {a b : _root_.Address} {i j : Na
 /-- **The inductive of a stored constructor permits projection**, at the address it is stored
 under: the permission a step needs for the `Proj` cells it builds at a structure it has the
 constructor of. -/
-theorem ScopedCoreFacts.perm_of_ctor {c : ScopedCtx} (hc : ScopedCoreFacts c)
+theorem ScopedCoreBase.perm_of_ctor {c : ScopedCtx} (hc : ScopedCoreBase c)
     {a ac b : _root_.Address} {i j : Nat} {cvT : Ix.Kernel.ConstantVal .anon}
     {caps : Ix.Kernel.IndCaps .anon} {cv : Ix.Kernel.ConstantVal .anon} {nP nF : Nat}
     (hfindI : c.env.find? (c.κ a) = some (.indInfo cvT caps))
@@ -624,7 +624,7 @@ theorem ScopedCoreFacts.perm_of_ctor {c : ScopedCtx} (hc : ScopedCoreFacts c)
   exact hfindC
 
 /-- The address a role in force is bound to resolves. -/
-theorem ScopedCoreFacts.res_of_role {c : ScopedCtx} (hc : ScopedCoreFacts c)
+theorem ScopedCoreBase.res_of_role {c : ScopedCtx} (hc : ScopedCoreBase c)
     {r : Ix.Kernel.Role} {a : _root_.Address} (hb : c.t.addressOf? r = some a)
     (hf : c.inForce r) (hi : fabricatedRole r = true) : c.κ a ≠ unresolvedKey :=
   hc.loads.roleRes r a hf hi hb
@@ -637,11 +637,11 @@ macro "resolve_key" : tactic => `(tactic| first
     | exact Tm.const_key_ne (by assumption)
     | exact Tm.head_key_ne (by assumption)
     | exact Tm.proj_key_ne (by assumption)
-    | exact ScopedCoreFacts.res_of_find (by assumption) (by assumption)
-    | exact ScopedCoreFacts.res_of_ind (by assumption) (by assumption) (by assumption)
-    | exact ScopedCoreFacts.res_of_ctor (by assumption) (by assumption) (by assumption)
+    | exact ScopedCoreBase.res_of_find (by assumption) (by assumption)
+    | exact ScopedCoreBase.res_of_ind (by assumption) (by assumption) (by assumption)
+    | exact ScopedCoreBase.res_of_ctor (by assumption) (by assumption) (by assumption)
         (by assumption))
-  | exact ScopedCoreFacts.res_of_role (by with_reducible assumption)
+  | exact ScopedCoreBase.res_of_role (by with_reducible assumption)
       (by with_reducible assumption) (by with_reducible assumption) (by decide))
 
 end IxVM.Refinement.Core

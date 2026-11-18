@@ -6,18 +6,20 @@ The projection step of the registry (`infer_proj_common`) owes, at a projection 
 propositional structure, the rules tier's firing condition `Ix.Kernel.Rules.FireSem` of the
 table entry at the use's levels. What decides it is a reading of the run of
 `KernelInfer::proj_guard`, which needs the registry's induction hypothesis; so the firing
-cannot be a field of the facts the registry is run with (`ScopedCoreFacts`), and it is not
-stated over a limit.
+cannot be stated before the registry, among the facts its steps are proved from
+(`ScopedCoreBase`), and it is not stated over a limit.
 
 * `ProjGuardFires c`: the firing at one context, as the projection step consumes it. It is the
-  second hypothesis of the registry (`scoped_steps`).
+  second hypothesis of the registry (`scoped_steps_base`).
 * `ProjTableFires t E k tbl kc cvC`, `ProjTablesFire t E env`: the same with no context fixed,
   one stored table at a time, at every context over a role table and a store that stores the
   table and its constructor. This form names no limit, no call scope and no keying; it is kept
   by every step of the environment that keeps the lookups (`ProjTablesFire.step`), and it gives
   the firing at any context that stores the tables (`ProjTablesFire.fires`).
 * `ScopedLoadFacts c`: the load contract a prefix carries, `ScopedLoadBase c` with
-  `ProjTablesFire` at the context's table, store and environment.
+  `ProjTablesFire` at the context's table, store and environment; `ScopedCoreFacts c`: the
+  facts the registry is run with above this file, the environment facts with that contract
+  (`ScopedCoreFacts.base`, `ScopedCoreFacts.fires` give the registry's two hypotheses).
 * `LoadFacts.projGuardFires`: the unrestricted contract of the seams instance still holds the
   guard of each `proj_guard` run at its own limit; it gives the firing at the unrestricted
   context.
@@ -80,7 +82,7 @@ environment and by every change of limit. It is what a certificate of the table 
 of a use give of one table. -/
 def ProjTableFires (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (k : KKey)
     (tbl : Ix.Kernel.ProjTable .anon) (kc : KKey) (cvC : Ix.Kernel.ConstantVal .anon) : Prop :=
-  ∀ (c : ScopedCtx), c.t = t → c.E = E → ScopedCoreFacts c →
+  ∀ (c : ScopedCtx), c.t = t → c.E = E → ScopedCoreBase c →
     c.env.find? (Ix.Kernel.projTableName k) = some (.projInfo tbl) →
     (∃ nP nF : Nat, c.env.find? kc = some (.ctorInfo cvC nP nF)) →
     ∀ {calls0 : List (Call F)} (ih : IH c calls0)
@@ -117,7 +119,7 @@ def ProjTablesFire (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (env : Ix.Kernel.Env
 what the registry's projection step consumes, read off the limit-free statement at the
 context's own core facts. -/
 theorem ProjTablesFire.fires {c : ScopedCtx} (hT : ProjTablesFire c.t c.E c.env)
-    (hc : ScopedCoreFacts c) : ProjGuardFires c := by
+    (hc : ScopedCoreBase c) : ProjGuardFires c := by
   intro calls0 ih x_rc x_block r h h' calls i f hlt0 good ev b hrc hb x_blockC ptrC hC hC' csC
     evC goodC hbC cvT caps hind cm hrec hinfo cvC nP nF tbl hctor htbl hnF hf g hg us hus hzero
     hprop
@@ -177,15 +179,79 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop extends ScopedLoadBase c where
   /-- Every stored projection table of a propositional structure fires at every context. -/
   projFire : ProjTablesFire c.t c.E c.env
 
-/-- The registry's facts at a context, from the environment facts and the load contract. -/
-theorem ScopedLoadFacts.coreFacts {c : ScopedCtx} (hlf : ScopedLoadFacts c)
-    (hef : CoreEnvFacts c.toCtx) : ScopedCoreFacts c :=
-  ⟨hef, hlf.toScopedLoadBase⟩
+/-- **Context evidence for scoped registry runs, as a prefix carries it**: the environment facts
+and the load contract with the firing of the stored projection tables. The registry's steps are
+proved from its part before the registry (`ScopedCoreFacts.base`) and the firing at the context
+(`ScopedCoreFacts.fires`). -/
+structure ScopedCoreFacts (c : ScopedCtx) : Prop where
+  env : CoreEnvFacts c.toCtx
+  loads : ScopedLoadFacts c
 
-/-- The firing at a context, from the environment facts and the load contract. -/
-theorem ScopedLoadFacts.fires {c : ScopedCtx} (hlf : ScopedLoadFacts c)
-    (hef : CoreEnvFacts c.toCtx) : ProjGuardFires c :=
-  hlf.projFire.fires (hlf.coreFacts hef)
+/-- The part of the facts stated before the registry. -/
+theorem ScopedCoreFacts.base {c : ScopedCtx} (hc : ScopedCoreFacts c) : ScopedCoreBase c :=
+  ⟨hc.env, hc.loads.toScopedLoadBase⟩
+
+/-- The firing of the projection guards at the context, read off the load contract. -/
+theorem ScopedCoreFacts.fires {c : ScopedCtx} (hc : ScopedCoreFacts c) : ProjGuardFires c :=
+  hc.loads.projFire.fires hc.base
+
+/-- What the environment stores under the context's keying resolves. -/
+theorem ScopedCoreFacts.res_of_find {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {a : _root_.Address} {ci : Ix.Kernel.ConstantInfo .anon}
+    (h : c.env.find? (c.κ a) = some ci) : c.κ a ≠ unresolvedKey :=
+  hc.base.res_of_find h
+
+/-- A key the environment stores under the table's keying resolves, and the context keys it as
+the table does. -/
+theorem ScopedCoreFacts.key_of_stored {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {a : _root_.Address} {ci : Ix.Kernel.ConstantInfo .anon}
+    (h : c.env.find? (keyOf c.t a) = some ci) : c.κ a = keyOf c.t a :=
+  hc.base.key_of_stored h
+
+/-- The inductive a stored inductive names resolves. -/
+theorem ScopedCoreFacts.res_of_ind {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {a b : _root_.Address} {i : Nat} {cv : Ix.Kernel.ConstantVal .anon}
+    {caps : Ix.Kernel.IndCaps .anon}
+    (hfind : c.env.find? (c.κ a) = some (.indInfo cv caps))
+    (hname : cv.name = c.κ (iprjAddr b i)) : c.κ (iprjAddr b i) ≠ unresolvedKey :=
+  hc.base.res_of_ind hfind hname
+
+/-- The inductive of a stored constructor resolves. -/
+theorem ScopedCoreFacts.res_of_ctor {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {a b : _root_.Address} {i j : Nat} {cv : Ix.Kernel.ConstantVal .anon} {nP nF : Nat}
+    (hfind : c.env.find? (c.κ a) = some (.ctorInfo cv nP nF))
+    (hname : cv.name = c.κ (cprjAddr b i j)) (hb : HashedBlockAt c.E b) :
+    c.κ (iprjAddr b i) ≠ unresolvedKey :=
+  hc.base.res_of_ctor hfind hname hb
+
+/-- The inductive of a stored constructor permits projection, at the address it is stored
+under. -/
+theorem ScopedCoreFacts.perm_of_ctor {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {a ac b : _root_.Address} {i j : Nat} {cvT : Ix.Kernel.ConstantVal .anon}
+    {caps : Ix.Kernel.IndCaps .anon} {cv : Ix.Kernel.ConstantVal .anon} {nP nF : Nat}
+    (hfindI : c.env.find? (c.κ a) = some (.indInfo cvT caps))
+    (hnameI : cvT.name = c.κ (iprjAddr b i))
+    (hfindC : c.env.find? (c.κ ac) = some (.ctorInfo cv nP nF))
+    (hnameC : cv.name = c.κ (cprjAddr b i j)) (hb : HashedBlockAt c.E b) :
+    ProjPermitted c.κ a :=
+  hc.base.perm_of_ctor hfindI hnameI hfindC hnameC hb
+
+/-- The address a role in force is bound to resolves. -/
+theorem ScopedCoreFacts.res_of_role {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    {r : Ix.Kernel.Role} {a : _root_.Address} (hb : c.t.addressOf? r = some a)
+    (hf : c.inForce r) (hi : fabricatedRole r = true) : c.κ a ≠ unresolvedKey :=
+  hc.base.res_of_role hb hf hi
+
+/-- `resolve_key` also reads the resolution off the facts a prefix carries. -/
+macro_rules
+  | `(tactic| resolve_key) => `(tactic| first
+      | with_reducible (first
+        | exact ScopedCoreFacts.res_of_find (by assumption) (by assumption)
+        | exact ScopedCoreFacts.res_of_ind (by assumption) (by assumption) (by assumption)
+        | exact ScopedCoreFacts.res_of_ctor (by assumption) (by assumption) (by assumption)
+            (by assumption))
+      | exact ScopedCoreFacts.res_of_role (by with_reducible assumption)
+          (by with_reducible assumption) (by with_reducible assumption) (by decide))
 
 /-! ## The unrestricted contract of the seams instance -/
 

@@ -424,7 +424,7 @@ theorem block_is_modeled_step (c : ScopedCtx) {args : List (SourceValue F)} {h h
 
 /-- `KernelModeled::proj_ctor`: asserts `block_is_modeled(block) = 0` (`FewInductives`) and loads
 the constructor projection record `(i, 0, block)`. -/
-theorem proj_ctor_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
+theorem proj_ctor_step (c : ScopedCtx) (hc : ScopedCoreBase c)
     {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelModeled::proj_ctor" args h r h' calls) (ih : IH c calls) :

@@ -1026,7 +1026,7 @@ theorem role_of_step (c : ScopedCtx) {args h r h' calls}
         have hinForce : c.inForce ro := ⟨hbinds, fun m hm => by rw [hlim] at hm; cases hm⟩
         exact .inr ⟨ro, hr, haddr, hinForce⟩
 
-theorem role_is_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args h r h' calls}
+theorem role_is_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args h r h' calls}
     (ev : ObsFn W "KernelRoles::role_is" args h r h' calls) (ih : IH c calls) :
     Specs.Roles.role_is c args h r h' calls := by
   intro rc ap a ro hargs good hrc ha hr_ne

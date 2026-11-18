@@ -131,7 +131,7 @@ end InferBase
 open InferBase
 
 /-- `KernelInfer::k_infer_core`: one step of full-grade inference by the head node. -/
-theorem k_infer_core_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
+theorem k_infer_core_step (c : ScopedCtx) (hc : ScopedCoreBase c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::k_infer_core" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_core c args h r h' calls := by
@@ -284,7 +284,7 @@ theorem k_infer_core_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
       hEs
 
 /-- `KernelInferOnly::k_infer_only_core`: one step of io-grade inference by the head node. -/
-theorem k_infer_only_core_step (c : ScopedCtx) (hc : ScopedCoreFacts c)
+theorem k_infer_only_core_step (c : ScopedCtx) (hc : ScopedCoreBase c)
     (hfire : ProjGuardFires c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInferOnly::k_infer_only_core" args h r h' calls) (ih : IH c calls) :

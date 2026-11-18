@@ -333,7 +333,7 @@ theorem head_addr_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Hea
 /-- `KernelDefEq::delta_unfold`: at a constant head, the stored definition's value
 (`Red.delta`) or the stored theorem's (`Red.deltaThm`, with `EnvFacts.thmTyped`) at the head's
 levels, applied to the spine. -/
-theorem delta_unfold_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)}
+theorem delta_unfold_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::delta_unfold" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.delta_unfold c args h r h' calls := by

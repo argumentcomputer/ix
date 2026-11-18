@@ -65,7 +65,7 @@ theorem last_binder_dom_spec (c : ScopedCtx) :
       obtain ⟨T0, B0, ℓ, rfl, hT0, -, -⟩ := hE.forallE_of_load ld12
       exact ⟨rfl, 0, T0, rfl, by simpa using hT0⟩
 
-theorem rec_family_block_spec (c : ScopedCtx) (hc : ScopedCoreFacts c) {x_rec_addr r : SourceValue F} {h h' : Heap F}
+theorem rec_family_block_spec (c : ScopedCtx) (hc : ScopedCoreBase c) {x_rec_addr r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)} {a : Bytes.Address} {cv : Ix.Kernel.ConstantVal .anon}
     {mI rP : Nat} {rls : List (Ix.Kernel.RecRule .anon)}
     (ev : ObsFn W "KernelModeled::rec_family_block" [x_rec_addr] h r h' calls)
@@ -435,7 +435,7 @@ theorem rec_major_pins_spec (c : ScopedCtx) {ps : List Ix.Kernel.LevelParam}
   exact ⟨x_iaddr, x_ilvls, v358, lvls, pins, rfl,
     by rw [hpins_len]; exact hnP_lt, hnested, hlsPos.mono ext_all, hpins_375⟩
 
-theorem rec_comparands_spec (c : ScopedCtx) (hc : ScopedCoreFacts c) {x_raddr r : SourceValue F} {h h' : Heap F}
+theorem rec_comparands_spec (c : ScopedCtx) (hc : ScopedCoreBase c) {x_raddr r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)} {a : Bytes.Address} {cv : Ix.Kernel.ConstantVal .anon}
     {mI rP : Nat} {rls : List (Ix.Kernel.RecRule .anon)}
     (ev : ObsFn W "KernelModeled::rec_comparands" [x_raddr] h r h' calls)
@@ -616,7 +616,7 @@ end FireCompareAux
 
 /-- `KernelModeled::fire_compare`: modeled recursor firing comparison (`FamilyFew` when
 `block_is_modeled = 0`, or `FireCompared` against `Tier.nestedPins`). -/
-theorem fire_compare_step (c : ScopedCtx) (hc : ScopedCoreFacts c) {args : List (SourceValue F)} {h h' : Heap F}
+theorem fire_compare_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelModeled::fire_compare" args h r h' calls) (ih : IH c calls) :
     Specs.Callees.fire_compare c args h r h' calls := by

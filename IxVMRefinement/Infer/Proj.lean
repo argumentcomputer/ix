@@ -596,7 +596,7 @@ theorem lv_snoc {ls : List KLevel} {l : KLevel} {lp vp r : SourceValue F} {h h' 
   rw [Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol, klevel_node_eq] at hres
   exact hres
 
-theorem ind_params_eq (c : ScopedCtx) (hc : ScopedCoreFacts c)
+theorem ind_params_eq (c : ScopedCtx) (hc : ScopedCoreBase c)
     {addr ptr nl ty ni nc u blk : SourceValue F} {h1 h2 : Heap F} {cs : List (Call F)}
     {s b : Bytes.Address} {nPS nP : Nat} {i : F}
     (ev : ObsFn W "Ingress::get_ci" [addr] h1 ptr h2 cs)
@@ -636,7 +636,7 @@ theorem ind_params_eq (c : ScopedCtx) (hc : ScopedCoreFacts c)
 /-- **The store's record at a loaded structure's address is the projection of the member the
 load names**: the member index and the block the `Induct` value carries are those of the
 inductive projection record the store holds at the address. -/
-theorem ind_member_record (c : ScopedCtx) (hc : ScopedCoreFacts c)
+theorem ind_member_record (c : ScopedCtx) (hc : ScopedCoreBase c)
     {addr ptr nl ty np ni nc u blk : SourceValue F} {h1 h2 : Heap F} {cs : List (Call F)}
     {s b : Bytes.Address} {i : F}
     (ev : ObsFn W "Ingress::get_ci" [addr] h1 ptr h2 cs)
@@ -978,7 +978,7 @@ end ProjAux
 
 /-- **Shared projection inference step** at grade `g` (`.full` for `k_infer_proj`, `.io` for
 `k_infer_only_core`'s `.Proj` arm). -/
-theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c) (hfire : ProjGuardFires c)
+theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreBase c) (hfire : ProjGuardFires c)
     {g : Ix.Kernel.Rules.Grade} {calls : List (Call F)} (ih : IH c calls) (good : CoreGood c calls)
     {x_rc x_struct_addr x_fidx x_e1 x_types r : SourceValue F} {h h' : Heap F}
     {d : Nat} {Γ : Nat → KExpr} {s : Bytes.Address} {fi : F} {PE : KExpr}
@@ -1274,7 +1274,7 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreFacts c) (hfire : Proj
       hfindC htbl hnFt hltF hg_lvl husT hg0_us heqv φ
 
 /-- `KernelInfer::k_infer_proj`: full-grade projection inference (`Infer.proj`). -/
-theorem k_infer_proj_step (c : ScopedCtx) (hc : ScopedCoreFacts c) (hfire : ProjGuardFires c)
+theorem k_infer_proj_step (c : ScopedCtx) (hc : ScopedCoreBase c) (hfire : ProjGuardFires c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::k_infer_proj" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_proj c args h r h' calls := by
