@@ -94,7 +94,7 @@ structure FamilyChecksAt (calls : List (Call F)) (bAddr : _root_.Address)
 witness** (module docstring). The family checks of the family records, of the twins and of the
 inner records are at one binding (`checks`, the walk's), so a twin's family check and its
 block's family record's are under the same context. A block with a family record is a block of
-inductive types (`famInductive`). -/
+inductive types (`famInd`). -/
 structure FamilyRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
     (envT : Ix.Kernel.Env .anon) (E₀ : Ixon.Env) (lim : Option Nat)
     (Top : _root_.Address → Prop) (rank : _root_.Address → Nat)
@@ -120,7 +120,7 @@ structure FamilyRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
     ModeledRouteAt calls B →
     (∃ x, ConstAddrOf B cb x ∧ ¬ StoredAt t envT x) → ∃ rb, fam B = some rb
   /-- A block with a family record is a block of inductive types. -/
-  famInductive : ∀ B rb, fam B = some rb → ∃ cb ms, recordOf E₀ B = some cb ∧
+  famInd : ∀ B rb, fam B = some rb → ∃ cb ms, recordOf E₀ B = some cb ∧
     cb.info = .muts ms ∧ ∀ m ∈ ms.toList, ∃ ind, m = Ixon.MutConst.indc ind
   /-- The family checks of the family records, the twins and the inner records, at one
   binding. -/

@@ -338,7 +338,7 @@ theorem familyRun_of (K : FamRunCtx) {rank' : _root_.Address → Nat}
     FamilyRun K.calls K.t K.envT K.E₀ K.lim K.Top rank' K.fam K.twin K.adv K.Inner ∧
       ∀ B rb rb', K.fam B = some rb → K.twin rb' = some B → K.Pref B rb := by
   refine ⟨{ graph := ?graph, claimed := ?claimed, modeled := ?modeled,
-            famInductive := ?famInductive,
+            famInd := ?famInd,
             checks := ⟨K.bAddr, { famCall := ?famCall, twinCall := ?twinCall,
               innerCall := ?innerCall }⟩,
             storedTwin := hST }, ?form⟩
@@ -409,7 +409,7 @@ theorem familyRun_of (K : FamRunCtx) {rank' : _root_.Address → Nat}
           exact hlog⟩
     obtain ⟨rb, hFC⟩ := hO.modeledCall B hFB
     exact FamRunCtx.fam_of hFB hFC
-  case famInductive =>
+  case famInd =>
     intro B rb h
     obtain ⟨cb, ms, hcb, hms, -, hall⟩ := (FamRunCtx.fam_some h).1.2.2.1
     exact ⟨cb, ms, hcb, hms, hall⟩
