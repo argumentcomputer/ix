@@ -85,6 +85,7 @@ theorem CheckedSortAt.raw_trace (rawKey : _root_.Address → KKey) [∀ a, Resol
     _, _, extension, types, represented, observed, level, included, zero⟩ := checked
   obtain ⟨context, rawCtx⟩ := RawContext.ofTypes rawKey types.1
   obtain ⟨input, physical⟩ := RawExprRep.ofOpenTm_keyed rawKey represented
+  rw [Nat.zero_add] at physical
   obtain ⟨rawSignature, rawLevel, trace⟩ := sort_signature_raw_trace rawKey facts
     (good.sub included) included types represented rawCtx physical observed
   have same := level.det rawLevel
