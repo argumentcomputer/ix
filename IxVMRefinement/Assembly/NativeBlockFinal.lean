@@ -6,30 +6,14 @@ import IxVMRefinement.Assembly.NativeBlockAux
 import IxVMRefinement.Assembly.StoreArClauses
 import IxVMRefinement.Assembly.LateValueStep
 
-/-! # The per-record step of a native inductive block without its recursor
+/-! # The carried clause of the earlier native block step, and the family it registers
 
-`unitStep_nativeBlock`: `UnitStep` for a one-type native inductive block whose former is a
-syntactic telescope, its type former and constructors as one unit, with the carried clause
-`NativeBlockX t E` (the registry of native families, the store-key clause, the projection-name
-clause and the level clauses).
-
-The step at an environment `env` handed by the fold: the readings and the recogniser
-(`blockReads_of_member`, `nativeParts_of_member`), the install read off the member check
-(`nativeInstallOut_of_member`), the new projection table (`blockTable_of_install`), the load
-contract after the install (`storedLoads_append` with `BlockInstall.newLoads`), the prefix
-invariant there (`PrefixInv.nativeNoRec_eta`), and the carried clause there: the family registered
-(`LateRegistry.nativeNoRec'` with `lateFamAt_of_install`), the store keys (`HashKeyed.append`),
-the projection names (`NativeNoRecFacts.auxRootSynced`), the level clauses
-(`NativeNoRecFacts.lvClauses`).
-
-The level clauses are not read by this step; they are in the carried clause so that it is the
-fold's one clause, which the value steps read for their front check
-(`constantValCheckJ_of_prefix_lv`) and this step keeps.
-
-Three inputs remain: the certificate of the new projection table and the two η fields of the
-load contract at the new family, each stated over the install read off the member check
-(`NativeInstallOut`; `BlockCert`, `BlockEta`), and the reading of a `proj_guard` run (`hread`),
-with which the certificate gives the table's firing at every context (`blockFire_of_cert`).
+What the earlier statements of a one-type native block's step share: the keys of the new
+constants are resolved (`keyOf_ne_unresolvedKey`, `projTableName_keyOf_ne_unresolvedKey`), the
+family the install names read off the store with its telescope constant the stored former
+(`lateFamAt_of_install`), and the clause those statements carry beside the invariant
+(`NativeBlockX t E`: the registry of native families, the store-key clause, the
+projection-name clause and the level clauses).
 -/
 
 set_option maxHeartbeats 4000000
@@ -154,111 +138,11 @@ theorem lateFamAt_of_install {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {n : 
       rw [h0]
       exact (hctor j cA hcA).1
 
-/-! ## The step -/
+/-! ## The carried clause -/
 
 /-- **The clause the fold carries beside the invariant** (module docstring). -/
 abbrev NativeBlockX (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (env : Ix.Kernel.Env .anon) :
     Prop :=
   ((LateRegistry.{u} t E env ∧ HashKeyed t env) ∧ Decl.AuxRootSynced env) ∧ LvClauses env
-
-/-- **`UnitStep` for a one-type native inductive block without its recursor** (module
-docstring). The unit is the block's record at `B`; it is checked at the limit `n` of the member
-check, on the native route, with its former declared at a syntactic telescope. -/
-theorem unitStep_nativeBlock {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr B : _root_.Address}
-    {cb : Ixon.Constant} {ind : Ixon.Inductive} {n : Nat}
-    (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hrec : BlockUnitRecord E₀ B cb ind)
-    (hchk : MutsMemberCheckedAtFullAt calls bAddr t B #[.indc ind] 0 n) (hlim : lim = some n)
-    (hnat : NativeRouteAt calls B) (htele : FormerAtTele t E₀ B cb ind)
-    (hkey : ∀ x, ConstAddrOf B cb x → Decl.KeyFree (keyOf t x))
-    (hinert : InertClause t cb)
-    (hcover : ∀ env, HandedRefs t envT E₀ B cb env → CoverAt t env cb)
-    (hP : HashedBlockProjectionsHeld E) (hcov : L1.CanonicalHashCoverage E calls)
-    (hread : Core.ProjGuardRunReading)
-    (hcert : ∀ (env : Ix.Kernel.Env .anon) (new blk : List (ConstantInfo .anon))
-      (p₀ p : Ix.Kernel.NativeParts .anon) (ty' : Ix.Kernel.Expr .anon)
-      (ctorsA : List (ConstantVal .anon × Nat)) (caps : IndCaps .anon),
-      NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps →
-      BlockCert t E ⟨new ++ env.consts⟩ B)
-    (heta : ∀ (env : Ix.Kernel.Env .anon) (new blk : List (ConstantInfo .anon))
-      (p₀ p : Ix.Kernel.NativeParts .anon) (ty' : Ix.Kernel.Expr .anon)
-      (ctorsA : List (ConstantVal .anon × Nat)) (caps : IndCaps .anon),
-      Decl.PrefixInv.{u} E t (some n) env →
-      NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps →
-      BlockEta ⟨E, env, t, some n⟩ new) :
-    UnitStep.{u} (NativeBlockX.{u} t E) t envT E₀ E lim B cb := by
-  subst hlim
-  intro env hext hnd hinv hXe href hfresh
-  obtain ⟨⟨⟨hreg, hkeys⟩, haux⟩, hlv⟩ := hXe
-  have hbound : Bounded calls := (hst.good env none).2
-  have htwf : t.wf = true := hinv.tableWf
-  have hstored : Decl.UsedRefsStored t env cb :=
-    usedRefsStored_of_cover (hcover env ⟨hext, href, hfresh⟩) hinert
-  obtain ⟨ty₀, cs, -, -, -, hall⟩ := blockReads_of_member ht hbound hS hrec hchk
-  obtain ⟨hblk, hpin, hna⟩ := hall {}
-  obtain ⟨p₀, hp₀, -⟩ := nativeParts_of_member ht hbound hS hrec hchk htele hblk hkey
-  obtain ⟨new, p, ty', ctorsA, caps, hO⟩ := nativeInstallOut_of_member ht hS hst hrec hchk hnat
-    htele hblk hp₀ hinv hstored hP hkeys hfresh hkey hcov haux hnd
-  have hI := hO.install
-  have hfreshT : env.find? (Core.keyOf t (Core.iprjAddr B 0)) = none :=
-    hfresh _ (Or.inr ⟨_, 0, .indc ind, hrec.muts, rfl, Or.inl rfl⟩)
-  have hcvT : p₀.cvT = ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat,
-      p₀.cvT.type⟩ := by
-    rw [← hO.cvT₀.1, ← hO.cvT₀.2]
-  have hctorsA : ∀ (j : Nat) (cA : ConstantVal .anon × Nat), ctorsA[j]? = some cA →
-      cA.1.name = Core.keyOf t (Core.cprjAddr B 0 j) ∧
-        cA.1.levelParams = List.range ind.lvls.toNat := by
-    intro j cA hcA
-    have hj : j < ind.ctors.size := by
-      have := (List.getElem?_eq_some_iff.mp hcA).1
-      rw [hO.lenA] at this
-      exact this
-    obtain ⟨ct, cty', -, hcl, -, hA⟩ := hO.ctors j hj
-    rw [hA] at hcA
-    injection hcA with hcA
-    subst hcA
-    exact ⟨rfl, by rw [hcl]⟩
-  have hT : BlockTable ⟨E, env, t, some n⟩ new B ind :=
-    blockTable_of_install hI hinv hpin hna hO.facts hcvT hO.nP₀ hO.nIdx₀ hO.lenA hctorsA hfreshT
-      (blockFire_of_cert hread hI (hcert env new _ p₀ p ty' ctorsA caps hO))
-  have hE := heta env new _ p₀ p ty' ctorsA caps hinv hO
-  -- the names of the new constants
-  have hnres : ∀ cn ∈ new, cn.name ≠ Core.unresolvedKey := by
-    intro cn hcn
-    rcases hI.newName cn hcn with h | ⟨j, -, h⟩ | ⟨tbl, rfl⟩
-    · rw [h]; exact keyOf_ne_unresolvedKey t _
-    · rw [h]; exact keyOf_ne_unresolvedKey t _
-    · show Ix.Kernel.projTableName tbl.structName ≠ Core.unresolvedKey
-      rw [hO.tableName tbl hcn]
-      exact projTableName_keyOf_ne_unresolvedKey t _
-  have hres : ∀ (k : Core.KKey) (ci : ConstantInfo .anon),
-      (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? k = some ci → env.find? k = none →
-      k ≠ Core.unresolvedKey := by
-    intro k ci hf hnone
-    rcases find?_append_cases new hf with hm | hold
-    · rw [← Core.WhnfAux.name_of_find hf]
-      exact hnres ci hm
-    · rw [hnone] at hold
-      cases hold
-  -- the load contract and the invariant after the install
-  have hloads := storedLoads_append (c := ⟨E, env, t, some n⟩) hinv.loads hO.facts.envExt hnres
-    hinv.etaStable (hI.newLoads hT hE)
-  have hinv₂ : Decl.PrefixInv.{u} E t (some n) ⟨new ++ env.consts⟩ :=
-    PrefixInv.nativeNoRec_eta hinv hO.facts hpin hna hres hloads
-  -- the carried clause after the install
-  have hreg₂ : LateRegistry.{u} t E ⟨new ++ env.consts⟩ :=
-    LateRegistry.nativeNoRec' hreg hO.facts (lateFamAt_of_install hrec hO)
-  have hkeys₂ : HashKeyed t ⟨new ++ env.consts⟩ := by
-    refine HashKeyed.append htwf hkeys fun ci hci => ?_
-    rcases hI.newName ci hci with h | ⟨j, hj, h⟩ | ⟨tbl, rfl⟩
-    · exact Or.inl ⟨Core.iprjAddr B 0, h, address_size_of_record hS hrec.former⟩
-    · exact Or.inl ⟨Core.cprjAddr B 0 j, h, address_size_of_record hS (hrec.ctors j hj)⟩
-    · exact Or.inr fun y h =>
-        Decl.ne_projTableName_of_isBaseKey (Decl.isBaseKey_keyOf t y) h.symm
-  have haux₂ : Decl.AuxRootSynced ⟨new ++ env.consts⟩ :=
-    NativeNoRecFacts.auxRootSynced hpin hna hO.facts haux
-  have hlv₂ : LvClauses ⟨new ++ env.consts⟩ := NativeNoRecFacts.lvClauses hpin hO.facts hlv
-  exact ⟨new, hO.nodup, hO.fresh, hinv₂, ⟨⟨⟨hreg₂, hkeys₂⟩, haux₂⟩, hlv₂⟩, hO.reads, hO.named⟩
 
 end IxVM.Refinement.Typing
