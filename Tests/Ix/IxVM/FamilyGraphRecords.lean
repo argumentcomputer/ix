@@ -533,6 +533,10 @@ def runProbe (leanEnv : Lean.Environment) : IO UInt32 := do
       let mkEnv (extra : Array (Address × Ixon.Constant)) (pl : IxVM.Model.Payload) : Ixon.Env :=
         { env with models := env.models.insert block pl.ser,
                    modelRecords := extra.foldl (fun m (a, c) => m.insert a c) env.modelRecords,
+                   -- a `Definition` record's `get_ci` loads its reducibility hint (channel 3),
+                   -- so every hand-built definition is served one (`Ingress::load_constant_hint`)
+                   modelHints := extra.foldl (fun m (a, c) => match c.info with
+                     | .defn _ => m.insert a (.regular 0) | _ => m) env.modelHints,
                    modelDeps := env.modelDeps.insert block
                      ((env.modelDeps.getD block #[]) ++ extra.map (·.1)) }
       let probe (name : String) (extra : Array (Address × Ixon.Constant)) (pl : IxVM.Model.Payload)
