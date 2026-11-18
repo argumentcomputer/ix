@@ -112,9 +112,11 @@ end Run
   `check_recs` compares the record entry by entry against the flattened block; not specified.
 * `noPinned`: unknown; it is a statement about the basis pins and the keys of the new records
   (`PinnedBasis`), for which no reading of the circuit is written.
-* `keptRoles`: today's circuit: the validation of a kept role walks its record (`validate_member`,
-  `validate_anchor`, `validate_eqns`) and its root is safe (`rootsAndTheoremsSafe_of_run`); not
-  assembled.
+* `keptRoles`: today's circuit: the record is held (`groupStore_kept`), in Lean's logic with its
+  block (`RootsSafe.bound`), and checked at the group's limit (the root's walked record,
+  `unitCheckedAt_of_topRec`); not exported is that the bound record is no block record:
+  `get_ci`'s head at the bound address (`Claim.GetCIHead`, no arm for a block), which
+  `RoleVal.ValidateRoleIn.bound_loaded` drops.
 * `routeNew`: today's circuit: the modeled arm of `KernelCheck::check_const` reaches
   `KernelModeled::check_modeled_block` and `check_family`; a block's route over the closure's
   store against the route the circuit read; not specified.
@@ -140,7 +142,7 @@ structure RunFactsLeft (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : I
   routeNew : ∀ R₁ B, ClosureStore t g R R' R₁ → New R R' B →
     Route.blockRoute R₁ B = some true → ∃ rb, famOf B = some rb
   readsDown : ∀ R₁ x ci₀, ClosureStore t g R R' R₁ → (recordOf R x).isSome = true →
-    Reads t R₁ x ci₀ → Reads t R x ci₀
+    IxVM.Consistency.Reads t R₁ x ci₀ → IxVM.Consistency.Reads t R x ci₀
 
 /-- **What is left of the run's family checks**, at the store sequence with the run's payload
 (`Rs g` below is `groupStore t E₀ (runPayload calls bAddr t) g`). Status: premises; nothing
