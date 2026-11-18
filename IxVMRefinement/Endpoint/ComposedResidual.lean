@@ -10,6 +10,7 @@ import IxVMRefinement.FamilyGraph.CompositionFam
 import IxVMRefinement.Binding.RoleUnitW
 import IxVMRefinement.Binding.BasisWalked
 import IxVMRefinement.Binding.ClosureFamilyRun
+import IxVMRefinement.FamilyGraph.ProducersAcyclic
 
 /-! # The composed statement from its open obligations
 
@@ -337,18 +338,26 @@ and each group from 6 to 76 of it:
 The role unit of a standard axiom is proved in that form (`Binding.standardAxiomRoleUnitW_closed`,
 from the axiom's observed validation, `Binding.axiomValidationFacts`).
 
-The last four hypotheses are the typing half's. The step of the ordinary inductive type takes
-the use-site reading of the projection guard, a theorem (`Core.projGuardRunReading`).
+The last four hypotheses are the typing half's. Before them, `Pref` is a parameter, not an
+obligation (a relation, not a proposition): the twin preference, which the typing side
+instantiates with the concrete record-level form once that form is defined. The step of the
+ordinary inductive type takes the use-site reading of the projection guard, a theorem
+(`Core.projGuardRunReading`).
 
-* `familyGraph`: at every walk of an accepted typing claim and every witness of the table's
-  shape, the run's family records, advice, inner records and twins form a family graph in which
-  every top-walked non-empty block of recursors is a family record or a twin, every top-walked
-  block on the modeled route has a family record, and each family record and twin had its
-  family check at the walk's limit (`FamilyRun`). Stated; its graph part (`FamilyGraph`) is
-  inhabited at two compiled fixtures (`GraphCheck.familyGraph_of_checks`, from record checks
-  evaluated by execution). Producer open: the graph from the run's family
-  checks; that a top-walked block of recursors is claimed or a twin is read off the circuit's
-  family checks as they are to be changed, not proved.
+* `familyGraph`: what the run's family graph is owed at the twin preference `Pref`
+  (`Typing.FamilyGraphOwed`): at every walk of an accepted typing claim and every witness of the
+  table's shape, at the run's choices, the facts the circuit's functions give
+  (`Typing.BatchGives`, the reference facts the ranking reads among them) and the stored twins'
+  field (`Typing.StoredTwinField`). The obligation holds at any `Pref`, since both read it only
+  through the selector's choice of the family records and the twins. Proved from it
+  (`Typing.familyGraphRow_of_owed`): the row `FamilyGraphRow`, in which the run's family
+  records, advice, inner records and twins form a family graph where every top-walked non-empty
+  block of recursors is a family record or a twin, every top-walked block on the modeled route
+  has a family record, and each family record and twin had its family check at the walk's limit
+  (`FamilyRun`). The choices, the graph, the ranking with its acyclicity, and the facts of the
+  functions that the circuit's family changes leave alone are proved. Producer open: the batch's
+  fields, from the circuit's functions as they are to be changed, and the stored twins' field,
+  from the binding side's stored families.
 * `innerChecked`: at every walk and every such run, each record checked inside a family check
   was checked at the walk's limit, uses no inert axiom's reference, uses only references that
   the witness's environment stores, that are covered, or that a checked record of smaller rank
@@ -363,15 +372,17 @@ the use-site reading of the projection guard, a theorem (`Core.projGuardRunReadi
 * `familyBlock`: what the family check of a top-walked block with a family record, an empty one
   included, gives its step (`FamilyAlias.FamilyBlockCheckRow`): the seam to the model side's
   facts (the family as read and `Decl.FamilyAlias.FamilyCheckFacts`, kernel-checked at two
-  compiled fixtures), the companion facts of each recursor the step stores, and the three load
-  facts at its new constants that read the family check (`FamilyAlias.FamilyLoadsCheck`: the
-  annotated loads of the members, of the constructor projections and of the inductive
-  projections). The
+  compiled fixtures), the companion facts of each recursor the step stores, the stored types of
+  the block's members and constructors as the canonical annotation of their readings, with the
+  block's used references stored (`FamilyAlias.FamilyMembersCanon`), and one load fact at its
+  new constants that reads the family check (`FamilyAlias.FamilyLoadsCheck`: the annotated loads
+  of the members). The
   row (`FamilyBlockRow`: the step installs the block with its family record and keeps the fold's
   clause with the family recursors' companions beside it, `UnitStepFamily`) is a theorem from it
   (`FamilyAlias.familyBlockRow_of_check`): the block's record, the route fact at the block, the
   claim of the recursors, key freedom, the pinned equality, the keeping of the clause and the
-  other eleven load facts (the unit-like and eta facts among them) are proved. Producer: the
+  other thirteen load facts (the unit-like and eta facts and the loads of the constructor and
+  inductive projections among them) are proved. Producer: the
   circuit side, from the observed family check
   to these facts, open until the circuit's family changes.
 * `familyTwin`: the step of a second family record of a block (a twin), handed the block's
@@ -392,7 +403,8 @@ theorem circuitComposed_residual
     (operationRoleUnit : ∀ calls,
       AtGroups (BindingRun calls)
         (RoleUnitStepOverW.{u} (· ∈ RoleOps.opRoles) FormerOpenTraceAt))
-    (familyGraph : FamilyGraphRow.{u})
+    (Pref : RunPref)
+    (familyGraph : FamilyGraphOwed.{u} Pref)
     (innerChecked : InnerCheckedRow)
     (familyBlock : FamilyAlias.FamilyBlockCheckRow.{u} FormerOpenTraceAt)
     (familyTwin : FamilyTwinRow.{u} FormerOpenTraceAt) :
@@ -404,7 +416,7 @@ theorem circuitComposed_residual
     admitsReadsChain_bindingRun (fun _ _ _ _ h => h.families)
     (groupClosureFamily_of_steps closureUnitSteps closureFamilySteps closureTwinSteps)
     groupWithoutRoleUnit operationRoleUnit Binding.standardAxiomRoleUnitW_closed
-    familyGraph
+    (familyGraphRow_of_owed familyGraph)
     (innerUnitSteps_of_innerChecked innerChecked
       (nativeBlockTelescope_checked linkLaws_formerOpenTrace Core.projGuardRunReading))
     (FamilyAlias.familyBlockRow_of_check linkLaws_formerOpenTrace familyBlock) familyTwin

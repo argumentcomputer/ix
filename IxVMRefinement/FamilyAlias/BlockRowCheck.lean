@@ -304,6 +304,45 @@ theorem storedAs_ctor {ci : ConstantInfo .anon} {cv₀ : ConstantVal .anon} {nP 
   | recInfo _ _ _ _ => exact False.elim h2
   | projInfo _ => exact False.elim h2
 
+/-- **The stored constant of a declared inductive is an inductive with its name and level
+parameters.** -/
+theorem storedAs_ind {ci : ConstantInfo .anon} {cv₀ : ConstantVal .anon}
+    {caps₀ : Ix.Kernel.IndCaps .anon} (h : StoredAs ci (.indInfo cv₀ caps₀)) :
+    ∃ cv caps, ci = .indInfo cv caps ∧ cv.name = cv₀.name ∧ cv.levelParams = cv₀.levelParams := by
+  obtain ⟨⟨hn, hl, -⟩, h2⟩ := h
+  cases ci with
+  | indInfo cv caps => exact ⟨cv, caps, rfl, hn, hl⟩
+  | axiomInfo _ => exact False.elim h2
+  | defnInfo _ _ _ => exact False.elim h2
+  | thmInfo _ _ => exact False.elim h2
+  | ctorInfo _ _ _ => exact False.elim h2
+  | recInfo _ _ _ _ => exact False.elim h2
+  | projInfo _ => exact False.elim h2
+
+/-- **The stored constant of a declared constructor is a constructor with its name, level
+parameters and counts.** -/
+theorem storedAs_ctor_val {ci : ConstantInfo .anon} {cv₀ : ConstantVal .anon} {nP nF : Nat}
+    (h : StoredAs ci (.ctorInfo cv₀ nP nF)) :
+    ∃ cv, ci = .ctorInfo cv nP nF ∧ cv.name = cv₀.name ∧ cv.levelParams = cv₀.levelParams := by
+  obtain ⟨⟨hn, hl, -⟩, h2⟩ := h
+  cases ci with
+  | ctorInfo cv nP' nF' =>
+    obtain ⟨e1, e2⟩ := h2
+    exact ⟨cv, by rw [e1, e2], hn, hl⟩
+  | axiomInfo _ => exact False.elim h2
+  | defnInfo _ _ _ => exact False.elim h2
+  | thmInfo _ _ => exact False.elim h2
+  | indInfo _ _ => exact False.elim h2
+  | recInfo _ _ _ _ => exact False.elim h2
+  | projInfo _ => exact False.elim h2
+
+/-- A constant value with the given name and level parameters. -/
+theorem constVal_eta {cv : ConstantVal .anon} {n : Ix.Kernel.Key .anon}
+    {lps : List Ix.Kernel.LevelParam} (hn : cv.name = n) (hl : cv.levelParams = lps) :
+    cv = ⟨n, lps, cv.type⟩ := by
+  subst hn hl
+  rfl
+
 /-- **What the family step gives the load facts** (`FamLoadCtx`), at each environment the step's
 record is taken at: the store's records at the two records' addresses (the run's, decoded), the
 route fact, the new constants: the members at the keys of the two records' constant addresses
@@ -334,7 +373,8 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
     (hg : AliasGroup env h aliases) (hreads : FamDeclReads t E₀ A c rb crb blk)
     (hd : DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩)
     (hst : ∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
-      StoredAs c' ci) :
+      StoredAs c' ci)
+    (hcanon : FamilyMembersCanon t E₀ A c ms ⟨new ++ env.consts⟩) :
     FamLoadCtx ⟨E, env, t, lim⟩ new A c ms rb crb rs := by
   have hdec : L1.EnvDecoded E := hctx.recordsFor.1
   have hrec : ∀ a d, recordOf E₀ a = some d → recordOf E a = some d := fun a d hd' =>
@@ -410,7 +450,96 @@ theorem famLoadCtx_of_step {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {R 
         exact storedAs_ctor hsa
       routeTrue := hrouteT
       ctorTrees := fun ind hms => htrees ind (hB.muts.trans (by rw [hms]))
-      core := hinv.scopedCoreFacts }
+      core := hinv.scopedCoreFacts
+      check := Core.RoleClosure.check_ok_of_wf hinv.tableWf
+      used := hcanon.used
+      indForm := by
+        intro i ind hi hm
+        have hx : FamAddr A c rb crb (Core.iprjAddr A i) :=
+          Or.inl (Or.inr ⟨ms, i, .indc ind, hB.muts, hm, Or.inl rfl⟩)
+        obtain ⟨ci₀, hci₀, hk⟩ := hreads.2.2.1 _ hx
+        obtain ⟨y, -, hy, hry⟩ := hreads.2.1 ci₀ hci₀
+        have hyx : y = Core.iprjAddr A i := Core.keyOf_inj hinv.tableWf (hy.symm.trans hk)
+        rw [hyx] at hry
+        obtain ⟨c', hc', hR⟩ := hry
+        have e : c' = memberProjection A i (.indc ind) :=
+          Option.some.inj (hc'.symm.trans (hB.members i (.indc ind) hm))
+        subst e
+        have hinfo : (memberProjection A i (.indc ind)).info = .iPrj ⟨i.toUInt64, A⟩ := rfl
+        rw [hinfo] at hR
+        obtain ⟨cb', ms', ind', ⟨hcb', hms', hind', -, -, -⟩, ty₀, caps₀, hty, hci₀eq⟩ := hR
+        have e1 : cb' = c := Option.some.inj (hcb'.symm.trans hB.record)
+        subst e1
+        have e2 : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hB.muts)
+        subst e2
+        have hm' : ms'[(i.toUInt64).toNat]? = some (.indc ind) := by
+          rw [toNat_toUInt64_of_lt hi]
+          exact hm
+        have e3 : ind' = ind := Ixon.MutConst.indc.inj (Option.some.inj (hind'.symm.trans hm'))
+        subst e3
+        obtain ⟨c'', hf'', hsa⟩ := hst ci₀ hci₀
+        rw [hk] at hf''
+        rw [hci₀eq] at hsa
+        obtain ⟨cv, caps, hcv, hn, hl⟩ := storedAs_ind hsa
+        subst hcv
+        obtain ⟨hlbb, hdef, hcan⟩ := hcanon.ind i ind' ty₀ cv caps hi hm hty hf''
+        have hn' : cv.name = Core.keyOf t (Core.iprjAddr A i) := hn
+        have hl' : cv.levelParams = List.range ind'.lvls.toNat := hl
+        have ecv : (ConstantInfo.indInfo cv caps) =
+            .indInfo ⟨Core.keyOf t (Core.iprjAddr A i), List.range ind'.lvls.toNat, cv.type⟩ caps := by
+          rw [← constVal_eta hn' hl']
+        exact ⟨ty₀, cv.type, caps,
+          ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
+            (blob' := fun y => E.blobs.get? y) hctx.runBlob hty,
+          hlbb, hdef, hcan, hf''.trans (congrArg some ecv)⟩
+      ctorForm := by
+        intro i ind j ct hi hj hm hct
+        have hjlt : j < ind.ctors.size := (Array.getElem?_eq_some_iff.mp hct).1
+        have hx : FamAddr A c rb crb (Core.cprjAddr A i j) :=
+          Or.inl (Or.inr ⟨ms, i, .indc ind, hB.muts, hm, Or.inr ⟨ind, j, rfl, hjlt, rfl⟩⟩)
+        obtain ⟨ci₀, hci₀, hk⟩ := hreads.2.2.1 _ hx
+        obtain ⟨y, -, hy, hry⟩ := hreads.2.1 ci₀ hci₀
+        have hyx : y = Core.cprjAddr A i j := Core.keyOf_inj hinv.tableWf (hy.symm.trans hk)
+        rw [hyx] at hry
+        obtain ⟨c', hc', hR⟩ := hry
+        have e : c' = constructorProjection A i j :=
+          Option.some.inj (hc'.symm.trans (hB.ctors i ind j hm hjlt))
+        subst e
+        have hinfo : (constructorProjection A i j).info =
+            .cPrj ⟨i.toUInt64, j.toUInt64, A⟩ := rfl
+        rw [hinfo] at hR
+        obtain ⟨cb', ms', ind', ct', hcb', hms', hind', hct', hcidx, -, -, -, ty₀, hty, hci₀eq⟩ := hR
+        have e1 : cb' = c := Option.some.inj (hcb'.symm.trans hB.record)
+        subst e1
+        have e2 : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hB.muts)
+        subst e2
+        have hm' : ms'[(i.toUInt64).toNat]? = some (.indc ind) := by
+          rw [toNat_toUInt64_of_lt hi]
+          exact hm
+        have e3 : ind' = ind := Ixon.MutConst.indc.inj (Option.some.inj (hind'.symm.trans hm'))
+        subst e3
+        have hct2 : ind'.ctors[(j.toUInt64).toNat]? = some ct := by
+          rw [toNat_toUInt64_of_lt hj]
+          exact hct
+        have e4 : ct' = ct := Option.some.inj (hct'.symm.trans hct2)
+        subst e4
+        have hcj : ct'.cidx.toNat = j := hcidx.trans (toNat_toUInt64_of_lt hj)
+        obtain ⟨c'', hf'', hsa⟩ := hst ci₀ hci₀
+        rw [hk] at hf''
+        rw [hci₀eq] at hsa
+        obtain ⟨cv, hcv, hn, hl⟩ := storedAs_ctor_val hsa
+        subst hcv
+        obtain ⟨hlbb, hdef, hcan⟩ := hcanon.ctor i ind' j ct' ty₀ cv _ _ hi hj hm hct hty hf''
+        have hn' : cv.name = Core.keyOf t (Core.cprjAddr A i j) := hn
+        have hl' : cv.levelParams = List.range ct'.lvls.toNat := hl
+        have ecv : (ConstantInfo.ctorInfo cv ct'.params.toNat ct'.fields.toNat) =
+            .ctorInfo ⟨Core.keyOf t (Core.cprjAddr A i j), List.range ct'.lvls.toNat, cv.type⟩
+              ct'.params.toNat ct'.fields.toNat := by
+          rw [← constVal_eta hn' hl']
+        exact ⟨hcj, ty₀, cv.type,
+          ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
+            (blob' := fun y => E.blobs.get? y) hctx.runBlob hty,
+          hlbb, hdef, hcan, hf''.trans (congrArg some ecv)⟩ }
 
 /-- **What the circuit side's family check hands the step of the block at `A` with its family
 record at `rb`**: the seam, the companion facts of each recursor the step stores, and the load
@@ -447,6 +576,16 @@ structure FamilyBlockCheck (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
       StoredAs c' ci) →
     ∀ cv mI rP rls, ConstantInfo.recInfo cv mI rP rls ∈ new →
       RecCompanionFacts ⟨E, ⟨new ++ env.consts⟩, t, lim⟩ cv mI rP rls
+  /-- The seam of the loads: the circuit loads each new inductive and constructor in its
+  canonical annotated form. -/
+  canon : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
+    (aliases blk new : List (ConstantInfo .anon)),
+    Decl.PrefixInv.{u} E t lim env → AliasGroup env h aliases →
+    FamDeclReads t E₀ A c rb crb blk →
+    DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk ⟨new ++ env.consts⟩ →
+    (∀ ci ∈ blk, ∃ c', (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? ci.name = some c' ∧
+      StoredAs c' ci) →
+    ∀ ms, c.info = .muts ms → FamilyMembersCanon t E₀ A c ms ⟨new ++ env.consts⟩
   /-- The load facts at the step's new constants that read the family check. -/
   loads : ∀ (env : Ix.Kernel.Env .anon) (h : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon)
     (aliases blk new : List (ConstantInfo .anon)),
@@ -492,8 +631,9 @@ theorem familyBlockCircuitRow_of_check {L : Ix.Kernel.Env .anon → NativeFam .a
       route := hroute
       recs := hK.recs
       loads := fun env h aliases blk new hinv hg hreads hd hst =>
-        (famLoadCtx_of_step hctx hB hrb hroute hfree hrouteT htrees hinv hg hreads hd
-          hst).newLoads (hK.loads env h aliases blk new hinv hg hreads hd hst) }
+        (famLoadCtx_of_step hctx hB hrb hroute hfree hrouteT htrees hinv hg hreads hd hst
+          (hK.canon env h aliases blk new hinv hg hreads hd hst ms hB.muts)).newLoads
+          (hK.loads env h aliases blk new hinv hg hreads hd hst) }
 
 /-- **The row `familyBlock` from the facts of the family check** (module docstring). -/
 theorem familyBlockRow_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}

@@ -11,10 +11,11 @@ takes the kinds of a top-walked unit in, and of `CheckedUnitFact` and `CheckedUn
 form of a kind's step for every checked unit) and the axioms it reaches. A change to any of them
 fails the build.
 
-How to read it. The explicit arguments are the open obligations: the first six are the
-binding half's, the others the typing half's: the typing fold's rows over the family graph (the
-run's family graph, the records a family check checks, the step of a block with its family record and the step of a
-twin). The binding half's run predicate is `IxVM.Refinement.Binding.BindingRun`. The first
+How to read it. The explicit arguments are the open obligations, except `Pref`, a parameter
+(the twin preference, a relation, not a proposition): the first six are the
+binding half's, the others the typing half's: the typing fold's rows over the family graph (what
+the run's family graph is owed, the records a family check checks, the step of a block with its
+family record and the step of a twin). The binding half's run predicate is `IxVM.Refinement.Binding.BindingRun`. The first
 argument is the part of the binding claim's export that remains: the stores of a run and the
 family clauses of its family checks (the loaded table's admission and its prelude pin are
 theorems, `Binding.loadedTableAdmits` and `Binding.loadedTablePinsPrelude`). The next three are
@@ -69,7 +70,8 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
       IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
         (IxVM.Refinement.Binding.RoleUnitStepOverW (fun x => x ∈ IxVM.Refinement.RoleOps.opRoles)
           IxVM.Refinement.Typing.FormerOpenTraceAt))
-  (familyGraph : IxVM.Refinement.Typing.FamilyGraphRow) (innerChecked : IxVM.Refinement.Typing.InnerCheckedRow)
+  (Pref : IxVM.Refinement.Typing.RunPref) (familyGraph : IxVM.Refinement.Typing.FamilyGraphOwed Pref)
+  (innerChecked : IxVM.Refinement.Typing.InnerCheckedRow)
   (familyBlock : IxVM.Refinement.Typing.FamilyAlias.FamilyBlockCheckRow IxVM.Refinement.Typing.FormerOpenTraceAt)
   (familyTwin : IxVM.Refinement.Typing.FamilyTwinRow IxVM.Refinement.Typing.FormerOpenTraceAt) :
   IxVM.Consistency.CircuitComposed
