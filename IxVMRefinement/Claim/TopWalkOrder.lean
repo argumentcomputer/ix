@@ -51,7 +51,7 @@ theorem assert_op_reached_in_order_spec {ro : Ix.Kernel.Role} {n : Nat} (hn : n 
     RoleVal.roleSpecKindNat ro = 2 → n < 33 → Ix.SpecDigest.groupOf ro < n := by
   intro h2 h33
   have hnv : ZMod.val (n : F) = n := RolesAux.val_natCast (Nat.lt_trans hn (by decide))
-  have h33v : ZMod.val ((33 : Nat) : F) = 33 := RolesAux.val_natCast (by decide)
+  have h33v : ZMod.val (33 : F) = 33 := RolesAux.val_natCast (by decide)
   match Obs.«KernelRoles::assert_op_reached_in_order».obs ev with
   | .n2_n1 (ev63 := ev63) (ev92 := ev92) (heq115 := heq) .. =>
     obtain ⟨hlt, -, hiff, -, -⟩ := Lib.less_than_fields_field ev92
@@ -60,7 +60,7 @@ theorem assert_op_reached_in_order_spec {ro : Ix.Kernel.Role} {n : Nat} (hn : n 
   | .n2_other (ev63 := ev63) (ev42 := ev42) (hne121 := hne) .. =>
     obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::first_well_founded_group».obs ev63
     obtain ⟨-, -, hiff, -, -⟩ := Lib.less_than_fields_field ev42
-    exact absurd (hiff.mpr (by rw [hnv]; simpa using h33)) hne
+    exact absurd (hiff.mpr (by rw [hnv, h33v]; exact h33)) hne
   | .other (ev15 := ev15) (hne130 := hne) .. =>
     obtain ⟨hk, -⟩ := RoleVal.role_spec_kind_spec ev15
     exact absurd (by rw [hk, h2]; simp) hne
