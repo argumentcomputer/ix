@@ -283,9 +283,9 @@ theorem adviceBlock_shape {lim : Option Nat} {calls cs : List (Call F)} {E₀ : 
         rw [hl] at hcnt
         cases m with
         | indc ind =>
-          exact ⟨ind, Array.toList_inj.mp (by rw [hl]; rfl)⟩
-        | defn d => simp [Specs.Callees.isIndc] at hcnt
-        | recr rc => simp [Specs.Callees.isIndc] at hcnt
+          exact ⟨ind, Array.toList_inj.mp (by rw [hl])⟩
+        | defn d => exact absurd hcnt (by decide)
+        | recr rc => exact absurd hcnt (by decide)
       | _ :: _ :: _ =>
         rw [hl] at hcnt hle
         simp only [List.length_cons] at hcnt
