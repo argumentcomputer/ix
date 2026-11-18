@@ -193,7 +193,7 @@ theorem twinKeepsStoreAr : TwinKeepsStoreAr := by
     exact congrArg Env.mk (List.append_assoc _ _ _).symm
   have hlpW : ∀ w ∈ ws, w.cvW'.levelParams = w.cvW.levelParams := by
     intro w hw
-    obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, h⟩ := (hall w hw).1.inv
+    obtain ⟨-, -, -, -, -, -, type, stype, lv, -, -, -, -, -, h⟩ := (hall w hw).1.inv
     rw [h]
   have hfindRec : ∀ w ∈ ws,
       env₂.find? w.cvW.name = some (.recInfo w.cvW' w.mI w.rP w.rulesW') := by
@@ -213,7 +213,7 @@ theorem twinKeepsStoreAr : TwinKeepsStoreAr := by
     · obtain ⟨w, hw, rfl⟩ := List.mem_map.mp hrec
       have hcv := (hall w hw).1
       have hcC : ConstArR env (.recInfo w.cvC w.mI w.rP w.rulesC) := hA.const (hall w hw).2.2.1
-      refine { type := ?_, defn := fun _ _ _ he => nomatch he, thm := fun _ _ he => nomatch he,
+      refine { type := ?_, defn := fun _ _ _ he => (nomatch he), thm := fun _ _ he => (nomatch he),
                rhs := ?_, proj := fun _ he => nomatch he }
       · obtain ⟨-, -, -, -, hlb, hfv, type, stype, lv, hann, hlp, hres, hinf, -, hcv'⟩ := hcv.inv
         obtain ⟨hfv', -⟩ := (judgeFrames_twinPosRulesJ env).annot_syntax hann hfv hlb
