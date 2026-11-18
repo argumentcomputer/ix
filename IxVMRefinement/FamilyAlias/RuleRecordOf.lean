@@ -296,7 +296,9 @@ theorem iotaRuleRenRunJ_of_aliased
         ← IxVM.Refinement.Decl.getAppArgs_renameConsts, hcresFmap]
       exact r1
     · refine defEqListJ_renameJ_of_pos hext hA ?_
-      rw [map_fvarTypeD_renameConsts', hxfix, List.map_drop, hcdFmap]
+      have hd : (cdomsF.drop cnP).map (·.renameConsts h) = cdoms.drop cnP := by
+        rw [List.map_drop, hcdFmap]
+      rw [map_fvarTypeD_renameConsts', hxfix, hd]
       exact r2
     · refine defEqListJ_renameJ_of_pos hext hA ?_
       rw [map_fvarTypeD_renameConsts', hpre, hrdFmap]
@@ -350,7 +352,7 @@ theorem iotaRuleRenRunJ_of_aliased
     subst hlvls
     rw [instantiateLevelParams_self_eq] at hcdF hcdP
     rw [hpinsFt] at hcdF hlast'
-    rw [hpinsPt] at hcdP hcdomsPa htl
+    rw [hpinsPt] at hcdP htl
     -- the parameter domains, from the typed pins
     have hfvarsP : ∀ x ∈ (fvsP.take cnP).map (·.renameConsts g), ∃ idx ty, x = .fvar idx ty := by
       intro x hx
