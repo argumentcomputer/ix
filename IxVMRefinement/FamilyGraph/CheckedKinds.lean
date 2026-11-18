@@ -169,15 +169,15 @@ structure InnerChecked (calls : List (Call F)) (bAddr : _root_.Address)
     Prop where
   /-- The family check checked the record at the fold's limit: every member of a block, or the
   record. -/
-  checked : ∀ a c, Inner a → recordOf E₀ a = some c →
+  checked : ∀ a c, Inner a → twin a = none → recordOf E₀ a = some c →
     (∃ ms, c.info = .muts ms ∧
         ∀ k, k < ms.size → Claim.MemberCheckedLimAt calls bAddr t a ms k lim) ∨
       Claim.CheckedLimAt calls bAddr t a lim
   /-- No reference the record uses is an inert axiom's. -/
-  notInert : ∀ a x, Inner a → UsedRef E₀ a x → ¬ InertAt t x
+  notInert : ∀ a x, Inner a → twin a = none → UsedRef E₀ a x → ¬ InertAt t x
   /-- A reference the record uses is stored by the witness's environment, covered, or an
   in-logic constant address owned by a checked unclaimed record of smaller rank. -/
-  refsBelow : ∀ a x, Inner a → UsedRef E₀ a x →
+  refsBelow : ∀ a x, Inner a → twin a = none → UsedRef E₀ a x →
     StoredAt t envT x ∨ Covered t x ∨
       (NeedOk E₀ x ∧ OwnedBelow E₀ Top Inner rank fam (rank a) x)
   /-- A block among them that no block claims and that is no twin is empty, a block of
@@ -204,19 +204,20 @@ theorem checkedUnit_of_inner (hG : TopGraph t E₀ seeds Top rank)
     (hI : InnerChecked calls bAddr t envT E₀ lim Top rank fam twin Inner)
     (hctx : StepCtx.{u} calls t R envT E₀ E) (ht : t.check = .ok ())
     {A : _root_.Address} {c : Ixon.Constant} (hIA : Inner A) (hU : Unclaimed fam A)
+    (htw : twin A = none)
     (hc : recordOf E₀ A = some c) (hns : ∀ x, ConstAddrOf A c x → ¬ StoredAt t envT x) :
     CheckedUnit calls bAddr t envT E₀ lim A c := by
   have htwf : t.wf = true := by
     unfold Ix.Kernel.RoleTable.wf
     rw [ht]
     rfl
-  refine ⟨hI.checked A c hIA hc, ?_, ?_, hns,
+  refine ⟨hI.checked A c hIA htw hc, ?_, ?_, hns,
     fun x hx => keyFree_of_not_stored hctx.shape ht (hns x hx)⟩
   · intro i hi x hx
-    exact Claim.inertKey_keyOf_false ht (hI.notInert A x hIA (usedRef_of_idx hc hi hx))
+    exact Claim.inertKey_keyOf_false ht (hI.notInert A x hIA htw (usedRef_of_idx hc hi hx))
   · intro env h i hi x hx hnin
     have hused := usedRef_of_idx hc hi hx
-    rcases hI.refsBelow A x hIA hused with hst | hcov | ⟨hok, hob⟩
+    rcases hI.refsBelow A x hIA htw hused with hst | hcov | ⟨hok, hob⟩
     · obtain ⟨ci, hci, hname⟩ := hst
       exact Option.isSome_iff_exists.mp (find_isSome_of_storedAt ⟨ci, h.ext ci hci, hname⟩)
     · obtain ⟨ci, hci, hname⟩ := covered_stored hctx.shape htwf hcov
@@ -245,6 +246,7 @@ theorem innerUnitStep_of_checked (hG : TopGraph t E₀ seeds Top rank)
       Prop}
     (hstep : CheckedUnitStep.{u} X Kind)
     {A : _root_.Address} {c : Ixon.Constant} (hIA : Inner A) (hU : Unclaimed fam A)
+    (htw : twin A = none)
     (hc : recordOf E₀ A = some c) (hlog : InLogic c) (hkind : Kind calls t E₀ A c) :
     UnitStep.{u} (X t E) t envT E₀ E lim A c := by
   intro env hext hnd hinv hXe href hfresh
@@ -256,7 +258,7 @@ theorem innerUnitStep_of_checked (hG : TopGraph t E₀ seeds Top rank)
     rw [hfresh x hx] at hs
     simp at hs
   exact hstep calls bAddr t E₀ lim R envT E hctx A c hc hlog hkind ht hS hcov hcanon
-    (checkedUnit_of_inner hG hF hI hctx ht hIA hU hc hns) env hext hnd hinv hXe href hfresh
+    (checkedUnit_of_inner hG hF hI hctx ht hIA hU htw hc hns) env hext hnd hinv hXe href hfresh
 
 /-- **The step of every unit checked inside a family check, from the step of each kind**, at
 the fold's clause at the opened head trace: the family skeleton's step hypothesis for inner
@@ -290,7 +292,8 @@ theorem innerUnitSteps_of_kinds
       Ixon.Constant → Prop},
       CheckedUnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt) Kind → Kind calls t E₀ A c →
       UnitStep.{u} (FoldExtra.{u} FormerOpenTraceAt t E) t envT E₀ E lim A c :=
-    fun h hkind => innerUnitStep_of_checked hG hF hI hctx ht hS hcov hcanon h hIA hU hc hlog hkind
+    fun h hkind =>
+      innerUnitStep_of_checked hG hF hI hctx ht hS hcov hcanon h hIA hU htw hc hlog hkind
   rcases hk with ⟨d, hinfo⟩ | ⟨rc, hinfo⟩ | ⟨ms, hinfo⟩
   · exact step (standaloneValue_checked linkLaws_formerOpenTrace) ⟨d, hinfo⟩
   · exact step standaloneRecursor_checked ⟨rc, hinfo⟩

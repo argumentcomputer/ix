@@ -159,7 +159,7 @@ theorem MemberCheckedLimAt.dispatch {calls : List (Call F)} {E₀ : Ixon.Env}
   rw [hraw, Ixon.Verify.deConstantExact_serConstant _ hwf] at hx
   injection hx with hcp
   subst hcp
-  obtain ⟨cb, ms', ind', -, -, -, nl, ty, np, ni, u, x_blk, b, hldI, hbrep, hbeq⟩ :=
+  obtain ⟨cb, ms', ind', -, -, -, nl, ty, np, ni, x_blk, b, hldI, hbrep, hbeq⟩ :=
     hhead.iPrj _ _ rfl
   rw [hld] at hldI
   injection hldI with hv

@@ -274,17 +274,18 @@ theorem get_ci_dprj_head {b : Bytes.Address} {idx : Nat}
     | recr _ => obtain ⟨rv, hrv, _⟩ := hmc_rep; simp at hrv
 
 /-- `Ingress::get_ci_iprj`: the block is loaded, its member at the index is an inductive, and
-the returned constant is that inductive with its constructor count, block and index. -/
+the returned constant is that inductive with its constructor count, its unsafe flag, block and
+index. -/
 theorem get_ci_iprj_head {b : Bytes.Address} {idx : F} {x_block_addr r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
     (hb : Bytes.RepAddressRef Core.addrTy h b x_block_addr)
     (ev : ObsFn Obs.W "Ingress::get_ci_iprj" [x_block_addr, .field idx] h r h' calls) :
     ∃ cb ms ind, BlockLoad calls (Core.ixAddr b) cb ms ∧
       ms.toList[idx.val]? = some (.indc ind) ∧
-      ∃ nl ty np ni u : SourceValue F,
+      ∃ nl ty np ni : SourceValue F,
         loadValue h' r = .ok (.construct "KernelTypes::KConstantInfo" "Induct"
-          [nl, ty, np, ni, .field (ind.ctors.toList.length : F), u, x_block_addr,
-            .field idx]) := by
+          [nl, ty, np, ni, .field (ind.ctors.toList.length : F), L1.repBoolField ind.isUnsafe,
+            x_block_addr, .field idx]) := by
   match Obs.«Ingress::get_ci_iprj».obs ev with
   | .run (m2 := m2) (m86 := m86) (cs12 := cs12) (v166 := v166) (m167 := m167) (cs174 := cs174)
       (ev14 := ev14) (ev98 := ev98) (ev149 := ev149) (he170 := he170) (hm169 := hm169)
@@ -300,11 +301,12 @@ theorem get_ci_iprj_head {b : Bytes.Address} {idx : F} {x_block_addr r : SourceV
       obtain ⟨typPtr, ctorsPtr, rfl, -, hctors⟩ := hiv
       have ext := ev149.heap_extends.trans (ev246.heap_extends.trans ev266.heap_extends)
       match Obs.«Convert::convert_inductive».obs ev176 with
-      | .run (x_ctors := ctorsArg) (m177 := countHeap) (v124 := v124) (hv15 := fields)
-          (he128 := hres) (ev207 := countRun) (hc238 := convCalls) .. =>
+      | .run (x_is_unsafe := unsafeArg) (x_ctors := ctorsArg) (m177 := countHeap) (v124 := v124)
+          (hv15 := fields) (he128 := hres) (ev207 := countRun) (hc238 := convCalls) .. =>
         simp only [Value.construct.injEq, List.cons.injEq, and_true] at fields
         obtain ⟨_, _, _, _, _, _, _, hct⟩ := fields
         subst ctorsArg
+        subst unsafeArg
         have member : (⟨"Convert::count_ctors", [ctorsPtr], countHeap⟩ : Call F) ∈ cs174 := by
           rw [convCalls]; simp
         have ext2 := (ev176.call_heap_bounds member).1
@@ -312,7 +314,7 @@ theorem get_ci_iprj_head {b : Bytes.Address} {idx : F} {x_block_addr r : SourceV
           (hctors.mono L1.repConstructor_heapMono₂ (ext.trans ext2)) countRun
         subst hv124 hres he170 hm169
         exact ⟨cb, ms, ind, hbl.mono (by rw [hc]; intro x hx; simp [hx]), hmc_get,
-          _, _, _, _, _, loadValue_snoc_self m167 _⟩
+          _, _, _, _, loadValue_snoc_self m167 _⟩
     | defn _ => obtain ⟨dv, hdv, _⟩ := hmc_rep; simp at hdv
     | recr _ => obtain ⟨rv, hrv, _⟩ := hmc_rep; simp at hrv
 
@@ -367,7 +369,7 @@ theorem get_ci_rprj_head {b : Bytes.Address} {idx : F} {x_block_addr r : SourceV
 projection record, the block it names was loaded, with a member of the projection's kind at its
 index (and, for a constructor projection, a constructor at its constructor index); for an
 inductive projection, the returned constant is the inductive with its constructor count, its
-block and its index. -/
+unsafe flag, its block and its index. -/
 structure GetCIHead (calls : List (Call F)) (h : Heap F) (info : Ixon.ConstantInfo)
     (r : SourceValue F) : Prop where
   notMuts : ∀ ms, info ≠ .muts ms
@@ -376,10 +378,10 @@ structure GetCIHead (calls : List (Call F)) (h : Heap F) (info : Ixon.ConstantIn
   iPrj : ∀ idx blk, info = .iPrj ⟨idx, blk⟩ →
     ∃ cb ms ind, BlockLoad calls blk cb ms ∧ ms.toList[idx.toNat]? = some (.indc ind) ∧
       idx.toNat < 72057594037927936 ∧
-      ∃ (nl ty np ni u x_blk : SourceValue F) (b : Bytes.Address),
+      ∃ (nl ty np ni x_blk : SourceValue F) (b : Bytes.Address),
         loadValue h r = .ok (.construct "KernelTypes::KConstantInfo" "Induct"
-          [nl, ty, np, ni, .field (ind.ctors.toList.length : F), u, x_blk,
-            .field (idx.toNat : F)]) ∧
+          [nl, ty, np, ni, .field (ind.ctors.toList.length : F), L1.repBoolField ind.isUnsafe,
+            x_blk, .field (idx.toNat : F)]) ∧
         Bytes.RepAddressRef Core.addrTy h b x_blk ∧ Core.ixAddr b = blk
   cPrj : ∀ idx cidx blk, info = .cPrj ⟨idx, cidx, blk⟩ →
     ∃ cb ms ind, BlockLoad calls blk cb ms ∧ ms.toList[idx.toNat]? = some (.indc ind) ∧
@@ -501,7 +503,7 @@ theorem get_ci_head {a : Bytes.Address} {x_addr r : SourceValue F} {h h' : Heap 
     subst v722 m731
     obtain ⟨b, hb_eq, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk_ix
     have hb_eq' : Core.ixAddr b = blk := hb_eq
-    obtain ⟨cb, ms, ind, hbl, hmem, nl, ty, np, ni, u, hld⟩ := get_ci_iprj_head hb_rep ev720
+    obtain ⟨cb, ms, ind, hbl, hmem, nl, ty, np, ni, hld⟩ := get_ci_iprj_head hb_rep ev720
     rw [L1.val_cast_u56_ing hidx56] at hmem
     have hsub : ∀ x ∈ csi, x ∈ calls := by rw [hc]; intro x hx; simp [hx]
     have hbl' : BlockLoad calls blk cb ms := by rw [← hb_eq']; exact hbl.mono hsub
@@ -513,7 +515,7 @@ theorem get_ci_head {a : Bytes.Address} {x_addr r : SourceValue F} {h h' : Heap 
     intro idx' blk' e
     have e' := hci.symm.trans e
     cases e'
-    exact ⟨cb, ms, ind, hbl', hmem, hidx56, nl, ty, np, ni, u, x_blk, b, hld, hb_rep', hb_eq'⟩
+    exact ⟨cb, ms, ind, hbl', hmem, hidx56, nl, ty, np, ni, x_blk, b, hld, hb_rep', hb_eq'⟩
   | .CPrj (m2 := m2) (x_idx := x_idx) (x_cidx := x_cidx) (x_block_addr := x_blk)
       (cs798 := csc) (v802 := v802) (v803 := v803) (m812 := m812) (m832 := m832)
       (ev14 := ev14) (ev822 := ev822) (ev842 := ev842) (ev800 := ev800) (hc851 := hc) .. =>
@@ -793,7 +795,7 @@ theorem member_records (hS : LoadedReads.RunStore calls E₀)
   · -- the constructors' projection records, hashed by the member's check
     intro ind j hind hj
     subst hind
-    obtain ⟨cb, ms'', ind', hbl', hget'', -, nl, ty, np, ni, u, x_blk, b'', hld', hb'',
+    obtain ⟨cb, ms'', ind', hbl', hget'', -, nl, ty, np, ni, x_blk, b'', hld', hb'',
       hb''eq⟩ := hhead.iPrj i.toUInt64 (Core.ixAddr b') rfl
     have hcb := ((hbl'.mono hsub_ld).record hS hc).1
     have hinfo'' : c.info = .muts ms'' := by rw [← hcb]; exact hbl'.info

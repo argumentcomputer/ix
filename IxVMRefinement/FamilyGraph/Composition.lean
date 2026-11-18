@@ -63,13 +63,38 @@ def ContainerRecCheckIn (cs : List (Call F)) (bAddr : _root_.Address)
     Aiur.Generic.SourceSemantics.ObsFn Obs.W "KernelModeled::check_container_rec"
       [rc, xa, ib] h r h' cs₁ ∧ (∀ cl ∈ cs₁, cl ∈ cs)
 
-/-- **What an accepted run gives of its family records, advice and twins, at a walk and a
-witness** (module docstring). `innerCall`: every inner record was checked by the family check
-of a family record or of a twin, under the family check's own context at the walk's limit and
-one binding: an advice record that is no projection record by its advice-record check, a
-container's recursor by its check. An advice entry of a family check that is not in the graph's
+/-- **The run's family checks at one binding `bAddr`**, at the walk's limit: the family check
+of each family record (on the modeled route of its block), with its advice entries; the family
+check of each twin; and the check of each inner record. `innerCall`: every inner record was
+checked by the family check of a family record or of a twin, under the family check's own
+context: an advice record that is no projection record by its advice-record check, a
+container's recursor by its check, a twin reached only through a container's recursor
+projection by a family check at its own address nested in that check (its own checks are the
+twin step's, not `InnerChecked`'s). An advice entry of a family check that is not in the graph's
 advice owns no constant address and uses nothing in Lean's logic (a projection record of an
 earlier advice block). -/
+structure FamilyChecksAt (calls : List (Call F)) (bAddr : _root_.Address)
+    (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (lim : Option Nat)
+    (fam twin : _root_.Address → Option _root_.Address)
+    (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop) : Prop where
+  famCall : ∀ B rb, fam B = some rb → ModeledRouteAt calls B ∧
+    ∃ cs, FamilyCallAtLim calls bAddr t B rb lim cs ∧
+      ∀ a, AdviceIn cs a → adv B a ∨
+        ((∀ ca x, recordOf E₀ a = some ca → ¬ ConstAddrOf a ca x) ∧
+          ∀ x, UsedRef E₀ a x → ¬ NeedOk E₀ x)
+  twinCall : ∀ rb' B, twin rb' = some B → ∃ cs, FamilyCallAtLim calls bAddr t B rb' lim cs
+  innerCall : ∀ a, Inner a → ∃ B rb cs,
+    (fam B = some rb ∨ twin rb = some B) ∧ FamilyCallAtLim calls bAddr t B rb lim cs ∧
+    ((AdviceCheckIn cs bAddr t lim a ∧ ∀ c, recordOf E₀ a = some c → ¬ IsProj c) ∨
+      ContainerRecCheckIn cs bAddr t lim a ∨
+      ∃ B' cs', twin a = some B' ∧ FamilyCallAtLim calls bAddr t B' a lim cs' ∧
+        ∀ cl ∈ cs', cl ∈ cs)
+
+/-- **What an accepted run gives of its family records, advice and twins, at a walk and a
+witness** (module docstring). The family checks of the family records, of the twins and of the
+inner records are at one binding (`checks`, the walk's), so a twin's family check and its
+block's family record's are under the same context. A block with a family record is a block of
+inductive types (`famInd`). -/
 structure FamilyRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
     (envT : Ix.Kernel.Env .anon) (E₀ : Ixon.Env) (lim : Option Nat)
     (Top : _root_.Address → Prop) (rank : _root_.Address → Nat)
@@ -83,26 +108,50 @@ structure FamilyRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable)
     (∀ m ∈ ms.toList, ∃ r, m = Ixon.MutConst.recr r) →
     (∃ x, ConstAddrOf A c x ∧ ¬ StoredAt t envT x) →
     (∃ B, fam B = some A) ∨ ∃ B, twin A = some B
-  /-- A top-walked block the run routes as modeled, with a constant address the witness's
-  environment does not store, has a family record (possibly empty). A block the witness
-  already stores is no unit: the fold does not step it. -/
-  modeled : ∀ B cb, Top B → recordOf E₀ B = some cb → ModeledRouteAt calls B →
+  /-- A top-walked block of inductive types in Lean's logic the run routes as modeled, with a
+  constant address the witness's environment does not store, has a family record (possibly
+  empty). A block the witness already stores is no unit: the fold does not step it.
+  (`ModeledRouteAt` reads the run's observations of the dispatch, so it holds of a record the
+  dispatch never saw: the field is asked of blocks of inductive types only, the records the
+  dispatch reads; and of blocks in Lean's logic, since the modeled arm of `check_const` runs
+  the family check only for a safe inductive.) -/
+  modeled : ∀ B cb (ms : Array Ixon.MutConst), Top B → recordOf E₀ B = some cb → InLogic cb →
+    cb.info = .muts ms → (∀ m ∈ ms.toList, ∃ ind, m = Ixon.MutConst.indc ind) →
+    ModeledRouteAt calls B →
     (∃ x, ConstAddrOf B cb x ∧ ¬ StoredAt t envT x) → ∃ rb, fam B = some rb
-  famCall : ∀ B rb, fam B = some rb → ModeledRouteAt calls B ∧
-    ∃ bAddr cs, FamilyCallAtLim calls bAddr t B rb lim cs ∧
-      ∀ a, AdviceIn cs a → adv B a ∨
-        ((∀ ca x, recordOf E₀ a = some ca → ¬ ConstAddrOf a ca x) ∧
-          ∀ x, UsedRef E₀ a x → ¬ NeedOk E₀ x)
-  twinCall : ∀ rb' B, twin rb' = some B → ∃ bAddr cs, FamilyCallAtLim calls bAddr t B rb' lim cs
-  innerCall : ∃ bAddr, ∀ a, Inner a → ∃ B rb cs,
-    (fam B = some rb ∨ twin rb = some B) ∧ FamilyCallAtLim calls bAddr t B rb lim cs ∧
-    ((AdviceCheckIn cs bAddr t lim a ∧ ∀ c, recordOf E₀ a = some c → ¬ IsProj c) ∨
-      ContainerRecCheckIn cs bAddr t lim a)
+  /-- A block with a family record is a block of inductive types. -/
+  famInd : ∀ B rb, fam B = some rb → ∃ cb ms, recordOf E₀ B = some cb ∧
+    cb.info = .muts ms ∧ ∀ m ∈ ms.toList, ∃ ind, m = Ixon.MutConst.indc ind
+  /-- The family checks of the family records, the twins and the inner records, at one
+  binding. -/
+  checks : ∃ bAddr, FamilyChecksAt calls bAddr t E₀ lim fam twin adv Inner
   /-- A twin of a block with no family record in the graph (a block the witness's environment
   stores) is a second record of a family record the witness's environment stores whole, each
   recursor with its model companion (from the binding half: `StoredFamiliesInstalled`). -/
   storedTwin : ∀ rb' B, twin rb' = some B → fam B = none →
     ∃ rb crb, (∀ x, ConstAddrOf rb crb x → StoredAt t envT x) ∧ FamilyInstalled t envT rb crb
+
+/-- **A block's family record with its family check, at the binding of the twins' checks**: at
+the one binding of the run's family checks, the family record of a block is a family record of
+the run's store, checked by a family check of the block at that binding and the walk's limit.
+This is what the twin step asks of the block's family record (`TwinFamily.FamRecOfBlock`),
+under the twin's own family check's context. -/
+theorem FamilyRun.famRecAt {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {envT : Ix.Kernel.Env .anon} {E₀ : Ixon.Env} {lim : Option Nat}
+    {Top : _root_.Address → Prop} {rank : _root_.Address → Nat}
+    {fam twin : _root_.Address → Option _root_.Address}
+    {adv : _root_.Address → _root_.Address → Prop} {Inner : _root_.Address → Prop}
+    (hFR : FamilyRun calls t envT E₀ lim Top rank fam twin adv Inner) :
+    ∃ bAddr, FamilyChecksAt calls bAddr t E₀ lim fam twin adv Inner ∧
+      ∀ B rb crb, fam B = some rb → recordOf E₀ rb = some crb →
+        ∃ rs cs, FamRecRecord E₀ rb crb rs ∧ FamilyCallAtLim calls bAddr t B rb lim cs := by
+  obtain ⟨bAddr, hC⟩ := hFR.checks
+  refine ⟨bAddr, hC, fun B rb crb h hcrb => ?_⟩
+  obtain ⟨crb', rs, hF⟩ := hFR.graph.famRecord B rb h
+  have e : crb' = crb := Option.some.inj (hF.record.symm.trans hcrb)
+  subst e
+  obtain ⟨-, cs, hcs, -⟩ := hC.famCall B rb h
+  exact ⟨rs, cs, hF, hcs⟩
 
 /-- **Row `familyGraph`**: at every walk of an accepted typing claim and every witness of the
 table's shape, a rank of the same walk and the run's family records, advice, inner records and
@@ -267,9 +316,11 @@ theorem topUnitSteps_family
       ht hW.runStore hW.hashedStored hctx.toStepStore hcanon hinert hcover hchk hns
       (fun x hx => keyFree_of_not_stored hctx.shape ht (hns x hx))
       env hext hnd hinv hXe href hfresh
-  have hnoFam : (∃ x, ConstAddrOf A c x ∧ ¬ StoredAt t envT x) → ¬ ModeledRouteAt calls A := by
-    intro hun hroute
-    obtain ⟨rb, hrb⟩ := hFR.modeled A c hT hc hroute hun
+  have hnoFam : ∀ ms : Array Ixon.MutConst, c.info = .muts ms →
+      (∀ m ∈ ms.toList, ∃ ind, m = Ixon.MutConst.indc ind) →
+      (∃ x, ConstAddrOf A c x ∧ ¬ StoredAt t envT x) → ¬ ModeledRouteAt calls A := by
+    intro ms hinfo hall hun hroute
+    obtain ⟨rb, hrb⟩ := hFR.modeled A c ms hT hc hlog hinfo hall hroute hun
     rw [hfa] at hrb
     cases hrb
   -- a step is asked only at an environment that extends the witness's and stores none of the
@@ -304,13 +355,15 @@ theorem topUnitSteps_family
           · exact step nativeBlockOtherTelescope ⟨ind, hrec, hnat, hother⟩
         · have hx0 := constAddr_member0 (A := A) hinfo (by simp)
           exact byUnit _ hx0 fun hns =>
-            hnoFam ⟨_, hx0, hns⟩ (modeled_of_offNativeRoute hW.runStore hctx.toStepStore hcanon
+            hnoFam _ hinfo (fun m hm => ⟨ind, by simpa using hm⟩) ⟨_, hx0, hns⟩
+              (modeled_of_offNativeRoute hW.runStore hctx.toStepStore hcanon
               hrec hchk hnat).1
       · rcases hW.otherBlock_cases hT hc hinfo hdefs (fun ind h => hone ⟨ind, h⟩) with
           ⟨hsize, hall⟩ | ⟨hpos, hall⟩
         · have hx0 := constAddr_member0 (A := A) hinfo (by omega)
           exact byUnit _ hx0 fun hns =>
-            hnoFam ⟨_, hx0, hns⟩ (modeledRouteAt_of_multi ht hctx.toStepStore hc hinfo hsize hall).1
+            hnoFam ms hinfo hall ⟨_, hx0, hns⟩
+              (modeledRouteAt_of_multi ht hctx.toStepStore hc hinfo hsize hall).1
         · have hx0 := constAddr_member0 (A := A) hinfo hpos
           exact byUnit _ hx0 fun hns => by
             rcases hFR.claimed A c ms hT hc hinfo hpos hall ⟨_, hx0, hns⟩ with ⟨B, hB⟩ | ⟨B, hB⟩
