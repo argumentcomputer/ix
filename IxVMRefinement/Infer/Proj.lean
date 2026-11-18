@@ -1271,7 +1271,7 @@ theorem infer_proj_common (c : ScopedCtx) (hc : ScopedCoreBase c) (hfire : ProjG
         (Ix.Kernel.Level.subst (List.range us.length) us g_lvl) = 0 :=
       fun ψ => (WhnfAux.lvEq_subst_range (fun _ => rfl) hEq ψ).trans (hg0 ψ)
     exact hfire ih (by lt_calls) g626 ev628' hrc548 hbS548 ev372' g370.raw hbS hindS hrecS hinfoS
-      hfindC htbl hnFt hltF hg_lvl husT hg0_us heqv φ
+      hfindC htbl hnPt hnFt hltF hg_lvl husT hg0_us heqv φ
 
 /-- `KernelInfer::k_infer_proj`: full-grade projection inference (`Infer.proj`). -/
 theorem k_infer_proj_step (c : ScopedCtx) (hc : ScopedCoreBase c) (hfire : ProjGuardFires c)
