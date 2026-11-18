@@ -12,10 +12,8 @@ form of a kind's step for every checked unit) and the axioms it reaches. A chang
 fails the build.
 
 How to read it. The explicit arguments are the open obligations: the first seven are the
-binding half's, the others the typing half's: the use-site reading of the projection guard (the
-one premise of the ordinary inductive block's step), and the typing fold's rows over the
-family graph (the run's family graph, the
-records a family check checks, the step of a block with its family record and the step of a
+binding half's, the others the typing half's: the typing fold's rows over the family graph (the
+run's family graph, the records a family check checks, the step of a block with its family record and the step of a
 twin). The binding half's run predicate is `IxVM.Refinement.Binding.BindingRun`. The first
 three arguments are the parts of the binding claim's export that remain: the loaded table's
 admission, its prelude pin, and the stores of a run. The run predicate holds the prelude pin,
@@ -62,8 +60,7 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u} (tableAdmits : IxVM.
       IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
         (IxVM.Refinement.Binding.RoleUnitStepOver (fun x => x ∈ IxVM.Consistency.standardAxioms)
           IxVM.Refinement.Typing.FormerOpenTraceAt))
-  (projGuardRunReading : IxVM.Refinement.Core.ProjGuardRunReading) (familyGraph : IxVM.Refinement.Typing.FamilyGraphRow)
-  (innerChecked : IxVM.Refinement.Typing.InnerCheckedRow)
+  (familyGraph : IxVM.Refinement.Typing.FamilyGraphRow) (innerChecked : IxVM.Refinement.Typing.InnerCheckedRow)
   (familyBlock : IxVM.Refinement.Typing.FamilyBlockRow IxVM.Refinement.Typing.FormerOpenTraceAt)
   (familyTwin : IxVM.Refinement.Typing.FamilyTwinRow IxVM.Refinement.Typing.FormerOpenTraceAt) :
   IxVM.Consistency.CircuitComposed
