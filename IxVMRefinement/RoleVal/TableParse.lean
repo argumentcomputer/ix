@@ -242,6 +242,33 @@ theorem lt_fields_nat {a b : Nat} (ha : a < 4294967296) (hb : b < 4294967296)
   rw [h0] at h1
   exact zero_ne_one (Value.field.inj h1)
 
+/-- An entry at another address survives an insertion (as `Claim`'s, which is private). -/
+theorem mem_insSorted_of_ne {a b : Bytes.Address} {v w : SourceValue F}
+    {es : List (Bytes.Address × SourceValue F)}
+    (hbw : (b, w) ∈ es) (hne : b ≠ a) :
+    (b, w) ∈ Claim.insSorted a v es := by
+  induction es with
+  | nil => cases hbw
+  | cons kw rest ih =>
+    rcases kw with ⟨k, w0⟩
+    unfold Claim.insSorted
+    by_cases hlt : Claim.addrRank a < Claim.addrRank k
+    · rw [ite_eq_left hlt]
+      exact List.mem_cons_of_mem _ hbw
+    · rw [ite_eq_right hlt]
+      by_cases heq : a = k
+      · rw [ite_eq_left heq]
+        subst heq
+        rcases List.mem_cons.mp hbw with hhead | htail
+        · injection hhead with hbk _
+          exact absurd hbk hne
+        · exact List.mem_cons_of_mem _ htail
+      · rw [ite_eq_right heq]
+        rcases List.mem_cons.mp hbw with hhead | htail
+        · rw [hhead]
+          exact List.mem_cons_self
+        · exact List.mem_cons_of_mem _ (ih htail)
+
 /-! ## `read_role_bindings`, parsed -/
 
 /-- **The address index after the bindings reader**: the entries it started from and, for each
