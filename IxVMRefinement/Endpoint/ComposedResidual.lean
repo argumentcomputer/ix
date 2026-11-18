@@ -15,6 +15,7 @@ import IxVMRefinement.FamilyGraph.ProducersAcyclic
 import IxVMRefinement.FamilyGraph.ProducersInner
 import IxVMRefinement.Binding.OpCertObs
 import IxVMRefinement.FamilyAlias.ClosureFamilyStep
+import IxVMRefinement.FamilyAlias.FamilyCall
 import IxVMRefinement.FamilyGraph.ProducersStoredFam
 
 /-! # The composed statement from its open obligations
@@ -320,7 +321,7 @@ theorem circuitComposed_of_partsFam
 are proved passed in. The binding claim layer's run predicate is `Binding.BindingRun`, by the
 run's calls, and the run's family checks of a group are `Binding.ClosureFam`.
 
-The first five hypotheses are the binding half's. One is the part of the claim's export that
+The first four hypotheses are the binding half's. One is the part of the claim's export that
 remains (`Binding.bindingClaimExport_of_table_and_stores`; the claim's decode is proved,
 `Claim.verify_claim_decode_binding_spec`, and so are the other two parts: that the table a
 binding run loads is the admitted table of bytes the run hashed, `Binding.loadedTableAdmits`,
@@ -339,22 +340,23 @@ is an inert axiom's, each is one a step needs stored, and a one-inductive block'
 no literal function's). The invariant at the six basis groups with its family form is
 proved (`Binding.basisOverW_bindingRun`); the two admission chains and the families of each
 group are projections of the run predicate (`admitsChain_bindingRun`,
-`admitsReadsChain_bindingRun`, `BindingRun.families`). The other four are, for every bounded run
+`admitsReadsChain_bindingRun`, `BindingRun.families`). The other three are, for every bounded run
 and each group from 6 to 76 of it:
-* two of the closure's three steps, which give the closure in the family form
-  (`Binding.groupClosureFamily_of_steps`; the third, the step of a new unit with no family
-  record that is no twin, is proved from the run, `Binding.closureUnitSteps_bindingRun`):
-  `closureFamilySteps`, what the family check of a new block with its selected family record
-  gives the closure's step (`FamilyAlias.ClosureFamilyCheck`: the family as read with the facts
-  of its check, the selected annotated types and right-hand sides as the circuit loads them, and
-  the companion facts of each recursor at its selected type, at a record store the run is good
-  for; the family record's references safe); the step itself, `Binding.ClosureFamilySteps`, is
-  proved from it (`FamilyAlias.closureFamilySteps_of_checkRow`: the step taken once at that store
-  and the group's validation limit, the fold's clause kept with the same registry at every
-  record store for the closure's store, the block's references from the run's facts
-  `Binding.ClosureRunFacts.famNotInert`, `.famNeedOk`); producer of the check: the circuit side,
-  after the circuit's family changes; `closureTwinSteps`, the step of a new
-  second family record (`Binding.ClosureTwinSteps`; open, after the circuit's family changes);
+* one of the closure's three steps, which give the closure in the family form
+  (`Binding.groupClosureFamily_of_steps`): `closureTwinSteps`, the step of a new second family
+  record (`Binding.ClosureTwinSteps`; open, after the circuit's family changes). The step of a
+  new unit with no family record that is no twin is proved from the run
+  (`Binding.closureUnitSteps_bindingRun`). The step of a new block with its selected family
+  record, `Binding.ClosureFamilySteps`, is proved from the hypothesis `familyCall` below: the
+  family check's facts at the closure (`FamilyAlias.closureFamilyCheck_of_call`: the family as
+  read with the facts of its check, the selected annotated types and right-hand sides as the
+  circuit loads them, and the companion facts of each recursor at its selected type, at a record
+  store the run is good for; each of the family record's references covered at the group's
+  validation limit, so stored by the table's shape, or needed), then the step
+  (`FamilyAlias.closureFamilySteps_of_checkRow`: the step taken once at that store and the
+  group's validation limit, the fold's clause kept with the same registry at every record store
+  for the closure's store, the block's references from the run's facts
+  `Binding.ClosureRunFacts.famNotInert`, `.famNeedOk`);
 * the stored shapes where the group has no role unit;
 * `certProjFree`: no certificate of a well-founded operation projects the operation: for an
   operation bound at `a` and a certificate in its evidence whose record in the run's store is a
@@ -371,7 +373,9 @@ and each group from 6 to 76 of it:
 The role unit of a standard axiom is proved in that form (`Binding.standardAxiomRoleUnitW_closed`,
 from the axiom's observed validation, `Binding.axiomValidationFacts`).
 
-The last three hypotheses are the typing half's. Before them, `Pref` is a parameter, not an
+The last three hypotheses are the typing half's; the second of them, `familyCall`, also gives the
+binding half's closure step of a new block with its family record (above). Before them, `Pref`
+is a parameter, not an
 obligation (a relation, not a proposition): the twin preference, which the typing side
 instantiates with the concrete record-level form once that form is defined. The step of the
 ordinary inductive type takes the use-site reading of the projection guard, a theorem
@@ -406,21 +410,30 @@ ordinary inductive type takes the use-site reading of the projection guard, a th
   inert and in-logic facts from the assertion on the used references of the records a family
   check checks (`assert_inner_refs_safe`), and the advice walk's refusal of a listed address seen
   before, read through the set lookup.
-* `familyBlock`: what the family check of a top-walked block with a family record, an empty one
-  included, gives the row's step (`FamilyAlias.FamilyBlockCheckRow`): the family as read with
-  the facts of its check (`Decl.FamilyAlias.FamilyCheckFacts`, kernel-checked at two compiled
-  fixtures), the selected annotated types and right-hand sides as the circuit loads them and the
-  companion facts of each recursor at its selected type (`FamilyAlias.SelectedForms`), and the
-  family record's references safe. The row (`FamilyBlockRow`: the step installs the block with
-  its family record and keeps the fold's clause with the family recursors' companions beside it,
-  `UnitStepFamily`) is a theorem from it (`FamilyAlias.familyBlockRow_of_check`): the block's
-  record, the route fact at the block, the claim of the recursors, key freedom, the pinned
-  equality, the keeping of the clause, all fourteen load facts and the companion facts at the
-  step's new constants at the installation of the selected forms
+* `familyCall`: what one accepted family check gives (`FamilyAlias.FamilyCallRow`): at every
+  family check of a block with its family record on the modeled route, one selection, fixed by
+  the check (the family as read, the advice, the selected annotated types and right-hand sides),
+  with the selected forms as the check loads them (`FamilyAlias.FamilyTysCanon`), the major
+  premises' heads among the family record's references, each reference of the family record
+  covered at the check's limit or needed, and at every environment a step is handed, the family
+  as read, the facts of the check (`Decl.FamilyAlias.FamilyCheckFacts`, kernel-checked at two
+  compiled fixtures) and the companion facts of each recursor at its selected type over the
+  check's store. Both family steps are theorems from it, with the companion facts carried from
+  the check's store to every store the steps read (`FamilyAlias.famRecsCompanion_carry`): the
+  closure's step of a new block with its selected family record (above), and the row's step of
+  a top-walked block with a family record, an empty one included
+  (`FamilyAlias.familyBlockCheckRow_of_call`, then `FamilyAlias.familyBlockRow_of_check`). The
+  row (`FamilyBlockRow`: the step installs the block with its family record and keeps the fold's
+  clause with the family recursors' companions beside it, `UnitStepFamily`) has proved: the
+  block's record, the route fact at the block, the claim of the recursors, key freedom, the
+  pinned equality, the keeping of the clause, all fourteen load facts and the companion facts at
+  the step's new constants at the installation of the selected forms
   (`FamilyAlias.familyMembersCanon_of_tys`, `FamilyAlias.recCompanionFacts_of_tys`), and the
-  block's own used references stored (from the walk's facts, `FamilyAlias.famUsedStored`) are
-  proved. Producer: the circuit side, from the observed family check to these facts, open until
-  the circuit's family changes.
+  block's own used references stored (from the walk's facts, `FamilyAlias.famUsedStored`, and
+  for a covered one from the table's shape, `FamilyAlias.coveredAt_stored`). Producer: the
+  circuit side, from the observed family check, after the circuit's family changes; the typing
+  judgements of `Decl.FamilyAlias.FamilyCheckFacts` need the registry's judgements carried
+  through the check's renaming (open).
 * `familyTwin`: the step of a second family record of a block (a twin), handed the block's
   family record stored, installs it and keeps the fold's clause with the family recursors'
   companions beside it, at the concrete record form (`TwinFamily.FamilyTwinRowFam` at
@@ -434,9 +447,6 @@ ordinary inductive type takes the use-site reading of the projection guard, a th
   canonical record (its type part is `Binding.FamilyRecon.wrapRel_of_recon`). -/
 theorem circuitComposed_residual
     (groupStores : ∀ calls, RemainingStoreClausesOfRun calls)
-    (closureFamilySteps :
-      ∀ calls, AtGroups (BindingRun calls)
-        (FamilyAlias.ClosureFamilyCheck.{u} FormerOpenTraceAt calls))
     (closureTwinSteps :
       ∀ calls, AtGroups (BindingRun calls) (ClosureTwinSteps.{u} FormerOpenTraceAt calls))
     (groupWithoutRoleUnit :
@@ -444,7 +454,7 @@ theorem circuitComposed_residual
     (certProjFree : ∀ calls, Binding.CertProjFree calls)
     (Pref : RunPref)
     (familyGraph : FamilyGraphInnerOwedFam.{u} Pref)
-    (familyBlock : FamilyAlias.FamilyBlockCheckRow.{u} FormerOpenTraceAt)
+    (familyCall : FamilyAlias.FamilyCallRow.{u} FormerOpenTraceAt)
     (familyTwin : TwinFamily.FamilyTwinRowFam.{u} FamilyRecon.RFormS FormerOpenTraceAt) :
     CircuitComposed.{u} :=
   circuitComposed_of_partsFamInnerWT (Run := BindingRun) (Fam := ClosureFam)
@@ -453,13 +463,15 @@ theorem circuitComposed_residual
     (fun calls => basisOverW_bindingRun FormerOpenTraceAt calls) admitsChain_bindingRun
     admitsReadsChain_bindingRun (fun _ _ _ _ h => h.families)
     (groupClosureFamily_of_steps Binding.closureUnitSteps_bindingRun
-      (FamilyAlias.closureFamilySteps_of_checkRow closureFamilySteps) closureTwinSteps)
+      (FamilyAlias.closureFamilySteps_of_checkRow
+        (FamilyAlias.closureFamilyCheck_of_call familyCall)) closureTwinSteps)
     groupWithoutRoleUnit (Binding.operationRoleUnitW_of_projFree.{u} certProjFree)
     Binding.standardAxiomRoleUnitW_closed
     (familyGraphRowInnerFamT_of_owed familyGraph) storedFormAt_recon
     (innerStepsChecked_of_kinds
       (nativeBlockTelescope_checked linkLaws_formerOpenTrace Core.projGuardRunReading))
-    (FamilyAlias.familyBlockRow_of_check linkLaws_formerOpenTrace familyBlock) familyTwin
+    (FamilyAlias.familyBlockRow_of_check linkLaws_formerOpenTrace
+      (FamilyAlias.familyBlockCheckRow_of_call familyCall)) familyTwin
     (standaloneDefinition_foldExtra linkLaws_formerOpenTrace)
     (standaloneTheoremOrOpaque_foldExtra linkLaws_formerOpenTrace)
     (standaloneRecursor_of_freshNotBasis freshRecursorMajorNotBasis_walked)
