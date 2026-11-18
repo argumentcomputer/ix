@@ -1036,9 +1036,10 @@ def check_family := aiur_fn⟦
               let (rec_models, s8) = get_addrs(s7, n_recs);
               let src = Lists::concat(type_addrs, Lists::concat(ctor_addrs, rec_addrs));
               let dst = Lists::concat(type_models, Lists::concat(ctor_models, rec_models));
-              members_val(type_addrs, type_models, src, dst, aset);
-              members_val(ctor_addrs, ctor_models, src, dst, aset);
-              members_val(rec_addrs, rec_models, src, dst, aset);
+              members_val(type_addrs, type_models, src, dst, aset, src);
+              members_val(ctor_addrs, ctor_models, src, dst, aset,
+                Lists::concat(ctor_addrs, rec_addrs));
+              members_val(rec_addrs, rec_models, src, dst, aset, rec_addrs);
               -- the family-wide elimination level and the block's level count, from the
               -- block alone: its types share their level count and result universe, and
               -- a block of two or more types (mutual, or nested, which the kernel
@@ -1564,13 +1565,14 @@ def muts_recr_count := aiur_fn⟦
 def members_val := aiur_fn⟦
   fn members_val(members: Lists::List<Bytes::AddressRef>, models: Lists::List<Bytes::AddressRef>,
                  src: Lists::List<Bytes::AddressRef>, dst: Lists::List<Bytes::AddressRef>,
-                 aset: RBTreeMap::RBTreeMap<Field>) -> () {
+                 aset: RBTreeMap::RBTreeMap<Field>,
+                 later: Lists::List<Bytes::AddressRef>) -> () {
       match (*(members)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(m, rest) => {
           let Lists::Node::Cons(md, mrest) = (*(models));
-          member_val(m, md, src, dst, aset);
-          members_val(rest, mrest, src, dst, aset) } ,
+          member_val(m, md, src, dst, aset, later);
+          members_val(rest, mrest, src, dst, aset, later) } ,
       }
     }
 ⟧
@@ -1581,9 +1583,14 @@ def members_val := aiur_fn⟦
 def member_val := aiur_fn⟦
   fn member_val(member: Bytes::AddressRef, model: Bytes::AddressRef,
                 src: Lists::List<Bytes::AddressRef>, dst: Lists::List<Bytes::AddressRef>,
-                aset: RBTreeMap::RBTreeMap<Field>) -> () {
+                aset: RBTreeMap::RBTreeMap<Field>,
+                later: Lists::List<Bytes::AddressRef>) -> () {
       assert_eq!(KernelClaim::addr_set_member(model, aset), 1, "model advice: a model that is not advice");
       let (nl, ty) = ci_lvls_type((*(Ingress::get_ci(member))));
+      -- the member's type names no member stored after it: a type's names none, a
+      -- constructor's no constructor and no recursor, a recursor's no recursor
+      assert_eq!(expr_mentions_addrs(ty, later), 0,
+        "modeled block: a member's type names a member that is not stored before it");
       match (*(Ingress::get_ci(model))) {
         KernelTypes::KConstantInfo::Defn(nlm, mty, _, _, _) => {
           assert_eq!(nl, nlm, "model level parameters mismatch");
