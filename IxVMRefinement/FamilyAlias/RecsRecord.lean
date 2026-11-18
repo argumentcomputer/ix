@@ -63,7 +63,7 @@ structure RuleRecordEnv (env E envM envSelf : Env .anon) (g h : KKey → KKey)
       (cvj.type.renameConsts g).constsResolve env = true
   iotaFound : ∀ k j c, E.find? (iotaKey k j) = some c → envM.find? (iotaKey k j) = some c
   ext : EnvExt env envSelf
-  alias : AliasEnv envSelf h
+  aliasEnv : AliasEnv envSelf h
   stored : ∀ k, (env.find? (g k)).isSome = true → (envSelf.find? k).isSome = true
 
 /-! ## The rules of a recursor -/
@@ -93,7 +93,7 @@ theorem iotaRulesRenRunJ_of_aliased {env E envM envSelf : Env .anon} {g h : KKey
       exact (hR.iotaFound _ _ _ hfind).trans hfind.symm
     obtain ⟨r', hrec, hst⟩ := iotaRuleRenRunJ_of_aliased hr hR.wf hR.store hperm hR.out hR.moves
       hR.target hR.fixes hrecbn hR.members htyF htyB htyL htyR (hR.ctor r.ctor) hiota hR.ext
-      hR.alias hR.stored
+      hR.aliasEnv hR.stored
     obtain ⟨rest', hrecs, hsts⟩ := iotaRulesRenRunJ_of_aliased hR hperm hrecbn htyF htyB htyL
       htyR rs rhss thms (j + 1) hrest
     exact ⟨r' :: rest', ⟨r', rest', hrec, hrecs, rfl⟩, List.Forall₂.cons hst hsts⟩
