@@ -53,7 +53,7 @@ open Aiur.Library
 open IxVM (F)
 open IxVM.Consistency
 open Ix.Kernel (ConstantInfo ConstantVal IndCaps)
-open Ix.Kernel.Semantics (NativeFam)
+open Ix.Kernel.Semantics (NativeFam NativeFamStored)
 
 universe u
 
@@ -173,7 +173,7 @@ theorem famRead_of_install {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
     {ctorsA : List (ConstantVal .anon × Nat)} {caps : IndCaps .anon}
     (hrec : BlockUnitRecord E₀ B cb ind)
     (hO : NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps)
-    (hwf : Ix.Kernel.EnvWF ⟨new ++ env.consts⟩) (hA : StoreArR ⟨new ++ env.consts⟩)
+    (hwf : Ix.Kernel.EnvWF ⟨new ++ env.consts⟩) (hA : Ix.Kernel.Model.StoreArR ⟨new ++ env.consts⟩)
     (hrh : FamIxonRetHead t E
       ⟨p, ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩,
         ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩, ctorsA⟩)
