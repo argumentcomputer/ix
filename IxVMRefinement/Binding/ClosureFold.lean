@@ -116,8 +116,8 @@ def ClosureNeeds (E₀ : Ixon.Env) (famOf : _root_.Address → Option _root_.Add
 fact about the run at the group (its producer is named in the lane's notes):
 
 * `oldNeeds`: an address a new unit's step reads stored, held before the group, is a non-block
-  record in Lean's logic with its block that the run checked at some limit, or the address of a
-  walked role of an earlier group;
+  record in Lean's logic with its block that the run checked at some limit, the address of a
+  walked role of an earlier group, or an address with a reading over `R`;
 * `famRefs`: an in-logic constant address a selected family record uses that is new in the group
   is a constant address of the block or of the record, or ranked below the block;
 * `famNonempty`: a block with a selected family record has a member (so one block selects a
@@ -143,11 +143,21 @@ fact about the run at the group (its producer is named in the lane's notes):
 structure ClosureRunFacts (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : Ixon.Env)
     (famOf : _root_.Address → Option _root_.Address)
     (adv : _root_.Address → _root_.Address → Prop) : Prop where
+  /-- An address a new unit's step reads stored, held before the group, is one of: a non-block
+  record in Lean's logic with its block that the run checked at some limit (producer: the walk's
+  `KernelClaim::run_check` at the group that added it, or a check inside a family check,
+  `KernelModeled::check_advice_record`, `check_container_rec`); the address of a walked role of
+  an earlier group (producer: that role's validation, `KernelRoles::validate_role`); or an
+  address with a reading over the store before the group, which the boundary stores
+  (`ReadingOf.stored`; producer: the reading of a projection record from its block's check over
+  the used-closed store, such as a constructor projection of an advice block that
+  `KernelClaim::check_muts_all` checked inside an earlier family check). -/
   oldNeeds : ∀ A x, New R R' A → ClosureNeeds ρ.E₀ famOf adv A x →
     (recordOf R x).isSome = true →
     (∃ c n, recordOf R x = some c ∧ (∀ ms, c.info ≠ .muts ms) ∧ InLogic c ∧
       (∀ cb, recordOf R (Ix.Cert.ownerOf x c) = some cb → InLogic cb) ∧ ρ.checked x n) ∨
-    ∃ r, walkedRole r = true ∧ Ix.SpecDigest.groupOf r < g ∧ t.addressOf? r = some x
+    (∃ r, walkedRole r = true ∧ Ix.SpecDigest.groupOf r < g ∧ t.addressOf? r = some x) ∨
+    ∃ ci₀, IxVM.Consistency.Reads t R x ci₀
   famRefs : ∀ B rb x, famOf B = some rb → UsedRef ρ.E₀ rb x → NeedOk ρ.E₀ x → New R R' x →
     (∃ cb crb, recordOf R' B = some cb ∧ recordOf R' rb = some crb ∧ FamAddr B cb rb crb x) ∨
       ρ.rank g x < ρ.rank g B
