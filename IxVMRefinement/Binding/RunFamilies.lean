@@ -205,14 +205,6 @@ end Run
 (`roleUnitForm_of_run`), `keptRoles` (`keptRoles_of_run`), `famNonempty`
 (`famNonempty_of_run`), `noPinned` (`noPinned_of_run`) and `readsDown` (`readsDown_of_run` from
 group 7 on, `readsDownBasis_of_run` at the basis group), which are proved. Each field's source:
-* `oldNeeds`: today's circuit, not specified: an address a new unit's step reads that is held
-  before the group was checked at the limit of the group that added it (the walk's
-  `KernelClaim::run_check` at that group; for a payload record, its family check), or is a
-  walked role's record; the step's reading set (`ClosureNeeds`) is wider than what the walk of
-  the unit reads, through the family record's and the advice's references. A third alternative,
-  a reading over the store before the group, covers what neither form of evidence does (a
-  constructor projection of an advice block an earlier family check stored); producers in
-  `ClosureRunFacts.oldNeeds`' docstring.
 * `routeNew`: today's circuit: the modeled arm of `KernelCheck::check_const` reaches
   `KernelModeled::check_modeled_block` and `check_family`; a block's route over the closure's
   store against the route the circuit read; not specified.
@@ -222,12 +214,6 @@ group 7 on, `readsDownBasis_of_run` at the basis group), which are proved. Each 
 structure RunFactsLeft (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : Ixon.Env)
     (famOf : _root_.Address → Option _root_.Address)
     (adv : _root_.Address → _root_.Address → Prop) : Prop where
-  oldNeeds : ∀ A x, New R R' A → ClosureNeeds ρ.E₀ famOf adv A x →
-    (recordOf R x).isSome = true →
-    (∃ c n, recordOf R x = some c ∧ (∀ ms, c.info ≠ .muts ms) ∧ InLogic c ∧
-      (∀ cb, recordOf R (Ix.Cert.ownerOf x c) = some cb → InLogic cb) ∧ ρ.checked x n) ∨
-    (∃ r, walkedRole r = true ∧ Ix.SpecDigest.groupOf r < g ∧ t.addressOf? r = some x) ∨
-    ∃ ci₀, IxVM.Consistency.Reads t R x ci₀
   routeNew : ∀ R₁ B, ClosureStore t g R R' R₁ → New R R' B →
     Route.blockRoute R₁ B = some true → ∃ rb, famOf B = some rb
   /-- No reference a plain unit uses is an inert axiom's. Producer: the group's walk.
@@ -660,8 +646,7 @@ theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRows
         familyFlat := hR.familyFlat g hg6 hg
         claimed := hR.claimed g hg6 hg }
   · exact
-      { oldNeeds := hL.oldNeeds
-        famRefs := hrank.famRefs
+      { famRefs := hrank.famRefs
         famNonempty := famNonempty_of_run hC
         advNotUnit := advNotUnit_of_run hC hb hax hR hg6 hg hw hpay
         noPinned := noPinned_of_run hb hpin hcheck hg6 hcl
