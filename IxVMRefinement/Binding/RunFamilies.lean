@@ -122,7 +122,7 @@ theorem modeled_of_run (hC : CollisionFreeRun calls E₀) (g : Nat) :
       (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) B ∧ ModeledRouteAt calls B ∧
       ∃ rb, FamCallAt calls bAddr t g B rb := ⟨hnew, hmod, rb, cs, hfc⟩
   unfold runFamOf
-  rw [dif_pos h]
+  rw [dite_eq_left h]
   exact ⟨_, rfl⟩
 
 end Run
