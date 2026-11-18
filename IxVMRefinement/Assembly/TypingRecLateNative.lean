@@ -45,12 +45,12 @@ open Ix.Kernel.Model (rulesJ)
 
 /-- **The recursor's stage and the stored recursor at the arm** (module docstring). -/
 theorem rec_nativeRecJ_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hcov : LoadedReads.HashedRecordsStored calls E₀) (hst : StepStore calls t E₀ E)
     (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlogic : InLogic c)
-    (hlim : lim = some n) (hnat : NativeRecArm calls bAddr t A n)
+    (hnat : RecArmRun calls t A lim)
     (hkey : Decl.KeyFree (keyOf t A)) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
@@ -121,7 +121,7 @@ theorem rec_nativeRecJ_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} 
         (List.range ind.lvls.toNat)).length = rc.lvls.toNat := by
   obtain ⟨ty, rules, tyC, rlsC, recTy, hty, hlbb, hdef, hrd, hrr, hcT, hcR, hannT, hstR, hM, hcv,
     hrec, hwrap, hlenC, hrules, hmaj⟩ :=
-    rec_native_front ht hS hcov hst hc hinfo hlogic hlim hnat hkey hinert hcover hstep hlv hcm
+    rec_native_front ht hS hcov hst hc hinfo hlogic hnat hkey hinert hcover hstep hlv hcm
       hcmi htie hcb hms hind hm hhead hnoProj hbounds hrscoped
   have hat : LateFamAt t E env fam := hm.1
   have hL1 : fam.p.cvT.levelParams = List.range ind.lvls.toNat :=

@@ -540,11 +540,11 @@ canonical comparison's `is_large_eliminator` run: its arm that walks the constru
 that are its own level parameters, the registry's `L1`), the scoped walk, and the stored
 constructor's opened residual. -/
 theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
-    {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlim : lim = some n)
-    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
     {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
@@ -578,7 +578,7 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     simpa using h.symm
   have hz : ∀ φ, Ix.Kernel.Level.eval φ fam.p.resSort = 0 := fun φ =>
     (Ix.Kernel.Level.isEquiv_sound hiso φ).trans rfl
-  have helim := rec_elim_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie
+  have helim := rec_elim_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie
     hcb' hms' hind' hat hname hnP hnI hlenC hlarge
   have hlen2 : fam.ctorsA.length < 2 := by
     rcases helim with h | h
@@ -611,9 +611,8 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     loadCalls, kCalls, canonCalls, hrc, hbA, hbA', hbR, hbR', hbT, hbT', hbP, hbP', hblob, rty,
     hrulesTr, hrules_lt, hidx56, hlvR, hlvP, hpP, hiP, hcP, eSL, evLoad, hsLoad, hldP, eK, evK,
     hsK, hkEq, eC, evCanon, hsCanon⟩ :=
-    rec_arm_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hcb' hms' hind'
-  subst hlim
-  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, some n⟩
+    rec_arm_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie hcb' hms' hind'
+  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, lim⟩
   have hcS : Core.ScopedCoreFacts cS := hstep.inv.scopedCoreFacts
   -- the parent's type, as the stored former's
   have hformer : env.find? (Core.keyOf t P) =
@@ -621,8 +620,8 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     rw [LoadedReads.keyOf_eq, ← hname]
     exact hat.stored.former
   have hκP : cS.κ P = Core.keyOf t P :=
-    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hformer
-  have hgL : Core.Good ⟨E, env, t, some n⟩ loadCalls := (hst.good env (some n)).sub hsLoad
+    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hformer
+  have hgL : Core.Good ⟨E, env, t, lim⟩ loadCalls := (hst.good env lim).sub hsLoad
   obtain ⟨ci, hfind, hptr⟩ := Core.get_ci_step cS hcS evLoad parentV bT rfl trivial
     (by rw [hbT', hκP]; exact Core.Resolved.ne)
     (Core.CoreGood.ofRaw hgL (fun _ _ => trivial)) hbT
@@ -650,7 +649,7 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
       rfl⟩
   obtain ⟨bs', hpos⟩ := hpos
   -- the canonical comparison
-  have hgC : Core.Good ⟨E, env, t, some n⟩ canonCalls := (hst.good env (some n)).sub hsCanon
+  have hgC : Core.Good ⟨E, env, t, lim⟩ canonCalls := (hst.good env lim).sub hsCanon
   have hsub : ∀ {cs : List (Call F)}, (∀ x ∈ cs, x ∈ canonCalls) → Core.CoreGood cS cs :=
     fun h => Core.CoreGood.ofRaw (hgC.sub h) (fun _ _ => trivial)
   match Obs.«KernelCheck::check_recursor_canonical_full».obs evCanon with
@@ -673,7 +672,7 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
       rw [hnames 0 cA hcA, ← LoadedReads.keyOf_eq] at hfindK
       have hκC : cS.κ (Core.cprjAddr ip.block ip.idx.toNat 0) =
           Core.keyOf t (Core.cprjAddr ip.block ip.idx.toNat 0) :=
-        Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hfindK
+        Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hfindK
       have hidx : ZMod.val ((ip.idx.toNat : Nat) : F) = ip.idx.toNat :=
         ZMod.val_natCast_of_lt (by unfold Aiur.Library.U32.Goldilocks.modulus; omega)
       have hfindC' : cS.env.find? (cS.κ (Core.cprjAddr (Core.ixAddr bP)
@@ -704,7 +703,7 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
         exact Decl.typesRep_alloc_nil _ _ _
       obtain ⟨ℓ, hℓ, hlv⟩ := Decl.get_result_sort_level_any_spec
         (ind.params.toNat + ind.indices.toNat) (by omega)
-        (((hrc.mono eC).toRCRep).mono e2) htys (Decl.ghostScoped_zero _) hcS.env hcS.loads
+        ((hrc.mono eC).mono e2) htys (Decl.ghostScoped_zero _) hcS.env hcS.loads
         (hsub (fun x hx => by rw [children]; simp [hx]))
         ((htm.mono (eC.trans e2)) 0 (fun _ => default)) sortRun
       have hsℓ := hlv bs' _ hpos
@@ -768,7 +767,7 @@ theorem rec_field_sorts_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
           exact (ext_of_eq_snoc hm337).trans (sortRun.heap_extends.trans
             (soloRun.heap_extends.trans (e15.heap_extends.trans (ext_of_eq_snoc hm255))))
         have hrcv : Core.RCRep cS.t cS.lim m247 rcv :=
-          ((hrc.mono eC).toRCRep).mono (e1.trans (by rw [hh]; exact e247))
+          (hrc.mono eC).mono (e1.trans (by rw [hh]; exact e247))
         have htypes : Core.TypesRep cS.κ (fun _ => default) m247 0
             (.ptr (.enum Core.kexprListEnum) m2.length) := by
           rw [hm255]

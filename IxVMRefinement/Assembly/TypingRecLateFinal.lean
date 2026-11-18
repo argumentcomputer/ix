@@ -56,12 +56,12 @@ abbrev lateRecLps (rc : Ixon.Recursor) (ind : Ixon.Inductive) : List Ix.Kernel.L
 
 /-- **The second interface at the recursor's own parent** (module docstring). -/
 theorem recLateOut_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hcov : LoadedReads.HashedRecordsStored calls E₀) (hst : StepStore calls t E₀ E)
     (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlogic : InLogic c)
-    (hlim : lim = some n) (hnat : NativeRecArm calls bAddr t A n)
+    (hnat : RecArmRun calls t A lim)
     (hkey : Decl.KeyFree (keyOf t A)) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
@@ -80,25 +80,25 @@ theorem recLateOut_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
   have hhd : Decl.CtorRetHeadAt cb ind := hhead P cm ip cb ms ind hname hcm hcmi hcb hms hind
   obtain ⟨ty, rules, tyC, rlsC, recTy, hty, hlbb, hdef, hrd, hrr, hcT, hcR, hnatJ, hgen, hwrap,
     hannT, hrs, hlen⟩ :=
-    rec_nativeRecJ_of_arm ht hS hcov hst hc hinfo hlogic hlim hnat hkey hinert hcover hstep hlv
+    rec_nativeRecJ_of_arm ht hS hcov hst hc hinfo hlogic hnat hkey hinert hcover hstep hlv
       hcm hcmi htie hcb hms hind hm hhd hnoProj (hbounds cb ms ind hcb hms hind)
-      (rec_rules_scoped_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hcb
+      (rec_rules_scoped_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie hcb
         hms hind)
   obtain ⟨rules', hrr', -, hmI, hrP, hrlen, hpins⟩ :=
-    rec_pins_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hm
+    rec_pins_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie hm
       (lateRecLps rc ind) ⟨keyOf t A, lateRecLps rc ind, ty⟩
       (if decide (rc.lvls.toNat = ind.lvls.toNat + 1) then ind.lvls.toNat else 0)
       (decide (rc.lvls.toNat = ind.lvls.toNat + 1))
   have hreq : rules' = rules := ruleReads_unique hrr' hrr
   subst hreq
-  have helim := rec_elim_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie
+  have helim := rec_elim_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie
     hcb hms hind hat hname hnP hnI hlenC
-  have hfs := rec_field_sorts_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi
+  have hfs := rec_field_sorts_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi
     htie hcb hms hind hm
-  have hK := rec_k_stored_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hm
-  obtain ⟨hp, -, -, -, -⟩ := rec_counts_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep
+  have hK := rec_k_stored_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie hm
+  obtain ⟨hp, -, -, -, -⟩ := rec_counts_of_arm ht hS hst hc hinfo hnat hinert hcover hstep
     hcm hcmi htie hcb hms hind
-  have hreads := rec_reads_of_arm ht hS hcov hst hc hinfo hlogic hlim hnat hinert hcover hstep
+  have hreads := rec_reads_of_arm ht hS hcov hst hc hinfo hlogic hnat hinert hcover hstep
     hcm hcmi htie hcb hms hind hm hty hrr' hannT hgen hwrap
   have hstored : Decl.UsedRefsStored t env c :=
     usedRefsStored_of_cover (hcover env ⟨hstep.ext, hstep.refs, hstep.fresh⟩) hinert
@@ -108,8 +108,8 @@ theorem recLateOut_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
 /-- **The step of a top-walked, in-logic, standalone recursor record of a native family**, with
 the fold's carried clause (the native block step's). The circuit's evidence at the record:
 `hS`, `hcov`, `hst` (the run's store, its hashed records, the step's store), `hc`, `hinfo`,
-`hlogic` (the record, a recursor, in Lean's logic), `hlim`, `hnat` (checked on the native recursor
-route at the limit `n`), `hkey`, `hinert`, `hcover` (its key free, no inert axiom used, the cover
+`hlogic` (the record, a recursor, in Lean's logic), `hnat` (checked on the native recursor
+route at the limit `lim`), `hkey`, `hinert`, `hcover` (its key free, no inert axiom used, the cover
 clause), `hres` (the major premise's head is no basis name). Named hypotheses about the matched
 registry entry and the record, at every environment the fold hands the step: `hhead` (the
 entry's constructors return literally, `FamIxonRetHead`: the native block step's, carried by the
@@ -117,12 +117,12 @@ fold), `hnoProj` (no stored constructor type projects out of the family: the nat
 constructor stage), `hbounds` (the count bounds of the native recursor comparison's
 specifications). -/
 theorem unitStep_recLate {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hcov : LoadedReads.HashedRecordsStored calls E₀) (hst : StepStore calls t E₀ E)
     (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlogic : InLogic c)
-    (hlim : lim = some n) (hnat : NativeRecArm calls bAddr t A n)
+    (hnat : RecArmRun calls t A lim)
     (hkey : Decl.KeyFree (keyOf t A)) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     (hres : RecMajorNotBasis t E₀ A c rc)
@@ -139,10 +139,10 @@ theorem unitStep_recLate {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
       (fun env => ((LateRegistry.{u} t E env ∧ HashKeyed t env) ∧ Decl.AuxRootSynced env) ∧
         LvClauses env) t envT E₀ E lim A c :=
   unitStep_recLate_lv (RecMajorTie t E₀ A c rc) ht hinfo (address_size_of_record hS hc)
-    (fun env hstep => recParent_of_arm_tied ht hS hst hc hinfo hlim hnat hinert hcover hres env
+    (fun env hstep => recParent_of_arm_tied ht hS hst hc hinfo hnat hinert hcover hres env
       hstep)
     (fun env P ip fam hstep hlv hpar htie hm =>
-      recLateOut_of_arm ht hS hcov hst hc hinfo hlogic hlim hnat hkey hinert hcover hstep hlv hpar
+      recLateOut_of_arm ht hS hcov hst hc hinfo hlogic hnat hkey hinert hcover hstep hlv hpar
         htie hm (famCtorRetHead_of_ixon (hhead env P ip fam hstep hm))
         (hnoProj env P ip fam hstep hm) (hbounds env P ip fam hstep hm))
 

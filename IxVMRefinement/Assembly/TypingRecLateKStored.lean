@@ -117,11 +117,11 @@ theorem recRuleKOf_late {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {env : Ix.Kerne
 constructor, and the stored K bit of its rule is set (`rec_k_of_arm` with `recRuleKOf_late`). -/
 theorem rec_k_stored_of_arm {calls : List (Aiur.Generic.SourceSemantics.Call F)}
     {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlim : lim = some n)
-    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
     {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
@@ -132,7 +132,7 @@ theorem rec_k_stored_of_arm {calls : List (Aiur.Generic.SourceSemantics.Call F)}
       ∃ cA, fam.ctorsA = [cA] ∧ Ix.Kernel.recRuleKOf env.find? cA.1.name = true := by
   intro hk
   obtain ⟨hsize, hlen, hfields, hz⟩ :=
-    rec_k_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hm hk
+    rec_k_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie hm hk
   obtain ⟨cA, hA⟩ : ∃ cA, fam.ctorsA = [cA] := List.length_eq_one_iff.mp hlen
   have h0 : cA.2 = 0 := hfields cA (by simp [hA])
   exact ⟨hsize, cA, hA, recRuleKOf_late hm.1 hA h0 hz⟩

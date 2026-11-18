@@ -437,15 +437,15 @@ The route's scan (`rec_to_parent_addr`) runs on the converted type in the heap, 
 data replaced; the scan finds the literal shape in `R'`, hence in the reading, and an
 annotation of the reading has the reading's major key. -/
 theorem rec_major_key_reading {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
-    {E₀ E : Ixon.Env} {bAddr A : _root_.Address} {c : Ixon.Constant} {rc : Ixon.Recursor}
-    {n : Nat}
+    {E₀ E : Ixon.Env} {A : _root_.Address} {c : Ixon.Constant} {rc : Ixon.Recursor}
+    {lim : Option Nat}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
     (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
-    (hnat : NativeRecArm calls bAddr t A n) {P : _root_.Address}
+    (hnat : RecArmRun calls t A lim) {P : _root_.Address}
     (htie : RecMajorTie t E₀ A c rc P) :
     ∃ tyP, (exprReader t (fun x => E₀.blobs.get? x) c id (soloSelf t A)).read rc.typ = .ok tyP ∧
       majorKey rc tyP = some (keyOf t P) := by
-  have hgood : Core.Good ⟨E, default, t, some n⟩ calls := hst.good default (some n)
+  have hgood : Core.Good ⟨E, default, t, lim⟩ calls := hst.good default lim
   have hbound : Bounded calls := hgood.2
   have hrec₀ : Ix.Cert.recordAt E₀ A = some c := (hS.recordOf_eq_recordAt A).symm.trans hc
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,

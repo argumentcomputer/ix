@@ -27,11 +27,11 @@ open Ix.Kernel (ConstantVal)
 naming the constructor projections of the parent's member, are the late relation's pinned rules
 for the matched family, with the record's major index and rule prefix the family's. -/
 theorem rec_pins_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlim : lim = some n)
-    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
     {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
@@ -56,14 +56,14 @@ theorem rec_pins_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ 
         rules[j]? = some r → fam.ctorsA[j]? = some cA → r.ctor = cA.1.name ∧ r.nfields = cA.2 := by
   obtain ⟨hat, hTP, cb, ms, ind, hcb, hms, hind, hnP, hnI, hlenC, hnames⟩ := hm
   obtain ⟨hp, hi, hmot, hrules, hmin⟩ :=
-    rec_counts_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hcb hms hind
-  have hfields := rec_rule_fields_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm
+    rec_counts_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie hcb hms hind
+  have hfields := rec_rule_fields_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm
     hcmi htie hcb hms hind hat.stored hnames
   obtain ⟨rcv, apv, parentV, tyPtr, rulesPtr, blkPtr, tyPtrP, unsP, blkPtrP, kTarget, result,
     bA, bR, bT, bP, blobs, tree, loadedHeap, kHeap, kAfter, canonHeap, final, kCalls,
     canonCalls, hrc, hbA, hbA', hbR, hbR', hbT, hbT', hbP, hbP', hblob, rty, hrulesTr, hrules_lt,
     hidx56, eK, evK, hsK, hkEq, eC, evCanon, hsCanon⟩ :=
-    rec_canon_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hcb hms hind
+    rec_canon_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie hcb hms hind
   obtain ⟨rules, hrr, hrd⟩ := LoadedReads.rules_reading (t := t)
     (blob := fun x => E₀.blobs.get? x) (param := Ix.Kernel.Reader.recParam ps)
     (self := soloSelf t A) ht (LoadedReads.soloSelf_ok t A) hblob ip.block ip.idx.toNat

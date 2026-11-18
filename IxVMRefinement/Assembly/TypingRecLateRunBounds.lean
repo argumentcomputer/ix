@@ -1,6 +1,7 @@
 import IxVMRefinement.Assembly.RecArmRunBounds
 import IxVMRefinement.Assembly.TypingRecLateNativeFront2
 import IxVMRefinement.Claim.TopRec
+import IxVMRefinement.Claim.TopDefn
 
 /-! # The count bounds of a native recursor's step, from the arm's own observations
 
@@ -9,9 +10,10 @@ bounds. This module derives the bounds an accepted run gives (`RecArmRunBounds`)
 walk observed at the record, at every validation limit:
 
 * `RecArmObs calls A`: the walk loaded the record at `A` as a `Rec` value and ran `check_const`
-  on it. It is `NativeRecArm` and `Claim.RecArmLimAt` without their role-context
-  representation, which the bounds do not read; so one statement serves a validating run and a
-  run under an assumed binding (`NativeRecArm.obs`, `recArmObs_of_lim`);
+  on it. It is `RecArmRun` and `Claim.RecArmLimAt` without their role-context
+  representation, which the bounds do not read (`RecArmRun.obs`, `recArmObs_of_lim`);
+* `recArmRun_of_limArm`: the arm the walk exports at any limit (`Claim.TopWalkCore.recArm`) is
+  the arm the step reads;
 * `recArmRunBounds_of_obs`: at a step's environment and the tied parent, the two loads of the
   arm (the record's own, and the member check's load of the parent) give `RecArmRunBounds`.
   Its hypotheses are those `rec_front_arm` takes, with the limit free;
@@ -101,16 +103,28 @@ def RecArmObs (calls : List (Call F)) (A : _root_.Address) : Prop :=
           position], ap] m_chk r_chk h'_chk cs_chk ∧
     (∀ cl ∈ cs_chk, cl ∈ calls)
 
-/-- The arm of a validating run gives the observations. -/
-theorem NativeRecArm.obs {calls : List (Call F)} {bAddr : _root_.Address}
-    {t : Ix.Kernel.RoleTable} {A : _root_.Address} {n : Nat}
-    (h : NativeRecArm calls bAddr t A n) : RecArmObs calls A := by
+/-- The arm at a limit gives the observations. -/
+theorem RecArmRun.obs {calls : List (Call F)}
+    {t : Ix.Kernel.RoleTable} {A : _root_.Address} {lim : Option Nat}
+    (h : RecArmRun calls t A lim) : RecArmObs calls A := by
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, -, -, ha_pre, -, ev_ld, hsub_ld,
     hld, ev_chk, hsub_chk⟩ := h
   exact ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, ha_pre, ev_ld, hsub_ld, hld,
     ev_chk, hsub_chk⟩
+
+/-- **The arm the walk exports at any limit is the arm at that limit**: the walk's role
+context, read as the core reads it. -/
+theorem recArmRun_of_limArm {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {A : _root_.Address} {lim : Option Nat}
+    (h : Claim.RecArmLimAt calls bAddr t A lim) : RecArmRun calls t A lim := by
+  obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
+    minors, rules, kf, uns, block, position, cs_load, cs_chk, hrc_pre, hrc_m, ha_pre, ha_m, ev_ld,
+    hsub_ld, hld, ev_chk, hsub_chk⟩ := h
+  exact ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
+    minors, rules, kf, uns, block, position, cs_load, cs_chk, hrc_pre.toRCRep, hrc_m.toRCRep,
+    ha_pre, ha_m, ev_ld, hsub_ld, hld, ev_chk, hsub_chk⟩
 
 /-- The arm the walk exports at any limit gives the observations. -/
 theorem recArmObs_of_lim {calls : List (Call F)} {bAddr : _root_.Address}
@@ -270,14 +284,13 @@ theorem recArmRunBounds_of_obs {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨hlvlsP, hpP, hiP, hcP56, hidxP, -⟩ := hraw
   exact ⟨hlvls, hrules_lt, hlvlsP, hpP, hiP, hcP56, hidxP⟩
 
-/-- **The bounds at a validating run's arm**: `recArmRunBounds_of_obs` at `NativeRecArm`. The
-limit of the step and the limit of the arm's role context are not related by the statement. -/
+/-- **The bounds at the arm**: `recArmRunBounds_of_obs` at `RecArmRun`. -/
 theorem recArmRunBounds_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
-    {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
     (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
-    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
     {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}

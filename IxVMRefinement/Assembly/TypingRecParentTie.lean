@@ -91,16 +91,15 @@ theorem recParent_of_route_tied {E : Ixon.Env} {t : Ix.Kernel.RoleTable} {lim : 
 heading the major premise's domain of the annotation of the record's type the route scanned. -/
 theorem recParent_of_arm_tied {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ E : Ixon.Env} {envT : Ix.Kernel.Env .anon} {lim : Option Nat}
-    {bAddr A : _root_.Address} {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {A : _root_.Address} {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlim : lim = some n)
-    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     (hres : RecMajorNotBasis t E₀ A c rc)
     (env : Ix.Kernel.Env .anon) (hstep : StepAt.{u} t envT E₀ E lim A c env) :
     ∃ P ip, RecParent t E env P ip ∧ RecMajorTie t E₀ A c rc P := by
-  subst hlim
-  have hgood : Core.Good ⟨E, env, t, some n⟩ calls := hst.good env (some n)
+  have hgood : Core.Good ⟨E, env, t, lim⟩ calls := hst.good env lim
   have hbound : Bounded calls := hgood.2
   have hrec₀ : Ix.Cert.recordAt E₀ A = some c := (hS.recordOf_eq_recordAt A).symm.trans hc
   have hstored : Decl.UsedRefsStored t env c :=
@@ -149,7 +148,7 @@ theorem recParent_of_arm_tied {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨E', hann, htm⟩ := rty.toTmC (κ := Core.keyOf t) (ps := List.range rc.lvls.toNat)
     (by simp) (by simpa using hlvls) (LoadedReads.readCtx_keyAt_inv ht _)
     (fun i x m k hx => by simp at hx) hblob hrd hlbb hdef
-  have htmS := Decl.tmC_stored_of_usedRefs (E₀ := E) (env := env) (lim := some n) rty
+  have htmS := Decl.tmC_stored_of_usedRefs (E₀ := E) (env := env) (lim := lim) rty
     (recr_typ_usedRefs hinfo) hstored htm
   rw [Decl.posOf_range] at htmS
   obtain ⟨parent, pointer, scanHeap, loadedHeap, routedHeap, scanCalls, loadCalls, routeCalls,

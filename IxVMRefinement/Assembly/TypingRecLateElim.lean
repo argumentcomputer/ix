@@ -117,7 +117,7 @@ open Ix.Kernel.Semantics (NativeFam NativeFamStored)
 the scoped load of the parent (`get_ci`) answering the pointer whose value is the parent's read
 `Induct` value, and the parent's count bounds. -/
 def RecArmAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
-    (bAddr : _root_.Address) (n : Nat) (A : _root_.Address) (c : Ixon.Constant)
+    (lim : Option Nat) (A : _root_.Address) (c : Ixon.Constant)
     (rc : Ixon.Recursor) (P : _root_.Address) (ip : Ixon.InductiveProj)
     (ind : Ixon.Inductive) : Prop :=
   ∃ (rcv apv parentV tyPtr rulesPtr blkPtr tyPtrP unsP blkPtrP kTarget result pointer :
@@ -125,7 +125,7 @@ def RecArmAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
     (bA bR bT bP : Bytes.Address) (blobs : List (_root_.Address × ByteArray))
     (tree : L1.BinderTreeData) (scanHeap loadedHeap kHeap kAfter canonHeap final : Heap F)
     (loadCalls kCalls canonCalls : List (Call F)),
-    Claim.RCFullRep t bAddr n loadedHeap rcv ∧
+    Core.RCRep t lim loadedHeap rcv ∧
     Bytes.RepAddressRef Core.addrTy loadedHeap bA apv ∧ Core.ixAddr bA = A ∧
     Bytes.RepAddressRef Core.addrTy loadedHeap bR blkPtr ∧ Core.ixAddr bR = A ∧
     Bytes.RepAddressRef Core.addrTy scanHeap bT parentV ∧ Core.ixAddr bT = P ∧
@@ -170,11 +170,11 @@ def RecArmAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
 /-- **The arm at the tied parent, with the parent's load** (the derivation of
 `rec_canon_of_arm`, keeping the load). -/
 theorem rec_arm_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlim : lim = some n)
-    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
     {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
@@ -183,10 +183,9 @@ theorem rec_arm_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E
     {cb : Ixon.Constant} {ms : Array Ixon.MutConst} {ind : Ixon.Inductive}
     (hcb : Ix.Cert.recordAt E ip.block = some cb) (hms : cb.info = .muts ms)
     (hind : ms[ip.idx.toNat]? = some (.indc ind)) :
-    RecArmAt calls t E₀ bAddr n A c rc P ip ind := by
-  subst hlim
+    RecArmAt calls t E₀ lim A c rc P ip ind := by
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
-  have hgood : Core.Good ⟨E, env, t, some n⟩ calls := hst.good env (some n)
+  have hgood : Core.Good ⟨E, env, t, lim⟩ calls := hst.good env lim
   have hbound : Bounded calls := hgood.2
   have hrec₀ : Ix.Cert.recordAt E₀ A = some c := (hS.recordOf_eq_recordAt A).symm.trans hc
   have hstored : Decl.UsedRefsStored t env c :=
@@ -239,7 +238,7 @@ theorem rec_arm_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E
   obtain ⟨E', hann, htm⟩ := rty.toTmC (κ := Core.keyOf t) (ps := List.range rc.lvls.toNat)
     (by simp) (by simpa using hlvls) (LoadedReads.readCtx_keyAt_inv ht _)
     (fun i x m k hx => by simp at hx) hblob hrd hlbb hdef
-  have htmS := Decl.tmC_stored_of_usedRefs (E₀ := E) (env := env) (lim := some n) rty
+  have htmS := Decl.tmC_stored_of_usedRefs (E₀ := E) (env := env) (lim := lim) rty
     (recr_typ_usedRefs hinfo) hstored htm
   rw [Decl.posOf_range] at htmS
   have hsum : ZMod.val ((rc.params.toNat : F) + (rc.motives.toNat : F) + (rc.minors.toNat : F) +
@@ -254,7 +253,7 @@ theorem rec_arm_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E
     native_rec_member_full evM
   have hsScan' : ∀ x ∈ scanCalls, x ∈ calls := fun x hx => hsub_chk x (hsubM x (hsScan x hx))
   have hsLoad' : ∀ x ∈ loadCalls, x ∈ calls := fun x hx => hsub_chk x (hsubM x (hsLoad x hx))
-  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, some n⟩
+  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, lim⟩
   have hcS : Core.ScopedCoreFacts cS := hstep.inv.scopedCoreFacts
   have htmM := htmS.mono hextM
   obtain ⟨a, dom, us, ha, hpi, hhead⟩ := Decl.scopedCalleesSpec cS hcS .rec_to_parent_addr _ _ _
@@ -274,7 +273,7 @@ theorem rec_arm_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E
     Option.some.inj (hmajP.symm.trans ((majorKey_annotates_eq (rc := rc) hann' hann).trans hmajA))
   have hPa : P = Core.ixAddr a := keyOf_inj hroles hkeys
   subst hPa
-  have hgL : Core.Good ⟨E, env, t, some n⟩ loadCalls := hgood.sub hsLoad'
+  have hgL : Core.Good ⟨E, env, t, lim⟩ loadCalls := hgood.sub hsLoad'
   obtain ⟨rawP, cP, hhP, hbaP, hexP, -, hresP⟩ := L1.get_ci_block_trace_spec hgL.2 ha evLoad
   have hrecP : recordOf E (Core.ixAddr a) = some cm := by
     rw [recordOf_eq_recordAt_of_decoded hst.decoded]
@@ -502,11 +501,11 @@ theorem canonical_full_elim {c : Core.ScopedCtx} (hc : Core.ScopedCoreFacts c)
 parent: if the record has one level more than the parent's member (a large eliminator), the
 family's result sort is never zero or the family has fewer than two constructors. -/
 theorem rec_elim_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
-    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {bAddr A : _root_.Address}
-    {c : Ixon.Constant} {rc : Ixon.Recursor} {n : Nat}
+    {envT : Ix.Kernel.Env .anon} {lim : Option Nat} {A : _root_.Address}
+    {c : Ixon.Constant} {rc : Ixon.Recursor}
     (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀) (hst : StepStore calls t E₀ E)
-    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc) (hlim : lim = some n)
-    (hnat : NativeRecArm calls bAddr t A n) (hinert : InertClause t c)
+    (hc : recordOf E₀ A = some c) (hinfo : c.info = .recr rc)
+    (hnat : RecArmRun calls t A lim) (hinert : InertClause t c)
     (hcover : ∀ env, HandedRefs t envT E₀ A c env → CoverAt t env c)
     {env : Ix.Kernel.Env .anon} (hstep : StepAt.{u} t envT E₀ E lim A c env)
     {P : _root_.Address} {ip : Ixon.InductiveProj} {cm : Ixon.Constant}
@@ -528,16 +527,15 @@ theorem rec_elim_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ 
     loadCalls, kCalls, canonCalls, hrc, hbA, hbA', hbR, hbR', hbT, hbT', hbP, hbP', hblob, rty,
     hrulesTr, hrules_lt, hidx56, hlvR, hlvP, hpP, hiP, hcP, eSL, evLoad, hsLoad, hldP, eK, evK,
     hsK, hkEq, eC, evCanon, hsCanon⟩ :=
-    rec_arm_of_arm ht hS hst hc hinfo hlim hnat hinert hcover hstep hcm hcmi htie hcb hms hind
-  subst hlim
-  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, some n⟩
+    rec_arm_of_arm ht hS hst hc hinfo hnat hinert hcover hstep hcm hcmi htie hcb hms hind
+  let cS : Core.ScopedCtx := Core.Ctx.stored ⟨E, env, t, lim⟩
   have hcS : Core.ScopedCoreFacts cS := hstep.inv.scopedCoreFacts
   -- the former the parent's key stores
   have hformer : env.find? (Core.keyOf t P) = some (.indInfo fam.cvS (Ix.Kernel.nativeCaps fam.p)) := by
     rw [LoadedReads.keyOf_eq, ← hname]
     exact hat.stored.former
-  have hκP : cS.κ P = Core.keyOf t P := Core.Ctx.stored_key_of_find (c := ⟨E, env, t, some n⟩) hformer
-  have hgL : Core.Good ⟨E, env, t, some n⟩ loadCalls := (hst.good env (some n)).sub hsLoad
+  have hκP : cS.κ P = Core.keyOf t P := Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hformer
+  have hgL : Core.Good ⟨E, env, t, lim⟩ loadCalls := (hst.good env lim).sub hsLoad
   obtain ⟨ci, hfind, hptr⟩ := Core.get_ci_step cS hcS evLoad parentV bT rfl trivial
     (by rw [hbT', hκP]; exact Core.Resolved.ne)
     (Core.CoreGood.ofRaw hgL (fun _ _ => trivial)) hbT
@@ -554,8 +552,8 @@ theorem rec_elim_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ 
   subst hcvEq
   obtain ⟨-, -, hperm, htm⟩ := hval
   -- the canonical comparison
-  have hgC : Core.Good ⟨E, env, t, some n⟩ canonCalls := (hst.good env (some n)).sub hsCanon
-  have helim := canonical_full_elim hcS (fun _ => trivial) ((hrc.mono eC).toRCRep) hgC
+  have hgC : Core.Good ⟨E, env, t, lim⟩ canonCalls := (hst.good env lim).sub hsCanon
+  have helim := canonical_full_elim hcS (fun _ => trivial) (hrc.mono eC) hgC
     (htm.mono eC) (by omega) (by omega) evCanon hlarge'
   -- the former's telescope, renamed to positions
   obtain ⟨bs, hsort⟩ := hat.sort
