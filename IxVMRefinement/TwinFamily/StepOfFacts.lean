@@ -45,9 +45,9 @@ theorem unitStepTwin_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon → P
       InertClause t crb' →
       (∀ x, ConstAddrOf rb' crb' x → env.find? (keyOf t x) = none) →
       (∀ x, ConstAddrOf rb' crb' x → Decl.KeyFree (keyOf t x)) →
-      ∃ (blk : List (ConstantInfo .anon)) (ws : List (TwinRecPart .anon))
-        (f : Ix.Kernel.Key .anon → Ix.Kernel.Key .anon),
-        TwinDeclReads t E₀ rb' crb' blk ∧ TwinPartsFacts t env rb crb recon blk ws f)
+      ∃ (blk : List (ConstantInfo .anon)) (ws : List (TwinRecPart .anon)),
+        TwinDeclReads t E₀ rb' crb' blk ∧
+        TwinPartsFacts t env rb crb recon blk ws (Decl.twinPeerRename ws))
     {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
     {envT : Ix.Kernel.Env .anon} {E₀ E : Ixon.Env} {lim : Option Nat}
     {fam : _root_.Address → Option _root_.Address} {A B rb : _root_.Address}
