@@ -11,8 +11,8 @@ The circuit sees the same model as advice records at keys of their own, each def
 theorem read with its level parameters at positions. This module states the passage as
 functions of the environment IxC's fold stores (`ModeledFamily`):
 
-* `advicePrefix`: the prefix in the advice layout. Every stored constant that is not a member of
-  the block is kept; a constant of the model moves to its advice key (`adviceKey`), its constants
+* `advicePrefix`: the prefix in the advice layout. Every constant stored before the block is
+  kept; a constant of the model moves to its advice key (`adviceKey`), its constants
   renamed, and a definition's or theorem's level parameters renamed to positions.
 * `familyAliases`: the alias group. The alias of a member keeps the model's declared type (the
   member's annotated type renamed to the model keys) and its level parameters, and its value is
@@ -60,9 +60,15 @@ def isModelKey (m : ModeledFamily) (k : KKey) : Bool :=
   | .aux _ _ => m.names.contains k.base
   | _ => false
 
+/-- The constants stored before the block, newest first: those older than every member of the
+block. What IxC's fold stores with the block or after it (a projection function of a
+structure-like member) is not part of the prefix. -/
+def beforeBlock (m : ModeledFamily) : List (ConstantInfo .anon) :=
+  (m.stored.reverse.takeWhile fun c => !m.names.contains c.name).reverse
+
 /-- The model's keys, oldest first. -/
 def modelKeys (m : ModeledFamily) : List KKey :=
-  ((m.stored.map (·.name)).reverse).filter m.isModelKey
+  ((m.beforeBlock.map (·.name)).reverse).filter m.isModelKey
 
 /-- The placeholder address of the model constant at position `i`. -/
 def adviceAddress (i : Nat) : _root_.Address :=
@@ -115,9 +121,8 @@ def adviceConst (g : KKey → KKey) : ConstantInfo .anon → Option (ConstantInf
 
 /-- **The prefix in the advice layout**, newest first. -/
 def advicePrefix (m : ModeledFamily) : List (ConstantInfo .anon) :=
-  m.stored.filterMap fun c =>
-    if m.names.contains c.name then none
-    else if m.isModelKey c.name then adviceConst m.adviceRen c
+  m.beforeBlock.filterMap fun c =>
+    if m.isModelKey c.name then adviceConst m.adviceRen c
     else some c
 
 /-- The alias at a model key: a definition by the advice constant at the alias's own level
