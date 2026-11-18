@@ -299,8 +299,6 @@ theorem former_reads_lim (ht : t.check = .ok ()) (hbound : Bounded calls)
   subst hind
   exact ⟨ty₀, hty, hreads⟩
 
-/-- **The reading of a constructor at a loaded slot**, over the run's store, with its stored
-index, level count and parameter count pinned to the slot and the block's. -/
 
 /-- **The declared block of the unit, read over the run's store**: the former, then one
 constructor per slot, each with its reading; no pinned basis block; non-derived keys. The
@@ -453,7 +451,6 @@ theorem blockReads_shape_lim (ht : t.check = .ok ()) (hbound : Bounded calls)
     · cases e
   exact ⟨ct, tyj, h1, h2, h3, h4, h5, hceq, hcs j c hc⟩
 
-end Member
 
 /-! ## The recognition of the block -/
 
@@ -551,10 +548,6 @@ theorem former_scope_lim (hbound : Bounded calls) (hS : LoadedReads.RunStore cal
     prelude.scopeRun (hsub_chk _ prelude.scopeMember)
   exact ⟨hlbb, hdef, Assembly.memberReader_read_noFvar hty⟩
 
-/-- **The former's stage of IxC at the prefix** (T6): the recognised block's former is checked
-against the prefix as its canonical annotation, at a telescope ending in the block's sort, and
-stored at the native capability record of the completed shape, for either recursion flag. The
-former's key is the key of its projection address. -/
 
 /-- **The member check's load bounds the record's counts.** -/
 theorem member_bounds_lim {t : Ix.Kernel.RoleTable} {calls : List (Call F)} {E₀ : Ixon.Env}
@@ -752,8 +745,5 @@ theorem formerChecked_of_member_lim {calls : List (Call F)} {t : Ix.Kernel.RoleT
       prelude.sortRun
   rw [Decl.posOf_range] at inferred
   exact ⟨ty', hcT, hannT, checked, sty, u, inferred, reduced⟩
-
-/-- **IxC's former stage at a syntactic telescope**: the checked former is the telescope constant
-and the stored former; the record is completed with the sort the telescope ends in, and the
 former is stored at the capability record of that completed record. -/
 end IxVM.Refinement.Typing
