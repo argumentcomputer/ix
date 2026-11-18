@@ -504,8 +504,8 @@ def runProbe (leanEnv : Lean.Environment) : IO UInt32 := do
 /-! ## Family records that must be refused -/
 
 private def betaDom (d : Lean.Expr) : Lean.Expr :=
-  Lean.mkApp (.lam `x (Lean.mkConst ``PUnit [Lean.levelOne]) (d.liftLooseBVars 0 1) .default)
-    (Lean.mkConst ``PUnit.unit [Lean.levelOne])
+  Lean.mkApp (.lam `x (Lean.mkConst ``PUnit [Lean.Level.one]) (d.liftLooseBVars 0 1) .default)
+    (Lean.mkConst ``PUnit.unit [Lean.Level.one])
 
 private partial def editBinderAt (target : Nat) (g : Lean.Expr → Lean.Expr) :
     Nat → Lean.Expr → Lean.Expr
