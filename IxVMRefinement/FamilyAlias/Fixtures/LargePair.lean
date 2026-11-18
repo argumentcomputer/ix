@@ -32,6 +32,8 @@ open Ix.Kernel (Env Expr Key Level ConstantInfo ConstantVal RecRule RecRuleFire 
 
 set_option maxRecDepth 100000
 
+universe u
+
 def k0 : KKey := Key.id (adr [176, 0, 0])
 def k1 : KKey := Key.id (adr [176, 0, 1])
 def k2 : KKey := Key.id (adr [176, 0, 2])
@@ -207,5 +209,26 @@ theorem inhabited :
       DeclIndRenRunJ (famJ h) ⟨as ++ pre⟩ blk env₂ := by
   obtain ⟨env₂, -, hd⟩ := famRecord_of_check record_ok
   exact ⟨aliasMap tbl, aliases, env₂, aliasGroup_of_check group_ok, roots_ok, hd⟩
+
+/-- No basis pin hits the block (evaluated). -/
+theorem pin_ok : Ix.Kernel.basisPinHit blk = none := by decide +kernel
+
+/-- The block's names are base keys (evaluated). -/
+theorem base_ok : ∀ ci ∈ blk, isBaseKey ci.name = true := by decide +kernel
+
+/-- **The model side at this family**: the declaration layer's invariant passes from the prefix to
+the environment after the block, in every set theory, and every recursor the block stores has a
+model companion. -/
+theorem model_side :
+    ∃ env₂ : Env .anon, DeclIndRenRunJ (famJ (aliasMap tbl)) ⟨aliases ++ pre⟩ blk env₂ ∧
+      (∀ (V : Type u) [Ix.Kernel.SetTheory V], FullDeclInv V ⟨pre⟩ → FullDeclInv V env₂) ∧
+      (∀ (k : KKey) (c : ConstantVal .anon) (mI rP : Nat) (rules : List (RecRule .anon)),
+        env₂.find? k = some (.recInfo c mI rP rules) →
+        (⟨aliases ++ pre⟩ : Env .anon).find? k = none → Ix.Kernel.Model.HasModel env₂ k) := by
+  obtain ⟨env₂, -, hd⟩ := famRecord_of_check record_ok
+  exact ⟨env₂, hd,
+    fullDeclInv_famStep (aliasGroup_of_check group_ok) pin_ok
+      (fun ci hci => isBaseKey_iff_nonAuxKey.mp (base_ok ci hci)) roots_ok hd,
+    fun _ _ _ _ _ hf hn => hasModel_declIndRenJ hd hf hn⟩
 
 end IxVM.Refinement.Decl.FamilyAlias.Fixtures.LargePair
