@@ -25,7 +25,7 @@ reload of a new constant at its key is the prefix's: `newLoads_noFam`).
 
 * `newLoads_noFam`, `etaStable_append_noFam`: the load contract's new part and η stability for
   constants that are no inductive, constructor or projection table;
-* `FoldClauseWith.twinStep`: the clause after the twin record;
+* `foldClauseWith_twinStep`: the clause after the twin record;
 * `twinStepKeeps_foldExtra`: `TwinStepKeeps` at `FoldExtra`. -/
 
 universe u
@@ -36,7 +36,7 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library
 open IxVM (F)
 open IxVM.Consistency
-open IxVM.Refinement.Core (Ctx KKey unresolvedKey ixAddr CIPtrRep)
+open IxVM.Refinement.Core (Ctx KKey unresolvedKey ixAddr CIPtrRep W kciEnum addrTy)
 open IxVM.Refinement.Decl (twinPosRulesJ)
 open Ix.Kernel (ConstantInfo ConstantVal)
 open Ix.Kernel.Semantics (DeclRecTwinRunJ TwinRecPart twinModels twinRecs NativeFam)
@@ -153,7 +153,7 @@ variable {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop} {t : Ix.Kernel.R
 /-- **The fold's clause after a twin record** (module docstring), from the clause before, the
 block's names at the keys of 32-byte addresses, the arity facts after the step, the companions
 after the step, and the reload of each new constant at the key of an address. -/
-theorem FoldClauseWith.twinStep (hL : LinkLaws L) (h : FoldClauseWith.{u} L t E lim env Reg)
+theorem foldClauseWith_twinStep (hL : LinkLaws L) (h : FoldClauseWith.{u} L t E lim env Reg)
     {blk : List (ConstantInfo .anon)} (hrun : DeclRecTwinRunJ twinPosRulesJ env blk env₂)
     (hkeys : ∀ ci ∈ blk, ∃ x : _root_.Address, ci.name = keyOf t x ∧ x.hash.size = 32)
     (hAr : StoreArR env₂) (hcomp : Decl.CoreCompanions ⟨E, env₂, t, lim⟩)
@@ -194,9 +194,11 @@ theorem FoldClauseWith.twinStep (hL : LinkLaws L) (h : FoldClauseWith.{u} L t E 
     intro ci hci
     rcases List.mem_append.mp hci with hr | hm
     · obtain ⟨cv, mI, rP, rules, rfl⟩ := hrecs ci hr
-      exact ⟨fun _ _ h => nomatch h, fun _ _ _ h => nomatch h, fun _ h => nomatch h⟩
+      unfold NoFamConst
+      refine ⟨fun a b h => ?_, fun a b d h => ?_, fun a h => ?_⟩ <;> cases h
     · obtain ⟨-, -, -, cv, v, hint, rfl⟩ := hmods ci hm
-      exact ⟨fun _ _ h => nomatch h, fun _ _ _ h => nomatch h, fun _ h => nomatch h⟩
+      unfold NoFamConst
+      refine ⟨fun a b h => ?_, fun a b d h => ?_, fun a h => ?_⟩ <;> cases h
   have hnres : ∀ cn ∈ twinRecs ws ++ twinModels ws, cn.name ≠ unresolvedKey := by
     intro cn hcn
     rcases List.mem_append.mp hcn with hr | hm
@@ -206,7 +208,8 @@ theorem FoldClauseWith.twinStep (hL : LinkLaws L) (h : FoldClauseWith.{u} L t E 
     · obtain ⟨ci', -, hk, -⟩ := hmods cn hm
       rw [hk]
       intro he
-      cases he
+      injection he with h1 h2
+      cases h2
   have hold : ∀ {k : KKey} {x : ConstantInfo .anon},
       (⟨(twinRecs ws ++ twinModels ws) ++ env.consts⟩ : Ix.Kernel.Env .anon).find? k = some x →
         x ∉ twinRecs ws ++ twinModels ws → env.find? k = some x :=
@@ -297,7 +300,7 @@ theorem twinStepKeeps_foldExtra {L : Ix.Kernel.Env .anon → NativeFam .anon →
     obtain ⟨x, hx, hn, -⟩ := hreads.2.1 ci hci
     exact ⟨x, hn, hsz x hx⟩
   have hC' : FoldClauseWith.{u} L t E lim env₂ Reg :=
-    hC.twinStep hL hrun hkeyed (hAr env env₂ blk hrun hC.storeArR)
+    foldClauseWith_twinStep hL hC hrun hkeyed (hAr env env₂ blk hrun hC.storeArR)
       (hcomp env env₂ blk hinv hreads hrun hstored)
       (hreload env env₂ blk hinv hreads hrun hstored)
   exact ⟨hC'.prefixInv, hC'.extra⟩
