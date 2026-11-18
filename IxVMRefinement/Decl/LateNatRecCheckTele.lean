@@ -13,7 +13,8 @@ represents, given the term its input represents.
 `tty₀` with `nP + nIdx` leading `∀`s that the builder's output represents after the level
 parameters are renamed to positions, and concludes the comparison for the recursor generated
 from `tty₀`. For a syntactic telescope the premise holds with `tty₀ = pty₀`
-(`NatFormerTeleReads.of_strip`), which gives back the earlier statement. -/
+(`NatFormerTeleReads.of_strip`), which gives back the earlier statement
+(`late_nat_rec_check_spec_syntactic`). -/
 
 namespace IxVM.Refinement.Decl
 
@@ -677,5 +678,101 @@ theorem late_nat_rec_check_spec_of_tele {c : ScopedCtx} (hc : ScopedCoreFacts c)
   intro j hlt hj
   have h0_j : 0 + j < ctors_info.length := by simpa using hj
   simpa using hrules_ok j hlt h0_j
+
+/-- **The comparison for a loaded parent type that is syntactically a telescope**: the statement
+of `late_nat_rec_check_specT`, as the instance of `late_nat_rec_check_spec_of_tele` at
+`pty₀ = tty₀` with the builder read by `NatFormerTeleReads.of_strip`. -/
+theorem late_nat_rec_check_spec_syntactic {c : ScopedCtx} (hc : ScopedCoreFacts c)
+    (hall : ∀ cl, c.allowed cl)
+    {κ₂ : _root_.Address → KKey} {find₂ : KKey → Option (ConstantInfo .anon)}
+    (hkeep : ∀ x, c.κ x ≠ unresolvedKey → κ₂ x = c.κ x)
+    (hwl₂ : WrapLoads c.toCtx κ₂ find₂)
+    {cst : Ixon.Constant} {rc' : Ixon.Recursor}
+    {T recC : KKey} {b₀ bT bRec bRB : Bytes.Address} {idx k nP nIdx : Nat} {large : Bool}
+    {tty₀ rec_ty₀ : KExpr}
+    {tbs₀ : List (KExpr × Ix.Kernel.BinderMeta)} {tsort₀ : KExpr}
+    {ctors_info : List (KKey × Nat × KExpr × KExpr × List Nat)}
+    {rls : List (RecRule .anon)}
+    {x_rc x_nlvls x_ty x_n_mot x_n_min x_rules w_k w_u x_rec_blk w_ridx : SourceValue F}
+    {x_pty w_p1 w_p2 w_pu x_block : SourceValue F}
+    {x_addr x_parent_addr r : SourceValue F}
+    {h h' : Heap F} {cs : List (Call F)}
+    [Resolved (κ₂ (ixAddr bRec))]
+    (hT_ind : ∃ cv caps, c.env.find? T = some (.indInfo cv caps))
+    (hrecblk : Ix.Cert.recordAt c.E (ixAddr bRB) = some cst)
+    (hcst : cst.info = .recr rc')
+    (hT : c.κ (ixAddr bT) = T)
+    (hκ₂_inj : ∀ a : Bytes.Address, κ₂ (ixAddr a) = T → a = bT)
+    (hRec : κ₂ (ixAddr bRec) = recC)
+    (hidx : idx < 4294967296)
+    (hCres : ∀ i, i < ctors_info.length → c.κ (cprjAddr (ixAddr b₀) idx i) ≠ unresolvedKey)
+    (hk_lt : k < 2147483648)
+    (hnP_lt : nP < 2147483648)
+    (hnIdx_lt : nIdx < 2147483648)
+    (hnCtors_lt : ctors_info.length < 2147483648)
+    (hnall_lt : nP + 1 + ctors_info.length + nIdx + 1 < 4294967296)
+    (hlps_tty : tty₀.allLevelParamsDefined (List.range k) = true)
+    (hsT₀ : tty₀.stripPis (nP + nIdx) = some (tbs₀, tsort₀))
+    (hwf_all : ∀ info ∈ ctors_info,
+      NatCtorInfoWfT T k large nP nIdx ctors_info.length info)
+    (hrls_len : rls.length = ctors_info.length)
+    (hload : NatCtorLoadT c.κ b₀ idx k ctors_info x_block cs)
+    (hhead : NatCtorRetHeadT b₀ idx nP ctors_info x_block cs)
+    (hgood : CoreGood c cs)
+    (hrc : RCRep c.t c.lim h x_rc)
+    (hb₀_blk : Bytes.RepAddressRef addrTy h b₀ x_block)
+    (hbRB : Bytes.RepAddressRef addrTy h bRB x_rec_blk)
+    (hbT : Bytes.RepAddressRef addrTy h bT x_parent_addr)
+    (hbRec : Bytes.RepAddressRef addrTy h bRec x_addr)
+    (hpty : Tm c.κ 0 (fun _ => default) h 0 tty₀ x_pty)
+    (hrec_ty : Tm c.κ 0 (fun _ => default) h 0
+      (posOf (if large then k :: List.range k else List.range k) rec_ty₀) x_ty)
+    (hrules : RulesRep κ₂ h
+      (if large then k :: List.range k else List.range k) 0 x_rules rls)
+    (ev : ObsFn W "KernelCheck::nat_rec_check"
+      [x_rc,
+        .construct kciEnum "Rec"
+          [x_nlvls, x_ty, .field (nP : F), .field (nIdx : F), x_n_mot, x_n_min,
+            x_rules, w_k, w_u, x_rec_blk, w_ridx],
+        x_addr,
+        .construct kciEnum "Induct"
+          [.field (k : F), x_pty, w_p1, w_p2, .field (ctors_info.length : F),
+            w_pu, x_block, .field (idx : F)],
+        x_parent_addr,
+        .field ((if large then 1 else 0 : Nat) : F)]
+      h r h' cs) :
+    let rlps := if large then k :: List.range k else List.range k
+    let elim := if large then k else 0
+    let ctors₀ := ctors_info.map (fun info => (info.1, info.2.1, info.2.2.2.1, info.2.2.2.2))
+    x_nlvls = .field (rlps.length : F) ∧
+    x_n_mot = .field 1 ∧
+    x_n_min = .field (ctors_info.length : F) ∧
+    (∃ recTy,
+      Ix.Kernel.structRecTyR T (List.range k) elim large nP nIdx tty₀ ctors₀ = some recTy ∧
+      WrapRelSem c.env.find? recTy rec_ty₀) ∧
+    (∀ a_d ls_d,
+      ForallRightHeadLvls h a_d ls_d (nP + 1 + ctors_info.length + nIdx) x_ty →
+      ls_d = (List.range k).map (fun i => Level.param ((if large then 1 else 0) + i))) ∧
+    ∀ j (hlt : j < rls.length) (hj : j < ctors_info.length),
+      (rls[j]'hlt).nfields = (ctors_info[j]'hj).2.1 ∧
+      ∃ rhsG,
+        Ix.Kernel.structRecRhsR T (List.range k) elim large nP nIdx tty₀ ctors₀
+          recC (rlps.map .param) j = some rhsG ∧
+        WrapRelSem find₂ rhsG (rls[j]'hlt).rhs := by
+  have hs : ((posOf (if large then k :: List.range k else List.range k) tty₀).stripPis
+      (nP + nIdx)).isSome = true :=
+    Specs.Whnf.stripPis_isSome_instantiateLevelParams
+      (if large then k :: List.range k else List.range k)
+      (posLevels (if large then k :: List.range k else List.range k)) (nP + nIdx) tty₀
+      (by simp [hsT₀])
+  exact late_nat_rec_check_spec_of_tele hc hall hkeep hwl₂ (pty₀ := tty₀) (tty₀ := tty₀)
+    (hT_ind := hT_ind) (hrecblk := hrecblk) (hcst := hcst) (hT := hT) (hκ₂_inj := hκ₂_inj)
+    (hRec := hRec) (hidx := hidx) (hCres := hCres) (hk_lt := hk_lt) (hnP_lt := hnP_lt)
+    (hnIdx_lt := hnIdx_lt) (hnCtors_lt := hnCtors_lt) (hnall_lt := hnall_lt)
+    (hlps_pty := hlps_tty) (hsT₀ := hsT₀) (hwf_all := hwf_all) (hrls_len := hrls_len)
+    (hload := hload) (hhead := hhead) (hgood := hgood) (hrc := hrc) (hb₀_blk := hb₀_blk)
+    (hbRB := hbRB) (hbT := hbT) (hbRec := hbRec) (hpty := hpty)
+    (htele := NatFormerTeleReads.of_strip hc (by omega) hs)
+    (hrec_ty := hrec_ty) (hrules := hrules) (ev := ev)
 
 end IxVM.Refinement.Decl

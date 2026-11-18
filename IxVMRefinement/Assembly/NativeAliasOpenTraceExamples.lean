@@ -1,5 +1,4 @@
 import IxVMRefinement.Assembly.NativeAliasOpenTrace
-import IxVMRefinement.Assembly.NativeAliasTrace
 import IxVMRefinement.Core.Det
 import IxVMRefinement.Core.Steps.Whnf
 
@@ -11,9 +10,7 @@ Checked instances of the opened-body telescope walk, in environments that store 
 `∀ (α : Type), Rel α`, with three binders. The circuit's builder substitutes the argument `α`
 with lifting, so its telescope is `∀ (α : Type) (a : α) (b : α), Prop`, whose third domain is the
 variable two binders up. `rel_openBinderTrace` shows that the opened-body walk builds exactly
-that telescope. The walk on unopened bodies builds a different one, whose third domain is the
-second binder (`rel_unopened_trace`), and does not relate the declared type to the circuit's
-telescope at all (`rel_unopened_trace_false`).
+that telescope.
 
 **A universe-polymorphic alias under level instantiation.** `def Pred.{w} (α : Type w) :=
 α → Prop` and a family declared at `∀ (α : Type (max u u)), Pred.{max u u} α`, with two binders.
@@ -25,7 +22,15 @@ renamed declared type builds the renamed telescope of the block run. The circuit
 instantiation also simplifies `max u u`, so the heap term it builds has first domain
 `Sort (u + 1)` where the renamed telescope has `Sort (max u u + 1)`: the two terms differ and are
 equal up to the semantic equality of levels (`fooTele_renamed_lvEq_circuit`), which is the
-equality the term seam reads levels up to. -/
+equality the term seam reads levels up to.
+
+**An alias whose unfolding substitutes levels.** `def D.{a, b} (α : Type a) :=
+Sort (max a b) → α → Prop` and a family declared at `∀ (α : Type (max u u)), D.{u, u} α`. The
+heap telescope of the recursor run is neither the renamed telescope of the block run nor that
+telescope with its levels simplified (`barTele_renamed_ne_circuit`,
+`barTele_circuit_ne_simplified`); it is level-equivalent to the first
+(`barTele_renamed_lvEq_circuit`), which every walk from the renamed declared type builds
+(`bar_renamed_unique`). -/
 
 set_option linter.unusedVariables false
 
@@ -89,10 +94,6 @@ variable two binders up. -/
 def relTele : KExpr :=
   .forallE type0 (.forallE (.bvar 0) (.forallE (.bvar 1) (.sort .zero) nv) nv) nv
 
-/-- The term the walk on unopened bodies builds: its third domain is the second binder. -/
-def relTeleUnopened : KExpr :=
-  .forallE type0 (.forallE (.bvar 0) (.forallE (.bvar 0) (.sort .zero) nv) nv) nv
-
 theorem rel_unfold (Rel : Key .anon) :
     unfoldDefinition (relEnv Rel) (.const Rel []) = some relValue := by
   have hfind := find_singleton Rel [] (.forallE type0 type0 nv) relValue .abbrev
@@ -141,43 +142,16 @@ theorem rel_openSortTrace (Rel : Key .anon) :
   exact OpenSortTrace.step (d := 0) (n := 2) (E := relFormer Rel) (T := type0)
     (B := .app (.const Rel []) (.bvar 0)) (bm := nv) .refl h1
 
-/-- The walk on unopened bodies builds the term whose third domain is the second binder. -/
-theorem rel_unopened_trace (Rel : Key .anon) :
-    BinderTrace (relEnv Rel) 3 (relFormer Rel) relTeleUnopened := by
-  have h3 : BinderTrace (relEnv Rel) 0 (.sort .zero) (.sort .zero) := .done .refl
-  have h2 : BinderTrace (relEnv Rel) 1 (.forallE (.bvar 0) (.sort .zero) nv)
-      (.forallE (.bvar 0) (.sort .zero) nv) :=
-    BinderTrace.step (E := .forallE (.bvar 0) (.sort .zero) nv) (T := .bvar 0)
-      (B := .sort .zero) (R := .sort .zero) (bm := nv) .refl h3
-  have h1 : BinderTrace (relEnv Rel) 2 (.app (.const Rel []) (.bvar 0))
-      (.forallE (.bvar 0) (.forallE (.bvar 0) (.sort .zero) nv) nv) :=
-    BinderTrace.step (E := .app (.const Rel []) (.bvar 0)) (T := .bvar 0)
-      (B := .forallE (.bvar 0) (.sort .zero) nv) (R := .forallE (.bvar 0) (.sort .zero) nv)
-      (bm := nv) (rel_head_trace Rel (.bvar 0)) h2
-  exact BinderTrace.step (E := relFormer Rel) (T := type0)
-    (B := .app (.const Rel []) (.bvar 0))
-    (R := .forallE (.bvar 0) (.forallE (.bvar 0) (.sort .zero) nv) nv) (bm := nv) .refl h1
-
-/-- **The walk on unopened bodies does not relate the declared type to the circuit's
-telescope.** -/
-theorem rel_unopened_trace_false (Rel : Key .anon) :
-    ¬ BinderTrace (relEnv Rel) 3 (relFormer Rel) relTele := by
-  intro h
-  have hpre : PrefixEq 3 relTele relTeleUnopened :=
-    h.prefixEq (fun _ _ hf => hf) (rel_unopened_trace Rel)
-  have hdom : (Expr.bvar 1 : KExpr) = Expr.bvar 0 := hpre.2.2.2.2.1
-  exact absurd (Expr.bvar.inj hdom) (by decide)
-
 /-- The record of a registered family holds at this former and this telescope, which are
 different terms. The record's other data is arbitrary: this is the statement about the traces,
 not an accepted block. -/
-theorem rel_formerOpenTraceAt (Rel : Key .anon) (p : Semantics.NativeParts .anon) :
+theorem rel_formerOpenTraceAt (Rel : Key .anon) (p : NativeParts .anon) :
     ∃ fam : Semantics.NativeFam .anon,
       Typing.FormerOpenTraceAt (relEnv Rel) fam ∧ fam.cvS.type = relFormer Rel ∧
         fam.cvTa.type = relTele ∧ fam.cvTa ≠ fam.cvS := by
   let cvS : ConstantVal .anon := { p.cvT with type := relFormer Rel }
   let cvTa : ConstantVal .anon := { p.cvT with type := relTele }
-  let p' : Semantics.NativeParts .anon := { p with nP := 1, nIdx := 2, resSort := .zero }
+  let p' : NativeParts .anon := { p with nP := 1, nIdx := 2, resSort := .zero }
   refine ⟨⟨p', cvS, cvTa, []⟩,
     ⟨TracedBinders.intro (rel_openBinderTrace Rel) (PrefixEq.of_strip 3 (E := relTele) rfl),
       TracedSort.intro (rel_openSortTrace Rel) (LvEq.refl _)⟩, rfl, rfl, ?_⟩
@@ -305,7 +279,125 @@ theorem fooTele_renamed_lvEq_circuit :
     ExprLvEq (fooTeleAt fooLevelRenamed) fooTeleCircuit := by
   have hlv : LvEq (.succ fooLevelRenamed) (.succ (.param 1)) := by
     intro φ
-    simp [Ix.Kernel.Level.eval, fooLevelRenamed]
+    simp [Ix.Kernel.Level.eval]
   exact .forallE (.sort hlv) (.forallE .bvar (.sort (LvEq.refl _)))
+
+/-! ## An alias whose unfolding substitutes levels
+
+`def D.{a, b} (α : Type a) := Sort (max a b) → α → Prop`.
+
+A family declared at `∀ (α : Type (max u u)), D.{u, u} α`, with three binders. The second domain
+`Sort (max u u)` arises from unfolding `D` at the levels `u, u`, which substitutes without
+simplifying. So when the recursor run first renames and simplifies the declared type and then
+unfolds, its heap telescope has first domain `Sort (u + 1)` (simplified) and second domain
+`Sort (max u u)` (not simplified): it is neither the renamed telescope of the block run nor that
+telescope with its levels simplified, and it is level-equivalent to the first. -/
+
+/-- `fun (α : Type la) => Sort (max la lb) → α → Prop`. -/
+def dValueAt (la lb : Level) : KExpr :=
+  .lam (.sort (.succ la))
+    (.forallE (.sort (.max la lb)) (.forallE (.bvar 1) (.sort .zero) nv) nv) nv
+
+/-- An environment that stores `D` with two level parameters and that value. -/
+def dEnv (D : Key .anon) : Env .anon :=
+  ⟨[.defnInfo ⟨D, [0, 1], .forallE (.sort (.succ (.param 0))) (.sort (.succ (.param 0))) nv⟩
+    (dValueAt (.param 0) (.param 1)) .abbrev]⟩
+
+/-- The declared type: `∀ (α : Type l), D.{la, lb} α`. -/
+def barFormerAt (D : Key .anon) (l la lb : Level) : KExpr :=
+  .forallE (.sort (.succ l)) (.app (.const D [la, lb]) (.bvar 0)) nv
+
+/-- The telescope: `∀ (α : Type l) (s : Sort (max la lb)) (a : α), Prop`. -/
+def barTeleAt (l la lb : Level) : KExpr :=
+  .forallE (.sort (.succ l))
+    (.forallE (.sort (.max la lb)) (.forallE (.bvar 1) (.sort .zero) nv) nv) nv
+
+theorem dValue_instantiate (la lb : Level) :
+    (dValueAt (.param 0) (.param 1)).instantiateLevelParams [0, 1] [la, lb] = dValueAt la lb := by
+  simp [dValueAt, Expr.instantiateLevelParams, Level.subst, Level.subst.go, nv_instantiate]
+
+theorem d_unfold (D : Key .anon) (la lb : Level) :
+    unfoldDefinition (dEnv D) (.const D [la, lb]) = some (dValueAt la lb) := by
+  have hfind := find_singleton D [0, 1]
+    (.forallE (.sort (.succ (.param 0))) (.sort (.succ (.param 0))) nv)
+    (dValueAt (.param 0) (.param 1)) .abbrev
+  have h := unfold_const_mkAppN (us := [la, lb]) [] hfind rfl
+  exact (show unfoldDefinition (dEnv D) (.const D [la, lb]) =
+    some ((dValueAt (.param 0) (.param 1)).instantiateLevelParams [0, 1] [la, lb]) from h).trans
+      (congrArg some (dValue_instantiate la lb))
+
+theorem d_defnLevelsClosed (D : Key .anon) : DefnLevelsClosed (dEnv D) :=
+  defnLevelsClosed_singleton (by
+    simp [dValueAt, Expr.allLevelParamsDefined, Level.allParamsDefined, nv,
+      BinderMeta.leanNever])
+
+/-- **The walk of the block run**, at any levels. -/
+theorem bar_openBinderTrace (D : Key .anon) (l la lb : Level) :
+    OpenBinderTrace (dEnv D) 0 3 (barFormerAt D l la lb) (barTeleAt l la lb) := by
+  have h3 : OpenBinderTrace (dEnv D) 3 0 (.sort .zero) (.sort .zero) := .done
+  have h2 : OpenBinderTrace (dEnv D) 2 1 (.forallE (fooVar l) (.sort .zero) nv)
+      (.forallE (fooVar l) (.sort .zero) nv) :=
+    OpenBinderTrace.step (d := 2) (n := 0) (E := .forallE (fooVar l) (.sort .zero) nv)
+      (T := fooVar l) (B := .sort .zero) (R := .sort .zero) (bm := nv) .refl h3
+  have ht : Trace (dEnv D) (.app (.const D [la, lb]) (fooVar l))
+      (.forallE (.sort (.max la lb)) (.forallE (fooVar l) (.sort .zero) nv) nv) :=
+    .cons (.appFn (.delta (d_unfold D la lb)))
+      (.cons (Step.beta (ty := .sort (.succ la))
+        (body := .forallE (.sort (.max la lb)) (.forallE (.bvar 1) (.sort .zero) nv) nv)
+        (a := fooVar l) (mb := nv)) .refl)
+  have h1 : OpenBinderTrace (dEnv D) 1 2 (.app (.const D [la, lb]) (fooVar l))
+      (.forallE (.sort (.max la lb)) (.forallE (fooVar l) (.sort .zero) nv) nv) :=
+    OpenBinderTrace.step (d := 1) (n := 1) (E := .app (.const D [la, lb]) (fooVar l))
+      (T := .sort (.max la lb)) (B := .forallE (fooVar l) (.sort .zero) nv)
+      (R := .forallE (fooVar l) (.sort .zero) nv) (bm := nv) ht h2
+  exact OpenBinderTrace.step (d := 0) (n := 2) (E := barFormerAt D l la lb)
+    (T := .sort (.succ l)) (B := .app (.const D [la, lb]) (.bvar 0))
+    (R := .forallE (.sort (.max la lb)) (.forallE (fooVar l) (.sort .zero) nv) nv)
+    (bm := nv) .refl h1
+
+theorem barTele_renamed :
+    posOf [1, 0] (barTeleAt fooLevel (.param 0) (.param 0)) =
+      barTeleAt fooLevelRenamed (.param 1) (.param 1) := by
+  have hpos : posLevels [1, 0] = [Level.param 0, Level.param 1] := rfl
+  simp [posOf, hpos, barTeleAt, fooLevel, fooLevelRenamed, Expr.instantiateLevelParams,
+    Level.subst, Level.subst.go, nv_instantiate]
+
+/-- **Every walk from the renamed declared type builds the renamed telescope of the block
+run**, by the commutation with level instantiation. -/
+theorem bar_renamed_unique (D : Key .anon) {Y : KExpr}
+    (hY : OpenBinderTrace (dEnv D) 0 3
+      (posOf [1, 0] (barFormerAt D fooLevel (.param 0) (.param 0))) Y) :
+    Y = barTeleAt fooLevelRenamed (.param 1) (.param 1) :=
+  (hY.unique (fun _ _ hf => hf)
+    ((bar_openBinderTrace D fooLevel (.param 0) (.param 0)).instantiateLevelParams
+      (d_defnLevelsClosed D) [1, 0] (posLevels [1, 0]))).trans barTele_renamed
+
+/-- The heap telescope of the recursor run: first domain simplified, second not. -/
+abbrev barTeleCircuit : KExpr := barTeleAt (.param 1) (.param 1) (.param 1)
+
+/-- The renamed telescope of the block run with every level simplified. -/
+def barTeleSimplified : KExpr :=
+  .forallE (.sort (.succ (.param 1)))
+    (.forallE (.sort (.param 1)) (.forallE (.bvar 1) (.sort .zero) nv) nv) nv
+
+/-- The circuit's telescope is not the renamed telescope of the block run. -/
+theorem barTele_renamed_ne_circuit :
+    barTeleAt fooLevelRenamed (.param 1) (.param 1) ≠ barTeleCircuit := by
+  intro h
+  simp [barTeleAt, fooLevelRenamed] at h
+
+/-- The circuit's telescope is not the simplified telescope either. -/
+theorem barTele_circuit_ne_simplified : barTeleCircuit ≠ barTeleSimplified := by
+  intro h
+  simp [barTeleAt, barTeleSimplified] at h
+
+/-- **It is the renamed telescope of the block run up to the semantic equality of levels.** -/
+theorem barTele_renamed_lvEq_circuit :
+    ExprLvEq (barTeleAt fooLevelRenamed (.param 1) (.param 1)) barTeleCircuit := by
+  have hlv : LvEq (.succ fooLevelRenamed) (.succ (.param 1)) := by
+    intro φ
+    simp [Ix.Kernel.Level.eval]
+  exact .forallE (.sort hlv)
+    (.forallE (.sort (LvEq.refl _)) (.forallE .bvar (.sort (LvEq.refl _))))
 
 end IxVM.Refinement.Decl.AliasTelescopeExamples
