@@ -64,7 +64,7 @@ theorem indDataAt_mono
           simp only [hm] at h ⊢
           cases hr : (exprReader t (fun y => E.blobs.get? y) cb id
               (blockSelf t p.block ms)).read ind.typ with
-          | error e => simp [hr, Except.toOption] at h
+          | error e => rw [hr] at h; simp [Except.toOption] at h
           | ok ty =>
             rw [exprReader_mono hblob hr]
             rw [hr] at h
@@ -101,7 +101,7 @@ theorem ctorAt_mono
           simp only [hct] at h ⊢
           cases hr : (exprReader t (fun y => E.blobs.get? y) cb id (blockSelf t b ms)).read
               ctor.typ with
-          | error e => simp [hr, Except.toOption] at h
+          | error e => rw [hr] at h; simp [Except.toOption] at h
           | ok ty =>
             rw [exprReader_mono hblob hr]
             rw [hr] at h
@@ -130,7 +130,7 @@ theorem defnAt_mono
     | defn =>
       simp only [hk] at h ⊢
       cases hr : (exprReader t (fun y => E.blobs.get? y) c id (soloSelf t a)).read d.value with
-      | error e => simp [hr, Except.toOption] at h
+      | error e => rw [hr] at h; simp [Except.toOption] at h
       | ok v =>
         rw [exprReader_mono hblob hr]
         rw [hr] at h
@@ -162,7 +162,7 @@ theorem defnAt_mono
             simp only [hk] at h ⊢
             cases hr : (exprReader t (fun y => E.blobs.get? y) cb id
                 (blockSelf t p.block ms)).read d.value with
-            | error e => simp [hr, Except.toOption] at h
+            | error e => rw [hr] at h; simp [Except.toOption] at h
             | ok v =>
               rw [exprReader_mono hblob hr]
               rw [hr] at h
@@ -229,7 +229,7 @@ theorem indDataAt_inv {a : _root_.Address} {i : IndData} (h : indDataAt t E a = 
           simp only [hm] at h
           cases hr : (exprReader t (fun y => E.blobs.get? y) cb id
               (blockSelf t p.block ms)).read ind.typ with
-          | error e => simp [hr, Except.toOption] at h
+          | error e => rw [hr] at h; simp [Except.toOption] at h
           | ok ty =>
             rw [hr] at h
             simp only [Except.toOption, Option.some.injEq] at h
@@ -267,7 +267,7 @@ theorem ctorAt_inv {b : _root_.Address} {i j : Nat} {ty : KExpr} {np : Nat}
           simp only [hct] at h
           cases hr : (exprReader t (fun y => E.blobs.get? y) cb id (blockSelf t b ms)).read
               ctor.typ with
-          | error e => simp [hr, Except.toOption] at h
+          | error e => rw [hr] at h; simp [Except.toOption] at h
           | ok ty' =>
             rw [hr] at h
             simp only [Except.toOption, Option.some.injEq, Prod.mk.injEq] at h
@@ -300,7 +300,7 @@ theorem defnAt_inv {a : _root_.Address} {n : Nat} {v : KExpr}
     | defn =>
       simp only [hk] at h
       cases hr : (exprReader t (fun y => E.blobs.get? y) c id (soloSelf t a)).read d.value with
-      | error e => simp [hr, Except.toOption] at h
+      | error e => rw [hr] at h; simp [Except.toOption] at h
       | ok w =>
         rw [hr] at h
         simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
@@ -328,7 +328,7 @@ theorem defnAt_inv {a : _root_.Address} {n : Nat} {v : KExpr}
             simp only [hk] at h
             cases hr : (exprReader t (fun y => E.blobs.get? y) cb id
                 (blockSelf t p.block ms)).read d.value with
-            | error e => simp [hr, Except.toOption] at h
+            | error e => rw [hr] at h; simp [Except.toOption] at h
             | ok w =>
               rw [hr] at h
               simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
@@ -359,7 +359,7 @@ theorem unfoldAt_inv {k : KKey} {us : List KLevel} {v : KExpr}
         simp only [hd] at h
         split at h
         · simp only [Option.some.injEq] at h
-          exact ⟨a, n, w, rfl, rfl, h.symm⟩
+          exact ⟨a, n, w, rfl, hd, h.symm⟩
         · simp at h
 
 end Inv
