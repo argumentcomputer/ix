@@ -54,15 +54,15 @@ Proved inside, with no hypothesis left:
   the fold over the 77 groups, the step of a group from its parts, the raise past a group, the
   table's well-formedness from the claim's admission, and the witness on every group.
 
-Left as hypotheses, for a run predicate `Run` that the binding claim layer is to supply (the
-run record is the observed one, `observedRun`; the predicate relating it to the table and the
-store sequence is not fixed):
+Left as hypotheses, at the binding claim layer's run predicate `Binding.BindingRun` (the run
+record is the observed one, `observedRun`; the predicate holds the table's prelude pin, the
+store after the six basis groups and the admission of each group with its reading clause, so
+the invariant at the basis groups and the two admission chains are its projections):
 
-* binding: the claim export with the observed run record; the invariant at the six basis
-  groups; the admission of each group and its reading clause; and at each group of a run the
-  closure, the stored shapes where the group has no role unit, the role unit of an operation
-  and of a standard axiom, and the load contract's guard at the limits a closed group brings
-  within range;
+* binding: the claim export, which has to produce the run predicate from an accepted run; and
+  at each group of a run the closure, the stored shapes where the group has no role unit, the
+  role unit of an operation and of a standard axiom, and the load contract's guard at the
+  limits a closed group brings within range;
 * typing, for a top-walked unit by the form of its record (`WalkedUnit`, `WalkedUnitStep`): the
   step of a standalone theorem or opaque; for a standalone recursor, the check's output at a
   native parent's registered family, and the step where no such parent heads the major
@@ -353,12 +353,15 @@ theorem circuitComposed_of_parts
 /-- **The public statement from the open obligations** (module docstring):
 `circuitComposed_of_parts` at the opened head trace `FormerOpenTraceAt`, with the step of a
 standalone definition proved and the step of a standalone recursor reduced to its two parts.
-`Run` is the binding claim layer's run predicate, by the run's calls. The first nine
-hypotheses are the binding half's, for every bounded run: the claim export with the observed
-run record; the invariant at the six basis groups; the admission of each group and its reading
-clause; and at each group from 6 to 76 of a run the closure, the stored shapes where the group
-has no role unit, the role unit of an operation, the role unit of a standard axiom and the
-guard at the raised limits. The other nine are the typing half's, for a top-walked unit of
+The binding claim layer's run predicate is `Binding.BindingRun`, by the run's calls. The first
+six hypotheses are the binding half's, for every bounded run: the claim export, which produces
+the run predicate (the observed run record, the prelude pin, the store after the basis groups,
+the admission of each group and its reading clause); and at each group from 6 to 76 of a run
+the closure, the stored shapes where the group has no role unit, the role unit of an
+operation, the role unit of a standard axiom and the guard at the raised limits. The invariant
+at the six basis groups and the two admission chains are projections of the run predicate
+(`basisOver_bindingRun`, `admitsChain_bindingRun`, `admitsReadsChain_bindingRun`). The other
+nine are the typing half's, for a top-walked unit of
 each remaining kind: its step, and for a standalone recursor the check's output at a native
 parent's registered family and the step where no native parent heads its major premise. -/
 theorem circuitComposed_residual

@@ -2933,6 +2933,88 @@ theorem role_of_full_admit_spec {t : Ix.Kernel.RoleTable} {bAddr addr : _root_.A
         rw [Claim.map_addr_walkedRec_mono]
         exact hev_ga g' hr ro' hro' arr thm hm hthm
 
+/-! ## The observed validation of each role of a group -/
+
+/-- **The run validated the role `ro` in the validation of group `g`**: an observed call of
+`KernelRoles::validate_role` on `ro` under the role context at the group's validation limit and
+the table `t` at the binding `bAddr`, among `calls`. It is the observation itself: every
+assertion of the role's validation is a consequence of it. -/
+def ValidateRoleIn (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
+    (g : Nat) (ro : Ix.Kernel.Role) : Prop :=
+  ∃ (h h' : Heap F) (x_rc x_tbl res : SourceValue F) (cs : List (Call F)),
+    Claim.RCFullRep t bAddr (groupValLimit g) h x_rc ∧
+    Claim.TableFullRep t bAddr h x_tbl ∧
+    ObsFn W "KernelRoles::validate_role" [x_rc, x_tbl, .field (roleNum ro)] h res h' cs ∧
+    ∀ cl ∈ cs, cl ∈ calls
+
+theorem ValidateRoleIn.mono {cs₁ cs₂ : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.Role}
+    (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂) (hv : ValidateRoleIn cs₁ bAddr t g ro) :
+    ValidateRoleIn cs₂ bAddr t g ro := by
+  obtain ⟨h, h', x_rc, x_tbl, res, cs, hrc, htbl, ev, hs⟩ := hv
+  exact ⟨h, h', x_rc, x_tbl, res, cs, hrc, htbl, ev, fun cl hm => hsub cl (hs cl hm)⟩
+
+private theorem validate_group_roles_observed {t : Ix.Kernel.RoleTable}
+    {bAddr : _root_.Address} {g : Nat} {rs : List Ix.Kernel.Role} :
+    ∀ {x_rc x_tbl x_rs r : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
+      Claim.RCFullRep t bAddr (groupValLimit g) h x_rc →
+      Claim.TableFullRep t bAddr h x_tbl →
+      RepList Obs.Names.«Lists::Node<Field>» repRoleNum h rs x_rs →
+      ObsFn W "KernelRoles::validate_group_roles" [x_rc, x_tbl, x_rs] h r h' calls →
+      Heap.Extends h h' ∧ ∀ ro ∈ rs, ValidateRoleIn calls bAddr t g ro
+  | x_rc, x_tbl, x_rs, r, h, h', calls, hrc, htbl, hlist, ev => by
+    cases Obs.«KernelRoles::validate_group_roles».obs ev with
+    | Nil ld12 _ he23 _ =>
+      obtain rfl := Lib.rep_nil_of_load hlist ld12
+      subst he23
+      exact ⟨Heap.Extends.refl _, fun _ hm => (nomatch hm)⟩
+    | Cons x_r x_rest v42 m43 cs53 cs83 ld12 ev55 ev85 hc110 =>
+      obtain ⟨ro₀, rest, rfl, hro, hrest⟩ := Lib.rep_cons_of_load hlist ld12
+      rw [hro] at ev55
+      have ext1 := ev55.heap_extends
+      obtain ⟨ext2, hval2⟩ :=
+        validate_group_roles_observed (hrc.mono ext1) (htbl.mono ext1)
+          (repList_heapMono₂ _ repRoleNum_heapMono₂ ext1 hrest) ev85
+      have hsub1 : ∀ cl ∈ cs53, cl ∈ calls := fun cl hm => by rw [hc110]; simp [hm]
+      have hsub2 : ∀ cl ∈ cs83, cl ∈ calls := fun cl hm => by rw [hc110]; simp [hm]
+      refine ⟨ext1.trans ext2, fun ro hmem => ?_⟩
+      rcases List.mem_cons.mp hmem with heq | hmem'
+      · rw [heq]
+        exact ⟨_, _, _, _, _, _, hrc, htbl, ev55, hsub1⟩
+      · exact (hval2 ro hmem').mono hsub2
+
+/-- **`KernelRoles::group_admit(tbl, .field (g : F))` validates every role of the group, as
+observed**: under `Claim.TableFullRep`, each role of group `g` has its `validate_role` call under
+the role context at the group's validation limit among the run's calls. -/
+theorem group_admit_role_observations {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {g : Nat} (hg : g < 4294967296)
+    {x_tbl r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (htbl : Claim.TableFullRep t bAddr h x_tbl)
+    (ev : ObsFn W "KernelRoles::group_admit" [x_tbl, .field (g : F)] h r h' calls) :
+    Heap.Extends h h' ∧ ∀ ro ∈ groupRoles g, ValidateRoleIn calls bAddr t g ro := by
+  obtain ⟨v1, m2, cs12, v16, m25, cs33, m45, v60, m70, cs78, cs101, v106, m122, cs130,
+    ev35, ev14, hm55, ev80, ev132, ev103, hc141⟩ :=
+    Obs.«KernelRoles::group_admit».obs ev
+  obtain ⟨rfl, rfl⟩ := group_validation_limit_of_nat hg ev80
+  obtain ⟨ext_gn, hneeds_rep⟩ := group_needs_spec hg ev35
+  have ext_gan := ev14.heap_extends
+  let rcNode := Value.construct rcEnum "Mk"
+    [x_tbl, .field (groupValLimit g : F), .construct addrMapEnum "Nil" []]
+  have ext_m45 : Heap.Extends h m45 :=
+    ext_gn.trans (ext_gan.trans (by rw [hm55]; exact Heap.Extends.snoc m70 rcNode))
+  have hld_rc : loadValue m45 (.ptr (.enum rcEnum) m70.length) = .ok rcNode := by
+    rw [hm55]
+    exact Claim.loadValue_snoc_construct m70 rcEnum "Mk"
+      [x_tbl, .field (groupValLimit g : F), .construct addrMapEnum "Nil" []]
+  have hrc_m45 : Claim.RCFullRep t bAddr (groupValLimit g) m45 (.ptr (.enum rcEnum) m70.length) :=
+    ⟨groupValLimit_lt_u32 g, x_tbl, hld_rc, htbl.mono ext_m45⟩
+  obtain ⟨ext_gr, hroles_rep⟩ := group_roles_spec hg ev132
+  obtain ⟨ext_vgr, hval_here⟩ :=
+    validate_group_roles_observed (hrc_m45.mono ext_gr) ((htbl.mono ext_m45).mono ext_gr)
+      hroles_rep ev103
+  have hsub_h : ∀ cl ∈ cs101, cl ∈ calls := fun cl hm => by rw [hc141]; simp [hm]
+  exact ⟨ext_m45.trans (ext_gr.trans ext_vgr), fun ro hro => (hval_here ro hro).mono hsub_h⟩
+
 end GroupAdmit
 
 end IxVM.Refinement.RoleVal
