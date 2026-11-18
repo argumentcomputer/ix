@@ -2031,8 +2031,8 @@ def defeq_tele := aiur_fn⟦
     }
 ⟧
 
-  -- A `λ`-telescope's first `n` domains against a `∀`-telescope's; returns the body and
-  -- the extended context.
+  -- A `λ`-telescope's first `n` domains against a `∀`-telescope's, each under the
+  -- `∀`-telescope's earlier domains; returns the body and the context extended by them.
 
 def defeq_lam_tele := aiur_fn⟦
   fn defeq_lam_tele(rc: KernelRoles::RoleCtx, l: KernelTypes::KExpr, p: KernelTypes::KExpr, n: Field,
