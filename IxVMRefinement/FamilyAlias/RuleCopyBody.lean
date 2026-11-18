@@ -374,7 +374,7 @@ theorem ruleCopy_spec {env : Env .anon} {g f h : KKey → KKey} {recKey ctorKey 
     exact h0
   have hargs0 : (Expr.closeN (rP + cnF) lhsS 0).getAppArgs =
       lhsS.getAppArgs.map fun x => Expr.closeN (rP + cnF) x 0 := by
-    rw [hl0, Ix.Kernel.Expr.getAppArgs_mkAppN] <;> rfl
+    rw [hl0, Ix.Kernel.Expr.getAppArgs_mkAppN]; rfl
   have hlargs : (lhsS.getAppArgs.map fun x => Expr.closeN (rP + cnF) x 0).map
       (fun x => Expr.instSeq fvs (rP + cnF - 1) x) = lhsS.getAppArgs := by
     have h0 := Ix.Kernel.Model.Expr.getAppArgs_instSeq_fvars fvs (rP + cnF - 1)

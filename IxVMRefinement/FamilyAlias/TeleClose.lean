@@ -68,7 +68,7 @@ theorem eq_three_of_length {α : Type} (d : α) (l : List α) (h : l.length = 3)
   | [_], h => exact absurd h (by simp)
   | [_, _], h => exact absurd h (by simp)
   | _ :: _ :: _ :: _ :: l, h =>
-    exact absurd h (by simp only [List.length_cons] <;> omega)
+    exact absurd h (by simp only [List.length_cons]; omega)
 
 /-! ## Renamings -/
 
