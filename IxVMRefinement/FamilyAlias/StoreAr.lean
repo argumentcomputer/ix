@@ -490,7 +490,9 @@ theorem lenExt_provision_fold {J J' : Judgements .anon} {bn : List KKey}
       ⟨cvA, mI, rP, rules, rest', _, hmv, hprov, hchk⟩, hfold, hlen => by
     subst hchk
     obtain ⟨rules', -, hfold'⟩ := hfold
-    exact lenExt_provision_fold hprov hfold' (LenExt.cons hlen rfl rfl)
+    have hl' := LenExt.cons (a := .recInfo cvA mI rP []) (b := .recInfo cvA mI rP rules') hlen
+      rfl rfl
+    exact lenExt_provision_fold hprov hfold' hl'
 
 /-- **Every constant the renamed record stores is arity-correct after the block.** -/
 theorem famRecord_newSat {env env₂ : Env .anon} {h : KKey → KKey}
