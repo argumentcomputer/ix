@@ -217,8 +217,13 @@ theorem HashedBlockAt.of_good {c : Ctx} {cs : List (Call F)} (hg : Good c cs) {b
   ⟨cs, blk, cb, ms, hg.1, hg.2, hh, hex, hms, hb⟩
 
 /-- Installed reads require allowed top invocations and coverage of their children. Raw record facts stay
-conditional on actual stored records, and native eta observations carry their own evidence. -/
-structure ScopedLoadFacts (c : ScopedCtx) : Prop where
+conditional on actual stored records, and native eta observations carry their own evidence.
+
+This is the load contract without the firing of the projection guards: it is stated before the
+registry, and it is the part the registry's own facts (`ScopedCoreFacts`) hold. The contract a
+prefix carries (`ScopedLoadFacts`, `Core/ProjFire.lean`) adds the firing of every stored
+projection table. -/
+structure ScopedLoadBase (c : ScopedCtx) : Prop where
   getCI : ∀ (addr ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F)) (a : Bytes.Address),
     ObsFn W "Ingress::get_ci" [addr] h ptr h' cs → c.allowedTop "Ingress::get_ci" [addr] h →
       c.κ (ixAddr a) ≠ unresolvedKey → CoreGood c cs →
@@ -413,7 +418,9 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
     ∃ (cb : Ixon.Constant) (xs : Array Ixon.MutConst) (ind : Ixon.Inductive),
       Ix.Cert.recordAt c.E (ixAddr b) = some cb ∧ cb.info = .muts xs ∧
       xs[ZMod.val i]? = some (.indc ind)
-  projTablesGuard : ∀ (bp ip ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
+  /-- **A native structure's constructor telescope**: companion to `projTables` for
+  `Infer.proj`, the constructor's type is a telescope at its parameter and field counts. -/
+  projCtorTele : ∀ (bp ip ptr : SourceValue F) (h h' : Heap F) (cs : List (Call F))
       (b : Bytes.Address) (i : F),
     ObsFn W "KernelModeled::proj_ctor" [bp, ip] h ptr h' cs → Good c.toCtx cs →
     Bytes.RepAddressRef addrTy h b bp → ip = .field i →
@@ -422,18 +429,7 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
       c.env.find? (c.κ (cprjAddr (ixAddr b) (ZMod.val i) j)) = some (.ctorInfo cvC nP nF) →
       c.env.find? (Ix.Kernel.projTableName (c.κ (iprjAddr (ixAddr b) (ZMod.val i)))) =
         some (.projInfo tbl) →
-      Ix.Kernel.Expr.ctorTeleOk cvC.type (nP + nF) = true ∧
-      (Ix.Kernel.Level.isEquiv tbl.structSort .zero = some true →
-        ∀ (f : F) (rc bp' rg : SourceValue F) (hg hg' : Heap F) (csg : List (Call F))
-          (g : KLevel) (us : List KLevel),
-          ZMod.val f < nF → us.length = tbl.levelParams.length →
-          ObsFn W "KernelInfer::proj_guard" [rc, bp', .field i, .field f] hg rg hg' csg →
-          Good c.toCtx csg → RCRep c.t c.lim hg rc → Bytes.RepAddressRef addrTy hg b bp' →
-          IxVM.Refinement.KernelLevels.RepKLevel hg' g rg →
-          (∀ φ, Ix.Kernel.Level.eval φ
-            (Ix.Kernel.Level.subst (List.range us.length) us g) = 0) →
-          ∀ φ, Ix.Kernel.Level.eval φ
-            (Ix.Kernel.Level.subst tbl.levelParams us (tbl.entry (ZMod.val f)).fieldSort) = 0)
+      Ix.Kernel.Expr.ctorTeleOk cvC.type (nP + nF) = true
   canonical : ∀ (x : _root_.Address) (lc : Ixon.LazyConstant) (info : Ixon.ConstantInfo),
     (⟨info, #[], #[], #[], #[]⟩ : Ixon.Constant).wireWF →
     c.E.consts.get? x = some lc → lc.rawBytes = Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩ →
@@ -465,8 +461,8 @@ structure ScopedLoadFacts (c : ScopedCtx) : Prop where
 
 /-- Compatibility with the old unrestricted interface. This adapter does not construct
 load evidence for a fresh declaration or establish its selected-call coverage. -/
-theorem ScopedLoadFacts.ofUnrestricted {c : ScopedCtx} (hk : c.key = keyOf c.t)
-    (he : EnvFacts c.toCtx) (h : LoadFacts c.toCtx) : ScopedLoadFacts c := by
+theorem ScopedLoadBase.ofUnrestricted {c : ScopedCtx} (hk : c.key = keyOf c.t)
+    (he : EnvFacts c.toCtx) (h : LoadFacts c.toCtx) : ScopedLoadBase c := by
   obtain ⟨c₀, allowed, key, key_spec⟩ := c
   dsimp only at hk
   subst hk
@@ -526,7 +522,8 @@ theorem ScopedLoadFacts.ofUnrestricted {c : ScopedCtx} (hk : c.key = keyOf c.t)
   recordShape := h.recordShape
   inductBlock := fun addr ptr h₀ h₁ cs a b nl ty np ni nc u blk i ev _ _ hg ha ld hb =>
     h.inductBlock addr ptr h₀ h₁ cs a b nl ty np ni nc u blk i ev hg ha ld hb
-  projTablesGuard := h.projTablesGuard
+  projCtorTele := fun bp ip ptr h₀ h₁ cs b i ev hg hb hip j cvC nP nF tbl hc ht =>
+    (h.projTablesGuard bp ip ptr h₀ h₁ cs b i ev hg hb hip j cvC nP nF tbl hc ht).1
   canonical := h.canonical
   storedRes := fun _ _ _ => Resolved.ne
   findRes := fun _ _ _ => Resolved.ne
@@ -537,11 +534,11 @@ theorem ScopedLoadFacts.ofUnrestricted {c : ScopedCtx} (hk : c.key = keyOf c.t)
 /-- Context evidence for actual scoped registry runs. -/
 structure ScopedCoreFacts (c : ScopedCtx) : Prop where
   env : CoreEnvFacts c.toCtx
-  loads : ScopedLoadFacts c
+  loads : ScopedLoadBase c
 
 theorem ScopedCoreFacts.ofUnrestricted {c : Ctx} (h : CoreFacts c) :
     ScopedCoreFacts (ScopedCtx.unrestricted c) :=
-  ⟨h.env.toCoreEnvFacts, ScopedLoadFacts.ofUnrestricted rfl h.env h.loads⟩
+  ⟨h.env.toCoreEnvFacts, ScopedLoadBase.ofUnrestricted rfl h.env h.loads⟩
 
 /-! ## Resolution at the load sites
 

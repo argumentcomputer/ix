@@ -34,14 +34,16 @@ theorem levelOps_step (c : ScopedCtx) :
   | .level_inst_params, _, _, _, _, _, ev, _ => IxVM.Refinement.Levels.levelInstParams_step ev
   | .level_list_inst, _, _, _, _, _, ev, _ => IxVM.Refinement.Levels.levelListInst_step ev
 
-/-- Every registered function satisfies its step under the selected-call contracts. -/
-theorem scoped_steps (c : ScopedCtx) (hc : ScopedCoreFacts c) : Steps c
+/-- Every registered function satisfies its step under the selected-call contracts and the firing
+of the projection guards at the context. -/
+theorem scoped_steps (c : ScopedCtx) (hc : ScopedCoreFacts c) (hfire : ProjGuardFires c) :
+    Steps c
   | .subst f, _, _, _, _, _, ev, ih => subst_step c f _ _ _ _ _ ev ih
   | .levels f, _, _, _, _, _, ev, ih => levels_step c f _ _ _ _ _ ev ih
   | .levelOps f, _, _, _, _, _, ev, ih => levelOps_step c f _ _ _ _ _ ev ih
   | .whnf f, _, _, _, _, _, ev, ih => whnf_family_step c hc f _ _ _ _ _ ev ih
   | .defEq f, _, _, _, _, _, ev, ih => defEq_step c hc f _ _ _ _ _ ev ih
-  | .infer f, _, _, _, _, _, ev, ih => infer_step c hc f _ _ _ _ _ ev ih
+  | .infer f, _, _, _, _, _, ev, ih => infer_step c hc hfire f _ _ _ _ _ ev ih
   | .nat f, _, _, _, _, _, ev, ih => nat_step c hc f _ _ _ _ _ ev ih
   | .roles f, _, _, _, _, _, ev, ih => roles_step c hc f _ _ _ _ _ ev ih
   | .callees f, _, _, _, _, _, ev, ih => callees_step c hc f _ _ _ _ _ ev ih
@@ -49,6 +51,7 @@ theorem scoped_steps (c : ScopedCtx) (hc : ScopedCoreFacts c) : Steps c
 /-- Explicit compatibility for the historical unrestricted context package. -/
 theorem all_steps (c : Ctx) (hc : CoreFacts c) : Steps (ScopedCtx.unrestricted c) :=
   scoped_steps (ScopedCtx.unrestricted c) (ScopedCoreFacts.ofUnrestricted hc)
+    hc.loads.projGuardFires
 
 /-- **Obligation L4's content at `S₀`**: weak head normalization, definitional equality, and
 full-grade type inference refine `Ix.Kernel.Rules.{Red,DefEq,Infer}` up to hashed collision. -/
