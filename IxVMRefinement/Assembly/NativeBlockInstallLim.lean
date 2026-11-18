@@ -3,6 +3,7 @@ import IxVMRefinement.Assembly.NativeBlockOutsRawLim
 import IxVMRefinement.Assembly.NativeBlockInstallOf
 import IxVMRefinement.Assembly.NativeBlockRetHead
 import IxVMRefinement.Assembly.NativeBlockNoProjOf
+import IxVMRefinement.Assembly.NativeBlockCertOf
 
 /-! # The install of a native block read off the member check, at either role context
 
@@ -14,9 +15,12 @@ them for either context, beside the earlier ones, with the same proofs: none of 
 role context's limit, and each runs the scoped specifications at the context of the given
 limit. At `lim = some n` each is the earlier statement.
 
-* `nativeNoRecFacts_of_outs_named_lim`: IxC's no-recursor install from the two stages' outputs.
-* `nativeInstallOut_of_member_lim`: the new constants of the install. The limit index of the
+* `nativeNoRecFacts_of_outs_named_with_lim`: IxC's no-recursor install from the two stages'
+  outputs, with a property of the recursion flag and the sorts handed through.
+* `InstallSortsCheckedLim`, `nativeInstallOut_of_member_checked_lim`: the new constants of the
+  install, and the table stage ran at sorts the classifier checked. The limit index of the
   bundle it concludes is free: the bundle reads the limit nowhere.
+* `blockCert_of_install_lim`: the certificate of the new projection table from them.
 * `blockRawRetHead_of_member_lim`: the constructors' raw types return literally.
 * `blockFamCtorNoProj_of_member_lim`: no stored constructor type projects out of the family.
 -/
@@ -38,16 +42,16 @@ open LoadedReads (canonAnn canonRawAnn)
 
 universe u
 
-/-- **IxC's no-recursor install of the block, from the outputs of its two stages, with the family named, at either role context**: `nativeNoRecFacts_of_outs_named` with the member's check read under the
+/-- **IxC's no-recursor install of the block, from the outputs of its two stages, with the family named and a property of the sorts handed through, at either role context**: `nativeNoRecFacts_of_outs_named_with` with the member's check read under the
 role context of the limit `lim : Option Nat` (`Claim.MemberCheckedLimAt`) and the prefix
 invariant at that limit; the same proof. -/
-theorem nativeNoRecFacts_of_outs_named_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+theorem nativeNoRecFacts_of_outs_named_with_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ E : Ixon.Env} {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
     {lim : Option Nat} (ht : t.check = .ok ()) (hS : LoadedReads.RunStore calls E₀)
     (hst : StepStore calls t E₀ E) (hrec : BlockUnitRecord E₀ B cb ind)
     (hchk : Claim.MemberCheckedLimAt calls bAddr t B #[.indc ind] 0 lim)
     {blk : List (ConstantInfo .anon)} (hblk : BlockReadings t E₀ B ind blk)
-    {p₀ : Ix.Kernel.NativeParts .anon}
+    {p₀ : Ix.Kernel.NativeParts .anon} {Q : Bool → List (List Ix.Kernel.Level) → Prop}
     (hp₀ : Ix.Kernel.Semantics.nativePartsNoRec? ind.params.toNat blk = some p₀)
     (hnd : (p₀.ctors.map (·.1.name)).Nodup)
     {env : Ix.Kernel.Env .anon} (hinv : Decl.PrefixInv.{u} E t lim env)
@@ -60,12 +64,12 @@ theorem nativeNoRecFacts_of_outs_named_lim {calls : List (Call F)} {t : Ix.Kerne
     (hnameS : cvS.name = p₀.cvT.name) (hlenA : ctorsA.length = p₀.ctors.length)
     (hout : ∀ isRec : Bool, ∃ sortss : List (List Ix.Kernel.Level),
       sortss.length = p₀.ctors.length ∧
-      ∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
+      (∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
         sortss[j]? = some sorts ∧
         Decl.NativeCtorOut ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
             (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩
           p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx p₀.resSort cvS.type
-          (rawTypes.getD j default) c cA sorts)
+          (rawTypes.getD j default) c cA sorts) ∧ Q isRec sortss)
     (hunused : ∀ cA ∈ ctorsA, ∀ cbs body,
       cA.1.type.stripPis (p₀.nP + cA.2) = some (cbs, body) →
       ∀ i < cA.2,
@@ -75,7 +79,12 @@ theorem nativeNoRecFacts_of_outs_named_lim {calls : List (Call F)} {t : Ix.Kerne
            (cbs.getD (p₀.nP + i) default).1 = .reflexive) →
         Ix.Kernel.structUsedLater cA.1.type p₀.nP i = false) :
     ∃ (env₂ : Ix.Kernel.Env .anon) (p : Ix.Kernel.NativeParts .anon),
-      NativeNoRecFacts env env₂ blk ind.params.toNat p₀ ⟨p, cvS, cvS, ctorsA⟩ := by
+      NativeNoRecFacts env env₂ blk ind.params.toNat p₀ ⟨p, cvS, cvS, ctorsA⟩ ∧
+      ∃ (isRec : Bool) (sortss : List (List Ix.Kernel.Level)), Q isRec sortss ∧
+        Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM .anon) p ctorsA sortss
+          (Ix.Kernel.consSumCtors p.nP ctorsA ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
+            (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩) = .ok env₂ ∧
+        p.resSort = p₀.resSort := by
   have hbound : Bounded calls := (hst.good env none).2
   have htwf : t.wf = true := hinv.tableWf
   obtain ⟨ty₀, caps, cs, rfl, hty, hlen, hcs⟩ := blockReads_shape_lim ht hbound hS hrec hchk hblk
@@ -145,15 +154,30 @@ theorem nativeNoRecFacts_of_outs_named_lim {calls : List (Call F)} {t : Ix.Kerne
   have hshapeT : cvS.name.isProjFnShape = false := by
     rw [hnameS, hTname]
     exact Decl.isProjFnShape_of_isBaseKey (Decl.isBaseKey_keyOf t _)
-  exact Decl.nativeNoRecFacts_of_stage_named hp₀ hnd hinv.store.store hcheckT hstS hnameS
+  exact Decl.nativeNoRecFacts_of_stage_named_with hp₀ hnd hinv.store.store hcheckT hstS hnameS
     (by rw [hnameS]; exact hfreshT) hshapeT hlenA hout hfv_ctors hfresh_ctors hshape_ctors
     hT_ctors hfn htbl hunused
 
 
-/-- **The new constants of a native block's install, read off the member check, at either role context**: `nativeInstallOut_of_member` with the member's check read under the
+/-- **The table stage of a native block's install ran at sorts the classifier checked, at either role context**: `InstallSortsChecked` with
+the stage's facts at the context of the limit `lim : Option Nat` (`StageSortsCheckedLim`). -/
+def InstallSortsCheckedLim (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (lim : Option Nat)
+    (env : Ix.Kernel.Env .anon) (B : _root_.Address) (cvS : ConstantVal .anon)
+    (p₀ : Ix.Kernel.NativeParts .anon) (new : List (ConstantInfo .anon))
+    (p : Ix.Kernel.NativeParts .anon) (ctorsA : List (ConstantVal .anon × Nat)) : Prop :=
+  ∃ (isRec : Bool) (sortss : List (List Ix.Kernel.Level)),
+    StageSortsCheckedLim calls t E lim env B cvS p₀ ctorsA isRec sortss ∧
+    Ix.Kernel.checkNativeTable (m := Ix.Kernel.CheckM .anon) p ctorsA sortss
+      (Ix.Kernel.consSumCtors p.nP ctorsA ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
+        (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩) =
+      .ok ⟨new ++ env.consts⟩ ∧
+    p.resSort = p₀.resSort
+
+
+/-- **The new constants of a native block's install, read off the member check, with the sorts of its table stage, at either role context**: `nativeInstallOut_of_member_checked` with the member's check read under the
 role context of the limit `lim : Option Nat` (`Claim.MemberCheckedLimAt`) and the prefix
 invariant at that limit; the same proof. -/
-theorem nativeInstallOut_of_member_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+theorem nativeInstallOut_of_member_checked_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ E : Ixon.Env} {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive}
     {n : Nat} {lim : Option Nat} {env : Ix.Kernel.Env .anon} {blk : List (ConstantInfo .anon)}
     {p₀ : Ix.Kernel.NativeParts .anon}
@@ -172,18 +196,21 @@ theorem nativeInstallOut_of_member_lim {calls : List (Call F)} {t : Ix.Kernel.Ro
     ∃ (new : List (ConstantInfo .anon)) (p : Ix.Kernel.NativeParts .anon)
       (ty' : Ix.Kernel.Expr .anon) (ctorsA : List (ConstantVal .anon × Nat))
       (caps : IndCaps .anon),
-      NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps := by
+      NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps ∧
+      InstallSortsCheckedLim calls t E lim env B
+        ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ p₀ new p ctorsA := by
   have hbound : Bounded calls := (hst.good env none).2
   have htwf : t.wf = true := hinv.tableWf
   obtain ⟨ty₀, ty', cvS, bsT, ctorsA, rawTypes, hty, hlbb, hdef, hcT, hcvT, hcvS, hnP₀, hnIdx₀,
     hlenP, hper, hT, hstT, hname, hlenA, hout, hun⟩ :=
-    ctorOuts_of_member_named_lim ht hS hst hrec hchk hnat htele hblk hp₀ hinv hstored hP hkeys
-      hfresh hfree hcov haux
+    ctorOuts_of_member_named_checked_lim ht hS hst hrec hchk hnat htele hblk hp₀ hinv hstored hP
+      hkeys hfresh hfree hcov haux
   obtain ⟨p₀', hp₀', hnd₀⟩ := nativeParts_of_member_lim ht hbound hS hrec hchk htele hblk hfree
   rw [hp₀] at hp₀'
   injection hp₀' with e
   subst e
-  obtain ⟨env₂, p, hf⟩ := nativeNoRecFacts_of_outs_named_lim ht hS hst hrec hchk hblk hp₀ hnd₀
+  obtain ⟨env₂, p, hf, isRecQ, sortssQ, hQ, htabQ, hresQ⟩ := nativeNoRecFacts_of_outs_named_with_lim
+    (Q := StageSortsCheckedLim calls t E lim env B cvS p₀ ctorsA) ht hS hst hrec hchk hblk hp₀ hnd₀
     hinv hfresh haux hT hstT hname hlenA hout hun
   subst hcvS
   obtain ⟨isRec, s, kinds, caps, tbls, hpEq, hcapsAt, hcapsP, henv₂, htbls⟩ := hf.named_env
@@ -352,7 +379,7 @@ theorem nativeInstallOut_of_member_lim {calls : List (Call F)} {t : Ix.Kernel.Ro
     ctorFind := fun cA hcA => hfind (.ctorInfo cA.1 p.nP cA.2)
       (List.mem_append_right _ (List.mem_append_left _
         (List.mem_reverse.mpr (List.mem_map.mpr ⟨cA, hcA, rfl⟩))))
-    tableName := ?_ }⟩
+    tableName := ?_ }, isRecQ, sortssQ, hQ, htabQ, hresQ⟩
   · -- the new constants as the store reads them
     obtain ⟨hp56, hi56, hc56⟩ := member_bounds_lim hbound hS hrec hchk
     exact {
@@ -489,6 +516,63 @@ theorem nativeInstallOut_of_member_lim {calls : List (Call F)} {t : Ix.Kernel.Ro
       · obtain ⟨j, c, cty', -, -, -, he⟩ := hrevMem _ h
         exact nomatch he
       · exact nomatch List.mem_singleton.mp h
+
+
+/-- **The new table's certificate, from the install's output and the sorts of its table stage, at either role context**: `blockCert_of_install` with the stage's facts at the context of the limit `lim : Option Nat`
+(`InstallSortsCheckedLim`); the same proof. The limit index of the install's output is free. -/
+theorem blockCert_of_install_lim (hfields : Core.CheckedSortsRunReading)
+    {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {n : Nat} {lim : Option Nat}
+    {env : Ix.Kernel.Env .anon} {B : _root_.Address} {cb : Ixon.Constant}
+    {ind : Ixon.Inductive} {blk : List (ConstantInfo .anon)}
+    {p₀ p : Ix.Kernel.NativeParts .anon} {new : List (ConstantInfo .anon)}
+    {ty' : Ix.Kernel.Expr .anon} {ctorsA : List (ConstantVal .anon × Nat)}
+    {caps : IndCaps .anon}
+    (hnc : ¬ View.HashedCollision { env := E } [] calls)
+    (hO : NativeInstallOut t E₀ E n env B cb ind blk p₀ new p ty' ctorsA caps)
+    (hS : InstallSortsCheckedLim calls t E lim env B
+      ⟨Core.keyOf t (Core.iprjAddr B 0), List.range ind.lvls.toNat, ty'⟩ p₀ new p ctorsA)
+    (h1 : ind.ctors.size = 1) (h0 : ind.indices.toNat = 0)
+    (hz : Ix.Kernel.Level.isEquiv p.resSort .zero = some true) :
+    BlockCert t E ⟨new ++ env.consts⟩ B := by
+  intro tbl htbl hprop
+  obtain ⟨isRec, sortss, hQ, htab, hres⟩ := hS
+  have hlenP : p₀.ctors.length = 1 := by
+    have h := congrArg List.length hO.ctorNames
+    simp only [List.length_map] at h
+    rw [h, hO.lenA]
+    exact h1
+  have hzero : ∀ φ : Ix.Kernel.LevelParam → Nat, Ix.Kernel.Level.eval φ p₀.resSort = 0 := by
+    intro φ
+    rw [← hres]
+    exact Decl.eval_zero_of_isEquiv_zero (by rw [hz]; rfl) φ
+  obtain ⟨b, u, cA, sorts, hbB, hcA, hsorts, hcS, hchk⟩ := hQ hlenP (hO.nIdx₀.trans h0) hzero
+  subst hcA hsorts
+  -- the loop's reading at the sorts the table stage ran at
+  rcases hfields _ hcS hchk with hcol | ⟨sigs, fuel, raw, hraw, hsig, hzeros⟩
+  · exact absurd hcol hnc
+  have hv0 : ZMod.val (0 : F) = 0 := ZMod.val_zero
+  rw [hbB, hv0] at hraw
+  rw [hO.nP₀, ← hO.nP] at hsig
+  -- the table the stage stores, with its certificate
+  obtain ⟨tbl', -, hfind', -, -, -, hlps', cert⟩ :=
+    Guard.projGuardCert_of_checkNativeTable (hO.nIdx.trans h0) htab hsig hzeros
+  rw [hO.cvT, hO.cvT₀.1] at hfind'
+  rw [hfind'] at htbl
+  injection htbl with htbl
+  injection htbl with htbl
+  subst htbl
+  -- the stored constructor
+  obtain ⟨ct, cty', -, -, -, hA0⟩ := hO.ctors 0 (by omega)
+  have hcAeq : cA = (⟨Core.keyOf t (Core.cprjAddr B 0 0), List.range ct.lvls.toNat, cty'⟩,
+      ct.fields.toNat) := by
+    have h : some cA = some ((⟨Core.keyOf t (Core.cprjAddr B 0 0), List.range ct.lvls.toNat,
+        cty'⟩, ct.fields.toNat) : ConstantVal .anon × Nat) := hA0
+    exact Option.some.inj h
+  have hctor := hO.ctorFind cA (List.mem_singleton.mpr rfl)
+  have hname : cA.1.name = Core.keyOf t (Core.cprjAddr B 0 0) := by rw [hcAeq]
+  rw [hname] at hctor
+  refine ⟨cA.1, p.nP, cA.2, raw, hctor, hraw, ?_, cert⟩
+  rw [hlps', hO.cvT, hO.cvT₀.2, List.length_range]
 
 
 /-- **The constructors' raw types return literally, from the block step's member check, at either role context**: `blockRawRetHead_of_member` with the member's check read under the

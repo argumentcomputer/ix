@@ -11,7 +11,8 @@ them for either context, beside the earlier ones, with the same proofs: none of 
 role context's limit, and each runs the scoped specifications at the context of the given
 limit. At `lim = some n` each is the earlier statement.
 
-* `ctorOuts_of_member_named_lim`.
+* `StageSortsCheckedLim`: the field sorts of the stage are the ones the classifier checked.
+* `ctorOuts_of_member_named_checked_lim`.
 -/
 
 set_option maxHeartbeats 4000000
@@ -31,10 +32,29 @@ open LoadedReads (canonAnn canonRawAnn)
 
 universe u
 
-/-- **The constructor stage of a native block, from its walked check, with the stored constants named, at either role context**: `ctorOuts_of_member_named` with the member's check read under the
+/-- **The field sorts of the constructor stage are the ones the classifier checked, at either role context**: `StageSortsChecked` at the
+constructor stage of the context of the limit `lim : Option Nat`. -/
+def StageSortsCheckedLim (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (lim : Option Nat)
+    (env : Ix.Kernel.Env .anon) (B : _root_.Address) (cvS : ConstantVal .anon)
+    (p₀ : Ix.Kernel.NativeParts .anon) (ctorsA : List (ConstantVal .anon × Nat))
+    (isRec : Bool) (sortss : List (List Ix.Kernel.Level)) : Prop :=
+  p₀.ctors.length = 1 → p₀.nIdx = 0 →
+  (∀ φ : Ix.Kernel.LevelParam → Nat, Ix.Kernel.Level.eval φ p₀.resSort = 0) →
+  ∃ (b : Bytes.Address) (u : Ix.Kernel.Level) (cA : ConstantVal .anon × Nat)
+    (sorts : List Ix.Kernel.Level),
+    Core.ixAddr b = B ∧ ctorsA = [cA] ∧ sortss = [sorts] ∧
+    Core.ScopedCoreFacts (Decl.ctorStage ⟨E, env, t, lim⟩ cvS
+      (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort p₀.resSort) isRec)) ∧
+    Core.GuardData.CheckedFieldsAt
+      (Decl.ctorStage ⟨E, env, t, lim⟩ cvS
+        (Ix.Kernel.nativeCapsAt (p₀.toInductiveShape.withSort p₀.resSort) isRec))
+      calls b 0 p₀.nP cA.2 cA.1.type u sorts
+
+
+/-- **The constructor stage of a native block, from its walked check, with the stored constants named and the checked sorts kept, at either role context**: `ctorOuts_of_member_named_checked` with the member's check read under the
 role context of the limit `lim : Option Nat` (`Claim.MemberCheckedLimAt`) and the prefix
 invariant at that limit; the same proof. -/
-theorem ctorOuts_of_member_named_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
+theorem ctorOuts_of_member_named_checked_lim {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
     {bAddr B : _root_.Address} {cb : Ixon.Constant} {ind : Ixon.Inductive} {lim : Option Nat}
     {env : Ix.Kernel.Env .anon} {blk : List (ConstantInfo .anon)}
     {p₀ : Ix.Kernel.NativeParts .anon}
@@ -81,12 +101,13 @@ theorem ctorOuts_of_member_named_lim {calls : List (Call F)} {t : Ix.Kernel.Role
       cvS.name = p₀.cvT.name ∧ ctorsA.length = p₀.ctors.length ∧
       (∀ isRec : Bool, ∃ sortss : List (List Ix.Kernel.Level),
         sortss.length = p₀.ctors.length ∧
-        ∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
+        (∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
           sortss[j]? = some sorts ∧
           Decl.NativeCtorOut ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
               (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩
             p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx p₀.resSort cvS.type
             (rawTypes.getD j default) c cA sorts) ∧
+        StageSortsCheckedLim calls t E lim env B cvS p₀ ctorsA isRec sortss) ∧
       (∀ cA ∈ ctorsA, ∀ cbs body, cA.1.type.stripPis (p₀.nP + cA.2) = some (cbs, body) →
         ∀ i < cA.2,
           (Ix.Kernel.recFieldKind p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx i
@@ -402,12 +423,13 @@ theorem ctorOuts_of_member_named_lim {calls : List (Call F)} {t : Ix.Kernel.Role
   have h256 : (2 : Nat) ^ 56 = 72057594037927936 := by norm_num
   have houts : ∀ isRec : Bool, ∃ sortss : List (List Ix.Kernel.Level),
       sortss.length = p₀.ctors.length ∧
-      ∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
+      (∀ j < p₀.ctors.length, ∃ c cA sorts, p₀.ctors[j]? = some c ∧ ctorsA[j]? = some cA ∧
         sortss[j]? = some sorts ∧
         Decl.NativeCtorOut ⟨.indInfo cvS (Ix.Kernel.nativeCapsAt
             (p₀.toInductiveShape.withSort p₀.resSort) isRec) :: env.consts⟩
           p₀.cvT.name p₀.cvT.levelParams p₀.nP p₀.nIdx p₀.resSort cvS.type
-          (rawTypes.getD j default) c cA sorts := by
+          (rawTypes.getD j default) c cA sorts) ∧
+      StageSortsCheckedLim calls t E lim env B cvS p₀ ctorsA isRec sortss := by
     intro isRec
     have hunit : ind.indices.toNat = 0 → ind.ctors.size = 1 →
         (∀ ct, ind.ctors[0]? = some ct → ct.fields.toNat = 0) →
@@ -498,7 +520,7 @@ theorem ctorOuts_of_member_named_lim {calls : List (Call F)} {t : Ix.Kernel.Role
           (by rw [hb_eq]; exact h5E) hl hd
       rw [hc2]
       exact hf56
-    obtain ⟨sortss, hlen_s, hout⟩ := Decl.native_ctor_staged IxVM.Refinement.Levels.levels
+    obtain ⟨sortss, hlen_s, hout⟩ := Decl.native_ctor_staged_checked IxVM.Refinement.Levels.levels
       (cS := cS) (fun _ => trivial) (T := p₀.cvT.name) (lps := p₀.cvT.levelParams)
       (nP := p₀.nP) (nIdx := p₀.nIdx) (ta := ty') (resSort := p₀.resSort) (ind_lvl := ind_lvl)
       (cs_root := cs_chk) (ctors := p₀.ctors) (ctorsA := ctorsA) (ctorRawTypes := rawTypes)
@@ -543,7 +565,16 @@ theorem ctorOuts_of_member_named_lim {calls : List (Call F)} {t : Ix.Kernel.Role
       (hraw_at ⟨ConstantInfo.indInfo cvS caps₁ :: env.consts⟩).2 shape.ctorSubset
       (hg_chk.sub shape.ctorSubset) (hrc_m.toRCRep.mono e_ctor) (hformer.mono e_ctor)
       hbRepCtor hlvRep ctorRun
-    exact ⟨sortss, hlen_s, hout⟩
+    refine ⟨sortss, hlen_s, fun j hj => ?_, fun h1 h0 hz => ?_⟩
+    · obtain ⟨c, cA, sorts, hc, hcA, hs, ho, -⟩ := hout j hj
+      exact ⟨c, cA, sorts, hc, hcA, hs, ho⟩
+    · obtain ⟨c, cA, sorts, hc, hcA, hs, ho, hchk⟩ := hout 0 (by omega)
+      have hk := hchk h1 h0 (fun φ => (hlveq φ).symm.trans (hz φ))
+      rw [← ho.nF_eq] at hk
+      exact ⟨b, ind_lvl, cA, sorts, hb_eq,
+        Core.GuardData.eq_singleton (by rw [hcload.1]; exact h1) hcA,
+        Core.GuardData.eq_singleton (by rw [hlen_s]; exact h1) hs, ⟨hcore.1, hcore.2⟩,
+        hk.mono hsub_chk⟩
   have hctorsCanon : ∀ j c, p₀.ctors[j]? = some c →
       ∃ (ct : Ixon.Constructor) (cty' : Ix.Kernel.Expr .anon),
         ind.ctors[j]? = some ct ∧ ct.cidx.toNat = j ∧ ct.params.toNat = ind.params.toNat ∧
@@ -579,7 +610,7 @@ theorem ctorOuts_of_member_named_lim {calls : List (Call F)} {t : Ix.Kernel.Role
   rw [hjA] at hcA'
   injection hcA' with hcAeq
   subst hcAeq
-  obtain ⟨sortss, -, hout⟩ := houts false
+  obtain ⟨sortss, -, hout, -⟩ := houts false
   obtain ⟨c', cA', sorts, hc', hcA'', -, hout_j⟩ := hout j hjP
   rw [hc] at hc'
   injection hc' with hceq
