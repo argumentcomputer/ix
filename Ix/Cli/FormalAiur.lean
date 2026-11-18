@@ -426,7 +426,8 @@ private def runDistributed (p : Cli.Parsed) (artifactPath : String) (options : H
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env assumeBinding)
   let view ← IO.ofExcept (Ix.Shard.parseIxesManifest (← IO.FS.readBinFile manifest))
   unless ← Ix.Shard.shardsCover env view.shards do throw (IO.userError "invalid manifest coverage")
-  let indexed := (view.shards.mapIdx fun i b => (i, Ix.Shard.ownedConstsForBlocks env b)).filter (!·.2.isEmpty)
+  -- every shard's owned constants in one pass over the environment
+  let indexed := ((Ix.Shard.ownedConstsPer env view.shards).mapIdx fun i owned => (i, owned)).filter (!·.2.isEmpty)
   let owners := indexed.map (·.2)
   if owners.isEmpty then throw (IO.userError "distributed environment has no owned constants")
   let primitives := Ix.primAddrSet.toArray.filter env.consts.contains
@@ -518,6 +519,9 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
       IO.println s!"shard {k}: {view.shards[k]!.size} blocks; RAM reservation {options.ram} bytes"
     return 0
   let jobs := max 1 (min jobs selected.size)
+  -- every shard's owned constants in one pass over the environment; a split part's are
+  -- divided from its shard's (`Ix.Shard.Check.cutOwned`)
+  let owners := Ix.Shard.ownedConstsPer env view.shards
   -- `--json` writes one benchmark results row (`Ix.Benchmark.Results`) for
   -- `ix bench run --backend aiur-sharded-env`; its peak covers the hosts.
   if p.hasFlag "json" then TracingTexray.startSampler
@@ -526,12 +530,11 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
     let capacity ← if options.resident.isSome then pure (jobs + (← executionJobs p jobs)) else pure jobs
     let results ← boundedMap capacity selected fun members k => do
       let options := options.forWave jobs members
-      let mut pending := #[view.shards[k]!]
+      let mut pending := #[(view.shards[k]!, owners[k]!)]
       let mut settled : Array PartResult := #[]
       while !pending.isEmpty do
-        let blocks := pending.back!
+        let (blocks, owned) := pending.back!
         pending := pending.pop
-        let owned := Ix.Shard.ownedConstsForBlocks env blocks
         if owned.isEmpty then
           settled := settled.push { blocks, result := {} }
           continue
@@ -540,7 +543,7 @@ private def runManifest (p : Cli.Parsed) (artifactPath binary : String) (options
         let canSplit := (result.report.getObjValAs? Bool "can_split").toOption.getD true
         if result.code == 75 && canSplit && blocks.size > 1 && !p.hasFlag "trace-shards" then
           let parts := (result.report.getObjVal? "plan" >>= fun j => j.getObjValAs? Nat "suggested_parts").toOption.getD 2
-          let cut := Ix.Shard.Check.cutBlocks blocks parts
+          let cut := Ix.Shard.Check.cutOwned env blocks owned parts
           IO.println s!"[aiur] shard {k}: splitting into {cut.size} parts after resource planning"
           pending := pending ++ cut.reverse
         else
