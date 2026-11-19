@@ -39,9 +39,10 @@ open IxVM (F)
 open IxVM.Refinement.Binding (KeyIn read_keys)
 open IxVM.Refinement.Binding.FamilyFlat (FlatView Held loadedAt keyAddr keyAddr_keyOf
   indInfoAt ctorTypeAt membersAt indInfoAt_inv ctorTypeAt_inv membersAt_inv
-  mem_indcAddrs keyIn_of_loadedAt)
+  mem_indcAddrs keyIn_of_loadedAt keyIn_exprInstLevels)
 open IxVM.Refinement.Binding.FamilyRecon (ReconView RKeysAt indDataAt ctorAt unfoldAt
-  defnAt indDataAt_inv ctorAt_inv unfoldAt_inv defnAt_inv keyIn_exprInstLevels mem_used_of_member)
+  defnAt indDataAt_inv ctorAt_inv unfoldAt_inv defnAt_inv mem_used_of_member)
+open IxVM.Refinement.ReaderReads (exprReader_mono)
 
 set_option linter.unusedVariables false
 
@@ -522,7 +523,7 @@ private theorem ctorProj_eq_of_noCollision {calls : List (Call F)} {t : Ix.Kerne
     subst hcb_eq
     obtain ⟨hhash_b, hb_hash⟩ := hRS.loaded.1 b lc_b hget_b
     -- Bound `i` and `c` using `Bounded calls` + `deConstantExact_resource_bound`
-    obtain ⟨cl, hcl, _, input, hargs, hrep⟩ := hhash_b
+    obtain ⟨cl, hcl, hcl_name, input, hargs, hrep⟩ := hhash_b
     have hlen_b : lc_b.rawBytes.data.toList.length < 2 ^ 39 :=
       RomBound.bounded_length_lt hgood.2 hcl (by rw [hargs]; exact List.mem_cons_self ..) hrep
     have hres_b : cb'.resourceSize ≤ 2 * lc_b.rawBytes.size :=
@@ -556,7 +557,7 @@ private theorem ctorProj_eq_of_noCollision {calls : List (Call F)} {t : Ix.Kerne
         by_contra hne
         apply hgood.1
         refine Or.inr (Or.inl ⟨ctorAddr b i c, lc_x.rawBytes, image, lc_b.rawBytes, cb', ms,
-          Or.inl (Or.inl ⟨lc_x, hget_x, rfl⟩), ⟨cl, hcl, _, input, hargs, hrep⟩, hde_b, hms,
+          Or.inl (Or.inl ⟨lc_x, hget_x, rfl⟩), ⟨cl, hcl, hcl_name, input, hargs, hrep⟩, hde_b, hms,
           Or.inr ⟨i.toUInt64, c.toUInt64, by rw [hb_hash]; rfl⟩, hne, rfl⟩)
       have hb_hash_sz : b.hash.size = 32 := by
         rw [← hb_hash]
@@ -1052,7 +1053,7 @@ theorem graphStoreClosed_of_envWF
       obtain ⟨cb, arr, hcb, hcbi, rfl⟩ := membersAt_inv (h : membersAt E₀ b = some addrs)
       obtain ⟨i, m, hm, rfl⟩ := mem_indcAddrs arr.toList 0 ha
       have hm' : arr[i]? = some m := by simpa only [Array.getElem?_toList] using hm
-      rw [Nat.zero_add]
+      rw [Nat.zero_add] at ha ⊢
       rcases hb with hst_b | ⟨cb', ms', hcb', hcbi', hbs⟩ | hbas_b | ⟨hTb, hrkb⟩ |
           ⟨b', cb', ms', i', m', hTb', _, hcb', hcbi', hm'', rfl⟩
       · obtain ⟨-, -, hbas | hkept⟩ := storedAt_provenance hctx.shape ht htwf hst_b
