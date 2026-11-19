@@ -208,7 +208,7 @@ theorem walkedRef_needOk (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoade
     · rcases hkind with hwk | hs | hq
       · exact walkedRole_needOk hC hval hroots (Or.inr hwk) had
       · obtain ⟨c, ax, hc, hi, hsafe⟩ := hax r hs x had
-        refine ⟨c, hc, fun ⟨ms, hms⟩ => by rw [hi] at hms; cases hms,
+        refine ⟨c, hc, (fun ⟨ms, hms⟩ => by rw [hi] at hms; cases hms),
           (by simp only [InLogic, hi, hsafe]), fun cb hcb => ?_⟩
         have hown : Ix.Cert.ownerOf x c = x := by simp [Ix.Cert.ownerOf, hi]
         rw [hown, hc] at hcb
@@ -220,7 +220,7 @@ theorem walkedRef_needOk (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoade
         unfold quotRowOk at hok
         simp only [hctab] at hok
         obtain ⟨⟨a', c⟩, hmem, hcond⟩ := List.any_eq_true.mp hok
-        obtain ⟨ha', hinfoOk⟩ := Bool.and_eq_true.mp hcond
+        obtain ⟨ha', hinfoOk⟩ := (Bool.and_eq_true _ _).mp hcond
         have ea : a' = x := beq_iff_eq.mp ha'
         subst ea
         have hrecB : recordOf basisStore a' = some c := StoreInhabit.store_record_of_mem hmem
@@ -233,7 +233,7 @@ theorem walkedRef_needOk (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoade
           exact hrecB
         cases hci : c.info with
         | quot q =>
-          refine ⟨c, hE, fun ⟨ms, hms⟩ => by rw [hci] at hms; cases hms,
+          refine ⟨c, hE, (fun ⟨ms, hms⟩ => by rw [hci] at hms; cases hms),
             (by simp only [InLogic, hci]), fun cb hcb => ?_⟩
           have hown : Ix.Cert.ownerOf a' c = a' := by simp [Ix.Cert.ownerOf, hci]
           rw [hown, hE] at hcb
@@ -243,7 +243,7 @@ theorem walkedRef_needOk (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoade
           simp only [hci] at hinfoOk
           have hsafe : ax.isUnsafe = false := by
             cases hu' : ax.isUnsafe <;> simp [hu'] at hinfoOk ⊢
-          refine ⟨c, hE, fun ⟨ms, hms⟩ => by rw [hci] at hms; cases hms,
+          refine ⟨c, hE, (fun ⟨ms, hms⟩ => by rw [hci] at hms; cases hms),
             (by simp only [InLogic, hci, hsafe]), fun cb hcb => ?_⟩
           have hown : Ix.Cert.ownerOf a' c = a' := by simp [Ix.Cert.ownerOf, hci]
           rw [hown, hE] at hcb
