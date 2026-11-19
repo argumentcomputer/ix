@@ -10,19 +10,18 @@ Wires `Binding.FamilyRecon.familyFlat_of_call`, `Binding.FamilyRecon.familyForm_
 `Binding.FamilyRecon.familyForm_of_call_group` directly into both twin-step endpoints
 (`ClosureTwinSteps` and `FamilyTwinRowFamClosed`), eliminating `TwinCallFlat` and `TwinCallRecon`:
 
-* `StoreLevelsParams t R`: blob-independent level-parameter well-scopedness and inductive
-  parameter coherence on a binding witness store `R`;
 * `recordWrapConsObs_of_recon`: converts `Binding.FamilyRecon.RecordWrapConsObs` (plus the
   `ctorsBefore` minor-count equality from `familyFlat_of_call`) to `TwinFamily.RecordWrapConsObs`;
-* `closureStore_levels_and_params`, `closureTwinSteps_of_storeLevels`: discharges
-  `Binding.ClosureTwinSteps` across every group `6 ≤ g < 77` of every binding run from
-  `StoredRecLvlsOk` and `StoreLevelsParams` on the pre-group store `R`;
+* `closureStore_levels_and_params`, `closureTwinSteps_of_storeLevels`, `closureTwinSteps_closed`:
+  discharges `Binding.ClosureTwinSteps` across every group `6 ≤ g < 77` of every binding run from
+  `Binding.storedRecLvls_of_stored` and `Binding.StoreLevelsParams` on the pre-group store `R`;
 * `TypingUseSet`, `typingUseStore_usedClosed`, `typingUseStore_levels_and_params`,
-  `FamilyTwinRowFamClosed`, `familyTwinWF_of_storeLevels`: builds the `UsedClosed` store
+  `FamilyTwinRowFamClosed`, `familyTwinWF_of_storeLevels`, `familyTwinWF_closed`,
+  `familyTwinStep_graph_of_closed`, `storedTwinSteps_of_closed`: builds the `UsedClosed` store
   `recordsAt E (TypingUseSet ...)` on the typing side, establishes `StoreLevelsOk` and
-  `StoreIndParamsOk` over it from `StoreLevelsParams t R`, committed basis rows, `TopWalkCore`,
-  `InnerChecked`, and `FamilyChecksAt`, and discharges `FamilyTwinRowFamClosed` from
-  `StoredRecLvlsOk` alone (given `StoreLevelsParams t R` at the witness store). -/
+  `StoreIndParamsOk` over it from `Binding.StoreLevelsParams t R`, committed basis rows,
+  `TopWalkCore`, `InnerChecked`, and `FamilyChecksAt`, and unconditionally discharges
+  `FamilyTwinRowFamClosed`. -/
 
 universe u
 
@@ -35,7 +34,7 @@ open IxVM (F)
 open IxVM.Refinement.Core (KExpr KLevel KKey ExprLvEq)
 open IxVM.Refinement.Typing.FamilyAlias (FamilyCallAtLim)
 open IxVM.Refinement.Binding (BRun BindingRun AtGroups ClosureCtx ClosureTwinSteps StoredFamiliesRForm
-  IsTwinShape UnitCheckedAt)
+  StoreLevelsParams IsTwinShape UnitCheckedAt)
 open IxVM.Refinement.Binding.FamilyOf (FamilyOfBlock)
 open IxVM.Refinement.Binding.FamilyFlat (FlatEntry RecordFlat BlockDerivedFlat Held)
 open IxVM.Refinement.Binding.FamilyRecon (ReconView RFormS MemberRecon StoreLevelsOk
@@ -44,15 +43,6 @@ open IxVM.Refinement.Binding.FamilyRecon (ReconView RFormS MemberRecon StoreLeve
 set_option maxHeartbeats 1600000
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
-
-/-! ## Store-level invariant interface -/
-
-/-- **Blob-independent level-parameter well-scopedness and inductive-parameter coherence on `R`**:
-for any store `E` extending `R` on records, both `StoreLevelsOk t E (Held R)` and
-`StoreIndParamsOk E (Held R)` hold. -/
-def StoreLevelsParams (t : Ix.Kernel.RoleTable) (R : Ixon.Env) : Prop :=
-  ∀ E : Ixon.Env, (∀ y c, recordOf R y = some c → recordOf E y = some c) →
-    StoreLevelsOk t E (Held R) ∧ StoreIndParamsOk E (Held R)
 
 /-! ## Conversion from `Binding.FamilyRecon` wrapper observations to `TwinFamily` -/
 
@@ -779,6 +769,13 @@ theorem closureTwinSteps_of_storeLevels
       hrun.hashedStored hrun.bounded hR₁_agree hC.closed hRB (hrecRefs hRr hRec.record)
       hlv₁ hpar₁ hM hRec hsz hlogB hvl hfc)
 
+/-- **Unconditional binding-closure twin step (`Binding.ClosureTwinSteps`)**: discharges the
+binding-side twin step across every group of every binding run with zero remaining premises. -/
+theorem closureTwinSteps_closed :
+    ∀ calls, AtGroups (BindingRun calls) (ClosureTwinSteps.{u} FormerOpenTraceAt calls) :=
+  closureTwinSteps_of_storeLevels Binding.storedRecLvls_of_stored
+    (fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hC => hC.fams.levelsParams)
+
 /-! ## Typing-side used-closed store and `FamilyTwinRowFamClosed` -/
 
 /-- **Address set for the typing-side `UsedClosed` store `recordsAt E (TypingUseSet ...)`**:
@@ -1389,5 +1386,79 @@ theorem familyTwinWF_of_storeLevels (hStoredLvls : StoredRecLvlsOk) :
         hagree hcl hRB (hrecRefs hrel hRec) hlv hpar hM hRec hsz hlogB hfc with h1 | h2
     · exact Or.inl h1
     · exact Or.inr (recordWrapConsObs_of_recon hRec.record hRec.muts hBD hct h2)
+
+/-- **Unconditional typing-side twin row (`FamilyTwinRowFamClosed`)**: discharges the typing-side
+twin step (both the graph arm and the stored arm) with zero remaining premises. -/
+theorem familyTwinWF_closed :
+    FamilyTwinRowFamClosed.{u} RFormS FormerOpenTraceAt :=
+  familyTwinWF_of_storeLevels Binding.storedRecLvls_of_stored
+
+/-- **The graph case of `FamilyTwinRowFamClosed`**, at the empty stored-family map. -/
+theorem familyTwinStep_graph_of_closed
+    {L : Ix.Kernel.Env .anon → Ix.Kernel.Semantics.NativeFam .anon → Prop}
+    {RFormS : Binding.StoredFormPred} (h : FamilyTwinRowFamClosed.{u} RFormS L)
+    {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {seeds : List _root_.Address}
+    {E₀ : Ixon.Env} {lim : Option Nat} {Top : _root_.Address → Prop}
+    {rank : _root_.Address → Nat} (hWalk : Claim.TopWalk calls t seeds E₀ lim Top rank)
+    {R : Ixon.Env} {envT : Ix.Kernel.Env .anon} {E : Ixon.Env}
+    {fam twin : _root_.Address → Option _root_.Address}
+    {adv : _root_.Address → _root_.Address → Prop} {Inner : _root_.Address → Prop}
+    {bAddrIC : _root_.Address}
+    (hFR : FamilyRun calls t envT E₀ lim Top rank fam twin adv Inner)
+    (hIC : InnerChecked calls bAddrIC t envT E₀ lim Top rank fam twin Inner)
+    (hctx : StepCtx.{u} calls t R envT E₀ E)
+    (hEnvWF : Ix.Kernel.EnvWF envT)
+    (hWhole : ∀ E', RecordsFor R E' →
+      ∀ (a B : _root_.Address) (c cb : Ixon.Constant) (ms : Array Ixon.MutConst),
+        (envT.find? (keyOf t a)).isSome = true → Ix.Cert.recordAt E' a = some c →
+        Ix.Cert.ownerOf a c = B → B ≠ a → Ix.Cert.recordAt E' B = some cb → cb.info = .muts ms →
+        BlockStored t envT B ms)
+    (hLP : StoreLevelsParams t R)
+    {A : _root_.Address} {c : Ixon.Constant} {B rb : _root_.Address} {crb : Ixon.Constant}
+    (hW : Walked Top Inner A) (hc : recordOf E₀ A = some c) (hlog : InLogic c)
+    (htw : twin A = some B) (hfam : fam B = some rb) (hcrb : recordOf E₀ rb = some crb)
+    (hrec : RecBlock E₀ rb) (hpref : RFormS t E₀ B A → RFormS t E₀ B rb) :
+    UnitStepTwin.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
+      t envT E₀ E lim A c rb crb :=
+  h calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner bAddrIC
+    hFR hIC hctx hEnvWF hWhole hLP (fun _ => none) (storedFamiliesRForm_none RFormS)
+    A c B rb crb hW hc hlog htw (Or.inl ⟨hfam, hcrb, hrec, hpref⟩)
+
+/-- **The stored case of `FamilyTwinRowFamClosed`**: every stored twin's unit step at a walk and
+witness with `InnerChecked`, `EnvWF`, block-wholeness, and `StoreLevelsParams`. -/
+theorem storedTwinSteps_of_closed
+    {L : Ix.Kernel.Env .anon → Ix.Kernel.Semantics.NativeFam .anon → Prop}
+    {RFormS : Binding.StoredFormPred} (h : FamilyTwinRowFamClosed.{u} RFormS L)
+    {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {seeds : List _root_.Address}
+    {E₀ : Ixon.Env} {lim : Option Nat} {Top : _root_.Address → Prop}
+    {rank : _root_.Address → Nat} (hWalk : Claim.TopWalk calls t seeds E₀ lim Top rank)
+    {R : Ixon.Env} {envT : Ix.Kernel.Env .anon}
+    {fam twin : _root_.Address → Option _root_.Address}
+    {adv : _root_.Address → _root_.Address → Prop} {Inner : _root_.Address → Prop}
+    {bAddrIC : _root_.Address}
+    (hFR : FamilyRun calls t envT E₀ lim Top rank fam twin adv Inner)
+    (hIC : InnerChecked calls bAddrIC t envT E₀ lim Top rank fam twin Inner)
+    (hEnvWF : Ix.Kernel.EnvWF envT)
+    (hWhole : ∀ E', RecordsFor R E' →
+      ∀ (a B : _root_.Address) (c cb : Ixon.Constant) (ms : Array Ixon.MutConst),
+        (envT.find? (keyOf t a)).isSome = true → Ix.Cert.recordAt E' a = some c →
+        Ix.Cert.ownerOf a c = B → B ≠ a → Ix.Cert.recordAt E' B = some cb → cb.info = .muts ms →
+        BlockStored t envT B ms)
+    (hLP : StoreLevelsParams t R)
+    (hfams : ∃ famOf, Binding.StoredFamilies t R envT famOf ∧
+      Binding.StoredFamiliesFlat t R famOf ∧ StoredFamiliesRForm RFormS t R famOf)
+    (hblock : StoredTwinBlock t R envT fam twin) :
+    ∀ E, StepCtx.{u} calls t R envT E₀ E → ∀ A c B, Walked Top Inner A →
+      recordOf E₀ A = some c → InLogic c → twin A = some B → fam B = none →
+      UnitStep.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
+        t envT E₀ E lim A c := by
+  intro E hctx A c B hW hc hlog htw hnone
+  obtain ⟨famOf, hSF, hflat, hRF⟩ := hfams
+  obtain ⟨cb, hB, hroute, hst⟩ := hblock A B htw hnone
+  obtain ⟨rb, crb, hcanon⟩ := storedTwinCanon_of_block hSF hflat hB hroute hst
+  exact unitStep_of_twin_stored hcanon.stored
+    (h calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner bAddrIC
+      hFR hIC hctx hEnvWF hWhole hLP famOf hRF A c B rb crb hW hc hlog htw
+      (Or.inr ⟨hnone, hcanon⟩))
 
 end IxVM.Refinement.Typing.TwinFamily
