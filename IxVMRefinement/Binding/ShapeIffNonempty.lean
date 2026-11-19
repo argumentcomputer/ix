@@ -9,11 +9,11 @@ from the invariant below the group or holds vacuously; the one left is `IffPinne
 `NonemptyPinned` at 17, the standard axioms' check of the stored family.
 
 * `roleFreeShapes_iffNonempty_of_pinned`: `RoleFreeShapes` at 16 or 17 from `IffPinned`
-  (resp. `NonemptyPinned`) of the closure's environment. Producer of that premise: open, the
-  stored members read from the group's `validate_role` of the three roles (the member-pin lemmas
-  `validateRole_stdMember`, `validateMember_induct`, `validateMember_ctor`,
-  `validateMember_storedRecCounts`, `familyKey_of_stdRecPin`, `recLps_of_stdRecPin`) joined to
-  the kept declarations (`GroupKept`), as `anchor_stored_matchesPin` does for an anchor.
+  (resp. `NonemptyPinned`) of the closure's environment. Producer of that premise:
+  `Binding/ShapeIffNonemptyPins.lean` (`iffPinned_of_group16`, `nonemptyPinned_of_group17`),
+  joining the member-pin lemmas (`validateRole_stdMember`, `validateMember_induct`,
+  `validateMember_ctor`, `validateMember_storedRecCounts`, `familyKey_of_stdRecPin`,
+  `recLps_of_stdRecPin`) to the kept declarations (`GroupKept`).
 -/
 
 universe u
