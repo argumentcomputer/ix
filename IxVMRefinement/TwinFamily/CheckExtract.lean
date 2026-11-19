@@ -3232,22 +3232,14 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
               rw [hκk, hfind'] at hfind_e
               injection hfind_e with hci_eq
               subst hci_eq
-              rw [hld_a] at hpv_e
-              injection hpv_e with hv_e_eq
-              rw [← hv_e_eq] at hci_e
-              generalize hve_g : Value.construct Core.kciEnum "Rec" _ = ve_g at hci_e
+              have hve_eq : pv_e = v_a := by
+                rw [← hv_a] at hld_a
+                rw [hld_a] at hpv_e
+                exact Except.ok.inj hpv_e.symm
+              rw [hve_eq] at hci_e
+              generalize hvc_g : v_a = vc_g at hci_canon
               cases hci_e with
               | recr hv_e hnp_e hni_e hnm_e hnmi_e hrP_e hmI_e hcnts_e hrules_e _ _ =>
-                injection hve_g with _ _ hvef
-                injection hvef with hnl_g hvef1
-                injection hvef1 with hty_g hvef2
-                injection hvef2 with hnp_g hvef3
-                injection hvef3 with hni_g hvef4
-                injection hvef4 with hnm_g hvef5
-                injection hvef5 with hnmi_g hvef6
-                injection hvef6 with hrl_g _
-                subst hnl_g hty_g hnp_g hni_g hnm_g hnmi_g hrl_g
-                generalize hvc_g : Value.construct Core.kciEnum "Rec" _ = vc_g at hci_canon
                 cases hci_canon with
                 | recr hv_c _ _ _ _ _ _ _ hrules_c _ _ =>
                   injection hvc_g with _ _ hvcf
@@ -3259,6 +3251,18 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
                   injection hvcf5 with _ hvcf6
                   injection hvcf6 with hrl_cg _
                   subst hty_cg hrl_cg
+                  injection hv_a with _ _ hvaf
+                  injection hvaf with hnl_a hvaf1
+                  injection hvaf1 with _ hvaf2
+                  injection hvaf2 with hnp_a hvaf3
+                  injection hvaf3 with hni_a hvaf4
+                  injection hvaf4 with hnm_a hvaf5
+                  injection hvaf5 with hnmi_a _
+                  rw [hnl_a] at hv_e
+                  rw [hnp_a] at hnp_e
+                  rw [hni_a] at hni_e
+                  rw [hnm_a] at hnm_e
+                  rw [hnmi_a] at hnmi_e
                   have hp_e : _ = (rc.params.toNat : F) := Value.field.inj hnp_e.symm
                   have hi_e : _ = (rc.indices.toNat : F) := Value.field.inj hni_e.symm
                   have hm_e : _ = (rc.motives.toNat : F) := Value.field.inj hnm_e.symm
@@ -3276,6 +3280,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
                       ZMod.val_natCast_of_lt (by omega), ZMod.val_natCast_of_lt (by omega)] at h1
                     exact h1
                   have hlv_eq : cv.levelParams.length = rc.lvls.toNat := by
+                    have hcv_lt := hv_e.2.1
                     have h1 := congrArg ZMod.val (Value.field.inj hv_e.1)
                     rw [ZMod.val_natCast_of_lt (by omega), ZMod.val_natCast_of_lt (by omega)] at h1
                     exact h1.symm
@@ -3284,7 +3289,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
                       (hv_c.2.2.2 0 (fun _ => .sort .zero))
                   exact ⟨hmI_eq, hrP_eq, hlv_eq, hty_eq, rulesRep_det_ce hrules_e hrules_c⟩
                 | quot _ _ => exact absurd (Value.construct.inj hvc_g).2.1 (by decide)
-              | quot _ _ => exact absurd (Value.construct.inj hve_g).2.1 (by decide)
+              | quot _ _ => exact absurd (Value.construct.inj hv_a).2.1 (by decide)
           }⟩
       · have hnext_k : v1026 = .field ((k + 1 : Nat) : F) := by
           simp only [evalBinOp, Except.ok.injEq] at op1107
