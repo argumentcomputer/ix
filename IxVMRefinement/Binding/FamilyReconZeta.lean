@@ -38,6 +38,7 @@ open IxVM.Refinement.Binding.FamilyFlat (peelForalls)
 open Ix.Kernel (Expr PropWhen)
 
 set_option maxHeartbeats 1600000
+set_option maxRecDepth 20000
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
 
@@ -156,10 +157,23 @@ def NotLet (h : Heap F) (p : SourceValue F) : Prop :=
   ∃ v, loadValue h p = .ok v ∧
     ∀ vs : List (SourceValue F), vs.length = 3 → v ≠ .construct kexprEnum "Let" vs
 
+theorem loadValue_mono {h h' : Heap F} {p v : SourceValue F}
+    (ext : Heap.Extends h h') (ld : loadValue h p = .ok v) : loadValue h' p = .ok v := by
+  cases p with
+  | ptr target addr =>
+    simp only [loadValue] at ld ⊢
+    cases hget : h[addr]? with
+    | none => simp [hget] at ld
+    | some val =>
+      rw [hget] at ld
+      rw [ext.getElem?_eq hget]
+      exact ld
+  | _ => simp [loadValue] at ld
+
 theorem NotLet.mono {h h' : Heap F} {p : SourceValue F}
     (ext : Heap.Extends h h') (hn : NotLet h p) : NotLet h' p := by
   obtain ⟨v, ld, hne⟩ := hn
-  exact ⟨v, loadValue_heapMono₂ ext ld, hne⟩
+  exact ⟨v, loadValue_mono ext ld, hne⟩
 
 theorem notLet_of_cell {h : Heap F} {addr : Nat} {tag : String} {args : List (SourceValue F)}
     (cell : h[addr]? = some (.construct kexprEnum tag args)) (ht : tag ≠ "Let") :
@@ -184,25 +198,18 @@ theorem not_app_of_notLet {κ : _root_.Address → KKey} {h : Heap F}
     E.getAppFn = E ∧ E.getAppArgs = [] := by
   obtain ⟨k, ht⟩ := hp
   cases ht with
-  | bvarLocal .. => exact ⟨rfl, rfl⟩
   | bvarFree _ _ _ hd => omega
-  | sort .. => exact ⟨rfl, rfl⟩
-  | const .. => exact ⟨rfl, rfl⟩
   | app cell _ _ =>
     have hld := Lib.load_enum_cell cell
     rw [ld] at hld
     injection hld with hv
     exact (hneApp _ rfl hv).elim
-  | lam .. => exact ⟨rfl, rfl⟩
-  | forallE .. => exact ⟨rfl, rfl⟩
   | letE cell _ _ _ =>
     have hld := Lib.load_enum_cell cell
     rw [ld] at hld
     injection hld with hv
     exact (hneLet _ rfl hv).elim
-  | litNat .. => exact ⟨rfl, rfl⟩
-  | litStr .. => exact ⟨rfl, rfl⟩
-  | proj .. => exact ⟨rfl, rfl⟩
+  | _ => exact ⟨rfl, rfl⟩
 
 /-! ## `zeta_head`, `peel_n_foralls_zeta`, `collect_spine_zeta` -/
 
@@ -274,12 +281,12 @@ theorem peel_n_foralls_zeta_spec {κ : _root_.Address → KKey} :
 termination_by _ _ _ _ _ _ cs => cs.length
 
 private theorem kexprList_names :
-    kexprListEnum = (Instance.mk "Lists::Node" [.ref (.enum kexprEnum)]).symbol := by
+    kexprListEnum = (Instance.mk "Lists::Node" [.ptr (.named "KernelTypes::KExprNode" [])]).symbol := by
   decide
 
 private theorem kexprSnoc_names :
     Obs.Names.«Lists::snoc<&KernelTypes::KExprNode>» =
-      (Instance.mk "Lists::snoc" [.ref (.enum kexprEnum)]).symbol := by
+      (Instance.mk "Lists::snoc" [.ptr (.named "KernelTypes::KExprNode" [])]).symbol := by
   decide
 
 /-- **`KernelCheck::collect_spine_zeta`** splits an expression into `(E.getAppFn, E.getAppArgs)`
@@ -306,7 +313,7 @@ theorem collect_spine_zeta_spec {κ : _root_.Address → KKey} {h h' : Heap F}
       rw [hc]; simp only [List.length_cons, List.length_append]; omega
     obtain ⟨hfn, hnl, hlist⟩ := collect_spine_zeta_spec hf
       (sub fun c hc' => by rw [hc]; simp [hc']) e1
-    have hlist' : RepList (Instance.mk "Lists::Node" [.ref (.enum kexprEnum)]).symbol
+    have hlist' : RepList (Instance.mk "Lists::Node" [.ptr (.named "KernelTypes::KExprNode" [])]).symbol
         (TmOExact κ) m1 Ef.getAppArgs xargs := by
       rwa [← kexprList_names]
     rw [kexprSnoc_names] at e2
@@ -585,7 +592,6 @@ theorem level_list_struct_eq_exact {h h' : Heap F} {la lb : List KLevel}
       cases hb with
       | nil cell =>
         have hld := Lib.load_enum_cell cell
-        rw [← IxVM.Refinement.Levels.klevelList_names] at hld
         rw [ld2] at hld
         injection hld with hv
         rw [IxVM.Refinement.Levels.klevelList_names] at hv
@@ -772,7 +778,7 @@ private theorem zeta_struct_eq_bundle {κ : _root_.Address → KKey} (hinj : Fun
           TmOExact κ h Ta ta → TmOExact κ h Ba ba → RepKLevel h ℓa la →
           TmOExact κ h Tb tb → TmOExact κ h Bb bb → RepKLevel h ℓb lb →
           r = .field (if bmeta ℓa = bmeta ℓb ∧ Ta = Tb ∧ Ba = Bb then 1 else 0)) := by
-  refine ObsFn.strong_induction (W := W)
+  refine ObsFn.strong_induction (world := W)
     (P := fun fname args h r h' cs => IxVM.Consistency.Bounded cs →
       (fname = "KernelCheck::kexpr_zeta_struct_eq" →
         ∀ (p₁ p₂ : SourceValue F) (E₁ E₂ : KExpr),
@@ -955,9 +961,12 @@ private theorem zeta_struct_eq_bundle {κ : _root_.Address → KKey} (hinj : Fun
             Ta Ba Tb Bb ℓa ℓb rfl hta hba hla htb hbb hlb
           rw [hbeq]
           congr 1
-          exact if_congr (by constructor
+          have hiff : (bmeta ℓa = bmeta ℓb ∧ Ta = Tb ∧ Ba = Bb) ↔
+              (Expr.lam Ta Ba (bmeta ℓa) = Expr.lam Tb Bb (bmeta ℓb)) := by
+            constructor
             · rintro ⟨hm, ht, hb⟩; rw [hm, ht, hb]
-            · intro h; obtain ⟨ht, hb, hm⟩ := Expr.lam.inj h; exact ⟨hm, ht, hb⟩) rfl rfl
+            · intro h; obtain ⟨ht, hb, hm⟩ := Expr.lam.inj h; exact ⟨hm, ht, hb⟩
+          exact if_congr hiff rfl rfl
         | .Lam_other (v_yahvaeuc := va) (m_rasepwbe := m1) (cs_gjslryle := cs1)
             (v_yhvxairr := vb) (m_awietpfd := m2) (cs_bokxvske := cs2) (v_twnyxrgg := v)
             (ev_dkmtahfq := e1) (ev_yasdpozq := e2) (ld_bolbylmd := ld1) (ld_mgdxvnfg := ld2)
@@ -984,9 +993,12 @@ private theorem zeta_struct_eq_bundle {κ : _root_.Address → KKey} (hinj : Fun
             Ta Ba Tb Bb ℓa ℓb rfl hta hba hla htb hbb hlb
           rw [hbeq]
           congr 1
-          exact if_congr (by constructor
+          have hiff : (bmeta ℓa = bmeta ℓb ∧ Ta = Tb ∧ Ba = Bb) ↔
+              (Expr.forallE Ta Ba (bmeta ℓa) = Expr.forallE Tb Bb (bmeta ℓb)) := by
+            constructor
             · rintro ⟨hm, ht, hb⟩; rw [hm, ht, hb]
-            · intro h; obtain ⟨ht, hb, hm⟩ := Expr.forallE.inj h; exact ⟨hm, ht, hb⟩) rfl rfl
+            · intro h; obtain ⟨ht, hb, hm⟩ := Expr.forallE.inj h; exact ⟨hm, ht, hb⟩
+          exact if_congr hiff rfl rfl
         | .Forall_other (v_yahvaeuc := va) (m_rasepwbe := m1) (cs_gjslryle := cs1)
             (v_yhvxairr := vb) (m_awietpfd := m2) (cs_bokxvske := cs2) (v_lrjojuby := v)
             (ev_dkmtahfq := e1) (ev_yasdpozq := e2) (ld_bolbylmd := ld1) (ld_ugduqnkn := ld2)
