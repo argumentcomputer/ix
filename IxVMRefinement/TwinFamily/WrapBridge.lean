@@ -1259,7 +1259,7 @@ private theorem peelAll_liftLooseBVars :
       exact (hzip (peelAll b).1 0).symm
     · rw [h2]; simp only [List.length_cons]; congr 1; omega
   | .bvar i, n, c => by
-    simp only [Expr.liftLooseBVars, peelAll]; split <;> rfl
+    simp only [Expr.liftLooseBVars]; split <;> simp [peelAll, *]
   | .fvar _ _, _, _ | .sort _, _, _ | .const _ _, _, _ | .app _ _, _, _
   | .lam _ _ _, _, _ | .letE _ _ _ _, _, _ | .lit _, _, _ | .proj _ _ _, _, _ => by
     simp [Expr.liftLooseBVars, peelAll]
@@ -1618,12 +1618,13 @@ theorem ruleBodiesAt_renameConsts_of_recTypeAt {V : ReconView} {f : KKey → KKe
             cases hprim : V.ind e0.addr with
             | none => simp [hprim] at hR
             | some prim =>
-              simp only [hprim, hself] at hR
+              simp only [hprim, hself, List.length_map, List.length_range] at hR
               cases hcd : Binding.FamilyRecon.collectDoms V fuel nP
                   (prim.ty.instantiateLevelParams (List.range prim.nl)
                     ((List.range prim.nl).map fun i => Level.param (off + i))) with
               | none => simp [hcd] at hR
               | some pDoms =>
+                obtain ⟨paramDoms, _⟩ := pDoms
                 simp only [hcd] at hR
                 cases hmot : Binding.FamilyRecon.allMotives V fuel (elimLevel off) nP es 0 with
                 | none => simp [hmot] at hR
