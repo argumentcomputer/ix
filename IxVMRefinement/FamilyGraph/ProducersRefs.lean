@@ -2834,13 +2834,16 @@ theorem rec_family_block_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
           unfold Binding.FamilyOf.lastDom at h ⊢
           cases hnd : Binding.FamilyOf.node cHost e with
           | all d' b' =>
-            dsimp only at h ⊢
+            rw [hnd] at h; dsimp only at h ⊢
             cases hb' : Binding.FamilyOf.node cHost b' with
-            | all _ _ => exact ih k₂' b' d (by omega) h
+            | all _ _ =>
+              rw [hb'] at h; exact ih k₂' b' d (by omega) h
             | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | app _ _
-            | lam _ _ | letE _ _ _ _ _ | share _ => exact h
+            | lam _ _ | letE _ _ _ _ _ | share _ =>
+              rw [hb'] at h; exact h
           | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | app _ _
-          | lam _ _ | letE _ _ _ _ _ | share _ => cases h
+          | lam _ _ | letE _ _ _ _ _ | share _ =>
+            rw [hnd] at h; cases h
       have hsp_mono : ∀ k₁ k₂ e, k₁ ≤ k₂ →
           (∀ f a, Binding.FamilyOf.spineHead cHost k₁ e ≠ .app f a) →
           Binding.FamilyOf.spineHead cHost k₂ e = Binding.FamilyOf.spineHead cHost k₁ e := by
@@ -2863,7 +2866,7 @@ theorem rec_family_block_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
           unfold Binding.FamilyOf.spineHead at hne ⊢
           cases hnd : Binding.FamilyOf.node cHost e with
           | app f a =>
-            dsimp only at hne ⊢
+            rw [hnd] at hne; dsimp only at hne ⊢
             exact ih k₂' f (by omega) hne
           | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | lam _ _
           | all _ _ | letE _ _ _ _ _ | share _ => rfl
