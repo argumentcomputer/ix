@@ -387,8 +387,8 @@ theorem wrapperArity_of_observed {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
     have hv := congrArg ZMod.val hf
     omega
   subst hkeq
-  dsimp [Core.Ctx.stored, c] at hfind_ci
-  simp [wrapperArity, hfind_ci, hlam_pos]
+  have hfind_env : env.find? w = some (.defnInfo cv V hn_hint) := hfind_ci
+  simp [wrapperArity, hfind_env, hlam_pos]
 
 /-- Wrapper consumption carrying an observation predicate `ObsW` on every consumed wrapper. -/
 inductive ConsumesObs (W : KKey → Option (Option Nat)) (ObsW : KKey → Nat → Prop) :
@@ -1106,6 +1106,23 @@ private theorem fieldBVars_renameConsts (f : KKey → KKey) (hd : KExpr) (nf nb 
   rw [appSpine_renameConsts, List.map_map]
   rfl
 
+private theorem map_id_of_mem_wb {α : Type} {f : α → α} :
+    ∀ {l : List α}, (∀ x ∈ l, f x = x) → l.map f = l
+  | [], _ => rfl
+  | a :: l, h => by
+    simp only [List.map_cons, h a List.mem_cons_self,
+      map_id_of_mem_wb fun x hx => h x (List.mem_cons_of_mem _ hx)]
+
+private theorem mem_of_mem_zipIdx_wb {α : Type} {x : α} {i : Nat} :
+    ∀ {l : List α} {s : Nat}, (x, i) ∈ l.zipIdx s → x ∈ l
+  | [], _, h => nomatch h
+  | a :: l, s, h => by
+    rcases List.mem_cons.mp h with he | h'
+    · injection he with hx _
+      subst hx
+      exact List.mem_cons_self
+    · exact List.mem_cons_of_mem _ (mem_of_mem_zipIdx_wb h')
+
 private theorem wrapLams_renameConsts (f : KKey → KKey) (body : KExpr) (doms : List KExpr)
     (elim : KLevel) :
     (wrapLams body doms elim).renameConsts f =
@@ -1113,9 +1130,10 @@ private theorem wrapLams_renameConsts (f : KKey → KKey) (body : KExpr) (doms :
   induction doms with
   | nil => rfl
   | cons d ds ih =>
-    simp only [wrapLams, List.foldr_cons, List.map_cons, Expr.renameConsts]
-    congr 1
-    exact ih
+    show Expr.lam (d.renameConsts f) ((wrapLams body ds elim).renameConsts f) (Core.bmeta elim) =
+      Expr.lam (d.renameConsts f) (wrapLams (body.renameConsts f) (ds.map (Expr.renameConsts f)) elim)
+        (Core.bmeta elim)
+    rw [ih]
 
 private theorem applyIhs_renameConsts {V : ReconView} {f : KKey → KKey}
     {rm : List Nat} {norm : List KExpr} {peersC peersW : List _root_.Address}
@@ -1140,7 +1158,7 @@ private theorem applyIhs_renameConsts {V : ReconView} {f : KKey → KKey}
     intro headC headW resC hhd _ h
     simp only [applyIhs, Option.some.injEq] at h ⊢
     subst h
-    exact congrArg some hhd.symm
+    exact hhd.symm
   | cons fieldIdx rest ih =>
     intro headC headW resC hhd hfix h
     simp only [applyIhs] at h ⊢
@@ -1180,8 +1198,8 @@ private theorem applyIhs_renameConsts {V : ReconView} {f : KKey → KKey}
           congr 2
           · congr 1
             congr 1
-            exact List.map_id'' hidx_fix
-          · exact List.map_id'' hfds_fix
+            exact map_id_of_mem_wb (by simpa only [Nat.add_zero] using hidx_fix)
+          · exact map_id_of_mem_wb hfds_fix
         exact ih (k + 1) _ _ resC hstep_hd (fun j fi d hj hd' => by
           have := hfix (j + 1) fi d hj hd'
           simpa [Nat.add_assoc, Nat.add_comm 1 j] using this) h
@@ -1241,7 +1259,7 @@ private theorem peelAll_liftLooseBVars :
       exact (hzip (peelAll b).1 0).symm
     · rw [h2]; simp only [List.length_cons]; congr 1; omega
   | .bvar i, n, c => by
-    simp only [Expr.liftLooseBVars]; split <;> simp [peelAll]
+    simp only [Expr.liftLooseBVars, peelAll]; split <;> rfl
   | .fvar _ _, _, _ | .sort _, _, _ | .const _ _, _, _ | .app _ _, _, _
   | .lam _ _ _, _, _ | .letE _ _ _ _, _, _ | .lit _, _, _ | .proj _ _ _, _, _ => by
     simp [Expr.liftLooseBVars, peelAll]
@@ -1538,18 +1556,20 @@ private theorem ruleBodies_renameConsts_of_fixed {V : ReconView} {f : KKey → K
                         obtain ⟨⟨d₁, i₁⟩, hd₁, rfl⟩ := List.mem_map.mp hd
                         have hd₁_mem :
                             d₁ ∈ (peelAll (dom.liftLooseBVars ((peelAll raw).1.length - fi) 0)).1 :=
-                          List.mem_of_mem_zipIdx hd₁
+                          mem_of_mem_zipIdx_wb hd₁
                         rw [h1_step.1] at hd₁_mem
                         obtain ⟨⟨d₀, i₀⟩, hd₀, rfl⟩ := List.mem_map.mp hd₁_mem
-                        have hd₀_mem : d₀ ∈ (peelAll dom).1 := List.mem_of_mem_zipIdx hd₀
+                        have hd₀_mem : d₀ ∈ (peelAll dom).1 := mem_of_mem_zipIdx_wb hd₀
                         exact hfix_lift _ _ _ (hfix_lift _ _ _ (h1 d₀ hd₀_mem))
                       · intro a ha
                         rw [h2_step.2, h1_step.2, getAppArgs_liftLooseBVars,
                           getAppArgs_liftLooseBVars, ← List.map_drop, ← List.map_drop] at ha
                         obtain ⟨a₁, ha₁, rfl⟩ := List.mem_map.mp ha
                         obtain ⟨a₀, ha₀, rfl⟩ := List.mem_map.mp ha₁
-                        exact hfix_lift _ _ _ (hfix_lift _ _ _ (h2 a₀ ha₀))
+                        exact hfix_lift _ _ _ (hfix_lift _ _ _
+                          (h2 a₀ (by simpa only [Nat.zero_add] using ha₀)))
                   · cases hrbC
+          dsimp only
           rw [hrbW, ih bsC' (fun c' hc' => hfix c' (List.mem_cons_of_mem _ hc')) hrest]
           rfl
 
@@ -1600,8 +1620,7 @@ theorem ruleBodiesAt_renameConsts_of_recTypeAt {V : ReconView} {f : KKey → KKe
             | some prim =>
               simp only [hprim, hself] at hR
               cases hcd : Binding.FamilyRecon.collectDoms V fuel nP
-                  (prim.ty.instantiateLevelParams (List.range ((List.range prim.nl).map
-                    fun i => Level.param (off + i)).length)
+                  (prim.ty.instantiateLevelParams (List.range prim.nl)
                     ((List.range prim.nl).map fun i => Level.param (off + i))) with
               | none => simp [hcd] at hR
               | some pDoms =>
@@ -1632,7 +1651,7 @@ theorem ruleBodiesAt_renameConsts_of_recTypeAt {V : ReconView} {f : KKey → KKe
                         obtain ⟨info, prev', ms, hvi, hmd, hms_sub⟩ :=
                           allMinors_mem_at es 0 0 minDoms hmin k ek hek
                         have hinfo_eq : info = self := Option.some.inj (hvi.symm.trans hself)
-                        subst hinfo_eq
+                        subst info
                         refine ruleBodies_renameConsts_of_fixed hpeers (List.range self.nctors) bsC
                           ?_ hbs
                         intro c hc_mem cty np after fds ri rm ret norm hvc hpc hfc j fi dom hri hdom
@@ -1795,7 +1814,7 @@ private theorem rKeysAt_peelAll {V : ReconView} {S : _root_.Address → Prop} :
     · exact h1 x hx'
   | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
   | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
-    ⟨fun _ hm => nomatch hm, h⟩
+    ⟨(fun _ hm => nomatch hm), h⟩
 
 private theorem rKeysAt_getAppArgs {V : ReconView} {S : _root_.Address → Prop} :
     ∀ (e : KExpr), RKeysAt V S e → ∀ a ∈ e.getAppArgs, RKeysAt V S a
@@ -1971,11 +1990,11 @@ theorem majorDom_pos_eq_of_pins {dC dW : KExpr} {hd : KExpr} {nP kIdx shift : Na
     dW.getAppFn = dC.getAppFn ∧ dW.getAppArgs = dC.getAppArgs := by
   have htakeC : dC.getAppArgs.take nP = pins.map (Expr.liftLooseBVars shift 0) := by
     rw [← hlowC, List.map_map]
-    exact (List.map_id'' fun x hx =>
+    exact (map_id_of_mem_wb fun x hx =>
       liftLooseBVars_lowerBVars_of_not_hasBVarIn x shift 0 (by simpa using hnoC x hx)).symm
   have htakeW : dW.getAppArgs.take nP = pins.map (Expr.liftLooseBVars shift 0) := by
     rw [← hlowW, List.map_map]
-    exact (List.map_id'' fun x hx =>
+    exact (map_id_of_mem_wb fun x hx =>
       liftLooseBVars_lowerBVars_of_not_hasBVarIn x shift 0 (by simpa using hnoW x hx)).symm
   refine ⟨hfnW.trans hfnC.symm, ?_⟩
   rw [← List.take_append_drop nP dW.getAppArgs, ← List.take_append_drop nP dC.getAppArgs,
