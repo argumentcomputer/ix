@@ -43,10 +43,11 @@ theorem infer_step (c : ScopedCtx) (hc : ScopedCoreBase c) (hfire : ProjGuardFir
   | .io_const_num_lvls, _, _, _, _, _, ev, ih => io_const_num_lvls_step c ev ih
   | .io_const_type_of, _, _, _, _, _, ev, ih => io_const_type_of_step c ev ih
   | .k_infer_only, _, _, _, _, _, ev, ih => k_infer_only_step c ev ih
-  | .k_infer_only_core, _, _, _, _, _, ev, ih => k_infer_only_core_step c hc hfire ev ih
+  | .k_infer_only_core, _, _, _, _, _, ev, ih => k_infer_only_core_step c hc ev ih
   | .io_app_cod, _, _, _, _, _, ev, ih => io_app_cod_step c ev ih
   | .forall_datum_ok, _, _, _, _, _, ev, ih => forall_datum_ok_step c ev ih
   | .lam_datum_ok, _, _, _, _, _, ev, ih => lam_datum_ok_step c ev ih
+  | .k_infer_only_proj, _, _, _, _, _, ev, ih => k_infer_only_proj_step c hc hfire ev ih
   | .ensure_sort_only, _, _, _, _, _, ev, ih => ensure_sort_only_step c ev ih
   | .io_peel_params_subst, _, _, _, _, _, ev, ih => io_peel_params_subst_step c ev ih
 

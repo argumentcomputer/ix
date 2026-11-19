@@ -155,7 +155,7 @@ def k_infer_app_spine_loop : SpecFn := fun c args h r h' calls =>
 (`natLitSupported`, `strLitSupported`) come from `EnvFacts` and the table's bindings. -/
 def k_infer_lit : SpecFn := fun c args h r h' calls =>
   ∀ rc lit, args = [rc, lit] → CoreGood c calls → c.rc h rc → ∀ l, LitRep h lit l →
-    ∀ d Γ, ∃ T, c.tm d Γ h' T r ∧ Infer c.env .full d (.lit l) T
+    ∀ g d Γ, ∃ T, c.tm d Γ h' T r ∧ Infer c.env g d (.lit l) T
 
 /-- `peel_params_subst(ty, args, n_params)`: **a constructor type with its first `n` binders
 instantiated by the structure's parameters**, syntactically (`instPis`). -/
@@ -301,6 +301,15 @@ def ensure_sort_only : SpecFn := fun c args h r h' calls =>
     ∀ d Γ, c.types Γ h d types → ∀ E, c.tm d Γ h E e →
       ∃ (T : KExpr) (u : KLevel), Infer c.env .io d E T ∧ Red c.env d T (.sort u) ∧ LvRep h' u r
 
+/-- `k_infer_only_proj(rc, struct_addr, fidx, e1, types)`: **a projection's io-grade type**
+(`Infer.proj` at `.io`). -/
+def k_infer_only_proj : SpecFn := fun c args h r h' calls =>
+  ∀ rc sa fi e1 types, args = [rc, sa, fi, e1, types] → CoreGood c calls → c.rc h rc →
+    ∀ i : F, fi = .field i → ∀ d Γ, c.types Γ h d types →
+      ∀ (a : Bytes.Address) (PE : KExpr), RepAddr h a sa → ProjPermitted c.κ (ixAddr a) →
+        c.tm d Γ h PE e1 →
+        ∃ T, c.tm d Γ h' T r ∧ Infer c.env .io d (.proj (c.κ (ixAddr a)) (ZMod.val i) PE) T
+
 /-- `io_peel_params_subst(ty, args, n_params)`: as `peel_params_subst`. -/
 def io_peel_params_subst : SpecFn := peel_params_subst
 
@@ -313,7 +322,8 @@ inductive Fn where
   | is_inductive_prop | level_may_be_nonzero | proj_shape_ok | peel_n_alls_whnf
   | peel_field_loop | k_infer_proj | k_ensure_sort | k_check
   | io_types_lookup | io_const_num_lvls | io_const_type_of | k_infer_only | k_infer_only_core
-  | io_app_cod | forall_datum_ok | lam_datum_ok | ensure_sort_only | io_peel_params_subst
+  | io_app_cod | forall_datum_ok | lam_datum_ok | k_infer_only_proj | ensure_sort_only
+  | io_peel_params_subst
   deriving DecidableEq, Repr
 
 /-- The function's symbol. -/
@@ -345,6 +355,7 @@ def Fn.name : Fn → String
   | .io_app_cod => "KernelInferOnly::io_app_cod"
   | .forall_datum_ok => "KernelInferOnly::forall_datum_ok"
   | .lam_datum_ok => "KernelInferOnly::lam_datum_ok"
+  | .k_infer_only_proj => "KernelInferOnly::k_infer_only_proj"
   | .ensure_sort_only => "KernelInferOnly::ensure_sort_only"
   | .io_peel_params_subst => "KernelInferOnly::io_peel_params_subst"
 
@@ -377,6 +388,7 @@ def Fn.spec : Fn → SpecFn
   | .io_app_cod => Specs.Infer.io_app_cod
   | .forall_datum_ok => Specs.Infer.forall_datum_ok
   | .lam_datum_ok => Specs.Infer.lam_datum_ok
+  | .k_infer_only_proj => Specs.Infer.k_infer_only_proj
   | .ensure_sort_only => Specs.Infer.ensure_sort_only
   | .io_peel_params_subst => Specs.Infer.io_peel_params_subst
 

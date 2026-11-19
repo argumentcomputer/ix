@@ -1307,4 +1307,37 @@ theorem k_infer_proj_step (c : ScopedCtx) (hc : ScopedCoreBase c) (hfire : ProjG
     rw [hnp, hni] at op710
     rw [NatAux.add_ok op710, add_zero]
 
+/-- `KernelInferOnly::k_infer_only_proj`: io-grade projection inference (`Infer.proj`). -/
+theorem k_infer_only_proj_step (c : ScopedCtx) (hc : ScopedCoreBase c) (hfire : ProjGuardFires c)
+    {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn W "KernelInferOnly::k_infer_only_proj" args h r h' calls) (ih : IH c calls) :
+    Specs.Infer.k_infer_only_proj c args h r h' calls := by
+  intro rc sa fi e1 types hargs good hrc i hfi d Γ htypes a PE ha hperm hPE
+  subst hargs
+  rcases Obs.«KernelInferOnly::k_infer_only_proj».obs ev with
+    ⟨v1, m2, cs12, v39, m40, cs50, m78, cs89, x_head, x_args, x_head_addr, x_lvls,
+      v156, m159, cs167, m194, p201, cs207, x_ind_nlvls, x_ind_ty, x_n_params, x_n_indices,
+      x_num_ctors, w234, x_block_addr, x_ind_idx, v302, m303, cs313, m357, p364, cs370,
+      x_ctor_nlvls, x_ctor_ty, w405, w406, w407, w408, w409, w410, v479, m480, cs490,
+      v509, m510, cs520, v547, m548, cs558, v600, m601, cs611, v614, v616, m618, cs626,
+      m669, cs677,
+      ev14, ev52, ev91, ld127, ev169, heq192, ev209, ld203, heq301, ev315, ev372, ld366, heq478,
+      ev492, ev522, ev560, ev628, ev679, ev613, he714, he715, hc716⟩
+  have hlt12 : cs12.length < calls.length := by rw [hc716]; lt_calls
+  have g12 : CoreGood c cs12 := good.sub fun x hx => by rw [hc716]; simp [hx]
+  have hlt520 : cs520.length < calls.length := by rw [hc716]; lt_calls
+  have g520 : CoreGood c cs520 := good.sub fun x hx => by rw [hc716]; simp [hx]
+  refine infer_proj_common c hc hfire ih good hrc hfi htypes ha hperm hPE hc716 ?_ ev52 ev91 ld127
+    ev169 heq192 ev209 ld203 heq301 ev315 ev372 ld366 heq478 ev492 ?_ ev560 ev628 ?_ ev679 ev613
+    he714 he715
+  · obtain ⟨TPE, hTPE, hinf⟩ := ih.get (.infer .k_infer_only) hlt12 ev14 rc e1 types rfl g12
+      hrc d Γ htypes PE hPE
+    exact ⟨TPE, hTPE, hinf, ObsFn.heap_extends ev14⟩
+  · intro n T As hnp hT hAs
+    obtain ⟨T_after, hT_after, hpis⟩ := ih.get (.infer .io_peel_params_subst) hlt520 ev522
+      v479 x_args x_n_params rfl g520 n hnp d Γ T As hT hAs
+    exact ⟨T_after, hT_after, hpis, ObsFn.heap_extends ev522⟩
+  · intro _ hnp _
+    exact hnp
+
 end IxVM.Refinement.Core

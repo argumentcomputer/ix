@@ -71,14 +71,15 @@ def k_infer_only_core := aiur_fn⟦
 
         KernelTypes::KExprNode::App(f, a) => {
           let f_ty = k_infer_only(rc, f, types);
-          match (*(f_ty)) {
-            KernelTypes::KExprNode::Forall(dom, cod, bl) => {  io_app_cod(rc, dom, cod, bl, a, types) } ,
+          let (dom, cod, bl) = match (*(f_ty)) {
+            KernelTypes::KExprNode::Forall(dom, cod, bl) => {  (dom, cod, bl) } ,
             _ => {
               let f_ty_whnf = KernelWhnf::whnf(rc, f_ty, types);
               match (*(f_ty_whnf)) {
-                KernelTypes::KExprNode::Forall(dom, cod, bl) => {  io_app_cod(rc, dom, cod, bl, a, types) } ,
+                KernelTypes::KExprNode::Forall(dom, cod, bl) => {  (dom, cod, bl) } ,
               } } ,
-          } } ,
+          };
+          io_app_cod(rc, dom, cod, bl, a, types) } ,
 
         KernelTypes::KExprNode::Lam(ty, body, bl) => {
           let types2 = (&(Lists::Node::Cons(ty, types)));
@@ -97,46 +98,10 @@ def k_infer_only_core := aiur_fn⟦
           let body_substed = KernelSubst::expr_inst1(body, val, 0);
           k_infer_only(rc, body_substed, types) } ,
 
-        KernelTypes::KExprNode::Lit(lit) => {
-          match lit {
-            KernelTypes::KLiteral::Nat(_) => {
-              (&(KernelTypes::KExprNode::Const(KernelRoles::role_addr(rc, KernelRoleSpec::role_nat()), (&(Lists::Node::Nil))))) } ,
-            KernelTypes::KLiteral::Str(_) => {
-              (&(KernelTypes::KExprNode::Const(KernelRoles::role_used_implicitly(rc, KernelRoleSpec::role_string()), (&(Lists::Node::Nil))))) } ,
-          } } ,
+        KernelTypes::KExprNode::Lit(lit) => {  KernelInfer::k_infer_lit(rc, lit) } ,
 
         KernelTypes::KExprNode::Proj(struct_addr, fidx, e1) => {
-          let val_ty = k_infer_only(rc, e1, types);
-          let wty = KernelWhnf::whnf(rc, val_ty, types);
-          match KernelTypes::collect_spine(wty) {
-            (head, args) => {
-              match (*(head)) {
-                KernelTypes::KExprNode::Const(head_addr, lvls) => {
-                  assert_eq!(Bytes::address_eq(head_addr, struct_addr), 1,
-                    "projection's structure type differs from the value's head");
-                  let ind_ci = (*(Ingress::get_ci(head_addr)));
-                  match ind_ci {
-                    KernelTypes::KConstantInfo::Induct(ind_nlvls, ind_ty, n_params, n_indices, num_ctors, _,
-                                           block_addr, ind_idx) => {
-
-                      assert_eq!(num_ctors, 1,
-                        "projection on an inductive with more than one constructor");
-                      KernelInfer::proj_shape_ok(n_indices, args, n_params, lvls, ind_nlvls);
-                      let ctor_ci = (*(KernelModeled::proj_ctor(block_addr, ind_idx)));
-                      match ctor_ci {
-                        KernelTypes::KConstantInfo::Ctor(ctor_nlvls, ctor_ty, _, _, _, _, _, _) => {
-                          assert_eq!(ctor_nlvls, ind_nlvls,
-                            "projection's constructor universe count differs from its inductive's");
-                          let ctor_ty_inst = KernelLevels::expr_inst_levels(ctor_ty, lvls);
-                          let after_params = io_peel_params_subst(ctor_ty_inst, args, n_params);
-                          let field_ty = KernelInfer::peel_field_loop(after_params, fidx, 0, struct_addr, e1);
-                          KernelInfer::prop_guard_ok(KernelInfer::proj_guard(rc, block_addr, ind_idx, fidx), lvls,
-                            KernelInfer::is_inductive_prop(rc, ind_ty, n_params));
-                          field_ty } ,
-                      } } ,
-                  } } ,
-              } } ,
-          } } ,
+          k_infer_only_proj(rc, struct_addr, fidx, e1, types) } ,
       }
     }
 ⟧
@@ -151,12 +116,13 @@ def io_app_cod := aiur_fn⟦
   inline fn io_app_cod(rc: KernelRoles::RoleCtx, dom: KernelTypes::KExpr, cod: KernelTypes::KExpr, bl: KernelTypes::KLevel,
                 a: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
       match KernelLevels::level_is_not_zero(bl) {
-        1 => {  KernelSubst::expr_inst1(cod, a, 0) } ,
+        1 => {  () } ,
         _ => {
           assert_eq!(KernelDefEq::k_is_def_eq(rc, k_infer_only(rc, a, types), dom, types), 1,
             "io application: the argument's type is not the domain");
-          KernelSubst::expr_inst1(cod, a, 0) } ,
-      }
+          () } ,
+      };
+      KernelSubst::expr_inst1(cod, a, 0)
     }
 ⟧
 
@@ -174,14 +140,49 @@ def forall_datum_ok := aiur_fn⟦
 def lam_datum_ok := aiur_fn⟦
   inline fn lam_datum_ok(rc: KernelRoles::RoleCtx, body: KernelTypes::KExpr, body_ty: KernelTypes::KExpr,
                          bl: KernelTypes::KLevel, types2: Lists::List<KernelTypes::KExpr>) -> () {
-      match (*(body)) {
-        KernelTypes::KExprNode::Lam(_, _, inner) => {
-          assert_eq!(KernelLevels::pw_eq(bl, inner), 1, "a lambda's datum differs from its inner lambda's");
-          () } ,
-        _ => {
-          assert_eq!(KernelLevels::pw_eq(ensure_sort_only(rc, body_ty, types2), bl), 1,
-            "a lambda's datum is not the zero-ness of its body type's sort");
-          () } ,
+      let lhs = match (*(body)) {
+        KernelTypes::KExprNode::Lam(_, _, inner) => {  inner } ,
+        _ => {  ensure_sort_only(rc, body_ty, types2) } ,
+      };
+      assert_eq!(KernelLevels::pw_eq(lhs, bl), 1,
+        "a lambda's datum does not match its body");
+      ()
+    }
+⟧
+
+def k_infer_only_proj := aiur_fn⟦
+  fn k_infer_only_proj(rc: KernelRoles::RoleCtx, struct_addr: Bytes::AddressRef, fidx: Field, e1: KernelTypes::KExpr,
+                       types: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
+      let val_ty = k_infer_only(rc, e1, types);
+      let wty = KernelWhnf::whnf(rc, val_ty, types);
+      match KernelTypes::collect_spine(wty) {
+        (head, args) => {
+          match (*(head)) {
+            KernelTypes::KExprNode::Const(head_addr, lvls) => {
+              assert_eq!(Bytes::address_eq(head_addr, struct_addr), 1,
+                "projection's structure type differs from the value's head");
+              let ind_ci = (*(Ingress::get_ci(head_addr)));
+              match ind_ci {
+                KernelTypes::KConstantInfo::Induct(ind_nlvls, ind_ty, n_params, n_indices, num_ctors, _,
+                                       block_addr, ind_idx) => {
+
+                  assert_eq!(num_ctors, 1,
+                    "projection on an inductive with more than one constructor");
+                  KernelInfer::proj_shape_ok(n_indices, args, n_params, lvls, ind_nlvls);
+                  let ctor_ci = (*(KernelModeled::proj_ctor(block_addr, ind_idx)));
+                  match ctor_ci {
+                    KernelTypes::KConstantInfo::Ctor(ctor_nlvls, ctor_ty, _, _, _, _, _, _) => {
+                      assert_eq!(ctor_nlvls, ind_nlvls,
+                        "projection's constructor universe count differs from its inductive's");
+                      let ctor_ty_inst = KernelLevels::expr_inst_levels(ctor_ty, lvls);
+                      let after_params = io_peel_params_subst(ctor_ty_inst, args, n_params);
+                      let field_ty = KernelInfer::peel_field_loop(after_params, fidx, 0, struct_addr, e1);
+                      KernelInfer::prop_guard_ok(KernelInfer::proj_guard(rc, block_addr, ind_idx, fidx), lvls,
+                        KernelInfer::is_inductive_prop(rc, ind_ty, n_params));
+                      field_ty } ,
+                  } } ,
+              } } ,
+          } } ,
       }
     }
 ⟧

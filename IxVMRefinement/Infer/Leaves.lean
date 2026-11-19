@@ -153,18 +153,19 @@ theorem lam_datum_ok_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : 
   intro rc body bt bl types hargs good hrc d Γ htypes Bo Bt ℓ hBo hBt hℓ
   subst hargs
   rcases Obs.«KernelInferOnly::lam_datum_ok».obs ev with
-    ⟨w20, w21, x_inner, v48, m51, cs59, ld12, ev61, heq84, -, -, hc89⟩ |
-    ⟨v1, v105, m108, cs116, v119, m122, cs130, ld12, hne90, ev132, ev118, heq170, -, -, hc175⟩
-  · subst hc89 heq84
-    obtain ⟨T', B', ℓ', rfl, -, -, hℓ'⟩ := hBo.lam_of_load ld12
-    obtain ⟨hr, -⟩ := ih.get (.levels .pw_eq) (by lt_calls) ev61 bl x_inner rfl
-      (good.sub fun x hx => by simp [hx]) ℓ ℓ' hℓ hℓ'
-    exact .inl ⟨T', B', ℓ', rfl, zeroness_eq_of_one hr⟩
-  · subst hc175 heq170
-    obtain ⟨T, u, hinf, hred, la, hla, hle⟩ := ih.get (.infer .ensure_sort_only) (by lt_calls) ev132
+    ⟨v_lhs, m_lhs, cs_lhs, v_eq, m_eq, cs_eq, sg, ev_pw, heq, -, -, hc⟩
+  subst hc heq
+  rcases sg with
+    ⟨w1, w2, x_inner, ld, rfl, rfl, rfl⟩ |
+    ⟨v1, cs_es, ld, hne, ev_es, rfl⟩
+  · obtain ⟨T', B', ℓ', rfl, -, -, hℓ'⟩ := hBo.lam_of_load ld
+    obtain ⟨hr, -⟩ := ih.get (.levels .pw_eq) (by lt_calls) ev_pw v_lhs bl rfl
+      (good.sub fun x hx => by simp [hx]) ℓ' ℓ hℓ' hℓ
+    exact .inl ⟨T', B', ℓ', rfl, (zeroness_eq_of_one hr).symm⟩
+  · obtain ⟨T, u, hinf, hred, la, hla, hle⟩ := ih.get (.infer .ensure_sort_only) (by lt_calls) ev_es
       rc bt types rfl (good.sub fun x hx => by simp [hx]) hrc d Γ htypes Bt hBt
-    have e1 := ObsFn.heap_extends ev132
-    obtain ⟨hr, -⟩ := ih.get (.levels .pw_eq) (by lt_calls) ev118 v119 bl rfl
+    have e1 := ObsFn.heap_extends ev_es
+    obtain ⟨hr, -⟩ := ih.get (.levels .pw_eq) (by lt_calls) ev_pw v_lhs bl rfl
       (good.sub fun x hx => by simp [hx]) la ℓ hla (hℓ.mono e1)
     exact .inr ⟨T, u, hinf, hred, (zeronessOf_congr hle).trans (zeroness_eq_of_one hr)⟩
 
@@ -199,7 +200,7 @@ theorem k_infer_lit_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (S
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInfer::k_infer_lit" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_lit c args h r h' calls := by
-  intro rc lit hargs good hrc l hl d Γ
+  intro rc lit hargs good hrc l hl g d Γ
   subst hargs
   rcases Obs.«KernelInfer::k_infer_lit».obs ev with
     ⟨w17, v31, m34, cs42, v46, m55, cs63, m67, hv15, he27, hm26, ev65, ev44, hm75, hc79⟩ |
@@ -306,34 +307,37 @@ theorem io_app_cod_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : He
   subst hargs
   have hC' : c.tmk d Γ (ZMod.val (0 : F) + 1) h C cod := by rw [ZMod.val_zero]; exact hC
   rcases Obs.«KernelInferOnly::io_app_cod».obs ev with
-    ⟨m2, cs13, cs31, ev15, ev33, hc57⟩ |
-    ⟨v1, m2, cs13, v73, m76, cs84, v88, m99, cs107, cs158, ev15, hne58, ev109, ev86, heq154, ev160,
-      hc184⟩
-  · subst hc57
-    obtain ⟨hr, hm2⟩ := ih.get (.levelOps .level_is_not_zero) (by lt_calls) ev15 bl rfl ℓ hℓ
-    rw [hm2] at ev33
+    ⟨v_unit, m_mid, cs_mid, cs_inst, sg, ev_inst, hc⟩
+  subst hc
+  rcases sg with
+    ⟨m_nz, cs_nz, ev_nz, -, hm_mid, rfl⟩ |
+    ⟨v_nz, m_nz, cs_nz, v_eq, m_eq, cs_eq, v_ta, m_ta, cs_ta, ev_nz, hne, ev_inf, ev_deq, heq,
+      -, hm_mid, rfl⟩
+  · subst hm_mid
+    obtain ⟨hr, hm2⟩ := ih.get (.levelOps .level_is_not_zero) (by lt_calls) ev_nz bl rfl ℓ hℓ
+    rw [hm2] at ev_inst
     have hnz : ℓ.isNeverZero = true := by
       by_contra hn
       rw [ite_eq_right hn] at hr
       exact field_one_ne_zero hr
-    have hi := ih.get (.subst .expr_inst1) (by lt_calls) ev33 cod a 0 rfl
+    have hi := ih.get (.subst .expr_inst1) (by lt_calls) ev_inst cod a 0 rfl
       (good.sub fun x hx => by simp [hx]) d Γ C A hC' hA
     rw [ZMod.val_zero] at hi
     refine ⟨hi, .inl ?_⟩
     show ℓ.zeronessOf.isNever = true
     rw [← Ix.Kernel.Level.isNeverZero_eq_isNever]
     exact hnz
-  · subst hc184 heq154
-    obtain ⟨-, hm2⟩ := ih.get (.levelOps .level_is_not_zero) (by lt_calls) ev15 bl rfl ℓ hℓ
-    rw [hm2] at ev109
-    obtain ⟨TA, hTA, hinf⟩ := ih.get (.infer .k_infer_only) (by lt_calls) ev109 rc a types rfl
+  · subst hm_mid heq
+    obtain ⟨-, hm2⟩ := ih.get (.levelOps .level_is_not_zero) (by lt_calls) ev_nz bl rfl ℓ hℓ
+    rw [hm2] at ev_inf
+    obtain ⟨TA, hTA, hinf⟩ := ih.get (.infer .k_infer_only) (by lt_calls) ev_inf rc a types rfl
       (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A hA
-    have e1 := ObsFn.heap_extends ev109
-    have hdeq := ih.get (.defEq .k_is_def_eq) (by lt_calls) ev86 rc v88 dom types rfl
+    have e1 := ObsFn.heap_extends ev_inf
+    have hdeq := ih.get (.defEq .k_is_def_eq) (by lt_calls) ev_deq rc v_ta dom types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono e1 hrc) d Γ (types_mono e1 htypes) TA D
       hTA (Tm.mono e1 hD) field_one_ne_zero
-    have e2 := e1.trans (ObsFn.heap_extends ev86)
-    have hi := ih.get (.subst .expr_inst1) (by lt_calls) ev160 cod a 0 rfl
+    have e2 := e1.trans (ObsFn.heap_extends ev_deq)
+    have hi := ih.get (.subst .expr_inst1) (by lt_calls) ev_inst cod a 0 rfl
       (good.sub fun x hx => by simp [hx]) d Γ C A (Tm.mono e2 hC') (Tm.mono e2 hA)
     rw [ZMod.val_zero] at hi
     exact ⟨hi, .inr ⟨TA, hinf, hdeq⟩⟩

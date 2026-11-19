@@ -273,9 +273,9 @@ theorem k_infer_core_step (c : ScopedCtx) (hc : ScopedCoreBase c)
     subst hc929
     rcases hE.lit_of_load ld12 with ⟨lp, limbs, rfl, hl, -, rfl⟩ | ⟨bp, bytes, s, rfl, hb, hs, rfl⟩
     · exact ih.get (.infer .k_infer_lit) (by lt_calls) ev912 rc _ rfl
-        (good.sub fun x hx => by simp [hx]) hrc _ (.inl ⟨lp, _, rfl, ⟨limbs, hl, rfl⟩, rfl⟩) d Γ
+        (good.sub fun x hx => by simp [hx]) hrc _ (.inl ⟨lp, _, rfl, ⟨limbs, hl, rfl⟩, rfl⟩) .full d Γ
     · exact ih.get (.infer .k_infer_lit) (by lt_calls) ev912 rc _ rfl
-        (good.sub fun x hx => by simp [hx]) hrc _ (.inr ⟨bp, bytes, s, rfl, hb, hs, rfl⟩) d Γ
+        (good.sub fun x hx => by simp [hx]) hrc _ (.inr ⟨bp, bytes, s, rfl, hb, hs, rfl⟩) .full d Γ
   case Proj x_struct_addr x_fidx x_e1 cs955 ld12 ev957 hc998 =>
     subst hc998
     obtain ⟨a, i, Es, rfl, rfl, ha, hEs⟩ := hE.proj_of_load ld12
@@ -285,7 +285,6 @@ theorem k_infer_core_step (c : ScopedCtx) (hc : ScopedCoreBase c)
 
 /-- `KernelInferOnly::k_infer_only_core`: one step of io-grade inference by the head node. -/
 theorem k_infer_only_core_step (c : ScopedCtx) (hc : ScopedCoreBase c)
-    (hfire : ProjGuardFires c)
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelInferOnly::k_infer_only_core" args h r h' calls) (ih : IH c calls) :
     Specs.Infer.k_infer_only_core c args h r h' calls := by
@@ -345,38 +344,40 @@ theorem k_infer_only_core_step (c : ScopedCtx) (hc : ScopedCoreBase c)
       (good.sub fun x hx => by simp [hx]) Γ 0 _ us (hty 0 Γ) ⟨ls, hls.mono e1, hus⟩
     rw [InferAux.posOf_instantiateLevelParams_perm hval.2.2.1 hus'] at hinst
     exact ⟨_, Tm.of_depth_zero hinst d, .const hfind hci.isTowerEntry hus'⟩
-  case App_Forall x_f x_a v271 m272 cs282 x_dom x_cod x_bl cs346 ld12 ev284 ld320 ev348 hc397 =>
-    subst hc397
+  case App x_f x_a v271 m272 cs282 m_mid cs_mid x_dom x_cod x_bl cs_cod ld12 ev284 sg ev_cod hc =>
+    subst hc
     obtain ⟨F0, A, rfl, hF, hA⟩ := hE.app_of_load ld12
     obtain ⟨TF, hTF, hinfF⟩ := ih.get (.infer .k_infer_only) (by lt_calls) ev284 rc x_f types rfl
       (good.sub fun x hx => by simp [hx]) hrc d Γ htypes F0 hF
     have e1 := ObsFn.heap_extends ev284
-    obtain ⟨D, C, ℓ, rfl, hD, hC, hℓ⟩ := hTF.forallE_of_load ld320
-    obtain ⟨hr, hcase⟩ := ih.get (.infer .io_app_cod) (by lt_calls) ev348 rc x_dom x_cod x_bl x_a
-      types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e1 hrc) d Γ (types_mono e1 htypes)
-      D C ℓ A hD hC hℓ (Tm.mono e1 hA)
-    refine ⟨_, hr, ?_⟩
-    rcases hcase with hnv | ⟨TA, hTA, hdeq⟩
-    · exact .appSkip hinfF .refl hnv
-    · exact .app hinfF .refl hTA hdeq
-  case App_other x_f x_a v271 m272 cs282 v309 v402 m403 cs413 x_dom x_cod x_bl cs477 ld12 ev284
-      ld320 hne398 ev415 ld451 ev479 hc528 =>
-    subst hc528
-    obtain ⟨F0, A, rfl, hF, hA⟩ := hE.app_of_load ld12
-    obtain ⟨TF, hTF, hinfF⟩ := ih.get (.infer .k_infer_only) (by lt_calls) ev284 rc x_f types rfl
-      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes F0 hF
-    have e1 := ObsFn.heap_extends ev284
-    obtain ⟨X, hX, hred⟩ := ih.get (.whnf .whnf) (by lt_calls) ev415 rc v271 types rfl
-      (good.sub fun x hx => by simp [hx]) (RCRep.mono e1 hrc) d Γ (types_mono e1 htypes) TF hTF
-    have e2 := e1.trans (ObsFn.heap_extends ev415)
-    obtain ⟨D, C, ℓ, rfl, hD, hC, hℓ⟩ := hX.forallE_of_load ld451
-    obtain ⟨hr, hcase⟩ := ih.get (.infer .io_app_cod) (by lt_calls) ev479 rc x_dom x_cod x_bl x_a
-      types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e2 hrc) d Γ (types_mono e2 htypes)
-      D C ℓ A hD hC hℓ (Tm.mono e2 hA)
-    refine ⟨_, hr, ?_⟩
-    rcases hcase with hnv | ⟨TA, hTA, hdeq⟩
-    · exact .appSkip hinfF hred hnv
-    · exact .app hinfF hred hTA hdeq
+    rcases sg with
+      ⟨x_d, x_c, x_b, ld_for, htup, hm_mid, rfl⟩ |
+      ⟨v_ft, v_w, m_w, cs_w, x_d, x_c, x_b, ld_ft, hne, ev_whnf, ld_for, htup, hm_mid, rfl⟩
+    · simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
+      obtain ⟨rfl, rfl, rfl⟩ := htup
+      subst hm_mid
+      obtain ⟨D, C, ℓ, rfl, hD, hC, hℓ⟩ := hTF.forallE_of_load ld_for
+      obtain ⟨hr, hcase⟩ := ih.get (.infer .io_app_cod) (by lt_calls) ev_cod rc _ _ _ x_a
+        types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e1 hrc) d Γ (types_mono e1 htypes)
+        D C ℓ A hD hC hℓ (Tm.mono e1 hA)
+      refine ⟨_, hr, ?_⟩
+      rcases hcase with hnv | ⟨TA, hTA, hdeq⟩
+      · exact .appSkip hinfF .refl hnv
+      · exact .app hinfF .refl hTA hdeq
+    · simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
+      obtain ⟨rfl, rfl, rfl⟩ := htup
+      subst hm_mid
+      obtain ⟨X, hX, hred⟩ := ih.get (.whnf .whnf) (by lt_calls) ev_whnf rc v271 types rfl
+        (good.sub fun x hx => by simp [hx]) (RCRep.mono e1 hrc) d Γ (types_mono e1 htypes) TF hTF
+      have e2 := e1.trans (ObsFn.heap_extends ev_whnf)
+      obtain ⟨D, C, ℓ, rfl, hD, hC, hℓ⟩ := hX.forallE_of_load ld_for
+      obtain ⟨hr, hcase⟩ := ih.get (.infer .io_app_cod) (by lt_calls) ev_cod rc _ _ _ x_a
+        types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono e2 hrc) d Γ (types_mono e2 htypes)
+        D C ℓ A hD hC hℓ (Tm.mono e2 hA)
+      refine ⟨_, hr, ?_⟩
+      rcases hcase with hnv | ⟨TA, hTA, hdeq⟩
+      · exact .appSkip hinfF hred hnv
+      · exact .app hinfF hred hTA hdeq
   case Lam x_ty x_body x_bl m553 v583 m584 cs594 v621 m622 cs632 ld12 hm563 ev596 ev634 he679
       hm678 hc707 =>
     subst hc707 hm563
@@ -438,58 +439,18 @@ theorem k_infer_only_core_step (c : ScopedCtx) (hc : ScopedCoreBase c)
     refine ⟨T, hT, ?_⟩
     rw [instShift_eq_instantiate1 hV.looseBVarsBounded]
     exact hinf
-  case Lit_Nat w1024 v1038 m1041 cs1049 v1053 m1062 cs1070 m1074 ld12 he1034 hm1033 ev1072 ev1051
-      hm1082 hc1086 =>
-    subst hc1086
-    obtain ⟨hv, hm⟩ := ih.get (.roles .role_nat) (by lt_calls) ev1072 rfl
-    rw [hv, hm] at ev1051
-    obtain ⟨a, ha, hb, hf⟩ := ih.get (.roles .role_addr) (by lt_calls) ev1051 rc .nat rfl
-      (good.sub fun x hx => by simp [hx]) hrc
-    rcases hE.lit_of_load ld12 with ⟨lp, limbs, hx, -, -, rfl⟩ | ⟨bp, bytes, s, hx, -, -, -⟩
-    · rw [he1034]
-      exact ⟨_, PrimStrAux.tmc_role_const_nil hc ha hb (by resolve_key) hm1082 hm1033 d Γ,
-        .natLit (PrimNat.natLit_of_natBlock hc hf (by decide) (by decide) (by decide))⟩
-    · injection hx with _ h2
-      exact absurd h2 (by decide)
-  case Lit_Str w1094 v1108 m1111 cs1119 v1123 m1132 cs1140 m1144 ld12 he1104 hm1103 ev1142 ev1121
-      hm1152 hc1156 =>
-    subst hc1156
-    obtain ⟨hv, hm⟩ := ih.get (.roles .role_string) (by lt_calls) ev1142 rfl
-    rw [hv, hm] at ev1121
-    obtain ⟨a, ha, hb, hf⟩ := ih.get (.roles .role_used_implicitly) (by lt_calls) ev1121 rc .string
-      rfl (good.sub fun x hx => by simp [hx]) hrc
-    rcases hE.lit_of_load ld12 with ⟨lp, limbs, hx, -, -, -⟩ | ⟨bp, bytes, s, hx, -, -, rfl⟩
-    · injection hx with _ h2
-      exact absurd h2 (by decide)
-    · rw [he1104]
-      exact ⟨_, PrimStrAux.tmc_role_const_nil hc ha hb (by resolve_key) hm1152 hm1103 d Γ, .strLit (hc.env.strLit hf)⟩
-  case Proj x_struct_addr x_fidx x_e1 v1180 m1181 cs1191 v1218 m1219 cs1229 m1257 cs1268
-      x_head x_args x_head_addr x_lvls v1335 m1338 cs1346 m1373 p1380 cs1386
-      x_ind_nlvls x_ind_ty x_n_params x_n_indices x_num_ctors w1413 x_block_addr x_ind_idx
-      v1481 m1482 cs1492 m1536 p1543 cs1549
-      x_ctor_nlvls x_ctor_ty w1584 w1585 w1586 w1587 w1588 w1589
-      v1658 m1659 cs1669 v1688 m1689 cs1699 v1726 m1727 cs1737 v1779 m1780 cs1790
-      v1793 v1795 m1797 cs1805 m1848 cs1856
-      ld12 ev1193 ev1231 ev1270 ld1306 ev1348 heq1371 ev1388 ld1382 heq1480 ev1494 ev1551 ld1545
-      heq1657 ev1671 ev1701 ev1739 ev1807 ev1858 ev1792 he1884 he1885 hc1886 =>
-    obtain ⟨a, i, PE, rfl, rfl, ha, hPE⟩ := hE.proj_of_load ld12
-    have hlt1191 : cs1191.length < calls.length := by rw [hc1886]; lt_calls
-    have g1191 : CoreGood c cs1191 := good.sub fun x hx => by rw [hc1886]; simp [hx]
-    have hlt1699 : cs1699.length < calls.length := by rw [hc1886]; lt_calls
-    have g1699 : CoreGood c cs1699 := good.sub fun x hx => by rw [hc1886]; simp [hx]
-    refine infer_proj_common c hc hfire ih good hrc rfl htypes ha (hE.proj_permitted ld12 ha) hPE
-      hc1886
-      ?_ ev1231 ev1270 ld1306
-      ev1348 heq1371 ev1388 ld1382 heq1480 ev1494 ev1551 ld1545 heq1657 ev1671 ?_ ev1739 ev1807 ?_ ev1858
-      ev1792 he1884 he1885
-    · obtain ⟨TPE, hTPE, hinf⟩ := ih.get (.infer .k_infer_only) hlt1191 ev1193 rc x_e1 types rfl
-        g1191 hrc d Γ htypes PE hPE
-      exact ⟨TPE, hTPE, hinf, ObsFn.heap_extends ev1193⟩
-    · intro n T As hnp hT hAs
-      obtain ⟨T_after, hT_after, hpis⟩ := ih.get (.infer .io_peel_params_subst) hlt1699 ev1701
-        v1658 x_args x_n_params rfl g1699 n hnp d Γ T As hT hAs
-      exact ⟨T_after, hT_after, hpis, ObsFn.heap_extends ev1701⟩
-    · intro _ hnp _
-      exact hnp
+  case Lit x_lit cs_lit ld12 ev_lit hc =>
+    subst hc
+    rcases hE.lit_of_load ld12 with ⟨lp, limbs, rfl, hl, -, rfl⟩ | ⟨bp, bytes, s, rfl, hb, hs, rfl⟩
+    · exact ih.get (.infer .k_infer_lit) (by lt_calls) ev_lit rc _ rfl
+        (good.sub fun x hx => by simp [hx]) hrc _ (.inl ⟨lp, _, rfl, ⟨limbs, hl, rfl⟩, rfl⟩) .io d Γ
+    · exact ih.get (.infer .k_infer_lit) (by lt_calls) ev_lit rc _ rfl
+        (good.sub fun x hx => by simp [hx]) hrc _ (.inr ⟨bp, bytes, s, rfl, hb, hs, rfl⟩) .io d Γ
+  case Proj x_struct_addr x_fidx x_e1 cs_proj ld12 ev_proj hc =>
+    subst hc
+    obtain ⟨a, i, Es, rfl, rfl, ha, hEs⟩ := hE.proj_of_load ld12
+    exact ih.get (.infer .k_infer_only_proj) (by lt_calls) ev_proj rc x_struct_addr _ x_e1 types rfl
+      (good.sub fun x hx => by simp [hx]) hrc i rfl d Γ htypes a Es ha (hE.proj_permitted ld12 ha)
+      hEs
 
 end IxVM.Refinement.Core
