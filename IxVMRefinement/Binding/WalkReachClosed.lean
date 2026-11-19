@@ -115,9 +115,9 @@ theorem pathReach_stored_of_usedClosed {R : Ixon.Env}
     have hcxE := hsub x cx hcx
     rcases hs with ⟨cx', i, hcx', hi, hy⟩ | ⟨cx', hcx', _, rfl⟩
     · cases Option.some.inj (hcx'.symm.trans hcxE)
-      exact (hcl.1 x cx' hcx).2 i hi y hy
+      exact (hcl.1 x _ hcx).2 i hi y hy
     · cases Option.some.inj (hcx'.symm.trans hcxE)
-      exact (hcl.1 x cx' hcx).1
+      exact (hcl.1 x _ hcx).1
 
 /-- **Stored-closure completeness for `AlreadyStoredRole`**: every record reachable along a
 dependency path from an `AlreadyStoredRole t g x` address is already held in
