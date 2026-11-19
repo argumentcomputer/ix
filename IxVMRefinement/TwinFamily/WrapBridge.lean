@@ -2125,15 +2125,15 @@ theorem wrapDom_not_defn_to_wrapRel {find? : KKey → Option (ConstantInfo .anon
   cases h with
   | keep hw => exact hw
   | consume hc _ =>
-    have hwa : Ix.Kernel.wrapperArity find? k = none := by
-      unfold Ix.Kernel.wrapperArity
+    have hwa : Ix.Kernel.Semantics.wrapperArity find? k = none := by
+      unfold Ix.Kernel.Semantics.wrapperArity
       cases hf : find? k with
       | none => rfl
       | some ci =>
         cases ci with
         | defnInfo cv v hint => exact (hnotdef cv v hint hf).elim
         | _ => rfl
-    unfold Ix.Kernel.Semantics.Consumes Ix.Kernel.consumeWrapper at hc
+    unfold Ix.Kernel.Semantics.Consumes Ix.Kernel.Semantics.consumeWrapper at hc
     rw [hfn] at hc
     cases hargs : d.getAppArgs with
     | nil => simp [hargs] at hc
