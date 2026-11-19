@@ -1095,7 +1095,7 @@ theorem SymAW.teleFit : ∀ (vs : List V) {X Y : AnnotTerm} {ρ : Nat → V} {r 
         rw [AnnotValid_pi] at havX havY
         obtain ⟨hs1, hs2⟩ := hs.sem ρ ⟨hwdX.1, havX.1⟩
         have hA := hs2.trans (hw.sem ρ hs1 ⟨hwdY.1, havY.1⟩)
-        have hmA : v ∈ˢ interp V ρ _ := by rw [hA]; exact hmem
+        have hmA := hA.symm ▸ hmem
         obtain ⟨r', hr'⟩ := SymAW.teleFit vs hb ⟨hwdX.2 v hmA, havX.2.1 v hmA⟩
           ⟨hwdY.2 v hmem, havY.2.1 v hmem⟩ hrest
         exact ⟨r', .cons hmA hr'⟩
@@ -1106,7 +1106,7 @@ theorem SymAW.teleFit : ∀ (vs : List V) {X Y : AnnotTerm} {ρ : Nat → V} {r 
         rw [AnnotValid_pi] at havX havY
         obtain ⟨hs1, hs2⟩ := hs.sem ρ ⟨hwdY.1, havY.1⟩
         have hA := (hw.sem ρ ⟨hwdX.1, havX.1⟩ hs1).trans hs2.symm
-        have hmA : v ∈ˢ interp V ρ _ := by rw [hA]; exact hmem
+        have hmA := hA.symm ▸ hmem
         obtain ⟨r', hr'⟩ := SymAW.teleFit vs hb ⟨hwdX.2 v hmA, havX.2.1 v hmA⟩
           ⟨hwdY.2 v hmem, havY.2.1 v hmem⟩ hrest
         exact ⟨r', .cons hmA hr'⟩
@@ -1140,7 +1140,7 @@ theorem denoteMeta_eq_of_wrapT_empty_aux : ∀ (n : Nat) (e₁ e₂ : Expr md), 
         denoteMeta_eq_of_wrapT_empty_aux n _ _ (by omega) hf k,
         denoteMeta_eq_of_wrapT_empty_aux n _ _ (by omega) ha k]
     | @lam t a t' b b' m m' hpw hs hw hb =>
-      have ha := hs.eq_of_empty; subst ha
+      rcases hs.eq_of_empty with rfl
       simp only [Ix.Kernel.Expr.sizeB] at hlt
       have hbi := WrapT.instantiate1 (WrapT.fvar k t t') hb 0
       rw [denoteMeta_lam, denoteMeta_lam, hpw,
@@ -1148,7 +1148,7 @@ theorem denoteMeta_eq_of_wrapT_empty_aux : ∀ (n : Nat) (e₁ e₂ : Expr md), 
         denoteMeta_eq_of_wrapT_empty_aux n _ _
           (by rw [Ix.Kernel.Expr.sizeB_instantiate1 (.fvar k t) rfl]; omega) hbi (k + 1)]
     | @forallE t a t' b b' m m' hpw hs hw hb =>
-      have ha := hs.eq_of_empty; subst ha
+      rcases hs.eq_of_empty with rfl
       simp only [Ix.Kernel.Expr.sizeB] at hlt
       have hbi := WrapT.instantiate1 (WrapT.fvar k t t') hb 0
       rw [denoteMeta_forallE, denoteMeta_forallE, hpw,
@@ -1196,9 +1196,9 @@ theorem symWrapT_read_aux : ∀ (n : Nat) (d₁ d₂ : Expr md), d₁.sizeB + d�
       simp only [denoteMeta] at hd₂
       obtain rfl := Option.some.inj (hd₁.symm.trans hd₂)
       exact .refl _
-    | const huvs =>
+    | @const cn _ _ huvs =>
       simp only [denoteMeta] at hd₁ hd₂
-      cases hf : env.find? _ with
+      cases hf : env.find? cn with
       | none => simp only [hf] at hd₁; exact nomatch hd₁
       | some ci =>
         simp only [hf] at hd₁ hd₂
@@ -1361,7 +1361,7 @@ theorem lamDomAlong_base_sem :
       have hDl : denoteMeta acval env φ d dl = some Dp := by
         rw [denoteMeta_eq_of_wrapT_empty hdom d]; exact hDp
       obtain ⟨dc, bc, mC, Dc, Bc, rfl, hpw, hSymB, rfl, _, hBc, hDomEq⟩ :=
-        symWrapT_lam_step hfind hdef hSym hC hDl
+        symWrapT_lam_step (V := V) hfind hdef hSym hC hDl
       simp only [stripLams] at hSC
       have hSymB' := SymWrapT.instantiate1 (SymWrapT.fvar d dc dl) hSymB 0
       have hLam'' := LamDomAlong.instantiate1 (WrapT.fvar d dl dp) hLam' 0
@@ -1413,7 +1413,7 @@ theorem lamDomAlong_lifted_sem
     cases hLam1
     rw [liftLooseBVars_zero] at hLam2
     simp only [Nat.zero_add] at hSC
-    obtain ⟨Lw, hLw, hsem⟩ := lamDomAlong_base_sem hfind hdef nf d hSym hLam2 hSC hBase hC hM
+    obtain ⟨Lw, hLw, hsem⟩ := lamDomAlong_base_sem (V := V) hfind hdef nf d hSym hLam2 hSC hBase hC hM
     exact ⟨Lw, hLw, fun ρ hokC _ hokM => hsem ρ hokC hokM⟩
   | s + 1, d, nf, lC, lW, p, mW, afterW, sbC, sbW, La, Pa, Ma, hSym, hLam1, hLam2, hSC, hBase,
       hwsM, hC, hP, hM => by
@@ -1423,7 +1423,7 @@ theorem lamDomAlong_lifted_sem
       have hDl : denoteMeta acval env φ d dl = some Dp := by
         rw [denoteMeta_eq_of_wrapT_empty hdom d]; exact hDp
       obtain ⟨dc, bc, mC, Dc, Bc, rfl, hpw, hSymB, rfl, _, hBc, hDomEq⟩ :=
-        symWrapT_lam_step hfind hdef hSym hC hDl
+        symWrapT_lam_step (V := V) hfind hdef hSym hC hDl
       rw [show s + 1 + nf = (s + nf) + 1 by omega] at hSC
       simp only [stripLams] at hSC
       have hSymB' := SymWrapT.instantiate1 (SymWrapT.fvar d dc dl) hSymB 0
@@ -1497,7 +1497,7 @@ theorem lamDomAlong_prefix_sem
     simp only [Nat.zero_add] at hSC
     obtain ⟨Ma, _, hMa, _, hPa⟩ := denoteMeta_forallE_inv hP
     simp only [Expr.WScoped] at hwsP
-    obtain ⟨Lw, hLw, hsem⟩ := lamDomAlong_lifted_sem hfind hdef hacl s d nf hSym hLam1 hLam2
+    obtain ⟨Lw, hLw, hsem⟩ := lamDomAlong_lifted_sem (V := V) hfind hdef hacl s d nf hSym hLam1 hLam2
       hSC hBase hwsP.1 hC hP hMa
     refine ⟨Lw, hLw, fun ρ hokC hokP => ?_⟩
     have hokM : WellDenotedV V ρ Ma := by
@@ -1514,7 +1514,7 @@ theorem lamDomAlong_prefix_sem
       have hDl : denoteMeta acval env φ d dl = some Dp := by
         rw [denoteMeta_eq_of_wrapT_empty hdom d]; exact hDp
       obtain ⟨dc, bc, mC, Dc, Bc, rfl, hpw, hSymB, rfl, _, hBc, hDomEq⟩ :=
-        symWrapT_lam_step hfind hdef hSym hC hDl
+        symWrapT_lam_step (V := V) hfind hdef hSym hC hDl
       obtain ⟨_, _, _, bs0, hpeq, hStripP0⟩ := stripPis_succ_inv hStripP
       injection hpeq with _ hbp_eq _
       subst hbp_eq
@@ -1571,7 +1571,7 @@ theorem twinRuleMatch_sem
   obtain ⟨hSym, nPre, nf, afterW, sbW, sbC, hLam1, hMid, hSC, hBase⟩ := hMatch
   rcases hMid with ⟨rfl, rfl⟩ | ⟨iMin, bs, mdomW, restW, mmW, hlt, hStripP, hLam2⟩
   · simp only [Nat.add_zero] at hSC
-    obtain ⟨Rw', hRw', hsem⟩ := lamDomAlong_base_sem hfind hdef nPre 0 hSym hLam1 hSC hBase hRc hTVw'
+    obtain ⟨Rw', hRw', hsem⟩ := lamDomAlong_base_sem (V := V) hfind hdef nPre 0 hSym hLam1 hSC hBase hRc hTVw'
     exact ⟨Rw', hRw', fun ρ => hsem ρ (hokRc ρ) (hokW' ρ)⟩
   · have hsplit : iMin + (nPre - iMin) = nPre := by omega
     rw [← hsplit] at hLam1 hSC
@@ -1580,7 +1580,7 @@ theorem twinRuleMatch_sem
     have hmidP : midP = .forallE mdomW restW mmW :=
       (Prod.mk.inj (Option.some.inj (hStripP'.symm.trans hStripP))).2
     subst hmidP
-    obtain ⟨Rw', hRw', hsem⟩ := lamDomAlong_prefix_sem hfind hdef hacl iMin 0 (nPre - iMin) nf
+    obtain ⟨Rw', hRw', hsem⟩ := lamDomAlong_prefix_sem (V := V) hfind hdef hacl iMin 0 (nPre - iMin) nf
       hSym hLam0 hStripP hLam1' hLam2 hSC hBase hwsW' hRc hTVw'
     exact ⟨Rw', hRw', fun ρ => hsem ρ (hokRc ρ) (hokW' ρ)⟩
 
