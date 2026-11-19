@@ -1684,8 +1684,12 @@ theorem advAs_eq_of_familyOwnAdvice {rc xb xrb r : SourceValue F} {h h' : Heap F
     have hrep_C_423 : RepList addrListEnum (Bytes.RepAddressRef addrTy) C.m423 as_C C.advList := by
       rw [hxa_C]
       exact repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext_254_423 hrep_ga_C
-    have h1 : advAs' = as_C := repList_det (fun _ _ _ _ r1 r2 => Core.addr_det r1 r2) hrep' hrep_C_423
-    have h2 : as_w = advAs := repList_det (fun _ _ _ _ r1 r2 => Core.addr_det r1 r2) hrep_w_adv advRep
+    have h1 : advAs' = as_C :=
+      repList_det (R := Bytes.RepAddressRef addrTy) (fun _ _ _ _ r1 r2 => Core.addr_det r1 r2)
+        hrep' hrep_C_423
+    have h2 : as_w = advAs :=
+      repList_det (R := Bytes.RepAddressRef addrTy) (fun _ _ _ _ r1 r2 => Core.addr_det r1 r2)
+        hrep_w_adv advRep
     exact h1.trans (has_eq.trans h2)
 
 /-! ## Endpoint 1 (unconditional): `ClosureFamilyCheck` at every group of every binding run -/
