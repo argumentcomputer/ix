@@ -4,6 +4,7 @@ import IxVMRefinement.FamilyAlias.CallCells
 import IxVMRefinement.FamilyAlias.Selected
 import IxVMRefinement.Decl.FamilyMentions
 import IxVMRefinement.StatementRel.LoadedReadsCanonRec
+import IxVMRefinement.Assembly.BareState
 
 /-! # Member validation against advice models (`members_val`, `member_val`)
 
@@ -162,36 +163,21 @@ theorem mentionsConst_instantiateLevelParams (ks : List LevelParam) (us : List C
     simp only [Ix.Kernel.Expr.instantiateLevelParams, Ix.Kernel.Expr.mentionsConst,
       mentionsConst_instantiateLevelParams ks us k e]
 
-theorem hasFvar_of_annotates {e₁ e₂ : KExpr} (h : Annotates e₁ e₂) :
-    e₁.hasFvar = e₂.hasFvar := by
-  induction h with
-  | bvar _ | sort _ | const _ _ | lit _ | fvar _ _ => rfl
-  | app _ _ ihf iha => simp [Ix.Kernel.Expr.hasFvar, ihf, iha]
-  | lam _ _ _ iht ihb => simp [Ix.Kernel.Expr.hasFvar, iht, ihb]
-  | forallE _ _ _ iht ihb => simp [Ix.Kernel.Expr.hasFvar, iht, ihb]
+theorem tmExact_hasFvar_false {κ : _root_.Address → KKey} {Γ : Nat → KExpr} {h : Heap F}
+    {k : Nat} {E : KExpr} {p : SourceValue F}
+    (rep : Decl.TmExact κ 0 Γ h k E p) : E.hasFvar = false := by
+  induction rep with
+  | bvarLocal _ _ _ => rfl
+  | bvarFree _ _ _ hd => exact absurd hd (Nat.not_lt_zero _)
+  | sort _ _ => rfl
+  | const _ _ _ => rfl
+  | app _ _ _ ihf iha => simp [Ix.Kernel.Expr.hasFvar, ihf, iha]
+  | lam _ _ _ _ iht ihb => simp [Ix.Kernel.Expr.hasFvar, iht, ihb]
+  | forallE _ _ _ _ iht ihb => simp [Ix.Kernel.Expr.hasFvar, iht, ihb]
   | letE _ _ _ _ iht ihv ihb => simp [Ix.Kernel.Expr.hasFvar, iht, ihv, ihb]
-  | proj _ _ _ ih => simp [Ix.Kernel.Expr.hasFvar, ih]
-
-theorem tmExact_hasFvar_false {κ : _root_.Address → KKey} {Γ : Nat → KExpr} {h : Heap F} :
-    ∀ {k : Nat} {E : KExpr} {p : SourceValue F},
-      Decl.TmExact κ 0 Γ h k E p → E.hasFvar = false
-  | _, _, _, .bvarLocal _ _ _ => rfl
-  | _, _, _, .bvarFree _ _ _ hd => absurd hd (Nat.not_lt_zero _)
-  | _, _, _, .sort _ _ => rfl
-  | _, _, _, .const _ _ _ => rfl
-  | _, _, _, .app _ rf ra => by
-    simp [Ix.Kernel.Expr.hasFvar, tmExact_hasFvar_false rf, tmExact_hasFvar_false ra]
-  | _, _, _, .lam _ rt rb _ => by
-    simp [Ix.Kernel.Expr.hasFvar, tmExact_hasFvar_false rt, tmExact_hasFvar_false rb]
-  | _, _, _, .forallE _ rt rb _ => by
-    simp [Ix.Kernel.Expr.hasFvar, tmExact_hasFvar_false rt, tmExact_hasFvar_false rb]
-  | _, _, _, .letE _ rt rv rb => by
-    simp [Ix.Kernel.Expr.hasFvar, tmExact_hasFvar_false rt, tmExact_hasFvar_false rv,
-      tmExact_hasFvar_false rb]
-  | _, _, _, .litNat _ _ _ => rfl
-  | _, _, _, .litStr _ _ _ => rfl
-  | _, _, _, .proj _ _ re => by
-    simp [Ix.Kernel.Expr.hasFvar, tmExact_hasFvar_false re]
+  | litNat _ _ _ => rfl
+  | litStr _ _ _ => rfl
+  | proj _ _ _ ihe => simp [Ix.Kernel.Expr.hasFvar, ihe]
 
 theorem aliasMap_zip_getElem :
     ∀ {ks ds : List KKey}, ks.Nodup → (hlen : ks.length = ds.length) →
@@ -204,9 +190,7 @@ theorem aliasMap_zip_getElem :
     obtain ⟨hk_not, hnd'⟩ := List.nodup_cons.mp hnd
     have hi' : i < ks.length := Nat.lt_of_succ_lt_succ hi
     have hne : ks[i]'hi' ≠ k := fun heq => hk_not (heq ▸ List.getElem_mem hi')
-    have hbeq : (k == ks[i]'hi') = false := beq_false_of_ne hne.symm
-    simp only [List.zip_cons_cons, aliasMap, List.getElem_cons_succ, hbeq, Bool.false_eq_true,
-      ↓reduceIte]
+    simp only [List.zip_cons_cons, aliasMap, List.getElem_cons_succ, hne, ↓reduceIte]
     exact aliasMap_zip_getElem hnd' (Nat.succ.inj hlen) i hi'
 
 theorem aliasMap_out_of_zip {ks ds : List KKey} {k : KKey} (hnot : ks.contains k = false) :
@@ -425,8 +409,8 @@ theorem srcAddrs_nodup {E₀ : Ixon.Env} {B rb : _root_.Address} {cb crb : Ixon.
     simp only [List.getElem_mapIdx, Array.getElem_toList] at heq
     have hm_i : ms[i]? = some ms[i] := Array.getElem?_eq_getElem hi
     have hm_j : ms[j]? = some ms[j] := Array.getElem?_eq_getElem hj
-    obtain ⟨ind1, h1⟩ := hB.indcs ms[i] (List.mem_of_getElem? (by simpa using hm_i))
-    obtain ⟨ind2, h2⟩ := hB.indcs ms[j] (List.mem_of_getElem? (by simpa using hm_j))
+    obtain ⟨ind1, h1⟩ := hB.indcs ms[i] (Array.mem_toList_iff.mpr (Array.getElem_mem hi))
+    obtain ⟨ind2, h2⟩ := hB.indcs ms[j] (Array.mem_toList_iff.mpr (Array.getElem_mem hj))
     have hr1 := hB.members i ms[i] hm_i
     have hr2 := hB.members j ms[j] hm_j
     rw [LoadedReads.memberAddr_eq_projAddr] at hr1 hr2
@@ -470,9 +454,10 @@ theorem srcAddrs_nodup {E₀ : Ixon.Env} {B rb : _root_.Address} {cb crb : Ixon.
     have hnj := congrArg UInt64.toNat hpeq.1.2.1
     rw [toNat_toUInt64_lt (by omega), toNat_toUInt64_lt (by omega)] at hni
     rw [toNat_toUInt64_lt (by omega), toNat_toUInt64_lt (by omega)] at hnj
-    exact Fin.val_eq_of_eq (hndS (a₁ := ⟨a, by simp [ha]⟩) (a₂ := ⟨b, by simp [hb]⟩) (by
+    have hfeq := hndS (a₁ := ⟨a, by simp [ha]⟩) (a₂ := ⟨b, by simp [hb]⟩) (by
       simp only [List.getElem_map]
-      exact Prod.ext hni hnj))
+      exact Prod.ext hni hnj)
+    exact Fin.mk.inj hfeq
   have hndR : (recAs.map ixAddr).Nodup := by
     rw [T.recs]
     rw [List.nodup_iff_injective_getElem]
@@ -482,8 +467,8 @@ theorem srcAddrs_nodup {E₀ : Ixon.Env} {B rb : _root_.Address} {cb crb : Ixon.
     simp only [List.getElem_mapIdx, Array.getElem_toList] at heq
     have hm_i : rs[i]? = some rs[i] := Array.getElem?_eq_getElem hi
     have hm_j : rs[j]? = some rs[j] := Array.getElem?_eq_getElem hj
-    obtain ⟨r1, h1⟩ := hR.recrs rs[i] (List.mem_of_getElem? (by simpa using hm_i))
-    obtain ⟨r2, h2⟩ := hR.recrs rs[j] (List.mem_of_getElem? (by simpa using hm_j))
+    obtain ⟨r1, h1⟩ := hR.recrs rs[i] (Array.mem_toList_iff.mpr (Array.getElem_mem hi))
+    obtain ⟨r2, h2⟩ := hR.recrs rs[j] (Array.mem_toList_iff.mpr (Array.getElem_mem hj))
     have hr1 := hR.members i rs[i] hm_i
     have hr2 := hR.members j rs[j] hm_j
     rw [LoadedReads.memberAddr_eq_projAddr] at hr1 hr2
@@ -581,7 +566,7 @@ structure MemberValItem (calls : List (Call F)) (bAddr : _root_.Address)
   hchkM : Claim.CheckedLimAt calls bAddr t (ixAddr aMd) lim
   ty' : KExpr
   W : AdviceTypeWitness calls t lim aMd dm.lvls.toNat chain.m101 chain.nl chain.mty ty'
-  htyScoped : HeapExprScoped chain.m216 dm.lvls.toNat 0 chain.ty
+  htyScoped : HeapExprScoped hEnd dm.lvls.toNat 0 chain.ty
 
 theorem MemberValItem.ext_m15_m101 {calls bAddr t E₀ lim csFam advAs srcAs dstAs laterAs aM aMd}
     (I : MemberValItem calls bAddr t E₀ lim csFam advAs srcAs dstAs laterAs aM aMd) :
@@ -630,10 +615,10 @@ theorem memberVal_item {calls : List (Call F)} {bAddr : _root_.Address}
   obtain ⟨ty', ⟨W⟩⟩ :=
     advice_checked_type ht hbd hS hrecM hinfoM (Or.inl (hkindM rfl)) hlogM hchkM
       haMd_mMent C.evGetMd.obs hsubMd (Or.inl ⟨C.w1, C.w2, C.w3, C.ldMd⟩)
-  have hrenScoped : HeapExprScoped C.m216 dm.lvls.toNat 0 C.ren :=
+  have hrenScoped : HeapExprScoped h' dm.lvls.toNat 0 C.ren :=
     heapExprScoped_of_kexpr_struct_eq (W.mty_scoped.mono C.evRen.extends) C.evEq.obs
-  have htyScoped : HeapExprScoped C.m216 dm.lvls.toNat 0 C.ty :=
-    heapExprScoped_of_rename C.evRen.obs (Heap.Extends.refl _) hrenScoped
+  have htyScoped : HeapExprScoped h' dm.lvls.toNat 0 C.ty :=
+    heapExprScoped_of_rename C.evRen.obs C.evEq.extends hrenScoped
   have hsubAll : CallSub cs calls := hsub
   exact ⟨{
     hStart := h
@@ -680,7 +665,7 @@ theorem membersVal_walk {calls : List (Call F)} {bAddr : _root_.Address}
   | _ :: _, [], _, _, _, _, _, _, _, _, _, _, hlen, _, _, _, _, _, _, _, _, _, _ => by cases hlen
   | aM :: msRest, aMd :: mdRest, xMs, xMds, xSrc, xDst, xAset, xLater, r, h, h', cs,
       hlen, hsub, hms, hmds, hsrc, hdst, haset, hlater, ev, idx, hidx => by
-    rcases membersVal_step ev with ⟨ldNil, -⟩ | ⟨C⟩
+    rcases membersVal_step ev with ⟨ldNil, -⟩ | ⟨⟨C⟩⟩
     · exact absurd (Lib.rep_nil_of_load hms ldNil) (List.cons_ne_nil _ _)
     · obtain ⟨aM', msRest', he1, haM, hmsRest⟩ := Lib.rep_cons_of_load hms C.ldMembers
       obtain ⟨aMd', mdRest', he2, haMd, hmdsRest⟩ := Lib.rep_cons_of_load hmds C.ldModels
@@ -770,6 +755,7 @@ theorem memberVal_facts_of_tm {calls : List (Call F)} {bAddr : _root_.Address}
     (hperm : ps.Perm (List.range ps.length))
     (hpsLen : ps.length = I.dm.lvls.toNat)
     (hlbb : ty₀.looseBVarsBounded 0 = true)
+    (hty0_fv : ty₀.hasFvar = false)
     (hann : Annotates tyA ty₀)
     (htm : Decl.TmCExact (Core.keyOf t) I.chain.m65 (Core.posOf ps tyA) I.chain.ty) :
     let srcKeys := srcAs.map fun b => Core.keyOf t (ixAddr b)
@@ -814,7 +800,6 @@ theorem memberVal_facts_of_tm {calls : List (Call F)} {bAddr : _root_.Address}
     have hf := tmExact_hasFvar_false (htm 0 (fun _ => .sort .zero))
     unfold Core.posOf at hf
     rwa [Decl.hasFvar_instantiateLevelParams] at hf
-  have hty0_fv : ty₀.hasFvar = false := (hasFvar_of_annotates hann).symm.trans htyA_fv
   have hment : ∀ b ∈ laterAs, tyA.mentionsConst (Core.keyOf t (ixAddr b)) = false := by
     intro b hb
     have hT : ∀ a : Bytes.Address, Core.keyOf t (ixAddr a) = Core.keyOf t (ixAddr b) →
@@ -973,10 +958,11 @@ theorem indMember_of_item {calls : List (Call F)} {bAddr : _root_.Address}
     L1.BlobReadAgreement.of_mem hblob
   obtain ⟨ty₀, hread⟩ :=
     LoadedReads.exprReader_read_ok ht rty (LoadedReads.blockSelf_ok t B ms) hblob
-  have htySc : HeapExprScoped I.chain.m216 ind.lvls.toNat 0 tyPtr := by
+  have htySc : HeapExprScoped I.hEnd ind.lvls.toNat 0 I.chain.ty := by
     rw [hlvls_eq]; exact I.htyScoped
   obtain ⟨hlbb, hdef⟩ :=
-    rawConvExpr_scoped_of_heapExprScoped rty (I.ext_m65_m101.trans I.chain.evRen.extends) hread htySc
+    rawConvExpr_scoped_of_heapExprScoped rty
+      (I.ext_m65_m101.trans (I.chain.evRen.extends.trans I.chain.evEq.extends)) hread htySc
   obtain ⟨cnt, tyPtr', flds, hvc, hbl⟩ := hlevs
   rw [hv_eq] at hvc
   injection hvc with _ _ hca; injection hca with _ hca; injection hca with htp _; subst htp
@@ -984,11 +970,11 @@ theorem indMember_of_item {calls : List (Call F)} {bAddr : _root_.Address}
     annotation_canon_range_exact ht hlvls_lt (LoadedReads.blockSelf_key t B ms) hagree rty built
       planned hbl hread hlbb hdef
   have htm_pos : Decl.TmCExact (Core.keyOf t) I.chain.m65
-      (Core.posOf (List.range ind.lvls.toNat) tyA) tyPtr := by
+      (Core.posOf (List.range ind.lvls.toNat) tyA) I.chain.ty := by
     rw [Decl.posOf_range]; exact htm
   obtain ⟨hren_pos, hA_def, h0_fv, hA_fv, hment, hstep⟩ :=
     memberVal_facts_of_tm ht hlenSD I (ps := List.range ind.lvls.toNat)
-      (by simp) (by simp [hlvls_eq]) hlbb hann htm_pos
+      (by simp) (by simp [hlvls_eq]) hlbb (Assembly.memberReader_read_noFvar hread) hann htm_pos
   rw [Decl.posOf_range] at hren_pos
   exact ⟨{
     ty₀, tyA, hread, hlbb, hdef, hcanon, hann, hA_def, hA_fv, h0_fv, hment
@@ -1114,10 +1100,11 @@ theorem ctorMember_of_item {calls : List (Call F)} {bAddr : _root_.Address}
     L1.BlobReadAgreement.of_mem hblob
   obtain ⟨ty₀, hread⟩ :=
     LoadedReads.exprReader_read_ok ht rty (LoadedReads.blockSelf_ok t B ms) hblob
-  have htySc : HeapExprScoped I.chain.m216 ct.lvls.toNat 0 tyPtr := by
+  have htySc : HeapExprScoped I.hEnd ct.lvls.toNat 0 I.chain.ty := by
     rw [hlvls_eq]; exact I.htyScoped
   obtain ⟨hlbb, hdef⟩ :=
-    rawConvExpr_scoped_of_heapExprScoped rty (I.ext_m65_m101.trans I.chain.evRen.extends) hread htySc
+    rawConvExpr_scoped_of_heapExprScoped rty
+      (I.ext_m65_m101.trans (I.chain.evRen.extends.trans I.chain.evEq.extends)) hread htySc
   obtain ⟨cnt, tyPtr', flds, hvc, hbl⟩ := hlevs
   rw [hv_eq] at hvc
   injection hvc with _ _ hca; injection hca with _ hca; injection hca with htp _; subst htp
@@ -1125,11 +1112,11 @@ theorem ctorMember_of_item {calls : List (Call F)} {bAddr : _root_.Address}
     annotation_canon_range_exact ht hlvls_lt (LoadedReads.blockSelf_key t B ms) hagree rty built
       planned hbl hread hlbb hdef
   have htm_pos : Decl.TmCExact (Core.keyOf t) I.chain.m65
-      (Core.posOf (List.range ct.lvls.toNat) tyA) tyPtr := by
+      (Core.posOf (List.range ct.lvls.toNat) tyA) I.chain.ty := by
     rw [Decl.posOf_range]; exact htm
   obtain ⟨hren_pos, hA_def, h0_fv, hA_fv, hment, hstep⟩ :=
     memberVal_facts_of_tm ht hlenSD I (ps := List.range ct.lvls.toNat)
-      (by simp) (by simp [hlvls_eq]) hlbb hann htm_pos
+      (by simp) (by simp [hlvls_eq]) hlbb (Assembly.memberReader_read_noFvar hread) hann htm_pos
   rw [Decl.posOf_range] at hren_pos
   exact ⟨{
     ty₀, tyA, hread, hlbb, hdef, hcanon, hann, hA_def, hA_fv, h0_fv, hment
@@ -1241,7 +1228,8 @@ theorem recMemberVal_of_item {calls : List (Call F)} {bAddr : _root_.Address}
   have htyA_eq : tyA' = tyA := Option.some.inj (hcanon'.symm.trans hcanon)
   subst tyA'
   obtain ⟨hren, hA_def, h0_fv, hA_fv, hment, hstep⟩ :=
-    memberVal_facts_of_tm ht hlenSD I hperm (hpsLen.trans hlvls_eq) hlbb hann' htm'
+    memberVal_facts_of_tm ht hlenSD I hperm (hpsLen.trans hlvls_eq) hlbb
+      (Assembly.memberReader_read_noFvar hread) hann' htm'
   refine ⟨hren, hA_def, h0_fv, hA_fv, hment, fun hSE hadv hdefSrc => ?_⟩
   obtain ⟨hnp, hmf⟩ := hstep hSE hadv hdefSrc
   exact ⟨hnp, fun mI rP rules₀ =>

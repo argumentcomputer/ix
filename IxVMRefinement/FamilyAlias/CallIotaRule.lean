@@ -984,6 +984,7 @@ theorem check_iota_rule_facts
     (hcnp_lt : cnP < 72057594037927936) (hcnf_lt : cnF < 72057594037927936)
     (hnfields : r.nfields = cnF)
     (hrhs_lbb : r.rhs.looseBVarsBounded 0 = true)
+    (hrhs_nofvar : r.rhs.hasFvar = false)
     (hrhs_ann : Annotates rhsA r.rhs)
     (hmaj : majorShape tyA mI rP cnP = some (lvls, pins))
     (hlvls_def : lvls.all (Level.allParamsDefined lps) = true)
@@ -1090,7 +1091,6 @@ theorem check_iota_rule_facts
     have hf := tmExact_hasFvar_false hrhs_pos_tm0
     unfold Core.posOf at hf
     rwa [Decl.hasFvar_instantiateLevelParams] at hf
-  have hrhs_nofvar : r.rhs.hasFvar = false := (hasFvar_of_annotates hrhs_ann).symm.trans hrhsA_nofvar
   have hrhsA_lvls : rhsA.allLevelParamsDefined lps = true :=
     Decl.allLevelParamsDefined_of_posOf_perm hlps_perm
       (Decl.validate_expr_well_scoped_spec hlps_lt hrhs_pos_tm0 ev_sc_h)
