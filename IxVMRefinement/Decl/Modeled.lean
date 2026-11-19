@@ -381,8 +381,8 @@ private theorem rbtree_map_ins_addrMapAll {t_V : Generic.Ty}
   induction ht0 with
   | nil =>
     intro a_key x_key x_value r h h' cs _ hk hv ev
-    cases Obs.«RBTreeMap::rbtree_map_ins».obs ev with
-    | Nil m47 m60 _ he25 hm55 hm68 he72 _ =>
+    match Obs.«RBTreeMap::rbtree_map_ins».obs ev with
+    | .Nil (m47 := m47) (m60 := m60) (he25 := he25) (hm55 := hm55) (hm68 := hm68) (he72 := he72) .. =>
       let nilVal : SourceValue F := .construct en "Nil" []
       have ext_47 : Heap.Extends h m47 := hm55 ▸ heap_extends_append h [nilVal]
       have ext_60 : Heap.Extends m47 m60 := hm68 ▸ heap_extends_append m47 [nilVal]
@@ -394,19 +394,22 @@ private theorem rbtree_map_ins_addrMapAll {t_V : Generic.Ty}
       rw [he25]
       exact ⟨.node (Bytes.repAddressRef_heapMono₂ addrTy ext_all hk) hv ld_l ld_r .nil .nil,
         ⟨0, x_key, x_value, _, _, rfl⟩, ext_all⟩
-    | Node_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv79 _ _ _ _ _ _ _ =>
+    | .Node_n0 (hv_yxogouup := hv79) .. =>
       injection hv79 with _ htag _; exact absurd htag (by decide)
-    | Node_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv79 _ _ _ _ _ _ _ _ _ _ _ _ =>
+    | .Node_n1 (hv_yxogouup := hv79) .. =>
       injection hv79 with _ htag _; exact absurd htag (by decide)
-    | Node_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv79 _ _ _ _ _ _ _ _ _ _ _ =>
+    | .Node_other (hv_yxogouup := hv79) .. =>
       injection hv79 with _ htag _; exact absurd htag (by decide)
   | @node c_t kp vp lp rp lv rv _ hk_t hP_t hl_t hr_t rl_t rr_t ihl ihr =>
     intro a_key x_key x_value r h h' cs ext0 hk hv ev
-    cases Obs.«RBTreeMap::rbtree_map_ins».obs ev with
-    | Nil _ _ hv15 _ _ _ _ _ =>
+    match Obs.«RBTreeMap::rbtree_map_ins».obs ev with
+    | .Nil (hv15 := hv15) .. =>
       injection hv15 with _ htag _; exact absurd htag (by decide)
-    | Node_n1 x_color x_k x_v w81 w82 y103 y111 m115 _ v128 m130 _ _ v180 m204 _
-        _ hv79 ld104 ld112 ev140 ev127 ev214 ev176 _ =>
+    | .Node_n0 (x_color := x_color) (x_k := x_k) (x_v := x_v) (x_left_ptr := x_left_ptr)
+        (x_right_ptr := x_right_ptr) (m_iczzthhe := m_cmp) (v_xkvkfotc := v_ins)
+        (v_wltcltau := v_r) (m_mfdajbya := m_ins) (v_yeofoqcl := v_l)
+        (hv_yxogouup := hv79) (ev_khiwzwox := ev_cmp) (ld_ntcpyjql := ld_l)
+        (ev_yrqpzaso := ev_ins) (ld_gfopccso := ld_r) (ev_ueayrilk := ev_bal) .. =>
       injection hv79 with _ _ hargs
       injection hargs with hc_eq h1
       injection h1 with hk_eq h2
@@ -414,23 +417,23 @@ private theorem rbtree_map_ins_addrMapAll {t_V : Generic.Ty}
       injection h3 with hl_eq h4
       injection h4 with hr_eq _
       subst hc_eq hk_eq hv_eq hl_eq hr_eq
-      have hld_l : loadValue h lp = .ok lv := ext0.loadValue_eq hl_t
-      have hld_r : loadValue h rp = .ok rv := ext0.loadValue_eq hr_t
-      rw [hld_l] at ld104; injection ld104 with hy103; subst hy103
-      rw [hld_r] at ld112; injection ld112 with hy111; subst hy111
-      have ext_115 : Heap.Extends h m115 :=
-        (ObsFn.heap_extends ev140).trans (ObsFn.heap_extends ev127)
-      obtain ⟨hv180, _, ext_204⟩ :=
-        ihl (ext0.trans ext_115) (Bytes.repAddressRef_heapMono₂ addrTy ext_115 hk) hv ev214
-      have ext_h_204 : Heap.Extends h m204 := ext_115.trans ext_204
-      have ext_b_204 : Heap.Extends h₀ m204 := ext0.trans ext_h_204
+      have ext_cmp : Heap.Extends h m_cmp := ObsFn.heap_extends ev_cmp
+      have hld_l : loadValue m_cmp lp = .ok lv := (ext0.trans ext_cmp).loadValue_eq hl_t
+      rw [hld_l] at ld_l; injection ld_l with hv_l; subst hv_l
+      obtain ⟨hv_ins, _, ext_ins⟩ :=
+        ihl (ext0.trans ext_cmp) (Bytes.repAddressRef_heapMono₂ addrTy ext_cmp hk) hv ev_ins
+      have ext_h_ins : Heap.Extends h m_ins := ext_cmp.trans ext_ins
+      have ext_b_ins : Heap.Extends h₀ m_ins := ext0.trans ext_h_ins
+      have hld_r : loadValue m_ins rp = .ok rv := ext_b_ins.loadValue_eq hr_t
+      rw [hld_r] at ld_r; injection ld_r with hv_r; subst hv_r
       obtain ⟨hout, hshape, ext_bal⟩ :=
         rbtree_map_balance_addrMapAll
-          (Bytes.repAddressRef_heapMono₂ addrTy ext_b_204 hk_t) hP_t
-          hv180 (addrMapAll_mono_pred (P₂ := Pm) ext_b_204 (fun hp => hp) rr_t) ev176
-      exact ⟨hout, hshape, ext_h_204.trans ext_bal⟩
-    | Node_other_n0 x_color x_k x_v w81 w82 y103 y111 _ m115 _ _ m130 _ _ m261 _ m334 m345
-        _ hv79 ld104 ld112 ev140 ev127 _ ev272 _ he311 hm342 hm353 he355 _ =>
+          (Bytes.repAddressRef_heapMono₂ addrTy ext_b_ins hk_t) hP_t
+          hv_ins (addrMapAll_mono_pred (P₂ := Pm) ext_b_ins (fun hp => hp) rr_t) ev_bal
+      exact ⟨hout, hshape, ext_h_ins.trans ext_bal⟩
+    | .Node_n1 (x_color := x_color) (x_k := x_k) (x_v := x_v) (x_left_ptr := x_left_ptr)
+        (x_right_ptr := x_right_ptr) (m_iczzthhe := m_cmp) (hv_yxogouup := hv79)
+        (ev_khiwzwox := ev_cmp) (he_pjwpkiht := he_r) (he_zhcposei := he_h) .. =>
       injection hv79 with _ _ hargs
       injection hargs with hc_eq h1
       injection h1 with hk_eq h2
@@ -438,31 +441,19 @@ private theorem rbtree_map_ins_addrMapAll {t_V : Generic.Ty}
       injection h3 with hl_eq h4
       injection h4 with hr_eq _
       subst hc_eq hk_eq hv_eq hl_eq hr_eq
-      have hld_l : loadValue h lp = .ok lv := ext0.loadValue_eq hl_t
-      have hld_r : loadValue h rp = .ok rv := ext0.loadValue_eq hr_t
-      rw [hld_l] at ld104; injection ld104 with hy103; subst hy103
-      rw [hld_r] at ld112; injection ld112 with hy111; subst hy111
-      have ext_261 : Heap.Extends h m261 :=
-        (ObsFn.heap_extends ev140).trans
-          ((ObsFn.heap_extends ev127).trans (ObsFn.heap_extends ev272))
-      have ext_334 : Heap.Extends m261 m334 := hm342 ▸ heap_extends_append m261 [lv]
-      have ext_345 : Heap.Extends m334 m345 := hm353 ▸ heap_extends_append m334 [rv]
-      have ext_all : Heap.Extends h h' := he355 ▸ ext_261.trans (ext_334.trans ext_345)
-      have hlv_261 : AddrMapAll en Pm m261 lv :=
-        addrMapAll_mono_pred (P₂ := Pm) (ext0.trans ext_261) (fun hp => hp) rl_t
-      have hrv_334 : AddrMapAll en Pm m334 rv :=
-        addrMapAll_mono_pred (P₂ := Pm) (ext0.trans (ext_261.trans ext_334)) (fun hp => hp) rr_t
-      have ld_lv : loadValue h' (.ptr (Value.type lv) m261.length) = .ok lv :=
-        load_stored_addrMapAll_type hlv_261 (hm342 ▸ he355 ▸ ext_345)
-      have ld_rv : loadValue h' (.ptr (Value.type rv) m334.length) = .ok rv :=
-        load_stored_addrMapAll_type hrv_334 (hm353 ▸ he355 ▸ Heap.Extends.refl _)
-      rw [he311]
-      exact ⟨.node (Bytes.repAddressRef_heapMono₂ addrTy ext_all hk) hv ld_lv ld_rv
-        (addrMapAll_mono_pred (P₂ := Pm) (ext0.trans ext_all) (fun hp => hp) rl_t)
-        (addrMapAll_mono_pred (P₂ := Pm) (ext0.trans ext_all) (fun hp => hp) rr_t),
+      have ext_all : Heap.Extends h h' := he_h ▸ ObsFn.heap_extends ev_cmp
+      have ext_b : Heap.Extends h₀ h' := ext0.trans ext_all
+      rw [he_r]
+      exact ⟨.node (Bytes.repAddressRef_heapMono₂ addrTy ext_all hk) hv
+        (ext_b.loadValue_eq hl_t) (ext_b.loadValue_eq hr_t)
+        (addrMapAll_mono_pred (P₂ := Pm) ext_b (fun hp => hp) rl_t)
+        (addrMapAll_mono_pred (P₂ := Pm) ext_b (fun hp => hp) rr_t),
         ⟨c_t, x_key, x_value, _, _, rfl⟩, ext_all⟩
-    | Node_other_other x_color x_k x_v w81 w82 y103 y111 _ m115 _ _ m130 _ _ _ m261 _ _
-        v371 m401 _ _ hv79 ld104 ld112 ev140 ev127 _ ev272 _ _ ev411 ev366 _ =>
+    | .Node_other (x_color := x_color) (x_k := x_k) (x_v := x_v) (x_left_ptr := x_left_ptr)
+        (x_right_ptr := x_right_ptr) (m_iczzthhe := m_cmp) (v_gnsaykcn := v_l)
+        (v_wkuqfaty := v_ins) (m_zxtzwonh := m_ins) (v_oxqmdgey := v_r)
+        (hv_yxogouup := hv79) (ev_khiwzwox := ev_cmp) (ld_soaidfau := ld_l)
+        (ld_ihxnivmy := ld_r) (ev_avtjegwj := ev_ins) (ev_kdezdqmp := ev_bal) .. =>
       injection hv79 with _ _ hargs
       injection hargs with hc_eq h1
       injection h1 with hk_eq h2
@@ -470,22 +461,20 @@ private theorem rbtree_map_ins_addrMapAll {t_V : Generic.Ty}
       injection h3 with hl_eq h4
       injection h4 with hr_eq _
       subst hc_eq hk_eq hv_eq hl_eq hr_eq
-      have hld_l : loadValue h lp = .ok lv := ext0.loadValue_eq hl_t
-      have hld_r : loadValue h rp = .ok rv := ext0.loadValue_eq hr_t
-      rw [hld_l] at ld104; injection ld104 with hy103; subst hy103
-      rw [hld_r] at ld112; injection ld112 with hy111; subst hy111
-      have ext_261 : Heap.Extends h m261 :=
-        (ObsFn.heap_extends ev140).trans
-          ((ObsFn.heap_extends ev127).trans (ObsFn.heap_extends ev272))
-      obtain ⟨hv371, _, ext_401⟩ :=
-        ihr (ext0.trans ext_261) (Bytes.repAddressRef_heapMono₂ addrTy ext_261 hk) hv ev411
-      have ext_h_401 : Heap.Extends h m401 := ext_261.trans ext_401
-      have ext_b_401 : Heap.Extends h₀ m401 := ext0.trans ext_h_401
+      have ext_cmp : Heap.Extends h m_cmp := ObsFn.heap_extends ev_cmp
+      have hld_l : loadValue m_cmp lp = .ok lv := (ext0.trans ext_cmp).loadValue_eq hl_t
+      have hld_r : loadValue m_cmp rp = .ok rv := (ext0.trans ext_cmp).loadValue_eq hr_t
+      rw [hld_l] at ld_l; injection ld_l with hv_l; subst hv_l
+      rw [hld_r] at ld_r; injection ld_r with hv_r; subst hv_r
+      obtain ⟨hv_ins, _, ext_ins⟩ :=
+        ihr (ext0.trans ext_cmp) (Bytes.repAddressRef_heapMono₂ addrTy ext_cmp hk) hv ev_ins
+      have ext_h_ins : Heap.Extends h m_ins := ext_cmp.trans ext_ins
+      have ext_b_ins : Heap.Extends h₀ m_ins := ext0.trans ext_h_ins
       obtain ⟨hout, hshape, ext_bal⟩ :=
         rbtree_map_balance_addrMapAll
-          (Bytes.repAddressRef_heapMono₂ addrTy ext_b_401 hk_t) hP_t
-          (addrMapAll_mono_pred (P₂ := Pm) ext_b_401 (fun hp => hp) rl_t) hv371 ev366
-      exact ⟨hout, hshape, ext_h_401.trans ext_bal⟩
+          (Bytes.repAddressRef_heapMono₂ addrTy ext_b_ins hk_t) hP_t
+          (addrMapAll_mono_pred (P₂ := Pm) ext_b_ins (fun hp => hp) rl_t) hv_ins ev_bal
+      exact ⟨hout, hshape, ext_h_ins.trans ext_bal⟩
 
 /-- Inserting `(x_key, .field 1)` into an `AddrMapAll addrMapEnum` set extends its membership
 predicate from `S` to `fun a => S a ∨ a = a_key`. -/

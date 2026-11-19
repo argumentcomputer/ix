@@ -514,6 +514,212 @@ local macro "rbtree_chunk" : tactic =>
       (computes_idx_byte (by decide) (by rbtree_lookup))
       (computes_idx_byte (by decide) (by rbtree_lookup)))
 
+private theorem computes_pack4 {h : Heap F} {locals : List (String × SourceValue F)}
+    {n : String} {a : Bytes.Address}
+    (hn : locals.find? (·.1 == n) = some (n, .tuple (Lib.addrCell F a))) :
+    Lib.ComputesAt h locals
+      (.binary .add
+        (.binary .add
+          (.binary .add
+            (.binary .mul (.call "UInt8::to_field" (some []) [.index (.var n) 0]) (.literal 16777216))
+            (.binary .mul (.call "UInt8::to_field" (some []) [.index (.var n) 1]) (.literal 65536)))
+          (.binary .mul (.call "UInt8::to_field" (some []) [.index (.var n) 2]) (.literal 256)))
+        (.call "UInt8::to_field" (some []) [.index (.var n) 3]))
+      (packChunk a[0] a[1] a[2] a[3] : F) := by
+  have hcast :
+      ((a[0].toNat : F) * (16777216 : F) + (a[1].toNat : F) * (65536 : F) +
+        (a[2].toNat : F) * (256 : F) + (a[3].toNat : F)) =
+      (packChunk a[0] a[1] a[2] a[3] : F) := by
+    unfold packChunk; push_cast; ring
+  rw [← hcast]
+  exact Lib.computes_add
+    (Lib.computes_add
+      (Lib.computes_add
+        (Lib.computes_mul (computes_idx_byte (by decide) hn) (Lib.computes_lit _))
+        (Lib.computes_mul (computes_idx_byte (by decide) hn) (Lib.computes_lit _)))
+      (Lib.computes_mul (computes_idx_byte (by decide) hn) (Lib.computes_lit _)))
+    (computes_idx_byte (by decide) hn)
+
+private theorem cmpChunks_addrChunks (a b : Bytes.Address) :
+    thenCmp (cmpNat (packChunk a[0] a[1] a[2] a[3]) (packChunk b[0] b[1] b[2] b[3]))
+      (cmpChunks (addrChunks a).tail (addrChunks b).tail) =
+    cmpNat (addrRank a) (addrRank b) := by
+  have ha : ∀ z ∈ addrChunks a, z < 4294967296 := by
+    intro z hz
+    simp only [addrChunks, List.mem_cons, List.not_mem_nil, or_false] at hz
+    rcases hz with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact packChunk_lt _ _ _ _
+  have hb : ∀ z ∈ addrChunks b, z < 4294967296 := by
+    intro z hz
+    simp only [addrChunks, List.mem_cons, List.not_mem_nil, or_false] at hz
+    rcases hz with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact packChunk_lt _ _ _ _
+  exact cmpChunks_eq_packChunks (xs := addrChunks a) (ys := addrChunks b)
+    (by simp [addrChunks]) (by simp [addrChunks]) ha hb
+
+set_option maxHeartbeats 2000000 in
+/-- **`RBTreeMap::canon_addr_cmp_tail`**: compares bytes 4..31 of two represented addresses as
+`cmpChunks (addrChunks a).tail (addrChunks b).tail`, without allocating. -/
+theorem canon_addr_cmp_tail_spec {x y r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    {a b : Bytes.Address}
+    (hx : Bytes.RepAddressRef addrTy h a x) (hy : Bytes.RepAddressRef addrTy h b y)
+    (ev : ObsFn W "RBTreeMap::canon_addr_cmp_tail" [x, y] h r h' cs) :
+    r = .field (cmpChunks (addrChunks a).tail (addrChunks b).tail : F) ∧ h' = h := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.RBTreeMap.canon_addr_cmp_tail.lookup
+    (by simp [IxVM.RBTreeMap.canon_addr_cmp_tail, ControlLower.hasControl]) ev
+  simp only [IxVM.RBTreeMap.canon_addr_cmp_tail, List.map, List.zip, List.zipWith] at d0
+  have comp : Lib.ComputesAt h [("x", x), ("y", y)] IxVM.RBTreeMap.canon_addr_cmp_tail.body
+      (cmpChunks (addrChunks a).tail (addrChunks b).tail : F) := by
+    simp only [IxVM.RBTreeMap.canon_addr_cmp_tail, addrChunks, List.tail_cons, cmpChunks]
+    refine computes_let_load (by rbtree_lookup) (Lib.load_addr hx) ?_
+    refine computes_let_load (by rbtree_lookup) (Lib.load_addr hy) ?_
+    refine computes_then (cmpNat_values _ _) (by rbtree_chunk) ?_
+    refine computes_then (cmpNat_values _ _) (by rbtree_chunk) ?_
+    refine computes_then (cmpNat_values _ _) (by rbtree_chunk) ?_
+    refine computes_then (cmpNat_values _ _) (by rbtree_chunk) ?_
+    refine computes_then (cmpNat_values _ _) (by rbtree_chunk) ?_
+    refine computes_then (cmpNat_values _ _) (by rbtree_chunk) ?_
+    rbtree_chunk
+  exact comp r h' cs d0
+
+private theorem computes_call_tail {h : Heap F} {locals : List (String × SourceValue F)}
+    {x y : SourceValue F} {a b : Bytes.Address}
+    (hx : Bytes.RepAddressRef addrTy h a x) (hy : Bytes.RepAddressRef addrTy h b y)
+    (lx : locals.find? (·.1 == "x") = some ("x", x))
+    (ly : locals.find? (·.1 == "y") = some ("y", y)) :
+    Lib.ComputesAt h locals
+      (.call "RBTreeMap::canon_addr_cmp_tail" (some []) [.var "x", .var "y"])
+      (cmpChunks (addrChunks a).tail (addrChunks b).tail : F) := by
+  intro r h' cs d
+  obtain ⟨vs, m, _, _, args0, ev, -⟩ := d.call_inv
+  rw [instanceName_plain_some] at ev
+  obtain ⟨vx, vs1, m1, _, _, rfl, dx, args1, -⟩ := args0.cons_inv
+  obtain ⟨lx', rfl, -⟩ := dx.var_inv
+  have hvx : vx = x := (Prod.mk.inj (Option.some.inj (lx'.symm.trans lx))).2
+  subst hvx
+  obtain ⟨vy, vs2, m2, _, _, rfl, dy, args2, -⟩ := args1.cons_inv
+  obtain ⟨ly', rfl, -⟩ := dy.var_inv
+  have hvy : vy = y := (Prod.mk.inj (Option.some.inj (ly'.symm.trans ly))).2
+  subst hvy
+  obtain ⟨rfl, rfl, -⟩ := args2.nil_inv
+  exact canon_addr_cmp_tail_spec hx hy ev
+
+private theorem computes_match_eq_tail {h : Heap F} {locals : List (String × SourceValue F)}
+    {x y : SourceValue F} {a b : Bytes.Address}
+    (hx : Bytes.RepAddressRef addrTy h a x) (hy : Bytes.RepAddressRef addrTy h b y)
+    (hc0 : packChunk a[0] a[1] a[2] a[3] = packChunk b[0] b[1] b[2] b[3])
+    (lx : locals.find? (·.1 == "x") = some ("x", x))
+    (ly : locals.find? (·.1 == "y") = some ("y", y)) :
+    Lib.ComputesAt h locals
+      (.matchValue (.call "Bytes::address_eq_tail" (some []) [.var "x", .var "y"])
+        [(Generic.Pattern.literal 1, .literal 1),
+         (Generic.Pattern.wildcard, .call "RBTreeMap::canon_addr_cmp_tail" (some []) [.var "x", .var "y"])])
+      (cmpNat (addrRank a) (addrRank b) : F) := by
+  intro r h' cs d
+  obtain ⟨input, m, bs, body, _, _, ds, sel, db, -⟩ := d.matchValue_inv
+  obtain ⟨vs, m0, _, _, args0, ev_eq, -⟩ := ds.call_inv
+  rw [instanceName_plain_some] at ev_eq
+  obtain ⟨vx, vs1, m1, _, _, rfl, dx, args1, -⟩ := args0.cons_inv
+  obtain ⟨lx', rfl, -⟩ := dx.var_inv
+  have hvx : vx = x := (Prod.mk.inj (Option.some.inj (lx'.symm.trans lx))).2
+  subst hvx
+  obtain ⟨vy, vs2, m2, _, _, rfl, dy, args2, -⟩ := args1.cons_inv
+  obtain ⟨ly', rfl, -⟩ := dy.var_inv
+  have hvy : vy = y := (Prod.mk.inj (Option.some.inj (ly'.symm.trans ly))).2
+  subst hvy
+  obtain ⟨rfl, rfl, -⟩ := args2.nil_inv
+  obtain ⟨hin, hm⟩ := Lib.tail_eval (Lib.load_addr hx) (Lib.load_addr hy) ev_eq
+  subst hm
+  rw [hin] at sel
+  rcases selectArm_cons_inv sel with ⟨mt, hbody⟩ | ⟨nm, sel2⟩
+  · subst hbody
+    obtain ⟨hv, hbs⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt
+    subst hbs
+    obtain ⟨hr, hh, -⟩ := db.literal_inv
+    have hb0 : a[0] = b[0] := (packChunk_inj hc0).1
+    have h0sub : (a[0].toNat : F) - (b[0].toNat : F) = 0 := by rw [hb0, sub_self]
+    have haddrEq : Bytes.addressEq F a b = 1 := by
+      unfold Bytes.addressEq
+      rw [ite_eq_left h0sub]
+      exact Value.field.inj hv
+    have hab : a = b :=
+      (Bytes.address_eq_one_iff Aiur.Library.U64.Goldilocks.compatible a b).mp haddrEq
+    have h1 : cmpNat (addrRank a) (addrRank b) = 1 :=
+      cmpNat_eq_one_iff.mpr (congrArg addrRank hab)
+    exact ⟨hr.trans (by rw [h1, Nat.cast_one]), hh⟩
+  · rcases selectArm_cons_inv sel2 with ⟨mt2, hbody⟩ | ⟨nm2, _⟩
+    · subst hbody
+      have hbs := matchPattern_wildcard_inv mt2
+      subst hbs
+      simp only [List.nil_append] at db
+      obtain ⟨hr, hh⟩ := computes_call_tail hx hy lx ly r h' _ db
+      have hfold : cmpChunks (addrChunks a).tail (addrChunks b).tail =
+          cmpNat (addrRank a) (addrRank b) := by
+        rw [← cmpChunks_addrChunks a b, cmpNat_eq_one_iff.mpr hc0]
+        simp only [thenCmp, ↓reduceIte]
+      exact ⟨hr.trans (congrArg Value.field (congrArg Nat.cast hfold)), hh⟩
+    · exact (matchPattern_wildcard_none nm2).elim
+
+private theorem computes_match_lt0 {h : Heap F} {locals : List (String × SourceValue F)}
+    {a b : Bytes.Address}
+    (hne : packChunk a[0] a[1] a[2] a[3] ≠ packChunk b[0] b[1] b[2] b[3])
+    (lxv : locals.find? (·.1 == "xv") = some ("xv", .field (packChunk a[0] a[1] a[2] a[3] : F)))
+    (lyv : locals.find? (·.1 == "yv") = some ("yv", .field (packChunk b[0] b[1] b[2] b[3] : F))) :
+    Lib.ComputesAt h locals
+      (.matchValue (.call "UInt32::less_than_fields" (some []) [.var "xv", .var "yv"])
+        [(Generic.Pattern.literal 1, .literal 0),
+         (Generic.Pattern.literal 0, .literal 2)])
+      (cmpNat (addrRank a) (addrRank b) : F) := by
+  intro r h' cs d
+  obtain ⟨input, m, bs, body, _, _, ds, sel, db, -⟩ := d.matchValue_inv
+  obtain ⟨vs, m0, _, _, args0, ev_lt, -⟩ := ds.call_inv
+  rw [instanceName_plain_some] at ev_lt
+  obtain ⟨vx, vs1, m1, _, _, rfl, dx, args1, -⟩ := args0.cons_inv
+  obtain ⟨lx', rfl, -⟩ := dx.var_inv
+  have hvx : vx = .field (packChunk a[0] a[1] a[2] a[3] : F) :=
+    (Prod.mk.inj (Option.some.inj (lx'.symm.trans lxv))).2
+  subst hvx
+  obtain ⟨vy, vs2, m2, _, _, rfl, dy, args2, -⟩ := args1.cons_inv
+  obtain ⟨ly', rfl, -⟩ := dy.var_inv
+  have hvy : vy = .field (packChunk b[0] b[1] b[2] b[3] : F) :=
+    (Prod.mk.inj (Option.some.inj (ly'.symm.trans lyv))).2
+  subst hvy
+  obtain ⟨rfl, rfl, -⟩ := args2.nil_inv
+  obtain ⟨_, _, hlt_iff, h01, hm⟩ := Lib.less_than_fields_field ev_lt
+  subst hm
+  set pa := packChunk a[0] a[1] a[2] a[3]
+  set pb := packChunk b[0] b[1] b[2] b[3]
+  have hpa : pa < 4294967296 := packChunk_lt _ _ _ _
+  have hpb : pb < 4294967296 := packChunk_lt _ _ _ _
+  rcases selectArm_cons_inv sel with ⟨mt, hbody⟩ | ⟨nm, sel2⟩
+  · subst hbody
+    obtain ⟨hv, hbs⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt
+    subst hbs
+    obtain ⟨hr, hh, -⟩ := db.literal_inv
+    have hlt : pa < pb := by
+      have hv' := hlt_iff.mp hv
+      rwa [val_of_lt_u32 hpa, val_of_lt_u32 hpb] at hv'
+    have hfold : cmpNat (addrRank a) (addrRank b) = 0 := by
+      rw [← cmpChunks_addrChunks a b, cmpNat_eq_zero_iff.mpr hlt]
+      exact ite_eq_right (by decide)
+    exact ⟨hr.trans (by rw [hfold, Nat.cast_zero]), hh⟩
+  · rcases selectArm_cons_inv sel2 with ⟨mt2, hbody⟩ | ⟨nm2, sel3⟩
+    · subst hbody
+      obtain ⟨hv, hbs⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt2
+      subst hbs
+      obtain ⟨hr, hh, -⟩ := db.literal_inv
+      have nlt : ¬ pa < pb := by
+        intro hlt
+        have hv' : ZMod.val (pa : F) < ZMod.val (pb : F) := by
+          rwa [val_of_lt_u32 hpa, val_of_lt_u32 hpb]
+        exact zero_ne_one (Value.field.inj (hv.symm.trans (hlt_iff.mpr hv')))
+      have hgt : pb < pa := Nat.lt_of_le_of_ne (Nat.le_of_not_lt nlt) hne.symm
+      have hfold : cmpNat (addrRank a) (addrRank b) = 2 := by
+        rw [← cmpChunks_addrChunks a b, cmpNat_eq_two_iff.mpr hgt]
+        exact ite_eq_right (by decide)
+      exact ⟨hr.trans (by rw [hfold, Nat.cast_ofNat]), hh⟩
+    · rcases h01 with h0 | h1
+      · exact (MatchesConst.none_inv (MatchesConst.literal 0) nm2 h0).elim
+      · exact (MatchesConst.none_inv (MatchesConst.literal 1) nm h1).elim
+
 set_option maxHeartbeats 2000000 in
 /-- **`RBTreeMap::canon_addr_cmp`**: compares all 32 bytes of two represented addresses as
 `cmpNat (addrRank a) (addrRank b)` (`0` if `<`, `1` if `=`, `2` if `>`), without allocating. -/
@@ -526,47 +732,28 @@ theorem canon_addr_cmp_spec {x y r : SourceValue F} {h h' : Heap F} {cs : List (
     (by simp [IxVM.RBTreeMap.canon_addr_cmp, ControlLower.hasControl]) ev
   simp only [IxVM.RBTreeMap.canon_addr_cmp, List.map, List.zip, List.zipWith] at d0
   have comp : Lib.ComputesAt h [("x", x), ("y", y)] IxVM.RBTreeMap.canon_addr_cmp.body
-      (thenCmp (cmpNat (packChunk a[0] a[1] a[2] a[3]) (packChunk b[0] b[1] b[2] b[3]))
-        (thenCmp (cmpNat (packChunk a[4] a[5] a[6] a[7]) (packChunk b[4] b[5] b[6] b[7]))
-          (thenCmp (cmpNat (packChunk a[8] a[9] a[10] a[11]) (packChunk b[8] b[9] b[10] b[11]))
-            (thenCmp (cmpNat (packChunk a[12] a[13] a[14] a[15]) (packChunk b[12] b[13] b[14] b[15]))
-              (thenCmp (cmpNat (packChunk a[16] a[17] a[18] a[19]) (packChunk b[16] b[17] b[18] b[19]))
-                (thenCmp (cmpNat (packChunk a[20] a[21] a[22] a[23]) (packChunk b[20] b[21] b[22] b[23]))
-                  (thenCmp (cmpNat (packChunk a[24] a[25] a[26] a[27]) (packChunk b[24] b[25] b[26] b[27]))
-                    (cmpNat (packChunk a[28] a[29] a[30] a[31]) (packChunk b[28] b[29] b[30] b[31]))))))))) := by
+      (cmpNat (addrRank a) (addrRank b) : F) := by
     simp only [IxVM.RBTreeMap.canon_addr_cmp]
     refine computes_let_load (by rbtree_lookup) (Lib.load_addr hx) ?_
     refine computes_let_load (by rbtree_lookup) (Lib.load_addr hy) ?_
-    refine computes_then (cmpNat_values _ _) (by rbtree_chunk) ?_
-    refine computes_then (cmpNat_values _ _) (by rbtree_chunk) ?_
-    refine computes_then (cmpNat_values _ _) (by rbtree_chunk) ?_
-    refine computes_then (cmpNat_values _ _) (by rbtree_chunk) ?_
-    refine computes_then (cmpNat_values _ _) (by rbtree_chunk) ?_
-    refine computes_then (cmpNat_values _ _) (by rbtree_chunk) ?_
-    refine computes_then (cmpNat_values _ _) (by rbtree_chunk) ?_
-    rbtree_chunk
-  obtain ⟨hr, hh⟩ := comp r h' cs d0
-  have hfold :
-      thenCmp (cmpNat (packChunk a[0] a[1] a[2] a[3]) (packChunk b[0] b[1] b[2] b[3]))
-        (thenCmp (cmpNat (packChunk a[4] a[5] a[6] a[7]) (packChunk b[4] b[5] b[6] b[7]))
-          (thenCmp (cmpNat (packChunk a[8] a[9] a[10] a[11]) (packChunk b[8] b[9] b[10] b[11]))
-            (thenCmp (cmpNat (packChunk a[12] a[13] a[14] a[15]) (packChunk b[12] b[13] b[14] b[15]))
-              (thenCmp (cmpNat (packChunk a[16] a[17] a[18] a[19]) (packChunk b[16] b[17] b[18] b[19]))
-                (thenCmp (cmpNat (packChunk a[20] a[21] a[22] a[23]) (packChunk b[20] b[21] b[22] b[23]))
-                  (thenCmp (cmpNat (packChunk a[24] a[25] a[26] a[27]) (packChunk b[24] b[25] b[26] b[27]))
-                    (cmpNat (packChunk a[28] a[29] a[30] a[31]) (packChunk b[28] b[29] b[30] b[31])))))))) =
-        cmpNat (addrRank a) (addrRank b) := by
-    have ha : ∀ z ∈ addrChunks a, z < 4294967296 := by
-      intro z hz
-      simp only [addrChunks, List.mem_cons, List.not_mem_nil, or_false] at hz
-      rcases hz with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact packChunk_lt _ _ _ _
-    have hb : ∀ z ∈ addrChunks b, z < 4294967296 := by
-      intro z hz
-      simp only [addrChunks, List.mem_cons, List.not_mem_nil, or_false] at hz
-      rcases hz with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact packChunk_lt _ _ _ _
-    exact cmpChunks_eq_packChunks (xs := addrChunks a) (ys := addrChunks b)
-      (by simp [addrChunks]) (by simp [addrChunks]) ha hb
-  exact ⟨hr.trans (congrArg Value.field (congrArg Nat.cast hfold)), hh⟩
+    refine Lib.computes_let (computes_pack4 (by rbtree_lookup)) ?_
+    refine Lib.computes_let (computes_pack4 (by rbtree_lookup)) ?_
+    have hite :
+        (if ((packChunk a[0] a[1] a[2] a[3] : F) - (packChunk b[0] b[1] b[2] b[3] : F)) = 0
+         then (cmpNat (addrRank a) (addrRank b) : F)
+         else (cmpNat (addrRank a) (addrRank b) : F)) =
+        (cmpNat (addrRank a) (addrRank b) : F) := ite_self _
+    rw [← hite]
+    refine Lib.computes_match0
+      (Lib.computes_sub (Lib.computes_var (by rbtree_lookup)) (Lib.computes_var (by rbtree_lookup)))
+      (fun h0 => ?_) (fun hne => ?_)
+    · have hc0 : packChunk a[0] a[1] a[2] a[3] = packChunk b[0] b[1] b[2] b[3] :=
+        natCast_inj_of_lt_u32 (packChunk_lt _ _ _ _) (packChunk_lt _ _ _ _) (sub_eq_zero.mp h0)
+      exact computes_match_eq_tail hx hy hc0 (by rbtree_lookup) (by rbtree_lookup)
+    · have hcne : packChunk a[0] a[1] a[2] a[3] ≠ packChunk b[0] b[1] b[2] b[3] := by
+        intro heq; rw [heq, sub_self] at hne; exact hne rfl
+      exact computes_match_lt0 hcne (by rbtree_lookup) (by rbtree_lookup)
+  exact comp r h' cs d0
 
 end CanonAddrCmp
 
@@ -965,67 +1152,43 @@ theorem insSorted_split_gt_aux {a ak : Bytes.Address} {v vk : SourceValue F}
 
 /-! ## Branch-decoding helpers for `canon_addr_cmp` in `lookup_or_default` and `ins` -/
 
-private theorem cmp_branch_lt {x_key x_k v_cmp : SourceValue F} {h m1 m2 : Heap F}
-    {cs1 cs2 : List (Call F)} {a ak : Bytes.Address}
+private theorem cmp_branch_lt {x_key x_k : SourceValue F} {h m1 : Heap F}
+    {cs1 : List (Call F)} {a ak : Bytes.Address}
     (hk : Bytes.RepAddressRef addrTy h a x_key)
     (hk_node : Bytes.RepAddressRef addrTy h ak x_k)
-    (ev_cmp : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v_cmp m1 cs1)
-    (ev_z : ObsFn W "Fields::is_zero" [v_cmp] m1 (.field 1) m2 cs2) :
-    m2 = h ∧ addrRank a < addrRank ak := by
-  obtain ⟨rfl, rfl⟩ := canon_addr_cmp_spec hk hk_node ev_cmp
-  obtain ⟨hz, rfl⟩ := Lib.is_zero_field ev_z
-  have hc0 : (cmpNat (addrRank a) (addrRank ak) : F) = 0 := by
-    by_cases he : (cmpNat (addrRank a) (addrRank ak) : F) = 0
-    · exact he
-    · rw [ite_eq_right he] at hz
-      exact absurd (Value.field.inj hz) one_ne_zero
+    (ev_cmp : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h (.field 0) m1 cs1) :
+    m1 = h ∧ addrRank a < addrRank ak := by
+  obtain ⟨hr, rfl⟩ := canon_addr_cmp_spec hk hk_node ev_cmp
+  have hc0 : (cmpNat (addrRank a) (addrRank ak) : F) = 0 := (Value.field.inj hr).symm
   have hc_eq : cmpNat (addrRank a) (addrRank ak) = 0 :=
     natCast_inj_of_lt_u32 (cmpNat_lt_u32 _ _) (by decide) hc0
   exact ⟨rfl, cmpNat_eq_zero_iff.mp hc_eq⟩
 
-private theorem cmp_branch_eq {x_key x_k v_cmp v_lt x_cmp2 : SourceValue F}
-    {h m1 m2 m3 : Heap F} {cs1 cs2 cs3 : List (Call F)} {a ak : Bytes.Address}
+private theorem cmp_branch_eq {x_key x_k : SourceValue F}
+    {h m1 : Heap F} {cs1 : List (Call F)} {a ak : Bytes.Address}
     (hk : Bytes.RepAddressRef addrTy h a x_key)
     (hk_node : Bytes.RepAddressRef addrTy h ak x_k)
-    (ev_cmp1 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v_cmp m1 cs1)
-    (ev_z : ObsFn W "Fields::is_zero" [v_cmp] m1 v_lt m2 cs2)
-    (ev_cmp2 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] m2 x_cmp2 m3 cs3)
-    (op_sub : evalBinOp .sub x_cmp2 (.field 1) = .ok (.field 0)) :
-    m3 = h ∧ a = ak := by
-  obtain ⟨rfl, rfl⟩ := canon_addr_cmp_spec hk hk_node ev_cmp1
-  obtain ⟨_, rfl⟩ := Lib.is_zero_field ev_z
-  obtain ⟨rfl, rfl⟩ := canon_addr_cmp_spec hk hk_node ev_cmp2
-  simp only [evalBinOp, Except.ok.injEq, Value.field.injEq] at op_sub
-  have hc1 : (cmpNat (addrRank a) (addrRank ak) : F) = (1 : F) := by
-    simpa using sub_eq_zero.mp op_sub
+    (ev_cmp : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h (.field 1) m1 cs1) :
+    m1 = h ∧ a = ak := by
+  obtain ⟨hr, rfl⟩ := canon_addr_cmp_spec hk hk_node ev_cmp
+  have hc1 : (cmpNat (addrRank a) (addrRank ak) : F) = (1 : F) := (Value.field.inj hr).symm
   have hc_eq : cmpNat (addrRank a) (addrRank ak) = 1 :=
     natCast_inj_of_lt_u32 (cmpNat_lt_u32 _ _) (by decide) hc1
   exact ⟨rfl, addrRank_injective (cmpNat_eq_one_iff.mp hc_eq)⟩
 
-private theorem cmp_branch_gt {x_key x_k v_cmp v_lt x_cmp2 v_sub : SourceValue F}
-    {h m1 m2 m3 : Heap F} {cs1 cs2 cs3 : List (Call F)} {a ak : Bytes.Address}
+private theorem cmp_branch_gt {x_key x_k v_cmp : SourceValue F}
+    {h m1 : Heap F} {cs1 : List (Call F)} {a ak : Bytes.Address}
     (hk : Bytes.RepAddressRef addrTy h a x_key)
     (hk_node : Bytes.RepAddressRef addrTy h ak x_k)
-    (ev_cmp1 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v_cmp m1 cs1)
-    (ev_z : ObsFn W "Fields::is_zero" [v_cmp] m1 v_lt m2 cs2)
-    (hne_lt : v_lt ≠ .field 1)
-    (ev_cmp2 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] m2 x_cmp2 m3 cs3)
-    (op_sub : evalBinOp .sub x_cmp2 (.field 1) = .ok v_sub)
-    (hne_eq : v_sub ≠ .field 0) :
-    m3 = h ∧ addrRank ak < addrRank a := by
-  obtain ⟨rfl, rfl⟩ := canon_addr_cmp_spec hk hk_node ev_cmp1
-  obtain ⟨hz, rfl⟩ := Lib.is_zero_field ev_z
-  obtain ⟨rfl, rfl⟩ := canon_addr_cmp_spec hk hk_node ev_cmp2
+    (ev_cmp : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v_cmp m1 cs1)
+    (hne0 : v_cmp ≠ .field 0)
+    (hne1 : v_cmp ≠ .field 1) :
+    m1 = h ∧ addrRank ak < addrRank a := by
+  obtain ⟨rfl, rfl⟩ := canon_addr_cmp_spec hk hk_node ev_cmp
   have nc0 : cmpNat (addrRank a) (addrRank ak) ≠ 0 := by
-    intro e
-    rw [e] at hz
-    simp at hz
-    exact hne_lt hz
+    intro e; rw [e] at hne0; exact hne0 (by simp)
   have nc1 : cmpNat (addrRank a) (addrRank ak) ≠ 1 := by
-    intro e
-    rw [e] at op_sub
-    simp [evalBinOp] at op_sub
-    exact hne_eq op_sub.symm
+    intro e; rw [e] at hne1; exact hne1 (by simp)
   rcases cmpNat_values (addrRank a) (addrRank ak) with h0 | h1 | h2
   · exact absurd h0 nc0
   · exact absurd h1 nc1
@@ -1221,47 +1384,42 @@ theorem rbtree_map_lookup_or_default_spec {t_V : Generic.Ty}
   intro x_key x_tree x_default r h h' calls a hk ⟨htree, hpw⟩ ev
   induction htree generalizing r h' calls with
   | nil =>
-    rcases Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev with
-      ⟨_, rfl, rfl, -⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, hv26, _, _, _, _, _, -⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv26, _, _, _, _, _, _, _, _, _, -⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv26, _, _, _, _, _, _, _, _, _, -⟩
-    · exact ⟨rfl, rfl⟩
-    · simp at hv26
-    · simp at hv26
-    · simp at hv26
+    match Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev with
+    | .Nil (he18 := hr) (he19 := hh) .. => exact ⟨hr, hh⟩
+    | .Node_n0 (hv_yxogouup := hv26) .. => simp at hv26
+    | .Node_n1 (hv_yxogouup := hv26) .. => simp at hv26
+    | .Node_other (hv_yxogouup := hv26) .. => simp at hv26
   | node hk_node hl hr rl rr ihl ihr =>
     obtain ⟨hpwL, hpwR, _, _⟩ := pairwise_split hpw
-    rcases Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev with
-      ⟨hv15, _, _, -⟩ |
-      ⟨w28, x_k, x_v, w29, w30, y51, y59, m63, cs73, v76, m78, cs86, cs122,
-        _, hv26, ld52, ld60, ev88, ev75, ev124, -⟩ |
-      ⟨w28, x_k, x_v, w29, w30, y51, y59, v62, m63, cs73, v76, m78, cs86, x162, m164, cs173,
-        _, hv26, ld52, ld60, ev88, ev75, hne150, ev175, op169, rfl, rfl, -⟩ |
-      ⟨w28, x_k, x_v, w29, w30, y51, y59, v62, m63, cs73, v76, m78, cs86, v154, x162, m164,
-        cs173, cs217, _, hv26, ld52, ld60, ev88, ev75, hne150, ev175, op169, hne210, ev219, -⟩
-    · simp at hv15
-    · injection hv26 with _ _ hargs
+    match Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev with
+    | .Nil (hv15 := hv15) .. => simp at hv15
+    | .Node_n0 (hv_yxogouup := hv26) (ev_khiwzwox := ev_cmp) (ld_uxbvbmib := ld_l)
+        (ev_rgfvjlxh := ev_rec) .. =>
+      injection hv26 with _ _ hargs
       simp only [List.cons.injEq, and_true] at hargs
       obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := hargs
-      obtain rfl := loadValue_eq_inj ld52 hl
-      obtain ⟨hm78, hlt⟩ := cmp_branch_lt hk hk_node ev88 ev75
-      subst hm78
+      obtain ⟨hm, hlt⟩ := cmp_branch_lt hk hk_node ev_cmp
+      subst hm
+      obtain rfl := loadValue_eq_inj ld_l hl
       rw [lookupEntries_split_lt hpw hlt]
-      exact ihl hpwL ev124
-    · injection hv26 with _ _ hargs
+      exact ihl hpwL ev_rec
+    | .Node_n1 (hv_yxogouup := hv26) (ev_khiwzwox := ev_cmp) (he_xjcnykms := hr_eq)
+        (he_yudkmufo := hh_eq) .. =>
+      injection hv26 with _ _ hargs
       simp only [List.cons.injEq, and_true] at hargs
       obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := hargs
-      obtain ⟨hm164, rfl⟩ := cmp_branch_eq hk hk_node ev88 ev75 ev175 op169
-      exact ⟨(lookupEntries_split_eq hpw).symm, hm164⟩
-    · injection hv26 with _ _ hargs
+      obtain ⟨hm, rfl⟩ := cmp_branch_eq hk hk_node ev_cmp
+      exact ⟨hr_eq.trans (lookupEntries_split_eq hpw).symm, hh_eq.trans hm⟩
+    | .Node_other (hv_yxogouup := hv26) (ev_khiwzwox := ev_cmp) (hne_xnxwzifz := hne0)
+        (hne_yiigmgjs := hne1) (ld_vukxxfzy := ld_r) (ev_ogagosff := ev_rec) .. =>
+      injection hv26 with _ _ hargs
       simp only [List.cons.injEq, and_true] at hargs
       obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := hargs
-      obtain rfl := loadValue_eq_inj ld60 hr
-      obtain ⟨hm164, hgt⟩ := cmp_branch_gt hk hk_node ev88 ev75 hne150 ev175 op169 hne210
-      subst hm164
+      obtain ⟨hm, hgt⟩ := cmp_branch_gt hk hk_node ev_cmp hne0 hne1
+      subst hm
+      obtain rfl := loadValue_eq_inj ld_r hr
       rw [lookupEntries_split_gt hpw hgt]
-      exact ihr hpwR ev219
+      exact ihr hpwR ev_rec
 
 /-- **`RBTreeMap::rbtree_map_ins`**: inserts/overwrites `(a, x_value)` in `es` while preserving
 the structural entries invariant. -/
@@ -1277,12 +1435,9 @@ theorem rbtree_map_ins_entries {t_V : Generic.Ty}
   intro x_key x_value x_tree r h h' calls a hk ⟨htree, hpw⟩ ev
   induction htree generalizing r h' calls with
   | nil =>
-    rcases Obs.«RBTreeMap::rbtree_map_ins».obs ev with
-      ⟨m47, m60, _, rfl, hm55, hm68, rfl, -⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv79, _, _, _, _, _, _, -⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv79, _, _, _, _, _, _, _, _, _, _, _, -⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv79, _, _, _, _, _, _, _, _, _, _, -⟩
-    · subst hm55 hm68
+    match Obs.«RBTreeMap::rbtree_map_ins».obs ev with
+    | .Nil (m47 := m47) (m60 := m60) (he25 := hr) (hm55 := hm55) (hm68 := hm68) (he72 := hh) .. =>
+      subst hr hh hm55 hm68
       set nilVal := Value.construct (rbtreeEnum t_V) "Nil" []
       set m1 := h ++ [nilVal]
       set m2 := m1 ++ [nilVal]
@@ -1293,66 +1448,50 @@ theorem rbtree_map_ins_entries {t_V : Generic.Ty}
       have ldR : loadValue m2 (.ptr (.enum (rbtreeEnum t_V)) m1.length) = .ok nilVal :=
         loadValue_snoc_construct m1 _ _ _
       exact ⟨ext, .node (Bytes.repAddressRef_heapMono₂ addrTy ext hk) ldL ldR .nil .nil⟩
-    · simp at hv79
-    · simp at hv79
-    · simp at hv79
+    | .Node_n0 (hv_yxogouup := hv79) .. => simp at hv79
+    | .Node_n1 (hv_yxogouup := hv79) .. => simp at hv79
+    | .Node_other (hv_yxogouup := hv79) .. => simp at hv79
   | node hk_node hl hr rl rr ihl ihr =>
     obtain ⟨hpwL, hpwR, hL, _⟩ := pairwise_split hpw
-    rcases Obs.«RBTreeMap::rbtree_map_ins».obs ev with
-      ⟨_, _, hv15, _, _, _, _, -⟩ |
-      ⟨x_color, x_k, x_v, w81, w82, y103, y111, m115, cs125, v128, m130, cs138, cs174,
-        v180, m204, cs212, _, hv79, ld104, ld112, ev140, ev127, ev214, ev176, -⟩ |
-      ⟨x_color, x_k, x_v, w81, w82, y103, y111, v114, m115, cs125, v128, m130, cs138,
-        x259, m261, cs270, m334, m345,
-        _, hv79, ld104, ld112, ev140, ev127, hne247, ev272, op266, rfl, hm342, hm353, rfl, -⟩ |
-      ⟨x_color, x_k, x_v, w81, w82, y103, y111, v114, m115, cs125, v128, m130, cs138,
-        v251, x259, m261, cs270, cs364, v371, m401, cs409,
-        _, hv79, ld104, ld112, ev140, ev127, hne247, ev272, op266, hne357, ev411, ev366, -⟩
-    · simp at hv15
-    · -- `<`: insert left, then balance
+    match Obs.«RBTreeMap::rbtree_map_ins».obs ev with
+    | .Nil (hv15 := hv15) .. => simp at hv15
+    | .Node_n0 (hv_yxogouup := hv79) (ev_khiwzwox := ev_cmp) (ld_ntcpyjql := ld_l)
+        (ev_yrqpzaso := ev_ins) (ld_gfopccso := ld_r) (ev_ueayrilk := ev_bal) .. =>
       injection hv79 with _ _ hargs
       simp only [List.cons.injEq, and_true] at hargs
       obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := hargs
-      obtain rfl := loadValue_eq_inj ld104 hl
-      obtain rfl := loadValue_eq_inj ld112 hr
-      obtain ⟨hm130, hlt⟩ := cmp_branch_lt hk hk_node ev140 ev127
-      subst hm130
-      obtain ⟨ext1, rl'⟩ := ihl hpwL ev214
+      obtain ⟨hm, hlt⟩ := cmp_branch_lt hk hk_node ev_cmp
+      subst hm
+      obtain rfl := loadValue_eq_inj ld_l hl
+      obtain ⟨ext1, rl'⟩ := ihl hpwL ev_ins
+      obtain rfl := loadValue_eq_inj ld_r (ext1.loadValue_eq hr)
       obtain ⟨ext2, rbal⟩ := rbtree_map_balance_entries
-        (Bytes.repAddressRef_heapMono₂ addrTy ext1 hk_node) rl' (rr.mono ext1) ev176
+        (Bytes.repAddressRef_heapMono₂ addrTy ext1 hk_node) rl' (rr.mono ext1) ev_bal
       rw [insSorted_split_lt_aux hlt]
       exact ⟨ext1.trans ext2, rbal⟩
-    · -- `=`: overwrite root
+    | .Node_n1 (hv_yxogouup := hv79) (ev_khiwzwox := ev_cmp) (he_pjwpkiht := hr_eq)
+        (he_zhcposei := hh_eq) .. =>
       injection hv79 with _ _ hargs
       simp only [List.cons.injEq, and_true] at hargs
       obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := hargs
-      obtain rfl := loadValue_eq_inj ld104 hl
-      obtain rfl := loadValue_eq_inj ld112 hr
-      obtain ⟨hm261, rfl⟩ := cmp_branch_eq hk hk_node ev140 ev127 ev272 op266
-      rw [hm261] at hm342 ⊢
-      subst hm342 hm353
-      set m1 := h ++ [y103]
-      set m2 := m1 ++ [y111]
-      have e12 : Heap.Extends m1 m2 := Heap.Extends.snoc _ _
-      have ext : Heap.Extends h m2 := (Heap.Extends.snoc _ _).trans e12
-      have ldL : loadValue m2 (.ptr y103.type h.length) = .ok y103 :=
-        e12.loadValue_eq (loadValue_snoc_self h y103)
-      have ldR : loadValue m2 (.ptr y111.type m1.length) = .ok y111 :=
-        loadValue_snoc_self m1 y111
+      obtain ⟨hm, rfl⟩ := cmp_branch_eq hk hk_node ev_cmp
+      have hheq : h' = h := hh_eq.trans hm
+      subst hheq hr_eq
       rw [insSorted_split_eq_aux hL]
-      exact ⟨ext, .node (Bytes.repAddressRef_heapMono₂ addrTy ext hk)
-        ldL ldR (rl.mono ext) (rr.mono ext)⟩
-    · -- `>`: insert right, then balance
+      exact ⟨Heap.Extends.refl _, .node hk hl hr rl rr⟩
+    | .Node_other (hv_yxogouup := hv79) (ev_khiwzwox := ev_cmp) (hne_xnxwzifz := hne0)
+        (hne_yiigmgjs := hne1) (ld_soaidfau := ld_l) (ld_ihxnivmy := ld_r)
+        (ev_avtjegwj := ev_ins) (ev_kdezdqmp := ev_bal) .. =>
       injection hv79 with _ _ hargs
       simp only [List.cons.injEq, and_true] at hargs
       obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := hargs
-      obtain rfl := loadValue_eq_inj ld104 hl
-      obtain rfl := loadValue_eq_inj ld112 hr
-      obtain ⟨hm261, hgt⟩ := cmp_branch_gt hk hk_node ev140 ev127 hne247 ev272 op266 hne357
-      subst hm261
-      obtain ⟨ext1, rr'⟩ := ihr hpwR ev411
+      obtain ⟨hm, hgt⟩ := cmp_branch_gt hk hk_node ev_cmp hne0 hne1
+      subst hm
+      obtain rfl := loadValue_eq_inj ld_l hl
+      obtain rfl := loadValue_eq_inj ld_r hr
+      obtain ⟨ext1, rr'⟩ := ihr hpwR ev_ins
       obtain ⟨ext2, rbal⟩ := rbtree_map_balance_entries
-        (Bytes.repAddressRef_heapMono₂ addrTy ext1 hk_node) (rl.mono ext1) rr' ev366
+        (Bytes.repAddressRef_heapMono₂ addrTy ext1 hk_node) (rl.mono ext1) rr' ev_bal
       rw [insSorted_split_gt_aux hL hgt]
       exact ⟨ext1.trans ext2, rbal⟩
 

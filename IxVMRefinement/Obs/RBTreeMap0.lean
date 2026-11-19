@@ -641,48 +641,36 @@ inductive «RBTreeMap::rbtree_map_ins».Path (t_V : Generic.Ty) (x_key x_value x
       (hm68 : m60 = (m47 ++ [(.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" [])]))
       (he72 : h' = m60)
       (hc73 : calls = [])
+  | Node_n0
+      (x_color : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (x_left_ptr : SourceValue F) (x_right_ptr : SourceValue F) (m_iczzthhe : Heap F) (cs_claryqpx : List (Call F)) (cs_rjqljvau : List (Call F)) (v_xkvkfotc : SourceValue F) (v_wltcltau : SourceValue F) (m_mfdajbya : Heap F) (cs_zzpfhmxc : List (Call F)) (v_yeofoqcl : SourceValue F)
+      (hne74 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" vs)
+      (hv_yxogouup : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [x_color, x_k, x_v, x_left_ptr, x_right_ptr]))
+      (ev_khiwzwox : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h (.field 0) m_iczzthhe cs_claryqpx)
+      (ld_ntcpyjql : loadValue m_iczzthhe x_left_ptr = .ok v_yeofoqcl)
+      (ev_yrqpzaso : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol [x_key, x_value, v_yeofoqcl] m_iczzthhe v_xkvkfotc m_mfdajbya cs_zzpfhmxc)
+      (ld_gfopccso : loadValue m_mfdajbya x_right_ptr = .ok v_wltcltau)
+      (ev_ueayrilk : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_balance" [t_V]).symbol [x_color, x_k, x_v, v_xkvkfotc, v_wltcltau] m_mfdajbya r h' cs_rjqljvau)
+      (hc_mgvmxnia : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs_claryqpx ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol, [x_key, x_value, v_yeofoqcl], m_iczzthhe⟩ : Call F) :: (cs_zzpfhmxc ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_balance" [t_V]).symbol, [x_color, x_k, x_v, v_xkvkfotc, v_wltcltau], m_mfdajbya⟩ : Call F) :: cs_rjqljvau))))))
   | Node_n1
-      (x_color : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (w81 : SourceValue F) (w82 : SourceValue F) (y103 : SourceValue F) (y111 : SourceValue F) (m115 : Heap F) (cs125 : List (Call F)) (v128 : SourceValue F) (m130 : Heap F) (cs138 : List (Call F)) (cs174 : List (Call F)) (v180 : SourceValue F) (m204 : Heap F) (cs212 : List (Call F))
+      (x_color : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (x_left_ptr : SourceValue F) (x_right_ptr : SourceValue F) (m_iczzthhe : Heap F) (cs_claryqpx : List (Call F))
       (hne74 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" vs)
-      (hv79 : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [x_color, x_k, x_v, w81, w82]))
-      (ld104 : loadValue h w81 = .ok y103)
-      (ld112 : loadValue h w82 = .ok y111)
-      (ev140 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v128 m130 cs138)
-      (ev127 : ObsFn W "Fields::is_zero" [v128] m130 (.field 1) m115 cs125)
-      (ev214 : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol [x_key, x_value, y103] m115 v180 m204 cs212)
-      (ev176 : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_balance" [t_V]).symbol [x_color, x_k, x_v, v180, y111] m204 r h' cs174)
-      (hc246 : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs138 ++ ((⟨"Fields::is_zero", [v128], m130⟩ : Call F) :: (cs125 ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol, [x_key, x_value, y103], m115⟩ : Call F) :: (cs212 ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_balance" [t_V]).symbol, [x_color, x_k, x_v, v180, y111], m204⟩ : Call F) :: cs174))))))))
-  | Node_other_n0
-      (x_color : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (w81 : SourceValue F) (w82 : SourceValue F) (y103 : SourceValue F) (y111 : SourceValue F) (v114 : SourceValue F) (m115 : Heap F) (cs125 : List (Call F)) (v128 : SourceValue F) (m130 : Heap F) (cs138 : List (Call F)) (x259 : SourceValue F) (m261 : Heap F) (cs270 : List (Call F)) (m334 : Heap F) (m345 : Heap F)
+      (hv_yxogouup : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [x_color, x_k, x_v, x_left_ptr, x_right_ptr]))
+      (ev_khiwzwox : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h (.field 1) m_iczzthhe cs_claryqpx)
+      (he_pjwpkiht : r = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [x_color, x_key, x_value, x_left_ptr, x_right_ptr]))
+      (he_zhcposei : h' = m_iczzthhe)
+      (hc_igqsevxl : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: cs_claryqpx))
+  | Node_other
+      (x_color : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (x_left_ptr : SourceValue F) (x_right_ptr : SourceValue F) (v_xhxpaxfe : SourceValue F) (m_iczzthhe : Heap F) (cs_claryqpx : List (Call F)) (cs_achbgomc : List (Call F)) (v_gnsaykcn : SourceValue F) (v_wkuqfaty : SourceValue F) (m_zxtzwonh : Heap F) (cs_hytqqyyg : List (Call F)) (v_oxqmdgey : SourceValue F)
       (hne74 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" vs)
-      (hv79 : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [x_color, x_k, x_v, w81, w82]))
-      (ld104 : loadValue h w81 = .ok y103)
-      (ld112 : loadValue h w82 = .ok y111)
-      (ev140 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v128 m130 cs138)
-      (ev127 : ObsFn W "Fields::is_zero" [v128] m130 v114 m115 cs125)
-      (hne247 : (v114 : SourceValue F) ≠ (.field 1))
-      (ev272 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] m115 x259 m261 cs270)
-      (op266 : evalBinOp .sub (x259 : SourceValue F) ((.field 1) : SourceValue F) = .ok (.field 0))
-      (he311 : r = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [x_color, x_key, x_value, (.ptr (Value.type (y103 : SourceValue F)) (m261).length), (.ptr (Value.type (y111 : SourceValue F)) (m334).length)]))
-      (hm342 : m334 = (m261 ++ [y103]))
-      (hm353 : m345 = (m334 ++ [y111]))
-      (he355 : h' = m345)
-      (hc356 : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs138 ++ ((⟨"Fields::is_zero", [v128], m130⟩ : Call F) :: (cs125 ++ ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], m115⟩ : Call F) :: cs270))))))
-  | Node_other_other
-      (x_color : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (w81 : SourceValue F) (w82 : SourceValue F) (y103 : SourceValue F) (y111 : SourceValue F) (v114 : SourceValue F) (m115 : Heap F) (cs125 : List (Call F)) (v128 : SourceValue F) (m130 : Heap F) (cs138 : List (Call F)) (v251 : SourceValue F) (x259 : SourceValue F) (m261 : Heap F) (cs270 : List (Call F)) (cs364 : List (Call F)) (v371 : SourceValue F) (m401 : Heap F) (cs409 : List (Call F))
-      (hne74 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" vs)
-      (hv79 : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [x_color, x_k, x_v, w81, w82]))
-      (ld104 : loadValue h w81 = .ok y103)
-      (ld112 : loadValue h w82 = .ok y111)
-      (ev140 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v128 m130 cs138)
-      (ev127 : ObsFn W "Fields::is_zero" [v128] m130 v114 m115 cs125)
-      (hne247 : (v114 : SourceValue F) ≠ (.field 1))
-      (ev272 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] m115 x259 m261 cs270)
-      (op266 : evalBinOp .sub (x259 : SourceValue F) ((.field 1) : SourceValue F) = .ok v251)
-      (hne357 : (v251 : SourceValue F) ≠ (.field 0))
-      (ev411 : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol [x_key, x_value, y111] m261 v371 m401 cs409)
-      (ev366 : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_balance" [t_V]).symbol [x_color, x_k, x_v, y103, v371] m401 r h' cs364)
-      (hc436 : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs138 ++ ((⟨"Fields::is_zero", [v128], m130⟩ : Call F) :: (cs125 ++ ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], m115⟩ : Call F) :: (cs270 ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol, [x_key, x_value, y111], m261⟩ : Call F) :: (cs409 ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_balance" [t_V]).symbol, [x_color, x_k, x_v, y103, v371], m401⟩ : Call F) :: cs364))))))))))
+      (hv_yxogouup : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [x_color, x_k, x_v, x_left_ptr, x_right_ptr]))
+      (ev_khiwzwox : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v_xhxpaxfe m_iczzthhe cs_claryqpx)
+      (hne_xnxwzifz : (v_xhxpaxfe : SourceValue F) ≠ (.field 0))
+      (hne_yiigmgjs : (v_xhxpaxfe : SourceValue F) ≠ (.field 1))
+      (ld_soaidfau : loadValue m_iczzthhe x_left_ptr = .ok v_gnsaykcn)
+      (ld_ihxnivmy : loadValue m_iczzthhe x_right_ptr = .ok v_oxqmdgey)
+      (ev_avtjegwj : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol [x_key, x_value, v_oxqmdgey] m_iczzthhe v_wkuqfaty m_zxtzwonh cs_hytqqyyg)
+      (ev_kdezdqmp : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_balance" [t_V]).symbol [x_color, x_k, x_v, v_gnsaykcn, v_wkuqfaty] m_zxtzwonh r h' cs_achbgomc)
+      (hc_pliitbsd : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs_claryqpx ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_ins" [t_V]).symbol, [x_key, x_value, v_oxqmdgey], m_iczzthhe⟩ : Call F) :: (cs_hytqqyyg ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_balance" [t_V]).symbol, [x_color, x_k, x_v, v_gnsaykcn, v_wkuqfaty], m_zxtzwonh⟩ : Call F) :: cs_achbgomc))))))
 
 /-- **Every observed derivation of `RBTreeMap::rbtree_map_ins` takes one of its paths.** -/
 theorem «RBTreeMap::rbtree_map_ins».obs {t_V : Generic.Ty} {x_key x_value x_tree : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -730,176 +718,145 @@ theorem «RBTreeMap::rbtree_map_ins».obs {t_V : Generic.Ty} {x_key x_value x_tr
   · have hne74 := matchPattern_construct_none (by trivial) nm12
     simp only [constructorName_named, instanceName_some_one, subst_param_singleton] at hne74
     rcases selectArm_cons_inv sel13 with ⟨mt75, rfl⟩ | ⟨nm76, sel77⟩
-    · obtain ⟨vs78, hv79, -, ml80⟩ := matchPattern_construct_inv mt75
-      rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv79
-      obtain ⟨x_color, vs83, b84, b85, rfl, mt86, ml87, rfl⟩ := matchListWith_cons_inv ml80
-      obtain rfl := matchPattern_bind_inv mt86
-      obtain ⟨x_k, vs88, b89, b90, rfl, mt91, ml92, rfl⟩ := matchListWith_cons_inv ml87
-      obtain rfl := matchPattern_bind_inv mt91
-      obtain ⟨x_v, vs93, b94, b95, rfl, mt96, ml97, rfl⟩ := matchListWith_cons_inv ml92
-      obtain rfl := matchPattern_bind_inv mt96
-      obtain ⟨w81, vs98, b99, b100, rfl, mt101, ml102, rfl⟩ := matchListWith_cons_inv ml97
-      obtain ⟨y103, ld104, mt105⟩ := matchPattern_load_inv mt101
-      obtain rfl := matchPattern_bind_inv mt105
-      obtain ⟨w82, vs106, b107, b108, rfl, mt109, ml110, rfl⟩ := matchListWith_cons_inv ml102
-      obtain ⟨y111, ld112, mt113⟩ := matchPattern_load_inv mt109
-      obtain rfl := matchPattern_bind_inv mt113
-      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml110
-      obtain ⟨v114, m115, bs116, c117, c118, d119, mt120, d121, rfl⟩ := d9.letValue_inv
-      obtain ⟨vs122, m123, c124, cs125, a126, ev127, rfl⟩ := d119.call_inv
-      rw [instanceName_plain_some] at ev127
-      obtain ⟨v128, vs129, m130, c131, c132, rfl, d133, a134, rfl⟩ := a126.cons_inv
-      obtain ⟨vs135, m136, c137, cs138, a139, ev140, rfl⟩ := d133.call_inv
-      rw [instanceName_plain_some] at ev140
-      obtain ⟨v141, vs143, m144, c145, c146, rfl, d147, a148, rfl⟩ := a139.cons_inv
-      obtain ⟨l149, rfl, rfl⟩ := d147.var_inv
-      simp at l149
-      subst l149
-      obtain ⟨v142, vs150, m151, c152, c153, rfl, d154, a155, rfl⟩ := a148.cons_inv
-      obtain ⟨l156, rfl, rfl⟩ := d154.var_inv
-      simp at l156
-      subst l156
-      obtain ⟨rfl, rfl, rfl⟩ := a155.nil_inv
-      obtain ⟨rfl, rfl, rfl⟩ := a134.nil_inv
-      obtain rfl := matchPattern_bind_inv mt120
-      obtain ⟨v157, m158, bs159, body160, c161, c162, d163, sel164, d165, rfl⟩ := d121.matchValue_inv
-      obtain ⟨l166, rfl, rfl⟩ := d163.var_inv
-      simp at l166
-      subst l166
-      rcases selectArm_cons_inv sel164 with ⟨mt167, rfl⟩ | ⟨nm168, sel169⟩
-      · obtain ⟨hv170, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt167
-        subst hv170
-        obtain ⟨vs171, m172, c173, cs174, a175, ev176, rfl⟩ := d165.call_inv
-        rw [instanceName_some_one, subst_param_singleton] at ev176
-        obtain ⟨v177, vs182, m183, c184, c185, rfl, d186, a187, rfl⟩ := a175.cons_inv
-        obtain ⟨l188, rfl, rfl⟩ := d186.var_inv
-        simp at l188
-        subst l188
-        obtain ⟨v178, vs189, m190, c191, c192, rfl, d193, a194, rfl⟩ := a187.cons_inv
-        obtain ⟨l195, rfl, rfl⟩ := d193.var_inv
-        simp at l195
-        subst l195
-        obtain ⟨v179, vs196, m197, c198, c199, rfl, d200, a201, rfl⟩ := a194.cons_inv
-        obtain ⟨l202, rfl, rfl⟩ := d200.var_inv
-        simp at l202
-        subst l202
-        obtain ⟨v180, vs203, m204, c205, c206, rfl, d207, a208, rfl⟩ := a201.cons_inv
-        obtain ⟨vs209, m210, c211, cs212, a213, ev214, rfl⟩ := d207.call_inv
-        rw [instanceName_some_one, subst_param_singleton] at ev214
-        obtain ⟨v215, vs218, m219, c220, c221, rfl, d222, a223, rfl⟩ := a213.cons_inv
-        obtain ⟨l224, rfl, rfl⟩ := d222.var_inv
-        simp at l224
-        subst l224
-        obtain ⟨v216, vs225, m226, c227, c228, rfl, d229, a230, rfl⟩ := a223.cons_inv
-        obtain ⟨l231, rfl, rfl⟩ := d229.var_inv
-        simp at l231
-        subst l231
-        obtain ⟨v217, vs232, m233, c234, c235, rfl, d236, a237, rfl⟩ := a230.cons_inv
-        obtain ⟨l238, rfl, rfl⟩ := d236.var_inv
-        simp at l238
-        subst l238
-        obtain ⟨rfl, rfl, rfl⟩ := a237.nil_inv
-        obtain ⟨v181, vs239, m240, c241, c242, rfl, d243, a244, rfl⟩ := a208.cons_inv
-        obtain ⟨l245, rfl, rfl⟩ := d243.var_inv
-        simp at l245
-        subst l245
-        obtain ⟨rfl, rfl, rfl⟩ := a244.nil_inv
-        exact «RBTreeMap::rbtree_map_ins».Path.Node_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne74 hv79 ld104 ld112 ev140 ev127 ev214 ev176 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
-      · have hne247 := MatchesConst.none_inv (MatchesConst.literal 1) nm168
-        rcases selectArm_cons_inv sel169 with ⟨mt248, rfl⟩ | ⟨nm249, sel250⟩
-        · obtain rfl := matchPattern_wildcard_inv mt248
-          obtain ⟨v251, m252, bs253, c254, c255, d256, mt257, d258, rfl⟩ := d165.letValue_inv
-          obtain ⟨x259, y260, m261, c262, c263, d264, d265, op266, rfl⟩ := d256.binary_inv
-          obtain ⟨vs267, m268, c269, cs270, a271, ev272, rfl⟩ := d264.call_inv
-          rw [instanceName_plain_some] at ev272
-          obtain ⟨v273, vs275, m276, c277, c278, rfl, d279, a280, rfl⟩ := a271.cons_inv
-          obtain ⟨l281, rfl, rfl⟩ := d279.var_inv
-          simp at l281
-          subst l281
-          obtain ⟨v274, vs282, m283, c284, c285, rfl, d286, a287, rfl⟩ := a280.cons_inv
-          obtain ⟨l288, rfl, rfl⟩ := d286.var_inv
-          simp at l288
-          subst l288
-          obtain ⟨rfl, rfl, rfl⟩ := a287.nil_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d265.literal_inv
-          obtain rfl := matchPattern_bind_inv mt257
-          obtain ⟨v289, m290, bs291, body292, c293, c294, d295, sel296, d297, rfl⟩ := d258.matchValue_inv
-          obtain ⟨l298, rfl, rfl⟩ := d295.var_inv
-          simp at l298
-          subst l298
-          rcases selectArm_cons_inv sel296 with ⟨mt299, rfl⟩ | ⟨nm300, sel301⟩
-          · obtain ⟨hv302, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt299
-            subst hv302
-            obtain ⟨vs303, a304, hres305⟩ := d297.construct_inv
-            rw [instanceName_some_one, subst_param_singleton] at hres305
-            subst hres305
-            obtain ⟨v306, vs312, m313, c314, c315, rfl, d316, a317, rfl⟩ := a304.cons_inv
-            obtain ⟨l318, rfl, rfl⟩ := d316.var_inv
-            simp at l318
-            subst l318
-            obtain ⟨v307, vs319, m320, c321, c322, rfl, d323, a324, rfl⟩ := a317.cons_inv
-            obtain ⟨l325, rfl, rfl⟩ := d323.var_inv
-            simp at l325
-            subst l325
-            obtain ⟨v308, vs326, m327, c328, c329, rfl, d330, a331, rfl⟩ := a324.cons_inv
-            obtain ⟨l332, rfl, rfl⟩ := d330.var_inv
-            simp at l332
-            subst l332
-            obtain ⟨v309, vs333, m334, c335, c336, rfl, d337, a338, rfl⟩ := a331.cons_inv
-            obtain ⟨v339, m340, d341, rfl, hm342⟩ := d337.store_inv
-            obtain ⟨l343, rfl, rfl⟩ := d341.var_inv
-            simp at l343
-            subst l343
-            obtain ⟨v310, vs344, m345, c346, c347, rfl, d348, a349, rfl⟩ := a338.cons_inv
-            obtain ⟨v350, m351, d352, rfl, hm353⟩ := d348.store_inv
-            obtain ⟨l354, rfl, rfl⟩ := d352.var_inv
-            simp at l354
-            subst l354
-            obtain ⟨rfl, rfl, rfl⟩ := a349.nil_inv
-            try simp only [Value.type, List.map_cons, List.map_nil] at hne74 hv79 ld104 ld112 ev140 ev127 hne247 ev272 op266 hm342 hm353 ⊢
-            exact «RBTreeMap::rbtree_map_ins».Path.Node_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne74 hv79 ld104 ld112 ev140 ev127 hne247 ev272 op266 rfl hm342 hm353 rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-          · have hne357 := MatchesConst.none_inv (MatchesConst.literal 0) nm300
-            rcases selectArm_cons_inv sel301 with ⟨mt358, rfl⟩ | ⟨nm359, sel360⟩
-            · obtain rfl := matchPattern_wildcard_inv mt358
-              obtain ⟨vs361, m362, c363, cs364, a365, ev366, rfl⟩ := d297.call_inv
-              rw [instanceName_some_one, subst_param_singleton] at ev366
-              obtain ⟨v367, vs372, m373, c374, c375, rfl, d376, a377, rfl⟩ := a365.cons_inv
-              obtain ⟨l378, rfl, rfl⟩ := d376.var_inv
-              simp at l378
-              subst l378
-              obtain ⟨v368, vs379, m380, c381, c382, rfl, d383, a384, rfl⟩ := a377.cons_inv
-              obtain ⟨l385, rfl, rfl⟩ := d383.var_inv
-              simp at l385
-              subst l385
-              obtain ⟨v369, vs386, m387, c388, c389, rfl, d390, a391, rfl⟩ := a384.cons_inv
-              obtain ⟨l392, rfl, rfl⟩ := d390.var_inv
-              simp at l392
-              subst l392
-              obtain ⟨v370, vs393, m394, c395, c396, rfl, d397, a398, rfl⟩ := a391.cons_inv
-              obtain ⟨l399, rfl, rfl⟩ := d397.var_inv
-              simp at l399
-              subst l399
-              obtain ⟨v371, vs400, m401, c402, c403, rfl, d404, a405, rfl⟩ := a398.cons_inv
-              obtain ⟨vs406, m407, c408, cs409, a410, ev411, rfl⟩ := d404.call_inv
-              rw [instanceName_some_one, subst_param_singleton] at ev411
-              obtain ⟨v412, vs415, m416, c417, c418, rfl, d419, a420, rfl⟩ := a410.cons_inv
-              obtain ⟨l421, rfl, rfl⟩ := d419.var_inv
-              simp at l421
-              subst l421
-              obtain ⟨v413, vs422, m423, c424, c425, rfl, d426, a427, rfl⟩ := a420.cons_inv
-              obtain ⟨l428, rfl, rfl⟩ := d426.var_inv
-              simp at l428
-              subst l428
-              obtain ⟨v414, vs429, m430, c431, c432, rfl, d433, a434, rfl⟩ := a427.cons_inv
-              obtain ⟨l435, rfl, rfl⟩ := d433.var_inv
-              simp at l435
-              subst l435
-              obtain ⟨rfl, rfl, rfl⟩ := a434.nil_inv
-              obtain ⟨rfl, rfl, rfl⟩ := a405.nil_inv
-              exact «RBTreeMap::rbtree_map_ins».Path.Node_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne74 hv79 ld104 ld112 ev140 ev127 hne247 ev272 op266 hne357 ev411 ev366 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
-            · exact (matchPattern_wildcard_none nm359).elim
-        · exact (matchPattern_wildcard_none nm249).elim
-    · clear nm76
+    · obtain ⟨vs78, hv_yxogouup, -, ml80⟩ := matchPattern_construct_inv mt75
+      rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv_yxogouup
+      obtain ⟨x_color, vs81, b82, b83, rfl, mt84, ml85, rfl⟩ := matchListWith_cons_inv ml80
+      obtain rfl := matchPattern_bind_inv mt84
+      obtain ⟨x_k, vs86, b87, b88, rfl, mt89, ml90, rfl⟩ := matchListWith_cons_inv ml85
+      obtain rfl := matchPattern_bind_inv mt89
+      obtain ⟨x_v, vs91, b92, b93, rfl, mt94, ml95, rfl⟩ := matchListWith_cons_inv ml90
+      obtain rfl := matchPattern_bind_inv mt94
+      obtain ⟨x_left_ptr, vs96, b97, b98, rfl, mt99, ml100, rfl⟩ := matchListWith_cons_inv ml95
+      obtain rfl := matchPattern_bind_inv mt99
+      obtain ⟨x_right_ptr, vs101, b102, b103, rfl, mt104, ml105, rfl⟩ := matchListWith_cons_inv ml100
+      obtain rfl := matchPattern_bind_inv mt104
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml105
+      obtain ⟨v_xhxpaxfe, m_iczzthhe, bs108, body109, c110, c111, d112, sel113, d114, rfl⟩ := d9.matchValue_inv
+      obtain ⟨vs115, m116, c117, cs_claryqpx, a119, ev_khiwzwox, rfl⟩ := d112.call_inv
+      rw [instanceName_plain_some] at ev_khiwzwox
+      obtain ⟨v121, vs123, m124, c125, c126, rfl, d127, a128, rfl⟩ := a119.cons_inv
+      obtain ⟨l129, rfl, rfl⟩ := d127.var_inv
+      simp at l129
+      subst l129
+      obtain ⟨v122, vs130, m131, c132, c133, rfl, d134, a135, rfl⟩ := a128.cons_inv
+      obtain ⟨l136, rfl, rfl⟩ := d134.var_inv
+      simp at l136
+      subst l136
+      obtain ⟨rfl, rfl, rfl⟩ := a135.nil_inv
+      rcases selectArm_cons_inv sel113 with ⟨mt137, rfl⟩ | ⟨nm138, sel139⟩
+      · obtain ⟨hv140, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt137
+        subst hv140
+        obtain ⟨vs141, m142, c143, cs_rjqljvau, a145, ev_ueayrilk, rfl⟩ := d114.call_inv
+        rw [instanceName_some_one, subst_param_singleton] at ev_ueayrilk
+        obtain ⟨v147, vs152, m153, c154, c155, rfl, d156, a157, rfl⟩ := a145.cons_inv
+        obtain ⟨l158, rfl, rfl⟩ := d156.var_inv
+        simp at l158
+        subst l158
+        obtain ⟨v148, vs159, m160, c161, c162, rfl, d163, a164, rfl⟩ := a157.cons_inv
+        obtain ⟨l165, rfl, rfl⟩ := d163.var_inv
+        simp at l165
+        subst l165
+        obtain ⟨v149, vs166, m167, c168, c169, rfl, d170, a171, rfl⟩ := a164.cons_inv
+        obtain ⟨l172, rfl, rfl⟩ := d170.var_inv
+        simp at l172
+        subst l172
+        obtain ⟨v_xkvkfotc, vs173, m_mfdajbya, c175, c176, rfl, d177, a178, rfl⟩ := a171.cons_inv
+        obtain ⟨vs179, m180, c181, cs_zzpfhmxc, a183, ev_yrqpzaso, rfl⟩ := d177.call_inv
+        rw [instanceName_some_one, subst_param_singleton] at ev_yrqpzaso
+        obtain ⟨v185, vs188, m189, c190, c191, rfl, d192, a193, rfl⟩ := a183.cons_inv
+        obtain ⟨l194, rfl, rfl⟩ := d192.var_inv
+        simp at l194
+        subst l194
+        obtain ⟨v186, vs195, m196, c197, c198, rfl, d199, a200, rfl⟩ := a193.cons_inv
+        obtain ⟨l201, rfl, rfl⟩ := d199.var_inv
+        simp at l201
+        subst l201
+        obtain ⟨v_yeofoqcl, vs202, m203, c204, c205, rfl, d206, a207, rfl⟩ := a200.cons_inv
+        obtain ⟨p208, d209, ld_ntcpyjql⟩ := d206.load_inv
+        obtain ⟨l211, rfl, rfl⟩ := d209.var_inv
+        simp at l211
+        subst l211
+        obtain ⟨rfl, rfl, rfl⟩ := a207.nil_inv
+        obtain ⟨v_wltcltau, vs212, m213, c214, c215, rfl, d216, a217, rfl⟩ := a178.cons_inv
+        obtain ⟨p218, d219, ld_gfopccso⟩ := d216.load_inv
+        obtain ⟨l221, rfl, rfl⟩ := d219.var_inv
+        simp at l221
+        subst l221
+        obtain ⟨rfl, rfl, rfl⟩ := a217.nil_inv
+        exact «RBTreeMap::rbtree_map_ins».Path.Node_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ hne74 hv_yxogouup ev_khiwzwox ld_ntcpyjql ev_yrqpzaso ld_gfopccso ev_ueayrilk (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
+      · have hne_xnxwzifz := MatchesConst.none_inv (MatchesConst.literal 0) nm138
+        rcases selectArm_cons_inv sel139 with ⟨mt224, rfl⟩ | ⟨nm225, sel226⟩
+        · obtain ⟨hv227, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt224
+          subst hv227
+          obtain ⟨vs228, a229, hres230⟩ := d114.construct_inv
+          rw [instanceName_some_one, subst_param_singleton] at hres230
+          subst hres230
+          obtain ⟨v231, vs237, m238, c239, c240, rfl, d241, a242, rfl⟩ := a229.cons_inv
+          obtain ⟨l243, rfl, rfl⟩ := d241.var_inv
+          simp at l243
+          subst l243
+          obtain ⟨v232, vs244, m245, c246, c247, rfl, d248, a249, rfl⟩ := a242.cons_inv
+          obtain ⟨l250, rfl, rfl⟩ := d248.var_inv
+          simp at l250
+          subst l250
+          obtain ⟨v233, vs251, m252, c253, c254, rfl, d255, a256, rfl⟩ := a249.cons_inv
+          obtain ⟨l257, rfl, rfl⟩ := d255.var_inv
+          simp at l257
+          subst l257
+          obtain ⟨v234, vs258, m259, c260, c261, rfl, d262, a263, rfl⟩ := a256.cons_inv
+          obtain ⟨l264, rfl, rfl⟩ := d262.var_inv
+          simp at l264
+          subst l264
+          obtain ⟨v235, vs265, m266, c267, c268, rfl, d269, a270, rfl⟩ := a263.cons_inv
+          obtain ⟨l271, rfl, rfl⟩ := d269.var_inv
+          simp at l271
+          subst l271
+          obtain ⟨rfl, rfl, rfl⟩ := a270.nil_inv
+          exact «RBTreeMap::rbtree_map_ins».Path.Node_n1 _ _ _ _ _ _ _ hne74 hv_yxogouup ev_khiwzwox rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        · have hne_yiigmgjs := MatchesConst.none_inv (MatchesConst.literal 1) nm225
+          rcases selectArm_cons_inv sel226 with ⟨mt275, rfl⟩ | ⟨nm276, sel277⟩
+          · obtain rfl := matchPattern_wildcard_inv mt275
+            obtain ⟨vs278, m279, c280, cs_achbgomc, a282, ev_kdezdqmp, rfl⟩ := d114.call_inv
+            rw [instanceName_some_one, subst_param_singleton] at ev_kdezdqmp
+            obtain ⟨v284, vs289, m290, c291, c292, rfl, d293, a294, rfl⟩ := a282.cons_inv
+            obtain ⟨l295, rfl, rfl⟩ := d293.var_inv
+            simp at l295
+            subst l295
+            obtain ⟨v285, vs296, m297, c298, c299, rfl, d300, a301, rfl⟩ := a294.cons_inv
+            obtain ⟨l302, rfl, rfl⟩ := d300.var_inv
+            simp at l302
+            subst l302
+            obtain ⟨v286, vs303, m304, c305, c306, rfl, d307, a308, rfl⟩ := a301.cons_inv
+            obtain ⟨l309, rfl, rfl⟩ := d307.var_inv
+            simp at l309
+            subst l309
+            obtain ⟨v_gnsaykcn, vs310, m311, c312, c313, rfl, d314, a315, rfl⟩ := a308.cons_inv
+            obtain ⟨p316, d317, ld_soaidfau⟩ := d314.load_inv
+            obtain ⟨l319, rfl, rfl⟩ := d317.var_inv
+            simp at l319
+            subst l319
+            obtain ⟨v_wkuqfaty, vs320, m_zxtzwonh, c322, c323, rfl, d324, a325, rfl⟩ := a315.cons_inv
+            obtain ⟨vs326, m327, c328, cs_hytqqyyg, a330, ev_avtjegwj, rfl⟩ := d324.call_inv
+            rw [instanceName_some_one, subst_param_singleton] at ev_avtjegwj
+            obtain ⟨v332, vs335, m336, c337, c338, rfl, d339, a340, rfl⟩ := a330.cons_inv
+            obtain ⟨l341, rfl, rfl⟩ := d339.var_inv
+            simp at l341
+            subst l341
+            obtain ⟨v333, vs342, m343, c344, c345, rfl, d346, a347, rfl⟩ := a340.cons_inv
+            obtain ⟨l348, rfl, rfl⟩ := d346.var_inv
+            simp at l348
+            subst l348
+            obtain ⟨v_oxqmdgey, vs349, m350, c351, c352, rfl, d353, a354, rfl⟩ := a347.cons_inv
+            obtain ⟨p355, d356, ld_ihxnivmy⟩ := d353.load_inv
+            obtain ⟨l358, rfl, rfl⟩ := d356.var_inv
+            simp at l358
+            subst l358
+            obtain ⟨rfl, rfl, rfl⟩ := a354.nil_inv
+            obtain ⟨rfl, rfl, rfl⟩ := a325.nil_inv
+            exact «RBTreeMap::rbtree_map_ins».Path.Node_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne74 hv_yxogouup ev_khiwzwox hne_xnxwzifz hne_yiigmgjs ld_soaidfau ld_ihxnivmy ev_avtjegwj ev_kdezdqmp (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
+          · exact (matchPattern_wildcard_none nm276).elim
+    · have hne360 := matchPattern_construct_none (by trivial) nm76
+      simp only [constructorName_named, instanceName_some_one, subst_param_singleton] at hne360
       exact (selectArm_nil_inv sel77).elim
 
 /-- The program resolves `RBTreeMap::rbtree_map_insert` at each instance to its closure. -/
@@ -1008,44 +965,32 @@ inductive «RBTreeMap::rbtree_map_lookup_or_default».Path (t_V : Generic.Ty) (x
       (he18 : r = x_default)
       (he19 : h' = h)
       (hc20 : calls = [])
+  | Node_n0
+      (w_tdwskwdu : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (x_left_ptr : SourceValue F) (x_right_ptr : SourceValue F) (m_iczzthhe : Heap F) (cs_claryqpx : List (Call F)) (cs_unefuzaw : List (Call F)) (v_pqcjeefo : SourceValue F)
+      (hne21 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" vs)
+      (hv_yxogouup : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [w_tdwskwdu, x_k, x_v, x_left_ptr, x_right_ptr]))
+      (ev_khiwzwox : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h (.field 0) m_iczzthhe cs_claryqpx)
+      (ld_uxbvbmib : loadValue m_iczzthhe x_left_ptr = .ok v_pqcjeefo)
+      (ev_rgfvjlxh : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [t_V]).symbol [x_key, v_pqcjeefo, x_default] m_iczzthhe r h' cs_unefuzaw)
+      (hc_mgvmxnia : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs_claryqpx ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [t_V]).symbol, [x_key, v_pqcjeefo, x_default], m_iczzthhe⟩ : Call F) :: cs_unefuzaw))))
   | Node_n1
-      (w28 : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (w29 : SourceValue F) (w30 : SourceValue F) (y51 : SourceValue F) (y59 : SourceValue F) (m63 : Heap F) (cs73 : List (Call F)) (v76 : SourceValue F) (m78 : Heap F) (cs86 : List (Call F)) (cs122 : List (Call F))
+      (w_tdwskwdu : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (x_left_ptr : SourceValue F) (x_right_ptr : SourceValue F) (m_iczzthhe : Heap F) (cs_claryqpx : List (Call F))
       (hne21 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" vs)
-      (hv26 : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [w28, x_k, x_v, w29, w30]))
-      (ld52 : loadValue h w29 = .ok y51)
-      (ld60 : loadValue h w30 = .ok y59)
-      (ev88 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v76 m78 cs86)
-      (ev75 : ObsFn W "Fields::is_zero" [v76] m78 (.field 1) m63 cs73)
-      (ev124 : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [t_V]).symbol [x_key, y51, x_default] m63 r h' cs122)
-      (hc149 : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs86 ++ ((⟨"Fields::is_zero", [v76], m78⟩ : Call F) :: (cs73 ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [t_V]).symbol, [x_key, y51, x_default], m63⟩ : Call F) :: cs122))))))
-  | Node_other_n0
-      (w28 : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (w29 : SourceValue F) (w30 : SourceValue F) (y51 : SourceValue F) (y59 : SourceValue F) (v62 : SourceValue F) (m63 : Heap F) (cs73 : List (Call F)) (v76 : SourceValue F) (m78 : Heap F) (cs86 : List (Call F)) (x162 : SourceValue F) (m164 : Heap F) (cs173 : List (Call F))
+      (hv_yxogouup : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [w_tdwskwdu, x_k, x_v, x_left_ptr, x_right_ptr]))
+      (ev_khiwzwox : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h (.field 1) m_iczzthhe cs_claryqpx)
+      (he_xjcnykms : r = x_v)
+      (he_yudkmufo : h' = m_iczzthhe)
+      (hc_igqsevxl : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: cs_claryqpx))
+  | Node_other
+      (w_tdwskwdu : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (x_left_ptr : SourceValue F) (x_right_ptr : SourceValue F) (v_xhxpaxfe : SourceValue F) (m_iczzthhe : Heap F) (cs_claryqpx : List (Call F)) (cs_rauanskz : List (Call F)) (v_nhqlzftx : SourceValue F)
       (hne21 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" vs)
-      (hv26 : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [w28, x_k, x_v, w29, w30]))
-      (ld52 : loadValue h w29 = .ok y51)
-      (ld60 : loadValue h w30 = .ok y59)
-      (ev88 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v76 m78 cs86)
-      (ev75 : ObsFn W "Fields::is_zero" [v76] m78 v62 m63 cs73)
-      (hne150 : (v62 : SourceValue F) ≠ (.field 1))
-      (ev175 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] m63 x162 m164 cs173)
-      (op169 : evalBinOp .sub (x162 : SourceValue F) ((.field 1) : SourceValue F) = .ok (.field 0))
-      (he207 : r = x_v)
-      (he208 : h' = m164)
-      (hc209 : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs86 ++ ((⟨"Fields::is_zero", [v76], m78⟩ : Call F) :: (cs73 ++ ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], m63⟩ : Call F) :: cs173))))))
-  | Node_other_other
-      (w28 : SourceValue F) (x_k : SourceValue F) (x_v : SourceValue F) (w29 : SourceValue F) (w30 : SourceValue F) (y51 : SourceValue F) (y59 : SourceValue F) (v62 : SourceValue F) (m63 : Heap F) (cs73 : List (Call F)) (v76 : SourceValue F) (m78 : Heap F) (cs86 : List (Call F)) (v154 : SourceValue F) (x162 : SourceValue F) (m164 : Heap F) (cs173 : List (Call F)) (cs217 : List (Call F))
-      (hne21 : ∀ vs : List (SourceValue F), vs.length = 0 → (x_tree : SourceValue F) ≠ .construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Nil" vs)
-      (hv26 : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [w28, x_k, x_v, w29, w30]))
-      (ld52 : loadValue h w29 = .ok y51)
-      (ld60 : loadValue h w30 = .ok y59)
-      (ev88 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v76 m78 cs86)
-      (ev75 : ObsFn W "Fields::is_zero" [v76] m78 v62 m63 cs73)
-      (hne150 : (v62 : SourceValue F) ≠ (.field 1))
-      (ev175 : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] m63 x162 m164 cs173)
-      (op169 : evalBinOp .sub (x162 : SourceValue F) ((.field 1) : SourceValue F) = .ok v154)
-      (hne210 : (v154 : SourceValue F) ≠ (.field 0))
-      (ev219 : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [t_V]).symbol [x_key, y59, x_default] m164 r h' cs217)
-      (hc244 : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs86 ++ ((⟨"Fields::is_zero", [v76], m78⟩ : Call F) :: (cs73 ++ ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], m63⟩ : Call F) :: (cs173 ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [t_V]).symbol, [x_key, y59, x_default], m164⟩ : Call F) :: cs217))))))))
+      (hv_yxogouup : x_tree = (.construct (Instance.mk "RBTreeMap::RBTreeMap" [t_V]).symbol "Node" [w_tdwskwdu, x_k, x_v, x_left_ptr, x_right_ptr]))
+      (ev_khiwzwox : ObsFn W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h v_xhxpaxfe m_iczzthhe cs_claryqpx)
+      (hne_xnxwzifz : (v_xhxpaxfe : SourceValue F) ≠ (.field 0))
+      (hne_yiigmgjs : (v_xhxpaxfe : SourceValue F) ≠ (.field 1))
+      (ld_vukxxfzy : loadValue m_iczzthhe x_right_ptr = .ok v_nhqlzftx)
+      (ev_ogagosff : ObsFn W (Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [t_V]).symbol [x_key, v_nhqlzftx, x_default] m_iczzthhe r h' cs_rauanskz)
+      (hc_pliitbsd : calls = ((⟨"RBTreeMap::canon_addr_cmp", [x_key, x_k], h⟩ : Call F) :: (cs_claryqpx ++ ((⟨(Instance.mk "RBTreeMap::rbtree_map_lookup_or_default" [t_V]).symbol, [x_key, v_nhqlzftx, x_default], m_iczzthhe⟩ : Call F) :: cs_rauanskz))))
 
 /-- **Every observed derivation of `RBTreeMap::rbtree_map_lookup_or_default` takes one of its paths.** -/
 theorem «RBTreeMap::rbtree_map_lookup_or_default».obs {t_V : Generic.Ty} {x_key x_tree x_default : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -1069,112 +1014,82 @@ theorem «RBTreeMap::rbtree_map_lookup_or_default».obs {t_V : Generic.Ty} {x_ke
   · have hne21 := matchPattern_construct_none (by trivial) nm12
     simp only [constructorName_named, instanceName_some_one, subst_param_singleton] at hne21
     rcases selectArm_cons_inv sel13 with ⟨mt22, rfl⟩ | ⟨nm23, sel24⟩
-    · obtain ⟨vs25, hv26, -, ml27⟩ := matchPattern_construct_inv mt22
-      rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv26
-      obtain ⟨w28, vs31, b32, b33, rfl, mt34, ml35, rfl⟩ := matchListWith_cons_inv ml27
-      obtain rfl := matchPattern_wildcard_inv mt34
-      obtain ⟨x_k, vs36, b37, b38, rfl, mt39, ml40, rfl⟩ := matchListWith_cons_inv ml35
-      obtain rfl := matchPattern_bind_inv mt39
-      obtain ⟨x_v, vs41, b42, b43, rfl, mt44, ml45, rfl⟩ := matchListWith_cons_inv ml40
-      obtain rfl := matchPattern_bind_inv mt44
-      obtain ⟨w29, vs46, b47, b48, rfl, mt49, ml50, rfl⟩ := matchListWith_cons_inv ml45
-      obtain ⟨y51, ld52, mt53⟩ := matchPattern_load_inv mt49
-      obtain rfl := matchPattern_bind_inv mt53
-      obtain ⟨w30, vs54, b55, b56, rfl, mt57, ml58, rfl⟩ := matchListWith_cons_inv ml50
-      obtain ⟨y59, ld60, mt61⟩ := matchPattern_load_inv mt57
-      obtain rfl := matchPattern_bind_inv mt61
-      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml58
-      obtain ⟨v62, m63, bs64, c65, c66, d67, mt68, d69, rfl⟩ := d9.letValue_inv
-      obtain ⟨vs70, m71, c72, cs73, a74, ev75, rfl⟩ := d67.call_inv
-      rw [instanceName_plain_some] at ev75
-      obtain ⟨v76, vs77, m78, c79, c80, rfl, d81, a82, rfl⟩ := a74.cons_inv
-      obtain ⟨vs83, m84, c85, cs86, a87, ev88, rfl⟩ := d81.call_inv
-      rw [instanceName_plain_some] at ev88
-      obtain ⟨v89, vs91, m92, c93, c94, rfl, d95, a96, rfl⟩ := a87.cons_inv
-      obtain ⟨l97, rfl, rfl⟩ := d95.var_inv
-      simp at l97
-      subst l97
-      obtain ⟨v90, vs98, m99, c100, c101, rfl, d102, a103, rfl⟩ := a96.cons_inv
-      obtain ⟨l104, rfl, rfl⟩ := d102.var_inv
-      simp at l104
-      subst l104
-      obtain ⟨rfl, rfl, rfl⟩ := a103.nil_inv
-      obtain ⟨rfl, rfl, rfl⟩ := a82.nil_inv
-      obtain rfl := matchPattern_bind_inv mt68
-      obtain ⟨v105, m106, bs107, body108, c109, c110, d111, sel112, d113, rfl⟩ := d69.matchValue_inv
-      obtain ⟨l114, rfl, rfl⟩ := d111.var_inv
-      simp at l114
-      subst l114
-      rcases selectArm_cons_inv sel112 with ⟨mt115, rfl⟩ | ⟨nm116, sel117⟩
-      · obtain ⟨hv118, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt115
-        subst hv118
-        obtain ⟨vs119, m120, c121, cs122, a123, ev124, rfl⟩ := d113.call_inv
-        rw [instanceName_some_one, subst_param_singleton] at ev124
-        obtain ⟨v125, vs128, m129, c130, c131, rfl, d132, a133, rfl⟩ := a123.cons_inv
-        obtain ⟨l134, rfl, rfl⟩ := d132.var_inv
-        simp at l134
-        subst l134
-        obtain ⟨v126, vs135, m136, c137, c138, rfl, d139, a140, rfl⟩ := a133.cons_inv
-        obtain ⟨l141, rfl, rfl⟩ := d139.var_inv
-        simp at l141
-        subst l141
-        obtain ⟨v127, vs142, m143, c144, c145, rfl, d146, a147, rfl⟩ := a140.cons_inv
-        obtain ⟨l148, rfl, rfl⟩ := d146.var_inv
-        simp at l148
-        subst l148
-        obtain ⟨rfl, rfl, rfl⟩ := a147.nil_inv
-        exact «RBTreeMap::rbtree_map_lookup_or_default».Path.Node_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ hne21 hv26 ld52 ld60 ev88 ev75 ev124 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
-      · have hne150 := MatchesConst.none_inv (MatchesConst.literal 1) nm116
-        rcases selectArm_cons_inv sel117 with ⟨mt151, rfl⟩ | ⟨nm152, sel153⟩
-        · obtain rfl := matchPattern_wildcard_inv mt151
-          obtain ⟨v154, m155, bs156, c157, c158, d159, mt160, d161, rfl⟩ := d113.letValue_inv
-          obtain ⟨x162, y163, m164, c165, c166, d167, d168, op169, rfl⟩ := d159.binary_inv
-          obtain ⟨vs170, m171, c172, cs173, a174, ev175, rfl⟩ := d167.call_inv
-          rw [instanceName_plain_some] at ev175
-          obtain ⟨v176, vs178, m179, c180, c181, rfl, d182, a183, rfl⟩ := a174.cons_inv
-          obtain ⟨l184, rfl, rfl⟩ := d182.var_inv
-          simp at l184
-          subst l184
-          obtain ⟨v177, vs185, m186, c187, c188, rfl, d189, a190, rfl⟩ := a183.cons_inv
-          obtain ⟨l191, rfl, rfl⟩ := d189.var_inv
-          simp at l191
-          subst l191
-          obtain ⟨rfl, rfl, rfl⟩ := a190.nil_inv
-          obtain ⟨rfl, rfl, rfl⟩ := d168.literal_inv
-          obtain rfl := matchPattern_bind_inv mt160
-          obtain ⟨v192, m193, bs194, body195, c196, c197, d198, sel199, d200, rfl⟩ := d161.matchValue_inv
-          obtain ⟨l201, rfl, rfl⟩ := d198.var_inv
-          simp at l201
-          subst l201
-          rcases selectArm_cons_inv sel199 with ⟨mt202, rfl⟩ | ⟨nm203, sel204⟩
-          · obtain ⟨hv205, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt202
-            subst hv205
-            obtain ⟨l206, rfl, rfl⟩ := d200.var_inv
-            simp at l206
-            subst l206
-            exact «RBTreeMap::rbtree_map_lookup_or_default».Path.Node_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne21 hv26 ld52 ld60 ev88 ev75 hne150 ev175 op169 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-          · have hne210 := MatchesConst.none_inv (MatchesConst.literal 0) nm203
-            rcases selectArm_cons_inv sel204 with ⟨mt211, rfl⟩ | ⟨nm212, sel213⟩
-            · obtain rfl := matchPattern_wildcard_inv mt211
-              obtain ⟨vs214, m215, c216, cs217, a218, ev219, rfl⟩ := d200.call_inv
-              rw [instanceName_some_one, subst_param_singleton] at ev219
-              obtain ⟨v220, vs223, m224, c225, c226, rfl, d227, a228, rfl⟩ := a218.cons_inv
-              obtain ⟨l229, rfl, rfl⟩ := d227.var_inv
-              simp at l229
-              subst l229
-              obtain ⟨v221, vs230, m231, c232, c233, rfl, d234, a235, rfl⟩ := a228.cons_inv
-              obtain ⟨l236, rfl, rfl⟩ := d234.var_inv
-              simp at l236
-              subst l236
-              obtain ⟨v222, vs237, m238, c239, c240, rfl, d241, a242, rfl⟩ := a235.cons_inv
-              obtain ⟨l243, rfl, rfl⟩ := d241.var_inv
-              simp at l243
-              subst l243
-              obtain ⟨rfl, rfl, rfl⟩ := a242.nil_inv
-              exact «RBTreeMap::rbtree_map_lookup_or_default».Path.Node_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hne21 hv26 ld52 ld60 ev88 ev75 hne150 ev175 op169 hne210 ev219 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
-            · exact (matchPattern_wildcard_none nm212).elim
-        · exact (matchPattern_wildcard_none nm152).elim
-    · clear nm23
+    · obtain ⟨vs25, hv_yxogouup, -, ml27⟩ := matchPattern_construct_inv mt22
+      rw [constructorName_named, instanceName_some_one, subst_param_singleton] at hv_yxogouup
+      obtain ⟨w_tdwskwdu, vs29, b30, b31, rfl, mt32, ml33, rfl⟩ := matchListWith_cons_inv ml27
+      obtain rfl := matchPattern_wildcard_inv mt32
+      obtain ⟨x_k, vs34, b35, b36, rfl, mt37, ml38, rfl⟩ := matchListWith_cons_inv ml33
+      obtain rfl := matchPattern_bind_inv mt37
+      obtain ⟨x_v, vs39, b40, b41, rfl, mt42, ml43, rfl⟩ := matchListWith_cons_inv ml38
+      obtain rfl := matchPattern_bind_inv mt42
+      obtain ⟨x_left_ptr, vs44, b45, b46, rfl, mt47, ml48, rfl⟩ := matchListWith_cons_inv ml43
+      obtain rfl := matchPattern_bind_inv mt47
+      obtain ⟨x_right_ptr, vs49, b50, b51, rfl, mt52, ml53, rfl⟩ := matchListWith_cons_inv ml48
+      obtain rfl := matchPattern_bind_inv mt52
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml53
+      obtain ⟨v_xhxpaxfe, m_iczzthhe, bs56, body57, c58, c59, d60, sel61, d62, rfl⟩ := d9.matchValue_inv
+      obtain ⟨vs63, m64, c65, cs_claryqpx, a67, ev_khiwzwox, rfl⟩ := d60.call_inv
+      rw [instanceName_plain_some] at ev_khiwzwox
+      obtain ⟨v69, vs71, m72, c73, c74, rfl, d75, a76, rfl⟩ := a67.cons_inv
+      obtain ⟨l77, rfl, rfl⟩ := d75.var_inv
+      simp at l77
+      subst l77
+      obtain ⟨v70, vs78, m79, c80, c81, rfl, d82, a83, rfl⟩ := a76.cons_inv
+      obtain ⟨l84, rfl, rfl⟩ := d82.var_inv
+      simp at l84
+      subst l84
+      obtain ⟨rfl, rfl, rfl⟩ := a83.nil_inv
+      rcases selectArm_cons_inv sel61 with ⟨mt85, rfl⟩ | ⟨nm86, sel87⟩
+      · obtain ⟨hv88, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt85
+        subst hv88
+        obtain ⟨vs89, m90, c91, cs_unefuzaw, a93, ev_rgfvjlxh, rfl⟩ := d62.call_inv
+        rw [instanceName_some_one, subst_param_singleton] at ev_rgfvjlxh
+        obtain ⟨v95, vs98, m99, c100, c101, rfl, d102, a103, rfl⟩ := a93.cons_inv
+        obtain ⟨l104, rfl, rfl⟩ := d102.var_inv
+        simp at l104
+        subst l104
+        obtain ⟨v_pqcjeefo, vs105, m106, c107, c108, rfl, d109, a110, rfl⟩ := a103.cons_inv
+        obtain ⟨p111, d112, ld_uxbvbmib⟩ := d109.load_inv
+        obtain ⟨l114, rfl, rfl⟩ := d112.var_inv
+        simp at l114
+        subst l114
+        obtain ⟨v97, vs115, m116, c117, c118, rfl, d119, a120, rfl⟩ := a110.cons_inv
+        obtain ⟨l121, rfl, rfl⟩ := d119.var_inv
+        simp at l121
+        subst l121
+        obtain ⟨rfl, rfl, rfl⟩ := a120.nil_inv
+        exact «RBTreeMap::rbtree_map_lookup_or_default».Path.Node_n0 _ _ _ _ _ _ _ _ _ hne21 hv_yxogouup ev_khiwzwox ld_uxbvbmib ev_rgfvjlxh (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
+      · have hne_xnxwzifz := MatchesConst.none_inv (MatchesConst.literal 0) nm86
+        rcases selectArm_cons_inv sel87 with ⟨mt124, rfl⟩ | ⟨nm125, sel126⟩
+        · obtain ⟨hv127, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt124
+          subst hv127
+          obtain ⟨l128, rfl, rfl⟩ := d62.var_inv
+          simp at l128
+          subst l128
+          exact «RBTreeMap::rbtree_map_lookup_or_default».Path.Node_n1 _ _ _ _ _ _ _ hne21 hv_yxogouup ev_khiwzwox rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        · have hne_yiigmgjs := MatchesConst.none_inv (MatchesConst.literal 1) nm125
+          rcases selectArm_cons_inv sel126 with ⟨mt133, rfl⟩ | ⟨nm134, sel135⟩
+          · obtain rfl := matchPattern_wildcard_inv mt133
+            obtain ⟨vs136, m137, c138, cs_rauanskz, a140, ev_ogagosff, rfl⟩ := d62.call_inv
+            rw [instanceName_some_one, subst_param_singleton] at ev_ogagosff
+            obtain ⟨v142, vs145, m146, c147, c148, rfl, d149, a150, rfl⟩ := a140.cons_inv
+            obtain ⟨l151, rfl, rfl⟩ := d149.var_inv
+            simp at l151
+            subst l151
+            obtain ⟨v_nhqlzftx, vs152, m153, c154, c155, rfl, d156, a157, rfl⟩ := a150.cons_inv
+            obtain ⟨p158, d159, ld_vukxxfzy⟩ := d156.load_inv
+            obtain ⟨l161, rfl, rfl⟩ := d159.var_inv
+            simp at l161
+            subst l161
+            obtain ⟨v144, vs162, m163, c164, c165, rfl, d166, a167, rfl⟩ := a157.cons_inv
+            obtain ⟨l168, rfl, rfl⟩ := d166.var_inv
+            simp at l168
+            subst l168
+            obtain ⟨rfl, rfl, rfl⟩ := a167.nil_inv
+            exact «RBTreeMap::rbtree_map_lookup_or_default».Path.Node_other _ _ _ _ _ _ _ _ _ _ hne21 hv_yxogouup ev_khiwzwox hne_xnxwzifz hne_yiigmgjs ld_vukxxfzy ev_ogagosff (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some, instanceName_some_one, subst_param_singleton])
+          · exact (matchPattern_wildcard_none nm134).elim
+    · have hne170 := matchPattern_construct_none (by trivial) nm23
+      simp only [constructorName_named, instanceName_some_one, subst_param_singleton] at hne170
       exact (selectArm_nil_inv sel24).elim
 
 /-- The evaluation paths of `RBTreeMap::canon_ord_cmp_g`: one constructor per combination of selected arms. -/
@@ -1295,154 +1210,156 @@ theorem «RBTreeMap::canon_ord_then».obs {x_a x_b : SourceValue F} {h h' : Heap
 /-- The evaluation paths of `RBTreeMap::canon_addr_cmp`: one constructor per combination of selected arms. -/
 inductive «RBTreeMap::canon_addr_cmp».Path (x_x x_y : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
-  | run
-      (v1 : SourceValue F) (v13 : SourceValue F) (cs28 : List (Call F)) (v31 : SourceValue F) (v32 : SourceValue F) (m34 : Heap F) (cs42 : List (Call F)) (v45 : SourceValue F) (v46 : SourceValue F) (v47 : SourceValue F) (v48 : SourceValue F) (v49 : SourceValue F) (v50 : SourceValue F) (v51 : SourceValue F) (v52 : SourceValue F) (m54 : Heap F) (cs62 : List (Call F)) (v65 : SourceValue F) (m77 : Heap F) (cs85 : List (Call F)) (v88 : SourceValue F) (m100 : Heap F) (cs108 : List (Call F)) (v111 : SourceValue F) (m123 : Heap F) (cs131 : List (Call F)) (v134 : SourceValue F) (m146 : Heap F) (cs154 : List (Call F)) (v157 : SourceValue F) (m169 : Heap F) (cs177 : List (Call F)) (v180 : SourceValue F) (m192 : Heap F) (cs200 : List (Call F)) (v203 : SourceValue F) (m215 : Heap F) (cs223 : List (Call F)) (v226 : SourceValue F) (m238 : Heap F) (cs246 : List (Call F)) (v249 : SourceValue F) (v250 : SourceValue F) (m252 : Heap F) (cs260 : List (Call F)) (v263 : SourceValue F) (v264 : SourceValue F) (v265 : SourceValue F) (v266 : SourceValue F) (v267 : SourceValue F) (v268 : SourceValue F) (v269 : SourceValue F) (v270 : SourceValue F) (m272 : Heap F) (cs280 : List (Call F)) (v283 : SourceValue F) (m295 : Heap F) (cs303 : List (Call F)) (v306 : SourceValue F) (m318 : Heap F) (cs326 : List (Call F)) (v329 : SourceValue F) (m341 : Heap F) (cs349 : List (Call F)) (v352 : SourceValue F) (m364 : Heap F) (cs372 : List (Call F)) (v375 : SourceValue F) (m387 : Heap F) (cs395 : List (Call F)) (v398 : SourceValue F) (m410 : Heap F) (cs418 : List (Call F)) (v421 : SourceValue F) (m433 : Heap F) (cs441 : List (Call F)) (v444 : SourceValue F) (m456 : Heap F) (cs464 : List (Call F)) (v467 : SourceValue F) (v468 : SourceValue F) (m470 : Heap F) (cs478 : List (Call F)) (v481 : SourceValue F) (v482 : SourceValue F) (v483 : SourceValue F) (v484 : SourceValue F) (v485 : SourceValue F) (v486 : SourceValue F) (v487 : SourceValue F) (v488 : SourceValue F) (m490 : Heap F) (cs498 : List (Call F)) (v501 : SourceValue F) (m513 : Heap F) (cs521 : List (Call F)) (v524 : SourceValue F) (m536 : Heap F) (cs544 : List (Call F)) (v547 : SourceValue F) (m559 : Heap F) (cs567 : List (Call F)) (v570 : SourceValue F) (m582 : Heap F) (cs590 : List (Call F)) (v593 : SourceValue F) (m605 : Heap F) (cs613 : List (Call F)) (v616 : SourceValue F) (m628 : Heap F) (cs636 : List (Call F)) (v639 : SourceValue F) (m651 : Heap F) (cs659 : List (Call F)) (v662 : SourceValue F) (m674 : Heap F) (cs682 : List (Call F)) (v685 : SourceValue F) (v686 : SourceValue F) (m688 : Heap F) (cs696 : List (Call F)) (v699 : SourceValue F) (v700 : SourceValue F) (v701 : SourceValue F) (v702 : SourceValue F) (v703 : SourceValue F) (v704 : SourceValue F) (v705 : SourceValue F) (v706 : SourceValue F) (m708 : Heap F) (cs716 : List (Call F)) (v719 : SourceValue F) (m731 : Heap F) (cs739 : List (Call F)) (v742 : SourceValue F) (m754 : Heap F) (cs762 : List (Call F)) (v765 : SourceValue F) (m777 : Heap F) (cs785 : List (Call F)) (v788 : SourceValue F) (m800 : Heap F) (cs808 : List (Call F)) (v811 : SourceValue F) (m823 : Heap F) (cs831 : List (Call F)) (v834 : SourceValue F) (m846 : Heap F) (cs854 : List (Call F)) (v857 : SourceValue F) (m869 : Heap F) (cs877 : List (Call F)) (v880 : SourceValue F) (m892 : Heap F) (cs900 : List (Call F)) (v903 : SourceValue F) (v904 : SourceValue F) (m906 : Heap F) (cs914 : List (Call F)) (v917 : SourceValue F) (v918 : SourceValue F) (v919 : SourceValue F) (v920 : SourceValue F) (v921 : SourceValue F) (v922 : SourceValue F) (v923 : SourceValue F) (v924 : SourceValue F) (m926 : Heap F) (cs934 : List (Call F)) (v937 : SourceValue F) (m949 : Heap F) (cs957 : List (Call F)) (v960 : SourceValue F) (m972 : Heap F) (cs980 : List (Call F)) (v983 : SourceValue F) (m995 : Heap F) (cs1003 : List (Call F)) (v1006 : SourceValue F) (m1018 : Heap F) (cs1026 : List (Call F)) (v1029 : SourceValue F) (m1041 : Heap F) (cs1049 : List (Call F)) (v1052 : SourceValue F) (m1064 : Heap F) (cs1072 : List (Call F)) (v1075 : SourceValue F) (m1087 : Heap F) (cs1095 : List (Call F)) (v1098 : SourceValue F) (m1110 : Heap F) (cs1118 : List (Call F)) (v1121 : SourceValue F) (v1122 : SourceValue F) (m1124 : Heap F) (cs1132 : List (Call F)) (v1135 : SourceValue F) (v1136 : SourceValue F) (v1137 : SourceValue F) (v1138 : SourceValue F) (v1139 : SourceValue F) (v1140 : SourceValue F) (v1141 : SourceValue F) (v1142 : SourceValue F) (m1144 : Heap F) (cs1152 : List (Call F)) (v1155 : SourceValue F) (m1167 : Heap F) (cs1175 : List (Call F)) (v1178 : SourceValue F) (m1190 : Heap F) (cs1198 : List (Call F)) (v1201 : SourceValue F) (m1213 : Heap F) (cs1221 : List (Call F)) (v1224 : SourceValue F) (m1236 : Heap F) (cs1244 : List (Call F)) (v1247 : SourceValue F) (m1259 : Heap F) (cs1267 : List (Call F)) (v1270 : SourceValue F) (m1282 : Heap F) (cs1290 : List (Call F)) (v1293 : SourceValue F) (m1305 : Heap F) (cs1313 : List (Call F)) (v1316 : SourceValue F) (m1328 : Heap F) (cs1336 : List (Call F)) (v1339 : SourceValue F) (v1340 : SourceValue F) (m1342 : Heap F) (cs1350 : List (Call F)) (v1353 : SourceValue F) (v1354 : SourceValue F) (v1355 : SourceValue F) (v1356 : SourceValue F) (v1357 : SourceValue F) (v1358 : SourceValue F) (v1359 : SourceValue F) (v1360 : SourceValue F) (m1362 : Heap F) (cs1370 : List (Call F)) (v1373 : SourceValue F) (m1385 : Heap F) (cs1393 : List (Call F)) (v1396 : SourceValue F) (m1408 : Heap F) (cs1416 : List (Call F)) (v1419 : SourceValue F) (m1431 : Heap F) (cs1439 : List (Call F)) (v1442 : SourceValue F) (m1454 : Heap F) (cs1462 : List (Call F)) (v1465 : SourceValue F) (m1477 : Heap F) (cs1485 : List (Call F)) (v1488 : SourceValue F) (m1500 : Heap F) (cs1508 : List (Call F)) (v1511 : SourceValue F) (m1523 : Heap F) (cs1531 : List (Call F)) (v1534 : SourceValue F) (m1546 : Heap F) (cs1554 : List (Call F)) (v1557 : SourceValue F) (v1558 : SourceValue F) (v1559 : SourceValue F) (v1560 : SourceValue F) (v1561 : SourceValue F) (v1562 : SourceValue F) (v1563 : SourceValue F) (v1564 : SourceValue F) (m1566 : Heap F) (cs1574 : List (Call F)) (v1577 : SourceValue F) (m1589 : Heap F) (cs1597 : List (Call F)) (v1600 : SourceValue F) (m1612 : Heap F) (cs1620 : List (Call F)) (v1623 : SourceValue F) (m1635 : Heap F) (cs1643 : List (Call F)) (v1646 : SourceValue F) (m1658 : Heap F) (cs1666 : List (Call F)) (v1669 : SourceValue F) (m1681 : Heap F) (cs1689 : List (Call F)) (v1692 : SourceValue F) (m1704 : Heap F) (cs1712 : List (Call F)) (v1715 : SourceValue F) (m1727 : Heap F) (cs1735 : List (Call F)) (v1738 : SourceValue F)
+  | n0_n1
+      (v1 : SourceValue F) (v13 : SourceValue F) (v_dpddzmhx : SourceValue F) (m_obkfkdlt : Heap F) (x_hiphurcc : SourceValue F) (y_aoahgehb : SourceValue F) (x_ydbwcpov : SourceValue F) (y_aalcgdac : SourceValue F) (x_olxgybbk : SourceValue F) (y_elowuqcl : SourceValue F) (x_kpfcggpp : SourceValue F) (m_avfnomxx : Heap F) (cs_pzelfaih : List (Call F)) (v_cssojfsh : SourceValue F) (x_fmftmynm : SourceValue F) (m_mybcqflv : Heap F) (cs_sdcrvmtk : List (Call F)) (v_bsarbopc : SourceValue F) (x_rmabywrr : SourceValue F) (m_ffpimoiq : Heap F) (cs_ojfawbjb : List (Call F)) (v_laxzkuap : SourceValue F) (cs_vgsxxuiz : List (Call F)) (v_sarbutap : SourceValue F) (v_frwyptmt : SourceValue F) (m_gsivumnr : Heap F) (x_ftcthkxr : SourceValue F) (y_tphstdzk : SourceValue F) (x_ndogdkot : SourceValue F) (y_xyxdbpyo : SourceValue F) (x_oedusdtn : SourceValue F) (y_kupdgfpx : SourceValue F) (x_dkivkfps : SourceValue F) (m_alrxnvmm : Heap F) (cs_fjytmruo : List (Call F)) (v_uprznsvv : SourceValue F) (x_tcpswxjp : SourceValue F) (m_fajzchdp : Heap F) (cs_hifhcneo : List (Call F)) (v_yhwkvpty : SourceValue F) (x_eiokamie : SourceValue F) (m_yipjsgcx : Heap F) (cs_egiqoeoh : List (Call F)) (v_cwrumawi : SourceValue F) (cs_xztrhcee : List (Call F)) (v_fjbemnru : SourceValue F) (m_aszjyoou : Heap F) (cs_owxhewhm : List (Call F))
       (ld11 : loadValue h x_x = .ok v1)
       (ld23 : loadValue h x_y = .ok v13)
-      (pr74 : projectValue (v1 : SourceValue F) 0 = .ok v65)
-      (ev64 : ObsFn W "UInt8::to_field" [v65] h v45 m54 cs62)
-      (pr97 : projectValue (v1 : SourceValue F) 1 = .ok v88)
-      (ev87 : ObsFn W "UInt8::to_field" [v88] m54 v46 m77 cs85)
-      (pr120 : projectValue (v1 : SourceValue F) 2 = .ok v111)
-      (ev110 : ObsFn W "UInt8::to_field" [v111] m77 v47 m100 cs108)
-      (pr143 : projectValue (v1 : SourceValue F) 3 = .ok v134)
-      (ev133 : ObsFn W "UInt8::to_field" [v134] m100 v48 m123 cs131)
-      (pr166 : projectValue (v13 : SourceValue F) 0 = .ok v157)
-      (ev156 : ObsFn W "UInt8::to_field" [v157] m123 v49 m146 cs154)
-      (pr189 : projectValue (v13 : SourceValue F) 1 = .ok v180)
-      (ev179 : ObsFn W "UInt8::to_field" [v180] m146 v50 m169 cs177)
-      (pr212 : projectValue (v13 : SourceValue F) 2 = .ok v203)
-      (ev202 : ObsFn W "UInt8::to_field" [v203] m169 v51 m192 cs200)
-      (pr235 : projectValue (v13 : SourceValue F) 3 = .ok v226)
-      (ev225 : ObsFn W "UInt8::to_field" [v226] m192 v52 m215 cs223)
-      (ev44 : ObsFn W "RBTreeMap::canon_addr_chunk" [v45, v46, v47, v48, v49, v50, v51, v52] m215 v31 m34 cs42)
-      (pr292 : projectValue (v1 : SourceValue F) 4 = .ok v283)
-      (ev282 : ObsFn W "UInt8::to_field" [v283] m34 v263 m272 cs280)
-      (pr315 : projectValue (v1 : SourceValue F) 5 = .ok v306)
-      (ev305 : ObsFn W "UInt8::to_field" [v306] m272 v264 m295 cs303)
-      (pr338 : projectValue (v1 : SourceValue F) 6 = .ok v329)
-      (ev328 : ObsFn W "UInt8::to_field" [v329] m295 v265 m318 cs326)
-      (pr361 : projectValue (v1 : SourceValue F) 7 = .ok v352)
-      (ev351 : ObsFn W "UInt8::to_field" [v352] m318 v266 m341 cs349)
-      (pr384 : projectValue (v13 : SourceValue F) 4 = .ok v375)
-      (ev374 : ObsFn W "UInt8::to_field" [v375] m341 v267 m364 cs372)
-      (pr407 : projectValue (v13 : SourceValue F) 5 = .ok v398)
-      (ev397 : ObsFn W "UInt8::to_field" [v398] m364 v268 m387 cs395)
-      (pr430 : projectValue (v13 : SourceValue F) 6 = .ok v421)
-      (ev420 : ObsFn W "UInt8::to_field" [v421] m387 v269 m410 cs418)
-      (pr453 : projectValue (v13 : SourceValue F) 7 = .ok v444)
-      (ev443 : ObsFn W "UInt8::to_field" [v444] m410 v270 m433 cs441)
-      (ev262 : ObsFn W "RBTreeMap::canon_addr_chunk" [v263, v264, v265, v266, v267, v268, v269, v270] m433 v249 m252 cs260)
-      (pr510 : projectValue (v1 : SourceValue F) 8 = .ok v501)
-      (ev500 : ObsFn W "UInt8::to_field" [v501] m252 v481 m490 cs498)
-      (pr533 : projectValue (v1 : SourceValue F) 9 = .ok v524)
-      (ev523 : ObsFn W "UInt8::to_field" [v524] m490 v482 m513 cs521)
-      (pr556 : projectValue (v1 : SourceValue F) 10 = .ok v547)
-      (ev546 : ObsFn W "UInt8::to_field" [v547] m513 v483 m536 cs544)
-      (pr579 : projectValue (v1 : SourceValue F) 11 = .ok v570)
-      (ev569 : ObsFn W "UInt8::to_field" [v570] m536 v484 m559 cs567)
-      (pr602 : projectValue (v13 : SourceValue F) 8 = .ok v593)
-      (ev592 : ObsFn W "UInt8::to_field" [v593] m559 v485 m582 cs590)
-      (pr625 : projectValue (v13 : SourceValue F) 9 = .ok v616)
-      (ev615 : ObsFn W "UInt8::to_field" [v616] m582 v486 m605 cs613)
-      (pr648 : projectValue (v13 : SourceValue F) 10 = .ok v639)
-      (ev638 : ObsFn W "UInt8::to_field" [v639] m605 v487 m628 cs636)
-      (pr671 : projectValue (v13 : SourceValue F) 11 = .ok v662)
-      (ev661 : ObsFn W "UInt8::to_field" [v662] m628 v488 m651 cs659)
-      (ev480 : ObsFn W "RBTreeMap::canon_addr_chunk" [v481, v482, v483, v484, v485, v486, v487, v488] m651 v467 m470 cs478)
-      (pr728 : projectValue (v1 : SourceValue F) 12 = .ok v719)
-      (ev718 : ObsFn W "UInt8::to_field" [v719] m470 v699 m708 cs716)
-      (pr751 : projectValue (v1 : SourceValue F) 13 = .ok v742)
-      (ev741 : ObsFn W "UInt8::to_field" [v742] m708 v700 m731 cs739)
-      (pr774 : projectValue (v1 : SourceValue F) 14 = .ok v765)
-      (ev764 : ObsFn W "UInt8::to_field" [v765] m731 v701 m754 cs762)
-      (pr797 : projectValue (v1 : SourceValue F) 15 = .ok v788)
-      (ev787 : ObsFn W "UInt8::to_field" [v788] m754 v702 m777 cs785)
-      (pr820 : projectValue (v13 : SourceValue F) 12 = .ok v811)
-      (ev810 : ObsFn W "UInt8::to_field" [v811] m777 v703 m800 cs808)
-      (pr843 : projectValue (v13 : SourceValue F) 13 = .ok v834)
-      (ev833 : ObsFn W "UInt8::to_field" [v834] m800 v704 m823 cs831)
-      (pr866 : projectValue (v13 : SourceValue F) 14 = .ok v857)
-      (ev856 : ObsFn W "UInt8::to_field" [v857] m823 v705 m846 cs854)
-      (pr889 : projectValue (v13 : SourceValue F) 15 = .ok v880)
-      (ev879 : ObsFn W "UInt8::to_field" [v880] m846 v706 m869 cs877)
-      (ev698 : ObsFn W "RBTreeMap::canon_addr_chunk" [v699, v700, v701, v702, v703, v704, v705, v706] m869 v685 m688 cs696)
-      (pr946 : projectValue (v1 : SourceValue F) 16 = .ok v937)
-      (ev936 : ObsFn W "UInt8::to_field" [v937] m688 v917 m926 cs934)
-      (pr969 : projectValue (v1 : SourceValue F) 17 = .ok v960)
-      (ev959 : ObsFn W "UInt8::to_field" [v960] m926 v918 m949 cs957)
-      (pr992 : projectValue (v1 : SourceValue F) 18 = .ok v983)
-      (ev982 : ObsFn W "UInt8::to_field" [v983] m949 v919 m972 cs980)
-      (pr1015 : projectValue (v1 : SourceValue F) 19 = .ok v1006)
-      (ev1005 : ObsFn W "UInt8::to_field" [v1006] m972 v920 m995 cs1003)
-      (pr1038 : projectValue (v13 : SourceValue F) 16 = .ok v1029)
-      (ev1028 : ObsFn W "UInt8::to_field" [v1029] m995 v921 m1018 cs1026)
-      (pr1061 : projectValue (v13 : SourceValue F) 17 = .ok v1052)
-      (ev1051 : ObsFn W "UInt8::to_field" [v1052] m1018 v922 m1041 cs1049)
-      (pr1084 : projectValue (v13 : SourceValue F) 18 = .ok v1075)
-      (ev1074 : ObsFn W "UInt8::to_field" [v1075] m1041 v923 m1064 cs1072)
-      (pr1107 : projectValue (v13 : SourceValue F) 19 = .ok v1098)
-      (ev1097 : ObsFn W "UInt8::to_field" [v1098] m1064 v924 m1087 cs1095)
-      (ev916 : ObsFn W "RBTreeMap::canon_addr_chunk" [v917, v918, v919, v920, v921, v922, v923, v924] m1087 v903 m906 cs914)
-      (pr1164 : projectValue (v1 : SourceValue F) 20 = .ok v1155)
-      (ev1154 : ObsFn W "UInt8::to_field" [v1155] m906 v1135 m1144 cs1152)
-      (pr1187 : projectValue (v1 : SourceValue F) 21 = .ok v1178)
-      (ev1177 : ObsFn W "UInt8::to_field" [v1178] m1144 v1136 m1167 cs1175)
-      (pr1210 : projectValue (v1 : SourceValue F) 22 = .ok v1201)
-      (ev1200 : ObsFn W "UInt8::to_field" [v1201] m1167 v1137 m1190 cs1198)
-      (pr1233 : projectValue (v1 : SourceValue F) 23 = .ok v1224)
-      (ev1223 : ObsFn W "UInt8::to_field" [v1224] m1190 v1138 m1213 cs1221)
-      (pr1256 : projectValue (v13 : SourceValue F) 20 = .ok v1247)
-      (ev1246 : ObsFn W "UInt8::to_field" [v1247] m1213 v1139 m1236 cs1244)
-      (pr1279 : projectValue (v13 : SourceValue F) 21 = .ok v1270)
-      (ev1269 : ObsFn W "UInt8::to_field" [v1270] m1236 v1140 m1259 cs1267)
-      (pr1302 : projectValue (v13 : SourceValue F) 22 = .ok v1293)
-      (ev1292 : ObsFn W "UInt8::to_field" [v1293] m1259 v1141 m1282 cs1290)
-      (pr1325 : projectValue (v13 : SourceValue F) 23 = .ok v1316)
-      (ev1315 : ObsFn W "UInt8::to_field" [v1316] m1282 v1142 m1305 cs1313)
-      (ev1134 : ObsFn W "RBTreeMap::canon_addr_chunk" [v1135, v1136, v1137, v1138, v1139, v1140, v1141, v1142] m1305 v1121 m1124 cs1132)
-      (pr1382 : projectValue (v1 : SourceValue F) 24 = .ok v1373)
-      (ev1372 : ObsFn W "UInt8::to_field" [v1373] m1124 v1353 m1362 cs1370)
-      (pr1405 : projectValue (v1 : SourceValue F) 25 = .ok v1396)
-      (ev1395 : ObsFn W "UInt8::to_field" [v1396] m1362 v1354 m1385 cs1393)
-      (pr1428 : projectValue (v1 : SourceValue F) 26 = .ok v1419)
-      (ev1418 : ObsFn W "UInt8::to_field" [v1419] m1385 v1355 m1408 cs1416)
-      (pr1451 : projectValue (v1 : SourceValue F) 27 = .ok v1442)
-      (ev1441 : ObsFn W "UInt8::to_field" [v1442] m1408 v1356 m1431 cs1439)
-      (pr1474 : projectValue (v13 : SourceValue F) 24 = .ok v1465)
-      (ev1464 : ObsFn W "UInt8::to_field" [v1465] m1431 v1357 m1454 cs1462)
-      (pr1497 : projectValue (v13 : SourceValue F) 25 = .ok v1488)
-      (ev1487 : ObsFn W "UInt8::to_field" [v1488] m1454 v1358 m1477 cs1485)
-      (pr1520 : projectValue (v13 : SourceValue F) 26 = .ok v1511)
-      (ev1510 : ObsFn W "UInt8::to_field" [v1511] m1477 v1359 m1500 cs1508)
-      (pr1543 : projectValue (v13 : SourceValue F) 27 = .ok v1534)
-      (ev1533 : ObsFn W "UInt8::to_field" [v1534] m1500 v1360 m1523 cs1531)
-      (ev1352 : ObsFn W "RBTreeMap::canon_addr_chunk" [v1353, v1354, v1355, v1356, v1357, v1358, v1359, v1360] m1523 v1339 m1342 cs1350)
-      (pr1586 : projectValue (v1 : SourceValue F) 28 = .ok v1577)
-      (ev1576 : ObsFn W "UInt8::to_field" [v1577] m1342 v1557 m1566 cs1574)
-      (pr1609 : projectValue (v1 : SourceValue F) 29 = .ok v1600)
-      (ev1599 : ObsFn W "UInt8::to_field" [v1600] m1566 v1558 m1589 cs1597)
-      (pr1632 : projectValue (v1 : SourceValue F) 30 = .ok v1623)
-      (ev1622 : ObsFn W "UInt8::to_field" [v1623] m1589 v1559 m1612 cs1620)
-      (pr1655 : projectValue (v1 : SourceValue F) 31 = .ok v1646)
-      (ev1645 : ObsFn W "UInt8::to_field" [v1646] m1612 v1560 m1635 cs1643)
-      (pr1678 : projectValue (v13 : SourceValue F) 28 = .ok v1669)
-      (ev1668 : ObsFn W "UInt8::to_field" [v1669] m1635 v1561 m1658 cs1666)
-      (pr1701 : projectValue (v13 : SourceValue F) 29 = .ok v1692)
-      (ev1691 : ObsFn W "UInt8::to_field" [v1692] m1658 v1562 m1681 cs1689)
-      (pr1724 : projectValue (v13 : SourceValue F) 30 = .ok v1715)
-      (ev1714 : ObsFn W "UInt8::to_field" [v1715] m1681 v1563 m1704 cs1712)
-      (pr1747 : projectValue (v13 : SourceValue F) 31 = .ok v1738)
-      (ev1737 : ObsFn W "UInt8::to_field" [v1738] m1704 v1564 m1727 cs1735)
-      (ev1556 : ObsFn W "RBTreeMap::canon_addr_chunk" [v1557, v1558, v1559, v1560, v1561, v1562, v1563, v1564] m1727 v1340 m1546 cs1554)
-      (ev1338 : ObsFn W "RBTreeMap::canon_ord_then" [v1339, v1340] m1546 v1122 m1328 cs1336)
-      (ev1120 : ObsFn W "RBTreeMap::canon_ord_then" [v1121, v1122] m1328 v904 m1110 cs1118)
-      (ev902 : ObsFn W "RBTreeMap::canon_ord_then" [v903, v904] m1110 v686 m892 cs900)
-      (ev684 : ObsFn W "RBTreeMap::canon_ord_then" [v685, v686] m892 v468 m674 cs682)
-      (ev466 : ObsFn W "RBTreeMap::canon_ord_then" [v467, v468] m674 v250 m456 cs464)
-      (ev248 : ObsFn W "RBTreeMap::canon_ord_then" [v249, v250] m456 v32 m238 cs246)
-      (ev30 : ObsFn W "RBTreeMap::canon_ord_then" [v31, v32] m238 r h' cs28)
-      (hc1749 : calls = ((⟨"UInt8::to_field", [v65], h⟩ : Call F) :: (cs62 ++ ((⟨"UInt8::to_field", [v88], m54⟩ : Call F) :: (cs85 ++ ((⟨"UInt8::to_field", [v111], m77⟩ : Call F) :: (cs108 ++ ((⟨"UInt8::to_field", [v134], m100⟩ : Call F) :: (cs131 ++ ((⟨"UInt8::to_field", [v157], m123⟩ : Call F) :: (cs154 ++ ((⟨"UInt8::to_field", [v180], m146⟩ : Call F) :: (cs177 ++ ((⟨"UInt8::to_field", [v203], m169⟩ : Call F) :: (cs200 ++ ((⟨"UInt8::to_field", [v226], m192⟩ : Call F) :: (cs223 ++ ((⟨"RBTreeMap::canon_addr_chunk", [v45, v46, v47, v48, v49, v50, v51, v52], m215⟩ : Call F) :: (cs42 ++ ((⟨"UInt8::to_field", [v283], m34⟩ : Call F) :: (cs280 ++ ((⟨"UInt8::to_field", [v306], m272⟩ : Call F) :: (cs303 ++ ((⟨"UInt8::to_field", [v329], m295⟩ : Call F) :: (cs326 ++ ((⟨"UInt8::to_field", [v352], m318⟩ : Call F) :: (cs349 ++ ((⟨"UInt8::to_field", [v375], m341⟩ : Call F) :: (cs372 ++ ((⟨"UInt8::to_field", [v398], m364⟩ : Call F) :: (cs395 ++ ((⟨"UInt8::to_field", [v421], m387⟩ : Call F) :: (cs418 ++ ((⟨"UInt8::to_field", [v444], m410⟩ : Call F) :: (cs441 ++ ((⟨"RBTreeMap::canon_addr_chunk", [v263, v264, v265, v266, v267, v268, v269, v270], m433⟩ : Call F) :: (cs260 ++ ((⟨"UInt8::to_field", [v501], m252⟩ : Call F) :: (cs498 ++ ((⟨"UInt8::to_field", [v524], m490⟩ : Call F) :: (cs521 ++ ((⟨"UInt8::to_field", [v547], m513⟩ : Call F) :: (cs544 ++ ((⟨"UInt8::to_field", [v570], m536⟩ : Call F) :: (cs567 ++ ((⟨"UInt8::to_field", [v593], m559⟩ : Call F) :: (cs590 ++ ((⟨"UInt8::to_field", [v616], m582⟩ : Call F) :: (cs613 ++ ((⟨"UInt8::to_field", [v639], m605⟩ : Call F) :: (cs636 ++ ((⟨"UInt8::to_field", [v662], m628⟩ : Call F) :: (cs659 ++ ((⟨"RBTreeMap::canon_addr_chunk", [v481, v482, v483, v484, v485, v486, v487, v488], m651⟩ : Call F) :: (cs478 ++ ((⟨"UInt8::to_field", [v719], m470⟩ : Call F) :: (cs716 ++ ((⟨"UInt8::to_field", [v742], m708⟩ : Call F) :: (cs739 ++ ((⟨"UInt8::to_field", [v765], m731⟩ : Call F) :: (cs762 ++ ((⟨"UInt8::to_field", [v788], m754⟩ : Call F) :: (cs785 ++ ((⟨"UInt8::to_field", [v811], m777⟩ : Call F) :: (cs808 ++ ((⟨"UInt8::to_field", [v834], m800⟩ : Call F) :: (cs831 ++ ((⟨"UInt8::to_field", [v857], m823⟩ : Call F) :: (cs854 ++ ((⟨"UInt8::to_field", [v880], m846⟩ : Call F) :: (cs877 ++ ((⟨"RBTreeMap::canon_addr_chunk", [v699, v700, v701, v702, v703, v704, v705, v706], m869⟩ : Call F) :: (cs696 ++ ((⟨"UInt8::to_field", [v937], m688⟩ : Call F) :: (cs934 ++ ((⟨"UInt8::to_field", [v960], m926⟩ : Call F) :: (cs957 ++ ((⟨"UInt8::to_field", [v983], m949⟩ : Call F) :: (cs980 ++ ((⟨"UInt8::to_field", [v1006], m972⟩ : Call F) :: (cs1003 ++ ((⟨"UInt8::to_field", [v1029], m995⟩ : Call F) :: (cs1026 ++ ((⟨"UInt8::to_field", [v1052], m1018⟩ : Call F) :: (cs1049 ++ ((⟨"UInt8::to_field", [v1075], m1041⟩ : Call F) :: (cs1072 ++ ((⟨"UInt8::to_field", [v1098], m1064⟩ : Call F) :: (cs1095 ++ ((⟨"RBTreeMap::canon_addr_chunk", [v917, v918, v919, v920, v921, v922, v923, v924], m1087⟩ : Call F) :: (cs914 ++ ((⟨"UInt8::to_field", [v1155], m906⟩ : Call F) :: (cs1152 ++ ((⟨"UInt8::to_field", [v1178], m1144⟩ : Call F) :: (cs1175 ++ ((⟨"UInt8::to_field", [v1201], m1167⟩ : Call F) :: (cs1198 ++ ((⟨"UInt8::to_field", [v1224], m1190⟩ : Call F) :: (cs1221 ++ ((⟨"UInt8::to_field", [v1247], m1213⟩ : Call F) :: (cs1244 ++ ((⟨"UInt8::to_field", [v1270], m1236⟩ : Call F) :: (cs1267 ++ ((⟨"UInt8::to_field", [v1293], m1259⟩ : Call F) :: (cs1290 ++ ((⟨"UInt8::to_field", [v1316], m1282⟩ : Call F) :: (cs1313 ++ ((⟨"RBTreeMap::canon_addr_chunk", [v1135, v1136, v1137, v1138, v1139, v1140, v1141, v1142], m1305⟩ : Call F) :: (cs1132 ++ ((⟨"UInt8::to_field", [v1373], m1124⟩ : Call F) :: (cs1370 ++ ((⟨"UInt8::to_field", [v1396], m1362⟩ : Call F) :: (cs1393 ++ ((⟨"UInt8::to_field", [v1419], m1385⟩ : Call F) :: (cs1416 ++ ((⟨"UInt8::to_field", [v1442], m1408⟩ : Call F) :: (cs1439 ++ ((⟨"UInt8::to_field", [v1465], m1431⟩ : Call F) :: (cs1462 ++ ((⟨"UInt8::to_field", [v1488], m1454⟩ : Call F) :: (cs1485 ++ ((⟨"UInt8::to_field", [v1511], m1477⟩ : Call F) :: (cs1508 ++ ((⟨"UInt8::to_field", [v1534], m1500⟩ : Call F) :: (cs1531 ++ ((⟨"RBTreeMap::canon_addr_chunk", [v1353, v1354, v1355, v1356, v1357, v1358, v1359, v1360], m1523⟩ : Call F) :: (cs1350 ++ ((⟨"UInt8::to_field", [v1577], m1342⟩ : Call F) :: (cs1574 ++ ((⟨"UInt8::to_field", [v1600], m1566⟩ : Call F) :: (cs1597 ++ ((⟨"UInt8::to_field", [v1623], m1589⟩ : Call F) :: (cs1620 ++ ((⟨"UInt8::to_field", [v1646], m1612⟩ : Call F) :: (cs1643 ++ ((⟨"UInt8::to_field", [v1669], m1635⟩ : Call F) :: (cs1666 ++ ((⟨"UInt8::to_field", [v1692], m1658⟩ : Call F) :: (cs1689 ++ ((⟨"UInt8::to_field", [v1715], m1681⟩ : Call F) :: (cs1712 ++ ((⟨"UInt8::to_field", [v1738], m1704⟩ : Call F) :: (cs1735 ++ ((⟨"RBTreeMap::canon_addr_chunk", [v1557, v1558, v1559, v1560, v1561, v1562, v1563, v1564], m1727⟩ : Call F) :: (cs1554 ++ ((⟨"RBTreeMap::canon_ord_then", [v1339, v1340], m1546⟩ : Call F) :: (cs1336 ++ ((⟨"RBTreeMap::canon_ord_then", [v1121, v1122], m1328⟩ : Call F) :: (cs1118 ++ ((⟨"RBTreeMap::canon_ord_then", [v903, v904], m1110⟩ : Call F) :: (cs900 ++ ((⟨"RBTreeMap::canon_ord_then", [v685, v686], m892⟩ : Call F) :: (cs682 ++ ((⟨"RBTreeMap::canon_ord_then", [v467, v468], m674⟩ : Call F) :: (cs464 ++ ((⟨"RBTreeMap::canon_ord_then", [v249, v250], m456⟩ : Call F) :: (cs246 ++ ((⟨"RBTreeMap::canon_ord_then", [v31, v32], m238⟩ : Call F) :: cs28))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+      (pr_guadjhnk : projectValue (v1 : SourceValue F) 0 = .ok v_cssojfsh)
+      (ev_bnvcwkjv : ObsFn W "UInt8::to_field" [v_cssojfsh] h x_kpfcggpp m_avfnomxx cs_pzelfaih)
+      (op_ffeqzpio : evalBinOp .mul (x_kpfcggpp : SourceValue F) ((.field 16777216) : SourceValue F) = .ok x_olxgybbk)
+      (pr_hcayndmt : projectValue (v1 : SourceValue F) 1 = .ok v_bsarbopc)
+      (ev_rvslfuso : ObsFn W "UInt8::to_field" [v_bsarbopc] m_avfnomxx x_fmftmynm m_mybcqflv cs_sdcrvmtk)
+      (op_wdqumkmh : evalBinOp .mul (x_fmftmynm : SourceValue F) ((.field 65536) : SourceValue F) = .ok y_elowuqcl)
+      (op_ndsqplhl : evalBinOp .add (x_olxgybbk : SourceValue F) (y_elowuqcl : SourceValue F) = .ok x_ydbwcpov)
+      (pr_jcrlvcdv : projectValue (v1 : SourceValue F) 2 = .ok v_laxzkuap)
+      (ev_fgveynbv : ObsFn W "UInt8::to_field" [v_laxzkuap] m_mybcqflv x_rmabywrr m_ffpimoiq cs_ojfawbjb)
+      (op_zlwrujnq : evalBinOp .mul (x_rmabywrr : SourceValue F) ((.field 256) : SourceValue F) = .ok y_aalcgdac)
+      (op_ijnfduxf : evalBinOp .add (x_ydbwcpov : SourceValue F) (y_aalcgdac : SourceValue F) = .ok x_hiphurcc)
+      (pr_yvxbfszh : projectValue (v1 : SourceValue F) 3 = .ok v_sarbutap)
+      (ev_jjnvnrhz : ObsFn W "UInt8::to_field" [v_sarbutap] m_ffpimoiq y_aoahgehb m_obkfkdlt cs_vgsxxuiz)
+      (op_tydhzemu : evalBinOp .add (x_hiphurcc : SourceValue F) (y_aoahgehb : SourceValue F) = .ok v_dpddzmhx)
+      (pr_qcvnkmsm : projectValue (v13 : SourceValue F) 0 = .ok v_uprznsvv)
+      (ev_bpfaizhx : ObsFn W "UInt8::to_field" [v_uprznsvv] m_obkfkdlt x_dkivkfps m_alrxnvmm cs_fjytmruo)
+      (op_cpinnbqu : evalBinOp .mul (x_dkivkfps : SourceValue F) ((.field 16777216) : SourceValue F) = .ok x_oedusdtn)
+      (pr_bmmoygfm : projectValue (v13 : SourceValue F) 1 = .ok v_yhwkvpty)
+      (ev_kvkbktrj : ObsFn W "UInt8::to_field" [v_yhwkvpty] m_alrxnvmm x_tcpswxjp m_fajzchdp cs_hifhcneo)
+      (op_xflqnxgz : evalBinOp .mul (x_tcpswxjp : SourceValue F) ((.field 65536) : SourceValue F) = .ok y_kupdgfpx)
+      (op_qtngrzud : evalBinOp .add (x_oedusdtn : SourceValue F) (y_kupdgfpx : SourceValue F) = .ok x_ndogdkot)
+      (pr_gzqeiffo : projectValue (v13 : SourceValue F) 2 = .ok v_cwrumawi)
+      (ev_yuiwokdb : ObsFn W "UInt8::to_field" [v_cwrumawi] m_fajzchdp x_eiokamie m_yipjsgcx cs_egiqoeoh)
+      (op_uicpaafg : evalBinOp .mul (x_eiokamie : SourceValue F) ((.field 256) : SourceValue F) = .ok y_xyxdbpyo)
+      (op_romrexfz : evalBinOp .add (x_ndogdkot : SourceValue F) (y_xyxdbpyo : SourceValue F) = .ok x_ftcthkxr)
+      (pr_kxwatvzn : projectValue (v13 : SourceValue F) 3 = .ok v_fjbemnru)
+      (ev_xtdnsfku : ObsFn W "UInt8::to_field" [v_fjbemnru] m_yipjsgcx y_tphstdzk m_gsivumnr cs_xztrhcee)
+      (op_hugjfmbd : evalBinOp .add (x_ftcthkxr : SourceValue F) (y_tphstdzk : SourceValue F) = .ok v_frwyptmt)
+      (op_mmyajoju : evalBinOp .sub (v_dpddzmhx : SourceValue F) (v_frwyptmt : SourceValue F) = .ok (.field 0))
+      (ev_grarewzx : ObsFn W "Bytes::address_eq_tail" [x_x, x_y] m_gsivumnr (.field 1) m_aszjyoou cs_owxhewhm)
+      (he_xfqlsuic : r = (.field 1))
+      (he_myjhlwdv : h' = m_aszjyoou)
+      (hc_xsriamwj : calls = ((⟨"UInt8::to_field", [v_cssojfsh], h⟩ : Call F) :: (cs_pzelfaih ++ ((⟨"UInt8::to_field", [v_bsarbopc], m_avfnomxx⟩ : Call F) :: (cs_sdcrvmtk ++ ((⟨"UInt8::to_field", [v_laxzkuap], m_mybcqflv⟩ : Call F) :: (cs_ojfawbjb ++ ((⟨"UInt8::to_field", [v_sarbutap], m_ffpimoiq⟩ : Call F) :: (cs_vgsxxuiz ++ ((⟨"UInt8::to_field", [v_uprznsvv], m_obkfkdlt⟩ : Call F) :: (cs_fjytmruo ++ ((⟨"UInt8::to_field", [v_yhwkvpty], m_alrxnvmm⟩ : Call F) :: (cs_hifhcneo ++ ((⟨"UInt8::to_field", [v_cwrumawi], m_fajzchdp⟩ : Call F) :: (cs_egiqoeoh ++ ((⟨"UInt8::to_field", [v_fjbemnru], m_yipjsgcx⟩ : Call F) :: (cs_xztrhcee ++ ((⟨"Bytes::address_eq_tail", [x_x, x_y], m_gsivumnr⟩ : Call F) :: cs_owxhewhm))))))))))))))))))
+  | n0_other
+      (v1 : SourceValue F) (v13 : SourceValue F) (v_dpddzmhx : SourceValue F) (m_obkfkdlt : Heap F) (x_hiphurcc : SourceValue F) (y_aoahgehb : SourceValue F) (x_ydbwcpov : SourceValue F) (y_aalcgdac : SourceValue F) (x_olxgybbk : SourceValue F) (y_elowuqcl : SourceValue F) (x_kpfcggpp : SourceValue F) (m_avfnomxx : Heap F) (cs_pzelfaih : List (Call F)) (v_cssojfsh : SourceValue F) (x_fmftmynm : SourceValue F) (m_mybcqflv : Heap F) (cs_sdcrvmtk : List (Call F)) (v_bsarbopc : SourceValue F) (x_rmabywrr : SourceValue F) (m_ffpimoiq : Heap F) (cs_ojfawbjb : List (Call F)) (v_laxzkuap : SourceValue F) (cs_vgsxxuiz : List (Call F)) (v_sarbutap : SourceValue F) (v_frwyptmt : SourceValue F) (m_gsivumnr : Heap F) (x_ftcthkxr : SourceValue F) (y_tphstdzk : SourceValue F) (x_ndogdkot : SourceValue F) (y_xyxdbpyo : SourceValue F) (x_oedusdtn : SourceValue F) (y_kupdgfpx : SourceValue F) (x_dkivkfps : SourceValue F) (m_alrxnvmm : Heap F) (cs_fjytmruo : List (Call F)) (v_uprznsvv : SourceValue F) (x_tcpswxjp : SourceValue F) (m_fajzchdp : Heap F) (cs_hifhcneo : List (Call F)) (v_yhwkvpty : SourceValue F) (x_eiokamie : SourceValue F) (m_yipjsgcx : Heap F) (cs_egiqoeoh : List (Call F)) (v_cwrumawi : SourceValue F) (cs_xztrhcee : List (Call F)) (v_fjbemnru : SourceValue F) (v_vuvjmocv : SourceValue F) (m_aszjyoou : Heap F) (cs_owxhewhm : List (Call F)) (cs_pggoibre : List (Call F))
+      (ld11 : loadValue h x_x = .ok v1)
+      (ld23 : loadValue h x_y = .ok v13)
+      (pr_guadjhnk : projectValue (v1 : SourceValue F) 0 = .ok v_cssojfsh)
+      (ev_bnvcwkjv : ObsFn W "UInt8::to_field" [v_cssojfsh] h x_kpfcggpp m_avfnomxx cs_pzelfaih)
+      (op_ffeqzpio : evalBinOp .mul (x_kpfcggpp : SourceValue F) ((.field 16777216) : SourceValue F) = .ok x_olxgybbk)
+      (pr_hcayndmt : projectValue (v1 : SourceValue F) 1 = .ok v_bsarbopc)
+      (ev_rvslfuso : ObsFn W "UInt8::to_field" [v_bsarbopc] m_avfnomxx x_fmftmynm m_mybcqflv cs_sdcrvmtk)
+      (op_wdqumkmh : evalBinOp .mul (x_fmftmynm : SourceValue F) ((.field 65536) : SourceValue F) = .ok y_elowuqcl)
+      (op_ndsqplhl : evalBinOp .add (x_olxgybbk : SourceValue F) (y_elowuqcl : SourceValue F) = .ok x_ydbwcpov)
+      (pr_jcrlvcdv : projectValue (v1 : SourceValue F) 2 = .ok v_laxzkuap)
+      (ev_fgveynbv : ObsFn W "UInt8::to_field" [v_laxzkuap] m_mybcqflv x_rmabywrr m_ffpimoiq cs_ojfawbjb)
+      (op_zlwrujnq : evalBinOp .mul (x_rmabywrr : SourceValue F) ((.field 256) : SourceValue F) = .ok y_aalcgdac)
+      (op_ijnfduxf : evalBinOp .add (x_ydbwcpov : SourceValue F) (y_aalcgdac : SourceValue F) = .ok x_hiphurcc)
+      (pr_yvxbfszh : projectValue (v1 : SourceValue F) 3 = .ok v_sarbutap)
+      (ev_jjnvnrhz : ObsFn W "UInt8::to_field" [v_sarbutap] m_ffpimoiq y_aoahgehb m_obkfkdlt cs_vgsxxuiz)
+      (op_tydhzemu : evalBinOp .add (x_hiphurcc : SourceValue F) (y_aoahgehb : SourceValue F) = .ok v_dpddzmhx)
+      (pr_qcvnkmsm : projectValue (v13 : SourceValue F) 0 = .ok v_uprznsvv)
+      (ev_bpfaizhx : ObsFn W "UInt8::to_field" [v_uprznsvv] m_obkfkdlt x_dkivkfps m_alrxnvmm cs_fjytmruo)
+      (op_cpinnbqu : evalBinOp .mul (x_dkivkfps : SourceValue F) ((.field 16777216) : SourceValue F) = .ok x_oedusdtn)
+      (pr_bmmoygfm : projectValue (v13 : SourceValue F) 1 = .ok v_yhwkvpty)
+      (ev_kvkbktrj : ObsFn W "UInt8::to_field" [v_yhwkvpty] m_alrxnvmm x_tcpswxjp m_fajzchdp cs_hifhcneo)
+      (op_xflqnxgz : evalBinOp .mul (x_tcpswxjp : SourceValue F) ((.field 65536) : SourceValue F) = .ok y_kupdgfpx)
+      (op_qtngrzud : evalBinOp .add (x_oedusdtn : SourceValue F) (y_kupdgfpx : SourceValue F) = .ok x_ndogdkot)
+      (pr_gzqeiffo : projectValue (v13 : SourceValue F) 2 = .ok v_cwrumawi)
+      (ev_yuiwokdb : ObsFn W "UInt8::to_field" [v_cwrumawi] m_fajzchdp x_eiokamie m_yipjsgcx cs_egiqoeoh)
+      (op_uicpaafg : evalBinOp .mul (x_eiokamie : SourceValue F) ((.field 256) : SourceValue F) = .ok y_xyxdbpyo)
+      (op_romrexfz : evalBinOp .add (x_ndogdkot : SourceValue F) (y_xyxdbpyo : SourceValue F) = .ok x_ftcthkxr)
+      (pr_kxwatvzn : projectValue (v13 : SourceValue F) 3 = .ok v_fjbemnru)
+      (ev_xtdnsfku : ObsFn W "UInt8::to_field" [v_fjbemnru] m_yipjsgcx y_tphstdzk m_gsivumnr cs_xztrhcee)
+      (op_hugjfmbd : evalBinOp .add (x_ftcthkxr : SourceValue F) (y_tphstdzk : SourceValue F) = .ok v_frwyptmt)
+      (op_mmyajoju : evalBinOp .sub (v_dpddzmhx : SourceValue F) (v_frwyptmt : SourceValue F) = .ok (.field 0))
+      (ev_grarewzx : ObsFn W "Bytes::address_eq_tail" [x_x, x_y] m_gsivumnr v_vuvjmocv m_aszjyoou cs_owxhewhm)
+      (hne_arrgtqjy : (v_vuvjmocv : SourceValue F) ≠ (.field 1))
+      (ev_vwwebsdk : ObsFn W "RBTreeMap::canon_addr_cmp_tail" [x_x, x_y] m_aszjyoou r h' cs_pggoibre)
+      (hc_jaehgrbh : calls = ((⟨"UInt8::to_field", [v_cssojfsh], h⟩ : Call F) :: (cs_pzelfaih ++ ((⟨"UInt8::to_field", [v_bsarbopc], m_avfnomxx⟩ : Call F) :: (cs_sdcrvmtk ++ ((⟨"UInt8::to_field", [v_laxzkuap], m_mybcqflv⟩ : Call F) :: (cs_ojfawbjb ++ ((⟨"UInt8::to_field", [v_sarbutap], m_ffpimoiq⟩ : Call F) :: (cs_vgsxxuiz ++ ((⟨"UInt8::to_field", [v_uprznsvv], m_obkfkdlt⟩ : Call F) :: (cs_fjytmruo ++ ((⟨"UInt8::to_field", [v_yhwkvpty], m_alrxnvmm⟩ : Call F) :: (cs_hifhcneo ++ ((⟨"UInt8::to_field", [v_cwrumawi], m_fajzchdp⟩ : Call F) :: (cs_egiqoeoh ++ ((⟨"UInt8::to_field", [v_fjbemnru], m_yipjsgcx⟩ : Call F) :: (cs_xztrhcee ++ ((⟨"Bytes::address_eq_tail", [x_x, x_y], m_gsivumnr⟩ : Call F) :: (cs_owxhewhm ++ ((⟨"RBTreeMap::canon_addr_cmp_tail", [x_x, x_y], m_aszjyoou⟩ : Call F) :: cs_pggoibre))))))))))))))))))))
+  | other_n1
+      (v1 : SourceValue F) (v13 : SourceValue F) (v_dpddzmhx : SourceValue F) (m_obkfkdlt : Heap F) (x_hiphurcc : SourceValue F) (y_aoahgehb : SourceValue F) (x_ydbwcpov : SourceValue F) (y_aalcgdac : SourceValue F) (x_olxgybbk : SourceValue F) (y_elowuqcl : SourceValue F) (x_kpfcggpp : SourceValue F) (m_avfnomxx : Heap F) (cs_pzelfaih : List (Call F)) (v_cssojfsh : SourceValue F) (x_fmftmynm : SourceValue F) (m_mybcqflv : Heap F) (cs_sdcrvmtk : List (Call F)) (v_bsarbopc : SourceValue F) (x_rmabywrr : SourceValue F) (m_ffpimoiq : Heap F) (cs_ojfawbjb : List (Call F)) (v_laxzkuap : SourceValue F) (cs_vgsxxuiz : List (Call F)) (v_sarbutap : SourceValue F) (v_frwyptmt : SourceValue F) (m_gsivumnr : Heap F) (x_ftcthkxr : SourceValue F) (y_tphstdzk : SourceValue F) (x_ndogdkot : SourceValue F) (y_xyxdbpyo : SourceValue F) (x_oedusdtn : SourceValue F) (y_kupdgfpx : SourceValue F) (x_dkivkfps : SourceValue F) (m_alrxnvmm : Heap F) (cs_fjytmruo : List (Call F)) (v_uprznsvv : SourceValue F) (x_tcpswxjp : SourceValue F) (m_fajzchdp : Heap F) (cs_hifhcneo : List (Call F)) (v_yhwkvpty : SourceValue F) (x_eiokamie : SourceValue F) (m_yipjsgcx : Heap F) (cs_egiqoeoh : List (Call F)) (v_cwrumawi : SourceValue F) (cs_xztrhcee : List (Call F)) (v_fjbemnru : SourceValue F) (v_hirlhoca : SourceValue F) (m_wvoaahvw : Heap F) (cs_iqaplvxj : List (Call F))
+      (ld11 : loadValue h x_x = .ok v1)
+      (ld23 : loadValue h x_y = .ok v13)
+      (pr_guadjhnk : projectValue (v1 : SourceValue F) 0 = .ok v_cssojfsh)
+      (ev_bnvcwkjv : ObsFn W "UInt8::to_field" [v_cssojfsh] h x_kpfcggpp m_avfnomxx cs_pzelfaih)
+      (op_ffeqzpio : evalBinOp .mul (x_kpfcggpp : SourceValue F) ((.field 16777216) : SourceValue F) = .ok x_olxgybbk)
+      (pr_hcayndmt : projectValue (v1 : SourceValue F) 1 = .ok v_bsarbopc)
+      (ev_rvslfuso : ObsFn W "UInt8::to_field" [v_bsarbopc] m_avfnomxx x_fmftmynm m_mybcqflv cs_sdcrvmtk)
+      (op_wdqumkmh : evalBinOp .mul (x_fmftmynm : SourceValue F) ((.field 65536) : SourceValue F) = .ok y_elowuqcl)
+      (op_ndsqplhl : evalBinOp .add (x_olxgybbk : SourceValue F) (y_elowuqcl : SourceValue F) = .ok x_ydbwcpov)
+      (pr_jcrlvcdv : projectValue (v1 : SourceValue F) 2 = .ok v_laxzkuap)
+      (ev_fgveynbv : ObsFn W "UInt8::to_field" [v_laxzkuap] m_mybcqflv x_rmabywrr m_ffpimoiq cs_ojfawbjb)
+      (op_zlwrujnq : evalBinOp .mul (x_rmabywrr : SourceValue F) ((.field 256) : SourceValue F) = .ok y_aalcgdac)
+      (op_ijnfduxf : evalBinOp .add (x_ydbwcpov : SourceValue F) (y_aalcgdac : SourceValue F) = .ok x_hiphurcc)
+      (pr_yvxbfszh : projectValue (v1 : SourceValue F) 3 = .ok v_sarbutap)
+      (ev_jjnvnrhz : ObsFn W "UInt8::to_field" [v_sarbutap] m_ffpimoiq y_aoahgehb m_obkfkdlt cs_vgsxxuiz)
+      (op_tydhzemu : evalBinOp .add (x_hiphurcc : SourceValue F) (y_aoahgehb : SourceValue F) = .ok v_dpddzmhx)
+      (pr_qcvnkmsm : projectValue (v13 : SourceValue F) 0 = .ok v_uprznsvv)
+      (ev_bpfaizhx : ObsFn W "UInt8::to_field" [v_uprznsvv] m_obkfkdlt x_dkivkfps m_alrxnvmm cs_fjytmruo)
+      (op_cpinnbqu : evalBinOp .mul (x_dkivkfps : SourceValue F) ((.field 16777216) : SourceValue F) = .ok x_oedusdtn)
+      (pr_bmmoygfm : projectValue (v13 : SourceValue F) 1 = .ok v_yhwkvpty)
+      (ev_kvkbktrj : ObsFn W "UInt8::to_field" [v_yhwkvpty] m_alrxnvmm x_tcpswxjp m_fajzchdp cs_hifhcneo)
+      (op_xflqnxgz : evalBinOp .mul (x_tcpswxjp : SourceValue F) ((.field 65536) : SourceValue F) = .ok y_kupdgfpx)
+      (op_qtngrzud : evalBinOp .add (x_oedusdtn : SourceValue F) (y_kupdgfpx : SourceValue F) = .ok x_ndogdkot)
+      (pr_gzqeiffo : projectValue (v13 : SourceValue F) 2 = .ok v_cwrumawi)
+      (ev_yuiwokdb : ObsFn W "UInt8::to_field" [v_cwrumawi] m_fajzchdp x_eiokamie m_yipjsgcx cs_egiqoeoh)
+      (op_uicpaafg : evalBinOp .mul (x_eiokamie : SourceValue F) ((.field 256) : SourceValue F) = .ok y_xyxdbpyo)
+      (op_romrexfz : evalBinOp .add (x_ndogdkot : SourceValue F) (y_xyxdbpyo : SourceValue F) = .ok x_ftcthkxr)
+      (pr_kxwatvzn : projectValue (v13 : SourceValue F) 3 = .ok v_fjbemnru)
+      (ev_xtdnsfku : ObsFn W "UInt8::to_field" [v_fjbemnru] m_yipjsgcx y_tphstdzk m_gsivumnr cs_xztrhcee)
+      (op_hugjfmbd : evalBinOp .add (x_ftcthkxr : SourceValue F) (y_tphstdzk : SourceValue F) = .ok v_frwyptmt)
+      (op_mmyajoju : evalBinOp .sub (v_dpddzmhx : SourceValue F) (v_frwyptmt : SourceValue F) = .ok v_hirlhoca)
+      (hne_xjnibfzs : (v_hirlhoca : SourceValue F) ≠ (.field 0))
+      (ev_mqwzqjls : ObsFn W "UInt32::less_than_fields" [v_dpddzmhx, v_frwyptmt] m_gsivumnr (.field 1) m_wvoaahvw cs_iqaplvxj)
+      (he_yyywwiyz : r = (.field 0))
+      (he_gzcylbfx : h' = m_wvoaahvw)
+      (hc_ahbbsdfg : calls = ((⟨"UInt8::to_field", [v_cssojfsh], h⟩ : Call F) :: (cs_pzelfaih ++ ((⟨"UInt8::to_field", [v_bsarbopc], m_avfnomxx⟩ : Call F) :: (cs_sdcrvmtk ++ ((⟨"UInt8::to_field", [v_laxzkuap], m_mybcqflv⟩ : Call F) :: (cs_ojfawbjb ++ ((⟨"UInt8::to_field", [v_sarbutap], m_ffpimoiq⟩ : Call F) :: (cs_vgsxxuiz ++ ((⟨"UInt8::to_field", [v_uprznsvv], m_obkfkdlt⟩ : Call F) :: (cs_fjytmruo ++ ((⟨"UInt8::to_field", [v_yhwkvpty], m_alrxnvmm⟩ : Call F) :: (cs_hifhcneo ++ ((⟨"UInt8::to_field", [v_cwrumawi], m_fajzchdp⟩ : Call F) :: (cs_egiqoeoh ++ ((⟨"UInt8::to_field", [v_fjbemnru], m_yipjsgcx⟩ : Call F) :: (cs_xztrhcee ++ ((⟨"UInt32::less_than_fields", [v_dpddzmhx, v_frwyptmt], m_gsivumnr⟩ : Call F) :: cs_iqaplvxj))))))))))))))))))
+  | other_n0
+      (v1 : SourceValue F) (v13 : SourceValue F) (v_dpddzmhx : SourceValue F) (m_obkfkdlt : Heap F) (x_hiphurcc : SourceValue F) (y_aoahgehb : SourceValue F) (x_ydbwcpov : SourceValue F) (y_aalcgdac : SourceValue F) (x_olxgybbk : SourceValue F) (y_elowuqcl : SourceValue F) (x_kpfcggpp : SourceValue F) (m_avfnomxx : Heap F) (cs_pzelfaih : List (Call F)) (v_cssojfsh : SourceValue F) (x_fmftmynm : SourceValue F) (m_mybcqflv : Heap F) (cs_sdcrvmtk : List (Call F)) (v_bsarbopc : SourceValue F) (x_rmabywrr : SourceValue F) (m_ffpimoiq : Heap F) (cs_ojfawbjb : List (Call F)) (v_laxzkuap : SourceValue F) (cs_vgsxxuiz : List (Call F)) (v_sarbutap : SourceValue F) (v_frwyptmt : SourceValue F) (m_gsivumnr : Heap F) (x_ftcthkxr : SourceValue F) (y_tphstdzk : SourceValue F) (x_ndogdkot : SourceValue F) (y_xyxdbpyo : SourceValue F) (x_oedusdtn : SourceValue F) (y_kupdgfpx : SourceValue F) (x_dkivkfps : SourceValue F) (m_alrxnvmm : Heap F) (cs_fjytmruo : List (Call F)) (v_uprznsvv : SourceValue F) (x_tcpswxjp : SourceValue F) (m_fajzchdp : Heap F) (cs_hifhcneo : List (Call F)) (v_yhwkvpty : SourceValue F) (x_eiokamie : SourceValue F) (m_yipjsgcx : Heap F) (cs_egiqoeoh : List (Call F)) (v_cwrumawi : SourceValue F) (cs_xztrhcee : List (Call F)) (v_fjbemnru : SourceValue F) (v_hirlhoca : SourceValue F) (m_wvoaahvw : Heap F) (cs_iqaplvxj : List (Call F))
+      (ld11 : loadValue h x_x = .ok v1)
+      (ld23 : loadValue h x_y = .ok v13)
+      (pr_guadjhnk : projectValue (v1 : SourceValue F) 0 = .ok v_cssojfsh)
+      (ev_bnvcwkjv : ObsFn W "UInt8::to_field" [v_cssojfsh] h x_kpfcggpp m_avfnomxx cs_pzelfaih)
+      (op_ffeqzpio : evalBinOp .mul (x_kpfcggpp : SourceValue F) ((.field 16777216) : SourceValue F) = .ok x_olxgybbk)
+      (pr_hcayndmt : projectValue (v1 : SourceValue F) 1 = .ok v_bsarbopc)
+      (ev_rvslfuso : ObsFn W "UInt8::to_field" [v_bsarbopc] m_avfnomxx x_fmftmynm m_mybcqflv cs_sdcrvmtk)
+      (op_wdqumkmh : evalBinOp .mul (x_fmftmynm : SourceValue F) ((.field 65536) : SourceValue F) = .ok y_elowuqcl)
+      (op_ndsqplhl : evalBinOp .add (x_olxgybbk : SourceValue F) (y_elowuqcl : SourceValue F) = .ok x_ydbwcpov)
+      (pr_jcrlvcdv : projectValue (v1 : SourceValue F) 2 = .ok v_laxzkuap)
+      (ev_fgveynbv : ObsFn W "UInt8::to_field" [v_laxzkuap] m_mybcqflv x_rmabywrr m_ffpimoiq cs_ojfawbjb)
+      (op_zlwrujnq : evalBinOp .mul (x_rmabywrr : SourceValue F) ((.field 256) : SourceValue F) = .ok y_aalcgdac)
+      (op_ijnfduxf : evalBinOp .add (x_ydbwcpov : SourceValue F) (y_aalcgdac : SourceValue F) = .ok x_hiphurcc)
+      (pr_yvxbfszh : projectValue (v1 : SourceValue F) 3 = .ok v_sarbutap)
+      (ev_jjnvnrhz : ObsFn W "UInt8::to_field" [v_sarbutap] m_ffpimoiq y_aoahgehb m_obkfkdlt cs_vgsxxuiz)
+      (op_tydhzemu : evalBinOp .add (x_hiphurcc : SourceValue F) (y_aoahgehb : SourceValue F) = .ok v_dpddzmhx)
+      (pr_qcvnkmsm : projectValue (v13 : SourceValue F) 0 = .ok v_uprznsvv)
+      (ev_bpfaizhx : ObsFn W "UInt8::to_field" [v_uprznsvv] m_obkfkdlt x_dkivkfps m_alrxnvmm cs_fjytmruo)
+      (op_cpinnbqu : evalBinOp .mul (x_dkivkfps : SourceValue F) ((.field 16777216) : SourceValue F) = .ok x_oedusdtn)
+      (pr_bmmoygfm : projectValue (v13 : SourceValue F) 1 = .ok v_yhwkvpty)
+      (ev_kvkbktrj : ObsFn W "UInt8::to_field" [v_yhwkvpty] m_alrxnvmm x_tcpswxjp m_fajzchdp cs_hifhcneo)
+      (op_xflqnxgz : evalBinOp .mul (x_tcpswxjp : SourceValue F) ((.field 65536) : SourceValue F) = .ok y_kupdgfpx)
+      (op_qtngrzud : evalBinOp .add (x_oedusdtn : SourceValue F) (y_kupdgfpx : SourceValue F) = .ok x_ndogdkot)
+      (pr_gzqeiffo : projectValue (v13 : SourceValue F) 2 = .ok v_cwrumawi)
+      (ev_yuiwokdb : ObsFn W "UInt8::to_field" [v_cwrumawi] m_fajzchdp x_eiokamie m_yipjsgcx cs_egiqoeoh)
+      (op_uicpaafg : evalBinOp .mul (x_eiokamie : SourceValue F) ((.field 256) : SourceValue F) = .ok y_xyxdbpyo)
+      (op_romrexfz : evalBinOp .add (x_ndogdkot : SourceValue F) (y_xyxdbpyo : SourceValue F) = .ok x_ftcthkxr)
+      (pr_kxwatvzn : projectValue (v13 : SourceValue F) 3 = .ok v_fjbemnru)
+      (ev_xtdnsfku : ObsFn W "UInt8::to_field" [v_fjbemnru] m_yipjsgcx y_tphstdzk m_gsivumnr cs_xztrhcee)
+      (op_hugjfmbd : evalBinOp .add (x_ftcthkxr : SourceValue F) (y_tphstdzk : SourceValue F) = .ok v_frwyptmt)
+      (op_mmyajoju : evalBinOp .sub (v_dpddzmhx : SourceValue F) (v_frwyptmt : SourceValue F) = .ok v_hirlhoca)
+      (hne_xjnibfzs : (v_hirlhoca : SourceValue F) ≠ (.field 0))
+      (ev_mqwzqjls : ObsFn W "UInt32::less_than_fields" [v_dpddzmhx, v_frwyptmt] m_gsivumnr (.field 0) m_wvoaahvw cs_iqaplvxj)
+      (he_qzstfxnn : r = (.field 2))
+      (he_lwvfeqiv : h' = m_wvoaahvw)
+      (hc_sdcrobqe : calls = ((⟨"UInt8::to_field", [v_cssojfsh], h⟩ : Call F) :: (cs_pzelfaih ++ ((⟨"UInt8::to_field", [v_bsarbopc], m_avfnomxx⟩ : Call F) :: (cs_sdcrvmtk ++ ((⟨"UInt8::to_field", [v_laxzkuap], m_mybcqflv⟩ : Call F) :: (cs_ojfawbjb ++ ((⟨"UInt8::to_field", [v_sarbutap], m_ffpimoiq⟩ : Call F) :: (cs_vgsxxuiz ++ ((⟨"UInt8::to_field", [v_uprznsvv], m_obkfkdlt⟩ : Call F) :: (cs_fjytmruo ++ ((⟨"UInt8::to_field", [v_yhwkvpty], m_alrxnvmm⟩ : Call F) :: (cs_hifhcneo ++ ((⟨"UInt8::to_field", [v_cwrumawi], m_fajzchdp⟩ : Call F) :: (cs_egiqoeoh ++ ((⟨"UInt8::to_field", [v_fjbemnru], m_yipjsgcx⟩ : Call F) :: (cs_xztrhcee ++ ((⟨"UInt32::less_than_fields", [v_dpddzmhx, v_frwyptmt], m_gsivumnr⟩ : Call F) :: cs_iqaplvxj))))))))))))))))))
 
 /-- **Every observed derivation of `RBTreeMap::canon_addr_cmp` takes one of its paths.** -/
 theorem «RBTreeMap::canon_addr_cmp».obs {x_x x_y : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -1463,642 +1380,875 @@ theorem «RBTreeMap::canon_addr_cmp».obs {x_x x_y : SourceValue F} {h h' : Heap
   simp at l24
   subst l24
   obtain rfl := matchPattern_bind_inv mt19
-  obtain ⟨vs25, m26, c27, cs28, a29, ev30, rfl⟩ := d20.call_inv
-  rw [instanceName_plain_some] at ev30
-  obtain ⟨v31, vs33, m34, c35, c36, rfl, d37, a38, rfl⟩ := a29.cons_inv
-  obtain ⟨vs39, m40, c41, cs42, a43, ev44, rfl⟩ := d37.call_inv
-  rw [instanceName_plain_some] at ev44
-  obtain ⟨v45, vs53, m54, c55, c56, rfl, d57, a58, rfl⟩ := a43.cons_inv
-  obtain ⟨vs59, m60, c61, cs62, a63, ev64, rfl⟩ := d57.call_inv
-  rw [instanceName_plain_some] at ev64
-  obtain ⟨v65, vs66, m67, c68, c69, rfl, d70, a71, rfl⟩ := a63.cons_inv
-  obtain ⟨p72, d73, pr74⟩ := d70.index_inv
+  obtain ⟨v_dpddzmhx, m_obkfkdlt, bs27, c28, c29, d30, mt31, d32, rfl⟩ := d20.letValue_inv
+  obtain ⟨x_hiphurcc, y_aoahgehb, m35, c36, c37, d38, d39, op_tydhzemu, rfl⟩ := d30.binary_inv
+  obtain ⟨x_ydbwcpov, y_aalcgdac, m43, c44, c45, d46, d47, op_ijnfduxf, rfl⟩ := d38.binary_inv
+  obtain ⟨x_olxgybbk, y_elowuqcl, m51, c52, c53, d54, d55, op_ndsqplhl, rfl⟩ := d46.binary_inv
+  obtain ⟨x_kpfcggpp, y58, m_avfnomxx, c60, c61, d62, d63, op_ffeqzpio, rfl⟩ := d54.binary_inv
+  obtain ⟨vs65, m66, c67, cs_pzelfaih, a69, ev_bnvcwkjv, rfl⟩ := d62.call_inv
+  rw [instanceName_plain_some] at ev_bnvcwkjv
+  obtain ⟨v_cssojfsh, vs72, m73, c74, c75, rfl, d76, a77, rfl⟩ := a69.cons_inv
+  obtain ⟨p78, d79, pr_guadjhnk⟩ := d76.index_inv
+  obtain ⟨l81, rfl, rfl⟩ := d79.var_inv
+  simp at l81
+  subst l81
+  obtain ⟨rfl, rfl, rfl⟩ := a77.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d63.literal_inv
+  obtain ⟨x_fmftmynm, y83, m_mybcqflv, c85, c86, d87, d88, op_wdqumkmh, rfl⟩ := d55.binary_inv
+  obtain ⟨vs90, m91, c92, cs_sdcrvmtk, a94, ev_rvslfuso, rfl⟩ := d87.call_inv
+  rw [instanceName_plain_some] at ev_rvslfuso
+  obtain ⟨v_bsarbopc, vs97, m98, c99, c100, rfl, d101, a102, rfl⟩ := a94.cons_inv
+  obtain ⟨p103, d104, pr_hcayndmt⟩ := d101.index_inv
+  obtain ⟨l106, rfl, rfl⟩ := d104.var_inv
+  simp at l106
+  subst l106
+  obtain ⟨rfl, rfl, rfl⟩ := a102.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d88.literal_inv
+  obtain ⟨x_rmabywrr, y108, m_ffpimoiq, c110, c111, d112, d113, op_zlwrujnq, rfl⟩ := d47.binary_inv
+  obtain ⟨vs115, m116, c117, cs_ojfawbjb, a119, ev_fgveynbv, rfl⟩ := d112.call_inv
+  rw [instanceName_plain_some] at ev_fgveynbv
+  obtain ⟨v_laxzkuap, vs122, m123, c124, c125, rfl, d126, a127, rfl⟩ := a119.cons_inv
+  obtain ⟨p128, d129, pr_jcrlvcdv⟩ := d126.index_inv
+  obtain ⟨l131, rfl, rfl⟩ := d129.var_inv
+  simp at l131
+  subst l131
+  obtain ⟨rfl, rfl, rfl⟩ := a127.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d113.literal_inv
+  obtain ⟨vs132, m133, c134, cs_vgsxxuiz, a136, ev_jjnvnrhz, rfl⟩ := d39.call_inv
+  rw [instanceName_plain_some] at ev_jjnvnrhz
+  obtain ⟨v_sarbutap, vs139, m140, c141, c142, rfl, d143, a144, rfl⟩ := a136.cons_inv
+  obtain ⟨p145, d146, pr_yvxbfszh⟩ := d143.index_inv
+  obtain ⟨l148, rfl, rfl⟩ := d146.var_inv
+  simp at l148
+  subst l148
+  obtain ⟨rfl, rfl, rfl⟩ := a144.nil_inv
+  obtain rfl := matchPattern_bind_inv mt31
+  obtain ⟨v_frwyptmt, m_gsivumnr, bs151, c152, c153, d154, mt155, d156, rfl⟩ := d32.letValue_inv
+  obtain ⟨x_ftcthkxr, y_tphstdzk, m159, c160, c161, d162, d163, op_hugjfmbd, rfl⟩ := d154.binary_inv
+  obtain ⟨x_ndogdkot, y_xyxdbpyo, m167, c168, c169, d170, d171, op_romrexfz, rfl⟩ := d162.binary_inv
+  obtain ⟨x_oedusdtn, y_kupdgfpx, m175, c176, c177, d178, d179, op_qtngrzud, rfl⟩ := d170.binary_inv
+  obtain ⟨x_dkivkfps, y182, m_alrxnvmm, c184, c185, d186, d187, op_cpinnbqu, rfl⟩ := d178.binary_inv
+  obtain ⟨vs189, m190, c191, cs_fjytmruo, a193, ev_bpfaizhx, rfl⟩ := d186.call_inv
+  rw [instanceName_plain_some] at ev_bpfaizhx
+  obtain ⟨v_uprznsvv, vs196, m197, c198, c199, rfl, d200, a201, rfl⟩ := a193.cons_inv
+  obtain ⟨p202, d203, pr_qcvnkmsm⟩ := d200.index_inv
+  obtain ⟨l205, rfl, rfl⟩ := d203.var_inv
+  simp at l205
+  subst l205
+  obtain ⟨rfl, rfl, rfl⟩ := a201.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d187.literal_inv
+  obtain ⟨x_tcpswxjp, y207, m_fajzchdp, c209, c210, d211, d212, op_xflqnxgz, rfl⟩ := d179.binary_inv
+  obtain ⟨vs214, m215, c216, cs_hifhcneo, a218, ev_kvkbktrj, rfl⟩ := d211.call_inv
+  rw [instanceName_plain_some] at ev_kvkbktrj
+  obtain ⟨v_yhwkvpty, vs221, m222, c223, c224, rfl, d225, a226, rfl⟩ := a218.cons_inv
+  obtain ⟨p227, d228, pr_bmmoygfm⟩ := d225.index_inv
+  obtain ⟨l230, rfl, rfl⟩ := d228.var_inv
+  simp at l230
+  subst l230
+  obtain ⟨rfl, rfl, rfl⟩ := a226.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d212.literal_inv
+  obtain ⟨x_eiokamie, y232, m_yipjsgcx, c234, c235, d236, d237, op_uicpaafg, rfl⟩ := d171.binary_inv
+  obtain ⟨vs239, m240, c241, cs_egiqoeoh, a243, ev_yuiwokdb, rfl⟩ := d236.call_inv
+  rw [instanceName_plain_some] at ev_yuiwokdb
+  obtain ⟨v_cwrumawi, vs246, m247, c248, c249, rfl, d250, a251, rfl⟩ := a243.cons_inv
+  obtain ⟨p252, d253, pr_gzqeiffo⟩ := d250.index_inv
+  obtain ⟨l255, rfl, rfl⟩ := d253.var_inv
+  simp at l255
+  subst l255
+  obtain ⟨rfl, rfl, rfl⟩ := a251.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := d237.literal_inv
+  obtain ⟨vs256, m257, c258, cs_xztrhcee, a260, ev_xtdnsfku, rfl⟩ := d163.call_inv
+  rw [instanceName_plain_some] at ev_xtdnsfku
+  obtain ⟨v_fjbemnru, vs263, m264, c265, c266, rfl, d267, a268, rfl⟩ := a260.cons_inv
+  obtain ⟨p269, d270, pr_kxwatvzn⟩ := d267.index_inv
+  obtain ⟨l272, rfl, rfl⟩ := d270.var_inv
+  simp at l272
+  subst l272
+  obtain ⟨rfl, rfl, rfl⟩ := a268.nil_inv
+  obtain rfl := matchPattern_bind_inv mt155
+  obtain ⟨v_hirlhoca, m274, bs275, body276, c277, c278, d279, sel280, d281, rfl⟩ := d156.matchValue_inv
+  obtain ⟨x282, y283, m284, c285, c286, d287, d288, op_mmyajoju, rfl⟩ := d279.binary_inv
+  obtain ⟨l290, rfl, rfl⟩ := d287.var_inv
+  simp at l290
+  subst l290
+  obtain ⟨l291, rfl, rfl⟩ := d288.var_inv
+  simp at l291
+  subst l291
+  rcases selectArm_cons_inv sel280 with ⟨mt292, rfl⟩ | ⟨nm293, sel294⟩
+  · obtain ⟨hv295, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt292
+    subst hv295
+    obtain ⟨v_vuvjmocv, m_aszjyoou, bs298, body299, c300, c301, d302, sel303, d304, rfl⟩ := d281.matchValue_inv
+    obtain ⟨vs305, m306, c307, cs_owxhewhm, a309, ev_grarewzx, rfl⟩ := d302.call_inv
+    rw [instanceName_plain_some] at ev_grarewzx
+    obtain ⟨v311, vs313, m314, c315, c316, rfl, d317, a318, rfl⟩ := a309.cons_inv
+    obtain ⟨l319, rfl, rfl⟩ := d317.var_inv
+    simp at l319
+    subst l319
+    obtain ⟨v312, vs320, m321, c322, c323, rfl, d324, a325, rfl⟩ := a318.cons_inv
+    obtain ⟨l326, rfl, rfl⟩ := d324.var_inv
+    simp at l326
+    subst l326
+    obtain ⟨rfl, rfl, rfl⟩ := a325.nil_inv
+    rcases selectArm_cons_inv sel303 with ⟨mt327, rfl⟩ | ⟨nm328, sel329⟩
+    · obtain ⟨hv330, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt327
+      subst hv330
+      obtain ⟨rfl, rfl, rfl⟩ := d304.literal_inv
+      exact «RBTreeMap::canon_addr_cmp».Path.n0_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld11 ld23 pr_guadjhnk ev_bnvcwkjv op_ffeqzpio pr_hcayndmt ev_rvslfuso op_wdqumkmh op_ndsqplhl pr_jcrlvcdv ev_fgveynbv op_zlwrujnq op_ijnfduxf pr_yvxbfszh ev_jjnvnrhz op_tydhzemu pr_qcvnkmsm ev_bpfaizhx op_cpinnbqu pr_bmmoygfm ev_kvkbktrj op_xflqnxgz op_qtngrzud pr_gzqeiffo ev_yuiwokdb op_uicpaafg op_romrexfz pr_kxwatvzn ev_xtdnsfku op_hugjfmbd op_mmyajoju ev_grarewzx rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne_arrgtqjy := MatchesConst.none_inv (MatchesConst.literal 1) nm328
+      rcases selectArm_cons_inv sel329 with ⟨mt335, rfl⟩ | ⟨nm336, sel337⟩
+      · obtain rfl := matchPattern_wildcard_inv mt335
+        obtain ⟨vs338, m339, c340, cs_pggoibre, a342, ev_vwwebsdk, rfl⟩ := d304.call_inv
+        rw [instanceName_plain_some] at ev_vwwebsdk
+        obtain ⟨v344, vs346, m347, c348, c349, rfl, d350, a351, rfl⟩ := a342.cons_inv
+        obtain ⟨l352, rfl, rfl⟩ := d350.var_inv
+        simp at l352
+        subst l352
+        obtain ⟨v345, vs353, m354, c355, c356, rfl, d357, a358, rfl⟩ := a351.cons_inv
+        obtain ⟨l359, rfl, rfl⟩ := d357.var_inv
+        simp at l359
+        subst l359
+        obtain ⟨rfl, rfl, rfl⟩ := a358.nil_inv
+        exact «RBTreeMap::canon_addr_cmp».Path.n0_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld11 ld23 pr_guadjhnk ev_bnvcwkjv op_ffeqzpio pr_hcayndmt ev_rvslfuso op_wdqumkmh op_ndsqplhl pr_jcrlvcdv ev_fgveynbv op_zlwrujnq op_ijnfduxf pr_yvxbfszh ev_jjnvnrhz op_tydhzemu pr_qcvnkmsm ev_bpfaizhx op_cpinnbqu pr_bmmoygfm ev_kvkbktrj op_xflqnxgz op_qtngrzud pr_gzqeiffo ev_yuiwokdb op_uicpaafg op_romrexfz pr_kxwatvzn ev_xtdnsfku op_hugjfmbd op_mmyajoju ev_grarewzx hne_arrgtqjy ev_vwwebsdk (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · exact (matchPattern_wildcard_none nm336).elim
+  · have hne_xjnibfzs := MatchesConst.none_inv (MatchesConst.literal 0) nm293
+    rcases selectArm_cons_inv sel294 with ⟨mt362, rfl⟩ | ⟨nm363, sel364⟩
+    · obtain rfl := matchPattern_wildcard_inv mt362
+      obtain ⟨v365, m_wvoaahvw, bs367, body368, c369, c370, d371, sel372, d373, rfl⟩ := d281.matchValue_inv
+      obtain ⟨vs374, m375, c376, cs_iqaplvxj, a378, ev_mqwzqjls, rfl⟩ := d371.call_inv
+      rw [instanceName_plain_some] at ev_mqwzqjls
+      obtain ⟨v380, vs382, m383, c384, c385, rfl, d386, a387, rfl⟩ := a378.cons_inv
+      obtain ⟨l388, rfl, rfl⟩ := d386.var_inv
+      simp at l388
+      subst l388
+      obtain ⟨v381, vs389, m390, c391, c392, rfl, d393, a394, rfl⟩ := a387.cons_inv
+      obtain ⟨l395, rfl, rfl⟩ := d393.var_inv
+      simp at l395
+      subst l395
+      obtain ⟨rfl, rfl, rfl⟩ := a394.nil_inv
+      rcases selectArm_cons_inv sel372 with ⟨mt396, rfl⟩ | ⟨nm397, sel398⟩
+      · obtain ⟨hv399, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt396
+        subst hv399
+        obtain ⟨rfl, rfl, rfl⟩ := d373.literal_inv
+        exact «RBTreeMap::canon_addr_cmp».Path.other_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld11 ld23 pr_guadjhnk ev_bnvcwkjv op_ffeqzpio pr_hcayndmt ev_rvslfuso op_wdqumkmh op_ndsqplhl pr_jcrlvcdv ev_fgveynbv op_zlwrujnq op_ijnfduxf pr_yvxbfszh ev_jjnvnrhz op_tydhzemu pr_qcvnkmsm ev_bpfaizhx op_cpinnbqu pr_bmmoygfm ev_kvkbktrj op_xflqnxgz op_qtngrzud pr_gzqeiffo ev_yuiwokdb op_uicpaafg op_romrexfz pr_kxwatvzn ev_xtdnsfku op_hugjfmbd op_mmyajoju hne_xjnibfzs ev_mqwzqjls rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+      · have hne403 := MatchesConst.none_inv (MatchesConst.literal 1) nm397
+        rcases selectArm_cons_inv sel398 with ⟨mt404, rfl⟩ | ⟨nm405, sel406⟩
+        · obtain ⟨hv407, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 0) mt404
+          subst hv407
+          obtain ⟨rfl, rfl, rfl⟩ := d373.literal_inv
+          exact «RBTreeMap::canon_addr_cmp».Path.other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld11 ld23 pr_guadjhnk ev_bnvcwkjv op_ffeqzpio pr_hcayndmt ev_rvslfuso op_wdqumkmh op_ndsqplhl pr_jcrlvcdv ev_fgveynbv op_zlwrujnq op_ijnfduxf pr_yvxbfszh ev_jjnvnrhz op_tydhzemu pr_qcvnkmsm ev_bpfaizhx op_cpinnbqu pr_bmmoygfm ev_kvkbktrj op_xflqnxgz op_qtngrzud pr_gzqeiffo ev_yuiwokdb op_uicpaafg op_romrexfz pr_kxwatvzn ev_xtdnsfku op_hugjfmbd op_mmyajoju hne_xjnibfzs ev_mqwzqjls rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+        · have hne411 := MatchesConst.none_inv (MatchesConst.literal 0) nm405
+          exact (selectArm_nil_inv sel406).elim
+    · exact (matchPattern_wildcard_none nm363).elim
+
+/-- The evaluation paths of `RBTreeMap::canon_addr_cmp_tail`: one constructor per combination of selected arms. -/
+inductive «RBTreeMap::canon_addr_cmp_tail».Path (x_x x_y : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | run
+      (v_rmmlnofu : SourceValue F) (v_ylhlkvmp : SourceValue F) (cs_jutqgogh : List (Call F)) (v_afcxnern : SourceValue F) (v_aehixlct : SourceValue F) (m_sydkuuao : Heap F) (cs_mprfvrcs : List (Call F)) (v_qkzioqyj : SourceValue F) (v_jsfftuwg : SourceValue F) (v_nauwlmzi : SourceValue F) (v_jlpzbjud : SourceValue F) (v_eijzgvsi : SourceValue F) (v_uavweirt : SourceValue F) (v_rytwiymb : SourceValue F) (v_trdvharr : SourceValue F) (m_sntfzrew : Heap F) (cs_shcdxcld : List (Call F)) (v_aegvqpew : SourceValue F) (m_yiptmhbi : Heap F) (cs_fzvxpyzu : List (Call F)) (v_sbyabegj : SourceValue F) (m_tfuvijpt : Heap F) (cs_omfwygcv : List (Call F)) (v_ovohvmvn : SourceValue F) (m_ampnpals : Heap F) (cs_kmcvwrgg : List (Call F)) (v_fuhxxrei : SourceValue F) (m_ydvnvkhm : Heap F) (cs_fmcmanmo : List (Call F)) (v_jlbenphq : SourceValue F) (m_glhojgci : Heap F) (cs_bfglidpb : List (Call F)) (v_iliokxvm : SourceValue F) (m_zodxxfld : Heap F) (cs_jlbltqvu : List (Call F)) (v_bnjkcpso : SourceValue F) (m_jsnuezwe : Heap F) (cs_ebgtecrw : List (Call F)) (v_nawsdswf : SourceValue F) (m_xqpvqnwg : Heap F) (cs_dlufwjoo : List (Call F)) (v_abfpxusc : SourceValue F) (v_rghuncid : SourceValue F) (m_entgrpwh : Heap F) (cs_sitltovl : List (Call F)) (v_gjtvjdhb : SourceValue F) (v_qbqzpefj : SourceValue F) (v_kajsjbrf : SourceValue F) (v_ommphixs : SourceValue F) (v_dtbjbtmd : SourceValue F) (v_ryohkofc : SourceValue F) (v_okgqmkkz : SourceValue F) (v_jwxwvpiy : SourceValue F) (m_bkjlpzzn : Heap F) (cs_mcklzxxr : List (Call F)) (v_iosoaztt : SourceValue F) (m_bzzzmmrg : Heap F) (cs_fisdiqqe : List (Call F)) (v_hjcakcyw : SourceValue F) (m_nfmpyvyj : Heap F) (cs_wnmqmkzh : List (Call F)) (v_yjbmwfhq : SourceValue F) (m_ccbqigqg : Heap F) (cs_wbsalyne : List (Call F)) (v_aaulfsqp : SourceValue F) (m_ybwlptkg : Heap F) (cs_wlgpwdkt : List (Call F)) (v_tcihskrz : SourceValue F) (m_uwgthagn : Heap F) (cs_bmbcztrt : List (Call F)) (v_snzjerdk : SourceValue F) (m_xjppmcog : Heap F) (cs_djfbystk : List (Call F)) (v_jhikxuws : SourceValue F) (m_wnznnpgq : Heap F) (cs_walkzjao : List (Call F)) (v_sldvicia : SourceValue F) (m_aertcppv : Heap F) (cs_dlckxjzl : List (Call F)) (v_ngxfxlwm : SourceValue F) (v_ggtuvbti : SourceValue F) (m_zmuovrmt : Heap F) (cs_kjwcsckp : List (Call F)) (v_vsbrbfhw : SourceValue F) (v_kexhlfqo : SourceValue F) (v_bwgfowul : SourceValue F) (v_fwhixmim : SourceValue F) (v_zdnhrfpa : SourceValue F) (v_wlmyitsu : SourceValue F) (v_vtojtafm : SourceValue F) (v_oeqogvwf : SourceValue F) (m_otfezhsh : Heap F) (cs_duijlmum : List (Call F)) (v_xfvycsga : SourceValue F) (m_drejqgpr : Heap F) (cs_rskssvau : List (Call F)) (v_vqzmhgnw : SourceValue F) (m_bjxwtrod : Heap F) (cs_dvhfgyfq : List (Call F)) (v_luisrfji : SourceValue F) (m_ulnfaxdr : Heap F) (cs_dyciuzso : List (Call F)) (v_renynvbx : SourceValue F) (m_drrqiuwl : Heap F) (cs_hwkxafzy : List (Call F)) (v_mfgbzlzt : SourceValue F) (m_tqktwrap : Heap F) (cs_lyhuzuka : List (Call F)) (v_qjjeonbs : SourceValue F) (m_izikhvxz : Heap F) (cs_oqkjodoj : List (Call F)) (v_hsghrbqx : SourceValue F) (m_rcsergkn : Heap F) (cs_iczwhamm : List (Call F)) (v_kghjygch : SourceValue F) (m_foxbgeum : Heap F) (cs_ociitgbk : List (Call F)) (v_ihmuhgdv : SourceValue F) (v_lqgqdpzr : SourceValue F) (m_awavchjd : Heap F) (cs_zyjvaiyj : List (Call F)) (v_yxgkrbhp : SourceValue F) (v_borsetzo : SourceValue F) (v_clcatdul : SourceValue F) (v_nulbbbmn : SourceValue F) (v_ocrndlxe : SourceValue F) (v_slamzocv : SourceValue F) (v_byvumfwu : SourceValue F) (v_llduvlvo : SourceValue F) (m_qlyibhqz : Heap F) (cs_ychubqxn : List (Call F)) (v_ywwkjwlv : SourceValue F) (m_csamqqni : Heap F) (cs_xvdskoys : List (Call F)) (v_jgekmmmc : SourceValue F) (m_peomwrzs : Heap F) (cs_pcnaulzc : List (Call F)) (v_mzpkkmmo : SourceValue F) (m_wgrrjoie : Heap F) (cs_puzgrtre : List (Call F)) (v_bhqoeldz : SourceValue F) (m_pjlnudfr : Heap F) (cs_jiirhzis : List (Call F)) (v_ldlxtyte : SourceValue F) (m_biobjjiw : Heap F) (cs_iymalovu : List (Call F)) (v_cqndvkyk : SourceValue F) (m_naijynbm : Heap F) (cs_tfpdhwxt : List (Call F)) (v_xghxkwgm : SourceValue F) (m_dxstqfgn : Heap F) (cs_sobuhttj : List (Call F)) (v_hmfqpfgt : SourceValue F) (m_qdpamvxs : Heap F) (cs_venzxlnf : List (Call F)) (v_mttqyjae : SourceValue F) (v_djtcyqhj : SourceValue F) (m_zjdxqmve : Heap F) (cs_ldqgjadh : List (Call F)) (v_eotiihij : SourceValue F) (v_nghuwdde : SourceValue F) (v_mwrhpcxx : SourceValue F) (v_lhtmgplu : SourceValue F) (v_colzkwko : SourceValue F) (v_zlxqhqha : SourceValue F) (v_zbjhpeqs : SourceValue F) (v_wybumgoh : SourceValue F) (m_zddgmjez : Heap F) (cs_scscvzkh : List (Call F)) (v_wypcviiy : SourceValue F) (m_jvhxtbis : Heap F) (cs_mqesljcu : List (Call F)) (v_aumpuucr : SourceValue F) (m_ljplgwmc : Heap F) (cs_ygxpxhyh : List (Call F)) (v_jneqolql : SourceValue F) (m_xwathwam : Heap F) (cs_ryumdsmk : List (Call F)) (v_uzastsdg : SourceValue F) (m_epzlsxea : Heap F) (cs_oddrxybo : List (Call F)) (v_qftjtdpz : SourceValue F) (m_sgefzbba : Heap F) (cs_vcykgqep : List (Call F)) (v_wgwmpjlf : SourceValue F) (m_vxlcbzza : Heap F) (cs_nxjobnmx : List (Call F)) (v_jjzmwrrm : SourceValue F) (m_imwuqovj : Heap F) (cs_fzzqwbhy : List (Call F)) (v_ahnstnpv : SourceValue F) (m_yicqlqnz : Heap F) (cs_pceeeosh : List (Call F)) (v_guswxxwc : SourceValue F) (v_toytbbdx : SourceValue F) (m_qqogzkkr : Heap F) (cs_hvjbyvay : List (Call F)) (v_fmrbopqe : SourceValue F) (v_prbooulb : SourceValue F) (v_xdvhoiyy : SourceValue F) (v_zcyzdrhj : SourceValue F) (v_oncyznxc : SourceValue F) (v_xfgkvlhq : SourceValue F) (v_lwongibj : SourceValue F) (v_fhlsxoxi : SourceValue F) (m_opdffskr : Heap F) (cs_ckqqacro : List (Call F)) (v_cxanwoow : SourceValue F) (m_yxeeidru : Heap F) (cs_culgmpoc : List (Call F)) (v_fxkxvwzj : SourceValue F) (m_uzjotiav : Heap F) (cs_muimjnwf : List (Call F)) (v_yqtakcng : SourceValue F) (m_omwxjyvb : Heap F) (cs_tcmstopn : List (Call F)) (v_qcxvfrco : SourceValue F) (m_silcruvs : Heap F) (cs_vuahzumf : List (Call F)) (v_bjzqpyty : SourceValue F) (m_tupzgtil : Heap F) (cs_vyyergiu : List (Call F)) (v_fsoctuzs : SourceValue F) (m_ngxytljm : Heap F) (cs_vndcwpzr : List (Call F)) (v_szlesuhu : SourceValue F) (m_ctefdlrv : Heap F) (cs_iwdrmtly : List (Call F)) (v_numzkuvn : SourceValue F) (m_rzoktnhl : Heap F) (cs_zoerszsa : List (Call F)) (v_qpvxjfqw : SourceValue F) (v_opjnsllw : SourceValue F) (v_wlvmarxt : SourceValue F) (v_bjaqoyjj : SourceValue F) (v_ftskkhbm : SourceValue F) (v_wnxowxkp : SourceValue F) (v_suyvldxu : SourceValue F) (v_yjcxyfon : SourceValue F) (m_cifrvngp : Heap F) (cs_jotfjrys : List (Call F)) (v_fokqnimt : SourceValue F) (m_tdtkakto : Heap F) (cs_pqyicxwj : List (Call F)) (v_wujjhhim : SourceValue F) (m_bmykbdpy : Heap F) (cs_wxlrqioy : List (Call F)) (v_zokpwawu : SourceValue F) (m_euezvxgi : Heap F) (cs_cxpqalzr : List (Call F)) (v_xznrfqbe : SourceValue F) (m_dxcuftkx : Heap F) (cs_kfuldyso : List (Call F)) (v_bghxrsdn : SourceValue F) (m_lgrpjukl : Heap F) (cs_ofqbxqdo : List (Call F)) (v_xfbzylkt : SourceValue F) (m_uorbjygw : Heap F) (cs_bpjlvpvx : List (Call F)) (v_ciupwelg : SourceValue F) (m_pvpgsgum : Heap F) (cs_hghgulzr : List (Call F)) (v_wwphmnwr : SourceValue F)
+      (ld_lgriepir : loadValue h x_x = .ok v_rmmlnofu)
+      (ld_hreidqgq : loadValue h x_y = .ok v_ylhlkvmp)
+      (pr_cucihyxu : projectValue (v_rmmlnofu : SourceValue F) 4 = .ok v_aegvqpew)
+      (ev_rcltkczj : ObsFn W "UInt8::to_field" [v_aegvqpew] h v_qkzioqyj m_sntfzrew cs_shcdxcld)
+      (pr_rpsomomz : projectValue (v_rmmlnofu : SourceValue F) 5 = .ok v_sbyabegj)
+      (ev_kimcbzhm : ObsFn W "UInt8::to_field" [v_sbyabegj] m_sntfzrew v_jsfftuwg m_yiptmhbi cs_fzvxpyzu)
+      (pr_ppygvbil : projectValue (v_rmmlnofu : SourceValue F) 6 = .ok v_ovohvmvn)
+      (ev_jeubqmon : ObsFn W "UInt8::to_field" [v_ovohvmvn] m_yiptmhbi v_nauwlmzi m_tfuvijpt cs_omfwygcv)
+      (pr_nqtdqezi : projectValue (v_rmmlnofu : SourceValue F) 7 = .ok v_fuhxxrei)
+      (ev_nnpbhvoh : ObsFn W "UInt8::to_field" [v_fuhxxrei] m_tfuvijpt v_jlpzbjud m_ampnpals cs_kmcvwrgg)
+      (pr_ahfjbgrg : projectValue (v_ylhlkvmp : SourceValue F) 4 = .ok v_jlbenphq)
+      (ev_rucemdmj : ObsFn W "UInt8::to_field" [v_jlbenphq] m_ampnpals v_eijzgvsi m_ydvnvkhm cs_fmcmanmo)
+      (pr_rqkxwbyz : projectValue (v_ylhlkvmp : SourceValue F) 5 = .ok v_iliokxvm)
+      (ev_udygryny : ObsFn W "UInt8::to_field" [v_iliokxvm] m_ydvnvkhm v_uavweirt m_glhojgci cs_bfglidpb)
+      (pr_qbmmexdo : projectValue (v_ylhlkvmp : SourceValue F) 6 = .ok v_bnjkcpso)
+      (ev_ghkwqwke : ObsFn W "UInt8::to_field" [v_bnjkcpso] m_glhojgci v_rytwiymb m_zodxxfld cs_jlbltqvu)
+      (pr_vfjvtvxs : projectValue (v_ylhlkvmp : SourceValue F) 7 = .ok v_nawsdswf)
+      (ev_czsvkppt : ObsFn W "UInt8::to_field" [v_nawsdswf] m_zodxxfld v_trdvharr m_jsnuezwe cs_ebgtecrw)
+      (ev_xlqdsuwi : ObsFn W "RBTreeMap::canon_addr_chunk" [v_qkzioqyj, v_jsfftuwg, v_nauwlmzi, v_jlpzbjud, v_eijzgvsi, v_uavweirt, v_rytwiymb, v_trdvharr] m_jsnuezwe v_afcxnern m_sydkuuao cs_mprfvrcs)
+      (pr_usfjghzp : projectValue (v_rmmlnofu : SourceValue F) 8 = .ok v_iosoaztt)
+      (ev_vaxivmgc : ObsFn W "UInt8::to_field" [v_iosoaztt] m_sydkuuao v_gjtvjdhb m_bkjlpzzn cs_mcklzxxr)
+      (pr_vouodasu : projectValue (v_rmmlnofu : SourceValue F) 9 = .ok v_hjcakcyw)
+      (ev_aedobqbt : ObsFn W "UInt8::to_field" [v_hjcakcyw] m_bkjlpzzn v_qbqzpefj m_bzzzmmrg cs_fisdiqqe)
+      (pr_eqvsrzxi : projectValue (v_rmmlnofu : SourceValue F) 10 = .ok v_yjbmwfhq)
+      (ev_duqqhaso : ObsFn W "UInt8::to_field" [v_yjbmwfhq] m_bzzzmmrg v_kajsjbrf m_nfmpyvyj cs_wnmqmkzh)
+      (pr_egpbyugm : projectValue (v_rmmlnofu : SourceValue F) 11 = .ok v_aaulfsqp)
+      (ev_fjrusexj : ObsFn W "UInt8::to_field" [v_aaulfsqp] m_nfmpyvyj v_ommphixs m_ccbqigqg cs_wbsalyne)
+      (pr_giimhahx : projectValue (v_ylhlkvmp : SourceValue F) 8 = .ok v_tcihskrz)
+      (ev_qbampzjy : ObsFn W "UInt8::to_field" [v_tcihskrz] m_ccbqigqg v_dtbjbtmd m_ybwlptkg cs_wlgpwdkt)
+      (pr_txnalprh : projectValue (v_ylhlkvmp : SourceValue F) 9 = .ok v_snzjerdk)
+      (ev_szxubtpw : ObsFn W "UInt8::to_field" [v_snzjerdk] m_ybwlptkg v_ryohkofc m_uwgthagn cs_bmbcztrt)
+      (pr_ehbmstth : projectValue (v_ylhlkvmp : SourceValue F) 10 = .ok v_jhikxuws)
+      (ev_afcrbfns : ObsFn W "UInt8::to_field" [v_jhikxuws] m_uwgthagn v_okgqmkkz m_xjppmcog cs_djfbystk)
+      (pr_abqupilj : projectValue (v_ylhlkvmp : SourceValue F) 11 = .ok v_sldvicia)
+      (ev_gqpkamfh : ObsFn W "UInt8::to_field" [v_sldvicia] m_xjppmcog v_jwxwvpiy m_wnznnpgq cs_walkzjao)
+      (ev_eqvecapo : ObsFn W "RBTreeMap::canon_addr_chunk" [v_gjtvjdhb, v_qbqzpefj, v_kajsjbrf, v_ommphixs, v_dtbjbtmd, v_ryohkofc, v_okgqmkkz, v_jwxwvpiy] m_wnznnpgq v_abfpxusc m_entgrpwh cs_sitltovl)
+      (pr_bemrgmhg : projectValue (v_rmmlnofu : SourceValue F) 12 = .ok v_xfvycsga)
+      (ev_fvcintpq : ObsFn W "UInt8::to_field" [v_xfvycsga] m_entgrpwh v_vsbrbfhw m_otfezhsh cs_duijlmum)
+      (pr_bijtfmap : projectValue (v_rmmlnofu : SourceValue F) 13 = .ok v_vqzmhgnw)
+      (ev_sntguhub : ObsFn W "UInt8::to_field" [v_vqzmhgnw] m_otfezhsh v_kexhlfqo m_drejqgpr cs_rskssvau)
+      (pr_qgccfhcp : projectValue (v_rmmlnofu : SourceValue F) 14 = .ok v_luisrfji)
+      (ev_wknxtqph : ObsFn W "UInt8::to_field" [v_luisrfji] m_drejqgpr v_bwgfowul m_bjxwtrod cs_dvhfgyfq)
+      (pr_outvftek : projectValue (v_rmmlnofu : SourceValue F) 15 = .ok v_renynvbx)
+      (ev_zxekyepw : ObsFn W "UInt8::to_field" [v_renynvbx] m_bjxwtrod v_fwhixmim m_ulnfaxdr cs_dyciuzso)
+      (pr_vlibakmd : projectValue (v_ylhlkvmp : SourceValue F) 12 = .ok v_mfgbzlzt)
+      (ev_agrtykcv : ObsFn W "UInt8::to_field" [v_mfgbzlzt] m_ulnfaxdr v_zdnhrfpa m_drrqiuwl cs_hwkxafzy)
+      (pr_wqhsxwjy : projectValue (v_ylhlkvmp : SourceValue F) 13 = .ok v_qjjeonbs)
+      (ev_taporuqe : ObsFn W "UInt8::to_field" [v_qjjeonbs] m_drrqiuwl v_wlmyitsu m_tqktwrap cs_lyhuzuka)
+      (pr_mkmyoxyy : projectValue (v_ylhlkvmp : SourceValue F) 14 = .ok v_hsghrbqx)
+      (ev_ezvjfisw : ObsFn W "UInt8::to_field" [v_hsghrbqx] m_tqktwrap v_vtojtafm m_izikhvxz cs_oqkjodoj)
+      (pr_ddndhkur : projectValue (v_ylhlkvmp : SourceValue F) 15 = .ok v_kghjygch)
+      (ev_cnoebvdi : ObsFn W "UInt8::to_field" [v_kghjygch] m_izikhvxz v_oeqogvwf m_rcsergkn cs_iczwhamm)
+      (ev_buiclwmc : ObsFn W "RBTreeMap::canon_addr_chunk" [v_vsbrbfhw, v_kexhlfqo, v_bwgfowul, v_fwhixmim, v_zdnhrfpa, v_wlmyitsu, v_vtojtafm, v_oeqogvwf] m_rcsergkn v_ngxfxlwm m_zmuovrmt cs_kjwcsckp)
+      (pr_aqqtevdx : projectValue (v_rmmlnofu : SourceValue F) 16 = .ok v_ywwkjwlv)
+      (ev_asjpnuey : ObsFn W "UInt8::to_field" [v_ywwkjwlv] m_zmuovrmt v_yxgkrbhp m_qlyibhqz cs_ychubqxn)
+      (pr_vavhgzaf : projectValue (v_rmmlnofu : SourceValue F) 17 = .ok v_jgekmmmc)
+      (ev_itvbtwij : ObsFn W "UInt8::to_field" [v_jgekmmmc] m_qlyibhqz v_borsetzo m_csamqqni cs_xvdskoys)
+      (pr_qpfgvgls : projectValue (v_rmmlnofu : SourceValue F) 18 = .ok v_mzpkkmmo)
+      (ev_smzpbuhw : ObsFn W "UInt8::to_field" [v_mzpkkmmo] m_csamqqni v_clcatdul m_peomwrzs cs_pcnaulzc)
+      (pr_dkhxgyos : projectValue (v_rmmlnofu : SourceValue F) 19 = .ok v_bhqoeldz)
+      (ev_mxsynjkz : ObsFn W "UInt8::to_field" [v_bhqoeldz] m_peomwrzs v_nulbbbmn m_wgrrjoie cs_puzgrtre)
+      (pr_ahryorva : projectValue (v_ylhlkvmp : SourceValue F) 16 = .ok v_ldlxtyte)
+      (ev_kkqmrnne : ObsFn W "UInt8::to_field" [v_ldlxtyte] m_wgrrjoie v_ocrndlxe m_pjlnudfr cs_jiirhzis)
+      (pr_vpghjlow : projectValue (v_ylhlkvmp : SourceValue F) 17 = .ok v_cqndvkyk)
+      (ev_bylqhoqd : ObsFn W "UInt8::to_field" [v_cqndvkyk] m_pjlnudfr v_slamzocv m_biobjjiw cs_iymalovu)
+      (pr_ecvmaxgd : projectValue (v_ylhlkvmp : SourceValue F) 18 = .ok v_xghxkwgm)
+      (ev_pfpzvdby : ObsFn W "UInt8::to_field" [v_xghxkwgm] m_biobjjiw v_byvumfwu m_naijynbm cs_tfpdhwxt)
+      (pr_wkxaksxa : projectValue (v_ylhlkvmp : SourceValue F) 19 = .ok v_hmfqpfgt)
+      (ev_ydtaspez : ObsFn W "UInt8::to_field" [v_hmfqpfgt] m_naijynbm v_llduvlvo m_dxstqfgn cs_sobuhttj)
+      (ev_ppusmsxb : ObsFn W "RBTreeMap::canon_addr_chunk" [v_yxgkrbhp, v_borsetzo, v_clcatdul, v_nulbbbmn, v_ocrndlxe, v_slamzocv, v_byvumfwu, v_llduvlvo] m_dxstqfgn v_ihmuhgdv m_awavchjd cs_zyjvaiyj)
+      (pr_hfbqmygp : projectValue (v_rmmlnofu : SourceValue F) 20 = .ok v_wypcviiy)
+      (ev_lhywjnae : ObsFn W "UInt8::to_field" [v_wypcviiy] m_awavchjd v_eotiihij m_zddgmjez cs_scscvzkh)
+      (pr_sgetrrvy : projectValue (v_rmmlnofu : SourceValue F) 21 = .ok v_aumpuucr)
+      (ev_dkmhhxzz : ObsFn W "UInt8::to_field" [v_aumpuucr] m_zddgmjez v_nghuwdde m_jvhxtbis cs_mqesljcu)
+      (pr_salfkpnz : projectValue (v_rmmlnofu : SourceValue F) 22 = .ok v_jneqolql)
+      (ev_jlhyexsd : ObsFn W "UInt8::to_field" [v_jneqolql] m_jvhxtbis v_mwrhpcxx m_ljplgwmc cs_ygxpxhyh)
+      (pr_dmhmapbd : projectValue (v_rmmlnofu : SourceValue F) 23 = .ok v_uzastsdg)
+      (ev_gsyacnlo : ObsFn W "UInt8::to_field" [v_uzastsdg] m_ljplgwmc v_lhtmgplu m_xwathwam cs_ryumdsmk)
+      (pr_arhpwjmq : projectValue (v_ylhlkvmp : SourceValue F) 20 = .ok v_qftjtdpz)
+      (ev_adgatwts : ObsFn W "UInt8::to_field" [v_qftjtdpz] m_xwathwam v_colzkwko m_epzlsxea cs_oddrxybo)
+      (pr_bsrvrzvb : projectValue (v_ylhlkvmp : SourceValue F) 21 = .ok v_wgwmpjlf)
+      (ev_kgvziuqs : ObsFn W "UInt8::to_field" [v_wgwmpjlf] m_epzlsxea v_zlxqhqha m_sgefzbba cs_vcykgqep)
+      (pr_orvloruj : projectValue (v_ylhlkvmp : SourceValue F) 22 = .ok v_jjzmwrrm)
+      (ev_tyfuyqxt : ObsFn W "UInt8::to_field" [v_jjzmwrrm] m_sgefzbba v_zbjhpeqs m_vxlcbzza cs_nxjobnmx)
+      (pr_aonfxkur : projectValue (v_ylhlkvmp : SourceValue F) 23 = .ok v_ahnstnpv)
+      (ev_effkjgqf : ObsFn W "UInt8::to_field" [v_ahnstnpv] m_vxlcbzza v_wybumgoh m_imwuqovj cs_fzzqwbhy)
+      (ev_svxsbguh : ObsFn W "RBTreeMap::canon_addr_chunk" [v_eotiihij, v_nghuwdde, v_mwrhpcxx, v_lhtmgplu, v_colzkwko, v_zlxqhqha, v_zbjhpeqs, v_wybumgoh] m_imwuqovj v_mttqyjae m_zjdxqmve cs_ldqgjadh)
+      (pr_vneczgsw : projectValue (v_rmmlnofu : SourceValue F) 24 = .ok v_cxanwoow)
+      (ev_udkilsog : ObsFn W "UInt8::to_field" [v_cxanwoow] m_zjdxqmve v_fmrbopqe m_opdffskr cs_ckqqacro)
+      (pr_rgtsodog : projectValue (v_rmmlnofu : SourceValue F) 25 = .ok v_fxkxvwzj)
+      (ev_umbizwcw : ObsFn W "UInt8::to_field" [v_fxkxvwzj] m_opdffskr v_prbooulb m_yxeeidru cs_culgmpoc)
+      (pr_caxpujym : projectValue (v_rmmlnofu : SourceValue F) 26 = .ok v_yqtakcng)
+      (ev_mpbqbvov : ObsFn W "UInt8::to_field" [v_yqtakcng] m_yxeeidru v_xdvhoiyy m_uzjotiav cs_muimjnwf)
+      (pr_bcuyejhl : projectValue (v_rmmlnofu : SourceValue F) 27 = .ok v_qcxvfrco)
+      (ev_hrvzdhbn : ObsFn W "UInt8::to_field" [v_qcxvfrco] m_uzjotiav v_zcyzdrhj m_omwxjyvb cs_tcmstopn)
+      (pr_xdlmtmaj : projectValue (v_ylhlkvmp : SourceValue F) 24 = .ok v_bjzqpyty)
+      (ev_jrmisihu : ObsFn W "UInt8::to_field" [v_bjzqpyty] m_omwxjyvb v_oncyznxc m_silcruvs cs_vuahzumf)
+      (pr_jcdvnkrl : projectValue (v_ylhlkvmp : SourceValue F) 25 = .ok v_fsoctuzs)
+      (ev_btfabzzg : ObsFn W "UInt8::to_field" [v_fsoctuzs] m_silcruvs v_xfgkvlhq m_tupzgtil cs_vyyergiu)
+      (pr_qokcwrui : projectValue (v_ylhlkvmp : SourceValue F) 26 = .ok v_szlesuhu)
+      (ev_uzjgfaqn : ObsFn W "UInt8::to_field" [v_szlesuhu] m_tupzgtil v_lwongibj m_ngxytljm cs_vndcwpzr)
+      (pr_molyngit : projectValue (v_ylhlkvmp : SourceValue F) 27 = .ok v_numzkuvn)
+      (ev_azvodnbh : ObsFn W "UInt8::to_field" [v_numzkuvn] m_ngxytljm v_fhlsxoxi m_ctefdlrv cs_iwdrmtly)
+      (ev_qesvleec : ObsFn W "RBTreeMap::canon_addr_chunk" [v_fmrbopqe, v_prbooulb, v_xdvhoiyy, v_zcyzdrhj, v_oncyznxc, v_xfgkvlhq, v_lwongibj, v_fhlsxoxi] m_ctefdlrv v_guswxxwc m_qqogzkkr cs_hvjbyvay)
+      (pr_vvjhdtgd : projectValue (v_rmmlnofu : SourceValue F) 28 = .ok v_fokqnimt)
+      (ev_pnphtafd : ObsFn W "UInt8::to_field" [v_fokqnimt] m_qqogzkkr v_qpvxjfqw m_cifrvngp cs_jotfjrys)
+      (pr_zktpnswo : projectValue (v_rmmlnofu : SourceValue F) 29 = .ok v_wujjhhim)
+      (ev_jfwxqfhk : ObsFn W "UInt8::to_field" [v_wujjhhim] m_cifrvngp v_opjnsllw m_tdtkakto cs_pqyicxwj)
+      (pr_qervdeue : projectValue (v_rmmlnofu : SourceValue F) 30 = .ok v_zokpwawu)
+      (ev_xsfluwub : ObsFn W "UInt8::to_field" [v_zokpwawu] m_tdtkakto v_wlvmarxt m_bmykbdpy cs_wxlrqioy)
+      (pr_ylbuldmx : projectValue (v_rmmlnofu : SourceValue F) 31 = .ok v_xznrfqbe)
+      (ev_nvbitzup : ObsFn W "UInt8::to_field" [v_xznrfqbe] m_bmykbdpy v_bjaqoyjj m_euezvxgi cs_cxpqalzr)
+      (pr_mwoevxqm : projectValue (v_ylhlkvmp : SourceValue F) 28 = .ok v_bghxrsdn)
+      (ev_uutycfnp : ObsFn W "UInt8::to_field" [v_bghxrsdn] m_euezvxgi v_ftskkhbm m_dxcuftkx cs_kfuldyso)
+      (pr_xqnwvzxg : projectValue (v_ylhlkvmp : SourceValue F) 29 = .ok v_xfbzylkt)
+      (ev_onfrxgos : ObsFn W "UInt8::to_field" [v_xfbzylkt] m_dxcuftkx v_wnxowxkp m_lgrpjukl cs_ofqbxqdo)
+      (pr_bhdkxiav : projectValue (v_ylhlkvmp : SourceValue F) 30 = .ok v_ciupwelg)
+      (ev_mvjytetb : ObsFn W "UInt8::to_field" [v_ciupwelg] m_lgrpjukl v_suyvldxu m_uorbjygw cs_bpjlvpvx)
+      (pr_gwmtoymd : projectValue (v_ylhlkvmp : SourceValue F) 31 = .ok v_wwphmnwr)
+      (ev_njbszfat : ObsFn W "UInt8::to_field" [v_wwphmnwr] m_uorbjygw v_yjcxyfon m_pvpgsgum cs_hghgulzr)
+      (ev_qgwxrclc : ObsFn W "RBTreeMap::canon_addr_chunk" [v_qpvxjfqw, v_opjnsllw, v_wlvmarxt, v_bjaqoyjj, v_ftskkhbm, v_wnxowxkp, v_suyvldxu, v_yjcxyfon] m_pvpgsgum v_toytbbdx m_rzoktnhl cs_zoerszsa)
+      (ev_ftbfmmke : ObsFn W "RBTreeMap::canon_ord_then" [v_guswxxwc, v_toytbbdx] m_rzoktnhl v_djtcyqhj m_yicqlqnz cs_pceeeosh)
+      (ev_zgazafkp : ObsFn W "RBTreeMap::canon_ord_then" [v_mttqyjae, v_djtcyqhj] m_yicqlqnz v_lqgqdpzr m_qdpamvxs cs_venzxlnf)
+      (ev_hcuqwpmy : ObsFn W "RBTreeMap::canon_ord_then" [v_ihmuhgdv, v_lqgqdpzr] m_qdpamvxs v_ggtuvbti m_foxbgeum cs_ociitgbk)
+      (ev_iphxenxi : ObsFn W "RBTreeMap::canon_ord_then" [v_ngxfxlwm, v_ggtuvbti] m_foxbgeum v_rghuncid m_aertcppv cs_dlckxjzl)
+      (ev_tpbpsvll : ObsFn W "RBTreeMap::canon_ord_then" [v_abfpxusc, v_rghuncid] m_aertcppv v_aehixlct m_xqpvqnwg cs_dlufwjoo)
+      (ev_juakmrmb : ObsFn W "RBTreeMap::canon_ord_then" [v_afcxnern, v_aehixlct] m_xqpvqnwg r h' cs_jutqgogh)
+      (hc_sgljalbe : calls = ((⟨"UInt8::to_field", [v_aegvqpew], h⟩ : Call F) :: (cs_shcdxcld ++ ((⟨"UInt8::to_field", [v_sbyabegj], m_sntfzrew⟩ : Call F) :: (cs_fzvxpyzu ++ ((⟨"UInt8::to_field", [v_ovohvmvn], m_yiptmhbi⟩ : Call F) :: (cs_omfwygcv ++ ((⟨"UInt8::to_field", [v_fuhxxrei], m_tfuvijpt⟩ : Call F) :: (cs_kmcvwrgg ++ ((⟨"UInt8::to_field", [v_jlbenphq], m_ampnpals⟩ : Call F) :: (cs_fmcmanmo ++ ((⟨"UInt8::to_field", [v_iliokxvm], m_ydvnvkhm⟩ : Call F) :: (cs_bfglidpb ++ ((⟨"UInt8::to_field", [v_bnjkcpso], m_glhojgci⟩ : Call F) :: (cs_jlbltqvu ++ ((⟨"UInt8::to_field", [v_nawsdswf], m_zodxxfld⟩ : Call F) :: (cs_ebgtecrw ++ ((⟨"RBTreeMap::canon_addr_chunk", [v_qkzioqyj, v_jsfftuwg, v_nauwlmzi, v_jlpzbjud, v_eijzgvsi, v_uavweirt, v_rytwiymb, v_trdvharr], m_jsnuezwe⟩ : Call F) :: (cs_mprfvrcs ++ ((⟨"UInt8::to_field", [v_iosoaztt], m_sydkuuao⟩ : Call F) :: (cs_mcklzxxr ++ ((⟨"UInt8::to_field", [v_hjcakcyw], m_bkjlpzzn⟩ : Call F) :: (cs_fisdiqqe ++ ((⟨"UInt8::to_field", [v_yjbmwfhq], m_bzzzmmrg⟩ : Call F) :: (cs_wnmqmkzh ++ ((⟨"UInt8::to_field", [v_aaulfsqp], m_nfmpyvyj⟩ : Call F) :: (cs_wbsalyne ++ ((⟨"UInt8::to_field", [v_tcihskrz], m_ccbqigqg⟩ : Call F) :: (cs_wlgpwdkt ++ ((⟨"UInt8::to_field", [v_snzjerdk], m_ybwlptkg⟩ : Call F) :: (cs_bmbcztrt ++ ((⟨"UInt8::to_field", [v_jhikxuws], m_uwgthagn⟩ : Call F) :: (cs_djfbystk ++ ((⟨"UInt8::to_field", [v_sldvicia], m_xjppmcog⟩ : Call F) :: (cs_walkzjao ++ ((⟨"RBTreeMap::canon_addr_chunk", [v_gjtvjdhb, v_qbqzpefj, v_kajsjbrf, v_ommphixs, v_dtbjbtmd, v_ryohkofc, v_okgqmkkz, v_jwxwvpiy], m_wnznnpgq⟩ : Call F) :: (cs_sitltovl ++ ((⟨"UInt8::to_field", [v_xfvycsga], m_entgrpwh⟩ : Call F) :: (cs_duijlmum ++ ((⟨"UInt8::to_field", [v_vqzmhgnw], m_otfezhsh⟩ : Call F) :: (cs_rskssvau ++ ((⟨"UInt8::to_field", [v_luisrfji], m_drejqgpr⟩ : Call F) :: (cs_dvhfgyfq ++ ((⟨"UInt8::to_field", [v_renynvbx], m_bjxwtrod⟩ : Call F) :: (cs_dyciuzso ++ ((⟨"UInt8::to_field", [v_mfgbzlzt], m_ulnfaxdr⟩ : Call F) :: (cs_hwkxafzy ++ ((⟨"UInt8::to_field", [v_qjjeonbs], m_drrqiuwl⟩ : Call F) :: (cs_lyhuzuka ++ ((⟨"UInt8::to_field", [v_hsghrbqx], m_tqktwrap⟩ : Call F) :: (cs_oqkjodoj ++ ((⟨"UInt8::to_field", [v_kghjygch], m_izikhvxz⟩ : Call F) :: (cs_iczwhamm ++ ((⟨"RBTreeMap::canon_addr_chunk", [v_vsbrbfhw, v_kexhlfqo, v_bwgfowul, v_fwhixmim, v_zdnhrfpa, v_wlmyitsu, v_vtojtafm, v_oeqogvwf], m_rcsergkn⟩ : Call F) :: (cs_kjwcsckp ++ ((⟨"UInt8::to_field", [v_ywwkjwlv], m_zmuovrmt⟩ : Call F) :: (cs_ychubqxn ++ ((⟨"UInt8::to_field", [v_jgekmmmc], m_qlyibhqz⟩ : Call F) :: (cs_xvdskoys ++ ((⟨"UInt8::to_field", [v_mzpkkmmo], m_csamqqni⟩ : Call F) :: (cs_pcnaulzc ++ ((⟨"UInt8::to_field", [v_bhqoeldz], m_peomwrzs⟩ : Call F) :: (cs_puzgrtre ++ ((⟨"UInt8::to_field", [v_ldlxtyte], m_wgrrjoie⟩ : Call F) :: (cs_jiirhzis ++ ((⟨"UInt8::to_field", [v_cqndvkyk], m_pjlnudfr⟩ : Call F) :: (cs_iymalovu ++ ((⟨"UInt8::to_field", [v_xghxkwgm], m_biobjjiw⟩ : Call F) :: (cs_tfpdhwxt ++ ((⟨"UInt8::to_field", [v_hmfqpfgt], m_naijynbm⟩ : Call F) :: (cs_sobuhttj ++ ((⟨"RBTreeMap::canon_addr_chunk", [v_yxgkrbhp, v_borsetzo, v_clcatdul, v_nulbbbmn, v_ocrndlxe, v_slamzocv, v_byvumfwu, v_llduvlvo], m_dxstqfgn⟩ : Call F) :: (cs_zyjvaiyj ++ ((⟨"UInt8::to_field", [v_wypcviiy], m_awavchjd⟩ : Call F) :: (cs_scscvzkh ++ ((⟨"UInt8::to_field", [v_aumpuucr], m_zddgmjez⟩ : Call F) :: (cs_mqesljcu ++ ((⟨"UInt8::to_field", [v_jneqolql], m_jvhxtbis⟩ : Call F) :: (cs_ygxpxhyh ++ ((⟨"UInt8::to_field", [v_uzastsdg], m_ljplgwmc⟩ : Call F) :: (cs_ryumdsmk ++ ((⟨"UInt8::to_field", [v_qftjtdpz], m_xwathwam⟩ : Call F) :: (cs_oddrxybo ++ ((⟨"UInt8::to_field", [v_wgwmpjlf], m_epzlsxea⟩ : Call F) :: (cs_vcykgqep ++ ((⟨"UInt8::to_field", [v_jjzmwrrm], m_sgefzbba⟩ : Call F) :: (cs_nxjobnmx ++ ((⟨"UInt8::to_field", [v_ahnstnpv], m_vxlcbzza⟩ : Call F) :: (cs_fzzqwbhy ++ ((⟨"RBTreeMap::canon_addr_chunk", [v_eotiihij, v_nghuwdde, v_mwrhpcxx, v_lhtmgplu, v_colzkwko, v_zlxqhqha, v_zbjhpeqs, v_wybumgoh], m_imwuqovj⟩ : Call F) :: (cs_ldqgjadh ++ ((⟨"UInt8::to_field", [v_cxanwoow], m_zjdxqmve⟩ : Call F) :: (cs_ckqqacro ++ ((⟨"UInt8::to_field", [v_fxkxvwzj], m_opdffskr⟩ : Call F) :: (cs_culgmpoc ++ ((⟨"UInt8::to_field", [v_yqtakcng], m_yxeeidru⟩ : Call F) :: (cs_muimjnwf ++ ((⟨"UInt8::to_field", [v_qcxvfrco], m_uzjotiav⟩ : Call F) :: (cs_tcmstopn ++ ((⟨"UInt8::to_field", [v_bjzqpyty], m_omwxjyvb⟩ : Call F) :: (cs_vuahzumf ++ ((⟨"UInt8::to_field", [v_fsoctuzs], m_silcruvs⟩ : Call F) :: (cs_vyyergiu ++ ((⟨"UInt8::to_field", [v_szlesuhu], m_tupzgtil⟩ : Call F) :: (cs_vndcwpzr ++ ((⟨"UInt8::to_field", [v_numzkuvn], m_ngxytljm⟩ : Call F) :: (cs_iwdrmtly ++ ((⟨"RBTreeMap::canon_addr_chunk", [v_fmrbopqe, v_prbooulb, v_xdvhoiyy, v_zcyzdrhj, v_oncyznxc, v_xfgkvlhq, v_lwongibj, v_fhlsxoxi], m_ctefdlrv⟩ : Call F) :: (cs_hvjbyvay ++ ((⟨"UInt8::to_field", [v_fokqnimt], m_qqogzkkr⟩ : Call F) :: (cs_jotfjrys ++ ((⟨"UInt8::to_field", [v_wujjhhim], m_cifrvngp⟩ : Call F) :: (cs_pqyicxwj ++ ((⟨"UInt8::to_field", [v_zokpwawu], m_tdtkakto⟩ : Call F) :: (cs_wxlrqioy ++ ((⟨"UInt8::to_field", [v_xznrfqbe], m_bmykbdpy⟩ : Call F) :: (cs_cxpqalzr ++ ((⟨"UInt8::to_field", [v_bghxrsdn], m_euezvxgi⟩ : Call F) :: (cs_kfuldyso ++ ((⟨"UInt8::to_field", [v_xfbzylkt], m_dxcuftkx⟩ : Call F) :: (cs_ofqbxqdo ++ ((⟨"UInt8::to_field", [v_ciupwelg], m_lgrpjukl⟩ : Call F) :: (cs_bpjlvpvx ++ ((⟨"UInt8::to_field", [v_wwphmnwr], m_uorbjygw⟩ : Call F) :: (cs_hghgulzr ++ ((⟨"RBTreeMap::canon_addr_chunk", [v_qpvxjfqw, v_opjnsllw, v_wlvmarxt, v_bjaqoyjj, v_ftskkhbm, v_wnxowxkp, v_suyvldxu, v_yjcxyfon], m_pvpgsgum⟩ : Call F) :: (cs_zoerszsa ++ ((⟨"RBTreeMap::canon_ord_then", [v_guswxxwc, v_toytbbdx], m_rzoktnhl⟩ : Call F) :: (cs_pceeeosh ++ ((⟨"RBTreeMap::canon_ord_then", [v_mttqyjae, v_djtcyqhj], m_yicqlqnz⟩ : Call F) :: (cs_venzxlnf ++ ((⟨"RBTreeMap::canon_ord_then", [v_ihmuhgdv, v_lqgqdpzr], m_qdpamvxs⟩ : Call F) :: (cs_ociitgbk ++ ((⟨"RBTreeMap::canon_ord_then", [v_ngxfxlwm, v_ggtuvbti], m_foxbgeum⟩ : Call F) :: (cs_dlckxjzl ++ ((⟨"RBTreeMap::canon_ord_then", [v_abfpxusc, v_rghuncid], m_aertcppv⟩ : Call F) :: (cs_dlufwjoo ++ ((⟨"RBTreeMap::canon_ord_then", [v_afcxnern, v_aehixlct], m_xqpvqnwg⟩ : Call F) :: cs_jutqgogh))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+
+/-- **Every observed derivation of `RBTreeMap::canon_addr_cmp_tail` takes one of its paths.** -/
+theorem «RBTreeMap::canon_addr_cmp_tail».obs {x_x x_y : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn W "RBTreeMap::canon_addr_cmp_tail" [x_x, x_y] h r h' calls) :
+    «RBTreeMap::canon_addr_cmp_tail».Path x_x x_y h r h' calls := by
+  have d0 := ObsFn.function_inv (s := IxVM.source) IxVM.RBTreeMap.canon_addr_cmp_tail.lookup
+    (by simp [IxVM.RBTreeMap.canon_addr_cmp_tail, ControlLower.hasControl]) ev
+  simp only [IxVM.RBTreeMap.canon_addr_cmp_tail] at d0
+  obtain ⟨v_rmmlnofu, m2, bs3, c4, c5, d6, mt7, d8, rfl⟩ := d0.letValue_inv
+  obtain ⟨p9, d10, ld_lgriepir⟩ := d6.load_inv
+  obtain ⟨l12, rfl, rfl⟩ := d10.var_inv
+  simp at l12
+  subst l12
+  obtain rfl := matchPattern_bind_inv mt7
+  obtain ⟨v_ylhlkvmp, m14, bs15, c16, c17, d18, mt19, d20, rfl⟩ := d8.letValue_inv
+  obtain ⟨p21, d22, ld_hreidqgq⟩ := d18.load_inv
+  obtain ⟨l24, rfl, rfl⟩ := d22.var_inv
+  simp at l24
+  subst l24
+  obtain rfl := matchPattern_bind_inv mt19
+  obtain ⟨vs25, m26, c27, cs_jutqgogh, a29, ev_juakmrmb, rfl⟩ := d20.call_inv
+  rw [instanceName_plain_some] at ev_juakmrmb
+  obtain ⟨v_afcxnern, vs33, m_sydkuuao, c35, c36, rfl, d37, a38, rfl⟩ := a29.cons_inv
+  obtain ⟨vs39, m40, c41, cs_mprfvrcs, a43, ev_xlqdsuwi, rfl⟩ := d37.call_inv
+  rw [instanceName_plain_some] at ev_xlqdsuwi
+  obtain ⟨v_qkzioqyj, vs53, m_sntfzrew, c55, c56, rfl, d57, a58, rfl⟩ := a43.cons_inv
+  obtain ⟨vs59, m60, c61, cs_shcdxcld, a63, ev_rcltkczj, rfl⟩ := d57.call_inv
+  rw [instanceName_plain_some] at ev_rcltkczj
+  obtain ⟨v_aegvqpew, vs66, m67, c68, c69, rfl, d70, a71, rfl⟩ := a63.cons_inv
+  obtain ⟨p72, d73, pr_cucihyxu⟩ := d70.index_inv
   obtain ⟨l75, rfl, rfl⟩ := d73.var_inv
   simp at l75
   subst l75
   obtain ⟨rfl, rfl, rfl⟩ := a71.nil_inv
-  obtain ⟨v46, vs76, m77, c78, c79, rfl, d80, a81, rfl⟩ := a58.cons_inv
-  obtain ⟨vs82, m83, c84, cs85, a86, ev87, rfl⟩ := d80.call_inv
-  rw [instanceName_plain_some] at ev87
-  obtain ⟨v88, vs89, m90, c91, c92, rfl, d93, a94, rfl⟩ := a86.cons_inv
-  obtain ⟨p95, d96, pr97⟩ := d93.index_inv
+  obtain ⟨v_jsfftuwg, vs76, m_yiptmhbi, c78, c79, rfl, d80, a81, rfl⟩ := a58.cons_inv
+  obtain ⟨vs82, m83, c84, cs_fzvxpyzu, a86, ev_kimcbzhm, rfl⟩ := d80.call_inv
+  rw [instanceName_plain_some] at ev_kimcbzhm
+  obtain ⟨v_sbyabegj, vs89, m90, c91, c92, rfl, d93, a94, rfl⟩ := a86.cons_inv
+  obtain ⟨p95, d96, pr_rpsomomz⟩ := d93.index_inv
   obtain ⟨l98, rfl, rfl⟩ := d96.var_inv
   simp at l98
   subst l98
   obtain ⟨rfl, rfl, rfl⟩ := a94.nil_inv
-  obtain ⟨v47, vs99, m100, c101, c102, rfl, d103, a104, rfl⟩ := a81.cons_inv
-  obtain ⟨vs105, m106, c107, cs108, a109, ev110, rfl⟩ := d103.call_inv
-  rw [instanceName_plain_some] at ev110
-  obtain ⟨v111, vs112, m113, c114, c115, rfl, d116, a117, rfl⟩ := a109.cons_inv
-  obtain ⟨p118, d119, pr120⟩ := d116.index_inv
+  obtain ⟨v_nauwlmzi, vs99, m_tfuvijpt, c101, c102, rfl, d103, a104, rfl⟩ := a81.cons_inv
+  obtain ⟨vs105, m106, c107, cs_omfwygcv, a109, ev_jeubqmon, rfl⟩ := d103.call_inv
+  rw [instanceName_plain_some] at ev_jeubqmon
+  obtain ⟨v_ovohvmvn, vs112, m113, c114, c115, rfl, d116, a117, rfl⟩ := a109.cons_inv
+  obtain ⟨p118, d119, pr_ppygvbil⟩ := d116.index_inv
   obtain ⟨l121, rfl, rfl⟩ := d119.var_inv
   simp at l121
   subst l121
   obtain ⟨rfl, rfl, rfl⟩ := a117.nil_inv
-  obtain ⟨v48, vs122, m123, c124, c125, rfl, d126, a127, rfl⟩ := a104.cons_inv
-  obtain ⟨vs128, m129, c130, cs131, a132, ev133, rfl⟩ := d126.call_inv
-  rw [instanceName_plain_some] at ev133
-  obtain ⟨v134, vs135, m136, c137, c138, rfl, d139, a140, rfl⟩ := a132.cons_inv
-  obtain ⟨p141, d142, pr143⟩ := d139.index_inv
+  obtain ⟨v_jlpzbjud, vs122, m_ampnpals, c124, c125, rfl, d126, a127, rfl⟩ := a104.cons_inv
+  obtain ⟨vs128, m129, c130, cs_kmcvwrgg, a132, ev_nnpbhvoh, rfl⟩ := d126.call_inv
+  rw [instanceName_plain_some] at ev_nnpbhvoh
+  obtain ⟨v_fuhxxrei, vs135, m136, c137, c138, rfl, d139, a140, rfl⟩ := a132.cons_inv
+  obtain ⟨p141, d142, pr_nqtdqezi⟩ := d139.index_inv
   obtain ⟨l144, rfl, rfl⟩ := d142.var_inv
   simp at l144
   subst l144
   obtain ⟨rfl, rfl, rfl⟩ := a140.nil_inv
-  obtain ⟨v49, vs145, m146, c147, c148, rfl, d149, a150, rfl⟩ := a127.cons_inv
-  obtain ⟨vs151, m152, c153, cs154, a155, ev156, rfl⟩ := d149.call_inv
-  rw [instanceName_plain_some] at ev156
-  obtain ⟨v157, vs158, m159, c160, c161, rfl, d162, a163, rfl⟩ := a155.cons_inv
-  obtain ⟨p164, d165, pr166⟩ := d162.index_inv
+  obtain ⟨v_eijzgvsi, vs145, m_ydvnvkhm, c147, c148, rfl, d149, a150, rfl⟩ := a127.cons_inv
+  obtain ⟨vs151, m152, c153, cs_fmcmanmo, a155, ev_rucemdmj, rfl⟩ := d149.call_inv
+  rw [instanceName_plain_some] at ev_rucemdmj
+  obtain ⟨v_jlbenphq, vs158, m159, c160, c161, rfl, d162, a163, rfl⟩ := a155.cons_inv
+  obtain ⟨p164, d165, pr_ahfjbgrg⟩ := d162.index_inv
   obtain ⟨l167, rfl, rfl⟩ := d165.var_inv
   simp at l167
   subst l167
   obtain ⟨rfl, rfl, rfl⟩ := a163.nil_inv
-  obtain ⟨v50, vs168, m169, c170, c171, rfl, d172, a173, rfl⟩ := a150.cons_inv
-  obtain ⟨vs174, m175, c176, cs177, a178, ev179, rfl⟩ := d172.call_inv
-  rw [instanceName_plain_some] at ev179
-  obtain ⟨v180, vs181, m182, c183, c184, rfl, d185, a186, rfl⟩ := a178.cons_inv
-  obtain ⟨p187, d188, pr189⟩ := d185.index_inv
+  obtain ⟨v_uavweirt, vs168, m_glhojgci, c170, c171, rfl, d172, a173, rfl⟩ := a150.cons_inv
+  obtain ⟨vs174, m175, c176, cs_bfglidpb, a178, ev_udygryny, rfl⟩ := d172.call_inv
+  rw [instanceName_plain_some] at ev_udygryny
+  obtain ⟨v_iliokxvm, vs181, m182, c183, c184, rfl, d185, a186, rfl⟩ := a178.cons_inv
+  obtain ⟨p187, d188, pr_rqkxwbyz⟩ := d185.index_inv
   obtain ⟨l190, rfl, rfl⟩ := d188.var_inv
   simp at l190
   subst l190
   obtain ⟨rfl, rfl, rfl⟩ := a186.nil_inv
-  obtain ⟨v51, vs191, m192, c193, c194, rfl, d195, a196, rfl⟩ := a173.cons_inv
-  obtain ⟨vs197, m198, c199, cs200, a201, ev202, rfl⟩ := d195.call_inv
-  rw [instanceName_plain_some] at ev202
-  obtain ⟨v203, vs204, m205, c206, c207, rfl, d208, a209, rfl⟩ := a201.cons_inv
-  obtain ⟨p210, d211, pr212⟩ := d208.index_inv
+  obtain ⟨v_rytwiymb, vs191, m_zodxxfld, c193, c194, rfl, d195, a196, rfl⟩ := a173.cons_inv
+  obtain ⟨vs197, m198, c199, cs_jlbltqvu, a201, ev_ghkwqwke, rfl⟩ := d195.call_inv
+  rw [instanceName_plain_some] at ev_ghkwqwke
+  obtain ⟨v_bnjkcpso, vs204, m205, c206, c207, rfl, d208, a209, rfl⟩ := a201.cons_inv
+  obtain ⟨p210, d211, pr_qbmmexdo⟩ := d208.index_inv
   obtain ⟨l213, rfl, rfl⟩ := d211.var_inv
   simp at l213
   subst l213
   obtain ⟨rfl, rfl, rfl⟩ := a209.nil_inv
-  obtain ⟨v52, vs214, m215, c216, c217, rfl, d218, a219, rfl⟩ := a196.cons_inv
-  obtain ⟨vs220, m221, c222, cs223, a224, ev225, rfl⟩ := d218.call_inv
-  rw [instanceName_plain_some] at ev225
-  obtain ⟨v226, vs227, m228, c229, c230, rfl, d231, a232, rfl⟩ := a224.cons_inv
-  obtain ⟨p233, d234, pr235⟩ := d231.index_inv
+  obtain ⟨v_trdvharr, vs214, m_jsnuezwe, c216, c217, rfl, d218, a219, rfl⟩ := a196.cons_inv
+  obtain ⟨vs220, m221, c222, cs_ebgtecrw, a224, ev_czsvkppt, rfl⟩ := d218.call_inv
+  rw [instanceName_plain_some] at ev_czsvkppt
+  obtain ⟨v_nawsdswf, vs227, m228, c229, c230, rfl, d231, a232, rfl⟩ := a224.cons_inv
+  obtain ⟨p233, d234, pr_vfjvtvxs⟩ := d231.index_inv
   obtain ⟨l236, rfl, rfl⟩ := d234.var_inv
   simp at l236
   subst l236
   obtain ⟨rfl, rfl, rfl⟩ := a232.nil_inv
   obtain ⟨rfl, rfl, rfl⟩ := a219.nil_inv
-  obtain ⟨v32, vs237, m238, c239, c240, rfl, d241, a242, rfl⟩ := a38.cons_inv
-  obtain ⟨vs243, m244, c245, cs246, a247, ev248, rfl⟩ := d241.call_inv
-  rw [instanceName_plain_some] at ev248
-  obtain ⟨v249, vs251, m252, c253, c254, rfl, d255, a256, rfl⟩ := a247.cons_inv
-  obtain ⟨vs257, m258, c259, cs260, a261, ev262, rfl⟩ := d255.call_inv
-  rw [instanceName_plain_some] at ev262
-  obtain ⟨v263, vs271, m272, c273, c274, rfl, d275, a276, rfl⟩ := a261.cons_inv
-  obtain ⟨vs277, m278, c279, cs280, a281, ev282, rfl⟩ := d275.call_inv
-  rw [instanceName_plain_some] at ev282
-  obtain ⟨v283, vs284, m285, c286, c287, rfl, d288, a289, rfl⟩ := a281.cons_inv
-  obtain ⟨p290, d291, pr292⟩ := d288.index_inv
+  obtain ⟨v_aehixlct, vs237, m_xqpvqnwg, c239, c240, rfl, d241, a242, rfl⟩ := a38.cons_inv
+  obtain ⟨vs243, m244, c245, cs_dlufwjoo, a247, ev_tpbpsvll, rfl⟩ := d241.call_inv
+  rw [instanceName_plain_some] at ev_tpbpsvll
+  obtain ⟨v_abfpxusc, vs251, m_entgrpwh, c253, c254, rfl, d255, a256, rfl⟩ := a247.cons_inv
+  obtain ⟨vs257, m258, c259, cs_sitltovl, a261, ev_eqvecapo, rfl⟩ := d255.call_inv
+  rw [instanceName_plain_some] at ev_eqvecapo
+  obtain ⟨v_gjtvjdhb, vs271, m_bkjlpzzn, c273, c274, rfl, d275, a276, rfl⟩ := a261.cons_inv
+  obtain ⟨vs277, m278, c279, cs_mcklzxxr, a281, ev_vaxivmgc, rfl⟩ := d275.call_inv
+  rw [instanceName_plain_some] at ev_vaxivmgc
+  obtain ⟨v_iosoaztt, vs284, m285, c286, c287, rfl, d288, a289, rfl⟩ := a281.cons_inv
+  obtain ⟨p290, d291, pr_usfjghzp⟩ := d288.index_inv
   obtain ⟨l293, rfl, rfl⟩ := d291.var_inv
   simp at l293
   subst l293
   obtain ⟨rfl, rfl, rfl⟩ := a289.nil_inv
-  obtain ⟨v264, vs294, m295, c296, c297, rfl, d298, a299, rfl⟩ := a276.cons_inv
-  obtain ⟨vs300, m301, c302, cs303, a304, ev305, rfl⟩ := d298.call_inv
-  rw [instanceName_plain_some] at ev305
-  obtain ⟨v306, vs307, m308, c309, c310, rfl, d311, a312, rfl⟩ := a304.cons_inv
-  obtain ⟨p313, d314, pr315⟩ := d311.index_inv
+  obtain ⟨v_qbqzpefj, vs294, m_bzzzmmrg, c296, c297, rfl, d298, a299, rfl⟩ := a276.cons_inv
+  obtain ⟨vs300, m301, c302, cs_fisdiqqe, a304, ev_aedobqbt, rfl⟩ := d298.call_inv
+  rw [instanceName_plain_some] at ev_aedobqbt
+  obtain ⟨v_hjcakcyw, vs307, m308, c309, c310, rfl, d311, a312, rfl⟩ := a304.cons_inv
+  obtain ⟨p313, d314, pr_vouodasu⟩ := d311.index_inv
   obtain ⟨l316, rfl, rfl⟩ := d314.var_inv
   simp at l316
   subst l316
   obtain ⟨rfl, rfl, rfl⟩ := a312.nil_inv
-  obtain ⟨v265, vs317, m318, c319, c320, rfl, d321, a322, rfl⟩ := a299.cons_inv
-  obtain ⟨vs323, m324, c325, cs326, a327, ev328, rfl⟩ := d321.call_inv
-  rw [instanceName_plain_some] at ev328
-  obtain ⟨v329, vs330, m331, c332, c333, rfl, d334, a335, rfl⟩ := a327.cons_inv
-  obtain ⟨p336, d337, pr338⟩ := d334.index_inv
+  obtain ⟨v_kajsjbrf, vs317, m_nfmpyvyj, c319, c320, rfl, d321, a322, rfl⟩ := a299.cons_inv
+  obtain ⟨vs323, m324, c325, cs_wnmqmkzh, a327, ev_duqqhaso, rfl⟩ := d321.call_inv
+  rw [instanceName_plain_some] at ev_duqqhaso
+  obtain ⟨v_yjbmwfhq, vs330, m331, c332, c333, rfl, d334, a335, rfl⟩ := a327.cons_inv
+  obtain ⟨p336, d337, pr_eqvsrzxi⟩ := d334.index_inv
   obtain ⟨l339, rfl, rfl⟩ := d337.var_inv
   simp at l339
   subst l339
   obtain ⟨rfl, rfl, rfl⟩ := a335.nil_inv
-  obtain ⟨v266, vs340, m341, c342, c343, rfl, d344, a345, rfl⟩ := a322.cons_inv
-  obtain ⟨vs346, m347, c348, cs349, a350, ev351, rfl⟩ := d344.call_inv
-  rw [instanceName_plain_some] at ev351
-  obtain ⟨v352, vs353, m354, c355, c356, rfl, d357, a358, rfl⟩ := a350.cons_inv
-  obtain ⟨p359, d360, pr361⟩ := d357.index_inv
+  obtain ⟨v_ommphixs, vs340, m_ccbqigqg, c342, c343, rfl, d344, a345, rfl⟩ := a322.cons_inv
+  obtain ⟨vs346, m347, c348, cs_wbsalyne, a350, ev_fjrusexj, rfl⟩ := d344.call_inv
+  rw [instanceName_plain_some] at ev_fjrusexj
+  obtain ⟨v_aaulfsqp, vs353, m354, c355, c356, rfl, d357, a358, rfl⟩ := a350.cons_inv
+  obtain ⟨p359, d360, pr_egpbyugm⟩ := d357.index_inv
   obtain ⟨l362, rfl, rfl⟩ := d360.var_inv
   simp at l362
   subst l362
   obtain ⟨rfl, rfl, rfl⟩ := a358.nil_inv
-  obtain ⟨v267, vs363, m364, c365, c366, rfl, d367, a368, rfl⟩ := a345.cons_inv
-  obtain ⟨vs369, m370, c371, cs372, a373, ev374, rfl⟩ := d367.call_inv
-  rw [instanceName_plain_some] at ev374
-  obtain ⟨v375, vs376, m377, c378, c379, rfl, d380, a381, rfl⟩ := a373.cons_inv
-  obtain ⟨p382, d383, pr384⟩ := d380.index_inv
+  obtain ⟨v_dtbjbtmd, vs363, m_ybwlptkg, c365, c366, rfl, d367, a368, rfl⟩ := a345.cons_inv
+  obtain ⟨vs369, m370, c371, cs_wlgpwdkt, a373, ev_qbampzjy, rfl⟩ := d367.call_inv
+  rw [instanceName_plain_some] at ev_qbampzjy
+  obtain ⟨v_tcihskrz, vs376, m377, c378, c379, rfl, d380, a381, rfl⟩ := a373.cons_inv
+  obtain ⟨p382, d383, pr_giimhahx⟩ := d380.index_inv
   obtain ⟨l385, rfl, rfl⟩ := d383.var_inv
   simp at l385
   subst l385
   obtain ⟨rfl, rfl, rfl⟩ := a381.nil_inv
-  obtain ⟨v268, vs386, m387, c388, c389, rfl, d390, a391, rfl⟩ := a368.cons_inv
-  obtain ⟨vs392, m393, c394, cs395, a396, ev397, rfl⟩ := d390.call_inv
-  rw [instanceName_plain_some] at ev397
-  obtain ⟨v398, vs399, m400, c401, c402, rfl, d403, a404, rfl⟩ := a396.cons_inv
-  obtain ⟨p405, d406, pr407⟩ := d403.index_inv
+  obtain ⟨v_ryohkofc, vs386, m_uwgthagn, c388, c389, rfl, d390, a391, rfl⟩ := a368.cons_inv
+  obtain ⟨vs392, m393, c394, cs_bmbcztrt, a396, ev_szxubtpw, rfl⟩ := d390.call_inv
+  rw [instanceName_plain_some] at ev_szxubtpw
+  obtain ⟨v_snzjerdk, vs399, m400, c401, c402, rfl, d403, a404, rfl⟩ := a396.cons_inv
+  obtain ⟨p405, d406, pr_txnalprh⟩ := d403.index_inv
   obtain ⟨l408, rfl, rfl⟩ := d406.var_inv
   simp at l408
   subst l408
   obtain ⟨rfl, rfl, rfl⟩ := a404.nil_inv
-  obtain ⟨v269, vs409, m410, c411, c412, rfl, d413, a414, rfl⟩ := a391.cons_inv
-  obtain ⟨vs415, m416, c417, cs418, a419, ev420, rfl⟩ := d413.call_inv
-  rw [instanceName_plain_some] at ev420
-  obtain ⟨v421, vs422, m423, c424, c425, rfl, d426, a427, rfl⟩ := a419.cons_inv
-  obtain ⟨p428, d429, pr430⟩ := d426.index_inv
+  obtain ⟨v_okgqmkkz, vs409, m_xjppmcog, c411, c412, rfl, d413, a414, rfl⟩ := a391.cons_inv
+  obtain ⟨vs415, m416, c417, cs_djfbystk, a419, ev_afcrbfns, rfl⟩ := d413.call_inv
+  rw [instanceName_plain_some] at ev_afcrbfns
+  obtain ⟨v_jhikxuws, vs422, m423, c424, c425, rfl, d426, a427, rfl⟩ := a419.cons_inv
+  obtain ⟨p428, d429, pr_ehbmstth⟩ := d426.index_inv
   obtain ⟨l431, rfl, rfl⟩ := d429.var_inv
   simp at l431
   subst l431
   obtain ⟨rfl, rfl, rfl⟩ := a427.nil_inv
-  obtain ⟨v270, vs432, m433, c434, c435, rfl, d436, a437, rfl⟩ := a414.cons_inv
-  obtain ⟨vs438, m439, c440, cs441, a442, ev443, rfl⟩ := d436.call_inv
-  rw [instanceName_plain_some] at ev443
-  obtain ⟨v444, vs445, m446, c447, c448, rfl, d449, a450, rfl⟩ := a442.cons_inv
-  obtain ⟨p451, d452, pr453⟩ := d449.index_inv
+  obtain ⟨v_jwxwvpiy, vs432, m_wnznnpgq, c434, c435, rfl, d436, a437, rfl⟩ := a414.cons_inv
+  obtain ⟨vs438, m439, c440, cs_walkzjao, a442, ev_gqpkamfh, rfl⟩ := d436.call_inv
+  rw [instanceName_plain_some] at ev_gqpkamfh
+  obtain ⟨v_sldvicia, vs445, m446, c447, c448, rfl, d449, a450, rfl⟩ := a442.cons_inv
+  obtain ⟨p451, d452, pr_abqupilj⟩ := d449.index_inv
   obtain ⟨l454, rfl, rfl⟩ := d452.var_inv
   simp at l454
   subst l454
   obtain ⟨rfl, rfl, rfl⟩ := a450.nil_inv
   obtain ⟨rfl, rfl, rfl⟩ := a437.nil_inv
-  obtain ⟨v250, vs455, m456, c457, c458, rfl, d459, a460, rfl⟩ := a256.cons_inv
-  obtain ⟨vs461, m462, c463, cs464, a465, ev466, rfl⟩ := d459.call_inv
-  rw [instanceName_plain_some] at ev466
-  obtain ⟨v467, vs469, m470, c471, c472, rfl, d473, a474, rfl⟩ := a465.cons_inv
-  obtain ⟨vs475, m476, c477, cs478, a479, ev480, rfl⟩ := d473.call_inv
-  rw [instanceName_plain_some] at ev480
-  obtain ⟨v481, vs489, m490, c491, c492, rfl, d493, a494, rfl⟩ := a479.cons_inv
-  obtain ⟨vs495, m496, c497, cs498, a499, ev500, rfl⟩ := d493.call_inv
-  rw [instanceName_plain_some] at ev500
-  obtain ⟨v501, vs502, m503, c504, c505, rfl, d506, a507, rfl⟩ := a499.cons_inv
-  obtain ⟨p508, d509, pr510⟩ := d506.index_inv
+  obtain ⟨v_rghuncid, vs455, m_aertcppv, c457, c458, rfl, d459, a460, rfl⟩ := a256.cons_inv
+  obtain ⟨vs461, m462, c463, cs_dlckxjzl, a465, ev_iphxenxi, rfl⟩ := d459.call_inv
+  rw [instanceName_plain_some] at ev_iphxenxi
+  obtain ⟨v_ngxfxlwm, vs469, m_zmuovrmt, c471, c472, rfl, d473, a474, rfl⟩ := a465.cons_inv
+  obtain ⟨vs475, m476, c477, cs_kjwcsckp, a479, ev_buiclwmc, rfl⟩ := d473.call_inv
+  rw [instanceName_plain_some] at ev_buiclwmc
+  obtain ⟨v_vsbrbfhw, vs489, m_otfezhsh, c491, c492, rfl, d493, a494, rfl⟩ := a479.cons_inv
+  obtain ⟨vs495, m496, c497, cs_duijlmum, a499, ev_fvcintpq, rfl⟩ := d493.call_inv
+  rw [instanceName_plain_some] at ev_fvcintpq
+  obtain ⟨v_xfvycsga, vs502, m503, c504, c505, rfl, d506, a507, rfl⟩ := a499.cons_inv
+  obtain ⟨p508, d509, pr_bemrgmhg⟩ := d506.index_inv
   obtain ⟨l511, rfl, rfl⟩ := d509.var_inv
   simp at l511
   subst l511
   obtain ⟨rfl, rfl, rfl⟩ := a507.nil_inv
-  obtain ⟨v482, vs512, m513, c514, c515, rfl, d516, a517, rfl⟩ := a494.cons_inv
-  obtain ⟨vs518, m519, c520, cs521, a522, ev523, rfl⟩ := d516.call_inv
-  rw [instanceName_plain_some] at ev523
-  obtain ⟨v524, vs525, m526, c527, c528, rfl, d529, a530, rfl⟩ := a522.cons_inv
-  obtain ⟨p531, d532, pr533⟩ := d529.index_inv
+  obtain ⟨v_kexhlfqo, vs512, m_drejqgpr, c514, c515, rfl, d516, a517, rfl⟩ := a494.cons_inv
+  obtain ⟨vs518, m519, c520, cs_rskssvau, a522, ev_sntguhub, rfl⟩ := d516.call_inv
+  rw [instanceName_plain_some] at ev_sntguhub
+  obtain ⟨v_vqzmhgnw, vs525, m526, c527, c528, rfl, d529, a530, rfl⟩ := a522.cons_inv
+  obtain ⟨p531, d532, pr_bijtfmap⟩ := d529.index_inv
   obtain ⟨l534, rfl, rfl⟩ := d532.var_inv
   simp at l534
   subst l534
   obtain ⟨rfl, rfl, rfl⟩ := a530.nil_inv
-  obtain ⟨v483, vs535, m536, c537, c538, rfl, d539, a540, rfl⟩ := a517.cons_inv
-  obtain ⟨vs541, m542, c543, cs544, a545, ev546, rfl⟩ := d539.call_inv
-  rw [instanceName_plain_some] at ev546
-  obtain ⟨v547, vs548, m549, c550, c551, rfl, d552, a553, rfl⟩ := a545.cons_inv
-  obtain ⟨p554, d555, pr556⟩ := d552.index_inv
+  obtain ⟨v_bwgfowul, vs535, m_bjxwtrod, c537, c538, rfl, d539, a540, rfl⟩ := a517.cons_inv
+  obtain ⟨vs541, m542, c543, cs_dvhfgyfq, a545, ev_wknxtqph, rfl⟩ := d539.call_inv
+  rw [instanceName_plain_some] at ev_wknxtqph
+  obtain ⟨v_luisrfji, vs548, m549, c550, c551, rfl, d552, a553, rfl⟩ := a545.cons_inv
+  obtain ⟨p554, d555, pr_qgccfhcp⟩ := d552.index_inv
   obtain ⟨l557, rfl, rfl⟩ := d555.var_inv
   simp at l557
   subst l557
   obtain ⟨rfl, rfl, rfl⟩ := a553.nil_inv
-  obtain ⟨v484, vs558, m559, c560, c561, rfl, d562, a563, rfl⟩ := a540.cons_inv
-  obtain ⟨vs564, m565, c566, cs567, a568, ev569, rfl⟩ := d562.call_inv
-  rw [instanceName_plain_some] at ev569
-  obtain ⟨v570, vs571, m572, c573, c574, rfl, d575, a576, rfl⟩ := a568.cons_inv
-  obtain ⟨p577, d578, pr579⟩ := d575.index_inv
+  obtain ⟨v_fwhixmim, vs558, m_ulnfaxdr, c560, c561, rfl, d562, a563, rfl⟩ := a540.cons_inv
+  obtain ⟨vs564, m565, c566, cs_dyciuzso, a568, ev_zxekyepw, rfl⟩ := d562.call_inv
+  rw [instanceName_plain_some] at ev_zxekyepw
+  obtain ⟨v_renynvbx, vs571, m572, c573, c574, rfl, d575, a576, rfl⟩ := a568.cons_inv
+  obtain ⟨p577, d578, pr_outvftek⟩ := d575.index_inv
   obtain ⟨l580, rfl, rfl⟩ := d578.var_inv
   simp at l580
   subst l580
   obtain ⟨rfl, rfl, rfl⟩ := a576.nil_inv
-  obtain ⟨v485, vs581, m582, c583, c584, rfl, d585, a586, rfl⟩ := a563.cons_inv
-  obtain ⟨vs587, m588, c589, cs590, a591, ev592, rfl⟩ := d585.call_inv
-  rw [instanceName_plain_some] at ev592
-  obtain ⟨v593, vs594, m595, c596, c597, rfl, d598, a599, rfl⟩ := a591.cons_inv
-  obtain ⟨p600, d601, pr602⟩ := d598.index_inv
+  obtain ⟨v_zdnhrfpa, vs581, m_drrqiuwl, c583, c584, rfl, d585, a586, rfl⟩ := a563.cons_inv
+  obtain ⟨vs587, m588, c589, cs_hwkxafzy, a591, ev_agrtykcv, rfl⟩ := d585.call_inv
+  rw [instanceName_plain_some] at ev_agrtykcv
+  obtain ⟨v_mfgbzlzt, vs594, m595, c596, c597, rfl, d598, a599, rfl⟩ := a591.cons_inv
+  obtain ⟨p600, d601, pr_vlibakmd⟩ := d598.index_inv
   obtain ⟨l603, rfl, rfl⟩ := d601.var_inv
   simp at l603
   subst l603
   obtain ⟨rfl, rfl, rfl⟩ := a599.nil_inv
-  obtain ⟨v486, vs604, m605, c606, c607, rfl, d608, a609, rfl⟩ := a586.cons_inv
-  obtain ⟨vs610, m611, c612, cs613, a614, ev615, rfl⟩ := d608.call_inv
-  rw [instanceName_plain_some] at ev615
-  obtain ⟨v616, vs617, m618, c619, c620, rfl, d621, a622, rfl⟩ := a614.cons_inv
-  obtain ⟨p623, d624, pr625⟩ := d621.index_inv
+  obtain ⟨v_wlmyitsu, vs604, m_tqktwrap, c606, c607, rfl, d608, a609, rfl⟩ := a586.cons_inv
+  obtain ⟨vs610, m611, c612, cs_lyhuzuka, a614, ev_taporuqe, rfl⟩ := d608.call_inv
+  rw [instanceName_plain_some] at ev_taporuqe
+  obtain ⟨v_qjjeonbs, vs617, m618, c619, c620, rfl, d621, a622, rfl⟩ := a614.cons_inv
+  obtain ⟨p623, d624, pr_wqhsxwjy⟩ := d621.index_inv
   obtain ⟨l626, rfl, rfl⟩ := d624.var_inv
   simp at l626
   subst l626
   obtain ⟨rfl, rfl, rfl⟩ := a622.nil_inv
-  obtain ⟨v487, vs627, m628, c629, c630, rfl, d631, a632, rfl⟩ := a609.cons_inv
-  obtain ⟨vs633, m634, c635, cs636, a637, ev638, rfl⟩ := d631.call_inv
-  rw [instanceName_plain_some] at ev638
-  obtain ⟨v639, vs640, m641, c642, c643, rfl, d644, a645, rfl⟩ := a637.cons_inv
-  obtain ⟨p646, d647, pr648⟩ := d644.index_inv
+  obtain ⟨v_vtojtafm, vs627, m_izikhvxz, c629, c630, rfl, d631, a632, rfl⟩ := a609.cons_inv
+  obtain ⟨vs633, m634, c635, cs_oqkjodoj, a637, ev_ezvjfisw, rfl⟩ := d631.call_inv
+  rw [instanceName_plain_some] at ev_ezvjfisw
+  obtain ⟨v_hsghrbqx, vs640, m641, c642, c643, rfl, d644, a645, rfl⟩ := a637.cons_inv
+  obtain ⟨p646, d647, pr_mkmyoxyy⟩ := d644.index_inv
   obtain ⟨l649, rfl, rfl⟩ := d647.var_inv
   simp at l649
   subst l649
   obtain ⟨rfl, rfl, rfl⟩ := a645.nil_inv
-  obtain ⟨v488, vs650, m651, c652, c653, rfl, d654, a655, rfl⟩ := a632.cons_inv
-  obtain ⟨vs656, m657, c658, cs659, a660, ev661, rfl⟩ := d654.call_inv
-  rw [instanceName_plain_some] at ev661
-  obtain ⟨v662, vs663, m664, c665, c666, rfl, d667, a668, rfl⟩ := a660.cons_inv
-  obtain ⟨p669, d670, pr671⟩ := d667.index_inv
+  obtain ⟨v_oeqogvwf, vs650, m_rcsergkn, c652, c653, rfl, d654, a655, rfl⟩ := a632.cons_inv
+  obtain ⟨vs656, m657, c658, cs_iczwhamm, a660, ev_cnoebvdi, rfl⟩ := d654.call_inv
+  rw [instanceName_plain_some] at ev_cnoebvdi
+  obtain ⟨v_kghjygch, vs663, m664, c665, c666, rfl, d667, a668, rfl⟩ := a660.cons_inv
+  obtain ⟨p669, d670, pr_ddndhkur⟩ := d667.index_inv
   obtain ⟨l672, rfl, rfl⟩ := d670.var_inv
   simp at l672
   subst l672
   obtain ⟨rfl, rfl, rfl⟩ := a668.nil_inv
   obtain ⟨rfl, rfl, rfl⟩ := a655.nil_inv
-  obtain ⟨v468, vs673, m674, c675, c676, rfl, d677, a678, rfl⟩ := a474.cons_inv
-  obtain ⟨vs679, m680, c681, cs682, a683, ev684, rfl⟩ := d677.call_inv
-  rw [instanceName_plain_some] at ev684
-  obtain ⟨v685, vs687, m688, c689, c690, rfl, d691, a692, rfl⟩ := a683.cons_inv
-  obtain ⟨vs693, m694, c695, cs696, a697, ev698, rfl⟩ := d691.call_inv
-  rw [instanceName_plain_some] at ev698
-  obtain ⟨v699, vs707, m708, c709, c710, rfl, d711, a712, rfl⟩ := a697.cons_inv
-  obtain ⟨vs713, m714, c715, cs716, a717, ev718, rfl⟩ := d711.call_inv
-  rw [instanceName_plain_some] at ev718
-  obtain ⟨v719, vs720, m721, c722, c723, rfl, d724, a725, rfl⟩ := a717.cons_inv
-  obtain ⟨p726, d727, pr728⟩ := d724.index_inv
+  obtain ⟨v_ggtuvbti, vs673, m_foxbgeum, c675, c676, rfl, d677, a678, rfl⟩ := a474.cons_inv
+  obtain ⟨vs679, m680, c681, cs_ociitgbk, a683, ev_hcuqwpmy, rfl⟩ := d677.call_inv
+  rw [instanceName_plain_some] at ev_hcuqwpmy
+  obtain ⟨v_ihmuhgdv, vs687, m_awavchjd, c689, c690, rfl, d691, a692, rfl⟩ := a683.cons_inv
+  obtain ⟨vs693, m694, c695, cs_zyjvaiyj, a697, ev_ppusmsxb, rfl⟩ := d691.call_inv
+  rw [instanceName_plain_some] at ev_ppusmsxb
+  obtain ⟨v_yxgkrbhp, vs707, m_qlyibhqz, c709, c710, rfl, d711, a712, rfl⟩ := a697.cons_inv
+  obtain ⟨vs713, m714, c715, cs_ychubqxn, a717, ev_asjpnuey, rfl⟩ := d711.call_inv
+  rw [instanceName_plain_some] at ev_asjpnuey
+  obtain ⟨v_ywwkjwlv, vs720, m721, c722, c723, rfl, d724, a725, rfl⟩ := a717.cons_inv
+  obtain ⟨p726, d727, pr_aqqtevdx⟩ := d724.index_inv
   obtain ⟨l729, rfl, rfl⟩ := d727.var_inv
   simp at l729
   subst l729
   obtain ⟨rfl, rfl, rfl⟩ := a725.nil_inv
-  obtain ⟨v700, vs730, m731, c732, c733, rfl, d734, a735, rfl⟩ := a712.cons_inv
-  obtain ⟨vs736, m737, c738, cs739, a740, ev741, rfl⟩ := d734.call_inv
-  rw [instanceName_plain_some] at ev741
-  obtain ⟨v742, vs743, m744, c745, c746, rfl, d747, a748, rfl⟩ := a740.cons_inv
-  obtain ⟨p749, d750, pr751⟩ := d747.index_inv
+  obtain ⟨v_borsetzo, vs730, m_csamqqni, c732, c733, rfl, d734, a735, rfl⟩ := a712.cons_inv
+  obtain ⟨vs736, m737, c738, cs_xvdskoys, a740, ev_itvbtwij, rfl⟩ := d734.call_inv
+  rw [instanceName_plain_some] at ev_itvbtwij
+  obtain ⟨v_jgekmmmc, vs743, m744, c745, c746, rfl, d747, a748, rfl⟩ := a740.cons_inv
+  obtain ⟨p749, d750, pr_vavhgzaf⟩ := d747.index_inv
   obtain ⟨l752, rfl, rfl⟩ := d750.var_inv
   simp at l752
   subst l752
   obtain ⟨rfl, rfl, rfl⟩ := a748.nil_inv
-  obtain ⟨v701, vs753, m754, c755, c756, rfl, d757, a758, rfl⟩ := a735.cons_inv
-  obtain ⟨vs759, m760, c761, cs762, a763, ev764, rfl⟩ := d757.call_inv
-  rw [instanceName_plain_some] at ev764
-  obtain ⟨v765, vs766, m767, c768, c769, rfl, d770, a771, rfl⟩ := a763.cons_inv
-  obtain ⟨p772, d773, pr774⟩ := d770.index_inv
+  obtain ⟨v_clcatdul, vs753, m_peomwrzs, c755, c756, rfl, d757, a758, rfl⟩ := a735.cons_inv
+  obtain ⟨vs759, m760, c761, cs_pcnaulzc, a763, ev_smzpbuhw, rfl⟩ := d757.call_inv
+  rw [instanceName_plain_some] at ev_smzpbuhw
+  obtain ⟨v_mzpkkmmo, vs766, m767, c768, c769, rfl, d770, a771, rfl⟩ := a763.cons_inv
+  obtain ⟨p772, d773, pr_qpfgvgls⟩ := d770.index_inv
   obtain ⟨l775, rfl, rfl⟩ := d773.var_inv
   simp at l775
   subst l775
   obtain ⟨rfl, rfl, rfl⟩ := a771.nil_inv
-  obtain ⟨v702, vs776, m777, c778, c779, rfl, d780, a781, rfl⟩ := a758.cons_inv
-  obtain ⟨vs782, m783, c784, cs785, a786, ev787, rfl⟩ := d780.call_inv
-  rw [instanceName_plain_some] at ev787
-  obtain ⟨v788, vs789, m790, c791, c792, rfl, d793, a794, rfl⟩ := a786.cons_inv
-  obtain ⟨p795, d796, pr797⟩ := d793.index_inv
+  obtain ⟨v_nulbbbmn, vs776, m_wgrrjoie, c778, c779, rfl, d780, a781, rfl⟩ := a758.cons_inv
+  obtain ⟨vs782, m783, c784, cs_puzgrtre, a786, ev_mxsynjkz, rfl⟩ := d780.call_inv
+  rw [instanceName_plain_some] at ev_mxsynjkz
+  obtain ⟨v_bhqoeldz, vs789, m790, c791, c792, rfl, d793, a794, rfl⟩ := a786.cons_inv
+  obtain ⟨p795, d796, pr_dkhxgyos⟩ := d793.index_inv
   obtain ⟨l798, rfl, rfl⟩ := d796.var_inv
   simp at l798
   subst l798
   obtain ⟨rfl, rfl, rfl⟩ := a794.nil_inv
-  obtain ⟨v703, vs799, m800, c801, c802, rfl, d803, a804, rfl⟩ := a781.cons_inv
-  obtain ⟨vs805, m806, c807, cs808, a809, ev810, rfl⟩ := d803.call_inv
-  rw [instanceName_plain_some] at ev810
-  obtain ⟨v811, vs812, m813, c814, c815, rfl, d816, a817, rfl⟩ := a809.cons_inv
-  obtain ⟨p818, d819, pr820⟩ := d816.index_inv
+  obtain ⟨v_ocrndlxe, vs799, m_pjlnudfr, c801, c802, rfl, d803, a804, rfl⟩ := a781.cons_inv
+  obtain ⟨vs805, m806, c807, cs_jiirhzis, a809, ev_kkqmrnne, rfl⟩ := d803.call_inv
+  rw [instanceName_plain_some] at ev_kkqmrnne
+  obtain ⟨v_ldlxtyte, vs812, m813, c814, c815, rfl, d816, a817, rfl⟩ := a809.cons_inv
+  obtain ⟨p818, d819, pr_ahryorva⟩ := d816.index_inv
   obtain ⟨l821, rfl, rfl⟩ := d819.var_inv
   simp at l821
   subst l821
   obtain ⟨rfl, rfl, rfl⟩ := a817.nil_inv
-  obtain ⟨v704, vs822, m823, c824, c825, rfl, d826, a827, rfl⟩ := a804.cons_inv
-  obtain ⟨vs828, m829, c830, cs831, a832, ev833, rfl⟩ := d826.call_inv
-  rw [instanceName_plain_some] at ev833
-  obtain ⟨v834, vs835, m836, c837, c838, rfl, d839, a840, rfl⟩ := a832.cons_inv
-  obtain ⟨p841, d842, pr843⟩ := d839.index_inv
+  obtain ⟨v_slamzocv, vs822, m_biobjjiw, c824, c825, rfl, d826, a827, rfl⟩ := a804.cons_inv
+  obtain ⟨vs828, m829, c830, cs_iymalovu, a832, ev_bylqhoqd, rfl⟩ := d826.call_inv
+  rw [instanceName_plain_some] at ev_bylqhoqd
+  obtain ⟨v_cqndvkyk, vs835, m836, c837, c838, rfl, d839, a840, rfl⟩ := a832.cons_inv
+  obtain ⟨p841, d842, pr_vpghjlow⟩ := d839.index_inv
   obtain ⟨l844, rfl, rfl⟩ := d842.var_inv
   simp at l844
   subst l844
   obtain ⟨rfl, rfl, rfl⟩ := a840.nil_inv
-  obtain ⟨v705, vs845, m846, c847, c848, rfl, d849, a850, rfl⟩ := a827.cons_inv
-  obtain ⟨vs851, m852, c853, cs854, a855, ev856, rfl⟩ := d849.call_inv
-  rw [instanceName_plain_some] at ev856
-  obtain ⟨v857, vs858, m859, c860, c861, rfl, d862, a863, rfl⟩ := a855.cons_inv
-  obtain ⟨p864, d865, pr866⟩ := d862.index_inv
+  obtain ⟨v_byvumfwu, vs845, m_naijynbm, c847, c848, rfl, d849, a850, rfl⟩ := a827.cons_inv
+  obtain ⟨vs851, m852, c853, cs_tfpdhwxt, a855, ev_pfpzvdby, rfl⟩ := d849.call_inv
+  rw [instanceName_plain_some] at ev_pfpzvdby
+  obtain ⟨v_xghxkwgm, vs858, m859, c860, c861, rfl, d862, a863, rfl⟩ := a855.cons_inv
+  obtain ⟨p864, d865, pr_ecvmaxgd⟩ := d862.index_inv
   obtain ⟨l867, rfl, rfl⟩ := d865.var_inv
   simp at l867
   subst l867
   obtain ⟨rfl, rfl, rfl⟩ := a863.nil_inv
-  obtain ⟨v706, vs868, m869, c870, c871, rfl, d872, a873, rfl⟩ := a850.cons_inv
-  obtain ⟨vs874, m875, c876, cs877, a878, ev879, rfl⟩ := d872.call_inv
-  rw [instanceName_plain_some] at ev879
-  obtain ⟨v880, vs881, m882, c883, c884, rfl, d885, a886, rfl⟩ := a878.cons_inv
-  obtain ⟨p887, d888, pr889⟩ := d885.index_inv
+  obtain ⟨v_llduvlvo, vs868, m_dxstqfgn, c870, c871, rfl, d872, a873, rfl⟩ := a850.cons_inv
+  obtain ⟨vs874, m875, c876, cs_sobuhttj, a878, ev_ydtaspez, rfl⟩ := d872.call_inv
+  rw [instanceName_plain_some] at ev_ydtaspez
+  obtain ⟨v_hmfqpfgt, vs881, m882, c883, c884, rfl, d885, a886, rfl⟩ := a878.cons_inv
+  obtain ⟨p887, d888, pr_wkxaksxa⟩ := d885.index_inv
   obtain ⟨l890, rfl, rfl⟩ := d888.var_inv
   simp at l890
   subst l890
   obtain ⟨rfl, rfl, rfl⟩ := a886.nil_inv
   obtain ⟨rfl, rfl, rfl⟩ := a873.nil_inv
-  obtain ⟨v686, vs891, m892, c893, c894, rfl, d895, a896, rfl⟩ := a692.cons_inv
-  obtain ⟨vs897, m898, c899, cs900, a901, ev902, rfl⟩ := d895.call_inv
-  rw [instanceName_plain_some] at ev902
-  obtain ⟨v903, vs905, m906, c907, c908, rfl, d909, a910, rfl⟩ := a901.cons_inv
-  obtain ⟨vs911, m912, c913, cs914, a915, ev916, rfl⟩ := d909.call_inv
-  rw [instanceName_plain_some] at ev916
-  obtain ⟨v917, vs925, m926, c927, c928, rfl, d929, a930, rfl⟩ := a915.cons_inv
-  obtain ⟨vs931, m932, c933, cs934, a935, ev936, rfl⟩ := d929.call_inv
-  rw [instanceName_plain_some] at ev936
-  obtain ⟨v937, vs938, m939, c940, c941, rfl, d942, a943, rfl⟩ := a935.cons_inv
-  obtain ⟨p944, d945, pr946⟩ := d942.index_inv
+  obtain ⟨v_lqgqdpzr, vs891, m_qdpamvxs, c893, c894, rfl, d895, a896, rfl⟩ := a692.cons_inv
+  obtain ⟨vs897, m898, c899, cs_venzxlnf, a901, ev_zgazafkp, rfl⟩ := d895.call_inv
+  rw [instanceName_plain_some] at ev_zgazafkp
+  obtain ⟨v_mttqyjae, vs905, m_zjdxqmve, c907, c908, rfl, d909, a910, rfl⟩ := a901.cons_inv
+  obtain ⟨vs911, m912, c913, cs_ldqgjadh, a915, ev_svxsbguh, rfl⟩ := d909.call_inv
+  rw [instanceName_plain_some] at ev_svxsbguh
+  obtain ⟨v_eotiihij, vs925, m_zddgmjez, c927, c928, rfl, d929, a930, rfl⟩ := a915.cons_inv
+  obtain ⟨vs931, m932, c933, cs_scscvzkh, a935, ev_lhywjnae, rfl⟩ := d929.call_inv
+  rw [instanceName_plain_some] at ev_lhywjnae
+  obtain ⟨v_wypcviiy, vs938, m939, c940, c941, rfl, d942, a943, rfl⟩ := a935.cons_inv
+  obtain ⟨p944, d945, pr_hfbqmygp⟩ := d942.index_inv
   obtain ⟨l947, rfl, rfl⟩ := d945.var_inv
   simp at l947
   subst l947
   obtain ⟨rfl, rfl, rfl⟩ := a943.nil_inv
-  obtain ⟨v918, vs948, m949, c950, c951, rfl, d952, a953, rfl⟩ := a930.cons_inv
-  obtain ⟨vs954, m955, c956, cs957, a958, ev959, rfl⟩ := d952.call_inv
-  rw [instanceName_plain_some] at ev959
-  obtain ⟨v960, vs961, m962, c963, c964, rfl, d965, a966, rfl⟩ := a958.cons_inv
-  obtain ⟨p967, d968, pr969⟩ := d965.index_inv
+  obtain ⟨v_nghuwdde, vs948, m_jvhxtbis, c950, c951, rfl, d952, a953, rfl⟩ := a930.cons_inv
+  obtain ⟨vs954, m955, c956, cs_mqesljcu, a958, ev_dkmhhxzz, rfl⟩ := d952.call_inv
+  rw [instanceName_plain_some] at ev_dkmhhxzz
+  obtain ⟨v_aumpuucr, vs961, m962, c963, c964, rfl, d965, a966, rfl⟩ := a958.cons_inv
+  obtain ⟨p967, d968, pr_sgetrrvy⟩ := d965.index_inv
   obtain ⟨l970, rfl, rfl⟩ := d968.var_inv
   simp at l970
   subst l970
   obtain ⟨rfl, rfl, rfl⟩ := a966.nil_inv
-  obtain ⟨v919, vs971, m972, c973, c974, rfl, d975, a976, rfl⟩ := a953.cons_inv
-  obtain ⟨vs977, m978, c979, cs980, a981, ev982, rfl⟩ := d975.call_inv
-  rw [instanceName_plain_some] at ev982
-  obtain ⟨v983, vs984, m985, c986, c987, rfl, d988, a989, rfl⟩ := a981.cons_inv
-  obtain ⟨p990, d991, pr992⟩ := d988.index_inv
+  obtain ⟨v_mwrhpcxx, vs971, m_ljplgwmc, c973, c974, rfl, d975, a976, rfl⟩ := a953.cons_inv
+  obtain ⟨vs977, m978, c979, cs_ygxpxhyh, a981, ev_jlhyexsd, rfl⟩ := d975.call_inv
+  rw [instanceName_plain_some] at ev_jlhyexsd
+  obtain ⟨v_jneqolql, vs984, m985, c986, c987, rfl, d988, a989, rfl⟩ := a981.cons_inv
+  obtain ⟨p990, d991, pr_salfkpnz⟩ := d988.index_inv
   obtain ⟨l993, rfl, rfl⟩ := d991.var_inv
   simp at l993
   subst l993
   obtain ⟨rfl, rfl, rfl⟩ := a989.nil_inv
-  obtain ⟨v920, vs994, m995, c996, c997, rfl, d998, a999, rfl⟩ := a976.cons_inv
-  obtain ⟨vs1000, m1001, c1002, cs1003, a1004, ev1005, rfl⟩ := d998.call_inv
-  rw [instanceName_plain_some] at ev1005
-  obtain ⟨v1006, vs1007, m1008, c1009, c1010, rfl, d1011, a1012, rfl⟩ := a1004.cons_inv
-  obtain ⟨p1013, d1014, pr1015⟩ := d1011.index_inv
+  obtain ⟨v_lhtmgplu, vs994, m_xwathwam, c996, c997, rfl, d998, a999, rfl⟩ := a976.cons_inv
+  obtain ⟨vs1000, m1001, c1002, cs_ryumdsmk, a1004, ev_gsyacnlo, rfl⟩ := d998.call_inv
+  rw [instanceName_plain_some] at ev_gsyacnlo
+  obtain ⟨v_uzastsdg, vs1007, m1008, c1009, c1010, rfl, d1011, a1012, rfl⟩ := a1004.cons_inv
+  obtain ⟨p1013, d1014, pr_dmhmapbd⟩ := d1011.index_inv
   obtain ⟨l1016, rfl, rfl⟩ := d1014.var_inv
   simp at l1016
   subst l1016
   obtain ⟨rfl, rfl, rfl⟩ := a1012.nil_inv
-  obtain ⟨v921, vs1017, m1018, c1019, c1020, rfl, d1021, a1022, rfl⟩ := a999.cons_inv
-  obtain ⟨vs1023, m1024, c1025, cs1026, a1027, ev1028, rfl⟩ := d1021.call_inv
-  rw [instanceName_plain_some] at ev1028
-  obtain ⟨v1029, vs1030, m1031, c1032, c1033, rfl, d1034, a1035, rfl⟩ := a1027.cons_inv
-  obtain ⟨p1036, d1037, pr1038⟩ := d1034.index_inv
+  obtain ⟨v_colzkwko, vs1017, m_epzlsxea, c1019, c1020, rfl, d1021, a1022, rfl⟩ := a999.cons_inv
+  obtain ⟨vs1023, m1024, c1025, cs_oddrxybo, a1027, ev_adgatwts, rfl⟩ := d1021.call_inv
+  rw [instanceName_plain_some] at ev_adgatwts
+  obtain ⟨v_qftjtdpz, vs1030, m1031, c1032, c1033, rfl, d1034, a1035, rfl⟩ := a1027.cons_inv
+  obtain ⟨p1036, d1037, pr_arhpwjmq⟩ := d1034.index_inv
   obtain ⟨l1039, rfl, rfl⟩ := d1037.var_inv
   simp at l1039
   subst l1039
   obtain ⟨rfl, rfl, rfl⟩ := a1035.nil_inv
-  obtain ⟨v922, vs1040, m1041, c1042, c1043, rfl, d1044, a1045, rfl⟩ := a1022.cons_inv
-  obtain ⟨vs1046, m1047, c1048, cs1049, a1050, ev1051, rfl⟩ := d1044.call_inv
-  rw [instanceName_plain_some] at ev1051
-  obtain ⟨v1052, vs1053, m1054, c1055, c1056, rfl, d1057, a1058, rfl⟩ := a1050.cons_inv
-  obtain ⟨p1059, d1060, pr1061⟩ := d1057.index_inv
+  obtain ⟨v_zlxqhqha, vs1040, m_sgefzbba, c1042, c1043, rfl, d1044, a1045, rfl⟩ := a1022.cons_inv
+  obtain ⟨vs1046, m1047, c1048, cs_vcykgqep, a1050, ev_kgvziuqs, rfl⟩ := d1044.call_inv
+  rw [instanceName_plain_some] at ev_kgvziuqs
+  obtain ⟨v_wgwmpjlf, vs1053, m1054, c1055, c1056, rfl, d1057, a1058, rfl⟩ := a1050.cons_inv
+  obtain ⟨p1059, d1060, pr_bsrvrzvb⟩ := d1057.index_inv
   obtain ⟨l1062, rfl, rfl⟩ := d1060.var_inv
   simp at l1062
   subst l1062
   obtain ⟨rfl, rfl, rfl⟩ := a1058.nil_inv
-  obtain ⟨v923, vs1063, m1064, c1065, c1066, rfl, d1067, a1068, rfl⟩ := a1045.cons_inv
-  obtain ⟨vs1069, m1070, c1071, cs1072, a1073, ev1074, rfl⟩ := d1067.call_inv
-  rw [instanceName_plain_some] at ev1074
-  obtain ⟨v1075, vs1076, m1077, c1078, c1079, rfl, d1080, a1081, rfl⟩ := a1073.cons_inv
-  obtain ⟨p1082, d1083, pr1084⟩ := d1080.index_inv
+  obtain ⟨v_zbjhpeqs, vs1063, m_vxlcbzza, c1065, c1066, rfl, d1067, a1068, rfl⟩ := a1045.cons_inv
+  obtain ⟨vs1069, m1070, c1071, cs_nxjobnmx, a1073, ev_tyfuyqxt, rfl⟩ := d1067.call_inv
+  rw [instanceName_plain_some] at ev_tyfuyqxt
+  obtain ⟨v_jjzmwrrm, vs1076, m1077, c1078, c1079, rfl, d1080, a1081, rfl⟩ := a1073.cons_inv
+  obtain ⟨p1082, d1083, pr_orvloruj⟩ := d1080.index_inv
   obtain ⟨l1085, rfl, rfl⟩ := d1083.var_inv
   simp at l1085
   subst l1085
   obtain ⟨rfl, rfl, rfl⟩ := a1081.nil_inv
-  obtain ⟨v924, vs1086, m1087, c1088, c1089, rfl, d1090, a1091, rfl⟩ := a1068.cons_inv
-  obtain ⟨vs1092, m1093, c1094, cs1095, a1096, ev1097, rfl⟩ := d1090.call_inv
-  rw [instanceName_plain_some] at ev1097
-  obtain ⟨v1098, vs1099, m1100, c1101, c1102, rfl, d1103, a1104, rfl⟩ := a1096.cons_inv
-  obtain ⟨p1105, d1106, pr1107⟩ := d1103.index_inv
+  obtain ⟨v_wybumgoh, vs1086, m_imwuqovj, c1088, c1089, rfl, d1090, a1091, rfl⟩ := a1068.cons_inv
+  obtain ⟨vs1092, m1093, c1094, cs_fzzqwbhy, a1096, ev_effkjgqf, rfl⟩ := d1090.call_inv
+  rw [instanceName_plain_some] at ev_effkjgqf
+  obtain ⟨v_ahnstnpv, vs1099, m1100, c1101, c1102, rfl, d1103, a1104, rfl⟩ := a1096.cons_inv
+  obtain ⟨p1105, d1106, pr_aonfxkur⟩ := d1103.index_inv
   obtain ⟨l1108, rfl, rfl⟩ := d1106.var_inv
   simp at l1108
   subst l1108
   obtain ⟨rfl, rfl, rfl⟩ := a1104.nil_inv
   obtain ⟨rfl, rfl, rfl⟩ := a1091.nil_inv
-  obtain ⟨v904, vs1109, m1110, c1111, c1112, rfl, d1113, a1114, rfl⟩ := a910.cons_inv
-  obtain ⟨vs1115, m1116, c1117, cs1118, a1119, ev1120, rfl⟩ := d1113.call_inv
-  rw [instanceName_plain_some] at ev1120
-  obtain ⟨v1121, vs1123, m1124, c1125, c1126, rfl, d1127, a1128, rfl⟩ := a1119.cons_inv
-  obtain ⟨vs1129, m1130, c1131, cs1132, a1133, ev1134, rfl⟩ := d1127.call_inv
-  rw [instanceName_plain_some] at ev1134
-  obtain ⟨v1135, vs1143, m1144, c1145, c1146, rfl, d1147, a1148, rfl⟩ := a1133.cons_inv
-  obtain ⟨vs1149, m1150, c1151, cs1152, a1153, ev1154, rfl⟩ := d1147.call_inv
-  rw [instanceName_plain_some] at ev1154
-  obtain ⟨v1155, vs1156, m1157, c1158, c1159, rfl, d1160, a1161, rfl⟩ := a1153.cons_inv
-  obtain ⟨p1162, d1163, pr1164⟩ := d1160.index_inv
+  obtain ⟨v_djtcyqhj, vs1109, m_yicqlqnz, c1111, c1112, rfl, d1113, a1114, rfl⟩ := a910.cons_inv
+  obtain ⟨vs1115, m1116, c1117, cs_pceeeosh, a1119, ev_ftbfmmke, rfl⟩ := d1113.call_inv
+  rw [instanceName_plain_some] at ev_ftbfmmke
+  obtain ⟨v_guswxxwc, vs1123, m_qqogzkkr, c1125, c1126, rfl, d1127, a1128, rfl⟩ := a1119.cons_inv
+  obtain ⟨vs1129, m1130, c1131, cs_hvjbyvay, a1133, ev_qesvleec, rfl⟩ := d1127.call_inv
+  rw [instanceName_plain_some] at ev_qesvleec
+  obtain ⟨v_fmrbopqe, vs1143, m_opdffskr, c1145, c1146, rfl, d1147, a1148, rfl⟩ := a1133.cons_inv
+  obtain ⟨vs1149, m1150, c1151, cs_ckqqacro, a1153, ev_udkilsog, rfl⟩ := d1147.call_inv
+  rw [instanceName_plain_some] at ev_udkilsog
+  obtain ⟨v_cxanwoow, vs1156, m1157, c1158, c1159, rfl, d1160, a1161, rfl⟩ := a1153.cons_inv
+  obtain ⟨p1162, d1163, pr_vneczgsw⟩ := d1160.index_inv
   obtain ⟨l1165, rfl, rfl⟩ := d1163.var_inv
   simp at l1165
   subst l1165
   obtain ⟨rfl, rfl, rfl⟩ := a1161.nil_inv
-  obtain ⟨v1136, vs1166, m1167, c1168, c1169, rfl, d1170, a1171, rfl⟩ := a1148.cons_inv
-  obtain ⟨vs1172, m1173, c1174, cs1175, a1176, ev1177, rfl⟩ := d1170.call_inv
-  rw [instanceName_plain_some] at ev1177
-  obtain ⟨v1178, vs1179, m1180, c1181, c1182, rfl, d1183, a1184, rfl⟩ := a1176.cons_inv
-  obtain ⟨p1185, d1186, pr1187⟩ := d1183.index_inv
+  obtain ⟨v_prbooulb, vs1166, m_yxeeidru, c1168, c1169, rfl, d1170, a1171, rfl⟩ := a1148.cons_inv
+  obtain ⟨vs1172, m1173, c1174, cs_culgmpoc, a1176, ev_umbizwcw, rfl⟩ := d1170.call_inv
+  rw [instanceName_plain_some] at ev_umbizwcw
+  obtain ⟨v_fxkxvwzj, vs1179, m1180, c1181, c1182, rfl, d1183, a1184, rfl⟩ := a1176.cons_inv
+  obtain ⟨p1185, d1186, pr_rgtsodog⟩ := d1183.index_inv
   obtain ⟨l1188, rfl, rfl⟩ := d1186.var_inv
   simp at l1188
   subst l1188
   obtain ⟨rfl, rfl, rfl⟩ := a1184.nil_inv
-  obtain ⟨v1137, vs1189, m1190, c1191, c1192, rfl, d1193, a1194, rfl⟩ := a1171.cons_inv
-  obtain ⟨vs1195, m1196, c1197, cs1198, a1199, ev1200, rfl⟩ := d1193.call_inv
-  rw [instanceName_plain_some] at ev1200
-  obtain ⟨v1201, vs1202, m1203, c1204, c1205, rfl, d1206, a1207, rfl⟩ := a1199.cons_inv
-  obtain ⟨p1208, d1209, pr1210⟩ := d1206.index_inv
+  obtain ⟨v_xdvhoiyy, vs1189, m_uzjotiav, c1191, c1192, rfl, d1193, a1194, rfl⟩ := a1171.cons_inv
+  obtain ⟨vs1195, m1196, c1197, cs_muimjnwf, a1199, ev_mpbqbvov, rfl⟩ := d1193.call_inv
+  rw [instanceName_plain_some] at ev_mpbqbvov
+  obtain ⟨v_yqtakcng, vs1202, m1203, c1204, c1205, rfl, d1206, a1207, rfl⟩ := a1199.cons_inv
+  obtain ⟨p1208, d1209, pr_caxpujym⟩ := d1206.index_inv
   obtain ⟨l1211, rfl, rfl⟩ := d1209.var_inv
   simp at l1211
   subst l1211
   obtain ⟨rfl, rfl, rfl⟩ := a1207.nil_inv
-  obtain ⟨v1138, vs1212, m1213, c1214, c1215, rfl, d1216, a1217, rfl⟩ := a1194.cons_inv
-  obtain ⟨vs1218, m1219, c1220, cs1221, a1222, ev1223, rfl⟩ := d1216.call_inv
-  rw [instanceName_plain_some] at ev1223
-  obtain ⟨v1224, vs1225, m1226, c1227, c1228, rfl, d1229, a1230, rfl⟩ := a1222.cons_inv
-  obtain ⟨p1231, d1232, pr1233⟩ := d1229.index_inv
+  obtain ⟨v_zcyzdrhj, vs1212, m_omwxjyvb, c1214, c1215, rfl, d1216, a1217, rfl⟩ := a1194.cons_inv
+  obtain ⟨vs1218, m1219, c1220, cs_tcmstopn, a1222, ev_hrvzdhbn, rfl⟩ := d1216.call_inv
+  rw [instanceName_plain_some] at ev_hrvzdhbn
+  obtain ⟨v_qcxvfrco, vs1225, m1226, c1227, c1228, rfl, d1229, a1230, rfl⟩ := a1222.cons_inv
+  obtain ⟨p1231, d1232, pr_bcuyejhl⟩ := d1229.index_inv
   obtain ⟨l1234, rfl, rfl⟩ := d1232.var_inv
   simp at l1234
   subst l1234
   obtain ⟨rfl, rfl, rfl⟩ := a1230.nil_inv
-  obtain ⟨v1139, vs1235, m1236, c1237, c1238, rfl, d1239, a1240, rfl⟩ := a1217.cons_inv
-  obtain ⟨vs1241, m1242, c1243, cs1244, a1245, ev1246, rfl⟩ := d1239.call_inv
-  rw [instanceName_plain_some] at ev1246
-  obtain ⟨v1247, vs1248, m1249, c1250, c1251, rfl, d1252, a1253, rfl⟩ := a1245.cons_inv
-  obtain ⟨p1254, d1255, pr1256⟩ := d1252.index_inv
+  obtain ⟨v_oncyznxc, vs1235, m_silcruvs, c1237, c1238, rfl, d1239, a1240, rfl⟩ := a1217.cons_inv
+  obtain ⟨vs1241, m1242, c1243, cs_vuahzumf, a1245, ev_jrmisihu, rfl⟩ := d1239.call_inv
+  rw [instanceName_plain_some] at ev_jrmisihu
+  obtain ⟨v_bjzqpyty, vs1248, m1249, c1250, c1251, rfl, d1252, a1253, rfl⟩ := a1245.cons_inv
+  obtain ⟨p1254, d1255, pr_xdlmtmaj⟩ := d1252.index_inv
   obtain ⟨l1257, rfl, rfl⟩ := d1255.var_inv
   simp at l1257
   subst l1257
   obtain ⟨rfl, rfl, rfl⟩ := a1253.nil_inv
-  obtain ⟨v1140, vs1258, m1259, c1260, c1261, rfl, d1262, a1263, rfl⟩ := a1240.cons_inv
-  obtain ⟨vs1264, m1265, c1266, cs1267, a1268, ev1269, rfl⟩ := d1262.call_inv
-  rw [instanceName_plain_some] at ev1269
-  obtain ⟨v1270, vs1271, m1272, c1273, c1274, rfl, d1275, a1276, rfl⟩ := a1268.cons_inv
-  obtain ⟨p1277, d1278, pr1279⟩ := d1275.index_inv
+  obtain ⟨v_xfgkvlhq, vs1258, m_tupzgtil, c1260, c1261, rfl, d1262, a1263, rfl⟩ := a1240.cons_inv
+  obtain ⟨vs1264, m1265, c1266, cs_vyyergiu, a1268, ev_btfabzzg, rfl⟩ := d1262.call_inv
+  rw [instanceName_plain_some] at ev_btfabzzg
+  obtain ⟨v_fsoctuzs, vs1271, m1272, c1273, c1274, rfl, d1275, a1276, rfl⟩ := a1268.cons_inv
+  obtain ⟨p1277, d1278, pr_jcdvnkrl⟩ := d1275.index_inv
   obtain ⟨l1280, rfl, rfl⟩ := d1278.var_inv
   simp at l1280
   subst l1280
   obtain ⟨rfl, rfl, rfl⟩ := a1276.nil_inv
-  obtain ⟨v1141, vs1281, m1282, c1283, c1284, rfl, d1285, a1286, rfl⟩ := a1263.cons_inv
-  obtain ⟨vs1287, m1288, c1289, cs1290, a1291, ev1292, rfl⟩ := d1285.call_inv
-  rw [instanceName_plain_some] at ev1292
-  obtain ⟨v1293, vs1294, m1295, c1296, c1297, rfl, d1298, a1299, rfl⟩ := a1291.cons_inv
-  obtain ⟨p1300, d1301, pr1302⟩ := d1298.index_inv
+  obtain ⟨v_lwongibj, vs1281, m_ngxytljm, c1283, c1284, rfl, d1285, a1286, rfl⟩ := a1263.cons_inv
+  obtain ⟨vs1287, m1288, c1289, cs_vndcwpzr, a1291, ev_uzjgfaqn, rfl⟩ := d1285.call_inv
+  rw [instanceName_plain_some] at ev_uzjgfaqn
+  obtain ⟨v_szlesuhu, vs1294, m1295, c1296, c1297, rfl, d1298, a1299, rfl⟩ := a1291.cons_inv
+  obtain ⟨p1300, d1301, pr_qokcwrui⟩ := d1298.index_inv
   obtain ⟨l1303, rfl, rfl⟩ := d1301.var_inv
   simp at l1303
   subst l1303
   obtain ⟨rfl, rfl, rfl⟩ := a1299.nil_inv
-  obtain ⟨v1142, vs1304, m1305, c1306, c1307, rfl, d1308, a1309, rfl⟩ := a1286.cons_inv
-  obtain ⟨vs1310, m1311, c1312, cs1313, a1314, ev1315, rfl⟩ := d1308.call_inv
-  rw [instanceName_plain_some] at ev1315
-  obtain ⟨v1316, vs1317, m1318, c1319, c1320, rfl, d1321, a1322, rfl⟩ := a1314.cons_inv
-  obtain ⟨p1323, d1324, pr1325⟩ := d1321.index_inv
+  obtain ⟨v_fhlsxoxi, vs1304, m_ctefdlrv, c1306, c1307, rfl, d1308, a1309, rfl⟩ := a1286.cons_inv
+  obtain ⟨vs1310, m1311, c1312, cs_iwdrmtly, a1314, ev_azvodnbh, rfl⟩ := d1308.call_inv
+  rw [instanceName_plain_some] at ev_azvodnbh
+  obtain ⟨v_numzkuvn, vs1317, m1318, c1319, c1320, rfl, d1321, a1322, rfl⟩ := a1314.cons_inv
+  obtain ⟨p1323, d1324, pr_molyngit⟩ := d1321.index_inv
   obtain ⟨l1326, rfl, rfl⟩ := d1324.var_inv
   simp at l1326
   subst l1326
   obtain ⟨rfl, rfl, rfl⟩ := a1322.nil_inv
   obtain ⟨rfl, rfl, rfl⟩ := a1309.nil_inv
-  obtain ⟨v1122, vs1327, m1328, c1329, c1330, rfl, d1331, a1332, rfl⟩ := a1128.cons_inv
-  obtain ⟨vs1333, m1334, c1335, cs1336, a1337, ev1338, rfl⟩ := d1331.call_inv
-  rw [instanceName_plain_some] at ev1338
-  obtain ⟨v1339, vs1341, m1342, c1343, c1344, rfl, d1345, a1346, rfl⟩ := a1337.cons_inv
-  obtain ⟨vs1347, m1348, c1349, cs1350, a1351, ev1352, rfl⟩ := d1345.call_inv
-  rw [instanceName_plain_some] at ev1352
-  obtain ⟨v1353, vs1361, m1362, c1363, c1364, rfl, d1365, a1366, rfl⟩ := a1351.cons_inv
-  obtain ⟨vs1367, m1368, c1369, cs1370, a1371, ev1372, rfl⟩ := d1365.call_inv
-  rw [instanceName_plain_some] at ev1372
-  obtain ⟨v1373, vs1374, m1375, c1376, c1377, rfl, d1378, a1379, rfl⟩ := a1371.cons_inv
-  obtain ⟨p1380, d1381, pr1382⟩ := d1378.index_inv
-  obtain ⟨l1383, rfl, rfl⟩ := d1381.var_inv
-  simp at l1383
-  subst l1383
-  obtain ⟨rfl, rfl, rfl⟩ := a1379.nil_inv
-  obtain ⟨v1354, vs1384, m1385, c1386, c1387, rfl, d1388, a1389, rfl⟩ := a1366.cons_inv
-  obtain ⟨vs1390, m1391, c1392, cs1393, a1394, ev1395, rfl⟩ := d1388.call_inv
-  rw [instanceName_plain_some] at ev1395
-  obtain ⟨v1396, vs1397, m1398, c1399, c1400, rfl, d1401, a1402, rfl⟩ := a1394.cons_inv
-  obtain ⟨p1403, d1404, pr1405⟩ := d1401.index_inv
-  obtain ⟨l1406, rfl, rfl⟩ := d1404.var_inv
-  simp at l1406
-  subst l1406
-  obtain ⟨rfl, rfl, rfl⟩ := a1402.nil_inv
-  obtain ⟨v1355, vs1407, m1408, c1409, c1410, rfl, d1411, a1412, rfl⟩ := a1389.cons_inv
-  obtain ⟨vs1413, m1414, c1415, cs1416, a1417, ev1418, rfl⟩ := d1411.call_inv
-  rw [instanceName_plain_some] at ev1418
-  obtain ⟨v1419, vs1420, m1421, c1422, c1423, rfl, d1424, a1425, rfl⟩ := a1417.cons_inv
-  obtain ⟨p1426, d1427, pr1428⟩ := d1424.index_inv
-  obtain ⟨l1429, rfl, rfl⟩ := d1427.var_inv
-  simp at l1429
-  subst l1429
-  obtain ⟨rfl, rfl, rfl⟩ := a1425.nil_inv
-  obtain ⟨v1356, vs1430, m1431, c1432, c1433, rfl, d1434, a1435, rfl⟩ := a1412.cons_inv
-  obtain ⟨vs1436, m1437, c1438, cs1439, a1440, ev1441, rfl⟩ := d1434.call_inv
-  rw [instanceName_plain_some] at ev1441
-  obtain ⟨v1442, vs1443, m1444, c1445, c1446, rfl, d1447, a1448, rfl⟩ := a1440.cons_inv
-  obtain ⟨p1449, d1450, pr1451⟩ := d1447.index_inv
-  obtain ⟨l1452, rfl, rfl⟩ := d1450.var_inv
-  simp at l1452
-  subst l1452
-  obtain ⟨rfl, rfl, rfl⟩ := a1448.nil_inv
-  obtain ⟨v1357, vs1453, m1454, c1455, c1456, rfl, d1457, a1458, rfl⟩ := a1435.cons_inv
-  obtain ⟨vs1459, m1460, c1461, cs1462, a1463, ev1464, rfl⟩ := d1457.call_inv
-  rw [instanceName_plain_some] at ev1464
-  obtain ⟨v1465, vs1466, m1467, c1468, c1469, rfl, d1470, a1471, rfl⟩ := a1463.cons_inv
-  obtain ⟨p1472, d1473, pr1474⟩ := d1470.index_inv
-  obtain ⟨l1475, rfl, rfl⟩ := d1473.var_inv
-  simp at l1475
-  subst l1475
-  obtain ⟨rfl, rfl, rfl⟩ := a1471.nil_inv
-  obtain ⟨v1358, vs1476, m1477, c1478, c1479, rfl, d1480, a1481, rfl⟩ := a1458.cons_inv
-  obtain ⟨vs1482, m1483, c1484, cs1485, a1486, ev1487, rfl⟩ := d1480.call_inv
-  rw [instanceName_plain_some] at ev1487
-  obtain ⟨v1488, vs1489, m1490, c1491, c1492, rfl, d1493, a1494, rfl⟩ := a1486.cons_inv
-  obtain ⟨p1495, d1496, pr1497⟩ := d1493.index_inv
-  obtain ⟨l1498, rfl, rfl⟩ := d1496.var_inv
-  simp at l1498
-  subst l1498
-  obtain ⟨rfl, rfl, rfl⟩ := a1494.nil_inv
-  obtain ⟨v1359, vs1499, m1500, c1501, c1502, rfl, d1503, a1504, rfl⟩ := a1481.cons_inv
-  obtain ⟨vs1505, m1506, c1507, cs1508, a1509, ev1510, rfl⟩ := d1503.call_inv
-  rw [instanceName_plain_some] at ev1510
-  obtain ⟨v1511, vs1512, m1513, c1514, c1515, rfl, d1516, a1517, rfl⟩ := a1509.cons_inv
-  obtain ⟨p1518, d1519, pr1520⟩ := d1516.index_inv
-  obtain ⟨l1521, rfl, rfl⟩ := d1519.var_inv
-  simp at l1521
-  subst l1521
-  obtain ⟨rfl, rfl, rfl⟩ := a1517.nil_inv
-  obtain ⟨v1360, vs1522, m1523, c1524, c1525, rfl, d1526, a1527, rfl⟩ := a1504.cons_inv
-  obtain ⟨vs1528, m1529, c1530, cs1531, a1532, ev1533, rfl⟩ := d1526.call_inv
-  rw [instanceName_plain_some] at ev1533
-  obtain ⟨v1534, vs1535, m1536, c1537, c1538, rfl, d1539, a1540, rfl⟩ := a1532.cons_inv
-  obtain ⟨p1541, d1542, pr1543⟩ := d1539.index_inv
-  obtain ⟨l1544, rfl, rfl⟩ := d1542.var_inv
-  simp at l1544
-  subst l1544
-  obtain ⟨rfl, rfl, rfl⟩ := a1540.nil_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a1527.nil_inv
-  obtain ⟨v1340, vs1545, m1546, c1547, c1548, rfl, d1549, a1550, rfl⟩ := a1346.cons_inv
-  obtain ⟨vs1551, m1552, c1553, cs1554, a1555, ev1556, rfl⟩ := d1549.call_inv
-  rw [instanceName_plain_some] at ev1556
-  obtain ⟨v1557, vs1565, m1566, c1567, c1568, rfl, d1569, a1570, rfl⟩ := a1555.cons_inv
-  obtain ⟨vs1571, m1572, c1573, cs1574, a1575, ev1576, rfl⟩ := d1569.call_inv
-  rw [instanceName_plain_some] at ev1576
-  obtain ⟨v1577, vs1578, m1579, c1580, c1581, rfl, d1582, a1583, rfl⟩ := a1575.cons_inv
-  obtain ⟨p1584, d1585, pr1586⟩ := d1582.index_inv
-  obtain ⟨l1587, rfl, rfl⟩ := d1585.var_inv
-  simp at l1587
-  subst l1587
-  obtain ⟨rfl, rfl, rfl⟩ := a1583.nil_inv
-  obtain ⟨v1558, vs1588, m1589, c1590, c1591, rfl, d1592, a1593, rfl⟩ := a1570.cons_inv
-  obtain ⟨vs1594, m1595, c1596, cs1597, a1598, ev1599, rfl⟩ := d1592.call_inv
-  rw [instanceName_plain_some] at ev1599
-  obtain ⟨v1600, vs1601, m1602, c1603, c1604, rfl, d1605, a1606, rfl⟩ := a1598.cons_inv
-  obtain ⟨p1607, d1608, pr1609⟩ := d1605.index_inv
-  obtain ⟨l1610, rfl, rfl⟩ := d1608.var_inv
-  simp at l1610
-  subst l1610
-  obtain ⟨rfl, rfl, rfl⟩ := a1606.nil_inv
-  obtain ⟨v1559, vs1611, m1612, c1613, c1614, rfl, d1615, a1616, rfl⟩ := a1593.cons_inv
-  obtain ⟨vs1617, m1618, c1619, cs1620, a1621, ev1622, rfl⟩ := d1615.call_inv
-  rw [instanceName_plain_some] at ev1622
-  obtain ⟨v1623, vs1624, m1625, c1626, c1627, rfl, d1628, a1629, rfl⟩ := a1621.cons_inv
-  obtain ⟨p1630, d1631, pr1632⟩ := d1628.index_inv
-  obtain ⟨l1633, rfl, rfl⟩ := d1631.var_inv
-  simp at l1633
-  subst l1633
-  obtain ⟨rfl, rfl, rfl⟩ := a1629.nil_inv
-  obtain ⟨v1560, vs1634, m1635, c1636, c1637, rfl, d1638, a1639, rfl⟩ := a1616.cons_inv
-  obtain ⟨vs1640, m1641, c1642, cs1643, a1644, ev1645, rfl⟩ := d1638.call_inv
-  rw [instanceName_plain_some] at ev1645
-  obtain ⟨v1646, vs1647, m1648, c1649, c1650, rfl, d1651, a1652, rfl⟩ := a1644.cons_inv
-  obtain ⟨p1653, d1654, pr1655⟩ := d1651.index_inv
-  obtain ⟨l1656, rfl, rfl⟩ := d1654.var_inv
-  simp at l1656
-  subst l1656
-  obtain ⟨rfl, rfl, rfl⟩ := a1652.nil_inv
-  obtain ⟨v1561, vs1657, m1658, c1659, c1660, rfl, d1661, a1662, rfl⟩ := a1639.cons_inv
-  obtain ⟨vs1663, m1664, c1665, cs1666, a1667, ev1668, rfl⟩ := d1661.call_inv
-  rw [instanceName_plain_some] at ev1668
-  obtain ⟨v1669, vs1670, m1671, c1672, c1673, rfl, d1674, a1675, rfl⟩ := a1667.cons_inv
-  obtain ⟨p1676, d1677, pr1678⟩ := d1674.index_inv
-  obtain ⟨l1679, rfl, rfl⟩ := d1677.var_inv
-  simp at l1679
-  subst l1679
-  obtain ⟨rfl, rfl, rfl⟩ := a1675.nil_inv
-  obtain ⟨v1562, vs1680, m1681, c1682, c1683, rfl, d1684, a1685, rfl⟩ := a1662.cons_inv
-  obtain ⟨vs1686, m1687, c1688, cs1689, a1690, ev1691, rfl⟩ := d1684.call_inv
-  rw [instanceName_plain_some] at ev1691
-  obtain ⟨v1692, vs1693, m1694, c1695, c1696, rfl, d1697, a1698, rfl⟩ := a1690.cons_inv
-  obtain ⟨p1699, d1700, pr1701⟩ := d1697.index_inv
-  obtain ⟨l1702, rfl, rfl⟩ := d1700.var_inv
-  simp at l1702
-  subst l1702
-  obtain ⟨rfl, rfl, rfl⟩ := a1698.nil_inv
-  obtain ⟨v1563, vs1703, m1704, c1705, c1706, rfl, d1707, a1708, rfl⟩ := a1685.cons_inv
-  obtain ⟨vs1709, m1710, c1711, cs1712, a1713, ev1714, rfl⟩ := d1707.call_inv
-  rw [instanceName_plain_some] at ev1714
-  obtain ⟨v1715, vs1716, m1717, c1718, c1719, rfl, d1720, a1721, rfl⟩ := a1713.cons_inv
-  obtain ⟨p1722, d1723, pr1724⟩ := d1720.index_inv
-  obtain ⟨l1725, rfl, rfl⟩ := d1723.var_inv
-  simp at l1725
-  subst l1725
-  obtain ⟨rfl, rfl, rfl⟩ := a1721.nil_inv
-  obtain ⟨v1564, vs1726, m1727, c1728, c1729, rfl, d1730, a1731, rfl⟩ := a1708.cons_inv
-  obtain ⟨vs1732, m1733, c1734, cs1735, a1736, ev1737, rfl⟩ := d1730.call_inv
-  rw [instanceName_plain_some] at ev1737
-  obtain ⟨v1738, vs1739, m1740, c1741, c1742, rfl, d1743, a1744, rfl⟩ := a1736.cons_inv
-  obtain ⟨p1745, d1746, pr1747⟩ := d1743.index_inv
-  obtain ⟨l1748, rfl, rfl⟩ := d1746.var_inv
-  simp at l1748
-  subst l1748
-  obtain ⟨rfl, rfl, rfl⟩ := a1744.nil_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a1731.nil_inv
-  obtain ⟨rfl, rfl, rfl⟩ := a1550.nil_inv
+  obtain ⟨v_toytbbdx, vs1327, m_rzoktnhl, c1329, c1330, rfl, d1331, a1332, rfl⟩ := a1128.cons_inv
+  obtain ⟨vs1333, m1334, c1335, cs_zoerszsa, a1337, ev_qgwxrclc, rfl⟩ := d1331.call_inv
+  rw [instanceName_plain_some] at ev_qgwxrclc
+  obtain ⟨v_qpvxjfqw, vs1347, m_cifrvngp, c1349, c1350, rfl, d1351, a1352, rfl⟩ := a1337.cons_inv
+  obtain ⟨vs1353, m1354, c1355, cs_jotfjrys, a1357, ev_pnphtafd, rfl⟩ := d1351.call_inv
+  rw [instanceName_plain_some] at ev_pnphtafd
+  obtain ⟨v_fokqnimt, vs1360, m1361, c1362, c1363, rfl, d1364, a1365, rfl⟩ := a1357.cons_inv
+  obtain ⟨p1366, d1367, pr_vvjhdtgd⟩ := d1364.index_inv
+  obtain ⟨l1369, rfl, rfl⟩ := d1367.var_inv
+  simp at l1369
+  subst l1369
+  obtain ⟨rfl, rfl, rfl⟩ := a1365.nil_inv
+  obtain ⟨v_opjnsllw, vs1370, m_tdtkakto, c1372, c1373, rfl, d1374, a1375, rfl⟩ := a1352.cons_inv
+  obtain ⟨vs1376, m1377, c1378, cs_pqyicxwj, a1380, ev_jfwxqfhk, rfl⟩ := d1374.call_inv
+  rw [instanceName_plain_some] at ev_jfwxqfhk
+  obtain ⟨v_wujjhhim, vs1383, m1384, c1385, c1386, rfl, d1387, a1388, rfl⟩ := a1380.cons_inv
+  obtain ⟨p1389, d1390, pr_zktpnswo⟩ := d1387.index_inv
+  obtain ⟨l1392, rfl, rfl⟩ := d1390.var_inv
+  simp at l1392
+  subst l1392
+  obtain ⟨rfl, rfl, rfl⟩ := a1388.nil_inv
+  obtain ⟨v_wlvmarxt, vs1393, m_bmykbdpy, c1395, c1396, rfl, d1397, a1398, rfl⟩ := a1375.cons_inv
+  obtain ⟨vs1399, m1400, c1401, cs_wxlrqioy, a1403, ev_xsfluwub, rfl⟩ := d1397.call_inv
+  rw [instanceName_plain_some] at ev_xsfluwub
+  obtain ⟨v_zokpwawu, vs1406, m1407, c1408, c1409, rfl, d1410, a1411, rfl⟩ := a1403.cons_inv
+  obtain ⟨p1412, d1413, pr_qervdeue⟩ := d1410.index_inv
+  obtain ⟨l1415, rfl, rfl⟩ := d1413.var_inv
+  simp at l1415
+  subst l1415
+  obtain ⟨rfl, rfl, rfl⟩ := a1411.nil_inv
+  obtain ⟨v_bjaqoyjj, vs1416, m_euezvxgi, c1418, c1419, rfl, d1420, a1421, rfl⟩ := a1398.cons_inv
+  obtain ⟨vs1422, m1423, c1424, cs_cxpqalzr, a1426, ev_nvbitzup, rfl⟩ := d1420.call_inv
+  rw [instanceName_plain_some] at ev_nvbitzup
+  obtain ⟨v_xznrfqbe, vs1429, m1430, c1431, c1432, rfl, d1433, a1434, rfl⟩ := a1426.cons_inv
+  obtain ⟨p1435, d1436, pr_ylbuldmx⟩ := d1433.index_inv
+  obtain ⟨l1438, rfl, rfl⟩ := d1436.var_inv
+  simp at l1438
+  subst l1438
+  obtain ⟨rfl, rfl, rfl⟩ := a1434.nil_inv
+  obtain ⟨v_ftskkhbm, vs1439, m_dxcuftkx, c1441, c1442, rfl, d1443, a1444, rfl⟩ := a1421.cons_inv
+  obtain ⟨vs1445, m1446, c1447, cs_kfuldyso, a1449, ev_uutycfnp, rfl⟩ := d1443.call_inv
+  rw [instanceName_plain_some] at ev_uutycfnp
+  obtain ⟨v_bghxrsdn, vs1452, m1453, c1454, c1455, rfl, d1456, a1457, rfl⟩ := a1449.cons_inv
+  obtain ⟨p1458, d1459, pr_mwoevxqm⟩ := d1456.index_inv
+  obtain ⟨l1461, rfl, rfl⟩ := d1459.var_inv
+  simp at l1461
+  subst l1461
+  obtain ⟨rfl, rfl, rfl⟩ := a1457.nil_inv
+  obtain ⟨v_wnxowxkp, vs1462, m_lgrpjukl, c1464, c1465, rfl, d1466, a1467, rfl⟩ := a1444.cons_inv
+  obtain ⟨vs1468, m1469, c1470, cs_ofqbxqdo, a1472, ev_onfrxgos, rfl⟩ := d1466.call_inv
+  rw [instanceName_plain_some] at ev_onfrxgos
+  obtain ⟨v_xfbzylkt, vs1475, m1476, c1477, c1478, rfl, d1479, a1480, rfl⟩ := a1472.cons_inv
+  obtain ⟨p1481, d1482, pr_xqnwvzxg⟩ := d1479.index_inv
+  obtain ⟨l1484, rfl, rfl⟩ := d1482.var_inv
+  simp at l1484
+  subst l1484
+  obtain ⟨rfl, rfl, rfl⟩ := a1480.nil_inv
+  obtain ⟨v_suyvldxu, vs1485, m_uorbjygw, c1487, c1488, rfl, d1489, a1490, rfl⟩ := a1467.cons_inv
+  obtain ⟨vs1491, m1492, c1493, cs_bpjlvpvx, a1495, ev_mvjytetb, rfl⟩ := d1489.call_inv
+  rw [instanceName_plain_some] at ev_mvjytetb
+  obtain ⟨v_ciupwelg, vs1498, m1499, c1500, c1501, rfl, d1502, a1503, rfl⟩ := a1495.cons_inv
+  obtain ⟨p1504, d1505, pr_bhdkxiav⟩ := d1502.index_inv
+  obtain ⟨l1507, rfl, rfl⟩ := d1505.var_inv
+  simp at l1507
+  subst l1507
+  obtain ⟨rfl, rfl, rfl⟩ := a1503.nil_inv
+  obtain ⟨v_yjcxyfon, vs1508, m_pvpgsgum, c1510, c1511, rfl, d1512, a1513, rfl⟩ := a1490.cons_inv
+  obtain ⟨vs1514, m1515, c1516, cs_hghgulzr, a1518, ev_njbszfat, rfl⟩ := d1512.call_inv
+  rw [instanceName_plain_some] at ev_njbszfat
+  obtain ⟨v_wwphmnwr, vs1521, m1522, c1523, c1524, rfl, d1525, a1526, rfl⟩ := a1518.cons_inv
+  obtain ⟨p1527, d1528, pr_gwmtoymd⟩ := d1525.index_inv
+  obtain ⟨l1530, rfl, rfl⟩ := d1528.var_inv
+  simp at l1530
+  subst l1530
+  obtain ⟨rfl, rfl, rfl⟩ := a1526.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := a1513.nil_inv
   obtain ⟨rfl, rfl, rfl⟩ := a1332.nil_inv
   obtain ⟨rfl, rfl, rfl⟩ := a1114.nil_inv
   obtain ⟨rfl, rfl, rfl⟩ := a896.nil_inv
   obtain ⟨rfl, rfl, rfl⟩ := a678.nil_inv
   obtain ⟨rfl, rfl, rfl⟩ := a460.nil_inv
   obtain ⟨rfl, rfl, rfl⟩ := a242.nil_inv
-  exact «RBTreeMap::canon_addr_cmp».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld11 ld23 pr74 ev64 pr97 ev87 pr120 ev110 pr143 ev133 pr166 ev156 pr189 ev179 pr212 ev202 pr235 ev225 ev44 pr292 ev282 pr315 ev305 pr338 ev328 pr361 ev351 pr384 ev374 pr407 ev397 pr430 ev420 pr453 ev443 ev262 pr510 ev500 pr533 ev523 pr556 ev546 pr579 ev569 pr602 ev592 pr625 ev615 pr648 ev638 pr671 ev661 ev480 pr728 ev718 pr751 ev741 pr774 ev764 pr797 ev787 pr820 ev810 pr843 ev833 pr866 ev856 pr889 ev879 ev698 pr946 ev936 pr969 ev959 pr992 ev982 pr1015 ev1005 pr1038 ev1028 pr1061 ev1051 pr1084 ev1074 pr1107 ev1097 ev916 pr1164 ev1154 pr1187 ev1177 pr1210 ev1200 pr1233 ev1223 pr1256 ev1246 pr1279 ev1269 pr1302 ev1292 pr1325 ev1315 ev1134 pr1382 ev1372 pr1405 ev1395 pr1428 ev1418 pr1451 ev1441 pr1474 ev1464 pr1497 ev1487 pr1520 ev1510 pr1543 ev1533 ev1352 pr1586 ev1576 pr1609 ev1599 pr1632 ev1622 pr1655 ev1645 pr1678 ev1668 pr1701 ev1691 pr1724 ev1714 pr1747 ev1737 ev1556 ev1338 ev1120 ev902 ev684 ev466 ev248 ev30 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  exact «RBTreeMap::canon_addr_cmp_tail».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld_lgriepir ld_hreidqgq pr_cucihyxu ev_rcltkczj pr_rpsomomz ev_kimcbzhm pr_ppygvbil ev_jeubqmon pr_nqtdqezi ev_nnpbhvoh pr_ahfjbgrg ev_rucemdmj pr_rqkxwbyz ev_udygryny pr_qbmmexdo ev_ghkwqwke pr_vfjvtvxs ev_czsvkppt ev_xlqdsuwi pr_usfjghzp ev_vaxivmgc pr_vouodasu ev_aedobqbt pr_eqvsrzxi ev_duqqhaso pr_egpbyugm ev_fjrusexj pr_giimhahx ev_qbampzjy pr_txnalprh ev_szxubtpw pr_ehbmstth ev_afcrbfns pr_abqupilj ev_gqpkamfh ev_eqvecapo pr_bemrgmhg ev_fvcintpq pr_bijtfmap ev_sntguhub pr_qgccfhcp ev_wknxtqph pr_outvftek ev_zxekyepw pr_vlibakmd ev_agrtykcv pr_wqhsxwjy ev_taporuqe pr_mkmyoxyy ev_ezvjfisw pr_ddndhkur ev_cnoebvdi ev_buiclwmc pr_aqqtevdx ev_asjpnuey pr_vavhgzaf ev_itvbtwij pr_qpfgvgls ev_smzpbuhw pr_dkhxgyos ev_mxsynjkz pr_ahryorva ev_kkqmrnne pr_vpghjlow ev_bylqhoqd pr_ecvmaxgd ev_pfpzvdby pr_wkxaksxa ev_ydtaspez ev_ppusmsxb pr_hfbqmygp ev_lhywjnae pr_sgetrrvy ev_dkmhhxzz pr_salfkpnz ev_jlhyexsd pr_dmhmapbd ev_gsyacnlo pr_arhpwjmq ev_adgatwts pr_bsrvrzvb ev_kgvziuqs pr_orvloruj ev_tyfuyqxt pr_aonfxkur ev_effkjgqf ev_svxsbguh pr_vneczgsw ev_udkilsog pr_rgtsodog ev_umbizwcw pr_caxpujym ev_mpbqbvov pr_bcuyejhl ev_hrvzdhbn pr_xdlmtmaj ev_jrmisihu pr_jcdvnkrl ev_btfabzzg pr_qokcwrui ev_uzjgfaqn pr_molyngit ev_azvodnbh ev_qesvleec pr_vvjhdtgd ev_pnphtafd pr_zktpnswo ev_jfwxqfhk pr_qervdeue ev_xsfluwub pr_ylbuldmx ev_nvbitzup pr_mwoevxqm ev_uutycfnp pr_xqnwvzxg ev_onfrxgos pr_bhdkxiav ev_mvjytetb pr_gwmtoymd ev_njbszfat ev_qgwxrclc ev_ftbfmmke ev_zgazafkp ev_hcuqwpmy ev_iphxenxi ev_tpbpsvll ev_juakmrmb (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
 
 /-- The evaluation paths of `RBTreeMap::canon_addr_chunk`: one constructor per combination of selected arms. -/
 inductive «RBTreeMap::canon_addr_chunk».Path (x_x0 x_x1 x_x2 x_x3 x_y0 x_y1 x_y2 x_y3 : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)

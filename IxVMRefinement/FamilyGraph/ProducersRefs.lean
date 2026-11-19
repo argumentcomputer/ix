@@ -70,24 +70,22 @@ private theorem canon_addr_cmp_spec_ext {h₁ h₁' h₂ : Heap F} {x y r : Sour
     r = .field (Claim.cmpNat (Claim.addrRank a) (Claim.addrRank ak) : F) ∧ h₁' = h₁ := by
   have hk_node₁ : Bytes.RepAddressRef Core.addrTy h₁ ak y := by
     match Obs.«RBTreeMap::canon_addr_cmp».obs ev with
-    | .run (ld23 := ld23) .. => exact repAddressRef_pullback ext ld23 hk_node
+    | .n0_n1 (ld23 := ld23) .. => exact repAddressRef_pullback ext ld23 hk_node
+    | .n0_other (ld23 := ld23) .. => exact repAddressRef_pullback ext ld23 hk_node
+    | .other_n1 (ld23 := ld23) .. => exact repAddressRef_pullback ext ld23 hk_node
+    | .other_n0 (ld23 := ld23) .. => exact repAddressRef_pullback ext ld23 hk_node
   exact Claim.canon_addr_cmp_spec hk hk_node₁ ev
 
-private theorem cmp_branch_lt_ext {x_key x_k v_cmp : SourceValue F} {h₁ m1 m2 h₂ : Heap F}
-    {cs1 cs2 : List (Call F)} {a ak : Bytes.Address}
+private theorem cmp_branch_lt_ext {x_key x_k : SourceValue F} {h₁ m1 h₂ : Heap F}
+    {cs1 : List (Call F)} {a ak : Bytes.Address}
     (hk : Bytes.RepAddressRef Core.addrTy h₁ a x_key)
     (hk_node : Bytes.RepAddressRef Core.addrTy h₂ ak x_k)
     (ext : Heap.Extends h₁ h₂)
-    (ev_cmp : ObsFn Obs.W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h₁ v_cmp m1 cs1)
-    (ev_z : ObsFn Obs.W "Fields::is_zero" [v_cmp] m1 (.field 1) m2 cs2) :
-    m2 = h₁ ∧ Claim.addrRank a < Claim.addrRank ak := by
-  obtain ⟨rfl, rfl⟩ := canon_addr_cmp_spec_ext hk hk_node ext ev_cmp
-  obtain ⟨hz, rfl⟩ := Lib.is_zero_field ev_z
-  have hc0 : (Claim.cmpNat (Claim.addrRank a) (Claim.addrRank ak) : F) = 0 := by
-    by_cases he : (Claim.cmpNat (Claim.addrRank a) (Claim.addrRank ak) : F) = 0
-    · exact he
-    · rw [ite_eq_right he] at hz
-      exact absurd (Value.field.inj hz) one_ne_zero
+    (ev_cmp : ObsFn Obs.W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h₁ (.field 0) m1 cs1) :
+    m1 = h₁ ∧ Claim.addrRank a < Claim.addrRank ak := by
+  obtain ⟨hr, rfl⟩ := canon_addr_cmp_spec_ext hk hk_node ext ev_cmp
+  have hc0 : (Claim.cmpNat (Claim.addrRank a) (Claim.addrRank ak) : F) = 0 :=
+    (Value.field.inj hr).symm
   have hc_eq : Claim.cmpNat (Claim.addrRank a) (Claim.addrRank ak) = 0 := by
     have hlt1 := Claim.cmpNat_lt_u32 (Claim.addrRank a) (Claim.addrRank ak)
     have h1 := val_cast_lt_u56 (n := Claim.cmpNat (Claim.addrRank a) (Claim.addrRank ak))
@@ -96,22 +94,16 @@ private theorem cmp_branch_lt_ext {x_key x_k v_cmp : SourceValue F} {h₁ m1 m2 
     exact h1.symm
   exact ⟨rfl, Claim.cmpNat_eq_zero_iff.mp hc_eq⟩
 
-private theorem cmp_branch_eq_ext {x_key x_k v_cmp v_lt x_cmp2 : SourceValue F}
-    {h₁ m1 m2 m3 h₂ : Heap F} {cs1 cs2 cs3 : List (Call F)} {a ak : Bytes.Address}
+private theorem cmp_branch_eq_ext {x_key x_k : SourceValue F}
+    {h₁ m1 h₂ : Heap F} {cs1 : List (Call F)} {a ak : Bytes.Address}
     (hk : Bytes.RepAddressRef Core.addrTy h₁ a x_key)
     (hk_node : Bytes.RepAddressRef Core.addrTy h₂ ak x_k)
     (ext : Heap.Extends h₁ h₂)
-    (ev_cmp1 : ObsFn Obs.W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h₁ v_cmp m1 cs1)
-    (ev_z : ObsFn Obs.W "Fields::is_zero" [v_cmp] m1 v_lt m2 cs2)
-    (ev_cmp2 : ObsFn Obs.W "RBTreeMap::canon_addr_cmp" [x_key, x_k] m2 x_cmp2 m3 cs3)
-    (op_sub : evalBinOp .sub x_cmp2 (.field 1) = .ok (.field 0)) :
-    m3 = h₁ ∧ a = ak := by
-  obtain ⟨rfl, rfl⟩ := canon_addr_cmp_spec_ext hk hk_node ext ev_cmp1
-  obtain ⟨_, rfl⟩ := Lib.is_zero_field ev_z
-  obtain ⟨rfl, rfl⟩ := canon_addr_cmp_spec_ext hk hk_node ext ev_cmp2
-  simp only [evalBinOp, Except.ok.injEq, Value.field.injEq] at op_sub
-  have hc1 : (Claim.cmpNat (Claim.addrRank a) (Claim.addrRank ak) : F) = (1 : F) := by
-    simpa using sub_eq_zero.mp op_sub
+    (ev_cmp : ObsFn Obs.W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h₁ (.field 1) m1 cs1) :
+    m1 = h₁ ∧ a = ak := by
+  obtain ⟨hr, rfl⟩ := canon_addr_cmp_spec_ext hk hk_node ext ev_cmp
+  have hc1 : (Claim.cmpNat (Claim.addrRank a) (Claim.addrRank ak) : F) = (1 : F) :=
+    (Value.field.inj hr).symm
   have hc_eq : Claim.cmpNat (Claim.addrRank a) (Claim.addrRank ak) = 1 := by
     have hlt1 := Claim.cmpNat_lt_u32 (Claim.addrRank a) (Claim.addrRank ak)
     have h1 := val_cast_lt_u56 (n := Claim.cmpNat (Claim.addrRank a) (Claim.addrRank ak))
@@ -120,31 +112,20 @@ private theorem cmp_branch_eq_ext {x_key x_k v_cmp v_lt x_cmp2 : SourceValue F}
     exact h1.symm
   exact ⟨rfl, Claim.addrRank_injective (Claim.cmpNat_eq_one_iff.mp hc_eq)⟩
 
-private theorem cmp_branch_gt_ext {x_key x_k v_cmp v_lt x_cmp2 v_sub : SourceValue F}
-    {h₁ m1 m2 m3 h₂ : Heap F} {cs1 cs2 cs3 : List (Call F)} {a ak : Bytes.Address}
+private theorem cmp_branch_gt_ext {x_key x_k v_cmp : SourceValue F}
+    {h₁ m1 h₂ : Heap F} {cs1 : List (Call F)} {a ak : Bytes.Address}
     (hk : Bytes.RepAddressRef Core.addrTy h₁ a x_key)
     (hk_node : Bytes.RepAddressRef Core.addrTy h₂ ak x_k)
     (ext : Heap.Extends h₁ h₂)
-    (ev_cmp1 : ObsFn Obs.W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h₁ v_cmp m1 cs1)
-    (ev_z : ObsFn Obs.W "Fields::is_zero" [v_cmp] m1 v_lt m2 cs2)
-    (hne_lt : v_lt ≠ .field 1)
-    (ev_cmp2 : ObsFn Obs.W "RBTreeMap::canon_addr_cmp" [x_key, x_k] m2 x_cmp2 m3 cs3)
-    (op_sub : evalBinOp .sub x_cmp2 (.field 1) = .ok v_sub)
-    (hne_eq : v_sub ≠ .field 0) :
-    m3 = h₁ ∧ Claim.addrRank ak < Claim.addrRank a := by
-  obtain ⟨rfl, rfl⟩ := canon_addr_cmp_spec_ext hk hk_node ext ev_cmp1
-  obtain ⟨hz, rfl⟩ := Lib.is_zero_field ev_z
-  obtain ⟨rfl, rfl⟩ := canon_addr_cmp_spec_ext hk hk_node ext ev_cmp2
+    (ev_cmp : ObsFn Obs.W "RBTreeMap::canon_addr_cmp" [x_key, x_k] h₁ v_cmp m1 cs1)
+    (hne0 : v_cmp ≠ .field 0)
+    (hne1 : v_cmp ≠ .field 1) :
+    m1 = h₁ ∧ Claim.addrRank ak < Claim.addrRank a := by
+  obtain ⟨rfl, rfl⟩ := canon_addr_cmp_spec_ext hk hk_node ext ev_cmp
   have nc0 : Claim.cmpNat (Claim.addrRank a) (Claim.addrRank ak) ≠ 0 := by
-    intro e
-    rw [e] at hz
-    simp at hz
-    exact hne_lt hz
+    intro e; rw [e] at hne0; exact hne0 (by simp)
   have nc1 : Claim.cmpNat (Claim.addrRank a) (Claim.addrRank ak) ≠ 1 := by
-    intro e
-    rw [e] at op_sub
-    simp only [Nat.cast_one, evalBinOp, sub_self, Except.ok.injEq] at op_sub
-    exact hne_eq op_sub.symm
+    intro e; rw [e] at hne1; exact hne1 (by simp)
   rcases Claim.cmpNat_values (Claim.addrRank a) (Claim.addrRank ak) with h0 | h1 | h2
   · exact absurd h0 nc0
   · exact absurd h1 nc1
@@ -163,47 +144,42 @@ private theorem rbtree_map_lookup_or_default_spec_ext {t_V : Generic.Ty}
   intro x_key x_tree x_default r h₁ h₁' h₂ calls a hk ⟨htree, hpw⟩ ext ev
   induction htree generalizing r h₁' calls with
   | nil =>
-    rcases Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev with
-      ⟨_, rfl, rfl, -⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, hv26, _, _, _, _, _, -⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv26, _, _, _, _, _, _, _, _, _, -⟩ |
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hv26, _, _, _, _, _, _, _, _, _, -⟩
-    · exact ⟨rfl, rfl⟩
-    · simp at hv26
-    · simp at hv26
-    · simp at hv26
+    match Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev with
+    | .Nil (he18 := hr) (he19 := hh) .. => exact ⟨hr, hh⟩
+    | .Node_n0 (hv_yxogouup := hv26) .. => simp at hv26
+    | .Node_n1 (hv_yxogouup := hv26) .. => simp at hv26
+    | .Node_other (hv_yxogouup := hv26) .. => simp at hv26
   | node hk_node hl hr rl rr ihl ihr =>
     obtain ⟨hpwL, hpwR, _, _⟩ := Claim.pairwise_split hpw
-    rcases Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev with
-      ⟨hv15, _, _, -⟩ |
-      ⟨w28, x_k, x_v, w29, w30, y51, y59, m63, cs73, v76, m78, cs86, cs122,
-        _, hv26, ld52, ld60, ev88, ev75, ev124, -⟩ |
-      ⟨w28, x_k, x_v, w29, w30, y51, y59, v62, m63, cs73, v76, m78, cs86, x162, m164, cs173,
-        _, hv26, ld52, ld60, ev88, ev75, hne150, ev175, op169, rfl, rfl, -⟩ |
-      ⟨w28, x_k, x_v, w29, w30, y51, y59, v62, m63, cs73, v76, m78, cs86, v154, x162, m164,
-        cs173, cs217, _, hv26, ld52, ld60, ev88, ev75, hne150, ev175, op169, hne210, ev219, -⟩
-    · simp at hv15
-    · injection hv26 with _ _ hargs
+    match Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev with
+    | .Nil (hv15 := hv15) .. => simp at hv15
+    | .Node_n0 (hv_yxogouup := hv26) (ev_khiwzwox := ev_cmp) (ld_uxbvbmib := ld_l)
+        (ev_rgfvjlxh := ev_rec) .. =>
+      injection hv26 with _ _ hargs
       simp only [List.cons.injEq, and_true] at hargs
       obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := hargs
-      obtain rfl := Except.ok.inj ((ext.loadValue_eq ld52).symm.trans hl)
-      obtain ⟨hm78, hlt⟩ := cmp_branch_lt_ext hk hk_node ext ev88 ev75
-      subst hm78
+      obtain ⟨hm, hlt⟩ := cmp_branch_lt_ext hk hk_node ext ev_cmp
+      subst hm
+      obtain rfl := Except.ok.inj ((ext.loadValue_eq ld_l).symm.trans hl)
       rw [Claim.lookupEntries_split_lt hpw hlt]
-      exact ihl hpwL ev124
-    · injection hv26 with _ _ hargs
+      exact ihl hpwL ev_rec
+    | .Node_n1 (hv_yxogouup := hv26) (ev_khiwzwox := ev_cmp) (he_xjcnykms := hr_eq)
+        (he_yudkmufo := hh_eq) .. =>
+      injection hv26 with _ _ hargs
       simp only [List.cons.injEq, and_true] at hargs
       obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := hargs
-      obtain ⟨hm164, rfl⟩ := cmp_branch_eq_ext hk hk_node ext ev88 ev75 ev175 op169
-      exact ⟨(Claim.lookupEntries_split_eq hpw).symm, hm164⟩
-    · injection hv26 with _ _ hargs
+      obtain ⟨hm, rfl⟩ := cmp_branch_eq_ext hk hk_node ext ev_cmp
+      exact ⟨hr_eq.trans (Claim.lookupEntries_split_eq hpw).symm, hh_eq.trans hm⟩
+    | .Node_other (hv_yxogouup := hv26) (ev_khiwzwox := ev_cmp) (hne_xnxwzifz := hne0)
+        (hne_yiigmgjs := hne1) (ld_vukxxfzy := ld_r) (ev_ogagosff := ev_rec) .. =>
+      injection hv26 with _ _ hargs
       simp only [List.cons.injEq, and_true] at hargs
       obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := hargs
-      obtain rfl := Except.ok.inj ((ext.loadValue_eq ld60).symm.trans hr)
-      obtain ⟨hm164, hgt⟩ := cmp_branch_gt_ext hk hk_node ext ev88 ev75 hne150 ev175 op169 hne210
-      subst hm164
+      obtain ⟨hm, hgt⟩ := cmp_branch_gt_ext hk hk_node ext ev_cmp hne0 hne1
+      subst hm
+      obtain rfl := Except.ok.inj ((ext.loadValue_eq ld_r).symm.trans hr)
       rw [Claim.lookupEntries_split_gt hpw hgt]
-      exact ihr hpwR ev219
+      exact ihr hpwR ev_rec
 
 private theorem role_ctx_table_lim_spec_ext {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
     {lim : Option Nat} {x_rc r : SourceValue F} {h₁ h₁' h₂ : Heap F} {calls : List (Call F)}

@@ -63,17 +63,11 @@ def rbtree_map_ins := aiur_fn⟦
       match tree {
         RBTreeMap::RBTreeMap::Nil => {
           RBTreeMap::RBTreeMap::Node(0, key, value, (&(RBTreeMap::RBTreeMap::Nil)), (&(RBTreeMap::RBTreeMap::Nil))) } ,
-        RBTreeMap::RBTreeMap::Node(color, k, v, &left, &right) => {
-          let lt = Fields::is_zero(canon_addr_cmp(key, k));
-          match lt {
-            1 => {  rbtree_map_balance(color, k, v, rbtree_map_ins(key, value, left), right) } ,
-            _ => {
-
-              let eq = canon_addr_cmp(key, k) - 1;
-              match eq {
-                0 => {  RBTreeMap::RBTreeMap::Node(color, key, value, (&(left)), (&(right))) } ,
-                _ => {  rbtree_map_balance(color, k, v, left, rbtree_map_ins(key, value, right)) } ,
-              } } ,
+        RBTreeMap::RBTreeMap::Node(color, k, v, left_ptr, right_ptr) => {
+          match canon_addr_cmp(key, k) {
+            0 => {  rbtree_map_balance(color, k, v, rbtree_map_ins(key, value, (*(left_ptr))), (*(right_ptr))) } ,
+            1 => {  RBTreeMap::RBTreeMap::Node(color, key, value, left_ptr, right_ptr) } ,
+            _ => {  rbtree_map_balance(color, k, v, (*(left_ptr)), rbtree_map_ins(key, value, (*(right_ptr)))) } ,
           } } ,
       }
     }
@@ -92,16 +86,11 @@ def rbtree_map_lookup_or_default := aiur_fn⟦
   fn rbtree_map_lookup_or_default<V>(key: Bytes::AddressRef, tree: RBTreeMap::RBTreeMap<V>, default: V) -> V {
       match tree {
         RBTreeMap::RBTreeMap::Nil => {  default } ,
-        RBTreeMap::RBTreeMap::Node(_, k, v, &left, &right) => {
-          let lt = Fields::is_zero(canon_addr_cmp(key, k));
-          match lt {
-            1 => {  rbtree_map_lookup_or_default(key, left, default) } ,
-            _ => {
-              let eq = canon_addr_cmp(key, k) - 1;
-              match eq {
-                0 => {  v } ,
-                _ => {  rbtree_map_lookup_or_default(key, right, default) } ,
-              } } ,
+        RBTreeMap::RBTreeMap::Node(_, k, v, left_ptr, right_ptr) => {
+          match canon_addr_cmp(key, k) {
+            0 => {  rbtree_map_lookup_or_default(key, (*(left_ptr)), default) } ,
+            1 => {  v } ,
+            _ => {  rbtree_map_lookup_or_default(key, (*(right_ptr)), default) } ,
           } } ,
       }
     }
@@ -137,22 +126,41 @@ def canon_addr_cmp := aiur_fn⟦
   fn canon_addr_cmp(x: Bytes::AddressRef, y: Bytes::AddressRef) -> Field {
       let xa = (*(x));
       let ya = (*(y));
-      canon_ord_then(canon_addr_chunk(UInt8::to_field(xa[0]), UInt8::to_field(xa[1]), UInt8::to_field(xa[2]), UInt8::to_field(xa[3]),
-                                      UInt8::to_field(ya[0]), UInt8::to_field(ya[1]), UInt8::to_field(ya[2]), UInt8::to_field(ya[3])),
-        canon_ord_then(canon_addr_chunk(UInt8::to_field(xa[4]), UInt8::to_field(xa[5]), UInt8::to_field(xa[6]), UInt8::to_field(xa[7]),
-                                        UInt8::to_field(ya[4]), UInt8::to_field(ya[5]), UInt8::to_field(ya[6]), UInt8::to_field(ya[7])),
-          canon_ord_then(canon_addr_chunk(UInt8::to_field(xa[8]), UInt8::to_field(xa[9]), UInt8::to_field(xa[10]), UInt8::to_field(xa[11]),
-                                          UInt8::to_field(ya[8]), UInt8::to_field(ya[9]), UInt8::to_field(ya[10]), UInt8::to_field(ya[11])),
-            canon_ord_then(canon_addr_chunk(UInt8::to_field(xa[12]), UInt8::to_field(xa[13]), UInt8::to_field(xa[14]), UInt8::to_field(xa[15]),
-                                            UInt8::to_field(ya[12]), UInt8::to_field(ya[13]), UInt8::to_field(ya[14]), UInt8::to_field(ya[15])),
-              canon_ord_then(canon_addr_chunk(UInt8::to_field(xa[16]), UInt8::to_field(xa[17]), UInt8::to_field(xa[18]), UInt8::to_field(xa[19]),
-                                              UInt8::to_field(ya[16]), UInt8::to_field(ya[17]), UInt8::to_field(ya[18]), UInt8::to_field(ya[19])),
-                canon_ord_then(canon_addr_chunk(UInt8::to_field(xa[20]), UInt8::to_field(xa[21]), UInt8::to_field(xa[22]), UInt8::to_field(xa[23]),
-                                                UInt8::to_field(ya[20]), UInt8::to_field(ya[21]), UInt8::to_field(ya[22]), UInt8::to_field(ya[23])),
-                  canon_ord_then(canon_addr_chunk(UInt8::to_field(xa[24]), UInt8::to_field(xa[25]), UInt8::to_field(xa[26]), UInt8::to_field(xa[27]),
-                                                  UInt8::to_field(ya[24]), UInt8::to_field(ya[25]), UInt8::to_field(ya[26]), UInt8::to_field(ya[27])),
-                                 canon_addr_chunk(UInt8::to_field(xa[28]), UInt8::to_field(xa[29]), UInt8::to_field(xa[30]), UInt8::to_field(xa[31]),
-                                                  UInt8::to_field(ya[28]), UInt8::to_field(ya[29]), UInt8::to_field(ya[30]), UInt8::to_field(ya[31])))))))))
+      let xv = UInt8::to_field(xa[0]) * 16777216 + UInt8::to_field(xa[1]) * 65536 + UInt8::to_field(xa[2]) * 256 + UInt8::to_field(xa[3]);
+      let yv = UInt8::to_field(ya[0]) * 16777216 + UInt8::to_field(ya[1]) * 65536 + UInt8::to_field(ya[2]) * 256 + UInt8::to_field(ya[3]);
+      match xv - yv {
+        0 => {
+          match Bytes::address_eq_tail(x, y) {
+            1 => {  1 } ,
+            _ => {  canon_addr_cmp_tail(x, y) } ,
+          } } ,
+        _ => {
+          match UInt32::less_than_fields(xv, yv) {
+            1 => {  0 } ,
+            0 => {  2 } ,
+          } } ,
+      }
+    }
+⟧
+
+def canon_addr_cmp_tail := aiur_fn⟦
+  fn canon_addr_cmp_tail(x: Bytes::AddressRef, y: Bytes::AddressRef) -> Field {
+      let xa = (*(x));
+      let ya = (*(y));
+      canon_ord_then(canon_addr_chunk(UInt8::to_field(xa[4]), UInt8::to_field(xa[5]), UInt8::to_field(xa[6]), UInt8::to_field(xa[7]),
+                                      UInt8::to_field(ya[4]), UInt8::to_field(ya[5]), UInt8::to_field(ya[6]), UInt8::to_field(ya[7])),
+        canon_ord_then(canon_addr_chunk(UInt8::to_field(xa[8]), UInt8::to_field(xa[9]), UInt8::to_field(xa[10]), UInt8::to_field(xa[11]),
+                                        UInt8::to_field(ya[8]), UInt8::to_field(ya[9]), UInt8::to_field(ya[10]), UInt8::to_field(ya[11])),
+          canon_ord_then(canon_addr_chunk(UInt8::to_field(xa[12]), UInt8::to_field(xa[13]), UInt8::to_field(xa[14]), UInt8::to_field(xa[15]),
+                                          UInt8::to_field(ya[12]), UInt8::to_field(ya[13]), UInt8::to_field(ya[14]), UInt8::to_field(ya[15])),
+            canon_ord_then(canon_addr_chunk(UInt8::to_field(xa[16]), UInt8::to_field(xa[17]), UInt8::to_field(xa[18]), UInt8::to_field(xa[19]),
+                                            UInt8::to_field(ya[16]), UInt8::to_field(ya[17]), UInt8::to_field(ya[18]), UInt8::to_field(ya[19])),
+              canon_ord_then(canon_addr_chunk(UInt8::to_field(xa[20]), UInt8::to_field(xa[21]), UInt8::to_field(xa[22]), UInt8::to_field(xa[23]),
+                                              UInt8::to_field(ya[20]), UInt8::to_field(ya[21]), UInt8::to_field(ya[22]), UInt8::to_field(ya[23])),
+                canon_ord_then(canon_addr_chunk(UInt8::to_field(xa[24]), UInt8::to_field(xa[25]), UInt8::to_field(xa[26]), UInt8::to_field(xa[27]),
+                                                UInt8::to_field(ya[24]), UInt8::to_field(ya[25]), UInt8::to_field(ya[26]), UInt8::to_field(ya[27])),
+                               canon_addr_chunk(UInt8::to_field(xa[28]), UInt8::to_field(xa[29]), UInt8::to_field(xa[30]), UInt8::to_field(xa[31]),
+                                                UInt8::to_field(ya[28]), UInt8::to_field(ya[29]), UInt8::to_field(ya[30]), UInt8::to_field(ya[31]))))))))
     }
 ⟧
 

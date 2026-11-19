@@ -322,7 +322,7 @@ def root : Name := ``IxVM.Consistency.CircuitComposed
 def manifestPath : System.FilePath := "Tests/Fixtures/circuit-composed-closure-manifest.txt"
 
 /-- The SHA-256 digest of the manifest's text (its lines, each followed by a newline). -/
-def pinnedDigest : String := "98e4243a860f48a73ab4e891ae67a7b8252e2216321a8a9bec2b0cab5f5693a9"
+def pinnedDigest : String := "5322c43827b4cb2d4d0b1272a340c34a8ea618bdabb5b7389e2c2846e30874fd"
 
 /-- Lines of `a` not in `b`. -/
 def missingFrom (a b : Array String) : Array String :=

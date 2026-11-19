@@ -76,9 +76,9 @@ private theorem addr_set_member_nil {ap r : SourceValue F} {h h' : Heap F}
   rw [← Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>».symbol] at ev6
   match Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev6 with
   | .Nil (he18 := hr) (he19 := hh) .. => exact ⟨hr, hh⟩
-  | .Node_n1 (hv26 := hv) .. => simp [addrMapEnum] at hv
-  | .Node_other_n0 (hv26 := hv) .. => simp [addrMapEnum] at hv
-  | .Node_other_other (hv26 := hv) .. => simp [addrMapEnum] at hv
+  | .Node_n0 (hv_yxogouup := hv) .. => simp [addrMapEnum] at hv
+  | .Node_n1 (hv_yxogouup := hv) .. => simp [addrMapEnum] at hv
+  | .Node_other (hv_yxogouup := hv) .. => simp [addrMapEnum] at hv
 
 private theorem refs_small_of_decoded {bytes : ByteArray} {c : Ixon.Constant}
     (hsz : bytes.size < 4294967296) (he : Ixon.deConstantExact bytes = .ok c) :

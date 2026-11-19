@@ -1,4 +1,5 @@
 import IxVMRefinement.Roles.Tables
+import IxVMRefinement.Claim.RBTree
 import IxVMRefinement.Core.Roles
 import IxVMRefinement.Core.Open
 import IxVMRefinement.Lib.Words
@@ -449,7 +450,6 @@ theorem proj_addrTuple_eq {a : Bytes.Address} {v : SourceValue F} (i : Nat) (hi 
   rw [proj_addrTuple a i hi] at hp
   exact (Except.ok.inj hp).symm
 
-set_option maxHeartbeats 1600000 in
 /-- **`RBTreeMap::canon_addr_cmp(x, y)`** on two represented addresses leaves the heap unchanged,
 and answers `1` only when the addresses are equal. -/
 theorem canon_addr_cmp_spec {a₁ a₂ : Bytes.Address} {px py r : SourceValue F}
@@ -457,213 +457,13 @@ theorem canon_addr_cmp_spec {a₁ a₂ : Bytes.Address} {px py r : SourceValue F
     (ha₁ : RepAddr h a₁ px) (ha₂ : RepAddr h a₂ py)
     (ev : ObsFn W "RBTreeMap::canon_addr_cmp" [px, py] h r h' calls) :
     h' = h ∧ (r = .field 1 → a₁ = a₂) := by
-  rcases Obs.«RBTreeMap::canon_addr_cmp».obs ev with
-    ⟨v1, v13, cs28, v31, v32, m34, cs42, v45, v46, v47, v48, v49, v50, v51, v52,
-     m54, cs62, v65, m77, cs85, v88, m100, cs108, v111, m123, cs131, v134, m146, cs154, v157,
-     m169, cs177, v180, m192, cs200, v203, m215, cs223, v226, m238, cs246, v249, v250, m252,
-     cs260, v263, v264, v265, v266, v267, v268, v269, v270, m272, cs280, v283, m295, cs303,
-     v306, m318, cs326, v329, m341, cs349, v352, m364, cs372, v375, m387, cs395, v398, m410,
-     cs418, v421, m433, cs441, v444, m456, cs464, v467, v468, m470, cs478, v481, v482, v483,
-     v484, v485, v486, v487, v488, m490, cs498, v501, m513, cs521, v524, m536, cs544, v547,
-     m559, cs567, v570, m582, cs590, v593, m605, cs613, v616, m628, cs636, v639, m651, cs659,
-     v662, m674, cs682, v685, v686, m688, cs696, v699, v700, v701, v702, v703, v704, v705,
-     v706, m708, cs716, v719, m731, cs739, v742, m754, cs762, v765, m777, cs785, v788, m800,
-     cs808, v811, m823, cs831, v834, m846, cs854, v857, m869, cs877, v880, m892, cs900, v903,
-     v904, m906, cs914, v917, v918, v919, v920, v921, v922, v923, v924, m926, cs934, v937,
-     m949, cs957, v960, m972, cs980, v983, m995, cs1003, v1006, m1018, cs1026, v1029, m1041,
-     cs1049, v1052, m1064, cs1072, v1075, m1087, cs1095, v1098, m1110, cs1118, v1121, v1122,
-     m1124, cs1132, v1135, v1136, v1137, v1138, v1139, v1140, v1141, v1142, m1144, cs1152,
-     v1155, m1167, cs1175, v1178, m1190, cs1198, v1201, m1213, cs1221, v1224, m1236, cs1244,
-     v1247, m1259, cs1267, v1270, m1282, cs1290, v1293, m1305, cs1313, v1316, m1328, cs1336,
-     v1339, v1340, m1342, cs1350, v1353, v1354, v1355, v1356, v1357, v1358, v1359, v1360,
-     m1362, cs1370, v1373, m1385, cs1393, v1396, m1408, cs1416, v1419, m1431, cs1439, v1442,
-     m1454, cs1462, v1465, m1477, cs1485, v1488, m1500, cs1508, v1511, m1523, cs1531, v1534,
-     m1546, cs1554, v1557, v1558, v1559, v1560, v1561, v1562, v1563, v1564, m1566, cs1574,
-     v1577, m1589, cs1597, v1600, m1612, cs1620, v1623, m1635, cs1643, v1646, m1658, cs1666,
-     v1669, m1681, cs1689, v1692, m1704, cs1712, v1715, m1727, cs1735, v1738,
-     ld11, ld23,
-     pr74, ev64, pr97, ev87, pr120, ev110, pr143, ev133,
-     pr166, ev156, pr189, ev179, pr212, ev202, pr235, ev225, ev44,
-     pr292, ev282, pr315, ev305, pr338, ev328, pr361, ev351,
-     pr384, ev374, pr407, ev397, pr430, ev420, pr453, ev443, ev262,
-     pr510, ev500, pr533, ev523, pr556, ev546, pr579, ev569,
-     pr602, ev592, pr625, ev615, pr648, ev638, pr671, ev661, ev480,
-     pr728, ev718, pr751, ev741, pr774, ev764, pr797, ev787,
-     pr820, ev810, pr843, ev833, pr866, ev856, pr889, ev879, ev698,
-     pr946, ev936, pr969, ev959, pr992, ev982, pr1015, ev1005,
-     pr1038, ev1028, pr1061, ev1051, pr1084, ev1074, pr1107, ev1097, ev916,
-     pr1164, ev1154, pr1187, ev1177, pr1210, ev1200, pr1233, ev1223,
-     pr1256, ev1246, pr1279, ev1269, pr1302, ev1292, pr1325, ev1315, ev1134,
-     pr1382, ev1372, pr1405, ev1395, pr1428, ev1418, pr1451, ev1441,
-     pr1474, ev1464, pr1497, ev1487, pr1520, ev1510, pr1543, ev1533, ev1352,
-     pr1586, ev1576, pr1609, ev1599, pr1632, ev1622, pr1655, ev1645,
-     pr1678, ev1668, pr1701, ev1691, pr1724, ev1714, pr1747, ev1737, ev1556,
-     ev1338, ev1120, ev902, ev684, ev466, ev248, ev30, -⟩
-  rw [loadValue_of_repAddr ha₁] at ld11; injection ld11 with hv1; subst hv1
-  rw [loadValue_of_repAddr ha₂] at ld23; injection ld23 with hv13; subst hv13
-  obtain rfl := proj_addrTuple_eq 0 (by decide) pr74
-  obtain rfl := proj_addrTuple_eq 1 (by decide) pr97
-  obtain rfl := proj_addrTuple_eq 2 (by decide) pr120
-  obtain rfl := proj_addrTuple_eq 3 (by decide) pr143
-  obtain rfl := proj_addrTuple_eq 0 (by decide) pr166
-  obtain rfl := proj_addrTuple_eq 1 (by decide) pr189
-  obtain rfl := proj_addrTuple_eq 2 (by decide) pr212
-  obtain rfl := proj_addrTuple_eq 3 (by decide) pr235
-  obtain rfl := proj_addrTuple_eq 4 (by decide) pr292
-  obtain rfl := proj_addrTuple_eq 5 (by decide) pr315
-  obtain rfl := proj_addrTuple_eq 6 (by decide) pr338
-  obtain rfl := proj_addrTuple_eq 7 (by decide) pr361
-  obtain rfl := proj_addrTuple_eq 4 (by decide) pr384
-  obtain rfl := proj_addrTuple_eq 5 (by decide) pr407
-  obtain rfl := proj_addrTuple_eq 6 (by decide) pr430
-  obtain rfl := proj_addrTuple_eq 7 (by decide) pr453
-  obtain rfl := proj_addrTuple_eq 8 (by decide) pr510
-  obtain rfl := proj_addrTuple_eq 9 (by decide) pr533
-  obtain rfl := proj_addrTuple_eq 10 (by decide) pr556
-  obtain rfl := proj_addrTuple_eq 11 (by decide) pr579
-  obtain rfl := proj_addrTuple_eq 8 (by decide) pr602
-  obtain rfl := proj_addrTuple_eq 9 (by decide) pr625
-  obtain rfl := proj_addrTuple_eq 10 (by decide) pr648
-  obtain rfl := proj_addrTuple_eq 11 (by decide) pr671
-  obtain rfl := proj_addrTuple_eq 12 (by decide) pr728
-  obtain rfl := proj_addrTuple_eq 13 (by decide) pr751
-  obtain rfl := proj_addrTuple_eq 14 (by decide) pr774
-  obtain rfl := proj_addrTuple_eq 15 (by decide) pr797
-  obtain rfl := proj_addrTuple_eq 12 (by decide) pr820
-  obtain rfl := proj_addrTuple_eq 13 (by decide) pr843
-  obtain rfl := proj_addrTuple_eq 14 (by decide) pr866
-  obtain rfl := proj_addrTuple_eq 15 (by decide) pr889
-  obtain rfl := proj_addrTuple_eq 16 (by decide) pr946
-  obtain rfl := proj_addrTuple_eq 17 (by decide) pr969
-  obtain rfl := proj_addrTuple_eq 18 (by decide) pr992
-  obtain rfl := proj_addrTuple_eq 19 (by decide) pr1015
-  obtain rfl := proj_addrTuple_eq 16 (by decide) pr1038
-  obtain rfl := proj_addrTuple_eq 17 (by decide) pr1061
-  obtain rfl := proj_addrTuple_eq 18 (by decide) pr1084
-  obtain rfl := proj_addrTuple_eq 19 (by decide) pr1107
-  obtain rfl := proj_addrTuple_eq 20 (by decide) pr1164
-  obtain rfl := proj_addrTuple_eq 21 (by decide) pr1187
-  obtain rfl := proj_addrTuple_eq 22 (by decide) pr1210
-  obtain rfl := proj_addrTuple_eq 23 (by decide) pr1233
-  obtain rfl := proj_addrTuple_eq 20 (by decide) pr1256
-  obtain rfl := proj_addrTuple_eq 21 (by decide) pr1279
-  obtain rfl := proj_addrTuple_eq 22 (by decide) pr1302
-  obtain rfl := proj_addrTuple_eq 23 (by decide) pr1325
-  obtain rfl := proj_addrTuple_eq 24 (by decide) pr1382
-  obtain rfl := proj_addrTuple_eq 25 (by decide) pr1405
-  obtain rfl := proj_addrTuple_eq 26 (by decide) pr1428
-  obtain rfl := proj_addrTuple_eq 27 (by decide) pr1451
-  obtain rfl := proj_addrTuple_eq 24 (by decide) pr1474
-  obtain rfl := proj_addrTuple_eq 25 (by decide) pr1497
-  obtain rfl := proj_addrTuple_eq 26 (by decide) pr1520
-  obtain rfl := proj_addrTuple_eq 27 (by decide) pr1543
-  obtain rfl := proj_addrTuple_eq 28 (by decide) pr1586
-  obtain rfl := proj_addrTuple_eq 29 (by decide) pr1609
-  obtain rfl := proj_addrTuple_eq 30 (by decide) pr1632
-  obtain rfl := proj_addrTuple_eq 31 (by decide) pr1655
-  obtain rfl := proj_addrTuple_eq 28 (by decide) pr1678
-  obtain rfl := proj_addrTuple_eq 29 (by decide) pr1701
-  obtain rfl := proj_addrTuple_eq 30 (by decide) pr1724
-  obtain rfl := proj_addrTuple_eq 31 (by decide) pr1747
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev64
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev87
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev110
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev133
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev156
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev179
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev202
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev225
-  obtain ⟨rfl, hc0⟩ := canon_addr_chunk_spec ev44
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev282
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev305
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev328
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev351
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev374
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev397
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev420
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev443
-  obtain ⟨rfl, hc1⟩ := canon_addr_chunk_spec ev262
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev500
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev523
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev546
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev569
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev592
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev615
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev638
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev661
-  obtain ⟨rfl, hc2⟩ := canon_addr_chunk_spec ev480
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev718
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev741
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev764
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev787
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev810
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev833
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev856
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev879
-  obtain ⟨rfl, hc3⟩ := canon_addr_chunk_spec ev698
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev936
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev959
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev982
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1005
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1028
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1051
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1074
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1097
-  obtain ⟨rfl, hc4⟩ := canon_addr_chunk_spec ev916
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1154
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1177
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1200
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1223
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1246
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1269
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1292
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1315
-  obtain ⟨rfl, hc5⟩ := canon_addr_chunk_spec ev1134
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1372
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1395
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1418
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1441
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1464
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1487
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1510
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1533
-  obtain ⟨rfl, hc6⟩ := canon_addr_chunk_spec ev1352
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1576
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1599
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1622
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1645
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1668
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1691
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1714
-  obtain ⟨rfl, rfl⟩ := Lib.u8_to_field_spec ev1737
-  obtain ⟨rfl, hc7⟩ := canon_addr_chunk_spec ev1556
-  obtain ⟨rfl, ht6⟩ := canon_ord_then_spec ev1338
-  obtain ⟨rfl, ht5⟩ := canon_ord_then_spec ev1120
-  obtain ⟨rfl, ht4⟩ := canon_ord_then_spec ev902
-  obtain ⟨rfl, ht3⟩ := canon_ord_then_spec ev684
-  obtain ⟨rfl, ht2⟩ := canon_ord_then_spec ev466
-  obtain ⟨rfl, ht1⟩ := canon_ord_then_spec ev248
-  obtain ⟨rfl, ht0⟩ := canon_ord_then_spec ev30
-  refine ⟨rfl, fun hr => ?_⟩
-  obtain ⟨hq0, hr1⟩ := ht0 hr
-  obtain ⟨hq1, hr2⟩ := ht1 hr1
-  obtain ⟨hq2, hr3⟩ := ht2 hr2
-  obtain ⟨hq3, hr4⟩ := ht3 hr3
-  obtain ⟨hq4, hr5⟩ := ht4 hr4
-  obtain ⟨hq5, hr6⟩ := ht5 hr5
-  obtain ⟨hq6, hq7⟩ := ht6 hr6
-  obtain ⟨e0, e1, e2, e3⟩ := hc0 hq0
-  obtain ⟨e4, e5, e6, e7⟩ := hc1 hq1
-  obtain ⟨e8, e9, e10, e11⟩ := hc2 hq2
-  obtain ⟨e12, e13, e14, e15⟩ := hc3 hq3
-  obtain ⟨e16, e17, e18, e19⟩ := hc4 hq4
-  obtain ⟨e20, e21, e22, e23⟩ := hc5 hq5
-  obtain ⟨e24, e25, e26, e27⟩ := hc6 hq6
-  obtain ⟨e28, e29, e30, e31⟩ := hc7 hq7
-  apply Vector.ext
-  intro i hi
-  interval_cases i
-  all_goals assumption
+  obtain ⟨hr, hh⟩ := Claim.canon_addr_cmp_spec ha₁ ha₂ ev
+  refine ⟨hh, fun h1 => ?_⟩
+  have hcast : (Claim.cmpNat (Claim.addrRank a₁) (Claim.addrRank a₂) : F) = (1 : F) :=
+    Value.field.inj (hr.symm.trans h1)
+  have hcmpeq : Claim.cmpNat (Claim.addrRank a₁) (Claim.addrRank a₂) = 1 :=
+    Claim.natCast_inj_of_lt_u32 (Claim.cmpNat_lt_u32 _ _) (by decide) hcast
+  exact Claim.addrRank_injective (Claim.cmpNat_eq_one_iff.mp hcmpeq)
 
 theorem rbtree_map_lookup_generic :
     ∀ {kp tree dflt r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
@@ -684,22 +484,22 @@ theorem rbtree_map_lookup_generic :
     induction N with
     | zero =>
       intro kp tree dflt r h h' calls a P hle ha hall ev
-      cases Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev with
-      | Nil _ he18 he19 _ => exact ⟨he19, .inl he18⟩
-      | Node_n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hc149 =>
-        rw [hc149] at hle; simp at hle
-      | Node_other_n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hc209 =>
-        rw [hc209] at hle; simp at hle
-      | Node_other_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hc244 =>
-        rw [hc244] at hle; simp at hle
+      match Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev with
+      | .Nil (he18 := he18) (he19 := he19) .. => exact ⟨he19, .inl he18⟩
+      | .Node_n0 (hc_mgvmxnia := hc) .. => rw [hc] at hle; simp at hle
+      | .Node_n1 (hc_igqsevxl := hc) .. => rw [hc] at hle; simp at hle
+      | .Node_other (hc_pliitbsd := hc) .. => rw [hc] at hle; simp at hle
     | succ N ih =>
       intro kp tree dflt r h h' calls a P hle ha hall ev
-      cases Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev with
-      | Nil _ he18 he19 _ => exact ⟨he19, .inl he18⟩
-      | Node_n1 w28 x_k x_v w29 w30 y51 y59 m63 cs73 v76 m78 cs86 cs122 _ hv26 ld52 _ ev88 ev75 ev124 hc149 =>
+      match Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev with
+      | .Nil (he18 := he18) (he19 := he19) .. => exact ⟨he19, .inl he18⟩
+      | .Node_n0 (w_tdwskwdu := w28) (x_k := x_k) (x_v := x_v) (x_left_ptr := x_left_ptr)
+          (x_right_ptr := x_right_ptr) (cs_unefuzaw := cs_rec) (v_pqcjeefo := v_l)
+          (hv_yxogouup := hv26) (ev_khiwzwox := ev_cmp) (ld_uxbvbmib := ld_l)
+          (ev_rgfvjlxh := ev_rec) (hc_mgvmxnia := hc) .. =>
         rw [Obs.Names.«RBTreeMap::RBTreeMap<Field>».symbol] at hv26
         subst hv26
-        generalize ht : (Value.construct addrMapEnum "Node" [w28, x_k, x_v, w29, w30] : SourceValue F) = t at hall
+        generalize ht : (Value.construct addrMapEnum "Node" [w28, x_k, x_v, x_left_ptr, x_right_ptr] : SourceValue F) = t at hall
         cases hall with
         | nil => exact (construct_ctor_ne (by decide) ht.symm).elim
         | node hk _ hl _ rl _ =>
@@ -709,15 +509,16 @@ theorem rbtree_map_lookup_generic :
           injection hvs2 with _ hvs3
           injection hvs3 with hw29 _
           subst hxk hw29
-          rw [hl] at ld52; injection ld52 with hy51; subst hy51
-          obtain ⟨rfl, -⟩ := canon_addr_cmp_spec ha hk ev88
-          obtain ⟨-, rfl⟩ := Lib.is_zero_spec ev75
-          have hcs : cs122.length ≤ N := by rw [hc149] at hle; simp at hle; omega
-          exact ih hcs ha rl ev124
-      | Node_other_n0 w28 x_k x_v w29 w30 y51 y59 v62 m63 cs73 v76 m78 cs86 x162 m164 cs173 _ hv26 _ _ ev88 ev75 _ ev175 op169 he207 he208 _ =>
+          obtain ⟨rfl, -⟩ := canon_addr_cmp_spec ha hk ev_cmp
+          rw [hl] at ld_l; injection ld_l with hvl; subst hvl
+          have hcs : cs_rec.length ≤ N := by rw [hc] at hle; simp at hle; omega
+          exact ih hcs ha rl ev_rec
+      | .Node_n1 (w_tdwskwdu := w28) (x_k := x_k) (x_v := x_v) (x_left_ptr := x_left_ptr)
+          (x_right_ptr := x_right_ptr) (hv_yxogouup := hv26) (ev_khiwzwox := ev_cmp)
+          (he_xjcnykms := hr_eq) (he_yudkmufo := hh_eq) .. =>
         rw [Obs.Names.«RBTreeMap::RBTreeMap<Field>».symbol] at hv26
         subst hv26
-        generalize ht : (Value.construct addrMapEnum "Node" [w28, x_k, x_v, w29, w30] : SourceValue F) = t at hall
+        generalize ht : (Value.construct addrMapEnum "Node" [w28, x_k, x_v, x_left_ptr, x_right_ptr] : SourceValue F) = t at hall
         cases hall with
         | nil => exact (construct_ctor_ne (by decide) ht.symm).elim
         | node hk hP _ _ _ _ =>
@@ -726,18 +527,17 @@ theorem rbtree_map_lookup_generic :
           injection hvs1 with hxk hvs2
           injection hvs2 with hxv _
           subst hxk hxv
-          obtain ⟨rfl, -⟩ := canon_addr_cmp_spec ha hk ev88
-          obtain ⟨-, rfl⟩ := Lib.is_zero_spec ev75
-          obtain ⟨x, hx1, hx2⟩ := evalBinOp_sub_eq_zero_inv op169
-          have hx162 : x162 = .field 1 := hx1.trans hx2.symm
-          obtain ⟨rfl, heqa⟩ := canon_addr_cmp_spec ha hk ev175
-          obtain rfl := heqa hx162
-          rw [he207, he208]
+          obtain ⟨rfl, heqa⟩ := canon_addr_cmp_spec ha hk ev_cmp
+          obtain rfl := heqa rfl
+          rw [hr_eq, hh_eq]
           exact ⟨rfl, .inr hP⟩
-      | Node_other_other w28 x_k x_v w29 w30 y51 y59 v62 m63 cs73 v76 m78 cs86 v154 x162 m164 cs173 cs217 _ hv26 _ ld60 ev88 ev75 _ ev175 _ _ ev219 hc244 =>
+      | .Node_other (w_tdwskwdu := w28) (x_k := x_k) (x_v := x_v) (x_left_ptr := x_left_ptr)
+          (x_right_ptr := x_right_ptr) (cs_rauanskz := cs_rec) (v_nhqlzftx := v_r)
+          (hv_yxogouup := hv26) (ev_khiwzwox := ev_cmp) (ld_vukxxfzy := ld_r)
+          (ev_ogagosff := ev_rec) (hc_pliitbsd := hc) .. =>
         rw [Obs.Names.«RBTreeMap::RBTreeMap<Field>».symbol] at hv26
         subst hv26
-        generalize ht : (Value.construct addrMapEnum "Node" [w28, x_k, x_v, w29, w30] : SourceValue F) = t at hall
+        generalize ht : (Value.construct addrMapEnum "Node" [w28, x_k, x_v, x_left_ptr, x_right_ptr] : SourceValue F) = t at hall
         cases hall with
         | nil => exact (construct_ctor_ne (by decide) ht.symm).elim
         | node hk _ _ hr _ rr =>
@@ -748,12 +548,10 @@ theorem rbtree_map_lookup_generic :
           injection hvs3 with _ hvs4
           injection hvs4 with hw30 _
           subst hxk hw30
-          rw [hr] at ld60; injection ld60 with hy59; subst hy59
-          obtain ⟨rfl, -⟩ := canon_addr_cmp_spec ha hk ev88
-          obtain ⟨-, rfl⟩ := Lib.is_zero_spec ev75
-          obtain ⟨rfl, -⟩ := canon_addr_cmp_spec ha hk ev175
-          have hcs : cs217.length ≤ N := by rw [hc244] at hle; simp at hle; omega
-          exact ih hcs ha rr ev219
+          obtain ⟨rfl, -⟩ := canon_addr_cmp_spec ha hk ev_cmp
+          rw [hr] at ld_r; injection ld_r with hvr; subst hvr
+          have hcs : cs_rec.length ≤ N := by rw [hc] at hle; simp at hle; omega
+          exact ih hcs ha rr ev_rec
   intro kp tree dflt r h h' calls a P ha hall ev
   rw [← Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>».symbol] at ev
   exact go calls.length (Nat.le_refl _) ha hall ev

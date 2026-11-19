@@ -36,9 +36,9 @@ theorem axiom_standing_inForce_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _ro
     rw [← Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>».symbol] at ev92
     match Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev92 with
     | .Nil (he18 := he) .. => exact (hne he).elim
-    | .Node_n1 (hv26 := hv) .. => simp [addrMapEnum] at hv
-    | .Node_other_n0 (hv26 := hv) .. => simp [addrMapEnum] at hv
-    | .Node_other_other (hv26 := hv) .. => simp [addrMapEnum] at hv
+    | .Node_n0 (hv_yxogouup := hv) .. => simp [addrMapEnum] at hv
+    | .Node_n1 (hv_yxogouup := hv) .. => simp [addrMapEnum] at hv
+    | .Node_other (hv_yxogouup := hv) .. => simp [addrMapEnum] at hv
   | .other_n0 (he170 := he) .. => exact (hne he).elim
   | .other_other_n0 (he212 := he) .. => exact (hne he).elim
   | .other_other_other (ev14 := ev14) (ev58 := ev58) (ev36 := ev36)
@@ -130,9 +130,9 @@ theorem axiom_standing_role_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_
     rw [← Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>».symbol] at ev92
     match Obs.«RBTreeMap::rbtree_map_lookup_or_default».obs ev92 with
     | .Nil (he18 := he) .. => exact (hne he).elim
-    | .Node_n1 (hv26 := hv) .. => simp [addrMapEnum] at hv
-    | .Node_other_n0 (hv26 := hv) .. => simp [addrMapEnum] at hv
-    | .Node_other_other (hv26 := hv) .. => simp [addrMapEnum] at hv
+    | .Node_n0 (hv_yxogouup := hv) .. => simp [addrMapEnum] at hv
+    | .Node_n1 (hv_yxogouup := hv) .. => simp [addrMapEnum] at hv
+    | .Node_other (hv_yxogouup := hv) .. => simp [addrMapEnum] at hv
   | .other_n0 (he170 := he) .. => exact (hne he).elim
   | .other_other_n0 (he212 := he) .. => exact (hne he).elim
   | .other_other_other (ev14 := ev14) (ev58 := ev58) (ev36 := ev36)
