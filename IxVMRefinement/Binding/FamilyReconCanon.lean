@@ -129,11 +129,10 @@ theorem posOf_range_eq (n : Nat) : ∀ E : KExpr, Core.posOf (List.range n) E = 
       apply Ix.Kernel.PropWhen.eq_of_holds
       intro φ
       rw [Ix.Kernel.Level.holds_substPW]
+      have hpos : Core.posLevels (List.range n) = (List.range n).map .param := by
+        simp [Core.posLevels]
       have hφ : Ix.Kernel.Level.substFn φ (List.range n) (Core.posLevels (List.range n)) = φ := by
-        funext p
-        unfold Ix.Kernel.Level.substFn
-        rw [level_subst_posLevels_range n (.param p)]
-        rfl
+        rw [hpos]; funext p; exact Ix.Kernel.Level.substFn_map_param
       rw [hφ]
   | .forallE t b m => by
     show Ix.Kernel.Expr.forallE (Core.posOf (List.range n) t) (Core.posOf (List.range n) b)
@@ -147,11 +146,10 @@ theorem posOf_range_eq (n : Nat) : ∀ E : KExpr, Core.posOf (List.range n) E = 
       apply Ix.Kernel.PropWhen.eq_of_holds
       intro φ
       rw [Ix.Kernel.Level.holds_substPW]
+      have hpos : Core.posLevels (List.range n) = (List.range n).map .param := by
+        simp [Core.posLevels]
       have hφ : Ix.Kernel.Level.substFn φ (List.range n) (Core.posLevels (List.range n)) = φ := by
-        funext p
-        unfold Ix.Kernel.Level.substFn
-        rw [level_subst_posLevels_range n (.param p)]
-        rfl
+        rw [hpos]; funext p; exact Ix.Kernel.Level.substFn_map_param
       rw [hφ]
   | .letE t v b l => by
     show Ix.Kernel.Expr.letE (Core.posOf (List.range n) t) (Core.posOf (List.range n) v)
@@ -367,8 +365,9 @@ private theorem soloSelf_key {t : Ix.Kernel.RoleTable} {a : _root_.Address} {d :
     | zero =>
       simp only [List.getElem?_cons_zero, Option.some.injEq] at hx
       subst hx
-      simp only [soloSelf, Option.some.injEq] at hs
-      rw [← hs] at hm
+      simp only [soloSelf] at hs
+      injection hs with hs'
+      rw [← hs'] at hm
       exact (Except.ok.inj hm).symm
     | succ _ => simp at hx
   · simp at hx
@@ -527,8 +526,8 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
   cases hci : c.info with
   | defn d =>
     simp only [L1.GetCITraceResult, hci] at htr
-    obtain ⟨blobs, tree, v, hhp, built, hld, hnl, tp, vp, hp, hv, rty, rval, hpT, hpV, hlT, hlV⟩ :=
-      htr
+    obtain ⟨blobs, tree, v, hhp, built, hld, hnl, tp, vp, hp, planT, planV, hv, rty, rval,
+      hpT, hpV, hlT, hlV⟩ := htr
     rw [hld] at ldci; injection ldci with hv_eq; subst hv_eq; subst hv
     refine ⟨fun xnl xty xval xsf xh hshape => ?_, fun hne => ?_⟩
     · obtain ⟨hdk, rfl, rfl⟩ := defnValShape_defn_inv hshape
@@ -561,7 +560,7 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
   | dPrj prj =>
     simp only [L1.GetCITraceResult, hci] at htr
     obtain ⟨_, blkBytes, cb, ms, d, blobs, tree, v, hhB, haB, hexB, hcb, hms, hhp, built, hld,
-      hnl, tp, vp, hp, hv, rty, rval, hpT, hpV, hlT, hlV⟩ := htr
+      hnl, tp, vp, hp, planT, planV, hv, rty, rval, hpT, hpV, hlT, hlV⟩ := htr
     rw [hld] at ldci; injection ldci with hv_eq; subst hv_eq; subst hv
     have hpb : Held R prj.block := by
       have h1 := held_owner_of_proj hRsub hcl hSa hcE
@@ -593,8 +592,8 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       | thm => rfl
       | opaq => rfl
   | axio ax =>
-    simp only [L1.GetCITraceResult, hci] at htr
-    obtain ⟨_, _, v, -, -, hld, -, tp, rfl, -⟩ := htr
+    simp only [L1.GetCIRawResult, hci] at hrawRes
+    obtain ⟨v, hld, -, tp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [defnAt, hcE, hci]⟩
