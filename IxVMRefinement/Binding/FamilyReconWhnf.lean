@@ -344,11 +344,11 @@ private theorem red_proj_gate_eval
     (hsd_nl : sd.nl < 4294967296) (hsd_np : sd.np < 4294967296)
     (hsd_ni : sd.ni < 4294967296) (hsd_nc : sd.nctors < 4294967296)
     (hsd_idx : sd.idx < 4294967296)
-    {h m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 : Heap F}
+    {h m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 : Heap F}
     {xcblk xsblk xargs xclvls : SourceValue F}
     {v_eq v_sub1 y_z1 x_m1 v_sub2 y_z2 v_g1 y_z3 v_sub3 y_z4 x_m2 v_sub4 y_z5 v_g2
      x_alen y_add v_sub5 x_z6 x_llen v_sub6 y_z7 v_g3 x_m3 x_m4 y_lt v_out : SourceValue F}
-    {cs1 cs2 cs3 cs4 cs5 cs6 cs7 cs8 cs9 cs10 cs11 cs12 : List (Call F)}
+    {cs1 cs2 cs3 cs4 cs5 cs6 cs7 cs8 cs9 cs10 cs11 : List (Call F)}
     (r_cblk : Bytes.RepAddressRef addrTy h ba_c xcblk)
     (r_sblk : Bytes.RepAddressRef addrTy h ba_s xsblk)
     (r_args : RepList kexprListEnum (TmOExact κ) h args xargs)
