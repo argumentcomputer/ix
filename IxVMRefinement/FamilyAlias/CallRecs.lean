@@ -1868,7 +1868,7 @@ theorem pinsP_leavesFixed {t : Ix.Kernel.RoleTable} {calls : List (Call F)}
             | some q2 =>
               rcases q2 with ⟨fvs2, r2⟩
               simp [hop2] at hsplit
-              have hfvs_eq : fvs1 ++ fvs2 = fvsP := hsplit.1
+              have hfvs_eq : fvs1 ++ fvs2 = fvsP := hsplit.1.symm
               have hlen1 : fvs1.length = nP := Decl.openPisAtFvars_len nP hop1
               have htake_np : fvsP.take nP = fvs1 := by
                 rw [← hfvs_eq, List.take_left' hlen1]
