@@ -5,7 +5,7 @@ import IxVMRefinement.Whnf.Proj
 import IxVMRefinement.Obs.KernelWhnf2
 import IxVMRefinement.Obs.KernelWhnf4
 import IxVMRefinement.Obs.KernelWhnf5
-import IxVMRefinement.Obs.KernelTypes0
+import IxVMRefinement.Core.SpineChain
 
 /-! # Step lemmas of `KernelWhnf`: the structure-η rescue and recursor dispatch
 
@@ -143,41 +143,41 @@ private theorem apply_n_projs_head :
         have hs' := SpineHead.app (loadValue_enum_cell hcell) (hs.mono (ext1.trans ext2))
         exact apply_n_projs_head n' (by simp at hle; omega) ev76 hs'
 
+private theorem spineChain_eq_spineHead {h : Heap F} {hd0 e hd : SourceValue F}
+    {ps : List (SourceValue F)} (hs : SpineHead h hd0 e) (sc : SpineChain h e hd ps) :
+    hd = hd0 := by
+  induction hs generalizing ps with
+  | head hld hne =>
+    cases sc with
+    | head _ _ => rfl
+    | app ld _ =>
+      rw [hld] at ld
+      injection ld with hv
+      injection hv with _ hc _
+      exact (hne hc).elim
+  | app hld _ ih =>
+    cases sc with
+    | head ld hne =>
+      rw [hld] at ld
+      injection ld with hv
+      exact (hne _ rfl hv.symm).elim
+    | app ld rest =>
+      rw [hld] at ld
+      injection ld with hv
+      injection hv with _ _ hxs
+      simp only [List.cons.injEq, and_true] at hxs
+      obtain ⟨rfl, -⟩ := hxs
+      exact ih rest
+
 private theorem collect_spine_head :
     ∀ (n : Nat) {hd0 e hd sp : SourceValue F} {h h' : Heap F} {calls : List (Call F)},
       calls.length ≤ n →
       ObsFn W "KernelTypes::collect_spine" [e] h (.tuple [hd, sp]) h' calls →
       SpineHead h hd0 e →
       hd = hd0
-  | n, hd0, e, hd, sp, h, h', calls, hle, ev, hs => by
-    cases hs with
-    | head hld hne =>
-      match Obs.«KernelTypes::collect_spine».obs ev with
-      | .App (ld12 := ld12) .. =>
-        rw [hld] at ld12
-        injection ld12 with hv
-        injection hv with _ hc _
-        exact (hne hc).elim
-      | .other (he115 := he115) .. =>
-        exact (tuple2_inj he115).1
-    | app hld hf =>
-      match Obs.«KernelTypes::collect_spine».obs ev with
-      | .App (x_f := x_f) (x_head := x_head) (cs41 := cs41) (ld12 := ld12) (ev43 := ev43)
-          (he69 := he69) (hc106 := hc106) .. =>
-        rw [hld] at ld12
-        injection ld12 with hv
-        injection hv with _ _ hxs
-        simp only [List.cons.injEq, and_true] at hxs
-        obtain ⟨rfl, -⟩ := hxs
-        subst hc106
-        obtain ⟨rfl, -⟩ := tuple2_inj he69
-        cases n with
-        | zero => simp at hle
-        | succ n' => exact collect_spine_head n' (by simp at hle; omega) ev43 hf
-      | .other (ld12 := ld12) (hne107 := hne107) .. =>
-        rw [hld] at ld12
-        injection ld12 with hv
-        exact (hne107 _ rfl hv.symm).elim
+  | _, _, _, _, _, _, _, _, _, ev, hs => by
+    obtain ⟨_, hch, -, -⟩ := collect_spine_chain_tup ev
+    exact spineChain_eq_spineHead hs hch
 
 private theorem se_parent_addr_tag_field :
     ∀ (n : Nat) {rt skip w pa : SourceValue F} {h h' : Heap F} {calls : List (Call F)},

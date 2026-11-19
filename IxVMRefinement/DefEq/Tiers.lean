@@ -950,21 +950,36 @@ theorem k_is_def_eq_structure_tree_step (c : ScopedCtx) {args : List (SourceValu
 
 /-! ## The slow tiers -/
 
-/-- `KernelDefEq::k_is_def_eq_slow`: string literals, then `k_is_def_eq_slow_nd`. -/
+private theorem k_is_def_eq_slow_seg_pure {rc a b types r : SourceValue F} {h h' : Heap F}
+    {cs : List (Call F)}
+    (sg : Obs.«KernelDefEq::k_is_def_eq_slow».Seg_ordcvglu rc a b types h r h' cs) :
+    h' = h ∧ cs = [] := by
+  cases sg <;> exact ⟨‹_›, ‹_›⟩
+
+/-- `KernelDefEq::k_is_def_eq_slow`: string literals (gated on `Lit(Str)`), then
+`k_is_def_eq_slow_nd`. -/
 theorem k_is_def_eq_slow_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq_slow" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_is_def_eq_slow c args h r h' calls := by
   intro rc a b types hargs good hrc d Γ htypes A B hA hB hr
   subst hargs
-  rcases Obs.«KernelDefEq::k_is_def_eq_slow».obs ev with
-    ⟨m2, cs13, ev15, he52, he53, hc54⟩ | ⟨v1, m2, cs13, cs62, ev15, hne55, ev64, hc97⟩
-  · subst hc54
-    exact ih.get (.defEq .try_string_lit_pair) (by lt_calls) ev15 rc a b types rfl
+  cases Obs.«KernelDefEq::k_is_def_eq_slow».obs ev
+  case n0 _ _ _ sg ev_nd hc =>
+    obtain ⟨rfl, rfl⟩ := k_is_def_eq_slow_seg_pure sg
+    subst hc
+    exact ih.get (.defEq .k_is_def_eq_slow_nd) (by lt_calls) ev_nd rc a b types rfl
+      (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB hr
+  case other_n1 _ _ _ _ _ sg _ ev_str _ _ hc =>
+    obtain ⟨rfl, rfl⟩ := k_is_def_eq_slow_seg_pure sg
+    subst hc
+    exact ih.get (.defEq .try_string_lit_pair) (by lt_calls) ev_str rc a b types rfl
       (good.sub fun x hx => by simp [hx]) hrc d Γ htypes A B hA hB field_one_ne_zero
-  · subst hc97
-    have e0 := ObsFn.heap_extends ev15
-    exact ih.get (.defEq .k_is_def_eq_slow_nd) (by lt_calls) ev64 rc a b types rfl
+  case other_other _ _ _ _ _ _ _ sg _ ev_str _ ev_nd hc =>
+    obtain ⟨rfl, rfl⟩ := k_is_def_eq_slow_seg_pure sg
+    subst hc
+    have e0 := ObsFn.heap_extends ev_str
+    exact ih.get (.defEq .k_is_def_eq_slow_nd) (by lt_calls) ev_nd rc a b types rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono e0 hrc) d Γ (types_mono e0 htypes) A B
       (Tm.mono e0 hA) (Tm.mono e0 hB) hr
 

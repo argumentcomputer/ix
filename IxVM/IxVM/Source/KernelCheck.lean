@@ -4135,12 +4135,23 @@ def peel_n_foralls_zeta := aiur_fn⟦
     }
 ⟧
 
+def collect_spine_zeta_acc := aiur_fn⟦
+  fn collect_spine_zeta_acc(e: KernelTypes::KExpr, acc: Lists::List<KernelTypes::KExpr>) -> (KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>) {
+      match (*(e)) {
+        KernelTypes::KExprNode::App(f, a) => {
+          collect_spine_zeta_acc(f, (&(Lists::Node::Cons(a, acc)))) } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          collect_spine_zeta_acc(KernelSubst::expr_inst1(b, v, 0), acc) } ,
+        _ => {  (e, acc) } ,
+      }
+    }
+⟧
+
 def collect_spine_zeta := aiur_fn⟦
   fn collect_spine_zeta(e: KernelTypes::KExpr) -> (KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>) {
       match (*(e)) {
         KernelTypes::KExprNode::App(f, a) => {
-          let (head, args) = collect_spine_zeta(f);
-          (head, Lists::snoc(args, a)) } ,
+          collect_spine_zeta_acc(f, (&(Lists::Node::Cons(a, (&(Lists::Node::Nil)))))) } ,
         KernelTypes::KExprNode::Let(_, v, b) => {
           collect_spine_zeta(KernelSubst::expr_inst1(b, v, 0)) } ,
         _ => {  (e, (&(Lists::Node::Nil))) } ,

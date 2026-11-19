@@ -1,3 +1,4 @@
+import IxVMRefinement.Core.SpineChain
 import IxVMRefinement.Binding.RunStepStores
 import IxVMRefinement.Binding.StoreOpOrder
 import IxVMRefinement.Binding.PayloadDirectLoads
@@ -1375,46 +1376,53 @@ private theorem collect_spine_rawConv {refs : List _root_.Address} {univs : List
         (∀ idx, eh ≠ .share idx) ∧
         (∀ i ∈ exprRefIdxs eh, i ∈ exprRefIdxs e ∨ ∃ s ∈ sharing, i ∈ exprRefIdxs s) ∧
         L1.RawConvExpr refs [] univs sharing blobs h' b' eh hd := by
-  intro fuel
-  induction fuel with
-  | zero => intro bound e x_e hd sp h h' cs hlt; omega
-  | succ fuel ih =>
-    intro bound e x_e hd sp h h' cs hlt hraw ev
-    obtain ⟨b1, e1, hu1, hns1, href1, hr1⟩ := ixonUnshare_rawConv hraw
-    match Obs.«KernelTypes::collect_spine».obs ev with
-    | .App (m31 := m31) (cs41 := cs41) (ld12 := ld12) (ev43 := evRec) (he69 := hr) (ev88 := evSnoc)
-        (he105 := hh) (hc106 := hcs) .. =>
+  intro _ bound e x_e hd sp h h' cs _ hraw ev
+  obtain ⟨ps, hch, hplen, -⟩ := Core.collect_spine_chain_tup ev
+  have haux :
+      ∀ {x_e hd' : SourceValue F} {ps : List (SourceValue F)},
+        Core.SpineChain h x_e hd' ps →
+        ∀ {bound : Nat} {e : Ixon.Expr},
+          L1.RawConvExpr refs [] univs sharing blobs h bound e x_e →
+          ∃ b' eh,
+            (∀ f, ps.length < f →
+              ∀ rIdx uIdxs, eh = .ref rIdx uIdxs →
+                ixonAppHeadRef sharing f bound e = some rIdx.toNat) ∧
+            (∀ idx, eh ≠ .share idx) ∧
+            (∀ i ∈ exprRefIdxs eh, i ∈ exprRefIdxs e ∨ ∃ s ∈ sharing, i ∈ exprRefIdxs s) ∧
+            L1.RawConvExpr refs [] univs sharing blobs h b' eh hd' := by
+    intro x_e hd' ps sc
+    induction sc with
+    | head ld12 hne =>
+      intro bound e hraw
+      obtain ⟨b1, e1, hu1, hns1, href1, hr1⟩ := ixonUnshare_rawConv hraw
+      have hna := rawConv_not_app_of_ne hr1 hns1 ld12 hne
+      refine ⟨b1, e1, ?_, hns1, href1, hr1⟩
+      intro f hf rIdx uIdxs heh
+      cases f with
+      | zero => omega
+      | succ f' =>
+        subst heh
+        simp only [ixonAppHeadRef, hu1]
+    | app ld12 _ ih =>
+      intro bound e hraw
+      obtain ⟨b1, e1, hu1, hns1, href1, hr1⟩ := ixonUnshare_rawConv hraw
       obtain ⟨ef, ea, rfl, hrf, -⟩ := rawConv_app_of_load hr1 hns1 ld12
-      injection hr with htl
-      injection htl with hhd _
-      subst hhd
-      have hlt' : cs41.length < fuel := by rw [hcs] at hlt; simp at hlt; omega
-      obtain ⟨ext1, b', eh, hfun, hns', href', hr'⟩ := ih hlt' hrf evRec
-      have ext_snoc : Heap.Extends m31 h' := by rw [hh]; exact evSnoc.heap_extends
-      refine ⟨ext1.trans ext_snoc, b', eh, ?_, hns', ?_, hr'.mono ext_snoc (fun _ hm => hm)⟩
+      obtain ⟨b', eh, hfun, hns', href', hr'⟩ := ih hrf
+      refine ⟨b', eh, ?_, hns', ?_, hr'⟩
       · intro f hf rIdx uIdxs heh
         cases f with
         | zero => omega
         | succ f' =>
           simp only [ixonAppHeadRef, hu1]
-          exact hfun f' (by rw [hcs] at hf; simp at hf; omega) rIdx uIdxs heh
+          exact hfun f' (by simp at hf; omega) rIdx uIdxs heh
       · intro i hi
         rcases href' i hi with h1 | h2
         · exact href1 i (by simp [exprRefIdxs, h1])
         · exact Or.inr h2
-    | .other (ld12 := ld12) (hne107 := hne) (he115 := hr) (hm132 := hm) (he136 := hh) .. =>
-      injection hr with htl
-      injection htl with hhd _
-      subst hhd
-      have hna := rawConv_not_app_of_ne hr1 hns1 ld12 hne
-      have ext_snoc : Heap.Extends h h' := by rw [hh, hm]; exact Heap.Extends.snoc _ _
-      refine ⟨ext_snoc, b1, e1, ?_, hns1, href1, hr1.mono ext_snoc (fun _ hm => hm)⟩
-      · intro f hf rIdx uIdxs heh
-        cases f with
-        | zero => omega
-        | succ f' =>
-          subst heh
-          simp only [ixonAppHeadRef, hu1]
+  obtain ⟨b', eh, hfun, hns', href', hr'⟩ := haux hch hraw
+  refine ⟨ev.heap_extends, b', eh, ?_, hns', href', hr'.mono ev.heap_extends (fun _ hm => hm)⟩
+  intro f hf
+  exact hfun f (by omega)
 
 /-- Pure first-motive carrier reference index extracted from a recursor's converted type. -/
 private theorem motive0_carrier_rawConv {refs : List _root_.Address} {univs : List Ixon.Univ}

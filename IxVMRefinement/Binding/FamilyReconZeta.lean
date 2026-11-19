@@ -284,10 +284,61 @@ private theorem kexprList_names :
     kexprListEnum = (Instance.mk "Lists::Node" [.ptr (.named "KernelTypes::KExprNode" [])]).symbol :=
   Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol.symm
 
-private theorem kexprSnoc_names :
-    Obs.Names.«Lists::snoc<&KernelTypes::KExprNode>» =
-      (Instance.mk "Lists::snoc" [.ptr (.named "KernelTypes::KExprNode" [])]).symbol :=
-  Obs.Names.«Lists::snoc<&KernelTypes::KExprNode>».symbol.symm
+/-- Tail-recursive accumulator for `KernelCheck::collect_spine_zeta`: prepends arguments from `E`
+onto `Acc` through intervening `Let` nodes, leaving a `NotLet` head. -/
+theorem collect_spine_zeta_acc_spec {κ : _root_.Address → KKey} {h h' : Heap F}
+    {E : KExpr} {Acc : List KExpr} {p acc hd args : SourceValue F} {cs : List (Call F)}
+    (hp : TmOExact κ h E p) (hacc : RepList kexprListEnum (TmOExact κ) h Acc acc)
+    (bd : IxVM.Consistency.Bounded cs)
+    (ev : ObsFn W "KernelCheck::collect_spine_zeta_acc" [p, acc] h (.tuple [hd, args]) h' cs) :
+    TmOExact κ h' E.getAppFn hd ∧ NotLet h' hd ∧
+      RepList kexprListEnum (TmOExact κ) h' (E.getAppArgs ++ Acc) args := by
+  have sub : ∀ {cs' : List (Call F)}, (∀ c ∈ cs', c ∈ cs) → IxVM.Consistency.Bounded cs' :=
+    fun hs => RomBound.bounded_mono bd hs
+  match Obs.«KernelCheck::collect_spine_zeta_acc».obs ev with
+  | .App (x_f := xf) (x_a := xa) (cs_kagrtcnv := cs1) (ld_bolbylmd := ld) (hm_kuahfmom := hm)
+      (ev_bfwtwchv := e1) (hc_xkhdrnsx := hc) .. =>
+    subst hm
+    obtain ⟨Ef, Ea, rfl, hf, ha⟩ := TmOExact.app_of_load hp ld
+    have hlt : cs1.length < cs.length := by
+      rw [hc]; simp only [List.length_cons]; omega
+    have ext : Heap.Extends h
+        (h ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Cons" [xa, acc]]) :=
+      Heap.Extends.snoc _ _
+    have hacc' : RepList kexprListEnum (TmOExact κ)
+        (h ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Cons" [xa, acc]])
+        (Ea :: Acc)
+        (.ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») h.length) :=
+      .cons (by simp) (ha.mono ext) (hacc.mono (tmOExact_heapMono₂ (κ := κ)) ext)
+    obtain ⟨hfn, hnl, hlist⟩ := collect_spine_zeta_acc_spec (hf.mono ext) hacc'
+      (sub fun c hc' => by rw [hc]; simp [hc']) e1
+    have hgetFn : (Expr.app Ef Ea).getAppFn = Ef.getAppFn := rfl
+    have hgetArgs : (Expr.app Ef Ea).getAppArgs ++ Acc = Ef.getAppArgs ++ Ea :: Acc := by
+      show (Ef.getAppArgs ++ [Ea]) ++ Acc = Ef.getAppArgs ++ Ea :: Acc
+      simp [List.append_assoc]
+    rw [hgetFn, hgetArgs]
+    exact ⟨hfn, hnl, hlist⟩
+  | .Let (x_v := xv) (x_b := xb) (cs_niixsajb := cs2) (v_cpmozruk := v') (m_fhppzpwh := m')
+      (cs_yqrxeseo := cs1) (ld_bolbylmd := ld) (ev_gemvpjgn := e1) (ev_eyocrmig := e2)
+      (hc_qubwlzze := hc) .. =>
+    obtain ⟨T, V, B, rfl, -, hv, hb⟩ := TmOExact.letE_of_load hp ld
+    have hv' : TmOExact κ m' (B.instantiate1Lift V 0) v' :=
+      expr_inst1_tmOExact (sub fun c hc' => by rw [hc]; simp [hc']) hb hv e1
+    have hlt : cs2.length < cs.length := by
+      rw [hc]; simp only [List.length_cons, List.length_append]; omega
+    exact collect_spine_zeta_acc_spec hv'
+      (hacc.mono (tmOExact_heapMono₂ (κ := κ)) e1.heap_extends)
+      (sub fun c hc' => by rw [hc]; simp [hc']) e2
+  | .other (v_hirlhoca := v) (ld_bolbylmd := ld) (hne_ebjedqqk := hneApp)
+      (hne_ttotnwna := hneLet) (he_jjavcari := hres) (he_yrjjshnd := hh) .. =>
+    injection hres with hpair
+    injection hpair with hhd hpair2
+    injection hpair2 with hargs
+    subst hhd hargs hh
+    obtain ⟨hfn, hargs⟩ := not_app_of_notLet hp ld hneApp hneLet
+    rw [hfn, hargs, List.nil_append]
+    exact ⟨hp, ⟨v, ld, hneLet⟩, hacc⟩
+termination_by cs.length
 
 /-- **`KernelCheck::collect_spine_zeta`** splits an expression into `(E.getAppFn, E.getAppArgs)`
 through any intervening `Let` nodes, leaving a `NotLet` head. -/
@@ -300,30 +351,38 @@ theorem collect_spine_zeta_spec {κ : _root_.Address → KKey} {h h' : Heap F}
   have sub : ∀ {cs' : List (Call F)}, (∀ c ∈ cs', c ∈ cs) → IxVM.Consistency.Bounded cs' :=
     fun hs => RomBound.bounded_mono bd hs
   match Obs.«KernelCheck::collect_spine_zeta».obs ev with
-  | .App (x_f := xf) (x_a := xa) (m_jqajpums := m1) (cs_vfqnrvid := cs1)
-      (x_head := xhd) (x_args := xargs) (v_artqopmv := vsnoc) (m_ivjtjdtv := m2)
-      (cs_ylwmksdk := cs2) (ld_bolbylmd := ld) (ev_gsaollmr := e1) (he_elcfuhxw := hres)
-      (ev_atvhnvai := e2) (he_yhlvgkyp := hh) (hc_xkhdrnsx := hc) .. =>
-    injection hres with hpair
-    injection hpair with hhd hpair2
-    injection hpair2 with hargs
-    subst hhd hargs hh
+  | .App (x_f := xf) (x_a := xa) (cs_kagrtcnv := cs1) (ld_bolbylmd := ld) (hm_kuahfmom := hm2)
+      (hm_ximulagv := hm1) (ev_bfwtwchv := e1) (hc_xkhdrnsx := hc) .. =>
+    subst hm1 hm2
     obtain ⟨Ef, Ea, rfl, hf, ha⟩ := TmOExact.app_of_load hp ld
-    have hlt : cs1.length < cs.length := by
-      rw [hc]; simp only [List.length_cons, List.length_append]; omega
-    obtain ⟨hfn, hnl, hlist⟩ := collect_spine_zeta_spec hf
+    have ext1 : Heap.Extends h
+        (h ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []]) :=
+      Heap.Extends.snoc _ _
+    have hnil : RepList kexprListEnum (TmOExact κ)
+        (h ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []]) []
+        (.ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») h.length) :=
+      .nil (by simp)
+    have ext2 : Heap.Extends
+        (h ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []])
+        ((h ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []]) ++
+          [.construct Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Cons"
+            [xa, .ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») h.length]]) :=
+      Heap.Extends.snoc _ _
+    have ext12 := ext1.trans ext2
+    have hcons : RepList kexprListEnum (TmOExact κ)
+        ((h ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []]) ++
+          [.construct Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Cons"
+            [xa, .ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») h.length]])
+        [Ea]
+        (.ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KExprNode>»)
+          (h ++ ([Value.construct Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []] : List (SourceValue F))).length) :=
+      .cons (by simp) (ha.mono ext12) (hnil.mono (tmOExact_heapMono₂ (κ := κ)) ext2)
+    obtain ⟨hfn, hnl, hlist⟩ := collect_spine_zeta_acc_spec (hf.mono ext12) hcons
       (sub fun c hc' => by rw [hc]; simp [hc']) e1
-    have hlist' : RepList (Instance.mk "Lists::Node" [.ptr (.named "KernelTypes::KExprNode" [])]).symbol
-        (TmOExact κ) m1 Ef.getAppArgs xargs := by
-      rwa [← kexprList_names]
-    rw [kexprSnoc_names] at e2
-    have hsnoc := Lib.Lists.snoc_spec (tmOExact_heapMono₂ (κ := κ)) e2 hlist'
-      (ha.mono e1.heap_extends)
-    rw [← kexprList_names] at hsnoc
     have hgetFn : (Expr.app Ef Ea).getAppFn = Ef.getAppFn := rfl
     have hgetArgs : (Expr.app Ef Ea).getAppArgs = Ef.getAppArgs ++ [Ea] := rfl
     rw [hgetFn, hgetArgs]
-    exact ⟨hfn.mono e2.heap_extends, hnl.mono e2.heap_extends, hsnoc⟩
+    exact ⟨hfn, hnl, hlist⟩
   | .Let (x_v := xv) (x_b := xb) (v_boczwtnf := v') (m_fhppzpwh := m')
       (cs_yqrxeseo := cs1) (cs_vizhzyfr := cs2) (ld_bolbylmd := ld)
       (ev_gemvpjgn := e1) (ev_tmtbszvp := e2) (hc_qubwlzze := hc) .. =>

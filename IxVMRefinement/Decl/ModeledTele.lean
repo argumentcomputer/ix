@@ -1259,22 +1259,30 @@ theorem collect_spine_exact {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat �
           ∃ hd sp H As, r = .tuple [hd, sp] ∧ TmExact κ d Γ h' k H hd ∧
             RepList kexprListEnum (fun h E p => TmExact κ d Γ h k E p) h' As sp ∧
             E = Expr.mkAppN H As)
-      (fun fname args h r h' cs ev ih hfn e k E hargs hE => by
+      (fun fname args h r h' cs ev _ hfn e k E hargs hE => by
         subst hfn hargs
-        match Obs.«KernelTypes::collect_spine».obs ev with
-        | .App (ld12 := ld) (ev43 := e1) (he69 := hr) (ev88 := e2) (he105 := he) (hc106 := hc) .. =>
-          subst hc hr he
-          obtain ⟨Ef, Ea, rfl, hf, ha⟩ := hE.app_of_load ld
-          obtain ⟨hd, sp, H, As, htup, hH, hAs, rfl⟩ :=
-            ih _ _ _ _ _ _ tele_lt_calls e1 rfl _ k Ef rfl hf
-          injection htup with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
-          exact ⟨_, _, H, As ++ [Ea], rfl, hH.mono e2.heap_extends,
-            SubstAux.ksnoc (R := fun h E p => TmExact κ d Γ h k E p)
-              (fun _ _ _ _ ext r => r.mono ext) e2 hAs (ha.mono e1.heap_extends),
-            (SubstAux.mkAppN_snoc As H Ea).symm⟩
-        | .other (he115 := hr) (hm132 := hm) (he136 := he) .. =>
-          subst hr hm he
-          exact ⟨e, _, E, [], rfl, hE.mono (Heap.Extends.snoc _ _), .nil (by simp), rfl⟩)
+        obtain ⟨hd, sp, ps, rfl, hch, -, hrep⟩ := Core.collect_spine_chain ev
+        have haux :
+            ∀ {e hd : SourceValue F} {ps : List (SourceValue F)},
+              Core.SpineChain h' e hd ps →
+              ∀ {E : KExpr}, TmExact κ d Γ h' k E e →
+                ∃ H As, TmExact κ d Γ h' k H hd ∧
+                  List.Forall₂ (fun X p => TmExact κ d Γ h' k X p) As ps ∧
+                  E = Expr.mkAppN H As := by
+          intro e hd ps sc
+          induction sc with
+          | head _ _ =>
+            intro E hE
+            exact ⟨E, [], hE, .nil, rfl⟩
+          | app ld _ ih =>
+            intro E hE
+            obtain ⟨Ef, Ea, rfl, hf, ha⟩ := hE.app_of_load ld
+            obtain ⟨H, As, hH, hAs, rfl⟩ := ih hf
+            exact ⟨H, As ++ [Ea], hH, Core.forall₂_append hAs (.cons ha .nil),
+              (SubstAux.mkAppN_snoc As H Ea).symm⟩
+        obtain ⟨H, As, hH, hAs, hmk⟩ :=
+          haux (hch.mono ev.heap_extends) (hE.mono ev.heap_extends)
+        exact ⟨hd, sp, H, As, rfl, hH, Core.repList_of_eq_forall₂ hrep hAs, hmk⟩)
   intro e r h h' cs k E ev hE
   exact hmain _ _ _ _ _ _ ev rfl e k E rfl hE
 

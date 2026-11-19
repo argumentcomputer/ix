@@ -302,7 +302,7 @@ def try_def_eq_nat := aiur_fn⟦
 ⟧
 
 def try_string_lit_pair := aiur_fn⟦
-  inline fn try_string_lit_pair(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
+  fn try_string_lit_pair(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
       match try_string_lit_one(rc, a, b, types) {
         1 => {  1 } ,
         _ => {  try_string_lit_one(rc, b, a, types) } ,
@@ -327,9 +327,37 @@ def try_string_lit_one := aiur_fn⟦
 
 def k_is_def_eq_slow := aiur_fn⟦
   fn k_is_def_eq_slow(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
-      match try_string_lit_pair(rc, a, b, types) {
-        1 => {  1 } ,
-        _ => {  k_is_def_eq_slow_nd(rc, a, b, types) } ,
+      let has_str = match (*(a)) {
+        KernelTypes::KExprNode::Lit(la) => {
+          match la {
+            KernelTypes::KLiteral::Str(_) => {  1 } ,
+            _ => {
+              match (*(b)) {
+                KernelTypes::KExprNode::Lit(lb) => {
+                  match lb {
+                    KernelTypes::KLiteral::Str(_) => {  1 } ,
+                    _ => {  0 } ,
+                  } } ,
+                _ => {  0 } ,
+              } } ,
+          } } ,
+        _ => {
+          match (*(b)) {
+            KernelTypes::KExprNode::Lit(lb) => {
+              match lb {
+                KernelTypes::KLiteral::Str(_) => {  1 } ,
+                _ => {  0 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+      };
+      match has_str {
+        0 => {  k_is_def_eq_slow_nd(rc, a, b, types) } ,
+        _ => {
+          match try_string_lit_pair(rc, a, b, types) {
+            1 => {  1 } ,
+            _ => {  k_is_def_eq_slow_nd(rc, a, b, types) } ,
+          } } ,
       }
     }
 ⟧

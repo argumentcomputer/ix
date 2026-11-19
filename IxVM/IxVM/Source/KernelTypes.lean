@@ -62,12 +62,21 @@ module KernelTypes {
 }
 ⟧
 
+def collect_spine_acc := aiur_fn⟦
+  fn collect_spine_acc(e: KExpr, acc: Lists::List<KExpr>) -> (KExpr, Lists::List<KExpr>) {
+      match (*(e)) {
+        KExprNode::App(f, a) => {
+          collect_spine_acc(f, (&(Lists::Node::Cons(a, acc)))) } ,
+        _ => {  (e, acc) } ,
+      }
+    }
+⟧
+
 def collect_spine := aiur_fn⟦
   fn collect_spine(e: KExpr) -> (KExpr, Lists::List<KExpr>) {
       match (*(e)) {
         KExprNode::App(f, a) => {
-          let (head, args) = collect_spine(f);
-          (head, Lists::snoc(args, a)) } ,
+          collect_spine_acc(f, (&(Lists::Node::Cons(a, (&(Lists::Node::Nil)))))) } ,
         _ => {  (e, (&(Lists::Node::Nil))) } ,
       }
     }

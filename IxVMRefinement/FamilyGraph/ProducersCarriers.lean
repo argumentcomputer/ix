@@ -1,3 +1,4 @@
+import IxVMRefinement.Core.SpineChain
 import IxVMRefinement.FamilyGraph.ProducersGraph
 import IxVMRefinement.Assembly.NativeFormerLength
 import IxVMRefinement.Assembly.ProjSafe
@@ -640,39 +641,34 @@ theorem collect_spine_raw_aux {c : Ixon.Constant} {recurAddrs : List _root_.Addr
           L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h' b'
             (Binding.FamilyOf.spineHead c n e) hd ∧
           (∀ i, Binding.FamilyOf.spineHead c n e ≠ .share i)
-  | 0, bound, e, kp, hd, sp, h, h', cs, hlen, raw, ev => by
-    match Obs.«KernelTypes::collect_spine».obs ev with
-    | .App (hc106 := hc) .. => simp [hc] at hlen
-    | .other (he115 := hr) (hm132 := hm) (he136 := hh) .. =>
-      simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hr
-      obtain ⟨rfl, -⟩ := hr
-      have ext : Heap.Extends h h' := by rw [hh, hm]; exact Heap.Extends.snoc h _
-      obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
-      exact ⟨ext, .refl _, 0, b', raw'.mono ext (fun _ hm => hm), hns⟩
-  | m + 1, bound, e, kp, hd, sp, h, h', cs, hlen, raw, ev => by
-    match Obs.«KernelTypes::collect_spine».obs ev with
-    | .App (m31 := m31) (cs41 := cs41) (ld12 := ld12) (ev43 := ev43) (he69 := hr) (ev88 := ev88)
-        (he105 := hh) (hc106 := hc) .. =>
-      simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hr
-      obtain ⟨rfl, -⟩ := hr
-      have hlen' : cs41.length ≤ m := by
-        rw [hc] at hlen
-        simp only [List.length_cons, List.length_append] at hlen
-        omega
-      obtain ⟨b₁, ef, ea, hnd, raw_f, -⟩ := rawConvExpr_app_inv raw ld12
-      obtain ⟨ext1, hsub, n, b₂, raw', hns⟩ := collect_spine_raw_aux m hlen' raw_f ev43
-      have ext2 : Heap.Extends m31 h' := by rw [hh]; exact ev88.heap_extends
-      refine ⟨ext1.trans ext2, .appFn ld12 hsub, n + 1, b₂, ?_, ?_⟩
-      · simp only [Binding.FamilyOf.spineHead, hnd]
-        exact raw'.mono ext2 (fun _ hm => hm)
-      · simp only [Binding.FamilyOf.spineHead, hnd]
-        exact hns
-    | .other (he115 := hr) (hm132 := hm) (he136 := hh) .. =>
-      simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hr
-      obtain ⟨rfl, -⟩ := hr
-      have ext : Heap.Extends h h' := by rw [hh, hm]; exact Heap.Extends.snoc h _
-      obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
-      exact ⟨ext, .refl _, 0, b', raw'.mono ext (fun _ hm => hm), hns⟩
+  | _, bound, e, kp, hd, sp, h, h', cs, _, raw, ev => by
+    obtain ⟨ps, hch, -, -⟩ := Core.collect_spine_chain_tup ev
+    have ext : Heap.Extends h h' := ev.heap_extends
+    have haux :
+        ∀ {kp hd' : SourceValue F} {ps : List (SourceValue F)},
+          Core.SpineChain h kp hd' ps →
+          ∀ {bound : Nat} {e : Ixon.Expr},
+            L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
+            KExprSub h kp hd' ∧
+              ∃ n b',
+                L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b'
+                  (Binding.FamilyOf.spineHead c n e) hd' ∧
+                (∀ i, Binding.FamilyOf.spineHead c n e ≠ .share i) := by
+      intro kp hd' ps sc
+      induction sc with
+      | head _ _ =>
+        intro bound e raw
+        obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
+        exact ⟨.refl _, 0, b', raw', hns⟩
+      | app ld _ ih =>
+        intro bound e raw
+        obtain ⟨b₁, ef, ea, hnd, raw_f, -⟩ := rawConvExpr_app_inv raw ld
+        obtain ⟨hsub, n, b₂, raw', hns⟩ := ih raw_f
+        refine ⟨.appFn ld hsub, n + 1, b₂, ?_, ?_⟩
+        · simp only [Binding.FamilyOf.spineHead, hnd]; exact raw'
+        · simp only [Binding.FamilyOf.spineHead, hnd]; exact hns
+    obtain ⟨hsub, n, b', raw', hns⟩ := haux hch raw
+    exact ⟨ext, hsub, n, b', raw'.mono ext (fun _ hm => hm), hns⟩
 
 theorem node_of_not_share {c : Ixon.Constant} {e : Ixon.Expr}
     (hns : ∀ i, e ≠ .share i) : Binding.FamilyOf.node c e = e := by

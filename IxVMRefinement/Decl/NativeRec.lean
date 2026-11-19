@@ -4900,38 +4900,49 @@ theorem collect_spine_rawTm_spec {κ : _root_.Address → KKey} {d : Nat} {Γ : 
       R = Expr.mkAppN Rh Ras ∧
       E = Expr.mkAppN Eh Eas ∧
       (∀ f a, Rh ≠ .app f a) := by
-  induction R generalizing E pe r h' cs with
-  | app Rf Ra ihf _ =>
-    match Obs.«KernelTypes::collect_spine».obs ev with
-    | .App (ld12 := ld) (ev43 := e1) (he69 := hr) (ev88 := e2) (he105 := hh) (hc106 := hc) .. =>
-      subst hc hr hh
+  obtain ⟨hd, sp, ps, rfl, hch, -, hrep⟩ := Core.collect_spine_chain ev
+  have haux :
+      ∀ {e hd : SourceValue F} {ps : List (SourceValue F)},
+        Core.SpineChain h' e hd ps →
+        ∀ {R E : KExpr}, RawTm κ d Γ h' k R E e →
+          ∃ (Rh Eh : KExpr) (Ras Eas : List KExpr),
+            RawTm κ d Γ h' k Rh Eh hd ∧
+            List.Forall₂ (fun X p => Tm κ d Γ h' k X p) Eas ps ∧
+            Ras.length = Eas.length ∧
+            R = Expr.mkAppN Rh Ras ∧
+            E = Expr.mkAppN Eh Eas ∧
+            (∀ f a, Rh ≠ .app f a) := by
+    intro e hd ps sc
+    induction sc with
+    | head ld hne =>
+      intro R E hRE
+      have hna : ∀ f a, R ≠ .app f a := by
+        intro f a hEq
+        subst hEq
+        cases hRE with
+        | app cell _ _ =>
+          rw [loadValue_enum_cell cell] at ld
+          injection ld with hv
+          exact hne [_, _] rfl hv.symm
+      exact ⟨R, E, [], [], hRE, .nil, rfl, rfl, rfl, hna⟩
+    | app ld _ ih =>
+      intro R E hRE
       cases hRE with
       | app cell rf ra =>
         obtain ⟨-, hxs⟩ := load_cell cell ld
         injection hxs with h1 hxs; injection hxs with h2; subst h1 h2
-        obtain ⟨hd, sp, Rh, Eh, Ras, Eas, htup, hH, hAs, hlen, hR, hE, hnot_app⟩ := ihf rf e1
-        injection htup with hl; injection hl with h1 hl; injection hl with h2
-        subst h1 h2
-        exact ⟨_, _, Rh, Eh, Ras ++ [_], Eas ++ [_], rfl, hH.mono e2.heap_extends,
-          SubstAux.ksnoc (R := fun h E p => Tm κ d Γ h k E p)
-            (fun _ _ _ _ ext r => Tm.mono ext r) e2 hAs (ra.toTm.mono e1.heap_extends),
-          by simp [hlen], by rw [hR]; exact (mkAppN_snoc Ras Rh _).symm,
-          by rw [hE]; exact (mkAppN_snoc Eas Eh _).symm, hnot_app⟩
-    | .other (ld12 := ld) (hne107 := hne) .. =>
-      cases hRE with
-      | app cell _ _ =>
-        rw [loadValue_enum_cell cell] at ld
-        injection ld with hv
-        exact (hne [_, _] rfl hv.symm).elim
-  | bvar _ | fvar _ _ | sort _ | const _ _ | lam _ _ _ | forallE _ _ _
-  | letE _ _ _ _ | lit _ | proj _ _ _ =>
-    match Obs.«KernelTypes::collect_spine».obs ev with
-    | .App (ld12 := ld) .. =>
-      exact (rawTm_not_app_load_ne hRE (fun _ _ h => nomatch h) ld).elim
-    | .other (he115 := hr) (hm132 := hm) (he136 := hh) .. =>
-      subst hr hm hh
-      exact ⟨pe, _, _, E, [], [], rfl, hRE.mono (Heap.Extends.snoc _ _), .nil (by simp),
-        rfl, rfl, rfl, fun _ _ h => nomatch h⟩
+        obtain ⟨Rh, Eh, Ras, Eas, hH, hAs, hlen, hR, hE, hna⟩ := ih rf
+        exact ⟨Rh, Eh, Ras ++ [_], Eas ++ [_], hH,
+          Core.forall₂_append hAs (.cons ra.toTm .nil), by simp [hlen],
+          by rw [hR]; exact (mkAppN_snoc Ras Rh _).symm,
+          by rw [hE]; exact (mkAppN_snoc Eas Eh _).symm, hna⟩
+      | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ | const cell _ _
+      | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _
+      | litStr cell _ _ | proj cell _ _ =>
+        exact (load_cell_ne cell ld (by decide)).elim
+  obtain ⟨Rh, Eh, Ras, Eas, hH, hAs, hlen, hR, hE, hna⟩ :=
+    haux (hch.mono ev.heap_extends) (hRE.mono ev.heap_extends)
+  exact ⟨hd, sp, Rh, Eh, Ras, Eas, rfl, hH, Core.repList_of_eq_forall₂ hrep hAs, hlen, hR, hE, hna⟩
 
 theorem mkAppN_const_inj {T₁ T₂ : KKey} {us₁ us₂ : List KLevel} {as₁ as₂ : List KExpr}
     (h : Expr.mkAppN (.const T₁ us₁) as₁ = Expr.mkAppN (.const T₂ us₂) as₂) :

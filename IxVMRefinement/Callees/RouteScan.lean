@@ -657,41 +657,40 @@ theorem collect_spine_tree :
     have := T.size_pos
     omega
   | succ n ih =>
-    intro T e r h h' cs hn ht ev
-    match Obs.«KernelTypes::collect_spine».obs ev with
-    | .App (ld12 := ld) (ev43 := e1) (he69 := hr) (ev88 := e2) (he105 := he) .. =>
-      subst hr he
-      obtain ⟨Tf, Tx, rfl, hf, hx⟩ := ht.app_inv ld
-      simp only [ScanTree.size] at hn
-      obtain ⟨hd, sp, htup, hH, hAs⟩ := ih (by omega) hf e1
-      injection htup with hl
-      injection hl with h1 hl
-      injection hl with h2
-      subst h1 h2
-      refine ⟨_, _, rfl, ?_, ?_⟩
-      · simp only [ScanTree.head]
-        exact hH.mono e2.heap_extends
-      · simp only [ScanTree.args]
-        exact SubstAux.ksnoc treeAt_heapMono₂ e2 hAs (hx.mono e1.heap_extends)
-    | .other (v1 := v1) (ld12 := ld) (hne107 := hne) (he115 := hr) (hm132 := hm)
-        (he136 := he) .. =>
-      subst hr hm he
-      have hna : T.head = T ∧ T.args = [] := by
-        cases ht with
-        | app hl _ _ =>
-          rw [hl] at ld
-          injection ld with hv
-          exact (hne [_, _] rfl hv.symm).elim
-        | bvar _ => exact ⟨rfl, rfl⟩
-        | srt _ => exact ⟨rfl, rfl⟩
-        | lit _ => exact ⟨rfl, rfl⟩
-        | const _ _ => exact ⟨rfl, rfl⟩
-        | lam _ _ _ => exact ⟨rfl, rfl⟩
-        | all _ _ _ => exact ⟨rfl, rfl⟩
-        | letE _ _ _ _ => exact ⟨rfl, rfl⟩
-        | proj _ _ => exact ⟨rfl, rfl⟩
-      rw [hna.1, hna.2]
-      exact ⟨e, _, rfl, ht.mono (Heap.Extends.snoc _ _), .nil (by simp)⟩
+    intro T e r h h' cs _ ht ev
+    obtain ⟨hd, sp, ps, rfl, hch, -, hrep⟩ := Core.collect_spine_chain ev
+    have haux :
+        ∀ {e hd : SourceValue F} {ps : List (SourceValue F)},
+          Core.SpineChain h' e hd ps →
+          ∀ {T : ScanTree}, TreeAt h' e T →
+            TreeAt h' hd T.head ∧ List.Forall₂ (fun X p => TreeAt h' p X) T.args ps := by
+      intro e hd ps sc
+      induction sc with
+      | head ld hne =>
+        intro T ht'
+        have hna : T.head = T ∧ T.args = [] := by
+          cases ht' with
+          | app hl _ _ =>
+            rw [hl] at ld
+            injection ld with hv
+            exact (hne [_, _] rfl hv.symm).elim
+          | bvar _ => exact ⟨rfl, rfl⟩
+          | srt _ => exact ⟨rfl, rfl⟩
+          | lit _ => exact ⟨rfl, rfl⟩
+          | const _ _ => exact ⟨rfl, rfl⟩
+          | lam _ _ _ => exact ⟨rfl, rfl⟩
+          | all _ _ _ => exact ⟨rfl, rfl⟩
+          | letE _ _ _ _ => exact ⟨rfl, rfl⟩
+          | proj _ _ => exact ⟨rfl, rfl⟩
+        rw [hna.1, hna.2]
+        exact ⟨ht', .nil⟩
+      | app ld _ ih =>
+        intro T ht'
+        obtain ⟨Tf, Tx, rfl, hf, hx⟩ := ht'.app_inv ld
+        obtain ⟨hH, hAs⟩ := ih hf
+        exact ⟨hH, Core.forall₂_append hAs (.cons hx .nil)⟩
+    obtain ⟨hH, hAs⟩ := haux (hch.mono ev.heap_extends) (ht.mono ev.heap_extends)
+    exact ⟨hd, sp, rfl, hH, Core.repList_of_eq_forall₂ hrep hAs⟩
 
 /-- **`peel_n_foralls` on a term of a given shape**: the term after `n` leading `∀` nodes. -/
 theorem peel_n_foralls_tree :

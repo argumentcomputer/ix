@@ -1,5 +1,5 @@
 import IxVMRefinement.Binding.FamilyReconCanon
-import IxVMRefinement.Obs.KernelTypes0
+import IxVMRefinement.Core.SpineChain
 import IxVMRefinement.Obs.KernelCheck0
 import IxVMRefinement.Obs.KernelCheck1
 import IxVMRefinement.Obs.KernelCheck2
@@ -745,38 +745,34 @@ theorem collect_spine_tmOExact {κ : _root_.Address → KKey} {E : KExpr}
       Ix.Kernel.Expr.mkAppN hd args = E ∧
       (∀ v, loadValue h' xhd = .ok v → ∀ vs, vs.length = 2 →
         v ≠ .construct kexprEnum "App" vs) := by
-  match Obs.«KernelTypes::collect_spine».obs ev with
-  | .App (x_f := xf) (x_a := xa) (m31 := m1) (cs41 := cs1) (x_head := xhd) (x_args := xargs)
-      (v68 := vargs) (m78 := m2) (ld12 := ld) (ev43 := evf) (he69 := hr)
-      (ev88 := evsn) (he105 := hh) (hc106 := hc) .. =>
-    subst hr hh
-    obtain ⟨Ef, Ea, rfl, hEf, hEa⟩ := TmOExact.app_of_load hE ld
-    have hlt : cs1.length < cs.length := by
-      rw [hc]; simp only [List.length_cons, List.length_append]; omega
-    obtain ⟨xhd', xargs', hd, args, htup, hhd, hargs, hmk, hnotapp⟩ :=
-      collect_spine_tmOExact evf hEf
-    injection htup with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
-    have hsn := kexpr_snoc_spec evsn hargs (hEa.mono evf.heap_extends)
-    refine ⟨xhd, vargs, hd, args ++ [Ea], rfl, hhd.mono evsn.heap_extends, hsn, ?_, ?_⟩
-    · rw [mkAppN_snoc, hmk]
-    · intro v hlv vs hlen hcon
-      obtain ⟨v0, hlv0⟩ := loadValue_of_tmOExact hhd
-      have hsame := (loadValue_mono evsn.heap_extends hlv0).symm.trans hlv
-      injection hsame with hv; subst hv
-      exact hnotapp v0 hlv0 vs hlen hcon
-  | .other (v1 := v1) (ld12 := ld) (hne107 := hne) (he115 := hr) (hm132 := hm)
-      (he136 := hh) .. =>
-    subst hr hm hh
-    have ext : Heap.Extends h (h ++ [.construct kexprListEnum "Nil" []]) := Heap.Extends.snoc _ _
-    have hnil : RepList kexprListEnum (TmOExact κ)
-        (h ++ [.construct kexprListEnum "Nil" []]) [] (.ptr (.enum kexprListEnum) h.length) :=
-      Lib.rep_store_nil h
-    refine ⟨xe, .ptr (.enum kexprListEnum) h.length, E, [], rfl, hE.mono ext, hnil, rfl, ?_⟩
-    intro v hlv vs hlen hcon
-    have hsame := (loadValue_mono ext ld).symm.trans hlv
-    injection hsame with hv; subst hv
-    exact hne vs hlen hcon
-termination_by cs.length
+  obtain ⟨xhd, xargs, ps, rfl, hch, -, hrep⟩ := Core.collect_spine_chain ev
+  have hch' := hch.mono ev.heap_extends
+  have haux :
+      ∀ {xe xhd' : SourceValue F} {ps : List (SourceValue F)},
+        Core.SpineChain h' xe xhd' ps →
+        ∀ {E : KExpr}, TmOExact κ h' E xe →
+          ∃ (hd : KExpr) (args : List KExpr),
+            TmOExact κ h' hd xhd' ∧
+            List.Forall₂ (fun X p => TmOExact κ h' X p) args ps ∧
+            Ix.Kernel.Expr.mkAppN hd args = E := by
+    intro xe xhd' ps sc
+    induction sc with
+    | head _ _ =>
+      intro E hE'
+      exact ⟨E, [], hE', .nil, rfl⟩
+    | app ld _ ih =>
+      intro E hE'
+      obtain ⟨Ef, Ea, rfl, hEf, hEa⟩ := TmOExact.app_of_load hE' ld
+      obtain ⟨hd, args, hhd, hargs, hmk⟩ := ih hEf
+      refine ⟨hd, args ++ [Ea], hhd, Core.forall₂_append hargs (.cons hEa .nil), ?_⟩
+      rw [mkAppN_snoc, hmk]
+  obtain ⟨hd, args, hhd, hargs, hmk⟩ := haux hch' (hE.mono ev.heap_extends)
+  obtain ⟨v0, hlv0, hne0⟩ := hch'.head_load
+  refine ⟨xhd, xargs, hd, args, rfl, hhd, Core.repList_of_eq_forall₂ hrep hargs, hmk, ?_⟩
+  intro v hlv vs hlen hcon
+  have hsame := hlv0.symm.trans hlv
+  injection hsame with hv; subst hv
+  exact hne0 vs hlen hcon
 
 /-- `KernelTypes::collect_spine` produces the exact same head pointer across heap extensions. -/
 theorem collect_spine_det_head {xe xhd₁ xargs₁ xhd₂ xargs₂ : SourceValue F}
@@ -784,30 +780,9 @@ theorem collect_spine_det_head {xe xhd₁ xargs₁ xhd₂ xargs₂ : SourceValue
     (ev₁ : ObsFn W "KernelTypes::collect_spine" [xe] h₁ (.tuple [xhd₁, xargs₁]) h₁' cs₁)
     (ev₂ : ObsFn W "KernelTypes::collect_spine" [xe] h₂ (.tuple [xhd₂, xargs₂]) h₂' cs₂) :
     xhd₁ = xhd₂ := by
-  match Obs.«KernelTypes::collect_spine».obs ev₁, Obs.«KernelTypes::collect_spine».obs ev₂ with
-  | .App (x_f := xf1) (cs41 := cs1') (x_head := xh1) (ld12 := ld1) (ev43 := e1) (he69 := hr1)
-      (hc106 := hc1) ..,
-    .App (x_f := xf2) (x_head := xh2) (ld12 := ld2) (ev43 := e2) (he69 := hr2) .. =>
-    have hld := (loadValue_mono ext ld1).symm.trans ld2
-    injection hld with hc; injection hc with _ _ hl; injection hl with hxf _; subst hxf
-    injection hr1 with hl1; injection hl1 with hh1 _; subst hh1
-    injection hr2 with hl2; injection hl2 with hh2 _; subst hh2
-    have hlt : cs1'.length < cs₁.length := by
-      rw [hc1]; simp only [List.length_cons, List.length_append]; omega
-    exact collect_spine_det_head ext e1 e2
-  | .App (ld12 := ld1) .., .other (ld12 := ld2) (hne107 := hne) .. =>
-    have hld := (loadValue_mono ext ld1).symm.trans ld2
-    injection hld with hv
-    exact (hne _ rfl hv.symm).elim
-  | .other (ld12 := ld1) (hne107 := hne) .., .App (ld12 := ld2) .. =>
-    have hld := (loadValue_mono ext ld1).symm.trans ld2
-    injection hld with hv
-    exact (hne _ rfl hv).elim
-  | .other (he115 := hr1) .., .other (he115 := hr2) .. =>
-    injection hr1 with hl1; injection hl1 with hh1 _; subst hh1
-    injection hr2 with hl2; injection hl2 with hh2 _; subst hh2
-    rfl
-termination_by cs₁.length
+  obtain ⟨_, hch₁, -, -⟩ := Core.collect_spine_chain_tup ev₁
+  obtain ⟨_, hch₂, -, -⟩ := Core.collect_spine_chain_tup ev₂
+  exact (hch₁.det ext hch₂).1
 
 theorem getAppFn_mkAppN_const (k : KKey) (us : List KLevel) :
     ∀ (args : List KExpr), (Ix.Kernel.Expr.mkAppN (.const k us) args).getAppFn = .const k us

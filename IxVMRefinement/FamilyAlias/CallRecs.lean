@@ -1288,43 +1288,23 @@ private theorem addrIn_collect_spine {h0 : Heap F} {e0 : SourceValue F} :
       (KExprClosed h₁ p ∧ ∀ a, AddrIn h₁ p a → AddrIn h0 e0 a) →
       (KExprClosed h₂ p ∧ ∀ a, AddrIn h₂ p a → AddrIn h0 e0 a) :=
     fun ext ⟨hc, hs⟩ => ⟨hc.mono ext, fun a ha => hs a (hc.addrIn_back ext a ha)⟩
-  have hmain : ∀ fname args h r h' cs, ObsFn Obs.W fname args h r h' cs →
-      fname = "KernelTypes::collect_spine" →
-      ∀ e hd x_args, args = [e] → r = .tuple [hd, x_args] →
-        KExprClosed h e → (∀ a, AddrIn h e a → AddrIn h0 e0 a) →
-        ∃ xs : List (SourceValue F),
-          RepList kexprListEnum
-            (fun h _ p => KExprClosed h p ∧ ∀ a, AddrIn h p a → AddrIn h0 e0 a) h' xs x_args :=
-    ObsFn.strong_induction (world := Obs.W)
-      (fun fname args h r h' _ => fname = "KernelTypes::collect_spine" →
-        ∀ e hd x_args, args = [e] → r = .tuple [hd, x_args] →
-          KExprClosed h e → (∀ a, AddrIn h e a → AddrIn h0 e0 a) →
-          ∃ xs : List (SourceValue F),
-            RepList kexprListEnum
-              (fun h _ p => KExprClosed h p ∧ ∀ a, AddrIn h p a → AddrIn h0 e0 a) h' xs x_args)
-      (fun fname args h r h' cs ev ih hfn e hd x_args hargs hr hc hsub => by
-        subst hfn hargs hr
-        match Obs.«KernelTypes::collect_spine».obs ev with
-        | .other (he115 := hr) (hm132 := hm) (he136 := hh) .. =>
-          subst hh hm
-          injection hr with hl; injection hl with _ hl; injection hl with h2 _; subst h2
-          exact ⟨[], .nil (by simp)⟩
-        | .App (x_f := xf) (x_a := xa) (m31 := m1) (cs41 := cs1) (x_head := xh)
-            (x_args := xas) (v68 := v68) (ld12 := ld) (ev43 := evRec) (he69 := hr)
-            (ev88 := evSnoc) (he105 := hh) (hc106 := hc106) .. =>
-          subst hh
-          injection hr with hl; injection hl with _ hl; injection hl with h2 _; subst h2
-          obtain ⟨idx, rfl, hget, hcf, hca⟩ := hc.load_app ld
-          have hlt : cs1.length < cs.length := by
-            rw [hc106]; simp only [List.length_cons, List.length_append]; omega
-          obtain ⟨xs, hxs⟩ := ih _ _ _ _ _ _ hlt evRec rfl xf xh xas rfl rfl hcf
-            (fun a ha => hsub a (.appFn hget ha))
-          have hxa_m1 := hmono evRec.heap_extends ⟨hca, fun a ha => hsub a (.appArg hget ha)⟩
-          exact ⟨xs ++ [xa],
-            addrIn_snoc_list (R := fun h p => KExprClosed h p ∧ ∀ a, AddrIn h p a → AddrIn h0 e0 a)
-              (fun ext r => hmono ext r) evSnoc hxs hxa_m1⟩)
   intro e hd args h h' cs ev hc hsub
-  exact hmain _ _ _ _ _ _ ev rfl e hd args rfl rfl hc hsub
+  obtain ⟨ps, hch, -, hrep⟩ := Core.collect_spine_chain_tup ev
+  have haux :
+      ∀ {e hd' : SourceValue F} {ps : List (SourceValue F)},
+        Core.SpineChain h e hd' ps →
+        KExprClosed h e →
+        (∀ a, AddrIn h e a → AddrIn h0 e0 a) →
+        List.Forall₂ (fun _ p => KExprClosed h' p ∧ ∀ a, AddrIn h' p a → AddrIn h0 e0 a) ps ps := by
+    intro e hd' ps sc
+    induction sc with
+    | head _ _ => intro _ _; exact .nil
+    | app ld _ ih =>
+      intro hc hsub
+      obtain ⟨idx, rfl, hget, hcf, hca⟩ := hc.load_app ld
+      exact Core.forall₂_append (ih hcf (fun a ha => hsub a (.appFn hget ha)))
+        (.cons (hmono ev.heap_extends ⟨hca, fun a ha => hsub a (.appArg hget ha)⟩) .nil)
+  exact ⟨ps, Core.repList_of_eq_forall₂ hrep (haux hch hc hsub)⟩
 
 private theorem addrIn_lower_pins {h0 : Heap F} {e0 : SourceValue F} :
     ∀ (xs : List (SourceValue F)) {ps_ptr ni r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},

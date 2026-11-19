@@ -1558,16 +1558,11 @@ private theorem collect_spine_head_valid :
     (fun fname args h r h' cs => fname = "KernelTypes::collect_spine" →
       ∀ xe xhd xargs, args = [xe] → r = .tuple [xhd, xargs] →
         ∃ v, loadValue h xhd = .ok v ∧ ∀ f a, v ≠ .construct kexprEnum "App" [f, a])
-    (fun fname args h r h' cs ev ih hnm xe xhd xargs hargs hr => by
+    (fun fname args h r h' cs ev _ hnm xe xhd xargs hargs hr => by
       subst hnm hargs hr
-      match Obs.«KernelTypes::collect_spine».obs ev with
-      | .App (x_f := xf) (x_head := xhd') (x_args := xargs') (ev43 := evrec) (he69 := hr0)
-          (hc106 := hc) .. =>
-        injection hr0 with hl; injection hl with h1 _; subst h1
-        exact ih _ _ _ _ _ _ (by rw [hc]; simp) evrec rfl xf xhd xargs' rfl rfl
-      | .other (v1 := v1) (ld12 := ld) (hne107 := hne) (he115 := hr0) .. =>
-        injection hr0 with hl; injection hl with h1 _; subst h1
-        exact ⟨v1, ld, fun f a he => hne [f, a] rfl he⟩)
+      obtain ⟨_, hch, -, -⟩ := Core.collect_spine_chain_tup ev
+      obtain ⟨v, ld, hne⟩ := hch.head_load
+      exact ⟨v, ld, fun f a he => hne [f, a] rfl he⟩)
 
 private theorem collect_spine_heapAppBVar :
     ∀ (fname : String) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
@@ -1581,25 +1576,23 @@ private theorem collect_spine_heapAppBVar :
       ∀ xe xhd xargs idx, args = [xe] → r = .tuple [xhd, xargs] →
         loadValue h' xhd = .ok (.construct kexprEnum "BVar" [.field idx]) →
         HeapAppBVar h xe idx)
-    (fun fname args h r h' cs ev ih hnm xe xhd xargs idx hargs hr ldb => by
+    (fun fname args h r h' cs ev _ hnm xe xhd xargs idx hargs hr ldb => by
       subst hnm hargs hr
-      match Obs.«KernelTypes::collect_spine».obs ev with
-      | .App (x_f := xf) (x_head := xhd') (x_args := xargs') (ld12 := ld)
-          (ev43 := evrec) (he69 := hr0) (ev88 := evsn) (he105 := hh0) (hc106 := hc) .. =>
-        subst hh0
-        injection hr0 with hl; injection hl with h1 _; subst h1
-        obtain ⟨v, ldv, -⟩ := collect_spine_head_valid _ _ _ _ _ _ evrec rfl xf xhd xargs' rfl rfl
-        have hld_m := loadValue_mono (evrec.heap_extends.trans evsn.heap_extends) ldv
-        rw [hld_m] at ldb; injection ldb with hv; subst hv
-        exact .app ld (ih _ _ _ _ _ _ (by rw [hc]; simp) evrec rfl xf xhd xargs' idx rfl rfl
-          (loadValue_mono evrec.heap_extends ldv))
-      | .other (v1 := v1) (ld12 := ld) (he115 := hr0) (hm132 := hm) (he136 := hh0) .. =>
-        subst hh0
-        injection hr0 with hl; injection hl with h1 _; subst h1
-        have ext_sn : Heap.Extends h h' := by rw [hm]; exact Heap.Extends.snoc _ _
-        have hld_m := loadValue_mono ext_sn ld
-        rw [hld_m] at ldb; injection ldb with hv; subst hv
-        exact .bvar ld)
+      obtain ⟨ps, hch, -, -⟩ := Core.collect_spine_chain_tup ev
+      have haux :
+          ∀ {xe xhd' : SourceValue F} {ps : List (SourceValue F)},
+            Core.SpineChain h xe xhd' ps →
+            loadValue h' xhd' = .ok (.construct kexprEnum "BVar" [.field idx]) →
+            HeapAppBVar h xe idx := by
+        intro xe xhd' ps sc
+        induction sc with
+        | head ld _ =>
+          intro ldb'
+          have hld_m := loadValue_mono ev.heap_extends ld
+          rw [hld_m] at ldb'; injection ldb' with hv; subst hv
+          exact .bvar ld
+        | app ld _ ih => intro ldb'; exact .app ld (ih ldb')
+      exact haux hch ldb)
 
 private theorem evalBinOp_sub_eq_zero_field {a b : F}
     (op : evalBinOp .sub (.field a : SourceValue F) (.field b) = .ok (.field 0)) : a = b := by
@@ -1782,30 +1775,37 @@ private theorem collect_spine_rawConvExpr {c : Ixon.Constant}
           loadValue h_fin xh = .ok (.construct kexprEnum "Const" [xc, xus]) →
           ∃ da : Bytes.Address, Bytes.RepAddressRef addrTy h_fin da xc ∧
             (ixAddr da ∉ recurAddrs → ∃ fuel, FamilyOf.refHeadAt c fuel e = some (ixAddr da)))
-    (fun fname args h r h' cs ev ih hnm p xh xargs hargs hr {h_fin bound e xc xus} ext_fin raw ldc => by
+    (fun fname args h r h' cs ev _ hnm p xh xargs hargs hr {h_fin bound e xc xus} ext_fin raw ldc => by
       subst hnm hargs hr
-      match Obs.«KernelTypes::collect_spine».obs ev with
-      | .App (x_f := xf) (x_head := xhead) (x_args := xargs') (m31 := m31) (cs41 := cs41)
-          (ld12 := ld12) (ev43 := ev43) (he69 := he69) (ev88 := ev88) (he105 := he105)
-          (hc106 := hc) .. =>
-        injection he69 with hxs; injection hxs with hxh _; subst hxh he105
-        obtain ⟨b', ef, ea, hnd, raw_f, -⟩ := rawConvExpr_app_inv_wrap raw ld12
-        obtain ⟨da, rda, href⟩ := ih _ _ _ _ _ _
-          (by rw [hc]; simp only [List.length_cons, List.length_append]; omega)
-          ev43 rfl xf xh xargs' rfl rfl (ev88.heap_extends.trans ext_fin) raw_f ldc
-        refine ⟨da, rda, fun hnr => ?_⟩
-        obtain ⟨fuel, hf⟩ := href hnr
-        exact ⟨fuel + 1, by simp only [FamilyOf.refHeadAt, FamilyOf.spineHead, hnd]; exact hf⟩
-      | .other (he115 := he115) (hm132 := hm132) (he136 := he136) .. =>
-        injection he115 with hxs; injection hxs with hxh _; subst hxh he136 hm132
-        have ext_h := (Heap.Extends.snoc h (.construct kexprListEnum "Nil" [])).trans ext_fin
-        rcases rawConvExpr_const_inv_any_wrap (raw.mono ext_h (fun _ hp => hp)) ldc with
-          ⟨rIdx, uIdxs, a', da, hnd, href, hda, rda⟩ |
-          ⟨recIdx, uIdxs, a', da, hnd, hrec, hda, rda⟩
-        · subst hda
-          exact ⟨da, rda, fun _ => ⟨0, by simp [FamilyOf.refHeadAt, FamilyOf.spineHead, hnd, href]⟩⟩
-        · subst hda
-          exact ⟨da, rda, fun hnr => absurd (List.mem_of_getElem? hrec) hnr⟩)
+      obtain ⟨ps, hch, -, -⟩ := Core.collect_spine_chain_tup ev
+      have ext_h := ev.heap_extends.trans ext_fin
+      have haux :
+          ∀ {p xh' : SourceValue F} {ps : List (SourceValue F)},
+            Core.SpineChain h p xh' ps →
+            loadValue h_fin xh' = .ok (.construct kexprEnum "Const" [xc, xus]) →
+            ∀ {bound : Nat} {e : Ixon.Expr},
+              L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e p →
+              ∃ da : Bytes.Address, Bytes.RepAddressRef addrTy h_fin da xc ∧
+                (ixAddr da ∉ recurAddrs → ∃ fuel, FamilyOf.refHeadAt c fuel e = some (ixAddr da)) := by
+        intro p xh' ps sc
+        induction sc with
+        | head _ _ =>
+          intro ldc' bound e raw
+          rcases rawConvExpr_const_inv_any_wrap (raw.mono ext_h (fun _ hp => hp)) ldc' with
+            ⟨rIdx, uIdxs, a', da, hnd, href, hda, rda⟩ |
+            ⟨recIdx, uIdxs, a', da, hnd, hrec, hda, rda⟩
+          · subst hda
+            exact ⟨da, rda, fun _ => ⟨0, by simp [FamilyOf.refHeadAt, FamilyOf.spineHead, hnd, href]⟩⟩
+          · subst hda
+            exact ⟨da, rda, fun hnr => absurd (List.mem_of_getElem? hrec) hnr⟩
+        | app ld12 _ ih =>
+          intro ldc' bound e raw
+          obtain ⟨b', ef, ea, hnd, raw_f, -⟩ := rawConvExpr_app_inv_wrap raw ld12
+          obtain ⟨da, rda, href⟩ := ih ldc' raw_f
+          refine ⟨da, rda, fun hnr => ?_⟩
+          obtain ⟨fuel, hf⟩ := href hnr
+          exact ⟨fuel + 1, by simp only [FamilyOf.refHeadAt, FamilyOf.spineHead, hnd]; exact hf⟩
+      exact haux hch ldc raw)
 
 private theorem rawConvExpr_peel_of_heapForalls {c : Ixon.Constant}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)} {h : Heap F} :
