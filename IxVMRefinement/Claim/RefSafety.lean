@@ -209,8 +209,9 @@ theorem assert_safe_used_refs_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       (∀ cl ∈ cs, cl ∈ calls) →
       ∀ j, (hj : j < refs.length) → i + j ∈ idxs →
         ¬ CoveredAt t lim refs[j] → SourceSafe E₀ refs[j] :=
-  fun i hb hrc hr hi ev hsub j hj hm hn =>
-    (assert_safe_used_refs_full_spec hS refs i hb hrc hr hi ev hsub j hj hm).2 hn
+  by
+    intro i idxs rc rp used r h h' cs hb hrc hr hi ev hsub j hj hm hn
+    exact (assert_safe_used_refs_full_spec hS refs i hb hrc hr hi ev hsub j hj hm).2 hn
 
 /-- A concrete record guard supplies the conditional edge-safety clause. The source and
 owner safety premises determine the guard branch; neither branch choice nor the conclusion

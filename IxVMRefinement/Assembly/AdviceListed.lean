@@ -9,10 +9,10 @@ import IxVMRefinement.Obs.KernelModeled3
 the advice walk of a family check nested in its calls (a container's recursor's check runs one, and
 so may the check of a basis role's record and its closure), is the family check's own advice
 list. Recorded calls do not mark which call made which, so the walk is read off the family check's
-unfolding, `«KernelModeled::check_family».Path.run` (generated, `Obs/KernelModeled3.lean`), using
-named binders for the advice list (`x_advice`) and the walk's heap (`m423`).
+unfolding, `«KernelModeled::check_family».Path.run` (generated, `Obs/KernelModeled3.lean`).
 
-* `FamilyOwnAdvice`, `FamilyOwnAdvice.path`: the family check's unfolding with its own advice list;
+* `FamilyOwnAdvice`: the family check's unfolding paired with its own witness walk, witness set
+  build, and advice walk reading `advAs`;
 * `FamilyCallOwn`: the observed family check of `B` with the record at `rb` at the limit `lim`, its
   calls `cs` among the run's, with its own advice list;
 * `AdviceListedIn`: an address of that list. -/
@@ -28,22 +28,41 @@ open IxVM (F)
 set_option linter.unusedVariables false
 
 /-- **The family check's unfolding with its own advice list**: `«KernelModeled::check_family».Path`
-whose own advice walk (`ev465`) reads the list `advAs` at its heap `m423` from its argument
-`x_advice`. -/
-def FamilyOwnAdvice (x_rc x_block x_rec_block : SourceValue F) (h : Heap F)
+together with its witness walk (`ev_ws`), witness-set build (`ev_asb`), and own advice walk
+(`ev_adv`) reading the list `advAs` from `x_advice` at `m_adv`. -/
+structure FamilyOwnAdvice (x_rc x_block x_rec_block : SourceValue F) (h : Heap F)
     (r : SourceValue F) (h' : Heap F) (calls : List (Call F)) (advAs : List Bytes.Address) :
-    Prop :=
-  ∃ p : «KernelModeled::check_family».Path x_rc x_block x_rec_block h r h' calls,
-    match p with
-    | .run (m423 := m423) (x_advice := x_advice) .. =>
-      RepList addrListEnum (Bytes.RepAddressRef addrTy) m423 advAs x_advice
-
-/-- The family check's unfolding with its own advice list is the family check's unfolding. -/
-theorem FamilyOwnAdvice.path {x_rc x_block x_rec_block : SourceValue F} {h : Heap F}
-    {r : SourceValue F} {h' : Heap F} {calls : List (Call F)} {advAs : List Bytes.Address}
-    (w : FamilyOwnAdvice x_rc x_block x_rec_block h r h' calls advAs) :
-    «KernelModeled::check_family».Path x_rc x_block x_rec_block h r h' calls :=
-  w.1
+    Prop where
+  path : «KernelModeled::check_family».Path x_rc x_block x_rec_block h r h' calls
+  m_ws : Heap F
+  x_s4 : SourceValue F
+  x_nw : SourceValue F
+  x_outside : SourceValue F
+  x_s5 : SourceValue F
+  m_ws' : Heap F
+  cs_ws : List (Call F)
+  ev_ws : ObsFn Obs.W "KernelModeled::check_witnesses" [x_rc, x_block, x_s4, x_nw]
+    m_ws (.tuple [x_outside, x_s5]) m_ws' cs_ws
+  wset : SourceValue F
+  m_asb : Heap F
+  cs_asb : List (Call F)
+  ev_asb : ObsFn Obs.W "KernelClaim::addr_set_build"
+    [x_outside, .construct Names.«RBTreeMap::RBTreeMap<Field>» "Nil" []]
+    m_ws' wset m_asb cs_asb
+  m_adv : Heap F
+  m_adv' : Heap F
+  x_advice : SourceValue F
+  v_adv : SourceValue F
+  cs_adv : List (Call F)
+  ev_adv : ObsFn Obs.W "KernelModeled::check_advice_records"
+    [x_rc, x_advice, .construct Names.«RBTreeMap::RBTreeMap<Field>» "Nil" [], wset]
+    m_adv v_adv m_adv' cs_adv
+  ext_h_ws : Heap.Extends h m_ws
+  ext_asb_adv : Heap.Extends m_asb m_adv
+  advRep : RepList addrListEnum (Bytes.RepAddressRef addrTy) m_adv advAs x_advice
+  sub_ws : ∀ cl ∈ cs_ws, cl ∈ calls
+  sub_asb : ∀ cl ∈ cs_asb, cl ∈ calls
+  sub_adv : ∀ cl ∈ cs_adv, cl ∈ calls
 
 /-- **The family check of the block at `B` with the family record at `rb`, with its own advice
 list**: `check_family [rc, B, rb]` observed with calls `cs` under a role context at `lim` with the
@@ -68,24 +87,11 @@ theorem FamilyOwnAdvice.walk {x_rc x_block x_rec_block : SourceValue F} {h : Hea
     ∃ (m m' : Heap F) (xadv seen wset v : SourceValue F) (cs₁ : List (Call F)),
       Heap.Extends h m ∧ RepList addrListEnum (Bytes.RepAddressRef addrTy) m advAs xadv ∧
       ObsFn Obs.W "KernelModeled::check_advice_records" [x_rc, xadv, seen, wset] m v m' cs₁ ∧
-      ∀ cl ∈ cs₁, cl ∈ calls := by
-  obtain ⟨p, hadv⟩ := w
-  match p, hadv with
-  | .run (m105 := m105) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
-      (ev_yqjbwijz := evo) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309) (ev344 := ev344)
-      (ev403 := ev403) (ev435 := ev435) (ev465 := ev465) (hc1474 := hc) .., hadv =>
-    have e0 : Heap.Extends h m105 := by
-      match sg112 with
-      | .Nil (ev15 := ev15) (he33 := he33) .. =>
-        rw [he33]
-        exact ev15.heap_extends
-      | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
-    refine ⟨_, _, _, _, _, _, _, e0.trans (ev126.heap_extends.trans (ev148.heap_extends.trans
-      (ev194.heap_extends.trans (evo.heap_extends.trans (ev231.heap_extends.trans
-      (ev266.heap_extends.trans (ev309.heap_extends.trans (ev344.heap_extends.trans
-      (ev403.heap_extends.trans ev435.heap_extends))))))))), hadv, ev465, fun cl hcl => ?_⟩
-    rw [hc]
-    simp [hcl]
+      ∀ cl ∈ cs₁, cl ∈ calls :=
+  ⟨w.m_adv, w.m_adv', w.x_advice, .construct Names.«RBTreeMap::RBTreeMap<Field>» "Nil" [],
+    w.wset, w.v_adv, w.cs_adv,
+    w.ext_h_ws.trans (w.ev_ws.heap_extends.trans (w.ev_asb.heap_extends.trans w.ext_asb_adv)),
+    w.advRep, w.ev_adv, w.sub_adv⟩
 
 /-- **An advice record listed by a family check itself**: an address of the family check's own
 advice list. -/
