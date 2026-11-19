@@ -291,7 +291,7 @@ theorem check_advice_record_inner_refs_safe {calls cs : List (Call F)} {E₀ : I
   | .run (cs12 := cs12) (cs_zlhtmzlz := csSafe) (ev_yqjbwijz := ev_ord) (ev14 := ev14)
       (sg952 := sg952) (ev_lawbyzgo := ev_idx1) (ev_bilbznow := ev_adv)
       (ev_ozxzdina := ev_idx2) (ev_tnqzszcy := ev_safe) (hc1011 := hcalls) .. =>
-    have ⟨c, i, hc, -, -⟩ := hu
+    have ⟨c, i, hc, _, _⟩ := hu
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls :=
       fun cl hcl => hsub cl (by rw [hcalls]; simp [hcl])
     have hsubSafe : ∀ cl ∈ csSafe, cl ∈ calls :=
