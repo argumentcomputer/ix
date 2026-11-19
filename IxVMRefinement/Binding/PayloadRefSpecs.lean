@@ -1092,10 +1092,10 @@ theorem directContOwn_toContainerRecIn {calls : List (Call F)} {bAddr : _root_.A
     {cs : List (Call F)} {advAs : List Bytes.Address} {x : _root_.Address}
     (hdc : DirectContOwn calls bAddr t B rb lim cs advAs x) :
     ContainerRecIn cs x := by
-  obtain ⟨h, h', rc, xb, xrb, r, -, -, -, -, g, -, -⟩ := hdc
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, cs_ws, -, -, -,
-    -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -,
-    sub_ws, -, -, -, -, hcont⟩ := g
+  obtain ⟨h, h', rc, xb, xrb, r, _, _, _, _, g, _, _⟩ := hdc
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, cs_ws, _, _, _,
+    _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+    sub_ws, _, _, _, _, hcont⟩ := g
   have hdw := hcont x rfl
   have hcr : ContainerRecIn cs_ws x := by
     induction hdw with
@@ -2735,7 +2735,7 @@ theorem FamilyCallExact.unpack {calls : List (Call F)} {bAddr : _root_.Address}
     v_crr, m423, csCrr, evCrr,
     x_adv, v_adv, m453, csAdv, evAdv, hadvP,
     m_fro0, m_fro1, v_fro, csFro, ext391_fro, evFro,
-    subWs, subAsb, subCrr, subAdv, subFro, -⟩ := g
+    subWs, subAsb, subCrr, subAdv, subFro, _⟩ := g
   have hrbOrd : Claim.OpOrderedAt t lim (Core.ixAddr bR) :=
     assert_in_order_spec (hrc.mono ext184)
       ⟨bR, Bytes.repAddressRef_heapMono₂ Core.addrTy ext184 hbR, rfl⟩ evOrd
