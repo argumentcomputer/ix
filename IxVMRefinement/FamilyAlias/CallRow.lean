@@ -1543,7 +1543,7 @@ private theorem get_count_spec_bytes {s x_n x_s2 : SourceValue F} {bytes : List 
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup hr
     obtain ⟨rfl, rfl⟩ := htup
     obtain ⟨rfl, rfl⟩ := hr
-    obtain ⟨-, hv38, hm42⟩ := Lib.u64_to_field_spec (Deserialize.repU64_u64Value h tg.value) e2
+    obtain ⟨-, hv38, hm42⟩ := Lib.u64_to_field_spec (Deserialize.repU64_u64Value m2 tg.value) e2
     rw [hh, hm42]
     exact ⟨tg, k, htag, hv38, hrest⟩
 
@@ -1663,8 +1663,9 @@ theorem advAs_eq_of_familyOwnAdvice {rc xb xrb r : SourceValue F} {h h' : Heap F
     have hk_eq : k_w = k_C := congrArg Ixon.GetState.idx hst_eq
     subst htg_eq hk_eq
     rw [hxna_w] at ev_ga
-    have ev_ga_C := C.evGetAdv.obs
-    rw [hxna_C] at ev_ga_C
+    have ev_ga_C : ObsFn Obs.W "KernelModeled::get_addrs" [C.s2, .field (tg_w.value.toNat : F)]
+        C.m219 (.tuple [C.advList, C.s3]) C.m254 C.evGetAdv.cs := by
+      rw [← hxna_C]; exact C.evGetAdv.obs
     obtain ⟨as_w, out_w, x_as_w, x_s3_w', htup_ga_w, hlen_w, hbytes_ga_w, hrep_ga_w, -⟩ :=
       get_addrs_bytes_go (ZMod.val (tg_w.value.toNat : F)) rfl hs_s2_w ev_ga
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup_ga_w
