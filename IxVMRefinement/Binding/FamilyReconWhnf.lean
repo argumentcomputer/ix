@@ -180,25 +180,30 @@ def AddrIn (S : _root_.Address → Prop) (κ : _root_.Address → KKey) : KExpr 
 theorem addrIn_mono {S₁ S₂ : _root_.Address → Prop} (hsub : ∀ a, S₁ a → S₂ a) :
     ∀ {E : KExpr}, AddrIn S₁ κ E → AddrIn S₂ κ E
   | .bvar _, _ | .sort _, _ | .lit _, _ => trivial
-  | .fvar _ _, h => addrIn_mono hsub h
+  | .fvar _ t, h => addrIn_mono hsub (E := t) h
   | .const _ _, h => fun a ha => hsub a (h a ha)
-  | .app _ _, ⟨hf, ha⟩ => ⟨addrIn_mono hsub hf, addrIn_mono hsub ha⟩
-  | .lam _ _ _, ⟨ht, hb⟩ => ⟨addrIn_mono hsub ht, addrIn_mono hsub hb⟩
-  | .forallE _ _ _, ⟨ht, hb⟩ => ⟨addrIn_mono hsub ht, addrIn_mono hsub hb⟩
-  | .letE _ _ _ _, ⟨ht, hv, hb⟩ => ⟨addrIn_mono hsub ht, addrIn_mono hsub hv, addrIn_mono hsub hb⟩
-  | .proj _ _ _, ⟨hk, he⟩ => ⟨fun a ha => hsub a (hk a ha), addrIn_mono hsub he⟩
+  | .app f a, ⟨hf, ha⟩ => ⟨addrIn_mono hsub (E := f) hf, addrIn_mono hsub (E := a) ha⟩
+  | .lam t b _, ⟨ht, hb⟩ => ⟨addrIn_mono hsub (E := t) ht, addrIn_mono hsub (E := b) hb⟩
+  | .forallE t b _, ⟨ht, hb⟩ => ⟨addrIn_mono hsub (E := t) ht, addrIn_mono hsub (E := b) hb⟩
+  | .letE t v b _, ⟨ht, hv, hb⟩ =>
+    ⟨addrIn_mono hsub (E := t) ht, addrIn_mono hsub (E := v) hv, addrIn_mono hsub (E := b) hb⟩
+  | .proj _ _ e, ⟨hk, he⟩ => ⟨fun a ha => hsub a (hk a ha), addrIn_mono hsub (E := e) he⟩
 
 theorem addrIn_exprInstLevelsWalk {S : _root_.Address → Prop} (us : List KLevel) :
     ∀ {E : KExpr}, AddrIn S κ E → AddrIn S κ (FamilyFlat.exprInstLevelsWalk us E)
   | .bvar _, _ | .sort _, _ | .lit _, _ => trivial
-  | .fvar _ _, h => addrIn_exprInstLevelsWalk us h
+  | .fvar _ t, h => addrIn_exprInstLevelsWalk us (E := t) h
   | .const _ _, h => h
-  | .app _ _, ⟨hf, ha⟩ => ⟨addrIn_exprInstLevelsWalk us hf, addrIn_exprInstLevelsWalk us ha⟩
-  | .lam _ _ _, ⟨ht, hb⟩ => ⟨addrIn_exprInstLevelsWalk us ht, addrIn_exprInstLevelsWalk us hb⟩
-  | .forallE _ _ _, ⟨ht, hb⟩ => ⟨addrIn_exprInstLevelsWalk us ht, addrIn_exprInstLevelsWalk us hb⟩
-  | .letE _ _ _ _, ⟨ht, hv, hb⟩ =>
-    ⟨addrIn_exprInstLevelsWalk us ht, addrIn_exprInstLevelsWalk us hv, addrIn_exprInstLevelsWalk us hb⟩
-  | .proj _ _ _, ⟨hk, he⟩ => ⟨hk, addrIn_exprInstLevelsWalk us he⟩
+  | .app f a, ⟨hf, ha⟩ =>
+    ⟨addrIn_exprInstLevelsWalk us (E := f) hf, addrIn_exprInstLevelsWalk us (E := a) ha⟩
+  | .lam t b _, ⟨ht, hb⟩ =>
+    ⟨addrIn_exprInstLevelsWalk us (E := t) ht, addrIn_exprInstLevelsWalk us (E := b) hb⟩
+  | .forallE t b _, ⟨ht, hb⟩ =>
+    ⟨addrIn_exprInstLevelsWalk us (E := t) ht, addrIn_exprInstLevelsWalk us (E := b) hb⟩
+  | .letE t v b _, ⟨ht, hv, hb⟩ =>
+    ⟨addrIn_exprInstLevelsWalk us (E := t) ht, addrIn_exprInstLevelsWalk us (E := v) hv,
+      addrIn_exprInstLevelsWalk us (E := b) hb⟩
+  | .proj _ _ e, ⟨hk, he⟩ => ⟨hk, addrIn_exprInstLevelsWalk us (E := e) he⟩
 
 theorem addrIn_exprInstLevels {S : _root_.Address → Prop} {us : List KLevel} {E : KExpr}
     (h : AddrIn S κ E) : AddrIn S κ (exprInstLevels us E) := by
@@ -211,48 +216,67 @@ theorem addrIn_liftLooseBVars {S : _root_.Address → Prop} (n : Nat) :
     ∀ {E : KExpr} {c : Nat}, AddrIn S κ E → AddrIn S κ (E.liftLooseBVars n c)
   | .bvar _, _, _ => by simp only [Ix.Kernel.Expr.liftLooseBVars]; split <;> trivial
   | .sort _, _, _ | .lit _, _, _ => trivial
-  | .fvar _ _, _, h => addrIn_liftLooseBVars n h
+  | .fvar _ t, c, h => addrIn_liftLooseBVars n (E := t) (c := c) h
   | .const _ _, _, h => h
-  | .app _ _, _, ⟨hf, ha⟩ => ⟨addrIn_liftLooseBVars n hf, addrIn_liftLooseBVars n ha⟩
-  | .lam _ _ _, _, ⟨ht, hb⟩ => ⟨addrIn_liftLooseBVars n ht, addrIn_liftLooseBVars n hb⟩
-  | .forallE _ _ _, _, ⟨ht, hb⟩ => ⟨addrIn_liftLooseBVars n ht, addrIn_liftLooseBVars n hb⟩
-  | .letE _ _ _ _, _, ⟨ht, hv, hb⟩ =>
-    ⟨addrIn_liftLooseBVars n ht, addrIn_liftLooseBVars n hv, addrIn_liftLooseBVars n hb⟩
-  | .proj _ _ _, _, ⟨hk, he⟩ => ⟨hk, addrIn_liftLooseBVars n he⟩
+  | .app f a, c, ⟨hf, ha⟩ =>
+    ⟨addrIn_liftLooseBVars n (E := f) (c := c) hf, addrIn_liftLooseBVars n (E := a) (c := c) ha⟩
+  | .lam t b _, c, ⟨ht, hb⟩ =>
+    ⟨addrIn_liftLooseBVars n (E := t) (c := c) ht,
+      addrIn_liftLooseBVars n (E := b) (c := c + 1) hb⟩
+  | .forallE t b _, c, ⟨ht, hb⟩ =>
+    ⟨addrIn_liftLooseBVars n (E := t) (c := c) ht,
+      addrIn_liftLooseBVars n (E := b) (c := c + 1) hb⟩
+  | .letE t v b _, c, ⟨ht, hv, hb⟩ =>
+    ⟨addrIn_liftLooseBVars n (E := t) (c := c) ht,
+      addrIn_liftLooseBVars n (E := v) (c := c) hv,
+      addrIn_liftLooseBVars n (E := b) (c := c + 1) hb⟩
+  | .proj _ _ e, c, ⟨hk, he⟩ => ⟨hk, addrIn_liftLooseBVars n (E := e) (c := c) he⟩
 
 theorem addrIn_lowerBVars {S : _root_.Address → Prop} (n : Nat) :
     ∀ {E : KExpr} {c : Nat}, AddrIn S κ E → AddrIn S κ (E.lowerBVars n c)
   | .bvar _, _, _ => by simp only [Ix.Kernel.Expr.lowerBVars]; split <;> trivial
   | .sort _, _, _ | .lit _, _, _ => trivial
-  | .fvar _ _, _, h => addrIn_lowerBVars n h
+  | .fvar _ t, c, h => addrIn_lowerBVars n (E := t) (c := c) h
   | .const _ _, _, h => h
-  | .app _ _, _, ⟨hf, ha⟩ => ⟨addrIn_lowerBVars n hf, addrIn_lowerBVars n ha⟩
-  | .lam _ _ _, _, ⟨ht, hb⟩ => ⟨addrIn_lowerBVars n ht, addrIn_lowerBVars n hb⟩
-  | .forallE _ _ _, _, ⟨ht, hb⟩ => ⟨addrIn_lowerBVars n ht, addrIn_lowerBVars n hb⟩
-  | .letE _ _ _ _, _, ⟨ht, hv, hb⟩ =>
-    ⟨addrIn_lowerBVars n ht, addrIn_lowerBVars n hv, addrIn_lowerBVars n hb⟩
-  | .proj _ _ _, _, ⟨hk, he⟩ => ⟨hk, addrIn_lowerBVars n he⟩
+  | .app f a, c, ⟨hf, ha⟩ =>
+    ⟨addrIn_lowerBVars n (E := f) (c := c) hf, addrIn_lowerBVars n (E := a) (c := c) ha⟩
+  | .lam t b _, c, ⟨ht, hb⟩ =>
+    ⟨addrIn_lowerBVars n (E := t) (c := c) ht, addrIn_lowerBVars n (E := b) (c := c + 1) hb⟩
+  | .forallE t b _, c, ⟨ht, hb⟩ =>
+    ⟨addrIn_lowerBVars n (E := t) (c := c) ht, addrIn_lowerBVars n (E := b) (c := c + 1) hb⟩
+  | .letE t v b _, c, ⟨ht, hv, hb⟩ =>
+    ⟨addrIn_lowerBVars n (E := t) (c := c) ht, addrIn_lowerBVars n (E := v) (c := c) hv,
+      addrIn_lowerBVars n (E := b) (c := c + 1) hb⟩
+  | .proj _ _ e, c, ⟨hk, he⟩ => ⟨hk, addrIn_lowerBVars n (E := e) (c := c) he⟩
 
 theorem addrIn_instantiate1Lift {S : _root_.Address → Prop} {V : KExpr} (hV : AddrIn S κ V) :
     ∀ {B : KExpr} {d : Nat}, AddrIn S κ B → AddrIn S κ (B.instantiate1Lift V d)
   | .bvar i, d, _ => by
     simp only [Ix.Kernel.Expr.instantiate1Lift]
     split
-    · exact addrIn_liftLooseBVars d hV
+    · exact addrIn_liftLooseBVars d (E := V) (c := 0) hV
     · split <;> trivial
   | .sort _, _, _ | .lit _, _, _ => trivial
-  | .fvar _ _, _, h => addrIn_instantiate1Lift hV h
+  | .fvar _ t, d, h => addrIn_instantiate1Lift hV (B := t) (d := d) h
   | .const _ _, _, h => h
-  | .app _ _, _, ⟨hf, ha⟩ => ⟨addrIn_instantiate1Lift hV hf, addrIn_instantiate1Lift hV ha⟩
-  | .lam _ _ _, _, ⟨ht, hb⟩ => ⟨addrIn_instantiate1Lift hV ht, addrIn_instantiate1Lift hV hb⟩
-  | .forallE _ _ _, _, ⟨ht, hb⟩ => ⟨addrIn_instantiate1Lift hV ht, addrIn_instantiate1Lift hV hb⟩
-  | .letE _ _ _ _, _, ⟨ht, hv, hb⟩ =>
-    ⟨addrIn_instantiate1Lift hV ht, addrIn_instantiate1Lift hV hv, addrIn_instantiate1Lift hV hb⟩
-  | .proj _ _ _, _, ⟨hk, he⟩ => ⟨hk, addrIn_instantiate1Lift hV he⟩
+  | .app f a, d, ⟨hf, ha⟩ =>
+    ⟨addrIn_instantiate1Lift hV (B := f) (d := d) hf,
+      addrIn_instantiate1Lift hV (B := a) (d := d) ha⟩
+  | .lam t b _, d, ⟨ht, hb⟩ =>
+    ⟨addrIn_instantiate1Lift hV (B := t) (d := d) ht,
+      addrIn_instantiate1Lift hV (B := b) (d := d + 1) hb⟩
+  | .forallE t b _, d, ⟨ht, hb⟩ =>
+    ⟨addrIn_instantiate1Lift hV (B := t) (d := d) ht,
+      addrIn_instantiate1Lift hV (B := b) (d := d + 1) hb⟩
+  | .letE t v b _, d, ⟨ht, hv, hb⟩ =>
+    ⟨addrIn_instantiate1Lift hV (B := t) (d := d) ht,
+      addrIn_instantiate1Lift hV (B := v) (d := d) hv,
+      addrIn_instantiate1Lift hV (B := b) (d := d + 1) hb⟩
+  | .proj _ _ e, d, ⟨hk, he⟩ => ⟨hk, addrIn_instantiate1Lift hV (B := e) (d := d) he⟩
 
 theorem addrIn_getAppFn {S : _root_.Address → Prop} :
     ∀ {E : KExpr}, AddrIn S κ E → AddrIn S κ E.getAppFn
-  | .app _ _, ⟨hf, _⟩ => addrIn_getAppFn hf
+  | .app f _, ⟨hf, _⟩ => addrIn_getAppFn (E := f) hf
   | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .lam _ _ _, h | .forallE _ _ _, h
   | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h => h
 
@@ -261,7 +285,7 @@ theorem addrIn_getAppArgs {S : _root_.Address → Prop} :
   | .app f a, ⟨hf, ha⟩, A, hmem => by
     change A ∈ f.getAppArgs ++ [a] at hmem
     rcases List.mem_append.mp hmem with hm | hm
-    · exact addrIn_getAppArgs hf A hm
+    · exact addrIn_getAppArgs (E := f) hf A hm
     · rw [List.mem_singleton] at hm; subst hm; exact ha
   | .bvar _, _, _, hm | .fvar _ _, _, _, hm | .sort _, _, _, hm | .const _ _, _, _, hm
   | .lam _ _ _, _, _, hm | .forallE _ _ _, _, _, hm | .letE _ _ _ _, _, _, hm | .lit _, _, _, hm
@@ -271,23 +295,23 @@ theorem addrIn_mkAppN {S : _root_.Address → Prop} :
     ∀ {Sp : List KExpr} {H : KExpr}, AddrIn S κ H → (∀ A ∈ Sp, AddrIn S κ A) →
       AddrIn S κ (Ix.Kernel.Expr.mkAppN H Sp)
   | [], _, hH, _ => hH
-  | A :: As, _, hH, hSp =>
-    addrIn_mkAppN ⟨hH, hSp A List.mem_cons_self⟩
+  | A :: As, H, hH, hSp =>
+    addrIn_mkAppN (Sp := As) (H := .app H A) ⟨hH, hSp A List.mem_cons_self⟩
       (fun X hX => hSp X (List.mem_cons_of_mem _ hX))
 
 theorem addrIn_appSpine {S : _root_.Address → Prop} :
     ∀ {Sp : List KExpr} {H : KExpr}, AddrIn S κ H → (∀ A ∈ Sp, AddrIn S κ A) →
       AddrIn S κ (appSpine H Sp)
   | [], _, hH, _ => hH
-  | A :: As, _, hH, hSp =>
-    addrIn_appSpine ⟨hH, hSp A List.mem_cons_self⟩
+  | A :: As, H, hH, hSp =>
+    addrIn_appSpine (Sp := As) (H := .app H A) ⟨hH, hSp A List.mem_cons_self⟩
       (fun X hX => hSp X (List.mem_cons_of_mem _ hX))
 
 theorem addrIn_peelAll {S : _root_.Address → Prop} :
     ∀ {E : KExpr}, AddrIn S κ E →
       (∀ D ∈ (peelAll E).1, AddrIn S κ D) ∧ AddrIn S κ (peelAll E).2
   | .forallE d b _, ⟨hd, hb⟩ => by
-    obtain ⟨hds, hret⟩ := addrIn_peelAll hb
+    obtain ⟨hds, hret⟩ := addrIn_peelAll (E := b) hb
     refine ⟨fun D hD => ?_, hret⟩
     rcases List.mem_cons.mp hD with rfl | hmem
     · exact hd
@@ -301,7 +325,7 @@ theorem addrIn_wrapForalls {S : _root_.Address → Prop} {body : KExpr} {dl : KL
   | [], _, hb => hb
   | D :: Ds, hds, hb =>
     ⟨hds D List.mem_cons_self,
-      addrIn_wrapForalls (fun X hX => hds X (List.mem_cons_of_mem _ hX)) hb⟩
+      addrIn_wrapForalls (doms := Ds) (fun X hX => hds X (List.mem_cons_of_mem _ hX)) hb⟩
 
 theorem addrIn_wrapLams {S : _root_.Address → Prop} {body : KExpr} {dl : KLevel} :
     ∀ {doms : List KExpr}, (∀ D ∈ doms, AddrIn S κ D) → AddrIn S κ body →
@@ -309,7 +333,7 @@ theorem addrIn_wrapLams {S : _root_.Address → Prop} {body : KExpr} {dl : KLeve
   | [], _, hb => hb
   | D :: Ds, hds, hb =>
     ⟨hds D List.mem_cons_self,
-      addrIn_wrapLams (fun X hX => hds X (List.mem_cons_of_mem _ hX)) hb⟩
+      addrIn_wrapLams (doms := Ds) (fun X hX => hds X (List.mem_cons_of_mem _ hX)) hb⟩
 
 theorem addrIn_ctorSubstParamFor {S : _root_.Address → Prop} {j depth specLift : Nat}
     {aux : Bool} {sp : List KExpr} (hsp : ∀ P ∈ sp, AddrIn S κ P) :
