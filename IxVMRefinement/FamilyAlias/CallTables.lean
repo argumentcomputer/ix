@@ -247,7 +247,7 @@ counts are the lists' lengths because a loaded record's resource size is below `
 recursors' count, and the payload is a stream where the rules' theorems start. -/
 theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
     (hS : LoadedReads.RunStore calls E₀) (hH : LoadedReads.HashedRecordsStored calls E₀)
-    {c : Ctx} {b b' : Bytes.Address} {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
+    {b b' : Bytes.Address} {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
     (hB : FamBlockRecord E₀ (ixAddr b) cb ms) (hR : FamRecRecord E₀ (ixAddr b') crb rs)
     {xb xrb x_members w538 w539 w540 w541 v588 v621 v651 v673 x_s5 x_type_models x_s6 v746 v798
       x_ctor_models x_s7 v839 v861 x_rec_models x_s8 v941 v926 v992 v977 rc v_nr : SourceValue F}
@@ -284,7 +284,7 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
     (ev990 : ObsFn W Obs.Names.«Lists::concat<&[Field; 32]>» [x_type_models, v992] m1001 v977 m978
       cs988)
     (hsub511 : ∀ cl ∈ cs511, cl ∈ calls) (hsub850 : ∀ cl ∈ cs850, cl ∈ calls)
-    (hg : Good c cs757) :
+    (hbd : Bounded cs757) :
     ∃ typeAs ctorAs recAs typeMs ctorMs recMs : List Bytes.Address,
       FamilyTables (ixAddr b) (ixAddr b') ms rs m978 typeAs ctorAs recAs typeMs ctorMs recMs
         v673 v746 v839 x_type_models x_ctor_models x_rec_models v926 v977 ∧
@@ -344,12 +344,12 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
       [x_members, xb, .field ((0 : Nat) : F)] m704 v746 m747 cs757 := by
     rw [Nat.cast_zero]
     exact ev759
-  obtain ⟨ctorAs, hcA, hcmap, -⟩ := block_ctor_addrs_spec (c := c) ms.toList 0 (by omega)
+  obtain ⟨ctorAs, hcA, hcmap, -⟩ := block_ctor_addrs_spec ms.toList 0 (by omega)
     (fun ind hi => by
       obtain ⟨i, hi'⟩ := List.mem_iff_getElem?.mp hi
       have := Claim.ctors_size_le hB.muts hi'
       omega)
-    hg (Bytes.repAddressRef_heapMono₂ addrTy (ev513.heap_extends.trans x704) hb)
+    hbd (Bytes.repAddressRef_heapMono₂ addrTy (ev513.heap_extends.trans x704) hb)
     (RepLinkedList.mono repMutConst_heapMono' x704 hrep) ev759'
   have hclen : ctorAs.length < 8589934592 := by
     have e := congrArg List.length hcmap
@@ -424,12 +424,12 @@ heap that extends the check's. The calls of the check are among the run's; the c
 are good for some context. -/
 theorem check_family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
     (hS : LoadedReads.RunStore calls E₀) (hH : LoadedReads.HashedRecordsStored calls E₀)
-    {c : Ctx} {b b' : Bytes.Address} {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
+    {b b' : Bytes.Address} {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
     (hB : FamBlockRecord E₀ (ixAddr b) cb ms) (hR : FamRecRecord E₀ (ixAddr b') crb rs)
     {rc xb xrb r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hb : Bytes.RepAddressRef addrTy h b xb) (hrb : Bytes.RepAddressRef addrTy h b' xrb)
     (ev : ObsFn W "KernelModeled::check_family" [rc, xb, xrb] h r h' cs)
-    (hsub : ∀ cl ∈ cs, cl ∈ calls) (hg : Good c cs) :
+    (hsub : ∀ cl ∈ cs, cl ∈ calls) (hbd : Bounded cs) :
     ∃ (m : Heap F) (typeAs ctorAs recAs typeMs ctorMs recMs : List Bytes.Address)
       (xtA xcA xrA xtM xcM xrM xsrc xdst : SourceValue F),
       Heap.Extends h m ∧
@@ -461,7 +461,7 @@ theorem check_family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
       ev960 ev939 ev1011 ev990
       (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))
       (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))
-      (hg.sub fun cl hcl => by rw [hc]; simp [hcl])
+      (bounded_sub (fun cl hcl => by rw [hc]; simp [hcl]) hbd)
     exact ⟨_, typeAs, ctorAs, recAs, typeMs, ctorMs, recMs, _, _, _, _, _, _, _, _,
       e0.trans (x332.trans (x453.trans (ev513.heap_extends.trans (ev601.heap_extends.trans
         (ev634.heap_extends.trans (ev664.heap_extends.trans (ev686.heap_extends.trans

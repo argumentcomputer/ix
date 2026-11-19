@@ -554,8 +554,11 @@ structure CheckRecsCons (rc tys recs models src dst aset s n k np uo bnl fam for
   idx : SourceValue F
   ldRec : loadValue m67 p = .ok (.construct "KernelTypes::KConstantInfo" "Rec"
     [nl, ty, np, ni, n, nmin, rules, .field 0, .field 0, blk, idx])
+  m391 : Heap F
+  ext391 : Heap.Extends m67 m391
+  vCarriers : SourceValue F
   m473 : Heap F
-  ext473 : Heap.Extends m67 m473
+  evCarriers : SubCall calls "KernelModeled::check_carriers" [ty, np, tys] m391 vCarriers m473
   vScope : SourceValue F
   m511 : Heap F
   evScope : SubCall calls "KernelCheck::validate_expr_well_scoped" [ty, .field 0, nl]
@@ -644,12 +647,13 @@ theorem CheckRecsCons.ext_h_m838
   have e1 : Heap.Extends C.m561 C.mNil1 := by rw [C.hNil1]; exact Heap.Extends.snoc _ _
   have e2 : Heap.Extends C.mRen C.mNil2 := by rw [C.hNil2]; exact Heap.Extends.snoc _ _
   have e3 : Heap.Extends C.mLP C.mNilSort := by rw [C.hNilSort]; exact Heap.Extends.snoc _ _
-  exact C.evGetRec.extends.trans (C.ext473.trans (C.evScope.extends.trans (C.evNoMent.extends.trans
+  exact C.evGetRec.extends.trans (C.ext391.trans (C.evCarriers.extends.trans
+    (C.evScope.extends.trans (C.evNoMent.extends.trans
     (e1.trans (C.evPeel1.extends.trans (C.evRen.extends.trans (e2.trans (C.evPeel2.extends.trans
       (C.evParamEq.extends.trans (C.evPins.extends.trans (C.evLowerPins.extends.trans
         (e3.trans (C.evSort.extends.trans (C.ext669.trans (C.evParent.extends.trans
           (C.evGetParent.extends.trans (C.evCanon.extends.trans
-            C.evHeaderLets.extends)))))))))))))))))
+            C.evHeaderLets.extends))))))))))))))))))
 
 /-- **Heap-chained step of `KernelModeled::check_recs`.** -/
 theorem checkRecs_step {rc tys recs models src dst aset s n k np uo bnl fam form r : SourceValue F}
@@ -706,8 +710,9 @@ theorem checkRecs_step {rc tys recs models src dst aset s n k np uo bnl fam form
          ldModels := l51
          p := _, m67 := _, evGetRec := s82
          nl := _, ty := _, ni := _, nmin := _, rules := _, blk := _, idx := _, ldRec := l76
-         m473 := _, ext473 := s298.extends.trans (s359.extends.trans (s345.extends.trans
-           (s403.extends.trans s485.extends)))
+         m391 := _, ext391 := s298.extends.trans (s359.extends.trans (s345.extends.trans
+           s403.extends))
+         vCarriers := _, m473 := _, evCarriers := s485
          vScope := _, m511 := _, evScope := s523
          m561 := _, evNoMent := s571
          mNil1 := _, hNil1 := hNil1
