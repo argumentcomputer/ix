@@ -1,6 +1,7 @@
 import IxVMRefinement.FamilyAlias.BlockRowCheck
 import IxVMRefinement.FamilyAlias.TysCanon
 import IxVMRefinement.Binding.ClosureUnitDispatch
+import IxVMRefinement.Binding.ReadsAgree
 
 /-! # The closure's step of a new block with its family record, at the binding fold's clause
 
@@ -534,7 +535,136 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
     exact Decl.isBaseKey_iff_nonAuxKey.mp (Decl.isBaseKey_keyOf t x)
   have hSrec : Ix.Kernel.RecCtorsStored (⟨(new ++ as) ++ env.consts⟩ : Ix.Kernel.Env .anon) :=
     (Decl.FamilyAlias.foldStoreInv_famStep hg hreads.2.2.2 hna hd hClc.foldStore).store.rec_ctors
-  refine ⟨new ++ as, Reg, hndNA, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  -- the stored recursors' loaded form, self-mention scoping, and `check_recs` header counts
+  have hstoredRecs : Binding.StoredFamilyRecs t R₁ ⟨(new ++ as) ++ env.consts⟩ B cb rb crb := by
+    refine ⟨fun ms' rs' k rc hms' hrs' hk => ?_⟩
+    have ems : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hB.muts)
+    have ers : rs' = rs := Ixon.ConstantInfo.muts.inj (hrs'.symm.trans hRB.muts)
+    subst ms' rs'
+    have hT := hTys ms rs hB.muts hRB.muts
+    have hku : k < UInt64.size := Nat.lt_trans (Array.getElem?_eq_some_iff.mp hk).1 hT.rsBound
+    have hk_toNat : k.toUInt64.toNat = k := by
+      change (UInt64.ofNat k).toNat = k
+      rw [UInt64.toNat_ofNat']
+      exact Nat.mod_eq_of_lt hku
+    have hx_rb : ConstAddrOf rb crb (memberAddr rb k (.recr rc)) :=
+      Or.inr ⟨rs, k, .recr rc, hRB.muts, hk, Or.inl rfl⟩
+    have hxF : FamAddr B cb rb crb (memberAddr rb k (.recr rc)) := Or.inr hx_rb
+    obtain ⟨ci₀, hci₀, hname₀⟩ := hreads.2.2.1 _ hxF
+    obtain ⟨y, -, hy, hry⟩ := hreads.2.1 ci₀ hci₀
+    have hyx : y = memberAddr rb k (.recr rc) := Core.keyOf_inj htwf (hy.symm.trans hname₀)
+    rw [hyx] at hry
+    have hP₀ : recordOf ρ.E₀ (memberAddr rb k (.recr rc)) =
+        some (memberProjection rb k (.recr rc)) := hRB.members k (.recr rc) hk
+    have hinfoP : (memberProjection rb k (.recr rc)).info = .rPrj ⟨k.toUInt64, rb⟩ := rfl
+    obtain ⟨cb', rs'', rc', hMA₀, hRR₀⟩ := TwinFamily.reads_rprj hP₀ hinfoP hry
+    obtain ⟨hcb', hrs'', hmem', -, -, -⟩ := hMA₀
+    have ecb' : cb' = crb := Option.some.inj (hcb'.symm.trans hRB.record)
+    rw [ecb'] at hrs'' hRR₀
+    have ers'' : rs'' = rs := Ixon.ConstantInfo.muts.inj (hrs''.symm.trans hRB.muts)
+    rw [ers''] at hmem' hRR₀
+    rw [hk_toNat] at hmem'
+    have erc' : rc' = rc := Ixon.MutConst.recr.inj (Option.some.inj (hmem'.symm.trans hk))
+    rw [erc'] at hRR₀
+    have hci_rec : ∃ cv mI rP rules₀, ci₀ = .recInfo cv mI rP rules₀ := by
+      obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hci_eq⟩ := hRR₀
+      exact ⟨_, _, _, _, hci_eq⟩
+    obtain ⟨cv, mI, rP, rules₀, hci_eq⟩ := hci_rec
+    subst hci_eq
+    have hcv_name : cv.name = keyOf t (memberAddr rb k (.recr rc)) := hname₀
+    have hcrb' : recordOf R' rb = some crb := Binding.recordOf_of_loaded hC.store.le₂.1 hcrb
+    have hry' : Reads t R' (memberAddr rb k (.recr rc)) (.recInfo cv mI rP rules₀) :=
+      hC.reads.reads rb crb (memberAddr rb k (.recr rc)) _ hnrb hcrb' hx_rb hry
+    have hry₁ : Reads t R₁ (memberAddr rb k (.recr rc)) (.recInfo cv mI rP rules₀) := by
+      unfold Reads at hry' ⊢
+      refine Binding.readsIn_of_agree (fun z cz hcz hkindZ => ?_) hC.store.blobs
+        (fun cz hcz => hheld _ hxF cz (Binding.recordOf_of_loaded hC.admits.loaded hcz)) hry'
+      cases h1 : R₁.consts.get? z with
+      | some lc =>
+        have h2 := hC.store.le₂.1 z lc h1
+        unfold recordOf at hcz ⊢
+        rw [h2] at hcz
+        rw [h1]
+        exact hcz
+      | none =>
+        exfalso
+        have hsome : (R'.consts.get? z).isSome = true := by
+          unfold recordOf at hcz
+          cases hg' : R'.consts.get? z with
+          | none => rw [hg'] at hcz; cases hcz
+          | some _ => rfl
+        have hru : Binding.RoleUnitAt t g z := hC.store.units z hsome h1
+        have hRnone : recordOf R z = none := by
+          unfold recordOf
+          cases hgR : R.consts.get? z with
+          | none => rfl
+          | some lc =>
+            have := hC.store.le₁.1 z lc hgR
+            rw [h1] at this
+            cases this
+        have hnewZ : Binding.New R R' z := ⟨by rw [hcz]; rfl, hRnone⟩
+        rcases hC.run.roleUnitForm z cz hru hnewZ hcz with ⟨d, hd⟩ | ⟨ax, hax⟩
+        · rcases hkindZ with ⟨_, hkZ⟩ | ⟨_, hkZ⟩ <;> (rw [hd] at hkZ; cases hkZ)
+        · rcases hkindZ with ⟨_, hkZ⟩ | ⟨_, hkZ⟩ <;> (rw [hax] at hkZ; cases hkZ)
+    have hP₁ : recordOf R₁ (memberAddr rb k (.recr rc)) =
+        some (memberProjection rb k (.recr rc)) := hheld _ hxF _ hP₀
+    obtain ⟨cb₁, rs₁, rc₁, hMA₁, hRR₁⟩ := TwinFamily.reads_rprj hP₁ hinfoP hry₁
+    obtain ⟨hcb₁, hrs₁, hmem₁, -, -, -⟩ := hMA₁
+    have ecb₁ : cb₁ = crb := Option.some.inj (hcb₁.symm.trans hcrb)
+    rw [ecb₁] at hrs₁ hRR₁
+    have ers₁ : rs₁ = rs := Ixon.ConstantInfo.muts.inj (hrs₁.symm.trans hRB.muts)
+    rw [ers₁] at hmem₁ hRR₁
+    rw [hk_toNat] at hmem₁
+    have erc₁ : rc₁ = rc := Ixon.MutConst.recr.inj (Option.some.inj (hmem₁.symm.trans hk))
+    rw [erc₁] at hRR₁
+    have hrec_mem : ConstantInfo.recInfo cv mI rP rules₀ ∈ Decl.FamilyAlias.recsOf blk :=
+      List.mem_filter.mpr ⟨hci₀, rfl⟩
+    obtain ⟨idx, hidx⟩ := List.getElem?_of_mem hrec_mem
+    obtain ⟨⟨tyA, htyA⟩, ⟨rhss, hrhss⟩⟩ := tys_of_rec hFacts hidx
+    obtain ⟨rules', hf', -, -⟩ := hR idx cv mI rP rules₀ tyA rhss hidx htyA hrhss
+    have hf_k : (⟨(new ++ as) ++ env.consts⟩ : Ix.Kernel.Env .anon).find?
+        (keyOf t (memberAddr rb k (.recr rc))) =
+        some (.recInfo ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules') := by
+      rw [← hcv_name]
+      exact hf'
+    obtain ⟨cSA, hcSA, hSA'⟩ := hst₂ _ hci₀
+    have ecSA : cSA = .recInfo ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules' :=
+      Option.some.inj (hcSA.symm.trans hf')
+    rw [ecSA] at hSA'
+    have hTML : TwinFamily.TwinMemberLoaded crb rs ⟨k.toUInt64, rb⟩ rc cv.levelParams cv.type
+        rules₀ ⟨cv.name, cv.levelParams, tyA⟩ rules' := by
+      have hRR₀' : RecReads t (recordOf ρ.E₀) (fun x => ρ.E₀.blobs.get? x) crb (blockSelf t rb rs)
+          (keyOf t (memberAddr rb (⟨k.toUInt64, rb⟩ : Ixon.RecursorProj).idx.toNat (.recr rc)))
+          rc (.recInfo cv mI rP rules₀) := by
+        simpa [hk_toNat] using hRR₀
+      have hf'' : (⟨(new ++ as) ++ env.consts⟩ : Ix.Kernel.Env .anon).find?
+          (keyOf t (memberAddr rb (⟨k.toUInt64, rb⟩ : Ixon.RecursorProj).idx.toNat (.recr rc))) =
+          some (.recInfo ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules') := by
+        simpa [hk_toNat] using hf_k
+      exact hcanonM.recLoaded ⟨k.toUInt64, rb⟩ rc cv mI rP rules₀
+        ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules' rfl (by simpa [hk_toNat] using hk) hRR₀' hf''
+    have hmeta := hT.recMeta idx cv mI rP rules₀ tyA rhss hidx htyA hrhss ⟨k.toUInt64, rb⟩ rc rfl
+      (by simpa [hk_toNat] using hk) (by simpa [hk_toNat] using hcv_name)
+      (by rw [hcv_name]; exact hRR₀)
+    obtain ⟨hns, hnp, hmot, ⟨Bm, im, cbm, msm, indm, D, lvls, himu, husedM, hPm₀, hBm₀, hmsm, him,
+      hpi, hfn, hni⟩, hconcl⟩ := hmeta
+    obtain ⟨crb', i_u, hcrb'_u, hi_u, hx_u⟩ := husedM
+    have ecrb'_u : crb' = crb := Option.some.inj (hcrb'_u.symm.trans hcrb₀)
+    subst crb'
+    obtain ⟨Pm₁, hPm₁⟩ := Option.isSome_iff_exists.mp ((hC.closed.1 rb crb hcrb).2 i_u hi_u _ hx_u)
+    have ePm : Pm₁ = memberProjection Bm im (.indc indm) :=
+      Option.some.inj ((Binding.recordOf_of_loaded hloaded hPm₁).symm.trans hPm₀)
+    subst Pm₁
+    have hownM : Ix.Cert.ownerOf (memberAddr Bm im (.indc indm))
+        (memberProjection Bm im (.indc indm)) = Bm := rfl
+    obtain ⟨cbm₁, hcbm₁⟩ := Option.isSome_iff_exists.mp (hownM ▸ (hC.closed.1 _ _ hPm₁).1)
+    have ecbm : cbm₁ = cbm :=
+      Option.some.inj ((Binding.recordOf_of_loaded hloaded hcbm₁).symm.trans hBm₀)
+    subst cbm₁
+    exact ⟨cv, mI, rP, rules₀, ⟨cv.name, cv.levelParams, tyA⟩, rules', hku, hRR₁, hf_k, rfl, rfl,
+      hSA', hTML, hns, hnp, hmot,
+      ⟨Bm, im, cbm, msm, indm, D, lvls, himu, hPm₁, hcbm₁, hmsm, him, hpi, hfn, hni⟩, hconcl⟩
+  refine ⟨new ++ as, Reg, hndNA, ?_, ?_, ?_, ?_, ?_, hstoredRecs, ?_⟩
   · -- fresh in the prefix
     intro ci hci
     rcases List.mem_append.mp hci with hci | hci
@@ -562,7 +692,10 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
       (famModeled_at hB hRB (fun x hx d hd => hE.2.1 x d (hheld x hx d hd))
         (modeledAt_of_blockRoute (hrouteE E hE)))
       hCE hg hroots hreads hd
-      (recCompanionFacts_of_tys hFacts hndNA hnameNA hN hR hSrec (hComp E hE))
+      (recCompanionFacts_of_tys hB hRB (Binding.recordOf_of_recordsFor hE hcrb)
+        (fun i m hm => hEof E hE _ (Or.inr (Or.inr ⟨rs, i, m, hRB.muts, hm, Or.inl rfl⟩)) _
+          (hRB.members i m hm))
+        hreads (hTys ms rs hB.muts hRB.muts) hFacts hndNA hnameNA hN hR hSrec (hComp E hE))
       hLC.newLoads
   · -- no constant at an operation's key
     intro ci hci

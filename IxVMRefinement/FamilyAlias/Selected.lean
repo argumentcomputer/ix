@@ -141,6 +141,37 @@ structure FamilyTysCanon (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (A : _root_
       RecReads t (recordOf E₀) (fun x => E₀.blobs.get? x) crb (blockSelf t rb rs) cv.name rc
         (.recInfo cv mI rP rules₀) →
       FamRecCanon crb rs p rc cv.levelParams cv.type rules₀ tyA rhss
+  /-- Bound on the family record's member count. -/
+  rsBound : rs.size < UInt64.size
+  /-- Scoping and header-count facts on each recursor member at its selected annotated type `tyA`:
+  no self-mentions of any recursor key of `rb`, `rc.params` matches `ms[0]`, `rc.motives = rs.size`,
+  `rc.indices` matches the major premise's inductive (which `rb` uses), and stripping `mI + 1`
+  binders from `Core.posOf cv.levelParams tyA` yields a non-`forallE` conclusion. -/
+  recMeta : ∀ (k : Nat) (cv : ConstantVal .anon) (mI rP : Nat) (rules₀ : List (RecRule .anon))
+      (tyA : KExpr) (rhss : List KExpr),
+    (recsOf blk)[k]? = some (.recInfo cv mI rP rules₀) →
+    tys[(nonrecsOf blk).length + k]? = some tyA → rhsss[k]? = some rhss →
+    ∀ (p : Ixon.RecursorProj) (rc : Ixon.Recursor), p.block = rb →
+      rs[p.idx.toNat]? = some (.recr rc) →
+      cv.name = keyOf t (memberAddr rb p.idx.toNat (.recr rc)) →
+      RecReads t (recordOf E₀) (fun x => E₀.blobs.get? x) crb (blockSelf t rb rs) cv.name rc
+        (.recInfo cv mI rP rules₀) →
+      (∀ (j : Nat) (rc_j : Ixon.Recursor), rs[j]? = some (.recr rc_j) →
+        tyA.mentionsConst (keyOf t (memberAddr rb j (.recr rc_j))) = false) ∧
+      (∀ (ind₀ : Ixon.Inductive), ms[0]? = some (.indc ind₀) →
+        rc.params.toNat = ind₀.params.toNat) ∧
+      rc.motives.toNat = rs.size ∧
+      (∃ (Bm : _root_.Address) (im : Nat) (cbm : Ixon.Constant) (msm : Array Ixon.MutConst)
+        (indm : Ixon.Inductive) (D : KExpr) (lvls : List Core.KLevel),
+        im < UInt64.size ∧
+        UsedRef E₀ rb (memberAddr Bm im (.indc indm)) ∧
+        recordOf E₀ (memberAddr Bm im (.indc indm)) = some (memberProjection Bm im (.indc indm)) ∧
+        recordOf E₀ Bm = some cbm ∧ cbm.info = .muts msm ∧ msm[im]? = some (.indc indm) ∧
+        Core.piDomAt mI tyA = some D ∧
+        D.getAppFn = .const (keyOf t (memberAddr Bm im (.indc indm))) lvls ∧
+        rc.indices.toNat = indm.indices.toNat) ∧
+      (∃ bs concl, (Core.posOf cv.levelParams tyA).stripPis (mI + 1) = some (bs, concl) ∧
+        ∀ d b m, concl ≠ .forallE d b m)
 
 /-! ## The companion facts at the selected forms -/
 
@@ -168,20 +199,16 @@ structure FamRecCompanion (E : Ixon.Env) (t : Ix.Kernel.RoleTable) (env : Ix.Ker
       D.getAppFn = .const T (cvj.levelParams.map .param) ∧
       D.getAppArgs.take nP = (List.range nP).map (fun i => .bvar (mI - 1 - i)) ∧
       D.getAppArgs.drop nP = (List.range (mI - rP)).map fun i => .bvar (mI - rP - 1 - i)
-  head : ∀ (rl : RecRule .anon) (cvj : ConstantVal .anon) (nP nF : Nat)
-    (T : Ix.Kernel.Key .anon) (us : List Core.KLevel), rl ∈ rules₀ →
-    Decl.FamilyAlias.RuleCtor env blk tys rl.ctor cvj nP nF →
-    (Core.piDomAt mI tyA).map (·.getAppFn) = some (.const T us) →
-    ∃ tus, (Ix.Kernel.Expr.piResult cvj.type).getAppFn = .const T tus
 
 /-- **The companion facts of every recursor of the family, at its position**: the recursor at
-position `k` of the recursors, with its selected type `tys[n + k]` (`FamRecCompanion`). -/
+position `k` of the recursors, with its selected type `tys[n + k]` (`FamRecCompanion`), and
+unroled (`assert_no_role`). -/
 def FamRecsCompanion (E : Ixon.Env) (t : Ix.Kernel.RoleTable) (env : Ix.Kernel.Env .anon)
     (blk : List (ConstantInfo .anon)) (tys : List KExpr) : Prop :=
   ∀ (k : Nat) (cv : ConstantVal .anon) (mI rP : Nat) (rules₀ : List (RecRule .anon))
     (tyA : KExpr), (recsOf blk)[k]? = some (.recInfo cv mI rP rules₀) →
     tys[(nonrecsOf blk).length + k]? = some tyA →
-    FamRecCompanion E t env blk tys tyA mI rP rules₀
+    FamRecCompanion E t env blk tys tyA mI rP rules₀ ∧ ∀ r, cv.name ≠ .role r
 
 /-! ## The selected forms of a block with its family record -/
 

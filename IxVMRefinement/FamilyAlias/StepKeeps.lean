@@ -108,11 +108,7 @@ structure RecCompanionFacts (c : Core.Ctx) (cv : ConstantVal .anon) (mI rP : Nat
       D.getAppFn = .const T (cvj.levelParams.map .param) ∧
       D.getAppArgs.take nP = (List.range nP).map (fun i => .bvar (mI - 1 - i)) ∧
       D.getAppArgs.drop nP = (List.range (mI - rP)).map fun i => .bvar (mI - rP - 1 - i)
-  head : ∀ (rl : RecRule .anon) (cvj : ConstantVal .anon) (nP nF : Nat) (T : Key .anon)
-    (us : List Core.KLevel), rl ∈ rls →
-    c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
-    (Core.piDomAt mI cv.type).map (·.getAppFn) = some (.const T us) →
-    ∃ tus, (Ix.Kernel.Expr.piResult cvj.type).getAppFn = .const T tus
+  noK : Core.RecNotKAt c.E cv.name
 
 /-- **The companions after constants put in front of the prefix**, constructors and recursors
 among them: the role fields are monotone along the extension; a recursor of the prefix keeps its
@@ -159,11 +155,14 @@ theorem coreCompanions_append_recs {c : Core.Ctx} (h : Decl.CoreCompanions c)
         · exact (hrec cv mI rP rls hm).plain rl cvj nP nF hrl hfire hc
         · exact h.recPlain k cv mI rP rls rl cvj nP nF hf' hrl hfire (oldRuleCtor hf' hrl hc)
       ruleCtorHead := by
-        intro k cv mI rP rls rl cvj nP nF T us hf hrl hc hdom
+        intro k cv mI rP rls hf
+        have hkn : cv.name = k := Ix.Kernel.Semantics.Env.find?_name hf
         rcases find?_append_cases new hf with hm | hf'
-        · exact (hrec cv mI rP rls hm).head rl cvj nP nF T us hrl hc hdom
-        · exact h.ruleCtorHead k cv mI rP rls rl cvj nP nF T us hf' hrl (oldRuleCtor hf' hrl hc)
-            hdom }
+        · exact Or.inr (hkn ▸ (hrec cv mI rP rls hm).noK)
+        · exact (h.ruleCtorHead k cv mI rP rls hf').imp
+            (fun hh rl cvj nP nF T us hrl hc hdom =>
+              hh rl cvj nP nF T us hrl (oldRuleCtor hf' hrl hc) hdom)
+            id }
 
 /-! ## The keeping -/
 

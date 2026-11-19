@@ -51,6 +51,7 @@ theorem familyRecsModeled_famStep {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     (hg : AliasGroup env h aliases)
     (hd : DeclIndRenRunJ (famJ h) ⟨aliases ++ env.consts⟩ blk env₂)
     (hst : ∀ ci ∈ blk, ∃ c', env₂.find? ci.name = some c' ∧ StoredAs c' ci)
+    (hread : ∀ ci ∈ blk, ∀ x, ci.name = keyOf t x → Reads t E₀ x ci)
     (hclaim : ∀ (B' rb' x : _root_.Address) (crb' : Ixon.Constant), fam B' = some rb' →
       recordOf E₀ rb' = some crb' → ConstAddrOf rb' crb' x →
       ∀ ci ∈ blk, ci.name = keyOf t x → isRecursor ci = true) :
@@ -75,13 +76,14 @@ theorem familyRecsModeled_famStep {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
   · obtain ⟨ci, hci, hcn⟩ := hnew a ha
     have hk : ci.name = keyOf t x := hcn.symm.trans han
     have hrec := hclaim B' rb' x crb' hrb hcrb hx ci hci hk
+    have hrd := hread ci hci x hk
     obtain ⟨c', hc', hS⟩ := hst ci hci
     rw [hk] at hc'
     cases ci with
     | recInfo cv mI rP rules =>
       cases c' with
       | recInfo cv' mI' rP' rules' =>
-        refine ⟨⟨cv', mI', rP', rules', hc'⟩, ?_⟩
+        refine ⟨⟨cv', mI', rP', rules', hc', .recInfo cv mI rP rules, hrd, hS⟩, ?_⟩
         refine Decl.FamilyAlias.hasModel_declIndRenJ hd hc' ?_
         refine find?_append_none aliases (fun b hb heq => ?_) hold
         obtain ⟨n, d, hn⟩ := AliasGroup.name_aux hg b hb

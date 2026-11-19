@@ -213,6 +213,10 @@ theorem unitStepFamily_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
       hd hst hI).2
   · rw [← henv₂]
     exact familyRecsModeled_famStep (A := A) (rb := rb) (c := c) (crb := crb) hX.2 hg hd hst
+      (fun ci hci x hk => by
+        obtain ⟨x', -, hk', hr⟩ := hreads.2.1 ci hci
+        rw [← IxVM.Refinement.Core.keyOf_inj hinv.tableWf (hk'.symm.trans hk)]
+        exact hr)
       (hclaim blk hreads)
   · -- each address of the family, stored as its reading
     intro x hx

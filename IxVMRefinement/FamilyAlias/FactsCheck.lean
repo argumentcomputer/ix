@@ -137,6 +137,8 @@ def memberFactsCheck (fuel : Nat) (env : Env .anon) (g : KKey → KKey)
     (ci.toConstantVal.type.looseBVarsBounded 0 = true)
   let h3 ← guardP "member: annotation"
     ((IxVM.Consistency.annotatesCheck 4096 tyA ci.toConstantVal.type).isSome = true)
+  let hlv ← guardP "member: level parameters of the type"
+    (tyA.allLevelParamsDefined ci.toConstantVal.levelParams = true)
   let hs ← posInferSort fuel "member: the model's type is not typed" env hperm.down
     (tyA.renameConsts g)
   match hfind : env.find? (g ci.name) with
@@ -146,7 +148,10 @@ def memberFactsCheck (fuel : Nat) (env : Env .anon) (g : KKey → KKey)
     let ht ← guardP "member: type of the model"
       (cvm.type = posOf ci.toConstantVal.levelParams (tyA.renameConsts g))
     return ⟨⟨hperm.down, h1.down, h2.down, IxVM.Consistency.annotates_of_check h3.down,
-      ⟨cvm, mval, hint, hfind, hl.down, ht.down⟩, hs.down⟩⟩
+      hlv.down,
+      ⟨cvm, mval, hint, hfind, hl.down ▸ List.Perm.refl _, by
+        rw [hl.down, posOf_range, ht.down]
+        exact ExprLvEq.refl _⟩, hs.down⟩⟩
   | _ => .error "member: the model is not a stored definition"
 
 /-- The members against their models, in order. -/
@@ -266,11 +271,14 @@ def ruleFactsCheck (fuel : Nat) (env : Env .anon) (g : KKey → KKey)
   | some (.thmInfo cvt vt) =>
     let hl ← guardP "rule: level parameters of the theorem"
       (cvt.levelParams = List.range lps.length)
+    let htl ← guardP "rule: level parameters of the theorem type"
+      (cvt.type.allLevelParamsDefined (List.range lps.length) = true)
     let hs ← statementFactsCheck fuel env g recKey hperm tyA mI rP r.ctor rhsA c.1.1 c.1.2.1
       c.1.2.2 sh.1.1 sh.1.2 (invPosOf lps cvt.type)
     return ⟨⟨c.1.1, c.1.2.1, c.1.2.2, sh.1.1, sh.1.2, c.2, h2.down, h3.down, h4.down,
       IxVM.Consistency.annotates_of_check h5.down, h6.down, h7.down, ⟨ht.1, ht.2⟩, sh.2,
-      h8.down, h9.down, h10.down, cvt, vt, hfind, hl.down, hs.down⟩⟩
+      h8.down, h9.down, h10.down, cvt, vt, cvt.type, hfind, hl.down ▸ List.Perm.refl _,
+      htl.down, by rw [hl.down, posOf_range]; exact ExprLvEq.refl _, hs.down⟩⟩
   | _ => .error "rule: the theorem is not a stored theorem"
 
 /-- The rules of one recursor against their theorems, in order. -/

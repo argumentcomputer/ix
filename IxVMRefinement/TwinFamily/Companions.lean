@@ -74,11 +74,12 @@ theorem coreCompanions_append {c : Core.Ctx} (h : Decl.CoreCompanions c)
           D.getAppFn = .const T (cvj.levelParams.map .param) ∧
           D.getAppArgs.take nP = (List.range nP).map (fun i => .bvar (mI - 1 - i)) ∧
           D.getAppArgs.drop nP = (List.range (mI - rP)).map fun i => .bvar (mI - rP - 1 - i)) ∧
-      (∀ (rl : RecRule .anon) (cvj : ConstantVal .anon) (nP nF : Nat) (T : Key .anon)
-        (us : List Core.KLevel), rl ∈ rls →
-        c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
-        (Core.piDomAt mI cv.type).map (·.getAppFn) = some (.const T us) →
-        ∃ tus, (Ix.Kernel.Expr.piResult cvj.type).getAppFn = .const T tus)) :
+      ((∀ (rl : RecRule .anon) (cvj : ConstantVal .anon) (nP nF : Nat) (T : Key .anon)
+          (us : List Core.KLevel), rl ∈ rls →
+          c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
+          (Core.piDomAt mI cv.type).map (·.getAppFn) = some (.const T us) →
+          ∃ tus, (Ix.Kernel.Expr.piResult cvj.type).getAppFn = .const T tus) ∨
+        Core.RecNotKAt c.E cv.name)) :
     Decl.CoreCompanions ⟨c.E, ⟨new ++ c.env.consts⟩, c.t, c.lim⟩ := by
   have hctor_old : ∀ {k : Key .anon} {cvj : ConstantVal .anon} {nP nF : Nat},
       (⟨new ++ c.env.consts⟩ : Ix.Kernel.Env .anon).find? k = some (.ctorInfo cvj nP nF) →
@@ -112,10 +113,15 @@ theorem coreCompanions_append {c : Core.Ctx} (h : Decl.CoreCompanions c)
         · exact (hrec cv mI rP rls hm).2.2.1 rl cvj nP nF hrl hfire (hctor_old hc)
         · exact h.recPlain k cv mI rP rls rl cvj nP nF hf' hrl hfire (hctor_old hc)
       ruleCtorHead := by
-        intro k cv mI rP rls rl cvj nP nF T us hf hrl hc hdom
+        intro k cv mI rP rls hf
+        have hkn : cv.name = k := Ix.Kernel.Semantics.Env.find?_name hf
         rcases find?_append_cases new hf with hm | hf'
-        · exact (hrec cv mI rP rls hm).2.2.2 rl cvj nP nF T us hrl (hctor_old hc) hdom
-        · exact h.ruleCtorHead k cv mI rP rls rl cvj nP nF T us hf' hrl (hctor_old hc) hdom }
+        · exact (hrec cv mI rP rls hm).2.2.2.imp
+            (fun hh rl cvj nP nF T us hrl hc hdom => hh rl cvj nP nF T us hrl (hctor_old hc) hdom)
+            (fun hnk => hkn ▸ hnk)
+        · exact (h.ruleCtorHead k cv mI rP rls hf').imp
+            (fun hh rl cvj nP nF T us hrl hc hdom => hh rl cvj nP nF T us hrl (hctor_old hc) hdom)
+            id }
 
 /-! ## The twin record's constants -/
 
@@ -135,7 +141,8 @@ structure TwinCompanionFacts (env : Ix.Kernel.Env .anon) (w : TwinRecPart .anon)
 theorem coreCompanions_twin {c : Core.Ctx} (h : Decl.CoreCompanions c)
     {ws : List (TwinRecPart .anon)}
     (hext : Ix.Kernel.EnvExt c.env ⟨twinRecs ws ++ (twinModels ws ++ c.env.consts)⟩)
-    (hpart : ∀ w ∈ ws, TwinCompanionFacts c.env w) :
+    (hpart : ∀ w ∈ ws, TwinCompanionFacts c.env w)
+    (hnoK : ∀ w ∈ ws, Core.RecNotKAt c.E w.cvW'.name) :
     Decl.CoreCompanions ⟨c.E, ⟨twinRecs ws ++ (twinModels ws ++ c.env.consts)⟩, c.t, c.lim⟩ := by
   have hmodel : ∀ ci ∈ twinModels ws, ∃ cv v hint, ci = .defnInfo cv v hint := by
     intro ci hm
@@ -178,7 +185,7 @@ theorem coreCompanions_twin {c : Core.Ctx} (h : Decl.CoreCompanions c)
     rw [← hfn, he']
   have hcanR := h.recRulesNodupAndProj w.kC w.cvC w.mI w.rP w.rulesC hcan
   refine ⟨fun p us hne hdom => h.recMajorRecord w.kC w.cvC w.mI w.rP w.rulesC p us hcan
-      (lforall₂_ne_nil hrules hne) (hhead _ hdom), ⟨?_, ?_⟩, ?_, ?_⟩
+      (lforall₂_ne_nil hrules hne) (hhead _ hdom), ⟨?_, ?_⟩, ?_, Or.inr (hnoK w hw)⟩
   · rw [hmapctor]
     exact hcanR.1
   · intro p cm ip us hdom hcm hip j rl hj
@@ -208,9 +215,5 @@ theorem coreCompanions_twin {c : Core.Ctx} (h : Decl.CoreCompanions c)
       exact htake
     · rw [hargs hall]
       exact hdrop
-  · intro rl cvj nP nF T us hrl hc hdom
-    obtain ⟨rC, hrC, hct, -⟩ := lforall₂_mem_left hrules hrl
-    exact h.ruleCtorHead w.kC w.cvC w.mI w.rP w.rulesC rC cvj nP nF T us hcan hrC
-      (by rw [← hct]; exact hc) (hhead _ hdom)
 
 end IxVM.Refinement.Typing.TwinFamily

@@ -1,5 +1,6 @@
 import IxVMRefinement.Core.Registry
 import IxVMRefinement.Core.Open
+import IxVMRefinement.L1.Ingress
 import IxVMRefinement.Obs.KernelWhnf
 import IxVMRefinement.Obs.KernelTypes
 import IxVMRefinement.Obs.KernelLevels
@@ -516,10 +517,71 @@ theorem field_one_ne_two : (1 : F) ≠ 2 := by
   have h3 : (1 : F) + 1 = 1 + 0 := by rw [add_zero]; exact h2
   exact one_ne_zero (add_left_cancel h3)
 
+/-- **A loaded `Rec` with `kf = .field 1` satisfies the rule-constructor-head clause**:
+`RuleCtorHeadFact` gives either that clause directly, or `RecNotKAt c.E (c.κ (ixAddr a))`,
+which pins the record at `ixAddr a` in `c.E` to a recursor projection with `rc.k = false`;
+by `L1.get_ci_spec` and `load_escape`, `get_ci` then loads `kf = .field 0`, contradicting
+`kf = .field 1`. -/
+theorem recHead_of_getCI {c : ScopedCtx} (hc : ScopedCoreBase c)
+    {addr ptr : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {a : Bytes.Address}
+    {nl recTy np ni nm nmi rules kf u blk idx : SourceValue F} {ci : Ix.Kernel.ConstantInfo .anon}
+    (good : CoreGood c cs) (hres : c.κ (ixAddr a) ≠ unresolvedKey)
+    (ha : Bytes.RepAddressRef addrTy h a addr)
+    (ev : ObsFn W "Ingress::get_ci" [addr] h ptr h' cs)
+    (hld : loadValue h' ptr = .ok (.construct kciEnum "Rec"
+      [nl, recTy, np, ni, nm, nmi, rules, kf, u, blk, idx]))
+    (hfind : c.env.find? (c.κ (ixAddr a)) = some ci) :
+    kf = .field 1 →
+      ∀ cv mI rP rls rl cvj nP nF T us, ci = .recInfo cv mI rP rls → rl ∈ rls →
+        c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
+        (piDomAt mI cv.type).map (·.getAppFn) = some (.const T us) →
+        ∃ tus, (Ix.Kernel.Expr.piResult cvj.type).getAppFn = .const T tus := by
+  intro hkf cv mI rP rls rl cvj nP nF T us hci hrl hcj hdom
+  subst hci
+  rcases hc.env.ruleCtorHead _ cv mI rP rls hfind with hhead |
+    ⟨a', lc0, lcb, c0, cb, p, rs, rc, hk, hlc0, hd0, hinfo, hlcb, hdb, hmuts, hmem, hnotK⟩
+  · exact hhead rl cvj nP nF T us hrl hcj hdom
+  · have hkey : keyOf c.t (ixAddr a) = .id a' := (c.key_eq hres).symm.trans hk
+    have haeq : ixAddr a = a' := by
+      unfold keyOf at hkey
+      cases hf : c.t.bound.find? (·.2 == ixAddr a) with
+      | some rp => rw [hf] at hkey; cases hkey
+      | none => rw [hf] at hkey; exact Ix.Kernel.Key.id.inj hkey
+    subst haeq
+    obtain ⟨_, rawBytes, c_ld, blobs, hhash, haddr, hexact, _, _, _, hrawRes⟩ :=
+      L1.get_ci_spec good.bounded ha ev
+    have hbytes := load_escape hlc0 good.noCollision rawBytes hhash haddr
+    rw [hbytes, hd0] at hexact
+    have hc_eq : c_ld = c0 := (Except.ok.inj hexact).symm
+    subst hc_eq
+    simp only [L1.GetCIRawResult, hinfo] at hrawRes
+    obtain ⟨_, blkBytes, cb', ms', rc', v', hhash_b, haddr_b, hexact_b, _, hcb_info, hmc_get,
+      hld', hraw⟩ := hrawRes
+    have hbbytes := load_escape hlcb good.noCollision blkBytes hhash_b haddr_b
+    rw [hbbytes, hdb] at hexact_b
+    have hcb_eq : cb' = cb := (Except.ok.inj hexact_b).symm
+    subst hcb_eq
+    have hms_eq : ms' = rs := Ixon.ConstantInfo.muts.inj (hcb_info.symm.trans hmuts)
+    subst hms_eq
+    rw [Array.getElem?_toList] at hmc_get
+    have hrc_eq : rc' = rc := Ixon.MutConst.recr.inj (Option.some.inj (hmc_get.symm.trans hmem))
+    subst hrc_eq
+    rw [hld] at hld'
+    have hv_eq := Except.ok.inj hld'
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, hraw_v, _, _⟩ := hraw
+    rw [hraw_v] at hv_eq
+    injection hv_eq with _ _ hargs
+    simp only [List.cons.injEq, and_true] at hargs
+    obtain ⟨_, _, _, _, _, _, _, hk_eq, _, _, _⟩ := hargs
+    rw [hkf, hnotK] at hk_eq
+    simp only [L1.repBoolField, Bool.false_eq_true, ↓reduceIte] at hk_eq
+    exact absurd hk_eq field_one_ne_zero
+
 /-- `KernelWhnf::whnf_const_head`: the natives (`try_prim_dispatch`), then by the loaded
 constant: a definition's projection shortcut, then δ (`Red.delta`, continued by
 `whnf_with_spine`); quotient ι; the recursor dispatch; any other head is stuck. -/
-theorem whnf_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_const_head_step (c : ScopedCtx) (hc : ScopedCoreBase c)
+    {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_const_head" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_const_head c args h r h' calls := by
@@ -633,7 +695,10 @@ theorem whnf_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h'
     obtain ⟨E, hE, hred⟩ := ih.get (.whnf .red_rec) (by lt_calls) ev721 rc _ _ lvls hd sp _ _ _ _ _
       _ types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) d Γ
       (types_mono ext htypes) _ us cv mI rP rls As
-      ⟨⟨hfind, _, _, _, hci⟩, LvListRep.mono ext hus⟩ (Tm.mono ext hH) (tml_mono ext hAs) 1
+      ⟨⟨hfind, ⟨_, _, _, hci⟩,
+        recHead_of_getCI hc (good.sub fun x hx => by simp [hx]) (by resolve_key)
+          (Bytes.repAddressRef_heapMono₂ addrTy (ObsFn.heap_extends ev14) ha) ev155 ld149 hfind⟩,
+        LvListRep.mono ext hus⟩ (Tm.mono ext hH) (tml_mono ext hAs) 1
       x_reduced rfl (.inl rfl)
     have ext' := ext.trans (ObsFn.heap_extends ev721)
     obtain ⟨E', hE', hred'⟩ := ih.get (.whnf .whnf) (by lt_calls) ev849 rc x_reduced types rfl
@@ -654,7 +719,10 @@ theorem whnf_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h'
     exact ih.get (.whnf .red_rec) (by lt_calls) ev721 rc _ _ lvls hd sp _ _ _ _ _
       _ types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) d Γ
       (types_mono ext htypes) _ us cv mI rP rls As
-      ⟨⟨hfind, _, _, _, hci⟩, LvListRep.mono ext hus⟩ (Tm.mono ext hH) (tml_mono ext hAs) 2
+      ⟨⟨hfind, ⟨_, _, _, hci⟩,
+        recHead_of_getCI hc (good.sub fun x hx => by simp [hx]) (by resolve_key)
+          (Bytes.repAddressRef_heapMono₂ addrTy (ObsFn.heap_extends ev14) ha) ev155 ld149 hfind⟩,
+        LvListRep.mono ext hus⟩ (Tm.mono ext hH) (tml_mono ext hAs) 2
       _ rfl (.inr (.inl rfl))
   case other_Rec_n3_bind v1 m2 cs12 m140 p147 cs153 x_rnl x_rec_ty x_nparams x_nindices
       x_nmotives x_nminors x_rules x_k_flag w649 w650 w651 m708 cs719 x_k_reduct cs918 ev14 ev155
@@ -671,7 +739,10 @@ theorem whnf_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h'
     obtain ⟨E, hE, hred⟩ := ih.get (.whnf .red_rec) (by lt_calls) ev721 rc _ _ lvls hd sp _ _ _ _ _
       _ types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) d Γ
       (types_mono ext htypes) _ us cv mI rP rls As
-      ⟨⟨hfind, _, _, _, hci⟩, LvListRep.mono ext hus⟩ (Tm.mono ext hH) (tml_mono ext hAs) 3
+      ⟨⟨hfind, ⟨_, _, _, hci⟩,
+        recHead_of_getCI hc (good.sub fun x hx => by simp [hx]) (by resolve_key)
+          (Bytes.repAddressRef_heapMono₂ addrTy (ObsFn.heap_extends ev14) ha) ev155 ld149 hfind⟩,
+        LvListRep.mono ext hus⟩ (Tm.mono ext hH) (tml_mono ext hAs) 3
       x_k_reduct rfl (.inr (.inr rfl))
     have ext' := ext.trans (ObsFn.heap_extends ev721)
     obtain ⟨E', hE', hred'⟩ := ih.get (.whnf .whnf) (by lt_calls) ev920 rc x_k_reduct types rfl

@@ -79,8 +79,9 @@ theorem MemberFacts.renamed_resolves {env : Env .anon} {g : KKey → KKey}
     (tyA.renameConsts g).constsResolve env = true := by
   obtain ⟨cvm, mval₀, hint₀, hfm, hlm, htm⟩ := hF.model
   have hcw := hwf _ (List.mem_of_find?_eq_some hfm)
-  have h1 : cvm.type.constsResolve env = true := hcw.2.2.1
-  rw [htm, constsResolve_posOf] at h1
+  have h1 : (posOf cvm.levelParams cvm.type).constsResolve env = true := by
+    rw [constsResolve_posOf]; exact hcw.2.2.1
+  rw [← exprLvEq_constsResolve env htm, constsResolve_posOf] at h1
   exact h1
 
 /-! ## The derivation -/

@@ -348,5 +348,8 @@ theorem FoldStoreInv.etaUseFacts {env : Env .anon} (h : FoldStoreInv env)
   towers := h.etaTowers T cvT caps hT heta
   sort := (h.etaShape T cvT caps hT heta).1
   type := h.etaStable T kc cvT cvc caps nP nF hT heta hctor hkc env (Ix.Kernel.EnvExt.refl env)
+  ctorHead := fun cvc' hkc' => by
+    obtain ⟨_, _, _, _, cbs, hstrip⟩ := (h.etaShape T cvT caps hT heta).2 kc cvc' nP nF hctor hkc'
+    exact ⟨_, Ix.Kernel.Model.family_of_residual hstrip⟩
 
 end IxVM.Refinement.Decl

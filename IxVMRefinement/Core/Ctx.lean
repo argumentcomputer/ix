@@ -440,6 +440,31 @@ abbrev ScopedCtx.binds (c : ScopedCtx) (r : Ix.Kernel.Role) : Prop := (c.t.addre
 abbrev ScopedCtx.inForce (c : ScopedCtx) (r : Ix.Kernel.Role) : Prop :=
   c.binds r ∧ ∀ n, c.lim = some n → Ix.SpecDigest.groupOf r < n
 
+/-- **A recursor key is non-K at its record in `E`**: the key is an unroled address `.id a`
+whose exact record in `E` is a recursor projection into a block in `E` with `rc.k = false`.
+Such a recursor never loads with `kf = .field 1` (`recHead_of_getCI`), so K-rescue never fires
+at it. -/
+def RecNotKAt (E : Ixon.Env) (k : KKey) : Prop :=
+  ∃ (a : _root_.Address) (lc0 lcb : Ixon.LazyConstant) (c0 cb : Ixon.Constant)
+      (p : Ixon.RecursorProj) (rs : Array Ixon.MutConst) (rc : Ixon.Recursor),
+    k = .id a ∧
+    E.consts.get? a = some lc0 ∧ Ixon.deConstantExact lc0.rawBytes = .ok c0 ∧ c0.info = .rPrj p ∧
+    E.consts.get? p.block = some lcb ∧ Ixon.deConstantExact lcb.rawBytes = .ok cb ∧
+      cb.info = .muts rs ∧ rs[p.idx.toNat]? = some (.recr rc) ∧ rc.k = false
+
+/-- **Either a recursor's rules' constructors build its major inductive, or the recursor is
+non-K at its record in `E`** (`RecNotKAt`). Native and basis recursors satisfy the left arm
+(which K-rescue reads); modeled family recursors are non-K and unroled, satisfying the right
+arm. -/
+def RuleCtorHeadFact (E : Ixon.Env) (env : Ix.Kernel.Env .anon) : Prop :=
+  ∀ k cv mI rP rls,
+    env.find? k = some (.recInfo cv mI rP rls) →
+    (∀ rl cvj nP nF T us, rl ∈ rls →
+      env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
+      (piDomAt mI cv.type).map (·.getAppFn) = some (.const T us) →
+      ∃ tus, (Ix.Kernel.Expr.piResult cvj.type).getAppFn = .const T tus) ∨
+    RecNotKAt E k
+
 /-- **The environment invariant the core reads** (module docstring's table, with the layer that
 establishes each field). -/
 structure EnvFacts (c : Ctx) : Prop where
@@ -508,14 +533,9 @@ structure EnvFacts (c : Ctx) : Prop where
     c.env.find? k = some (.recInfo cv mI rP rls) → rls ≠ [] →
     (piDomAt mI cv.type).map (·.getAppFn) = some (.const (c.κ p) us) →
     ∃ cm, Ix.Cert.recordAt c.E p = some cm
-  /-- (L5) **A rule's constructor builds the recursor's major inductive**: the head of the
-  constructor type's result is the key heading the major premise's domain (the K and η rescues
-  rebuild a major from it). -/
-  ruleCtorHead : ∀ k cv mI rP rls rl cvj nP nF T us,
-    c.env.find? k = some (.recInfo cv mI rP rls) → rl ∈ rls →
-    c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
-    (piDomAt mI cv.type).map (·.getAppFn) = some (.const T us) →
-    ∃ tus, (Ix.Kernel.Expr.piResult cvj.type).getAppFn = .const T tus
+  /-- (L5) **A rule's constructor builds the recursor's major inductive, or the recursor is
+  non-K at its record in `c.E`** (`RuleCtorHeadFact`). -/
+  ruleCtorHead : RuleCtorHeadFact c.E c.env
   /-- (L5, L6) **The quotient roles in force store the pinned basis**: the annotated basis
   constants (`Ix.Kernel.BasisKind.declsA .quotK`: `Quot`, `Quot.mk`, `Quot.lift`, `Quot.ind`,
   `Quot.sound`) are stored at their keys once `Quot` is in force (its group admitted, the basis
@@ -552,6 +572,13 @@ structure EnvFacts (c : Ctx) : Prop where
   etaSort : ∀ T cvT caps, c.env.find? T = some (.indInfo cvT caps) → caps.eta = true →
     ∃ bs l, cvT.type.stripPis caps.etaParams = some (bs, .sort l) ∧
       caps.sortZ = Ix.Kernel.Level.zeronessOf l
+  /-- (L5) **An η-capable family's η-constructor builds that family**: the head of the
+  constructor type's result is `T`. -/
+  etaCtorHead : ∀ (T kc : KKey) (cvT : Ix.Kernel.ConstantVal .anon)
+      (caps : Ix.Kernel.IndCaps .anon) (nP nF : Nat),
+    c.env.find? T = some (.indInfo cvT caps) → caps.eta = true → caps.etaCtor = some kc →
+    ∀ cvc, c.env.find? kc = some (.ctorInfo cvc nP nF) →
+      ∃ tus, (Ix.Kernel.Expr.piResult cvc.type).getAppFn = .const T tus
   /-- (L5) **A stored recursor with a rule has a binder for each argument up to the major
   premise** (the walk `Red.iota` reads, `CertsR.toCerts`; a recursor with no rule never fires).
   `Ix.Kernel.Open.recArity_of`. A projection function is such a recursor, so this is also the

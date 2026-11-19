@@ -260,19 +260,18 @@ theorem eta_iota_fab_step (c : ScopedCtx) (hc : ScopedCoreBase c)
     obtain ⟨cvj, cnP, cnF, T', tus', cvT', caps', hcj, hres', hT', heta, hetaCtor, -, hlp_eq⟩ :=
       hc.env.store.recEta hfind hrl hrleta
     obtain ⟨us0, hmh0⟩ := hmh
-    obtain ⟨tus, htus⟩ :=
-      hc.env.ruleCtorHead k cv mI rP [rl] rl cvj cnP cnF (c.κ (ixAddr p)) us0 hfind hrl hcj hmh0
-    rw [htus] at hres'
-    injection hres' with hTT _
-    subst hTT
     have hciI' := hciI
     obtain ⟨cvT, caps, nPT, nIT, nCT, rfl, ⟨hinl, hinl_lt, hiperm, hity⟩, rfl, rfl, rfl, hnPT,
       -, -, b, i, hb, rfl, hnameT⟩ := WhnfAux.ind_inv hciI
+    obtain ⟨hctor, hetaP, hetaF, hnP_eq, hunit0, hetaUse⟩ :=
+      hetaCaps b nPT i cvT cvj caps cnP cnF rfl rfl (Nat.lt_of_lt_of_le hnPT (by decide)) rfl hb hcj
+    obtain ⟨tus, htus⟩ := hetaUse.ctorHead cvj hcj
+    rw [htus] at hres'
+    injection hres' with hTT _
+    subst hTT
     rw [hfindI] at hT'
     obtain ⟨rfl, rfl⟩ := Ix.Kernel.ConstantInfo.indInfo.inj (Option.some.inj hT')
     subst hinl
-    obtain ⟨hctor, hetaP, hetaF, hnP_eq, hunit0, hetaUse⟩ :=
-      hetaCaps b nPT i cvT cvj caps cnP cnF rfl rfl (Nat.lt_of_lt_of_le hnPT (by decide)) rfl hb hcj
     -- heap extensions
     have e36 := ObsFn.heap_extends ev36
     have e14 := ObsFn.heap_extends ev14
@@ -594,7 +593,7 @@ theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreBase c)
       ev513 ev479 hne559 ev577 ev673 hc770 hnt0 =>
     subst hc770
     have hrr' := hrr
-    obtain ⟨⟨hfind, u0, blk0, idx0, hci⟩, hus⟩ := hrr
+    obtain ⟨⟨hfind, ⟨u0, blk0, idx0, hci⟩, -⟩, hus⟩ := hrr
     obtain ⟨p', i', m', mi', hval, hnp, hni, hnm, hnmi, hrP, hmI, -, hmIb, hrules⟩ :=
       CIRep.recr_fields hci
     obtain ⟨rl, rls1, hrl_cons, _, hrules1⟩ := RulesRep.cons_of_load hrules ld12
@@ -667,9 +666,6 @@ theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreBase c)
       hc.loads.storedRes _ _ ((congrArg (fun k => c.env.find? k) hctor).symm.trans hcj)
     have hctorScoped : rl.ctor = c.κ (cprjAddr (ixAddr b) (ZMod.val i) 0) :=
       hctor.trans (c.key_eq hresc).symm
-    obtain ⟨tus, htus⟩ :=
-      hc.env.ruleCtorHead k cv mI rP [rl] rl cvj rl.ctorParams cnF (c.κ (ixAddr p)) us_m
-        hfind hrl hcj hmh0
     -- unpack ev422 (struct_is_rec) to extract block_is_multi = 0
     have ev422_keep := ev422
     have hgood420 : CoreGood c cs420 := good.sub fun z hz => by simp [hz]
@@ -776,6 +772,7 @@ theorem try_struct_eta_iota_step (c : ScopedCtx) (hc : ScopedCoreBase c)
         fun h01 => NatAux.field_one_ne_zero h01.symm, hgood420.raw,
         Bytes.repAddressRef_heapMono₂ addrTy Y352 hp⟩
       hl_f hnz_f
+    obtain ⟨tus, htus⟩ := hetaUse.ctorHead cvj hcj_cprj
     have hetaCtor_rl : caps.etaCtor = some rl.ctor := by
       rw [← hctorScoped] at hetaCtor_cprj; exact hetaCtor_cprj
     obtain ⟨a_rec, hcv_key⟩ := recr_key hci
@@ -844,7 +841,7 @@ theorem red_rec_step (c : ScopedCtx)
     k us cv mI rP rls As hrr hhd hAs t x hr ht
   subst hargs
   have hrr' := hrr
-  obtain ⟨⟨hfind, u0, blk0, idx0, hci⟩, hus⟩ := hrr
+  obtain ⟨⟨hfind, ⟨u0, blk0, idx0, hci⟩, -⟩, hus⟩ := hrr
   obtain ⟨p', i', m', mi', ⟨hnl, hnl_lt, -, hrt⟩, hnp, hni, hnm, hnmi, -, hmI, -, hmIb, -⟩ :=
     CIRep.recr_fields hci
   -- Helper: check level count from ev23 and op17

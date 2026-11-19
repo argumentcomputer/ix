@@ -50,8 +50,8 @@ theorem RecRedHyps.mono {c : ScopedCtx} {h₁ h₂ : Heap F} {k : KKey} {us : Li
     {mI rP : Nat} {rls : List (Ix.Kernel.RecRule .anon)} (ext : Heap.Extends h₁ h₂)
     (hr : Specs.Whnf.RecRedHyps c h₁ k us lvls nl rt np ni nm nmi rules kf cv mI rP rls) :
     Specs.Whnf.RecRedHyps c h₂ k us lvls nl rt np ni nm nmi rules kf cv mI rP rls := by
-  obtain ⟨⟨hf, u, blk, idx, hci⟩, hus⟩ := hr
-  exact ⟨⟨hf, u, blk, idx, CIRep.mono ext hci⟩, LvListRep.mono ext hus⟩
+  obtain ⟨⟨hf, ⟨u, blk, idx, hci⟩, hhead⟩, hus⟩ := hr
+  exact ⟨⟨hf, ⟨u, blk, idx, CIRep.mono ext hci⟩, hhead⟩, LvListRep.mono ext hus⟩
 
 /-- The major premise's position, as the field element `np + nm + nmi + ni` IxVM computes. -/
 theorem major_idx_field {np nm nmi ni x17 x9 v1 : SourceValue F} {p i m mi : F} {mI : Nat}
@@ -214,7 +214,7 @@ theorem try_iota_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap
   · -- fired: `red_iota`'s reduct
     obtain ⟨-, rfl⟩ := tuple2_inj (hr.symm.trans he542)
     subst he556 hc2
-    obtain ⟨⟨hfind, u, blk, idx, hci⟩, hus⟩ := hrr
+    obtain ⟨⟨hfind, ⟨u, blk, idx, hci⟩, hhead⟩, hus⟩ := hrr
     obtain ⟨p', i', m', mi', -, hnp, hni, hnm, hnmi, -, hmI, -, hmIb, -⟩ := CIRep.recr_fields hci
     have hv1 := major_idx_field hnp hni hnm hnmi hmI op32 op24 op16
     subst hv1
@@ -243,7 +243,7 @@ theorem try_iota_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap
     obtain ⟨E, hE, hred⟩ := ih.get (.whnf .red_iota) (by lt_calls) ev303 rc rt lvls sp np nm nmi
       ni rules rp v259 types rfl (good.sub fun z hz => by simp [hz]) (RCRep.mono ext hrc) d Γ
       (types_mono ext htypes) k us nl kf cv mI rP rls p As M
-      (RecRedHyps.mono ext ⟨⟨hfind, u, blk, idx, hci⟩, hus⟩) hlen
+      (RecRedHyps.mono ext ⟨⟨hfind, ⟨u, blk, idx, hci⟩, hhead⟩, hus⟩) hlen
       (Bytes.repAddressRef_heapMono₂ addrTy ext hp) hmh (tml_mono ext hAs) hM
       (by rw [hget]; exact .trans hr1 (.trans hr2 (.trans hr3 hr4))) x rfl
     exact ⟨E, Tm.mono (ObsFn.heap_extends ev432) hE, hred⟩

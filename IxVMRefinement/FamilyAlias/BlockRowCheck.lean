@@ -863,7 +863,9 @@ theorem familyBlockCircuitRow_of_check {L : Ix.Kernel.Env .anon → NativeFam .a
       obtain ⟨x, -, hk, -⟩ := hreads.2.1 ci hci
       rw [hk]
       exact Decl.isBaseKey_iff_nonAuxKey.mp (Decl.isBaseKey_keyOf t x)
-    exact recCompanionFacts_of_tys hF hnd hname hI.nonrecs hI.recs
+    exact recCompanionFacts_of_tys hB hrb (hctx.toStepStore.held hrb.record)
+      (fun i m hm => hctx.toStepStore.held (hrb.members i m hm)) hreads
+      (hSel.1 ms rs hB.muts hrb.muts) hF hnd hname hI.nonrecs hI.recs
       (Decl.FamilyAlias.foldStoreInv_famStep hg hreads.2.2.2 hna hd hinv.store).store.rec_ctors
       hSel.2
   · intro env h aliases blk new adv' tys rhsss hinv hextT hrefs hg hreads hF hSel hd hst hI

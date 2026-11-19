@@ -80,9 +80,10 @@ theorem CoreCompanions.append_noRec {c : Ctx} (h : Decl.CoreCompanions c)
       recPlain := fun k cv mI rP rls rl cvj nP nF hf hrl hfire hc =>
         h.recPlain k cv mI rP rls rl cvj nP nF (oldRec hf) hrl hfire
           (oldRuleCtor (oldRec hf) hrl hc)
-      ruleCtorHead := fun k cv mI rP rls rl cvj nP nF T us hf hrl hc hdom =>
-        h.ruleCtorHead k cv mI rP rls rl cvj nP nF T us (oldRec hf) hrl
-          (oldRuleCtor (oldRec hf) hrl hc) hdom }
+      ruleCtorHead := fun k cv mI rP rls hf =>
+        (h.ruleCtorHead k cv mI rP rls (oldRec hf)).imp
+          (fun hhead rl cvj nP nF T us hrl hc hdom =>
+            hhead rl cvj nP nF T us hrl (oldRuleCtor (oldRec hf) hrl hc) hdom) id }
 
 /-- **The unresolved key stays unstored** where no new constant has it. -/
 theorem unresolved_append {env : Ix.Kernel.Env .anon} (h : env.find? unresolvedKey = none)

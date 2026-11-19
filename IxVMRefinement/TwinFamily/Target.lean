@@ -49,7 +49,7 @@ open IxVM.Refinement.Decl (twinPosRulesJ judgeFrames_twinPosRulesJ judgeSound_tw
 open IxVM.Refinement.Typing.FamilyAlias (FamilyCallAtLim)
 open Ix.Kernel (ConstantInfo ConstantVal RecRule LevelParam)
 open Ix.Kernel.Semantics (Judgements ConstantValCheckJ DeclRecTwinRunJ TwinRecPart twinModels
-  twinRecs WrapRel NativeFam)
+  twinRecs WrapRel SymWrapT TwinRuleMatch NativeFam)
 open Ix.Kernel.Model (EnvModelN EnvModelM JudgeFrames JudgeSound HasModel StoreArR)
 
 set_option linter.unusedVariables false
@@ -121,6 +121,8 @@ def TwinStepTarget (RForm : RecordFormPred) : Prop :=
     (∀ x, UsedRef E₀ rb' x →
       (env.find? (keyOf t x)).isSome = true ∨ ConstAddrOf rb' crb' x ∨ ¬ NeedOk E₀ x) →
     FamilyInstalled t env rb crb →
+    (∀ x, ConstAddrOf rb crb x →
+      ∃ ci ci₀, env.find? (keyOf t x) = some ci ∧ Reads t E₀ x ci₀ ∧ StoredAs ci ci₀) →
     (∀ x, ConstAddrOf rb' crb' x → env.find? (keyOf t x) = none) →
     (∀ x, ConstAddrOf rb' crb' x → Decl.KeyFree (keyOf t x)) →
     ∃ (blk : List (ConstantInfo .anon)) (env₂ : Ix.Kernel.Env .anon),
@@ -205,11 +207,13 @@ def FamilyRecsModeled (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
   ∀ (B rb x : _root_.Address) (crb : Ixon.Constant),
     fam B = some rb → recordOf E₀ rb = some crb → ConstAddrOf rb crb x →
     (env.find? (keyOf t x)).isSome = true →
-    (∃ cv mI rP rules, env.find? (keyOf t x) = some (.recInfo cv mI rP rules)) ∧
+    (∃ cv mI rP rules, env.find? (keyOf t x) = some (.recInfo cv mI rP rules) ∧
+      ∃ ci₀, Reads t E₀ x ci₀ ∧ StoredAs (.recInfo cv mI rP rules) ci₀) ∧
       HasModel env (keyOf t x)
 
 /-- The clause is kept by a step that keeps every stored constant and stores, at a constant
-address of a claimed family record, only a recursor with a model companion. -/
+address of a claimed family record, only a recursor that stores its reading with a model
+companion. -/
 theorem FamilyRecsModeled.step {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     {fam : _root_.Address → Option _root_.Address} {env env₂ : Ix.Kernel.Env .anon}
     (h : FamilyRecsModeled t E₀ fam env)
@@ -218,16 +222,18 @@ theorem FamilyRecsModeled.step {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     (hnew : ∀ (B rb x : _root_.Address) (crb : Ixon.Constant),
       fam B = some rb → recordOf E₀ rb = some crb → ConstAddrOf rb crb x →
       (env₂.find? (keyOf t x)).isSome = true → env.find? (keyOf t x) = none →
-      (∃ cv mI rP rules, env₂.find? (keyOf t x) = some (.recInfo cv mI rP rules)) ∧
+      (∃ cv mI rP rules, env₂.find? (keyOf t x) = some (.recInfo cv mI rP rules) ∧
+        ∃ ci₀, Reads t E₀ x ci₀ ∧ StoredAs (.recInfo cv mI rP rules) ci₀) ∧
         HasModel env₂ (keyOf t x)) :
     FamilyRecsModeled t E₀ fam env₂ := by
   intro B rb x crb hrb hcrb hx hs
   cases hold : env.find? (keyOf t x) with
   | none => exact hnew B rb x crb hrb hcrb hx hs hold
   | some c =>
-    obtain ⟨⟨cv, mI, rP, rules, hf⟩, hm⟩ := h B rb x crb hrb hcrb hx (by rw [hold]; rfl)
+    obtain ⟨⟨cv, mI, rP, rules, hf, ci₀, hrd, hst⟩, hm⟩ :=
+      h B rb x crb hrb hcrb hx (by rw [hold]; rfl)
     rw [hold] at hf
-    refine ⟨⟨cv, mI, rP, rules, ?_⟩, hm.mono hfind⟩
+    refine ⟨⟨cv, mI, rP, rules, ?_, ci₀, hrd, hst⟩, hm.mono hfind⟩
     rw [← hf]
     exact hfind hold
 
@@ -249,8 +255,23 @@ theorem familyInstalled_of_clause {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     {B rb : _root_.Address} {crb : Ixon.Constant} (h : FamilyRecsModeled t E₀ fam env)
     (hrb : fam B = some rb) (hcrb : recordOf E₀ rb = some crb)
     (hstored : ∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true) :
-    FamilyInstalled t env rb crb :=
-  fun x hx => h B rb x crb hrb hcrb hx (hstored x hx)
+    FamilyInstalled t env rb crb := by
+  intro x hx
+  obtain ⟨⟨cv, mI, rP, rules, hf, -⟩, hm⟩ := h B rb x crb hrb hcrb hx (hstored x hx)
+  exact ⟨⟨cv, mI, rP, rules, hf⟩, hm⟩
+
+/-- **With the clause, each stored constant address of a claimed family record stores its
+reading in `E₀`.** -/
+theorem familyRecsStored_of_clause {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
+    {fam : _root_.Address → Option _root_.Address} {env : Ix.Kernel.Env .anon}
+    {B rb : _root_.Address} {crb : Ixon.Constant} (h : FamilyRecsModeled t E₀ fam env)
+    (hrb : fam B = some rb) (hcrb : recordOf E₀ rb = some crb)
+    (hstored : ∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true) :
+    ∀ x, ConstAddrOf rb crb x →
+      ∃ ci ci₀, env.find? (keyOf t x) = some ci ∧ Reads t E₀ x ci₀ ∧ StoredAs ci ci₀ := by
+  intro x hx
+  obtain ⟨⟨cv, mI, rP, rules, hf, ci₀, hrd, hst⟩, -⟩ := h B rb x crb hrb hcrb hx (hstored x hx)
+  exact ⟨.recInfo cv mI rP rules, ci₀, hf, hrd, hst⟩
 
 /-! ## The generated terms of IxC's twin record -/
 
@@ -267,18 +288,18 @@ def GenTyped (J : Judgements .anon) (env : Ix.Kernel.Env .anon) (lps : List Leve
 
 /-- **The generated type of a twin recursor**, as `DeclRecTwinRunJ` asks it: one term related by
 `WrapRel` to the canonical recursor's type and to the twin's checked type, which is the canonical
-type or is typed. -/
+type, is typed, or sits over symmetrically wrapper-related types. -/
 def TwinTypeGen (J : Judgements .anon) (env : Ix.Kernel.Env .anon)
     (cvC cvW' : ConstantVal .anon) : Prop :=
   ∃ tyG : KExpr, WrapRel env.find? tyG cvC.type ∧ WrapRel env.find? tyG cvW'.type ∧
-    (tyG = cvC.type ∨ GenTyped J env cvC.levelParams tyG)
+    (tyG = cvC.type ∨ GenTyped J env cvC.levelParams tyG ∨ SymWrapT env.find? cvC.type cvW'.type)
 
 /-- **The generated right-hand side of a twin rule**, as `TwinRuleJ` asks it. -/
 def TwinRuleGen (J : Judgements .anon) (env : Ix.Kernel.Env .anon) (f : KKey → KKey)
-    (lps : List LevelParam) (rC rW' : RecRule .anon) : Prop :=
+    (lps : List LevelParam) (cvW' : ConstantVal .anon) (rC rW' : RecRule .anon) : Prop :=
   ∃ rhsG : KExpr, WrapRel env.find? rhsG rC.rhs ∧
     WrapRel env.find? (rhsG.renameConsts f) rW'.rhs ∧
-    (rhsG = rC.rhs ∨ GenTyped J env lps rhsG)
+    (rhsG = rC.rhs ∨ GenTyped J env lps rhsG ∨ TwinRuleMatch env.find? f cvW'.type rC.rhs rW'.rhs)
 
 /-- Where the canonical type is above the twin's (the twin consumed at least the wrappers the
 canonical record did; in particular where the two terms are equal), the canonical type is the
@@ -297,7 +318,7 @@ theorem twinTypeGen_of_twin_above {cvC cvW cvW' : ConstantVal .anon}
   obtain ⟨-, -, -, -, hlb, hfv, type, stype, lv, hann, hlp, hres, hinf, -, hcv'⟩ := hcv.inv
   obtain ⟨hfv', hlb'⟩ := hfr.annot_syntax hann hfv hlb
   subst hcv'
-  refine ⟨type, h, WrapRel.refl _ _, Or.inr ⟨hfv', ?_, hres, hlb', stype, hinf⟩⟩
+  refine ⟨type, h, WrapRel.refl _ _, Or.inr (Or.inl ⟨hfv', ?_, hres, hlb', stype, hinf⟩)⟩
   rw [← hlps]
   exact hlp
 
@@ -307,26 +328,44 @@ supply. -/
 theorem twinTypeGen_of_typed {cvC cvW' : ConstantVal .anon} {g : KExpr}
     (hC : WrapRel env.find? g cvC.type) (hW : WrapRel env.find? g cvW'.type)
     (ht : GenTyped J env cvC.levelParams g) : TwinTypeGen J env cvC cvW' :=
-  ⟨g, hC, hW, Or.inr ht⟩
+  ⟨g, hC, hW, Or.inr (Or.inl ht)⟩
+
+/-- Where the canonical and twin types are symmetrically wrapper-related (`SymWrapT`) with a
+common `WrapRel` ancestor `tyG`, nothing further is typed. -/
+theorem twinTypeGen_of_symWrapT {cvC cvW' : ConstantVal .anon} {g : KExpr}
+    (hC : WrapRel env.find? g cvC.type) (hW : WrapRel env.find? g cvW'.type)
+    (hSym : SymWrapT env.find? cvC.type cvW'.type) : TwinTypeGen J env cvC cvW' :=
+  ⟨g, hC, hW, Or.inr (Or.inr hSym)⟩
 
 /-- Where the canonical rule, renamed to the twin's peers, is above the twin's rule, the
 canonical right-hand side is the generated one: nothing is typed. -/
 theorem twinRuleGen_of_canonical_above {f : KKey → KKey} {lps : List LevelParam}
-    {rC rW' : RecRule .anon} (h : WrapRel env.find? (rC.rhs.renameConsts f) rW'.rhs) :
-    TwinRuleGen J env f lps rC rW' :=
+    {cvW' : ConstantVal .anon} {rC rW' : RecRule .anon}
+    (h : WrapRel env.find? (rC.rhs.renameConsts f) rW'.rhs) :
+    TwinRuleGen J env f lps cvW' rC rW' :=
   ⟨rC.rhs, WrapRel.refl _ _, h, Or.inl rfl⟩
 
 /-- A common right-hand side above both rules that is typed at the environment is the generated
 one. No front door types a rule's right-hand side, so in every case but the one above this
 typing has to be supplied. -/
 theorem twinRuleGen_of_typed {f : KKey → KKey} {lps : List LevelParam}
-    {rC rW' : RecRule .anon} {g : KExpr} (hC : WrapRel env.find? g rC.rhs)
+    {cvW' : ConstantVal .anon} {rC rW' : RecRule .anon} {g : KExpr}
+    (hC : WrapRel env.find? g rC.rhs)
     (hW : WrapRel env.find? (g.renameConsts f) rW'.rhs) (ht : GenTyped J env lps g) :
-    TwinRuleGen J env f lps rC rW' :=
-  ⟨g, hC, hW, Or.inr ht⟩
+    TwinRuleGen J env f lps cvW' rC rW' :=
+  ⟨g, hC, hW, Or.inr (Or.inl ht)⟩
 
-/-- The generated type is the clause of the circuit-facing contract of a modeled twin
-(`ModeledTwinMemberOut.ty_gen`). -/
+/-- Where the twin rule matches the twin type's λ-prefix and the canonical rule's body under
+`SymWrapT` (`TwinRuleMatch`), nothing further is typed. -/
+theorem twinRuleGen_of_match {f : KKey → KKey} {lps : List LevelParam}
+    {cvW' : ConstantVal .anon} {rC rW' : RecRule .anon} {g : KExpr}
+    (hC : WrapRel env.find? g rC.rhs)
+    (hW : WrapRel env.find? (g.renameConsts f) rW'.rhs)
+    (hm : TwinRuleMatch env.find? f cvW'.type rC.rhs rW'.rhs) :
+    TwinRuleGen J env f lps cvW' rC rW' :=
+  ⟨g, hC, hW, Or.inr (Or.inr hm)⟩
+
+/-- The generated type is the clause of `DeclRecTwinRunJ` for a twin recursor. -/
 theorem twinTypeGen_iff_ty_gen {w : TwinRecPart .anon} :
     TwinTypeGen J env w.cvC w.cvW' ↔
       ∃ tyG : KExpr,
@@ -335,7 +374,8 @@ theorem twinTypeGen_iff_ty_gen {w : TwinRecPart .anon} :
         (tyG = w.cvC.type ∨
           (tyG.hasFvar = false ∧ tyG.allLevelParamsDefined w.cvC.levelParams = true ∧
             tyG.constsResolve env = true ∧ tyG.looseBVarsBounded 0 = true ∧
-            ∃ sty, J.infer env 0 tyG sty)) :=
+            ∃ sty, J.infer env 0 tyG sty) ∨
+          SymWrapT env.find? w.cvC.type w.cvW'.type) :=
   Iff.rfl
 
 end Generated

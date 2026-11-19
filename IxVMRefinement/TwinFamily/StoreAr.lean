@@ -23,7 +23,7 @@ namespace IxVM.Refinement.Typing.TwinFamily
 
 open Ix.Kernel (Env Expr Key ConstantInfo ConstantVal RecRule)
 open Ix.Kernel.Semantics (WrapRel WrapT ConsumeStar DeclRecTwinRunJ TwinRecPart twinRecs
-  twinModels twinProv Forall₂)
+  twinModels twinProv Forall₂ LamDomAlong TwinRuleMatch stripLams)
 open Ix.Kernel.Model (ArRes ConstArR StoreArR)
 open IxVM.Refinement.Decl (twinPosRulesJ judgeFrames_twinPosRulesJ)
 
@@ -181,6 +181,90 @@ theorem arOk_of_twinPosInfer {env : Env .anon} {e t : Expr .anon} (hfv : e.hasFv
   unfold Core.posOf at h1
   rwa [Ix.Kernel.LevelRen.arOk_inst] at h1
 
+private theorem arOk_liftLooseBVars (env : Env .anon) :
+    ∀ (e : Expr .anon) (n c : Nat), Expr.arOk env (e.liftLooseBVars n c) = Expr.arOk env e
+  | .bvar i, n, c => by simp only [Expr.liftLooseBVars]; split <;> rfl
+  | .fvar _ _, _, _ | .sort _, _, _ | .const _ _, _, _ | .lit _, _, _ => rfl
+  | .app f a, n, c => by
+    simp [Expr.liftLooseBVars, Expr.arOk, arOk_liftLooseBVars env f n c,
+      arOk_liftLooseBVars env a n c]
+  | .lam t b _, n, c => by
+    simp [Expr.liftLooseBVars, Expr.arOk, arOk_liftLooseBVars env t n c,
+      arOk_liftLooseBVars env b n (c + 1)]
+  | .forallE t b _, n, c => by
+    simp [Expr.liftLooseBVars, Expr.arOk, arOk_liftLooseBVars env t n c,
+      arOk_liftLooseBVars env b n (c + 1)]
+  | .letE t v b _, n, c => by
+    simp [Expr.liftLooseBVars, Expr.arOk, arOk_liftLooseBVars env t n c,
+      arOk_liftLooseBVars env v n c, arOk_liftLooseBVars env b n (c + 1)]
+  | .proj _ _ e, n, c => arOk_liftLooseBVars env e n c
+
+private theorem arOk_of_stripPis {env : Env .anon} :
+    ∀ (n : Nat) {e rest : Expr .anon} {bs : List (Expr .anon × Ix.Kernel.BinderMeta)},
+      e.stripPis n = some (bs, rest) → Expr.arOk env e = true → Expr.arOk env rest = true
+  | 0, _, _, _, hs, ha => by
+    simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at hs
+    obtain ⟨-, rfl⟩ := hs
+    exact ha
+  | n + 1, _, _, _, hs, ha => by
+    obtain ⟨_, _, _, _, rfl, hs0⟩ := Ix.Kernel.Semantics.stripPis_succ_inv hs
+    simp only [Expr.arOk, Bool.and_eq_true] at ha
+    exact arOk_of_stripPis n hs0 ha.2
+
+private theorem arOk_of_stripLams {env : Env .anon} :
+    ∀ (n : Nat) {e rest : Expr .anon},
+      stripLams n e = some rest → Expr.arOk env e = true → Expr.arOk env rest = true
+  | 0, _, _, hs, ha => by
+    simp only [stripLams, Option.some.injEq] at hs; subst hs; exact ha
+  | n + 1, .lam _ _ _, _, hs, ha => by
+    simp only [stripLams] at hs
+    simp only [Expr.arOk, Bool.and_eq_true] at ha
+    exact arOk_of_stripLams n hs ha.2
+  | _ + 1, .bvar _, _, hs, _ | _ + 1, .fvar _ _, _, hs, _ | _ + 1, .sort _, _, hs, _
+  | _ + 1, .const _ _, _, hs, _ | _ + 1, .app _ _, _, hs, _ | _ + 1, .forallE _ _ _, _, hs, _
+  | _ + 1, .letE _ _ _ _, _, hs, _ | _ + 1, .lit _, _, hs, _ | _ + 1, .proj _ _ _, _, hs, _ => by
+    simp [stripLams] at hs
+
+private theorem hasFvar_of_lamDomAlong {n : Nat} {l p r : Expr .anon}
+    (h : LamDomAlong n l p r) (hl : l.hasFvar = false) : r.hasFvar = false := by
+  induction h with
+  | zero => exact hl
+  | succ _ _ ih =>
+    simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hl
+    exact ih hl.2
+
+private theorem arOk_of_lamDomAlong {env : Env .anon} {n : Nat} {l p r : Expr .anon}
+    (h : LamDomAlong n l p r) (hl : l.hasFvar = false)
+    (hp : Expr.arOk env p = true) (hr : Expr.arOk env r = true) : Expr.arOk env l = true := by
+  induction h with
+  | zero => exact hr
+  | succ hdom _ ih =>
+    simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hl
+    simp only [Expr.arOk, Bool.and_eq_true] at hp ⊢
+    exact ⟨wrapT_arOk hdom.symm_empty hl.1 hp.1, ih hl.2 hp.2 hr⟩
+
+private theorem arOk_of_twinRuleMatch {find? : Key .anon → Option (ConstantInfo .anon)}
+    {env : Env .anon} {f : Key .anon → Key .anon}
+    {tyW' rhsC rhsW' : Expr .anon} (h : TwinRuleMatch find? f tyW' rhsC rhsW')
+    (hfvW : rhsW'.hasFvar = false) (hty : Expr.arOk env tyW' = true)
+    (hrc : Expr.arOk env (rhsC.renameConsts f) = true) : Expr.arOk env rhsW' = true := by
+  obtain ⟨-, nPre, nf, afterW, sbW, sbC, hLam1, hMid, hSC, hBase⟩ := h
+  have hfvAfter : afterW.hasFvar = false := hasFvar_of_lamDomAlong hLam1 hfvW
+  have harSbC : Expr.arOk env sbC = true := arOk_of_stripLams (nPre + nf) hSC hrc
+  have harAfter : Expr.arOk env afterW = true := by
+    rcases hMid with ⟨rfl, rfl⟩ | ⟨iMin, bs, mdomW, restW, mmW, -, hStripP, hLam2⟩
+    · exact wrapT_arOk hBase hfvAfter harSbC
+    · have hfvSbW : sbW.hasFvar = false := hasFvar_of_lamDomAlong hLam2 hfvAfter
+      have harSbW : Expr.arOk env sbW = true := wrapT_arOk hBase hfvSbW harSbC
+      have harMdom : Expr.arOk env mdomW = true := by
+        have h1 := arOk_of_stripPis iMin hStripP hty
+        simp only [Expr.arOk, Bool.and_eq_true] at h1
+        exact h1.1
+      have harLift : Expr.arOk env (mdomW.liftLooseBVars (nPre - iMin) 0) = true := by
+        rw [arOk_liftLooseBVars]; exact harMdom
+      exact arOk_of_lamDomAlong hLam2 hfvAfter harLift harSbW
+  exact arOk_of_lamDomAlong hLam1 hfvW hty harAfter
+
 /-! ## The twin record keeps `StoreArR` -/
 
 /-- **`TwinKeepsStoreAr`** (module docstring). -/
@@ -213,14 +297,15 @@ theorem twinKeepsStoreAr : TwinKeepsStoreAr := by
     · obtain ⟨w, hw, rfl⟩ := List.mem_map.mp hrec
       have hcv := (hall w hw).1
       have hcC : ConstArR env (.recInfo w.cvC w.mI w.rP w.rulesC) := hA.const (hall w hw).2.2.1
-      refine { type := ?_, defn := fun _ _ _ he => (nomatch he), thm := fun _ _ he => (nomatch he),
-               rhs := ?_, proj := fun _ he => nomatch he }
-      · obtain ⟨-, -, -, -, hlb, hfv, type, stype, lv, hann, hlp, hres, hinf, -, hcv'⟩ := hcv.inv
+      have hTyW'₂ : ArRes env₂ w.cvW'.type := by
+        obtain ⟨-, -, -, -, hlb, hfv, type, stype, lv, hann, hlp, hres, hinf, -, hcv'⟩ := hcv.inv
         obtain ⟨hfv', -⟩ := (judgeFrames_twinPosRulesJ env).annot_syntax hann hfv hlb
         have h : ArRes env w.cvW'.type := by
           rw [hcv']
           exact ⟨arOk_of_twinPosInfer hfv' hinf, hres⟩
         exact h.mono hext.find
+      refine { type := hTyW'₂, defn := fun _ _ _ he => (nomatch he), thm := fun _ _ he => (nomatch he),
+               rhs := ?_, proj := fun _ he => nomatch he }
       · intro cv mI rP rules he rl hrl
         cases he
         obtain ⟨rW, hz⟩ := exists_mem_zip_right (hall w hw).2.2.2.2.2.2.1 hrl
@@ -230,11 +315,6 @@ theorem twinKeepsStoreAr : TwinKeepsStoreAr := by
         have hfvR : rl.rhs.hasFvar = false :=
           ((judgeFrames_twinPosRulesJ _).annot_syntax hannR hfvW hlbW).1
         have hrC' := hcC.rhs _ _ _ _ rfl rC hrC
-        have hG : ArRes env rhsG := by
-          rcases hgen with rfl | ⟨hfvG, -, hresG, -, rty, hinfG⟩
-          · exact hrC'.1
-          · exact ⟨arOk_of_twinPosInfer hfvG hinfG, hresG⟩
-        have hG₂ := hG.mono hext.find
         have hren : ∀ k ci, env₂.find? k = some ci → ∃ ci', env₂.find? (f k) = some ci' ∧
             ci'.toConstantVal.levelParams.length = ci.toConstantVal.levelParams.length := by
           intro k ci hci
@@ -246,9 +326,18 @@ theorem twinKeepsStoreAr : TwinKeepsStoreAr := by
             refine ⟨.recInfo w'.cvW' w'.mI w'.rP w'.rulesW', by rw [hfe]; exact hfindRec w' hw', ?_⟩
             show w'.cvW'.levelParams.length = w'.cvC.levelParams.length
             rw [hlpW w' hw', (hall w' hw').2.2.2.1]
-        obtain ⟨harR, -⟩ := arRes_renameConsts hren hG₂.1 hG₂.2
-        have hT := WrapRel.toWrapT hwW hlf
-        refine ⟨⟨wrapT_arOk hT hfvR harR, ?_⟩, ?_⟩
+        have harW : Expr.arOk env₂ rl.rhs = true := by
+          rcases hgen with rfl | ⟨hfvG, -, hresG, -, rty, hinfG⟩ | hMatch
+          · have hG₂ := hrC'.1.mono hext.find
+            obtain ⟨harR, -⟩ := arRes_renameConsts hren hG₂.1 hG₂.2
+            exact wrapT_arOk (WrapRel.toWrapT hwW hlf) hfvR harR
+          · have hG₂ := (⟨arOk_of_twinPosInfer hfvG hinfG, hresG⟩ : ArRes env rhsG).mono hext.find
+            obtain ⟨harR, -⟩ := arRes_renameConsts hren hG₂.1 hG₂.2
+            exact wrapT_arOk (WrapRel.toWrapT hwW hlf) hfvR harR
+          · have hC₂ := hrC'.1.mono hext.find
+            obtain ⟨harRenC, -⟩ := arRes_renameConsts hren hC₂.1 hC₂.2
+            exact arOk_of_twinRuleMatch hMatch hfvR hTyW'₂.1 harRenC
+        refine ⟨⟨harW, ?_⟩, ?_⟩
         · refine Ix.Kernel.Expr.constsResolve_of_find (fun n hn => ?_) hresSelf
           obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hn
           rcases Ix.Kernel.Semantics.find?_append_inv (cs := twinProv ws) hci with hold | ⟨hm, hname⟩

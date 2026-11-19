@@ -158,7 +158,7 @@ theorem k_synth_fab_step (c : ScopedCtx) (hc : ScopedCoreBase c)
     ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, he0, _, _⟩
   · subst he549 hc550
     obtain ⟨hv503, rfl⟩ := tuple2_inj (hr.symm.trans he505)
-    obtain ⟨hfind, u0, blk0, idx0, hci⟩ := hrec
+    obtain ⟨hfind, ⟨u0, blk0, idx0, hci⟩, hrecHead⟩ := hrec
     obtain ⟨rl', p', hrl1, -, hnp, hnP⟩ := CIRep.recr_k hci rfl
     simp only [List.cons.injEq, and_true] at hrl1
     subst hrl1 hnp
@@ -222,7 +222,7 @@ theorem k_synth_fab_step (c : ScopedCtx) (hc : ScopedCoreBase c)
       hc.env.store.recK hfind hrl hrlk
     rw [hcj] at hcj'
     obtain ⟨rfl, rfl, rfl⟩ := Ix.Kernel.ConstantInfo.ctorInfo.inj (Option.some.inj hcj')
-    obtain ⟨tus, htus⟩ := hc.env.ruleCtorHead k cv mI rP [rl] rl cvj _ _ _ us0 hfind hrl hcj hmh0
+    obtain ⟨tus, htus⟩ := hrecHead rfl cv mI rP [rl] rl cvj _ _ _ us0 rfl hrl hcj hmh0
     rw [htus] at hres'
     injection hres' with hTT _
     subst hTT
@@ -306,7 +306,7 @@ theorem try_k_synth_iota_step (c : ScopedCtx) {args : List (SourceValue F)} {h h
     ⟨v1, m450, ld12, hne434, he442, hm458, he469, hc470⟩
   · exact (tag_zero_ne_one (he150.symm.trans hr)).elim
   · subst hc396
-    obtain ⟨⟨hfind, u0, blk0, idx0, hci⟩, hus⟩ := hrr
+    obtain ⟨⟨hfind, ⟨u0, blk0, idx0, hci⟩, hrecHead⟩, hus⟩ := hrr
     obtain ⟨rl, _, rfl, hrlk, _, _⟩ := CIRep.recr_k hci rfl
     obtain ⟨p', i', m', mi', -, hnp, hni, hnm, hnmi, -, hmI, -, hmIb, hrules⟩ :=
       CIRep.recr_fields hci
@@ -327,14 +327,14 @@ theorem try_k_synth_iota_step (c : ScopedCtx) {args : List (SourceValue F)} {h h
     obtain ⟨FAB, hFAB, hredF⟩ := ih.get (.whnf .k_synth_fab) (by lt_calls) ev227 rc v183 x_cidx np
       rp types rfl (good.sub fun z hz => by simp [hz]) (RCRep.mono e0 hrc) d Γ
       (types_mono e0 htypes) k nl rt ni nm nmi rules cv mI rP rl p A
-      ⟨hfind, u0, blk0, idx0, CIRep.mono e0 hci⟩ hrlk (by simpa using hcidx)
+      ⟨hfind, ⟨u0, blk0, idx0, CIRep.mono e0 hci⟩, hrecHead⟩ hrlk (by simpa using hcidx)
       (Bytes.repAddressRef_heapMono₂ addrTy e0 hp) hmh hAt x_fab rfl
     have e1 := e0.trans (ObsFn.heap_extends ev227)
     have hget : As.getD mI (.bvar 0) = A := by rw [List.getD_eq_getElem?_getD, hA]; rfl
     exact ih.get (.whnf .red_iota) (by lt_calls) ev299 rc rt lvls sp np nm nmi ni rules rp x_fab
       types rfl (good.sub fun z hz => by simp [hz]) (RCRep.mono e1 hrc) d Γ
       (types_mono e1 htypes) k us nl (.field 1) cv mI rP [rl] p As FAB
-      (RecRedHyps.mono e1 ⟨⟨hfind, u0, blk0, idx0, hci⟩, hus⟩) hlen
+      (RecRedHyps.mono e1 ⟨⟨hfind, ⟨u0, blk0, idx0, hci⟩, hrecHead⟩, hus⟩) hlen
       (Bytes.repAddressRef_heapMono₂ addrTy e1 hp) hmh (tml_mono e1 hAs) hFAB
       (by rw [hget]; exact hredF) x hr
   · exact (tag_zero_ne_one (he404.symm.trans hr)).elim

@@ -218,11 +218,7 @@ structure CoreCompanions (c : Ctx) : Prop where
       D.getAppFn = .const T (cvj.levelParams.map .param) ∧
       D.getAppArgs.take nP = (List.range nP).map (fun i => .bvar (mI - 1 - i)) ∧
       D.getAppArgs.drop nP = (List.range (mI - rP)).map fun i => .bvar (mI - rP - 1 - i)
-  ruleCtorHead : ∀ k cv mI rP rls rl cvj nP nF T us,
-    c.env.find? k = some (.recInfo cv mI rP rls) → rl ∈ rls →
-    c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
-    (piDomAt mI cv.type).map (·.getAppFn) = some (.const T us) →
-    ∃ tus, (Expr.piResult cvj.type).getAppFn = .const T tus
+  ruleCtorHead : RuleCtorHeadFact c.E c.env
 
 /-- The scoped core's environment facts, from the store invariant, the table and the
 companions. -/
@@ -262,7 +258,7 @@ theorem coreCompanions_of_empty {c : Ctx} (henv : ∀ k, c.env.find? k = none)
   recMajorRecord := fun k cv mI rP rls p us hf _ _ => (noFind henv hf).elim
   recRulesNodupAndProj := fun k cv mI rP rls hf => (noFind henv hf).elim
   recPlain := fun k cv mI rP rls rl cvj nP nF hf _ _ _ => (noFind henv hf).elim
-  ruleCtorHead := fun k cv mI rP rls rl cvj nP nF T us hf _ _ _ => (noFind henv hf).elim
+  ruleCtorHead := fun k cv mI rP rls hf => (noFind henv hf).elim
 
 /-- **A value constant keeps the companions**: storing, at a fresh key that is no projection
 table's, a constant that is neither a recursor nor a constructor (a definition, a theorem, an
@@ -302,10 +298,10 @@ theorem CoreCompanions.cons_value {c : Ctx} (h : CoreCompanions c) {ci : Constan
         h.recPlain k cv mI rP rls rl cvj nP nF
           (hold hf (fun e => hrec cv mI rP rls e.symm)) hrl hfire
           (hold hc (fun e => hctor cvj nP nF e.symm))
-      ruleCtorHead := fun k cv mI rP rls rl cvj nP nF T us hf hrl hc hdom =>
-        h.ruleCtorHead k cv mI rP rls rl cvj nP nF T us
-          (hold hf (fun e => hrec cv mI rP rls e.symm)) hrl
-          (hold hc (fun e => hctor cvj nP nF e.symm)) hdom }
+      ruleCtorHead := fun k cv mI rP rls hf =>
+        (h.ruleCtorHead k cv mI rP rls (hold hf (fun e => hrec cv mI rP rls e.symm))).imp
+          (fun hhead rl cvj nP nF T us hrl hc hdom =>
+            hhead rl cvj nP nF T us hrl (hold hc (fun e => hctor cvj nP nF e.symm)) hdom) id }
 
 /-- No role is in force at the group limit `0`. -/
 theorem not_inForce_of_lim_zero {c : Ctx} (hlim : c.lim = some 0) (r : Ix.Kernel.Role) :
