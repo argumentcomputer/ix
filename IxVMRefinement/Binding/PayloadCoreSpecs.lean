@@ -1863,9 +1863,9 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
         have hbb453 := Bytes.repAddressRef_heapMono₂ Core.addrTy e453 hbb
         obtain ⟨cb', ms', hbl, hrepM⟩ := Claim.load_block_head hbb453 ev513
         have ecb' := ((hbl.mono hsub511).record hC.runStore hcb).1
-        subst ecb'
+        subst cb'
         have ems' := Ixon.ConstantInfo.muts.inj (hbl.info.symm.trans hms)
-        subst ems'
+        subst ms'
         have e501_652 : Heap.Extends _ _ :=
           ev601.heap_extends.trans (ev634.heap_extends.trans ev664.heap_extends)
         have hmemRep : Core.Specs.Callees.MembersRep m652 (m0 :: mrest) x_members := by
@@ -1965,7 +1965,7 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
               have erc0' : rc0' = rc0 := by
                 simp only [UInt64.toNat_zero] at hmemR'
                 rw [Array.getElem?_toList, hrc0_get] at hmemR'
-                exact Ixon.MutConst.recr.inj (Option.some.inj hmemR')
+                exact Ixon.MutConst.recr.inj (Option.some.inj hmemR'.symm)
               subst erc0'
               rw [hldR] at ldRec
               injection ldRec with hvR
