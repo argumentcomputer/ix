@@ -2807,7 +2807,7 @@ theorem familyCallExact_of_call {calls : List (Call F)} {bAddr : _root_.Address}
         (fun cl hcl => by rw [hc1474]; simp [hcl]),
         (fun cl hcl => by rw [hc1474]; simp [hcl]),
         (fun cl hcl => by rw [hc1474]; simp [hcl]),
-        fun _ hc => nomatch hc,
+        (fun _ hc => nomatch hc),
         ⟨_, _, bytes0, hst0, check_family_first_get_address sg112 ev126 hc1474,
           _, _, _, _, ev148, _, _, _, _, _, ev194.heap_extends.trans evOrd.heap_extends,
           ev231, _, _, _, ev266, ext423⟩⟩,
@@ -2874,7 +2874,7 @@ theorem FamilyCallExact.unpack {calls : List (Call F)} {bAddr : _root_.Address}
           x_adv, v_adv, m453, csAdv, evAdv, hadvP,
           m_fro0, m_fro1, v_fro, csFro, ext391_fro, evFro,
           subWs, lenWs, subAsb, subCrr, subAdv, subFro,
-          fun _ heq => by cases heq; exact hdw, anchor⟩, hmemEv, hsub⟩,
+          (fun _ heq => by cases heq; exact hdw), anchor⟩, hmemEv, hsub⟩,
         ⟨ib, hposIb, h₁, h₂, rc₁, xx₁, xib₁, r₁, cs₁, hrc₁, hxx₁, hxib₁,
           evCr, hsubCr, Nat.lt_trans hlen₁ lenWs⟩⟩))
     · exact Or.inr (Or.inr (Or.inr h3))
@@ -2975,7 +2975,7 @@ theorem DirectContOwn.unpack {calls : List (Call F)} {bAddr : _root_.Address}
           x_adv, v_adv, m453, csAdv, evAdv, hadvP,
           m_fro0, m_fro1, v_fro, csFro, ext391_fro, evFro,
           subWs, lenWs, subAsb, subCrr, subAdv, subFro,
-          fun _ heq => by cases heq; exact hdwW, anchor⟩, hmemEv, hsub⟩,
+          (fun _ heq => by cases heq; exact hdwW), anchor⟩, hmemEv, hsub⟩,
         ⟨ibW, hposW, h₁W, h₂W, rc₁W, xx₁W, xib₁W, r₁W, cs₁W, hrc₁W, hxx₁W, hxib₁W,
           evCrW, hsubCrW, Nat.lt_trans hlenW lenWs⟩⟩))
     · exact Or.inr (Or.inr (Or.inr h3))

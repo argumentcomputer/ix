@@ -256,7 +256,7 @@ theorem DirectContOwn.toExact {calls : List (Call F)} {bAddr : _root_.Address}
       x_s4, x_outside, x_s5, cs_ws, ext_h_ws, hs4, ev_ws, x_wset, m_asb, cs_asb, ev_asb,
       v_crr, m_crr, cs_crr, ev_crr, x_advice, v_adv, m_adv', cs_adv, ev_adv, advRep,
       m_fro0, m_fro1, v_fro, cs_fro, ext_asb_fro, ev_fro, sub_ws, len_ws, sub_asb, sub_crr, sub_adv,
-      sub_fro, fun _ hc => nomatch hc, anchor⟩, hmem, hsub⟩
+      sub_fro, (fun _ hc => nomatch hc), anchor⟩, hmem, hsub⟩
 
 theorem DirectContOwn.toOwn {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {B rb : _root_.Address} {lim : Option Nat}

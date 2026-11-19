@@ -1804,6 +1804,29 @@ private theorem inReadPayloadClosed_ne_get_address {s : String} (h : inReadPaylo
   rw [hf] at h
   cases h
 
+private theorem prepare_readPayloadClosed {fnName : String} {args : List (SourceValue F)}
+    {types : Types} {locals : Environment F Nat} {expr : Expr F}
+    (prepared : Obs.W.prepare fnName args = .ok (types, locals, expr))
+    (hin : ∀ key, Instance.ofSymbol fnName = .ok key → inReadPayloadClosed key.name = true) :
+    callsWithin inReadPayloadClosed expr = true ∧ noDollarCall expr = true := by
+  simp only [Obs.W, Source.world, sourceWorld] at prepared
+  cases hsf : IxVM.program.sourceFunction? fnName with
+  | none => simp [hsf] at prepared
+  | some sf =>
+    rw [hsf] at prepared
+    simp only [SourceFunction.prepare] at prepared
+    split at prepared
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at prepared
+      obtain ⟨_, _, hbody⟩ := prepared
+      obtain ⟨key, f, types', hof, hf, hfn, _, hsf_eq⟩ := sourceFunction?_fn_detail hsf
+      have hclosed := List.all_eq_true.mp ixvm_readPayloadClosed f hf
+      have hnd := List.all_eq_true.mp ixvm_noDollarCalls f hf
+      have hinf : inReadPayloadClosed f.name = true := hfn ▸ hin key hof
+      simp only [hinf, Bool.not_true, Bool.false_or] at hclosed
+      rw [← hbody, hsf_eq]
+      exact ⟨hclosed, hnd⟩
+    · cases prepared
+
 private theorem obsFn_readPayloadClosed_no_get_address {fnName : String}
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn Obs.W fnName args h r h' calls)
@@ -1833,7 +1856,7 @@ private theorem obsFn_readPayloadClosed_no_get_address {fnName : String}
   | index _ _ ih hcw hnd cl hm | slice _ _ ih hcw hnd cl hm | builtin _ _ ih hcw hnd cl hm
   | update _ _ ih hcw hnd cl hm | record _ ih hcw hnd cl hm | member _ _ ih hcw hnd cl hm
   | construct _ ih hcw hnd cl hm | constructAs _ ih hcw hnd cl hm | project _ _ ih hcw hnd cl hm
-  | store _ ih hcw hnd cl hm | load _ ih hcw hnd cl hm | hint _ _ ih hcw hnd cl hm
+  | store _ ih hcw hnd cl hm | load _ _ ih hcw hnd cl hm | hint _ _ ih hcw hnd cl hm
   | neg _ _ ih hcw hnd cl hm => exact ih hcw hnd cl hm
   | letValue _ _ _ ih1 ih2 hcw hnd cl hm =>
     simp only [callsWithin, Bool.and_eq_true] at hcw
@@ -1878,42 +1901,12 @@ private theorem obsFn_readPayloadClosed_no_get_address {fnName : String}
     · exact ih2 hcw.2 hnd.2 cl h2
   | intro prepared _ ih =>
     intro hin cl hm
-    simp only [Obs.W, Source.world, sourceWorld] at prepared
-    cases hsf : IxVM.program.sourceFunction? _ with
-    | none => simp [hsf] at prepared
-    | some sf =>
-      rw [hsf] at prepared
-      simp only [SourceFunction.prepare] at prepared
-      split at prepared
-      · simp only [Except.ok.injEq, Prod.mk.injEq] at prepared
-        obtain ⟨_, _, hbody⟩ := prepared
-        obtain ⟨key, f, types, hof, hf, hfn, _, hsf_eq⟩ := sourceFunction?_fn_detail hsf
-        have hclosed := List.all_eq_true.mp ixvm_readPayloadClosed f hf
-        have hnd := List.all_eq_true.mp ixvm_noDollarCalls f hf
-        have hinf : inReadPayloadClosed f.name = true := hfn ▸ hin key hof
-        simp only [hinf, Bool.not_true, Bool.false_or] at hclosed
-        rw [← hbody, hsf_eq] at ih
-        exact ih hclosed hnd cl hm
-      · cases prepared
+    obtain ⟨hclosed, hnd⟩ := prepare_readPayloadClosed prepared hin
+    exact ih hclosed hnd cl hm
   | returned prepared _ ih =>
     intro hin cl hm
-    simp only [Obs.W, Source.world, sourceWorld] at prepared
-    cases hsf : IxVM.program.sourceFunction? _ with
-    | none => simp [hsf] at prepared
-    | some sf =>
-      rw [hsf] at prepared
-      simp only [SourceFunction.prepare] at prepared
-      split at prepared
-      · simp only [Except.ok.injEq, Prod.mk.injEq] at prepared
-        obtain ⟨_, _, hbody⟩ := prepared
-        obtain ⟨key, f, types, hof, hf, hfn, _, hsf_eq⟩ := sourceFunction?_fn_detail hsf
-        have hclosed := List.all_eq_true.mp ixvm_readPayloadClosed f hf
-        have hnd := List.all_eq_true.mp ixvm_noDollarCalls f hf
-        have hinf : inReadPayloadClosed f.name = true := hfn ▸ hin key hof
-        simp only [hinf, Bool.not_true, Bool.false_or] at hclosed
-        rw [← hbody, hsf_eq] at ih
-        exact ih hclosed hnd cl hm
-      · cases prepared
+    obtain ⟨hclosed, hnd⟩ := prepare_readPayloadClosed prepared hin
+    exact ih hclosed hnd cl hm
   | exit _ ih hcw hnd cl hm | exitPayload _ ih hcw hnd cl hm | fromBlock _ _ ih hcw hnd cl hm
   | fromTuple _ ih hcw hnd cl hm | fromArray _ ih hcw hnd cl hm | fromRepeat _ ih hcw hnd cl hm
   | fromIndex _ ih hcw hnd cl hm | fromSlice _ ih hcw hnd cl hm | fromBuiltin _ ih hcw hnd cl hm
@@ -2004,7 +1997,7 @@ theorem check_family_first_get_address {x_rc x_block x_rec_block v104 v113 : Sou
       intro cl hcl
       rw [hc34] at hcl
       rcases List.mem_cons.mp hcl with rfl | hcl'
-      · decide
+      · dsimp only; decide
       · exact beq_false_of_ne (hax ev15 cl hcl')
   have hno124 : ∀ cl ∈ cs124, (cl.name == "IxonDeserialize::get_address") = false := by
     intro cl hcl
