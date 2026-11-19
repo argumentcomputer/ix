@@ -1378,63 +1378,63 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
                         hvalAll hws hg6 hg77 hpr with
                     | stored hst => rw [hnewA.2] at hst; cases hst
                     | walked hgrA => exact hexA ⟨walkRank recs a, Or.inl ⟨hgrA, rfl⟩⟩
-                    | famRec hB hmodB hex =>
+                    | @famRec B' _ cs' advAs' hB hmodB hex =>
                       rcases hB with hgrB | hstB
-                      · by_cases hstB' : StoredAtG calls bAddr t E₀ g _
-                        · exact h1 ⟨2 * _ + 1, 0, Or.inr ⟨_, _, _, ⟨hstB', hmodB, hex⟩, rfl⟩⟩
+                      · by_cases hstB' : StoredAtG calls bAddr t E₀ g B'
+                        · exact h1 ⟨2 * cs'.length + 1, 0, Or.inr ⟨B', cs', advAs', ⟨hstB', hmodB, hex⟩, rfl⟩⟩
                         · obtain ⟨cb, -, hcb, -, -, -⟩ := familyCall_block_indc_nonempty
                             hC.runStore hC.hashedStored (FamilyCallExact.toCall hex)
-                          have hnewB : NewAtG calls bAddr t E₀ g _ := by
-                            rcases hnew_or_stored_of_held' _
+                          have hnewB : NewAtG calls bAddr t E₀ g B' := by
+                            rcases hnew_or_stored_of_held' B'
                               (by rw [(groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mpr
                                 ⟨storedBelow_of_adds hg6 (GroupAdds.reach hgrB), hcb⟩]; rfl) with
                               hn | hs
                             · exact hn
                             · exact absurd hs hstB'
-                          exact h2 ⟨_, _, _, hnewB, hgrB, hmodB, hex⟩
-                      · exact h1 ⟨2 * _ + 1, 0, Or.inr ⟨_, _, _, ⟨hstB, hmodB, hex⟩, rfl⟩⟩
-                    | directAdv hB hmodB hex hadv =>
+                          exact h2 ⟨B', cs', advAs', hnewB, hgrB, hmodB, hex⟩
+                      · exact h1 ⟨2 * cs'.length + 1, 0, Or.inr ⟨B', cs', advAs', ⟨hstB, hmodB, hex⟩, rfl⟩⟩
+                    | @directAdv B' rb' _ cs' advAs' hB hmodB hex hadv =>
                       obtain ⟨ab, habMem, habEq⟩ := hadv
                       obtain ⟨k, hk, hgetk⟩ := List.mem_iff_getElem.mp habMem
                       rcases hB with hgrB | hstB
-                      · by_cases hstB' : StoredAtG calls bAddr t E₀ g _
-                        · exact h1 ⟨2 * _, k + 1, Or.inl ⟨_, _, _, _, k, hk,
+                      · by_cases hstB' : StoredAtG calls bAddr t E₀ g B'
+                        · exact h1 ⟨2 * cs'.length, k + 1, Or.inl ⟨B', rb', cs', advAs', k, hk,
                             ⟨hstB', hmodB, hex⟩, by rw [hgetk, habEq], rfl⟩⟩
                         · obtain ⟨cb, -, hcb, -, -, -⟩ := familyCall_block_indc_nonempty
                             hC.runStore hC.hashedStored (FamilyCallExact.toCall hex)
-                          have hnewB : NewAtG calls bAddr t E₀ g _ := by
-                            rcases hnew_or_stored_of_held' _
+                          have hnewB : NewAtG calls bAddr t E₀ g B' := by
+                            rcases hnew_or_stored_of_held' B'
                               (by rw [(groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mpr
                                 ⟨storedBelow_of_adds hg6 (GroupAdds.reach hgrB), hcb⟩]; rfl) with
                               hn | hs
                             · exact hn
                             · exact absurd hs hstB'
-                          exact hexA ⟨walkRank recs _, Or.inr ⟨_, _, _, _, k + 1,
+                          exact hexA ⟨walkRank recs B', Or.inr ⟨B', rb', cs', advAs', k + 1,
                             ⟨hnewB, hgrB, hmodB, hex⟩,
                             Or.inr ⟨k, hk, rfl, by rw [hgetk, habEq], ca, hcaE, hnpA⟩, rfl⟩⟩
-                      · exact h1 ⟨2 * _, k + 1, Or.inl ⟨_, _, _, _, k, hk,
+                      · exact h1 ⟨2 * cs'.length, k + 1, Or.inl ⟨B', rb', cs', advAs', k, hk,
                           ⟨hstB, hmodB, hex⟩, by rw [hgetk, habEq], rfl⟩⟩
-                    | directCont hB hmodB hex hdc =>
+                    | @directCont B' rb' _ cs' advAs' hB hmodB hex hdc =>
                       obtain ⟨-, -, -, -, ⟨ib, -, h₁, h₂, rc₁, xx₁, xib₁, r₁, cs₁, -, hxx₁, hxib₁,
                           evCr, hsubCr, -⟩, -, -, -⟩ := hdc.unpack hC hbd
                       rcases check_container_rec_shape hC hbd hxx₁ hxib₁ evCr hsubCr hcaE with
                         ⟨rc, hrc⟩ | ⟨rp, hrp⟩
                       · rcases hB with hgrB | hstB
-                        · by_cases hstB' : StoredAtG calls bAddr t E₀ g _
-                          · exact h0 ⟨⟨ca, rc, hcaE, hrc⟩, _, _, _, _, ⟨hstB', hmodB, hex⟩, hdc⟩
+                        · by_cases hstB' : StoredAtG calls bAddr t E₀ g B'
+                          · exact h0 ⟨⟨ca, rc, hcaE, hrc⟩, B', rb', cs', advAs', ⟨hstB', hmodB, hex⟩, hdc⟩
                           · obtain ⟨cb, -, hcb, -, -, -⟩ := familyCall_block_indc_nonempty
                               hC.runStore hC.hashedStored (FamilyCallExact.toCall hex)
-                            have hnewB : NewAtG calls bAddr t E₀ g _ := by
-                              rcases hnew_or_stored_of_held' _
+                            have hnewB : NewAtG calls bAddr t E₀ g B' := by
+                              rcases hnew_or_stored_of_held' B'
                                 (by rw [(groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mpr
                                   ⟨storedBelow_of_adds hg6 (GroupAdds.reach hgrB), hcb⟩]; rfl) with
                                 hn | hs
                               · exact hn
                               · exact absurd hs hstB'
-                            exact hexA ⟨walkRank recs _, Or.inr ⟨_, _, _, _, 0,
+                            exact hexA ⟨walkRank recs B', Or.inr ⟨B', rb', cs', advAs', 0,
                               ⟨hnewB, hgrB, hmodB, hex⟩,
                               Or.inl ⟨rfl, ⟨ca, rc, hcaE, hrc⟩, hdc⟩, rfl⟩⟩
-                        · exact h0 ⟨⟨ca, rc, hcaE, hrc⟩, _, _, _, _, ⟨hstB, hmodB, hex⟩, hdc⟩
+                        · exact h0 ⟨⟨ca, rc, hcaE, hrc⟩, B', rb', cs', advAs', ⟨hstB, hmodB, hex⟩, hdc⟩
                       · exact hnpA (Or.inr (Or.inr (Or.inr ⟨rp, hrp⟩)))
                     | checkedProj hc' hpr _ _ _ _ =>
                       have ec : _ = ca := Option.some.inj (hc'.symm.trans hcaE)
