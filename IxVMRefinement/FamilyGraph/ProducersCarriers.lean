@@ -1198,7 +1198,7 @@ private theorem safe_refs_only_const_ind0_safe {calls cs : List (Call F)} {E₀ 
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     ind₀.isUnsafe = false := by
   match Obs.«KernelCheck::safe_refs_only».obs ev with
-  | .Const (cs77 := cs77) (ld12 := ld) (ev79 := ev_ci) (ld73 := hld) (ev101 := ev_u)
+  | .Const (cs77 := cs77) (y89 := y89) (ld12 := ld) (ev79 := ev_ci) (ld73 := hld) (ev101 := ev_u)
       (op95 := op) (hc110 := hc) .. =>
     have hq_eq := Except.ok.inj (hldq.symm.trans ld)
     simp only [Value.construct.injEq, List.cons.injEq, and_true] at hq_eq
@@ -1233,7 +1233,7 @@ private theorem safe_refs_only_const_ind0_safe {calls cs : List (Call F)} {E₀ 
     subst ind'
     have hv63 := Except.ok.inj (hld.symm.trans hldv)
     rw [hv63] at ev_u
-    have hy0 : _ = L1.repBoolField ind₀.isUnsafe := by
+    have hy0 : y89 = L1.repBoolField ind₀.isUnsafe := by
       match Obs.«KernelCheck::is_unsafe_ci».obs ev_u with
       | .Induct (hv195 := hv) (he245 := hr) .. =>
         simp only [Value.construct.injEq, List.cons.injEq, and_true] at hv
@@ -1477,7 +1477,7 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
     {B rb : _root_.Address} (hfc : K.FamCheck B rb) :
     ∃ cb crb ms rs, FamCheckCarriers K.calls K.t K.E₀ B rb cb crb ms rs := by
   obtain ⟨crb, rs, hrb⟩ := FamRunCtx.record_of hW B rb hfc
-  obtain ⟨cs, h₀, h₀', rc₀, xb₀, xrb₀, r₀, hrc₀, hB₀, hrb₀, ev_fam, hsub_fam⟩ := hfc
+  obtain ⟨cs, h₀, h₀', rc₀, xb₀, xrb₀, r₀, hrc₀, hB₀, hrb₀, ev_fam, -, hsub_fam⟩ := hfc
   match Obs.«KernelModeled::check_family».obs ev_fam with
   | .run (m453 := m453) (m501 := m501) (cs511 := cs511) (x_members := x_members)
       (m624 := m624) (m652 := m652) (v673 := v673) (m674 := m674) (cs684 := cs684)
@@ -1535,8 +1535,7 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
     have hBrec : recordOf K.E₀ B = some cb := hb_blk_ix ▸ hBrec_blk
     -- Member 0 is an inductive (`block_nparams`)
     have hind0 : ∃ ind₀, ms[0]? = some (.indc ind₀) := by
-      have hms624 := repList_heapMono₂ _ (fun _ _ _ _ ext r => L1.RepMutConst.mono ext r)
-        ext_501_624 hms_rep
+      have hms624 := hms_rep.mono L1.repMutConst_heapMono₂ ext_501_624
       match Obs.«KernelModeled::block_nparams».obs ev664 with
       | .run (ld12 := ld12) .. =>
         obtain ⟨m0, rest, hms_cons, hm0_rep, -⟩ := Lib.rep_cons_of_load hms624 ld12
@@ -1549,8 +1548,7 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
         | recr _ => obtain ⟨rv, hrv, -⟩ := hm0_rep; simp at hrv
     -- Type address list (`build_recur_addrs`) and hash of `iprjAddr B 0`
     have hmems652 : Core.Specs.Callees.MembersRep m652 ms.toList x_members :=
-      Route.membersRep_of_repMutConstList
-        (repList_heapMono₂ _ (fun _ _ _ _ ext r => L1.RepMutConst.mono ext r) ext_501_652 hms_rep)
+      Route.membersRep_of_repMutConstList (hms_rep.mono L1.repMutConst_heapMono₂ ext_501_652)
     have hb_blk652 : Bytes.RepAddressRef Core.addrTy m652 b_blk xb₀ :=
       Bytes.repAddressRef_heapMono₂ Core.addrTy
         (ext_0_453.trans (ev513.heap_extends.trans ext_501_652)) hb_blk_rep
@@ -1730,7 +1728,10 @@ theorem FamRunCtx.inLogic_of {K : FamRunCtx} {seeds : List _root_.Address}
   obtain ⟨ind₀, hind₀⟩ := hcar.ind0
   have hsafe0 : ind₀.isUnsafe = false := hcar.ind0Safe hrb_pos ind₀ hind₀
   have h0lt : 0 < ms.size := (Array.getElem?_eq_some_iff.mp hind₀).1
-  have hchk := Claim.membersChecked_of_block hW.runStore hcb hcar.blockMuts (hW.checked B hTB)
+  obtain ⟨cb'', hcb'', hchk_or⟩ := hW.checked B hTB
+  have hcb''_eq : cb'' = cb := Option.some.inj (hcb''.symm.trans hcb)
+  subst cb''
+  have hchk := Claim.membersChecked_of_block hW.runStore hcb hcar.blockMuts hchk_or
   obtain ⟨x, rr, h₁, h₂, cs₁, hx, evk, hsubk⟩ :=
     Claim.MemberCheckObs.block_kinds hW.runStore (hchk 0 h0lt).obs
   have hmem0 : Ixon.MutConst.indc ind₀ ∈ ms.toList := by
@@ -1756,12 +1757,7 @@ theorem FamRunCtx.blockOf_of {K : FamRunCtx} {seeds : List _root_.Address}
   subst crb1 crb2
   have hrs2 : rs2 = rs1 := Ixon.ConstantInfo.muts.inj (hcar2.recRec.muts.symm.trans hcar1.recRec.muts)
   subst rs2
-  have hpos : 0 < rs1.size := by
-    rcases hx with ⟨hnb, -⟩ | ⟨ms', i, m', hmuts', hget', -⟩
-    · exact (hnb rs1 hcar1.recRec.muts).elim
-    · have hms_eq : ms' = rs1 := Ixon.ConstantInfo.muts.inj (hmuts'.symm.trans hcar1.recRec.muts)
-      subst hms_eq
-      exact Nat.lt_of_le_of_lt (Nat.zero_le i) (Array.getElem?_eq_some_iff.mp hget').1
+  have hpos : 0 < rs1.size := constAddr_muts_pos hcar1.recRec.muts hx
   have h0mem : rs1[0] ∈ rs1.toList := by
     have hL : rs1.toList[0]? = some rs1[0] := by
       rw [Array.getElem?_toList, Array.getElem?_eq_getElem hpos]
