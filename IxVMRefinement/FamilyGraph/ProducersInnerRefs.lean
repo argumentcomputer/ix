@@ -549,7 +549,7 @@ theorem FamRunCtx.inner_ref_safe {K : FamRunCtx} {seeds : List _root_.Address}
       (FamRunCtx.adviceCheck_of_listed hown hadv) hcs hu
   · obtain ⟨h₀, h₀', rc₀, xb₀, xrb₀, r₀, -, -, -, ev_fam, -, hsub_fam⟩ := hS.1
     obtain ⟨h_w, rc_w, xb_w, xx_w, s_w, hrc_w, -, hxx_w, hcl_w⟩ := hwit
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ev_asb, _, _, cs_cr, ev_cr,
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ev_asb, _, _, cs_cr, ev_cr,
       _, _, cs_w, ev_w, -, -, ext_w_ws', sub_ws, _, sub_cr, sub_w, elems, outsideRep,
       memOutside⟩ := obsFn_check_witness_enclosing_family ev_fam hcl_w
     have hrecr : ∃ rcr, ca.info = .recr rcr := by

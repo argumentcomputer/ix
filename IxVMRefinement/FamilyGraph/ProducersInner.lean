@@ -133,7 +133,7 @@ theorem FamilyOwnAdvice.walk_nil {x_rc x_block x_rec_block : SourceValue F} {h :
       ObsFn Obs.W "KernelModeled::check_advice_records"
         [x_rc, xadv, .construct addrMapEnum "Nil" [], wset] m v m' cs₁ ∧
       ∀ cl ∈ cs₁, cl ∈ calls := by
-  obtain ⟨_, _, _, _, _, _, _, _, ev_ws, wset, _, _, ev_asb, m_adv, m_adv', x_advice, v_adv,
+  obtain ⟨_, _, _, _, _, _, _, _, _, ev_ws, wset, _, _, ev_asb, m_adv, m_adv', x_advice, v_adv,
     cs_adv, ev_adv, ext_h_ws, ext_asb_adv, advRep, _, _, sub_adv⟩ := w
   exact ⟨m_adv, m_adv', x_advice, wset, v_adv, cs_adv,
     ext_h_ws.trans (ev_ws.heap_extends.trans (ev_asb.heap_extends.trans ext_asb_adv)),

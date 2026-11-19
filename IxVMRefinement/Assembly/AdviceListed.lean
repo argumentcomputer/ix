@@ -37,6 +37,7 @@ inductive FamilyOwnAdvice (x_rc x_block x_rec_block : SourceValue F) (h : Heap F
       (path : «KernelModeled::check_family».Path x_rc x_block x_rec_block h r h' calls)
       (m_ws : Heap F) (x_s4 x_nw x_outside x_s5 : SourceValue F) (m_ws' : Heap F)
       (cs_ws : List (Call F))
+      (stream_s4 : ∃ bs : List UInt8, Bytes.RepByteStream byteListEnum m_ws bs x_s4)
       (ev_ws : ObsFn Obs.W "KernelModeled::check_witnesses" [x_rc, x_block, x_s4, x_nw]
         m_ws (.tuple [x_outside, x_s5]) m_ws' cs_ws)
       (wset : SourceValue F) (m_asb : Heap F) (cs_asb : List (Call F))
@@ -86,8 +87,8 @@ theorem FamilyOwnAdvice.walk {x_rc x_block x_rec_block : SourceValue F} {h : Hea
       Heap.Extends h m ∧ RepList addrListEnum (Bytes.RepAddressRef addrTy) m advAs xadv ∧
       ObsFn Obs.W "KernelModeled::check_advice_records" [x_rc, xadv, seen, wset] m v m' cs₁ ∧
       ∀ cl ∈ cs₁, cl ∈ calls := by
-  obtain ⟨_, _, _, _, _, _, _, _, ev_ws, wset, _, _, ev_asb, m_adv, m_adv', x_advice, v_adv, cs_adv,
-    ev_adv, ext_h_ws, ext_asb_adv, advRep, _, _, sub_adv⟩ := w
+  obtain ⟨_, _, _, _, _, _, _, _, _, ev_ws, wset, _, _, ev_asb, m_adv, m_adv', x_advice, v_adv,
+    cs_adv, ev_adv, ext_h_ws, ext_asb_adv, advRep, _, _, sub_adv⟩ := w
   exact ⟨m_adv, m_adv', x_advice, .construct Names.«RBTreeMap::RBTreeMap<Field>» "Nil" [],
     wset, v_adv, cs_adv,
     ext_h_ws.trans (ev_ws.heap_extends.trans (ev_asb.heap_extends.trans ext_asb_adv)),

@@ -1371,7 +1371,14 @@ inductive EnclosingFamilyWitness (calls : List (Call F))
   | mk
       (m_rp : Heap F) (v_rp : SourceValue F) (m_rp' : Heap F) (cs_rp : List (Call F))
       (ev_rp : ObsFn Obs.W "KernelModeled::read_payload" [xb] m_rp v_rp m_rp' cs_rp)
-      (m_ws : Heap F) (x_s4 x_nw x_outside x_s5 : SourceValue F) (m_ws' : Heap F)
+      (m_ws : Heap F) (x_s4 x_nw : SourceValue F)
+      (ev_pre_ws : ∃ x_rb x_s1 m_ga cs_ga x_na x_s2 m_gc1 cs_gc1 m_gc1' x_adv x_s3 m_gas cs_gas cs_gc2,
+        ObsFn Obs.W "IxonDeserialize::get_address" [v_rp] m_rp' (.tuple [x_rb, x_s1]) m_ga cs_ga ∧
+        Heap.Extends m_ga m_gc1 ∧
+        ObsFn Obs.W "KernelModeled::get_count" [x_s1] m_gc1 (.tuple [x_na, x_s2]) m_gc1' cs_gc1 ∧
+        ObsFn Obs.W "KernelModeled::get_addrs" [x_s2, x_na] m_gc1' (.tuple [x_adv, x_s3]) m_gas cs_gas ∧
+        ObsFn Obs.W "KernelModeled::get_count" [x_s3] m_gas (.tuple [x_nw, x_s4]) m_ws cs_gc2)
+      (x_outside x_s5 : SourceValue F) (m_ws' : Heap F)
       (cs_ws : List (Call F))
       (ev_ws : ObsFn Obs.W "KernelModeled::check_witnesses" [rc, xb, x_s4, x_nw]
         m_ws (.tuple [x_outside, x_s5]) m_ws' cs_ws)
@@ -1401,11 +1408,12 @@ theorem EnclosingFamilyWitness.mono {cs₁ cs₂ : List (Call F)}
     (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂)
     (e : EnclosingFamilyWitness cs₁ rc xb xx kind s h_w) :
     EnclosingFamilyWitness cs₂ rc xb xx kind s h_w := by
-  rcases e with ⟨m_rp, v_rp, m_rp', cs_rp, ev_rp, m_ws, x_s4, x_nw, x_outside, x_s5, m_ws', cs_ws,
-    ev_ws, wset, m_asb, cs_asb, ev_asb, v_cr, m_cr, cs_cr, ev_cr, v_w, m_w, cs_w, ev_w,
-    ext_rp_ws, ext_ws_w, ext_w_ws', sub_ws, sub_asb, sub_cr, sub_w, elems, outsideRep, memOutside⟩
-  exact ⟨m_rp, v_rp, m_rp', cs_rp, ev_rp, m_ws, x_s4, x_nw, x_outside, x_s5, m_ws', cs_ws,
-    ev_ws, wset, m_asb, cs_asb, ev_asb, v_cr, m_cr, cs_cr, ev_cr, v_w, m_w, cs_w, ev_w,
+  rcases e with ⟨m_rp, v_rp, m_rp', cs_rp, ev_rp, m_ws, x_s4, x_nw, ev_pre_ws, x_outside, x_s5,
+    m_ws', cs_ws, ev_ws, wset, m_asb, cs_asb, ev_asb, v_cr, m_cr, cs_cr, ev_cr, v_w, m_w, cs_w,
+    ev_w, ext_rp_ws, ext_ws_w, ext_w_ws', sub_ws, sub_asb, sub_cr, sub_w, elems, outsideRep,
+    memOutside⟩
+  exact ⟨m_rp, v_rp, m_rp', cs_rp, ev_rp, m_ws, x_s4, x_nw, ev_pre_ws, x_outside, x_s5, m_ws',
+    cs_ws, ev_ws, wset, m_asb, cs_asb, ev_asb, v_cr, m_cr, cs_cr, ev_cr, v_w, m_w, cs_w, ev_w,
     ext_rp_ws, ext_ws_w, ext_w_ws',
     fun cl h => hsub cl (sub_ws cl h),
     fun cl h => hsub cl (sub_asb cl h),
@@ -1573,7 +1581,10 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
                       hsub x (List.mem_cons_of_mem _ (List.mem_append_right _
                         (List.mem_cons_of_mem _ (List.mem_append_right _
                           (List.mem_cons_of_mem _ (List.mem_append_left _ hx))))))
-                    exact .mk (ev_rp := ev126) (ev_ws := ev344) (ev_asb := ev403)
+                    exact .mk (ev_rp := ev126)
+                      (ev_pre_ws := ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, ev148,
+                        ev194.heap_extends.trans evOrd.heap_extends, ev231, ev266, ev309⟩)
+                      (ev_ws := ev344) (ev_asb := ev403)
                       (ev_cr := ev435) (ev_w := evw) (ext_rp_ws := hext_rp_ws)
                       (ext_ws_w := hext1) (ext_w_ws' := hext2)
                       (sub_ws := hsub342) (sub_asb := hsub_asb) (sub_cr := hsub_cr)

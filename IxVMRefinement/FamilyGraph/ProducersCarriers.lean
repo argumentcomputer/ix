@@ -192,7 +192,7 @@ theorem motiveCarrierAt_usedRef {E₀ : Ixon.Env} {rb a : _root_.Address} {crb :
 
 /-! ## Unconditional raw conversion of a recursor projection -/
 
-private theorem val_cast_lt_u56 {n : Nat} (hn : n < 72057594037927936) :
+theorem val_cast_lt_u56 {n : Nat} (hn : n < 72057594037927936) :
     ((n : F)).val = n := by
   have hlt : n < Aiur.Library.U32.Goldilocks.modulus := by
     change n < 18446744069414584321
@@ -208,7 +208,7 @@ private theorem val_cast_le_u56 {n : Nat} (hn : n ≤ 72057594037927936) :
   change (n : ZMod Aiur.Library.U32.Goldilocks.modulus).val = n
   rw [ZMod.val_natCast, Nat.mod_eq_of_lt hlt]
 
-private theorem get_ci_rprj_raw_uncond {b : Bytes.Address} {idx : F}
+theorem get_ci_rprj_raw_uncond {b : Bytes.Address} {idx : F}
     {x_block_addr r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (hb : Bytes.RepAddressRef Core.addrTy h b x_block_addr)
     (ev : ObsFn Obs.W "Ingress::get_ci_rprj" [x_block_addr, .field idx] h r h' calls) :
@@ -430,7 +430,7 @@ private theorem rawConvExpr_node {c : Ixon.Constant} {blobs : List (_root_.Addre
       (∀ i, Binding.FamilyOf.node c e ≠ .share i) :=
   rawConvExpr_unshare raw (c.sharing.size + 1) (Or.inr (Nat.le_succ _))
 
-private theorem rawConvExpr_forall_inv {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)}
+theorem rawConvExpr_forall_inv {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp d b bi : SourceValue F}
     (raw : L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e kp)
     (ld : loadValue h kp = .ok (.construct "KernelTypes::KExprNode" "Forall" [d, b, bi])) :
@@ -492,7 +492,7 @@ private theorem rawConvExpr_app_inv {c : Ixon.Constant} {blobs : List (_root_.Ad
   | lam _ _ _ cell | all _ _ _ cell | letE _ _ _ cell =>
     exact (Core.load_cell_ne cell ld (by decide)).elim
 
-private theorem rawConvExpr_const_inv {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)}
+theorem rawConvExpr_const_inv {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp x_c w : SourceValue F}
     (raw : L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e kp)
     (ld : loadValue h kp = .ok (.construct "KernelTypes::KExprNode" "Const" [x_c, w])) :
@@ -514,7 +514,7 @@ private theorem rawConvExpr_const_inv {c : Ixon.Constant} {blobs : List (_root_.
   | nat _ _ _ _ _ _ _ cell | app _ _ cell | lam _ _ _ cell | all _ _ _ cell | letE _ _ _ cell =>
     exact (Core.load_cell_ne cell ld (by decide)).elim
 
-private theorem peel_n_foralls_raw {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)} :
+theorem peel_n_foralls_raw {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)} :
     ∀ (n : Nat) {bound : Nat} {e : Ixon.Expr} {kp r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
       n < 72057594037927936 →
@@ -551,7 +551,7 @@ private theorem peel_n_foralls_raw {c : Ixon.Constant} {blobs : List (_root_.Add
       simp only [Binding.FamilyOf.peel, hnd]
       exact hpeel
 
-private theorem last_binder_dom_raw_aux {c : Ixon.Constant}
+theorem last_binder_dom_raw_aux {c : Ixon.Constant}
     {blobs : List (_root_.Address × ByteArray)} :
     ∀ (m : Nat) {bound : Nat} {e : Ixon.Expr} {kp r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
@@ -603,7 +603,7 @@ private theorem last_binder_dom_raw_aux {c : Ixon.Constant}
         · rfl
       exact ⟨rfl, .forallDom ld12 (.refl _), 1, b₁, ed, hld, raw_d⟩
 
-private theorem collect_spine_raw_aux {c : Ixon.Constant}
+theorem collect_spine_raw_aux {c : Ixon.Constant}
     {blobs : List (_root_.Address × ByteArray)} :
     ∀ (m : Nat) {bound : Nat} {e : Ixon.Expr} {kp hd sp : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
@@ -649,7 +649,7 @@ private theorem collect_spine_raw_aux {c : Ixon.Constant}
       obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
       exact ⟨ext, .refl _, 0, b', raw'.mono ext (fun _ hm => hm), hns⟩
 
-private theorem node_of_not_share {c : Ixon.Constant} {e : Ixon.Expr}
+theorem node_of_not_share {c : Ixon.Constant} {e : Ixon.Expr}
     (hns : ∀ i, e ≠ .share i) : Binding.FamilyOf.node c e = e := by
   unfold Binding.FamilyOf.node
   cases e with
@@ -1461,7 +1461,7 @@ structure FamCheckCarriers (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E�
     ∃ n, Binding.FamilyOf.motiveCarrierAt crb rc 0 n = some (Core.iprjAddr B 0)
   ind0Safe : 0 < rs.size → ∀ ind₀, ms[0]? = some (Ixon.MutConst.indc ind₀) → ind₀.isUnsafe = false
 
-private theorem check_family_seg1_extends {e0 e1 e2 r : SourceValue F} {h h' : Heap F}
+theorem check_family_seg1_extends {e0 e1 e2 r : SourceValue F} {h h' : Heap F}
     {cs : List (Call F)} (sg : Obs.«KernelModeled::check_family».Seg1 e0 e1 e2 h r h' cs) :
     Heap.Extends h h' := by
   cases sg with
