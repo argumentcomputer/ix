@@ -504,13 +504,11 @@ def AtWalkFam (Pref : RunPref)
       P ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ R famOf rank
 
 /-- **What the graph row and the inner records are owed at the witness with its stored
-families**, at the twin preference `Pref`: the run's facts the graph reads (`BatchGives`) and the
-inner records' facts (`InnerOwed`). The stored twins' field (`StoredTwinField`) is not owed: it
-is the witness's map (`storedTwinField_of_block`) at the stored twins' blocks, whose reads of
-the witness (`StoredTwinReads`) are proved at the walk's step store
-(`storedTwinReads_of_walk`). -/
+families**, at the twin preference `Pref`: only the run's facts the graph reads (`BatchGives`).
+Both `InnerOwed` (`innerOwed_of_walk`) and the stored twins' field (`storedTwinField_of_block` via
+`storedTwinReads_of_walk`) are proved unconditionally at the walk. -/
 def FamilyGraphInnerOwedFam (Pref : RunPref) : Prop :=
-  AtWalkFam.{u} Pref fun K _ _ _ => BatchGives K ∧ InnerOwed K
+  AtWalkFam.{u} Pref fun K _ _ _ => BatchGives K
 
 /-- **The graph row with the inner records at the witness with its stored families, from what
 they are owed**: as `familyGraphRowInner_of_owed`, the stored twins' field from the map. -/
@@ -518,7 +516,7 @@ theorem familyGraphRowInnerFam_of_owed {Pref : RunPref} (h : FamilyGraphInnerOwe
     FamilyGraphRowInnerFam.{u} := by
   intro calls t seeds E₀ lim Top rank hWalk R envT hshape famOf hSF hagree hstore
   obtain ⟨bAddr, hW, hG⟩ := hWalk
-  obtain ⟨hB, hIO⟩ :=
+  have hB :=
     h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape famOf hSF hagree hstore
   obtain ⟨E, hctx⟩ := hstore
   have hreads : StoredTwinReads
@@ -535,7 +533,7 @@ theorem familyGraphRowInnerFam_of_owed {Pref : RunPref} (h : FamilyGraphInnerOwe
   have hWalk' : Claim.TopWalk calls t seeds E₀ lim Top rank' :=
     topWalk_of_edges ⟨bAddr, hW, hG⟩ hR.closed hR.owner
   exact ⟨rank', _, _, _, _, hWalk', hFR, bAddr, innerChecked_of_gives hWalk' hFR
-    (FamRunCtx.checks_of _ hB) (innerGives_of_owed hW hG hB hshape hIO)⟩
+    (FamRunCtx.checks_of _ hB) (innerGives_of_owed hW hG hB hshape (innerOwed_of_walk hW))⟩
 
 /-- **Row `familyGraph` with the inner records at the witness with its stored families, with what
 the twin step reads of the run's choices**: `FamilyGraphRowInnerFam`'s conclusion at one binding
@@ -569,7 +567,7 @@ theorem familyGraphRowInnerFamT_of_owed {Pref : RunPref} (h : FamilyGraphInnerOw
     FamilyGraphRowInnerFamT.{u} Pref := by
   intro calls t seeds E₀ lim Top rank hWalk R envT hshape famOf hSF hagree hstore
   obtain ⟨bAddr, hW, hG⟩ := hWalk
-  obtain ⟨hB, hIO⟩ :=
+  have hB :=
     h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape famOf hSF hagree hstore
   obtain ⟨E, hctx⟩ := hstore
   have hreads : StoredTwinReads
@@ -586,7 +584,7 @@ theorem familyGraphRowInnerFamT_of_owed {Pref : RunPref} (h : FamilyGraphInnerOw
   have hWalk' : Claim.TopWalk calls t seeds E₀ lim Top rank' :=
     topWalk_of_edges ⟨bAddr, hW, hG⟩ hR.closed hR.owner
   exact ⟨rank', _, _, _, _, bAddr, hWalk', hFR, innerChecked_of_gives hWalk' hFR
-    (FamRunCtx.checks_of _ hB) (innerGives_of_owed hW hG hB hshape hIO),
+    (FamRunCtx.checks_of _ hB) (innerGives_of_owed hW hG hB hshape (innerOwed_of_walk hW)),
     FamRunCtx.checks_of _ hB, hblock, fun B rb rb' hf ht => FamRunCtx.twin_canonical hf ht⟩
 
 /-! ## The public statement with the typing half at the witness with its stored families -/
