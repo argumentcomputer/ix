@@ -114,6 +114,27 @@ inductive DirectContWitness (x_rc x_block : SourceValue F) (x : _root_.Address) 
           cs194)))))) :
       DirectContWitness x_rc x_block x x_s x_n x_out x_s' h h' cs
 
+/-- **Payload-stream anchor tying a family check's advice walk to the first
+`IxonDeserialize::get_address` call in `calls`** (mirrors the anchor fields of `FamilyOwnAdvice`). -/
+inductive AdviceChainAnchor (calls : List (Call F)) (m_adv : Heap F) (x_advice : SourceValue F) :
+    Prop where
+  | mk
+      (v_pl : SourceValue F) (m_pl : Heap F) (bytes_pl : List UInt8)
+      (pl_stream : Bytes.RepByteStream Core.byteListEnum m_pl bytes_pl v_pl)
+      (pl_first : calls.find? (fun cl => cl.name == "IxonDeserialize::get_address") =
+        some ⟨"IxonDeserialize::get_address", [v_pl], m_pl⟩)
+      (x_rb x_s1 : SourceValue F) (m_s1 : Heap F) (cs_rb : List (Call F))
+      (ev_rb : ObsFn Obs.W "IxonDeserialize::get_address" [v_pl] m_pl (.tuple [x_rb, x_s1])
+        m_s1 cs_rb)
+      (m_na : Heap F) (x_na x_s2 : SourceValue F) (m_s2 : Heap F) (cs_na : List (Call F))
+      (ext_s1_na : Heap.Extends m_s1 m_na)
+      (ev_na : ObsFn Obs.W "KernelModeled::get_count" [x_s1] m_na (.tuple [x_na, x_s2])
+        m_s2 cs_na)
+      (x_s3 : SourceValue F) (m_s3 : Heap F) (cs_ga : List (Call F))
+      (ev_ga : ObsFn Obs.W "KernelModeled::get_addrs" [x_s2, x_na] m_s2 (.tuple [x_advice, x_s3])
+        m_s3 cs_ga)
+      (ext_s3_adv : Heap.Extends m_s3 m_adv)
+
 /-- **The witness, advice, container, and family reference guards extracted from a single unfolding
 of `KernelModeled::check_family`**: packs `path`, the `assert_in_order` on `rec_block`, the
 `L1.Stream` feeding `check_witnesses`, `ev_ws`, `ev_asb`, `ev_crr`, `ev_adv` (with `advRep` for
@@ -159,6 +180,7 @@ inductive CheckFamilyGuards (x_rc x_block x_rec_block : SourceValue F) (h : Heap
       (sub_fro : ∀ cl ∈ cs_fro, cl ∈ cs)
       (hcont : ∀ x, optCont = some x →
         DirectContWitness x_rc x_block x x_s4 (.field (nw : F)) x_outside x_s5 m_ws m_ws' cs_ws)
+      (anchor : AdviceChainAnchor cs m_crr x_advice)
 
 /-- **A family check with its exact own advice list and reference guards** (`CheckFamilyGuards`). -/
 def FamilyCallExact (calls : List (Call F)) (bAddr : _root_.Address)
@@ -200,11 +222,15 @@ theorem FamilyCallExact.toOwn {calls : List (Call F)} {bAddr : _root_.Address}
   obtain ⟨path, _, _, _, _, _, _, m_ws, m_ws', nw, bytes4, x_s4, x_outside, x_s5, cs_ws,
     ext_h_ws, hs4, ev_ws, x_wset, m_asb, cs_asb, ev_asb, _, m_crr, _, ev_crr,
     x_advice, v_adv, m_adv', cs_adv, ev_adv, advRep, _, _, _, _, _, _,
-    sub_ws, _, sub_asb, _, sub_adv, _, _⟩ := g
+    sub_ws, _, sub_asb, _, sub_adv, _, _, anchor⟩ := g
+  obtain ⟨v_pl, m_pl, bytes_pl, pl_stream, pl_first, x_rb, x_s1, m_s1, cs_rb, ev_rb,
+    m_na, x_na, x_s2, m_s2, cs_na, ext_s1_na, ev_na, x_s3, m_s3, cs_ga, ev_ga, ext_s3_adv⟩ := anchor
   exact ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev,
     FamilyOwnAdvice.mk path m_ws x_s4 (.field (nw : F)) x_outside x_s5 m_ws' cs_ws ⟨bytes4, hs4⟩
       ev_ws x_wset m_asb cs_asb ev_asb m_crr m_adv' x_advice v_adv cs_adv ev_adv
-      ext_h_ws ev_crr.heap_extends advRep sub_ws sub_asb sub_adv,
+      ext_h_ws ev_crr.heap_extends advRep sub_ws sub_asb sub_adv
+      v_pl m_pl bytes_pl pl_stream pl_first x_rb x_s1 m_s1 cs_rb ev_rb
+      m_na x_na x_s2 m_s2 cs_na ext_s1_na ev_na x_s3 m_s3 cs_ga ev_ga ext_s3_adv,
     hmem, hsub⟩
 
 theorem FamilyCallExact.toCall {calls : List (Call F)} {bAddr : _root_.Address}
@@ -224,13 +250,13 @@ theorem DirectContOwn.toExact {calls : List (Call F)} {bAddr : _root_.Address}
     x_s4, x_outside, x_s5, cs_ws, ext_h_ws, hs4, ev_ws, x_wset, m_asb, cs_asb, ev_asb,
     v_crr, m_crr, cs_crr, ev_crr, x_advice, v_adv, m_adv', cs_adv, ev_adv, advRep,
     m_fro0, m_fro1, v_fro, cs_fro, ext_asb_fro, ev_fro, sub_ws, len_ws, sub_asb, sub_crr, sub_adv,
-    sub_fro, _⟩ := g
+    sub_fro, _, anchor⟩ := g
   exact ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev,
     ⟨path, m_ord0, m_ord1, v_ord, cs_ord, ext_h_ord, ev_ord, m_ws, m_ws', nw, bytes4,
       x_s4, x_outside, x_s5, cs_ws, ext_h_ws, hs4, ev_ws, x_wset, m_asb, cs_asb, ev_asb,
       v_crr, m_crr, cs_crr, ev_crr, x_advice, v_adv, m_adv', cs_adv, ev_adv, advRep,
       m_fro0, m_fro1, v_fro, cs_fro, ext_asb_fro, ev_fro, sub_ws, len_ws, sub_asb, sub_crr, sub_adv,
-      sub_fro, fun _ hc => nomatch hc⟩, hmem, hsub⟩
+      sub_fro, fun _ hc => nomatch hc, anchor⟩, hmem, hsub⟩
 
 theorem DirectContOwn.toOwn {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {B rb : _root_.Address} {lim : Option Nat}
