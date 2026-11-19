@@ -127,42 +127,25 @@ theorem payDirect_cases {calls : List (Call F)} {bAddr : _root_.Address}
   · exact Or.inl ⟨B, rb, cs, hB, hfc, ha⟩
   · exact Or.inr (Or.inl ⟨B, rb, cs, hB, hfc, ha⟩)
 
-/-- **The remaining direct payload facts hold of every collision-free run**
-(`adviceCheck_projMember`, `containerRecIn_logic`). -/
-theorem payloadDirect_of_run {calls : List (Call F)} {bAddr : _root_.Address}
-    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} (hC : CollisionFreeRun calls E₀) :
-    PayloadDirectLeft calls bAddr t E₀ where
-  projMember := fun _ _ _ ⟨_, _, _, -, hfc, hadv⟩ hc hp =>
-    adviceCheck_projMember hC.runStore hC.hashedStored (adviceCheckObs_of_familyCall hfc hadv) hc hp
-  containerLogic := fun _ _ _ ⟨_, _, _, -, hfc, hcon⟩ hc =>
-    containerRecIn_logic hC.runStore hfc hcon hc
-
 /-- **What is left of the payload's facts at the addresses the run's family checks name
-directly** (`PayDirect`). The family checks' own loads give the rest (`payloadDirect_of_left`,
-`Binding/PayloadAdvice.lean`, `Binding/PayloadDirectLoads.lean`): the family record's record, kind,
-logic and member projections (`familyCall_record_facts`: `family_recs`, `build_recur_addrs`,
-`check_recs`); an advice record's record, kind and logic, and an advice block's member and
-constructor projections (`adviceCheck_logic`, `adviceCheck_block`: `check_advice_record`'s arms,
-`muts_all_safe`, `check_muts_all`); a container recursor's record and kind, that it is no block,
-and a projection among them at its block's member address (`rec_family_block`'s `get_ci`).
-Each field left names its producer:
-* `projMember`: an advice record that is an inductive or a constructor projection is at a member's
-  or a constructor's address of its block. Producer: `Ingress::get_ci` at the record in
-  `KernelModeled::check_advice_record`'s `IPrj` and `CPrj` arms, a change of the circuit source
-  (`Claim.proj_member_of_load` reads it); today's arms only check that the block is earlier
-  advice.
-* `containerLogic`: a container recursor is in Lean's logic. Producer:
-  `KernelModeled::check_container_rec` asserting the recursor's unsafe flag `0`, a change of the
-  circuit source. Today's circuit checks a container recursor on the native route
-  (`KernelCheck::check_const`'s `Rec` arm, `check_recursor_member`, which read no flag), so an
-  unsafe recursor record of a native block in the modeled block's closure passes as a witness of
-  kind 2. -/
+directly** (`PayDirect`). Both fields are proved of every collision-free run
+(`payloadDirect_of_run`, `Binding/PayloadDirectClosed.lean`). -/
 structure PayloadDirectLeft (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) : Prop where
   projMember : ∀ g a c, PayAdviceAt calls bAddr t E₀ g a → recordOf E₀ a = some c → IsProj c →
     ∃ cb, recordOf E₀ (Ix.Cert.ownerOf a c) = some cb ∧ ConstAddrOf (Ix.Cert.ownerOf a c) cb a
   containerLogic : ∀ g a c, PayContainerAt calls bAddr t E₀ g a → recordOf E₀ a = some c →
     InLogic c
+
+/-- **The remaining direct payload facts hold of every collision-free run**
+(`adviceCheck_projMember`, `containerRecIn_logic`). -/
+theorem payloadDirect_of_run {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} (hC : CollisionFreeRun calls E₀) :
+    PayloadDirectLeft calls bAddr t E₀ where
+  projMember := fun _ _ _ ⟨_, _, _, _, hfc, hadv⟩ hc hp =>
+    adviceCheck_projMember hC.runStore hC.hashedStored (adviceCheckObs_of_familyCall hfc hadv) hc hp
+  containerLogic := fun _ _ _ ⟨_, _, _, _, hfc, hcon⟩ hc =>
+    containerRecIn_logic hC.runStore hfc hcon hc
 
 /-- **The payload's facts at the addresses the run's family checks name directly**, from what is
 left of them (`PayloadDirectLeft`) and the family checks' own loads. -/
@@ -1095,7 +1078,7 @@ theorem famNew_of_run (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E
       (hcpE.symm.trans (hF.block.members 0 ms[0] hm0))
     subst ecp
     have hBHeld := (hclg.1 (memberAddr B 0 ms[0]) (memberProjection B 0 ms[0]) hcp).1
-    rw [ownerOf_memberProjection B 0 ms[0], hnewB.2] at hBHeld
+    rw [ownerOf_memberProjection, hnewB.2] at hBHeld
     cases hBHeld
 
 /-- **The family form's clauses at a group**, for a rank of its new records: `ClosureRunFacts`
