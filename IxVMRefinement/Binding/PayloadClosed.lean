@@ -744,7 +744,7 @@ private theorem witness_in_payClass (hC : CollisionFreeRun calls E₀)
             Claim.RCLimRep t bAddr (some (valLimit g)) h₁ rc₁ ∧
             Core.S0.addr h₁ xx₁ w ∧ Core.S0.addr h₁ xib₁ ib ∧
             ObsFn Obs.W "KernelModeled::check_container_rec" [rc₁, xx₁, xib₁] h₁ r₁ h₂ cs₁ ∧
-            (∀ cl ∈ cs₁, cl ∈ calls)) ∨
+            (∀ cl ∈ cs₁, cl ∈ calls) ∧ cs₁.length < cs.length) ∨
       (∃ ib c cib, PathPos E₀ B ib ∧ recordOf E₀ w = some c ∧ IsProj c ∧
         Ix.Cert.ownerOf w c = ib ∧ usedRefIdxs c = [] ∧
         recordOf E₀ ib = some cib ∧ ConstAddrOf ib cib w)) :
@@ -881,7 +881,7 @@ theorem payReach_in_payClass (hC : CollisionFreeRun calls E₀)
           (Or.inr (Or.inr ⟨B, rb, cs, advAs, hB, hmodB, hex, by rw [hown]; exact hblkAdv⟩))
     | @directCont B rb _ cs advAs hB hmodB hex hdc =>
       obtain ⟨outs, -, -, hcrIn, ⟨ib, hposIb, h₁, h₂, rc₁, xx₁, xib₁, r₁, cs₁, -, hxx₁, hxib₁,
-          evCr, hsubCr⟩, hcontRefs, -, houtsCls⟩ := hdc.unpack hC hbd
+          evCr, hsubCr, -⟩, hcontRefs, -, houtsCls⟩ := hdc.unpack hC hbd
       obtain ⟨ca, i, hca, hi, hy⟩ := hu
       rcases check_container_rec_shape hC hbd hxx₁ hxib₁ evCr hsubCr hca with
         ⟨rc, hrc⟩ | ⟨rp, hrp⟩
@@ -961,7 +961,7 @@ theorem payReach_in_payClass (hC : CollisionFreeRun calls E₀)
         exact PayClass.directAdv hB hmodB hex hownAdv
     | @directCont B rb _ cs advAs hB hmodB hex hdc =>
       obtain ⟨outs, -, -, -, ⟨ib, hposIb, h₁, h₂, rc₁, xx₁, xib₁, r₁, cs₁, hrc₁, hxx₁, hxib₁,
-          evCr, hsubCr⟩, -, -, -⟩ := hdc.unpack hC hbd
+          evCr, hsubCr, -⟩, -, -, -⟩ := hdc.unpack hC hbd
       rcases check_container_rec_shape hC hbd hxx₁ hxib₁ evCr hsubCr hc with
         ⟨rc, hrc⟩ | ⟨rp, hrp⟩
       · exact (standalone_not_proj (Or.inr (Or.inl ⟨rc, hrc⟩)) hp).elim
@@ -1281,7 +1281,7 @@ theorem storeStepInv_all (hC : CollisionFreeRun calls E₀)
         exact opEarlier_of_ordered hg33 (hfacts.2.choose_spec.2.2.2 y hu).2.1
       | directCont _ _ hex hdc =>
         obtain ⟨outs, -, -, hcrIn, ⟨ib, -, h₁, h₂, rc₁, xx₁, xib₁, r₁, cs₁, -, hxx₁, hxib₁,
-            evCr, hsubCr⟩, hcontRefs, -, -⟩ := hdc.unpack hC hbd
+            evCr, hsubCr, -⟩, hcontRefs, -, -⟩ := hdc.unpack hC hbd
         obtain ⟨ca, i, hca, hi, hy⟩ := hu
         rcases check_container_rec_shape hC hbd hxx₁ hxib₁ evCr hsubCr hca with
           ⟨rc, hrc⟩ | ⟨rp, hrp⟩
@@ -1527,7 +1527,7 @@ theorem payloadChecked_of_run (hC : CollisionFreeRun calls E₀)
     · exact (unitKind_not_proj hunit hp).elim
   | directCont _ _ hex hdc =>
     left
-    obtain ⟨-, -, -, -, ⟨ib, -, h₁, h₂, rc₁, xx₁, xib₁, r₁, cs₁, hrc₁, hxx₁, -, evCr, hsubCr⟩,
+    obtain ⟨-, -, -, -, ⟨ib, -, h₁, h₂, rc₁, xx₁, xib₁, r₁, cs₁, hrc₁, hxx₁, -, evCr, hsubCr, -⟩,
         -, -, -⟩ := hdc.unpack hC hbd
     exact Or.inl (Decl.containerRec_checked hC.runStore hrc₁ hxx₁ evCr hsubCr).1
   | checkedProj hc' hpr _ _ _ _ =>
@@ -1677,7 +1677,7 @@ theorem runFactsLeft_of_run (hC : CollisionFreeRun calls E₀)
       exact needOk_of_notBlock_sourceSafe hC hvalAll hroots hnb hsafe hxE
     | directCont _ _ hex hdc =>
       obtain ⟨outs, -, -, -, ⟨ib, -, h₁, h₂, rc₁, xx₁, xib₁, r₁, cs₁, -, hxx₁, hxib₁,
-          evCr, hsubCr⟩, hcontRefs, -, -⟩ := hdc.unpack hC hbd
+          evCr, hsubCr, -⟩, hcontRefs, -, -⟩ := hdc.unpack hC hbd
       rcases check_container_rec_shape hC hbd hxx₁ hxib₁ evCr hsubCr hE with
         ⟨rc, hrc⟩ | ⟨rp, hrp⟩
       · obtain ⟨ib', -, hrefs⟩ := hcontRefs c hE (Or.inl ⟨rc, hrc⟩)

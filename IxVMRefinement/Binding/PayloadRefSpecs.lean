@@ -1057,7 +1057,7 @@ theorem DirectContWitness.extract {calls : List (Call F)} {bAddr : _root_.Addres
             Claim.RCLimRep t bAddr lim h₁ rc₁ ∧
             Core.S0.addr h₁ xx₁ x ∧ Core.S0.addr h₁ xib₁ ib ∧
             ObsFn Obs.W "KernelModeled::check_container_rec" [rc₁, xx₁, xib₁] h₁ r₁ h₂ cs₁ ∧
-            (∀ cl ∈ cs₁, cl ∈ calls) := by
+            (∀ cl ∈ cs₁, cl ∈ calls) ∧ cs₁.length < cs.length := by
   induction hdw with
   | @head x_s x_n x_out x_s' h h' cs m47 m82 m_ord m157 m117 m184 m256
       x_x x_s2 x_kind x_s3 v_ord v_ns x_rest v200 cs57 cs92 cs_ord cs165 cs127 cs194
@@ -1143,7 +1143,7 @@ theorem DirectContWitness.extract {calls : List (Call F)} {bAddr : _root_.Addres
         hrc.mono (ext157.trans extW),
         ⟨b_x, Bytes.repAddressRef_heapMono₂ Core.addrTy extW hbx157, rfl⟩,
         ⟨b_ib, hbIb, rfl⟩,
-        evCr, hsubCr⟩
+        evCr, hsubCr, by rw [hcs, hcsW]; simp; omega⟩
   | @tail x_s x_n x_out x_s' h h' cs m47 m82 m_ord m157 m117 m184 m256
       x_x x_s2 x_kind x_s3 v_ord v_kf v_ns x_rest v200 cs57 cs92 cs_ord cs165 cs127 cs194
       hne evAddr evByte evOrd evU8 evWit opSub evRec htail hr hm hh hcs ih =>
@@ -1173,7 +1173,8 @@ theorem DirectContWitness.extract {calls : List (Call F)} {bAddr : _root_.Addres
         (Bytes.repAddressRef_heapMono₂ Core.addrTy ext157 hblk)
         hbx157 (L1.Stream.mono ext82_157 hs3_82) evWit hsub127
     have ext117 : Heap.Extends h m117 := ext157.trans evWit.heap_extends
-    obtain ⟨⟨rest, hrestRep, hxMem⟩, hordX, hcrRest, hcrWit⟩ :=
+    obtain ⟨⟨rest, hrestRep, hxMem⟩, hordX, hcrRest,
+        ⟨ib, hposIb, h₁, h₂, rc₁, xx₁, xib₁, r₁, cs₁, hrc₁, hxx₁, hxib₁, evCr, hsubCr, hlen₁⟩⟩ :=
       ih (hrc.mono ext117) (Bytes.repAddressRef_heapMono₂ Core.addrTy ext117 hblk) hs_ns hsub194
     have extCons : Heap.Extends m184 h' := by rw [hh, hm]; exact Heap.Extends.snoc _ _
     have cell : h'[m184.length]? =
@@ -1186,7 +1187,9 @@ theorem DirectContWitness.extract {calls : List (Call F)} {bAddr : _root_.Addres
       rw [hr]
       exact RepLinkedList.cons cell hbxEnd
         (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy) extCons hrestRep)
-    refine ⟨⟨b_x :: rest, houts, List.mem_cons_of_mem _ hxMem⟩, hordX, ?_, hcrWit⟩
+    refine ⟨⟨b_x :: rest, houts, List.mem_cons_of_mem _ hxMem⟩, hordX, ?_,
+      ⟨ib, hposIb, h₁, h₂, rc₁, xx₁, xib₁, r₁, cs₁, hrc₁, hxx₁, hxib₁, evCr, hsubCr,
+        by rw [hcs]; simp; omega⟩⟩
     obtain ⟨rc₁, xa₁, ib₁, h₁, hmem₁, hxa₁⟩ := hcrRest
     exact ⟨rc₁, xa₁, ib₁, h₁, by rw [hcs]; simp [hmem₁], hxa₁⟩
 
@@ -2719,7 +2722,7 @@ structure FamilyCallUnpacked (calls : List (Call F)) (bAddr : _root_.Address)
           Claim.RCLimRep t bAddr lim h₁ rc₁ ∧
           Core.S0.addr h₁ xx₁ w ∧ Core.S0.addr h₁ xib₁ ib ∧
           ObsFn Obs.W "KernelModeled::check_container_rec" [rc₁, xx₁, xib₁] h₁ r₁ h₂ cs₁ ∧
-          (∀ cl ∈ cs₁, cl ∈ calls)) ∨
+          (∀ cl ∈ cs₁, cl ∈ calls) ∧ cs₁.length < cs.length) ∨
     (∃ ib c cib, PathPos E₀ B ib ∧ recordOf E₀ w = some c ∧ IsProj c ∧
       Ix.Cert.ownerOf w c = ib ∧ usedRefIdxs c = [] ∧
       recordOf E₀ ib = some cib ∧ ConstAddrOf ib cib w)
@@ -2797,6 +2800,7 @@ theorem familyCallExact_of_call {calls : List (Call F)} {bAddr : _root_.Address}
         RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy) ext423 hadvRep,
         _, _, _, _, extAsbFro, evFro,
         (fun cl hcl => by rw [hc1474]; simp [hcl]),
+        (by rw [hc1474]; simp; omega),
         (fun cl hcl => by rw [hc1474]; simp [hcl]),
         (fun cl hcl => by rw [hc1474]; simp [hcl]),
         (fun cl hcl => by rw [hc1474]; simp [hcl]),
@@ -2818,7 +2822,7 @@ theorem FamilyCallExact.unpack {calls : List (Call F)} {bAddr : _root_.Address}
     v_crr, m423, csCrr, evCrr,
     x_adv, v_adv, m453, csAdv, evAdv, hadvP,
     m_fro0, m_fro1, v_fro, csFro, ext391_fro, evFro,
-    subWs, subAsb, subCrr, subAdv, subFro, _⟩ := g
+    subWs, lenWs, subAsb, subCrr, subAdv, subFro, _⟩ := g
   have hrbOrd : Claim.OpOrderedAt t lim (Core.ixAddr bR) :=
     assert_in_order_spec (hrc.mono ext184)
       ⟨bR, Bytes.repAddressRef_heapMono₂ Core.addrTy ext184 hbR, rfl⟩ evOrd
@@ -2855,7 +2859,8 @@ theorem FamilyCallExact.unpack {calls : List (Call F)} {bAddr : _root_.Address}
     rcases houtsDc b hb with h0 | h1 | hdw | h3
     · exact Or.inl h0
     · exact Or.inr (Or.inl h1)
-    · obtain ⟨-, -, -, hcrWit⟩ := hdw.extract hC (hrc.mono ext297)
+    · obtain ⟨-, -, -, ⟨ib, hposIb, h₁, h₂, rc₁, xx₁, xib₁, r₁, cs₁, hrc₁, hxx₁, hxib₁,
+          evCr, hsubCr, hlen₁⟩⟩ := hdw.extract hC (hrc.mono ext297)
         (Bytes.repAddressRef_heapMono₂ Core.addrTy ext297 hbB) hs4 hsubWs
       exact Or.inr (Or.inr (Or.inl ⟨⟨h, h', rc, xb, xrb, r, hrc, ⟨bB, hbB, rfl⟩, ⟨bR, hbR, rfl⟩,
         ev, ⟨path, m_ord0, m_ord1, v_ord, cs_ord, ext184, evOrd,
@@ -2863,8 +2868,10 @@ theorem FamilyCallExact.unpack {calls : List (Call F)} {bAddr : _root_.Address}
           x_wset, m391, csAsb, evAsb, v_crr, m423, csCrr, evCrr,
           x_adv, v_adv, m453, csAdv, evAdv, hadvP,
           m_fro0, m_fro1, v_fro, csFro, ext391_fro, evFro,
-          subWs, subAsb, subCrr, subAdv, subFro,
-          fun _ heq => by cases heq; exact hdw⟩, hmemEv, hsub⟩, hcrWit⟩))
+          subWs, lenWs, subAsb, subCrr, subAdv, subFro,
+          fun _ heq => by cases heq; exact hdw⟩, hmemEv, hsub⟩,
+        ⟨ib, hposIb, h₁, h₂, rc₁, xx₁, xib₁, r₁, cs₁, hrc₁, hxx₁, hxib₁,
+          evCr, hsubCr, Nat.lt_trans hlen₁ lenWs⟩⟩))
     · exact Or.inr (Or.inr (Or.inr h3))
   · intro w hw
     obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hw
@@ -2887,7 +2894,7 @@ theorem DirectContOwn.unpack {calls : List (Call F)} {bAddr : _root_.Address}
           Claim.RCLimRep t bAddr lim h₁ rc₁ ∧
           Core.S0.addr h₁ xx₁ x ∧ Core.S0.addr h₁ xib₁ ib ∧
           ObsFn Obs.W "KernelModeled::check_container_rec" [rc₁, xx₁, xib₁] h₁ r₁ h₂ cs₁ ∧
-          (∀ cl ∈ cs₁, cl ∈ calls)) ∧
+          (∀ cl ∈ cs₁, cl ∈ calls) ∧ cs₁.length < cs.length) ∧
       ContainerRefsFacts calls bAddr t E₀ lim (outs.map Core.ixAddr) x ∧
       (∀ w ∈ outs.map Core.ixAddr, Claim.OpOrderedAt t lim w) ∧
       (∀ w ∈ outs.map Core.ixAddr,
@@ -2905,7 +2912,7 @@ theorem DirectContOwn.unpack {calls : List (Call F)} {bAddr : _root_.Address}
               Claim.RCLimRep t bAddr lim h₁ rc₁ ∧
               Core.S0.addr h₁ xx₁ w ∧ Core.S0.addr h₁ xib₁ ib ∧
               ObsFn Obs.W "KernelModeled::check_container_rec" [rc₁, xx₁, xib₁] h₁ r₁ h₂ cs₁ ∧
-              (∀ cl ∈ cs₁, cl ∈ calls)) ∨
+              (∀ cl ∈ cs₁, cl ∈ calls) ∧ cs₁.length < cs.length) ∨
         (∃ ib c cib, PathPos E₀ B ib ∧ recordOf E₀ w = some c ∧ IsProj c ∧
           Ix.Cert.ownerOf w c = ib ∧ usedRefIdxs c = [] ∧
           recordOf E₀ ib = some cib ∧ ConstAddrOf ib cib w)) := by
@@ -2916,14 +2923,16 @@ theorem DirectContOwn.unpack {calls : List (Call F)} {bAddr : _root_.Address}
     v_crr, m423, csCrr, evCrr,
     x_adv, v_adv, m453, csAdv, evAdv, hadvP,
     m_fro0, m_fro1, v_fro, csFro, ext391_fro, evFro,
-    subWs, subAsb, subCrr, subAdv, subFro, hcont⟩ := g
+    subWs, lenWs, subAsb, subCrr, subAdv, subFro, hcont⟩ := g
   have hdw := hcont x rfl
   have hsubWs : ∀ cl ∈ csWs, cl ∈ calls := fun cl hcl => hsub cl (subWs cl hcl)
   have hsubCrr : ∀ cl ∈ csCrr, cl ∈ calls := fun cl hcl => hsub cl (subCrr cl hcl)
   obtain ⟨outs, -, houtsRep, -, houtsOrd, -, houtsDc⟩ :=
     check_witnesses_spec hC (ZMod.val (nw : F)) rfl (hrc.mono ext297)
       (Bytes.repAddressRef_heapMono₂ Core.addrTy ext297 hbB) hs4 evWs hsubWs
-  obtain ⟨⟨outs', houtsRep', hxMem'⟩, hordX, hcrWs, hcrWit⟩ :=
+  obtain ⟨⟨outs', houtsRep', hxMem'⟩, hordX, hcrWs,
+      ⟨ibX, hposX, h₁X, h₂X, rc₁X, xx₁X, xib₁X, r₁X, cs₁X, hrc₁X, hxx₁X, hxib₁X,
+        evCrX, hsubCrX, hlenX⟩⟩ :=
     hdw.extract hC (hrc.mono ext297)
       (Bytes.repAddressRef_heapMono₂ Core.addrTy ext297 hbB) hs4 hsubWs
   have eouts : outs' = outs := addrList_rep_det houtsRep' houtsRep
@@ -2937,7 +2946,10 @@ theorem DirectContOwn.unpack {calls : List (Call F)} {bAddr : _root_.Address}
   have houts391 := RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy) extAsb houtsRep
   have hcrr := container_recs_refs_spec hC hbd outs' (hrc.mono ext391) houts391 hwset evCrr hsubCrr
   obtain ⟨bx, hbx, rfl⟩ := List.mem_map.mp hxMem'
-  refine ⟨outs', List.mem_map_of_mem hbx, hordX, ?_, hcrWit, hcrr bx hbx, ?_, ?_⟩
+  refine ⟨outs', List.mem_map_of_mem hbx, hordX, ?_,
+    ⟨ibX, hposX, h₁X, h₂X, rc₁X, xx₁X, xib₁X, r₁X, cs₁X, hrc₁X, hxx₁X, hxib₁X,
+      evCrX, hsubCrX, Nat.lt_trans hlenX lenWs⟩,
+    hcrr bx hbx, ?_, ?_⟩
   · obtain ⟨rc₁, xa₁, ib₁, h₁, hmem₁, hxa₁⟩ := hcrWs
     exact ⟨rc₁, xa₁, ib₁, h₁, subWs _ hmem₁, hxa₁⟩
   · intro w hw
@@ -2948,7 +2960,8 @@ theorem DirectContOwn.unpack {calls : List (Call F)} {bAddr : _root_.Address}
     rcases houtsDc b hb with h0 | h1 | hdwW | h3
     · exact Or.inl h0
     · exact Or.inr (Or.inl h1)
-    · obtain ⟨-, -, -, hcrW⟩ := hdwW.extract hC (hrc.mono ext297)
+    · obtain ⟨-, -, -, ⟨ibW, hposW, h₁W, h₂W, rc₁W, xx₁W, xib₁W, r₁W, cs₁W, hrc₁W, hxx₁W, hxib₁W,
+          evCrW, hsubCrW, hlenW⟩⟩ := hdwW.extract hC (hrc.mono ext297)
         (Bytes.repAddressRef_heapMono₂ Core.addrTy ext297 hbB) hs4 hsubWs
       exact Or.inr (Or.inr (Or.inl ⟨⟨h, h', rc, xb, xrb, r, hrc, ⟨bB, hbB, rfl⟩, ⟨bR, hbR, rfl⟩,
         ev, ⟨path, m_ord0, m_ord1, v_ord, cs_ord, ext184, evOrd,
@@ -2956,8 +2969,10 @@ theorem DirectContOwn.unpack {calls : List (Call F)} {bAddr : _root_.Address}
           x_wset, m391, csAsb, evAsb, v_crr, m423, csCrr, evCrr,
           x_adv, v_adv, m453, csAdv, evAdv, hadvP,
           m_fro0, m_fro1, v_fro, csFro, ext391_fro, evFro,
-          subWs, subAsb, subCrr, subAdv, subFro,
-          fun _ heq => by cases heq; exact hdwW⟩, hmemEv, hsub⟩, hcrW⟩))
+          subWs, lenWs, subAsb, subCrr, subAdv, subFro,
+          fun _ heq => by cases heq; exact hdwW⟩, hmemEv, hsub⟩,
+        ⟨ibW, hposW, h₁W, h₂W, rc₁W, xx₁W, xib₁W, r₁W, cs₁W, hrc₁W, hxx₁W, hxib₁W,
+          evCrW, hsubCrW, Nat.lt_trans hlenW lenWs⟩⟩))
     · exact Or.inr (Or.inr (Or.inr h3))
 
 end IxVM.Refinement.Binding

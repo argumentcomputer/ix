@@ -152,6 +152,7 @@ inductive CheckFamilyGuards (x_rc x_block x_rec_block : SourceValue F) (h : Heap
       (ev_fro : ObsFn Obs.W "KernelModeled::family_refs_ok" [x_rc, x_rec_block, x_block, x_wset]
         m_fro0 v_fro m_fro1 cs_fro)
       (sub_ws : ∀ cl ∈ cs_ws, cl ∈ cs)
+      (len_ws : cs_ws.length < cs.length)
       (sub_asb : ∀ cl ∈ cs_asb, cl ∈ cs)
       (sub_crr : ∀ cl ∈ cs_crr, cl ∈ cs)
       (sub_adv : ∀ cl ∈ cs_adv, cl ∈ cs)
@@ -199,7 +200,7 @@ theorem FamilyCallExact.toOwn {calls : List (Call F)} {bAddr : _root_.Address}
   obtain ⟨path, _, _, _, _, _, _, m_ws, m_ws', nw, _, x_s4, x_outside, x_s5, cs_ws,
     ext_h_ws, _, ev_ws, x_wset, m_asb, cs_asb, ev_asb, _, m_crr, _, ev_crr,
     x_advice, v_adv, m_adv', cs_adv, ev_adv, advRep, _, _, _, _, _, _,
-    sub_ws, sub_asb, _, sub_adv, _, _⟩ := g
+    sub_ws, _, sub_asb, _, sub_adv, _, _⟩ := g
   exact ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev,
     FamilyOwnAdvice.mk path m_ws x_s4 (.field (nw : F)) x_outside x_s5 m_ws' cs_ws ev_ws
       x_wset m_asb cs_asb ev_asb m_crr m_adv' x_advice v_adv cs_adv ev_adv
@@ -222,13 +223,13 @@ theorem DirectContOwn.toExact {calls : List (Call F)} {bAddr : _root_.Address}
   obtain ⟨path, m_ord0, m_ord1, v_ord, cs_ord, ext_h_ord, ev_ord, m_ws, m_ws', nw, bytes4,
     x_s4, x_outside, x_s5, cs_ws, ext_h_ws, hs4, ev_ws, x_wset, m_asb, cs_asb, ev_asb,
     v_crr, m_crr, cs_crr, ev_crr, x_advice, v_adv, m_adv', cs_adv, ev_adv, advRep,
-    m_fro0, m_fro1, v_fro, cs_fro, ext_asb_fro, ev_fro, sub_ws, sub_asb, sub_crr, sub_adv,
+    m_fro0, m_fro1, v_fro, cs_fro, ext_asb_fro, ev_fro, sub_ws, len_ws, sub_asb, sub_crr, sub_adv,
     sub_fro, _⟩ := g
   exact ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev,
     ⟨path, m_ord0, m_ord1, v_ord, cs_ord, ext_h_ord, ev_ord, m_ws, m_ws', nw, bytes4,
       x_s4, x_outside, x_s5, cs_ws, ext_h_ws, hs4, ev_ws, x_wset, m_asb, cs_asb, ev_asb,
       v_crr, m_crr, cs_crr, ev_crr, x_advice, v_adv, m_adv', cs_adv, ev_adv, advRep,
-      m_fro0, m_fro1, v_fro, cs_fro, ext_asb_fro, ev_fro, sub_ws, sub_asb, sub_crr, sub_adv,
+      m_fro0, m_fro1, v_fro, cs_fro, ext_asb_fro, ev_fro, sub_ws, len_ws, sub_asb, sub_crr, sub_adv,
       sub_fro, fun _ hc => nomatch hc⟩, hmem, hsub⟩
 
 theorem DirectContOwn.toOwn {calls : List (Call F)} {bAddr : _root_.Address}

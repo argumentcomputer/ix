@@ -865,7 +865,8 @@ theorem check_const_rec_block_modeled_family {calls cs : List (Call F)} {bAddr :
     ∃ (family : _root_.Address) (cs' : List (Call F)) (h_rf m_rf : Heap F)
       (ap_rf fb_rf : SourceValue F) (cs_rf : List (Call F)),
       ModeledRouteAt calls family ∧
-      FamilyCallAtLim calls bAddr t family A lim cs' ∧ (∀ cl ∈ cs', cl ∈ cs) ∧
+      FamilyCallAtLim calls bAddr t family A lim cs' ∧
+      (∀ cl ∈ cs', cl ∈ cs) ∧ cs'.length < cs.length ∧
       Core.S0.addr h_rf ap_rf x ∧ Core.S0.addr m_rf fb_rf family ∧
       ObsFn Obs.W "KernelModeled::rec_family_block" [ap_rf] h_rf fb_rf m_rf cs_rf ∧
       (∀ cl ∈ cs_rf, cl ∈ cs) := by
@@ -969,6 +970,7 @@ theorem check_const_rec_block_modeled_family {calls cs : List (Call F)} {bAddr :
           Core.S0.addr_mono ext_fam hblk, evFam,
           hsub _ (by rw [hcs]; simp), fun cl hcl => hsub cl (hsubFam cl hcl)⟩
       exact ⟨Core.ixAddr bF, csFam, _, _, x_addr, fb, csRf, hmod, hfc, hsubFam,
+        by rw [hcs]; simp; omega,
         Core.S0.addr_mono ext_rf ha, ⟨bF, hbF, rfl⟩, evRf, hsubRf⟩
 
 /-- **A checked recursor projection (`RPrj`) triggers a modeled family check of its recursor
@@ -998,7 +1000,7 @@ theorem rprj_checked_modeled_family {calls : List (Call F)} {bAddr : _root_.Addr
   injection hldR with hv
   subst hv
   obtain ⟨hrecB, hmsB⟩ := (hbl.mono hsub_ld).stored hC.hashedStored
-  obtain ⟨family, cs', h_rf, m_rf, ap_rf, fb_rf, cs_rf, hmod, hfc, -, ha_rf, hfb_rf, ev_rf,
+  obtain ⟨family, cs', h_rf, m_rf, ap_rf, fb_rf, cs_rf, hmod, hfc, -, -, ha_rf, hfb_rf, ev_rf,
     hsub_rf⟩ :=
     check_const_rec_block_modeled_family hC hstep hrc_m ha_m ⟨b, hb_rep, hb_eq⟩ hrecB hmsB
       ⟨rcr, List.mem_of_getElem? hmem⟩ ev_chk hsub_chk
