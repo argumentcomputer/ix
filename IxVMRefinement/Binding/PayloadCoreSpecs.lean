@@ -359,7 +359,7 @@ private theorem flat_originals_walk_len {x_all x_blk x_uo : SourceValue F} :
     intro x_cur x_pos r h h' cs hrep ev
     match Obs.«KernelCheck::flat_originals_walk».obs ev with
     | .Nil (ld12 := ld) .. => cases Lib.rep_nil_of_load hrep ld
-    | .Cons_Indc (m107 := m107) (m214 := m214) (ld12 := ld) (ev81 := e1) (ev122 := e2)
+    | .Cons_Indc (m107 := m107) (m214 := m214) (m295 := m295) (ld12 := ld) (ev81 := e1) (ev122 := e2)
         (sg221 := sg) (ev235 := e3)
         (he263 := hr) (hm262 := hh) (hm303 := hm3) (ev325 := evRec) .. =>
       obtain ⟨m', rest', he, hm, hrest⟩ := Lib.rep_cons_of_load hrep ld
@@ -369,9 +369,9 @@ private theorem flat_originals_walk_len {x_all x_blk x_uo : SourceValue F} :
       | indc ind =>
         have ext_sg : Heap.Extends m107 m214 := by
           match sg with
-          | .Induct (he209 := hsg) .. => rw [hsg]; exact Heap.Extends.refl _
-          | .other (he219 := hsg) .. => rw [hsg]; exact Heap.Extends.refl _
-        have ext_rec : Heap.Extends h _ :=
+          | .Induct (he204 := hsg) .. => rw [hsg]; exact Heap.Extends.refl _
+          | .other (he211 := hsg) .. => rw [hsg]; exact Heap.Extends.refl _
+        have ext_rec : Heap.Extends h m295 :=
           e1.heap_extends.trans (e2.heap_extends.trans (ext_sg.trans (e3.heap_extends.trans
             (by rw [hm3]; exact Heap.Extends.snoc _ _))))
         obtain ⟨xs, hlen, hxs⟩ := ih
@@ -425,9 +425,9 @@ theorem familyCall_block_indc_nonempty {calls : List (Call F)} {bAddr : _root_.A
     obtain ⟨cb, msB, hbl, hrep⟩ :=
       Claim.load_block_head (Bytes.repAddressRef_heapMono₂ Core.addrTy e453 hbB) ev513
     obtain ⟨hcb, hmsB⟩ := (hbl.mono hsub511).stored hH
-    have hszLt : msB.size < 8589934592 := by
-      have := Claim.muts_size_le hmsB
-      omega
+    obtain ⟨-, -, -, hszLt⟩ :=
+      Decl.load_block_info hS (Bytes.repAddressRef_heapMono₂ Core.addrTy e453 hbB) ev513 hsub511
+        hcb hmsB
     have hrep1 := RepLinkedList.mono L1.repMutConst_heapMono₂ ev601.heap_extends hrep
     have hlenV : _ = Value.field (msB.toList.length : F) := by
       have evLen' : ObsFn Obs.W
@@ -479,7 +479,8 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
   obtain ⟨cb, msB, hcb, hmsB, hposB, hfilt⟩ := familyCall_block_indc_nonempty hS hH hfc
   obtain ⟨h, h', rc, xb, xrb, r, hrc, ⟨bB, hbB, rfl⟩, ⟨bR, hbR, rfl⟩, ev, -, hsub⟩ := hfc
   match Obs.«KernelModeled::check_family».obs ev with
-  | .run (m105 := m105) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+  | .run (m105 := m105) (cs850 := cs850) (cs_pblrtsmj := cs_flat)
+      (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
       (ev_yqjbwijz := ev_ord) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
       (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465) (ev513 := ev513)
       (ev601 := ev601) (ev634 := ev634) (ev664 := ev664) (ev686 := ev686) (ev716 := ev716)
@@ -491,8 +492,7 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
       (ev_mitevvsv := ev_flen) (op_jmfoqaec := op_sub) (ev_rqpeovbn := ev_z1)
       (ev_xrhmaojz := ev_z2) (ev_whimdwjd := ev_vg) (op_qfbltjlu := op_1mvg)
       (op_cnutjuwu := op_eok) (op_ymhwloon := op_add) (op_mvhbzaru := op_mul)
-      (op_zaucahqq := op_or) (heq_sujkqzii := heq_or)
-      (cs_pblrtsmj := cs_flat) (cs850 := cs850) (hc1474 := hc1474) .. =>
+      (op_zaucahqq := op_or) (heq_sujkqzii := heq_or) (hc1474 := hc1474) .. =>
     have e0 : Heap.Extends h m105 := by
       match sg112 with
       | .Nil (ev15 := ev15) (he33 := he33) .. => rw [he33]; exact ev15.heap_extends
@@ -731,11 +731,11 @@ theorem muts_has_kind_spec :
       | .Indc_other (he83 := h01) .. | .Defn_other (he120 := h01) ..
       | .Recr_other (he157 := h01) .. =>
         exact absurd (Value.field.inj h01) one_ne_zero
-    | .Cons_other (ld12 := ld) (sg169 := sg) (hne187 := hne) (ev196 := evRec) .. =>
+    | .Cons_other (m162 := m162) (ld12 := ld) (sg169 := sg) (hne187 := hne) (ev196 := evRec) .. =>
       obtain ⟨m', rest', he, hm, hrest⟩ := Lib.rep_cons_of_load hrep ld
       injection he with h1 h2
       subst h1 h2
-      have hseg : _ = h ∧ (k = 0 → ∀ ind, m ≠ .indc ind) ∧ (k = 2 → ∀ rc, m ≠ .recr rc) := by
+      have hseg : m162 = h ∧ (k = 0 → ∀ ind, m ≠ .indc ind) ∧ (k = 2 → ∀ rc, m ≠ .recr rc) := by
         match sg with
         | .Indc_n0 (he76 := h1) .. | .Defn_n1 (he113 := h1) .. | .Recr_n2 (he150 := h1) .. =>
           exact absurd h1 hne
@@ -1104,31 +1104,31 @@ private theorem ixonUnshare_rawConv {refs : List _root_.Address} {univs : List I
       · exact Or.inr ⟨_, List.mem_of_getElem? hsh, h1⟩
       · exact Or.inr h2
   | var hidx cell =>
-    exact ⟨_, _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi, L1.RawConvExpr.var hidx cell⟩
+    exact ⟨_, .var _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi, L1.RawConvExpr.var hidx cell⟩
   | sort huIdx hu rl cell =>
-    exact ⟨_, _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi,
+    exact ⟨_, .sort _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi,
       L1.RawConvExpr.sort huIdx hu rl cell⟩
   | ref hrIdx href hd ra hls rls cell =>
-    exact ⟨_, _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi,
+    exact ⟨_, .ref _ _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi,
       L1.RawConvExpr.ref hrIdx href hd ra hls rls cell⟩
   | recur _ hrec _ _ _ _ _ => simp at hrec
   | prj htIdx hfIdx href hd ra rin cell =>
-    exact ⟨_, _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi,
+    exact ⟨_, .prj _ _ _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi,
       L1.RawConvExpr.prj htIdx hfIdx href hd ra rin cell⟩
   | str hbIdx href hmem rbs hs cell =>
-    exact ⟨_, _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi,
+    exact ⟨_, .str _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi,
       L1.RawConvExpr.str hbIdx href hmem rbs hs cell⟩
   | nat hbIdx href hmem hcanon rlimbs hlast hval cell =>
-    exact ⟨_, _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi,
+    exact ⟨_, .nat _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi,
       L1.RawConvExpr.nat hbIdx href hmem hcanon rlimbs hlast hval cell⟩
   | app rf ra cell =>
-    exact ⟨_, _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi, L1.RawConvExpr.app rf ra cell⟩
+    exact ⟨_, .app _ _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi, L1.RawConvExpr.app rf ra cell⟩
   | lam rl rt rb cell =>
-    exact ⟨_, _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi, L1.RawConvExpr.lam rl rt rb cell⟩
+    exact ⟨_, .lam _ _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi, L1.RawConvExpr.lam rl rt rb cell⟩
   | all rl rt rb cell =>
-    exact ⟨_, _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi, L1.RawConvExpr.all rl rt rb cell⟩
+    exact ⟨_, .all _ _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi, L1.RawConvExpr.all rl rt rb cell⟩
   | letE rt rv rb cell =>
-    exact ⟨_, _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi,
+    exact ⟨_, .letE _ _ _, rfl, fun _ h => nomatch h, fun _ hi => Or.inl hi,
       L1.RawConvExpr.letE rt rv rb cell⟩
 
 private theorem rawConv_forall_of_load {refs : List _root_.Address} {univs : List Ixon.Univ}
@@ -1171,7 +1171,7 @@ private theorem rawConv_app_of_load {refs : List _root_.Address} {univs : List I
     injection hld with hv
     injection hv with _ _ hargs
     simp only [List.cons.injEq] at hargs
-    obtain ⟨hf, ha⟩ := hargs
+    obtain ⟨hf, ha, -⟩ := hargs
     subst hf ha
     exact ⟨_, _, rfl, rf, ra⟩
   | share _ _ _ => exact (hns _ rfl).elim
@@ -1355,7 +1355,7 @@ private theorem collect_spine_rawConv {refs : List _root_.Address} {univs : List
     intro bound e x_e hd sp h h' cs hlt hraw ev
     obtain ⟨b1, e1, hu1, hns1, href1, hr1⟩ := ixonUnshare_rawConv hraw
     match Obs.«KernelTypes::collect_spine».obs ev with
-    | .App (cs41 := cs41) (ld12 := ld12) (ev43 := evRec) (he69 := hr) (ev88 := evSnoc)
+    | .App (m31 := m31) (cs41 := cs41) (ld12 := ld12) (ev43 := evRec) (he69 := hr) (ev88 := evSnoc)
         (he105 := hh) (hc106 := hcs) .. =>
       obtain ⟨ef, ea, rfl, hrf, -⟩ := rawConv_app_of_load hr1 hns1 ld12
       injection hr with htl
@@ -1363,7 +1363,7 @@ private theorem collect_spine_rawConv {refs : List _root_.Address} {univs : List
       subst hhd
       have hlt' : cs41.length < fuel := by rw [hcs] at hlt; simp at hlt; omega
       obtain ⟨ext1, b', eh, hfun, hns', href', hr'⟩ := ih hlt' hrf evRec
-      have ext_snoc : Heap.Extends _ h' := by rw [hh]; exact evSnoc.heap_extends
+      have ext_snoc : Heap.Extends m31 h' := by rw [hh]; exact evSnoc.heap_extends
       refine ⟨ext1.trans ext_snoc, b', eh, ?_, hns', ?_, hr'.mono ext_snoc (fun _ hm => hm)⟩
       · intro f hf rIdx uIdxs heh
         cases f with
@@ -1470,7 +1470,7 @@ theorem rec_family_block_head_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
               | _ => none)) = some rIdx := by
   obtain ⟨ab, hab, rfl⟩ := hx
   match Obs.«KernelModeled::rec_family_block».obs ev with
-  | .run (cs16 := csCi) (cs108 := cs1) (cs174 := cs2) (cs196 := cs3) (cs266 := csInd)
+  | .run (m2 := m2) (cs16 := csCi) (cs108 := cs1) (cs174 := cs2) (cs196 := cs3) (cs266 := csInd)
       (ev18 := evCi) (ld12 := ldRec) (ev110 := evPeel) (ld138 := ldM) (ev176 := evDom)
       (ev198 := evSp) (ld232 := ldHd) (ev268 := evInd) (ld262 := ldInd)
       (he331 := hr) (he332 := hh) (hc333 := hcs) .. =>
@@ -1490,13 +1490,15 @@ theorem rec_family_block_head_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
           rwa [er])
         hde hdeE
     have hfinish : ∀ (cOwn : Ixon.Constant) (rc : Ixon.Recursor)
+        (recurAddrs : List _root_.Address) (blkAddr : _root_.Address) (recIdx : Nat)
+        (v_rr : SourceValue F) (hld_rr : loadValue m2 _ = .ok v_rr)
         (hown : recordOf E₀ (Ix.Cert.ownerOf (Core.ixAddr ab) cx) = some cOwn)
         (hrcIn : ∀ i ∈ exprRefIdxs rc.typ, i ∈ usedRefIdxs cOwn)
         (hrcWit : (cx.info = .recr rc ∧ cOwn = cx) ∨
           (∃ rp ms, cx.info = .rPrj rp ∧ cOwn.info = .muts ms ∧
             ms.toList[rp.idx.toNat]? = some (.recr rc)))
-        (hrr : L1.RawRecrValRep cOwn.refs.toList _ cOwn.univs.toList cOwn.sharing.toList
-          blobs _ rc _ _ _),
+        (hrr : L1.RawRecrValRep cOwn.refs.toList recurAddrs cOwn.univs.toList cOwn.sharing.toList
+          blobs m2 rc blkAddr recIdx v_rr),
         ∃ (cx' cOwn' : Ixon.Constant) (rc' : Ixon.Recursor) (t0 family : _root_.Address)
           (bF' : Bytes.Address) (f1 f2 : Nat),
           recordOf E₀ (Core.ixAddr ab) = some cx' ∧
@@ -1516,9 +1518,9 @@ theorem rec_family_block_head_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
                     (ixonLastBinderDom cOwn'.sharing.toList g1 b2 dom).bind (fun (b3, d3) =>
                       ixonAppHeadRef cOwn'.sharing.toList g2 b3 d3)
                   | _ => none)) = some rIdx := by
-      intro cOwn rc hown hrcIn hrcWit hrr
+      intro cOwn rc recurAddrs blkAddr recIdx v_rr hld_rr hown hrcIn hrcWit hrr
       obtain ⟨-, hp, -, -, -, -, tyPtr, rulesPtr, blkPtr, b, -, -, hv_eq, hty, -⟩ := hrr
-      have hv_ok := hv_eq.symm.trans (Except.ok.inj ldRec)
+      have hv_ok := hv_eq.symm.trans (Except.ok.inj (hld_rr.symm.trans ldRec))
       injection hv_ok with _ _ hargs
       simp only [List.cons.injEq] at hargs
       obtain ⟨-, rfl, rfl, -⟩ := hargs
@@ -1596,10 +1598,7 @@ theorem rec_family_block_head_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
     · -- `cx.info = .recr rc`
       rename_i rc
       obtain ⟨v, hld, hrr⟩ := hres
-      rw [hld] at ldRec
-      injection ldRec with hv
-      subst hv
-      exact hfinish cx rc (by simp [Ix.Cert.ownerOf, hinfo, hrecX])
+      exact hfinish cx rc _ _ _ v hld (by simp [Ix.Cert.ownerOf, hinfo, hrecX])
         (fun i hi => by simp [usedRefIdxs, hinfo, hi])
         (Or.inl ⟨hinfo, rfl⟩)
         hrr
@@ -1618,9 +1617,6 @@ theorem rec_family_block_head_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
     · -- `cx.info = .rPrj rp`
       rename_i rp
       obtain ⟨-, blkBytes, cb, ms, rc, v, hhb, hblk, hdeEb, hdeb, hcbm, hmem, hld, hrr⟩ := hres
-      rw [hld] at ldRec
-      injection ldRec with hv
-      subst hv
       have hrecB : recordOf E₀ rp.block = some cb := by
         obtain ⟨rawX, cx', -, hhX, hbaX, hdeX, -, hheadX⟩ := Claim.get_ci_head hab evCi
         have ecX := hC.runStore.record_eq ((hC.runStore.recordOf_eq_recordAt _).symm.trans hrecX)
@@ -1631,7 +1627,7 @@ theorem rec_family_block_head_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
         have ecb := hC.runStore.record_eq ((hC.runStore.recordOf_eq_recordAt _).symm.trans hrecB')
           (Core.hashed_mono hsubCi hhb) hblk hdeEb
         rwa [ecb]
-      exact hfinish cb rc (by simp [Ix.Cert.ownerOf, hinfo, hrecB])
+      exact hfinish cb rc _ _ _ v hld (by simp [Ix.Cert.ownerOf, hinfo, hrecB])
         (fun i hi => by
           unfold usedRefIdxs
           rw [hcbm]
@@ -1764,10 +1760,10 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
     familyCall_block_indc_nonempty hC.runStore hC.hashedStored hfc
   obtain ⟨crb, rs, hcrb, hlog2, hrs, hRpos, hrecrs, hmem2⟩ :=
     familyCall_isTwinShape hC.runStore hC.hashedStored hn hfc
-  have hfamRec : TwinFamily.FamRecRecord E₀ rb crb rs :=
+  have hfamRec : FamRecRecord E₀ rb crb rs :=
     ⟨hcrb, hrs, hrecrs, hlog2, hmem2⟩
   have hms0 : ms.toList ≠ [] := by
-    intro h; have := congrArg List.length h; simp at this; omega
+    intro h; have := congrArg List.length h; simp [Array.length_toList] at this; omega
   cases hml : ms.toList with
   | nil => exact absurd hml hms0
   | cons m0 mrest =>
@@ -1776,7 +1772,7 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
       rw [Array.getElem?_toList, Array.getElem?_eq_getElem hBpos] at this
       exact Option.some.inj this
     have hrs0 : rs.toList ≠ [] := by
-      intro h; have := congrArg List.length h; simp at this; omega
+      intro h; have := congrArg List.length h; simp [Array.length_toList] at this; omega
     cases hrl : rs.toList with
     | nil => exact absurd hrl hrs0
     | cons r0 rrest =>
@@ -2071,7 +2067,7 @@ theorem proj_usedRefIdxs_nil {calls cs : List (Call F)} {E₀ : Ixon.Env}
   obtain ⟨raw, c', -, hh, hba, hx, htv, -⟩ := Claim.get_ci_head hab ev
   have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
     (Core.hashed_mono hsub hh) hba hx
-  subst hcc
+  subst c'
   have hpi : Assembly.IsProjInfo c.info := by
     rcases hpr with ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ <;> rw [h] <;> exact True.intro
   obtain ⟨hcanon, -⟩ := Claim.proj_canon hba hx htv hpi
@@ -2097,22 +2093,22 @@ theorem projection_member_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
     have hab' := Bytes.repAddressRef_heapMono₂ Core.addrTy evL.heap_extends hab
     have hsubG : ∀ cl ∈ csG, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     exact ⟨proj_usedRefIdxs_nil hS hab' evG hsubG hc hpr,
-      proj_member_of_load hS hH hab' evG hsubG hc hpr⟩
+      Claim.proj_member_of_load hS hH hab' evG hsubG hc hpr⟩
   | .CPrj (ev_crkizsgj := evL) (cs_tafpebbo := csG) (ev_rnaxgwez := evG) (hc_efncukkh := hcs) .. =>
     have hab' := Bytes.repAddressRef_heapMono₂ Core.addrTy evL.heap_extends hab
     have hsubG : ∀ cl ∈ csG, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     exact ⟨proj_usedRefIdxs_nil hS hab' evG hsubG hc hpr,
-      proj_member_of_load hS hH hab' evG hsubG hc hpr⟩
+      Claim.proj_member_of_load hS hH hab' evG hsubG hc hpr⟩
   | .RPrj (ev_crkizsgj := evL) (cs_nwqbwyif := csG) (ev_jqzwxbpt := evG) (hc_vptjzawx := hcs) .. =>
     have hab' := Bytes.repAddressRef_heapMono₂ Core.addrTy evL.heap_extends hab
     have hsubG : ∀ cl ∈ csG, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     exact ⟨proj_usedRefIdxs_nil hS hab' evG hsubG hc hpr,
-      proj_member_of_load hS hH hab' evG hsubG hc hpr⟩
+      Claim.proj_member_of_load hS hH hab' evG hsubG hc hpr⟩
   | .DPrj (ev_crkizsgj := evL) (cs_hvhyumie := csG) (ev_tdzysuam := evG) (hc_nxcjkmpf := hcs) .. =>
     have hab' := Bytes.repAddressRef_heapMono₂ Core.addrTy evL.heap_extends hab
     have hsubG : ∀ cl ∈ csG, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     exact ⟨proj_usedRefIdxs_nil hS hab' evG hsubG hc hpr,
-      proj_member_of_load hS hH hab' evG hsubG hc hpr⟩
+      Claim.proj_member_of_load hS hH hab' evG hsubG hc hpr⟩
   | .other (cs_oxwpunas := csL) (ev_crkizsgj := evL) (hne_xmppnoqc := hni)
       (hne_ovfsyazc := hnc) (hne_jztycgco := hnr) (hne_gmqblbbq := hnd) (hc_kjrxaxhl := hcs) .. =>
     exfalso
@@ -2125,7 +2121,7 @@ theorem projection_member_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
       exact Claim.recordOf_of_hashed hH (Core.hashed_mono hsubL hh)
         (by simpa only [ByteArray.size, List.size_toArray] using hsz) hexact
     have ec : c' = c := Option.some.inj (hrec'.symm.trans hc)
-    subst ec
+    subst c'
     obtain ⟨infoVal, -, -, -, -, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
     have e := (List.cons.inj (Value.construct.inj hc_eq).2.2).1
     rw [← e] at hinfoRep
@@ -2137,25 +2133,25 @@ theorem projection_member_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
 
 private theorem roleNum_eq_nat_imp (ro : Ix.Kernel.Role) (k : Nat)
     (hk : k ∈ [0, 1, 2, 3, 8, 9, 10, 11, 12, 13, 32, 33, 34, 35, 36])
-    (heq : (Claim.roleNum ro : F) = (k : F)) :
+    (heq : Core.roleNum ro = (k : F)) :
     Ix.SpecDigest.groupOf ro < 6 ∧
     (RoleVal.roleWalksBound ro = true ∨ RoleVal.isQuotRole ro = true) := by
-  have hlt : Claim.roleNum ro < 100 := by cases ro <;> decide
+  have hlt : ro.idx < 100 := by cases ro <;> decide
   have hklt : k < 100 := by
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hk
     rcases hk with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
       rfl | rfl | rfl | rfl <;> omega
-  have hnat : Claim.roleNum ro = k :=
+  have hnat : ro.idx = k :=
     Core.ModeledAux.natCast_inj_lt (Nat.lt_trans hlt (by decide)) (Nat.lt_trans hklt (by decide)) heq
   rw [← hnat] at hk
   cases ro <;> revert hk <;> decide
 
-/-- **`KernelModeled::basis_role_allowed`** returning `1` on `roleNum ro` means `ro` is one of the
-15 basis roles in groups `< 6` (`Nat`, `Eq`, `PUnit`, `Quot`), every one of which is either
+/-- **`KernelModeled::basis_role_allowed`** returning `1` on `Core.roleNum ro` means `ro` is one of
+the 15 basis roles in groups `< 6` (`Nat`, `Eq`, `PUnit`, `Quot`), every one of which is either
 `roleWalksBound` or `isQuotRole`. -/
 theorem basis_role_allowed_spec {ro : Ix.Kernel.Role} {r : SourceValue F} {h h' : Heap F}
     {cs : List (Call F)}
-    (ev : ObsFn Obs.W "KernelModeled::basis_role_allowed" [.field (Claim.roleNum ro : F)] h r h' cs)
+    (ev : ObsFn Obs.W "KernelModeled::basis_role_allowed" [.field (Core.roleNum ro)] h r h' cs)
     (hr : r = .field 1) :
     h' = h ∧ Ix.SpecDigest.groupOf ro < 6 ∧
     (RoleVal.roleWalksBound ro = true ∨ RoleVal.isQuotRole ro = true) := by
@@ -2201,7 +2197,7 @@ theorem basisRole_alreadyStoredRole {t : Ix.Kernel.RoleTable} {g : Nat} {x : _ro
     (hk : RoleVal.roleWalksBound ro = true ∨ RoleVal.isQuotRole ro = true) :
     AlreadyStoredRole t g x := by
   have hvl : 6 ≤ valLimit g := by
-    unfold valLimit
+    unfold valLimit RoleVal.groupValLimit
     split_ifs <;> omega
   rcases hk with hwb | hq
   · refine Or.inl ⟨ro, had, by rw [Claim.walkedRole_eq_roleWalksBound]; exact hwb, fun n hn => ?_⟩
