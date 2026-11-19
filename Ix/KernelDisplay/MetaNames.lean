@@ -8,7 +8,7 @@ public import IxC.Kernel.FEnv
 
 @[expose] public section
 
-/-! # `.meta`'s binder names, from the `.ixe`'s metadata (IxC step 6b, display only)
+/-! # `.meta`'s binder names, from the `.ixe`'s metadata (display only)
 
 The meta reader is the Ixon reader at `.meta` (`Ix.Kernel.Reader.readRecord`,
 the same code as `.anon`'s), followed by two display steps outside the kernel:

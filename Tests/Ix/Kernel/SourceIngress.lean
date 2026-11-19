@@ -86,7 +86,7 @@ def expected : List (Lean.Name × String) := [
   (own "BoolQ", "accept"), (own "BoolQ.mk", "accept"), (own "BoolQ.const", "accept"),
   -- fields whose occurrence of the block whnf removes (Lean's kernel
   -- tests positivity after whnf): nested (`V`, `W`), mutual (`A`, `B`) and
-  -- single (`S`); `T` (lane P's reproducer) and `U`, the nested shapes at
+  -- single (`S`); `T` and `U`, the nested shapes at
   -- `Sort u`, get past that test and are declined by the modeller's residual
   -- for a non-`Prop` nested block with a small eliminator
   (reduced "V", "accept"), (reduced "V.mk", "accept"), (reduced "V.rec", "accept"),

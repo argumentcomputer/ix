@@ -12,9 +12,8 @@ module reads that call at the prefix and produces the former stage's input
 (`FormerAliasTeleC`, `FormerAliasTele` with its parameter clause asked at a family with a
 constructor), over one named input:
 
-* `FormerTeleConv` (named input): the paths `former_tele_typed` has once its second arm also
-  asserts `k_is_def_eq(rc, ty, tele, []) = 1` (the circuit change proposed for a later batch). It
-  holds of the regenerated circuit by inverting the regenerated path; it is not produced here.
+* `FormerTeleConv` (named input): the paths of `former_tele_typed` whose second arm also
+  asserts `k_is_def_eq(rc, ty, tele, []) = 1`, discharged by inverting the generated path lemma.
 * `formerAliasTeleC_of_member`: from the walked check of the block's member, at every native
   former: the telescope constant is the exact reading of the built term, checked from scratch at
   the prefix (`ConstantValCheckJ`: scoping by `validate_expr_well_scoped`, typing by
@@ -23,8 +22,7 @@ constructor), over one named input:
   at a family with a constructor (whose parameter agreement walks the declared type's parameters
   as syntactic `Forall` cells), opening its parameters to the declared type's variables. At a
   former declared at its telescope, the declared former is its own telescope constant.
-* `formerStageAlias_of_conv`: the former stage at an alias former (T6, second branch) over
-  `FormerTeleConv` alone.
+* `formerStageAlias_of_conv`: the former stage at an alias former over `FormerTeleConv` alone.
 
 Why the parameter clause is asked only at a family with a constructor: at a family with none,
 a `let` cell among the declared type's first `nP` cells is head-normalized by `former_tele_at`, and

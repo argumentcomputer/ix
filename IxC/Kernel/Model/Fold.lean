@@ -12,21 +12,18 @@ import IxC.Kernel.Model.BasisFalse
 public section
 
 /-!
-# The P declaration fold, and the conditional capstone (task #161, P4)
+# The P declaration fold and consistency capstone
 
 `foldPM` carries `EnvModelOk` — the P invariant plus the η-family
 closure — through an accepted stream, and
-`no_proof_of_Empty_pure` is the campaign's **close**, at the frozen letter
-(`CapstoneP.lean`'s docstring): input-level hypotheses only.  The
-milestone-shaped `no_proof_of_Empty_pure_of` is kept beside it, now
-carrying no bundle at all — every tier step is discharged.
+`no_proof_of_Empty_pure` closes the consistency statement with
+input-level hypotheses only (`no_proof_of_Empty_pure_of` is kept beside
+it as a convenience form, also carrying no extra bundle).
 
 The η half of the fold invariant is `declEtaStepRun`
-(`SetBase/DeclEta.lean`, task #161 S3) and is now **model-free at every
-kind**: S3 left `indDecl` premised on `declIndS memberKeyS mp.base` —
-the one kind whose η-closure was proved interleaved with the `EnvS`
-member/recursor folds — and S5's ind unit (`declIndEtaClosed`,
-`SetBase/IndBlockR.lean`) proves it from `DeclIndRun` alone.  No install
+(`SetBase/DeclEta.lean`) and is **model-free at every
+kind**: `declIndEtaClosed` (`SetBase/IndBlockR.lean`) proves it for
+`indDecl` from `DeclIndRun` alone.  No install
 obligation is consulted for the η half; the harvests keep their own
 uses of `divModPinS` and `reducePinS`, which are value-kind
 obligations, not fold ones.  The v1 base at every prefix is
@@ -243,9 +240,8 @@ theorem foldPM (hμ : μ.verifiedChecks = true) {F : Nat} :
           -- premise `checkDeclRun_ofEnvFactsE` fills with `declIndRR`.
           (Ix.Kernel.Semantics.checkDeclRun_ofEnvFactsE hd)) h
 
-/-- **The acceptance theorem, P route — milestone shape** (conditional
-on the tier bundles; the final form replaces them with the tiers'
-theorems). -/
+/-- **The acceptance theorem, P route**: every accepted declaration stream
+in a validating mode admits an `EnvModelM`. -/
 theorem checkDeclsPure_sound_of (hμ : μ.verifiedChecks = true) {F : Nat}
     {ds : List (Declaration md)} {env' : Env md}
     (h : checkDeclsPure μ (fueledOps μ F) ev ds = .ok env') :
@@ -253,10 +249,8 @@ theorem checkDeclsPure_sound_of (hμ : μ.verifiedChecks = true) {F : Nat}
   (foldPM hμ ds Env.empty
     ⟨⟨EnvModelM.empty V μ⟩, EtaFamiliesClosed.empty⟩ h).1
 
-/-- **The capstone, milestone shape**: no proof of `Empty` is ever
-accepted — the collapse-free model of the validated annotations, at
-the frozen final statement's hypotheses plus the named tier
-bundles. -/
+/-- **The consistency capstone (uncurried form)**: no proof of `Empty` is ever
+accepted — the collapse-free model of the validated annotations. -/
 theorem no_proof_of_Empty_pure_of (V : Type w) [SetTheory V]
     {μ : CheckMode} (hμ : μ.verifiedChecks = true) {F : Nat}
     {ds : List (Declaration md)} {env' : Env md}
@@ -266,23 +260,18 @@ theorem no_proof_of_Empty_pure_of (V : Type w) [SetTheory V]
   obtain ⟨mp⟩ := checkDeclsPure_sound_of (V := V) hμ h
   exact no_constant_of_Empty mp c hc hty
 
-/-- **THE CAPSTONE, at the frozen letter** (`CapstoneP.lean`'s
-docstring, checked against the goal's own words): *the checker,
-running in a validating mode, never accepts a declaration stream in
-which some stored constant has type `Empty`.*
+/-- **The consistency capstone**: *the checker, running in a validating mode,
+never accepts a declaration stream in which some stored constant has type
+`Empty`.*
 
 Hypotheses are **input-level only** — the accepted run, the stored
-constant, its type, plus the validating mode, which is part of the
-goal's letter (the annotated checker *is* the verified mode;
-`--trusted` ignores annotations by design).  No residue: every tier
-step is discharged (`axiomStepPB_of`, `basisStepPB_of`,
-`indStepPB_of`), so the conditional milestone form
-`no_proof_of_Empty_pure_of` above now carries nothing either.  The #16
-hypothesis-minimal precedent, met.
+constant, its type, plus the validating mode (the annotated checker *is*
+the verified mode; `--trusted` ignores annotations by design).  Every
+tier step is discharged (`axiomStepPB_of`, `basisStepPB_of`,
+`indStepPB_of`).
 
 `SetTheory V` is the standing parametricity of the consistency
-argument (project rule: consistency proofs stay parametric in the
-`SetTheory` interface), not a hypothesis about the input. -/
+argument, not a hypothesis about the input. -/
 theorem no_proof_of_Empty_pure (V : Type w) [SetTheory V]
     {μ : CheckMode} (hμ : μ.verifiedChecks = true) {F : Nat}
     {ds : List (Declaration md)} {env' : Env md}

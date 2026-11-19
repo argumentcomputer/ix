@@ -7,7 +7,7 @@ public import IxC.Kernel.Verify.Denote.Inst
 public section
 
 /-!
-# `denoteMeta` commutes with instantiation (task #161, P3 batch 2)
+# `denoteMeta` commutes with instantiation
 
 `denote_substFvarAt`/`denote_beta` (`Verify/Denote/Inst.lean`)
 mirrored for the validated-annotation reading — the substitution
@@ -28,15 +28,15 @@ copied verbatim.  So the numeral is literally the same expression on
 both sides of every binder clause and each closes by the recursion
 alone.
 
-**It costs two leaf premises, not one.**  The brief proposed the
-single `inst`-invariance premise `hainst`; the walk needs a second.
+**It costs two leaf premises, not one.**  In addition to
+`inst`-invariance (`hainst`), the walk needs lift-invariance (`hacl`):
 
 * `hainst : ∀ n ψ y k, (acval n ψ).inst y k = acval n ψ` is what the
-  `.const` and `.lit` clauses read — the exact analogue of v1's
-  `Term.inst_eq_self_of_closed (hcl _ _)`, and of batch 1's `hacl`
+  `.const` and `.lit` clauses read — the exact analogue of
+  `Term.inst_eq_self_of_closed (hcl _ _)`, and of `hacl`
   one operation over.
-* `hacl : ∀ n ψ k, (acval n ψ).liftN 1 k = acval n ψ` — batch 1's
-  premise, unchanged — is what the **`fvar`-at-`p` clause** reads,
+* `hacl : ∀ n ψ k, (acval n ψ).liftN 1 k = acval n ψ`
+  is what the **`fvar`-at-`p` clause** reads,
   through `denoteMeta_lift` below.  That clause is v1's
   `denote_lift hcl hwa.fvarsBelow D hpD` step; v1 hides the split
   because `Term.Closed` implies both invariances at once, while the

@@ -8,9 +8,9 @@ import Ix.KernelDisplay.MetaNames
 import Ix.KernelDisplay.Peek
 import Tests.Ix.Kernel.MetaNamesFixtures
 
-/-! # `kernel-meta-names`: `.meta` and `.source` names against Lean (IxC step 6b)
+/-! # `kernel-meta-names`: `.meta` and `.source` names against Lean
 
-The oracle of step 6b's names. A small Lean environment (`Init` and
+The oracle of display binder names. A small Lean environment (`Init` and
 `Tests.Ix.Kernel.MetaNamesFixtures`) and five ill-typed declarations built
 here (they cannot be elaborated) are checked three ways:
 

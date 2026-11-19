@@ -4,25 +4,25 @@ import IxVMRefinement.Claim.TopProj
 import IxVMRefinement.Binding.ClauseInvariant
 import Ix.IxVM.Consistency.ReadsKeys
 
-/-! # Route dispatch, recursor arms, freshness, and complete `BatchGives` assembly
+/-! # Route dispatch, recursor arms, freshness, and complete `FamilyCheckFacts` assembly
 
-Discharges the remaining five fields of `BatchGives` (`routed`, `listedNotScope`, `recUsesBlock`,
-`recArm`, and `fresh`) and assembles `FamRunCtx.batchGives_of_run : BatchGives K`:
+Discharges the remaining five fields of `FamilyCheckFacts` (`routed`, `listedNotScope`, `recUsesBlock`,
+`recArm`, and `fresh`) and assembles `FamRunCtx.familyCheckFacts_of_run : FamilyCheckFacts K`:
 
 * `FamCallsModeled`: every `KernelModeled::check_family` call in a run's call trace is backed by
   an observed non-zero `KernelModeled::block_is_modeled` call on the same block address
   (`FamCallsModeled.of_verifyClaim` via `obsFn_check_family_modeled`);
 * `modeledRouteAt_of_obs`: a single observed non-zero `KernelModeled::block_is_modeled` call on
   `B` in a step store yields `ModeledRouteAt K.calls B` via `Route.block_is_modeled_agrees`;
-* `FamRunCtx.routed_of`, `FamRunCtx.listedNotScope_of`: discharge `BatchGives.routed` and
-  `BatchGives.listedNotScope`;
-* `FamRunCtx.recUsesBlock_of`, `FamRunCtx.recArm_of`: discharge `BatchGives.recUsesBlock` and
-  `BatchGives.recArm` via `FamCheckCarriers.noTypeRole` (`KernelModeled::assert_no_type_role`)
+* `FamRunCtx.routed_of`, `FamRunCtx.listedNotScope_of`: discharge `FamilyCheckFacts.routed` and
+  `FamilyCheckFacts.listedNotScope`;
+* `FamRunCtx.recUsesBlock_of`, `FamRunCtx.recArm_of`: discharge `FamilyCheckFacts.recUsesBlock` and
+  `FamilyCheckFacts.recArm` via `FamCheckCarriers.noTypeRole` (`KernelModeled::assert_no_type_role`)
   and `rprj_check_const_rec_other`;
-* `familyKey_of_motiveCarrierAt`, `FamRunCtx.fresh_of`: discharge `BatchGives.fresh` via
+* `familyKey_of_motiveCarrierAt`, `FamRunCtx.fresh_of`: discharge `FamilyCheckFacts.fresh` via
   `TableShape.reading.provenance`, `motiveCarrierAt → familyKey → motiveKeys` across `Annotates`,
   `Ix.Kernel.EnvWF`, and `BoundaryFacts.whole`;
-* `FamRunCtx.batchGives_of_run`: complete `BatchGives K`. -/
+* `FamRunCtx.familyCheckFacts_of_run`: complete `FamilyCheckFacts K`. -/
 
 set_option maxHeartbeats 16000000
 set_option maxRecDepth 100000
@@ -110,9 +110,9 @@ theorem FamRunCtx.modeledRouteAt_of_famCheck {K : FamRunCtx} {seeds : List _root
     hfamMod rc xb xrb h b hmem hb
   exact modeledRouteAt_of_block_is_modeled hW hctx ev_mod hr_mod hsub_mod hb_mod hbB
 
-/-! ## `BatchGives.routed` and `BatchGives.listedNotScope` -/
+/-! ## `FamilyCheckFacts.routed` and `FamilyCheckFacts.listedNotScope` -/
 
-/-- **Discharges `BatchGives.routed`**: the block of a nested twin is routed as modeled. -/
+/-- **Discharges `FamilyCheckFacts.routed`**: the block of a nested twin is routed as modeled. -/
 theorem FamRunCtx.routed_of {K : FamRunCtx} {seeds : List _root_.Address}
     {rank : _root_.Address → Nat} {R E : Ixon.Env}
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
@@ -123,7 +123,7 @@ theorem FamRunCtx.routed_of {K : FamRunCtx} {seeds : List _root_.Address}
   obtain ⟨-, -, -, B₀, rb₀, -, cs₀, -, cs', hfc', -⟩ := hnt
   exact FamRunCtx.modeledRouteAt_of_famCheck hW hctx hfamMod ⟨cs', hfc'⟩
 
-/-- **Discharges `BatchGives.listedNotScope`**: the block of a scope check is listed by no
+/-- **Discharges `FamilyCheckFacts.listedNotScope`**: the block of a scope check is listed by no
 scope check's own advice walk. -/
 theorem FamRunCtx.listedNotScope_of {K : FamRunCtx} {seeds : List _root_.Address}
     {rank : _root_.Address → Nat} {R E : Ixon.Env}
@@ -141,9 +141,9 @@ theorem FamRunCtx.listedNotScope_of {K : FamRunCtx} {seeds : List _root_.Address
   have hnot := FamRunCtx.listedNotModeled_of hW hS' hown' hk hcb hC.blockMuts
   exact hnot (hbB.symm ▸ hroute)
 
-/-! ## `BatchGives.recUsesBlock` -/
+/-! ## `FamilyCheckFacts.recUsesBlock` -/
 
-/-- **Discharges `BatchGives.recUsesBlock`**: every non-empty record of a scope check uses a
+/-- **Discharges `FamilyCheckFacts.recUsesBlock`**: every non-empty record of a scope check uses a
 constant address of its block bound to no walked role (`iprjAddr B 0`, checked by
 `assert_no_type_role`). -/
 theorem FamRunCtx.recUsesBlock_of {K : FamRunCtx} {seeds : List _root_.Address}
@@ -178,9 +178,9 @@ theorem FamRunCtx.recUsesBlock_of {K : FamRunCtx} {seeds : List _root_.Address}
     exact hC.noTypeRole 0 ind₀ hind₀ ro hof
   exact ⟨cb, Core.iprjAddr B 0, hC.blockRec, hca, hncov, hused⟩
 
-/-! ## `BatchGives.recArm` -/
+/-! ## `FamilyCheckFacts.recArm` -/
 
-/-- **Discharges `BatchGives.recArm`**: every top-walked non-empty block of recursors is the
+/-- **Discharges `FamilyCheckFacts.recArm`**: every top-walked non-empty block of recursors is the
 record of a family check of a top-walked non-empty block of inductive types routed as modeled. -/
 theorem FamRunCtx.recArm_of {K : FamRunCtx} {seeds : List _root_.Address}
     {rank : _root_.Address → Nat} {R E : Ixon.Env}
@@ -274,7 +274,7 @@ theorem FamRunCtx.recArm_of {K : FamRunCtx} {seeds : List _root_.Address}
     · obtain ⟨r', hr'⟩ := hr (.indc ind₀) hmem_ind0; cases hr'
   exact ⟨ib, ⟨cs_fam, hfc⟩, hTib, hroute, ⟨cib', ms_ib', hC.blockRec, hC.blockMuts, hpos_ib, hall_ind⟩⟩
 
-/-! ## `motiveCarrierAt → familyKey → motiveKeys → constsResolve` and `BatchGives.fresh` -/
+/-! ## `motiveCarrierAt → familyKey → motiveKeys → constsResolve` and `FamilyCheckFacts.fresh` -/
 
 section FreshBridge
 
@@ -736,7 +736,7 @@ private theorem pinned_names_basisRole_fresh (kind : Ix.Kernel.BasisKind) :
 
 end FreshBridge
 
-/-- **Discharges `BatchGives.fresh`**: the witness's environment stores no constant address of
+/-- **Discharges `FamilyCheckFacts.fresh`**: the witness's environment stores no constant address of
 the family record of a block it does not store whole. -/
 theorem FamRunCtx.fresh_of {K : FamRunCtx} {seeds : List _root_.Address}
     {rank : _root_.Address → Nat} {R E : Ixon.Env}
@@ -856,11 +856,11 @@ theorem FamRunCtx.fresh_of {K : FamRunCtx} {seeds : List _root_.Address}
     · obtain ⟨ci_y, hfy⟩ := Option.isSome_iff_exists.mp ((hBS i (.indc ind) hi).2 ind j rfl hj)
       exact storedAt_of_find hfy
 
-/-! ## Complete `BatchGives` assembly -/
+/-! ## Complete `FamilyCheckFacts` assembly -/
 
-/-- **Complete `BatchGives K`** for any top-level typing walk at a step store whose witness
+/-- **Complete `FamilyCheckFacts K`** for any top-level typing walk at a step store whose witness
 environment is well-formed (`EnvWF`) and stores blocks whole (`BoundaryFacts.whole`). -/
-theorem FamRunCtx.batchGives_of_run {K : FamRunCtx} {seeds : List _root_.Address}
+theorem FamRunCtx.familyCheckFacts_of_run {K : FamRunCtx} {seeds : List _root_.Address}
     {rank : _root_.Address → Nat} {R E : Ixon.Env}
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
     (hG : TopGraph K.t K.E₀ seeds K.Top rank)
@@ -873,7 +873,7 @@ theorem FamRunCtx.batchGives_of_run {K : FamRunCtx} {seeds : List _root_.Address
         (K.envT.find? (keyOf K.t a)).isSome = true → Ix.Cert.recordAt E' a = some c →
         Ix.Cert.ownerOf a c = B → B ≠ a → Ix.Cert.recordAt E' B = some cb → cb.info = .muts ms →
         BlockStored K.t K.envT B ms) :
-    BatchGives K :=
+    FamilyCheckFacts K :=
   { recArm := FamRunCtx.recArm_of hW hctx
     routed := FamRunCtx.routed_of hW hctx hfamMod
     inLogic := fun _ _ h _ hc => FamRunCtx.inLogic_of hW h hc

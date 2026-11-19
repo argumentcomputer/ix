@@ -11,7 +11,7 @@ The row `innerChecked` asks `InnerChecked` of every family run, whose inner reco
 the graph producer's. At the producer's choices (`FamRunCtx`) every inner record is listed by
 the own advice walk of a family check of a top-walked block (a scope check) or witnessed by one
 as a container's recursor, so what the walk and the family check's reference facts
-(`BatchGives`) give settles the record's own addresses. This module states what is owed of the
+(`FamilyCheckFacts`) give settles the record's own addresses. This module states what is owed of the
 inner records there, beside what the graph row is owed, and composes both:
 
 * `Decl.check_advice_records_nodup`, `FamilyOwnAdvice.walk_nil`, `FamilyCallOwn.listed_nodup`,
@@ -184,7 +184,7 @@ variable {K : FamRunCtx} {seeds : List _root_.Address} {rank : _root_.Address �
 or holds a projection record whose block is the record. -/
 theorem FamRunCtx.walkedConstAddr_cases
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {D x : _root_.Address} {cD : Ixon.Constant} (hD : K.Top D ∨ K.Inner D)
     (hc : recordOf K.E₀ D = some cD) (hx : ConstAddrOf D cD x) :
     (x = D ∧ Standalone cD) ∨
@@ -205,7 +205,7 @@ theorem FamRunCtx.walkedConstAddr_cases
 /-- **Two records the run checked share no constant address.** -/
 theorem FamRunCtx.walkedConstAddr_unique
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {D D' x : _root_.Address} {cD cD' : Ixon.Constant} (hD : K.Top D ∨ K.Inner D)
     (hD' : K.Top D' ∨ K.Inner D') (hc : recordOf K.E₀ D = some cD)
     (hc' : recordOf K.E₀ D' = some cD') (hx : ConstAddrOf D cD x) (hx' : ConstAddrOf D' cD' x) :
@@ -228,7 +228,7 @@ theorem FamRunCtx.walkedConstAddr_unique
 projection record whose block, the record, the walk would reach. -/
 theorem FamRunCtx.inner_constAddr_not_top
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {a x : _root_.Address} {c : Ixon.Constant} (hIa : K.Inner a) (hc : recordOf K.E₀ a = some c)
     (hx : ConstAddrOf a c x) (hTx : K.Top x) : False := by
   rcases FamRunCtx.walkedConstAddr_cases hW hG hB (Or.inr hIa) hc hx with ⟨hxa, -⟩ |
@@ -245,7 +245,7 @@ top-walked block makes the witness, or the block it is a constant address of, to
 (`dep_top`), which no constant address of an inner record is. -/
 theorem FamRunCtx.inner_witBase_kept
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K) {R : Ixon.Env}
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K) {R : Ixon.Env}
     (hshape : TableShape.{u} K.t (fun _ => True) R K.envT)
     {B rb a x : _root_.Address} {cs : List (Call F)} {c : Ixon.Constant}
     (hS : K.ScopeAt B rb cs) (hIa : K.Inner a) (hc : recordOf K.E₀ a = some c)
@@ -271,7 +271,7 @@ block, or of the block a used reference projects from, would make the inner reco
 top-walked block. -/
 theorem FamRunCtx.inner_blockRef_covered
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {D a x : _root_.Address} {c : Ixon.Constant} (hTD : K.Top D) (hIa : K.Inner a)
     (hc : recordOf K.E₀ a = some c) (hx : ConstAddrOf a c x) (hbr : K.BlockRef D x) :
     Covered K.t x := by
@@ -297,7 +297,7 @@ the check; any other is a member of a block of recursors with a family check, wh
 record would then be. -/
 theorem FamRunCtx.inner_contWitness_kept
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K) {R : Ixon.Env}
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K) {R : Ixon.Env}
     (hshape : TableShape.{u} K.t (fun _ => True) R K.envT)
     {B rb a x : _root_.Address} {cs : List (Call F)} {c : Ixon.Constant}
     (hS : K.ScopeAt B rb cs) (hIa : K.Inner a) (hc : recordOf K.E₀ a = some c)
@@ -340,7 +340,7 @@ theorem FamRunCtx.inner_contWitness_kept
 witness's environment stores it or it is covered** (module docstring). -/
 theorem FamRunCtx.inner_ownRef
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K) {R : Ixon.Env}
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K) {R : Ixon.Env}
     (hshape : TableShape.{u} K.t (fun _ => True) R K.envT) :
     ∀ a c x, K.Inner a → K.twin a = none → recordOf K.E₀ a = some c → UsedRef K.E₀ a x →
       ConstAddrOf a c x → StoredAt K.t K.envT x ∨ Covered K.t x := by
@@ -410,7 +410,7 @@ variable {K : FamRunCtx} {seeds : List _root_.Address} {rank : _root_.Address �
 own-address field from `FamRunCtx.inner_ownRef`. -/
 theorem innerGives_of_owed
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K) {R : Ixon.Env}
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K) {R : Ixon.Env}
     (hshape : TableShape.{u} K.t (fun _ => True) R K.envT) (hIO : InnerOwed K) :
     InnerGives K.calls K.bAddr K.t K.envT K.E₀ K.lim K.Top K.Inner K.fam K.twin :=
   ⟨fun a x hIa _ htw _ hu => hIO.notInert a x hIa htw hu,
@@ -443,11 +443,11 @@ theorem familyGraphRow_of_inner (h : FamilyGraphRowInner.{u}) : FamilyGraphRow.{
   exact ⟨rank', fam, twin, adv, Inner, hW', hFR⟩
 
 /-- **What the graph row and the records its family checks check are owed**, at the twin
-preference `Pref`: at every walk and witness, the run's facts the graph reads (`BatchGives`) and
+preference `Pref`: at every walk and witness, the run's facts the graph reads (`FamilyCheckFacts`) and
 the stored twins' field (`StoredTwinField`), at the run's choices (`InnerOwed` is proved by
 `innerOwed_of_walk`). -/
 def FamilyGraphInnerOwed (Pref : RunPref) : Prop :=
-  AtWalk.{u} Pref fun K _ => BatchGives K ∧ StoredTwinField K
+  AtWalk.{u} Pref fun K _ => FamilyCheckFacts K ∧ StoredTwinField K
 
 /-- `FamilyGraphInnerOwed` gives `FamilyGraphOwed`. -/
 theorem familyGraphOwed_of_inner {Pref : RunPref} (h : FamilyGraphInnerOwed.{u} Pref) :
@@ -455,7 +455,7 @@ theorem familyGraphOwed_of_inner {Pref : RunPref} (h : FamilyGraphInnerOwed.{u} 
   h
 
 /-- **The graph row with the inner records, from what they are owed**: the ranking and
-`FamilyRun` at the choices (as `familyGraphRowPref_of_batch`), and `InnerChecked` at the same
+`FamilyRun` at the choices (as `familyGraphRowPref_of_facts`), and `InnerChecked` at the same
 choices from `InnerGives` (`innerGives_of_owed`, `innerOwed_of_walk`, `innerChecked_of_gives`) at
 the binding of the run's family checks, the walk's. -/
 theorem familyGraphRowInner_of_owed {Pref : RunPref} (h : FamilyGraphInnerOwed.{u} Pref) :
@@ -469,7 +469,7 @@ theorem familyGraphRowInner_of_owed {Pref : RunPref} (h : FamilyGraphInnerOwed.{
       (rankEdges_of hW hG hB hshape (FamRunCtx.famEdge_acyclic hW hG hB))⟩
   obtain ⟨hFR, -⟩ :=
     familyRun_of ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ hB hW
-      (noBatchFields_of _ hW) hR hST
+      (containerKindFact_of _ hW) hR hST
   have hWalk' : Claim.TopWalk calls t seeds E₀ lim Top rank' :=
     topWalk_of_edges ⟨bAddr, hW, hG⟩ hR.closed hR.owner
   exact ⟨rank', _, _, _, _, hWalk', hFR, bAddr, innerChecked_of_gives hWalk' hFR

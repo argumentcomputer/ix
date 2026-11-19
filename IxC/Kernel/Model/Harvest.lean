@@ -16,17 +16,14 @@ import IxC.Kernel.Model.Annot.BitLevels
 public section
 
 /-!
-# The harvest, value kinds (task #161, P4 — the fold's species)
+# The harvest, value kinds (the fold's species)
 
-The `defn` species below, and then its `thm` mirror (batch H2, T1).
-The `opaque` mirror is **not** here: see the SKIP record at the end of
-this module for the one missing link and the upstream strengthening it
-names.
+The `defn`, `thm`, `axiom`, and `opaque` species of the declaration
+fold's model invariant.
 
-`harvestDefn`: from a checked `def`'s harvest relation (`DeclDefnR`,
-the H1-exposed runs included) and the P machinery at the prefix
-environment, the P invariant extends — `declStep_preserves_of_cons`'s premises
-assembled end to end:
+`harvestDefn`: from a checked `def`'s harvest relation (`DeclDefnR`)
+and the P machinery at the prefix environment, the P invariant extends —
+`declStep_preserves_of_cons`'s premises assembled end to end:
 
 * the v1 base and its agreement come **constructively** from
   `declDefnS` (`∃ m'`, not a `Nonempty`);
@@ -112,13 +109,7 @@ theorem natLitSupported_cons_back {env : Env md} {c₀ : ConstantInfo md}
 The three literal heads are *stored* wherever the guard holds, so
 freshness makes each of them distinct from the new name and the fresh
 leaf is invisible to all three — `mp.nat_heads` transports unchanged.
-No bespoke premise: this is the lemma `InstallP.lean`'s docstring
-calls `declStepPM_natHeads_fresh`, landed here because the harvest is
-its only consumer and `InstallP.lean` is not this batch's to edit.
-
-The species below predates it and still carries the block inline (its
-statement is sealed; the proof adopts this when the seal next opens);
-`harvestThm` and `harvestAxiom` call it. -/
+No bespoke premise: `harvestThm` and `harvestAxiom` call it. -/
 theorem natHeads_cons_fresh (mp : EnvModelM V μ env)
     {c₀ : ConstantInfo md} {A : (LevelParam → Nat) → AnnotTerm}
     (hfresh : env.find? c₀.name = none)
@@ -523,11 +514,11 @@ theorem harvestDefn (hμ : μ.verifiedChecks = true)
   let ⟨mp₂, _⟩ := harvestDefnJ mp (judgeSound_runJ hμ mp F) (declDefnRun_runJ hR)
   ⟨mp₂⟩
 
-/-! ## The `thm` mirror (batch H2, T1)
+/-! ## The `thm` mirror
 
 `harvestThm` is `harvestDefn` at `DeclThmR`/`declThmS`, and the
 mirror is exact: the same two front doors (`ConstantValR`,
-`ValueFrontR`) with the same H1-exposed runs, the same leaf (the
+`ValueFrontR`), the same leaf (the
 value's `denoteMeta` reading), the same claims, the same crossing.  The
 three deltas are all shape:
 
@@ -798,62 +789,7 @@ theorem harvestThm (hμ : μ.verifiedChecks = true)
   obtain ⟨_, mp₂, _⟩ := harvestThmJ mp (judgeSound_runJ hμ mp F) hcv hvfr
   exact ⟨mp₂⟩
 
-/-! ## The `opaque` kind: the H2 SKIP, since unlocked
-
-(The record below is batch H2's original finding, kept for the trail;
-the named strengthening has been LANDED — `extendValueS` now exposes
-the leaf equation, `declOpaqueS` carries it with the annotate link —
-and `harvestOpaque` at the end of this file is the species on it.)
-
-There is **no `harvestOpaque` here**, and the wall is one equation.
-
-Everything the species does transfers: `DeclOpaqueR` carries the same
-two front doors, so the leaf `A` (the value's `denoteMeta` reading), its
-laws, the type's reading and grading, the membership across the defeq
-run, the crossing and `nat_heads` are all available verbatim, and
-`hvalReads`'s two arms are *both* `nomatch` (an `opaque` is stored as
-`.axiomInfo ⟨cv.name, cv.levelParams, type'⟩` — `Decl.lean`'s
-`DeclOpaqueR`, third conjunct — so it is neither a `defnInfo` nor a
-`thmInfo`).  What is missing is `declStep_preserves_of_cons`'s `hAerase`:
-
-    ∀ ψ, (A ψ).erase = m'.cval cv.name ψ
-
-At a `def` this is the new base's `defn_eq` field (`harvestDefn`
-above; a theorem, opaque to reduction, has no such field).  At an
-`opaque` **neither field speaks**: v1 stores an axiom and keeps no
-equation between the discarded body and the leaf.  The equation is
-*true* — `extendValueS` values the constant by `cvalAt m.cval env
-cv.name value'`, i.e. by the value's own denotation — but
-`declOpaqueS`'s conclusion is `∃ m' : EnvS V env₂, ∀ n, n ≠ cv.name →
-m.cval n = m'.cval n`, and the agreement says nothing *at* `cv.name`.
-The witness that knows the leaf is thrown away at the `∃`-boundary.
-
-This is the same wall the U tier already named: `declStep2_of_value`'s
-`hleaf` premise, whose docstring (`Step2Cons.lean`, `leafEq_defn` /
-`leafEq_thm`) records "a residue only at the `opaque` kind".  The P
-tier hits it in the same place, for the same reason.
-
-**The bill (upstream, `IxC/Kernel/SetR/Install/ValueKinds.lean` — not this
-file's to edit).**  `declOpaqueS` should expose its leaf, the way
-`extendValueS` already exposes its agreement:
-
-    theorem declOpaqueS (hrp : ReducePinS V) … :
-      ∃ m' : EnvS V env₂,
-        (∀ n, n ≠ cv.name → m.cval n = m'.cval n) ∧
-        ∀ value', annotateCore μ env F 0 value = .ok value' →
-          ∀ ψ, denoteClosed m.cval env ψ value' = some (m'.cval cv.name ψ)
-
-(the second conjunct quantified over the *annotate output*, which is
-determined, since `value'` is bound inside `DeclOpaqueR`'s `∃`; the
-proof is `cvalAt_self` at the `hkey` reading `extendValueS` already
-has in hand, one `have` inside the existing call).  With that conjunct
-`harvestOpaque` is the species with `defn_eq` replaced by it and both
-`hvalReads` arms `nomatch` — no new semantic content, no new premise.
-Landing it here instead as a premise would be a conditional form with
-**no supplier at all** (unlike `harvestAxiom` below, whose premises
-the pin tier really does discharge), so it is not landed. -/
-
-/-! ## The `axiom` kind (batch H2, T3)
+/-! ## The `axiom` kind
 
 `harvestAxiom` is not a mirror of the species but of
 `declStep2M_of_axiom` (`Step2Cons.lean`) at the P fields: **an axiom
@@ -1060,14 +996,12 @@ theorem harvestAxiom (hμ : μ.verifiedChecks = true)
     harvestAxiomJ mp (judgeSound_runJ hμ mp F) hcv hAvclosed hAclosed hAparams hAok hAvalid hmemA
   ⟨mp₂⟩
 
-/-! ## The `opaque` kind, unlocked (the exposed leaf equation)
+/-! ## The `opaque` kind (using the exposed leaf equation)
 
-The H2 SKIP record above named the one missing premise: the leaf
-equation invisible at `declOpaqueS`'s `∃`-boundary.  `extendValueS`
-now exposes it (an additive conjunct; `declOpaqueS` carries it with
-the annotate link), and the harvest is the species with the erasure
-link read **directly** off the exposed equation — no `denote_install`,
-no `defn_eq`/`thm_ok` detour. -/
+`extendValueS` exposes the leaf equation (`declOpaqueS` carries it with
+the annotate link), and the harvest reads the erasure link directly off
+that exposed equation — no `denote_install`, no `defn_eq`/`thm_ok`
+detour. -/
 
 /-- **The `opaque` harvest over a judgement package**: the proof
 below, with every run read through `JudgeSound`. `harvestOpaque` is its kernel

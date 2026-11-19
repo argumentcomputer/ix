@@ -1,6 +1,6 @@
 import Ix.KernelDisplay.Render
 
-/-! # The display-only read (IxC step 6b): the one `unsafe` of the step
+/-! # The display-only read: the one `unsafe` for display metadata
 
 A display annotation (a binder's or a let's Lean name, a failure's terms and
 binders) is held in a `Squash`, so that it is a subsingleton: every statement,

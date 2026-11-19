@@ -14,7 +14,7 @@ hypothesis:
   and `BoundaryFacts.whole` (from `OverWFam.facts.1.1.whole`);
 * `familyGraphRowInnerFamT_closed`: produces the full graph, inner checks, family checks, stored
   twin blocks, and canonical twin selection at any walk with `FamCallsModeled`, `EnvWF`, and
-  `BoundaryFacts.whole` via `FamRunCtx.batchGives_of_run`;
+  `BoundaryFacts.whole` via `FamRunCtx.familyCheckFacts_of_run`;
 * `familyStepsFamFull_closed`, `familySteps_closedWF`: builds `FamilyStepsFamFull` for
   `Claim.TopWalk calls` with no `familyGraph` premise (taking `FamilyTwinRowFam` or
   `FamilyTwinRowFamClosed`);
@@ -176,15 +176,15 @@ theorem familyGraphRowInnerFamT_closed (Pref : RunPref)
   obtain ⟨bAddr, hW, hG⟩ := hWalk
   obtain ⟨E, hctx⟩ := hstore
   let K : FamRunCtx := ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩
-  have hB : BatchGives K :=
-    FamRunCtx.batchGives_of_run hW hG hagree hctx hfamMod hEnvWF hWhole
+  have hB : FamilyCheckFacts K :=
+    FamRunCtx.familyCheckFacts_of_run hW hG hagree hctx hfamMod hEnvWF hWhole
   have hreads : StoredTwinReads K R := storedTwinReads_of_walk hW hG hB hagree hctx
   obtain ⟨rank', hR⟩ : ∃ rank', FamilyRanked K rank' :=
     ⟨_, familyRanked_of_edges hW
       (rankEdges_of hW hG hB hshape (FamRunCtx.famEdge_acyclic hW hG hB))⟩
   have hblock := storedTwinBlock_of_reads hB hagree hreads
   obtain ⟨hFR, -⟩ :=
-    familyRun_of K hB hW (noBatchFields_of _ hW) hR (storedTwinField_of_block hSF hblock)
+    familyRun_of K hB hW (containerKindFact_of _ hW) hR (storedTwinField_of_block hSF hblock)
   have hWalk' : Claim.TopWalk calls t seeds E₀ lim Top rank' :=
     topWalk_of_edges ⟨bAddr, hW, hG⟩ hR.closed hR.owner
   exact ⟨rank', _, _, _, _, bAddr, hWalk', hFR, innerChecked_of_gives hWalk' hFR

@@ -5,16 +5,12 @@ import IxVMRefinement.L1.ByteStream
 import IxVMRefinement.L1.Stream
 import IxVMRefinement.Core.Specs.Callees
 import IxVMRefinement.Obs.KernelClaim
-/-! # Modeled Recursor Rule Verification (`check_iota_rule`, `check_rules_go`, `check_rules`)
+/-! # Modeled Recursor Rule Verification Helpers
 
-The direct inversion of `check_iota_rule` and the refinements of the rule loops are parked
-(`Parked/IxVMRefinement/Decl/ModeledRules.lean`, outside every library): the program now types
-the rules on their renaming to the model. What stays: the helpers and the rule records
-(`RawIotaRuleVmRun`, `RawIotaRulesVmRun`) other modules use.
-
-Refinement of `IxonDeserialize::get_address`, `KernelModeled::check_iota_rule` (via direct
-expression-level inversion over `ObsFn`), `KernelModeled::check_rules_go`, and
-`KernelModeled::check_rules` against `IotaRulesVmRunJ posRulesJ` and `IxVM.Consistency.RuleStored`.
+Helpers and rule records (`RawIotaRuleVmRun`, `RawIotaRulesVmRun`) used by the modeled recursor
+rule refinement modules, together with `IxonDeserialize::get_address` and helper lemmas for
+`KernelModeled::check_iota_rule`, `KernelModeled::check_rules_go`, and
+`KernelModeled::check_rules`.
 -/
 
 namespace IxVM.Refinement.Decl

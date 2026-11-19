@@ -4,7 +4,7 @@ import IxVMRefinement.RoleOps.Producers
 
 /-! # An operation's check facts from the circuit's validation (`KernelRoles::validate_op`)
 
-The operations lane's interface (`RoleOps.OpChecked`) has a prefix half and a check half. This
+The role-operations interface (`RoleOps.OpChecked`) has a prefix half and a check half. This
 file produces both at the environment `env` the closure of the operation's group leaves, the
 boundary invariant below the group holding there.
 

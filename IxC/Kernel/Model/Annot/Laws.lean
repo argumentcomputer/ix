@@ -138,10 +138,8 @@ the v1 field (`Sound/Motives.lean:309`) on the stored `indInfo`, the
 capability flag, the non-reserved name, and the completed family
 (`EtaFamilyStored`).
 
-Design decisions, recorded (the lane lead's freeze; the statements
-below are unchanged from `Interp/CapsP.lean`'s first landing, which
-is now the *preservation* file — the definitions moved here because
-the `EnvModelM` field must import them and `CapsP` imports `EnvModelM`):
+Design decisions (the definitions live here because `EnvModelM` imports
+them and `Interp/CapsP.lean` imports `EnvModelM`):
 
 * **The telescope fit is `TeleFit`, not `TeleFit2`.**  `TeleFit2`
   (`Annot/Spine2.lean`) demands every product in the graph regime
@@ -174,8 +172,7 @@ law → cert+sound, `Install/EtaLawS.lean`); the P path re-runs its
 defeq certificates through the claims — the run-certificate route —
 when the ind tier lands.  Consumers: the structure-η and unit-like
 rules' soundness (`DefEq.structEta_sound`/`DefEq.structUnit_sound`,
-`Model/Rules/DefEqSound.lean`; the `Steps/CapsRows.lean` rows until
-the task #305 closing). -/
+`Model/Rules/DefEqSound.lean`). -/
 
 /-- **The annotated telescope fit** (`TeleFitV`'s `interp` mirror):
 each argument value inhabits its progressively-peeled domain, the
@@ -273,14 +270,9 @@ install — `IndStepPB`'s bill). -/
     Ix.Kernel.reservedBasisNames.contains T = false →
     Ix.Kernel.EtaFamilyStored env T caps →
     ∀ φ' : LevelParam → Nat, EtaLaw m φ' T cvT caps) ∧
-  -- The unit half carries NO `EtaFamilyStored` premise — exactly as
-  -- v1's `CapsOkV` unit half (`Sound/Motives.lean:315`).  The freeze
-  -- transcribed the eta half's premise here by mistake; the caps
-  -- batch mechanized the refutation (`etaFamilyStored_not_derivable`:
-  -- a WF environment with a non-reserved unitlike-only family where
-  -- the premise is false and the law vacuous), and the deletion was
-  -- ratified — it strengthens the field, consumers and the
-  -- `IndStepPB` establishment unchanged.
+  -- The unit half carries NO `EtaFamilyStored` premise (matching `CapsOkV`'s
+  -- unit half, since a WF environment can have a non-reserved unitlike-only
+  -- family where `EtaFamilyStored` is false).
   (∀ (T : Key md) (cvT : ConstantVal md) (caps : IndCaps md),
     env.find? T = some (.indInfo cvT caps) → caps.unitlike = true →
     Ix.Kernel.reservedBasisNames.contains T = false →
@@ -619,15 +611,13 @@ theorem towerGuardAt_of {entry : ProjEntry md} {us : List Level} {φ : LevelPara
     simpa [Level.eval] using h1
   · exact hO5 (by simpa using hp) _ hs
 
-/-- **The guard at a valuation, from the fire guard** (task #175 W6):
+/-- **The guard at a valuation, from the fire guard**:
 `whnfCore`'s tower fire (`ProjEntry.fireOk`) is the tower infer
 branch's own guard — a `Prop`-declared family fires only where the
 field's guard level is a proposition, any other family unconditionally
 — so with O5 it yields `TowerGuardAt` exactly as the infer branch
-does.  (Until W6 the fire was gated on the structure's sort being
-provably nonzero, `TowerStructPos`, and the iota law was stated in the
-graph regime only; the squash regime is now licensed by the certified
-spine's fit, see `TowerEntryLaw`'s clause (B).) -/
+does (the squash regime is licensed by the certified spine's fit, see
+`TowerEntryLaw`'s clause (B)). -/
 theorem towerGuardAt_of_fireOk {entry : ProjEntry md} {us : List Level}
     {φ : LevelParam → Nat} (hO5 : TowerO5 entry)
     (hfire : entry.fireOk us = true) : TowerGuardAt φ entry us := by
@@ -708,7 +698,7 @@ dummy binders carry the reading only; the law never reads them. -/
             interp V ρ (projAV (i + entry.off) x) ∈ˢ interp V ρ rest)) ∧
       -- (B) the iota law: the projection of a *graded* constructor
       -- application is the selected field, at every valuation under
-      -- the guard (task #175 W6).  Two premises: the application's
+      -- the guard.  Two premises: the application's
       -- grading (its slot chain — the graph regime's whole premise,
       -- where every constructor binder is graph-regime and graph
       -- rigidity pins the memberships), and the certified spine's fit

@@ -8,7 +8,7 @@ grows along every edge into a record that has an edge out (`edge_pot`; a family 
 member has none):
 
 * a top-walked record bound to a role of the quotient package (`QBound`): `(0, 0, rank, 0)`;
-  what it uses is covered or again such a record (`BatchGives.quotBound`);
+  what it uses is covered or again such a record (`FamilyCheckFacts.quotBound`);
 * a non-empty block of recursors that is the record of a scope check (`RecAnch`: a block's
   family record, a twin): `(rank B + 1, 1, 0, 2)` at the scope's block `B` (one block, by
   `blockOf`), not at its own walk rank;
@@ -20,7 +20,7 @@ member has none):
 
 The scope's block is no local record of any scope check, so its potential is
 `(rank B + 1, 1, 0, 0)`; its local records lie at or below it, and what they use lies below them
-by the batch's reference facts (`familyRefs`, `adviceRefs`, `contWitness`). -/
+by the family-check reference facts (`familyRefs`, `adviceRefs`, `contWitness`). -/
 
 universe u
 
@@ -299,14 +299,14 @@ theorem FamRunCtx.not_recAnch_of_indBlock {n : _root_.Address} (h : IndBlock K.E
 
 /-- **The block of a record of scope checks is one**: two scope checks with a non-empty record
 are of one block (`blockOf`). -/
-theorem FamRunCtx.recAnch_unique (hB : BatchGives K) {n B B' : _root_.Address}
+theorem FamRunCtx.recAnch_unique (hB : FamilyCheckFacts K) {n B B' : _root_.Address}
     {cs cs' : List (Call F)} (hRB : RecBlock K.E₀ n) (hS : K.ScopeAt B n cs)
     (hS' : K.ScopeAt B' n cs') : B' = B :=
   FamRunCtx.block_unique hB hRB ⟨cs', hS'.1⟩ ⟨cs, hS.1⟩
 
 theorem FamRunCtx.pot0_scopeRec
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {n B : _root_.Address} {cs : List (Call F)} (hS : K.ScopeAt B n cs)
     (hRB : RecBlock K.E₀ n) : K.pot0 rank n = (rank B + 1, 1, 0, 2) := by
   obtain ⟨c, rs, hc, hrs, -, -⟩ := id hRB
@@ -315,7 +315,7 @@ theorem FamRunCtx.pot0_scopeRec
 
 theorem FamRunCtx.pot_scopeRec
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {n B : _root_.Address} {cs : List (Call F)} (hS : K.ScopeAt B n cs)
     (hRB : RecBlock K.E₀ n) : K.pot rank n = (rank B + 1, 1, 0, 2) := by
   obtain ⟨c, rs, hc, hrs, -, -⟩ := id hRB
@@ -335,7 +335,7 @@ theorem FamRunCtx.localAt_notProj {B rb : _root_.Address} {cs : List (Call F)}
 /-- **The block of a scope check is no local record of any scope check**: no own advice walk
 lists it (`listedNotScope`), it is no standalone record, and it is no twin (a block of
 inductive types). -/
-theorem FamRunCtx.scope_not_local (hB : BatchGives K) {B rb : _root_.Address}
+theorem FamRunCtx.scope_not_local (hB : FamilyCheckFacts K) {B rb : _root_.Address}
     {cs : List (Call F)} (hS : K.ScopeAt B rb cs) {B' rb' : _root_.Address}
     {cs' : List (Call F)} {p : Nat} (hS' : K.ScopeAt B' rb' cs') :
     ¬ K.LocalAt B' rb' cs' B p := by
@@ -350,7 +350,7 @@ theorem FamRunCtx.scope_not_local (hB : BatchGives K) {B rb : _root_.Address}
 /-- **The potential of a scope check's block**: `(rank B + 1, 1, 0, 0)`. -/
 theorem FamRunCtx.pot0_scope
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {B rb : _root_.Address} {cs : List (Call F)} (hS : K.ScopeAt B rb cs) :
     K.pot0 rank B = (rank B + 1, 1, 0, 0) := by
   obtain ⟨cb, ms, hcb, hms, hpos, hall⟩ := hS.2.2.1
@@ -369,7 +369,7 @@ theorem FamRunCtx.pot0_scope
 
 theorem FamRunCtx.pot_scope
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {B rb : _root_.Address} {cs : List (Call F)} (hS : K.ScopeAt B rb cs) :
     K.pot rank B = (rank B + 1, 1, 0, 0) := by
   obtain ⟨cb, ms, hcb, hms, -, -⟩ := hS.2.2.1
@@ -381,7 +381,7 @@ theorem FamRunCtx.pot_scope
 /-- **A non-empty record of a scope check lies above its block in the walk** (`recUsesBlock`). -/
 theorem FamRunCtx.rec_above
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {B n : _root_.Address} {cs : List (Call F)} (hS : K.ScopeAt B n cs)
     (hRB : RecBlock K.E₀ n) (hT : K.Top n) : Relation.TransGen (WStep K) B n := by
   obtain ⟨c, rs, hc, hrs, hpos, -⟩ := hRB
@@ -402,7 +402,7 @@ theorem FamRunCtx.rec_above
 /-- The first number of a top-walked record's potential is at most its walk rank plus one. -/
 theorem FamRunCtx.pot0_fst_le
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {m : _root_.Address} (hT : K.Top m) : (K.pot0 rank m).1 ≤ rank m + 1 := by
   by_cases hq : K.QBound m
   · rw [FamRunCtx.pot0_Q hq]
@@ -419,7 +419,7 @@ theorem FamRunCtx.pot0_fst_le
 
 theorem FamRunCtx.pot_fst_le
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {w : _root_.Address} (hT : K.Top w) : (K.pot rank w).1 ≤ rank w + 1 := by
   by_cases hp : K.TopProj w
   · obtain ⟨-, c, hc, hpc⟩ := hp
@@ -433,7 +433,7 @@ theorem FamRunCtx.pot_fst_le
 /-- **A top-walked record below `B` has a potential below `B`'s in the first number.** -/
 theorem FamRunCtx.below_bound
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {w B : _root_.Address} (hT : K.Top w) (hwB : Relation.TransGen (WStep K) w B) :
     (K.pot rank w).1 < rank B + 1 := by
   have h1 := FamRunCtx.pot_fst_le hW hG hB hT
@@ -455,7 +455,7 @@ theorem constAddr_cases_top (hG : TopGraph K.t K.E₀ seeds K.Top rank)
 `B`'s in the first number.** -/
 theorem FamRunCtx.constAddr_bound
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {D w B : _root_.Address} {cD : Ixon.Constant} (hTD : K.Top D)
     (hc : recordOf K.E₀ D = some cD) (hw : ConstAddrOf D cD w) (hTw : K.Top w)
     (hDB : Relation.TransGen (WStep K) D B) : (K.pot rank w).1 < rank B + 1 := by
@@ -523,7 +523,7 @@ recursors is the twin (both hold the witness's projection record), and its famil
 one block. -/
 theorem FamRunCtx.twinLocal_below
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hB : BatchGives K) {B rb : _root_.Address} {cs : List (Call F)} (hS : K.ScopeAt B rb cs)
+    (hB : FamilyCheckFacts K) {B rb : _root_.Address} {cs : List (Call F)} (hS : K.ScopeAt B rb cs)
     {a x B' : _root_.Address} {ca : Ixon.Constant} (htw : K.twin a = some B')
     (hwit : K.ContWitness cs B x) (hcov : ¬ Covered K.t x) (hca : recordOf K.E₀ a = some ca)
     (hxa : ConstAddrOf a ca x) : Relation.TransGen (WStep K) B' B := by
@@ -562,7 +562,7 @@ theorem FamRunCtx.twin_scope {a B' : _root_.Address} (htw : K.twin a = some B') 
 /-- **A local record's potential is at most a local record's of its scope at its position.** -/
 theorem FamRunCtx.local_bound
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {B rb : _root_.Address} {cs : List (Call F)} {ℓ : _root_.Address} {q : Nat}
     (hS : K.ScopeAt B rb cs) (hl : K.LocalAt B rb cs ℓ q) :
     LocBound rank (K.pot rank ℓ) B q := by
@@ -610,7 +610,7 @@ other is a projection record of a non-empty block of recursors whose family chec
 below the scope's block is among the scope check's calls, anchored at that block. -/
 theorem FamRunCtx.cont_bound
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {B rb : _root_.Address} {cs : List (Call F)} {z : _root_.Address}
     (hS : K.ScopeAt B rb cs) (hwit : K.ContWitness cs B z) (hTz : K.Top z)
     (hcov : ¬ Covered K.t z) : LocBound rank (K.pot rank z) B 0 := by
@@ -640,7 +640,7 @@ below the scope's block in the first number**: bound to a role of the quotient p
 the block, or a constant address of a block below it. -/
 theorem FamRunCtx.witBase_bound
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {B z : _root_.Address} (hTB : K.Top B) (hwb : K.WitBase B z) (hTz : K.Top z)
     (hcov : ¬ Covered K.t z) : (K.pot rank z).1 < rank B + 1 := by
   rcases hwb with ⟨ro, hro, ha⟩ | hc | hdep | ⟨ib, cib, hdep, hcib, hzi⟩
@@ -662,7 +662,7 @@ potential below the block's in the first number, or one step above the block's**
 address of the block). -/
 theorem FamRunCtx.blockRef_bound
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {A z : _root_.Address} (hTA : K.Top A) (hIA : IndBlock K.E₀ A) (hbr : K.BlockRef A z)
     (hTz : K.Top z) (hcov : ¬ Covered K.t z) :
     (K.pot rank z).1 < rank A + 1 ∨ K.pot rank z = (K.pot0 rank A).bump := by
@@ -685,7 +685,7 @@ theorem FamRunCtx.blockRef_bound
 it (`TopGraph.block_record` for a top-walked record, `innerMembers_of` for an inner one). -/
 theorem FamRunCtx.constAddr_cases_walked
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {D w : _root_.Address} {cD : Ixon.Constant} (hWD : Walked K.Top K.Inner D)
     (hc : recordOf K.E₀ D = some cD) (hw : ConstAddrOf D cD w) :
     (w = D ∧ Standalone cD) ∨
@@ -708,7 +708,7 @@ theorem FamRunCtx.constAddr_cases_walked
 role, is below a record of that scope check in the potential. -/
 theorem FamRunCtx.recRef_bound
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {B rb z : _root_.Address} {cs : List (Call F)} (hS : K.ScopeAt B rb cs)
     (hu : UsedRef K.E₀ rb z) (hTz : K.Top z) (hcov : ¬ Covered K.t z) :
     PotLt (K.pot rank z) (rank B + 1, 1, 0, 2) := by
@@ -725,7 +725,7 @@ theorem FamRunCtx.recRef_bound
 and bound to no walked role, is at most a local record's potential at an earlier position. -/
 theorem FamRunCtx.advRef_bound
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {B rb z : _root_.Address} {cs : List (Call F)} {advAs} {k : Nat} {b}
     (hS : K.ScopeAt B rb cs) (hown : FamilyCallOwn K.calls K.bAddr K.t B rb K.lim cs advAs)
     (hb : advAs[k]? = some b) (hTa : K.Top (Core.ixAddr b))
@@ -766,7 +766,7 @@ reference of the closure of the block its family eliminates (below the scope's b
 witness of a kind other than 2. -/
 theorem FamRunCtx.contRef_bound
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {B rb y z : _root_.Address} {cs : List (Call F)} {cy : Ixon.Constant}
     (hS : K.ScopeAt B rb cs) (hwit : K.ContWitness cs B y) (hcy : ¬ Covered K.t y)
     (hcyr : recordOf K.E₀ y = some cy) (hs : Standalone cy) (hu : UsedRef K.E₀ y z)
@@ -787,7 +787,7 @@ theorem FamRunCtx.contRef_bound
 /-- **The potential grows along the walk's steps.** -/
 theorem FamRunCtx.walk_pot
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {z y : _root_.Address} (h : WStep K z y) : PotLt (K.pot rank z) (K.pot rank y) := by
   have hr := h.rank_lt hW
   obtain ⟨hTy, hTz, hstep⟩ := h
@@ -933,7 +933,7 @@ theorem FamRunCtx.inner_plain
 potential in the fourth number; an empty family record has no edge out. -/
 theorem FamRunCtx.famRec_pot
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {B rb : _root_.Address} (h : K.fam B = some rb) :
     PotLt (K.pot rank B) (K.pot rank rb) ∨ ∀ w, ¬ FamEdge K rank rb w := by
   obtain ⟨crb, rs, hF⟩ := FamRunCtx.record_of hW B rb (FamRunCtx.fam_some h).2.1
@@ -947,7 +947,7 @@ theorem FamRunCtx.famRec_pot
 /-- A block before its twin: the twin is anchored at the block. -/
 theorem FamRunCtx.twinRec_pot
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {B rb' : _root_.Address} (h : K.twin rb' = some B) :
     PotLt (K.pot rank B) (K.pot rank rb') := by
   obtain ⟨cs', hS'⟩ := FamRunCtx.twin_scope h
@@ -958,7 +958,7 @@ theorem FamRunCtx.twinRec_pot
 /-- A local record before its scope's block. -/
 theorem FamRunCtx.loc_pot
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {B rb : _root_.Address} {cs : List (Call F)} {a : _root_.Address} {p : Nat}
     (hS : K.ScopeAt B rb cs) (hl : K.LocalAt B rb cs a p) :
     PotLt (K.pot rank a) (K.pot rank B) := by
@@ -969,7 +969,7 @@ theorem FamRunCtx.loc_pot
 before that record. -/
 theorem FamRunCtx.owner_pot
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {D a : _root_.Address} (hI : K.Inner a) (htw : ¬ ∃ B', K.twin a = some B')
     (hT : K.Top D)
     (hall : ∀ B rb cs p, K.ScopeAt B rb cs → K.LocalAt B rb cs a p → rank D < rank B) :
@@ -989,7 +989,7 @@ theorem FamRunCtx.owner_pot
 before that record. -/
 theorem FamRunCtx.earlier_pot
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {B rb : _root_.Address} {cs : List (Call F)} {a₁ a₂ : _root_.Address} {p₁ p₂ : Nat}
     (hI : K.Inner a₂) (htw : ¬ ∃ B', K.twin a₂ = some B') (hS : K.ScopeAt B rb cs)
     (hl₁ : K.LocalAt B rb cs a₁ p₁) (hl₂ : K.LocalAt B rb cs a₂ p₂) (hp : p₁ < p₂)
@@ -1018,7 +1018,7 @@ theorem FamRunCtx.earlier_pot
 /-- **The potential grows along every edge into a record with an edge out.** -/
 theorem FamRunCtx.edge_pot
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {z y : _root_.Address} (h : FamEdge K rank z y) :
     PotLt (K.pot rank z) (K.pot rank y) ∨ ∀ w, ¬ FamEdge K rank y w := by
   cases h with
@@ -1034,7 +1034,7 @@ theorem FamRunCtx.edge_pot
 potential grows (`edge_pot`), and every record of a cycle has an edge out. -/
 theorem FamRunCtx.famEdge_acyclic
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K) :
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K) :
     ∀ z, ¬ Relation.TransGen (FamEdge K rank) z z := by
   have key : ∀ a b, Relation.TransGen (FamEdge K rank) a b →
       (∃ w, FamEdge K rank b w) → PotLt (K.pot rank a) (K.pot rank b) := by
@@ -1059,47 +1059,47 @@ end Potential
 
 /-! ## The ranking -/
 
-/-- **The ranking, from what the batch's functions give**: at every walk and witness, the edges
+/-- **The ranking, from the family-check facts**: at every walk and witness, the edges
 `FamEdge` order the family graph (`rankEdges_of`, `famEdge_acyclic`), and the number of the run's
 store's addresses below an address is a rank of it (`familyRanked_of_edges`). -/
 theorem familyRanking_of (Pref : RunPref)
-    (batch : AtWalk.{u} Pref fun K _ => BatchGives K) : FamilyRanking.{u} Pref := by
+    (facts : AtWalk.{u} Pref fun K _ => FamilyCheckFacts K) : FamilyRanking.{u} Pref := by
   intro calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape
-  have hB := batch calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape
+  have hB := facts calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape
   exact ⟨_, familyRanked_of_edges hW
     (rankEdges_of hW hG hB hshape (FamRunCtx.famEdge_acyclic hW hG hB))⟩
 
 /-- **Row `familyGraph` with the selector's form fact, from what the run's functions give**, the
-ranking and the facts of unchanged functions proved: the batch's (`BatchGives`) and the stored
-twins' field (to be restated). -/
-theorem familyGraphRowPref_of_batch (Pref : RunPref)
-    (batch : AtWalk.{u} Pref fun K _ => BatchGives K)
+ranking and container-kind fact proved: the family-check facts (`FamilyCheckFacts`) and the stored
+twins' field. -/
+theorem familyGraphRowPref_of_facts (Pref : RunPref)
+    (facts : AtWalk.{u} Pref fun K _ => FamilyCheckFacts K)
     (storedTwin : AtWalk.{u} Pref fun K _ => StoredTwinField K) :
     FamilyGraphRowPref.{u} Pref :=
-  familyGraphRowPref_of_parts Pref batch
-    (fun _ _ _ _ _ _ _ _ hW _ _ _ _ => noBatchFields_of _ hW)
-    (familyRanking_of Pref batch) storedTwin
+  familyGraphRowPref_of_parts Pref facts
+    (fun _ _ _ _ _ _ _ _ hW _ _ _ _ => containerKindFact_of _ hW)
+    (familyRanking_of Pref facts) storedTwin
 
-/-- **Row `familyGraph` from what the run's functions give**, the ranking and the facts of
-unchanged functions proved (`familyGraphRowPref_of_batch` without the form fact). -/
-theorem familyGraphRow_of_batch (Pref : RunPref)
-    (batch : AtWalk.{u} Pref fun K _ => BatchGives K)
+/-- **Row `familyGraph` from what the run's functions give**, the ranking and container-kind fact
+proved (`familyGraphRowPref_of_facts` without the form fact). -/
+theorem familyGraphRow_of_facts (Pref : RunPref)
+    (facts : AtWalk.{u} Pref fun K _ => FamilyCheckFacts K)
     (storedTwin : AtWalk.{u} Pref fun K _ => StoredTwinField K) :
     FamilyGraphRow.{u} :=
-  familyGraphRow_of_pref (familyGraphRowPref_of_batch Pref batch storedTwin)
+  familyGraphRow_of_pref (familyGraphRowPref_of_facts Pref facts storedTwin)
 
 /-- **What the graph row is owed, at the twin preference `Pref`**: at every walk and witness, the
-batch's facts (`BatchGives`) and the stored twins' field (`StoredTwinField`) at the run's choices.
+family-check facts (`FamilyCheckFacts`) and the stored twins' field (`StoredTwinField`) at the run's choices.
 `Pref` is the twin preference the typing side instantiates with the concrete record-level form.
-The obligation holds at any `Pref`: `BatchGives` and `StoredTwinField` read it only through the
+The obligation holds at any `Pref`: `FamilyCheckFacts` and `StoredTwinField` read it only through the
 selector's choice of the family records and the twins. -/
 def FamilyGraphOwed (Pref : RunPref) : Prop :=
-  AtWalk.{u} Pref fun K _ => BatchGives K ∧ StoredTwinField K
+  AtWalk.{u} Pref fun K _ => FamilyCheckFacts K ∧ StoredTwinField K
 
 /-- **Row `familyGraph` with the selector's form fact, from what it is owed.** -/
 theorem familyGraphRowPref_of_owed {Pref : RunPref} (h : FamilyGraphOwed.{u} Pref) :
     FamilyGraphRowPref.{u} Pref :=
-  familyGraphRowPref_of_batch Pref
+  familyGraphRowPref_of_facts Pref
     (fun calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape =>
       (h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape).1)
     (fun calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape =>

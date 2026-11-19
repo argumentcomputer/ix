@@ -24,8 +24,8 @@ the binding fold's family form needs of a group beside `Admits`:
   `famOf B`,
   the one its family check accepted at the group's validation limit, with that check's advice
   `adv B` and container recursors `cont B`; the selected record is the block's family, position by
-  position over the flattened family (`FamilyOfBlock`: complete, so the binding's family check must
-  refuse an empty record under a group's validation, batch candidate B1″); and a new non-empty
+  position over the flattened family (`FamilyOfBlock`: complete, since the binding's family check
+  refuses an empty record under a group's validation); and a new non-empty
   block of recursors is a selected family record or was checked as a second family record of a
   block (a twin);
 * `FamilyAdmits ρ t g R R' famOf adv cont`: what the group's store holds and in what order: the

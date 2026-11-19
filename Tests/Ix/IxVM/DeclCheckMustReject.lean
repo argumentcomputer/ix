@@ -5,13 +5,13 @@ import Ix.IxVM.ClaimHarness
 import Ix.ClaimContext
 import Ix.AssumptionTree
 import Tests.Ix.IxVM.Harness
-import Tests.Ix.IxVM.BatchMustRejectDefs
+import Tests.Ix.IxVM.DeclCheckMustRejectDefs
 
 /-!
 # The declaration checker's must-reject cases
 
 Hand-built inputs the IxVM program must refuse, each with a control it must accept. Run by
-`ixvm-batch-must-reject` (manual). A case whose target is a recursor of a mutual or nested
+`ixvm-decl-check-must-reject` (manual). A case whose target is a recursor of a mutual or nested
 family, or whose closure holds one, is refused at that recursor while the program refuses
 such recursors (`modeledRecursorsRefused`); the case then names the type as well, where the
 family check still runs.
@@ -29,7 +29,7 @@ family check still runs.
   `Option` motive for `T2`.
 -/
 
-namespace Tests.Ix.IxVM.BatchMustReject
+namespace Tests.Ix.IxVM.DeclCheckMustReject
 
 open IxVM.ClaimHarness
 open Tests.Ix.IxVM
@@ -140,8 +140,8 @@ def selfRefRec (c : Ixon.Constant) : Except String Ixon.Constant := do
 
 /-- The recursor-type case. -/
 def recursorCases (fenv : Lean.Environment) : IO (Array Builder) := do
-  let env ← loadSharedIxonEnv #[`BatchMR.Two, `BatchMR.Two.rec] fenv
-  let recA ← lookupAddr env `BatchMR.Two.rec
+  let env ← loadSharedIxonEnv #[`DeclCheckMR.Two, `DeclCheckMR.Two.rec] fenv
+  let recA ← lookupAddr env `DeclCheckMR.Two.rec
   let some recC := env.getConst? recA | throw (IO.userError "Two.rec's record is missing")
   let (env, badA) := st env (← IO.ofExcept (selfRefRec recC))
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
@@ -151,13 +151,13 @@ def recursorCases (fenv : Lean.Environment) : IO (Array Builder) := do
 
 /-- The auxiliary-motive case. -/
 def auxCases (fenv : Lean.Environment) : IO (Array Builder) := do
-  let env ← loadSharedIxonEnv #[`BatchMR.T1, `BatchMR.T1.rec, `BatchMR.T2, `BatchMR.T2.rec] fenv
-  let t1A ← lookupAddr env `BatchMR.T1
-  let n1A ← lookupAddr env `BatchMR.T1.node
-  let t2A ← lookupAddr env `BatchMR.T2
-  let n2A ← lookupAddr env `BatchMR.T2.node
-  let r1A ← lookupAddr env `BatchMR.T1.rec
-  let r2A ← lookupAddr env `BatchMR.T2.rec
+  let env ← loadSharedIxonEnv #[`DeclCheckMR.T1, `DeclCheckMR.T1.rec, `DeclCheckMR.T2, `DeclCheckMR.T2.rec] fenv
+  let t1A ← lookupAddr env `DeclCheckMR.T1
+  let n1A ← lookupAddr env `DeclCheckMR.T1.node
+  let t2A ← lookupAddr env `DeclCheckMR.T2
+  let n2A ← lookupAddr env `DeclCheckMR.T2.node
+  let r1A ← lookupAddr env `DeclCheckMR.T1.rec
+  let r2A ← lookupAddr env `DeclCheckMR.T2.rec
   let some r1C := env.getConst? r1A | throw (IO.userError "T1.rec is missing")
   let some r2C := env.getConst? r2A | throw (IO.userError "T2.rec is missing")
   let .rPrj p1 := r1C.info | throw (IO.userError "T1.rec is not a recursor projection")
@@ -166,7 +166,7 @@ def auxCases (fenv : Lean.Environment) : IO (Array Builder) := do
   let some fam2 := env.getConst? p2.block | throw (IO.userError "T2's family is missing")
   let .muts ms1 := fam1.info | throw (IO.userError "T1's family is not a mutual record")
   let .muts ms2 := fam2.info | throw (IO.userError "T2's family is not a mutual record")
-  IO.println s!"[ixvm-batch-must-reject] T1's family has {ms1.size} recursors, T2's {ms2.size}"
+  IO.println s!"[ixvm-decl-check-must-reject] T1's family has {ms1.size} recursors, T2's {ms2.size}"
   -- T1's family on T2: every reference to T1 or T1.node is to T2 or T2.node
   let remap (a : Address) : Address := if a == t1A then t2A else if a == n1A then n2A else a
   let (env', famA) := st env { fam1 with refs := fam1.refs.map remap }
@@ -180,12 +180,12 @@ def auxCases (fenv : Lean.Environment) : IO (Array Builder) := do
   let mut consts := env'.consts.erase p2.block
   for i in [0:ms2.size] do
     consts := consts.erase (Address.blake3 (Ixon.ser (⟨.rPrj ⟨i.toUInt64, p2.block⟩, #[], #[], #[], #[]⟩ : Ixon.Constant)))
-  let crafted := ({ env' with consts } : Ixon.Env).registerNameAddr (Ix.Name.fromLeanName `BatchMR.T2.rec) (prjs.getD p1.idx.toNat default)
+  let crafted := ({ env' with consts } : Ixon.Env).registerNameAddr (Ix.Name.fromLeanName `DeclCheckMR.T2.rec) (prjs.getD p1.idx.toNat default)
   let (crafted, rep) ← IO.ofExcept (IxVM.Model.generateReport (withoutModels crafted))
   for (b, r) in rep.blocks do
     match r with
-    | .error e => IO.println s!"[ixvm-batch-must-reject] block {b} has no model: {e}"
-    | .ok (n, outside) => IO.println s!"[ixvm-batch-must-reject] block {b}: {n} advice records, {outside.size} outside references"
+    | .error e => IO.println s!"[ixvm-decl-check-must-reject] block {b} has no model: {e}"
+    | .ok (n, outside) => IO.println s!"[ixvm-decl-check-must-reject] block {b}: {n} advice records, {outside.size} outside references"
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
   let ctxC ← IO.ofExcept (Ix.ClaimContext.ofEnv crafted true)
   let craftedRec := prjs.getD p1.idx.toNat default
@@ -215,8 +215,8 @@ constructor whose type ends in a family outside the block), with prover-chosen r
   the native route of `Two`, whose canonical recursor it is not);
 * a two-type block whose first type's constructor is `C : Two`. -/
 def knCases (fenv : Lean.Environment) : IO (Array Builder) := do
-  let env ← loadSharedIxonEnv #[`BatchMR.Two, `BatchMR.Two.a, `BatchMR.Two.b] fenv
-  let twoA ← lookupAddr env `BatchMR.Two
+  let env ← loadSharedIxonEnv #[`DeclCheckMR.Two, `DeclCheckMR.Two.a, `DeclCheckMR.Two.b] fenv
+  let twoA ← lookupAddr env `DeclCheckMR.Two
   -- X₁.rec, a single recursor record
   let recTy : E := .leanAll (.sort 0) (.leanAll (.var 0) (.leanAll (.ref 0 #[]) (.var 2)))
   let rule : Ixon.RecursorRule := { fields := 0, rhs := .leanLam (.sort 0) (.leanLam (.var 0) (.var 0)) }
@@ -226,7 +226,7 @@ def knCases (fenv : Lean.Environment) : IO (Array Builder) := do
   let (env1, recA) ← stAnnot env ⟨.recr r, #[], #[twoA], #[.var 0], #[]⟩
   -- the same, well shaped: `∀ (motive : Two → Sort u) (minor : motive Two.a) (t : Two), motive t`,
   -- one rule `λ motive minor, minor` (Two has two constructors)
-  let twoAA ← lookupAddr env `BatchMR.Two.a
+  let twoAA ← lookupAddr env `DeclCheckMR.Two.a
   let motiveDom : E := .leanAll (.ref 0 #[]) (.sort 0)
   let minorDom : E := .app (.var 0) (.ref 1 #[])
   let recTy3 : E := .leanAll motiveDom (.leanAll minorDom (.leanAll (.ref 0 #[]) (.app (.var 2) (.var 0))))
@@ -236,7 +236,7 @@ def knCases (fenv : Lean.Environment) : IO (Array Builder) := do
       motives := 1, minors := 1, typ := recTy3, rules := #[rule3] }
   let (env3, rec3A) ← stAnnot env ⟨.recr r3, #[], #[twoA, twoAA], #[.var 0], #[]⟩
   -- the control: both rules, `Two.rec` up to binder data
-  let twoAB ← lookupAddr env `BatchMR.Two.b
+  let twoAB ← lookupAddr env `DeclCheckMR.Two.b
   let minorBDom : E := .app (.var 1) (.ref 2 #[])
   let recTyC : E := .leanAll motiveDom (.leanAll minorDom (.leanAll minorBDom
     (.leanAll (.ref 0 #[]) (.app (.var 3) (.var 0)))))
@@ -284,10 +284,10 @@ block), with their plain controls:
 * `mk : ∀ α, (let f := λ a i, W a Two.a; f) α Two.b` (the visible index is not the
   constructor's: its type is `W α Two.a`). -/
 def letResidualCases (fenv : Lean.Environment) : IO (Array Builder) := do
-  let env ← loadSharedIxonEnv #[`BatchMR.Two, `BatchMR.Two.a, `BatchMR.Two.b] fenv
-  let twoA ← lookupAddr env `BatchMR.Two
-  let twoAA ← lookupAddr env `BatchMR.Two.a
-  let twoAB ← lookupAddr env `BatchMR.Two.b
+  let env ← loadSharedIxonEnv #[`DeclCheckMR.Two, `DeclCheckMR.Two.a, `DeclCheckMR.Two.b] fenv
+  let twoA ← lookupAddr env `DeclCheckMR.Two
+  let twoAA ← lookupAddr env `DeclCheckMR.Two.a
+  let twoAB ← lookupAddr env `DeclCheckMR.Two.b
   let wTy : E := .leanAll (.sort 0) (.leanAll (.ref 0 #[]) (.sort 0))
   let plain (k : UInt64) : E := .leanAll (.sort 0) (.app (.app (.recur k #[]) (.var 0)) (.ref 1 #[]))
   let hidden (k : UInt64) : E := .leanAll (.sort 0)
@@ -316,8 +316,8 @@ def letResidualCases (fenv : Lean.Environment) : IO (Array Builder) := do
   let (env, rep) ← IO.ofExcept (IxVM.Model.generateReport (withoutModels env))
   for (b, r) in rep.blocks do
     match r with
-    | .error e => IO.println s!"[ixvm-batch-must-reject] let residual: block {b} has no model: {e}"
-    | .ok (n, _) => IO.println s!"[ixvm-batch-must-reject] let residual: block {b}: {n} advice records"
+    | .error e => IO.println s!"[ixvm-decl-check-must-reject] let residual: block {b} has no model: {e}"
+    | .ok (n, _) => IO.println s!"[ixvm-decl-check-must-reject] let residual: block {b}: {n} advice records"
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
   let claim (label : String) (a : Address) (accept : Bool) (why : Option String := none) : Builder :=
     fun _ => Case.ofClaim label env (.check ctx a none) {} accept why
@@ -336,9 +336,9 @@ def letResidualCases (fenv : Lean.Environment) : IO (Array Builder) := do
 /-- `PUnit.rec` on a variable at a never-zero level (`PUnit.{1}`, `PUnit.{u+1}`): the circuit's
 η route of ι fabricates `PUnit.unit` and fires, as the reference kernel's 0-field rescue does. -/
 def punitCases (fenv : Lean.Environment) : IO (Array Builder) := do
-  let env ← loadSharedIxonEnv #[`BatchMR.punitRecStuck, `BatchMR.punitRecStuckU] fenv
-  let a1 ← lookupAddr env `BatchMR.punitRecStuck
-  let a2 ← lookupAddr env `BatchMR.punitRecStuckU
+  let env ← loadSharedIxonEnv #[`DeclCheckMR.punitRecStuck, `DeclCheckMR.punitRecStuckU] fenv
+  let a1 ← lookupAddr env `DeclCheckMR.punitRecStuck
+  let a2 ← lookupAddr env `DeclCheckMR.punitRecStuckU
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
   return #[
     fun _ => Case.ofClaim "punit-rec-stuck-at-level-one" env (.check ctx a1 none) {} true,
@@ -347,16 +347,16 @@ def punitCases (fenv : Lean.Environment) : IO (Array Builder) := do
 /-- Further cases: a definition whose level-parameter count is 2^32; the witness of
 an existential projected out of it (field 0 of `Exists`, a proposition, whose stored guard is
 the witness's sort); and, as control, the first component of a conjunction. -/
-def secondBatchCases (fenv : Lean.Environment) : IO (Array Builder) := do
-  let env ← loadSharedIxonEnv #[``True, ``True.intro, `BatchMR.exWitness, `BatchMR.andFst, `BatchMR.FI,
-    `BatchMR.FI.rec, `BatchMR.F0, `BatchMR.F0.rec] fenv
-  let fiRecA ← lookupAddr env `BatchMR.FI.rec
-  let f0A ← lookupAddr env `BatchMR.F0
+def additionalCases (fenv : Lean.Environment) : IO (Array Builder) := do
+  let env ← loadSharedIxonEnv #[``True, ``True.intro, `DeclCheckMR.exWitness, `DeclCheckMR.andFst, `DeclCheckMR.FI,
+    `DeclCheckMR.FI.rec, `DeclCheckMR.F0, `DeclCheckMR.F0.rec] fenv
+  let fiRecA ← lookupAddr env `DeclCheckMR.FI.rec
+  let f0A ← lookupAddr env `DeclCheckMR.F0
   let trueA ← lookupAddr env ``True
   let introA ← lookupAddr env ``True.intro
   let (env, wideA) := st env ⟨.defn ⟨.defn, .safe, {}, 4294967296, .ref 0 #[], .ref 1 #[]⟩, #[],
     #[trueA, introA], #[], #[]⟩
-  let exA ← lookupAddr env `BatchMR.exWitness
+  let exA ← lookupAddr env `DeclCheckMR.exWitness
   let existsA ← lookupAddr env ``Exists
   let some exC := env.getConst? exA | throw (IO.userError "exWitness's record is missing")
   let .defn d := exC.info | throw (IO.userError "exWitness is not a definition record")
@@ -365,7 +365,7 @@ def secondBatchCases (fenv : Lean.Environment) : IO (Array Builder) := do
   let .lam ty _ := d.value | throw (IO.userError "exWitness's value is not a λ")
   let (env, projA) := st env
     { exC with info := .defn { d with value := .lam ty (.prj eIdx.toUInt64 0 (.var 0)) } }
-  let andA ← lookupAddr env `BatchMR.andFst
+  let andA ← lookupAddr env `DeclCheckMR.andFst
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
   return #[
     fun _ => Case.ofClaim "level-count-at-2^32" env (.check ctx wideA none) {} false
@@ -378,11 +378,11 @@ def secondBatchCases (fenv : Lean.Environment) : IO (Array Builder) := do
       (.check ctx f0A none) {} false (some "has no index")]
 
 def run (lenv : Lean.Environment) : IO UInt32 := do
-  -- the fixtures of `BatchMustRejectDefs` are in the test binary's environment
+  -- the fixtures of `DeclCheckMustRejectDefs` are in the test binary's environment
   let fenv := lenv
   let cases := (← axiomCases lenv) ++ (← recursorCases fenv) ++ (← auxCases fenv)
-  runCases "ixvm-batch-must-reject"
+  runCases "ixvm-decl-check-must-reject"
     (cases ++ (← knCases fenv) ++ (← letResidualCases fenv) ++ (← punitCases fenv) ++
-      (← secondBatchCases fenv))
+      (← additionalCases fenv))
 
-end Tests.Ix.IxVM.BatchMustReject
+end Tests.Ix.IxVM.DeclCheckMustReject

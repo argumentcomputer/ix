@@ -10,14 +10,11 @@ import IxC.Kernel.Model.Annot.BitClosed
 public section
 
 /-!
-# The soundness of the definitional-equality rules (task #305, lanes
-S-defeq / S-caps)
+# The soundness of the definitional-equality rules
 
-One lemma per constructor of `DefEq`.  Lane S-defeq owns `refl` …
-`proofIrrel` (the structural rules, the recursive-structure rule, η,
-the two proof-irrelevance arms); lane S-caps owns `unitLike`,
-`structEta`, `structUnit` (the capability rows of
-`Model/Steps/CapsRows.lean` and `Irrel.lean`).
+One lemma per constructor of `DefEq`: the structural rules, the
+recursive-structure rule, η, proof irrelevance (`refl` … `proofIrrel`),
+and the capability rules (`unitLike`, `structEta`, `structUnit`).
 -/
 
 namespace Ix.Kernel.Model.Rules
