@@ -1020,8 +1020,8 @@ theorem ctorLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
   refine ⟨ty, ct.lvls.toNat, ct.params.toNat, ct.fields.toNat, tyPtr, blkPtr, ba',
     .field (ct.cidx.toNat : F), L1.repBoolField ct.isUnsafe, rfl, ?_, ?_, hnl', hnp, hnf,
     htm, htyIn, hba', rba'⟩
-  · simp [ctorAt, hcbE, hcb, hms', hct', hloaded]
-  · simp [ctorTypeAt, hcbE, hcb, hms', hct', hloaded]
+  · unfold ctorAt; simp only [hcbE, hcb, hms', hct', mutsRoot, hloaded]
+  · unfold ctorTypeAt; simp only [hcbE, hcb, hms', hct', mutsRoot, hloaded]
 
 /-- **Representation of a recursor rule list** matching `loadedAt` for each rule `j` of a recursor
 member `r` at root `base`. -/
@@ -1165,9 +1165,13 @@ theorem recrLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     have hblk_lt : blkBytes.size < 2 ^ 39 := by
       obtain ⟨c0, hc0, -, inp, hargs, hrep⟩ := hhB
       have hlt := RomBound.bounded_length_lt hbd_cs hc0 (by rw [hargs]; simp) hrep
-      simpa [ByteArray.size] using hlt
+      change blkBytes.data.toList.length < 2 ^ 39 at hlt
+      have hbl : blkBytes.size = blkBytes.data.toList.length := by
+        simp only [ByteArray.size, Array.length_toList]
+      omega
     have := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound blkBytes cb hexB
     have := Claim.muts_size_le hmuts
+    have h64 : UInt64.size = 18446744073709551616 := rfl
     omega
   have hk_u64 : k.toUInt64.toNat = k := by
     change (UInt64.ofNat k).toNat = k
