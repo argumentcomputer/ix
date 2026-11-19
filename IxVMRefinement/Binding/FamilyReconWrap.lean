@@ -1675,8 +1675,7 @@ theorem flat_find_pos_kind_spec {κ : _root_.Address → KKey} (hinj : Function.
         simp only [evalBinOp, bind, Except.bind, pure, Except.pure, Option.some.injEq,
           Except.ok.injEq, Value.field.injEq] at op138
         have hfeq := sub_eq_zero.mp op138
-        cases h1 : e.aux <;> cases h2 : wantAux <;> simp [auxVal, h1, h2] at hfeq ⊢ <;>
-          exact absurd hfeq (by decide)
+        cases h1 : e.aux <;> cases h2 : wantAux <;> simp [auxVal, h1, h2] at hfeq ⊢
       | other v122 op138 hne148 he152 he153 _ =>
         subst he152 he153 hxis
         refine ⟨false, rfl, ?_, rfl⟩
@@ -2511,8 +2510,9 @@ theorem heapMotiveCarrier_rawConvExpr_lastDom {rootCalls : List (Call F)} {E₀ 
         L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h' bound e xd →
         ∃ ed n_dom n_ref, FamilyOf.lastDom c n_dom e = some ed ∧
           FamilyOf.refHeadAt c n_ref ed = some a := by
-    intro xg hm
-    induction hm with
+    clear hm hdom raw
+    intro xg hm'
+    induction hm' with
     | last ld ldb hne hac =>
       intro h' bound e xd ext0 hdom raw
       obtain ⟨h1, ext1, heq1⟩ := to_eq (loadValue_mono ext0 ld) hdom

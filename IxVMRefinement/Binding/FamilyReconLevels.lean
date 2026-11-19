@@ -1217,15 +1217,15 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
           E_rd.allLevelParamsDefined (List.range ct.lvls.toNat) = true) ∧
         ct.params = ind.params := by
       match Obs.«KernelCheck::check_inductive_shape».obs evsh with
-      | .run (m50 := ms0) (m2 := ms1) (m63 := ms2) (m133 := ms3)
+      | .run (m50 := ms0) (m2 := ms1) (m63 := ms2) (m133 := ms3) (cs198 := cs_ct)
           (hm58 := hms0) (ev14 := evr) (ev75 := evf) (ev145 := evt) (ev200 := evct)
           (hc288 := hc_sh) .. =>
         have ext_s0 : Heap.Extends m7 ms0 := by rw [hms0]; exact Heap.Extends.snoc _ _
         have ext7_s3 := ext_s0.trans (evr.heap_extends.trans (evf.heap_extends.trans evt.heap_extends))
-        have hres := check_inductive_shape_ctors_levelsOk hS hbd
+        have hres := check_inductive_shape_ctors_levelsOk (t := t) hS hbd
           (by rwa [hba_b_eq]) hms hk hk56 hnc56 hnl32 hnp56
           ind.ctors.size 0 (by omega)
-          (fun cl hcl => by
+          (fun cl (hcl : cl ∈ cs_ct) => by
             have h1 : cl ∈ cs_sh := mem_of_eq hc_sh (by call_mem)
             exact hsub_chk cl (mem_of_eq hc (by call_mem)))
           (Bytes.repAddressRef_heapMono₂ addrTy (ext07.trans ext7_s3) rba_b)
@@ -1260,13 +1260,16 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
         obtain ⟨-, bytes', c'', -, hh', ha', hde', -, -, -, -, -, -, cRep⟩ :=
           L1.load_verified_constant_decode_bounded
             (Bytes.repAddressRef_heapMono₂ addrTy (ext08.trans evaeq.heap_extends) rba_b) evlvc
-        have hc'' : c'' = cb := record_eq_of_hashed_l hS sub_lvc (by rw [hba_b_eq]; exact hcb) hh' ha' hde'
+        have hc'' : c'' = cb := record_eq_of_hashed_l hS sub_lvc
+          (show recordOf E₀ (L1.ixAddr ba_b) = some cb from by
+            change recordOf E₀ (ixAddr ba_b) = some cb; rwa [hba_b_eq])
+          hh' ha' hde'
         subst hc''
         obtain ⟨infoVal, _, _, _, _, hceq, hinfoRep, -, -, -, -⟩ := cRep
         injection hceq with _ _ hcl; injection hcl with hinfo_eq _
         rw [hms] at hinfoRep
         obtain ⟨mp, hmp, -⟩ := hinfoRep
-        exact (hneM [mp] rfl (hinfo_eq.symm.trans hmp)).elim
+        exact (hneM [mp] rfl (hinfo_eq.trans hmp)).elim
       | .Induct_other_Muts (m61 := mp1) (m105 := mp2) (cs115 := cs_lvc) (x_members := xmems)
           (cs195 := cs_w) (hv15 := hv2) (ev74 := evaeq) (ev117 := evlvc) (ev197 := evw)
           (hc261 := hc_pa) .. =>
@@ -2049,7 +2052,7 @@ theorem memberCheckedLimAt_recr_levelsOk {calls : List (Call F)} {bAddr : _root_
       e1.heap_extends.trans (evval.heap_extends.trans (ext_nil.trans (e3.heap_extends.trans
         (e4.heap_extends.trans (e5.heap_extends.trans (e6.heap_extends.trans
           (e7.heap_extends.trans e8.heap_extends)))))))
-    have hcf := check_family_recr_levelsOk hS hbd (by rwa [hba_b_eq]) hms
+    have hcf := check_family_recr_levelsOk (t := t) hS hbd (by rwa [hba_b_eq]) hms
       (Bytes.repAddressRef_heapMono₂ addrTy ext0_cf rba_b) evcf
       (fun cl hcl => hsub_chk cl (mem_of_eq hc (by call_mem))) k rc_m hk
     simpa [hba_b_eq] using hcf
