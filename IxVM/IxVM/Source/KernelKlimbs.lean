@@ -47,12 +47,16 @@ def klimbs_add_carry := aiur_fn⟦
               let pair1 = UInt64::add(la, lb);
               match pair1 {
                 (sum1, carry1) => {
-                  let pair2 = UInt64::add(sum1, [UInt8::from_field(carry), UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0]);
-                  match pair2 {
-                    (sum2, carry2) => {
-
-                      let total_carry = UInt8::to_field(carry1) + UInt8::to_field(carry2);
-                      (&(Lists::Node::Cons(sum2, klimbs_add_carry(ra, rb, total_carry)))) } ,
+                  match carry {
+                    0 => {
+                      (&(Lists::Node::Cons(sum1, klimbs_add_carry(ra, rb, UInt8::to_field(carry1))))) } ,
+                    _ => {
+                      let pair2 = UInt64::add(sum1, [UInt8::BYTE_1, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0]);
+                      match pair2 {
+                        (sum2, carry2) => {
+                          let total_carry = UInt8::to_field(carry1) + UInt8::to_field(carry2);
+                          (&(Lists::Node::Cons(sum2, klimbs_add_carry(ra, rb, total_carry)))) } ,
+                      } } ,
                   } } ,
               } } ,
           } } ,
@@ -102,15 +106,23 @@ def klimbs_sub_borrow := aiur_fn⟦
               let pair1 = UInt64::sub_with_borrow(la, lb);
               match pair1 {
                 (sum1, br1) => {
-                  let pair2 = UInt64::sub_with_borrow(sum1, [UInt8::from_field(borrow), UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0]);
-                  match pair2 {
-                    (sum2, br2) => {
-
-                      let total = br1 + br2;
-                      let rec_pair = klimbs_sub_borrow(ra, rb, total);
+                  match borrow {
+                    0 => {
+                      let rec_pair = klimbs_sub_borrow(ra, rb, br1);
                       match rec_pair {
                         (rest_res, br_final) => {
-                          ((&(Lists::Node::Cons(sum2, rest_res))), br_final) } ,
+                          ((&(Lists::Node::Cons(sum1, rest_res))), br_final) } ,
+                      } } ,
+                    _ => {
+                      let pair2 = UInt64::sub_with_borrow(sum1, [UInt8::BYTE_1, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0]);
+                      match pair2 {
+                        (sum2, br2) => {
+                          let total = br1 + br2;
+                          let rec_pair = klimbs_sub_borrow(ra, rb, total);
+                          match rec_pair {
+                            (rest_res, br_final) => {
+                              ((&(Lists::Node::Cons(sum2, rest_res))), br_final) } ,
+                          } } ,
                       } } ,
                   } } ,
               } } ,
@@ -152,10 +164,13 @@ def klimbs_sub := aiur_fn⟦
 
 def klimbs_le := aiur_fn⟦
   fn klimbs_le(a: KernelTypes::KLimbs, b: KernelTypes::KLimbs) -> Field {
-      let diff = klimbs_sub(a, b);
-      match (*(diff)) {
-        Lists::Node::Nil => {  1 } ,
-        _ => {  0 } ,
+      let pair = klimbs_sub_borrow(a, b, 0);
+      match pair {
+        (result, borrow) => {
+          match borrow {
+            1 => {  1 } ,
+            _ => {  klimbs_is_zero(result) } ,
+          } } ,
       }
     }
 ⟧
@@ -178,19 +193,25 @@ def divmod_256 := aiur_fn⟦
 
 def klimbs_mul := aiur_fn⟦
   fn klimbs_mul(a: KernelTypes::KLimbs, b: KernelTypes::KLimbs) -> KernelTypes::KLimbs {
-      klimbs_mul_outer(a, b, (&(Lists::Node::Nil)), 0)
-    }
-⟧
-
-def klimbs_mul_outer := aiur_fn⟦
-  fn klimbs_mul_outer(a: KernelTypes::KLimbs, b: KernelTypes::KLimbs, acc: KernelTypes::KLimbs, shift: Field) -> KernelTypes::KLimbs {
       match (*(a)) {
-        Lists::Node::Nil => {  acc } ,
+        Lists::Node::Nil => {  a } ,
         Lists::Node::Cons(a_limb, rest) => {
-          let prod = klimbs_mul_single(a_limb, b, [UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0]);
-          let shifted = klimbs_shl_limbs(prod, shift);
-          let new_acc = klimbs_add(acc, shifted);
-          klimbs_mul_outer(rest, b, new_acc, shift + 1) } ,
+          let hi = klimbs_mul(rest, b);
+          match UInt64::is_zero(a_limb) {
+            1 => {
+              match (*(hi)) {
+                Lists::Node::Nil => {  hi } ,
+                _ => {  (&(Lists::Node::Cons([UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0], hi))) } ,
+              } } ,
+            0 => {
+              let prod = klimbs_mul_single(a_limb, b, [UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0]);
+              match (*(hi)) {
+                Lists::Node::Nil => {  prod } ,
+                _ => {
+                  let shifted = (&(Lists::Node::Cons([UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0], hi)));
+                  klimbs_add(prod, shifted) } ,
+              } } ,
+          } } ,
       }
     }
 ⟧
@@ -221,22 +242,15 @@ def klimbs_mul_single := aiur_fn⟦
     }
 ⟧
 
-def klimbs_shl_limbs := aiur_fn⟦
-  fn klimbs_shl_limbs(x: KernelTypes::KLimbs, shift: Field) -> KernelTypes::KLimbs {
-      match shift {
-        0 => {  x } ,
-        _ => {
-          let prepended = (&(Lists::Node::Cons([UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0, UInt8::BYTE_0], x)));
-          klimbs_shl_limbs(prepended, shift - 1) } ,
-      }
-    }
-⟧
-
 def klimbs_is_zero := aiur_fn⟦
   fn klimbs_is_zero(x: KernelTypes::KLimbs) -> Field {
-      match (*(klimbs_normalize(x))) {
+      match (*(x)) {
         Lists::Node::Nil => {  1 } ,
-        _ => {  0 } ,
+        Lists::Node::Cons(limb, rest) => {
+          match UInt64::is_zero(limb) {
+            1 => {  klimbs_is_zero(rest) } ,
+            0 => {  0 } ,
+          } } ,
       }
     }
 ⟧

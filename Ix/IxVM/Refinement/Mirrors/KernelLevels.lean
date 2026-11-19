@@ -109,31 +109,38 @@ def «KernelKlimbs::klimbs_add_carry» : Nat → Heap F → SourceValue F → So
                           matchTuple 2 x_pair1
                             (fun
                               | [x_sum1, x_carry1] =>
-                                (do
-                                  let (v6, h7) ← (do
-                                    let (v8, h9) ← (do
-                                      let (v10, h11) ← mapCall IxVM.source.tables "UInt8::from_field" [x_carry] h5
-                                      some ((.tuple [v10, (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h11))
-                                    «UInt64::add» k h9 x_sum1 v8)
-                                  let x_pair2 := v6
-                                  matchTuple 2 x_pair2
-                                    (fun
-                                      | [x_sum2, x_carry2] =>
-                                        (do
-                                          let (v12, h13) ← (do
-                                            let (v14, h15) ← «UInt8::to_field» k h7 x_carry1
-                                            let (v16, h17) ← «UInt8::to_field» k h15 x_carry2
-                                            match evalBinOp .add v14 v16 with
-                                              | .ok z => some (z, h17)
-                                              | .error _ => none)
-                                          let x_total_carry := v12
+                                if x_carry = .field 0 then
+                                  (do
+                                    let (v20, h21) ← (do
+                                      let (v22, h23) ← (do
+                                        let (v24, h25) ← «UInt8::to_field» k h5 x_carry1
+                                        «KernelKlimbs::klimbs_add_carry» k h25 x_ra x_rb v24)
+                                      some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Cons" [x_sum1, v22] : SourceValue F), h23))
+                                    some ((.ptr v20.type h21.length : SourceValue F), h21 ++ [v20]))
+                                else
+                                  (do
+                                    let (v6, h7) ← (do
+                                      let (v8, h9) ← some ((.tuple [(.field 1), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h5)
+                                      «UInt64::add» k h9 x_sum1 v8)
+                                    let x_pair2 := v6
+                                    matchTuple 2 x_pair2
+                                      (fun
+                                        | [x_sum2, x_carry2] =>
                                           (do
-                                            let (v18, h19) ← (do
-                                              let (v20, h21) ← «KernelKlimbs::klimbs_add_carry» k h13 x_ra x_rb x_total_carry
-                                              some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Cons" [x_sum2, v20] : SourceValue F), h21))
-                                            some ((.ptr v18.type h19.length : SourceValue F), h19 ++ [v18])))
-                                      | _ => none)
-                                    (none))
+                                            let (v10, h11) ← (do
+                                              let (v12, h13) ← «UInt8::to_field» k h7 x_carry1
+                                              let (v14, h15) ← «UInt8::to_field» k h13 x_carry2
+                                              match evalBinOp .add v12 v14 with
+                                                | .ok z => some (z, h15)
+                                                | .error _ => none)
+                                            let x_total_carry := v10
+                                            (do
+                                              let (v16, h17) ← (do
+                                                let (v18, h19) ← «KernelKlimbs::klimbs_add_carry» k h11 x_ra x_rb x_total_carry
+                                                some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Cons" [x_sum2, v18] : SourceValue F), h19))
+                                              some ((.ptr v16.type h17.length : SourceValue F), h17 ++ [v16])))
+                                        | _ => none)
+                                      (none))
                               | _ => none)
                             (none))
                       | _ => none)
@@ -180,31 +187,6 @@ theorem «KernelKlimbs::klimbs_add».of_eval (ih22 : «KernelKlimbs::klimbs_succ
   refine ⟨k21 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
   simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_add», hk22 k' (by omega)]
-
-/-- The mirror of `KernelKlimbs::klimbs_shl_limbs`. -/
-def «KernelKlimbs::klimbs_shl_limbs» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
-  | 0, _, _, _ => none
-  | k + 1, h, x_x, x_shift =>
-    if x_shift = .field 0 then
-      some (x_x, h)
-    else
-      (do
-        let (v0, h1) ← (do
-          let (v2, h3) ← (do
-            let (v4, h5) ← some ((.tuple [(.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h)
-            some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Cons" [v4, x_x] : SourceValue F), h5))
-          some ((.ptr v2.type h3.length : SourceValue F), h3 ++ [v2]))
-        let x_prepended := v0
-        (do
-          let (v6, h7) ← match evalBinOp .sub x_shift (.field 1) with
-            | .ok z => some (z, h1)
-            | .error _ => none
-          «KernelKlimbs::klimbs_shl_limbs» k h7 x_prepended v6))
-
-/-- Every derivation of `KernelKlimbs::klimbs_shl_limbs` is a run of its mirror. -/
-abbrev «KernelKlimbs::klimbs_shl_limbs».Complete : Prop :=
-  ∀ {x_x x_shift : SourceValue F} {h h' : Heap F} {r : SourceValue F},
-    EvalFn W "KernelKlimbs::klimbs_shl_limbs" [x_x, x_shift] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_shl_limbs» k h x_x x_shift = some (r, h')
 
 /-- The mirror of `UInt64::mul_column`. -/
 def «UInt64::mul_column» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -684,7 +666,7 @@ abbrev «UInt64::mul».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "UInt64::mul" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «UInt64::mul» k h x_a x_b = some (r, h')
 
-theorem «UInt64::mul».of_eval (ih25 : «UInt64::mul_column».Complete) : «UInt64::mul».Complete := by
+theorem «UInt64::mul».of_eval (ih24 : «UInt64::mul_column».Complete) : «UInt64::mul».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.UInt64.mul.lookup
     (by simp [IxVM.UInt64.mul, ControlLower.hasControl])
@@ -901,7 +883,7 @@ theorem «UInt64::mul».of_eval (ih25 : «UInt64::mul_column».Complete) : «UIn
   subst l406
   obtain ⟨rfl, rfl⟩ := args398.nil_inv
   rw [instanceName_plain_some] at callee393
-  obtain ⟨k407, hk408⟩ := ih25 callee393
+  obtain ⟨k407, hk408⟩ := ih24 callee393
   obtain ⟨ys409, hp410, hl411, ml412⟩ := matchPattern_tuple_inv mt388
   rcases ys409 with _ | ⟨y413, _ | ⟨y414, _ | ⟨_, _⟩⟩⟩ <;> simp at hl411
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp410
@@ -961,7 +943,7 @@ theorem «UInt64::mul».of_eval (ih25 : «UInt64::mul_column».Complete) : «UIn
   obtain ⟨k525, hk526⟩ := «UInt8::to_field».of_eval callee515
   obtain ⟨rfl, rfl⟩ := args429.nil_inv
   rw [instanceName_plain_some] at callee424
-  obtain ⟨k527, hk528⟩ := ih25 callee424
+  obtain ⟨k527, hk528⟩ := ih24 callee424
   obtain ⟨ys529, hp530, hl531, ml532⟩ := matchPattern_tuple_inv mt419
   rcases ys529 with _ | ⟨y533, _ | ⟨y534, _ | ⟨_, _⟩⟩⟩ <;> simp at hl531
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp530
@@ -1029,7 +1011,7 @@ theorem «UInt64::mul».of_eval (ih25 : «UInt64::mul_column».Complete) : «UIn
   obtain ⟨k659, hk660⟩ := «UInt8::to_field».of_eval callee649
   obtain ⟨rfl, rfl⟩ := args549.nil_inv
   rw [instanceName_plain_some] at callee544
-  obtain ⟨k661, hk662⟩ := ih25 callee544
+  obtain ⟨k661, hk662⟩ := ih24 callee544
   obtain ⟨ys663, hp664, hl665, ml666⟩ := matchPattern_tuple_inv mt539
   rcases ys663 with _ | ⟨y667, _ | ⟨y668, _ | ⟨_, _⟩⟩⟩ <;> simp at hl665
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp664
@@ -1105,7 +1087,7 @@ theorem «UInt64::mul».of_eval (ih25 : «UInt64::mul_column».Complete) : «UIn
   obtain ⟨k807, hk808⟩ := «UInt8::to_field».of_eval callee797
   obtain ⟨rfl, rfl⟩ := args683.nil_inv
   rw [instanceName_plain_some] at callee678
-  obtain ⟨k809, hk810⟩ := ih25 callee678
+  obtain ⟨k809, hk810⟩ := ih24 callee678
   obtain ⟨ys811, hp812, hl813, ml814⟩ := matchPattern_tuple_inv mt673
   rcases ys811 with _ | ⟨y815, _ | ⟨y816, _ | ⟨_, _⟩⟩⟩ <;> simp at hl813
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp812
@@ -1173,7 +1155,7 @@ theorem «UInt64::mul».of_eval (ih25 : «UInt64::mul_column».Complete) : «UIn
   obtain ⟨k941, hk942⟩ := «UInt8::to_field».of_eval callee931
   obtain ⟨rfl, rfl⟩ := args831.nil_inv
   rw [instanceName_plain_some] at callee826
-  obtain ⟨k943, hk944⟩ := ih25 callee826
+  obtain ⟨k943, hk944⟩ := ih24 callee826
   obtain ⟨ys945, hp946, hl947, ml948⟩ := matchPattern_tuple_inv mt821
   rcases ys945 with _ | ⟨y949, _ | ⟨y950, _ | ⟨_, _⟩⟩⟩ <;> simp at hl947
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp946
@@ -1233,7 +1215,7 @@ theorem «UInt64::mul».of_eval (ih25 : «UInt64::mul_column».Complete) : «UIn
   obtain ⟨k1061, hk1062⟩ := «UInt8::to_field».of_eval callee1051
   obtain ⟨rfl, rfl⟩ := args965.nil_inv
   rw [instanceName_plain_some] at callee960
-  obtain ⟨k1063, hk1064⟩ := ih25 callee960
+  obtain ⟨k1063, hk1064⟩ := ih24 callee960
   obtain ⟨ys1065, hp1066, hl1067, ml1068⟩ := matchPattern_tuple_inv mt955
   rcases ys1065 with _ | ⟨y1069, _ | ⟨y1070, _ | ⟨_, _⟩⟩⟩ <;> simp at hl1067
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp1066
@@ -1285,7 +1267,7 @@ theorem «UInt64::mul».of_eval (ih25 : «UInt64::mul_column».Complete) : «UIn
   obtain ⟨k1167, hk1168⟩ := «UInt8::to_field».of_eval callee1157
   obtain ⟨rfl, rfl⟩ := args1085.nil_inv
   rw [instanceName_plain_some] at callee1080
-  obtain ⟨k1169, hk1170⟩ := ih25 callee1080
+  obtain ⟨k1169, hk1170⟩ := ih24 callee1080
   obtain ⟨ys1171, hp1172, hl1173, ml1174⟩ := matchPattern_tuple_inv mt1075
   rcases ys1171 with _ | ⟨y1175, _ | ⟨y1176, _ | ⟨_, _⟩⟩⟩ <;> simp at hl1173
   try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp1172
@@ -1469,86 +1451,69 @@ abbrev «KernelKlimbs::klimbs_mul_single».Complete : Prop :=
   ∀ {x_a_limb x_b x_carry : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_mul_single" [x_a_limb, x_b, x_carry] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_mul_single» k h x_a_limb x_b x_carry = some (r, h')
 
-/-- The mirror of `KernelKlimbs::klimbs_mul_outer`. -/
-def «KernelKlimbs::klimbs_mul_outer» : Nat → Heap F → SourceValue F → SourceValue F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
-  | 0, _, _, _, _, _ => none
-  | k + 1, h, x_a, x_b, x_acc, x_shift =>
+/-- The mirror of `KernelKlimbs::klimbs_mul`. -/
+def «KernelKlimbs::klimbs_mul» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _, _ => none
+  | k + 1, h, x_a, x_b =>
     (do
       let (v0, h1) ← match loadValue h x_a with
         | .ok z => some (z, h)
         | .error _ => none
       matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v0
         (fun _ =>
-          some (x_acc, h1))
+          some (x_a, h1))
         (matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Cons" 2 v0
           (fun
             | [x_a_limb, x_rest] =>
               (do
-                let (v2, h3) ← (do
-                  let (v4, h5) ← some ((.tuple [(.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h1)
-                  «KernelKlimbs::klimbs_mul_single» k h5 x_a_limb x_b v4)
-                let x_prod := v2
+                let (v2, h3) ← «KernelKlimbs::klimbs_mul» k h1 x_rest x_b
+                let x_hi := v2
                 (do
-                  let (v6, h7) ← «KernelKlimbs::klimbs_shl_limbs» k h3 x_prod x_shift
-                  let x_shifted := v6
-                  (do
-                    let (v8, h9) ← «KernelKlimbs::klimbs_add» k h7 x_acc x_shifted
-                    let x_new_acc := v8
+                  let (v4, h5) ← «UInt64::is_zero» k h3 x_a_limb
+                  if v4 = .field 1 then
                     (do
-                      let (v10, h11) ← match evalBinOp .add x_shift (.field 1) with
-                        | .ok z => some (z, h9)
+                      let (v18, h19) ← match loadValue h5 x_hi with
+                        | .ok z => some (z, h5)
                         | .error _ => none
-                      «KernelKlimbs::klimbs_mul_outer» k h11 x_rest x_b x_new_acc v10))))
+                      matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v18
+                        (fun _ =>
+                          some (x_hi, h19))
+                        ((do
+                          let (v20, h21) ← (do
+                            let (v22, h23) ← some ((.tuple [(.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h19)
+                            some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Cons" [v22, x_hi] : SourceValue F), h23))
+                          some ((.ptr v20.type h21.length : SourceValue F), h21 ++ [v20]))))
+                  else
+                    if v4 = .field 0 then
+                      (do
+                        let (v6, h7) ← (do
+                          let (v8, h9) ← some ((.tuple [(.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h5)
+                          «KernelKlimbs::klimbs_mul_single» k h9 x_a_limb x_b v8)
+                        let x_prod := v6
+                        (do
+                          let (v10, h11) ← match loadValue h7 x_hi with
+                            | .ok z => some (z, h7)
+                            | .error _ => none
+                          matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v10
+                            (fun _ =>
+                              some (x_prod, h11))
+                            ((do
+                              let (v12, h13) ← (do
+                                let (v14, h15) ← (do
+                                  let (v16, h17) ← some ((.tuple [(.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h11)
+                                  some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Cons" [v16, x_hi] : SourceValue F), h17))
+                                some ((.ptr v14.type h15.length : SourceValue F), h15 ++ [v14]))
+                              let x_shifted := v12
+                              «KernelKlimbs::klimbs_add» k h13 x_prod x_shifted))))
+                    else
+                      none))
             | _ => none)
           (none)))
-
-/-- Every derivation of `KernelKlimbs::klimbs_mul_outer` is a run of its mirror. -/
-abbrev «KernelKlimbs::klimbs_mul_outer».Complete : Prop :=
-  ∀ {x_a x_b x_acc x_shift : SourceValue F} {h h' : Heap F} {r : SourceValue F},
-    EvalFn W "KernelKlimbs::klimbs_mul_outer" [x_a, x_b, x_acc, x_shift] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_mul_outer» k h x_a x_b x_acc x_shift = some (r, h')
-
-/-- The mirror of `KernelKlimbs::klimbs_mul`. -/
-def «KernelKlimbs::klimbs_mul» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
-  | 0, _, _, _ => none
-  | k + 1, h, x_a, x_b =>
-    (do
-      let (v0, h1) ← (do
-        let (v2, h3) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Nil" [] : SourceValue F), h)
-        some ((.ptr v2.type h3.length : SourceValue F), h3 ++ [v2]))
-      «KernelKlimbs::klimbs_mul_outer» k h1 x_a x_b v0 (.field 0))
 
 /-- Every derivation of `KernelKlimbs::klimbs_mul` is a run of its mirror. -/
 abbrev «KernelKlimbs::klimbs_mul».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_mul" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_mul» k h x_a x_b = some (r, h')
-
-theorem «KernelKlimbs::klimbs_mul».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih25 : «UInt64::mul_column».Complete) (ih26 : «KernelKlimbs::klimbs_mul_single».Complete) (ih27 : «KernelKlimbs::klimbs_mul_outer».Complete) : «KernelKlimbs::klimbs_mul».Complete := by
-  intro x_a x_b h h' r ev
-  have body := ev.function_inv IxVM.KernelKlimbs.klimbs_mul.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_mul, ControlLower.hasControl])
-  simp only [IxVM.KernelKlimbs.klimbs_mul] at body
-  obtain ⟨vs0, m1, args2, callee3⟩ := body.call_inv
-  obtain ⟨v4, vs5, m6, rfl, d7, args8⟩ := args2.cons_inv
-  obtain ⟨l9, rfl⟩ := d7.var_inv
-  simp at l9
-  subst l9
-  obtain ⟨v10, vs11, m12, rfl, d13, args14⟩ := args8.cons_inv
-  obtain ⟨l15, rfl⟩ := d13.var_inv
-  simp at l15
-  subst l15
-  obtain ⟨v16, vs17, m18, rfl, d19, args20⟩ := args14.cons_inv
-  obtain ⟨v21, m22, d23, rfl, rfl⟩ := d19.store_inv
-  obtain ⟨vs24, args25, rfl⟩ := d23.construct_inv
-  obtain ⟨rfl, rfl⟩ := args25.nil_inv
-  obtain ⟨v26, vs27, m28, rfl, d29, args30⟩ := args20.cons_inv
-  obtain ⟨rfl, rfl⟩ := d29.literal_inv
-  obtain ⟨rfl, rfl⟩ := args30.nil_inv
-  rw [instanceName_plain_some] at callee3
-  obtain ⟨k31, hk32⟩ := ih27 callee3
-  try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk32
-  refine ⟨k31 + 1, fun k hk => ?_⟩
-  obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-  simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_mul», hk32 k' (by omega)]
 
 /-- The mirror of `KernelKlimbs::klimbs_normalize`. -/
 def «KernelKlimbs::klimbs_normalize» : Nat → Heap F → SourceValue F → Option (SourceValue F × Heap F)
@@ -1608,52 +1573,31 @@ def «KernelKlimbs::klimbs_is_zero» : Nat → Heap F → SourceValue F → Opti
   | 0, _, _ => none
   | k + 1, h, x_x =>
     (do
-      let (v0, h1) ← (do
-        let (v2, h3) ← «KernelKlimbs::klimbs_normalize» k h x_x
-        match loadValue h3 v2 with
-          | .ok z => some (z, h3)
-          | .error _ => none)
+      let (v0, h1) ← match loadValue h x_x with
+        | .ok z => some (z, h)
+        | .error _ => none
       matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v0
         (fun _ =>
           some ((.field 1), h1))
-        (some ((.field 0), h1)))
+        (matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Cons" 2 v0
+          (fun
+            | [x_limb, x_rest] =>
+              (do
+                let (v2, h3) ← «UInt64::is_zero» k h1 x_limb
+                if v2 = .field 1 then
+                  «KernelKlimbs::klimbs_is_zero» k h3 x_rest
+                else
+                  if v2 = .field 0 then
+                    some ((.field 0), h3)
+                  else
+                    none)
+            | _ => none)
+          (none)))
 
 /-- Every derivation of `KernelKlimbs::klimbs_is_zero` is a run of its mirror. -/
 abbrev «KernelKlimbs::klimbs_is_zero».Complete : Prop :=
   ∀ {x_x : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_is_zero" [x_x] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_is_zero» k h x_x = some (r, h')
-
-theorem «KernelKlimbs::klimbs_is_zero».of_eval (ih28 : «KernelKlimbs::klimbs_normalize».Complete) : «KernelKlimbs::klimbs_is_zero».Complete := by
-  intro x_x h h' r ev
-  have body := ev.function_inv IxVM.KernelKlimbs.klimbs_is_zero.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_is_zero, ControlLower.hasControl])
-  simp only [IxVM.KernelKlimbs.klimbs_is_zero] at body
-  obtain ⟨v0, m1, bs2, body3, d4, sel5, d6⟩ := body.matchValue_inv
-  obtain ⟨p7, d8, ld9⟩ := d4.load_inv
-  obtain ⟨vs10, m11, args12, callee13⟩ := d8.call_inv
-  obtain ⟨v14, vs15, m16, rfl, d17, args18⟩ := args12.cons_inv
-  obtain ⟨l19, rfl⟩ := d17.var_inv
-  simp at l19
-  subst l19
-  obtain ⟨rfl, rfl⟩ := args18.nil_inv
-  rw [instanceName_plain_some] at callee13
-  obtain ⟨k20, hk21⟩ := ih28 callee13
-  try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk21
-  rcases selectArm_construct_inv (by trivial) sel5 with ⟨ys22, hp23, hl24, ml25, rfl⟩ | ⟨hc26, sel27⟩
-  · rcases ys22 with _ | ⟨_, _⟩ <;> simp at hl24
-    simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml25
-    subst ml25
-    try rw [hp23] at d6
-    obtain ⟨rfl, rfl⟩ := d6.literal_inv
-    refine ⟨k20 + 1, fun k hk => ?_⟩
-    obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_is_zero», ld9, hk21 k' (by omega), hp23]
-  · dsimp only [List.length] at hc26
-    obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel27
-    obtain ⟨rfl, rfl⟩ := d6.literal_inv
-    refine ⟨k20 + 1, fun k hk => ?_⟩
-    obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_is_zero», ld9, hk21 k' (by omega), hc26]
 
 /-- The mirror of `KernelKlimbs::klimbs_sub_borrow`. -/
 def «KernelKlimbs::klimbs_sub_borrow» : Nat → Heap F → SourceValue F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -1666,33 +1610,33 @@ def «KernelKlimbs::klimbs_sub_borrow» : Nat → Heap F → SourceValue F → S
       matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v0
         (fun _ =>
           (do
-            let (v34, h35) ← match loadValue h1 x_b with
+            let (v38, h39) ← match loadValue h1 x_b with
               | .ok z => some (z, h1)
               | .error _ => none
-            matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v34
+            matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v38
               (fun _ =>
                 (do
-                  let (v46, h47) ← (do
-                    let (v48, h49) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Nil" [] : SourceValue F), h35)
-                    some ((.ptr v48.type h49.length : SourceValue F), h49 ++ [v48]))
-                  some ((.tuple [v46, x_borrow] : SourceValue F), h47)))
-              (matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Cons" 2 v34
+                  let (v50, h51) ← (do
+                    let (v52, h53) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Nil" [] : SourceValue F), h39)
+                    some ((.ptr v52.type h53.length : SourceValue F), h53 ++ [v52]))
+                  some ((.tuple [v50, x_borrow] : SourceValue F), h51)))
+              (matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Cons" 2 v38
                 (fun
                   | [_, _] =>
                     (do
-                      let (v36, h37) ← «KernelKlimbs::klimbs_is_zero» k h35 x_b
-                      if v36 = .field 1 then
+                      let (v40, h41) ← «KernelKlimbs::klimbs_is_zero» k h39 x_b
+                      if v40 = .field 1 then
                         (do
-                          let (v42, h43) ← (do
-                            let (v44, h45) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Nil" [] : SourceValue F), h37)
-                            some ((.ptr v44.type h45.length : SourceValue F), h45 ++ [v44]))
-                          some ((.tuple [v42, x_borrow] : SourceValue F), h43))
+                          let (v46, h47) ← (do
+                            let (v48, h49) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Nil" [] : SourceValue F), h41)
+                            some ((.ptr v48.type h49.length : SourceValue F), h49 ++ [v48]))
+                          some ((.tuple [v46, x_borrow] : SourceValue F), h47))
                       else
                         (do
-                          let (v38, h39) ← (do
-                            let (v40, h41) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Nil" [] : SourceValue F), h37)
-                            some ((.ptr v40.type h41.length : SourceValue F), h41 ++ [v40]))
-                          some ((.tuple [v38, (.field 1)] : SourceValue F), h39)))
+                          let (v42, h43) ← (do
+                            let (v44, h45) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Nil" [] : SourceValue F), h41)
+                            some ((.ptr v44.type h45.length : SourceValue F), h45 ++ [v44]))
+                          some ((.tuple [v42, (.field 1)] : SourceValue F), h43)))
                   | _ => none)
                 (none))))
         (matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Cons" 2 v0
@@ -1708,28 +1652,28 @@ def «KernelKlimbs::klimbs_sub_borrow» : Nat → Heap F → SourceValue F → S
                       some ((.tuple [x_a, (.field 0)] : SourceValue F), h3)
                     else
                       (do
-                        let (v20, h21) ← (do
-                          let (v22, h23) ← some ((.tuple [(.field 1), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h3)
-                          «UInt64::sub_with_borrow» k h23 x_la v22)
-                        let x_pair := v20
+                        let (v24, h25) ← (do
+                          let (v26, h27) ← some ((.tuple [(.field 1), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h3)
+                          «UInt64::sub_with_borrow» k h27 x_la v26)
+                        let x_pair := v24
                         matchTuple 2 x_pair
                           (fun
                             | [x_diff, x_br] =>
                               (do
-                                let (v24, h25) ← (do
-                                  let (v26, h27) ← (do
-                                    let (v28, h29) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Nil" [] : SourceValue F), h21)
-                                    some ((.ptr v28.type h29.length : SourceValue F), h29 ++ [v28]))
-                                  «KernelKlimbs::klimbs_sub_borrow» k h27 x_ra v26 x_br)
-                                let x_pair2 := v24
+                                let (v28, h29) ← (do
+                                  let (v30, h31) ← (do
+                                    let (v32, h33) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Nil" [] : SourceValue F), h25)
+                                    some ((.ptr v32.type h33.length : SourceValue F), h33 ++ [v32]))
+                                  «KernelKlimbs::klimbs_sub_borrow» k h31 x_ra v30 x_br)
+                                let x_pair2 := v28
                                 matchTuple 2 x_pair2
                                   (fun
                                     | [x_rest_res, x_br2] =>
                                       (do
-                                        let (v30, h31) ← (do
-                                          let (v32, h33) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Cons" [x_diff, x_rest_res] : SourceValue F), h25)
-                                          some ((.ptr v32.type h33.length : SourceValue F), h33 ++ [v32]))
-                                        some ((.tuple [v30, x_br2] : SourceValue F), h31))
+                                        let (v34, h35) ← (do
+                                          let (v36, h37) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Cons" [x_diff, x_rest_res] : SourceValue F), h29)
+                                          some ((.ptr v36.type h37.length : SourceValue F), h37 ++ [v36]))
+                                        some ((.tuple [v34, x_br2] : SourceValue F), h35))
                                     | _ => none)
                                   (none))
                             | _ => none)
@@ -1743,36 +1687,49 @@ def «KernelKlimbs::klimbs_sub_borrow» : Nat → Heap F → SourceValue F → S
                           matchTuple 2 x_pair1
                             (fun
                               | [x_sum1, x_br1] =>
-                                (do
-                                  let (v6, h7) ← (do
-                                    let (v8, h9) ← (do
-                                      let (v10, h11) ← mapCall IxVM.source.tables "UInt8::from_field" [x_borrow] h5
-                                      some ((.tuple [v10, (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h11))
-                                    «UInt64::sub_with_borrow» k h9 x_sum1 v8)
-                                  let x_pair2 := v6
-                                  matchTuple 2 x_pair2
-                                    (fun
-                                      | [x_sum2, x_br2] =>
-                                        (do
-                                          let (v12, h13) ← match evalBinOp .add x_br1 x_br2 with
-                                            | .ok z => some (z, h7)
-                                            | .error _ => none
-                                          let x_total := v12
+                                if x_borrow = .field 0 then
+                                  (do
+                                    let (v18, h19) ← «KernelKlimbs::klimbs_sub_borrow» k h5 x_ra x_rb x_br1
+                                    let x_rec_pair := v18
+                                    matchTuple 2 x_rec_pair
+                                      (fun
+                                        | [x_rest_res, x_br_final] =>
                                           (do
-                                            let (v14, h15) ← «KernelKlimbs::klimbs_sub_borrow» k h13 x_ra x_rb x_total
-                                            let x_rec_pair := v14
-                                            matchTuple 2 x_rec_pair
-                                              (fun
-                                                | [x_rest_res, x_br_final] =>
-                                                  (do
-                                                    let (v16, h17) ← (do
-                                                      let (v18, h19) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Cons" [x_sum2, x_rest_res] : SourceValue F), h15)
-                                                      some ((.ptr v18.type h19.length : SourceValue F), h19 ++ [v18]))
-                                                    some ((.tuple [v16, x_br_final] : SourceValue F), h17))
-                                                | _ => none)
-                                              (none)))
-                                      | _ => none)
-                                    (none))
+                                            let (v20, h21) ← (do
+                                              let (v22, h23) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Cons" [x_sum1, x_rest_res] : SourceValue F), h19)
+                                              some ((.ptr v22.type h23.length : SourceValue F), h23 ++ [v22]))
+                                            some ((.tuple [v20, x_br_final] : SourceValue F), h21))
+                                        | _ => none)
+                                      (none))
+                                else
+                                  (do
+                                    let (v6, h7) ← (do
+                                      let (v8, h9) ← some ((.tuple [(.field 1), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0), (.field 0)] : SourceValue F), h5)
+                                      «UInt64::sub_with_borrow» k h9 x_sum1 v8)
+                                    let x_pair2 := v6
+                                    matchTuple 2 x_pair2
+                                      (fun
+                                        | [x_sum2, x_br2] =>
+                                          (do
+                                            let (v10, h11) ← match evalBinOp .add x_br1 x_br2 with
+                                              | .ok z => some (z, h7)
+                                              | .error _ => none
+                                            let x_total := v10
+                                            (do
+                                              let (v12, h13) ← «KernelKlimbs::klimbs_sub_borrow» k h11 x_ra x_rb x_total
+                                              let x_rec_pair := v12
+                                              matchTuple 2 x_rec_pair
+                                                (fun
+                                                  | [x_rest_res, x_br_final] =>
+                                                    (do
+                                                      let (v14, h15) ← (do
+                                                        let (v16, h17) ← some ((.construct (instanceName [] "Lists::Node" (some [(.array .field 8)])) "Cons" [x_sum2, x_rest_res] : SourceValue F), h13)
+                                                        some ((.ptr v16.type h17.length : SourceValue F), h17 ++ [v16]))
+                                                      some ((.tuple [v14, x_br_final] : SourceValue F), h15))
+                                                  | _ => none)
+                                                (none)))
+                                        | _ => none)
+                                      (none))
                               | _ => none)
                             (none))
                       | _ => none)
@@ -1784,6 +1741,138 @@ def «KernelKlimbs::klimbs_sub_borrow» : Nat → Heap F → SourceValue F → S
 abbrev «KernelKlimbs::klimbs_sub_borrow».Complete : Prop :=
   ∀ {x_a x_b x_borrow : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_sub_borrow" [x_a, x_b, x_borrow] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_sub_borrow» k h x_a x_b x_borrow = some (r, h')
+
+/-- The mirror of `KernelKlimbs::klimbs_le`. -/
+def «KernelKlimbs::klimbs_le» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _, _ => none
+  | k + 1, h, x_a, x_b =>
+    (do
+      let (v0, h1) ← «KernelKlimbs::klimbs_sub_borrow» k h x_a x_b (.field 0)
+      let x_pair := v0
+      matchTuple 2 x_pair
+        (fun
+          | [x_result, x_borrow] =>
+            if x_borrow = .field 1 then
+              some ((.field 1), h1)
+            else
+              «KernelKlimbs::klimbs_is_zero» k h1 x_result
+          | _ => none)
+        (none))
+
+/-- Every derivation of `KernelKlimbs::klimbs_le` is a run of its mirror. -/
+abbrev «KernelKlimbs::klimbs_le».Complete : Prop :=
+  ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "KernelKlimbs::klimbs_le" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_le» k h x_a x_b = some (r, h')
+
+theorem «KernelKlimbs::klimbs_le».of_eval (ih28 : «KernelKlimbs::klimbs_is_zero».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) : «KernelKlimbs::klimbs_le».Complete := by
+  intro x_a x_b h h' r ev
+  have body := ev.function_inv IxVM.KernelKlimbs.klimbs_le.lookup
+    (by simp [IxVM.KernelKlimbs.klimbs_le, ControlLower.hasControl])
+  simp only [IxVM.KernelKlimbs.klimbs_le] at body
+  obtain ⟨v0, m1, bs2, d3, mt4, d5⟩ := body.letValue_inv
+  obtain ⟨vs6, m7, args8, callee9⟩ := d3.call_inv
+  obtain ⟨v10, vs11, m12, rfl, d13, args14⟩ := args8.cons_inv
+  obtain ⟨l15, rfl⟩ := d13.var_inv
+  simp at l15
+  subst l15
+  obtain ⟨v16, vs17, m18, rfl, d19, args20⟩ := args14.cons_inv
+  obtain ⟨l21, rfl⟩ := d19.var_inv
+  simp at l21
+  subst l21
+  obtain ⟨v22, vs23, m24, rfl, d25, args26⟩ := args20.cons_inv
+  obtain ⟨rfl, rfl⟩ := d25.literal_inv
+  obtain ⟨rfl, rfl⟩ := args26.nil_inv
+  rw [instanceName_plain_some] at callee9
+  obtain ⟨k27, hk28⟩ := ih29 callee9
+  try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk28
+  rw [matchPattern_bind] at mt4
+  simp only [Except.ok.injEq, Option.some.injEq] at mt4
+  subst mt4
+  obtain ⟨v29, m30, bs31, body32, d33, sel34, d35⟩ := d5.matchValue_inv
+  obtain ⟨l36, rfl⟩ := d33.var_inv
+  simp at l36
+  subst l36
+  rcases selectArm_tuple_inv (by trivial) sel34 with ⟨ys37, hp38, hl39, ml40, rfl⟩ | ⟨hc41, sel42⟩
+  · rcases ys37 with _ | ⟨y43, _ | ⟨y44, _ | ⟨_, _⟩⟩⟩ <;> simp at hl39
+    try simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hp38
+    simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml40
+    subst ml40
+    try rw [hp38] at d35
+    obtain ⟨v45, m46, bs47, body48, d49, sel50, d51⟩ := d35.matchValue_inv
+    obtain ⟨l52, rfl⟩ := d49.var_inv
+    simp at l52
+    subst l52
+    rcases selectArm_literal_inv sel50 with ⟨hc53, rfl, rfl⟩ | ⟨hc53, sel54⟩
+    · obtain ⟨rfl, rfl⟩ := d51.literal_inv
+      refine ⟨k27 + 1, fun k hk => ?_⟩
+      obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_le», hk28 k' (by omega), hp38, hc53]
+    · obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel54
+      obtain ⟨vs55, m56, args57, callee58⟩ := d51.call_inv
+      obtain ⟨v59, vs60, m61, rfl, d62, args63⟩ := args57.cons_inv
+      obtain ⟨l64, rfl⟩ := d62.var_inv
+      simp at l64
+      subst l64
+      obtain ⟨rfl, rfl⟩ := args63.nil_inv
+      rw [instanceName_plain_some] at callee58
+      obtain ⟨k65, hk66⟩ := ih28 callee58
+      try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk66
+      refine ⟨k27 + k65 + 1, fun k hk => ?_⟩
+      obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+      simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_le», hk28 k' (by omega), hp38, hc53, hk66 k' (by omega)]
+  · dsimp only [List.length] at hc41
+    simp [SourceSemantics.selectArm] at sel42
+
+/-- The mirror of `KernelLevels::klimbs_eq`. -/
+def «KernelLevels::klimbs_eq» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
+  | 0, _, _, _ => none
+  | k + 1, h, x_a, x_b =>
+    (do
+      let (v0, h1) ← match loadValue h x_a with
+        | .ok z => some (z, h)
+        | .error _ => none
+      matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v0
+        (fun _ =>
+          (do
+            let (v6, h7) ← match loadValue h1 x_b with
+              | .ok z => some (z, h1)
+              | .error _ => none
+            matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v6
+              (fun _ =>
+                some ((.field 1), h7))
+              (some ((.field 0), h7))))
+        (matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Cons" 2 v0
+          (fun
+            | [x_la, x_ra] =>
+              (do
+                let (v2, h3) ← match loadValue h1 x_b with
+                  | .ok z => some (z, h1)
+                  | .error _ => none
+                matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v2
+                  (fun _ =>
+                    some ((.field 0), h3))
+                  (matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Cons" 2 v2
+                    (fun
+                      | [x_lb, x_rb] =>
+                        (do
+                          let (v4, h5) ← «UInt64::eq» k h3 x_la x_lb
+                          let x_eq := v4
+                          if x_eq = .field 1 then
+                            «KernelLevels::klimbs_eq» k h5 x_ra x_rb
+                          else
+                            if x_eq = .field 0 then
+                              some ((.field 0), h5)
+                            else
+                              none)
+                      | _ => none)
+                    (none)))
+            | _ => none)
+          (none)))
+
+/-- Every derivation of `KernelLevels::klimbs_eq` is a run of its mirror. -/
+abbrev «KernelLevels::klimbs_eq».Complete : Prop :=
+  ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
+    EvalFn W "KernelLevels::klimbs_eq" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelLevels::klimbs_eq» k h x_a x_b = some (r, h')
 
 /-- The mirror of `KernelKlimbs::klimbs_sub`. -/
 def «KernelKlimbs::klimbs_sub» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -1812,7 +1901,7 @@ abbrev «KernelKlimbs::klimbs_sub».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_sub" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_sub» k h x_a x_b = some (r, h')
 
-theorem «KernelKlimbs::klimbs_sub».of_eval (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) : «KernelKlimbs::klimbs_sub».Complete := by
+theorem «KernelKlimbs::klimbs_sub».of_eval (ih27 : «KernelKlimbs::klimbs_normalize».Complete) (ih28 : «KernelKlimbs::klimbs_is_zero».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) : «KernelKlimbs::klimbs_sub».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_sub.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_sub, ControlLower.hasControl])
@@ -1865,7 +1954,7 @@ theorem «KernelKlimbs::klimbs_sub».of_eval (ih28 : «KernelKlimbs::klimbs_norm
         subst l71
         obtain ⟨rfl, rfl⟩ := args70.nil_inv
         rw [instanceName_plain_some] at callee65
-        obtain ⟨k72, hk73⟩ := ih28 callee65
+        obtain ⟨k72, hk73⟩ := ih27 callee65
         try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk73
         refine ⟨k27 + k72 + 1, fun k hk => ?_⟩
         obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
@@ -1873,121 +1962,6 @@ theorem «KernelKlimbs::klimbs_sub».of_eval (ih28 : «KernelKlimbs::klimbs_norm
       · simp [SourceSemantics.selectArm] at sel61
   · dsimp only [List.length] at hc41
     simp [SourceSemantics.selectArm] at sel42
-
-/-- The mirror of `KernelKlimbs::klimbs_le`. -/
-def «KernelKlimbs::klimbs_le» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
-  | 0, _, _, _ => none
-  | k + 1, h, x_a, x_b =>
-    (do
-      let (v0, h1) ← «KernelKlimbs::klimbs_sub» k h x_a x_b
-      let x_diff := v0
-      (do
-        let (v2, h3) ← match loadValue h1 x_diff with
-          | .ok z => some (z, h1)
-          | .error _ => none
-        matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v2
-          (fun _ =>
-            some ((.field 1), h3))
-          (some ((.field 0), h3))))
-
-/-- Every derivation of `KernelKlimbs::klimbs_le` is a run of its mirror. -/
-abbrev «KernelKlimbs::klimbs_le».Complete : Prop :=
-  ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
-    EvalFn W "KernelKlimbs::klimbs_le" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_le» k h x_a x_b = some (r, h')
-
-theorem «KernelKlimbs::klimbs_le».of_eval (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) : «KernelKlimbs::klimbs_le».Complete := by
-  intro x_a x_b h h' r ev
-  have body := ev.function_inv IxVM.KernelKlimbs.klimbs_le.lookup
-    (by simp [IxVM.KernelKlimbs.klimbs_le, ControlLower.hasControl])
-  simp only [IxVM.KernelKlimbs.klimbs_le] at body
-  obtain ⟨v0, m1, bs2, d3, mt4, d5⟩ := body.letValue_inv
-  obtain ⟨vs6, m7, args8, callee9⟩ := d3.call_inv
-  obtain ⟨v10, vs11, m12, rfl, d13, args14⟩ := args8.cons_inv
-  obtain ⟨l15, rfl⟩ := d13.var_inv
-  simp at l15
-  subst l15
-  obtain ⟨v16, vs17, m18, rfl, d19, args20⟩ := args14.cons_inv
-  obtain ⟨l21, rfl⟩ := d19.var_inv
-  simp at l21
-  subst l21
-  obtain ⟨rfl, rfl⟩ := args20.nil_inv
-  rw [instanceName_plain_some] at callee9
-  obtain ⟨k22, hk23⟩ := «KernelKlimbs::klimbs_sub».of_eval ih28 ih29 callee9
-  try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk23
-  rw [matchPattern_bind] at mt4
-  simp only [Except.ok.injEq, Option.some.injEq] at mt4
-  subst mt4
-  obtain ⟨v24, m25, bs26, body27, d28, sel29, d30⟩ := d5.matchValue_inv
-  obtain ⟨p31, d32, ld33⟩ := d28.load_inv
-  obtain ⟨l34, rfl⟩ := d32.var_inv
-  simp at l34
-  subst l34
-  rcases selectArm_construct_inv (by trivial) sel29 with ⟨ys35, hp36, hl37, ml38, rfl⟩ | ⟨hc39, sel40⟩
-  · rcases ys35 with _ | ⟨_, _⟩ <;> simp at hl37
-    simp [matchListWith, matchPattern_bind, matchPattern_wildcard, bind, Except.bind, pure, Except.pure] at ml38
-    subst ml38
-    try rw [hp36] at d30
-    obtain ⟨rfl, rfl⟩ := d30.literal_inv
-    refine ⟨k22 + 1, fun k hk => ?_⟩
-    obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_le», hk23 k' (by omega), ld33, hp36]
-  · dsimp only [List.length] at hc39
-    obtain ⟨rfl, rfl⟩ := selectArm_wildcard_inv sel40
-    obtain ⟨rfl, rfl⟩ := d30.literal_inv
-    refine ⟨k22 + 1, fun k hk => ?_⟩
-    obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    simp (config := { decide := true, maxSteps := 10000000 }) only [mirror_eval, bind, Option.bind, pure, Pure.pure, «KernelKlimbs::klimbs_le», hk23 k' (by omega), ld33, hc39]
-
-/-- The mirror of `KernelLevels::klimbs_eq`. -/
-def «KernelLevels::klimbs_eq» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
-  | 0, _, _, _ => none
-  | k + 1, h, x_a, x_b =>
-    (do
-      let (v0, h1) ← match loadValue h x_a with
-        | .ok z => some (z, h)
-        | .error _ => none
-      matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v0
-        (fun _ =>
-          (do
-            let (v6, h7) ← match loadValue h1 x_b with
-              | .ok z => some (z, h1)
-              | .error _ => none
-            matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v6
-              (fun _ =>
-                some ((.field 1), h7))
-              (some ((.field 0), h7))))
-        (matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Cons" 2 v0
-          (fun
-            | [x_la, x_ra] =>
-              (do
-                let (v2, h3) ← match loadValue h1 x_b with
-                  | .ok z => some (z, h1)
-                  | .error _ => none
-                matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Nil" 0 v2
-                  (fun _ =>
-                    some ((.field 0), h3))
-                  (matchConstruct (constructorName [] (.named "Lists::Node" [(.array .field 8)])) "Cons" 2 v2
-                    (fun
-                      | [x_lb, x_rb] =>
-                        (do
-                          let (v4, h5) ← «UInt64::eq» k h3 x_la x_lb
-                          let x_eq := v4
-                          if x_eq = .field 1 then
-                            «KernelLevels::klimbs_eq» k h5 x_ra x_rb
-                          else
-                            if x_eq = .field 0 then
-                              some ((.field 0), h5)
-                            else
-                              none)
-                      | _ => none)
-                    (none)))
-            | _ => none)
-          (none)))
-
-/-- Every derivation of `KernelLevels::klimbs_eq` is a run of its mirror. -/
-abbrev «KernelLevels::klimbs_eq».Complete : Prop :=
-  ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
-    EvalFn W "KernelLevels::klimbs_eq" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelLevels::klimbs_eq» k h x_a x_b = some (r, h')
 
 /-- The mirror of `IxVMCompat::divide_grow`. -/
 def «IxVMCompat::divide_grow» : Nat → Heap F → SourceValue F → SourceValue F → Option (SourceValue F × Heap F)
@@ -2053,7 +2027,7 @@ abbrev «IxVMCompat::ordinary_div_mod».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "IxVMCompat::ordinary_div_mod" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «IxVMCompat::ordinary_div_mod» k h x_a x_b = some (r, h')
 
-theorem «IxVMCompat::ordinary_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) : «IxVMCompat::ordinary_div_mod».Complete := by
+theorem «IxVMCompat::ordinary_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih27 : «KernelKlimbs::klimbs_normalize».Complete) (ih28 : «KernelKlimbs::klimbs_is_zero».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) : «IxVMCompat::ordinary_div_mod».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.IxVMCompat.ordinary_div_mod.lookup
     (by simp [IxVM.IxVMCompat.ordinary_div_mod, ControlLower.hasControl])
@@ -2066,7 +2040,7 @@ theorem «IxVMCompat::ordinary_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_
   subst l15
   obtain ⟨rfl, rfl⟩ := args14.nil_inv
   rw [instanceName_plain_some] at callee9
-  obtain ⟨k16, hk17⟩ := ih28 callee9
+  obtain ⟨k16, hk17⟩ := ih27 callee9
   rw [matchPattern_bind] at mt4
   simp only [Except.ok.injEq, Option.some.injEq] at mt4
   subst mt4
@@ -2078,7 +2052,7 @@ theorem «IxVMCompat::ordinary_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_
   subst l33
   obtain ⟨rfl, rfl⟩ := args32.nil_inv
   rw [instanceName_plain_some] at callee27
-  obtain ⟨k34, hk35⟩ := ih28 callee27
+  obtain ⟨k34, hk35⟩ := ih27 callee27
   rw [matchPattern_bind] at mt22
   simp only [Except.ok.injEq, Option.some.injEq] at mt22
   subst mt22
@@ -2090,7 +2064,7 @@ theorem «IxVMCompat::ordinary_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_
   subst l52
   obtain ⟨rfl, rfl⟩ := args51.nil_inv
   rw [instanceName_plain_some] at callee46
-  obtain ⟨k53, hk54⟩ := «KernelKlimbs::klimbs_is_zero».of_eval ih28 callee46
+  obtain ⟨k53, hk54⟩ := ih28 callee46
   rcases selectArm_literal_inv sel41 with ⟨hc55, rfl, rfl⟩ | ⟨hc55, sel56⟩
   · obtain ⟨vs57, args58, rfl⟩ := d42.tuple_inv
     obtain ⟨v59, vs60, m61, rfl, d62, args63⟩ := args58.cons_inv
@@ -2183,7 +2157,7 @@ abbrev «KernelKlimbs::klimbs_div_mod».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_div_mod" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_div_mod» k h x_a x_b = some (r, h')
 
-theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih25 : «UInt64::mul_column».Complete) (ih26 : «KernelKlimbs::klimbs_mul_single».Complete) (ih27 : «KernelKlimbs::klimbs_mul_outer».Complete) (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih30 : «KernelLevels::klimbs_eq».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) : «KernelKlimbs::klimbs_div_mod».Complete := by
+theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «UInt64::mul_column».Complete) (ih25 : «KernelKlimbs::klimbs_mul_single».Complete) (ih26 : «KernelKlimbs::klimbs_mul».Complete) (ih27 : «KernelKlimbs::klimbs_normalize».Complete) (ih28 : «KernelKlimbs::klimbs_is_zero».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih30 : «KernelLevels::klimbs_eq».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) : «KernelKlimbs::klimbs_div_mod».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_div_mod.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_div_mod, ControlLower.hasControl])
@@ -2200,7 +2174,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_
   subst l21
   obtain ⟨rfl, rfl⟩ := args20.nil_inv
   rw [instanceName_plain_some] at callee9
-  obtain ⟨k22, hk23⟩ := «IxVMCompat::ordinary_div_mod».of_eval ih22 ih23 ih28 ih29 ih31 callee9
+  obtain ⟨k22, hk23⟩ := «IxVMCompat::ordinary_div_mod».of_eval ih22 ih23 ih27 ih28 ih29 ih31 callee9
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk23
   obtain ⟨ys24, hp25, hl26, ml27⟩ := matchPattern_tuple_inv mt4
   rcases ys24 with _ | ⟨y28, _ | ⟨y29, _ | ⟨_, _⟩⟩⟩ <;> simp at hl26
@@ -2215,7 +2189,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_
   subst l45
   obtain ⟨rfl, rfl⟩ := args44.nil_inv
   rw [instanceName_plain_some] at callee39
-  obtain ⟨k46, hk47⟩ := ih28 callee39
+  obtain ⟨k46, hk47⟩ := ih27 callee39
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk47
   rw [matchPattern_bind] at mt34
   simp only [Except.ok.injEq, Option.some.injEq] at mt34
@@ -2228,7 +2202,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_
   subst l63
   obtain ⟨rfl, rfl⟩ := args62.nil_inv
   rw [instanceName_plain_some] at callee57
-  obtain ⟨k64, hk65⟩ := ih28 callee57
+  obtain ⟨k64, hk65⟩ := ih27 callee57
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk65
   rw [matchPattern_bind] at mt52
   simp only [Except.ok.injEq, Option.some.injEq] at mt52
@@ -2245,7 +2219,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_
   subst l87
   obtain ⟨rfl, rfl⟩ := args86.nil_inv
   rw [instanceName_plain_some] at callee75
-  obtain ⟨k88, hk89⟩ := «KernelKlimbs::klimbs_mul».of_eval ih22 ih23 ih24 ih25 ih26 ih27 callee75
+  obtain ⟨k88, hk89⟩ := ih26 callee75
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk89
   rw [matchPattern_bind] at mt70
   simp only [Except.ok.injEq, Option.some.injEq] at mt70
@@ -2268,7 +2242,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk122
   obtain ⟨rfl, rfl⟩ := args104.nil_inv
   rw [instanceName_plain_some] at callee99
-  obtain ⟨k123, hk124⟩ := ih28 callee99
+  obtain ⟨k123, hk124⟩ := ih27 callee99
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk124
   rw [matchPattern_bind] at mt94
   simp only [Except.ok.injEq, Option.some.injEq] at mt94
@@ -2281,7 +2255,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_
   subst l140
   obtain ⟨rfl, rfl⟩ := args139.nil_inv
   rw [instanceName_plain_some] at callee134
-  obtain ⟨k141, hk142⟩ := ih28 callee134
+  obtain ⟨k141, hk142⟩ := ih27 callee134
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk142
   rw [matchPattern_bind] at mt129
   simp only [Except.ok.injEq, Option.some.injEq] at mt129
@@ -2316,7 +2290,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_
   subst l196
   obtain ⟨rfl, rfl⟩ := args195.nil_inv
   rw [instanceName_plain_some] at callee190
-  obtain ⟨k197, hk198⟩ := «KernelKlimbs::klimbs_is_zero».of_eval ih28 callee190
+  obtain ⟨k197, hk198⟩ := ih28 callee190
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk198
   rcases selectArm_literal_inv sel185 with ⟨hc199, rfl, rfl⟩ | ⟨hc199, sel200⟩
   · obtain ⟨v201, m202, bs203, d204, mt205, d206⟩ := d186.letValue_inv
@@ -2329,7 +2303,7 @@ theorem «KernelKlimbs::klimbs_div_mod».of_eval (ih22 : «KernelKlimbs::klimbs_
     subst l224
     obtain ⟨rfl, rfl⟩ := args223.nil_inv
     rw [instanceName_plain_some] at callee218
-    obtain ⟨k225, hk226⟩ := «KernelKlimbs::klimbs_is_zero».of_eval ih28 callee218
+    obtain ⟨k225, hk226⟩ := ih28 callee218
     try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk226
     obtain ⟨v227, vs228, m229, rfl, d230, args231⟩ := args214.cons_inv
     obtain ⟨rfl, rfl⟩ := d230.literal_inv
@@ -2469,7 +2443,7 @@ abbrev «KernelKlimbs::klimbs_div».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_div" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_div» k h x_a x_b = some (r, h')
 
-theorem «KernelKlimbs::klimbs_div».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih25 : «UInt64::mul_column».Complete) (ih26 : «KernelKlimbs::klimbs_mul_single».Complete) (ih27 : «KernelKlimbs::klimbs_mul_outer».Complete) (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih30 : «KernelLevels::klimbs_eq».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) : «KernelKlimbs::klimbs_div».Complete := by
+theorem «KernelKlimbs::klimbs_div».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «UInt64::mul_column».Complete) (ih25 : «KernelKlimbs::klimbs_mul_single».Complete) (ih26 : «KernelKlimbs::klimbs_mul».Complete) (ih27 : «KernelKlimbs::klimbs_normalize».Complete) (ih28 : «KernelKlimbs::klimbs_is_zero».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih30 : «KernelLevels::klimbs_eq».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) : «KernelKlimbs::klimbs_div».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_div.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_div, ControlLower.hasControl])
@@ -2526,7 +2500,7 @@ abbrev «KernelKlimbs::klimbs_shr».Complete : Prop :=
   ∀ {x_a x_n : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_shr" [x_a, x_n] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_shr» k h x_a x_n = some (r, h')
 
-theorem «KernelKlimbs::klimbs_shr».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih25 : «UInt64::mul_column».Complete) (ih26 : «KernelKlimbs::klimbs_mul_single».Complete) (ih27 : «KernelKlimbs::klimbs_mul_outer».Complete) (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih30 : «KernelLevels::klimbs_eq».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) (ih32 : «KernelKlimbs::klimbs_pow».Complete) : «KernelKlimbs::klimbs_shr».Complete := by
+theorem «KernelKlimbs::klimbs_shr».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «UInt64::mul_column».Complete) (ih25 : «KernelKlimbs::klimbs_mul_single».Complete) (ih26 : «KernelKlimbs::klimbs_mul».Complete) (ih27 : «KernelKlimbs::klimbs_normalize».Complete) (ih28 : «KernelKlimbs::klimbs_is_zero».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih30 : «KernelLevels::klimbs_eq».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) (ih32 : «KernelKlimbs::klimbs_pow».Complete) : «KernelKlimbs::klimbs_shr».Complete := by
   intro x_a x_n h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_shr.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_shr, ControlLower.hasControl])
@@ -2611,7 +2585,7 @@ abbrev «KernelKlimbs::klimbs_shl».Complete : Prop :=
   ∀ {x_a x_n : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_shl" [x_a, x_n] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_shl» k h x_a x_n = some (r, h')
 
-theorem «KernelKlimbs::klimbs_shl».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih25 : «UInt64::mul_column».Complete) (ih26 : «KernelKlimbs::klimbs_mul_single».Complete) (ih27 : «KernelKlimbs::klimbs_mul_outer».Complete) (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih30 : «KernelLevels::klimbs_eq».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) (ih32 : «KernelKlimbs::klimbs_pow».Complete) : «KernelKlimbs::klimbs_shl».Complete := by
+theorem «KernelKlimbs::klimbs_shl».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «UInt64::mul_column».Complete) (ih25 : «KernelKlimbs::klimbs_mul_single».Complete) (ih26 : «KernelKlimbs::klimbs_mul».Complete) (ih27 : «KernelKlimbs::klimbs_normalize».Complete) (ih28 : «KernelKlimbs::klimbs_is_zero».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih30 : «KernelLevels::klimbs_eq».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) (ih32 : «KernelKlimbs::klimbs_pow».Complete) : «KernelKlimbs::klimbs_shl».Complete := by
   intro x_a x_n h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_shl.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_shl, ControlLower.hasControl])
@@ -2667,7 +2641,7 @@ theorem «KernelKlimbs::klimbs_shl».of_eval (ih22 : «KernelKlimbs::klimbs_succ
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk100
   obtain ⟨rfl, rfl⟩ := args82.nil_inv
   rw [instanceName_plain_some] at callee71
-  obtain ⟨k101, hk102⟩ := «KernelKlimbs::klimbs_mul».of_eval ih22 ih23 ih24 ih25 ih26 ih27 callee71
+  obtain ⟨k101, hk102⟩ := ih26 callee71
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk102
   refine ⟨k99 + k101 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
@@ -2815,7 +2789,7 @@ abbrev «KernelKlimbs::klimbs_mod».Complete : Prop :=
   ∀ {x_a x_b : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_mod" [x_a, x_b] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_mod» k h x_a x_b = some (r, h')
 
-theorem «KernelKlimbs::klimbs_mod».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «KernelKlimbs::klimbs_shl_limbs».Complete) (ih25 : «UInt64::mul_column».Complete) (ih26 : «KernelKlimbs::klimbs_mul_single».Complete) (ih27 : «KernelKlimbs::klimbs_mul_outer».Complete) (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih30 : «KernelLevels::klimbs_eq».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) : «KernelKlimbs::klimbs_mod».Complete := by
+theorem «KernelKlimbs::klimbs_mod».of_eval (ih22 : «KernelKlimbs::klimbs_succ».Complete) (ih23 : «KernelKlimbs::klimbs_add_carry».Complete) (ih24 : «UInt64::mul_column».Complete) (ih25 : «KernelKlimbs::klimbs_mul_single».Complete) (ih26 : «KernelKlimbs::klimbs_mul».Complete) (ih27 : «KernelKlimbs::klimbs_normalize».Complete) (ih28 : «KernelKlimbs::klimbs_is_zero».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) (ih30 : «KernelLevels::klimbs_eq».Complete) (ih31 : «IxVMCompat::divide_grow».Complete) : «KernelKlimbs::klimbs_mod».Complete := by
   intro x_a x_b h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_mod.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_mod, ControlLower.hasControl])
@@ -2917,7 +2891,7 @@ abbrev «KernelKlimbs::klimbs_dec».Complete : Prop :=
   ∀ {x_a : SourceValue F} {h h' : Heap F} {r : SourceValue F},
     EvalFn W "KernelKlimbs::klimbs_dec" [x_a] h r h' → ∃ k0, ∀ k ≥ k0, «KernelKlimbs::klimbs_dec» k h x_a = some (r, h')
 
-theorem «KernelKlimbs::klimbs_dec».of_eval (ih28 : «KernelKlimbs::klimbs_normalize».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) : «KernelKlimbs::klimbs_dec».Complete := by
+theorem «KernelKlimbs::klimbs_dec».of_eval (ih27 : «KernelKlimbs::klimbs_normalize».Complete) (ih28 : «KernelKlimbs::klimbs_is_zero».Complete) (ih29 : «KernelKlimbs::klimbs_sub_borrow».Complete) : «KernelKlimbs::klimbs_dec».Complete := by
   intro x_a h h' r ev
   have body := ev.function_inv IxVM.KernelKlimbs.klimbs_dec.lookup
     (by simp [IxVM.KernelKlimbs.klimbs_dec, ControlLower.hasControl])
@@ -2963,7 +2937,7 @@ theorem «KernelKlimbs::klimbs_dec».of_eval (ih28 : «KernelKlimbs::klimbs_norm
   subst l83
   obtain ⟨rfl, rfl⟩ := args82.nil_inv
   rw [instanceName_plain_some] at callee71
-  obtain ⟨k84, hk85⟩ := «KernelKlimbs::klimbs_sub».of_eval ih28 ih29 callee71
+  obtain ⟨k84, hk85⟩ := «KernelKlimbs::klimbs_sub».of_eval ih27 ih28 ih29 callee71
   try simp only [List.append_assoc, List.cons_append, List.nil_append] at hk85
   refine ⟨k84 + 1, fun k hk => ?_⟩
   obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
@@ -6832,18 +6806,16 @@ theorem «Lists::is_empty».of_eval : «Lists::is_empty».Complete := by
 * KernelKlimbs::klimbs_succ: mirror only (recursive)
 * KernelKlimbs::klimbs_add_carry: mirror only (recursive)
 * KernelKlimbs::klimbs_add: mirror and lemma
-* KernelKlimbs::klimbs_shl_limbs: mirror only (recursive)
 * UInt64::mul_column: mirror only (recursive)
 * UInt64::mul: mirror and lemma
 * KernelKlimbs::klimbs_mul_single: mirror only (recursive)
-* KernelKlimbs::klimbs_mul_outer: mirror only (recursive)
-* KernelKlimbs::klimbs_mul: mirror and lemma
+* KernelKlimbs::klimbs_mul: mirror only (recursive)
 * KernelKlimbs::klimbs_normalize: mirror only (recursive)
-* KernelKlimbs::klimbs_is_zero: mirror and lemma
+* KernelKlimbs::klimbs_is_zero: mirror only (recursive)
 * KernelKlimbs::klimbs_sub_borrow: mirror only (recursive)
-* KernelKlimbs::klimbs_sub: mirror and lemma
 * KernelKlimbs::klimbs_le: mirror and lemma
 * KernelLevels::klimbs_eq: mirror only (recursive)
+* KernelKlimbs::klimbs_sub: mirror and lemma
 * IxVMCompat::divide_grow: mirror only (recursive)
 * IxVMCompat::ordinary_div_mod: mirror and lemma
 * KernelKlimbs::klimbs_div_mod: mirror and lemma

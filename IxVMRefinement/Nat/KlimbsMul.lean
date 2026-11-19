@@ -59,67 +59,109 @@ end NatAux
 
 /-! ## Multiplication -/
 
-/-- `klimbs_mul_outer(a, b, acc, shift)`: `acc + a * b * 2^(64 * shift)`, at a shift plus the
-multiplicand's length below `2^40`. -/
-theorem klimbs_mul_outer_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
-    {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelKlimbs::klimbs_mul_outer" args h r h' calls) (ih : IH c calls) :
-    Specs.Nat.klimbs_mul_outer c args h r h' calls := by
-  intro a b acc s hargs good ls m k hl hb hacc hlen
-  subst hargs
-  rcases Obs.«KernelKlimbs::klimbs_mul_outer».obs ev with
-    ⟨ld, hr, hh, -⟩ |
-    ⟨x_a_limb, x_rest, v41, m42, cs52, v136, m137, cs147, v166, m167, cs177, cs199, v205,
-      ld, ev1, ev2, ev3, op, ev4, hc⟩
-  · obtain rfl := lrep_nil_of_load hl ld
-    rw [hr, hh]
-    simpa [limbsVal_nil] using hacc
-  · obtain ⟨x, ls0, rfl, hx, hls0⟩ := lrep_cons_of_load hl ld
-    subst hc
-    obtain ⟨w0, hw0, hr0⟩ := word_zero h
-    have e1 := ObsFn.heap_extends ev1
-    have e2 := ObsFn.heap_extends ev2
-    have e3 := ObsFn.heap_extends ev3
-    have h1 := ih.get (.nat .klimbs_mul_single) (by nat_lt_calls) ev1 _ b _ rfl
-      (good.sub fun x hx => by simp [hx]) x w0 m hx hr0 hb
-    have h2 := ih.get (.nat .klimbs_shl_limbs) (by nat_lt_calls) ev2 _ s rfl
-      (good.sub fun x hx => by simp [hx]) _ h1
-    have h3 := ih.get (.nat .klimbs_add) (by nat_lt_calls) ev3 acc _ rfl
-      (good.sub fun x hx => by simp [hx]) k _ (repLimbs_mono (e1.trans e2) hacc) h2
-    rw [add_ok op] at ev4
-    simp only [List.length_cons, pow40] at hlen
-    have hs1 : ZMod.val (s + 1) = ZMod.val s + 1 := val_add_one (by omega)
-    have h4 := ih.get (.nat .klimbs_mul_outer) (by nat_lt_calls) ev4 x_rest b _ (s + 1) rfl
-      (good.sub fun x hx => by simp [hx]) ls0 m _ (lrep_mono (e1.trans (e2.trans e3)) hls0)
-      (repLimbs_mono (e1.trans (e2.trans e3)) hb) h3 (by rw [hs1, pow40]; omega)
-    rw [hs1] at h4
-    have e : k + (x.toNat * m + w0.toNat) * 2 ^ (64 * ZMod.val s) +
-        limbsVal ls0 * m * 2 ^ (64 * (ZMod.val s + 1)) =
-        k + limbsVal (x :: ls0) * m * 2 ^ (64 * ZMod.val s) := by
-      rw [limbsVal_cons, hw0, show 64 * (ZMod.val s + 1) = 64 * ZMod.val s + 64 by ring,
-        Nat.pow_add, show (2 : Nat) ^ 64 = 18446744073709551616 by norm_num]
-      ring
-    rwa [e] at h4
-
-/-- `klimbs_mul(a, b)`: `a * b`. -/
+/-- `klimbs_mul(a, b)`: `a * b` by direct Horner recursion on `a`, skipping zero limbs and
+avoiding shifting or adding zero high parts. -/
 theorem klimbs_mul_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelKlimbs::klimbs_mul" args h r h' calls) (ih : IH c calls) :
     Specs.Nat.klimbs_mul c args h r h' calls := by
   rintro a b hargs good n m ⟨la, hla, rfl⟩ hb
   subst hargs
-  obtain ⟨cs4, m26, rfl, ev6, hc⟩ := Obs.«KernelKlimbs::klimbs_mul».obs ev
-  subst hc
-  have ext : Heap.Extends h (h ++ [.construct limbListEnum "Nil" []]) := Heap.Extends.snoc _ _
-  have hlen : la.length < 2 ^ 39 :=
-    RomBound.bounded_length_lt good.2
-      (c := ⟨"KernelKlimbs::klimbs_mul_outer",
-        [a, b, .ptr (.enum limbListEnum) h.length, .field 0],
-        h ++ [.construct limbListEnum "Nil" []]⟩) (by simp) (by simp) (lrep_mono ext hla)
-  have := ih.get (.nat .klimbs_mul_outer) (by nat_lt_calls) ev6 a b _ 0 rfl
-    (good.sub fun x hx => by simp [hx]) la m 0 (lrep_mono ext hla) (repLimbs_mono ext hb)
-    ⟨[], lrep_store_nil h, rfl⟩ (by rw [pow39] at hlen; rw [val_zero, pow40]; omega)
-  simpa [val_zero] using this
+  match Obs.«KernelKlimbs::klimbs_mul».obs ev with
+  | .Nil (ld_bolbylmd := ld) (he_izcrgnpq := hr) (he_xmcwjuqn := hh) .. =>
+    obtain rfl := lrep_nil_of_load hla ld
+    rw [hr, hh]
+    exact ⟨[], hla, by simp [limbsVal_nil]⟩
+  | .Cons_n1_Nil (x_a_limb := x_a_limb) (x_rest := x_rest) (v_uboiercw := v_hi)
+      (m_sxlgoiya := m_hi) (ld_bolbylmd := ld) (ev_tstlgbjs := ev_rec)
+      (ev_uvtqsprv := ev_z) (ld_ffxonsrz := ld_hi) (he_uhuphksu := hr)
+      (he_agkquygc := hh) (hc_rmtntsze := hc) .. =>
+    subst hc
+    obtain ⟨x, la0, rfl, hx, hla0⟩ := lrep_cons_of_load hla ld
+    have hhi := ih.get (.nat .klimbs_mul) (by nat_lt_calls) ev_rec x_rest b rfl
+      (good.sub fun z hz => by simp [hz]) (limbsVal la0) m ⟨la0, hla0, rfl⟩ hb
+    have e1 := ObsFn.heap_extends ev_rec
+    obtain ⟨hz, rfl⟩ := is_zero_word hx ev_z
+    have hx0 : x.toNat = 0 := by
+      by_contra hne
+      rw [ite_eq_right hne] at hz
+      exact field_one_ne_zero hz
+    obtain ⟨lhi, hlhi, hvhi⟩ := hhi
+    obtain rfl := lrep_nil_of_load hlhi ld_hi
+    rw [hr, hh]
+    refine ⟨[], hlhi, ?_⟩
+    rw [limbsVal_nil] at hvhi ⊢
+    rw [limbsVal_cons, hx0, Nat.zero_add, Nat.mul_assoc, ← hvhi, Nat.mul_zero]
+  | .Cons_n1_other (x_a_limb := x_a_limb) (x_rest := x_rest) (v_uboiercw := v_hi)
+      (m_sxlgoiya := m_hi) (ld_bolbylmd := ld)
+      (ev_tstlgbjs := ev_rec) (ev_uvtqsprv := ev_z) (he_ohoucied := hr)
+      (hm_xjmmdnsp := hh) (hc_kpynyweb := hc) .. =>
+    subst hc
+    obtain ⟨x, la0, rfl, hx, hla0⟩ := lrep_cons_of_load hla ld
+    have hhi := ih.get (.nat .klimbs_mul) (by nat_lt_calls) ev_rec x_rest b rfl
+      (good.sub fun z hz => by simp [hz]) (limbsVal la0) m ⟨la0, hla0, rfl⟩ hb
+    obtain ⟨hz, rfl⟩ := is_zero_word hx ev_z
+    have hx0 : x.toNat = 0 := by
+      by_contra hne
+      rw [ite_eq_right hne] at hz
+      exact field_one_ne_zero hz
+    obtain ⟨lhi, hlhi, hvhi⟩ := hhi
+    obtain ⟨w0, hw0, hr0⟩ := word_zero m_hi
+    rw [hr, hh]
+    refine ⟨w0 :: lhi, lrep_store_cons hr0 hlhi, ?_⟩
+    rw [limbsVal_cons, limbsVal_cons, hw0, hx0, hvhi]
+    ring
+  | .Cons_n0_Nil (x_a_limb := x_a_limb) (x_rest := x_rest) (v_uboiercw := v_hi)
+      (m_sxlgoiya := m_hi) (v_rvdhngyb := v_prod) (m_kqoslqhn := m_prod)
+      (ld_bolbylmd := ld) (ev_tstlgbjs := ev_rec) (ev_uvtqsprv := ev_z)
+      (ev_ultllena := ev_single) (ld_nsuepssy := ld_hi) (he_ocvqsodt := hr)
+      (he_zcinsrva := hh) (hc_lzcarmjz := hc) .. =>
+    subst hc
+    obtain ⟨x, la0, rfl, hx, hla0⟩ := lrep_cons_of_load hla ld
+    have hhi := ih.get (.nat .klimbs_mul) (by nat_lt_calls) ev_rec x_rest b rfl
+      (good.sub fun z hz => by simp [hz]) (limbsVal la0) m ⟨la0, hla0, rfl⟩ hb
+    have e1 := ObsFn.heap_extends ev_rec
+    obtain ⟨-, rfl⟩ := is_zero_word hx ev_z
+    obtain ⟨w0, hw0, hr0⟩ := word_zero m_hi
+    have hprod := ih.get (.nat .klimbs_mul_single) (by nat_lt_calls) ev_single x_a_limb b _ rfl
+      (good.sub fun z hz => by simp [hz]) x w0 m hx hr0 (repLimbs_mono e1 hb)
+    have e2 := ObsFn.heap_extends ev_single
+    obtain ⟨lhi, hlhi, hvhi⟩ := repLimbs_mono e2 hhi
+    obtain rfl := lrep_nil_of_load hlhi ld_hi
+    rw [limbsVal_nil] at hvhi
+    rw [hr, hh]
+    have heq : x.toNat * m + w0.toNat = limbsVal (x :: la0) * m := by
+      rw [limbsVal_cons, hw0, Nat.add_zero, Nat.add_mul, Nat.mul_assoc, ← hvhi, Nat.mul_zero,
+        Nat.add_zero]
+    rwa [heq] at hprod
+  | .Cons_n0_other (x_a_limb := x_a_limb) (x_rest := x_rest) (v_uboiercw := v_hi)
+      (m_sxlgoiya := m_hi) (v_rvdhngyb := v_prod) (m_kqoslqhn := m_prod)
+      (m_qzrqbjso := m_cons) (ld_bolbylmd := ld) (ev_tstlgbjs := ev_rec)
+      (ev_uvtqsprv := ev_z) (ev_ultllena := ev_single) (hm_elklvemq := hm_cons)
+      (ev_kfaaplgl := ev_add) (hc_glcnyqfh := hc) .. =>
+    subst hc
+    obtain ⟨x, la0, rfl, hx, hla0⟩ := lrep_cons_of_load hla ld
+    have hhi := ih.get (.nat .klimbs_mul) (by nat_lt_calls) ev_rec x_rest b rfl
+      (good.sub fun z hz => by simp [hz]) (limbsVal la0) m ⟨la0, hla0, rfl⟩ hb
+    have e1 := ObsFn.heap_extends ev_rec
+    obtain ⟨-, rfl⟩ := is_zero_word hx ev_z
+    obtain ⟨w0, hw0, hr0⟩ := word_zero m_hi
+    have hprod := ih.get (.nat .klimbs_mul_single) (by nat_lt_calls) ev_single x_a_limb b _ rfl
+      (good.sub fun z hz => by simp [hz]) x w0 m hx hr0 (repLimbs_mono e1 hb)
+    have e2 := ObsFn.heap_extends ev_single
+    obtain ⟨lhi, hlhi, hvhi⟩ := repLimbs_mono e2 hhi
+    obtain ⟨w0', hw0', hr0'⟩ := word_zero m_prod
+    have ext_cons : Heap.Extends m_prod m_cons := hm_cons ▸ Heap.Extends.snoc _ _
+    have hshifted : RepLimbs m_cons (B64 * (limbsVal la0 * m))
+        (.ptr (.enum limbListEnum) m_prod.length) := by
+      rw [hm_cons]
+      exact ⟨w0' :: lhi, lrep_store_cons hr0' hlhi, by rw [limbsVal_cons, hw0', hvhi, Nat.zero_add]⟩
+    have hadd := ih.get (.nat .klimbs_add) (by nat_lt_calls) ev_add v_prod _ rfl
+      (good.sub fun z hz => by simp [hz]) _ _ (repLimbs_mono ext_cons hprod) hshifted
+    have heq : (x.toNat * m + w0.toNat) + B64 * (limbsVal la0 * m) = limbsVal (x :: la0) * m := by
+      rw [limbsVal_cons, hw0]
+      ring
+    rwa [heq] at hadd
 
 /-! ## Division -/
 

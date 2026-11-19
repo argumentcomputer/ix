@@ -32,9 +32,7 @@ theorem nat_step (c : ScopedCtx) (hc : ScopedCoreBase c) :
   | .klimbs_dec, _, _, _, _, _, ev, ih => klimbs_dec_step c ev ih
   | .divmod_256, _, _, _, _, _, ev, ih => divmod_256_step c ev ih
   | .klimbs_mul, _, _, _, _, _, ev, ih => klimbs_mul_step c ev ih
-  | .klimbs_mul_outer, _, _, _, _, _, ev, ih => klimbs_mul_outer_step c ev ih
   | .klimbs_mul_single, _, _, _, _, _, ev, ih => klimbs_mul_single_step c ev ih
-  | .klimbs_shl_limbs, _, _, _, _, _, ev, ih => klimbs_shl_limbs_step c ev ih
   | .klimbs_is_zero, _, _, _, _, _, ev, ih => klimbs_is_zero_step c ev ih
   | .klimbs_div_mod, _, _, _, _, _, ev, ih => klimbs_div_mod_step c ev ih
   | .klimbs_div, _, _, _, _, _, ev, ih => klimbs_div_step c ev ih

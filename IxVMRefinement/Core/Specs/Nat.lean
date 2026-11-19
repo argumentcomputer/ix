@@ -136,26 +136,12 @@ def klimbs_mul : SpecFn := fun c args h r h' calls =>
   ∀ a b, args = [a, b] → CoreGood c calls →
     ∀ n m, RepLimbs h n a → RepLimbs h m b → RepLimbs h' (n * m) r
 
-/-- `klimbs_mul_outer(a, b, acc, shift)`: `acc + a * b * 2^(64 * shift)`, while the shift counter
-does not wrap: it is stated for a shift plus the number of `a`'s limbs below `2^40` (the caller
-starts at `0`, and a represented list is shorter than `2^39`). -/
-def klimbs_mul_outer : SpecFn := fun c args h r h' calls =>
-  ∀ a b acc (s : F), args = [a, b, acc, .field s] → CoreGood c calls →
-    ∀ (limbs : List UInt64) m k, RepList limbListEnum RepU64 h limbs a → RepLimbs h m b →
-      RepLimbs h k acc → ZMod.val s + limbs.length < 2 ^ 40 →
-      RepLimbs h' (k + limbsVal limbs * m * 2 ^ (64 * (ZMod.val s))) r
-
 /-- `klimbs_mul_single(a_limb, b, carry)`: `a_limb * b + carry`, for 64-bit `a_limb` and
 `carry`. -/
 def klimbs_mul_single : SpecFn := fun c args h r h' calls =>
   ∀ al b cr, args = [al, b, cr] → CoreGood c calls →
     ∀ (x y : UInt64) m, RepU64 h x al → RepU64 h y cr → RepLimbs h m b →
       RepLimbs h' (x.toNat * m + y.toNat) r
-
-/-- `klimbs_shl_limbs(x, shift)`: `x * 2^(64 * shift)` (`shift` zero limbs prepended). -/
-def klimbs_shl_limbs : SpecFn := fun c args h r h' calls =>
-  ∀ a (s : F), args = [a, .field s] → CoreGood c calls →
-    ∀ n, RepLimbs h n a → RepLimbs h' (n * 2 ^ (64 * (ZMod.val s))) r
 
 /-- `klimbs_is_zero(x)`: `1` exactly when the value is `0` (exact both ways). -/
 def klimbs_is_zero : SpecFn := fun c args h r h' calls =>
@@ -445,8 +431,8 @@ def try_nat_dispatch : SpecFn := fun c args h r h' calls =>
 /-- The functions of the family. -/
 inductive Fn where
   | klimbs_succ | klimbs_add_carry | klimbs_add | klimbs_sub_borrow | klimbs_normalize
-  | klimbs_sub | klimbs_le | klimbs_dec | divmod_256 | klimbs_mul | klimbs_mul_outer
-  | klimbs_mul_single | klimbs_shl_limbs | klimbs_is_zero | klimbs_div_mod | klimbs_div
+  | klimbs_sub | klimbs_le | klimbs_dec | divmod_256 | klimbs_mul
+  | klimbs_mul_single | klimbs_is_zero | klimbs_div_mod | klimbs_div
   | klimbs_mod | klimbs_gcd | klimbs_pow | klimbs_land | klimbs_lor | klimbs_xor_op
   | klimbs_shl | klimbs_shr
   | divide_grow | ordinary_div_mod
@@ -471,9 +457,7 @@ def Fn.name : Fn → String
   | .klimbs_dec => "KernelKlimbs::klimbs_dec"
   | .divmod_256 => "KernelKlimbs::divmod_256"
   | .klimbs_mul => "KernelKlimbs::klimbs_mul"
-  | .klimbs_mul_outer => "KernelKlimbs::klimbs_mul_outer"
   | .klimbs_mul_single => "KernelKlimbs::klimbs_mul_single"
-  | .klimbs_shl_limbs => "KernelKlimbs::klimbs_shl_limbs"
   | .klimbs_is_zero => "KernelKlimbs::klimbs_is_zero"
   | .klimbs_div_mod => "KernelKlimbs::klimbs_div_mod"
   | .klimbs_div => "KernelKlimbs::klimbs_div"
@@ -524,9 +508,7 @@ def Fn.spec : Fn → SpecFn
   | .klimbs_dec => Specs.Nat.klimbs_dec
   | .divmod_256 => Specs.Nat.divmod_256
   | .klimbs_mul => Specs.Nat.klimbs_mul
-  | .klimbs_mul_outer => Specs.Nat.klimbs_mul_outer
   | .klimbs_mul_single => Specs.Nat.klimbs_mul_single
-  | .klimbs_shl_limbs => Specs.Nat.klimbs_shl_limbs
   | .klimbs_is_zero => Specs.Nat.klimbs_is_zero
   | .klimbs_div_mod => Specs.Nat.klimbs_div_mod
   | .klimbs_div => Specs.Nat.klimbs_div

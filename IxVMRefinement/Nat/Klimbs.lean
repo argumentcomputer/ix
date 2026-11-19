@@ -95,62 +95,84 @@ theorem klimbs_add_carry_step (c : ScopedCtx) {args : List (SourceValue F)} {h h
     Specs.Nat.klimbs_add_carry c args h r h' calls := by
   rintro a b k hargs good hk n m ⟨la, hla, rfl⟩ ⟨lb, hlb, rfl⟩
   subst hargs
-  rcases Obs.«KernelKlimbs::klimbs_add_carry».obs ev with
-    ⟨ld, hv, hr, hh, -⟩ |
-    ⟨cs45, ld, hne, ev1, hc⟩ |
-    ⟨x_la, x_ra, ld, ld2, hv, hr, hh, -⟩ |
-    ⟨x_la, x_ra, cs118, ld, ld2, hne, ev1, hc⟩ |
-    ⟨x_la, x_ra, x_lb, x_rb, m148, cs158, x_sum1, x_carry1, m204, cs214, v234, m243, cs251,
-      x_sum2, x_carry2, v330, m331, x338, y339, m340, cs349, cs363, v383, m392, cs400,
-      ld, ld2, ev1, ev2, ev3, ev4, ev5, op, rfl, rfl, ev6, hc⟩
-  · -- `a` empty, no carry: `b`
+  match Obs.«KernelKlimbs::klimbs_add_carry».obs ev with
+  | .Nil_n0 (ld12 := ld) (hv33 := hv) (he35 := hr) (he36 := hh) .. =>
     obtain rfl := lrep_nil_of_load hla ld
     rw [hr, hh]
     have h0 := field_eq_zero_val hv
     exact ⟨lb, hlb, by lv_omega⟩
-  · -- `a` empty, a carry: `b + 1`
+  | .Nil_other (ld12 := ld) (hne38 := hne) (ev47 := ev1) (hc56 := hc) .. =>
     obtain rfl := lrep_nil_of_load hla ld
     subst hc
     have hk1 : ZMod.val k = 1 := by have := field_ne_zero_val hne; omega
     obtain ⟨ls', hl', hv'⟩ := (ih.get (.nat .klimbs_succ) (by nat_lt_calls) ev1 b rfl
       (good.sub fun x hx => by simp [hx]) (limbsVal lb)).1 ⟨lb, hlb, rfl⟩
     exact ⟨ls', hl', by lv_omega⟩
-  · -- `b` empty, no carry: `a`
+  | .Cons_Nil_n0 (ld85 := ld2) (hv106 := hv) (he108 := hr) (he109 := hh) .. =>
     obtain rfl := lrep_nil_of_load hlb ld2
     rw [hr, hh]
     have h0 := field_eq_zero_val hv
     exact ⟨la, hla, by lv_omega⟩
-  · -- `b` empty, a carry: `a + 1`
+  | .Cons_Nil_other (ld85 := ld2) (hne111 := hne) (ev120 := ev1) (hc129 := hc) .. =>
     obtain rfl := lrep_nil_of_load hlb ld2
     subst hc
     have hk1 : ZMod.val k = 1 := by have := field_ne_zero_val hne; omega
     obtain ⟨ls', hl', hv'⟩ := (ih.get (.nat .klimbs_succ) (by nat_lt_calls) ev1 a rfl
       (good.sub fun x hx => by simp [hx]) (limbsVal la)).1 ⟨la, hla, rfl⟩
     exact ⟨ls', hl', by lv_omega⟩
-  · -- two limbs and the carry: the low limb of the sum, then the rest with the carry out
+  | .Cons_Cons_n0 (x_la := x_la) (x_ra := x_ra) (x_lb := x_lb) (x_rb := x_rb)
+      (ld12 := ld) (ld85 := ld2) (ev160 := ev1) (hv_voxudgwr := hv)
+      (he_yjaxijcf := hr) (hm_nbvxcmlc := hh) (ev_bqgwgdjf := ev4)
+      (ev_rfwqfifo := ev6) (hc_azxkqqtp := hc) .. =>
     obtain ⟨x, la0, rfl, hx, hla0⟩ := lrep_cons_of_load hla ld
     obtain ⟨y, lb0, rfl, hy, hlb0⟩ := lrep_cons_of_load hlb ld2
     have hxb := toNat_lt x
     have hyb := toNat_lt y
+    have hk0 := field_eq_zero_val hv
     obtain ⟨rfl, rfl, rfl⟩ := add_words hx hy ev1
-    obtain ⟨rfl, rfl, -⟩ := from_field ev2
+    obtain ⟨rfl, rfl⟩ := to_field ev4
+    subst hc
+    have hbit : (x.toNat + y.toNat) / B64 ≤ 1 := by omega
+    have hval : ZMod.val (((x.toNat + y.toNat) / B64 : Nat) : F) =
+        (x.toNat + y.toNat) / B64 := val_natCast (by omega)
+    obtain ⟨ls', hl', hv'⟩ := ih.get (.nat .klimbs_add_carry) (by nat_lt_calls) ev6 x_ra x_rb _ rfl
+      (good.sub fun x hx => by simp [hx]) (by rw [hval]; exact hbit) (limbsVal la0) (limbsVal lb0)
+      ⟨la0, hla0, rfl⟩ ⟨lb0, hlb0, rfl⟩
+    rw [hval] at hv'
     obtain ⟨ws, hws, hrs⟩ := word_of h (Nat.mod_lt (x.toNat + y.toNat) (by decide))
-    obtain ⟨wk, hwk, hrk⟩ := word_lowByte h (k := k) (by omega)
-    obtain ⟨rfl, rfl, rfl⟩ := add_words hrs hrk ev3
+    rw [hr, hh]
+    refine ⟨ws :: ls', lrep_store_cons hrs hl', ?_⟩
+    rw [limbsVal_cons, limbsVal_cons, limbsVal_cons, hv']
+    omega
+  | .Cons_Cons_other (x_la := x_la) (x_ra := x_ra) (x_lb := x_lb) (x_rb := x_rb)
+      (ld12 := ld) (ld85 := ld2) (ev160 := ev1) (hne_twrqvtjy := hne)
+      (ev_ftbzzand := ev3) (ev_xvayfvmj := ev4) (ev_jykcldeg := ev5)
+      (op_iwdvyznu := op) (he_esarcyko := hr) (hm_etddrudf := hh)
+      (ev_gxfjasvr := ev6) (hc_zqwumloa := hc) .. =>
+    obtain ⟨x, la0, rfl, hx, hla0⟩ := lrep_cons_of_load hla ld
+    obtain ⟨y, lb0, rfl, hy, hlb0⟩ := lrep_cons_of_load hlb ld2
+    have hxb := toNat_lt x
+    have hyb := toNat_lt y
+    have hk1 : ZMod.val k = 1 := by have := field_ne_zero_val hne; omega
+    obtain ⟨rfl, rfl, rfl⟩ := add_words hx hy ev1
+    obtain ⟨ws, hws, hrs⟩ := word_of h (Nat.mod_lt (x.toNat + y.toNat) (by decide))
+    obtain ⟨w1, hw1, hr1⟩ := word_one h
+    obtain ⟨rfl, rfl, rfl⟩ := add_words hrs hr1 ev3
     obtain ⟨rfl, rfl⟩ := to_field ev4
     obtain ⟨rfl, rfl⟩ := to_field ev5
     rw [add_ok op, ← Nat.cast_add] at ev6
     subst hc
     have hbit : (x.toNat + y.toNat) / B64 +
-        (ws.toNat + wk.toNat) / B64 ≤ 1 := by omega
+        (ws.toNat + w1.toNat) / B64 ≤ 1 := by omega
     have hval : ZMod.val ((((x.toNat + y.toNat) / B64 +
-        (ws.toNat + wk.toNat) / B64 : Nat)) : F) =
-        (x.toNat + y.toNat) / B64 + (ws.toNat + wk.toNat) / B64 := val_natCast (by omega)
+        (ws.toNat + w1.toNat) / B64 : Nat)) : F) =
+        (x.toNat + y.toNat) / B64 + (ws.toNat + w1.toNat) / B64 := val_natCast (by omega)
     obtain ⟨ls', hl', hv'⟩ := ih.get (.nat .klimbs_add_carry) (by nat_lt_calls) ev6 x_ra x_rb _ rfl
       (good.sub fun x hx => by simp [hx]) (by rw [hval]; exact hbit) (limbsVal la0) (limbsVal lb0)
       ⟨la0, hla0, rfl⟩ ⟨lb0, hlb0, rfl⟩
     rw [hval] at hv'
-    obtain ⟨w2, hw2, hr2⟩ := word_of h (Nat.mod_lt (ws.toNat + wk.toNat) (by decide))
+    obtain ⟨w2, hw2, hr2⟩ := word_of h (Nat.mod_lt (ws.toNat + w1.toNat) (by decide))
+    rw [hr, hh]
     refine ⟨w2 :: ls', lrep_store_cons hr2 hl', ?_⟩
     rw [limbsVal_cons, limbsVal_cons, limbsVal_cons, hv']
     omega
@@ -178,23 +200,16 @@ theorem klimbs_sub_borrow_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
     Specs.Nat.klimbs_sub_borrow c args h r h' calls := by
   rintro a b β hargs good hβ n m ⟨la, hla, rfl⟩ ⟨lb, hlb, rfl⟩
   subst hargs
-  rcases Obs.«KernelKlimbs::klimbs_sub_borrow».obs ev with
-    ⟨m45, ld, ld2, rfl, rfl, rfl, -⟩ |
-    ⟨w73, w74, m86, cs97, m118, ld, ld2, ev1, rfl, rfl, rfl, hc⟩ |
-    ⟨w73, w74, v85, m86, cs97, m149, ld, ld2, ev1, hne, rfl, rfl, rfl, hc⟩ |
-    ⟨x_la, x_ra, ld, ld2, hv, hr, hh, -⟩ |
-    ⟨x_la, x_ra, m245, cs255, x_diff, x_br, m358, cs368, m382, x_rest_res, x_br2, m433,
-      ld, ld2, hne, ev1, rfl, ev2, rfl, rfl, rfl, hc⟩ |
-    ⟨x_la, x_ra, x_lb, x_rb, m490, cs500, x_sum1, x_br1, m546, cs556, v576, m585, cs593,
-      x_sum2, x_br2, v672, m691, cs701, x_rest_res, x_br_final, m760,
-      ld, ld2, ev1, ev2, ev3, op, ev4, rfl, rfl, rfl, hc⟩
-  · -- both empty: the borrow passes through
+  match Obs.«KernelKlimbs::klimbs_sub_borrow».obs ev with
+  | .Nil_Nil (ld12 := ld) (ld31 := ld2) (he43 := hr) (hm53 := hm) (he64 := hh) .. =>
     obtain rfl := lrep_nil_of_load hla ld
     obtain rfl := lrep_nil_of_load hlb ld2
+    rw [hr, hh, hm]
     rcases bit_cases hβ with ⟨rfl, h0⟩ | ⟨rfl, h1⟩
     · exact ⟨_, 0, rfl, .inl ⟨rfl, by lv_omega, ⟨[], lrep_store_nil h, by lv_omega⟩⟩⟩
     · exact ⟨_, 1, rfl, .inr ⟨rfl, by lv_omega⟩⟩
-  · -- `a` empty, `b` of value `0`: as both empty
+  | .Nil_Cons_n1 (m86 := m86) (ld12 := ld) (ev99 := ev1) (he116 := hr) (hm126 := hm)
+      (he137 := hh) (hc138 := hc) .. =>
     obtain rfl := lrep_nil_of_load hla ld
     subst hc
     have hz := ih.get (.nat .klimbs_is_zero) (by nat_lt_calls) ev1 b rfl
@@ -203,10 +218,11 @@ theorem klimbs_sub_borrow_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
       by_contra hne
       rw [ite_eq_right hne] at hz
       exact field_one_ne_zero hz
+    rw [hr, hh, hm]
     rcases bit_cases hβ with ⟨rfl, h0⟩ | ⟨rfl, h1⟩
     · exact ⟨_, 0, rfl, .inl ⟨rfl, by lv_omega, ⟨[], lrep_store_nil m86, by lv_omega⟩⟩⟩
     · exact ⟨_, 1, rfl, .inr ⟨rfl, by lv_omega⟩⟩
-  · -- `a` empty, `b` not `0`: a borrow out
+  | .Nil_Cons_other (ld12 := ld) (ev99 := ev1) (hne139 := hne) (he147 := hr) (hc168 := hc) .. =>
     obtain rfl := lrep_nil_of_load hla ld
     subst hc
     have hz := ih.get (.nat .klimbs_is_zero) (by nat_lt_calls) ev1 b rfl
@@ -215,14 +231,17 @@ theorem klimbs_sub_borrow_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
       intro h0
       rw [ite_eq_left h0] at hz
       exact hne hz
+    rw [hr]
     exact ⟨_, 1, rfl, .inr ⟨rfl, by lv_omega⟩⟩
-  · -- `b` empty, no borrow: `a`
+  | .Cons_Nil_n0 (ld198 := ld2) (hv219 := hv) (he224 := hr) (he238 := hh) .. =>
     obtain rfl := lrep_nil_of_load hlb ld2
     rw [hr, hh]
     have h0 := field_eq_zero_val hv
     obtain rfl : β = 0 := field_inj hv
     exact ⟨a, 0, rfl, .inl ⟨rfl, by lv_omega, ⟨la, hla, by lv_omega⟩⟩⟩
-  · -- `b` empty, a borrow: decrement the low limb, then the rest with its borrow
+  | .Cons_Nil_other (x_la := x_la) (x_ra := x_ra) (ld12 := ld) (ld198 := ld2) (hne240 := hne)
+      (ev257 := ev1) (hm390 := hm0) (ev370 := ev2) (he431 := hr) (hm441 := hm1) (he468 := hh)
+      (hc469 := hc) .. =>
     obtain rfl := lrep_nil_of_load hlb ld2
     obtain ⟨x, la0, rfl, hx, hla0⟩ := lrep_cons_of_load hla ld
     have hxb := toNat_lt x
@@ -230,7 +249,7 @@ theorem klimbs_sub_borrow_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
     obtain ⟨w1, hw1, hr1⟩ := word_one h
     obtain ⟨rfl, rfl, rfl⟩ := sub_words hx hr1 ev1
     obtain ⟨bb, hbb, hbbc⟩ := ite_bit (x.toNat < w1.toNat)
-    rw [hbb] at ev2
+    rw [hbb, hm0] at ev2
     subst hc
     have hbbv : ZMod.val (bb : F) = bb := val_natCast (by omega)
     obtain ⟨res, bf, hpair, hcase⟩ := ih.get (.nat .klimbs_sub_borrow) (by nat_lt_calls) ev2 x_ra _ _ rfl
@@ -240,23 +259,54 @@ theorem klimbs_sub_borrow_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
     obtain ⟨rfl, rfl⟩ := hpair
     rw [hbbv] at hcase
     obtain ⟨wd, hwd, hrd⟩ := word_of h (Nat.mod_lt (x.toNat + B64 - w1.toNat) (by decide))
+    rw [hr, hh, hm1]
     rcases hcase with ⟨rfl, hle, ⟨ls', hl', hv'⟩⟩ | ⟨rfl, hlt⟩
     · refine ⟨_, 0, rfl, .inl ⟨rfl, ?_, ⟨wd :: ls', lrep_store_cons hrd hl', ?_⟩⟩⟩
       · rw [limbsVal_cons]; lv_omega
       · rw [limbsVal_cons, limbsVal_cons, hv']; lv_omega
     · exact ⟨_, 1, rfl, .inr ⟨rfl, by rw [limbsVal_cons]; lv_omega⟩⟩
-  · -- two limbs: subtract them, then the borrow, then the rest with the borrows out
+  | .Cons_Cons_n0 (x_la := x_la) (x_ra := x_ra) (x_lb := x_lb) (x_rb := x_rb)
+      (ld12 := ld) (ld198 := ld2) (ev502 := ev1) (hv_voxudgwr := hv)
+      (ev_lkwthlxt := ev4) (he_zdemrmtq := hr) (hm_irmallci := hm) (he_aeutgjcm := hh)
+      (hc_azxkqqtp := hc) .. =>
     obtain ⟨x, la0, rfl, hx, hla0⟩ := lrep_cons_of_load hla ld
     obtain ⟨y, lb0, rfl, hy, hlb0⟩ := lrep_cons_of_load hlb ld2
     have hxb := toNat_lt x
     have hyb := toNat_lt y
+    have hβ0 := field_eq_zero_val hv
     obtain ⟨rfl, rfl, rfl⟩ := sub_words hx hy ev1
-    obtain ⟨rfl, rfl, -⟩ := from_field ev2
-    obtain ⟨ws, hws, hrs⟩ := word_of h (Nat.mod_lt (x.toNat + B64 - y.toNat) (by decide))
-    obtain ⟨wβ, hwβ, hrβ⟩ := word_lowByte h (k := β) (by omega)
-    obtain ⟨rfl, rfl, rfl⟩ := sub_words hrs hrβ ev3
     obtain ⟨b1, hb1, hb1c⟩ := ite_bit (x.toNat < y.toNat)
-    obtain ⟨b2, hb2, hb2c⟩ := ite_bit (ws.toNat < wβ.toNat)
+    rw [hb1] at ev4
+    subst hc
+    have hbv : ZMod.val (b1 : F) = b1 := val_natCast (by omega)
+    obtain ⟨res, bf, hpair, hcase⟩ := ih.get (.nat .klimbs_sub_borrow) (by nat_lt_calls) ev4 x_ra x_rb _
+      rfl (good.sub fun x hx => by simp [hx]) (by rw [hbv]; omega) (limbsVal la0)
+      (limbsVal lb0) ⟨la0, hla0, rfl⟩ ⟨lb0, hlb0, rfl⟩
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hpair
+    obtain ⟨rfl, rfl⟩ := hpair
+    rw [hbv] at hcase
+    obtain ⟨ws, hws, hrs⟩ := word_of h (Nat.mod_lt (x.toNat + B64 - y.toNat) (by decide))
+    rw [hr, hh, hm]
+    rcases hcase with ⟨rfl, hle, ⟨ls', hl', hv'⟩⟩ | ⟨rfl, hlt⟩
+    · refine ⟨_, 0, rfl, .inl ⟨rfl, ?_, ⟨ws :: ls', lrep_store_cons hrs hl', ?_⟩⟩⟩
+      · rw [limbsVal_cons, limbsVal_cons]; omega
+      · rw [limbsVal_cons, limbsVal_cons, limbsVal_cons, hv']; omega
+    · exact ⟨_, 1, rfl, .inr ⟨rfl, by rw [limbsVal_cons, limbsVal_cons]; omega⟩⟩
+  | .Cons_Cons_other (x_la := x_la) (x_ra := x_ra) (x_lb := x_lb) (x_rb := x_rb)
+      (ld12 := ld) (ld198 := ld2) (ev502 := ev1) (hne_twrqvtjy := hne)
+      (ev_fejpmyzk := ev3) (op_bfzhbaer := op) (ev_lapaqmjd := ev4)
+      (he_ctvggkfc := hr) (hm_adnlprjg := hm) (he_fhmtbmjo := hh) (hc_zqwumloa := hc) .. =>
+    obtain ⟨x, la0, rfl, hx, hla0⟩ := lrep_cons_of_load hla ld
+    obtain ⟨y, lb0, rfl, hy, hlb0⟩ := lrep_cons_of_load hlb ld2
+    have hxb := toNat_lt x
+    have hyb := toNat_lt y
+    have hβ1 : ZMod.val β = 1 := by have := field_ne_zero_val hne; omega
+    obtain ⟨rfl, rfl, rfl⟩ := sub_words hx hy ev1
+    obtain ⟨ws, hws, hrs⟩ := word_of h (Nat.mod_lt (x.toNat + B64 - y.toNat) (by decide))
+    obtain ⟨w1, hw1, hr1⟩ := word_one h
+    obtain ⟨rfl, rfl, rfl⟩ := sub_words hrs hr1 ev3
+    obtain ⟨b1, hb1, hb1c⟩ := ite_bit (x.toNat < y.toNat)
+    obtain ⟨b2, hb2, hb2c⟩ := ite_bit (ws.toNat < w1.toNat)
     rw [hb1, hb2] at op
     rw [add_ok op, ← Nat.cast_add] at ev4
     subst hc
@@ -268,7 +318,8 @@ theorem klimbs_sub_borrow_step (c : ScopedCtx) {args : List (SourceValue F)} {h 
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hpair
     obtain ⟨rfl, rfl⟩ := hpair
     rw [hbv] at hcase
-    obtain ⟨w2, hw2, hr2⟩ := word_of h (Nat.mod_lt (ws.toNat + B64 - wβ.toNat) (by decide))
+    obtain ⟨w2, hw2, hr2⟩ := word_of h (Nat.mod_lt (ws.toNat + B64 - w1.toNat) (by decide))
+    rw [hr, hh, hm]
     rcases hcase with ⟨rfl, hle, ⟨ls', hl', hv'⟩⟩ | ⟨rfl, hlt⟩
     · refine ⟨_, 0, rfl, .inl ⟨rfl, ?_, ⟨w2 :: ls', lrep_store_cons hr2 hl', ?_⟩⟩⟩
       · rw [limbsVal_cons, limbsVal_cons]; omega
@@ -371,20 +422,33 @@ theorem klimbs_le_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Hea
     Specs.Nat.klimbs_le c args h r h' calls := by
   intro a b hargs good n m ha hb
   subst hargs
-  rcases Obs.«KernelKlimbs::klimbs_le».obs ev with
-    ⟨v1, m2, cs12, ev1, ld, rfl, rfl, hc⟩ |
-    ⟨v1, m2, cs12, v31, ev1, ld, hne, rfl, rfl, hc⟩
-  · subst hc
-    obtain ⟨ls, hl, hv, hcn⟩ := ih.get (.nat .klimbs_sub) (by nat_lt_calls) ev1 a b rfl
-      (good.sub fun x hx => by simp [hx]) n m ha hb
-    obtain rfl := lrep_nil_of_load hl ld
-    rw [limbsVal_nil] at hv
-    rw [ite_eq_left (by omega)]
-  · subst hc
-    obtain ⟨ls, hl, hv, hcn⟩ := ih.get (.nat .klimbs_sub) (by nat_lt_calls) ev1 a b rfl
-      (good.sub fun x hx => by simp [hx]) n m ha hb
-    have hpos := limbsVal_pos_of_ne_nil hcn (rep_cons_of_not_nil hl ld hne)
-    rw [ite_eq_right (by omega)]
+  match Obs.«KernelKlimbs::klimbs_le».obs ev with
+  | .n1 (ev_qcpyqvfx := ev1) (he_cfrpqvdk := hr) (hc_atwemxxh := hc) .. =>
+    subst hc
+    obtain ⟨res, bf, hpair, hcase⟩ := ih.get (.nat .klimbs_sub_borrow) (by nat_lt_calls) ev1 a b 0
+      rfl (good.sub fun x hx => by simp [hx]) (by rw [val_zero]; decide) n m ha hb
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hpair
+    obtain ⟨rfl, hbf⟩ := hpair
+    rw [val_zero] at hcase
+    rcases hcase with ⟨rfl, -, -⟩ | ⟨-, hlt⟩
+    · exact absurd (field_inj hbf) one_ne_zero
+    · rw [hr, ite_eq_left (by omega)]
+  | .other (x_result := x_result) (ev_qcpyqvfx := ev1) (hne_rehascgg := hne)
+      (ev_wnqmpxqh := ev2) (hc59 := hc) .. =>
+    subst hc
+    obtain ⟨res, bf, hpair, hcase⟩ := ih.get (.nat .klimbs_sub_borrow) (by nat_lt_calls) ev1 a b 0
+      rfl (good.sub fun x hx => by simp [hx]) (by rw [val_zero]; decide) n m ha hb
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hpair
+    obtain ⟨rfl, rfl⟩ := hpair
+    rw [val_zero] at hcase
+    rcases hcase with ⟨-, hle, hrep⟩ | ⟨rfl, -⟩
+    · have hz := ih.get (.nat .klimbs_is_zero) (by nat_lt_calls) ev2 x_result rfl
+        (good.sub fun x hx => by simp [hx]) (n - m - 0) hrep
+      rw [hz]
+      by_cases hnm : n ≤ m
+      · rw [ite_eq_left (by omega), ite_eq_left hnm]
+      · rw [ite_eq_right (by omega), ite_eq_right hnm]
+    · exact absurd rfl hne
 
 /-- `klimbs_dec(a)`: `a - 1`, canonical. -/
 theorem klimbs_dec_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
@@ -408,22 +472,40 @@ theorem klimbs_is_zero_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' 
     Specs.Nat.klimbs_is_zero c args h r h' calls := by
   intro a hargs good n ha
   subst hargs
-  rcases Obs.«KernelKlimbs::klimbs_is_zero».obs ev with
-    ⟨m2, p10, cs16, ev1, ld, rfl, rfl, hc⟩ |
-    ⟨v1, m2, p10, cs16, ev1, ld, hne, rfl, rfl, hc⟩
-  · subst hc
-    obtain ⟨ls, hl, hv, hcn⟩ := ih.get (.nat .klimbs_normalize) (by nat_lt_calls) ev1 a rfl
-      (good.sub fun x hx => by simp [hx]) n ha
+  match Obs.«KernelKlimbs::klimbs_is_zero».obs ev with
+  | .Nil (ld12 := ld) (he33 := hr) .. =>
+    obtain ⟨ls, hl, rfl⟩ := ha
     obtain rfl := lrep_nil_of_load hl ld
-    rw [limbsVal_nil] at hv
-    rw [ite_eq_left hv.symm]
-  · subst hc
-    obtain ⟨ls, hl, hv, hcn⟩ := ih.get (.nat .klimbs_normalize) (by nat_lt_calls) ev1 a rfl
-      (good.sub fun x hx => by simp [hx]) n ha
-    have hpos := limbsVal_pos_of_ne_nil hcn (rep_cons_of_not_nil hl ld hne)
-    rw [ite_eq_right (by omega)]
+    rw [hr, limbsVal_nil, ite_eq_left rfl]
+  | .Cons_n1 (x_limb := x_limb) (x_rest := x_rest) (ld12 := ld)
+      (ev_uvtqsprv := ev1) (ev_atasxwzm := ev2) (hc_oclvoxqd := hc) .. =>
+    subst hc
+    obtain ⟨ls, hl, rfl⟩ := ha
+    obtain ⟨x, ls0, rfl, hx, hls0⟩ := lrep_cons_of_load hl ld
+    obtain ⟨hz1, rfl⟩ := is_zero_word hx ev1
+    have hx0 : x.toNat = 0 := by
+      by_contra hne
+      rw [ite_eq_right hne] at hz1
+      exact field_one_ne_zero hz1
+    have hrec := ih.get (.nat .klimbs_is_zero) (by nat_lt_calls) ev2 x_rest rfl
+      (good.sub fun z hz => by simp [hz]) (limbsVal ls0) ⟨ls0, hls0, rfl⟩
+    rw [hrec, limbsVal_cons, hx0, Nat.zero_add]
+    have hB : 0 < B64 := by decide
+    by_cases h0 : limbsVal ls0 = 0
+    · rw [ite_eq_left h0, ite_eq_left (by omega)]
+    · rw [ite_eq_right h0, ite_eq_right (by exact Nat.mul_ne_zero (by omega) h0)]
+  | .Cons_n0 (x_limb := x_limb) (x_rest := x_rest) (ld12 := ld)
+      (ev_uvtqsprv := ev1) (he_zlbagkhm := hr) .. =>
+    obtain ⟨ls, hl, rfl⟩ := ha
+    obtain ⟨x, ls0, rfl, hx, hls0⟩ := lrep_cons_of_load hl ld
+    obtain ⟨hz1, rfl⟩ := is_zero_word hx ev1
+    have hxne : x.toNat ≠ 0 := by
+      intro h0
+      rw [ite_eq_left h0] at hz1
+      exact field_one_ne_zero hz1.symm
+    rw [hr, limbsVal_cons, ite_eq_right (by omega)]
 
-/-! ## `divmod_256`, `klimbs_shl_limbs` -/
+/-! ## `divmod_256` -/
 
 /-- `divmod_256(x, q)`: `(x mod 256, q + x div 256)`, at `x < 2^32`. -/
 theorem divmod_256_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
@@ -465,39 +547,6 @@ theorem divmod_256_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : He
         q + ((ZMod.val x / 256 : Nat) : F) := by
       rw [e2]; push_cast; ring
     rw [hr, e1, e3]
-
-/-- `klimbs_shl_limbs(x, shift)`: `x * 2^(64 * shift)`. -/
-theorem klimbs_shl_limbs_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
-    {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelKlimbs::klimbs_shl_limbs" args h r h' calls) (ih : IH c calls) :
-    Specs.Nat.klimbs_shl_limbs c args h r h' calls := by
-  intro a s hargs good n ha
-  subst hargs
-  rcases Obs.«KernelKlimbs::klimbs_shl_limbs».obs ev with
-    ⟨hv, hr, hh, -⟩ |
-    ⟨m24, cs114, v118, hne, rfl, op, ev1, hc⟩
-  · rw [hr, hh, field_inj hv, val_zero]
-    simpa using ha
-  · subst hc
-    rw [sub_ok op] at ev1
-    have hs0 : s ≠ 0 := fun e => hne (by rw [e])
-    obtain ⟨ls, hl, rfl⟩ := ha
-    obtain ⟨w0, hw0, hr0⟩ := word_zero h
-    have hrep : RepLimbs (h ++ [.construct limbListEnum "Cons" [.tuple [.field 0, .field 0, .field 0,
-        .field 0, .field 0, .field 0, .field 0, .field 0], a]]) (B64 * limbsVal ls)
-        (.ptr (.enum limbListEnum) h.length) :=
-      ⟨w0 :: ls, lrep_store_cons hr0 hl, by rw [limbsVal_cons, hw0, Nat.zero_add]⟩
-    have := ih.get (.nat .klimbs_shl_limbs) (by nat_lt_calls) ev1 _ (s - 1) rfl
-      (good.sub fun x hx => by simp [hx]) _ hrep
-    rw [val_sub_one hs0] at this
-    have hpos : 0 < ZMod.val s := Nat.pos_of_ne_zero (fun e => hs0 ((ZMod.val_eq_zero s).mp e))
-    have e : B64 * limbsVal ls * 2 ^ (64 * (ZMod.val s - 1)) =
-        limbsVal ls * 2 ^ (64 * ZMod.val s) := by
-      obtain ⟨t, ht⟩ : ∃ t, ZMod.val s = t + 1 := ⟨ZMod.val s - 1, by omega⟩
-      rw [ht, Nat.add_sub_cancel, show 64 * (t + 1) = 64 * t + 64 by ring, Nat.pow_add,
-        show (2 : Nat) ^ 64 = 18446744073709551616 by norm_num]
-      ring
-    rwa [e] at this
 
 /-! ## Bitwise operations -/
 
