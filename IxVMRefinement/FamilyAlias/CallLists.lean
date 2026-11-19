@@ -68,7 +68,7 @@ private theorem bytes_to_addr_bounded {bp r : SourceValue F} {bytes : List UInt8
     · exact L1.repAddress_iff.mpr rfl
   · rw [hd_eq, ProjAddrAux.blake3Pure_eq_ixAddr]
 
-private theorem projection_addr_ctor_bounded {i j : F} {bp r : SourceValue F}
+theorem projection_addr_ctor_bounded {i j : F} {bp r : SourceValue F}
     {b : Bytes.Address} {h h' : Heap F} {calls : List (Call F)}
     (ev : ObsFn W "KernelCheck::projection_addr_ctor" [.field i, .field j, bp] h r h' calls)
     (hbd : Bounded calls) (hb : Bytes.RepAddressRef addrTy h b bp) :
