@@ -1482,7 +1482,7 @@ private theorem ruleBodies_renameConsts_of_fixed {V : ReconView} {f : KKey → K
       (∀ c ∈ cs, ∀ cty np after fds ri rm ret norm,
         V.ctor blk idx c = some (cty, np) →
         peelCtorParams V fuel np 0 aux sp np 0
-          (Binding.FamilyRecon.exprInstLevels us cty) = some after →
+          (Binding.FamilyFlat.exprInstLevels us cty) = some after →
         fieldsClassify V fuel es 0 0 after = some (fds, ri, rm, ret, norm) →
         ∀ (j fieldIdx : Nat) (dom : KExpr),
           ri[j]? = some fieldIdx → norm[fieldIdx]? = some dom →
@@ -1522,12 +1522,12 @@ private theorem ruleBodies_renameConsts_of_fixed {V : ReconView} {f : KKey → K
           have hrbW : ruleBody V fuel es fop peersW cty (off + c) nP nMot nMin np us recLvls aux sp
               elim = some (bC.renameConsts f) := by
             unfold ruleBody at hrbC ⊢
-            cases hpf : peelForalls np (Binding.FamilyRecon.exprInstLevels us cty) with
+            cases hpf : peelForalls np (Binding.FamilyFlat.exprInstLevels us cty) with
             | none => simp [hpf] at hrbC
             | some raw =>
               simp only [hpf] at hrbC ⊢
               cases hpc : peelCtorParams V fuel np 0 aux sp np 0
-                  (Binding.FamilyRecon.exprInstLevels us cty) with
+                  (Binding.FamilyFlat.exprInstLevels us cty) with
               | none => simp [hpc] at hrbC
               | some after =>
                 simp only [hpc] at hrbC ⊢
@@ -1630,7 +1630,7 @@ theorem ruleBodiesAt_renameConsts_of_recTypeAt {V : ReconView} {f : KKey → KKe
                 | some prim =>
                   simp only [hprim, hself] at hR
                   cases hcd : Binding.FamilyRecon.collectDoms V fuel nP
-                      (Binding.FamilyRecon.exprInstLevels
+                      (Binding.FamilyFlat.exprInstLevels
                         ((List.range prim.nl).map fun i => Level.param (off + i)) prim.ty) with
                   | none => simp [hcd] at hR
                   | some pDoms =>
@@ -1645,7 +1645,7 @@ theorem ruleBodiesAt_renameConsts_of_recTypeAt {V : ReconView} {f : KKey → KKe
                       | some minDoms =>
                         simp only [hmin] at hR
                         cases hpm : Binding.FamilyRecon.peelMotiveParams nP ek.aux ek.params self.np 0
-                            (Binding.FamilyRecon.exprInstLevels ek.levels self.ty) with
+                            (Binding.FamilyFlat.exprInstLevels ek.levels self.ty) with
                         | none => simp [hpm] at hR
                         | some selfAfter =>
                           simp only [hpm] at hR
@@ -1678,7 +1678,7 @@ theorem ruleBodiesAt_renameConsts_of_recTypeAt {V : ReconView} {f : KKey → KKe
                             obtain ⟨hnp_f, hnp_t⟩ := hnp_match ek self hek hself c cty np hclt hvc
                             have hpc_eq :
                                 peelCtorParams V fuel nP 0 ek.aux ek.params np 0
-                                  (Binding.FamilyRecon.exprInstLevels ek.levels cty) =
+                                  (Binding.FamilyFlat.exprInstLevels ek.levels cty) =
                                 some after := by
                               rw [peelCtorParams_eq_of_depth (fun hf => (hnp_f hf).symm) np 0 _
                                 (fun ht => by simpa using hnp_t ht)]
@@ -2125,27 +2125,31 @@ theorem wrapDom_not_defn_to_wrapRel {find? : KKey → Option (ConstantInfo .anon
   cases h with
   | keep hw => exact hw
   | consume hc _ =>
-    obtain ⟨f, us', args, cv, v, hint, -, hd_eq, hf_find, -, -, -⟩ := hc
-    have h1 : d.getAppFn = .const f us' := by
-      rw [hd_eq]; exact Expr.getAppFn_mkAppN (.const f us') args
-    rw [hfn] at h1
-    injection h1 with hkf _
-    subst hkf
-    exact (hnotdef cv v hint hf_find).elim
+    have hwa : Ix.Kernel.wrapperArity find? k = none := by
+      unfold Ix.Kernel.wrapperArity
+      cases hf : find? k with
+      | none => rfl
+      | some ci =>
+        cases ci with
+        | defnInfo cv v hint => exact (hnotdef cv v hint hf).elim
+        | _ => rfl
+    unfold Ix.Kernel.Semantics.Consumes Ix.Kernel.consumeWrapper at hc
+    rw [hfn] at hc
+    cases hargs : d.getAppArgs with
+    | nil => simp [hargs] at hc
+    | cons a rest => simp [hargs, hwa] at hc
 
 private theorem wrapRel_letFree_appSpine_const_aux {find? : KKey → Option (ConstantInfo .anon)}
     {k : KKey} {us : List KLevel} :
     ∀ (rargs : List KExpr) {d : KExpr},
-      letFree d = true →
       WrapRel find? d (Binding.FamilyRecon.appSpine (.const k us) rargs.reverse) →
       d.getAppArgs.length = rargs.length ∧
         ((∀ a ∈ rargs, ∃ i, a = .bvar i) → d.getAppArgs = rargs.reverse)
-  | [], d, hlf, hw => by
+  | [], d, hw => by
     simp only [List.reverse_nil, Binding.FamilyRecon.appSpine, List.foldl_nil] at hw
     cases hw with
     | const _ => simp [Expr.getAppArgs]
-    | zeta => simp [letFree] at hlf
-  | a :: rest, d, hlf, hw => by
+  | a :: rest, d, hw => by
     have hfold : Binding.FamilyRecon.appSpine (.const k us) (a :: rest).reverse =
         .app (Binding.FamilyRecon.appSpine (.const k us) rest.reverse) a := by
       simp [Binding.FamilyRecon.appSpine, List.reverse_cons]
@@ -2153,39 +2157,35 @@ private theorem wrapRel_letFree_appSpine_const_aux {find? : KKey → Option (Con
     cases hw with
     | app hwf hwa =>
       rename_i d1 d2
-      simp only [letFree, Bool.and_eq_true] at hlf
-      obtain ⟨hlen, hbvars⟩ := wrapRel_letFree_appSpine_const_aux rest hlf.1 hwf
+      obtain ⟨hlen, hbvars⟩ := wrapRel_letFree_appSpine_const_aux rest hwf
       refine ⟨by simp [Expr.getAppArgs, hlen], fun hall => ?_⟩
       obtain ⟨i, rfl⟩ := hall a List.mem_cons_self
       have hd2 : d2 = .bvar i := by
         cases hwa with
         | bvar => rfl
-        | zeta => simp [letFree] at hlf
       rw [Expr.getAppArgs, hd2, hbvars (fun b hb => hall b (List.mem_cons_of_mem _ hb)),
         List.reverse_cons]
-    | zeta => simp [letFree] at hlf
 
-/-- A `let`-free term related by `WrapRel` to an `appSpine` headed by a constant has the same
-argument count, and identical arguments whenever every argument on the right is a `.bvar`. -/
-theorem wrapRel_letFree_appSpine_const {find? : KKey → Option (ConstantInfo .anon)}
+/-- A term related by `WrapRel` to an `appSpine` headed by a constant has the same argument count,
+and identical arguments whenever every argument on the right is a `.bvar`. -/
+theorem wrapRel_appSpine_const {find? : KKey → Option (ConstantInfo .anon)}
     {k : KKey} {us : List KLevel} {args : List KExpr} {d : KExpr}
-    (hlf : letFree d = true)
     (hw : WrapRel find? d (Binding.FamilyRecon.appSpine (.const k us) args)) :
     d.getAppArgs.length = args.length ∧
       ((∀ a ∈ args, ∃ i, a = .bvar i) → d.getAppArgs = args) := by
-  have h := wrapRel_letFree_appSpine_const_aux args.reverse hlf (by simpa using hw)
+  have h := wrapRel_letFree_appSpine_const_aux args.reverse (by simpa using hw)
   simpa using h
 
 /-- `hasBVarIn` is invariant under `Core.ExprLvEq`. -/
 theorem hasBVarIn_eq_of_exprLvEq {a b : KExpr} (h : Core.ExprLvEq a b) :
     ∀ lo hi, Binding.FamilyFlat.hasBVarIn lo hi a = Binding.FamilyFlat.hasBVarIn lo hi b := by
   induction h with
-  | bvar _ | fvar _ _ | sort _ | const _ | lit _ => intro _ _; rfl
+  | bvar | fvar _ | sort _ | const _ | lit => intro _ _; rfl
   | app _ _ ihf iha =>
     intro lo hi; simp only [Binding.FamilyFlat.hasBVarIn, ihf lo hi, iha lo hi]
-  | lam _ _ _ iht ihb =>
+  | lam _ _ iht ihb =>
     intro lo hi; simp only [Binding.FamilyFlat.hasBVarIn, iht lo hi, ihb (lo + 1) (hi + 1)]
-  | forallE _ _ _ iht ihb =>
+  | forallE _ _ iht ihb =>
     intro lo hi; simp only [Binding.FamilyFlat.hasBVarIn, iht lo hi, ihb (lo + 1) (hi + 1)]
   | letE _ _ _ iht ihv ihb =>
     intro lo hi
