@@ -565,6 +565,14 @@ structure RemainingFamilyClauses (calls : List (Call F)) (bAddr : _root_.Address
       FamilyFlat.RecordFlat t E₀ rb crb rs es ∧ FamilyFlat.BlockDerivedFlat t E₀ B off es
   familyForm : ∀ g, 6 ≤ g → g < 77 → ∀ B rb, runFamOf calls bAddr t E₀ g B = some rb →
     FamilyRecon.RFormS t E₀ B rb
+  familyRecLvls : ∀ g, 6 ≤ g → g < 77 → ∀ B rb cb crb (ms rs : Array Ixon.MutConst),
+    runFamOf calls bAddr t E₀ g B = some rb →
+    recordOf E₀ B = some cb → recordOf E₀ rb = some crb →
+    cb.info = .muts ms → crb.info = .muts rs →
+    ∃ off : Nat, FamilyFlat.BlockElim t E₀ B off ∧
+      ∀ (ind₀ : Ixon.Inductive) (k : Nat) (rc : Ixon.Recursor),
+        ms[0]? = some (.indc ind₀) → rs[k]? = some (.recr rc) →
+        rc.lvls.toNat = ind₀.lvls.toNat + off
 
 section Families
 
@@ -1096,6 +1104,7 @@ theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRows
         family := hR.family g hg6 hg
         familyFlat := hR.familyFlat g hg6 hg
         familyForm := hR.familyForm g hg6 hg
+        familyRecLvls := hR.familyRecLvls g hg6 hg
         claimed := hclaimed }
   · exact
       { famRefs := hrank.famRefs

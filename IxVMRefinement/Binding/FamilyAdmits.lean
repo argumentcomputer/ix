@@ -312,6 +312,15 @@ structure GroupFamilyChecks (calls : List (Call F)) (bAddr : _root_.Address)
   store in the canonical reading, `FamilyFlat.loadedAt`: the binder data of the record's binder
   blocks at the expression's root, as `get_ci` loads it). -/
   familyForm : ∀ B rb, famOf B = some rb → FamilyRecon.RFormS t E₀ B rb
+  /-- Every recursor of the selected family record has level count equal to the block's first
+  inductive's level count plus the block's elimination offset `off`. -/
+  familyRecLvls : ∀ B rb cb crb (ms rs : Array Ixon.MutConst),
+    famOf B = some rb → recordOf E₀ B = some cb → recordOf E₀ rb = some crb →
+    cb.info = .muts ms → crb.info = .muts rs →
+    ∃ off : Nat, FamilyFlat.BlockElim t E₀ B off ∧
+      ∀ (ind₀ : Ixon.Inductive) (k : Nat) (rc : Ixon.Recursor),
+        ms[0]? = some (.indc ind₀) → rs[k]? = some (.recr rc) →
+        rc.lvls.toNat = ind₀.lvls.toNat + off
   /-- A new non-empty block of recursors is a selected family record, or was checked as a
   second family record of a block (a twin). -/
   claimed : ∀ (A : _root_.Address) (c : Ixon.Constant) (rs' : Array Ixon.MutConst),

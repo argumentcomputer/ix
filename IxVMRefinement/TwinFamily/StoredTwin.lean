@@ -107,6 +107,20 @@ theorem StoredTwinCanon.recNoSelf {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
     cv'.type.mentionsConst (keyOf t (memberAddr rb j (.recr rc_j))) = false :=
   (h.recs cb hcb).recNoSelf hms hrs hk hj hf
 
+/-- **Level-count agreement of each stored recursor member** at the block's elimination offset,
+projected from `StoredTwinCanon`. -/
+theorem StoredTwinCanon.recLvls {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
+    {envT : Ix.Kernel.Env .anon} {famOf : _root_.Address → Option _root_.Address}
+    {B rb : _root_.Address} {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
+    {es : List FlatEntry} {off : Nat}
+    (h : StoredTwinCanon t R envT famOf B rb crb)
+    (hcb : recordOf R B = some cb) (hms : cb.info = .muts ms) (hrs : crb.info = .muts rs)
+    (hBD : BlockDerivedFlat t R B off es)
+    {ind₀ : Ixon.Inductive} {k : Nat} {rc : Ixon.Recursor}
+    (hm0 : ms[0]? = some (.indc ind₀)) (hk : rs[k]? = some (.recr rc)) :
+    rc.lvls.toNat = ind₀.lvls.toNat + off :=
+  (h.recs cb hcb).recLvls hms hrs hBD hm0 hk
+
 /-- **The witness's choice at a selected record.** -/
 theorem storedTwinCanon_of_selected {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
     {envT : Ix.Kernel.Env .anon} {famOf : _root_.Address → Option _root_.Address}

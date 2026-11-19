@@ -5408,6 +5408,9 @@ theorem remainingFamilyClauses_of_run {calls : List (Call F)} {bAddr : _root_.Ad
       ∃ (cb crb : Ixon.Constant) (ms rs : Array Ixon.MutConst) (es : List FlatEntry) (off : Nat),
         FamilyOfBlock E₀ B cb ms rb crb rs (es.map FlatEntry.addr) ∧
         RecordFlat t E₀ rb crb rs es ∧ BlockDerivedFlat t E₀ B off es ∧
+        (∀ (ind₀ : Ixon.Inductive) (k : Nat) (rc : Ixon.Recursor),
+          ms[0]? = some (.indc ind₀) → rs[k]? = some (.recr rc) →
+          rc.lvls.toNat = ind₀.lvls.toNat + off) ∧
         RFormS t E₀ B rb := by
     intro g hg6 hg77 B rb hfam
     obtain ⟨hnew, hmod, cs, hfc⟩ := runFamOf_spec hfam
@@ -5468,19 +5471,28 @@ theorem remainingFamilyClauses_of_run {calls : List (Call F)} {bAddr : _root_.Ad
         obtain ⟨c', hc'⟩ := Option.isSome_iff_exists.mp hRB
         have := hRagree _ _ _ hc' hcb; subst this; exact hc'
       exact logic_of_rootsSafe hC hb hP hval hroots g hg6 hg77 B cb hnew hcbR
-    obtain ⟨cb, ms, es, off, hFOB, hRF, hBDF, -, -, hform⟩ :=
+    obtain ⟨cb, ms, es, off, hFOB, hRF, hBDF, hlv_eq, -, hform⟩ :=
       check_family_core hcheck hwf hC.runStore hC.hashedStored hbd hRagree hcl_g hRB hrecRefs
         hlv_g hpar_g hM_g hRec (by omega) hBLogic hfc
     rcases hform with hformS | ⟨-, hbot⟩
-    · exact ⟨cb, cr, ms, rs, es, off, hFOB, hRF, hBDF, hformS⟩
+    · exact ⟨cb, cr, ms, rs, es, off, hFOB, hRF, hBDF, hlv_eq, hformS⟩
     · exact (hbot (valLimit g) rfl hvl).elim
   exact {
     familyFlat := fun g hg6 hg77 B rb hfam => by
-      obtain ⟨cb, crb, ms, rs, es, off, hF, hR, hB, -⟩ := hcore g hg6 hg77 B rb hfam
+      obtain ⟨cb, crb, ms, rs, es, off, hF, hR, hB, -, -⟩ := hcore g hg6 hg77 B rb hfam
       exact ⟨cb, crb, ms, rs, es, off, hF, hR, hB⟩
     familyForm := fun g hg6 hg77 B rb hfam => by
-      obtain ⟨_, _, _, _, _, _, -, -, -, hformS⟩ := hcore g hg6 hg77 B rb hfam
+      obtain ⟨_, _, _, _, _, _, -, -, -, -, hformS⟩ := hcore g hg6 hg77 B rb hfam
       exact hformS
+    familyRecLvls := fun g hg6 hg77 B rb cb crb ms rs hfam hcb hcrb hms hrs => by
+      obtain ⟨cb', crb', ms', rs', es, off, hF, -, hB, hlv, -⟩ := hcore g hg6 hg77 B rb hfam
+      have ecb : cb' = cb := Option.some.inj (hF.block.record.symm.trans hcb)
+      have ecrb : crb' = crb := Option.some.inj (hF.record.record.symm.trans hcrb)
+      subst cb' crb'
+      have ems : ms' = ms := Ixon.ConstantInfo.muts.inj (hF.block.muts.symm.trans hms)
+      have ers : rs' = rs := Ixon.ConstantInfo.muts.inj (hF.record.muts.symm.trans hrs)
+      subst ms' rs'
+      exact ⟨off, hB.1, hlv⟩
   }
 
 /-- **Closed `RemainingStoreClausesOfRunNC`**: discharges the remaining family clauses for any
