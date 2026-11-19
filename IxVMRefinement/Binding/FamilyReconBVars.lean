@@ -500,8 +500,7 @@ theorem peelAll_of_not_forall_not_let {h : Heap F} {E : KExpr} {p v : SourceValu
     have hld := Lib.load_enum_cell cell; rw [ld] at hld; injection hld with hv
     exact (hlet _ rfl hv).elim
   | bvarFree _ _ _ hd => omega
-  | bvarLocal .. | sort .. | const .. | app .. | lam .. | litNat .. | litStr .. | proj .. =>
-    rfl
+  | _ => rfl
 
 /-- **`KernelCheck::peel_leading_foralls_acc(ty, acc)`** on any `TmOExact` term (stepping through
 any `Let` nodes, with zero no-let premise): the leading binders' domains, reversed, before `acc`,

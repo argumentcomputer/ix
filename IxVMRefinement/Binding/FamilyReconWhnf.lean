@@ -101,8 +101,7 @@ private theorem typeSortNever_not_forall_not_sort {h : Heap F} {E : KExpr} {p v 
     have hld := Lib.load_enum_cell cell; rw [ld] at hld; injection hld with hv
     exact (hl _ rfl hv).elim
   | bvarFree _ _ _ hd => omega
-  | bvarLocal .. | const .. | app .. | lam .. | litNat .. | litStr .. | proj .. =>
-    cases n <;> rfl
+  | _ => cases n <;> rfl
 
 /-- **`KernelWhnf::type_sort_never_zeta`** decides `typeSortNever E n us` bidirectionally on
 `TmOExact`. -/
