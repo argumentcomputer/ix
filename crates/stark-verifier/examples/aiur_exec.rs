@@ -31,9 +31,8 @@ use std::{error::Error, fs, path::Path, time::Instant};
 
 const ENTRY: &str = "AiurExec::aiur_exec";
 const OUT_BYTES: usize = 104;
-/// Word counts of the program claim: model, data, model.
+/// Words of each model in a program claim `[1, index, m, data, m']`.
 const MODEL_WORDS: usize = 331;
-const DATA_WORDS: usize = 381;
 
 type R<T> = Result<T, Box<dyn Error>>;
 
@@ -217,13 +216,13 @@ fn main() -> R<()> {
       }
       let claims = fs::read(program.join("root-claims.bin"))?;
       let claim = decode_one_claim(&claims)?;
-      if claim.len() != 2 + 2 * MODEL_WORDS + DATA_WORDS {
-        return Err("program claim has the wrong length".into());
+      if claim.len() < 2 + 2 * MODEL_WORDS {
+        return Err("program claim is shorter than its two models".into());
       }
       let bytes = |w: &[u64]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
       let m0 = &claim[2..2 + MODEL_WORDS];
-      let data = &claim[2 + MODEL_WORDS..2 + MODEL_WORDS + DATA_WORDS];
-      let m1 = &claim[2 + MODEL_WORDS + DATA_WORDS..];
+      let data = &claim[2 + MODEL_WORDS..claim.len() - MODEL_WORDS];
+      let m1 = &claim[claim.len() - MODEL_WORDS..];
       let out = out_claim(
         1,
         blake3::hash(&bytes(m0)).as_bytes(),

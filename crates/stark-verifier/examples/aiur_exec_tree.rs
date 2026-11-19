@@ -7,10 +7,11 @@
 //!
 //! ```text
 //! aiur_exec_tree AX.ixa IDENTITY_DIR PROGRAMS_DIR WORK_DIR N
-//!                [--max-ram GIB] [--exec-jobs N] [--deadline SECONDS]
+//!                [--prefix NAME] [--max-ram GIB] [--exec-jobs N] [--deadline SECONDS]
 //! ```
 //!
-//! Leaf `i` proves `PROGRAMS_DIR/step-iii` (a `batch_root` directory) into
+//! Leaf `i` proves `PROGRAMS_DIR/NAME-iii` (a `batch_root` directory; `NAME`
+//! is `step` unless `--prefix` gives another) into
 //! `WORK_DIR/L0-iii`; level `d` joins adjacent nodes of level `d - 1` into
 //! `WORK_DIR/Ld-kkk` and carries an odd last node up unchanged. Node
 //! directories are those of `aiur_exec`, so its `wrap` and `root` take the
@@ -58,8 +59,8 @@ use std::{
 
 const ENTRY: &str = "AiurExec::aiur_exec";
 const OUT_BYTES: usize = 104;
+/// Words of each model in a program claim `[1, index, m, data, m']`.
 const MODEL_WORDS: usize = 331;
-const DATA_WORDS: usize = 381;
 const GIB: usize = 1 << 30;
 /// Executions per GPU admitted whenever a share is free
 /// (`EXECUTIONS_PER_GPU` in `crates/ixon/src/shard.rs`).
@@ -146,12 +147,12 @@ struct Node {
 
 /// Leaves, then adjacent joins level by level; an odd last node is carried
 /// up. The last node is the top.
-fn tree(work: &Path, programs: &Path, n: usize) -> Vec<Node> {
+fn tree(work: &Path, programs: &Path, prefix: &str, n: usize) -> Vec<Node> {
   let mut nodes: Vec<Node> = (0..n)
     .map(|i| Node {
       name: format!("L0-{i:03}"),
       dir: work.join(format!("L0-{i:03}")),
-      kind: Kind::Leaf(programs.join(format!("step-{i:03}"))),
+      kind: Kind::Leaf(programs.join(format!("{prefix}-{i:03}"))),
       parent: None,
       done: false,
       record: None,
@@ -194,13 +195,13 @@ fn node_streams(id: &Identity, nodes: &[Node], node: usize) -> R<(Vec<Stream>, V
       }
       let claims = fs::read(program.join("root-claims.bin"))?;
       let claim = decode_one_claim(&claims)?;
-      if claim.len() != 2 + 2 * MODEL_WORDS + DATA_WORDS {
-        return Err("program claim has the wrong length".into());
+      if claim.len() < 2 + 2 * MODEL_WORDS {
+        return Err("program claim is shorter than its two models".into());
       }
       let bytes = |w: &[u64]| w.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
       let m0 = &claim[2..2 + MODEL_WORDS];
-      let data = &claim[2 + MODEL_WORDS..2 + MODEL_WORDS + DATA_WORDS];
-      let m1 = &claim[2 + MODEL_WORDS + DATA_WORDS..];
+      let data = &claim[2 + MODEL_WORDS..claim.len() - MODEL_WORDS];
+      let m1 = &claim[claim.len() - MODEL_WORDS..];
       let out = out_claim(
         1,
         blake3::hash(&bytes(m0)).as_bytes(),
@@ -484,12 +485,13 @@ fn main() {
 fn run() -> R<i32> {
   let args: Vec<String> = std::env::args().collect();
   let [_, ax, id_dir, programs, work, n, ..] = &args[..] else {
-    return Err("usage: aiur_exec_tree AX.ixa IDENTITY_DIR PROGRAMS_DIR WORK_DIR N [--max-ram GIB] [--exec-jobs N] [--deadline SECONDS]".into());
+    return Err("usage: aiur_exec_tree AX.ixa IDENTITY_DIR PROGRAMS_DIR WORK_DIR N [--prefix NAME] [--max-ram GIB] [--exec-jobs N] [--deadline SECONDS]".into());
   };
   let n: usize = n.parse()?;
   let max_ram: Option<usize> = flag(&args, "--max-ram")?;
   let exec_jobs: Option<usize> = flag(&args, "--exec-jobs")?;
   let deadline: Option<f64> = flag(&args, "--deadline")?;
+  let prefix: String = flag(&args, "--prefix")?.unwrap_or_else(|| "step".to_owned());
   let begun = Instant::now();
   let (work, programs, id_dir) = (Path::new(work), Path::new(programs), Path::new(id_dir));
   fs::create_dir_all(work)?;
@@ -558,7 +560,7 @@ fn run() -> R<i32> {
   );
   let ctx = Context { program, package_digest: digest.to_string(), identity, lanes, workspace };
 
-  let mut nodes = tree(work, programs, n);
+  let mut nodes = tree(work, programs, &prefix, n);
   let mut reused = 0;
   let start = Instant::now();
   for node in nodes.iter_mut() {

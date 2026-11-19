@@ -1,16 +1,21 @@
 //! Check what an `aiur_exec` root claims, against a specification supplied by
 //! the verifier: that it covers `count` chained executions of the program's
-//! entry from the model `m₀` to `mₙ` over the given data, in order.
+//! entry from the model `m₀` to `mₙ` over the given data, in order, each
+//! execution `steps` SGD steps (1 for `Fixed::step`, 20 for
+//! `Fixed::train_block`).
 //!
 //! ```text
-//! aiur_exec_check AX.ixa PROGRAM.ixa ROOT_DIR SPEC_ARGS EXPECTED_OUTPUT COUNT
+//! aiur_exec_check AX.ixa PROGRAM.ixa ROOT_DIR SPEC_ARGS EXPECTED_OUTPUT COUNT [STEPS]
 //! ```
 //!
 //! - `ROOT_DIR`: `root-vk.bin` and `root-claims.bin`, the key and claims a
 //!   compression certificate binds by BLAKE3, and the preimages it needs:
 //!   `allowed.bin` (identity blob) and `out.bin` (output claim).
-//! - `SPEC_ARGS`: signed integers `m₀ (331) ‖ lr ‖ xs (count·160) ‖ ts (count·220)`,
-//!   as `Fixed::train` takes them; `EXPECTED_OUTPUT`: `mₙ` (331).
+//! - `SPEC_ARGS`: signed integers `m₀ (331) ‖ lr ‖ xs (count·steps·160) ‖
+//!   ts (count·steps·220)`, as `Fixed::train` takes them; `EXPECTED_OUTPUT`:
+//!   `mₙ` (331).
+//! - An execution's data is `xs ‖ ts ‖ lr` for one step (`Fixed::step`'s
+//!   arguments) and `lr ‖ xs ‖ ts` for several (`Fixed::train_block`'s).
 //!
 //! Every key is recomputed from its program: the aggregator's must be the
 //! certificate's root key, and the identity blob must name the program's.
@@ -80,10 +85,20 @@ fn batch_key(program: aiur::Program, trace: aiur::trace::TraceArtifact, arity: u
 
 fn main() -> R<()> {
   let a: Vec<String> = std::env::args().collect();
-  let [_, ax, program, root, spec, expected, count] = a.as_slice() else {
-    return Err("usage: aiur_exec_check AX.ixa PROGRAM.ixa ROOT_DIR SPEC_ARGS EXPECTED_OUTPUT COUNT".into());
+  let (ax, program, root, spec, expected, count, steps) = match a.as_slice() {
+    [_, ax, program, root, spec, expected, count] => (ax, program, root, spec, expected, count, 1),
+    [_, ax, program, root, spec, expected, count, steps] => {
+      (ax, program, root, spec, expected, count, steps.parse::<usize>()?)
+    },
+    _ => {
+      return Err("usage: aiur_exec_check AX.ixa PROGRAM.ixa ROOT_DIR SPEC_ARGS EXPECTED_OUTPUT COUNT [STEPS]".into());
+    },
   };
   let count: usize = count.parse()?;
+  if steps == 0 {
+    return Err("STEPS must be positive".into());
+  }
+  let (xs_words, ts_words) = (steps * XS, steps * TS);
   let root = Path::new(root);
   let check = |ok: bool, what: &str| -> R<()> {
     if ok { println!("ok: {what}"); Ok(()) } else { Err(format!("REJECT: {what}").into()) }
@@ -97,8 +112,10 @@ fn main() -> R<()> {
 
   let (step_pkg, _) = ExecutionPackage::load(program.as_ref())?;
   let (step_prog, step_trace) = step_pkg.package.traced()?;
-  let (step_key, step_index, step_claim_len) = batch_key(step_prog, step_trace, MODEL + XS + TS + 1, MODEL)?;
-  check(step_claim_len == 2 + 2 * MODEL + XS + TS + 1, "the program's claim is model, batch, rate, model")?;
+  let (step_key, step_index, step_claim_len) =
+    batch_key(step_prog, step_trace, MODEL + xs_words + ts_words + 1, MODEL)?;
+  check(step_claim_len == 2 + 2 * MODEL + xs_words + ts_words + 1,
+    &format!("the program's claim is model, {steps} batches and the rate, model"))?;
 
   let claims = stark_verifier::compress_wrap::decode_claims(&fs::read(root.join("root-claims.bin"))?)?;
   check(claims.len() == 1 && claims[0].len() == 18, "one 18-word root claim")?;
@@ -116,10 +133,10 @@ fn main() -> R<()> {
   check(u64::from_le_bytes(allowed[72..80].try_into()?) == ax_index, "the identity names the aggregator's entry")?;
 
   let spec = words(spec)?;
-  check(spec.len() == MODEL + 1 + count * (XS + TS), "specification arguments have the full config's length")?;
+  check(spec.len() == MODEL + 1 + count * (xs_words + ts_words), "specification arguments have the full config's length")?;
   let (m0, lr) = (&spec[..MODEL], spec[MODEL]);
-  let xs = &spec[MODEL + 1..MODEL + 1 + count * XS];
-  let ts = &spec[MODEL + 1 + count * XS..];
+  let xs = &spec[MODEL + 1..MODEL + 1 + count * xs_words];
+  let ts = &spec[MODEL + 1 + count * xs_words..];
   let last = words(expected)?;
   let param = |v: &i128| (-8191..=8191).contains(v);
   let input = |v: &i128| (-4096..=4096).contains(v);
@@ -132,13 +149,12 @@ fn main() -> R<()> {
   check(out[40..72] == h(&enc(&last)), "the chain ends at the expected model")?;
   let leaves: Vec<[u8; 32]> = (0..count)
     .map(|i| {
-      let mut d = xs[i * XS..(i + 1) * XS].to_vec();
-      d.extend_from_slice(&ts[i * TS..(i + 1) * TS]);
-      d.push(lr);
+      let (x, t) = (&xs[i * xs_words..(i + 1) * xs_words], &ts[i * ts_words..(i + 1) * ts_words]);
+      let d = if steps == 1 { [x, t, &[lr]].concat() } else { [&[lr], x, t].concat() };
       h(&enc(&d))
     })
     .collect();
-  check(out[72..104] == data_root(leaves), "execution i used batch i and lr, for every i")?;
+  check(out[72..104] == data_root(leaves), "execution i used its batches and lr, for every i")?;
   println!("ACCEPT: {count} chained executions of the program (key {}) from m0 to the expected model",
     blake3::Hash::from(h(&step_key)).to_hex());
   Ok(())

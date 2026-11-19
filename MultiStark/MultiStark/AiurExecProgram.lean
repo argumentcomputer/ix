@@ -1,6 +1,7 @@
 import MultiStark.Program
 import MultiStark.FunctionGroups
 import MultiStark.Modules.AiurExec
+import MultiStark.Modules.AiurExecBlock
 import Aiur.Artifact
 import Aiur.Trace.Export
 
@@ -12,27 +13,40 @@ every existing proof are untouched. -/
 namespace MultiStark
 open Aiur
 
-def aiurExecSource : Modules.Program Nat :=
+/-- The aggregator over `module`, an instance of `AiurExec` for one program's claim shape. -/
+def aiurExecSourceWith (module : Modules.Program Nat) : Modules.Program Nat :=
   [Source.proofDeserialize, Source.systemDeserialize, Source.pcs, Source.aggregation,
     Source.starkIO, Source.starkHash, Source.mmcs, Source.starkVerifier, Source.transcript,
-    Source.aiurExec].foldl Modules.Program.append {}
+    module].foldl Modules.Program.append {}
+
+def aiurExecSource : Modules.Program Nat := aiurExecSourceWith Source.aiurExec
+
+/-- The aggregator for `Fixed::train_block` claims. -/
+def aiurExecBlockSource : Modules.Program Nat := aiurExecSourceWith Source.aiurExecBlock
 
 #aiur_check libraries.append aiurExecSource
+#aiur_check libraries.append aiurExecBlockSource
 
 def aiurExecProgram : Modules.Program F := withLibraries aiurExecSource
+
+def aiurExecBlockProgram : Modules.Program F := withLibraries aiurExecBlockSource
 
 def aiurExecEntry : String := "AiurExec::aiur_exec"
 
 def aiurExecDigest : String := aiur_eval% hexDigest (reprStr aiurExecProgram)
+
+def aiurExecBlockDigest : String := aiur_eval% hexDigest (reprStr aiurExecBlockProgram)
 
 /-- The verifier's function groups, restricted to functions the program has, plus one group
 for this module's own functions. -/
 def aiurExecGroups (names : List String) : List (String × List String) :=
   (functionGroups.map fun (g, fs) => (g, fs.filter names.contains)).filter (!·.2.isEmpty)
 
-/-- The compiled package, as `compilePackage` compiles `ix_aggr`. -/
-def compileAiurExecPackage (grouped : Bool := true) : IO ByteArray := do
-  let prepared ← IO.ofExcept (Modules.prepare aiurExecProgram [aiurExecEntry])
+/-- The compiled package of `program` (`aiurExecProgram` unless given), as `compilePackage`
+compiles `ix_aggr`. -/
+def compileAiurExecPackage (grouped : Bool := true) (program : Modules.Program F := aiurExecProgram) :
+    IO ByteArray := do
+  let prepared ← IO.ofExcept (Modules.prepare program [aiurExecEntry])
   let exported ← IO.ofExcept prepared.exportExecution
   let names := exported.bytecode.functions.map (·.name) ++ exported.bytecode.maps.map (·.name)
   let groups := if grouped then aiurExecGroups names else []
