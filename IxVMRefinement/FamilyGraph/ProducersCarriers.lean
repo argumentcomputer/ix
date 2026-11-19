@@ -409,15 +409,13 @@ theorem KExprSub.trans {h : Heap F} {p q r : SourceValue F}
   | appFn ld _ ih => exact .appFn ld (ih h2)
 
 private theorem rawConvExpr_unshare {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)}
-    {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e kp) :
+    {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F} :
+    L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e kp →
     ∀ k, (bound ≤ k ∨ c.sharing.size ≤ k) →
       ∃ b', L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h b'
         (Binding.FamilyOf.unshare c k e) kp ∧
-        (∀ i, Binding.FamilyOf.unshare c k e ≠ .share i) := by
-  match raw with
-  | .share hidx hsh rs =>
-    intro k hk
+        (∀ i, Binding.FamilyOf.unshare c k e ≠ .share i)
+  | .share hidx hsh rs, k, hk => by
     have hlt_sz : _ < c.sharing.size := by
       have := (List.getElem?_eq_some_iff.mp hsh).1
       simpa only [Array.length_toList] using this
@@ -426,11 +424,10 @@ private theorem rawConvExpr_unshare {c : Ixon.Constant} {blobs : List (_root_.Ad
     have hget : c.sharing[_]? = some _ := by simpa only [Array.getElem?_toList] using hsh
     simp only [Binding.FamilyOf.unshare, hget]
     exact rawConvExpr_unshare rs k' (Or.inl (by omega))
-  | .var .. | .sort .. | .ref .. | .recur ..
-  | .prj .. | .str .. | .nat ..
-  | .app .. | .lam .. | .all .. | .letE .. =>
-    intro k _
-    cases k <;> exact ⟨_, raw, fun _ h => by cases h⟩
+  | r@(.var ..), k, _ | r@(.sort ..), k, _ | r@(.ref ..), k, _ | r@(.recur ..), k, _
+  | r@(.prj ..), k, _ | r@(.str ..), k, _ | r@(.nat ..), k, _
+  | r@(.app ..), k, _ | r@(.lam ..), k, _ | r@(.all ..), k, _ | r@(.letE ..), k, _ => by
+    cases k <;> exact ⟨_, r, fun _ h => by cases h⟩
 
 private theorem rawConvExpr_node {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
@@ -628,8 +625,8 @@ private theorem collect_spine_raw_aux {c : Ixon.Constant}
       exact ⟨ext, .refl _, 0, b', raw'.mono ext (fun _ hm => hm), hns⟩
   | m + 1, bound, e, kp, hd, sp, h, h', cs, hlen, raw, ev => by
     match Obs.«KernelTypes::collect_spine».obs ev with
-    | .App (cs41 := cs41) (ld12 := ld12) (ev43 := ev43) (he69 := hr) (ev88 := ev88) (he105 := hh)
-        (hc106 := hc) .. =>
+    | .App (m31 := m31) (cs41 := cs41) (ld12 := ld12) (ev43 := ev43) (he69 := hr) (ev88 := ev88)
+        (he105 := hh) (hc106 := hc) .. =>
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hr
       obtain ⟨rfl, -⟩ := hr
       have hlen' : cs41.length ≤ m := by
@@ -638,7 +635,7 @@ private theorem collect_spine_raw_aux {c : Ixon.Constant}
         omega
       obtain ⟨b₁, ef, ea, hnd, raw_f, -⟩ := rawConvExpr_app_inv raw ld12
       obtain ⟨ext1, hsub, n, b₂, raw', hns⟩ := collect_spine_raw_aux m hlen' raw_f ev43
-      have ext2 : Heap.Extends _ h' := by rw [hh]; exact ev88.heap_extends
+      have ext2 : Heap.Extends m31 h' := by rw [hh]; exact ev88.heap_extends
       refine ⟨ext1.trans ext2, .appFn ld12 hsub, n + 1, b₂, ?_, ?_⟩
       · simp only [Binding.FamilyOf.spineHead, hnd]
         exact raw'.mono ext2 (fun _ hm => hm)
@@ -1644,7 +1641,7 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
             L1.load_verified_constant_decode_bounded hb_rb784 ev_fr14
           have hcrb_eq : crb_l = crb :=
             hW.runStore.record_eq ((hW.runStore.recordOf_eq_recordAt _).symm.trans
-              (by simpa [hb_rb_ix] using hrb.record))
+              (by change recordOf K.E₀ (Core.ixAddr b_rb) = some crb; rw [hb_rb_ix]; exact hrb.record))
               (Core.hashed_mono hsub_fr12 hh_l) hba_l hde_l
           subst crb_l
           have hres := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound ⟨raw_l.toArray⟩ crb hde_l
@@ -1659,7 +1656,7 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
             L1.load_verified_constant_decode_bounded hb_rb784 ev_fr14
           have hcrb_eq : crb_l = crb :=
             hW.runStore.record_eq ((hW.runStore.recordOf_eq_recordAt _).symm.trans
-              (by simpa [hb_rb_ix] using hrb.record))
+              (by change recordOf K.E₀ (Core.ixAddr b_rb) = some crb; rw [hb_rb_ix]; exact hrb.record))
               (Core.hashed_mono hsub_fr12 hh_l) hba_l hde_l
           subst crb_l
           obtain ⟨infoVal, _, _, _, _, hc_eq, hinfoRep, -, -, -, -⟩ := cRep_l
