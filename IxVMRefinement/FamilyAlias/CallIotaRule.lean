@@ -118,7 +118,8 @@ theorem keyIn_getAppArgs (k : KKey) :
 
 private theorem keyIn_liftLooseBVars (k : KKey) (d : Nat) :
     ∀ (e : KExpr) (c : Nat), KeyIn k (e.liftLooseBVars d c) ↔ KeyIn k e
-  | .bvar _, _ | .sort _, _ | .lit _, _ | .const _ _, _ | .fvar _ _, _ => Iff.rfl
+  | .bvar _, _ => by unfold Expr.liftLooseBVars; split <;> exact Iff.rfl
+  | .sort _, _ | .lit _, _ | .const _ _, _ | .fvar _ _, _ => Iff.rfl
   | .app f a, c => by
     simp [Expr.liftLooseBVars, KeyIn, keyIn_liftLooseBVars k d f c, keyIn_liftLooseBVars k d a c]
   | .lam ty b _, c | .forallE ty b _, c => by
@@ -1695,7 +1696,7 @@ theorem check_iota_rule_facts
   have hcdoms_drop : cdoms.drop cnP = cdoms2 := by
     have hlen1 : cdoms1.length = cnP := by
       rw [Decl.instPisAt_length hinst_c1]; simp [pinsF_lps, hpins_len]
-    simp [cdoms, List.drop_append, hlen1]
+    simp [cdoms, hlen1]
   obtain ⟨r_ch, r_ca, ch_pos, cargs_pos, htup_csp, hch_tm, hcargs_rep, hcres_app⟩ :=
     SubstAux.gall sc.κ .collect_spine [inv.cres] inv.h_cres
       (.tuple [inv.chead, inv.cargs]) inv.h_csp inv.cs_csp inv.ev_csp inv.cres rfl
@@ -1730,7 +1731,7 @@ theorem check_iota_rule_facts
     have hpfx_len : (pinsF_lps ++ fvs.drop rP).length + 0 = cnP + cnF := by
       simp [pinsF_lps, hpins_len, hfvs_len]; omega
     rw [← hpfx_len] at hstrip_ren
-    obtain ⟨-, cres', -, cbody_r, hinst_r', hs0, -, hlen_r⟩ :=
+    obtain ⟨_, cres', _, cbody_r, hinst_r', hs0, _, hlen_r⟩ :=
       Decl.instPisAt_constHead _ _ cbody_inst.getAppArgs.length (pinsF_lps ++ fvs.drop rP) 0
         (cty_inst.renameConsts g) hstrip_ren hfn_ren hlen_ren
     rw [hinst_c] at hinst_r'; injection hinst_r' with hp; injection hp with _ hcr; subst hcr
@@ -1812,7 +1813,7 @@ theorem check_iota_rule_facts
   rw [show rP + cnF = depth from rfl, hopen_t, hop_dt1, Nat.zero_add] at hfvs_split
   dsimp only at hfvs_split
   rw [Option.map_eq_some_iff] at hfvs_split
-  obtain ⟨⟨fvs2, -⟩, hop_dt2_expected, hfvs_pair⟩ := hfvs_split
+  obtain ⟨⟨fvs2, _⟩, hop_dt2_expected, hfvs_pair⟩ := hfvs_split
   dsimp only at hfvs_pair
   obtain ⟨hfvs_app, -⟩ := Prod.mk.inj hfvs_pair
   have hfvs1_len : fvs1.length = rP := (Decl.openPisAtFvars_spec rP stmt 0 hop_dt1).1
