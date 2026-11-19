@@ -1,4 +1,5 @@
 import IxVMRefinement.Binding.FamilyReconCanon
+import IxVMRefinement.Binding.StoreLevelsBasis
 import IxVMRefinement.Assembly.ProjSafe
 import IxVMRefinement.Binding.PayloadClosed
 import IxVMRefinement.Binding.StoreLogic
@@ -63,497 +64,6 @@ local macro_rules
       | apply List.mem_cons_of_mem
       | apply List.mem_append_right)
 
-/-! ## Inductive parameter coherence predicate -/
-
-/-- **Inductive parameter coherence over a store subset `S`**: every constructor of an inductive
-block in `S` has the same parameter count as its parent inductive, and any two inductive members
-of the same block in `S` share their parameter count. -/
-structure StoreIndParamsOk (E : Ixon.Env) (S : _root_.Address → Prop) : Prop where
-  ctorParams : ∀ (b : _root_.Address) (cb : Ixon.Constant) (ms : Array Ixon.MutConst)
-      (i : Nat) (ind : Ixon.Inductive) (j : Nat) (ct : Ixon.Constructor),
-    S b → recordOf E b = some cb → cb.info = .muts ms →
-    ms[i]? = some (.indc ind) → ind.ctors[j]? = some ct → ct.params = ind.params
-  blockParams : ∀ (b : _root_.Address) (cb : Ixon.Constant) (ms : Array Ixon.MutConst)
-      (i₁ i₂ : Nat) (ind₁ ind₂ : Ixon.Inductive),
-    S b → recordOf E b = some cb → cb.info = .muts ms →
-    ms[i₁]? = some (.indc ind₁) → ms[i₂]? = some (.indc ind₂) → ind₁.params = ind₂.params
-
-/-! ## Part 1: Pure level-parameter check and basis rows -/
-
-private def univVarsLt (n : Nat) : Ixon.Univ → Bool
-  | .zero => true
-  | .succ u => univVarsLt n u
-  | .max a b => univVarsLt n a && univVarsLt n b
-  | .imax a b => univVarsLt n a && univVarsLt n b
-  | .var i => decide (i.toNat < n)
-
-private theorem convUniv_allParamsDefined {n : Nat} :
-    ∀ u : Ixon.Univ, univVarsLt n u = true →
-      (Ix.Kernel.Reader.convUniv id u).allParamsDefined (List.range n) = true
-  | .zero, _ => rfl
-  | .succ u, h => convUniv_allParamsDefined u h
-  | .max a b, h => by
-    simp only [univVarsLt, Bool.and_eq_true] at h
-    simp only [Ix.Kernel.Reader.convUniv, Ix.Kernel.Level.allParamsDefined, Bool.and_eq_true]
-    exact ⟨convUniv_allParamsDefined a h.1, convUniv_allParamsDefined b h.2⟩
-  | .imax a b, h => by
-    simp only [univVarsLt, Bool.and_eq_true] at h
-    simp only [Ix.Kernel.Reader.convUniv, Ix.Kernel.Level.allParamsDefined, Bool.and_eq_true]
-    exact ⟨convUniv_allParamsDefined a h.1, convUniv_allParamsDefined b h.2⟩
-  | .var i, h => by
-    simp only [univVarsLt, decide_eq_true_eq] at h
-    simp only [Ix.Kernel.Reader.convUniv, id, Ix.Kernel.Level.allParamsDefined, List.contains_eq_mem,
-      decide_eq_true_eq, List.mem_range]
-    exact h
-
-private def univIdxOk (univs : Array Ixon.Univ) (n : Nat) (i : UInt64) : Bool :=
-  match univs[i.toNat]? with
-  | some u => univVarsLt n u
-  | none => true
-
-private def exprUnivsLtGo (univs : Array Ixon.Univ) (n : Nat) (tbl : Array Bool) :
-    Ixon.Expr → Bool
-  | .var _ | .str _ | .nat _ => true
-  | .sort i => univIdxOk univs n i
-  | .ref _ us | .recur _ us => us.toList.all (univIdxOk univs n)
-  | .prj _ _ v => exprUnivsLtGo univs n tbl v
-  | .app f a => exprUnivsLtGo univs n tbl f && exprUnivsLtGo univs n tbl a
-  | .lam t b | .all t b => exprUnivsLtGo univs n tbl t && exprUnivsLtGo univs n tbl b
-  | .letE _ _ t v b =>
-    exprUnivsLtGo univs n tbl t && exprUnivsLtGo univs n tbl v && exprUnivsLtGo univs n tbl b
-  | .share i => tbl.getD i.toNat true
-
-private def buildUnivsOkTblGo (univs : Array Ixon.Univ) (n : Nat) :
-    Array Bool → List Ixon.Expr → Array Bool
-  | acc, [] => acc
-  | acc, e :: es => buildUnivsOkTblGo univs n (acc.push (exprUnivsLtGo univs n acc e)) es
-
-private def exprUnivsOk (src : Ixon.Constant) (n : Nat) (e : Ixon.Expr) : Bool :=
-  exprUnivsLtGo src.univs n (buildUnivsOkTblGo src.univs n #[] src.sharing.toList) e
-
-private theorem ecx_level_allParamsDefined {ecx : Ix.Kernel.Reader.ECx .anon}
-    {univs : Array Ixon.Univ} {n : Nat} {i : UInt64} {l : KLevel}
-    (hunivs : ecx.univs = univs.map (Ix.Kernel.Reader.convUniv id))
-    (hok : univIdxOk univs n i = true)
-    (hl : ecx.level i = .ok l) :
-    l.allParamsDefined (List.range n) = true := by
-  unfold Ix.Kernel.Reader.ECx.level at hl
-  rw [hunivs, Array.getElem?_map] at hl
-  unfold univIdxOk at hok
-  cases hget : univs[i.toNat]? with
-  | none => rw [hget] at hl; simp [Ix.Kernel.Reader.malformed] at hl
-  | some u =>
-    rw [hget] at hl hok
-    simp only [Option.map_some] at hl
-    have heq : Ix.Kernel.Reader.convUniv id u = l := Except.ok.inj hl
-    rw [← heq]
-    exact convUniv_allParamsDefined u hok
-
-private theorem ecx_levels_allParamsDefined {ecx : Ix.Kernel.Reader.ECx .anon}
-    {univs : Array Ixon.Univ} {n : Nat}
-    (hunivs : ecx.univs = univs.map (Ix.Kernel.Reader.convUniv id)) :
-    ∀ (us : List UInt64) (ls : List KLevel),
-      us.all (univIdxOk univs n) = true →
-      us.mapM ecx.level = .ok ls →
-      ls.all (Ix.Kernel.Level.allParamsDefined (List.range n)) = true
-  | [], ls, _, h => by
-    simp only [List.mapM_nil, pure, Except.pure, Except.ok.injEq] at h
-    subst h; rfl
-  | u :: us, ls, hok, h => by
-    simp only [List.all_cons, Bool.and_eq_true] at hok
-    simp only [List.mapM_cons, bind, Except.bind] at h
-    cases hl : ecx.level u with
-    | error _ => rw [hl] at h; cases h
-    | ok l =>
-      rw [hl] at h
-      cases hls : us.mapM ecx.level with
-      | error _ => rw [hls] at h; cases h
-      | ok ls' =>
-        rw [hls] at h
-        simp only [pure, Except.pure, Except.ok.injEq] at h
-        subst h
-        simp only [List.all_cons, Bool.and_eq_true]
-        exact ⟨ecx_level_allParamsDefined hunivs hok.1 hl,
-          ecx_levels_allParamsDefined hunivs us ls' hok.2 hls⟩
-
-private theorem convExpr_allLevelParamsDefined {ecx : Ix.Kernel.Reader.ECx .anon}
-    {univs : Array Ixon.Univ} {n : Nat}
-    {shareTbl : Array (Ix.Kernel.Reader.ReadM KExpr)} {okTbl : Array Bool}
-    (hunivs : ecx.univs = univs.map (Ix.Kernel.Reader.convUniv id))
-    (htbl : ∀ i E_rd, shareTbl[i]? = some (.ok E_rd) → okTbl.getD i true = true →
-      E_rd.allLevelParamsDefined (List.range n) = true) :
-    ∀ (e : Ixon.Expr) (E_rd : KExpr),
-      exprUnivsLtGo univs n okTbl e = true →
-      Ix.Kernel.Reader.convExpr ecx shareTbl e = .ok E_rd →
-      E_rd.allLevelParamsDefined (List.range n) = true
-  | .var i, E_rd, _, h => by
-    simp only [Ix.Kernel.Reader.convExpr, pure, Except.pure, Except.ok.injEq] at h
-    subst h
-    rw [Ix.Kernel.Expr.mkBvar_eq]; rfl
-  | .sort i, E_rd, hok, h => by
-    simp only [Ix.Kernel.Reader.convExpr, bind, Except.bind] at h
-    cases hl : ecx.level i with
-    | error _ => rw [hl] at h; cases h
-    | ok l =>
-      rw [hl] at h
-      simp only [pure, Except.pure, Except.ok.injEq] at h
-      subst h
-      exact ecx_level_allParamsDefined hunivs hok hl
-  | .ref i us, E_rd, hok, h => by
-    simp only [Ix.Kernel.Reader.convExpr, bind, Except.bind] at h
-    cases hk : ecx.keyAt i with
-    | error _ => rw [hk] at h; cases h
-    | ok k =>
-      rw [hk] at h
-      cases hls : ecx.levels us with
-      | error _ => rw [hls] at h; cases h
-      | ok ls =>
-        rw [hls] at h
-        simp only [pure, Except.pure, Except.ok.injEq] at h
-        subst h
-        exact ecx_levels_allParamsDefined hunivs us.toList ls hok hls
-  | .recur i us, E_rd, hok, h => by
-    simp only [Ix.Kernel.Reader.convExpr] at h
-    cases hs : ecx.self i.toNat with
-    | none => rw [hs] at h; cases h
-    | some m =>
-      rw [hs] at h
-      simp only [bind, Except.bind] at h
-      cases hm : m with
-      | error _ => rw [hm] at h; cases h
-      | ok k =>
-        rw [hm] at h
-        cases hls : ecx.levels us with
-        | error _ => rw [hls] at h; cases h
-        | ok ls =>
-          rw [hls] at h
-          simp only [pure, Except.pure, Except.ok.injEq] at h
-          subst h
-          exact ecx_levels_allParamsDefined hunivs us.toList ls hok hls
-  | .prj i f v, E_rd, hok, h => by
-    simp only [Ix.Kernel.Reader.convExpr, bind, Except.bind] at h
-    cases hk : ecx.keyAt i with
-    | error _ => rw [hk] at h; cases h
-    | ok k =>
-      rw [hk] at h
-      cases hv : Ix.Kernel.Reader.convExpr ecx shareTbl v with
-      | error _ => rw [hv] at h; cases h
-      | ok ev =>
-        rw [hv] at h
-        simp only [pure, Except.pure, Except.ok.injEq] at h
-        subst h
-        exact convExpr_allLevelParamsDefined hunivs htbl v ev hok hv
-  | .str i, E_rd, _, h => by
-    simp only [Ix.Kernel.Reader.convExpr, bind, Except.bind] at h
-    cases hb : ecx.blobAt i with
-    | error _ => rw [hb] at h; cases h
-    | ok bs =>
-      rw [hb] at h; dsimp only at h
-      cases hs : String.fromUTF8? bs with
-      | none => rw [hs] at h; cases h
-      | some s =>
-        rw [hs] at h; dsimp only at h
-        simp only [pure, Except.pure, Except.ok.injEq] at h
-        subst h; rfl
-  | .nat i, E_rd, _, h => by
-    simp only [Ix.Kernel.Reader.convExpr, bind, Except.bind] at h
-    cases hn : ecx.natAt i with
-    | error _ => rw [hn] at h; cases h
-    | ok m =>
-      rw [hn] at h; dsimp only at h
-      simp only [pure, Except.pure, Except.ok.injEq] at h
-      subst h; rfl
-  | .app f a, E_rd, hok, h => by
-    simp only [exprUnivsLtGo, Bool.and_eq_true] at hok
-    simp only [Ix.Kernel.Reader.convExpr, bind, Except.bind] at h
-    cases hf : Ix.Kernel.Reader.convExpr ecx shareTbl f with
-    | error _ => rw [hf] at h; cases h
-    | ok ef =>
-      rw [hf] at h
-      cases ha : Ix.Kernel.Reader.convExpr ecx shareTbl a with
-      | error _ => rw [ha] at h; cases h
-      | ok ea =>
-        rw [ha] at h
-        simp only [pure, Except.pure, Except.ok.injEq] at h
-        subst h
-        simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true]
-        exact ⟨convExpr_allLevelParamsDefined hunivs htbl f ef hok.1 hf,
-          convExpr_allLevelParamsDefined hunivs htbl a ea hok.2 ha⟩
-  | .lam t b, E_rd, hok, h => by
-    simp only [exprUnivsLtGo, Bool.and_eq_true] at hok
-    simp only [Ix.Kernel.Reader.convExpr, bind, Except.bind] at h
-    cases ht : Ix.Kernel.Reader.convExpr ecx shareTbl t with
-    | error _ => rw [ht] at h; cases h
-    | ok et =>
-      rw [ht] at h
-      cases hb : Ix.Kernel.Reader.convExpr ecx shareTbl b with
-      | error _ => rw [hb] at h; cases h
-      | ok eb =>
-        rw [hb] at h
-        simp only [pure, Except.pure, Except.ok.injEq] at h
-        subst h
-        simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true,
-          Ix.Kernel.BinderMeta.leanNever, Ix.Kernel.PropWhen.paramsDefined]
-        exact ⟨⟨convExpr_allLevelParamsDefined hunivs htbl t et hok.1 ht,
-          convExpr_allLevelParamsDefined hunivs htbl b eb hok.2 hb⟩, rfl⟩
-  | .all t b, E_rd, hok, h => by
-    simp only [exprUnivsLtGo, Bool.and_eq_true] at hok
-    simp only [Ix.Kernel.Reader.convExpr, bind, Except.bind] at h
-    cases ht : Ix.Kernel.Reader.convExpr ecx shareTbl t with
-    | error _ => rw [ht] at h; cases h
-    | ok et =>
-      rw [ht] at h
-      cases hb : Ix.Kernel.Reader.convExpr ecx shareTbl b with
-      | error _ => rw [hb] at h; cases h
-      | ok eb =>
-        rw [hb] at h
-        simp only [pure, Except.pure, Except.ok.injEq] at h
-        subst h
-        simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true,
-          Ix.Kernel.BinderMeta.leanNever, Ix.Kernel.PropWhen.paramsDefined]
-        exact ⟨⟨convExpr_allLevelParamsDefined hunivs htbl t et hok.1 ht,
-          convExpr_allLevelParamsDefined hunivs htbl b eb hok.2 hb⟩, rfl⟩
-  | .letE _ _ t v b, E_rd, hok, h => by
-    simp only [exprUnivsLtGo, Bool.and_eq_true] at hok
-    simp only [Ix.Kernel.Reader.convExpr, bind, Except.bind] at h
-    cases ht : Ix.Kernel.Reader.convExpr ecx shareTbl t with
-    | error _ => rw [ht] at h; cases h
-    | ok et =>
-      rw [ht] at h
-      cases hv : Ix.Kernel.Reader.convExpr ecx shareTbl v with
-      | error _ => rw [hv] at h; cases h
-      | ok ev =>
-        rw [hv] at h
-        cases hb : Ix.Kernel.Reader.convExpr ecx shareTbl b with
-        | error _ => rw [hb] at h; cases h
-        | ok eb =>
-          rw [hb] at h
-          simp only [pure, Except.pure, Except.ok.injEq] at h
-          subst h
-          simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true]
-          exact ⟨⟨convExpr_allLevelParamsDefined hunivs htbl t et hok.1.1 ht,
-            convExpr_allLevelParamsDefined hunivs htbl v ev hok.1.2 hv⟩,
-            convExpr_allLevelParamsDefined hunivs htbl b eb hok.2 hb⟩
-  | .share i, E_rd, hok, h => by
-    simp only [Ix.Kernel.Reader.convExpr] at h
-    cases hg : shareTbl[i.toNat]? with
-    | none => rw [hg] at h; cases h
-    | some r =>
-      rw [hg] at h; dsimp only at h
-      exact htbl i.toNat E_rd (by rw [hg, h]) hok
-
-private theorem buildUnivsOkTblGo_sound {ecx : Ix.Kernel.Reader.ECx .anon}
-    {univs : Array Ixon.Univ} {n : Nat}
-    (hunivs : ecx.univs = univs.map (Ix.Kernel.Reader.convUniv id)) :
-    ∀ (es : List Ixon.Expr) (shareAcc : Array (Ix.Kernel.Reader.ReadM KExpr))
-      (okAcc : Array Bool),
-      shareAcc.size = okAcc.size →
-      (∀ i E_rd, shareAcc[i]? = some (.ok E_rd) → okAcc.getD i true = true →
-        E_rd.allLevelParamsDefined (List.range n) = true) →
-      ∀ i E_rd, (L1.buildShareTblGo ecx shareAcc es)[i]? = some (.ok E_rd) →
-        (buildUnivsOkTblGo univs n okAcc es).getD i true = true →
-        E_rd.allLevelParamsDefined (List.range n) = true
-  | [], shareAcc, okAcc, _, hinv, i, E_rd, hs, hok => hinv i E_rd hs hok
-  | e :: es, shareAcc, okAcc, hsz, hinv, i, E_rd, hs, hok => by
-    refine buildUnivsOkTblGo_sound hunivs es
-      (shareAcc.push (Ix.Kernel.Reader.convExpr ecx shareAcc e))
-      (okAcc.push (exprUnivsLtGo univs n okAcc e)) (by simp [hsz]) ?_ i E_rd hs hok
-    intro j E' hj hokj
-    by_cases hlt : j < shareAcc.size
-    · rw [Array.getElem?_push_lt hlt, ← Array.getElem?_eq_getElem hlt] at hj
-      have hlt' : j < okAcc.size := by omega
-      have hgetd : (okAcc.push (exprUnivsLtGo univs n okAcc e)).getD j true = okAcc.getD j true := by
-        simp [Array.getD, hlt', Array.size_push, Nat.lt_succ_of_lt hlt', Array.getElem_push_lt hlt']
-      rw [hgetd] at hokj
-      exact hinv j E' hj hokj
-    · have hj_eq : j = shareAcc.size := by
-        have hlt_p := (Array.getElem?_eq_some_iff.mp hj).1
-        simp only [Array.size_push] at hlt_p; omega
-      subst hj_eq
-      rw [Array.getElem?_push_size] at hj
-      have hconv := Option.some.inj hj
-      have hgetd : (okAcc.push (exprUnivsLtGo univs n okAcc e)).getD shareAcc.size true =
-          exprUnivsLtGo univs n okAcc e := by
-        simp [Array.getD, hsz]
-      rw [hgetd] at hokj
-      exact convExpr_allLevelParamsDefined hunivs hinv e E' hokj hconv
-
-private theorem exprUnivsOk_sound {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Constant}
-    {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)} {n : Nat} {e : Ixon.Expr} {E_rd : KExpr}
-    (hok : exprUnivsOk src n e = true)
-    (hread : (Ix.Kernel.Reader.MemberReader.mk' cx src id self).read e = .ok E_rd) :
-    E_rd.allLevelParamsDefined (List.range n) = true := by
-  obtain ⟨hecx, htbl⟩ := L1.memberReader_mk'_eq cx src id self
-  unfold Ix.Kernel.Reader.MemberReader.read at hread
-  rw [hecx, htbl] at hread
-  have hinv := buildUnivsOkTblGo_sound
-    (ecx := ⟨cx, src, src.univs.map (Ix.Kernel.Reader.convUniv id), self⟩)
-    (univs := src.univs) (n := n) rfl src.sharing.toList #[] #[] rfl
-    (fun i _ h => by simp at h)
-  exact convExpr_allLevelParamsDefined rfl hinv e E_rd hok hread
-
-private def constLevelsOkBool (c : Ixon.Constant) : Bool :=
-  match c.info with
-  | .defn d =>
-    if d.kind == .defn then decide (d.lvls.toNat < 4294967296) && exprUnivsOk c d.lvls.toNat d.value
-    else true
-  | .muts ms =>
-    ms.toList.all fun m =>
-      match m with
-      | .defn d =>
-        if d.kind == .defn then decide (d.lvls.toNat < 4294967296) && exprUnivsOk c d.lvls.toNat d.value
-        else true
-      | .indc ind =>
-        decide (ind.lvls.toNat < 4294967296) && exprUnivsOk c ind.lvls.toNat ind.typ &&
-          ind.ctors.toList.all fun ct =>
-            decide (ct.lvls.toNat < 4294967296) && exprUnivsOk c ct.lvls.toNat ct.typ
-      | .recr r =>
-        decide (r.lvls.toNat < 4294967296) && exprUnivsOk c r.lvls.toNat r.typ &&
-          r.rules.toList.all fun ru => exprUnivsOk c r.lvls.toNat ru.rhs
-  | _ => true
-
-private def constIndParamsOkBool (c : Ixon.Constant) : Bool :=
-  match c.info with
-  | .muts ms =>
-    ms.toList.all fun m =>
-      match m with
-      | .indc ind =>
-        ind.ctors.toList.all (fun ct => ct.params == ind.params) &&
-          ms.toList.all fun m2 =>
-            match m2 with
-            | .indc ind2 => ind2.params == ind.params
-            | _ => true
-      | _ => true
-  | _ => true
-
-set_option maxRecDepth 200000 in
-private theorem basisRows_levelsOk_bool :
-    StoreInhabit.basisRows.all (fun e => constLevelsOkBool e.2) = true := by
-  decide +kernel
-
-set_option maxRecDepth 200000 in
-private theorem basisRows_indParamsOk_bool :
-    StoreInhabit.basisRows.all (fun e => constIndParamsOkBool e.2) = true := by
-  decide +kernel
-
-private theorem basisRow_constLevelsOk {a : _root_.Address} {c : Ixon.Constant}
-    (h : recordOf StoreInhabit.basisStore a = some c) :
-    constLevelsOkBool c = true :=
-  List.all_eq_true.mp basisRows_levelsOk_bool (a, c) (StoreInhabit.store_record_inv h)
-
-private theorem basisRow_constIndParamsOk {a : _root_.Address} {c : Ixon.Constant}
-    (h : recordOf StoreInhabit.basisStore a = some c) :
-    constIndParamsOkBool c = true :=
-  List.all_eq_true.mp basisRows_indParamsOk_bool (a, c) (StoreInhabit.store_record_inv h)
-
-/-- Unit-level bundle capturing all level-parameter and inductive-parameter invariants of a
-single record `c` at address `a`. -/
-structure UnitLevelsAndParamsOk (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
-    (a : _root_.Address) (c : Ixon.Constant) : Prop where
-  defnVal : ∀ (d : Ixon.Definition), c.info = .defn d → d.kind = .defn →
-    d.lvls.toNat < 4294967296 ∧
-    ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) c id (soloSelf t a)).read d.value = .ok E_rd →
-      E_rd.allLevelParamsDefined (List.range d.lvls.toNat) = true
-  mutDefn : ∀ (ms : Array Ixon.MutConst) (i : Nat) (d : Ixon.Definition),
-    c.info = .muts ms → ms[i]? = some (.defn d) → d.kind = .defn →
-    d.lvls.toNat < 4294967296 ∧
-    ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) c id (blockSelf t a ms)).read d.value = .ok E_rd →
-      E_rd.allLevelParamsDefined (List.range d.lvls.toNat) = true
-  mutInd : ∀ (ms : Array Ixon.MutConst) (i : Nat) (ind : Ixon.Inductive),
-    c.info = .muts ms → ms[i]? = some (.indc ind) →
-    (ind.lvls.toNat < 4294967296 ∧
-      ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) c id (blockSelf t a ms)).read ind.typ = .ok E_rd →
-        E_rd.allLevelParamsDefined (List.range ind.lvls.toNat) = true) ∧
-    (∀ (j : Nat) (ct : Ixon.Constructor), ind.ctors[j]? = some ct →
-      ct.lvls.toNat < 4294967296 ∧
-      (∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) c id (blockSelf t a ms)).read ct.typ = .ok E_rd →
-        E_rd.allLevelParamsDefined (List.range ct.lvls.toNat) = true) ∧
-      ct.params = ind.params) ∧
-    (∀ (i₂ : Nat) (ind₂ : Ixon.Inductive), ms[i₂]? = some (.indc ind₂) → ind.params = ind₂.params)
-  mutRecr : ∀ (ms : Array Ixon.MutConst) (k : Nat) (r : Ixon.Recursor),
-    c.info = .muts ms → ms[k]? = some (.recr r) →
-    r.lvls.toNat < 4294967296 ∧
-    (∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) c id (blockSelf t a ms)).read r.typ = .ok E_rd →
-      E_rd.allLevelParamsDefined (List.range r.lvls.toNat) = true) ∧
-    (∀ (j : Nat) (ru : Ixon.RecursorRule) E_rd, r.rules[j]? = some ru →
-      (exprReader t (fun x => E₀.blobs.get? x) c id (blockSelf t a ms)).read ru.rhs = .ok E_rd →
-      E_rd.allLevelParamsDefined (List.range r.lvls.toNat) = true)
-
-private theorem unitLevelsAndParamsOk_of_basis {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
-    {a : _root_.Address} {c : Ixon.Constant}
-    (hb : recordOf StoreInhabit.basisStore a = some c) :
-    UnitLevelsAndParamsOk t E₀ a c := by
-  have hlv := basisRow_constLevelsOk hb
-  have hpr := basisRow_constIndParamsOk hb
-  refine ⟨?_, ?_, ?_, ?_⟩
-  · intro d hci hdk
-    simp only [constLevelsOkBool, hci, hdk] at hlv
-    change (decide (d.lvls.toNat < 4294967296) && exprUnivsOk c d.lvls.toNat d.value) = true at hlv
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at hlv
-    exact ⟨hlv.1, fun E_rd hr => exprUnivsOk_sound hlv.2 hr⟩
-  · intro ms i d hci hi hdk
-    simp only [constLevelsOkBool, hci, List.all_eq_true] at hlv
-    have hm := hlv (.defn d) (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hi))
-    simp only [hdk] at hm
-    change (decide (d.lvls.toNat < 4294967296) && exprUnivsOk c d.lvls.toNat d.value) = true at hm
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at hm
-    exact ⟨hm.1, fun E_rd hr => exprUnivsOk_sound hm.2 hr⟩
-  · intro ms i ind hci hi
-    simp only [constLevelsOkBool, hci, List.all_eq_true] at hlv
-    simp only [constIndParamsOkBool, hci, List.all_eq_true] at hpr
-    have hml := hlv (.indc ind) (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hi))
-    have hmp := hpr (.indc ind) (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hi))
-    simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hml hmp
-    refine ⟨⟨hml.1.1, fun E_rd hr => exprUnivsOk_sound hml.1.2 hr⟩, ?_, ?_⟩
-    · intro j ct hj
-      have hct := hml.2 ct (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hj))
-      have hctp := hmp.1 ct (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hj))
-      exact ⟨hct.1, fun E_rd hr => exprUnivsOk_sound hct.2 hr, beq_iff_eq.mp hctp⟩
-    · intro i₂ ind₂ hi₂
-      have hp2 := hmp.2 (.indc ind₂) (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hi₂))
-      exact (beq_iff_eq.mp hp2).symm
-  · intro ms k r hci hk
-    simp only [constLevelsOkBool, hci, List.all_eq_true] at hlv
-    have hm := hlv (.recr r) (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hk))
-    simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hm
-    refine ⟨hm.1.1, fun E_rd hr => exprUnivsOk_sound hm.1.2 hr, ?_⟩
-    intro j ru E_rd hj hr
-    have hru := hm.2 ru (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hj))
-    exact exprUnivsOk_sound hru hr
-
-/-- **Any `UsedClosed` sub-store `R` of `E₀` whose records satisfy `UnitLevelsAndParamsOk`**
-satisfies both `StoreLevelsOk t E₀ (Held R)` and `StoreIndParamsOk E₀ (Held R)`. -/
-theorem storeLevelsOk_and_indParamsOk_of_units {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env}
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c)
-    (hcl : UsedClosed R)
-    (hunits : ∀ a c, recordOf R a = some c → UnitLevelsAndParamsOk t E₀ a c) :
-    StoreLevelsOk t E₀ (Held R) ∧ StoreIndParamsOk E₀ (Held R) := by
-  have held_rec : ∀ a c, Held R a → recordOf E₀ a = some c → recordOf R a = some c := by
-    intro a c ha hcE
-    obtain ⟨cR, hcR⟩ := Option.isSome_iff_exists.mp ha
-    have heq := Option.some.inj ((hRsub a cR hcR).symm.trans hcE)
-    exact heq ▸ hcR
-  have owner_held : ∀ a c, Held R a → recordOf E₀ a = some c → Held R (Ix.Cert.ownerOf a c) :=
-    fun a c ha hcE => (hcl.1 a c (held_rec a c ha hcE)).1
-  refine ⟨⟨?_, ?_, ?_, ?_, ?_⟩, ⟨?_, ?_⟩⟩
-  · intro a c d ha hcE hci hdk
-    exact (hunits a c (held_rec a c ha hcE)).defnVal d hci hdk
-  · intro a c p cb ms d ha hcE hci hcbE hms hi hdk
-    have hpb : Held R p.block := by simpa [Ix.Cert.ownerOf, hci] using owner_held a c ha hcE
-    exact (hunits p.block cb (held_rec p.block cb hpb hcbE)).mutDefn ms p.idx.toNat d hms hi hdk
-  · intro a c p cb ms ind ha hcE hci hcbE hms hi
-    have hpb : Held R p.block := by simpa [Ix.Cert.ownerOf, hci] using owner_held a c ha hcE
-    exact ((hunits p.block cb (held_rec p.block cb hpb hcbE)).mutInd ms p.idx.toNat ind hms hi).1
-  · intro b cb ms i ind j ct hb hcbE hms hi hj
-    have hct := ((hunits b cb (held_rec b cb hb hcbE)).mutInd ms i ind hms hi).2.1 j ct hj
-    exact ⟨hct.1, hct.2.1⟩
-  · intro rb crb rs k r hrb hcrbE hrs hk
-    exact (hunits rb crb (held_rec rb crb hrb hcrbE)).mutRecr rs k r hrs hk
-  · intro b cb ms i ind j ct hb hcbE hms hi hj
-    exact (((hunits b cb (held_rec b cb hb hcbE)).mutInd ms i ind hms hi).2.1 j ct hj).2.2
-  · intro b cb ms i₁ i₂ ind₁ ind₂ hb hcbE hms hi₁ hi₂
-    exact ((hunits b cb (held_rec b cb hb hcbE)).mutInd ms i₁ ind₁ hms hi₁).2.2 i₂ ind₂ hi₂
-
 /-! ## Part 2: Discharging `UnitLevelsAndParamsOk` from circuit observations -/
 
 private theorem record_eq_of_hashed_l {calls cs : List (Call F)} {E₀ : Ixon.Env}
@@ -566,7 +76,7 @@ private theorem record_eq_of_hashed_l {calls cs : List (Call F)} {E₀ : Ixon.En
   exact hS.record_eq hrec (Core.hashed_mono hsub hh) ha hde
 
 private theorem validate_reader_levels {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
-    {E₀ : Ixon.Env} {src : Ixon.Constant}
+    {E_b : Ixon.Env} {src : Ixon.Constant}
     {self : Nat → Option (Ix.Kernel.Reader.ReadM KKey)}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
     {nlvls : Nat} {e : Ixon.Expr} {kp r : SourceValue F} {h₀ h h' : Heap F}
@@ -579,20 +89,21 @@ private theorem validate_reader_levels {calls : List (Call F)} {t : Ix.Kernel.Ro
       [kp, .field 0, .field (nlvls : F)] h r h' cs)
     (hcall : (⟨"KernelCheck::validate_expr_well_scoped",
       [kp, .field 0, .field (nlvls : F)], h⟩ : Call F) ∈ calls) :
-    ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) src id self).read e = .ok E_rd →
+    ∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) src id self).read e = .ok E_rd →
       E_rd.allLevelParamsDefined (List.range nlvls) = true := by
   intro E_rd hread
   exact (Assembly.validate_expr_well_scoped_spec hbd hnl raw hext hread ev hcall).2.2
 
-/-- **`CheckedLimAt` on a standalone `.defn` with `d.kind = .defn`** validates `d.value`. -/
-theorem checkedLimAt_defnVal_levelsOk {calls : List (Call F)} {bAddr : _root_.Address}
-    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {a : _root_.Address} {lim : Option Nat}
+/-- **`CheckedLimAt` on a standalone `.defn` with `d.kind = .defn`** validates `d.value` (at any
+blob store `E_b`). -/
+theorem checkedLimAt_defnVal_levelsOk_blob {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ E_b : Ixon.Env} {a : _root_.Address} {lim : Option Nat}
     {c : Ixon.Constant} {d : Ixon.Definition}
     (hS : LoadedReads.RunStore calls E₀) (hbd : Bounded calls)
     (hrec : recordOf E₀ a = some c) (hci : c.info = .defn d) (hdk : d.kind = .defn)
     (hchk : Claim.CheckedLimAt calls bAddr t a lim) :
     d.lvls.toNat < 4294967296 ∧
-    ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) c id (soloSelf t a)).read d.value = .ok E_rd →
+    ∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) c id (soloSelf t a)).read d.value = .ok E_rd →
       E_rd.allLevelParamsDefined (List.range d.lvls.toNat) = true := by
   obtain ⟨h_pre, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk,
     -, -, ⟨ab, rab, hab⟩, -, ev_ld, -, hsub_ld, hld, ev_chk, -, hsub_chk⟩ := hchk
@@ -621,6 +132,18 @@ theorem checkedLimAt_defnVal_levelsOk {calls : List (Call F)} {bAddr : _root_.Ad
   | .Ctor_other_n0 (hne521 := hne) .. | .Ctor_other_other (hne521 := hne) ..
   | .Rec_n0 (hne521 := hne) .. | .Rec_other (hne521 := hne) .. =>
     exact (hne _ rfl rfl).elim
+
+/-- **`CheckedLimAt` on a standalone `.defn` with `d.kind = .defn`** validates `d.value`. -/
+theorem checkedLimAt_defnVal_levelsOk {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {a : _root_.Address} {lim : Option Nat}
+    {c : Ixon.Constant} {d : Ixon.Definition}
+    (hS : LoadedReads.RunStore calls E₀) (hbd : Bounded calls)
+    (hrec : recordOf E₀ a = some c) (hci : c.info = .defn d) (hdk : d.kind = .defn)
+    (hchk : Claim.CheckedLimAt calls bAddr t a lim) :
+    d.lvls.toNat < 4294967296 ∧
+    ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) c id (soloSelf t a)).read d.value = .ok E_rd →
+      E_rd.allLevelParamsDefined (List.range d.lvls.toNat) = true :=
+  checkedLimAt_defnVal_levelsOk_blob hS hbd hrec hci hdk hchk
 
 /-- Unpacks `MemberCheckedLimAt` on member `k` of a block `b` into the raw loaded constant of its
 projection record together with the observed `KernelCheck::check_const` call. -/
@@ -698,15 +221,15 @@ private theorem memberChecked_unpack {calls : List (Call F)} {bAddr : _root_.Add
 
 /-- **`MemberCheckedLimAt` on a definition member `ms[k] = .defn d` with `d.kind = .defn`**
 validates `d.value`. -/
-theorem memberCheckedLimAt_defnVal_levelsOk {calls : List (Call F)} {bAddr : _root_.Address}
-    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {b : _root_.Address} {cb : Ixon.Constant}
+theorem memberCheckedLimAt_defnVal_levelsOk_blob {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ E_b : Ixon.Env} {b : _root_.Address} {cb : Ixon.Constant}
     {ms : Array Ixon.MutConst} {k : Nat} {d : Ixon.Definition} {lim : Option Nat}
     (hS : LoadedReads.RunStore calls E₀) (hbd : Bounded calls)
     (hcb : recordOf E₀ b = some cb) (hms : cb.info = .muts ms)
     (hk : ms[k]? = some (.defn d)) (hdk : d.kind = .defn)
     (hmc : Claim.MemberCheckedLimAt calls bAddr t b ms k lim) :
     d.lvls.toNat < 4294967296 ∧
-    ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id (blockSelf t b ms)).read d.value = .ok E_rd →
+    ∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) cb id (blockSelf t b ms)).read d.value = .ok E_rd →
       E_rd.allLevelParamsDefined (List.range d.lvls.toNat) = true := by
   obtain ⟨hk56, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk, ba, blobs,
     -, -, -, hld, hrawRes, hsub_ld, ev_chk, hsub_chk⟩ :=
@@ -741,10 +264,22 @@ theorem memberCheckedLimAt_defnVal_levelsOk {calls : List (Call F)} {bAddr : _ro
   | .Rec_n0 (hne521 := hne) .. | .Rec_other (hne521 := hne) .. =>
     exact (hne _ rfl rfl).elim
 
+theorem memberCheckedLimAt_defnVal_levelsOk {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {b : _root_.Address} {cb : Ixon.Constant}
+    {ms : Array Ixon.MutConst} {k : Nat} {d : Ixon.Definition} {lim : Option Nat}
+    (hS : LoadedReads.RunStore calls E₀) (hbd : Bounded calls)
+    (hcb : recordOf E₀ b = some cb) (hms : cb.info = .muts ms)
+    (hk : ms[k]? = some (.defn d)) (hdk : d.kind = .defn)
+    (hmc : Claim.MemberCheckedLimAt calls bAddr t b ms k lim) :
+    d.lvls.toNat < 4294967296 ∧
+    ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id (blockSelf t b ms)).read d.value = .ok E_rd →
+      E_rd.allLevelParamsDefined (List.range d.lvls.toNat) = true :=
+  memberCheckedLimAt_defnVal_levelsOk_blob hS hbd hcb hms hk hdk hmc
+
 /-! ### Constructor loops (`check_inductive_shape_ctors`, `check_modeled_ctors`) -/
 
 private theorem check_inductive_shape_ctors_levelsOk {calls : List (Call F)}
-    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {ba : Bytes.Address} {cb : Ixon.Constant}
+    {t : Ix.Kernel.RoleTable} {E₀ E_b : Ixon.Env} {ba : Bytes.Address} {cb : Ixon.Constant}
     {ms : Array Ixon.MutConst} {k : Nat} {ind : Ixon.Inductive}
     {xrc xty xni xlv xuns xblk : SourceValue F}
     (hS : LoadedReads.RunStore calls E₀) (hbd : Bounded calls)
@@ -762,7 +297,7 @@ private theorem check_inductive_shape_ctors_levelsOk {calls : List (Call F)}
           h r h' cs →
         ∀ j ct, c ≤ j → ind.ctors[j]? = some ct →
           ct.lvls.toNat < 4294967296 ∧
-          (∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id
+          (∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) cb id
               (blockSelf t (ixAddr ba) ms)).read ct.typ = .ok E_rd →
             E_rd.allLevelParamsDefined (List.range ct.lvls.toNat) = true) ∧
           ct.params = ind.params := by
@@ -810,7 +345,7 @@ private theorem check_inductive_shape_ctors_levelsOk {calls : List (Call F)}
         calc ct'.params = ct'.params.toNat.toUInt64 := UInt64.ofNat_toNat.symm
           _ = ind.params.toNat.toUInt64 := by rw [hnp_nat]
           _ = ind.params := UInt64.ofNat_toNat
-      have hval_c : ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id
+      have hval_c : ∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) cb id
           (blockSelf t (ixAddr ba) ms)).read ct'.typ = .ok E_rd →
           E_rd.allLevelParamsDefined (List.range ct'.lvls.toNat) = true := by
         rw [hnl_nat]
@@ -837,7 +372,7 @@ private theorem check_inductive_shape_ctors_levelsOk {calls : List (Call F)}
           (Bytes.repAddressRef_heapMono₂ addrTy ext07 rba) evrec j ct (by omega) hj
 
 private theorem check_modeled_ctors_levelsOk {calls : List (Call F)}
-    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {ba : Bytes.Address} {cb : Ixon.Constant}
+    {t : Ix.Kernel.RoleTable} {E₀ E_b : Ixon.Env} {ba : Bytes.Address} {cb : Ixon.Constant}
     {ms : Array Ixon.MutConst} {k : Nat} {ind : Ixon.Inductive}
     {xrc xni xuns xblk : SourceValue F}
     (hS : LoadedReads.RunStore calls E₀) (hbd : Bounded calls)
@@ -855,7 +390,7 @@ private theorem check_modeled_ctors_levelsOk {calls : List (Call F)}
           h r h' cs →
         ∀ j ct, c ≤ j → ind.ctors[j]? = some ct →
           ct.lvls.toNat < 4294967296 ∧
-          (∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id
+          (∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) cb id
               (blockSelf t (ixAddr ba) ms)).read ct.typ = .ok E_rd →
             E_rd.allLevelParamsDefined (List.range ct.lvls.toNat) = true) ∧
           ct.params = ind.params := by
@@ -901,7 +436,7 @@ private theorem check_modeled_ctors_levelsOk {calls : List (Call F)}
         calc ct'.params = ct'.params.toNat.toUInt64 := UInt64.ofNat_toNat.symm
           _ = ind.params.toNat.toUInt64 := by rw [hnp_nat]
           _ = ind.params := UInt64.ofNat_toNat
-      have hval_c : ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id
+      have hval_c : ∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) cb id
           (blockSelf t (ixAddr ba) ms)).read ct'.typ = .ok E_rd →
           E_rd.allLevelParamsDefined (List.range ct'.lvls.toNat) = true := by
         rw [hnl_nat]
@@ -1117,19 +652,19 @@ private theorem peer_agree_walk_spec {calls : List (Call F)} {E₀ : Ixon.Env}
 /-- **`MemberCheckedLimAt` on an inductive member `ms[k] = .indc ind` of a safe block**
 validates `ind.typ`, every constructor `ct.typ`, constructor parameter equality `ct.params = ind.params`,
 and mutual block peer parameter equality `ind.params = ind₂.params`. -/
-theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.Address}
-    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {b : _root_.Address} {cb : Ixon.Constant}
+theorem memberCheckedLimAt_ind_levelsOk_blob {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ E_b : Ixon.Env} {b : _root_.Address} {cb : Ixon.Constant}
     {ms : Array Ixon.MutConst} {k : Nat} {ind : Ixon.Inductive} {lim : Option Nat}
     (hS : LoadedReads.RunStore calls E₀) (hbd : Bounded calls)
     (hcb : recordOf E₀ b = some cb) (hms : cb.info = .muts ms)
     (hlogic : InLogic cb) (hk : ms[k]? = some (.indc ind))
     (hmc : Claim.MemberCheckedLimAt calls bAddr t b ms k lim) :
     (ind.lvls.toNat < 4294967296 ∧
-      ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id (blockSelf t b ms)).read ind.typ = .ok E_rd →
+      ∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) cb id (blockSelf t b ms)).read ind.typ = .ok E_rd →
         E_rd.allLevelParamsDefined (List.range ind.lvls.toNat) = true) ∧
     (∀ (j : Nat) (ct : Ixon.Constructor), ind.ctors[j]? = some ct →
       ct.lvls.toNat < 4294967296 ∧
-      (∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id (blockSelf t b ms)).read ct.typ = .ok E_rd →
+      (∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) cb id (blockSelf t b ms)).read ct.typ = .ok E_rd →
         E_rd.allLevelParamsDefined (List.range ct.lvls.toNat) = true) ∧
       ct.params = ind.params) ∧
     (∀ (i₂ : Nat) (ind₂ : Ixon.Inductive), ms[i₂]? = some (.indc ind₂) → ind.params = ind₂.params) := by
@@ -1198,7 +733,7 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
     injection hl with h4 hl; injection hl with h5 hl; injection hl with h6 hl
     injection hl with h7 hl; injection hl with h8 _
     subst h1 h2 h3 h4 h5 h6 h7 h8
-    have hty_ok : ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id
+    have hty_ok : ∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) cb id
         (blockSelf t b ms)).read ind.typ = .ok E_rd →
         E_rd.allLevelParamsDefined (List.range ind.lvls.toNat) = true :=
       validate_reader_levels hbd hnl32 raw_ty ev14.heap_extends evval
@@ -1212,7 +747,7 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
           (evmk.heap_extends.trans evbm.heap_extends))))))))
     have hctors_ok : ∀ (j : Nat) (ct : Ixon.Constructor), ind.ctors[j]? = some ct →
         ct.lvls.toNat < 4294967296 ∧
-        (∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id
+        (∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) cb id
             (blockSelf t b ms)).read ct.typ = .ok E_rd →
           E_rd.allLevelParamsDefined (List.range ct.lvls.toNat) = true) ∧
         ct.params = ind.params := by
@@ -1222,7 +757,7 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
           (hc288 := hc_sh) .. =>
         have ext_s0 : Heap.Extends m7 ms0 := by rw [hms0]; exact Heap.Extends.snoc _ _
         have ext7_s3 := ext_s0.trans (evr.heap_extends.trans (evf.heap_extends.trans evt.heap_extends))
-        have hres := check_inductive_shape_ctors_levelsOk (t := t) hS hbd
+        have hres := check_inductive_shape_ctors_levelsOk (t := t) (E_b := E_b) hS hbd
           (by rwa [hba_b_eq]) hms hk hk56 hnc56 hnl32 hnp56
           ind.ctors.size 0 (by omega)
           (fun cl (hcl : cl ∈ cs_ct) => by
@@ -1319,7 +854,7 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
     injection hl with h4 hl; injection hl with h5 hl; injection hl with _ hl
     injection hl with h7 hl; injection hl with h8 _
     subst h1 h2 h3 h4 h5 h7 h8
-    have hty_ok : ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id
+    have hty_ok : ∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) cb id
         (blockSelf t b ms)).read ind.typ = .ok E_rd →
         E_rd.allLevelParamsDefined (List.range ind.lvls.toNat) = true :=
       validate_reader_levels hbd hnl32 raw_ty ev14.heap_extends evval
@@ -1336,11 +871,11 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
               (ext10a.trans evrs.heap_extends)))))))))))))
     have hctors_ok : ∀ (j : Nat) (ct : Ixon.Constructor), ind.ctors[j]? = some ct →
         ct.lvls.toNat < 4294967296 ∧
-        (∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id
+        (∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) cb id
             (blockSelf t b ms)).read ct.typ = .ok E_rd →
           E_rd.allLevelParamsDefined (List.range ct.lvls.toNat) = true) ∧
         ct.params = ind.params := by
-      have hres := check_modeled_ctors_levelsOk (t := t) hS hbd
+      have hres := check_modeled_ctors_levelsOk (t := t) (E_b := E_b) hS hbd
         (by rwa [hba_b_eq]) hms hk hk56 hnc56 hnl32 hnp56
         ind.ctors.size 0 (by omega)
         (fun cl (hcl : cl ∈ cs_mc) => hsub_chk cl (mem_of_eq hc (by call_mem)))
@@ -1394,6 +929,24 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
             _ = ind₂.params.toNat.toUInt64 := by rw [h1, h2]
             _ = ind₂.params := UInt64.ofNat_toNat
     exact ⟨⟨hnl32, hty_ok⟩, hctors_ok, hpeers_ok⟩
+
+theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {b : _root_.Address} {cb : Ixon.Constant}
+    {ms : Array Ixon.MutConst} {k : Nat} {ind : Ixon.Inductive} {lim : Option Nat}
+    (hS : LoadedReads.RunStore calls E₀) (hbd : Bounded calls)
+    (hcb : recordOf E₀ b = some cb) (hms : cb.info = .muts ms)
+    (hlogic : InLogic cb) (hk : ms[k]? = some (.indc ind))
+    (hmc : Claim.MemberCheckedLimAt calls bAddr t b ms k lim) :
+    (ind.lvls.toNat < 4294967296 ∧
+      ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id (blockSelf t b ms)).read ind.typ = .ok E_rd →
+        E_rd.allLevelParamsDefined (List.range ind.lvls.toNat) = true) ∧
+    (∀ (j : Nat) (ct : Ixon.Constructor), ind.ctors[j]? = some ct →
+      ct.lvls.toNat < 4294967296 ∧
+      (∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id (blockSelf t b ms)).read ct.typ = .ok E_rd →
+        E_rd.allLevelParamsDefined (List.range ct.lvls.toNat) = true) ∧
+      ct.params = ind.params) ∧
+    (∀ (i₂ : Nat) (ind₂ : Ixon.Inductive), ms[i₂]? = some (.indc ind₂) → ind.params = ind₂.params) :=
+  memberCheckedLimAt_ind_levelsOk_blob hS hbd hcb hms hlogic hk hmc
 
 /-! ### Prefix inversion of `KernelModeled::check_iota_rule` (steps 1–4) -/
 
@@ -1490,7 +1043,7 @@ private theorem check_iota_rule_validate_rhs
 /-! ### Recursor blocks (`check_family` → `check_recs`, and `MemberCheckedLimAt` → `Rec_n0` / `Rec_other`) -/
 
 private theorem check_rules_go_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
-    {E₀ : Ixon.Env} {rb : _root_.Address} {crb : Ixon.Constant} {rs : Array Ixon.MutConst}
+    {E_b : Ixon.Env} {rb : _root_.Address} {crb : Ixon.Constant} {rs : Array Ixon.MutConst}
     {nl : Nat} {blobs : List (_root_.Address × ByteArray)}
     {xrc xrm xty xrp xni xib xiidx xinp xilvls xpins xsrc xdst xaset : SourceValue F}
     (hbd : Bounded calls) (hnl32 : nl < 4294967296) :
@@ -1503,7 +1056,7 @@ private theorem check_rules_go_levelsOk {calls : List (Call F)} {t : Ix.Kernel.R
         [xrc, xrm, .field (nl : F), xty, xrp, xni, xrules, xib, xiidx, xinp, xilvls, xpins,
           xsrc, xdst, xaset, xs, xj] h r h' cs →
       ∀ ru ∈ rus, ∀ E_rd,
-        (exprReader t (fun x => E₀.blobs.get? x) crb id (blockSelf t rb rs)).read ru.rhs = .ok E_rd →
+        (exprReader t (fun x => E_b.blobs.get? x) crb id (blockSelf t rb rs)).read ru.rhs = .ok E_rd →
         E_rd.allLevelParamsDefined (List.range nl) = true := by
   intro rus
   induction rus with
@@ -1533,7 +1086,7 @@ private theorem check_rules_go_levelsOk {calls : List (Call F)} {t : Ix.Kernel.R
       have hcall_sc : (⟨"KernelCheck::validate_expr_well_scoped",
           [rhsPtr, .field 0, .field (nl : F)], h_plen⟩ : Call F) ∈ calls :=
         hsub _ (mem_of_eq hc (by call_mem))
-      have hru_ok : ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) crb id
+      have hru_ok : ∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) crb id
           (blockSelf t rb rs)).read ru.rhs = .ok E_rd →
           E_rd.allLevelParamsDefined (List.range nl) = true :=
         validate_reader_levels hbd hnl32 raw_rhs (ext03.trans ext_io) ev_sc hcall_sc
@@ -1700,7 +1253,7 @@ theorem family_recs_muts_list {calls : List (Call F)} {E₀ : Ixon.Env}
     rw [← hi] at hmp; simp at hmp
 
 private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
-    {E₀ : Ixon.Env} {rb_b : Bytes.Address} {crb : Ixon.Constant} {rs : Array Ixon.MutConst}
+    {E₀ E_b : Ixon.Env} {rb_b : Bytes.Address} {crb : Ixon.Constant} {rs : Array Ixon.MutConst}
     {xrc xta xsrc xdst xaset xnrecs xnp xuo xbnl xfam : SourceValue F}
     (hS : LoadedReads.RunStore calls E₀) (hbd : Bounded calls)
     (hcrb : recordOf E₀ (ixAddr rb_b) = some crb) (hrs : crb.info = .muts rs) :
@@ -1720,11 +1273,11 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
           h r h' cs →
         ∀ (i : Nat) (rc : Ixon.Recursor), rs[pos + i]? = some (.recr rc) → i < as.length →
           rc.lvls.toNat < 4294967296 ∧
-          (∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) crb id
+          (∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) crb id
               (blockSelf t (ixAddr rb_b) rs)).read rc.typ = .ok E_rd →
             E_rd.allLevelParamsDefined (List.range rc.lvls.toNat) = true) ∧
           (∀ (j : Nat) (ru : Ixon.RecursorRule) E_rd, rc.rules[j]? = some ru →
-            (exprReader t (fun x => E₀.blobs.get? x) crb id
+            (exprReader t (fun x => E_b.blobs.get? x) crb id
                 (blockSelf t (ixAddr rb_b) rs)).read ru.rhs = .ok E_rd →
             E_rd.allLevelParamsDefined (List.range rc.lvls.toNat) = true) := by
   intro as
@@ -1815,14 +1368,14 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
         injection hl with _ hl; injection hl with _ hl; injection hl with _ hl
         injection hl with h6 _
         subst h1 h2 h6
-        have hty_ok : ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) crb id
+        have hty_ok : ∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) crb id
             (blockSelf t (ixAddr rb_b) rs)).read rc.typ = .ok E_rd →
             E_rd.allLevelParamsDefined (List.range rc.lvls.toNat) = true :=
           validate_reader_levels hbd hnl32 raw_ty ext1_6 evval
             (hsub _ (mem_of_eq hcs (by call_mem)))
         have hrules_ok : ∀ (j : Nat) (ru : Ixon.RecursorRule) (E_rd : KExpr),
             rc.rules[j]? = some ru →
-            (exprReader t (fun x => E₀.blobs.get? x) crb id
+            (exprReader t (fun x => E_b.blobs.get? x) crb id
                 (blockSelf t (ixAddr rb_b) rs)).read ru.rhs = .ok E_rd →
             E_rd.allLevelParamsDefined (List.range rc.lvls.toNat) = true := by
           match Obs.«KernelModeled::check_rules».obs evrules with
@@ -1830,7 +1383,7 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
               (hc315 := hc_ru) .. =>
             have ext_go : Heap.Extends m1 _ :=
               ext1_21.trans (evrmp.heap_extends.trans (evgci.heap_extends.trans evrlen.heap_extends))
-            have hgo := check_rules_go_levelsOk (t := t) (E₀ := E₀) hbd hnl32 rc.rules.toList 0
+            have hgo := check_rules_go_levelsOk (t := t) (E_b := E_b) hbd hnl32 rc.rules.toList 0
               (fun cl hcl => by
                 have h1 : cl ∈ cs_ru := mem_of_eq hc_ru (by call_mem)
                 exact hsub cl (mem_of_eq hcs (by call_mem)))
@@ -1840,9 +1393,9 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
         exact ⟨hnl32, hty_ok, hrules_ok⟩
 
 /-- **`KernelModeled::check_family` validates every recursor member of its recursor block**
-(both `rc.typ` and every `ru.rhs`). -/
-theorem check_family_recr_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
-    {E₀ : Ixon.Env} {rb_b : Bytes.Address} {crb : Ixon.Constant} {rs : Array Ixon.MutConst}
+(both `rc.typ` and every `ru.rhs`, at any blob store `E_b`). -/
+theorem check_family_recr_levelsOk_blob {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {E₀ E_b : Ixon.Env} {rb_b : Bytes.Address} {crb : Ixon.Constant} {rs : Array Ixon.MutConst}
     {xrc xb xrb r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hS : LoadedReads.RunStore calls E₀) (hbd : Bounded calls)
     (hcrb : recordOf E₀ (ixAddr rb_b) = some crb) (hrs : crb.info = .muts rs)
@@ -1851,11 +1404,11 @@ theorem check_family_recr_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     ∀ (k : Nat) (rc : Ixon.Recursor), rs[k]? = some (.recr rc) →
       rc.lvls.toNat < 4294967296 ∧
-      (∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) crb id
+      (∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) crb id
           (blockSelf t (ixAddr rb_b) rs)).read rc.typ = .ok E_rd →
         E_rd.allLevelParamsDefined (List.range rc.lvls.toNat) = true) ∧
       (∀ (j : Nat) (ru : Ixon.RecursorRule) E_rd, rc.rules[j]? = some ru →
-        (exprReader t (fun x => E₀.blobs.get? x) crb id
+        (exprReader t (fun x => E_b.blobs.get? x) crb id
             (blockSelf t (ixAddr rb_b) rs)).read ru.rhs = .ok E_rd →
         E_rd.allLevelParamsDefined (List.range rc.lvls.toNat) = true) := by
   match Obs.«KernelModeled::check_family».obs ev with
@@ -1895,7 +1448,7 @@ theorem check_family_recr_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     obtain ⟨as, has, hlen, hmem⟩ := family_recs_muts_list hS
       (Bytes.repAddressRef_heapMono₂ addrTy ext_to_fr hrb) evfr
       (fun cl hcl => hsub cl (mem_of_eq hc (by call_mem))) hcrb hrs
-    have hcr := check_recs_levelsOk (t := t) hS hbd hcrb hrs as 0 (by omega)
+    have hcr := check_recs_levelsOk (t := t) (E_b := E_b) hS hbd hcrb hrs as 0 (by omega)
       (fun i a hi => by simpa using hmem i a hi)
       (fun cl hcl => hsub cl (mem_of_eq hc (by call_mem)))
       (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext_fr_to_cr has) evcr
@@ -1904,8 +1457,29 @@ theorem check_family_recr_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleTa
       have := (Array.getElem?_eq_some_iff.mp hk).1; omega
     exact hcr k rc (by simpa using hk) hk_lt
 
+/-- **`KernelModeled::check_family` validates every recursor member of its recursor block**
+(both `rc.typ` and every `ru.rhs`). -/
+theorem check_family_recr_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {E₀ : Ixon.Env} {rb_b : Bytes.Address} {crb : Ixon.Constant} {rs : Array Ixon.MutConst}
+    {xrc xb xrb r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hS : LoadedReads.RunStore calls E₀) (hbd : Bounded calls)
+    (hcrb : recordOf E₀ (ixAddr rb_b) = some crb) (hrs : crb.info = .muts rs)
+    (hrb : Bytes.RepAddressRef addrTy h rb_b xrb)
+    (ev : ObsFn W "KernelModeled::check_family" [xrc, xb, xrb] h r h' cs)
+    (hsub : ∀ cl ∈ cs, cl ∈ calls) :
+    ∀ (k : Nat) (rc : Ixon.Recursor), rs[k]? = some (.recr rc) →
+      rc.lvls.toNat < 4294967296 ∧
+      (∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) crb id
+          (blockSelf t (ixAddr rb_b) rs)).read rc.typ = .ok E_rd →
+        E_rd.allLevelParamsDefined (List.range rc.lvls.toNat) = true) ∧
+      (∀ (j : Nat) (ru : Ixon.RecursorRule) E_rd, rc.rules[j]? = some ru →
+        (exprReader t (fun x => E₀.blobs.get? x) crb id
+            (blockSelf t (ixAddr rb_b) rs)).read ru.rhs = .ok E_rd →
+        E_rd.allLevelParamsDefined (List.range rc.lvls.toNat) = true) :=
+  check_family_recr_levelsOk_blob hS hbd hcrb hrs hrb ev hsub
+
 private theorem check_rec_rules_wellscoped_levelsOk {calls : List (Call F)}
-    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {rb : _root_.Address} {crb : Ixon.Constant}
+    {t : Ix.Kernel.RoleTable} {E_b : Ixon.Env} {rb : _root_.Address} {crb : Ixon.Constant}
     {rs : Array Ixon.MutConst} {nl : Nat} {blobs : List (_root_.Address × ByteArray)}
     {xod : SourceValue F}
     (hbd : Bounded calls) (hnl32 : nl < 4294967296) :
@@ -1916,7 +1490,7 @@ private theorem check_rec_rules_wellscoped_levelsOk {calls : List (Call F)}
         crb.sharing.toList blobs h j rus xrules →
       ObsFn W "KernelCheck::check_rec_rules_wellscoped" [xrules, xod, .field (nl : F)] h r h' cs →
       ∀ ru ∈ rus, ∀ E_rd,
-        (exprReader t (fun x => E₀.blobs.get? x) crb id (blockSelf t rb rs)).read ru.rhs = .ok E_rd →
+        (exprReader t (fun x => E_b.blobs.get? x) crb id (blockSelf t rb rs)).read ru.rhs = .ok E_rd →
         E_rd.allLevelParamsDefined (List.range nl) = true := by
   intro rus
   induction rus with
@@ -1937,7 +1511,7 @@ private theorem check_rec_rules_wellscoped_levelsOk {calls : List (Call F)}
       rw [hv_ru] at h1
       injection h1 with _ _ hrl; injection hrl with _ hrl
       injection hrl with _ hrl; injection hrl with hrhs _; subst hrhs
-      have hru_ok : ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) crb id
+      have hru_ok : ∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) crb id
           (blockSelf t rb rs)).read ru.rhs = .ok E_rd →
           E_rd.allLevelParamsDefined (List.range nl) = true :=
         validate_reader_levels hbd hnl32 raw_rhs (Heap.Extends.refl _) evval
@@ -1950,19 +1524,20 @@ private theorem check_rec_rules_wellscoped_levelsOk {calls : List (Call F)}
       · exact htail ru' hmem
 
 /-- **`MemberCheckedLimAt` on a recursor member `ms[k] = .recr rc`** validates `rc.typ` and
-every `ru.rhs` (both non-modeled via `check_recursor_member` and modeled via `check_family`). -/
-theorem memberCheckedLimAt_recr_levelsOk {calls : List (Call F)} {bAddr : _root_.Address}
-    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {b : _root_.Address} {cb : Ixon.Constant}
+every `ru.rhs` (both non-modeled via `check_recursor_member` and modeled via `check_family`, at
+any blob store `E_b`). -/
+theorem memberCheckedLimAt_recr_levelsOk_blob {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ E_b : Ixon.Env} {b : _root_.Address} {cb : Ixon.Constant}
     {ms : Array Ixon.MutConst} {k : Nat} {rc_m : Ixon.Recursor} {lim : Option Nat}
     (hS : LoadedReads.RunStore calls E₀) (hbd : Bounded calls)
     (hcb : recordOf E₀ b = some cb) (hms : cb.info = .muts ms)
     (hk : ms[k]? = some (.recr rc_m))
     (hmc : Claim.MemberCheckedLimAt calls bAddr t b ms k lim) :
     rc_m.lvls.toNat < 4294967296 ∧
-    (∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id (blockSelf t b ms)).read rc_m.typ = .ok E_rd →
+    (∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) cb id (blockSelf t b ms)).read rc_m.typ = .ok E_rd →
       E_rd.allLevelParamsDefined (List.range rc_m.lvls.toNat) = true) ∧
     (∀ (j : Nat) (ru : Ixon.RecursorRule) E_rd, rc_m.rules[j]? = some ru →
-      (exprReader t (fun x => E₀.blobs.get? x) cb id (blockSelf t b ms)).read ru.rhs = .ok E_rd →
+      (exprReader t (fun x => E_b.blobs.get? x) cb id (blockSelf t b ms)).read ru.rhs = .ok E_rd →
       E_rd.allLevelParamsDefined (List.range rc_m.lvls.toNat) = true) := by
   obtain ⟨hk56, m_chk, h'_chk, rc, ap, ptr, v, r_chk, cs_load, cs_chk, ba_p, blobs,
     -, -, -, hld, hrawRes, hsub_ld, ev_chk, hsub_chk⟩ :=
@@ -2001,7 +1576,7 @@ theorem memberCheckedLimAt_recr_levelsOk {calls : List (Call F)} {bAddr : _root_
     injection hl with _ hl; injection hl with _ hl; injection hl with _ hl
     injection hl with h6 _
     subst h1 h2 h6
-    have hty_ok : ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id
+    have hty_ok : ∀ E_rd, (exprReader t (fun x => E_b.blobs.get? x) cb id
         (blockSelf t b ms)).read rc_m.typ = .ok E_rd →
         E_rd.allLevelParamsDefined (List.range rc_m.lvls.toNat) = true :=
       validate_reader_levels hbd hnl32 raw_ty e1.heap_extends evval
@@ -2024,7 +1599,7 @@ theorem memberCheckedLimAt_recr_levelsOk {calls : List (Call F)} {bAddr : _root_
         ext0_crm.trans (f1.heap_extends.trans (f2.heap_extends.trans (f3.heap_extends.trans
           (f4.heap_extends.trans (f5.heap_extends.trans (f6.heap_extends.trans
             (f7.heap_extends.trans f8.heap_extends)))))))
-      have hws := check_rec_rules_wellscoped_levelsOk (t := t) (E₀ := E₀) hbd hnl32 rc_m.rules.toList 0
+      have hws := check_rec_rules_wellscoped_levelsOk (t := t) (E_b := E_b) hbd hnl32 rc_m.rules.toList 0
         (fun cl hcl => by
           have h1 : cl ∈ cs_crm := mem_of_eq hc_crm (by call_mem)
           exact hsub_chk cl (mem_of_eq hc (by call_mem)))
@@ -2046,23 +1621,39 @@ theorem memberCheckedLimAt_recr_levelsOk {calls : List (Call F)} {bAddr : _root_
       e1.heap_extends.trans (evval.heap_extends.trans (ext_nil.trans (e3.heap_extends.trans
         (e4.heap_extends.trans (e5.heap_extends.trans (e6.heap_extends.trans
           (e7.heap_extends.trans e8.heap_extends)))))))
-    have hcf := check_family_recr_levelsOk (t := t) hS hbd (by rwa [hba_b_eq]) hms
+    have hcf := check_family_recr_levelsOk_blob (t := t) (E_b := E_b) hS hbd (by rwa [hba_b_eq]) hms
       (Bytes.repAddressRef_heapMono₂ addrTy ext0_cf rba_b) evcf
       (fun cl hcl => hsub_chk cl (mem_of_eq hc (by call_mem))) k rc_m hk
     simpa [hba_b_eq] using hcf
 
-/-- **Any safe record checked by `UnitCheckedAt`** satisfies `UnitLevelsAndParamsOk`. -/
-theorem unitCheckedAt_unitLevelsAndParamsOk {calls : List (Call F)} {bAddr : _root_.Address}
-    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {a : _root_.Address} {c : Ixon.Constant}
+theorem memberCheckedLimAt_recr_levelsOk {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {b : _root_.Address} {cb : Ixon.Constant}
+    {ms : Array Ixon.MutConst} {k : Nat} {rc_m : Ixon.Recursor} {lim : Option Nat}
+    (hS : LoadedReads.RunStore calls E₀) (hbd : Bounded calls)
+    (hcb : recordOf E₀ b = some cb) (hms : cb.info = .muts ms)
+    (hk : ms[k]? = some (.recr rc_m))
+    (hmc : Claim.MemberCheckedLimAt calls bAddr t b ms k lim) :
+    rc_m.lvls.toNat < 4294967296 ∧
+    (∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id (blockSelf t b ms)).read rc_m.typ = .ok E_rd →
+      E_rd.allLevelParamsDefined (List.range rc_m.lvls.toNat) = true) ∧
+    (∀ (j : Nat) (ru : Ixon.RecursorRule) E_rd, rc_m.rules[j]? = some ru →
+      (exprReader t (fun x => E₀.blobs.get? x) cb id (blockSelf t b ms)).read ru.rhs = .ok E_rd →
+      E_rd.allLevelParamsDefined (List.range rc_m.lvls.toNat) = true) :=
+  memberCheckedLimAt_recr_levelsOk_blob hS hbd hcb hms hk hmc
+
+/-- **Any safe record checked by `UnitCheckedAt`** satisfies `UnitLevelsAndParamsOk` at any blob
+store `E_b`. -/
+theorem unitCheckedAt_unitLevelsAndParamsOk_blob {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ E_b : Ixon.Env} {a : _root_.Address} {c : Ixon.Constant}
     {lim : Option Nat}
     (hS : LoadedReads.RunStore calls E₀) (hbd : Bounded calls)
     (hrec : recordOf E₀ a = some c) (hlogic : InLogic c)
     (hU : UnitCheckedAt calls bAddr t E₀ a lim) :
-    UnitLevelsAndParamsOk t E₀ a c := by
+    UnitLevelsAndParamsOk t E_b a c := by
   rcases hU with hchk | ⟨c', ms', hc', hms', hmem⟩
   · refine ⟨?_, ?_, ?_, ?_⟩
     · intro d hci hdk
-      exact checkedLimAt_defnVal_levelsOk hS hbd hrec hci hdk hchk
+      exact checkedLimAt_defnVal_levelsOk_blob hS hbd hrec hci hdk hchk
     · intro ms i d hms _ _
       exact (Claim.checked_not_block hS hrec hms hchk).elim
     · intro ms i ind hms _
@@ -2077,17 +1668,27 @@ theorem unitCheckedAt_unitLevelsAndParamsOk {calls : List (Call F)} {bAddr : _ro
       have heq : ms = ms' := Ixon.ConstantInfo.muts.inj (hms.symm.trans hms')
       subst heq
       have hi_lt := (Array.getElem?_eq_some_iff.mp hi).1
-      exact memberCheckedLimAt_defnVal_levelsOk hS hbd hrec hms hi hdk (hmem i hi_lt)
+      exact memberCheckedLimAt_defnVal_levelsOk_blob hS hbd hrec hms hi hdk (hmem i hi_lt)
     · intro ms i ind hms hi
       have heq : ms = ms' := Ixon.ConstantInfo.muts.inj (hms.symm.trans hms')
       subst heq
       have hi_lt := (Array.getElem?_eq_some_iff.mp hi).1
-      exact memberCheckedLimAt_ind_levelsOk hS hbd hrec hms hlogic hi (hmem i hi_lt)
+      exact memberCheckedLimAt_ind_levelsOk_blob hS hbd hrec hms hlogic hi (hmem i hi_lt)
     · intro ms k r hms hk
       have heq : ms = ms' := Ixon.ConstantInfo.muts.inj (hms.symm.trans hms')
       subst heq
       have hk_lt := (Array.getElem?_eq_some_iff.mp hk).1
-      exact memberCheckedLimAt_recr_levelsOk hS hbd hrec hms hk (hmem k hk_lt)
+      exact memberCheckedLimAt_recr_levelsOk_blob hS hbd hrec hms hk (hmem k hk_lt)
+
+/-- **Any safe record checked by `UnitCheckedAt`** satisfies `UnitLevelsAndParamsOk`. -/
+theorem unitCheckedAt_unitLevelsAndParamsOk {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {a : _root_.Address} {c : Ixon.Constant}
+    {lim : Option Nat}
+    (hS : LoadedReads.RunStore calls E₀) (hbd : Bounded calls)
+    (hrec : recordOf E₀ a = some c) (hlogic : InLogic c)
+    (hU : UnitCheckedAt calls bAddr t E₀ a lim) :
+    UnitLevelsAndParamsOk t E₀ a c :=
+  unitCheckedAt_unitLevelsAndParamsOk_blob hS hbd hrec hlogic hU
 
 /-! ## Part 3: `StoreLevelsOk` and `StoreIndParamsOk` over every `groupStore` (`6 ≤ g ≤ 77`) -/
 
@@ -2101,7 +1702,7 @@ private theorem unitLevelsAndParamsOk_of_nonUnit {t : Ix.Kernel.RoleTable} {E₀
    fun ms _ _ h _ => (hnm ms h).elim⟩
 
 private theorem groupStore_units_levelsAndParamsOk {calls : List (Call F)} {bAddr : _root_.Address}
-    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
+    {t : Ix.Kernel.RoleTable} {E₀ E_b : Ixon.Env}
     (hC : CollisionFreeRun calls E₀)
     (hbd : Bounded calls) (hb : BasisRowsLoaded E₀)
     (hbr : BasisRolesStored t) (hax : AxiomRolesDeclared t E₀)
@@ -2112,10 +1713,10 @@ private theorem groupStore_units_levelsAndParamsOk {calls : List (Call F)} {bAdd
     (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs) :
     ∀ g, 6 ≤ g → g ≤ 77 → ∀ a c,
       recordOf (groupStore t E₀ (runPayload calls bAddr t) g) a = some c →
-      UnitLevelsAndParamsOk t E₀ a c := by
+      UnitLevelsAndParamsOk t E_b a c := by
   have hP := payloadFacts_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
   have hbase : ∀ a c, recordOf (groupStore t E₀ (runPayload calls bAddr t) 6) a = some c →
-      UnitLevelsAndParamsOk t E₀ a c := by
+      UnitLevelsAndParamsOk t E_b a c := by
     intro a c hc
     rw [groupStore_six] at hc
     exact unitLevelsAndParamsOk_of_basis hc
@@ -2157,12 +1758,12 @@ private theorem groupStore_units_levelsAndParamsOk {calls : List (Call F)} {bAdd
           · rw [hd] at hax'; cases hax'
           · rw [hms] at hax'; cases hax'
         obtain ⟨recs, hw⟩ := hws (6 + d)
-        have hfromWalk : GroupReach t E₀ (6 + d) a → UnitLevelsAndParamsOk t E₀ a c := by
+        have hfromWalk : GroupReach t E₀ (6 + d) a → UnitLevelsAndParamsOk t E_b a c := by
           intro hgr
           obtain ⟨y, -, hya⟩ := hgr.listed hC.hashedStored hw
           have hU := unitCheckedAt_of_topRec hC.hashedStored y
           rw [hya] at hU
-          exact unitCheckedAt_unitLevelsAndParamsOk hC.runStore hbd hE hlogic hU
+          exact unitCheckedAt_unitLevelsAndParamsOk_blob hC.runStore hbd hE hlogic hU
         rcases new_reach_cases hC hb hax hP hg6' hw hnew hE hnp hna with hgr | hpr
         · exact hfromWalk hgr
         · cases payReach_payClass_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
@@ -2179,7 +1780,8 @@ private theorem groupStore_units_levelsAndParamsOk {calls : List (Call F)} {bAdd
             obtain ⟨h_cf, h'_cf, xrc_cf, xb_cf, xrb_cf, r_cf, -, -, ⟨rb_b, hrb_b, hrb_eq⟩,
               ev_cf, -, hsub_cf⟩ := hfc
             subst hrb_eq
-            have hrecs := check_family_recr_levelsOk (t := t) hC.runStore hbd hE hrs hrb_b ev_cf hsub_cf
+            have hrecs := check_family_recr_levelsOk_blob (t := t) (E_b := E_b) hC.runStore hbd
+              hE hrs hrb_b ev_cf hsub_cf
             refine ⟨?_, ?_, ?_, ?_⟩
             · intro d' hd'; rw [hrs] at hd'; cases hd'
             · intro ms i d' hms hi _
@@ -2211,18 +1813,38 @@ private theorem groupStore_units_levelsAndParamsOk {calls : List (Call F)} {bAdd
               · exact Or.inl hchk
               · exact Or.inr ⟨ca, ms, hE, hms, hmem⟩
               · exact (hnp hp).elim
-            exact unitCheckedAt_unitLevelsAndParamsOk hC.runStore hbd hE hlogic hUnit
+            exact unitCheckedAt_unitLevelsAndParamsOk_blob hC.runStore hbd hE hlogic hUnit
           | directCont _ _ hex hdc =>
             obtain ⟨-, -, -, -, ⟨ib, -, h₁, h₂, rc₁, xx₁, xib₁, r₁, cs₁, hrc₁, hxx₁, -, evCr,
                 hsubCr, -⟩, -, -, -⟩ := hdc.unpack hC hbd
             have hchk := (Decl.containerRec_checked hC.runStore hrc₁ hxx₁ evCr hsubCr).1
-            exact unitCheckedAt_unitLevelsAndParamsOk hC.runStore hbd hE hlogic (Or.inl hchk)
+            exact unitCheckedAt_unitLevelsAndParamsOk_blob hC.runStore hbd hE hlogic (Or.inl hchk)
           | checkedProj hc' hp _ _ _ _ =>
             have hce : _ = c := Option.some.inj (hc'.symm.trans hE)
             rw [hce] at hp
             exact (hnp hp).elim
       · push Not at hdm
         exact unitLevelsAndParamsOk_of_nonUnit hdm.1 hdm.2
+
+/-- **Blob-independent `StoreLevelsParams` holds over every `groupStore ... g` (`6 ≤ g ≤ 77`)
+of a collision-free bounded binding run.** -/
+theorem storeLevelsParams_of_groupStore {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
+    (hC : CollisionFreeRun calls E₀)
+    (hbd : Bounded calls) (hb : BasisRowsLoaded E₀)
+    (hbr : BasisRolesStored t) (hax : AxiomRolesDeclared t E₀)
+    (hpin : PreludePinned t) (hcheck : t.check = .ok ())
+    (hroots : RootsSafe t E₀) (hstep : RunStepStores calls t E₀)
+    (hval : ∀ g, g < 77 → ∀ r ∈ roleGroup g, RoleValidationIn calls bAddr t g r)
+    (hvalAll : ∀ k, ∀ r ∈ roleGroup k, RoleValidationIn calls bAddr t k r)
+    (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs)
+    {g : Nat} (hg6 : 6 ≤ g) (hg77 : g ≤ 77) :
+    Binding.StoreLevelsParams t (groupStore t E₀ (runPayload calls bAddr t) g) := by
+  have hP := payloadFacts_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
+  exact Binding.storeLevelsParams_of_units
+    (groupStore_usedClosed_all hC hb hbr hax hP hws g hg6)
+    (fun E_b a c hc => groupStore_units_levelsAndParamsOk hC hbd hb hbr hax hpin hcheck hroots
+      hstep hval hvalAll hws g hg6 hg77 a c hc)
 
 /-- **Both `StoreLevelsOk` and `StoreIndParamsOk` hold over every `groupStore ... g`
 (`6 ≤ g ≤ 77`) of a collision-free bounded binding run.** -/
@@ -2238,13 +1860,9 @@ theorem storeLevelsOk_and_indParamsOk_of_groupStore {calls : List (Call F)} {bAd
     (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs)
     {g : Nat} (hg6 : 6 ≤ g) (hg77 : g ≤ 77) :
     StoreLevelsOk t E₀ (Held (groupStore t E₀ (runPayload calls bAddr t) g)) ∧
-    StoreIndParamsOk E₀ (Held (groupStore t E₀ (runPayload calls bAddr t) g)) := by
-  have hP := payloadFacts_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
-  exact storeLevelsOk_and_indParamsOk_of_units
-    (fun y cy hy => ((groupStore_recordOf hb hg6).mp hy).2)
-    (groupStore_usedClosed_all hC hb hbr hax hP hws g hg6)
-    (groupStore_units_levelsAndParamsOk hC hbd hb hbr hax hpin hcheck hroots hstep hval hvalAll hws
-      g hg6 hg77)
+    StoreIndParamsOk E₀ (Held (groupStore t E₀ (runPayload calls bAddr t) g)) :=
+  storeLevelsParams_of_groupStore hC hbd hb hbr hax hpin hcheck hroots hstep hval hvalAll hws
+    hg6 hg77 E₀ (fun y cy hy => ((groupStore_recordOf hb hg6).mp hy).2)
 
 /-- **`StoreLevelsOk` over every `groupStore ... g` (`6 ≤ g ≤ 77`).** -/
 theorem storeLevelsOk_of_groupStore {calls : List (Call F)} {bAddr : _root_.Address}

@@ -441,7 +441,7 @@ theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       obtain ⟨cb, crb, _ms, _rs, hcb, hcrb, -⟩ := fam_new hC hfa
       exact ⟨Option.isSome_iff_exists.mpr ⟨cb, hcb⟩, Option.isSome_iff_exists.mpr ⟨crb, hcrb⟩⟩
     refine ⟨fun B cb hcb hroute hst => ?_, fun B rb h => ?_, fun B rb cb h hcb x hx => ?_,
-      fun B rb crb h hcrb => ?_, ?_, ?_, ?_⟩
+      fun B rb crb h hcrb => ?_, ?_, ?_, ?_, ?_⟩
     · cases hRB : recordOf R B with
       | none =>
         obtain ⟨rb, hrb⟩ :=
@@ -546,6 +546,7 @@ theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       rcases joinFam_cases h with hfa | ⟨-, h₀⟩
       · exact Or.inr hfa
       · exact Or.inl h₀
+    · exact hFA.levelsParams.of_usedClosed_sub hC.closed (fun _ _ hy => rec₁₂ hy)
   case walked =>
     refine ⟨fun x c n hc hnb hlog hlogB hchk => ?_, fun r x hw hgr ha =>
       hsomeFind _ (hW.2 r x hw hgr ha)⟩
