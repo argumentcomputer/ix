@@ -1444,14 +1444,15 @@ theorem addrIn_rec_major_pins {κ : _root_.Address → KKey} {Γ : Nat → KExpr
     obtain ⟨ys, hys⟩ := addrIn_lower_pins (xs.take inp.val) evLow htake
     have hzip := repList_zip_pred hPs hys
     have hfinal : ∀ {l : List KExpr} {p : SourceValue F},
-        RepList kexprListEnum (fun h P p => Decl.TmExact κ 0 Γ h (ZMod.val rp) P p ∧
-          ∃ _ : SourceValue F, KExprClosed h p ∧ ∀ a, AddrIn h p a → AddrIn h ty_ptr a) h' l p →
-        RepList kexprListEnum (fun h P p => Decl.TmExact κ 0 Γ h (ZMod.val rp) P p ∧
-          ∀ a, AddrIn h p a → AddrIn h ty_ptr a) h' l p := by
+        RepList kexprListEnum (fun h1 P p => Decl.TmExact κ 0 Γ h1 (ZMod.val rp) P p ∧
+          ∃ _ : SourceValue F, KExprClosed h1 p ∧ ∀ a, AddrIn h1 p a → AddrIn h ty_ptr a) h' l p →
+        RepList kexprListEnum (fun h1 P p => Decl.TmExact κ 0 Γ h1 (ZMod.val rp) P p ∧
+          ∀ a, AddrIn h1 p a → AddrIn h1 ty_ptr a) h' l p := by
       intro l p hr
       induction hr with
       | nil c => exact .nil c
-      | cons c hx _ ih => exact .cons c ⟨hx.1, hx.2.choose_spec.2⟩ ih
+      | cons c hx _ ih =>
+        exact .cons c ⟨hx.1, fun a ha => Binding.AddrIn.mono' ev.heap_extends (hx.2.choose_spec.2 a ha)⟩ ih
     exact hfinal hzip
 
 /-! ## `LeavesFixed` for instantiated major pins from `CheckRecsCons` -/
@@ -1866,9 +1867,7 @@ theorem pinsP_leavesFixed {t : Ix.Kernel.RoleTable} {calls : List (Call F)}
             | none => simp [hop2] at hsplit
             | some q2 =>
               rcases q2 with ⟨fvs2, r2⟩
-              rw [hop2] at hsplit
-              dsimp only at hsplit
-              simp only [Option.some.injEq, Prod.mk.injEq] at hsplit
+              simp [hop2] at hsplit
               have hfvs_eq : fvs1 ++ fvs2 = fvsP := hsplit.1
               have hlen1 : fvs1.length = nP := Decl.openPisAtFvars_len nP hop1
               have htake_np : fvsP.take nP = fvs1 := by
@@ -1966,14 +1965,14 @@ theorem get_ci_induct_record {calls : List (Call F)} {E₀ : Ixon.Env}
   -- and `recordOf E₀ ip.block = some cbM` via `Claim.load_verified_constant_de` + `recordOf_hashed`.
   have hrec_and_blk : recordOf E₀ (ixAddr a) = some cm ∧
       ∃ cbM, recordOf E₀ ip.block = some cbM := by
-    have hcontra : ∀ {m2 : Heap F} {cs12 : List (Call F)} {vInfo wSh wRf wUn wBd : SourceValue F}
+    have hcontra : ∀ {m2 : Heap F} {cs12 : List (Call F)} {wSh wRf wUn wBd : SourceValue F}
         {tag : String} {iargs : List (SourceValue F)},
         (∀ cl ∈ cs12, cl ∈ calls) →
         ObsFn Obs.W "Ingress::load_verified_constant" [xa] h
           (.construct "Ixon::Constant" "Mk"
             [.construct "Ixon::ConstantInfo" tag iargs, wSh, wRf, wUn, wBd]) m2 cs12 →
         tag ≠ "IPrj" → False := by
-      intro m2 cs12 vInfo wSh wRf wUn wBd tag iargs hsub12 ev14 hne
+      intro m2 cs12 wSh wRf wUn wBd tag iargs hsub12 ev14 hne
       obtain ⟨-, bs1, c1, hsz1, hh1, hb1, hde1, hex1, hrep1, -⟩ :=
         Claim.load_verified_constant_de ⟨a, ha, rfl⟩ ev14
       have hrec1 : recordOf E₀ (ixAddr a) = some c1 := by
@@ -3976,7 +3975,7 @@ theorem recMember_of_cons
       have hz_eq : (rc.rules.toList.zipIdx 0)[j] = (rc.rules.toList[j]'(by rw [Array.length_toList, ← hrules_len]; exact hj_lt), j) :=
         Option.some.inj ((List.getElem?_eq_getElem (by omega)).symm.trans hget_z)
       rw [hz_eq] at hmk
-      rw [hmk]; simp [LoadedReads.ctorAddr_eq_cprjAddr]
+      rw [hmk]; simp [LoadedReads.ctorAddr_eq_cprjAddr]; rfl
     -- `ReadsIn` given `InLogic cbM`
     have hreads_of_logic : InLogic cbM →
         ReadsIn t (recordOf E₀) (fun x => E₀.blobs.get? x) (memberAddr rb k (.recr rc))
