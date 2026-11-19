@@ -39,7 +39,8 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library
 open IxVM (F)
 open IxVM.Refinement.Core (KExpr KLevel KKey ExprLvEq LvEq LvEqList)
-open IxVM.Refinement.Binding.FamilyFlat (FlatEntry RecordFlat peelForalls binderDomAfter KeyIn)
+open IxVM.Refinement.Binding (KeyIn)
+open IxVM.Refinement.Binding.FamilyFlat (FlatEntry RecordFlat peelForalls binderDomAfter)
 open IxVM.Refinement.Binding.FamilyRecon (ReconView IndData CtorData wrapAt appHead consumeOf
   consumeAt Consumes FullCons LamsAlong RuleFollows recTypeAt ruleBodiesAt ruleBodies ruleBody
   applyIhs minorAt minorDoms allMinors ihDoms wrapForalls wrapLams appSpine appBVarsDec
@@ -76,7 +77,7 @@ private theorem mkAppN_liftLooseBVars_wb (n c : Nat) :
 private theorem renameConsts_liftLooseBVars_wb (f : KKey → KKey) (n : Nat) :
     ∀ (e : KExpr) (c : Nat),
       (e.liftLooseBVars n c).renameConsts f = (e.renameConsts f).liftLooseBVars n c
-  | .bvar i, c => by simp only [Expr.liftLooseBVars]; split <;> rfl
+  | .bvar i, c => by simp only [Expr.liftLooseBVars, Expr.renameConsts]; split <;> rfl
   | .fvar _ t, c => by
     simp [Expr.liftLooseBVars, Expr.renameConsts, renameConsts_liftLooseBVars_wb f n t c]
   | .sort _, _ | .const _ _, _ | .lit _, _ => rfl
@@ -139,13 +140,13 @@ theorem Consumes.unique {W : KKey → Option (Option Nat)} {t c₁ c₂ : KExpr}
     | step hc _ =>
       rw [hs₁] at hc
       cases hc
-  | step hc₁ _ ih =>
+  | @step _ a₁ _ hc₁ _ ih =>
     cases h₂ with
     | refl =>
       rw [hs₂] at hc₁
       cases hc₁
-    | step hc₂ h₂' =>
-      have ha : _ = _ := Option.some.inj (Option.some.inj (hc₁.symm.trans hc₂))
+    | @step _ a₂ _ hc₂ h₂' =>
+      have ha : a₁ = a₂ := Option.some.inj (Option.some.inj (hc₁.symm.trans hc₂))
       subst ha
       exact ih hs₁ h₂' hs₂
 
@@ -226,14 +227,14 @@ private theorem tm_lam_descent_wb {κ : _root_.Address → KKey} {d : Nat} {Γ :
     {h : Heap F} {k : Nat} {E : KExpr} {p w20 xb xm : SourceValue F} {steps : Nat}
     (hE : Core.Tm κ d Γ h k E p)
     (ld : loadValue h p = .ok (.construct Core.kexprEnum "Lam" [w20, xb, xm]))
-    (hdesc : Core.RomBound.HeapDescent h (.enum Core.kexprEnum) xb steps) :
-    Core.RomBound.HeapDescent h (.enum Core.kexprEnum) p (steps + 1) := by
+    (hdesc : IxVM.Refinement.RomBound.HeapDescent h (.enum Core.kexprEnum) xb steps) :
+    IxVM.Refinement.RomBound.HeapDescent h (.enum Core.kexprEnum) p (steps + 1) := by
   cases hE with
   | @lam _ addr tp bp lp _ _ _ cell _ _ _ =>
     obtain ⟨_, hxs⟩ := Core.load_cell cell ld
     injection hxs with h1 hxs; injection hxs with h2 _
     subst h1 h2
-    exact .down cell (by simp [Value.type]) (by simp [Core.RomBound.cellArgs]) hdesc
+    exact .down cell (by simp [Value.type]) (by simp [IxVM.Refinement.RomBound.cellArgs]) hdesc
   | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
   | app cell _ _ | forallE cell _ _ _ | letE cell _ _ _ | litNat cell _ _
   | litStr cell _ _ | proj cell _ _ =>
@@ -242,7 +243,7 @@ private theorem tm_lam_descent_wb {κ : _root_.Address → KKey} {d : Nat} {Γ :
 private theorem tm_ptr_descent_zero_wb {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
     {h : Heap F} {k : Nat} {E : KExpr} {p : SourceValue F}
     (hE : Core.Tm κ d Γ h k E p) :
-    Core.RomBound.HeapDescent h (.enum Core.kexprEnum) p 0 := by
+    IxVM.Refinement.RomBound.HeapDescent h (.enum Core.kexprEnum) p 0 := by
   cases hE with
   | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ _ | const cell _ _ _
   | app cell _ _ | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _
@@ -255,26 +256,26 @@ private theorem lam_first_arity_go_wb {κ : _root_.Address → KKey} {Γ : Nat �
       ObsFn Core.W fname args h r h' cs → fname = "KernelCheck::lam_first_arity" →
       ∀ (n : Nat) (E : KExpr) (xv xk : SourceValue F),
         args = [xv, .field (n : F)] → r = .tuple [.field 1, xk] →
-        (∀ steps, Core.RomBound.HeapDescent h (.enum Core.kexprEnum) xv steps →
+        (∀ steps, IxVM.Refinement.RomBound.HeapDescent h (.enum Core.kexprEnum) xv steps →
           n + steps < 549755813888) →
         Core.Tm κ 0 Γ h n E xv →
         ∃ k_out steps : Nat,
           xk = .field (k_out : F) ∧
           k_out = n + steps ∧
-          Core.RomBound.HeapDescent h (.enum Core.kexprEnum) xv steps ∧
+          IxVM.Refinement.RomBound.HeapDescent h (.enum Core.kexprEnum) xv steps ∧
           lamFirstArity E n = some k_out ∧
           h' = h :=
   ObsFn.strong_induction (world := Core.W)
     (fun fname args h r h' cs => fname = "KernelCheck::lam_first_arity" →
       ∀ (n : Nat) (E : KExpr) (xv xk : SourceValue F),
         args = [xv, .field (n : F)] → r = .tuple [.field 1, xk] →
-        (∀ steps, Core.RomBound.HeapDescent h (.enum Core.kexprEnum) xv steps →
+        (∀ steps, IxVM.Refinement.RomBound.HeapDescent h (.enum Core.kexprEnum) xv steps →
           n + steps < 549755813888) →
         Core.Tm κ 0 Γ h n E xv →
         ∃ k_out steps : Nat,
           xk = .field (k_out : F) ∧
           k_out = n + steps ∧
-          Core.RomBound.HeapDescent h (.enum Core.kexprEnum) xv steps ∧
+          IxVM.Refinement.RomBound.HeapDescent h (.enum Core.kexprEnum) xv steps ∧
           lamFirstArity E n = some k_out ∧
           h' = h)
     (fun fname args h r h' cs ev ih hfn n E xv xk hargs hr hbnd_desc hE => by
@@ -301,11 +302,11 @@ private theorem lam_first_arity_go_wb {κ : _root_.Address → KKey} {Γ : Nat �
           (op107 := op107) (ev84 := ev84) (hc109 := hc109) =>
         subst hc109
         obtain ⟨T, B, ℓ, rfl, _, hB, hℓ⟩ := hE.lam_of_load ld12
-        obtain ⟨u, rfl, hu⟩ := Core.Levels.rep_succ_of_load hℓ ld47
-        obtain rfl := Core.Levels.rep_zero_of_load hu ld71
+        obtain ⟨u, rfl, hu⟩ := IxVM.Refinement.Levels.rep_succ_of_load hℓ ld47
+        obtain rfl := IxVM.Refinement.Levels.rep_zero_of_load hu ld71
         have hv86 : v86 = .field ((n + 1 : Nat) : F) := Decl.evalBinOp_add_one n op107
         rw [hv86] at ev84
-        have hbnd_b : ∀ steps, Core.RomBound.HeapDescent h (.enum Core.kexprEnum) xb steps →
+        have hbnd_b : ∀ steps, IxVM.Refinement.RomBound.HeapDescent h (.enum Core.kexprEnum) xb steps →
             (n + 1) + steps < 549755813888 := by
           intro steps hdb
           have hdp := tm_lam_descent_wb hE ld12 hdb
@@ -368,10 +369,10 @@ theorem wrapperArity_of_observed {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
   injection hld with hv_eq
   subst hv_eq
   obtain ⟨cv, V, hn_hint, rfl, _, hV⟩ := Core.CIRep.defn_inv hci_rep
-  have hbnd_la : ∀ steps, Core.RomBound.HeapDescent h_ci (.enum Core.kexprEnum) val steps →
+  have hbnd_la : ∀ steps, IxVM.Refinement.RomBound.HeapDescent h_ci (.enum Core.kexprEnum) val steps →
       0 + steps < 549755813888 := by
     intro steps hdesc
-    have hlt := Core.RomBound.bounded_descent_lt hg_all.2 hcl_la List.mem_cons_self hdesc
+    have hlt := IxVM.Refinement.RomBound.bounded_descent_lt hg_all.2 hcl_la List.mem_cons_self hdesc
     simpa using hlt
   obtain ⟨k_out, steps, hxk, hk_steps, hdesc_v, hlam_pos, -⟩ :=
     lam_first_arity_go_wb _ _ _ _ _ _ ev_la rfl 0 (Core.posOf cv.levelParams V) val (.field (n : F))
@@ -508,9 +509,8 @@ private theorem constsResolve_appHead_and_arg {env : Ix.Kernel.Env .anon} {t a :
     · next hlen =>
       injection hca with ha_eq
       subst ha_eq
-      injection hlen with hlen
       refine ⟨hfn_cr, hargs_cr a (by rw [hargs]; exact List.mem_cons_self), by simp, ?_⟩
-      simp [hlen]
+      simpa using hlen
     · cases hca
 
 private theorem ConsumesObs.toWrapDom_of_obs {W : KKey → Option (Option Nat)}
@@ -522,12 +522,12 @@ private theorem ConsumesObs.toWrapDom_of_obs {W : KKey → Option (Option Nat)}
       ∀ {t' : KExpr}, WrapRel env.find? c t' → WrapDom env.find? t t' := by
   induction h with
   | refl t => intro hcr; exact ⟨hcr, fun hr => .keep hr⟩
-  | step hc hd hw ho _ ih =>
+  | @step t a c w n hc hd hw ho _ ih =>
     intro hcr
     obtain ⟨hfind, ha_cr, hargs_cons, hargs_len⟩ := constsResolve_appHead_and_arg hcr hc hd hw
     obtain ⟨us, hfn⟩ := Binding.FamilyRecon.appHead_some hd
-    have hwa : wrapperArity env.find? _ = some _ := hObs _ _ hfind ho
-    have hcw : consumeWrapper env.find? _ = some _ := by
+    have hwa : wrapperArity env.find? w = some n := hObs w n hfind ho
+    have hcw : consumeWrapper env.find? t = some a := by
       unfold consumeWrapper
       rw [hfn, hargs_cons]
       simp only [List.length_cons] at hargs_len
@@ -605,13 +605,13 @@ private theorem consumeWrapper_congr {find? : KKey → Option (ConstantInfo .ano
     rw [ht2, Expr.getAppArgs_mkAppN]
     simp [Expr.getAppArgs]
   rw [hargs2] at hargs
+  generalize hga : t₁.getAppArgs = l₁ at hargs
   cases hargs with
   | @cons a₁ _ rest₁ _ ha hrest =>
-    rename_i hargs₁
     have hlen : rest₁.length = rest.length := Binding.FamilyRecon.forall2_length hrest
     refine ⟨a₁, ?_, ha⟩
     unfold consumeWrapper
-    rw [hfn₁, ← hargs₁, hw, hlen]
+    rw [hfn₁, hga, hw, hlen]
     simp
 
 private theorem forall2_eval_trans_left {us₁ us₂ vs : List KLevel}
@@ -644,14 +644,13 @@ private theorem forall2_eval_trans_right {us vs₁ vs₂ : List KLevel}
     | cons v₂ vs₂' =>
       exact .cons (fun φ => (hr φ).trans (h2 φ).1) (ih fun φ => (h2 φ).2)
 
-/-- `WrapRel` and `WrapDom` respect `ExprLvEq` on the left. -/
-theorem wrapRel_congr_left {find? : KKey → Option (ConstantInfo .anon)} :
-    (∀ {g d : KExpr}, WrapRel find? g d → ∀ {g₁ : KExpr}, ExprLvEq g₁ g → WrapRel find? g₁ d) ∧
-    (∀ {t d : KExpr}, WrapDom find? t d → ∀ {t₁ : KExpr}, ExprLvEq t₁ t → WrapDom find? t₁ d) := by
+/-- `WrapRel` respects `ExprLvEq` on the left. -/
+theorem wrapRel_congr_exprLvEq_left {find? : KKey → Option (ConstantInfo .anon)} {g g₁ d : KExpr}
+    (h : ExprLvEq g₁ g) (hw : WrapRel find? g d) : WrapRel find? g₁ d := by
   refine WrapRel.rec
     (motive_1 := fun g d _ => ∀ {g₁ : KExpr}, ExprLvEq g₁ g → WrapRel find? g₁ d)
     (motive_2 := fun t d _ => ∀ {t₁ : KExpr}, ExprLvEq t₁ t → WrapDom find? t₁ d)
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ hw h
   · intro i g₁ hg; cases hg; exact .bvar i
   · intro i t t' _ ih g₁ hg; cases hg with | fvar ht => exact .fvar (ih ht)
   · intro u v huv g₁ hg; cases hg with | sort hu => exact .sort (fun φ => (hu φ).trans (huv φ))
@@ -671,14 +670,22 @@ theorem wrapRel_congr_left {find? : KKey → Option (ConstantInfo .anon)} :
     obtain ⟨a₁, hc₁, ha⟩ := consumeWrapper_congr ht hc
     exact .consume hc₁ (ih ha)
 
-/-- `WrapRel` and `WrapDom` respect `ExprLvEq` on the right. -/
-theorem wrapRel_congr_right {find? : KKey → Option (ConstantInfo .anon)} :
-    (∀ {g d : KExpr}, WrapRel find? g d → ∀ {d₁ : KExpr}, ExprLvEq d d₁ → WrapRel find? g d₁) ∧
-    (∀ {t d : KExpr}, WrapDom find? t d → ∀ {d₁ : KExpr}, ExprLvEq d d₁ → WrapDom find? t d₁) := by
+/-- `WrapDom` respects `ExprLvEq` on the left. -/
+theorem wrapDom_congr_exprLvEq_left {find? : KKey → Option (ConstantInfo .anon)} {t t₁ d : KExpr}
+    (h : ExprLvEq t₁ t) (hw : WrapDom find? t d) : WrapDom find? t₁ d := by
+  induction hw generalizing t₁ with
+  | keep hr => exact .keep (wrapRel_congr_exprLvEq_left h hr)
+  | consume hc _ ih =>
+    obtain ⟨a₁, hc₁, ha⟩ := consumeWrapper_congr h hc
+    exact .consume hc₁ (ih ha)
+
+/-- `WrapRel` respects `ExprLvEq` on the right. -/
+theorem wrapRel_congr_exprLvEq_right {find? : KKey → Option (ConstantInfo .anon)} {g d d₁ : KExpr}
+    (hw : WrapRel find? g d) (h : ExprLvEq d d₁) : WrapRel find? g d₁ := by
   refine WrapRel.rec
     (motive_1 := fun g d _ => ∀ {d₁ : KExpr}, ExprLvEq d d₁ → WrapRel find? g d₁)
     (motive_2 := fun t d _ => ∀ {d₁ : KExpr}, ExprLvEq d d₁ → WrapDom find? t d₁)
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ hw h
   · intro i d₁ hd; cases hd; exact .bvar i
   · intro i t t' _ ih d₁ hd; cases hd with | fvar ht => exact .fvar (ih ht)
   · intro u v huv d₁ hd; cases hd with | sort hv => exact .sort (fun φ => (huv φ).trans (hv φ))
@@ -698,21 +705,12 @@ theorem wrapRel_congr_right {find? : KKey → Option (ConstantInfo .anon)} :
   · intro t t' _ ih d₁ hd; exact .keep (ih hd)
   · intro t a t' hc _ ih d₁ hd; exact .consume hc (ih hd)
 
-theorem WrapRel.congr_exprLvEq_left {find? : KKey → Option (ConstantInfo .anon)} {g g₁ d : KExpr}
-    (h : ExprLvEq g₁ g) (hw : WrapRel find? g d) : WrapRel find? g₁ d :=
-  wrapRel_congr_left.1 hw h
-
-theorem WrapRel.congr_exprLvEq_right {find? : KKey → Option (ConstantInfo .anon)} {g d d₁ : KExpr}
-    (hw : WrapRel find? g d) (h : ExprLvEq d d₁) : WrapRel find? g d₁ :=
-  wrapRel_congr_right.1 hw h
-
-theorem WrapDom.congr_exprLvEq_left {find? : KKey → Option (ConstantInfo .anon)} {t t₁ d : KExpr}
-    (h : ExprLvEq t₁ t) (hw : WrapDom find? t d) : WrapDom find? t₁ d :=
-  wrapRel_congr_left.2 hw h
-
-theorem WrapDom.congr_exprLvEq_right {find? : KKey → Option (ConstantInfo .anon)} {t d d₁ : KExpr}
-    (hw : WrapDom find? t d) (h : ExprLvEq d d₁) : WrapDom find? t d₁ :=
-  wrapRel_congr_right.2 hw h
+/-- `WrapDom` respects `ExprLvEq` on the right. -/
+theorem wrapDom_congr_exprLvEq_right {find? : KKey → Option (ConstantInfo .anon)} {t d d₁ : KExpr}
+    (hw : WrapDom find? t d) (h : ExprLvEq d d₁) : WrapDom find? t d₁ := by
+  induction hw with
+  | keep hr => exact .keep (wrapRel_congr_exprLvEq_right hr h)
+  | consume hc _ ih => exact .consume hc (ih h)
 
 /-! ### Level-parameter instantiation and lifting -/
 
@@ -741,19 +739,17 @@ private theorem consumeWrapper_instantiateLevelParams {find? : KKey → Option (
   simp only [Expr.instantiateLevelParams, List.map_cons]
   exact Ix.Kernel.Semantics.consumeWrapper_mkAppN (by rw [List.length_map]; exact hw)
 
-/-- `WrapRel` and `WrapDom` commute with `Expr.instantiateLevelParams` on `letFree` right sides. -/
+/-- `WrapRel` commutes with `Expr.instantiateLevelParams` on `letFree` right sides. -/
 theorem wrapRel_instantiateLevelParams {find? : KKey → Option (ConstantInfo .anon)}
-    (ps : List LevelParam) (us : List KLevel) :
-    (∀ {g d : KExpr}, WrapRel find? g d → letFree d = true →
-      WrapRel find? (g.instantiateLevelParams ps us) (d.instantiateLevelParams ps us)) ∧
-    (∀ {t d : KExpr}, WrapDom find? t d → letFree d = true →
-      WrapDom find? (t.instantiateLevelParams ps us) (d.instantiateLevelParams ps us)) := by
+    (ps : List LevelParam) (us : List KLevel) {g d : KExpr}
+    (hw : WrapRel find? g d) (hd : letFree d = true) :
+    WrapRel find? (g.instantiateLevelParams ps us) (d.instantiateLevelParams ps us) := by
   refine WrapRel.rec
     (motive_1 := fun g d _ => letFree d = true →
       WrapRel find? (g.instantiateLevelParams ps us) (d.instantiateLevelParams ps us))
     (motive_2 := fun t d _ => letFree d = true →
       WrapDom find? (t.instantiateLevelParams ps us) (d.instantiateLevelParams ps us))
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ hw hd
   · intro i _; exact .bvar i
   · intro i t t' _ ih _; exact .fvar (ih (by simp [letFree]))
   · intro u v huv _; exact .sort (level_eval_subst_congr ps us huv)
@@ -776,13 +772,13 @@ theorem wrapRel_instantiateLevelParams {find? : KKey → Option (ConstantInfo .a
     exact .consume (consumeWrapper_instantiateLevelParams ps us hc) (ih hlf)
 
 /-- Move `WrapRel` from positional level parameters (`posOf ps`) back to `ps`. -/
-theorem WrapRel.of_posOf_perm {find? : KKey → Option (ConstantInfo .anon)}
+theorem wrapRel_of_posOf_perm {find? : KKey → Option (ConstantInfo .anon)}
     {ps : List LevelParam} (hperm : ps.Perm (List.range ps.length)) {g d : KExpr}
     (hd : letFree d = true) (h : WrapRel find? (Core.posOf ps g) (Core.posOf ps d)) :
     WrapRel find? g d := by
   have hlf_pos : letFree (Core.posOf ps d) = true :=
     Decl.letFree_instantiateLevelParams _ _ hd
-  have h' := (wrapRel_instantiateLevelParams (List.range ps.length) (ps.map .param)).1 h hlf_pos
+  have h' := wrapRel_instantiateLevelParams (List.range ps.length) (ps.map .param) h hlf_pos
   rwa [Decl.posOf_perm_inv hperm g, Decl.posOf_perm_inv hperm d] at h'
 
 private theorem consumeWrapper_liftLooseBVars {find? : KKey → Option (ConstantInfo .anon)}
@@ -793,18 +789,16 @@ private theorem consumeWrapper_liftLooseBVars {find? : KKey → Option (Constant
   simp only [Expr.liftLooseBVars, List.map_cons]
   exact Ix.Kernel.Semantics.consumeWrapper_mkAppN (by rw [List.length_map]; exact hw)
 
-/-- `WrapRel` and `WrapDom` commute with `Expr.liftLooseBVars` on `letFree` right sides. -/
-theorem wrapRel_liftLooseBVars {find? : KKey → Option (ConstantInfo .anon)} :
-    (∀ {g d : KExpr}, WrapRel find? g d → letFree d = true →
-      ∀ n c, WrapRel find? (g.liftLooseBVars n c) (d.liftLooseBVars n c)) ∧
-    (∀ {t d : KExpr}, WrapDom find? t d → letFree d = true →
-      ∀ n c, WrapDom find? (t.liftLooseBVars n c) (d.liftLooseBVars n c)) := by
+/-- `WrapRel` commutes with `Expr.liftLooseBVars` on `letFree` right sides. -/
+theorem wrapRel_liftLooseBVars {find? : KKey → Option (ConstantInfo .anon)}
+    {g d : KExpr} (hw : WrapRel find? g d) (hd : letFree d = true) (n c : Nat) :
+    WrapRel find? (g.liftLooseBVars n c) (d.liftLooseBVars n c) := by
   refine WrapRel.rec
     (motive_1 := fun g d _ => letFree d = true →
       ∀ n c, WrapRel find? (g.liftLooseBVars n c) (d.liftLooseBVars n c))
     (motive_2 := fun t d _ => letFree d = true →
       ∀ n c, WrapDom find? (t.liftLooseBVars n c) (d.liftLooseBVars n c))
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ hw hd n c
   · intro i _ n c; simp only [Expr.liftLooseBVars]; split <;> exact .bvar _
   · intro i t t' _ ih _ n c; exact .fvar (ih (by simp [letFree]) n c)
   · intro u v huv _ _ _; exact .sort huv
@@ -826,8 +820,16 @@ theorem wrapRel_liftLooseBVars {find? : KKey → Option (ConstantInfo .anon)} :
   · intro t a t' hc _ ih hlf n c
     exact .consume (consumeWrapper_liftLooseBVars n c hc) (ih hlf n c)
 
+/-- `WrapDom` commutes with `Expr.liftLooseBVars` on `letFree` right sides. -/
+theorem wrapDom_liftLooseBVars {find? : KKey → Option (ConstantInfo .anon)}
+    {t d : KExpr} (hw : WrapDom find? t d) (hd : letFree d = true) (n c : Nat) :
+    WrapDom find? (t.liftLooseBVars n c) (d.liftLooseBVars n c) := by
+  induction hw with
+  | keep hr => exact .keep (wrapRel_liftLooseBVars hr hd n c)
+  | consume hc _ ih => exact .consume (consumeWrapper_liftLooseBVars n c hc) (ih hd)
+
 /-- A `∀`-headed term cannot be consumed as a wrapper, so `WrapDom` on it is `WrapRel`. -/
-theorem WrapDom.toWrapRel_of_forallE {find? : KKey → Option (ConstantInfo .anon)}
+theorem wrapDom_toWrapRel_of_forallE {find? : KKey → Option (ConstantInfo .anon)}
     {d b t' : KExpr} {m : Ix.Kernel.BinderMeta}
     (h : WrapDom find? (.forallE d b m) t') : WrapRel find? (.forallE d b m) t' := by
   cases h with
@@ -836,7 +838,7 @@ theorem WrapDom.toWrapRel_of_forallE {find? : KKey → Option (ConstantInfo .ano
     simp [consumeWrapper, Expr.getAppFn] at hc
 
 /-- Peeling `n` leading `∀` binders preserves `WrapRel` on `letFree` right sides. -/
-theorem WrapRel.peelForalls {find? : KKey → Option (ConstantInfo .anon)} :
+theorem wrapRel_peelForalls {find? : KKey → Option (ConstantInfo .anon)} :
     ∀ (n : Nat) {g d g' d' : KExpr}, WrapRel find? g d → letFree d = true →
       peelForalls n g = some g' → peelForalls n d = some d' →
       WrapRel find? g' d' ∧ letFree d' = true
@@ -850,18 +852,18 @@ theorem WrapRel.peelForalls {find? : KKey → Option (ConstantInfo .anon)} :
     cases hw with
     | forallE _ _ hb =>
       simp only [letFree, Bool.and_eq_true] at hlf
-      exact WrapRel.peelForalls n hb hlf.2 hg hd
+      exact wrapRel_peelForalls n hb hlf.2 hg hd
 
 /-! ## `RuleFollows` and `LamsAlong` into `WrapRel` -/
 
 /-- Renaming constants that a term does not mention leaves it unchanged. -/
-theorem Expr.renameConsts_eq_self_of_not_mentions {f : KKey → KKey} :
+theorem renameConsts_eq_self_of_not_mentions {f : KKey → KKey} :
     ∀ (e : KExpr), (∀ k, f k ≠ k → e.mentionsConst k = false) → e.renameConsts f = e
   | .bvar _, _ | .sort _, _ | .lit _, _ => rfl
   | .fvar i t, h => by
     simp only [Expr.renameConsts]
     congr 1
-    exact Expr.renameConsts_eq_self_of_not_mentions t fun k hk => by
+    exact renameConsts_eq_self_of_not_mentions t fun k hk => by
       simpa [Expr.mentionsConst] using h k hk
   | .const n us, h => by
     simp only [Expr.renameConsts]
@@ -869,43 +871,43 @@ theorem Expr.renameConsts_eq_self_of_not_mentions {f : KKey → KKey} :
     · rw [hn]
     · have := h n hn
       simp [Expr.mentionsConst] at this
-  | .app fn a, h => by
+  | .app g a, h => by
     simp only [Expr.renameConsts]
     congr 1
-    · exact Expr.renameConsts_eq_self_of_not_mentions fn fun k hk =>
+    · exact renameConsts_eq_self_of_not_mentions g fun k hk =>
         (Bool.or_eq_false_iff.mp (h k hk)).1
-    · exact Expr.renameConsts_eq_self_of_not_mentions a fun k hk =>
+    · exact renameConsts_eq_self_of_not_mentions a fun k hk =>
         (Bool.or_eq_false_iff.mp (h k hk)).2
   | .lam t b m, h => by
     simp only [Expr.renameConsts]
     congr 1
-    · exact Expr.renameConsts_eq_self_of_not_mentions t fun k hk =>
+    · exact renameConsts_eq_self_of_not_mentions t fun k hk =>
         (Bool.or_eq_false_iff.mp (h k hk)).1
-    · exact Expr.renameConsts_eq_self_of_not_mentions b fun k hk =>
+    · exact renameConsts_eq_self_of_not_mentions b fun k hk =>
         (Bool.or_eq_false_iff.mp (h k hk)).2
   | .forallE t b m, h => by
     simp only [Expr.renameConsts]
     congr 1
-    · exact Expr.renameConsts_eq_self_of_not_mentions t fun k hk =>
+    · exact renameConsts_eq_self_of_not_mentions t fun k hk =>
         (Bool.or_eq_false_iff.mp (h k hk)).1
-    · exact Expr.renameConsts_eq_self_of_not_mentions b fun k hk =>
+    · exact renameConsts_eq_self_of_not_mentions b fun k hk =>
         (Bool.or_eq_false_iff.mp (h k hk)).2
   | .letE t v b l, h => by
     simp only [Expr.renameConsts]
     congr 1
-    · exact Expr.renameConsts_eq_self_of_not_mentions t fun k hk =>
+    · exact renameConsts_eq_self_of_not_mentions t fun k hk =>
         (Bool.or_eq_false_iff.mp (Bool.or_eq_false_iff.mp (h k hk)).1).1
-    · exact Expr.renameConsts_eq_self_of_not_mentions v fun k hk =>
+    · exact renameConsts_eq_self_of_not_mentions v fun k hk =>
         (Bool.or_eq_false_iff.mp (Bool.or_eq_false_iff.mp (h k hk)).1).2
-    · exact Expr.renameConsts_eq_self_of_not_mentions b fun k hk =>
+    · exact renameConsts_eq_self_of_not_mentions b fun k hk =>
         (Bool.or_eq_false_iff.mp (h k hk)).2
   | .proj s i e, h => by
     simp only [Expr.renameConsts]
     congr 1
-    exact Expr.renameConsts_eq_self_of_not_mentions e fun k hk =>
+    exact renameConsts_eq_self_of_not_mentions e fun k hk =>
       (Bool.or_eq_false_iff.mp (h k hk)).2
 
-theorem ExprLvEq.renameConsts (f : KKey → KKey) {e₁ e₂ : KExpr} (h : ExprLvEq e₁ e₂) :
+theorem exprLvEq_renameConsts (f : KKey → KKey) {e₁ e₂ : KExpr} (h : ExprLvEq e₁ e₂) :
     ExprLvEq (e₁.renameConsts f) (e₂.renameConsts f) := by
   induction h with
   | bvar => exact .bvar
@@ -919,12 +921,12 @@ theorem ExprLvEq.renameConsts (f : KKey → KKey) {e₁ e₂ : KExpr} (h : ExprL
   | lit => exact .lit
   | proj _ ih => exact .proj ih
 
-theorem LamsAlong.renameConsts (f : KKey → KKey) {elim : KLevel} {n : Nat} {l p r : KExpr}
+theorem lamsAlong_renameConsts (f : KKey → KKey) {elim : KLevel} {n : Nat} {l p r : KExpr}
     (h : LamsAlong elim n l p r) :
     LamsAlong elim n (l.renameConsts f) (p.renameConsts f) (r.renameConsts f) := by
   induction h with
   | zero => exact .zero
-  | succ hpw hdom _ ih => exact .succ hpw (hdom.renameConsts f) ih
+  | succ hpw hdom _ ih => exact .succ hpw (exprLvEq_renameConsts f hdom) ih
 
 /-- Two λ-prefixes along `WrapRel`-related `∀`-telescopes whose bodies are `WrapRel`-related are
 themselves `WrapRel`-related. -/
@@ -944,7 +946,7 @@ theorem wrapRel_of_lamsAlong {find? : KKey → Option (ConstantInfo .anon)} {eli
         | forallE _ hdomP hbP =>
           simp only [letFree, Bool.and_eq_true] at hlf
           have hdom : WrapDom find? _ _ :=
-            (hdomP.congr_exprLvEq_left hdomC).congr_exprLvEq_right hdomW.symm
+            wrapDom_congr_exprLvEq_right (wrapDom_congr_exprLvEq_left hdomC hdomP) hdomW.symm
           exact .lam (hpwC.trans hpwW.symm) hdom
             (wrapRel_of_lamsAlong hbP hlf.2 hC' hW' hr)
 
@@ -979,7 +981,7 @@ theorem wrapRel_rule_of_ruleFollows {find? : KKey → Option (ConstantInfo .anon
   obtain ⟨afterW, mdomW, restW, sbW, mmW, hlam1W, hpeelW, hlam2W, hsbW⟩ := hW
   have hlam1C' : LamsAlong elim (nP + nMot + nMin) (rhsC.renameConsts f) tyC
       (afterC.renameConsts f) := by
-    have h := hlam1C.renameConsts f
+    have h := lamsAlong_renameConsts f hlam1C
     rwa [hty_fix] at h
   have hpeelC' : peelForalls (nP + nMot + minor) tyC =
       some (.forallE (mdomC.renameConsts f) (restC.renameConsts f) mmC) := by
@@ -990,30 +992,32 @@ theorem wrapRel_rule_of_ruleFollows {find? : KKey → Option (ConstantInfo .anon
     injection h
   have hlam2C' : LamsAlong elim nf (afterC.renameConsts f)
       (mdomC.liftLooseBVars (nMin - minor) 0) (sbC.renameConsts f) := by
-    have h := hlam2C.renameConsts f
+    have h := lamsAlong_renameConsts f hlam2C
     rw [renameConsts_liftLooseBVars_wb, hmdom_fix] at h
     exact h
   have hsb : WrapRel find? (sbC.renameConsts f) sbW :=
     Binding.FamilyRecon.exprLvEq_wrapRel find?
-      (((hsbC.renameConsts f).trans hcb).trans hsbW.symm)
+      (((exprLvEq_renameConsts f hsbC).trans hcb).trans hsbW.symm)
   have hafter : WrapRel find? (afterC.renameConsts f) afterW := by
     cases nf with
     | zero =>
       cases hlam2C'; cases hlam2W; exact hsb
     | succ nf' =>
-      obtain ⟨hpeel_w, hlf_peel⟩ := WrapRel.peelForalls (nP + nMot + minor) hty hlfW hpeelC hpeelW
+      obtain ⟨hpeel_w, hlf_peel⟩ := wrapRel_peelForalls (nP + nMot + minor) hty hlfW hpeelC hpeelW
       cases hpeel_w with
       | forallE _ hdomM _ =>
         simp only [letFree, Bool.and_eq_true] at hlf_peel
         have hdomM_lift : WrapDom find? (mdomC.liftLooseBVars (nMin - minor) 0)
             (mdomW.liftLooseBVars (nMin - minor) 0) :=
-          (wrapRel_liftLooseBVars).2 hdomM hlf_peel.1 (nMin - minor) 0
-        cases hlam2C' with
-        | succ _ _ _ =>
-          have hrelM := hdomM_lift.toWrapRel_of_forallE
+          wrapDom_liftLooseBVars hdomM hlf_peel.1 (nMin - minor) 0
+        cases hm : mdomC.liftLooseBVars (nMin - minor) 0 with
+        | forallE d b m =>
+          rw [hm] at hdomM_lift hlam2C'
+          have hrelM := wrapDom_toWrapRel_of_forallE hdomM_lift
           have hlf_lift : letFree (mdomW.liftLooseBVars (nMin - minor) 0) = true :=
             Decl.letFree_liftLooseBVars (nMin - minor) 0 hlf_peel.1
-          exact wrapRel_of_lamsAlong hrelM hlf_lift ‹_› hlam2W hsb
+          exact wrapRel_of_lamsAlong hrelM hlf_lift hlam2C' hlam2W hsb
+        | _ => rw [hm] at hlam2C'; cases hlam2C'
   exact wrapRel_of_lamsAlong hty hlfW hlam1C' hlam1W hafter
 
 /-! ## Reconstructed rule bodies under peer renaming -/
@@ -1635,9 +1639,9 @@ theorem ruleBodiesAt_renameConsts_of_recTypeAt {V : ReconView} {f : KKey → KKe
                                 exact List.mem_map.mpr ⟨a, ha_mem, rfl⟩
                               have := hpeel2 _ hmem_l
                               rwa [mentionsConst_liftLooseBVars] at this
-                          exact ⟨fun d hd => Expr.renameConsts_eq_self_of_not_mentions d
+                          exact ⟨fun d hd => renameConsts_eq_self_of_not_mentions d
                               (fun q hq => (hmc_pair q hq).1 d hd),
-                            fun a ha => Expr.renameConsts_eq_self_of_not_mentions a
+                            fun a ha => renameConsts_eq_self_of_not_mentions a
                               (fun q hq => (hmc_pair q hq).2 a ha)⟩
 
 private theorem whnfTele_keys {V : ReconView} {S : _root_.Address → Prop} (hC : V.ClosedOn S)
@@ -1750,7 +1754,7 @@ private theorem renameConsts_of_rKeysAt {V : ReconView} {S : _root_.Address → 
     (hfix : ∀ k, f k ≠ k → ∃ a, V.addr k = some a ∧ ¬ S a) :
     ∀ (e : KExpr), RKeysAt V S e → e.renameConsts f = e := by
   intro e hK
-  refine Expr.renameConsts_eq_self_of_not_mentions e fun k hk => ?_
+  refine renameConsts_eq_self_of_not_mentions e fun k hk => ?_
   obtain ⟨a, ha, hnotS⟩ := hfix k hk
   -- If `e.mentionsConst k = true`, then `KeyIn k e`, contradicting `hnotS` via `hK`.
   have hmc_keyIn : ∀ (x : KExpr), x.mentionsConst k = true → KeyIn k x := by
@@ -1758,10 +1762,10 @@ private theorem renameConsts_of_rKeysAt {V : ReconView} {S : _root_.Address → 
     induction x with
     | bvar _ | sort _ | lit _ => intro hm; simp [Expr.mentionsConst] at hm
     | fvar _ t ih =>
-      intro hm; simp [Expr.mentionsConst] at hm; exact .fvar (ih hm)
+      intro hm; simp [Expr.mentionsConst] at hm; exact .fvarTy (ih hm)
     | const n us =>
-      intro hm; simp only [Expr.mentionsConst, beq_iff_eq] at hm; subst hm; exact .const
-    | app fn a ihf iha =>
+      intro hm; simp only [Expr.mentionsConst, beq_iff_eq] at hm; subst hm; exact .const us
+    | app g a ihf iha =>
       intro hm; simp only [Expr.mentionsConst, Bool.or_eq_true] at hm
       rcases hm with h1 | h2
       · exact .appFn (ihf h1)
@@ -1785,8 +1789,8 @@ private theorem renameConsts_of_rKeysAt {V : ReconView} {S : _root_.Address → 
     | proj s i x ih =>
       intro hm; simp only [Expr.mentionsConst, Bool.or_eq_true, beq_iff_eq] at hm
       rcases hm with rfl | h2
-      · exact .projS
-      · exact .projE (ih h2)
+      · exact .proj i x
+      · exact .projBody (ih h2)
   cases hm : e.mentionsConst k with
   | false => rfl
   | true => exact (hnotS (hK k (hmc_keyIn e hm) a ha)).elim

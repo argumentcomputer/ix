@@ -116,7 +116,7 @@ a constant address of `c` itself; and each part's member, at its reading, is loa
 checked recursor (`TwinMemberLoaded`). -/
 structure TwinLoadFacts (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (env : Ix.Kernel.Env .anon)
     (A : _root_.Address) (c : Ixon.Constant) (ws : List (TwinRecPart .anon)) : Prop where
-  usedStored : ∀ i ∈ Ix.Kernel.Reader.usedRefIdxs c, ∀ x, c.refs[i]? = some x →
+  usedStored : ∀ i ∈ IxVM.Consistency.usedRefIdxs c, ∀ x, c.refs.toList[i]? = some x →
     (env.find? (keyOf t x)).isSome = true ∨ ConstAddrOf A c x
   loaded : ∀ w ∈ ws, ∀ (ms : Array Ixon.MutConst) (p : Ixon.RecursorProj) (rc : Ixon.Recursor),
     c.info = .muts ms → p.block = A → ms[p.idx.toNat]? = some (.recr rc) →
