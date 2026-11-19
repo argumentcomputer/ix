@@ -6,6 +6,9 @@ import IxVMRefinement.Claim.RefSafety
 import IxVMRefinement.Assembly.TypingSkeleton
 import IxVMRefinement.Assembly.TypingDefnStep
 import IxVMRefinement.StatementRel.LoadedReadsWalked
+import IxVMRefinement.Obs.KernelRoles2
+import IxVMRefinement.Obs.KernelRoleSpec0
+import IxVMRefinement.Obs.KernelClaim1
 
 /-! # The claim layer's walk export for the typing half
 
@@ -66,6 +69,230 @@ structure TopWalkCore (calls : List (Call F)) (bAddr : _root_.Address)
     ∀ c, recordOf E₀ x = some c → ¬ Typing.IsBlock c
   safeRefs : ∀ a x, Top a → SourceSafe E₀ a → Typing.UsedRef E₀ a x →
     ¬ Typing.Covered t x → SourceSafe E₀ x
+  quotBound : ∀ x ro c, Top x → quotRole ro = true → t.addressOf? ro = some x →
+    recordOf E₀ x = some c → Typing.Standalone c ∧ ∀ y, Typing.UsedRef E₀ x y →
+      Typing.Covered t y ∨ ∃ ro', quotRole ro' = true ∧ t.addressOf? ro' = some y
+
+/-! ## Quotient-bound records (`assert_quot_record_refs`) -/
+
+private theorem quotRole_iff_sub_32 (ro : Ix.Kernel.Role) :
+    quotRole ro = true ↔
+      roleNum ro - (32 : F) = (0 : F) ∨ roleNum ro - (32 : F) = (1 : F) ∨
+      roleNum ro - (32 : F) = (2 : F) ∨ roleNum ro - (32 : F) = (3 : F) ∨
+      roleNum ro - (32 : F) = (4 : F) := by
+  cases ro <;> decide
+
+theorem addr_quot_bound_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
+    {lim : Option Nat} {x_rc x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : RCLimRep t bAddr lim h x_rc) (ha : S0.addr h x_a a)
+    (ev : ObsFn W "KernelRoles::addr_quot_bound" [x_rc, x_a] h r h' calls) :
+    h' = h ∧
+      ((r = .field 0 ∧ ∀ ro, quotRole ro = true → t.addressOf? ro ≠ some a) ∨
+       (r = .field 1 ∧ ∃ ro, quotRole ro = true ∧ t.addressOf? ro = some a)) := by
+  match Obs.«KernelRoles::addr_quot_bound».obs ev with
+  | .n0 (ev_rcqbqram := evr) (he_daqahcdl := hr) (he_bhektsom := hh) .. =>
+    obtain ⟨rfl, hres⟩ := role_index_of_lim_spec hrc ha evr
+    rcases hres with ⟨-, hnone⟩ | ⟨ro, h0, -⟩
+    · exact ⟨hh, .inl ⟨hr, fun ro _ => hnone ro⟩⟩
+    · exact absurd (Value.field.inj h0).symm (RolesAux.roleNum_add_one_ne_zero ro)
+  | .other_n0 (ev_rcqbqram := evr) (hne_xjnibfzs := hne) (op_hvsdcsbp := op1)
+      (ev_oakdyycl := evq) (op_bssudskp := op2) (he_qzstfxnn := hr) (he_lwvfeqiv := hh) .. =>
+    obtain ⟨rfl, hres⟩ := role_index_of_lim_spec hrc ha evr
+    rcases hres with ⟨h0, -⟩ | ⟨ro, hro, hof⟩
+    · exact absurd h0 hne
+    · subst hro
+      simp only [evalBinOp, add_sub_cancel_right, Except.ok.injEq] at op1; subst op1
+      obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::role_quot».obs evq
+      simp only [evalBinOp, Except.ok.injEq] at op2
+      exact ⟨hh, .inr ⟨hr, ro, (quotRole_iff_sub_32 ro).mpr (.inl (Value.field.inj op2)), hof⟩⟩
+  | .other_n1 (ev_rcqbqram := evr) (hne_xjnibfzs := hne) (op_hvsdcsbp := op1)
+      (ev_oakdyycl := evq) (op_bssudskp := op2) (he_yyywwiyz := hr) (he_gzcylbfx := hh) .. =>
+    obtain ⟨rfl, hres⟩ := role_index_of_lim_spec hrc ha evr
+    rcases hres with ⟨h0, -⟩ | ⟨ro, hro, hof⟩
+    · exact absurd h0 hne
+    · subst hro
+      simp only [evalBinOp, add_sub_cancel_right, Except.ok.injEq] at op1; subst op1
+      obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::role_quot».obs evq
+      simp only [evalBinOp, Except.ok.injEq] at op2
+      exact ⟨hh, .inr ⟨hr, ro, (quotRole_iff_sub_32 ro).mpr (.inr (.inl (Value.field.inj op2))), hof⟩⟩
+  | .other_n2 (ev_rcqbqram := evr) (hne_xjnibfzs := hne) (op_hvsdcsbp := op1)
+      (ev_oakdyycl := evq) (op_bssudskp := op2) (he_qadijrxe := hr) (he_yrhrpjvx := hh) .. =>
+    obtain ⟨rfl, hres⟩ := role_index_of_lim_spec hrc ha evr
+    rcases hres with ⟨h0, -⟩ | ⟨ro, hro, hof⟩
+    · exact absurd h0 hne
+    · subst hro
+      simp only [evalBinOp, add_sub_cancel_right, Except.ok.injEq] at op1; subst op1
+      obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::role_quot».obs evq
+      simp only [evalBinOp, Except.ok.injEq] at op2
+      exact ⟨hh, .inr ⟨hr, ro,
+        (quotRole_iff_sub_32 ro).mpr (.inr (.inr (.inl (Value.field.inj op2)))), hof⟩⟩
+  | .other_n3 (ev_rcqbqram := evr) (hne_xjnibfzs := hne) (op_hvsdcsbp := op1)
+      (ev_oakdyycl := evq) (op_bssudskp := op2) (he_hcborifo := hr) (he_msijpbpf := hh) .. =>
+    obtain ⟨rfl, hres⟩ := role_index_of_lim_spec hrc ha evr
+    rcases hres with ⟨h0, -⟩ | ⟨ro, hro, hof⟩
+    · exact absurd h0 hne
+    · subst hro
+      simp only [evalBinOp, add_sub_cancel_right, Except.ok.injEq] at op1; subst op1
+      obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::role_quot».obs evq
+      simp only [evalBinOp, Except.ok.injEq] at op2
+      exact ⟨hh, .inr ⟨hr, ro,
+        (quotRole_iff_sub_32 ro).mpr (.inr (.inr (.inr (.inl (Value.field.inj op2))))), hof⟩⟩
+  | .other_n4 (ev_rcqbqram := evr) (hne_xjnibfzs := hne) (op_hvsdcsbp := op1)
+      (ev_oakdyycl := evq) (op_bssudskp := op2) (he_tdbumkgo := hr) (he_lgppkpmn := hh) .. =>
+    obtain ⟨rfl, hres⟩ := role_index_of_lim_spec hrc ha evr
+    rcases hres with ⟨h0, -⟩ | ⟨ro, hro, hof⟩
+    · exact absurd h0 hne
+    · subst hro
+      simp only [evalBinOp, add_sub_cancel_right, Except.ok.injEq] at op1; subst op1
+      obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::role_quot».obs evq
+      simp only [evalBinOp, Except.ok.injEq] at op2
+      exact ⟨hh, .inr ⟨hr, ro,
+        (quotRole_iff_sub_32 ro).mpr (.inr (.inr (.inr (.inr (Value.field.inj op2))))), hof⟩⟩
+  | .other_other (ev_rcqbqram := evr) (hne_xjnibfzs := hne) (op_hvsdcsbp := op1)
+      (ev_oakdyycl := evq) (op_bssudskp := op2) (hne_trdykyhf := hn0) (hne_arcdkpuy := hn1)
+      (hne_lowihoxb := hn2) (hne_teyjavyr := hn3) (hne_ezgksmjk := hn4)
+      (he_lhxtzule := hr) (he_xhtrolce := hh) .. =>
+    obtain ⟨rfl, hres⟩ := role_index_of_lim_spec hrc ha evr
+    rcases hres with ⟨h0, -⟩ | ⟨ro, hro, hof⟩
+    · exact absurd h0 hne
+    · subst hro
+      simp only [evalBinOp, add_sub_cancel_right, Except.ok.injEq] at op1; subst op1
+      obtain ⟨rfl, rfl, -⟩ := Obs.«KernelRoleSpec::role_quot».obs evq
+      simp only [evalBinOp, Except.ok.injEq] at op2; subst op2
+      refine ⟨hh, .inl ⟨hr, fun ro' hq' hof' => ?_⟩⟩
+      obtain ⟨_, ⟨hwf, -⟩, -⟩ := hrc.cases
+      have hro_eq : ro' = ro :=
+        Ix.Kernel.RoleTable.addressOf?_inj (RoleClosure.check_ok_of_wf hwf) hof' hof
+      subst hro_eq
+      rcases (quotRole_iff_sub_32 ro').mp hq' with h0 | h1 | h2 | h3 | h4
+      · exact hn0 (congrArg Value.field h0)
+      · exact hn1 (congrArg Value.field h1)
+      · exact hn2 (congrArg Value.field h2)
+      · exact hn3 (congrArg Value.field h3)
+      · exact hn4 (congrArg Value.field h4)
+
+theorem addr_walked_role_lim_spec {t : Ix.Kernel.RoleTable} {bAddr a : _root_.Address}
+    {lim : Option Nat} {x_rc x_a r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
+    (hrc : RCLimRep t bAddr lim h x_rc) (ha : S0.addr h x_a a)
+    (ev : ObsFn W "KernelRoles::addr_walked_role" [x_rc, x_a] h r h' calls) :
+    h' = h ∧ (r = .field 0 ∨ (r = .field 1 ∧ Typing.Covered t a)) := by
+  match Obs.«KernelRoles::addr_walked_role».obs ev with
+  | .n0 (ev_rcqbqram := evr) (he_daqahcdl := hr) (he_bhektsom := hh) .. =>
+    obtain ⟨rfl, -⟩ := role_index_of_lim_spec hrc ha evr
+    exact ⟨hh, .inl hr⟩
+  | .other (ev_rcqbqram := evr) (hne_xjnibfzs := hne) (op_buvadoef := op)
+      (ev_opsbypwq := eva) .. =>
+    obtain ⟨rfl, hres⟩ := role_index_of_lim_spec hrc ha evr
+    rcases hres with ⟨h0, -⟩ | ⟨ro, hro, hof⟩
+    · exact absurd h0 hne
+    · subst hro
+      simp only [evalBinOp, add_sub_cancel_right, Except.ok.injEq] at op; subst op
+      obtain ⟨rfl, hr⟩ := role_admission_checks_walks eva
+      exact ⟨rfl, hr.imp id fun ⟨h1, hw⟩ => ⟨h1, ro, hof, hw⟩⟩
+
+private theorem quot_refs_ok_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {lim : Option Nat} (refs : List _root_.Address) :
+    ∀ (i : Nat) {idxs : List Nat} {rc rp used r : SourceValue F} {h h' : Heap F}
+      {cs : List (Call F)}, i + refs.length < 8589934592 →
+      RCLimRep t bAddr lim h rc →
+      RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem h refs rp →
+      RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h idxs used →
+      ObsFn Obs.W "KernelClaim::quot_refs_ok" [rc, rp, used, .field (i : F)] h r h' cs →
+      ∀ j, (hj : j < refs.length) → i + j ∈ idxs →
+        Typing.Covered t refs[j] ∨ ∃ ro, quotRole ro = true ∧ t.addressOf? ro = some refs[j] := by
+  induction refs with
+  | nil => intro i idxs rc rp used r h h' cs hb hrc hr hi ev j hj; cases hj
+  | cons a rest ih =>
+    intro i idxs rc rp used r h h' cs hb hrc hr hi ev
+    match Obs.«KernelClaim::quot_refs_ok».obs ev with
+    | .Nil (ld_bolbylmd := ld) .. => cases Lib.rep_nil_of_load hr ld
+    | .Cons (m_yvuflqli := mSeg) (ld_bolbylmd := ld) (sg_dugcmplc := seg) (op_gskedpnl := op) (ev_rajcapyd := evr) .. =>
+      obtain ⟨_, _, he, ha, hrest⟩ := Lib.rep_cons_of_load hr ld
+      injection he with he1 he2
+      subst he1 he2
+      have hseg : Heap.Extends h mSeg ∧ (i ∈ idxs →
+          Typing.Covered t a ∨ ∃ ro, quotRole ro = true ∧ t.addressOf? ro = some a) := by
+        match seg with
+        | .other (ev_zomhduxa := evg) (hne_arfngzyc := hn) (he_xtnzeqqi := hh) .. =>
+          refine ⟨by rw [hh]; exact evg.heap_extends, fun hm => ?_⟩
+          exact (hn ((g_list_has_spec idxs (by simp at hb; omega) hi evg).2.mpr hm)).elim
+        | .n1 (ev_zomhduxa := evg) (ev_hxpsnrnr := evw) (ev_wyalnnti := evq)
+            (op_yueivgwj := opAdd) (heq_gnajvtpv := heq1) (he_rlktgdfs := hh) .. =>
+          obtain ⟨rfl, _⟩ := g_list_has_spec idxs (by simp at hb; omega) hi evg
+          obtain ⟨rfl, hw⟩ := addr_walked_role_lim_spec hrc ha evw
+          obtain ⟨rfl, hq⟩ := addr_quot_bound_lim_spec hrc ha evq
+          refine ⟨by rw [hh], fun _ => ?_⟩
+          rcases hw with rfl | ⟨-, hcov⟩
+          · rcases hq with ⟨rfl, -⟩ | ⟨-, hqb⟩
+            · simp only [evalBinOp, add_zero, Except.ok.injEq] at opAdd
+              exact absurd (Value.field.inj (opAdd.trans heq1)) zero_ne_one
+            · exact .inr hqb
+          · exact .inl hcov
+      obtain ⟨ext, hhead⟩ := hseg
+      simp only [evalBinOp, Except.ok.injEq] at op
+      subst op
+      have hinc : (i : F) + 1 = ((i + 1 : Nat) : F) := by push_cast; rfl
+      rw [hinc] at evr
+      have htail := ih (i + 1) (by simp at hb ⊢; omega) (hrc.mono ext)
+        (repList_heapMono₂ _ repAddrElem_heapMono₂ ext hrest)
+        (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext hi) evr
+      intro j hj hm
+      cases j with
+      | zero => exact hhead (by simpa only [Nat.add_zero] using hm)
+      | succ j =>
+        have hj' : j < rest.length := by simpa using hj
+        exact htail j hj' (by simpa only [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hm)
+
+theorem QuotRecordRefsIn.spec {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {bAddr a : _root_.Address} {lim : Option Nat} {c : Ixon.Constant} {ro : Ix.Kernel.Role}
+    (hrefs : c.refs.size < 8589934592) (hq : QuotRecordRefsIn calls t bAddr lim a c)
+    (hqr : quotRole ro = true) (hof : t.addressOf? ro = some a) :
+    Typing.Standalone c ∧ ∀ i ∈ usedRefIdxs c, ∀ y, c.refs[i]? = some y →
+      Typing.Covered t y ∨ ∃ ro', quotRole ro' = true ∧ t.addressOf? ro' = some y := by
+  obtain ⟨h, h', rc, ap, cp, r, cs, hrc, ha, hcp, ev, -⟩ := hq
+  match Obs.«KernelClaim::assert_quot_record_refs».obs ev with
+  | .n0 (ev_lhvvlvzx := evq) .. =>
+    obtain ⟨-, ⟨-, hnone⟩ | ⟨h0, -⟩⟩ := addr_quot_bound_lim_spec hrc ha evq
+    · exact (hnone ro hqr hof).elim
+    · exact absurd (Value.field.inj h0) zero_ne_one
+  | .other (m_jrmullwx := mSeg) (x_info := x_info) (x_refs := x_refs) (ev_lhvvlvzx := evq)
+      (hv_cdpymqwc := hv) (sg_qqmcdzij := seg) (heq_zxortwso := h1)
+      (ev_lfynsjgt := evIdx) (ev_oucfbbyu := evLoop) .. =>
+    obtain ⟨hmQ, -⟩ := addr_quot_bound_lim_spec hrc ha evq
+    rw [hmQ] at seg
+    have hcp' := hcp
+    obtain ⟨infoVal, _, rfPtr, _, _, hcp_eq, hinfo, _, hrf, _, _⟩ := hcp'
+    have heq := hcp_eq.symm.trans hv
+    simp only [Value.construct.injEq, List.cons.injEq, and_true, true_and] at heq
+    rcases heq with ⟨hinfo_eq, _, hrf_eq, _, _⟩
+    rw [hinfo_eq] at hinfo
+    rw [hrf_eq] at hrf
+    have hstand : Typing.Standalone c ∧ mSeg = h := by
+      match seg with
+      | .Quot (hv_wlehqhre := hq_v) (he_danydyxy := hh) .. =>
+        rw [hq_v] at hinfo
+        cases hci : c.info <;> rw [hci] at hinfo
+        case quot q => exact ⟨.inr (.inr (.inr ⟨q, hci⟩)), hh⟩
+        all_goals (obtain ⟨_, hv', _⟩ := hinfo; simp at hv')
+      | .Axio (hv_qcgdvgos := hax_v) (he_ebfeplnh := hh) .. =>
+        rw [hax_v] at hinfo
+        cases hci : c.info <;> rw [hci] at hinfo
+        case axio ax => exact ⟨.inr (.inr (.inl ⟨ax, hci⟩)), hh⟩
+        all_goals (obtain ⟨_, hv', _⟩ := hinfo; simp at hv')
+      | .other (he_ccliwrit := h0) .. =>
+        exact absurd (Value.field.inj (h0.symm.trans h1)) zero_ne_one
+    obtain ⟨hs, hmSeg⟩ := hstand
+    rw [hmSeg] at evIdx
+    obtain ⟨extIdx, hidx⟩ := const_idxs_of_spec hcp evIdx
+    have hloop := quot_refs_ok_spec c.refs.toList 0
+      (by simpa only [Nat.zero_add, Array.length_toList] using hrefs)
+      (hrc.mono extIdx) (repList_heapMono₂ _ repAddrElem_heapMono₂ extIdx hrf) hidx evLoop
+    refine ⟨hs, fun i hi y hy => ?_⟩
+    have hy' : c.refs.toList[i]? = some y := by simpa only [Array.getElem?_toList] using hy
+    obtain ⟨hiLt, hget⟩ := List.getElem?_eq_some_iff.mp hy'
+    have hi' : i ∈ S0.usedRefIdxs c := by rw [Assembly.usedRefIdxs_eq]; exact hi
+    have hres := hloop i hiLt (by simpa only [Nat.zero_add] using hi')
+    rwa [hget] at hres
 
 /-- The store of the run's hashed records and blobs at the binding `b`. -/
 noncomputable def runEnv (b : Ix.Kernel.Admission.Binding) {t : Ix.Kernel.RoleTable}
@@ -154,7 +381,8 @@ theorem topWalkCore_of_recs
       checked := ?_
       refsNotInert := ?_
       refsNotBlock := ?_
-      safeRefs := ?_ }
+      safeRefs := ?_
+      quotBound := ?_ }
   · rintro a ⟨r, hr, rfl⟩
     exact ⟨r.c, hrec r hr⟩
   · rintro a x hTa ⟨c, i, hc, hi, hx⟩
@@ -197,6 +425,18 @@ theorem topWalkCore_of_recs
     obtain ⟨r, hr, rfl, _, rfl⟩ := hmin a c hTa hc
     exact r.hguard.safe hS hH (hrec r hr) hsafe i hi x (by simpa using hx)
       (by rintro ⟨ro, hof, hw, _⟩; exact hncov ⟨ro, hof, hw⟩)
+  · intro x ro c hTx hqr hof hc
+    obtain ⟨r, hr, rfl, -, rfl⟩ := hmin x c hTx hc
+    have hrefs : r.c.refs.size < 8589934592 := by
+      have hres := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound r.rawBytes r.c r.hdeExact
+      have hsz := r.hsz
+      have : r.c.refs.size ≤ r.c.resourceSize := by dsimp [Ixon.Constant.resourceSize]; omega
+      omega
+    obtain ⟨hstand, hrefsOk⟩ := r.hquot.spec hrefs hqr hof
+    refine ⟨hstand, fun y ⟨c', i, hc', hi, hy⟩ => ?_⟩
+    have hc_eq : c' = r.c := huniq r hr c' hc'
+    subst hc_eq
+    exact hrefsOk i hi y hy
 
 
 end Build
