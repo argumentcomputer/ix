@@ -146,9 +146,9 @@ pub fn prepare_kzg(
   let source =
     lowering::FriConstruction::build(&plan, verifier.statement.schema())?
       .assign(&plan, proof, claims)?;
+  drop(plan);
   let foreign = lowering::translate(&source.circuit);
   drop(source.circuit);
-  drop(plan);
   let assignment = lowering::assign_foreign(
     &foreign.inputs,
     &foreign.circuit,

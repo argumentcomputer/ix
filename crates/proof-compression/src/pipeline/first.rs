@@ -60,6 +60,9 @@ pub(super) fn run(
   )?;
   assert_eq!(prepared.public_values(), fixture.public);
   let public = super::stage::scalar_statement(&fixture.public);
+  drop(plan);
+  drop(fixture.key);
+  drop(fixture.proof);
   let lowered = lowering::prepare_first(prepared, trace_height)?;
   assert_eq!(lowered.assignment.public_values(), public);
   eprintln!(
