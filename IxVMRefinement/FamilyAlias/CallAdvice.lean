@@ -429,6 +429,7 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
           unfold InLogic
           rw [hinfo]
           simp [Ix.Kernel.Reader.safetyDecline, Ix.Kernel.Reader.safetyDeclineOf, hdk, hds]
+          rfl
         have hrc_lim := (Claim.run_check_lim_spec (hrc0.mono (evOrd.heap_extends.trans extLd))
           ⟨a, Bytes.repAddressRef_heapMono₂ addrTy (evOrd.heap_extends.trans extLd) ha0, rfl⟩
           evRc).2.mono (fun cl hcl => hsubSg cl (by rw [hcsg]; simp [hcl]))
