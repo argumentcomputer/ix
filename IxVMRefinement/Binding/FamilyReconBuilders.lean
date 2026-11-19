@@ -3065,7 +3065,8 @@ theorem build_rec_type_from_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Role
     ∃ (Rty : KExpr) (tot : Nat),
       flatTotalCtors (ReconView.ofStore t E₀) es = some tot ∧ tot < 2 ^ 39 ∧
       Eventually (fun f => recTypeAt (ReconView.ofStore t E₀) f es off nP k = some Rty) ∧
-      TmOExact (Core.keyOf t) h' Rty r := by
+      TmOExact (Core.keyOf t) h' Rty r ∧
+      AddrIn (Held R) (Core.keyOf t) Rty := by
   have sub : ∀ {cs' : List (Call F)}, (∀ cl ∈ cs', cl ∈ cs) → ∀ cl ∈ cs', cl ∈ rootCalls :=
     fun hs cl hcl' => hsub cl (hs cl hcl')
   have bnd : ∀ {cs' : List (Call F)}, (∀ cl ∈ cs', cl ∈ cs) → Bounded cs' :=
@@ -3118,14 +3119,14 @@ theorem build_rec_type_from_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Role
       (hprimTy.mono evplvls.heap_extends) hpUs evinst1
     have ext3a : Heap.Extends m3 m3a := by rw [hm3a]; exact Heap.Extends.snoc _ _
     have ext0_3a := evplvls.heap_extends.trans (evinst1.heap_extends.trans ext3a)
-    obtain ⟨ext_3a_4, xl, xa, paramDoms, afterP, htupP, hpdoms, -, -, -, hev_pdoms⟩ :=
+    obtain ⟨ext_3a_4, xl, xa, paramDoms, afterP, htupP, hpdoms, -, hpdomsIn, -, hev_pdoms⟩ :=
       collect_n_doms_whnf_spec hA hD hI hC hM nP (by omega) evcolP
         (bnd fun c hc' => by rw [hc]; simp [hc']) (sub fun c hc' => by rw [hc]; simp [hc'])
         (hptyI.mono ext3a) (addrIn_exprInstLevels hprimTyIn)
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupP
     obtain ⟨rfl, rfl⟩ := htupP
     have ext04 := ext0_3a.trans ext_3a_4
-    obtain ⟨motDoms, hev_mots, hmotD, -⟩ := build_all_motives_spec ht hwf hS hH hbd hRagree hcl hlv hM
+    obtain ⟨motDoms, hev_mots, hmotD, hmotIn⟩ := build_all_motives_spec ht hwf hS hH hbd hRagree hcl hlv hM
       hnP (by omega) (sub fun c hc' => by rw [hc]; simp [hc'])
       (flatList_mono ext04 hes) (helim.mono ext04) hall evmots
     have ext05 := ext04.trans evmots.heap_extends
@@ -3141,7 +3142,7 @@ theorem build_rec_type_from_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Role
     have htot_lt : tot < 2 ^ 39 := by
       have hlt := repList_length_lt_obs hbd hsub evlenM (by rw [hc]; simp) (by simp) hraw_min
       simpa using hlt
-    obtain ⟨minDoms, hmin_len, hev_mins, hminD, -⟩ := build_all_minors_spec ht hwf hS hH hbd
+    obtain ⟨minDoms, hmin_len, hev_mins, hminD, hminIn⟩ := build_all_minors_spec ht hwf hS hH hbd
       hRagree hcl hlv hM hnP rfl rfl hfop_len hfop56 htot_lt htot
       (sub fun c hc' => by rw [hc]; simp [hc'])
       (flatList_mono ext05 hes) (fieldList_mono ext05 hfop) (helim.mono ext05)
@@ -3188,7 +3189,7 @@ theorem build_rec_type_from_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Role
       hstyI (tmOExactList_mono ext6_10 hssp)
     have hselfAfterIn : AddrIn (Held R) (Core.keyOf t) selfAfter :=
       addrIn_peelMotiveParams hsspIn self.np 0 _ _ hpeel_eq (addrIn_exprInstLevels hstyIn)
-    obtain ⟨ext12_13, idxRaw, hidxRaw, -, hev_idx⟩ := collect_index_doms_spec hA hD hI hC hM nI
+    obtain ⟨ext12_13, idxRaw, hidxRaw, hidxRawIn, hev_idx⟩ := collect_index_doms_spec hA hD hI hC hM nI
       (by omega) evcolI (bnd fun c hc' => by rw [hc]; simp [hc'])
       (sub fun c hc' => by rw [hc]; simp [hc'])
       (hselfAfter.mono evrev.heap_extends) hselfAfterIn
@@ -3273,20 +3274,28 @@ theorem build_rec_type_from_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Role
       (helim.mono (ext04.trans ext4_25))
     refine ⟨_, tot, htot, htot_lt,
       ((hev_pdoms.and hev_mots).and (hev_mins.and hev_idx)).mono fun f ⟨⟨hfp, hfm⟩, ⟨hfmin, hfi⟩⟩ => ?_,
-      hw4⟩
-    simp only [recTypeAt, he0, hek, hfop_eq]
-    rw [show (ReconView.ofStore t E₀).ind e0.addr = some (some prim) from hprim_ind,
-      hself_ind_e]
-    dsimp only
-    rw [hfp, hfm]
-    dsimp only
-    rw [hfmin, hpeel_eq, hni_eq, hsa]
-    dsimp only
-    cases hcd : collectDoms (ReconView.ofStore t E₀) f nI selfAfter with
-    | none => simp [hcd] at hfi
-    | some p =>
-      simp only [hcd, Option.map_some, Option.some.injEq] at hfi
-      subst hfi; rfl
+      hw4, ?_⟩
+    · simp only [recTypeAt, he0, hek, hfop_eq]
+      rw [show (ReconView.ofStore t E₀).ind e0.addr = some (some prim) from hprim_ind,
+        hself_ind_e]
+      dsimp only
+      rw [hfp, hfm]
+      dsimp only
+      rw [hfmin, hpeel_eq, hni_eq, hsa]
+      dsimp only
+      cases hcd : collectDoms (ReconView.ofStore t E₀) f nI selfAfter with
+      | none => simp [hcd] at hfi
+      | some p =>
+        simp only [hcd, Option.map_some, Option.some.injEq] at hfi
+        subst hfi; rfl
+    · refine addrIn_wrapForalls hpdomsIn (addrIn_wrapForalls hmotIn
+        (addrIn_wrapForalls hminIn (addrIn_wrapForalls (addrIn_liftIndices hidxRawIn)
+          ⟨addrIn_appBVarsDown ?_, ⟨addrIn_conclIndices trivial, trivial⟩⟩)))
+      have hheadIn : AddrIn (Held R) (Core.keyOf t) (.const (Core.keyOf t (ixAddr sa)) ek.levels) :=
+        fun x hx => by have := Core.keyOf_inj hwf hx; subst this; exact hSek'
+      split
+      · exact addrIn_specParamsLifted hheadIn hsspIn
+      · exact addrIn_appBVarsDec hheadIn
 
 /-- **`KernelCheck::build_rec_type`** refines `recTypeAt (ReconView.ofStore t E₀)` at `Eventually`
 on `TmOExact`, also exporting `flatTotalCtors < 2 ^ 39`. -/
@@ -3321,7 +3330,8 @@ theorem build_rec_type_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
     ∃ (Rty : KExpr) (tot : Nat),
       flatTotalCtors (ReconView.ofStore t E₀) es = some tot ∧ tot < 2 ^ 39 ∧
       Eventually (fun f => recTypeAt (ReconView.ofStore t E₀) f es off nP k = some Rty) ∧
-      TmOExact (Core.keyOf t) h' Rty r := by
+      TmOExact (Core.keyOf t) h' Rty r ∧
+      AddrIn (Held R) (Core.keyOf t) Rty := by
   have sub : ∀ {cs' : List (Call F)}, (∀ cl ∈ cs', cl ∈ cs) → ∀ cl ∈ cs', cl ∈ rootCalls :=
     fun hs cl hcl' => hsub cl (hs cl hcl')
   have hI : IndAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
