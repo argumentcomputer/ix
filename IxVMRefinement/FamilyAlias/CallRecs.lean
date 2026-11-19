@@ -3712,10 +3712,14 @@ theorem recMember_of_cons
           Decl.peel_n_foralls_exact (mI + 1) hmi1_v evP ((htm_tyA 0 zeroGhost).mono C.ext335)
         obtain ⟨_, _, H, As, htup, hH, -, hrem_eq⟩ := Decl.collect_spine_exact evSp hrem
         injection htup with hl; injection hl with h1 _; subst h1
-        have hH_ne : ∀ d b m, H ≠ .forallE d b m :=
-          hH.not_forallE_of_load ldHead (fun _ _ h => by cases h)
+        have hH_ne : ∀ d b m, H ≠ .forallE d b m := by
+          cases hH with
+          | bvarLocal _ _ _ | bvarFree _ _ _ _ => intro d b m h; cases h
+          | sort cell _ | const cell _ _ | app cell _ _ | lam cell _ _ _ | forallE cell _ _ _
+          | letE cell _ _ _ | litNat cell _ _ | litStr cell _ _ | proj cell _ _ =>
+            exact (load_cell_ne cell ldHead (by decide)).elim
         have hmkAppN_ne : ∀ (args : List KExpr) (f : KExpr),
-            (∀ d b m, f ≠ .forallE d b m) → ∀ d b m, Decl.mkAppN f args ≠ .forallE d b m := by
+            (∀ d b m, f ≠ .forallE d b m) → ∀ d b m, Expr.mkAppN f args ≠ .forallE d b m := by
           intro args
           induction args with
           | nil => intro f hf; exact hf
