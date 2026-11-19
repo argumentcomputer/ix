@@ -783,4 +783,801 @@ theorem WrapRel.major_structFamI {g d : Expr md} (h : WrapRel find? g d) (hd : l
 
 end Major
 
+/-! ## Symmetric wrapper consumption and twin rule prefix matching -/
+
+section SymWrap
+
+variable {find? : Key md → Option (ConstantInfo md)}
+
+theorem ConsumeStar.linear {t a b : Expr md}
+    (ha : ConsumeStar find? t a) (hb : ConsumeStar find? t b) :
+    ConsumeStar find? a b ∨ ConsumeStar find? b a := by
+  induction ha generalizing b with
+  | refl => exact Or.inl hb
+  | step hc ha' ih =>
+    cases hb with
+    | refl => exact Or.inr (.step hc ha')
+    | step hc' hb' =>
+      have heq := Option.some.inj (hc.symm.trans hc')
+      subst heq
+      exact ih hb'
+
+theorem WrapT.refl (find? : Key md → Option (ConstantInfo md)) :
+    ∀ e : Expr md, letFree e = true → WrapT find? e e
+  | .bvar i, _ => .bvar i
+  | .fvar i t, _ => .fvar i t t
+  | .sort _, _ => .sort (fun _ => rfl)
+  | .const _ us, _ => .const (Forall₂.refl (fun _ _ => rfl) us)
+  | .lit l, _ => .lit l
+  | .app f a, h => by
+    simp only [letFree, Bool.and_eq_true] at h
+    exact .app (WrapT.refl find? f h.1) (WrapT.refl find? a h.2)
+  | .lam t b _, h => by
+    simp only [letFree, Bool.and_eq_true] at h
+    exact .lam rfl (.refl t) (WrapT.refl find? t h.1) (WrapT.refl find? b h.2)
+  | .forallE t b _, h => by
+    simp only [letFree, Bool.and_eq_true] at h
+    exact .forallE rfl (.refl t) (WrapT.refl find? t h.1) (WrapT.refl find? b h.2)
+  | .letE .., h => by simp [letFree] at h
+  | .proj _ _ e, h => .proj (WrapT.refl find? e h)
+
+theorem WrapT.mkAppN : ∀ {args args' : List (Expr md)} {f f' : Expr md},
+    WrapT find? f f' → Forall₂ (WrapT find?) args args' →
+      WrapT find? (Expr.mkAppN f args) (Expr.mkAppN f' args')
+  | [], [], _, _, hf, .nil => hf
+  | _ :: _, _ :: _, _, _, hf, .cons ha has => WrapT.mkAppN (.app hf ha) has
+
+theorem WrapT.mkAppN_inv : ∀ (args : List (Expr md)) {f t : Expr md},
+    WrapT find? (Expr.mkAppN f args) t →
+      ∃ f' args', t = Expr.mkAppN f' args' ∧ args'.length = args.length ∧
+        WrapT find? f f' ∧ Forall₂ (WrapT find?) args args'
+  | [], _, t, h => ⟨t, [], rfl, rfl, h, .nil⟩
+  | a :: as, f, t, h => by
+    obtain ⟨fa', as', rfl, hlen, hfa, has'⟩ := WrapT.mkAppN_inv as (f := .app f a) h
+    cases hfa with
+    | app hf ha =>
+      exact ⟨_, _ :: as', rfl, by simp [hlen], hf, .cons ha has'⟩
+
+theorem WrapT.consumeWrapper {t₁ t₂ a₁ : Expr md}
+    (h : WrapT find? t₁ t₂) (hc : Ix.Kernel.Semantics.consumeWrapper find? t₁ = some a₁) :
+    ∃ a₂, Ix.Kernel.Semantics.consumeWrapper find? t₂ = some a₂ ∧ WrapT find? a₁ a₂ := by
+  obtain ⟨w, us, rest, rfl, hw⟩ := consumeWrapper_inv hc
+  obtain ⟨f', args', rfl, hlen, hf, hargs⟩ := WrapT.mkAppN_inv (a₁ :: rest) h
+  cases hf with
+  | const _ =>
+    cases hargs with
+    | cons ha hrest =>
+      rename_i a₂ rest₂
+      have hlen' : rest₂.length = rest.length := by simpa using hlen
+      exact ⟨a₂, consumeWrapper_mkAppN (by rw [hlen']; exact hw), ha⟩
+
+theorem WrapT.consumeStar {t₁ t₂ a₁ : Expr md}
+    (h : WrapT find? t₁ t₂) (hs : ConsumeStar find? t₁ a₁) :
+    ∃ a₂, ConsumeStar find? t₂ a₂ ∧ WrapT find? a₁ a₂ := by
+  induction hs generalizing t₂ with
+  | refl => exact ⟨t₂, .refl t₂, h⟩
+  | step hc _ ih =>
+    obtain ⟨a₂', hc₂, ha⟩ := h.consumeWrapper hc
+    obtain ⟨a₂, hs₂, hfin⟩ := ih ha
+    exact ⟨a₂, .step hc₂ hs₂, hfin⟩
+
+theorem ConsumeStar.toWrapDom {t a t' : Expr md}
+    (hs : ConsumeStar find? t a) (h : WrapRel find? a t') : WrapDom find? t t' := by
+  induction hs with
+  | refl => exact .keep h
+  | step hc _ ih => exact .consume hc (ih h)
+
+theorem WrapT.toWrapRel {g d : Expr md} (h : WrapT find? g d) (hf : g.hasFvar = false) :
+    WrapRel find? g d := by
+  have hP : ∀ f x : Expr md, (Expr.app f x).hasFvar = false →
+      f.hasFvar = false ∧ x.hasFvar = false := by
+    intro f x h; simpa [Ix.Kernel.Expr.hasFvar] using h
+  induction h with
+  | bvar i => exact .bvar i
+  | fvar => simp [Ix.Kernel.Expr.hasFvar] at hf
+  | sort h => exact .sort h
+  | const h => exact .const h
+  | lit l => exact .lit l
+  | app _ _ ihf iha =>
+    simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hf
+    exact .app (ihf hf.1) (iha hf.2)
+  | lam hpw hs _ _ ihw ihb =>
+    simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hf
+    exact .lam hpw (hs.toWrapDom (ihw (hs.of (P := fun e => e.hasFvar = false) hP hf.1)))
+      (ihb hf.2)
+  | forallE hpw hs _ _ ihw ihb =>
+    simp only [Ix.Kernel.Expr.hasFvar, Bool.or_eq_false_iff] at hf
+    exact .forallE hpw (hs.toWrapDom (ihw (hs.of (P := fun e => e.hasFvar = false) hP hf.1)))
+      (ihb hf.2)
+  | proj _ ih => exact .proj (ih hf)
+
+theorem consumeWrapper_none_empty (t : Expr md) :
+    consumeWrapper (fun _ : Key md => (none : Option (ConstantInfo md))) t = none := by
+  unfold consumeWrapper
+  cases t.getAppFn <;> try rfl
+  cases t.getAppArgs <;> simp [wrapperArity]
+
+theorem ConsumeStar.eq_of_empty {t a : Expr md}
+    (h : ConsumeStar (fun _ : Key md => (none : Option (ConstantInfo md))) t a) : a = t :=
+  h.eq_of_none (consumeWrapper_none_empty t)
+
+theorem WrapT.mono_empty {g d : Expr md}
+    (h : WrapT (fun _ : Key md => (none : Option (ConstantInfo md))) g d) :
+    WrapT find? g d := by
+  induction h with
+  | bvar i => exact .bvar i
+  | fvar i t t' => exact .fvar i t t'
+  | sort h => exact .sort h
+  | const h => exact .const h
+  | lit l => exact .lit l
+  | app _ _ ihf iha => exact .app ihf iha
+  | lam hpw hs _ _ ihw ihb =>
+    have ha := hs.eq_of_empty; subst ha
+    exact .lam hpw (.refl _) ihw ihb
+  | forallE hpw hs _ _ ihw ihb =>
+    have ha := hs.eq_of_empty; subst ha
+    exact .forallE hpw (.refl _) ihw ihb
+  | proj _ ih => exact .proj ih
+
+private theorem forall₂_eval_symm :
+    ∀ {us vs : List Level},
+      Forall₂ (fun u v => ∀ φ : LevelParam → Nat, u.eval φ = v.eval φ) us vs →
+      Forall₂ (fun u v => ∀ φ : LevelParam → Nat, u.eval φ = v.eval φ) vs us
+  | [], [], .nil => .nil
+  | _ :: _, _ :: _, .cons h hr => .cons (fun φ => (h φ).symm) (forall₂_eval_symm hr)
+
+private theorem forall₂_eval_symm_trans :
+    ∀ {gs us vs : List Level},
+      Forall₂ (fun u v => ∀ φ : LevelParam → Nat, u.eval φ = v.eval φ) gs us →
+      Forall₂ (fun u v => ∀ φ : LevelParam → Nat, u.eval φ = v.eval φ) gs vs →
+      Forall₂ (fun u v => ∀ φ : LevelParam → Nat, u.eval φ = v.eval φ) us vs
+  | [], [], [], .nil, .nil => .nil
+  | _ :: _, _ :: _, _ :: _, .cons h1 r1, .cons h2 r2 =>
+    .cons (fun φ => (h1 φ).symm.trans (h2 φ)) (forall₂_eval_symm_trans r1 r2)
+
+theorem WrapT.symm_empty {a b : Expr md}
+    (h : WrapT (fun _ : Key md => (none : Option (ConstantInfo md))) a b) :
+    WrapT (fun _ : Key md => (none : Option (ConstantInfo md))) b a := by
+  induction h with
+  | bvar i => exact .bvar i
+  | fvar i t t' => exact .fvar i t' t
+  | sort h => exact .sort (fun φ => (h φ).symm)
+  | const h => exact .const (forall₂_eval_symm h)
+  | lit l => exact .lit l
+  | app _ _ ihf iha => exact .app ihf iha
+  | lam hpw hs _ _ ihw ihb =>
+    have ha := hs.eq_of_empty; subst ha
+    exact .lam hpw.symm (.refl _) ihw ihb
+  | forallE hpw hs _ _ ihw ihb =>
+    have ha := hs.eq_of_empty; subst ha
+    exact .forallE hpw.symm (.refl _) ihw ihb
+  | proj _ ih => exact .proj ih
+
+/-- **Symmetric wrapper relation on `let`-free terms**: at each binder domain, wrappers may be
+consumed on either the left or the right. -/
+inductive SymWrapT (find? : Key md → Option (ConstantInfo md)) : Expr md → Expr md → Prop
+  | bvar (i : Nat) : SymWrapT find? (.bvar i) (.bvar i)
+  | fvar (i : Nat) (t t' : Expr md) : SymWrapT find? (.fvar i t) (.fvar i t')
+  | sort {u v : Level} :
+      (∀ φ : LevelParam → Nat, u.eval φ = v.eval φ) → SymWrapT find? (.sort u) (.sort v)
+  | const {n : Key md} {us vs : List Level} :
+      Forall₂ (fun u v => ∀ φ : LevelParam → Nat, u.eval φ = v.eval φ) us vs →
+      SymWrapT find? (.const n us) (.const n vs)
+  | lit (l : Literal) : SymWrapT find? (.lit l) (.lit l)
+  | app {f a f' a' : Expr md} :
+      SymWrapT find? f f' → SymWrapT find? a a' → SymWrapT find? (.app f a) (.app f' a')
+  | lamL {t a t' b b' : Expr md} {m m' : Ix.Kernel.BinderMeta} :
+      m.pw = m'.pw → ConsumeStar find? t a → SymWrapT find? a t' → SymWrapT find? b b' →
+      SymWrapT find? (.lam t b m) (.lam t' b' m')
+  | lamR {t t' a b b' : Expr md} {m m' : Ix.Kernel.BinderMeta} :
+      m.pw = m'.pw → ConsumeStar find? t' a → SymWrapT find? t a → SymWrapT find? b b' →
+      SymWrapT find? (.lam t b m) (.lam t' b' m')
+  | forallEL {t a t' b b' : Expr md} {m m' : Ix.Kernel.BinderMeta} :
+      m.pw = m'.pw → ConsumeStar find? t a → SymWrapT find? a t' → SymWrapT find? b b' →
+      SymWrapT find? (.forallE t b m) (.forallE t' b' m')
+  | forallER {t t' a b b' : Expr md} {m m' : Ix.Kernel.BinderMeta} :
+      m.pw = m'.pw → ConsumeStar find? t' a → SymWrapT find? t a → SymWrapT find? b b' →
+      SymWrapT find? (.forallE t b m) (.forallE t' b' m')
+  | proj {s : Key md} {i : Nat} {e e' : Expr md} :
+      SymWrapT find? e e' → SymWrapT find? (.proj s i e) (.proj s i e')
+
+theorem SymWrapT.of_wrapT {g d : Expr md} (h : WrapT find? g d) : SymWrapT find? g d := by
+  induction h with
+  | bvar i => exact .bvar i
+  | fvar i t t' => exact .fvar i t t'
+  | sort h => exact .sort h
+  | const h => exact .const h
+  | lit l => exact .lit l
+  | app _ _ ihf iha => exact .app ihf iha
+  | lam hpw hs _ _ ihw ihb => exact .lamL hpw hs ihw ihb
+  | forallE hpw hs _ _ ihw ihb => exact .forallEL hpw hs ihw ihb
+  | proj _ ih => exact .proj ih
+
+theorem SymWrapT.symm {d₁ d₂ : Expr md} (h : SymWrapT find? d₁ d₂) : SymWrapT find? d₂ d₁ := by
+  induction h with
+  | bvar i => exact .bvar i
+  | fvar i t t' => exact .fvar i t' t
+  | sort h => exact .sort (fun φ => (h φ).symm)
+  | const h => exact .const (forall₂_eval_symm h)
+  | lit l => exact .lit l
+  | app _ _ ihf iha => exact .app ihf iha
+  | lamL hpw hs _ _ ihw ihb => exact .lamR hpw.symm hs ihw ihb
+  | lamR hpw hs _ _ ihw ihb => exact .lamL hpw.symm hs ihw ihb
+  | forallEL hpw hs _ _ ihw ihb => exact .forallER hpw.symm hs ihw ihb
+  | forallER hpw hs _ _ ihw ihb => exact .forallEL hpw.symm hs ihw ihb
+  | proj _ ih => exact .proj ih
+
+theorem SymWrapT.instantiate1 {v₁ v₂ : Expr md} (hv : SymWrapT find? v₁ v₂) {d₁ d₂ : Expr md}
+    (h : SymWrapT find? d₁ d₂) : ∀ j, SymWrapT find? (d₁.instantiate1 v₁ j) (d₂.instantiate1 v₂ j) := by
+  induction h with
+  | bvar i =>
+    intro j
+    show SymWrapT find? (if i = j then v₁ else if i > j then .bvar (i - 1) else .bvar i)
+      (if i = j then v₂ else if i > j then .bvar (i - 1) else .bvar i)
+    by_cases h1 : i = j
+    · rw [if_pos h1, if_pos h1]; exact hv
+    · rw [if_neg h1, if_neg h1]
+      by_cases h2 : i > j
+      · rw [if_pos h2]; exact .bvar _
+      · rw [if_neg h2]; exact .bvar _
+  | fvar i t t' => intro _; exact .fvar i t t'
+  | sort h => intro _; exact .sort h
+  | const h => intro _; exact .const h
+  | lit l => intro _; exact .lit l
+  | app _ _ ihf iha => intro j; exact .app (ihf j) (iha j)
+  | lamL hpw hs _ _ ihw ihb =>
+    intro j; exact .lamL hpw (hs.instantiate1 v₁ j) (ihw j) (ihb (j + 1))
+  | lamR hpw hs _ _ ihw ihb =>
+    intro j; exact .lamR hpw (hs.instantiate1 v₂ j) (ihw j) (ihb (j + 1))
+  | forallEL hpw hs _ _ ihw ihb =>
+    intro j; exact .forallEL hpw (hs.instantiate1 v₁ j) (ihw j) (ihb (j + 1))
+  | forallER hpw hs _ _ ihw ihb =>
+    intro j; exact .forallER hpw (hs.instantiate1 v₂ j) (ihw j) (ihb (j + 1))
+  | proj _ ih => intro j; exact .proj (ih j)
+
+private theorem symWrapT_of_span_aux : ∀ (n : Nat) (g d₁ d₂ : Expr md), g.sizeB < n →
+    WrapT find? g d₁ → WrapT find? g d₂ → SymWrapT find? d₁ d₂
+  | 0, _, _, _, hlt, _, _ => absurd hlt (Nat.not_lt_zero _)
+  | n + 1, _, _, _, hlt, h₁, h₂ => by
+    cases h₁ with
+    | bvar i => cases h₂; exact .bvar i
+    | fvar i _ _ => cases h₂; exact .fvar i _ _
+    | sort hu₁ =>
+      cases h₂ with
+      | sort hu₂ => exact .sort (fun φ => (hu₁ φ).symm.trans (hu₂ φ))
+    | const hus₁ =>
+      cases h₂ with
+      | const hus₂ => exact .const (forall₂_eval_symm_trans hus₁ hus₂)
+    | lit l => cases h₂; exact .lit l
+    | app hf₁ ha₁ =>
+      cases h₂ with
+      | app hf₂ ha₂ =>
+        simp only [Ix.Kernel.Expr.sizeB] at hlt
+        exact .app (symWrapT_of_span_aux n _ _ _ (by omega) hf₁ hf₂)
+          (symWrapT_of_span_aux n _ _ _ (by omega) ha₁ ha₂)
+    | lam hpw₁ hs₁ hw₁ hb₁ =>
+      cases h₂ with
+      | lam hpw₂ hs₂ hw₂ hb₂ =>
+        simp only [Ix.Kernel.Expr.sizeB] at hlt
+        have hb := symWrapT_of_span_aux n _ _ _ (by omega) hb₁ hb₂
+        rcases hs₁.linear hs₂ with h12 | h21
+        · obtain ⟨c₁, hcs₁, hwc₁⟩ := hw₁.consumeStar h12
+          have hsz := hs₂.sizeB_le
+          exact .lamL (hpw₁.symm.trans hpw₂) hcs₁
+            (symWrapT_of_span_aux n _ _ _ (by omega) hwc₁ hw₂) hb
+        · obtain ⟨c₂, hcs₂, hwc₂⟩ := hw₂.consumeStar h21
+          have hsz := hs₁.sizeB_le
+          exact .lamR (hpw₁.symm.trans hpw₂) hcs₂
+            (symWrapT_of_span_aux n _ _ _ (by omega) hw₁ hwc₂) hb
+    | forallE hpw₁ hs₁ hw₁ hb₁ =>
+      cases h₂ with
+      | forallE hpw₂ hs₂ hw₂ hb₂ =>
+        simp only [Ix.Kernel.Expr.sizeB] at hlt
+        have hb := symWrapT_of_span_aux n _ _ _ (by omega) hb₁ hb₂
+        rcases hs₁.linear hs₂ with h12 | h21
+        · obtain ⟨c₁, hcs₁, hwc₁⟩ := hw₁.consumeStar h12
+          have hsz := hs₂.sizeB_le
+          exact .forallEL (hpw₁.symm.trans hpw₂) hcs₁
+            (symWrapT_of_span_aux n _ _ _ (by omega) hwc₁ hw₂) hb
+        · obtain ⟨c₂, hcs₂, hwc₂⟩ := hw₂.consumeStar h21
+          have hsz := hs₁.sizeB_le
+          exact .forallER (hpw₁.symm.trans hpw₂) hcs₂
+            (symWrapT_of_span_aux n _ _ _ (by omega) hw₁ hwc₂) hb
+    | proj he₁ =>
+      cases h₂ with
+      | proj he₂ =>
+        simp only [Ix.Kernel.Expr.sizeB] at hlt
+        exact .proj (symWrapT_of_span_aux n _ _ _ (by omega) he₁ he₂)
+
+/-- Two `WrapT` descendants of a common term are related by `SymWrapT`. -/
+theorem symWrapT_of_span {g d₁ d₂ : Expr md}
+    (h₁ : WrapT find? g d₁) (h₂ : WrapT find? g d₂) : SymWrapT find? d₁ d₂ :=
+  symWrapT_of_span_aux (g.sizeB + 1) g d₁ d₂ (Nat.lt_succ_self _) h₁ h₂
+
+private theorem mkAppN_hasFvar_false : ∀ (args : List (Expr md)) (f : Expr md),
+    (Expr.mkAppN f args).hasFvar = false ↔ f.hasFvar = false ∧ ∀ a ∈ args, a.hasFvar = false
+  | [], f => by simp [Expr.mkAppN]
+  | a :: as, f => by
+    simp only [Expr.mkAppN, mkAppN_hasFvar_false as (.app f a), Expr.hasFvar,
+      Bool.or_eq_false_iff, List.mem_cons]
+    constructor
+    · rintro ⟨⟨hf, ha⟩, has⟩
+      exact ⟨hf, fun x hx => hx.elim (fun h => h ▸ ha) (has x)⟩
+    · rintro ⟨hf, hall⟩
+      exact ⟨⟨hf, hall a (Or.inl rfl)⟩, fun x hx => hall x (Or.inr hx)⟩
+
+private theorem mkAppN_letFree : ∀ (args : List (Expr md)) (f : Expr md),
+    letFree (Expr.mkAppN f args) = true ↔ letFree f = true ∧ ∀ a ∈ args, letFree a = true
+  | [], f => by simp [Expr.mkAppN]
+  | a :: as, f => by
+    simp only [Expr.mkAppN, mkAppN_letFree as (.app f a), letFree, Bool.and_eq_true, List.mem_cons]
+    constructor
+    · rintro ⟨⟨hf, ha⟩, has⟩
+      exact ⟨hf, fun x hx => hx.elim (fun h => h ▸ ha) (has x)⟩
+    · rintro ⟨hf, hall⟩
+      exact ⟨⟨hf, hall a (Or.inl rfl)⟩, fun x hx => hall x (Or.inr hx)⟩
+
+private theorem mkAppN_renameConsts (f : Key md → Key md) :
+    ∀ (args : List (Expr md)) (hd : Expr md),
+      (Expr.mkAppN hd args).renameConsts f =
+        Expr.mkAppN (hd.renameConsts f) (args.map (Expr.renameConsts f))
+  | [], _ => rfl
+  | a :: as, hd => by
+    simp only [Expr.mkAppN, List.map_cons]
+    exact mkAppN_renameConsts f as (.app hd a)
+
+private theorem mkAppN_renameConsts_eq (f : Key md → Key md) :
+    ∀ (args : List (Expr md)) (hd : Expr md),
+      (Expr.mkAppN hd args).renameConsts f = Expr.mkAppN hd args →
+      hd.renameConsts f = hd ∧ ∀ a ∈ args, a.renameConsts f = a
+  | [], _, h => ⟨h, fun _ hm => nomatch hm⟩
+  | a :: as, hd, h => by
+    obtain ⟨hha, has⟩ := mkAppN_renameConsts_eq f as (.app hd a) h
+    simp only [Expr.renameConsts, Expr.app.injEq] at hha
+    exact ⟨hha.1, fun x hx => (List.mem_cons.mp hx).elim (fun hx => hx ▸ hha.2) (has x)⟩
+
+private theorem liftConsumeStar {t a ga : Expr md}
+    (hs : ConsumeStar find? t a) (hga : WrapT find? ga a) :
+    letFree t = true →
+    ∃ gt : Expr md,
+      WrapT find? gt t ∧ ConsumeStar find? gt ga ∧
+      (t.hasFvar = false → ga.hasFvar = false → gt.hasFvar = false) ∧
+      (∀ f : Key md → Key md, t.renameConsts f = t → ga.renameConsts f = ga →
+        gt.renameConsts f = gt) := by
+  induction hs with
+  | refl _ =>
+    intro _
+    exact ⟨ga, hga, .refl ga, fun _ h => h, fun _ _ h => h⟩
+  | @step t a₁ c hc hs' ih =>
+    intro hlf
+    obtain ⟨w, us, rest, rfl, hw⟩ := consumeWrapper_inv hc
+    have hlf' := (mkAppN_letFree (a₁ :: rest) (.const w us)).mp hlf
+    have hlf_a₁ : letFree a₁ = true := hlf'.2 a₁ List.mem_cons_self
+    obtain ⟨gt₁, hgt₁_a₁, hcs₁, hfv₁, hren₁⟩ := ih hga hlf_a₁
+    refine ⟨Expr.mkAppN (.const w us) (gt₁ :: rest), ?_, ?_, ?_, ?_⟩
+    · refine WrapT.mkAppN (.const (Forall₂.refl (fun _ _ => rfl) us)) (.cons hgt₁_a₁ ?_)
+      have hrefl : ∀ l : List (Expr md), (∀ x ∈ l, letFree x = true) → Forall₂ (WrapT find?) l l := by
+        intro l
+        induction l with
+        | nil => intro _; exact .nil
+        | cons x xs ihx =>
+          intro hx
+          exact .cons (WrapT.refl find? x (hx x List.mem_cons_self))
+            (ihx fun y hy => hx y (List.mem_cons_of_mem _ hy))
+      exact hrefl rest (fun x hx => hlf'.2 x (List.mem_cons_of_mem _ hx))
+    · exact .step (consumeWrapper_mkAppN hw) hcs₁
+    · intro hfv_t hfv_ga
+      have hf' := (mkAppN_hasFvar_false (a₁ :: rest) (.const w us)).mp hfv_t
+      rw [mkAppN_hasFvar_false]
+      refine ⟨rfl, fun x hx => ?_⟩
+      rcases List.mem_cons.mp hx with rfl | hx'
+      · exact hfv₁ (hf'.2 a₁ List.mem_cons_self) hfv_ga
+      · exact hf'.2 x (List.mem_cons_of_mem _ hx')
+    · intro f hrt hrga
+      obtain ⟨hfw, hargs⟩ := mkAppN_renameConsts_eq f (a₁ :: rest) (.const w us) hrt
+      rw [mkAppN_renameConsts, hfw, List.map_cons,
+        hren₁ f (hargs a₁ List.mem_cons_self) hrga]
+      have hmap : rest.map (Expr.renameConsts f) = rest := by
+        have h : ∀ l : List (Expr md), (∀ x ∈ l, x.renameConsts f = x) → l.map (Expr.renameConsts f) = l := by
+          intro l
+          induction l with
+          | nil => intro _; rfl
+          | cons x xs ihx =>
+            intro hx
+            simp only [List.map_cons, hx x List.mem_cons_self,
+              ihx fun y hy => hx y (List.mem_cons_of_mem _ hy)]
+        exact h rest (fun x hx => hargs x (List.mem_cons_of_mem _ hx))
+      rw [hmap]
+
+/-- Any two `let`-free terms related by `SymWrapT` admit a common `WrapT` ancestor `g` preserving
+fvar-freeness and fixedness under any constant renaming. -/
+theorem SymWrapT.exists_join {d₁ d₂ : Expr md} (h : SymWrapT find? d₁ d₂) :
+    letFree d₁ = true → letFree d₂ = true →
+    ∃ g : Expr md,
+      WrapT find? g d₁ ∧ WrapT find? g d₂ ∧
+      (d₁.hasFvar = false → d₂.hasFvar = false → g.hasFvar = false) ∧
+      (∀ f : Key md → Key md, d₁.renameConsts f = d₁ → d₂.renameConsts f = d₂ →
+        g.renameConsts f = g) := by
+  have hlfP : ∀ f x : Expr md, letFree (.app f x) = true → letFree f = true ∧ letFree x = true := by
+    intro f x h; simpa [letFree] using h
+  have hfvP : ∀ f x : Expr md, (Expr.app f x).hasFvar = false →
+      f.hasFvar = false ∧ x.hasFvar = false := by
+    intro f x h; simpa [Expr.hasFvar] using h
+  have hrenP : ∀ (f : Key md → Key md) (fn arg : Expr md),
+      (Expr.app fn arg).renameConsts f = .app fn arg →
+      fn.renameConsts f = fn ∧ arg.renameConsts f = arg := by
+    intro f fn arg h; simpa [Expr.renameConsts] using h
+  induction h with
+  | bvar i => intro _ _; exact ⟨.bvar i, .bvar i, .bvar i, fun _ _ => rfl, fun _ _ _ => rfl⟩
+  | fvar i t t' =>
+    intro _ _
+    exact ⟨.fvar i t, .fvar i t t, .fvar i t t', fun h _ => h, fun _ h _ => h⟩
+  | sort hu =>
+    intro _ _
+    exact ⟨.sort _, .sort (fun _ => rfl), .sort hu, fun _ _ => rfl, fun _ _ _ => rfl⟩
+  | const hus =>
+    intro _ _
+    exact ⟨.const _ _, .const (Forall₂.refl (fun _ _ => rfl) _), .const hus,
+      fun _ _ => rfl, fun _ h _ => h⟩
+  | lit l => intro _ _; exact ⟨.lit l, .lit l, .lit l, fun _ _ => rfl, fun _ _ _ => rfl⟩
+  | app _ _ ihf iha =>
+    intro h1 h2
+    simp only [letFree, Bool.and_eq_true] at h1 h2
+    obtain ⟨gf, hgf1, hgf2, hff, hrf⟩ := ihf h1.1 h2.1
+    obtain ⟨ga, hga1, hga2, hfa, hra⟩ := iha h1.2 h2.2
+    refine ⟨.app gf ga, .app hgf1 hga1, .app hgf2 hga2, ?_, ?_⟩
+    · intro hfv1 hfv2
+      simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv1 hfv2 ⊢
+      exact ⟨hff hfv1.1 hfv2.1, hfa hfv1.2 hfv2.2⟩
+    · intro f hr1 hr2
+      simp only [Expr.renameConsts, Expr.app.injEq] at hr1 hr2 ⊢
+      exact ⟨hrf f hr1.1 hr2.1, hra f hr1.2 hr2.2⟩
+  | @lamL t a t' b b' m m' hpw hs _ _ ihw ihb =>
+    intro h1 h2
+    simp only [letFree, Bool.and_eq_true] at h1 h2
+    obtain ⟨ga, hga1, hga2, hfa, hra⟩ := ihw (hs.of hlfP h1.1) h2.1
+    obtain ⟨gt, hgt_t, hcs_gt, hft, hrt⟩ := liftConsumeStar hs hga1 h1.1
+    obtain ⟨gb, hgb1, hgb2, hfb, hrb⟩ := ihb h1.2 h2.2
+    refine ⟨.lam gt gb m, .lam rfl (.refl gt) hgt_t hgb1, .lam hpw hcs_gt hga2 hgb2, ?_, ?_⟩
+    · intro hfv1 hfv2
+      simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv1 hfv2 ⊢
+      exact ⟨hft hfv1.1 (hfa (hs.of hfvP hfv1.1) hfv2.1), hfb hfv1.2 hfv2.2⟩
+    · intro f hr1 hr2
+      simp only [Expr.renameConsts, Expr.lam.injEq] at hr1 hr2 ⊢
+      exact ⟨hrt f hr1.1 (hra f (hs.of (hP := hrenP f) hr1.1) hr2.1), hrb f hr1.2 hr2.2⟩
+  | @lamR t t' a b b' m m' hpw hs _ _ ihw ihb =>
+    intro h1 h2
+    simp only [letFree, Bool.and_eq_true] at h1 h2
+    obtain ⟨ga, hga1, hga2, hfa, hra⟩ := ihw h1.1 (hs.of hlfP h2.1)
+    obtain ⟨gt, hgt_t', hcs_gt, hft, hrt⟩ := liftConsumeStar hs hga2 h2.1
+    obtain ⟨gb, hgb1, hgb2, hfb, hrb⟩ := ihb h1.2 h2.2
+    refine ⟨.lam gt gb m, .lam rfl hcs_gt hga1 hgb1, .lam hpw (.refl gt) hgt_t' hgb2, ?_, ?_⟩
+    · intro hfv1 hfv2
+      simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv1 hfv2 ⊢
+      exact ⟨hft hfv2.1 (hfa hfv1.1 (hs.of hfvP hfv2.1)), hfb hfv1.2 hfv2.2⟩
+    · intro f hr1 hr2
+      simp only [Expr.renameConsts, Expr.lam.injEq] at hr1 hr2 ⊢
+      exact ⟨hrt f hr2.1 (hra f hr1.1 (hs.of (hP := hrenP f) hr2.1)), hrb f hr1.2 hr2.2⟩
+  | @forallEL t a t' b b' m m' hpw hs _ _ ihw ihb =>
+    intro h1 h2
+    simp only [letFree, Bool.and_eq_true] at h1 h2
+    obtain ⟨ga, hga1, hga2, hfa, hra⟩ := ihw (hs.of hlfP h1.1) h2.1
+    obtain ⟨gt, hgt_t, hcs_gt, hft, hrt⟩ := liftConsumeStar hs hga1 h1.1
+    obtain ⟨gb, hgb1, hgb2, hfb, hrb⟩ := ihb h1.2 h2.2
+    refine ⟨.forallE gt gb m, .forallE rfl (.refl gt) hgt_t hgb1,
+      .forallE hpw hcs_gt hga2 hgb2, ?_, ?_⟩
+    · intro hfv1 hfv2
+      simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv1 hfv2 ⊢
+      exact ⟨hft hfv1.1 (hfa (hs.of hfvP hfv1.1) hfv2.1), hfb hfv1.2 hfv2.2⟩
+    · intro f hr1 hr2
+      simp only [Expr.renameConsts, Expr.forallE.injEq] at hr1 hr2 ⊢
+      exact ⟨hrt f hr1.1 (hra f (hs.of (hP := hrenP f) hr1.1) hr2.1), hrb f hr1.2 hr2.2⟩
+  | @forallER t t' a b b' m m' hpw hs _ _ ihw ihb =>
+    intro h1 h2
+    simp only [letFree, Bool.and_eq_true] at h1 h2
+    obtain ⟨ga, hga1, hga2, hfa, hra⟩ := ihw h1.1 (hs.of hlfP h2.1)
+    obtain ⟨gt, hgt_t', hcs_gt, hft, hrt⟩ := liftConsumeStar hs hga2 h2.1
+    obtain ⟨gb, hgb1, hgb2, hfb, hrb⟩ := ihb h1.2 h2.2
+    refine ⟨.forallE gt gb m, .forallE rfl hcs_gt hga1 hgb1,
+      .forallE hpw (.refl gt) hgt_t' hgb2, ?_, ?_⟩
+    · intro hfv1 hfv2
+      simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv1 hfv2 ⊢
+      exact ⟨hft hfv2.1 (hfa hfv1.1 (hs.of hfvP hfv2.1)), hfb hfv1.2 hfv2.2⟩
+    · intro f hr1 hr2
+      simp only [Expr.renameConsts, Expr.forallE.injEq] at hr1 hr2 ⊢
+      exact ⟨hrt f hr2.1 (hra f hr1.1 (hs.of (hP := hrenP f) hr2.1)), hrb f hr1.2 hr2.2⟩
+  | proj _ ih =>
+    intro h1 h2
+    obtain ⟨ge, hge1, hge2, hfe, hre⟩ := ih h1 h2
+    refine ⟨.proj _ _ ge, .proj hge1, .proj hge2, hfe, fun f hr1 hr2 => ?_⟩
+    simp only [Expr.renameConsts, Expr.proj.injEq] at hr1 hr2 ⊢
+    exact ⟨hr1.1, hre f hr1.2 hr2.2⟩
+
+/-- Strip `n` leading λ-binders, returning the body. -/
+def stripLams : Nat → Expr md → Option (Expr md)
+  | 0, e => some e
+  | n + 1, .lam _ b _ => stripLams n b
+  | _ + 1, _ => none
+
+/-- `l` starts with `n` λ-binders whose domains are level-equivalent (`WrapT (fun _ => none)`)
+to the first `n` `∀`-domains of `p`, leaving residual body `r`. -/
+inductive LamDomAlong : Nat → Expr md → Expr md → Expr md → Prop
+  | zero {l p : Expr md} : LamDomAlong 0 l p l
+  | succ {n : Nat} {dl bl dp bp r : Expr md} {m mp : Ix.Kernel.BinderMeta} :
+      WrapT (fun _ => none) dl dp →
+      LamDomAlong n bl bp r →
+      LamDomAlong (n + 1) (.lam dl bl m) (.forallE dp bp mp) r
+
+/-- **Symmetric wrapper + λ-domain match for a twin rule**: `rhsW'` is symmetrically
+wrapper-related to `rhsC.renameConsts f`, its leading `nPre` λ-domains match `tyW'`'s leading
+`∀`-domains, its next `nf` λ-domains match the `iMin`-th `∀`-domain of `tyW'` lifted by
+`nPre - iMin` (when `nf > 0`, with `iMin < nPre`), and its inner body is level-equivalent to
+the inner body of `rhsC.renameConsts f` under `nPre + nf` λs. -/
+def TwinRuleMatch (find? : Key md → Option (ConstantInfo md)) (f : Key md → Key md)
+    (tyW' rhsC rhsW' : Expr md) : Prop :=
+  SymWrapT find? (rhsC.renameConsts f) rhsW' ∧
+  ∃ (nPre nf : Nat) (afterW sbW sbC : Expr md),
+    LamDomAlong nPre rhsW' tyW' afterW ∧
+    (nf = 0 ∧ sbW = afterW ∨
+      ∃ (iMin : Nat) (bs : List (Expr md × Ix.Kernel.BinderMeta))
+        (mdomW restW : Expr md) (mmW : Ix.Kernel.BinderMeta),
+        iMin < nPre ∧
+        tyW'.stripPis iMin = some (bs, .forallE mdomW restW mmW) ∧
+        LamDomAlong nf afterW (mdomW.liftLooseBVars (nPre - iMin) 0) sbW) ∧
+    stripLams (nPre + nf) (rhsC.renameConsts f) = some sbC ∧
+    WrapT (fun _ => none) sbC sbW
+
+theorem liftLooseBVars_zero : ∀ (e : Expr md) (c : Nat), e.liftLooseBVars 0 c = e
+  | .bvar i, c => by simp only [Expr.liftLooseBVars]; split <;> simp
+  | .fvar _ _, _ | .sort _, _ | .const _ _, _ | .lit _, _ => rfl
+  | .app f a, c => by simp [Expr.liftLooseBVars, liftLooseBVars_zero f c, liftLooseBVars_zero a c]
+  | .lam t b _, c => by
+    simp [Expr.liftLooseBVars, liftLooseBVars_zero t c, liftLooseBVars_zero b (c + 1)]
+  | .forallE t b _, c => by
+    simp [Expr.liftLooseBVars, liftLooseBVars_zero t c, liftLooseBVars_zero b (c + 1)]
+  | .letE t v b _, c => by
+    simp [Expr.liftLooseBVars, liftLooseBVars_zero t c, liftLooseBVars_zero v c,
+      liftLooseBVars_zero b (c + 1)]
+  | .proj _ _ e, c => by simp [Expr.liftLooseBVars, liftLooseBVars_zero e c]
+
+theorem liftLooseBVars_instantiate1_fvar (s k : Nat) (ty : Expr md) :
+    ∀ (e : Expr md) (c i : Nat), c ≤ i →
+      (e.liftLooseBVars s c).instantiate1 (.fvar k ty) (i + s) =
+        (e.instantiate1 (.fvar k ty) i).liftLooseBVars s c
+  | .bvar j, c, i, hci => by
+    simp only [Expr.liftLooseBVars, Expr.instantiate1]
+    by_cases hjc : j ≥ c
+    · rw [if_pos hjc]
+      simp only [Expr.instantiate1]
+      by_cases hji : j = i
+      · subst hji
+        rw [if_pos rfl, if_pos rfl]; rfl
+      · rw [if_neg (by omega : ¬ j + s = i + s), if_neg hji]
+        by_cases hgt : j > i
+        · rw [if_pos (by omega : j + s > i + s), if_pos hgt]
+          simp only [Expr.liftLooseBVars]
+          rw [if_pos (by omega : j - 1 ≥ c)]
+          congr 1; omega
+        · rw [if_neg (by omega : ¬ j + s > i + s), if_neg hgt]
+          simp only [Expr.liftLooseBVars, if_pos hjc]
+    · rw [if_neg hjc]
+      simp only [Expr.instantiate1]
+      rw [if_neg (by omega : ¬ j = i + s), if_neg (by omega : ¬ j > i + s),
+        if_neg (by omega : ¬ j = i), if_neg (by omega : ¬ j > i)]
+      simp only [Expr.liftLooseBVars, if_neg hjc]
+  | .fvar _ _, _, _, _ | .sort _, _, _, _ | .const _ _, _, _, _ | .lit _, _, _, _ => rfl
+  | .app f a, c, i, hci => by
+    simp [Expr.liftLooseBVars, Expr.instantiate1,
+      liftLooseBVars_instantiate1_fvar s k ty f c i hci,
+      liftLooseBVars_instantiate1_fvar s k ty a c i hci]
+  | .lam t b _, c, i, hci => by
+    simp only [Expr.liftLooseBVars, Expr.instantiate1,
+      liftLooseBVars_instantiate1_fvar s k ty t c i hci]
+    have h1 := liftLooseBVars_instantiate1_fvar s k ty b (c + 1) (i + 1) (by omega)
+    rw [show i + 1 + s = i + s + 1 by omega] at h1
+    rw [h1]
+  | .forallE t b _, c, i, hci => by
+    simp only [Expr.liftLooseBVars, Expr.instantiate1,
+      liftLooseBVars_instantiate1_fvar s k ty t c i hci]
+    have h1 := liftLooseBVars_instantiate1_fvar s k ty b (c + 1) (i + 1) (by omega)
+    rw [show i + 1 + s = i + s + 1 by omega] at h1
+    rw [h1]
+  | .letE t v b _, c, i, hci => by
+    simp only [Expr.liftLooseBVars, Expr.instantiate1,
+      liftLooseBVars_instantiate1_fvar s k ty t c i hci,
+      liftLooseBVars_instantiate1_fvar s k ty v c i hci]
+    have h1 := liftLooseBVars_instantiate1_fvar s k ty b (c + 1) (i + 1) (by omega)
+    rw [show i + 1 + s = i + s + 1 by omega] at h1
+    rw [h1]
+  | .proj _ _ e, c, i, hci => by
+    simp [Expr.liftLooseBVars, Expr.instantiate1,
+      liftLooseBVars_instantiate1_fvar s k ty e c i hci]
+
+theorem liftLooseBVars_succ_instantiate1 (v : Expr md) (s : Nat) :
+    ∀ (e : Expr md) (c : Nat),
+      (e.liftLooseBVars (s + 1) c).instantiate1 v (c + s) = e.liftLooseBVars s c
+  | .bvar j, c => by
+    simp only [Expr.liftLooseBVars]
+    by_cases hjc : j ≥ c
+    · rw [if_pos hjc, if_pos hjc]
+      simp only [Expr.instantiate1]
+      rw [if_neg (by omega : ¬ j + (s + 1) = c + s), if_pos (by omega : j + (s + 1) > c + s)]
+      congr 1; omega
+    · rw [if_neg hjc, if_neg hjc]
+      simp only [Expr.instantiate1]
+      rw [if_neg (by omega : ¬ j = c + s), if_neg (by omega : ¬ j > c + s)]
+  | .fvar _ _, _ | .sort _, _ | .const _ _, _ | .lit _, _ => rfl
+  | .app f a, c => by
+    simp [Expr.liftLooseBVars, Expr.instantiate1,
+      liftLooseBVars_succ_instantiate1 v s f c, liftLooseBVars_succ_instantiate1 v s a c]
+  | .lam t b _, c => by
+    simp only [Expr.liftLooseBVars, Expr.instantiate1, liftLooseBVars_succ_instantiate1 v s t c]
+    have h1 := liftLooseBVars_succ_instantiate1 v s b (c + 1)
+    rw [show c + 1 + s = c + s + 1 by omega] at h1
+    rw [h1]
+  | .forallE t b _, c => by
+    simp only [Expr.liftLooseBVars, Expr.instantiate1, liftLooseBVars_succ_instantiate1 v s t c]
+    have h1 := liftLooseBVars_succ_instantiate1 v s b (c + 1)
+    rw [show c + 1 + s = c + s + 1 by omega] at h1
+    rw [h1]
+  | .letE t v' b _, c => by
+    simp only [Expr.liftLooseBVars, Expr.instantiate1,
+      liftLooseBVars_succ_instantiate1 v s t c, liftLooseBVars_succ_instantiate1 v s v' c]
+    have h1 := liftLooseBVars_succ_instantiate1 v s b (c + 1)
+    rw [show c + 1 + s = c + s + 1 by omega] at h1
+    rw [h1]
+  | .proj _ _ e, c => by
+    simp [Expr.liftLooseBVars, Expr.instantiate1, liftLooseBVars_succ_instantiate1 v s e c]
+
+theorem LamDomAlong.instantiate1 {v₁ v₂ : Expr md}
+    (hv : WrapT (fun _ : Key md => (none : Option (ConstantInfo md))) v₁ v₂)
+    {n : Nat} {l p r : Expr md} (h : LamDomAlong n l p r) :
+    ∀ j, LamDomAlong n (l.instantiate1 v₁ j) (p.instantiate1 v₂ j) (r.instantiate1 v₁ (j + n)) := by
+  induction h with
+  | zero => intro j; simpa using LamDomAlong.zero
+  | @succ n dl bl dp bp r m mp hdom _ ih =>
+    intro j
+    have h1 := ih (j + 1)
+    rw [show j + 1 + n = j + (n + 1) by omega] at h1
+    exact .succ (WrapT.instantiate1 hv hdom j) h1
+
+theorem LamDomAlong.split : ∀ (m n : Nat) {l p r : Expr md},
+    LamDomAlong (m + n) l p r →
+    ∃ mid midP bs,
+      LamDomAlong m l p mid ∧ p.stripPis m = some (bs, midP) ∧ LamDomAlong n mid midP r
+  | 0, _, l, p, _, h => by
+    simp only [Nat.zero_add] at h
+    exact ⟨l, p, [], .zero, rfl, h⟩
+  | m + 1, n, _, _, _, h => by
+    rw [show m + 1 + n = (m + n) + 1 by omega] at h
+    cases h with
+    | succ hdom hrest =>
+      obtain ⟨mid, midP, bs, h1, hsp, h2⟩ := LamDomAlong.split m n hrest
+      exact ⟨mid, midP, _, .succ hdom h1, stripPis_succ_forallE hsp, h2⟩
+
+theorem stripLams_instantiate1 : ∀ (n : Nat) {e r : Expr md},
+    stripLams n e = some r → ∀ v j, stripLams n (e.instantiate1 v j) = some (r.instantiate1 v (j + n))
+  | 0, _, _, h, _, j => by
+    simp only [stripLams, Option.some.injEq] at h ⊢
+    subst h; simp
+  | n + 1, .lam _ b _, _, h, v, j => by
+    simp only [stripLams, Expr.instantiate1] at h ⊢
+    have h1 := stripLams_instantiate1 n h v (j + 1)
+    rwa [show j + 1 + n = j + (n + 1) by omega] at h1
+  | _ + 1, .bvar _, _, h, _, _ | _ + 1, .fvar _ _, _, h, _, _ | _ + 1, .sort _, _, h, _, _
+  | _ + 1, .const _ _, _, h, _, _ | _ + 1, .app _ _, _, h, _, _ | _ + 1, .forallE _ _ _, _, h, _, _
+  | _ + 1, .letE _ _ _ _, _, h, _, _ | _ + 1, .lit _, _, h, _, _ | _ + 1, .proj _ _ _, _, h, _, _ => by
+    simp [stripLams] at h
+
+theorem stripLams_add : ∀ (m n : Nat) (e : Expr md),
+    stripLams (m + n) e = (stripLams m e).bind (stripLams n)
+  | 0, _, _ => by simp [stripLams]
+  | m + 1, n, .lam _ b _ => by
+    rw [show m + 1 + n = (m + n) + 1 by omega]
+    exact stripLams_add m n b
+  | m + 1, n, .bvar _ | m + 1, n, .fvar _ _ | m + 1, n, .sort _ | m + 1, n, .const _ _
+  | m + 1, n, .app _ _ | m + 1, n, .forallE _ _ _ | m + 1, n, .letE _ _ _ _
+  | m + 1, n, .lit _ | m + 1, n, .proj _ _ _ => by
+    rw [show m + 1 + n = (m + n) + 1 by omega]
+    simp [stripLams]
+
+theorem stripPis_instantiate1 : ∀ (n : Nat) {e rest : Expr md}
+    {bs : List (Expr md × Ix.Kernel.BinderMeta)},
+    e.stripPis n = some (bs, rest) → ∀ v j,
+      ∃ bs', (e.instantiate1 v j).stripPis n = some (bs', rest.instantiate1 v (j + n))
+  | 0, _, _, _, h, _, j => by
+    simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨-, rfl⟩ := h
+    exact ⟨[], by simp [Expr.stripPis]⟩
+  | n + 1, _, _, _, h, v, j => by
+    obtain ⟨t, b, m, bs0, rfl, hs0⟩ := stripPis_succ_inv h
+    obtain ⟨bs', h1⟩ := stripPis_instantiate1 n hs0 v (j + 1)
+    rw [show j + 1 + n = j + (n + 1) by omega] at h1
+    exact ⟨_, stripPis_succ_forallE h1⟩
+
+/-- Every leading λ-domain of `lC` and `lW` up to depth `n` is fixed by `f`. -/
+inductive LamDomsFix (f : Key md → Key md) : Nat → Expr md → Expr md → Prop
+  | zero {lC lW : Expr md} : LamDomsFix f 0 lC lW
+  | succ {n : Nat} {dC bC dW bW : Expr md} {mC mW : Ix.Kernel.BinderMeta} :
+      dC.renameConsts f = dC → dW.renameConsts f = dW →
+      LamDomsFix f n bC bW →
+      LamDomsFix f (n + 1) (.lam dC bC mC) (.lam dW bW mW)
+
+/-- Build a common `WrapRel` ancestor `rhsG` for a pair of `let`-free rules related by `SymWrapT`
+whose first `n` λ-domains are fixed by `f` and whose bodies match under `WrapT (fun _ => none)`. -/
+theorem SymWrapT.exists_join_prefix {f : Key md → Key md} :
+    ∀ (n : Nat) {lC lW sbC sbW : Expr md},
+      SymWrapT find? (lC.renameConsts f) lW →
+      stripLams n lC = some sbC →
+      stripLams n lW = some sbW →
+      WrapT (fun _ : Key md => (none : Option (ConstantInfo md))) (sbC.renameConsts f) sbW →
+      LamDomsFix f n lC lW →
+      lC.hasFvar = false → lW.hasFvar = false →
+      letFree lC = true → letFree lW = true →
+      ∃ rhsG : Expr md,
+        WrapRel find? rhsG lC ∧ WrapRel find? (rhsG.renameConsts f) lW
+  | 0, lC, lW, sbC, sbW, _, hC, hW, hsb, _, hfvC, _, _, _ => by
+    simp only [stripLams, Option.some.injEq] at hC hW
+    subst hC hW
+    have hfvRen : (lC.renameConsts f).hasFvar = false := by
+      clear hsb
+      induction lC with
+      | bvar _ | sort _ | const _ _ | lit _ => rfl
+      | fvar _ _ => simp [Expr.hasFvar] at hfvC
+      | app a b iha ihb =>
+        simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfvC
+        simp [Expr.renameConsts, Expr.hasFvar, iha hfvC.1, ihb hfvC.2]
+      | lam t b _ iht ihb | forallE t b _ iht ihb =>
+        simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfvC
+        simp [Expr.renameConsts, Expr.hasFvar, iht hfvC.1, ihb hfvC.2]
+      | letE t v b _ iht ihv ihb =>
+        simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfvC
+        simp [Expr.renameConsts, Expr.hasFvar, iht hfvC.1.1, ihv hfvC.1.2, ihb hfvC.2]
+      | proj _ _ e ihe => exact ihe hfvC
+    exact ⟨lC, WrapRel.refl find? lC, (hsb.mono_empty (find? := find?)).toWrapRel hfvRen⟩
+  | n + 1, _, _, sbC, sbW, hSym, hC, hW, hsb, hfix, hfvC, hfvW, hlfC, hlfW => by
+    cases hfix with
+    | @succ _ dC bC dW bW mC mW hdC_fix hdW_fix hfix' =>
+      simp only [stripLams] at hC hW
+      simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfvC hfvW
+      simp only [letFree, Bool.and_eq_true] at hlfC hlfW
+      have hlfP : ∀ fn a : Expr md, letFree (.app fn a) = true →
+          letFree fn = true ∧ letFree a = true := by
+        intro fn a h; simpa [letFree] using h
+      have hfvP : ∀ fn a : Expr md, (Expr.app fn a).hasFvar = false →
+          fn.hasFvar = false ∧ a.hasFvar = false := by
+        intro fn a h; simpa [Expr.hasFvar] using h
+      have hrenP : ∀ fn a : Expr md, (Expr.app fn a).renameConsts f = .app fn a →
+          fn.renameConsts f = fn ∧ a.renameConsts f = a := by
+        intro fn a h; simpa [Expr.renameConsts] using h
+      simp only [Expr.renameConsts, hdC_fix] at hSym
+      cases hSym with
+      | lamL hpw hs hd hb =>
+        obtain ⟨ga, hga1, hga2, hfa, hra⟩ := hd.exists_join (hs.of hlfP hlfC.1) hlfW.1
+        obtain ⟨gt, hgt_t, hcs_gt, hft, hrt⟩ := liftConsumeStar hs hga1 hlfC.1
+        have hgt_fv : gt.hasFvar = false :=
+          hft hfvC.1 (hfa (hs.of hfvP hfvC.1) hfvW.1)
+        have hgt_fix : gt.renameConsts f = gt :=
+          hrt f hdC_fix (hra f (hs.of hrenP hdC_fix) hdW_fix)
+        obtain ⟨gB, hgBC, hgBW⟩ :=
+          SymWrapT.exists_join_prefix n hb hC hW hsb hfix' hfvC.2 hfvW.2 hlfC.2 hlfW.2
+        refine ⟨.lam gt gB mC, .lam rfl (.keep (hgt_t.toWrapRel hgt_fv)) hgBC, ?_⟩
+        simp only [Expr.renameConsts, hgt_fix]
+        exact .lam hpw (hcs_gt.toWrapDom (hga2.toWrapRel (hfa (hs.of hfvP hfvC.1) hfvW.1))) hgBW
+      | lamR hpw hs hd hb =>
+        obtain ⟨ga, hga1, hga2, hfa, hra⟩ := hd.exists_join hlfC.1 (hs.of hlfP hlfW.1)
+        obtain ⟨gt, hgt_t', hcs_gt, hft, hrt⟩ := liftConsumeStar hs hga2 hlfW.1
+        have hgt_fv : gt.hasFvar = false :=
+          hft hfvW.1 (hfa hfvC.1 (hs.of hfvP hfvW.1))
+        have hgt_fix : gt.renameConsts f = gt :=
+          hrt f hdW_fix (hra f hdC_fix (hs.of hrenP hdW_fix))
+        obtain ⟨gB, hgBC, hgBW⟩ :=
+          SymWrapT.exists_join_prefix n hb hC hW hsb hfix' hfvC.2 hfvW.2 hlfC.2 hlfW.2
+        refine ⟨.lam gt gB mC,
+          .lam rfl (hcs_gt.toWrapDom (hga1.toWrapRel (hfa hfvC.1 (hs.of hfvP hfvW.1)))) hgBC, ?_⟩
+        simp only [Expr.renameConsts, hgt_fix]
+        exact .lam hpw (.keep (hgt_t'.toWrapRel hgt_fv)) hgBW
+
+end SymWrap
+
 end Ix.Kernel.Semantics

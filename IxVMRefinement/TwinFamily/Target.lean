@@ -49,7 +49,7 @@ open IxVM.Refinement.Decl (twinPosRulesJ judgeFrames_twinPosRulesJ judgeSound_tw
 open IxVM.Refinement.Typing.FamilyAlias (FamilyCallAtLim)
 open Ix.Kernel (ConstantInfo ConstantVal RecRule LevelParam)
 open Ix.Kernel.Semantics (Judgements ConstantValCheckJ DeclRecTwinRunJ TwinRecPart twinModels
-  twinRecs WrapRel NativeFam)
+  twinRecs WrapRel SymWrapT TwinRuleMatch NativeFam)
 open Ix.Kernel.Model (EnvModelN EnvModelM JudgeFrames JudgeSound HasModel StoreArR)
 
 set_option linter.unusedVariables false
@@ -288,18 +288,18 @@ def GenTyped (J : Judgements .anon) (env : Ix.Kernel.Env .anon) (lps : List Leve
 
 /-- **The generated type of a twin recursor**, as `DeclRecTwinRunJ` asks it: one term related by
 `WrapRel` to the canonical recursor's type and to the twin's checked type, which is the canonical
-type or is typed. -/
+type, is typed, or sits over symmetrically wrapper-related types. -/
 def TwinTypeGen (J : Judgements .anon) (env : Ix.Kernel.Env .anon)
     (cvC cvW' : ConstantVal .anon) : Prop :=
   ∃ tyG : KExpr, WrapRel env.find? tyG cvC.type ∧ WrapRel env.find? tyG cvW'.type ∧
-    (tyG = cvC.type ∨ GenTyped J env cvC.levelParams tyG)
+    (tyG = cvC.type ∨ GenTyped J env cvC.levelParams tyG ∨ SymWrapT env.find? cvC.type cvW'.type)
 
 /-- **The generated right-hand side of a twin rule**, as `TwinRuleJ` asks it. -/
 def TwinRuleGen (J : Judgements .anon) (env : Ix.Kernel.Env .anon) (f : KKey → KKey)
-    (lps : List LevelParam) (rC rW' : RecRule .anon) : Prop :=
+    (lps : List LevelParam) (cvW' : ConstantVal .anon) (rC rW' : RecRule .anon) : Prop :=
   ∃ rhsG : KExpr, WrapRel env.find? rhsG rC.rhs ∧
     WrapRel env.find? (rhsG.renameConsts f) rW'.rhs ∧
-    (rhsG = rC.rhs ∨ GenTyped J env lps rhsG)
+    (rhsG = rC.rhs ∨ GenTyped J env lps rhsG ∨ TwinRuleMatch env.find? f cvW'.type rC.rhs rW'.rhs)
 
 /-- Where the canonical type is above the twin's (the twin consumed at least the wrappers the
 canonical record did; in particular where the two terms are equal), the canonical type is the
@@ -318,7 +318,7 @@ theorem twinTypeGen_of_twin_above {cvC cvW cvW' : ConstantVal .anon}
   obtain ⟨-, -, -, -, hlb, hfv, type, stype, lv, hann, hlp, hres, hinf, -, hcv'⟩ := hcv.inv
   obtain ⟨hfv', hlb'⟩ := hfr.annot_syntax hann hfv hlb
   subst hcv'
-  refine ⟨type, h, WrapRel.refl _ _, Or.inr ⟨hfv', ?_, hres, hlb', stype, hinf⟩⟩
+  refine ⟨type, h, WrapRel.refl _ _, Or.inr (Or.inl ⟨hfv', ?_, hres, hlb', stype, hinf⟩)⟩
   rw [← hlps]
   exact hlp
 
@@ -328,26 +328,44 @@ supply. -/
 theorem twinTypeGen_of_typed {cvC cvW' : ConstantVal .anon} {g : KExpr}
     (hC : WrapRel env.find? g cvC.type) (hW : WrapRel env.find? g cvW'.type)
     (ht : GenTyped J env cvC.levelParams g) : TwinTypeGen J env cvC cvW' :=
-  ⟨g, hC, hW, Or.inr ht⟩
+  ⟨g, hC, hW, Or.inr (Or.inl ht)⟩
+
+/-- Where the canonical and twin types are symmetrically wrapper-related (`SymWrapT`) with a
+common `WrapRel` ancestor `tyG`, nothing further is typed. -/
+theorem twinTypeGen_of_symWrapT {cvC cvW' : ConstantVal .anon} {g : KExpr}
+    (hC : WrapRel env.find? g cvC.type) (hW : WrapRel env.find? g cvW'.type)
+    (hSym : SymWrapT env.find? cvC.type cvW'.type) : TwinTypeGen J env cvC cvW' :=
+  ⟨g, hC, hW, Or.inr (Or.inr hSym)⟩
 
 /-- Where the canonical rule, renamed to the twin's peers, is above the twin's rule, the
 canonical right-hand side is the generated one: nothing is typed. -/
 theorem twinRuleGen_of_canonical_above {f : KKey → KKey} {lps : List LevelParam}
-    {rC rW' : RecRule .anon} (h : WrapRel env.find? (rC.rhs.renameConsts f) rW'.rhs) :
-    TwinRuleGen J env f lps rC rW' :=
+    {cvW' : ConstantVal .anon} {rC rW' : RecRule .anon}
+    (h : WrapRel env.find? (rC.rhs.renameConsts f) rW'.rhs) :
+    TwinRuleGen J env f lps cvW' rC rW' :=
   ⟨rC.rhs, WrapRel.refl _ _, h, Or.inl rfl⟩
 
 /-- A common right-hand side above both rules that is typed at the environment is the generated
 one. No front door types a rule's right-hand side, so in every case but the one above this
 typing has to be supplied. -/
 theorem twinRuleGen_of_typed {f : KKey → KKey} {lps : List LevelParam}
-    {rC rW' : RecRule .anon} {g : KExpr} (hC : WrapRel env.find? g rC.rhs)
+    {cvW' : ConstantVal .anon} {rC rW' : RecRule .anon} {g : KExpr}
+    (hC : WrapRel env.find? g rC.rhs)
     (hW : WrapRel env.find? (g.renameConsts f) rW'.rhs) (ht : GenTyped J env lps g) :
-    TwinRuleGen J env f lps rC rW' :=
-  ⟨g, hC, hW, Or.inr ht⟩
+    TwinRuleGen J env f lps cvW' rC rW' :=
+  ⟨g, hC, hW, Or.inr (Or.inl ht)⟩
 
-/-- The generated type is the clause of the circuit-facing contract of a modeled twin
-(`ModeledTwinMemberOut.ty_gen`). -/
+/-- Where the twin rule matches the twin type's λ-prefix and the canonical rule's body under
+`SymWrapT` (`TwinRuleMatch`), nothing further is typed. -/
+theorem twinRuleGen_of_match {f : KKey → KKey} {lps : List LevelParam}
+    {cvW' : ConstantVal .anon} {rC rW' : RecRule .anon} {g : KExpr}
+    (hC : WrapRel env.find? g rC.rhs)
+    (hW : WrapRel env.find? (g.renameConsts f) rW'.rhs)
+    (hm : TwinRuleMatch env.find? f cvW'.type rC.rhs rW'.rhs) :
+    TwinRuleGen J env f lps cvW' rC rW' :=
+  ⟨g, hC, hW, Or.inr (Or.inr hm)⟩
+
+/-- The generated type is the clause of `DeclRecTwinRunJ` for a twin recursor. -/
 theorem twinTypeGen_iff_ty_gen {w : TwinRecPart .anon} :
     TwinTypeGen J env w.cvC w.cvW' ↔
       ∃ tyG : KExpr,
@@ -356,7 +374,8 @@ theorem twinTypeGen_iff_ty_gen {w : TwinRecPart .anon} :
         (tyG = w.cvC.type ∨
           (tyG.hasFvar = false ∧ tyG.allLevelParamsDefined w.cvC.levelParams = true ∧
             tyG.constsResolve env = true ∧ tyG.looseBVarsBounded 0 = true ∧
-            ∃ sty, J.infer env 0 tyG sty)) :=
+            ∃ sty, J.infer env 0 tyG sty) ∨
+          SymWrapT env.find? w.cvC.type w.cvW'.type) :=
   Iff.rfl
 
 end Generated

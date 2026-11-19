@@ -6,6 +6,7 @@ public import IxC.Kernel.Model.Rules.RedSoundKit
 public import IxC.Kernel.Semantics.Inductives.WrapRelFacts
 import IxC.Kernel.Model.Annot.BitLevels
 import IxC.Kernel.Model.Annot.BitLemmas
+import IxC.Kernel.Model.Annot.BitShift
 import IxC.Kernel.Verify.EnvWF
 
 public section
@@ -938,5 +939,651 @@ theorem recDeclaredStep {μ : CheckMode} {E : Env md} (mpC : EnvModelM V μ E)
         rw [heq] at hf
         exact RecRuleLaw.swapP hcg hm₂' (mpg.rec_rules φ n cv mI' rP' rules hf rl hrl hfire))
   exact ⟨mpd, hmpd.trans hacv⟩
+
+/-! ## Symmetric wrapper readings and twin rule prefix semantics -/
+
+/-- **Symmetric reading relation up to consumed wrappers**: equal, except that at a binder domain
+either side may apply wrappers. -/
+inductive SymAW : AnnotTerm → AnnotTerm → Prop
+  | refl (X : AnnotTerm) : SymAW X X
+  | app {f a f' a' : AnnotTerm} : SymAW f f' → SymAW a a' → SymAW (.app f a) (.app f' a')
+  | lamL {v : Nat} {A a A' b b' : AnnotTerm} :
+      AStar A a → SymAW a A' → SymAW b b' → SymAW (.lam v A b) (.lam v A' b')
+  | lamR {v : Nat} {A A' a b b' : AnnotTerm} :
+      AStar A' a → SymAW A a → SymAW b b' → SymAW (.lam v A b) (.lam v A' b')
+  | piL {u u' v : Nat} {A a A' B B' : AnnotTerm} :
+      AStar A a → SymAW a A' → SymAW B B' → SymAW (.pi u v A B) (.pi u' v A' B')
+  | piR {u u' v : Nat} {A A' a B B' : AnnotTerm} :
+      AStar A' a → SymAW A a → SymAW B B' → SymAW (.pi u v A B) (.pi u' v A' B')
+  | fst {e e' : AnnotTerm} : SymAW e e' → SymAW (.fst e) (.fst e')
+  | snd {e e' : AnnotTerm} : SymAW e e' → SymAW (.snd e) (.snd e')
+
+theorem SymAW.of_AW {X Y : AnnotTerm} (h : AW X Y) : SymAW X Y := by
+  induction h with
+  | refl X => exact .refl X
+  | app _ _ ihf iha => exact .app ihf iha
+  | lam hs _ _ ihd ihb => exact .lamL hs ihd ihb
+  | pi hs _ _ ihd ihb => exact .piL hs ihd ihb
+  | fst _ ih => exact .fst ih
+  | snd _ ih => exact .snd ih
+
+theorem SymAW.symm {X Y : AnnotTerm} (h : SymAW X Y) : SymAW Y X := by
+  induction h with
+  | refl X => exact .refl X
+  | app _ _ ihf iha => exact .app ihf iha
+  | lamL hs _ _ ihd ihb => exact .lamR hs ihd ihb
+  | lamR hs _ _ ihd ihb => exact .lamL hs ihd ihb
+  | piL hs _ _ ihd ihb => exact .piR hs ihd ihb
+  | piR hs _ _ ihd ihb => exact .piL hs ihd ihb
+  | fst _ ih => exact .fst ih
+  | snd _ ih => exact .snd ih
+
+/-- **Symmetric wrapper relation preserves interpretation** when both sides are graded. -/
+theorem SymAW.sem {X Y : AnnotTerm} (h : SymAW X Y) :
+    ∀ ρ : Nat → V, WellDenotedV V ρ X → WellDenotedV V ρ Y → interp V ρ X = interp V ρ Y := by
+  induction h with
+  | refl => intro _ _ _; rfl
+  | app _ _ ihf iha =>
+    intro ρ hX hY
+    obtain ⟨hwdX, havX⟩ := hX
+    obtain ⟨hwdY, havY⟩ := hY
+    rw [WellDenoted_app] at hwdX hwdY
+    rw [AnnotValid_app] at havX havY
+    rw [interp_app, interp_app,
+      ihf ρ ⟨hwdX.1, havX.1⟩ ⟨hwdY.1, havY.1⟩,
+      iha ρ ⟨hwdX.2.1, havX.2⟩ ⟨hwdY.2.1, havY.2⟩]
+  | lamL hs _ _ ihd ihb =>
+    intro ρ hX hY
+    obtain ⟨hwdX, havX⟩ := hX
+    obtain ⟨hwdY, havY⟩ := hY
+    rw [WellDenoted_lam] at hwdX hwdY
+    rw [AnnotValid_lam] at havX havY
+    obtain ⟨hs1, hs2⟩ := hs.sem ρ ⟨hwdX.1, havX.1⟩
+    have hA := hs2.trans (ihd ρ hs1 ⟨hwdY.1, havY.1⟩)
+    rw [interp_lam, interp_lam, hA]
+    exact lamR_congr fun x hx =>
+      ihb (cons x ρ) ⟨hwdX.2.1 x (hA ▸ hx), havX.2 x (hA ▸ hx)⟩ ⟨hwdY.2.1 x hx, havY.2 x hx⟩
+  | lamR hs _ _ ihd ihb =>
+    intro ρ hX hY
+    obtain ⟨hwdX, havX⟩ := hX
+    obtain ⟨hwdY, havY⟩ := hY
+    rw [WellDenoted_lam] at hwdX hwdY
+    rw [AnnotValid_lam] at havX havY
+    obtain ⟨hs1, hs2⟩ := hs.sem ρ ⟨hwdY.1, havY.1⟩
+    have hA := (ihd ρ ⟨hwdX.1, havX.1⟩ hs1).trans hs2.symm
+    rw [interp_lam, interp_lam, hA]
+    exact lamR_congr fun x hx =>
+      ihb (cons x ρ) ⟨hwdX.2.1 x (hA ▸ hx), havX.2 x (hA ▸ hx)⟩ ⟨hwdY.2.1 x hx, havY.2 x hx⟩
+  | piL hs _ _ ihd ihb =>
+    intro ρ hX hY
+    obtain ⟨hwdX, havX⟩ := hX
+    obtain ⟨hwdY, havY⟩ := hY
+    rw [WellDenoted_pi] at hwdX hwdY
+    rw [AnnotValid_pi] at havX havY
+    obtain ⟨hs1, hs2⟩ := hs.sem ρ ⟨hwdX.1, havX.1⟩
+    have hA := hs2.trans (ihd ρ hs1 ⟨hwdY.1, havY.1⟩)
+    rw [interp_pi, interp_pi, hA]
+    exact piR_congr fun x hx =>
+      ihb (cons x ρ) ⟨hwdX.2 x (hA ▸ hx), havX.2.1 x (hA ▸ hx)⟩ ⟨hwdY.2 x hx, havY.2.1 x hx⟩
+  | piR hs _ _ ihd ihb =>
+    intro ρ hX hY
+    obtain ⟨hwdX, havX⟩ := hX
+    obtain ⟨hwdY, havY⟩ := hY
+    rw [WellDenoted_pi] at hwdX hwdY
+    rw [AnnotValid_pi] at havX havY
+    obtain ⟨hs1, hs2⟩ := hs.sem ρ ⟨hwdY.1, havY.1⟩
+    have hA := (ihd ρ ⟨hwdX.1, havX.1⟩ hs1).trans hs2.symm
+    rw [interp_pi, interp_pi, hA]
+    exact piR_congr fun x hx =>
+      ihb (cons x ρ) ⟨hwdX.2 x (hA ▸ hx), havX.2.1 x (hA ▸ hx)⟩ ⟨hwdY.2 x hx, havY.2.1 x hx⟩
+  | fst _ ih =>
+    intro ρ hX hY
+    obtain ⟨hwdX, havX⟩ := hX
+    obtain ⟨hwdY, havY⟩ := hY
+    rw [WellDenoted] at hwdX hwdY
+    rw [AnnotValid_fst] at havX havY
+    rw [interp_fst, interp_fst, ih ρ ⟨hwdX.1, havX⟩ ⟨hwdY.1, havY⟩]
+  | snd _ ih =>
+    intro ρ hX hY
+    obtain ⟨hwdX, havX⟩ := hX
+    obtain ⟨hwdY, havY⟩ := hY
+    rw [WellDenoted] at hwdX hwdY
+    rw [AnnotValid_snd] at havX havY
+    rw [interp_snd, interp_snd, ih ρ ⟨hwdX.1, havX⟩ ⟨hwdY.1, havY⟩]
+
+theorem SymAW.projAV : ∀ (n : Nat) {X X' : AnnotTerm}, SymAW X X' →
+    SymAW (projAV n X) (projAV n X')
+  | 0, _, _, h => .fst h
+  | n + 1, _, _, h => SymAW.projAV n (.snd h)
+
+theorem SymAW.projPair {i : Nat} {X X' Y Y' : AnnotTerm} (h : SymAW X X')
+    (hp : AnnotTerm.projPair? i X = some Y) (hp' : AnnotTerm.projPair? i X' = some Y') :
+    SymAW Y Y' := by
+  match i, hp, hp' with
+  | 0, hp, hp' =>
+    obtain rfl := Option.some.inj hp
+    obtain rfl := Option.some.inj hp'
+    exact .fst h
+  | 1, hp, hp' =>
+    obtain rfl := Option.some.inj hp
+    obtain rfl := Option.some.inj hp'
+    exact .snd h
+
+theorem SymAW.piChain_left : ∀ (n : Nat) {X Y : AnnotTerm}, SymAW X Y → PiChain n Y → PiChain n X
+  | 0, _, _, _, _ => trivial
+  | n + 1, _, _, h, hpc => by
+    obtain ⟨_, _, _, _, rfl, hB⟩ := piChain_succ_inv hpc
+    cases h with
+    | refl => exact hpc
+    | piL _ _ hb => exact SymAW.piChain_left n hb hB
+    | piR _ _ hb => exact SymAW.piChain_left n hb hB
+
+/-- **A value-level fit moves across `SymAW`** when both telescopes are graded. -/
+theorem SymAW.teleFit : ∀ (vs : List V) {X Y : AnnotTerm} {ρ : Nat → V} {r : V},
+    SymAW X Y → WellDenotedV V ρ X → WellDenotedV V ρ Y →
+    TeleFit V ρ Y vs r → ∃ r', TeleFit V ρ X vs r'
+  | [], _, _, _, _, _, _, _, _ => ⟨_, .nil⟩
+  | v :: vs, _, _, ρ, r, h, hX, hY, hfit => by
+    cases hfit with
+    | @cons _ u₀ w₀ A₀ B₀ _ _ _ hmem hrest =>
+      cases h with
+      | refl => exact ⟨r, .cons hmem hrest⟩
+      | piL hs hw hb =>
+        obtain ⟨hwdX, havX⟩ := hX
+        obtain ⟨hwdY, havY⟩ := hY
+        rw [WellDenoted_pi] at hwdX hwdY
+        rw [AnnotValid_pi] at havX havY
+        obtain ⟨hs1, hs2⟩ := hs.sem ρ ⟨hwdX.1, havX.1⟩
+        have hA := hs2.trans (hw.sem ρ hs1 ⟨hwdY.1, havY.1⟩)
+        have hmA : v ∈ˢ interp V ρ _ := by rw [hA]; exact hmem
+        obtain ⟨r', hr'⟩ := SymAW.teleFit vs hb ⟨hwdX.2 v hmA, havX.2.1 v hmA⟩
+          ⟨hwdY.2 v hmem, havY.2.1 v hmem⟩ hrest
+        exact ⟨r', .cons hmA hr'⟩
+      | piR hs hw hb =>
+        obtain ⟨hwdX, havX⟩ := hX
+        obtain ⟨hwdY, havY⟩ := hY
+        rw [WellDenoted_pi] at hwdX hwdY
+        rw [AnnotValid_pi] at havX havY
+        obtain ⟨hs1, hs2⟩ := hs.sem ρ ⟨hwdY.1, havY.1⟩
+        have hA := (hw.sem ρ ⟨hwdX.1, havX.1⟩ hs1).trans hs2.symm
+        have hmA : v ∈ˢ interp V ρ _ := by rw [hA]; exact hmem
+        obtain ⟨r', hr'⟩ := SymAW.teleFit vs hb ⟨hwdX.2 v hmA, havX.2.1 v hmA⟩
+          ⟨hwdY.2 v hmem, havY.2.1 v hmem⟩ hrest
+        exact ⟨r', .cons hmA hr'⟩
+
+section SymRead
+
+variable {acval : Key md → (LevelParam → Nat) → AnnotTerm} {env : Env md}
+  {φ : LevelParam → Nat}
+
+/-- Terms related by `WrapT (fun _ => none)` (level-equivalent, no wrapper consumption) have
+identical `denoteMeta` readings. -/
+theorem denoteMeta_eq_of_wrapT_empty_aux : ∀ (n : Nat) (e₁ e₂ : Expr md), e₁.sizeB < n →
+    WrapT (fun _ : Key md => (none : Option (ConstantInfo md))) e₁ e₂ →
+    ∀ k : Nat, denoteMeta acval env φ k e₁ = denoteMeta acval env φ k e₂
+  | 0, _, _, hlt, _, _ => absurd hlt (Nat.not_lt_zero _)
+  | n + 1, _, _, hlt, h, k => by
+    cases h with
+    | bvar | lit => rfl
+    | fvar i t t' => rw [denoteMeta_fvar, denoteMeta_fvar]
+    | sort huv => simp only [denoteMeta, huv φ]
+    | const huvs =>
+      simp only [denoteMeta]
+      cases hf : env.find? _ with
+      | none => rfl
+      | some ci =>
+        dsimp only
+        rw [forall₂_length_eq huvs, substFn_eq_of_forall₂ φ ci.toConstantVal.levelParams huvs]
+    | app hf ha =>
+      simp only [Ix.Kernel.Expr.sizeB] at hlt
+      rw [denoteMeta_app, denoteMeta_app,
+        denoteMeta_eq_of_wrapT_empty_aux n _ _ (by omega) hf k,
+        denoteMeta_eq_of_wrapT_empty_aux n _ _ (by omega) ha k]
+    | @lam t a t' b b' m m' hpw hs hw hb =>
+      have ha := hs.eq_of_empty; subst ha
+      simp only [Ix.Kernel.Expr.sizeB] at hlt
+      have hbi := WrapT.instantiate1 (WrapT.fvar k t t') hb 0
+      rw [denoteMeta_lam, denoteMeta_lam, hpw,
+        denoteMeta_eq_of_wrapT_empty_aux n t t' (by omega) hw k,
+        denoteMeta_eq_of_wrapT_empty_aux n _ _
+          (by rw [Ix.Kernel.Expr.sizeB_instantiate1 (.fvar k t) rfl]; omega) hbi (k + 1)]
+    | @forallE t a t' b b' m m' hpw hs hw hb =>
+      have ha := hs.eq_of_empty; subst ha
+      simp only [Ix.Kernel.Expr.sizeB] at hlt
+      have hbi := WrapT.instantiate1 (WrapT.fvar k t t') hb 0
+      rw [denoteMeta_forallE, denoteMeta_forallE, hpw,
+        denoteMeta_eq_of_wrapT_empty_aux n t t' (by omega) hw k,
+        denoteMeta_eq_of_wrapT_empty_aux n _ _
+          (by rw [Ix.Kernel.Expr.sizeB_instantiate1 (.fvar k t) rfl]; omega) hbi (k + 1)]
+    | proj he =>
+      simp only [Ix.Kernel.Expr.sizeB] at hlt
+      rw [denoteMeta_proj, denoteMeta_proj,
+        denoteMeta_eq_of_wrapT_empty_aux n _ _ (by omega) he k]
+
+theorem denoteMeta_eq_of_wrapT_empty {e₁ e₂ : Expr md}
+    (h : WrapT (fun _ : Key md => (none : Option (ConstantInfo md))) e₁ e₂) (k : Nat) :
+    denoteMeta acval env φ k e₁ = denoteMeta acval env φ k e₂ :=
+  denoteMeta_eq_of_wrapT_empty_aux (e₁.sizeB + 1) e₁ e₂ (Nat.lt_succ_self _) h k
+
+variable {find? : Key md → Option (ConstantInfo md)}
+  (hfind : ∀ w ci, find? w = some ci → env.find? w = some ci)
+  (hdef : ∀ (ψ : LevelParam → Nat) (cv : ConstantVal md) (value : Expr md),
+    (∃ hint : Ix.Kernel.ReducibilityHint, ConstantInfo.defnInfo cv value hint ∈ env.consts) →
+    denoteMeta acval env ψ 0 value = some (acval cv.name ψ))
+
+include hfind hdef in
+theorem symWrapT_read_aux : ∀ (n : Nat) (d₁ d₂ : Expr md), d₁.sizeB + d₂.sizeB < n →
+    SymWrapT find? d₁ d₂ →
+    ∀ (k : Nat) (da₁ da₂ : AnnotTerm),
+      denoteMeta acval env φ k d₁ = some da₁ →
+      denoteMeta acval env φ k d₂ = some da₂ →
+      SymAW da₁ da₂ := by
+  intro n
+  induction n with
+  | zero => intro d₁ d₂ hlt; exact absurd hlt (Nat.not_lt_zero _)
+  | succ n ih =>
+    intro d₁ d₂ hlt h k da₁ da₂ hd₁ hd₂
+    cases h with
+    | bvar | lit =>
+      obtain rfl := Option.some.inj (hd₁.symm.trans hd₂)
+      exact .refl _
+    | fvar i t t' =>
+      rw [denoteMeta_fvar] at hd₁ hd₂
+      obtain rfl := Option.some.inj (hd₁.symm.trans hd₂)
+      exact .refl _
+    | sort huv =>
+      simp only [denoteMeta, huv φ] at hd₁
+      simp only [denoteMeta] at hd₂
+      obtain rfl := Option.some.inj (hd₁.symm.trans hd₂)
+      exact .refl _
+    | const huvs =>
+      simp only [denoteMeta] at hd₁ hd₂
+      cases hf : env.find? _ with
+      | none => simp only [hf] at hd₁; exact nomatch hd₁
+      | some ci =>
+        simp only [hf] at hd₁ hd₂
+        rw [forall₂_length_eq huvs, substFn_eq_of_forall₂ φ ci.toConstantVal.levelParams huvs] at hd₁
+        obtain rfl := Option.some.inj (hd₁.symm.trans hd₂)
+        exact .refl _
+    | app hf ha =>
+      obtain ⟨fa₁, aa₁, hfa₁, haa₁, rfl⟩ := denoteMeta_app_inv hd₁
+      obtain ⟨fa₂, aa₂, hfa₂, haa₂, rfl⟩ := denoteMeta_app_inv hd₂
+      simp only [Ix.Kernel.Expr.sizeB] at hlt
+      exact .app (ih _ _ (by omega) hf k fa₁ fa₂ hfa₁ hfa₂)
+        (ih _ _ (by omega) ha k aa₁ aa₂ haa₁ haa₂)
+    | @lamL t a t' b b' m m' hpw hs hw hb =>
+      obtain ⟨ta₁, ba₁, hta₁, hba₁, rfl⟩ := denoteMeta_lam_inv hd₁
+      obtain ⟨ta₂, ba₂, hta₂, hba₂, rfl⟩ := denoteMeta_lam_inv hd₂
+      simp only [Ix.Kernel.Expr.sizeB] at hlt
+      obtain ⟨aa, haa, hAS⟩ := consumeStar_read hfind hdef hs hta₁
+      have hAd := ih a t' (by have := hs.sizeB_le; omega) hw k aa ta₂ haa hta₂
+      have hbi := SymWrapT.instantiate1 (SymWrapT.fvar k t t') hb 0
+      have hAb := ih _ _ (by
+        rw [Ix.Kernel.Expr.sizeB_instantiate1 (.fvar k t) rfl,
+          Ix.Kernel.Expr.sizeB_instantiate1 (.fvar k t') rfl]; omega) hbi (k + 1) ba₁ ba₂ hba₁ hba₂
+      rw [hpw]; exact .lamL hAS hAd hAb
+    | @lamR t t' a b b' m m' hpw hs hw hb =>
+      obtain ⟨ta₁, ba₁, hta₁, hba₁, rfl⟩ := denoteMeta_lam_inv hd₁
+      obtain ⟨ta₂, ba₂, hta₂, hba₂, rfl⟩ := denoteMeta_lam_inv hd₂
+      simp only [Ix.Kernel.Expr.sizeB] at hlt
+      obtain ⟨aa, haa, hAS⟩ := consumeStar_read hfind hdef hs hta₂
+      have hAd := ih t a (by have := hs.sizeB_le; omega) hw k ta₁ aa hta₁ haa
+      have hbi := SymWrapT.instantiate1 (SymWrapT.fvar k t t') hb 0
+      have hAb := ih _ _ (by
+        rw [Ix.Kernel.Expr.sizeB_instantiate1 (.fvar k t) rfl,
+          Ix.Kernel.Expr.sizeB_instantiate1 (.fvar k t') rfl]; omega) hbi (k + 1) ba₁ ba₂ hba₁ hba₂
+      rw [hpw]; exact .lamR hAS hAd hAb
+    | @forallEL t a t' b b' m m' hpw hs hw hb =>
+      obtain ⟨ta₁, ba₁, hta₁, hba₁, rfl⟩ := denoteMeta_forallE_inv hd₁
+      obtain ⟨ta₂, ba₂, hta₂, hba₂, rfl⟩ := denoteMeta_forallE_inv hd₂
+      simp only [Ix.Kernel.Expr.sizeB] at hlt
+      obtain ⟨aa, haa, hAS⟩ := consumeStar_read hfind hdef hs hta₁
+      have hAd := ih a t' (by have := hs.sizeB_le; omega) hw k aa ta₂ haa hta₂
+      have hbi := SymWrapT.instantiate1 (SymWrapT.fvar k t t') hb 0
+      have hAb := ih _ _ (by
+        rw [Ix.Kernel.Expr.sizeB_instantiate1 (.fvar k t) rfl,
+          Ix.Kernel.Expr.sizeB_instantiate1 (.fvar k t') rfl]; omega) hbi (k + 1) ba₁ ba₂ hba₁ hba₂
+      rw [hpw]; exact .piL hAS hAd hAb
+    | @forallER t t' a b b' m m' hpw hs hw hb =>
+      obtain ⟨ta₁, ba₁, hta₁, hba₁, rfl⟩ := denoteMeta_forallE_inv hd₁
+      obtain ⟨ta₂, ba₂, hta₂, hba₂, rfl⟩ := denoteMeta_forallE_inv hd₂
+      simp only [Ix.Kernel.Expr.sizeB] at hlt
+      obtain ⟨aa, haa, hAS⟩ := consumeStar_read hfind hdef hs hta₂
+      have hAd := ih t a (by have := hs.sizeB_le; omega) hw k ta₁ aa hta₁ haa
+      have hbi := SymWrapT.instantiate1 (SymWrapT.fvar k t t') hb 0
+      have hAb := ih _ _ (by
+        rw [Ix.Kernel.Expr.sizeB_instantiate1 (.fvar k t) rfl,
+          Ix.Kernel.Expr.sizeB_instantiate1 (.fvar k t') rfl]; omega) hbi (k + 1) ba₁ ba₂ hba₁ hba₂
+      rw [hpw]; exact .piR hAS hAd hAb
+    | proj he =>
+      obtain ⟨ia₁, hia₁, hcase₁⟩ := denoteMeta_proj_inv hd₁
+      obtain ⟨ia₂, hia₂, hcase₂⟩ := denoteMeta_proj_inv hd₂
+      simp only [Ix.Kernel.Expr.sizeB] at hlt
+      have hSAW := ih _ _ (by omega) he k ia₁ ia₂ hia₁ hia₂
+      rcases hcase₁ with ⟨entry₁, hfp₁, rfl⟩ | ⟨hfp₁, hdec₁⟩
+      · rcases hcase₂ with ⟨entry₂, hfp₂, rfl⟩ | ⟨hfp₂, _⟩
+        · obtain rfl := Option.some.inj (hfp₁.symm.trans hfp₂)
+          exact SymAW.projAV _ hSAW
+        · rw [hfp₁] at hfp₂; cases hfp₂
+      · rcases hcase₂ with ⟨_, hfp₂, _⟩ | ⟨_, hdec₂⟩
+        · rw [hfp₁] at hfp₂; cases hfp₂
+        · exact SymAW.projPair hSAW hdec₁ hdec₂
+
+include hfind hdef in
+/-- **Readings of symmetrically wrapper-related terms are related by `SymAW`.** -/
+theorem symWrapT_read {d₁ d₂ : Expr md} (h : SymWrapT find? d₁ d₂)
+    {k : Nat} {da₁ da₂ : AnnotTerm}
+    (hd₁ : denoteMeta acval env φ k d₁ = some da₁)
+    (hd₂ : denoteMeta acval env φ k d₂ = some da₂) :
+    SymAW da₁ da₂ :=
+  symWrapT_read_aux hfind hdef (d₁.sizeB + d₂.sizeB + 1) d₁ d₂ (Nat.lt_succ_self _) h k da₁ da₂ hd₁ hd₂
+
+include hfind hdef in
+private theorem symWrapT_lam_step {d : Nat} {lC dl bl : Expr md} {mW : Ix.Kernel.BinderMeta}
+    {La Dp : AnnotTerm}
+    (hSym : SymWrapT find? lC (.lam dl bl mW))
+    (hC : denoteMeta acval env φ d lC = some La)
+    (hDl : denoteMeta acval env φ d dl = some Dp) :
+    ∃ (dc bc : Expr md) (mC : Ix.Kernel.BinderMeta) (Dc Bc : AnnotTerm),
+      lC = .lam dc bc mC ∧
+      mC.pw = mW.pw ∧
+      SymWrapT find? bc bl ∧
+      La = .lam (pwBit φ mC.pw) Dc Bc ∧
+      denoteMeta acval env φ d dc = some Dc ∧
+      denoteMeta acval env φ (d + 1) (bc.instantiate1 (.fvar d dc) 0) = some Bc ∧
+      ∀ ρ : Nat → V, WellDenotedV V ρ Dc → WellDenotedV V ρ Dp →
+        interp V ρ Dc = interp V ρ Dp := by
+  cases hSym with
+  | @lamL dc a _ bc _ mC _ hpw hs hd hb =>
+    obtain ⟨Dc, Bc, hDc, hBc, rfl⟩ := denoteMeta_lam_inv hC
+    obtain ⟨aa, haa, hAS⟩ := consumeStar_read hfind hdef hs hDc
+    have hSAW := symWrapT_read hfind hdef hd haa hDl
+    refine ⟨dc, bc, mC, Dc, Bc, rfl, hpw, hb, rfl, hDc, hBc, fun ρ hokDc hokDp => ?_⟩
+    obtain ⟨hokAa, heq1⟩ := hAS.sem ρ hokDc
+    exact heq1.trans (hSAW.sem ρ hokAa hokDp)
+  | @lamR dc _ a bc _ mC _ hpw hs hd hb =>
+    obtain ⟨Dc, Bc, hDc, hBc, rfl⟩ := denoteMeta_lam_inv hC
+    obtain ⟨aa, haa, hAS⟩ := consumeStar_read hfind hdef hs hDl
+    have hSAW := symWrapT_read hfind hdef hd hDc haa
+    refine ⟨dc, bc, mC, Dc, Bc, rfl, hpw, hb, rfl, hDc, hBc, fun ρ hokDc hokDp => ?_⟩
+    obtain ⟨hokAa, heq1⟩ := hAS.sem ρ hokDp
+    exact (hSAW.sem ρ hokDc hokAa).trans heq1.symm
+
+private theorem wellDenotedV_lam_transfer {v : Nat} {Dc Dp Bc Bw : AnnotTerm} {ρ : Nat → V}
+    (hokC : WellDenotedV V ρ (.lam v Dc Bc))
+    (hokDp : WellDenotedV V ρ Dp)
+    (hDom : interp V ρ Dc = interp V ρ Dp)
+    (hBody : ∀ x, x ∈ˢ interp V ρ Dp →
+      WellDenotedV V (cons x ρ) Bw ∧ interp V (cons x ρ) Bc = interp V (cons x ρ) Bw) :
+    WellDenotedV V ρ (.lam v Dp Bw) ∧
+      interp V ρ (.lam v Dc Bc) = interp V ρ (.lam v Dp Bw) := by
+  obtain ⟨hwdC, havC⟩ := hokC
+  rw [WellDenoted_lam] at hwdC
+  rw [AnnotValid_lam] at havC
+  obtain ⟨-, -, B, hBm, hBz⟩ := hwdC
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · rw [WellDenoted_lam]
+    refine ⟨hokDp.1, fun x hx => (hBody x hx).1.1, B, fun x hx => ?_,
+      fun h0 x hx => hBz h0 x (hDom ▸ hx)⟩
+    rw [← (hBody x hx).2]
+    exact hBm x (hDom ▸ hx)
+  · rw [AnnotValid_lam]
+    exact ⟨hokDp.2, fun x hx => (hBody x hx).1.2⟩
+  · rw [interp_lam, interp_lam, hDom]
+    exact lamR_congr fun x hx => (hBody x hx).2
+
+include hfind hdef in
+/-- **Base λ-prefix semantics**: `lW` follows `p` for `n` λs whose bodies match `lC` under
+`WrapT (fun _ => none)` and `SymWrapT`. -/
+theorem lamDomAlong_base_sem :
+    ∀ (n d : Nat) {lC lW p rC rW : Expr md} {La Pa : AnnotTerm},
+      SymWrapT find? lC lW →
+      LamDomAlong n lW p rW →
+      stripLams n lC = some rC →
+      WrapT (fun _ : Key md => (none : Option (ConstantInfo md))) rC rW →
+      denoteMeta acval env φ d lC = some La →
+      denoteMeta acval env φ d p = some Pa →
+      ∃ Lw : AnnotTerm,
+        denoteMeta acval env φ d lW = some Lw ∧
+        ∀ ρ : Nat → V, WellDenotedV V ρ La → WellDenotedV V ρ Pa →
+          WellDenotedV V ρ Lw ∧ interp V ρ La = interp V ρ Lw
+  | 0, d, lC, lW, _, rC, rW, La, _, _, hLam, hSC, hBase, hC, _ => by
+    cases hLam
+    simp only [stripLams, Option.some.injEq] at hSC
+    subst hSC
+    refine ⟨La, ?_, fun ρ hokC _ => ⟨hokC, rfl⟩⟩
+    rw [← denoteMeta_eq_of_wrapT_empty hBase d]
+    exact hC
+  | n + 1, d, lC, lW, p, rC, rW, La, Pa, hSym, hLam, hSC, hBase, hC, hP => by
+    cases hLam with
+    | @succ _ dl bl dp bp _ mW mp hdom hLam' =>
+      obtain ⟨Dp, Bp, hDp, hBp, rfl⟩ := denoteMeta_forallE_inv hP
+      have hDl : denoteMeta acval env φ d dl = some Dp := by
+        rw [denoteMeta_eq_of_wrapT_empty hdom d]; exact hDp
+      obtain ⟨dc, bc, mC, Dc, Bc, rfl, hpw, hSymB, rfl, _, hBc, hDomEq⟩ :=
+        symWrapT_lam_step hfind hdef hSym hC hDl
+      simp only [stripLams] at hSC
+      have hSymB' := SymWrapT.instantiate1 (SymWrapT.fvar d dc dl) hSymB 0
+      have hLam'' := LamDomAlong.instantiate1 (WrapT.fvar d dl dp) hLam' 0
+      have hSC' := stripLams_instantiate1 n hSC (.fvar d dc) 0
+      have hBase' := WrapT.instantiate1 (WrapT.fvar d dc dl) hBase n
+      simp only [Nat.zero_add] at hLam'' hSC'
+      obtain ⟨Bw, hBw, ih⟩ := lamDomAlong_base_sem n (d + 1) hSymB' hLam'' hSC' hBase' hBc hBp
+      refine ⟨.lam (pwBit φ mW.pw) Dp Bw, ?_, fun ρ hokC hokP => ?_⟩
+      · rw [denoteMeta_lam, hDl, hBw]; rfl
+      · obtain ⟨hwdP, havP⟩ := hokP
+        rw [WellDenoted_pi] at hwdP
+        rw [AnnotValid_pi] at havP
+        have hokDp : WellDenotedV V ρ Dp := ⟨hwdP.1, havP.1⟩
+        have hokDc : WellDenotedV V ρ Dc := by
+          obtain ⟨hwC, hvC⟩ := hokC
+          rw [WellDenoted_lam] at hwC; rw [AnnotValid_lam] at hvC
+          exact ⟨hwC.1, hvC.1⟩
+        have hdom_eq := hDomEq ρ hokDc hokDp
+        rw [hpw] at hokC ⊢
+        refine wellDenotedV_lam_transfer hokC hokDp hdom_eq fun x hx => ?_
+        obtain ⟨hwC, hvC⟩ := hokC
+        rw [WellDenoted_lam] at hwC; rw [AnnotValid_lam] at hvC
+        exact ih (cons x ρ) ⟨hwC.2.1 x (hdom_eq ▸ hx), hvC.2 x (hdom_eq ▸ hx)⟩
+          ⟨hwdP.2 x hx, havP.2.1 x hx⟩
+
+include hfind hdef in
+/-- **Second segment of `TwinRuleMatch`**: walks `s` λs while carrying `mW` lifted by `s`,
+weakening `mW`'s reading one binder at a time via `denoteMeta_weaken_top`, then finishes with
+`lamDomAlong_base_sem` at `s = 0`. -/
+theorem lamDomAlong_lifted_sem
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
+      (acval n ψ).liftN 1 k = acval n ψ) :
+    ∀ (s d nf : Nat) {lC lW p mW afterW sbC sbW : Expr md} {La Pa Ma : AnnotTerm},
+      SymWrapT find? lC lW →
+      LamDomAlong s lW p afterW →
+      LamDomAlong nf afterW (mW.liftLooseBVars s 0) sbW →
+      stripLams (s + nf) lC = some sbC →
+      WrapT (fun _ : Key md => (none : Option (ConstantInfo md))) sbC sbW →
+      Expr.WScoped d mW →
+      denoteMeta acval env φ d lC = some La →
+      denoteMeta acval env φ d p = some Pa →
+      denoteMeta acval env φ d mW = some Ma →
+      ∃ Lw : AnnotTerm,
+        denoteMeta acval env φ d lW = some Lw ∧
+        ∀ ρ : Nat → V, WellDenotedV V ρ La → WellDenotedV V ρ Pa → WellDenotedV V ρ Ma →
+          WellDenotedV V ρ Lw ∧ interp V ρ La = interp V ρ Lw
+  | 0, d, nf, lC, lW, _, mW, afterW, sbC, sbW, La, _, Ma, hSym, hLam1, hLam2, hSC, hBase,
+      _, hC, _, hM => by
+    cases hLam1
+    rw [liftLooseBVars_zero] at hLam2
+    simp only [Nat.zero_add] at hSC
+    obtain ⟨Lw, hLw, hsem⟩ := lamDomAlong_base_sem hfind hdef nf d hSym hLam2 hSC hBase hC hM
+    exact ⟨Lw, hLw, fun ρ hokC _ hokM => hsem ρ hokC hokM⟩
+  | s + 1, d, nf, lC, lW, p, mW, afterW, sbC, sbW, La, Pa, Ma, hSym, hLam1, hLam2, hSC, hBase,
+      hwsM, hC, hP, hM => by
+    cases hLam1 with
+    | @succ _ dl bl dp bp _ mW_b mp hdom hLam1' =>
+      obtain ⟨Dp, Bp, hDp, hBp, rfl⟩ := denoteMeta_forallE_inv hP
+      have hDl : denoteMeta acval env φ d dl = some Dp := by
+        rw [denoteMeta_eq_of_wrapT_empty hdom d]; exact hDp
+      obtain ⟨dc, bc, mC, Dc, Bc, rfl, hpw, hSymB, rfl, _, hBc, hDomEq⟩ :=
+        symWrapT_lam_step hfind hdef hSym hC hDl
+      rw [show s + 1 + nf = (s + nf) + 1 by omega] at hSC
+      simp only [stripLams] at hSC
+      have hSymB' := SymWrapT.instantiate1 (SymWrapT.fvar d dc dl) hSymB 0
+      have hLam1'' := LamDomAlong.instantiate1 (WrapT.fvar d dl dp) hLam1' 0
+      have hLam2' := LamDomAlong.instantiate1 (WrapT.fvar d dl dp) hLam2 s
+      have hSC' := stripLams_instantiate1 (s + nf) hSC (.fvar d dc) 0
+      have hBase' := WrapT.instantiate1 (WrapT.fvar d dc dl) hBase (s + nf)
+      simp only [Nat.zero_add] at hLam1'' hSC'
+      have hlift : (mW.liftLooseBVars (s + 1) 0).instantiate1 (.fvar d dp) s =
+          mW.liftLooseBVars s 0 := by
+        simpa only [Nat.zero_add] using liftLooseBVars_succ_instantiate1 (.fvar d dp) s mW 0
+      rw [hlift] at hLam2'
+      have hM' : denoteMeta acval env φ (d + 1) mW = some (Ma.liftN 1 0) := by
+        rw [denoteMeta_weaken_top hacl hwsM, hM]; rfl
+      obtain ⟨Bw, hBw, ih⟩ := lamDomAlong_lifted_sem hacl s (d + 1) nf hSymB' hLam1'' hLam2'
+        hSC' hBase' (hwsM.mono (Nat.le_succ d)) hBc hBp hM'
+      refine ⟨.lam (pwBit φ mW_b.pw) Dp Bw, ?_, fun ρ hokC hokP hokM => ?_⟩
+      · rw [denoteMeta_lam, hDl, hBw]; rfl
+      · obtain ⟨hwdP, havP⟩ := hokP
+        rw [WellDenoted_pi] at hwdP
+        rw [AnnotValid_pi] at havP
+        have hokDp : WellDenotedV V ρ Dp := ⟨hwdP.1, havP.1⟩
+        have hokDc : WellDenotedV V ρ Dc := by
+          obtain ⟨hwC, hvC⟩ := hokC
+          rw [WellDenoted_lam] at hwC; rw [AnnotValid_lam] at hvC
+          exact ⟨hwC.1, hvC.1⟩
+        have hdom_eq := hDomEq ρ hokDc hokDp
+        rw [hpw] at hokC ⊢
+        refine wellDenotedV_lam_transfer hokC hokDp hdom_eq fun x hx => ?_
+        obtain ⟨hwC, hvC⟩ := hokC
+        rw [WellDenoted_lam] at hwC; rw [AnnotValid_lam] at hvC
+        have hokM' : WellDenotedV V (cons x ρ) (Ma.liftN 1 0) := by
+          refine ⟨?_, ?_⟩
+          · rw [WellDenoted_liftN, show (1 : Nat) = 0 + 1 from rfl, shiftE_succ_cons,
+              shiftE_zero_zero]
+            exact hokM.1
+          · rw [AnnotValid_liftN, show (1 : Nat) = 0 + 1 from rfl, shiftE_succ_cons,
+              shiftE_zero_zero]
+            exact hokM.2
+        exact ih (cons x ρ) ⟨hwC.2.1 x (hdom_eq ▸ hx), hvC.2 x (hdom_eq ▸ hx)⟩
+          ⟨hwdP.2 x hx, havP.2.1 x hx⟩ hokM'
+
+include hfind hdef in
+/-- **First segment of `TwinRuleMatch`**: walks `iMin` λs up to the minor premise `mdomW` in `p`,
+then delegates to `lamDomAlong_lifted_sem`. -/
+theorem lamDomAlong_prefix_sem
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
+      (acval n ψ).liftN 1 k = acval n ψ) :
+    ∀ (iMin d s nf : Nat) {lC lW p midW afterW mdomW restW sbC sbW : Expr md}
+      {bs : List (Expr md × Ix.Kernel.BinderMeta)} {mmW : Ix.Kernel.BinderMeta}
+      {La Pa : AnnotTerm},
+      SymWrapT find? lC lW →
+      LamDomAlong iMin lW p midW →
+      p.stripPis iMin = some (bs, .forallE mdomW restW mmW) →
+      LamDomAlong s midW (.forallE mdomW restW mmW) afterW →
+      LamDomAlong nf afterW (mdomW.liftLooseBVars s 0) sbW →
+      stripLams (iMin + s + nf) lC = some sbC →
+      WrapT (fun _ : Key md => (none : Option (ConstantInfo md))) sbC sbW →
+      Expr.WScoped d p →
+      denoteMeta acval env φ d lC = some La →
+      denoteMeta acval env φ d p = some Pa →
+      ∃ Lw : AnnotTerm,
+        denoteMeta acval env φ d lW = some Lw ∧
+        ∀ ρ : Nat → V, WellDenotedV V ρ La → WellDenotedV V ρ Pa →
+          WellDenotedV V ρ Lw ∧ interp V ρ La = interp V ρ Lw
+  | 0, d, s, nf, lC, lW, p, midW, afterW, mdomW, restW, sbC, sbW, bs, mmW, La, Pa,
+      hSym, hLam0, hStripP, hLam1, hLam2, hSC, hBase, hwsP, hC, hP => by
+    cases hLam0
+    simp only [Ix.Kernel.Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at hStripP
+    obtain ⟨-, rfl⟩ := hStripP
+    simp only [Nat.zero_add] at hSC
+    obtain ⟨Ma, _, hMa, _, hPa⟩ := denoteMeta_forallE_inv hP
+    simp only [Expr.WScoped] at hwsP
+    obtain ⟨Lw, hLw, hsem⟩ := lamDomAlong_lifted_sem hfind hdef hacl s d nf hSym hLam1 hLam2
+      hSC hBase hwsP.1 hC hP hMa
+    refine ⟨Lw, hLw, fun ρ hokC hokP => ?_⟩
+    have hokM : WellDenotedV V ρ Ma := by
+      rw [hPa] at hokP
+      obtain ⟨hwdP, havP⟩ := hokP
+      rw [WellDenoted_pi] at hwdP; rw [AnnotValid_pi] at havP
+      exact ⟨hwdP.1, havP.1⟩
+    exact hsem ρ hokC hokP hokM
+  | iMin + 1, d, s, nf, lC, lW, p, midW, afterW, mdomW, restW, sbC, sbW, bs, mmW, La, Pa,
+      hSym, hLam0, hStripP, hLam1, hLam2, hSC, hBase, hwsP, hC, hP => by
+    cases hLam0 with
+    | @succ _ dl bl dp bp _ mW_b mp hdom hLam0' =>
+      obtain ⟨Dp, Bp, hDp, hBp, rfl⟩ := denoteMeta_forallE_inv hP
+      have hDl : denoteMeta acval env φ d dl = some Dp := by
+        rw [denoteMeta_eq_of_wrapT_empty hdom d]; exact hDp
+      obtain ⟨dc, bc, mC, Dc, Bc, rfl, hpw, hSymB, rfl, _, hBc, hDomEq⟩ :=
+        symWrapT_lam_step hfind hdef hSym hC hDl
+      obtain ⟨_, _, _, bs0, hpeq, hStripP0⟩ := stripPis_succ_inv hStripP
+      injection hpeq with _ hbp_eq _
+      subst hbp_eq
+      rw [show iMin + 1 + s + nf = (iMin + s + nf) + 1 by omega] at hSC
+      simp only [stripLams] at hSC
+      have hSymB' := SymWrapT.instantiate1 (SymWrapT.fvar d dc dl) hSymB 0
+      have hLam0'' := LamDomAlong.instantiate1 (WrapT.fvar d dl dp) hLam0' 0
+      obtain ⟨bs0', hStripP'⟩ := stripPis_instantiate1 iMin hStripP0 (.fvar d dp) 0
+      have hLam1' := LamDomAlong.instantiate1 (WrapT.fvar d dl dp) hLam1 iMin
+      have hLam2' := LamDomAlong.instantiate1 (WrapT.fvar d dl dp) hLam2 (iMin + s)
+      have hSC' := stripLams_instantiate1 (iMin + s + nf) hSC (.fvar d dc) 0
+      have hBase' := WrapT.instantiate1 (WrapT.fvar d dc dl) hBase (iMin + s + nf)
+      simp only [Nat.zero_add, Ix.Kernel.Expr.instantiate1] at hLam0'' hStripP' hLam1' hSC'
+      rw [liftLooseBVars_instantiate1_fvar s d dp mdomW 0 iMin (Nat.zero_le _)] at hLam2'
+      simp only [Expr.WScoped] at hwsP
+      have hwsBp : Expr.WScoped (d + 1) (bp.instantiate1 (.fvar d dp) 0) :=
+        Expr.WScoped.instantiate1 hwsP.1 0 hwsP.2
+      obtain ⟨Bw, hBw, ih⟩ := lamDomAlong_prefix_sem hacl iMin (d + 1) s nf hSymB' hLam0''
+        hStripP' hLam1' hLam2' hSC' hBase' hwsBp hBc hBp
+      refine ⟨.lam (pwBit φ mW_b.pw) Dp Bw, ?_, fun ρ hokC hokP => ?_⟩
+      · rw [denoteMeta_lam, hDl, hBw]; rfl
+      · obtain ⟨hwdP, havP⟩ := hokP
+        rw [WellDenoted_pi] at hwdP
+        rw [AnnotValid_pi] at havP
+        have hokDp : WellDenotedV V ρ Dp := ⟨hwdP.1, havP.1⟩
+        have hokDc : WellDenotedV V ρ Dc := by
+          obtain ⟨hwC, hvC⟩ := hokC
+          rw [WellDenoted_lam] at hwC; rw [AnnotValid_lam] at hvC
+          exact ⟨hwC.1, hvC.1⟩
+        have hdom_eq := hDomEq ρ hokDc hokDp
+        rw [hpw] at hokC ⊢
+        refine wellDenotedV_lam_transfer hokC hokDp hdom_eq fun x hx => ?_
+        obtain ⟨hwC, hvC⟩ := hokC
+        rw [WellDenoted_lam] at hwC; rw [AnnotValid_lam] at hvC
+        exact ih (cons x ρ) ⟨hwC.2.1 x (hdom_eq ▸ hx), hvC.2 x (hdom_eq ▸ hx)⟩
+          ⟨hwdP.2 x hx, havP.2.1 x hx⟩
+
+include hfind hdef in
+/-- **Full semantics of `TwinRuleMatch`**: derives `rW'.rhs`'s reading, grading, and semantic
+agreement with `rC.rhs.renameConsts f` directly from `w.cvW'.type` and `rC.rhs`. -/
+theorem twinRuleMatch_sem
+    (hacl : ∀ (n : Key md) (ψ : LevelParam → Nat) (k : Nat),
+      (acval n ψ).liftN 1 k = acval n ψ)
+    {f : Key md → Key md} {tyW' rhsC rhsW' : Expr md} {TVw' Rc : AnnotTerm}
+    (hwsW' : Expr.WScoped 0 tyW')
+    (hTVw' : denoteMeta acval env φ 0 tyW' = some TVw')
+    (hokW' : ∀ ρ : Nat → V, WellDenotedV V ρ TVw')
+    (hRc : denoteMeta acval env φ 0 (rhsC.renameConsts f) = some Rc)
+    (hokRc : ∀ ρ : Nat → V, WellDenotedV V ρ Rc)
+    (hMatch : TwinRuleMatch find? f tyW' rhsC rhsW') :
+    ∃ Rw' : AnnotTerm,
+      denoteMeta acval env φ 0 rhsW' = some Rw' ∧
+      ∀ ρ : Nat → V, WellDenotedV V ρ Rw' ∧ interp V ρ Rc = interp V ρ Rw' := by
+  obtain ⟨hSym, nPre, nf, afterW, sbW, sbC, hLam1, hMid, hSC, hBase⟩ := hMatch
+  rcases hMid with ⟨rfl, rfl⟩ | ⟨iMin, bs, mdomW, restW, mmW, hlt, hStripP, hLam2⟩
+  · simp only [Nat.add_zero] at hSC
+    obtain ⟨Rw', hRw', hsem⟩ := lamDomAlong_base_sem hfind hdef nPre 0 hSym hLam1 hSC hBase hRc hTVw'
+    exact ⟨Rw', hRw', fun ρ => hsem ρ (hokRc ρ) (hokW' ρ)⟩
+  · have hsplit : iMin + (nPre - iMin) = nPre := by omega
+    rw [← hsplit] at hLam1 hSC
+    obtain ⟨midW, midP, bs', hLam0, hStripP', hLam1'⟩ :=
+      LamDomAlong.split iMin (nPre - iMin) hLam1
+    have hmidP : midP = .forallE mdomW restW mmW :=
+      (Prod.mk.inj (Option.some.inj (hStripP'.symm.trans hStripP))).2
+    subst hmidP
+    obtain ⟨Rw', hRw', hsem⟩ := lamDomAlong_prefix_sem hfind hdef hacl iMin 0 (nPre - iMin) nf
+      hSym hLam0 hStripP hLam1' hLam2 hSC hBase hwsW' hRc hTVw'
+    exact ⟨Rw', hRw', fun ρ => hsem ρ (hokRc ρ) (hokW' ρ)⟩
+
+end SymRead
 
 end Ix.Kernel.Model

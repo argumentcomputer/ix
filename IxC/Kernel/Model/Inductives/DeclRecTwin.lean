@@ -345,6 +345,7 @@ theorem capsOk_cons_rec_nonproj {E : Env md} (mpE : EnvModelM V μ E)
 theorem twinTypeAtBase {J : Judgements md} {env : Env md}
     (mp : EnvModelM V μ env) (hJ : JudgeSound J mp.base2)
     {w : TwinRecPart md} {tyG : Expr md}
+    (hcv : ConstantValCheckJ J env w.cvW w.cvW')
     (hfkC : env.find? w.kC = some (.recInfo w.cvC w.mI w.rP w.rulesC))
     (hlfW' : letFree w.cvW'.type = true)
     (hWC : WrapRel env.find? tyG w.cvC.type)
@@ -352,21 +353,19 @@ theorem twinTypeAtBase {J : Judgements md} {env : Env md}
     (htyG : tyG = w.cvC.type ∨
       (tyG.hasFvar = false ∧ tyG.allLevelParamsDefined w.cvC.levelParams = true ∧
         tyG.constsResolve env = true ∧ tyG.looseBVarsBounded 0 = true ∧
-        ∃ sty, J.infer env 0 tyG sty))
+        ∃ sty, J.infer env 0 tyG sty) ∨
+      SymWrapT env.find? w.cvC.type w.cvW'.type)
     (ψ : LevelParam → Nat) :
-    ∃ TVg TVc TVw',
-      denoteMeta mp.base2.acval env ψ 0 tyG = some TVg ∧
+    ∃ TVc TVw',
       denoteMeta mp.base2.acval env ψ 0 w.cvC.type = some TVc ∧
       denoteMeta mp.base2.acval env ψ 0 w.cvW'.type = some TVw' ∧
-      ConstsBound env tyG ∧
-      (∀ ρ : Nat → V, WellDenotedV V ρ TVg) ∧
+      (∀ ρ : Nat → V, WellDenotedV V ρ TVc) ∧
       (∀ ρ : Nat → V, WellDenotedV V ρ TVw') ∧
       (∀ ρ : Nat → V, interp V ρ (mp.base2.acval w.kC ψ) ∈ˢ interp V ρ TVw') ∧
-      AW TVg TVc ∧ AW TVg TVw' := by
+      SymAW TVc TVw' := by
   have hmemC : ConstantInfo.recInfo w.cvC w.mI w.rP w.rulesC ∈ env.consts :=
     Ix.Kernel.Semantics.Env.find?_mem hfkC
   have hnmC : w.cvC.name = w.kC := Ix.Kernel.Semantics.Env.find?_name hfkC
-  obtain ⟨-, -, htrC, -⟩ := mp.base2.wf _ hmemC
   obtain ⟨TVc, hTVc⟩ := mp.type_reads _ hmemC ψ
   have hokC : ∀ ρ : Nat → V, WellDenotedV V ρ TVc := mp.type_wellDenotedV _ hmemC ψ TVc hTVc
   have hmemTypeC : ∀ ρ : Nat → V, interp V ρ (mp.base2.acval w.kC ψ) ∈ˢ interp V ρ TVc := by
@@ -376,11 +375,11 @@ theorem twinTypeAtBase {J : Judgements md} {env : Env md}
     rwa [hnmC] at hm
   have hlfC : letFree w.cvC.type = true :=
     letFree_of_denoteMeta (w.cvC.type.sizeB + 1) w.cvC.type (Nat.lt_succ_self _) 0 TVc hTVc
-  rcases htyG with rfl | ⟨hgfv, -, hgres, hgbv, sty, hginf⟩
+  rcases htyG with rfl | ⟨hgfv, -, -, hgbv, sty, hginf⟩ | hSym
   · obtain ⟨TVw', hTVw', hAWW'⟩ :=
       wrapRel_read (fun _ _ h => h) mp.defn_reads hWW' hlfW' hTVc
-    refine ⟨TVc, TVc, TVw', hTVc, hTVc, hTVw', constsBound_of_constsResolve _ htrC,
-      hokC, fun ρ => (hAWW'.sem ρ (hokC ρ)).1, ?_, .refl TVc, hAWW'⟩
+    refine ⟨TVc, TVw', hTVc, hTVw', hokC, fun ρ => (hAWW'.sem ρ (hokC ρ)).1, ?_,
+      SymAW.of_AW hAWW'⟩
     intro ρ
     rw [← (hAWW'.sem ρ (hokC ρ)).2]
     exact hmemTypeC ρ
@@ -391,10 +390,24 @@ theorem twinTypeAtBase {J : Judgements md} {env : Env md}
     rw [hTVcEq] at hAWC
     obtain ⟨TVw', hTVw', hAWW'⟩ :=
       wrapRel_read (fun _ _ h => h) mp.defn_reads hWW' hlfW' hTVg
-    refine ⟨TVg, TVc, TVw', hTVg, hTVc, hTVw', constsBound_of_constsResolve _ hgres,
-      hokG, fun ρ => (hAWW'.sem ρ (hokG ρ)).1, ?_, hAWC, hAWW'⟩
+    have hSymT : SymWrapT env.find? w.cvC.type w.cvW'.type :=
+      symWrapT_of_span (hWC.toWrapT hlfC) (hWW'.toWrapT hlfW')
+    have hSAW : SymAW TVc TVw' :=
+      symWrapT_read (fun _ _ h => h) mp.defn_reads hSymT hTVc hTVw'
+    refine ⟨TVc, TVw', hTVc, hTVw', hokC, fun ρ => (hAWW'.sem ρ (hokG ρ)).1, ?_, hSAW⟩
     intro ρ
     rw [← (hAWW'.sem ρ (hokG ρ)).2, (hAWC.sem ρ (hokG ρ)).2]
+    exact hmemTypeC ρ
+  · obtain ⟨-, -, -, -, hlb, hfv, type, stype, _, hann, -, -, hinf, -, hcv'⟩ := hcv.inv
+    obtain ⟨hfv', hlb'⟩ := hJ.toJudgeFrames.annot_syntax hann hfv hlb
+    have hty_eq : w.cvW'.type = type := by rw [hcv']
+    obtain ⟨TVw', hTVw', hokW'⟩ :=
+      inferClosed_reads_graded mp.base2 hJ (hty_eq ▸ hfv') (hty_eq ▸ hlb') (hty_eq ▸ hinf) ψ
+    have hSAW : SymAW TVc TVw' :=
+      symWrapT_read (fun _ _ h => h) mp.defn_reads hSym hTVc hTVw'
+    refine ⟨TVc, TVw', hTVc, hTVw', hokC, hokW', ?_, hSAW⟩
+    intro ρ
+    rw [← hSAW.sem ρ (hokC ρ) (hokW' ρ)]
     exact hmemTypeC ρ
 
 /-- Provisioning one rule-less twin recursor at leaf `mp.base2.acval w.kC`. -/
@@ -417,7 +430,8 @@ theorem installTwinProvOne {J : Judgements md} {env E : Env md}
     (htyG : tyG = w.cvC.type ∨
       (tyG.hasFvar = false ∧ tyG.allLevelParamsDefined w.cvC.levelParams = true ∧
         tyG.constsResolve env = true ∧ tyG.looseBVarsBounded 0 = true ∧
-        ∃ sty, J.infer env 0 tyG sty)) :
+        ∃ sty, J.infer env 0 tyG sty) ∨
+      SymWrapT env.find? w.cvC.type w.cvW'.type) :
     let c₀ : ConstantInfo md := .recInfo w.cvW' w.mI w.rP []
     ∃ mp' : EnvModelM V μ ⟨c₀ :: E.consts⟩,
       mp'.base2.acval = acvalWith mpE.base2.acval w.cvW'.name (mp.base2.acval w.kC) ∧
@@ -467,22 +481,22 @@ theorem installTwinProvOne {J : Judgements md} {env E : Env md}
           obtain ⟨-, -, -, rfl⟩ := ConstantInfo.recInfo.inj heq
           rfl) m₂ hm₂ φ)
     · intro ψ
-      obtain ⟨_, _, TVw', -, -, hTVw', -, -, -, -, -, -⟩ :=
-        twinTypeAtBase mp hJ hfkC hlfW' hWC hWW' htyG ψ
+      obtain ⟨_, TVw', -, hTVw', -, -, -, -⟩ :=
+        twinTypeAtBase mp hJ hcv hfkC hlfW' hWC hWW' htyG ψ
       exact ⟨TVw', denoteMeta_cons_fresh_mono (c₀ := c₀) (A := A) hfresh
         (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) ψ 0 w.cvW'.type hcbW'E
         (hmonoE ψ 0 w.cvW'.type hcbW' hTVw')⟩
     · intro ψ ta hta ρ
-      obtain ⟨_, _, TVw', -, -, hTVw', -, -, hokW', -, -, -⟩ :=
-        twinTypeAtBase mp hJ hfkC hlfW' hWC hWW' htyG ψ
+      obtain ⟨_, TVw', -, hTVw', -, hokW', -, -⟩ :=
+        twinTypeAtBase mp hJ hcv hfkC hlfW' hWC hWW' htyG ψ
       have hTVw'1 := denoteMeta_cons_fresh_mono (c₀ := c₀) (A := A) hfresh
         (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) ψ 0 w.cvW'.type hcbW'E
         (hmonoE ψ 0 w.cvW'.type hcbW' hTVw')
       obtain rfl : ta = TVw' := Option.some.inj (hta.symm.trans hTVw'1)
       exact hokW' ρ
     · intro ψ ta hta ρ
-      obtain ⟨_, _, TVw', -, -, hTVw', -, -, -, hmemW', -, -⟩ :=
-        twinTypeAtBase mp hJ hfkC hlfW' hWC hWW' htyG ψ
+      obtain ⟨_, TVw', -, hTVw', -, -, hmemW', -⟩ :=
+        twinTypeAtBase mp hJ hcv hfkC hlfW' hWC hWW' htyG ψ
       have hTVw'1 := denoteMeta_cons_fresh_mono (c₀ := c₀) (A := A) hfresh
         (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) ψ 0 w.cvW'.type hcbW'E
         (hmonoE ψ 0 w.cvW'.type hcbW' hTVw')
@@ -514,7 +528,8 @@ theorem installTwinProv {J : Judgements md} {env envM : Env md}
           (tyG = w.cvC.type ∨
             (tyG.hasFvar = false ∧ tyG.allLevelParamsDefined w.cvC.levelParams = true ∧
               tyG.constsResolve env = true ∧ tyG.looseBVarsBounded 0 = true ∧
-              ∃ sty, J.infer env 0 tyG sty))) →
+              ∃ sty, J.infer env 0 tyG sty) ∨
+            SymWrapT env.find? w.cvC.type w.cvW'.type)) →
       let envSelf : Env md := ⟨twinProv ws ++ envM.consts⟩
       ∃ mpSelf : EnvModelM V μ envSelf,
         ModelExt mpM mpSelf ∧
@@ -645,7 +660,8 @@ theorem RecRuleLaw.wrapTwin {J : Judgements md} {env envSelf : Env md}
     (htyG : tyG = w.cvC.type ∨
       (tyG.hasFvar = false ∧ tyG.allLevelParamsDefined w.cvC.levelParams = true ∧
         tyG.constsResolve env = true ∧ tyG.looseBVarsBounded 0 = true ∧
-        ∃ sty, J.infer env 0 tyG sty))
+        ∃ sty, J.infer env 0 tyG sty) ∨
+      SymWrapT env.find? w.cvC.type w.cvW'.type)
     {rW rW' rC : RecRule md}
     (hrC : rC ∈ w.rulesC)
     (hrule : TwinRuleJ J env envSelf f w.cvW.name w.cvC.levelParams w.cvW' w.mI w.rP rW rW' rC)
@@ -657,10 +673,11 @@ theorem RecRuleLaw.wrapTwin {J : Judgements md} {env envSelf : Env md}
   have hlps' : w.cvW'.levelParams = w.cvC.levelParams := hcv.levelParams_eq.trans hlps
   have hcbC : ConstsBound env w.cvC.type :=
     constsBound_of_constsResolve _ (mp.base2.wf _ (Ix.Kernel.Semantics.Env.find?_mem hfkC)).2.2.1
-  have hcbW' : ConstsBound env w.cvW'.type :=
-    constsBound_of_constsResolve _ (ConstantValCheckJ.typeWF hJ.toJudgeFrames hcv).2.2.1
-  -- `w.cvW'.type.stripPis (w.mI + 1)` is `some`, hence `(tyG.stripPis (w.mI + 1)).isSome = true`
-  have hissG : (tyG.stripPis (w.mI + 1)).isSome = true := by
+  have htyWF := ConstantValCheckJ.typeWF hJ.toJudgeFrames hcv
+  have hcbW' : ConstsBound env w.cvW'.type := constsBound_of_constsResolve _ htyWF.2.2.1
+  have hwsW' : Expr.WScoped 0 w.cvW'.type := Expr.WScoped.of_not_hasFvar htyWF.1
+  -- `w.cvW'.type.stripPis (w.mI + 1)` is `some`
+  have hissW' : (w.cvW'.type.stripPis (w.mI + 1)).isSome = true := by
     have hmajW' : ∃ pre dom body bm,
         w.cvW'.type.stripPis w.mI = some (pre, .forallE dom body bm) := by
       cases hfr0 : rW'.fire with
@@ -678,8 +695,7 @@ theorem RecRuleLaw.wrapTwin {J : Judgements md} {env envSelf : Env md}
     have hsW'1 : w.cvW'.type.stripPis (w.mI + 1) = some (pre ++ [(dom, bm)], body) :=
       Ix.Kernel.stripPis_append w.mI hsW'
         (show (Expr.forallE dom body bm).stripPis 1 = some ([(dom, bm)], body) from rfl)
-    obtain ⟨bsG, bodyG, hsG, -⟩ := WrapT.stripPis_back (w.mI + 1) (hWW'.toWrapT hlfTyW') hsW'1
-    rw [hsG]; rfl
+    rw [hsW'1]; rfl
   -- canonical rule law at `mpSelf`
   have hlawC := mpSelf.rec_rules φ w.kC w.cvC w.mI w.rP w.rulesC
     (hfindSelf w.kC _ hfkC) rC hrC (fun hc => hfireW' (hfireEq.trans hc))
@@ -695,11 +711,20 @@ theorem RecRuleLaw.wrapTwin {J : Judgements md} {env envSelf : Env md}
   obtain ⟨Rc, hRcInst, hokRc, hpinsC, hbodyC⟩ := hC us husC
   have hRc : denoteMeta mpSelf.base2.acval envSelf ψ 0 rC.rhs = some Rc := by
     rwa [denotePInstLevels mpSelf.base2] at hRcInst
+  -- Type readings and `PiChain` at `mpSelf`
+  obtain ⟨TVc, TVw', hTVc₀, hTVw'₀, hokC, hokW', -, hSymTy⟩ :=
+    twinTypeAtBase mp hJ hcv hfkC hlfTyW' hWC hWW' htyG ψ
+  have hTVc := hmonoSelf ψ 0 w.cvC.type hcbC hTVc₀
+  have hTVw' := hmonoSelf ψ 0 w.cvW'.type hcbW' hTVw'₀
+  have hpcW' : PiChain (w.mI + 1) TVw' := Rules.piChain_of_stripPis (w.mI + 1) hissW' hTVw'
+  have hpcW'rP : PiChain w.rP TVw' := piChain_of_le (Nat.le_trans hle (Nat.le_succ w.mI)) hpcW'
+  have hpcC : PiChain (w.mI + 1) TVc := hSymTy.piChain_left (w.mI + 1) hpcW'
+  have hpcCrP : PiChain w.rP TVc := hSymTy.piChain_left w.rP hpcW'rP
   -- RHS reading and semantic agreement at `mpSelf`
   have hRhsRel : ∃ Rw',
       denoteMeta mpSelf.base2.acval envSelf ψ 0 rW'.rhs = some Rw' ∧
       ∀ ρ : Nat → V, WellDenotedV V ρ Rw' ∧ interp V ρ Rc = interp V ρ Rw' := by
-    rcases hrhsG with rfl | ⟨hrfv, -, hrres, hrbv, rty, hrinf⟩
+    rcases hrhsG with rfl | ⟨hrfv, -, hrres, hrbv, rty, hrinf⟩ | hMatch
     · have hren : denoteMeta mpSelf.base2.acval envSelf ψ 0 (rC.rhs.renameConsts f) = some Rc := by
         rw [denoteMeta_renameConsts hro]; exact hRc
       obtain ⟨Rw', hRw', hAWW'⟩ :=
@@ -718,18 +743,14 @@ theorem RecRuleLaw.wrapTwin {J : Judgements md} {env envSelf : Env md}
       obtain ⟨Rw', hRw', hAWW'⟩ :=
         wrapRel_read hfindSelf mpSelf.defn_reads hRhsW' hlfRhsW' hren
       refine ⟨Rw', hRw', fun ρ => ?_⟩
-      obtain ⟨hokW', heqGW'⟩ := hAWW'.sem ρ (hokRg ρ)
+      obtain ⟨hokW'', heqGW'⟩ := hAWW'.sem ρ (hokRg ρ)
       obtain ⟨-, heqGC⟩ := hAWC.sem ρ (hokRg ρ)
-      exact ⟨hokW', heqGC.symm.trans heqGW'⟩
+      exact ⟨hokW'', heqGC.symm.trans heqGW'⟩
+    · have hren : denoteMeta mpSelf.base2.acval envSelf ψ 0 (rC.rhs.renameConsts f) = some Rc := by
+        rw [denoteMeta_renameConsts hro]; exact hRc
+      exact twinRuleMatch_sem hfindSelf mpSelf.defn_reads mpSelf.base2.acval_closed
+        hwsW' hTVw' hokW' hren hokRc hMatch
   obtain ⟨Rw', hRw', hsemR⟩ := hRhsRel
-  -- Type readings and `PiChain` at `mpSelf`
-  obtain ⟨TVg, TVc, TVw', hTVg₀, hTVc₀, hTVw'₀, hcbG, hokG, -, -, hAWTyC, hAWTyW'⟩ :=
-    twinTypeAtBase mp hJ hfkC hlfTyW' hWC hWW' htyG ψ
-  have hTVg := hmonoSelf ψ 0 tyG hcbG hTVg₀
-  have hTVc := hmonoSelf ψ 0 w.cvC.type hcbC hTVc₀
-  have hTVw' := hmonoSelf ψ 0 w.cvW'.type hcbW' hTVw'₀
-  have hpcG : PiChain (w.mI + 1) TVg := Rules.piChain_of_stripPis (w.mI + 1) hissG hTVg
-  have hpcGrP : PiChain w.rP TVg := piChain_of_le (Nat.le_trans hle (Nat.le_succ w.mI)) hpcG
   refine ⟨Rw', ?_, fun ρ => (hsemR ρ).1, ?_, ?_⟩
   · rw [denotePInstLevels mpSelf.base2, hlps']; exact hRw'
   · intro lvls pins hfr i hi
@@ -739,14 +760,9 @@ theorem RecRuleLaw.wrapTwin {J : Judgements md} {env envSelf : Env md}
     rw [denotePInstLevels mpSelf.base2, hlps'] at hTVa
     have hTVaEq : TVa = TVw' := Option.some.inj (hTVa.symm.trans hTVw')
     rw [hTVaEq] at hfitW'
-    have hpcW'rP : PiChain zs.length TVw' := by
-      rw [hzl]; exact hAWTyW'.piChain w.rP hpcGrP
-    have hfitVw' := teleFit_of_teleFitPA hpcW'rP hfitW'
-    obtain ⟨_, hfitVg⟩ := AW.teleFit (zs.map (interp V ρ)) hAWTyW' (hokG ρ) hfitVw'
-    obtain ⟨_, hfitVc⟩ := AW.teleFit_fwd (zs.map (interp V ρ)) hAWTyC (hokG ρ) hfitVg
-    have hpcCrP : PiChain zs.length TVc := by
-      rw [hzl]; exact hAWTyC.piChain w.rP hpcGrP
-    obtain ⟨restC_pins, hfitPAc⟩ := teleFitPA_of_teleFit hpcCrP hfitVc
+    have hfitVw' := teleFit_of_teleFitPA (by rw [hzl]; exact hpcW'rP) hfitW'
+    obtain ⟨_, hfitVc⟩ := SymAW.teleFit (zs.map (interp V ρ)) hSymTy (hokC ρ) (hokW' ρ) hfitVw'
+    obtain ⟨restC_pins, hfitPAc⟩ := teleFitPA_of_teleFit (by rw [hzl]; exact hpcCrP) hfitVc
     exact hgrC ρ zs TVc restC_pins hzl hzok
       (by rw [denotePInstLevels mpSelf.base2]; exact hTVc) hfitPAc
   · intro cvj cnP cnF hfc usj ρ xs ys TVa TVja restR restC hxl hyl hujl hlev hplain hnested hidx
@@ -757,14 +773,10 @@ theorem RecRuleLaw.wrapTwin {J : Judgements md} {env envSelf : Env md}
     let majArg := AnnotTerm.mkAppN
       (mpSelf.base2.acval rW'.ctor (Level.substFn φ cvj.levelParams usj)) ys
     have hlenS : (xs ++ [majArg]).length = w.mI + 1 := by simp [hxl]
-    have hpcW' : PiChain (xs ++ [majArg]).length TVw' := by
-      rw [hlenS]; exact hAWTyW'.piChain (w.mI + 1) hpcG
-    have hfitVw' := teleFit_of_teleFitPA hpcW' hfitR
-    obtain ⟨_, hfitVg⟩ := AW.teleFit ((xs ++ [majArg]).map (interp V ρ)) hAWTyW' (hokG ρ) hfitVw'
-    obtain ⟨_, hfitVc⟩ := AW.teleFit_fwd ((xs ++ [majArg]).map (interp V ρ)) hAWTyC (hokG ρ) hfitVg
-    have hpcC : PiChain (xs ++ [majArg]).length TVc := by
-      rw [hlenS]; exact hAWTyC.piChain (w.mI + 1) hpcG
-    obtain ⟨restRc, hfitPAc⟩ := teleFitPA_of_teleFit hpcC hfitVc
+    have hfitVw' := teleFit_of_teleFitPA (by rw [hlenS]; exact hpcW') hfitR
+    obtain ⟨_, hfitVc⟩ :=
+      SymAW.teleFit ((xs ++ [majArg]).map (interp V ρ)) hSymTy (hokC ρ) (hokW' ρ) hfitVw'
+    obtain ⟨restRc, hfitPAc⟩ := teleFitPA_of_teleFit (by rw [hlenS]; exact hpcC) hfitVc
     have hfcC : envSelf.find? rC.ctor = some (.ctorInfo cvj cnP cnF) := by rwa [← hctor]
     have hylC : ys.length = rC.ctorParams + rC.nfields := by rwa [← hcp, ← hnf]
     have hlevC : Level.substFn φ cvj.levelParams usj =

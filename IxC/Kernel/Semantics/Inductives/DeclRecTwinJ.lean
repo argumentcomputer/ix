@@ -2,6 +2,7 @@ module
 
 public import IxC.Kernel.Semantics.DeclJ
 public import IxC.Kernel.Semantics.Inductives.WrapRel
+public import IxC.Kernel.Semantics.Inductives.WrapRelFacts
 import IxC.Kernel.Verify.Extend.Inversions
 
 @[expose] public section
@@ -62,7 +63,8 @@ def TwinRuleJ (J : Judgements md) (env envSelf : Env md) (f : Key md → Key md)
     (rhsG = rC.rhs ∨
       (rhsG.hasFvar = false ∧ rhsG.allLevelParamsDefined lps = true ∧
         rhsG.constsResolve env = true ∧ rhsG.looseBVarsBounded 0 = true ∧
-        ∃ rty, J.infer env 0 rhsG rty))
+        ∃ rty, J.infer env 0 rhsG rty) ∨
+      TwinRuleMatch env.find? f cvW'.type rC.rhs rW'.rhs)
 
 /-- **One recursor of a twin recursor block**: the declared constant `cvW`, its checked
 annotation `cvW'`, the already-stored canonical recursor `(kC, cvC, mI, rP, rulesC)`, the
@@ -140,7 +142,8 @@ def DeclRecTwinRunJ (J : Judgements md) (env : Env md) (block : List (ConstantIn
         (tyG = w.cvC.type ∨
           (tyG.hasFvar = false ∧ tyG.allLevelParamsDefined w.cvC.levelParams = true ∧
             tyG.constsResolve env = true ∧ tyG.looseBVarsBounded 0 = true ∧
-            ∃ sty, J.infer env 0 tyG sty))) ∧
+            ∃ sty, J.infer env 0 tyG sty) ∨
+          SymWrapT env.find? w.cvC.type w.cvW'.type)) ∧
       w.rulesW.length = w.rulesW'.length ∧
       Forall₂ (fun (p : RecRule md × RecRule md) rC =>
         TwinRuleJ J env envSelf f w.cvW.name w.cvC.levelParams w.cvW' w.mI w.rP p.1 p.2 rC)
