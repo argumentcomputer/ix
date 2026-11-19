@@ -636,7 +636,7 @@ termination_by cs.length
 
 /-! ## Exact bidirectional structural equality (`kexpr_zeta_struct_eq`, `spec_params_zeta_eq`) -/
 
-private theorem tmOExact_not_bvar {κ : _root_.Address → KKey} {h : Heap F}
+theorem tmOExact_not_bvar {κ : _root_.Address → KKey} {h : Heap F}
     {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
     (ld : loadValue h p = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 1 → v ≠ .construct kexprEnum "BVar" vs) :
@@ -650,7 +650,7 @@ private theorem tmOExact_not_bvar {κ : _root_.Address → KKey} {h : Heap F}
   | letE cell _ _ _ => exact hnl.ne_let (Lib.load_enum_cell cell)
   | _ => cases hE
 
-private theorem tmOExact_not_sort {κ : _root_.Address → KKey} {h : Heap F}
+theorem tmOExact_not_sort {κ : _root_.Address → KKey} {h : Heap F}
     {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
     (ld : loadValue h p = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 1 → v ≠ .construct kexprEnum "Srt" vs) :
@@ -664,7 +664,7 @@ private theorem tmOExact_not_sort {κ : _root_.Address → KKey} {h : Heap F}
   | bvarFree _ _ _ hd => omega
   | _ => cases hE
 
-private theorem tmOExact_not_const {κ : _root_.Address → KKey} {h : Heap F}
+theorem tmOExact_not_const {κ : _root_.Address → KKey} {h : Heap F}
     {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
     (ld : loadValue h p = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 2 → v ≠ .construct kexprEnum "Const" vs) :
@@ -678,7 +678,7 @@ private theorem tmOExact_not_const {κ : _root_.Address → KKey} {h : Heap F}
   | bvarFree _ _ _ hd => omega
   | _ => cases hE
 
-private theorem tmOExact_not_app {κ : _root_.Address → KKey} {h : Heap F}
+theorem tmOExact_not_app {κ : _root_.Address → KKey} {h : Heap F}
     {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
     (ld : loadValue h p = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 2 → v ≠ .construct kexprEnum "App" vs) :
@@ -692,7 +692,7 @@ private theorem tmOExact_not_app {κ : _root_.Address → KKey} {h : Heap F}
   | bvarFree _ _ _ hd => omega
   | _ => cases hE
 
-private theorem tmOExact_not_lam {κ : _root_.Address → KKey} {h : Heap F}
+theorem tmOExact_not_lam {κ : _root_.Address → KKey} {h : Heap F}
     {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
     (ld : loadValue h p = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 3 → v ≠ .construct kexprEnum "Lam" vs) :
@@ -706,7 +706,7 @@ private theorem tmOExact_not_lam {κ : _root_.Address → KKey} {h : Heap F}
   | bvarFree _ _ _ hd => omega
   | _ => cases hE
 
-private theorem tmOExact_not_forall {κ : _root_.Address → KKey} {h : Heap F}
+theorem tmOExact_not_forall {κ : _root_.Address → KKey} {h : Heap F}
     {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
     (ld : loadValue h p = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 3 → v ≠ .construct kexprEnum "Forall" vs) :
@@ -720,7 +720,7 @@ private theorem tmOExact_not_forall {κ : _root_.Address → KKey} {h : Heap F}
   | bvarFree _ _ _ hd => omega
   | _ => cases hE
 
-private theorem tmOExact_not_lit {κ : _root_.Address → KKey} {h : Heap F}
+theorem tmOExact_not_lit {κ : _root_.Address → KKey} {h : Heap F}
     {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
     (ld : loadValue h p = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 1 → v ≠ .construct kexprEnum "Lit" vs) :
@@ -736,7 +736,7 @@ private theorem tmOExact_not_lit {κ : _root_.Address → KKey} {h : Heap F}
   | bvarFree _ _ _ hd => omega
   | _ => cases hE
 
-private theorem tmOExact_not_proj {κ : _root_.Address → KKey} {h : Heap F}
+theorem tmOExact_not_proj {κ : _root_.Address → KKey} {h : Heap F}
     {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
     (ld : loadValue h p = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 3 → v ≠ .construct kexprEnum "Proj" vs) :

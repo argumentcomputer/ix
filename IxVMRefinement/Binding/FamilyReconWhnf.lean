@@ -77,7 +77,7 @@ theorem apply_spine_spec (Sp : List KExpr) :
           (tmExact_depth_le (r₂.mono ext) _ (Nat.le_max_right _ _))⟩
       have hnlApp : NotLet (h ++ [.construct "KernelTypes::KExprNode" "App" [xh, x_a]])
           (.ptr (.enum "KernelTypes::KExprNode") h.length) :=
-        notLet_of_cell (by simp) (by decide)
+        notLet_of_cell (tag := "App") (by simp) (by decide)
       obtain ⟨ext', hr, hnlr⟩ := ih ev' happ hnlApp (tmOExactList_mono ext hzs')
       exact ⟨ext.trans ext', hr, hnlr⟩
 
@@ -127,7 +127,8 @@ theorem type_sort_never_zeta_spec {E : KExpr} {n : Nat} {us : List KLevel}
     obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by omega⟩
     obtain rfl := evalBinOp_sub_succ m op
     have hlt : cs1.length < cs.length := by rw [hc]; simp
-    exact type_sort_never_zeta_spec (by omega) hB hus (sub fun c hc' => by rw [hc]; simp [hc']) e1
+    exact type_sort_never_zeta_spec (n := m) (by omega) hB hus
+      (sub fun c hc' => by rw [hc]; simp [hc']) e1
   | .Srt_n0 (x_l := xl) (v_bjumgskp := vl) (m_etsdnfpa := m1)
       (cs_xbqhqjym := cs1) (cs_fcwfomrw := cs2) (ld_bolbylmd := ld) (hv_nnibqruc := hv)
       (ev_pvmsdakl := e1) (ev_ssgoqbcd := e2) (hc_fdglgoab := hc) .. =>
@@ -226,13 +227,25 @@ def ModeledAnswers (V : ReconView) : Prop :=
 
 /-! ## `red_unfold` and `red_proj_zeta` from elementary store reads -/
 
+private theorem bounded_list_lt_of_call {fname : String} {α : Type*} {en : String}
+    {R : Heap F → α → SourceValue F → Prop} {xs : List α} {p r : SourceValue F}
+    {h h' : Heap F} {csl cs : List (Call F)}
+    (bd : IxVM.Consistency.Bounded cs)
+    (_ev : ObsFn W fname [p] h r h' csl)
+    (hmem : (⟨fname, [p], h⟩ : Call F) ∈ cs)
+    (hl : RepList en R h xs p) : xs.length < 2 ^ 39 :=
+  RomBound.bounded_length_lt bd hmem (by simp) hl
+
 private theorem klevel_length {us : List KLevel} {l r : SourceValue F} {h h' : Heap F}
     {cs : List (Call F)}
     (ev : ObsFn W Obs.Names.«Lists::length<&KernelTypes::KLevelNode>» [l] h r h' cs)
     (hl : RepKLevelList h us l) : r = .field (us.length : F) ∧ h' = h :=
   Lib.Lists.length_spec (t := .ptr (.named "KernelTypes::KLevelNode" [])) (R := RepKLevel)
     (by rw [Obs.Names.«Lists::length<&KernelTypes::KLevelNode>».symbol]; exact ev)
-    (by rw [← IxVM.Refinement.Levels.klevelList_names]; exact hl)
+    (by
+      rw [Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>».symbol,
+        ← IxVM.Refinement.Levels.klevelList_names]
+      exact hl)
 
 /-- **`KernelWhnf::red_unfold`** after `Ingress::get_ci` refines `V.unfold` on `TmOExact`. -/
 theorem red_unfold_spec {V : ReconView} (hD : DefnAnswers κ V)
@@ -252,9 +265,9 @@ theorem red_unfold_spec {V : ReconView} (hD : DefnAnswers κ V)
       (op61 := op) (he85 := hr) (ev103 := evi) (he120 := hh) (hc121 := hc) .. =>
     subst hr hh
     obtain ⟨nl, val, rfl, hnl, hval, hunf⟩ := hyes _ _ _ _ _ hci
-    obtain ⟨rfl, rfl⟩ := klevel_length evl rus
     have hus_lt : us.length < 2 ^ 39 :=
-      RomBound.bounded_length_lt bd (c := ⟨_, [xl], m⟩) (by rw [hc]; simp) (by simp) rus
+      bounded_list_lt_of_call bd evl (by rw [hc]; simp) rus
+    obtain ⟨rfl, rfl⟩ := klevel_length evl rus
     have heq : us.length = nl := binop_sub_eq_zero_nat (by omega) (by omega) op
     refine ⟨fun xb hxb => ?_, fun hnt => (hnt vres rfl).elim⟩
     injection hxb with hpair
@@ -263,7 +276,7 @@ theorem red_unfold_spec {V : ReconView} (hD : DefnAnswers κ V)
     subst hxb'
     have binst : IxVM.Consistency.Bounded csi :=
       RomBound.bounded_mono bd (fun c hc' => by rw [hc]; simp [hc'])
-    refine ⟨exprInstLevels us val, by rw [hunf us, if_pos heq],
+    refine ⟨exprInstLevels us val, by rw [hunf us, ite_eq_left heq],
       expr_inst_levels_tmOExact binst hval rus evi⟩
   | .Defn_other (x_nl := xnl) (x_value := xval) (x54 := xlen) (m56 := m1)
       (hv15 := hci) (ev67 := evl) (op61 := op) (hne122 := hne) (he130 := hr) .. =>
@@ -271,7 +284,7 @@ theorem red_unfold_spec {V : ReconView} (hD : DefnAnswers κ V)
     obtain ⟨nl, val, rfl, hnl, -, hunf⟩ := hyes _ _ _ _ _ hci
     obtain ⟨rfl, rfl⟩ := klevel_length evl rus
     have hneq : us.length ≠ nl := binop_sub_ne_nat op hne
-    refine ⟨fun xb hxb => ?_, fun _ => by rw [hunf us, if_neg hneq]⟩
+    refine ⟨fun xb hxb => ?_, fun _ => by rw [hunf us, ite_eq_right hneq]⟩
     injection hxb with hpair; injection hpair with h0 _
     exact absurd (Value.field.inj h0) (by decide)
   | .Thm_n0 (hne146 := hnd) (he209 := hr) .. =>
@@ -308,7 +321,7 @@ private theorem is_zero_sub_nat {a b : Nat} (ha : a < 18446744069414584321)
   · subst hab; simp
   · have hne : (a : F) - (b : F) ≠ 0 := fun h0 => hab (natCast_inj_small ha hb (sub_eq_zero.mp h0))
     have hbf : (a == b) = false := beq_eq_false_iff_ne.mpr hab
-    rw [if_neg hne, hbf]; rfl
+    rw [ite_eq_right hne, hbf]; rfl
 
 private theorem is_zero_nat {a : Nat} (ha : a < 18446744069414584321)
     {r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -320,7 +333,7 @@ private theorem is_zero_nat {a : Nat} (ha : a < 18446744069414584321)
   · subst ha0; simp
   · have hne : (a : F) ≠ 0 := fun h0 => ha0 (natCast_inj_small ha (by decide) (by simpa using h0))
     have hbf : (a == 0) = false := beq_eq_false_iff_ne.mpr ha0
-    rw [if_neg hne, hbf]; rfl
+    rw [ite_eq_right hne, hbf]; rfl
 
 private theorem red_proj_gate_eval
     {cd : CtorData} {sd : IndData} {ba_c ba_s : Bytes.Address}
@@ -376,7 +389,7 @@ private theorem red_proj_gate_eval
     · subst hba; simp
     · have hne : ixAddr ba_c ≠ ixAddr ba_s := fun h => hba (ixAddr_inj h)
       have hbf : (ixAddr ba_c == ixAddr ba_s) = false := beq_eq_false_iff_ne.mpr hne
-      rw [if_neg hba, hbf]; rfl
+      rw [ite_eq_right hba, hbf]; rfl
   rw [hblk_eq] at hv_eq; subst hv_eq
   obtain ⟨hy_z1, rfl⟩ := is_zero_sub_nat (by omega) (by omega) op1 ev2; subst hy_z1
   obtain rfl := field_mul_bool op2
@@ -452,7 +465,7 @@ theorem red_proj_zeta_spec {V : ReconView}
     refine ⟨fun xf hxf => ?_, fun _ => ?_⟩
     · injection hxf with hp; injection hp with h0 _
       exact absurd (Value.field.inj h0) (by decide)
-    · unfold projStep; rw [hfn_eq, hA, hct_none]
+    · simp only [projStep, hfn_eq, hA, hct_none]
   | .Const_Ctor_other (m_ojfleyqm := m1) (cs_mtergxtu := cs1) (x_head := xhd) (x_args := xargs)
       (x_caddr := xca) (x_clvls := xcl) (m_tdzaboly := m2) (p_fvrbdqgt := pci1)
       (cs_tkdqmhev := cs2) (v_alxmatcq := vci2) (m_rzlfecwb := m3) (p_murouqmk := pci2)
@@ -469,7 +482,7 @@ theorem red_proj_zeta_spec {V : ReconView}
     refine ⟨fun xf hxf => ?_, fun _ => ?_⟩
     · injection hxf with hp; injection hp with h0 _
       exact absurd (Value.field.inj h0) (by decide)
-    · unfold projStep; rw [hfn_eq, hA, hcd, hA, hind_none]
+    · simp only [projStep, hfn_eq, hA, hcd, hA, hind_none]
   | .Const_Ctor_Induct_other (m_ojfleyqm := m1) (cs_mtergxtu := cs1) (x_head := xhd)
       (x_args := xargs) (x_caddr := xca) (x_clvls := xcl) (m_tdzaboly := m2) (p_fvrbdqgt := pci1)
       (cs_tkdqmhev := cs2) (x_cnl := xcnl) (x_cblock := xcblk) (x_cind := xcind)
@@ -499,12 +512,12 @@ theorem red_proj_zeta_spec {V : ReconView}
     have hargs3 := tmOExactList_mono ext_g12 hargs
     have hcl3 := rcl.mono ext_g12
     have hargs_lt : W0.getAppArgs.length < 2 ^ 39 :=
-      RomBound.bounded_length_lt bd (c := ⟨_, [xargs], _⟩) (by rw [hc]; simp) (by simp)
+      bounded_list_lt_of_call bd ev7 (by rw [hc]; simp)
         (tmOExactList_mono
           (ev1.heap_extends.trans (ev2.heap_extends.trans (ev3.heap_extends.trans
             (ev4.heap_extends.trans (ev5.heap_extends.trans ev6.heap_extends))))) hargs3)
     have hclvls_lt : cus.length < 2 ^ 39 :=
-      RomBound.bounded_length_lt bd (c := ⟨_, [xcl], _⟩) (by rw [hc]; simp) (by simp)
+      bounded_list_lt_of_call bd ev9 (by rw [hc]; simp)
         (hcl3.mono (ev1.heap_extends.trans (ev2.heap_extends.trans (ev3.heap_extends.trans
           (ev4.heap_extends.trans (ev5.heap_extends.trans (ev6.heap_extends.trans
             (ev7.heap_extends.trans ev8.heap_extends))))))))
@@ -550,12 +563,12 @@ theorem red_proj_zeta_spec {V : ReconView}
     have hargs3 := tmOExactList_mono ext_g12 hargs
     have hcl3 := rcl.mono ext_g12
     have hargs_lt : W0.getAppArgs.length < 2 ^ 39 :=
-      RomBound.bounded_length_lt bd (c := ⟨_, [xargs], _⟩) (by rw [hc]; simp) (by simp)
+      bounded_list_lt_of_call bd ev7 (by rw [hc]; simp)
         (tmOExactList_mono
           (ev1.heap_extends.trans (ev2.heap_extends.trans (ev3.heap_extends.trans
             (ev4.heap_extends.trans (ev5.heap_extends.trans ev6.heap_extends))))) hargs3)
     have hclvls_lt : cus.length < 2 ^ 39 :=
-      RomBound.bounded_length_lt bd (c := ⟨_, [xcl], _⟩) (by rw [hc]; simp) (by simp)
+      bounded_list_lt_of_call bd ev9 (by rw [hc]; simp)
         (hcl3.mono (ev1.heap_extends.trans (ev2.heap_extends.trans (ev3.heap_extends.trans
           (ev4.heap_extends.trans (ev5.heap_extends.trans (ev6.heap_extends.trans
             (ev7.heap_extends.trans ev8.heap_extends))))))))
@@ -579,7 +592,7 @@ theorem red_proj_zeta_spec {V : ReconView}
     refine ⟨fun xf hxf => ?_, fun _ => ?_⟩
     · injection hxf with hp; injection hp with h0 _
       exact absurd (Value.field.inj h0) (by decide)
-    · unfold projStep; rw [hfn_eq, hA, hcd, hA, hsd, hgt, if_pos rfl, hbm]
+    · simp only [projStep, hfn_eq, hA, hcd, hA, hsd, hgt, ↓reduceIte, hbm]
   | .Const_Ctor_Induct_n1_n0_other (m_ojfleyqm := m1) (cs_mtergxtu := cs1) (x_head := xhd)
       (x_args := xargs) (x_caddr := xca) (x_clvls := xcl) (m_tdzaboly := m2) (p_fvrbdqgt := pci1)
       (cs_tkdqmhev := cs2) (x_cnl := xcnl) (x_cblock := xcblk) (x_cind := xcind)
@@ -610,12 +623,12 @@ theorem red_proj_zeta_spec {V : ReconView}
     have hargs3 := tmOExactList_mono ext_g12 hargs
     have hcl3 := rcl.mono ext_g12
     have hargs_lt : W0.getAppArgs.length < 2 ^ 39 :=
-      RomBound.bounded_length_lt bd (c := ⟨_, [xargs], _⟩) (by rw [hc]; simp) (by simp)
+      bounded_list_lt_of_call bd ev7 (by rw [hc]; simp)
         (tmOExactList_mono
           (ev1.heap_extends.trans (ev2.heap_extends.trans (ev3.heap_extends.trans
             (ev4.heap_extends.trans (ev5.heap_extends.trans ev6.heap_extends))))) hargs3)
     have hclvls_lt : cus.length < 2 ^ 39 :=
-      RomBound.bounded_length_lt bd (c := ⟨_, [xcl], _⟩) (by rw [hc]; simp) (by simp)
+      bounded_list_lt_of_call bd ev9 (by rw [hc]; simp)
         (hcl3.mono (ev1.heap_extends.trans (ev2.heap_extends.trans (ev3.heap_extends.trans
           (ev4.heap_extends.trans (ev5.heap_extends.trans (ev6.heap_extends.trans
             (ev7.heap_extends.trans ev8.heap_extends))))))))
@@ -645,7 +658,7 @@ theorem red_proj_zeta_spec {V : ReconView}
     refine ⟨fun xf hxf => ?_, fun _ => ?_⟩
     · injection hxf with hp; injection hp with h0 _
       exact absurd (Value.field.inj h0) (by decide)
-    · unfold projStep; rw [hfn_eq, hA, hcd, hA, hsd, hgt, if_pos rfl, hbm, htf]; rfl
+    · simp only [projStep, hfn_eq, hA, hcd, hA, hsd, hgt, ↓reduceIte, hbm, htf]
   | .Const_Ctor_Induct_n1_n0_n1 (m_ojfleyqm := m1) (cs_mtergxtu := cs1) (x_head := xhd)
       (x_args := xargs) (x_caddr := xca) (x_clvls := xcl) (m_tdzaboly := m2) (p_fvrbdqgt := pci1)
       (cs_tkdqmhev := cs2) (x_cnl := xcnl) (x_cblock := xcblk) (x_cind := xcind)
@@ -677,12 +690,12 @@ theorem red_proj_zeta_spec {V : ReconView}
     have hargs3 := tmOExactList_mono ext_g12 hargs
     have hcl3 := rcl.mono ext_g12
     have hargs_lt : W0.getAppArgs.length < 2 ^ 39 :=
-      RomBound.bounded_length_lt bd (c := ⟨_, [xargs], _⟩) (by rw [hc]; simp) (by simp)
+      bounded_list_lt_of_call bd ev7 (by rw [hc]; simp)
         (tmOExactList_mono
           (ev1.heap_extends.trans (ev2.heap_extends.trans (ev3.heap_extends.trans
             (ev4.heap_extends.trans (ev5.heap_extends.trans ev6.heap_extends))))) hargs3)
     have hclvls_lt : cus.length < 2 ^ 39 :=
-      RomBound.bounded_length_lt bd (c := ⟨_, [xcl], _⟩) (by rw [hc]; simp) (by simp)
+      bounded_list_lt_of_call bd ev9 (by rw [hc]; simp)
         (hcl3.mono (ev1.heap_extends.trans (ev2.heap_extends.trans (ev3.heap_extends.trans
           (ev4.heap_extends.trans (ev5.heap_extends.trans (ev6.heap_extends.trans
             (ev7.heap_extends.trans ev8.heap_extends))))))))
@@ -720,8 +733,7 @@ theorem red_proj_zeta_spec {V : ReconView}
     obtain ⟨⟨y, hy, hyr⟩, rfl⟩ := kexpr_lookup evlk hargs_lk
     rw [fval_natCast (by omega)] at hy
     refine ⟨y, ?_, hyr⟩
-    unfold projStep
-    rw [hfn_eq, hA, hcd, hA, hsd, hgt, if_pos rfl, hbm, htt, if_pos rfl, hy]
+    simp only [projStep, hfn_eq, hA, hcd, hA, hsd, hgt, ↓reduceIte, hbm, htt, hy]
 
 /-! ## Fuel and head normalization -/
 
@@ -832,10 +844,10 @@ theorem recon_whnf_spine_spec {V : ReconView}
       exact ⟨hext, E', HnfTo.step (fun _ => rfl) hto, hr, hnl⟩
     | .Lam_Nil (ld_bolbylmd := ld) (ld_mgdxvnfg := lds) (he_qcfircfw := hr)
         (he_mnrwwkgr := hh) .. =>
-      subst hr hh
       obtain ⟨T, B, ℓ, rfl, -, -, -⟩ := rE.lam_of_load ld
       obtain rfl := IxVM.Refinement.Core.RepList.nil_of_load hS lds
       have hnl : NotLet h xe := ⟨_, ld, fun _ _ h => by injection h with _ hc; exact absurd hc (by decide)⟩
+      subst hr hh
       exact ⟨hext, _, HnfTo.done fun _ => rfl, ⟨kE, rE⟩, hnl⟩
     | .Const_n1_bind (x_addr := xaddr) (x_lvls := xlvls) (m_tdzaboly := m2) (cs_rziuyuaw := cs2)
         (v_iqukuotq := vci) (m_zxxyeiga := m1) (p_lnqccfus := pci) (cs_axpnhoxg := cs1)
@@ -932,7 +944,7 @@ theorem recon_whnf_spine_spec {V : ReconView}
           (rW.mono (extx.trans extc))⟩
       have hnlP : NotLet (mx ++ [.construct "KernelTypes::KExprNode" "Proj" [xs, .field i, vw]])
           (.ptr (.enum "KernelTypes::KExprNode") mx.length) :=
-        notLet_of_cell (by simp) (by decide)
+        notLet_of_cell (tag := "Proj") (by simp) (by decide)
       obtain ⟨-, hr, hnl⟩ := apply_spine_spec Sp eva hnode hnlP
         (tmOExactList_mono ((exta.trans extx).trans extc) hS)
       obtain ⟨n1, hn1⟩ := htoW

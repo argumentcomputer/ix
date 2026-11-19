@@ -239,7 +239,7 @@ theorem flat_find_matching_spec {κ : _root_.Address → KKey} (hinj : Function.
         by_cases h : ae = a
         · subst h; simp
         · have hne : ixAddr ae ≠ ixAddr a := fun heq => h (ixAddr_inj heq)
-          rw [if_neg h, beq_eq_false_iff_ne.mpr hne]; rfl
+          rw [ite_eq_right h, beq_eq_false_iff_ne.mpr hne]; rfl
       rw [haddr_eq] at hv1; subst hv1
       have hv2 : v2 = .field (if (!e.aux || (specPrefix e.params args liftBy && e.levels == us))
           then 1 else 0) := by
@@ -260,7 +260,7 @@ theorem flat_find_matching_spec {κ : _root_.Address → KKey} (hinj : Function.
           have hl_eq : (if e.levels = us then (1 : F) else 0) = if e.levels == us then 1 else 0 := by
             by_cases h : e.levels = us
             · subst h; simp
-            · rw [if_neg h, beq_eq_false_iff_ne.mpr h]; rfl
+            · rw [ite_eq_right h, beq_eq_false_iff_ne.mpr h]; rfl
           rw [hl_eq] at hy2
           subst hx1 hy2
           have hm := field_mul_bool_flat op_pl
@@ -292,7 +292,7 @@ theorem flat_find_matching_spec {κ : _root_.Address → KKey} (hinj : Function.
         by_cases h : ae = a
         · subst h; simp
         · have hne : ixAddr ae ≠ ixAddr a := fun heq => h (ixAddr_inj heq)
-          rw [if_neg h, beq_eq_false_iff_ne.mpr hne]; rfl
+          rw [ite_eq_right h, beq_eq_false_iff_ne.mpr hne]; rfl
       rw [haddr_eq] at hv1; subst hv1
       have hseg : v2 = .field (if (!e.aux || (specPrefix e.params args liftBy && e.levels == us))
           then 1 else 0) ∧ Heap.Extends h m2 := by
@@ -313,7 +313,7 @@ theorem flat_find_matching_spec {κ : _root_.Address → KKey} (hinj : Function.
           have hl_eq : (if e.levels = us then (1 : F) else 0) = if e.levels == us then 1 else 0 := by
             by_cases h : e.levels = us
             · subst h; simp
-            · rw [if_neg h, beq_eq_false_iff_ne.mpr h]; rfl
+            · rw [ite_eq_right h, beq_eq_false_iff_ne.mpr h]; rfl
           rw [hl_eq] at hy2
           subst hx1 hy2 hh_l
           have hm := field_mul_bool_flat op_pl
