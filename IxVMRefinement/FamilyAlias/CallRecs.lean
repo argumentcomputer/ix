@@ -2974,8 +2974,16 @@ structure RecMemberData (calls : List (Call F)) (bAddr : _root_.Address)
     LoadedReads.canonRules crb ps rc.k rc.params.toNat
       (((L1.mutsRootOffset rs.toList k : Nat) : F) + 1) rc.rules.toList rules₀ = some rlsCan ∧
     List.Forall₂ (fun (rl : RecRule .anon) (rhsA : KExpr) => rl.rhs = rhsA) rlsCan rhss
-  -- Scoping (`typesScoped`)
+  -- Scoping (`typesScoped`) and `check_recs` header counts
   hment : ∀ b ∈ recAs, tyA.mentionsConst (Core.keyOf t (ixAddr b)) = false
+  hnp_eq_ind0 : ∀ ind₀, ms[0]? = some (.indc ind₀) → rc.params.toNat = ind₀.params.toNat
+  hmot_eq_rs : rc.motives.toNat = rs.size
+  hni_eq_indM : rc.indices.toNat = indM.indices.toNat
+  hconcl : ∃ bs concl,
+    (Core.posOf ps tyA).stripPis
+      (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat + 1) =
+      some (bs, concl) ∧
+    ∀ d b m, concl ≠ .forallE d b m
   -- Major-premise head & rules' constructors (for `MajorRefs` and `FamRecCompanion`)
   hhead : ∃ D lvls pins,
     Core.piDomAt (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat) tyA = some D ∧
@@ -3402,6 +3410,9 @@ theorem recMember_of_cons
     (hk_u64 : k < UInt64.size) (hrk : rs[k]? = some (.recr rc))
     (hk_eq : kV = .field (k : F)) (hbnl_eq : bnl = .field (ind0.lvls.toNat : F))
     (huo : uo = .field 0 ∨ uo = .field 1)
+    (hnp_ind0 : ∀ ind₀, ms[0]? = some (.indc ind₀) →
+      ind₀.params.toNat < 72057594037927936 ∧ np = .field (ind₀.params.toNat : F))
+    (hn_rs : rs.size < 72057594037927936 ∧ n = .field (rs.size : F))
     (haRec_eq : ixAddr aRec = rprjAddr rb k)
     (hg_eq : aliasMap (((typeAs ++ ctorAs ++ recAs).map fun b => Core.keyOf t (ixAddr b)).zip
       (dstAs.map fun b => Core.keyOf t (ixAddr b))) (Core.keyOf t (rprjAddr rb k)) =
@@ -3663,6 +3674,57 @@ theorem recMember_of_cons
     obtain ⟨tyA, hcanon_ty, hann_ty, htm_tyA⟩ :=
       annotation_canon_gen_exact ht hperm (by rw [hps_len]; exact hlvls_lt)
         hself_nil hagree rty built hpT hlT hread₀ hty₀_lbb hty₀_def
+    have hnp_eq_ind0 : ∀ ind₀, ms[0]? = some (.indc ind₀) →
+        rc.params.toNat = ind₀.params.toNat := by
+      intro ind₀ h0
+      obtain ⟨hlt, hval⟩ := hnp_ind0 ind₀ h0
+      exact nat_eq_of_field_eq_u56_r hnp_lt hlt (Value.field.inj (hnp_eq.symm.trans hval))
+    have hmot_eq_rs : rc.motives.toNat = rs.size :=
+      nat_eq_of_field_eq_u56_r hnmot_lt hn_rs.1 (Value.field.inj (hn_eq.symm.trans hn_rs.2))
+    have hconcl : ∃ bs concl,
+        (Core.posOf ps tyA).stripPis (mI + 1) = some (bs, concl) ∧
+        ∀ d b m, concl ≠ .forallE d b m := by
+      have hop1 : evalBinOp .add (.field (rc.params.toNat : F)) (.field (rc.motives.toNat : F)) =
+          .ok C.xMotiveNpN := by rw [← hnp_eq, ← hn_eq]; exact C.opMotiveNpN
+      have hx1 := SubstAux.add_ok hop1
+      have hop2 : evalBinOp .add (.field ((rc.params.toNat : F) + (rc.motives.toNat : F)))
+          (.field (rc.minors.toNat : F)) = .ok C.xMotiveRp := by
+        rw [← hx1, ← hnmin_eq]; exact C.opMotiveRp
+      have hx2 := SubstAux.add_ok hop2
+      have hop3 : evalBinOp .add (.field ((rc.params.toNat : F) + (rc.motives.toNat : F) +
+          (rc.minors.toNat : F))) (.field (rc.indices.toNat : F)) = .ok C.xMotiveMi := by
+        rw [← hx2, ← hni_eq]; exact C.opMotiveMi
+      have hx3 := SubstAux.add_ok hop3
+      have hop4 : evalBinOp .add (.field ((rc.params.toNat : F) + (rc.motives.toNat : F) +
+          (rc.minors.toNat : F) + (rc.indices.toNat : F))) (.field 1) = .ok C.vMotiveDepth := by
+        rw [← hx3]; exact C.opMotiveDepth
+      have hvDepth : C.vMotiveDepth = .field ((mI + 1 : Nat) : F) := by
+        rw [SubstAux.add_ok hop4]; simp only [mI, rP, Nat.cast_add, Nat.cast_one]
+      have evMot' : ObsFn Obs.W "KernelModeled::check_rec_motive"
+          [C.ty, .field ((mI + 1 : Nat) : F), C.vMotivePos] C.m335 C.vMotive C.m391
+          C.evMotive.cs := by
+        rw [← hvDepth]; exact C.evMotive.obs
+      match Obs.«KernelModeled::check_rec_motive».obs evMot' with
+      | .run (ev14 := evP) (ev44 := evSp) (ld78 := ldHead) .. =>
+        have hmi1_v : ZMod.val ((mI + 1 : Nat) : F) = mI + 1 :=
+          SubstAux.val_natCast (by omega)
+        obtain ⟨bs, rem, hstrip, hrem, rfl⟩ :=
+          Decl.peel_n_foralls_exact (mI + 1) hmi1_v evP ((htm_tyA 0 zeroGhost).mono C.ext335)
+        obtain ⟨_, _, H, As, htup, hH, -, hrem_eq⟩ := Decl.collect_spine_exact evSp hrem
+        injection htup with hl; injection hl with h1 _; subst h1
+        have hH_ne : ∀ d b m, H ≠ .forallE d b m := by
+          cases hH with
+          | bvarLocal _ _ _ | bvarFree _ _ _ _ => intro d b m h; cases h
+          | sort cell _ | const cell _ _ | app cell _ _ | lam cell _ _ _ | forallE cell _ _ _
+          | letE cell _ _ _ | litNat cell _ _ | litStr cell _ _ | proj cell _ _ =>
+            exact (load_cell_ne cell ldHead (by decide)).elim
+        have hmkAppN_ne : ∀ (args : List KExpr) (f : KExpr),
+            (∀ d b m, f ≠ .forallE d b m) → ∀ d b m, Expr.mkAppN f args ≠ .forallE d b m := by
+          intro args
+          induction args with
+          | nil => intro f hf; exact hf
+          | cons a rest ih => intro f _; exact ih (.app f a) (fun _ _ _ h => by cases h)
+        exact ⟨bs, rem, hstrip, hrem_eq ▸ hmkAppN_ne As H hH_ne⟩
     -- Bridge to `evRecsVal`'s `MemberValItem` via `CallMembers.recMemberVal_of_item`!
     obtain ⟨_, htyA_def, _, htyA_fv, hment, hmemStep⟩ :=
       recMemberVal_of_item ht hbd hS hR hlenSD hk_u64 hrk haRec_eq hg_eq hvalItem
@@ -3707,8 +3769,9 @@ theorem recMember_of_cons
     subst h1 h2 h3
     have haInd2_eq : aInd2 = aIndM := addr_det haInd2 haIndM_rmp
     subst aInd2
-    -- Match `ZMod.val inpF = indM.params.toNat` from `evRmp'`'s `get_ci [x_iaddr]` and `Lists::length`
-    have hinp_eq : ZMod.val inpF = indM.params.toNat := by
+    -- Match `ZMod.val inpF = indM.params.toNat` and `rc.indices.toNat = indM.indices.toNat`
+    -- from `evRmp'`'s `get_ci [x_iaddr]` and `Lists::length`
+    have hinp_ni_eq : ZMod.val inpF = indM.params.toNat ∧ rc.indices.toNat = indM.indices.toNat := by
       match Obs.«KernelModeled::rec_major_pins».obs evRmp' with
       | .run (x_iaddr := xi) (m77 := m77) (m141 := m141) (p149 := p149) (cs155 := cs155)
           (x_args := x_args) (x_inp := xinp) (v257 := v257) (v258 := v258)
@@ -3764,7 +3827,10 @@ theorem recMember_of_cons
         have hvI_ld := Except.ok.inj (ldI.symm.trans hldI)
         rw [hvI_eq] at hvI_ld
         injection hvI_ld with _ _ haI
-        injection haI with _ haI; injection haI with _ haI; injection haI with hxinp_eq _
+        injection haI with _ haI; injection haI with _ haI; injection haI with hxinp_eq haI
+        injection haI with hxini_eq _
+        have hni_eq_indM : rc.indices.toNat = indM.indices.toNat :=
+          nat_eq_of_field_eq_u56_r hni_lt hindM_ni_lt (Value.field.inj (heqIni.symm.trans hxini_eq))
         -- `eL` gives `v257 = .field (AsPos.length : F)`
         have eL' : ObsFn Obs.W (Instance.mk "Lists::length" [(.ptr (.named "KernelTypes::KExprNode" []))]).symbol
             [x_args] m141 v257 m260 cs268 := by
@@ -3781,8 +3847,11 @@ theorem recMember_of_cons
         have hfeq : inpF + (rc.indices.toNat : F) = (indM.params.toNat : F) + (rc.indices.toNat : F) :=
           hAsPos_f.symm.trans (Value.field.inj heqL)
         have hinp_f : inpF = (indM.params.toNat : F) := add_right_cancel hfeq
+        refine ⟨?_, hni_eq_indM⟩
         rw [hinp_f]
         exact SubstAux.val_natCast (by omega)
+    have hinp_eq : ZMod.val inpF = indM.params.toNat := hinp_ni_eq.1
+    have hni_eq_indM : rc.indices.toNat = indM.indices.toNat := hinp_ni_eq.2
     -- 7. Transfer `majorShape` from `Core.posOf ps tyA` to `tyA`, and establish `hlvls_def`, `hpins_ok`,
     --    `husedIndM`, `hpins_used`, `hty_used`.
     have hstripA_ex : ∃ bsA domA bodyA mA, tyA.stripPis mI = some (bsA, .forallE domA bodyA mA) ∧
@@ -4014,7 +4083,7 @@ theorem recMember_of_cons
       hty_def := hty₀_def
       hrules_sc, hcanon_ty
       hcanon_rules := ⟨rlsCan, hcanon_rules, hf2_rules⟩
-      hment
+      hment, hnp_eq_ind0, hmot_eq_rs, hni_eq_indM, hconcl
       hhead := ⟨domA, lvlsA, pinsA, piDomAt_eq_of_stripPis mI hstripA, hfnA, hmajA⟩
       hrules_len, hrules_ctor
       hrules_recCprj := fun j hj => by
@@ -4057,7 +4126,10 @@ theorem checkRecs_walk
     (hrs_u64 : rs.size < UInt64.size)
     {rcV tys src dst aset n np uo bnl fam : SourceValue F}
     (hbnl_eq : bnl = .field (ind0.lvls.toNat : F))
-    (huo : uo = .field 0 ∨ uo = .field 1) :
+    (huo : uo = .field 0 ∨ uo = .field 1)
+    (hnp_ind0 : ∀ ind₀, ms[0]? = some (.indc ind₀) →
+      ind₀.params.toNat < 72057594037927936 ∧ np = .field (ind₀.params.toNat : F))
+    (hn_rs : rs.size < 72057594037927936 ∧ n = .field (rs.size : F)) :
     ∀ (k0 : Nat) (remRecs remMods : List Bytes.Address)
       {recsPtr modsPtr s form r : SourceValue F} {bytes : List UInt8}
       {h h' : Heap F} {cs : List (Call F)},
@@ -4135,7 +4207,7 @@ theorem checkRecs_walk
           obtain ⟨⟨D0⟩, remBytes, hstr_mid⟩ :=
             recMember_of_cons ht hbd hS hH hB hR htypes hctors hrecs hlenSD hlenNR hctorLookup
               hrecRefs htypeAs_cons ha0_eq hms0 hind0_lvls_lt hsub C (Nat.lt_trans hk0_lt hrs_u64)
-              hrk rfl hbnl_eq huo ha0 hg0 (hsubDst aMd List.mem_cons_self) hrc htys
+              hrk rfl hbnl_eq huo hnp_ind0 hn_rs ha0 hg0 (hsubDst aMd List.mem_cons_self) hrc htys
               haRec_rep haMd_rep hsrc hdst haset hstr item0
           -- Advance to `C.evNext` at `k0 + 1`
           have hk1_eq : C.k' = .field ((k0 + 1 : Nat) : F) := by

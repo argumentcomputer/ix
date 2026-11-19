@@ -71,7 +71,8 @@ theorem operationRoleUnitW_of_validation
       exact Option.isSome_iff_exists.mpr ⟨ci, find_of_ext hext hnd hci⟩
     · exact Option.isSome_iff_exists.mpr ⟨_, by rw [hkeya]; exact hself⟩
   · refine storedFamilies_roleUnit hadds hb.shape.usedClosed hadm.usedClosed hform
-      (fun x hx => ?_) (fun x hx => ?_) (fun rb crb hi => familyInstalled_mono hext hnd hi) hsf
+      (fun x hx => ?_) (fun x hx => ?_) (fun rb crb hi => familyInstalled_mono hext hnd hi)
+      (fun hk => find_of_ext hext hnd hk) hsf
     · obtain ⟨ci, hci, hn⟩ := hx
       exact ⟨ci, hext ci hci, hn⟩
     · obtain ⟨ci, hci, hn⟩ := hx

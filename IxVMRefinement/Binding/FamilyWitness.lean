@@ -103,6 +103,11 @@ structure StoredFamilies (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (env : Ix.Kern
   the flattened family derived from the block, and each of its recursors is the block's
   reconstruction at its position (`FamilyRecon.RFormS`). -/
   form : StoredFamiliesRForm FamilyRecon.RFormS t R famOf
+  /-- Each recursor member of a selected family record is stored with its canonical loaded form
+  (`TwinFamily.TwinMemberLoaded`), mentions no recursor key of the record, and carries the four
+  header-count facts of `KernelModeled::check_recs`. -/
+  recs : ∀ B rb cb crb, famOf B = some rb → recordOf R B = some cb → recordOf R rb = some crb →
+    StoredFamilyRecs t R env B cb rb crb
 
 /-! ## The flattened families across stores -/
 

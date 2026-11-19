@@ -67,6 +67,9 @@ structure ClosureFoldInv (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
   ops : ∀ n ∈ RoleOps.opNames, s.find? n = env₀.find? n
   famInst : ∀ B rb crb, (famOf₀ B = some rb ∨ famOf B = some rb) → recordOf R₁ rb = some crb →
     (∀ x, ConstAddrOf rb crb x → StoredAt t s x) → FamilyInstalled t s rb crb
+  famRecs : ∀ B rb cb crb, (famOf₀ B = some rb ∨ famOf B = some rb) →
+    recordOf R₁ B = some cb → recordOf R₁ rb = some crb →
+    (∀ x, ConstAddrOf rb crb x → StoredAt t s x) → StoredFamilyRecs t R₁ s B cb rb crb
 
 /-- **The closure as a system of units** (module docstring). -/
 def closureFold (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (t : Ix.Kernel.RoleTable)

@@ -185,6 +185,8 @@ theorem storedFamilies_grow {t : Ix.Kernel.RoleTable} {R₁ R' : Ixon.Env}
         ∀ x, ConstAddrOf B cb x → StoredAt t env₁ x)
     (hst : ∀ x, StoredAt t env₁ x → StoredAt t env' x)
     (hinst : ∀ rb crb, FamilyInstalled t env₁ rb crb → FamilyInstalled t env' rb crb)
+    (hfind : ∀ {k : Ix.Kernel.Key .anon} {ci : Ix.Kernel.ConstantInfo .anon},
+      env₁.find? k = some ci → env'.find? k = some ci)
     (h : StoredFamilies t R₁ env₁ famOf) : StoredFamilies t R' env' famOf where
   selected := fun B cb hB hroute hstored => by
     obtain ⟨hB₁, hroute₁, hst₁⟩ := hblocks B cb hB hroute hstored
@@ -208,6 +210,12 @@ theorem storedFamilies_grow {t : Ix.Kernel.RoleTable} {R₁ R' : Ixon.Env}
     exact ⟨fun x hx => hst x (hs x hx), hinst rb crb hi⟩
   flat := storedFamiliesFlat_grow hle hblob hclosed h.flat
   form := storedFamiliesForm_grow hle hblob h.form
+  recs := fun B rb cb crb hrb hcb hcrb => by
+    obtain ⟨cb₁, ms, crb₁, rs, flat, hF⟩ := h.family B rb hrb
+    have e1 : cb₁ = cb := rec_eq (hle _ _ hF.block.record) hcb
+    have e2 : crb₁ = crb := rec_eq (hle _ _ hF.record.record) hcrb
+    subst e1 e2
+    exact (h.recs B rb cb₁ crb₁ hrb hF.block.record hF.record.record).mono hle hblob hfind
 
 /-- **The stored families depend on the store only through its records and blobs**, at a store
 closed under what its records use. -/
@@ -222,7 +230,7 @@ theorem storedFamilies_storeCongr {t : Ix.Kernel.RoleTable} {R R' : Ixon.Env}
       rw [← recordOf_storeCongr hc] at hB
       rw [blockRoute_storeCongr hc] at hroute
       exact ⟨hB, hroute, hst⟩)
-    (fun _ h => h) (fun _ _ h => h) h
+    (fun _ h => h) (fun _ _ h => h) (fun h => h) h
 
 /-- **The walked records of a group with no role unit are stored once its kept roles are**: the
 walked roles of the group are kept roles. -/

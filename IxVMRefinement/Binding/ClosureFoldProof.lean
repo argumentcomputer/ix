@@ -441,7 +441,7 @@ theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       obtain ⟨cb, crb, _ms, _rs, hcb, hcrb, -⟩ := fam_new hC hfa
       exact ⟨Option.isSome_iff_exists.mpr ⟨cb, hcb⟩, Option.isSome_iff_exists.mpr ⟨crb, hcrb⟩⟩
     refine ⟨fun B cb hcb hroute hst => ?_, fun B rb h => ?_, fun B rb cb h hcb x hx => ?_,
-      fun B rb crb h hcrb => ?_, ?_, ?_⟩
+      fun B rb crb h hcrb => ?_, ?_, ?_, ?_⟩
     · cases hRB : recordOf R B with
       | none =>
         obtain ⟨rb, hrb⟩ :=
@@ -524,6 +524,28 @@ theorem closureFoldStatement (L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
         (storedFamiliesForm_grow (fun y c hy => recordOf_closureStore_of_R hadm hy) hspec.le₁.2
           hSF.form)
         (fun B rb h => (joinFam_cases h).imp id And.right)
+    · intro B rb cb crb h hcb hcrb
+      have hst : ∀ x, ConstAddrOf rb crb x → StoredAt t env₁ x := by
+        intro x hx
+        rcases joinFam_cases h with hfa | ⟨-, h₀⟩
+        · obtain ⟨cb', crb', ms, rs, hcb', hcrb', -, -, hnB, -, -⟩ := fam_new hC hfa
+          have e : crb' = crb := rec_eq hcrb' hcrb
+          rw [e] at hcrb'
+          obtain ⟨ci, hci, hname, -⟩ := hdone B
+            ⟨hnB, fam_unclaimed hC hfa, x, cb', hcb', Or.inr ⟨rb, crb, hfa, hcrb', hx⟩⟩
+            x ⟨cb', hcb', Or.inr ⟨rb, crb, hfa, hcrb', hx⟩⟩
+          exact ⟨ci, hci, hname⟩
+        · obtain ⟨cbR, ms, crbR, rs, flat, hF⟩ := hSF.family B rb h₀
+          have e : crbR = crb :=
+            rec_eq (recordOf_closureStore_of_R hadm hF.record.record) hcrb
+          have hRrb := hF.record.record
+          rw [e] at hRrb
+          obtain ⟨ci, hci, hname⟩ := (hSF.installed B rb crb h₀ hRrb).1 x hx
+          exact ⟨ci, hext ci hci, hname⟩
+      refine hI.famRecs B rb cb crb ?_ hcb hcrb hst
+      rcases joinFam_cases h with hfa | ⟨-, h₀⟩
+      · exact Or.inr hfa
+      · exact Or.inl h₀
   case walked =>
     refine ⟨fun x c n hc hnb hlog hlogB hchk => ?_, fun r x hw hgr ha =>
       hsomeFind _ (hW.2 r x hw hgr ha)⟩
