@@ -2290,7 +2290,6 @@ theorem build_minor_at_depth_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Rol
     · simp only [minorAt, hpf, hwfcf]
       rw [show ihDoms rm (liftIndices pfNorm (nMot + prevMinors)) fop motiveBase pfDoms.length
           (nrp + nMot + prevMinors) elim 0 ri = some ihs from hihs]
-      rfl
     · refine addrIn_wrapForalls (addrIn_liftIndices hpfdIn)
         (addrIn_wrapForalls hihsIn ⟨addrIn_appSpine trivial hretIdxIn,
           addrIn_fieldBVars (addrIn_ctorAppParams (fun x hx => by
