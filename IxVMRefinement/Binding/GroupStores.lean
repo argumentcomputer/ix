@@ -51,16 +51,16 @@ open IxVM (F)
 open IxVM.Refinement.StoreInhabit (basisStore)
 
 set_option maxRecDepth 100000 in
-private theorem basis_group_walked (r : Ix.Kernel.Role) :
-    Ix.SpecDigest.groupOf r < 6 → walkedRole r = true → r ∈ TableInhabit.basisRoleOrder := by
+private theorem basis_group_all (r : Ix.Kernel.Role) :
+    Ix.SpecDigest.groupOf r < 6 → r ∈ TableInhabit.basisRoleOrder := by
   cases r <;> decide +kernel
 
-/-- **At a table that pins the prelude, the bound record of a walked role of a group below 6 is
-a basis row.** -/
+/-- **At a table that pins the prelude, the bound record of every role of a group below 6 is a
+basis row.** -/
 theorem basisRolesStored_of_pinned {t : Ix.Kernel.RoleTable} (hpre : PreludePinned t) :
     BasisRolesStored t := by
-  intro r hlt hw a had
-  have hr : r ∈ TableInhabit.basisRoleOrder := basis_group_walked r hlt hw
+  intro r hlt a had
+  have hr : r ∈ TableInhabit.basisRoleOrder := basis_group_all r hlt
   have hrows := List.all_eq_true.mp basisRoles_rows r hr
   simp only [← addressOf_basis hpre hr, had] at hrows
   have hrec : (recordOf basisStore a).isSome = true := StoreInhabit.isSome_of_hasKey hrows
@@ -209,7 +209,7 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
       { blobs := groupStore_reads_blobs (Nat.lt_succ_of_le hg6)
         reads := groupStore_reads hcheck hC hb hbr hax hP hws hg6 }
   · exact ⟨_, _, _, families_of_remaining (rk := fun g => Classical.choose (hrk g)) hC hb hax hRF
-      hcheck hroots hpin hg6 hg (hvalAll g) (Classical.choose_spec (hws g))
+      hcheck hroots hpin hg6 hg hvalAll (Classical.choose_spec (hws g))
       (Classical.choose_spec (hrk g) hg6 hg) (payloadOpEarlier_all hRS.payloadOps g hg6)
       (groupStore_usedClosed_all hC hb hbr hax hP hws g hg6)
       (groupStore_usedClosed_all hC hb hbr hax hP hws (g + 1) (Nat.le_succ_of_le hg6))
