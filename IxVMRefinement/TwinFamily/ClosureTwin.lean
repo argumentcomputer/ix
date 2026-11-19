@@ -480,8 +480,8 @@ theorem closureTwinSteps_of_premises
       rw [e]; exact hFOB_R.block.logic
     -- Flattened family & recon for `A` over `ρ.E₀`
     obtain ⟨cb_A, ms_A, es_A, off_A, hFOB_A, hRF_A, hBD_A, hlvls_A⟩ :=
-      hFlat calls bAddr t ρ.E₀ B A c rs' (some (Binding.valLimit g)) cs_A ht hRS hH hA hszA
-        hlogicB hcall_A
+      hFlat calls bAddr t ρ.E₀ B A c rs' (some (Binding.valLimit g)) cs_A ht hrun.bounded hRS hH
+        hA hszA hlogicB hcall_A
     have ecb_A : cb_A = cb₀ := Option.some.inj (hFOB_A.block.record.symm.trans hcb₀)
     subst cb_A
     have ems_A : ms_A = ms₀ := Ixon.ConstantInfo.muts.inj (hFOB_A.block.muts.symm.trans hms₀)
@@ -506,7 +506,7 @@ theorem closureTwinSteps_of_premises
     subst ind₀'
     -- Unpack `fuel` on `ρ.E₀` for `rb` (`RFormS`) and `A` (`RFormS ∨ RecordFullConsObs`)
     have hrec_A := hRecon calls bAddr t ρ.E₀ B A cb₀ c ms₀ rs' (some (Binding.valLimit g)) cs_A
-      ht hRS hH hFOB_A.block hA hszA hcall_A
+      ht hrun.bounded hRS hH hFOB_A.block hA hszA hcall_A
     have hMR_pair : ∃ fuel : Nat,
         (∀ k rc, rs[k]? = some (.recr rc) →
           MemberRecon Core.ExprLvEq t ρ.E₀ rb crb rs es off fuel k rc) ∧
@@ -669,7 +669,7 @@ theorem closureTwinSteps_of_premises
       rw [List.length_map] at hlt0
       omega
     obtain ⟨cb_rb2, ms_rb2, es_rb2, off_rb2, hFOB_rb2, _, hBD_rb2, hlvls_rb2⟩ :=
-      hFlat calls bAddr t ρ.E₀ B rb crb rs (some (Binding.valLimit g)) cs_rb ht hRS hH
+      hFlat calls bAddr t ρ.E₀ B rb crb rs (some (Binding.valLimit g)) cs_rb ht hrun.bounded hRS hH
         hFOB_rb.record hsz_rb hlogicB hcall_rb
     have ecb_rb2 : cb_rb2 = cb₀ := Option.some.inj (hFOB_rb2.block.record.symm.trans hcb₀)
     subst cb_rb2
@@ -680,8 +680,8 @@ theorem closureTwinSteps_of_premises
       (fun _ _ _ h1 h2 => Option.some.inj (h1.symm.trans h2)) hBD_rb2 hBD_rb
     subst off_rb2 es_rb2
     obtain ⟨cb_A, ms_A, es_A, off_A, hFOB_A, hRF_A, hBD_A, hlvls_A⟩ :=
-      hFlat calls bAddr t ρ.E₀ B A c rs' (some (Binding.valLimit g)) cs_A ht hRS hH hA hszA
-        hlogicB hcall_A
+      hFlat calls bAddr t ρ.E₀ B A c rs' (some (Binding.valLimit g)) cs_A ht hrun.bounded hRS hH
+        hA hszA hlogicB hcall_A
     have ecb_A : cb_A = cb₀ := Option.some.inj (hFOB_A.block.record.symm.trans hcb₀)
     subst cb_A
     have ems_A : ms_A = ms₀ := Ixon.ConstantInfo.muts.inj (hFOB_A.block.muts.symm.trans hms₀)
@@ -708,7 +708,7 @@ theorem closureTwinSteps_of_premises
     subst ind₀_A
     -- Unpack `fuel` on `ρ.E₀` for `rb` (`RFormS`) and `A` (`RFormS ∨ RecordFullConsObs`)
     have hrec_A := hRecon calls bAddr t ρ.E₀ B A cb₀ c ms₀ rs' (some (Binding.valLimit g)) cs_A
-      ht hRS hH hFOB_A.block hA hszA hcall_A
+      ht hrun.bounded hRS hH hFOB_A.block hA hszA hcall_A
     have hMR_pair : ∃ fuel : Nat,
         (∀ k rc, rs[k]? = some (.recr rc) →
           MemberRecon Core.ExprLvEq t ρ.E₀ rb crb rs es off fuel k rc) ∧
