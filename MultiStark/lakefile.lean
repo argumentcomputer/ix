@@ -18,6 +18,10 @@ lean_exe «stark-export» where
   root := `MultiStark.Main
   supportInterpreter := true
 
+lean_exe «aiurexec-export» where
+  root := `MultiStark.AiurExecMain
+  supportInterpreter := true
+
 lean_exe kzg_xof_fixture where
   root := `Examples.KzgXof
 lean_exe kzg_source_fixture where
