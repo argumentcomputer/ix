@@ -1043,13 +1043,10 @@ private theorem peer_agree_walk_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       obtain rfl := binop_add_one_nat op1
       have hv0 : vdiff = .field 0 := by
         obtain ⟨hz, -⟩ := Lib.is_zero_spec evz
-        cases vdiff with
-        | field fv =>
-          by_cases hfv : fv = 0
-          · subst hfv; rfl
-          · rw [ite_eq_right hfv] at hz
-            exact absurd (Value.field.inj hz) (by decide)
-        | ptr _ _ | tuple _ | construct _ _ _ => simp [Lib.is_zero_spec] at hz
+        by_cases hfv : vdiff = .field 0
+        · exact hfv
+        · rw [ite_eq_right hfv] at hz
+          exact absurd (Value.field.inj hz) (by decide)
       subst hv0
       have hpos_eq : pos = selfIdx := binop_sub_eq_zero_nat (by omega) (by omega) opsub
       have htail := ih (pos + 1) (by simp only [List.length_cons] at hlen; omega) hidx'
@@ -1225,18 +1222,14 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
           (hc288 := hc_sh) .. =>
         have ext_s0 : Heap.Extends m7 ms0 := by rw [hms0]; exact Heap.Extends.snoc _ _
         have ext7_s3 := ext_s0.trans (evr.heap_extends.trans (evf.heap_extends.trans evt.heap_extends))
-        have evct' : ObsFn W "KernelCheck::check_inductive_shape_ctors"
-            [rc, tyPtr, .field (ind.params.toNat : F), .field (ind.indices.toNat : F),
-              .field (ind.ctors.size : F), .field (ind.lvls.toNat : F), blkPtr,
-              .field (k : F), _, L1.repBoolField false, .field ((0 : Nat) : F)]
-            ms3 _ m8 _ := by simpa using evct
         have hres := check_inductive_shape_ctors_levelsOk hS hbd
           (by rwa [hba_b_eq]) hms hk hk56 hnc56 hnl32 hnp56
           ind.ctors.size 0 (by omega)
           (fun cl hcl => by
-            have h1 := mem_of_eq hc_sh (by call_mem)
+            have h1 : cl ∈ cs_sh := mem_of_eq hc_sh (by call_mem)
             exact hsub_chk cl (mem_of_eq hc (by call_mem)))
-          (Bytes.repAddressRef_heapMono₂ addrTy (ext07.trans ext7_s3) rba_b) evct'
+          (Bytes.repAddressRef_heapMono₂ addrTy (ext07.trans ext7_s3) rba_b)
+          (by simpa using evct)
         intro j ct hj
         simpa [hba_b_eq] using hres j ct (Nat.zero_le j) hj
     have hpeers_ok : ∀ (i₂ : Nat) (ind₂ : Ixon.Inductive),
@@ -1262,14 +1255,14 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
         injection hl2 with h7' _; subst h7'
         have sub_lvc : ∀ cl ∈ cs_lvc, cl ∈ calls :=
           fun cl hcl => by
-            have h1 := mem_of_eq hc_pa (by call_mem)
+            have h1 : cl ∈ cs_pa := mem_of_eq hc_pa (by call_mem)
             exact hsub_chk cl (mem_of_eq hc (by call_mem))
         obtain ⟨-, bytes', c'', -, hh', ha', hde', -, -, -, -, -, -, cRep⟩ :=
           L1.load_verified_constant_decode_bounded
             (Bytes.repAddressRef_heapMono₂ addrTy (ext08.trans evaeq.heap_extends) rba_b) evlvc
-        have hc'' : c'' = cb := record_eq_of_hashed_l hS sub_lvc (by rwa [hba_b_eq]) hh' ha' hde'
+        have hc'' : c'' = cb := record_eq_of_hashed_l hS sub_lvc (by rw [hba_b_eq]; exact hcb) hh' ha' hde'
         subst hc''
-        obtain ⟨infoVal, -, -, -, -, hceq, hinfoRep, -, -, -, -⟩ := cRep
+        obtain ⟨infoVal, _, _, _, _, hceq, hinfoRep, -, -, -, -⟩ := cRep
         injection hceq with _ _ hcl; injection hcl with hinfo_eq _
         rw [hms] at hinfoRep
         obtain ⟨mp, hmp, -⟩ := hinfoRep
@@ -1284,11 +1277,11 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
         subst h2' h3' h4' h7' h8'
         have sub_lvc : ∀ cl ∈ cs_lvc, cl ∈ calls :=
           fun cl hcl => by
-            have h1 := mem_of_eq hc_pa (by call_mem)
+            have h1 : cl ∈ cs_pa := mem_of_eq hc_pa (by call_mem)
             exact hsub_chk cl (mem_of_eq hc (by call_mem))
         obtain ⟨cb'', ms'', hbl, hrepM⟩ := Claim.load_block_head
           (Bytes.repAddressRef_heapMono₂ addrTy (ext08.trans evaeq.heap_extends) rba_b) evlvc
-        have hrec_eq := (hbl.mono sub_lvc).record hS (by rwa [hba_b_eq])
+        have hrec_eq := (hbl.mono sub_lvc).record hS (by rw [hba_b_eq]; exact hcb)
         obtain ⟨rfl, hres_lt⟩ := hrec_eq
         obtain ⟨-, -, -, -, -, hbl_muts⟩ := hbl
         have hms_eq2 : ms'' = ms := Ixon.ConstantInfo.muts.inj (hbl_muts.symm.trans hms)
@@ -1298,11 +1291,11 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
         have evw' : ObsFn W "KernelCheck::peer_agree_walk"
             [rc, xmems, tyPtr, .field (ind.params.toNat : F), .field (ind.indices.toNat : F),
               .field (k : F), .field ((0 : Nat) : F), blkPtr] mp2 _ _ cs_w := by simpa using evw
-        have hwalk := peer_agree_walk_spec hS hbd (by rwa [hba_b_eq]) hms hk56 hnp56
+        have hwalk := peer_agree_walk_spec hS hbd (by rw [hba_b_eq]; exact hcb) hms hk56 hnp56
           (fun ind' h' => by rw [hk] at h'; injection h' with hm; injection hm with hi; subst hi; rfl)
           hms_lt56 ms.toList 0 (by simp) (fun i m hi => by simpa [Array.getElem?_toList] using hi)
           (fun cl hcl => by
-            have h1 := mem_of_eq hc_pa (by call_mem)
+            have h1 : cl ∈ cs_pa := mem_of_eq hc_pa (by call_mem)
             exact hsub_chk cl (mem_of_eq hc (by call_mem))) hrepM
           (Bytes.repAddressRef_heapMono₂ addrTy
             (ext08.trans (evaeq.heap_extends.trans evlvc.heap_extends)) rba_b) evw'
@@ -1840,9 +1833,9 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
               (hc315 := hc_ru) .. =>
             have ext_go : Heap.Extends m1 _ :=
               ext1_21.trans (evrmp.heap_extends.trans (evgci.heap_extends.trans evrlen.heap_extends))
-            have hgo := check_rules_go_levelsOk hbd hnl32 rc.rules.toList 0
+            have hgo := check_rules_go_levelsOk (t := t) (E₀ := E₀) hbd hnl32 rc.rules.toList 0
               (fun cl hcl => by
-                have h1 := mem_of_eq hc_ru (by call_mem)
+                have h1 : cl ∈ cs_ru := mem_of_eq hc_ru (by call_mem)
                 exact hsub cl (mem_of_eq hcs (by call_mem)))
               (raw_rules.mono ext_go (fun _ hm => hm)) evgo
             intro j ru E_rd hj hread
@@ -2034,7 +2027,7 @@ theorem memberCheckedLimAt_recr_levelsOk {calls : List (Call F)} {bAddr : _root_
         ext0_crm.trans (f1.heap_extends.trans (f2.heap_extends.trans (f3.heap_extends.trans
           (f4.heap_extends.trans (f5.heap_extends.trans (f6.heap_extends.trans
             (f7.heap_extends.trans f8.heap_extends)))))))
-      have hws := check_rec_rules_wellscoped_levelsOk hbd hnl32 rc_m.rules.toList 0
+      have hws := check_rec_rules_wellscoped_levelsOk (t := t) (E₀ := E₀) hbd hnl32 rc_m.rules.toList 0
         (fun cl hcl => by
           have h1 : cl ∈ cs_crm := mem_of_eq hc_crm (by call_mem)
           exact hsub_chk cl (mem_of_eq hc (by call_mem)))

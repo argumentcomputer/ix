@@ -978,8 +978,8 @@ theorem consume_wrapper_one_oexact {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
       omega
     subst hk_eq
     have hwrap : wrapAt t E₀ (Core.keyOf t (ixAddr wa)) = some (some (rest.length + 1)) := by
-      unfold wrapAt
-      rw [keyAddr_keyOf hwf (ixAddr wa), hdefnAt, hlam_V]
+      have hk_wa : keyAddr t (Core.keyOf t (ixAddr wa)) = some (ixAddr wa) := keyAddr_keyOf hwf (ixAddr wa)
+      simp only [wrapAt, hk_wa, hdefnAt, hlam_V]
     have hhd_E : appHead E = some (Core.keyOf t (ixAddr wa)) := by
       unfold appHead; rw [hfn_E]
     have hcons : consumeAt (wrapAt t E₀) E = some (some A) := by
@@ -1675,7 +1675,7 @@ theorem flat_find_pos_kind_spec {κ : _root_.Address → KKey} (hinj : Function.
         simp only [evalBinOp, bind, Except.bind, pure, Except.pure, Option.some.injEq,
           Except.ok.injEq, Value.field.injEq] at op138
         have hfeq := sub_eq_zero.mp op138
-        cases e.aux <;> cases wantAux <;> simp [auxVal] at hfeq ⊢ <;>
+        cases h1 : e.aux <;> cases h2 : wantAux <;> simp [auxVal, h1, h2] at hfeq ⊢ <;>
           exact absurd hfeq (by decide)
       | other v122 op138 hne148 he152 he153 _ =>
         subst he152 he153 hxis
@@ -1828,6 +1828,8 @@ private theorem unshare_ge_wrap (c : Ixon.Constant) {recurAddrs : List _root_.Ad
     | share idx =>
       cases raw with
       | @share _ _ s _ hlt hs raw' =>
+        have hidx_sz : idx.toNat < c.sharing.size := by
+          simpa [Array.getElem?_eq_some_iff] using (List.getElem?_eq_some_iff.mp hs).1
         have hidx_arr : c.sharing[idx.toNat]? = some s := by
           simpa [Array.getElem?_toList] using hs
         simp only [FamilyOf.unshare, hidx_arr]
@@ -2537,7 +2539,7 @@ theorem heapMotiveCarrier_rawConvExpr_lastDom {rootCalls : List (Call F)} {E₀ 
       obtain ⟨b'', ed', eb', hnd_b, -, -⟩ :=
         rawConvExpr_forall_inv_wrap (raw_b.mono ext_b (fun _ hp => hp)) ld3
       obtain ⟨ed_out, n_dom, n_ref, hld, href⟩ :=
-        ih hcE hi hnot_rec ((ext0.trans ext1).trans ext_b) (Or.inl hrel_b)
+        ih hcE hnot_rec ((ext0.trans ext1).trans ext_b) (Or.inl hrel_b)
           (raw_b.mono ext_b (fun _ hp => hp))
       refine ⟨ed_out, n_dom + 1, n_ref, ?_, href⟩
       simp only [FamilyOf.lastDom, hnd, hnd_b]
