@@ -610,7 +610,8 @@ theorem compileCorrect_circuitComposed_bridge
         hseeds hV with hCol' | ⟨tb, t', R, envT, htb, hadm', hall, hloadB, hshape, hcons⟩
     · exact Or.inl hCol'
     · right
-      have ⟨E₀_wit, _, hLoadA_wit, -⟩ := hcons
+      have hcons' := hcons
+      obtain ⟨E₀_wit, _, hLoadA_wit, -⟩ := hcons'
       obtain ⟨htbEq, htEq, -, -, -⟩ :=
         noCollision_agrees_with_view hV hCol hLoadA_wit hloadB htb hadm' rfl rfl hAdmitBind
       subst htbEq
