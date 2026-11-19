@@ -1259,7 +1259,7 @@ private theorem peelAll_liftLooseBVars :
       exact (hzip (peelAll b).1 0).symm
     · rw [h2]; simp only [List.length_cons]; congr 1; omega
   | .bvar i, n, c => by
-    simp only [Expr.liftLooseBVars]; split <;> simp [peelAll, *]
+    simp only [Expr.liftLooseBVars]; split <;> simp [peelAll, Expr.liftLooseBVars, *]
   | .fvar _ _, _, _ | .sort _, _, _ | .const _ _, _, _ | .app _ _, _, _
   | .lam _ _ _, _, _ | .letE _ _ _ _, _, _ | .lit _, _, _ | .proj _ _ _, _, _ => by
     simp [Expr.liftLooseBVars, peelAll]
@@ -1663,7 +1663,7 @@ theorem ruleBodiesAt_renameConsts_of_recTypeAt {V : ReconView} {f : KKey → KKe
                           minorDoms_get_mem (List.range self.nctors) prev' ms hmd c c hc_get
                         have hpair : (cty', np') = (cty, np) := Option.some.inj (hvc'.symm.trans hvc)
                         injection hpair with hcty_eq hnp_eq
-                        subst hcty_eq hnp_eq
+                        subst cty' np'
                         obtain ⟨hnp_f, hnp_t⟩ := hnp_match ek self hek hself c cty np hclt hvc
                         have hpc_eq :
                             peelCtorParams V fuel nP 0 ek.aux ek.params np 0
