@@ -225,7 +225,7 @@ private theorem quot_refs_ok_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
           rcases hw with rfl | ⟨-, hcov⟩
           · rcases hq with ⟨rfl, -⟩ | ⟨-, hqb⟩
             · simp only [evalBinOp, add_zero, Except.ok.injEq] at opAdd
-              exact absurd (Value.field.inj (opAdd.symm.trans heq1)) zero_ne_one
+              exact absurd (Value.field.inj (opAdd.trans heq1)) zero_ne_one
             · exact .inr hqb
           · exact .inl hcov
       obtain ⟨ext, hhead⟩ := hseg
@@ -259,7 +259,7 @@ theorem QuotRecordRefsIn.spec {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
       (hv_cdpymqwc := hv) (sg_qqmcdzij := seg) (heq_zxortwso := h1)
       (ev_lfynsjgt := evIdx) (ev_oucfbbyu := evLoop) .. =>
     obtain ⟨hmQ, -⟩ := addr_quot_bound_lim_spec hrc ha evq
-    rw [hmQ] at seg evIdx evLoop
+    rw [hmQ] at seg
     have hcp' := hcp
     obtain ⟨infoVal, _, rfPtr, _, _, hcp_eq, hinfo, _, hrf, _, _⟩ := hcp'
     have heq := hcp_eq.symm.trans hv
