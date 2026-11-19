@@ -78,6 +78,13 @@ theorem head_ne_of_bytes {s : String} (h : s.toByteArray.data.toList.head? ≠ s
 theorem nodup_of_nameKeys {l : List String} (h : (l.map nameKey).Nodup) : l.Nodup :=
   List.Pairwise.of_map nameKey (fun _ _ ne eq => ne (congrArg nameKey eq)) h
 
+/-- Certify distinct keys by sorting and checking adjacent pairs, avoiding
+the quadratic comparisons of deciding `Nodup` directly. -/
+theorem nodup_of_sortedKeys {xs : List Nat}
+    (h : (xs.mergeSort (· ≤ ·)).IsChain (· < ·)) : xs.Nodup :=
+  (List.mergeSort_perm xs (· ≤ ·)).nodup_iff.mp
+    ((List.isChain_iff_pairwise.mp h).imp fun h => Nat.ne_of_lt h)
+
 /-- In a list with distinct keys, `find?` by a member's key finds that member. -/
 theorem find?_key {α : Type} (key : α → String) :
     ∀ {l : List α}, (l.map key).Nodup → ∀ {x : α}, x ∈ l →
