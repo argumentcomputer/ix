@@ -282,22 +282,22 @@ theorem validate_anchor_pin {x_rc x_tbl x_ci res : SourceValue F} {k : F} {h h' 
       ObsFn W "KernelRoleSpec::role_type" [x_tbl, .field k] m₅ spec m₆ cs₄ ∧
       ObsFn W "KernelRoles::assert_type_pinned" [ty, spec] m₆ w m₇ cs₅ := by
   cases Obs.«KernelRoles::validate_anchor».obs ev with
-  | n1 v1 m2 cs12 v23 m24 cs34 v45 m46 cs56 v61 m76 cs84 v95 m96 cs106 m127 v139 m140 cs150 v605
-      m606 cs608 m615 cs626 cs644 v648 m657 cs665 ev14 ev36 ev86 ev58 hm135 ev108 ev152 sg613
-      ev628 ev667 ev646 hc684 =>
+  | n1 v1 m2 cs12 vk mk csk v23 m24 cs34 v45 m46 cs56 v61 m76 cs84 v95 m96 cs106 m127 v139 m140
+      cs150 v605 m606 cs608 m615 cs626 cs644 v648 m657 cs665 ev14 evk _ ev36 ev86 ev58 hm135 ev108
+      ev152 sg613 ev628 ev667 ev646 hc684 =>
     obtain ⟨cs', evP⟩ := seg1_pinned hk sg613
     have e127 : Heap.Extends m46 m127 := by rw [hm135]; exact Heap.Extends.snoc m46 _
-    exact ⟨m2, m24, m76, m46, m96, m140, m606, v23, v61, v139, v45, v605, cs34, cs84, cs56,
-      cs150, cs', ev14.heap_extends, ev36, ev86, ev58, by rw [hc684]; simp,
-      e127.trans ev108.heap_extends, ev152, evP⟩
-  | other v1 m2 cs12 v23 m24 cs34 v45 m46 cs56 v61 m76 cs84 v95 m96 cs106 m127 v139 m140 cs150
-      v605 m606 cs608 v614 m615 cs626 ev14 ev36 ev86 ev58 hm135 ev108 ev152 sg613 ev628 hne685
-      he691 he692 hc693 =>
+    exact ⟨mk, m24, m76, m46, m96, m140, m606, v23, v61, v139, v45, v605, cs34, cs84, cs56,
+      cs150, cs', ev14.heap_extends.trans evk.heap_extends, ev36, ev86, ev58,
+      by rw [hc684]; simp, e127.trans ev108.heap_extends, ev152, evP⟩
+  | other v1 m2 cs12 vk mk csk v23 m24 cs34 v45 m46 cs56 v61 m76 cs84 v95 m96 cs106 m127 v139
+      m140 cs150 v605 m606 cs608 v614 m615 cs626 ev14 evk _ ev36 ev86 ev58 hm135 ev108 ev152
+      sg613 ev628 hne685 he691 he692 hc693 =>
     obtain ⟨cs', evP⟩ := seg1_pinned hk sg613
     have e127 : Heap.Extends m46 m127 := by rw [hm135]; exact Heap.Extends.snoc m46 _
-    exact ⟨m2, m24, m76, m46, m96, m140, m606, v23, v61, v139, v45, v605, cs34, cs84, cs56,
-      cs150, cs', ev14.heap_extends, ev36, ev86, ev58, by rw [hc693]; simp,
-      e127.trans ev108.heap_extends, ev152, evP⟩
+    exact ⟨mk, m24, m76, m46, m96, m140, m606, v23, v61, v139, v45, v605, cs34, cs84, cs56,
+      cs150, cs', ev14.heap_extends.trans evk.heap_extends, ev36, ev86, ev58,
+      by rw [hc693]; simp, e127.trans ev108.heap_extends, ev152, evP⟩
 
 /-! ## The stored constant at a pinned anchor's key -/
 

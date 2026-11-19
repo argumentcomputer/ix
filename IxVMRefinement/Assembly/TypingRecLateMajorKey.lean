@@ -450,7 +450,7 @@ theorem rec_major_key_reading {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   have hrec₀ : Ix.Cert.recordAt E₀ A = some c := (hS.recordOf_eq_recordAt A).symm.trans hc
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, -, -, ha_pre, -, ev_ld, hsub_ld,
-    hld, ev_chk, hsub_chk⟩ := hnat
+    hld, ev_chk, hsub_chk, hfr⟩ := hnat
   obtain ⟨a', ha'_ref, haA⟩ := ha_pre
   subst haA
   obtain ⟨rawBytes, c', hh, hba, hex, -, hres'⟩ :=
@@ -478,7 +478,7 @@ theorem rec_major_key_reading {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     exact hrun
   obtain ⟨tyP, E'', htyP, hann', hmajP⟩ := htie
   obtain ⟨sB, sA, mH, sR, sCs, mCs, hextS, evS, hmemS, hextM, evM, hsubM⟩ :=
-    check_const_rec_route ev_chk
+    check_const_rec_route ev_chk hfr
   obtain ⟨-, hlbb, hdef⟩ := Assembly.validate_expr_well_scoped_spec
     (cx := readCtx t (fun x => E₀.blobs.get? x)) (self := soloSelf t (Core.ixAddr a'))
     hbound hlvls rty hextS htyP evS (hsub_chk _ hmemS)

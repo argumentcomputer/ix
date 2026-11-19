@@ -421,6 +421,21 @@ theorem famUsedStored {t : Ix.Kernel.RoleTable} {R E₀ : Ixon.Env}
     · exact hfound x hf
     · exact absurd (hneed i hi x hx (hinert i hi x hx) hcov) hn
 
+/-- **A reference covered at a limit is stored by a table's environment whose groups include the
+role's**: the role bound at it is walked, and its group, below the limit when there is one, is
+among the groups the table's shape keeps. -/
+theorem coveredAt_stored {t : Ix.Kernel.RoleTable} {G : Nat → Prop} {R : Ixon.Env}
+    {envT : Ix.Kernel.Env .anon} (hshape : TableShape.{u} t G R envT) (htwf : t.wf = true)
+    {lim : Option Nat}
+    (hG : ∀ r : Ix.Kernel.Role, (∀ n, lim = some n → Ix.SpecDigest.groupOf r < n) →
+      G (Ix.SpecDigest.groupOf r))
+    {x : _root_.Address} (h : Claim.CoveredAt t lim x) : StoredAt t envT x := by
+  obtain ⟨r, ha, hw, hlt⟩ := h
+  obtain ⟨ci, hfind, -⟩ := hshape.kept (Ix.SpecDigest.groupOf r) r x (hG r hlt)
+    (role_mem_roleGroup r) (Or.inl (Or.inl hw)) ha
+  exact storedAt_of_role htwf ha (Ix.Kernel.Semantics.Env.find?_mem hfind)
+    (Ix.Kernel.Semantics.Env.find?_name hfind)
+
 /-- **What the family step gives the load facts** (`FamLoadCtx`), at each environment the step's
 record is taken at and at any decoded store `E` that holds the run's blobs and the run's records at
 the two blocks and their projections: those records, the route fact at `E`, the new constants:
@@ -793,12 +808,14 @@ structure FamilyBlockCheck (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop
       (rhsss : List (List IxVM.Refinement.Core.KExpr)),
       FamDeclReads t E₀ A c rb crb blk ∧ FamilyCheckFacts env blk adv' tys rhsss ∧
         SelectedForms t E₀ E A c rb crb env blk tys rhsss
-  /-- No reference the family record uses is an inert axiom's, and each is one a step needs
-  stored. Producer: `KernelModeled::check_family`'s `family_refs_ok`, whose
-  `assert_inner_refs_safe` covers every reference the family record uses
-  (`KernelClaim::assert_safe_used_refs`, with `KernelRoles::assert_ref_allowed`, and
-  `assert_used_not_block`, with `KernelClaim::assert_not_block_ref`). -/
-  recRefs : ∀ x, UsedRef E₀ rb x → ¬ IxVM.Consistency.InertAt t x ∧ NeedOk E₀ x
+  /-- Each reference the family record uses is covered at the limit (the table's environment
+  stores it) or is one a step needs stored. Producer: `KernelModeled::check_family`'s
+  `family_refs_ok`, whose `assert_inner_refs_safe` covers every reference the family record uses:
+  `assert_used_not_block` loads its record and refutes a block
+  (`KernelClaim::assert_not_block_ref`), and `KernelClaim::assert_safe_used_refs` reads the safety
+  of its record and owner unless `KernelRoles::walk_covered` answers `1`, which it does only for
+  a reference covered at the limit (`Claim.walk_covered_lim_spec`). -/
+  recRefs : ∀ x, UsedRef E₀ rb x → Claim.CoveredAt t lim x ∨ NeedOk E₀ x
 
 /-- **The facts of the family check at every block with a family record**, at the hypotheses of
 the row `familyBlock`. -/
@@ -854,15 +871,23 @@ theorem familyBlockCircuitRow_of_check {L : Ix.Kernel.Env .anon → NativeFam .a
     have husedR : Decl.UsedRefsStored t ⟨new ++ env.consts⟩ crb := by
       intro i hi x hx
       have hu : UsedRef E₀ rb x := usedRef_of_idx hrb.record hi hx
-      rcases hrefs x (Or.inr hu) with hs | hf | hn
-      · obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hs
+      have hold : (env.find? (keyOf t x)).isSome = true →
+          ∃ ci, (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? (keyOf t x) = some ci := by
+        intro hs
+        obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hs
         obtain ⟨hmem', hname⟩ := find?_mem_name hci
         have hs' := find?_isSome_of_mem (E := ⟨new ++ env.consts⟩)
           (List.mem_append_right new hmem')
         rw [hname] at hs'
         exact Option.isSome_iff_exists.mp hs'
-      · exact famFound_of_step hreads hst x hf
-      · exact absurd (hK.recRefs x hu).2 hn
+      rcases hK.recRefs x hu with hcov | hneed
+      · obtain ⟨ci, hci, hname⟩ :=
+          coveredAt_stored hctx.shape hinv.tableWf (fun _ _ => trivial) hcov
+        exact hold (find_isSome_of_storedAt ⟨ci, hextT ci hci, hname⟩)
+      · rcases hrefs x (Or.inr hu) with hs | hf | hn
+        · exact hold hs
+        · exact famFound_of_step hreads hst x hf
+        · exact absurd hneed hn
     exact (famLoadCtx_of_step hctx hB hrb hroute hfree hrouteT htrees hinv hg hreads hd hst
       (famUsedStored hctx.shape hinv.tableWf hc hinert hneed hextT hrefs
         (famFound_of_step hreads hst))

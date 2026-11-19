@@ -37,9 +37,9 @@ The proof is complete when the theorem has no explicit argument.
 
 What this module does not print. A definition that a hypothesis reads
 (`RemainingStoreClausesOfRun`, `BindingRun`, `AtGroups`,
-`FamilyAlias.ClosureFamilyCheck`, `ClosureTwinSteps`, `RoleFreeShapes`, `CertProjFree`,
-`FamilyGraphInnerOwed`,
-`FamilyBlockCheckRow`, `FamilyTwinRow`, `FoldExtra`, `UnitStep` and the others) appears by name only: its own
+`ClosureTwinSteps`, `RoleFreeShapes`, `CertProjFree`,
+`FamilyGraphInnerOwedFam`, `FamilyAlias.FamilyCallRow`, `FamilyRecon.RFormS`,
+`FamilyTwinRowFam`, `FoldExtra`, `UnitStep` and the others) appears by name only: its own
 module holds it. The public statement and what it reads are printed in
 `Ix.IxVM.ConsistencyAudit` and `Ix.IxVM.ConsistencyModelAudit`. The module is outside any
 namespace, so every name prints in full. -/
@@ -51,10 +51,6 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
   (groupStores :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
       IxVM.Refinement.Binding.RemainingStoreClausesOfRun calls)
-  (closureFamilySteps :
-    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
-        (IxVM.Refinement.Typing.FamilyAlias.ClosureFamilyCheck IxVM.Refinement.Typing.FormerOpenTraceAt calls))
   (closureTwinSteps :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
       IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
@@ -65,9 +61,11 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
         (IxVM.Refinement.Binding.RoleFreeShapes IxVM.Refinement.Typing.FormerOpenTraceAt))
   (certProjFree :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)), IxVM.Refinement.Binding.CertProjFree calls)
-  (Pref : IxVM.Refinement.Typing.RunPref) (familyGraph : IxVM.Refinement.Typing.FamilyGraphInnerOwed Pref)
-  (familyBlock : IxVM.Refinement.Typing.FamilyAlias.FamilyBlockCheckRow IxVM.Refinement.Typing.FormerOpenTraceAt)
-  (familyTwin : IxVM.Refinement.Typing.FamilyTwinRow IxVM.Refinement.Typing.FormerOpenTraceAt) :
+  (Pref : IxVM.Refinement.Typing.RunPref) (familyGraph : IxVM.Refinement.Typing.FamilyGraphInnerOwedFam Pref)
+  (familyCall : IxVM.Refinement.Typing.FamilyAlias.FamilyCallRow IxVM.Refinement.Typing.FormerOpenTraceAt)
+  (familyTwin :
+    IxVM.Refinement.Typing.TwinFamily.FamilyTwinRowFam IxVM.Refinement.Binding.FamilyRecon.RFormS
+      IxVM.Refinement.Typing.FormerOpenTraceAt) :
   IxVM.Consistency.CircuitComposed
 -/
 #guard_msgs in

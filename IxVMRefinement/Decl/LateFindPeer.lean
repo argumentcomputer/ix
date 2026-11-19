@@ -18,11 +18,11 @@ open IxVM.Refinement.Core
 /-- **At a record that is a recursor, the peer search answers the recursor's own address.** -/
 theorem find_peer_standalone_spec {c : ScopedCtx} (hlf : ScopedLoadFacts c)
     {cst : Ixon.Constant} {rc : Ixon.Recursor} {b : Bytes.Address}
-    {x_block x_t x_sp x_aux x_self r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    {x_block x_t x_sp x_us x_aux x_self r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hrec_at : Ix.Cert.recordAt c.E (ixAddr b) = some cst) (hcst : cst.info = .recr rc)
     (hgood : Good c.toCtx cs) (hb : Bytes.RepAddressRef addrTy h b x_block)
     (ev : ObsFn W "KernelCheck::find_peer_recursor_with_spec"
-      [x_block, x_t, x_sp, x_aux, x_self] h r h' cs) :
+      [x_block, x_t, x_sp, x_us, x_aux, x_self] h r h' cs) :
     r = x_self ∧ Heap.Extends h h' := by
   match Obs.«KernelCheck::find_peer_recursor_with_spec».obs ev with
   | .other (ev14 := ev_ld) (he164 := hr) (he165 := hh) .. =>
