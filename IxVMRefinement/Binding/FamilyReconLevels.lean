@@ -1291,9 +1291,6 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
         subst ms''
         have hms_lt56 : ms.size < 72057594037927936 := by
           have := Claim.muts_size_le hms; omega
-        have evw' : ObsFn W "KernelCheck::peer_agree_walk"
-            [rc, xmems, tyPtr, .field (ind.params.toNat : F), .field (ind.indices.toNat : F),
-              .field (k : F), .field ((0 : Nat) : F), blkPtr] mp2 _ _ cs_w := by simpa using evw
         have hwalk := peer_agree_walk_spec hS hbd (by rw [hba_b_eq]; exact hcb) hms hk56 hnp56
           (fun ind' h' => by rw [hk] at h'; injection h' with hm; injection hm with hi; subst hi; rfl)
           hms_lt56 ms.toList 0 (by simp) (fun i m hi => by simpa [Array.getElem?_toList] using hi)
@@ -1301,7 +1298,8 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
             have h1 : cl ∈ cs_pa := mem_of_eq hc_pa (by call_mem)
             exact hsub_chk cl (mem_of_eq hc (by call_mem))) hrepM
           (Bytes.repAddressRef_heapMono₂ addrTy
-            (ext08.trans (evaeq.heap_extends.trans evlvc.heap_extends)) rba_b) evw'
+            (ext08.trans (evaeq.heap_extends.trans evlvc.heap_extends)) rba_b)
+          (by simpa using evw)
         intro i₂ ind₂ hi₂
         have hnat := hwalk i₂ ind₂ (by rwa [Array.getElem?_toList])
         calc ind.params = ind.params.toNat.toUInt64 := UInt64.ofNat_toNat.symm
@@ -1342,23 +1340,19 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
             (blockSelf t b ms)).read ct.typ = .ok E_rd →
           E_rd.allLevelParamsDefined (List.range ct.lvls.toNat) = true) ∧
         ct.params = ind.params := by
-      have evct' : ObsFn W "KernelCheck::check_modeled_ctors"
-          [rc, .field (ind.params.toNat : F), .field (ind.indices.toNat : F),
-            .field (ind.ctors.size : F), .field (ind.lvls.toNat : F), blkPtr,
-            .field (k : F), .field 0, .field ((0 : Nat) : F)]
-          m11 _ m12 cs_mc := by simpa using evct
-      have hres := check_modeled_ctors_levelsOk hS hbd
+      have hres := check_modeled_ctors_levelsOk (t := t) hS hbd
         (by rwa [hba_b_eq]) hms hk hk56 hnc56 hnl32 hnp56
         ind.ctors.size 0 (by omega)
         (fun cl hcl => hsub_chk cl (mem_of_eq hc (by call_mem)))
-        (Bytes.repAddressRef_heapMono₂ addrTy ext0_11 rba_b) evct'
+        (Bytes.repAddressRef_heapMono₂ addrTy ext0_11 rba_b) (by simpa using evct)
       intro j ct hj
       simpa [hba_b_eq] using hres j ct (Nat.zero_le j) hj
     have hpeers_ok : ∀ (i₂ : Nat) (ind₂ : Ixon.Inductive),
         ms[i₂]? = some (.indc ind₂) → ind.params = ind₂.params := by
       have ext0_12 := ext0_11.trans evct.heap_extends
       match Obs.«KernelModeled::check_modeled_block».obs evcmb with
-      | .run (ev27 := evrp) (ev14 := evga) (ev55 := evcf) (hc80 := hc_mb) .. =>
+      | .run (m2 := mb_m2) (cs53 := cs_cf) (ev27 := evrp) (ev14 := evga) (ev55 := evcf)
+          (hc80 := hc_mb) .. =>
         match Obs.«KernelModeled::check_family».obs evcf with
         | .run (m105 := mf1) (m114 := mf2) (m136 := mf3) (m184 := mf4) (m_judpcwze := mf5)
             (m219 := mf6) (m254 := mf7) (m297 := mf8) (m332 := mf9) (m391 := mf10)
@@ -1369,7 +1363,7 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
             (ev344 := evf8) (ev403 := evf9) (ev435 := evf10) (ev465 := evf11)
             (ev513 := evlvc) (ev601 := evlen) (ev634 := evmic) (ev664 := evbnp)
             (hc1474 := hc_cf) .. =>
-          have ext_sg1 : Heap.Extends _ mf1 := by
+          have ext_sg1 : Heap.Extends mb_m2 mf1 := by
             cases sg1 with
             | Nil _ _ evax _ hh _ => rw [hh]; exact evax.heap_extends
             | Node _ _ _ _ _ _ _ _ heq _ _ _ => exact absurd (Value.field.inj heq) (by decide)
@@ -1381,8 +1375,8 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
                     (evf10.heap_extends.trans evf11.heap_extends)))))))))))))
           have sub_lvc : ∀ cl ∈ cs_lvc, cl ∈ calls :=
             fun cl hcl => by
-              have h1 := mem_of_eq hc_cf (by call_mem)
-              have h2 := mem_of_eq hc_mb (by call_mem)
+              have h1 : cl ∈ cs_cf := mem_of_eq hc_cf (by call_mem)
+              have h2 : cl ∈ cs_mb := mem_of_eq hc_mb (by call_mem)
               exact hsub_chk cl (mem_of_eq hc (by call_mem))
           obtain ⟨cb'', ms'', hbl, hrepM⟩ := Claim.load_block_head
             (Bytes.repAddressRef_heapMono₂ addrTy ext_to_lvc rba_b) evlvc
@@ -1392,7 +1386,7 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
           subst ms''
           have ext_m := evlen.heap_extends.trans evmic.heap_extends
           obtain ⟨np, -, -, hall_np⟩ := block_nparams_spec
-            (RepLinkedList.mono L1.repMutConst_heapMono₂ ext_m hrepM) evbnp
+            (hrepM.mono L1.repMutConst_heapMono₂ ext_m) evbnp
           intro i₂ ind₂ hi₂
           have h1 := hall_np ind (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hk))
           have h2 := hall_np ind₂ (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hi₂))
