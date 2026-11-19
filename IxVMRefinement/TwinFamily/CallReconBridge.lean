@@ -1303,7 +1303,7 @@ theorem familyTwinWF_of_storeLevels (hStoredLvls : StoredRecLvlsOk) :
     FamilyTwinRowFamClosed.{u} RFormS FormerOpenTraceAt := by
   intro calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner bAddrIC
     hFR hIC hctx hEnvWF hWhole hLP famOf hRF A c B rb crb hW hc hlog htw hcase
-  obtain ⟨bAddrW, hWc, hG⟩ := hWalk
+  have ⟨bAddrW, hWc, hG⟩ := hWalk
   have ht : t.check = .ok () := hWc.check_ok
   have htwf : t.wf = true := by unfold Ix.Kernel.RoleTable.wf; rw [ht]; rfl
   have hb : Bounded calls := (hctx.good envT lim).2

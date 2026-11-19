@@ -4124,7 +4124,7 @@ theorem familyTwin_of_premises
     FamilyTwinRowFam.{u} RFormS FormerOpenTraceAt := by
   intro calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx famOf hRF
     A c B rb crb hW hc hlog htw hcase
-  obtain ⟨_, hWc, _⟩ := hWalk
+  have ⟨_, hWc, _⟩ := hWalk
   exact familyTwin_step_core hStoredLvls hWalk hFR hctx hRF hW hc hlog htw hcase
     (fun bAddr r cr rs cs _ hrec hsz hlogB hcall =>
       hFlat calls bAddr t E₀ B r cr rs lim cs hWc.check_ok (hctx.good envT lim).2
@@ -4169,7 +4169,7 @@ theorem familyTwinWF_of_premises
     FamilyTwinRowFamWF.{u} RFormS FormerOpenTraceAt := by
   intro calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx hEnvWF hWhole
     famOf hRF A c B rb crb hW hc hlog htw hcase
-  obtain ⟨_, hWc, _⟩ := hWalk
+  have ⟨_, hWc, _⟩ := hWalk
   exact familyTwin_step_core hStoredLvls hWalk hFR hctx hRF hW hc hlog htw hcase
     (fun bAddr r cr rs cs _ hrec hsz hlogB hcall =>
       hFlat calls bAddr t E₀ B r cr rs lim cs hWc.check_ok (hctx.good envT lim).2
