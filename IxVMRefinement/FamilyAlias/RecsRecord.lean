@@ -126,13 +126,7 @@ theorem MemberFacts.annotated_scope {env : Env .anon} {g : KKey → KKey}
   have hann : Annot 0 ci.toConstantVal.type tyA :=
     annot_of_annotates hF.annotated hF.closed hF.bounded 0
   obtain ⟨htyF, htyB⟩ := (judgeFrames_posRulesJ env).annot_syntax hann hF.closed hF.bounded
-  obtain ⟨cvm, mval₀, hint₀, hfm, hlm, htm⟩ := hF.model
-  have hcw := hwf _ (List.mem_of_find?_eq_some hfm)
-  have h1 : cvm.type.allLevelParamsDefined cvm.levelParams = true := hcw.2.1
-  rw [htm, hlm] at h1
-  have h2 := allLevelParamsDefined_of_posOf_perm hF.perm h1
-  rw [allLevelParamsDefined_renameConsts] at h2
-  exact ⟨htyF, htyB, h2⟩
+  exact ⟨htyF, htyB, hF.levels⟩
 
 /-- **The recursors of a family, installed with their rules**, from the rules' facts with their
 aliases: each recursor is found after the fold as a recursor that stores its reading, and every

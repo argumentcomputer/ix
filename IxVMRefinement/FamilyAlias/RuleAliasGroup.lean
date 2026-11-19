@@ -27,10 +27,10 @@ set_option linter.unusedVariables false
 def RuleAliased (env E : Env .anon) (g : KKey → KKey) (blk : List (ConstantInfo .anon))
     (tys : List KExpr) (bn : List KKey) (recKey : KKey) (lps : List LevelParam) (tyA : KExpr)
     (mI rP j : Nat) (r : RecRule .anon) (rhsA : KExpr) (thm : KKey) : Prop :=
-  ∃ cvj cnP cnF lvls pins cvt vt,
-    RuleWitness env g blk tys recKey lps tyA mI rP r rhsA thm cvj cnP cnF lvls pins cvt vt ∧
+  ∃ cvj cnP cnF lvls pins cvt vt tty₀,
+    RuleWitness env g blk tys recKey lps tyA mI rP r rhsA thm cvj cnP cnF lvls pins cvt vt tty₀ ∧
     E.find? (iotaKey recKey j) =
-      some (ruleAlias bn recKey lps j r.ctor lvls cnF pins thm cvt.type)
+      some (ruleAlias bn recKey lps j r.ctor lvls cnF pins thm tty₀)
 
 /-- The rules of one recursor with their aliases, from index `j` on. -/
 def RulesAliased (env E : Env .anon) (g : KKey → KKey) (blk : List (ConstantInfo .anon))
@@ -66,8 +66,8 @@ theorem RulesAliased.congr {env E E' : Env .anon} {g : KKey → KKey}
   | _, _ :: _, [], _, h => nomatch h
   | _, _ :: _, _ :: _, [], h => nomatch h
   | j, r :: rs, rhsA :: rhss, thm :: thms, h => by
-    obtain ⟨⟨cvj, cnP, cnF, lvls, pins, cvt, vt, hw, hf⟩, hrest⟩ := h
-    exact ⟨⟨cvj, cnP, cnF, lvls, pins, cvt, vt, hw, (hE j).trans hf⟩,
+    obtain ⟨⟨cvj, cnP, cnF, lvls, pins, cvt, vt, tty₀, hw, hf⟩, hrest⟩ := h
+    exact ⟨⟨cvj, cnP, cnF, lvls, pins, cvt, vt, tty₀, hw, (hE j).trans hf⟩,
       RulesAliased.congr hE (j + 1) rs rhss thms hrest⟩
 
 /-! ## The rules of one recursor -/
@@ -104,7 +104,7 @@ theorem aliasGroup_rules {env : Env .anon} {g : KKey → KKey} {blk : List (Cons
   | _ :: _, _ :: _, [], _, _, _, hf, _, _, _ => nomatch hf
   | r :: rs, rhsA :: rhss, thm :: thms, j, as, tbl, hf, hg, htarget, hfresh => by
     obtain ⟨hF, hrestF⟩ := hf
-    obtain ⟨cvj, cnP, cnF, lvls, pins, cvt, vt, hw⟩ := hF.witness
+    obtain ⟨cvj, cnP, cnF, lvls, pins, cvt, vt, tty₀, hw⟩ := hF.witness
     have hg1 := aliasGroup_ruleAlias hw hwf hperm hg (hfresh j (Nat.le_refl j)) hout htarget
       hrecbn hblk (pins_renamed_resolve hw.major htyres)
     have htarget1 : ∀ k, bn.contains k = true →
@@ -112,10 +112,10 @@ theorem aliasGroup_rules {env : Env .anon} {g : KKey → KKey} {blk : List (Cons
       fun k hk =>
         (ite_eq_right (fun heq => iotaKey_ne_model recKey j k heq.symm)).trans (htarget k hk)
     have hname : ∀ j', j ≠ j' →
-        (ruleAlias bn recKey lps j r.ctor lvls cnF pins thm cvt.type).name ≠ iotaKey recKey j' :=
+        (ruleAlias bn recKey lps j r.ctor lvls cnF pins thm tty₀).name ≠ iotaKey recKey j' :=
       fun j' hjj heq => hjj (iotaKey_inj heq).2
     have hfresh1 : ∀ j', j + 1 ≤ j' →
-        (⟨(ruleAlias bn recKey lps j r.ctor lvls cnF pins thm cvt.type :: as) ++ env.consts⟩ :
+        (⟨(ruleAlias bn recKey lps j r.ctor lvls cnF pins thm tty₀ :: as) ++ env.consts⟩ :
           Env .anon).find? (iotaKey recKey j') = none :=
       fun j' hj' =>
         (Ix.Kernel.EnvExt.find?_cons_ne (env := (⟨as ++ env.consts⟩ : Env .anon))
@@ -123,7 +123,7 @@ theorem aliasGroup_rules {env : Env .anon} {g : KKey → KKey} {blk : List (Cons
     obtain ⟨as', tbl', hg', hmap, hfind, hnames, hrest⟩ :=
       aliasGroup_rules hwf hperm hout hrecbn hblk htyres rs rhss thms (j + 1) _ _ hrestF hg1
         htarget1 hfresh1
-    refine ⟨as', tbl', hg', ?_, ?_, ?_, ⟨⟨cvj, cnP, cnF, lvls, pins, cvt, vt, hw, ?_⟩, hrest⟩⟩
+    refine ⟨as', tbl', hg', ?_, ?_, ?_, ⟨⟨cvj, cnP, cnF, lvls, pins, cvt, vt, tty₀, hw, ?_⟩, hrest⟩⟩
     · intro k hk
       have h1 := hmap k (fun j' hj' => hk j' (by omega))
       have h2 : aliasMap ((iotaKey recKey j, thm) :: tbl) k = aliasMap tbl k :=
@@ -131,7 +131,7 @@ theorem aliasGroup_rules {env : Env .anon} {g : KKey → KKey} {blk : List (Cons
       exact h1.trans h2
     · intro k hk
       have h1 := hfind k (fun j' hj' => hk j' (by omega))
-      have hne : (ruleAlias bn recKey lps j r.ctor lvls cnF pins thm cvt.type).name ≠ k :=
+      have hne : (ruleAlias bn recKey lps j r.ctor lvls cnF pins thm tty₀).name ≠ k :=
         fun heq => hk j (Nat.le_refl j) heq.symm
       exact h1.trans
         (Ix.Kernel.EnvExt.find?_cons_ne (env := (⟨as ++ env.consts⟩ : Env .anon)) hne)

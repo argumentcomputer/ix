@@ -181,20 +181,16 @@ theorem aliasGroup_modelAliases {env : Env .anon} {g : KKey → KKey} {bn : List
   | ci :: rest, tyA :: tys, as, tbl, hg, hm, hr => by
     obtain ⟨hF, hrestF⟩ := hm
     obtain ⟨hfresh, hfind, hres, hcomp, hready⟩ := hr
-    obtain ⟨hperm, hclosed, hbnd, hann, ⟨cvm, mval₀, hint₀, hfm, hlm, htm⟩, -⟩ := hF
+    obtain ⟨hperm, hclosed, hbnd, hann, hlv, ⟨cvm, mval₀, hint₀, hfm, hlm, htm⟩, -⟩ := hF
     have hannot : Annot 0 ci.toConstantVal.type tyA := annot_of_annotates hann hclosed hbnd 0
     obtain ⟨hclA, hbA⟩ := (judgeFrames_posRulesJ env).annot_syntax hannot hclosed hbnd
-    have hcw := hwf _ (List.mem_of_find?_eq_some hfm)
-    have hlv : tyA.allLevelParamsDefined ci.toConstantVal.levelParams = true := by
-      have h1 : cvm.type.allLevelParamsDefined cvm.levelParams = true := hcw.2.1
-      rw [htm, hlm] at h1
-      have h2 := allLevelParamsDefined_of_posOf_perm hperm h1
-      rwa [allLevelParamsDefined_renameConsts] at h2
-    have hty : posOf ci.toConstantVal.levelParams
-        ((tyA.renameConsts (blockRen bn)).renameConsts (aliasMap tbl)) =
-        (ConstantInfo.defnInfo cvm mval₀ hint₀ : ConstantInfo .anon).toConstantVal.type := by
+    have hty : ExprLvEq
+        (posOf ci.toConstantVal.levelParams
+          ((tyA.renameConsts (blockRen bn)).renameConsts (aliasMap tbl)))
+        (posOf (ConstantInfo.defnInfo cvm mval₀ hint₀ : ConstantInfo .anon).toConstantVal.levelParams
+          (ConstantInfo.defnInfo cvm mval₀ hint₀ : ConstantInfo .anon).toConstantVal.type) := by
       rw [hcomp]
-      exact htm.symm
+      exact htm
     have hstep : AliasGroup env
         (aliasMap ((auxKey ci.toConstantVal.name .model, g ci.toConstantVal.name) :: tbl))
         (modelAlias g bn ci tyA :: as) :=
