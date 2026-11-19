@@ -59,8 +59,8 @@ theorem FamilyOwnAdvice.path {x_rc x_block x_rec_block : SourceValue F} {h : Hea
     {r : SourceValue F} {h' : Heap F} {calls : List (Call F)} {advAs : List Bytes.Address}
     (w : FamilyOwnAdvice x_rc x_block x_rec_block h r h' calls advAs) :
     «KernelModeled::check_family».Path x_rc x_block x_rec_block h r h' calls := by
-  cases w with
-  | mk p .. => exact p
+  match w with
+  | .mk (path := p) .. => exact p
 
 /-- **The family check of the block at `B` with the family record at `rb`, with its own advice
 list**: `check_family [rc, B, rb]` observed with calls `cs` under a role context at `lim` with the
