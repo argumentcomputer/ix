@@ -90,7 +90,7 @@ theorem iotaRulesRenRunJ_of_aliased {env E envM envSelf : Env .anon} {g h : KKey
   | r :: rs, rhsA :: rhss, thm :: thms, j, ha => by
     obtain ⟨hr, hrest⟩ := ha
     have hiota : envM.find? (iotaKey recKey j) = E.find? (iotaKey recKey j) := by
-      obtain ⟨_, _, _, _, _, _, _, _, hfind⟩ := hr
+      obtain ⟨_, _, _, _, _, _, _, _, _, hfind⟩ := hr
       exact (hR.iotaFound _ _ _ hfind).trans hfind.symm
     obtain ⟨r', hrec, hst, hrhs⟩ := iotaRuleRenRunJ_of_aliased hr hR.wf hR.store hperm hR.out hR.moves
       hR.target hR.fixes hrecbn hR.members htyF htyB htyL htyR (hR.ctor r.ctor) hiota hR.ext
