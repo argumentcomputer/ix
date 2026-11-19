@@ -1,6 +1,8 @@
 import IxVMRefinement.FamilyGraph.InnerCheckedOwed
 import IxVMRefinement.FamilyGraph.ProducersAcyclic
 import IxVMRefinement.FamilyGraph.CompositionFam
+import IxVMRefinement.Claim.RefSafetyExcept
+import IxVMRefinement.Obs.KernelModeled2
 
 /-! # The records a family check checks, at the graph producer's choices
 
@@ -11,17 +13,21 @@ as a container's recursor, so what the walk and the family check's reference fac
 (`BatchGives`) give settles the record's own addresses. This module states what is owed of the
 inner records there, beside what the graph row is owed, and composes both:
 
+* `Decl.check_advice_records_nodup`, `FamilyOwnAdvice.walk_nil`, `FamilyCallOwn.listed_nodup`,
+  `FamilyCallOwn.listed_inj`: a family check's own advice walk lists no address twice.
+  `check_advice_records` refuses an address already in its seen set (`addr_set_member(a, seen)`
+  is asserted `0`) before checking it and inserts it after, and `check_family` starts the walk
+  from the empty set;
 * `FamRunCtx.inner_ownRef`: an inner record that is no twin uses one of its own constant
   addresses only where the witness's environment stores it or it is covered. The proof reads
   the scope check's facts: an earlier listed record is no projection record and is not the
-  record itself (no address listed twice); a witness of the basis is stored, a covered one
-  covered; a witness at the end of a dependency path from the block, or a constant address of
-  one, is top-walked with its block, which the inner record is not; a container's recursor's
-  witness is a standalone recursor or a member of a block of recursors, which an advice record
-  is not;
+  record itself (no address is listed twice, `FamilyCallOwn.listed_inj`); a witness of the basis
+  is stored, a covered one covered; a witness at the end of a dependency path from the block, or
+  a constant address of one, is top-walked with its block, which the inner record is not; a
+  container's recursor's witness is a standalone recursor or a member of a block of recursors,
+  which an advice record is not;
 * `InnerOwed`: what is owed of the inner records at the choices: no inert used reference and a
-  covered or `NeedOk` used reference (the change that adds `assert_inner_refs_safe`), and no
-  address listed twice by a scope check's own advice walk (today's `check_advice_records`);
+  covered or `NeedOk` used reference (`assert_inner_refs_safe`);
 * `innerGives_of_owed`, `innerChecked_at`: `InnerGives` and `InnerChecked` at the choices;
 * `FamilyGraphInnerOwed`: what the graph row and the inner records are owed together;
   `FamilyGraphRowInner`, `familyGraphRowInner_of_owed`: the graph row with `InnerChecked` at the
@@ -31,6 +37,70 @@ inner records there, beside what the graph row is owed, and composes both:
   composition with the inner steps read at the graph's own choices. -/
 
 universe u
+
+/-! ## No address listed twice by a family check's own advice walk -/
+
+namespace IxVM.Refinement.Decl
+
+open Aiur Aiur.Library Aiur.Library.List Aiur.Generic Aiur.Generic.SourceSemantics
+open IxVM.Refinement.Core
+open IxVM.Refinement.Claim (RepAddrSet rbtree_set_lookup_spec rbtree_set_insert_spec)
+open IxVM (F)
+
+set_option linter.unusedVariables false
+
+/-- **The advice walk lists no address twice**: from the listed advice addresses `advAs` and a
+seen set that represents the addresses `S`, no listed address is in `S` (the walk asserts the
+membership test `0` at each) and the listed addresses are pairwise distinct (each is inserted
+into the seen set of the rest of the walk). -/
+theorem check_advice_records_nodup {rc wset : SourceValue F} :
+    ∀ (advAs : List Bytes.Address) (S : List _root_.Address)
+      {x_advice x_seen r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      RepList addrListEnum (Bytes.RepAddressRef addrTy) h advAs x_advice →
+      RepAddrSet h S x_seen →
+      ObsFn Obs.W "KernelModeled::check_advice_records" [rc, x_advice, x_seen, wset] h r h' cs →
+      (∀ b ∈ advAs, ixAddr b ∉ S) ∧ (advAs.map ixAddr).Nodup
+  | [], S, x_advice, x_seen, r, h, h', cs, hadv_rep, hseen, ev =>
+    ⟨fun _ hb => (nomatch hb), List.nodup_nil⟩
+  | a :: rest, S, x_advice, x_seen, r, h, h', cs, hadv_rep, hseen, ev => by
+    match Obs.«KernelModeled::check_advice_records».obs ev with
+    | .Nil (ld12 := ld12) .. =>
+      cases Lib.rep_nil_of_load hadv_rep ld12
+    | .Cons (m90 := m90) (ld12 := ld12) (ev_mfihupbr := ev_seen) (heq_sefkntmx := heq_seen)
+        (ev_xzbngsxs := ev_wset) (ev102 := ev102) (ev170 := ev170) (ev140 := ev140) .. =>
+      subst heq_seen
+      obtain ⟨a', rest', heq_cons, ha_rep, hrest_rep⟩ := Lib.rep_cons_of_load hadv_rep ld12
+      injection heq_cons with ha_eq hrest_eq
+      subst ha_eq hrest_eq
+      have hnot : ixAddr a ∉ S := by
+        obtain ⟨_, ev6, _⟩ := Obs.«KernelClaim::addr_set_member».obs ev_seen
+        rw [← Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>».symbol] at ev6
+        obtain ⟨hr, -⟩ := rbtree_set_lookup_spec ha_rep hseen ev6
+        intro hin
+        rw [ite_eq_left hin] at hr
+        exact absurd (Value.field.inj hr) zero_ne_one
+      have ext_90 : Heap.Extends h m90 :=
+        (ObsFn.heap_extends ev_seen).trans
+          ((ObsFn.heap_extends ev_wset).trans (ObsFn.heap_extends ev102))
+      rw [← Obs.Names.«RBTreeMap::rbtree_map_insert<Field>».symbol] at ev170
+      obtain ⟨ext_160, hseen1⟩ :=
+        rbtree_set_insert_spec (Bytes.repAddressRef_heapMono₂ addrTy ext_90 ha_rep)
+          (hseen.mono ext_90) ev170
+      obtain ⟨hout, hnd⟩ :=
+        check_advice_records_nodup rest (ixAddr a :: S)
+          (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) (ext_90.trans ext_160)
+            hrest_rep)
+          hseen1 ev140
+      refine ⟨fun b hb => ?_, ?_⟩
+      · rcases List.mem_cons.mp hb with rfl | hrm
+        · exact hnot
+        · exact fun hin => hout b hrm (List.mem_cons_of_mem _ hin)
+      · rw [List.map_cons, List.nodup_cons]
+        refine ⟨fun hmem => ?_, hnd⟩
+        obtain ⟨b, hb, hba⟩ := List.mem_map.mp hmem
+        exact hout b hb (by rw [hba]; exact List.mem_cons_self)
+
+end IxVM.Refinement.Decl
 
 namespace IxVM.Refinement.Typing
 
@@ -44,6 +114,61 @@ open TwinFamily (FamilyRecsModeled FamilyInstalled)
 open FamilyAlias (FamilyCallAtLim)
 
 set_option linter.unusedVariables false
+
+section Listed
+
+open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open Aiur.Library Aiur.Library.List
+open IxVM.Refinement.Core
+open IxVM.Refinement.Obs
+
+/-- **The family check's own advice walk, from the empty set**: as `FamilyOwnAdvice.walk`, with
+the seen set the walk starts from, the empty tree. -/
+theorem FamilyOwnAdvice.walk_nil {x_rc x_block x_rec_block : SourceValue F} {h : Heap F}
+    {r : SourceValue F} {h' : Heap F} {calls : List (Call F)} {advAs : List Bytes.Address}
+    (w : FamilyOwnAdvice x_rc x_block x_rec_block h r h' calls advAs) :
+    ∃ (m m' : Heap F) (xadv wset v : SourceValue F) (cs₁ : List (Call F)),
+      Heap.Extends h m ∧ RepList addrListEnum (Bytes.RepAddressRef addrTy) m advAs xadv ∧
+      ObsFn Obs.W "KernelModeled::check_advice_records"
+        [x_rc, xadv, .construct addrMapEnum "Nil" [], wset] m v m' cs₁ ∧
+      ∀ cl ∈ cs₁, cl ∈ calls := by
+  obtain ⟨_, _, _, _, _, _, _, _, ev_ws, wset, _, _, ev_asb, m_adv, m_adv', x_advice, v_adv,
+    cs_adv, ev_adv, ext_h_ws, ext_asb_adv, advRep, _, _, sub_adv⟩ := w
+  exact ⟨m_adv, m_adv', x_advice, wset, v_adv, cs_adv,
+    ext_h_ws.trans (ev_ws.heap_extends.trans (ev_asb.heap_extends.trans ext_asb_adv)),
+    advRep, ev_adv, sub_adv⟩
+
+/-- **A family check's own advice walk lists no address twice**: the walk starts from the empty
+set (`FamilyOwnAdvice.walk_nil`), and refuses an address it has seen
+(`Decl.check_advice_records_nodup`). -/
+theorem FamilyOwnAdvice.listed_nodup {x_rc x_block x_rec_block : SourceValue F} {h : Heap F}
+    {r : SourceValue F} {h' : Heap F} {calls : List (Call F)} {advAs : List Bytes.Address}
+    (w : FamilyOwnAdvice x_rc x_block x_rec_block h r h' calls advAs) :
+    (advAs.map ixAddr).Nodup := by
+  obtain ⟨m, m', xadv, wset, v, cs₁, -, hadv, ev, -⟩ := w.walk_nil
+  exact (Decl.check_advice_records_nodup advAs [] hadv (Claim.RepAddrSet.nil m) ev).2
+
+/-- The own advice list of an observed family check has no address twice. -/
+theorem FamilyCallOwn.listed_nodup {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {B rb : _root_.Address} {lim : Option Nat} {cs : List (Call F)}
+    {advAs : List Bytes.Address} (hown : FamilyCallOwn calls bAddr t B rb lim cs advAs) :
+    (advAs.map ixAddr).Nodup := by
+  obtain ⟨h, h', rc, xb, xrb, r, -, -, -, -, w, -, -⟩ := hown
+  exact w.listed_nodup
+
+/-- **Two positions of a family check's own advice list with one address are one position.** -/
+theorem FamilyCallOwn.listed_inj {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {B rb : _root_.Address} {lim : Option Nat} {cs : List (Call F)}
+    {advAs : List Bytes.Address} (hown : FamilyCallOwn calls bAddr t B rb lim cs advAs)
+    {j k : Nat} {b b' : Bytes.Address} (hj : advAs[j]? = some b) (hk : advAs[k]? = some b')
+    (hbb : ixAddr b = ixAddr b') : j = k := by
+  have hjl : j < (advAs.map ixAddr).length := by
+    rw [List.length_map]
+    exact (List.getElem?_eq_some_iff.mp hj).1
+  refine (List.Nodup.getElem?_inj hjl hown.listed_nodup).mp ?_
+  rw [List.getElem?_map, List.getElem?_map, hj, hk, Option.map_some, Option.map_some, hbb]
+
+end Listed
 
 /-! ## The inner records' own addresses at the choices -/
 
@@ -192,7 +317,7 @@ theorem FamRunCtx.inner_contWitness_kept
     · have e := Option.some.inj (hcx.symm.trans hP)
       subst e
       exact (standalone_not_proj hsx hpP).elim
-  · obtain ⟨crb, rs, hF⟩ := hB.record ib a'' ⟨cs', hfc''⟩
+  · obtain ⟨crb, rs, hF⟩ := FamRunCtx.record_of hW ib a'' ⟨cs', hfc''⟩
     have e : crb = ca'' := Option.some.inj (hF.record.symm.trans hca'')
     subst e
     obtain ⟨P, hP, hpP, hoP⟩ := hF.constAddr hx''
@@ -207,20 +332,12 @@ theorem FamRunCtx.inner_contWitness_kept
       rw [e3] at hRB
       exact (hnr hRB).elim
 
-/-- **No address listed twice by a scope check's own advice walk** (`InnerOwed.listedNodup`'s
-statement). -/
-def FamRunCtx.ListedNodup (K : FamRunCtx) : Prop :=
-  ∀ B rb cs advAs, K.ScopeAt B rb cs → FamilyCallOwn K.calls K.bAddr K.t B rb K.lim cs advAs →
-    ∀ (j k : Nat) b b', advAs[j]? = some b → advAs[k]? = some b' →
-      Core.ixAddr b = Core.ixAddr b' → j = k
-
 /-- **An inner record that is no twin uses one of its own constant addresses only where the
-witness's environment stores it or it is covered** (module docstring), given that no scope check
-lists an address twice. -/
+witness's environment stores it or it is covered** (module docstring). -/
 theorem FamRunCtx.inner_ownRef
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
     (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K) {R : Ixon.Env}
-    (hshape : TableShape.{u} K.t (fun _ => True) R K.envT) (hnodup : K.ListedNodup) :
+    (hshape : TableShape.{u} K.t (fun _ => True) R K.envT) :
     ∀ a c x, K.Inner a → K.twin a = none → recordOf K.E₀ a = some c → UsedRef K.E₀ a x →
       ConstAddrOf a c x → StoredAt K.t K.envT x ∨ Covered K.t x := by
   intro a c x hIa htw hc hu hx
@@ -233,7 +350,7 @@ theorem FamRunCtx.inner_ownRef
       ⟨j, b', hjk, hj, hxb', hnp⟩ | ⟨j, b', c', hjk, hj, hc', hx'⟩ | hwb | hcw
     · rcases FamRunCtx.walkedConstAddr_cases hW hG hB (Or.inr hIa) hc hx with ⟨hxa, -⟩ |
         ⟨P, hP, hpP, -⟩
-      · have e := hnodup B rb cs advAs hS hown j k b' b hj hk (hxb'.trans hxa)
+      · have e := hown.listed_inj hj hk (hxb'.trans hxa)
         omega
       · exact (hnp P hP hpP).elim
     · have hWa' : K.Top (Core.ixAddr b') ∨ K.Inner (Core.ixAddr b') := by
@@ -242,11 +359,11 @@ theorem FamRunCtx.inner_ownRef
         · exact Or.inr ⟨hT', ⟨c', x, hc', hx'⟩, Or.inl ⟨B, rb, cs, hS,
             Or.inl ⟨advAs, hown, b', List.mem_of_getElem? hj, rfl⟩⟩⟩
       have e := FamRunCtx.walkedConstAddr_unique hW hG hB hWa' (Or.inr hIa) hc' hc hx' hx
-      have e' := hnodup B rb cs advAs hS hown j k b' b hj hk e
+      have e' := hown.listed_inj hj hk e
       omega
     · exact FamRunCtx.inner_witBase_kept hW hG hB hshape hS hIa hc hx hwb
     · exact FamRunCtx.inner_contWitness_kept hW hG hB hshape hS hIa hc
-        (hB.listedNotRec B rb cs advAs k b hS hown hk) hu hx hcw
+        (FamRunCtx.listedNotRec_of hW hS hown hk) hu hx hcw
   · have e : ca = c := Option.some.inj (hca.symm.trans hc)
     rw [e] at hsA
     obtain ⟨ib, hdep, -, -, hstand, -⟩ := hB.contWitness B rb cs a hS hwit hcovA
@@ -263,23 +380,15 @@ end Own
 /-! ## What is owed of the inner records at the choices -/
 
 /-- **What is owed of the records a family check checks, at the graph producer's choices**
-(premise; each field names its source). Lines are of `KernelModeled.lean`: "today" in the present
-source, "changed" in the text of the circuit's changes. -/
+(premise; each field names its source). -/
 structure InnerOwed (K : FamRunCtx) : Prop where
-  /-- The change that adds `assert_inner_refs_safe` (changed `:990-995`) to
-  `check_advice_record` (changed `:921`) and `container_refs_check` (changed `:739`): its
-  `assert_safe_used_refs` runs `assert_ref_allowed` (today `KernelRoles.lean:1259`) at every used
-  reference of an inner record. -/
+  /-- `assert_inner_refs_safe` in `check_advice_record` and `container_refs_check`: its
+  `assert_safe_used_refs` runs `assert_ref_allowed` at every used reference of an inner record. -/
   notInert : ∀ a x, K.Inner a → K.twin a = none → UsedRef K.E₀ a x → ¬ InertAt K.t x
-  /-- The same change: the uncovered branch of `assert_safe_used_refs` (today
-  `KernelClaim.lean:600-615`: the referenced record and its owner are not unsafe) and
-  `assert_used_not_block` with `assert_not_block_ref` (changed `:976-988`). -/
+  /-- The uncovered branch of `assert_safe_used_refs` (the referenced record and its owner are
+  not unsafe) and `assert_used_not_block` with `assert_not_block_ref`. -/
   needOk : ∀ a x, K.Inner a → K.twin a = none → UsedRef K.E₀ a x →
     Covered K.t x ∨ NeedOk K.E₀ x
-  /-- Today's circuit: `check_advice_records` refuses an address already in its seen set before
-  checking it (today `:796-797`), and adds it after. Not proved here: reading the refusal needs
-  that `addr_set_member` answers `1` at every member of the set its tree represents. -/
-  listedNodup : K.ListedNodup
 
 section Gives
 
@@ -295,7 +404,7 @@ theorem innerGives_of_owed
   ⟨fun a x hIa _ htw _ hu => hIO.notInert a x hIa htw hu,
     fun a x hIa htw _ hu => hIO.needOk a x hIa htw hu,
     fun a c x hIa _ htw _ hc hu hx =>
-      FamRunCtx.inner_ownRef hW hG hB hshape hIO.listedNodup a c x hIa htw hc hu hx⟩
+      FamRunCtx.inner_ownRef hW hG hB hshape a c x hIa htw hc hu hx⟩
 
 end Gives
 
