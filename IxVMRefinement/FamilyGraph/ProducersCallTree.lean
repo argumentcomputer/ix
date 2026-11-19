@@ -1,5 +1,6 @@
 import IxVMRefinement.Core.CallHeaps
 import IxVMRefinement.Core.Rep
+import Ix.IxVM.Refinement.Statement
 import IxVMRefinement.Obs.KernelCheck13
 import IxVMRefinement.Obs.KernelModeled0
 import IxVMRefinement.Obs.KernelModeled1
@@ -1643,5 +1644,412 @@ theorem obsFn_check_witness_enclosing_family
     EnclosingFamilyWitness cs rc xb xx kind s h_w :=
   obsFn_check_witness_enclosing_aux cs.length (Nat.le_refl _) (by decide)
     (peel_noKey (by decide) _ (by decide)) ev hcl
+
+/-- Every `KernelModeled::check_family` call in `calls` is backed by an observed non-zero
+`KernelModeled::block_is_modeled` call on the same block address with subcalls in `calls`. -/
+def FamCallsModeled (calls : List (Call F)) : Prop :=
+  ∀ (rc xb xrb : SourceValue F) (h_cf : Heap F) (b : Bytes.Address),
+    (⟨"KernelModeled::check_family", [rc, xb, xrb], h_cf⟩ : Call F) ∈ calls →
+    Bytes.RepAddressRef IxVM.Refinement.Core.addrTy h_cf b xb →
+    ∃ (r_mod : SourceValue F) (m_mod m_mod' : Heap F) (cs_mod : List (Call F)),
+      ObsFn Obs.W "KernelModeled::block_is_modeled" [xb] m_mod r_mod m_mod' cs_mod ∧
+      r_mod ≠ .field 0 ∧
+      Bytes.RepAddressRef IxVM.Refinement.Core.addrTy m_mod b xb ∧
+      ∀ cl ∈ cs_mod, cl ∈ calls
+
+/-- Top-level `IxVM::verify_claim` derivations satisfy `FamCallsModeled`. -/
+theorem FamCallsModeled.of_verifyClaim {d : IxVM.Refinement.Digest}
+    {value : SourceValue F} {heap : Heap F} {calls : List (Call F)}
+    (ev : ObsFn Obs.W IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] [] value heap
+      calls) :
+    FamCallsModeled calls :=
+  fun _ _ _ _ _ hcl hb =>
+    obsFn_check_family_modeled (by decide) (by decide) ev hcl hb
+
+/-! ## First `IxonDeserialize::get_address` call inside `KernelModeled::check_family` -/
+
+private def bytesPrefix : List UInt8 → List UInt8 → Bool
+  | [], _ => true
+  | _ :: _, [] => false
+  | a :: as, b :: bs => decide (a.toNat = b.toNat) && bytesPrefix as bs
+
+private def strStartsWith (pfx s : String) : Bool :=
+  bytesPrefix pfx.toByteArray.data.toList s.toByteArray.data.toList
+
+private def inReadPayloadClosed (s : String) : Bool :=
+  strBytesEq s "KernelRoles::role_ctx_axioms" ||
+  strBytesEq s "KernelModeled::read_payload" ||
+  strBytesEq s "IxVMCompat::io_get_info" ||
+  strBytesEq s "Blake3::address_to_fields" ||
+  strBytesEq s "IxByteStream::read_finite_byte_stream" ||
+  strBytesEq s "IxByteStream::read_byte_stream" ||
+  strStartsWith "UInt8::" s ||
+  strStartsWith "UInt32::" s
+
+mutual
+  private def callsWithin (p : String → Bool) : Expr F → Bool
+    | .literal _ | .var _ | .global _ _ => true
+    | .tuple xs | .array xs | .construct _ _ _ xs | .constructAs _ _ _ xs
+    | .record _ xs | .update _ xs | .builtin _ xs => callsWithinList p xs
+    | .repeat x _ | .index x _ | .slice x _ _ | .member x _ | .project x _
+    | .store x | .load x | .hint _ x _ | .neg x | .control _ x => callsWithin p x
+    | .letValue _ v b | .binary _ v b => callsWithin p v && callsWithin p b
+    | .call name _ args => p name && callsWithinList p args
+    | .matchValue scrut arms => callsWithin p scrut && callsWithinArms p arms
+
+  private def callsWithinList (p : String → Bool) : List (Expr F) → Bool
+    | [] => true
+    | x :: xs => callsWithin p x && callsWithinList p xs
+
+  private def callsWithinArms (p : String → Bool) : List (Pattern F × Expr F) → Bool
+    | [] => true
+    | (_, b) :: rest => callsWithin p b && callsWithinArms p rest
+end
+
+private theorem callsWithin_arms_mem {p : String → Bool} {arms : List (Pattern F × Expr F)}
+    {pat : Pattern F} {b : Expr F} (h : callsWithinArms p arms = true) (hm : (pat, b) ∈ arms) :
+    callsWithin p b = true := by
+  induction arms with
+  | nil => simp at hm
+  | cons a rest ih =>
+    rcases a with ⟨p₀, b₀⟩
+    simp only [callsWithinArms, Bool.and_eq_true] at h
+    rcases List.mem_cons.mp hm with heq | hm'
+    · cases heq; exact h.1
+    · exact ih h.2 hm'
+
+private theorem callsWithinList_of_all {p : String → Bool} {es : List (Expr F)}
+    (h : ∀ e ∈ es, callsWithin p e = true) : callsWithinList p es = true := by
+  induction es with
+  | nil => rfl
+  | cons e es ih =>
+    simp only [callsWithinList, Bool.and_eq_true]
+    exact ⟨h e List.mem_cons_self, ih (fun x hx => h x (List.mem_cons_of_mem _ hx))⟩
+
+private theorem callsWithin_toExpr (p : String → Bool) (pat : Pattern F) :
+    ∀ {e : Expr F}, Consts.toExpr pat = .ok e → callsWithin p e = true := by
+  match pat with
+  | .literal _ | .global _ _ =>
+    intro e h
+    simp only [Consts.toExpr, pure, Except.pure, Except.ok.injEq] at h
+    subst h; rfl
+  | .orElse _ _ _ | .wildcard | .bind _ =>
+    intro e h; simp [Consts.toExpr, throw, MonadExceptOf.throw] at h
+  | .load p' =>
+    intro e h
+    simp only [Consts.toExpr, bind, Except.bind] at h
+    cases hp' : Consts.toExpr p' with
+    | error _ => rw [hp'] at h; cases h
+    | ok e' =>
+      rw [hp'] at h
+      simp only [pure, Except.pure, Except.ok.injEq] at h
+      subst h
+      simp only [callsWithin]
+      exact callsWithin_toExpr p p' hp'
+  | .repeat p' n =>
+    intro e h
+    simp only [Consts.toExpr, bind, Except.bind] at h
+    cases hp' : Consts.toExpr p' with
+    | error _ => rw [hp'] at h; cases h
+    | ok e' =>
+      rw [hp'] at h
+      simp only [pure, Except.pure, Except.ok.injEq] at h
+      subst h
+      simp only [callsWithin]
+      exact callsWithin_toExpr p p' hp'
+  | .record head ps | .tuple ps | .array ps | .constructAs _ _ _ ps =>
+    intro e h
+    simp only [Consts.toExpr, bind, Except.bind] at h
+    cases hps : ps.mapM Consts.toExpr with
+    | error _ => rw [hps] at h; cases h
+    | ok es =>
+      rw [hps] at h
+      simp only [pure, Except.pure, Except.ok.injEq] at h
+      subst h
+      simp only [callsWithin]
+      refine callsWithinList_of_all fun e' he' => ?_
+      obtain ⟨p', hp', hto⟩ := mapM_toExpr_ok hps e' he'
+      have : sizeOf p' < sizeOf ps := List.sizeOf_lt_of_mem hp'
+      exact callsWithin_toExpr p p' hto
+  | .construct t c ps =>
+    cases t with
+    | named n ts' =>
+      intro e h
+      simp only [Consts.toExpr, bind, Except.bind] at h
+      cases hps : ps.mapM Consts.toExpr with
+      | error _ => rw [hps] at h; cases h
+      | ok es =>
+        rw [hps] at h
+        simp only [pure, Except.pure, Except.ok.injEq] at h
+        subst h
+        simp only [callsWithin]
+        refine callsWithinList_of_all fun e' he' => ?_
+        obtain ⟨p', hp', hto⟩ := mapM_toExpr_ok hps e' he'
+        have : sizeOf p' < sizeOf ps := List.sizeOf_lt_of_mem hp'
+        exact callsWithin_toExpr p p' hto
+    | field | tuple _ | array _ _ | ptr _ | param _ =>
+      intro e h; simp [Consts.toExpr, throw, MonadExceptOf.throw] at h
+termination_by sizeOf pat
+
+private theorem ixvm_readPayloadClosed :
+    IxVM.program.functions.all (fun f =>
+      !inReadPayloadClosed f.name || callsWithin inReadPayloadClosed f.body) = true := by
+  decide +kernel
+
+private theorem inReadPayloadClosed_ne_get_address {s : String} (h : inReadPayloadClosed s = true) :
+    s ≠ "IxonDeserialize::get_address" := by
+  intro heq
+  subst heq
+  have hf : inReadPayloadClosed "IxonDeserialize::get_address" = false := by decide
+  rw [hf] at h
+  cases h
+
+private theorem callsWithin_constantExpr (p : String → Bool) (c : Constant F) :
+    callsWithin p (constantExpr c) = true := by
+  match c with
+  | .field _ => simp only [constantExpr, callsWithin]
+  | .ptr _ a => exact Empty.elim a
+  | .tuple xs =>
+    simp only [constantExpr, callsWithin]
+    exact go xs
+  | .construct n c xs =>
+    simp only [constantExpr, callsWithin]
+    exact go xs
+where
+  go : (xs : List (Constant F)) → callsWithinList p (xs.map constantExpr) = true
+    | [] => rfl
+    | x :: xs => by
+      simp only [List.map_cons, callsWithinList, Bool.and_eq_true]
+      exact ⟨callsWithin_constantExpr p x, go xs⟩
+
+private theorem instanceName_ofSymbol_name {types : Types} {name : String}
+    {typeArgs : Option (List Ty)} (hnd : plainBytes name = true) {key : Instance}
+    (hof : Instance.ofSymbol (instanceName types name typeArgs) = .ok key) :
+    key.name = name := by
+  have hsym := Instance.ofSymbol_symbol
+    ⟨name, (typeArgs.getD []).map (Ty.subst types)⟩
+    (fun _ => head_ne_dollar_of_plainBytes hnd)
+  change Instance.ofSymbol
+    (Instance.symbol ⟨name, (typeArgs.getD []).map (Ty.subst types)⟩) = .ok key at hof
+  rw [hsym] at hof
+  injection hof with hkey
+  subst hkey
+  rfl
+
+private theorem prepare_readPayloadClosed {fnName : String} {args : List (SourceValue F)}
+    {types : Types} {locals : Environment F Nat} {expr : Expr F}
+    (prepared : Obs.W.prepare fnName args = .ok (types, locals, expr))
+    (hin : ∀ key, Instance.ofSymbol fnName = .ok key → inReadPayloadClosed key.name = true) :
+    callsWithin inReadPayloadClosed expr = true ∧ noDollarCall expr = true := by
+  simp only [Obs.W, Source.world, sourceWorld] at prepared
+  cases hsf : IxVM.source.program.sourceFunction? fnName with
+  | none =>
+    rw [hsf] at prepared
+    cases hlk : lookupMap IxVM.source.tables fnName args with
+    | error e => simp [hlk, Functor.map, Except.map] at prepared
+    | ok c =>
+      simp only [hlk, Functor.map, Except.map, Except.ok.injEq, Prod.mk.injEq] at prepared
+      obtain ⟨_, _, rfl⟩ := prepared
+      exact ⟨callsWithin_constantExpr _ c, noDollarCall_constantExpr c⟩
+  | some sf =>
+    rw [hsf] at prepared
+    simp only [SourceFunction.prepare] at prepared
+    split at prepared
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at prepared
+      obtain ⟨_, _, hbody⟩ := prepared
+      have hsf' : IxVM.program.sourceFunction? fnName = some sf := hsf
+      obtain ⟨key, f, types', hof, hf, hfn, _, hsf_eq⟩ := sourceFunction?_fn_detail hsf'
+      have hclosed := List.all_eq_true.mp ixvm_readPayloadClosed f hf
+      have hnd := List.all_eq_true.mp ixvm_noDollarCalls f hf
+      have hinf : inReadPayloadClosed f.name = true := hfn ▸ hin key hof
+      simp only [hinf, Bool.not_true, Bool.false_or] at hclosed
+      rw [← hbody, hsf_eq]
+      exact ⟨hclosed, hnd⟩
+    · cases prepared
+
+private theorem obsFn_readPayloadClosed_no_get_address {fnName : String}
+    {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
+    (ev : ObsFn Obs.W fnName args h r h' calls)
+    (hin : ∀ key, Instance.ofSymbol fnName = .ok key → inReadPayloadClosed key.name = true) :
+    ∀ cl ∈ calls, cl.name ≠ "IxonDeserialize::get_address" := by
+  revert hin
+  induction ev using ObsFn.rec
+    (motive_1 := fun _ _ expr _ _ _ calls _ =>
+      callsWithin inReadPayloadClosed expr = true → noDollarCall expr = true →
+      ∀ cl ∈ calls, cl.name ≠ "IxonDeserialize::get_address")
+    (motive_2 := fun _ _ exprs _ _ _ calls _ =>
+      callsWithinList inReadPayloadClosed exprs = true → noDollarCallList exprs = true →
+      ∀ cl ∈ calls, cl.name ≠ "IxonDeserialize::get_address")
+    (motive_4 := fun _ _ expr _ _ _ _ calls _ =>
+      callsWithin inReadPayloadClosed expr = true → noDollarCall expr = true →
+      ∀ cl ∈ calls, cl.name ≠ "IxonDeserialize::get_address")
+    (motive_5 := fun _ _ exprs _ _ _ _ calls _ =>
+      callsWithinList inReadPayloadClosed exprs = true → noDollarCallList exprs = true →
+      ∀ cl ∈ calls, cl.name ≠ "IxonDeserialize::get_address") with
+  | block _ ih hcw hnd cl hm => exact ih hcw hnd cl hm
+  | blockExit _ ih hcw hnd cl hm => exact ih hcw hnd cl hm
+  | literal _ _ cl hm => simp at hm
+  | var _ _ _ cl hm => simp at hm
+  | global _ interpreted _ ih _ _ cl hm =>
+    exact ih (callsWithin_toExpr _ _ interpreted) (noDollarCall_toExpr _ interpreted) cl hm
+  | tuple _ ih hcw hnd cl hm | array _ ih hcw hnd cl hm | «repeat» _ ih hcw hnd cl hm
+  | index _ _ ih hcw hnd cl hm | slice _ _ ih hcw hnd cl hm | builtin _ _ ih hcw hnd cl hm
+  | update _ _ ih hcw hnd cl hm | record _ ih hcw hnd cl hm | member _ _ ih hcw hnd cl hm
+  | construct _ ih hcw hnd cl hm | constructAs _ ih hcw hnd cl hm | project _ _ ih hcw hnd cl hm
+  | store _ ih hcw hnd cl hm | load _ _ ih hcw hnd cl hm | hint _ _ ih hcw hnd cl hm
+  | neg _ _ ih hcw hnd cl hm => exact ih hcw hnd cl hm
+  | letValue _ _ _ ih1 ih2 hcw hnd cl hm =>
+    simp only [callsWithin, Bool.and_eq_true] at hcw
+    simp only [noDollarCall, Bool.and_eq_true] at hnd
+    rcases List.mem_append.mp hm with h1 | h2
+    · exact ih1 hcw.1 hnd.1 cl h1
+    · exact ih2 hcw.2 hnd.2 cl h2
+  | binary _ _ _ ih1 ih2 hcw hnd cl hm =>
+    simp only [callsWithin, Bool.and_eq_true] at hcw
+    simp only [noDollarCall, Bool.and_eq_true] at hnd
+    rcases List.mem_append.mp hm with h1 | h2
+    · exact ih1 hcw.1 hnd.1 cl h1
+    · exact ih2 hcw.2 hnd.2 cl h2
+  | call _ _ ih1 ih2 hcw hnd cl hm =>
+    simp only [callsWithin, Bool.and_eq_true] at hcw
+    simp only [noDollarCall, Bool.and_eq_true] at hnd
+    rcases List.mem_append.mp hm with h1 | h2
+    · exact ih1 hcw.2 hnd.2 cl h1
+    · rcases List.mem_cons.mp h2 with rfl | h3
+      · exact instanceName_ne_of_ne (by decide) (inReadPayloadClosed_ne_get_address hcw.1)
+      · refine ih2 (fun key hof => ?_) cl h3
+        rw [instanceName_ofSymbol_name hnd.1 hof]
+        exact hcw.1
+  | matchValue _ selected _ ih1 ih2 hcw hnd cl hm =>
+    simp only [callsWithin, Bool.and_eq_true] at hcw
+    simp only [noDollarCall, Bool.and_eq_true] at hnd
+    rcases List.mem_append.mp hm with h1 | h2
+    · exact ih1 hcw.1 hnd.1 cl h1
+    · obtain ⟨p, hp⟩ := selectArm_body_mem selected
+      exact ih2 (callsWithin_arms_mem hcw.2 hp) (noDollarCall_arms_mem hnd.2 hp) cl h2
+  | nil _ _ cl hm => simp at hm
+  | cons _ _ ih1 ih2 hcw hnd cl hm =>
+    simp only [callsWithinList, Bool.and_eq_true] at hcw
+    simp only [noDollarCallList, Bool.and_eq_true] at hnd
+    rcases List.mem_append.mp hm with h1 | h2
+    · exact ih1 hcw.1 hnd.1 cl h1
+    · exact ih2 hcw.2 hnd.2 cl h2
+  | intro prepared _ ih =>
+    intro hin cl hm
+    obtain ⟨hclosed, hnd⟩ := prepare_readPayloadClosed prepared hin
+    exact ih hclosed hnd cl hm
+  | returned prepared _ ih =>
+    intro hin cl hm
+    obtain ⟨hclosed, hnd⟩ := prepare_readPayloadClosed prepared hin
+    exact ih hclosed hnd cl hm
+  | exit _ ih hcw hnd cl hm | exitPayload _ ih hcw hnd cl hm | fromBlock _ _ ih hcw hnd cl hm
+  | fromTuple _ ih hcw hnd cl hm | fromArray _ ih hcw hnd cl hm | fromRepeat _ ih hcw hnd cl hm
+  | fromIndex _ ih hcw hnd cl hm | fromSlice _ ih hcw hnd cl hm | fromBuiltin _ ih hcw hnd cl hm
+  | fromUpdate _ ih hcw hnd cl hm | fromRecord _ ih hcw hnd cl hm | fromMember _ ih hcw hnd cl hm
+  | fromConstruct _ ih hcw hnd cl hm | fromConstructAs _ ih hcw hnd cl hm
+  | fromProject _ ih hcw hnd cl hm | fromStore _ ih hcw hnd cl hm | fromLoad _ ih hcw hnd cl hm
+  | fromHint _ ih hcw hnd cl hm | fromNeg _ ih hcw hnd cl hm => exact ih hcw hnd cl hm
+  | fromGlobal _ interpreted _ ih _ _ cl hm =>
+    exact ih (callsWithin_toExpr _ _ interpreted) (noDollarCall_toExpr _ interpreted) cl hm
+  | fromLetValue _ ih hcw hnd cl hm =>
+    simp only [callsWithin, Bool.and_eq_true] at hcw
+    simp only [noDollarCall, Bool.and_eq_true] at hnd
+    exact ih hcw.1 hnd.1 cl hm
+  | letBody _ _ _ ih1 ih2 hcw hnd cl hm =>
+    simp only [callsWithin, Bool.and_eq_true] at hcw
+    simp only [noDollarCall, Bool.and_eq_true] at hnd
+    rcases List.mem_append.mp hm with h1 | h2
+    · exact ih1 hcw.1 hnd.1 cl h1
+    · exact ih2 hcw.2 hnd.2 cl h2
+  | binaryLeft _ ih hcw hnd cl hm =>
+    simp only [callsWithin, Bool.and_eq_true] at hcw
+    simp only [noDollarCall, Bool.and_eq_true] at hnd
+    exact ih hcw.1 hnd.1 cl hm
+  | binaryRight _ _ ih1 ih2 hcw hnd cl hm =>
+    simp only [callsWithin, Bool.and_eq_true] at hcw
+    simp only [noDollarCall, Bool.and_eq_true] at hnd
+    rcases List.mem_append.mp hm with h1 | h2
+    · exact ih1 hcw.1 hnd.1 cl h1
+    · exact ih2 hcw.2 hnd.2 cl h2
+  | fromCall _ ih hcw hnd cl hm =>
+    simp only [callsWithin, Bool.and_eq_true] at hcw
+    simp only [noDollarCall, Bool.and_eq_true] at hnd
+    exact ih hcw.2 hnd.2 cl hm
+  | fromMatchValue _ ih hcw hnd cl hm =>
+    simp only [callsWithin, Bool.and_eq_true] at hcw
+    simp only [noDollarCall, Bool.and_eq_true] at hnd
+    exact ih hcw.1 hnd.1 cl hm
+  | matchBody _ selected _ ih1 ih2 hcw hnd cl hm =>
+    simp only [callsWithin, Bool.and_eq_true] at hcw
+    simp only [noDollarCall, Bool.and_eq_true] at hnd
+    rcases List.mem_append.mp hm with h1 | h2
+    · exact ih1 hcw.1 hnd.1 cl h1
+    · obtain ⟨p, hp⟩ := selectArm_body_mem selected
+      exact ih2 (callsWithin_arms_mem hcw.2 hp) (noDollarCall_arms_mem hnd.2 hp) cl h2
+  | head _ ih hcw hnd cl hm =>
+    simp only [callsWithinList, Bool.and_eq_true] at hcw
+    simp only [noDollarCallList, Bool.and_eq_true] at hnd
+    exact ih hcw.1 hnd.1 cl hm
+  | tail _ _ ih1 ih2 hcw hnd cl hm =>
+    simp only [callsWithinList, Bool.and_eq_true] at hcw
+    simp only [noDollarCallList, Bool.and_eq_true] at hnd
+    rcases List.mem_append.mp hm with h1 | h2
+    · exact ih1 hcw.1 hnd.1 cl h1
+    · exact ih2 hcw.2 hnd.2 cl h2
+
+private theorem find?_append_none_left {α : Type _} {p : α → Bool} {l₁ l₂ : List α}
+    (h : ∀ x ∈ l₁, p x = false) : (l₁ ++ l₂).find? p = l₂.find? p := by
+  induction l₁ with
+  | nil => rfl
+  | cons a as ih =>
+    simp only [List.cons_append, List.find?_cons, h a List.mem_cons_self]
+    exact ih (fun x hx => h x (List.mem_cons_of_mem _ hx))
+
+/-- **The first `IxonDeserialize::get_address` call in a `KernelModeled::check_family` call list
+is the call on its own payload stream `v113` at `m114`.** -/
+theorem check_family_first_get_address {x_rc x_block x_rec_block v104 v113 : SourceValue F}
+    {h m105 m114 : Heap F} {calls cs107 cs124 rest : List (Call F)}
+    (sg112 : Obs.«KernelModeled::check_family».Seg1 x_rc x_block x_rec_block h v104 m105 cs107)
+    (ev126 : ObsFn Obs.W "KernelModeled::read_payload" [x_block] m105 v113 m114 cs124)
+    (hc : calls = cs107 ++ ((⟨"KernelModeled::read_payload", [x_block], m105⟩ : Call F) ::
+      (cs124 ++ ((⟨"IxonDeserialize::get_address", [v113], m114⟩ : Call F) :: rest)))) :
+    calls.find? (fun cl => cl.name == "IxonDeserialize::get_address") =
+      some ⟨"IxonDeserialize::get_address", [v113], m114⟩ := by
+  have hno107 : ∀ cl ∈ cs107, (cl.name == "IxonDeserialize::get_address") = false := by
+    have hax : ∀ {r' m' cs'}, ObsFn Obs.W "KernelRoles::role_ctx_axioms" [x_rc] h r' m' cs' →
+        ∀ cl ∈ cs', cl.name ≠ "IxonDeserialize::get_address" := by
+      intro r' m' cs' ev
+      exact obsFn_readPayloadClosed_no_get_address ev (fun key hof => by
+        have hsym := Instance.ofSymbol_symbol ⟨"KernelRoles::role_ctx_axioms", []⟩
+          (fun _ => by decide)
+        change Instance.ofSymbol (Instance.symbol ⟨"KernelRoles::role_ctx_axioms", []⟩) = .ok key at hof
+        rw [hsym] at hof
+        injection hof with hkey
+        subst hkey
+        decide)
+    match sg112 with
+    | .Nil (ev15 := ev15) (hc34 := hc34) .. | .Node (ev15 := ev15) (hc102 := hc34) .. =>
+      intro cl hcl
+      rw [hc34] at hcl
+      rcases List.mem_cons.mp hcl with rfl | hcl'
+      · dsimp only; decide
+      · exact beq_false_of_ne (hax ev15 cl hcl')
+  have hno124 : ∀ cl ∈ cs124, (cl.name == "IxonDeserialize::get_address") = false := by
+    intro cl hcl
+    refine beq_false_of_ne (obsFn_readPayloadClosed_no_get_address ev126 (fun key hof => ?_) cl hcl)
+    have hsym := Instance.ofSymbol_symbol ⟨"KernelModeled::read_payload", []⟩ (fun _ => by decide)
+    change Instance.ofSymbol (Instance.symbol ⟨"KernelModeled::read_payload", []⟩) = .ok key at hof
+    rw [hsym] at hof
+    injection hof with hkey
+    subst hkey
+    decide
+  rw [hc, find?_append_none_left hno107]
+  simp only [List.find?_cons]
+  have hrp : (("KernelModeled::read_payload" : String) == "IxonDeserialize::get_address") = false := by
+    decide
+  rw [hrp]
+  dsimp only
+  rw [find?_append_none_left hno124]
+  simp
 
 end IxVM.Refinement.Typing

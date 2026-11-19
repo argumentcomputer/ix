@@ -48,26 +48,6 @@ set_option linter.unnecessarySimpa false
 
 /-! ## Modeled-route propagation from observed `block_is_modeled` calls -/
 
-/-- Every `KernelModeled::check_family` call in `calls` is backed by an observed non-zero
-`KernelModeled::block_is_modeled` call on the same block address with subcalls in `calls`. -/
-def FamCallsModeled (calls : List (Call F)) : Prop :=
-  ∀ (rc xb xrb : SourceValue F) (h_cf : Heap F) (b : Bytes.Address),
-    (⟨"KernelModeled::check_family", [rc, xb, xrb], h_cf⟩ : Call F) ∈ calls →
-    Bytes.RepAddressRef Core.addrTy h_cf b xb →
-    ∃ (r_mod : SourceValue F) (m_mod m_mod' : Heap F) (cs_mod : List (Call F)),
-      ObsFn Obs.W "KernelModeled::block_is_modeled" [xb] m_mod r_mod m_mod' cs_mod ∧
-      r_mod ≠ .field 0 ∧
-      Bytes.RepAddressRef Core.addrTy m_mod b xb ∧
-      ∀ cl ∈ cs_mod, cl ∈ calls
-
-/-- Top-level `KernelClaim::verify_claim` derivations satisfy `FamCallsModeled`. -/
-theorem FamCallsModeled.of_verifyClaim {d : Digest} {value : SourceValue F} {heap : Heap F}
-    {calls : List (Call F)}
-    (ev : ObsFn Obs.W IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] [] value heap calls) :
-    FamCallsModeled calls :=
-  fun _ _ _ _ _ hcl hb =>
-    obsFn_check_family_modeled (by decide) (by decide) ev hcl hb
-
 /-- Build canonical hash coverage for a step store `E` from `TopWalkCore.hashedStored`. -/
 private theorem canonicalHashCoverage_of_step {K : FamRunCtx} {seeds : List _root_.Address}
     {rank : _root_.Address → Nat} {R E : Ixon.Env}

@@ -243,6 +243,7 @@ theorem validated_of_validateBinding {calls : List (Call F)} {a : _root_.Address
 /-- **The binding claim's export from its four named parts** (module docstring). -/
 theorem bindingClaimExportObs_of_parts {calls : List (Call F)} {d : Digest}
     (hb : Bounded calls)
+    (hfamMod : Typing.FamCallsModeled calls)
     (claimDecode : BindingClaimDecodes calls d)
     (tableAdmits : LoadedTableAdmits)
     (preludePins : LoadedTablePinsPrelude)
@@ -282,7 +283,8 @@ theorem bindingClaimExportObs_of_parts {calls : List (Call F)} {d : Digest}
       reads := fun g hg6 hg => admitsReads_observed_of_checked (hgs g hg6 hg).2.1
       stepStores := runStepStores_of_noCollision t (LoadedReads.RunStore.of_walkedL6 hload hw0) hb
         (fun x hx => List.mem_cons_of_mem _ hx) hnc
-      families := fun g hg6 hg => (hgs g hg6 hg).2.2 }
+      families := fun g hg6 hg => (hgs g hg6 hg).2.2
+      famCallsModeled := hfamMod }
 
 /-- **The claim export of the residual theorem, from the four named parts for every bounded
 run**: the decode of the claim is taken from the observed `verify_claim` derivation. -/
@@ -296,7 +298,7 @@ theorem bindingClaimExport_of_parts
     (groupStores : ∀ calls, GroupStoresOfRun calls) :
     SourceSoundBounded fun calls d => BindingClaimExportObs (BindingRun calls) calls d :=
   fun d value heap calls ev hb =>
-    bindingClaimExportObs_of_parts hb (claimDecode d value heap calls ev) tableAdmits
-      preludePins (groupStores calls)
+    bindingClaimExportObs_of_parts hb (Typing.FamCallsModeled.of_verifyClaim ev)
+      (claimDecode d value heap calls ev) tableAdmits preludePins (groupStores calls)
 
 end IxVM.Refinement.Binding
