@@ -26,6 +26,8 @@ namespace IxVM.Refinement.Typing.FamilyAlias
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
+open IxVM.Refinement.Decl (SubCalls)
+open IxVM.Refinement.KernelLevels (RepKLevelList)
 open IxVM.Consistency
 open IxVM (F)
 open IxVM.Refinement.Decl.FamilyAlias
@@ -37,6 +39,9 @@ open Ix.Kernel.Semantics (NativeFam DefEqListJ TypedListJ IotaRunsJ)
 set_option linter.unusedVariables false
 
 universe u
+
+/-- Default empty-context ghost map. -/
+abbrev zeroGhost : Nat → KExpr := fun _ => .sort .zero
 
 /-! ## Pure `KExpr`, `KeyIn`, `NoProjIn`, and `Infer` helpers -/
 
@@ -761,7 +766,8 @@ theorem rename_tm_stored {t : Ix.Kernel.RoleTable} (hwf : t.wf = true) {E₀ : I
             Core.Ctx.stored_key_of_find (c := ⟨E₀, env, t, lim⟩) hci
           have : Resolved (sc.κ (ixAddr a')) := ⟨by rw [hsc_a']; exact Resolved.ne⟩
           have hkey_eq : g (famKey t env srcAs (ixAddr a)) = sc.κ (ixAddr a') := by
-            rw [hfk_eq, ← hka, hsc_a']
+            rw [hfk_eq]
+            exact hka.symm.trans hsc_a'.symm
           simp only [Decl.renameAll, hkey_eq]
           exact .const (by simp)
             (Bytes.repAddressRef_heapMono₂ addrTy (Heap.Extends.snoc _ _) ra')
@@ -837,7 +843,8 @@ theorem rename_tm_stored {t : Ix.Kernel.RoleTable} (hwf : t.wf = true) {E₀ : I
             Core.Ctx.stored_projPermitted_of_find (c := ⟨E₀, env, t, lim⟩) hci
           have ses := ih _ _ _ _ _ _ iota_lt_calls e2 rfl _ src dst k Es rfl hes hsrc hdst
           have hkey_eq : g (famKey t env srcAs (ixAddr a)) = sc.κ (ixAddr a') := by
-            rw [hfk_eq, ← hka, hsc_a']
+            rw [hfk_eq]
+            exact hka.symm.trans hsc_a'.symm
           simp only [Decl.renameAll, hkey_eq]
           exact SubstAux.tm_store_proj
             (Bytes.repAddressRef_heapMono₂ addrTy e2.heap_extends ra') ses
@@ -896,11 +903,11 @@ theorem rename_list_stored_of_keys {t : Ix.Kernel.RoleTable} (hwf : t.wf = true)
     · obtain ⟨_, _, he, _, _⟩ := Lib.rep_cons_of_load hes ld; cases he
   | E :: Es, es, src, dst, r, h, h', cs, ev, hes, hkeys, hsrc, hdst => by
     rcases Obs.«KernelModeled::rename_list».obs ev with ⟨ld, _, _, _⟩ |
-      ⟨_, _, _, _, _, _, _, _, ld, rfl, rfl, ev1, ev2, _⟩
+      ⟨x_e, _, _, _, _, _, _, _, ld, rfl, rfl, ev1, ev2, _⟩
     · cases Lib.rep_nil_of_load hes ld
     · obtain ⟨E', Es', he, hE, hEs⟩ := Lib.rep_cons_of_load hes ld
       injection he with h1 h2; subst h1 h2
-      have hcellsE : ∀ a, AddrIn h _ a →
+      have hcellsE : ∀ a, AddrIn h x_e a →
           (∃ ci, env.find? (Core.keyOf t (ixAddr a)) = some ci) ∨ ixAddr a ∈ srcAs.map ixAddr := by
         intro a ha
         have hk := keyIn_of_tmExact_addrIn hE a ha
@@ -1026,10 +1033,10 @@ theorem check_iota_rule_facts
         ci_gc.toConstantVal.levelParams.length = cvj.levelParams.length ∧
         cvj.type.allLevelParamsDefined cvj.levelParams = true ∧
         Decl.NoProjIn (srcAs.map fun b => Core.keyOf t (ixAddr b)) cvj.type = true ∧
-        Tm (famKey t env srcAs) 0 Decl.zeroGhost h 0 (Core.posOf cvj.levelParams cvj.type) cty)
+        Tm (famKey t env srcAs) 0 zeroGhost h 0 (Core.posOf cvj.levelParams cvj.type) cty)
     (hilvls_rep : RepKLevelList h (lvls.map (Level.subst lps (Core.posLevels lps))) ilvls)
     (hpins_rep : RepList kexprListEnum
-      (fun h P p => Decl.TmExact (Core.keyOf t) 0 Decl.zeroGhost h rP P p) h
+      (fun h P p => Decl.TmExact (Core.keyOf t) 0 zeroGhost h rP P p) h
       (pins.map (Core.posOf lps)) pins_ptr)
     (inv : Decl.CheckIotaRuleInvR rc rm (.field (lps.length : F)) ty_r (.field (rP : F))
       (.field ((mI - rP : Nat) : F)) rhs cprj cty (.field (cnP : F)) (.field (cnF : F))
@@ -1085,8 +1092,8 @@ theorem check_iota_rule_facts
     rw [hcnp_val, SubstAux.val_natCast (by omega), List.length_map] at hv
     exact hv.symm
   -- 2. Stored `rhsA` front-end (`validate_expr_well_scoped`, `peel_n_lams_collect`, `rename`, `k_infer`)
-  have hrhs_pos_tm0 : Decl.TmExact (Core.keyOf t) 0 Decl.zeroGhost h 0 (Core.posOf lps rhsA) rhs :=
-    hrhs_rep 0 Decl.zeroGhost
+  have hrhs_pos_tm0 : Decl.TmExact (Core.keyOf t) 0 zeroGhost h 0 (Core.posOf lps rhsA) rhs :=
+    hrhs_rep 0 zeroGhost
   have hrhsA_nofvar : rhsA.hasFvar = false := by
     have hf := tmExact_hasFvar_false hrhs_pos_tm0
     unfold Core.posOf at hf
@@ -1116,9 +1123,9 @@ theorem check_iota_rule_facts
   have hrhs_cells_peel : ∀ a, AddrIn inv.h_peel rhs a →
       (∃ ci, env.find? (Core.keyOf t (ixAddr a)) = some ci) ∨ ixAddr a ∈ srcAs.map ixAddr :=
     fun a ha => hrhs_cells a (Binding.TmExact.addrIn_back hrhs_pos_tm0 ext_peel a ha)
-  have hrhs_m_raw : Decl.TmExact sc.κ 0 Decl.zeroGhost inv.h_rhs_m 0
+  have hrhs_m_raw : Decl.TmExact sc.κ 0 zeroGhost inv.h_rhs_m 0
       (Decl.renameAll g (Core.posOf lps rhsA)) inv.rhs_m :=
-    rename_stored_of_src (E₀ := E) (lim := lim) (Γ₂ := Decl.zeroGhost) htwf inv.ev_rhs_m hlenSD
+    rename_stored_of_src (E₀ := E) (lim := lim) (Γ₂ := zeroGhost) htwf inv.ev_rhs_m hlenSD
       (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_peel hsrc)
       (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_peel hdst)
       (hrhs_pos_tm0.mono ext_peel) hmodels hrhs_cells_peel
@@ -1127,8 +1134,8 @@ theorem check_iota_rule_facts
   obtain ⟨rhs_ty_pos, -, hrhs_inf_raw⟩ :=
     Decl.scoped_core_infer (c := sc)
       (hrc.mono (ext_rhs_m.trans ext_rhs_in))
-      (Decl.typesRep_alloc_nil sc.κ Decl.zeroGhost inv.h_rhs_m)
-      (Decl.ghostScoped_zero Decl.zeroGhost) hef hlf (hgoodOf inv.sub_rhs_inf)
+      (Decl.typesRep_alloc_nil sc.κ zeroGhost inv.h_rhs_m)
+      (Decl.ghostScoped_zero zeroGhost) hef hlf (hgoodOf inv.sub_rhs_inf)
       inv.ev_rhs_inf (hrhs_m_raw.mono ext_rhs_in).toTm
   have hrhs_pos_fv : (Core.posOf lps rhsA).hasFvar = false := by
     unfold Core.posOf; rw [Decl.hasFvar_instantiateLevelParams]; exact hrhsA_nofvar
@@ -1178,9 +1185,9 @@ theorem check_iota_rule_facts
   obtain ⟨r_tbody, r_ctx, Γ_t, fvs_pos, tbody_pos, htup_open, hopen_pos, -, hΓt_hi,
       htbody_ex, hctx_rep, hsc_t⟩ :=
     Decl.peel_collect_open_exact depth hd_val ev_open'
-      ((htty_rep 0 Decl.zeroGhost).mono ext_open_in)
-      (Decl.typesRep_alloc_nil sc.κ Decl.zeroGhost inv.h_tci)
-      (Decl.ghostScoped_zero Decl.zeroGhost)
+      ((htty_rep 0 zeroGhost).mono ext_open_in)
+      (Decl.typesRep_alloc_nil sc.κ zeroGhost inv.h_tci)
+      (Decl.ghostScoped_zero zeroGhost)
   injection htup_open with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
   simp only [Nat.zero_add] at hΓt_hi htbody_ex hctx_rep hsc_t
   obtain ⟨fvs, tbody, hopen_t, hfvs_pos, htbody_pos⟩ := Decl.openPisAtFvars_of_posOf hopen_pos
@@ -1407,7 +1414,7 @@ theorem check_iota_rule_facts
     intro key hk
     have hk_pos : KeyIn key (Core.posOf lps tyA) :=
       (keyIn_instantiateLevelParams lps (Core.posLevels lps) key tyA).mpr hk
-    obtain ⟨a, ha, rfl⟩ := addrIn_of_keyIn_tmExact (hty_rep 0 Decl.zeroGhost) key hk_pos
+    obtain ⟨a, ha, rfl⟩ := addrIn_of_keyIn_tmExact (hty_rep 0 zeroGhost) key hk_pos
     rcases hty_cells a ha with hst | hm
     · exact Or.inl hst
     · obtain ⟨b, hb, hab⟩ := List.mem_map.mp hm
@@ -1419,7 +1426,7 @@ theorem check_iota_rule_facts
     have hkp := (keyIn_instantiateLevelParams lps (Core.posLevels lps) key p).mp hk
     exact hty_keys key (keyIn_of_majorShape hmaj hp hkp)
   have hpins_ren_rep := rename_list_stored_of_keys (E₀ := E) (lim := lim)
-    (Γ₁ := Decl.zeroGhost) (Γ₂ := Decl.zeroGhost) htwf hlenSD hmodels inv.ev_pren
+    (Γ₁ := zeroGhost) (Γ₂ := zeroGhost) htwf hlenSD hmodels inv.ev_pren
     (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_cren hpins_rep) hpins_keys
     (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_cren hsrc)
     (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_cren hdst)
@@ -1597,11 +1604,11 @@ theorem check_iota_rule_facts
   -- 7. Constructor telescope (`cty_l`, `ctorTeleOk`, `crest`, `cres`, index `defeq_list_ok`)
   have ext_h_majeq := ext_h_pref.trans (ext_pref_exp.trans inv.ev_majeq.heap_extends)
   let cty_inst : KExpr := cvj.type.instantiateLevelParams cvj.levelParams lvls
-  have hctyl_tm0 : Tm (famKey t env srcAs) 0 Decl.zeroGhost inv.h_ctyl 0
+  have hctyl_tm0 : Tm (famKey t env srcAs) 0 zeroGhost inv.h_ctyl 0
       (Core.posOf lps cty_inst) inv.cty_l := by
     have hinst := SubstAux.gall (famKey t env srcAs) .expr_inst_levels [cty, ilvls] inv.h_majeq
       inv.cty_l inv.h_ctyl inv.cs_ctyl inv.ev_ctyl cty ilvls rfl
-      (bounded_sub (hsub_iota.trans inv.sub_ctyl) hbd) Decl.zeroGhost 0
+      (bounded_sub (hsub_iota.trans inv.sub_ctyl) hbd) zeroGhost 0
       (Core.posOf cvj.levelParams cvj.type) (lvls.map (Level.subst lps (Core.posLevels lps)))
       (hcty_rep.mono ext_h_majeq)
       ⟨_, hilvls_rep.mono ext_h_majeq, LvEqList.refl _⟩
@@ -1620,7 +1627,7 @@ theorem check_iota_rule_facts
   obtain ⟨r_ch0, r_ca0, ch0_pos, ca0_pos, htup_csp0, hch0_tm, -, hrem0_app⟩ :=
     SubstAux.gall (famKey t env srcAs) .collect_spine [inv.v_peel0] inv.h_peel0
       (.tuple [inv.chead0, inv.cargs0]) inv.h_csp0 inv.cs_csp0 inv.ev_csp0 inv.v_peel0 rfl
-      (bounded_sub (hsub_iota.trans inv.sub_csp0) hbd) 0 Decl.zeroGhost (cnP + cnF) rem0_pos hrem0_tm
+      (bounded_sub (hsub_iota.trans inv.sub_csp0) hbd) 0 zeroGhost (cnP + cnF) rem0_pos hrem0_tm
   injection htup_csp0 with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
   obtain ⟨a_ch0, us_ch0, rfl, -, -, -, -⟩ := hch0_tm.const_of_load inv.ld_chead0
   have hrem0_fn : rem0_pos.getAppFn = .const (famKey t env srcAs (ixAddr a_ch0)) us_ch0 := by
@@ -1633,9 +1640,9 @@ theorem check_iota_rule_facts
       hstrip_inst hfn_inst
   have ext_ctyl_csp0 := inv.ev_peel0.heap_extends.trans inv.ev_csp0.heap_extends
   have ext_h_csp0 := ext_h_majeq.trans (inv.ev_ctyl.heap_extends.trans ext_ctyl_csp0)
-  have hcty_ren_tm0 : Tm sc.κ 0 Decl.zeroGhost inv.h_cty_ren 0
+  have hcty_ren_tm0 : Tm sc.κ 0 zeroGhost inv.h_cty_ren 0
       (Core.posOf lps (cty_inst.renameConsts g)) inv.v_cty_ren := by
-    have hr := rename_tm_stored (E₀ := E) (lim := lim) (Γ₁ := Decl.zeroGhost) (Γ₂ := Decl.zeroGhost)
+    have hr := rename_tm_stored (E₀ := E) (lim := lim) (Γ₁ := zeroGhost) (Γ₂ := zeroGhost)
       htwf hlenSD hmodels inv.ev_cty_ren (hctyl_tm0.mono ext_ctyl_csp0)
       (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_csp0 hsrc)
       (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_csp0 hdst)
@@ -1776,13 +1783,13 @@ theorem check_iota_rule_facts
   have ext_h_deidx := ext_h_idxl.trans ext_idxl_deidx
   have hty_cells_deidx : ∀ a, AddrIn inv.h_deidx ty_r a →
       (∃ ci, env.find? (Core.keyOf t (ixAddr a)) = some ci) ∨ ixAddr a ∈ srcAs.map ixAddr :=
-    fun a ha => hty_cells a (Binding.TmExact.addrIn_back (hty_rep 0 Decl.zeroGhost) ext_h_deidx a ha)
-  have hty_m_ex : Decl.TmExact sc.κ 0 Decl.zeroGhost inv.h_ty_m 0
+    fun a ha => hty_cells a (Binding.TmExact.addrIn_back (hty_rep 0 zeroGhost) ext_h_deidx a ha)
+  have hty_m_ex : Decl.TmExact sc.κ 0 zeroGhost inv.h_ty_m 0
       (Core.posOf lps (tyA.renameConsts g)) inv.ty_m := by
-    have hr := rename_stored_of_src (E₀ := E) (lim := lim) (Γ₂ := Decl.zeroGhost) htwf inv.ev_ty_m
+    have hr := rename_stored_of_src (E₀ := E) (lim := lim) (Γ₂ := zeroGhost) htwf inv.ev_ty_m
       hlenSD (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_deidx hsrc)
       (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_deidx hdst)
-      ((hty_rep 0 Decl.zeroGhost).mono ext_h_deidx) hmodels hty_cells_deidx
+      ((hty_rep 0 zeroGhost).mono ext_h_deidx) hmodels hty_cells_deidx
     have hnp_ty_pos : Decl.NoProjIn srcKeys (Core.posOf lps tyA) = true := by
       unfold Core.posOf; rw [Decl.noProjIn_instantiateLevelParams]; exact hnp_ty
     rw [Decl.renameAll_eq_renameConsts_of_noProjIn hout hnp_ty_pos] at hr
@@ -1797,9 +1804,9 @@ theorem check_iota_rule_facts
   obtain ⟨fvs1_pos, remA1_pos, rdoms_pos, lrest_pos, hop_dt1_pos, hinst_r_pos, hraw_pre⟩ :=
     Decl.defeq_tele_scoped_spec (c := sc) rP (d := 0) (depth := depth)
       hrp_val (by omega) (hrc.mono ext_h_dt1_in)
-      (Decl.typesRep_alloc_nil sc.κ Decl.zeroGhost inv.h_ty_m)
-      (Decl.ghostScoped_zero Decl.zeroGhost) hef hlf (hgoodOf inv.sub_dt1) inv.ev_dt1
-      ((htty_rep 0 Decl.zeroGhost).mono ext_tci_dt1_in)
+      (Decl.typesRep_alloc_nil sc.κ zeroGhost inv.h_ty_m)
+      (Decl.ghostScoped_zero zeroGhost) hef hlf (hgoodOf inv.sub_dt1) inv.ev_dt1
+      ((htty_rep 0 zeroGhost).mono ext_tci_dt1_in)
       (hty_m_ex.toTm.mono ext_ty_m_nil)
   obtain ⟨fvs1, remA1, hop_dt1, hfvs1_pos, hremA1_pos⟩ := Decl.openPisAtFvars_of_posOf hop_dt1_pos
   subst hfvs1_pos hremA1_pos
@@ -1901,8 +1908,8 @@ theorem check_iota_rule_facts
       -, hctxp_rep, hsc_p⟩ :=
     Decl.peel_collect_open_exact rP hrp_val inv.ev_ctxp
       (hty_m_ex.mono (ext_ty_m_dt2.trans ext_dt2_nil))
-      (Decl.typesRep_alloc_nil sc.κ Decl.zeroGhost inv.h_dt2)
-      (Decl.ghostScoped_zero Decl.zeroGhost)
+      (Decl.typesRep_alloc_nil sc.κ zeroGhost inv.h_dt2)
+      (Decl.ghostScoped_zero zeroGhost)
   injection htup_ctxp with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
   simp only [Nat.zero_add] at hΓp_hi hctxp_rep hsc_p
   obtain ⟨fvsP_m, crest2_m, hopen_pm, hfvsPm_pos, hcrest2m_pos⟩ :=
@@ -1918,9 +1925,9 @@ theorem check_iota_rule_facts
   have ext_ctyl_ctxp := ext_ctyl_csp0.trans (inv.ev_cty_ren.heap_extends.trans
     (inv.ev_crest.heap_extends.trans (ext_crest_dt1.trans
       (ext_dt1_dt2.trans (ext_dt2_nil.trans inv.ev_ctxp.heap_extends)))))
-  have hcty_ren2_tm0 : Tm sc.κ 0 Decl.zeroGhost inv.h_cty_ren2 0
+  have hcty_ren2_tm0 : Tm sc.κ 0 zeroGhost inv.h_cty_ren2 0
       (Core.posOf lps (cty_inst.renameConsts g)) inv.v_cty_ren2 := by
-    have hr := rename_tm_stored (E₀ := E) (lim := lim) (Γ₁ := Decl.zeroGhost) (Γ₂ := Decl.zeroGhost)
+    have hr := rename_tm_stored (E₀ := E) (lim := lim) (Γ₁ := zeroGhost) (Γ₂ := zeroGhost)
       htwf hlenSD hmodels inv.ev_cty_ren2 (hctyl_tm0.mono ext_ctyl_ctxp)
       (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_ctxp hsrc)
       (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_ctxp hdst)
@@ -1944,7 +1951,7 @@ theorem check_iota_rule_facts
       (ext_open_in.trans (inv.ev_open.heap_extends.trans
         (ext_open_dt1.trans (ext_dt1_dt2.trans (ext_dt2_nil.trans
           (inv.ev_ctxp.heap_extends.trans (inv.ev_cty_ren2.heap_extends.trans
-            (inv.ev_crestp.heap_extends.trans ext_crestp_nil))))))))))))
+            (inv.ev_crestp.heap_extends.trans ext_crestp_nil)))))))))))
   have ext_tym_lt1_in := ext_ty_m_dt2.trans (ext_dt2_nil.trans
     (inv.ev_ctxp.heap_extends.trans (inv.ev_cty_ren2.heap_extends.trans
       (inv.ev_crestp.heap_extends.trans ext_crestp_nil))))
@@ -1952,8 +1959,8 @@ theorem check_iota_rule_facts
       htup_lt1, hop_lt1_pos, hinst_lt1_pos, -, hΓl_hi, hremL1_tm, hlctx_rep, hsc_l, hraw_lt1⟩ :=
     Decl.defeq_lam_tele_scoped_spec (c := sc) rP (d := 0) (depth := depth)
       hrp_val (by omega) (hrc.mono ext_h_lt1_in)
-      (Decl.typesRep_alloc_nil sc.κ Decl.zeroGhost inv.h_crestp)
-      (Decl.ghostScoped_zero Decl.zeroGhost) hef hlf (hgoodOf inv.sub_lt1) inv.ev_lt1
+      (Decl.typesRep_alloc_nil sc.κ zeroGhost inv.h_crestp)
+      (Decl.ghostScoped_zero zeroGhost) hef hlf (hgoodOf inv.sub_lt1) inv.ev_lt1
       (hrhs_m_raw.toTm.mono ext_rhsm_lt1_in)
       (hty_m_ex.toTm.mono ext_tym_lt1_in)
   injection htup_lt1 with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
