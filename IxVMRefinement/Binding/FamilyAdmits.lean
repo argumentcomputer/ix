@@ -197,13 +197,13 @@ theorem FamilyCallExact.toOwn {calls : List (Call F)} {bAddr : _root_.Address}
     (hex : FamilyCallExact calls bAddr t B rb lim cs advAs) :
     FamilyCallOwn calls bAddr t B rb lim cs advAs := by
   obtain ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev, g, hmem, hsub⟩ := hex
-  obtain ⟨path, _, _, _, _, _, _, m_ws, m_ws', nw, _, x_s4, x_outside, x_s5, cs_ws,
-    ext_h_ws, _, ev_ws, x_wset, m_asb, cs_asb, ev_asb, _, m_crr, _, ev_crr,
+  obtain ⟨path, _, _, _, _, _, _, m_ws, m_ws', nw, bytes4, x_s4, x_outside, x_s5, cs_ws,
+    ext_h_ws, hs4, ev_ws, x_wset, m_asb, cs_asb, ev_asb, _, m_crr, _, ev_crr,
     x_advice, v_adv, m_adv', cs_adv, ev_adv, advRep, _, _, _, _, _, _,
     sub_ws, _, sub_asb, _, sub_adv, _, _⟩ := g
   exact ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev,
-    FamilyOwnAdvice.mk path m_ws x_s4 (.field (nw : F)) x_outside x_s5 m_ws' cs_ws ev_ws
-      x_wset m_asb cs_asb ev_asb m_crr m_adv' x_advice v_adv cs_adv ev_adv
+    FamilyOwnAdvice.mk path m_ws x_s4 (.field (nw : F)) x_outside x_s5 m_ws' cs_ws ⟨bytes4, hs4⟩
+      ev_ws x_wset m_asb cs_asb ev_asb m_crr m_adv' x_advice v_adv cs_adv ev_adv
       ext_h_ws ev_crr.heap_extends advRep sub_ws sub_asb sub_adv,
     hmem, hsub⟩
 
