@@ -275,8 +275,9 @@ theorem basis_etaIota :
     exact hη rfl rfl basisEnv_find_punitUnit basisEnv (Ix.Kernel.EnvExt.refl _) d us' args ty' hlen
       hcl hinf
   · intro cvc' hC'
-    rw [basisEnv_find_punitUnit] at hC'
-    obtain ⟨rfl, -, -⟩ := Ix.Kernel.ConstantInfo.ctorInfo.inj (Option.some.inj hC')
+    have hC'' : basisEnv.find? (Ix.Kernel.Key.role .punitUnit) = some (.ctorInfo cvc' 0 0) := hC'
+    rw [basisEnv_find_punitUnit] at hC''
+    obtain ⟨rfl, -, -⟩ := Ix.Kernel.ConstantInfo.ctorInfo.inj (Option.some.inj hC'')
     exact ⟨_, rfl⟩
 
 end
