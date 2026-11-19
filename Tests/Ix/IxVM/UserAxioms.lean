@@ -199,13 +199,15 @@ def distributedCli : IO Bool := do
     let ixe := dir / "axiom.ixe"
     IO.FS.writeBinFile ixe (← IO.ofExcept (Ixon.serEnv (← IO.ofExcept (wholeEnvironment true))))
     let manifest := dir / "one.ixes"
-    let shard ← IO.Process.output { cmd := ix.toString,
+    let shard ← IO.Process.output {
+      cmd := ix.toString
       args := #["shard", ixe.toString, "--shards", "1", "--out", manifest.toString] }
     unless shard.exitCode == 0 do
       IO.eprintln s!"[ixvm-user-axioms] ix shard failed: {shard.stderr}"
       return false
     let prover := dir / "no-prover"
-    let out ← IO.Process.output { cmd := ix.toString,
+    let out ← IO.Process.output {
+      cmd := ix.toString
       args := #["prove", "--distributed", "--exec-only", "--assume-binding", "--no-index",
         "--max-ram", "8", "--ixe", ixe.toString, "--ixes", manifest.toString]
       env := #[("IX_PROVER_HOST", some prover.toString)] }

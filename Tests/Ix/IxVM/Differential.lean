@@ -285,7 +285,7 @@ def Attribution.mark (a : Attribution) (blocks : Array Address) (o : Outcome) : 
 /-- The outcome of every block of the report's `parts` (`reportParts`) that did not pass,
 over the manifest's `shards` and their owned constants `owners`
 (`Ix.Shard.ownedConstsPer`), with `accepts` running an owned set again. -/
-def attribute (env : Ixon.Env) (accepts : String → Array Address → IO Bool)
+def attributeParts (env : Ixon.Env) (accepts : String → Array Address → IO Bool)
     (shards owners : Array (Array Address)) (parts : Array (Nat × Array (Array Address × Nat))) :
     IO Attribution := do
   let mut a : Attribution := {}
@@ -417,7 +417,7 @@ def runShards (leanEnv : Lean.Environment) : IO UInt32 := do
   let missing := (List.range view.shards.size).filter (!seen.contains ·)
   unless missing.isEmpty do
     throw (IO.userError s!"the report has no verdict for shards {missing}")
-  let a ← attribute env (shardAccepted env) view.shards owners parts
+  let a ← attributeParts env (shardAccepted env) view.shards owners parts
   IO.println s!"[ixvm-differential] {view.shards.size} shards, {owners.foldl (· + ·.size) 0} owned \
     constants; shards with a part that did not pass {a.shards}"
   -- Lean: a replay of the named constants' closure, unless `IX_DIFF_LEAN=skip`.
@@ -494,7 +494,7 @@ def attributionChecks : IO Unit := do
     runs.modify (·.push owned)
     return !(owned.contains rd || owned.contains rf || (owned.contains ra && owned.contains rb))
   let parts ← IO.ofExcept (reportParts report)
-  let a ← attribute env accepts shards owners parts
+  let a ← attributeParts env accepts shards owners parts
   let names : Array (Lean.Name × Address) :=
     #[(`a, ra), (`b, rb), (`c, rc), (`d, rd), (`e, re), (`f, rf), (`g, rg), (`h, rh), (`i, ri), (`j, rj)]
   let lean : Std.HashMap String String := names.foldl (fun m (n, _) => m.insert n.toString "accept") {}
