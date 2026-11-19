@@ -2133,7 +2133,7 @@ theorem wrapDom_not_defn_to_wrapRel {find? : KKey → Option (ConstantInfo .anon
         cases ci with
         | defnInfo cv v hint => exact (hnotdef cv v hint hf).elim
         | _ => rfl
-    unfold Ix.Kernel.Semantics.Consumes Ix.Kernel.Semantics.consumeWrapper at hc
+    unfold consumeWrapper at hc
     rw [hfn] at hc
     cases hargs : d.getAppArgs with
     | nil => simp [hargs] at hc
