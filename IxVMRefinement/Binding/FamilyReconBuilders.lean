@@ -220,11 +220,12 @@ private theorem peelAll_length_le_count_aux {rom : ROM F} {κ : _root_.Address �
       cases hget : h[loc]? with
       | none => rw [hget] at ld; cases ld
       | some stored =>
-        rw [hget] at ld
-        split at ld
-        · cases ld
-        · obtain ⟨w1, w2, hst⟩ : ∃ w1 w2, stored = .construct kexprEnum "Forall" [w1, xbody, w2] :=
-            ⟨_, _, (Except.ok.inj ld).symm⟩
+        by_cases hty_ne : Value.type stored ≠ ty
+        · simp [loadValue, hget, hty_ne] at ld
+        · simp only [loadValue, hget, hty_ne, ↓reduceIte, pure, Except.pure, bind, Except.bind,
+            Except.ok.injEq] at ld
+          obtain ⟨w1, w2, hst⟩ : ∃ w1 w2, stored = .construct kexprEnum "Forall" [w1, xbody, w2] :=
+            ⟨_, _, ld.symm⟩
           obtain ⟨s, addr, enc, hs, hmem_r, hrep_c, rfl⟩ := represents_ptr_inv_b hrep
           rw [hget] at hs; cases hs
           rw [hst] at hrep_c
@@ -309,8 +310,8 @@ theorem walk_fields_classify_doms_len {κ : _root_.Address → KKey} {E : KExpr}
       RepList kexprListEnum (fun _ (_ : Unit) _ => True) h' ds xds := by
   have sub : ∀ {cs' : List (Call F)}, (∀ c ∈ cs', c ∈ cs) → Bounded cs' :=
     fun hs => RomBound.bounded_mono hbnd hs
-  match Obs.«KernelCheck::walk_fields_classify».obs ev with
-  | .Forall_n1 (x_dom := xdom) (x_body := xbody) (m37 := m1) (m75 := m2)
+  match Obs.«KernelCheck::walk_fields_classify».obsx ev with
+  | .Forall_n1_bind (x_dom := xdom) (x_body := xbody) (m37 := m1) (m75 := m2)
       (m122 := m3) (m153 := m4) (m184 := m5) (m243 := m6) (m274 := m7) (cs307 := cs3)
       (ld12 := ld) (ev49 := evw) (ev87 := evrecf)
       (hm132 := hm3) (hm163 := hm4) (hm194 := hm5) (hm253 := hm6) (hm284 := hm7)
@@ -2166,7 +2167,7 @@ theorem build_minor_at_depth_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Rol
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupU
       obtain ⟨rfl, -, -, -, -⟩ := htupU
       have hltU := repList_length_lt_obs hbd hsub evlen1 (by rw [hc]; simp) (by simp) hrepU
-      simpa using hlenU ▸ hltU
+      simp only [List.length_nil, Nat.zero_add] at hlenU; omega
     obtain ⟨ext_3d_4, _, _, _, _, _, pfDoms, pfNorm, ri, rm, pfRet, htup,
         hpfd, hri, hrm, hret, hnorm, hpfdIn, hretIn, hnormIn, hev_wfc⟩ :=
       walk_fields_classify_nil_spec hinj hA hD hI hC hM (by omega) evwfc'
@@ -2174,7 +2175,7 @@ theorem build_minor_at_depth_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Rol
         (hafter.mono ext3_d) hafterIn (flatList_mono ext0_3d hes) hnil1 hnil2 hnil3 hnil4
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
     obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := htup
-    obtain ⟨f_wfc, hf_wfc⟩ := hev_wfc
+    have ⟨f_wfc, hf_wfc⟩ := hev_wfc
     obtain ⟨hnorm_len, hrm_len, hri_lt, hrm_lt⟩ :=
       fieldsClassify_lengths_and_bounds after 0 pfDoms pfNorm ri rm pfRet (hf_wfc f_wfc (Nat.le_refl _))
     simp only [Nat.zero_add] at hri_lt
@@ -3268,7 +3269,10 @@ theorem build_rec_type_from_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Role
     rw [show (ReconView.ofStore t E₀).ind e0.addr = some (some prim) from hprim_ind,
       hself_ind_e]
     dsimp only
-    rw [hfp, hfm, hfmin, hpeel_eq, hni_eq, hsa]
+    rw [hfp, hfm]
+    dsimp only
+    rw [hfmin, hpeel_eq, hni_eq, hsa]
+    dsimp only
     cases hcd : collectDoms (ReconView.ofStore t E₀) f nI selfAfter with
     | none => simp [hcd] at hfi
     | some p =>
@@ -3566,8 +3570,9 @@ theorem apply_ihs_full_spec {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
         rw [List.getElem?_map, hpeer_m]; rfl
       refine ⟨B, ?_, hBtm⟩
       simp only [applyIhs]
-      rw [hrm_k, Option.getD_some, hmap_get, hnorm_fi, hfop_m,
-        show (ReconView.ofStore t E₀).key = Core.keyOf t from rfl, hB]
+      rw [hrm_k, Option.getD_some, hmap_get, hnorm_fi, hfop_m]
+      dsimp only
+      rw [Option.getD_some, show (ReconView.ofStore t E₀).key = Core.keyOf t from rfl, hB]
 
 /-- **`KernelCheck::build_rule_rhs`** refines `ruleBody (ReconView.ofStore t E₀)` at `Eventually`
 on `TmOExact`. -/
@@ -3697,7 +3702,7 @@ theorem build_rule_rhs_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupU
       obtain ⟨rfl, -, -, -, -⟩ := htupU
       have hltU := repList_length_lt_obs hbd hsub evlen (by rw [hc]; simp) (by simp) hrepU
-      simpa using hlenU ▸ hltU
+      simp only [List.length_nil, Nat.zero_add] at hlenU; omega
     obtain ⟨ext_5d_6, _, _, _, _, _, fds, norm, ri, rm, ret, htup,
         hfds, hri, hrm, -, hnorm, -, -, -, hev_wfc⟩ :=
       walk_fields_classify_nil_spec hinj hA hD hI hC hM (by omega) evwfc'
@@ -3705,7 +3710,7 @@ theorem build_rule_rhs_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
         (hafter.mono ext5_d) hafterIn (flatList_mono ext0_5d hes) hnil1 hnil2 hnil3 hnil4
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
     obtain ⟨rfl, rfl, rfl, -, rfl⟩ := htup
-    obtain ⟨f_wfc, hf_wfc⟩ := hev_wfc
+    have ⟨f_wfc, hf_wfc⟩ := hev_wfc
     obtain ⟨hnorm_len, hrm_len, hri_lt, hrm_lt⟩ :=
       fieldsClassify_lengths_and_bounds after 0 fds norm ri rm ret (hf_wfc f_wfc (Nat.le_refl _))
     simp only [Nat.zero_add] at hri_lt
@@ -3732,6 +3737,8 @@ theorem build_rule_rhs_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
         [vhead, xri, xrm, xnorm, xpeers, xfop, .field (nP : F), .field (nMot : F),
           .field (nMin : F), .field (nFields : F), xrlvls, .field ((0 : Nat) : F), xelim]
         m9 r h' cs9 := by simpa using evih
+    have hri_len_lt : ri.length < 2 ^ 39 :=
+      repList_length_lt_obs hbd hsub evih' (by rw [hc]; simp) (by simp) (fieldList_mono ext69 hri)
     obtain ⟨B, hB, hBtm⟩ := apply_ihs_full_spec (t := t) (E₀ := E₀)
       (by omega) (by omega) hfop_lt_b (by omega) hpeers_len hfop56
       (fun m hm => by rw [hfop_len]; exact hrm_lt m hm)
