@@ -5483,27 +5483,11 @@ theorem remainingFamilyClauses_of_run {calls : List (Call F)} {bAddr : _root_.Ad
       exact hformS
   }
 
-/-- **Closed `GroupStoresOfRun`**: discharges the binding group-store hypothesis unconditionally
-for every run (direct drop-in for `Endpoint/ComposedResidual.lean`). -/
-theorem groupStoresOfRun_closed (calls : List (Call F)) : GroupStoresOfRun calls := by
-  intro hbd V extra hextra a tb t htb hadm hall hpin hval
-  by_cases hcol : V.HashedCollision extra calls
-  · exact Or.inl hcol
-  right
-  have hnoColl : ∀ b₁ b₂ : ByteArray, Hashed calls b₁ → Hashed calls b₂ →
-      Address.blake3Pure b₁ = Address.blake3Pure b₂ → b₁ = b₂ := by
-    rcases Claim.noColl_or_hashedCollision V extra calls with h | h
-    · exact absurd h hcol
-    · exact h
-  have hw0 : Claim.WalkedL6 calls t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) [] :=
-    Claim.walkedL6_envOfRecs (seeds := []) hnoColl [] hadm (by simp)
-      (by intro r hr; cases hr)
-  have hload : LoadedBy calls (Claim.runEnv ⟨a, tb⟩ (t := t) calls) :=
-    Claim.envOfRecs_loadedBy (t := t) ⟨a, tb⟩ calls []
-  have hS := LoadedReads.RunStore.of_walkedL6 hload hw0
-  have hH := LoadedReads.hashedRecordsStored_of_walkedL6 hw0
-  have hC : CollisionFreeRun calls (Claim.runEnv ⟨a, tb⟩ (t := t) calls) :=
-    collisionFreeRun_of_no_collision hextra hcol hS hH
+/-- **Closed `RemainingStoreClausesOfRunNC`**: discharges the remaining family clauses for any
+bounded, collision-free binding run with `RunStepStores`. -/
+theorem remainingStoreClausesOfRunNC_closed (calls : List (Call F)) :
+    RemainingStoreClausesOfRunNC calls := by
+  intro hbd a tb t htb hadm hall hpin hval hC hstep _
   have hb := basisRows_of_run hC hpin hval
   have hax := axiomRoles_of_run hC hval
   have hbr : BasisRolesStored t := basisRolesStored_of_pinned hpin
@@ -5511,76 +5495,12 @@ theorem groupStoresOfRun_closed (calls : List (Call F)) : GroupStoresOfRun calls
     ((Ix.Kernel.Admission.admitBinding_ok_iff _ _ t).mp hadm).wellFormed
   have hroots : RootsSafe t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) :=
     RootsSafe.of_run hC hval (rootsAndTheoremsSafe_of_run hC hval)
-  have hstep := runStepStores_of_noCollision t hS hbd hextra hcol
-  have hRF := remainingFamilyClauses_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hval
-  have hvalAll : ∀ g, ∀ r ∈ roleGroup g, RoleValidationIn calls a t g r := by
-    intro g r hr
-    by_cases hg : g < 77
-    · exact hval g hg r hr
-    · rw [roleGroup_eq_nil (by rw [groups_length]; omega)] at hr; cases hr
-  have hws : ∀ k, ∃ recs, GroupWalked calls a t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) k recs :=
-    fun k => groupWalked_exists hH (hvalAll k)
-  have hP := payloadFacts_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
-  have hblock := blockSteps_of_run hC hvalAll hws
-  have hpayOps := payloadOps_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
-  have hclaimedAll := claimed_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
-  have hrunFactsAll := runFactsLeft_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
-  have hpayChkAll := payloadChecked_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
-  have hrankedAll := payloadRanked_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
-  have hrk : ∀ g, ∃ r : _root_.Address → Nat, 6 ≤ g → g < 77 →
-      GroupRanked t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) (runPayload calls a t) g
-        (runFamOf calls a t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) g) (runAdv calls a t g)
-        (runCont calls a t g) r := by
-    intro g
-    by_cases hr : 6 ≤ g ∧ g < 77
-    · obtain ⟨r, hr'⟩ := hrankedAll g hr.1 hr.2
-      exact ⟨r, fun _ _ => hr'⟩
-    · exact ⟨fun _ => 0, fun h6 h77 => absurd ⟨h6, h77⟩ hr⟩
-  refine ⟨fun g => Classical.choose (hrk g),
-    groupStore t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) (runPayload calls a t),
-    groupStore_basis_consts, groupStore_basis_blobs, fun g hg6 hg => ⟨?_, ?_, ?_⟩⟩
-  · have hw := Classical.choose_spec (hws g)
-    have hrank := Classical.choose_spec (hrk g) hg6 hg
-    exact
-      { mono := groupStore_mono hb hg6
-        monoBlobs := groupStore_monoBlobs hg6
-        loaded := groupStore_loaded hb (Nat.le_succ_of_le hg6)
-        loadedBlobs := groupStore_loadedBlobs (Nat.lt_succ_of_le hg6)
-        hashed := groupStore_hashed hS hb (Nat.lt_succ_of_le hg6)
-        usedClosed :=
-          groupStore_usedClosed_all hC hb hbr hax hP hws (g + 1) (Nat.le_succ_of_le hg6)
-        committed := groupStore_committed hC hb (Nat.le_succ_of_le hg6)
-        zeroFree := groupStore_zeroFree hC hb (Nat.lt_succ_of_le hg6)
-        rankUsed := hrank.used
-        rankOwner := hrank.owner
-        projMember := groupStore_projMember hC hb hax hP hg6 hw
-        standing := standing_of_rootsSafe hC hb hpin hP hval hroots g hg6 hg
-        logic := logic_of_rootsSafe hC hb hP hval hroots g hg6 hg
-        validated := fun _ _ => trivial
-        kept := groupStore_kept hC hb hax hg6 hw
-        opsOwn := groupStore_opsOwn hC hb hax hP hcheck hvalAll hg6 hw
-          (walkStepsOrdered_all hC hvalAll hblock g)
-          (payloadOpEarlier_all hpayOps g hg6)
-        unitsLast := groupStore_unitsLast hC hb hax hP hpin hws hg6 (hvalAll g) hw
-          (walkStepsOrdered_all hC hvalAll hblock g)
-          (payloadOpEarlier_all hpayOps g hg6)
-        evidenceRefs := groupStore_evidenceRefs hC hb hbr hax hP hws hg6 hw }
-  · exact
-      { blobs := groupStore_reads_blobs (Nat.lt_succ_of_le hg6)
-        reads := groupStore_reads hcheck hC hb hbr hax hP hws hg6 }
-  · exact ⟨_, _, _, families_of_remaining (rk := fun g => Classical.choose (hrk g)) hC hb hax hP hRF
-      hcheck hroots hpin hg6 hg hvalAll (Classical.choose_spec (hws g))
-      (Classical.choose_spec (hrk g) hg6 hg) (payloadOpEarlier_all hpayOps g hg6)
-      (groupStore_usedClosed_all hC hb hbr hax hP hws g hg6)
-      (groupStore_usedClosed_all hC hb hbr hax hP hws (g + 1) (Nat.le_succ_of_le hg6))
-      hstep
-      (groupStore_unitsLast hC hb hax hP hpin hws hg6 (hvalAll g) (Classical.choose_spec (hws g))
-        (walkStepsOrdered_all hC hvalAll hblock g)
-        (payloadOpEarlier_all hpayOps g hg6))
-      (logic_of_rootsSafe hC hb hP hval hroots g hg6 hg)
-      (hclaimedAll g hg6 hg)
-      (hrunFactsAll g hg6 hg (fun g => Classical.choose (hrk g)))
-      (hpayChkAll g hg6 hg)⟩
+  exact remainingFamilyClauses_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hval
+
+/-- **Closed `GroupStoresOfRun`**: discharges the binding group-store hypothesis unconditionally
+for every run (direct drop-in for `Endpoint/ComposedResidual.lean`). -/
+theorem groupStoresOfRun_closed (calls : List (Call F)) : GroupStoresOfRun calls :=
+  groupStoresOfRun_of_remainingNC (remainingStoreClausesOfRunNC_closed calls)
 
 end IxVM.Refinement.Binding.FamilyRecon
 
