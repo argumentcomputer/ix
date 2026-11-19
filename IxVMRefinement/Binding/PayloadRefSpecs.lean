@@ -2141,8 +2141,8 @@ theorem check_advice_record_spec {calls : List (Call F)} {bAddr : _root_.Address
               (List.length_filter_eq_length_iff.mp hflen) m hm
             cases m with
             | indc ind => exact ⟨ind, rfl⟩
-            | defn _ => simp [Core.Specs.Callees.isIndc] at hbi
-            | recr _ => simp [Core.Specs.Callees.isIndc] at hbi
+            | defn _ => simp [Core.Specs.Callees.isIndc, Core.isIndc] at hbi
+            | recr _ => simp [Core.Specs.Callees.isIndc, Core.isIndc] at hbi
           exact ⟨ms, rfl, hallIndc, hchkAll, hnat⟩
         | defn _ => rw [hinfo] at hinfoRep; obtain ⟨_, h', -⟩ := hinfoRep; rw [hv] at h'; simp at h'
         | recr _ => rw [hinfo] at hinfoRep; obtain ⟨_, h', -⟩ := hinfoRep; rw [hv] at h'; simp at h'
