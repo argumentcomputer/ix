@@ -36,7 +36,7 @@ theorem operationRoleUnitW_of_validation
     {calls : List (Call F)} (hv : OpValidationFactsW.{u} L calls) :
     AtGroups (BindingRun calls) (RoleUnitStepOverW.{u} (· ∈ RoleOps.opRoles) L) := by
   intro t ρ Rs hrun hall ht g h6 h77 r a R R₁ R' env₁ famOf₁ hgrp hop ha hadm hreads hb hadds
-    hle hW hsf
+    hle hW hsf hlp'
   have htwf : t.wf = true := wf_of_check ht
   have hkeya : keyOf t a = Ix.Kernel.Key.role r := Core.keyOf_of_addressOf htwf ha
   have hkey_role : ∀ x, keyOf t x = Ix.Kernel.Key.role r → x = a := by
@@ -72,7 +72,7 @@ theorem operationRoleUnitW_of_validation
     · exact Option.isSome_iff_exists.mpr ⟨_, by rw [hkeya]; exact hself⟩
   · refine storedFamilies_roleUnit hadds hb.shape.usedClosed hadm.usedClosed hform
       (fun x hx => ?_) (fun x hx => ?_) (fun rb crb hi => familyInstalled_mono hext hnd hi)
-      (fun hk => find_of_ext hext hnd hk) hsf
+      (fun hk => find_of_ext hext hnd hk) hlp' hsf
     · obtain ⟨ci, hci, hn⟩ := hx
       exact ⟨ci, hext ci hci, hn⟩
     · obtain ⟨ci, hci, hn⟩ := hx

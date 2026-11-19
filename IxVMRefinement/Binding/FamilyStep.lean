@@ -2,6 +2,7 @@ import IxVMRefinement.Binding.ClauseInvariant
 import IxVMRefinement.TwinFamily.Target
 import IxVMRefinement.TwinFamily.Reload
 import IxVMRefinement.Assembly.PointTable
+import IxVMRefinement.Binding.FamilyFlatLocal
 
 /-! # The binding fold's family form: the step of a block with its family record
 
@@ -76,6 +77,12 @@ structure StoredFamilyRecs (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (env : Ix.Ke
         rc.indices.toNat = indm.indices.toNat) ∧
       (∃ bs concl, (Core.posOf cv'.levelParams cv'.type).stripPis (mI + 1) = some (bs, concl) ∧
         ∀ d b m, concl ≠ .forallE d b m)
+  lvls : ∀ (ms rs : Array Ixon.MutConst),
+    cb.info = .muts ms → crb.info = .muts rs →
+    ∃ off : Nat, FamilyFlat.BlockElim t R B off ∧
+      ∀ (ind₀ : Ixon.Inductive) (k : Nat) (rc : Ixon.Recursor),
+        ms[0]? = some (.indc ind₀) → rs[k]? = some (.recr rc) →
+        rc.lvls.toNat = ind₀.lvls.toNat + off
 
 /-- **The stored recursor facts pass to any larger store and environment that keep lookups.** -/
 theorem StoredFamilyRecs.mono {t : Ix.Kernel.RoleTable} {R₁ R' : Ixon.Env}
@@ -93,6 +100,9 @@ theorem StoredFamilyRecs.mono {t : Ix.Kernel.RoleTable} {R₁ R' : Ixon.Env}
       hfind hf, hnm, hlp, hSA, hTML, hns, hnp, hmot,
       ⟨Bm, im, cbm, msm, indm, D, lvls, himu, hle _ _ hPm, hle _ _ hBm, hmsm, him, hpi, hfn, hni⟩,
       hconcl⟩
+  lvls := fun ms rs hms hrs => by
+    obtain ⟨off, hBE, hlv⟩ := h.lvls ms rs hms hrs
+    exact ⟨off, hBE.grow hle hblob, hlv⟩
 
 /-- **The stored recursor facts stay valid in any extending environment with distinct names.** -/
 theorem StoredFamilyRecs.mono_env {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
@@ -149,6 +159,36 @@ theorem StoredFamilyRecs.recNoSelf {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
   injection ef with hcv' _ _ _
   rw [← hcv']
   exact hns j rc_j hj
+
+/-- **Stored recursor level-count agreement** at the block's elimination offset. -/
+theorem StoredFamilyRecs.recLvls {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
+    {env : Ix.Kernel.Env .anon} {B rb : _root_.Address} {cb crb : Ixon.Constant}
+    {ms rs : Array Ixon.MutConst} {es : List FamilyFlat.FlatEntry} {off : Nat}
+    (hms : cb.info = .muts ms) (hrs : crb.info = .muts rs)
+    (h : StoredFamilyRecs t R env B cb rb crb)
+    (hBD : FamilyFlat.BlockDerivedFlat t R B off es)
+    {ind₀ : Ixon.Inductive} {k : Nat} {rc : Ixon.Recursor}
+    (hm0 : ms[0]? = some (.indc ind₀)) (hk : rs[k]? = some (.recr rc)) :
+    rc.lvls.toNat = ind₀.lvls.toNat + off := by
+  obtain ⟨off', hBE', hlv⟩ := h.lvls ms rs hms hrs
+  have hoff : off' = off := hBE'.unique_same hBD.1
+  rw [← hoff]
+  exact hlv ind₀ k rc hm0 hk
+
+/-- **Unconditional stored family recursor level-count agreement** (matches
+`TwinFamily.StoredRecLvlsOk` verbatim). -/
+theorem storedRecLvls_of_stored :
+    ∀ (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (env : Ix.Kernel.Env .anon)
+      (B rb : _root_.Address) (cb crb : Ixon.Constant)
+      (ms rs : Array Ixon.MutConst) (es : List FamilyFlat.FlatEntry) (off : Nat),
+      cb.info = .muts ms → crb.info = .muts rs →
+      StoredFamilyRecs t R env B cb rb crb →
+      FamilyFlat.BlockDerivedFlat t R B off es →
+      ∀ (ind₀ : Ixon.Inductive) (k : Nat) (rc : Ixon.Recursor),
+        ms[0]? = some (.indc ind₀) → rs[k]? = some (.recr rc) →
+        rc.lvls.toNat = ind₀.lvls.toNat + off :=
+  fun _ _ _ _ _ _ _ _ _ _ _ hms hrs h hBD _ _ _ hm0 hk =>
+    h.recLvls hms hrs hBD hm0 hk
 
 /-- **The step of a block with its family record, over the fold's clause** (module docstring).
 `adv` is the advice of the block's family check. -/

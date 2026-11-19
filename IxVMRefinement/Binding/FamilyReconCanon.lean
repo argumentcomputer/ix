@@ -1,5 +1,6 @@
 import IxVMRefinement.Binding.FamilyReconFlat
 import IxVMRefinement.Binding.FamilyReconStore
+import IxVMRefinement.Binding.StoreLevelsDef
 import IxVMRefinement.StatementRel.LoadedReadsTrace
 import IxVMRefinement.StatementRel.LoadedReadsBlockTrace
 import IxVMRefinement.StatementRel.LoadedReadsCanonCtor
@@ -43,51 +44,6 @@ set_option maxHeartbeats 3200000
 set_option maxRecDepth 100000
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
-
-/-! ## Level-parameter well-scopedness of records in a store -/
-
-/-- **Every expression of every record at an address in `S` has its level parameters within the
-record's declared level count (below `2^32`)**, so `RawConvExpr` lifts directly to `TmOExact` and
-`loadedAt`. -/
-structure StoreLevelsOk (t : Ix.Kernel.RoleTable) (E : Ixon.Env)
-    (S : _root_.Address → Prop) : Prop where
-  defnVal : ∀ a c d, S a → recordOf E a = some c → c.info = .defn d → d.kind = .defn →
-    d.lvls.toNat < 4294967296 ∧
-    ∀ E_rd, (exprReader t (fun x => E.blobs.get? x) c id (soloSelf t a)).read d.value = .ok E_rd →
-      E_rd.allLevelParamsDefined (List.range d.lvls.toNat) = true
-  dPrjVal : ∀ a c p cb ms d, S a → recordOf E a = some c → c.info = .dPrj p →
-    recordOf E p.block = some cb → cb.info = .muts ms → ms[p.idx.toNat]? = some (.defn d) →
-    d.kind = .defn →
-    d.lvls.toNat < 4294967296 ∧
-    ∀ E_rd, (exprReader t (fun x => E.blobs.get? x) cb id
-        (blockSelf t p.block ms)).read d.value = .ok E_rd →
-      E_rd.allLevelParamsDefined (List.range d.lvls.toNat) = true
-  indTy : ∀ a c p cb ms ind, S a → recordOf E a = some c → c.info = .iPrj p →
-    recordOf E p.block = some cb → cb.info = .muts ms → ms[p.idx.toNat]? = some (.indc ind) →
-    ind.lvls.toNat < 4294967296 ∧
-    ∀ E_rd, (exprReader t (fun x => E.blobs.get? x) cb id
-        (blockSelf t p.block ms)).read ind.typ = .ok E_rd →
-      E_rd.allLevelParamsDefined (List.range ind.lvls.toNat) = true
-  ctorTy : ∀ (b : _root_.Address) (cb : Ixon.Constant) (ms : Array Ixon.MutConst)
-      (i : Nat) (ind : Ixon.Inductive) (j : Nat) (ct : Ixon.Constructor),
-    S b → recordOf E b = some cb → cb.info = .muts ms →
-    ms[i]? = some (.indc ind) → ind.ctors[j]? = some ct →
-    ct.lvls.toNat < 4294967296 ∧
-    ∀ E_rd, (exprReader t (fun x => E.blobs.get? x) cb id
-        (blockSelf t b ms)).read ct.typ = .ok E_rd →
-      E_rd.allLevelParamsDefined (List.range ct.lvls.toNat) = true
-  recr : ∀ (rb : _root_.Address) (crb : Ixon.Constant) (rs : Array Ixon.MutConst)
-      (k : Nat) (r : Ixon.Recursor),
-    S rb → recordOf E rb = some crb → crb.info = .muts rs →
-    rs[k]? = some (.recr r) →
-    r.lvls.toNat < 4294967296 ∧
-    (∀ E_rd, (exprReader t (fun x => E.blobs.get? x) crb id
-        (blockSelf t rb rs)).read r.typ = .ok E_rd →
-      E_rd.allLevelParamsDefined (List.range r.lvls.toNat) = true) ∧
-    (∀ (j : Nat) (ru : Ixon.RecursorRule) E_rd, r.rules[j]? = some ru →
-      (exprReader t (fun x => E.blobs.get? x) crb id
-        (blockSelf t rb rs)).read ru.rhs = .ok E_rd →
-      E_rd.allLevelParamsDefined (List.range r.lvls.toNat) = true)
 
 /-! ## Pure helpers: `posOf (List.range n)`, `looseBVarsBounded`, `AddrIn` -/
 

@@ -82,10 +82,11 @@ theorem storedFamilies_roleUnit {t : Ix.Kernel.RoleTable} {a : _root_.Address}
     (hinst : ∀ rb crb, FamilyInstalled t env₁ rb crb → FamilyInstalled t env' rb crb)
     (hfind : ∀ {k : Ix.Kernel.Key .anon} {ci : Ix.Kernel.ConstantInfo .anon},
       env₁.find? k = some ci → env'.find? k = some ci)
+    (hlp' : StoreLevelsParams t R')
     (h : StoredFamilies t R₁ env₁ famOf) : StoredFamilies t R' env' famOf := by
   refine storedFamilies_grow (fun x c hx => OpInstall.recordOf_up hadds hx)
     (fun x b hx => (hadds.2.2 x b).mpr hx) hc' (fun B cb hB hroute hstored => ?_) hst hinst
-    hfind h
+    hfind hlp' h
   have hmuts : ∃ ms, cb.info = .muts ms := by
     by_contra hn
     have hnm : ∀ ms, cb.info ≠ .muts ms := fun ms e => hn ⟨ms, e⟩
@@ -130,7 +131,7 @@ theorem standardAxiomRoleUnitW_of_validation
     {calls : List (Call F)} (hv : AxiomInstall.AxiomValidationFacts.{u} L calls) :
     AtGroups (BindingRun calls) (RoleUnitStepOverW.{u} (· ∈ standardAxioms) L) := by
   intro t ρ Rs hrun hall ht g h6 h77 r a R R₁ R' env₁ famOf₁ hgrp hstd ha hadm hreads hb hadds
-    hle hW hsf
+    hle hW hsf hlp'
   have htwf : t.wf = true := wf_of_check ht
   have hkeya : keyOf t a = Ix.Kernel.Key.role r := Core.keyOf_of_addressOf htwf ha
   have hkey_role : ∀ x, keyOf t x = Ix.Kernel.Key.role r → x = a := by
@@ -172,7 +173,7 @@ theorem standardAxiomRoleUnitW_of_validation
       · exact Option.isSome_iff_exists.mpr ⟨_, by rw [hkeya]; exact hself⟩
     · refine storedFamilies_roleUnit hadds hb.shape.usedClosed hadm.usedClosed hform
         (fun x hx => ?_) (fun x hx => ?_) (fun rb crb hi => familyInstalled_mono hext hnd hi)
-        (fun hk => find_of_ext hext hnd hk) hsf
+        (fun hk => find_of_ext hext hnd hk) hlp' hsf
       · obtain ⟨ci, hci, hn⟩ := hx
         exact ⟨ci, hext ci hci, hn⟩
       · obtain ⟨ci, hci, hn⟩ := hx
@@ -189,7 +190,7 @@ theorem standardAxiomRoleUnitW_of_validation
     · exact walkedStored_roleUnit hgrp ha hadds hW (fun _ h => h)
         (Option.isSome_iff_exists.mpr ⟨ci, by rw [hkeya]; exact hf⟩)
     · exact storedFamilies_roleUnit hadds hb.shape.usedClosed hadm.usedClosed hform
-        (fun _ h => h) (fun _ h => Or.inl h) (fun _ _ h => h) (fun hk => hk) hsf
+        (fun _ h => h) (fun _ h => Or.inl h) (fun _ _ h => h) (fun hk => hk) hlp' hsf
 
 /-- **The standard axioms' role unit with the family form, with no premise**, at the link the
 composed fold carries. -/

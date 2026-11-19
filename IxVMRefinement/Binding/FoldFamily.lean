@@ -78,6 +78,7 @@ def RoleUnitStepOverW (P : Ix.Kernel.Role → Prop)
     roleGroup g = [r] → P r → t.addressOf? r = some a → Admits ρ t g R R' →
     AdmitsReads ρ t R R' → BndOver.{u} L t (· < g) R₁ env₁ → AddsAt R₁ R' a → StoreLe R R₁ →
     WalkedStored ρ t (· < g) R₁ env₁ → StoredFamilies t R₁ env₁ famOf₁ →
+    StoreLevelsParams t R' →
     ∃ env' : Ix.Kernel.Env .anon, (∀ ci ∈ env₁.consts, ci ∈ env'.consts) ∧
       BeforeRaise.{u} L t g R' env' ∧ WalkedStored ρ t (· < g + 1) R' env' ∧
       StoredFamilies t R' env' famOf₁
@@ -187,6 +188,7 @@ theorem storedFamilies_grow {t : Ix.Kernel.RoleTable} {R₁ R' : Ixon.Env}
     (hinst : ∀ rb crb, FamilyInstalled t env₁ rb crb → FamilyInstalled t env' rb crb)
     (hfind : ∀ {k : Ix.Kernel.Key .anon} {ci : Ix.Kernel.ConstantInfo .anon},
       env₁.find? k = some ci → env'.find? k = some ci)
+    (hlp : StoreLevelsParams t R')
     (h : StoredFamilies t R₁ env₁ famOf) : StoredFamilies t R' env' famOf where
   selected := fun B cb hB hroute hstored => by
     obtain ⟨hB₁, hroute₁, hst₁⟩ := hblocks B cb hB hroute hstored
@@ -216,6 +218,7 @@ theorem storedFamilies_grow {t : Ix.Kernel.RoleTable} {R₁ R' : Ixon.Env}
     have e2 : crb₁ = crb := rec_eq (hle _ _ hF.record.record) hcrb
     subst e1 e2
     exact (h.recs B rb cb₁ crb₁ hrb hF.block.record hF.record.record).mono hle hblob hfind
+  levelsParams := hlp
 
 /-- **The stored families depend on the store only through its records and blobs**, at a store
 closed under what its records use. -/
@@ -230,7 +233,7 @@ theorem storedFamilies_storeCongr {t : Ix.Kernel.RoleTable} {R R' : Ixon.Env}
       rw [← recordOf_storeCongr hc] at hB
       rw [blockRoute_storeCongr hc] at hroute
       exact ⟨hB, hroute, hst⟩)
-    (fun _ h => h) (fun _ _ h => h) (fun h => h) h
+    (fun _ h => h) (fun _ _ h => h) (fun h => h) (h.levelsParams.of_storeCongr hc) h
 
 /-- **The walked records of a group with no role unit are stored once its kept roles are**: the
 walked roles of the group are kept roles. -/
@@ -352,12 +355,12 @@ theorem groupStepOverW_of_parts {L : Ix.Kernel.Env .anon → NativeFam .anon →
         exact Or.inr (Option.some.inj ha').symm
     rcases hk with hk' | hk'
     · obtain ⟨env', hext', hB', hws', hsf'⟩ :=
-        hop r a R R₁ R' env₁ famOf₁ hsingle hk' ha hadm hrd hb₁ hadds hRR₁ hws₁ hsf₁
+        hop r a R R₁ R' env₁ famOf₁ hsingle hk' ha hadm hrd hb₁ hadds hRR₁ hws₁ hsf₁ hFA.levelsParams
       exact ⟨env', fun ci h => hext' ci (hext ci h),
         ⟨bndOver_of_beforeRaise hall hg hB', hws',
           recordsStored_roleUnit htwf hr (Or.inl hk') ha hadds hext' hB' hrs₁, famOf₁, hsf'⟩⟩
     · obtain ⟨env', hext', hB', hws', hsf'⟩ :=
-        hax r a R R₁ R' env₁ famOf₁ hsingle hk' ha hadm hrd hb₁ hadds hRR₁ hws₁ hsf₁
+        hax r a R R₁ R' env₁ famOf₁ hsingle hk' ha hadm hrd hb₁ hadds hRR₁ hws₁ hsf₁ hFA.levelsParams
       exact ⟨env', fun ci h => hext' ci (hext ci h),
         ⟨bndOver_of_beforeRaise hall hg hB', hws',
           recordsStored_roleUnit htwf hr (Or.inr hk') ha hadds hext' hB' hrs₁, famOf₁, hsf'⟩⟩

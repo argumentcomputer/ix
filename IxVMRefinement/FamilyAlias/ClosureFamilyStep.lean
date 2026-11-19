@@ -537,7 +537,14 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
     (Decl.FamilyAlias.foldStoreInv_famStep hg hreads.2.2.2 hna hd hClc.foldStore).store.rec_ctors
   -- the stored recursors' loaded form, self-mention scoping, and `check_recs` header counts
   have hstoredRecs : Binding.StoredFamilyRecs t R₁ ⟨(new ++ as) ++ env.consts⟩ B cb rb crb := by
-    refine ⟨fun ms' rs' k rc hms' hrs' hk => ?_⟩
+    refine ⟨?_, fun ms' rs' hms' hrs' => ?_⟩
+    swap
+    · obtain ⟨off, hBE₀, hlv⟩ := hC.checks.familyRecLvls B rb cb crb ms' rs' hfam hcb₀ hcrb₀ hms' hrs'
+      exact ⟨off, hBE₀.of_closed_sub ht htwf
+        (fun y c hy => Binding.recordOf_of_loaded hloaded hy) hC.closed hblobs
+        (by show (recordOf R₁ B).isSome = true; rw [hcb]; rfl),
+        hlv⟩
+    intro ms' rs' k rc hms' hrs' hk
     have ems : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hB.muts)
     have ers : rs' = rs := Ixon.ConstantInfo.muts.inj (hrs'.symm.trans hRB.muts)
     subst ms' rs'

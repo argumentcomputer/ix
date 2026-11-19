@@ -72,6 +72,7 @@ structure StoredTwinCanon (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (envT : Ix.Ke
   stored : ∀ x, ConstAddrOf rb crb x → StoredAt t envT x
   installed : FamilyInstalled t envT rb crb
   recs : ∀ cb, recordOf R B = some cb → Binding.StoredFamilyRecs t R envT B cb rb crb
+  levelsParams : Binding.StoreLevelsParams t R
 
 /-- **Canonical loaded form of each stored recursor member** (`TwinMemberLoaded`), projected
 from `StoredTwinCanon`. -/
@@ -107,6 +108,20 @@ theorem StoredTwinCanon.recNoSelf {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
     cv'.type.mentionsConst (keyOf t (memberAddr rb j (.recr rc_j))) = false :=
   (h.recs cb hcb).recNoSelf hms hrs hk hj hf
 
+/-- **Level-count agreement of each stored recursor member** at the block's elimination offset,
+projected from `StoredTwinCanon`. -/
+theorem StoredTwinCanon.recLvls {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
+    {envT : Ix.Kernel.Env .anon} {famOf : _root_.Address → Option _root_.Address}
+    {B rb : _root_.Address} {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
+    {es : List FlatEntry} {off : Nat}
+    (h : StoredTwinCanon t R envT famOf B rb crb)
+    (hcb : recordOf R B = some cb) (hms : cb.info = .muts ms) (hrs : crb.info = .muts rs)
+    (hBD : BlockDerivedFlat t R B off es)
+    {ind₀ : Ixon.Inductive} {k : Nat} {rc : Ixon.Recursor}
+    (hm0 : ms[0]? = some (.indc ind₀)) (hk : rs[k]? = some (.recr rc)) :
+    rc.lvls.toNat = ind₀.lvls.toNat + off :=
+  (h.recs cb hcb).recLvls hms hrs hBD hm0 hk
+
 /-- **The witness's choice at a selected record.** -/
 theorem storedTwinCanon_of_selected {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
     {envT : Ix.Kernel.Env .anon} {famOf : _root_.Address → Option _root_.Address}
@@ -119,7 +134,7 @@ theorem storedTwinCanon_of_selected {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
   rw [e] at hf hrf
   obtain ⟨hst, hinst⟩ := h.installed B rb crb hsel hcrb
   exact ⟨hsel, ⟨cb, ms, rs, es, off, hf, hrf, hbd⟩, hst, hinst,
-    fun cb' hcb' => h.recs B rb cb' crb hsel hcb' hcrb⟩
+    fun cb' hcb' => h.recs B rb cb' crb hsel hcb' hcrb, h.levelsParams⟩
 
 /-- **The witness's choice at a stored modeled block** (the first import of the typing half,
 `Binding.storedFamily_of_clause`). -/
