@@ -594,10 +594,12 @@ theorem compileCorrect_circuitComposed_bridge
   have hAdmitBind : Ix.Kernel.Admission.admitBinding Address.admissionHash binding = .ok t := by
     obtain ⟨b', hb', _, _, _, _, hacc, -⟩ := hComm
     rw [hbind] at hb'
-    obtain rfl := Except.ok.inj hb'
+    have hbEq : b' = binding := (Except.ok.inj hb').symm
+    subst hbEq
     obtain ⟨-, tA, _, _, _, hadm, -⟩ := hacc
     have hteq : tA = t := Ix.Cert.ReadingKeys.admitBinding_default htable hbind hadm
-    rwa [hteq] at hadm
+    exact hteq ▸ hadm
+  clear htable hbind
   refine @circuitSound_mono _ _ (fun callsB dB hA => ?_) (@circuitComposed_selfHashed.{u})
   refine @circuitSound_mono _ _ (fun callsA dA hSpec => ?_) hA
   intro bytesB spec deB dgB bytesA cA deA dgA hsc ctx hctx hba trees seeds V hseeds
