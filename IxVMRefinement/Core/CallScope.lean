@@ -51,11 +51,7 @@ structure CoreEnvFacts (c : Ctx) : Prop where
     c.env.find? k = some (.recInfo cv mI rP rls) → rls ≠ [] →
     (piDomAt mI cv.type).map (·.getAppFn) = some (.const (c.κ p) us) →
     ∃ cm, Ix.Cert.recordAt c.E p = some cm
-  ruleCtorHead : ∀ k cv mI rP rls rl cvj nP nF T us,
-    c.env.find? k = some (.recInfo cv mI rP rls) → rl ∈ rls →
-    c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
-    (piDomAt mI cv.type).map (·.getAppFn) = some (.const T us) →
-    ∃ tus, (Ix.Kernel.Expr.piResult cvj.type).getAppFn = .const T tus
+  ruleCtorHead : RuleCtorHeadFact c.E c.env
   quotBasis : c.inForce .quot → ∀ ci ∈ Ix.Kernel.BasisKind.declsA (md := .anon) .quotK,
     c.env.find? ci.name = some ci
   recEta : ∀ k cv mI rP rl, c.env.find? k = some (.recInfo cv mI rP [rl]) →
@@ -132,6 +128,20 @@ structure EtaUseFacts (env : Ix.Kernel.Env .anon) (T kc : KKey)
     args.length = nP + nF → (∀ s ∈ args.take nP, s.looseBVarsBounded 0 = true) →
     Infer env .io d (Ix.Kernel.Expr.mkAppN (.const kc us) args) ty →
       Red env d ty (Ix.Kernel.Expr.mkAppN (.const T us) (args.take nP))
+  /-- The η-constructor's stored type results in the structure `T`. -/
+  ctorHead : ∀ cvc, env.find? kc = some (.ctorInfo cvc nP nF) →
+    ∃ tus, (Ix.Kernel.Expr.piResult cvc.type).getAppFn = .const T tus
+
+theorem EtaUseFacts.ctorHead_mono {env env' : Ix.Kernel.Env .anon} {T kc : KKey}
+    {cvT cvc : Ix.Kernel.ConstantVal .anon} {caps : Ix.Kernel.IndCaps .anon} {nP nF : Nat}
+    (hext : Ix.Kernel.EnvExt env env') (hC : env.find? kc = some (.ctorInfo cvc nP nF))
+    (huse : EtaUseFacts env T kc cvT caps nP nF) :
+    ∀ cvc', env'.find? kc = some (.ctorInfo cvc' nP nF) →
+      ∃ tus, (Ix.Kernel.Expr.piResult cvc'.type).getAppFn = .const T tus := by
+  intro cvc' hC'
+  have heq := (hext.find hC).symm.trans hC'
+  obtain ⟨rfl, -, -⟩ := Ix.Kernel.ConstantInfo.ctorInfo.inj (Option.some.inj heq)
+  exact huse.ctorHead cvc hC
 
 theorem EnvFacts.etaUseFacts {c : Ctx} (h : EnvFacts c)
     {T kc : KKey} {cvT cvc : Ix.Kernel.ConstantVal .anon} {caps : Ix.Kernel.IndCaps .anon}
@@ -139,7 +149,8 @@ theorem EnvFacts.etaUseFacts {c : Ctx} (h : EnvFacts c)
     (hctor : caps.etaCtor = some kc) (hC : c.env.find? kc = some (.ctorInfo cvc nP nF)) :
     EtaUseFacts c.env T kc cvT caps nP nF :=
   ⟨h.etaTowers T cvT caps hT heta, h.etaSort T cvT caps hT heta,
-    h.etaType T kc cvT cvc caps nP nF hT heta hctor hC⟩
+    h.etaType T kc cvT cvc caps nP nF hT heta hctor hC,
+    h.etaCtorHead T kc cvT caps nP nF hT heta hctor⟩
 
 /-- A selected metadata read of a zero-field constructor. It makes no assertion that the
 constructor is already installed in the semantic environment. -/

@@ -111,14 +111,20 @@ inductive CertsR (env : Ix.Kernel.Env .anon) (d : Nat) (lic : Bool) :
   | red {T T' : KExpr} {zs : List KExpr} :
       Red env d T T' → CertsR env d lic T' zs → CertsR env d lic T zs
 
-/-- **A recursor's loaded data**: the environment stores the recursor `ci` at `k`, and a loaded
-`Rec` value with these fields represents it (`CIRep.recr`: level count, closed type, the
-counts, the rules one for one). -/
+/-- **A recursor's loaded data**: the environment stores the recursor `ci` at `k`, a loaded `Rec`
+value with these fields represents it (`CIRep.recr`: level count, closed type, the counts, the
+rules one for one), and whenever `kf = .field 1` (K-like recursor) every rule's constructor
+builds the recursor's major inductive (`RuleCtorHeadFact` ruled out on non-K records). -/
 def RecInfoAt (c : ScopedCtx) (h : Heap F) (k : KKey)
     (nl recTy np ni nm nmi rules kf : SourceValue F) (ci : Ix.Kernel.ConstantInfo .anon) : Prop :=
   c.env.find? k = some ci ∧
-    ∃ u blk idx : SourceValue F,
-      c.ci h (.construct kciEnum "Rec" [nl, recTy, np, ni, nm, nmi, rules, kf, u, blk, idx]) ci
+    (∃ u blk idx : SourceValue F,
+      c.ci h (.construct kciEnum "Rec" [nl, recTy, np, ni, nm, nmi, rules, kf, u, blk, idx]) ci) ∧
+    (kf = .field 1 →
+      ∀ cv mI rP rls rl cvj nP nF T us, ci = .recInfo cv mI rP rls → rl ∈ rls →
+        c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
+        (piDomAt mI cv.type).map (·.getAppFn) = some (.const T us) →
+        ∃ tus, (Ix.Kernel.Expr.piResult cvj.type).getAppFn = .const T tus)
 
 /-- **`p` is the address of the recursor's major inductive**: the head of the domain of the
 major premise (binder `mI`) of the recursor's type is the constant at `p`. -/

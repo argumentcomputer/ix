@@ -90,7 +90,7 @@ theorem iotaRulesRenRunJ_of_aliased {env E envM envSelf : Env .anon} {g h : KKey
   | r :: rs, rhsA :: rhss, thm :: thms, j, ha => by
     obtain ⟨hr, hrest⟩ := ha
     have hiota : envM.find? (iotaKey recKey j) = E.find? (iotaKey recKey j) := by
-      obtain ⟨_, _, _, _, _, _, _, _, hfind⟩ := hr
+      obtain ⟨_, _, _, _, _, _, _, _, _, hfind⟩ := hr
       exact (hR.iotaFound _ _ _ hfind).trans hfind.symm
     obtain ⟨r', hrec, hst, hrhs⟩ := iotaRuleRenRunJ_of_aliased hr hR.wf hR.store hperm hR.out hR.moves
       hR.target hR.fixes hrecbn hR.members htyF htyB htyL htyR (hR.ctor r.ctor) hiota hR.ext
@@ -126,13 +126,7 @@ theorem MemberFacts.annotated_scope {env : Env .anon} {g : KKey → KKey}
   have hann : Annot 0 ci.toConstantVal.type tyA :=
     annot_of_annotates hF.annotated hF.closed hF.bounded 0
   obtain ⟨htyF, htyB⟩ := (judgeFrames_posRulesJ env).annot_syntax hann hF.closed hF.bounded
-  obtain ⟨cvm, mval₀, hint₀, hfm, hlm, htm⟩ := hF.model
-  have hcw := hwf _ (List.mem_of_find?_eq_some hfm)
-  have h1 : cvm.type.allLevelParamsDefined cvm.levelParams = true := hcw.2.1
-  rw [htm, hlm] at h1
-  have h2 := allLevelParamsDefined_of_posOf_perm hF.perm h1
-  rw [allLevelParamsDefined_renameConsts] at h2
-  exact ⟨htyF, htyB, h2⟩
+  exact ⟨htyF, htyB, hF.levels⟩
 
 /-- **The recursors of a family, installed with their rules**, from the rules' facts with their
 aliases: each recursor is found after the fold as a recursor that stores its reading, and every

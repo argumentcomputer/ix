@@ -143,8 +143,9 @@ theorem renLen_of_aliasEnv {env : Env .anon} {h : KKey → KKey} (hA : AliasEnv 
   rw [hfk] at hk
   obtain rfl := Option.some.inj hk
   refine ⟨ci', hft, ?_⟩
-  rw [hlt, List.length_range]
-  rfl
+  have hq := hlt.length_eq
+  rw [List.length_range] at hq
+  exact hq
 
 /-- **Every block name stored has its model key stored at as many level parameters.** -/
 def ModelLen (env : Env .anon) (bn : List KKey) : Prop :=
@@ -529,6 +530,22 @@ theorem famRecord_newSat {env env₂ : Env .anon} {h : KKey → KKey}
 
 /-! ## The aliases -/
 
+/-- Level-equivalent expressions have the same `arOk`. -/
+private theorem exprLvEq_arOk (env : Env .anon) {e₁ e₂ : KExpr} (h : ExprLvEq e₁ e₂) :
+    Expr.arOk env e₁ = Expr.arOk env e₂ := by
+  induction h with
+  | bvar | sort | lit => rfl
+  | fvar _ ih => exact ih
+  | const hus =>
+    simp only [Expr.arOk]
+    cases env.find? _ with
+    | none => rfl
+    | some ci => simp [lvEqList_length_eq hus]
+  | app _ _ ihf iha => simp [Expr.arOk, ihf, iha]
+  | lam _ _ iht ihb | forallE _ _ iht ihb => simp [Expr.arOk, iht, ihb]
+  | letE _ _ _ iht ihv ihb => simp [Expr.arOk, iht, ihv, ihb]
+  | proj _ ih => simp [Expr.arOk, ih]
+
 /-- **An alias group keeps `StoreArR`.** -/
 theorem storeArR_aliasGroup {env : Env .anon} {h : KKey → KKey} {as : List (ConstantInfo .anon)}
     (hg : AliasGroup env h as) (hA : StoreArR env) : StoreArR ⟨as ++ env.consts⟩ := by
@@ -539,8 +556,12 @@ theorem storeArR_aliasGroup {env : Env .anon} {h : KKey → KKey} {as : List (Co
     have hAl : AliasEnv ⟨as' ++ env.consts⟩ h₀ := hg'.aliasEnv
     have hci : ConstArR ⟨as' ++ env.consts⟩ ci := ih.const hsrc
     have harT : Expr.arOk (⟨as' ++ env.consts⟩ : Env .anon) ty = true := by
-      have h1 := hci.type.ar
-      rw [← hty] at h1
+      have h1 : Expr.arOk (⟨as' ++ env.consts⟩ : Env .anon)
+          (posOf ci.toConstantVal.levelParams ci.toConstantVal.type) = true := by
+        unfold posOf
+        rw [Ix.Kernel.LevelRen.arOk_inst]
+        exact hci.type.ar
+      rw [← exprLvEq_arOk _ hty] at h1
       unfold posOf at h1
       rw [Ix.Kernel.LevelRen.arOk_inst] at h1
       exact arOk_of_renameConsts (renLen_of_aliasEnv hAl) h1
@@ -553,8 +574,9 @@ theorem storeArR_aliasGroup {env : Env .anon} {h : KKey → KKey} {as : List (Co
       refine ⟨Ix.Kernel.LevelRen.arOk_const_of (fun ci' hf' => ?_), ?_⟩
       · rw [hsrc] at hf'
         obtain rfl := Option.some.inj hf'
-        rw [hlps]
-        simp
+        have hq := hlps.length_eq
+        simp only [List.length_range] at hq
+        simp [hq]
       · simp [Expr.constsResolve, hsrc]
     refine Ix.Kernel.Model.storeArR_cons ih hfresh
       (Ix.Kernel.Model.ConstArR.of_defn (Ix.Kernel.Model.ArRes.mono hfx ⟨harT, htr⟩)

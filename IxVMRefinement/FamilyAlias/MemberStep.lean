@@ -103,19 +103,12 @@ theorem memberValRunJ_of_facts {env env' : Env .anon} {g h : KKey → KKey} {bn 
           tyA.renameConsts (blockRen bn)⟩ mval hint)) :
     MemberValRunJ (renameJ (blockRen bn) (famJ h)) env' bn ci.toConstantVal
       ⟨ci.toConstantVal.name, ci.toConstantVal.levelParams, tyA⟩ := by
-  obtain ⟨hperm, hclosed, hbnd, hann, ⟨cvm, mval₀, hint₀, hfm, hlm, htm⟩,
+  obtain ⟨hperm, hclosed, hbnd, hann, hlv, ⟨cvm, mval₀, hint₀, hfm, hlm, htm⟩,
     ⟨stype, u, hinf, hsort⟩⟩ := hF
   obtain ⟨mval, hint, hal⟩ := halias
   -- the annotation, and what it keeps of the declared type
   have hannot : Annot 0 ci.toConstantVal.type tyA := annot_of_annotates hann hclosed hbnd 0
   obtain ⟨hclA, hbA⟩ := (judgeFrames_posRulesJ env).annot_syntax hannot hclosed hbnd
-  -- the member's level parameters, from the stored model's type
-  have hcw := hwf _ (List.mem_of_find?_eq_some hfm)
-  have hlv : tyA.allLevelParamsDefined ci.toConstantVal.levelParams = true := by
-    have h1 : cvm.type.allLevelParamsDefined cvm.levelParams = true := hcw.2.1
-    rw [htm, hlm] at h1
-    have h2 := allLevelParamsDefined_of_posOf_perm hperm h1
-    rwa [allLevelParamsDefined_renameConsts] at h2
   -- the front door's typing, on the renamed type
   have hclR : (tyA.renameConsts (blockRen bn)).hasFvar = false :=
     (hasFvar_renameConsts (blockRen bn) tyA).trans hclA

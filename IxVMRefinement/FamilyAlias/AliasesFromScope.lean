@@ -124,7 +124,7 @@ theorem aliasesReady_of_scope {env : Env .anon} {g : KKey → KKey} {bn : List K
   | _ :: _, [], _, _, _, _, _, _, _, _, _, _, _ => trivial
   | ci :: rest, tyA :: tys, done, as, tbl, hm, hsc, hnd, hS, hbn, hD, hst, hJ => by
     obtain ⟨hF, hrestF⟩ := hm
-    obtain ⟨hperm, hclosed, hbnd, hann, ⟨cvm, mval₀, hint₀, hfm, hlm, htm⟩, hmt⟩ := hF
+    obtain ⟨hperm, hclosed, hbnd, hann, hlv, ⟨cvm, mval₀, hint₀, hfm, hlm, htm⟩, hmt⟩ := hF
     have hsc0 : ((ci.name :: rest.map (·.name)).all (fun k => !tyA.mentionsConst k) &&
         typesScopedB (rest.map (·.name)) tys) = true := hsc
     simp only [Bool.and_eq_true] at hsc0
@@ -137,11 +137,12 @@ theorem aliasesReady_of_scope {env : Env .anon} {g : KKey → KKey} {bn : List K
       · exact hd
       · have hno := List.all_eq_true.mp hsc1 k hin
         simp [hmk] at hno
-    -- the renamed type resolves in the prefix: it is the stored model's type
+    -- the renamed type resolves in the prefix: it is level-equivalent to the stored model's type
     have hcw := hwf _ (List.mem_of_find?_eq_some hfm)
     have hmres : (tyA.renameConsts g).constsResolve env = true := by
-      have h1 : cvm.type.constsResolve env = true := hcw.2.2.1
-      rw [htm, constsResolve_posOf] at h1
+      have h1 : (posOf cvm.levelParams cvm.type).constsResolve env = true := by
+        rw [constsResolve_posOf]; exact hcw.2.2.1
+      rw [← exprLvEq_constsResolve env htm, constsResolve_posOf] at h1
       exact h1
     have hmono : ∀ k, (env.find? k).isSome = true →
         ((⟨as ++ env.consts⟩ : Env .anon).find? k).isSome = true := by

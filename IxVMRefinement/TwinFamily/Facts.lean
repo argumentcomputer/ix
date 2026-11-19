@@ -242,6 +242,7 @@ theorem twinTarget_of_facts {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim : Opti
         w.model? = some (cvm, mval, hint))
     (hinst : FamilyInstalled t env rb crb)
     (hcomp : Decl.CoreCompanions ⟨E, env, t, lim⟩)
+    (hnoK : ∀ w ∈ ws, Core.RecNotKAt E w.cvW'.name)
     (hrel : ∀ w ∈ ws, Decl.ReloadsAs E t ⟨twinRecs ws ++ (twinModels ws ++ env.consts)⟩
       (.recInfo w.cvW' w.mI w.rP w.rulesW')) :
     ∃ env₂ : Ix.Kernel.Env .anon,
@@ -317,7 +318,7 @@ theorem twinTarget_of_facts {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim : Opti
       List.mem_append_right _ (List.mem_filterMap.mpr ⟨w, hw, hmi⟩)
     exact ⟨_, mval, hint, hfind _ hmem⟩
   · refine coreCompanions_twin (c := ⟨E, env, t, lim⟩) hcomp
-      (Ix.Kernel.Semantics.declRecTwinRunJ_envExt hrun) fun w hw => ?_
+      (Ix.Kernel.Semantics.declRecTwinRunJ_envExt hrun) (fun w hw => ?_) hnoK
     obtain ⟨x, -, -, hcmp⟩ := hF.canonAt w hw
     have hrc : List.Forall₂ (fun rW' rC : RecRule .anon => rW'.ctor = rC.ctor ∧ rW'.fire = rC.fire)
         w.rulesW' w.rulesC :=
@@ -459,7 +460,7 @@ theorem twinStepTarget_of_facts {RForm : RecordFormPred} (hseam : TwinSeam.{u} R
     exact h
   obtain ⟨env₂, hrun, hstored, hmodel, hcomp, hrel⟩ :=
     twinTarget_of_facts (lim := lim) hF hblock hblk hnames hfresh₂ hmodel hinst hinv.companions
-      hrelW
+      (twinRecs_recNotKAt hSS hrb' hreads hblock hF.front hLd) hrelW
   exact ⟨blk, env₂, hreads, hrun, hstored, hmodel, hcomp, hrel⟩
 
 end IxVM.Refinement.Typing.TwinFamily

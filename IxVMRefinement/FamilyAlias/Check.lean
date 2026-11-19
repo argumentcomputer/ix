@@ -83,7 +83,7 @@ def AliasEntry (env : Env .anon) (a t : KKey) : Prop :=
     env.find? a = some (.defnInfo ⟨a, lps, ty⟩ (.const t (lps.map .param)) hint) ∧
     lps.Perm (List.range lps.length) ∧
     env.find? t = some ci ∧
-    ci.toConstantVal.levelParams = List.range lps.length
+    ci.toConstantVal.levelParams.Perm (List.range lps.length)
 
 /-- A proof that `a` is stored as an alias of `t`, if it is. -/
 def aliasEntryCheck (env : Env .anon) (a t : KKey) : Except String (PLift (AliasEntry env a t)) :=
@@ -98,7 +98,7 @@ def aliasEntryCheck (env : Env .anon) (a t : KKey) : Except String (PLift (Alias
           obtain ⟨h1, h2, -, -⟩ := hc
           subst h1
           subst h2
-          exact hfa, hc.2.2.1, hft, hc.2.2.2⟩⟩
+          exact hfa, hc.2.2.1, hft, hc.2.2.2 ▸ List.Perm.refl _⟩⟩
       else .error "alias table: an entry is not the alias of its target"
     | none => .error "alias table: a target is not stored"
   | _ => .error "alias table: an alias key does not store a definition"
@@ -733,8 +733,10 @@ def aliasGroupCheck (env : Env .anon) :
       subst hv
       subst hh
       exact AliasGroup.cons ih.down hperm.down (Option.isNone_iff_eq_none.mp hfr.down)
-        (auxKey_ne_projTableName hd.down) src.2 hlps.down htf.down htp.down htr.down htb.down
-        hty.down (ite_eq_left rfl) (fun x hx => ite_eq_right hx)⟩
+        (auxKey_ne_projTableName hd.down) src.2 (hlps.down ▸ List.Perm.refl _)
+        htf.down htp.down htr.down htb.down
+        (by rw [hlps.down, posOf_range, hty.down]; exact ExprLvEq.refl _)
+        (ite_eq_left rfl) (fun x hx => ite_eq_right hx)⟩
   | _, _ => .error "alias group: the table and the aliases do not correspond"
 
 /-- **A successful check is an alias group.** -/

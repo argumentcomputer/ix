@@ -178,7 +178,7 @@ theorem famRecsCompanion_carry {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
     (hmaj : MajorRefs t E₀ rb blk tys) (hc : FamRecsCompanion E₀ t env blk tys) :
     FamRecsCompanion E t env blk tys := by
   intro k cv mI rP rules₀ tyA hk htyA
-  have h0 := hc k cv mI rP rules₀ tyA hk htyA
+  obtain ⟨h0, hnr⟩ := hc k cv mI rP rules₀ tyA hk htyA
   have hmove : rules₀ ≠ [] → ∀ (p : _root_.Address) (us : List Core.KLevel),
       (Core.piDomAt mI tyA).map (·.getAppFn) = some (.const (Core.keyOf t p) us) →
       ∃ cm, Ix.Cert.recordAt E₀ p = some cm ∧ Ix.Cert.recordAt E p = some cm := by
@@ -186,8 +186,8 @@ theorem famRecsCompanion_carry {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
     obtain ⟨cm, hcm⟩ := h0.major p us hne hhead
     exact ⟨cm, hcm,
       hE p (hmaj k cv mI rP rules₀ tyA p us hk htyA hne hhead) cm ((hS p).trans hcm)⟩
-  refine ⟨fun p us hne hhead => ?_, ⟨h0.rules.1, fun p cm ip us hhead hcm hip j rl hj => ?_⟩,
-    h0.plain, h0.head⟩
+  refine ⟨⟨fun p us hne hhead => ?_, ⟨h0.rules.1, fun p cm ip us hhead hcm hip j rl hj => ?_⟩,
+    h0.plain⟩, hnr⟩
   · obtain ⟨cm, -, h⟩ := hmove hne p us hhead
     exact ⟨cm, h⟩
   · have hne : rules₀ ≠ [] := by

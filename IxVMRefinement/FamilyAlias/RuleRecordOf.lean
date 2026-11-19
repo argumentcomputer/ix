@@ -57,7 +57,7 @@ theorem iotaRuleRenRunJ_of_aliased
     (hstored : ∀ k, (env.find? (g k)).isSome = true → (envSelf.find? k).isSome = true) :
     ∃ r', IotaRuleRenRunJ (famJ h) envM envSelf (blockRen bn) recKey lps tyA mI rP j r r' ∧
       IxVM.Consistency.RuleStored r' r ∧ r'.rhs = rhsA := by
-  obtain ⟨cvj, cnP, cnF, lvls, pins, cvt, vt, hw, hfindA⟩ := hra
+  obtain ⟨cvj, cnP, cnF, lvls, pins, cvt, vt, tty₀, hw, hfindA⟩ := hra
   obtain ⟨hctorM, hctyR⟩ := hctor cvj cnP cnF hw.ctor
   have hmono : ∀ k, (env.find? k).isSome = true → (envSelf.find? k).isSome = true := by
     intro k hk
@@ -115,7 +115,8 @@ theorem iotaRuleRenRunJ_of_aliased
       LeavesFixed.of_closed ((Ix.Kernel.hasFvar_renameConsts _ rhsA).trans hrhsF),
       by rw [renameConsts_comp, hrhsA]; exact posRulesJ_infer_weaken hext ⟨ps, hps, hinf⟩⟩⟩
   /- the statement, opened -/
-  obtain ⟨hsF, hsB, hsR, hsL⟩ := statement_scope hwf hw.thm hperm hw.thmLevels
+  obtain ⟨hsF, hsB, hsR, hsL⟩ :=
+    statement_scope hwf hw.thm hperm hw.thmTypeLevels hw.thmTypeEq
   have hst := hw.statement
   obtain ⟨fvs, tbody, hop, heqh, h3, hrest⟩ := hst
   dsimp only at hrest
@@ -137,7 +138,7 @@ theorem iotaRuleRenRunJ_of_aliased
   obtain ⟨-, -, -, hflen, -, -⟩ := Ix.Kernel.Verify.openPisAtFvars_stripPis (rP + cnF) hop
   obtain ⟨-, hfvscl, -⟩ := openPisAtFvars_fvars_closed (rP + cnF) hsB hop
   /- the statement's side is fixed by `h` -/
-  have hstmtfix : (invPosOf lps cvt.type).renameConsts h = invPosOf lps cvt.type :=
+  have hstmtfix : (invPosOf lps tty₀).renameConsts h = invPosOf lps tty₀ :=
     renameConsts_eq_self_of_constsResolve hfix _ hsR
   obtain ⟨hfvsfix, htbfix⟩ := openPisAtFvars_fixed hop hstmtfix
   have hfvsfixe : ∀ x ∈ fvs, x.renameConsts h = x := map_eq_self_mem hfvsfix
@@ -183,7 +184,7 @@ theorem iotaRuleRenRunJ_of_aliased
   have hlhsren : lhs'.renameConsts h = lhsS := by
     have h1 := IxVM.Refinement.Decl.openPisAtFvars_renameConsts h (rP + cnF)
       (copyStatement (auxKey recKey .model) lps
-        (fun _ => copyMajor (blockRen bn) r.ctor lvls cnF pins) (invPosOf lps cvt.type)) 0
+        (fun _ => copyMajor (blockRen bn) r.ctor lvls cnF pins) (invPosOf lps tty₀)) 0
     rw [hren, hop, hopc] at h1
     simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     have h2 := h1.2
@@ -314,7 +315,7 @@ theorem iotaRuleRenRunJ_of_aliased
         Or.inl ⟨hA, Or.inr (by rw [hαfix]; exact posRulesJ_defeq_weaken hext hdr)⟩⟩
   /- the alias, as `envM` finds it -/
   have hcvt : envM.findCV? (iotaKey recKey j) =
-      some (ruleAlias bn recKey lps j r.ctor lvls cnF pins thm cvt.type).toConstantVal := by
+      some (ruleAlias bn recKey lps j r.ctor lvls cnF pins thm tty₀).toConstantVal := by
     show (envM.find? _).map _ = _
     rw [hiota, hfindA]
     rfl

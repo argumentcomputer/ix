@@ -55,7 +55,7 @@ theorem iotaKey_ne_model (R : KKey) (j : Nat) (k : KKey) : iotaKey R j ≠ auxKe
 structure RuleWitness (env : Env .anon) (g : KKey → KKey) (blk : List (ConstantInfo .anon))
     (tys : List KExpr) (recKey : KKey) (lps : List LevelParam) (tyA : KExpr) (mI rP : Nat)
     (r : RecRule .anon) (rhsA : KExpr) (thm : KKey) (cvj : ConstantVal .anon) (cnP cnF : Nat)
-    (lvls : List Level) (pins : List KExpr) (cvt : ConstantVal .anon) (vt : KExpr) : Prop where
+    (lvls : List Level) (pins : List KExpr) (cvt : ConstantVal .anon) (vt tty₀ : KExpr) : Prop where
   ctor : RuleCtor env blk tys r.ctor cvj cnP cnF
   nfields : r.nfields = cnF
   bounded : r.rhs.looseBVarsBounded 0 = true
@@ -70,29 +70,33 @@ structure RuleWitness (env : Env .anon) (g : KKey → KKey) (blk : List (Constan
     p.allLevelParamsDefined lps) = true
   ctorTele : Expr.ctorTeleOk cvj.type (cnP + cnF) = true
   thm : env.find? thm = some (.thmInfo cvt vt)
-  thmLevels : cvt.levelParams = List.range lps.length
+  thmLevels : cvt.levelParams.Perm (List.range lps.length)
+  thmTypeLevels : tty₀.allLevelParamsDefined (List.range lps.length) = true
+  thmTypeEq : ExprLvEq tty₀ (posOf cvt.levelParams cvt.type)
   statement : StatementFacts env g recKey lps tyA mI rP r.ctor rhsA cvj cnP cnF lvls pins
-    (invPosOf lps cvt.type)
+    (invPosOf lps tty₀)
 
 /-- A rule's facts have such data. -/
 theorem RuleFacts.witness {env : Env .anon} {g : KKey → KKey} {blk : List (ConstantInfo .anon)}
     {tys : List KExpr} {recKey : KKey} {lps : List LevelParam} {tyA : KExpr} {mI rP : Nat}
     {r : RecRule .anon} {rhsA : KExpr} {thm : KKey}
     (h : RuleFacts env g blk tys recKey lps tyA mI rP r rhsA thm) :
-    ∃ cvj cnP cnF lvls pins cvt vt,
-      RuleWitness env g blk tys recKey lps tyA mI rP r rhsA thm cvj cnP cnF lvls pins cvt vt := by
+    ∃ cvj cnP cnF lvls pins cvt vt tty₀,
+      RuleWitness env g blk tys recKey lps tyA mI rP r rhsA thm cvj cnP cnF lvls pins cvt vt
+        tty₀ := by
   obtain ⟨cvj, cnP, cnF, lvls, pins, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, cvt, vt,
-    h13, h14, h15⟩ := h
-  exact ⟨cvj, cnP, cnF, lvls, pins, cvt, vt,
-    ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15⟩⟩
+    tty₀, h13, h14, h14b, h14c, h15⟩ := h
+  exact ⟨cvj, cnP, cnF, lvls, pins, cvt, vt, tty₀,
+    ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h14b, h14c, h15⟩⟩
 
 /-- The pins of a rule are closed and bounded by the rule prefix. -/
 theorem RuleWitness.pins_scope {env : Env .anon} {g : KKey → KKey}
     {blk : List (ConstantInfo .anon)} {tys : List KExpr} {recKey : KKey} {lps : List LevelParam}
     {tyA : KExpr} {mI rP : Nat} {r : RecRule .anon} {rhsA : KExpr} {thm : KKey}
     {cvj : ConstantVal .anon} {cnP cnF : Nat} {lvls : List Level} {pins : List KExpr}
-    {cvt : ConstantVal .anon} {vt : KExpr}
-    (hw : RuleWitness env g blk tys recKey lps tyA mI rP r rhsA thm cvj cnP cnF lvls pins cvt vt) :
+    {cvt : ConstantVal .anon} {vt tty₀ : KExpr}
+    (hw : RuleWitness env g blk tys recKey lps tyA mI rP r rhsA thm cvj cnP cnF lvls pins cvt vt
+      tty₀) :
     ∀ p ∈ pins, p.hasFvar = false ∧ p.looseBVarsBounded rP = true := by
   intro p hp
   have h0 := List.all_eq_true.mp hw.pinsScoped p hp
@@ -188,24 +192,29 @@ theorem scope_of_renamed {env E : Env .anon} {h : KKey → KKey} {e s : KExpr}
 
 /-- **The advice statement of a stored theorem, in the recursor's level parameters, has the
 theorem's scope.** -/
-theorem statement_scope {env : Env .anon} {thm : KKey} {cvt : ConstantVal .anon} {vt : KExpr}
+theorem statement_scope {env : Env .anon} {thm : KKey} {cvt : ConstantVal .anon} {vt tty₀ : KExpr}
     {lps : List LevelParam} (hwf : EnvWF env) (hfind : env.find? thm = some (.thmInfo cvt vt))
     (hperm : lps.Perm (List.range lps.length))
-    (hlp : cvt.levelParams = List.range lps.length) :
-    (invPosOf lps cvt.type).hasFvar = false ∧
-      (invPosOf lps cvt.type).looseBVarsBounded 0 = true ∧
-      (invPosOf lps cvt.type).constsResolve env = true ∧
-      (invPosOf lps cvt.type).allLevelParamsDefined lps = true := by
+    (htl : tty₀.allLevelParamsDefined (List.range lps.length) = true)
+    (heq : ExprLvEq tty₀ (posOf cvt.levelParams cvt.type)) :
+    (invPosOf lps tty₀).hasFvar = false ∧
+      (invPosOf lps tty₀).looseBVarsBounded 0 = true ∧
+      (invPosOf lps tty₀).constsResolve env = true ∧
+      (invPosOf lps tty₀).allLevelParamsDefined lps = true := by
   have hcw := hwf _ (List.mem_of_find?_eq_some hfind)
-  have h1 : cvt.type.hasFvar = false := hcw.1
-  have h2 : cvt.type.allLevelParamsDefined cvt.levelParams = true := hcw.2.1
-  have h3 : cvt.type.constsResolve env = true := hcw.2.2.1
-  have h4 : cvt.type.looseBVarsBounded 0 = true := hcw.2.2.2.1
-  rw [hlp] at h2
-  refine ⟨(hasFvar_instantiateLevelParams _ _ cvt.type).trans h1,
-    (looseBVarsBounded_instantiateLevelParams _ _ 0 cvt.type).trans h4, ?_,
-    allLevelParamsDefined_of_posOf_perm hperm (by rw [posOf_invPosOf hperm]; exact h2)⟩
-  have h5 : (invPosOf lps cvt.type).constsResolve env = cvt.type.constsResolve env :=
+  have h1 : tty₀.hasFvar = false := by
+    rw [exprLvEq_hasFvar heq]
+    exact (hasFvar_instantiateLevelParams _ _ cvt.type).trans hcw.1
+  have h3 : tty₀.constsResolve env = true := by
+    rw [exprLvEq_constsResolve env heq, constsResolve_posOf]
+    exact hcw.2.2.1
+  have h4 : tty₀.looseBVarsBounded 0 = true := by
+    rw [exprLvEq_looseBVarsBounded heq 0]
+    exact (looseBVarsBounded_instantiateLevelParams _ _ 0 cvt.type).trans hcw.2.2.2.1
+  refine ⟨(hasFvar_instantiateLevelParams _ _ tty₀).trans h1,
+    (looseBVarsBounded_instantiateLevelParams _ _ 0 tty₀).trans h4, ?_,
+    allLevelParamsDefined_of_posOf_perm hperm (by rw [posOf_invPosOf hperm]; exact htl)⟩
+  have h5 : (invPosOf lps tty₀).constsResolve env = tty₀.constsResolve env :=
     Ix.Kernel.Expr.constsResolve_instantiateLevelParams ..
   rw [h5]
   exact h3
@@ -239,9 +248,10 @@ theorem aliasGroup_ruleAlias {env : Env .anon} {g : KKey → KKey}
     {blk : List (ConstantInfo .anon)} {tys : List KExpr} {bn : List KKey} {recKey : KKey}
     {lps : List LevelParam} {tyA : KExpr} {mI rP j : Nat} {r : RecRule .anon} {rhsA : KExpr}
     {thm : KKey} {cvj : ConstantVal .anon} {cnP cnF : Nat} {lvls : List Level}
-    {pins : List KExpr} {cvt : ConstantVal .anon} {vt : KExpr}
+    {pins : List KExpr} {cvt : ConstantVal .anon} {vt tty₀ : KExpr}
     {as : List (ConstantInfo .anon)} {tbl : List (KKey × KKey)}
-    (hw : RuleWitness env g blk tys recKey lps tyA mI rP r rhsA thm cvj cnP cnF lvls pins cvt vt)
+    (hw : RuleWitness env g blk tys recKey lps tyA mI rP r rhsA thm cvj cnP cnF lvls pins cvt vt
+      tty₀)
     (hwf : EnvWF env) (hperm : lps.Perm (List.range lps.length))
     (hg : AliasGroup env (aliasMap tbl) as)
     (hfresh : (⟨as ++ env.consts⟩ : Env .anon).find? (iotaKey recKey j) = none)
@@ -251,8 +261,9 @@ theorem aliasGroup_ruleAlias {env : Env .anon} {g : KKey → KKey}
     (hblk : ∀ ci ∈ blk, bn.contains ci.name = true)
     (hpinsres : ∀ p ∈ pins, (p.renameConsts g).constsResolve env = true) :
     AliasGroup env (aliasMap ((iotaKey recKey j, thm) :: tbl))
-      (ruleAlias bn recKey lps j r.ctor lvls cnF pins thm cvt.type :: as) := by
-  obtain ⟨hclosed, hbnd, hres, hlvl⟩ := statement_scope hwf hw.thm hperm hw.thmLevels
+      (ruleAlias bn recKey lps j r.ctor lvls cnF pins thm tty₀ :: as) := by
+  obtain ⟨hclosed, hbnd, hres, hlvl⟩ :=
+    statement_scope hwf hw.thm hperm hw.thmTypeLevels hw.thmTypeEq
   obtain ⟨fvs, tbody, hop, heq, h3, hrest⟩ := hw.statement
   dsimp only at hrest
   obtain ⟨hfn, hlen, -, hmajor, -⟩ := hrest
@@ -283,9 +294,16 @@ theorem aliasGroup_ruleAlias {env : Env .anon} {g : KKey → KKey}
     (fun p hp => comp_of_renamed_resolves hout htarget hfix (hpinsres p hp))
   obtain ⟨c1, c2, c3, c4⟩ := scope_of_renamed (E := ⟨as ++ env.consts⟩) hren hg.stored_prefix
     hg.stored_of_target ⟨hclosed, hbnd, hres, hlvl⟩
+  have htyEq : ExprLvEq
+      (posOf lps
+        ((copyStatement (auxKey recKey .model) lps
+          (fun _ => copyMajor (blockRen bn) r.ctor lvls cnF pins) (invPosOf lps tty₀)).renameConsts
+          (aliasMap tbl)))
+      (posOf cvt.levelParams cvt.type) := by
+    rw [hren, posOf_invPosOf hperm tty₀]
+    exact hw.thmTypeEq
   exact AliasGroup.cons hg hperm hfresh (fun T => ne_projTableName_auxKey_iota _ T j)
-    (hg.find_prefix thm _ hw.thm) hw.thmLevels c1 c2 c3 c4
-    ((congrArg (posOf lps) hren).trans (posOf_invPosOf hperm cvt.type))
+    (hg.find_prefix thm _ hw.thm) hw.thmLevels c1 c2 c3 c4 htyEq
     (ite_eq_left rfl) (fun x hx => ite_eq_right hx)
 
 end IxVM.Refinement.Decl.FamilyAlias
