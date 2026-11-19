@@ -11,51 +11,35 @@ takes the kinds of a top-walked unit in, and of `CheckedUnitFact` and `CheckedUn
 form of a kind's step for every checked unit) and the axioms it reaches. A change to any of them
 fails the build.
 
-How to read it. The explicit arguments are the open obligations: the first is the binding half's
-(the closure's remaining step in the family form: a twin), and the second is the typing half's
-(the step of a twin). The binding claim export (`Binding.FamilyRecon.groupStoresOfRun_closed`
-through `Binding.groupStoresOfRun_of_remainingNC`), the family graph, inner checks, canonical twin
-selection (`Typing.familyGraphRowInnerFamT_closed`), and both family-check steps
-(`FamilyAlias.closureFamilyCheck_of_run`, `FamilyAlias.familyBlockCheckRow_of_run`) are proved
-unconditionally. The binding half's run predicate is `IxVM.Refinement.Binding.BindingRun`. The
-step of a unit with no family record and no twin is a theorem (`Binding.closureUnitSteps_bindingRun`),
-and the step of a new block with its selected family record is a theorem
-(`FamilyAlias.closureFamilyCheck_of_run`). The run predicate holds the prelude pin, the store after
-the basis groups, the admission of each group with its reading clause and the group's family checks,
-so the fold's hypotheses about those are its projections and are not listed; the basis groups'
-family form, the stored shapes of groups with no role unit (`Binding.groupWithoutRoleUnit_bindingRun`),
-the role unit of an operation (`Binding.operationRoleUnitW_of_projFree` from
-`Binding.certProjFree_bindingRun`) and the standard axioms' role unit are theorems. A hypothesis
-is typed by the interface its obligation has today, so the theorem claims nothing by itself; it
-fixes how the parts compose and what is left.
+How to read it. Zero explicit arguments remain: both `circuitComposed_residual` and its
+zero-argument alias `circuitComposed` prove `IxVM.Consistency.CircuitComposed` unconditionally on
+`[propext, Classical.choice, Quot.sound]`. Every binding and typing obligation is discharged:
+the binding claim export (`Binding.FamilyRecon.groupStoresOfRun_closed` through
+`Binding.groupStoresOfRun_of_remainingNC`), the basis groups' family form, the role-free group
+shapes (`Binding.groupWithoutRoleUnit_bindingRun`), the operation and standard-axiom role units
+(`Binding.operationRoleUnitW_of_projFree`, `Binding.standardAxiomRoleUnitW_closed`), all three
+steps of every group's closure (`Binding.closureUnitSteps_bindingRun`,
+`FamilyAlias.closureFamilyCheck_of_run`, `TwinFamily.closureTwinSteps_closed`), the family graph,
+inner checks, canonical twin selection (`Typing.familyGraphRowInnerFamT_closed`), the family-block
+step (`FamilyAlias.familyBlockCheckRow_of_run`), and the twin step
+(`TwinFamily.familyTwinWF_closed`).
 
-How to change it. When a theorem produces a hypothesis, apply it inside
-`circuitComposed_residual`, delete the hypothesis and update the expected output here in the
-same commit. When the interface of an obligation changes, retype its hypothesis the same way.
-The proof is complete when the theorem has no explicit argument.
-
-What this module does not print. A definition that a hypothesis reads
-(`BindingRun`, `AtGroups`, `ClosureTwinSteps`, `FamilyRecon.RFormS`,
-`FamilyTwinRowFam`, `FoldExtra`, `UnitStep` and the others) appears by name only: its own
-module holds it. The public statement and what it reads are printed in
-`Ix.IxVM.ConsistencyAudit` and `Ix.IxVM.ConsistencyModelAudit`. The module is outside any
-namespace, so every name prints in full. -/
+The public statement and what it reads are printed in `Ix.IxVM.ConsistencyAudit` and
+`Ix.IxVM.ConsistencyModelAudit`. The module is outside any namespace, so every name prints in full. -/
 
 /-! ## The theorem -/
 
 /--
-info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
-  (closureTwinSteps :
-    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
-        (IxVM.Refinement.Binding.ClosureTwinSteps IxVM.Refinement.Typing.FormerOpenTraceAt calls))
-  (familyTwin :
-    IxVM.Refinement.Typing.TwinFamily.FamilyTwinRowFam IxVM.Refinement.Binding.FamilyRecon.RFormS
-      IxVM.Refinement.Typing.FormerOpenTraceAt) :
-  IxVM.Consistency.CircuitComposed
+info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u} : IxVM.Consistency.CircuitComposed
 -/
 #guard_msgs in
 #check IxVM.Refinement.Endpoint.circuitComposed_residual
+
+/--
+info: IxVM.Refinement.Endpoint.circuitComposed.{u} : IxVM.Consistency.CircuitComposed
+-/
+#guard_msgs in
+#check IxVM.Refinement.Endpoint.circuitComposed
 
 /-! ## The shape of a typing hypothesis -/
 
@@ -156,3 +140,4 @@ fun X Kind =>
 The theorem reaches the three standard axioms and no other. -/
 
 #guard_kernel_axioms IxVM.Refinement.Endpoint.circuitComposed_residual [propext, Classical.choice, Quot.sound]
+#guard_kernel_axioms IxVM.Refinement.Endpoint.circuitComposed [propext, Classical.choice, Quot.sound]

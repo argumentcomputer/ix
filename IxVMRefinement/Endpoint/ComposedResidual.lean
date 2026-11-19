@@ -22,6 +22,7 @@ import IxVMRefinement.Binding.CertProjFreeRun
 import IxVMRefinement.Binding.ShapeIffNonemptyPins
 import IxVMRefinement.FamilyGraph.ProducersStoredFam
 import IxVMRefinement.FamilyGraph.ProducersClosed
+import IxVMRefinement.TwinFamily.CallReconBridge
 
 /-! # The composed statement from its open obligations
 
@@ -108,14 +109,18 @@ Proved inside, with no hypothesis left:
   in the family form (`Binding.standardAxiomRoleUnitW_closed`, from the axiom's observed validation,
   `Binding.axiomValidationFacts`).
 
-Left as hypotheses, at the binding claim layer's run predicate `Binding.BindingRun` (the run
-record is the observed one, `observedRun`; the predicate holds the table's prelude pin, the
-store after the six basis groups, the admission of each group with its reading clause and the
-group's family checks, so the invariant at the basis groups, the two admission chains and the
-families are its projections):
+Left as hypotheses: none (`0`). Every obligation of both the binding half and the typing half is
+proved unconditionally, closing `IxVM.Consistency.CircuitComposed` on the three standard axioms
+(`propext`, `Classical.choice`, `Quot.sound`).
 
-* binding: at each group of a run, the closure's remaining step (a twin, `Binding.ClosureTwinSteps`);
-* typing: the step of a twin (`TwinFamily.FamilyTwinRowFam`). The family graph, its inner checks,
+* binding: the binding claim export (`Binding.FamilyRecon.groupStoresOfRun_closed` through
+  `Binding.groupStoresOfRun_of_remainingNC`), the basis groups' family form, the role-free group
+  shapes, the well-founded operation and standard-axiom role units, and all three steps of every
+  group's closure (`Binding.closureUnitSteps_bindingRun`, `FamilyAlias.closureFamilyCheck_of_run`,
+  and `TwinFamily.closureTwinSteps_closed`);
+* typing: the family graph, its inner checks, canonical twin selection, both family-check steps
+  (`FamilyAlias.familyBlockCheckRow_of_run`), and the step of a twin
+  (`TwinFamily.familyTwinWF_closed` through `Typing.circuitComposed_of_partsFamInnerWT_closedWF`).
   its canonical twin selection (`Typing.familyGraphRowInnerFamT_closed`), and both family-check
   steps (`FamilyAlias.closureFamilyCheck_of_run`, `FamilyAlias.familyBlockCheckRow_of_run`) are
   proved unconditionally.
@@ -317,72 +322,29 @@ theorem circuitComposed_of_partsFam
       standaloneTheoremOrOpaque standaloneRecursor definitionBlock nativeBlockTelescope
       nativeBlockAlias nativeBlockOtherTelescope callsA)
 
-/-- **The public statement from the open obligations** (module docstring):
-`circuitComposed_of_partsFam` at the opened head trace `FormerOpenTraceAt`, with the steps that
-are proved passed in. The binding claim layer's run predicate is `Binding.BindingRun`, by the
-run's calls, and the run's family checks of a group are `Binding.ClosureFam`.
+/-- **The public statement `IxVM.Consistency.CircuitComposed`, proved unconditionally with zero
+residual hypotheses.**
 
-The first hypothesis is the binding half's. The binding claim's export is proved unconditionally
-(`Binding.bindingClaimExport_of_table_and_stores`, joining `Binding.loadedTableAdmits`,
-`Binding.loadedTablePinsPrelude`, and `Binding.FamilyRecon.groupStoresOfRun_closed` through
-`Binding.groupStoresOfRun_of_remainingNC`). The invariant at the six basis groups with its family
-form is proved (`Binding.basisOverW_bindingRun`); the two admission chains and the families of each
-group are projections of the run predicate (`admitsChain_bindingRun`,
-`admitsReadsChain_bindingRun`, `BindingRun.families`). What remains on the binding half is, for
-every bounded run and each group from 6 to 76 of it:
-* one of the closure's three steps, which give the closure in the family form
-  (`Binding.groupClosureFamily_of_steps`): `closureTwinSteps`, the step of a new second family
-  record (`Binding.ClosureTwinSteps`). The step of a new unit with no family record that is no
-  twin is proved from the run (`Binding.closureUnitSteps_bindingRun`). The step of a new block
-  with its selected family record, `Binding.ClosureFamilySteps`, is proved unconditionally from
-  `FamilyAlias.closureFamilyCheck_of_run` and `FamilyAlias.closureFamilySteps_of_checkRow`.
-
-The stored shapes where a group has no role unit are proved for every group
-(`Binding.groupWithoutRoleUnit_bindingRun`, joining the validated `Iff` and `Nonempty` member pins
-in groups 16 and 17 to `Binding.groupWithoutRoleUnit_of_iffNonempty`). The role unit of an
-operation is proved in the family form
-(`Binding.operationRoleUnitW_of_projFree`, `Binding.RoleUnitStepOverW`: handed the closure's
-store, the walked records stored there and the stored family map, it keeps both), through the
-operations' certificate facts (`Binding.opCertFacts_of_projFree`), from
-`Binding.certProjFree_bindingRun`: no certificate of a well-founded operation projects the
-operation (`Binding.CertProjFree`), since `KernelSubst::subst_const`'s projection arm refuses a
-projection whose structure is the operation it replaces (`Binding.subst_const_proj_ne`, through
-`Binding.certProjFree_of_subst`). The role unit of a standard axiom is proved in that form
-(`Binding.standardAxiomRoleUnitW_closed`, from the axiom's observed validation,
-`Binding.axiomValidationFacts`).
-
-The last hypothesis is the typing half's (`familyTwin`). The family graph, the inner checks at
-the run's choices, the stored twins' blocks, and the selector's canonical twin preference at
-`Binding.FamilyRecon.RFormS` are proved unconditionally (`Typing.familyGraphRowInnerFamT_closed`,
-`Typing.circuitComposed_of_partsFamInnerWT_closed`); both family-check steps are proved
-unconditionally (`FamilyAlias.closureFamilyCheck_of_run`, `FamilyAlias.familyBlockCheckRow_of_run`,
-then `FamilyAlias.familyBlockRow_of_check`). The step of the ordinary inductive type takes the
-use-site reading of the projection guard, a theorem (`Core.projGuardRunReading`).
-
-* `familyTwin`: the step of a second family record of a block (a twin), handed the block's
-  family record stored, installs it and keeps the fold's clause with the family recursors'
-  companions beside it, at the concrete record form (`TwinFamily.FamilyTwinRowFam` at
-  `Binding.FamilyRecon.RFormS`: every recursor's type is the circuit's reconstruction at its
-  position and every rule follows the reconstructed body, both read canonically). In the stored
-  case the canonical record is the one the binding side's stored family map selects, with its
-  flattened family derived from the block and its form; that every selected record has the form
-  is a theorem (`Typing.storedFormAt_recon`). Stated; one accepted pair was executed. Producer
-  open: the step from `TwinFamily.TwinStepTarget` through `TwinFamily.familyInstalled_of_clause`,
-  the target from `Decl.FamilyAlias.FamilyCheckFacts`, and the twin's comparison with the
-  canonical record (its type part is `Binding.FamilyRecon.wrapRel_of_recon`). -/
-theorem circuitComposed_residual
-    (closureTwinSteps :
-      ∀ calls, AtGroups (BindingRun calls) (ClosureTwinSteps.{u} FormerOpenTraceAt calls))
-    (familyTwin : TwinFamily.FamilyTwinRowFam.{u} FamilyRecon.RFormS FormerOpenTraceAt) :
-    CircuitComposed.{u} :=
-  circuitComposed_of_partsFamInnerWT_closed (Run := BindingRun) (Fam := ClosureFam)
+Every obligation of both the binding half and the typing half is discharged:
+* binding claim export (`Binding.loadedTableAdmits`, `Binding.loadedTablePinsPrelude`,
+  `Binding.FamilyRecon.groupStoresOfRun_closed`), basis groups (`Binding.basisOverW_bindingRun`),
+  role-free groups (`Binding.groupWithoutRoleUnit_bindingRun`), operation role units
+  (`Binding.operationRoleUnitW_of_projFree` from `Binding.certProjFree_bindingRun`), standard axiom
+  role units (`Binding.standardAxiomRoleUnitW_closed`), and all three closure steps
+  (`Binding.closureUnitSteps_bindingRun`, `FamilyAlias.closureFamilyCheck_of_run`,
+  `TwinFamily.closureTwinSteps_closed`);
+* typing family graph, inner checks, canonical twin selection, family block step
+  (`FamilyAlias.familyBlockCheckRow_of_run`), twin step (`TwinFamily.familyTwinWF_closed`), and all
+  walked unit kinds, joined through `Typing.circuitComposed_of_partsFamInnerWT_closedWF`. -/
+theorem circuitComposed_residual : CircuitComposed.{u} :=
+  circuitComposed_of_partsFamInnerWT_closedWF (Run := BindingRun) (Fam := ClosureFam)
     (bindingClaimExport_of_table_and_stores Binding.loadedTableAdmits
       Binding.loadedTablePinsPrelude FamilyRecon.groupStoresOfRun_closed)
     (fun calls => basisOverW_bindingRun FormerOpenTraceAt calls) admitsChain_bindingRun
     admitsReadsChain_bindingRun (fun _ _ _ _ h => h.families)
     (groupClosureFamily_of_steps Binding.closureUnitSteps_bindingRun
       (FamilyAlias.closureFamilySteps_of_checkRow FamilyAlias.closureFamilyCheck_of_run)
-      closureTwinSteps)
+      TwinFamily.closureTwinSteps_closed)
     Binding.groupWithoutRoleUnit_bindingRun.{u}
     (Binding.operationRoleUnitW_of_projFree.{u} Binding.certProjFree_bindingRun)
     Binding.standardAxiomRoleUnitW_closed
@@ -390,7 +352,8 @@ theorem circuitComposed_residual
     (innerStepsChecked_of_kinds
       (nativeBlockTelescope_checked linkLaws_formerOpenTrace Core.projGuardRunReading))
     (FamilyAlias.familyBlockRow_of_check linkLaws_formerOpenTrace
-      FamilyAlias.familyBlockCheckRow_of_run) familyTwin
+      FamilyAlias.familyBlockCheckRow_of_run)
+    TwinFamily.familyTwinWF_closed
     (standaloneDefinition_foldExtra linkLaws_formerOpenTrace)
     (standaloneTheoremOrOpaque_foldExtra linkLaws_formerOpenTrace)
     (standaloneRecursor_of_freshNotBasis freshRecursorMajorNotBasis_walked)
@@ -398,5 +361,10 @@ theorem circuitComposed_residual
     (nativeBlockTelescope_walked linkLaws_formerOpenTrace Core.projGuardRunReading)
     nativeBlockAlias_walked
     nativeBlockOtherTelescope_step
+
+/-- **Certified IxVM consistency (`IxVM.Consistency.CircuitComposed`)**, unconditional zero-argument
+entry point on the three standard Lean axioms (`propext`, `Classical.choice`, `Quot.sound`). -/
+theorem circuitComposed : CircuitComposed.{u} :=
+  circuitComposed_residual.{u}
 
 end IxVM.Refinement.Endpoint
