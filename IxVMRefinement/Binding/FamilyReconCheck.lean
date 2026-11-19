@@ -4869,7 +4869,7 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
         intro h0
         have := congrArg ZMod.val h0
         rw [fval_natCast (by omega)] at this; exact hrs_ne this
-      have hrs_neV : (Value.field (rs.size : F)) ≠ .field 0 :=
+      have hrs_neV : (Value.field (rs.size : F) : SourceValue F) ≠ .field 0 :=
         fun h => hrs_neF (Value.field.inj h)
       rw [if_neg hrs_neV] at hz_nr; subst hz_nr
       cases v_vg with
@@ -4889,7 +4889,7 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
           | field fv =>
             by_cases hfv : fv = 0
             · subst hfv; rfl
-            · rw [if_neg (fun h => hfv (Value.field.inj h))] at heq_or
+            · rw [if_neg (fun (h : (Value.field fv : SourceValue F) = .field 0) => hfv (Value.field.inj h))] at heq_or
               exact absurd (Value.field.inj heq_or) zero_ne_one
           | ptr _ _ | tuple _ | construct _ _ _ => simp [evalBinOp] at op_sub
         rw [hsub0] at op_sub
@@ -4902,7 +4902,8 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
       cb := cb, msB := msB, ind₀ := ind₀, np := np, bnl := bnl, off := off,
       prim := prim, cprim := cprim, msp := msp, os := os, flat := flat,
       as_t := as_t, as_r := as_r,
-      hBlock := hBlock, hms0 := hms0, hmsB_lt := hmsB_lt, hnp_lt := hnp_lt, hnp_all := hnp_all,
+      hBlock := hBlock, hms0 := hms0, hmsB_lt := hmsB_lt, hnp_lt := hnp_lt,
+      hnp_all := fun m hm ind hmi => hnp_all ind (hmi ▸ hm),
       hrs_lt := hrs_lt, hflat_lt := hflat_lt, hflat_len := hflat_len,
       hbnl_lt := hbnl_lt, hoff := hoff, hBlockElim := hBlockElim, hbnl_d0 := hbnl_d0,
       has_t_len := has_t_len,
@@ -4966,7 +4967,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
   -- 2. Unpack check_family into a clean, compact record (dropping hc1474 and ~190 binders)
   obtain ⟨u⟩ := check_family_unpack ht hwf hS hH hbd hR'agree hcl' hR'B hR'rb hlv'
     hRec hrs_ne hBLogic hrc hbB hBb hbR hRb ev_cf hsub_cf
-  clear h h' xrc xb xrb r_cf hrc bB hbB hBb bR hbR hRb ev_cf hsub_cf
+  clear hrec_lv h h' xrc xb xrb r_cf hrc bB hbB hBb bR hbR hRb ev_cf hsub_cf
   obtain ⟨bB, bR, rfl, rfl, cb, msB, ind₀, np, bnl, off, prim, cprim, msp, os, flat, as_t, as_r,
     hBlock, hms0, hmsB_lt, hnp_lt, hnp_all, hrs_lt, hflat_lt, hflat_len, hbnl_lt, hoff,
     hBlockElim, hbnl_d0, has_t_len, has_t_mem, has_r_len, has_r_recr,
