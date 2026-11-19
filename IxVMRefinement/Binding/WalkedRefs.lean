@@ -224,8 +224,7 @@ theorem walkedRef_needOk (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoade
         have ea : a' = x := beq_iff_eq.mp ha'
         subst ea
         have hrecB : recordOf basisStore a' = some c := StoreInhabit.store_record_of_mem hmem
-        have hgetB : basisStore.consts.get? a' = some (StoreInhabit.mkLazy (Ixon.serConstant c) c) :=
-          StoreInhabit.store_get?_of_mem hmem
+        have hgetB := StoreInhabit.store_get?_of_mem hmem
         have hE : recordOf E₀ a' = some c := by
           unfold recordOf at hrecB ⊢
           rw [hgetB] at hrecB
