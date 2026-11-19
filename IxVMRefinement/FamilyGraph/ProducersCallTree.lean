@@ -32,7 +32,7 @@ set_option maxRecDepth 100000
 
 namespace IxVM.Refinement.Typing
 
-open Aiur (Heap SourceValue Environment Constant Value)
+open Aiur (Heap SourceValue Environment Constant Value loadValue lookupMap)
 open Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library
 open IxVM (F)
@@ -201,7 +201,7 @@ private theorem selectArm_body_mem {world : World F} {types : Types} {heap : Hea
 private theorem hasCallIn_constantExpr (ts : List String) (c : Constant F) :
     hasCallIn ts (constantExpr c) = false := by
   match c with
-  | .field _ => rfl
+  | .field _ => simp only [constantExpr, hasCallIn]
   | .ptr _ a => exact Empty.elim a
   | .tuple xs =>
     simp only [constantExpr, hasCallIn]
@@ -219,7 +219,7 @@ where
 private theorem noDollarCall_constantExpr (c : Constant F) :
     noDollarCall (constantExpr c) = true := by
   match c with
-  | .field _ => rfl
+  | .field _ => simp only [constantExpr, noDollarCall]
   | .ptr _ a => exact Empty.elim a
   | .tuple xs =>
     simp only [constantExpr, noDollarCall]
@@ -425,6 +425,22 @@ private theorem instanceName_not_mem_targets {ts : List String}
   intro t ht
   exact instanceName_ne_of_ne (hplain t ht) (inTargets_eq_false h t ht)
 
+private theorem instanceName_ofSymbol_not_mem_targets {ts : List String} {types : Types}
+    {name : String} {typeArgs : Option (List Ty)}
+    (hno : inTargets ts name = false) (hnd : plainBytes name = true) :
+    ∀ key, Instance.ofSymbol (instanceName types name typeArgs) = .ok key →
+      ∀ t ∈ ts, key.name ≠ t := by
+  intro key hof t ht
+  have hsym := Instance.ofSymbol_symbol
+    ⟨name, (typeArgs.getD []).map (Ty.subst types)⟩
+    (fun _ => head_ne_dollar_of_plainBytes hnd)
+  change Instance.ofSymbol
+    (Instance.symbol ⟨name, (typeArgs.getD []).map (Ty.subst types)⟩) = .ok key at hof
+  rw [hsym] at hof
+  injection hof with hkey
+  subst hkey
+  exact inTargets_eq_false hno t ht
+
 /-- A strictly shorter subcall containing `cl` whose callee avoids `ts`. -/
 private def StrictSubCall (ts : List String) (cl : Call F) (calls : List (Call F)) : Prop :=
   ∃ fnName args h r h' cs,
@@ -454,6 +470,7 @@ private theorem obsFn_strictSubCall {ts : List String}
     (hprep : ∀ types locals expr, Obs.W.prepare fnName args = .ok (types, locals, expr) →
       hasCallIn ts expr = false ∧ noDollarCall expr = true)
     (hcl : cl ∈ calls) : StrictSubCall ts cl calls := by
+  revert hprep hcl
   induction ev using ObsFn.rec
     (motive_1 := fun _ _ expr _ _ _ calls _ =>
       hasCallIn ts expr = false → noDollarCall expr = true → cl ∈ calls →
@@ -461,10 +478,6 @@ private theorem obsFn_strictSubCall {ts : List String}
     (motive_2 := fun _ _ exprs _ _ _ calls _ =>
       hasCallInList ts exprs = false → noDollarCallList exprs = true → cl ∈ calls →
       StrictSubCall ts cl calls)
-    (motive_3 := fun fnName args _ _ _ calls _ =>
-      (∀ types locals expr, Obs.W.prepare fnName args = .ok (types, locals, expr) →
-        hasCallIn ts expr = false ∧ noDollarCall expr = true) →
-      cl ∈ calls → StrictSubCall ts cl calls)
     (motive_4 := fun _ _ expr _ _ _ _ calls _ =>
       hasCallIn ts expr = false → noDollarCall expr = true → cl ∈ calls →
       StrictSubCall ts cl calls)
@@ -496,7 +509,7 @@ private theorem obsFn_strictSubCall {ts : List String}
     rcases List.mem_append.mp hm with h1 | h2
     · exact strictSubCall_mono_left (ih1 hno.1 hnd.1 h1)
     · exact strictSubCall_mono_right (ih2 hno.2 hnd.2 h2)
-  | @call types _ name typeArgs _ _ _ _ _ _ _ _ callee _ ih1 _ =>
+  | call _ callee ih1 _ =>
     intro hno hnd hm
     simp only [hasCallIn, Bool.or_eq_false_iff] at hno
     simp only [noDollarCall, Bool.and_eq_true] at hnd
@@ -505,19 +518,11 @@ private theorem obsFn_strictSubCall {ts : List String}
     · rcases List.mem_cons.mp h2 with heq | h3
       · have hne := instanceName_not_mem_targets hplain hno.1 cl.name hclTarget
         exact (hne (congrArg Call.name heq.symm)).elim
-      · refine ⟨instanceName types name typeArgs, _, _, _, _, _, callee, h3,
+      · exact ⟨_, _, _, _, _, _, callee, h3,
           by simp; omega,
           fun x hx => List.mem_append_right _ (List.mem_cons_of_mem _ hx),
-          instanceName_not_mem_targets hplain hno.1, ?_⟩
-        intro key hof t ht
-        have hsym := Instance.ofSymbol_symbol
-          ⟨name, (typeArgs.getD []).map (Ty.subst types)⟩
-          (fun _ => head_ne_dollar_of_plainBytes hnd.1)
-        change Instance.ofSymbol (Instance.symbol ⟨name, (typeArgs.getD []).map (Ty.subst types)⟩) = .ok key at hof
-        rw [hsym] at hof
-        injection hof with hkey
-        subst hkey
-        exact inTargets_eq_false hno.1 t ht
+          instanceName_not_mem_targets hplain hno.1,
+          instanceName_ofSymbol_not_mem_targets hno.1 hnd.1⟩
   | matchValue _ selected _ ih1 ih2 =>
     intro hno hnd hm
     simp only [hasCallIn, Bool.or_eq_false_iff] at hno
@@ -604,7 +609,6 @@ private theorem obsFn_strictSubCall {ts : List String}
     rcases List.mem_append.mp hm with h1 | h2
     · exact strictSubCall_mono_left (ih1 hno.1 hnd.1 h1)
     · exact strictSubCall_mono_right (ih2 hno.2 hnd.2 h2)
-  exact hprep hcl
 
 /-! ## Identifying the program function behind an `ObsFn` -/
 
@@ -618,7 +622,7 @@ private theorem arguments_nil_right {params : List String} {ts : List (String ×
     have hp : params = [] := List.eq_nil_of_length_eq_zero hlen
     subst hp
     simp [pure, Except.pure, bind, Except.bind] at h
-    exact ⟨rfl, h.symm⟩
+    exact ⟨rfl, h⟩
 
 private theorem arguments_nil_left {types : List Ty} {ts : List (String × Ty)}
     (h : arguments [] types = .ok ts) : types = [] ∧ ts = [] := by
@@ -630,7 +634,7 @@ private theorem arguments_nil_left {types : List Ty} {ts : List (String × Ty)}
     have ht : types = [] := List.eq_nil_of_length_eq_zero hlen
     subst ht
     simp [pure, Except.pure, bind, Except.bind] at h
-    exact ⟨rfl, h.symm⟩
+    exact ⟨rfl, h⟩
 
 private theorem sourceFunction?_fn_detail {p : Program F} {name : String} {sf : SourceFunction F}
     (h : p.sourceFunction? name = some sf) :
@@ -655,7 +659,7 @@ private theorem sourceFunction?_fn_detail {p : Program F} {name : String} {sf : 
         simp only [h3, Except.toOption, pure, Option.some.injEq] at h
         unfold Program.findFunction? at h2
         have hmem : f ∈ p.functions := List.mem_of_find?_eq_some h2
-        have hbeq : (f.name == key.name) = true := List.find?_some h2
+        have hbeq := List.find?_some h2
         exact ⟨key, f, types, rfl, hmem, beq_iff_eq.mp hbeq, rfl, h.symm⟩
 
 /-- Re-tag an `ObsFn` whose underlying program function has plain name `target` and a known
@@ -688,7 +692,8 @@ private theorem obsFn_retag_mono {fnName target : String} {sf sfT : SourceFuncti
   | ok typesT =>
     simp only [hargT, Except.toOption, pure, Option.some.injEq] at hlk'
     obtain ⟨htp, htsT⟩ := arguments_nil_right hargT
-    subst htp htsT
+    rw [htp] at harg
+    subst htsT
     obtain ⟨_, hts⟩ := arguments_nil_left harg
     subst hts
     have hsf_eq_sfT : sf = sfT := hsf_eq.trans hlk'
@@ -770,6 +775,11 @@ theorem read_payload_loads_block {x_block r : SourceValue F} {h h' : Heap F}
     exact ⟨v1, ld11⟩
 
 /-! ## Call-list peeling helpers -/
+
+private theorem peel_eq {P : Prop} {cl : Call F} {rhs calls : List (Call F)}
+    (hc : calls = rhs) (hcl : cl ∈ calls)
+    (k : cl ∈ rhs → rhs.length ≤ calls.length → (∀ x ∈ rhs, x ∈ calls) → P) : P :=
+  k (hc ▸ hcl) (by rw [hc]) (fun x hx => hc ▸ hx)
 
 private theorem peel_append {P : Prop} {cl : Call F} {cs₁ cs₂ calls : List (Call F)}
     (hcl : cl ∈ cs₁ ++ cs₂) (hle : (cs₁ ++ cs₂).length ≤ calls.length)
@@ -954,7 +964,7 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
               intro rcM blkM rM hM hM' csM m_mod m_mod' r_mod cs_mod evM evMod hrm hextMod
                 hsubMod hclM hleM hsubM
               rcases List.mem_cons.mp hclM with heq | hcsM
-              · exact absurd (congrArg Call.name heq) (by decide)
+              · have hnm := congrArg Call.name heq; simp [cl] at hnm
               · match Obs.«KernelModeled::check_modeled_block».obs evM with
                 | .run (m2 := m2) (cs12 := cs12) (v15 := v15) (m17 := m17) (cs25 := cs25)
                     (x_rb := x_rb) (cs53 := cs53) (ev27 := ev27) (ev14 := ev14c)
@@ -970,7 +980,7 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
                     have hheap : h_cf = m2 := congrArg Call.heap heq
                     injection hargs with _ hargs; injection hargs with hxb _
                     subst hxb; subst hheap
-                    have hext : Heap.Extends m_mod m2 :=
+                    have hext : Heap.Extends m_mod _ :=
                       hextMod.trans (ev27.heap_extends.trans ev14c.heap_extends)
                     obtain ⟨v_ld, hld⟩ := block_is_modeled_loads_block evMod
                     exact ⟨r_mod, m_mod, m_mod', cs_mod, evMod, hrm,
@@ -980,9 +990,7 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
             match Obs.«KernelCheck::check_const».obs evCC with
             | .Axiom_n1 (ev14 := ev14) (ev68 := ev68) (ev105 := ev105) (ev149 := ev149)
                 (hc184 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine step ev14 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev68 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev105 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -991,9 +999,7 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
                 (ev203 := ev203) (hc254 := hc) ..
             | .Axiom_other_other (ev14 := ev14) (ev68 := ev68) (ev105 := ev105) (ev149 := ev149)
                 (ev203 := ev203) (hc263 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine step ev14 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev68 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev105 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -1001,9 +1007,7 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
               exact stepLast ev203 (by decide) (by decide) (by decide) hcl hle hsub
             | .Defn (ev14 := ev14) (ev311 := ev311) (ev348 := ev348) (ev385 := ev385)
                 (ev429 := ev429) (ev459 := ev459) (ev481 := ev481) (hc520 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine step ev14 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev311 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev348 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -1014,9 +1018,7 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
             | .Thm (ev14 := ev14) (ev556 := ev556) (ev593 := ev593) (ev630 := ev630)
                 (ev685 := ev685) (ev728 := ev728) (ev758 := ev758) (ev780 := ev780)
                 (hc819 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine step ev14 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev556 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev593 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -1027,9 +1029,7 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
               exact stepLast ev780 (by decide) (by decide) (by decide) hcl hle hsub
             | .Opaque (ev14 := ev14) (ev861 := ev861) (ev898 := ev898) (ev935 := ev935)
                 (ev979 := ev979) (ev1009 := ev1009) (ev1031 := ev1031) (hc1070 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine step ev14 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev861 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev898 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -1039,9 +1039,7 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
               exact stepLast ev1031 (by decide) (by decide) (by decide) hcl hle hsub
             | .Quot (ev14 := ev14) (ev1106 := ev1106) (ev1143 := ev1143) (ev1187 := ev1187)
                 (ev1209 := ev1209) (hc1234 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine step ev14 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev1106 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev1143 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -1050,9 +1048,7 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
             | .Induct_n0 (ev14 := ev14) (ev1295 := ev1295) (ev1343 := ev1343) (ev1408 := ev1408)
                 (ev1452 := ev1452) (ev1482 := ev1482) (ev1505 := ev1505) (ev1531 := ev1531)
                 (ev1609 := ev1609) (hc1634 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine step ev14 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev1295 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev1343 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -1067,15 +1063,13 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
                 (hne1635 := hneMod) (ev1663 := ev1663) (ev1711 := ev1711) (ev1759 := ev1759)
                 (hm1849 := hm1849) (ev1805 := ev1805) (ev1866 := ev1866) (ev1957 := ev1957)
                 (hc1974 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
               have hsubMod : ∀ x ∈ cs_mod, x ∈ calls := fun x hx => by rw [hc]; simp [hx]
               have hextMod : Heap.Extends _ _ :=
                 ev1505.heap_extends.trans (ev1663.heap_extends.trans
                   (ev1711.heap_extends.trans (ev1759.heap_extends.trans
                     ((hm1849 ▸ Heap.Extends.snoc _ _).trans
                       (ev1805.heap_extends.trans ev1866.heap_extends)))))
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine step ev14 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev1295 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev1343 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -1093,9 +1087,7 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
                 (ev1408 := ev1408) (ev1452 := ev1452) (ev1482 := ev1482) (ev1505 := ev1505)
                 (ev1663 := ev1663) (ev1711 := ev1711) (ev1759 := ev1759) (ev1805 := ev1805)
                 (ev1866 := ev1866) (hc1983 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine step ev14 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev1295 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev1343 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -1111,9 +1103,7 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
             | .Ctor_n0_n0 (ev14 := ev14) (ev2045 := ev2045) (ev2082 := ev2082) (ev2126 := ev2126)
                 (ev2159 := ev2159) (ev2332 := ev2332) (ev2403 := ev2403) (ev2429 := ev2429)
                 (ev2475 := ev2475) (ev2536 := ev2536) (ev2588 := ev2588) (hc2613 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine step ev14 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev2045 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev2082 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -1128,9 +1118,7 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
             | .Ctor_n0_other (ev14 := ev14) (ev2045 := ev2045) (ev2082 := ev2082)
                 (ev2126 := ev2126) (ev2159 := ev2159) (ev2332 := ev2332) (ev2403 := ev2403)
                 (ev2429 := ev2429) (ev2475 := ev2475) (ev2536 := ev2536) (hc2622 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine step ev14 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev2045 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev2082 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -1144,12 +1132,10 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
             | .Ctor_other_n0 (cs2401 := cs_mod) (ev14 := ev14) (ev2045 := ev2045) (ev2082 := ev2082)
                 (ev2126 := ev2126) (ev2159 := ev2159) (ev2332 := ev2332) (ev2403 := ev2403)
                 (hne2623 := hneMod) (ev2651 := ev2651) (ev2694 := ev2694) (hc2711 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
               have hsubMod : ∀ x ∈ cs_mod, x ∈ calls := fun x hx => by rw [hc]; simp [hx]
               have hextMod : Heap.Extends _ _ :=
                 ev2403.heap_extends.trans ev2651.heap_extends
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine step ev14 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev2045 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev2082 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -1162,9 +1148,7 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
             | .Ctor_other_other (ev14 := ev14) (ev2045 := ev2045) (ev2082 := ev2082)
                 (ev2126 := ev2126) (ev2159 := ev2159) (ev2332 := ev2332) (ev2403 := ev2403)
                 (ev2651 := ev2651) (hc2720 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine step ev14 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev2045 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev2082 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -1176,9 +1160,7 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
             | .Rec_n0 (ev14 := ev14) (ev2801 := ev2801) (ev2838 := ev2838) (ev2882 := ev2882)
                 (ev2912 := ev2912) (ev2942 := ev2942) (ev2964 := ev2964) (ev2986 := ev2986)
                 (ev3068 := ev3068) (hc3093 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine step ev14 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev2801 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev2838 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -1191,10 +1173,8 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
             | .Rec_other (cs2984 := cs_mod) (ev14 := ev14) (ev2801 := ev2801) (ev2838 := ev2838) (ev2882 := ev2882)
                 (ev2912 := ev2912) (ev2942 := ev2942) (ev2964 := ev2964) (ev2986 := ev2986)
                 (hne3094 := hneMod) (ev3157 := ev3157) (hc3182 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
               have hsubMod : ∀ x ∈ cs_mod, x ∈ calls := fun x hx => by rw [hc]; simp [hx]
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine step ev14 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev2801 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
               refine step ev2838 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -1314,8 +1294,6 @@ private theorem check_witnesses_descend_aux (n : Nat) :
     | .other (x_x := x_x) (x_rest := x_rest) (ev59 := ev59) (ev94 := ev94)
         (ev_updedcyj := evOrd) (ev167 := ev167) (ev129 := ev129) (ev196 := ev196)
         (he254 := he254) (hm264 := hm264) (he291 := he291) (hc292 := hc) .. =>
-      have hle : cs_ws.length ≤ cs_ws.length := Nat.le_refl _
-      have hsub : ∀ x ∈ cs_ws, x ∈ cs_ws := fun _ hx => hx
       have mkSub : ∀ {fn' args' h₁ r₁ h₁' cs'},
           ObsFn Obs.W fn' args' h₁ r₁ h₁' cs' →
           plainBytes fn' = true →
@@ -1340,17 +1318,17 @@ private theorem check_witnesses_descend_aux (n : Nat) :
               rcases List.mem_cons.mp ht with rfl | ht'
               · exact peel_noKey hpl' _ hneWS key hof
               · simp at ht'⟩
-      rw [hc] at hcl hle hsub
-      refine peel ev59 hcl hle hsub (by decide)
+      refine peel_eq hc hcl fun hcl hle hsub => ?_
+      refine peel ev59 hcl hle hsub (by simp [cl])
         (fun h1 h2 h3 => mkSub ev59 (by decide) (by decide) h1 h2 h3)
         fun hcl hle hsub => ?_
-      refine peel ev94 hcl hle hsub (by decide)
+      refine peel ev94 hcl hle hsub (by simp [cl])
         (fun h1 h2 h3 => mkSub ev94 (by decide) (by decide) h1 h2 h3)
         fun hcl hle hsub => ?_
-      refine peel evOrd hcl hle hsub (by decide)
+      refine peel evOrd hcl hle hsub (by simp [cl])
         (fun h1 h2 h3 => mkSub evOrd (by decide) (by decide) h1 h2 h3)
         fun hcl hle hsub => ?_
-      refine peel ev167 hcl hle hsub (by decide)
+      refine peel ev167 hcl hle hsub (by simp [cl])
         (fun h1 h2 h3 => mkSub ev167 (by decide) (by decide) h1 h2 h3)
         fun hcl hle hsub => ?_
       rcases List.mem_cons.mp hcl with heq | hmem
@@ -1364,20 +1342,20 @@ private theorem check_witnesses_descend_aux (n : Nat) :
         obtain ⟨elems, hrepRest⟩ := check_witnesses_repList_aux _ (Nat.le_refl _) ev196
         injection he254 with hpair; injection hpair with hlist _
         subst hlist; subst he291; subst hm264
-        have hrepCons := List.allocCons_rep _ (fun _ _ _ _ _ h => h) (x := x_x) rfl hrepRest
+        have hrepCons := List.allocCons_rep _ (fun _ _ _ _ _ h => h) (x := xx) rfl hrepRest
         have hext1 : Heap.Extends h_ws _ :=
           ev59.heap_extends.trans (ev94.heap_extends.trans
             (evOrd.heap_extends.trans ev167.heap_extends))
         have hext2 : Heap.Extends _ _ :=
           ev196.heap_extends.trans (Heap.Extends.snoc _ _)
-        exact Or.inl ⟨rfl, rfl, _, _, _, x_x :: elems, ev129,
+        exact Or.inl ⟨rfl, rfl, _, _, _, xx :: elems, ev129,
           fun x hx => hsub x (List.mem_cons_of_mem _ (List.mem_append_left _ hx)),
           hext1, hext2, hrepCons, List.mem_cons_self⟩
       · rcases List.mem_append.mp hmem with hcs127 | hrest
         · exact mkSub ev129 (by decide) (by decide) hcs127 (by simp at hle; omega)
             (fun x hx => hsub x (List.mem_cons_of_mem _ (List.mem_append_left _ hx)))
         · rcases List.mem_cons.mp hrest with heq | hcs194
-          · exact absurd (congrArg Call.name heq) (by decide)
+          · have hnm := congrArg Call.name heq; simp [cl] at hnm
           · have hlt194 : _ < cs_ws.length := by simp at hle; omega
             rcases ih (by omega) ev196 hcs194 with
               ⟨hrc, hxb, vw, mw, csw, elems, evw, hsubw, hext1, hext2, hrepRest, hmemEl⟩ | hsc
@@ -1569,9 +1547,7 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
                 (ev_cwwgzxtj := evFlat) (ev1246 := ev1246) (ev_mitevvsv := evLenF)
                 (ev_rqpeovbn := evIz1) (ev_xrhmaojz := evIz2) (ev_whimdwjd := evVal)
                 (ev1305 := ev1305) (ev1343 := ev1343) (hc1474 := hc) .. =>
-              have hle : calls.length ≤ calls.length := Nat.le_refl _
-              have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
-              rw [hc] at hcl hle hsub
+              refine peel_eq hc hcl fun hcl hle hsub => ?_
               refine peel_append hcl hle hsub (fun hcs107 hle107 hsub107 => ?_)
                 fun hcl hle hsub => ?_
               · -- Inside `sg112` (`KernelRoles::role_ctx_axioms`)
@@ -1590,7 +1566,7 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
                 refine step ev266 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
                 refine step ev309 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
                 -- Now at `ev344 : check_witnesses`!
-                refine peel ev344 hcl hle hsub (by decide) (fun hcs342 hlt342 hsub342 => ?_)
+                refine peel ev344 hcl hle hsub (by simp [cl]) (fun hcs342 hlt342 hsub342 => ?_)
                   fun hcl hle hsub => ?_
                 · -- Inside `ev344`: either direct hit (DONE!) or nested subcall (apply strong IH).
                   rcases check_witnesses_descend_aux _ (Nat.le_refl _) ev344 hcs342 with
@@ -1611,7 +1587,7 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
                       (ev_cr := ev435) (ev_w := evw) (ext_rp_ws := hext_rp_ws)
                       (ext_ws_w := hext1) (ext_w_ws' := hext2)
                       (sub_ws := hsub342) (sub_asb := hsub_asb) (sub_cr := hsub_cr)
-                      (sub_w := hsubw) (outsideElems := elems)
+                      (sub_w := hsubw) (elems := elems)
                       (outsideRep := hrepOut) (memOutside := hmemOut)
                   · obtain ⟨fn', args', h₁, r₁, h₁', cs', ev', hcl', hlt', hsub', hne', hkey'⟩ := hsc
                     exact (ih (by omega) (hne' _ List.mem_cons_self)
