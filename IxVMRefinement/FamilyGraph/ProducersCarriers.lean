@@ -454,7 +454,7 @@ private theorem rawConvExpr_forall_inv {c : Ixon.Constant} {blobs : List (_root_
     have hxs := (Core.load_cell cell ld).2
     simp only [List.cons.injEq, and_true] at hxs
     obtain ⟨rfl, rfl, rfl⟩ := hxs
-    exact ⟨b', _, _, he', rt, rb⟩
+    exact ⟨b', _, _, rfl, rt, rb⟩
   | share _ _ _ => exact (hns _ rfl).elim
   | var _ cell | sort _ _ _ cell | ref _ _ _ _ _ _ cell | recur _ _ _ _ _ _ cell
   | prj _ _ _ _ _ _ cell | str _ _ _ _ _ cell | nat _ _ _ _ _ _ _ cell
@@ -479,7 +479,7 @@ private theorem rawConvExpr_not_forall_inv {c : Ixon.Constant}
   | var _ _ | sort _ _ _ _ | ref _ _ _ _ _ _ _ | recur _ _ _ _ _ _ _
   | prj _ _ _ _ _ _ _ | str _ _ _ _ _ _ | nat _ _ _ _ _ _ _ _
   | app _ _ _ | lam _ _ _ _ | letE _ _ _ _ =>
-    intro _ _ he; rw [he'] at he; cases he
+    intro _ _ he; cases he
 
 private theorem rawConvExpr_app_inv {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp f a : SourceValue F}
@@ -495,7 +495,7 @@ private theorem rawConvExpr_app_inv {c : Ixon.Constant} {blobs : List (_root_.Ad
     have hxs := (Core.load_cell cell ld).2
     simp only [List.cons.injEq, and_true] at hxs
     obtain ⟨rfl, rfl⟩ := hxs
-    exact ⟨b', _, _, he', rf, ra⟩
+    exact ⟨b', _, _, rfl, rf, ra⟩
   | share _ _ _ => exact (hns _ rfl).elim
   | var _ cell | sort _ _ _ cell | ref _ _ _ _ _ _ cell | recur _ _ _ _ _ _ cell
   | prj _ _ _ _ _ _ cell | str _ _ _ _ _ cell | nat _ _ _ _ _ _ _ cell
@@ -517,7 +517,7 @@ private theorem rawConvExpr_const_inv {c : Ixon.Constant} {blobs : List (_root_.
     have hxs := (Core.load_cell cell ld).2
     simp only [List.cons.injEq, and_true] at hxs
     obtain ⟨rfl, rfl⟩ := hxs
-    exact ⟨_, _, _, _, he', by simpa only [Array.getElem?_toList] using href, hd, ra⟩
+    exact ⟨_, _, _, _, rfl, by simpa only [Array.getElem?_toList] using href, hd, ra⟩
   | recur _ hrec _ _ _ _ _ => simp at hrec
   | share _ _ _ => exact (hns _ rfl).elim
   | var _ cell | sort _ _ _ cell | prj _ _ _ _ _ _ cell | str _ _ _ _ _ cell
@@ -586,8 +586,8 @@ private theorem last_binder_dom_raw_aux {c : Ixon.Constant}
       | letE _ _ _ _ _ | share _ => rfl
   | m + 1, bound, e, kp, r, h, h', cs, hlen, raw, ev => by
     match Obs.«KernelModeled::last_binder_dom».obs ev with
-    | .Forall (ld12 := ld12) (ld47 := ld47) (ev78 := ev78) (hc87 := hc) .. =>
-      have hlen' : _ ≤ m := by rw [hc] at hlen; simp at hlen; omega
+    | .Forall (cs76 := cs76) (ld12 := ld12) (ld47 := ld47) (ev78 := ev78) (hc87 := hc) .. =>
+      have hlen' : cs76.length ≤ m := by rw [hc] at hlen; simp at hlen; omega
       obtain ⟨b₁, ed, eb, hnd, -, raw_b⟩ := rawConvExpr_forall_inv raw ld12
       obtain ⟨_, _, _, hnb, -, -⟩ := rawConvExpr_forall_inv raw_b ld47
       obtain ⟨hh, hsub, n, b₂, ed', hld, raw'⟩ := last_binder_dom_raw_aux m hlen' raw_b ev78
@@ -628,11 +628,11 @@ private theorem collect_spine_raw_aux {c : Ixon.Constant}
       exact ⟨ext, .refl _, 0, b', raw'.mono ext (fun _ hm => hm), hns⟩
   | m + 1, bound, e, kp, hd, sp, h, h', cs, hlen, raw, ev => by
     match Obs.«KernelTypes::collect_spine».obs ev with
-    | .App (ld12 := ld12) (ev43 := ev43) (he69 := hr) (ev88 := ev88) (he105 := hh)
+    | .App (cs41 := cs41) (ld12 := ld12) (ev43 := ev43) (he69 := hr) (ev88 := ev88) (he105 := hh)
         (hc106 := hc) .. =>
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at hr
       obtain ⟨rfl, -⟩ := hr
-      have hlen' : _ ≤ m := by
+      have hlen' : cs41.length ≤ m := by
         rw [hc] at hlen
         simp only [List.length_cons, List.length_append] at hlen
         omega
@@ -1643,7 +1643,8 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
           obtain ⟨-, raw_l, crb_l, hsz_l, hh_l, hba_l, hde_l, -, -, -, -, -, -, -⟩ :=
             L1.load_verified_constant_decode_bounded hb_rb784 ev_fr14
           have hcrb_eq : crb_l = crb :=
-            hW.runStore.record_eq ((hW.runStore.recordOf_eq_recordAt _).symm.trans (hb_rb_ix ▸ hrb.record))
+            hW.runStore.record_eq ((hW.runStore.recordOf_eq_recordAt _).symm.trans
+              (by simpa [hb_rb_ix] using hrb.record))
               (Core.hashed_mono hsub_fr12 hh_l) hba_l hde_l
           subst crb_l
           have hres := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound ⟨raw_l.toArray⟩ crb hde_l
@@ -1657,7 +1658,8 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
           obtain ⟨-, raw_l, crb_l, -, hh_l, hba_l, hde_l, -, -, -, -, -, -, cRep_l⟩ :=
             L1.load_verified_constant_decode_bounded hb_rb784 ev_fr14
           have hcrb_eq : crb_l = crb :=
-            hW.runStore.record_eq ((hW.runStore.recordOf_eq_recordAt _).symm.trans (hb_rb_ix ▸ hrb.record))
+            hW.runStore.record_eq ((hW.runStore.recordOf_eq_recordAt _).symm.trans
+              (by simpa [hb_rb_ix] using hrb.record))
               (Core.hashed_mono hsub_fr12 hh_l) hba_l hde_l
           subst crb_l
           obtain ⟨infoVal, _, _, _, _, hc_eq, hinfoRep, -, -, -, -⟩ := cRep_l
