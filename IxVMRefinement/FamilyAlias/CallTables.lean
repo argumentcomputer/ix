@@ -250,11 +250,11 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
     {b b' : Bytes.Address} {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
     (hB : FamBlockRecord E₀ (ixAddr b) cb ms) (hR : FamRecRecord E₀ (ixAddr b') crb rs)
     {xb xrb x_members w538 w539 w540 w541 v588 v621 v651 v673 x_s5 x_type_models x_s6 v746 v798
-      x_ctor_models x_s7 v839 v861 x_rec_models x_s8 v941 v926 v992 v977 rc v_nr : SourceValue F}
+      x_ctor_models x_s7 v839 v861 x_rec_models x_s8 v941 v926 v992 v977 rc v_nr v_ntr : SourceValue F}
     {bytes : List UInt8}
-    {m453 m501 m589 m624 m652 m674 m704 m747 m807 m784 m840 m840' m862 m884 m950 m927 m1001
+    {m453 m501 m589 m624 m652 m674 m704 m747 m807 m784 m840 m840' m840'' m862 m884 m950 m927 m1001
       m978 : Heap F}
-    {cs511 cs599 cs632 cs662 cs684 cs714 cs757 cs815 cs794 cs850 cs_nr cs872 cs894 cs958 cs937
+    {cs511 cs599 cs632 cs662 cs684 cs714 cs757 cs815 cs794 cs850 cs_nr cs_ntr cs872 cs894 cs958 cs937
       cs1009 cs988 : List (Call F)}
     (hb : Bytes.RepAddressRef addrTy m453 b xb) (hrb : Bytes.RepAddressRef addrTy m453 b' xrb)
     (hs5 : L1.Stream m453 bytes x_s5)
@@ -274,7 +274,8 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
       m784 cs794)
     (ev852 : ObsFn W "KernelModeled::family_recs" [xrb] m784 v839 m840 cs850)
     (evNoRole : ObsFn W "KernelModeled::assert_no_role" [rc, v839] m840 v_nr m840' cs_nr)
-    (ev874 : ObsFn W Obs.Names.«Lists::length<&[Field; 32]>» [v839] m840' v861 m862 cs872)
+    (evNoTypeRole : ObsFn W "KernelModeled::assert_no_type_role" [rc, v673] m840' v_ntr m840'' cs_ntr)
+    (ev874 : ObsFn W Obs.Names.«Lists::length<&[Field; 32]>» [v839] m840'' v861 m862 cs872)
     (ev896 : ObsFn W "KernelModeled::get_addrs" [x_s7, v861] m862 (.tuple [x_rec_models, x_s8])
       m884 cs894)
     (ev960 : ObsFn W Obs.Names.«Lists::concat<&[Field; 32]>» [v746, v839] m884 v941 m950 cs958)
@@ -290,7 +291,8 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
         v673 v746 v839 x_type_models x_ctor_models x_rec_models v926 v977 ∧
       v861 = .field (recAs.length : F) ∧ ∃ bytes' : List UInt8, L1.Stream m978 bytes' x_s8 := by
   have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
-  have x874 : Heap.Extends m840 m862 := evNoRole.heap_extends.trans ev874.heap_extends
+  have x874 : Heap.Extends m840 m862 :=
+    evNoRole.heap_extends.trans (evNoTypeRole.heap_extends.trans ev874.heap_extends)
   -- the block
   obtain ⟨cb', ms', hbl, hrep⟩ := Claim.load_block_head hb ev513
   obtain ⟨hrec, hinfo⟩ := (hbl.mono hsub511).stored hH
@@ -441,11 +443,12 @@ theorem check_family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
       (ev266 := ev266) (ev309 := ev309) (ev344 := ev344) (ev403 := ev403) (ev435 := ev435)
       (ev465 := ev465) (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
       (ev686 := ev686) (ev716 := ev716) (ev759 := ev759) (ev817 := ev817) (ev796 := ev796)
-      (ev852 := ev852) (ev_ursqbimm := evNoRole) (ev874 := ev874) (ev896 := ev896)
+      (ev852 := ev852) (ev_ursqbimm := evNoRole) (ev_srfmazjk := evNoTypeRole) (ev874 := ev874) (ev896 := ev896)
       (ev960 := ev960) (ev939 := ev939)
       (ev1011 := ev1011) (ev990 := ev990) (hc1474 := hc) .. =>
     have e0 := Decl.check_family_seg1_inv sg
-    have x874 : Heap.Extends _ _ := evNoRole.heap_extends.trans ev874.heap_extends
+    have x874 : Heap.Extends _ _ :=
+      evNoRole.heap_extends.trans (evNoTypeRole.heap_extends.trans ev874.heap_extends)
     have x332 := ev126.heap_extends.trans (ev148.heap_extends.trans (ev194.heap_extends.trans
       (evOrd.heap_extends.trans
       (ev231.heap_extends.trans (ev266.heap_extends.trans (ev309.heap_extends.trans
@@ -456,7 +459,8 @@ theorem check_family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
     obtain ⟨typeAs, ctorAs, recAs, typeMs, ctorMs, recMs, T, -, -⟩ := family_tables hS hH hB hR
       (Bytes.repAddressRef_heapMono₂ addrTy (e0.trans (x332.trans x453)) hb)
       (Bytes.repAddressRef_heapMono₂ addrTy (e0.trans (x332.trans x453)) hrb)
-      (hs5.mono x453) ev513 ev601 ev634 ev664 ev686 ev716 ev759 ev817 ev796 ev852 evNoRole ev874
+      (hs5.mono x453) ev513 ev601 ev634 ev664 ev686 ev716 ev759 ev817 ev796 ev852 evNoRole
+      evNoTypeRole ev874
       ev896
       ev960 ev939 ev1011 ev990
       (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))

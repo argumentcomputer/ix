@@ -182,9 +182,13 @@ structure CheckFamilyChain (rc b rb : SourceValue F)
   vNoRole : SourceValue F
   mNoRole : Heap F
   evNoRole : SubCall calls "KernelModeled::assert_no_role" [rc, recs] m840 vNoRole mNoRole
+  vNoTypeRole : SourceValue F
+  mNoTypeRole : Heap F
+  evNoTypeRole : SubCall calls "KernelModeled::assert_no_type_role" [rc, tys] mNoRole
+    vNoTypeRole mNoTypeRole
   nRecs : SourceValue F
   m862 : Heap F
-  evLenRecs : SubCall calls Obs.Names.«Lists::length<&[Field; 32]>» [recs] mNoRole nRecs m862
+  evLenRecs : SubCall calls Obs.Names.«Lists::length<&[Field; 32]>» [recs] mNoTypeRole nRecs m862
   recM : SourceValue F
   s8 : SourceValue F
   m884 : Heap F
@@ -250,9 +254,9 @@ theorem CheckFamilyChain.ext_m453_m978 {rc b rb : SourceValue F}
   C.evLoadBlk.extends.trans (C.evLenMem.extends.trans (C.evIndcCnt.extends.trans
     (C.evNParams.extends.trans (C.evTypes.extends.trans (C.evTypeMods.extends.trans
       (C.evCtors.extends.trans (C.evLenCtors.extends.trans (C.evCtorMods.extends.trans
-        (C.evRecs.extends.trans (C.evNoRole.extends.trans (C.evLenRecs.extends.trans
-          (C.evRecMods.extends.trans (C.evSrcTail.extends.trans (C.evSrc.extends.trans
-            (C.evDstTail.extends.trans C.evDst.extends)))))))))))))))
+        (C.evRecs.extends.trans (C.evNoRole.extends.trans (C.evNoTypeRole.extends.trans
+          (C.evLenRecs.extends.trans (C.evRecMods.extends.trans (C.evSrcTail.extends.trans
+            (C.evSrc.extends.trans (C.evDstTail.extends.trans C.evDst.extends))))))))))))))))
 
 theorem CheckFamilyChain.ext_m978_m1293 {rc b rb : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)} (C : CheckFamilyChain rc b rb h h' calls) :
@@ -271,7 +275,7 @@ theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : L
       (ev403 := e403) (ev435 := e435) (ev465 := e465) (ev513 := e513) (ev601 := e601)
       (ev634 := e634) (heq650 := q650) (ev664 := e664) (ev686 := e686) (ev716 := e716)
       (ev759 := e759) (ev817 := e817) (ev796 := e796) (ev852 := e852) (ev_ursqbimm := eNoRole)
-      (ev874 := e874) (ev896 := e896) (ev960 := e960) (ev939 := e939) (ev1011 := e1011)
+      (ev_srfmazjk := eNoTypeRole) (ev874 := e874) (ev896 := e896) (ev960 := e960) (ev939 := e939) (ev1011 := e1011)
       (ev990 := e990) (ev_edyzsqzv := eTysV) (ev_gkddqxhv := eLater) (ev_ittpynob := eCtorsV)
       (ev_biaifgpd := eRecsV) (ev1203 := eElim) (ev_cwwgzxtj := eFlat) (ev1246 := eNest)
       (ev_mitevvsv := eLenF) (ev_rqpeovbn := eZ1) (ev_xrhmaojz := eZ2) (ev_whimdwjd := eValG)
@@ -302,6 +306,7 @@ theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : L
     let ⟨s796, hr⟩ := peel_call hr e796
     let ⟨s852, hr⟩ := peel_call hr e852
     let ⟨sNoRole, hr⟩ := peel_call hr eNoRole
+    let ⟨sNoTypeRole, hr⟩ := peel_call hr eNoTypeRole
     let ⟨s874, hr⟩ := peel_call hr e874
     let ⟨s896, hr⟩ := peel_call hr e896
     let ⟨s960, hr⟩ := peel_call hr e960
@@ -346,6 +351,7 @@ theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : L
          ctorM := _, s7 := _, m784 := _, evCtorMods := s796
          recs := _, m840 := _, evRecs := s852
          vNoRole := _, mNoRole := _, evNoRole := sNoRole
+         vNoTypeRole := _, mNoTypeRole := _, evNoTypeRole := sNoTypeRole
          nRecs := _, m862 := _, evLenRecs := s874
          recM := _, s8 := _, m884 := _, evRecMods := s896
          ctorRec := _, m950 := _, evSrcTail := s960
