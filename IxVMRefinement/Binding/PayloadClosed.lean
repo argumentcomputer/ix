@@ -424,7 +424,7 @@ variable {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTab
 and identifies its return address with `ib`. -/
 theorem check_container_rec_rec_family_block (hC : CollisionFreeRun calls E₀)
     (hbd : IxVM.Consistency.Bounded calls)
-    {lim : Option Nat} {x ib : _root_.Address} {rc xx xib r : SourceValue F}
+    {x ib : _root_.Address} {rc xx xib r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
     (hx : Core.S0.addr h xx x) (hib : Core.S0.addr h xib ib)
     (ev : ObsFn Obs.W "KernelModeled::check_container_rec" [rc, xx, xib] h r h' cs)
@@ -453,7 +453,7 @@ theorem check_container_rec_rec_family_block (hC : CollisionFreeRun calls E₀)
 /-- A container recursor checked by `check_container_rec` has `info` either `.recr` or `.rPrj`. -/
 theorem check_container_rec_shape (hC : CollisionFreeRun calls E₀)
     (hbd : IxVM.Consistency.Bounded calls)
-    {lim : Option Nat} {x ib : _root_.Address} {rc xx xib r : SourceValue F}
+    {x ib : _root_.Address} {rc xx xib r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
     (hx : Core.S0.addr h xx x) (hib : Core.S0.addr h xib ib)
     (ev : ObsFn Obs.W "KernelModeled::check_container_rec" [rc, xx, xib] h r h' cs)
@@ -650,14 +650,14 @@ theorem needOk_of_notBlock_sourceSafe (hC : CollisionFreeRun calls E₀)
       | none => rw [hget] at hcx; cases hcx
       | some lc =>
         rw [hget] at hcx
+        dsimp only [Option.bind] at hcx
         obtain ⟨hlcH, hlcB⟩ := hC.runStore.loaded.1 x lc hget
         have eraw : raw = lc.rawBytes := hC.runStore.hashed_inj hh hlcH (hbl.trans hlcB.symm)
         cases hdeE : Ixon.deConstantExact lc.rawBytes with
-        | error _ => rw [hdeE] at hcx; cases hcx
+        | error _ => simp [hdeE, Except.toOption] at hcx
         | ok cx' =>
-          rw [hdeE] at hcx
-          have ecx' : cx' = cx := Option.some.inj hcx
-          subst ecx'
+          simp only [hdeE, Except.toOption, Option.some.injEq] at hcx
+          subst cx'
           have hde' := L1.deConstant_of_deConstantExact hdeE
           rw [← eraw, hde] at hde'
           exact Except.ok.inj hde'
@@ -806,9 +806,11 @@ theorem payReach_in_payClass (hC : CollisionFreeRun calls E₀)
       have ers : rs = ms := Ixon.ConstantInfo.muts.inj (hrs.symm.trans hms)
       subst ers
       have hm0 : rs[0] ∈ rs.toList := Array.getElem_mem_toList hpos
-      obtain ⟨ind, hind⟩ := hallIndc _ hm0
+      have hbi : Core.Specs.Callees.isIndc rs[0] = true :=
+        (List.length_filter_eq_length_iff.mp (by simpa [Array.length_toList] using hallIndc)) _ hm0
       obtain ⟨r, hr⟩ := hallRec _ hm0
-      rw [hind] at hr; cases hr
+      rw [hr] at hbi
+      simp [Core.Specs.Callees.isIndc, Core.isIndc] at hbi
     | @directAdv B' rb' _ cs' advAs' _ _ hexB hadvB =>
       exfalso
       obtain ⟨outs, hU⟩ := hexB.unpack hC hbd
@@ -822,7 +824,7 @@ theorem payReach_in_payClass (hC : CollisionFreeRun calls E₀)
       rcases hkind with ⟨d, hd, -⟩ | ⟨rc, hrc, -⟩ | ⟨ms', hms', -, -, hnat⟩ | ⟨hpr, -⟩
       · rw [hms] at hd; cases hd
       · rw [hms] at hrc; cases hrc
-      · exact not_modeledRouteAt_of_nativeObs hC.runStore hnat hmod
+      · exact not_modeledRouteAt_of_nativeObs hnat hmod
       · exact proj_not_block hpr ⟨ms, hms⟩
     | @directCont B' rb' _ cs' advAs' _ _ hexB hdcB =>
       exact (containerRecIn_notBlock hC.runStore (FamilyCallExact.toCall hexB)
@@ -1704,9 +1706,11 @@ theorem runFactsLeft_of_run (hC : CollisionFreeRun calls E₀)
       have ers : rs = ms := Ixon.ConstantInfo.muts.inj (hrs.symm.trans hms)
       subst rs
       have hm0 : ms[0] ∈ ms.toList := Array.getElem_mem_toList hpos
-      obtain ⟨ind, hind⟩ := hallIndc _ hm0
+      have hbi : Core.Specs.Callees.isIndc ms[0] = true :=
+        (List.length_filter_eq_length_iff.mp (by simpa [Array.length_toList] using hallIndc)) _ hm0
       obtain ⟨r, hr⟩ := hallRec _ hm0
-      rw [hind] at hr; cases hr
+      rw [hr] at hbi
+      simp [Core.Specs.Callees.isIndc, Core.isIndc] at hbi
     | directAdv _ _ hex hadv =>
       exfalso
       obtain ⟨outs, hU⟩ := hex.unpack hC hbd
@@ -1720,7 +1724,7 @@ theorem runFactsLeft_of_run (hC : CollisionFreeRun calls E₀)
       rcases hkind with ⟨d, hd, -⟩ | ⟨rc, hrc, -⟩ | ⟨_, _, -, -, hnat⟩ | ⟨hpr, -⟩
       · rw [hms] at hd; cases hd
       · rw [hms] at hrc; cases hrc
-      · exact not_modeledRouteAt_of_nativeObs hC.runStore hnat hmod
+      · exact not_modeledRouteAt_of_nativeObs hnat hmod
       · exact proj_not_block hpr ⟨ms, hms⟩
     | directCont _ _ hex hdc =>
       exact (containerRecIn_notBlock hC.runStore (FamilyCallExact.toCall hex)
