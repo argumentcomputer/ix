@@ -1294,7 +1294,7 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
         have hwalk := peer_agree_walk_spec hS hbd (by rw [hba_b_eq]; exact hcb) hms hk56 hnp56
           (fun ind' h' => by rw [hk] at h'; injection h' with hm; injection hm with hi; subst hi; rfl)
           hms_lt56 ms.toList 0 (by simp) (fun i m hi => by simpa [Array.getElem?_toList] using hi)
-          (fun cl hcl => by
+          (fun cl (hcl : cl ∈ cs_w) => by
             have h1 : cl ∈ cs_pa := mem_of_eq hc_pa (by call_mem)
             exact hsub_chk cl (mem_of_eq hc (by call_mem))) hrepM
           (Bytes.repAddressRef_heapMono₂ addrTy
@@ -1831,7 +1831,7 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
             have ext_go : Heap.Extends m1 _ :=
               ext1_21.trans (evrmp.heap_extends.trans (evgci.heap_extends.trans evrlen.heap_extends))
             have hgo := check_rules_go_levelsOk (t := t) (E₀ := E₀) hbd hnl32 rc.rules.toList 0
-              (fun cl hcl => by
+              (fun cl (hcl : cl ∈ cs_w) => by
                 have h1 : cl ∈ cs_ru := mem_of_eq hc_ru (by call_mem)
                 exact hsub cl (mem_of_eq hcs (by call_mem)))
               (raw_rules.mono ext_go (fun _ hm => hm)) evgo
