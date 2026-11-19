@@ -629,11 +629,11 @@ theorem familyCall_record_block {calls : List (Call F)} {bAddr : _root_.Address}
         (ev_yqjbwijz := ev_ord) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
         (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465) (ev513 := ev513)
         (ev601 := ev601) (ev634 := ev634) (ev664 := ev664) (ev686 := ev686) (ev716 := ev716)
-        (ev759 := ev759) (ev817 := ev817) (ev796 := ev796) (ev852 := ev852)
-        (ev_ursqbimm := ev_norole) (ev874 := ev874) (ev896 := ev896) (ev960 := ev960)
-        (ev939 := ev939) (ev1011 := ev1011) (ev990 := ev990) (ev_edyzsqzv := ev_mv1)
-        (ev_gkddqxhv := ev_cat) (ev_ittpynob := ev_mv2) (ev_biaifgpd := ev_mv3)
-        (ev1203 := ev1203) (ev_cwwgzxtj := ev_flat) (ev1246 := ev1246)
+        (ev759 := ev759) (ev817 := ev817) (ev796 := ev796) (v839 := v839) (m840 := m840)
+        (ev852 := ev852) (ev_ursqbimm := ev_norole) (ev874 := ev874) (ev896 := ev896)
+        (ev960 := ev960) (ev939 := ev939) (ev1011 := ev1011) (ev990 := ev990)
+        (ev_edyzsqzv := ev_mv1) (ev_gkddqxhv := ev_cat) (ev_ittpynob := ev_mv2)
+        (ev_biaifgpd := ev_mv3) (ev1203 := ev1203) (ev_cwwgzxtj := ev_flat) (ev1246 := ev1246)
         (ev_mitevvsv := ev_flen) (ev_rqpeovbn := ev_z1) (ev_xrhmaojz := ev_z2)
         (ev_whimdwjd := ev_vg) (ev1305 := ev1305) (ev1343 := ev1343) (hc1474 := hc1474) .. =>
       have e0 : Heap.Extends h m105 := by
@@ -668,7 +668,7 @@ theorem familyCall_record_block {calls : List (Call F)} {bAddr : _root_.Address}
         cases hinfo.symm.trans hmuts
       | .Recr (m2 := m2) (m197 := m197) (ev14 := ev14) (he183 := he183) (hm182 := hm182)
           (hm205 := hm205) .. =>
-        have hb840 : RepList addrListEnum (Bytes.RepAddressRef addrTy) _ [b] _ := by
+        have hb840 : RepList addrListEnum (Bytes.RepAddressRef addrTy) m840 [b] v839 := by
           subst hm205 he183 hm182
           have hb' : Bytes.RepAddressRef addrTy
               (m2 ++ [.construct Obs.Names.«Lists::Node<&[Field; 32]>» "Nil" []]) b xrb :=

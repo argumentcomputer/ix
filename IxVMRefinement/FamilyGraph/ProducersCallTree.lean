@@ -32,10 +32,10 @@ set_option maxRecDepth 100000
 
 namespace IxVM.Refinement.Typing
 
-open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
+open Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library
 open IxVM (F)
-open IxVM.Refinement (Core Obs)
+open IxVM.Refinement.Obs
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
@@ -89,7 +89,7 @@ private theorem inTargets_eq_false {ts : List String} {s : String}
     intro t ht
     rcases List.mem_cons.mp ht with rfl | ht'
     · intro heq; subst heq
-      have ht1 : strBytesEq t t = true := strBytesEq_eq_true.mpr rfl
+      have ht1 : strBytesEq t₀ t₀ = true := strBytesEq_eq_true.mpr rfl
       rw [h.1] at ht1; cases ht1
     · exact ih h.2 t ht'
 
@@ -282,7 +282,7 @@ private theorem hasCallIn_toExpr (ts : List String) (p : Pattern F) :
     simp only [Consts.toExpr, pure, Except.pure, Except.ok.injEq] at h
     subst h; rfl
   | .orElse _ _ _ | .wildcard | .bind _ =>
-    intro e h; simp [Consts.toExpr, throw, Except.throw] at h
+    intro e h; simp [Consts.toExpr, throw, MonadExceptOf.throw] at h
   | .load p' =>
     intro e h
     simp only [Consts.toExpr, bind, Except.bind] at h
@@ -334,7 +334,7 @@ private theorem hasCallIn_toExpr (ts : List String) (p : Pattern F) :
         have : sizeOf p' < sizeOf ps := List.sizeOf_lt_of_mem hp'
         exact hasCallIn_toExpr ts p' hto
     | field | tuple _ | array _ _ | ptr _ | param _ =>
-      intro e h; simp [Consts.toExpr, throw, Except.throw] at h
+      intro e h; simp [Consts.toExpr, throw, MonadExceptOf.throw] at h
 termination_by sizeOf p
 
 private theorem noDollarCall_toExpr (p : Pattern F) :
@@ -345,7 +345,7 @@ private theorem noDollarCall_toExpr (p : Pattern F) :
     simp only [Consts.toExpr, pure, Except.pure, Except.ok.injEq] at h
     subst h; rfl
   | .orElse _ _ _ | .wildcard | .bind _ =>
-    intro e h; simp [Consts.toExpr, throw, Except.throw] at h
+    intro e h; simp [Consts.toExpr, throw, MonadExceptOf.throw] at h
   | .load p' =>
     intro e h
     simp only [Consts.toExpr, bind, Except.bind] at h
@@ -397,7 +397,7 @@ private theorem noDollarCall_toExpr (p : Pattern F) :
         have : sizeOf p' < sizeOf ps := List.sizeOf_lt_of_mem hp'
         exact noDollarCall_toExpr p' hto
     | field | tuple _ | array _ _ | ptr _ | param _ =>
-      intro e h; simp [Consts.toExpr, throw, Except.throw] at h
+      intro e h; simp [Consts.toExpr, throw, MonadExceptOf.throw] at h
 termination_by sizeOf p
 
 /-! ## Strict descent when a body avoids the target callees -/
@@ -422,31 +422,31 @@ private theorem instanceName_not_mem_targets {ts : List String}
 
 /-- A strictly shorter subcall containing `cl` whose callee avoids `ts`. -/
 private def StrictSubCall (ts : List String) (cl : Call F) (calls : List (Call F)) : Prop :=
-  ∃ fn args h r h' cs,
-    ObsFn Obs.W fn args h r h' cs ∧
+  ∃ fnName args h r h' cs,
+    ObsFn Obs.W fnName args h r h' cs ∧
     cl ∈ cs ∧ cs.length < calls.length ∧ (∀ x ∈ cs, x ∈ calls) ∧
-    (∀ t ∈ ts, fn ≠ t) ∧
-    (∀ key, Instance.ofSymbol fn = .ok key → ∀ t ∈ ts, key.name ≠ t)
+    (∀ t ∈ ts, fnName ≠ t) ∧
+    (∀ key, Instance.ofSymbol fnName = .ok key → ∀ t ∈ ts, key.name ≠ t)
 
 private theorem strictSubCall_mono_left {ts : List String} {cl : Call F}
     {cs₁ cs₂ : List (Call F)} (h : StrictSubCall ts cl cs₁) :
     StrictSubCall ts cl (cs₁ ++ cs₂) := by
-  obtain ⟨fn, args, h0, r0, h0', cs, ev, hmem, hlt, hsub, hne, hkey⟩ := h
-  exact ⟨fn, args, h0, r0, h0', cs, ev, hmem, by simp; omega,
+  obtain ⟨fnName, args, h0, r0, h0', cs, ev, hmem, hlt, hsub, hne, hkey⟩ := h
+  exact ⟨fnName, args, h0, r0, h0', cs, ev, hmem, by simp; omega,
     fun x hx => List.mem_append_left _ (hsub x hx), hne, hkey⟩
 
 private theorem strictSubCall_mono_right {ts : List String} {cl : Call F}
     {cs₁ cs₂ : List (Call F)} (h : StrictSubCall ts cl cs₂) :
     StrictSubCall ts cl (cs₁ ++ cs₂) := by
-  obtain ⟨fn, args, h0, r0, h0', cs, ev, hmem, hlt, hsub, hne, hkey⟩ := h
-  exact ⟨fn, args, h0, r0, h0', cs, ev, hmem, by simp; omega,
+  obtain ⟨fnName, args, h0, r0, h0', cs, ev, hmem, hlt, hsub, hne, hkey⟩ := h
+  exact ⟨fnName, args, h0, r0, h0', cs, ev, hmem, by simp; omega,
     fun x hx => List.mem_append_right _ (hsub x hx), hne, hkey⟩
 
 private theorem obsFn_strictSubCall {ts : List String}
     (hplain : ∀ t ∈ ts, t.toList.head? ≠ some '$') {cl : Call F} (hclTarget : cl.name ∈ ts)
-    {fn : String} {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F}
-    {calls : List (Call F)} (ev : ObsFn Obs.W fn args h r h' calls)
-    (hprep : ∀ types locals expr, Obs.W.prepare fn args = .ok (types, locals, expr) →
+    {fnName : String} {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)} (ev : ObsFn Obs.W fnName args h r h' calls)
+    (hprep : ∀ types locals expr, Obs.W.prepare fnName args = .ok (types, locals, expr) →
       hasCallIn ts expr = false ∧ noDollarCall expr = true)
     (hcl : cl ∈ calls) : StrictSubCall ts cl calls := by
   induction ev using ObsFn.rec
@@ -456,8 +456,8 @@ private theorem obsFn_strictSubCall {ts : List String}
     (motive_2 := fun _ _ exprs _ _ _ calls _ =>
       hasCallInList ts exprs = false → noDollarCallList exprs = true → cl ∈ calls →
       StrictSubCall ts cl calls)
-    (motive_3 := fun fn args _ _ _ calls _ =>
-      (∀ types locals expr, Obs.W.prepare fn args = .ok (types, locals, expr) →
+    (motive_3 := fun fnName args _ _ _ calls _ =>
+      (∀ types locals expr, Obs.W.prepare fnName args = .ok (types, locals, expr) →
         hasCallIn ts expr = false ∧ noDollarCall expr = true) →
       cl ∈ calls → StrictSubCall ts cl calls)
     (motive_4 := fun _ _ expr _ _ _ _ calls _ =>
@@ -607,7 +607,7 @@ private theorem arguments_nil_right {params : List String} {ts : List (String ×
     (h : arguments params [] = .ok ts) : params = [] ∧ ts = [] := by
   unfold arguments at h
   split at h
-  · simp [throw, Except.throw] at h
+  · simp [throw, MonadExceptOf.throw] at h
   · rename_i hne
     have hlen : params.length = 0 := by simpa using hne
     have hp : params = [] := List.eq_nil_of_length_eq_zero hlen
@@ -619,7 +619,7 @@ private theorem arguments_nil_left {types : List Ty} {ts : List (String × Ty)}
     (h : arguments [] types = .ok ts) : types = [] ∧ ts = [] := by
   unfold arguments at h
   split at h
-  · simp [throw, Except.throw] at h
+  · simp [throw, MonadExceptOf.throw] at h
   · rename_i hne
     have hlen : types.length = 0 := by simpa using hne
     have ht : types = [] := List.eq_nil_of_length_eq_zero hlen
@@ -654,11 +654,11 @@ private theorem sourceFunction?_fn_detail {p : Program F} {name : String} {sf : 
 
 /-- Re-tag an `ObsFn` whose underlying program function has plain name `target` and a known
 monomorphic lookup theorem `hlk` into `ObsFn Obs.W target args ...`, also determining `args.length`. -/
-private theorem obsFn_retag_mono {fn target : String} {sf sfT : SourceFunction F}
+private theorem obsFn_retag_mono {fnName target : String} {sf sfT : SourceFunction F}
     {f : Aiur.Generic.Function F} {key : Instance} {types : Types}
     {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn Obs.W fn args h r h' calls)
-    (hsf : IxVM.program.sourceFunction? fn = some sf)
+    (ev : ObsFn Obs.W fnName args h r h' calls)
+    (hsf : IxVM.program.sourceFunction? fnName = some sf)
     (hf : f ∈ IxVM.program.functions)
     (harg : arguments f.typeParams key.types = .ok types)
     (hsf_eq : sf = { types, params := f.params.map fun (n, t) => (n, (t.subst types).toCore),
@@ -686,7 +686,7 @@ private theorem obsFn_retag_mono {fn target : String} {sf sfT : SourceFunction F
     obtain ⟨_, hts⟩ := arguments_nil_left harg
     subst hts
     have hsf_eq_sfT : sf = sfT := hsf_eq.trans hlk'
-    have hprepEq : Obs.W.prepare fn args = Obs.W.prepare target args := by
+    have hprepEq : Obs.W.prepare fnName args = Obs.W.prepare target args := by
       simp only [Obs.W, Source.world, sourceWorld, hsf, hlk, hsf_eq_sfT]
     have hlen : ∀ {t l b}, Obs.W.prepare target args = .ok (t, l, b) →
         args.length = sfT.params.length := by
@@ -735,10 +735,10 @@ theorem repAddressRef_pullback {ty : Aiur.Ty} {h₁ h₂ : Heap F} {addr : Bytes
     Bytes.RepAddressRef ty h₁ addr ptr := by
   obtain ⟨idx, v₂, rfl, hget₂, haddr⟩ := hrep
   unfold loadValue at hld
+  dsimp only at hld
   cases hget₁ : h₁[idx]? with
   | none => simp [hget₁] at hld
   | some v =>
-    rw [hget₁] at hld
     have hget₂' : h₂[idx]? = some v := ext.getElem?_eq hget₁
     rw [hget₂'] at hget₂
     injection hget₂ with hv
@@ -765,13 +765,22 @@ theorem read_payload_loads_block {x_block r : SourceValue F} {h h' : Heap F}
 
 /-! ## Call-list peeling helpers -/
 
-private theorem peel {P : Prop} {fn : String} {args : List (SourceValue F)}
+private theorem peel_append {P : Prop} {cl : Call F} {cs₁ cs₂ calls : List (Call F)}
+    (hcl : cl ∈ cs₁ ++ cs₂) (hle : (cs₁ ++ cs₂).length ≤ calls.length)
+    (hsub : ∀ x ∈ cs₁ ++ cs₂, x ∈ calls)
+    (h1 : cl ∈ cs₁ → cs₁.length ≤ calls.length → (∀ x ∈ cs₁, x ∈ calls) → P)
+    (h2 : cl ∈ cs₂ → cs₂.length ≤ calls.length → (∀ x ∈ cs₂, x ∈ calls) → P) : P := by
+  rcases List.mem_append.mp hcl with h | h
+  · exact h1 h (by simp at hle; omega) (fun x hx => hsub x (List.mem_append_left _ hx))
+  · exact h2 h (by simp at hle; omega) (fun x hx => hsub x (List.mem_append_right _ hx))
+
+private theorem peel {P : Prop} {fnName : String} {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {cs rest calls : List (Call F)} {cl : Call F}
-    (ev : ObsFn Obs.W fn args h r h' cs)
-    (hcl : cl ∈ (⟨fn, args, h⟩ : Call F) :: (cs ++ rest))
-    (hle : ((⟨fn, args, h⟩ : Call F) :: (cs ++ rest)).length ≤ calls.length)
-    (hsub : ∀ x ∈ ((⟨fn, args, h⟩ : Call F) :: (cs ++ rest)), x ∈ calls)
-    (hne : cl.name ≠ fn)
+    (ev : ObsFn Obs.W fnName args h r h' cs)
+    (hcl : cl ∈ (⟨fnName, args, h⟩ : Call F) :: (cs ++ rest))
+    (hle : ((⟨fnName, args, h⟩ : Call F) :: (cs ++ rest)).length ≤ calls.length)
+    (hsub : ∀ x ∈ ((⟨fnName, args, h⟩ : Call F) :: (cs ++ rest)), x ∈ calls)
+    (hne : cl.name ≠ fnName)
     (h1 : cl ∈ cs → cs.length < calls.length → (∀ x ∈ cs, x ∈ calls) → P)
     (h2 : cl ∈ rest → rest.length ≤ calls.length → (∀ x ∈ rest, x ∈ calls) → P) : P := by
   rcases List.mem_cons.mp hcl with rfl | hmem
@@ -782,33 +791,33 @@ private theorem peel {P : Prop} {fn : String} {args : List (SourceValue F)}
     · exact h2 hrest (by simp at hle; omega)
         (fun x hx => hsub x (List.mem_cons_of_mem _ (List.mem_append_right _ hx)))
 
-private theorem peel_last {P : Prop} {fn : String} {args : List (SourceValue F)}
+private theorem peel_last {P : Prop} {fnName : String} {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {cs calls : List (Call F)} {cl : Call F}
-    (ev : ObsFn Obs.W fn args h r h' cs)
-    (hcl : cl ∈ (⟨fn, args, h⟩ : Call F) :: cs)
-    (hle : ((⟨fn, args, h⟩ : Call F) :: cs).length ≤ calls.length)
-    (hsub : ∀ x ∈ ((⟨fn, args, h⟩ : Call F) :: cs), x ∈ calls)
-    (hne : cl.name ≠ fn)
+    (ev : ObsFn Obs.W fnName args h r h' cs)
+    (hcl : cl ∈ (⟨fnName, args, h⟩ : Call F) :: cs)
+    (hle : ((⟨fnName, args, h⟩ : Call F) :: cs).length ≤ calls.length)
+    (hsub : ∀ x ∈ ((⟨fnName, args, h⟩ : Call F) :: cs), x ∈ calls)
+    (hne : cl.name ≠ fnName)
     (h1 : cl ∈ cs → cs.length < calls.length → (∀ x ∈ cs, x ∈ calls) → P) : P := by
   rcases List.mem_cons.mp hcl with rfl | hcs
   · exact (hne rfl).elim
   · exact h1 hcs (by simp at hle; omega)
       (fun x hx => hsub x (List.mem_cons_of_mem _ hx))
 
-private theorem peel_noKey {fn : String} (hplain : plainBytes fn = true) (t : String)
-    (hne : fn ≠ t) :
-    ∀ key, Instance.ofSymbol fn = .ok key → key.name ≠ t := by
+private theorem peel_noKey {fnName : String} (hplain : plainBytes fnName = true) (t : String)
+    (hne : fnName ≠ t) :
+    ∀ key, Instance.ofSymbol fnName = .ok key → key.name ≠ t := by
   intro key hof
-  have hsym := Instance.ofSymbol_symbol ⟨fn, []⟩ (fun _ => head_ne_dollar_of_plainBytes hplain)
+  have hsym := Instance.ofSymbol_symbol ⟨fnName, []⟩ (fun _ => head_ne_dollar_of_plainBytes hplain)
   simp only [Instance.symbol, List.isEmpty_nil, ↓reduceIte] at hsym
   rw [hsym] at hof
   injection hof with hkey
   subst hkey
   exact hne
 
-private theorem peel_noKey_sym {fn nm : String} {tys : List Ty} {t : String}
-    (hsym : (Instance.mk nm tys).symbol = fn) (htys : tys ≠ []) (hne : nm ≠ t) :
-    ∀ key, Instance.ofSymbol fn = .ok key → key.name ≠ t := by
+private theorem peel_noKey_sym {fnName nm : String} {tys : List Ty} {t : String}
+    (hsym : (Instance.mk nm tys).symbol = fnName) (htys : tys ≠ []) (hne : nm ≠ t) :
+    ∀ key, Instance.ofSymbol fnName = .ok key → key.name ≠ t := by
   intro key hof
   rw [← hsym, Instance.ofSymbol_symbol_of_ne_nil ⟨nm, tys⟩ htys] at hof
   injection hof with hkey
@@ -818,26 +827,26 @@ private theorem peel_noKey_sym {fn nm : String} {tys : List Ty} {t : String}
 /-! ## Theorem 1: Every `check_family` call is backed by a non-zero `block_is_modeled` call -/
 
 private theorem obsFn_check_family_modeled_aux (n : Nat) :
-    ∀ {fn : String} {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F}
+    ∀ {fnName : String} {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F}
       {calls : List (Call F)} {rc xb xrb : SourceValue F} {h_cf : Heap F} {b : Bytes.Address},
       calls.length ≤ n →
-      fn ≠ "KernelModeled::check_modeled_block" →
-      (∀ key, Instance.ofSymbol fn = .ok key → key.name ≠ "KernelModeled::check_modeled_block") →
-      ObsFn Obs.W fn args h r h' calls →
+      fnName ≠ "KernelModeled::check_modeled_block" →
+      (∀ key, Instance.ofSymbol fnName = .ok key → key.name ≠ "KernelModeled::check_modeled_block") →
+      ObsFn Obs.W fnName args h r h' calls →
       (⟨"KernelModeled::check_family", [rc, xb, xrb], h_cf⟩ : Call F) ∈ calls →
-      Bytes.RepAddressRef Core.addrTy h_cf b xb →
+      Bytes.RepAddressRef IxVM.Refinement.Core.addrTy h_cf b xb →
       ∃ (r_mod : SourceValue F) (m_mod m_mod' : Heap F) (cs_mod : List (Call F)),
         ObsFn Obs.W "KernelModeled::block_is_modeled" [xb] m_mod r_mod m_mod' cs_mod ∧
         r_mod ≠ .field 0 ∧
-        Bytes.RepAddressRef Core.addrTy m_mod b xb ∧
+        Bytes.RepAddressRef IxVM.Refinement.Core.addrTy m_mod b xb ∧
         ∀ cl ∈ cs_mod, cl ∈ calls := by
   induction n with
   | zero =>
-    intro fn args h h' r calls rc xb xrb h_cf b hlen _ _ _ hcl _
+    intro fnName args h h' r calls rc xb xrb h_cf b hlen _ _ _ hcl _
     have hnil : calls = [] := List.eq_nil_of_length_eq_zero (by omega)
     subst hnil; simp at hcl
   | succ n ih =>
-    intro fn args h h' r calls rc xb xrb h_cf b hlen hneFn hneKey ev hcl hb
+    intro fnName args h h' r calls rc xb xrb h_cf b hlen hneFn hneKey ev hcl hb
     let cl : Call F := ⟨"KernelModeled::check_family", [rc, xb, xrb], h_cf⟩
     let ts : List String := ["KernelModeled::check_family", "KernelModeled::check_modeled_block"]
     have hplainTs : ∀ t ∈ ts, t.toList.head? ≠ some '$' := by
@@ -848,12 +857,12 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
         · exact head_ne_dollar_of_plainBytes (by decide)
         · simp at ht''
     have hclIn : cl.name ∈ ts := List.mem_cons_self
-    cases hsf : IxVM.program.sourceFunction? fn with
+    cases hsf : IxVM.program.sourceFunction? fnName with
     | none =>
       have hsub := obsFn_strictSubCall hplainTs hclIn ev (by
         intro types locals expr hprep
         simp only [Obs.W, Source.world, sourceWorld, hsf, bind, Except.bind] at hprep
-        cases hlk : lookupMap IxVM.source.tables fn args with
+        cases hlk : lookupMap IxVM.source.tables fnName args with
         | error e => rw [hlk] at hprep; cases hprep
         | ok c =>
           rw [hlk] at hprep
@@ -890,48 +899,54 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
           have hlen3 : args.length = 3 := by simpa [IxVM.KernelCheck.check_const] using hargLen
           match args, hlen3, evCC with
           | [a_rc, a_ci, a_addr], _, evCC =>
+            let G : Prop :=
+              ∃ (r_mod : SourceValue F) (m_mod m_mod' : Heap F) (cs_mod : List (Call F)),
+                ObsFn Obs.W "KernelModeled::block_is_modeled" [xb] m_mod r_mod m_mod' cs_mod ∧
+                r_mod ≠ .field 0 ∧ Bytes.RepAddressRef IxVM.Refinement.Core.addrTy m_mod b xb ∧
+                ∀ x ∈ cs_mod, x ∈ calls
             have useSub : ∀ {fn' args' h₁ r₁ h₁' cs'},
                 ObsFn Obs.W fn' args' h₁ r₁ h₁' cs' →
                 plainBytes fn' = true → fn' ≠ "KernelModeled::check_modeled_block" →
-                cl ∈ cs' → cs'.length < calls.length → (∀ x ∈ cs', x ∈ calls) →
-                ∃ (r_mod : SourceValue F) (m_mod m_mod' : Heap F) (cs_mod : List (Call F)),
-                  ObsFn Obs.W "KernelModeled::block_is_modeled" [xb] m_mod r_mod m_mod' cs_mod ∧
-                  r_mod ≠ .field 0 ∧ Bytes.RepAddressRef Core.addrTy m_mod b xb ∧
-                  ∀ x ∈ cs_mod, x ∈ calls := by
+                cl ∈ cs' → cs'.length < calls.length → (∀ x ∈ cs', x ∈ calls) → G := by
               intro fn' args' h₁ r₁ h₁' cs' ev' hpl' hne' hcl' hlt' hsub'
               obtain ⟨rm, mm, mm', csm, evm, hrm, hbm, hsubm⟩ :=
                 ih (by omega) hne' (peel_noKey hpl' _ hne') ev' hcl' hb
               exact ⟨rm, mm, mm', csm, evm, hrm, hbm, fun x hx => hsub' x (hsubm x hx)⟩
-            have step := fun {fn' args' h₁ r₁ h₁' cs' rest}
-                (ev' : ObsFn Obs.W fn' args' h₁ r₁ h₁' cs')
-                (hpl' : plainBytes fn' = true)
-                (hneCF : fn' ≠ "KernelModeled::check_family")
-                (hneCMB : fn' ≠ "KernelModeled::check_modeled_block")
-                (hcl' : cl ∈ (⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest))
-                (hle' : ((⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest)).length ≤ calls.length)
-                (hsub' : ∀ x ∈ ((⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest)), x ∈ calls)
-                (hrest : cl ∈ rest → rest.length ≤ calls.length → (∀ x ∈ rest, x ∈ calls) → _) =>
-              peel ev' hcl' hle' hsub' (fun e => hneCF e.symm)
-                (fun h1 h2 h3 => useSub ev' hpl' hneCMB h1 h2 h3) hrest
-            have stepLast := fun {fn' args' h₁ r₁ h₁' cs'}
-                (ev' : ObsFn Obs.W fn' args' h₁ r₁ h₁' cs')
-                (hpl' : plainBytes fn' = true)
-                (hneCF : fn' ≠ "KernelModeled::check_family")
-                (hneCMB : fn' ≠ "KernelModeled::check_modeled_block")
-                (hcl' : cl ∈ (⟨fn', args', h₁⟩ : Call F) :: cs')
-                (hle' : ((⟨fn', args', h₁⟩ : Call F) :: cs').length ≤ calls.length)
-                (hsub' : ∀ x ∈ ((⟨fn', args', h₁⟩ : Call F) :: cs'), x ∈ calls) =>
-              peel_last ev' hcl' hle' hsub' (fun e => hneCF e.symm)
-                (fun h1 h2 h3 => useSub ev' hpl' hneCMB h1 h2 h3)
-            have handleCMB := fun {rcM blkM rM hM hM' csM m_mod m_mod' r_mod cs_mod}
-                (evM : ObsFn Obs.W "KernelModeled::check_modeled_block" [rcM, blkM] hM rM hM' csM)
-                (evMod : ObsFn Obs.W "KernelModeled::block_is_modeled" [blkM] m_mod r_mod m_mod' cs_mod)
-                (hrm : r_mod ≠ .field 0)
-                (hextMod : Heap.Extends m_mod hM)
-                (hsubMod : ∀ x ∈ cs_mod, x ∈ calls)
-                (hclM : cl ∈ (⟨"KernelModeled::check_modeled_block", [rcM, blkM], hM⟩ : Call F) :: csM)
-                (hleM : ((⟨"KernelModeled::check_modeled_block", [rcM, blkM], hM⟩ : Call F) :: csM).length ≤ calls.length)
-                (hsubM : ∀ x ∈ ((⟨"KernelModeled::check_modeled_block", [rcM, blkM], hM⟩ : Call F) :: csM), x ∈ calls) => by
+            have step : ∀ {fn' args' h₁ r₁ h₁' cs' rest},
+                ObsFn Obs.W fn' args' h₁ r₁ h₁' cs' →
+                plainBytes fn' = true →
+                fn' ≠ "KernelModeled::check_family" →
+                fn' ≠ "KernelModeled::check_modeled_block" →
+                cl ∈ (⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest) →
+                ((⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest)).length ≤ calls.length →
+                (∀ x ∈ ((⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest)), x ∈ calls) →
+                (cl ∈ rest → rest.length ≤ calls.length → (∀ x ∈ rest, x ∈ calls) → G) → G :=
+              fun ev' hpl' hneCF hneCMB hcl' hle' hsub' hrest =>
+                peel ev' hcl' hle' hsub' (fun e => hneCF e.symm)
+                  (fun h1 h2 h3 => useSub ev' hpl' hneCMB h1 h2 h3) hrest
+            have stepLast : ∀ {fn' args' h₁ r₁ h₁' cs'},
+                ObsFn Obs.W fn' args' h₁ r₁ h₁' cs' →
+                plainBytes fn' = true →
+                fn' ≠ "KernelModeled::check_family" →
+                fn' ≠ "KernelModeled::check_modeled_block" →
+                cl ∈ (⟨fn', args', h₁⟩ : Call F) :: cs' →
+                ((⟨fn', args', h₁⟩ : Call F) :: cs').length ≤ calls.length →
+                (∀ x ∈ ((⟨fn', args', h₁⟩ : Call F) :: cs'), x ∈ calls) → G :=
+              fun ev' hpl' hneCF hneCMB hcl' hle' hsub' =>
+                peel_last ev' hcl' hle' hsub' (fun e => hneCF e.symm)
+                  (fun h1 h2 h3 => useSub ev' hpl' hneCMB h1 h2 h3)
+            have handleCMB : ∀ {rcM blkM rM hM hM' csM m_mod m_mod' r_mod cs_mod},
+                ObsFn Obs.W "KernelModeled::check_modeled_block" [rcM, blkM] hM rM hM' csM →
+                ObsFn Obs.W "KernelModeled::block_is_modeled" [blkM] m_mod r_mod m_mod' cs_mod →
+                r_mod ≠ .field 0 →
+                Heap.Extends m_mod hM →
+                (∀ x ∈ cs_mod, x ∈ calls) →
+                cl ∈ (⟨"KernelModeled::check_modeled_block", [rcM, blkM], hM⟩ : Call F) :: csM →
+                ((⟨"KernelModeled::check_modeled_block", [rcM, blkM], hM⟩ : Call F) :: csM).length ≤ calls.length →
+                (∀ x ∈ ((⟨"KernelModeled::check_modeled_block", [rcM, blkM], hM⟩ : Call F) :: csM), x ∈ calls) →
+                G := by
+              intro rcM blkM rM hM hM' csM m_mod m_mod' r_mod cs_mod evM evMod hrm hextMod
+                hsubMod hclM hleM hsubM
               rcases List.mem_cons.mp hclM with heq | hcsM
               · exact absurd (congrArg Call.name heq) (by decide)
               · match Obs.«KernelModeled::check_modeled_block».obs evM with
@@ -1198,23 +1213,23 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
 /-- **Every `check_family` call in a top-level derivation (whose callee is not
 `check_modeled_block`) is backed by a non-zero `block_is_modeled` observation on the same
 block.** -/
-theorem obsFn_check_family_modeled {fn : String} {args : List (SourceValue F)}
+theorem obsFn_check_family_modeled {fnName : String} {args : List (SourceValue F)}
     {h h' : Heap F} {r : SourceValue F} {calls : List (Call F)}
     {rc xb xrb : SourceValue F} {h_cf : Heap F} {b : Bytes.Address}
-    (hplain : fn.toList.head? ≠ some '$')
-    (hne : fn ≠ "KernelModeled::check_modeled_block")
-    (ev : ObsFn Obs.W fn args h r h' calls)
+    (hplain : fnName.toList.head? ≠ some '$')
+    (hne : fnName ≠ "KernelModeled::check_modeled_block")
+    (ev : ObsFn Obs.W fnName args h r h' calls)
     (hcl : (⟨"KernelModeled::check_family", [rc, xb, xrb], h_cf⟩ : Call F) ∈ calls)
-    (hb : Bytes.RepAddressRef Core.addrTy h_cf b xb) :
+    (hb : Bytes.RepAddressRef IxVM.Refinement.Core.addrTy h_cf b xb) :
     ∃ (r_mod : SourceValue F) (m_mod m_mod' : Heap F) (cs_mod : List (Call F)),
       ObsFn Obs.W "KernelModeled::block_is_modeled" [xb] m_mod r_mod m_mod' cs_mod ∧
       r_mod ≠ .field 0 ∧
-      Bytes.RepAddressRef Core.addrTy m_mod b xb ∧
+      Bytes.RepAddressRef IxVM.Refinement.Core.addrTy m_mod b xb ∧
       ∀ cl ∈ cs_mod, cl ∈ calls := by
-  have hkey : ∀ key, Instance.ofSymbol fn = .ok key →
+  have hkey : ∀ key, Instance.ofSymbol fnName = .ok key →
       key.name ≠ "KernelModeled::check_modeled_block" := by
     intro key hof
-    have hsym := Instance.ofSymbol_symbol ⟨fn, []⟩ (fun _ => hplain)
+    have hsym := Instance.ofSymbol_symbol ⟨fnName, []⟩ (fun _ => hplain)
     simp only [Instance.symbol, List.isEmpty_nil, ↓reduceIte] at hsym
     rw [hsym] at hof
     injection hof with hk; subst hk; exact hne
@@ -1249,9 +1264,9 @@ private theorem check_witnesses_repList_aux (n : Nat) :
       injection hpair with hlist _
       subst hlist; subst he40; subst hm29
       exact ⟨[], List.allocNil_rep _ _ h⟩
-    | .other (x_x := x_x) (x_rest := x_rest) (ev196 := ev196)
+    | .other (x_x := x_x) (x_rest := x_rest) (cs194 := cs194) (ev196 := ev196)
         (he254 := he254) (hm264 := hm264) (he291 := he291) (hc292 := hc) .. =>
-      have hlt : _ < cs.length := by rw [hc]; simp; omega
+      have hlt : cs194.length < cs.length := by rw [hc]; simp; omega
       obtain ⟨elems, hrep⟩ := ih (by omega) ev196
       injection he254 with hpair
       injection hpair with hlist _
@@ -1295,19 +1310,30 @@ private theorem check_witnesses_descend_aux (n : Nat) :
         (he254 := he254) (hm264 := hm264) (he291 := he291) (hc292 := hc) .. =>
       have hle : cs_ws.length ≤ cs_ws.length := Nat.le_refl _
       have hsub : ∀ x ∈ cs_ws, x ∈ cs_ws := fun _ hx => hx
-      have mkSub := fun {fn' args' h₁ r₁ h₁' cs'} (ev' : ObsFn Obs.W fn' args' h₁ r₁ h₁' cs')
-          (hpl' : plainBytes fn' = true)
-          (hneWS : fn' ≠ "KernelModeled::check_witnesses")
-          (hcl' : cl ∈ cs') (hlt' : cs'.length < cs_ws.length) (hsub' : ∀ x ∈ cs', x ∈ cs_ws) =>
-        Or.inr (⟨fn', args', h₁, r₁, h₁', cs', ev', hcl', hlt', hsub',
-          fun t ht => by
-            rcases List.mem_cons.mp ht with rfl | ht'
-            · exact hneWS
-            · simp at ht',
-          fun key hof t ht => by
-            rcases List.mem_cons.mp ht with rfl | ht'
-            · exact peel_noKey hpl' _ hneWS key hof
-            · simp at ht'⟩ : StrictSubCall ts cl cs_ws)
+      have mkSub : ∀ {fn' args' h₁ r₁ h₁' cs'},
+          ObsFn Obs.W fn' args' h₁ r₁ h₁' cs' →
+          plainBytes fn' = true →
+          fn' ≠ "KernelModeled::check_witnesses" →
+          cl ∈ cs' → cs'.length < cs_ws.length → (∀ x ∈ cs', x ∈ cs_ws) →
+          (rc = rc₀ ∧ xb = xb₀ ∧
+            ∃ (v_w : SourceValue F) (m_w : Heap F) (cs_w : List (Call F))
+              (elems : List (SourceValue F)),
+              ObsFn Obs.W "KernelModeled::check_witness" [rc, xb, xx, kind, s] h_w v_w m_w cs_w ∧
+              (∀ cl ∈ cs_w, cl ∈ cs_ws) ∧
+              Heap.Extends h_ws h_w ∧ Heap.Extends m_w h_ws' ∧
+              List.RepList Obs.Names.«Lists::Node<&[Field; 32]>» (fun _ a b => a = b) h_ws' elems xlist ∧
+              xx ∈ elems) ∨
+          StrictSubCall ts cl cs_ws :=
+        fun ev' hpl' hneWS hcl' hlt' hsub' =>
+          Or.inr ⟨_, _, _, _, _, _, ev', hcl', hlt', hsub',
+            fun t ht => by
+              rcases List.mem_cons.mp ht with rfl | ht'
+              · exact hneWS
+              · simp at ht',
+            fun key hof t ht => by
+              rcases List.mem_cons.mp ht with rfl | ht'
+              · exact peel_noKey hpl' _ hneWS key hof
+              · simp at ht'⟩
       rw [hc] at hcl hle hsub
       refine peel ev59 hcl hle hsub (by decide)
         (fun h1 h2 h3 => mkSub ev59 (by decide) (by decide) h1 h2 h3)
@@ -1414,21 +1440,21 @@ theorem EnclosingFamilyWitness.mono {cs₁ cs₂ : List (Call F)}
     sub_w, elems, outsideRep, memOutside⟩
 
 private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
-    ∀ {fn : String} {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F}
+    ∀ {fnName : String} {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F}
       {calls : List (Call F)} {rc xb xx kind s : SourceValue F} {h_w : Heap F},
       calls.length ≤ n →
-      fn ≠ "KernelModeled::check_witnesses" →
-      (∀ key, Instance.ofSymbol fn = .ok key → key.name ≠ "KernelModeled::check_witnesses") →
-      ObsFn Obs.W fn args h r h' calls →
+      fnName ≠ "KernelModeled::check_witnesses" →
+      (∀ key, Instance.ofSymbol fnName = .ok key → key.name ≠ "KernelModeled::check_witnesses") →
+      ObsFn Obs.W fnName args h r h' calls →
       (⟨"KernelModeled::check_witness", [rc, xb, xx, kind, s], h_w⟩ : Call F) ∈ calls →
       EnclosingFamilyWitness calls rc xb xx kind s h_w := by
   induction n with
   | zero =>
-    intro fn args h h' r calls rc xb xx kind s h_w hlen _ _ _ hcl
+    intro fnName args h h' r calls rc xb xx kind s h_w hlen _ _ _ hcl
     have hnil : calls = [] := List.eq_nil_of_length_eq_zero (by omega)
     subst hnil; simp at hcl
   | succ n ih =>
-    intro fn args h h' r calls rc xb xx kind s h_w hlen hneFn hneKey ev hcl
+    intro fnName args h h' r calls rc xb xx kind s h_w hlen hneFn hneKey ev hcl
     let cl : Call F := ⟨"KernelModeled::check_witness", [rc, xb, xx, kind, s], h_w⟩
     let ts : List String := ["KernelModeled::check_witness", "KernelModeled::check_witnesses"]
     have hplainTs : ∀ t ∈ ts, t.toList.head? ≠ some '$' := by
@@ -1439,12 +1465,12 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
         · exact head_ne_dollar_of_plainBytes (by decide)
         · simp at ht''
     have hclIn : cl.name ∈ ts := List.mem_cons_self
-    cases hsf : IxVM.program.sourceFunction? fn with
+    cases hsf : IxVM.program.sourceFunction? fnName with
     | none =>
       have hsub := obsFn_strictSubCall hplainTs hclIn ev (by
         intro types locals expr hprep
         simp only [Obs.W, Source.world, sourceWorld, hsf, bind, Except.bind] at hprep
-        cases hlk : lookupMap IxVM.source.tables fn args with
+        cases hlk : lookupMap IxVM.source.tables fnName args with
         | error e => rw [hlk] at hprep; cases hprep
         | ok c =>
           rw [hlk] at hprep
@@ -1479,48 +1505,53 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
           have hlen3 : args.length = 3 := by simpa [IxVM.KernelModeled.check_family] using hargLen
           match args, hlen3, evCF with
           | [a_rc, a_blk, a_rb], _, evCF =>
-            have useSub := fun {fn' args' h₁ r₁ h₁' cs'}
-                (ev' : ObsFn Obs.W fn' args' h₁ r₁ h₁' cs')
-                (hnoKey' : ∀ key, Instance.ofSymbol fn' = .ok key → key.name ≠ "KernelModeled::check_witnesses")
-                (hne' : fn' ≠ "KernelModeled::check_witnesses")
-                (hcl' : cl ∈ cs') (hlt' : cs'.length < calls.length) (hsub' : ∀ x ∈ cs', x ∈ calls) =>
-              (ih (by omega) hne' hnoKey' ev' hcl').mono hsub'
-            have step := fun {fn' args' h₁ r₁ h₁' cs' rest}
-                (ev' : ObsFn Obs.W fn' args' h₁ r₁ h₁' cs')
-                (hpl' : plainBytes fn' = true)
-                (hneW : fn' ≠ "KernelModeled::check_witness")
-                (hneWS : fn' ≠ "KernelModeled::check_witnesses")
-                (hcl' : cl ∈ (⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest))
-                (hle' : ((⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest)).length ≤ calls.length)
-                (hsub' : ∀ x ∈ ((⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest)), x ∈ calls)
-                (hrest : cl ∈ rest → rest.length ≤ calls.length → (∀ x ∈ rest, x ∈ calls) → _) =>
-              peel ev' hcl' hle' hsub' (fun e => hneW e.symm)
-                (fun h1 h2 h3 => useSub ev' (peel_noKey hpl' _ hneWS) hneWS h1 h2 h3) hrest
-            have stepSym := fun {fn' nm : String} {tys : List Ty} {args' h₁ r₁ h₁' cs' rest}
-                (ev' : ObsFn Obs.W fn' args' h₁ r₁ h₁' cs')
-                (hsym' : (Instance.mk nm tys).symbol = fn')
-                (htys' : tys ≠ [])
-                (hneNm : nm ≠ "KernelModeled::check_witnesses")
-                (hneW : fn' ≠ "KernelModeled::check_witness")
-                (hneWS : fn' ≠ "KernelModeled::check_witnesses")
-                (hcl' : cl ∈ (⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest))
-                (hle' : ((⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest)).length ≤ calls.length)
-                (hsub' : ∀ x ∈ ((⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest)), x ∈ calls)
-                (hrest : cl ∈ rest → rest.length ≤ calls.length → (∀ x ∈ rest, x ∈ calls) → _) =>
-              peel ev' hcl' hle' hsub' (fun e => hneW e.symm)
-                (fun h1 h2 h3 => useSub ev' (peel_noKey_sym hsym' htys' hneNm) hneWS h1 h2 h3) hrest
-            have stepLast := fun {fn' args' h₁ r₁ h₁' cs'}
-                (ev' : ObsFn Obs.W fn' args' h₁ r₁ h₁' cs')
-                (hpl' : plainBytes fn' = true)
-                (hneW : fn' ≠ "KernelModeled::check_witness")
-                (hneWS : fn' ≠ "KernelModeled::check_witnesses")
-                (hcl' : cl ∈ (⟨fn', args', h₁⟩ : Call F) :: cs')
-                (hle' : ((⟨fn', args', h₁⟩ : Call F) :: cs').length ≤ calls.length)
-                (hsub' : ∀ x ∈ ((⟨fn', args', h₁⟩ : Call F) :: cs'), x ∈ calls) =>
-              peel_last ev' hcl' hle' hsub' (fun e => hneW e.symm)
-                (fun h1 h2 h3 => useSub ev' (peel_noKey hpl' _ hneWS) hneWS h1 h2 h3)
+            let G : Prop := EnclosingFamilyWitness calls rc xb xx kind s h_w
+            have useSub : ∀ {fn' args' h₁ r₁ h₁' cs'},
+                ObsFn Obs.W fn' args' h₁ r₁ h₁' cs' →
+                (∀ key, Instance.ofSymbol fn' = .ok key → key.name ≠ "KernelModeled::check_witnesses") →
+                fn' ≠ "KernelModeled::check_witnesses" →
+                cl ∈ cs' → cs'.length < calls.length → (∀ x ∈ cs', x ∈ calls) → G :=
+              fun ev' hnoKey' hne' hcl' hlt' hsub' =>
+                (ih (by omega) hne' hnoKey' ev' hcl').mono hsub'
+            have step : ∀ {fn' args' h₁ r₁ h₁' cs' rest},
+                ObsFn Obs.W fn' args' h₁ r₁ h₁' cs' →
+                plainBytes fn' = true →
+                fn' ≠ "KernelModeled::check_witness" →
+                fn' ≠ "KernelModeled::check_witnesses" →
+                cl ∈ (⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest) →
+                ((⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest)).length ≤ calls.length →
+                (∀ x ∈ ((⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest)), x ∈ calls) →
+                (cl ∈ rest → rest.length ≤ calls.length → (∀ x ∈ rest, x ∈ calls) → G) → G :=
+              fun ev' hpl' hneW hneWS hcl' hle' hsub' hrest =>
+                peel ev' hcl' hle' hsub' (fun e => hneW e.symm)
+                  (fun h1 h2 h3 => useSub ev' (peel_noKey hpl' _ hneWS) hneWS h1 h2 h3) hrest
+            have stepSym : ∀ {fn' nm : String} {tys : List Ty} {args' h₁ r₁ h₁' cs' rest},
+                ObsFn Obs.W fn' args' h₁ r₁ h₁' cs' →
+                (Instance.mk nm tys).symbol = fn' →
+                tys ≠ [] →
+                nm ≠ "KernelModeled::check_witnesses" →
+                fn' ≠ "KernelModeled::check_witness" →
+                fn' ≠ "KernelModeled::check_witnesses" →
+                cl ∈ (⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest) →
+                ((⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest)).length ≤ calls.length →
+                (∀ x ∈ ((⟨fn', args', h₁⟩ : Call F) :: (cs' ++ rest)), x ∈ calls) →
+                (cl ∈ rest → rest.length ≤ calls.length → (∀ x ∈ rest, x ∈ calls) → G) → G :=
+              fun ev' hsym' htys' hneNm hneW hneWS hcl' hle' hsub' hrest =>
+                peel ev' hcl' hle' hsub' (fun e => hneW e.symm)
+                  (fun h1 h2 h3 => useSub ev' (peel_noKey_sym hsym' htys' hneNm) hneWS h1 h2 h3) hrest
+            have stepLast : ∀ {fn' args' h₁ r₁ h₁' cs'},
+                ObsFn Obs.W fn' args' h₁ r₁ h₁' cs' →
+                plainBytes fn' = true →
+                fn' ≠ "KernelModeled::check_witness" →
+                fn' ≠ "KernelModeled::check_witnesses" →
+                cl ∈ (⟨fn', args', h₁⟩ : Call F) :: cs' →
+                ((⟨fn', args', h₁⟩ : Call F) :: cs').length ≤ calls.length →
+                (∀ x ∈ ((⟨fn', args', h₁⟩ : Call F) :: cs'), x ∈ calls) → G :=
+              fun ev' hpl' hneW hneWS hcl' hle' hsub' =>
+                peel_last ev' hcl' hle' hsub' (fun e => hneW e.symm)
+                  (fun h1 h2 h3 => useSub ev' (peel_noKey hpl' _ hneWS) hneWS h1 h2 h3)
             match Obs.«KernelModeled::check_family».obs evCF with
-            | .run (cs107 := cs107) (cs401 := cs401) (cs433 := cs433) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+            | .run (m105 := m105) (m297 := m297) (cs107 := cs107) (cs401 := cs401) (cs433 := cs433) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
                 (ev_yqjbwijz := evOrd) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
                 (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465)
                 (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
@@ -1535,10 +1566,9 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
               have hle : calls.length ≤ calls.length := Nat.le_refl _
               have hsub : ∀ x ∈ calls, x ∈ calls := fun _ hx => hx
               rw [hc] at hcl hle hsub
-              rcases List.mem_append.mp hcl with hcs107 | hcl
+              refine peel_append hcl hle hsub (fun hcs107 hle107 hsub107 => ?_)
+                fun hcl hle hsub => ?_
               · -- Inside `sg112` (`KernelRoles::role_ctx_axioms`)
-                have hle107 : cs107.length ≤ calls.length := by simp at hle; omega
-                have hsub107 : ∀ x ∈ cs107, x ∈ calls := fun x hx => hsub x (List.mem_append_left _ hx)
                 cases sg112 with
                 | Nil _ _ ev15 _ _ hc34 =>
                   rw [hc34] at hcs107 hle107 hsub107
@@ -1546,9 +1576,7 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
                 | Node _ _ _ _ _ _ _ ev15 _ _ _ hc102 =>
                   rw [hc102] at hcs107 hle107 hsub107
                   exact stepLast ev15 (by decide) (by decide) (by decide) hcs107 hle107 hsub107
-              · have hle : _ ≤ calls.length := by simp at hle; omega
-                have hsub : ∀ x ∈ _, x ∈ calls := fun x hx => hsub x (List.mem_append_right _ hx)
-                refine step ev126 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+              · refine step ev126 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
                 refine step ev148 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
                 refine step ev194 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
                 refine step evOrd (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
@@ -1562,10 +1590,10 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
                   rcases check_witnesses_descend_aux _ (Nat.le_refl _) ev344 hcs342 with
                     ⟨hrc, hxb, vw, mw, csw, elems, evw, hsubw, hext1, hext2, hrepOut, hmemOut⟩ | hsc
                   · subst hrc hxb
-                    have hext_rp_ws : Heap.Extends _ _ :=
-                      ev126.heap_extends.trans (ev148.heap_extends.trans
-                        (ev194.heap_extends.trans (evOrd.heap_extends.trans
-                          (ev231.heap_extends.trans (ev266.heap_extends.trans ev309.heap_extends)))))
+                    have hext_rp_ws : Heap.Extends m105 m297 :=
+                      ev126.heap_extends.trans <| ev148.heap_extends.trans <|
+                        ev194.heap_extends.trans <| evOrd.heap_extends.trans <|
+                        ev231.heap_extends.trans <| ev266.heap_extends.trans <| ev309.heap_extends
                     have hsub_asb : ∀ x ∈ cs401, x ∈ calls := fun x hx =>
                       hsub x (List.mem_cons_of_mem _ (List.mem_append_right _
                         (List.mem_cons_of_mem _ (List.mem_append_left _ hx))))
@@ -1573,9 +1601,12 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
                       hsub x (List.mem_cons_of_mem _ (List.mem_append_right _
                         (List.mem_cons_of_mem _ (List.mem_append_right _
                           (List.mem_cons_of_mem _ (List.mem_append_left _ hx))))))
-                    exact .mk _ _ _ _ ev126 _ _ _ _ _ _ _ ev344 _ _ _ ev403 _ _ _ ev435
-                      _ _ _ evw hext_rp_ws hext1 hext2 hsub342 hsub_asb hsub_cr hsubw
-                      elems hrepOut hmemOut
+                    exact .mk (ev_rp := ev126) (ev_ws := ev344) (ev_asb := ev403)
+                      (ev_cr := ev435) (ev_w := evw) (ext_rp_ws := hext_rp_ws)
+                      (ext_ws_w := hext1) (ext_w_ws' := hext2)
+                      (sub_ws := hsub342) (sub_asb := hsub_asb) (sub_cr := hsub_cr)
+                      (sub_w := hsubw) (outsideElems := elems)
+                      (outsideRep := hrepOut) (memOutside := hmemOut)
                   · obtain ⟨fn', args', h₁, r₁, h₁', cs', ev', hcl', hlt', hsub', hne', hkey'⟩ := hsc
                     exact (ih (by omega) (hne' _ List.mem_cons_self)
                       (fun k hk => hkey' k hk _ List.mem_cons_self) ev' hcl').mono
