@@ -353,7 +353,7 @@ theorem closureFold_steps
             recordOf R₁ B = some cbB ∧ cbB.info = .muts msB ∧
             FamRecRecord ρ.E₀ rb crb rsB := by
           rcases hor with h₀ | ⟨h₁, -⟩
-          · obtain ⟨cbB, msB, crbB, rsB, -, hFB⟩ := hC.fams.family B rb h₀
+          · obtain ⟨cbB, msB, crbB, rsB, flatB, hFB⟩ := hC.fams.family B rb h₀
             have hcbB₁ : recordOf R₁ B = some cbB :=
               recordOf_closureStore_of_R hC.admits hFB.block.record
             have hcrbB₁ : recordOf R₁ rb = some crbB :=
@@ -364,7 +364,7 @@ theorem closureFold_steps
               ⟨rec₂₀ hC.admits (rec₁₂ hcrb), hFB.record.muts, hFB.record.recrs, hFB.record.logic,
                 fun i m hm => rec₂₀ hC.admits (rec₁₂
                   (recordOf_closureStore_of_R hC.admits (hFB.record.members i m hm)))⟩⟩
-          · obtain ⟨cbB, msB, crbB, rsB, -, hFB⟩ := hC.checks.family B rb h₁
+          · obtain ⟨cbB, msB, crbB, rsB, flatB, hFB⟩ := hC.checks.family B rb h₁
             obtain ⟨cb₁, crb₁, _, _, hcb₁, hcrb₁, -, -, -, -, -⟩ := fam_new hC h₁
             have ecb : cb₁ = cbB := rec_eq (rec₂₀ hC.admits (rec₁₂ hcb₁)) hFB.block.record
             have ecrb₁ : crb₁ = crb := rec_eq hcrb₁ hcrb
@@ -387,7 +387,10 @@ theorem closureFold_steps
             rcases hxm with rfl | ⟨ind, j, hind, -, -⟩
             · obtain ⟨cv, mI, rP, rules₀, cv', rules', hku, hRR, hf, -, -, hSA, -⟩ :=
                 hFR.member msB rsB k rc hmsB hRB.muts hm
-              have hk_toNat : k.toUInt64.toNat = k := UInt64.toNat_ofNat' hku
+              have hk_toNat : k.toUInt64.toNat = k := by
+                change (UInt64.ofNat k).toNat = k
+                rw [UInt64.toNat_ofNat']
+                exact Nat.mod_eq_of_lt hku
               have hRR₀ : RecReads t (recordOf ρ.E₀) (fun y => ρ.E₀.blobs.get? y) crb
                   (blockSelf t rb rsB) (keyOf t (memberAddr rb k (.recr rc))) rc
                   (.recInfo cv mI rP rules₀) :=
