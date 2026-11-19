@@ -396,13 +396,15 @@ private theorem applyBinderTrace_posOf {ps : List LevelParam}
         · simp only [h2] at h
           obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj h)
           have hpos_lam : Core.posOf ps (.lam d b m) =
-              .lam (Core.posOf ps d) (Core.posOf ps b) (m.substPW ps (Core.posLevels ps)) := rfl
+              .lam (Core.posOf ps d) (Core.posOf ps b)
+                { m with pw := Level.substPW ps (Core.posLevels ps) m.pw } := rfl
           rw [hpos_lam]
           simp only [L1.applyBinderTrace, bind, Option.bind, ihd h1, ihb h2]
-          simp only [pure, Option.pure, Option.some.injEq, Prod.mk.injEq, and_true]
+          simp only [pure, Option.some.injEq, Prod.mk.injEq, and_true]
           show Expr.lam (Core.posOf ps d1) (Core.posOf ps b1) (Core.bmeta lv) =
             Expr.lam (Core.posOf ps d1) (Core.posOf ps b1)
-              ((Core.bmeta (L1.invPosLevel ps lv)).substPW ps (Core.posLevels ps))
+              { Core.bmeta (L1.invPosLevel ps lv) with
+                  pw := Level.substPW ps (Core.posLevels ps) (Core.bmeta (L1.invPosLevel ps lv)).pw }
           congr 1
           exact (L1.substPW_posLevels_bmeta hperm lv).symm
   | forallE d b m ihd ihb =>
@@ -419,13 +421,15 @@ private theorem applyBinderTrace_posOf {ps : List LevelParam}
         · simp only [h2] at h
           obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj h)
           have hpos_fa : Core.posOf ps (.forallE d b m) =
-              .forallE (Core.posOf ps d) (Core.posOf ps b) (m.substPW ps (Core.posLevels ps)) := rfl
+              .forallE (Core.posOf ps d) (Core.posOf ps b)
+                { m with pw := Level.substPW ps (Core.posLevels ps) m.pw } := rfl
           rw [hpos_fa]
           simp only [L1.applyBinderTrace, bind, Option.bind, ihd h1, ihb h2]
-          simp only [pure, Option.pure, Option.some.injEq, Prod.mk.injEq, and_true]
+          simp only [pure, Option.some.injEq, Prod.mk.injEq, and_true]
           show Expr.forallE (Core.posOf ps d1) (Core.posOf ps b1) (Core.bmeta lv) =
             Expr.forallE (Core.posOf ps d1) (Core.posOf ps b1)
-              ((Core.bmeta (L1.invPosLevel ps lv)).substPW ps (Core.posLevels ps))
+              { Core.bmeta (L1.invPosLevel ps lv) with
+                  pw := Level.substPW ps (Core.posLevels ps) (Core.bmeta (L1.invPosLevel ps lv)).pw }
           congr 1
           exact (L1.substPW_posLevels_bmeta hperm lv).symm
   | letE t v b l iht ihv ihb =>
@@ -445,7 +449,7 @@ private theorem applyBinderTrace_posOf {ps : List LevelParam}
               .letE (Core.posOf ps t) (Core.posOf ps v) (Core.posOf ps b) l := rfl
           rw [hpos_let]
           simp only [L1.applyBinderTrace, bind, Option.bind, iht h1, ihv h2, ihb h3]
-          simp only [pure, Option.pure, Option.some.injEq, Prod.mk.injEq, and_true]
+          simp only [pure, Option.some.injEq, Prod.mk.injEq, and_true]
           exact (Core.ProjBody.instantiate1Lift_instantiateLevelParams ps (Core.posLevels ps) v1 b1 0).symm
   | proj s i e ih =>
     intro plan rest E' h
@@ -967,12 +971,10 @@ theorem recRefs_of_familyCall {calls : List (Call F)} {bAddr : _root_.Address}
         ev36.heap_extends.trans (ev_i1.heap_extends.trans (ev_i2.heap_extends.trans ev_go.heap_extends))
       have hcRep' := hcRep.mono ext_after
       obtain ⟨extIdx, hidx⟩ := Claim.const_idxs_of_spec hcRep' ev_i3
-      have hrf : RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem _ c.refs.toList _ := by
-        obtain ⟨_, _, rp, _, _, heq, -, -, hrf, -, -⟩ := hcRep'
-        simp only [Value.construct.injEq, List.cons.injEq, and_true, true_and] at heq
-        rcases heq with ⟨_, _, hrp, _, _⟩
-        subst hrp
-        exact hrf
+      obtain ⟨_, _, rp, _, _, heq, -, -, hrf, -, -⟩ := hcRep'
+      simp only [Value.construct.injEq, List.cons.injEq, and_true, true_and] at heq
+      rcases heq with ⟨_, _, hrp, _, _⟩
+      subst hrp
       have hrp := repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ extIdx hrf
       have hrc_safe := hrc.mono (ext_fro.trans (ext14.trans (ext_after.trans extIdx)))
       match Obs.«KernelModeled::assert_inner_refs_safe».obs ev_safe with
@@ -1836,7 +1838,7 @@ private theorem rule_list_length_eq {src : Ixon.Constant} {recurAddrs : List _ro
       injection ld with hv; injection hv with _ _ hargs; injection hargs with _ htl
       injection htl with hrest _
       subst hrest
-      have ev_rec' : ObsFn Obs.W Obs.Names.«Lists::length<KernelTypes::KRecRule>» [rest] h x m cs' := by
+      have ev_rec' : ObsFn Obs.W Obs.Names.«Lists::length<KernelTypes::KRecRule>» [rest] h x h' cs' := by
         rwa [← Obs.Names.«Lists::length<KernelTypes::KRecRule>».symbol]
       have hsub := ih hext ev_rec'
       subst hsub
@@ -2116,7 +2118,7 @@ private theorem rec_major_pins_ni_eq {calls : List (Call F)} {t : Ix.Kernel.Role
       injection hfn1 with hk_eq _
       exact Assembly.keyOf_injective ht hk_eq.symm
     have hsub_ci : ∀ cl ∈ cs155, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
-    obtain ⟨-, c_u, hh_u, haddr_u, hex_u, -, hres_u⟩ :=
+    obtain ⟨raw_u, c_u, hh_u, haddr_u, hex_u, -, hres_u⟩ :=
       L1.get_ci_block_trace_spec (Core.bounded_sub hsub_ci hbd) ra_ind ev_ci
     have hc_u_eq : c_u = c_maj := by
       rw [ha_eq] at haddr_u
@@ -2125,7 +2127,7 @@ private theorem rec_major_pins_ni_eq {calls : List (Call F)} {t : Ix.Kernel.Role
     subst hc_u_eq
     unfold L1.GetCIBlockTraceResult at hres_u
     rw [hp_maj] at hres_u
-    obtain ⟨-, _, cb', ms', ind', -, -, -, v', hhB', haB', hexB', hcb', hms', -, -, -,
+    obtain ⟨-, blk', cb', ms', ind', blobs', tree', plan', v', hhB', haB', hexB', hcb', hms', -, -, -,
       hld', hraw', -⟩ := hres_u
     have hcb'_eq : cb' = cbM :=
       hRS.record_eq ((hRS.recordOf_eq_recordAt _).symm.trans hrec_cbM)
@@ -2136,7 +2138,7 @@ private theorem rec_major_pins_ni_eq {calls : List (Call F)} {t : Ix.Kernel.Role
     have hind'_eq : ind' = indM :=
       Ixon.MutConst.indc.inj (Option.some.inj (hms'.symm.trans hmsM))
     subst hind'_eq
-    obtain ⟨-, -, hni_M, -, -, _, _, _, -, -, hv', -⟩ := hraw'
+    obtain ⟨-, -, hni_M, -, -, tyPtr', blkPtr', b', -, -, hv', -⟩ := hraw'
     rw [hv'] at hld'
     rw [hld'] at ld_ind
     injection ld_ind with hv_eq
@@ -2402,11 +2404,10 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
           have h1 : (recAs.map Core.ixAddr)[k]? = some (Core.ixAddr a_k) := by
             rw [List.getElem?_map, ha_k_eq]; rfl
           rw [hrecAs_map, List.getElem?_mapIdx, Array.getElem?_toList, hmem_k] at h1
-          have h2 := Option.some.inj h1.symm
-          simpa [memberAddr] using h2
+          exact Option.some.inj h1.symm
         have hproj_k : recordOf E₀ (Core.ixAddr a_k) = some (memberProjection A k (.recr rc)) := by
           rw [ha_k_ix]
-          simpa [memberAddr] using hA.members k (.recr rc) hmem_k
+          exact hA.members k (.recr rc) hmem_k
         have hgood_in : Core.Good ⟨E_in, default, t, lim⟩ calls := hSS_in.good default lim
         have hbound : Bounded calls := hgood_in.2
         have hsub80 : ∀ cl ∈ cs80, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
@@ -2423,10 +2424,20 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
         rw [hproj_info] at hres_proj
         obtain ⟨hk56, blkBytes, cb_a, rs_a, rc_a, blobs_a, tree_a, v_a,
           hh_blk, ha_blk, hex_blk, hcb_a, hrs_a, hhp_a, hbuilt_a, hld_a, htr_a⟩ := hres_proj
+        have hk_lt_res : rs'.size ≤ c.resourceSize := by
+          have h1 : rs'.toList.length ≤ (rs'.toList.map Ixon.MutConst.resourceSize).sum :=
+            length_le_sum_map_ce Ixon.MutConst.resourceSize (fun m => by
+              cases m <;> dsimp [Ixon.MutConst.resourceSize] <;> omega) rs'.toList
+          have h2 : c.info.resourceSize = 1 + (rs'.toList.map Ixon.MutConst.resourceSize).sum := by
+            rw [hA.muts]; rfl
+          have h3 : c.info.resourceSize ≤ c.resourceSize := by
+            dsimp [Ixon.Constant.resourceSize]; omega
+          simp only [Array.length_toList] at h1
+          omega
         have hk64 : k.toUInt64.toNat = k := by
           change (UInt64.ofNat k).toNat = k
           rw [UInt64.toNat_ofNat']
-          exact Nat.mod_eq_of_lt (Nat.lt_trans hk56 (by decide))
+          exact Nat.mod_eq_of_lt (by omega)
         have hrec0_A : Ix.Cert.recordAt E₀ A = some c :=
           (hRS.recordOf_eq_recordAt A).symm.trans hA.record
         have hcb_a_eq : cb_a = c :=
@@ -2434,7 +2445,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
         subst hcb_a_eq
         have hrs_a_eq : rs_a = rs' := Ixon.ConstantInfo.muts.inj (hcb_a.symm.trans hA.muts)
         subst hrs_a_eq
-        rw [hk64, ← Array.getElem?_toList] at hrs_a
+        rw [hk64, Array.getElem?_toList] at hrs_a
         have hrc_a_eq : rc_a = rc :=
           Ixon.MutConst.recr.inj (Option.some.inj (hrs_a.symm.trans hmem_k))
         subst hrc_a_eq
@@ -3097,19 +3108,19 @@ theorem familyCall_extract_members {calls : List (Call F)} {bAddr : _root_.Addre
       Claim.load_block_head (Bytes.repAddressRef_heapMono₂ Core.addrTy ext_h_453 hB_rep) ev513
     obtain ⟨hcb'_eq, hms'_eq⟩ := (hblB.mono hsub511).stored hH
     have heq_cb : cb' = cb := Option.some.inj (hcb'_eq.symm.trans hB.record)
-    subst heq_cb
+    subst cb'
     have heq_ms : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'_eq.symm.trans hB.muts)
-    subst heq_ms
+    subst ms'
     -- 2. `ev664 : block_nparams [x_members]` gives `ind₀` and `v651 = .field ind₀.params`
     obtain ⟨ind₀, rest_ms, hms_cons, hind0_params, hv651_eq⟩ :=
-      block_nparams_spec (RepLinkedList.mono L1.repMutConst_heapMono ext_501_624 hms_rep) ev664
+      block_nparams_spec (RepLinkedList.mono L1.repMutConst_heapMono₂ ext_501_624 hms_rep) ev664
     subst hv651_eq
     have hms0 : ms[0]? = some (.indc ind₀) := by
       rw [← Array.getElem?_toList, hms_cons]; rfl
     -- 3. `ev686 : build_recur_addrs [x_members, x_block]` gives `typeAs` with head `iprjAddr B 0`
     have hmem_m652 : Core.Specs.Callees.MembersRep m652 ms.toList x_members :=
       Route.membersRep_of_repMutConstList
-        (RepLinkedList.mono L1.repMutConst_heapMono ext_501_652 hms_rep)
+        (RepLinkedList.mono L1.repMutConst_heapMono₂ ext_501_652 hms_rep)
     obtain ⟨-, typeAs, htype_m674, htype_map⟩ := L1.build_recur_addrs_spec hmem_m652
       (Bytes.repAddressRef_heapMono₂ Core.addrTy (ext_h_501.trans ext_501_652) hB_rep) ev686
     rw [hms_cons] at htype_map
@@ -3282,13 +3293,13 @@ theorem familyCall_usedRef_ind0 {calls : List (Call F)} {bAddr : _root_.Address}
       Claim.load_block_head (Bytes.repAddressRef_heapMono₂ Core.addrTy ext_h_453 hB_rep) ev513
     obtain ⟨hcb'_eq, hms'_eq⟩ := (hblB.mono hsub511).stored hH
     have heq_cb : cb' = cb := Option.some.inj (hcb'_eq.symm.trans hB.record)
-    subst heq_cb
+    subst cb'
     have heq_ms : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'_eq.symm.trans hB.muts)
-    subst heq_ms
+    subst ms'
     obtain ⟨ind₀, rest_ms, hms_cons, -, -⟩ :=
-      block_nparams_spec (RepLinkedList.mono L1.repMutConst_heapMono ext_501_624 hms_rep) ev664
+      block_nparams_spec (RepLinkedList.mono L1.repMutConst_heapMono₂ ext_501_624 hms_rep) ev664
     have hmem_m652 := Route.membersRep_of_repMutConstList
-      (RepLinkedList.mono L1.repMutConst_heapMono ext_501_652 hms_rep)
+      (RepLinkedList.mono L1.repMutConst_heapMono₂ ext_501_652 hms_rep)
     obtain ⟨-, typeAs, htype_m674, htype_map⟩ := L1.build_recur_addrs_spec hmem_m652
       (Bytes.repAddressRef_heapMono₂ Core.addrTy (ext_h_501.trans ext_501_652) hB_rep) ev686
     rw [hms_cons] at htype_map
@@ -3338,7 +3349,7 @@ theorem familyCall_usedRef_ind0 {calls : List (Call F)} {bAddr : _root_.Address}
             L1.get_ci_block_trace_spec (hgood_in.sub hsub80).2 ha0_rep ev82
           have hproj0 : recordOf E₀ (Core.ixAddr a0) =
               some (memberProjection (Core.ixAddr bA) 0 (.recr rc0)) := by
-            rw [ha0_ix]; simpa [memberAddr] using hA.members 0 (.recr rc0) hmem0
+            rw [ha0_ix]; exact hA.members 0 (.recr rc0) hmem0
           have hcp0_eq : c_p0 = memberProjection (Core.ixAddr bA) 0 (.recr rc0) :=
             hRS.record_eq ((hRS.recordOf_eq_recordAt _).symm.trans hproj0)
               (Core.hashed_mono hsub80 hh_p0) haddr_p0 hex_p0
@@ -3352,10 +3363,11 @@ theorem familyCall_usedRef_ind0 {calls : List (Call F)} {bAddr : _root_.Address}
           have hcb0_eq : cb0 = c :=
             hRS.record_eq ((hRS.recordOf_eq_recordAt _).symm.trans hA.record)
               (Core.hashed_mono hsub80 hhB0) haB0 hexB0
-          subst hcb0_eq
+          subst cb0
           have hrs0_eq : rs0 = rs' := Ixon.ConstantInfo.muts.inj (hcb0.symm.trans hA.muts)
-          subst hrs0_eq
-          rw [← Array.getElem?_toList] at hrs0
+          subst rs0
+          have hidx0 : ({ idx := (0 : Nat).toUInt64, block := Core.ixAddr bA } : Ixon.RecursorProj).idx.toNat = 0 := rfl
+          rw [hidx0, Array.getElem?_toList] at hrs0
           have hrc0_eq : rc0' = rc0 :=
             Ixon.MutConst.recr.inj (Option.some.inj (hrs0.symm.trans hmem0))
           subst hrc0_eq
