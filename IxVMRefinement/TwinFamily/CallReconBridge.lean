@@ -89,7 +89,7 @@ private theorem recordWrapConsObs_of_recon {calls : List (Call F)} {t : Ix.Kerne
     {es : List FlatEntry} {off : Nat}
     (hrec : recordOf E rb = some crb) (hmuts : crb.info = .muts rs)
     (hBD : BlockDerivedFlat t E B off es)
-    (hct : ∀ k rc, rs[k]? = some (.recr rc) →
+    (hct : ∀ (k : Nat) (rc : Ixon.Recursor), rs[k]? = some (.recr rc) →
       ctorsBefore (ReconView.ofStore t E) es es.length = some rc.minors.toNat)
     (h : Binding.FamilyRecon.RecordWrapConsObs calls t E B rb) :
     RecordWrapConsObs calls t E B rb := by
@@ -579,7 +579,7 @@ private theorem unitLevelsAndParamsOk_of_held_R {calls : List (Call F)} {t : Ix.
     have hsz64 : ms.size < UInt64.size := muts_size_lt_u64 hS hbd hc₀ hms
     have hi64 : i.toUInt64.toNat = i := by
       change (UInt64.ofNat i).toNat = i
-      rw [UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (by omega)
+      rw [UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (Nat.lt_trans hi_lt hsz64)
     have hmemR := (hclR.2 a c ms hcR hms i (.defn d) hi).1
     have hmemE := hR_E _ _ hmemR
     have hmemHeld : Held R (memberAddr a i (.defn d)) :=
@@ -593,7 +593,7 @@ private theorem unitLevelsAndParamsOk_of_held_R {calls : List (Call F)} {t : Ix.
     have hsz64 : ms.size < UInt64.size := muts_size_lt_u64 hS hbd hc₀ hms
     have hi64 : i.toUInt64.toNat = i := by
       change (UInt64.ofNat i).toNat = i
-      rw [UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (by omega)
+      rw [UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (Nat.lt_trans hi_lt hsz64)
     have hmemR := (hclR.2 a c ms hcR hms i (.indc ind) hi).1
     have hmemE := hR_E _ _ hmemR
     have hmemHeld : Held R (memberAddr a i (.indc ind)) :=
@@ -696,7 +696,8 @@ private theorem closureStore_levels_and_params
             hR₁_sub _ _ (hC.closed.2 a c rs hc₁ hmuts i m hm).1⟩
         rcases hC.checks.claimed a c rs hnew' hc₀ hmuts hpos hrecrs with ⟨B', hfamB'⟩ | ⟨B', cs', hfc⟩
         · obtain ⟨-, -, cs', advAs', hown', -⟩ := hC.checks.famCall B' a hfamB'
-          exact unitLevelsAndParamsOk_of_familyCall hrun.runStore hrun.bounded hRec hown'.toCall
+          exact unitLevelsAndParamsOk_of_familyCall hrun.runStore hrun.bounded hRec
+            (Binding.FamilyCallOwn.toCall hown')
         · exact unitLevelsAndParamsOk_of_familyCall hrun.runStore hrun.bounded hRec hfc
       · rcases hC.famAdmits.checked a c hnew' hc' hUK htw with hchk | ⟨B', hfamB', -⟩
         · have hU : UnitCheckedAt calls bAddrChk t ρ.E₀ a (some (Binding.valLimit g)) :=
@@ -708,8 +709,8 @@ private theorem closureStore_levels_and_params
           have heq : crb' = c := Option.some.inj (hFOB.record.record.symm.trans hc₀)
           rw [heq] at hFOB
           exact unitLevelsAndParamsOk_of_familyCall hrun.runStore hrun.bounded
-            hFOB.record hown'.toCall
-    · push_neg at hdm
+            hFOB.record (Binding.FamilyCallOwn.toCall hown')
+    · push Not at hdm
       exact unitLevelsAndParamsOk_of_nonUnit hdm.1 hdm.2
 
 /-- **Binding-closure twin step (`Binding.ClosureTwinSteps`) from `StoredRecLvlsOk` and
@@ -898,7 +899,7 @@ private theorem typingUseStore_usedClosed {calls : List (Call F)} {bAddrW bAddrI
         refine Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨D, cD, ms, ?_, hcD, hms, i, m, hm, hproj⟩))))
         rcases hWD with hTD | hID
         · refine Or.inl ⟨hTD, fun c' hc' => ?_⟩
-          have e := Option.some.inj (hc'.symm.trans hcD); subst e
+          have e := Option.some.inj (hc'.symm.trans hcD); subst c'
           refine ⟨hlogD, fun cb hcb => ?_⟩
           have ho : Ix.Cert.ownerOf D cD = D := by simp [Ix.Cert.ownerOf, hms]
           rw [ho] at hcb
@@ -921,12 +922,12 @@ private theorem typingUseStore_usedClosed {calls : List (Call F)} {bAddrW bAddrI
           recordOf E₀ (ctorAddr D i j) = some (constructorProjection D i j)) →
       ∀ i m, ms[i]? = some m →
         recordOf R_use (memberAddr D i m) = some (memberProjection D i m) ∧
-        ∀ ind j, m = .indc ind → j < ind.ctors.size →
+        ∀ ind, m = .indc ind → ∀ j, j < ind.ctors.size →
           recordOf R_use (ctorAddr D i j) = some (constructorProjection D i j) := by
     intro D cD ms hcls hcD hms hmem i m hm
     refine ⟨recordOf_recordsAt.mpr ⟨Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
       ⟨D, cD, ms, hcls, hcD, hms, i, m, hm, Or.inl rfl⟩)))), hE₀_E _ _ (hmem i m hm).1⟩, ?_⟩
-    intro ind j hmind hj
+    intro ind hmind j hj
     exact recordOf_recordsAt.mpr ⟨Or.inr (Or.inr (Or.inr (Or.inr (Or.inr
       ⟨D, cD, ms, hcls, hcD, hms, i, m, hm, Or.inr ⟨ind, j, hmind, hj, rfl⟩⟩)))),
       hE₀_E _ _ ((hmem i m hm).2 ind j hmind hj)⟩
@@ -967,7 +968,7 @@ private theorem typingUseStore_usedClosed {calls : List (Call F)} {bAddrW bAddrI
           obtain ⟨ms, hms⟩ := hcb_muts
           have hSafe_own : Claim.SourceSafe E₀ (Ix.Cert.ownerOf a c₀) := by
             intro cb' hcb'
-            have e' := Option.some.inj (hcb'.symm.trans hcb); subst e'
+            have e' := Option.some.inj (hcb'.symm.trans hcb); subst cb'
             refine ⟨hlog_cb, fun cb₂ hcb₂ => ?_⟩
             have ho : Ix.Cert.ownerOf (Ix.Cert.ownerOf a c₀) cb = Ix.Cert.ownerOf a c₀ := by
               simp [Ix.Cert.ownerOf, hms]
@@ -1026,7 +1027,7 @@ private theorem typingUseStore_usedClosed {calls : List (Call F)} {bAddrW bAddrI
     · -- (5) `fam B' = some a`
       obtain ⟨crb, rs, hF⟩ := hFR.graph.famRecord B' a hfam'
       have e : crb = c := Option.some.inj ((hE₀_E a crb hF.record).symm.trans hcE)
-      subst e
+      subst c
       have hnp : ¬ IsProj crb := fun hp => proj_not_block hp ⟨rs, hF.muts⟩
       refine ⟨by rw [ownerOf_eq_self_of_not_proj hnp]; exact Option.isSome_iff_exists.mpr ⟨crb, ha⟩, ?_⟩
       intro j hj x hx
@@ -1041,29 +1042,29 @@ private theorem typingUseStore_usedClosed {calls : List (Call F)} {bAddrW bAddrI
         · exact held_of_stored x hst
         · exact held_of_cov x hcov
         · obtain ⟨cb₀, msB, hcb₀, hmsB, -⟩ := hFR.famInd B' a hfam'
-          have ecb := Option.some.inj (hcb'.symm.trans hcb₀); subst ecb
+          have ecb := Option.some.inj (hcb'.symm.trans hcb₀); subst cb'
           have hTB := hFR.graph.famBlock B' a hfam'
           obtain ⟨-, cb₁, hcb₁, hlogB₁, -⟩ := hFR.graph.famUnit B' a hfam'
-          have ecb₁ := Option.some.inj (hcb₁.symm.trans hcb₀); subst ecb₁
+          have ecb₁ := Option.some.inj (hcb₁.symm.trans hcb₀); subst cb₁
           have hSafeB : Claim.SourceSafe E₀ B' := by
             intro cb₂ hcb₂
-            have e₂ := Option.some.inj (hcb₂.symm.trans hcb₀); subst e₂
+            have e₂ := Option.some.inj (hcb₂.symm.trans hcb₀); subst cb₂
             refine ⟨hlogB₁, fun cb₃ hcb₃ => ?_⟩
-            have ho : Ix.Cert.ownerOf B' cb₁ = B' := by simp [Ix.Cert.ownerOf, hmsB]
+            have ho : Ix.Cert.ownerOf B' cb₀ = B' := by simp [Ix.Cert.ownerOf, hmsB]
             rw [ho] at hcb₃
             rw [Option.some.inj (hcb₃.symm.trans hcb₀)]; exact hlogB₁
           rcases hcaB with ⟨-, hst⟩ | ⟨ms', k, m, hms', hm, hproj⟩
           · exact (standalone_not_block hst ⟨msB, hmsB⟩).elim
-          · have hm_mem := hG.members B' cb₁ ms' hTB hcb₀ hms' k m hm
+          · have hm_mem := hG.members B' cb₀ ms' hTB hcb₀ hms' k m hm
             rcases hproj with rfl | ⟨ind, q, rfl, hq, rfl⟩
             · exact Option.isSome_iff_exists.mpr ⟨_, recordOf_recordsAt.mpr
-                ⟨Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨B', cb₁, ms', Or.inl ⟨hTB, hSafeB⟩,
+                ⟨Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨B', cb₀, ms', Or.inl ⟨hTB, hSafeB⟩,
                   hcb₀, hms', k, m, hm, Or.inl rfl⟩)))), hE₀_E _ _ hm_mem.1⟩⟩
             · exact Option.isSome_iff_exists.mpr ⟨_, recordOf_recordsAt.mpr
-                ⟨Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨B', cb₁, ms', Or.inl ⟨hTB, hSafeB⟩,
+                ⟨Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ⟨B', cb₀, ms', Or.inl ⟨hTB, hSafeB⟩,
                   hcb₀, hms', k, .indc ind, hm, Or.inr ⟨ind, q, rfl, hq, rfl⟩⟩)))),
                   hE₀_E _ _ (hm_mem.2 ind q rfl hq)⟩⟩
-        · have ecr := Option.some.inj (hcrb'.symm.trans hF.record); subst ecr
+        · have ecr := Option.some.inj (hcrb'.symm.trans hF.record); subst crb'
           rcases hcar with ⟨-, hst⟩ | ⟨ms', k, m, hms', hm, hproj⟩
           · exact (standalone_not_block hst ⟨rs, hF.muts⟩).elim
           · have hrs' : rs = ms' := Ixon.ConstantInfo.muts.inj (hF.muts.symm.trans hms')
@@ -1120,7 +1121,7 @@ private theorem typingUseStore_usedClosed {calls : List (Call F)} {bAddrW bAddrI
       subst e
       have h2 := hctx.shape.usedClosed.2 B cR ms hcR hms i m hm
       refine ⟨recordOf_recordsAt.mpr ⟨Or.inl (Option.isSome_iff_exists.mpr ⟨_, h2.1⟩),
-        hR_E _ _ h2.1⟩, fun ind j hmind hj =>
+        hR_E _ _ h2.1⟩, fun ind hmind j hj =>
         recordOf_recordsAt.mpr ⟨Or.inl (Option.isSome_iff_exists.mpr ⟨_, h2.2 ind hmind j hj⟩),
           hR_E _ _ (h2.2 ind hmind j hj)⟩⟩
     · obtain ⟨cBas, hcBas⟩ := Option.isSome_iff_exists.mp hBasB
@@ -1128,7 +1129,7 @@ private theorem typingUseStore_usedClosed {calls : List (Call F)} {bAddrW bAddrI
       subst e
       have h2 := StoreInhabit.store_usedClosed.2 B cBas ms hcBas hms i m hm
       refine ⟨recordOf_recordsAt.mpr ⟨Or.inr (Or.inl (Option.isSome_iff_exists.mpr ⟨_, h2.1⟩)),
-        hBas_E _ _ h2.1⟩, fun ind j hmind hj =>
+        hBas_E _ _ h2.1⟩, fun ind hmind j hj =>
         recordOf_recordsAt.mpr ⟨Or.inr (Or.inl (Option.isSome_iff_exists.mpr ⟨_, h2.2 ind hmind j hj⟩)),
           hBas_E _ _ (h2.2 ind hmind j hj)⟩⟩
     · obtain ⟨c₀, hc₀⟩ := hG.record B hTB
@@ -1325,16 +1326,16 @@ theorem familyTwinWF_of_storeLevels (hStoredLvls : StoredRecLvlsOk) :
     · have hTB : Top B := hFR.graph.famBlock B rb hfam
       obtain ⟨-, cb₀, hcb₀, hlogB, -⟩ := hFR.graph.famUnit B rb hfam
       obtain ⟨cb₁, ms₁, hcb₁, hms₁, -⟩ := hFR.famInd B rb hfam
-      have e := Option.some.inj (hcb₁.symm.trans hcb₀); subst e
+      have e := Option.some.inj (hcb₁.symm.trans hcb₀); subst cb₁
       have hSafeB : Claim.SourceSafe E₀ B := by
         intro cb' hcb'
-        have e' := Option.some.inj (hcb'.symm.trans hcb₀); subst e'
+        have e' := Option.some.inj (hcb'.symm.trans hcb₀); subst cb'
         refine ⟨hlogB, fun cb₂ hcb₂ => ?_⟩
-        have ho : Ix.Cert.ownerOf B cb₁ = B := by simp [Ix.Cert.ownerOf, hms₁]
+        have ho : Ix.Cert.ownerOf B cb₀ = B := by simp [Ix.Cert.ownerOf, hms₁]
         rw [ho] at hcb₂
         rw [Option.some.inj (hcb₂.symm.trans hcb₀)]; exact hlogB
-      exact Option.isSome_iff_exists.mpr ⟨cb₁,
-        recordOf_recordsAt.mpr ⟨Or.inr (Or.inr (Or.inl ⟨hTB, hSafeB⟩)), hE₀_E B cb₁ hcb₀⟩⟩
+      exact Option.isSome_iff_exists.mpr ⟨cb₀,
+        recordOf_recordsAt.mpr ⟨Or.inr (Or.inr (Or.inl ⟨hTB, hSafeB⟩)), hE₀_E B cb₀ hcb₀⟩⟩
     · obtain ⟨cb, _, _, _, _, hFOB_R, -, -⟩ := hcanon.family
       exact Option.isSome_iff_exists.mpr ⟨cb,
         recordOf_recordsAt.mpr ⟨Or.inl (Option.isSome_iff_exists.mpr ⟨cb, hFOB_R.block.record⟩),
@@ -1345,18 +1346,18 @@ theorem familyTwinWF_of_storeLevels (hStoredLvls : StoredRecLvlsOk) :
     have hnp : ¬ IsProj cr := fun hp => proj_not_block hp ⟨rs, hRec.muts⟩
     rcases hrel with rfl | hfamr
     · rcases hW with hTA | hIA
-      · have hSafeA : Claim.SourceSafe E₀ A := by
+      · have hSafeA : Claim.SourceSafe E₀ r := by
           intro c' hc'
-          have e' := Option.some.inj (hc'.symm.trans hRec.record); subst e'
+          have e' := Option.some.inj (hc'.symm.trans hRec.record); subst c'
           refine ⟨hRec.logic, fun cb₂ hcb₂ => ?_⟩
-          have ho : Ix.Cert.ownerOf A cr = A := by simp [Ix.Cert.ownerOf, hRec.muts]
+          have ho : Ix.Cert.ownerOf r cr = r := by simp [Ix.Cert.ownerOf, hRec.muts]
           rw [ho] at hcb₂
           rw [Option.some.inj (hcb₂.symm.trans hRec.record)]; exact hRec.logic
         exact Option.isSome_iff_exists.mpr ⟨cr,
-          recordOf_recordsAt.mpr ⟨Or.inr (Or.inr (Or.inl ⟨hTA, hSafeA⟩)), hE₀_E A cr hRec.record⟩⟩
+          recordOf_recordsAt.mpr ⟨Or.inr (Or.inr (Or.inl ⟨hTA, hSafeA⟩)), hE₀_E r cr hRec.record⟩⟩
       · exact Option.isSome_iff_exists.mpr ⟨cr,
           recordOf_recordsAt.mpr ⟨Or.inr (Or.inr (Or.inr (Or.inl ⟨hIA, cr, hRec.record, hRec.logic, hnp⟩))),
-            hE₀_E A cr hRec.record⟩⟩
+            hE₀_E r cr hRec.record⟩⟩
     · exact Option.isSome_iff_exists.mpr ⟨cr,
         recordOf_recordsAt.mpr ⟨Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ⟨B, hfamr⟩)))),
           hE₀_E r cr hRec.record⟩⟩
