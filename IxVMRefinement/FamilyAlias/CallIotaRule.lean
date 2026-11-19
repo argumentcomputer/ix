@@ -563,6 +563,31 @@ theorem famKey_ne_cases {t : Ix.Kernel.RoleTable} {env : Ix.Kernel.Env .anon}
   · exact Or.inr h2
   · exact (Core.not_isProjMarker_of_size (Core.ixAddr_size a) ⟨y, hy⟩).elim
 
+/-- Any term exact at `Core.Ctx.stored` is exact at `Core.keyOf t` (same expression). -/
+theorem tmExact_rekey_stored_to_table {E₀ : Ixon.Env} {env : Ix.Kernel.Env .anon}
+    {t : Ix.Kernel.RoleTable} {lim : Option Nat} {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
+    {k : Nat} {E : KExpr} {p : SourceValue F}
+    (rep : Decl.TmExact (Core.Ctx.stored ⟨E₀, env, t, lim⟩).κ d Γ h k E p) :
+    Decl.TmExact (Core.keyOf t) d Γ h k E p := by
+  induction rep with
+  | bvarLocal cell hs hi => exact .bvarLocal cell hs hi
+  | bvarFree cell hs hk hd => exact .bvarFree cell hs hk hd
+  | sort cell rl => exact .sort cell rl
+  | @const k addr ap lsp a ls res cell ra rls =>
+    have he : (Core.Ctx.stored ⟨E₀, env, t, lim⟩).κ (ixAddr a) = Core.keyOf t (ixAddr a) :=
+      (Core.Ctx.stored ⟨E₀, env, t, lim⟩).key_eq res.ne
+    rw [he]; exact .const cell ra rls
+  | app cell _ _ ihf iha => exact .app cell ihf iha
+  | lam cell _ _ rl iht ihb => exact .lam cell iht ihb rl
+  | forallE cell _ _ rl iht ihb => exact .forallE cell iht ihb rl
+  | letE cell _ _ _ iht ihv ihb => exact .letE cell iht ihv ihb
+  | litNat cell rl hc => exact .litNat cell rl hc
+  | litStr cell rb hs => exact .litStr cell rb hs
+  | @proj k addr ap ep a i E res _ cell ra _ ih =>
+    have he : (Core.Ctx.stored ⟨E₀, env, t, lim⟩).κ (ixAddr a) = Core.keyOf t (ixAddr a) :=
+      (Core.Ctx.stored ⟨E₀, env, t, lim⟩).key_eq res.ne
+    rw [he]; exact .proj cell ra ih
+
 /-- Any term represented at `Core.Ctx.stored` is represented at `famKey` (same expression). -/
 theorem tm_famKey_of_stored {E₀ : Ixon.Env} {env : Ix.Kernel.Env .anon} {t : Ix.Kernel.RoleTable}
     {lim : Option Nat} {srcAs : List Bytes.Address} {d : Nat} {Γ : Nat → KExpr} {h : Heap F}
@@ -951,12 +976,8 @@ theorem check_iota_rule_facts
     {blk : List (ConstantInfo .anon)} {tys : List KExpr}
     {recKey : KKey} {lps : List LevelParam} {tyA : KExpr} {mI rP : Nat}
     {r : RecRule .anon} {rhsA : KExpr}
-    {cvj : ConstantVal .anon} {cnP cnF : Nat}
+    {cnP cnF : Nat}
     {lvls : List Level} {pins : List KExpr}
-    (hruleCtor : RuleCtor env blk tys r.ctor cvj cnP cnF)
-    (hgCtor_lvls : ∃ ci, env.find? (aliasMap ((srcAs.map fun b => Core.keyOf t (ixAddr b)).zip
-      (dstAs.map fun b => Core.keyOf t (ixAddr b))) r.ctor) = some ci ∧
-      ci.toConstantVal.levelParams.length = cvj.levelParams.length)
     (hlps_lt : lps.length < 4294967296)
     (hlps_perm : lps.Perm (List.range lps.length))
     (hrp_le : rP ≤ mI) (hmi_lt : mI < 288230376151711744)
@@ -968,9 +989,7 @@ theorem check_iota_rule_facts
     (hlvls_def : lvls.all (Level.allParamsDefined lps) = true)
     (hpins_ok : pins.all (fun p => !p.hasFvar && p.looseBVarsBounded rP &&
       p.allLevelParamsDefined lps) = true)
-    (hcvj_def : cvj.type.allLevelParamsDefined cvj.levelParams = true)
     (hnp_ty : Decl.NoProjIn (srcAs.map fun b => Core.keyOf t (ixAddr b)) tyA = true)
-    (hnp_cty : Decl.NoProjIn (srcAs.map fun b => Core.keyOf t (ixAddr b)) cvj.type = true)
     (hleaves : ∀ fvsP crest2, openPisAtFvars rP tyA 0 = some (fvsP, crest2) →
       ∀ p ∈ pins, LeavesFixed (aliasMap ((srcAs.map fun b => Core.keyOf t (ixAddr b)).zip
         (dstAs.map fun b => Core.keyOf t (ixAddr b))))
@@ -998,8 +1017,15 @@ theorem check_iota_rule_facts
     (hrhs_rep : Decl.TmCExact (Core.keyOf t) h (Core.posOf lps rhsA) rhs)
     (hrhs_cells : ∀ a, AddrIn h rhs a →
       (∃ ci, env.find? (Core.keyOf t (ixAddr a)) = some ci) ∨ ixAddr a ∈ srcAs.map ixAddr)
-    (hcty_rep : Tm (famKey t env srcAs) 0 Decl.zeroGhost h 0
-      (Core.posOf cvj.levelParams cvj.type) cty)
+    (hcty_of_find : ∀ ci_gc,
+      env.find? (aliasMap ((srcAs.map fun b => Core.keyOf t (ixAddr b)).zip
+        (dstAs.map fun b => Core.keyOf t (ixAddr b))) r.ctor) = some ci_gc →
+      ∃ cvj : ConstantVal .anon,
+        RuleCtor env blk tys r.ctor cvj cnP cnF ∧
+        ci_gc.toConstantVal.levelParams.length = cvj.levelParams.length ∧
+        cvj.type.allLevelParamsDefined cvj.levelParams = true ∧
+        Decl.NoProjIn (srcAs.map fun b => Core.keyOf t (ixAddr b)) cvj.type = true ∧
+        Tm (famKey t env srcAs) 0 Decl.zeroGhost h 0 (Core.posOf cvj.levelParams cvj.type) cty)
     (hilvls_rep : RepKLevelList h (lvls.map (Level.subst lps (Core.posLevels lps))) ilvls)
     (hpins_rep : RepList kexprListEnum
       (fun h P p => Decl.TmExact (Core.keyOf t) 0 Decl.zeroGhost h rP P p) h
@@ -1375,12 +1401,6 @@ theorem check_iota_rule_facts
       (Bytes.repAddressRef_heapMono₂ addrTy ext_h_maj hcprj) hrm_tbl
   have ra_cren := Bytes.repAddressRef_heapMono₂ addrTy inv.ev_cren.heap_extends ra_cren_maj
   rw [hcprj_key] at hcren_key
-  obtain ⟨ci_gc, hci_gc, hci_gc_lvls⟩ := hgCtor_lvls
-  have hsc_cren : sc.κ (ixAddr a_cren) = g r.ctor := by
-    have hfind_cren : env.find? (Core.keyOf t (ixAddr a_cren)) = some ci_gc := by
-      rwa [hcren_key]
-    exact (Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hfind_cren).trans hcren_key
-  have : Resolved (sc.κ (ixAddr a_cren)) := ⟨by rw [hsc_cren]; exact Resolved.ne⟩
   have ext_h_cren := ext_h_maj.trans inv.ev_cren.heap_extends
   have hty_keys : ∀ key, KeyIn key tyA →
       (∃ ci, env.find? key = some ci) ∨ key ∈ srcKeys := by
@@ -1448,18 +1468,18 @@ theorem check_iota_rule_facts
   have ext_pref_pren := inv.ev_maj.heap_extends.trans
     (inv.ev_cren.heap_extends.trans inv.ev_pren.heap_extends)
   have ext_h_pd := ext_h_pref.trans (ext_pref_pren.trans inv.ev_pd.heap_extends)
-  have hchead_exp_ex : Decl.TmExact sc.κ depth Γ_t
+  have hchead_exp_ex : Decl.TmExact (Core.keyOf t) depth Γ_t
       (inv.h_pd ++ [.construct kexprEnum "Const" [inv.cren, ilvls]]) 0
       (Core.posOf lps (.const (g r.ctor) lvls))
       (.ptr (.enum kexprEnum) inv.h_pd.length) := by
     unfold Core.posOf
     simp only [Expr.instantiateLevelParams]
-    rw [← hsc_cren]
+    rw [← hcren_key]
     exact .const (by simp)
       (Bytes.repAddressRef_heapMono₂ addrTy
         (inv.ev_pren.heap_extends.trans (inv.ev_pd.heap_extends.trans ext_pd_c)) ra_cren)
       (hilvls_rep.mono (ext_h_pd.trans ext_pd_c))
-  have hbvd2_rep := Decl.bvars_desc_exact_wide (κ := sc.κ) (d := depth) (Γ := Γ_t)
+  have hbvd2_rep := Decl.bvars_desc_exact_wide (κ := Core.keyOf t) (d := depth) (Γ := Γ_t)
     (by rw [hcnf_val]) (by rw [hcnf_val]; omega) (by omega) inv.ev_bvd2
   rw [hcnf_val, show depth - cnF = rP by omega] at hbvd2_rep
   have hbvd2_fvs :
@@ -1478,8 +1498,9 @@ theorem check_iota_rule_facts
     simp [Core.posOf, Expr.instantiateLevelParams, Expr.fvarTypeD]
   rw [hbvd2_fvs] at hbvd2_rep
   have hcat_rep := Decl.tele_kconcat (fun _ _ _ _ e x => x.mono e) inv.ev_cat
-    (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e)
-      (ext_pd_c.trans inv.ev_bvd2.heap_extends) hpd_rep)
+    (repList_imp (fun _ _ x => tmExact_rekey_stored_to_table x)
+      (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e)
+        (ext_pd_c.trans inv.ev_bvd2.heap_extends) hpd_rep))
     hbvd2_rep
   have hexp_ex := Decl.apply_spine_exact inv.ev_exp
     (hchead_exp_ex.mono (inv.ev_bvd2.heap_extends.trans inv.ev_cat.heap_extends)) hcat_rep
@@ -1495,7 +1516,8 @@ theorem check_iota_rule_facts
   have ext_pref_exp := ext_pref_pren.trans (inv.ev_pd.heap_extends.trans
     (ext_pd_c.trans (inv.ev_bvd2.heap_extends.trans
       (inv.ev_cat.heap_extends.trans inv.ev_exp.heap_extends))))
-  have hmajor_pos_eq := Decl.kexpr_struct_eq_one (hmaj_ex.mono ext_pref_exp) hexp_ex inv.ev_majeq
+  have hmajor_pos_eq := Decl.kexpr_struct_eq_one
+    (tmExact_rekey_stored_to_table (hmaj_ex.mono ext_pref_exp)) hexp_ex inv.ev_majeq
   rw [hmaj_last] at hmajor_pos_eq
   have hmajor_eq :
       lhsS.getAppArgs.getLastD (.bvar 0) =
@@ -1549,7 +1571,8 @@ theorem check_iota_rule_facts
     Decl.scoped_core_defeq (c := sc) (hrc.mono (ext_h_derhs.trans e_tr))
       (hctx_rep.mono (ext_open_derhs.trans e_tr)) hsc_t hef hlf (hgoodOf inv.sub_detr) inv.ev_detr
       htr_tm (halpha_ex.toTm.mono (ext_a2_derhs.trans e_tr))
-  have hlvls_len : lvls.length = cvj.levelParams.length := by
+  have hgc_info : ∃ ci_gc, env.find? (g r.ctor) = some ci_gc ∧
+      lvls.length = ci_gc.toConstantVal.levelParams.length := by
     have hmem_maj : Core.posOf lps (lhsS.getAppArgs.getLastD (.bvar 0)) ∈ largs_pos := by
       rw [← hmaj_last]
       have hmi_lt_largs : mI < lhsS.getAppArgs.length := by omega
@@ -1566,9 +1589,11 @@ theorem check_iota_rule_facts
     simp only [Expr.instantiateLevelParams] at hc_inf
     cases hc_inf with
     | const hfc _ hlen_us =>
-      rw [hci_gc] at hfc; injection hfc with hci_eq; subst hci_eq
       rw [List.length_map] at hlen_us
-      exact hlen_us.trans hci_gc_lvls
+      exact ⟨_, hfc, hlen_us⟩
+  obtain ⟨ci_gc, hci_gc, hlvls_gc⟩ := hgc_info
+  obtain ⟨cvj, hruleCtor, hci_gc_lvls, hcvj_def, hnp_cty, hcty_rep⟩ := hcty_of_find ci_gc hci_gc
+  have hlvls_len : lvls.length = cvj.levelParams.length := hlvls_gc.trans hci_gc_lvls
   -- 7. Constructor telescope (`cty_l`, `ctorTeleOk`, `crest`, `cres`, index `defeq_list_ok`)
   have ext_h_majeq := ext_h_pref.trans (ext_pref_exp.trans inv.ev_majeq.heap_extends)
   let cty_inst : KExpr := cvj.type.instantiateLevelParams cvj.levelParams lvls

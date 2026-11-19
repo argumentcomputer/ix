@@ -374,7 +374,8 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
     have e := congrArg List.length hrmap
     simpa only [List.length_map, List.length_mapIdx, Array.length_toList] using e
   obtain ⟨hv861, -⟩ := Decl.addrList_length_spec
-    (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) evNoRole.heap_extends hrA) ev874
+    (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy)
+      (evNoRole.heap_extends.trans evNoTypeRole.heap_extends) hrA) ev874
   subst hv861
   obtain ⟨nR, recMs, bR, hnR, hlenR, hrM, hs8, -⟩ := Decl.get_addrs_spec
     (hs7.mono (ev852.heap_extends.trans x874)) ev896
