@@ -2167,7 +2167,8 @@ private theorem check_advice_record_spec {calls cs : List (Call F)} {E₀ : Ixon
         intro hnp c hc'
         have e : c = ca := Option.some.inj (hc'.symm.trans hrec_a)
         subst e; exact hnp
-      have ⟨infoVal, _, _, _, _, hmk, hinfo_rep, -, -, -, -⟩ := hrep_a
+      have hrep_a' := hrep_a
+      obtain ⟨infoVal, _, _, _, _, hmk, hinfo_rep, -, -, -, -⟩ := hrep_a'
       injection hmk with _ _ hargs
       simp only [List.cons.injEq] at hargs
       have hinfo_eq := hargs.1
@@ -2489,7 +2490,7 @@ theorem get_ci_of_rec_raw_uncond {calls cs : List (Call F)} {E₀ : Ixon.Env}
         (L1.core_to_repIxonAddressRef hab).mono (ext1.trans ext2a)
       have hrecs : RepList Deserialize.addressListEnum L1.RepIxonAddressRef m941 [Core.ixAddr ab]
           (.ptr (.enum Names.«Lists::Node<&[Field; 32]>») m965.length) := by
-        rw [hm951, Deserialize.addressListEnum_eq]
+        rw [hm951, L1.addressListEnum_eq]
         exact Lib.rep_store_cons L1.repIxonAddressRef_heapMono₂ ha965 hnil965
       obtain ⟨ext3, htbl⟩ :=
         L1.binder_table_spec (hbd.mono Deserialize.repBinderBlock_heapMono₂ ext2) hbd32 ev1056
@@ -2793,7 +2794,7 @@ theorem rec_family_block_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
             ca.info = .muts rs ∧ rs[idx.toNat]? = some (.recr rc) ∧
             motiveCarrierWithRecur ca (L1.blockRecurAddrs a rs.toList) rc n = some t0 ∧
             (UsedRef E₀ a t0 ∨
-              ∃ recIdx, (L1.blockRecurAddrs a rs.toList)[recIdx.toNat]? = some t0))) := by
+              ∃ recIdx : UInt64, (L1.blockRecurAddrs a rs.toList)[recIdx.toNat]? = some t0))) := by
   obtain ⟨ab, hab, rfl⟩ := hx
   match Obs.«KernelModeled::rec_family_block».obs ev with
   | .run (m2 := m2) (m186 := m186) (w33 := w33) (x_ty := x_ty) (x_np := x_np)
@@ -2820,7 +2821,7 @@ theorem rec_family_block_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
         ∃ (n : Nat) (t0_b : Bytes.Address),
           motiveCarrierWithRecur cHost recurAddrs rc n = some (Core.ixAddr t0_b) ∧
           (Binding.FamilyOf.motiveCarrierAt cHost rc 0 n = some (Core.ixAddr t0_b) ∨
-            ∃ rIdx, recurAddrs[rIdx.toNat]? = some (Core.ixAddr t0_b)) ∧
+            ∃ rIdx : UInt64, recurAddrs[rIdx.toNat]? = some (Core.ixAddr t0_b)) ∧
           Bytes.RepAddressRef Core.addrTy m186 t0_b x_t0 := by
       intro cHost recurAddrs rc blkAddr recIdx blobs hraw
       obtain ⟨-, hnp56, -, -, -, -, tyPtr, rulesPtr, blkPtr, _, -, -, hv_eq, rawTy, -⟩ := hraw
@@ -2939,7 +2940,7 @@ theorem rec_family_block_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
         get_ci_loads_induct_is_iprj hS hcov ht0_rep ev_ci_t0 hsub266 ld_ind
       subst hr hh hib_eq
       have hu_or : UsedRef E₀ a (Core.ixAddr t0_b) ∨
-          ∃ recIdx, (L1.blockRecurAddrs a rs.toList)[recIdx.toNat]? = some (Core.ixAddr t0_b) := by
+          ∃ recIdx : UInt64, (L1.blockRecurAddrs a rs.toList)[recIdx.toNat]? = some (Core.ixAddr t0_b) := by
         rcases hmot_or with hmot | hrec
         · exact Or.inl (motiveCarrierAt_usedRef hca hca_muts hca_k hmot)
         · exact Or.inr hrec
@@ -3136,7 +3137,7 @@ theorem rprj_check_const_rec_other {calls cs₁ cs₂ : List (Call F)} {E₀ : I
         recordOf E₀ ib = some cib ∧ cib.info = .muts ms_ib ∧ ms_ib[j.toNat]? = some (.indc ind) ∧
         recordOf E₀ t0 = some ct0 ∧ ct0.info = .iPrj ⟨j, ib⟩ ∧
         (UsedRef E₀ a t0 ∨
-          ∃ rs, ca.info = .muts rs ∧ ∃ recIdx, (L1.blockRecurAddrs a rs.toList)[recIdx.toNat]? = some t0) ∧
+          ∃ rs, ca.info = .muts rs ∧ ∃ recIdx : UInt64, (L1.blockRecurAddrs a rs.toList)[recIdx.toNat]? = some t0) ∧
         (∃ m_rfb m_rfb' r_rfb cs_rfb, S0.addr m_rfb xx x ∧ S0.addr m_rfb' r_rfb ib ∧
           ObsFn Obs.W "KernelModeled::rec_family_block" [xx] m_rfb r_rfb m_rfb' cs_rfb ∧
           ∀ cl ∈ cs_rfb, cl ∈ cs₂) ∧
@@ -3309,7 +3310,7 @@ theorem rprj_check_const_rec_other {calls cs₁ cs₂ : List (Call F)} {E₀ : I
     have hcx₂_eq : cx₂ = cx := Option.some.inj (hcx₂.symm.trans hcx)
     subst cx₂
     have hu_t0 : UsedRef E₀ a t0 ∨
-        ∃ rs', ca.info = .muts rs' ∧ ∃ recIdx, (L1.blockRecurAddrs a rs'.toList)[recIdx.toNat]? = some t0 := by
+        ∃ rs', ca.info = .muts rs' ∧ ∃ recIdx : UInt64, (L1.blockRecurAddrs a rs'.toList)[recIdx.toNat]? = some t0 := by
       rcases hk_rfb with ⟨_, _, hbad, -⟩ | ⟨_, a', ca', rs', _, _, hrprj', hca', hmuts', -, -, hu⟩
       · rw [hrprj] at hbad; cases hbad
       · have hp := Ixon.ConstantInfo.rPrj.inj (hrprj.symm.trans hrprj')
