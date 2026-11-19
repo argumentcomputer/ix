@@ -536,6 +536,7 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
         (soloSelf_ok (t := t) (a := ixAddr a) (d := d))
         (soloSelf_key (t := t) (a := ixAddr a) (d := d))
         (blobs_of_hashedPairs hS hsub hhp) rval built hpV hlV hdef
+      rw [zero_add] at hloaded
       have hdefnAt : defnAt t E₀ (ixAddr a) = some (some (d.lvls.toNat, val)) := by
         unfold defnAt
         simp only [hcE, hci, hdk, hloaded]
