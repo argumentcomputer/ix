@@ -56,7 +56,7 @@ theorem tmExact_rekey_of_tm {c : Ctx} {d : Nat} {Γ : Nat → KExpr} {h : Heap F
   | sort cell rl => exact .sort cell rl
   | @const k addr ap lsp a ls _ cell ra rls =>
     cases r2 with
-    | @const _ _ _ _ a' _ res2 cell' ra' _ _ =>
+    | @const _ _ _ _ a' _ _ res2 cell' ra' _ _ =>
       have hv := cell_eq cell cell'
       simp only [Value.construct.injEq, List.cons.injEq, and_true, true_and] at hv
       obtain ⟨rfl, rfl⟩ := hv
@@ -159,7 +159,8 @@ theorem hasFvar_renameAll (f : KKey → KKey) :
 private theorem noProjIn_of_renameAll_map {bad : List KKey} {g : KKey → KKey} :
     ∀ e : KExpr, Decl.NoProjIn (bad.map g) (Decl.renameAll g e) = true →
       Decl.NoProjIn bad e = true
-  | .bvar _, _ | .fvar _ _, _ | .sort _, _ | .const _ _, _ | .lit _, _ => rfl
+  | .bvar _, _ | .sort _, _ | .const _ _, _ | .lit _, _ => rfl
+  | .fvar _ ty, h => noProjIn_of_renameAll_map ty h
   | .app a b, h => by
     simp only [Decl.renameAll, Decl.NoProjIn, Bool.and_eq_true] at h ⊢
     exact ⟨noProjIn_of_renameAll_map a h.1, noProjIn_of_renameAll_map b h.2⟩
@@ -263,11 +264,12 @@ theorem check_advice_records_checked {calls : List (Call F)} {bAddr : _root_.Add
   | a :: rest, seenSet, x_advice, x_seen, r, h, h', cs, hrc, hadv_rep, hseen, ev, hsub => by
     match Obs.«KernelModeled::check_advice_records».obs ev with
     | .Nil (ld12 := ld12) .. => cases Lib.rep_nil_of_load hadv_rep ld12
-    | .Cons (x_a := x_a) (m_aiikskik := m55) (m90 := m90) (cs100 := cs100) (cs138 := cs138)
-        (v143 := v143) (m160 := m160) (ld12 := ld12) (ev_mfihupbr := ev65)
+    | .Cons (x_a := x_a) (x_rest := x_rest) (m_cnmrgvie := m_a1) (cs_jxqtckhn := csA1)
+        (m_aiikskik := m55) (cs_eiizeeve := csA2) (m90 := m90) (cs100 := cs100) (cs138 := cs138)
+        (v143 := v143) (m160 := m160) (cs168 := csIns) (ld12 := ld12) (ev_mfihupbr := ev65)
         (heq_sefkntmx := heq88) (ev_xzbngsxs := ev65w) (heq_xyxoxrbw := heq88w)
         (ev102 := ev102) (ev170 := ev170) (ev140 := ev140) (hc201 := hc201) .. =>
-      subst heq88 heq88w hc201
+      subst heq88 heq88w
       obtain ⟨a', rest', heq_cons, ha_rep, hrest_rep⟩ := Lib.rep_cons_of_load hadv_rep ld12
       injection heq_cons with ha_eq hrest_eq
       subst ha_eq hrest_eq
@@ -283,20 +285,21 @@ theorem check_advice_records_checked {calls : List (Call F)} {bAddr : _root_.Add
         check_advice_records_checked rest (fun b => seenSet b ∨ b = a)
           (hrc.mono ext_h_160)
           (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_160 hrest_rep)
-          hseen1 ev140 (fun cl hcl => hsub cl (by simp [hcl]))
-      have ha_chk : AdvChecked calls bAddr t lim _ (a :: rest) a :=
+          hseen1 ev140 (fun cl hcl => hsub cl (by rw [hc201]; simp [hcl]))
+      have ha_chk : AdvChecked calls bAddr t lim cs (a :: rest) a :=
         ⟨List.mem_cons_self,
-         ⟨rc, x_a, x_seen, wset, m55, by simp,
+         ⟨rc, x_a, x_seen, wset, m55, by rw [hc201]; simp,
           ⟨a, Bytes.repAddressRef_heapMono₂ addrTy ext_55 ha_rep, rfl⟩⟩,
          m55, m90, rc, x_a, x_seen, wset, _, cs100,
          hrc.mono ext_55, Bytes.repAddressRef_heapMono₂ addrTy ext_55 ha_rep, ev102,
-         fun cl hcl => hsub cl (by simp [hcl])⟩
+         fun cl hcl => hsub cl (by rw [hc201]; simp [hcl])⟩
       refine ⟨Decl.addrSet_mono_imp (Heap.Extends.refl h') ?_ hout, ext_h_160.trans ext_rest⟩
       intro b hb
       rcases hb with (hs | rfl) | hrm
       · exact Or.inl hs
       · exact Or.inr ha_chk
-      · exact Or.inr (hrm.mono (fun cl hcl => by simp [hcl]) (fun x hx => List.mem_cons_of_mem _ hx))
+      · exact Or.inr (hrm.mono (fun cl hcl => by rw [hc201]; simp [hcl])
+          (fun x hx => List.mem_cons_of_mem _ hx))
 
 /-! ## `check_advice_record` and `check_const` for advice `Defn`/`Thm` records -/
 
@@ -373,9 +376,10 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
       Claim.CheckedLimAt calls bAddr t (ixAddr a) lim := by
   obtain ⟨-, -, h0, h0', rc0, xa0, seen0, wset0, r0, cs1, hrc0, ha0, ev_car, hsub1⟩ := hAdv
   match Obs.«KernelModeled::check_advice_record».obs ev_car with
-  | .run (ev_yqjbwijz := evOrd) (ev14 := evLd) (sg952 := sg) (hc1011 := hc) .. =>
-    have hsubLd : ∀ cl ∈ _, cl ∈ calls := fun cl hcl => hsub1 cl (by rw [hc]; simp [hcl])
-    have hsubSg : ∀ cl ∈ _, cl ∈ calls := fun cl hcl => hsub1 cl (by rw [hc]; simp [hcl])
+  | .run (cs12 := csLd) (cs947 := csSg) (ev_yqjbwijz := evOrd) (ev14 := evLd) (sg952 := sg)
+      (hc1011 := hc) .. =>
+    have hsubLd : ∀ cl ∈ csLd, cl ∈ calls := fun cl hcl => hsub1 cl (by rw [hc]; simp [hcl])
+    have hsubSg : ∀ cl ∈ csSg, cl ∈ calls := fun cl hcl => hsub1 cl (by rw [hc]; simp [hcl])
     obtain ⟨extLd, bytes, c, hsz, hh, hb, hde, hex, hcp, -⟩ :=
       Claim.load_verified_constant_de
         ⟨a, Bytes.repAddressRef_heapMono₂ addrTy evOrd.heap_extends ha0, rfl⟩ evLd
@@ -573,7 +577,7 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
     hrc_pre, hrc_m, ha_pre, ha_m, ev_ld, hcl_ld, hsub_ld, hld₁, ev_chk, hcl_chk, hsub_chk⟩ := hchk
   obtain ⟨a', ha'_ref, hix'⟩ := ha_pre
   have ha_eq : a' = a := Decl.ixAddr_injective hix'
-  subst ha_eq
+  subst a'
   obtain ⟨raw1, c1, hh1, hba1, hex1, hres1⟩ := L1.get_ci_trace_spec ha'_ref ev_ld
   have hc1 : c = c1 := (hS.record_eq hrecAt (Core.hashed_mono hsub_ld hh1) hba1 hex1).symm
   subst hc1
@@ -798,18 +802,21 @@ theorem advice_stored_defn_facts {L : Ix.Kernel.Env .anon → NativeFam .anon �
     hne_a (CoreGood.ofRaw (hgood.sub hsub_ci) (fun _ _ => trivial)) ha
   rw [hκa] at hfind2
   obtain ⟨v2, hld2, hci2⟩ := hptr2
-  rw [hld] at hld2; injection hld2 with hv2; subst hv2
+  rw [hld] at hld2; injection hld2 with hv2
   cases hci2 with
   | @defn _ _ _ _ _ cvm mval hint hval2 _ =>
+    injection hv2 with _ _ hargs2
+    simp only [List.cons.injEq, and_true] at hargs2
+    obtain ⟨rfl, rfl, -, -, -⟩ := hargs2
     obtain ⟨hnl2, hlt2, hperm2, htm2⟩ := hval2
     have hlen_eq : cvm.levelParams.length = nlvls := by
       have hfeq : (cvm.levelParams.length : F) = (nlvls : F) :=
         Value.field.inj (hnl2.symm.trans W.nl_eq)
       have hv1 : ZMod.val (cvm.levelParams.length : F) = cvm.levelParams.length :=
         SubstAux.val_natCast (Nat.lt_trans hlt2 (by decide))
-      have hv2 : ZMod.val (nlvls : F) = nlvls :=
+      have hv2' : ZMod.val (nlvls : F) = nlvls :=
         SubstAux.val_natCast (Nat.lt_trans W.nlvls_lt (by decide))
-      rw [← hv1, hfeq, hv2]
+      rw [← hv1, hfeq, hv2']
     have hperm_n : cvm.levelParams.Perm (List.range nlvls) := hlen_eq ▸ hperm2
     have htm2_ex : Decl.TmCExact sc.κ h₂ ty' mty := tmCExact_rekey_of_tmC W.tm_ci htm2
     have hlvEq : ExprLvEq ty' (posOf cvm.levelParams cvm.type) :=
@@ -820,11 +827,12 @@ theorem advice_stored_defn_facts {L : Ix.Kernel.Env .anon → NativeFam .anon �
     rw [hκa, hfind2] at hfind1
     obtain rfl := Option.some.inj hfind1
     obtain ⟨v1', hld1', hci1⟩ := hptr1
-    rw [W.hld₁] at hld1'; injection hld1' with hv1'; subst hv1'
+    rw [W.hld₁] at hld1'; injection hld1' with hv1'
     cases hci1 with
     | defn hval1 _ =>
       rcases W.hv₁ with ⟨_, _, _, hv1eq⟩ | ⟨_, hv1eq⟩
-      · injection hv1eq with _ _ hargs1
+      · rw [hv1eq] at hv1'
+        injection hv1' with _ _ hargs1
         simp only [List.cons.injEq] at hargs1
         rw [← hargs1.2.1] at hval1
         have htm1_ex : Decl.TmCExact sc.κ W.m_chk ty' W.x_ty₁ :=
@@ -839,11 +847,9 @@ theorem advice_stored_defn_facts {L : Ix.Kernel.Env .anon → NativeFam .anon �
           (CoreGood.ofRaw (hgood.sub W.sub_es) (fun _ _ => trivial)) W.ev_es
           ((htm1_ex 0 (fun _ => .sort .zero)).mono W.ext_chk_es).toTm
         exact ⟨cvm, mval, hint, hfind2, hperm_n, hlvEq, htm2_ex, stype, u, hinf, hred⟩
-      · injection hv1eq with _ htag _; exact absurd htag (by decide)
-    | _ =>
-      rcases W.hv₁ with ⟨_, _, _, hv1eq⟩ | ⟨_, hv1eq⟩ <;>
-        (injection hv1eq with _ htag _; exact absurd htag (by decide))
-  | _ => simp [kciEnum] at *
+      · rw [hv1eq] at hv1'
+        injection hv1' with _ htag _; exact absurd htag (by decide)
+  | _ => simp [kciEnum] at hv2
 
 /-- **Stored iota-theorem facts at any `FamilyStepEnv`**: combines `AdviceTypeWitness` with
 `PrefixInv.loads.getCI` to produce the stored `.thmInfo`, level parameter permutation, level
@@ -881,23 +887,26 @@ theorem advice_stored_thm_facts {L : Ix.Kernel.Env .anon → NativeFam .anon →
     hne_a (CoreGood.ofRaw (hgood.sub hsub_ci) (fun _ _ => trivial)) ha
   rw [hκa] at hfind2
   obtain ⟨v2, hld2, hci2⟩ := hptr2
-  rw [hld] at hld2; injection hld2 with hv2; subst hv2
+  rw [hld] at hld2; injection hld2 with hv2
   cases hci2 with
   | @thm _ _ _ cvt vt hval2 _ =>
+    injection hv2 with _ _ hargs2
+    simp only [List.cons.injEq, and_true] at hargs2
+    obtain ⟨rfl, rfl, -⟩ := hargs2
     obtain ⟨hnl2, hlt2, hperm2, htm2⟩ := hval2
     have hlen_eq : cvt.levelParams.length = nlvls := by
       have hfeq : (cvt.levelParams.length : F) = (nlvls : F) :=
         Value.field.inj (hnl2.symm.trans W.nl_eq)
       have hv1 : ZMod.val (cvt.levelParams.length : F) = cvt.levelParams.length :=
         SubstAux.val_natCast (Nat.lt_trans hlt2 (by decide))
-      have hv2 : ZMod.val (nlvls : F) = nlvls :=
+      have hv2' : ZMod.val (nlvls : F) = nlvls :=
         SubstAux.val_natCast (Nat.lt_trans W.nlvls_lt (by decide))
-      rw [← hv1, hfeq, hv2]
+      rw [← hv1, hfeq, hv2']
     have hperm_n : cvt.levelParams.Perm (List.range nlvls) := hlen_eq ▸ hperm2
     have htm2_ex : Decl.TmCExact sc.κ h₂ ty' mty := tmCExact_rekey_of_tmC W.tm_ci htm2
     have hlvEq : ExprLvEq ty' (posOf cvt.levelParams cvt.type) :=
       Tm.det ((htm2_ex 0 (fun _ => .sort .zero)).toTm) (htm2 0 (fun _ => .sort .zero))
     exact ⟨cvt, vt, hfind2, hperm_n, hlvEq, htm2_ex⟩
-  | _ => simp [kciEnum] at *
+  | _ => simp [kciEnum] at hv2
 
 end IxVM.Refinement.Typing.FamilyAlias

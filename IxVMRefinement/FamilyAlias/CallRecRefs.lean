@@ -65,9 +65,9 @@ private theorem assert_used_not_block_seg_spec {calls cs : List (Call F)} {E₀ 
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     Heap.Extends h h' ∧ (i ∈ idxs → ∃ c, recordOf E₀ a = some c ∧ ¬ IsBlock c) := by
   match ev with
-  | .n1 (ev_zomhduxa := evHas) (ev_rewyseeq := evNb) (hc_hifgrvaq := hcs) .. =>
+  | .n1 (cs_rexuxvwa := csNb) (ev_zomhduxa := evHas) (ev_rewyseeq := evNb) (hc_hifgrvaq := hcs) .. =>
     obtain ⟨rfl, _⟩ := Claim.g_list_has_spec idxs hi hidx evHas
-    have hnbSub : ∀ cl ∈ _, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
+    have hnbSub : ∀ cl ∈ csNb, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     obtain ⟨ext, hstore⟩ := assert_not_block_ref_store hS hH ha evNb hnbSub
     exact ⟨ext, fun _ => hstore⟩
   | .other (ev_zomhduxa := evHas) (hne_arfngzyc := hne) (he_xtnzeqqi := hh) .. =>
@@ -94,19 +94,20 @@ theorem assert_used_not_block_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     intro i idxs rp used r h h' cs hb hr hi ev hsub
     match Obs.«KernelModeled::assert_used_not_block».obs ev with
     | .Nil (ld_bolbylmd := ld) .. => cases Lib.rep_nil_of_load hr ld
-    | .Cons (ld_bolbylmd := ld) (sg_dugcmplc := seg) (op_urfjlksd := op)
-        (ev_tuyouizb := evRest) (hc_gtnunfxa := hcs) .. =>
+    | .Cons (cs_juuuvegi := csSeg) (cs_uirsovbz := csTail) (ld_bolbylmd := ld)
+        (sg_dugcmplc := seg) (op_urfjlksd := op) (ev_tuyouizb := evRest)
+        (hc_gtnunfxa := hcs) .. =>
       obtain ⟨_, _, he, ha, hrest⟩ := Lib.rep_cons_of_load hr ld
       injection he with he1 he2
       subst he1 he2
-      have hsegSub : ∀ cl ∈ _, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
+      have hsegSub : ∀ cl ∈ csSeg, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       obtain ⟨ext, hhead⟩ := assert_used_not_block_seg_spec hS hH ha hi (by simp at hb; omega)
         seg hsegSub
       simp only [evalBinOp, Except.ok.injEq] at op
       subst op
       have hinc : (i : F) + 1 = ((i + 1 : Nat) : F) := by push_cast; rfl
       rw [hinc] at evRest
-      have htailSub : ∀ cl ∈ _, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
+      have htailSub : ∀ cl ∈ csTail, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       have ht := ih (i + 1) (by simp at hb ⊢; omega)
         (repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ ext hrest)
         (repList_heapMono₂ _ Claim.repBoundedIdx_heapMono₂ ext hi) evRest htailSub
@@ -155,7 +156,7 @@ theorem family_recRefs {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Kernel.
     obtain ⟨_, _, rp, _, _, heq, _, _, hrf, _, _⟩ := hcp
     simp only [Value.construct.injEq, List.cons.injEq, and_true, true_and] at heq
     rcases heq with ⟨_, _, heqRefs, _, _⟩
-    rw [heqRefs] at hrf
+    rw [← heqRefs] at hrf
     exact repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ (C.extToIdxs.trans extIdx) hrf
   obtain ⟨I⟩ := assertInnerRefsSafe_chain C.evInner.obs
   have hsafe := Claim.assert_safe_used_refs_spec hS crb.refs.toList 0
@@ -171,7 +172,7 @@ theorem family_recRefs {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Kernel.
   intro x hx
   obtain ⟨c₁, i, hc₁, hi, hget⟩ := hx
   have ec : c₁ = crb := Option.some.inj (hc₁.symm.trans hR.record)
-  subst ec
+  subst c₁
   have hgetL : crb.refs.toList[i]? = some x := by
     rw [Array.getElem?_toList]
     exact hget
@@ -230,7 +231,7 @@ theorem assert_no_role_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {
       have hno : ∀ ro, t.addressOf? ro ≠ some (ixAddr a) := by
         rcases hres with ⟨_, hn⟩ | ⟨ro, hro, _⟩
         · exact hn
-        · exact absurd (Value.field.inj (heq0.symm.trans hro)) (RolesAux.roleNum_add_one_ne_zero ro)
+        · exact absurd (Value.field.inj (hro.symm.trans heq0)) (RolesAux.roleNum_add_one_ne_zero ro)
       have hchk : t.check = .ok () := by
         obtain ⟨_, ⟨hwf, -⟩, -⟩ := hrc.cases
         exact RoleClosure.check_ok_of_wf hwf
