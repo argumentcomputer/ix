@@ -1235,7 +1235,7 @@ theorem directContOwn_toContainerRecIn {calls : List (Call F)} {bAddr : _root_.A
   obtain ⟨h, h', rc, xb, xrb, r, _, _, _, _, g, _, _⟩ := hdc
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, cs_ws, _, _, _,
     _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-    sub_ws, _, _, _, _, hcont⟩ := g
+    sub_ws, _, _, _, _, _, hcont⟩ := g
   obtain ⟨rc₁, xa₁, ib₁, h₁, hmem₁, hxa₁⟩ := directContWitness_toContainerRecIn (hcont x rfl)
   exact ⟨rc₁, xa₁, ib₁, h₁, sub_ws _ hmem₁, hxa₁⟩
 
