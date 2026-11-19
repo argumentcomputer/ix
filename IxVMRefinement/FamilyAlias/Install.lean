@@ -180,7 +180,6 @@ theorem installAliasPos {V : Type u} [Ix.Kernel.SetTheory V] {μ : CheckMode} {E
       rw [denoteMeta, hfind_t]
       dsimp only
       rw [ite_eq_left hlen_p, show c₀.name = auxKey n d from rfl, acvalWith_ne hne_tgt]
-      rfl
     · exact fun φ => natHeads_cons_offNat mpE
         (ne_of_notReserved hnres reserved_natName)
         (ne_of_notReserved hnres reserved_natZeroName)
