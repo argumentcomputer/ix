@@ -1141,7 +1141,7 @@ def check_family := aiur_fn⟦
               let (ctor_models, s7) = get_addrs(s6, Lists::length(ctor_addrs));
               let rec_addrs = family_recs(rec_block);
               assert_no_role(rc, rec_addrs);
-              assert_no_role(rc, type_addrs);
+              assert_no_type_role(rc, type_addrs);
               let n_recs = Lists::length(rec_addrs);
               let (rec_models, s8) = get_addrs(s7, n_recs);
               let src = Lists::concat(type_addrs, Lists::concat(ctor_addrs, rec_addrs));
@@ -2235,6 +2235,20 @@ def occ_any_mentions_block := aiur_fn⟦
             1 => {  1 } ,
             _ => {  occ_any_mentions_block(rest, block_addrs) } ,
           } } ,
+      }
+    }
+⟧
+
+  -- No type address of the modeled block is bound to a role.
+
+def assert_no_type_role := aiur_fn⟦
+  fn assert_no_type_role(rc: KernelRoles::RoleCtx, xs: Lists::List<Bytes::AddressRef>) -> () {
+      match (*(xs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(x, rest) => {
+          assert_eq!(KernelRoles::role_index_of(rc, x), 0,
+            "a modeled inductive is bound to a role");
+          assert_no_type_role(rc, rest) } ,
       }
     }
 ⟧
