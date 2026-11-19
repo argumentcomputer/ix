@@ -1367,48 +1367,35 @@ private theorem check_witnesses_descend_aux (n : Nat) :
                 hne', hkey'⟩
 
 /-- The enclosing `check_family` data returned for any `check_witness` call inside `calls`. -/
-structure EnclosingFamilyWitness (calls : List (Call F))
+inductive EnclosingFamilyWitness (calls : List (Call F))
     (rc xb xx kind s : SourceValue F) (h_w : Heap F) : Prop where
-  m_rp : Heap F
-  v_rp : SourceValue F
-  m_rp' : Heap F
-  cs_rp : List (Call F)
-  ev_rp : ObsFn Obs.W "KernelModeled::read_payload" [xb] m_rp v_rp m_rp' cs_rp
-  m_ws : Heap F
-  x_s4 : SourceValue F
-  x_nw : SourceValue F
-  x_outside : SourceValue F
-  x_s5 : SourceValue F
-  m_ws' : Heap F
-  cs_ws : List (Call F)
-  ev_ws : ObsFn Obs.W "KernelModeled::check_witnesses" [rc, xb, x_s4, x_nw]
-    m_ws (.tuple [x_outside, x_s5]) m_ws' cs_ws
-  wset : SourceValue F
-  m_asb : Heap F
-  cs_asb : List (Call F)
-  ev_asb : ObsFn Obs.W "KernelClaim::addr_set_build"
-    [x_outside, .construct Obs.Names.«RBTreeMap::RBTreeMap<Field>» "Nil" []]
-    m_ws' wset m_asb cs_asb
-  v_cr : SourceValue F
-  m_cr : Heap F
-  cs_cr : List (Call F)
-  ev_cr : ObsFn Obs.W "KernelModeled::container_recs_refs" [rc, x_outside, wset]
-    m_asb v_cr m_cr cs_cr
-  v_w : SourceValue F
-  m_w : Heap F
-  cs_w : List (Call F)
-  ev_w : ObsFn Obs.W "KernelModeled::check_witness" [rc, xb, xx, kind, s] h_w v_w m_w cs_w
-  ext_rp_ws : Heap.Extends m_rp m_ws
-  ext_ws_w : Heap.Extends m_ws h_w
-  ext_w_ws' : Heap.Extends m_w m_ws'
-  sub_ws : ∀ cl ∈ cs_ws, cl ∈ calls
-  sub_asb : ∀ cl ∈ cs_asb, cl ∈ calls
-  sub_cr : ∀ cl ∈ cs_cr, cl ∈ calls
-  sub_w : ∀ cl ∈ cs_w, cl ∈ cs_ws
-  elems : List (SourceValue F)
-  outsideRep : List.RepList Obs.Names.«Lists::Node<&[Field; 32]>» (fun _ a b => a = b)
-    m_ws' elems x_outside
-  memOutside : xx ∈ elems
+  | mk
+      (m_rp : Heap F) (v_rp : SourceValue F) (m_rp' : Heap F) (cs_rp : List (Call F))
+      (ev_rp : ObsFn Obs.W "KernelModeled::read_payload" [xb] m_rp v_rp m_rp' cs_rp)
+      (m_ws : Heap F) (x_s4 x_nw x_outside x_s5 : SourceValue F) (m_ws' : Heap F)
+      (cs_ws : List (Call F))
+      (ev_ws : ObsFn Obs.W "KernelModeled::check_witnesses" [rc, xb, x_s4, x_nw]
+        m_ws (.tuple [x_outside, x_s5]) m_ws' cs_ws)
+      (wset : SourceValue F) (m_asb : Heap F) (cs_asb : List (Call F))
+      (ev_asb : ObsFn Obs.W "KernelClaim::addr_set_build"
+        [x_outside, .construct Obs.Names.«RBTreeMap::RBTreeMap<Field>» "Nil" []]
+        m_ws' wset m_asb cs_asb)
+      (v_cr : SourceValue F) (m_cr : Heap F) (cs_cr : List (Call F))
+      (ev_cr : ObsFn Obs.W "KernelModeled::container_recs_refs" [rc, x_outside, wset]
+        m_asb v_cr m_cr cs_cr)
+      (v_w : SourceValue F) (m_w : Heap F) (cs_w : List (Call F))
+      (ev_w : ObsFn Obs.W "KernelModeled::check_witness" [rc, xb, xx, kind, s] h_w v_w m_w cs_w)
+      (ext_rp_ws : Heap.Extends m_rp m_ws)
+      (ext_ws_w : Heap.Extends m_ws h_w)
+      (ext_w_ws' : Heap.Extends m_w m_ws')
+      (sub_ws : ∀ cl ∈ cs_ws, cl ∈ calls)
+      (sub_asb : ∀ cl ∈ cs_asb, cl ∈ calls)
+      (sub_cr : ∀ cl ∈ cs_cr, cl ∈ calls)
+      (sub_w : ∀ cl ∈ cs_w, cl ∈ cs_ws)
+      (elems : List (SourceValue F))
+      (outsideRep : List.RepList Obs.Names.«Lists::Node<&[Field; 32]>» (fun _ a b => a = b)
+        m_ws' elems x_outside)
+      (memOutside : xx ∈ elems)
 
 theorem EnclosingFamilyWitness.mono {cs₁ cs₂ : List (Call F)}
     {rc xb xx kind s : SourceValue F} {h_w : Heap F}
@@ -1586,22 +1573,9 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
                       hsub x (List.mem_cons_of_mem _ (List.mem_append_right _
                         (List.mem_cons_of_mem _ (List.mem_append_right _
                           (List.mem_cons_of_mem _ (List.mem_append_left _ hx))))))
-                    exact {
-                      ev_rp := ev126
-                      ev_ws := ev344
-                      ev_asb := ev403
-                      ev_cr := ev435
-                      ev_w := evw
-                      ext_rp_ws := hext_rp_ws
-                      ext_ws_w := hext1
-                      ext_w_ws' := hext2
-                      sub_ws := hsub342
-                      sub_asb := hsub_asb
-                      sub_cr := hsub_cr
-                      sub_w := hsubw
-                      elems := elems
-                      outsideRep := hrepOut
-                      memOutside := hmemOut }
+                    exact .mk _ _ _ _ ev126 _ _ _ _ _ _ _ ev344 _ _ _ ev403 _ _ _ ev435
+                      _ _ _ evw hext_rp_ws hext1 hext2 hsub342 hsub_asb hsub_cr hsubw
+                      elems hrepOut hmemOut
                   · obtain ⟨fn', args', h₁, r₁, h₁', cs', ev', hcl', hlt', hsub', hne', hkey'⟩ := hsc
                     exact (ih (by omega) (hne' _ List.mem_cons_self)
                       (fun k hk => hkey' k hk _ List.mem_cons_self) ev' hcl').mono
