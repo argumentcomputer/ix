@@ -58,12 +58,23 @@ open IxVM.Refinement.Typing.FamilyAlias (FamilyCallAtLim)
 open IxVM.Refinement.Binding.FamilyFlat (FlatEntry loadedAt mutsRoot binderDomAfter peelForalls)
 open Ix.Kernel (ConstantInfo ConstantVal RecRule Level LevelParam Expr)
 open Ix.Kernel.Semantics (ConstantValCheckJ letFree)
-open Ix.CompileCert.Loop (except_bind_ok)
 open Ix.Cert.ReaderUnits (throw_ok)
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
 set_option maxHeartbeats 4000000
+
+private theorem except_bind_ok_ce {ε α β : Type} {m : Except ε α} {f : α → Except ε β} {b : β} :
+    (m >>= f) = .ok b ↔ ∃ a, m = .ok a ∧ f a = .ok b := by
+  cases m with
+  | error e => simp [bind, Except.bind]
+  | ok a => simp [bind, Except.bind]
+
+private theorem heapExt_getElem? {h h' : Heap F} (ext : Heap.Extends h h') {i : Nat}
+    {v : SourceValue F} (hget : h[i]? = some v) : h'[i]? = some v := by
+  obtain ⟨s, rfl⟩ := ext
+  rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hget).1]
+  exact hget
 
 /-! ## Pure algebraic bridges: `posOf`, `canonAnn`, `loadedAt`, `letFree`, `twinPosRulesJ` -/
 
@@ -133,27 +144,48 @@ private theorem convExpr_posOf {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Con
       Ix.Kernel.Reader.convExpr (⟨cx, src, src.univs.map (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps)), self⟩) tbl₁ e = .ok v →
       Ix.Kernel.Reader.convExpr (⟨cx, src, src.univs.map (Ix.Kernel.Reader.convUniv id), self⟩) tbl₂ e =
         .ok (Core.posOf ps v) := by
-  have huniv : ∀ (i : UInt64),
-      Level.subst ps (Core.posLevels ps)
-        ((⟨cx, src, src.univs.map (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps)), self⟩ :
-            Ix.Kernel.Reader.ECx .anon).univAt i) =
-      (⟨cx, src, src.univs.map (Ix.Kernel.Reader.convUniv id), self⟩ :
-            Ix.Kernel.Reader.ECx .anon).univAt i := by
-    intro i
-    simp only [Ix.Kernel.Reader.ECx.univAt]
+  let ecx₁ : Ix.Kernel.Reader.ECx .anon :=
+    ⟨cx, src, src.univs.map (Ix.Kernel.Reader.convUniv (Ix.Kernel.Reader.recParam ps)), self⟩
+  let ecx₂ : Ix.Kernel.Reader.ECx .anon :=
+    ⟨cx, src, src.univs.map (Ix.Kernel.Reader.convUniv id), self⟩
+  have hlevel : ∀ (i : UInt64) (l : KLevel),
+      ecx₁.level i = .ok l → ecx₂.level i = .ok (Level.subst ps (Core.posLevels ps) l) := by
+    intro i l hl
+    unfold Ix.Kernel.Reader.ECx.level at hl ⊢
     by_cases hi : i.toNat < src.univs.size
-    · simp only [Array.getElem?_map, Array.getElem?_eq_getElem hi, Option.map_some, Option.getD_some]
-      exact convUniv_posOf_uncond hperm src.univs[i.toNat]
-    · simp only [Array.getElem?_map, Array.getElem?_eq_none (Nat.le_of_not_lt hi), Option.map_none,
-        Option.getD_none]
-      rfl
+    · simp only [ecx₁, ecx₂, Array.getElem?_map, Array.getElem?_eq_getElem hi, Option.map_some,
+        pure, Except.pure, Except.ok.injEq] at hl ⊢
+      subst hl
+      exact (convUniv_posOf_uncond hperm src.univs[i.toNat]).symm
+    · simp only [ecx₁, ecx₂, Array.getElem?_map, Array.getElem?_eq_none (Nat.le_of_not_lt hi),
+        Option.map_none] at hl
+      exact (throw_ok hl).elim
+  have hlevels : ∀ (us : List UInt64) (ls : List KLevel),
+      us.mapM ecx₁.level = .ok ls →
+      us.mapM ecx₂.level = .ok (ls.map (Level.subst ps (Core.posLevels ps))) := by
+    intro us
+    induction us with
+    | nil =>
+      intro ls h
+      simp only [List.mapM_nil, pure, Except.pure, Except.ok.injEq] at h ⊢
+      subst h; rfl
+    | cons u rest ih =>
+      intro ls h
+      simp only [List.mapM_cons] at h ⊢
+      obtain ⟨l, hl, h⟩ := except_bind_ok_ce.mp h
+      obtain ⟨ls', hls', h⟩ := except_bind_ok_ce.mp h
+      rw [hlevel u l hl, ih ls' hls']
+      simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h ⊢
+      subst h; rfl
   intro e
   induction e with
   | sort i =>
     intro v h
-    simp only [Ix.Kernel.Reader.convExpr, pure, Except.pure, Except.ok.injEq] at h ⊢
-    subst h
-    simp only [Core.posOf, Expr.instantiateLevelParams, huniv i]
+    simp only [Ix.Kernel.Reader.convExpr] at h ⊢
+    obtain ⟨l, hl, h⟩ := except_bind_ok_ce.mp h
+    rw [hlevel i l hl]
+    simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h ⊢
+    subst h; rfl
   | var i =>
     intro v h
     simp only [Ix.Kernel.Reader.convExpr, pure, Except.pure, Except.ok.injEq] at h ⊢
@@ -161,17 +193,14 @@ private theorem convExpr_posOf {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Con
   | ref i us =>
     intro v h
     simp only [Ix.Kernel.Reader.convExpr] at h ⊢
-    obtain ⟨k, hk, hrest⟩ := except_bind_ok.mp h
-    have hk' : (⟨cx, src, src.univs.map (Ix.Kernel.Reader.convUniv id), self⟩ :
-        Ix.Kernel.Reader.ECx .anon).keyAt i = .ok k := hk
-    rw [hk']
-    simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at hrest ⊢
-    subst hrest
-    simp only [Core.posOf, Expr.instantiateLevelParams, List.map_map]
-    congr 1
-    apply List.map_congr_left
-    intro u _
-    exact huniv u
+    obtain ⟨k, hk, h⟩ := except_bind_ok_ce.mp h
+    obtain ⟨ls, hls, h⟩ := except_bind_ok_ce.mp h
+    have hk' : ecx₂.keyAt i = .ok k := hk
+    have hls' : ecx₂.levels us = .ok (ls.map (Level.subst ps (Core.posLevels ps))) :=
+      hlevels us.toList ls hls
+    rw [hk', hls']
+    simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h ⊢
+    subst h; rfl
   | recur i us =>
     intro v h
     cases hs : self i.toNat with
@@ -179,77 +208,76 @@ private theorem convExpr_posOf {cx : Ix.Kernel.Reader.Ctx .anon} {src : Ixon.Con
       simp only [Ix.Kernel.Reader.convExpr, hs] at h
       exact (throw_ok h).elim
     | some m =>
-      cases m with
-      | error er => simp [Ix.Kernel.Reader.convExpr, hs, bind, Except.bind] at h
-      | ok k =>
-        simp only [Ix.Kernel.Reader.convExpr, hs, bind, Except.bind, pure, Except.pure,
-          Except.ok.injEq] at h ⊢
-        subst h
-        simp only [Core.posOf, Expr.instantiateLevelParams, List.map_map]
-        congr 1
-        apply List.map_congr_left
-        intro u _
-        exact huniv u
+      simp only [Ix.Kernel.Reader.convExpr, hs] at h ⊢
+      obtain ⟨k, hk, h⟩ := except_bind_ok_ce.mp h
+      obtain ⟨ls, hls, h⟩ := except_bind_ok_ce.mp h
+      have hls' : ecx₂.levels us = .ok (ls.map (Level.subst ps (Core.posLevels ps))) :=
+        hlevels us.toList ls hls
+      rw [hk, hls']
+      simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h ⊢
+      subst h; rfl
   | prj i field val ih =>
     intro v h
     simp only [Ix.Kernel.Reader.convExpr] at h ⊢
-    obtain ⟨k, hk, h⟩ := except_bind_ok.mp h
-    obtain ⟨x, hx, h⟩ := except_bind_ok.mp h
-    have hk' : (⟨cx, src, src.univs.map (Ix.Kernel.Reader.convUniv id), self⟩ :
-        Ix.Kernel.Reader.ECx .anon).keyAt i = .ok k := hk
+    obtain ⟨k, hk, h⟩ := except_bind_ok_ce.mp h
+    obtain ⟨x, hx, h⟩ := except_bind_ok_ce.mp h
+    have hk' : ecx₂.keyAt i = .ok k := hk
     rw [hk', ih x hx]
     simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h ⊢
     subst h; rfl
   | str i =>
     intro v h
     simp only [Ix.Kernel.Reader.convExpr] at h ⊢
-    obtain ⟨bs, hbs, h⟩ := except_bind_ok.mp h
-    have hbs' : (⟨cx, src, src.univs.map (Ix.Kernel.Reader.convUniv id), self⟩ :
-        Ix.Kernel.Reader.ECx .anon).blobAt i = .ok bs := hbs
+    obtain ⟨bs, hbs, h⟩ := except_bind_ok_ce.mp h
+    have hbs' : ecx₂.blobAt i = .ok bs := hbs
     rw [hbs']
-    simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h ⊢
-    subst h; rfl
+    simp only [bind, Except.bind] at h ⊢
+    cases hutf : String.fromUTF8? bs with
+    | none => rw [hutf] at h; exact (throw_ok h).elim
+    | some s =>
+      rw [hutf] at h ⊢
+      simp only [pure, Except.pure, Except.ok.injEq] at h ⊢
+      subst h; rfl
   | nat i =>
     intro v h
     simp only [Ix.Kernel.Reader.convExpr] at h ⊢
-    obtain ⟨n, hn, h⟩ := except_bind_ok.mp h
-    have hn' : (⟨cx, src, src.univs.map (Ix.Kernel.Reader.convUniv id), self⟩ :
-        Ix.Kernel.Reader.ECx .anon).natAt i = .ok n := hn
+    obtain ⟨n, hn, h⟩ := except_bind_ok_ce.mp h
+    have hn' : ecx₂.natAt i = .ok n := hn
     rw [hn']
     simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h ⊢
     subst h; rfl
   | app f a ihf iha =>
     intro v h
     simp only [Ix.Kernel.Reader.convExpr] at h ⊢
-    obtain ⟨x, hx, h⟩ := except_bind_ok.mp h
-    obtain ⟨y, hy, h⟩ := except_bind_ok.mp h
+    obtain ⟨x, hx, h⟩ := except_bind_ok_ce.mp h
+    obtain ⟨y, hy, h⟩ := except_bind_ok_ce.mp h
     rw [ihf x hx, iha y hy]
     simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h ⊢
     subst h; rfl
   | lam ty b iht ihb =>
     intro v h
     simp only [Ix.Kernel.Reader.convExpr] at h ⊢
-    obtain ⟨x, hx, h⟩ := except_bind_ok.mp h
-    obtain ⟨y, hy, h⟩ := except_bind_ok.mp h
+    obtain ⟨x, hx, h⟩ := except_bind_ok_ce.mp h
+    obtain ⟨y, hy, h⟩ := except_bind_ok_ce.mp h
     rw [iht x hx, ihb y hy]
     simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h ⊢
     subst h
-    simp [Core.posOf, Expr.instantiateLevelParams, default, Level.substPW]
+    simp [Core.posOf, Expr.instantiateLevelParams, Ix.Kernel.BinderMeta.leanNever, Level.substPW]
   | all ty b iht ihb =>
     intro v h
     simp only [Ix.Kernel.Reader.convExpr] at h ⊢
-    obtain ⟨x, hx, h⟩ := except_bind_ok.mp h
-    obtain ⟨y, hy, h⟩ := except_bind_ok.mp h
+    obtain ⟨x, hx, h⟩ := except_bind_ok_ce.mp h
+    obtain ⟨y, hy, h⟩ := except_bind_ok_ce.mp h
     rw [iht x hx, ihb y hy]
     simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h ⊢
     subst h
-    simp [Core.posOf, Expr.instantiateLevelParams, default, Level.substPW]
+    simp [Core.posOf, Expr.instantiateLevelParams, Ix.Kernel.BinderMeta.leanNever, Level.substPW]
   | letE nonDep mode ty val b iht ihv ihb =>
     intro v h
     simp only [Ix.Kernel.Reader.convExpr] at h ⊢
-    obtain ⟨x, hx, h⟩ := except_bind_ok.mp h
-    obtain ⟨y, hy, h⟩ := except_bind_ok.mp h
-    obtain ⟨z, hz, h⟩ := except_bind_ok.mp h
+    obtain ⟨x, hx, h⟩ := except_bind_ok_ce.mp h
+    obtain ⟨y, hy, h⟩ := except_bind_ok_ce.mp h
+    obtain ⟨z, hz, h⟩ := except_bind_ok_ce.mp h
     rw [iht x hx, ihv y hy, ihb z hz]
     simp only [bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h ⊢
     subst h; rfl
@@ -321,10 +349,9 @@ private theorem applyBinderTrace_posOf {ps : List LevelParam}
   | fvar idx ty ih =>
     intro plan rest E' h
     simp only [L1.applyBinderTrace, bind, Option.bind] at h
-    cases h1 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) ty plan with
-    | none => rw [h1] at h; cases h
-    | some p =>
-      rw [h1] at h
+    rcases h1 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) ty plan with _ | ⟨ty1, r1⟩
+    · rw [h1] at h; cases h
+    · rw [h1] at h
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj h)
       simp only [Core.posOf, Expr.instantiateLevelParams, L1.applyBinderTrace, bind, Option.bind]
       rw [ih h1]; rfl
@@ -343,14 +370,12 @@ private theorem applyBinderTrace_posOf {ps : List LevelParam}
   | app f a ihf iha =>
     intro plan rest E' h
     simp only [L1.applyBinderTrace, bind, Option.bind] at h
-    cases h1 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) f plan with
-    | none => rw [h1] at h; cases h
-    | some p1 =>
-      rw [h1] at h
-      cases h2 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) a p1.2 with
-      | none => rw [h2] at h; cases h
-      | some p2 =>
-        rw [h2] at h
+    rcases h1 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) f plan with _ | ⟨f1, r1⟩
+    · rw [h1] at h; cases h
+    · rw [h1] at h
+      rcases h2 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) a r1 with _ | ⟨a1, r2⟩
+      · rw [h2] at h; cases h
+      · rw [h2] at h
         obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj h)
         simp only [Core.posOf, Expr.instantiateLevelParams, L1.applyBinderTrace, bind, Option.bind]
         rw [ihf h1, iha h2]; rfl
@@ -360,14 +385,12 @@ private theorem applyBinderTrace_posOf {ps : List LevelParam}
     | nil => simp [L1.applyBinderTrace] at h
     | cons lv ls =>
       simp only [L1.applyBinderTrace, bind, Option.bind] at h
-      cases h1 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) d ls with
-      | none => rw [h1] at h; cases h
-      | some p1 =>
-        rw [h1] at h
-        cases h2 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) b p1.2 with
-        | none => rw [h2] at h; cases h
-        | some p2 =>
-          rw [h2] at h
+      rcases h1 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) d ls with _ | ⟨d1, r1⟩
+      · rw [h1] at h; cases h
+      · rw [h1] at h
+        rcases h2 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) b r1 with _ | ⟨b1, r2⟩
+        · rw [h2] at h; cases h
+        · rw [h2] at h
           obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj h)
           simp only [Core.posOf, Expr.instantiateLevelParams, L1.applyBinderTrace, bind, Option.bind]
           rw [ihd h1, ihb h2]
@@ -380,14 +403,12 @@ private theorem applyBinderTrace_posOf {ps : List LevelParam}
     | nil => simp [L1.applyBinderTrace] at h
     | cons lv ls =>
       simp only [L1.applyBinderTrace, bind, Option.bind] at h
-      cases h1 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) d ls with
-      | none => rw [h1] at h; cases h
-      | some p1 =>
-        rw [h1] at h
-        cases h2 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) b p1.2 with
-        | none => rw [h2] at h; cases h
-        | some p2 =>
-          rw [h2] at h
+      rcases h1 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) d ls with _ | ⟨d1, r1⟩
+      · rw [h1] at h; cases h
+      · rw [h1] at h
+        rcases h2 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) b r1 with _ | ⟨b1, r2⟩
+        · rw [h2] at h; cases h
+        · rw [h2] at h
           obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj h)
           simp only [Core.posOf, Expr.instantiateLevelParams, L1.applyBinderTrace, bind, Option.bind]
           rw [ihd h1, ihb h2]
@@ -397,30 +418,26 @@ private theorem applyBinderTrace_posOf {ps : List LevelParam}
   | letE t v b l iht ihv ihb =>
     intro plan rest E' h
     simp only [L1.applyBinderTrace, bind, Option.bind] at h
-    cases h1 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) t plan with
-    | none => rw [h1] at h; cases h
-    | some p1 =>
-      rw [h1] at h
-      cases h2 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) v p1.2 with
-      | none => rw [h2] at h; cases h
-      | some p2 =>
-        rw [h2] at h
-        cases h3 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) b p2.2 with
-        | none => rw [h3] at h; cases h
-        | some p3 =>
-          rw [h3] at h
+    rcases h1 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) t plan with _ | ⟨t1, r1⟩
+    · rw [h1] at h; cases h
+    · rw [h1] at h
+      rcases h2 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) v r1 with _ | ⟨v1, r2⟩
+      · rw [h2] at h; cases h
+      · rw [h2] at h
+        rcases h3 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) b r2 with _ | ⟨b1, r3⟩
+        · rw [h3] at h; cases h
+        · rw [h3] at h
           obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj h)
           simp only [Core.posOf, Expr.instantiateLevelParams, L1.applyBinderTrace, bind, Option.bind]
           rw [iht h1, ihv h2, ihb h3]
           simp only [pure, Option.pure, Option.some.injEq, Prod.mk.injEq, and_true]
-          exact (Core.ProjBody.instantiate1Lift_instantiateLevelParams ps (Core.posLevels ps) p2.1 p3.1 0).symm
+          exact (Core.ProjBody.instantiate1Lift_instantiateLevelParams ps (Core.posLevels ps) v1 b1 0).symm
   | proj s i e ih =>
     intro plan rest E' h
     simp only [L1.applyBinderTrace, bind, Option.bind] at h
-    cases h1 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) e plan with
-    | none => rw [h1] at h; cases h
-    | some p =>
-      rw [h1] at h
+    rcases h1 : L1.applyBinderTrace (fun l => Core.bmeta (L1.invPosLevel ps l)) e plan with _ | ⟨e1, r1⟩
+    · rw [h1] at h; cases h
+    · rw [h1] at h
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj h)
       simp only [Core.posOf, Expr.instantiateLevelParams, L1.applyBinderTrace, bind, Option.bind]
       rw [ih h1]; rfl
@@ -473,7 +490,7 @@ private theorem letFree_instantiate1Lift {v : KExpr} (hv : letFree v = true) :
     split
     · exact Decl.letFree_liftLooseBVars d 0 hv
     · split <;> rfl
-  | .fvar _ _, _, _ | .sort _, _, _ | .const _ _, _, _ | .lit _, _, _ => fun _ => rfl
+  | .fvar _ _, _, _ | .sort _, _, _ | .const _ _, _, _ | .lit _, _, _ => rfl
   | .app f a, d, h => by
     simp only [letFree, Bool.and_eq_true] at h
     simp only [Expr.instantiate1Lift, letFree, Bool.and_eq_true]
@@ -505,22 +522,19 @@ theorem letFree_of_applyBinderTrace {md : KLevel → Ix.Kernel.BinderMeta} :
   | fvar _ ty _ =>
     intro plan rest E' h
     simp only [L1.applyBinderTrace, bind, Option.bind] at h
-    cases h1 : L1.applyBinderTrace md ty plan with
-    | none => rw [h1] at h; cases h
-    | some p =>
-      rw [h1] at h
+    rcases h1 : L1.applyBinderTrace md ty plan with _ | ⟨ty1, r1⟩
+    · rw [h1] at h; cases h
+    · rw [h1] at h
       obtain ⟨rfl, -⟩ := Prod.mk.inj (Option.some.inj h); rfl
   | app f a ihf iha =>
     intro plan rest E' h
     simp only [L1.applyBinderTrace, bind, Option.bind] at h
-    cases h1 : L1.applyBinderTrace md f plan with
-    | none => rw [h1] at h; cases h
-    | some p1 =>
-      rw [h1] at h
-      cases h2 : L1.applyBinderTrace md a p1.2 with
-      | none => rw [h2] at h; cases h
-      | some p2 =>
-        rw [h2] at h
+    rcases h1 : L1.applyBinderTrace md f plan with _ | ⟨f1, r1⟩
+    · rw [h1] at h; cases h
+    · rw [h1] at h
+      rcases h2 : L1.applyBinderTrace md a r1 with _ | ⟨a1, r2⟩
+      · rw [h2] at h; cases h
+      · rw [h2] at h
         obtain ⟨rfl, -⟩ := Prod.mk.inj (Option.some.inj h)
         simp only [letFree, Bool.and_eq_true]
         exact ⟨ihf h1, iha h2⟩
@@ -530,14 +544,12 @@ theorem letFree_of_applyBinderTrace {md : KLevel → Ix.Kernel.BinderMeta} :
     | nil => simp [L1.applyBinderTrace] at h
     | cons lv ls =>
       simp only [L1.applyBinderTrace, bind, Option.bind] at h
-      cases h1 : L1.applyBinderTrace md d ls with
-      | none => rw [h1] at h; cases h
-      | some p1 =>
-        rw [h1] at h
-        cases h2 : L1.applyBinderTrace md b p1.2 with
-        | none => rw [h2] at h; cases h
-        | some p2 =>
-          rw [h2] at h
+      rcases h1 : L1.applyBinderTrace md d ls with _ | ⟨d1, r1⟩
+      · rw [h1] at h; cases h
+      · rw [h1] at h
+        rcases h2 : L1.applyBinderTrace md b r1 with _ | ⟨b1, r2⟩
+        · rw [h2] at h; cases h
+        · rw [h2] at h
           obtain ⟨rfl, -⟩ := Prod.mk.inj (Option.some.inj h)
           simp only [letFree, Bool.and_eq_true]
           exact ⟨ihd h1, ihb h2⟩
@@ -547,41 +559,35 @@ theorem letFree_of_applyBinderTrace {md : KLevel → Ix.Kernel.BinderMeta} :
     | nil => simp [L1.applyBinderTrace] at h
     | cons lv ls =>
       simp only [L1.applyBinderTrace, bind, Option.bind] at h
-      cases h1 : L1.applyBinderTrace md d ls with
-      | none => rw [h1] at h; cases h
-      | some p1 =>
-        rw [h1] at h
-        cases h2 : L1.applyBinderTrace md b p1.2 with
-        | none => rw [h2] at h; cases h
-        | some p2 =>
-          rw [h2] at h
+      rcases h1 : L1.applyBinderTrace md d ls with _ | ⟨d1, r1⟩
+      · rw [h1] at h; cases h
+      · rw [h1] at h
+        rcases h2 : L1.applyBinderTrace md b r1 with _ | ⟨b1, r2⟩
+        · rw [h2] at h; cases h
+        · rw [h2] at h
           obtain ⟨rfl, -⟩ := Prod.mk.inj (Option.some.inj h)
           simp only [letFree, Bool.and_eq_true]
           exact ⟨ihd h1, ihb h2⟩
   | letE t v b _ _ ihv ihb =>
     intro plan rest E' h
     simp only [L1.applyBinderTrace, bind, Option.bind] at h
-    cases h1 : L1.applyBinderTrace md t plan with
-    | none => rw [h1] at h; cases h
-    | some p1 =>
-      rw [h1] at h
-      cases h2 : L1.applyBinderTrace md v p1.2 with
-      | none => rw [h2] at h; cases h
-      | some p2 =>
-        rw [h2] at h
-        cases h3 : L1.applyBinderTrace md b p2.2 with
-        | none => rw [h3] at h; cases h
-        | some p3 =>
-          rw [h3] at h
+    rcases h1 : L1.applyBinderTrace md t plan with _ | ⟨t1, r1⟩
+    · rw [h1] at h; cases h
+    · rw [h1] at h
+      rcases h2 : L1.applyBinderTrace md v r1 with _ | ⟨v1, r2⟩
+      · rw [h2] at h; cases h
+      · rw [h2] at h
+        rcases h3 : L1.applyBinderTrace md b r2 with _ | ⟨b1, r3⟩
+        · rw [h3] at h; cases h
+        · rw [h3] at h
           obtain ⟨rfl, -⟩ := Prod.mk.inj (Option.some.inj h)
-          exact letFree_instantiate1Lift (ihv h2) p3.1 0 (ihb h3)
+          exact letFree_instantiate1Lift (ihv h2) b1 0 (ihb h3)
   | proj _ _ e ih =>
     intro plan rest E' h
     simp only [L1.applyBinderTrace, bind, Option.bind] at h
-    cases h1 : L1.applyBinderTrace md e plan with
-    | none => rw [h1] at h; cases h
-    | some p =>
-      rw [h1] at h
+    rcases h1 : L1.applyBinderTrace md e plan with _ | ⟨e1, r1⟩
+    · rw [h1] at h; cases h
+    · rw [h1] at h
       obtain ⟨rfl, -⟩ := Prod.mk.inj (Option.some.inj h)
       exact ih h1
 
@@ -617,51 +623,61 @@ private theorem convExpr_hasFvar_false {ecx : Ix.Kernel.Reader.ECx .anon}
       Ix.Kernel.Reader.convExpr ecx tbl e = .ok v → v.hasFvar = false := by
   intro e
   induction e with
-  | sort _ | var _ =>
+  | sort _ =>
+    intro v h; simp only [Ix.Kernel.Reader.convExpr] at h
+    obtain ⟨_, _, h⟩ := except_bind_ok_ce.mp h
+    simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
+  | var _ =>
     intro v h; simp only [Ix.Kernel.Reader.convExpr, pure, Except.pure, Except.ok.injEq] at h
     subst h; rfl
   | ref _ _ =>
     intro v h; simp only [Ix.Kernel.Reader.convExpr] at h
-    obtain ⟨_, _, h⟩ := except_bind_ok.mp h
+    obtain ⟨_, _, h⟩ := except_bind_ok_ce.mp h
+    obtain ⟨_, _, h⟩ := except_bind_ok_ce.mp h
     simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
   | recur i _ =>
     intro v h
     cases hs : ecx.self i.toNat with
     | none => simp only [Ix.Kernel.Reader.convExpr, hs] at h; exact (throw_ok h).elim
     | some m =>
-      cases m with
-      | error _ => simp [Ix.Kernel.Reader.convExpr, hs, bind, Except.bind] at h
-      | ok _ =>
-        simp only [Ix.Kernel.Reader.convExpr, hs, bind, Except.bind, pure, Except.pure,
-          Except.ok.injEq] at h
-        subst h; rfl
+      simp only [Ix.Kernel.Reader.convExpr, hs] at h
+      obtain ⟨_, _, h⟩ := except_bind_ok_ce.mp h
+      obtain ⟨_, _, h⟩ := except_bind_ok_ce.mp h
+      simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
   | prj _ _ _ ih =>
     intro v h; simp only [Ix.Kernel.Reader.convExpr] at h
-    obtain ⟨_, _, h⟩ := except_bind_ok.mp h
-    obtain ⟨x, hx, h⟩ := except_bind_ok.mp h
+    obtain ⟨_, _, h⟩ := except_bind_ok_ce.mp h
+    obtain ⟨x, hx, h⟩ := except_bind_ok_ce.mp h
     simp only [pure, Except.pure, Except.ok.injEq] at h; subst h
     exact ih x hx
-  | str _ | nat _ =>
+  | str _ =>
     intro v h; simp only [Ix.Kernel.Reader.convExpr] at h
-    obtain ⟨_, _, h⟩ := except_bind_ok.mp h
+    obtain ⟨bs, _, h⟩ := except_bind_ok_ce.mp h
+    cases hu : String.fromUTF8? bs with
+    | none => simp only [hu] at h; exact (throw_ok h).elim
+    | some s =>
+      simp only [hu, pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
+  | nat _ =>
+    intro v h; simp only [Ix.Kernel.Reader.convExpr] at h
+    obtain ⟨_, _, h⟩ := except_bind_ok_ce.mp h
     simp only [pure, Except.pure, Except.ok.injEq] at h; subst h; rfl
   | app _ _ ihf iha =>
     intro v h; simp only [Ix.Kernel.Reader.convExpr] at h
-    obtain ⟨x, hx, h⟩ := except_bind_ok.mp h
-    obtain ⟨y, hy, h⟩ := except_bind_ok.mp h
+    obtain ⟨x, hx, h⟩ := except_bind_ok_ce.mp h
+    obtain ⟨y, hy, h⟩ := except_bind_ok_ce.mp h
     simp only [pure, Except.pure, Except.ok.injEq] at h; subst h
     simp [Expr.hasFvar, ihf x hx, iha y hy]
   | lam _ _ iht ihb | all _ _ iht ihb =>
     intro v h; simp only [Ix.Kernel.Reader.convExpr] at h
-    obtain ⟨x, hx, h⟩ := except_bind_ok.mp h
-    obtain ⟨y, hy, h⟩ := except_bind_ok.mp h
+    obtain ⟨x, hx, h⟩ := except_bind_ok_ce.mp h
+    obtain ⟨y, hy, h⟩ := except_bind_ok_ce.mp h
     simp only [pure, Except.pure, Except.ok.injEq] at h; subst h
     simp [Expr.hasFvar, iht x hx, ihb y hy]
   | letE _ _ _ _ _ iht ihv ihb =>
     intro v h; simp only [Ix.Kernel.Reader.convExpr] at h
-    obtain ⟨x, hx, h⟩ := except_bind_ok.mp h
-    obtain ⟨y, hy, h⟩ := except_bind_ok.mp h
-    obtain ⟨z, hz, h⟩ := except_bind_ok.mp h
+    obtain ⟨x, hx, h⟩ := except_bind_ok_ce.mp h
+    obtain ⟨y, hy, h⟩ := except_bind_ok_ce.mp h
+    obtain ⟨z, hz, h⟩ := except_bind_ok_ce.mp h
     simp only [pure, Except.pure, Except.ok.injEq] at h; subst h
     simp [Expr.hasFvar, iht x hx, ihv y hy, ihb z hz]
   | share i =>
@@ -1279,22 +1295,15 @@ private theorem check_iota_rule_validate_scoped
   obtain ⟨v4_1, vs4_2, m4_1, c4_1, c4_23, rfl, d4_1, a4_2, rfl⟩ := a4.cons_inv
   obtain ⟨v4_2, vs4_3, m4_2, c4_2, c4_3, rfl, d4_2, a4_3, rfl⟩ := a4_2.cons_inv
   obtain ⟨v4_3, vs4_nil, m4_3', c4_3', c4_nil, rfl, d4_3, a4_nil, rfl⟩ := a4_3.cons_inv
-  obtain ⟨rfl, hm4_nil, rfl⟩ := a4_nil.nil_inv
-  obtain ⟨rfl, hm4_1, rfl⟩ := inv_var_find_ce (by rfl) d4_1
-  obtain ⟨rfl, hm4_2, rfl⟩ := d4_2.literal_inv
-  obtain ⟨rfl, hm4_3, rfl⟩ := inv_var_find_ce (by rfl) d4_3
-  have hm3_eq : h = h_plen ∨ Heap.Extends h h_plen := by
-    right
-    rw [hm3_lv, ← hm3_la]
-    exact ev_plen.heap_extends
+  obtain ⟨rfl, rfl, rfl⟩ := a4_nil.nil_inv
+  obtain ⟨rfl, rfl, rfl⟩ := inv_var_find_ce (by rfl) d4_1
+  obtain ⟨rfl, rfl, rfl⟩ := d4_2.literal_inv
+  obtain ⟨rfl, rfl, rfl⟩ := inv_var_find_ce (by rfl) d4_3
   have hext_plen : Heap.Extends h m4_1 := by
-    rw [← hm4_1, ← hm3_r, ← hm3_nil, hm3_lv, ← hm3_la]
+    rw [← hm3_r, ← hm3_nil, hm3_lv, ← hm3_la]
     exact ev_plen.heap_extends
-  have hsc_heaps : m4_1 = m4_3 := by
-    rw [hm4_2, ← hm4_3, ← hm4_nil]
-  refine ⟨m4_3, v_sc, h_sc, cs_sc, ?_, ev_sc, ?_⟩
-  · rw [← hsc_heaps]; exact hext_plen
-  · simp [instanceName_plain_some]
+  refine ⟨m4_1, v_sc, h_sc, cs_sc, hext_plen, ev_sc, ?_⟩
+  simp [instanceName_plain_some]
 
 private theorem check_rules_go_scoped {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {blob : _root_.Address → Option ByteArray} {src : Ixon.Constant}
@@ -1326,14 +1335,14 @@ private theorem check_rules_go_scoped {calls : List (Call F)} {t : Ix.Kernel.Rol
     intro hext ev hsub ru' hmem rhsP hread
     match Obs.«KernelModeled::check_rules_go».obs ev with
     | .Nil (ld12 := ld12) .. =>
-      have := Core.loadValue_enum_cell (hext.getElem? cell)
+      have := Core.loadValue_enum_cell (heapExt_getElem? hext cell)
       rw [this] at ld12
       exact absurd (Value.construct.inj (Except.ok.inj ld12)).2.1 (by decide)
     | .Cons (x_rest := xrest) (x_rhs := xrhs) (m42 := m42) (m117 := m117) (m155 := m155)
         (m77 := m77) (cs290 := cs290) (cs432 := cs432)
         (ld12 := ld12) (ev54 := ev54) (ev129 := ev129) (ev171 := ev171) (ev292 := ev292)
         (ev434 := ev434) (hc579 := hc) .. =>
-      have hld := Core.loadValue_enum_cell (hext.getElem? cell)
+      have hld := Core.loadValue_enum_cell (heapExt_getElem? hext cell)
       rw [hld] at ld12
       injection ld12 with hv
       injection hv with _ _ hargs
@@ -1375,7 +1384,7 @@ theorem hasBVarIn_false_of_noLooseIn_lower {m n : Nat} :
     · exact Or.inl (by omega)
     · have hlow : (Expr.bvar i : KExpr).lowerBVars n lo = .bvar (i - n) := by
         show (if i ≥ lo + n then Expr.bvar (i - n) else Expr.bvar i) = .bvar (i - n)
-        exact if_pos hge
+        exact ite_eq_left hge
       rw [hlow] at h2
       simp only [Decl.noLooseIn, decide_eq_true_eq] at h2
       exact Or.inr (by omega)
@@ -1414,19 +1423,19 @@ private theorem addrIn_mono_ce {h h' : Heap F} (ext : Heap.Extends h h') {p : So
     {a : Bytes.Address} (hin : Core.AddrIn h p a) : Core.AddrIn h' p a := by
   induction hin with
   | const cell ra =>
-    exact .const (ext.getElem? cell) (Bytes.repAddressRef_heapMono₂ Core.addrTy ext ra)
+    exact .const (heapExt_getElem? ext cell) (Bytes.repAddressRef_heapMono₂ Core.addrTy ext ra)
   | projHead cell ra =>
-    exact .projHead (ext.getElem? cell) (Bytes.repAddressRef_heapMono₂ Core.addrTy ext ra)
-  | projArg cell _ ih => exact .projArg (ext.getElem? cell) ih
-  | appFn cell _ ih => exact .appFn (ext.getElem? cell) ih
-  | appArg cell _ ih => exact .appArg (ext.getElem? cell) ih
-  | lamTy cell _ ih => exact .lamTy (ext.getElem? cell) ih
-  | lamBody cell _ ih => exact .lamBody (ext.getElem? cell) ih
-  | forallTy cell _ ih => exact .forallTy (ext.getElem? cell) ih
-  | forallBody cell _ ih => exact .forallBody (ext.getElem? cell) ih
-  | letTy cell _ ih => exact .letTy (ext.getElem? cell) ih
-  | letVal cell _ ih => exact .letVal (ext.getElem? cell) ih
-  | letBody cell _ ih => exact .letBody (ext.getElem? cell) ih
+    exact .projHead (heapExt_getElem? ext cell) (Bytes.repAddressRef_heapMono₂ Core.addrTy ext ra)
+  | projArg cell _ ih => exact .projArg (heapExt_getElem? ext cell) ih
+  | appFn cell _ ih => exact .appFn (heapExt_getElem? ext cell) ih
+  | appArg cell _ ih => exact .appArg (heapExt_getElem? ext cell) ih
+  | lamTy cell _ ih => exact .lamTy (heapExt_getElem? ext cell) ih
+  | lamBody cell _ ih => exact .lamBody (heapExt_getElem? ext cell) ih
+  | forallTy cell _ ih => exact .forallTy (heapExt_getElem? ext cell) ih
+  | forallBody cell _ ih => exact .forallBody (heapExt_getElem? ext cell) ih
+  | letTy cell _ ih => exact .letTy (heapExt_getElem? ext cell) ih
+  | letVal cell _ ih => exact .letVal (heapExt_getElem? ext cell) ih
+  | letBody cell _ ih => exact .letBody (heapExt_getElem? ext cell) ih
 
 private theorem zero_ne_one_ce : (.field (0 : F) : SourceValue F) ≠ .field 1 := by
   intro h
@@ -1792,15 +1801,15 @@ private theorem rule_list_length_eq {src : Ixon.Constant} {recurAddrs : List _ro
     intro hext ev
     rcases Obs.«Lists::length».obs ev with ⟨ld, rfl, -, -⟩ | ⟨_, _, _, _, _, ld, -, -⟩
     · simp
-    · rw [Core.loadValue_enum_cell (hext.getElem? cell)] at ld
+    · rw [Core.loadValue_enum_cell (heapExt_getElem? hext cell)] at ld
       exact absurd (Value.construct.inj (Except.ok.inj ld)).2.1 (by decide)
   | cons cell _ _ _ _ _ ih =>
     intro hext ev
     rcases Obs.«Lists::length».obs ev with ⟨ld, -, -, -⟩ |
       ⟨w, rest, x, m, cs', ld, ev', rfl, op, -⟩
-    · rw [Core.loadValue_enum_cell (hext.getElem? cell)] at ld
+    · rw [Core.loadValue_enum_cell (heapExt_getElem? hext cell)] at ld
       exact absurd (Value.construct.inj (Except.ok.inj ld)).2.1 (by decide)
-    · rw [Core.loadValue_enum_cell (hext.getElem? cell)] at ld
+    · rw [Core.loadValue_enum_cell (heapExt_getElem? hext cell)] at ld
       injection ld with hv; injection hv with _ _ hargs; injection hargs with _ htl
       injection htl with hrest _
       subst hrest
@@ -2016,7 +2025,10 @@ private theorem rulesTrace_build_reads {t : Ix.Kernel.RoleTable}
     obtain ⟨rhsP, hrhsP⟩ := LoadedReads.exprReader_read_ok (t := t) (blob := blob) ht
       (param := id) (self := self) raw hself hblob
     obtain ⟨hlbbP, hdefP⟩ := hsc ru (List.mem_cons_self ..) rhsP hrhsP
-    obtain ⟨rhs₀, hrhs₀, hpos⟩ := exprReader_posOf hperm hrhsP
+    obtain ⟨rhs₀, hrhs₀⟩ := LoadedReads.exprReader_read_ok (t := t) (blob := blob) ht
+      (param := Ix.Kernel.Reader.recParam ps) (self := self) raw hself hblob
+    have hpos : Core.posOf ps rhs₀ = rhsP :=
+      Except.ok.inj ((exprReader_posOf hperm hrhs₀).symm.trans hrhsP)
     have hlbb₀ : rhs₀.looseBVarsBounded 0 = true := by
       have : (Core.posOf ps rhs₀).looseBVarsBounded 0 = true := by rwa [hpos]
       simpa [Core.posOf, Ix.Kernel.Expr.looseBVarsBounded_instantiateLevelParams] using this
@@ -2027,6 +2039,86 @@ private theorem rulesTrace_build_reads {t : Ix.Kernel.RoleTable}
     refine ⟨RecRule.mk (keyOf t (ctorAddr Bm im j)) ru.fields.toNat 0 .inert rhs₀ false false false :: rest₀,
       .cons ⟨rhs₀, hrhs₀, rfl⟩ hrr,
       .cons ⟨rfl, hrhs₀, hlbb₀, hdef₀, hfv₀⟩ hrf⟩
+
+private theorem rec_major_pins_ni_eq {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
+    {E₀ : Ixon.Env} {E : KExpr} {ty_ptr r : SourceValue F} {rp ni : F}
+    {h h' : Heap F} {cs : List (Call F)}
+    {a_maj : _root_.Address} {c_maj cbM : Ixon.Constant} {p_maj : Ixon.IndProj}
+    {msM : Array Ixon.MutConst} {indM : Ixon.Inductive}
+    (ht : t.check = .ok ())
+    (hRS : LoadedReads.RunStore calls E₀)
+    (hbd : Bounded calls)
+    (hsub : ∀ cl ∈ cs, cl ∈ calls)
+    (hrp : ZMod.val rp < 288230376151711744)
+    (hni : ZMod.val ni < 288230376151711744)
+    (ev : ObsFn Obs.W "KernelModeled::rec_major_pins" [ty_ptr, .field rp, .field ni] h r h' cs)
+    (hE : Decl.TmExact (Core.keyOf t) 0 (fun _ => .sort .zero) h 0 E ty_ptr)
+    (hmaj : ∃ bs dom body m lvls,
+      E.stripPis (ZMod.val rp + ZMod.val ni) = some (bs, .forallE dom body m) ∧
+      dom.getAppFn = .const (Core.keyOf t a_maj) lvls)
+    (hrec_M : recordOf E₀ a_maj = some c_maj)
+    (hp_maj : c_maj.info = .iPrj p_maj)
+    (hrec_cbM : recordOf E₀ p_maj.block = some cbM)
+    (hcbM : cbM.info = .muts msM)
+    (hmsM : msM.toList[p_maj.idx.toNat]? = some (.indc indM)) :
+    ZMod.val ni = indM.indices.toNat := by
+  match Obs.«KernelModeled::rec_major_pins».obs ev with
+  | .run (cs155 := cs155) (op37 := op_mi) (ev14 := ev_peel) (ld51 := ld_fa)
+      (ev89 := ev_sp) (ld122 := ld_c) (ev157 := ev_ci) (ld151 := ld_ind)
+      (heq245 := heq_ini) (hc424 := hc) .. =>
+    rw [Decl.SubstAux.add_ok op_mi] at ev_peel
+    have hmi_val : ZMod.val (rp + ni) = ZMod.val rp + ZMod.val ni :=
+      Decl.SubstAux.val_add (by omega)
+    obtain ⟨bs, rem, hstrip, hrem, rfl⟩ :=
+      Decl.peel_n_foralls_exact (ZMod.val rp + ZMod.val ni) hmi_val ev_peel hE
+    rw [Nat.zero_add] at hrem
+    obtain ⟨dom, body, ℓ_maj, rfl, hdom, _, _⟩ := hrem.forallE_of_load ld_fa
+    obtain ⟨hd, sp, H, As, htup, hH, _, hdom_eq⟩ := Decl.collect_spine_exact ev_sp hdom
+    injection htup with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
+    obtain ⟨a_ind, lvls_pos, rfl, ra_ind, -⟩ := hH.const_of_load ld_c
+    have ha_eq : Core.ixAddr a_ind = a_maj := by
+      obtain ⟨bs', dom', body', m', lvls', hstrip', hfn'⟩ := hmaj
+      have hrem_eq := Prod.mk.inj (Option.some.inj (hstrip.symm.trans hstrip'))
+      injection hrem_eq.2 with hdom_eq' _ _
+      have hfn1 : dom.getAppFn = .const (Core.keyOf t (Core.ixAddr a_ind)) lvls_pos := by
+        rw [hdom_eq, Ix.Kernel.Expr.getAppFn_mkAppN]; rfl
+      rw [hdom_eq', hfn'] at hfn1
+      injection hfn1 with hk_eq _
+      exact Assembly.keyOf_injective ht hk_eq.symm
+    have hsub_ci : ∀ cl ∈ cs155, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
+    obtain ⟨-, c_u, hh_u, haddr_u, hex_u, -, hres_u⟩ :=
+      L1.get_ci_block_trace_spec (hbd.sub hsub_ci) ra_ind ev_ci
+    have hc_u_eq : c_u = c_maj := by
+      rw [ha_eq] at haddr_u
+      exact hRS.record_eq ((hRS.recordOf_eq_recordAt _).symm.trans hrec_M)
+        (Core.hashed_mono hsub_ci hh_u) haddr_u hex_u
+    subst hc_u_eq
+    unfold L1.GetCIBlockTraceResult at hres_u
+    rw [hp_maj] at hres_u
+    obtain ⟨-, _, cb', ms', ind', -, -, -, v', hhB', haB', hexB', hcb', hms', -, -, -,
+      hld', hraw', -⟩ := hres_u
+    have hcb'_eq : cb' = cbM :=
+      hRS.record_eq ((hRS.recordOf_eq_recordAt _).symm.trans hrec_cbM)
+        (Core.hashed_mono hsub_ci hhB') haB' hexB'
+    subst hcb'_eq
+    have hms'_eq : ms' = msM := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hcbM)
+    subst hms'_eq
+    have hind'_eq : ind' = indM :=
+      Ixon.MutConst.indc.inj (Option.some.inj (hms'.symm.trans hmsM))
+    subst hind'_eq
+    obtain ⟨-, -, hni_M, -, -, _, _, _, -, -, hv', -⟩ := hraw'
+    rw [hv'] at hld'
+    rw [hld'] at ld_ind
+    injection ld_ind with hv_eq
+    injection hv_eq with _ _ hf
+    injection hf with _ hf2
+    injection hf2 with _ hf3
+    injection hf3 with _ hf4
+    injection hf4 with hini_eq _
+    rw [← hini_eq] at heq_ini
+    have hval := congrArg ZMod.val (Value.field.inj heq_ini)
+    rw [ZMod.val_natCast_of_lt (by omega)] at hval
+    exact hval.symm
 
 /-! ## Extracted member data from `KernelModeled::check_family` -/
 
@@ -2052,6 +2144,9 @@ structure ExtractedTwinMember (calls : List (Call F)) (t : Ix.Kernel.RoleTable) 
     (List.range ind₀.lvls.toNat)
   hps_len : ps.length = rc.lvls.toNat
   hps_perm : ps.Perm (List.range ps.length)
+  a_maj : _root_.Address
+  p_maj : Ixon.IndProj
+  indM : Ixon.Inductive
   ty₀ : KExpr
   ty' : KExpr
   rules₀ : List (RecRule .anon)
@@ -2063,6 +2158,9 @@ structure ExtractedTwinMember (calls : List (Call F)) (t : Ix.Kernel.RoleTable) 
   hreads : Reads t E₀ (Core.rprjAddr A k) ci₀
   hrecReads : RecReads t (recordOf E₀) (fun x => E₀.blobs.get? x) c (blockSelf t A rs')
     (keyOf t (Core.rprjAddr A k)) rc ci₀
+  hmajKey : majorKey rc (Core.posOf ps ty₀) = some (keyOf t a_maj)
+  hindKey_M : IndKeyAt t (recordOf E₀) (keyOf t a_maj) p_maj.block p_maj.idx.toNat indM
+  hni_eq : rc.indices.toNat = indM.indices.toNat
   hty_read : (exprReader t (fun x => E₀.blobs.get? x) c (Ix.Kernel.Reader.recParam ps)
     (blockSelf t A rs')).read rc.typ = .ok ty₀
   hty_lbb : ty₀.looseBVarsBounded 0 = true
@@ -2476,6 +2574,12 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             rw [← haddr_M]
             exact Claim.recordOf_of_hashed hH (Core.hashed_mono hsub_cr72 hh_M) hszM hex_M
           obtain ⟨hrec_cbM, hcbM⟩ := (hblM.mono hsub_cr72).stored hH
+          have hni_eq : rc.indices.toNat = indM.indices.toNat := by
+            have h1 := rec_major_pins_ni_eq ht hRS hbound hsub_cr12 hrp_lt hni_lt ev_cr_pins
+              (hraw0.toTmExact.mono ext_m67_m838)
+              ⟨bs_r, dom_r, body_r, mmaj_r, lvls_r, hstrip_r, hfn_r⟩
+              hrec_M hp_maj hrec_cbM hcbM hmsM
+            rwa [ZMod.val_natCast_of_lt (by omega)] at h1
           -- `rc.rules.size = indM.ctors.size`
           have hlen_rules := rule_list_length_eq hrules_tr
             (ext_m67_m838.trans (ev_cr_pins.heap_extends.trans ev_cr_ci.heap_extends)) ev_cr_len
@@ -2539,7 +2643,12 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             rcases hoff with rfl | rfl <;> simp [hlvls_eq] at h1 ⊢ <;> omega
           have hps_perm : ps.Perm (List.range ps.length) := hps_props.2
           -- Build `ty₀` under `ps`
-          obtain ⟨ty₀, hty₀_read, hty₀_pos⟩ := exprReader_posOf hps_perm (by rw [hps_len]; exact htyP)
+          obtain ⟨ty₀, hty₀_read⟩ := LoadedReads.exprReader_read_ok (t := t)
+            (blob := fun x => E₀.blobs.get? x) ht (param := Ix.Kernel.Reader.recParam ps)
+            (self := blockSelf t A rs') rty
+            (fun i x hx => ⟨_, _, LoadedReads.blockSelf_key t A rs' i x hx, rfl⟩) hblob_a
+          have hty₀_pos : Core.posOf ps ty₀ = tyP :=
+            Except.ok.inj ((exprReader_posOf hps_perm hty₀_read).symm.trans htyP)
           have hty₀_lbb : ty₀.looseBVarsBounded 0 = true := by
             have : (Core.posOf ps ty₀).looseBVarsBounded 0 = true := by rwa [hty₀_pos]
             simpa [Core.posOf, Ix.Kernel.Expr.looseBVarsBounded_instantiateLevelParams] using this
@@ -2815,6 +2924,9 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             hps_eq := rfl
             hps_len := hps_len
             hps_perm := hps_perm
+            a_maj := Core.ixAddr a_maj
+            p_maj := p_maj
+            indM := indM
             ty₀ := ty₀
             ty' := ty'
             rules₀ := rules₀
@@ -2823,6 +2935,9 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             hci₀ := rfl
             hreads := hreads
             hrecReads := hrecReads
+            hmajKey := by rwa [hty₀_pos]
+            hindKey_M := hindKey_M
+            hni_eq := hni_eq
             hty_read := hty₀_read
             hty_lbb := hty₀_lbb
             hty_def := hty₀_def
