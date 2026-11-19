@@ -1427,6 +1427,67 @@ def whnf_nd_const_head := aiur_fn⟦
     }
 ⟧
 
+  -- Reconstruction-only ζ-transparent variants of `type_sort_never` and `red_proj`, used
+  -- solely by `KernelCheck::recon_whnf_spine` so reconstruction steps through `let` bindings
+  -- without altering `whnf`, `KernelDefEq`, or `eta_iota_fab`.
+
+def type_sort_never_zeta := aiur_fn⟦
+  fn type_sort_never_zeta(ty: KernelTypes::KExpr, n: Field, lvls: Lists::List<KernelTypes::KLevel>) -> Field {
+      match (*(ty)) {
+        KernelTypes::KExprNode::Forall(_, body, _) => {
+          match n {
+            0 => {  0 } ,
+            _ => {  type_sort_never_zeta(body, n - 1, lvls) } ,
+          } } ,
+        KernelTypes::KExprNode::Srt(l) => {
+          match n {
+            0 => {  KernelLevels::level_is_not_zero(KernelLevels::level_inst_params(l, lvls)) } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          type_sort_never_zeta(KernelSubst::expr_inst1(b, v, 0), n, lvls) } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+def red_proj_zeta := aiur_fn⟦
+  fn red_proj_zeta(struct_addr: Bytes::AddressRef, fidx: Field, scrut: KernelTypes::KExpr)
+                   -> (Field, KernelTypes::KExpr) {
+      match KernelCheck::collect_spine_zeta(scrut) {
+        (head, args) => {
+          match (*(head)) {
+            KernelTypes::KExprNode::Const(caddr, clvls) => {
+              match (*(Ingress::get_ci(caddr))) {
+                KernelTypes::KConstantInfo::Ctor(cnl, _, cblock, cind, _, nparams, nfields, _) => {
+                  match (*(Ingress::get_ci(struct_addr))) {
+                    KernelTypes::KConstantInfo::Induct(snl, sty, snp, sni, snc, _, sblock, sidx) => {
+                      let owner = (Bytes::address_eq(cblock, sblock) * Fields::is_zero(cind - sidx)) * Fields::is_zero(snl - cnl);
+                      let shape = (Fields::is_zero(sni) * Fields::is_zero(snc - 1)) * Fields::is_zero(snp - nparams);
+                      let arity = Fields::is_zero(Lists::length(args) - (nparams + nfields))
+                                  * Fields::is_zero(Lists::length(clvls) - cnl);
+                      match ((owner * shape) * arity) * UInt32::less_than_fields(fidx, nfields) {
+                        1 => {
+                          match KernelModeled::block_is_modeled(sblock) {
+                            0 => {
+                              match type_sort_never_zeta(sty, snp, clvls) {
+                                1 => {  (1, Lists::lookup(args, nparams + fidx)) } ,
+                                _ => {  (0, scrut) } ,
+                              } } ,
+                            _ => {  (0, scrut) } ,
+                          } } ,
+                        _ => {  (0, scrut) } ,
+                      } } ,
+                    _ => {  (0, scrut) } ,
+                  } } ,
+                _ => {  (0, scrut) } ,
+              } } ,
+            _ => {  (0, scrut) } ,
+          } } ,
+      }
+    }
+⟧
+
 end
 
 end IxVM

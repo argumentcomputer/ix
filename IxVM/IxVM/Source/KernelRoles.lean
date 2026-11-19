@@ -1063,8 +1063,14 @@ def validate_standard_axiom := aiur_fn⟦
           -- the axiom itself, which is not in force in its own group (the axiom arm refuses it)
           let c = Ingress::load_verified_constant(role_bound_addr(tbl, r));
           match c {
-            Ixon::Constant::Mk(_, _, refs, _, _) => {
+            Ixon::Constant::Mk(_, sharing, refs, _, _) => {
               KernelClaim::assert_safe_record_refs(rc, role_bound_addr(tbl, r), c);
+              match (*(sharing)) {
+                Lists::Node::Nil => {  () } ,
+                Lists::Node::Cons(_, _) => {
+                  assert_eq!(0, 1, "a bound standard axiom carries sharing entries");
+                  () } ,
+              };
               KernelClaim::walk_refs_transitive(rc, refs, KernelClaim::const_idxs_of(c), 0) } ,
           } } ,
       }

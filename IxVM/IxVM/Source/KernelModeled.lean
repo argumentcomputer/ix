@@ -1141,6 +1141,7 @@ def check_family := aiur_fn⟦
               let (ctor_models, s7) = get_addrs(s6, Lists::length(ctor_addrs));
               let rec_addrs = family_recs(rec_block);
               assert_no_role(rc, rec_addrs);
+              assert_no_type_role(rc, type_addrs);
               let n_recs = Lists::length(rec_addrs);
               let (rec_models, s8) = get_addrs(s7, n_recs);
               let src = Lists::concat(type_addrs, Lists::concat(ctor_addrs, rec_addrs));
@@ -1294,7 +1295,7 @@ def ctors_scan := aiur_fn⟦
             KernelTypes::KConstantInfo::Ctor(_, cty, _, _, _, _, _, _) => {
               let t = KernelLevels::expr_inst_levels(cty, us);
               let body = match is_aux {
-                0 => {  KernelCheck::peel_n_foralls(t, np) } ,
+                0 => {  KernelCheck::peel_n_foralls_zeta(t, np) } ,
                 _ => {  inst_ctor_params(t, sp) } ,
               };
               ctors_scan(block, mblk, midx, nctors, c + 1, np, is_aux, sp, us,
@@ -1304,8 +1305,8 @@ def ctors_scan := aiur_fn⟦
     }
 ⟧
 
-  -- A constructor type's parameters, syntactic binders, instantiated by `sp` (terms over
-  -- the recursor's parameters).
+  -- A constructor type's parameters, instantiated by `sp` (terms over the recursor's
+  -- parameters), stepping through leading `let` bindings.
 
 def inst_ctor_params := aiur_fn⟦
   fn inst_ctor_params(t: KernelTypes::KExpr, sp: Lists::List<KernelTypes::KExpr>) -> KernelTypes::KExpr {
@@ -1315,6 +1316,8 @@ def inst_ctor_params := aiur_fn⟦
           match (*(t)) {
             KernelTypes::KExprNode::Forall(_, body, _) => {
               inst_ctor_params(KernelSubst::expr_inst1(body, v, 0), rest) } ,
+            KernelTypes::KExprNode::Let(_, lv, lb) => {
+              inst_ctor_params(KernelSubst::expr_inst1(lb, lv, 0), sp) } ,
           } } ,
       }
     }
@@ -1328,12 +1331,12 @@ def occ_scan := aiur_fn⟦
               acc: Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)>)
         -> Lists::List<(Bytes::AddressRef, Field, Lists::List<KernelTypes::KExpr>, Lists::List<KernelTypes::KLevel>)> {
       let blocks = (&(Lists::Node::Cons(block, (&(Lists::Node::Nil)))));
-      match KernelCheck::expr_mentions_block(e, blocks) {
+      match occ_mentions_block(e, blocks) {
         0 => {  acc } ,
         _ => {
           match (*(e)) {
             KernelTypes::KExprNode::App(_, _) => {
-              let (head, args) = KernelTypes::collect_spine(e);
+              let (head, args) = KernelCheck::collect_spine_zeta(e);
               match (*(head)) {
                 KernelTypes::KExprNode::Const(c, us) => {
                   match (*(Ingress::get_ci(c))) {
@@ -1343,7 +1346,7 @@ def occ_scan := aiur_fn⟦
                         _ => {
                           match UInt32::less_than_fields(Lists::length(args), cnp) {
                             1 => {  0 } ,
-                            _ => {  KernelCheck::list_any_mentions_block(Lists::take(args, cnp), blocks) } ,
+                            _ => {  occ_any_mentions_block(Lists::take(args, cnp), blocks) } ,
                           } } ,
                       };
                       match nested {
@@ -1360,8 +1363,8 @@ def occ_scan := aiur_fn⟦
               occ_scan(block, b, d + 1, occ_scan(block, t, d, acc)) } ,
             KernelTypes::KExprNode::Forall(t, b, _) => {
               occ_scan(block, b, d + 1, occ_scan(block, t, d, acc)) } ,
-            KernelTypes::KExprNode::Let(t, v, b) => {
-              occ_scan(block, b, d + 1, occ_scan(block, v, d, occ_scan(block, t, d, acc))) } ,
+            KernelTypes::KExprNode::Let(_, v, b) => {
+              occ_scan(block, KernelSubst::expr_inst1(b, v, 0), d, acc) } ,
             KernelTypes::KExprNode::Proj(_, _, x) => {  occ_scan(block, x, d, acc) } ,
             _ => {  acc } ,
           } } ,
@@ -1433,7 +1436,7 @@ def aux_entry_in := aiur_fn⟦
             (a, is_aux, s, u) => {
               match is_aux * Bytes::address_eq(a, addr) {
                 1 => {
-                  match KernelCheck::spec_params_ptr_eq(s, sp) * KernelCheck::level_list_struct_eq(u, us) {
+                  match KernelCheck::spec_params_zeta_eq(s, sp) * KernelCheck::level_list_struct_eq(u, us) {
                     1 => {  1 } ,
                     _ => {  aux_entry_in(rest, addr, sp, us) } ,
                   } } ,
@@ -1481,7 +1484,7 @@ def aux_all_in := aiur_fn⟦
                         _ => {  0 } ,
                       };
                       let same = ((Bytes::address_eq(a, a2) * same_kind) *
-                        KernelCheck::spec_params_ptr_eq(s, s2)) *
+                        KernelCheck::spec_params_zeta_eq(s, s2)) *
                         KernelCheck::level_list_struct_eq(u, u2);
                       match same {
                         1 => {  aux_all_in(rest, rest2) } ,
@@ -2186,6 +2189,66 @@ def defeq_lam_tele := aiur_fn⟦
                   defeq_lam_tele(rc, bl, bp, n - 1, (&(Lists::Node::Cons(dp, ctx)))) } ,
               } } ,
           } } ,
+      }
+    }
+⟧
+
+  -- Whether `e` mentions a peer of `block_addrs` after ζ-expanding `let` bindings, used
+  -- solely by `occ_scan` so dead `let` bindings do not introduce phantom nested occurrences.
+
+def occ_mentions_block := aiur_fn⟦
+  fn occ_mentions_block(e: KernelTypes::KExpr, block_addrs: Lists::List<Bytes::AddressRef>) -> Field {
+      match (*(e)) {
+        KernelTypes::KExprNode::BVar(_) => {  0 } ,
+        KernelTypes::KExprNode::Srt(_) => {  0 } ,
+        KernelTypes::KExprNode::Const(caddr, _) => {  KernelCheck::caddr_is_peer(caddr, block_addrs) } ,
+        KernelTypes::KExprNode::App(f, a) => {
+          match occ_mentions_block(f, block_addrs) {
+            1 => {  1 } ,
+            _ => {  occ_mentions_block(a, block_addrs) } ,
+          } } ,
+        KernelTypes::KExprNode::Lam(t, b, _) => {
+          match occ_mentions_block(t, block_addrs) {
+            1 => {  1 } ,
+            _ => {  occ_mentions_block(b, block_addrs) } ,
+          } } ,
+        KernelTypes::KExprNode::Forall(t, b, _) => {
+          match occ_mentions_block(t, block_addrs) {
+            1 => {  1 } ,
+            _ => {  occ_mentions_block(b, block_addrs) } ,
+          } } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          occ_mentions_block(KernelSubst::expr_inst1(b, v, 0), block_addrs) } ,
+        KernelTypes::KExprNode::Lit(_) => {  0 } ,
+        KernelTypes::KExprNode::Proj(_, _, e1) => {  occ_mentions_block(e1, block_addrs) } ,
+      }
+    }
+⟧
+
+def occ_any_mentions_block := aiur_fn⟦
+  fn occ_any_mentions_block(es: Lists::List<KernelTypes::KExpr>,
+                            block_addrs: Lists::List<Bytes::AddressRef>) -> Field {
+      match (*(es)) {
+        Lists::Node::Nil => {  0 } ,
+        Lists::Node::Cons(e, rest) => {
+          match occ_mentions_block(e, block_addrs) {
+            1 => {  1 } ,
+            _ => {  occ_any_mentions_block(rest, block_addrs) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- No type address of the modeled block is bound to a role.
+
+def assert_no_type_role := aiur_fn⟦
+  fn assert_no_type_role(rc: KernelRoles::RoleCtx, xs: Lists::List<Bytes::AddressRef>) -> () {
+      match (*(xs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(x, rest) => {
+          assert_eq!(KernelRoles::role_index_of(rc, x), 0,
+            "a modeled inductive is bound to a role");
+          assert_no_type_role(rc, rest) } ,
       }
     }
 ⟧
