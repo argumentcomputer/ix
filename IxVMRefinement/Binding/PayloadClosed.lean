@@ -111,27 +111,46 @@ theorem basisRows_inLogic :
     StoreInhabit.basisRows.all (fun e => inLogicBool e.2) = true := by
   decide +kernel
 
+private theorem byteArray_eq_of_toList_eq {b₁ b₂ : ByteArray}
+    (h : b₁.data.toList = b₂.data.toList) : b₁ = b₂ := by
+  cases b₁ with
+  | mk a₁ =>
+    cases b₂ with
+    | mk a₂ =>
+      cases a₁
+      cases a₂
+      simp only at h
+      subst h
+      rfl
+
 /-- Decidable structural match of a projection basis row against its parent block row, without
 re-hashing. -/
 private def basisProjMatch (c : Ixon.Constant) (B : _root_.Address) (cb : Ixon.Constant) : Bool :=
   match c.info, cb.info with
   | .dPrj p, .muts ms =>
     p.block == B && match ms[p.idx.toNat]? with
-      | some (.defn d) => c == memberProjection B p.idx.toNat (.defn d)
+      | some (.defn d) =>
+        (Ixon.serConstant c).data.toList ==
+          (Ixon.serConstant (memberProjection B p.idx.toNat (.defn d))).data.toList
       | _ => false
   | .iPrj p, .muts ms =>
     p.block == B && match ms[p.idx.toNat]? with
-      | some (.indc ind) => c == memberProjection B p.idx.toNat (.indc ind)
+      | some (.indc ind) =>
+        (Ixon.serConstant c).data.toList ==
+          (Ixon.serConstant (memberProjection B p.idx.toNat (.indc ind))).data.toList
       | _ => false
   | .rPrj p, .muts ms =>
     p.block == B && match ms[p.idx.toNat]? with
-      | some (.recr r) => c == memberProjection B p.idx.toNat (.recr r)
+      | some (.recr r) =>
+        (Ixon.serConstant c).data.toList ==
+          (Ixon.serConstant (memberProjection B p.idx.toNat (.recr r))).data.toList
       | _ => false
   | .cPrj p, .muts ms =>
     p.block == B && match ms[p.idx.toNat]? with
       | some (.indc ind) =>
         decide (p.cidx.toNat < ind.ctors.size) &&
-          c == constructorProjection B p.idx.toNat p.cidx.toNat
+          ((Ixon.serConstant c).data.toList ==
+            (Ixon.serConstant (constructorProjection B p.idx.toNat p.cidx.toNat)).data.toList)
       | _ => false
   | _, _ => false
 
@@ -176,9 +195,9 @@ theorem basisStore_projMember {a : _root_.Address} {c : Ixon.Constant}
         rw [hget] at hrest
         cases m with
         | defn d =>
-          have ec : c = memberProjection B p.idx.toNat (.defn d) := beq_iff_eq.mp hrest
+          have hser := byteArray_eq_of_toList_eq (beq_iff_eq.mp hrest)
           have ha : a = memberAddr B p.idx.toNat (.defn d) := by
-            rw [← hhash, ec]; rfl
+            rw [← hhash, hser]; rfl
           refine ⟨cb, ?_, ?_⟩
           · simp only [Ix.Cert.ownerOf, hi, eB]
             exact StoreInhabit.store_record_of_mem hbMem
@@ -202,9 +221,9 @@ theorem basisStore_projMember {a : _root_.Address} {c : Ixon.Constant}
         rw [hget] at hrest
         cases m with
         | indc ind =>
-          have ec : c = memberProjection B p.idx.toNat (.indc ind) := beq_iff_eq.mp hrest
+          have hser := byteArray_eq_of_toList_eq (beq_iff_eq.mp hrest)
           have ha : a = memberAddr B p.idx.toNat (.indc ind) := by
-            rw [← hhash, ec]; rfl
+            rw [← hhash, hser]; rfl
           refine ⟨cb, ?_, ?_⟩
           · simp only [Ix.Cert.ownerOf, hi, eB]
             exact StoreInhabit.store_record_of_mem hbMem
@@ -230,9 +249,9 @@ theorem basisStore_projMember {a : _root_.Address} {c : Ixon.Constant}
         | indc ind =>
           obtain ⟨hlt, heq⟩ := Bool.and_eq_true _ _ |>.mp hrest
           have hj : p.cidx.toNat < ind.ctors.size := of_decide_eq_true hlt
-          have ec : c = constructorProjection B p.idx.toNat p.cidx.toNat := beq_iff_eq.mp heq
+          have hser := byteArray_eq_of_toList_eq (beq_iff_eq.mp heq)
           have ha : a = ctorAddr B p.idx.toNat p.cidx.toNat := by
-            rw [← hhash, ec]; rfl
+            rw [← hhash, hser]; rfl
           refine ⟨cb, ?_, ?_⟩
           · simp only [Ix.Cert.ownerOf, hi, eB]
             exact StoreInhabit.store_record_of_mem hbMem
@@ -257,9 +276,9 @@ theorem basisStore_projMember {a : _root_.Address} {c : Ixon.Constant}
         rw [hget] at hrest
         cases m with
         | recr r =>
-          have ec : c = memberProjection B p.idx.toNat (.recr r) := beq_iff_eq.mp hrest
+          have hser := byteArray_eq_of_toList_eq (beq_iff_eq.mp hrest)
           have ha : a = memberAddr B p.idx.toNat (.recr r) := by
-            rw [← hhash, ec]; rfl
+            rw [← hhash, hser]; rfl
           refine ⟨cb, ?_, ?_⟩
           · simp only [Ix.Cert.ownerOf, hi, eB]
             exact StoreInhabit.store_record_of_mem hbMem
@@ -418,10 +437,8 @@ theorem check_container_rec_rec_family_block (hC : CollisionFreeRun calls E₀)
   | .run (v26 := v26) (m29 := m29) (cs37 := cs37) (ev39 := ev39) (ev25 := ev25)
       (heq61 := heq61) (hc96 := hc96) .. =>
     have hsub37 : ∀ cl ∈ cs37, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc96]; simp [hcl])
-    obtain ⟨_, _, _, _, _, fam, bF, hrepF, hbEqF⟩ := by
-      obtain ⟨cx, cOwn, c0, ip, t0, fam, -, -, -, -, -, -, bF, hrepF, hbEqF⟩ :=
-        rec_family_block_usedRef hC hbd hx ev39 hsub37
-      exact ⟨cx, cOwn, c0, ip, t0, fam, bF, hrepF, hbEqF⟩
+    obtain ⟨_, _, _, _, _, fam, _, _, _, _, _, _, bF, hrepF, _⟩ :=
+      rec_family_block_usedRef hC hbd hx ev39 hsub37
     obtain ⟨b_ib, hbIb, rfl⟩ := hib
     have hbIb29 := Bytes.repAddressRef_heapMono₂ Core.addrTy ev39.heap_extends hbIb
     obtain ⟨heqV, -⟩ := Lib.address_eq_spec ev25 hrepF hbIb29
@@ -444,7 +461,7 @@ theorem check_container_rec_shape (hC : CollisionFreeRun calls E₀)
     (∃ rc, c.info = .recr rc) ∨ (∃ rp, c.info = .rPrj rp) := by
   obtain ⟨v26, m29, cs37, ev39, -, hsub37⟩ :=
     check_container_rec_rec_family_block hC hbd hx hib ev hsub
-  obtain ⟨cx, -, rc', -, -, -, -, -, hrecX, -, -, -, -, -, hshape, -⟩ :=
+  obtain ⟨cx, _, rc', _, _, _, _, _, hrecX, _, _, _, _, _, hshape, _⟩ :=
     rec_family_block_head_spec hC hbd hx ev39 hsub37
   have ec : cx = c := Option.some.inj (hrecX.symm.trans hc)
   subst ec
@@ -627,8 +644,23 @@ theorem needOk_of_notBlock_sourceSafe (hC : CollisionFreeRun calls E₀)
   · exact covered_needOk hC hvalAll hroots hcov
   · obtain ⟨cx, hcx⟩ := hex
     obtain ⟨raw, c', hh, hbl, hde, hnotM⟩ := hnb
-    have ec : c' = cx := hC.runStore.record_eq ((hC.runStore.recordOf_eq_recordAt x).symm.trans hcx)
-      hh hbl hde
+    have ec : c' = cx := by
+      unfold recordOf at hcx
+      cases hget : E₀.consts.get? x with
+      | none => rw [hget] at hcx; cases hcx
+      | some lc =>
+        rw [hget] at hcx
+        obtain ⟨hlcH, hlcB⟩ := hC.runStore.loaded.1 x lc hget
+        have eraw : raw = lc.rawBytes := hC.runStore.hashed_inj hh hlcH (hbl.trans hlcB.symm)
+        cases hdeE : Ixon.deConstantExact lc.rawBytes with
+        | error _ => rw [hdeE] at hcx; cases hcx
+        | ok cx' =>
+          rw [hdeE] at hcx
+          have ecx' : cx' = cx := Option.some.inj hcx
+          subst ecx'
+          have hde' := L1.deConstant_of_deConstantExact hdeE
+          rw [← eraw, hde] at hde'
+          exact Except.ok.inj hde'
     subst ec
     have hs := hsafe hcov c' hcx
     exact ⟨c', hcx, fun ⟨ms, hms⟩ => hnotM ms hms, hs.1, hs.2⟩
@@ -720,11 +752,11 @@ private theorem witness_in_payClass (hC : CollisionFreeRun calls E₀)
   rcases hw with ⟨ro, had, hlt, hk⟩ | ⟨hpos, -, -⟩ | ⟨hdc, -⟩ |
       ⟨ib, c, cib, hpos, hc, hp, hown, hnil, hcib, hca⟩
   · exact PayClass.stored (halr_g w (basisRole_alreadyStoredRole hg6 had hlt hk))
-  · rcases pathReach_closed_of_usedClosed hcl_g hrec_g halr_g hB hpos.toReach with hgr | hst
+  · rcases pathReach_closed_of_usedClosed hrec_g hcl_g halr_g hB hpos.toReach with hgr | hst
     · exact PayClass.walked hgr
     · exact PayClass.stored hst
   · exact PayClass.directCont hB hmodB hex hdc
-  · rcases pathReach_closed_of_usedClosed hcl_g hrec_g halr_g hB hpos.toReach with hgr | hst
+  · rcases pathReach_closed_of_usedClosed hrec_g hcl_g halr_g hB hpos.toReach with hgr | hst
     · exact PayClass.checkedProj hc hp hnil (by rw [hown]; exact hcib) (by rw [hown]; exact hca)
         (Or.inr (Or.inl (by rw [hown]; exact hgr)))
     · exact PayClass.checkedProj hc hp hnil (by rw [hown]; exact hcib) (by rw [hown]; exact hca)
@@ -734,12 +766,13 @@ private theorem witness_in_payClass (hC : CollisionFreeRun calls E₀)
 and `AlreadyStoredRole` completeness on `groupStore ... g`. -/
 theorem payReach_in_payClass (hC : CollisionFreeRun calls E₀)
     (hbd : IxVM.Consistency.Bounded calls) (hb : BasisRowsLoaded E₀)
-    (hstep : RunStepStores calls t E₀) {g : Nat} (hg6 : 6 ≤ g)
+    (hstep : RunStepStores calls t E₀) {g : Nat} (hg6 : 6 ≤ g) (hg77 : g < 77)
     (hcl_g : UsedClosed (groupStore t E₀ (runPayload calls bAddr t) g))
     (halr_g : ∀ x, AlreadyStoredRole t g x →
       (recordOf (groupStore t E₀ (runPayload calls bAddr t) g) x).isSome = true)
     {x : _root_.Address} (h : PayReach t E₀ (runPayload calls bAddr t) g x) :
     PayClass calls bAddr t E₀ g x := by
+  have hvl : valLimit g < 77 := Nat.lt_of_le_of_lt (valLimit_le g) hg77
   have hrec_g : ∀ y c, recordOf (groupStore t E₀ (runPayload calls bAddr t) g) y = some c →
       recordOf E₀ y = some c :=
     fun y c hy => ((groupStore_recordOf hb hg6).mp hy).2
@@ -766,8 +799,8 @@ theorem payReach_in_payClass (hC : CollisionFreeRun calls E₀)
     | walked hgr => exact hfinish (Or.inl hgr)
     | @famRec B' _ cs' advAs' _ _ hexB =>
       exfalso
-      obtain ⟨c', rs, hc', hrs, -, hallRec⟩ :=
-        familyCall_isTwinShape hC.runStore hC.hashedStored (FamilyCallExact.toCall hexB)
+      obtain ⟨c', rs, hc', -, hrs, -, hallRec, -⟩ :=
+        familyCall_isTwinShape hC.runStore hC.hashedStored hvl (FamilyCallExact.toCall hexB)
       have ec : c' = cb := Option.some.inj (hc'.symm.trans hcb)
       subst ec
       have ers : rs = ms := Ixon.ConstantInfo.muts.inj (hrs.symm.trans hms)
@@ -779,7 +812,7 @@ theorem payReach_in_payClass (hC : CollisionFreeRun calls E₀)
     | @directAdv B' rb' _ cs' advAs' _ _ hexB hadvB =>
       exfalso
       obtain ⟨outs, hU⟩ := hexB.unpack hC hbd
-      obtain ⟨ab, habMem, habEq⟩ := List.mem_map.mp hadvB
+      obtain ⟨ab, habMem, habEq⟩ := hadvB
       obtain ⟨k, hk, hgetk⟩ := List.mem_iff_getElem.mp habMem
       have hfacts := hU.adviceFacts k hk
       rw [hgetk, habEq] at hfacts
@@ -813,13 +846,13 @@ theorem payReach_in_payClass (hC : CollisionFreeRun calls E₀)
       obtain ⟨-, -, -, hcls⟩ := hU.famRefs y hu
       rcases hcls with huB | ⟨c, cb, hc, hp, hown, hnil, hcb, hca⟩ |
           ⟨blk, c, cb, hpos, hc, hp, hown, hnil, hcb, hca⟩ | hw
-      · rcases pathReach_closed_of_usedClosed hcl_g hrec_g halr_g hB
+      · rcases pathReach_closed_of_usedClosed hrec_g hcl_g halr_g hB
             (PathReach.single (Or.inl huB)) with hgr | hst
         · exact PayClass.walked hgr
         · exact PayClass.stored hst
       · exact PayClass.checkedProj hc hp hnil (by rw [hown]; exact hcb) (by rw [hown]; exact hca)
           (by rw [hown]; rcases hB with h | h; exact Or.inr (Or.inl h); exact Or.inl h)
-      · rcases pathReach_closed_of_usedClosed hcl_g hrec_g halr_g hB hpos.toReach with hgr | hst
+      · rcases pathReach_closed_of_usedClosed hrec_g hcl_g halr_g hB hpos.toReach with hgr | hst
         · exact PayClass.checkedProj hc hp hnil (by rw [hown]; exact hcb) (by rw [hown]; exact hca)
             (Or.inr (Or.inl (by rw [hown]; exact hgr)))
         · exact PayClass.checkedProj hc hp hnil (by rw [hown]; exact hcb) (by rw [hown]; exact hca)
@@ -827,7 +860,7 @@ theorem payReach_in_payClass (hC : CollisionFreeRun calls E₀)
       · exact witness_in_payClass hC hg6 hcl_g halr_g hrec_g hB hmodB hex (hU.outsClassified y hw)
     | @directAdv B rb _ cs advAs hB hmodB hex hadv =>
       obtain ⟨outs, hU⟩ := hex.unpack hC hbd
-      obtain ⟨ab, habMem, habEq⟩ := List.mem_map.mp hadv
+      obtain ⟨ab, habMem, habEq⟩ := hadv
       obtain ⟨k, hk, hgetk⟩ := List.mem_iff_getElem.mp habMem
       have hfacts := hU.adviceFacts k hk
       rw [hgetk, habEq] at hfacts
@@ -836,12 +869,12 @@ theorem payReach_in_payClass (hC : CollisionFreeRun calls E₀)
       rcases hcls with hS | hW | ⟨blk, c, cb, hblkS, hc, hp, hown, hnil, hcb, hca⟩
       · have hyAdv : AdviceListedIn advAs y := by
           obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hS
-          exact List.mem_map_of_mem (List.mem_of_mem_take hb)
+          exact ⟨b, List.mem_of_mem_take hb, rfl⟩
         exact PayClass.directAdv hB hmodB hex hyAdv
       · exact witness_in_payClass hC hg6 hcl_g halr_g hrec_g hB hmodB hex (hU.outsClassified y hW)
       · have hblkAdv : AdviceListedIn advAs blk := by
           obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hblkS
-          exact List.mem_map_of_mem (List.mem_of_mem_take hb)
+          exact ⟨b, List.mem_of_mem_take hb, rfl⟩
         exact PayClass.checkedProj hc hp hnil (by rw [hown]; exact hcb) (by rw [hown]; exact hca)
           (Or.inr (Or.inr ⟨B, rb, cs, advAs, hB, hmodB, hex, by rw [hown]; exact hblkAdv⟩))
     | @directCont B rb _ cs advAs hB hmodB hex hdc =>
@@ -862,17 +895,17 @@ theorem payReach_in_payClass (hC : CollisionFreeRun calls E₀)
         obtain ⟨-, -, -, -, hcls⟩ := hrefs y huOwn
         rcases hcls with huIb | ⟨c, cb, hc, hp, hown, hnil, hcb, hca'⟩ |
             ⟨blk, c, cb, hposBlk, hc, hp, hown, hnil, hcb, hca'⟩ | ⟨hw, -⟩
-        · rcases pathReach_closed_of_usedClosed hcl_g hrec_g halr_g hB
+        · rcases pathReach_closed_of_usedClosed hrec_g hcl_g halr_g hB
               (hposIb.tail (Or.inl huIb)).toReach with hgr | hst
           · exact PayClass.walked hgr
           · exact PayClass.stored hst
-        · rcases pathReach_closed_of_usedClosed hcl_g hrec_g halr_g hB hposIb.toReach with hgr | hst
+        · rcases pathReach_closed_of_usedClosed hrec_g hcl_g halr_g hB hposIb.toReach with hgr | hst
           · exact PayClass.checkedProj hc hp hnil (by rw [hown]; exact hcb)
               (by rw [hown]; exact hca') (Or.inr (Or.inl (by rw [hown]; exact hgr)))
           · exact PayClass.checkedProj hc hp hnil (by rw [hown]; exact hcb)
               (by rw [hown]; exact hca') (Or.inl (by rw [hown]; exact hst))
         · have hposB := hposIb.trans_reach hposBlk.toReach
-          rcases pathReach_closed_of_usedClosed hcl_g hrec_g halr_g hB hposB.toReach with hgr | hst
+          rcases pathReach_closed_of_usedClosed hrec_g hcl_g halr_g hB hposB.toReach with hgr | hst
           · exact PayClass.checkedProj hc hp hnil (by rw [hown]; exact hcb)
               (by rw [hown]; exact hca') (Or.inr (Or.inl (by rw [hown]; exact hgr)))
           · exact PayClass.checkedProj hc hp hnil (by rw [hown]; exact hcb)
@@ -902,14 +935,14 @@ theorem payReach_in_payClass (hC : CollisionFreeRun calls E₀)
       exact PayClass.walked (GroupReach.owner hgr hc hp)
     | @famRec B _ cs advAs _ _ hex =>
       exfalso
-      obtain ⟨c', rs, hc', hrs, -, -⟩ :=
-        familyCall_isTwinShape hC.runStore hC.hashedStored (FamilyCallExact.toCall hex)
+      obtain ⟨c', rs, hc', -, hrs, -, -, -⟩ :=
+        familyCall_isTwinShape hC.runStore hC.hashedStored hvl (FamilyCallExact.toCall hex)
       have ec : c' = c := Option.some.inj (hc'.symm.trans hc)
       subst ec
       exact proj_not_block hp ⟨rs, hrs⟩
     | @directAdv B rb _ cs advAs hB hmodB hex hadv =>
       obtain ⟨outs, hU⟩ := hex.unpack hC hbd
-      obtain ⟨ab, habMem, habEq⟩ := List.mem_map.mp hadv
+      obtain ⟨ab, habMem, habEq⟩ := hadv
       obtain ⟨k, hk, hgetk⟩ := List.mem_iff_getElem.mp habMem
       have hfacts := hU.adviceFacts k hk
       rw [hgetk, habEq] at hfacts
@@ -922,7 +955,7 @@ theorem payReach_in_payClass (hC : CollisionFreeRun calls E₀)
       · exact (proj_not_block hp ⟨ms, hms⟩).elim
       · have hownAdv : AdviceListedIn advAs (Ix.Cert.ownerOf a ca) := by
           obtain ⟨b, hb, hbe⟩ := List.mem_map.mp hownS
-          exact hbe ▸ List.mem_map_of_mem (List.mem_of_mem_take hb)
+          exact ⟨b, List.mem_of_mem_take hb, hbe⟩
         exact PayClass.directAdv hB hmodB hex hownAdv
     | @directCont B rb _ cs advAs hB hmodB hex hdc =>
       obtain ⟨outs, -, -, -, ⟨ib, hposIb, h₁, h₂, rc₁, xx₁, xib₁, r₁, cs₁, hrc₁, hxx₁, hxib₁,
@@ -941,7 +974,7 @@ theorem payReach_in_payClass (hC : CollisionFreeRun calls E₀)
         obtain ⟨advAs', hex'⟩ := familyCallExact_of_call hfcF
         have hownEq : Ix.Cert.ownerOf a c = rp.block := by simp [Ix.Cert.ownerOf, hrp]
         rw [hownEq]
-        exact PayClass.famRec (pathReach_closed_of_usedClosed hcl_g hrec_g halr_g hB hposIb.toReach)
+        exact PayClass.famRec (pathReach_closed_of_usedClosed hrec_g hcl_g halr_g hB hposIb.toReach)
           hmodF hex'
     | checkedProj hc' _ _ _ _ hown =>
       have ec : _ = c := Option.some.inj (hc'.symm.trans hc)
@@ -1055,9 +1088,10 @@ theorem storeStepInv_all (hC : CollisionFreeRun calls E₀)
       obtain ⟨cx, hcx⟩ := storedBelow_record hC hb hax hP_lt hws hsb
       rw [(groupStore_recordOf hb hg6).mpr ⟨hsb, hcx⟩]
       rfl
+    have hvl : valLimit g < 77 := Nat.lt_of_le_of_lt (valLimit_le g) hg77
     have hcls : ∀ x, PayReach t E₀ (runPayload calls bAddr t) g x →
         PayClass calls bAddr t E₀ g x :=
-      fun x hx => payReach_in_payClass hC hbd hb hstep hg6 hcl_g halr_g hx
+      fun x hx => payReach_in_payClass hC hbd hb hstep hg6 hg77 hcl_g halr_g hx
     obtain ⟨recs, hw⟩ := hws g
     have hPF : PayloadFactsAt t E₀ (runPayload calls bAddr t) g := by
       refine
@@ -1141,8 +1175,8 @@ theorem storeStepInv_all (hC : CollisionFreeRun calls E₀)
           rw [hya, ← ec] at hpm
           exact hpm
         | famRec _ _ hex =>
-          obtain ⟨c₀, rs, hc₀, hrs, -, -⟩ :=
-            familyCall_isTwinShape hC.runStore hC.hashedStored (FamilyCallExact.toCall hex)
+          obtain ⟨c₀, rs, hc₀, -, hrs, -, -, -⟩ :=
+            familyCall_isTwinShape hC.runStore hC.hashedStored hvl (FamilyCallExact.toCall hex)
           have ec : c₀ = c := Option.some.inj (hc₀.symm.trans hE)
           subst ec
           exact (proj_not_block hp ⟨rs, hrs⟩).elim
@@ -1190,8 +1224,8 @@ theorem storeStepInv_all (hC : CollisionFreeRun calls E₀)
           exact groupReach_new_not_axiomLike hC hax hpin (hvalAll g) hw
             (groupReach_sourceSafe_of_run hC hval77 hroots hg77 hw) hgr hnot hE hk
         | famRec _ _ hex =>
-          obtain ⟨c₀, rs, hc₀, hrs, -, -⟩ :=
-            familyCall_isTwinShape hC.runStore hC.hashedStored (FamilyCallExact.toCall hex)
+          obtain ⟨c₀, rs, hc₀, -, hrs, -, -, -⟩ :=
+            familyCall_isTwinShape hC.runStore hC.hashedStored hvl (FamilyCallExact.toCall hex)
           have ec : c₀ = c := Option.some.inj (hc₀.symm.trans hE)
           subst ec
           exact isBlock_not_axiomLike hrs hk
@@ -1212,7 +1246,7 @@ theorem storeStepInv_all (hC : CollisionFreeRun calls E₀)
       · obtain ⟨outs, hU⟩ := hex.unpack hC hbd
         exact opEarlier_of_ordered hg33 hU.rbOrdered
       · obtain ⟨outs, hU⟩ := hex.unpack hC hbd
-        obtain ⟨ab, habMem, habEq⟩ := List.mem_map.mp hadv
+        obtain ⟨ab, habMem, habEq⟩ := hadv
         obtain ⟨k, hk, hgetk⟩ := List.mem_iff_getElem.mp habMem
         have hfacts := hU.adviceFacts k hk
         rw [hgetk, habEq] at hfacts
@@ -1238,7 +1272,7 @@ theorem storeStepInv_all (hC : CollisionFreeRun calls E₀)
         exact opEarlier_of_ordered hg33 (hU.famRefs y hu).2.1
       | directAdv _ _ hex hadv =>
         obtain ⟨outs, hU⟩ := hex.unpack hC hbd
-        obtain ⟨ab, habMem, habEq⟩ := List.mem_map.mp hadv
+        obtain ⟨ab, habMem, habEq⟩ := hadv
         obtain ⟨k, hk, hgetk⟩ := List.mem_iff_getElem.mp habMem
         have hfacts := hU.adviceFacts k hk
         rw [hgetk, habEq] at hfacts
@@ -1350,7 +1384,7 @@ theorem payReach_payClass_of_run (hC : CollisionFreeRun calls E₀)
     (hroots : RootsSafe t E₀) (hstep : RunStepStores calls t E₀)
     (hvalAll : ∀ k, ∀ r ∈ roleGroup k, RoleValidationIn calls bAddr t k r)
     (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs)
-    {g : Nat} (hg6 : 6 ≤ g) {x : _root_.Address}
+    {g : Nat} (hg6 : 6 ≤ g) (hg77 : g < 77) {x : _root_.Address}
     (hx : PayReach t E₀ (runPayload calls bAddr t) g x) :
     PayClass calls bAddr t E₀ g x := by
   have hP := payloadFacts_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
@@ -1362,7 +1396,7 @@ theorem payReach_payClass_of_run (hC : CollisionFreeRun calls E₀)
     obtain ⟨cy, hcy⟩ := storedBelow_record hC hb hax hP hws hsb
     rw [(groupStore_recordOf hb hg6).mpr ⟨hsb, hcy⟩]
     rfl
-  exact payReach_in_payClass hC hbd hb hstep hg6 hcl_g halr_g hx
+  exact payReach_in_payClass hC hbd hb hstep hg6 hg77 hcl_g halr_g hx
 
 /-- **Discharges `claimed`**: every new non-empty block of recursors has an observed
 `FamilyCallAtLim` at the group's validation limit. -/
@@ -1395,7 +1429,7 @@ theorem claimed_of_run (hC : CollisionFreeRun calls E₀)
     · have ec : c' = c := Option.some.inj (hc'.symm.trans hE)
       subst ec
       have ems : ms' = rs' := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hms)
-      subst ems
+      subst ms'
       obtain ⟨r, hr⟩ := hall rs'[0] (Array.getElem_mem_toList hpos)
       have hk0 : rs'.toList[((0 : Nat) : F).val]? = some (.recr r) := by
         simp [Array.getElem?_toList, Array.getElem?_eq_getElem hpos, hr]
@@ -1406,14 +1440,14 @@ theorem claimed_of_run (hC : CollisionFreeRun calls E₀)
       (fun hp => proj_not_block hp ⟨rs', hms⟩) (fun ax h => by rw [hms] at h; cases h) with
     hgr | hpr
   · exact Or.inr (hfromWalk hgr)
-  · cases payReach_payClass_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws hg6 hpr with
+  · cases payReach_payClass_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws hg6 hg77 hpr with
     | stored hst => rw [hnew.2] at hst; cases hst
     | walked hgr => exact Or.inr (hfromWalk hgr)
     | famRec _ _ hex => exact Or.inr ⟨_, _, FamilyCallExact.toCall hex⟩
     | directAdv _ _ hex hadv =>
       exfalso
       obtain ⟨outs, hU⟩ := hex.unpack hC hbd
-      obtain ⟨ab, habMem, habEq⟩ := List.mem_map.mp hadv
+      obtain ⟨ab, habMem, habEq⟩ := hadv
       obtain ⟨k, hk, hgetk⟩ := List.mem_iff_getElem.mp habMem
       have hfacts := hU.adviceFacts k hk
       rw [hgetk, habEq] at hfacts
@@ -1424,7 +1458,7 @@ theorem claimed_of_run (hC : CollisionFreeRun calls E₀)
       · rw [hms] at hd; cases hd
       · rw [hms] at hrc; cases hrc
       · have ems : ms' = rs' := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hms)
-        subst ems
+        subst ms'
         obtain ⟨ind, hind⟩ := hallI rs'[0] (Array.getElem_mem_toList hpos)
         obtain ⟨r, hr⟩ := hall rs'[0] (Array.getElem_mem_toList hpos)
         rw [hind] at hr; cases hr
@@ -1457,9 +1491,10 @@ theorem payloadChecked_of_run (hC : CollisionFreeRun calls E₀)
           New (groupStore t E₀ (runPayload calls bAddr t) g)
             (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) B := by
   intro g hg6 hg77 a c hpr hnew hcR' hunit hntw
+  have hvl : valLimit g < 77 := Nat.lt_of_le_of_lt (valLimit_le g) hg77
   obtain ⟨recs, hw⟩ := hws g
   have hE : recordOf E₀ a = some c := ((groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mp hcR').2
-  cases payReach_payClass_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws hg6 hpr with
+  cases payReach_payClass_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws hg6 hg77 hpr with
   | stored hst => rw [hnew.2] at hst; cases hst
   | walked hgr =>
     left
@@ -1468,15 +1503,15 @@ theorem payloadChecked_of_run (hC : CollisionFreeRun calls E₀)
     exact unitCheckedAt_of_topRec hC.hashedStored y
   | famRec _ _ hex =>
     exfalso
-    obtain ⟨c', rs, hc', hrs, hpos, hall⟩ :=
-      familyCall_isTwinShape hC.runStore hC.hashedStored (FamilyCallExact.toCall hex)
+    obtain ⟨c', rs, hc', -, hrs, hpos, hall, -⟩ :=
+      familyCall_isTwinShape hC.runStore hC.hashedStored hvl (FamilyCallExact.toCall hex)
     have ec : c' = c := Option.some.inj (hc'.symm.trans hE)
     subst ec
     exact hntw ⟨rs, hrs, hpos, hall⟩
   | directAdv _ _ hex hadv =>
     left
     obtain ⟨outs, hU⟩ := hex.unpack hC hbd
-    obtain ⟨ab, habMem, habEq⟩ := List.mem_map.mp hadv
+    obtain ⟨ab, habMem, habEq⟩ := hadv
     obtain ⟨k, hk, hgetk⟩ := List.mem_iff_getElem.mp habMem
     have hfacts := hU.adviceFacts k hk
     rw [hgetk, habEq] at hfacts
@@ -1613,24 +1648,25 @@ theorem runFactsLeft_of_run (hC : CollisionFreeRun calls E₀)
       famNotInert := fun B _ x _ hnew _ hu => hnotInert_of_held B x hnew.1 hu
       famNeedOk := fun B rb x hfam hnew hpay hu => ?_ }
   · obtain ⟨hnew, hcR', hunit, -, -, -, hntw⟩ := hA
+    have hvl : valLimit g < 77 := Nat.lt_of_le_of_lt (valLimit_le g) hg77
     have hE : recordOf E₀ A = some c :=
       ((groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mp hcR').2
     have hxE : ∃ cx, recordOf E₀ x = some cx := by
       obtain ⟨cx, hcx⟩ := husedStored A x hnew.1 hu
       exact ⟨cx, ((groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mp hcx).2⟩
-    cases payReach_payClass_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws hg6 hpay with
+    cases payReach_payClass_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws hg6 hg77 hpay with
     | stored hst => rw [hnew.2] at hst; cases hst
     | walked hgr => exact walkedRef_needOk hC hb hpin hax hval77 hroots hg77 hw hgr hu
     | famRec _ _ hex =>
       exfalso
-      obtain ⟨c', rs, hc', hrs, hpos, hall⟩ :=
-        familyCall_isTwinShape hC.runStore hC.hashedStored (FamilyCallExact.toCall hex)
+      obtain ⟨c', rs, hc', -, hrs, hpos, hall, -⟩ :=
+        familyCall_isTwinShape hC.runStore hC.hashedStored hvl (FamilyCallExact.toCall hex)
       have ec : c' = c := Option.some.inj (hc'.symm.trans hE)
       subst ec
       exact hntw ⟨rs, hrs, hpos, hall⟩
     | directAdv _ _ hex hadv =>
       obtain ⟨outs, hU⟩ := hex.unpack hC hbd
-      obtain ⟨ab, habMem, habEq⟩ := List.mem_map.mp hadv
+      obtain ⟨ab, habMem, habEq⟩ := hadv
       obtain ⟨k, hk, hgetk⟩ := List.mem_iff_getElem.mp habMem
       have hfacts := hU.adviceFacts k hk
       rw [hgetk, habEq] at hfacts
@@ -1653,27 +1689,28 @@ theorem runFactsLeft_of_run (hC : CollisionFreeRun calls E₀)
       rw [ec] at hpr
       exact (unitKind_not_proj hunit hpr).elim
   · obtain ⟨-, hmod, cs, hfc⟩ := runFamOf_spec hfam
+    have hvl : valLimit g < 77 := Nat.lt_of_le_of_lt (valLimit_le g) hg77
     obtain ⟨cb, ms, hcb, hms, hpos, hallIndc⟩ :=
       familyCall_block_indc_nonempty hC.runStore hC.hashedStored hfc
-    cases payReach_payClass_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws hg6 hpay with
+    cases payReach_payClass_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws hg6 hg77 hpay with
     | stored hst => rw [hnew.2] at hst; cases hst
     | walked hgr => exact walkedRef_needOk hC hb hpin hax hval77 hroots hg77 hw hgr hu
     | famRec _ _ hex =>
       exfalso
-      obtain ⟨c', rs, hc', hrs, -, hallRec⟩ :=
-        familyCall_isTwinShape hC.runStore hC.hashedStored (FamilyCallExact.toCall hex)
+      obtain ⟨c', rs, hc', -, hrs, -, hallRec, -⟩ :=
+        familyCall_isTwinShape hC.runStore hC.hashedStored hvl (FamilyCallExact.toCall hex)
       have ec : c' = cb := Option.some.inj (hc'.symm.trans hcb)
       subst ec
       have ers : rs = ms := Ixon.ConstantInfo.muts.inj (hrs.symm.trans hms)
-      subst ers
-      have hm0 : rs[0] ∈ rs.toList := Array.getElem_mem_toList hpos
+      subst rs
+      have hm0 : ms[0] ∈ ms.toList := Array.getElem_mem_toList hpos
       obtain ⟨ind, hind⟩ := hallIndc _ hm0
       obtain ⟨r, hr⟩ := hallRec _ hm0
       rw [hind] at hr; cases hr
     | directAdv _ _ hex hadv =>
       exfalso
       obtain ⟨outs, hU⟩ := hex.unpack hC hbd
-      obtain ⟨ab, habMem, habEq⟩ := List.mem_map.mp hadv
+      obtain ⟨ab, habMem, habEq⟩ := hadv
       obtain ⟨k, hk, hgetk⟩ := List.mem_iff_getElem.mp habMem
       have hfacts := hU.adviceFacts k hk
       rw [hgetk, habEq] at hfacts
