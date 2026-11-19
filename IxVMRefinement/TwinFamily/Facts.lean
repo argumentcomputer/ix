@@ -364,6 +364,8 @@ def TwinSeam (RForm : RecordFormPred) : Prop :=
     (∀ x, UsedRef E₀ rb' x →
       (env.find? (keyOf t x)).isSome = true ∨ ConstAddrOf rb' crb' x ∨ ¬ NeedOk E₀ x) →
     FamilyInstalled t env rb crb →
+    (∀ x, ConstAddrOf rb crb x →
+      ∃ ci ci₀, env.find? (keyOf t x) = some ci ∧ Reads t E₀ x ci₀ ∧ StoredAs ci ci₀) →
     (∀ x, ConstAddrOf rb' crb' x → env.find? (keyOf t x) = none) →
     (∀ x, ConstAddrOf rb' crb' x → Decl.KeyFree (keyOf t x)) →
     ∃ ds : List Decl.TwinMemberData,
@@ -385,9 +387,9 @@ derived from them; all are fresh, a model copy's key because its root is not sto
 theorem twinStepTarget_of_facts {RForm : RecordFormPred} (hseam : TwinSeam.{u} RForm) :
     TwinStepTarget.{u} RForm := by
   intro calls bAddr t E₀ E env B rb rb' cb crb crb' ms rs' lim cs ht hRS hSS hB hrbB hrb' hsz
-    hne hcall hpref hroute hinv haux href hinst hfresh hkey
+    hne hcall hpref hroute hinv haux href hinst hstoredRb hfresh hkey
   obtain ⟨ds, hreads, hF, hLd⟩ := hseam calls bAddr t E₀ E env B rb rb' cb crb crb' ms rs'
-    lim cs ht hRS hSS hB hrbB hrb' hsz hne hcall hpref hroute hinv href hinst hfresh hkey
+    lim cs ht hRS hSS hB hrbB hrb' hsz hne hcall hpref hroute hinv href hinst hstoredRb hfresh hkey
   -- the parts copy the companions the environment stores
   have hmodel : ∀ w ∈ Decl.mkTwinRecParts env ds, ∀ cvm mval hint,
       env.find? (Ix.Kernel.auxKey w.kC .model) = some (.defnInfo cvm mval hint) →
