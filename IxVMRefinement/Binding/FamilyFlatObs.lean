@@ -1319,13 +1319,14 @@ private theorem flat_originals_walk_spec {rootCalls : List (Call F)} {t : Ix.Ker
         have hindEq : ind' = ind := by
           have : ms[pos]? = some (.indc ind') := by rw [← Array.getElem?_toList]; exact hms'
           exact Ixon.MutConst.indc.inj (Option.some.inj (this.symm.trans hm_at))
-        subst hindEq
-        obtain ⟨hnl, -, -, -, -, -, -, -, -, -, rfl, -⟩ := hrawI
+        subst ind'
+        obtain ⟨hnl, _, _, _, _, _, _, _, _, _, hshape, _⟩ := hrawI
         have hsg : vnl = .field (ind.lvls.toNat : F) ∧ m3 = m2 := by
           cases sg with
           | Induct _ _ _ _ _ _ _ _ hv hr hh _ =>
+            rw [hshape] at hv
             injection hv with _ _ hl; injection hl with h1 _; exact ⟨hr.trans h1.symm, hh⟩
-          | other hne _ _ _ => exact (hne _ rfl rfl).elim
+          | other hne _ _ _ => exact (hne _ rfl hshape).elim
         obtain ⟨rfl, rfl⟩ := hsg
         have evlvls' : ObsFn W "KernelCheck::build_param_lvls_range"
             [.field (off : F), .field (ind.lvls.toNat : F), .field ((0 : Nat) : F)]
