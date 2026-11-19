@@ -1343,7 +1343,7 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
       have hres := check_modeled_ctors_levelsOk (t := t) hS hbd
         (by rwa [hba_b_eq]) hms hk hk56 hnc56 hnl32 hnp56
         ind.ctors.size 0 (by omega)
-        (fun cl hcl => hsub_chk cl (mem_of_eq hc (by call_mem)))
+        (fun cl (hcl : cl ∈ cs_mc) => hsub_chk cl (mem_of_eq hc (by call_mem)))
         (Bytes.repAddressRef_heapMono₂ addrTy ext0_11 rba_b) (by simpa using evct)
       intro j ct hj
       simpa [hba_b_eq] using hres j ct (Nat.zero_le j) hj
