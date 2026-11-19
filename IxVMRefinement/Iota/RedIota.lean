@@ -362,7 +362,7 @@ theorem red_iota_step (c : ScopedCtx) (hc : ScopedCoreBase c) {args : List (Sour
     ⟨-, -, -, -, -, -, -, -, he0, -, -⟩
   · subst he935 hc936
     obtain ⟨-, rfl⟩ := tuple2_inj (hr.symm.trans he871)
-    obtain ⟨⟨hfind, u0, blk0, idx0, hci⟩, hus⟩ := hrr
+    obtain ⟨⟨hfind, ⟨u0, blk0, idx0, hci⟩, -⟩, hus⟩ := hrr
     obtain ⟨p', i', m', mi', hval, hnp, hni, hnm, hnmi, hrP, hmI, hrPmI, hmIb, hrules⟩ :=
       CIRep.recr_fields hci
     subst hnp hni hnm hnmi

@@ -170,11 +170,7 @@ structure CtxRoleFacts (c : Ctx) : Prop where
       D.getAppFn = .const T (cvj.levelParams.map .param) ∧
       D.getAppArgs.take nP = (List.range nP).map (fun i => .bvar (mI - 1 - i)) ∧
       D.getAppArgs.drop nP = (List.range (mI - rP)).map fun i => .bvar (mI - rP - 1 - i)
-  ruleCtorHead : ∀ k cv mI rP rls rl cvj nP nF T us,
-    c.env.find? k = some (.recInfo cv mI rP rls) → rl ∈ rls →
-    c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
-    (piDomAt mI cv.type).map (·.getAppFn) = some (.const T us) →
-    ∃ tus, (Expr.piResult cvj.type).getAppFn = .const T tus
+  ruleCtorHead : RuleCtorHeadFact c.E c.env
   etaType : ∀ (T kc : KKey) (cvT cvc : ConstantVal .anon)
       (caps : Ix.Kernel.IndCaps .anon) (nP nF : Nat),
     c.env.find? T = some (.indInfo cvT caps) → caps.eta = true → caps.etaCtor = some kc →
@@ -186,6 +182,11 @@ structure CtxRoleFacts (c : Ctx) : Prop where
   etaSort : ∀ T cvT caps, c.env.find? T = some (.indInfo cvT caps) → caps.eta = true →
     ∃ bs l, cvT.type.stripPis caps.etaParams = some (bs, .sort l) ∧
       caps.sortZ = Level.zeronessOf l
+  etaCtorHead : ∀ (T kc : KKey) (cvT : ConstantVal .anon)
+      (caps : Ix.Kernel.IndCaps .anon) (nP nF : Nat),
+    c.env.find? T = some (.indInfo cvT caps) → caps.eta = true → caps.etaCtor = some kc →
+    ∀ cvc, c.env.find? kc = some (.ctorInfo cvc nP nF) →
+      ∃ tus, (Expr.piResult cvc.type).getAppFn = .const T tus
 
 /-- Combine `DeclStoreInv c.env` with `c.t.wf = true` and `CtxRoleFacts c` to build `EnvFacts c`. -/
 theorem DeclStoreInv.toEnvFacts {c : Ctx} (hS : DeclStoreInv c.env) (htwf : c.t.wf = true)
@@ -211,6 +212,7 @@ theorem DeclStoreInv.toEnvFacts {c : Ctx} (hS : DeclStoreInv c.env) (htwf : c.t.
   recEta := fun k cv mI rP rl hf =>
     (hS.recShape k cv mI rP [rl] hf).eta rl (List.mem_cons.mpr (Or.inl rfl))
   etaSort := hR.etaSort
+  etaCtorHead := hR.etaCtorHead
   recArity := fun k cv mI rP rls hf rl hrl => hS.store.recArity hf hrl
   ruleCtorArity := fun k cv mI rP rls hf rl hrl cvj nP nF hc => hS.store.ruleCtor_arity hf hrl hc
   tableCtorArity := fun sn i entry hp cvC nP nF hc => hS.store.tableCtor_arity hp hc

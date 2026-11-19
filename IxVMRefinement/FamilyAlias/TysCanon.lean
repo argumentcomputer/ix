@@ -228,7 +228,7 @@ theorem familyMembersCanon_of_tys {t : Ix.Kernel.RoleTable} (ht : t.check = .ok 
         tyBounded := hC.tyBounded
         tyLevels := hC.tyLevels
         rulesScoped := hC.rulesScoped
-        kOne := fun hk1 => absurd (hC.notK.symm.trans hk1) Bool.false_ne_true
+        notK := hC.notK
         ty := hC.ty
         rules := ⟨rls, hcR,
           forall₂_meet (canonRules_fields hcR) hRS hrr' hrhs
@@ -345,10 +345,17 @@ theorem ruleCtor_of_installed (hF : FamilyCheckFacts env blk adv tys rhsss)
   · exact Or.inl ho
 
 /-- **The companion facts of each recursor the record installs** (module docstring), from the
-companion facts at the selected forms (`FamRecsCompanion`), the installed forms, and the store
+companion facts at the selected forms (`FamRecsCompanion`), the installed forms, the store
 invariant's rule facts after the step (`RecCtorsStored`: each stored rule's constructor is stored,
-and a plain rule satisfies `Expr.recRulePlain`). -/
-theorem recCompanionFacts_of_tys {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim : Option Nat}
+and a plain rule satisfies `Expr.recRulePlain`), and the non-K record witness (`FamilyTysCanon` +
+`FamRecsCompanion`'s unroled condition). -/
+theorem recCompanionFacts_of_tys {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {lim : Option Nat}
+    {A rb : _root_.Address} {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
+    (hB : FamBlockRecord E₀ A cb ms) (hrb : FamRecRecord E₀ rb crb rs)
+    (hErb : recordOf E rb = some crb)
+    (hEmem : ∀ i m, rs[i]? = some m → recordOf E (memberAddr rb i m) = some (memberProjection rb i m))
+    (hreads : FamDeclReads t E₀ A cb rb crb blk)
+    (hT : FamilyTysCanon t E₀ A cb ms rb crb rs blk tys rhsss)
     (hF : FamilyCheckFacts env blk adv tys rhsss) (hnd : (new.map (·.name)).Nodup)
     (hname : ∀ c ∈ new, (∃ cv v hint, c = ConstantInfo.defnInfo cv v hint) ∨
       ∃ ci ∈ blk, c.name = ci.name)
@@ -397,7 +404,7 @@ theorem recCompanionFacts_of_tys {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim :
     cases ci with
     | recInfo cv mI rP rules₀ =>
       obtain ⟨⟨tyA, hty⟩, ⟨rhss, hrh⟩⟩ := tys_of_rec hF hj
-      have hc := hC j cv mI rP rules₀ tyA hj hty
+      obtain ⟨hc, hnoRole⟩ := hC j cv mI rP rules₀ tyA hj hty
       obtain ⟨rules', hf, hRS, -⟩ := hR j cv mI rP rules₀ tyA rhss hj hty hrh
       have hn₂ : cvS.name = cv.name := hn'
       have hf' : (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? cvS.name =
@@ -430,13 +437,63 @@ theorem recCompanionFacts_of_tys {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim :
         have hp := hplain hfire
         rw [hst.1] at hcj
         exact hc.plain rl₀ _ _ _ hrl₀ (hctor _ _ _ _ hcj) hp
-      · -- the rules' constructor heads
-        intro rl cvj nP nF T us hrl hcj₀ hdom
-        have hcj : (⟨new ++ env.consts⟩ : Ix.Kernel.Env .anon).find? rl.ctor =
-            some (.ctorInfo cvj nP nF) := hcj₀
-        obtain ⟨rl₀, hrl₀, hst⟩ := forall₂_mem_left hRS rl hrl
-        rw [hst.1] at hcj
-        exact hc.head rl₀ cvj nP nF T us hrl₀ (hctor _ _ _ _ hcj) hdom
+      · -- non-K record witness in `E`
+        obtain ⟨x, hx, hk, hry⟩ := hreads.2.1 _ hci
+        rcases hx with (⟨-, hs⟩ | ⟨ms', i, m, hms', hm', hxm⟩) |
+          (⟨-, hs⟩ | ⟨rs', i, m, hrs', hm', hxm⟩)
+        · exact (TwinFamily.standalone_not_block hs ⟨ms, hB.muts⟩).elim
+        · have ems : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hB.muts)
+          subst ems
+          obtain ⟨ind, rfl⟩ := hB.indcs m (by simpa using Array.mem_of_getElem? hm')
+          rcases hxm with rfl | ⟨ind', j', hind, hjlt, rfl⟩
+          · obtain ⟨c', hc', hRd⟩ := hry
+            have ec' : c' = memberProjection A i (.indc ind) :=
+              Option.some.inj (hc'.symm.trans (hB.members i (.indc ind) hm'))
+            subst ec'
+            have hinfo : (memberProjection A i (.indc ind)).info = .iPrj ⟨i.toUInt64, A⟩ := rfl
+            rw [hinfo] at hRd
+            obtain ⟨_, _, _, _, _, _, _, hci₀eq⟩ := hRd
+            cases hci₀eq
+          · injection hind with hind'
+            subst hind'
+            obtain ⟨c', hc', hRd⟩ := hry
+            have ec' : c' = constructorProjection A i j' :=
+              Option.some.inj (hc'.symm.trans (hB.ctors i ind j' hm' hjlt))
+            subst ec'
+            have hinfo : (constructorProjection A i j').info =
+                .cPrj ⟨i.toUInt64, j'.toUInt64, A⟩ := rfl
+            rw [hinfo] at hRd
+            obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, hci₀eq⟩ := hRd
+            cases hci₀eq
+        · exact (TwinFamily.standalone_not_block hs ⟨rs, hrb.muts⟩).elim
+        · have ers : rs' = rs := Ixon.ConstantInfo.muts.inj (hrs'.symm.trans hrb.muts)
+          subst ers
+          obtain ⟨r, rfl⟩ := hrb.recrs m (by simpa using Array.mem_of_getElem? hm')
+          rcases hxm with rfl | ⟨ind', j', hind, -, -⟩
+          swap
+          · cases hind
+          have hP : recordOf E₀ (memberAddr rb i (.recr r)) =
+              some (memberProjection rb i (.recr r)) := hrb.members i _ hm'
+          obtain ⟨cb', rs'', rc', hMA, hRR⟩ :=
+            TwinFamily.reads_rprj (p := ⟨i.toUInt64, rb⟩) hP rfl hry
+          obtain ⟨hcb', hrs'', hmem', -, hxa, -⟩ := hMA
+          have ecb : cb' = crb := Option.some.inj (hcb'.symm.trans hrb.record)
+          rw [ecb] at hrs'' hRR
+          have ers' : rs'' = rs := Ixon.ConstantInfo.muts.inj (hrs''.symm.trans hrb.muts)
+          rw [ers'] at hmem' hRR
+          have hRRc : RecReads t (recordOf E₀) (fun y => E₀.blobs.get? y) crb (blockSelf t rb rs)
+              cv.name rc' (.recInfo cv mI rP rules₀) := by
+            rw [hk]
+            exact hRR
+          have hCrec := hT.recr j cv mI rP rules₀ tyA rhss hj hty hrh ⟨i.toUInt64, rb⟩ rc' rfl
+            hmem' (hk.trans (congrArg (keyOf t) hxa)) hRRc
+          have hid : keyOf t (memberAddr rb i (.recr r)) = .id (memberAddr rb i (.recr r)) :=
+            TwinFamily.keyOf_eq_id_of_noRole (fun ro hro => hnoRole ro (hk.trans hro))
+          obtain ⟨lc0, hlc0, hd0⟩ := TwinFamily.recordOf_unpack (hEmem i (.recr r) hm')
+          obtain ⟨lcb, hlcb, hdb⟩ := TwinFamily.recordOf_unpack hErb
+          exact ⟨memberAddr rb i (.recr r), lc0, lcb, memberProjection rb i (.recr r), crb,
+            ⟨i.toUInt64, rb⟩, rs, rc', hk.trans hid, hlc0, hd0, rfl, hlcb, hdb, hrb.muts,
+            hmem', hCrec.notK⟩
     | _ => exact absurd hrec Bool.false_ne_true
 
 end Installed

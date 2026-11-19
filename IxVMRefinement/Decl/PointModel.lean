@@ -711,9 +711,10 @@ theorem coreCompanions_of_noRec {c : Ctx} (h : CoreCompanions c)
         h.recRulesNodupAndProj k cv mI rP rls (hold hf)
       recPlain := fun k cv mI rP rls rl cvj nP nF hf hrl hfire hc =>
         h.recPlain k cv mI rP rls rl cvj nP nF (hold hf) hrl hfire (hctor (hold hf) hrl hc)
-      ruleCtorHead := fun k cv mI rP rls rl cvj nP nF T us hf hrl hc hdom =>
-        h.ruleCtorHead k cv mI rP rls rl cvj nP nF T us (hold hf) hrl
-          (hctor (hold hf) hrl hc) hdom }
+      ruleCtorHead := fun k cv mI rP rls hf =>
+        (h.ruleCtorHead k cv mI rP rls (hold hf)).imp
+          (fun hhead rl cvj nP nF T us hrl hc hdom =>
+            hhead rl cvj nP nF T us hrl (hctor (hold hf) hrl hc) hdom) id }
 
 /-- **The install keeps the core's companions**, at every record store, table and group
 limit. -/
