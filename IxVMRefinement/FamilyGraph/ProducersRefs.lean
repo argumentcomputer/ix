@@ -1881,7 +1881,7 @@ theorem FamRunCtx.familyRefs_of {K : FamRunCtx} {seeds : List _root_.Address}
       (ev344 := ev_ws) (ev403 := ev_asb) (ev435 := ev435) (ev465 := ev465)
       (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
       (ev686 := ev686) (ev716 := ev716) (ev759 := ev759) (ev817 := ev817)
-      (ev796 := ev796) (ev852 := ev852) (ev_ursqbimm := ev_anr) (ev874 := ev874)
+      (ev796 := ev796) (ev852 := ev852) (ev_ursqbimm := ev_anr) (ev_srfmazjk := ev_atr) (ev874 := ev874)
       (ev896 := ev896) (ev960 := ev960) (ev939 := ev939) (ev1011 := ev1011)
       (ev990 := ev990) (ev_edyzsqzv := ev_mv1) (ev_gkddqxhv := ev_cc1)
       (ev_ittpynob := ev_mv2) (ev_biaifgpd := ev_mv3) (ev1203 := ev1203)
@@ -1914,14 +1914,14 @@ theorem FamRunCtx.familyRefs_of {K : FamRunCtx} {seeds : List _root_.Address}
         (ev601.heap_extends.trans (ev634.heap_extends.trans (ev664.heap_extends.trans
           (ev686.heap_extends.trans (ev716.heap_extends.trans (ev759.heap_extends.trans
             (ev817.heap_extends.trans (ev796.heap_extends.trans (ev852.heap_extends.trans
-              (ev_anr.heap_extends.trans (ev874.heap_extends.trans (ev896.heap_extends.trans
-                (ev960.heap_extends.trans (ev939.heap_extends.trans (ev1011.heap_extends.trans
-                  (ev990.heap_extends.trans (ev_mv1.heap_extends.trans (ev_cc1.heap_extends.trans
-                    (ev_mv2.heap_extends.trans (ev_mv3.heap_extends.trans
+              (ev_anr.heap_extends.trans (ev_atr.heap_extends.trans (ev874.heap_extends.trans
+                (ev896.heap_extends.trans (ev960.heap_extends.trans (ev939.heap_extends.trans
+                  (ev1011.heap_extends.trans (ev990.heap_extends.trans (ev_mv1.heap_extends.trans
+                    (ev_cc1.heap_extends.trans (ev_mv2.heap_extends.trans (ev_mv3.heap_extends.trans
                       (ev1203.heap_extends.trans (ev_bfb.heap_extends.trans
                         (ev1246.heap_extends.trans (ev_len.heap_extends.trans
                           (ev_iz1.heap_extends.trans (ev_iz2.heap_extends.trans
-                            ev_val.heap_extends))))))))))))))))))))))))))))
+                            ev_val.heap_extends)))))))))))))))))))))))))))))
     have ext_to_fro := ext_to_ws.trans (ext_ws.trans (ext_asb.trans ext_asb_fro))
     match Obs.«KernelModeled::family_refs_ok».obs ev_fro with
     | .run (cs12 := cs_rb) (cs34 := cs_B) (cs_ijcbjcgc := cs_go)

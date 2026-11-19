@@ -15,6 +15,7 @@ import IxVMRefinement.Obs.KernelModeled2
 import IxVMRefinement.Obs.KernelModeled3
 import IxVMRefinement.Obs.KernelModeled4
 import IxVMRefinement.Obs.KernelModeled5
+import IxVMRefinement.Obs.KernelModeled6
 import IxVMRefinement.Obs.KernelTypes0
 
 /-! # Carrier extraction, logic safety, and block uniqueness from `check_family`
@@ -1310,6 +1311,41 @@ theorem assert_no_role_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {
       · exact hno
       · exact htl x hmem
 
+/-- **`KernelModeled::assert_no_type_role`**: no address in the checked type list is bound to any
+role. -/
+theorem assert_no_type_role_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address}
+    {lim : Option Nat} :
+    ∀ (as : List Bytes.Address) {x_rc x_xs r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
+      Claim.RCLimRep t bAddr lim h x_rc →
+      RepList Core.addrListEnum (Bytes.RepAddressRef Core.addrTy) h as x_xs →
+      ObsFn Obs.W "KernelModeled::assert_no_type_role" [x_rc, x_xs] h r h' cs →
+      h' = h ∧ ∀ a ∈ as, ∀ ro, t.addressOf? ro ≠ some (Core.ixAddr a)
+  | [], _, _, _, _, _, _, _, has, ev => by
+    match Obs.«KernelModeled::assert_no_type_role».obs ev with
+    | .Nil (he_gcukvwpy := hh) .. => exact ⟨hh, fun _ hm => nomatch hm⟩
+    | .Cons (ld_bolbylmd := ld) .. =>
+      obtain ⟨_, _, he, -, -⟩ := Lib.rep_cons_of_load has ld
+      cases he
+  | a :: rest, _, _, _, _, _, _, hrc, has, ev => by
+    match Obs.«KernelModeled::assert_no_type_role».obs ev with
+    | .Nil (ld_bolbylmd := ld) .. => cases Lib.rep_nil_of_load has ld
+    | .Cons (ld_bolbylmd := ld) (ev_bpdlygwe := ev_ri) (heq_qeodfzug := h0)
+        (ev_qrcmwmfz := ev_rest) .. =>
+      obtain ⟨_, _, he, ha_rep, hrest_rep⟩ := Lib.rep_cons_of_load has ld
+      injection he with ha_eq hrest_eq
+      subst ha_eq hrest_eq
+      obtain ⟨rfl, hcases⟩ := Claim.role_index_of_lim_spec hrc ⟨a, ha_rep, rfl⟩ ev_ri
+      have hno : ∀ ro, t.addressOf? ro ≠ some (Core.ixAddr a) := by
+        rcases hcases with ⟨-, hno⟩ | ⟨ro, hro, -⟩
+        · exact hno
+        · exact absurd (Value.field.inj (h0.symm.trans hro)).symm
+            (RolesAux.roleNum_add_one_ne_zero ro)
+      obtain ⟨hh, htl⟩ := assert_no_type_role_spec rest hrc hrest_rep ev_rest
+      refine ⟨hh, fun x hx => ?_⟩
+      rcases List.mem_cons.mp hx with rfl | hmem
+      · exact hno
+      · exact htl x hmem
+
 private theorem mutShape_mono_local : HeapMono₂ Core.Specs.Callees.MutShape :=
   fun _ _ _ _ _ rep => rep
 
@@ -1481,6 +1517,8 @@ structure FamCheckCarriers (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E�
       ⟨Core.Specs.Callees.memberProjInfo B 0 (.indc ind₀), #[], #[], #[], #[]⟩)
   noRole : ∀ (k : Nat) (m : Ixon.MutConst), rs[k]? = some m →
     ∀ ro, t.addressOf? ro ≠ some (memberAddr rb k m)
+  noTypeRole : ∀ (j : Nat) (ind : Ixon.Inductive), ms[j]? = some (Ixon.MutConst.indc ind) →
+    ∀ ro, t.addressOf? ro ≠ some (Core.iprjAddr B j)
   carrier : ∀ (k : Nat) (rc : Ixon.Recursor), rs[k]? = some (Ixon.MutConst.recr rc) →
     ∃ n, Binding.FamilyOf.motiveCarrierAt crb rc 0 n = some (Core.iprjAddr B 0)
   ind0Safe : 0 < rs.size → ∀ ind₀, ms[0]? = some (Ixon.MutConst.indc ind₀) → ind₀.isUnsafe = false
@@ -1513,7 +1551,8 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
       (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465)
       (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
       (ev686 := ev686) (ev716 := ev716) (ev759 := ev759) (ev817 := ev817)
-      (ev796 := ev796) (ev852 := ev852) (ev_ursqbimm := ev_norole) (ev874 := ev874)
+      (ev796 := ev796) (ev852 := ev852) (ev_ursqbimm := ev_norole)
+      (ev_srfmazjk := ev_notyperole) (ev874 := ev874)
       (ev896 := ev896) (ev960 := ev960) (ev939 := ev939) (ev1011 := ev1011)
       (ev990 := ev990) (ev_edyzsqzv := ev_mv1) (ev_gkddqxhv := ev_cat)
       (ev_ittpynob := ev_mv2) (ev_biaifgpd := ev_mv3) (ev1203 := ev1203)
@@ -1534,13 +1573,13 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
       ev716.heap_extends.trans (ev759.heap_extends.trans
         (ev817.heap_extends.trans ev796.heap_extends))
     have ext_840_1293 : Heap.Extends m840 m1293 :=
-      ev_norole.heap_extends.trans (ev874.heap_extends.trans (ev896.heap_extends.trans
-        (ev960.heap_extends.trans (ev939.heap_extends.trans (ev1011.heap_extends.trans
-        (ev990.heap_extends.trans (ev_mv1.heap_extends.trans (ev_cat.heap_extends.trans
-        (ev_mv2.heap_extends.trans (ev_mv3.heap_extends.trans (ev1203.heap_extends.trans
-        (ev_flat.heap_extends.trans (ev1246.heap_extends.trans (ev_lenf.heap_extends.trans
-        (ev_z1.heap_extends.trans (ev_z2.heap_extends.trans (ev_vg.heap_extends.trans
-        ev1305.heap_extends)))))))))))))))))
+      ev_norole.heap_extends.trans (ev_notyperole.heap_extends.trans (ev874.heap_extends.trans
+        (ev896.heap_extends.trans (ev960.heap_extends.trans (ev939.heap_extends.trans
+        (ev1011.heap_extends.trans (ev990.heap_extends.trans (ev_mv1.heap_extends.trans
+        (ev_cat.heap_extends.trans (ev_mv2.heap_extends.trans (ev_mv3.heap_extends.trans
+        (ev1203.heap_extends.trans (ev_flat.heap_extends.trans (ev1246.heap_extends.trans
+        (ev_lenf.heap_extends.trans (ev_z1.heap_extends.trans (ev_z2.heap_extends.trans
+        (ev_vg.heap_extends.trans ev1305.heap_extends))))))))))))))))))
     have ext_674_1293 : Heap.Extends m674 m1293 :=
       ext_674_784.trans (ev852.heap_extends.trans ext_840_1293)
     have hsub511 : ∀ cl ∈ cs511, cl ∈ K.calls :=
@@ -1623,6 +1662,24 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
       obtain ⟨a_k, ha_k, ha_k_eq⟩ := Option.map_eq_some_iff.mp h1
       rw [LoadedReads.memberAddr_eq_projAddr, ← ha_k_eq]
       exact hno_as_rc a_k (List.mem_of_getElem? ha_k)
+    -- `assert_no_type_role` on `b_i0 :: bs_ty`
+    have hno_as_ty : ∀ a ∈ b_i0 :: bs_ty, ∀ ro, K.t.addressOf? ro ≠ some (Core.ixAddr a) :=
+      (assert_no_type_role_spec (b_i0 :: bs_ty)
+        (hrc₀.mono (ext_0_784.trans (ev852.heap_extends.trans ev_norole.heap_extends)))
+        (repList_heapMono₂ _ (Bytes.repAddressRef_heapMono₂ Core.addrTy)
+          (ext_674_784.trans (ev852.heap_extends.trans ev_norole.heap_extends)) has_ty)
+        ev_notyperole).2
+    have hnoTypeRole : ∀ j ind, ms[j]? = some (Ixon.MutConst.indc ind) →
+        ∀ ro, K.t.addressOf? ro ≠ some (Core.iprjAddr B j) := by
+      intro j ind hj
+      have hjL : ms.toList[j]? = some (.indc ind) := by rw [Array.getElem?_toList]; exact hj
+      have h1 : ((b_i0 :: bs_ty).map Core.ixAddr)[j]? = some (Core.iprjAddr B j) := by
+        rw [hmap_ty, List.getElem?_mapIdx, hjL, hb_blk_ix]
+        rfl
+      rw [List.getElem?_map] at h1
+      obtain ⟨a_j, ha_j, ha_j_eq⟩ := Option.map_eq_some_iff.mp h1
+      rw [← ha_j_eq]
+      exact hno_as_ty a_j (List.mem_of_getElem? ha_j)
     -- `check_recs` on every member `k < rs.size`
     have has_rc1293 := repList_heapMono₂ _ (Bytes.repAddressRef_heapMono₂ Core.addrTy)
       ext_840_1293 has_rc
@@ -1716,7 +1773,7 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
         (Bytes.repAddressRef_heapMono₂ Core.addrTy (ext_473_596.trans ext_q) hb0_473)
         ev_q hsub_q_all
     refine ⟨cb, crb, ms, rs,
-      ⟨⟨b_blk, hb_blk_ix⟩, hBrec, hBmuts, hrb, ⟨ind₀, hind₀⟩, hhashIPrj0, hnoRole,
+      ⟨⟨b_blk, hb_blk_ix⟩, hBrec, hBmuts, hrb, ⟨ind₀, hind₀⟩, hhashIPrj0, hnoRole, hnoTypeRole,
         fun k rc hk => (hmem_both k rc hk).1, ?_⟩⟩
     intro hpos ind₀' hind₀'
     have hind_eq : ind₀' = ind₀ := Ixon.MutConst.indc.inj (Option.some.inj (hind₀'.symm.trans hind₀))
