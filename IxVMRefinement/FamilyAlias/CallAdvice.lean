@@ -1,4 +1,5 @@
 import IxVMRefinement.FamilyAlias.CheckFamilyReads
+import IxVMRefinement.FamilyAlias.CallScoped
 import IxVMRefinement.FamilyAlias.FamilyCall
 import IxVMRefinement.Assembly.FamilyAdviceWalk
 import IxVMRefinement.Assembly.NativeBlockFormer
@@ -518,6 +519,7 @@ structure AdviceTypeWitness (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (l
   nlvls_lt : nlvls < 4294967296
   nl_eq : nl = .field (nlvls : F)
   ty_levels : ty'.allLevelParamsDefined (List.range nlvls) = true
+  mty_scoped : HeapExprScoped h₂ nlvls 0 mty
   tm_ci : Decl.TmCExact (Core.keyOf t) h₂ ty' mty
   -- Witness from `check_advice_record`'s `run_check` (`get_ci` + `k_ensure_sort`)
   h_pre : Heap F
@@ -730,6 +732,7 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
     ⟨{ nlvls_lt := hnlvls
        nl_eq := hnl_eq
        ty_levels := hty'_def
+       mty_scoped := heapExprScoped_of_rawConvExpr rty2 hty hty_lbb hty_def
        tm_ci := htm2
        h_pre := h_pre
        m_chk := m_chk

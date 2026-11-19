@@ -441,7 +441,7 @@ theorem recCompanionFacts_of_tys {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {
         obtain ⟨x, hx, hk, hry⟩ := hreads.2.1 _ hci
         rcases hx with (⟨-, hs⟩ | ⟨ms', i, m, hms', hm', hxm⟩) |
           (⟨-, hs⟩ | ⟨rs', i, m, hrs', hm', hxm⟩)
-        · exact (TwinFamily.standalone_not_block hs ⟨ms, hB.muts⟩).elim
+        · exact (standalone_not_block hs ⟨ms, hB.muts⟩).elim
         · have ems : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hB.muts)
           subst ems
           obtain ⟨ind, rfl⟩ := hB.indcs m (by simpa using Array.mem_of_getElem? hm')
@@ -465,9 +465,9 @@ theorem recCompanionFacts_of_tys {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {
             rw [hinfo] at hRd
             obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, hci₀eq⟩ := hRd
             cases hci₀eq
-        · exact (TwinFamily.standalone_not_block hs ⟨rs, hrb.muts⟩).elim
+        · exact (standalone_not_block hs ⟨rs, hrb.muts⟩).elim
         · have ers : rs' = rs := Ixon.ConstantInfo.muts.inj (hrs'.symm.trans hrb.muts)
-          subst ers
+          subst rs'
           obtain ⟨r, rfl⟩ := hrb.recrs m (by simpa using Array.mem_of_getElem? hm')
           rcases hxm with rfl | ⟨ind', j', hind, -, -⟩
           swap
@@ -482,10 +482,10 @@ theorem recCompanionFacts_of_tys {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {
           have ers' : rs'' = rs := Ixon.ConstantInfo.muts.inj (hrs''.symm.trans hrb.muts)
           rw [ers'] at hmem' hRR
           have hRRc : RecReads t (recordOf E₀) (fun y => E₀.blobs.get? y) crb (blockSelf t rb rs)
-              cv.name rc' (.recInfo cv mI rP rules₀) := by
+              cv.name rc' (.recInfo cv mIS rPS rules₀) := by
             rw [hk]
             exact hRR
-          have hCrec := hT.recr j cv mI rP rules₀ tyA rhss hj hty hrh ⟨i.toUInt64, rb⟩ rc' rfl
+          have hCrec := hT.recr j cv mIS rPS rules₀ tyA rhss hj hty hrh ⟨i.toUInt64, rb⟩ rc' rfl
             hmem' (hk.trans (congrArg (keyOf t) hxa)) hRRc
           have hid : keyOf t (memberAddr rb i (.recr r)) = .id (memberAddr rb i (.recr r)) :=
             TwinFamily.keyOf_eq_id_of_noRole (fun ro hro => hnoRole ro (hk.trans hro))

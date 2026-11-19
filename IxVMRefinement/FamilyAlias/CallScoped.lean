@@ -68,8 +68,8 @@ private theorem loadValue_mono {h₁ h₂ : Heap F} {p v : SourceValue F}
 private theorem loadValue_enum_cell' {h : Heap F} {addr : Nat} {eName tag : String}
     {args : List (SourceValue F)}
     (cell : h[addr]? = some (.construct eName tag args)) :
-    loadValue h (.ptr (.enum eName) addr) = .ok (.construct eName tag args) := by
-  simp [loadValue, cell, Value.type, PointerType.valueType]
+    loadValue h (.ptr (.enum eName) addr) = .ok (.construct eName tag args) :=
+  Core.loadValue_enum_cell cell
 
 private theorem loadValue_snoc_enum {h : Heap F} {eName tag : String}
     {args : List (SourceValue F)} :
@@ -648,7 +648,8 @@ private theorem rawKLevel_allParamsDefined_of_scoped {h hSup : Heap F} {nl : Nat
       injection hargs with hf
       have hni := nat_eq_of_field_eq_u56 hn h56 (Value.field.inj hf)
       subst hni
-      simp [Ix.Kernel.Level.allParamsDefined, List.contains_iff_mem, List.mem_range, hi]
+      simp [Ix.Kernel.Level.allParamsDefined, List.mem_range]
+      exact hi
     | zero ld' | succ ld' _ | max ld' _ _ | imax ld' _ _ =>
       rw [ld] at ld'; injection ld' with h1; injection h1 with _ ht _; exact absurd ht (by decide)
 
@@ -670,38 +671,36 @@ private theorem rawKLevelList_allParamsDefined_of_scoped {h hSup : Heap F} {nl :
       obtain ⟨rfl, rfl⟩ := hargs
       simp [rawKLevel_allParamsDefined_of_scoped ext hhd h1, ih h2]
 
-private theorem mapM_univs_eq {univs : List Ixon.Univ} {uIdxs : List UInt64}
-    {ls₁ ls₂ : List Core.KLevel}
-    (h1 : uIdxs.mapM (fun i => univs[i.toNat]?.map (Ix.Kernel.Reader.convUniv id)) = some ls₁)
-    (h2 : Ix.Kernel.Reader.readUnivs (univs.toArray.map (Ix.Kernel.Reader.convUniv id)) uIdxs =
-      .ok ls₂) :
-    ls₁ = ls₂ := by
-  induction uIdxs generalizing ls₁ ls₂ with
+private theorem mapM_univs_eq {ecx : Ix.Kernel.Reader.ECx .anon}
+    {univs : List Ixon.Univ}
+    (hunivs : ecx.univs = univs.toArray.map (Ix.Kernel.Reader.convUniv id))
+    {us : List UInt64} {ls ls_rd : List Core.KLevel}
+    (hls : us.mapM (fun i => univs[i.toNat]?.map (Ix.Kernel.Reader.convUniv id)) = some ls)
+    (hrd : us.mapM ecx.level = .ok ls_rd) :
+    ls_rd = ls := by
+  induction us generalizing ls ls_rd with
   | nil =>
-    simp [Option.bind, pure, Option.pure, Ix.Kernel.Reader.readUnivs] at h1 h2
-    rw [← h1, ← h2]
-  | cons i rest ih =>
-    simp only [List.mapM_cons, Ix.Kernel.Reader.readUnivs] at h1 h2
-    cases hget : univs[i.toNat]? with
-    | none =>
-      simp [hget] at h1
-    | some u =>
-      simp only [hget, Option.map_some, Option.bind_some] at h1
-      have hgetA : (univs.toArray.map (Ix.Kernel.Reader.convUniv id))[i.toNat]? =
-          some (Ix.Kernel.Reader.convUniv id u) := by
-        rw [Array.getElem?_map, ← Array.getElem?_toList, List.toArray_toList, hget]
-        rfl
-      simp only [hgetA, Bind.bind, Except.bind] at h2
-      cases hm : rest.mapM (fun j => univs[j.toNat]?.map (Ix.Kernel.Reader.convUniv id)) with
-      | none => simp [hm] at h1
-      | some tl₁ =>
-        simp only [hm, Option.bind_some, pure, Option.pure, Option.some.injEq] at h1
-        cases hr : Ix.Kernel.Reader.readUnivs (univs.toArray.map (Ix.Kernel.Reader.convUniv id)) rest with
-        | error _ => simp [hr] at h2
-        | ok tl₂ =>
-          simp only [hr, pure, Except.pure, Except.ok.injEq] at h2
-          subst h1 h2
-          exact congrArg _ (ih hm hr)
+    simp only [List.mapM_nil, Option.pure_def, Option.some.injEq] at hls
+    simp only [List.mapM_nil, pure, Except.pure, Except.ok.injEq] at hrd
+    exact hrd.symm.trans hls
+  | cons u rest ih =>
+    simp only [List.mapM_cons, Option.bind_eq_bind] at hls
+    obtain ⟨l1, hl1, hm2⟩ := Option.bind_eq_some_iff.mp hls
+    obtain ⟨lrest, hlrest, hls_eq⟩ := Option.bind_eq_some_iff.mp hm2
+    injection hls_eq with hls_eq'; subst hls_eq'
+    obtain ⟨u_raw, hu_raw, rfl⟩ := Option.map_eq_some_iff.mp hl1
+    have hu_arr : ecx.univs[u.toNat]? = some (Ix.Kernel.Reader.convUniv id u_raw) := by
+      rw [hunivs, Array.getElem?_map, List.getElem?_toArray, hu_raw]
+      rfl
+    have hlev1 : ecx.level u = .ok (Ix.Kernel.Reader.convUniv id u_raw) := by
+      simp [Ix.Kernel.Reader.ECx.level, hu_arr, pure, Except.pure]
+    simp only [List.mapM_cons, hlev1, bind, Except.bind] at hrd
+    cases hrest_rd : rest.mapM ecx.level with
+    | error _ => simp [hrest_rd] at hrd
+    | ok ls_r =>
+      simp only [hrest_rd, pure, Except.pure, Except.ok.injEq] at hrd
+      subst hrd
+      rw [ih hlrest hrest_rd]
 
 private theorem heapExprScoped_of_rawConvExpr_go
     {ecx : Ix.Kernel.Reader.ECx .anon}
@@ -727,57 +726,42 @@ private theorem heapExprScoped_of_rawConvExpr_go
     exact .bvar hlbb hidx (loadValue_enum_cell' cell)
   | @sort _ addr uIdx u lp huIdx hu rl cell =>
     intro n k E_rd _ _ hconv _ hdef
-    have hget : ecx.univs[uIdx.toNat]? = some (Ix.Kernel.Reader.convUniv id u) := by
-      rw [hunivs, Array.getElem?_map, ← Array.getElem?_toList, List.toArray_toList, hu]; rfl
-    simp only [Ix.Kernel.Reader.convExpr, hget, pure, Except.pure, Except.ok.injEq] at hconv
+    have hu_arr : ecx.univs[uIdx.toNat]? = some (Ix.Kernel.Reader.convUniv id u) := by
+      rw [hunivs, Array.getElem?_map, List.getElem?_toArray, hu]
+      rfl
+    simp only [Ix.Kernel.Reader.convExpr, Ix.Kernel.Reader.ECx.level, hu_arr,
+      pure, Except.pure, bind, Except.bind, Except.ok.injEq] at hconv
     subst hconv
-    rw [Ix.Kernel.Expr.mkSort_eq] at hdef
     exact .srt (loadValue_enum_cell' cell) (heapLevelScoped_of_rawKLevel rl hdef)
   | @ref _ addr rIdx uIdxs a d ap lsp ls hrIdx href hd ra hls rls cell =>
     intro n k E_rd _ _ hconv _ hdef
     simp only [Ix.Kernel.Reader.convExpr] at hconv
-    cases hkey : ecx.keyRef rIdx.toNat with
-    | error _ => simp [hkey, Bind.bind, Except.bind] at hconv
-    | ok nm =>
-      simp only [hkey, Bind.bind, Except.bind] at hconv
-      cases hru : Ix.Kernel.Reader.readUnivs ecx.univs uIdxs.toList with
-      | error _ => simp [hru] at hconv
-      | ok ls₂ =>
-        simp only [hru, pure, Except.pure, Except.ok.injEq] at hconv
-        subst hconv
-        rw [hunivs] at hru
-        have hleq := mapM_univs_eq hls hru
-        subst hleq
-        rw [Ix.Kernel.Expr.mkConst_eq] at hdef
-        exact .const (loadValue_enum_cell' cell) (heapLevelListScoped_of_rawKLevelList rls hdef)
+    obtain ⟨_, _, hbind2⟩ := except_bind_eq_ok' hconv
+    obtain ⟨ls_rd, hls_rd, hret⟩ := except_bind_eq_ok' hbind2
+    injection hret with hE; subst hE
+    have hleq := mapM_univs_eq hunivs hls hls_rd
+    subst hleq
+    exact .const (loadValue_enum_cell' cell) (heapLevelListScoped_of_rawKLevelList rls hdef)
   | @recur _ addr rIdx uIdxs a d ap lsp ls hrIdx hrec hd ra hls rls cell =>
     intro n k E_rd _ _ hconv _ hdef
     simp only [Ix.Kernel.Reader.convExpr] at hconv
-    cases hkey : ecx.keyRecur rIdx.toNat with
-    | error _ => simp [hkey, Bind.bind, Except.bind] at hconv
-    | ok nm =>
-      simp only [hkey, Bind.bind, Except.bind] at hconv
-      cases hru : Ix.Kernel.Reader.readUnivs ecx.univs uIdxs.toList with
-      | error _ => simp [hru] at hconv
-      | ok ls₂ =>
-        simp only [hru, pure, Except.pure, Except.ok.injEq] at hconv
-        subst hconv
-        rw [hunivs] at hru
-        have hleq := mapM_univs_eq hls hru
-        subst hleq
-        rw [Ix.Kernel.Expr.mkConst_eq] at hdef
-        exact .const (loadValue_enum_cell' cell) (heapLevelListScoped_of_rawKLevelList rls hdef)
+    cases hs_opt : ecx.self rIdx.toNat with
+    | none => simp [hs_opt, Ix.Kernel.Reader.malformed, throw, throwThe, MonadExceptOf.throw] at hconv
+    | some _ =>
+      simp only [hs_opt] at hconv
+      obtain ⟨_, _, hbind2⟩ := except_bind_eq_ok' hconv
+      obtain ⟨ls_rd, hls_rd, hret⟩ := except_bind_eq_ok' hbind2
+      injection hret with hE; subst hE
+      have hleq := mapM_univs_eq hunivs hls hls_rd
+      subst hleq
+      exact .const (loadValue_enum_cell' cell) (heapLevelListScoped_of_rawKLevelList rls hdef)
   | prj _ _ _ _ _ _ cell ih =>
     intro n k E_rd hn hbnd hconv hlbb hdef
     simp only [Ix.Kernel.Reader.convExpr] at hconv
-    cases hkey : ecx.keyRef _ with
-    | error _ => simp [hkey, Bind.bind, Except.bind] at hconv
-    | ok nm =>
-      simp only [hkey, Bind.bind, Except.bind] at hconv
-      obtain ⟨Ei, hEi, hret⟩ := except_bind_eq_ok' hconv
-      injection hret with hE; subst hE
-      rw [Ix.Kernel.Expr.mkProj_eq] at hlbb hdef
-      exact .proj (loadValue_enum_cell' cell) (ih hn hbnd hEi hlbb hdef)
+    obtain ⟨_, _, hbind2⟩ := except_bind_eq_ok' hconv
+    obtain ⟨Ei, hEi, hret⟩ := except_bind_eq_ok' hbind2
+    injection hret with hE; subst hE
+    exact .proj (loadValue_enum_cell' cell) (ih hn hbnd hEi hlbb hdef)
   | str _ _ _ _ _ cell =>
     intro _ _ _ _ _ _ _ _; exact .lit (loadValue_enum_cell' cell)
   | nat _ _ _ _ _ _ _ cell =>
@@ -788,7 +772,6 @@ private theorem heapExprScoped_of_rawConvExpr_go
     obtain ⟨Ef, hEf, h1⟩ := except_bind_eq_ok' hconv
     obtain ⟨Ea, hEa, hret⟩ := except_bind_eq_ok' h1
     injection hret with hE; subst hE
-    rw [Ix.Kernel.Expr.mkApp_eq] at hlbb hdef
     simp only [Ix.Kernel.Expr.looseBVarsBounded, Ix.Kernel.Expr.allLevelParamsDefined,
       Bool.and_eq_true] at hlbb hdef
     exact .app (loadValue_enum_cell' cell)
@@ -799,9 +782,8 @@ private theorem heapExprScoped_of_rawConvExpr_go
     obtain ⟨Et, hEt, h1⟩ := except_bind_eq_ok' hconv
     obtain ⟨Eb, hEb, hret⟩ := except_bind_eq_ok' h1
     injection hret with hE; subst hE
-    rw [Ix.Kernel.Expr.mkLam_eq] at hlbb hdef
-    simp only [Ix.Kernel.Expr.looseBVarsBounded, Ix.Kernel.Expr.allLevelParamsDefined,
-      Bool.and_eq_true] at hlbb hdef
+    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
+    simp [Ix.Kernel.Expr.allLevelParamsDefined, Ix.Kernel.BinderMeta.leanNever] at hdef
     exact .lam (loadValue_enum_cell' cell)
       (iht hn hbnd hEt hlbb.1 hdef.1) (ihb hn hbnd hEb hlbb.2 hdef.2)
   | all _ _ _ cell iht ihb =>
@@ -810,9 +792,8 @@ private theorem heapExprScoped_of_rawConvExpr_go
     obtain ⟨Et, hEt, h1⟩ := except_bind_eq_ok' hconv
     obtain ⟨Eb, hEb, hret⟩ := except_bind_eq_ok' h1
     injection hret with hE; subst hE
-    rw [Ix.Kernel.Expr.mkForall_eq] at hlbb hdef
-    simp only [Ix.Kernel.Expr.looseBVarsBounded, Ix.Kernel.Expr.allLevelParamsDefined,
-      Bool.and_eq_true] at hlbb hdef
+    simp only [Ix.Kernel.Expr.looseBVarsBounded, Bool.and_eq_true] at hlbb
+    simp [Ix.Kernel.Expr.allLevelParamsDefined, Ix.Kernel.BinderMeta.leanNever] at hdef
     exact .forallE (loadValue_enum_cell' cell)
       (iht hn hbnd hEt hlbb.1 hdef.1) (ihb hn hbnd hEb hlbb.2 hdef.2)
   | letE _ _ _ cell iht ihv ihb =>
@@ -822,7 +803,6 @@ private theorem heapExprScoped_of_rawConvExpr_go
     obtain ⟨Ev, hEv, h2⟩ := except_bind_eq_ok' h1
     obtain ⟨Eb, hEb, hret⟩ := except_bind_eq_ok' h2
     injection hret with hE; subst hE
-    rw [Ix.Kernel.Expr.mkLet_eq] at hlbb hdef
     simp only [Ix.Kernel.Expr.looseBVarsBounded, Ix.Kernel.Expr.allLevelParamsDefined,
       Bool.and_eq_true] at hlbb hdef
     exact .letE (loadValue_enum_cell' cell)
@@ -888,16 +868,17 @@ private theorem rawConvExpr_scoped_of_heapExprScoped_go
       rw [ld] at ld'; injection ld' with h1; injection h1 with _ ht _; exact absurd ht (by decide)
   | @sort _ addr uIdx u lp huIdx hu rl cell =>
     intro n k E_rd _ _ hconv hs
-    have hget : ecx.univs[uIdx.toNat]? = some (Ix.Kernel.Reader.convUniv id u) := by
-      rw [hunivs, Array.getElem?_map, ← Array.getElem?_toList, List.toArray_toList, hu]; rfl
-    simp only [Ix.Kernel.Reader.convExpr, hget, pure, Except.pure, Except.ok.injEq] at hconv
+    have hu_arr : ecx.univs[uIdx.toNat]? = some (Ix.Kernel.Reader.convUniv id u) := by
+      rw [hunivs, Array.getElem?_map, List.getElem?_toArray, hu]
+      rfl
+    simp only [Ix.Kernel.Reader.convExpr, Ix.Kernel.Reader.ECx.level, hu_arr,
+      pure, Except.pure, bind, Except.bind, Except.ok.injEq] at hconv
     subst hconv
     have ld := loadValue_enum_cell' (ext.getElem?_eq cell)
     cases hs with
     | srt ld' hl =>
       rw [ld] at ld'; injection ld' with h1; injection h1 with _ _ hargs; injection hargs with hlp
       subst hlp
-      rw [Ix.Kernel.Expr.mkSort_eq]
       exact ⟨rfl, rawKLevel_allParamsDefined_of_scoped ext rl hl⟩
     | bvar _ _ ld' | const ld' _ | app ld' _ _ | lam ld' _ _ | forallE ld' _ _
     | letE ld' _ _ _ | lit ld' | proj ld' _ =>
@@ -905,95 +886,77 @@ private theorem rawConvExpr_scoped_of_heapExprScoped_go
   | @ref _ addr rIdx uIdxs a d ap lsp ls hrIdx href hd ra hls rls cell =>
     intro n k E_rd _ _ hconv hs
     simp only [Ix.Kernel.Reader.convExpr] at hconv
-    cases hkey : ecx.keyRef rIdx.toNat with
-    | error _ => simp [hkey, Bind.bind, Except.bind] at hconv
-    | ok nm =>
-      simp only [hkey, Bind.bind, Except.bind] at hconv
-      cases hru : Ix.Kernel.Reader.readUnivs ecx.univs uIdxs.toList with
-      | error _ => simp [hru] at hconv
-      | ok ls₂ =>
-        simp only [hru, pure, Except.pure, Except.ok.injEq] at hconv
-        subst hconv
-        rw [hunivs] at hru
-        have hleq := mapM_univs_eq hls hru
-        subst hleq
-        have ld := loadValue_enum_cell' (ext.getElem?_eq cell)
-        cases hs with
-        | const ld' hls' =>
-          rw [ld] at ld'; injection ld' with h1; injection h1 with _ _ hargs
-          simp only [List.cons.injEq, and_true] at hargs
-          obtain ⟨-, rfl⟩ := hargs
-          rw [Ix.Kernel.Expr.mkConst_eq]
-          exact ⟨rfl, rawKLevelList_allParamsDefined_of_scoped ext rls hls'⟩
-        | bvar _ _ ld' | srt ld' _ | app ld' _ _ | lam ld' _ _ | forallE ld' _ _
-        | letE ld' _ _ _ | lit ld' | proj ld' _ =>
-          rw [ld] at ld'; injection ld' with h1; injection h1 with _ ht _; exact absurd ht (by decide)
+    obtain ⟨_, _, hbind2⟩ := except_bind_eq_ok' hconv
+    obtain ⟨ls_rd, hls_rd, hret⟩ := except_bind_eq_ok' hbind2
+    injection hret with hE; subst hE
+    have hleq := mapM_univs_eq hunivs hls hls_rd
+    subst hleq
+    have ld := loadValue_enum_cell' (ext.getElem?_eq cell)
+    cases hs with
+    | const ld' hls' =>
+      rw [ld] at ld'; injection ld' with h1; injection h1 with _ _ hargs
+      simp only [List.cons.injEq, and_true] at hargs
+      obtain ⟨-, rfl⟩ := hargs
+      exact ⟨rfl, rawKLevelList_allParamsDefined_of_scoped ext rls hls'⟩
+    | bvar _ _ ld' | srt ld' _ | app ld' _ _ | lam ld' _ _ | forallE ld' _ _
+    | letE ld' _ _ _ | lit ld' | proj ld' _ =>
+      rw [ld] at ld'; injection ld' with h1; injection h1 with _ ht _; exact absurd ht (by decide)
   | @recur _ addr rIdx uIdxs a d ap lsp ls hrIdx hrec hd ra hls rls cell =>
     intro n k E_rd _ _ hconv hs
     simp only [Ix.Kernel.Reader.convExpr] at hconv
-    cases hkey : ecx.keyRecur rIdx.toNat with
-    | error _ => simp [hkey, Bind.bind, Except.bind] at hconv
-    | ok nm =>
-      simp only [hkey, Bind.bind, Except.bind] at hconv
-      cases hru : Ix.Kernel.Reader.readUnivs ecx.univs uIdxs.toList with
-      | error _ => simp [hru] at hconv
-      | ok ls₂ =>
-        simp only [hru, pure, Except.pure, Except.ok.injEq] at hconv
-        subst hconv
-        rw [hunivs] at hru
-        have hleq := mapM_univs_eq hls hru
-        subst hleq
-        have ld := loadValue_enum_cell' (ext.getElem?_eq cell)
-        cases hs with
-        | const ld' hls' =>
-          rw [ld] at ld'; injection ld' with h1; injection h1 with _ _ hargs
-          simp only [List.cons.injEq, and_true] at hargs
-          obtain ⟨-, rfl⟩ := hargs
-          rw [Ix.Kernel.Expr.mkConst_eq]
-          exact ⟨rfl, rawKLevelList_allParamsDefined_of_scoped ext rls hls'⟩
-        | bvar _ _ ld' | srt ld' _ | app ld' _ _ | lam ld' _ _ | forallE ld' _ _
-        | letE ld' _ _ _ | lit ld' | proj ld' _ =>
-          rw [ld] at ld'; injection ld' with h1; injection h1 with _ ht _; exact absurd ht (by decide)
+    cases hs_opt : ecx.self rIdx.toNat with
+    | none => simp [hs_opt, Ix.Kernel.Reader.malformed, throw, throwThe, MonadExceptOf.throw] at hconv
+    | some _ =>
+      simp only [hs_opt] at hconv
+      obtain ⟨_, _, hbind2⟩ := except_bind_eq_ok' hconv
+      obtain ⟨ls_rd, hls_rd, hret⟩ := except_bind_eq_ok' hbind2
+      injection hret with hE; subst hE
+      have hleq := mapM_univs_eq hunivs hls hls_rd
+      subst hleq
+      have ld := loadValue_enum_cell' (ext.getElem?_eq cell)
+      cases hs with
+      | const ld' hls' =>
+        rw [ld] at ld'; injection ld' with h1; injection h1 with _ _ hargs
+        simp only [List.cons.injEq, and_true] at hargs
+        obtain ⟨-, rfl⟩ := hargs
+        exact ⟨rfl, rawKLevelList_allParamsDefined_of_scoped ext rls hls'⟩
+      | bvar _ _ ld' | srt ld' _ | app ld' _ _ | lam ld' _ _ | forallE ld' _ _
+      | letE ld' _ _ _ | lit ld' | proj ld' _ =>
+        rw [ld] at ld'; injection ld' with h1; injection h1 with _ ht _; exact absurd ht (by decide)
   | prj _ _ _ _ _ _ cell ih =>
     intro n k E_rd hn hbnd hconv hs
     simp only [Ix.Kernel.Reader.convExpr] at hconv
-    cases hkey : ecx.keyRef _ with
-    | error _ => simp [hkey, Bind.bind, Except.bind] at hconv
-    | ok nm =>
-      simp only [hkey, Bind.bind, Except.bind] at hconv
-      obtain ⟨Ei, hEi, hret⟩ := except_bind_eq_ok' hconv
-      injection hret with hE; subst hE
-      have ld := loadValue_enum_cell' (ext.getElem?_eq cell)
-      cases hs with
-      | proj ld' hi =>
-        rw [ld] at ld'; injection ld' with h1; injection h1 with _ _ hargs
-        simp only [List.cons.injEq, and_true] at hargs
-        obtain ⟨-, -, rfl⟩ := hargs
-        rw [Ix.Kernel.Expr.mkProj_eq]
-        exact ih hn hbnd hEi hi
-      | bvar _ _ ld' | srt ld' _ | const ld' _ | app ld' _ _ | lam ld' _ _
-      | forallE ld' _ _ | letE ld' _ _ _ | lit ld' =>
-        rw [ld] at ld'; injection ld' with h1; injection h1 with _ ht _; exact absurd ht (by decide)
+    obtain ⟨_, _, hbind2⟩ := except_bind_eq_ok' hconv
+    obtain ⟨Ei, hEi, hret⟩ := except_bind_eq_ok' hbind2
+    injection hret with hE; subst hE
+    have ld := loadValue_enum_cell' (ext.getElem?_eq cell)
+    cases hs with
+    | proj ld' hi =>
+      rw [ld] at ld'; injection ld' with h1; injection h1 with _ _ hargs
+      simp only [List.cons.injEq, and_true] at hargs
+      obtain ⟨-, -, rfl⟩ := hargs
+      obtain ⟨hl1, hd1⟩ := ih hn hbnd hEi hi
+      exact ⟨by simp [Ix.Kernel.Expr.looseBVarsBounded, hl1],
+             by simp [Ix.Kernel.Expr.allLevelParamsDefined, hd1]⟩
+    | bvar _ _ ld' | srt ld' _ | const ld' _ | app ld' _ _ | lam ld' _ _
+    | forallE ld' _ _ | letE ld' _ _ _ | lit ld' =>
+      rw [ld] at ld'; injection ld' with h1; injection h1 with _ ht _; exact absurd ht (by decide)
   | str _ _ _ _ _ cell =>
     intro n k E_rd _ _ hconv _
     simp only [Ix.Kernel.Reader.convExpr] at hconv
-    cases hbl : ecx.readStr _ with
-    | error _ => simp [hbl, Bind.bind, Except.bind] at hconv
-    | ok s =>
-      simp only [hbl, Bind.bind, Except.bind, pure, Except.pure, Except.ok.injEq] at hconv
-      subst hconv
-      rw [Ix.Kernel.Expr.mkLit_eq]
+    obtain ⟨_, _, h2⟩ := except_bind_eq_ok' hconv
+    cases hutf : String.fromUTF8? _ with
+    | none => rw [hutf] at h2; simp [Ix.Kernel.Reader.malformed, throw, throwThe, MonadExceptOf.throw] at h2
+    | some _ =>
+      rw [hutf] at h2
+      injection h2 with hE; subst hE
       exact ⟨rfl, rfl⟩
   | nat _ _ _ _ _ _ _ cell =>
     intro n k E_rd _ _ hconv _
     simp only [Ix.Kernel.Reader.convExpr] at hconv
-    cases hbl : ecx.readNat _ with
-    | error _ => simp [hbl, Bind.bind, Except.bind] at hconv
-    | ok v =>
-      simp only [hbl, Bind.bind, Except.bind, pure, Except.pure, Except.ok.injEq] at hconv
-      subst hconv
-      rw [Ix.Kernel.Expr.mkLit_eq]
-      exact ⟨rfl, rfl⟩
+    obtain ⟨_, _, h2⟩ := except_bind_eq_ok' hconv
+    injection h2 with hE; subst hE
+    exact ⟨rfl, rfl⟩
   | app _ _ cell ihf iha =>
     intro n k E_rd hn hbnd hconv hs
     simp only [Ix.Kernel.Reader.convExpr] at hconv
@@ -1008,7 +971,6 @@ private theorem rawConvExpr_scoped_of_heapExprScoped_go
       obtain ⟨rfl, rfl⟩ := hargs
       obtain ⟨lf, df⟩ := ihf hn hbnd hEf hf
       obtain ⟨la, da⟩ := iha hn hbnd hEa ha
-      rw [Ix.Kernel.Expr.mkApp_eq]
       exact ⟨by simp [Ix.Kernel.Expr.looseBVarsBounded, lf, la],
              by simp [Ix.Kernel.Expr.allLevelParamsDefined, df, da]⟩
     | bvar _ _ ld' | srt ld' _ | const ld' _ | lam ld' _ _ | forallE ld' _ _
@@ -1028,9 +990,9 @@ private theorem rawConvExpr_scoped_of_heapExprScoped_go
       obtain ⟨rfl, rfl, -⟩ := hargs
       obtain ⟨lt, dt⟩ := iht hn hbnd hEt ht
       obtain ⟨lb, db⟩ := ihb hn hbnd hEb hb
-      rw [Ix.Kernel.Expr.mkLam_eq]
       exact ⟨by simp [Ix.Kernel.Expr.looseBVarsBounded, lt, lb],
-             by simp [Ix.Kernel.Expr.allLevelParamsDefined, dt, db]⟩
+             by simp [Ix.Kernel.Expr.allLevelParamsDefined, dt, db,
+               Ix.Kernel.BinderMeta.leanNever]⟩
     | bvar _ _ ld' | srt ld' _ | const ld' _ | app ld' _ _ | forallE ld' _ _
     | letE ld' _ _ _ | lit ld' | proj ld' _ =>
       rw [ld] at ld'; injection ld' with h1; injection h1 with _ ht _; exact absurd ht (by decide)
@@ -1048,9 +1010,9 @@ private theorem rawConvExpr_scoped_of_heapExprScoped_go
       obtain ⟨rfl, rfl, -⟩ := hargs
       obtain ⟨lt, dt⟩ := iht hn hbnd hEt ht
       obtain ⟨lb, db⟩ := ihb hn hbnd hEb hb
-      rw [Ix.Kernel.Expr.mkForall_eq]
       exact ⟨by simp [Ix.Kernel.Expr.looseBVarsBounded, lt, lb],
-             by simp [Ix.Kernel.Expr.allLevelParamsDefined, dt, db]⟩
+             by simp [Ix.Kernel.Expr.allLevelParamsDefined, dt, db,
+               Ix.Kernel.BinderMeta.leanNever]⟩
     | bvar _ _ ld' | srt ld' _ | const ld' _ | app ld' _ _ | lam ld' _ _
     | letE ld' _ _ _ | lit ld' | proj ld' _ =>
       rw [ld] at ld'; injection ld' with h1; injection h1 with _ ht _; exact absurd ht (by decide)
@@ -1070,7 +1032,6 @@ private theorem rawConvExpr_scoped_of_heapExprScoped_go
       obtain ⟨lt, dt⟩ := iht hn hbnd hEt ht
       obtain ⟨lv, dv⟩ := ihv hn hbnd hEv hv
       obtain ⟨lb, db⟩ := ihb hn hbnd hEb hb
-      rw [Ix.Kernel.Expr.mkLet_eq]
       exact ⟨by simp [Ix.Kernel.Expr.looseBVarsBounded, lt, lv, lb],
              by simp [Ix.Kernel.Expr.allLevelParamsDefined, dt, dv, db]⟩
     | bvar _ _ ld' | srt ld' _ | const ld' _ | app ld' _ _ | lam ld' _ _
