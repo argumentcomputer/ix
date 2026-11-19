@@ -67,7 +67,7 @@ record, its own advice records (`AdviceListedIn`), and its directly witnessed co
 (`DirectContOwn`). -/
 def runPayload (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable) :
     PayloadRel := fun g B a =>
-  ModeledRouteAt calls B ∧
+  6 ≤ g ∧ ModeledRouteAt calls B ∧
   ∃ rb cs advAs, FamilyCallExact calls bAddr t B rb (some (valLimit g)) cs advAs ∧
     (a = rb ∨ AdviceListedIn advAs a ∨
       DirectContOwn calls bAddr t B rb (some (valLimit g)) cs advAs a)
@@ -128,10 +128,12 @@ theorem payDirect_cases {calls : List (Call F)} {bAddr : _root_.Address}
     (h : PayDirect t E₀ (runPayload calls bAddr t) g a) :
     PayAdviceAt calls bAddr t E₀ g a ∨ PayContainerAt calls bAddr t E₀ g a ∨
       PayRecordAt calls bAddr t E₀ g a := by
-  obtain ⟨B, hB, -, rb, cs, advAs, hex, rfl | ha | ha⟩ := h
-  · exact Or.inr (Or.inr ⟨B, cs, hB, hex.toCall⟩)
-  · exact Or.inl ⟨B, rb, cs, hB, hex.toCall, adviceListedIn_toAdviceIn hex.toOwn ha⟩
-  · exact Or.inr (Or.inl ⟨B, rb, cs, hB, hex.toCall, directContOwn_toContainerRecIn ha⟩)
+  obtain ⟨B, hB, -, -, rb, cs, advAs, hex, rfl | ha | ha⟩ := h
+  · exact Or.inr (Or.inr ⟨B, cs, hB, FamilyCallExact.toCall hex⟩)
+  · exact Or.inl ⟨B, rb, cs, hB, FamilyCallExact.toCall hex,
+      adviceListedIn_toAdviceIn (FamilyCallExact.toOwn hex) ha⟩
+  · exact Or.inr (Or.inl ⟨B, rb, cs, hB, FamilyCallExact.toCall hex,
+      directContOwn_toContainerRecIn ha⟩)
 
 /-- **What is left of the payload's facts at the addresses the run's family checks name
 directly** (`PayDirect`). Both fields are proved of every collision-free run
@@ -242,9 +244,21 @@ theorem runFamOf_spec {g : Nat} {B rb : _root_.Address}
 /-- The selected record is in the group's payload. -/
 theorem runFamOf_payload {g : Nat} {B rb : _root_.Address}
     (h : runFamOf calls bAddr t E₀ g B = some rb) : runPayload calls bAddr t g B rb := by
-  obtain ⟨-, hmod, cs, hcs⟩ := runFamOf_spec h
+  obtain ⟨hnew, hmod, cs, hcs⟩ := runFamOf_spec h
+  have hg6 : 6 ≤ g := by
+    by_contra hlt
+    have h1 : groupStore t E₀ (runPayload calls bAddr t) g = basisStore := by
+      unfold groupStore; exact ite_eq_left (by omega)
+    have h2 : groupStore t E₀ (runPayload calls bAddr t) (g + 1) = basisStore := by
+      unfold groupStore; exact ite_eq_left (by omega)
+    have hs := hnew.1
+    have hn := hnew.2
+    rw [h2] at hs
+    rw [h1] at hn
+    rw [hn] at hs
+    cases hs
   obtain ⟨advAs, hex⟩ := familyCallExact_of_call hcs
-  exact ⟨hmod, rb, cs, advAs, hex, Or.inl rfl⟩
+  exact ⟨hg6, hmod, rb, cs, advAs, hex, Or.inl rfl⟩
 
 /-- **`GroupFamilyChecks.famCall` of the run's selection.** -/
 theorem runFamOf_famCall {g : Nat} :
@@ -258,7 +272,7 @@ theorem runFamOf_famCall {g : Nat} :
   intro B rb h
   obtain ⟨hn, hm, cs, hcs⟩ := runFamOf_spec h
   obtain ⟨advAs, hex⟩ := familyCallExact_of_call hcs
-  exact ⟨hn, hm, cs, advAs, hex.toOwn, fun a ha => ⟨rb, cs, advAs, hex, ha⟩,
+  exact ⟨hn, hm, cs, advAs, FamilyCallExact.toOwn hex, fun a ha => ⟨rb, cs, advAs, hex, ha⟩,
     fun x hx => ⟨rb, cs, advAs, hex, hx⟩⟩
 
 /-- **`GroupFamilyChecks.modeled` of every run**: the check of a member of a new block of
@@ -745,7 +759,7 @@ theorem advNotUnit_of_run (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoad
   rintro B rb a hfam ⟨rb', cs, advAs, hex, hin⟩ ⟨⟨r, hr, had, hk⟩, hnew⟩
   have hmod := (runFamOf_spec hfam).2.1
   have hreach := runPayload_reach hC hb hax hR hg6 hg hw hfam
-    ⟨hmod, rb', cs, advAs, hex, Or.inr (Or.inl hin)⟩
+    ⟨hg6, hmod, rb', cs, advAs, hex, Or.inr (Or.inl hin)⟩
   rcases hk with hop | hs
   · have h1 := hpay a hreach r had hop
     rw [groupOf_of_mem_roleGroup hr] at h1
@@ -1191,12 +1205,12 @@ theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRows
         advice := fun B rb a h hB ha => by
           obtain ⟨rb', cs, advAs, hex, hin⟩ := ha
           exact ⟨runPayload_held hC hb hax hR hg6 hg hw h
-              ⟨(runFamOf_spec h).2.1, rb', cs, advAs, hex, Or.inr (Or.inl hin)⟩,
+              ⟨hg6, (runFamOf_spec h).2.1, rb', cs, advAs, hex, Or.inr (Or.inl hin)⟩,
             fun hn => hrank.advice B rb a h hB ⟨rb', cs, advAs, hex, hin⟩ hn⟩
         container := fun B rb x h hB hx => by
           obtain ⟨rb', cs, advAs, hex, hin⟩ := hx
           exact ⟨runPayload_held hC hb hax hR hg6 hg hw h
-              ⟨(runFamOf_spec h).2.1, rb', cs, advAs, hex, Or.inr (Or.inr hin)⟩,
+              ⟨hg6, (runFamOf_spec h).2.1, rb', cs, advAs, hex, Or.inr (Or.inr hin)⟩,
             fun hn => hrank.container B rb x h hB ⟨rb', cs, advAs, hex, hin⟩ hn⟩
         checked := fun a c hn hc hu htw => by
           rcases groupStore_checked hC hb hax (hR.payload hC) hg6 hw a c hn hc hu with h | h

@@ -5,6 +5,7 @@ import IxVMRefinement.Binding.FamilyFlat
 import IxVMRefinement.Binding.FamilyRecon
 import IxVMRefinement.Assembly.AdviceListed
 import IxVMRefinement.Obs.KernelModeled1
+import IxVMRefinement.L1.Stream
 
 /-! # A group's admission with modeled blocks: the family checks and the store
 
@@ -84,7 +85,7 @@ inductive DirectContWitness (x_rc x_block : SourceValue F) (x : _root_.Address) 
         (cs_ord ++ (⟨"UInt8::to_field", [x_kind], m_ord⟩ : Call F) ::
         (cs165 ++ (⟨"KernelModeled::check_witness", [x_rc, x_block, x_x, .field 2, x_s3], m157⟩ : Call F) ::
         (cs127 ++ (⟨"KernelModeled::check_witnesses", [x_rc, x_block, v_ns, v200], m117⟩ : Call F) ::
-          cs194))))))))) :
+          cs194))))))) :
       DirectContWitness x_rc x_block x x_s x_n x_out x_s' h h' cs
   | tail {x_s x_n x_out x_s' : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
       {m47 m82 m_ord m157 m117 m184 m256 : Heap F}
@@ -110,51 +111,74 @@ inductive DirectContWitness (x_rc x_block : SourceValue F) (x : _root_.Address) 
         (cs_ord ++ (⟨"UInt8::to_field", [x_kind], m_ord⟩ : Call F) ::
         (cs165 ++ (⟨"KernelModeled::check_witness", [x_rc, x_block, x_x, v_kf, x_s3], m157⟩ : Call F) ::
         (cs127 ++ (⟨"KernelModeled::check_witnesses", [x_rc, x_block, v_ns, v200], m117⟩ : Call F) ::
-          cs194))))))))) :
+          cs194))))))) :
       DirectContWitness x_rc x_block x x_s x_n x_out x_s' h h' cs
 
-/-- **The advice list read directly from a `check_family.Path` unfolding** at the advice walk's
-heap `m423`. -/
-def OwnAdviceOfPath {rc xb xrb r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (p : Obs.«KernelModeled::check_family».Path rc xb xrb h r h' cs)
-    (advAs : List Bytes.Address) : Prop :=
-  match p with
-  | .run (x_advice := x_advice) (m423 := m423) .. =>
-    Aiur.Library.List.RepList Core.addrListEnum (Bytes.RepAddressRef Core.addrTy) m423 advAs x_advice
+/-- **The witness, advice, container, and family reference guards extracted from a single unfolding
+of `KernelModeled::check_family`**: packs `path`, the `assert_in_order` on `rec_block`, the
+`L1.Stream` feeding `check_witnesses`, `ev_ws`, `ev_asb`, `ev_crr`, `ev_adv` (with `advRep` for
+`advAs`), `ev_fro` (`family_refs_ok` on the same witness set), call memberships in `cs`, and an
+optional `DirectContWitness` for `optCont`. -/
+inductive CheckFamilyGuards (x_rc x_block x_rec_block : SourceValue F) (h : Heap F)
+    (r : SourceValue F) (h' : Heap F) (cs : List (Call F)) (advAs : List Bytes.Address)
+    (optCont : Option _root_.Address) : Prop where
+  | mk
+      (path : Obs.«KernelModeled::check_family».Path x_rc x_block x_rec_block h r h' cs)
+      (m_ord0 m_ord1 : Heap F) (v_ord : SourceValue F) (cs_ord : List (Call F))
+      (ext_h_ord : Heap.Extends h m_ord0)
+      (ev_ord : ObsFn Obs.W "KernelRoles::assert_in_order" [x_rc, x_rec_block]
+        m_ord0 v_ord m_ord1 cs_ord)
+      (m_ws m_ws' : Heap F) (nw : Nat) (bytes4 : List UInt8)
+      (x_s4 x_outside x_s5 : SourceValue F) (cs_ws : List (Call F))
+      (ext_h_ws : Heap.Extends h m_ws)
+      (hs4 : L1.Stream m_ws bytes4 x_s4)
+      (ev_ws : ObsFn Obs.W "KernelModeled::check_witnesses" [x_rc, x_block, x_s4, .field (nw : F)]
+        m_ws (.tuple [x_outside, x_s5]) m_ws' cs_ws)
+      (x_wset : SourceValue F) (m_asb : Heap F) (cs_asb : List (Call F))
+      (ev_asb : ObsFn Obs.W "KernelClaim::addr_set_build"
+        [x_outside, .construct Obs.Names.«RBTreeMap::RBTreeMap<Field>» "Nil" []]
+        m_ws' x_wset m_asb cs_asb)
+      (v_crr : SourceValue F) (m_crr : Heap F) (cs_crr : List (Call F))
+      (ev_crr : ObsFn Obs.W "KernelModeled::container_recs_refs" [x_rc, x_outside, x_wset]
+        m_asb v_crr m_crr cs_crr)
+      (x_advice v_adv : SourceValue F) (m_adv' : Heap F) (cs_adv : List (Call F))
+      (ev_adv : ObsFn Obs.W "KernelModeled::check_advice_records"
+        [x_rc, x_advice, .construct Obs.Names.«RBTreeMap::RBTreeMap<Field>» "Nil" [], x_wset]
+        m_crr v_adv m_adv' cs_adv)
+      (advRep : Aiur.Library.List.RepList Core.addrListEnum (Bytes.RepAddressRef Core.addrTy)
+        m_crr advAs x_advice)
+      (m_fro0 m_fro1 : Heap F) (v_fro : SourceValue F) (cs_fro : List (Call F))
+      (ext_asb_fro : Heap.Extends m_asb m_fro0)
+      (ev_fro : ObsFn Obs.W "KernelModeled::family_refs_ok" [x_rc, x_rec_block, x_block, x_wset]
+        m_fro0 v_fro m_fro1 cs_fro)
+      (sub_ws : ∀ cl ∈ cs_ws, cl ∈ cs)
+      (sub_asb : ∀ cl ∈ cs_asb, cl ∈ cs)
+      (sub_crr : ∀ cl ∈ cs_crr, cl ∈ cs)
+      (sub_adv : ∀ cl ∈ cs_adv, cl ∈ cs)
+      (sub_fro : ∀ cl ∈ cs_fro, cl ∈ cs)
+      (hcont : ∀ x, optCont = some x →
+        DirectContWitness x_rc x_block x x_s4 (.field (nw : F)) x_outside x_s5 m_ws m_ws' cs_ws)
 
-/-- **A container recursor witnessed directly by a `check_family.Path` unfolding** on its own
-`check_witnesses` step (`ev344`). -/
-def DirectContOfPath {rc xb xrb r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (p : Obs.«KernelModeled::check_family».Path rc xb xrb h r h' cs) (x : _root_.Address) : Prop :=
-  match p with
-  | .run (m297 := m297) (x_n_w := x_nw) (x_s4 := x_s4) (m332 := m332) (cs342 := cs342)
-      (x_outside := x_outside) (x_s5 := x_s5) .. =>
-    DirectContWitness rc xb x x_s4 x_nw x_outside x_s5 m297 m332 cs342
-
-/-- **A family check with its exact own advice list** read directly from its `check_family.Path`
-unfolding (`OwnAdviceOfPath`). -/
+/-- **A family check with its exact own advice list and reference guards** (`CheckFamilyGuards`). -/
 def FamilyCallExact (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (B rb : _root_.Address) (lim : Option Nat)
     (cs : List (Call F)) (advAs : List Bytes.Address) : Prop :=
   ∃ (h h' : Heap F) (rc xb xrb r : SourceValue F),
     Claim.RCLimRep t bAddr lim h rc ∧ Core.S0.addr h xb B ∧ Core.S0.addr h xrb rb ∧
     ObsFn Obs.W "KernelModeled::check_family" [rc, xb, xrb] h r h' cs ∧
-    (∃ p : Obs.«KernelModeled::check_family».Path rc xb xrb h r h' cs,
-      OwnAdviceOfPath p advAs) ∧
+    CheckFamilyGuards rc xb xrb h r h' cs advAs none ∧
     (⟨"KernelModeled::check_family", [rc, xb, xrb], h⟩ : Call F) ∈ calls ∧
     (∀ cl ∈ cs, cl ∈ calls)
 
 /-- **A container recursor witnessed directly by an observed family check**: the family check's
-own `check_witnesses` walk (`DirectContOfPath` on the same `check_family.Path` unfolding as
-`OwnAdviceOfPath`) took kind `2` on `x`. -/
+own `check_witnesses` walk took kind `2` on `x` (`CheckFamilyGuards ... (some x)`). -/
 def DirectContOwn (calls : List (Call F)) (bAddr : _root_.Address)
     (t : Ix.Kernel.RoleTable) (B rb : _root_.Address) (lim : Option Nat)
     (cs : List (Call F)) (advAs : List Bytes.Address) (x : _root_.Address) : Prop :=
   ∃ (h h' : Heap F) (rc xb xrb r : SourceValue F),
     Claim.RCLimRep t bAddr lim h rc ∧ Core.S0.addr h xb B ∧ Core.S0.addr h xrb rb ∧
     ObsFn Obs.W "KernelModeled::check_family" [rc, xb, xrb] h r h' cs ∧
-    (∃ p : Obs.«KernelModeled::check_family».Path rc xb xrb h r h' cs,
-      OwnAdviceOfPath p advAs ∧ DirectContOfPath p x) ∧
+    CheckFamilyGuards rc xb xrb h r h' cs advAs (some x) ∧
     (⟨"KernelModeled::check_family", [rc, xb, xrb], h⟩ : Call F) ∈ calls ∧
     (∀ cl ∈ cs, cl ∈ calls)
 
@@ -171,48 +195,48 @@ theorem FamilyCallExact.toOwn {calls : List (Call F)} {bAddr : _root_.Address}
     {cs : List (Call F)} {advAs : List Bytes.Address}
     (hex : FamilyCallExact calls bAddr t B rb lim cs advAs) :
     FamilyCallOwn calls bAddr t B rb lim cs advAs := by
-  obtain ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev, ⟨p, hadv⟩, hmem, hsub⟩ := hex
-  refine ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev, ?_, hmem, hsub⟩
-  match p with
-  | .run (m105 := m105) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
-      (ev_yqjbwijz := ev_ord) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
-      (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465)
-      (hc1474 := hc) .. =>
-    have e0 : Heap.Extends h m105 := by
-      match sg112 with
-      | .Nil (ev15 := ev15) (he33 := he33) .. => rw [he33]; exact ev15.heap_extends
-      | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
-    have e_ws : Heap.Extends h _ :=
-      e0.trans (ev126.heap_extends.trans (ev148.heap_extends.trans
-        (ev194.heap_extends.trans (ev_ord.heap_extends.trans
-          (ev231.heap_extends.trans (ev266.heap_extends.trans ev309.heap_extends))))))
-    exact FamilyOwnAdvice.mk (path := p) (ev_ws := ev344) (ev_asb := ev403) (ev_adv := ev465)
-      (ext_h_ws := e_ws) (ext_asb_adv := ev435.heap_extends) (advRep := hadv)
-      (sub_ws := fun cl hcl => by rw [hc]; simp [hcl])
-      (sub_asb := fun cl hcl => by rw [hc]; simp [hcl])
-      (sub_adv := fun cl hcl => by rw [hc]; simp [hcl])
+  obtain ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev, g, hmem, hsub⟩ := hex
+  obtain ⟨path, -, -, -, -, -, -, m_ws, m_ws', nw, -, x_s4, x_outside, x_s5, cs_ws,
+    ext_h_ws, -, ev_ws, x_wset, m_asb, cs_asb, ev_asb, -, m_crr, -, ev_crr,
+    x_advice, v_adv, m_adv', cs_adv, ev_adv, advRep, -, -, -, -, -, -,
+    sub_ws, sub_asb, -, sub_adv, -, -⟩ := g
+  exact ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev,
+    FamilyOwnAdvice.mk path m_ws x_s4 (.field (nw : F)) x_outside x_s5 m_ws' cs_ws ev_ws
+      x_wset m_asb cs_asb ev_asb m_crr m_adv' x_advice v_adv cs_adv ev_adv
+      ext_h_ws ev_crr.heap_extends advRep sub_ws sub_asb sub_adv,
+    hmem, hsub⟩
 
 theorem FamilyCallExact.toCall {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {B rb : _root_.Address} {lim : Option Nat}
     {cs : List (Call F)} {advAs : List Bytes.Address}
     (hex : FamilyCallExact calls bAddr t B rb lim cs advAs) :
     FamilyCallAtLim calls bAddr t B rb lim cs :=
-  hex.toOwn.toCall
+  FamilyCallOwn.toCall (FamilyCallExact.toOwn hex)
 
 theorem DirectContOwn.toExact {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {B rb : _root_.Address} {lim : Option Nat}
     {cs : List (Call F)} {advAs : List Bytes.Address} {x : _root_.Address}
     (hdc : DirectContOwn calls bAddr t B rb lim cs advAs x) :
     FamilyCallExact calls bAddr t B rb lim cs advAs := by
-  obtain ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev, ⟨p, hadv, -⟩, hmem, hsub⟩ := hdc
-  exact ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev, ⟨p, hadv⟩, hmem, hsub⟩
+  obtain ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev, g, hmem, hsub⟩ := hdc
+  obtain ⟨path, m_ord0, m_ord1, v_ord, cs_ord, ext_h_ord, ev_ord, m_ws, m_ws', nw, bytes4,
+    x_s4, x_outside, x_s5, cs_ws, ext_h_ws, hs4, ev_ws, x_wset, m_asb, cs_asb, ev_asb,
+    v_crr, m_crr, cs_crr, ev_crr, x_advice, v_adv, m_adv', cs_adv, ev_adv, advRep,
+    m_fro0, m_fro1, v_fro, cs_fro, ext_asb_fro, ev_fro, sub_ws, sub_asb, sub_crr, sub_adv,
+    sub_fro, -⟩ := g
+  exact ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev,
+    ⟨path, m_ord0, m_ord1, v_ord, cs_ord, ext_h_ord, ev_ord, m_ws, m_ws', nw, bytes4,
+      x_s4, x_outside, x_s5, cs_ws, ext_h_ws, hs4, ev_ws, x_wset, m_asb, cs_asb, ev_asb,
+      v_crr, m_crr, cs_crr, ev_crr, x_advice, v_adv, m_adv', cs_adv, ev_adv, advRep,
+      m_fro0, m_fro1, v_fro, cs_fro, ext_asb_fro, ev_fro, sub_ws, sub_asb, sub_crr, sub_adv,
+      sub_fro, fun _ hc => nomatch hc⟩, hmem, hsub⟩
 
 theorem DirectContOwn.toOwn {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {B rb : _root_.Address} {lim : Option Nat}
     {cs : List (Call F)} {advAs : List Bytes.Address} {x : _root_.Address}
     (hdc : DirectContOwn calls bAddr t B rb lim cs advAs x) :
     FamilyCallOwn calls bAddr t B rb lim cs advAs :=
-  hdc.toExact.toOwn
+  FamilyCallExact.toOwn (DirectContOwn.toExact hdc)
 
 /-- **What a binding run's family checks give at group `g`** (module docstring). -/
 structure GroupFamilyChecks (calls : List (Call F)) (bAddr : _root_.Address)

@@ -1092,26 +1092,27 @@ theorem directContOwn_toContainerRecIn {calls : List (Call F)} {bAddr : _root_.A
     {cs : List (Call F)} {advAs : List Bytes.Address} {x : _root_.Address}
     (hdc : DirectContOwn calls bAddr t B rb lim cs advAs x) :
     ContainerRecIn cs x := by
-  obtain ⟨h, h', rc, xb, xrb, r, -, -, -, -, ⟨p, -, hdw⟩, -, -⟩ := hdc
-  match p with
-  | .run (hc1474 := hc) .. =>
-    dsimp [DirectContOfPath] at hdw
-    have hcr : ContainerRecIn _ x := by
-      induction hdw with
-      | head _ _ _ _ _ evWit _ _ hx _ _ _ hcs =>
-        match Obs.«KernelModeled::check_witness».obs evWit with
-        | .n0 (hv14 := h0) .. => exact absurd (Value.field.inj h0) (by decide)
-        | .n1 (hv171 := h1) .. => exact absurd (Value.field.inj h1) (by decide)
-        | .n3 (hv447 := h3) .. => exact absurd (Value.field.inj h3) (by decide)
-        | .n2 (ev328 := evCnt) (ev_dpuowbtw := evW) (hc442 := hcsW) .. =>
-          refine ⟨_, _, _, _, ?_,
-            Core.S0.addr_mono (evCnt.heap_extends.trans evW.heap_extends) hx⟩
-          rw [hcs, hcsW]; simp
-      | tail _ _ _ _ _ _ _ _ _ _ _ _ hcs ih =>
-        obtain ⟨rc₁, xa₁, ib₁, h₁, hmem₁, hxa₁⟩ := ih
-        exact ⟨rc₁, xa₁, ib₁, h₁, by rw [hcs]; simp [hmem₁], hxa₁⟩
-    obtain ⟨rc₁, xa₁, ib₁, h₁, hmem₁, hxa₁⟩ := hcr
-    exact ⟨rc₁, xa₁, ib₁, h₁, by rw [hc]; simp [hmem₁], hxa₁⟩
+  obtain ⟨h, h', rc, xb, xrb, r, -, -, -, -, g, -, -⟩ := hdc
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, cs_ws, -, -, -,
+    -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -,
+    sub_ws, -, -, -, -, hcont⟩ := g
+  have hdw := hcont x rfl
+  have hcr : ContainerRecIn cs_ws x := by
+    induction hdw with
+    | head _ _ _ _ _ evWit _ _ hx _ _ _ hcs =>
+      match Obs.«KernelModeled::check_witness».obs evWit with
+      | .n0 (hv14 := h0) .. => exact absurd (Value.field.inj h0) (by decide)
+      | .n1 (hv171 := h1) .. => exact absurd (Value.field.inj h1) (by decide)
+      | .n3 (hv447 := h3) .. => exact absurd (Value.field.inj h3) (by decide)
+      | .n2 (ev328 := evCnt) (ev_dpuowbtw := evW) (hc442 := hcsW) .. =>
+        refine ⟨_, _, _, _, ?_,
+          Core.S0.addr_mono (evCnt.heap_extends.trans evW.heap_extends) hx⟩
+        rw [hcs, hcsW]; simp
+    | tail _ _ _ _ _ _ _ _ _ _ _ _ hcs ih =>
+      obtain ⟨rc₁, xa₁, ib₁, h₁, hmem₁, hxa₁⟩ := ih
+      exact ⟨rc₁, xa₁, ib₁, h₁, by rw [hcs]; simp [hmem₁], hxa₁⟩
+  obtain ⟨rc₁, xa₁, ib₁, h₁, hmem₁, hxa₁⟩ := hcr
+  exact ⟨rc₁, xa₁, ib₁, h₁, sub_ws _ hmem₁, hxa₁⟩
 
 /-! ## Reference-guard helpers -/
 
@@ -2655,7 +2656,8 @@ structure FamilyCallUnpacked (calls : List (Call F)) (bAddr : _root_.Address)
         recordOf E₀ blk = some cb ∧ ConstAddrOf blk cb ref) ∨
       ref ∈ outs.map Core.ixAddr)
 
-/-- **Every observed `FamilyCallAtLim` carries its exact own advice list (`FamilyCallExact`).** -/
+/-- **Every observed `FamilyCallAtLim` carries its exact own advice list and reference guards
+(`FamilyCallExact`).** -/
 theorem familyCallExact_of_call {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {B rb : _root_.Address} {lim : Option Nat} {cs : List (Call F)}
     (hfc : FamilyCallAtLim calls bAddr t B rb lim cs) :
@@ -2663,36 +2665,7 @@ theorem familyCallExact_of_call {calls : List (Call F)} {bAddr : _root_.Address}
   obtain ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev, hmem, hsub⟩ := hfc
   have hpath := Obs.«KernelModeled::check_family».obs ev
   match hpath with
-  | .run (ev126 := ev126) (ev148 := ev148) (ev194 := ev194) (ev_yqjbwijz := evOrd)
-      (ev231 := ev231) (ev266 := ev266) (ev309 := ev309) (ev344 := ev344)
-      (ev403 := ev403) (ev435 := ev435) .. =>
-    obtain ⟨-, bytes0, hst0⟩ := read_payload_stream ev126
-    obtain ⟨_, rem1, _, _, -, hr1, -, hs1, -, -⟩ := Decl.get_address_spec hst0 ev148
-    injection hr1 with h1; injection h1 with _ h2; injection h2 with e1 _
-    subst e1
-    obtain ⟨_, bytes2, -, -, hs2, -⟩ :=
-      get_count_spec (L1.Stream.mono (ev194.heap_extends.trans evOrd.heap_extends) hs1) ev231
-    obtain ⟨_, advAs, _, -, -, hadvRep, -, -⟩ := Decl.get_addrs_spec hs2 ev266
-    have ext423 := ev309.heap_extends.trans (ev344.heap_extends.trans
-      (ev403.heap_extends.trans ev435.heap_extends))
-    exact ⟨advAs, h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev,
-      ⟨hpath, RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy) ext423 hadvRep⟩,
-      hmem, hsub⟩
-
-/-- **Unpack every guard of an observed `FamilyCallExact`**. -/
-theorem FamilyCallExact.unpack {calls : List (Call F)} {bAddr : _root_.Address}
-    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {B rb : _root_.Address} {lim : Option Nat}
-    {cs : List (Call F)} {advAs : List Bytes.Address}
-    (hC : CollisionFreeRun calls E₀) (hbd : IxVM.Consistency.Bounded calls)
-    (hex : FamilyCallExact calls bAddr t B rb lim cs advAs) :
-    FamilyCallUnpacked calls bAddr t E₀ B rb lim cs advAs := by
-  obtain ⟨h, h', rc, xb, xrb, r, hrc, ⟨bB, hbB, rfl⟩, ⟨bR, hbR, rfl⟩, ev, ⟨p, hadvP⟩, hmemEv, hsub⟩ := hex
-  match p with
-  | .run (m105 := m105) (x_advice := x_adv) (x_n_w := x_nw) (x_s4 := x_s4)
-      (m297 := m297) (m332 := m332) (cs342 := csWs) (x_outside := x_out) (x_s5 := x_s5)
-      (v390 := x_wset) (m391 := m391) (cs401 := csAsb) (m423 := m423) (cs433 := csCrr)
-      (m453 := m453) (cs463 := csAdv) (cs1303 := csFro)
-      (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+  | .run (m105 := m105) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
       (ev_yqjbwijz := evOrd) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
       (ev344 := evWs) (ev403 := evAsb) (ev435 := evCrr) (ev465 := evAdv)
       (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
@@ -2704,48 +2677,27 @@ theorem FamilyCallExact.unpack {calls : List (Call F)} {bAddr : _root_.Address}
       (ev_cwwgzxtj := evFlat) (ev1246 := ev1246) (ev_mitevvsv := evFlen)
       (ev_rqpeovbn := evZ1) (ev_xrhmaojz := evZ2) (ev_whimdwjd := evVg)
       (ev1305 := evFro) (hc1474 := hc1474) .. =>
-    dsimp [OwnAdviceOfPath] at hadvP
     have e0 : Heap.Extends h m105 := by
       match sg112 with
       | .Nil (ev15 := ev15) (he33 := he33) .. => rw [he33]; exact ev15.heap_extends
       | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
     have ext184 : Heap.Extends h _ :=
       e0.trans (ev126.heap_extends.trans (ev148.heap_extends.trans ev194.heap_extends))
-    have hrbOrd : Claim.OpOrderedAt t lim (Core.ixAddr bR) :=
-      assert_in_order_spec (hrc.mono ext184)
-        ⟨bR, Bytes.repAddressRef_heapMono₂ Core.addrTy ext184 hbR, rfl⟩ evOrd
     obtain ⟨-, bytes0, hst0⟩ := read_payload_stream ev126
     obtain ⟨_, rem1, _, _, -, hr1, -, hs1, -, -⟩ := Decl.get_address_spec hst0 ev148
     injection hr1 with h1; injection h1 with _ h2; injection h2 with e1 _
     subst e1
     obtain ⟨_, bytes2, -, -, hs2, -⟩ :=
       get_count_spec (L1.Stream.mono (ev194.heap_extends.trans evOrd.heap_extends) hs1) ev231
-    obtain ⟨_, advAs', bytes3, -, -, hadvRep254, hs3, -⟩ := Decl.get_addrs_spec hs2 ev266
+    obtain ⟨_, advAs, bytes3, -, -, hadvRep, hs3, -⟩ := Decl.get_addrs_spec hs2 ev266
     obtain ⟨nw, bytes4, -, hnwEq, hs4, -⟩ := get_count_spec hs3 ev309
     subst hnwEq
-    have ext297 : Heap.Extends h m297 :=
+    have ext297 : Heap.Extends h _ :=
       ext184.trans (evOrd.heap_extends.trans (ev231.heap_extends.trans
         (ev266.heap_extends.trans ev309.heap_extends)))
-    have hsubWs : ∀ cl ∈ csWs, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1474]; simp [hcl])
-    have hsubCrr : ∀ cl ∈ csCrr, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1474]; simp [hcl])
-    have hsubAdv : ∀ cl ∈ csAdv, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1474]; simp [hcl])
-    have hsubFro : ∀ cl ∈ csFro, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1474]; simp [hcl])
-    obtain ⟨outs, bytes5, houtsRep, -, houtsOrd, houtsCls, houtsDc⟩ :=
-      check_witnesses_spec hC (ZMod.val (nw : F)) rfl (hrc.mono ext297)
-        (Bytes.repAddressRef_heapMono₂ Core.addrTy ext297 hbB) hs4 evWs hsubWs
-    obtain ⟨extAsb, hwsetRev⟩ := Claim.addr_set_build_spec houtsRep (Claim.RepAddrSet.nil m332) evAsb
-    have hwset : Claim.RepAddrSet m391 (outs.map Core.ixAddr) x_wset := by
-      obtain ⟨es, hbst, hlen, hmem⟩ := hwsetRev
-      refine ⟨es, hbst, hlen, fun b => ?_⟩
-      rw [hmem b]
-      simp [List.mem_reverse]
-    have ext391 : Heap.Extends h m391 := ext297.trans (evWs.heap_extends.trans extAsb)
-    have houts391 := RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy) extAsb houtsRep
-    have hcrr := container_recs_refs_spec hC hbd outs (hrc.mono ext391) houts391 hwset evCrr hsubCrr
-    have ext423 : Heap.Extends h m423 := ext391.trans evCrr.heap_extends
-    have hadvSpec := check_advice_records_indexed_spec hC.runStore hC.hashedStored
-      (hrc.mono ext423) hadvP (hwset.mono evCrr.heap_extends) evAdv hsubAdv
-    have ext391_fro : Heap.Extends m391 _ :=
+    have ext423 := ev309.heap_extends.trans (evWs.heap_extends.trans
+      (evAsb.heap_extends.trans evCrr.heap_extends))
+    have extAsbFro : Heap.Extends _ _ :=
       evCrr.heap_extends.trans <| evAdv.heap_extends.trans <| ev513.heap_extends.trans <|
         ev601.heap_extends.trans <| ev634.heap_extends.trans <| ev664.heap_extends.trans <|
         ev686.heap_extends.trans <| ev716.heap_extends.trans <| ev759.heap_extends.trans <|
@@ -2756,32 +2708,88 @@ theorem FamilyCallExact.unpack {calls : List (Call F)} {bAddr : _root_.Address}
         evM2.heap_extends.trans <| evM3.heap_extends.trans <| ev1203.heap_extends.trans <|
         evFlat.heap_extends.trans <| ev1246.heap_extends.trans <| evFlen.heap_extends.trans <|
         evZ1.heap_extends.trans <| evZ2.heap_extends.trans evVg.heap_extends
-    have extFro := ext391.trans ext391_fro
-    have hfro := family_refs_ok_spec hC.runStore hC.hashedStored (hrc.mono extFro)
-      ⟨bR, Bytes.repAddressRef_heapMono₂ Core.addrTy extFro hbR, rfl⟩
-      ⟨bB, Bytes.repAddressRef_heapMono₂ Core.addrTy extFro hbB, rfl⟩
-      (hwset.mono ext391_fro) evFro hsubFro
-    refine ⟨hrbOrd, outs, ?_, ?_, ?_, ?_, hadvSpec, hfro⟩
-    · intro w hw
-      obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hw
-      exact houtsOrd b hb
-    · intro w hw
-      obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hw
-      rcases houtsDc b hb with h0 | h1 | hdw | h3
-      · exact Or.inl h0
-      · exact Or.inr (Or.inl h1)
-      · obtain ⟨-, -, -, hcrWit⟩ := hdw.extract hC (hrc.mono ext297)
-          (Bytes.repAddressRef_heapMono₂ Core.addrTy ext297 hbB) hs4 hsubWs
-        exact Or.inr (Or.inr (Or.inl ⟨⟨h, h', rc, xb, xrb, r, hrc, ⟨bB, hbB, rfl⟩, ⟨bR, hbR, rfl⟩,
-          ev, ⟨p, hadvP, hdw⟩, hmemEv, hsub⟩, hcrWit⟩))
-      · exact Or.inr (Or.inr (Or.inr h3))
-    · intro w hw
-      obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hw
-      exact hcrr b hb
+    exact ⟨advAs, h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev,
+      ⟨hpath, _, _, _, _, ext184, evOrd, _, _, nw, bytes4, _, _, _, _, ext297, hs4, evWs,
+        _, _, _, evAsb, _, _, _, evCrr, _, _, _, _, evAdv,
+        RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy) ext423 hadvRep,
+        _, _, _, _, extAsbFro, evFro,
+        (fun cl hcl => by rw [hc1474]; simp [hcl]),
+        (fun cl hcl => by rw [hc1474]; simp [hcl]),
+        (fun cl hcl => by rw [hc1474]; simp [hcl]),
+        (fun cl hcl => by rw [hc1474]; simp [hcl]),
+        (fun cl hcl => by rw [hc1474]; simp [hcl]),
+        fun _ hc => nomatch hc⟩,
+      hmem, hsub⟩
 
-/-- **Unpack a `DirectContOwn` witness directly from its own `check_family.Path`**:
+/-- **Unpack every guard of an observed `FamilyCallExact`**. -/
+theorem FamilyCallExact.unpack {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {B rb : _root_.Address} {lim : Option Nat}
+    {cs : List (Call F)} {advAs : List Bytes.Address}
+    (hC : CollisionFreeRun calls E₀) (hbd : IxVM.Consistency.Bounded calls)
+    (hex : FamilyCallExact calls bAddr t B rb lim cs advAs) :
+    FamilyCallUnpacked calls bAddr t E₀ B rb lim cs advAs := by
+  obtain ⟨h, h', rc, xb, xrb, r, hrc, ⟨bB, hbB, rfl⟩, ⟨bR, hbR, rfl⟩, ev, g, hmemEv, hsub⟩ := hex
+  obtain ⟨path, m_ord0, m_ord1, v_ord, cs_ord, ext184, evOrd,
+    m297, m332, nw, bytes4, x_s4, x_out, x_s5, csWs, ext297, hs4, evWs,
+    x_wset, m391, csAsb, evAsb,
+    v_crr, m423, csCrr, evCrr,
+    x_adv, v_adv, m453, csAdv, evAdv, hadvP,
+    m_fro0, m_fro1, v_fro, csFro, ext391_fro, evFro,
+    subWs, subAsb, subCrr, subAdv, subFro, -⟩ := g
+  have hrbOrd : Claim.OpOrderedAt t lim (Core.ixAddr bR) :=
+    assert_in_order_spec (hrc.mono ext184)
+      ⟨bR, Bytes.repAddressRef_heapMono₂ Core.addrTy ext184 hbR, rfl⟩ evOrd
+  have hsubWs : ∀ cl ∈ csWs, cl ∈ calls := fun cl hcl => hsub cl (subWs cl hcl)
+  have hsubCrr : ∀ cl ∈ csCrr, cl ∈ calls := fun cl hcl => hsub cl (subCrr cl hcl)
+  have hsubAdv : ∀ cl ∈ csAdv, cl ∈ calls := fun cl hcl => hsub cl (subAdv cl hcl)
+  have hsubFro : ∀ cl ∈ csFro, cl ∈ calls := fun cl hcl => hsub cl (subFro cl hcl)
+  obtain ⟨outs, -, houtsRep, -, houtsOrd, -, houtsDc⟩ :=
+    check_witnesses_spec hC (ZMod.val (nw : F)) rfl (hrc.mono ext297)
+      (Bytes.repAddressRef_heapMono₂ Core.addrTy ext297 hbB) hs4 evWs hsubWs
+  obtain ⟨extAsb, hwsetRev⟩ := Claim.addr_set_build_spec houtsRep (Claim.RepAddrSet.nil m332) evAsb
+  have hwset : Claim.RepAddrSet m391 (outs.map Core.ixAddr) x_wset := by
+    obtain ⟨es, hbst, hlen, hmem⟩ := hwsetRev
+    refine ⟨es, hbst, hlen, fun b => ?_⟩
+    rw [hmem b]
+    simp [List.mem_reverse]
+  have ext391 : Heap.Extends h m391 := ext297.trans (evWs.heap_extends.trans extAsb)
+  have houts391 := RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy) extAsb houtsRep
+  have hcrr := container_recs_refs_spec hC hbd outs (hrc.mono ext391) houts391 hwset evCrr hsubCrr
+  have ext423 : Heap.Extends h m423 := ext391.trans evCrr.heap_extends
+  have hadvSpec := check_advice_records_indexed_spec hC.runStore hC.hashedStored
+    (hrc.mono ext423) hadvP (hwset.mono evCrr.heap_extends) evAdv hsubAdv
+  have extFro := ext391.trans ext391_fro
+  have hfro := family_refs_ok_spec hC.runStore hC.hashedStored (hrc.mono extFro)
+    ⟨bR, Bytes.repAddressRef_heapMono₂ Core.addrTy extFro hbR, rfl⟩
+    ⟨bB, Bytes.repAddressRef_heapMono₂ Core.addrTy extFro hbB, rfl⟩
+    (hwset.mono ext391_fro) evFro hsubFro
+  refine ⟨hrbOrd, outs, ?_, ?_, ?_, hadvSpec, hfro⟩
+  · intro w hw
+    obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hw
+    exact houtsOrd b hb
+  · intro w hw
+    obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hw
+    rcases houtsDc b hb with h0 | h1 | hdw | h3
+    · exact Or.inl h0
+    · exact Or.inr (Or.inl h1)
+    · obtain ⟨-, -, -, hcrWit⟩ := hdw.extract hC (hrc.mono ext297)
+        (Bytes.repAddressRef_heapMono₂ Core.addrTy ext297 hbB) hs4 hsubWs
+      exact Or.inr (Or.inr (Or.inl ⟨⟨h, h', rc, xb, xrb, r, hrc, ⟨bB, hbB, rfl⟩, ⟨bR, hbR, rfl⟩,
+        ev, ⟨path, m_ord0, m_ord1, v_ord, cs_ord, ext184, evOrd,
+          m297, m332, nw, bytes4, x_s4, x_out, x_s5, csWs, ext297, hs4, evWs,
+          x_wset, m391, csAsb, evAsb, v_crr, m423, csCrr, evCrr,
+          x_adv, v_adv, m453, csAdv, evAdv, hadvP,
+          m_fro0, m_fro1, v_fro, csFro, ext391_fro, evFro,
+          subWs, subAsb, subCrr, subAdv, subFro,
+          fun _ heq => by cases heq; exact hdw⟩, hmemEv, hsub⟩, hcrWit⟩))
+    · exact Or.inr (Or.inr (Or.inr h3))
+  · intro w hw
+    obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hw
+    exact hcrr b hb
+
+/-- **Unpack a `DirectContOwn` witness directly from its `CheckFamilyGuards`**:
 gives `x ∈ outs.map ixAddr`, `OpOrderedAt`, `ContainerRecIn`, `check_container_rec` at `ib` with
-`PathPos E₀ B ib`, `ContainerRefsFacts`, and full `FamilyCallUnpacked` on the same `outs`. -/
+`PathPos E₀ B ib`, `ContainerRefsFacts`, and witness classification on the same `outs`. -/
 theorem DirectContOwn.unpack {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {B rb : _root_.Address} {lim : Option Nat}
     {cs : List (Call F)} {advAs : List Bytes.Address} {x : _root_.Address}
@@ -2818,68 +2826,55 @@ theorem DirectContOwn.unpack {calls : List (Call F)} {bAddr : _root_.Address}
         (∃ ib c cib, PathPos E₀ B ib ∧ recordOf E₀ w = some c ∧ IsProj c ∧
           Ix.Cert.ownerOf w c = ib ∧ usedRefIdxs c = [] ∧
           recordOf E₀ ib = some cib ∧ ConstAddrOf ib cib w)) := by
-  obtain ⟨h, h', rc, xb, xrb, r, hrc, ⟨bB, hbB, rfl⟩, ⟨bR, hbR, rfl⟩, ev,
-    ⟨p, hadvP, hdw⟩, hmemEv, hsub⟩ := hdc
-  match p with
-  | .run (m105 := m105) (m297 := m297) (m332 := m332) (cs342 := csWs)
-      (v390 := x_wset) (m391 := m391) (cs433 := csCrr)
-      (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
-      (ev_yqjbwijz := evOrd) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
-      (ev344 := evWs) (ev403 := evAsb) (ev435 := evCrr) (hc1474 := hc1474) .. =>
-    dsimp [OwnAdviceOfPath] at hadvP
-    dsimp [DirectContOfPath] at hdw
-    have e0 : Heap.Extends h m105 := by
-      match sg112 with
-      | .Nil (ev15 := ev15) (he33 := he33) .. => rw [he33]; exact ev15.heap_extends
-      | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
-    have ext184 : Heap.Extends h _ :=
-      e0.trans (ev126.heap_extends.trans (ev148.heap_extends.trans ev194.heap_extends))
-    obtain ⟨-, bytes0, hst0⟩ := read_payload_stream ev126
-    obtain ⟨_, rem1, _, _, -, hr1, -, hs1, -, -⟩ := Decl.get_address_spec hst0 ev148
-    injection hr1 with h1; injection h1 with _ h2; injection h2 with e1 _
-    subst e1
-    obtain ⟨_, bytes2, -, -, hs2, -⟩ :=
-      get_count_spec (L1.Stream.mono (ev194.heap_extends.trans evOrd.heap_extends) hs1) ev231
-    obtain ⟨_, _, bytes3, -, -, -, hs3, -⟩ := Decl.get_addrs_spec hs2 ev266
-    obtain ⟨nw, bytes4, -, hnwEq, hs4, -⟩ := get_count_spec hs3 ev309
-    subst hnwEq
-    have ext297 : Heap.Extends h m297 :=
-      ext184.trans (evOrd.heap_extends.trans (ev231.heap_extends.trans
-        (ev266.heap_extends.trans ev309.heap_extends)))
-    have hsubWs : ∀ cl ∈ csWs, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1474]; simp [hcl])
-    have hsubCrr : ∀ cl ∈ csCrr, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc1474]; simp [hcl])
-    obtain ⟨outs, -, houtsRep, -, houtsOrd, -, houtsDc⟩ :=
-      check_witnesses_spec hC (ZMod.val (nw : F)) rfl (hrc.mono ext297)
-        (Bytes.repAddressRef_heapMono₂ Core.addrTy ext297 hbB) hs4 evWs hsubWs
-    obtain ⟨⟨outs', houtsRep', hxMem'⟩, hordX, hcrWs, hcrWit⟩ :=
-      hdw.extract hC (hrc.mono ext297)
+  obtain ⟨h, h', rc, xb, xrb, r, hrc, ⟨bB, hbB, rfl⟩, ⟨bR, hbR, rfl⟩, ev, g, hmemEv, hsub⟩ := hdc
+  obtain ⟨path, m_ord0, m_ord1, v_ord, cs_ord, ext184, evOrd,
+    m297, m332, nw, bytes4, x_s4, x_out, x_s5, csWs, ext297, hs4, evWs,
+    x_wset, m391, csAsb, evAsb,
+    v_crr, m423, csCrr, evCrr,
+    x_adv, v_adv, m453, csAdv, evAdv, hadvP,
+    m_fro0, m_fro1, v_fro, csFro, ext391_fro, evFro,
+    subWs, subAsb, subCrr, subAdv, subFro, hcont⟩ := g
+  have hdw := hcont x rfl
+  have hsubWs : ∀ cl ∈ csWs, cl ∈ calls := fun cl hcl => hsub cl (subWs cl hcl)
+  have hsubCrr : ∀ cl ∈ csCrr, cl ∈ calls := fun cl hcl => hsub cl (subCrr cl hcl)
+  obtain ⟨outs, -, houtsRep, -, houtsOrd, -, houtsDc⟩ :=
+    check_witnesses_spec hC (ZMod.val (nw : F)) rfl (hrc.mono ext297)
+      (Bytes.repAddressRef_heapMono₂ Core.addrTy ext297 hbB) hs4 evWs hsubWs
+  obtain ⟨⟨outs', houtsRep', hxMem'⟩, hordX, hcrWs, hcrWit⟩ :=
+    hdw.extract hC (hrc.mono ext297)
+      (Bytes.repAddressRef_heapMono₂ Core.addrTy ext297 hbB) hs4 hsubWs
+  have eouts : outs' = outs := addrList_rep_det houtsRep' houtsRep
+  subst eouts
+  obtain ⟨extAsb, hwsetRev⟩ := Claim.addr_set_build_spec houtsRep (Claim.RepAddrSet.nil m332) evAsb
+  have hwset : Claim.RepAddrSet m391 (outs'.map Core.ixAddr) x_wset := by
+    obtain ⟨es, hbst, hlen, hmem⟩ := hwsetRev
+    refine ⟨es, hbst, hlen, fun b => ?_⟩
+    rw [hmem b]; simp [List.mem_reverse]
+  have ext391 : Heap.Extends h m391 := ext297.trans (evWs.heap_extends.trans extAsb)
+  have houts391 := RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy) extAsb houtsRep
+  have hcrr := container_recs_refs_spec hC hbd outs' (hrc.mono ext391) houts391 hwset evCrr hsubCrr
+  obtain ⟨bx, hbx, rfl⟩ := List.mem_map.mp hxMem'
+  refine ⟨outs', List.mem_map_of_mem hbx, hordX, ?_, hcrWit, hcrr bx hbx, ?_, ?_⟩
+  · obtain ⟨rc₁, xa₁, ib₁, h₁, hmem₁, hxa₁⟩ := hcrWs
+    exact ⟨rc₁, xa₁, ib₁, h₁, subWs _ hmem₁, hxa₁⟩
+  · intro w hw
+    obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hw
+    exact houtsOrd b hb
+  · intro w hw
+    obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hw
+    rcases houtsDc b hb with h0 | h1 | hdwW | h3
+    · exact Or.inl h0
+    · exact Or.inr (Or.inl h1)
+    · obtain ⟨-, -, -, hcrW⟩ := hdwW.extract hC (hrc.mono ext297)
         (Bytes.repAddressRef_heapMono₂ Core.addrTy ext297 hbB) hs4 hsubWs
-    have eouts : outs' = outs := addrList_rep_det houtsRep' houtsRep
-    subst eouts
-    obtain ⟨extAsb, hwsetRev⟩ := Claim.addr_set_build_spec houtsRep (Claim.RepAddrSet.nil m332) evAsb
-    have hwset : Claim.RepAddrSet m391 (outs'.map Core.ixAddr) x_wset := by
-      obtain ⟨es, hbst, hlen, hmem⟩ := hwsetRev
-      refine ⟨es, hbst, hlen, fun b => ?_⟩
-      rw [hmem b]; simp [List.mem_reverse]
-    have ext391 : Heap.Extends h m391 := ext297.trans (evWs.heap_extends.trans extAsb)
-    have houts391 := RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy) extAsb houtsRep
-    have hcrr := container_recs_refs_spec hC hbd outs' (hrc.mono ext391) houts391 hwset evCrr hsubCrr
-    obtain ⟨bx, hbx, rfl⟩ := List.mem_map.mp hxMem'
-    refine ⟨outs', List.mem_map_of_mem hbx, hordX, ?_, hcrWit, hcrr bx hbx, ?_, ?_⟩
-    · obtain ⟨rc₁, xa₁, ib₁, h₁, hmem₁, hxa₁⟩ := hcrWs
-      exact ⟨rc₁, xa₁, ib₁, h₁, by rw [hc1474]; simp [hmem₁], hxa₁⟩
-    · intro w hw
-      obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hw
-      exact houtsOrd b hb
-    · intro w hw
-      obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hw
-      rcases houtsDc b hb with h0 | h1 | hdwW | h3
-      · exact Or.inl h0
-      · exact Or.inr (Or.inl h1)
-      · obtain ⟨-, -, -, hcrW⟩ := hdwW.extract hC (hrc.mono ext297)
-          (Bytes.repAddressRef_heapMono₂ Core.addrTy ext297 hbB) hs4 hsubWs
-        exact Or.inr (Or.inr (Or.inl ⟨⟨h, h', rc, xb, xrb, r, hrc, ⟨bB, hbB, rfl⟩, ⟨bR, hbR, rfl⟩,
-          ev, ⟨p, hadvP, hdwW⟩, hmemEv, hsub⟩, hcrW⟩))
-      · exact Or.inr (Or.inr (Or.inr h3))
+      exact Or.inr (Or.inr (Or.inl ⟨⟨h, h', rc, xb, xrb, r, hrc, ⟨bB, hbB, rfl⟩, ⟨bR, hbR, rfl⟩,
+        ev, ⟨path, m_ord0, m_ord1, v_ord, cs_ord, ext184, evOrd,
+          m297, m332, nw, bytes4, x_s4, x_out, x_s5, csWs, ext297, hs4, evWs,
+          x_wset, m391, csAsb, evAsb, v_crr, m423, csCrr, evCrr,
+          x_adv, v_adv, m453, csAdv, evAdv, hadvP,
+          m_fro0, m_fro1, v_fro, csFro, ext391_fro, evFro,
+          subWs, subAsb, subCrr, subAdv, subFro,
+          fun _ heq => by cases heq; exact hdwW⟩, hmemEv, hsub⟩, hcrW⟩))
+    · exact Or.inr (Or.inr (Or.inr h3))
 
 end IxVM.Refinement.Binding

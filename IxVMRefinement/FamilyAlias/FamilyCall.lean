@@ -283,7 +283,8 @@ theorem closureFamilyCheck_of_call {L : Ix.Kernel.Env .anon → NativeFam .anon 
   have hcb' : recordOf R' B = some cb := Binding.recordOf_of_loaded hC.store.le₂.1 hcb
   have hnB' : Binding.New R R' B := ⟨by rw [hcb']; rfl, hnB.2⟩
   obtain ⟨blk, advM, tys, rhsss, hF⟩ := hcall calls bAddr t ρ.E₀ B rb cb crb ms rs
-    (some (Binding.valLimit g)) cs (adv B) hS hrun.hashedStored hFB.block hFB.record hown.toCall
+    (some (Binding.valLimit g)) cs (adv B) hS hrun.hashedStored hFB.block hFB.record
+    (Binding.FamilyCallOwn.toCall hown)
     hroute (Or.inr ⟨advAs, hown, fun a ha => Or.inl (hadvIn a ha)⟩)
   refine ⟨fun Ec hRc hst env hext hnd hinv hX hinert hrefs hadv1 hadv2 hfresh => ?_, hF.recRefs⟩
   have hSE : FamilyStepEnv.{u} L calls t ρ.E₀ (some (Binding.valLimit g)) B cb rb crb (adv B)
