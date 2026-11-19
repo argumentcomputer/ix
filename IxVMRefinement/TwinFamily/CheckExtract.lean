@@ -1548,6 +1548,139 @@ private theorem check_rules_go_nfields {calls : List (Call F)} {t : Ix.Kernel.Ro
         exact ih (by simp at hbound_j; omega) (hext.trans ext_step) (hext_ib.trans ext_step)
           ev434 (fun cl hcl => hsub cl (by rw [hc]; simp [hcl])) c' ru' hget cvj cnP cnF hfind'
 
+private theorem check_rules_go_ctor_params {calls : List (Call F)} {E₀ : Ixon.Env}
+    {src : Ixon.Constant} {recurAddrs : List _root_.Address}
+    {blobs : List (_root_.Address × ByteArray)} {tree : L1.BinderTreeData}
+    {bM : Bytes.Address} {iM : Nat} {x_ib : SourceValue F} {h_ib : Heap F}
+    {cbM : Ixon.Constant} {msM : Array Ixon.MutConst} {indM : Ixon.Inductive}
+    (hRS : LoadedReads.RunStore calls E₀)
+    (hbd : Bounded calls)
+    (hiM : iM < 72057594037927936)
+    (hbM : Bytes.RepAddressRef Core.addrTy h_ib bM x_ib)
+    (hrec_cbM : recordOf E₀ (Core.ixAddr bM) = some cbM)
+    (hcbM : cbM.info = .muts msM)
+    (hmsM : msM.toList[iM]? = some (.indc indM))
+    (hindM_np : indM.params.toNat < 72057594037927936) :
+    ∀ {j : Nat} {root : F} {rus : List Ixon.RecursorRule} {x_rules : SourceValue F}
+      {h₀ : Heap F}
+      {x_rc x_rm x_nl x_ty x_rp x_ni x_il x_pins x_src x_dst x_aset x_s r : SourceValue F}
+      {h h' : Heap F} {cs : List (Call F)},
+      j + rus.length < 72057594037927936 →
+      L1.RulesTraceRep src.refs.toList recurAddrs src.univs.toList src.sharing.toList blobs tree
+        h₀ j root rus x_rules →
+      Heap.Extends h₀ h → Heap.Extends h_ib h →
+      ObsFn Obs.W "KernelModeled::check_rules_go"
+        [x_rc, x_rm, x_nl, x_ty, x_rp, x_ni, x_rules, x_ib, .field (iM : F),
+          .field (indM.params.toNat : F), x_il, x_pins, x_src, x_dst, x_aset, x_s,
+          .field (j : F)] h r h' cs →
+      (∀ cl ∈ cs, cl ∈ calls) →
+      ∀ (c_idx : Nat), c_idx < rus.length →
+        ∀ (ct : Ixon.Constructor), indM.ctors.toList[j + c_idx]? = some ct →
+          ct.params.toNat = indM.params.toNat := by
+  intro j root rus x_rules h₀ x_rc x_rm x_nl x_ty x_rp x_ni x_il x_pins x_src x_dst x_aset
+    x_s r h h' cs hbound_j hrep
+  induction hrep generalizing h h' cs x_s with
+  | nil cell =>
+    intro _ _ _ _ c_idx hc_lt
+    simp at hc_lt
+  | @cons j root addr rhsPtr rest ru rus plan cell hf raw planned levels rs ih =>
+    intro hext hext_ib ev hsub c_idx hc_lt ct hct
+    match Obs.«KernelModeled::check_rules_go».obs ev with
+    | .Nil (ld12 := ld12) .. =>
+      have := Core.loadValue_enum_cell (heapExt_getElem? hext cell)
+      rw [this] at ld12
+      exact absurd (Value.construct.inj (Except.ok.inj ld12)).2.1 (by decide)
+    | .Cons (x_rest := xrest) (v116 := v116) (m42 := m42) (m117 := m117)
+        (m155 := m155) (p163 := p163) (x_cnp := xcnp) (m77 := m77) (v451 := v451)
+        (cs127 := cs127) (cs169 := cs169) (cs432 := cs432)
+        (ld12 := ld12) (ev54 := ev54) (ev129 := ev129) (ev171 := ev171) (ld165 := ld165)
+        (heq258 := heq258) (ev292 := ev292) (op577 := op577) (ev434 := ev434) (hc579 := hc) .. =>
+      have hld := Core.loadValue_enum_cell (heapExt_getElem? hext cell)
+      rw [hld] at ld12
+      injection ld12 with hv
+      injection hv with _ _ hargs
+      injection hargs with _ htl
+      injection htl with hrest_eq _
+      subst hrest_eq
+      cases c_idx with
+      | zero =>
+        simp only [Nat.add_zero] at hct
+        have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
+        have hsub127 : ∀ cl ∈ cs127, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
+        have hsub169 : ∀ cl ∈ cs169, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
+        have hbM_m42 := Bytes.repAddressRef_heapMono₂ Core.addrTy (hext_ib.trans ev54.heap_extends) hbM
+        obtain ⟨bC, hbC_rep, hbC_addr⟩ := FamilyAlias.projection_addr_ctor_bounded ev129
+          (Core.bounded_sub hsub127 hbd) hbM_m42
+        have hiM_val : ZMod.val (iM : F) = iM := ZMod.val_natCast_of_lt (by omega)
+        have hj_val : ZMod.val (j : F) = j := ZMod.val_natCast_of_lt (by simp at hbound_j; omega)
+        rw [hiM_val, hj_val] at hbC_addr
+        let c0 : Core.ScopedCtx := Core.ScopedCtx.unrestricted ⟨{}, .empty, default, none⟩
+        have hhash_cprj := Core.hashed_mono hsub127 (Core.projection_addr_ctor_hashed c0 ev129 hbM_m42)
+        rw [hiM_val, hj_val] at hhash_cprj
+        obtain ⟨rawC, c_cp, hhC, haddrC, hexC, -, hresC⟩ :=
+          L1.get_ci_block_trace_spec (Core.bounded_sub hsub169 hbd) hbC_rep ev171
+        let c_exp : Ixon.Constant :=
+          ⟨.cPrj ⟨iM.toUInt64, j.toUInt64, Core.ixAddr bM⟩, #[], #[], #[], #[]⟩
+        have haddr_exp : Address.blake3Pure (Ixon.serConstant c_exp) = Core.ixAddr bC := by
+          rw [hbC_addr]; rfl
+        have hraw_eq : rawC = Ixon.serConstant c_exp :=
+          Option.some.inj ((hRS.blobs rawC (Core.hashed_mono hsub169 hhC)).symm.trans
+            (by rw [haddrC, ← haddr_exp]; exact hRS.blobs _ hhash_cprj))
+        have hwfC := L1.projConstant_wireWF_cPrj iM.toUInt64 j.toUInt64 bM
+        have hccp_eq : c_cp = c_exp :=
+          Except.ok.inj (hexC.symm.trans
+            (by rw [hraw_eq]; exact Ixon.Verify.deConstantExact_serConstant _ hwfC))
+        subst c_cp
+        unfold L1.GetCIBlockTraceResult at hresC
+        dsimp only [c_exp] at hresC
+        obtain ⟨-, -, blkC, cbC, msC, indC, ctC, blobsC, treeC, planC, vC, hhBC, haBC, hexBC,
+          hcbC, hmsC, hctC, -, -, -, hldC, hrawC, -⟩ := hresC
+        have hcbC_eq : cbC = cbM :=
+          hRS.record_eq ((hRS.recordOf_eq_recordAt _).symm.trans hrec_cbM)
+            (Core.hashed_mono hsub169 hhBC) haBC hexBC
+        subst cbC
+        have hmsC_eq : msC = msM := Ixon.ConstantInfo.muts.inj (hcbC.symm.trans hcbM)
+        subst msC
+        have hiM64 : iM.toUInt64.toNat = iM := by
+          change (UInt64.ofNat iM).toNat = iM
+          rw [UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (by omega)
+        have hj64 : j.toUInt64.toNat = j := by
+          change (UInt64.ofNat j).toNat = j
+          rw [UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (by simp at hbound_j; omega)
+        rw [hiM64] at hmsC
+        have hindC_eq : indC = indM := Ixon.MutConst.indc.inj (Option.some.inj (hmsC.symm.trans hmsM))
+        subst indC
+        rw [hj64] at hctC
+        have hctC_eq : ctC = ct := Option.some.inj (hctC.symm.trans hct)
+        subst ctC
+        obtain ⟨-, -, hct_np, -, -, tyPtrC, blkPtrC, bBC, -, -, hvC, -⟩ := hrawC
+        rw [hvC] at hldC
+        rw [hldC] at ld165
+        injection ld165 with hv_eq
+        injection hv_eq with _ _ hf
+        injection hf with _ hf2
+        injection hf2 with _ hf3
+        injection hf3 with _ hf4
+        injection hf4 with _ hf5
+        injection hf5 with _ hf6
+        injection hf6 with hcnp_eq _
+        rw [← hcnp_eq] at heq258
+        have h1 := congrArg ZMod.val (Value.field.inj heq258)
+        rw [ZMod.val_natCast_of_lt (by omega), ZMod.val_natCast_of_lt (by omega)] at h1
+        exact h1
+      | succ c' =>
+        have hv451 : v451 = .field ((j + 1 : Nat) : F) := by
+          simp only [evalBinOp, Except.ok.injEq] at op577
+          rw [← op577, Nat.cast_succ]
+        rw [hv451] at ev434
+        have ext_step : Heap.Extends h m77 :=
+          ev54.heap_extends.trans (ev129.heap_extends.trans (ev171.heap_extends.trans ev292.heap_extends))
+        have hct' : indM.ctors.toList[(j + 1) + c']? = some ct := by
+          have heq : j + 1 + c' = j + (c' + 1) := by omega
+          rwa [heq]
+        exact ih (by simp at hbound_j; omega) (hext.trans ext_step) (hext_ib.trans ext_step)
+          ev434 (fun cl hcl => hsub cl (by rw [hc]; simp [hcl])) c' (by simp at hc_lt; omega) ct hct'
+
 /-! ## Pin bounds, address-mention exclusion, and block parameter counts -/
 
 /-- Two consecutive `noLooseIn` checks (before and after `lowerBVars n lo`) imply
@@ -2238,6 +2371,39 @@ private theorem rulesTrace_build_reads {t : Ix.Kernel.RoleTable}
       .cons ⟨rhs₀, hrhs₀, rfl⟩ hrr,
       .cons ⟨rfl, hrhs₀, hlbb₀, hdef₀, hfv₀⟩ hrf⟩
 
+private theorem exprLvEq_stripPis_ce :
+    ∀ (n : Nat) {e₁ e₂ : KExpr}, Core.ExprLvEq e₁ e₂ →
+      ∀ {bs₁ bs₂ : List (KExpr × Ix.Kernel.BinderMeta)} {r₁ r₂ : KExpr},
+        e₁.stripPis n = some (bs₁, r₁) → e₂.stripPis n = some (bs₂, r₂) →
+        Core.ExprLvEq r₁ r₂
+  | 0, _, _, h, _, _, _, _, h1, h2 => by
+    simp only [Expr.stripPis, Option.some.injEq, Prod.mk.injEq] at h1 h2
+    rw [← h1.2, ← h2.2]; exact h
+  | n + 1, _, _, h, _, _, _, _, h1, h2 => by
+    cases h with
+    | @forallE d₁ d₂ b₁ b₂ m _ hb =>
+      simp only [Expr.stripPis] at h1 h2
+      cases hs1 : b₁.stripPis n with
+      | none => rw [hs1] at h1; cases h1
+      | some p1 =>
+        cases hs2 : b₂.stripPis n with
+        | none => rw [hs2] at h2; cases h2
+        | some p2 =>
+          rw [hs1] at h1; rw [hs2] at h2
+          simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1 h2
+          rw [← h1.2, ← h2.2]
+          exact exprLvEq_stripPis_ce n hb hs1 hs2
+    | bvar | fvar | sort | const | app | lam | letE | lit | proj =>
+      simp [Expr.stripPis] at h1 h2
+
+private theorem exprLvEq_getAppArgs_length_ce {e₁ e₂ : KExpr} (h : Core.ExprLvEq e₁ e₂) :
+    e₁.getAppArgs.length = e₂.getAppArgs.length := by
+  induction h with
+  | app _ _ ihf _ =>
+    simp [Expr.getAppArgs, ihf]
+  | bvar | fvar | sort | const | lam | forallE | letE | lit | proj =>
+    simp [Expr.getAppArgs]
+
 private theorem rec_major_pins_ni_eq {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ : Ixon.Env} {E : KExpr} {ty_ptr r : SourceValue F} {rp ni : F}
     {h h' : Heap F} {cs : List (Call F)}
@@ -2259,11 +2425,17 @@ private theorem rec_major_pins_ni_eq {calls : List (Call F)} {t : Ix.Kernel.Role
     (hrec_cbM : recordOf E₀ p_maj.block = some cbM)
     (hcbM : cbM.info = .muts msM)
     (hmsM : msM.toList[p_maj.idx.toNat]? = some (Ixon.MutConst.indc indM)) :
-    ZMod.val ni = indM.indices.toNat := by
+    ZMod.val ni = indM.indices.toNat ∧
+    indM.params.toNat < 72057594037927936 ∧
+    ∀ bs' dom' body' m',
+      E.stripPis (ZMod.val rp + ZMod.val ni) = some (bs', .forallE dom' body' m') →
+      dom'.getAppArgs.length = indM.params.toNat + indM.indices.toNat := by
   match Obs.«KernelModeled::rec_major_pins».obs ev with
-  | .run (cs155 := cs155) (op37 := op_mi) (ev14 := ev_peel) (ld51 := ld_fa)
+  | .run (x_args := x_args) (m141 := m141) (x_inp := x_inp) (cs155 := cs155)
+      (op37 := op_mi) (ev14 := ev_peel) (ld51 := ld_fa)
       (ev89 := ev_sp) (ld122 := ld_c) (ev157 := ev_ci) (ld151 := ld_ind)
-      (heq245 := heq_ini) (hc424 := hc) .. =>
+      (heq245 := heq_ini) (ev270 := ev_len) (op292 := op_add_inp)
+      (heq295 := heq_len) (hc424 := hc) .. =>
     have hop_mi : evalBinOp .add (.field rp : SourceValue F) (.field ni) = .ok (.field (rp + ni)) := rfl
     have hv16 : _ = (.field (rp + ni) : SourceValue F) := Except.ok.inj (op_mi.symm.trans hop_mi)
     rw [hv16] at ev_peel
@@ -2275,7 +2447,7 @@ private theorem rec_major_pins_ni_eq {calls : List (Call F)} {t : Ix.Kernel.Role
       Decl.peel_n_foralls_exact (ZMod.val rp + ZMod.val ni) hmi_val ev_peel hE
     rw [Nat.zero_add] at hrem
     obtain ⟨dom, body, ℓ_maj, rfl, hdom, _, _⟩ := hrem.forallE_of_load ld_fa
-    obtain ⟨hd, sp, H, As, htup, hH, _, hdom_eq⟩ := Decl.collect_spine_exact ev_sp hdom
+    obtain ⟨hd, sp, H, As, htup, hH, hAs, hdom_eq⟩ := Decl.collect_spine_exact ev_sp hdom
     injection htup with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
     obtain ⟨a_ind, lvls_pos, rfl, ra_ind, -⟩ := hH.const_of_load ld_c
     have ha_eq : Core.ixAddr a_ind = a_maj := by
@@ -2307,21 +2479,42 @@ private theorem rec_major_pins_ni_eq {calls : List (Call F)} {t : Ix.Kernel.Role
     subst hms'_eq
     have hind'_eq : ind' = indM :=
       Ixon.MutConst.indc.inj (Option.some.inj (hms'.symm.trans hmsM))
-    subst hind'_eq
-    obtain ⟨-, -, hni_M, -, -, tyPtr', blkPtr', b', -, -, hv', -⟩ := hraw'
+    subst ind'
+    obtain ⟨-, hnp_M, hni_M, -, -, tyPtr', blkPtr', b', -, -, hv', -⟩ := hraw'
     rw [hv'] at hld'
     rw [hld'] at ld_ind
     injection ld_ind with hv_eq
     injection hv_eq with _ _ hf
     injection hf with _ hf2
     injection hf2 with _ hf3
-    injection hf3 with _ hf4
+    injection hf3 with hinp_eq hf4
     injection hf4 with hini_eq _
     rw [← hini_eq] at heq_ini
     have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
     have hval := congrArg ZMod.val (Value.field.inj heq_ini)
     rw [ZMod.val_natCast_of_lt (by omega)] at hval
-    exact hval.symm
+    have hAs1 := RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ev_ci.heap_extends hAs
+    have hAs_lt : As.length < 2 ^ 39 :=
+      IxVM.Refinement.RomBound.bounded_length_lt (Core.bounded_sub hsub hbd)
+        (c := ⟨Obs.Names.«Lists::length<&KernelTypes::KExprNode>», [x_args], m141⟩)
+        (by rw [hc]; simp) (by simp) hAs1
+    obtain ⟨hv257, -⟩ := Decl.tele_klength ev_len hAs1
+    rw [← hinp_eq, ← hini_eq] at op_add_inp
+    have hop_add : evalBinOp .add (.field (indM.params.toNat : F) : SourceValue F)
+        (.field (indM.indices.toNat : F)) =
+        .ok (.field ((indM.params.toNat + indM.indices.toNat : Nat) : F)) := by
+      simp [evalBinOp, Nat.cast_add]
+    have hsum_eq := Except.ok.inj (op_add_inp.symm.trans hop_add)
+    rw [hv257, hsum_eq] at heq_len
+    have hAs_len : As.length = indM.params.toNat + indM.indices.toNat := by
+      have h1 := congrArg ZMod.val (Value.field.inj heq_len)
+      rw [ZMod.val_natCast_of_lt (by omega), ZMod.val_natCast_of_lt (by omega)] at h1
+      exact h1
+    refine ⟨hval.symm, hnp_M, fun bs' dom' body' m' hstrip' => ?_⟩
+    have hrem_eq := Prod.mk.inj (Option.some.inj (hstrip.symm.trans hstrip'))
+    injection hrem_eq.2 with hdom_eq' _ _
+    rw [← hdom_eq', hdom_eq, Ix.Kernel.Expr.getAppArgs_mkAppN]
+    exact hAs_len
 
 /-! ## Extracted member data from `KernelModeled::check_family` -/
 
@@ -2364,6 +2557,14 @@ structure ExtractedTwinMember (calls : List (Call F)) (t : Ix.Kernel.RoleTable) 
   hmajKey : majorKey rc (Core.posOf ps ty₀) = some (keyOf t a_maj)
   hindKey_M : IndKeyAt t (recordOf E₀) (keyOf t a_maj) p_maj.block p_maj.idx.toNat indM
   hni_eq : rc.indices.toNat = indM.indices.toNat
+  hrules_size : rc.rules.size = indM.ctors.size
+  hctor_params : ∀ (c_idx : Nat) (ct : Ixon.Constructor),
+    indM.ctors[c_idx]? = some ct → ct.params.toNat = indM.params.toNat
+  hmajor_np : ∀ bs dom body m,
+    (Core.posOf ps ty').stripPis
+      (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat) =
+        some (bs, .forallE dom body m) →
+    dom.getAppArgs.length = indM.params.toNat + rc.indices.toNat
   hty_read : (exprReader t (fun x => E₀.blobs.get? x) c (Ix.Kernel.Reader.recParam ps)
     (blockSelf t A rs')).read rc.typ = .ok ty₀
   hty_lbb : ty₀.looseBVarsBounded 0 = true
@@ -2742,8 +2943,8 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
         have hsub_rules : ∀ cl ∈ cs902, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
         -- Extract `a_ind_r`, `indM` from `ev904 : check_rules`
         match Obs.«KernelModeled::check_rules».obs ev904 with
-        | .run (x_iaddr := x_iaddr) (x_inct := x_inct) (x_iblock := x_iblock) (x_iidx := x_iidx)
-            (m2 := m_cr2) (m58 := m_cr58)
+        | .run (x_iaddr := x_iaddr) (x_inp := x_cr_inp) (x_inct := x_inct) (x_iblock := x_iblock)
+            (x_iidx := x_iidx) (m2 := m_cr2) (m58 := m_cr58)
             (m147 := m_cr147) (cs12 := cs_cr12) (cs72 := cs_cr72) (cs177 := cs_cr177)
             (ev14 := ev_cr_pins) (ev74 := ev_cr_ci) (ld68 := ld_cr_ind)
             (ev157 := ev_cr_len) (heq173 := heq_cr_len) (ev179 := ev_cr_go) (hc315 := hcs_cr) .. =>
@@ -2800,12 +3001,43 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             rw [← haddr_M]
             exact Claim.recordOf_of_hashed hH (Core.hashed_mono hsub_cr72 hh_M) hszM hex_M
           obtain ⟨hrec_cbM, hcbM⟩ := (hblM.mono hsub_cr72).stored hH
-          have hni_eq : rc.indices.toNat = indM.indices.toNat := by
-            have h1 := rec_major_pins_ni_eq ht hRS hbound hsub_cr12 hrp_lt hni_lt ev_cr_pins
+          have hx_cr_inp_eq : x_cr_inp = .field (indM.params.toNat : F) := by
+            obtain ⟨rawM2, c_m2, hhM2, haM2, hexM2, -, hresM2⟩ :=
+              L1.get_ci_block_trace_spec (hgood_in.sub hsub_cr72).2 ha_ind_r ev_cr_ci
+            have hcm2_eq : c_m2 = c_maj :=
+              hRS.record_eq ((hRS.recordOf_eq_recordAt _).symm.trans hrec_M)
+                (Core.hashed_mono hsub_cr72 hhM2) haM2 hexM2
+            subst c_m2
+            unfold L1.GetCIBlockTraceResult at hresM2
+            rw [hp_maj] at hresM2
+            obtain ⟨-, blk2, cb2, ms2, ind2, _, _, _, v2, hhB2, haB2, hexB2, hcb2, hms2, -, -, -,
+              hld2, hraw2, -⟩ := hresM2
+            have hcb2_eq : cb2 = cbM :=
+              hRS.record_eq ((hRS.recordOf_eq_recordAt _).symm.trans hrec_cbM)
+                (Core.hashed_mono hsub_cr72 hhB2) haB2 hexB2
+            subst cb2
+            have hms2_eq : ms2 = msM := Ixon.ConstantInfo.muts.inj (hcb2.symm.trans hcbM)
+            subst ms2
+            have hind2_eq : ind2 = indM :=
+              Ixon.MutConst.indc.inj (Option.some.inj (hms2.symm.trans hmsM))
+            subst ind2
+            obtain ⟨-, -, -, -, -, _, _, _, -, -, hv2, -⟩ := hraw2
+            rw [hv2] at hld2
+            rw [hld2] at ld_cr_ind
+            injection ld_cr_ind with hv_eq
+            injection hv_eq with _ _ hf
+            injection hf with _ hf2
+            injection hf2 with _ hf3
+            injection hf3 with hinp2_eq _
+            exact hinp2_eq.symm
+          subst hx_cr_inp_eq
+          obtain ⟨hni_eq', hindM_np, hdom_Epos_len⟩ :=
+            rec_major_pins_ni_eq ht hRS hbound hsub_cr12 hrp_lt hni_lt ev_cr_pins
               (hraw0.toTmExact.mono ext_m67_m838)
               ⟨bs_r, dom_r, body_r, mmaj_r, lvls_r, hstrip_r, hfn_r⟩
               hrec_M hp_maj hrec_cbM hcbM hmsM
-            rwa [ZMod.val_natCast_of_lt (by omega)] at h1
+          have hni_eq : rc.indices.toNat = indM.indices.toNat := by
+            rwa [ZMod.val_natCast_of_lt (by omega)] at hni_eq'
           -- `rc.rules.size = indM.ctors.size`
           have hlen_rules := rule_list_length_eq hrules_tr
             (ext_m67_m838.trans (ev_cr_pins.heap_extends.trans ev_cr_ci.heap_extends)) ev_cr_len
@@ -3186,6 +3418,33 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             hmajKey := by rwa [hty₀_pos]
             hindKey_M := hindKey_M
             hni_eq := hni_eq
+            hrules_size := hrules_size_eq
+            hctor_params := fun c_idx ct hct => by
+              have hr_le := rules_size_le_ce hA.muts hmem_k
+              have hctL : indM.ctors.toList[0 + c_idx]? = some ct := by
+                simpa [Nat.zero_add, Array.getElem?_toList] using hct
+              have hc_lt : c_idx < rc.rules.toList.length := by
+                have h1 : c_idx < indM.ctors.toList.length := by
+                  rcases (List.getElem?_eq_some_iff.mp hctL) with ⟨h, -⟩
+                  omega
+                simp only [Array.length_toList] at h1 ⊢
+                omega
+              exact check_rules_go_ctor_params hRS hbound hp_maj_idx_lt hbM_blk_rep
+                (by rwa [hbM_blk_ix]) hcbM hmsM hindM_np
+                (by simp only [Array.length_toList]; omega) hrules_tr
+                (ext_m67_m838.trans (ev_cr_pins.heap_extends.trans
+                  (ev_cr_ci.heap_extends.trans ev_cr_len.heap_extends)))
+                ev_cr_len.heap_extends
+                (by simpa only [Nat.cast_zero] using ev_cr_go)
+                hsub_cr177 c_idx hc_lt ct hctL
+            hmajor_np := fun bs dom body m hstrip => by
+              have hlv : Core.ExprLvEq E_pos (Core.posOf ps ty') :=
+                Core.Tm.det hraw0.toTmExact.toTm (htm_ty' 0 (fun _ => .sort .zero)).toTm
+              have hrem_lv := exprLvEq_stripPis_ce mI hlv hstrip_r' hstrip
+              cases hrem_lv with
+              | forallE hdom_lv _ =>
+                rw [← exprLvEq_getAppArgs_length_ce hdom_lv, hni_eq]
+                exact hdom_Epos_len bs_r dom_r body_r mmaj_r hstrip_r
             hty_read := hty₀_read
             hty_lbb := hty₀_lbb
             hty_def := hty₀_def
