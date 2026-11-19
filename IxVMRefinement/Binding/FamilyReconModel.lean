@@ -38,6 +38,29 @@ def peelForalls : Nat → Ix.Kernel.Expr .anon → Option (Ix.Kernel.Expr .anon)
   | n + 1, .forallE _ b _ => peelForalls n b
   | _ + 1, _ => none
 
+/-- Exact circuit-level parameter instantiation (`KernelLevels::expr_inst_levels_walk`):
+substitutes positional universe parameters `0, …, us.length - 1` by `us` using `substLevel` and
+`substLevelList`, updating binder data via `substPW`. -/
+def exprInstLevelsWalk (us : List Ix.Kernel.Level) : Ix.Kernel.Expr .anon → Ix.Kernel.Expr .anon
+  | .bvar i => .bvar i
+  | .fvar i t => .fvar i (exprInstLevelsWalk us t)
+  | .sort l => .sort (IxVM.Refinement.KernelLevels.substLevel l us)
+  | .const k ls => .const k (IxVM.Refinement.KernelLevels.substLevelList ls us)
+  | .app f a => .app (exprInstLevelsWalk us f) (exprInstLevelsWalk us a)
+  | .lam t b m => .lam (exprInstLevelsWalk us t) (exprInstLevelsWalk us b)
+      { m with pw := Ix.Kernel.Level.substPW (List.range us.length) us m.pw }
+  | .forallE t b m => .forallE (exprInstLevelsWalk us t) (exprInstLevelsWalk us b)
+      { m with pw := Ix.Kernel.Level.substPW (List.range us.length) us m.pw }
+  | .letE t v b l => .letE (exprInstLevelsWalk us t) (exprInstLevelsWalk us v)
+      (exprInstLevelsWalk us b) l
+  | .lit l => .lit l
+  | .proj s i e => .proj s i (exprInstLevelsWalk us e)
+
+/-- Exact circuit-level parameter instantiation (`KernelLevels::expr_inst_levels`): leaves the
+expression untouched when `us` is empty, otherwise runs `exprInstLevelsWalk us`. -/
+def exprInstLevels (us : List Ix.Kernel.Level) (e : Ix.Kernel.Expr .anon) : Ix.Kernel.Expr .anon :=
+  if us.isEmpty then e else exprInstLevelsWalk us e
+
 end IxVM.Refinement.Binding.FamilyFlat
 
 namespace IxVM.Refinement.Binding.FamilyRecon
@@ -77,7 +100,7 @@ a constant address, and whether a block is on the modeled route (`block_is_model
 for `red_proj`). Each answer is `none` where the circuit's load fails, so a store that holds more
 answers the same where the first answers. -/
 structure ReconView where
-  ind : _root_.Address → Option IndData
+  ind : _root_.Address → Option (Option IndData)
   ctor : _root_.Address → Nat → Nat → Option (KExpr × Nat)
   ctorAddr : _root_.Address → Nat → Nat → _root_.Address
   key : _root_.Address → KKey
@@ -98,12 +121,12 @@ def isForall : KExpr → Option (KExpr × KExpr × Ix.Kernel.BinderMeta)
   | .forallE d b m => some (d, b, m)
   | _ => none
 
-/-- **`type_sort_never`**: the sort a type former's telescope ends in, after `n` binders and at
-the levels `us`, is never zero (`level_is_not_zero` after `level_inst_params`); `false` at another
-shape. -/
+/-- **`type_sort_never_zeta`**: the sort a type former's telescope ends in, after `n` binders and
+at the levels `us`, is never zero (`level_is_not_zero` after `level_inst_params`); `false` at
+another shape. -/
 def typeSortNever : KExpr → Nat → List KLevel → Bool
   | .forallE _ b _, n + 1, us => typeSortNever b n us
-  | .sort l, 0, us => (Ix.Kernel.Level.subst (List.range us.length) us l).isNeverZero
+  | .sort l, 0, us => (IxVM.Refinement.KernelLevels.substLevel l us).isNeverZero
   | _, _, _ => false
 
 /-- `red_proj`'s gates at a constructor `cd` applied at the levels `cus` to `args`, projected
@@ -115,12 +138,11 @@ def projGate (cd : CtorData) (sd : IndData) (cus : List KLevel) (args : List KEx
   cd.blk == sd.blk && cd.ind == sd.idx && sd.nl == cd.nl && sd.ni == 0 && sd.nctors == 1 &&
     sd.np == cd.np && args.length == cd.np + cd.nf && cus.length == cd.nl && decide (i < cd.nf)
 
-/-- **`red_proj`** on a head-normal projected term `e` (`whnf_proj_head`): where `e` is a
-constructor applied, of the structure `s`, past `red_proj`'s gates (`projGate`), with the
+/-- **`red_proj_zeta`** on a head-normal projected term `e`: where `e` is a
+constructor applied, of the structure `s`, past `red_proj_zeta`'s gates (`projGate`), with the
 structure's block off the modeled route and its sort never zero at the constructor's levels
-(`type_sort_never`), the field `i`: argument `params + i`. `some none`: no step; `none`: a load
-fails. (`str_lit_to_ctor_app_or_self`'s string literal is not modelled: there the model takes no
-step.) -/
+(`type_sort_never_zeta`), the field `i`: argument `params + i`. `some none`: no step; `none`: a
+load fails. -/
 def projStep (V : ReconView) (s : KKey) (i : Nat) (e : KExpr) : Option (Option KExpr) :=
   match Ix.Kernel.Expr.getAppFn e with
   | .const ck cus =>
@@ -136,7 +158,8 @@ def projStep (V : ReconView) (s : KKey) (i : Nat) (e : KExpr) : Option (Option K
         | some sa =>
           match V.ind sa with
           | none => none
-          | some sd =>
+          | some none => some none
+          | some (some sd) =>
             if projGate cd sd cus (Ix.Kernel.Expr.getAppArgs e) i then
               match V.modeled sd.blk with
               | none => none
@@ -389,7 +412,7 @@ the entry's levels `us`, its parameter count `nOwn`), at the minors before it. -
 def minorAt (V : ReconView) (f : Nat) (es : List FlatEntry) (fop : List Nat) (ck : KKey)
     (cty : KExpr) (nOwn : Nat) (aux : Bool) (sp : List KExpr) (us : List KLevel)
     (nrp nMot prevMinors motiveBase selfMemIdx : Nat) (elim : KLevel) : Option KExpr :=
-  let ctyI := cty.instantiateLevelParams (List.range us.length) us
+  let ctyI := exprInstLevels us cty
   let minorSaved := nrp + nMot + prevMinors
   let below := nMot + prevMinors
   match peelCtorParams V f nrp 0 aux sp nOwn 0 ctyI with
@@ -436,22 +459,21 @@ def allMinors (V : ReconView) (f : Nat) (fullEs : List FlatEntry) (fop : List Na
   | [], _, _ => some []
   | e :: rest, prev, pos =>
     match V.ind e.addr with
-    | none => none
-    | some i =>
+    | some (some i) =>
       match minorDoms V f fullEs fop e.aux e.params e.levels nrp nMot motiveBase pos i.blk i.idx
           elim prev (List.range i.nctors) with
       | none => none
       | some ms =>
         (allMinors V f fullEs fop nrp nMot motiveBase elim rest (prev + ms.length) (pos + 1)).map
           (ms ++ ·)
+    | _ => none
 
 /-- **`build_motive_type_flat`**: the motive's type of one entry: over its indices and major
 premise, into the sort of the elimination level. -/
 def motiveType (V : ReconView) (f : Nat) (memberAddr : _root_.Address) (indTy : KExpr)
     (nOwn nIdx : Nat) (us : List KLevel) (elim : KLevel) (nrp : Nat) (aux : Bool)
     (sp : List KExpr) : Option KExpr :=
-  match peelMotiveParams nrp aux sp nOwn 0
-      (indTy.instantiateLevelParams (List.range us.length) us) with
+  match peelMotiveParams nrp aux sp nOwn 0 (exprInstLevels us indTy) with
   | none => none
   | some after =>
     match collectDoms V f nIdx after with
@@ -469,11 +491,11 @@ def allMotives (V : ReconView) (f : Nat) (elim : KLevel) (nrp : Nat) :
   | [], _ => some []
   | e :: rest, j =>
     match V.ind e.addr with
-    | none => none
-    | some i =>
+    | some (some i) =>
       match motiveType V f e.addr i.ty i.np i.ni e.levels elim nrp e.aux e.params with
       | none => none
       | some mt => (allMotives V f elim nrp rest (j + 1)).map (mt.liftLooseBVars j 0 :: ·)
+    | _ => none
 
 /-- The elimination level of a recursor at the elimination offset `off` (`check_recursor_
 canonical_at`): its first level parameter for a large eliminator, otherwise zero. -/
@@ -485,7 +507,7 @@ def flatOwnParams (V : ReconView) : List FlatEntry → Option (List Nat)
   | [] => some []
   | e :: es =>
     match V.ind e.addr, flatOwnParams V es with
-    | some i, some ns => some (i.np :: ns)
+    | some (some i), some ns => some (i.np :: ns)
     | _, _ => none
 
 /-! ## The reconstructed recursor type -/
@@ -500,11 +522,11 @@ def recTypeAt (V : ReconView) (f : Nat) (es : List FlatEntry) (off nP k : Nat) :
   match es[0]?, es[k]? with
   | some e0, some ek =>
     match V.ind e0.addr, V.ind ek.addr with
-    | some prim, some self =>
+    | some (some prim), some (some self) =>
       let nMot := es.length
       let nI := self.ni
       let pUs := (List.range prim.nl).map fun i => Ix.Kernel.Level.param (off + i)
-      match collectDoms V f nP (prim.ty.instantiateLevelParams (List.range pUs.length) pUs) with
+      match collectDoms V f nP (exprInstLevels pUs prim.ty) with
       | none => none
       | some (paramDoms, _) =>
         match allMotives V f elim nP es 0, flatOwnParams V es with
@@ -514,7 +536,7 @@ def recTypeAt (V : ReconView) (f : Nat) (es : List FlatEntry) (off nP k : Nat) :
           | some minDoms =>
             let nMin := minDoms.length
             match peelMotiveParams nP ek.aux ek.params self.np 0
-                (self.ty.instantiateLevelParams (List.range ek.levels.length) ek.levels) with
+                (exprInstLevels ek.levels self.ty) with
             | none => none
             | some selfAfter =>
               match collectDoms V f nI selfAfter with
@@ -564,7 +586,7 @@ levels `us`, its parameter count `nOwn`), whose minor premise is the `minorIdx`-
 def ruleBody (V : ReconView) (f : Nat) (es : List FlatEntry) (fop : List Nat)
     (peers : List _root_.Address) (cty : KExpr) (minorIdx nP nMot nMin nOwn : Nat)
     (us recLvls : List KLevel) (aux : Bool) (sp : List KExpr) (elim : KLevel) : Option KExpr :=
-  let ctyI := cty.instantiateLevelParams (List.range us.length) us
+  let ctyI := exprInstLevels us cty
   match peelForalls nOwn ctyI with
   | none => none
   | some raw =>
@@ -604,7 +626,7 @@ def ctorsBefore (V : ReconView) : List FlatEntry → Nat → Option Nat
   | [], _ + 1 => some 0
   | e :: es, k + 1 =>
     match V.ind e.addr, ctorsBefore V es k with
-    | some i, some n => some (i.nctors + n)
+    | some (some i), some n => some (i.nctors + n)
     | _, _ => none
 
 /-- **`populate_rules`**: the rule bodies of the recursor at entry `k`, with `nP` parameters,
@@ -616,7 +638,7 @@ def ruleBodiesAt (V : ReconView) (f : Nat) (es : List FlatEntry) (off nP nMot nM
   | none => none
   | some ek =>
     match V.ind ek.addr, flatOwnParams V es, ctorsBefore V es k with
-    | some self, some fop, some cb =>
+    | some (some self), some fop, some cb =>
       ruleBodies V f es fop peers nP nMot nMin ek.levels
         ((List.range nl).map Ix.Kernel.Level.param) ek.aux ek.params (elimLevel off) self.blk
         self.idx cb (List.range self.nctors)

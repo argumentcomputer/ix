@@ -334,6 +334,43 @@ theorem keyIn_instantiateLevelParams {ks : List Ix.Kernel.LevelParam} {us : List
     | proj => exact .proj _ _
     | projBody h => exact .projBody (ih h)
 
+/-- A key of a term after `exprInstLevelsWalk` is a key of the term. -/
+theorem keyIn_exprInstLevelsWalk {us : List Ix.Kernel.Level} :
+    ∀ (e : Ix.Kernel.Expr .anon), KeyIn k (exprInstLevelsWalk us e) → KeyIn k e := by
+  intro e
+  induction e with
+  | bvar i => intro h; simp only [exprInstLevelsWalk] at h; cases h
+  | fvar i ty ih => intro h; simp only [exprInstLevelsWalk] at h; cases h with | fvarTy h => exact .fvarTy (ih h)
+  | sort u => intro h; simp only [exprInstLevelsWalk] at h; cases h
+  | const n vs => intro h; simp only [exprInstLevelsWalk] at h; cases h with | const => exact .const _
+  | app f x ihf ihx =>
+    intro h; simp only [exprInstLevelsWalk] at h
+    cases h with | appFn h => exact .appFn (ihf h) | appArg h => exact .appArg (ihx h)
+  | lam t b m iht ihb =>
+    intro h; simp only [exprInstLevelsWalk] at h
+    cases h with | lamTy h => exact .lamTy (iht h) | lamBody h => exact .lamBody (ihb h)
+  | forallE t b m iht ihb =>
+    intro h; simp only [exprInstLevelsWalk] at h
+    cases h with | allTy h => exact .allTy (iht h) | allBody h => exact .allBody (ihb h)
+  | letE t v b l iht ihv ihb =>
+    intro h; simp only [exprInstLevelsWalk] at h
+    cases h with
+    | letTy h => exact .letTy (iht h)
+    | letVal h => exact .letVal (ihv h)
+    | letBody h => exact .letBody (ihb h)
+  | lit l => intro h; simp only [exprInstLevelsWalk] at h; cases h
+  | proj s i x ih =>
+    intro h; simp only [exprInstLevelsWalk] at h
+    cases h with | proj => exact .proj _ _ | projBody h => exact .projBody (ih h)
+
+/-- A key of a term after `exprInstLevels` is a key of the term. -/
+theorem keyIn_exprInstLevels {us : List Ix.Kernel.Level} (e : Ix.Kernel.Expr .anon)
+    (h : KeyIn k (exprInstLevels us e)) : KeyIn k e := by
+  unfold exprInstLevels at h
+  split at h
+  · exact h
+  · exact keyIn_exprInstLevelsWalk e h
+
 /-- A key of an argument of a spine is a key of the spine. -/
 theorem keyIn_of_mem_getAppArgs {x : Ix.Kernel.Expr .anon} :
     ∀ (e : Ix.Kernel.Expr .anon), x ∈ Ix.Kernel.Expr.getAppArgs e → KeyIn k x → KeyIn k e := by
@@ -878,14 +915,14 @@ theorem ctorScan_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) (B : _root_.Address
   | none => simp [hc] at h
   | some cty =>
     simp only [hc, hV.ctorType i.blk i.idx c cty hblk hc] at h ⊢
-    cases hb : ctorBody aux i.np sp (cty.instantiateLevelParams (List.range us.length) us) with
+    cases hb : ctorBody aux i.np sp (exprInstLevels us cty) with
     | none => simp [hb] at h
     | some body =>
       simp only [hb] at h ⊢
       have hKb : KeysAt V S body := by
         intro k hk a ha
         rcases keyIn_of_ctorBody hb hk with h1 | ⟨s, hs, h2⟩
-        · exact hC.ctorType i.blk i.idx c cty hblk hc k (keyIn_instantiateLevelParams _ h1) a ha
+        · exact hC.ctorType i.blk i.idx c cty hblk hc k (keyIn_exprInstLevels _ h1) a ha
         · exact hsp s hs k h2 a ha
       exact occScanF_leOn hV hC B _ body 0 acc r hKb hacc h
 

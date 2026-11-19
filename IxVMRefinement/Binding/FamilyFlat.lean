@@ -371,7 +371,7 @@ def ctorScan (V : FlatView) (B : _root_.Address) (i : IndInfo) (aux : Bool)
   match V.ctorType i.blk i.idx c with
   | none => none
   | some cty =>
-    match ctorBody aux i.np sp (cty.instantiateLevelParams (List.range us.length) us) with
+    match ctorBody aux i.np sp (exprInstLevels us cty) with
     | none => none
     | some body => occScanF V B (exprSize body + 1) body 0 acc
 
@@ -752,7 +752,7 @@ theorem ctorScan_le {V V' : FlatView} (hV : V.Le V') (B : _root_.Address) (i : I
   | none => simp [hc] at h
   | some cty =>
     simp only [hc, hV.ctorType i.blk i.idx c cty hc] at h ⊢
-    cases hb : ctorBody aux i.np sp (cty.instantiateLevelParams (List.range us.length) us) with
+    cases hb : ctorBody aux i.np sp (exprInstLevels us cty) with
     | none => simp [hb] at h
     | some body =>
       simp only [hb] at h ⊢
