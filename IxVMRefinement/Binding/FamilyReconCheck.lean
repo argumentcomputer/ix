@@ -1300,7 +1300,7 @@ private theorem build_rec_type_heap_shape {rootCalls : List (Call F)}
         (v574 := vlids) (m575 := m_li) (cs585 := cs14) (m621 := m_c)
         (v687 := vmaj1) (m688 := m_ms) (cs698 := cs15)
         (v775 := vmaj2) (m776 := m_mi) (cs786 := cs16)
-        (v887 := vconcl0) (cs898 := cs17)
+        (v887 := vconcl0) (m888 := m_aic) (cs898 := cs17)
         (v1007 := vw1) (cs1018 := cs18)
         (v1045 := vw2) (cs1056 := cs19)
         (v1083 := vw3) (cs1094 := cs20) (cs1124 := cs21)
@@ -1410,22 +1410,28 @@ private theorem build_rec_type_heap_shape {rootCalls : List (Call F)}
           (.ptr (.enum kexprEnum) m_mi.length)
           (((es.length + tot + nI - selfPos : Nat) : F)) :=
         .bvar (loadValue_store_snoc m_mi _)
-      have hab1 : HeapAppBVar _ vconcl0
+      let m_bv0 := m_aic ++ [Value.construct kexprEnum "BVar" [.field 0]]
+      let m_app := m_bv0 ++ [Value.construct kexprEnum "App" [vconcl0, .ptr (.enum kexprEnum) m_aic.length]]
+      let m_majf := m_app ++ [Value.construct kexprEnum "Forall" [vmaj2, .ptr (.enum kexprEnum) m_bv0.length, xelim]]
+      have hab1 : HeapAppBVar m_aic vconcl0
           (((es.length + tot + nI - selfPos : Nat) : F)) :=
         apply_indices_in_conclusion_heapAppBVar nI (by omega) nI 0 (by omega) hab0 (by simpa using evaic)
-      have ext_concl := (Heap.Extends.snoc _ _).trans (Heap.Extends.snoc _ _)
-      have hab_concl : HeapAppBVar _ (.ptr (.enum kexprEnum) _)
+      have ext_concl : Heap.Extends m_aic m_app :=
+        (Heap.Extends.snoc m_aic _).trans (Heap.Extends.snoc m_bv0 _)
+      have hab_concl : HeapAppBVar m_app (.ptr (.enum kexprEnum) m_bv0.length)
           (((es.length + tot + nI - selfPos : Nat) : F)) :=
-        .app (loadValue_store_snoc _ _) (hab1.mono ext_concl)
+        .app (loadValue_store_snoc m_bv0 _) (hab1.mono ext_concl)
       -- major Forall cell
-      have ext_maj2_f := (Heap.Extends.snoc _ _).trans (evaic.heap_extends.trans
-        (ext_concl.trans (Heap.Extends.snoc _ _)))
-      have ld_maj : loadValue _ (.ptr (.enum kexprEnum) _) =
-          .ok (.construct kexprEnum "Forall" [vmaj2, .ptr (.enum kexprEnum) _, xelim]) :=
-        loadValue_store_snoc _ _
+      have ext_maj2_f : Heap.Extends m_mi m_majf :=
+        (Heap.Extends.snoc m_mi _).trans (evaic.heap_extends.trans
+          (ext_concl.trans (Heap.Extends.snoc m_app _)))
+      have ld_maj : loadValue m_majf (.ptr (.enum kexprEnum) m_app.length) =
+          .ok (.construct kexprEnum "Forall" [vmaj2, .ptr (.enum kexprEnum) m_bv0.length, xelim]) :=
+        loadValue_store_snoc m_app _
       -- chain 4 wrap_foralls
-      have ext_dsI := (Heap.Extends.snoc _ _).trans (evms.heap_extends.trans
-        (evmi.heap_extends.trans ext_maj2_f))
+      have ext_dsI : Heap.Extends m_li m_majf :=
+        (Heap.Extends.snoc m_li _).trans (evms.heap_extends.trans
+          (evmi.heap_extends.trans ext_maj2_f))
       obtain ⟨hf1, -⟩ := wrap_foralls_heapForalls dsI
         (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext_dsI hdsI) evw1
       have ext_dsMin := evsci.heap_extends.trans (evinst2.heap_extends.trans
@@ -1445,16 +1451,16 @@ private theorem build_rec_type_heap_shape {rootCalls : List (Call F)}
       have ext_maj_end := evw1.heap_extends.trans ext_w1_end
       have ext_mot_end := ext_dsMot.trans (evw3.heap_extends.trans evw4.heap_extends)
       have hf_all_maj : HeapForalls h' (dsP.length + es.length + tot + dsI.length) r
-          (.ptr (.enum kexprEnum) _) := by
+          (.ptr (.enum kexprEnum) m_app.length) := by
         have h12 := hf4.trans ((hf3.mono ext_w3_end).trans
           ((hf2.mono ext_w2_end).trans (hf1.mono ext_w1_end)))
         simpa [hlenMot, hlenMin, Nat.add_assoc] using h12
       have hf_all : HeapForalls h' (dsP.length + es.length + tot + dsI.length + 1) r
-          (.ptr (.enum kexprEnum) _) :=
+          (.ptr (.enum kexprEnum) m_bv0.length) :=
         hf_all_maj.trans (.succ (loadValue_mono ext_maj_end ld_maj) (.zero _))
-      refine ⟨dsP.length, dsI.length, tot, .ptr (.enum kexprEnum) _,
+      refine ⟨dsP.length, dsI.length, tot, .ptr (.enum kexprEnum) m_bv0.length,
         hlenP, hlenI_le, hmin_lt, htot, hf_all,
-        hab_concl.mono ((Heap.Extends.snoc _ _).trans ext_maj_end), ?_, ?_⟩
+        hab_concl.mono ((Heap.Extends.snoc m_app _).trans ext_maj_end), ?_, ?_⟩
       · intro j ej hej
         have hjlt : j < dsMot.length := by
           rw [hlenMot]; exact (List.getElem?_eq_some_iff.mp hej).1
@@ -1462,7 +1468,7 @@ private theorem build_rec_type_heap_shape {rootCalls : List (Call F)}
         obtain ⟨q, bp, lp, hfq, ldq⟩ := hdoms3 j dj hdj
         exact ⟨q, dj, bp, lp, hf4.trans (hfq.mono ext_w3_end), loadValue_mono ext_w3_end ldq,
           (hmot_shape j dj ej hdj hej).toCarrier.mono ext_mot_end⟩
-      · exact ⟨.ptr (.enum kexprEnum) _, vmaj2, .ptr (.enum kexprEnum) _, xelim,
+      · exact ⟨.ptr (.enum kexprEnum) m_app.length, vmaj2, .ptr (.enum kexprEnum) m_bv0.length, xelim,
           hf_all_maj, loadValue_mono ext_maj_end ld_maj,
           hac2.mono (ext_maj2_f.trans ext_maj_end)⟩
   match Obs.«KernelCheck::build_rec_type».obs ev with
@@ -3678,7 +3684,7 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
       have hflat_lt : flat.length < 2 ^ 39 := by
         have hmem_len :
             (⟨Obs.Names.«Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>»,
-              [v_flat], m_f⟩ : Call F) ∈ calls :=
+              [v_flat], m224⟩ : Call F) ∈ calls :=
           hsub_cap _ (mem_of_eq hc_cap (by call_mem))
         exact RomBound.bounded_length_lt hbd hmem_len List.mem_cons_self
           (flatList_mono (ext_bfb_cin.trans ext_cin_f) hflat_bfb)
@@ -3698,7 +3704,7 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
       -- build_rec_type_heap_shape (at sp)
       have ev_brt' : ObsFn W "KernelCheck::build_rec_type"
           [xrc, x_pty, x_pnl, .field (rc.params.toNat : F), .field (pInfo.ni : F), v_elim,
-            .field (off : F), v_flat, v_fop, .field (sp : F)] m_c_in x_cty m_brt_out cs_brt := by
+            .field (off : F), v_flat, v_fop, .field (sp : F)] m_brt_in x_cty m_brt_out cs_brt := by
         rwa [hx_pni_eq] at ev_brt
       obtain ⟨lenP, lenI, tot, xconcl, hlenP_le, hlenI_le, htot_lt, htot_eq,
         hforalls_cty, hconcl_bv, hmots_car, hmaj_car⟩ :=
@@ -4495,62 +4501,132 @@ private theorem check_recs_pass3 {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
         (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) st.ext_h_next hrest_rep)
         hsub_n ev_n k rc (by omega) hk
 
-/-- **Core family-check theorem** unifying `familyFlat_of_call` and `familyForm_of_call` in one
-pass over `KernelModeled::check_family`. -/
-private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Address}
-    {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env} {B rb : _root_.Address}
+private theorem sub_drop {α : Type*} {l₁ l₂ root : List α} {c : α}
+    (h : ∀ x ∈ l₁ ++ c :: l₂, x ∈ root) : ∀ x ∈ l₂, x ∈ root :=
+  fun x hx => h x (List.mem_append_right l₁ (List.mem_cons_of_mem c hx))
+
+private theorem sub_take {α : Type*} {l₁ l₂ root : List α} {c : α}
+    (h : ∀ x ∈ l₁ ++ c :: l₂, x ∈ root) :
+    (∀ x ∈ l₁, x ∈ root) ∧ c ∈ root ∧ (∀ x ∈ l₂, x ∈ root) :=
+  ⟨fun x hx => h x (List.mem_append_left _ hx),
+   h c (List.mem_append_right l₁ List.mem_cons_self),
+   fun x hx => h x (List.mem_append_right l₁ (List.mem_cons_of_mem c hx))⟩
+
+private structure CheckFamilyUnpack (calls : List (Call F)) (bAddr : _root_.Address)
+    (t : Ix.Kernel.RoleTable) (E₀ R' : Ixon.Env) (B rb : _root_.Address)
+    (cr : Ixon.Constant) (rs : Array Ixon.MutConst) (lim : Option Nat) where
+  bB : Bytes.Address
+  bR : Bytes.Address
+  bB_eq : ixAddr bB = B
+  bR_eq : ixAddr bR = rb
+  cb : Ixon.Constant
+  msB : Array Ixon.MutConst
+  ind₀ : Ixon.Inductive
+  np : Nat
+  bnl : Nat
+  off : Nat
+  prim : _root_.Address
+  cprim : Ixon.Constant
+  msp : Array Ixon.MutConst
+  os : List FlatEntry
+  flat : List FlatEntry
+  as_t : List Bytes.Address
+  as_r : List Bytes.Address
+  hBlock : FamBlockRecord E₀ B cb msB
+  hms0 : msB[0]? = some (.indc ind₀)
+  hmsB_lt : msB.size < 8589934592
+  hnp_lt : np < 72057594037927936
+  hnp_all : ∀ m ∈ msB.toList, ∀ ind, m = .indc ind → ind.params.toNat = np
+  hrs_lt : rs.size < 2 ^ 39
+  hflat_lt : flat.length < 2 ^ 39
+  hflat_len : flat.length = rs.size
+  hbnl_lt : bnl < 4294967296
+  hoff : off ≤ 1
+  hBlockElim : BlockElim (ReconView.ofStore t E₀) B off
+  hbnl_d0 : ∀ a0 rest, as_t = a0 :: rest →
+    ∃ d0, indDataAt t E₀ (ixAddr a0) = some (some d0) ∧ bnl = d0.nlvls
+  has_t_len : as_t.length = msB.toList.length
+  has_t_mem : ∀ i a, as_t[i]? = some a →
+    ∃ m, msB.toList[i]? = some m ∧ ixAddr a = Core.projAddr (Core.Specs.Callees.memberProjInfo B i m)
+  has_r_len : as_r.length = rs.size
+  has_r_recr : ∀ i a, as_r[i]? = some a →
+    ∃ r, rs[i]? = some (.recr r) ∧ ixAddr a = memberAddr rb i (.recr r)
+  hfrp_cf : familyRecPrimary E₀ rb = some prim
+  hSprim : Held R' prim
+  hcprim : recordOf E₀ prim = some cprim
+  hmsp : cprim.info = .muts msp
+  horig_cf : flatOriginals (FlatView.ofStore t E₀) prim = some os
+  haux_cf : buildFlatAuxStep t E₀ rb cr rs prim 0 rs.toList os = some flat
+  hfilt_cf : flat.filter (fun e => !e.aux) = os
+  hos_props : ∀ e ∈ os, e.aux = false ∧ e.params = [] ∧ e.levels = [] ∧
+    ∃ idx ind, msp[idx]? = some (.indc ind) ∧ e.addr = memberAddr prim idx (.indc ind)
+  hflat_held : ∀ e ∈ flat, Held R' e.addr ∧ ∀ p ∈ e.params, AddrIn (Held R') (Core.keyOf t) p
+  m_flat : Heap F
+  m_cna_out : Heap F
+  xb_flat : SourceValue F
+  v_flat : SourceValue F
+  r_cna : SourceValue F
+  cs_cna : List (Call F)
+  hsub_cna : ∀ cl ∈ cs_cna, cl ∈ calls
+  hbB_flat : Bytes.RepAddressRef addrTy m_flat bB xb_flat
+  hflat_rep : RepList flatListEnum (FlatEntryRepExact (Core.keyOf t)) m_flat flat v_flat
+  ev_cna : ObsFn W "KernelModeled::check_nested_aux" [xb_flat, v_flat] m_flat r_cna m_cna_out cs_cna
+  m_cr : Heap F
+  m_cr_out : Heap F
+  xrc_cr : SourceValue F
+  x_ta : SourceValue F
+  x_recs : SourceValue F
+  x_rm : SourceValue F
+  x_v1 : SourceValue F
+  x_v2 : SourceValue F
+  x_v3 : SourceValue F
+  x_s8 : SourceValue F
+  r_cr : SourceValue F
+  cs_cr : List (Call F)
+  hsub_cr : ∀ cl ∈ cs_cr, cl ∈ calls
+  hrc_cr : Claim.RepRunCtxLim t m_cr bAddr lim xrc_cr
+  has_t_cr : RepList addrListEnum (Bytes.RepAddressRef addrTy) m_cr as_t x_ta
+  has_r_cr : RepList addrListEnum (Bytes.RepAddressRef addrTy) m_cr as_r x_recs
+  ev_cr : ObsFn W "KernelModeled::check_recs"
+    [xrc_cr, x_ta, x_recs, x_rm, x_v1, x_v2, x_v3, x_s8,
+      .field (rs.size : F), .field 0, .field (np : F), .field (off : F), .field (bnl : F),
+      x_recs, .field 0] m_cr r_cr m_cr_out cs_cr
+
+private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ R' : Ixon.Env} {B rb : _root_.Address}
     {cr : Ixon.Constant} {rs : Array Ixon.MutConst} {lim : Option Nat} {cs : List (Call F)}
+    {h h' : Heap F} {xrc xb xrb r_cf : SourceValue F} {bB bR : Bytes.Address}
     (ht : t.check = .ok ()) (hwf : t.wf = true)
     (hS : LoadedReads.RunStore calls E₀) (hH : LoadedReads.HashedRecordsStored calls E₀)
     (hbd : Bounded calls)
-    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
-    (hcl : UsedClosed R) (hRB : Held R B)
-    (hrecRefs : ∀ i ∈ usedRefIdxs cr, ∀ a, cr.refs[i]? = some a →
-      Held R a ∨ a = rb ∨ ∃ k m, rs[k]? = some m ∧ a = memberAddr rb k m)
-    (hlv : StoreLevelsOk t E₀ (Held R)) (hpar : StoreIndParamsOk E₀ (Held R))
-    (hM : ModeledAnswers calls (Held R) (ReconView.ofStore t E₀))
+    (hR'agree : ∀ y c c', recordOf R' y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl' : UsedClosed R') (hR'B : Held R' B) (hR'rb : Held R' rb)
+    (hlv' : StoreLevelsOk t E₀ (Held R'))
     (hRec : FamRecRecord E₀ rb cr rs) (hrs_ne : rs.size ≠ 0)
     (hBLogic : ∀ cb, recordOf E₀ B = some cb → InLogic cb)
-    (hfc : FamilyCallAtLim calls bAddr t B rb lim cs) :
-    ∃ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (es : List FlatEntry) (off : Nat),
-      FamilyOfBlock E₀ B cb ms rb cr rs (es.map FlatEntry.addr) ∧
-      RecordFlat t E₀ rb cr rs es ∧
-      BlockDerivedFlat t E₀ B off es ∧
-      (∀ (ind₀ : Ixon.Inductive) (k : Nat) (rc : Ixon.Recursor),
-        ms[0]? = some (.indc ind₀) → rs[k]? = some (.recr rc) →
-        rc.lvls.toNat = ind₀.lvls.toNat + off) ∧
-      (∀ (k : Nat) (rc : Ixon.Recursor), rs[k]? = some (.recr rc) →
-        ctorsBefore (ReconView.ofStore t E₀) es es.length = some rc.minors.toNat) ∧
-      (RFormS t E₀ B rb ∨
-        (RecordWrapConsObs calls t E₀ B rb ∧ ∀ n, lim = some n → n < 77 → False)) := by
-  obtain ⟨h, h', xrc, xb, xrb, r_cf, hrc, ⟨bB, hbB, rfl⟩, ⟨bR, hbR, rfl⟩, ev_cf, hmem_cf, hsub_cf⟩ := hfc
-  -- 1. Extend R with rb + its projections
-  have hrec_lv := check_family_recr_levelsOk (t := t) hS hbd hRec.record hRec.muts hbR ev_cf hsub_cf
-  obtain ⟨R', hcl', hRmono, hR'agree, -, hR'rb, hR'held_iff, hlv', hpar'⟩ :=
-    addRecBlockStore hcl hRagree hlv hpar hRec hrecRefs hrec_lv
-  have hR'B : Held R' (ixAddr bB) := by
-    obtain ⟨cB, hcB⟩ := Option.isSome_iff_exists.mp hRB
-    exact Option.isSome_iff_exists.mpr ⟨cB, hRmono _ _ hcB⟩
-  have hM' : ModeledAnswers calls (Held R') (ReconView.ofStore t E₀) :=
-    modeledAnswers_addRecBlock hS hRec hR'held_iff hM
-  -- 2. Unpack check_family
-  have sub : ∀ {cs' : List (Call F)}, (∀ cl ∈ cs', cl ∈ cs) → ∀ cl ∈ cs', cl ∈ calls :=
-    fun hs cl hcl' => hsub_cf cl (hs cl hcl')
+    (hrc : Claim.RepRunCtxLim t h bAddr lim xrc)
+    (hbB : Bytes.RepAddressRef addrTy h bB xb) (hBb : ixAddr bB = B)
+    (hbR : Bytes.RepAddressRef addrTy h bR xrb) (hRb : ixAddr bR = rb)
+    (ev_cf : ObsFn W "KernelModeled::check_family" [xrc, xb, xrb] h r_cf h' cs)
+    (hsub_cf : ∀ cl ∈ cs, cl ∈ calls) :
+    Nonempty (CheckFamilyUnpack calls bAddr t E₀ R' B rb cr rs lim) := by
+  subst hBb hRb
   match Obs.«KernelModeled::check_family».obs ev_cf with
-  | .run (m105 := m105) (m453 := m453) (m501 := m501) (cs511 := cs511) (x_members := x_members)
+  | .run (m105 := m105) (v452 := x_v3) (m453 := m453) (m501 := m501) (cs511 := cs511) (x_members := x_members)
       (v588 := v588) (m589 := m589) (cs599 := cs599) (v621 := v621) (m624 := m624)
       (v651 := v651) (m652 := m652) (v673 := x_ta) (m674 := m674) (cs684 := cs684)
       (m704 := m704) (v746 := x_ca) (m747 := m747) (cs757 := cs757)
       (m784 := m784) (v839 := x_recs) (m840 := m840) (cs850 := cs850)
       (m_qvdvjtit := m_qv) (v861 := v_nrecs) (m862 := m862) (cs872 := cs872)
+      (x_rec_models := x_rm) (x_s8 := x_s8) (v926 := x_v1) (v977 := x_v2)
       (m_lukcasbb := m_lu) (m1191 := m1191) (cs1201 := cs1201) (x_bnl := x_bnl)
       (x_univ_offset := x_uo) (v_qwfkpklj := v_flat) (m_ialrkdmk := m_flat) (cs_pblrtsmj := cs_flat)
-      (m1234 := m1234) (cs1244 := cs1244) (y_xxqgtlpp := v_flen) (m_soowcubw := m_so)
+      (v1233 := r_cna) (m1234 := m1234) (cs1244 := cs1244) (y_xxqgtlpp := v_flen) (m_soowcubw := m_so)
       (cs_owchsduj := cs_flen) (v_arypxepi := v_sub) (v_tabgyphp := v_comp)
       (m_gmcvdxbt := m_gm) (x_gwlxyjol := v_z0) (m_jbcuvwlm := m_jb)
       (y_svqhibng := v_vg) (m_yarikpkl := m_ya) (v_tpfunfpk := v_eok)
       (x_eezzidwb := v_add) (y_jggqqrgl := v_mul) (v_btzwyhmz := v_or)
-      (m1293 := m1293) (cs1341 := cs1341)
+      (m1293 := m1293) (v1330 := r_cr) (m1331 := m_cr_out) (cs1341 := cs1341)
       (sg112 := sg1) (ev126 := e1) (ev148 := e2) (ev194 := e3) (ev_yqjbwijz := e4)
       (ev231 := e5) (ev266 := e6) (ev309 := e7) (ev344 := e8) (ev403 := e9)
       (ev435 := e10) (ev465 := e11) (ev513 := ev_blk) (ev601 := ev_mlen)
@@ -4564,6 +4640,28 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       (ev_whimdwjd := ev_vg) (op_qfbltjlu := op_1mvg) (op_cnutjuwu := op_eok)
       (op_ymhwloon := op_add) (op_mvhbzaru := op_mul) (op_zaucahqq := op_or)
       (heq_sujkqzii := heq_or) (ev1305 := ev_fro) (ev1343 := ev_cr) (hc1474 := hc) .. =>
+    -- Peel all needed subcall proofs linearly from hc, then drop hc immediately
+    have hrest : ∀ cl ∈ cs, cl ∈ calls := hsub_cf
+    rw [hc] at hrest
+    clear hc hsub_cf ev_cf
+    have hrest := sub_drop (sub_drop (sub_drop (sub_drop (sub_drop (sub_drop
+      (sub_drop (sub_drop (sub_drop (sub_drop (sub_drop (sub_drop hrest)))))))))))
+    obtain ⟨hsub511, -, hrest⟩ := sub_take hrest
+    have hrest := sub_drop (sub_drop (sub_drop hrest))
+    obtain ⟨hsub684, -, hrest⟩ := sub_take hrest
+    have hrest := sub_drop hrest
+    obtain ⟨hsub757, -, hrest⟩ := sub_take hrest
+    have hrest := sub_drop (sub_drop hrest)
+    obtain ⟨hsub850, -, hrest⟩ := sub_take hrest
+    have hrest := sub_drop hrest
+    obtain ⟨-, hmem_rlen, hrest⟩ := sub_take hrest
+    have hrest := sub_drop (sub_drop (sub_drop (sub_drop (sub_drop
+      (sub_drop (sub_drop (sub_drop (sub_drop (sub_drop hrest)))))))))
+    obtain ⟨hsub1201, -, hrest⟩ := sub_take hrest
+    obtain ⟨hsub_flat, -, hrest⟩ := sub_take hrest
+    obtain ⟨hsub1244, hmem_flen, hrest⟩ := sub_take hrest
+    have hrest := sub_drop (sub_drop (sub_drop (sub_drop hrest)))
+    obtain ⟨-, -, hsub1341⟩ := sub_take hrest
     have ext_sg1 : Heap.Extends h m105 := by
       cases sg1 with
       | Nil _ _ evax _ hh _ => rw [hh]; exact evax.heap_extends
@@ -4592,6 +4690,10 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
         ev_belim.heap_extends.trans <| ev_bfb.heap_extends.trans <| ev_cna.heap_extends.trans <|
         ev_flen.heap_extends.trans <| ev_zcomp.heap_extends.trans <| ev_znr.heap_extends.trans <|
         ev_vg.heap_extends.trans ev_fro.heap_extends
+    have ext_674_1293 : Heap.Extends m674 m1293 :=
+      ext_674_lu.trans <| ev_belim.heap_extends.trans <| ev_bfb.heap_extends.trans <|
+        ev_cna.heap_extends.trans <| ev_flen.heap_extends.trans <| ev_zcomp.heap_extends.trans <|
+        ev_znr.heap_extends.trans <| ev_vg.heap_extends.trans ev_fro.heap_extends
     have ext_h_784 : Heap.Extends h m784 :=
       ext_h_453.trans <| ev_blk.heap_extends.trans <| ext_501_652.trans <|
         ext_652_704.trans ext_704_784
@@ -4601,7 +4703,6 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
     have ext_h_1293 : Heap.Extends h m1293 :=
       ext_h_784.trans (ev_fr.heap_extends.trans ext_840_1293)
     -- Block B: cb, msB, all inductive, nonempty, FamBlockRecord E₀ B cb msB
-    have hsub511 : ∀ cl ∈ cs511, cl ∈ calls := sub (fun cl hcl' => mem_of_eq hc (by call_mem))
     obtain ⟨cb, msB, hblB, hrep_msB⟩ :=
       Claim.load_block_head (Bytes.repAddressRef_heapMono₂ addrTy ext_h_453 hbB) ev_blk
     obtain ⟨hcbE, hmsB⟩ := (hblB.mono hsub511).stored hH
@@ -4624,7 +4725,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
         have he : ((msB.toList.filter Core.Specs.Callees.isIndc).length : F) = (msB.toList.length : F) :=
           Value.field.inj (hindV.symm.trans (heq_icnt.trans hmsB_len_v))
         have hle := List.length_filter_le Core.Specs.Callees.isIndc msB.toList
-        have hlt : msB.toList.length < 8589934592 := by simpa using hmsB_lt
+        have hlt : msB.toList.length < 8589934592 := by simpa only [Array.length_toList] using hmsB_lt
         exact Core.ModeledAux.natCast_inj_lt (by omega) (by omega) he
       intro m hm
       have hfl := List.filter_eq_self.mpr (by
@@ -4666,7 +4767,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       rw [← Array.getElem?_toList] at hm
       have hm_eq : m' = m := Option.some.inj (hm'.symm.trans hm); subst hm_eq
       obtain ⟨ind, rfl⟩ := hall_indc m (List.mem_of_getElem? hm)
-      exact stored_of_hashed_iprj hH (Core.hashed_mono (sub fun cl hcl' => mem_of_eq hc (by call_mem)) hh_i)
+      exact stored_of_hashed_iprj hH (Core.hashed_mono hsub684 hh_i)
     -- block_ctor_addrs_hashed_spec => FamBlockRecord.ctors in E₀
     have hct_sz : ∀ m ∈ msB.toList, ∀ ind, m = .indc ind → ind.ctors.size < 72057594037927936 := by
       intro m hm ind hmi; subst hmi
@@ -4680,17 +4781,19 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
     have hB_ctors : ∀ i ind j, msB[i]? = some (.indc ind) → j < ind.ctors.size →
         recordOf E₀ (ctorAddr (ixAddr bB) i j) = some (constructorProjection (ixAddr bB) i j) := by
       intro i ind j hi hj
-      have hh := block_ctor_addrs_hashed_spec (t := t) msB.toList 0 (by simpa using by omega) hct_sz
+      have hh := block_ctor_addrs_hashed_spec (t := t) msB.toList 0
+        (by rw [Nat.zero_add, Array.length_toList]; exact Nat.lt_trans hmsB_lt (by decide)) hct_sz
         (RepLinkedList.mono L1.repMutConst_heapMono₂ (ext_501_652.trans ext_652_704) hrep_msB)
         (Bytes.repAddressRef_heapMono₂ addrTy (ext_h_453.trans (ev_blk.heap_extends.trans (ext_501_652.trans ext_652_704))) hbB)
-        (by simpa using ev_bca) i ind j (by rw [Array.getElem?_toList]; exact hi) hj
-      simpa using stored_of_hashed_cprj hH (Core.hashed_mono (sub fun cl hcl' => mem_of_eq hc (by call_mem)) hh)
+        (by rw [Nat.cast_zero]; exact ev_bca) i ind j (by rw [Array.getElem?_toList]; exact hi) hj
+      rw [Nat.zero_add] at hh
+      exact stored_of_hashed_cprj hH (Core.hashed_mono hsub757 hh)
     have hBlock : FamBlockRecord E₀ (ixAddr bB) cb msB :=
       ⟨hcbE, hmsB, hall_indc, hBLogic cb hcbE, hB_members, hB_ctors⟩
     -- family_recs_muts_list => as_r
     obtain ⟨as_r, has_r, has_r_len, has_r_mem⟩ := family_recs_muts_list hS
       (Bytes.repAddressRef_heapMono₂ addrTy ext_h_784 hbR) ev_fr
-      (sub fun cl hcl' => mem_of_eq hc (by call_mem)) hRec.record hRec.muts
+      hsub850 hRec.record hRec.muts
     have has_r_recr : ∀ i a, as_r[i]? = some a →
         ∃ r, rs[i]? = some (.recr r) ∧ ixAddr a = memberAddr (ixAddr bR) i (.recr r) := by
       intro i a hi
@@ -4702,12 +4805,11 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       rw [Obs.Names.«Lists::length<&[Field; 32]>».symbol]; exact ev_rlen
     have has_r_qv := repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
       (f1.heap_extends.trans f2.heap_extends) has_r
-    obtain ⟨hv_nrecs, -⟩ := Lib.Lists.length_spec ev_rlen' (by rw [Obs.Names.«Lists::Node<&[Field; 32]>».symbol]; exact has_r_qv)
+    obtain ⟨hv_nrecs, -⟩ := Lib.Lists.length_spec ev_rlen'
+      (by rw [Obs.Names.«Lists::Node<&[Field; 32]>».symbol]; exact has_r_qv)
     rw [has_r_len] at hv_nrecs; subst hv_nrecs
     have hrs_lt : rs.size < 2 ^ 39 := by
-      have hmem_len : (⟨Obs.Names.«Lists::length<&[Field; 32]>», [x_recs], m_qv⟩ : Call F) ∈ calls :=
-        hsub_cf _ (mem_of_eq hc (by call_mem))
-      have := RomBound.bounded_length_lt hbd hmem_len List.mem_cons_self has_r_qv
+      have := RomBound.bounded_length_lt hbd hmem_rlen List.mem_cons_self has_r_qv
       rwa [has_r_len] at this
     -- block_elim_spec => bnl, off, BlockElim
     have has_t_map : as_t.map ixAddr = indcAddrs (ixAddr bB) 0 msB.toList := by
@@ -4717,9 +4819,9 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       · simp [has_t_len]
       · intro i h1 h2
         simp only [List.getElem_map, List.getElem_mapIdx]
-        have hi_t : i < as_t.length := by simpa using h1
+        have hi_t : i < as_t.length := by simpa only [List.length_map] using h1
         obtain ⟨m, hm, -, ha, -⟩ := has_t_mem i as_t[i] (List.getElem?_eq_getElem hi_t)
-        have hm_eq : m = msB.toList[i]'(by simpa [has_t_len] using hi_t) := by
+        have hm_eq : m = msB.toList[i]'(by simpa only [has_t_len] using hi_t) := by
           rw [List.getElem?_eq_getElem] at hm; exact Option.some.inj hm
         rw [← hm_eq]; exact ha
     have hmemAt_B : membersAt E₀ (ixAddr bB) = some (as_t.map ixAddr) := by
@@ -4737,7 +4839,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       rw [ha_i]; exact Option.isSome_iff_exists.mpr ⟨_, hprojR'⟩
     obtain ⟨bnl, off, hbelim_r, hbnl_lt, hoff_01, hBlockElim, hbnl_d0⟩ :=
       block_elim_spec ht hwf hS hH hbd hR'agree hcl' hlv'
-        (sub fun cl hcl' => mem_of_eq hc (by call_mem)) hmemAt_B has_t_held
+        hsub1201 hmemAt_B has_t_held
         (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext_674_lu has_t)
         ev_belim
     injection hbelim_r with hbl; injection hbl with hbnl_eq hbl; injection hbl with huo_eq _
@@ -4747,19 +4849,15 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
     obtain ⟨prim, cprim, msp, os, flat, hfrp_cf, hSprim, hcprim, hmsp, horig_cf, haux_cf, hfilt_cf,
       hos_props, hflat_rep, hflat_held⟩ :=
       build_flat_block_spec ht hwf hS hH hbd hR'agree hcl' hlv' hoff
-        (sub fun cl hcl' => mem_of_eq hc (by call_mem)) hR'rb hRec.record hRec.muts
+        hsub_flat hR'rb hRec.record hRec.muts
         hR'B hcbE hmsB
         (Bytes.repAddressRef_heapMono₂ addrTy ext_h_1191 hbR)
         (Bytes.repAddressRef_heapMono₂ addrTy ext_h_1191 hbB) ev_bfb
     -- flat.length = rs.size (from complete + empty_ok - complete*empty_ok = 1 and rs.size ≠ 0)
     obtain ⟨hv_flen, -⟩ := flat_length_spec ev_flen (flatList_mono ev_cna.heap_extends hflat_rep)
     subst hv_flen
-    have hflat_lt : flat.length < 2 ^ 39 := by
-      have hmem_len :
-          (⟨Obs.Names.«Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>»,
-            [v_flat], m1234⟩ : Call F) ∈ calls :=
-        hsub_cf _ (mem_of_eq hc (by call_mem))
-      exact RomBound.bounded_length_lt hbd hmem_len List.mem_cons_self
+    have hflat_lt : flat.length < 2 ^ 39 :=
+      RomBound.bounded_length_lt hbd hmem_flen List.mem_cons_self
         (flatList_mono ev_cna.heap_extends hflat_rep)
     have hflat_len : flat.length = rs.size := by
       obtain ⟨hz_nr, -⟩ := Lib.is_zero_spec ev_znr
@@ -4792,315 +4890,388 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
         have h1 := congrArg ZMod.val hfeq
         rw [fval_natCast (by omega), fval_natCast (by omega)] at h1; exact h1.symm
       | ptr _ _ | tuple _ | construct _ _ _ => simp [evalBinOp] at op_1mvg
-    -- Step A: k = 0 => prim = B, BlockDerivedFlat
-    obtain ⟨t0, trest, has_t_cons⟩ := List.exists_cons_of_ne_nil (show as_t ≠ [] by
-      intro h0; rw [h0] at has_t_len; simp at has_t_len; omega)
-    obtain ⟨a0, rrest, has_r_cons⟩ := List.exists_cons_of_ne_nil (show as_r ≠ [] by
-      intro h0; rw [h0] at has_r_len; simp at has_r_len; exact hrs_ne has_r_len.symm)
-    have ht0_addr : ixAddr t0 = memberAddr (ixAddr bB) 0 (.indc ind₀) := by
-      obtain ⟨m, hm, -, ha, -⟩ := has_t_mem 0 t0 (by rw [has_t_cons]; rfl)
-      rw [← Array.getElem?_toList] at hms0
-      have := Option.some.inj (hm.symm.trans hms0); subst this
-      rw [LoadedReads.memberAddr_eq_projAddr]; exact ha
-    obtain ⟨r₀, hrs0, ha0_addr⟩ := has_r_recr 0 a0 (by rw [has_r_cons]; rfl)
-    have hfrp_B := check_recs_head_prim_eq ht hwf hS hH hbd hR'agree hcl' hlv' hBlock hRec hR'rb
-      hrs_lt hnp_lt hoff hbnl_lt hms0 ht0_addr hrs0 ha0_addr
-      (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
-        (ext_674_lu.trans <| ev_belim.heap_extends.trans <| ev_bfb.heap_extends.trans <|
-          ev_cna.heap_extends.trans <| ev_flen.heap_extends.trans <| ev_zcomp.heap_extends.trans <|
-          ev_znr.heap_extends.trans <| ev_vg.heap_extends.trans ev_fro.heap_extends)
-        (has_t_cons ▸ has_t))
-      (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext_840_1293
-        (has_r_cons ▸ has_r))
-      (sub fun cl hcl' => mem_of_eq hc (by call_mem)) (by simpa using ev_cr)
-    have hprim_eq : prim = ixAddr bB := Option.some.inj (hfrp_cf.symm.trans (hfrp_B (ixAddr bB)))
-    subst hprim_eq
-    have hcprim_eq : cprim = cb := Option.some.inj (hcprim.symm.trans hcbE); subst hcprim_eq
-    have hmsp_eq : msp = msB := Ixon.ConstantInfo.muts.inj (hmsp.symm.trans hmsB); subst hmsp_eq
-    -- BlockDerivedFlat from check_nested_aux_spec
-    obtain ⟨n_der, hder⟩ := check_nested_aux_spec ht hwf hS hH hbd hR'agree hcl' hlv'
-      (sub fun cl hcl' => mem_of_eq hc (by call_mem))
-      (by unfold membersAt; simp only [hcbE, hmsB])
-      horig_cf hfilt_cf
-      (Bytes.repAddressRef_heapMono₂ addrTy (ext_h_1191.trans ev_bfb.heap_extends) hbB)
-      hflat_rep hflat_held ev_cna
-    have hBDF : BlockDerivedFlat t E₀ (ixAddr bB) off flat := ⟨hBlockElim, n_der, hder⟩
-    -- bnl = ind₀.lvls.toNat
-    have hbnl_ind0 : bnl = ind₀.lvls.toNat := by
-      obtain ⟨d0, hd0, hbnl_d⟩ := hbnl_d0 t0 trest has_t_cons
-      rw [ht0_addr] at hd0
-      obtain ⟨-, ca0, p0, cb0, ms0, ind0', hca0, hci0, hcb0, hms0', hm0', hnl0, -, -, -, hblk0, hidx0⟩ :=
-        indInfoAt_of_indDataAt hd0
-      have hproj0 := hBlock.members 0 (.indc ind₀) hms0
-      have hca_eq := Option.some.inj (hca0.symm.trans hproj0); subst hca_eq
-      simp only [memberProjection, Ixon.ConstantInfo.iPrj.injEq] at hci0; subst hci0
-      have hcb_eq := Option.some.inj (hcb0.symm.trans hcbE); subst hcb_eq
-      have hms_eq := Ixon.ConstantInfo.muts.inj (hms0'.symm.trans hmsB); subst hms_eq
-      have hm_eq := Ixon.MutConst.indc.inj (Option.some.inj (hm0'.symm.trans hms0)); subst hm_eq
-      exact hbnl_d.trans hnl0
-    -- Step B (Pass 1)
-    have hP1 := check_recs_pass1 ht hwf hS hH hbd hR'agree hcl' hlv' hBlock hRec hR'rb hrs_lt
-      hnp_lt hoff hbnl_lt hfrp_B horig_cf haux_cf as_r 0 (by simp [has_r_len])
-      (fun i a hi => by simpa using has_r_recr i a hi)
-      (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext_840_1293 has_r)
-      (sub fun cl hcl' => mem_of_eq hc (by call_mem)) (by simpa using ev_cr)
-    -- FamilyOfBlock
-    have hos_len : os.length = msB.size := by
+    exact ⟨{
+      bB := bB, bR := bR, bB_eq := rfl, bR_eq := rfl,
+      cb := cb, msB := msB, ind₀ := ind₀, np := np, bnl := bnl, off := off,
+      prim := prim, cprim := cprim, msp := msp, os := os, flat := flat,
+      as_t := as_t, as_r := as_r,
+      hBlock := hBlock, hms0 := hms0, hmsB_lt := hmsB_lt, hnp_lt := hnp_lt, hnp_all := hnp_all,
+      hrs_lt := hrs_lt, hflat_lt := hflat_lt, hflat_len := hflat_len,
+      hbnl_lt := hbnl_lt, hoff := hoff, hBlockElim := hBlockElim, hbnl_d0 := hbnl_d0,
+      has_t_len := has_t_len,
+      has_t_mem := fun i a hi => by
+        obtain ⟨m, hm, -, ha, -⟩ := has_t_mem i a hi; exact ⟨m, hm, ha⟩,
+      has_r_len := has_r_len, has_r_recr := has_r_recr,
+      hfrp_cf := hfrp_cf, hSprim := hSprim, hcprim := hcprim, hmsp := hmsp,
+      horig_cf := horig_cf, haux_cf := haux_cf, hfilt_cf := hfilt_cf,
+      hos_props := hos_props, hflat_held := hflat_held,
+      m_flat := m_flat, m_cna_out := m1234, xb_flat := xb, v_flat := v_flat,
+      r_cna := r_cna, cs_cna := cs1244, hsub_cna := hsub1244,
+      hbB_flat := Bytes.repAddressRef_heapMono₂ addrTy (ext_h_1191.trans ev_bfb.heap_extends) hbB,
+      hflat_rep := hflat_rep, ev_cna := ev_cna,
+      m_cr := m1293, m_cr_out := m_cr_out, xrc_cr := xrc,
+      x_ta := x_ta, x_recs := x_recs, x_rm := x_rm, x_v1 := x_v1, x_v2 := x_v2, x_v3 := x_v3,
+      x_s8 := x_s8, r_cr := r_cr, cs_cr := cs1341, hsub_cr := hsub1341,
+      hrc_cr := hrc.mono ext_h_1293,
+      has_t_cr := repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext_674_1293 has_t,
+      has_r_cr := repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext_840_1293 has_r,
+      ev_cr := ev_cr
+    }⟩
+
+/-- **Core family-check theorem** unifying `familyFlat_of_call` and `familyForm_of_call` in one
+pass over `KernelModeled::check_family`. -/
+private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Address}
+    {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env} {B rb : _root_.Address}
+    {cr : Ixon.Constant} {rs : Array Ixon.MutConst} {lim : Option Nat} {cs : List (Call F)}
+    (ht : t.check = .ok ()) (hwf : t.wf = true)
+    (hS : LoadedReads.RunStore calls E₀) (hH : LoadedReads.HashedRecordsStored calls E₀)
+    (hbd : Bounded calls)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R) (hRB : Held R B)
+    (hrecRefs : ∀ i ∈ usedRefIdxs cr, ∀ a, cr.refs[i]? = some a →
+      Held R a ∨ a = rb ∨ ∃ k m, rs[k]? = some m ∧ a = memberAddr rb k m)
+    (hlv : StoreLevelsOk t E₀ (Held R)) (hpar : StoreIndParamsOk E₀ (Held R))
+    (hM : ModeledAnswers calls (Held R) (ReconView.ofStore t E₀))
+    (hRec : FamRecRecord E₀ rb cr rs) (hrs_ne : rs.size ≠ 0)
+    (hBLogic : ∀ cb, recordOf E₀ B = some cb → InLogic cb)
+    (hfc : FamilyCallAtLim calls bAddr t B rb lim cs) :
+    ∃ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (es : List FlatEntry) (off : Nat),
+      FamilyOfBlock E₀ B cb ms rb cr rs (es.map FlatEntry.addr) ∧
+      RecordFlat t E₀ rb cr rs es ∧
+      BlockDerivedFlat t E₀ B off es ∧
+      (∀ (ind₀ : Ixon.Inductive) (k : Nat) (rc : Ixon.Recursor),
+        ms[0]? = some (.indc ind₀) → rs[k]? = some (.recr rc) →
+        rc.lvls.toNat = ind₀.lvls.toNat + off) ∧
+      (∀ (k : Nat) (rc : Ixon.Recursor), rs[k]? = some (.recr rc) →
+        ctorsBefore (ReconView.ofStore t E₀) es es.length = some rc.minors.toNat) ∧
+      (RFormS t E₀ B rb ∨
+        (RecordWrapConsObs calls t E₀ B rb ∧ ∀ n, lim = some n → n < 77 → False)) := by
+  obtain ⟨h, h', xrc, xb, xrb, r_cf, hrc, ⟨bB, hbB, hBb⟩, ⟨bR, hbR, hRb⟩, ev_cf, -, hsub_cf⟩ := hfc
+  -- 1. Extend R with rb + its projections
+  have hrec_lv := check_family_recr_levelsOk (t := t) hS hbd (hRb ▸ hRec.record) (hRb ▸ hRec.muts) hbR ev_cf hsub_cf
+  obtain ⟨R', hcl', hRmono, hR'agree, -, hR'rb, hR'held_iff, hlv', hpar'⟩ :=
+    addRecBlockStore hcl hRagree hlv hpar hRec hrecRefs (by rwa [hRb] at hrec_lv)
+  have hR'B : Held R' B := by
+    obtain ⟨cB, hcB⟩ := Option.isSome_iff_exists.mp hRB
+    exact Option.isSome_iff_exists.mpr ⟨cB, hRmono _ _ hcB⟩
+  have hM' : ModeledAnswers calls (Held R') (ReconView.ofStore t E₀) :=
+    modeledAnswers_addRecBlock hS hRec hR'held_iff hM
+  -- 2. Unpack check_family into a clean, compact record (dropping hc1474 and ~190 binders)
+  obtain ⟨u⟩ := check_family_unpack ht hwf hS hH hbd hR'agree hcl' hR'B hR'rb hlv'
+    hRec hrs_ne hBLogic hrc hbB hBb hbR hRb ev_cf hsub_cf
+  clear h h' xrc xb xrb r_cf hrc bB hbB hBb bR hbR hRb ev_cf hsub_cf
+  obtain ⟨bB, bR, rfl, rfl, cb, msB, ind₀, np, bnl, off, prim, cprim, msp, os, flat, as_t, as_r,
+    hBlock, hms0, hmsB_lt, hnp_lt, hnp_all, hrs_lt, hflat_lt, hflat_len, hbnl_lt, hoff,
+    hBlockElim, hbnl_d0, has_t_len, has_t_mem, has_r_len, has_r_recr,
+    hfrp_cf, hSprim, hcprim, hmsp, horig_cf, haux_cf, hfilt_cf, hos_props, hflat_held,
+    m_flat, m_cna_out, xb_flat, v_flat, r_cna, cs_cna, hsub_cna, hbB_flat, hflat_rep, ev_cna,
+    m_cr, m_cr_out, xrc_cr, x_ta, x_recs, x_rm, x_v1, x_v2, x_v3, x_s8, r_cr, cs_cr,
+    hsub_cr, hrc_cr, has_t_cr, has_r_cr, ev_cr⟩ := u
+  have hcbE := hBlock.record
+  have hmsB := hBlock.muts
+  have hall_indc := hBlock.indcs
+  have ev_cr0 : ObsFn W "KernelModeled::check_recs"
+      [xrc_cr, x_ta, x_recs, x_rm, x_v1, x_v2, x_v3, x_s8,
+        .field (rs.size : F), .field ((0 : Nat) : F), .field (np : F), .field (off : F),
+        .field (bnl : F), x_recs, .field 0] m_cr r_cr m_cr_out cs_cr := by
+    rw [Nat.cast_zero]; exact ev_cr
+  -- Step A: k = 0 => prim = B, BlockDerivedFlat
+  obtain ⟨t0, trest, has_t_cons⟩ := List.exists_cons_of_ne_nil (show as_t ≠ [] by
+    intro h0; rw [h0] at has_t_len; simp at has_t_len
+    have : msB[0]? = none := by rw [← Array.getElem?_toList, has_t_len]; rfl
+    rw [hms0] at this; cases this)
+  obtain ⟨a0, rrest, has_r_cons⟩ := List.exists_cons_of_ne_nil (show as_r ≠ [] by
+    intro h0; rw [h0] at has_r_len; simp at has_r_len; exact hrs_ne has_r_len.symm)
+  have ht0_addr : ixAddr t0 = memberAddr (ixAddr bB) 0 (.indc ind₀) := by
+    obtain ⟨m, hm, ha⟩ := has_t_mem 0 t0 (by rw [has_t_cons]; rfl)
+    have hms0' : msB.toList[0]? = some (.indc ind₀) := by rw [Array.getElem?_toList]; exact hms0
+    have := Option.some.inj (hm.symm.trans hms0'); subst this
+    rw [LoadedReads.memberAddr_eq_projAddr]; exact ha
+  obtain ⟨r₀, hrs0, ha0_addr⟩ := has_r_recr 0 a0 (by rw [has_r_cons]; rfl)
+  have hfrp_B := check_recs_head_prim_eq ht hwf hS hH hbd hR'agree hcl' hlv' hBlock hRec hR'rb
+    hrs_lt hnp_lt hoff hbnl_lt hms0 ht0_addr hrs0 ha0_addr
+    (has_t_cons ▸ has_t_cr) (has_r_cons ▸ has_r_cr) hsub_cr ev_cr
+  have hprim_eq : prim = ixAddr bB := Option.some.inj (hfrp_cf.symm.trans (hfrp_B (ixAddr bB)))
+  subst hprim_eq
+  have hcprim_eq : cprim = cb := Option.some.inj (hcprim.symm.trans hcbE); subst hcprim_eq
+  have hmsp_eq : msp = msB := Ixon.ConstantInfo.muts.inj (hmsp.symm.trans hmsB); subst hmsp_eq
+  -- BlockDerivedFlat from check_nested_aux_spec
+  obtain ⟨n_der, hder⟩ := check_nested_aux_spec ht hwf hS hH hbd hR'agree hcl' hlv'
+    hsub_cna (by unfold membersAt; simp only [hcbE, hmsB])
+    horig_cf hfilt_cf hbB_flat hflat_rep hflat_held ev_cna
+  have hBDF : BlockDerivedFlat t E₀ (ixAddr bB) off flat := ⟨hBlockElim, n_der, hder⟩
+  -- bnl = ind₀.lvls.toNat
+  have hbnl_ind0 : bnl = ind₀.lvls.toNat := by
+    obtain ⟨d0, hd0, hbnl_d⟩ := hbnl_d0 t0 trest has_t_cons
+    rw [ht0_addr] at hd0
+    obtain ⟨-, ca0, p0, cb0, ms0, ind0', hca0, hci0, hcb0, hms0', hm0', hnl0, -, -, -, hblk0, hidx0⟩ :=
+      indInfoAt_of_indDataAt hd0
+    have hproj0 := hBlock.members 0 (.indc ind₀) hms0
+    have hca_eq := Option.some.inj (hca0.symm.trans hproj0); subst hca_eq
+    simp only [memberProjection, Ixon.ConstantInfo.iPrj.injEq] at hci0; subst hci0
+    have hcb_eq := Option.some.inj (hcb0.symm.trans hcbE); subst hcb_eq
+    have hms_eq := Ixon.ConstantInfo.muts.inj (hms0'.symm.trans hmsB); subst hms_eq
+    have hm_eq := Ixon.MutConst.indc.inj (Option.some.inj (hm0'.symm.trans hms0)); subst hm_eq
+    exact hbnl_d.trans hnl0
+  -- Step B (Pass 1)
+  have hP1 := check_recs_pass1 ht hwf hS hH hbd hR'agree hcl' hlv' hBlock hRec hR'rb hrs_lt
+    hnp_lt hoff hbnl_lt hfrp_B horig_cf haux_cf as_r 0 (by simp [has_r_len])
+    (fun i a hi => by simpa only [Nat.zero_add] using has_r_recr i a hi)
+    has_r_cr hsub_cr ev_cr0
+  -- FamilyOfBlock
+  have hos_len : os.length = msB.size := by
+    have hmap := originals_map_addr (FlatView.ofStore t E₀) os horig_cf
+    have hlen1 := congrArg List.length hmap
+    simp only [List.length_map] at hlen1
+    rw [hlen1, ← blockRecurAddrs_eq_indcAddrs_of_all_indc (ixAddr bB) 0 msB.toList hall_indc]
+    simp
+  obtain ⟨auxs, hflat_app, hauxs_true⟩ := buildFlatAuxStep_append_aux rs.toList 0 os flat haux_cf
+  have hFOB : FamilyOfBlock E₀ (ixAddr bB) cb msB (ixAddr bR) cr rs (flat.map FlatEntry.addr) := {
+    block := hBlock
+    record := hRec
+    covers := by simp [hflat_len]
+    originals := fun i m hm => by
       have hmap := originals_map_addr (FlatView.ofStore t E₀) os horig_cf
-      have hlen1 := congrArg List.length hmap
-      simp only [List.length_map] at hlen1
-      rw [hlen1, ← blockRecurAddrs_eq_indcAddrs_of_all_indc (ixAddr bB) 0 msB.toList hall_indc]
-      simp
-    obtain ⟨auxs, hflat_app, hauxs_true⟩ := buildFlatAuxStep_append_aux rs.toList 0 os flat haux_cf
-    have hFOB : FamilyOfBlock E₀ (ixAddr bB) cb msB (ixAddr bR) cr rs (flat.map FlatEntry.addr) := {
-      block := hBlock
-      record := hRec
-      covers := by simp [hflat_len]
-      originals := fun i m hm => by
-        have hmap := originals_map_addr (FlatView.ofStore t E₀) os horig_cf
-        have hi_lt : i < os.length := by rw [hos_len]; exact (Array.getElem?_eq_some_iff.mp hm).1
-        rw [List.getElem?_map, hflat_app, List.getElem?_append_left hi_lt, ← List.getElem?_map, hmap]
-        rw [← blockRecurAddrs_eq_indcAddrs_of_all_indc (ixAddr bB) 0 msB.toList hall_indc,
-          List.getElem?_mapIdx, Array.getElem?_toList]
-        simp only [Nat.zero_add, hm, Option.map_some, LoadedReads.memberAddr_eq_projAddr]
-      motives := fun k rc hk => by
-        have := (hP1 k rc (Nat.zero_le _) hk).2.1
-        simpa using this
-      carriers := fun k rc hk j a ha => by
-        rw [List.getElem?_map] at ha
-        cases hej : flat[j]? with
-        | none => rw [hej] at ha; cases ha
-        | some ej =>
-          rw [hej] at ha; injection ha with hja; subst hja
-          exact (hP1 k rc (Nat.zero_le _) hk).2.2.2.2.2.1 j ej hej
-      major := fun k rc a hk ha => by
-        rw [List.getElem?_map] at ha
-        cases hek : flat[k]? with
-        | none => rw [hek] at ha; cases ha
-        | some ek =>
-          rw [hek] at ha; injection ha with hka; subst hka
-          exact (hP1 k rc (Nat.zero_le _) hk).2.2.2.2.2.2.1 ek hek
-    }
-    -- Pigeonhole on buildFlatAuxStep => exact auxiliary entries + FlatEntryParamsOk
-    have hms_le_rs : msB.size ≤ rs.size := hFOB.types_le
-    have hpre_skip : buildFlatAuxStep t E₀ (ixAddr bR) cr rs (ixAddr bB) msB.size
-        (rs.toList.drop msB.size) os = some flat := by
-      have hsplit : rs.toList = rs.toList.take msB.size ++ rs.toList.drop msB.size :=
-        (List.take_append_drop msB.size rs.toList).symm
-      have haux' : buildFlatAuxStep t E₀ (ixAddr bR) cr rs (ixAddr bB) 0
-          (rs.toList.take msB.size ++ rs.toList.drop msB.size) os = some flat := by
-        rwa [← hsplit]
-      have htake_len : (rs.toList.take msB.size).length = msB.size := by
-        rw [List.length_take, Array.length_toList]; exact Nat.min_eq_left hms_le_rs
-      have hres := buildFlatAuxStep_skip_prefix (rs.toList.take msB.size) (rs.toList.drop msB.size)
-        0 os flat haux' (fun j rc hj => by
-          have hj_lt : j < msB.size := by
-            have := (List.getElem?_eq_some_iff.mp hj).1; omega
-          have hj_rs : rs[j]? = some (.recr rc) := by
-            rw [List.getElem?_take_of_lt hj_lt, Array.getElem?_toList] at hj; exact hj
-          obtain ⟨ty, d, us, pa, pInfo, hty, hd, hfn, hpInfo, -, -, hfk⟩ :=
-            (hP1 j rc (Nat.zero_le _) hj_rs).2.2.2.2.2.2.2
-          obtain ⟨hinfo, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := indInfoAt_of_indDataAt hpInfo
-          have hm_j : msB[j]? = some msB[j] := Array.getElem?_eq_getElem hj_lt
-          obtain ⟨ind_j, hind_j⟩ := hall_indc msB[j] (Array.mem_toList_iff.mpr (Array.getElem_mem hj_lt))
-          rw [hind_j] at hm_j
-          have hfk_orig := hFOB.originals j (.indc ind_j) hm_j
-          rw [List.getElem?_map] at hfk_orig
-          have hpa_eq : ixAddr pa = memberAddr (ixAddr bB) j (.indc ind_j) :=
-            Option.some.inj (hfk.symm.trans hfk_orig)
-          have hblk_eq : pInfo.blk = ixAddr bB := by
-            obtain ⟨-, ca, pr, -, -, -, hca, hci, -, -, -, -, -, -, -, hblk, -⟩ :=
-              indInfoAt_of_indDataAt hpInfo
-            rw [hpa_eq] at hca
-            have hca_eq := Option.some.inj (hca.symm.trans (hBlock.members j (.indc ind_j) hm_j))
-            rw [← hca_eq] at hci
-            simp only [memberProjection, Ixon.ConstantInfo.iPrj.injEq] at hci
-            rw [hblk, ← hci]
-          exact ⟨ty, d, Core.keyOf t (ixAddr pa), us, ixAddr pa, _, by simpa using hty, hd, hfn,
-            keyAddr_keyOf hwf _, hinfo, hblk_eq⟩)
-      rwa [Nat.zero_add, htake_len] at hres
-    have haux_exact := buildFlatAuxStep_strict_suffix (rs.toList.drop msB.size) msB.size os flat
-      hpre_skip (by rw [hflat_len, hos_len, List.length_drop, Array.length_toList]; omega)
-    have hflat_ind_all : ∀ e ∈ flat, Held R' e.addr ∧ (∃ info, indDataAt t E₀ e.addr = some (some info)) ∧
-        (∀ p ∈ e.params, AddrIn (Held R') (Core.keyOf t) p) :=
-      (hP1 0 r₀ (Nat.zero_le _) hrs0).2.2.2.2.1
-    have hall_ok : ∀ e ∈ flat, Held R' e.addr ∧ (∃ info, indDataAt t E₀ e.addr = some (some info)) ∧
-        (∀ p ∈ e.params, AddrIn (Held R') (Core.keyOf t) p) ∧
-        FlatEntryParamsOk (ReconView.ofStore t E₀) np e := by
-      intro e he
-      refine ⟨(hflat_ind_all e he).1, (hflat_ind_all e he).2.1, (hflat_ind_all e he).2.2, ?_⟩
-      intro d hd
-      obtain ⟨-, ca_e, p_e, cb_e, ms_e, ind_e, hca_e, hci_e, hcb_e, hms_e, hm_e,
-        -, hd_np, -, -, hd_blk, hd_idx⟩ := indInfoAt_of_indDataAt hd
-      refine ⟨?_, ?_, ?_⟩
-      · intro haux_f
+      have hi_lt : i < os.length := by rw [hos_len]; exact (Array.getElem?_eq_some_iff.mp hm).1
+      rw [List.getElem?_map, hflat_app, List.getElem?_append_left hi_lt, ← List.getElem?_map, hmap]
+      rw [← blockRecurAddrs_eq_indcAddrs_of_all_indc (ixAddr bB) 0 msB.toList hall_indc,
+        List.getElem?_mapIdx, Array.getElem?_toList]
+      simp only [Nat.zero_add, hm, Option.map_some, LoadedReads.memberAddr_eq_projAddr]
+    motives := fun k rc hk => by
+      have := (hP1 k rc (Nat.zero_le _) hk).2.1
+      simpa using this
+    carriers := fun k rc hk j a ha => by
+      rw [List.getElem?_map] at ha
+      cases hej : flat[j]? with
+      | none => rw [hej] at ha; cases ha
+      | some ej =>
+        rw [hej] at ha; injection ha with hja; subst hja
+        exact (hP1 k rc (Nat.zero_le _) hk).2.2.2.2.2.1 j ej hej
+    major := fun k rc a hk ha => by
+      rw [List.getElem?_map] at ha
+      cases hek : flat[k]? with
+      | none => rw [hek] at ha; cases ha
+      | some ek =>
+        rw [hek] at ha; injection ha with hka; subst hka
+        exact (hP1 k rc (Nat.zero_le _) hk).2.2.2.2.2.2.1 ek hek
+  }
+  -- Pigeonhole on buildFlatAuxStep => exact auxiliary entries + FlatEntryParamsOk
+  have hms_le_rs : msB.size ≤ rs.size := hFOB.types_le
+  have hpre_skip : buildFlatAuxStep t E₀ (ixAddr bR) cr rs (ixAddr bB) msB.size
+      (rs.toList.drop msB.size) os = some flat := by
+    have hsplit : rs.toList = rs.toList.take msB.size ++ rs.toList.drop msB.size :=
+      (List.take_append_drop msB.size rs.toList).symm
+    have haux' : buildFlatAuxStep t E₀ (ixAddr bR) cr rs (ixAddr bB) 0
+        (rs.toList.take msB.size ++ rs.toList.drop msB.size) os = some flat := by
+      rwa [← hsplit]
+    have htake_len : (rs.toList.take msB.size).length = msB.size := by
+      rw [List.length_take, Array.length_toList]; exact Nat.min_eq_left hms_le_rs
+    have hres := buildFlatAuxStep_skip_prefix (rs.toList.take msB.size) (rs.toList.drop msB.size)
+      0 os flat haux' (fun j rc hj => by
+        have hj_lt : j < msB.size := by
+          have := (List.getElem?_eq_some_iff.mp hj).1; omega
+        have hj_rs : rs[j]? = some (.recr rc) := by
+          rw [List.getElem?_take_of_lt hj_lt, Array.getElem?_toList] at hj; exact hj
+        obtain ⟨ty, d, us, pa, pInfo, hty, hd, hfn, hpInfo, -, -, hfk⟩ :=
+          (hP1 j rc (Nat.zero_le _) hj_rs).2.2.2.2.2.2.2
+        obtain ⟨hinfo, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := indInfoAt_of_indDataAt hpInfo
+        have hm_j : msB[j]? = some msB[j] := Array.getElem?_eq_getElem hj_lt
+        obtain ⟨ind_j, hind_j⟩ := hall_indc msB[j] (Array.mem_toList_iff.mpr (Array.getElem_mem hj_lt))
+        rw [hind_j] at hm_j
+        have hfk_orig := hFOB.originals j (.indc ind_j) hm_j
+        rw [List.getElem?_map] at hfk_orig
+        have hpa_eq : ixAddr pa = memberAddr (ixAddr bB) j (.indc ind_j) :=
+          Option.some.inj (hfk.symm.trans hfk_orig)
+        have hblk_eq : pInfo.blk = ixAddr bB := by
+          obtain ⟨-, ca, pr, -, -, -, hca, hci, -, -, -, -, -, -, -, hblk, -⟩ :=
+            indInfoAt_of_indDataAt hpInfo
+          rw [hpa_eq] at hca
+          have hca_eq := Option.some.inj (hca.symm.trans (hBlock.members j (.indc ind_j) hm_j))
+          rw [← hca_eq] at hci
+          simp only [memberProjection, Ixon.ConstantInfo.iPrj.injEq] at hci
+          rw [hblk, ← hci]
+        exact ⟨ty, d, Core.keyOf t (ixAddr pa), us, ixAddr pa, _, by simpa using hty, hd, hfn,
+          keyAddr_keyOf hwf _, hinfo, hblk_eq⟩)
+    rwa [Nat.zero_add, htake_len] at hres
+  have haux_exact := buildFlatAuxStep_strict_suffix (rs.toList.drop msB.size) msB.size os flat
+    hpre_skip (by rw [hflat_len, hos_len, List.length_drop, Array.length_toList]; omega)
+  have hflat_ind_all : ∀ e ∈ flat, Held R' e.addr ∧ (∃ info, indDataAt t E₀ e.addr = some (some info)) ∧
+      (∀ p ∈ e.params, AddrIn (Held R') (Core.keyOf t) p) :=
+    (hP1 0 r₀ (Nat.zero_le _) hrs0).2.2.2.2.1
+  have hall_ok : ∀ e ∈ flat, Held R' e.addr ∧ (∃ info, indDataAt t E₀ e.addr = some (some info)) ∧
+      (∀ p ∈ e.params, AddrIn (Held R') (Core.keyOf t) p) ∧
+      FlatEntryParamsOk (ReconView.ofStore t E₀) np e := by
+    intro e he
+    refine ⟨(hflat_ind_all e he).1, (hflat_ind_all e he).2.1, (hflat_ind_all e he).2.2, ?_⟩
+    intro d hd
+    obtain ⟨-, ca_e, p_e, cb_e, ms_e, ind_e, hca_e, hci_e, hcb_e, hms_e, hm_e,
+      -, hd_np, -, -, hd_blk, hd_idx⟩ := indInfoAt_of_indDataAt hd
+    refine ⟨?_, ?_, ?_⟩
+    · intro haux_f
+      have he_os : e ∈ os := by
+        rw [← hfilt_cf]; exact List.mem_filter.mpr ⟨he, by simp [haux_f]⟩
+      obtain ⟨-, -, -, idx_e, ind_e', hget_e, he_mem⟩ := hos_props e he_os
+      rw [he_mem] at hca_e
+      have hca_eq := Option.some.inj (hca_e.symm.trans (hBlock.members idx_e (.indc ind_e') hget_e))
+      rw [← hca_eq] at hci_e
+      simp only [memberProjection, Ixon.ConstantInfo.iPrj.injEq] at hci_e; subst hci_e
+      have hcb_eq := Option.some.inj (hcb_e.symm.trans hcbE); subst hcb_eq
+      have hms_eq := Ixon.ConstantInfo.muts.inj (hms_e.symm.trans hmsB); subst hms_eq
+      have hi64 : idx_e.toUInt64.toNat = idx_e := by
+        have := (Array.getElem?_eq_some_iff.mp hget_e).1
+        have h64 : UInt64.size = 18446744073709551616 := rfl
+        change (UInt64.ofNat idx_e).toNat = idx_e
+        rw [UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (by omega)
+      rw [hi64] at hm_e
+      have hind_eq := Ixon.MutConst.indc.inj (Option.some.inj (hm_e.symm.trans hget_e)); subst hind_eq
+      have hnp_e := hnp_all (.indc ind_e) (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hget_e)) ind_e rfl
+      rw [hd_np, hnp_e]
+    · intro haux_t
+      obtain ⟨k, hk_lt, rfl⟩ := List.mem_iff_getElem.mp he
+      have hk_ge : msB.size ≤ k := by
+        by_contra hlt
+        have hko : k < os.length := by omega
+        have he_os : flat[k] ∈ os := by
+          have hget : flat[k]? = os[k]? := by rw [hflat_app, List.getElem?_append_left hko]
+          rw [List.getElem?_eq_getElem hk_lt, List.getElem?_eq_getElem hko] at hget
+          rw [Option.some.inj hget]; exact List.getElem_mem hko
+        have := (hos_props flat[k] he_os).1
+        rw [this] at haux_t; cases haux_t
+      have hk_rs_lt : k < rs.size := by omega
+      obtain ⟨rc_k, hrc_k⟩ : ∃ rc_k, rs[k]? = some (.recr rc_k) := by
+        have h1 := Array.getElem?_eq_getElem hk_rs_lt
+        obtain ⟨rc_k, hrc⟩ := hRec.recrs rs[k] (Array.mem_toList_iff.mpr (Array.getElem_mem hk_rs_lt))
+        rw [hrc] at h1; exact ⟨rc_k, h1⟩
+      have hdrop_get : (rs.toList.drop msB.size)[k - msB.size]? = some (.recr rc_k) := by
+        rw [List.getElem?_drop, Array.getElem?_toList, show msB.size + (k - msB.size) = k by omega]
+        exact hrc_k
+      obtain ⟨ty_a, d_a, k_a, us_a, paddr_a, info_a, hty_a, hd_a, hfn_a, hka_a, hinfo_a, hget_a⟩ :=
+        haux_exact (k - msB.size) rc_k hdrop_get
+      rw [show os.length + (k - msB.size) = k by omega, List.getElem?_eq_getElem hk_lt] at hget_a
+      injection hget_a with hflat_k_eq
+      obtain ⟨ty_1, d_1, us_1, pa_1, pInfo_1, hty_1, hd_1, -, hpInfo_1, -, hpnp_le_1, hfk_1⟩ :=
+        (hP1 k rc_k (Nat.zero_le _) hrc_k).2.2.2.2.2.2.2
+      rw [show msB.size + (k - msB.size) = k by omega] at hty_a
+      have hty_eq : ty_a = ty_1 := Option.some.inj (hty_a.symm.trans hty_1); subst hty_eq
+      have hd_eq : d_a = d_1 := Option.some.inj (hd_a.symm.trans hd_1); subst hd_eq
+      have hpa_eq : paddr_a = ixAddr pa_1 := by
+        rw [List.getElem?_eq_getElem hk_lt, ← hflat_k_eq] at hfk_1
+        exact Option.some.inj hfk_1
+      subst hpa_eq
+      have hd_eq_p : d = pInfo_1 := by
+        rw [← hflat_k_eq] at hd
+        exact Option.some.inj (Option.some.inj (hd.symm.trans hpInfo_1))
+      subst hd_eq_p
+      obtain ⟨hinfo_1, -⟩ := indInfoAt_of_indDataAt hpInfo_1
+      have hinfo_eq := Option.some.inj (Option.some.inj (hinfo_a.symm.trans hinfo_1)); subst hinfo_eq
+      rw [← hflat_k_eq]
+      simp only [List.length_map, List.length_take]
+      exact Nat.le_min.mpr ⟨Nat.le_refl _, hpnp_le_1⟩
+    · intro c cty cnp hctor
+      unfold ReconView.ofStore ctorAt at hctor
+      simp only [hd_blk, hd_idx, hcb_e, hms_e, hm_e] at hctor
+      cases hct : ind_e.ctors[c]? with
+      | none => rw [hct] at hctor; cases hctor
+      | some ct =>
+        rw [hct] at hctor
+        cases hld : loadedAt t (fun x => E₀.blobs.get? x) cb_e (blockSelf t p_e.block ms_e)
+            ct.lvls.toNat (mutsRoot ms_e p_e.idx.toNat + 1 + ((c : Nat) : F)) ct.typ with
+        | none => simp [hld] at hctor
+        | some cty' =>
+          simp only [hld, Option.map_some, Option.some.injEq, Prod.mk.injEq] at hctor
+          have hR'e : recordOf R' e.addr = some ca_e := by
+            obtain ⟨c', hc'⟩ := Option.isSome_iff_exists.mp (hflat_ind_all e he).1
+            have := hR'agree _ _ _ hc' hca_e; subst this; exact hc'
+          have hR'blk : Held R' p_e.block := by
+            simpa [Ix.Cert.ownerOf, hci_e] using (hcl'.1 e.addr ca_e hR'e).1
+          have hpeq := hpar'.ctorParams p_e.block cb_e ms_e p_e.idx.toNat ind_e c ct
+            hR'blk hcb_e hms_e hm_e hct
+          rw [← hctor.2, hpeq, hd_np]
+  -- Step C1 (Pass 2)
+  obtain ⟨tot, htot_flat⟩ : ∃ tot, flatTotalCtors (ReconView.ofStore t E₀) flat = some tot :=
+    ⟨r₀.minors.toNat, (hP1 0 r₀ (Nat.zero_le _) hrs0).2.2.2.1⟩
+  have hflat_ne : flat ≠ [] := by intro h0; rw [h0] at hflat_len; exact hrs_ne hflat_len.symm
+  obtain ⟨hRF_heads, hForm_disj⟩ := check_recs_pass2 ht hwf hS hH hbd hR'agree hcl' hlv' hM'
+    hBlock hRec hR'rb hrs_lt hnp_lt hoff hbnl_lt hfrp_B horig_cf haux_cf htot_flat hflat_ne hall_ok
+    as_r 0 (by simp [has_r_len]) (fun i a hi => by simpa only [Nat.zero_add] using has_r_recr i a hi)
+    hrc_cr has_r_cr hsub_cr
+    ⟨Or.inl rfl, fun _ => ⟨fun _ h => absurd h (Nat.not_lt_zero _), fun _ h => absurd h (Nat.not_lt_zero _)⟩,
+      fun h => absurd (Value.field.inj h) zero_ne_one,
+      fun h => absurd (Value.field.inj h) (by decide)⟩
+    ev_cr0
+  -- Assemble RecordFlatAux & FlatPeerDistinct
+  have hRFAux : RecordFlatAux t E₀ (ixAddr bR) cr rs flat := by
+    refine ⟨hflat_len, fun k hk => ?_, fun k rc e hk he => ?_⟩
+    · have h1 := Array.getElem?_eq_getElem hk
+      obtain ⟨rc, hrc⟩ := hRec.recrs rs[k] (Array.mem_toList_iff.mpr (Array.getElem_mem hk))
+      rw [hrc] at h1; exact ⟨rc, h1⟩
+    · obtain ⟨ty, d, info, hty, hd, hfn, hinfo⟩ := hRF_heads k rc e (Nat.zero_le _) hk he
+      refine ⟨ty, d, info, hty, hd, hfn, hinfo, fun haux_t => ?_⟩
+      have hk_ge : msB.size ≤ k := by
+        by_contra hlt
+        have hko : k < os.length := by omega
         have he_os : e ∈ os := by
-          rw [← hfilt_cf]; exact List.mem_filter.mpr ⟨he, by simp [haux_f]⟩
-        obtain ⟨-, -, -, idx_e, ind_e', hget_e, he_mem⟩ := hos_props e he_os
-        rw [he_mem] at hca_e
-        have hca_eq := Option.some.inj (hca_e.symm.trans (hBlock.members idx_e (.indc ind_e') hget_e))
-        rw [← hca_eq] at hci_e
-        simp only [memberProjection, Ixon.ConstantInfo.iPrj.injEq] at hci_e; subst hci_e
-        have hcb_eq := Option.some.inj (hcb_e.symm.trans hcbE); subst hcb_eq
-        have hms_eq := Ixon.ConstantInfo.muts.inj (hms_e.symm.trans hmsB); subst hms_eq
-        have hi64 : idx_e.toUInt64.toNat = idx_e := by
-          have := (Array.getElem?_eq_some_iff.mp hget_e).1
-          have h64 : UInt64.size = 18446744073709551616 := rfl
-          change (UInt64.ofNat idx_e).toNat = idx_e
-          rw [UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (by omega)
-        rw [hi64] at hm_e
-        have hind_eq := Ixon.MutConst.indc.inj (Option.some.inj (hm_e.symm.trans hget_e)); subst hind_eq
-        have hnp_e := hnp_all (.indc ind_e) (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hget_e)) ind_e rfl
-        rw [hd_np, hnp_e]
-      · intro haux_t
-        obtain ⟨k, hk_lt, rfl⟩ := List.mem_iff_getElem.mp he
-        have hk_ge : msB.size ≤ k := by
-          by_contra hlt
-          have hko : k < os.length := by omega
-          have he_os : flat[k] ∈ os := by
-            have hget : flat[k]? = os[k]? := by rw [hflat_app, List.getElem?_append_left hko]
-            rw [List.getElem?_eq_getElem hk_lt, List.getElem?_eq_getElem hko] at hget
-            rw [Option.some.inj hget]; exact List.getElem_mem hko
-          have := (hos_props flat[k] he_os).1
-          rw [this] at haux_t; cases haux_t
-        have hk_rs_lt : k < rs.size := by omega
-        obtain ⟨rc_k, hrc_k⟩ : ∃ rc_k, rs[k]? = some (.recr rc_k) := by
-          have h1 := Array.getElem?_eq_getElem hk_rs_lt
-          obtain ⟨rc_k, hrc⟩ := hRec.recrs rs[k] (Array.mem_toList_iff.mpr (Array.getElem_mem hk_rs_lt))
-          rw [hrc] at h1; exact ⟨rc_k, h1⟩
-        have hdrop_get : (rs.toList.drop msB.size)[k - msB.size]? = some (.recr rc_k) := by
-          rw [List.getElem?_drop, Array.getElem?_toList, show msB.size + (k - msB.size) = k by omega]
-          exact hrc_k
-        obtain ⟨ty_a, d_a, k_a, us_a, paddr_a, info_a, hty_a, hd_a, hfn_a, hka_a, hinfo_a, hget_a⟩ :=
-          haux_exact (k - msB.size) rc_k hdrop_get
-        rw [show os.length + (k - msB.size) = k by omega, List.getElem?_eq_getElem hk_lt] at hget_a
-        injection hget_a with hflat_k_eq
-        obtain ⟨ty_1, d_1, us_1, pa_1, pInfo_1, hty_1, hd_1, -, hpInfo_1, -, hpnp_le_1, hfk_1⟩ :=
-          (hP1 k rc_k (Nat.zero_le _) hrc_k).2.2.2.2.2.2.2
-        rw [show msB.size + (k - msB.size) = k by omega] at hty_a
-        have hty_eq : ty_a = ty_1 := Option.some.inj (hty_a.symm.trans hty_1); subst hty_eq
-        have hd_eq : d_a = d_1 := Option.some.inj (hd_a.symm.trans hd_1); subst hd_eq
-        have hpa_eq : paddr_a = ixAddr pa_1 := by
-          rw [List.getElem?_eq_getElem hk_lt, ← hflat_k_eq] at hfk_1
-          exact Option.some.inj hfk_1
-        subst hpa_eq
-        have hd_eq_p : d = pInfo_1 := by
-          rw [← hflat_k_eq] at hd
-          exact Option.some.inj (Option.some.inj (hd.symm.trans hpInfo_1))
-        subst hd_eq_p
-        obtain ⟨hinfo_1, -⟩ := indInfoAt_of_indDataAt hpInfo_1
-        have hinfo_eq := Option.some.inj (Option.some.inj (hinfo_a.symm.trans hinfo_1)); subst hinfo_eq
-        rw [← hflat_k_eq]
-        simp only [List.length_map, List.length_take]
-        exact Nat.le_min.mpr ⟨Nat.le_refl _, hpnp_le_1⟩
-      · intro c cty cnp hctor
-        unfold ReconView.ofStore ctorAt at hctor
-        simp only [hd_blk, hd_idx, hcb_e, hms_e, hm_e] at hctor
-        cases hct : ind_e.ctors[c]? with
-        | none => rw [hct] at hctor; cases hctor
-        | some ct =>
-          rw [hct] at hctor
-          cases hld : loadedAt t (fun x => E₀.blobs.get? x) cb_e (blockSelf t p_e.block ms_e)
-              ct.lvls.toNat (mutsRoot ms_e p_e.idx.toNat + 1 + ((c : Nat) : F)) ct.typ with
-          | none => simp [hld] at hctor
-          | some cty' =>
-            simp only [hld, Option.map_some, Option.some.injEq, Prod.mk.injEq] at hctor
-            have hR'e : recordOf R' e.addr = some ca_e := by
-              obtain ⟨c', hc'⟩ := Option.isSome_iff_exists.mp (hflat_ind_all e he).1
-              have := hR'agree _ _ _ hc' hca_e; subst this; exact hc'
-            have hR'blk : Held R' p_e.block := by
-              simpa [Ix.Cert.ownerOf, hci_e] using (hcl'.1 e.addr ca_e hR'e).1
-            have hpeq := hpar'.ctorParams p_e.block cb_e ms_e p_e.idx.toNat ind_e c ct
-              hR'blk hcb_e hms_e hm_e hct
-            rw [← hctor.2, hpeq, hd_np]
-    -- Step C1 (Pass 2)
-    obtain ⟨tot, htot_flat⟩ : ∃ tot, flatTotalCtors (ReconView.ofStore t E₀) flat = some tot :=
-      ⟨r₀.minors.toNat, (hP1 0 r₀ (Nat.zero_le _) hrs0).2.2.2.1⟩
-    have hflat_ne : flat ≠ [] := by intro h0; rw [h0] at hflat_len; exact hrs_ne hflat_len.symm
-    obtain ⟨hRF_heads, hForm_disj⟩ := check_recs_pass2 ht hwf hS hH hbd hR'agree hcl' hlv' hM'
-      hBlock hRec hR'rb hrs_lt hnp_lt hoff hbnl_lt hfrp_B horig_cf haux_cf htot_flat hflat_ne hall_ok
-      as_r 0 (by simp [has_r_len]) (fun i a hi => by simpa using has_r_recr i a hi)
-      (hrc.mono ext_h_1293)
-      (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext_840_1293 has_r)
-      (sub fun cl hcl' => mem_of_eq hc (by call_mem))
-      ⟨Or.inl rfl, fun _ => ⟨fun _ h => absurd h (Nat.not_lt_zero _), fun _ h => absurd h (Nat.not_lt_zero _)⟩,
-        fun h => absurd (Value.field.inj h) zero_ne_one,
-        fun h => absurd (Value.field.inj h) (by decide)⟩
-      (by simpa using ev_cr)
-    -- Assemble RecordFlatAux & FlatPeerDistinct
-    have hRFAux : RecordFlatAux t E₀ (ixAddr bR) cr rs flat := by
-      refine ⟨hflat_len, fun k hk => ?_, fun k rc e hk he => ?_⟩
-      · have h1 := Array.getElem?_eq_getElem hk
-        obtain ⟨rc, hrc⟩ := hRec.recrs rs[k] (Array.mem_toList_iff.mpr (Array.getElem_mem hk))
-        rw [hrc] at h1; exact ⟨rc, h1⟩
-      · obtain ⟨ty, d, info, hty, hd, hfn, hinfo⟩ := hRF_heads k rc e (Nat.zero_le _) hk he
-        refine ⟨ty, d, info, hty, hd, hfn, hinfo, fun haux_t => ?_⟩
-        have hk_ge : msB.size ≤ k := by
-          by_contra hlt
-          have hko : k < os.length := by omega
-          have he_os : e ∈ os := by
-            rw [hflat_app, List.getElem?_append_left hko] at he
-            exact List.mem_of_getElem? he
-          have := (hos_props e he_os).1; rw [this] at haux_t; cases haux_t
-        have hdrop_get : (rs.toList.drop msB.size)[k - msB.size]? = some (.recr rc) := by
-          rw [List.getElem?_drop, Array.getElem?_toList, show msB.size + (k - msB.size) = k by omega]
-          exact hk
-        obtain ⟨ty_a, d_a, k_a, us_a, paddr_a, info_a, hty_a, hd_a, -, -, hinfo_a, hget_a⟩ :=
-          haux_exact (k - msB.size) rc hdrop_get
-        rw [show msB.size + (k - msB.size) = k by omega] at hty_a
-        rw [show os.length + (k - msB.size) = k by omega] at hget_a
-        have he_eq := Option.some.inj (he.symm.trans hget_a); subst he_eq
-        have hty_eq := Option.some.inj (hty_a.symm.trans hty); subst hty_eq
-        have hd_eq := Option.some.inj (hd_a.symm.trans hd); subst hd_eq
-        have hinfo_eq := Option.some.inj (Option.some.inj (hinfo_a.symm.trans hinfo)); subst hinfo_eq
-        rfl
-    have hPD : FlatPeerDistinct flat :=
-      flatPeerDistinct_of_buildFlatAuxStep hR'agree hcl' hR'B hcbE hmsB (by omega)
-        (fun idx ind hget => hBlock.members idx (.indc ind) hget)
-        horig_cf (fun e he => ⟨(hos_props e he).1, (hos_props e he).2.2.2⟩) haux_cf
-    -- Step C2 (Pass 3)
-    have hP3 := check_recs_pass3 ht hwf hS hH hbd hR'agree hcl' hlv' hM' hBlock hRec hR'rb
-      hrs_lt hnp_lt hoff hbnl_lt hfrp_B horig_cf haux_cf htot_flat hRFAux hPD
-      as_r 0 (by simp [has_r_len]) (fun i a hi => by simpa using has_r_recr i a hi)
-      (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext_840_1293 has_r)
-      (sub fun cl hcl' => mem_of_eq hc (by call_mem)) (by simpa using ev_cr)
-    -- Merge common fuel over k < rs.size
-    have hForm_out : RFormS t E₀ (ixAddr bB) (ixAddr bR) ∨
-        (RecordWrapConsObs calls t E₀ (ixAddr bB) (ixAddr bR) ∧ ∀ n, lim = some n → n < 77 → False) := by
-      have build_recon : ∀ (TyRel : KExpr → KExpr → Prop),
-          (∀ k < rs.size, ∀ rc, rs[k]? = some (.recr rc) →
-            ∃ ty Rty, loadedAt t (fun x => E₀.blobs.get? x) cr (blockSelf t (ixAddr bR) rs) rc.lvls.toNat
-              (mutsRoot rs k) rc.typ = some ty ∧
-              Eventually (fun f => recTypeAt (ReconView.ofStore t E₀) f flat off rc.params.toNat k = some Rty) ∧
-              TyRel ty Rty) →
-          RecordReconWith TyRel t E₀ (ixAddr bB) (ixAddr bR) := by
-        intro TyRel hTy
-        have hall_ev : ∀ k < rs.size, Eventually (fun f => ∀ rc, rs[k]? = some (.recr rc) →
-            MemberRecon TyRel t E₀ (ixAddr bR) cr rs flat off f k rc) := by
-          intro k hk_lt
-          have h1 := Array.getElem?_eq_getElem hk_lt
-          obtain ⟨rc, hrc_m⟩ := hRec.recrs rs[k] (Array.mem_toList_iff.mpr (Array.getElem_mem hk_lt))
-          rw [hrc_m] at h1
-          obtain ⟨ty1, Rty, hty1, hev1, hrel1⟩ := hTy k hk_lt rc h1
-          obtain ⟨ty2, bodies, cbk, hty2, hev2, hcbk, hrules⟩ := hP3 k rc (Nat.zero_le _) h1
-          have hty_eq : ty1 = ty2 := Option.some.inj (hty1.symm.trans hty2); subst hty_eq
-          refine (hev1.and hev2).mono fun f ⟨hf1, hf2⟩ rc' hrc' => ?_
-          have hrc_eq := Ixon.MutConst.recr.inj (Option.some.inj (hrc'.symm.trans h1)); subst hrc_eq
-          exact ⟨ty1, Rty, bodies, cbk, hty1, hf1, hrel1, hf2, hcbk, hrules⟩
-        obtain ⟨fuel, hfuel⟩ := eventually_forall_range _ rs.size hall_ev
-        exact ⟨cr, rs, flat, off, fuel, hRec.record, hRec.muts, hRFAux.toRecordFlat, hBDF,
-          fun k rc hk => hfuel fuel (Nat.le_refl _) k (Array.getElem?_eq_some_iff.mp hk).1 rc hk⟩
-      rcases hForm_disj with h1 | ⟨h2, hnot⟩
-      · exact Or.inl (build_recon ExprLvEq h1)
-      · exact Or.inr ⟨build_recon (fun ty R => WrapConsObs (wrapAt t E₀) (WrapperObserved calls t) R ty) h2, hnot⟩
-    refine ⟨cb, msB, flat, off, hFOB, hRFAux.toRecordFlat, hBDF, ?_, ?_, hForm_out⟩
-    · intro ind₀' k rc hm0 hk
-      have hind_eq := Ixon.MutConst.indc.inj (Option.some.inj (hm0.symm.trans hms0)); subst hind_eq
-      rw [← hbnl_ind0]
-      exact (hP1 k rc (Nat.zero_le _) hk).2.2.1
-    · intro k rc hk
-      rw [← flatTotalCtors_eq_ctorsBefore_length]
-      exact (hP1 k rc (Nat.zero_le _) hk).2.2.2.1
+          rw [hflat_app, List.getElem?_append_left hko] at he
+          exact List.mem_of_getElem? he
+        have := (hos_props e he_os).1; rw [this] at haux_t; cases haux_t
+      have hdrop_get : (rs.toList.drop msB.size)[k - msB.size]? = some (.recr rc) := by
+        rw [List.getElem?_drop, Array.getElem?_toList, show msB.size + (k - msB.size) = k by omega]
+        exact hk
+      obtain ⟨ty_a, d_a, k_a, us_a, paddr_a, info_a, hty_a, hd_a, -, -, hinfo_a, hget_a⟩ :=
+        haux_exact (k - msB.size) rc hdrop_get
+      rw [show msB.size + (k - msB.size) = k by omega] at hty_a
+      rw [show os.length + (k - msB.size) = k by omega] at hget_a
+      have he_eq := Option.some.inj (he.symm.trans hget_a); subst he_eq
+      have hty_eq := Option.some.inj (hty_a.symm.trans hty); subst hty_eq
+      have hd_eq := Option.some.inj (hd_a.symm.trans hd); subst hd_eq
+      have hinfo_eq := Option.some.inj (Option.some.inj (hinfo_a.symm.trans hinfo)); subst hinfo_eq
+      rfl
+  have hPD : FlatPeerDistinct flat :=
+    flatPeerDistinct_of_buildFlatAuxStep hR'agree hcl' hR'B hcbE hmsB (by omega)
+      (fun idx ind hget => hBlock.members idx (.indc ind) hget)
+      horig_cf (fun e he => ⟨(hos_props e he).1, (hos_props e he).2.2.2⟩) haux_cf
+  -- Step C2 (Pass 3)
+  have hP3 := check_recs_pass3 ht hwf hS hH hbd hR'agree hcl' hlv' hM' hBlock hRec hR'rb
+    hrs_lt hnp_lt hoff hbnl_lt hfrp_B horig_cf haux_cf htot_flat hRFAux hPD
+    as_r 0 (by simp [has_r_len]) (fun i a hi => by simpa only [Nat.zero_add] using has_r_recr i a hi)
+    has_r_cr hsub_cr ev_cr0
+  -- Merge common fuel over k < rs.size
+  have hForm_out : RFormS t E₀ (ixAddr bB) (ixAddr bR) ∨
+      (RecordWrapConsObs calls t E₀ (ixAddr bB) (ixAddr bR) ∧ ∀ n, lim = some n → n < 77 → False) := by
+    have build_recon : ∀ (TyRel : KExpr → KExpr → Prop),
+        (∀ k < rs.size, ∀ rc, rs[k]? = some (.recr rc) →
+          ∃ ty Rty, loadedAt t (fun x => E₀.blobs.get? x) cr (blockSelf t (ixAddr bR) rs) rc.lvls.toNat
+            (mutsRoot rs k) rc.typ = some ty ∧
+            Eventually (fun f => recTypeAt (ReconView.ofStore t E₀) f flat off rc.params.toNat k = some Rty) ∧
+            TyRel ty Rty) →
+        RecordReconWith TyRel t E₀ (ixAddr bB) (ixAddr bR) := by
+      intro TyRel hTy
+      have hall_ev : ∀ k < rs.size, Eventually (fun f => ∀ rc, rs[k]? = some (.recr rc) →
+          MemberRecon TyRel t E₀ (ixAddr bR) cr rs flat off f k rc) := by
+        intro k hk_lt
+        have h1 := Array.getElem?_eq_getElem hk_lt
+        obtain ⟨rc, hrc_m⟩ := hRec.recrs rs[k] (Array.mem_toList_iff.mpr (Array.getElem_mem hk_lt))
+        rw [hrc_m] at h1
+        obtain ⟨ty1, Rty, hty1, hev1, hrel1⟩ := hTy k hk_lt rc h1
+        obtain ⟨ty2, bodies, cbk, hty2, hev2, hcbk, hrules⟩ := hP3 k rc (Nat.zero_le _) h1
+        have hty_eq : ty1 = ty2 := Option.some.inj (hty1.symm.trans hty2); subst hty_eq
+        refine (hev1.and hev2).mono fun f ⟨hf1, hf2⟩ rc' hrc' => ?_
+        have hrc_eq := Ixon.MutConst.recr.inj (Option.some.inj (hrc'.symm.trans h1)); subst hrc_eq
+        exact ⟨ty1, Rty, bodies, cbk, hty1, hf1, hrel1, hf2, hcbk, hrules⟩
+      obtain ⟨fuel, hfuel⟩ := eventually_forall_range _ rs.size hall_ev
+      exact ⟨cr, rs, flat, off, fuel, hRec.record, hRec.muts, hRFAux.toRecordFlat, hBDF,
+        fun k rc hk => hfuel fuel (Nat.le_refl _) k (Array.getElem?_eq_some_iff.mp hk).1 rc hk⟩
+    rcases hForm_disj with h1 | ⟨h2, hnot⟩
+    · exact Or.inl (build_recon ExprLvEq h1)
+    · exact Or.inr ⟨build_recon (fun ty R => WrapConsObs (wrapAt t E₀) (WrapperObserved calls t) R ty) h2, hnot⟩
+  refine ⟨cb, msB, flat, off, hFOB, hRFAux.toRecordFlat, hBDF, ?_, ?_, hForm_out⟩
+  · intro ind₀' k rc hm0 hk
+    have hind_eq := Ixon.MutConst.indc.inj (Option.some.inj (hm0.symm.trans hms0)); subst hind_eq
+    rw [← hbnl_ind0]
+    exact (hP1 k rc (Nat.zero_le _) hk).2.2.1
+  · intro k rc hk
+    rw [← flatTotalCtors_eq_ctorsBefore_length]
+    exact (hP1 k rc (Nat.zero_le _) hk).2.2.2.1
 
 /-! ## Section 6: Public exports (`familyFlat_of_call`, `familyForm_of_call`, `groupStoresOfRun_closed`) -/
 
