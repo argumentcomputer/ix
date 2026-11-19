@@ -410,7 +410,7 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
         injection hdv with _ _ hdvargs
         injection hdvargs with hdv'
         subst hdv'
-        obtain ⟨kindV, safetyV, -, -, -, -, hdv2, hkindRep, hsafRep, -, -, -, -⟩ := hdefRep
+        obtain ⟨kindV, safetyV, -, -, -, -, hdv2, hkindRep, hsafRep, _⟩ := hdefRep
         injection hdv2 with _ _ hargs2
         simp only [List.cons.injEq] at hargs2
         have hdk : d.kind = .defn := by
@@ -446,7 +446,7 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
         injection hdv with _ _ hdvargs
         injection hdvargs with hdv'
         subst hdv'
-        obtain ⟨kindV, safetyV, -, -, -, -, hdv2, hkindRep, -, -, -, -, -⟩ := hdefRep
+        obtain ⟨kindV, safetyV, -, -, -, -, hdv2, hkindRep, _⟩ := hdefRep
         injection hdv2 with _ _ hargs2
         simp only [List.cons.injEq] at hargs2
         have hdk : d.kind = .thm := by
@@ -708,7 +708,7 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
     LoadedReads.annotation_canon_exact (recurAddrs := []) ht hnlvls
       (fun _ _ _ _ hx => by simp at hx) hagree2 rty2 built2 hpT2 hlT2 hty hty_lbb hty_def
   have hty_eq : ty'' = ty' := Option.some.inj (hcT2.symm.trans hcT1)
-  subst hty_eq
+  subst ty''
   rw [Decl.posOf_range] at htm2
   -- Match `nl` and `mty` with `.field d.lvls.toNat` and `tyPtr2`
   have hnm : nl = .field (d.lvls.toNat : F) ∧ mty = tyPtr2 := by
