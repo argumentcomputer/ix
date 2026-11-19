@@ -148,7 +148,7 @@ theorem Consumes.unique {W : KKey → Option (Option Nat)} {t c₁ c₂ : KExpr}
     | @step _ a₂ _ hc₂ h₂' =>
       have ha : a₁ = a₂ := Option.some.inj (Option.some.inj (hc₁.symm.trans hc₂))
       subst ha
-      exact ih hs₁ h₂' hs₂
+      exact ih hs₁ h₂'
 
 /-- Two full consumptions of one generated term are related by `WrapRel find?` at any lookup
 `find?`, with no wrapper consumptions needed. -/
@@ -387,6 +387,7 @@ theorem wrapperArity_of_observed {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
     have hv := congrArg ZMod.val hf
     omega
   subst hkeq
+  dsimp [Core.Ctx.stored, c] at hfind_ci
   simp [wrapperArity, hfind_ci, hlam_pos]
 
 /-- Wrapper consumption carrying an observation predicate `ObsW` on every consumed wrapper. -/
@@ -509,8 +510,8 @@ private theorem constsResolve_appHead_and_arg {env : Ix.Kernel.Env .anon} {t a :
     · next hlen =>
       injection hca with ha_eq
       subst ha_eq
-      refine ⟨hfn_cr, hargs_cr a (by rw [hargs]; exact List.mem_cons_self), by simp, ?_⟩
-      simpa using hlen
+      refine ⟨hfn_cr, hargs_cr a' (by rw [hargs]; exact List.mem_cons_self), by simp, ?_⟩
+      simpa using hlen.symm
     · cases hca
 
 private theorem ConsumesObs.toWrapDom_of_obs {W : KKey → Option (Option Nat)}
@@ -530,7 +531,8 @@ private theorem ConsumesObs.toWrapDom_of_obs {W : KKey → Option (Option Nat)}
     have hcw : consumeWrapper env.find? t = some a := by
       unfold consumeWrapper
       rw [hfn, hargs_cons]
-      simp only [List.length_cons] at hargs_len
+      rw [hargs_cons, List.length_cons] at hargs_len
+      dsimp only
       rw [hwa, hargs_len]
       simp
     obtain ⟨hc_cr, hdom⟩ := ih ha_cr
@@ -611,7 +613,9 @@ private theorem consumeWrapper_congr {find? : KKey → Option (ConstantInfo .ano
     have hlen : rest₁.length = rest.length := Binding.FamilyRecon.forall2_length hrest
     refine ⟨a₁, ?_, ha⟩
     unfold consumeWrapper
-    rw [hfn₁, hga, hw, hlen]
+    rw [hfn₁, hga]
+    dsimp only
+    rw [hw, hlen]
     simp
 
 private theorem forall2_eval_trans_left {us₁ us₂ vs : List KLevel}
@@ -670,14 +674,55 @@ theorem wrapRel_congr_exprLvEq_left {find? : KKey → Option (ConstantInfo .anon
     obtain ⟨a₁, hc₁, ha⟩ := consumeWrapper_congr ht hc
     exact .consume hc₁ (ih ha)
 
+private theorem exprLvEq_liftLooseBVars_wb {e₁ e₂ : KExpr} (h : ExprLvEq e₁ e₂) :
+    ∀ (n c : Nat), ExprLvEq (e₁.liftLooseBVars n c) (e₂.liftLooseBVars n c) := by
+  induction h with
+  | bvar => intro n c; simp only [Expr.liftLooseBVars]; split <;> exact .bvar
+  | fvar ht _ => intro _ _; exact .fvar ht
+  | sort hu => intro _ _; exact .sort hu
+  | const hus => intro _ _; exact .const hus
+  | lit => intro _ _; exact .lit
+  | app _ _ ihf iha => intro n c; exact .app (ihf n c) (iha n c)
+  | lam _ _ iht ihb => intro n c; exact .lam (iht n c) (ihb n (c + 1))
+  | forallE _ _ iht ihb => intro n c; exact .forallE (iht n c) (ihb n (c + 1))
+  | letE _ _ _ iht ihv ihb => intro n c; exact .letE (iht n c) (ihv n c) (ihb n (c + 1))
+  | proj _ ihe => intro n c; exact .proj (ihe n c)
+
+private theorem exprLvEq_instantiate1Lift_wb {b₁ b₂ v₁ v₂ : KExpr}
+    (hb : ExprLvEq b₁ b₂) (hv : ExprLvEq v₁ v₂) :
+    ∀ (d : Nat), ExprLvEq (b₁.instantiate1Lift v₁ d) (b₂.instantiate1Lift v₂ d) := by
+  induction hb with
+  | @bvar i =>
+    intro d
+    simp only [Expr.instantiate1Lift]
+    split
+    · exact exprLvEq_liftLooseBVars_wb hv d 0
+    · split <;> exact .bvar
+  | fvar ht _ => intro _; exact .fvar ht
+  | sort hu => intro _; exact .sort hu
+  | const hus => intro _; exact .const hus
+  | lit => intro _; exact .lit
+  | app _ _ ihf iha => intro d; exact .app (ihf d) (iha d)
+  | lam _ _ iht ihb => intro d; exact .lam (iht d) (ihb (d + 1))
+  | forallE _ _ iht ihb => intro d; exact .forallE (iht d) (ihb (d + 1))
+  | letE _ _ _ iht ihv ihb => intro d; exact .letE (iht d) (ihv d) (ihb (d + 1))
+  | proj _ ihe => intro d; exact .proj (ihe d)
+
 /-- `WrapDom` respects `ExprLvEq` on the left. -/
 theorem wrapDom_congr_exprLvEq_left {find? : KKey → Option (ConstantInfo .anon)} {t t₁ d : KExpr}
-    (h : ExprLvEq t₁ t) (hw : WrapDom find? t d) : WrapDom find? t₁ d := by
-  induction hw generalizing t₁ with
-  | keep hr => exact .keep (wrapRel_congr_exprLvEq_left h hr)
-  | consume hc _ ih =>
-    obtain ⟨a₁, hc₁, ha⟩ := consumeWrapper_congr h hc
-    exact .consume hc₁ (ih ha)
+    (h : ExprLvEq t₁ t) (hw : WrapDom find? t d) : WrapDom find? t₁ d :=
+  WrapDom.rec
+    (motive_1 := fun _ _ _ => True)
+    (motive_2 := fun t d _ => ∀ {t₁ : KExpr}, ExprLvEq t₁ t → WrapDom find? t₁ d)
+    (bvar := fun _ => trivial) (fvar := fun _ _ => trivial) (sort := fun _ => trivial)
+    (const := fun _ => trivial) (lit := fun _ => trivial) (app := fun _ _ _ _ => trivial)
+    (lam := fun _ _ _ _ _ => trivial) (forallE := fun _ _ _ _ _ => trivial)
+    (letE := fun _ _ _ _ _ _ => trivial) (proj := fun _ _ => trivial) (zeta := fun _ _ => trivial)
+    (keep := fun hr _ _ ht => .keep (wrapRel_congr_exprLvEq_left ht hr))
+    (consume := fun hc _ ih _ ht => by
+      obtain ⟨a₁, hc₁, ha⟩ := consumeWrapper_congr ht hc
+      exact .consume hc₁ (ih ha))
+    hw h
 
 /-- `WrapRel` respects `ExprLvEq` on the right. -/
 theorem wrapRel_congr_exprLvEq_right {find? : KKey → Option (ConstantInfo .anon)} {g d d₁ : KExpr}
@@ -701,16 +746,23 @@ theorem wrapRel_congr_exprLvEq_right {find? : KKey → Option (ConstantInfo .ano
   · intro s i e e' _ ihe d₁ hd; cases hd with | proj he => exact .proj (ihe he)
   · intro g t v b l _ ih d₁ hd
     cases hd with
-    | letE _ hv hb => exact .zeta (ih (hb.shift hv 0))
+    | letE _ hv hb => exact .zeta (ih (exprLvEq_instantiate1Lift_wb hb hv 0))
   · intro t t' _ ih d₁ hd; exact .keep (ih hd)
   · intro t a t' hc _ ih d₁ hd; exact .consume hc (ih hd)
 
 /-- `WrapDom` respects `ExprLvEq` on the right. -/
 theorem wrapDom_congr_exprLvEq_right {find? : KKey → Option (ConstantInfo .anon)} {t d d₁ : KExpr}
-    (hw : WrapDom find? t d) (h : ExprLvEq d d₁) : WrapDom find? t d₁ := by
-  induction hw with
-  | keep hr => exact .keep (wrapRel_congr_exprLvEq_right hr h)
-  | consume hc _ ih => exact .consume hc (ih h)
+    (hw : WrapDom find? t d) (h : ExprLvEq d d₁) : WrapDom find? t d₁ :=
+  WrapDom.rec
+    (motive_1 := fun _ _ _ => True)
+    (motive_2 := fun t d _ => ∀ {d₁ : KExpr}, ExprLvEq d d₁ → WrapDom find? t d₁)
+    (bvar := fun _ => trivial) (fvar := fun _ _ => trivial) (sort := fun _ => trivial)
+    (const := fun _ => trivial) (lit := fun _ => trivial) (app := fun _ _ _ _ => trivial)
+    (lam := fun _ _ _ _ _ => trivial) (forallE := fun _ _ _ _ _ => trivial)
+    (letE := fun _ _ _ _ _ _ => trivial) (proj := fun _ _ => trivial) (zeta := fun _ _ => trivial)
+    (keep := fun hr _ _ hd => .keep (wrapRel_congr_exprLvEq_right hr hd))
+    (consume := fun hc _ ih _ hd => .consume hc (ih hd))
+    hw h
 
 /-! ### Level-parameter instantiation and lifting -/
 
@@ -739,46 +791,41 @@ private theorem consumeWrapper_instantiateLevelParams {find? : KKey → Option (
   simp only [Expr.instantiateLevelParams, List.map_cons]
   exact Ix.Kernel.Semantics.consumeWrapper_mkAppN (by rw [List.length_map]; exact hw)
 
-/-- `WrapRel` commutes with `Expr.instantiateLevelParams` on `letFree` right sides. -/
+/-- `WrapRel` commutes with `Expr.instantiateLevelParams`. -/
 theorem wrapRel_instantiateLevelParams {find? : KKey → Option (ConstantInfo .anon)}
     (ps : List LevelParam) (us : List KLevel) {g d : KExpr}
-    (hw : WrapRel find? g d) (hd : letFree d = true) :
-    WrapRel find? (g.instantiateLevelParams ps us) (d.instantiateLevelParams ps us) := by
-  refine WrapRel.rec
-    (motive_1 := fun g d _ => letFree d = true →
+    (hw : WrapRel find? g d) :
+    WrapRel find? (g.instantiateLevelParams ps us) (d.instantiateLevelParams ps us) :=
+  WrapRel.rec
+    (motive_1 := fun g d _ =>
       WrapRel find? (g.instantiateLevelParams ps us) (d.instantiateLevelParams ps us))
-    (motive_2 := fun t d _ => letFree d = true →
+    (motive_2 := fun t d _ =>
       WrapDom find? (t.instantiateLevelParams ps us) (d.instantiateLevelParams ps us))
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ hw hd
-  · intro i _; exact .bvar i
-  · intro i t t' _ ih _; exact .fvar (ih (by simp [letFree]))
-  · intro u v huv _; exact .sort (level_eval_subst_congr ps us huv)
-  · intro n ls₁ ls₂ hlv _; exact .const (forall2_eval_subst ps us hlv)
-  · intro l _; exact .lit l
-  · intro f a f' a' _ _ ihf iha hlf
-    simp only [letFree, Bool.and_eq_true] at hlf
-    exact .app (ihf hlf.1) (iha hlf.2)
-  · intro t b t' b' m m' hpw _ _ iht ihb hlf
-    simp only [letFree, Bool.and_eq_true] at hlf
-    exact .lam hpw (iht hlf.1) (ihb hlf.2)
-  · intro t b t' b' m m' hpw _ _ iht ihb hlf
-    simp only [letFree, Bool.and_eq_true] at hlf
-    exact .forallE hpw (iht hlf.1) (ihb hlf.2)
-  · intro t v b t' v' b' l l' _ _ _ _ _ _ hlf; simp [letFree] at hlf
-  · intro s i e e' _ ihe hlf; simp only [letFree] at hlf; exact .proj (ihe hlf)
-  · intro g t v b l _ _ hlf; simp [letFree] at hlf
-  · intro t t' _ ih hlf; exact .keep (ih hlf)
-  · intro t a t' hc _ ih hlf
-    exact .consume (consumeWrapper_instantiateLevelParams ps us hc) (ih hlf)
+    (bvar := fun i => .bvar i)
+    (fvar := fun _ iht => .fvar iht)
+    (sort := fun huv => .sort (level_eval_subst_congr ps us huv))
+    (const := fun hlv => .const (forall2_eval_subst ps us hlv))
+    (lit := fun l => .lit l)
+    (app := fun _ _ ihf iha => .app ihf iha)
+    (lam := fun hpw _ _ iht ihb =>
+      .lam (show Level.substPW ps us _ = Level.substPW ps us _ by rw [hpw]) iht ihb)
+    (forallE := fun hpw _ _ iht ihb =>
+      .forallE (show Level.substPW ps us _ = Level.substPW ps us _ by rw [hpw]) iht ihb)
+    (letE := fun _ _ _ iht ihv ihb => .letE iht ihv ihb)
+    (proj := fun _ ihe => .proj ihe)
+    (zeta := fun _ ihz => by
+      rw [Core.ProjBody.instantiate1Lift_instantiateLevelParams] at ihz
+      exact .zeta ihz)
+    (keep := fun _ ih => .keep ih)
+    (consume := fun hc _ ih => .consume (consumeWrapper_instantiateLevelParams ps us hc) ih)
+    hw
 
 /-- Move `WrapRel` from positional level parameters (`posOf ps`) back to `ps`. -/
 theorem wrapRel_of_posOf_perm {find? : KKey → Option (ConstantInfo .anon)}
     {ps : List LevelParam} (hperm : ps.Perm (List.range ps.length)) {g d : KExpr}
-    (hd : letFree d = true) (h : WrapRel find? (Core.posOf ps g) (Core.posOf ps d)) :
+    (h : WrapRel find? (Core.posOf ps g) (Core.posOf ps d)) :
     WrapRel find? g d := by
-  have hlf_pos : letFree (Core.posOf ps d) = true :=
-    Decl.letFree_instantiateLevelParams _ _ hd
-  have h' := wrapRel_instantiateLevelParams (List.range ps.length) (ps.map .param) h hlf_pos
+  have h' := wrapRel_instantiateLevelParams (List.range ps.length) (ps.map .param) h
   rwa [Decl.posOf_perm_inv hperm g, Decl.posOf_perm_inv hperm d] at h'
 
 private theorem consumeWrapper_liftLooseBVars {find? : KKey → Option (ConstantInfo .anon)}
@@ -800,7 +847,7 @@ theorem wrapRel_liftLooseBVars {find? : KKey → Option (ConstantInfo .anon)}
       ∀ n c, WrapDom find? (t.liftLooseBVars n c) (d.liftLooseBVars n c))
     ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ hw hd n c
   · intro i _ n c; simp only [Expr.liftLooseBVars]; split <;> exact .bvar _
-  · intro i t t' _ ih _ n c; exact .fvar (ih (by simp [letFree]) n c)
+  · intro i t t' ht _ _ _ _; exact .fvar ht
   · intro u v huv _ _ _; exact .sort huv
   · intro k ls₁ ls₂ hlv _ _ _; exact .const hlv
   · intro l _ _ _; exact .lit l
@@ -823,10 +870,18 @@ theorem wrapRel_liftLooseBVars {find? : KKey → Option (ConstantInfo .anon)}
 /-- `WrapDom` commutes with `Expr.liftLooseBVars` on `letFree` right sides. -/
 theorem wrapDom_liftLooseBVars {find? : KKey → Option (ConstantInfo .anon)}
     {t d : KExpr} (hw : WrapDom find? t d) (hd : letFree d = true) (n c : Nat) :
-    WrapDom find? (t.liftLooseBVars n c) (d.liftLooseBVars n c) := by
-  induction hw with
-  | keep hr => exact .keep (wrapRel_liftLooseBVars hr hd n c)
-  | consume hc _ ih => exact .consume (consumeWrapper_liftLooseBVars n c hc) (ih hd)
+    WrapDom find? (t.liftLooseBVars n c) (d.liftLooseBVars n c) :=
+  WrapDom.rec
+    (motive_1 := fun _ _ _ => True)
+    (motive_2 := fun t d _ => letFree d = true →
+      ∀ n c, WrapDom find? (t.liftLooseBVars n c) (d.liftLooseBVars n c))
+    (bvar := fun _ => trivial) (fvar := fun _ _ => trivial) (sort := fun _ => trivial)
+    (const := fun _ => trivial) (lit := fun _ => trivial) (app := fun _ _ _ _ => trivial)
+    (lam := fun _ _ _ _ _ => trivial) (forallE := fun _ _ _ _ _ => trivial)
+    (letE := fun _ _ _ _ _ _ => trivial) (proj := fun _ _ => trivial) (zeta := fun _ _ => trivial)
+    (keep := fun hr _ hlf n c => .keep (wrapRel_liftLooseBVars hr hlf n c))
+    (consume := fun hc _ ih hlf n c => .consume (consumeWrapper_liftLooseBVars n c hc) (ih hlf n c))
+    hw hd n c
 
 /-- A `∀`-headed term cannot be consumed as a wrapper, so `WrapDom` on it is `WrapRel`. -/
 theorem wrapDom_toWrapRel_of_forallE {find? : KKey → Option (ConstantInfo .anon)}
@@ -1001,7 +1056,7 @@ theorem wrapRel_rule_of_ruleFollows {find? : KKey → Option (ConstantInfo .anon
   have hafter : WrapRel find? (afterC.renameConsts f) afterW := by
     cases nf with
     | zero =>
-      cases hlam2C'; cases hlam2W; exact hsb
+      cases hlam2C; cases hlam2W; exact hsb
     | succ nf' =>
       obtain ⟨hpeel_w, hlf_peel⟩ := wrapRel_peelForalls (nP + nMot + minor) hty hlfW hpeelC hpeelW
       cases hpeel_w with
@@ -1010,14 +1065,16 @@ theorem wrapRel_rule_of_ruleFollows {find? : KKey → Option (ConstantInfo .anon
         have hdomM_lift : WrapDom find? (mdomC.liftLooseBVars (nMin - minor) 0)
             (mdomW.liftLooseBVars (nMin - minor) 0) :=
           wrapDom_liftLooseBVars hdomM hlf_peel.1 (nMin - minor) 0
-        cases hm : mdomC.liftLooseBVars (nMin - minor) 0 with
-        | forallE d b m =>
-          rw [hm] at hdomM_lift hlam2C'
-          have hrelM := wrapDom_toWrapRel_of_forallE hdomM_lift
-          have hlf_lift : letFree (mdomW.liftLooseBVars (nMin - minor) 0) = true :=
-            Decl.letFree_liftLooseBVars (nMin - minor) 0 hlf_peel.1
-          exact wrapRel_of_lamsAlong hrelM hlf_lift hlam2C' hlam2W hsb
-        | _ => rw [hm] at hlam2C'; cases hlam2C'
+        have hdomM_fa : ∃ d b m, mdomC.liftLooseBVars (nMin - minor) 0 = .forallE d b m := by
+          generalize hm : mdomC.liftLooseBVars (nMin - minor) 0 = mL at hlam2C
+          cases hlam2C
+          exact ⟨_, _, _, rfl⟩
+        obtain ⟨d, b, m, hm⟩ := hdomM_fa
+        rw [hm] at hdomM_lift hlam2C'
+        have hrelM := wrapDom_toWrapRel_of_forallE hdomM_lift
+        have hlf_lift : letFree (mdomW.liftLooseBVars (nMin - minor) 0) = true :=
+          Decl.letFree_liftLooseBVars (nMin - minor) 0 hlf_peel.1
+        exact wrapRel_of_lamsAlong hrelM hlf_lift hlam2C' hlam2W hsb
   exact wrapRel_of_lamsAlong hty hlfW hlam1C' hlam1W hafter
 
 /-! ## Reconstructed rule bodies under peer renaming -/
@@ -1057,12 +1114,13 @@ private theorem wrapLams_renameConsts (f : KKey → KKey) (body : KExpr) (doms :
   | nil => rfl
   | cons d ds ih =>
     simp only [wrapLams, List.foldr_cons, List.map_cons, Expr.renameConsts]
-    rw [ih]
+    congr 1
+    exact ih
 
 private theorem applyIhs_renameConsts {V : ReconView} {f : KKey → KKey}
     {rm : List Nat} {norm : List KExpr} {peersC peersW : List _root_.Address}
     {fop : List Nat} {nP nMot nMin nFields : Nat} {recLvls : List KLevel} {elim : KLevel}
-    (hpeers : ∀ j aC, peersC[j]? = some aC →
+    (hpeers : ∀ (j : Nat) aC, peersC[j]? = some aC →
       ∃ aW, peersW[j]? = some aW ∧ f (V.key aC) = V.key aW) :
     ∀ (k : Nat) (ri : List Nat) (headC headW resC : KExpr),
       headC.renameConsts f = headW →
@@ -1183,7 +1241,7 @@ private theorem peelAll_liftLooseBVars :
       exact (hzip (peelAll b).1 0).symm
     · rw [h2]; simp only [List.length_cons]; congr 1; omega
   | .bvar i, n, c => by
-    simp only [Expr.liftLooseBVars]; split <;> simp [peelAll, Expr.liftLooseBVars]
+    simp only [Expr.liftLooseBVars]; split <;> simp [peelAll]
   | .fvar _ _, _, _ | .sort _, _, _ | .const _ _, _, _ | .app _ _, _, _
   | .lam _ _ _, _, _ | .letE _ _ _ _, _, _ | .lit _, _, _ | .proj _ _ _, _, _ => by
     simp [Expr.liftLooseBVars, peelAll]
@@ -1250,7 +1308,7 @@ private theorem mentionsConst_ihDoms_false {k : KKey} {rm : List Nat} {norm : Li
           simp only [List.getElem?_cons_zero, Option.some.injEq] at hm
           subst hm
           have hdeq : dom0 = dom := Option.some.inj (hd0.symm.trans hdom)
-          subst hdeq
+          subst dom0
           have hfirst := hmc _ List.mem_cons_self
           obtain ⟨hbody, hfds⟩ := mentionsConst_wrapForalls_false hfirst
           simp only [Expr.mentionsConst, Bool.or_eq_false_iff] at hbody
@@ -1397,7 +1455,7 @@ private theorem ruleBodies_renameConsts_of_fixed {V : ReconView} {f : KKey → K
     {es : List FlatEntry} {fop : List Nat} {peersC peersW : List _root_.Address}
     {nP nMot nMin : Nat} {us recLvls : List KLevel} {aux : Bool} {sp : List KExpr}
     {elim : KLevel} {blk : _root_.Address} {idx off : Nat}
-    (hpeers : ∀ j aC, peersC[j]? = some aC →
+    (hpeers : ∀ (j : Nat) aC, peersC[j]? = some aC →
       ∃ aW, peersW[j]? = some aW ∧ f (V.key aC) = V.key aW) :
     ∀ (cs : List Nat) (bsC : List KExpr),
       (∀ c ∈ cs, ∀ cty np after fds ri rm ret norm,
@@ -1508,7 +1566,7 @@ renaming `ruleBodiesAt` at `peersC` by `f` produces `ruleBodiesAt` at `peersW`. 
 theorem ruleBodiesAt_renameConsts_of_recTypeAt {V : ReconView} {f : KKey → KKey}
     {fuel : Nat} {es : List FlatEntry} {off nP nMot nMin nl k : Nat}
     {peersC peersW : List _root_.Address} {R : KExpr} {bsC : List KExpr}
-    (hpeers : ∀ j aC, peersC[j]? = some aC →
+    (hpeers : ∀ (j : Nat) aC, peersC[j]? = some aC →
       ∃ aW, peersW[j]? = some aW ∧ f (V.key aC) = V.key aW)
     (hR : recTypeAt V fuel es off nP k = some R)
     (hR_fix : ∀ q, f q ≠ q → R.mentionsConst q = false)
@@ -1701,8 +1759,9 @@ private theorem fieldsClassify_norm_keys {V : ReconView} {S : _root_.Address →
         have hnd0 : RKeysAt V S nd0 := whnfTele_keys hC fuel d nd0 (fun k hk => hK k (.allTy hk)) hw
         have hnorm' : ∀ nd ∈ norm', RKeysAt V S nd :=
           ihb (fidx + 1) fds' ri' rm' ret' norm' (fun k hk => hK k (.allBody hk)) hrest
-        cases Binding.FamilyRecon.isRecField V es (liftBy + fidx) nd0 with
+        cases hrf : Binding.FamilyRecon.isRecField V es (liftBy + fidx) nd0 with
         | some _ =>
+          rw [hrf] at h
           simp only [Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨-, -, -, -, rfl⟩ := h
           intro nd hnd
@@ -1710,6 +1769,7 @@ private theorem fieldsClassify_norm_keys {V : ReconView} {S : _root_.Address →
           · exact hnd0
           · exact hnorm' nd hnd'
         | none =>
+          rw [hrf] at h
           simp only [Option.some.injEq, Prod.mk.injEq] at h
           obtain ⟨-, -, -, -, rfl⟩ := h
           intro nd hnd
@@ -1733,9 +1793,9 @@ private theorem rKeysAt_peelAll {V : ReconView} {S : _root_.Address → Prop} :
     rcases List.mem_cons.mp hx with rfl | hx'
     · exact fun k hk => h k (.allTy hk)
     · exact h1 x hx'
-  | .bvar _, _ | .fvar _ _, _ | .sort _, _ | .const _ _, _ | .app _ _, _
-  | .lam _ _ _, _ | .letE _ _ _ _, _ | .lit _, _ | .proj _ _ _, _ =>
-    fun h => ⟨fun _ hm => nomatch hm, h⟩
+  | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h
+  | .lam _ _ _, h | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h =>
+    ⟨fun _ hm => nomatch hm, h⟩
 
 private theorem rKeysAt_getAppArgs {V : ReconView} {S : _root_.Address → Prop} :
     ∀ (e : KExpr), RKeysAt V S e → ∀ a ∈ e.getAppArgs, RKeysAt V S a
@@ -1747,7 +1807,7 @@ private theorem rKeysAt_getAppArgs {V : ReconView} {S : _root_.Address → Prop}
     · exact fun k hk => h k (.appArg hk)
   | .bvar _, _ | .fvar _ _, _ | .sort _, _ | .const _ _, _ | .lam _ _ _, _
   | .forallE _ _ _, _ | .letE _ _ _ _, _ | .lit _, _ | .proj _ _ _, _ =>
-    fun _ _ ha => nomatch ha
+    fun _ ha => nomatch ha
 
 private theorem renameConsts_of_rKeysAt {V : ReconView} {S : _root_.Address → Prop}
     {f : KKey → KKey}
@@ -1802,7 +1862,7 @@ theorem ruleBodiesAt_renameConsts_of_closed {V : ReconView} {S : _root_.Address 
     {f : KKey → KKey} {fuel : Nat} {es : List FlatEntry} {off nP nMot nMin nl k : Nat}
     {peersC peersW : List _root_.Address} {bsC : List KExpr}
     (hC : V.ClosedOn S)
-    (hpeers : ∀ j aC, peersC[j]? = some aC →
+    (hpeers : ∀ (j : Nat) aC, peersC[j]? = some aC →
       ∃ aW, peersW[j]? = some aW ∧ f (V.key aC) = V.key aW)
     (hfix : ∀ q, f q ≠ q → ∃ a, V.addr q = some a ∧ ¬ S a)
     (hent : ∀ ek, es[k]? = some ek → REntryAt V S ek)
@@ -1898,9 +1958,9 @@ given two recursor types (at positional level parameters) whose `mI`-th domains 
 head `const (keyOf t e.addr) e.levels` and index suffix `(List.range (mI - rP)).map (fun i =>
 .bvar (mI - rP - 1 - i))`, and whose parameter prefixes agree after lowering (or are the canonical
 parameter bvars when `aux = false`), their `getAppFn` and `getAppArgs` are syntactically equal. -/
-theorem majorDom_pos_eq_of_pins {dC dW : KExpr} {fn : KExpr} {nP kIdx shift : Nat}
+theorem majorDom_pos_eq_of_pins {dC dW : KExpr} {hd : KExpr} {nP kIdx shift : Nat}
     {pins : List KExpr}
-    (hfnC : dC.getAppFn = fn) (hfnW : dW.getAppFn = fn)
+    (hfnC : dC.getAppFn = hd) (hfnW : dW.getAppFn = hd)
     (hlenC : dC.getAppArgs.length = nP + kIdx) (hlenW : dW.getAppArgs.length = nP + kIdx)
     (hdropC : dC.getAppArgs.drop nP = (List.range kIdx).map fun i => .bvar (kIdx - 1 - i))
     (hdropW : dW.getAppArgs.drop nP = (List.range kIdx).map fun i => .bvar (kIdx - 1 - i))
@@ -1977,20 +2037,14 @@ theorem stripPis_iff_peelForalls :
       cases heq
 
 /-- `Core.piDomAt mI e = some d` iff `binderDomAfter mI e = some d`. -/
-theorem piDomAt_eq_binderDomAfter (mI : Nat) (e : KExpr) :
-    Core.piDomAt mI e = binderDomAfter mI e := by
-  unfold Core.piDomAt binderDomAfter
-  cases h : peelForalls mI e with
-  | none =>
-    cases hs : e.stripPis mI with
-    | none => rfl
-    | some p =>
-      have := (stripPis_iff_peelForalls mI e p.2).mpr ⟨p.1, hs⟩
-      rw [h] at this; cases this
-  | some res =>
-    obtain ⟨bs, hbs⟩ := (stripPis_iff_peelForalls mI e res).mp h
-    rw [hbs]
-    cases res <;> rfl
+theorem piDomAt_eq_binderDomAfter : ∀ (mI : Nat) (e : KExpr),
+    Core.piDomAt mI e = binderDomAfter mI e
+  | 0, .forallE _ _ _ => rfl
+  | 0, .bvar _ | 0, .fvar _ _ | 0, .sort _ | 0, .const _ _ | 0, .app _ _
+  | 0, .lam _ _ _ | 0, .letE _ _ _ _ | 0, .lit _ | 0, .proj _ _ _ => rfl
+  | mI + 1, .forallE _ b _ => piDomAt_eq_binderDomAfter mI b
+  | mI + 1, .bvar _ | mI + 1, .fvar _ _ | mI + 1, .sort _ | mI + 1, .const _ _ | mI + 1, .app _ _
+  | mI + 1, .lam _ _ _ | mI + 1, .letE _ _ _ _ | mI + 1, .lit _ | mI + 1, .proj _ _ _ => rfl
 
 /-- Transport exact major-premise `getAppFn` and `getAppArgs` equality from positional level
 parameters (`posOf ps`) back to `ps`. -/
