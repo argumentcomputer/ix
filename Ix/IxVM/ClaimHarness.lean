@@ -81,7 +81,7 @@ def defaultTableSupport : Except String (Array (Address × Ixon.Constant) ×
 def withRoleTable (env : Ixon.Env) (bytes : ByteArray) : Except String Ixon.Env := do
   let (records, blobs, hints) ← defaultTableSupport
   let table? := Ix.Kernel.RoleTable.ofBytes bytes
-  let mut env := { env with roleBinding := some { address := Address.blake3 bytes, bytes } }
+  let mut env := { env.clearModels with roleBinding := some { address := Address.blake3 bytes, bytes } }
   let wrapper (info : Ixon.ConstantInfo) : Address × Ixon.Constant :=
     let c : Ixon.Constant := ⟨info, #[], #[], #[], #[]⟩
     (Address.blake3 (Ixon.ser c), c)
