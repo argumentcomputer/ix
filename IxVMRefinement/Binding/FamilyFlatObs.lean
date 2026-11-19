@@ -33,7 +33,7 @@ open IxVM.Refinement.Binding.FamilyFlat
    orB peer mentions mentionsList hasBVarIn occParamsLower auxEntryIn addBlockMembers
    scanList constOf nestedAt appCase occScanF exprSize instCtorParams ctorBody
    ctorScan ctorsLoop ctorsScan nestedWalk originals derivedFlatAt
-   mutsRoot loadedAt binderDomAfter indcAddrs Held)
+   mutsRoot loadedAt binderDomAfter indcAddrs Held exprInstLevels)
 open IxVM.Refinement.Core (W KExpr KLevel KKey kexprEnum kexprListEnum klevelEnum klevelListEnum
   kciEnum addrTy addrListEnum ixAddr bmeta)
 open IxVM.Refinement.Decl (TmExact)
@@ -151,11 +151,11 @@ theorem shapeOf_instantiate1Lift (V : KExpr) : ∀ (B : KExpr) (d : Nat),
   | .proj _ _ e, d => by
     simp [Ix.Kernel.Expr.instantiate1Lift, shapeOf, shapeOf_instantiate1Lift V e d]
 
-private theorem represents_ptr_inv' {rom : ROM F} {h : Heap F} {t : Generic.Ty} {loc : Nat}
+private theorem represents_ptr_inv' {rom : ROM F} {h : Heap F} {t : Aiur.Ty} {loc : Nat}
     {w : Value F} (r : Represents rom h (.ptr t loc) w) :
     ∃ stored address encoded, h[loc]? = some stored ∧ (address, encoded) ∈ rom.entries ∧
       Represents rom h stored encoded ∧ w = .ptr encoded.type address := by
-  generalize hp : (Generic.Value.ptr t loc : SourceValue F) = p at r
+  generalize hp : (Value.ptr t loc : SourceValue F) = p at r
   cases r with
   | ptr source cell contents =>
     injection hp with _ hl; subst hl
@@ -168,7 +168,7 @@ private theorem represents_construct_inv {rom : ROM F} {h : Heap F} {en tag : St
     {args : List (SourceValue F)} {w : Value F}
     (r : Represents rom h (.construct en tag args) w) :
     ∃ encArgs, w = .construct en tag encArgs ∧ List.Forall₂ (Represents rom h) args encArgs := by
-  generalize hv : (Generic.Value.construct en tag args : SourceValue F) = v at r
+  generalize hv : (Value.construct en tag args : SourceValue F) = v at r
   cases r with
   | construct items =>
     injection hv with h1 h2 h3; subst h1 h2 h3
@@ -179,7 +179,7 @@ private theorem represents_construct_inv {rom : ROM F} {h : Heap F} {en tag : St
 
 private theorem represents_field_inv {rom : ROM F} {h : Heap F} {x : F} {w : Value F}
     (r : Represents rom h (.field x) w) : w = .field x := by
-  generalize hv : (Generic.Value.field x : SourceValue F) = v at r
+  generalize hv : (Value.field x : SourceValue F) = v at r
   cases r with
   | field => injection hv with hx; subst hx; rfl
   | tuple _ => cases hv
@@ -722,7 +722,7 @@ private theorem loadValue_of_tmOExact {κ : _root_.Address → KKey} {h : Heap F
   | bvarLocal cell _ _ | bvarFree cell _ _ _ | sort cell _ | const cell _ _
   | app cell _ _ | lam cell _ _ _ | forallE cell _ _ _ | letE cell _ _ _
   | litNat cell _ _ | litStr cell _ _ | proj cell _ _ =>
-    exact ⟨_, by simp only [loadValue]; rw [cell]⟩
+    simp only [loadValue, cell]; exact ⟨_, rfl⟩
 
 private theorem mkAppN_snoc (hd : KExpr) (args : List KExpr) (a : KExpr) :
     Ix.Kernel.Expr.mkAppN hd (args ++ [a]) = .app (Ix.Kernel.Expr.mkAppN hd args) a := by
@@ -931,7 +931,7 @@ theorem caddr_is_peer_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       peer (FlatView.ofStore t E₀) (ixAddr ba) (Core.keyOf t (ixAddr a)) = some b ∧
       r = .field (if b then 1 else 0) := by
   have hka : keyAddr t (Core.keyOf t (ixAddr a)) = some (ixAddr a) :=
-    addrOf_ofStore hwf (ixAddr a)
+    addrOf_ofStore (E₀ := E₀) hwf (ixAddr a)
   match Obs.«KernelCheck::caddr_is_peer».obs ev with
   | .Induct (m2 := m2) (p9 := p9) (cs15 := cs1) (x_ba := xba) (ev17 := evci) (ld11 := ldci)
       (ev94 := evin) (hc111 := hc) .. =>
@@ -1097,8 +1097,9 @@ theorem occ_mentions_block_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleT
   | .Proj (cs_yblrkquu := cs1) (ld_bolbylmd := ld) (ev_fnwcywxx := evp) (hc_rksetomy := hc) .. =>
     obtain ⟨a, i, E1, -, rfl, -, hE1⟩ := TmOExact.proj_of_load hE ld
     have hlt : cs1.length < cs.length := by rw [hc]; simp
-    exact occ_mentions_block_spec hwf hS hH hbd hRsub hcl
+    obtain ⟨b, hb, hr⟩ := occ_mentions_block_spec hwf hS hH hbd hRsub hcl
       (sub fun c hc' => by rw [hc]; simp [hc']) hE1 hEin.2 rblks evp
+    exact ⟨b, hb, hr⟩
 termination_by cs.length
 
 /-- **`KernelModeled::occ_any_mentions_block`** against singleton `[B]` computes
@@ -1274,8 +1275,8 @@ private theorem flat_originals_walk_spec {rootCalls : List (Call F)} {t : Ix.Ker
       obtain ⟨m', rest', h1, hm', hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hcur ld
       injection h1 with h1m h1r; subst h1m h1r
       cases m with
-      | defn _ => obtain ⟨_, hshape⟩ := hm'; simp at hshape
-      | recr _ => obtain ⟨_, hshape⟩ := hm'; simp at hshape
+      | defn _ => obtain ⟨_, hshape⟩ := hm'; simp [Core.Specs.Callees.mutCtor] at hshape
+      | recr _ => obtain ⟨_, hshape⟩ := hm'; simp [Core.Specs.Callees.mutCtor] at hshape
       | indc ind =>
         obtain ⟨ext1, hpos56, -, mc, ma, hmc, rma, hma⟩ := L1.projection_addr_spec hall rba evpa
         have hpos_val : ((pos : F)).val = pos := by
@@ -1283,9 +1284,9 @@ private theorem flat_originals_walk_spec {rootCalls : List (Call F)} {t : Ix.Ker
           have hbd2 : Bounded cs2 := RomBound.bounded_mono hbd (fun c hc' => hsub c (by rw [hc]; simp [hc']))
           obtain ⟨-, -, blkBytes, cb', _, _, _, _, hhB, haB, hexB, -, -, -, -, -, -⟩ :=
             L1.get_ci_iprj_spec hbd2 (Bytes.repAddressRef_heapMono₂ addrTy ext1 rba) eviprj
-          have hcbEq := record_eq_of_hashed_flat hS (fun c hc' => hsub c (by rw [hc]; simp [hc']))
-            hcbE hhB haB hexB
-          subst hcbEq
+          obtain rfl : cb' = cb :=
+            (record_eq_of_hashed_flat hS (fun c hc' => hsub c (by rw [hc]; simp [hc']))
+              hcbE hhB haB hexB).symm
           obtain ⟨c0, hc0, -, inp, hargs, hrep⟩ := hhB
           have hbl : blkBytes.size < 2 ^ 39 := by
             have hlt := RomBound.bounded_length_lt hbd2 hc0 (by rw [hargs]; simp) hrep
@@ -1306,9 +1307,9 @@ private theorem flat_originals_walk_spec {rootCalls : List (Call F)} {t : Ix.Ker
           L1.get_ci_iprj_spec hbd2 (Bytes.repAddressRef_heapMono₂ addrTy ext1 rba) eviprj
         rw [hpos_val] at hms' hrawI
         rw [hld'] at ldci; injection ldci with hv; subst hv
-        have hcbEq := record_eq_of_hashed_flat hS (fun c hc' => hsub c (by rw [hc]; simp [hc']))
-          hcbE hhB haB hexB
-        subst hcbEq
+        obtain rfl : cb' = cb :=
+          (record_eq_of_hashed_flat hS (fun c hc' => hsub c (by rw [hc]; simp [hc']))
+            hcbE hhB haB hexB).symm
         have hmsEq := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hmuts)
         subst hmsEq
         have hindEq : ind' = ind := by
@@ -1472,14 +1473,10 @@ theorem occ_params_lower_spec {S : _root_.Address → Prop} {κ : _root_.Address
       have evhb' : ObsFn W "KernelSubst::has_bvar_in_range"
           [xx, .field ((0 : Nat) : F), .field (d : F)] h (.field 0) m1 cs1 := by
         simpa [heq0] using evhb
-      have hhb := has_bvar_in_range_zero_tmOExact hd bnd1 hx evhb'
-      have hno : hasBVarIn 0 d x = false := by
-        cases hbv : hasBVarIn 0 d x
-        · rfl
-        · rw [hbv] at hhb; exact absurd (Value.field.inj hhb) (by decide)
+      obtain ⟨rfl, hn, hno⟩ := has_bvar_in_range_zero_tmOExact (by decide) hd bnd1 hx evhb'
       have evlow' : ObsFn W "KernelSubst::expr_lower"
-          [xx, .field (d : F), .field ((0 : Nat) : F)] m1 vx' m2 cs2 := by simpa using evlow
-      have hlow := expr_lower_tmOExact hd (c := 0) (by decide) bnd2 (hx.mono evhb.heap_extends) evlow'
+          [xx, .field (d : F), .field ((0 : Nat) : F)] h vx' m2 cs2 := by simpa using evlow
+      have hlow := expr_lower_tmOExact hd (by decide) bnd2 hx (by simpa using hn) evlow'
       obtain ⟨sp, hsp, hrep_sp, hspIn⟩ := ih evrec bnd3
         (tmOExactList_mono (evhb.heap_extends.trans evlow.heap_extends) hrest)
         (fun y hy => hIn y (List.mem_cons_of_mem _ hy))
@@ -1536,9 +1533,10 @@ theorem aux_entry_in_spec {κ : _root_.Address → KKey} (hinj : Function.Inject
       injection hl with h3 hl; injection hl with h4; subst h1 h2 h3 h4
       obtain ⟨hv1, rfl⟩ := Lib.address_eq_spec evaeq rae ra
       have haux_t : e.aux = true ∧ ae = a := by
+        rw [hv1] at op1
         cases h1 : e.aux <;> by_cases h2 : ae = a <;>
-          simp [auxVal, h1, h2, evalBinOp] at hv1 op1
-        · exact ⟨rfl, h2⟩
+          simp [auxVal, h1, h2, evalBinOp] at op1
+        exact ⟨rfl, h2⟩
       obtain ⟨haux, rfl⟩ := haux_t
       have hsp_eq := spec_params_zeta_eq_exact hinj hspe hsp
         (bnd fun c hc' => by rw [hc]; simp [hc']) evsp
@@ -1561,9 +1559,10 @@ theorem aux_entry_in_spec {κ : _root_.Address → KKey} (hinj : Function.Inject
       injection hl with h3 hl; injection hl with h4; subst h1 h2 h3 h4
       obtain ⟨hv1, rfl⟩ := Lib.address_eq_spec evaeq rae ra
       have haux_t : e.aux = true ∧ ae = a := by
+        rw [hv1] at op1
         cases h1 : e.aux <;> by_cases h2 : ae = a <;>
-          simp [auxVal, h1, h2, evalBinOp] at hv1 op1
-        · exact ⟨rfl, h2⟩
+          simp [auxVal, h1, h2, evalBinOp] at op1
+        exact ⟨rfl, h2⟩
       obtain ⟨haux, rfl⟩ := haux_t
       have hsp_eq := spec_params_zeta_eq_exact hinj hspe hsp
         (bnd fun c hc' => by rw [hc]; simp [hc']) evsp
@@ -1859,7 +1858,7 @@ private theorem occ_scan_aux {rootCalls : List (Call F)} {rom : ROM F}
           obtain ⟨rfl, rfl⟩ := kexpr_length_spec evlen hargs5
           have hlen_lt : E.getAppArgs.length < 2 ^ 39 :=
             repList_length_lt_of_obs hbd hsub evlen (by rw [hc, hcs]; simp) (by simp) hargs5
-          obtain ⟨-, -, hlt_iff, -, rfl⟩ := Lib.Words.less_than_fields_field evlt
+          obtain ⟨-, -, hlt_iff, -, rfl⟩ := Lib.less_than_fields_field evlt
           have hge : ¬ (E.getAppArgs.length < info.np) := fun h => by
             have h1 : ((E.getAppArgs.length : F)).val < ((info.np : F)).val := by
               rw [fval_natCast (by omega), fval_natCast (by omega)]; exact h
@@ -1988,7 +1987,7 @@ private theorem occ_scan_aux {rootCalls : List (Call F)} {rom : ROM F}
           obtain ⟨rfl, rfl⟩ := kexpr_length_spec evlen hargs5
           have hlen_lt : E.getAppArgs.length < 2 ^ 39 :=
             repList_length_lt_of_obs hbd hsub evlen (by rw [hc, hcs]; simp) (by simp) hargs5
-          obtain ⟨-, -, hlt_iff, -, rfl⟩ := Lib.Words.less_than_fields_field evlt
+          obtain ⟨-, -, hlt_iff, -, rfl⟩ := Lib.less_than_fields_field evlt
           have hlt_np : E.getAppArgs.length < info.np := by
             have h1 := hlt_iff.mp rfl
             rwa [fval_natCast (by omega), fval_natCast (by omega)] at h1
@@ -2002,7 +2001,7 @@ private theorem occ_scan_aux {rootCalls : List (Call F)} {rom : ROM F}
           obtain ⟨rfl, rfl⟩ := kexpr_length_spec evlen hargs5
           have hlen_lt : E.getAppArgs.length < 2 ^ 39 :=
             repList_length_lt_of_obs hbd hsub evlen (by rw [hc, hcs]; simp) (by simp) hargs5
-          obtain ⟨-, -, hlt_iff, -, rfl⟩ := Lib.Words.less_than_fields_field evlt
+          obtain ⟨-, -, hlt_iff, -, rfl⟩ := Lib.less_than_fields_field evlt
           have hge : ¬ (E.getAppArgs.length < info.np) := fun h => by
             have h1 : ((E.getAppArgs.length : F)).val < ((info.np : F)).val := by
               rw [fval_natCast (by omega), fval_natCast (by omega)]; exact h
@@ -2144,8 +2143,8 @@ private theorem occ_scan_aux {rootCalls : List (Call F)} {rom : ROM F}
         call_arg_rep_of_obs hcar evt (by rw [hc]; simp) (by simp)
       have hrep_b : ∃ w, Represents rom m4 xb w :=
         call_arg_rep_of_obs hcar evb (by rw [hc]; simp) (by simp)
-      have hlt_t : exprSize T < exprSize (.lam T B (bmeta ℓ)) := by simp [exprSize]; omega
-      have hlt_b : exprSize B < exprSize (.lam T B (bmeta ℓ)) := by simp [exprSize]; omega
+      have hlt_t : exprSize T < exprSize (.lam T B (bmeta ℓ)) := by simp [exprSize]
+      have hlt_b : exprSize B < exprSize (.lam T B (bmeta ℓ)) := by simp [exprSize]
       obtain ⟨w0, hr0⟩ := hrep
       obtain ⟨addr, hseen_b⟩ := occSeen_cons hvalid hseen hE hr0 hlt_b
       have hlt1 : cs2.length < cs.length := by
@@ -2184,8 +2183,8 @@ private theorem occ_scan_aux {rootCalls : List (Call F)} {rom : ROM F}
         call_arg_rep_of_obs hcar evt (by rw [hc]; simp) (by simp)
       have hrep_b : ∃ w, Represents rom m4 xb w :=
         call_arg_rep_of_obs hcar evb (by rw [hc]; simp) (by simp)
-      have hlt_t : exprSize T < exprSize (.forallE T B (bmeta ℓ)) := by simp [exprSize]; omega
-      have hlt_b : exprSize B < exprSize (.forallE T B (bmeta ℓ)) := by simp [exprSize]; omega
+      have hlt_t : exprSize T < exprSize (.forallE T B (bmeta ℓ)) := by simp [exprSize]
+      have hlt_b : exprSize B < exprSize (.forallE T B (bmeta ℓ)) := by simp [exprSize]
       obtain ⟨w0, hr0⟩ := hrep
       obtain ⟨addr, hseen_b⟩ := occSeen_cons hvalid hseen hE hr0 hlt_b
       have hlt1 : cs2.length < cs.length := by
@@ -2452,9 +2451,8 @@ theorem ctors_scan_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
         cases sg with
         | n0 cs_p hv0 evpeel hcs =>
           have haux : aux = false := auxVal_eq_zero.mp hv0
-          obtain ⟨body, hpeel, hbtm⟩ := peel_n_foralls_zeta_spec info.np (by omega)
-            (RomBound.bounded_mono hbd (sub fun c' hc' => by rw [hc, hcs]; simp [hc']))
-            hinst evpeel
+          obtain ⟨body, hpeel, hbtm⟩ := peel_n_foralls_zeta_spec info.np (by omega) hinst
+            (RomBound.bounded_mono hbd (sub fun c' hc' => by rw [hc, hcs]; simp [hc'])) evpeel
           exact ⟨body, by simp [ctorBody, haux, hpeel], hbtm,
             addrIn_peelForalls hinstIn hpeel, evpeel.heap_extends⟩
         | other cs_i hne0 evip hcs =>
@@ -2476,7 +2474,7 @@ theorem ctors_scan_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
           (by rw [hc]; simp) (by simp)
       have evocc' : ObsFn W "KernelModeled::occ_scan"
           [xblk, vbody, .field ((0 : Nat) : F), xacc] m3 vacc1 m4 cs4 := by simpa using evocc
-      obtain ⟨acc1, hocc, hrep1, hlen1, hacc1S⟩ := occ_scan_aux hwf hS hH
+      obtain ⟨acc1, hocc, hrep1, hlen1, hacc1S⟩ := occ_scan_aux (seen := []) hwf hS hH
         ⟨rom, hvalid, hbound, hcarried⟩ hvalid hbound hRsub hcl
         (sub fun c' hc' => by rw [hc]; simp [hc'])
         (fun c' hc' => hcarried c' (hsub c' (by rw [hc]; simp [hc'])))
@@ -2495,8 +2493,18 @@ theorem ctors_scan_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
         rw [List.drop_eq_getElem_cons hlt]; simp
       refine ⟨res, ?_, hrep_res, hlen1.trans hlen_res, hresS⟩
       rw [hdrop]
-      simp only [ctorsLoop, ctorScan, FlatView.ofStore, hctyAt, hctorB,
-        hocc (exprSize body + 1) (Nat.lt_succ_self _), hres]
+      simp only [ctorsLoop, ctorScan]
+      change (match (match ctorTypeAt t E₀ info.blk info.idx c with
+        | none => none
+        | some cty => match ctorBody aux info.np sp (exprInstLevels us cty) with
+          | none => none
+          | some body => occScanF (FlatView.ofStore t E₀) (ixAddr ba) (exprSize body + 1) body 0 acc) with
+        | none => none
+        | some a => ctorsLoop (FlatView.ofStore t E₀) (ixAddr ba) info aux sp us
+            ((List.range info.nctors).drop (c + 1)) a) = some res
+      rw [hctyAt]; dsimp only
+      rw [hctorB]; dsimp only
+      rw [hocc (exprSize body + 1) (Nat.lt_succ_self _)]; exact hres
 
 /-- **`KernelModeled::nested_walk`** refines `nestedWalk (FlatView.ofStore t E₀) B n i acc` at
 some fuel `n`. -/
@@ -2579,7 +2587,15 @@ theorem nested_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       (Bytes.repAddressRef_heapMono₂ addrTy (ext03.trans evct.heap_extends) rba)
       hrep1 hacc1S evrec
     refine ⟨n + 1, res, ?_, hrep_res⟩
-    simp only [nestedWalk, he_at, FlatView.ofStore, hinfo, ctorsScan, hct, hnw]
+    simp only [nestedWalk, he_at]
+    change (match indInfoAt E₀ e.addr with
+      | some (some info) =>
+        match ctorsScan (FlatView.ofStore t E₀) (ixAddr ba) info e.aux e.params e.levels acc with
+        | none => none
+        | some a => nestedWalk (FlatView.ofStore t E₀) (ixAddr ba) n (i + 1) a
+      | _ => none) = some res
+    rw [hinfo]; dsimp only
+    unfold ctorsScan; rw [hct]; exact hnw
 termination_by cs.length
 
 /-- **`KernelModeled::flat_reals`** computes `es.filter (fun e => !e.aux)` on
@@ -2607,8 +2623,8 @@ theorem flat_reals_spec {κ : _root_.Address → KKey} :
       obtain ⟨e', rest', h1, he', hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hes ld
       injection h1 with h1e h1r; subst h1e h1r
       obtain ⟨xa', xsp', xus', ae, htup, rae, hae, hsp, hus⟩ := he'
-      injection htup with hl0; injection hl0 with h1 hl1; injection hl1 with haux hl2
-      injection hl2 with h2 hl3; injection hl3 with h3; subst h1 h2 h3
+      simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
+      obtain ⟨rfl, haux, rfl, rfl⟩ := htup
       have hf : e.aux = false := auxVal_eq_zero.mp haux.symm
       have hrec := ih evrec hrest
       simp only [List.filter_cons, hf, Bool.not_false, ↓reduceIte]
@@ -2671,41 +2687,21 @@ theorem aux_all_in_eq_one {κ : _root_.Address → KKey} (hinj : Function.Inject
       injection hl1 with h13 hl1; injection hl1 with h14; subst h11 h12 h13 h14
       injection ht2 with hl2; injection hl2 with h21 hl2; injection hl2 with h22 hl2
       injection hl2 with h23 hl2; injection hl2 with h24; subst h21 h22 h23 h24
-      have hsg1 : d.aux = f.aux ∧ a1 = a2 ∧ d.params = f.params ∧ d.levels = f.levels ∧
-          Heap.Extends h _ := by
-        cases sg with
-        | n0 ops hr hh _ =>
-          subst hr hh
-          have haux_eq : d.aux = f.aux := by
-            cases h1 : d.aux <;> cases h2 : f.aux <;> simp [auxVal, h1, h2, evalBinOp] at ops <;> rfl
-          obtain ⟨hva, rfl⟩ := Lib.address_eq_spec evaeq ra1 ra2
-          have hsp_eq := spec_params_zeta_eq_exact hinj hsp1 hsp2
-            (bnd fun c hc' => by rw [hc]; simp [hc']) evsp
-          obtain ⟨hus_eq, rfl⟩ := level_list_struct_eq_exact
-            (hus1.mono evsp.heap_extends) (hus2.mono evsp.heap_extends) evus
-          rw [hva] at op1
-          have hall : a1 = a2 ∧ d.params = f.params ∧ d.levels = f.levels := by
-            by_cases ha : a1 = a2 <;> by_cases hs : d.params = f.params <;>
-              by_cases hu : d.levels = f.levels
-            · exact ⟨ha, hs, hu⟩
-            all_goals
-              simp [ha, hs, hu] at hsp_eq hus_eq op1
-              try rw [hsp_eq] at op2
-              try rw [hus_eq] at op3
-              simp [evalBinOp] at op1 op2 op3
-              try rw [← op1] at op2; simp [evalBinOp] at op2
-              try rw [← op2] at op3; simp [evalBinOp] at op3
-          exact ⟨haux_eq, hall.1, hall.2.1, hall.2.2, evsp.heap_extends⟩
-        | other _ _ _ hr hh _ =>
-          subst hr hh
-          obtain ⟨hva, rfl⟩ := Lib.address_eq_spec evaeq ra1 ra2
-          have hsp_eq := spec_params_zeta_eq_exact hinj hsp1 hsp2
-            (bnd fun c hc' => by rw [hc]; simp [hc']) evsp
-          obtain ⟨hus_eq, rfl⟩ := level_list_struct_eq_exact
-            (hus1.mono evsp.heap_extends) (hus2.mono evsp.heap_extends) evus
-          rw [hva] at op1
+      cases sg with
+      | n0 ops hr hh _ =>
+        subst hr hh
+        have haux_eq : d.aux = f.aux := by
+          cases h1 : d.aux <;> cases h2 : f.aux <;> simp [auxVal, h1, h2, evalBinOp] at ops <;> rfl
+        obtain ⟨hva, rfl⟩ := Lib.address_eq_spec evaeq ra1 ra2
+        have hsp_eq := spec_params_zeta_eq_exact hinj hsp1 hsp2
+          (bnd fun c hc' => by rw [hc]; simp [hc']) evsp
+        obtain ⟨hus_eq, rfl⟩ := level_list_struct_eq_exact
+          (hus1.mono evsp.heap_extends) (hus2.mono evsp.heap_extends) evus
+        rw [hva] at op1
+        have hall : a1 = a2 ∧ d.params = f.params ∧ d.levels = f.levels := by
           by_cases ha : a1 = a2 <;> by_cases hs : d.params = f.params <;>
             by_cases hu : d.levels = f.levels
+          · exact ⟨ha, hs, hu⟩
           all_goals
             simp [ha, hs, hu] at hsp_eq hus_eq op1
             try rw [hsp_eq] at op2
@@ -2713,13 +2709,30 @@ theorem aux_all_in_eq_one {κ : _root_.Address → KKey} (hinj : Function.Inject
             simp [evalBinOp] at op1 op2 op3
             try rw [← op1] at op2; simp [evalBinOp] at op2
             try rw [← op2] at op3; simp [evalBinOp] at op3
-      obtain ⟨haux_eq, rfl, hsp_eq, hus_eq, ext⟩ := hsg1
-      have hd_eq : d = f := by
-        cases d; cases f; simp only at ha1 ha2 haux_eq hsp_eq hus_eq
-        subst haux_eq hsp_eq hus_eq; rw [← ha1, ha2]
-      have hrest_eq := ih fr evrec (bnd fun c hc' => by rw [hc]; simp [hc'])
-        (flatList_mono ext hdr) (flatList_mono ext hfr)
-      rw [hd_eq, hrest_eq]
+        obtain ⟨rfl, hsp_e, hus_e⟩ := hall
+        have hd_eq : d = f := by
+          cases d; cases f; simp only at ha1 ha2 haux_eq hsp_e hus_e
+          subst haux_eq hsp_e hus_e; rw [← ha1, ha2]
+        have hrest_eq := ih fr evrec (bnd fun c hc' => by rw [hc]; simp [hc'])
+          (flatList_mono evsp.heap_extends hdr) (flatList_mono evsp.heap_extends hfr)
+        rw [hd_eq, hrest_eq]
+      | other _ _ _ hr hh _ =>
+        subst hr hh
+        obtain ⟨hva, rfl⟩ := Lib.address_eq_spec evaeq ra1 ra2
+        have hsp_eq := spec_params_zeta_eq_exact hinj hsp1 hsp2
+          (bnd fun c hc' => by rw [hc]; simp [hc']) evsp
+        obtain ⟨hus_eq, rfl⟩ := level_list_struct_eq_exact
+          (hus1.mono evsp.heap_extends) (hus2.mono evsp.heap_extends) evus
+        rw [hva] at op1
+        by_cases ha : a1 = a2 <;> by_cases hs : d.params = f.params <;>
+          by_cases hu : d.levels = f.levels
+        all_goals
+          simp [ha, hs, hu] at hsp_eq hus_eq op1
+          try rw [hsp_eq] at op2
+          try rw [hus_eq] at op3
+          simp [evalBinOp] at op1 op2 op3
+          try rw [← op1] at op2; simp [evalBinOp] at op2
+          try rw [← op2] at op3; simp [evalBinOp] at op3
 
 /-- **`KernelModeled::check_nested_aux`** proves `∃ n, derivedFlatAt (FlatView.ofStore t E₀)
 (ixAddr ba) off n = some flat` whenever `flat`'s non-auxiliary entries match `originals`. -/
@@ -2766,7 +2779,14 @@ theorem check_nested_aux_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTab
       (RomBound.bounded_mono hbd (sub fun c hc' => by rw [hc]; simp [hc']))
       (flatList_mono ext_m2_m4 hrep_der) (flatList_mono ext_0_m4 hflat)
     subst heq
-    exact ⟨n, by simp [derivedFlatAt, FlatView.ofStore, hmemAt, horig, hnw]⟩
+    refine ⟨n, ?_⟩
+    unfold derivedFlatAt
+    change (match membersAt E₀ (ixAddr ba) with
+      | none => none
+      | some ms => match originals (FlatView.ofStore t E₀) off ms with
+        | none => none
+        | some os => nestedWalk (FlatView.ofStore t E₀) (ixAddr ba) n 0 os) = some derived
+    rw [hmemAt]; dsimp only; rw [horig]; dsimp only; exact hnw
 
 /-! ## `is_muts_block`, `rec_to_parent_addr`, `extract_aux_*`, `aux_already_in`, `build_flat_block` -/
 
@@ -2805,7 +2825,7 @@ theorem is_muts_block_spec {rootCalls : List (Call F)} {E₀ : Ixon.Env}
     | defn _ | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ =>
       rw [hci] at hinfo
       obtain ⟨_, hshape⟩ := hinfo
-      rw [hshape] at hm; simp at hm
+      rw [hshape] at hm; simp [Core.Specs.Callees.ixInfoEnum] at hm
   | .other (cs12 := cs1) (ev14 := evld) (hne93 := hne) (he97 := hr0) (hc99 := hc) .. =>
     cases hr0
     obtain ⟨-, bytes, c, hh, ha, hex, -, -, -, -, -, -, rep⟩ :=
@@ -2820,7 +2840,7 @@ theorem is_muts_block_spec {rootCalls : List (Call F)} {E₀ : Ixon.Env}
       rw [hci] at hinfo
       obtain ⟨xm, hshape, -⟩ := hinfo
       rw [hshape] at hm
-      exact (hne [xm] rfl hm.symm).elim
+      exact (hne [xm] rfl hm).elim
     | defn _ | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | iPrj _ | dPrj _ => rfl
 
 /-- **`KernelCheck::rec_to_parent_addr`** extracts the major premise's `Const` head address on
@@ -2889,11 +2909,16 @@ theorem spec_params_lower_spec {S : _root_.Address → Prop} {κ : _root_.Addres
       cases hr0; cases hm0
       obtain ⟨x', rest', h1, hx, hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hsps ld
       injection h1 with h1x h1r; subst h1x h1r
+      have bnd1 : Bounded cs1 := RomBound.bounded_mono hbnd (fun c hc' => by rw [hc]; simp [hc'])
       have bnd2 : Bounded cs2 := RomBound.bounded_mono hbnd (fun c hc' => by rw [hc]; simp [hc'])
       have bnd3 : Bounded cs3 := RomBound.bounded_mono hbnd (fun c hc' => by rw [hc]; simp [hc'])
+      have evhb' : ObsFn W "KernelSubst::has_bvar_in_range"
+          [xsp, .field ((0 : Nat) : F), .field (d : F)] h (.field 0) m1 cs1 := by
+        simpa [heq0] using evhb
+      obtain ⟨rfl, hn, -⟩ := has_bvar_in_range_zero_tmOExact (by decide) hd bnd1 hx evhb'
       have evlow' : ObsFn W "KernelSubst::expr_lower"
-          [xsp, .field (d : F), .field ((0 : Nat) : F)] m1 vx' m2 cs2 := by simpa using evlow
-      have hlow := expr_lower_tmOExact hd (c := 0) (by decide) bnd2 (hx.mono evhb.heap_extends) evlow'
+          [xsp, .field (d : F), .field ((0 : Nat) : F)] h vx' m2 cs2 := by simpa using evlow
+      have hlow := expr_lower_tmOExact hd (by decide) bnd2 hx (by simpa using hn) evlow'
       obtain ⟨hrep_rest, hrestIn⟩ := ih evrec bnd3
         (tmOExactList_mono (evhb.heap_extends.trans evlow.heap_extends) hrest)
         (fun y hy => hIn y (List.mem_cons_of_mem _ hy))
@@ -3180,7 +3205,7 @@ theorem aux_already_in_spec {κ : _root_.Address → KKey} (hinj : Function.Inje
       have hf : e.aux = false := by
         cases h : e.aux
         · rfl
-        · exact (hne (h2.symm.trans (auxVal_eq_one.mpr h))).elim
+        · exact (hne (h2.trans (auxVal_eq_one.mpr h))).elim
       have hrec := ih evrec (bnd fun c hc' => by rw [hc]; simp [hc']) hrest ra hsp hus
       rw [hrec]; simp [auxEntryIn, hf]
 
@@ -3236,7 +3261,7 @@ theorem firstRecrParentBlock_indep_fallback {t : Ix.Kernel.RoleTable} {E₀ : Ix
       have : rs[0]? = some m := by rw [← Array.getElem?_toList, h]; rfl
       rw [this] at h0; injection h0 with hm; subst hm; exact ⟨rest, rfl⟩
   obtain ⟨rest, hlist⟩ := hcons
-  simp [hlist, firstRecrParentBlock, hty, hd, hfn, hka, hinfo]
+  simp only [hlist, firstRecrParentBlock, hty, hd, hfn, hka, hinfo, and_self]
 
 /-- Pure model of `KernelCheck::aux_from_recrs_walk_ex`: appends auxiliary entries `(paddr, true,
 sp, us)` for each `Recr` member whose major-premise head inductive belongs to a block other than
@@ -3303,7 +3328,8 @@ theorem buildFlatAuxStep_append_aux {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
               · exact ih (pos + 1) acc res h
               · split at h
                 · exact ih (pos + 1) acc res h
-                · split at h
+                · dsimp only at h
+                  split at h
                   · exact ih (pos + 1) acc res h
                   · obtain ⟨auxs, hres, hall⟩ := ih (pos + 1) _ res h
                     refine ⟨⟨_, true, _, _⟩ :: auxs, ?_, ?_⟩
@@ -3454,7 +3480,7 @@ private theorem first_recr_parent_block_spec {rootCalls : List (Call F)} {t : Ix
       obtain ⟨m', rest', h1, hm', -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hcur ld
       injection h1 with h1m h1r; subst h1m h1r
       cases m with
-      | defn _ | indc _ => obtain ⟨_, hshape⟩ := hm'; simp at hshape
+      | defn _ | indc _ => obtain ⟨_, hshape⟩ := hm'; simp [Core.Specs.Callees.mutCtor] at hshape
       | recr rc =>
         have hrs_lt : rs.size < 2 ^ 39 := by
           have hlt := repList_length_lt_of_obs hbd hsub evpa (by rw [hc]; simp) (by simp) hall
@@ -3529,7 +3555,7 @@ private theorem first_recr_parent_block_spec {rootCalls : List (Call F)} {t : Ix
       obtain ⟨m', rest', h1, hm', -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hcur ld
       injection h1 with h1m h1r; subst h1m h1r
       cases m with
-      | defn _ | indc _ => obtain ⟨_, hshape⟩ := hm'; simp at hshape
+      | defn _ | indc _ => obtain ⟨_, hshape⟩ := hm'; simp [Core.Specs.Callees.mutCtor] at hshape
       | recr rc =>
         have hrs_lt : rs.size < 2 ^ 39 := by
           have hlt := repList_length_lt_of_obs hbd hsub evpa (by rw [hc]; simp) (by simp) hall
@@ -3572,7 +3598,7 @@ private theorem first_recr_parent_block_spec {rootCalls : List (Call F)} {t : Ix
       obtain ⟨m', rest', h1, hm', -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hcur ld
       injection h1 with h1m h1r; subst h1m h1r
       cases m with
-      | defn _ | indc _ => obtain ⟨_, hshape⟩ := hm'; simp at hshape
+      | defn _ | indc _ => obtain ⟨_, hshape⟩ := hm'; simp [Core.Specs.Callees.mutCtor] at hshape
       | recr rc =>
         have hrs_lt : rs.size < 2 ^ 39 := by
           have hlt := repList_length_lt_of_obs hbd hsub evpa (by rw [hc]; simp) (by simp) hall
@@ -3648,7 +3674,7 @@ theorem primary_parent_block_of_spec {rootCalls : List (Call F)} {t : Ix.Kernel.
     obtain ⟨xm, _, _, _, _, hv, -⟩ := load_verified_muts_of_record hS
       (fun c hc' => hsub c (by rw [hc]; simp [hc'])) hcrbE hmuts rrba evld
     injection hv with _ _ hl; injection hl with hm _
-    exact (hne [xm] rfl hm.symm).elim
+    exact (hne [xm] rfl hm).elim
 
 private theorem aux_from_recrs_walk_ex_spec {rootCalls : List (Call F)}
     {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env}
@@ -3708,7 +3734,7 @@ private theorem aux_from_recrs_walk_ex_spec {rootCalls : List (Call F)}
       obtain ⟨m', rest', h1, hm', hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hcur ld
       injection h1 with h1m h1r; subst h1m h1r
       cases m with
-      | defn _ | indc _ => obtain ⟨_, hshape⟩ := hm'; simp at hshape
+      | defn _ | indc _ => obtain ⟨_, hshape⟩ := hm'; simp [Core.Specs.Callees.mutCtor] at hshape
       | recr rc =>
         have hrs_lt : rs.size < 2 ^ 39 := by
           have hlt := repList_length_lt_of_obs hbd hsub evpa (by rw [hc]; simp) (by simp) hall
@@ -3802,7 +3828,7 @@ private theorem aux_from_recrs_walk_ex_spec {rootCalls : List (Call F)}
       obtain ⟨m', rest', h1, hm', hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hcur ld
       injection h1 with h1m h1r; subst h1m h1r
       cases m with
-      | defn _ | indc _ => obtain ⟨_, hshape⟩ := hm'; simp at hshape
+      | defn _ | indc _ => obtain ⟨_, hshape⟩ := hm'; simp [Core.Specs.Callees.mutCtor] at hshape
       | recr rc =>
         have hrs_lt : rs.size < 2 ^ 39 := by
           have hlt := repList_length_lt_of_obs hbd hsub evpa (by rw [hc]; simp) (by simp) hall
@@ -3920,7 +3946,7 @@ private theorem aux_from_recrs_walk_ex_spec {rootCalls : List (Call F)}
       obtain ⟨m', rest', h1, hm', hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hcur ld
       injection h1 with h1m h1r; subst h1m h1r
       cases m with
-      | defn _ | indc _ => obtain ⟨_, hshape⟩ := hm'; simp at hshape
+      | defn _ | indc _ => obtain ⟨_, hshape⟩ := hm'; simp [Core.Specs.Callees.mutCtor] at hshape
       | recr rc =>
         have hrs_lt : rs.size < 2 ^ 39 := by
           have hlt := repList_length_lt_of_obs hbd hsub evpa (by rw [hc]; simp) (by simp) hall
@@ -4098,7 +4124,7 @@ theorem detect_aux_from_recrs_ex_spec {rootCalls : List (Call F)} {t : Ix.Kernel
     obtain ⟨xm, _, _, _, _, hv, -⟩ := load_verified_muts_of_record hS
       (fun c hc' => hsub c (by rw [hc]; simp [hc'])) hcrbE hmuts rrba evld
     injection hv with _ _ hl; injection hl with hm _
-    exact (hne [xm] rfl hm.symm).elim
+    exact (hne [xm] rfl hm).elim
 
 /-- **`KernelCheck::build_flat_block`** on a `Muts` recursor block `rb` and `Muts` parent/fallback
 block `fb` computes the primary parent block `prim`, its `originals`, and `buildFlatAuxStep`
