@@ -396,9 +396,9 @@ theorem KExprSub.mono {h h' : Heap F} (ext : Heap.Extends h h') {p q : SourceVal
     (hs : KExprSub h p q) : KExprSub h' p q := by
   induction hs with
   | refl p => exact .refl p
-  | forallDom ld _ ih => exact .forallDom (loadValue_mono ext ld) ih
-  | forallBody ld _ ih => exact .forallBody (loadValue_mono ext ld) ih
-  | appFn ld _ ih => exact .appFn (loadValue_mono ext ld) ih
+  | forallDom ld _ ih => exact .forallDom (L1.loadValue_extend ext ld) ih
+  | forallBody ld _ ih => exact .forallBody (L1.loadValue_extend ext ld) ih
+  | appFn ld _ ih => exact .appFn (L1.loadValue_extend ext ld) ih
 
 theorem KExprSub.trans {h : Heap F} {p q r : SourceValue F}
     (h1 : KExprSub h p q) (h2 : KExprSub h q r) : KExprSub h p r := by
@@ -415,23 +415,22 @@ private theorem rawConvExpr_unshare {c : Ixon.Constant} {blobs : List (_root_.Ad
       ∃ b', L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h b'
         (Binding.FamilyOf.unshare c k e) kp ∧
         (∀ i, Binding.FamilyOf.unshare c k e ≠ .share i) := by
-  induction raw with
-  | @share bound idx s kp hidx hsh rs ih =>
+  match raw with
+  | .share hidx hsh rs =>
     intro k hk
-    have hlt_sz : idx.toNat < c.sharing.size := by
+    have hlt_sz : _ < c.sharing.size := by
       have := (List.getElem?_eq_some_iff.mp hsh).1
       simpa only [Array.length_toList] using this
-    have hlt_k : idx.toNat < k := by rcases hk with h1 | h2 <;> omega
+    have hlt_k : _ < k := by rcases hk with h1 | h2 <;> omega
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    have hget : c.sharing[idx.toNat]? = some s := by simpa only [Array.getElem?_toList] using hsh
+    have hget : c.sharing[_]? = some _ := by simpa only [Array.getElem?_toList] using hsh
     simp only [Binding.FamilyOf.unshare, hget]
-    exact ih k' (Or.inl (by omega))
-  | var _ _ | sort _ _ _ _ | ref _ _ _ _ _ _ _ | recur _ _ _ _ _ _ _
-  | prj _ _ _ _ _ _ _ | str _ _ _ _ _ _ | nat _ _ _ _ _ _ _ _
-  | app _ _ _ | lam _ _ _ _ | all _ _ _ _ | letE _ _ _ _ =>
-    rename_i bound' _
+    exact rawConvExpr_unshare rs k' (Or.inl (by omega))
+  | .var .. | .sort .. | .ref .. | .recur ..
+  | .prj .. | .str .. | .nat ..
+  | .app .. | .lam .. | .all .. | .letE .. =>
     intro k _
-    cases k <;> exact ⟨_, by assumption, fun _ h => by cases h⟩
+    cases k <;> exact ⟨_, raw, fun _ h => by cases h⟩
 
 private theorem rawConvExpr_node {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
@@ -449,12 +448,13 @@ private theorem rawConvExpr_forall_inv {c : Ixon.Constant} {blobs : List (_root_
       L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h b' ed d ∧
       L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h b' eb b := by
   obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
+  generalize he' : Binding.FamilyOf.node c e = e' at raw' hns
   cases raw' with
   | all _ rt rb cell =>
     have hxs := (Core.load_cell cell ld).2
     simp only [List.cons.injEq, and_true] at hxs
     obtain ⟨rfl, rfl, rfl⟩ := hxs
-    exact ⟨b', _, _, rfl, rt, rb⟩
+    exact ⟨b', _, _, he', rt, rb⟩
   | share _ _ _ => exact (hns _ rfl).elim
   | var _ cell | sort _ _ _ cell | ref _ _ _ _ _ _ cell | recur _ _ _ _ _ _ cell
   | prj _ _ _ _ _ _ cell | str _ _ _ _ _ cell | nat _ _ _ _ _ _ _ cell
@@ -470,6 +470,7 @@ private theorem rawConvExpr_not_forall_inv {c : Ixon.Constant}
       v ≠ .construct "KernelTypes::KExprNode" "Forall" vs) :
     ∀ ed eb, Binding.FamilyOf.node c e ≠ .all ed eb := by
   obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
+  generalize he' : Binding.FamilyOf.node c e = e' at raw' hns
   cases raw' with
   | all _ _ _ cell =>
     rw [Core.loadValue_enum_cell cell] at ld
@@ -478,7 +479,7 @@ private theorem rawConvExpr_not_forall_inv {c : Ixon.Constant}
   | var _ _ | sort _ _ _ _ | ref _ _ _ _ _ _ _ | recur _ _ _ _ _ _ _
   | prj _ _ _ _ _ _ _ | str _ _ _ _ _ _ | nat _ _ _ _ _ _ _ _
   | app _ _ _ | lam _ _ _ _ | letE _ _ _ _ =>
-    intro _ _ he; cases he
+    intro _ _ he; rw [he'] at he; cases he
 
 private theorem rawConvExpr_app_inv {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp f a : SourceValue F}
@@ -488,12 +489,13 @@ private theorem rawConvExpr_app_inv {c : Ixon.Constant} {blobs : List (_root_.Ad
       L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h b' ef f ∧
       L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h b' ea a := by
   obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
+  generalize he' : Binding.FamilyOf.node c e = e' at raw' hns
   cases raw' with
   | app rf ra cell =>
     have hxs := (Core.load_cell cell ld).2
     simp only [List.cons.injEq, and_true] at hxs
     obtain ⟨rfl, rfl⟩ := hxs
-    exact ⟨b', _, _, rfl, rf, ra⟩
+    exact ⟨b', _, _, he', rf, ra⟩
   | share _ _ _ => exact (hns _ rfl).elim
   | var _ cell | sort _ _ _ cell | ref _ _ _ _ _ _ cell | recur _ _ _ _ _ _ cell
   | prj _ _ _ _ _ _ cell | str _ _ _ _ _ cell | nat _ _ _ _ _ _ _ cell
@@ -509,12 +511,13 @@ private theorem rawConvExpr_const_inv {c : Ixon.Constant} {blobs : List (_root_.
       Core.ixAddr d = a ∧
       Bytes.RepAddressRef Core.addrTy h d x_c := by
   obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
+  generalize he' : Binding.FamilyOf.node c e = e' at raw' hns
   cases raw' with
   | ref _ href hd ra _ _ cell =>
     have hxs := (Core.load_cell cell ld).2
     simp only [List.cons.injEq, and_true] at hxs
     obtain ⟨rfl, rfl⟩ := hxs
-    exact ⟨_, _, _, _, rfl, by simpa only [Array.getElem?_toList] using href, hd, ra⟩
+    exact ⟨_, _, _, _, he', by simpa only [Array.getElem?_toList] using href, hd, ra⟩
   | recur _ hrec _ _ _ _ _ => simp at hrec
   | share _ _ _ => exact (hns _ rfl).elim
   | var _ cell | sort _ _ _ cell | prj _ _ _ _ _ _ cell | str _ _ _ _ _ cell
@@ -534,7 +537,7 @@ private theorem peel_n_foralls_raw {c : Ixon.Constant} {blobs : List (_root_.Add
     match Obs.«KernelCheck::peel_n_foralls».obs ev with
     | .n0 (he16 := hr) (he17 := hh) .. =>
       subst hr hh
-      exact ⟨rfl, .refl kp, bound, e, rfl, raw⟩
+      exact ⟨rfl, .refl _, bound, e, rfl, raw⟩
     | .other (hne19 := hne) .. => exact (hne (by simp)).elim
   | n + 1, bound, e, kp, r, h, h', cs, hlt, raw, ev => by
     have hne0 : (.field ((n + 1 : Nat) : F) : SourceValue F) ≠ .field 0 := by
@@ -622,7 +625,7 @@ private theorem collect_spine_raw_aux {c : Ixon.Constant}
       obtain ⟨rfl, -⟩ := hr
       have ext : Heap.Extends h h' := by rw [hh, hm]; exact Heap.Extends.snoc h _
       obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
-      exact ⟨ext, .refl kp, 0, b', raw'.mono ext (fun _ hm => hm), hns⟩
+      exact ⟨ext, .refl _, 0, b', raw'.mono ext (fun _ hm => hm), hns⟩
   | m + 1, bound, e, kp, hd, sp, h, h', cs, hlen, raw, ev => by
     match Obs.«KernelTypes::collect_spine».obs ev with
     | .App (ld12 := ld12) (ev43 := ev43) (he69 := hr) (ev88 := ev88) (he105 := hh)
@@ -646,7 +649,7 @@ private theorem collect_spine_raw_aux {c : Ixon.Constant}
       obtain ⟨rfl, -⟩ := hr
       have ext : Heap.Extends h h' := by rw [hh, hm]; exact Heap.Extends.snoc h _
       obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
-      exact ⟨ext, .refl kp, 0, b', raw'.mono ext (fun _ hm => hm), hns⟩
+      exact ⟨ext, .refl _, 0, b', raw'.mono ext (fun _ hm => hm), hns⟩
 
 private theorem node_of_not_share {c : Ixon.Constant} {e : Ixon.Expr}
     (hns : ∀ i, e ≠ .share i) : Binding.FamilyOf.node c e = e := by
@@ -695,11 +698,11 @@ private theorem check_carriers_raw_head {crb : Ixon.Constant} {rc : Ixon.Recurso
       have hd_eq : d_c = b₀ := by
         by_cases hdb : d_c = b₀
         · exact hdb
-        · rw [if_neg hdb] at heq_c
+        · rw [ite_eq_right hdb] at heq_c
           exact absurd (Value.field.inj (heq203.symm.trans heq_c)) (by decide)
       subst hd_eq
       have ext_tail : Heap.Extends _ h' := ev209.heap_extends
-      refine ⟨⟨max n₁ n₂, ?_⟩, x_head, x_c, w145, ?_, loadValue_mono ext_tail ld137,
+      refine ⟨⟨max n₁ n₂, ?_⟩, x_head, x_c, w145, ?_, L1.loadValue_extend ext_tail ld137,
         Bytes.repAddressRef_heapMono₂ Core.addrTy ext_tail hra_c⟩
       · unfold Binding.FamilyOf.motiveCarrierAt
         rw [Nat.add_zero, hpeel]
@@ -1605,7 +1608,7 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
       ext_674_1293 has_ty
     have hcr_all := check_recs_member_checks as_rc has_rc1293 ev_cr
     -- Helper: for any `k` with `rs[k]? = some (.recr rc)`, extract carrier AND `ind₀.isUnsafe = false`
-    have hmem_both : ∀ k (rc : Ixon.Recursor), rs[k]? = some (.recr rc) →
+    have hmem_both : ∀ (k : Nat) (rc : Ixon.Recursor), rs[k]? = some (Ixon.MutConst.recr rc) →
         (∃ n, Binding.FamilyOf.motiveCarrierAt crb rc 0 n = some (Core.iprjAddr B 0)) ∧
         ind₀.isUnsafe = false := by
       intro k rc hk
@@ -1685,7 +1688,7 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
         hsub_cr cl (hsub650 cl (by rw [hcs650]; simp [sub_q cl hcl]))
       exact safe_refs_only_const_ind0_safe hW.runStore hBrec hBmuts hind₀ hb_blk_ix hb_i0_eq
         (hhashIPrj0 ind₀ hind₀)
-        (loadValue_mono (ext_473_596.trans ext_q) hld_head)
+        (L1.loadValue_extend (ext_473_596.trans ext_q) hld_head)
         (Bytes.repAddressRef_heapMono₂ Core.addrTy (ext_473_596.trans ext_q) hb0_473)
         ev_q hsub_q_all
     refine ⟨cb, crb, ms, rs,
