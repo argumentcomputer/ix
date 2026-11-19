@@ -1,6 +1,8 @@
 import IxVMRefinement.FamilyGraph.ProducersInner
 import IxVMRefinement.TwinFamily.StoredTwin
 import IxVMRefinement.TwinFamily.StoredTwinRow
+import IxVMRefinement.FamilyAlias.ClosureFamilyStep
+import IxVMRefinement.Binding.BasisWalked
 
 /-! # The typing half at the witness with its stored families, and the stored twins from them
 
@@ -11,9 +13,10 @@ read the map, and the stored twins' field (`StoredTwinField`, `FamilyRun.storedT
 premise of its own. This module states the typing half at `OverWFam L` and produces that field
 from the map:
 
-* `FamilyStepsFam`: `FamilySteps` with the witness's map and the agreement of the run's store
+* `FamilyStepsFam`: `FamilySteps` with the witness's map, the agreement of the run's store
   with the witness's on the records both hold (the no-collision branch gives it:
-  `records_agree`) as premises;
+  `records_agree`) and a step store of the run for the witness (`StepCtx`; the same branch gives
+  the merged store) as premises;
 * `typing_skeleton_over_familyFam`: the typing half at `OverWFam L` from `FamilyStepsFam`;
   `composed_skeleton_over_familyWFam`: the composed statement with no weakening;
 * `FamilyGraphRowInnerFam`, `familyStepsFam_of_graphInner`: the graph row with the inner records
@@ -25,9 +28,13 @@ from the map:
   `storedTwinBlock_of_reads`: that block fact from the selector (a twin's block with no family
   record has its constant addresses stored), the run's facts (every twin's block routed as
   modeled and in Lean's logic: `BatchGives.routed`, `BatchGives.inLogic`), the agreement, and two
-  reads of the witness (`StoredTwinReads`, each field with its source);
+  reads of the witness (`StoredTwinReads`: its store holds the block and routes it as modeled);
+* `recordsFor_basisStore`, `storedTwinReads_of_walk`: those two reads at a walk with a step
+  store, whose route the run's dispatch answers and which holds the run's records, the
+  witness's and the basis rows;
 * `FamilyGraphInnerOwedFam`, `familyGraphRowInnerFam_of_owed`: what the graph row and the inner
-  records are owed at the witness with its map: `StoredTwinReads` in place of `StoredTwinField`;
+  records are owed at the witness with its map and a step store: neither `StoredTwinField` nor
+  `StoredTwinReads`;
 * `circuitComposed_of_partsFamInnerW`: the public statement with the typing half at
   `OverWFam L`;
 * `FamilyGraphRowInnerFamT Pref`, `familyGraphRowInnerFamT_of_owed`: the graph row at the
@@ -68,14 +75,16 @@ def RecordsAgree (E₀ R : Ixon.Env) : Prop :=
   ∀ x c c', recordOf E₀ x = some c → recordOf R x = some c' → c = c'
 
 /-- **The typing half's premise over the family graph, reading the witness's stored families**:
-`FamilySteps` with the witness's selected family map (`StoredFamilies`) and the agreement of the
-run's store with the witness's (`RecordsAgree`) as premises. -/
+`FamilySteps` with the witness's selected family map (`StoredFamilies`), the agreement of the
+run's store with the witness's (`RecordsAgree`) and a step store of the run for the witness
+(`StepCtx`) as premises. -/
 def FamilyStepsFam (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) (calls : List (Call F))
     (Walk : Ix.Kernel.RoleTable → List _root_.Address → Ixon.Env → Option Nat →
       (_root_.Address → Prop) → (_root_.Address → Nat) → Prop) : Prop :=
   ∀ t seeds E₀ lim Top rank, Walk t seeds E₀ lim Top rank →
     ∀ (R : Ixon.Env) (envT : Ix.Kernel.Env .anon), TableShape.{u} t (fun _ => True) R envT →
       ∀ famOf, StoredFamilies t R envT famOf → RecordsAgree E₀ R →
+      (∃ E, StepCtx.{u} calls t R envT E₀ E) →
       ∃ (rank' : _root_.Address → Nat) (fam twin : _root_.Address → Option _root_.Address)
         (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop),
         Walk t seeds E₀ lim Top rank' ∧
@@ -107,12 +116,14 @@ theorem familyStepsFam_of_steps {L : Ix.Kernel.Env .anon → NativeFam .anon →
     {Walk : Ix.Kernel.RoleTable → List _root_.Address → Ixon.Env → Option Nat →
       (_root_.Address → Prop) → (_root_.Address → Nat) → Prop}
     (h : FamilySteps.{u} L calls Walk) : FamilyStepsFam.{u} L calls Walk :=
-  fun t seeds E₀ lim Top rank hW R envT hshape _ _ _ => h t seeds E₀ lim Top rank hW R envT hshape
+  fun t seeds E₀ lim Top rank hW R envT hshape _ _ _ _ =>
+    h t seeds E₀ lim Top rank hW R envT hshape
 
 /-- **The typing half over the fold's clause and the family graph, at the witness with its
 stored families**: `typing_skeleton_over_family` at `OverWFam L`, handing the graph the
 witness's map and, on the branch where the run hashed no collision, the agreement of the two
-stores. -/
+stores and the merged store as a step store (`Merged.recordsFor`, `Merged.run_record`,
+`Merged.good`). -/
 theorem typing_skeleton_over_familyFam {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     {Walk : Ix.Kernel.RoleTable → List _root_.Address → Ixon.Env → Option Nat →
       (_root_.Address → Prop) → (_root_.Address → Nat) → Prop}
@@ -137,9 +148,16 @@ theorem typing_skeleton_over_familyFam {L : Ix.Kernel.Env .anon → NativeFam .a
       obtain ⟨Reg, hR⟩ := hW.facts.1.2
       obtain ⟨famOf, hSF⟩ := hW.facts.2
       have hc : Carried lim := carried_of_typingLim (hlim t seeds E₀ lim Top rank hWalk)
+      have hctx : ∃ E, StepCtx.{u} calls t R envT E₀ E := by
+        obtain ⟨E, hM⟩ := merged_exists E₀ R
+        exact ⟨E, hW.shape,
+          hM.recordsFor hS.loaded hS.decoded hW.shape.committed hextra hnc,
+          fun a c h => hM.run_record hS.loaded hS.decoded hextra hnc h,
+          fun a b h => hM.run_blob hS.loaded hnc h,
+          fun env lim => hM.good hS.loaded hW.shape.zeroFree hextra hnc hb env t lim⟩
       obtain ⟨rank', fam, twin, adv, Inner, hWalk', hFG, hTop, hInner, hFam, hTwin,
         hTwinStored⟩ := hsteps t seeds E₀ lim Top rank hWalk R envT hW.shape famOf hSF
-          (records_agree hS.loaded hnc)
+          (records_agree hS.loaded hnc) hctx
       exact typing_skeleton_core_family_modeled (X := fun E => FoldExtra.{u} L t E) hW.shape
         (fun E hE => (hR E hE lim hc (limWithin_all t lim)).prefixInv) hF.whole
         (fun E hE => (hR E hE lim hc (limWithin_all t lim)).extra) ht hb hextra hnc hS
@@ -177,13 +195,15 @@ theorem composed_skeleton_over_familyWFam {L : Ix.Kernel.Env .anon → NativeFam
 /-! ## The graph row reading the witness's stored families -/
 
 /-- **Row `familyGraph` with the inner records, at the witness with its stored families**:
-`FamilyGraphRowInner` with the witness's map and the agreement of the two stores as premises. -/
+`FamilyGraphRowInner` with the witness's map, the agreement of the two stores and a step store
+of the run for the witness as premises. -/
 def FamilyGraphRowInnerFam : Prop :=
   ∀ (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (seeds : List _root_.Address)
     (E₀ : Ixon.Env) (lim : Option Nat) (Top : _root_.Address → Prop)
     (rank : _root_.Address → Nat), Claim.TopWalk calls t seeds E₀ lim Top rank →
     ∀ (R : Ixon.Env) (envT : Ix.Kernel.Env .anon), TableShape.{u} t (fun _ => True) R envT →
       ∀ famOf, StoredFamilies t R envT famOf → RecordsAgree E₀ R →
+      (∃ E, StepCtx.{u} calls t R envT E₀ E) →
       ∃ (rank' : _root_.Address → Nat) (fam twin : _root_.Address → Option _root_.Address)
         (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop),
         Claim.TopWalk calls t seeds E₀ lim Top rank' ∧
@@ -193,7 +213,7 @@ def FamilyGraphRowInnerFam : Prop :=
 /-- `FamilyGraphRowInner` gives `FamilyGraphRowInnerFam`: the new premises are not read. -/
 theorem familyGraphRowInnerFam_of_row (h : FamilyGraphRowInner.{u}) :
     FamilyGraphRowInnerFam.{u} :=
-  fun calls t seeds E₀ lim Top rank hW R envT hshape _ _ _ =>
+  fun calls t seeds E₀ lim Top rank hW R envT hshape _ _ _ _ =>
     h calls t seeds E₀ lim Top rank hW R envT hshape
 
 /-- **The typing half's premise at the witness with its stored families, from the rows**:
@@ -220,9 +240,9 @@ theorem familyStepsFam_of_graphInner {L : Ix.Kernel.Env .anon → NativeFam .ano
         BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerTeleOther t E₀ B cb ind)
     (calls : List (Call F)) :
     FamilyStepsFam.{u} L calls (Claim.TopWalk calls) := by
-  intro t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree
+  intro t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree hstore
   obtain ⟨rank, fam, twin, adv, Inner, hWalk, hFR, bAddr, hIC⟩ :=
-    familyGraph calls t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree
+    familyGraph calls t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree hstore
   exact ⟨rank, fam, twin, adv, Inner, hWalk, hFR.graph,
     topUnitSteps_family standaloneDefinition standaloneTheoremOrOpaque standaloneRecursor
       definitionBlock nativeBlockTelescope nativeBlockAlias nativeBlockOtherTelescope hWalk hFR,
@@ -293,21 +313,21 @@ theorem FamRunCtx.twin_canonical {K : FamRunCtx} {B rb rb' : _root_.Address}
   obtain ⟨hRB, -, -, hFC⟩ := FamRunCtx.twin_facts ht
   exact ⟨hrec ⟨rb', hFC, hRB⟩, fun hp => hpref ⟨rb', hFC, hRB, hp⟩⟩
 
-/-- **What the stored twins' block fact reads of the witness** (premise; each field names its
-source). Asked of the block of a twin with no family record. That the run routes the block as
-modeled and that it is in Lean's logic are the run's (`FamRunCtx.twin_routed`,
-`BatchGives.inLogic`). -/
+/-- **What the stored twins' block fact reads of the witness**, of the block of a twin with no
+family record. Proved at a walk with a step store (`storedTwinReads_of_walk`). That the run
+routes the block as modeled and that it is in Lean's logic are the run's
+(`FamRunCtx.twin_routed`, `BatchGives.inLogic`). -/
 structure StoredTwinReads (K : FamRunCtx) (R : Ixon.Env) : Prop where
-  /-- The witness's store holds the block. INFERRED from the witness: the block's constant
-  addresses are stored by its environment (`FamRunCtx.twinBlock_stored`), whose constants are
-  readings of the store's records (`TableShape.reading.provenance`), and the store is closed
-  under a projection's block (`TableShape.usedClosed`). Not proved here. -/
+  /-- The witness's store holds the block: the address of the block's first member is stored by
+  the witness's environment (`FamRunCtx.twinBlock_stored`), whose constant there is no pin and
+  so a reading of the store's record at it (`TableShape.reading.provenance`); that record is the
+  run's projection record, and the store is closed under a projection's block
+  (`TableShape.usedClosed`). -/
   record : ∀ rb' B, K.twin rb' = some B → K.fam B = none → ∃ cb, recordOf R B = some cb
-  /-- The witness's store routes the block as modeled. INFERRED: the run routes it as modeled
-  (`FamRunCtx.twin_routed`), the run's dispatch agrees with `Route.blockRoute` at a step's store
-  (`FamilyAlias.famBlockRoute_of_run` reads it so at a family record's block), and the
-  witness's store agrees with the step's store on what the route reads (`RecordsFor`,
-  `TableShape.usedClosed`, `Binding.blockRoute_storeCongr`). Not proved here. -/
+  /-- The witness's store routes the block as modeled: the run routes it as modeled
+  (`FamRunCtx.twin_routed`), its dispatch on the block's first member answers the route of a
+  step's store (`FamilyAlias.blockRoute_of_modeledRoute`), which is the route of the witness's
+  store, used-closed and holding the block (`FamilyAlias.blockRoute_recordsFor`). -/
   route : ∀ rb' B, K.twin rb' = some B → K.fam B = none → Route.blockRoute R B = some true
 
 /-- **The block of every stored twin is a stored modeled block of the witness's store**, from
@@ -329,10 +349,148 @@ theorem storedTwinBlock_of_reads {K : FamRunCtx} {R : Ixon.Env} (hB : BatchGives
     fun x hx => FamRunCtx.twinBlock_stored htw hnone (FamRunCtx.twin_routed hB htw)
       (hB.inLogic rb' B htw) cb₀ x hcb₀ hx⟩
 
+/-! ## The reads of the stored twins' blocks, at a step store -/
+
+set_option maxRecDepth 100000 in
+/-- The names of the pinned basis constants are keys of basis roles. -/
+private theorem pinned_names_basisRole (kind : Ix.Kernel.BasisKind) :
+    ∀ n ∈ (kind.declsA (md := .anon)).map (·.name),
+      n ∈ TableInhabit.basisRoleOrder.map Ix.Kernel.Key.role := by
+  cases kind <;> decide +kernel
+
+/-- **A record store for a witness's store is one for the basis store**: it decodes its records
+and holds every committed prelude row, the basis store's records among them; the basis store
+holds no blob. -/
+theorem recordsFor_basisStore {R E : Ixon.Env} (h : RecordsFor R E) :
+    RecordsFor StoreInhabit.basisStore E := by
+  refine ⟨h.1, fun a c hc => ?_, fun x b hb => ?_, h.2.2.2⟩
+  · obtain ⟨hrow, hd⟩ := ClosedFacts.committedPrelude_rows (a, c)
+      (StoreInhabit.basisRows_sub _ (StoreInhabit.store_record_inv hc))
+    obtain ⟨lc, hlc, hraw⟩ := h.2.2.2 _ hrow
+    obtain ⟨c0, hget, hd0⟩ := h.1 a lc hlc
+    rw [hraw, hd] at hd0
+    have e : c = c0 := Except.ok.inj hd0
+    rw [e]
+    exact recordAt_of_get hlc hget
+  · exact absurd hb (by simp [StoreInhabit.basisStore])
+
+/-- **The witness's reads of the stored twins' blocks**, at a walk with a step store `E` (a
+record store for the witness's store that holds the run's records and that the run is good for,
+`StepCtx`). At the block `B` of a twin with no family record:
+
+* the step store routes `B` as modeled: the walk checked the first member of the top-walked
+  block, the check observed the dispatch on it, which answers the step store's route, and the
+  run routes the block as modeled (`FamilyAlias.blockRoute_of_modeledRoute`);
+* the witness's store holds `B`. Its environment stores the address of the block's first member
+  (`FamRunCtx.twinBlock_stored`), where the run holds a projection record of `B`. The constant
+  stored there is no pin: a pin's key is a basis role's, bound to a row of the basis store, which
+  would then hold the projection record and its block `B`; the step store, holding the basis
+  rows, would route `B` as the basis store does, and no block of the basis store routes as
+  modeled (`Binding.blockRoute_basisStore_ne_true`). So the constant is a reading of the witness's
+  record at the address (`TableShape.reading.provenance`), which is the run's projection record
+  (`RecordsAgree`), and the witness's store is closed under a projection's block;
+* the witness's store routes `B` as the step store does: it is used-closed and holds `B`
+  (`FamilyAlias.blockRoute_recordsFor`). -/
+theorem storedTwinReads_of_walk {K : FamRunCtx} {seeds : List _root_.Address}
+    {rank : _root_.Address → Nat} {R E : Ixon.Env}
+    (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hagree : RecordsAgree K.E₀ R) (hctx : StepCtx.{u} K.calls K.t R K.envT K.E₀ E) :
+    StoredTwinReads K R := by
+  have hshape := hctx.shape
+  have hcheck : K.t.check = .ok () := hW.check_ok
+  have htwf : K.t.wf = true := by
+    unfold Ix.Kernel.RoleTable.wf
+    rw [hcheck]
+    rfl
+  have hroles : (K.t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup hcheck).1
+  have hdecE : L1.EnvDecoded E := hctx.recordsFor.1
+  have hrunE : ∀ a c, recordOf K.E₀ a = some c → recordOf E a = some c := fun a c h =>
+    (recordOf_eq_recordAt_of_decoded hdecE a).trans (hctx.runRecord a c h)
+  have hEb : RecordsFor StoreInhabit.basisStore E := recordsFor_basisStore hctx.recordsFor
+  have key : ∀ rb' B, K.twin rb' = some B → K.fam B = none →
+      Route.blockRoute E B = some true ∧ ∃ cb, recordOf R B = some cb := by
+    intro rb' B htw hnone
+    have hTB : K.Top B ∧ IndBlock K.E₀ B := by
+      rcases FamRunCtx.twin_some htw with ⟨-, -, -, -, -, hT, -, hI⟩ | ⟨-, hT, hI, -⟩
+      · exact ⟨hT, hI⟩
+      · exact ⟨hT, hI⟩
+    obtain ⟨hT, cb, ms, hcb, hms, hpos, hall⟩ := hTB
+    have hroute : ModeledRouteAt K.calls B := FamRunCtx.twin_routed hB htw
+    have hchk : (∃ ms, cb.info = .muts ms ∧
+          ∀ k, k < ms.size → Claim.MemberCheckedLimAt K.calls K.bAddr K.t B ms k K.lim) ∨
+        Claim.CheckedLimAt K.calls K.bAddr K.t B K.lim := by
+      obtain ⟨c', hc', h⟩ := hW.checked B hT
+      have e3 : c' = cb := Option.some.inj (hc'.symm.trans hcb)
+      rw [e3] at h
+      exact h
+    have hm0 : Claim.MemberCheckedLimAt K.calls K.bAddr K.t B ms 0 K.lim :=
+      Claim.membersChecked_of_block hW.runStore hcb hms hchk 0 hpos
+    have hcanon₀ : L1.CanonicalHashCoverage K.E₀ K.calls := by
+      intro bytes value hashed size exactRead
+      obtain ⟨entry, stored, bytesEq, cached⟩ := hW.hashedStored bytes value hashed size
+        (L1.deConstant_of_deConstantExact exactRead) exactRead
+      refine ⟨⟨entry, value, stored, cached, ?_⟩, rfl⟩
+      rw [bytesEq]
+      exact exactRead
+    have hcanon : L1.CanonicalHashCoverage E K.calls :=
+      Assembly.canonicalHashCoverage_frame hcanon₀ hdecE
+        (fun a v h => hctx.runRecord a v ((hW.runStore.recordOf_eq_recordAt a).trans h))
+    have hRE : Route.blockRoute E B = some true :=
+      FamilyAlias.blockRoute_of_modeledRoute hW.runStore hctx.toStepStore hcanon hall hm0 hroute
+    refine ⟨hRE, ?_⟩
+    have hx : ConstAddrOf B cb (memberAddr B 0 ms[0]) := constAddr_member0 hms hpos
+    obtain ⟨P, hP, -, hPo⟩ :=
+      hG.block_record hT hcb hms (Array.getElem?_eq_getElem hpos) (Or.inl rfl)
+    have hst : StoredAt K.t K.envT (memberAddr B 0 ms[0]) :=
+      FamRunCtx.twinBlock_stored htw hnone hroute (hB.inLogic rb' B htw) cb _ hcb hx
+    obtain ⟨ci, hfind⟩ := Option.isSome_iff_exists.mp (find_isSome_of_storedAt hst)
+    have hname : ci.name = keyOf K.t (memberAddr B 0 ms[0]) :=
+      Ix.Kernel.Semantics.Env.find?_name hfind
+    obtain ⟨hclaimed, hna⟩ := seed_claimed hfind
+    rcases hshape.reading.provenance ci hclaimed with ⟨tbl, htbl⟩ | ⟨kind, hci⟩ | ⟨a, hk⟩
+    · rw [htbl] at hna
+      exact absurd rfl (hna tbl.structName .projTable)
+    · exfalso
+      obtain ⟨r, hr, hrk⟩ : ∃ r ∈ TableInhabit.basisRoleOrder, ci.name = .role r := by
+        obtain ⟨r, hr, he⟩ := List.mem_map.mp
+          (pinned_names_basisRole kind ci.name (List.mem_map.mpr ⟨ci, hci, rfl⟩))
+        exact ⟨r, hr, he.symm⟩
+      have had : K.t.addressOf? r = some (memberAddr B 0 ms[0]) :=
+        Core.addressOf_of_keyOf htwf (by rw [LoadedReads.keyOf_eq]; exact hname.symm.trans hrk)
+      have hxb : (recordOf StoreInhabit.basisStore (memberAddr B 0 ms[0])).isSome = true := by
+        have hrows := List.all_eq_true.mp basisRoles_rows r hr
+        simp only [← Binding.addressOf_basis hshape.prelude hr, had] at hrows
+        exact StoreInhabit.isSome_of_hasKey hrows
+      obtain ⟨cx, hcx⟩ := Option.isSome_iff_exists.mp hxb
+      have e : cx = P := Option.some.inj
+        (((recordOf_eq_recordAt_of_decoded hdecE _).trans (hEb.2.1 _ cx hcx)).symm.trans
+          (hrunE _ P hP))
+      have hown := (StoreInhabit.store_usedClosed.1 _ cx hcx).1
+      rw [e, hPo] at hown
+      obtain ⟨cB, hcB⟩ := Option.isSome_iff_exists.mp hown
+      rw [FamilyAlias.blockRoute_recordsFor StoreInhabit.store_usedClosed hEb hcB] at hRE
+      exact Binding.blockRoute_basisStore_ne_true B hRE
+    · have haa : a = memberAddr B 0 ms[0] :=
+        keyOf_inj hroles ((keptIn_name hk).symm.trans hname)
+      rw [haa] at hk
+      obtain ⟨-, ci₀, hr, -⟩ := hk
+      obtain ⟨c₀, hc₀, -⟩ := hr
+      have e : P = c₀ := hagree _ P c₀ hP hc₀
+      have hown := (hshape.usedClosed.1 _ c₀ hc₀).1
+      rw [← e, hPo] at hown
+      exact Option.isSome_iff_exists.mp hown
+  refine ⟨fun rb' B htw hnone => (key rb' B htw hnone).2, fun rb' B htw hnone => ?_⟩
+  obtain ⟨hRE, cb, hcb⟩ := key rb' B htw hnone
+  rw [← FamilyAlias.blockRoute_recordsFor hshape.usedClosed hctx.recordsFor hcb]
+  exact hRE
+
 /-! ## What the graph row is owed at the witness with its stored families -/
 
 /-- **A premise at every walk and every witness with its stored families**: `P` of the run's
-choices, the witness's store and map, where the two stores agree. -/
+choices, the witness's store and map, where the two stores agree and the run has a step store
+for the witness (`StepCtx`; the typing half has one on the branch where the run hashed no
+collision, `typing_skeleton_over_familyFam`). -/
 def AtWalkFam (Pref : RunPref)
     (P : FamRunCtx → Ixon.Env → (_root_.Address → Option _root_.Address) →
       (_root_.Address → Nat) → Prop) : Prop :=
@@ -342,24 +500,30 @@ def AtWalkFam (Pref : RunPref)
     Claim.TopWalkCore calls bAddr t seeds E₀ lim Top rank → TopGraph t E₀ seeds Top rank →
     ∀ (R : Ixon.Env) (envT : Ix.Kernel.Env .anon), TableShape.{u} t (fun _ => True) R envT →
       ∀ famOf, StoredFamilies t R envT famOf → RecordsAgree E₀ R →
+      (∃ E, StepCtx.{u} calls t R envT E₀ E) →
       P ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ R famOf rank
 
 /-- **What the graph row and the inner records are owed at the witness with its stored
-families**, at the twin preference `Pref`: the run's facts the graph reads (`BatchGives`), the
-reads of the stored twins' blocks (`StoredTwinReads`) and the inner records' facts
-(`InnerOwed`). The stored twins' field (`StoredTwinField`) is no longer owed: it is the
-witness's map (`storedTwinField_of_block`). -/
+families**, at the twin preference `Pref`: the run's facts the graph reads (`BatchGives`) and the
+inner records' facts (`InnerOwed`). The stored twins' field (`StoredTwinField`) is not owed: it
+is the witness's map (`storedTwinField_of_block`) at the stored twins' blocks, whose reads of
+the witness (`StoredTwinReads`) are proved at the walk's step store
+(`storedTwinReads_of_walk`). -/
 def FamilyGraphInnerOwedFam (Pref : RunPref) : Prop :=
-  AtWalkFam.{u} Pref fun K R _ _ => BatchGives K ∧ StoredTwinReads K R ∧ InnerOwed K
+  AtWalkFam.{u} Pref fun K _ _ _ => BatchGives K ∧ InnerOwed K
 
 /-- **The graph row with the inner records at the witness with its stored families, from what
 they are owed**: as `familyGraphRowInner_of_owed`, the stored twins' field from the map. -/
 theorem familyGraphRowInnerFam_of_owed {Pref : RunPref} (h : FamilyGraphInnerOwedFam.{u} Pref) :
     FamilyGraphRowInnerFam.{u} := by
-  intro calls t seeds E₀ lim Top rank hWalk R envT hshape famOf hSF hagree
+  intro calls t seeds E₀ lim Top rank hWalk R envT hshape famOf hSF hagree hstore
   obtain ⟨bAddr, hW, hG⟩ := hWalk
-  obtain ⟨hB, hreads, hIO⟩ :=
-    h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape famOf hSF hagree
+  obtain ⟨hB, hIO⟩ :=
+    h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape famOf hSF hagree hstore
+  obtain ⟨E, hctx⟩ := hstore
+  have hreads : StoredTwinReads
+      ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ R :=
+    storedTwinReads_of_walk hW hG hB hagree hctx
   obtain ⟨rank', hR⟩ : ∃ rank',
       FamilyRanked ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ rank' :=
     ⟨_, familyRanked_of_edges hW
@@ -385,6 +549,7 @@ def FamilyGraphRowInnerFamT (Pref : RunPref) : Prop :=
     (rank : _root_.Address → Nat), Claim.TopWalk calls t seeds E₀ lim Top rank →
     ∀ (R : Ixon.Env) (envT : Ix.Kernel.Env .anon), TableShape.{u} t (fun _ => True) R envT →
       ∀ famOf, StoredFamilies t R envT famOf → RecordsAgree E₀ R →
+      (∃ E, StepCtx.{u} calls t R envT E₀ E) →
       ∃ (rank' : _root_.Address → Nat) (fam twin : _root_.Address → Option _root_.Address)
         (adv : _root_.Address → _root_.Address → Prop) (Inner : _root_.Address → Prop)
         (bAddr : _root_.Address),
@@ -402,10 +567,14 @@ owed**: as `familyGraphRowInnerFam_of_owed`, exporting the run's binding with it
 choice at a block with a twin (`FamRunCtx.twin_canonical`). -/
 theorem familyGraphRowInnerFamT_of_owed {Pref : RunPref} (h : FamilyGraphInnerOwedFam.{u} Pref) :
     FamilyGraphRowInnerFamT.{u} Pref := by
-  intro calls t seeds E₀ lim Top rank hWalk R envT hshape famOf hSF hagree
+  intro calls t seeds E₀ lim Top rank hWalk R envT hshape famOf hSF hagree hstore
   obtain ⟨bAddr, hW, hG⟩ := hWalk
-  obtain ⟨hB, hreads, hIO⟩ :=
-    h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape famOf hSF hagree
+  obtain ⟨hB, hIO⟩ :=
+    h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape famOf hSF hagree hstore
+  obtain ⟨E, hctx⟩ := hstore
+  have hreads : StoredTwinReads
+      ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ R :=
+    storedTwinReads_of_walk hW hG hB hagree hctx
   obtain ⟨rank', hR⟩ : ∃ rank',
       FamilyRanked ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ rank' :=
     ⟨_, familyRanked_of_edges hW
@@ -535,9 +704,9 @@ theorem familyStepsFam_of_graphInnerT {L : Ix.Kernel.Env .anon → NativeFam .an
         BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerTeleOther t E₀ B cb ind)
     (calls : List (Call F)) :
     FamilyStepsFam.{u} L calls (Claim.TopWalk calls) := by
-  intro t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree
+  intro t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree hstore
   obtain ⟨rank, fam, twin, adv, Inner, bAddr, hWalk, hFR, hIC, -, hblock, -⟩ :=
-    familyGraph calls t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree
+    familyGraph calls t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree hstore
   exact ⟨rank, fam, twin, adv, Inner, hWalk, hFR.graph,
     topUnitSteps_family standaloneDefinition standaloneTheoremOrOpaque standaloneRecursor
       definitionBlock nativeBlockTelescope nativeBlockAlias nativeBlockOtherTelescope hWalk hFR,

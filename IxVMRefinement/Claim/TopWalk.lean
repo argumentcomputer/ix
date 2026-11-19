@@ -282,7 +282,7 @@ theorem QuotRecordRefsIn.spec {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
       | .other (he_ccliwrit := h0) .. =>
         exact absurd (Value.field.inj (h0.symm.trans h1)) zero_ne_one
     obtain ⟨hs, hmSeg⟩ := hstand
-    rw [hmSeg] at evIdx evLoop
+    rw [hmSeg] at evIdx
     obtain ⟨extIdx, hidx⟩ := const_idxs_of_spec hcp evIdx
     have hloop := quot_refs_ok_spec c.refs.toList 0
       (by simpa only [Nat.zero_add, Array.length_toList] using hrefs)
