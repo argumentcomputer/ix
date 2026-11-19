@@ -46,11 +46,17 @@ theorem unitStepTwin_of_facts {L : Ix.Kernel.Env .anon → NativeFam .anon → P
       (env.consts.map (·.name)).Nodup → Decl.PrefixInv.{u} E t lim env →
       (FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env) →
       (∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true) →
-      FamilyInstalled t env rb crb) :
+      FamilyInstalled t env rb crb)
+    (hstoredRb : ∀ env : Ix.Kernel.Env .anon, (∀ ci ∈ envT.consts, ci ∈ env.consts) →
+      (env.consts.map (·.name)).Nodup → Decl.PrefixInv.{u} E t lim env →
+      (FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env) →
+      (∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true) →
+      ∀ x, ConstAddrOf rb crb x →
+        ∃ ci ci₀, env.find? (keyOf t x) = some ci ∧ Reads t E₀ x ci₀ ∧ StoredAs ci ci₀) :
     UnitStepTwin.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
       t envT E₀ E lim A c rb crb :=
   unitStepTwin_of_installed (twinStepTarget_of_facts hseam) ht hRS hSS hB hrbB hA hsz hne
-    hcall hpref hroute hkey hinst (fun env hXe => hXe.1.1.2)
+    hcall hpref hroute hkey hinst hstoredRb (fun env hXe => hXe.1.1.2)
     (twinStepKeeps_foldExtra (t := t) (envT := envT) (E₀ := E₀) (E := E) (lim := lim) hL
       fun x hx => constAddr_hash_size_of_block hA.muts hx).and_familyRecsModeled
 
@@ -78,5 +84,6 @@ theorem unitStepTwin_of_facts_fam {L : Ix.Kernel.Env .anon → NativeFam .anon �
     exact hrb.record
   exact unitStepTwin_of_facts hL hseam ht hRS hSS hB hrbB hA hsz hne hcall hpref hroute hkey
     (fun env _ _ _ hXe hrbS => familyInstalled_of_clause hXe.2 hfam hcrb hrbS)
+    (fun env _ _ _ hXe hrbS => familyRecsStored_of_clause hXe.2 hfam hcrb hrbS)
 
 end IxVM.Refinement.Typing.TwinFamily

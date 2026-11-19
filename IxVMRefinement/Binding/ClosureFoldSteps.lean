@@ -333,8 +333,8 @@ theorem closureFold_steps
       by_cases htw : IsTwinShape c
       · obtain ⟨B, rb, crb, hcrb, hor, hst⟩ :=
           htwin R R' R₁ env famOf₀ famOf adv cont bAddr A c hC hA.1 hc htw hfa hA.2.1
-        have hinstT : FamilyInstalled t s rb crb := by
-          refine hI.famInst B rb crb (hor.imp id (fun h => h.1)) hcrb (fun x hx => ?_)
+        have hallRb : ∀ x, ConstAddrOf rb crb x → StoredAt t s x := by
+          intro x hx
           rcases hneed' x (Or.inr ⟨B, rb, crb, hcrb, hor, hx⟩) with hs | ho
           · exact hs
           · exfalso
@@ -347,8 +347,62 @@ theorem closureFold_steps
               rw [hA.1.2] at hR
               cases hR
             · exact hA.2.1 B h₁
+        have hinstT : FamilyInstalled t s rb crb :=
+          hI.famInst B rb crb (hor.imp id (fun h => h.1)) hcrb hallRb
+        have hfamB : ∃ cbB msB rsB,
+            recordOf R₁ B = some cbB ∧ cbB.info = .muts msB ∧
+            FamRecRecord ρ.E₀ rb crb rsB := by
+          rcases hor with h₀ | ⟨h₁, -⟩
+          · obtain ⟨cbB, msB, crbB, rsB, -, hFB⟩ := hC.fams.family B rb h₀
+            have hcbB₁ : recordOf R₁ B = some cbB :=
+              recordOf_closureStore_of_R hC.admits hFB.block.record
+            have hcrbB₁ : recordOf R₁ rb = some crbB :=
+              recordOf_closureStore_of_R hC.admits hFB.record.record
+            have ecrb : crbB = crb := rec_eq hcrbB₁ hcrb
+            subst ecrb
+            exact ⟨cbB, msB, rsB, hcbB₁, hFB.block.muts,
+              ⟨rec₂₀ hC.admits (rec₁₂ hcrb), hFB.record.muts, hFB.record.recrs, hFB.record.logic,
+                fun i m hm => rec₂₀ hC.admits (rec₁₂
+                  (recordOf_closureStore_of_R hC.admits (hFB.record.members i m hm)))⟩⟩
+          · obtain ⟨cbB, msB, crbB, rsB, -, hFB⟩ := hC.checks.family B rb h₁
+            obtain ⟨cb₁, crb₁, _, _, hcb₁, hcrb₁, -, -, -, -, -⟩ := fam_new hC h₁
+            have ecb : cb₁ = cbB := rec_eq (rec₂₀ hC.admits (rec₁₂ hcb₁)) hFB.block.record
+            have ecrb₁ : crb₁ = crb := rec_eq hcrb₁ hcrb
+            have ecrbB : crbB = crb := rec_eq hFB.record.record (rec₂₀ hC.admits (rec₁₂ hcrb))
+            subst ecb ecrb₁ ecrbB
+            exact ⟨cb₁, msB, rsB, hcb₁, hFB.block.muts, hFB.record⟩
+        have hstoredRb : ∀ x, ConstAddrOf rb crb x →
+            ∃ ci ci₀, s.find? (keyOf t x) = some ci ∧ Reads t ρ.E₀ x ci₀ ∧ StoredAs ci ci₀ := by
+          obtain ⟨cbB, msB, rsB, hcbB, hmsB, hRB⟩ := hfamB
+          have hFR := hI.famRecs B rb cbB crb (hor.imp id (fun h => h.1)) hcbB hcrb hallRb
+          intro x hx
+          rcases hx with ⟨-, hs⟩ | ⟨ms, k, m, hms, hm, hxm⟩
+          · exact (standalone_not_block hs ⟨rsB, hRB.muts⟩).elim
+          · rw [hRB.muts] at hms
+            have ems : rsB = ms := Ixon.ConstantInfo.muts.inj hms
+            subst ems
+            have hm' : rsB.toList[k]? = some m := by simpa only [Array.getElem?_toList] using hm
+            obtain ⟨rc, hrc⟩ := hRB.recrs m (List.mem_of_getElem? hm')
+            subst hrc
+            rcases hxm with rfl | ⟨ind, j, hind, -, -⟩
+            · obtain ⟨cv, mI, rP, rules₀, cv', rules', hku, hRR, hf, -, -, hSA, -⟩ :=
+                hFR.member msB rsB k rc hmsB hRB.muts hm
+              have hk_toNat : k.toUInt64.toNat = k := UInt64.toNat_ofNat' hku
+              have hRR₀ : RecReads t (recordOf ρ.E₀) (fun y => ρ.E₀.blobs.get? y) crb
+                  (blockSelf t rb rsB) (keyOf t (memberAddr rb k (.recr rc))) rc
+                  (.recInfo cv mI rP rules₀) :=
+                ReaderReads.recReads_mono (fun a c h => rec₂₀ hC.admits (rec₁₂ h))
+                  (fun y b h => hC.admits.loadedBlobs y b ((closureStore_spec hC.admits).le₂.2 y b h))
+                  hRR
+              refine ⟨.recInfo cv' mI rP rules', .recInfo cv mI rP rules₀, hf, ?_, hSA⟩
+              refine ⟨memberProjection rb k (.recr rc), hRB.members k (.recr rc) hm,
+                crb, rsB, rc, ⟨hRB.record, hRB.muts, ?_, ?_, ?_, hRB.logic⟩, hRR₀⟩
+              · rw [hk_toNat]; exact hm
+              · rw [hk_toNat]
+              · rw [hk_toNat]
+            · cases hind
         exact hst s hextT hI.nodup hfreshS s Reg (fun ci h => h) hI.nodup hReg hrefs' hinstT
-          hfresh₀
+          hstoredRb hfresh₀
       · obtain ⟨hk, hca⟩ := closureUnit_kind hC hA hc hfa
         exact hunit R R' R₁ env s famOf₀ famOf adv cont bAddr A c hC hextT hI.nodup hA.1 hc hk
           hca hfa hA.2.1 htw hfreshS s Reg (fun ci h => h) hI.nodup hReg hrefs' hfresh₀
