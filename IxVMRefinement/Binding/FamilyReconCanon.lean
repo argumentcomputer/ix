@@ -537,7 +537,9 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
         (soloSelf_key (t := t) (a := ixAddr a) (d := d))
         (blobs_of_hashedPairs hS hsub hhp) rval built hpV hlV hdef
       have hdefnAt : defnAt t E₀ (ixAddr a) = some (some (d.lvls.toNat, val)) := by
-        simp [defnAt, hcE, hci, hdk, hloaded]
+        unfold defnAt
+        simp only [hcE, hci, hdk, hloaded]
+        rfl
       have hvalIn : AddrIn (Held R) (Core.keyOf t) val := by
         have hcR := held_of_sub hRsub hSa hcE
         refine addrIn_of_rkeysAt (E₀ := E₀) hwf ?_
@@ -552,11 +554,10 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
           exact List.mem_append_right _ (List.mem_append_right _ hj)
       exact ⟨d.lvls.toNat, val, rfl, hnl', htm, hvalIn, hdefnAt, defnValAt_of_defnAt hdefnAt⟩
     · have hnd := defnValShape_ne_defn_of_kind hne
-      simp only [defnAt, hcE, hci]
       cases hdk : d.kind with
       | defn => exact (hnd hdk).elim
-      | thm => rfl
-      | opaq => rfl
+      | thm => unfold defnAt; simp only [hcE, hci, hdk]
+      | opaq => unfold defnAt; simp only [hcE, hci, hdk]
   | dPrj prj =>
     simp only [L1.GetCITraceResult, hci] at htr
     obtain ⟨_, blkBytes, cb, ms, d, blobs, tree, v, hhB, haB, hexB, hcb, hms, hhp, built, hld,
@@ -579,18 +580,19 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
         (defnMember_self_key (t := t) (B := prj.block) (ms := ms) (d := d))
         (blobs_of_hashedPairs hS hsub hhp) rval built hpV hlV hdef
       have hdefnAt : defnAt t E₀ (ixAddr a) = some (some (d.lvls.toNat, val)) := by
-        simp [defnAt, hcE, hci, hcbE, hcb, hms', hdk, hloaded]
+        unfold defnAt
+        simp only [hcE, hci, hcbE, hcb, hms', hdk, mutsRoot, hloaded]
+        rfl
       have hvalIn : AddrIn (Held R) (Core.keyOf t) val :=
         addrIn_of_rkeysAt (E₀ := E₀) hwf
           (keys_held_of_loaded ht hwf hcl hcbR (blockSelf_held hcl hcbR hcb)
             (fun j hj => mem_used_of_member hcb hms' j (List.mem_append_right _ hj)) hloaded)
       exact ⟨d.lvls.toNat, val, rfl, hnl', htm, hvalIn, hdefnAt, defnValAt_of_defnAt hdefnAt⟩
     · have hnd := defnValShape_ne_defn_of_kind hne
-      simp only [defnAt, hcE, hci, hcbE, hcb, hms']
       cases hdk : d.kind with
       | defn => exact (hnd hdk).elim
-      | thm => rfl
-      | opaq => rfl
+      | thm => unfold defnAt; simp only [hcE, hci, hcbE, hcb, hms', hdk]
+      | opaq => unfold defnAt; simp only [hcE, hci, hcbE, hcb, hms', hdk]
   | axio ax =>
     simp only [L1.GetCIRawResult, hci] at hrawRes
     obtain ⟨v, hld, -, tp, rfl, -⟩ := hrawRes
