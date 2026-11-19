@@ -2,6 +2,7 @@ import IxVMRefinement.Binding.ClauseFold
 import IxVMRefinement.StatementRel.LoadedReadsWalked
 import IxVMRefinement.Binding.RunStepStores
 import IxVMRefinement.Binding.ClosureFold
+import IxVMRefinement.FamilyGraph.ProducersCallTree
 
 /-! # The run predicate of an accepted binding claim
 
@@ -77,6 +78,9 @@ structure BindingRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (ρ : BRu
   families : ∀ g, 6 ≤ g → g < 77 → ∃ famOf adv cont,
     ClosureFam calls ρ t g (Rs g) (Rs (g + 1)) famOf adv cont ∧
     FamilyAdmits ρ t g (Rs g) (Rs (g + 1)) famOf adv cont
+  /-- Every `KernelModeled::check_family` call in `calls` is backed by a non-zero
+  `KernelModeled::block_is_modeled` call on the same block address. -/
+  famCallsModeled : Typing.FamCallsModeled calls
 
 /-- **The invariant at the six basis groups, for a binding run.** -/
 theorem basisOver_bindingRun (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
