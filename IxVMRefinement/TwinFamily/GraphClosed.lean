@@ -37,10 +37,10 @@ open IxVM.Consistency
 open Aiur.Generic.SourceSemantics (Call)
 open IxVM (F)
 open IxVM.Refinement.Binding (KeyIn read_keys)
-open IxVM.Refinement.Binding.FamilyFlat (FlatView loadedAt keyAddr keyAddr_keyOf
+open IxVM.Refinement.Binding.FamilyFlat (FlatView Held loadedAt keyAddr keyAddr_keyOf
   indInfoAt ctorTypeAt membersAt indInfoAt_inv ctorTypeAt_inv membersAt_inv
   mem_indcAddrs keyIn_of_loadedAt)
-open IxVM.Refinement.Binding.FamilyRecon (ReconView Held RKeysAt indDataAt ctorAt unfoldAt
+open IxVM.Refinement.Binding.FamilyRecon (ReconView RKeysAt indDataAt ctorAt unfoldAt
   defnAt indDataAt_inv ctorAt_inv unfoldAt_inv defnAt_inv keyIn_exprInstLevels mem_used_of_member)
 
 set_option linter.unusedVariables false
@@ -157,7 +157,7 @@ private theorem loadedAt_annotates {t : Ix.Kernel.RoleTable}
     ∃ e₀, (exprReader t blob src id self).read e = .ok e₀ ∧ Annotates v e₀ := by
   unfold loadedAt at h
   cases hr : (exprReader t blob src id self).read e with
-  | error _ => simp [hr] at h
+  | error _ => simp [hr, Except.toOption] at h
   | ok e₀ =>
     simp only [hr, Except.toOption, LoadedReads.canonAnn] at h
     cases hp : L1.binderRootPlan (LoadedReads.canonTree src.binders.toList)
@@ -528,7 +528,7 @@ private theorem ctorProj_eq_of_noCollision {calls : List (Call F)} {t : Ix.Kerne
     have hres_b : cb'.resourceSize ≤ 2 * lc_b.rawBytes.size :=
       Ixon.Verify.ConstantBounds.deConstantExact_resource_bound lc_b.rawBytes cb' hde_b
     have hsz_eq : lc_b.rawBytes.size = lc_b.rawBytes.data.toList.length := by
-      simp [ByteArray.size, Array.length_toList]
+      rw [Array.length_toList]; rfl
     have hi_lt_ms : i < ms.size := (Array.getElem?_eq_some_iff.mp hm).1
     have hc_lt_ct : c < ind.ctors.size := (Array.getElem?_eq_some_iff.mp hc).1
     have hms_le : ms.size ≤ cb'.resourceSize := Claim.muts_size_le hms
@@ -558,9 +558,20 @@ private theorem ctorProj_eq_of_noCollision {calls : List (Call F)} {t : Ix.Kerne
         refine Or.inr (Or.inl ⟨ctorAddr b i c, lc_x.rawBytes, image, lc_b.rawBytes, cb', ms,
           Or.inl (Or.inl ⟨lc_x, hget_x, rfl⟩), ⟨cl, hcl, _, input, hargs, hrep⟩, hde_b, hms,
           Or.inr ⟨i.toUInt64, c.toUInt64, by rw [hb_hash]; rfl⟩, hne, rfl⟩)
+      have hb_hash_sz : b.hash.size = 32 := by
+        rw [← hb_hash]
+        cases lc_b.rawBytes with
+        | mk arr =>
+          have h := L1.blake3Pure_eq arr.toList
+          simp only [Array.toArray_toList] at h
+          rw [h]
+          exact (Blake3.Pure.digest arr.toList).size_toArray
+      have hwf_cprj : (constructorProjection b i c).wireWF := by
+        unfold constructorProjection
+        rw [L1.emptyTablesConstant_wireWF]
+        exact hb_hash_sz
       have hde_img : Ixon.deConstantExact image = .ok (constructorProjection b i c) :=
-        Ixon.Verify.deConstantExact_serConstant _
-          (L1.projConstant_wireWF_cPrj i.toUInt64 c.toUInt64 b)
+        Ixon.Verify.deConstantExact_serConstant _ hwf_cprj
       rw [← himg_eq, hde_img] at hde_x
       exact ⟨(Except.ok.inj hde_x).symm, hi_u64, hc_u64⟩
 
