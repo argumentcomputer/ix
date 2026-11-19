@@ -288,7 +288,8 @@ theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : L
     have h0 := callSub_of_eq hc
     have hSubSeg := callSub_append_left h0
     have hr := callSub_append_right h0
-    let ⟨s126, hr⟩ := peel_call hr e126
+    let s126 := (peel_call hr e126).1
+    let hr := (peel_call hr e126).2
     let ⟨s148, hr⟩ := peel_call hr e148
     let ⟨s194, hr⟩ := peel_call hr e194
     let ⟨sOrd, hr⟩ := peel_call hr eOrd
