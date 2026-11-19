@@ -789,9 +789,9 @@ private theorem check_inductive_shape_ctors_levelsOk {calls : List (Call F)}
         hind', hct', -, hld', hraw_ct⟩ :=
         L1.get_ci_cprj_spec (RomBound.bounded_mono hbd sub1) rba evc
       have hcb_eq : cb' = cb := record_eq_of_hashed_l hS sub1 hcb hhB haB hdeB
-      rcases hcb_eq with rfl
+      subst cb'
       have hms_eq : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hms)
-      rcases hms_eq with rfl
+      subst ms'
       rw [L1.val_cast_u56_ing hk56, Array.getElem?_toList, hk] at hind'
       injection hind' with hi_mc; injection hi_mc with hi_eq; subst hi_eq
       rw [L1.val_cast_u56_ing (by omega : c < 72057594037927936), Array.getElem?_toList] at hct'
@@ -880,9 +880,9 @@ private theorem check_modeled_ctors_levelsOk {calls : List (Call F)}
         hind', hct', -, hld', hraw_ct⟩ :=
         L1.get_ci_cprj_spec (RomBound.bounded_mono hbd sub1) rba evc
       have hcb_eq : cb' = cb := record_eq_of_hashed_l hS sub1 hcb hhB haB hdeB
-      rcases hcb_eq with rfl
+      subst cb'
       have hms_eq : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hms)
-      rcases hms_eq with rfl
+      subst ms'
       rw [L1.val_cast_u56_ing hk56, Array.getElem?_toList, hk] at hind'
       injection hind' with hi_mc; injection hi_mc with hi_eq; subst hi_eq
       rw [L1.val_cast_u56_ing (by omega : c < 72057594037927936), Array.getElem?_toList] at hct'
@@ -1042,9 +1042,14 @@ private theorem peer_agree_walk_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       injection hcons with h1 h2; subst h1 h2
       obtain rfl := binop_add_one_nat op1
       have hv0 : vdiff = .field 0 := by
-        cases Obs.«Fields::is_zero».obs evz with
-        | n0 hv _ _ _ => exact hv
-        | other _ _ hr _ _ => exact absurd (Value.field.inj hr) (by decide)
+        obtain ⟨hz, -⟩ := Lib.is_zero_spec evz
+        cases vdiff with
+        | field fv =>
+          by_cases hfv : fv = 0
+          · subst hfv; rfl
+          · rw [ite_eq_right hfv] at hz
+            exact absurd (Value.field.inj hz) (by decide)
+        | ptr _ _ | tuple _ | construct _ _ _ => simp [Lib.is_zero_spec] at hz
       subst hv0
       have hpos_eq : pos = selfIdx := binop_sub_eq_zero_nat (by omega) (by omega) opsub
       have htail := ih (pos + 1) (by simp only [List.length_cons] at hlen; omega) hidx'
@@ -1105,7 +1110,7 @@ private theorem peer_agree_walk_spec {calls : List (Call F)} {E₀ : Ixon.Env}
         (ld12 := ld) (ev77 := evz) (ev208 := evip) (ld202 := ldip) (hne609 := hneI)
         (hc691 := hcs) .. =>
       have sub2 : ∀ cl ∈ cs2, cl ∈ calls := fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem))
-      obtain ⟨-, -, -, -, -, -, -, v', -, -, -, -, -, -, -, hld', hraw_i⟩ :=
+      obtain ⟨-, -, _, _, _, _, _, v', -, -, -, -, -, -, -, hld', hraw_i⟩ :=
         L1.get_ci_iprj_spec (RomBound.bounded_mono hbd sub2)
           (Bytes.repAddressRef_heapMono₂ addrTy evz.heap_extends rba) evip
       rw [hld'] at ldip; injection ldip with hv_eq; subst hv_eq
@@ -1223,7 +1228,7 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
         have evct' : ObsFn W "KernelCheck::check_inductive_shape_ctors"
             [rc, tyPtr, .field (ind.params.toNat : F), .field (ind.indices.toNat : F),
               .field (ind.ctors.size : F), .field (ind.lvls.toNat : F), blkPtr,
-              .field (k : F), _, repBoolField false, .field ((0 : Nat) : F)]
+              .field (k : F), _, L1.repBoolField false, .field ((0 : Nat) : F)]
             ms3 _ m8 _ := by simpa using evct
         have hres := check_inductive_shape_ctors_levelsOk hS hbd
           (by rwa [hba_b_eq]) hms hk hk56 hnc56 hnl32 hnp56
@@ -1234,7 +1239,8 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
           (Bytes.repAddressRef_heapMono₂ addrTy (ext07.trans ext7_s3) rba_b) evct'
         intro j ct hj
         simpa [hba_b_eq] using hres j ct (Nat.zero_le j) hj
-    have hpeers_ok : ∀ i₂ ind₂, ms[i₂]? = some (.indc ind₂) → ind.params = ind₂.params := by
+    have hpeers_ok : ∀ (i₂ : Nat) (ind₂ : Ixon.Inductive),
+        ms[i₂]? = some (.indc ind₂) → ind.params = ind₂.params := by
       have ext08 := ext07.trans evsh.heap_extends
       match Obs.«KernelCheck::check_block_peer_param_agreement».obs evpa with
       | .other (hne272 := hne) .. => exact (hne _ rfl rfl).elim
@@ -1352,7 +1358,8 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
         (Bytes.repAddressRef_heapMono₂ addrTy ext0_11 rba_b) evct'
       intro j ct hj
       simpa [hba_b_eq] using hres j ct (Nat.zero_le j) hj
-    have hpeers_ok : ∀ i₂ ind₂, ms[i₂]? = some (.indc ind₂) → ind.params = ind₂.params := by
+    have hpeers_ok : ∀ (i₂ : Nat) (ind₂ : Ixon.Inductive),
+        ms[i₂]? = some (.indc ind₂) → ind.params = ind₂.params := by
       have ext0_12 := ext0_11.trans evct.heap_extends
       match Obs.«KernelModeled::check_modeled_block».obs evcmb with
       | .run (ev27 := evrp) (ev14 := evga) (ev55 := evcf) (hc80 := hc_mb) .. =>
@@ -1620,8 +1627,9 @@ private theorem build_recur_addrs_walk_hashed_spec {ms : List Ixon.MutConst} {b 
       cases i with
       | zero =>
         simp only [List.getElem?_cons_zero, Option.some.injEq] at hi; subst hi
-        exact ⟨mc, rfl, by omega, by simpa using ha₀_eq,
-          Core.hashed_mono (fun cl hcl => mem_of_eq hc145 (by call_mem)) (by simpa using hh₀)⟩
+        refine ⟨mc, rfl, by omega, by simpa using ha₀_eq, ?_⟩
+        rw [hc145]
+        exact Core.hashed_mono (fun cl hcl => by simp [hcl]) hh₀
       | succ i' =>
         obtain ⟨m', hm', hk', ha', hh'⟩ := htl i' a (by simpa using hi)
         rw [show k + 1 + i' = k + (i' + 1) by omega] at hk' ha' hh'
@@ -1822,7 +1830,8 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
             E_rd.allLevelParamsDefined (List.range rc.lvls.toNat) = true :=
           validate_reader_levels hbd hnl32 raw_ty ext1_6 evval
             (hsub _ (mem_of_eq hcs (by call_mem)))
-        have hrules_ok : ∀ j ru E_rd, rc.rules[j]? = some ru →
+        have hrules_ok : ∀ (j : Nat) (ru : Ixon.RecursorRule) (E_rd : KExpr),
+            rc.rules[j]? = some ru →
             (exprReader t (fun x => E₀.blobs.get? x) crb id
                 (blockSelf t (ixAddr rb_b) rs)).read ru.rhs = .ok E_rd →
             E_rd.allLevelParamsDefined (List.range rc.lvls.toNat) = true := by
@@ -1993,7 +2002,7 @@ theorem memberCheckedLimAt_recr_levelsOk {calls : List (Call F)} {bAddr : _root_
   | .Induct_other_other (hv1240 := hv) .. => simp [kciEnum] at hv
   | .Ctor_n0_n0 (hv1989 := hv) .. | .Ctor_n0_other (hv1989 := hv) ..
   | .Ctor_other_n0 (hv1989 := hv) .. | .Ctor_other_other (hv1989 := hv) .. => simp [kciEnum] at hv
-  | .Rec_n0 (m2789 := m_val) (m2857 := m_nil) (m2974 := m_crm)
+  | .Rec_n0 (m2789 := m_val) (m2857 := m_nil) (m2974 := m_crm) (cs3066 := cs_crm)
       (ev14 := e1) (hv2727 := hv) (ev2801 := evval) (hm2865 := hmnil)
       (ev2838 := e3) (ev2882 := e4) (ev2912 := e5) (ev2942 := e6)
       (ev2964 := e7) (ev2986 := e8) (ev3068 := evcrm) (hc3093 := hc) .. =>
@@ -2027,7 +2036,7 @@ theorem memberCheckedLimAt_recr_levelsOk {calls : List (Call F)} {bAddr : _root_
             (f7.heap_extends.trans f8.heap_extends)))))))
       have hws := check_rec_rules_wellscoped_levelsOk hbd hnl32 rc_m.rules.toList 0
         (fun cl hcl => by
-          have h1 := mem_of_eq hc_crm (by call_mem)
+          have h1 : cl ∈ cs_crm := mem_of_eq hc_crm (by call_mem)
           exact hsub_chk cl (mem_of_eq hc (by call_mem)))
         (raw_rules.mono ext_ws (fun _ hm => hm)) evws
       exact ⟨hnl32, hty_ok, fun j ru E_rd hj hread =>
@@ -2149,7 +2158,8 @@ private theorem groupStore_units_levelsAndParamsOk {calls : List (Call F)} {bAdd
       by_cases hdm : (∃ d, c.info = .defn d) ∨ (∃ ms, c.info = .muts ms)
       · have hnp : ¬ Typing.IsProj c := by
           rcases hdm with ⟨d, hd⟩ | ⟨ms, hms⟩
-          · intro hp; unfold Typing.IsProj at hp; rw [hd] at hp; exact hp
+          · intro hp; unfold Typing.IsProj at hp; rw [hd] at hp
+            rcases hp with ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ <;> cases h
           · exact fun hp => Typing.proj_not_block hp ⟨ms, hms⟩
         have hna : ∀ ax, c.info ≠ .axio ax := by
           intro ax hax'
@@ -2221,7 +2231,7 @@ private theorem groupStore_units_levelsAndParamsOk {calls : List (Call F)} {bAdd
             have hce : _ = c := Option.some.inj (hc'.symm.trans hE)
             rw [hce] at hp
             exact (hnp hp).elim
-      · push_neg at hdm
+      · push Not at hdm
         exact unitLevelsAndParamsOk_of_nonUnit hdm.1 hdm.2
 
 /-- **Both `StoreLevelsOk` and `StoreIndParamsOk` hold over every `groupStore ... g`
