@@ -60,8 +60,8 @@ structure ReconView.LeOn (S : _root_.Address → Prop) (V V' : ReconView) : Prop
 /-- **What `V` answers at the addresses of `S` stays in `S`**: an inductive type's block, the keys
 of an inductive's type, of a constructor's type and of a definition's value. -/
 structure ReconView.ClosedOn (S : _root_.Address → Prop) (V : ReconView) : Prop where
-  indBlk : ∀ a i, S a → V.ind a = some i → S i.blk
-  indTy : ∀ a i, S a → V.ind a = some i → RKeysAt V S i.ty
+  indBlk : ∀ a i, S a → V.ind a = some (some i) → S i.blk
+  indTy : ∀ a i, S a → V.ind a = some (some i) → RKeysAt V S i.ty
   ctorTy : ∀ b i c ty np, S b → V.ctor b i c = some (ty, np) → RKeysAt V S ty
   unfold : ∀ k us v, (∀ a, V.addr k = some a → S a) → V.unfold k us = some (some v) →
     RKeysAt V S v
@@ -81,6 +81,10 @@ theorem rk_lift {e : KExpr} (n c : Nat) (h : RKeysAt V S e) :
 theorem rk_ilp {e : KExpr} (ks : List Ix.Kernel.LevelParam) (us : List KLevel)
     (h : RKeysAt V S e) : RKeysAt V S (e.instantiateLevelParams ks us) :=
   fun k hk => h k (keyIn_instantiateLevelParams e hk)
+
+theorem rk_exprInstLevels {e : KExpr} (us : List KLevel)
+    (h : RKeysAt V S e) : RKeysAt V S (exprInstLevels us e) :=
+  fun k hk => h k (keyIn_exprInstLevels e hk)
 
 theorem rk_bvar (i : Nat) : RKeysAt V S (.bvar i) := fun k hk => by cases hk
 
@@ -160,22 +164,25 @@ theorem projStep_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {s : KKey} {i : Nat
             simp only at h ⊢
             cases hsd : V.ind sa with
             | none => rw [hsd] at h; simp at h
-            | some sd =>
-              rw [hV.ind sa sd (hks sa hsa) hsd]
+            | some sdo =>
+              rw [hV.ind sa sdo (hks sa hsa) hsd]
               rw [hsd] at h
-              simp only at h ⊢
-              by_cases hg : projGate cd sd cus (Ix.Kernel.Expr.getAppArgs e) i = true
-              · rw [ite_eq_left hg] at h
-                rw [ite_eq_left hg]
-                cases hm : V.modeled sd.blk with
-                | none => rw [hm] at h; simp at h
-                | some mb =>
-                  rw [hV.modeled sd.blk mb (hC.indBlk sa sd (hks sa hsa) hsd) hm]
-                  rw [hm] at h
+              cases sdo with
+              | none => exact h
+              | some sd =>
+                simp only at h ⊢
+                by_cases hg : projGate cd sd cus (Ix.Kernel.Expr.getAppArgs e) i = true
+                · rw [ite_eq_left hg] at h
+                  rw [ite_eq_left hg]
+                  cases hm : V.modeled sd.blk with
+                  | none => rw [hm] at h; simp at h
+                  | some mb =>
+                    rw [hV.modeled sd.blk mb (hC.indBlk sa sd (hks sa hsa) hsd) hm]
+                    rw [hm] at h
+                    exact h
+                · rw [ite_eq_right hg] at h
+                  rw [ite_eq_right hg]
                   exact h
-              · rw [ite_eq_right hg] at h
-                rw [ite_eq_right hg]
-                exact h
   | _ => rw [hf] at h; exact h
 
 /-- **A field `red_proj` projects is an argument of the projected term.** -/
@@ -206,26 +213,29 @@ theorem projStep_mem {s : KKey} {i : Nat} {e e' : KExpr}
             simp only at h
             cases hsd : V.ind sa with
             | none => rw [hsd] at h; simp at h
-            | some sd =>
+            | some sdo =>
               rw [hsd] at h
-              simp only at h
-              by_cases hg : projGate cd sd cus (Ix.Kernel.Expr.getAppArgs e) i = true
-              · rw [ite_eq_left hg] at h
-                cases hm : V.modeled sd.blk with
-                | none => rw [hm] at h; simp at h
-                | some mb =>
-                  rw [hm] at h
-                  cases mb with
-                  | true => simp at h
-                  | false =>
-                    simp only at h
-                    by_cases ht : typeSortNever sd.ty sd.np cus = true
-                    · rw [ite_eq_left ht] at h
-                      exact List.mem_of_getElem? (Option.some.inj h)
-                    · rw [ite_eq_right ht] at h
-                      simp at h
-              · rw [ite_eq_right hg] at h
-                simp at h
+              cases sdo with
+              | none => simp at h
+              | some sd =>
+                simp only at h
+                by_cases hg : projGate cd sd cus (Ix.Kernel.Expr.getAppArgs e) i = true
+                · rw [ite_eq_left hg] at h
+                  cases hm : V.modeled sd.blk with
+                  | none => rw [hm] at h; simp at h
+                  | some mb =>
+                    rw [hm] at h
+                    cases mb with
+                    | true => simp at h
+                    | false =>
+                      simp only at h
+                      by_cases ht : typeSortNever sd.ty sd.np cus = true
+                      · rw [ite_eq_left ht] at h
+                        exact List.mem_of_getElem? (Option.some.inj h)
+                      · rw [ite_eq_right ht] at h
+                        simp at h
+                · rw [ite_eq_right hg] at h
+                  simp at h
   | _ => rw [hf] at h; simp at h
 
 
@@ -504,11 +514,10 @@ theorem minorAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu : 
     minorAt V' f' es fop ck cty nOwn aux sp us nrp nMot prev motiveBase selfMemIdx elim =
       some r := by
   simp only [minorAt] at h ⊢
-  cases hp : peelCtorParams V f nrp 0 aux sp nOwn 0
-      (cty.instantiateLevelParams (List.range us.length) us) with
+  cases hp : peelCtorParams V f nrp 0 aux sp nOwn 0 (exprInstLevels us cty) with
   | none => simp [hp] at h
   | some after =>
-    obtain ⟨hp', hka⟩ := peelCtorParams_leOn hV hC hfu hsp nOwn 0 _ after (rk_ilp _ _ hK) hp
+    obtain ⟨hp', hka⟩ := peelCtorParams_leOn hV hC hfu hsp nOwn 0 _ after (rk_exprInstLevels _ hK) hp
     rw [hp']
     rw [hp] at h
     simp only at h ⊢
@@ -571,24 +580,27 @@ theorem allMinors_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu 
     simp only [allMinors] at h ⊢
     cases hi : V.ind e.addr with
     | none => simp [hi] at h
-    | some i =>
-      rw [hV.ind e.addr i he.addr hi]
-      rw [hi] at h
-      simp only at h ⊢
-      cases hm : minorDoms V f fullEs fop e.aux e.params e.levels nrp nMot motiveBase pos i.blk
-          i.idx elim prev (List.range i.nctors) with
-      | none => simp [hm] at h
-      | some ms =>
-        rw [minorDoms_leOn hV hC hfu (hC.indBlk e.addr i he.addr hi) he.params _ prev ms hm]
-        rw [hm] at h
+    | some io =>
+      cases io with
+      | none => simp [hi] at h
+      | some i =>
+        rw [hV.ind e.addr (some i) he.addr hi]
+        rw [hi] at h
         simp only at h ⊢
-        cases hr : allMinors V f fullEs fop nrp nMot motiveBase elim es (prev + ms.length)
-            (pos + 1) with
-        | none => simp [hr] at h
-        | some q =>
-          rw [ih (prev + ms.length) (pos + 1) q (fun x hx => hE x (List.mem_cons_of_mem _ hx)) hr]
-          rw [hr] at h
-          exact h
+        cases hm : minorDoms V f fullEs fop e.aux e.params e.levels nrp nMot motiveBase pos i.blk
+            i.idx elim prev (List.range i.nctors) with
+        | none => simp [hm] at h
+        | some ms =>
+          rw [minorDoms_leOn hV hC hfu (hC.indBlk e.addr i he.addr hi) he.params _ prev ms hm]
+          rw [hm] at h
+          simp only at h ⊢
+          cases hr : allMinors V f fullEs fop nrp nMot motiveBase elim es (prev + ms.length)
+              (pos + 1) with
+          | none => simp [hr] at h
+          | some q =>
+            rw [ih (prev + ms.length) (pos + 1) q (fun x hx => hE x (List.mem_cons_of_mem _ hx)) hr]
+            rw [hr] at h
+            exact h
 
 theorem motiveType_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu : f ≤ f')
     {memberAddr : _root_.Address} {indTy : KExpr} {nOwn nIdx : Nat} {us : List KLevel}
@@ -597,11 +609,10 @@ theorem motiveType_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu
     (h : motiveType V f memberAddr indTy nOwn nIdx us elim nrp aux sp = some r) :
     motiveType V' f' memberAddr indTy nOwn nIdx us elim nrp aux sp = some r := by
   simp only [motiveType] at h ⊢
-  cases hp : peelMotiveParams nrp aux sp nOwn 0
-      (indTy.instantiateLevelParams (List.range us.length) us) with
+  cases hp : peelMotiveParams nrp aux sp nOwn 0 (exprInstLevels us indTy) with
   | none => simp [hp] at h
   | some after =>
-    have hka := peelMotiveParams_keys hsp nOwn 0 _ after (rk_ilp _ _ hK) hp
+    have hka := peelMotiveParams_keys hsp nOwn 0 _ after (rk_exprInstLevels _ hK) hp
     rw [hp] at h
     simp only at h ⊢
     cases hc : collectDoms V f nIdx after with
@@ -625,22 +636,25 @@ theorem allMotives_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu
     simp only [allMotives] at h ⊢
     cases hi : V.ind e.addr with
     | none => simp [hi] at h
-    | some i =>
-      rw [hV.ind e.addr i he.addr hi]
-      rw [hi] at h
-      simp only at h ⊢
-      cases hm : motiveType V f e.addr i.ty i.np i.ni e.levels elim nrp e.aux e.params with
-      | none => simp [hm] at h
-      | some mt =>
-        rw [motiveType_leOn hV hC hfu (hC.indTy e.addr i he.addr hi) he.params hm]
-        rw [hm] at h
+    | some io =>
+      cases io with
+      | none => simp [hi] at h
+      | some i =>
+        rw [hV.ind e.addr (some i) he.addr hi]
+        rw [hi] at h
         simp only at h ⊢
-        cases hr : allMotives V f elim nrp es (j + 1) with
-        | none => simp [hr] at h
-        | some q =>
-          rw [ih (j + 1) q (fun x hx => hE x (List.mem_cons_of_mem _ hx)) hr]
-          rw [hr] at h
-          exact h
+        cases hm : motiveType V f e.addr i.ty i.np i.ni e.levels elim nrp e.aux e.params with
+        | none => simp [hm] at h
+        | some mt =>
+          rw [motiveType_leOn hV hC hfu (hC.indTy e.addr i he.addr hi) he.params hm]
+          rw [hm] at h
+          simp only at h ⊢
+          cases hr : allMotives V f elim nrp es (j + 1) with
+          | none => simp [hr] at h
+          | some q =>
+            rw [ih (j + 1) q (fun x hx => hE x (List.mem_cons_of_mem _ hx)) hr]
+            rw [hr] at h
+            exact h
 
 theorem flatOwnParams_leOn (hV : V.LeOn S V') :
     ∀ (es : List FlatEntry) (r : List Nat), (∀ e ∈ es, REntryAt V S e) →
@@ -653,14 +667,17 @@ theorem flatOwnParams_leOn (hV : V.LeOn S V') :
     simp only [flatOwnParams] at h ⊢
     cases hi : V.ind e.addr with
     | none => simp [hi] at h
-    | some i =>
-      cases hr : flatOwnParams V es with
-      | none => simp [hi, hr] at h
-      | some q =>
-        rw [hV.ind e.addr i (hE e List.mem_cons_self).addr hi,
-          ih q (fun x hx => hE x (List.mem_cons_of_mem _ hx)) hr]
-        rw [hi, hr] at h
-        exact h
+    | some io =>
+      cases io with
+      | none => simp [hi] at h
+      | some i =>
+        cases hr : flatOwnParams V es with
+        | none => simp [hi, hr] at h
+        | some q =>
+          rw [hV.ind e.addr (some i) (hE e List.mem_cons_self).addr hi,
+            ih q (fun x hx => hE x (List.mem_cons_of_mem _ hx)) hr]
+          rw [hi, hr] at h
+          exact h
 
 theorem ctorsBefore_leOn (hV : V.LeOn S V') :
     ∀ (es : List FlatEntry) (k r : Nat), (∀ e ∈ es, REntryAt V S e) →
@@ -680,14 +697,17 @@ theorem ctorsBefore_leOn (hV : V.LeOn S V') :
       simp only [ctorsBefore] at h ⊢
       cases hi : V.ind e.addr with
       | none => simp [hi] at h
-      | some i =>
-        cases hr : ctorsBefore V es k with
-        | none => simp [hi, hr] at h
-        | some q =>
-          rw [hV.ind e.addr i (hE e List.mem_cons_self).addr hi,
-            ih k q (fun x hx => hE x (List.mem_cons_of_mem _ hx)) hr]
-          rw [hi, hr] at h
-          exact h
+      | some io =>
+        cases io with
+        | none => simp [hi] at h
+        | some i =>
+          cases hr : ctorsBefore V es k with
+          | none => simp [hi, hr] at h
+          | some q =>
+            rw [hV.ind e.addr (some i) (hE e List.mem_cons_self).addr hi,
+              ih k q (fun x hx => hE x (List.mem_cons_of_mem _ hx)) hr]
+            rw [hi, hr] at h
+            exact h
 
 /-! ## The recursor type -/
 
@@ -709,8 +729,14 @@ theorem recTypeAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu 
   simp only [h0, hk] at h ⊢
   cases hp : V.ind e0.addr with
   | none => simp [hp] at h
+  | some po =>
+  cases po with
+  | none => simp [hp] at h
   | some prim =>
   cases hs : V.ind ek.addr with
+  | none => simp [hp, hs] at h
+  | some so =>
+  cases so with
   | none => simp [hp, hs] at h
   | some self =>
   rw [hV.ind _ _ he0.addr hp, hV.ind _ _ hek.addr hs, hV.key]
@@ -719,7 +745,7 @@ theorem recTypeAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu 
   split at h
   · simp at h
   · next paramDoms rest hc1 =>
-    rw [collectDoms_leOn hV hC hfu nP _ _ (rk_ilp _ _ (hC.indTy _ _ he0.addr hp)) hc1]
+    rw [collectDoms_leOn hV hC hfu nP _ _ (rk_exprInstLevels _ (hC.indTy _ _ he0.addr hp)) hc1]
     simp only
     split at h
     · next motDoms fop hm hf =>
@@ -734,7 +760,7 @@ theorem recTypeAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu 
         · simp at h
         · next selfAfter hsa =>
           have hka := peelMotiveParams_keys hek.params _ 0 _ selfAfter
-            (rk_ilp _ _ (hC.indTy _ _ hek.addr hs)) hsa
+            (rk_exprInstLevels _ (hC.indTy _ _ hek.addr hs)) hsa
           split at h
           · simp at h
           · next idxRaw rest' hci =>
@@ -774,7 +800,7 @@ theorem ruleBody_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (hfu :
     split at h
     · simp at h
     · next after hp =>
-      obtain ⟨hp', hka⟩ := peelCtorParams_leOn hV hC hfu hsp nOwn 0 _ after (rk_ilp _ _ hK) hp
+      obtain ⟨hp', hka⟩ := peelCtorParams_leOn hV hC hfu hsp nOwn 0 _ after (rk_exprInstLevels _ hK) hp
       rw [hp']
       simp only
       split at h
@@ -835,6 +861,9 @@ theorem ruleBodiesAt_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) {f f' : Nat} (h
   have hek := hE ek (List.mem_of_getElem? hk)
   simp only [hk] at h ⊢
   cases hs : V.ind ek.addr with
+  | none => simp [hs] at h
+  | some so =>
+  cases so with
   | none => simp [hs] at h
   | some self =>
   cases hf : flatOwnParams V es with
