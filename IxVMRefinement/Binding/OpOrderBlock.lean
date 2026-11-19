@@ -381,7 +381,7 @@ private theorem scan_ext_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : 
               have : cs118.length < cs410.length := by rw [hc153]; simp
               omega
             obtain ⟨entered₁, hcl, hmem⟩ := scanAt hlt (hbase.trans ext1) hblk_addr ev120
-            refine ⟨ev120.heap_extends, (fun ms hms => by rw [hc_i] at hms; cases hms),
+            refine ⟨ev120.heap_extends, (fun _ hms => by cases hms),
               entered₁, hcl.mono (fun cl hcl' => by rw [hc153]; simp [hcl']), ?_⟩
             rw [hown]
             rcases hmem with h | h
@@ -403,7 +403,7 @@ private theorem scan_ext_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : 
               have : cs203.length < cs410.length := by rw [hc238]; simp
               omega
             obtain ⟨entered₁, hcl, hmem⟩ := scanAt hlt (hbase.trans ext1) hblk_addr ev205
-            refine ⟨ev205.heap_extends, (fun ms hms => by rw [hc_i] at hms; cases hms),
+            refine ⟨ev205.heap_extends, (fun _ hms => by cases hms),
               entered₁, hcl.mono (fun cl hcl' => by rw [hc238]; simp [hcl']), ?_⟩
             rw [hown]
             rcases hmem with h | h
@@ -425,7 +425,7 @@ private theorem scan_ext_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : 
               have : cs282.length < cs410.length := by rw [hc317]; simp
               omega
             obtain ⟨entered₁, hcl, hmem⟩ := scanAt hlt (hbase.trans ext1) hblk_addr ev284
-            refine ⟨ev284.heap_extends, (fun ms hms => by rw [hc_i] at hms; cases hms),
+            refine ⟨ev284.heap_extends, (fun _ hms => by cases hms),
               entered₁, hcl.mono (fun cl hcl' => by rw [hc317]; simp [hcl']), ?_⟩
             rw [hown]
             rcases hmem with h | h
@@ -447,7 +447,7 @@ private theorem scan_ext_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : 
               have : cs361.length < cs410.length := by rw [hc396]; simp
               omega
             obtain ⟨entered₁, hcl, hmem⟩ := scanAt hlt (hbase.trans ext1) hblk_addr ev363
-            refine ⟨ev363.heap_extends, (fun ms hms => by rw [hc_i] at hms; cases hms),
+            refine ⟨ev363.heap_extends, (fun _ hms => by cases hms),
               entered₁, hcl.mono (fun cl hcl' => by rw [hc396]; simp [hcl']), ?_⟩
             rw [hown]
             rcases hmem with h | h
