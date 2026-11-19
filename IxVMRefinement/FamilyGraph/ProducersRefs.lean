@@ -724,10 +724,10 @@ private theorem repIxonAddrList_to_core {h : Heap F} {xs : List _root_.Address}
       RepList Core.addrListEnum (Bytes.RepAddressRef Core.addrTy) h bs x_refs := by
   induction hr with
   | nil hld => exact ⟨[], rfl, .nil hld⟩
-  | cons hx _ hld ih =>
+  | cons hld hx _ ih =>
     obtain ⟨b, hb, hix⟩ := hx
     obtain ⟨bs, hmap, hbs⟩ := ih
-    exact ⟨b :: bs, by simp [hix, hmap], .cons hb hbs hld⟩
+    exact ⟨b :: bs, by simp [hix, hmap], .cons hld hb hbs⟩
 
 private theorem projection_block_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r : SourceValue F}
     {cs : List (Call F)} (a : _root_.Address)
@@ -1219,7 +1219,7 @@ private theorem walk_path_spec_ext {K : FamRunCtx}
       have hnc : ¬ Covered K.t cur := fun hc =>
         absurd (Value.field.inj (hc0.symm.trans (hiff_c.mpr hc))) zero_ne_one
       exact ⟨hp0, hnc, hnc, Or.inl ⟨hn0, rfl⟩⟩
-    | .other (m76 := m76) (v276 := v276) (m277 := m277) (cs86 := cs86) (cs288 := cs288)
+    | .other (x_st := x_st) (m76 := m76) (v276 := v276) (m277 := m277) (cs86 := cs86) (cs288 := cs288)
         (hne36 := hne0) (ev53 := ev53) (ev88 := ev88)
         (sg284 := sg) (ev_kkbmepwt := ev_cov) (op_uybassap := op1) (op_riujyiic := op2)
         (op_xgjbnmqg := op3) (ev290 := ev290) (hc323 := hc) .. =>
@@ -1243,23 +1243,24 @@ private theorem walk_path_spec_ext {K : FamRunCtx}
           subst hpb_h
           exact ⟨Heap.Extends.refl _, Ix.Cert.ownerOf cur c_cur, ⟨b_own, hown_rep, hown_eq⟩,
             Or.inr ⟨c_cur, hrec_cur, hproj, rfl⟩⟩
-        | .other (hv144 := hmk) (ev213 := ev_idxs) (op235 := op_s1) (ev199 := ev_has)
+        | .other (x_refs := x_refs) (v200 := v200) (v201 := v201) (m189 := m189) (m203 := m203)
+            (hv144 := hmk) (ev213 := ev_idxs) (op235 := op_s1) (ev199 := ev_has)
             (heq243 := hhas1) (op272 := op_s2) (ev249 := ev_lk) .. =>
           obtain ⟨ext_i, hidxs⟩ := Claim.const_idxs_of_spec hrep_cur ev_idxs
-          have hsub_eq : _ = _ := Except.ok.inj (op_s1.symm.trans op_s2)
+          have hsub_eq := Except.ok.inj (op_s1.symm.trans op_s2)
           rw [← hsub_eq] at ev_lk
           have hrf_list := repConstant_refs_eq_local (hmk ▸ hrep_cur)
           obtain ⟨refBs, hrefMap, hrefCore⟩ := repIxonAddrList_to_core hrf_list
           -- Extract field index `idxVal` from `ev_has` and `ev_lk`
-          have hex_idx : ∃ k : Nat, _ = Value.field (k : F) ∧
+          have hex_idx : ∃ k : Nat, v201 = Value.field (k : F) ∧
               k ∈ S0.usedRefIdxs c_cur ∧ k < 72057594037927936 := by
             -- `op_s1` gives `v201 = .field f`
-            cases hv201 : _ with
+            cases hv201 : v201 with
             | field f =>
               have hlt_f : f.val < 72057594037927936 := by
                 -- From `ev_lk : Lists::lookup`, `f.val < refBs.length = c_cur.refs.size < 2^56`
                 have ev_lk' : ObsFn Obs.W (Instance.mk "Lists::lookup" [.ptr (.array .field 32)]).symbol
-                    [_, .field f] _ _ _ _ := by
+                    [x_refs, .field f] m189 v276 m277 _ := by
                   rw [Obs.Names.«Lists::lookup<&[Field; 32]>».symbol]
                   simpa [hv201] using ev_lk
                 have hhref := RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy)
@@ -1273,21 +1274,20 @@ private theorem walk_path_spec_ext {K : FamRunCtx}
                 have hsz_lt := refs_size_lt_local hlen_cur hexact_cur
                 omega
               have ev_has' : ObsFn Obs.W "KernelClaim::g_list_has"
-                  [_, .field ((f.val : Nat) : F)] _ (.field 1) _ _ := by
+                  [v200, .field ((f.val : Nat) : F)] m203 (.field 1) m189 _ := by
                 simpa [hv201, ZMod.natCast_zmod_val f] using ev_has
               obtain ⟨-, hiff⟩ := Claim.g_list_has_spec (S0.usedRefIdxs c_cur) hlt_f hidxs ev_has'
               exact ⟨f.val, by rw [ZMod.natCast_zmod_val f], hiff.mp rfl, hlt_f⟩
             | tuple _ | construct _ _ _ | ptr _ _ =>
-              simp [evalBinOp] at op_s1
-              cases _ <;> simp [evalBinOp] at op_s1
+              cases x_st <;> simp [evalBinOp] at op_s1
           obtain ⟨k, hk_eq, hk_mem, hk_lt⟩ := hex_idx
           have ev_has' : ObsFn Obs.W "KernelClaim::g_list_has"
-              [_, .field (k : F)] _ (.field 1) _ _ := by
+              [v200, .field (k : F)] m203 (.field 1) m189 _ := by
             rwa [← hk_eq]
           obtain ⟨hm189, -⟩ := Claim.g_list_has_spec (S0.usedRefIdxs c_cur) hk_lt hidxs ev_has'
           subst hm189
           have ev_lk' : ObsFn Obs.W (Instance.mk "Lists::lookup" [.ptr (.array .field 32)]).symbol
-              [_, .field (k : F)] _ _ _ _ := by
+              [x_refs, .field (k : F)] m203 v276 m277 _ := by
             rw [Obs.Names.«Lists::lookup<&[Field; 32]>».symbol]
             rwa [← hk_eq]
           obtain ⟨⟨b_next, hget_b, hb_rep⟩, hm_lk⟩ :=
@@ -1303,7 +1303,7 @@ private theorem walk_path_spec_ext {K : FamRunCtx}
       obtain ⟨ext_sg, next, hnext, hstep_rel⟩ := hstep
       have ext_pre := (ext1.trans ext2).trans ext_sg
       obtain ⟨hm_cov, hbin_c, hiff_c⟩ :=
-        addr_covered_spec_ext hrc (ev290.heap_extends.trans ext_end)
+        addr_covered_spec_ext hrc (ev_cov.heap_extends.trans (ev290.heap_extends.trans ext_end))
           (S0.addr_mono ext_pre hcur) ev_cov
       subst hm_cov
       obtain ⟨hbin_p', hzero_p'⟩ := field_or_bool_spec hpb hbin_c op1 op2 op3
@@ -1456,7 +1456,7 @@ private theorem check_witness_spec_ext {K : FamRunCtx}
     have ext_all := ev_gc.heap_extends.trans (ext_wfb.trans (ev_ccr.heap_extends.trans ev_acp.heap_extends))
     exact ⟨ext_all, ⟨bs3, L1.Stream.mono (ev_ccr.heap_extends.trans ev_acp.heap_extends) hs3⟩,
       Or.inr ⟨hk2, hrec_kind⟩⟩
-  | .n3 (m570 := m570) (m685 := m685) (cs_frlxnmjz := cs_wfb) (cs687 := cs_sg) (cs_gufnlnhk := cs_ci)
+  | .n3 (m570 := m570) (v684 := v684) (m685 := m685) (cs_frlxnmjz := cs_wfb) (cs687 := cs_sg) (cs_gufnlnhk := cs_ci)
       (ev461 := ev_gc1) (ev_ndaajwbz := ev_wfb) (ev547 := ev_gc2) (ev582 := ev_gc3)
       (sg692 := sg) (ev717 := ev_eq) (heq740 := heq1) (ev_gwtfngxo := ev_ci)
       (ev_xxjagmga := ev_acp) (he742 := hr) (he743 := hh) (hc744 := hc) .. =>
@@ -1480,7 +1480,7 @@ private theorem check_witness_spec_ext {K : FamRunCtx}
     have hproj_step : ∃ (info : Ixon.ConstantInfo) (a_p : Bytes.Address),
         ((∃ n, info = .iPrj ⟨n, Core.ixAddr b_ib⟩) ∨
           (∃ ni nc, info = .cPrj ⟨ni, nc, Core.ixAddr b_ib⟩)) ∧
-        Bytes.RepAddressRef Core.addrTy _ a_p _ ∧
+        Bytes.RepAddressRef Core.addrTy m685 a_p v684 ∧
         Core.ixAddr a_p = Core.projAddr info ∧
         Hashed K.calls (Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩) := by
       match sg with
