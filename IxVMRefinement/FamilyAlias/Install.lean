@@ -33,19 +33,34 @@ set_option linter.unusedSimpArgs false
 
 universe u
 
-/-- **The alias's declared type reads as the target's**, when it is the target's type with the
-positions renamed back to the member's parameters, up to a renaming invisible to the reading. -/
+/-- **The alias's declared type reads as the target's**, when its positional renamed type is
+level-equivalent to the target's positional type, up to a renaming invisible to the reading. -/
 theorem aliasType_reads {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .anon}
     (m : EnvModel V E) {h : KKey → KKey} (hro : RenameOkPos m.acval E h)
-    {lps : List LevelParam} (hperm : lps.Perm (List.range lps.length))
-    {ty tyT : KExpr} (hty : posOf lps (ty.renameConsts h) = tyT) (ψ : LevelParam → Nat) :
-    denoteMeta m.acval E ψ 0 ty = denoteMeta m.acval E (posVal lps ψ) 0 tyT := by
-  rw [← hty, denoteMeta_posOf m hperm ψ 0, denoteMeta_renameConsts_pos hro]
+    {lps q : List LevelParam} (hperm : lps.Perm (List.range lps.length))
+    (hpermQ : q.Perm (List.range lps.length))
+    {ty tyT : KExpr} (hty : ExprLvEq (posOf lps (ty.renameConsts h)) (posOf q tyT))
+    (ψ : LevelParam → Nat) :
+    denoteMeta m.acval E ψ 0 ty =
+      denoteMeta m.acval E (Level.substFn ψ q (lps.map .param)) 0 tyT := by
+  calc denoteMeta m.acval E ψ 0 ty
+      = denoteMeta m.acval E ψ 0 (ty.renameConsts h) :=
+          (denoteMeta_renameConsts_pos hro ty 0).symm
+    _ = denoteMeta m.acval E (posVal lps ψ) 0 (posOf lps (ty.renameConsts h)) :=
+          (denoteMeta_posOf m hperm ψ 0 (ty.renameConsts h)).symm
+    _ = denoteMeta m.acval E (posVal lps ψ) 0 (posOf q tyT) :=
+          denoteMeta_of_exprLvEq hty 0
+    _ = denoteMeta m.acval E
+          (Level.substFn (posVal lps ψ) q ((List.range q.length).map .param)) 0 tyT := by
+          unfold posOf
+          exact Ix.Kernel.Model.denotePInstLevels m (posVal lps ψ) q
+            ((List.range q.length).map .param) 0 tyT
+    _ = denoteMeta m.acval E (Level.substFn ψ q (lps.map .param)) 0 tyT := by
+          rw [substFn_posVal_of_perm hperm hpermQ]
 
 /-- **Install a model alias with the member's own level parameters**: a definition at a fresh
 derived key, with parameters `lps`, value the target at `lps.map .param` and a declared type that
-reads as the target's type at the positional valuation. The model extends with the alias's leaf at
-`ψ` the target's at `posVal lps ψ`. -/
+reads as the target's type at the parameter-reindexed valuation. -/
 theorem installAliasPos {V : Type u} [Ix.Kernel.SetTheory V] {μ : CheckMode} {E : Env .anon}
     (mpE : EnvModelM V μ E) (hEE : Ix.Kernel.EtaFamiliesClosed E)
     {n : KKey} {d : Derived} {lps : List LevelParam} {ty : KExpr} {tgt : KKey}
@@ -54,25 +69,29 @@ theorem installAliasPos {V : Type u} [Ix.Kernel.SetTheory V] {μ : CheckMode} {E
     (hfresh : E.find? (auxKey n d) = none)
     (hnpt : ∀ T, auxKey n d ≠ Ix.Kernel.projTableName T)
     (hsrc : E.find? tgt = some ci)
-    (hlps : ci.toConstantVal.levelParams = List.range lps.length)
+    (hlps : ci.toConstantVal.levelParams.Perm (List.range lps.length))
     (htf : ty.hasFvar = false)
     (htp : ty.allLevelParamsDefined lps = true)
     (htr : ty.constsResolve E = true)
     (htb : ty.looseBVarsBounded 0 = true)
     (hty : ∀ ψ : LevelParam → Nat,
       denoteMeta mpE.base2.acval E ψ 0 ty =
-        denoteMeta mpE.base2.acval E (posVal lps ψ) 0 ci.toConstantVal.type) :
+        denoteMeta mpE.base2.acval E
+          (Level.substFn ψ ci.toConstantVal.levelParams (lps.map .param)) 0
+          ci.toConstantVal.type) :
     let c₀ : ConstantInfo .anon :=
       .defnInfo ⟨auxKey n d, lps, ty⟩ (.const tgt (lps.map .param)) .abbrev
     ∃ mp' : EnvModelM V μ ⟨c₀ :: E.consts⟩,
       mp'.base2.acval = acvalWith mpE.base2.acval c₀.name
-        (fun ψ => mpE.base2.acval tgt (posVal lps ψ)) ∧
+        (fun ψ => mpE.base2.acval tgt
+          (Level.substFn ψ ci.toConstantVal.levelParams (lps.map .param))) ∧
       ModelExt mpE mp' ∧
       Ix.Kernel.EtaFamiliesClosed ⟨c₀ :: E.consts⟩ ∧
       EnvExt E ⟨c₀ :: E.consts⟩ := by
   let mval_new : KExpr := .const tgt (lps.map .param)
   let c₀ : ConstantInfo .anon := .defnInfo ⟨auxKey n d, lps, ty⟩ mval_new .abbrev
-  let A : (LevelParam → Nat) → AnnotTerm := fun ψ => mpE.base2.acval tgt (posVal lps ψ)
+  let A : (LevelParam → Nat) → AnnotTerm :=
+    fun ψ => mpE.base2.acval tgt (Level.substFn ψ ci.toConstantVal.levelParams (lps.map .param))
   have hnres : Ix.Kernel.reservedBasisNames.contains c₀.name = false :=
     Ix.Kernel.reservedBasisNames_contains_auxKey n d
   have hmem : ci ∈ E.consts := Ix.Kernel.Semantics.Env.find?_mem hsrc
@@ -108,35 +127,44 @@ theorem installAliasPos {V : Type u} [Ix.Kernel.SetTheory V] {μ : CheckMode} {E
           (fun _ _ _ _ heq => nomatch heq)
           (fun _ heq => nomatch heq)
           (fun _ _ heq => nomatch heq)))
-        (fun ψ => mpE.base2.cval_closedL tgt (posVal lps ψ))
+        (fun ψ => mpE.base2.cval_closedL tgt
+          (Level.substFn ψ ci.toConstantVal.levelParams (lps.map .param)))
         hnres
         (fun _ heq => nomatch heq)
         (fun _ _ _ _ heq => nomatch heq))
-      (fun ψ k => mpE.base2.acval_closed tgt (posVal lps ψ) k)
+      (fun ψ k => mpE.base2.acval_closed tgt
+        (Level.substFn ψ ci.toConstantVal.levelParams (lps.map .param)) k)
       (fun ψ₁ ψ₂ hp => mpE.base2.acval_params tgt _ hsrc _ _
-        (fun p hpm => posVal_congr hp p (hlps ▸ hpm)))
-      (fun ψ ρ => mpE.base2.acval_wellDenoted tgt (posVal lps ψ) ρ)
-      (fun ψ ρ => mpE.acval_validV tgt (posVal lps ψ) ρ)
+        (substFn_lps_congr hlps hp))
+      (fun ψ ρ => mpE.base2.acval_wellDenoted tgt
+        (Level.substFn ψ ci.toConstantVal.levelParams (lps.map .param)) ρ)
+      (fun ψ ρ => mpE.acval_validV tgt
+        (Level.substFn ψ ci.toConstantVal.levelParams (lps.map .param)) ρ)
       ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
     · intro ψ
-      obtain ⟨ta, hta⟩ := mpE.type_reads _ hmem (posVal lps ψ)
+      obtain ⟨ta, hta⟩ := mpE.type_reads _ hmem
+        (Level.substFn ψ ci.toConstantVal.levelParams (lps.map .param))
       rw [← hty ψ] at hta
       exact ⟨ta, hcomp ψ ty hcbT hta⟩
     · intro ψ ta hta ρ
-      obtain ⟨ta₀, hta₀⟩ := mpE.type_reads _ hmem (posVal lps ψ)
+      obtain ⟨ta₀, hta₀⟩ := mpE.type_reads _ hmem
+        (Level.substFn ψ ci.toConstantVal.levelParams (lps.map .param))
       have hta₀' : denoteMeta mpE.base2.acval E ψ 0 ty = some ta₀ := by
         rw [hty ψ]; exact hta₀
       have htaEq : ta = ta₀ := Option.some.inj
         (hta.symm.trans (hcomp ψ ty hcbT hta₀'))
       rw [htaEq]
-      exact mpE.type_wellDenotedV _ hmem (posVal lps ψ) ta₀ hta₀ ρ
+      exact mpE.type_wellDenotedV _ hmem
+        (Level.substFn ψ ci.toConstantVal.levelParams (lps.map .param)) ta₀ hta₀ ρ
     · intro ψ ta hta ρ
-      obtain ⟨ta₀, hta₀⟩ := mpE.type_reads _ hmem (posVal lps ψ)
+      obtain ⟨ta₀, hta₀⟩ := mpE.type_reads _ hmem
+        (Level.substFn ψ ci.toConstantVal.levelParams (lps.map .param))
       have hta₀' : denoteMeta mpE.base2.acval E ψ 0 ty = some ta₀ := by
         rw [hty ψ]; exact hta₀
       have htaEq : ta = ta₀ := Option.some.inj
         (hta.symm.trans (hcomp ψ ty hcbT hta₀'))
-      have hm := mpE.mem_type _ hmem (posVal lps ψ) ta₀ hta₀ ρ
+      have hm := mpE.mem_type _ hmem
+        (Level.substFn ψ ci.toConstantVal.levelParams (lps.map .param)) ta₀ hta₀ ρ
       rw [hnm] at hm
       rw [htaEq]
       exact hm
@@ -145,16 +173,13 @@ theorem installAliasPos {V : Type u} [Ix.Kernel.SetTheory V] {μ : CheckMode} {E
       have hfind_t : (⟨c₀ :: E.consts⟩ : Env .anon).find? tgt = some ci :=
         Env.find?_cons_of_fresh hfresh hsrc
       have hlen_p : (lps.map Level.param).length = ci.toConstantVal.levelParams.length := by
-        rw [hlps]; simp
+        have hq := hlps.length_eq
+        simp only [List.length_range] at hq
+        simp [hq]
       simp only [mval_new]
       rw [denoteMeta, hfind_t]
       dsimp only
       rw [ite_eq_left hlen_p, show c₀.name = auxKey n d from rfl, acvalWith_ne hne_tgt]
-      have hgoal : some (mpE.base2.acval tgt
-          (Level.substFn ψ (List.range lps.length) (lps.map Level.param))) = some (A ψ) := rfl
-      first
-        | (rw [hlps]; done)
-        | (rw [hlps]; exact hgoal)
     · exact fun φ => natHeads_cons_offNat mpE
         (ne_of_notReserved hnres reserved_natName)
         (ne_of_notReserved hnres reserved_natZeroName)
@@ -193,7 +218,7 @@ theorem aliasEnv_cons {E : Env .anon} {h h' : KKey → KKey} (hA : AliasEnv E h)
     {ci : ConstantInfo .anon}
     (hperm : lps.Perm (List.range lps.length))
     (hfresh : E.find? k = none) (hsrc : E.find? tgt = some ci)
-    (hlps : ci.toConstantVal.levelParams = List.range lps.length)
+    (hlps : ci.toConstantVal.levelParams.Perm (List.range lps.length))
     (hk' : h' k = tgt) (hrest : ∀ x, x ≠ k → h' x = h x) :
     AliasEnv ⟨.defnInfo ⟨k, lps, ty⟩ (.const tgt (lps.map .param)) hint :: E.consts⟩ h' := by
   have hfresh0 : E.find? (ConstantInfo.defnInfo ⟨k, lps, ty⟩ (.const tgt (lps.map .param)) hint :
@@ -270,18 +295,19 @@ theorem foldInv_installAliasPos {V : Type u} [Ix.Kernel.SetTheory V] {E : Env .a
     (hfresh : E.find? (auxKey n d) = none)
     (hnpt : ∀ T, auxKey n d ≠ Ix.Kernel.projTableName T)
     (hsrc : E.find? tgt = some ci)
-    (hlps : ci.toConstantVal.levelParams = List.range lps.length)
+    (hlps : ci.toConstantVal.levelParams.Perm (List.range lps.length))
     (htf : ty.hasFvar = false)
     (htp : ty.allLevelParamsDefined lps = true)
     (htr : ty.constsResolve E = true)
     (htb : ty.looseBVarsBounded 0 = true)
     (hA : AliasEnv E h)
-    (hty : posOf lps (ty.renameConsts h) = ci.toConstantVal.type) :
+    (hty : ExprLvEq (posOf lps (ty.renameConsts h))
+      (posOf ci.toConstantVal.levelParams ci.toConstantVal.type)) :
     FoldInv V ⟨.defnInfo ⟨auxKey n d, lps, ty⟩ (.const tgt (lps.map .param)) .abbrev ::
       E.consts⟩ := by
   obtain ⟨⟨mp, hT⟩, hEE⟩ := hE.model
   obtain ⟨mp', -, hext, hEE', -⟩ := installAliasPos mp hEE hperm hfresh hnpt hsrc hlps htf htp
-    htr htb (fun ψ => aliasType_reads mp.base2 (renameOkPos_of_aliasEnv mp hA) hperm hty ψ)
+    htr htb (fun ψ => aliasType_reads mp.base2 (renameOkPos_of_aliasEnv mp hA) hperm hlps hty ψ)
   refine ⟨⟨⟨mp', hT.of_ext hext⟩, hEE'⟩, ?_⟩
   refine foldStoreInv_cons_defn hE.store hfresh hnpt ⟨htf, htp, htr, htb⟩ ⟨rfl, ?_, ?_, rfl⟩
   · show Expr.allLevelParamsDefined lps (Expr.const tgt (lps.map Level.param)) = true
@@ -309,12 +335,13 @@ inductive AliasGroup (env : Env .anon) : (KKey → KKey) → List (ConstantInfo 
       (⟨as ++ env.consts⟩ : Env .anon).find? (auxKey n d) = none →
       (∀ T, auxKey n d ≠ Ix.Kernel.projTableName T) →
       (⟨as ++ env.consts⟩ : Env .anon).find? tgt = some ci →
-      ci.toConstantVal.levelParams = List.range lps.length →
+      ci.toConstantVal.levelParams.Perm (List.range lps.length) →
       ty.hasFvar = false →
       ty.allLevelParamsDefined lps = true →
       ty.constsResolve (⟨as ++ env.consts⟩ : Env .anon) = true →
       ty.looseBVarsBounded 0 = true →
-      posOf lps (ty.renameConsts h) = ci.toConstantVal.type →
+      ExprLvEq (posOf lps (ty.renameConsts h))
+        (posOf ci.toConstantVal.levelParams ci.toConstantVal.type) →
       h' (auxKey n d) = tgt →
       (∀ x, x ≠ auxKey n d → h' x = h x) →
       AliasGroup env h'

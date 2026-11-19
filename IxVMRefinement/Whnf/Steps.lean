@@ -43,7 +43,7 @@ theorem whnf_family_step (c : ScopedCtx) (hc : ScopedCoreBase c) :
   | .try_nat_dispatch_prewhnf, _, _, _, _, _, ev, ih => try_nat_dispatch_prewhnf_step c ev ih
   | .prim_family, _, _, _, _, _, ev, ih => prim_family_step c hc ev ih
   | .try_prim_dispatch, _, _, _, _, _, ev, ih => try_prim_dispatch_step c hc ev ih
-  | .whnf_const_head, _, _, _, _, _, ev, ih => whnf_const_head_step c ev ih
+  | .whnf_const_head, _, _, _, _, _, ev, ih => whnf_const_head_step c hc ev ih
   | .lams_never, _, _, _, _, _, ev, ih => lams_never_step c ev ih
   | .projection_definition_info, _, _, _, _, _, ev, ih => projection_definition_info_step c ev ih
   | .nat_lit_to_ctor_or_self, _, _, _, _, _, ev, ih => nat_lit_to_ctor_or_self_step c hc ev ih
@@ -55,12 +55,12 @@ theorem whnf_family_step (c : ScopedCtx) (hc : ScopedCoreBase c) :
   | .whnf_struct_core, _, _, _, _, _, ev, ih => whnf_struct_core_step c ev ih
   | .whnf_struct_core_spine, _, _, _, _, _, ev, ih => whnf_struct_core_spine_step c ev ih
   | .whnf_struct_core_proj, _, _, _, _, _, ev, ih => whnf_struct_core_proj_step c ev ih
-  | .whnf_struct_core_const, _, _, _, _, _, ev, ih => whnf_struct_core_const_step c ev ih
+  | .whnf_struct_core_const, _, _, _, _, _, ev, ih => whnf_struct_core_const_step c hc ev ih
   | .whnf_nd, _, _, _, _, _, ev, ih => whnf_nd_step c ev ih
   | .whnf_nd_core, _, _, _, _, _, ev, ih => whnf_nd_core_step c ev ih
   | .whnf_nd_with_spine, _, _, _, _, _, ev, ih => whnf_nd_with_spine_step c ev ih
   | .whnf_nd_proj_head, _, _, _, _, _, ev, ih => whnf_nd_proj_head_step c ev ih
-  | .whnf_nd_const_head, _, _, _, _, _, ev, ih => whnf_nd_const_head_step c ev ih
+  | .whnf_nd_const_head, _, _, _, _, _, ev, ih => whnf_nd_const_head_step c hc ev ih
   | .red_iota, _, _, _, _, _, ev, ih => red_iota_step c hc ev ih
   | .iota_cmp, _, _, _, _, _, ev, ih => iota_cmp_step c ev ih
   | .iota_certs, _, _, _, _, _, ev, ih => iota_certs_step c ev ih

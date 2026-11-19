@@ -267,7 +267,7 @@ theorem twinTargetConcl_of_parts {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
     exact h
   obtain ⟨env₂, hrun, hstored, hmodel, hcomp, hrel⟩ :=
     twinTarget_of_facts (lim := lim) hF hblock hblk hnames hfresh₂ hmodel hinst hinv.companions
-      hrelW
+      (twinRecs_recNotKAt hSS hrb' hreads hblock hF.front hLd) hrelW
   exact ⟨blk, env₂, hreads, hrun, hstored, hmodel, hcomp, hrel⟩
 
 /-- **The twin's unit step from the target's conclusion at every handed environment**, and the

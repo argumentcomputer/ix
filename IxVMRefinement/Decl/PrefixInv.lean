@@ -415,7 +415,7 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
         refine ⟨⟨he1, by rw [eC]; exact he2, he3, he4, he5⟩, ?_⟩
         rw [eT, eC]
         exact ⟨(hext.towerSlotsAll_eq hT₁ _).trans huse.towers, huse.sort,
-          heta _ _ cvT cvc caps cnP cnF hT₁ he1 he2 hC₁ _ hext⟩
+          heta _ _ cvT cvc caps cnP cnF hT₁ he1 he2 hC₁ _ hext, huse.ctorHead_mono hext hC₁⟩
       etaIota := by
         intro pp ptr nl ty u blk h1 h2 cs1 pa b i m cvT cvc caps cnP cnF us l ev good hpa hld hb
           hfT hfC hmul hrec hsort hnz
@@ -426,7 +426,7 @@ theorem storedLoads_cons_value {c : Ctx} (h₁ : ScopedLoadFacts c.stored)
         refine ⟨⟨he1, by rw [eC]; exact he2, he3, he4, he5, he6⟩, ?_⟩
         rw [eT, eC]
         exact ⟨(hext.towerSlotsAll_eq hT₁ _).trans huse.towers, huse.sort,
-          heta _ _ cvT cvc caps cnP cnF hT₁ he1 he2 hC₁ _ hext⟩
+          heta _ _ cvT cvc caps cnP cnF hT₁ he1 he2 hC₁ _ hext, huse.ctorHead_mono hext hC₁⟩
       recordShape := h₁.recordShape
       inductBlock := by
         intro addr ptr h h' cs a b nl ty np ni nc u blk i ev _ res good ha hld hblk

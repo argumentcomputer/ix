@@ -270,10 +270,15 @@ theorem basis_etaIota :
   cases hpT
   cases hpC
   subst hm
-  refine ⟨⟨rfl, rfl, rfl, rfl, ZMod.val_zero.symm, rfl⟩, ⟨rfl, ⟨[], _, rfl, rfl⟩, ?_⟩⟩
-  intro d us' args ty' hlen hcl hinf
-  exact hη rfl rfl basisEnv_find_punitUnit basisEnv (Ix.Kernel.EnvExt.refl _) d us' args ty' hlen
-    hcl hinf
+  refine ⟨⟨rfl, rfl, rfl, rfl, ZMod.val_zero.symm, rfl⟩, ⟨rfl, ⟨[], _, rfl, rfl⟩, ?_, ?_⟩⟩
+  · intro d us' args ty' hlen hcl hinf
+    exact hη rfl rfl basisEnv_find_punitUnit basisEnv (Ix.Kernel.EnvExt.refl _) d us' args ty' hlen
+      hcl hinf
+  · intro cvc' hC'
+    have hC'' : basisEnv.find? (Ix.Kernel.Key.role .punitUnit) = some (.ctorInfo cvc' 0 0) := hC'
+    rw [basisEnv_find_punitUnit] at hC''
+    obtain ⟨rfl, -, -⟩ := Ix.Kernel.ConstantInfo.ctorInfo.inj (Option.some.inj hC'')
+    exact ⟨_, rfl⟩
 
 end
 

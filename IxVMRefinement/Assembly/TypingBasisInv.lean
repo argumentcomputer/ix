@@ -540,7 +540,9 @@ theorem basisEnv_companions {E : Ixon.Env} (hE : RecordsFor StoreInhabit.basisSt
         exact ⟨D, T, rfl, by rw [hF, hfn], htake, hdrop⟩
       next => simp at hfn
   ruleCtorHead := by
-    intro k cv mI rP rls rl cvj nP nF T us hf hrl hc hdom
+    intro k cv mI rP rls hf
+    left
+    intro rl cvj nP nF T us hrl hc hdom
     have h1 := List.all_eq_true.mp basisEnv_ruleHead _ (basisEnv_find_mem hf).1
     simp only [ruleHeadB, List.all_eq_true] at h1
     have hc' : basisEnv.find? rl.ctor = some (.ctorInfo cvj nP nF) := hc

@@ -75,9 +75,10 @@ private theorem coreEnvFacts_consInd {c : Ctx} {cv : ConstantVal .anon}
       (oldRec found) member fire (oldCtor stored)
   · intro name value major params rules parent levels found nonempty head
     exact facts.recMajorRecord name value major params rules parent levels (oldRec found) nonempty head
-  · intro name value major params rules rule constructor numParams numFields former levels found member stored head
-    exact facts.ruleCtorHead name value major params rules rule constructor numParams numFields former levels
-      (oldRec found) member (oldCtor stored) head
+  · intro name value major params rules found
+    exact (facts.ruleCtorHead name value major params rules (oldRec found)).imp
+      (fun hhead rule constructor numParams numFields former levels member stored head =>
+        hhead rule constructor numParams numFields former levels member (oldCtor stored) head) id
   · intro force value member
     exact extended.find (facts.quotBasis force value member)
   · intro name value major params rule found
