@@ -1362,6 +1362,18 @@ theorem payloadFacts_of_run (hC : CollisionFreeRun calls E₀)
         obtain ⟨h6, h77⟩ := hbounds g a h
         exact (hinv g h6 h77).1.notAxiomLike a c h }
 
+/-- **The payload's facts of a run** (`payloadFacts_of_run`), exported under
+`RemainingFamilyClauses.payload`. -/
+theorem RemainingFamilyClauses.payload (_hR : RemainingFamilyClauses calls bAddr t E₀)
+    (hC : CollisionFreeRun calls E₀) (hbd : IxVM.Consistency.Bounded calls)
+    (hb : BasisRowsLoaded E₀) (hbr : BasisRolesStored t) (hax : AxiomRolesDeclared t E₀)
+    (hpin : PreludePinned t) (hcheck : t.check = .ok ()) (hroots : RootsSafe t E₀)
+    (hstep : RunStepStores calls t E₀)
+    (hvalAll : ∀ k, ∀ r ∈ roleGroup k, RoleValidationIn calls bAddr t k r)
+    (hws : ∀ k, ∃ recs, GroupWalked calls bAddr t E₀ k recs) :
+    PayloadFacts t E₀ (runPayload calls bAddr t) :=
+  payloadFacts_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
+
 /-- **Global `payloadOps` below group 41**: groups 6..32 from `storeStepInv_all`, and groups
 33..40 vacuous by `payReach_empty_wf`. -/
 theorem payloadOps_of_run (hC : CollisionFreeRun calls E₀)

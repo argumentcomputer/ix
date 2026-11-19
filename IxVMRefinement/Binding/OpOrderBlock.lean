@@ -1431,7 +1431,7 @@ theorem groupReach_in_scan_wf {calls : List (Call F)} {bAddr : _root_.Address}
 
 /-! ## Discharging `blockSteps` and well-founded `payloadOps` -/
 
-/-- **`RemainingStoreClauses.blockSteps` of every run**: in groups 33 to 40, every reference
+/-- **Well-founded block operation order of every run**: in groups 33 to 40, every reference
 the group's walk follows is bound to no operation of the group or a later one. -/
 theorem blockSteps_of_run {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} (hC : CollisionFreeRun calls E₀)
