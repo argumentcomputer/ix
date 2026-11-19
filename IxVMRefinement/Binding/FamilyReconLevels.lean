@@ -37,9 +37,9 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Consistency
 open IxVM.Refinement.Core (W KExpr KLevel KKey kciEnum krrEnum krrListEnum addrTy addrListEnum
-  ixAddr S0)
+  ixAddr)
 open IxVM.Refinement.Binding
-open IxVM.Refinement.FamilyAlias (FamilyCallAtLim)
+open IxVM.Refinement.Typing.FamilyAlias (FamilyCallAtLim)
 open IxVM (F)
 
 set_option maxHeartbeats 4000000
@@ -343,10 +343,10 @@ private theorem buildUnivsOkTblGo_sound {ecx : Ix.Kernel.Reader.ECx .anon}
       (okAcc.push (exprUnivsLtGo univs n okAcc e)) (by simp [hsz]) ?_ i E_rd hs hok
     intro j E' hj hokj
     by_cases hlt : j < shareAcc.size
-    · rw [Array.getElem?_push_lt hlt] at hj
+    · rw [Array.getElem?_push_lt hlt, ← Array.getElem?_eq_getElem hlt] at hj
       have hlt' : j < okAcc.size := by omega
       have hgetd : (okAcc.push (exprUnivsLtGo univs n okAcc e)).getD j true = okAcc.getD j true := by
-        simp [Array.getD, hlt', Array.getElem_push_lt hlt']
+        simp [Array.getD, hlt', Nat.lt_succ_of_lt hlt']
       rw [hgetd] at hokj
       exact hinv j E' hj hokj
     · have hj_eq : j = shareAcc.size := by
