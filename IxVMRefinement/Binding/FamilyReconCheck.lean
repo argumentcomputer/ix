@@ -1454,7 +1454,7 @@ private theorem build_rec_type_heap_shape {rootCalls : List (Call F)}
           (.ptr (.enum kexprEnum) m_app.length) := by
         have h12 := hf4.trans ((hf3.mono ext_w3_end).trans
           ((hf2.mono ext_w2_end).trans (hf1.mono ext_w1_end)))
-        simpa [hlenMot, hlenMin, Nat.add_assoc] using h12
+        simpa [hlenMot, hlenMin0, m_app, m_bv0, Nat.add_assoc] using h12
       have hf_all : HeapForalls h' (dsP.length + es.length + tot + dsI.length + 1) r
           (.ptr (.enum kexprEnum) m_bv0.length) :=
         hf_all_maj.trans (.succ (loadValue_mono ext_maj_end ld_maj) (.zero _))
@@ -4487,8 +4487,9 @@ private theorem check_recs_pass3 {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
       refine ⟨st.ty, bodies, cbk, st.loaded_ty, ?_, hcbk_eq, ?_⟩
       · refine hev_bodies.mono fun f hf => ?_
         unfold ruleBodiesAt
-        simp only [ReconView.ofStore, hflat_eq ▸ st.flat_k, st.ek_addr.symm ▸ st.pInfo_at,
-          hflat_eq ▸ st.fop_eq, hcbk_eq]
+        have hind_k : (ReconView.ofStore t E₀).ind st.ek.addr = some (some st.pInfo) :=
+          st.ek_addr.symm ▸ st.pInfo_at
+        simp only [hflat_eq ▸ st.flat_k, hind_k, hflat_eq ▸ st.fop_eq, hcbk_eq]
         rw [st.rnp_eq]
         have hpm : peers.map ixAddr = recAddrs rb rs := by rwa [st.rba_addr] at hpeers_map
         rw [st.pba_addr, hpm] at hf
@@ -4548,7 +4549,7 @@ private structure CheckFamilyUnpack (calls : List (Call F)) (bAddr : _root_.Addr
   hoff : off ≤ 1
   hBlockElim : BlockElim t E₀ B off
   hbnl_d0 : ∀ a0 rest, as_t = a0 :: rest →
-    ∃ d0, indDataAt t E₀ (ixAddr a0) = some (some d0) ∧ bnl = d0.nlvls
+    ∃ d0, indDataAt t E₀ (ixAddr a0) = some (some d0) ∧ bnl = d0.nl
   has_t_len : as_t.length = msB.toList.length
   has_t_mem : ∀ i a, as_t[i]? = some a →
     ∃ m, msB.toList[i]? = some m ∧ ixAddr a = Core.projAddr (Core.Specs.Callees.memberProjInfo B i m)
@@ -4871,7 +4872,7 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
         rw [fval_natCast (by omega)] at this; exact hrs_ne this
       have hrs_neV : (Value.field (rs.size : F) : SourceValue F) ≠ .field 0 :=
         fun h => hrs_neF (Value.field.inj h)
-      rw [if_neg hrs_neV] at hz_nr; subst hz_nr
+      rw [ite_eq_right hrs_neV] at hz_nr; subst hz_nr
       cases v_vg with
       | field fvg =>
         simp only [evalBinOp, Except.ok.injEq] at op_1mvg
@@ -4889,7 +4890,7 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
           | field fv =>
             by_cases hfv : fv = 0
             · subst hfv; rfl
-            · rw [if_neg (fun (h : (Value.field fv : SourceValue F) = .field 0) => hfv (Value.field.inj h))] at heq_or
+            · rw [ite_eq_right (fun (h : (Value.field fv : SourceValue F) = .field 0) => hfv (Value.field.inj h))] at heq_or
               exact absurd (Value.field.inj heq_or) zero_ne_one
           | ptr _ _ | tuple _ | construct _ _ _ => simp [evalBinOp] at op_sub
         rw [hsub0] at op_sub
@@ -4925,6 +4926,28 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
       has_r_cr := repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext_840_1293 has_r,
       ev_cr := ev_cr
     }⟩
+
+private theorem originals_map_addr_cf {V : FlatView} {off : Nat} :
+    ∀ (as : List _root_.Address) (os : List FlatEntry),
+      originals V off as = some os → os.map (·.addr) = as := by
+  intro as
+  induction as with
+  | nil =>
+    intro os h; simp only [originals, Option.some.injEq] at h; subst h; rfl
+  | cons a rest ih =>
+    intro os h
+    simp only [originals] at h
+    cases hc : V.ci a with
+    | none => simp [hc] at h
+    | some opt =>
+      cases opt with
+      | none => simp [hc] at h
+      | some info =>
+        cases ho : originals V off rest with
+        | none => simp [hc, ho] at h
+        | some os' =>
+          simp only [hc, ho, Option.some.injEq] at h; subst h
+          simp [ih os' ho]
 
 /-- **Core family-check theorem** unifying `familyFlat_of_call` and `familyForm_of_call` in one
 pass over `KernelModeled::check_family`. -/
@@ -4986,8 +5009,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
   -- Step A: k = 0 => prim = B, BlockDerivedFlat
   obtain ⟨t0, trest, has_t_cons⟩ := List.exists_cons_of_ne_nil (show as_t ≠ [] by
     intro h0; rw [h0] at has_t_len; simp at has_t_len
-    have : msB[0]? = none := by rw [← Array.getElem?_toList, has_t_len]; rfl
-    rw [hms0] at this; cases this)
+    have := (Array.getElem?_eq_some_iff.mp hms0).1; omega)
   obtain ⟨a0, rrest, has_r_cons⟩ := List.exists_cons_of_ne_nil (show as_r ≠ [] by
     intro h0; rw [h0] at has_r_len; simp at has_r_len; exact hrs_ne has_r_len.symm)
   have ht0_addr : ixAddr t0 = memberAddr (ixAddr bB) 0 (.indc ind₀) := by
@@ -5000,9 +5022,9 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
     hrs_lt hnp_lt hoff hbnl_lt hms0 ht0_addr hrs0 ha0_addr
     (has_t_cons ▸ has_t_cr) (has_r_cons ▸ has_r_cr) hsub_cr ev_cr0
   have hprim_eq : prim = ixAddr bB := Option.some.inj (hfrp_cf.symm.trans (hfrp_B (ixAddr bB)))
-  subst hprim_eq
-  have hcprim_eq : cprim = cb := Option.some.inj (hcprim.symm.trans hcbE); subst hcprim_eq
-  have hmsp_eq : msp = msB := Ixon.ConstantInfo.muts.inj (hmsp.symm.trans hmsB); subst hmsp_eq
+  subst prim
+  have hcprim_eq : cprim = cb := Option.some.inj (hcprim.symm.trans hcbE); subst cprim
+  have hmsp_eq : msp = msB := Ixon.ConstantInfo.muts.inj (hmsp.symm.trans hmsB); subst msp
   -- BlockDerivedFlat from check_nested_aux_spec
   obtain ⟨n_der, hder⟩ := check_nested_aux_spec ht hwf hS hH hbd hR'agree hcl' hlv'
     hsub_cna (by unfold membersAt; simp only [hcbE, hmsB])
@@ -5028,7 +5050,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
     has_r_cr hsub_cr ev_cr0
   -- FamilyOfBlock
   have hos_len : os.length = msB.size := by
-    have hmap := originals_map_addr (FlatView.ofStore t E₀) os horig_cf
+    have hmap := originals_map_addr_cf _ os horig_cf
     have hlen1 := congrArg List.length hmap
     simp only [List.length_map] at hlen1
     rw [hlen1, ← blockRecurAddrs_eq_indcAddrs_of_all_indc (ixAddr bB) 0 msB.toList hall_indc]
@@ -5039,7 +5061,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
     record := hRec
     covers := by simp [hflat_len]
     originals := fun i m hm => by
-      have hmap := originals_map_addr (FlatView.ofStore t E₀) os horig_cf
+      have hmap := originals_map_addr_cf _ os horig_cf
       have hi_lt : i < os.length := by rw [hos_len]; exact (Array.getElem?_eq_some_iff.mp hm).1
       rw [List.getElem?_map, hflat_app, List.getElem?_append_left hi_lt, ← List.getElem?_map, hmap]
       rw [← blockRecurAddrs_eq_indcAddrs_of_all_indc (ixAddr bB) 0 msB.toList hall_indc,
@@ -5095,7 +5117,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
             indInfoAt_of_indDataAt hpInfo
           rw [hpa_eq] at hca
           have hca_eq := Option.some.inj (hca.symm.trans (hBlock.members j (.indc ind_j) hm_j))
-          rw [← hca_eq] at hci
+          rw [hca_eq] at hci
           simp only [memberProjection, Ixon.ConstantInfo.iPrj.injEq] at hci
           rw [hblk, ← hci]
         exact ⟨ty, d, Core.keyOf t (ixAddr pa), us, ixAddr pa, _, by simpa using hty, hd, hfn,
@@ -5121,8 +5143,8 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       obtain ⟨-, -, -, idx_e, ind_e', hget_e, he_mem⟩ := hos_props e he_os
       rw [he_mem] at hca_e
       have hca_eq := Option.some.inj (hca_e.symm.trans (hBlock.members idx_e (.indc ind_e') hget_e))
-      rw [← hca_eq] at hci_e
-      simp only [memberProjection, Ixon.ConstantInfo.iPrj.injEq] at hci_e; subst hci_e
+      rw [hca_eq] at hci_e
+      simp only [memberProjection, Ixon.ConstantInfo.iPrj.injEq] at hci_e; subst p_e
       have hcb_eq := Option.some.inj (hcb_e.symm.trans hcbE); subst hcb_eq
       have hms_eq := Ixon.ConstantInfo.muts.inj (hms_e.symm.trans hmsB); subst hms_eq
       have hi64 : idx_e.toUInt64.toNat = idx_e := by
@@ -5182,7 +5204,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       | none => rw [hct] at hctor; cases hctor
       | some ct =>
         rw [hct] at hctor
-        cases hld : loadedAt t (fun x => E₀.blobs.get? x) cb_e (blockSelf t p_e.block ms_e)
+        cases hld : loadedAt t (fun x => E₀.blobs[x]?) cb_e (blockSelf t p_e.block ms_e)
             ct.lvls.toNat (mutsRoot ms_e p_e.idx.toNat + 1 + ((c : Nat) : F)) ct.typ with
         | none => simp [hld] at hctor
         | some cty' =>
