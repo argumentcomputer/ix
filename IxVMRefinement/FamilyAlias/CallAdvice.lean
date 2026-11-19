@@ -410,15 +410,15 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
         injection hdv with _ _ hdvargs
         injection hdvargs with hdv'
         subst hdv'
-        obtain ⟨typPtr', valPtr', hdv2, -, -⟩ := hdefRep
+        obtain ⟨kVal, sVal, -, -, -, hdv2, hkindRep, hsafRep, _⟩ := hdefRep
         injection hdv2 with _ _ hargs2
         simp only [List.cons.injEq] at hargs2
         have hdk : d.kind = .defn := by
-          have hk := hargs2.1
-          cases d.kind <;> simp [L1.repDefKindVal] at hk ⊢
+          rw [← hargs2.1] at hkindRep
+          cases hk : d.kind <;> simp [Claim.RepDefKind, hk] at hkindRep ⊢
         have hds : d.safety = .safe := by
-          have hs := hargs2.2.1
-          cases d.safety <;> simp [L1.repDefSafetyVal] at hs ⊢
+          rw [← hargs2.2.1] at hsafRep
+          cases hs : d.safety <;> simp [Claim.RepDefinitionSafety, hs] at hsafRep ⊢
         obtain ⟨v, hld', -, tyPtr, valPtr, hintVal, rfl, -, -⟩ := hraw
         rw [hld] at hld'
         injection hld' with hveq
@@ -446,12 +446,12 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
         injection hdv with _ _ hdvargs
         injection hdvargs with hdv'
         subst hdv'
-        obtain ⟨typPtr', valPtr', hdv2, -, -⟩ := hdefRep
+        obtain ⟨kVal, sVal, -, -, -, hdv2, hkindRep, _⟩ := hdefRep
         injection hdv2 with _ _ hargs2
         simp only [List.cons.injEq] at hargs2
         have hdk : d.kind = .thm := by
-          have hk := hargs2.1
-          cases d.kind <;> simp [L1.repDefKindVal] at hk ⊢
+          rw [← hargs2.1] at hkindRep
+          cases hk : d.kind <;> simp [Claim.RepDefKind, hk] at hkindRep ⊢
         obtain ⟨v, hld', -, tyPtr, valPtr, hintVal, rfl, -, -⟩ := hraw
         rw [hld] at hld'
         injection hld' with hveq
