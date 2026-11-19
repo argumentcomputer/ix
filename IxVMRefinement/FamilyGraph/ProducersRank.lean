@@ -24,7 +24,7 @@ theorem topWalk_of_rankOrder {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨bAddr, hW, hG⟩ := h
   refine ⟨bAddr, ⟨hW.topLim, hW.table, hW.runStore, hW.hashedStored, hW.seedsTop, hW.record,
     ?_, ?_, hW.seedLogic, hW.seedNotInert, hW.checked, hW.refsNotInert, hW.refsNotBlock,
-    hW.safeRefs⟩, ⟨hG.seedsTop, hG.record, ?_, ?_, hG.members, hG.projMember, hG.standing,
+    hW.safeRefs, hW.quotBound⟩, ⟨hG.seedsTop, hG.record, ?_, ?_, hG.members, hG.projMember, hG.standing,
     hG.seedLogic⟩⟩
   · intro a x hT hu
     rcases hW.closed a x hT hu with ⟨hx, hr⟩ | hc

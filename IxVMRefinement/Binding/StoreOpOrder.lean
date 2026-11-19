@@ -174,7 +174,8 @@ theorem GroupReach.orderedListed (hC : CollisionFreeRun calls E₀) {g : Nat}
     rw [e] at hmem
     obtain ⟨y, hy, hya⟩ := List.mem_map.mp hmem
     exact ⟨recs, hcl, hord, y, hy, hya⟩
-  | @axiomRef r a' x hr hs had hu hnc =>
+  | @axiomRef r a' x hr hs had hu hns =>
+    have hnc := AlreadyStoredRole.not_covered hns
     obtain ⟨a₁, rawBytes, c, recs, had₁, hsz, hh, hblk, hde, hdeE, hcl, hord, hrefs⟩ :=
       RoleVal.ValidateRoleIn.axiom_refs_ordered
         (show RoleVal.ValidateRoleIn calls bAddr t g r from hval r hr)
@@ -195,7 +196,8 @@ theorem GroupReach.orderedListed (hC : CollisionFreeRun calls E₀) {g : Nat}
     · obtain ⟨y, hy, hya⟩ := List.mem_map.mp hin
       exact ⟨recs, hcl, hord, y, hy, hya⟩
     · exact absurd hcov hnc
-  | @ref a' x _ hu hnc ih =>
+  | @ref a' x _ hu hns ih =>
+    have hnc := AlreadyStoredRole.not_covered hns
     obtain ⟨recs, hcl, hord, y, hy, hya⟩ := ih
     obtain ⟨c, i, hc, hi, hx⟩ := hu
     have hrec := topRec_recordOf hC.hashedStored y
@@ -215,7 +217,8 @@ theorem GroupReach.orderedListed (hC : CollisionFreeRun calls E₀) {g : Nat}
     obtain ⟨r', hr', e, -⟩ := (hcl y hy).1 hp
     rw [hya] at e
     exact ⟨recs, hcl, hord, r', hr', e⟩
-  | @evidenceRef r arr thm x hr hm hthm hu hne hnc =>
+  | @evidenceRef r arr thm x hr hm hthm hu hne hns =>
+    have hnc := AlreadyStoredRole.not_covered hns
     have hv := hval r hr
     have hv' : RoleVal.ValidateRoleIn calls bAddr t g r := hv
     rcases evidence_specKind hv.wf hm with h2 | h5
@@ -352,11 +355,14 @@ theorem GroupReach.root_or_earlier {g : Nat} (hsteps : WalkStepsOrdered t E₀ g
         Ix.Cert.ownerOf x c = a := by
   cases h with
   | root hr _ had => exact Or.inl ⟨_, hr, had⟩
-  | axiomRef hr hs had hu hnc => exact Or.inr (Or.inl (haxs _ hr hs _ had _ hu hnc))
-  | ref hx hu hnc => exact Or.inr (Or.inl (hsteps.refs _ _ hx hu hnc))
+  | axiomRef hr hs had hu hns =>
+    exact Or.inr (Or.inl (haxs _ hr hs _ had _ hu (AlreadyStoredRole.not_covered hns)))
+  | ref hx hu hns =>
+    exact Or.inr (Or.inl (hsteps.refs _ _ hx hu (AlreadyStoredRole.not_covered hns)))
   | owner hx hc hp => exact Or.inr (Or.inr ⟨_, _, hx, hc, hp, rfl⟩)
-  | evidenceRef hr hm hthm hu hne hnc =>
-    exact Or.inr (Or.inl (hsteps.evidence _ hr _ _ _ hm hthm hu hne hnc))
+  | evidenceRef hr hm hthm hu hne hns =>
+    exact Or.inr (Or.inl (hsteps.evidence _ hr _ _ _ hm hthm hu hne
+      (AlreadyStoredRole.not_covered hns)))
 
 /-- **The block of a reached projection record holds a block record.** -/
 theorem GroupReach.owner_block (hC : CollisionFreeRun calls E₀) {g : Nat}
@@ -558,13 +564,21 @@ theorem groupStore_unitsLast (hC : CollisionFreeRun calls E₀) (hb : BasisRowsL
     exact ⟨c', i, ((groupStore_recordOf hb h6).mp hc').2, hi, hx⟩
   have hwf : t.wf = true := (hval r hr).wf
   have hgr : Ix.SpecDigest.groupOf r = g := groupOf_of_mem_roleGroup hr
-  have hnc : ¬ Claim.CoveredAt t (some (valLimit g)) a := by
-    rintro ⟨r', had', -, hlt⟩
-    have e : r' = r := addressOf_role_inj hwf had' had
-    subst e
-    have h1 := hlt (valLimit g) rfl
-    have h2 := valLimit_le g
-    omega
+  have hns : ¬ AlreadyStoredRole t g a := by
+    rintro (⟨r', had', -, hlt⟩ | ⟨r', had', hlt, -⟩ | ⟨r', had', -, hlt⟩)
+    · have e : r' = r := addressOf_role_inj hwf had' had
+      subst e
+      have h1 := hlt (valLimit g) rfl
+      have h2 := valLimit_le g
+      omega
+    · have e : r' = r := addressOf_role_inj hwf had' had
+      subst e
+      have h2 := valLimit_le g
+      omega
+    · have e : r' = r := addressOf_role_inj hwf had' had
+      subst e
+      omega
+  have hnc : ¬ Claim.CoveredAt t (some (valLimit g)) a := AlreadyStoredRole.not_covered hns
   have hnotE : OpEarlier t g a → r ∈ RoleOps.opRoles → False := fun h hop => by
     have h1 := h r had hop
     omega
@@ -585,7 +599,7 @@ theorem groupStore_unitsLast (hC : CollisionFreeRun calls E₀) (hb : BasisRowsL
   · rcases hkind with hop | hs
     · exact hnotE (hsteps.refs x a hra huE hnc) hop
     · exact stdAxiom_unreached hC hax hw hwf (Nat.le_of_eq hgr.symm) hs had
-        (GroupReach.ref hra huE hnc)
+        (GroupReach.ref hra huE hns)
   · obtain ⟨c', i, hc', hi, hx⟩ := huE
     have e : c' = p := Option.some.inj (hc'.symm.trans hp)
     rw [e, hrefs] at hx
@@ -593,9 +607,9 @@ theorem groupStore_unitsLast (hC : CollisionFreeRun calls E₀) (hb : BasisRowsL
   · rcases hkind with hop | hs'
     · exact hnotE (axiomSteps_ordered hC hval ro hro hs x hadx a huE hnc) hop
     · exact stdAxiom_unreached hC hax hw hwf (Nat.le_of_eq hgr.symm) hs' had
-        (GroupReach.axiomRef hro hs hadx huE hnc)
+        (GroupReach.axiomRef hro hs hadx huE hns)
   · rcases payAdds_cases hP hpay' with ⟨hpr, -⟩ | ⟨-, -, -, -, -, p, hp, -, -, hrefs, -⟩
-    · have hpa : PayReach t E₀ Pay g a := PayReach.ref hpr huE hnc
+    · have hpa : PayReach t E₀ Pay g a := PayReach.ref hpr huE hns
       rcases hkind with hop | hs
       · exact hnotE (hpay a hpa) hop
       · exact hnotP hs hpa
