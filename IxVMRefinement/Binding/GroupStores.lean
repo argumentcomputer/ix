@@ -5,38 +5,29 @@ import IxVMRefinement.Binding.StoreReads
 import IxVMRefinement.Assembly.TypingBasisInv
 import IxVMRefinement.Binding.RunFamilies
 import IxVMRefinement.Binding.StoreOpOrder
+import IxVMRefinement.Binding.PayloadClosed
+import IxVMRefinement.Binding.PayloadRanked
 
 /-! # The stores of a binding run: the sequence and what is left of its clauses
 
 `GroupStoresOfRun calls` (`IxVMRefinement.Binding.ClaimExport`) from the store sequence
 `groupStore t E₀ Pay` over the run's records at the run's payload (`runPayload`), the clauses
-proved of it in
-`IxVMRefinement.Binding.RunStores` and `IxVMRefinement.Binding.StoreClausesWalk`, and the
-clauses that are left, named in `RemainingStoreClauses`.
+proved of it across `RunStores`, `StoreClausesWalk`, `StoreOpOrder`, `OpOrderBlock`,
+`PayloadClosed`, and `PayloadRanked`, and the remaining family clauses (`RemainingFamilyClauses`:
+`familyFlat` and `familyForm`).
 
 * `basisRolesStored_of_pinned`: at a table that pins the prelude, the bound record of a walked
   role of a group below 6 is a basis row.
-* `RemainingStoreClauses t E₀ Pay`: what is not proved of the sequence: two facts of the
-  operation order the circuit does not check today (`blockSteps`, in the well-founded block;
-  `payloadOps`, the records the payload reaches), from which the clauses `opsOwn` and
-  `unitsLast` are proved (`IxVMRefinement.Binding.StoreOpOrder`). The reading clause of
-  `AdmitsReads` is proved (`groupStore_reads`). The safety
-  of the roots
-  (`RootsAndTheoremsSafe`, `rootsAndTheoremsSafe_of_run`; with `certRefs_of_run`, `RootsSafe`)
-  is proved of every run (`IxVMRefinement.Binding.RootSafety`), and the clauses `logic`
-  and `standing` are proved (`logic_of_rootsSafe`, `standing_of_rootsSafe`). The two facts
-  about the run's records the proved clauses read are proved
-  (`IxVMRefinement.Binding.StoreFieldsRun`):
-  the basis rows are records the run loaded as the basis store holds them (`basisRows_of_run`),
-  and the record a standard axiom is bound to is a safe axiom record (`axiomRoles_of_run`).
-* `RemainingStoreClausesOfRun calls`: `RemainingStoreClauses` at the run's records and payload,
-  and what is left of the run's family checks (`RemainingFamilyClauses`,
-  `IxVMRefinement.Binding.RunFamilies`), at every table the run's binding claim admits and
-  validates, in the alternative without a collision.
+* `RemainingStoreClausesOfRun calls`: what is left of the run's family checks
+  (`RemainingFamilyClauses`, `IxVMRefinement.Binding.RunFamilies`: `familyFlat` and `familyForm`),
+  at every table the run's binding claim admits and validates, in the alternative without a
+  collision.
 * `groupStoresOfRun_of_remaining`: `GroupStoresOfRun calls` from `RemainingStoreClausesOfRun`.
-  Every other clause of every group's admission is proved; the rank of a group is the walk's
-  (`walkRank`, `groupRanked_walk`) where the group has no payload, and the family form's
-  clauses (`ClosureFam`, `FamilyAdmits`) are given by `families_of_remaining`.
+  Every store-sequence, operation-order, payload-closure, ranking, claimed-family, run-facts, and
+  payload-checked clause of every group's admission is proved (`blockSteps_of_run`,
+  `payloadFacts_of_run`, `payloadOps_of_run`, `claimed_of_run`, `payloadChecked_of_run`,
+  `runFactsLeft_of_run`, `payloadRanked_of_run`), and the family form's clauses (`ClosureFam`,
+  `FamilyAdmits`) are assembled by `families_of_remaining`.
 -/
 
 set_option linter.unusedVariables false
@@ -71,41 +62,11 @@ theorem basisRolesStored_of_pinned {t : Ix.Kernel.RoleTable} (hpre : PreludePinn
     exact absurd hrec (by simp)
   | some lc => rfl
 
-/-- **What is left of the store sequence's clauses**, over the run's records `E₀`: two facts about
-the operation order that the circuit does not check today. With them the clauses `opsOwn` and
-`unitsLast` are proved at every group (`groupStore_opsOwn`, `groupStore_unitsLast`,
-`IxVMRefinement.Binding.StoreOpOrder`): below the well-founded block from
-`KernelRoles::assert_op_reached_in_order` in `KernelRoles::walk_ctx`, from limit 41 on because
-every operation is in force (`walkStepsOrdered_of_run`).
-
-Status: stated only; nothing proves either field of any run. (The safety of the roots, which
-this structure held as `rootsSafe`, is proved of every run: `rootsAndTheoremsSafe_of_run`; so is
-the reading clause it held as `reads`: `groupStore_reads`.)
-* `blockSteps`: in the well-founded block (groups 33 to 40, validated at limit 33, where
-  `walk_ctx`'s assertion is off), every reference the group's walk follows is bound to no
-  operation of the group or a later one (`WalkStepsOrdered`). Producer: the operation-order scan
-  (`KernelRoles::op_order_scan`) changed to go on through the anchors no validation walks and to
-  refuse a call at an operation neither in force nor needed, instead of entering it: its
-  regenerated observation (`RoleVal.OpOrderScanStep` in that form), the specifications of
-  `op_order_scan_except` and of the two call sites in `validate_op` and `validate_op_equations`,
-  and an induction showing that the scan follows every reference the walk follows up to a stop,
-  behind which the records were walked by an earlier group (`WalkStepsOrdered` at that group).
-* `payloadOps`: below limit 41, a record the group's payload reaches (`PayReach`: a family
-  check's family record, advice records, container recursors, and what they reference that is
-  not covered) is bound to no operation of the group or a later one. No walk and no scan of
-  today's circuit passes these records. Producer: the same scan extended to the records a
-  family's payload reaches. From limit 41 on it holds of every run (`payloadOpEarlier_all`). -/
-structure RemainingStoreClauses (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (Pay : PayloadRel) :
-    Prop where
-  blockSteps : ∀ g, 33 ≤ g → g ≤ 40 → WalkStepsOrdered t E₀ g
-  payloadOps : ∀ g, 6 ≤ g → g < 41 → ∀ x, PayReach t E₀ Pay g x → OpEarlier t g x
-
 /-- **What is left of the store sequence's clauses, for a run**: for a bounded run, at every
 table that bytes the run hashed admit at a binding address, binding every role, pinning the
 prelude and with every role of the 77 groups validated by the run, the run's records without a
-collision have `RemainingStoreClauses` at the run's payload (`runPayload`), and what is left of
-the run's family checks (`RemainingFamilyClauses`). The clauses are asked of bounded runs only
-(`Bounded calls`), the only runs the export consumes (`GroupStoresOfRun`). -/
+collision have `RemainingFamilyClauses` (`familyFlat` and `familyForm`). The clauses are asked of
+bounded runs only (`Bounded calls`), the only runs the export consumes (`GroupStoresOfRun`). -/
 def RemainingStoreClausesOfRun (calls : List (Call F)) : Prop :=
   IxVM.Consistency.Bounded calls →
   ∀ (a : _root_.Address) (tb : ByteArray) (t : Ix.Kernel.RoleTable),
@@ -114,15 +75,13 @@ def RemainingStoreClausesOfRun (calls : List (Call F)) : Prop :=
     AllBound t → PreludePinned t →
     (∀ g, g < 77 → ∀ r ∈ roleGroup g, RoleValidationIn calls a t g r) →
     CollisionFreeRun calls (Claim.runEnv ⟨a, tb⟩ (t := t) calls) →
-    RemainingStoreClauses t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) (runPayload calls a t) ∧
-      RemainingFamilyClauses calls a t (Claim.runEnv ⟨a, tb⟩ (t := t) calls)
+    RemainingFamilyClauses calls a t (Claim.runEnv ⟨a, tb⟩ (t := t) calls)
 
-/-- **The stores of a binding run, from what is left of the sequence's clauses**: for every run,
+/-- **The stores of a binding run, from what is left of its family clauses**: for every run,
 `GroupStoresOfRun calls` with the stores `groupStore t E₀ (runPayload calls a t)` over the run's
-records, at each group a rank of its new records (`GroupRanked`: the walk's rank where the group
-has no payload, `RemainingFamilyClauses.payloadRanked` where it has one), and the run's family
-selection (`runFamOf`, `runAdv`, `runCont`), if the run's records without a collision have
-`RemainingStoreClauses` and `RemainingFamilyClauses` (`RemainingStoreClausesOfRun`). -/
+records, the three-tier potential rank (`payloadRanked_of_run`), and the run's family selection
+(`runFamOf`, `runAdv`, `runCont`), given `RemainingStoreClausesOfRun` (`familyFlat` and
+`familyForm`). -/
 theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
     (hrem : RemainingStoreClausesOfRun calls) :
     GroupStoresOfRun calls := by
@@ -144,7 +103,7 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
   have hH := LoadedReads.hashedRecordsStored_of_walkedL6 hw0
   have hC : CollisionFreeRun calls (Claim.runEnv ⟨a, tb⟩ (t := t) calls) :=
     collisionFreeRun_of_no_collision hextra hcol hS hH
-  have hR := hrem hbd a tb t htb hadm hall hpin hval hC
+  have hRF := hrem hbd a tb t htb hadm hall hpin hval hC
   have hb := basisRows_of_run hC hpin hval
   have hax := axiomRoles_of_run hC hval
   have hbr : BasisRolesStored t := basisRolesStored_of_pinned hpin
@@ -158,22 +117,24 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
     · exact hval g hg r hr
     · rw [roleGroup_eq_nil (by rw [groups_length]; omega)] at hr
       cases hr
-  obtain ⟨hRS, hRF⟩ := hR
-  have hP := hRF.payload hC
   have hws : ∀ k, ∃ recs, GroupWalked calls a t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) k recs :=
     fun k => groupWalked_exists hH (hvalAll k)
+  have hstep := runStepStores_of_noCollision t hS hbd hextra hcol
+  have hP := payloadFacts_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
+  have hblock := blockSteps_of_run hC hvalAll hws
+  have hpayOps := payloadOps_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
+  have hclaimedAll := claimed_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
+  have hrunFactsAll := runFactsLeft_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
+  have hpayChkAll := payloadChecked_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
+  have hrankedAll := payloadRanked_of_run hC hbd hb hbr hax hpin hcheck hroots hstep hvalAll hws
   have hrk : ∀ g, ∃ r : _root_.Address → Nat, 6 ≤ g → g < 77 →
       GroupRanked t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) (runPayload calls a t) g
         (runFamOf calls a t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) g) (runAdv calls a t g)
         (runCont calls a t g) r := by
     intro g
     by_cases hr : 6 ≤ g ∧ g < 77
-    · by_cases hpay : ∃ B x, runPayload calls a t g B x
-      · obtain ⟨r, hr'⟩ := hRF.payloadRanked g hr.1 hr.2 hpay
-        exact ⟨r, fun _ _ => hr'⟩
-      · exact ⟨_, fun _ _ => groupRanked_walk hC hb hbr hax hP hws hr.1
-          (Classical.choose_spec (hws g)) (fun B x h => hpay ⟨B, x, h⟩)
-          (fun B rb h => runFamOf_payload h)⟩
+    · obtain ⟨r, hr'⟩ := hrankedAll g hr.1 hr.2
+      exact ⟨r, fun _ _ => hr'⟩
     · exact ⟨fun _ => 0, fun h6 h77 => absurd ⟨h6, h77⟩ hr⟩
   refine ⟨fun g => Classical.choose (hrk g),
     groupStore t (Claim.runEnv ⟨a, tb⟩ (t := t) calls) (runPayload calls a t),
@@ -199,24 +160,27 @@ theorem groupStoresOfRun_of_remaining {calls : List (Call F)}
         validated := fun _ _ => trivial
         kept := groupStore_kept hC hb hax hg6 hw
         opsOwn := groupStore_opsOwn hC hb hax hP hcheck hvalAll hg6 hw
-          (walkStepsOrdered_all hC hvalAll hRS.blockSteps g)
-          (payloadOpEarlier_all hRS.payloadOps g hg6)
+          (walkStepsOrdered_all hC hvalAll hblock g)
+          (payloadOpEarlier_all hpayOps g hg6)
         unitsLast := groupStore_unitsLast hC hb hax hP hpin hws hg6 (hvalAll g) hw
-          (walkStepsOrdered_all hC hvalAll hRS.blockSteps g)
-          (payloadOpEarlier_all hRS.payloadOps g hg6)
+          (walkStepsOrdered_all hC hvalAll hblock g)
+          (payloadOpEarlier_all hpayOps g hg6)
         evidenceRefs := groupStore_evidenceRefs hC hb hbr hax hP hws hg6 hw }
   · exact
       { blobs := groupStore_reads_blobs (Nat.lt_succ_of_le hg6)
         reads := groupStore_reads hcheck hC hb hbr hax hP hws hg6 }
-  · exact ⟨_, _, _, families_of_remaining (rk := fun g => Classical.choose (hrk g)) hC hb hax hRF
+  · exact ⟨_, _, _, families_of_remaining (rk := fun g => Classical.choose (hrk g)) hC hb hax hP hRF
       hcheck hroots hpin hg6 hg hvalAll (Classical.choose_spec (hws g))
-      (Classical.choose_spec (hrk g) hg6 hg) (payloadOpEarlier_all hRS.payloadOps g hg6)
+      (Classical.choose_spec (hrk g) hg6 hg) (payloadOpEarlier_all hpayOps g hg6)
       (groupStore_usedClosed_all hC hb hbr hax hP hws g hg6)
       (groupStore_usedClosed_all hC hb hbr hax hP hws (g + 1) (Nat.le_succ_of_le hg6))
-      (runStepStores_of_noCollision t hS hbd hextra hcol)
+      hstep
       (groupStore_unitsLast hC hb hax hP hpin hws hg6 (hvalAll g) (Classical.choose_spec (hws g))
-        (walkStepsOrdered_all hC hvalAll hRS.blockSteps g)
-        (payloadOpEarlier_all hRS.payloadOps g hg6))
-      (logic_of_rootsSafe hC hb hP hval hroots g hg6 hg)⟩
+        (walkStepsOrdered_all hC hvalAll hblock g)
+        (payloadOpEarlier_all hpayOps g hg6))
+      (logic_of_rootsSafe hC hb hP hval hroots g hg6 hg)
+      (hclaimedAll g hg6 hg)
+      (hrunFactsAll g hg6 hg (fun g => Classical.choose (hrk g)))
+      (hpayChkAll g hg6 hg)⟩
 
 end IxVM.Refinement.Binding

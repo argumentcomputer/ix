@@ -448,10 +448,11 @@ private partial def collectDependenciesAux (const : Lean.ConstantInfo)
     let acc ← goExpr consts acc val.type
     val.rules.foldlM (init := acc) fun acc rule => goExpr consts acc rule.rhs
 where
-  collectNames all acc := do
-    let visited ← get
-    all.foldlM (init := acc) fun acc name =>
-      if visited.contains name then pure acc
+  -- The visited set is read for each name: visiting one name can visit a later one of `all`
+  -- (a sibling of a mutual block), which must then not be visited and listed again.
+  collectNames (all : List Lean.Name) (acc : ConstList) : CollectM ConstList :=
+    all.foldlM (init := acc) fun acc name => do
+      if (← get).contains name then pure acc
       else
         let const := consts.find! name
         collectDependenciesAux const consts $ (name, const) :: acc

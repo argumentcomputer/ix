@@ -1,4 +1,5 @@
 import IxVMRefinement.FamilyGraph.Composition
+import IxVMRefinement.FamilyGraph.ProducersCallTree
 import IxVMRefinement.FamilyGraph.ProducersRank
 import IxVMRefinement.FamilyGraph.ProducersModeled
 import IxVMRefinement.FamilyGraph.InnerChecked
@@ -563,19 +564,25 @@ theorem familyOwnAdvice_of_obs {x_rc x_block x_rec_block r : SourceValue F} {h h
     rw [← e1] at hs1
     obtain ⟨bytes₂, hs2⟩ := get_count_stream
       (L1.Stream.mono (ev194.heap_extends.trans ev_ord.heap_extends) hs1) ev231
-    obtain ⟨n_f, advAs, bytes₃, -, -, hrep, -, -⟩ := Decl.get_addrs_spec hs2 ev266
-    have hadv := RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy)
-      (ev309.heap_extends.trans (ev344.heap_extends.trans
-        (ev403.heap_extends.trans ev435.heap_extends))) hrep
+    obtain ⟨n_f, advAs, bytes₃, -, -, hrep, hst3, -⟩ := Decl.get_addrs_spec hs2 ev266
+    obtain ⟨bytes₄, hs4⟩ := get_count_stream hst3 ev309
+    have e_s3_adv : Heap.Extends _ _ :=
+      ev309.heap_extends.trans (ev344.heap_extends.trans
+        (ev403.heap_extends.trans ev435.heap_extends))
+    have hadv := RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) e_s3_adv hrep
     have e_ws : Heap.Extends h _ :=
       e0.trans (ev126.heap_extends.trans (ev148.heap_extends.trans
         (ev194.heap_extends.trans (ev_ord.heap_extends.trans
           (ev231.heap_extends.trans (ev266.heap_extends.trans ev309.heap_extends))))))
-    exact ⟨advAs, .mk (path := hpath) (ev_ws := ev344) (ev_asb := ev403) (ev_adv := ev465)
+    exact ⟨advAs, .mk (path := hpath) (stream_s4 := ⟨bytes₄, hs4⟩) (ev_ws := ev344)
+      (ev_asb := ev403) (ev_adv := ev465)
       (ext_h_ws := e_ws) (ext_asb_adv := ev435.heap_extends) (advRep := hadv)
       (sub_ws := fun cl hcl => by rw [hc]; simp [hcl])
       (sub_asb := fun cl hcl => by rw [hc]; simp [hcl])
-      (sub_adv := fun cl hcl => by rw [hc]; simp [hcl])⟩
+      (sub_adv := fun cl hcl => by rw [hc]; simp [hcl])
+      (pl_stream := hst) (pl_first := check_family_first_get_address sg112 ev126 hc)
+      (ev_rb := ev148) (ext_s1_na := ev194.heap_extends.trans ev_ord.heap_extends)
+      (ev_na := ev231) (ev_ga := ev266) (ext_s3_adv := e_s3_adv)⟩
 
 /-- **The family check at a limit has its own advice list** (`familyOwnAdvice_of_obs` at the
 observed call). -/

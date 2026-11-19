@@ -504,13 +504,11 @@ def AtWalkFam (Pref : RunPref)
       P ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ R famOf rank
 
 /-- **What the graph row and the inner records are owed at the witness with its stored
-families**, at the twin preference `Pref`: the run's facts the graph reads (`BatchGives`) and the
-inner records' facts (`InnerOwed`). The stored twins' field (`StoredTwinField`) is not owed: it
-is the witness's map (`storedTwinField_of_block`) at the stored twins' blocks, whose reads of
-the witness (`StoredTwinReads`) are proved at the walk's step store
-(`storedTwinReads_of_walk`). -/
+families**, at the twin preference `Pref`: only the run's facts the graph reads (`BatchGives`).
+Both `InnerOwed` (`innerOwed_of_walk`) and the stored twins' field (`storedTwinField_of_block` via
+`storedTwinReads_of_walk`) are proved unconditionally at the walk. -/
 def FamilyGraphInnerOwedFam (Pref : RunPref) : Prop :=
-  AtWalkFam.{u} Pref fun K _ _ _ => BatchGives K ∧ InnerOwed K
+  AtWalkFam.{u} Pref fun K _ _ _ => BatchGives K
 
 /-- **The graph row with the inner records at the witness with its stored families, from what
 they are owed**: as `familyGraphRowInner_of_owed`, the stored twins' field from the map. -/
@@ -518,7 +516,7 @@ theorem familyGraphRowInnerFam_of_owed {Pref : RunPref} (h : FamilyGraphInnerOwe
     FamilyGraphRowInnerFam.{u} := by
   intro calls t seeds E₀ lim Top rank hWalk R envT hshape famOf hSF hagree hstore
   obtain ⟨bAddr, hW, hG⟩ := hWalk
-  obtain ⟨hB, hIO⟩ :=
+  have hB :=
     h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape famOf hSF hagree hstore
   obtain ⟨E, hctx⟩ := hstore
   have hreads : StoredTwinReads
@@ -535,7 +533,7 @@ theorem familyGraphRowInnerFam_of_owed {Pref : RunPref} (h : FamilyGraphInnerOwe
   have hWalk' : Claim.TopWalk calls t seeds E₀ lim Top rank' :=
     topWalk_of_edges ⟨bAddr, hW, hG⟩ hR.closed hR.owner
   exact ⟨rank', _, _, _, _, hWalk', hFR, bAddr, innerChecked_of_gives hWalk' hFR
-    (FamRunCtx.checks_of _ hB) (innerGives_of_owed hW hG hB hshape hIO)⟩
+    (FamRunCtx.checks_of _ hB) (innerGives_of_owed hW hG hB hshape (innerOwed_of_walk hW))⟩
 
 /-- **Row `familyGraph` with the inner records at the witness with its stored families, with what
 the twin step reads of the run's choices**: `FamilyGraphRowInnerFam`'s conclusion at one binding
@@ -569,7 +567,7 @@ theorem familyGraphRowInnerFamT_of_owed {Pref : RunPref} (h : FamilyGraphInnerOw
     FamilyGraphRowInnerFamT.{u} Pref := by
   intro calls t seeds E₀ lim Top rank hWalk R envT hshape famOf hSF hagree hstore
   obtain ⟨bAddr, hW, hG⟩ := hWalk
-  obtain ⟨hB, hIO⟩ :=
+  have hB :=
     h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape famOf hSF hagree hstore
   obtain ⟨E, hctx⟩ := hstore
   have hreads : StoredTwinReads
@@ -586,7 +584,7 @@ theorem familyGraphRowInnerFamT_of_owed {Pref : RunPref} (h : FamilyGraphInnerOw
   have hWalk' : Claim.TopWalk calls t seeds E₀ lim Top rank' :=
     topWalk_of_edges ⟨bAddr, hW, hG⟩ hR.closed hR.owner
   exact ⟨rank', _, _, _, _, bAddr, hWalk', hFR, innerChecked_of_gives hWalk' hFR
-    (FamRunCtx.checks_of _ hB) (innerGives_of_owed hW hG hB hshape hIO),
+    (FamRunCtx.checks_of _ hB) (innerGives_of_owed hW hG hB hshape (innerOwed_of_walk hW)),
     FamRunCtx.checks_of _ hB, hblock, fun B rb rb' hf ht => FamRunCtx.twin_canonical hf ht⟩
 
 /-! ## The public statement with the typing half at the witness with its stored families -/
@@ -681,8 +679,9 @@ stored conjunct from the restated row at the witness's selected record
 (`StoredFamilies.flat`), their form (`StoredFormAt`) and the stored twins' blocks the graph row
 exports. -/
 theorem familyStepsFam_of_graphInnerT {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    {Pref : RunPref} {RFormS : StoredFormPred}
-    (familyGraph : FamilyGraphRowInnerFamT.{u} Pref) (storedForm : StoredFormAt.{u} RFormS)
+    {RFormS : StoredFormPred}
+    (familyGraph : FamilyGraphRowInnerFamT.{u} (fun _ _ t E₀ _ B r => RFormS t E₀ B r))
+    (storedForm : StoredFormAt.{u} RFormS)
     (innerSteps : InnerStepsChecked.{u} L) (familyBlock : FamilyBlockRow.{u} L)
     (familyTwin : TwinFamily.FamilyTwinRowFam.{u} RFormS L)
     (standaloneDefinition : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
@@ -705,7 +704,7 @@ theorem familyStepsFam_of_graphInnerT {L : Ix.Kernel.Env .anon → NativeFam .an
     (calls : List (Call F)) :
     FamilyStepsFam.{u} L calls (Claim.TopWalk calls) := by
   intro t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree hstore
-  obtain ⟨rank, fam, twin, adv, Inner, bAddr, hWalk, hFR, hIC, -, hblock, -⟩ :=
+  obtain ⟨rank, fam, twin, adv, Inner, bAddr, hWalk, hFR, hIC, -, hblock, htwin_canon⟩ :=
     familyGraph calls t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree hstore
   exact ⟨rank, fam, twin, adv, Inner, hWalk, hFR.graph,
     topUnitSteps_family standaloneDefinition standaloneTheoremOrOpaque standaloneRecursor
@@ -713,7 +712,8 @@ theorem familyStepsFam_of_graphInnerT {L : Ix.Kernel.Env .anon → NativeFam .an
     innerSteps calls t seeds E₀ lim Top rank hWalk R envT fam twin adv Inner bAddr hFR hIC,
     fun E => familyBlock calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR,
     fun E hctx A c B rb crb hW hc hlog htw hrb hcrb =>
-      TwinFamily.familyTwinStep_graph_of_row familyTwin hWalk hFR hctx hW hc hlog htw hrb hcrb,
+      TwinFamily.familyTwinStep_graph_of_row familyTwin hWalk hFR hctx hW hc hlog htw hrb hcrb
+        (htwin_canon B rb A hrb htw).1 (htwin_canon B rb A hrb htw).2,
     TwinFamily.storedTwinSteps_of (TwinFamily.storedTwinStepFam_of_row familyTwin) hWalk hFR
       ⟨famOf, hSF, hSF.flat, storedForm t R envT famOf hshape hSF⟩ hblock⟩
 
@@ -727,7 +727,7 @@ theorem circuitComposed_of_partsFamInnerWT
     {Fam : List (Call F) → BRun → Ix.Kernel.RoleTable → Nat → Ixon.Env → Ixon.Env →
       (_root_.Address → Option _root_.Address) → (_root_.Address → _root_.Address → Prop) →
       (_root_.Address → _root_.Address → Prop) → Prop}
-    {Pref : RunPref} {RFormS : StoredFormPred}
+    {RFormS : StoredFormPred}
     (bindingClaimExport :
       SourceSoundBounded fun calls d => BindingClaimExportObs (Run calls) calls d)
     (basisGroups : ∀ calls, BasisOverW.{u} L (Run calls))
@@ -741,7 +741,8 @@ theorem circuitComposed_of_partsFamInnerWT
       ∀ calls, AtGroups (Run calls) (RoleUnitStepOverW.{u} (· ∈ RoleOps.opRoles) L))
     (standardAxiomRoleUnit :
       ∀ calls, AtGroups (Run calls) (RoleUnitStepOverW.{u} (· ∈ standardAxioms) L))
-    (familyGraph : FamilyGraphRowInnerFamT.{u} Pref) (storedForm : StoredFormAt.{u} RFormS)
+    (familyGraph : FamilyGraphRowInnerFamT.{u} (fun _ _ t E₀ _ B r => RFormS t E₀ B r))
+    (storedForm : StoredFormAt.{u} RFormS)
     (innerSteps : InnerStepsChecked.{u} L) (familyBlock : FamilyBlockRow.{u} L)
     (familyTwin : TwinFamily.FamilyTwinRowFam.{u} RFormS L)
     (standaloneDefinition : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>

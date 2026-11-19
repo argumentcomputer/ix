@@ -37,6 +37,7 @@ inductive FamilyOwnAdvice (x_rc x_block x_rec_block : SourceValue F) (h : Heap F
       (path : «KernelModeled::check_family».Path x_rc x_block x_rec_block h r h' calls)
       (m_ws : Heap F) (x_s4 x_nw x_outside x_s5 : SourceValue F) (m_ws' : Heap F)
       (cs_ws : List (Call F))
+      (stream_s4 : ∃ bs : List UInt8, Bytes.RepByteStream byteListEnum m_ws bs x_s4)
       (ev_ws : ObsFn Obs.W "KernelModeled::check_witnesses" [x_rc, x_block, x_s4, x_nw]
         m_ws (.tuple [x_outside, x_s5]) m_ws' cs_ws)
       (wset : SourceValue F) (m_asb : Heap F) (cs_asb : List (Call F))
@@ -53,6 +54,21 @@ inductive FamilyOwnAdvice (x_rc x_block x_rec_block : SourceValue F) (h : Heap F
       (sub_ws : ∀ cl ∈ cs_ws, cl ∈ calls)
       (sub_asb : ∀ cl ∈ cs_asb, cl ∈ calls)
       (sub_adv : ∀ cl ∈ cs_adv, cl ∈ calls)
+      (v_pl : SourceValue F) (m_pl : Heap F) (bytes_pl : List UInt8)
+      (pl_stream : Bytes.RepByteStream byteListEnum m_pl bytes_pl v_pl)
+      (pl_first : calls.find? (fun cl => cl.name == "IxonDeserialize::get_address") =
+        some ⟨"IxonDeserialize::get_address", [v_pl], m_pl⟩)
+      (x_rb x_s1 : SourceValue F) (m_s1 : Heap F) (cs_rb : List (Call F))
+      (ev_rb : ObsFn Obs.W "IxonDeserialize::get_address" [v_pl] m_pl (.tuple [x_rb, x_s1])
+        m_s1 cs_rb)
+      (m_na : Heap F) (x_na x_s2 : SourceValue F) (m_s2 : Heap F) (cs_na : List (Call F))
+      (ext_s1_na : Heap.Extends m_s1 m_na)
+      (ev_na : ObsFn Obs.W "KernelModeled::get_count" [x_s1] m_na (.tuple [x_na, x_s2])
+        m_s2 cs_na)
+      (x_s3 : SourceValue F) (m_s3 : Heap F) (cs_ga : List (Call F))
+      (ev_ga : ObsFn Obs.W "KernelModeled::get_addrs" [x_s2, x_na] m_s2 (.tuple [x_advice, x_s3])
+        m_s3 cs_ga)
+      (ext_s3_adv : Heap.Extends m_s3 m_adv)
 
 /-- The family check's unfolding with its own advice list is the family check's unfolding. -/
 theorem FamilyOwnAdvice.path {x_rc x_block x_rec_block : SourceValue F} {h : Heap F}
@@ -86,12 +102,15 @@ theorem FamilyOwnAdvice.walk {x_rc x_block x_rec_block : SourceValue F} {h : Hea
       Heap.Extends h m ∧ RepList addrListEnum (Bytes.RepAddressRef addrTy) m advAs xadv ∧
       ObsFn Obs.W "KernelModeled::check_advice_records" [x_rc, xadv, seen, wset] m v m' cs₁ ∧
       ∀ cl ∈ cs₁, cl ∈ calls := by
-  obtain ⟨_, _, _, _, _, _, _, _, ev_ws, wset, _, _, ev_asb, m_adv, m_adv', x_advice, v_adv, cs_adv,
-    ev_adv, ext_h_ws, ext_asb_adv, advRep, _, _, sub_adv⟩ := w
-  exact ⟨m_adv, m_adv', x_advice, .construct Names.«RBTreeMap::RBTreeMap<Field>» "Nil" [],
-    wset, v_adv, cs_adv,
-    ext_h_ws.trans (ev_ws.heap_extends.trans (ev_asb.heap_extends.trans ext_asb_adv)),
-    advRep, ev_adv, sub_adv⟩
+  match w with
+  | .mk (ev_ws := ev_ws) (wset := wset) (ev_asb := ev_asb) (m_adv := m_adv) (m_adv' := m_adv')
+      (x_advice := x_advice) (v_adv := v_adv) (cs_adv := cs_adv) (ev_adv := ev_adv)
+      (ext_h_ws := ext_h_ws) (ext_asb_adv := ext_asb_adv) (advRep := advRep)
+      (sub_adv := sub_adv) .. =>
+    exact ⟨m_adv, m_adv', x_advice, .construct Names.«RBTreeMap::RBTreeMap<Field>» "Nil" [],
+      wset, v_adv, cs_adv,
+      ext_h_ws.trans (ev_ws.heap_extends.trans (ev_asb.heap_extends.trans ext_asb_adv)),
+      advRep, ev_adv, sub_adv⟩
 
 /-- **An advice record listed by a family check itself**: an address of the family check's own
 advice list. -/
