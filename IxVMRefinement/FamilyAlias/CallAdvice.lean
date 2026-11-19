@@ -398,6 +398,7 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
     injection hv_c with _ _ hargs_c
     simp only [List.cons.injEq] at hargs_c
     rw [← hargs_c.1] at hinfoRep
+    unfold L1.GetCIRawResult at hraw
     -- Case split on `sg`: only `Defn_Definition_Safe` and `Defn_Theorem` match `tag ∈ {Defn, Thm}`
     match sg with
     | .Defn_Definition_Safe (hv81 := hv81) (ev210 := evRc) (hc227 := hcsg) .. =>
@@ -434,7 +435,7 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
         exact ⟨c, d, hrec, hinfo, fun _ => hdk, fun ht => absurd (htagEq.symm.trans ht) (by decide),
           hlog, Or.inl ⟨rfl, Or.inl ⟨d, hinfo⟩⟩, hrc_lim⟩
       | axio _ | quot _ | recr _ | muts _ | dPrj _ | iPrj _ | cPrj _ | rPrj _ =>
-        rw [hinfo] at hinfoRep; obtain ⟨_, hv, _⟩ := hinfoRep; cases hv
+        rw [hinfo] at hinfoRep; obtain ⟨_, hv, _⟩ := hinfoRep; simp at hv
     | .Defn_Definition_other (heq258 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
     | .Defn_Theorem (hv81 := hv81) (ev321 := evRc) (hc338 := hcsg) .. =>
       rw [hv81] at hinfoRep
@@ -467,51 +468,53 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
         exact ⟨c, d, hrec, hinfo, fun ht => absurd (htagEq.symm.trans ht) (by decide), fun _ => hdk,
           hlog, Or.inl ⟨rfl, Or.inl ⟨d, hinfo⟩⟩, hrc_lim⟩
       | axio _ | quot _ | recr _ | muts _ | dPrj _ | iPrj _ | cPrj _ | rPrj _ =>
-        rw [hinfo] at hinfoRep; obtain ⟨_, hv, _⟩ := hinfoRep; cases hv
+        rw [hinfo] at hinfoRep; obtain ⟨_, hv, _⟩ := hinfoRep; simp at hv
     | .Defn_Opaque (heq372 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
     | .Recr (hv403 := hv403) .. =>
       rw [hv403] at hinfoRep
       cases hinfo : c.info with
       | recr rc =>
         rw [hinfo] at hraw
-        obtain ⟨v, hld', -, -, -, -, -, -, -, -, -, -, -, -, hveq, -⟩ := hraw
+        obtain ⟨v, hld', hval⟩ := hraw
+        obtain ⟨-, -, -, -, -, -, _, _, _, _, -, -, hveq, -⟩ := hval
         rw [hld] at hld'
         injection hld' with hvv
         rw [← hvv] at hveq
         rcases htag with rfl | rfl <;> simp [Core.kciEnum] at hveq
       | axio _ | defn _ | quot _ | muts _ | dPrj _ | iPrj _ | cPrj _ | rPrj _ =>
-        rw [hinfo] at hinfoRep; obtain ⟨_, hv, _⟩ := hinfoRep; cases hv
+        rw [hinfo] at hinfoRep; obtain ⟨_, hv, _⟩ := hinfoRep; simp at hv
     | .Muts (hv598 := hv598) .. =>
       rw [hv598] at hinfoRep
       cases hinfo : c.info with
       | muts _ => rw [hinfo] at hraw; exact hraw.elim
       | axio _ | defn _ | quot _ | recr _ | dPrj _ | iPrj _ | cPrj _ | rPrj _ =>
-        rw [hinfo] at hinfoRep; obtain ⟨_, hv, _⟩ := hinfoRep; cases hv
+        rw [hinfo] at hinfoRep; obtain ⟨_, hv, _⟩ := hinfoRep; simp at hv
     | .IPrj (hv790 := hv790) .. =>
       rw [hv790] at hinfoRep
       cases hinfo : c.info with
       | iPrj p =>
         rw [hinfo] at hraw
-        obtain ⟨-, _, _, _, _, v, -, -, -, -, -, -, hld', -, -, -, -, -, -, -, hveq, -⟩ := hraw
+        obtain ⟨-, _, _, _, _, v, -, -, -, -, -, -, hld', hval⟩ := hraw
+        obtain ⟨-, -, -, -, -, _, _, _, -, -, hveq, -⟩ := hval
         rw [hld] at hld'
         injection hld' with hvv
         rw [← hvv] at hveq
         rcases htag with rfl | rfl <;> simp [Core.kciEnum] at hveq
       | axio _ | defn _ | quot _ | recr _ | muts _ | dPrj _ | cPrj _ | rPrj _ =>
-        rw [hinfo] at hinfoRep; obtain ⟨_, hv, _⟩ := hinfoRep; cases hv
+        rw [hinfo] at hinfoRep; obtain ⟨_, hv, _⟩ := hinfoRep; simp at hv
     | .CPrj (hv869 := hv869) .. =>
       rw [hv869] at hinfoRep
       cases hinfo : c.info with
       | cPrj p =>
         rw [hinfo] at hraw
-        obtain ⟨-, -, _, _, _, _, _, v, -, -, -, -, -, -, -, hld', -, -, -, -, -, -, -, -,
-          hveq, -⟩ := hraw
+        obtain ⟨-, -, _, _, _, _, _, v, -, -, -, -, -, -, -, hld', hval⟩ := hraw
+        obtain ⟨-, -, -, -, -, _, _, _, -, -, hveq, -⟩ := hval
         rw [hld] at hld'
         injection hld' with hvv
         rw [← hvv] at hveq
         rcases htag with rfl | rfl <;> simp [Core.kciEnum] at hveq
       | axio _ | defn _ | quot _ | recr _ | muts _ | dPrj _ | iPrj _ | rPrj _ =>
-        rw [hinfo] at hinfoRep; obtain ⟨_, hv, _⟩ := hinfoRep; cases hv
+        rw [hinfo] at hinfoRep; obtain ⟨_, hv, _⟩ := hinfoRep; simp at hv
 
 /-- **Type-checking witness extracted from `CheckedLimAt` on a safe standalone `Defn` or `Thm`**:
 gives the canonical annotated type `ty'`, its level scope, its exact representation at the second
@@ -849,7 +852,7 @@ theorem advice_stored_defn_facts {L : Ix.Kernel.Env .anon → NativeFam .anon �
         exact ⟨cvm, mval, hint, hfind2, hperm_n, hlvEq, htm2_ex, stype, u, hinf, hred⟩
       · rw [hv1eq] at hv1'
         injection hv1' with _ htag _; exact absurd htag (by decide)
-    | quot .. =>
+    | quot _ _ =>
       rcases W.hv₁ with ⟨_, _, _, hv1eq⟩ | ⟨_, hv1eq⟩ <;>
         (rw [hv1eq] at hv1'; injection hv1' with _ htag _; exact absurd htag (by decide))
   | _ => simp [kciEnum] at hv2
