@@ -135,9 +135,10 @@ theorem twinRule {env envSelf : Env md} {f : Key md → Key md} {recName : Key m
     hk, hblind, heta, hplain, hnested, rhsG, hwC, hwW, hgen⟩ := h
   refine ⟨hctor, hnf, hbv, hfv, M.annot hann, hlp, hres, hlf, hctorC, hnfC, hnp, hfire,
     hk, hblind, heta, hplain, hnested, rhsG, hwC, hwW, ?_⟩
-  rcases hgen with heq | ⟨hfvG, hlpG, hresG, hbvG, ty, hi⟩
+  rcases hgen with heq | ⟨hfvG, hlpG, hresG, hbvG, ty, hi⟩ | hmatch
   · exact Or.inl heq
-  · exact Or.inr ⟨hfvG, hlpG, hresG, hbvG, ty, M.infer hi⟩
+  · exact Or.inr (Or.inl ⟨hfvG, hlpG, hresG, hbvG, ty, M.infer hi⟩)
+  · exact Or.inr (Or.inr hmatch)
 
 theorem twinRules {env envSelf : Env md} {f : Key md → Key md} {recName : Key md}
     {lps : List LevelParam} {cvW : ConstantVal md} {mI rP : Nat} :
@@ -156,9 +157,10 @@ theorem twin {env env₂ : Env md} {block : List (ConstantInfo md)}
   refine ⟨M.constantValCheck hc, hlf, hfind, hlps, hmodel, ?_, hlen, M.twinRules hrules⟩
   obtain ⟨tyG, hwC, hwW, hgen⟩ := hgen
   refine ⟨tyG, hwC, hwW, ?_⟩
-  rcases hgen with heq | ⟨hfv, hlp, hres, hbv, ty, hi⟩
+  rcases hgen with heq | ⟨hfv, hlp, hres, hbv, ty, hi⟩ | hsym
   · exact Or.inl heq
-  · exact Or.inr ⟨hfv, hlp, hres, hbv, ty, M.infer hi⟩
+  · exact Or.inr (Or.inl ⟨hfv, hlp, hres, hbv, ty, M.infer hi⟩)
+  · exact Or.inr (Or.inr hsym)
 
 /-- All inductive routes transport at the same environment and declaration. -/
 theorem indRoutes {env env₂ : Env md} {block : List (ConstantInfo md)} {nP : Nat}

@@ -36,17 +36,19 @@ theorem declRecTwinRunJ_map {md : Ix.Kernel.Mode} {J K : Judgements md}
     hall w hw
   refine ⟨⟨ty', M.constantValRun hrun, hcv⟩, hlf, hfkC, hlps, hmod, ⟨tyG, htw1, htw2, ?_⟩,
     hlenW, ?_⟩
-  · rcases htgen with h | ⟨t1, t2, t3, t4, sty, hinf⟩
+  · rcases htgen with h | ⟨t1, t2, t3, t4, sty, hinf⟩ | hsym
     · exact Or.inl h
-    · exact Or.inr ⟨t1, t2, t3, t4, sty, M.infer hinf⟩
+    · exact Or.inr (Or.inl ⟨t1, t2, t3, t4, sty, M.infer hinf⟩)
+    · exact Or.inr (Or.inr hsym)
   · refine forall₂_imp hrules fun p rC hr => ?_
     obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17,
       rhsG, hw1, hw2, hgen⟩ := hr
     refine ⟨h1, h2, h3, h4, M.annot h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17,
       rhsG, hw1, hw2, ?_⟩
-    rcases hgen with h | ⟨g1, g2, g3, g4, rty, hinf⟩
+    rcases hgen with h | ⟨g1, g2, g3, g4, rty, hinf⟩ | hmatch
     · exact Or.inl h
-    · exact Or.inr ⟨g1, g2, g3, g4, rty, M.infer hinf⟩
+    · exact Or.inr (Or.inl ⟨g1, g2, g3, g4, rty, M.infer hinf⟩)
+    · exact Or.inr (Or.inr hmatch)
 where
   forall₂_imp {α β : Type} {R S : α → β → Prop} :
       ∀ {l₁ : List α} {l₂ : List β}, Ix.Kernel.Semantics.Forall₂ R l₁ l₂ →
