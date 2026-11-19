@@ -102,6 +102,10 @@ structure CheckFamilyChain (rc b rb : SourceValue F)
   payload : SourceValue F
   m114 : Heap F
   evReadPayload : SubCall calls "KernelModeled::read_payload" [b] m105 payload m114
+  callsRest : List (Call F)
+  callsPrefix : calls = cs107 ++ ((⟨"KernelModeled::read_payload", [b], m105⟩ : Call F) ::
+    (evReadPayload.cs ++ ((⟨"IxonDeserialize::get_address", [payload], m114⟩ : Call F) ::
+      callsRest)))
   xRb : SourceValue F
   s1 : SourceValue F
   m136 : Heap F
@@ -330,6 +334,7 @@ theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : L
       ⟨{ vSeg := _, m105 := _, cs107 := _, sg112 := sg
          subSeg := hSubSeg
          payload := _, m114 := _, evReadPayload := s126
+         callsRest := _, callsPrefix := hc
          xRb := _, s1 := _, m136 := _, evGetRb := s148
          m184 := _, evRbEq := s194
          vOrd := _, mOrd := _, evInOrder := sOrd

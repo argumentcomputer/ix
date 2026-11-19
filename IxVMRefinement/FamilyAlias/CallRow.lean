@@ -1,6 +1,7 @@
 import IxVMRefinement.FamilyAlias.CallRecs
 import IxVMRefinement.FamilyAlias.BlockRowCheck
 import IxVMRefinement.FamilyAlias.ClosureFamilyStep
+import IxVMRefinement.FamilyGraph.ProducersCallTree
 import IxVMRefinement.StatementRel.ClosedFacts
 import IxVMRefinement.StatementRel.StoreInhabit
 import IxVMRefinement.Assembly.TypingStore
@@ -8,7 +9,7 @@ import IxVMRefinement.Assembly.TypingStore
 /-! # Discharging `FamilyBlockCheckRow` and `ClosureFamilyCheck` from `KernelModeled::check_family`
 
 Wires the heap-chained check of a modeled family (`CheckFamilyChain`, `CallTables`, `CallAdvice`,
-`CallRecRefs`, `CallMembers`, `CallRecs`) into the full family check outputs:
+`CallRecRefs`, `CallMembers`, `CallRecs`) into both unconditional family check endpoints:
 
 * `committedPrelude_inLogic`, `pinnedBasis_role_mem_prelude`, `coveredLogic_of_checked`:
   every covered `.iPrj` reference has its block in Lean's logic (`InLogic`);
@@ -17,10 +18,12 @@ Wires the heap-chained check of a modeled family (`CheckFamilyChain`, `CallTable
 * `familyCall_checked_of_chain`: full Layer-2 assembly from `CheckFamilyChain` into
   `FamilyTysCanon`, `MajorRefs`, `recRefs`, `FamDeclReads`, `FamilyCheckFacts`, and
   `FamRecsCompanion`;
+* `advAs_eq_of_familyOwnAdvice`: identifies the advice list `advAs` of a `FamilyOwnAdvice` witness
+  with `C.advList` read off the same `check_family` call's `CheckFamilyChain`, via the payload
+  stream anchor (`check_family_first_get_address`) and determinism of byte-stream deserialization;
 * `closureFamilyCheck_of_run`: unconditional `ClosureFamilyCheck` at every group of every
   binding run;
-* `familyBlockCheckRow_of_advEq`: `FamilyBlockCheckRow` once `FamilyOwnAdvice` pins the check's
-  own advice list to its `check_family` path. -/
+* `familyBlockCheckRow_of_run`: unconditional `FamilyBlockCheckRow` at every typing walk. -/
 
 universe u
 
@@ -1523,6 +1526,167 @@ theorem familyCall_checked_of_chain
     rwa [ha_k] at hmem_k
   exact ⟨hreads, hcheckFacts, hcompanions⟩
 
+/-! ## Payload-stream determinism: identifying `FamilyOwnAdvice`'s advice list with `C.advList` -/
+
+private theorem get_count_spec_bytes {s x_n x_s2 : SourceValue F} {bytes : List UInt8}
+    {h h' : Heap F} {cs : List (Call F)} (hs : L1.Stream h bytes s)
+    (ev : ObsFn Obs.W "KernelModeled::get_count" [s] h (.tuple [x_n, x_s2]) h' cs) :
+    ∃ (tg : Ixon.TagN) (k : Nat),
+      Ixon.getTagN 0 (TagN.start bytes) = .ok tg { idx := k, bytes := ⟨bytes.toArray⟩ } ∧
+      x_n = .field (tg.value.toNat : F) ∧
+      L1.Stream h' (bytes.drop k) x_s2 := by
+  match Obs.«KernelModeled::get_count».obs ev with
+  | .run (m2 := m2) (x_n := x_w) (x_s2 := y) (v38 := v38) (ev14 := e1) (he40 := hr)
+      (ev52 := e2) (he68 := hh) .. =>
+    obtain ⟨hm2, tg, k, restPtr, htag, -, hrest, htup⟩ := TagN.getTagN0_refines hs e1.erase
+    subst hm2
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup hr
+    obtain ⟨rfl, rfl⟩ := htup
+    obtain ⟨rfl, rfl⟩ := hr
+    obtain ⟨-, hv38, hm42⟩ := Lib.u64_to_field_spec (Deserialize.repU64_u64Value h tg.value) e2
+    rw [hh, hm42]
+    exact ⟨tg, k, htag, hv38, hrest⟩
+
+private theorem get_addrs_bytes_go :
+    ∀ (cnt : Nat) {n_f : F} {x_s r : SourceValue F} {bytes_in : List UInt8}
+      {h h' : Heap F} {cs : List (Call F)},
+      ZMod.val n_f = cnt →
+      L1.Stream h bytes_in x_s →
+      ObsFn Obs.W "KernelModeled::get_addrs" [x_s, .field n_f] h r h' cs →
+      ∃ (as_ : List Bytes.Address) (bytes_out : List UInt8) (x_as x_s' : SourceValue F),
+        r = .tuple [x_as, x_s'] ∧
+        as_.length = cnt ∧
+        bytes_in = as_.flatMap (·.toList) ++ bytes_out ∧
+        RepList addrListEnum (Bytes.RepAddressRef addrTy) h' as_ x_as ∧
+        L1.Stream h' bytes_out x_s'
+  | 0, n_f, x_s, r, bytes_in, h, h', cs, hcnt, hs, ev => by
+    cases Obs.«KernelModeled::get_addrs».obs ev with
+    | n0 m21 _ he19 hm29 he40 _ =>
+      have ext : Heap.Extends h h' := ⟨_, by rw [he40, hm29]⟩
+      refine ⟨[], bytes_in, .ptr (.enum addrListEnum) h.length, x_s, he19, rfl, rfl, ?_, hs.mono ext⟩
+      rw [he40, hm29]
+      exact Lib.rep_store_nil h
+    | other _ _ _ _ _ _ _ _ _ _ hne42 _ _ _ _ _ _ _ =>
+      have hn0 : n_f = 0 := by rwa [ZMod.val_eq_zero] at hcnt
+      exact absurd (congrArg Value.field hn0) hne42
+  | cnt + 1, n_f, x_s, r, bytes_in, h, h', cs, hcnt, hs, ev => by
+    cases Obs.«KernelModeled::get_addrs».obs ev with
+    | n0 _ hv14 _ _ _ _ =>
+      injection hv14 with hn0
+      subst hn0
+      simp at hcnt
+    | other m47 cs57 x_a x_s2 m82 cs92 v96 x_rest x_s3 m138
+        hne42 ev59 op117 ev94 he136 hm146 he173 _ =>
+      have hn_ne : n_f ≠ 0 := fun e => hne42 (congrArg Value.field e)
+      obtain rfl := Lib.sub_one_inv op117
+      have hpred : ZMod.val (n_f - 1) = cnt := by
+        have hv := Lib.val_sub_one hn_ne
+        omega
+      obtain ⟨a, rem, x_t, x_s2', hbytes1, htup1, ha_rep, hs_rem, _, _⟩ :=
+        Decl.get_address_spec hs ev59
+      simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup1
+      obtain ⟨rfl, rfl⟩ := htup1
+      obtain ⟨as_rest, bytes_out, x_as_rest, x_s_out, htup2, hlen_rest, hbytes2, hrest_rep, hs_out⟩ :=
+        get_addrs_bytes_go cnt hpred hs_rem ev94
+      simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup2
+      obtain ⟨rfl, rfl⟩ := htup2
+      have ext2 : Heap.Extends m47 m82 := ev94.heap_extends
+      have ext3 : Heap.Extends m82 h' := ⟨_, by rw [he173, hm146]⟩
+      refine ⟨a :: as_rest, bytes_out, .ptr (.enum addrListEnum) m82.length, x_s3,
+        he136, by simp [hlen_rest], ?_, ?_, hs_out.mono ext3⟩
+      · rw [hbytes1, hbytes2, List.flatMap_cons, List.append_assoc]
+      · rw [he173, hm146]
+        exact Lib.rep_store_cons (Bytes.repAddressRef_heapMono₂ addrTy)
+          (Bytes.repAddressRef_heapMono₂ addrTy ext2 ha_rep) hrest_rep
+
+private theorem addrs_eq_of_flatMap_eq :
+    ∀ {l₁ l₂ : List Bytes.Address} {r₁ r₂ : List UInt8},
+      l₁.length = l₂.length →
+      l₁.flatMap (·.toList) ++ r₁ = l₂.flatMap (·.toList) ++ r₂ →
+      l₁ = l₂
+  | [], [], _, _, _, _ => rfl
+  | [], _ :: _, _, _, hlen, _ => by cases hlen
+  | _ :: _, [], _, _, hlen, _ => by cases hlen
+  | a₁ :: t₁, a₂ :: t₂, r₁, r₂, hlen, hbytes => by
+    simp only [List.flatMap_cons, List.append_assoc] at hbytes
+    have hlen32 : a₁.toList.length = a₂.toList.length := by simp only [Vector.length_toList]
+    obtain ⟨ha, ht⟩ := List.append_inj hbytes hlen32
+    exact congrArg₂ List.cons (Vector.toList_inj.mp ha)
+      (addrs_eq_of_flatMap_eq (by simpa using hlen) ht)
+
+/-- **The advice list `advAs` of a `FamilyOwnAdvice` witness equals the advice list `C.advList`
+read off the same `check_family` call's `CheckFamilyChain`**, via the payload-stream anchor
+(`check_family_first_get_address`) and determinism of byte-stream deserialization. -/
+theorem advAs_eq_of_familyOwnAdvice {rc xb xrb r : SourceValue F} {h h' : Heap F}
+    {cs : List (Call F)} {advAs advAs' : List Bytes.Address}
+    (w : FamilyOwnAdvice rc xb xrb h r h' cs advAs)
+    (C : CheckFamilyChain rc xb xrb h h' cs)
+    (hrep' : RepList addrListEnum (Bytes.RepAddressRef addrTy) C.m423 advAs' C.advList) :
+    advAs' = advAs := by
+  match w with
+  | .mk (m_adv := m_adv) (x_advice := x_advice) (advRep := advRep)
+      (v_pl := v_pl) (m_pl := m_pl) (bytes_pl := bytes_pl)
+      (pl_stream := pl_stream) (pl_first := pl_first)
+      (x_s1 := x_s1_w) (ev_rb := ev_rb)
+      (m_na := m_na_w) (x_na := x_na_w) (x_s2 := x_s2_w)
+      (ext_s1_na := ext_s1_na) (ev_na := ev_na)
+      (ev_ga := ev_ga) (ext_s3_adv := ext_s3_adv) .. =>
+    have hfirst_C := check_family_first_get_address C.sg112 C.evReadPayload.obs C.callsPrefix
+    have hcall_eq : (⟨"IxonDeserialize::get_address", [v_pl], m_pl⟩ : Call F) =
+        ⟨"IxonDeserialize::get_address", [C.payload], C.m114⟩ :=
+      Option.some.inj (pl_first.symm.trans hfirst_C)
+    have hvpl : v_pl = C.payload := (List.cons.inj (congrArg Call.args hcall_eq)).1
+    have hmpl : m_pl = C.m114 := congrArg Call.heap hcall_eq
+    subst hvpl hmpl
+    have hs_pl : L1.Stream C.m114 bytes_pl C.payload := pl_stream
+    obtain ⟨a_rb_w, rem1_w, x_t_w, x_s1_w', hbytes_rb_w, htup_rb_w, -, hs_rem1_w, -, -⟩ :=
+      Decl.get_address_spec hs_pl ev_rb
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup_rb_w
+    obtain ⟨-, rfl⟩ := htup_rb_w
+    obtain ⟨a_rb_C, rem1_C, x_t_C, x_s1_C', hbytes_rb_C, htup_rb_C, -, hs_rem1_C, -, -⟩ :=
+      Decl.get_address_spec hs_pl C.evGetRb.obs
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup_rb_C
+    obtain ⟨-, hxs1_C⟩ := htup_rb_C
+    have hrem1_eq : rem1_w = rem1_C := by
+      have h12 : a_rb_w.toList ++ rem1_w = a_rb_C.toList ++ rem1_C :=
+        hbytes_rb_w.symm.trans hbytes_rb_C
+      exact (List.append_inj h12 (by simp only [Vector.length_toList])).2
+    subst hrem1_eq
+    have hs_s1_w : L1.Stream m_na_w rem1_w x_s1_w := hs_rem1_w.mono ext_s1_na
+    have ext_136_ord : Heap.Extends C.m136 C.mOrd := C.evRbEq.extends.trans C.evInOrder.extends
+    have hs_s1_C : L1.Stream C.mOrd rem1_w C.s1 := by
+      rw [hxs1_C]; exact hs_rem1_C.mono ext_136_ord
+    obtain ⟨tg_w, k_w, htag_w, hxna_w, hs_s2_w⟩ := get_count_spec_bytes hs_s1_w ev_na
+    obtain ⟨tg_C, k_C, htag_C, hxna_C, hs_s2_C⟩ := get_count_spec_bytes hs_s1_C C.evCountAdv.obs
+    have htag_eq := htag_w.symm.trans htag_C
+    injection htag_eq with htg_eq hst_eq
+    have hk_eq : k_w = k_C := congrArg Ixon.GetState.idx hst_eq
+    subst htg_eq hk_eq
+    rw [hxna_w] at ev_ga
+    have ev_ga_C := C.evGetAdv.obs
+    rw [hxna_C] at ev_ga_C
+    obtain ⟨as_w, out_w, x_as_w, x_s3_w', htup_ga_w, hlen_w, hbytes_ga_w, hrep_ga_w, -⟩ :=
+      get_addrs_bytes_go (ZMod.val (tg_w.value.toNat : F)) rfl hs_s2_w ev_ga
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup_ga_w
+    obtain ⟨hxa_w, -⟩ := htup_ga_w
+    obtain ⟨as_C, out_C, x_as_C, x_s3_C', htup_ga_C, hlen_C, hbytes_ga_C, hrep_ga_C, -⟩ :=
+      get_addrs_bytes_go (ZMod.val (tg_w.value.toNat : F)) rfl hs_s2_C ev_ga_C
+    simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup_ga_C
+    obtain ⟨hxa_C, -⟩ := htup_ga_C
+    have has_eq : as_C = as_w :=
+      addrs_eq_of_flatMap_eq (hlen_C.trans hlen_w.symm) (hbytes_ga_C.symm.trans hbytes_ga_w)
+    have hrep_w_adv : RepList addrListEnum (Bytes.RepAddressRef addrTy) m_adv as_w x_advice := by
+      rw [hxa_w]
+      exact repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext_s3_adv hrep_ga_w
+    have ext_254_423 : Heap.Extends C.m254 C.m423 :=
+      C.evCountWit.extends.trans (C.evCheckWit.extends.trans (C.evWset.extends.trans C.evContRefs.extends))
+    have hrep_C_423 : RepList addrListEnum (Bytes.RepAddressRef addrTy) C.m423 as_C C.advList := by
+      rw [hxa_C]
+      exact repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext_254_423 hrep_ga_C
+    have h1 : advAs' = as_C := repList_det (fun _ _ _ _ r1 r2 => Core.addr_det r1 r2) hrep' hrep_C_423
+    have h2 : as_w = advAs := repList_det (fun _ _ _ _ r1 r2 => Core.addr_det r1 r2) hrep_w_adv advRep
+    exact h1.trans (has_eq.trans h2)
+
 /-! ## Endpoint 1 (unconditional): `ClosureFamilyCheck` at every group of every binding run -/
 
 /-- **Unconditional `ClosureFamilyCheck` at every group of every binding run**, polymorphic in any
@@ -1538,7 +1702,7 @@ theorem closureFamilyCheck_of_run {L : Ix.Kernel.Env .anon → NativeFam .anon �
     fun a lr h => hC.admits.loaded a lr (hC.store.le₂.1 a lr h)
   have hcb₀ : recordOf ρ.E₀ B = some cb := Binding.recordOf_of_loaded hloaded hcb
   have hcrb₀ : recordOf ρ.E₀ rb = some crb := Binding.recordOf_of_loaded hloaded hcrb
-  obtain ⟨-, hroute, cs, hcall', hadvIn, -⟩ := hC.checks.famCall B rb hfam
+  obtain ⟨-, hroute, cs, advAs, hown, hadvIn, -⟩ := hC.checks.famCall B rb hfam
   obtain ⟨cb', ms, crb', rs, flat, hFB⟩ := hC.checks.family B rb hfam
   have e1 : cb' = cb := Option.some.inj (hFB.block.record.symm.trans hcb₀)
   subst cb'
@@ -1546,8 +1710,8 @@ theorem closureFamilyCheck_of_run {L : Ix.Kernel.Env .anon → NativeFam .anon �
   subst crb'
   have hcb' : recordOf R' B = some cb := Binding.recordOf_of_loaded hC.store.le₂.1 hcb
   have hnB' : Binding.New R R' B := ⟨by rw [hcb']; rfl, hnB.2⟩
-  -- Unpack `FamilyCallAtLim` into `CheckFamilyChain`
-  obtain ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev, -, hsub⟩ := hcall'
+  -- Unpack `FamilyCallOwn` into `CheckFamilyChain`
+  obtain ⟨h, h', rc, xb, xrb, r, hrc, hxb, hxrb, ev, w, -, hsub⟩ := hown
   obtain ⟨C⟩ := checkFamily_chain ev
   -- Bounded calls + `ms.size < 2^33` + checked members at `valLimit g`
   have hzc : R₁.consts.get? Ix.HostAdmission.Merkle.padding = none := by
@@ -1628,10 +1792,16 @@ theorem closureFamilyCheck_of_run {L : Ix.Kernel.Env .anon → NativeFam .anon �
   have hcidx : ∀ (i : Nat) (ind : Ixon.Inductive) (j : Nat) (ct : Ixon.Constructor),
       ms[i]? = some (.indc ind) → ind.ctors[j]? = some ct → ct.cidx.toNat = j :=
     cidx_eq_of_modeled_checked hFB.block hst0 hRc0.1 hmod0 hms_lt8 hmem
-  -- Run `familyCall_checked_of_chain`!
+  have hadvHyp : ∀ (advAs' : List Bytes.Address),
+      RepList addrListEnum (Bytes.RepAddressRef addrTy) C.m423 advAs' C.advList →
+      ∀ a, AdviceListedIn advAs' a →
+        adv B a ∨ ∀ ca x, recordOf ρ.E₀ a = some ca → ¬ ConstAddrOf a ca x := by
+    intro advAs' hrep' a ha'
+    rw [advAs_eq_of_familyOwnAdvice w C hrep'] at ha'
+    exact Or.inl (hadvIn a ha')
   obtain ⟨blk, advM, tys, rhsss, hcanon, hmajorRefs, hrecRefs, hstep⟩ :=
     familyCall_checked_of_chain (L := L) ht hbd hS hH hFB.block hFB.record hrc hxb hxrb hsub C
-      (Or.inl hadvIn) hcidx
+      (Or.inr hadvHyp) hcidx
   refine ⟨fun Ec hRc hst env hext hnd hinv hX hinert hrefs hadv1 hadv2 hfresh => ?_, hrecRefs⟩
   have hSE : FamilyStepEnv.{u} L calls t ρ.E₀ (some (Binding.valLimit g)) B cb rb crb (adv B)
       Ec env :=
@@ -1677,19 +1847,11 @@ theorem closureFamilyCheck_of_run {L : Ix.Kernel.Env .anon → NativeFam .anon �
     subst e6
     exact hE.2.1 p P hP
 
-/-! ## Endpoint 2 bridge: `FamilyBlockCheckRow` from `FamilyOwnAdvice` advice-list equality -/
+/-! ## Endpoint 2 (unconditional): `FamilyBlockCheckRow` at every typing walk -/
 
-/-- **`FamilyBlockCheckRow` from a `FamilyOwnAdvice` → `CheckFamilyChain` advice-list match**,
-polymorphic in any link predicate `L` (in particular `FormerOpenTraceAt`). Once `FamilyOwnAdvice`
-exposes the payload-stream anchor (Round 54), this immediately discharges `FamilyBlockCheckRow`
-unconditionally. -/
-theorem familyBlockCheckRow_of_advEq {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
-    (hadvEq : ∀ {rc xb xrb r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-      {advAs advAs' : List Bytes.Address}
-      (_w : FamilyOwnAdvice rc xb xrb h r h' cs advAs)
-      (C : CheckFamilyChain rc xb xrb h h' cs),
-      RepList addrListEnum (Bytes.RepAddressRef addrTy) C.m423 advAs' C.advList →
-      advAs' = advAs) :
+/-- **Unconditional `FamilyBlockCheckRow`**, polymorphic in any link predicate `L`
+(in particular `FormerOpenTraceAt`). -/
+theorem familyBlockCheckRow_of_run {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop} :
     FamilyBlockCheckRow.{u} L := by
   intro calls t seeds E₀ lim Top rank hTW R envT E fam twin adv Inner hrun hctx A c rb crb rs
     hTop hc hlog hkind hfam hrb
@@ -1738,7 +1900,7 @@ theorem familyBlockCheckRow_of_advEq {L : Ix.Kernel.Env .anon → NativeFam .ano
       ∀ a, AdviceListedIn advAs' a →
         adv A a ∨ ∀ ca x, recordOf E₀ a = some ca → ¬ ConstAddrOf a ca x := by
     intro advAs' hrep' a ha'
-    rw [hadvEq w C hrep'] at ha'
+    rw [advAs_eq_of_familyOwnAdvice w C hrep'] at ha'
     exact hlist a ha'
   obtain ⟨blk, advM, tys, rhsss, hcanon, hmajorRefs, hrecRefs, hstep⟩ :=
     familyCall_checked_of_chain (L := L) ht hbd hS hH hB hrb hrc hxb hxrb hsub C
