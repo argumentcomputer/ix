@@ -1,3 +1,4 @@
+import IxVMRefinement.L1.AddressHash
 import IxVMRefinement.L1.ByteStream
 import IxVMRefinement.Obs.Ingress
 
@@ -31,18 +32,9 @@ namespace IxVM.Refinement.L1
 open IxVM (F)
 open IxVM.Refinement.Obs
 
-/-! ## Addresses -/
+/-! ## Addresses
 
-/-- The address with these 32 bytes. -/
-def ixAddr (d : Vector UInt8 32) : Address := ⟨⟨d.toArray⟩⟩
-
-/-- `Address.blake3Pure` is `Blake3.Pure.digest` of the bytes. -/
-theorem blake3Pure_eq (bytes : List UInt8) :
-    Address.blake3Pure ⟨bytes.toArray⟩ = ixAddr (Blake3.Pure.digest bytes) := by
-  first
-  | rfl
-  | (simp [Address.blake3Pure, Blake3.Pure.hash, ixAddr]; done)
-  | (unfold Address.blake3Pure Blake3.Pure.hash ixAddr; simp)
+`ixAddr` and `blake3Pure_eq` are in `IxVMRefinement.L1.AddressHash`. -/
 
 /-- **A `Blake3::hash` call on a stream gives `Hashed`.** -/
 theorem hashed_of_call {cs : List (Call F)} {inp : SourceValue F} {m : Heap F}
