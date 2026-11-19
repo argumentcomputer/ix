@@ -139,7 +139,7 @@ theorem family_recRefs {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Kernel.
     (ev : ObsFn Obs.W "KernelModeled::family_refs_ok" [rc, xrb, xb, wset] h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
     ∀ x, UsedRef E₀ rb x → Claim.CoveredAt t lim x ∨ NeedOk E₀ x := by
-  have C := familyRefsOk_chain ev
+  obtain ⟨C⟩ := familyRefsOk_chain ev
   obtain ⟨extLd, bytes, c', hsz, hh, hb, _, hex, hcp, -⟩ :=
     Claim.load_verified_constant_de hrb C.evLoadRb.obs
   have hrecAt : Ix.Cert.recordAt E₀ rb = some crb :=
@@ -157,7 +157,7 @@ theorem family_recRefs {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Kernel.
     rcases heq with ⟨_, _, heqRefs, _, _⟩
     rw [heqRefs] at hrf
     exact repList_heapMono₂ _ Claim.repAddrElem_heapMono₂ (C.extToIdxs.trans extIdx) hrf
-  have I := assertInnerRefsSafe_chain C.evInner.obs
+  obtain ⟨I⟩ := assertInnerRefsSafe_chain C.evInner.obs
   have hsafe := Claim.assert_safe_used_refs_spec hS crb.refs.toList 0
     (by simpa only [Nat.zero_add, Array.length_toList] using hrefsSmall)
     (hrc.mono (extToIdx.trans extIdx)) hRefs hidx I.evSafe.obs

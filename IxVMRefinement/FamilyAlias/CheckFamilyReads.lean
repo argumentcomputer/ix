@@ -42,7 +42,7 @@ abbrev CallSub (sub sup : List (Call F)) : Prop := ∀ cl ∈ sub, cl ∈ sup
 /-- **A sub-call of `calls` at explicit heaps**: `f` at `args`, starting at `h₁` and returning
 `v` at `h₂` with child calls `cs`, with both the call itself and all of `cs` in `calls`. -/
 structure SubCall (calls : List (Call F)) (f : String) (args : List (SourceValue F))
-    (h₁ : Heap F) (v : SourceValue F) (h₂ : Heap F) : Prop where
+    (h₁ : Heap F) (v : SourceValue F) (h₂ : Heap F) where
   cs : List (Call F)
   obs : ObsFn Obs.W f args h₁ v h₂ cs
   mem : (⟨f, args, h₁⟩ : Call F) ∈ calls
@@ -53,7 +53,7 @@ theorem SubCall.extends {calls : List (Call F)} {f : String} {args : List (Sourc
     Heap.Extends h₁ h₂ :=
   s.obs.heap_extends
 
-theorem SubCall.mono {calls₁ calls₂ : List (Call F)} {f : String} {args : List (SourceValue F)}
+def SubCall.mono {calls₁ calls₂ : List (Call F)} {f : String} {args : List (SourceValue F)}
     {h₁ h₂ : Heap F} {v : SourceValue F} (hsub : CallSub calls₁ calls₂)
     (s : SubCall calls₁ f args h₁ v h₂) : SubCall calls₂ f args h₁ v h₂ :=
   ⟨s.cs, s.obs, hsub _ s.mem, fun cl hcl => hsub cl (s.sub cl hcl)⟩
@@ -68,16 +68,16 @@ private theorem callSub_append_right {xs ys sup : List (Call F)} (h : CallSub (x
     CallSub ys sup :=
   fun cl hcl => h cl (List.mem_append_right xs hcl)
 
-private theorem peel_call {calls rest cs : List (Call F)} {f : String}
+private def peel_call {calls rest cs : List (Call F)} {f : String}
     {args : List (SourceValue F)} {h₁ h₂ : Heap F} {v : SourceValue F}
     (h : CallSub (⟨f, args, h₁⟩ :: (cs ++ rest)) calls)
     (ev : ObsFn Obs.W f args h₁ v h₂ cs) :
-    SubCall calls f args h₁ v h₂ ∧ CallSub rest calls :=
+    SubCall calls f args h₁ v h₂ ×' CallSub rest calls :=
   ⟨⟨cs, ev, h _ List.mem_cons_self,
       fun cl hcl => h cl (List.mem_cons_of_mem _ (List.mem_append_left rest hcl))⟩,
    fun cl hcl => h cl (List.mem_cons_of_mem _ (List.mem_append_right cs hcl))⟩
 
-private theorem peel_last {calls cs : List (Call F)} {f : String}
+private def peel_last {calls cs : List (Call F)} {f : String}
     {args : List (SourceValue F)} {h₁ h₂ : Heap F} {v : SourceValue F}
     (h : CallSub (⟨f, args, h₁⟩ :: cs) calls)
     (ev : ObsFn Obs.W f args h₁ v h₂ cs) :
@@ -88,7 +88,7 @@ private theorem peel_last {calls cs : List (Call F)} {f : String}
 
 /-- **Full heap-chained decomposition of an observed `KernelModeled::check_family` call.** -/
 structure CheckFamilyChain (rc b rb : SourceValue F)
-    (h_in h_out : Heap F) (calls : List (Call F)) : Prop where
+    (h_in h_out : Heap F) (calls : List (Call F)) where
   vSeg : SourceValue F
   m105 : Heap F
   cs107 : List (Call F)
@@ -139,7 +139,10 @@ structure CheckFamilyChain (rc b rb : SourceValue F)
     aset m453
   -- Block and family-record tables (`CallTables.family_tables` inputs)
   members : SourceValue F
-  wSh wRf wUn wBd : SourceValue F
+  wSh : SourceValue F
+  wRf : SourceValue F
+  wUn : SourceValue F
+  wBd : SourceValue F
   m501 : Heap F
   evLoadBlk : SubCall calls "Ingress::load_verified_constant" [b] m453
     (.construct "Ixon::Constant" "Mk"
@@ -213,7 +216,8 @@ structure CheckFamilyChain (rc b rb : SourceValue F)
   evRecsVal : SubCall calls "KernelModeled::members_val" [recs, recM, src, dst, aset, recs]
     mCtorsVal vRecsVal mRecsVal
   -- Elimination level / flat block checks, reference checks, recursor loop
-  bnl uo : SourceValue F
+  bnl : SourceValue F
+  uo : SourceValue F
   m1191 : Heap F
   evBlockElim : SubCall calls "KernelModeled::block_elim" [rc, tys] mRecsVal
     (.tuple [bnl, uo]) m1191
@@ -256,7 +260,7 @@ theorem CheckFamilyChain.ext_m978_m1293 {rc b rb : SourceValue F}
 /-- **Heap-chained reading of an observed `KernelModeled::check_family` call.** -/
 theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : List (Call F)}
     (ev : ObsFn Obs.W "KernelModeled::check_family" [rc, b, rb] h r h' calls) :
-    CheckFamilyChain rc b rb h h' calls := by
+    Nonempty (CheckFamilyChain rc b rb h h' calls) := by
   match Obs.«KernelModeled::check_family».obs ev with
   | .run (sg112 := sg) (ev126 := e126) (ev148 := e148) (ev194 := e194) (heq217 := q217)
       (ev_yqjbwijz := eOrd) (ev231 := e231) (ev266 := e266) (ev309 := e309) (ev344 := e344)
@@ -272,95 +276,99 @@ theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : L
     have h0 : CallSub _ calls := by rw [← hc]; exact callSub_refl calls
     have hSubSeg := callSub_append_left h0
     have hr := callSub_append_right h0
-    obtain ⟨s126, hr⟩ := peel_call hr e126
-    obtain ⟨s148, hr⟩ := peel_call hr e148
-    obtain ⟨s194, hr⟩ := peel_call hr e194
-    obtain ⟨sOrd, hr⟩ := peel_call hr eOrd
-    obtain ⟨s231, hr⟩ := peel_call hr e231
-    obtain ⟨s266, hr⟩ := peel_call hr e266
-    obtain ⟨s309, hr⟩ := peel_call hr e309
-    obtain ⟨s344, hr⟩ := peel_call hr e344
-    obtain ⟨s403, hr⟩ := peel_call hr e403
-    obtain ⟨s435, hr⟩ := peel_call hr e435
-    obtain ⟨s465, hr⟩ := peel_call hr e465
-    obtain ⟨s513, hr⟩ := peel_call hr e513
-    obtain ⟨s601, hr⟩ := peel_call hr e601
-    obtain ⟨s634, hr⟩ := peel_call hr e634
-    obtain ⟨s664, hr⟩ := peel_call hr e664
-    obtain ⟨s686, hr⟩ := peel_call hr e686
-    obtain ⟨s716, hr⟩ := peel_call hr e716
-    obtain ⟨s759, hr⟩ := peel_call hr e759
-    obtain ⟨s817, hr⟩ := peel_call hr e817
-    obtain ⟨s796, hr⟩ := peel_call hr e796
-    obtain ⟨s852, hr⟩ := peel_call hr e852
-    obtain ⟨sNoRole, hr⟩ := peel_call hr eNoRole
-    obtain ⟨s874, hr⟩ := peel_call hr e874
-    obtain ⟨s896, hr⟩ := peel_call hr e896
-    obtain ⟨s960, hr⟩ := peel_call hr e960
-    obtain ⟨s939, hr⟩ := peel_call hr e939
-    obtain ⟨s1011, hr⟩ := peel_call hr e1011
-    obtain ⟨s990, hr⟩ := peel_call hr e990
-    obtain ⟨sTysV, hr⟩ := peel_call hr eTysV
-    obtain ⟨sLater, hr⟩ := peel_call hr eLater
-    obtain ⟨sCtorsV, hr⟩ := peel_call hr eCtorsV
-    obtain ⟨sRecsV, hr⟩ := peel_call hr eRecsV
-    obtain ⟨sElim, hr⟩ := peel_call hr eElim
-    obtain ⟨sFlat, hr⟩ := peel_call hr eFlat
-    obtain ⟨sNest, hr⟩ := peel_call hr eNest
-    obtain ⟨sLenF, hr⟩ := peel_call hr eLenF
-    obtain ⟨sZ1, hr⟩ := peel_call hr eZ1
-    obtain ⟨sZ2, hr⟩ := peel_call hr eZ2
-    obtain ⟨sValG, hr⟩ := peel_call hr eValG
-    obtain ⟨sRefs, hr⟩ := peel_call hr eRefs
-    have sChk := peel_last hr eChk
+    let ⟨s126, hr⟩ := peel_call hr e126
+    let ⟨s148, hr⟩ := peel_call hr e148
+    let ⟨s194, hr⟩ := peel_call hr e194
+    let ⟨sOrd, hr⟩ := peel_call hr eOrd
+    let ⟨s231, hr⟩ := peel_call hr e231
+    let ⟨s266, hr⟩ := peel_call hr e266
+    let ⟨s309, hr⟩ := peel_call hr e309
+    let ⟨s344, hr⟩ := peel_call hr e344
+    let ⟨s403, hr⟩ := peel_call hr e403
+    let ⟨s435, hr⟩ := peel_call hr e435
+    let ⟨s465, hr⟩ := peel_call hr e465
+    let ⟨s513, hr⟩ := peel_call hr e513
+    let ⟨s601, hr⟩ := peel_call hr e601
+    let ⟨s634, hr⟩ := peel_call hr e634
+    let ⟨s664, hr⟩ := peel_call hr e664
+    let ⟨s686, hr⟩ := peel_call hr e686
+    let ⟨s716, hr⟩ := peel_call hr e716
+    let ⟨s759, hr⟩ := peel_call hr e759
+    let ⟨s817, hr⟩ := peel_call hr e817
+    let ⟨s796, hr⟩ := peel_call hr e796
+    let ⟨s852, hr⟩ := peel_call hr e852
+    let ⟨sNoRole, hr⟩ := peel_call hr eNoRole
+    let ⟨s874, hr⟩ := peel_call hr e874
+    let ⟨s896, hr⟩ := peel_call hr e896
+    let ⟨s960, hr⟩ := peel_call hr e960
+    let ⟨s939, hr⟩ := peel_call hr e939
+    let ⟨s1011, hr⟩ := peel_call hr e1011
+    let ⟨s990, hr⟩ := peel_call hr e990
+    let ⟨sTysV, hr⟩ := peel_call hr eTysV
+    let ⟨sLater, hr⟩ := peel_call hr eLater
+    let ⟨sCtorsV, hr⟩ := peel_call hr eCtorsV
+    let ⟨sRecsV, hr⟩ := peel_call hr eRecsV
+    let ⟨sElim, hr⟩ := peel_call hr eElim
+    let ⟨sFlat, hr⟩ := peel_call hr eFlat
+    let ⟨sNest, hr⟩ := peel_call hr eNest
+    let ⟨sLenF, hr⟩ := peel_call hr eLenF
+    let ⟨sZ1, hr⟩ := peel_call hr eZ1
+    let ⟨sZ2, hr⟩ := peel_call hr eZ2
+    let ⟨sValG, hr⟩ := peel_call hr eValG
+    let ⟨sRefs, hr⟩ := peel_call hr eRefs
+    let sChk := peel_last hr eChk
     exact
-      { sg112 := sg
-        subSeg := hSubSeg
-        evReadPayload := s126
-        evGetRb := s148
-        evRbEq := s194
-        evInOrder := sOrd
-        evCountAdv := s231
-        evGetAdv := s266
-        evCountWit := s309
-        evCheckWit := s344
-        evWset := s403
-        evContRefs := s435
-        evCheckAdv := s465
-        evLoadBlk := s513
-        evLenMem := s601
-        evIndcCnt := s634
-        evNParams := s664
-        evTypes := s686
-        evTypeMods := s716
-        evCtors := s759
-        evLenCtors := s817
-        evCtorMods := s796
-        evRecs := s852
-        evNoRole := sNoRole
-        evLenRecs := s874
-        evRecMods := s896
-        evSrcTail := s960
-        evSrc := s939
-        evDstTail := s1011
-        evDst := s990
-        evTysVal := sTysV
-        evLater := sLater
-        evCtorsVal := sCtorsV
-        evRecsVal := sRecsV
-        evBlockElim := sElim
-        extAfterElim := sFlat.extends.trans (sNest.extends.trans (sLenF.extends.trans
-          (sZ1.extends.trans (sZ2.extends.trans sValG.extends))))
-        evRefsOk := sRefs
-        evCheckRecs := sChk
-        ldS9Nil := lS9 }
+      ⟨{ sg112 := sg
+         subSeg := hSubSeg
+         evReadPayload := s126
+         evGetRb := s148
+         evRbEq := s194
+         evInOrder := sOrd
+         evCountAdv := s231
+         evGetAdv := s266
+         evCountWit := s309
+         evCheckWit := s344
+         evWset := s403
+         evContRefs := s435
+         evCheckAdv := s465
+         evLoadBlk := s513
+         evLenMem := s601
+         evIndcCnt := s634
+         evNParams := s664
+         evTypes := s686
+         evTypeMods := s716
+         evCtors := s759
+         evLenCtors := s817
+         evCtorMods := s796
+         evRecs := s852
+         evNoRole := sNoRole
+         evLenRecs := s874
+         evRecMods := s896
+         evSrcTail := s960
+         evSrc := s939
+         evDstTail := s1011
+         evDst := s990
+         evTysVal := sTysV
+         evLater := sLater
+         evCtorsVal := sCtorsV
+         evRecsVal := sRecsV
+         evBlockElim := sElim
+         extAfterElim := sFlat.extends.trans (sNest.extends.trans (sLenF.extends.trans
+           (sZ1.extends.trans (sZ2.extends.trans sValG.extends))))
+         evRefsOk := sRefs
+         evCheckRecs := sChk
+         ldS9Nil := lS9 }⟩
 
 /-! ## `members_val` and `member_val` -/
 
 /-- **One `Cons` step of `KernelModeled::members_val`, heap-chained.** -/
 structure MembersValCons (members models src dst aset later r : SourceValue F)
-    (h h' : Heap F) (calls : List (Call F)) : Prop where
-  xM xRest xMd xMrest vM : SourceValue F
+    (h h' : Heap F) (calls : List (Call F)) where
+  xM : SourceValue F
+  xRest : SourceValue F
+  xMd : SourceValue F
+  xMrest : SourceValue F
+  vM : SourceValue F
   mMid : Heap F
   ldMembers : loadValue h members =
     .ok (.construct Obs.Names.«Lists::Node<&[Field; 32]>» "Cons" [xM, xRest])
@@ -377,30 +385,36 @@ theorem membersVal_step {members models src dst aset later r : SourceValue F} {h
       h r h' calls) :
     (loadValue h members = .ok (.construct Obs.Names.«Lists::Node<&[Field; 32]>» "Nil" []) ∧
       h' = h) ∨
-    MembersValCons members models src dst aset later r h h' calls := by
+    Nonempty (MembersValCons members models src dst aset later r h h' calls) := by
   match Obs.«KernelModeled::members_val».obs ev with
   | .Nil (ld12 := l12) (he23 := hEq) .. => exact Or.inl ⟨l12, hEq⟩
   | .Cons (ld12 := l12) (ld52 := l52) (ev80 := e80) (ev126 := e126) (hc167 := hc) .. =>
     have h0 : CallSub _ calls := by rw [← hc]; exact callSub_refl calls
-    obtain ⟨sM, hr⟩ := peel_call h0 e80
-    have sRest := peel_last hr e126
-    exact Or.inr ⟨_, _, _, _, _, _, l12, l52, sM, sRest⟩
+    let ⟨sM, hr⟩ := peel_call h0 e80
+    let sRest := peel_last hr e126
+    exact Or.inr ⟨⟨_, _, _, _, _, _, l12, l52, sM, sRest⟩⟩
 
 /-- **Full heap-chained decomposition of `KernelModeled::member_val`.** -/
 structure MemberValChain (m md src dst aset later : SourceValue F) (h h' : Heap F)
-    (calls : List (Call F)) : Prop where
+    (calls : List (Call F)) where
   m15 : Heap F
   evInAset : SubCall calls "KernelClaim::addr_set_member" [md, aset] h (.field 1) m15
-  p ci : SourceValue F
+  p : SourceValue F
+  ci : SourceValue F
   m65 : Heap F
   evGetM : SubCall calls "Ingress::get_ci" [m] m15 p m65
   ldM : loadValue m65 p = .ok ci
-  nl ty : SourceValue F
+  nl : SourceValue F
+  ty : SourceValue F
   m50 : Heap F
   evLvlsTy : SubCall calls "KernelModeled::ci_lvls_type" [ci] m65 (.tuple [nl, ty]) m50
   mMent : Heap F
   evNoMent : SubCall calls "KernelModeled::expr_mentions_addrs" [ty, later] m50 (.field 0) mMent
-  pm mty w1 w2 w3 : SourceValue F
+  pm : SourceValue F
+  mty : SourceValue F
+  w1 : SourceValue F
+  w2 : SourceValue F
+  w3 : SourceValue F
   m101 : Heap F
   evGetMd : SubCall calls "Ingress::get_ci" [md] mMent pm m101
   ldMd : loadValue m101 pm =
@@ -414,7 +428,7 @@ structure MemberValChain (m md src dst aset later : SourceValue F) (h h' : Heap 
 theorem memberVal_chain {m md src dst aset later r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
     (ev : ObsFn Obs.W "KernelModeled::member_val" [m, md, src, dst, aset, later] h r h' calls) :
-    MemberValChain m md src dst aset later h h' calls := by
+    Nonempty (MemberValChain m md src dst aset later h h' calls) := by
   match Obs.«KernelModeled::member_val».obs ev with
   | .run (ev25 := e25) (heq48 := q48) (ev78 := e78) (ld72 := l72) (ev62 := e62)
       (ev_nczzuuzf := eMent) (heq_pbkckosz := qMent) (ev117 := e117) (ld111 := l111)
@@ -422,30 +436,34 @@ theorem memberVal_chain {m md src dst aset later r : SourceValue F} {h h' : Heap
       (hc269 := hc) .. =>
     subst q48 qMent qNl q264 hEq
     have h0 : CallSub _ calls := by rw [← hc]; exact callSub_refl calls
-    obtain ⟨s25, hr⟩ := peel_call h0 e25
-    obtain ⟨s78, hr⟩ := peel_call hr e78
-    obtain ⟨s62, hr⟩ := peel_call hr e62
-    obtain ⟨sMent, hr⟩ := peel_call hr eMent
-    obtain ⟨s117, hr⟩ := peel_call hr e117
-    obtain ⟨s226, hr⟩ := peel_call hr e226
-    have s212 := peel_last hr e212
+    let ⟨s25, hr⟩ := peel_call h0 e25
+    let ⟨s78, hr⟩ := peel_call hr e78
+    let ⟨s62, hr⟩ := peel_call hr e62
+    let ⟨sMent, hr⟩ := peel_call hr eMent
+    let ⟨s117, hr⟩ := peel_call hr e117
+    let ⟨s226, hr⟩ := peel_call hr e226
+    let s212 := peel_last hr e212
     exact
-      { evInAset := s25
-        evGetM := s78
-        ldM := l72
-        evLvlsTy := s62
-        evNoMent := sMent
-        evGetMd := s117
-        ldMd := l111
-        evRen := s226
-        evEq := s212 }
+      ⟨{ evInAset := s25
+         evGetM := s78
+         ldM := l72
+         evLvlsTy := s62
+         evNoMent := sMent
+         evGetMd := s117
+         ldMd := l111
+         evRen := s226
+         evEq := s212 }⟩
 
 /-! ## `family_refs_ok` and `assert_inner_refs_safe` -/
 
 /-- **Heap-chained decomposition of `KernelModeled::family_refs_ok`.** -/
 structure FamilyRefsOkChain (rc rb b wset r : SourceValue F) (h h' : Heap F)
-    (calls : List (Call F)) : Prop where
-  w1 w2 refs w3 w4 : SourceValue F
+    (calls : List (Call F)) where
+  w1 : SourceValue F
+  w2 : SourceValue F
+  refs : SourceValue F
+  w3 : SourceValue F
+  w4 : SourceValue F
   m2 : Heap F
   evLoadRb : SubCall calls "Ingress::load_verified_constant" [rb] h
     (.construct "Ixon::Constant" "Mk" [w1, w2, refs, w3, w4]) m2
@@ -461,27 +479,27 @@ structure FamilyRefsOkChain (rc rb b wset r : SourceValue F) (h h' : Heap F)
 theorem familyRefsOk_chain {rc rb b wset r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
     (ev : ObsFn Obs.W "KernelModeled::family_refs_ok" [rc, rb, b, wset] h r h' calls) :
-    FamilyRefsOkChain rc rb b wset r h h' calls := by
+    Nonempty (FamilyRefsOkChain rc rb b wset r h h' calls) := by
   match Obs.«KernelModeled::family_refs_ok».obs ev with
   | .run (ev14 := e14) (ev36 := e36) (ev_ycrqbsja := eI1) (ev_nhomjxfq := eI2)
       (ev_kfwmaaqi := eGo) (ev_ozxzdina := eIdx) (ev_tnqzszcy := eIn) (hc222 := hc) .. =>
     have h0 : CallSub _ calls := by rw [← hc]; exact callSub_refl calls
-    obtain ⟨s14, hr⟩ := peel_call h0 e14
-    obtain ⟨s36, hr⟩ := peel_call hr e36
-    obtain ⟨sI1, hr⟩ := peel_call hr eI1
-    obtain ⟨sI2, hr⟩ := peel_call hr eI2
-    obtain ⟨sGo, hr⟩ := peel_call hr eGo
-    obtain ⟨sIdx, hr⟩ := peel_call hr eIdx
-    have sIn := peel_last hr eIn
+    let ⟨s14, hr⟩ := peel_call h0 e14
+    let ⟨s36, hr⟩ := peel_call hr e36
+    let ⟨sI1, hr⟩ := peel_call hr eI1
+    let ⟨sI2, hr⟩ := peel_call hr eI2
+    let ⟨sGo, hr⟩ := peel_call hr eGo
+    let ⟨sIdx, hr⟩ := peel_call hr eIdx
+    let sIn := peel_last hr eIn
     exact
-      { evLoadRb := s14
-        extToIdxs := s36.extends.trans (sI1.extends.trans (sI2.extends.trans sGo.extends))
-        evIdxs := sIdx
-        evInner := sIn }
+      ⟨{ evLoadRb := s14
+         extToIdxs := s36.extends.trans (sI1.extends.trans (sI2.extends.trans sGo.extends))
+         evIdxs := sIdx
+         evInner := sIn }⟩
 
 /-- **Heap-chained decomposition of `KernelModeled::assert_inner_refs_safe`.** -/
 structure AssertInnerRefsSafeChain (rc refs used r : SourceValue F) (h h' : Heap F)
-    (calls : List (Call F)) : Prop where
+    (calls : List (Call F)) where
   vSafe : SourceValue F
   mSafe : Heap F
   evSafe : SubCall calls "KernelClaim::assert_safe_used_refs"
@@ -498,21 +516,24 @@ structure AssertInnerRefsSafeChain (rc refs used r : SourceValue F) (h h' : Heap
 theorem assertInnerRefsSafe_chain {rc refs used r : SourceValue F} {h h' : Heap F}
     {calls : List (Call F)}
     (ev : ObsFn Obs.W "KernelModeled::assert_inner_refs_safe" [rc, refs, used] h r h' calls) :
-    AssertInnerRefsSafeChain rc refs used r h h' calls := by
+    Nonempty (AssertInnerRefsSafeChain rc refs used r h h' calls) := by
   match Obs.«KernelModeled::assert_inner_refs_safe».obs ev with
   | .run (ev_mxwoukvn := eS) (ev_hemnmxwe := eB) (ev_xsejfvgw := eO) (hc_sgljalbe := hc) .. =>
     have h0 : CallSub _ calls := by rw [← hc]; exact callSub_refl calls
-    obtain ⟨sS, hr⟩ := peel_call h0 eS
-    obtain ⟨sB, hr⟩ := peel_call hr eB
-    have sO := peel_last hr eO
-    exact ⟨_, _, sS, _, _, sB, sO⟩
+    let ⟨sS, hr⟩ := peel_call h0 eS
+    let ⟨sB, hr⟩ := peel_call hr eB
+    let sO := peel_last hr eO
+    exact ⟨⟨_, _, sS, _, _, sB, sO⟩⟩
 
 /-! ## `check_recs` -/
 
 /-- **One `Cons` iteration of `KernelModeled::check_recs`, fully heap-chained.** -/
 structure CheckRecsCons (rc tys recs models src dst aset s n k np uo bnl fam form r :
-    SourceValue F) (h h' : Heap F) (calls : List (Call F)) : Prop where
-  x rest rm mrest : SourceValue F
+    SourceValue F) (h h' : Heap F) (calls : List (Call F)) where
+  x : SourceValue F
+  rest : SourceValue F
+  rm : SourceValue F
+  mrest : SourceValue F
   ldRecs : loadValue h recs =
     .ok (.construct Obs.Names.«Lists::Node<&[Field; 32]>» "Cons" [x, rest])
   ldModels : loadValue h models =
@@ -520,7 +541,13 @@ structure CheckRecsCons (rc tys recs models src dst aset s n k np uo bnl fam for
   p : SourceValue F
   m67 : Heap F
   evGetRec : SubCall calls "Ingress::get_ci" [x] h p m67
-  nl ty ni nmin rules blk idx : SourceValue F
+  nl : SourceValue F
+  ty : SourceValue F
+  ni : SourceValue F
+  nmin : SourceValue F
+  rules : SourceValue F
+  blk : SourceValue F
+  idx : SourceValue F
   ldRec : loadValue m67 p = .ok (.construct "KernelTypes::KConstantInfo" "Rec"
     [nl, ty, np, ni, n, nmin, rules, .field 0, .field 0, blk, idx])
   m473 : Heap F
@@ -533,7 +560,8 @@ structure CheckRecsCons (rc tys recs models src dst aset s n k np uo bnl fam for
   evNoMent : SubCall calls "KernelModeled::expr_mentions_addrs" [ty, fam] m511 (.field 0) m561
   mNil1 : Heap F
   hNil1 : mNil1 = m561 ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []]
-  wPeel1 pd : SourceValue F
+  wPeel1 : SourceValue F
+  pd : SourceValue F
   mP1 : Heap F
   evPeel1 : SubCall calls "KernelModeled::peel_collect"
     [ty, np, .ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») m561.length]
@@ -543,17 +571,21 @@ structure CheckRecsCons (rc tys recs models src dst aset s n k np uo bnl fam for
   evRen : SubCall calls "KernelModeled::rename" [ty, src, dst] mP1 ren mRen
   mNil2 : Heap F
   hNil2 : mNil2 = mRen ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []]
-  wPeel2 pdm : SourceValue F
+  wPeel2 : SourceValue F
+  pdm : SourceValue F
   mP2 : Heap F
   evPeel2 : SubCall calls "KernelModeled::peel_collect"
     [ren, np, .ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») mRen.length]
     mNil2 (.tuple [wPeel2, pdm]) mP2
   mEq : Heap F
   evParamEq : SubCall calls "KernelCheck::spec_params_ptr_eq" [pd, pdm] mP2 (.field 1) mEq
-  xNpN rp : SourceValue F
+  xNpN : SourceValue F
+  rp : SourceValue F
   opNpN : evalBinOp .add np n = .ok xNpN
   opRp : evalBinOp .add xNpN nmin = .ok rp
-  wP1 wP2 pins : SourceValue F
+  wP1 : SourceValue F
+  wP2 : SourceValue F
+  pins : SourceValue F
   mPins : Heap F
   evPins : SubCall calls "KernelModeled::rec_major_pins" [ty, rp, ni] mEq
     (.tuple [wP1, wP2, pins]) mPins
@@ -576,7 +608,8 @@ structure CheckRecsCons (rc tys recs models src dst aset s n k np uo bnl fam for
   m698 : Heap F
   evParent : SubCall calls "KernelCheck::rec_to_parent_addr" [ty, np, n, nmin, ni] m669
     parAddr m698
-  parPtr parCi : SourceValue F
+  parPtr : SourceValue F
+  parCi : SourceValue F
   mPar : Heap F
   evGetParent : SubCall calls "Ingress::get_ci" [parAddr] m698 parPtr mPar
   ldParent : loadValue mPar parPtr = .ok parCi
@@ -621,7 +654,7 @@ theorem checkRecs_step {rc tys recs models src dst aset s n k np uo bnl fam form
       [rc, tys, recs, models, src, dst, aset, s, n, k, np, uo, bnl, fam, form] h r h' calls) :
     (loadValue h recs = .ok (.construct Obs.Names.«Lists::Node<&[Field; 32]>» "Nil" []) ∧
       r = s ∧ h' = h) ∨
-    CheckRecsCons rc tys recs models src dst aset s n k np uo bnl fam form r h h' calls := by
+    Nonempty (CheckRecsCons rc tys recs models src dst aset s n k np uo bnl fam form r h h' calls) := by
   match Obs.«KernelModeled::check_recs».obs ev with
   | .Nil (ld12 := l12) (he21 := hR) (he22 := hH) .. => exact Or.inl ⟨l12, hR, hH⟩
   | .Cons (x_yytxvchu := xNpN) (v_czbmphqy := xRp) (x950 := xNpN2) (v909 := xRp2)
@@ -641,59 +674,59 @@ theorem checkRecs_step {rc tys recs models src dst aset s n k np uo bnl fam form
     have hB : xRp2 = xRp := Except.ok.inj (opB2.symm.trans opB)
     subst hB
     have h0 : CallSub _ calls := by rw [← hc]; exact callSub_refl calls
-    obtain ⟨s82, hr⟩ := peel_call h0 e82
-    obtain ⟨s298, hr⟩ := peel_call hr e298
-    obtain ⟨s359, hr⟩ := peel_call hr e359
-    obtain ⟨s345, hr⟩ := peel_call hr e345
-    obtain ⟨s403, hr⟩ := peel_call hr e403
-    obtain ⟨s485, hr⟩ := peel_call hr e485
-    obtain ⟨s523, hr⟩ := peel_call hr e523
-    obtain ⟨s571, hr⟩ := peel_call hr e571
-    obtain ⟨sP1, hr⟩ := peel_call hr eP1
-    obtain ⟨sRen, hr⟩ := peel_call hr eRen
-    obtain ⟨sP2, hr⟩ := peel_call hr eP2
-    obtain ⟨sEq, hr⟩ := peel_call hr eEq
-    obtain ⟨sPins, hr⟩ := peel_call hr ePins
-    obtain ⟨sLP, hr⟩ := peel_call hr eLP
-    obtain ⟨sSort, hr⟩ := peel_call hr eSort
-    obtain ⟨sSaf1, hr⟩ := peel_call hr eSaf1
-    obtain ⟨sSaf2, hr⟩ := peel_call hr eSaf2
-    obtain ⟨sPar, hr⟩ := peel_call hr ePar
-    obtain ⟨sGetP, hr⟩ := peel_call hr eGetP
-    obtain ⟨sCan, hr⟩ := peel_call hr eCan
-    obtain ⟨sHL, hr⟩ := peel_call hr eHL
-    obtain ⟨sRules, hr⟩ := peel_call hr eRules
-    have sNext := peel_last hr eNext
+    let ⟨s82, hr⟩ := peel_call h0 e82
+    let ⟨s298, hr⟩ := peel_call hr e298
+    let ⟨s359, hr⟩ := peel_call hr e359
+    let ⟨s345, hr⟩ := peel_call hr e345
+    let ⟨s403, hr⟩ := peel_call hr e403
+    let ⟨s485, hr⟩ := peel_call hr e485
+    let ⟨s523, hr⟩ := peel_call hr e523
+    let ⟨s571, hr⟩ := peel_call hr e571
+    let ⟨sP1, hr⟩ := peel_call hr eP1
+    let ⟨sRen, hr⟩ := peel_call hr eRen
+    let ⟨sP2, hr⟩ := peel_call hr eP2
+    let ⟨sEq, hr⟩ := peel_call hr eEq
+    let ⟨sPins, hr⟩ := peel_call hr ePins
+    let ⟨sLP, hr⟩ := peel_call hr eLP
+    let ⟨sSort, hr⟩ := peel_call hr eSort
+    let ⟨sSaf1, hr⟩ := peel_call hr eSaf1
+    let ⟨sSaf2, hr⟩ := peel_call hr eSaf2
+    let ⟨sPar, hr⟩ := peel_call hr ePar
+    let ⟨sGetP, hr⟩ := peel_call hr eGetP
+    let ⟨sCan, hr⟩ := peel_call hr eCan
+    let ⟨sHL, hr⟩ := peel_call hr eHL
+    let ⟨sRules, hr⟩ := peel_call hr eRules
+    let sNext := peel_last hr eNext
     exact Or.inr
-      { ldRecs := l12
-        ldModels := l51
-        evGetRec := s82
-        ldRec := l76
-        ext473 := s298.extends.trans (s359.extends.trans (s345.extends.trans
-          (s403.extends.trans s485.extends)))
-        evScope := s523
-        evNoMent := s571
-        hNil1 := hNil1
-        evPeel1 := sP1
-        evRen := sRen
-        hNil2 := hNil2
-        evPeel2 := sP2
-        evParamEq := sEq
-        opNpN := opA
-        opRp := opB
-        evPins := sPins
-        opNmotNmin := opC
-        evLowerPins := sLP
-        hNilSort := hNilS
-        evSort := sSort
-        ext669 := sSaf1.extends.trans sSaf2.extends
-        evParent := sPar
-        evGetParent := sGetP
-        ldParent := lPar
-        evCanon := sCan
-        evHeaderLets := sHL
-        evRules := sRules
-        opKNext := opK
-        evNext := sNext }
+      ⟨{ ldRecs := l12
+         ldModels := l51
+         evGetRec := s82
+         ldRec := l76
+         ext473 := s298.extends.trans (s359.extends.trans (s345.extends.trans
+           (s403.extends.trans s485.extends)))
+         evScope := s523
+         evNoMent := s571
+         hNil1 := hNil1
+         evPeel1 := sP1
+         evRen := sRen
+         hNil2 := hNil2
+         evPeel2 := sP2
+         evParamEq := sEq
+         opNpN := opA
+         opRp := opB
+         evPins := sPins
+         opNmotNmin := opC
+         evLowerPins := sLP
+         hNilSort := hNilS
+         evSort := sSort
+         ext669 := sSaf1.extends.trans sSaf2.extends
+         evParent := sPar
+         evGetParent := sGetP
+         ldParent := lPar
+         evCanon := sCan
+         evHeaderLets := sHL
+         evRules := sRules
+         opKNext := opK
+         evNext := sNext }⟩
 
 end IxVM.Refinement.Typing.FamilyAlias

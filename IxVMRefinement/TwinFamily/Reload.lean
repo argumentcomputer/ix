@@ -246,21 +246,25 @@ theorem recordOf_unpack {E : Ixon.Env} {a : _root_.Address} {c : Ixon.Constant}
     (h : recordOf E a = some c) :
     ∃ lc, E.consts.get? a = some lc ∧ Ixon.deConstantExact lc.rawBytes = .ok c := by
   unfold recordOf at h
-  cases hg : E.consts.get? a with
-  | none => simp [hg] at h
+  cases hget : E.consts.get? a with
+  | none =>
+    rw [hget] at h
+    cases (h : (none : Option Ixon.Constant) = some c)
   | some lc =>
-    rw [hg] at h
+    rw [hget] at h
+    refine ⟨lc, rfl, ?_⟩
+    have h' : (Ixon.deConstantExact lc.rawBytes).toOption = some c := h
     cases hd : Ixon.deConstantExact lc.rawBytes with
-    | error _ => simp [Option.bind, Except.toOption, hd] at h
+    | error _ => rw [hd] at h'; cases h'
     | ok c' =>
-      simp only [Option.bind, Except.toOption, hd, Option.some.injEq] at h
-      subst h
-      exact ⟨lc, rfl, rfl⟩
+      rw [hd] at h'
+      have e : c' = c := Option.some.inj h'
+      rw [e]
 
 /-- An unroled address's table key is `.id a`. -/
 theorem keyOf_eq_id_of_noRole {t : Ix.Kernel.RoleTable} {a : _root_.Address}
     (h : ∀ r, keyOf t a ≠ .role r) : keyOf t a = .id a := by
-  unfold keyOf Core.keyOf at h ⊢
+  unfold keyOf at h ⊢
   cases hf : t.bound.find? (·.2 == a) with
   | none => rfl
   | some rp => exact absurd (by simp [hf]) (h rp.1)

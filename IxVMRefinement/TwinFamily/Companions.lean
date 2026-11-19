@@ -114,7 +114,7 @@ theorem coreCompanions_append {c : Core.Ctx} (h : Decl.CoreCompanions c)
         · exact h.recPlain k cv mI rP rls rl cvj nP nF hf' hrl hfire (hctor_old hc)
       ruleCtorHead := by
         intro k cv mI rP rls hf
-        have hkn : cv.name = k := beq_iff_eq.mp (List.find?_some hf)
+        have hkn : cv.name = k := (Core.find?_mem_name hf).2
         rcases find?_append_cases new hf with hm | hf'
         · exact (hrec cv mI rP rls hm).2.2.2.imp
             (fun hh rl cvj nP nF T us hrl hc hdom => hh rl cvj nP nF T us hrl (hctor_old hc) hdom)
