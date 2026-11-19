@@ -26,7 +26,7 @@ namespace IxVM.Refinement.Typing.FamilyAlias
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Core
-open IxVM.Refinement.Decl (SubCalls)
+open IxVM.Refinement.Decl (SubCalls posRulesJ)
 open IxVM.Refinement.KernelLevels (RepKLevelList)
 open IxVM.Consistency
 open IxVM (F)
@@ -105,26 +105,62 @@ theorem keyIn_stripPis (k : KKey) :
   | _ + 1, .letE _ _ _ _, _, _, h, _ | _ + 1, .lit _, _, _, h, _ | _ + 1, .proj _ _ _, _, _, h, _ =>
     nomatch h
 
-private theorem keyIn_getAppArgsAux (k : KKey) :
-    ∀ (e : KExpr) (acc : List KExpr) (x : KExpr),
-      x ∈ e.getAppArgsAux acc → KeyIn k x → KeyIn k e ∨ ∃ y ∈ acc, KeyIn k y
-  | .app f a, acc, x, hx, hkx => by
-    simp only [Expr.getAppArgsAux] at hx
-    rcases keyIn_getAppArgsAux k f (a :: acc) x hx hkx with hf | ⟨y, hy, hky⟩
-    · exact Or.inl (Or.inl hf)
-    · rcases List.mem_cons.mp hy with rfl | hy'
-      · exact Or.inl (Or.inr hky)
-      · exact Or.inr ⟨y, hy', hky⟩
-  | .bvar _, acc, x, hx, hkx | .fvar _ _, acc, x, hx, hkx | .sort _, acc, x, hx, hkx
-  | .const _ _, acc, x, hx, hkx | .lam _ _ _, acc, x, hx, hkx | .forallE _ _ _, acc, x, hx, hkx
-  | .letE _ _ _ _, acc, x, hx, hkx | .lit _, acc, x, hx, hkx | .proj _ _ _, acc, x, hx, hkx =>
-    Or.inr ⟨x, hx, hkx⟩
+theorem keyIn_getAppArgs (k : KKey) :
+    ∀ {e x : KExpr}, x ∈ e.getAppArgs → KeyIn k x → KeyIn k e
+  | .app f a, x, hx, hkx => by
+    simp only [Expr.getAppArgs, List.mem_append, List.mem_singleton] at hx
+    rcases hx with hf | rfl
+    · exact Or.inl (keyIn_getAppArgs k hf hkx)
+    · exact Or.inr hkx
+  | .bvar _, _, hx, _ | .fvar _ _, _, hx, _ | .sort _, _, hx, _ | .const _ _, _, hx, _
+  | .lam _ _ _, _, hx, _ | .forallE _ _ _, _, hx, _ | .letE _ _ _ _, _, hx, _
+  | .lit _, _, hx, _ | .proj _ _ _, _, hx, _ => nomatch hx
 
-theorem keyIn_getAppArgs (k : KKey) {e x : KExpr} (hx : x ∈ e.getAppArgs) (hkx : KeyIn k x) :
-    KeyIn k e := by
-  rcases keyIn_getAppArgsAux k e [] x hx hkx with h | ⟨_, h, _⟩
-  · exact h
-  · exact nomatch h
+private theorem keyIn_liftLooseBVars (k : KKey) (d : Nat) :
+    ∀ (e : KExpr) (c : Nat), KeyIn k (e.liftLooseBVars d c) ↔ KeyIn k e
+  | .bvar _, _ | .sort _, _ | .lit _, _ | .const _ _, _ | .fvar _ _, _ => Iff.rfl
+  | .app f a, c => by
+    simp [Expr.liftLooseBVars, KeyIn, keyIn_liftLooseBVars k d f c, keyIn_liftLooseBVars k d a c]
+  | .lam ty b _, c | .forallE ty b _, c => by
+    simp [Expr.liftLooseBVars, KeyIn, keyIn_liftLooseBVars k d ty c,
+      keyIn_liftLooseBVars k d b (c + 1)]
+  | .letE ty v b _, c => by
+    simp [Expr.liftLooseBVars, KeyIn, keyIn_liftLooseBVars k d ty c,
+      keyIn_liftLooseBVars k d v c, keyIn_liftLooseBVars k d b (c + 1)]
+  | .proj _ _ e, c => by
+    simp [Expr.liftLooseBVars, KeyIn, keyIn_liftLooseBVars k d e c]
+
+private theorem keyIn_instShift (k : KKey) (V : KExpr) :
+    ∀ (B : KExpr) (j : Nat), KeyIn k (instShift V j B) → KeyIn k V ∨ KeyIn k B
+  | .bvar i, j, hk => by
+    simp only [instShift, Expr.instantiate1Lift] at hk
+    split at hk
+    · exact Or.inl ((keyIn_liftLooseBVars k j V 0).mp hk)
+    · split at hk <;> exact nomatch hk
+  | .fvar _ _, _, hk => Or.inr hk
+  | .sort _, _, hk | .lit _, _, hk => nomatch hk
+  | .const _ _, _, hk => Or.inr hk
+  | .app f a, j, hk => by
+    simp only [instShift, Expr.instantiate1Lift, KeyIn] at hk
+    rcases hk with hf | ha
+    · exact (keyIn_instShift k V f j hf).imp id Or.inl
+    · exact (keyIn_instShift k V a j ha).imp id Or.inr
+  | .lam ty b _, j, hk | .forallE ty b _, j, hk => by
+    simp only [instShift, Expr.instantiate1Lift, KeyIn] at hk
+    rcases hk with ht | hb
+    · exact (keyIn_instShift k V ty j ht).imp id Or.inl
+    · exact (keyIn_instShift k V b (j + 1) hb).imp id Or.inr
+  | .letE ty v b _, j, hk => by
+    simp only [instShift, Expr.instantiate1Lift, KeyIn] at hk
+    rcases hk with ht | hv | hb
+    · exact (keyIn_instShift k V ty j ht).imp id Or.inl
+    · exact (keyIn_instShift k V v j hv).imp id (Or.inr ∘ Or.inl)
+    · exact (keyIn_instShift k V b (j + 1) hb).imp id (Or.inr ∘ Or.inr)
+  | .proj _ _ e, j, hk => by
+    simp only [instShift, Expr.instantiate1Lift, KeyIn] at hk
+    rcases hk with rfl | he
+    · exact Or.inr (Or.inl rfl)
+    · exact (keyIn_instShift k V e j he).imp id Or.inr
 
 theorem keyIn_of_majorShape {tyA : KExpr} {mI rP cnP : Nat} {lvls : List Level} {pins : List KExpr}
     (hmaj : majorShape tyA mI rP cnP = some (lvls, pins))
@@ -173,19 +209,18 @@ private theorem noProjIn_stripPis {bad : List KKey} :
   | _ + 1, .letE _ _ _ _, _, _, _, hs | _ + 1, .lit _, _, _, _, hs
   | _ + 1, .proj _ _ _, _, _, _, hs => nomatch hs
 
-private theorem noProjIn_getAppArgsAux {bad : List KKey} :
-    ∀ (e : KExpr) (acc : List KExpr),
-      Decl.NoProjIn bad e = true → (∀ a ∈ acc, Decl.NoProjIn bad a = true) →
-      ∀ x ∈ e.getAppArgsAux acc, Decl.NoProjIn bad x = true
-  | .app f a, acc, hnp, hacc, x, hx => by
+private theorem noProjIn_getAppArgs {bad : List KKey} :
+    ∀ {e : KExpr}, Decl.NoProjIn bad e = true →
+      ∀ x ∈ e.getAppArgs, Decl.NoProjIn bad x = true
+  | .app f a, hnp, x, hx => by
     simp only [Decl.NoProjIn, Bool.and_eq_true] at hnp
-    simp only [Expr.getAppArgsAux] at hx
-    exact noProjIn_getAppArgsAux f (a :: acc) hnp.1
-      (fun y hy => by rcases List.mem_cons.mp hy with rfl | hy'; exact hnp.2; exact hacc y hy') x hx
-  | .bvar _, acc, _, hacc, x, hx | .fvar _ _, acc, _, hacc, x, hx | .sort _, acc, _, hacc, x, hx
-  | .const _ _, acc, _, hacc, x, hx | .lam _ _ _, acc, _, hacc, x, hx
-  | .forallE _ _ _, acc, _, hacc, x, hx | .letE _ _ _ _, acc, _, hacc, x, hx
-  | .lit _, acc, _, hacc, x, hx | .proj _ _ _, acc, _, hacc, x, hx => hacc x hx
+    simp only [Expr.getAppArgs, List.mem_append, List.mem_singleton] at hx
+    rcases hx with hf | rfl
+    · exact noProjIn_getAppArgs hnp.1 x hf
+    · exact hnp.2
+  | .bvar _, _, _, hx | .fvar _ _, _, _, hx | .sort _, _, _, hx | .const _ _, _, _, hx
+  | .lam _ _ _, _, _, hx | .forallE _ _ _, _, _, hx | .letE _ _ _ _, _, _, hx
+  | .lit _, _, _, hx | .proj _ _ _, _, _, hx => nomatch hx
 
 private theorem noProjIn_lowerBVars (bad : List KKey) (n : Nat) :
     ∀ (e : KExpr) (c : Nat), Decl.NoProjIn bad (e.lowerBVars n c) = Decl.NoProjIn bad e
@@ -230,8 +265,7 @@ theorem noProjIn_of_majorShape {bad : List KKey} {tyA : KExpr} {mI rP cnP : Nat}
             have hnp_fa := noProjIn_stripPis mI hnp hs
             simp only [Decl.NoProjIn, Bool.and_eq_true] at hnp_fa
             rw [noProjIn_lowerBVars]
-            exact noProjIn_getAppArgsAux dom [] hnp_fa.1 (fun _ h => nomatch h) q
-              (List.mem_of_mem_take hq)
+            exact noProjIn_getAppArgs hnp_fa.1 q (List.mem_of_mem_take hq)
           · cases hmaj
         | _ => rw [hfn] at hmaj; cases hmaj
       | _ => cases hmaj
@@ -240,7 +274,8 @@ theorem noProjIn_of_majorShape {bad : List KKey} {tyA : KExpr} {mI rP cnP : Nat}
 theorem noProjIn_of_constsResolve_fresh {env : Ix.Kernel.Env .anon} {bad : List KKey}
     (hfresh : ∀ k ∈ bad, env.find? k = none) :
     ∀ e : KExpr, e.constsResolve env = true → Decl.NoProjIn bad e = true
-  | .bvar _, _ | .fvar _ _, _ | .sort _, _ | .const _ _, _ | .lit _, _ => rfl
+  | .bvar _, _ | .sort _, _ | .const _ _, _ | .lit _, _ => rfl
+  | .fvar _ ty, h => noProjIn_of_constsResolve_fresh hfresh ty h
   | .app f a, h => by
     simp only [Expr.constsResolve, Bool.and_eq_true] at h
     simp [Decl.NoProjIn, noProjIn_of_constsResolve_fresh hfresh f h.1,
@@ -262,7 +297,8 @@ theorem noProjIn_of_constsResolve_fresh {env : Ix.Kernel.Env .anon} {bad : List 
       simp at h
     have hcont : bad.contains s = false := by
       rw [List.contains_eq_mem, decide_eq_false_iff_not]; exact hnotmem
-    simp [Decl.NoProjIn, hcont, noProjIn_of_constsResolve_fresh hfresh e h.2]
+    simp only [Decl.NoProjIn, Bool.and_eq_true, Bool.not_eq_true']
+    exact ⟨hcont, noProjIn_of_constsResolve_fresh hfresh e h.2⟩
 
 theorem addrIn_of_keyIn_tmExact {κ : _root_.Address → KKey} {Γ : Nat → KExpr} {h : Heap F}
     {k : Nat} {E : KExpr} {p : SourceValue F}
@@ -289,10 +325,9 @@ theorem addrIn_of_keyIn_tmExact {κ : _root_.Address → KKey} {Γ : Nat → KEx
     rcases hk with ht | hb
     · obtain ⟨a, hin, heq⟩ := iht key ht; exact ⟨a, .forallTy cell hin, heq⟩
     · obtain ⟨a, hin, heq⟩ := ihb key hb; exact ⟨a, .forallBody cell hin, heq⟩
-  | letE cell _ _ _ iht ihv ihb =>
+  | letE cell _ _ _ _ ihv ihb =>
     intro key hk
-    rcases hk with ht | hv | hb
-    · obtain ⟨a, hin, heq⟩ := iht key ht; exact ⟨a, .letTy cell hin, heq⟩
+    rcases keyIn_instShift key _ _ 0 hk with hv | hb
     · obtain ⟨a, hin, heq⟩ := ihv key hv; exact ⟨a, .letVal cell hin, heq⟩
     · obtain ⟨a, hin, heq⟩ := ihb key hb; exact ⟨a, .letBody cell hin, heq⟩
   | litNat _ _ _ | litStr _ _ _ => intro _ hk; exact nomatch hk
@@ -301,49 +336,6 @@ theorem addrIn_of_keyIn_tmExact {κ : _root_.Address → KKey} {Γ : Nat → KEx
     rcases hk with rfl | he
     · exact ⟨_, .projHead cell ra, rfl⟩
     · obtain ⟨a, hin, heq⟩ := ihe key he; exact ⟨a, .projArg cell hin, heq⟩
-
-theorem keyIn_of_tmExact_addrIn {κ : _root_.Address → KKey} {Γ : Nat → KExpr} {h : Heap F}
-    {k : Nat} {E : KExpr} {p : SourceValue F}
-    (rep : Decl.TmExact κ 0 Γ h k E p) :
-    ∀ a, AddrIn h p a → KeyIn (κ (ixAddr a)) E := by
-  induction rep with
-  | bvarLocal cell _ _ => intro a ha; exact (Binding.addrIn_none cell (by decide) ha).elim
-  | bvarFree _ _ _ hd => exact nomatch hd
-  | sort cell _ => intro a ha; exact (Binding.addrIn_none cell (by decide) ha).elim
-  | const cell ra _ =>
-    intro a ha
-    have he := Bytes.repAddressRef_inj U32.Goldilocks.compatible ra
-      (Binding.addrIn_const_inv cell ha)
-    subst he; rfl
-  | app cell _ _ ihf iha =>
-    intro a ha
-    rcases Binding.addrIn_app_inv cell ha with hf | harg
-    · exact Or.inl (ihf a hf)
-    · exact Or.inr (iha a harg)
-  | lam cell _ _ _ iht ihb =>
-    intro a ha
-    rcases Binding.addrIn_lam_inv cell ha with ht | hb
-    · exact Or.inl (iht a ht)
-    · exact Or.inr (ihb a hb)
-  | forallE cell _ _ _ iht ihb =>
-    intro a ha
-    rcases Binding.addrIn_forall_inv cell ha with ht | hb
-    · exact Or.inl (iht a ht)
-    · exact Or.inr (ihb a hb)
-  | letE cell _ _ _ iht ihv ihb =>
-    intro a ha
-    rcases Binding.addrIn_let_inv cell ha with ht | hv | hb
-    · exact Or.inl (iht a ht)
-    · exact Or.inr (Or.inl (ihv a hv))
-    · exact Or.inr (Or.inr (ihb a hb))
-  | litNat cell _ _ | litStr cell _ _ =>
-    intro a ha; exact (Binding.addrIn_none cell (by decide) ha).elim
-  | proj cell ra _ ihe =>
-    intro a ha
-    rcases Binding.addrIn_proj_inv cell ha with hh | harg
-    · have he := Bytes.repAddressRef_inj U32.Goldilocks.compatible ra hh
-      subst he; exact Or.inl rfl
-    · exact Or.inr (ihe a harg)
 
 private theorem infer_mkAppN_fn {env : Ix.Kernel.Env .anon} {d : Nat} :
     ∀ {args : List KExpr} {f T : KExpr},
@@ -402,7 +394,7 @@ private theorem stripPis_constHead_of_instantiateLevelParams (ks : List LevelPar
   | _ + 1, .sort _, _, _, _, _, hs, _ | _ + 1, .const _ _, _, _, _, _, hs, _
   | _ + 1, .app _ _, _, _, _, _, hs, _ | _ + 1, .lam _ _ _, _, _, _, _, hs, _
   | _ + 1, .letE _ _ _ _, _, _, _, _, hs, _ | _ + 1, .lit _, _, _, _, _, hs, _
-  | _ + 1, .proj _ _ _, _, _, _, _, hs, _ =>
+  | _ + 1, .proj _ _ _, _, _, _, _, hs, _ => by
     simp [Expr.instantiateLevelParams, Expr.stripPis] at hs
 
 private theorem stripPis_renameConsts (π : KKey → KKey) :
@@ -460,7 +452,7 @@ private theorem instLamsAt_append :
     cases Expr.instLamsAt xs (b.instantiate1 x) with
     | none => rfl
     | some p =>
-      cases Expr.instLamsAt ys p.2 <;> simp
+      cases hys : Expr.instLamsAt ys p.2 <;> simp [hys]
   | _ :: _, _, .bvar _ | _ :: _, _, .fvar _ _ | _ :: _, _, .sort _ | _ :: _, _, .const _ _
   | _ :: _, _, .app _ _ | _ :: _, _, .forallE _ _ _ | _ :: _, _, .letE _ _ _ _
   | _ :: _, _, .lit _ | _ :: _, _, .proj _ _ _ => rfl
@@ -608,7 +600,27 @@ theorem tm_famKey_of_stored {E₀ : Ixon.Env} {env : Ix.Kernel.Env .anon} {t : I
     rcases hres with h1 | ⟨y, hy, hci⟩
     · exact Core.resKey_of_res (Or.inl h1)
     · exact Core.resKey_of_res (Or.inr (Or.inr ⟨y, hy, Or.inl hci⟩))
-  exact rep.rekey hkeep
+  induction rep with
+  | bvarLocal cell hs hi => exact .bvarLocal cell hs hi
+  | bvarFree cell hs hk hd => exact .bvarFree cell hs hk hd
+  | sort cell rl hu => exact .sort cell rl hu
+  | @const k addr ap lsp a ls us res cell ra rls hus =>
+    have he := hkeep (ixAddr a) res.ne
+    have : Resolved (famKey t env srcAs (ixAddr a)) := ⟨by rw [he]; exact res.ne⟩
+    rw [← he]; exact .const cell ra rls hus
+  | app cell _ _ ihf iha => exact .app cell ihf iha
+  | lam cell _ _ rl iht ihb => exact .lam cell iht ihb rl
+  | forallE cell _ _ rl iht ihb => exact .forallE cell iht ihb rl
+  | letE cell _ _ _ iht ihv ihb => exact .letE cell iht ihv ihb
+  | litNat cell rl hc => exact .litNat cell rl hc
+  | litStr cell rb hs => exact .litStr cell rb hs
+  | @proj k addr ap ep a i E res pm cell ra _ ih =>
+    have he := hkeep (ixAddr a) res.ne
+    have : Resolved (famKey t env srcAs (ixAddr a)) := ⟨by rw [he]; exact res.ne⟩
+    have : ProjPermitted (famKey t env srcAs) (ixAddr a) := by
+      have hm := hkeep (Core.projMarker (ixAddr a)) pm.ne
+      exact ⟨by rw [hm]; exact pm.ne⟩
+    rw [← he]; exact .proj cell ra ih
 
 /-- Any term represented at `Core.keyOf t` whose cells are stored or in `srcAs` is represented at
 `famKey`. -/
@@ -628,7 +640,7 @@ theorem tm_famKey_of_cells {env : Ix.Kernel.Env .anon} {t : Ix.Kernel.RoleTable}
     · have he := famKey_of_find (srcAs := srcAs) hci
       have : Resolved (famKey t env srcAs (ixAddr a)) := ⟨by rw [he]; exact res.ne⟩
       rw [← he]; exact .const cell ra rls hus
-    · have he := famKey_of_src (env := env) hm
+    · have he := famKey_of_src (t := t) (env := env) hm
       have : Resolved (famKey t env srcAs (ixAddr a)) := ⟨by rw [he]; exact res.ne⟩
       rw [← he]; exact .const cell ra rls hus
   | app cell _ _ ihf iha =>
@@ -652,7 +664,7 @@ theorem tm_famKey_of_cells {env : Ix.Kernel.Env .anon} {t : Ix.Kernel.RoleTable}
       have : Resolved (famKey t env srcAs (ixAddr a)) := ⟨by rw [he]; exact res.ne⟩
       have : ProjPermitted (famKey t env srcAs) (ixAddr a) := famKey_projPermitted_of_find hci
       rw [← he]; exact .proj cell ra (ih fun a m => hcells a (.projArg cell m))
-    · have he := famKey_of_src (env := env) hm
+    · have he := famKey_of_src (t := t) (env := env) hm
       have : Resolved (famKey t env srcAs (ixAddr a)) := ⟨by rw [he]; exact res.ne⟩
       have : ProjPermitted (famKey t env srcAs) (ixAddr a) := famKey_projPermitted_of_src hm
       rw [← he]; exact .proj cell ra (ih fun a m => hcells a (.projArg cell m))
@@ -879,53 +891,49 @@ theorem rename_tm_stored {t : Ix.Kernel.RoleTable} (hwf : t.wf = true) {E₀ : I
   exact hmain _ _ _ _ _ _ ev rfl e src dst k E rfl hE hsrc hdst
 
 /-- **`KernelModeled::rename_list` into `Core.Ctx.stored`**: lifts `rename_stored_of_src` across a
-list of expressions whose keys are all stored in `env` or in `srcKeys`. -/
-theorem rename_list_stored_of_keys {t : Ix.Kernel.RoleTable} (hwf : t.wf = true) {E₀ : Ixon.Env}
+list of expressions whose heap cells are all stored in `env` or in `srcAs`. -/
+theorem rename_list_stored_of_cells {t : Ix.Kernel.RoleTable} (hwf : t.wf = true) {E₀ : Ixon.Env}
     {env : Ix.Kernel.Env .anon} {lim : Option Nat}
     {srcAs dstAs : List Bytes.Address} {Γ₁ Γ₂ : Nat → KExpr} {k : Nat}
     (hlen : srcAs.length = dstAs.length)
     (hmodels : ∀ b ∈ dstAs, ∃ ci, env.find? (Core.keyOf t (ixAddr b)) = some ci) :
     ∀ {Es : List KExpr} {es src dst r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       ObsFn W "KernelModeled::rename_list" [es, src, dst] h r h' cs →
-      RepList kexprListEnum (fun h E p => Decl.TmExact (Core.keyOf t) 0 Γ₁ h k E p) h Es es →
-      (∀ E ∈ Es, ∀ key, KeyIn key E →
-        (∃ ci, env.find? key = some ci) ∨ key ∈ srcAs.map fun b => Core.keyOf t (ixAddr b)) →
+      RepList kexprListEnum
+        (fun h E p => Decl.TmExact (Core.keyOf t) 0 Γ₁ h k E p ∧
+          ∀ a, AddrIn h p a →
+            (∃ ci, env.find? (Core.keyOf t (ixAddr a)) = some ci) ∨ ixAddr a ∈ srcAs.map ixAddr)
+        h Es es →
       RepList addrListEnum (Bytes.RepAddressRef addrTy) h srcAs src →
       RepList addrListEnum (Bytes.RepAddressRef addrTy) h dstAs dst →
       RepList kexprListEnum
         (fun h E p => Decl.TmExact (Core.Ctx.stored ⟨E₀, env, t, lim⟩).κ 0 Γ₂ h k E p) h'
         (Es.map (Decl.renameAll (aliasMap ((srcAs.map fun b => Core.keyOf t (ixAddr b)).zip
           (dstAs.map fun b => Core.keyOf t (ixAddr b)))))) r
-  | [], es, src, dst, r, h, h', cs, ev, hes, _, _, _ => by
+  | [], es, src, dst, r, h, h', cs, ev, hes, _, _ => by
     rcases Obs.«KernelModeled::rename_list».obs ev with ⟨_, rfl, rfl, _⟩ |
       ⟨_, _, _, _, _, _, _, _, ld, _, _, _, _, _⟩
     · exact .nil (by simp)
     · obtain ⟨_, _, he, _, _⟩ := Lib.rep_cons_of_load hes ld; cases he
-  | E :: Es, es, src, dst, r, h, h', cs, ev, hes, hkeys, hsrc, hdst => by
+  | E :: Es, es, src, dst, r, h, h', cs, ev, hes, hsrc, hdst => by
     rcases Obs.«KernelModeled::rename_list».obs ev with ⟨ld, _, _, _⟩ |
       ⟨x_e, _, _, _, _, _, _, _, ld, rfl, rfl, ev1, ev2, _⟩
     · cases Lib.rep_nil_of_load hes ld
-    · obtain ⟨E', Es', he, hE, hEs⟩ := Lib.rep_cons_of_load hes ld
+    · obtain ⟨E', Es', he, ⟨hE, hcellsE⟩, hEs⟩ := Lib.rep_cons_of_load hes ld
       injection he with h1 h2; subst h1 h2
-      have hcellsE : ∀ a, AddrIn h x_e a →
-          (∃ ci, env.find? (Core.keyOf t (ixAddr a)) = some ci) ∨ ixAddr a ∈ srcAs.map ixAddr := by
-        intro a ha
-        have hk := keyIn_of_tmExact_addrIn hE a ha
-        rcases hkeys E (List.mem_cons_self ..) _ hk with hst | hm
-        · exact Or.inl hst
-        · obtain ⟨b, hb, hab⟩ := List.mem_map.mp hm
-          exact Or.inr (List.mem_map.mpr ⟨b, hb, Core.keyOf_inj hwf hab⟩)
       have sE := rename_stored_of_src (E₀ := E₀) (lim := lim) (Γ₂ := Γ₂) hwf ev1 hlen hsrc hdst
         hE hmodels hcellsE
       have ext1 := ev1.heap_extends
-      have sEs := rename_list_stored_of_keys (E₀ := E₀) (lim := lim) (Γ₁ := Γ₁) (Γ₂ := Γ₂)
-        hwf hlen hmodels ev2
-        (RepLinkedList.mono (fun _ _ _ _ ext x => x.mono ext) ext1 hEs)
-        (fun E' hE' => hkeys E' (List.mem_cons_of_mem _ hE'))
+      have hEs_ext := RepLinkedList.mono
+        (fun _ _ _ _ ext ⟨hx, hc⟩ =>
+          ⟨hx.mono ext, fun a ha => hc a (Binding.TmExact.addrIn_back hx ext a ha)⟩)
+        ext1 hEs
+      have sEs := rename_list_stored_of_cells (E₀ := E₀) (lim := lim) (Γ₁ := Γ₁) (Γ₂ := Γ₂)
+        hwf hlen hmodels ev2 hEs_ext
         (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext1 hsrc)
         (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext1 hdst)
       exact .cons (by simp) (sE.mono (ev2.heap_extends.trans (Heap.Extends.snoc _ _)))
-        (sEs.mono (Heap.Extends.snoc _ _))
+        (RepLinkedList.mono (fun _ _ _ _ ext x => x.mono ext) (Heap.Extends.snoc _ _) sEs)
 
 /-- Scoped version of `Decl.eq_addr_key_spec`: resolving
 `Bytes::address_eq(eqa, KernelRoles::role_addr(rc, KernelRoleSpec::role_eq())) = 1`
@@ -1036,7 +1044,9 @@ theorem check_iota_rule_facts
         Tm (famKey t env srcAs) 0 zeroGhost h 0 (Core.posOf cvj.levelParams cvj.type) cty)
     (hilvls_rep : RepKLevelList h (lvls.map (Level.subst lps (Core.posLevels lps))) ilvls)
     (hpins_rep : RepList kexprListEnum
-      (fun h P p => Decl.TmExact (Core.keyOf t) 0 zeroGhost h rP P p) h
+      (fun h P p => Decl.TmExact (Core.keyOf t) 0 zeroGhost h rP P p ∧
+        ∀ a, AddrIn h p a →
+          (∃ ci, env.find? (Core.keyOf t (ixAddr a)) = some ci) ∨ ixAddr a ∈ srcAs.map ixAddr) h
       (pins.map (Core.posOf lps)) pins_ptr)
     (inv : Decl.CheckIotaRuleInvR rc rm (.field (lps.length : F)) ty_r (.field (rP : F))
       (.field ((mI - rP : Nat) : F)) rhs cprj cty (.field (cnP : F)) (.field (cnF : F))
@@ -1307,9 +1317,10 @@ theorem check_iota_rule_facts
   have ext_rhead := Heap.Extends.snoc inv.h_plvls (.construct kexprEnum "Const" [rm, inv.v_plvls])
   have ext_h_to_rhead := ext_a2.trans (ext_plvls.trans ext_rhead)
   obtain ⟨ci_rm, hci_rm⟩ := hrm_stored
-  have hsc_rm : sc.κ (ixAddr a_rm) = g recKey :=
-    (Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hci_rm).trans hrm_key
-  have : Resolved (sc.κ (ixAddr a_rm)) := ⟨by rw [hsc_rm]; exact Resolved.ne⟩
+  have hsc_rm_tbl : sc.κ (ixAddr a_rm) = Core.keyOf t (ixAddr a_rm) :=
+    Core.Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hci_rm
+  have hsc_rm : sc.κ (ixAddr a_rm) = g recKey := hsc_rm_tbl.trans hrm_key
+  have : Resolved (sc.κ (ixAddr a_rm)) := ⟨by rw [hsc_rm_tbl]; exact Resolved.ne⟩
   have hrhead_ex : Decl.TmExact sc.κ depth Γ_t
       (inv.h_plvls ++ [.construct kexprEnum "Const" [rm, inv.v_plvls]]) 0
       (Core.posOf lps (.const (g recKey) (lps.map .param)))
@@ -1409,25 +1420,11 @@ theorem check_iota_rule_facts
   have ra_cren := Bytes.repAddressRef_heapMono₂ addrTy inv.ev_cren.heap_extends ra_cren_maj
   rw [hcprj_key] at hcren_key
   have ext_h_cren := ext_h_maj.trans inv.ev_cren.heap_extends
-  have hty_keys : ∀ key, KeyIn key tyA →
-      (∃ ci, env.find? key = some ci) ∨ key ∈ srcKeys := by
-    intro key hk
-    have hk_pos : KeyIn key (Core.posOf lps tyA) :=
-      (keyIn_instantiateLevelParams lps (Core.posLevels lps) key tyA).mpr hk
-    obtain ⟨a, ha, rfl⟩ := addrIn_of_keyIn_tmExact (hty_rep 0 zeroGhost) key hk_pos
-    rcases hty_cells a ha with hst | hm
-    · exact Or.inl hst
-    · obtain ⟨b, hb, hab⟩ := List.mem_map.mp hm
-      exact Or.inr (List.mem_map.mpr ⟨b, hb, by rw [hab]⟩)
-  have hpins_keys : ∀ E ∈ pins.map (Core.posOf lps), ∀ key, KeyIn key E →
-      (∃ ci, env.find? key = some ci) ∨ key ∈ srcKeys := by
-    intro E hE key hk
-    obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hE
-    have hkp := (keyIn_instantiateLevelParams lps (Core.posLevels lps) key p).mp hk
-    exact hty_keys key (keyIn_of_majorShape hmaj hp hkp)
-  have hpins_ren_rep := rename_list_stored_of_keys (E₀ := E) (lim := lim)
+  have hpins_ren_rep := rename_list_stored_of_cells (E₀ := E) (lim := lim)
     (Γ₁ := zeroGhost) (Γ₂ := zeroGhost) htwf hlenSD hmodels inv.ev_pren
-    (RepLinkedList.mono (fun _ _ _ _ e x => x.mono e) ext_h_cren hpins_rep) hpins_keys
+    (RepLinkedList.mono
+      (fun _ _ _ _ e ⟨hx, hc⟩ => ⟨hx.mono e, fun a ha => hc a (Binding.TmExact.addrIn_back hx e a ha)⟩)
+      ext_h_cren hpins_rep)
     (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_cren hsrc)
     (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_cren hdst)
   have hnp_pins : ∀ p ∈ pins, Decl.NoProjIn srcKeys p = true :=
@@ -1481,7 +1478,8 @@ theorem check_iota_rule_facts
       (.ptr (.enum kexprEnum) inv.h_pd.length) := by
     unfold Core.posOf
     simp only [Expr.instantiateLevelParams]
-    rw [← hcren_key]
+    have hcren_g : g r.ctor = Core.keyOf t (ixAddr a_cren) := hcren_key.symm
+    rw [hcren_g]
     exact .const (by simp)
       (Bytes.repAddressRef_heapMono₂ addrTy
         (inv.ev_pren.heap_extends.trans (inv.ev_pd.heap_extends.trans ext_pd_c)) ra_cren)
@@ -1682,7 +1680,7 @@ theorem check_iota_rule_facts
     rw [List.getElem?_map, List.getElem?_range hm_cnF, Option.map_some,
       List.getElem?_eq_getElem hm] at h1
     exact Option.some.inj h1
-  obtain ⟨r_cres, -, cdoms2_pos, cres_pos, htup_cres, hinst_c2_pos, hcres_tm⟩ :=
+  obtain ⟨r_cres, _, cdoms2_pos, cres_pos, htup_cres, hinst_c2_pos, hcres_tm⟩ :=
     Decl.peel_collect_inst_tm hdrop_fvs_len hdrop_fvs_Γ inv.ev_cres (hcrest_tm.mono ext_crest_in)
   injection htup_cres with hl; injection hl with h1 _; subst h1
   rw [show rP + ((fvs.drop rP).map (Core.posOf lps)).length = depth by
