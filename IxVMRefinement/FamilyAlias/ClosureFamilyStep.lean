@@ -544,7 +544,9 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
     have hT := hTys ms rs hB.muts hRB.muts
     have hku : k < UInt64.size := Nat.lt_trans (Array.getElem?_eq_some_iff.mp hk).1 hT.rsBound
     have hk_toNat : k.toUInt64.toNat = k := by
-      simpa [UInt64.toNat_ofNat] using Nat.mod_eq_of_lt hku
+      show (UInt64.ofNat k).toNat = k
+      rw [UInt64.toNat_ofNat]
+      exact Nat.mod_eq_of_lt hku
     have hx_rb : ConstAddrOf rb crb (memberAddr rb k (.recr rc)) :=
       Or.inr ⟨rs, k, .recr rc, hRB.muts, hk, Or.inl rfl⟩
     have hxF : FamAddr B cb rb crb (memberAddr rb k (.recr rc)) := Or.inr hx_rb

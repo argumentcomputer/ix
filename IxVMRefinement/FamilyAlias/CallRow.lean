@@ -940,10 +940,9 @@ theorem familyCall_checked_of_chain
     subst e1
     have e2 : ms = ms' := Ixon.ConstantInfo.muts.inj (hB'.muts.symm.trans hmuts')
     subst e2
-    have hrepM' : RepList (Instance.mk "Lists::Node" [.named "Ixon::MutConst" []]).symbol
-        L1.RepMutConst C.m624 ms.toList C.members := by
-      rw [Obs.Names.«Lists::Node<Ixon::MutConst>».symbol]
-      exact RepLinkedList.mono (fun _ _ _ _ ext r => r.mono ext)
+    have hrepM' : RepList Obs.Names.«Lists::Node<Ixon::MutConst>»
+        L1.RepMutConst C.m624 ms.toList C.members :=
+      RepLinkedList.mono (fun _ _ _ _ ext r => r.mono ext)
         (C.evLenMem.extends.trans C.evIndcCnt.extends) hrepM
     exact block_nparams_spec hrepM' C.evNParams.obs
   have hn_rs : rs.size < 72057594037927936 ∧ C.nRecs = .field (rs.size : F) := by

@@ -126,7 +126,8 @@ theorem StoredFamilyRecs.recLoaded {t : Ix.Kernel.RoleTable} (ht : t.check = .ok
     | mk idx blk =>
       dsimp only at hp ⊢
       subst hp
-      rw [UInt64.ofNat_toNat]
+      have hidx : idx.toNat.toUInt64 = idx := UInt64.ofNat_toNat
+      rw [hidx]
   rw [hp', hcv, hrl, hcv', hrl'] at hTML
   exact hTML
 

@@ -427,8 +427,7 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
 member as a field element below `2^56`. -/
 theorem block_nparams_spec {h h' : Heap F} {ms : Array Ixon.MutConst}
     {x_members r : SourceValue F} {cs : List (Call F)}
-    (hrep : RepList (Instance.mk "Lists::Node" [.named "Ixon::MutConst" []]).symbol
-      L1.RepMutConst h ms.toList x_members)
+    (hrep : RepList Obs.Names.«Lists::Node<Ixon::MutConst>» L1.RepMutConst h ms.toList x_members)
     (ev : ObsFn W "KernelModeled::block_nparams" [x_members] h r h' cs) :
     ∀ ind₀, ms[0]? = some (.indc ind₀) →
       ind₀.params.toNat < 72057594037927936 ∧ r = .field (ind₀.params.toNat : F) := by
@@ -450,7 +449,7 @@ theorem block_nparams_spec {h h' : Heap F} {ms : Array Ixon.MutConst}
     injection hargs2 with _ hargs2
     injection hargs2 with hparams_eq _
     have hru : Deserialize.RepU64 h ind₀.params x_params := by
-      rw [← hparams_eq]
+      rw [hparams_eq]
       exact Deserialize.repU64_u64Value h ind₀.params
     obtain ⟨hlt, hval, -⟩ := Lib.u64_to_field_spec hru ev115
     rw [hr]
