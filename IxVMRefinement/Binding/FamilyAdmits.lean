@@ -85,7 +85,7 @@ inductive DirectContWitness (x_rc x_block : SourceValue F) (x : _root_.Address) 
         (cs_ord ++ (⟨"UInt8::to_field", [x_kind], m_ord⟩ : Call F) ::
         (cs165 ++ (⟨"KernelModeled::check_witness", [x_rc, x_block, x_x, .field 2, x_s3], m157⟩ : Call F) ::
         (cs127 ++ (⟨"KernelModeled::check_witnesses", [x_rc, x_block, v_ns, v200], m117⟩ : Call F) ::
-          cs194))))))) :
+          cs194)))))) :
       DirectContWitness x_rc x_block x x_s x_n x_out x_s' h h' cs
   | tail {x_s x_n x_out x_s' : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
       {m47 m82 m_ord m157 m117 m184 m256 : Heap F}
@@ -111,7 +111,7 @@ inductive DirectContWitness (x_rc x_block : SourceValue F) (x : _root_.Address) 
         (cs_ord ++ (⟨"UInt8::to_field", [x_kind], m_ord⟩ : Call F) ::
         (cs165 ++ (⟨"KernelModeled::check_witness", [x_rc, x_block, x_x, v_kf, x_s3], m157⟩ : Call F) ::
         (cs127 ++ (⟨"KernelModeled::check_witnesses", [x_rc, x_block, v_ns, v200], m117⟩ : Call F) ::
-          cs194))))))) :
+          cs194)))))) :
       DirectContWitness x_rc x_block x x_s x_n x_out x_s' h h' cs
 
 /-- **The witness, advice, container, and family reference guards extracted from a single unfolding
