@@ -74,3 +74,37 @@ without slowing the run. The two wraps took 14 s and 9 s, the L3 ladder 202 s
 (133 GB peak) to a 584-byte PLONK certificate with every ladder check
 passing, and `aiur_exec_check` accepted the root against the full config's
 inputs and expected weights.
+
+## Fewer, larger leaves: `Fixed::train_block`
+
+A step tree is about 1,200 recursive proofs, so at 3–4 s of device time each
+it cannot finish much under an hour. `Fixed::train_block` runs 20 steps in one
+execution (`model ‖ lr ‖ 20 batches' inputs ‖ their targets`, 7,601 data
+words), so the run is 30 executions and the tree 59 nodes. `AiurExecBlock`
+(`aiurexec-export export PATH --block`) is the `AiurExec` module with that
+claim shape; `aiur_exec_tree --prefix block` proves the tree over
+`block-NNN` batch roots, and `aiur_exec_check … 30 20` checks its root.
+
+The module keeps its word counts as constants. A variant that reads the data
+length from the claim compiled to a different layout, and its double-wrapped
+root needed 262,280 `G_cold0` rows in the pinned wrap layout (cap 262,144);
+the constant-count instance needs 259,374. The margin is thin, so a root the
+layout does not admit can be wrapped once more: a further wrap is a new proof
+of the same claim.
+
+Measured 2026-11-19 (one RTX PRO 6000, `AIUR_GPU_TRACE=generated`, default
+cells, `--max-ram 170` under a 180G cgroup cap), from the 30 exported
+packages to the certificate in one gated run:
+
+| Stage | Wall | Notes |
+|---|---|---|
+| 30 block proofs (`batch_root`, one normalized shard each) | 23 s | 0.23 s proving each, 21.5 MB proofs |
+| Tree, 30 leaves and 29 joins interleaved | 258 s | leaf: 4.8 GiB record, 2 shards, 2.7 s proof; join: 4.9 GiB, 2–3 shards, 4.0 s; 196 s of device proving, GPU busy 76% of samples; 122 GB peak RSS |
+| Two normalized wraps | 29 s | `G_cold0` 0.99 of the wrap layout |
+| L3 ladder to PLONK | 199 s | 143 GB peak; every ladder check passes |
+| Total | 509 s | plus `aiur_exec_check`, 0.5 s |
+
+Alone, a leaf over one block proof executes in 11 s with a 4.8 GiB record,
+the size of a step-tree join; with 24 executions at once it took 19 s.
+Exporting the 30 packages (one compilation of the block circuit, 127 s) took
+136 s and the aggregator's package 87 s; both are made once per circuit.
