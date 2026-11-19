@@ -1432,7 +1432,7 @@ private theorem allMinors_mem_at {V : ReconView} {f : Nat} {fullEs : List FlatEn
       allMinors V f fullEs fop nrp nMot motiveBase elim l prev pos = some allM →
       ∀ (k : Nat) (e : FlatEntry), l[k]? = some e →
         ∃ (info : IndData) (prev' : Nat) (ms : List KExpr),
-          V.ind e.addr = some info ∧
+          V.ind e.addr = some (some info) ∧
           minorDoms V f fullEs fop e.aux e.params e.levels nrp nMot motiveBase (pos + k)
             info.blk info.idx elim prev' (List.range info.nctors) = some ms ∧
           ∀ m ∈ ms, m ∈ allM := by
@@ -1444,30 +1444,33 @@ private theorem allMinors_mem_at {V : ReconView} {f : Nat} {fullEs : List FlatEn
     simp only [allMinors] at hall
     cases hi0 : V.ind e0.addr with
     | none => simp [hi0] at hall
-    | some info0 =>
-      simp only [hi0] at hall
-      cases hmd0 : minorDoms V f fullEs fop e0.aux e0.params e0.levels nrp nMot motiveBase pos
-          info0.blk info0.idx elim prev (List.range info0.nctors) with
-      | none => simp [hmd0] at hall
-      | some ms0 =>
-        simp only [hmd0] at hall
-        cases hrest : allMinors V f fullEs fop nrp nMot motiveBase elim rest
-            (prev + ms0.length) (pos + 1) with
-        | none => simp [hrest] at hall
-        | some msRest =>
-          simp only [hrest, Option.map_some, Option.some.injEq] at hall
-          subst hall
-          cases k with
-          | zero =>
-            simp only [List.getElem?_cons_zero, Option.some.injEq] at hk
-            subst hk
-            exact ⟨info0, prev, ms0, hi0, by simpa using hmd0,
-              fun m hm => List.mem_append_left _ hm⟩
-          | succ k' =>
-            obtain ⟨info, prev', ms, hvi, hmd, hsub⟩ :=
-              ih (prev + ms0.length) (pos + 1) msRest hrest k' e hk
-            exact ⟨info, prev', ms, hvi, by simpa [Nat.add_assoc, Nat.add_comm 1 k'] using hmd,
-              fun m hm => List.mem_append_right _ (hsub m hm)⟩
+    | some opt0 =>
+      cases opt0 with
+      | none => simp [hi0] at hall
+      | some info0 =>
+        simp only [hi0] at hall
+        cases hmd0 : minorDoms V f fullEs fop e0.aux e0.params e0.levels nrp nMot motiveBase pos
+            info0.blk info0.idx elim prev (List.range info0.nctors) with
+        | none => simp [hmd0] at hall
+        | some ms0 =>
+          simp only [hmd0] at hall
+          cases hrest : allMinors V f fullEs fop nrp nMot motiveBase elim rest
+              (prev + ms0.length) (pos + 1) with
+          | none => simp [hrest] at hall
+          | some msRest =>
+            simp only [hrest, Option.map_some, Option.some.injEq] at hall
+            subst hall
+            cases k with
+            | zero =>
+              simp only [List.getElem?_cons_zero, Option.some.injEq] at hk
+              subst hk
+              exact ⟨info0, prev, ms0, hi0, by simpa using hmd0,
+                fun m hm => List.mem_append_left _ hm⟩
+            | succ k' =>
+              obtain ⟨info, prev', ms, hvi, hmd, hsub⟩ :=
+                ih (prev + ms0.length) (pos + 1) msRest hrest k' e hk
+              exact ⟨info, prev', ms, hvi, by simpa [Nat.add_assoc, Nat.add_comm 1 k'] using hmd,
+                fun m hm => List.mem_append_right _ (hsub m hm)⟩
 
 private theorem ruleBodies_renameConsts_of_fixed {V : ReconView} {f : KKey → KKey} {fuel : Nat}
     {es : List FlatEntry} {fop : List Nat} {peersC peersW : List _root_.Address}
@@ -1479,7 +1482,7 @@ private theorem ruleBodies_renameConsts_of_fixed {V : ReconView} {f : KKey → K
       (∀ c ∈ cs, ∀ cty np after fds ri rm ret norm,
         V.ctor blk idx c = some (cty, np) →
         peelCtorParams V fuel np 0 aux sp np 0
-          (cty.instantiateLevelParams (List.range us.length) us) = some after →
+          (Binding.FamilyRecon.exprInstLevels us cty) = some after →
         fieldsClassify V fuel es 0 0 after = some (fds, ri, rm, ret, norm) →
         ∀ (j fieldIdx : Nat) (dom : KExpr),
           ri[j]? = some fieldIdx → norm[fieldIdx]? = some dom →
@@ -1519,12 +1522,12 @@ private theorem ruleBodies_renameConsts_of_fixed {V : ReconView} {f : KKey → K
           have hrbW : ruleBody V fuel es fop peersW cty (off + c) nP nMot nMin np us recLvls aux sp
               elim = some (bC.renameConsts f) := by
             unfold ruleBody at hrbC ⊢
-            cases hpf : peelForalls np (cty.instantiateLevelParams (List.range us.length) us) with
+            cases hpf : peelForalls np (Binding.FamilyRecon.exprInstLevels us cty) with
             | none => simp [hpf] at hrbC
             | some raw =>
               simp only [hpf] at hrbC ⊢
               cases hpc : peelCtorParams V fuel np 0 aux sp np 0
-                  (cty.instantiateLevelParams (List.range us.length) us) with
+                  (Binding.FamilyRecon.exprInstLevels us cty) with
               | none => simp [hpc] at hrbC
               | some after =>
                 simp only [hpc] at hrbC ⊢
@@ -1590,7 +1593,8 @@ theorem ruleBodiesAt_renameConsts_of_recTypeAt {V : ReconView} {f : KKey → KKe
       ∃ aW, peersW[j]? = some aW ∧ f (V.key aC) = V.key aW)
     (hR : recTypeAt V fuel es off nP k = some R)
     (hR_fix : ∀ q, f q ≠ q → R.mentionsConst q = false)
-    (hnp_match : ∀ (ek : FlatEntry) (self : IndData), es[k]? = some ek → V.ind ek.addr = some self →
+    (hnp_match : ∀ (ek : FlatEntry) (self : IndData), es[k]? = some ek →
+      V.ind ek.addr = some (some self) →
       ∀ c cty np, c < self.nctors → V.ctor self.blk self.idx c = some (cty, np) →
         (ek.aux = false → np = nP) ∧ (ek.aux = true → np ≤ ek.params.length))
     (hbs : ruleBodiesAt V fuel es off nP nMot nMin nl k peersC = some bsC) :
@@ -1602,129 +1606,136 @@ theorem ruleBodiesAt_renameConsts_of_recTypeAt {V : ReconView} {f : KKey → KKe
     simp only [hek] at hbs ⊢
     cases hself : V.ind ek.addr with
     | none => simp [hself] at hbs
-    | some self =>
-      cases hfop : flatOwnParams V es with
-      | none => simp [hself, hfop] at hbs
-      | some fop =>
-        cases hcb : ctorsBefore V es k with
-        | none => simp [hself, hfop, hcb] at hbs
-        | some cb =>
-          simp only [hself, hfop, hcb] at hbs ⊢
-          unfold recTypeAt at hR
-          cases he0 : es[0]? with
-          | none => simp [he0] at hR
-          | some e0 =>
-            simp only [he0, hek] at hR
-            cases hprim : V.ind e0.addr with
-            | none => simp [hprim] at hR
-            | some prim =>
-              simp only [hprim, hself, List.length_map, List.length_range] at hR
-              cases hcd : Binding.FamilyRecon.collectDoms V fuel nP
-                  (prim.ty.instantiateLevelParams (List.range prim.nl)
-                    ((List.range prim.nl).map fun i => Level.param (off + i))) with
-              | none => simp [hcd] at hR
-              | some pDoms =>
-                obtain ⟨paramDoms, _⟩ := pDoms
-                simp only [hcd] at hR
-                cases hmot : Binding.FamilyRecon.allMotives V fuel (elimLevel off) nP es 0 with
-                | none => simp [hmot] at hR
-                | some motDoms =>
-                  simp only [hmot, hfop] at hR
-                  cases hmin : allMinors V fuel es fop nP es.length nP (elimLevel off) es 0 0 with
-                  | none => simp [hmin] at hR
-                  | some minDoms =>
-                    simp only [hmin] at hR
-                    cases hpm : Binding.FamilyRecon.peelMotiveParams nP ek.aux ek.params self.np 0
-                        (self.ty.instantiateLevelParams (List.range ek.levels.length) ek.levels) with
-                    | none => simp [hpm] at hR
-                    | some selfAfter =>
-                      simp only [hpm] at hR
-                      cases hidx : Binding.FamilyRecon.collectDoms V fuel self.ni selfAfter with
-                      | none => simp [hidx] at hR
-                      | some idxRaw =>
-                        simp only [hidx, Option.some.injEq] at hR
-                        subst hR
-                        have hmin_nomove : ∀ q, f q ≠ q → ∀ m ∈ minDoms, m.mentionsConst q = false := by
-                          intro q hq
-                          have h1 := mentionsConst_wrapForalls_false (hR_fix q hq)
-                          have h2 := mentionsConst_wrapForalls_false h1.1
-                          exact (mentionsConst_wrapForalls_false h2.1).2
-                        obtain ⟨info, prev', ms, hvi, hmd, hms_sub⟩ :=
-                          allMinors_mem_at es 0 0 minDoms hmin k ek hek
-                        have hinfo_eq : info = self := Option.some.inj (hvi.symm.trans hself)
-                        subst info
-                        refine ruleBodies_renameConsts_of_fixed hpeers (List.range self.nctors) bsC
-                          ?_ hbs
-                        intro c hc_mem cty np after fds ri rm ret norm hvc hpc hfc j fi dom hri hdom
-                        have hclt : c < self.nctors := List.mem_range.mp hc_mem
-                        have hc_get : (List.range self.nctors)[c]? = some c := by
-                          simp [List.getElem?_range hclt]
-                        obtain ⟨cty', np', m, hvc', hma, hm_in⟩ :=
-                          minorDoms_get_mem (List.range self.nctors) prev' ms hmd c c hc_get
-                        have hpair : (cty', np') = (cty, np) := Option.some.inj (hvc'.symm.trans hvc)
-                        injection hpair with hcty_eq hnp_eq
-                        subst cty' np'
-                        obtain ⟨hnp_f, hnp_t⟩ := hnp_match ek self hek hself c cty np hclt hvc
-                        have hpc_eq :
-                            peelCtorParams V fuel nP 0 ek.aux ek.params np 0
-                              (cty.instantiateLevelParams (List.range ek.levels.length) ek.levels) =
-                            some after := by
-                          rw [peelCtorParams_eq_of_depth (fun hf => (hnp_f hf).symm) np 0 _
-                            (fun ht => by simpa using hnp_t ht)]
-                          exact hpc
-                        unfold minorAt at hma
-                        dsimp only at hma
-                        rw [hpc_eq] at hma
-                        dsimp only at hma
-                        rw [hfc] at hma
-                        dsimp only at hma
-                        cases hih : ihDoms rm (liftIndices norm (es.length + (prev' + c))) fop nP
-                            fds.length (nP + es.length + (prev' + c)) (elimLevel off) 0 ri with
-                        | none => simp [hih] at hma
-                        | some ihs =>
-                          simp only [hih, Option.some.injEq] at hma
-                          subst hma
-                          have hdom_lift :
-                              (liftIndices norm (es.length + (prev' + c)))[fi]? =
-                                some (dom.liftLooseBVars (es.length + (prev' + c)) fi) := by
-                            rw [liftIndices_getElem?, hdom]; rfl
-                          have hmc_pair : ∀ q, f q ≠ q →
-                              (∀ d ∈ (peelAll dom).1, d.mentionsConst q = false) ∧
-                              (∀ a ∈ ((peelAll dom).2.getAppArgs).drop ((fop[(rm[j]?).getD 0]?).getD 0),
-                                a.mentionsConst q = false) := by
-                            intro q hq
-                            have hm_q := hmin_nomove q hq _ (hms_sub _ hm_in)
-                            have h1 := mentionsConst_wrapForalls_false hm_q
-                            have h2 := mentionsConst_wrapForalls_false h1.1
-                            obtain ⟨hpeel1, hpeel2⟩ :=
-                              mentionsConst_ihDoms_false 0 ri ihs hih h2.2 j fi
-                                (dom.liftLooseBVars (es.length + (prev' + c)) fi) hri hdom_lift
-                            obtain ⟨hp1, hp2⟩ :=
-                              peelAll_liftLooseBVars dom (es.length + (prev' + c)) fi
-                            constructor
-                            · intro d hd_mem
-                              obtain ⟨idx, hidx⟩ := List.mem_iff_getElem?.mp hd_mem
-                              have hzip : (d, idx) ∈ (peelAll dom).1.zipIdx := by
-                                rw [List.mem_iff_getElem?]
-                                exact ⟨idx, by simp [List.getElem?_zipIdx, hidx]⟩
-                              have hmem_l : d.liftLooseBVars (es.length + (prev' + c)) (fi + idx) ∈
-                                  (peelAll (dom.liftLooseBVars (es.length + (prev' + c)) fi)).1 := by
-                                rw [hp1]; exact List.mem_map.mpr ⟨(d, idx), hzip, rfl⟩
-                              have := hpeel1 _ hmem_l
-                              rwa [mentionsConst_liftLooseBVars] at this
-                            · intro a ha_mem
-                              have hmem_l : a.liftLooseBVars (es.length + (prev' + c))
-                                    (fi + (peelAll dom).1.length) ∈
-                                  ((peelAll (dom.liftLooseBVars (es.length + (prev' + c)) fi)).2.getAppArgs).drop
-                                    ((fop[(rm[0 + j]?).getD 0]?).getD 0) := by
-                                rw [hp2, getAppArgs_liftLooseBVars, ← List.map_drop]
-                                exact List.mem_map.mpr ⟨a, by simpa only [Nat.zero_add] using ha_mem, rfl⟩
-                              have := hpeel2 _ hmem_l
-                              rwa [mentionsConst_liftLooseBVars] at this
-                          exact ⟨fun d hd => renameConsts_eq_self_of_not_mentions d
-                              (fun q hq => (hmc_pair q hq).1 d hd),
-                            fun a ha => renameConsts_eq_self_of_not_mentions a
-                              (fun q hq => (hmc_pair q hq).2 a ha)⟩
+    | some optS =>
+      cases optS with
+      | none => simp [hself] at hbs
+      | some self =>
+        cases hfop : flatOwnParams V es with
+        | none => simp [hself, hfop] at hbs
+        | some fop =>
+          cases hcb : ctorsBefore V es k with
+          | none => simp [hself, hfop, hcb] at hbs
+          | some cb =>
+            simp only [hself, hfop, hcb] at hbs ⊢
+            unfold recTypeAt at hR
+            cases he0 : es[0]? with
+            | none => simp [he0] at hR
+            | some e0 =>
+              simp only [he0, hek] at hR
+              cases hprim : V.ind e0.addr with
+              | none => simp [hprim] at hR
+              | some optP =>
+                cases optP with
+                | none => simp [hprim] at hR
+                | some prim =>
+                  simp only [hprim, hself] at hR
+                  cases hcd : Binding.FamilyRecon.collectDoms V fuel nP
+                      (Binding.FamilyRecon.exprInstLevels
+                        ((List.range prim.nl).map fun i => Level.param (off + i)) prim.ty) with
+                  | none => simp [hcd] at hR
+                  | some pDoms =>
+                    obtain ⟨paramDoms, _⟩ := pDoms
+                    simp only [hcd] at hR
+                    cases hmot : Binding.FamilyRecon.allMotives V fuel (elimLevel off) nP es 0 with
+                    | none => simp [hmot] at hR
+                    | some motDoms =>
+                      simp only [hmot, hfop] at hR
+                      cases hmin : allMinors V fuel es fop nP es.length nP (elimLevel off) es 0 0 with
+                      | none => simp [hmin] at hR
+                      | some minDoms =>
+                        simp only [hmin] at hR
+                        cases hpm : Binding.FamilyRecon.peelMotiveParams nP ek.aux ek.params self.np 0
+                            (Binding.FamilyRecon.exprInstLevels ek.levels self.ty) with
+                        | none => simp [hpm] at hR
+                        | some selfAfter =>
+                          simp only [hpm] at hR
+                          cases hidx : Binding.FamilyRecon.collectDoms V fuel self.ni selfAfter with
+                          | none => simp [hidx] at hR
+                          | some idxRaw =>
+                            simp only [hidx, Option.some.injEq] at hR
+                            subst hR
+                            have hmin_nomove : ∀ q, f q ≠ q → ∀ m ∈ minDoms, m.mentionsConst q = false := by
+                              intro q hq
+                              have h1 := mentionsConst_wrapForalls_false (hR_fix q hq)
+                              have h2 := mentionsConst_wrapForalls_false h1.1
+                              exact (mentionsConst_wrapForalls_false h2.1).2
+                            obtain ⟨info, prev', ms, hvi, hmd, hms_sub⟩ :=
+                              allMinors_mem_at es 0 0 minDoms hmin k ek hek
+                            have hinfo_eq : info = self :=
+                              Option.some.inj (Option.some.inj (hvi.symm.trans hself))
+                            subst info
+                            refine ruleBodies_renameConsts_of_fixed hpeers (List.range self.nctors) bsC
+                              ?_ hbs
+                            intro c hc_mem cty np after fds ri rm ret norm hvc hpc hfc j fi dom hri hdom
+                            have hclt : c < self.nctors := List.mem_range.mp hc_mem
+                            have hc_get : (List.range self.nctors)[c]? = some c := by
+                              simp [List.getElem?_range hclt]
+                            obtain ⟨cty', np', m, hvc', hma, hm_in⟩ :=
+                              minorDoms_get_mem (List.range self.nctors) prev' ms hmd c c hc_get
+                            have hpair : (cty', np') = (cty, np) := Option.some.inj (hvc'.symm.trans hvc)
+                            injection hpair with hcty_eq hnp_eq
+                            subst cty' np'
+                            obtain ⟨hnp_f, hnp_t⟩ := hnp_match ek self hek hself c cty np hclt hvc
+                            have hpc_eq :
+                                peelCtorParams V fuel nP 0 ek.aux ek.params np 0
+                                  (Binding.FamilyRecon.exprInstLevels ek.levels cty) =
+                                some after := by
+                              rw [peelCtorParams_eq_of_depth (fun hf => (hnp_f hf).symm) np 0 _
+                                (fun ht => by simpa using hnp_t ht)]
+                              exact hpc
+                            unfold minorAt at hma
+                            dsimp only at hma
+                            rw [hpc_eq] at hma
+                            dsimp only at hma
+                            rw [hfc] at hma
+                            dsimp only at hma
+                            cases hih : ihDoms rm (liftIndices norm (es.length + (prev' + c))) fop nP
+                                fds.length (nP + es.length + (prev' + c)) (elimLevel off) 0 ri with
+                            | none => simp [hih] at hma
+                            | some ihs =>
+                              simp only [hih, Option.some.injEq] at hma
+                              subst hma
+                              have hdom_lift :
+                                  (liftIndices norm (es.length + (prev' + c)))[fi]? =
+                                    some (dom.liftLooseBVars (es.length + (prev' + c)) fi) := by
+                                rw [liftIndices_getElem?, hdom]; rfl
+                              have hmc_pair : ∀ q, f q ≠ q →
+                                  (∀ d ∈ (peelAll dom).1, d.mentionsConst q = false) ∧
+                                  (∀ a ∈ ((peelAll dom).2.getAppArgs).drop ((fop[(rm[j]?).getD 0]?).getD 0),
+                                    a.mentionsConst q = false) := by
+                                intro q hq
+                                have hm_q := hmin_nomove q hq _ (hms_sub _ hm_in)
+                                have h1 := mentionsConst_wrapForalls_false hm_q
+                                have h2 := mentionsConst_wrapForalls_false h1.1
+                                obtain ⟨hpeel1, hpeel2⟩ :=
+                                  mentionsConst_ihDoms_false 0 ri ihs hih h2.2 j fi
+                                    (dom.liftLooseBVars (es.length + (prev' + c)) fi) hri hdom_lift
+                                obtain ⟨hp1, hp2⟩ :=
+                                  peelAll_liftLooseBVars dom (es.length + (prev' + c)) fi
+                                constructor
+                                · intro d hd_mem
+                                  obtain ⟨idx, hidx⟩ := List.mem_iff_getElem?.mp hd_mem
+                                  have hzip : (d, idx) ∈ (peelAll dom).1.zipIdx := by
+                                    rw [List.mem_iff_getElem?]
+                                    exact ⟨idx, by simp [List.getElem?_zipIdx, hidx]⟩
+                                  have hmem_l : d.liftLooseBVars (es.length + (prev' + c)) (fi + idx) ∈
+                                      (peelAll (dom.liftLooseBVars (es.length + (prev' + c)) fi)).1 := by
+                                    rw [hp1]; exact List.mem_map.mpr ⟨(d, idx), hzip, rfl⟩
+                                  have := hpeel1 _ hmem_l
+                                  rwa [mentionsConst_liftLooseBVars] at this
+                                · intro a ha_mem
+                                  have hmem_l : a.liftLooseBVars (es.length + (prev' + c))
+                                        (fi + (peelAll dom).1.length) ∈
+                                      ((peelAll (dom.liftLooseBVars (es.length + (prev' + c)) fi)).2.getAppArgs).drop
+                                        ((fop[(rm[0 + j]?).getD 0]?).getD 0) := by
+                                    rw [hp2, getAppArgs_liftLooseBVars, ← List.map_drop]
+                                    exact List.mem_map.mpr ⟨a, by simpa only [Nat.zero_add] using ha_mem, rfl⟩
+                                  have := hpeel2 _ hmem_l
+                                  rwa [mentionsConst_liftLooseBVars] at this
+                              exact ⟨fun d hd => renameConsts_eq_self_of_not_mentions d
+                                  (fun q hq => (hmc_pair q hq).1 d hd),
+                                fun a ha => renameConsts_eq_self_of_not_mentions a
+                                  (fun q hq => (hmc_pair q hq).2 a ha)⟩
 
 private theorem whnfTele_keys {V : ReconView} {S : _root_.Address → Prop} (hC : V.ClosedOn S)
     {fuel : Nat} :
@@ -1899,29 +1910,32 @@ theorem ruleBodiesAt_renameConsts_of_closed {V : ReconView} {S : _root_.Address 
     simp only [hek] at hbs ⊢
     cases hself : V.ind ek.addr with
     | none => simp [hself] at hbs
-    | some self =>
-      cases hfop : flatOwnParams V es with
-      | none => simp [hself, hfop] at hbs
-      | some fop =>
-        cases hcb : ctorsBefore V es k with
-        | none => simp [hself, hfop, hcb] at hbs
-        | some cb =>
-          simp only [hself, hfop, hcb] at hbs ⊢
-          have hekS := hent ek hek
-          have hblkS : S self.blk := hC.indBlk ek.addr self hekS.addr hself
-          refine ruleBodies_renameConsts_of_fixed hpeers (List.range self.nctors) bsC ?_ hbs
-          intro c _ cty np after fds ri rm ret norm hvc hpc hfc j fi dom hri hdom
-          have hctyS : RKeysAt V S cty := hC.ctorTy self.blk self.idx c cty np hblkS hvc
-          have hafterS : RKeysAt V S after :=
-            (Binding.FamilyRecon.peelCtorParams_leOn (ReconView.LeOn.refl V S) hC (Nat.le_refl _)
-              hekS.params np 0 _ after (Binding.FamilyRecon.rk_ilp _ _ hctyS) hpc).2
-          have hdomS : RKeysAt V S dom :=
-            fieldsClassify_norm_keys hC after 0 fds ri rm ret norm hafterS hfc dom
-              (List.mem_of_getElem? hdom)
-          obtain ⟨h1, h2⟩ := rKeysAt_peelAll dom hdomS
-          exact ⟨fun d hd => renameConsts_of_rKeysAt hfix d (h1 d hd),
-            fun a ha => renameConsts_of_rKeysAt hfix a
-              (rKeysAt_getAppArgs _ h2 a (List.mem_of_mem_drop ha))⟩
+    | some optS =>
+      cases optS with
+      | none => simp [hself] at hbs
+      | some self =>
+        cases hfop : flatOwnParams V es with
+        | none => simp [hself, hfop] at hbs
+        | some fop =>
+          cases hcb : ctorsBefore V es k with
+          | none => simp [hself, hfop, hcb] at hbs
+          | some cb =>
+            simp only [hself, hfop, hcb] at hbs ⊢
+            have hekS := hent ek hek
+            have hblkS : S self.blk := hC.indBlk ek.addr self hekS.addr hself
+            refine ruleBodies_renameConsts_of_fixed hpeers (List.range self.nctors) bsC ?_ hbs
+            intro c _ cty np after fds ri rm ret norm hvc hpc hfc j fi dom hri hdom
+            have hctyS : RKeysAt V S cty := hC.ctorTy self.blk self.idx c cty np hblkS hvc
+            have hafterS : RKeysAt V S after :=
+              (Binding.FamilyRecon.peelCtorParams_leOn (ReconView.LeOn.refl V S) hC (Nat.le_refl _)
+                hekS.params np 0 _ after (Binding.FamilyRecon.rk_exprInstLevels _ hctyS) hpc).2
+            have hdomS : RKeysAt V S dom :=
+              fieldsClassify_norm_keys hC after 0 fds ri rm ret norm hafterS hfc dom
+                (List.mem_of_getElem? hdom)
+            obtain ⟨h1, h2⟩ := rKeysAt_peelAll dom hdomS
+            exact ⟨fun d hd => renameConsts_of_rKeysAt hfix d (h1 d hd),
+              fun a ha => renameConsts_of_rKeysAt hfix a
+                (rKeysAt_getAppArgs _ h2 a (List.mem_of_mem_drop ha))⟩
 
 /-! ## Major-premise syntactic equality -/
 
@@ -2101,5 +2115,108 @@ theorem majorDom_of_posOf_perm {ps : List LevelParam} (hperm : ps.Perm (List.ran
     inv_bd tyW dW_pos hW, inv_bd tyC dC_pos hC, ?_, ?_⟩
   · rw [getAppFn_instantiateLevelParams, getAppFn_instantiateLevelParams, hfn]
   · rw [getAppArgs_instantiateLevelParams, getAppArgs_instantiateLevelParams, hargs]
+
+/-- `WrapDom` on a term headed by a non-definition constant cannot consume, so it is `WrapRel`. -/
+theorem wrapDom_not_defn_to_wrapRel {find? : KKey → Option (ConstantInfo .anon)}
+    {d d' : KExpr} {k : KKey} {us : List KLevel}
+    (h : WrapDom find? d d') (hfn : d.getAppFn = .const k us)
+    (hnotdef : ∀ cv v hint, find? k ≠ some (.defnInfo cv v hint)) :
+    WrapRel find? d d' := by
+  cases h with
+  | keep hw => exact hw
+  | consume hc _ =>
+    obtain ⟨f, us', args, cv, v, hint, -, hd_eq, hf_find, -, -, -⟩ := hc
+    have h1 : d.getAppFn = .const f us' := by
+      rw [hd_eq]; exact Expr.getAppFn_mkAppN (.const f us') args
+    rw [hfn] at h1
+    injection h1 with hkf _
+    subst hkf
+    exact (hnotdef cv v hint hf_find).elim
+
+private theorem wrapRel_letFree_appSpine_const_aux {find? : KKey → Option (ConstantInfo .anon)}
+    {k : KKey} {us : List KLevel} :
+    ∀ (rargs : List KExpr) {d : KExpr},
+      letFree d = true →
+      WrapRel find? d (Binding.FamilyRecon.appSpine (.const k us) rargs.reverse) →
+      d.getAppArgs.length = rargs.length ∧
+        ((∀ a ∈ rargs, ∃ i, a = .bvar i) → d.getAppArgs = rargs.reverse)
+  | [], d, hlf, hw => by
+    simp only [List.reverse_nil, Binding.FamilyRecon.appSpine, List.foldl_nil] at hw
+    cases hw with
+    | const _ => simp [Expr.getAppArgs]
+    | zeta => simp [letFree] at hlf
+  | a :: rest, d, hlf, hw => by
+    have hfold : Binding.FamilyRecon.appSpine (.const k us) (a :: rest).reverse =
+        .app (Binding.FamilyRecon.appSpine (.const k us) rest.reverse) a := by
+      simp [Binding.FamilyRecon.appSpine, List.reverse_cons]
+    rw [hfold] at hw
+    cases hw with
+    | app hwf hwa =>
+      rename_i d1 d2
+      simp only [letFree, Bool.and_eq_true] at hlf
+      obtain ⟨hlen, hbvars⟩ := wrapRel_letFree_appSpine_const_aux rest hlf.1 hwf
+      refine ⟨by simp [Expr.getAppArgs, hlen], fun hall => ?_⟩
+      obtain ⟨i, rfl⟩ := hall a List.mem_cons_self
+      have hd2 : d2 = .bvar i := by
+        cases hwa with
+        | bvar => rfl
+        | zeta => simp [letFree] at hlf
+      rw [Expr.getAppArgs, hd2, hbvars (fun b hb => hall b (List.mem_cons_of_mem _ hb)),
+        List.reverse_cons]
+    | zeta => simp [letFree] at hlf
+
+/-- A `let`-free term related by `WrapRel` to an `appSpine` headed by a constant has the same
+argument count, and identical arguments whenever every argument on the right is a `.bvar`. -/
+theorem wrapRel_letFree_appSpine_const {find? : KKey → Option (ConstantInfo .anon)}
+    {k : KKey} {us : List KLevel} {args : List KExpr} {d : KExpr}
+    (hlf : letFree d = true)
+    (hw : WrapRel find? d (Binding.FamilyRecon.appSpine (.const k us) args)) :
+    d.getAppArgs.length = args.length ∧
+      ((∀ a ∈ args, ∃ i, a = .bvar i) → d.getAppArgs = args) := by
+  have h := wrapRel_letFree_appSpine_const_aux args.reverse hlf (by simpa using hw)
+  simpa using h
+
+/-- `hasBVarIn` is invariant under `Core.ExprLvEq`. -/
+theorem hasBVarIn_eq_of_exprLvEq {a b : KExpr} (h : Core.ExprLvEq a b) :
+    ∀ lo hi, Binding.FamilyFlat.hasBVarIn lo hi a = Binding.FamilyFlat.hasBVarIn lo hi b := by
+  induction h with
+  | bvar _ | fvar _ _ | sort _ | const _ | lit _ => intro _ _; rfl
+  | app _ _ ihf iha =>
+    intro lo hi; simp only [Binding.FamilyFlat.hasBVarIn, ihf lo hi, iha lo hi]
+  | lam _ _ _ iht ihb =>
+    intro lo hi; simp only [Binding.FamilyFlat.hasBVarIn, iht lo hi, ihb (lo + 1) (hi + 1)]
+  | forallE _ _ _ iht ihb =>
+    intro lo hi; simp only [Binding.FamilyFlat.hasBVarIn, iht lo hi, ihb (lo + 1) (hi + 1)]
+  | letE _ _ _ iht ihv ihb =>
+    intro lo hi
+    simp only [Binding.FamilyFlat.hasBVarIn, iht lo hi, ihv lo hi, ihb (lo + 1) (hi + 1)]
+  | proj _ ih => intro lo hi; exact ih lo hi
+
+/-- A term lifted by `n` at cutoff `c` has no loose variable in `[c, c + n)`. -/
+theorem hasBVarIn_liftLooseBVars_false :
+    ∀ (e : KExpr) (n c : Nat),
+      Binding.FamilyFlat.hasBVarIn c (c + n) (e.liftLooseBVars n c) = false
+  | .bvar i, n, c => by
+    simp only [Expr.liftLooseBVars]
+    split <;> simp only [Binding.FamilyFlat.hasBVarIn, Bool.and_eq_false_iff, decide_eq_false_iff_not]
+    · exact Or.inr (by omega)
+    · exact Or.inl (by omega)
+  | .fvar _ _, _, _ | .sort _, _, _ | .const _ _, _, _ | .lit _, _, _ => rfl
+  | .app f a, n, c => by
+    simp only [Expr.liftLooseBVars, Binding.FamilyFlat.hasBVarIn, Bool.or_eq_false_iff]
+    exact ⟨hasBVarIn_liftLooseBVars_false f n c, hasBVarIn_liftLooseBVars_false a n c⟩
+  | .lam t b _, n, c => by
+    simp only [Expr.liftLooseBVars, Binding.FamilyFlat.hasBVarIn, Bool.or_eq_false_iff]
+    refine ⟨hasBVarIn_liftLooseBVars_false t n c, ?_⟩
+    simpa [Nat.add_assoc, Nat.add_comm 1 n] using hasBVarIn_liftLooseBVars_false b n (c + 1)
+  | .forallE t b _, n, c => by
+    simp only [Expr.liftLooseBVars, Binding.FamilyFlat.hasBVarIn, Bool.or_eq_false_iff]
+    refine ⟨hasBVarIn_liftLooseBVars_false t n c, ?_⟩
+    simpa [Nat.add_assoc, Nat.add_comm 1 n] using hasBVarIn_liftLooseBVars_false b n (c + 1)
+  | .letE t v b _, n, c => by
+    simp only [Expr.liftLooseBVars, Binding.FamilyFlat.hasBVarIn, Bool.or_eq_false_iff]
+    refine ⟨⟨hasBVarIn_liftLooseBVars_false t n c, hasBVarIn_liftLooseBVars_false v n c⟩, ?_⟩
+    simpa [Nat.add_assoc, Nat.add_comm 1 n] using hasBVarIn_liftLooseBVars_false b n (c + 1)
+  | .proj _ _ e, n, c => hasBVarIn_liftLooseBVars_false e n c
 
 end IxVM.Refinement.Typing.TwinFamily
