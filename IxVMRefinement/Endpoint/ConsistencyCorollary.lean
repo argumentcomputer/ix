@@ -199,9 +199,8 @@ theorem circuitComposed_no_False_VSet (hΩ : VSet.OmegaUniverses.{u}) :
             ∀ ctx, cA.context? = some ctx → ctx.binding = a →
               ∀ (V : View) (seeds : List Address), ClaimSeeds cA V seeds → SelfHashed V →
                 GenuineCollision V (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB) ∨
-                  ComposedWith.{u + 1} (fun t R _ => SeedsNotFalse callsA t R seeds) callsB a := by
-  let _ : SetTheory VSet.{u} := VSet.setTheoryOfOmegaUniverses hΩ
-  exact circuitComposed_no_False VSet.{u}
+                  ComposedWith.{u + 1} (fun t R _ => SeedsNotFalse callsA t R seeds) callsB a :=
+  @circuitComposed_no_False.{u + 1} VSet.{u} (VSet.setTheoryOfOmegaUniverses hΩ)
 
 /-- **Concrete `VSet` `SeedsInhabited` corollary of `circuitComposed`**: given
 `VSet.OmegaUniverses.{u}`, every covered seed's stored type is inhabited in
@@ -220,12 +219,12 @@ theorem circuitComposed_seeds_inhabited_VSet (hΩ : VSet.OmegaUniverses.{u}) :
                     (fun t R _ => @SeedsInhabitedIn VSet.{u} (VSet.setTheoryOfOmegaUniverses hΩ)
                       callsA t R seeds)
                     callsB a := by
-  let _ : SetTheory VSet.{u} := VSet.setTheoryOfOmegaUniverses hΩ
-  refine circuitSound_mono (fun callsB dB hA => ?_) circuitComposed_seeds_inhabited.{u + 1}
-  refine circuitSound_mono (fun callsA dA hSpec => ?_) hA
+  refine @circuitSound_mono _ _ (fun callsB dB hA => ?_) (@circuitComposed_seeds_inhabited.{u + 1})
+  refine @circuitSound_mono _ _ (fun callsA dA hSpec => ?_) hA
   intro bytesB spec a deB dgB bytesA cA deA dgA hsc ctx hctx hba V seeds hs hV
   exact (hSpec bytesB spec a deB dgB bytesA cA deA dgA hsc ctx hctx hba V seeds hs hV).imp_right
-    (ComposedWith.imp fun _ _ _ hr => seedsInhabitedIn_of VSet.{u} hr)
+    (ComposedWith.imp fun _ _ _ hr =>
+      @seedsInhabitedIn_of.{u + 1} VSet.{u} (VSet.setTheoryOfOmegaUniverses hΩ) _ _ _ _ hr)
 
 /-! ## 2. Kernel-checked conditional anti-vacuity lemmas -/
 
@@ -247,8 +246,8 @@ theorem emptyEnv_has_model {md : Ix.Kernel.Mode} (V : Type u) [SetTheory V] :
     proj_law := fun _ _ _ _ _ _ hf => nomatch hf
     proj_type := fun _ _ _ hf => by simp [Ix.Kernel.Env.findProj?, Ix.Kernel.Env.find?] at hf
     eta_fn := fun _ _ _ _ hf => nomatch hf
-    lit_ops := ⟨fun _ _ _ hf => nomatch hf, fun _ _ _ _ _ _ hf => nomatch hf,
-      fun _ _ _ _ _ _ hf => nomatch hf⟩
+    lit_ops := ⟨(fun _ _ _ hf => nomatch hf), (fun _ _ _ _ _ _ hf => nomatch hf),
+      (fun _ _ _ _ _ _ hf => nomatch hf)⟩
     nat_add := fun _ _ _ hf => nomatch hf
     graded := fun _ hc => nomatch hc
     cval_params := fun _ _ hf => nomatch hf
@@ -281,16 +280,17 @@ theorem no_model_of_alias_False {md : Ix.Kernel.Mode} (V : Type u) [SetTheory V]
   rw [htyT] at hDenT
   have hDenP : Ix.Kernel.Denotes M.cval env φ ρ (.const pName [])
       (M.cval pName (Ix.Kernel.Level.substFn φ cvP.levelParams [])) :=
-    Ix.Kernel.Denotes.const hfindP (by simp [hlpsP])
+    Ix.Kernel.Denotes.const hfindP (by simp [Ix.Kernel.ConstantInfo.toConstantVal, hlpsP])
   have hTeq : T = M.cval pName (Ix.Kernel.Level.substFn φ cvP.levelParams []) :=
     Ix.Kernel.Denotes_functional hDenT hDenP
   have hparams : M.cval pName (Ix.Kernel.Level.substFn φ cvP.levelParams []) = M.cval pName φ :=
-    M.cval_params pName _ hfindP _ φ (fun p hp => by rw [hlpsP] at hp; cases hp)
+    M.cval_params pName _ hfindP _ φ
+      (fun p hp => by simp only [Ix.Kernel.ConstantInfo.toConstantVal, hlpsP] at hp; cases hp)
   have hmemP : Ix.Kernel.ConstantInfo.defnInfo cvP (.const Ix.Kernel.falseName []) hint ∈ env.consts :=
     List.mem_of_find?_eq_some hfindP
   have hnameP : cvP.name = pName := by
     have h := List.find?_some hfindP
-    simpa [Ix.Kernel.ConstantInfo.name] using h
+    simpa [Ix.Kernel.ConstantInfo.name, Ix.Kernel.ConstantInfo.toConstantVal] using h
   have hDenFalse : Ix.Kernel.Denotes M.cval env φ ρ (.const Ix.Kernel.falseName [])
       (M.cval cvP.name φ) :=
     M.defn_value cvP (.const Ix.Kernel.falseName []) hint hmemP φ ρ
@@ -325,11 +325,11 @@ has no model in any `SetTheory V`. -/
 theorem badEnvAliasFalse_no_model (V : Type u) [SetTheory V] :
     IsEmpty (Ix.Kernel.Model V badEnvAliasFalse) := by
   let pKey : Ix.Kernel.Key .anon := .id ⟨ByteArray.mk #[2]⟩
-  have hne : (({ hash := ByteArray.mk #[3] } : Address) == { hash := ByteArray.mk #[2] }) = false := by
-    decide
   have hfindP : badEnvAliasFalse.find? pKey =
       some (.defnInfo ⟨pKey, [], .sort .zero⟩ (.const Ix.Kernel.falseName []) .abbrev) := by
-    simp [badEnvAliasFalse, pKey, Ix.Kernel.Env.find?, Ix.Kernel.ConstantInfo.name, hne]
+    simp only [badEnvAliasFalse, pKey, Ix.Kernel.Env.find?, List.find?,
+      Ix.Kernel.ConstantInfo.name, Ix.Kernel.ConstantInfo.toConstantVal]
+    rfl
   exact no_model_of_alias_False V hfindP rfl (List.mem_cons_self ..) rfl
 
 /-- **Anti-vacuity on `ConsistentReadOver`**: in any `SetTheory W`, no claimed
@@ -369,7 +369,7 @@ theorem selfHashed_of_compileReport {env : Ix.Environment} {ixe : Ixon.Env}
     {t : Ix.Kernel.RoleTable} (trees : List Ix.AssumptionTree)
     (hcomp : Ix.Cert.compileReport env = .ok (ixe, failures))
     (hadmit : Ix.Kernel.Admission.admitBinding Address.admissionHash binding = .ok t) :
-    SelfHashed ⟨{ ixe with roleBinding := some binding }, trees⟩ := by
+    SelfHashed ⟨{ ixe with roleBinding := some ⟨binding.address, binding.bytes⟩ }, trees⟩ := by
   have hauth := Ix.Cert.compileAuthentic env ixe (Ix.Cert.compile_eq_ok.mpr ⟨failures, hcomp⟩)
   have hbind : Address.blake3Pure binding.bytes = binding.address := by
     have ha := ((Ix.Kernel.Admission.admitBinding_ok_iff Address.admissionHash binding t).mp hadmit).authentic
@@ -432,7 +432,8 @@ theorem noCollision_agrees_with_view {V : View} {extra : List ByteArray}
     (hLoadA : LoadedBy callsA E₀) (hLoadB : LoadedBy callsB R)
     (hHashedTb : Hashed callsB tb)
     (hAdmitTb : Ix.Kernel.Admission.admitBinding Address.admissionHash ⟨a, tb⟩ = .ok t')
-    (hViewBind : V.env.roleBinding = some binding) (hBindAddr : binding.address = a)
+    (hViewBind : V.env.roleBinding = some ⟨binding.address, binding.bytes⟩)
+    (hBindAddr : binding.address = a)
     (hAdmitBind : Ix.Kernel.Admission.admitBinding Address.admissionHash binding = .ok t) :
     tb = binding.bytes ∧ t' = t ∧
       (∀ x c₁ c₂, storeOver E₀ R x = some c₁ → recordOf V.env x = some c₂ → c₁ = c₂) ∧
@@ -451,12 +452,13 @@ theorem noCollision_agrees_with_view {V : View} {extra : List ByteArray}
       hNoCol (Or.inl ⟨held, bytes, Or.inl hpre, hh, hne, heq⟩)
   -- 1. Role binding bytes and table identity
   have hHashBind : Address.blake3Pure binding.bytes = a :=
-    (hV.2.2 binding hViewBind).trans hBindAddr
+    (hV.2.2 ⟨binding.address, binding.bytes⟩ hViewBind).trans hBindAddr
   have hHashTb : Address.blake3Pure tb = a := by
     have ha := ((Ix.Kernel.Admission.admitBinding_ok_iff _ _ _).mp hAdmitTb).authentic
     simpa [Address.admissionHash_eq] using ha
   have hPreBind : V.Preimage (Address.blake3Pure binding.bytes) binding.bytes :=
-    Or.inr (Or.inr (Or.inl ⟨binding, hViewBind, hV.2.2 binding hViewBind |>.symm, rfl⟩))
+    Or.inr (Or.inr (Or.inl ⟨⟨binding.address, binding.bytes⟩, hViewBind,
+      (hV.2.2 ⟨binding.address, binding.bytes⟩ hViewBind).symm, rfl⟩))
   have hTbEq : tb = binding.bytes :=
     hBytesEq hPreBind (hashed_mono hcB hHashedTb) (hHashTb.trans hHashBind.symm)
   have hTableEq : t' = t := by
@@ -571,7 +573,7 @@ theorem compileCorrect_circuitComposed_bridge
             packDigest (Address.blake3Pure bytesA) = dA → InScopeTyping cA →
             ∀ ctx, cA.context? = some ctx → ctx.binding = binding.address →
               ∀ (trees : List Ix.AssumptionTree) (seeds : List Address),
-                let V : View := ⟨{ ixe with roleBinding := some binding }, trees⟩
+                let V : View := ⟨{ ixe with roleBinding := some ⟨binding.address, binding.bytes⟩ }, trees⟩
                 ClaimSeeds cA V seeds →
                   GenuineCollision V (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB) ∨
                     (Ix.Cert.Published ixe sub ∧
@@ -596,8 +598,8 @@ theorem compileCorrect_circuitComposed_bridge
     obtain ⟨-, tA, _, _, _, hadm, -⟩ := hacc
     have hteq : tA = t := Ix.Cert.ReadingKeys.admitBinding_default htable hbind hadm
     rwa [hteq] at hadm
-  refine circuitSound_mono (fun callsB dB hA => ?_) circuitComposed_selfHashed.{u}
-  refine circuitSound_mono (fun callsA dA hSpec => ?_) hA
+  refine @circuitSound_mono _ _ (fun callsB dB hA => ?_) (@circuitComposed_selfHashed.{u})
+  refine @circuitSound_mono _ _ (fun callsA dA hSpec => ?_) hA
   intro bytesB spec deB dgB bytesA cA deA dgA hsc ctx hctx hba trees seeds V hseeds
   have hV : SelfHashed V := selfHashed_of_compileReport trees hcomp hAdmitBind
   by_cases hCol : GenuineCollision V (bytesA :: bytesB :: committedFootprint) (callsA ++ callsB)
@@ -632,7 +634,7 @@ end IxVM.Refinement.Endpoint
 #guard_kernel_axioms Ix.Kernel.VSet.finiteSetTheory4 [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.VSet.omegaUniverses_implies_setTheory [propext, Classical.choice, Quot.sound]
 
-#guard_kernel_axioms IxVM.Refinement.Endpoint.seedsInhabitedIn_of []
+#guard_kernel_axioms IxVM.Refinement.Endpoint.seedsInhabitedIn_of [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Endpoint.circuitComposed_selfHashed [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Endpoint.circuitComposed_no_False [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms IxVM.Refinement.Endpoint.circuitComposed_seeds_inhabited [propext, Classical.choice, Quot.sound]
