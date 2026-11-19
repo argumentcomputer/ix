@@ -6,13 +6,13 @@ Ordinary, kernel-checked Lean declarations exercising reduction in inductive
 telescopes on the native route:
 
 * **Accepted**: non-recursive constructor field reduction (`KField`: a field
-  whose type reduces without mentioning the block) and type-former telescope
-  reduction (`KIndex`: an index telescope that reduces by K-like reduction at a
-  parameter).
-* **Declined on the native route**: constructor fields that syntactically
-  mention the block in a non-syntactic occurrence (`ArrowTree`, `KTree`,
-  `Phantom`), which would require rewriting the stored constructor's field
-  domains to classify positivity. -/
+  whose type reduces without mentioning the block).
+* **Declined on the native route**: former-telescope reduction beyond δβζ
+  (`KIndex`: an index telescope that reduces by K-like `@Eq.rec` reduction at a
+  parameter), and constructor fields that syntactically mention the block in a
+  non-syntactic occurrence (`ArrowTree`, `KTree`, `Phantom`), which would
+  require rewriting the stored constructor's field domains to classify
+  positivity. -/
 
 namespace Tests.Ix.IxVM.FieldReductionDefs
 
