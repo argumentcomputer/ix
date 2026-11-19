@@ -2963,7 +2963,7 @@ theorem twinRuleMatch_of_ruleFollows {find? : KKey → Option (ConstantInfo .ano
   have hBase : WrapT (fun _ : KKey => (none : Option (ConstantInfo .anon)))
       ((inst sbC_pos).renameConsts f) (inst sbW_pos) := by
     have h := wrapT_empty_instantiateLevelParams (List.range ps.length) (ps.map .param) hBase_pos
-    rw [renameConsts_instantiateLevelParams] at h
+    rw [← renameConsts_instantiateLevelParams] at h
     exact h
   refine ⟨hsym_fin, nP + nMot + nMin, nf, inst afterW_pos, inst sbW_pos, (inst sbC_pos).renameConsts f,
     hLD1, ?_, hSC, hBase⟩
