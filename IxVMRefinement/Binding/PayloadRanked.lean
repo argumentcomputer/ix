@@ -66,25 +66,6 @@ section Helpers
 variable {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
   {E₀ : Ixon.Env}
 
-/-- A `PathReach` starting at a record stored in a `UsedClosed` sub-store stays stored there. -/
-theorem pathReach_stored_of_usedClosed {R : Ixon.Env}
-    (hsub : ∀ x c, recordOf R x = some c → recordOf E₀ x = some c)
-    (hcl : UsedClosed R) {a b : _root_.Address}
-    (ha : (recordOf R a).isSome = true) (hp : PathReach E₀ a b) :
-    (recordOf R b).isSome = true := by
-  induction hp with
-  | refl => exact ha
-  | @tail x y _ hs ih =>
-    obtain ⟨cx, hcx⟩ := Option.isSome_iff_exists.mp ih
-    have hcxE := hsub x cx hcx
-    rcases hs with ⟨c', i, hc', hi, hy⟩ | ⟨c', hc', -, rfl⟩
-    · have ec : c' = cx := Option.some.inj (hc'.symm.trans hcxE)
-      subst ec
-      exact (hcl.1 x c' hcx).2 i hi y hy
-    · have ec : c' = cx := Option.some.inj (hc'.symm.trans hcxE)
-      subst ec
-      exact (hcl.1 x c' hcx).1
-
 /-- An observed `check_container_rec` on an `RPrj` recursor triggers a modeled `FamilyCallExact`
 for its recursor block `rp.block` anchored at `ib`, with strictly shorter call list `cs'.length < csCr.length`. -/
 theorem check_container_rec_rprj_family_lt_len (hC : CollisionFreeRun calls E₀)
@@ -306,7 +287,7 @@ theorem new_famRec_pathPos_block (hC : CollisionFreeRun calls E₀)
     ((groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mp hm0R').2
   exact PathPos.tail (PathPos.single (Or.inl hused))
     (Or.inr ⟨memberProjection B 0 ms[0], hm0E, memberProjection_isProj B 0 ms[0],
-      ownerOf_memberProjection B 0 ms[0]⟩)
+      ownerOf_memberProjection (memberAddr B 0 ms[0]) B 0 ms[0]⟩)
 
 end Helpers
 
@@ -345,7 +326,7 @@ def StoredStandaloneCont (n : _root_.Address) : Prop :=
 
 /-- Tier 1 `(2*M, k+1)` or `(2*M+1, 0)` candidate from a stored-anchored family check. -/
 def StoredCand (n : _root_.Address) (q : Nat × Nat) : Prop :=
-  (∃ B rb cs advAs (k : Nat) (hk : k < advAs.length),
+  (∃ B rb cs advAs, ∃ (k : Nat) (hk : k < advAs.length),
       StoredFamCall calls bAddr t E₀ g B rb cs advAs ∧
       Core.ixAddr (advAs[k]'hk) = n ∧ q = (2 * cs.length, k + 1)) ∨
   (∃ B cs advAs,
@@ -530,7 +511,7 @@ private theorem potG_storedProj {n : _root_.Address} {c : Ixon.Constant}
   rw [dite_eq_left h]
   have ec : Classical.choose h = c :=
     Option.some.inj ((Classical.choose_spec h).1.symm.trans hc)
-  rw [ec, if_pos hst]
+  rw [ec]; simp only [hst, ↓reduceIte]
 
 private theorem potG_newProj {n : _root_.Address} {c : Ixon.Constant}
     (hc : recordOf E₀ n = some c) (hp : IsProj c)
@@ -541,7 +522,7 @@ private theorem potG_newProj {n : _root_.Address} {c : Ixon.Constant}
   rw [dite_eq_left h]
   have ec : Classical.choose h = c :=
     Option.some.inj ((Classical.choose_spec h).1.symm.trans hc)
-  rw [ec, if_neg hns]
+  rw [ec]; simp only [hns, ↓reduceIte]
 
 private theorem pot0G_tier0 {n : _root_.Address}
     (h0 : StoredStandaloneCont calls bAddr t E₀ g n) :
@@ -608,22 +589,26 @@ private theorem potLt_of_tier1_bound {v : Pot} {m k m' k' d' : Nat}
     (hlt : m < m' ∨ (m = m' ∧ k < k')) :
     PotLt v (1, m', k', d') := by
   rcases hv with rfl | ⟨h1, h2 | ⟨h2, h3⟩⟩
-  · exact Or.inl (by omega)
-  · exact Or.inr ⟨h1, Or.inl (by omega)⟩
+  · exact Or.inl (by decide)
+  · rcases hlt with hlt | ⟨rfl, _⟩
+    · exact Or.inr ⟨h1, Or.inl (Nat.lt_trans h2 hlt)⟩
+    · exact Or.inr ⟨h1, Or.inl h2⟩
   · rcases hlt with hlt | ⟨rfl, hlt⟩
-    · exact Or.inr ⟨h1, Or.inl (by omega)⟩
-    · exact Or.inr ⟨h1, Or.inr ⟨h2, Or.inl (by omega)⟩⟩
+    · exact Or.inr ⟨h1, Or.inl (h2.symm ▸ hlt)⟩
+    · exact Or.inr ⟨h1, Or.inr ⟨h2, Or.inl (Nat.lt_of_le_of_lt h3 hlt)⟩⟩
 
 private theorem potLt_of_tier1_bound_bump {v : Pot} {m k m' k' d' : Nat}
     (hv : v = (0, 1, 0, 0) ∨ (v.1 = 1 ∧ (v.2.1 < m ∨ (v.2.1 = m ∧ v.2.2.1 ≤ k))))
     (hlt : m < m' ∨ (m = m' ∧ k < k')) :
     PotLt v.bump (1, m', k', d') := by
   rcases hv with rfl | ⟨h1, h2 | ⟨h2, h3⟩⟩
-  · exact Or.inl (by omega)
-  · exact Or.inr ⟨h1, Or.inl (by omega)⟩
+  · exact Or.inl (by decide)
+  · rcases hlt with hlt | ⟨rfl, _⟩
+    · exact Or.inr ⟨h1, Or.inl (Nat.lt_trans h2 hlt)⟩
+    · exact Or.inr ⟨h1, Or.inl h2⟩
   · rcases hlt with hlt | ⟨rfl, hlt⟩
-    · exact Or.inr ⟨h1, Or.inl (by omega)⟩
-    · exact Or.inr ⟨h1, Or.inr ⟨h2, Or.inl (by omega)⟩⟩
+    · exact Or.inr ⟨h1, Or.inl (h2.symm ▸ hlt)⟩
+    · exact Or.inr ⟨h1, Or.inr ⟨h2, Or.inl (Nat.lt_of_le_of_lt h3 hlt)⟩⟩
 
 /-- **Tier ≥ 2 local bound**: `v` lies strictly below `2 + r` in coord 1, or at `(2 + r, 0, ≤ p, _)`. -/
 private def LocBoundG (v : Pot) (r p : Nat) : Prop :=
@@ -642,7 +627,7 @@ private theorem LocBoundG.lt_block {v : Pot} {r p w : Nat} (h : LocBoundG v r p)
     PotLt v (2 + r, 1, 0, w) := by
   rcases h with h1 | ⟨h1, h2, -⟩
   · exact Or.inl h1
-  · exact Or.inr ⟨h1, Or.inl (by omega)⟩
+  · exact Or.inr ⟨h1, Or.inl (by dsimp only; omega)⟩
 
 /-- **Main ranking theorem**: discharges `GroupRanked` at every group `6 ≤ g < 77`. -/
 theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
@@ -746,7 +731,8 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
     have hnoAt : ¬ ∃ p, AtMuG calls bAddr t E₀ g recs B p := by
       rintro ⟨p, B', rb', cs', advAs', hnf, hloc, -⟩
       exact hnoLoc B' rb' cs' advAs' p hnf hloc
-    rw [show pot B = pot0 B from potG_notProj hcb hnpB, pot0G_own h0 h1 h2 hnoAt, hmu]
+    rw [show pot B = pot0 B from potG_notProj hcb hnpB,
+      show pot0 B = (2 + muG calls bAddr t E₀ g recs B, 1, 0, 0) from pot0G_own h0 h1 h2 hnoAt, hmu]
   -- Helper: potential of a `NewRecAnch` `rb` of `NewFamCall B rb cs advAs`.
   have hnewRec_pot : ∀ B rb cs advAs, NewFamCall calls bAddr t E₀ g B rb cs advAs →
       pot rb = (2 + walkRank recs B, 1, 0, 2) := by
@@ -784,7 +770,8 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
     have huniq : ∀ B' cs' advAs', NewFamCall calls bAddr t E₀ g B' rb cs' advAs' → B' = B :=
       fun B' cs' advAs' hnf' => familyCall_block_unique hC hbd hvl hvl
         (FamilyCallExact.toCall hnf'.2.2.2) (FamilyCallExact.toCall hnf.2.2.2)
-    rw [show pot rb = pot0 rb from potG_notProj hcrb hnp, pot0G_newRec h0 h1 h2 huniq]
+    rw [show pot rb = pot0 rb from potG_notProj hcrb hnp,
+      show pot0 rb = (2 + walkRank recs B, 1, 0, 2) from pot0G_newRec h0 h1 h2 huniq]
   -- Helper: any `New` node `x` with `GroupReach g x` has `(pot x).1 ≤ 2 + walkRank recs x`.
   have hpot_fst_le_walkRank : ∀ x, NewAtG calls bAddr t E₀ g x → GroupReach t E₀ g x →
       (pot x).1 ≤ 2 + walkRank recs x := by
@@ -805,8 +792,7 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
               pot0G_newRec h0 h1 ⟨B', cs', advAs', hnf'⟩ huniq]
             have hpos := new_famRec_pathPos_block hC hbd hb hg6 hg77 hcl' hnf'.1
               (FamilyCallExact.toCall hnf'.2.2.2)
-            have hlt := pathPos_walkRank_lt hC.hashedStored hw hrec_g hcl_g halr_g hgrY hpos
-              (by rw [hnf'.1.2]; simp)
+            have hlt := pathPos_walkRank_lt hC.hashedStored hw hrec_g hcl_g halr_g hgrY hpos hnf'.1.2
             dsimp only; omega
           · have hmu : muG calls bAddr t E₀ g recs y ≤ walkRank recs y :=
               muG_le (Or.inl ⟨hgrY, rfl⟩)
@@ -844,8 +830,7 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
         h | hst
       · exact h
       · rw [hnewY.2] at hst; cases hst
-    have hlt := pathPos_walkRank_lt hC.hashedStored hw hrec_g hcl_g halr_g hgrB hpos
-      (by rw [hnewY.2]; simp)
+    have hlt := pathPos_walkRank_lt hC.hashedStored hw hrec_g hcl_g halr_g hgrB hpos hnewY.2
     have hle := hpot_fst_le_walkRank y hnewY hgrY
     omega
   have hpathPos_proj_lt : ∀ B blk x cx, GroupReach t E₀ g B → PathPos E₀ B blk →
@@ -855,7 +840,7 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
     by_cases hst : StoredAtG calls bAddr t E₀ g blk
     · rw [show pot x = (0, 0, 0, 0) from potG_storedProj hcx hp (hown ▸ hst)]; omega
     · rw [show pot x = (pot0 blk).bump from by
-        have := potG_newProj hcx hp (hown ▸ hst); rwa [hown] at this]
+        dsimp only [pot, pot0]; rw [← hown]; exact potG_newProj hcx hp (hown ▸ hst)]
       have hgrBlk : GroupReach t E₀ g blk := by
         rcases pathReach_closed_of_usedClosed hrec_g hcl_g halr_g (Or.inl hgrB) hpos.toReach with
           h | hs
@@ -871,18 +856,15 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
         · exact hn
         · exact absurd hs hst
       have hlt := hpathPos_lt B blk hgrB hpos hnewBlk
-      -- `blk` is a block or non-proj; wait: `pot blk` vs `pot0 blk`:
-      -- actually `x` is a `New` `IsProj` whose owner `blk` has `IsBlock` by `projMember`!
+      -- `x` is a `New` `IsProj` whose owner `blk` is non-projection by `projMember`.
       obtain ⟨cblk, hcblk', hca⟩ := groupStore_projMember hC hb hax hP hg6 hw x cx hnewX
         ((groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mpr
           ⟨storedBelow_of_adds hg6 (new_groupStore hb hg6 hnewX).2.2.2.1, hcx⟩) hp
       have hblkE' : recordOf E₀ blk = some cblk := by
         rw [← hown]; exact ((groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mp hcblk').2
       have hnpBlk : ¬ IsProj cblk := by
-        rcases hca with ⟨heq, hst'⟩ | ⟨ms, _, _, hms, -, -⟩
-        · rw [← heq, hcx] at hblkE'
-          have ec : cx = cblk := Option.some.inj (by rw [← hown, heq] at hblkE'; exact hcx.symm.trans hblkE')
-          exact fun hp' => standalone_not_proj hst' hp'
+        rcases hca with ⟨_, hst'⟩ | ⟨ms, _, _, hms, -, -⟩
+        · exact fun hp' => standalone_not_proj hst' hp'
         · exact fun hp' => proj_not_block hp' ⟨ms, hms⟩
       rw [show pot blk = pot0 blk from potG_notProj hblkE' hnpBlk] at hlt
       simp only [Pot.bump_fst]; exact hlt
@@ -966,7 +948,7 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
     · have hstW := halr_g w (basisRole_alreadyStoredRole hg6 had hlt hk)
       rw [StoredAtG, hnewW.2] at hstW; cases hstW
     · have hstW := pathReach_stored_of_usedClosed hrec_g hcl_g hsf.1 hpos.toReach
-      rw [StoredAtG, hnewW.2] at hstW; cases hstW
+      rw [hnewW.2] at hstW; cases hstW
     · obtain ⟨cw, hcwE, -, -, -⟩ := new_groupStore hb hg6 hnewW
       rcases check_container_rec_shape hC hbd hxx₁ hxib₁ evCr hsubCr hcwE with
         ⟨rc, hrc⟩ | ⟨rp, hrp⟩
@@ -982,7 +964,7 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
         · rw [show pot w = (0, 0, 0, 0) from potG_storedProj hcwE hpw (hownEq ▸ hstBlk)]
           exact Or.inl (by omega)
         · rw [show pot w = (pot0 rp.block).bump from by
-            have := potG_newProj hcwE hpw (hownEq ▸ hstBlk); rwa [hownEq] at this]
+            dsimp only [pot, pot0]; rw [← hownEq]; exact potG_newProj hcwE hpw (hownEq ▸ hstBlk)]
           obtain ⟨cs', advAs', hmodIb, hex', hlen'⟩ :=
             check_container_rec_rprj_family_lt_len hC hbd hstep hrc₁ hxx₁ hxib₁ evCr hsubCr hcwE hrp
           have hcand : StoredCand calls bAddr t E₀ g rp.block (2 * cs'.length + 1, 0) :=
@@ -1038,12 +1020,13 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
           by_cases hstBlk : StoredAtG calls bAddr t E₀ g rp.block
           · rw [show pot w = (0, 0, 0, 0) from potG_storedProj hcwE hpw (hownEq ▸ hstBlk)]; omega
           · rw [show pot w = (pot0 rp.block).bump from by
-              have := potG_newProj hcwE hpw (hownEq ▸ hstBlk); rwa [hownEq] at this]
+              dsimp only [pot, pot0]; rw [← hownEq]; exact potG_newProj hcwE hpw (hownEq ▸ hstBlk)]
             obtain ⟨cs', advAs', hmodIb, hex', -⟩ :=
               check_container_rec_rprj_family_lt_len hC hbd hstep hrc₁ hxx₁ hxib₁ evCr hsubCr hcwE hrp
             by_cases hstIb : StoredAtG calls bAddr t E₀ g ib
             · have hcand : StoredCand calls bAddr t E₀ g rp.block (2 * cs'.length + 1, 0) :=
                 Or.inr ⟨ib, cs', advAs', ⟨hstIb, hmodIb, hex'⟩, rfl⟩
+              dsimp only [pot0]
               rcases pot0G_le_tier1 hcand with h0 | ⟨h1, -⟩
               · rw [h0]; simp only [Pot.bump_fst]; omega
               · simp only [Pot.bump_fst, h1]; omega
@@ -1070,7 +1053,7 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
                 potG_notProj hcrb (fun hp => proj_not_block hp ⟨rs, hrs⟩)] at hrecPot
               rw [hrecPot]
               have hltIb := pathPos_walkRank_lt hC.hashedStored hw hrec_g hcl_g halr_g
-                hnf.2.1 hposIb (by rw [hnewIb.2]; simp)
+                hnf.2.1 hposIb hnewIb.2
               simp only [Pot.bump_fst]; omega
         exact ⟨Or.inl hlt, fun _ => hlt⟩
     · have hlt := hpathPos_proj_lt B ib w cw hnf.2.1 hposIb hcw hpw hownw hnewW
@@ -1108,26 +1091,26 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
           ⟨blk, c₁, -, hposBlk, hc₁, hp₁, hown₁, -, -, -⟩ | ⟨hwX, cr, hcr, hnoR, hnoRP⟩
       · have hstX := pathReach_stored_of_usedClosed hrec_g hcl_g hstIb
           (PathReach.single (Or.inl huIb))
-        rw [StoredAtG, hnewX.2] at hstX; cases hstX
+        rw [hnewX.2] at hstX; cases hstX
       · rw [show pot x = (0, 0, 0, 0) from potG_storedProj hc₁ hp₁ (hown₁ ▸ hstIb)]
-        exact Or.inr ⟨rfl, Or.inl (by omega)⟩
+        exact Or.inr ⟨rfl, Or.inl (by decide)⟩
       · have hstBlk := pathReach_stored_of_usedClosed hrec_g hcl_g hstIb hposBlk.toReach
         rw [show pot x = (0, 0, 0, 0) from potG_storedProj hc₁ hp₁ (hown₁ ▸ hstBlk)]
-        exact Or.inr ⟨rfl, Or.inl (by omega)⟩
+        exact Or.inr ⟨rfl, Or.inl (by decide)⟩
       · rcases houtsCls x hwX with ⟨ro, had, hlt, hk⟩ | ⟨hposX, -, -⟩ |
             ⟨-, ib₂, -, h₁₂, h₂₂, rc₁₂, xx₁₂, xib₁₂, r₁₂, cs₁₂, -, hxx₁₂, hxib₁₂, evCr₂,
               hsubCr₂, -⟩ | ⟨ib₂, c₁, -, hposIb₂, hc₁, hp₁, hown₁, -, -, -⟩
         · have hstX := halr_g x (basisRole_alreadyStoredRole hg6 had hlt hk)
           rw [StoredAtG, hnewX.2] at hstX; cases hstX
         · have hstX := pathReach_stored_of_usedClosed hrec_g hcl_g hsf.1 hposX.toReach
-          rw [StoredAtG, hnewX.2] at hstX; cases hstX
+          rw [hnewX.2] at hstX; cases hstX
         · rcases check_container_rec_shape hC hbd hxx₁₂ hxib₁₂ evCr₂ hsubCr₂ hcr with
             ⟨rc₂, hrc₂⟩ | ⟨rp₂, hrp₂⟩
           · exact (hnoR rc₂ hrc₂).elim
           · exact (hnoRP rp₂ hrp₂).elim
         · have hstIb₂ := pathReach_stored_of_usedClosed hrec_g hcl_g hsf.1 hposIb₂.toReach
           rw [show pot x = (0, 0, 0, 0) from potG_storedProj hc₁ hp₁ (hown₁ ▸ hstIb₂)]
-          exact Or.inr ⟨rfl, Or.inl (by omega)⟩
+          exact Or.inr ⟨rfl, Or.inl (by decide)⟩
     · by_cases h1 : StoredAnchored calls bAddr t E₀ g a
       · -- Tier 1: `pot0 a = (1, tier1M a, tier1K a, 0)`.
         rw [show pot0 a = (1, tier1M calls bAddr t E₀ g a, tier1K calls bAddr t E₀ g a, 0) from
@@ -1187,9 +1170,9 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
             · rw [show pot x = (0, 0, 0, 0) from potG_storedProj hc₁ hp₁ (hown₁ ▸ hstBlk)]
               exact Or.inl (by omega)
             · rw [show pot x = (pot0 blk).bump from by
-                have := potG_newProj hc₁ hp₁ (hown₁ ▸ hstBlk); rwa [hown₁] at this]
-              obtain ⟨b, hb, hblkEq⟩ := List.mem_map.mp hblkS
-              obtain ⟨j, hj, hgetj⟩ := List.mem_iff_getElem.mp hb
+                dsimp only [pot, pot0]; rw [← hown₁]; exact potG_newProj hc₁ hp₁ (hown₁ ▸ hstBlk)]
+              obtain ⟨b, hbMem, hblkEq⟩ := List.mem_map.mp hblkS
+              obtain ⟨j, hj, hgetj⟩ := List.mem_iff_getElem.mp hbMem
               have hjk : j < k := by rw [List.length_take] at hj; omega
               have hjL : j < advAs.length := Nat.lt_trans hjk hk
               have hcand : StoredCand calls bAddr t E₀ g blk (2 * cs.length, j + 1) :=
@@ -1206,7 +1189,7 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
               ⟨blk, c₁, -, hposBlk, hc₁, hp₁, hown₁, -, -, -⟩ | hW
           · have hstX := pathReach_stored_of_usedClosed hrec_g hcl_g hsf.1
               (PathReach.single (Or.inl huB))
-            rw [StoredAtG, hnewX.2] at hstX; cases hstX
+            rw [hnewX.2] at hstX; cases hstX
           · rw [show pot x = (0, 0, 0, 0) from potG_storedProj hc₁ hp₁ (hown₁ ▸ hsf.1)]
             exact Or.inl (by omega)
           · have hstBlk := pathReach_stored_of_usedClosed hrec_g hcl_g hsf.1 hposBlk.toReach
@@ -1231,13 +1214,14 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
           · have hnsB : ¬ StoredAtG calls bAddr t E₀ g B := by
               rw [StoredAtG, hnf.1.2]; simp
             rw [show pot x = (pot0 B).bump from by
-              have := potG_newProj hc₁ hp₁ (hown₁ ▸ hnsB); rwa [hown₁] at this]
+              dsimp only [pot, pot0]; rw [← hown₁]; exact potG_newProj hc₁ hp₁ (hown₁ ▸ hnsB)]
             have hBpot := hmodeled_pot B a cs hnf.1 hnf.2.2.1 (FamilyCallExact.toCall hnf.2.2.2)
             obtain ⟨cb', ms', hcb', hms', -, -⟩ :=
               familyCall_block_indc_nonempty hC.runStore hC.hashedStored
                 (FamilyCallExact.toCall hnf.2.2.2)
             rw [show pot B = pot0 B from potG_notProj hcb' (fun hp => proj_not_block hp ⟨ms', hms'⟩)] at hBpot
             rw [hBpot]
+            dsimp only [Pot.bump]
             exact potLt_fourth (by omega)
           · exact Or.inl (hpathPos_proj_lt B blk x c₁ hnf.2.1 hposBlk hc₁ hp₁ hown₁ hnewX)
           · exact (hnew_wit_bound B a cs advAs x hnf (hU.outsClassified x hW) hnewX).1.lt_block
@@ -1279,8 +1263,8 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
               obtain ⟨-, -, -, -, -, hrefs⟩ := hfacts
               obtain ⟨-, -, -, hcls⟩ := hrefs x hu
               rcases hcls with hS | hW | ⟨blk, c₁, -, hblkS, hc₁, hp₁, hown₁, -, -, -⟩
-              · obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hS
-                obtain ⟨j, hj, hgetj⟩ := List.mem_iff_getElem.mp hb
+              · obtain ⟨b, hbMem, rfl⟩ := List.mem_map.mp hS
+                obtain ⟨j, hj, hgetj⟩ := List.mem_iff_getElem.mp hbMem
                 have hjk : j < k := by rw [List.length_take] at hj; omega
                 have hjL : j < advAs.length := Nat.lt_trans hjk hk
                 have hbj : advAs[j]'hjL = b := by rw [← hgetj, List.getElem_take]
@@ -1290,7 +1274,7 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
                   obtain ⟨-, c₂, hc₂, -, hkind₂, -⟩ := hfx
                   have ec : c₂ = cx := Option.some.inj (hc₂.symm.trans hcxE)
                   subst ec
-                  rcases hkind₂ with ⟨d, hd, -⟩ | ⟨rc, hrc, -⟩ | ⟨ms, hms, -⟩ | ⟨-, -, hownS, hcb, hca'⟩
+                  rcases hkind₂ with ⟨d, hd, -⟩ | ⟨rc, hrc, -⟩ | ⟨ms, hms, -⟩ | ⟨-, -, hownS, cb', hcb', hca'⟩
                   · exact (standalone_not_proj (Or.inl ⟨d, hd⟩) hpx).elim
                   · exact (standalone_not_proj (Or.inr (Or.inl ⟨rc, hrc⟩)) hpx).elim
                   · exact (proj_not_block hpx ⟨ms, hms⟩).elim
@@ -1303,7 +1287,6 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
                       obtain ⟨j', hj', hgetj'⟩ := List.mem_iff_getElem.mp hb'
                       have hj'j : j' < j := by rw [List.length_take] at hj'; omega
                       have hj'L : j' < advAs.length := Nat.lt_trans hj'j hjL
-                      obtain ⟨cb', hcb'⟩ := hcb
                       have hnpOwn : ¬ IsProj cb' := by
                         rcases hca' with ⟨heq, hst'⟩ | ⟨ms', _, _, hms', -, -⟩
                         · exact fun hp' => standalone_not_proj hst' hp'
@@ -1334,9 +1317,9 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
                 · rw [show pot x = (0, 0, 0, 0) from potG_storedProj hc₁ hp₁ (hown₁ ▸ hstBlk)]
                   exact Or.inl (by omega)
                 · rw [show pot x = (pot0 blk).bump from by
-                    have := potG_newProj hc₁ hp₁ (hown₁ ▸ hstBlk); rwa [hown₁] at this]
-                  obtain ⟨b, hb, hblkEq⟩ := List.mem_map.mp hblkS
-                  obtain ⟨j, hj, hgetj⟩ := List.mem_iff_getElem.mp hb
+                    dsimp only [pot, pot0]; rw [← hown₁]; exact potG_newProj hc₁ hp₁ (hown₁ ▸ hstBlk)]
+                  obtain ⟨b, hbMem, hblkEq⟩ := List.mem_map.mp hblkS
+                  obtain ⟨j, hj, hgetj⟩ := List.mem_iff_getElem.mp hbMem
                   have hjk : j < k := by rw [List.length_take] at hj; omega
                   have hjL : j < advAs.length := Nat.lt_trans hjk hk
                   have hnewBlk : NewAtG calls bAddr t E₀ g blk := by
@@ -1522,7 +1505,7 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
       obtain ⟨-, c₂, hc₂, -, hkind₂, -⟩ := hfacts
       have ec : c₂ = ca := Option.some.inj (hc₂.symm.trans hcaE)
       subst ec
-      rcases hkind₂ with ⟨d, hd, -⟩ | ⟨rc, hrc, -⟩ | ⟨ms, hms, -⟩ | ⟨-, -, hownS, hcb, hca'⟩
+      rcases hkind₂ with ⟨d, hd, -⟩ | ⟨rc, hrc, -⟩ | ⟨ms, hms, -⟩ | ⟨-, -, hownS, cb', hcb', hca'⟩
       · exact (standalone_not_proj (Or.inl ⟨d, hd⟩) hpa).elim
       · exact (standalone_not_proj (Or.inr (Or.inl ⟨rc, hrc⟩)) hpa).elim
       · exact (proj_not_block hpa ⟨ms, hms⟩).elim
@@ -1533,7 +1516,6 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
           obtain ⟨b', hb', hownEq⟩ := List.mem_map.mp hownS
           obtain ⟨j', hj', hgetj'⟩ := List.mem_iff_getElem.mp hb'
           have hj'L : j' < advAs.length := by rw [List.length_take] at hj'; omega
-          obtain ⟨cb', hcb'⟩ := hcb
           have hnpOwn : ¬ IsProj cb' := by
             rcases hca' with ⟨_, hst'⟩ | ⟨ms', _, _, hms', -, -⟩
             · exact fun hp' => standalone_not_proj hst' hp'
