@@ -812,6 +812,249 @@ impl KzgPcs {
     result
   }
 
+  /// Stream-commit each column of `matrix` over `domain`, returning only the
+  /// normalized KZG commitments without keeping all column vectors resident.
+  pub(crate) fn commit_matrix_commitment_only(
+    &self,
+    domain: Radix2Coset,
+    matrix: RowMajorMatrix<Scalar>,
+  ) -> KzgCommitment {
+    assert_eq!(matrix.height(), domain.size(), "matrix height != domain size");
+    let width = matrix.width();
+    let height = domain.size();
+    let ark = Self::ark_domain(domain);
+    let mut commits = Vec::with_capacity(width);
+    if width == 1 {
+      let first = matrix.values[0].0;
+      if matrix.values.par_iter().all(|v| v.0 == first) {
+        drop(matrix);
+        commits.push(self.commit_column(&Column::Constant {
+          value: first,
+          len: height,
+        }));
+      } else {
+        let mut coeffs: Vec<Fr> =
+          matrix.values.into_iter().map(|v| v.0).collect();
+        ark.ifft_in_place(&mut coeffs);
+        commits.push(self.msm(&coeffs));
+      }
+    } else {
+      for column in 0..width {
+        let first = matrix.values[column].0;
+        let is_constant = (1..height)
+          .into_par_iter()
+          .all(|row| matrix.values[row * width + column].0 == first);
+        if is_constant {
+          commits.push(self.commit_column(&Column::Constant {
+            value: first,
+            len: height,
+          }));
+        } else {
+          let mut coeffs = generate_buffer(height, |row| {
+            matrix.values[row * width + column].0
+          });
+          ark.ifft_in_place(&mut coeffs);
+          commits.push(self.msm(&coeffs));
+        }
+      }
+      drop(matrix);
+    }
+    KzgCommitment(vec![G1Projective::normalize_batch(&commits)])
+  }
+
+  /// Stream-commit `matrix` one column at a time directly into a checkpoint
+  /// file in the exact [`KzgProverData::write_checkpoint`] format, avoiding a
+  /// full transposed copy in memory and avoiding re-reading the written file
+  /// to compute per-column digests.
+  pub(crate) fn commit_matrix_to_checkpoint(
+    &self,
+    domain: Radix2Coset,
+    matrix: RowMajorMatrix<Scalar>,
+    temp_path: &std::path::Path,
+  ) -> Result<(KzgCommitment, Vec<StreamedColumn>), ark_serialize::SerializationError>
+  {
+    use std::{
+      fs::File,
+      io::{BufWriter, Seek, SeekFrom, Write},
+    };
+    struct HashingWriter<'a, W> {
+      inner: &'a mut W,
+      hasher: blake3::Hasher,
+    }
+    impl<W: Write> Write for HashingWriter<'_, W> {
+      fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let n = self.inner.write(buf)?;
+        if n >= 128 << 10 {
+          self.hasher.update_rayon(&buf[..n]);
+        } else {
+          self.hasher.update(&buf[..n]);
+        }
+        Ok(n)
+      }
+      fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+      }
+    }
+
+    assert_eq!(matrix.height(), domain.size(), "matrix height != domain size");
+    let width = matrix.width();
+    let height = domain.size();
+    let encode_header =
+      |commitment: &KzgCommitment| -> Result<Vec<u8>, ark_serialize::SerializationError> {
+        let mut header = Vec::new();
+        header.extend_from_slice(CHECKPOINT_MAGIC);
+        commitment.0.serialize_compressed(&mut header)?;
+        1u64.serialize_compressed(&mut header)?;
+        (domain.log_size as u64).serialize_compressed(&mut header)?;
+        domain.shift.0.serialize_compressed(&mut header)?;
+        (width as u64).serialize_compressed(&mut header)?;
+        Ok(header)
+      };
+
+    let placeholder = KzgCommitment(vec![vec![G1Affine::default(); width]]);
+    let placeholder_header = encode_header(&placeholder)?;
+    let mut writer = BufWriter::with_capacity(1 << 20, File::create(temp_path)?);
+    writer.write_all(&placeholder_header)?;
+    let mut file_offset = u64::try_from(placeholder_header.len())
+      .map_err(|_error| ark_serialize::SerializationError::InvalidData)?;
+    let column_bytes = u64::try_from(height)
+      .ok()
+      .and_then(|h| h.checked_mul(32))
+      .ok_or(ark_serialize::SerializationError::InvalidData)?;
+
+    let ark = Self::ark_domain(domain);
+    let mut commits = Vec::with_capacity(width);
+    let mut columns = Vec::with_capacity(width);
+
+    let write_constant =
+      |writer: &mut BufWriter<File>,
+       value: Fr,
+       file_offset: &mut u64|
+       -> Result<StreamedColumn, ark_serialize::SerializationError> {
+        (height as u64).serialize_compressed(&mut *writer)?;
+        *file_offset += 8;
+        let column = Column::Constant { value, len: height };
+        let mut result = Ok(());
+        column.visit(|_, values| {
+          if result.is_err() {
+            return;
+          }
+          result =
+            super::encoding::write_fields(&mut *writer, values, |v| *v)
+              .map_err(ark_serialize::SerializationError::from);
+        })?;
+        result?;
+        *file_offset += column_bytes;
+        Ok(StreamedColumn::Constant(value))
+      };
+
+    let write_dense =
+      |writer: &mut BufWriter<File>,
+       coeffs: &[Fr],
+       file_offset: &mut u64|
+       -> Result<StreamedColumn, ark_serialize::SerializationError> {
+        (height as u64).serialize_compressed(&mut *writer)?;
+        *file_offset += 8;
+        let offset = *file_offset;
+        let mut hashing =
+          HashingWriter { inner: writer, hasher: blake3::Hasher::new() };
+        super::encoding::write_fields(&mut hashing, coeffs, |v| *v)?;
+        let digest = hashing.hasher.finalize();
+        *file_offset += column_bytes;
+        Ok(StreamedColumn::Disk { offset, digest })
+      };
+
+    if width == 1 {
+      let first = matrix.values[0].0;
+      if matrix.values.par_iter().all(|v| v.0 == first) {
+        drop(matrix);
+        commits.push(self.commit_column(&Column::Constant {
+          value: first,
+          len: height,
+        }));
+        columns.push(write_constant(&mut writer, first, &mut file_offset)?);
+      } else {
+        let mut coeffs: Vec<Fr> =
+          matrix.values.into_iter().map(|v| v.0).collect();
+        ark.ifft_in_place(&mut coeffs);
+        commits.push(self.msm(&coeffs));
+        columns.push(write_dense(&mut writer, &coeffs, &mut file_offset)?);
+      }
+    } else {
+      for column in 0..width {
+        let first = matrix.values[column].0;
+        let is_constant = (1..height)
+          .into_par_iter()
+          .all(|row| matrix.values[row * width + column].0 == first);
+        if is_constant {
+          commits.push(self.commit_column(&Column::Constant {
+            value: first,
+            len: height,
+          }));
+          columns.push(write_constant(&mut writer, first, &mut file_offset)?);
+        } else {
+          let mut coeffs = generate_buffer(height, |row| {
+            matrix.values[row * width + column].0
+          });
+          ark.ifft_in_place(&mut coeffs);
+          commits.push(self.msm(&coeffs));
+          columns.push(write_dense(&mut writer, &coeffs, &mut file_offset)?);
+        }
+      }
+      drop(matrix);
+    }
+
+    let commitment = KzgCommitment(vec![G1Projective::normalize_batch(&commits)]);
+    let real_header = encode_header(&commitment)?;
+    assert_eq!(
+      real_header.len(),
+      placeholder_header.len(),
+      "checkpoint header length changed after commitment"
+    );
+    writer.flush()?;
+    let mut file = writer
+      .into_inner()
+      .map_err(|error| ark_serialize::SerializationError::from(error.into_error()))?;
+    file.seek(SeekFrom::Start(0))?;
+    file.write_all(&real_header)?;
+    file.flush()?;
+    Ok((commitment, columns))
+  }
+
+  /// Open a persisted streamed checkpoint without re-reading its coefficient
+  /// payload to recompute column digests.
+  pub(crate) fn open_streamed_checkpoint(
+    path: &std::path::Path,
+    domain: Radix2Coset,
+    commitment: KzgCommitment,
+    columns: Vec<StreamedColumn>,
+  ) -> std::io::Result<KzgProverData> {
+    let height = domain.size();
+    let needs_file =
+      columns.iter().any(|column| matches!(column, StreamedColumn::Disk { .. }));
+    let file = if needs_file {
+      Some(Arc::new(std::sync::Mutex::new(std::fs::File::open(path)?)))
+    } else {
+      None
+    };
+    let columns = columns
+      .into_iter()
+      .map(|column| match column {
+        StreamedColumn::Constant(value) => Column::Constant { value, len: height },
+        StreamedColumn::Disk { offset, digest } => Column::from_disk(
+          Arc::clone(file.as_ref().expect("file opened for disk columns")),
+          offset,
+          height,
+          digest,
+        ),
+      })
+      .collect();
+    Ok(KzgProverData {
+      commitment,
+      matrices: vec![CommittedMatrix::new(domain, columns)],
+    })
+  }
+
   /// Interpolate each column of `matrix` over `domain`.
   fn interpolate_columns(
     domain: Radix2Coset,
@@ -819,31 +1062,50 @@ impl KzgPcs {
   ) -> CommittedMatrix {
     assert_eq!(matrix.height(), domain.size(), "matrix height != domain size");
     let width = matrix.width();
-    let evals: Vec<Vec<Fr>> = if width == 1 {
-      // The consuming map reuses the transparent scalar vector's allocation.
-      vec![matrix.values.into_iter().map(|v| v.0).collect()]
-    } else {
-      (0..width)
-        .into_par_iter()
-        .map(|column| {
-          generate_buffer(matrix.height(), |row| {
-            matrix.values[row * width + column].0
-          })
-        })
-        .collect()
-    };
+    let height = domain.size();
     let mut constants = vec![false; width];
     let mut output: Vec<Option<Column>> = (0..width).map(|_| None).collect();
     let mut active = Vec::new();
     let mut inputs = Vec::new();
-    for (i, col) in evals.into_iter().enumerate() {
-      let first = col[0];
-      if col.iter().all(|&v| v == first) {
-        constants[i] = true;
-        output[i] = Some(Column::Constant { value: first, len: col.len() });
+    if width == 1 {
+      let first = matrix.values[0].0;
+      if matrix.values.par_iter().all(|v| v.0 == first) {
+        drop(matrix);
+        constants[0] = true;
+        output[0] = Some(Column::Constant { value: first, len: height });
       } else {
-        active.push(i);
-        inputs.push(col);
+        // The consuming map reuses the transparent scalar vector's allocation.
+        active.push(0);
+        inputs.push(matrix.values.into_iter().map(|v| v.0).collect());
+      }
+    } else {
+      let extracted: Vec<Result<Vec<Fr>, Fr>> = (0..width)
+        .into_par_iter()
+        .map(|column| {
+          let first = matrix.values[column].0;
+          let is_constant = (1..height)
+            .all(|row| matrix.values[row * width + column].0 == first);
+          if is_constant {
+            Err(first)
+          } else {
+            Ok(generate_buffer(height, |row| {
+              matrix.values[row * width + column].0
+            }))
+          }
+        })
+        .collect();
+      drop(matrix);
+      for (i, col) in extracted.into_iter().enumerate() {
+        match col {
+          Err(value) => {
+            constants[i] = true;
+            output[i] = Some(Column::Constant { value, len: height });
+          },
+          Ok(values) => {
+            active.push(i);
+            inputs.push(values);
+          },
+        }
       }
     }
     #[cfg(feature = "cuda")]
@@ -886,17 +1148,28 @@ impl KzgPcs {
 
   fn interpolate_on_host(
     domain: Radix2Coset,
-    columns: Vec<Vec<Fr>>,
+    mut columns: Vec<Vec<Fr>>,
   ) -> Vec<Vec<Fr>> {
     let ark = Self::ark_domain(domain);
+    // Large arkworks IFFTs already parallelize across Rayon threads; running
+    // one column at a time bounds peak scratch memory and improves cache reuse.
+    if domain.size() >= 1 << 16 {
+      for col in &mut columns {
+        ark.ifft_in_place(col);
+      }
+    } else {
+      columns.par_iter_mut().for_each(|col| {
+        ark.ifft_in_place(col);
+      });
+    }
     columns
-      .into_par_iter()
-      .map(|mut col| {
-        ark.ifft_in_place(&mut col);
-        col
-      })
-      .collect()
   }
+}
+
+/// Column metadata recorded while streaming a matrix into a checkpoint file.
+pub(crate) enum StreamedColumn {
+  Constant(Fr),
+  Disk { offset: u64, digest: blake3::Hash },
 }
 
 impl Pcs for KzgPcs {

@@ -114,6 +114,16 @@ impl Column {
     Ok(Self::Disk { file, offset, len, digest: hash.finalize() })
   }
 
+  /// Construct a disk-backed column from an already-written and hashed span.
+  pub(super) fn from_disk(
+    file: Arc<Mutex<File>>,
+    offset: u64,
+    len: usize,
+    digest: blake3::Hash,
+  ) -> Self {
+    Self::Disk { file, offset, len, digest }
+  }
+
   /// Check the bytes on every access; changing/truncating a checkpoint fails
   /// closed. The file must already be trusted when first indexed.
   pub(super) fn visit(
