@@ -1959,14 +1959,14 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
               have ecrb' : crb' = crb := hC.runStore.record_eq
                 ((hC.runStore.recordOf_eq_recordAt _).symm.trans hcrb)
                 (Core.hashed_mono hsub80 hhbR) hblkR hdeEbR
-              subst ecrb'
+              subst crb'
               have ers' : rs' = rs := Ixon.ConstantInfo.muts.inj (hcrb'm.symm.trans hrs)
-              subst ers'
+              subst rs'
               have erc0' : rc0' = rc0 := by
                 simp only [UInt64.toNat_zero] at hmemR'
                 rw [Array.getElem?_toList, hrc0_get] at hmemR'
                 exact Ixon.MutConst.recr.inj (Option.some.inj hmemR'.symm)
-              subst erc0'
+              subst rc0'
               rw [hldR] at ldRec
               injection ldRec with hvR
               subst hvR
