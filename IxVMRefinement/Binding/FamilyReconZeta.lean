@@ -314,8 +314,7 @@ theorem collect_spine_zeta_spec {κ : _root_.Address → KKey} {h h' : Heap F}
       (ha.mono e1.heap_extends)
     rw [← kexprList_names] at hsnoc
     have hgetFn : (Expr.app Ef Ea).getAppFn = Ef.getAppFn := rfl
-    have hgetArgs : (Expr.app Ef Ea).getAppArgs = Ef.getAppArgs ++ [Ea] := by
-      simpa using Expr.getAppArgs_app Ef Ea
+    have hgetArgs : (Expr.app Ef Ea).getAppArgs = Ef.getAppArgs ++ [Ea] := rfl
     rw [hgetFn, hgetArgs]
     exact ⟨hfn.mono e2.heap_extends, hnl.mono e2.heap_extends, hsnoc⟩
   | .Let (x_v := xv) (x_b := xb) (v_boczwtnf := v') (m_fhppzpwh := m')
@@ -586,8 +585,10 @@ theorem level_list_struct_eq_exact {h h' : Heap F} {la lb : List KLevel}
       cases hb with
       | nil cell =>
         have hld := Lib.load_enum_cell cell
-        rw [IxVM.Refinement.Levels.klevelList_names, ld2] at hld
+        rw [← IxVM.Refinement.Levels.klevelList_names] at hld
+        rw [ld2] at hld
         injection hld with hv
+        rw [IxVM.Refinement.Levels.klevelList_names] at hv
         exact absurd hv (hne [] rfl)
     | cons _ _ => simp
   | .Cons_Nil (ld12 := ld1) (ld77 := ld2) (he85 := hr) (he86 := hh) .. =>
@@ -641,8 +642,7 @@ private theorem tmOExact_not_bvar {κ : _root_.Address → KKey} {h : Heap F}
     have hld := Lib.load_enum_cell cell; rw [ld] at hld; injection hld with hv; exact hne _ rfl hv
   | bvarFree _ _ _ hd => omega
   | letE cell _ _ _ => exact hnl.ne_let (Lib.load_enum_cell cell)
-  | sort .. | const .. | app .. | lam .. | forallE .. | litNat .. | litStr .. | proj .. =>
-    cases hE
+  | _ => cases hE
 
 private theorem tmOExact_not_sort {κ : _root_.Address → KKey} {h : Heap F}
     {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
@@ -759,32 +759,32 @@ private theorem tmOExact_lit_rep {κ : _root_.Address → KKey} {h : Heap F}
   · exact ⟨.str bs, ⟨bp, hxl, rb⟩, .inr ⟨bs, s, rfl, hs, rfl⟩⟩
 
 private theorem zeta_struct_eq_bundle {κ : _root_.Address → KKey} (hinj : Function.Injective κ) :
-    ∀ (fn : String) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
+    ∀ (fname : String) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)),
-      ObsFn W fn args h r h' cs → IxVM.Consistency.Bounded cs →
-      (fn = "KernelCheck::kexpr_zeta_struct_eq" →
+      ObsFn W fname args h r h' cs → IxVM.Consistency.Bounded cs →
+      (fname = "KernelCheck::kexpr_zeta_struct_eq" →
         ∀ (p₁ p₂ : SourceValue F) (E₁ E₂ : KExpr),
           args = [p₁, p₂] → TmOExact κ h E₁ p₁ → TmOExact κ h E₂ p₂ →
           r = .field (if E₁ = E₂ then 1 else 0)) ∧
-      (fn = "KernelCheck::kexpr_zeta_binder_eq" →
+      (fname = "KernelCheck::kexpr_zeta_binder_eq" →
         ∀ (ta ba la tb bb lb : SourceValue F) (Ta Ba Tb Bb : KExpr) (ℓa ℓb : KLevel),
           args = [ta, ba, la, tb, bb, lb] →
           TmOExact κ h Ta ta → TmOExact κ h Ba ba → RepKLevel h ℓa la →
           TmOExact κ h Tb tb → TmOExact κ h Bb bb → RepKLevel h ℓb lb →
           r = .field (if bmeta ℓa = bmeta ℓb ∧ Ta = Tb ∧ Ba = Bb then 1 else 0)) := by
   refine ObsFn.strong_induction (W := W)
-    (P := fun fn args h r h' cs => IxVM.Consistency.Bounded cs →
-      (fn = "KernelCheck::kexpr_zeta_struct_eq" →
+    (P := fun fname args h r h' cs => IxVM.Consistency.Bounded cs →
+      (fname = "KernelCheck::kexpr_zeta_struct_eq" →
         ∀ (p₁ p₂ : SourceValue F) (E₁ E₂ : KExpr),
           args = [p₁, p₂] → TmOExact κ h E₁ p₁ → TmOExact κ h E₂ p₂ →
           r = .field (if E₁ = E₂ then 1 else 0)) ∧
-      (fn = "KernelCheck::kexpr_zeta_binder_eq" →
+      (fname = "KernelCheck::kexpr_zeta_binder_eq" →
         ∀ (ta ba la tb bb lb : SourceValue F) (Ta Ba Tb Bb : KExpr) (ℓa ℓb : KLevel),
           args = [ta, ba, la, tb, bb, lb] →
           TmOExact κ h Ta ta → TmOExact κ h Ba ba → RepKLevel h ℓa la →
           TmOExact κ h Tb tb → TmOExact κ h Bb bb → RepKLevel h ℓb lb →
           r = .field (if bmeta ℓa = bmeta ℓb ∧ Ta = Tb ∧ Ba = Bb then 1 else 0)))
-    (fun fn args h r h' cs ev ih bd => by
+    (fun fname args h r h' cs ev ih bd => by
       have sub : ∀ {cs' : List (Call F)}, (∀ c ∈ cs', c ∈ cs) → IxVM.Consistency.Bounded cs' :=
         fun hs => RomBound.bounded_mono bd hs
       refine ⟨fun hfn p₁ p₂ E₁ E₂ hargs h₁ h₂ => ?_,
