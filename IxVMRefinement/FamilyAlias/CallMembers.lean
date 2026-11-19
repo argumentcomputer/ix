@@ -174,7 +174,7 @@ theorem tmExact_hasFvar_false {κ : _root_.Address → KKey} {Γ : Nat → KExpr
   | app _ _ _ ihf iha => simp [Ix.Kernel.Expr.hasFvar, ihf, iha]
   | lam _ _ _ _ iht ihb => simp [Ix.Kernel.Expr.hasFvar, iht, ihb]
   | forallE _ _ _ _ iht ihb => simp [Ix.Kernel.Expr.hasFvar, iht, ihb]
-  | letE _ _ _ _ iht ihv ihb => simp [Ix.Kernel.Expr.hasFvar, iht, ihv, ihb]
+  | letE _ _ _ _ _ ihv ihb => exact SubstAux.hasFvar_instShift ihv _ 0 ihb
   | litNat _ _ _ => rfl
   | litStr _ _ _ => rfl
   | proj _ _ _ ihe => simp [Ix.Kernel.Expr.hasFvar, ihe]
