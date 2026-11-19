@@ -11,18 +11,17 @@ takes the kinds of a top-walked unit in, and of `CheckedUnitFact` and `CheckedUn
 form of a kind's step for every checked unit) and the axioms it reaches. A change to any of them
 fails the build.
 
-How to read it. The explicit arguments are the open obligations: the first two are the
-binding half's, and the third is the typing half's (the step of a twin). The family graph, inner
-checks, canonical twin selection (`Typing.familyGraphRowInnerFamT_closed`), and both family-check
-steps (`FamilyAlias.closureFamilyCheck_of_run`, `FamilyAlias.familyBlockCheckRow_of_run`) are
-proved unconditionally. The binding half's run
-predicate is `IxVM.Refinement.Binding.BindingRun`. The first argument is the part of the binding
-claim's export that remains (`familyFlat` and `familyForm`; the loaded table's admission, prelude
-pin, group store closures, and remaining family clauses are theorems). The second is the closure's
-remaining step in the family form (a twin; the step of a unit with no family record and no twin is
-a theorem, `Binding.closureUnitSteps_bindingRun`, and the step of a new block with its selected
-family record is a theorem, `FamilyAlias.closureFamilyCheck_of_run`). The run predicate holds the prelude pin, the store after the
-basis groups, the admission of each group with its reading clause and the group's family checks,
+How to read it. The explicit arguments are the open obligations: the first is the binding half's
+(the closure's remaining step in the family form: a twin), and the second is the typing half's
+(the step of a twin). The binding claim export (`Binding.FamilyRecon.groupStoresOfRun_closed`
+through `Binding.groupStoresOfRun_of_remainingNC`), the family graph, inner checks, canonical twin
+selection (`Typing.familyGraphRowInnerFamT_closed`), and both family-check steps
+(`FamilyAlias.closureFamilyCheck_of_run`, `FamilyAlias.familyBlockCheckRow_of_run`) are proved
+unconditionally. The binding half's run predicate is `IxVM.Refinement.Binding.BindingRun`. The
+step of a unit with no family record and no twin is a theorem (`Binding.closureUnitSteps_bindingRun`),
+and the step of a new block with its selected family record is a theorem
+(`FamilyAlias.closureFamilyCheck_of_run`). The run predicate holds the prelude pin, the store after
+the basis groups, the admission of each group with its reading clause and the group's family checks,
 so the fold's hypotheses about those are its projections and are not listed; the basis groups'
 family form, the stored shapes of groups with no role unit (`Binding.groupWithoutRoleUnit_bindingRun`),
 the role unit of an operation (`Binding.operationRoleUnitW_of_projFree` from
@@ -36,8 +35,7 @@ same commit. When the interface of an obligation changes, retype its hypothesis 
 The proof is complete when the theorem has no explicit argument.
 
 What this module does not print. A definition that a hypothesis reads
-(`RemainingStoreClausesOfRun`, `BindingRun`, `AtGroups`,
-`ClosureTwinSteps`, `FamilyRecon.RFormS`,
+(`BindingRun`, `AtGroups`, `ClosureTwinSteps`, `FamilyRecon.RFormS`,
 `FamilyTwinRowFam`, `FoldExtra`, `UnitStep` and the others) appears by name only: its own
 module holds it. The public statement and what it reads are printed in
 `Ix.IxVM.ConsistencyAudit` and `Ix.IxVM.ConsistencyModelAudit`. The module is outside any
@@ -47,9 +45,6 @@ namespace, so every name prints in full. -/
 
 /--
 info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
-  (groupStores :
-    ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
-      IxVM.Refinement.Binding.RemainingStoreClausesOfRun calls)
   (closureTwinSteps :
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
       IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
