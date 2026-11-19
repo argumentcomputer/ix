@@ -1300,7 +1300,7 @@ private theorem flat_originals_walk_spec {rootCalls : List (Call F)} {t : Ix.Ker
           have := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound blkBytes cb hexB
           have := Claim.muts_size_le hmuts
           exact fval_natCast (by omega)
-        rw [hpos_val] at hmc hpos56
+        rw [hpos_val] at hmc hpos56 hma
         have hmc' : ms[pos]? = some mc := by rw [← Array.getElem?_toList]; exact hmc
         have hmc_eq : mc = .indc ind := Option.some.inj (hmc'.symm.trans hm_at)
         subst hmc_eq
@@ -1327,7 +1327,8 @@ private theorem flat_originals_walk_spec {rootCalls : List (Call F)} {t : Ix.Ker
             rw [hshape] at hv
             injection hv with _ _ hl; injection hl with h1 _; exact ⟨hr.trans h1.symm, hh⟩
           | other hne _ _ _ => exact (hne _ rfl hshape).elim
-        obtain ⟨rfl, rfl⟩ := hsg
+        obtain ⟨rfl, hm3⟩ := hsg
+        subst m3
         have evlvls' : ObsFn W "KernelCheck::build_param_lvls_range"
             [.field (off : F), .field (ind.lvls.toNat : F), .field ((0 : Nat) : F)]
             m2 vlvls m4 cs4 := by simpa using evlvls
@@ -1357,8 +1358,7 @@ private theorem flat_originals_walk_spec {rootCalls : List (Call F)} {t : Ix.Ker
             some (some ⟨ind.lvls.toNat, ind.params.toNat, ind.ctors.size, ixAddr ba, pos⟩) := by
           unfold indInfoAt
           simp only [hprojE, memberProjection, hcbE, hmuts, hpos64, hm_at]
-        have hma_eq : ixAddr ma = memberAddr (ixAddr ba) pos (.indc ind) := by
-          simpa [memberAddr, Core.Specs.Callees.memberProjInfo, Core.iprjAddr] using hma
+        have hma_eq : ixAddr ma = memberAddr (ixAddr ba) pos (.indc ind) := hma
         have hnil_e : RepList kexprListEnum (TmOExact (Core.keyOf t))
             (m4 ++ [.construct kexprListEnum "Nil" []]) [] (.ptr (.enum kexprListEnum) m4.length) :=
           Lib.rep_store_nil m4
