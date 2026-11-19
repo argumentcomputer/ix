@@ -26,12 +26,13 @@ def PayDirect (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (Pay : PayloadRel) (g 
     (a : _root_.Address) : Prop :=
   ∃ B, (GroupReach t E₀ g B ∨ PayReach t E₀ Pay g B) ∧ Pay g B a
 
-/-- **An address the payload of group `g` reaches by a step**: an uncovered used reference, or the
-block of a projection record, of an address the payload reaches. -/
+/-- **An address the payload of group `g` reaches by a step**: an uncovered used reference (not
+already stored before the group), or the block of a projection record, of an address the payload
+reaches. -/
 def PayStep (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (Pay : PayloadRel) (g : Nat)
     (x : _root_.Address) : Prop :=
   ∃ a, PayReach t E₀ Pay g a ∧
-    ((UsedRef E₀ a x ∧ ¬ Claim.CoveredAt t (some (valLimit g)) x) ∨
+    ((UsedRef E₀ a x ∧ ¬ AlreadyStoredRole t g x) ∨
       ∃ c, recordOf E₀ a = some c ∧ IsProj c ∧ x = Ix.Cert.ownerOf a c)
 
 /-- **An address the payload reaches is named directly or reached by a step.** -/

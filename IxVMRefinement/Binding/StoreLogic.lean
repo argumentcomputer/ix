@@ -113,7 +113,8 @@ theorem groupReach_sourceSafe (hC : CollisionFreeRun calls E₀) (hax : AxiomRol
   intro a ha
   induction ha with
   | root hr hwk had => exact hroots.bound _ hwk _ had
-  | @evidenceRef r arr thm x hr hm hthm hu hne hnc =>
+  | @evidenceRef r arr thm x hr hm hthm hu hne hns =>
+    have hnc := AlreadyStoredRole.not_covered hns
     rcases hkind r hr arr hm with h2 | h5
     · have hgr := groupOf_of_mem_roleGroup hr
       exact hroots.certRefs r arr thm x h2 hm hthm hu hne (by rw [hgr]; exact hnc)
@@ -121,7 +122,8 @@ theorem groupReach_sourceSafe (hC : CollisionFreeRun calls E₀) (hax : AxiomRol
       obtain ⟨i, hi', hx⟩ := usedRef_guard_form hc hu
       exact Claim.RecordRefsIn.safe hC.runStore hC.hashedStored hc
         (hroots.eqnsEvidence r arr thm h5 hm hthm) hg i hi' x hx hnc
-  | @axiomRef r a x hr hs had hu hnc =>
+  | @axiomRef r a x hr hs had hu hns =>
+    have hnc := AlreadyStoredRole.not_covered hns
     obtain ⟨c, hc, hg⟩ := hguardAx r hr hs a had
     obtain ⟨c₂, ax, hc₂, hi, hsf⟩ := hax r hs a had
     have e : c₂ = c := Option.some.inj (hc₂.symm.trans hc)
@@ -129,7 +131,8 @@ theorem groupReach_sourceSafe (hC : CollisionFreeRun calls E₀) (hax : AxiomRol
     obtain ⟨i, hi', hx⟩ := usedRef_guard_form hc hu
     exact Claim.RecordRefsIn.safe hC.runStore hC.hashedStored hc (axiom_sourceSafe hc hi hsf) hg
       i hi' x hx hnc
-  | @ref a x ha hu hnc ih =>
+  | @ref a x ha hu hns ih =>
+    have hnc := AlreadyStoredRole.not_covered hns
     obtain ⟨y, hy, hya⟩ := ha.listed hC.hashedStored hw
     have hc := topRec_recordOf hC.hashedStored y
     rw [hya] at hc
