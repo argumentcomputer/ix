@@ -5,6 +5,7 @@ import IxVMRefinement.FamilyAlias.CallLists
 import IxVMRefinement.FamilyAlias.CallRecRefs
 import IxVMRefinement.FamilyAlias.CallRekey
 import IxVMRefinement.FamilyGraph.ProducersInnerRefs
+import IxVMRefinement.FamilyGraph.ProducersRefs
 import IxVMRefinement.Assembly.TypingRecLateMajorKey
 import IxVMRefinement.Decl.FamilyMentions
 import IxVMRefinement.Decl.Modeled
@@ -3803,21 +3804,52 @@ theorem familyCall_extract_members {calls : List (Call F)} {bAddr : _root_.Addre
           hrecAs_len hnoRole_all (k := 0) (by simp) (Heap.Extends.refl _) hrec_1293
           (by simpa only [Nat.cast_zero] using ev1343) hsub1341 k (Nat.zero_le k) hk
 
+private theorem build_recur_addrs_head_hashed {m0 : Ixon.MutConst} {rest : List Ixon.MutConst}
+    {b : Bytes.Address} {x_members x_block r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (hms : Core.Specs.Callees.MembersRep h (m0 :: rest) x_members)
+    (hb : Bytes.RepAddressRef Core.addrTy h b x_block)
+    (ev : ObsFn Obs.W "Ingress::build_recur_addrs" [x_members, x_block] h r h' cs) :
+    Hashed cs (Ixon.serConstant (memberProjection (Core.ixAddr b) 0 m0)) := by
+  obtain ⟨cs4, ev6, hc38⟩ := Obs.«Ingress::build_recur_addrs».obs ev
+  have ev6' : ObsFn Obs.W "Ingress::build_recur_addrs_walk"
+      [x_members, x_block, x_members, .field ((0 : Nat) : F)] h r h' cs4 := by
+    simpa using ev6
+  rcases Obs.«Ingress::build_recur_addrs_walk».obs ev6' with
+    ⟨ld12, _, _, _⟩ |
+    ⟨w36, x_rest, v55, v56, m58, cs66, m94, cs102, v108,
+      ld12, he51, hm50, ev68, op143, ev104, hc145⟩
+  · cases Lib.rep_nil_of_load hms ld12
+  · obtain ⟨-, -, -, mc, -, hget, -, -, hhash⟩ := L1.projection_addr_hashed_spec hms hb ev68
+    have h0 : ((0 : Nat) : F).val = 0 := by simp
+    rw [h0] at hget hhash
+    have emc : mc = m0 := (by simpa using hget : m0 = mc).symm
+    subst emc
+    have hmemb : memberProjection (Core.ixAddr b) 0 mc =
+        ⟨Core.Specs.Callees.memberProjInfo (Core.ixAddr b) 0 mc, #[], #[], #[], #[]⟩ := by
+      cases mc <;> rfl
+    rw [hmemb]
+    exact Core.hashed_mono (fun cl hcl => by rw [hc38, hc145]; simp [hcl]) hhash
+
 /-- **An accepted `KernelModeled::check_family` call on `(B, A)` with non-empty `A` witnesses
-`UsedRef E₀ A (Core.iprjAddr B 0)`**: `check_carriers` on member 0 of `A` finds `iprjAddr B 0`
-as a `Const` cell in `rc₀.typ` (where `recurAddrs = []`). -/
+`B`'s block record, its first inductive member `ind₀`, its stored member-0 projection record, and
+`UsedRef E₀ A (Core.iprjAddr B 0)`**: `load_verified_constant` loads `B`, `build_recur_addrs`
+hashes `memberProjection B 0 (.indc ind₀)`, and `check_carriers` on member 0 of `A` finds
+`iprjAddr B 0` as a `Const` cell in `rc₀.typ` (where `recurAddrs = []`). -/
 theorem familyCall_usedRef_ind0 {calls : List (Call F)} {bAddr : _root_.Address}
     {t : Ix.Kernel.RoleTable} {E₀ E_in : Ixon.Env} {lim : Option Nat}
-    {B A : _root_.Address} {cb c : Ixon.Constant} {ms rs' : Array Ixon.MutConst}
+    {B A : _root_.Address} {c : Ixon.Constant} {rs' : Array Ixon.MutConst}
     {cs : List (Call F)}
     (ht : t.check = .ok ())
     (hRS : LoadedReads.RunStore calls E₀)
     (hH : LoadedReads.HashedRecordsStored calls E₀)
     (hSS_in : StepStore calls t E₀ E_in)
-    (hB : FamBlockRecord E₀ B cb ms) (hA : FamRecRecord E₀ A c rs')
+    (hA : FamRecRecord E₀ A c rs')
     (hsz : rs'.size ≠ 0)
     (hcall : FamilyCallAtLim calls bAddr t B A lim cs) :
-    UsedRef E₀ A (Core.iprjAddr B 0) := by
+    ∃ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (ind₀ : Ixon.Inductive),
+      recordOf E₀ B = some cb ∧ cb.info = .muts ms ∧ ms[0]? = some (.indc ind₀) ∧
+      recordOf E₀ (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind₀)) ∧
+      UsedRef E₀ A (Core.iprjAddr B 0) := by
   obtain ⟨h, h', x_rc, x_block, x_rec_block, r, -, hxB, hxA, ev_fam, -, hsub_fam⟩ := hcall
   obtain ⟨bB, hB_rep, hB_ix⟩ := hxB
   obtain ⟨bA, hA_rep, hA_ix⟩ := hxA
@@ -3827,7 +3859,7 @@ theorem familyCall_usedRef_ind0 {calls : List (Call F)} {bAddr : _root_.Address}
       (m501 := m501) (m624 := m624) (m652 := m652) (m674 := m674) (m784 := m784)
       (m840 := m840) (m_qvdvjtit := m_qvd) (m862 := m862) (m_lukcasbb := m_luk)
       (m1191 := m1191) (m1293 := m1293)
-      (cs511 := cs511) (cs850 := cs850) (cs1341 := cs1341)
+      (cs511 := cs511) (cs684 := cs684) (cs850 := cs850) (cs1341 := cs1341)
       (sg112 := sg112) (ev126 := e1) (ev148 := e2) (ev194 := e3) (ev_yqjbwijz := e4)
       (ev231 := e5) (ev266 := e6) (ev309 := e7) (ev344 := e8) (ev403 := e9) (ev435 := e10)
       (ev465 := e11) (ev513 := ev513) (ev601 := e13) (ev634 := e14) (ev664 := ev664)
@@ -3869,17 +3901,32 @@ theorem familyCall_usedRef_ind0 {calls : List (Call F)} {bAddr : _root_.Address}
       ext_840_qvd.trans (ev874.heap_extends.trans (ext_862_luk.trans
         (ev1203.heap_extends.trans ext_1191_1293)))
     have hsub511 : ∀ cl ∈ cs511, cl ∈ calls := fun cl hcl => hsub_fam cl (by rw [hcs]; simp [hcl])
+    have hsub684 : ∀ cl ∈ cs684, cl ∈ calls := fun cl hcl => hsub_fam cl (by rw [hcs]; simp [hcl])
     obtain ⟨cb', ms', hblB, hms_rep⟩ :=
       Claim.load_block_head (Bytes.repAddressRef_heapMono₂ Core.addrTy ext_h_453 hB_rep) ev513
     obtain ⟨hcb'_eq, hms'_eq⟩ := (hblB.mono hsub511).stored hH
-    have heq_cb : cb' = cb := Option.some.inj (hcb'_eq.symm.trans hB.record)
-    subst cb'
-    have heq_ms : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'_eq.symm.trans hB.muts)
-    subst ms'
     obtain ⟨ind₀, rest_ms, hms_cons, -, -⟩ :=
       block_nparams_spec (RepLinkedList.mono L1.repMutConst_heapMono₂ ext_501_624 hms_rep) ev664
+    have hms0 : ms'[0]? = some (.indc ind₀) := by
+      rw [← Array.getElem?_toList, hms_cons]; rfl
     have hmem_m652 := Route.membersRep_of_repMutConstList
       (RepLinkedList.mono L1.repMutConst_heapMono₂ ext_501_652 hms_rep)
+    have hmem_m652_cons : Core.Specs.Callees.MembersRep m652 (.indc ind₀ :: rest_ms) x_members := by
+      rwa [hms_cons] at hmem_m652
+    have hP0_hashed : Hashed calls (Ixon.serConstant (memberProjection (Core.ixAddr bB) 0 (.indc ind₀))) :=
+      Core.hashed_mono hsub684 (build_recur_addrs_head_hashed hmem_m652_cons
+        (Bytes.repAddressRef_heapMono₂ Core.addrTy (ext_h_501.trans ext_501_652) hB_rep) ev686)
+    have hP0_rec : recordOf E₀ (Core.iprjAddr (Core.ixAddr bB) 0) =
+        some (memberProjection (Core.ixAddr bB) 0 (.indc ind₀)) := by
+      have hsz0 : (Ixon.serConstant ⟨.iPrj ⟨0, Core.ixAddr bB⟩, #[], #[], #[], #[]⟩).size <
+          4294967296 := serConstant_iprj_size_lt 0 bB
+      have hexact0 : Ixon.deConstantExact
+          (Ixon.serConstant ⟨.iPrj ⟨0, Core.ixAddr bB⟩, #[], #[], #[], #[]⟩) =
+          .ok ⟨.iPrj ⟨0, Core.ixAddr bB⟩, #[], #[], #[], #[]⟩ :=
+        Ixon.Verify.deConstantExact_serConstant _ (L1.projConstant_wireWF_iPrj 0 bB)
+      have hproj_rec := Claim.recordOf_of_hashed hH
+        (by simpa [memberProjection] using hP0_hashed) hsz0 hexact0
+      simpa [Core.iprjAddr, Core.projAddr, memberProjection] using hproj_rec
     obtain ⟨-, typeAs, htype_m674, htype_map⟩ := L1.build_recur_addrs_spec hmem_m652
       (Bytes.repAddressRef_heapMono₂ Core.addrTy (ext_h_501.trans ext_501_652) hB_rep) ev686
     rw [hms_cons] at htype_map
@@ -4018,7 +4065,8 @@ theorem familyCall_usedRef_ind0 {calls : List (Call F)} {bAddr : _root_.Address}
                     obtain ⟨i, hi, href⟩ := usedRef_of_rawConvExpr_rmember hA.record hA.muts hmem0
                       rty0 (hin_rem b_f (.forallTy cell_m (hin_dom b_f hin_bf)))
                     rw [hb_f, ht0_addr] at href
-                    exact usedRef_of_idx hA.record hi href
+                    exact ⟨cb', ms', ind₀, hcb'_eq, hms'_eq, hms0, hP0_rec,
+                      usedRef_of_idx hA.record hi href⟩
                 | bvar _ | fvar _ _ | sort _ | app _ _ | lam _ _ _
                 | forallE _ _ _ | letE _ _ _ _ | lit _ | proj _ _ _ =>
                   rw [hfn] at hfk0; cases hfk0
