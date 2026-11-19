@@ -99,36 +99,41 @@ private theorem safe_used_refs_seg_spec
     (ev : Obs.«KernelClaim::assert_safe_used_refs».Seg1 ap rest rc refs used (.field (i : F))
       (.construct addrMapEnum "Nil" []) h r h' cs)
     (hsub : ∀ cl ∈ cs, cl ∈ calls) :
-    Heap.Extends h h' ∧ (i ∈ idxs → ¬ CoveredAt t lim a → SourceSafe E₀ a) := by
+    Heap.Extends h h' ∧
+      (i ∈ idxs → RefAllowedIn calls t bAddr lim a ∧ (¬ CoveredAt t lim a → SourceSafe E₀ a)) := by
   match ev with
   | .n1_n1 (ev56 := ev56) (ev91 := ev91) .. =>
     obtain ⟨rfl, _⟩ := g_list_has_spec idxs hi hidx ev56
     have hz := (addr_set_member_nil ev91).1
     exact (one_ne_zero (Value.field.inj hz)).elim
   | .other (ev56 := ev56) (hne332 := hn) (he339 := hh) .. =>
-    refine ⟨?_, fun hm _ => ?_⟩
+    refine ⟨?_, fun hm => ?_⟩
     · rw [hh]; exact ev56.heap_extends
     · exact (hn ((g_list_has_spec idxs hi hidx ev56).2.mpr hm)).elim
-  | .n1_other_other (ev56 := ev56) (ev91 := ev91) (ev134 := ev134) (ev165 := ev165)
-      (hne323 := hn) (he330 := hh) .. =>
+  | .n1_other_other (cs132 := csAllow) (ev56 := ev56) (ev91 := ev91) (ev134 := ev134)
+      (ev165 := ev165) (hne323 := hn) (he330 := hh) (hc331 := hcs) .. =>
     obtain ⟨rfl, _⟩ := g_list_has_spec idxs hi hidx ev56
     obtain ⟨_, rfl⟩ := addr_set_member_nil ev91
     have ext := ev134.heap_extends
     obtain ⟨he, hc⟩ := walk_covered_lim_spec (hrc.mono ext) (S0.addr_mono ext ha) ev165
-    refine ⟨?_, fun _ hnc => ?_⟩
+    refine ⟨?_, fun _ => ⟨⟨_, _, rc, ap, _, csAllow, hrc, ha, ev134,
+      fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])⟩, fun hnc => ?_⟩⟩
     · rw [hh, he]; exact ext
     · rcases hc with hz | hcov
       · exact (hn hz).elim
       · exact (hnc hcov).elim
-  | .n1_other_n0 (cs197 := csLoad) (cs260 := csUnsafe) (cs300 := csOwner) (ev56 := ev56) (ev91 := ev91) (ev134 := ev134) (ev165 := ev165)
+  | .n1_other_n0 (cs132 := csAllow) (cs197 := csLoad) (cs260 := csUnsafe) (cs300 := csOwner)
+      (ev56 := ev56) (ev91 := ev91) (ev134 := ev134) (ev165 := ev165)
       (ev199 := ev199) (ev221 := ev221) (ev262 := ev262) (heq277 := hz)
       (ev302 := ev302) (heq317 := hzo) (he321 := hh) (hc322 := hcs) .. =>
-    have extAll := ev56.heap_extends.trans (ev91.heap_extends.trans (ev134.heap_extends.trans
+    have extPre := ev56.heap_extends.trans ev91.heap_extends
+    have extAll := extPre.trans (ev134.heap_extends.trans
       (ev165.heap_extends.trans (ev199.heap_extends.trans (ev221.heap_extends.trans
-        (ev262.heap_extends.trans ev302.heap_extends))))))
-    refine ⟨by rw [hh]; exact extAll, fun _ _ c hc => ?_⟩
-    have extLoad := ev56.heap_extends.trans (ev91.heap_extends.trans
-      (ev134.heap_extends.trans ev165.heap_extends))
+        (ev262.heap_extends.trans ev302.heap_extends)))))
+    refine ⟨by rw [hh]; exact extAll, fun _ =>
+      ⟨⟨_, _, rc, ap, _, csAllow, hrc.mono extPre, S0.addr_mono extPre ha, ev134,
+        fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])⟩, fun _ c hc => ?_⟩⟩
+    have extLoad := extPre.trans (ev134.heap_extends.trans ev165.heap_extends)
     have haLoad := S0.addr_mono extLoad ha
     obtain ⟨extLoaded, bytes, c', _, hhash, haddr, _, he, hrep, _⟩ :=
       load_verified_constant_de haLoad ev199
@@ -147,8 +152,9 @@ private theorem safe_used_refs_seg_spec
     exact record_unsafe_zero_in_store hS hb
       (S0.addr_mono (ev221.heap_extends.trans ev262.heap_extends) ho) ev302 hoSub
 
-/-- The empty-exclusion guard proves safety at every used, uncovered reference index. -/
-theorem assert_safe_used_refs_spec {calls : List (Call F)} {E₀ : Ixon.Env}
+/-- The empty-exclusion guard proves `assert_ref_allowed` at every used reference index and
+safety at every used, uncovered reference index. -/
+theorem assert_safe_used_refs_full_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : Option Nat}
     (hS : LoadedReads.RunStore calls E₀) (refs : List _root_.Address) :
     ∀ (i : Nat) {idxs : List Nat} {rc rp used r : SourceValue F} {h h' : Heap F}
@@ -160,7 +166,8 @@ theorem assert_safe_used_refs_spec {calls : List (Call F)} {E₀ : Ixon.Env}
         [rc, rp, used, .field (i : F), .construct addrMapEnum "Nil" []] h r h' cs →
       (∀ cl ∈ cs, cl ∈ calls) →
       ∀ j, (hj : j < refs.length) → i + j ∈ idxs →
-        ¬ CoveredAt t lim refs[j] → SourceSafe E₀ refs[j] := by
+        RefAllowedIn calls t bAddr lim refs[j] ∧
+          (¬ CoveredAt t lim refs[j] → SourceSafe E₀ refs[j]) := by
   induction refs with
   | nil => intro i idxs rc rp used r h h' cs hb hrc hr hi ev hsub j hj; cases hj
   | cons a rest ih =>
@@ -181,12 +188,29 @@ theorem assert_safe_used_refs_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       have ht := ih (i + 1) (by simp at hb ⊢; omega) (hrc.mono ext)
         (repList_heapMono₂ _ repAddrElem_heapMono₂ ext hrest)
         (repList_heapMono₂ _ repBoundedIdx_heapMono₂ ext hi) ev355 htailSub
-      intro j hj hm hn
+      intro j hj hm
       cases j with
-      | zero => exact hsafe (by simpa only [Nat.add_zero] using hm) hn
+      | zero => exact hsafe (by simpa only [Nat.add_zero] using hm)
       | succ j =>
         have hj' : j < rest.length := by simpa using hj
-        exact ht j hj' (by simpa only [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hm) hn
+        exact ht j hj' (by simpa only [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hm)
+
+/-- The empty-exclusion guard proves safety at every used, uncovered reference index. -/
+theorem assert_safe_used_refs_spec {calls : List (Call F)} {E₀ : Ixon.Env}
+    {t : Ix.Kernel.RoleTable} {bAddr : _root_.Address} {lim : Option Nat}
+    (hS : LoadedReads.RunStore calls E₀) (refs : List _root_.Address) :
+    ∀ (i : Nat) {idxs : List Nat} {rc rp used r : SourceValue F} {h h' : Heap F}
+      {cs : List (Call F)}, i + refs.length < 8589934592 →
+      RCLimRep t bAddr lim h rc →
+      RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem h refs rp →
+      RepList Obs.Names.«Lists::Node<Field>» RepBoundedIdx h idxs used →
+      ObsFn Obs.W "KernelClaim::assert_safe_used_refs"
+        [rc, rp, used, .field (i : F), .construct addrMapEnum "Nil" []] h r h' cs →
+      (∀ cl ∈ cs, cl ∈ calls) →
+      ∀ j, (hj : j < refs.length) → i + j ∈ idxs →
+        ¬ CoveredAt t lim refs[j] → SourceSafe E₀ refs[j] :=
+  fun i hb hrc hr hi ev hsub j hj hm hn =>
+    (assert_safe_used_refs_full_spec hS refs i hb hrc hr hi ev hsub j hj hm).2 hn
 
 /-- A concrete record guard supplies the conditional edge-safety clause. The source and
 owner safety premises determine the guard branch; neither branch choice nor the conclusion
