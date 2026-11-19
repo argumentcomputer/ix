@@ -120,21 +120,14 @@ private theorem carrierExprRefsIn_lastDom (c : Ixon.Constant) :
   | n + 1, e, d, h, hl => by
     unfold Binding.FamilyOf.lastDom at hl
     have hn := carrierExprRefsIn_node c h
-    cases hnd : Binding.FamilyOf.node c e with
-    | all d' b =>
-      rw [hnd] at hl hn
-      cases hb : Binding.FamilyOf.node c b with
-      | all _ _ =>
-        rw [hb] at hl
-        exact carrierExprRefsIn_lastDom c n (fun j hj => hn j (List.mem_append_right _ hj)) hl
-      | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | app _ _ | lam _ _
-      | letE _ _ _ _ _ | share _ =>
-        rw [hb] at hl
-        cases hl
+    split at hl
+    · rename_i d' b hnd
+      rw [hnd] at hn
+      split at hl
+      · exact carrierExprRefsIn_lastDom c n (fun j hj => hn j (List.mem_append_right _ hj)) hl
+      · cases hl
         exact fun j hj => hn j (List.mem_append_left _ hj)
-    | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | app _ _ | lam _ _
-    | letE _ _ _ _ _ | share _ =>
-      rw [hnd] at hl; cases hl
+    · cases hl
 
 private theorem carrierExprRefsIn_spineHead (c : Ixon.Constant) :
     ∀ (n : Nat) (e : Ixon.Expr),
@@ -264,7 +257,7 @@ private theorem get_ci_rprj_raw_uncond {b : Bytes.Address} {idx : F}
   obtain ⟨rc, rfl, hrc_rep⟩ := hrecr
   have hb2 := Bytes.repAddressRef_heapMono₂ Core.addrTy ext1 hb
   obtain ⟨ext2, hrecs⟩ := L1.build_recur_addrs_ixon_spec hms hb2 ev149
-  obtain ⟨ext3, htbl⟩ := L1.binder_table_spec (hbd.mono L1.repBinderBlock_heapMono₂ ext2) hbd32 ev246
+  obtain ⟨ext3, htbl⟩ := L1.binder_table_spec (hbd.mono Deserialize.repBinderBlock_heapMono₂ ext2) hbd32 ev246
   have ext23 := ext2.trans ext3
   obtain ⟨_, _, hm256⟩ := L1.muts_root_offset_spec (hms.mono L1.repMutConst_heapMono₂ ext23) ev266
   subst m256
@@ -277,10 +270,10 @@ private theorem get_ci_rprj_raw_uncond {b : Bytes.Address} {idx : F}
       (hrc_rep.mono ext23)
       ((L1.core_to_repIxonAddressRef hb2).mono ext23)
       hidx56
-      (L1.RepShareVec.mono ext23 hsh)
+      (Deserialize.RepShareVec.mono ext23 hsh)
       (hrf.mono L1.repIxonAddressRef_heapMono₂ ext23)
       (hrecs.mono L1.repIxonAddressRef_heapMono₂ ext3)
-      (hun.mono L1.repUnivPtr_heapMono₂ ext23)
+      (hun.mono Deserialize.repUnivPtr_heapMono₂ ext23)
       htbl ev176'
   rw [he170, hm169]
   have ext_snoc := Heap.Extends.snoc m167 v166
@@ -415,13 +408,13 @@ private theorem rawConvExpr_unshare {c : Ixon.Constant} {blobs : List (_root_.Ad
       ∃ b', L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h b'
         (Binding.FamilyOf.unshare c k e) kp ∧
         (∀ i, Binding.FamilyOf.unshare c k e ≠ .share i)
-  | .share hidx hsh rs, k, hk => by
-    have hlt_sz : _ < c.sharing.size := by
+  | .share (idx := idx) (s := s) hidx hsh rs, k, hk => by
+    have hlt_sz : idx.toNat < c.sharing.size := by
       have := (List.getElem?_eq_some_iff.mp hsh).1
       simpa only [Array.length_toList] using this
-    have hlt_k : _ < k := by rcases hk with h1 | h2 <;> omega
+    have hlt_k : idx.toNat < k := by rcases hk with h1 | h2 <;> omega
     obtain ⟨k', rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
-    have hget : c.sharing[_]? = some _ := by simpa only [Array.getElem?_toList] using hsh
+    have hget : c.sharing[idx.toNat]? = some s := by simpa only [Array.getElem?_toList] using hsh
     simp only [Binding.FamilyOf.unshare, hget]
     exact rawConvExpr_unshare rs k' (Or.inl (by omega))
   | r@(.var ..), k, _ | r@(.sort ..), k, _ | r@(.ref ..), k, _ | r@(.recur ..), k, _
@@ -575,12 +568,16 @@ private theorem last_binder_dom_raw_aux {c : Ixon.Constant}
       subst hr hh
       obtain ⟨b₁, ed, eb, hnd, raw_d, raw_b⟩ := rawConvExpr_forall_inv raw ld12
       have hnb := rawConvExpr_not_forall_inv raw_b ld47 hne
-      refine ⟨rfl, .forallDom ld12 (.refl _), 1, b₁, ed, ?_, raw_d⟩
-      simp only [Binding.FamilyOf.lastDom, hnd]
-      cases hnb' : Binding.FamilyOf.node c eb with
-      | all _ _ => exact (hnb _ _ hnb').elim
-      | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | app _ _ | lam _ _
-      | letE _ _ _ _ _ | share _ => rfl
+      have hld : Binding.FamilyOf.lastDom c 1 e = some ed := by
+        change Binding.FamilyOf.lastDom c (0 + 1) e = some ed
+        unfold Binding.FamilyOf.lastDom
+        rw [hnd]
+        dsimp only
+        split
+        · rename_i d' b' heq
+          exact (hnb d' b' heq).elim
+        · rfl
+      exact ⟨rfl, .forallDom ld12 (.refl _), 1, b₁, ed, hld, raw_d⟩
   | m + 1, bound, e, kp, r, h, h', cs, hlen, raw, ev => by
     match Obs.«KernelModeled::last_binder_dom».obs ev with
     | .Forall (cs76 := cs76) (ld12 := ld12) (ld47 := ld47) (ev78 := ev78) (hc87 := hc) .. =>
@@ -595,12 +592,16 @@ private theorem last_binder_dom_raw_aux {c : Ixon.Constant}
       subst hr hh
       obtain ⟨b₁, ed, eb, hnd, raw_d, raw_b⟩ := rawConvExpr_forall_inv raw ld12
       have hnb := rawConvExpr_not_forall_inv raw_b ld47 hne
-      refine ⟨rfl, .forallDom ld12 (.refl _), 1, b₁, ed, ?_, raw_d⟩
-      simp only [Binding.FamilyOf.lastDom, hnd]
-      cases hnb' : Binding.FamilyOf.node c eb with
-      | all _ _ => exact (hnb _ _ hnb').elim
-      | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | app _ _ | lam _ _
-      | letE _ _ _ _ _ | share _ => rfl
+      have hld : Binding.FamilyOf.lastDom c 1 e = some ed := by
+        change Binding.FamilyOf.lastDom c (0 + 1) e = some ed
+        unfold Binding.FamilyOf.lastDom
+        rw [hnd]
+        dsimp only
+        split
+        · rename_i d' b' heq
+          exact (hnb d' b' heq).elim
+        · rfl
+      exact ⟨rfl, .forallDom ld12 (.refl _), 1, b₁, ed, hld, raw_d⟩
 
 private theorem collect_spine_raw_aux {c : Ixon.Constant}
     {blobs : List (_root_.Address × ByteArray)} :
