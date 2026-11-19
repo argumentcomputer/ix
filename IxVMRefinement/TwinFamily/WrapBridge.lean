@@ -590,11 +590,11 @@ private theorem ConsumesObs.sizeB_le {W : KKey → Option (Option Nat)} {ObsW : 
     {t c : KExpr} (h : ConsumesObs W ObsW t c) : c.sizeB ≤ t.sizeB := by
   induction h with
   | refl => exact Nat.le_refl _
-  | step hc hd hw _ _ ih =>
+  | @step _ a _ w _ hc hd hw _ _ ih =>
     obtain ⟨us, rest, rfl, -⟩ := consumeAt_inv_wb hc hd hw
-    have hlt : _ < (Expr.mkAppN (.const _ us) (_ :: rest)).sizeB :=
+    have hlt : a.sizeB < (Expr.mkAppN (.const w us) (a :: rest)).sizeB :=
       Nat.lt_of_lt_of_le (by simp only [Ix.Kernel.Expr.sizeB]; omega)
-        (Ix.Kernel.Semantics.sizeB_le_mkAppN rest (.app (.const _ us) _))
+        (Ix.Kernel.Semantics.sizeB_le_mkAppN rest (.app (.const w us) a))
     exact Nat.le_trans ih (Nat.le_of_lt hlt)
 
 private theorem WrapConsObs.mkAppN_inv {W : KKey → Option (Option Nat)} {ObsW : KKey → Nat → Prop} :
@@ -740,7 +740,7 @@ private theorem WrapConsObs.toSymWrapT_aux {W : KKey → Option (Option Nat)}
           have hsz := hcs₁.sizeB_le
           exact .forallER (hpw₁.symm.trans hpw₂) hstar
             (WrapConsObs.toSymWrapT_aux hObs n _ _ _ (by omega) hd₁ hd₂' hcr₁.1 hcr₂' hlf₁.1 hlf₂') hb
-    | letE .. => simp [letFree] at hlf₁
+    | letE _ _ _ => simp [letFree] at hlf₁
     | proj he₁ =>
       cases h₂ with
       | proj he₂ =>
@@ -761,41 +761,42 @@ theorem WrapConsObs.toSymWrapT {W : KKey → Option (Option Nat)} {ObsW : KKey �
   WrapConsObs.toSymWrapT_aux hObs (g.sizeB + 1) g d₁ d₂ (Nat.lt_succ_self _) h₁ h₂ hcr₁ hcr₂ hlf₁ hlf₂
 
 theorem WrapConsObs.peelForalls {W : KKey → Option (Option Nat)} {ObsW : KKey → Nat → Prop} :
-    ∀ (n : Nat) {e₁ e₂ r₁ : KExpr}, WrapConsObs W ObsW e₁ e₂ → peelForalls n e₁ = some r₁ →
-      ∃ r₂, peelForalls n e₂ = some r₂ ∧ WrapConsObs W ObsW r₁ r₂
+    ∀ (n : Nat) {e₁ e₂ r₁ : KExpr}, WrapConsObs W ObsW e₁ e₂ →
+      Binding.FamilyFlat.peelForalls n e₁ = some r₁ →
+      ∃ r₂, Binding.FamilyFlat.peelForalls n e₂ = some r₂ ∧ WrapConsObs W ObsW r₁ r₂
   | 0, _, _, _, h, h1 => by
-    simp only [peelForalls, Option.some.injEq] at h1; subst h1; exact ⟨_, rfl, h⟩
+    simp only [Binding.FamilyFlat.peelForalls, Option.some.injEq] at h1; subst h1; exact ⟨_, rfl, h⟩
   | n + 1, _, _, _, h, h1 => by
     cases h with
     | forallE _ _ _ hb => exact WrapConsObs.peelForalls n hb h1
     | bvar | fvar | sort | const | app | lam | letE | lit | proj =>
-      simp [peelForalls] at h1
+      simp [Binding.FamilyFlat.peelForalls] at h1
 
 theorem WrapConsObs.peelForalls_max_eq {W : KKey → Option (Option Nat)} {ObsW : KKey → Nat → Prop} :
     ∀ {n₁ n₂ : Nat} {e₁ e₂ c₁ c₂ : KExpr},
       WrapConsObs W ObsW e₁ e₂ →
-      peelForalls n₁ e₁ = some c₁ → (∀ d b m, c₁ ≠ .forallE d b m) →
-      peelForalls n₂ e₂ = some c₂ → (∀ d b m, c₂ ≠ .forallE d b m) →
+      Binding.FamilyFlat.peelForalls n₁ e₁ = some c₁ → (∀ d b m, c₁ ≠ .forallE d b m) →
+      Binding.FamilyFlat.peelForalls n₂ e₂ = some c₂ → (∀ d b m, c₂ ≠ .forallE d b m) →
       n₁ = n₂
   | 0, 0, _, _, _, _, _, _, _, _, _ => rfl
   | 0, _ + 1, _, _, _, _, h, h1, hnc1, h2, _ => by
-    simp only [peelForalls, Option.some.injEq] at h1; subst h1
+    simp only [Binding.FamilyFlat.peelForalls, Option.some.injEq] at h1; subst h1
     cases h with
     | forallE _ _ _ _ => exact absurd rfl (hnc1 _ _ _)
     | bvar | fvar | sort | const | app | lam | letE | lit | proj =>
-      simp [peelForalls] at h2
+      simp [Binding.FamilyFlat.peelForalls] at h2
   | _ + 1, 0, _, _, _, _, h, h1, _, h2, hnc2 => by
-    simp only [peelForalls, Option.some.injEq] at h2; subst h2
+    simp only [Binding.FamilyFlat.peelForalls, Option.some.injEq] at h2; subst h2
     cases h with
     | forallE _ _ _ _ => exact absurd rfl (hnc2 _ _ _)
     | bvar | fvar | sort | const | app | lam | letE | lit | proj =>
-      simp [peelForalls] at h1
+      simp [Binding.FamilyFlat.peelForalls] at h1
   | _ + 1, _ + 1, _, _, _, _, h, h1, hnc1, h2, hnc2 => by
     cases h with
     | forallE _ _ _ hb =>
       exact congrArg Nat.succ (WrapConsObs.peelForalls_max_eq hb h1 hnc1 h2 hnc2)
     | bvar | fvar | sort | const | app | lam | letE | lit | proj =>
-      simp [peelForalls] at h1
+      simp [Binding.FamilyFlat.peelForalls] at h1
 
 private theorem forall₂_append_wb {α β : Type} {R : α → β → Prop}
     {a₁ a₂ : List α} {b₁ b₂ : List β}
@@ -2629,7 +2630,7 @@ theorem letFree_of_exprLvEq {e₁ e₂ : KExpr} (h : ExprLvEq e₁ e₂) :
   | app _ _ ihf iha => simp [letFree, ihf, iha]
   | lam _ _ iht ihb => simp [letFree, iht, ihb]
   | forallE _ _ iht ihb => simp [letFree, iht, ihb]
-  | letE .. => rfl
+  | letE _ _ _ _ _ _ => rfl
   | proj _ ih => exact ih
 
 theorem exprLvEq_to_wrapT_empty {e₁ e₂ : KExpr} (h : ExprLvEq e₁ e₂)
@@ -2650,7 +2651,7 @@ theorem exprLvEq_to_wrapT_empty {e₁ e₂ : KExpr} (h : ExprLvEq e₁ e₂)
   | forallE _ _ iht ihb =>
     simp only [letFree, Bool.and_eq_true] at hlf
     exact .forallE rfl (.refl _) (iht hlf.1) (ihb hlf.2)
-  | letE .. => simp [letFree] at hlf
+  | letE _ _ _ _ _ _ => simp [letFree] at hlf
   | proj _ ih => exact .proj (ih hlf)
 
 private theorem lamsAlong_letFree {elim : KLevel} :
@@ -2750,10 +2751,11 @@ private theorem lamsAlong_to_lamDomAlong {elim : KLevel} :
     obtain ⟨hL, hlfR⟩ := lamsAlong_to_lamDomAlong hrest hlf.2
     exact ⟨.succ (exprLvEq_to_wrapT_empty hdom hlf.1) hL, hlfR⟩
 
-private theorem lamsAlong_to_stripLams {elim : KLevel} :
-    ∀ {n : Nat} {l p r : KExpr}, LamsAlong elim n l p r → stripLams n l = some r
-  | 0, _, _, _, .zero => rfl
-  | _ + 1, _, _, _, .succ _ _ hrest => lamsAlong_to_stripLams hrest
+private theorem lamsAlong_to_stripLams {elim : KLevel} {n : Nat} {l p r : KExpr}
+    (h : LamsAlong elim n l p r) : stripLams n l = some r := by
+  induction h with
+  | zero => rfl
+  | succ _ _ _ ih => exact ih
 
 private theorem stripLams_of_exprLvEq :
     ∀ (n : Nat) {e₁ e₂ r₂ : KExpr},
@@ -2890,6 +2892,16 @@ private theorem letFree_instantiateLevelParams_wb (ps : List LevelParam) (us : L
       letFree_instantiateLevelParams_wb ps us t, letFree_instantiateLevelParams_wb ps us b]
   | .proj _ _ e => letFree_instantiateLevelParams_wb ps us e
 
+private theorem stripLams_renameConsts_wb (f : KKey → KKey) :
+    ∀ (n : Nat) {e r : KExpr},
+      stripLams n e = some r → stripLams n (e.renameConsts f) = some (r.renameConsts f)
+  | 0, _, _, h => by simp only [stripLams, Option.some.injEq] at h ⊢; rw [h]
+  | n + 1, .lam _ b _, _, h => stripLams_renameConsts_wb f n h
+  | _ + 1, .bvar _, _, h | _ + 1, .fvar _ _, _, h | _ + 1, .sort _, _, h
+  | _ + 1, .const _ _, _, h | _ + 1, .app _ _, _, h | _ + 1, .forallE _ _ _, _, h
+  | _ + 1, .letE _ _ _ _, _, h | _ + 1, .lit _, _, h | _ + 1, .proj _ _ _, _, h => by
+    simp [stripLams] at h
+
 /-- **Build `TwinRuleMatch` at level parameters `ps`** from `SymWrapT` on loaded types and
 `RuleFollows` on both canonical and twin rules. -/
 theorem twinRuleMatch_of_ruleFollows {find? : KKey → Option (ConstantInfo .anon)}
@@ -2934,20 +2946,26 @@ theorem twinRuleMatch_of_ruleFollows {find? : KKey → Option (ConstantInfo .ano
       (sbC_pos.renameConsts f) sbW_pos :=
     exprLvEq_to_wrapT_empty hsb_pos_lv hlf_sbC_pos
   let inst : KExpr → KExpr := Expr.instantiateLevelParams (List.range ps.length) (ps.map .param)
-  have hinst_tyW : inst tyW_ld = tyW' := by rw [← htyW_eq]; exact Decl.posOf_perm_inv hperm tyW'
-  have hinst_rhsW : inst rhsW_ld = rW'_rhs := by
+  have hinst_tyW : tyW_ld.instantiateLevelParams (List.range ps.length) (ps.map .param) = tyW' := by
+    rw [← htyW_eq]; exact Decl.posOf_perm_inv hperm tyW'
+  have hinst_rhsW : rhsW_ld.instantiateLevelParams (List.range ps.length) (ps.map .param) = rW'_rhs := by
     rw [← hrhsW_eq]; exact Decl.posOf_perm_inv hperm rW'_rhs
   have hLD1 : LamDomAlong (nP + nMot + nMin) rW'_rhs tyW' (inst afterW_pos) := by
     have h := lamDomAlong_instantiateLevelParams (List.range ps.length) (ps.map .param) hLD1_pos
     rwa [hinst_rhsW, hinst_tyW] at h
-  have hSC : stripLams (nP + nMot + nMin + nf) rC_rhs = some (inst sbC_pos) := by
+  have hSC_base : stripLams (nP + nMot + nMin + nf) rC_rhs = some (inst sbC_pos) := by
     have h := stripLams_instantiateLevelParams (List.range ps.length) (ps.map .param) _ hSC_pos
     rwa [Decl.posOf_perm_inv hperm rC_rhs] at h
+  have hSC : stripLams (nP + nMot + nMin + nf) (rC_rhs.renameConsts f) =
+      some ((inst sbC_pos).renameConsts f) := by
+    have h := stripLams_renameConsts_wb f (nP + nMot + nMin + nf) hSC_base
+    exact h
   have hBase : WrapT (fun _ : KKey => (none : Option (ConstantInfo .anon)))
       ((inst sbC_pos).renameConsts f) (inst sbW_pos) := by
     have h := wrapT_empty_instantiateLevelParams (List.range ps.length) (ps.map .param) hBase_pos
-    rwa [renameConsts_instantiateLevelParams] at h
-  refine ⟨hsym_fin, nP + nMot + nMin, nf, inst afterW_pos, inst sbW_pos, inst sbC_pos,
+    rw [renameConsts_instantiateLevelParams] at h
+    exact h
+  refine ⟨hsym_fin, nP + nMot + nMin, nf, inst afterW_pos, inst sbW_pos, (inst sbC_pos).renameConsts f,
     hLD1, ?_, hSC, hBase⟩
   right
   have hpeelW_inst : peelForalls (nP + nMot + minor) tyW' =
@@ -3044,16 +3062,6 @@ private theorem hasFvar_of_lamDomAlong_wb :
   | _ + 1, _, _, _, .succ _ hrest, h => by
     simp only [Expr.hasFvar, Bool.or_eq_false_iff] at h
     exact hasFvar_of_lamDomAlong_wb hrest h.2
-
-private theorem stripLams_renameConsts_wb (f : KKey → KKey) :
-    ∀ (n : Nat) {e r : KExpr},
-      stripLams n e = some r → stripLams n (e.renameConsts f) = some (r.renameConsts f)
-  | 0, _, _, h => by simp only [stripLams, Option.some.injEq] at h ⊢; rw [h]
-  | n + 1, .lam _ b _, _, h => stripLams_renameConsts_wb f n h
-  | _ + 1, .bvar _, _, h | _ + 1, .fvar _ _, _, h | _ + 1, .sort _, _, h
-  | _ + 1, .const _ _, _, h | _ + 1, .app _ _, _, h | _ + 1, .forallE _ _ _, _, h
-  | _ + 1, .letE _ _ _ _, _, h | _ + 1, .lit _, _, h | _ + 1, .proj _ _ _, _, h => by
-    simp [stripLams] at h
 
 private theorem binderPWDefinedWb_of_stripLams {lps : List LevelParam} :
     ∀ (n : Nat) {e r : KExpr},
@@ -3186,8 +3194,7 @@ theorem allLevelParamsDefined_of_twinRuleMatch {find? : KKey → Option (Constan
   obtain ⟨hSym, nPre, nf, afterW, sbW, sbC, hLam1, hMid, hSC, hBase⟩ := hMatch
   have hpw_ty := binderPWDefinedWb_of_allLPD tyW' hty_lpd
   have hpw_C := binderPWDefinedWb_of_allLPD (rhsC.renameConsts f) hrhsC_lpd
-  have hSC_ren := stripLams_renameConsts_wb f (nPre + nf) hSC
-  have hpw_sbC := binderPWDefinedWb_of_stripLams (nPre + nf) hSC_ren hpw_C
+  have hpw_sbC := binderPWDefinedWb_of_stripLams (nPre + nf) hSC hpw_C
   have hfv_afterW := hasFvar_of_lamDomAlong_wb hLam1 hfvW'
   have hpw_W' : binderPWDefinedWb lps rhsW' = true := by
     rcases hMid with ⟨rfl, rfl⟩ | ⟨iMin, bs, mdomW, restW, mmW, _, hStripP, hLam2⟩
@@ -3196,13 +3203,11 @@ theorem allLevelParamsDefined_of_twinRuleMatch {find? : KKey → Option (Constan
     · have hfv_sbW := hasFvar_of_lamDomAlong_wb hLam2 hfv_afterW
       have hpw_sbW := binderPWDefinedWb_of_wrapT_empty hBase hfv_sbW hpw_sbC
       rw [Ix.Kernel.Semantics.stripLams_add] at hSC
-      cases hSC1 : stripLams nPre rhsC with
+      cases hSC1 : stripLams nPre (rhsC.renameConsts f) with
       | none => rw [hSC1] at hSC; cases hSC
       | some afterC =>
-        rw [hSC1] at hSC
-        have hSC1_ren := stripLams_renameConsts_wb f nPre hSC1
-        have hSym_after := symWrapT_of_stripLams hSym hLam1 hSC1_ren
-        have hpw_afterC := binderPWDefinedWb_of_stripLams nPre hSC1_ren hpw_C
+        have hSym_after := symWrapT_of_stripLams hSym hLam1 hSC1
+        have hpw_afterC := binderPWDefinedWb_of_stripLams nPre hSC1 hpw_C
         have hpw_peel := binderPWDefinedWb_of_stripPis iMin hStripP hpw_ty
         simp only [binderPWDefinedWb, Bool.and_eq_true] at hpw_peel
         have hpw_mdomL : binderPWDefinedWb lps (mdomW.liftLooseBVars (nPre - iMin) 0) = true := by
@@ -3302,8 +3307,7 @@ theorem constsResolve_of_twinRuleMatch {find? : KKey → Option (ConstantInfo .a
     (hrhsC_cr : (rhsC.renameConsts f).constsResolve envSelf = true) :
     rhsW'.constsResolve envSelf = true := by
   obtain ⟨_, nPre, nf, afterW, sbW, sbC, hLam1, hMid, hSC, hBase⟩ := hMatch
-  have hSC_ren := stripLams_renameConsts_wb f (nPre + nf) hSC
-  have hcr_sbC := constsResolve_of_stripLams_wb (nPre + nf) hSC_ren hrhsC_cr
+  have hcr_sbC := constsResolve_of_stripLams_wb (nPre + nf) hSC hrhsC_cr
   have hfv_afterW := hasFvar_of_lamDomAlong_wb hLam1 hfvW'
   rcases hMid with ⟨rfl, rfl⟩ | ⟨iMin, bs, mdomW, restW, mmW, _, hStripP, hLam2⟩
   · have hcr_sbW := constsResolve_of_wrapT_empty hBase hfv_afterW hcr_sbC
