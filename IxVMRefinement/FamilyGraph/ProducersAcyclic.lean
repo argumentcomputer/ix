@@ -715,7 +715,7 @@ theorem FamRunCtx.recRef_bound
   rcases hB.familyRefs B rb cs hS z hu with hbr | hwb | hwit
   · rcases FamRunCtx.blockRef_bound hW hG hB hS.2.1 hS.2.2.1 hbr hTz hcov with h | h
     · exact Or.inl h
-    · rw [h, FamRunCtx.pot0_scope hG hB hS]
+    · rw [h, FamRunCtx.pot0_scope hW hG hB hS]
       show PotLt (rank B + 1, 1, 0, 0 + 1) (rank B + 1, 1, 0, 2)
       exact potLt_fourth (by decide)
   · exact Or.inl (FamRunCtx.witBase_bound hW hG hB hS.2.1 hwb hTz hcov)

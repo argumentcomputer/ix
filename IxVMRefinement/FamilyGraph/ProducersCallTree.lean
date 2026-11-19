@@ -32,6 +32,7 @@ set_option maxRecDepth 100000
 
 namespace IxVM.Refinement.Typing
 
+open Aiur (Heap SourceValue Environment Constant Value)
 open Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library
 open IxVM (F)
@@ -89,7 +90,7 @@ private theorem inTargets_eq_false {ts : List String} {s : String}
     intro t ht
     rcases List.mem_cons.mp ht with rfl | ht'
     · intro heq; subst heq
-      have ht1 : strBytesEq t₀ t₀ = true := strBytesEq_eq_true.mpr rfl
+      have ht1 : strBytesEq s s = true := strBytesEq_eq_true.mpr rfl
       rw [h.1] at ht1; cases ht1
     · exact ih h.2 t ht'
 
@@ -292,6 +293,7 @@ private theorem hasCallIn_toExpr (ts : List String) (p : Pattern F) :
       rw [hp'] at h
       simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h
+      simp only [hasCallIn]
       exact hasCallIn_toExpr ts p' hp'
   | .repeat p' n =>
     intro e h
@@ -302,6 +304,7 @@ private theorem hasCallIn_toExpr (ts : List String) (p : Pattern F) :
       rw [hp'] at h
       simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h
+      simp only [hasCallIn]
       exact hasCallIn_toExpr ts p' hp'
   | .record head ps | .tuple ps | .array ps | .constructAs _ _ _ ps =>
     intro e h
@@ -355,6 +358,7 @@ private theorem noDollarCall_toExpr (p : Pattern F) :
       rw [hp'] at h
       simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h
+      simp only [noDollarCall]
       exact noDollarCall_toExpr p' hp'
   | .repeat p' n =>
     intro e h
@@ -365,6 +369,7 @@ private theorem noDollarCall_toExpr (p : Pattern F) :
       rw [hp'] at h
       simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h
+      simp only [noDollarCall]
       exact noDollarCall_toExpr p' hp'
   | .record head ps | .tuple ps | .array ps | .constructAs _ _ _ ps =>
     intro e h
@@ -607,24 +612,24 @@ private theorem arguments_nil_right {params : List String} {ts : List (String ×
     (h : arguments params [] = .ok ts) : params = [] ∧ ts = [] := by
   unfold arguments at h
   split at h
-  · simp [throw, MonadExceptOf.throw] at h
+  · simp [throwThe, MonadExceptOf.throw, Functor.map, Except.map] at h
   · rename_i hne
     have hlen : params.length = 0 := by simpa using hne
     have hp : params = [] := List.eq_nil_of_length_eq_zero hlen
     subst hp
-    simp [pure, Except.pure] at h
+    simp [pure, Except.pure, bind, Except.bind] at h
     exact ⟨rfl, h.symm⟩
 
 private theorem arguments_nil_left {types : List Ty} {ts : List (String × Ty)}
     (h : arguments [] types = .ok ts) : types = [] ∧ ts = [] := by
   unfold arguments at h
   split at h
-  · simp [throw, MonadExceptOf.throw] at h
+  · simp [throwThe, MonadExceptOf.throw, Functor.map, Except.map] at h
   · rename_i hne
-    have hlen : types.length = 0 := by simpa using hne
+    have hlen : types.length = 0 := by simp at hne; omega
     have ht : types = [] := List.eq_nil_of_length_eq_zero hlen
     subst ht
-    simp [pure, Except.pure] at h
+    simp [pure, Except.pure, bind, Except.bind] at h
     exact ⟨rfl, h.symm⟩
 
 private theorem sourceFunction?_fn_detail {p : Program F} {name : String} {sf : SourceFunction F}
@@ -648,6 +653,7 @@ private theorem sourceFunction?_fn_detail {p : Program F} {name : String} {sf : 
       | error e => simp [h3, Except.toOption] at h
       | ok types =>
         simp only [h3, Except.toOption, pure, Option.some.injEq] at h
+        unfold Program.findFunction? at h2
         have hmem : f ∈ p.functions := List.mem_of_find?_eq_some h2
         have hbeq : (f.name == key.name) = true := List.find?_some h2
         exact ⟨key, f, types, rfl, hmem, beq_iff_eq.mp hbeq, rfl, h.symm⟩
