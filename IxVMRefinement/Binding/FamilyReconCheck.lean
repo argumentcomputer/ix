@@ -4786,7 +4786,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
             by_cases hfv : fv = 0
             · subst hfv; rfl
             · rw [ite_eq_right hfv] at heq_or; exact absurd (Value.field.inj heq_or) zero_ne_one
-          | ptr _ _ | tuple _ | construct _ _ _ => simp [Lib.is_zero_spec] at hz_c
+          | ptr _ _ | tuple _ | construct _ _ _ => simp [evalBinOp] at op_sub
         rw [hsub0] at op_sub
         have hfeq := evalBinOp_sub_eq_zero_field op_sub
         have h1 := congrArg ZMod.val hfeq
@@ -4799,7 +4799,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       intro h0; rw [h0] at has_r_len; simp at has_r_len; exact hrs_ne has_r_len.symm)
     have ht0_addr : ixAddr t0 = memberAddr (ixAddr bB) 0 (.indc ind₀) := by
       obtain ⟨m, hm, -, ha, -⟩ := has_t_mem 0 t0 (by rw [has_t_cons]; rfl)
-      rw [Array.getElem?_toList] at hms0
+      rw [← Array.getElem?_toList] at hms0
       have := Option.some.inj (hm.symm.trans hms0); subst this
       rw [LoadedReads.memberAddr_eq_projAddr]; exact ha
     obtain ⟨r₀, hrs0, ha0_addr⟩ := has_r_recr 0 a0 (by rw [has_r_cons]; rfl)
@@ -4849,9 +4849,8 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       have hmap := originals_map_addr (FlatView.ofStore t E₀) os horig_cf
       have hlen1 := congrArg List.length hmap
       simp only [List.length_map] at hlen1
-      rw [hlen1, ← blockRecurAddrs_eq_indcAddrs_of_all_indc (ixAddr bB) 0 msB.toList hall_indc,
-        ← L1.blockRecurAddrs_eq_mapIdx]
-      simp [L1.blockRecurAddrs_eq_mapIdx]
+      rw [hlen1, ← blockRecurAddrs_eq_indcAddrs_of_all_indc (ixAddr bB) 0 msB.toList hall_indc]
+      simp
     obtain ⟨auxs, hflat_app, hauxs_true⟩ := buildFlatAuxStep_append_aux rs.toList 0 os flat haux_cf
     have hFOB : FamilyOfBlock E₀ (ixAddr bB) cb msB (ixAddr bR) cr rs (flat.map FlatEntry.addr) := {
       block := hBlock
@@ -4862,9 +4861,8 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
         have hi_lt : i < os.length := by rw [hos_len]; exact (Array.getElem?_eq_some_iff.mp hm).1
         rw [List.getElem?_map, hflat_app, List.getElem?_append_left hi_lt, ← List.getElem?_map, hmap]
         rw [← blockRecurAddrs_eq_indcAddrs_of_all_indc (ixAddr bB) 0 msB.toList hall_indc,
-          ← L1.blockRecurAddrs_eq_mapIdx, L1.blockRecurAddrs_eq_mapIdx]
-        rw [List.getElem?_mapIdx, Array.getElem?_toList] at *
-        simp only [hm, Option.map_some, LoadedReads.memberAddr_eq_projAddr]
+          List.getElem?_mapIdx, Array.getElem?_toList]
+        simp only [Nat.zero_add, hm, Option.map_some, LoadedReads.memberAddr_eq_projAddr]
       motives := fun k rc hk => by
         have := (hP1 k rc (Nat.zero_le _) hk).2.1
         simpa using this
@@ -4899,7 +4897,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
           have hj_lt : j < msB.size := by
             have := (List.getElem?_eq_some_iff.mp hj).1; omega
           have hj_rs : rs[j]? = some (.recr rc) := by
-            rw [List.getElem?_take_of_lt hj_lt, ← Array.getElem?_toList] at hj; exact hj
+            rw [List.getElem?_take_of_lt hj_lt, Array.getElem?_toList] at hj; exact hj
           obtain ⟨ty, d, us, pa, pInfo, hty, hd, hfn, hpInfo, -, -, hfk⟩ :=
             (hP1 j rc (Nat.zero_le _) hj_rs).2.2.2.2.2.2.2
           obtain ⟨hinfo, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -⟩ := indInfoAt_of_indDataAt hpInfo
@@ -4971,7 +4969,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
           obtain ⟨rc_k, hrc⟩ := hRec.recrs rs[k] (Array.mem_toList_iff.mpr (Array.getElem_mem hk_rs_lt))
           rw [hrc] at h1; exact ⟨rc_k, h1⟩
         have hdrop_get : (rs.toList.drop msB.size)[k - msB.size]? = some (.recr rc_k) := by
-          rw [List.getElem?_drop, ← Array.getElem?_toList, show msB.size + (k - msB.size) = k by omega]
+          rw [List.getElem?_drop, Array.getElem?_toList, show msB.size + (k - msB.size) = k by omega]
           exact hrc_k
         obtain ⟨ty_a, d_a, k_a, us_a, paddr_a, info_a, hty_a, hd_a, hfn_a, hka_a, hinfo_a, hget_a⟩ :=
           haux_exact (k - msB.size) rc_k hdrop_get
@@ -5019,18 +5017,16 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
     obtain ⟨tot, htot_flat⟩ : ∃ tot, flatTotalCtors (ReconView.ofStore t E₀) flat = some tot :=
       ⟨r₀.minors.toNat, (hP1 0 r₀ (Nat.zero_le _) hrs0).2.2.2.1⟩
     have hflat_ne : flat ≠ [] := by intro h0; rw [h0] at hflat_len; exact hrs_ne hflat_len.symm
-    have hfinv0 : FormInv lim (.field 0)
-        (∀ k < 0, ∀ rc, rs[k]? = some (.recr rc) → _)
-        (∀ k < 0, ∀ rc, rs[k]? = some (.recr rc) → _) :=
-      ⟨Or.inl rfl, fun _ => ⟨fun _ h => absurd h (Nat.not_lt_zero _), fun _ h => absurd h (Nat.not_lt_zero _)⟩,
-        fun h => absurd (Value.field.inj h) zero_ne_one,
-        fun h => absurd (Value.field.inj h) (by decide)⟩
     obtain ⟨hRF_heads, hForm_disj⟩ := check_recs_pass2 ht hwf hS hH hbd hR'agree hcl' hlv' hM'
       hBlock hRec hR'rb hrs_lt hnp_lt hoff hbnl_lt hfrp_B horig_cf haux_cf htot_flat hflat_ne hall_ok
       as_r 0 (by simp [has_r_len]) (fun i a hi => by simpa using has_r_recr i a hi)
       (hrc.mono ext_h_1293)
       (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext_840_1293 has_r)
-      (sub fun cl hcl' => mem_of_eq hc (by call_mem)) hfinv0 (by simpa using ev_cr)
+      (sub fun cl hcl' => mem_of_eq hc (by call_mem))
+      ⟨Or.inl rfl, fun _ => ⟨fun _ h => absurd h (Nat.not_lt_zero _), fun _ h => absurd h (Nat.not_lt_zero _)⟩,
+        fun h => absurd (Value.field.inj h) zero_ne_one,
+        fun h => absurd (Value.field.inj h) (by decide)⟩
+      (by simpa using ev_cr)
     -- Assemble RecordFlatAux & FlatPeerDistinct
     have hRFAux : RecordFlatAux t E₀ (ixAddr bR) cr rs flat := by
       refine ⟨hflat_len, fun k hk => ?_, fun k rc e hk he => ?_⟩
@@ -5047,7 +5043,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
             exact List.mem_of_getElem? he
           have := (hos_props e he_os).1; rw [this] at haux_t; cases haux_t
         have hdrop_get : (rs.toList.drop msB.size)[k - msB.size]? = some (.recr rc) := by
-          rw [List.getElem?_drop, ← Array.getElem?_toList, show msB.size + (k - msB.size) = k by omega]
+          rw [List.getElem?_drop, Array.getElem?_toList, show msB.size + (k - msB.size) = k by omega]
           exact hk
         obtain ⟨ty_a, d_a, k_a, us_a, paddr_a, info_a, hty_a, hd_a, -, -, hinfo_a, hget_a⟩ :=
           haux_exact (k - msB.size) rc hdrop_get
