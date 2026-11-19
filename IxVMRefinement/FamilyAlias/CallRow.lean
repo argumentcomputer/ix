@@ -360,13 +360,14 @@ theorem cidx_eq_of_modeled_checked {calls : List (Call F)} {bAddr : _root_.Addre
 private theorem getElem?_finRange_eq {n k : Nat} (hk : k < n) :
     (List.finRange n)[k]? = some ⟨k, hk⟩ := by
   rw [List.getElem?_eq_getElem (by simp; exact hk), List.getElem_finRange]
+  rfl
 
 private theorem addrMapAll_imp {e : String} {P Q : Heap F → Bytes.Address → SourceValue F → Prop}
     (himp : ∀ h k v, P h k v → Q h k v) {h : Heap F} {p : SourceValue F}
     (hm : AddrMapAll e P h p) : AddrMapAll e Q h p := by
   induction hm with
   | nil => exact .nil
-  | node hc hk hv _ _ ihl ihr => exact .node hc hk (himp _ _ _ hv) ihl ihr
+  | node hk hP hl hr _ _ ihl ihr => exact .node hk (himp _ _ _ hP) hl hr ihl ihr
 
 private theorem repList_det {α : Type} {e n c : String} {R : Heap F → α → SourceValue F → Prop}
     (hdet : ∀ h a₁ a₂ p, R h a₁ p → R h a₂ p → a₁ = a₂) {h : Heap F} :
@@ -650,7 +651,8 @@ theorem familyCall_checked_of_chain
             (C.evDstTail.extends.trans C.evDst.extends))))))
       have heq_recAs : recAs' = recAs := by
         have hrA978 := RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_840_978 hrA'
-        exact repList_det (fun _ _ _ _ r1 r2 => addr_det r1 r2) hrA978 T.recsRep
+        exact repList_det (R := Bytes.RepAddressRef addrTy) (fun _ _ _ _ r1 r2 => addr_det r1 r2)
+          hrA978 T.recsRep
       subst heq_recAs
       exact hrA'
     exact assert_no_role_spec recAs (hrc.mono ext_h_840) hrA840 C.evNoRole.obs
@@ -854,12 +856,14 @@ theorem familyCall_checked_of_chain
       by rw [← hct_eq]; exact (ctorData p).hdef,
       by rw [← him_eq, ← hj_eq, ← hct_eq]; exact (ctorData p).hcanon,
       by rw [← hct_eq]; exact (ctorData p).hA_def, ?_⟩
-    · rw [List.getElem?_append_right (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
-      simp only [ctorBlk, List.getElem?_map, getElem?_finRange_eq hp_lt, Option.map_some,
+    · simp only [nonrecsBlk]
+      rw [List.getElem?_append_right (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
+      simp only [ctorBlk, List.getElem?_map, getElem?_finRange_eq p.isLt, Option.map_some,
         Option.some.injEq, him_eq, hj_eq, hct_eq]
-    · rw [List.getElem?_append_right (by omega),
+    · simp only [nonrecsTys]
+      rw [List.getElem?_append_right (by omega),
         show indBlk.length + p.val - indTys.length = p.val by omega]
-      simp only [ctorTys, List.getElem?_map, getElem?_finRange_eq hp_lt, Option.map_some]
+      simp only [ctorTys, List.getElem?_map, getElem?_finRange_eq p.isLt, Option.map_some]
     · intro L' adv' E' env' hSE' hadvH' hdefSrc'
       have haMd_adv : adv' (ixAddr (ctorMs[p.val]'(by rw [T.ctorModels, hlen_ctors]; exact p.isLt))) :=
         adv_of_advChecked (ctorData p).hitem.hAdv (ctorData p).hitem.hrecM
@@ -869,7 +873,7 @@ theorem familyCall_checked_of_chain
       obtain ⟨cvm, mval, hint, hfind_m, hperm_m, -⟩ := hmf.model
       have hfind_m' : env'.find? (g (Core.keyOf t (cprjAddr B im j))) =
           some (.defnInfo cvm mval hint) := by
-        simpa [g, srcKeys, dstKeys, him_eq, hj_eq, ConstantInfo.name] using hfind_m
+        simpa [g, srcKeys, dstKeys, him_eq, hj_eq, ConstantInfo.name, ConstantInfo.toConstantVal] using hfind_m
       have hci_eq : ci_gc = .defnInfo cvm mval hint :=
         Option.some.inj (hfind_gc.symm.trans hfind_m')
       have hlen_p := hperm_m.length_eq
@@ -982,7 +986,8 @@ theorem familyCall_checked_of_chain
     obtain ⟨rc_i, D_i, -, hb_i, -, -, -⟩ := hRecAt idx hi
     have hget : recsBlk[idx]'(by omega) = D_i.recInfo :=
       Option.some.inj ((List.getElem?_eq_getElem (by omega)).symm.trans hb_i)
-    simp only [List.getElem_map, hget, RecMemberData.recInfo, ConstantInfo.name]
+    simp only [List.getElem_map, hget, RecMemberData.recInfo, ConstantInfo.name,
+      ConstantInfo.toConstantVal]
     have ha := hrecAs_k idx hi
     rw [Nat.zero_add] at ha
     rw [ha]
@@ -1123,11 +1128,15 @@ theorem familyCall_checked_of_chain
           have h2 := (hslot_ok pf).2; rw [hind_eq, hj_eq] at h2
           exact Option.some.inj (h2.symm.trans hct)
         have hty0_eq : ty₀ = (ctorData pf).ty₀ := by
-          have hr1 := (ctorData pf).hread; rw [hct_eq] at hr1
+          have hr1 := (ctorData pf).hread
+          have hct_typ : slots[pf.val].2.2.2.typ = ct.typ := congrArg Ixon.Constructor.typ hct_eq
+          rw [hct_typ] at hr1
           exact Except.ok.inj (hread.symm.trans hr1)
         subst hty0_eq
-        refine ⟨(ctorData pf).hlbb, by rw [← hct_eq]; exact (ctorData pf).hdef, ?_⟩
-        rw [← hi_eq, ← hj_eq, ← hct_eq]
+        have hct_lvls : slots[pf.val].2.2.2.lvls = ct.lvls := congrArg Ixon.Constructor.lvls hct_eq
+        have hct_typ : slots[pf.val].2.2.2.typ = ct.typ := congrArg Ixon.Constructor.typ hct_eq
+        refine ⟨(ctorData pf).hlbb, by rw [← hct_lvls]; exact (ctorData pf).hdef, ?_⟩
+        rw [← hi_eq, ← hj_eq, ← hct_lvls, ← hct_typ]
         exact (ctorData pf).hcanon
     · -- `.recr`
       intro k cv mI rP rules₀ tyA rhss hk htyA hrhss p rc hpb hrp hname _
@@ -1165,15 +1174,14 @@ theorem familyCall_checked_of_chain
         rw [hk_eq_p] at hrp
         exact Ixon.MutConst.recr.inj (Option.some.inj (hrp.symm.trans hrk))
       subst hrc_eq
-      rw [hk_eq_p]
       exact
         { lvls := D_k.hps_len
           tyBounded := D_k.hty_lbb
           tyLevels := D_k.hty_def
           rulesScoped := D_k.hrules_sc
           notK := D_k.hnotK
-          ty := D_k.hcanon_ty
-          rules := D_k.hcanon_rules }
+          ty := by rw [hk_eq_p]; exact D_k.hcanon_ty
+          rules := by rw [hk_eq_p]; exact D_k.hcanon_rules }
   -- 12. `MajorRefs`
   have hmajorRefs : MajorRefs t E₀ rb blk tys := by
     intro k cv mI rP rules₀ tyA p us hk htyA _ hhd
@@ -1261,12 +1269,11 @@ theorem familyCall_checked_of_chain
         let pf : Fin slots.length := ⟨pos - typeAs.length, hp_lt⟩
         have hd_eq : dstAs[pos]'(by omega) =
             ctorMs[pf.val]'(by rw [T.ctorModels, hlen_ctors]; exact hp_lt) := by
-          have htm : typeMs.length = typeAs.length := T.typeModels
-          simp only [dstAs, List.append_assoc,
-            List.getElem_append_right (show typeMs.length ≤ pos by omega),
-            List.getElem_append_left (show pos - typeMs.length < ctorMs.length by
-              rw [T.ctorModels]; omega)]
-          congr 1; simp [pf]; omega
+          have h1lt : pos < (typeMs ++ ctorMs).length := by
+            simp only [List.length_append, T.typeModels, T.ctorModels]; omega
+          have h2le : typeMs.length ≤ pos := by rw [T.typeModels]; omega
+          simp only [dstAs, List.getElem_append_left h1lt, List.getElem_append_right h2le]
+          congr 1; simp [pf, T.typeModels]
         rw [hd_eq]
         have hadvM := adv_of_advChecked (ctorData pf).hitem.hAdv (ctorData pf).hitem.hrecM
           (ctorData pf).hitem.hcaM hadvCase
@@ -1356,7 +1363,7 @@ theorem familyCall_checked_of_chain
             MemberAt (recordOf E₀) (iprjAddr B i.val) (memberProjection B i.val (.indc (indOf i)))
               B cb' ms' i.val.toUInt64.toNat (.indc ind') ∧
             IndReads (exprReader t (fun x => E₀.blobs.get? x) cb' id (blockSelf t B ms'))
-              (keyOf t (iprjAddr B i.val)) ind' _
+              (Consistency.keyOf t (iprjAddr B i.val)) ind' _
           rw [hi_toNat]
           exact ⟨cb, ms, indOf i,
             ⟨hB.record, hB.muts, hms_indOf i, rfl, by rw [LoadedReads.memberAddr_indc], hB.logic⟩,
@@ -1386,7 +1393,7 @@ theorem familyCall_checked_of_chain
             cprjAddr B s.1 s.2.2.1 = ctorAddr B s.1.toUInt64.toNat s.2.2.1.toUInt64.toNat ∧
             InLogic cb' ∧
             CtorReads (exprReader t (fun x => E₀.blobs.get? x) cb' id (blockSelf t B ms'))
-              (keyOf t (cprjAddr B s.1 s.2.2.1)) ct' _
+              (Consistency.keyOf t (cprjAddr B s.1 s.2.2.1)) ct' _
           rw [hi_toNat, hj_toNat]
           exact ⟨cb, ms, s.2.1, s.2.2.2, hB.record, hB.muts, hmi, hct,
             hcidx s.1 s.2.1 s.2.2.1 s.2.2.2 hmi hct, rfl,
@@ -1411,7 +1418,7 @@ theorem familyCall_checked_of_chain
         refine ⟨rprjAddr rb idx,
           Or.inr (Or.inr ⟨rs, idx, .recr rc_i, hR.muts, hrk,
             Or.inl (by rw [LoadedReads.memberAddr_recr])⟩), rfl, ?_⟩
-        rw [← LoadedReads.memberAddr_recr (r := rc_i)]
+        rw [← LoadedReads.memberAddr_recr (rc := rc_i)]
         exact D_i.hreads hlogM
     · intro x hx
       have hmem : x ∈ srcAs.map ixAddr := by
@@ -1420,7 +1427,7 @@ theorem familyCall_checked_of_chain
       have hk : Core.keyOf t (ixAddr b) ∈ blk.map (·.name) := by
         rw [hblk_names]; exact List.mem_map.mpr ⟨b, hb, rfl⟩
       obtain ⟨ci, hci, hnm⟩ := List.mem_map.mp hk
-      exact ⟨ci, hci, hnm.symm⟩
+      exact ⟨ci, hci, hnm⟩
   -- 14b. `FamilyCheckFacts env blk advM tys rhsss`
   have hrec_rulesFacts : ∀ idx (hi : idx < recAs.length),
       ∀ (rc_i : Ixon.Recursor)
@@ -1449,16 +1456,14 @@ theorem familyCall_checked_of_chain
       rw [hren_eq]
       refine membersFacts_append hlenNR (membersFacts_append (by omega) ?_ ?_) ?_
       · refine membersFacts_of_getElem indBlk indTys (by omega) fun idx hi => ?_
-        have hi_ms : idx < ms.size := by omega
-        let kf : Fin ms.size := ⟨idx, hi_ms⟩
-        simp only [indBlk, indTys, List.getElem_map, List.getElem_finRange]
+        simp only [indBlk, indTys, List.getElem_map]
+        let kf : Fin ms.size := (List.finRange ms.size)[idx]'(by simp; omega)
         have hadvM := adv_of_advChecked (indData kf).hitem.hAdv (indData kf).hitem.hrecM
           (indData kf).hitem.hcaM hadvCase
         exact ((indData kf).hfacts hSE hadvM hdefSrc).2
       · refine membersFacts_of_getElem ctorBlk ctorTys (by omega) fun idx hi => ?_
-        have hi_sl : idx < slots.length := by omega
-        let pf : Fin slots.length := ⟨idx, hi_sl⟩
-        simp only [ctorBlk, ctorTys, List.getElem_map, List.getElem_finRange]
+        simp only [ctorBlk, ctorTys, List.getElem_map]
+        let pf : Fin slots.length := (List.finRange slots.length)[idx]'(by simp; omega)
         have hadvM := adv_of_advChecked (ctorData pf).hitem.hAdv (ctorData pf).hitem.hrecM
           (ctorData pf).hitem.hcaM hadvCase
         exact ((ctorData pf).hfacts hSE hadvM hdefSrc).2
