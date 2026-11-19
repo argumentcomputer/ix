@@ -222,6 +222,9 @@ pub fn execute(system: &System, request: &Request) -> Result<Outcome, String> {
     result.queries.len(),
     result.instructions
   );
+  if let Some(path) = std::env::var_os("IX_KERNEL_HINTS_TRACE") {
+    kernel_hints_trace(program, &result, Path::new(&path))?;
+  }
   let mut report = json!({"execution_seconds":seconds, "queries":result.queries.len(),
     "instructions":result.instructions, "executor":ran,
     "execution_statistics":system.verifier().execution_statistics(&result)});
@@ -229,6 +232,69 @@ pub fn execute(system: &System, request: &Request) -> Result<Outcome, String> {
     report[key] = value;
   }
   Ok(Outcome { status: 0, plan: None, report })
+}
+
+/// Append one JSON line describing an accepted IxVM execution to `path`:
+/// the rows (distinct queries) and uses (summed multiplicities) of every
+/// function that ran, every `lazy_delta_step_const_const` row as its two
+/// head addresses with its fuel, success flag and uses, and the addresses
+/// whose reducibility hint the claim loaded. A row is one memoized call, so
+/// a function's rows are its share of the trace before padding.
+///
+/// `lazy_delta_step_const_const(rc, a_addr, b_addr, a, b, fuel, types)` and
+/// `load_constant_hint(addr)` take only pointers and fields, so their
+/// arguments are positional; an address argument points at a 32-byte cell.
+fn kernel_hints_trace(
+  program: &Program,
+  record: &aiur::Execution<crate::Field>,
+  path: &Path,
+) -> Result<(), String> {
+  use multi_stark::p3_field::PrimeField64;
+  use std::io::Write;
+  let checked = program.checked();
+  let address = |ptr: &crate::Val| -> String {
+    let ptr = ptr.as_canonical_u64() as usize;
+    match record.memory.get_by_width(32, ptr) {
+      Some(entry) => entry
+        .cell
+        .value
+        .iter()
+        .map(|b| format!("{:02x}", b.as_canonical_u64()))
+        .collect(),
+      None => format!("?{ptr}"),
+    }
+  };
+  let mut functions: std::collections::BTreeMap<String, (u64, u64)> =
+    std::collections::BTreeMap::new();
+  let mut steps = Vec::new();
+  let mut hint_loads = Vec::new();
+  for (key, output) in record.queries.iter() {
+    let name = checked.callable_name(key.function).unwrap_or("?");
+    let entry = functions.entry(name.to_string()).or_default();
+    entry.0 += 1;
+    entry.1 += output.multiplicity;
+    let args = &key.args;
+    if name.ends_with("lazy_delta_step_const_const") && args.len() == 7 {
+      steps.push(json!([
+        address(&args[1]),
+        address(&args[2]),
+        args[5].as_canonical_u64(),
+        output.output.first().map(PrimeField64::as_canonical_u64),
+        output.multiplicity
+      ]));
+    } else if name.ends_with("load_constant_hint") && args.len() == 1 {
+      hint_loads.push(address(&args[0]));
+    }
+  }
+  let line = json!({"queries": record.queries.len(),
+    "instructions": record.instructions, "functions": functions,
+    "steps": steps, "hint_loads": hint_loads});
+  let mut file = std::fs::OpenOptions::new()
+    .create(true)
+    .append(true)
+    .open(path)
+    .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+  writeln!(file, "{line}").map_err(|e| e.to_string())
 }
 
 /// Execute an IxVM claim and plan its proof within the RAM budget, without
