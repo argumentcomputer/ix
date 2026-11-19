@@ -1140,7 +1140,7 @@ theorem denoteMeta_eq_of_wrapT_empty_aux : ∀ (n : Nat) (e₁ e₂ : Expr md), 
         denoteMeta_eq_of_wrapT_empty_aux n _ _ (by omega) hf k,
         denoteMeta_eq_of_wrapT_empty_aux n _ _ (by omega) ha k]
     | @lam t a t' b b' m m' hpw hs hw hb =>
-      rcases hs.eq_of_empty with rfl
+      rcases hs.eq_of_empty.symm with rfl
       simp only [Ix.Kernel.Expr.sizeB] at hlt
       have hbi := WrapT.instantiate1 (WrapT.fvar k t t') hb 0
       rw [denoteMeta_lam, denoteMeta_lam, hpw,
@@ -1148,7 +1148,7 @@ theorem denoteMeta_eq_of_wrapT_empty_aux : ∀ (n : Nat) (e₁ e₂ : Expr md), 
         denoteMeta_eq_of_wrapT_empty_aux n _ _
           (by rw [Ix.Kernel.Expr.sizeB_instantiate1 (.fvar k t) rfl]; omega) hbi (k + 1)]
     | @forallE t a t' b b' m m' hpw hs hw hb =>
-      rcases hs.eq_of_empty with rfl
+      rcases hs.eq_of_empty.symm with rfl
       simp only [Ix.Kernel.Expr.sizeB] at hlt
       have hbi := WrapT.instantiate1 (WrapT.fvar k t t') hb 0
       rw [denoteMeta_forallE, denoteMeta_forallE, hpw,
