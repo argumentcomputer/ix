@@ -437,7 +437,11 @@ theorem familyCall_block_indc_nonempty {calls : List (Call F)} {bAddr : _root_.A
           v588 m589 cs599 := by
         rw [Obs.Names.«Lists::length<Ixon::MutConst>».symbol]
         exact ev601
-      exact (Lib.Lists.length_spec evLen' hrep).1
+      have hrep' : RepList (Instance.mk "Lists::Node" [.named "Ixon::MutConst" []]).symbol
+          L1.RepMutConst m501 msB.toList x_members := by
+        rw [Obs.Names.«Lists::Node<Ixon::MutConst>».symbol]
+        exact hrep
+      exact (Lib.Lists.length_spec evLen' hrep').1
     obtain ⟨hindV, -⟩ :=
       Core.ModeledAux.muts_indc_count_spec (Route.membersRep_of_repMutConstList hrep1) ev634
     have hfilt : (msB.toList.filter Core.Specs.Callees.isIndc).length = msB.size := by
@@ -485,7 +489,7 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
   match Obs.«KernelModeled::check_family».obs ev with
   | .run (m105 := m105) (cs850 := cs850) (m1191 := m1191) (x_univ_offset := x_uo)
       (v_qwfkpklj := v_flat) (m_ialrkdmk := m_flat) (cs_pblrtsmj := cs_flat)
-      (v_arypxepi := v_arypxepi)
+      (m1234 := m1234) (v_arypxepi := v_arypxepi)
       (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
       (ev_yqjbwijz := ev_ord) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
       (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465) (ev513 := ev513)
@@ -657,7 +661,7 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
             (evM.heap_extends.trans evL.heap_extends) hxs⟩
     obtain ⟨xs, hlen, hltB, hxs⟩ := hflatLen
     have hxs' : RepList (Instance.mk "Lists::Node" [flatEntryTy]).symbol
-        (fun _ _ _ => True) _ xs _ := by
+        (fun (_ : Unit) (_ : Heap F) (_ : SourceValue F) => True) m1234 xs v_flat := by
       rw [flatListEnum_eq]
       exact RepLinkedList.mono (fun _ _ _ _ _ _ => trivial) ev1246.heap_extends hxs
     have evLen' : ObsFn Obs.W (Instance.mk "Lists::length" [flatEntryTy]).symbol
@@ -1092,6 +1096,12 @@ def ixonAppHeadRef (sharing : List Ixon.Expr) : Nat → Nat → Ixon.Expr → Op
     | some (_, .ref rIdx _) => some rIdx.toNat
     | _ => none
 
+private theorem ixonUnshare_nonshare {sharing : List Ixon.Expr} {bound : Nat} {e : Ixon.Expr}
+    (h : ∀ idx, e ≠ .share idx) : ixonUnshare sharing bound e = some (bound, e) := by
+  cases e with
+  | share idx => exact absurd rfl (h idx)
+  | _ => simp [ixonUnshare]
+
 private theorem ixonUnshare_rawConv {refs : List _root_.Address} {univs : List Ixon.Univ}
     {sharing : List Ixon.Expr} {blobs : List (_root_.Address × ByteArray)} {h : Heap F} :
     ∀ {bound : Nat} {e : Ixon.Expr} {p : SourceValue F},
@@ -1112,50 +1122,36 @@ private theorem ixonUnshare_rawConv {refs : List _root_.Address} {univs : List I
       · exact Or.inr ⟨_, List.mem_of_getElem? hsh, h1⟩
       · exact Or.inr h2
   | var hidx cell =>
-    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi, L1.RawConvExpr.var hidx cell⟩
-    · simp [ixonUnshare]
-    · intro _ h; cases h
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+      fun _ hi => Or.inl hi, L1.RawConvExpr.var hidx cell⟩
   | sort huIdx hu rl cell =>
-    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi, L1.RawConvExpr.sort huIdx hu rl cell⟩
-    · simp [ixonUnshare]
-    · intro _ h; cases h
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+      fun _ hi => Or.inl hi, L1.RawConvExpr.sort huIdx hu rl cell⟩
   | ref hrIdx href hd ra hls rls cell =>
-    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi,
-      L1.RawConvExpr.ref hrIdx href hd ra hls rls cell⟩
-    · simp [ixonUnshare]
-    · intro _ h; cases h
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+      fun _ hi => Or.inl hi, L1.RawConvExpr.ref hrIdx href hd ra hls rls cell⟩
   | recur _ hrec _ _ _ _ _ => simp at hrec
   | prj htIdx hfIdx href hd ra rin cell =>
-    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi,
-      L1.RawConvExpr.prj htIdx hfIdx href hd ra rin cell⟩
-    · simp [ixonUnshare]
-    · intro _ h; cases h
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+      fun _ hi => Or.inl hi, L1.RawConvExpr.prj htIdx hfIdx href hd ra rin cell⟩
   | str hbIdx href hmem rbs hs cell =>
-    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi,
-      L1.RawConvExpr.str hbIdx href hmem rbs hs cell⟩
-    · simp [ixonUnshare]
-    · intro _ h; cases h
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+      fun _ hi => Or.inl hi, L1.RawConvExpr.str hbIdx href hmem rbs hs cell⟩
   | nat hbIdx href hmem hcanon rlimbs hlast hval cell =>
-    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi,
-      L1.RawConvExpr.nat hbIdx href hmem hcanon rlimbs hlast hval cell⟩
-    · simp [ixonUnshare]
-    · intro _ h; cases h
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+      fun _ hi => Or.inl hi, L1.RawConvExpr.nat hbIdx href hmem hcanon rlimbs hlast hval cell⟩
   | app rf ra cell =>
-    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi, L1.RawConvExpr.app rf ra cell⟩
-    · simp [ixonUnshare]
-    · intro _ h; cases h
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+      fun _ hi => Or.inl hi, L1.RawConvExpr.app rf ra cell⟩
   | lam rl rt rb cell =>
-    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi, L1.RawConvExpr.lam rl rt rb cell⟩
-    · simp [ixonUnshare]
-    · intro _ h; cases h
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+      fun _ hi => Or.inl hi, L1.RawConvExpr.lam rl rt rb cell⟩
   | all rl rt rb cell =>
-    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi, L1.RawConvExpr.all rl rt rb cell⟩
-    · simp [ixonUnshare]
-    · intro _ h; cases h
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+      fun _ hi => Or.inl hi, L1.RawConvExpr.all rl rt rb cell⟩
   | letE rt rv rb cell =>
-    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi, L1.RawConvExpr.letE rt rv rb cell⟩
-    · simp [ixonUnshare]
-    · intro _ h; cases h
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+      fun _ hi => Or.inl hi, L1.RawConvExpr.letE rt rv rb cell⟩
 
 private theorem rawConv_forall_of_load {refs : List _root_.Address} {univs : List Ixon.Univ}
     {sharing : List Ixon.Expr} {blobs : List (_root_.Address × ByteArray)} {h : Heap F}
@@ -1578,7 +1574,7 @@ theorem rec_family_block_head_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
         obtain ⟨v, hld, hrrI⟩ := hresI
         rw [hld] at ldInd; injection ldInd with hv; subst hv
         obtain ⟨_, _, _, _, hv_eq0, -⟩ := hrrI
-        cases d.kind <;> simp [L1.defnValShape] at hv_eq0
+        cases hk : d.kind <;> simp [L1.defnValShape, hk] at hv_eq0
       | axio _ =>
         simp only [L1.GetCIRawResult, hinfo0] at hresI
         obtain ⟨v, hld, hrrI⟩ := hresI
@@ -1599,7 +1595,7 @@ theorem rec_family_block_head_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
         obtain ⟨_, _, cb0, ms0, d, v, _, _, _, _, _, _, hld, hrrI⟩ := hresI
         rw [hld] at ldInd; injection ldInd with hv; subst hv
         obtain ⟨_, _, _, _, hv_eq0, -⟩ := hrrI
-        cases d.kind <;> simp [L1.defnValShape] at hv_eq0
+        cases hk : d.kind <;> simp [L1.defnValShape, hk] at hv_eq0
       | iPrj ip =>
         simp only [L1.GetCIRawResult, hinfo0] at hresI
         obtain ⟨_, _, cb0, ms0, ind0, v, _, _, _, _, _, _, hld, hrrI⟩ := hresI
@@ -1632,7 +1628,7 @@ theorem rec_family_block_head_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
       obtain ⟨v, hld, hrr⟩ := hres
       rw [hld] at ldRec; injection ldRec with hv; subst hv
       obtain ⟨_, _, _, _, hv_eq, -⟩ := hrr
-      cases d.kind <;> simp [L1.defnValShape] at hv_eq
+      cases hk : d.kind <;> simp [L1.defnValShape, hk] at hv_eq
     | axio _ =>
       simp only [L1.GetCIRawResult, hinfo] at hres
       obtain ⟨v, hld, hrr⟩ := hres
@@ -1655,7 +1651,7 @@ theorem rec_family_block_head_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
       obtain ⟨_, _, cb0, ms0, d, v, _, _, _, _, _, _, hld, hrr⟩ := hres
       rw [hld] at ldRec; injection ldRec with hv; subst hv
       obtain ⟨_, _, _, _, hv_eq, -⟩ := hrr
-      cases d.kind <;> simp [L1.defnValShape] at hv_eq
+      cases hk : d.kind <;> simp [L1.defnValShape, hk] at hv_eq
     | iPrj _ =>
       simp only [L1.GetCIRawResult, hinfo] at hres
       obtain ⟨_, _, cb0, ms0, ind0, v, _, _, _, _, _, _, hld, hrr⟩ := hres
@@ -1838,7 +1834,7 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
         rw [← Array.getElem?_toList, hrl]; rfl
       obtain ⟨h, h', rc, xb, xrb, r, -, ⟨bb, hbb, rfl⟩, ⟨brb, hbrb, rfl⟩, ev, -, hsub⟩ := hfc
       match Obs.«KernelModeled::check_family».obs ev with
-      | .run (m105 := m105) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+      | .run (m105 := m105) (x_members := x_members) (m652 := m652) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
           (ev_yqjbwijz := evo) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
           (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465)
           (cs511 := cs511) (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
@@ -1871,7 +1867,7 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
         subst ems'
         have e501_652 : Heap.Extends _ _ :=
           ev601.heap_extends.trans (ev634.heap_extends.trans ev664.heap_extends)
-        have hmemRep : Core.Specs.Callees.MembersRep _ (m0 :: mrest) _ := by
+        have hmemRep : Core.Specs.Callees.MembersRep m652 (m0 :: mrest) x_members := by
           rw [← hml]
           exact Route.membersRep_of_repMutConstList
             (RepLinkedList.mono L1.repMutConst_heapMono₂ e501_652 hrepM)
