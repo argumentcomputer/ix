@@ -1315,7 +1315,7 @@ private theorem flat_originals_walk_spec {rootCalls : List (Call F)} {t : Ix.Ker
             hcbE hhB haB hexB
         subst cb'
         have hmsEq := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hmuts)
-        subst hmsEq
+        subst ms'
         have hindEq : ind' = ind := by
           have : ms[pos]? = some (.indc ind') := by rw [← Array.getElem?_toList]; exact hms'
           exact Ixon.MutConst.indc.inj (Option.some.inj (this.symm.trans hm_at))
@@ -1340,8 +1340,8 @@ private theorem flat_originals_walk_spec {rootCalls : List (Call F)} {t : Ix.Ker
         have ext15 := ext14.trans ext45
         obtain ⟨os, hos, hrep_os, haddrs, hprops⟩ := ih (pos + 1)
           (fun c hc' => hsub c (by rw [hc]; simp [hc'])) (by simp at hlen; omega) hidx'
-          (repList_heapMono₂ _ (fun _ _ _ h => h) ext15 hall)
-          (repList_heapMono₂ _ (fun _ _ _ h => h) ext15 hrest)
+          (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext15 hall)
+          (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext15 hrest)
           (Bytes.repAddressRef_heapMono₂ addrTy ext15 rba) evrec
         have hcbR : recordOf R (ixAddr ba) = some cb := held_of_sub_flat hRsub hSb hcbE
         have hprojR := (hcl.2 (ixAddr ba) cb ms hcbR hmuts pos (.indc ind) hm_at).1
@@ -1940,8 +1940,27 @@ private theorem occ_scan_aux {rootCalls : List (Call F)} {rom : ROM F}
       obtain ⟨n, rfl⟩ : ∃ n, fuel = n + 1 := ⟨fuel - 1, by omega⟩
       simp only [occScanF, hbm]
       rw [hE_app]
-      simp only [← hE_app, appCase, constOf, hfn_eq, FlatView.ofStore, hka, hinfo,
-        hnested, hmemAt, hsp]
+      simp only [← hE_app, appCase, constOf, hfn_eq]
+      change (match keyAddr t (Core.keyOf t (ixAddr ca)) with
+        | none => none
+        | some a => match indInfoAt E₀ a with
+          | none => none
+          | some none => scanList (fun x a => occScanF (FlatView.ofStore t E₀) (ixAddr ba) n x d a)
+              E.getAppArgs acc
+          | some (some info) => match nestedAt (FlatView.ofStore t E₀) (ixAddr ba) info E.getAppArgs with
+            | none => none
+            | some false => scanList (fun x a => occScanF (FlatView.ofStore t E₀) (ixAddr ba) n x d a)
+                E.getAppArgs acc
+            | some true => match membersAt E₀ info.blk with
+              | none => none
+              | some ms => match occParamsLower (E.getAppArgs.take info.np) d with
+                | none => none
+                | some sp => some (addBlockMembers ms sp us acc)) = some _
+      rw [hka]; dsimp only
+      rw [hinfo]; dsimp only
+      rw [hnested]; dsimp only
+      rw [hmemAt]; dsimp only
+      rw [hsp]
   | .other_App_Const_Induct_other (m2 := m2) (m26 := m26) (m39 := m3) (cs_ejheattv := cs1)
       (m113 := m4) (cs_lffdlqmw := cs2) (x_head := xhd) (x_args := xargs)
       (x_c := xc) (x_us := xus) (m177 := m5) (p185 := pci) (cs191 := cs3)
@@ -2040,7 +2059,25 @@ private theorem occ_scan_aux {rootCalls : List (Call F)} {rom : ROM F}
       obtain ⟨n, rfl⟩ : ∃ n, fuel = n + 1 := ⟨fuel - 1, by omega⟩
       simp only [occScanF, hbm]
       rw [hE_app]
-      simp only [← hE_app, appCase, constOf, hfn_eq, FlatView.ofStore, hka, hinfo, hnn]
+      simp only [← hE_app, appCase, constOf, hfn_eq]
+      change (match keyAddr t (Core.keyOf t (ixAddr ca)) with
+        | none => none
+        | some a => match indInfoAt E₀ a with
+          | none => none
+          | some none => scanList (fun x a => occScanF (FlatView.ofStore t E₀) (ixAddr ba) n x d a)
+              E.getAppArgs acc
+          | some (some info) => match nestedAt (FlatView.ofStore t E₀) (ixAddr ba) info E.getAppArgs with
+            | none => none
+            | some false => scanList (fun x a => occScanF (FlatView.ofStore t E₀) (ixAddr ba) n x d a)
+                E.getAppArgs acc
+            | some true => match membersAt E₀ info.blk with
+              | none => none
+              | some ms => match occParamsLower (E.getAppArgs.take info.np) d with
+                | none => none
+                | some sp => some (addBlockMembers ms sp us acc)) = some res
+      rw [hka]; dsimp only
+      rw [hinfo]; dsimp only
+      rw [hnn]; dsimp only
       exact hres n (fun x hx => Nat.lt_of_lt_of_le (exprSize_getAppArgs_lt E x hx) (by omega))
   | .other_App_Const_other (m2 := m2) (m26 := m26) (m39 := m3) (cs_ejheattv := cs1)
       (m113 := m4) (cs_lffdlqmw := cs2) (x_head := xhd) (x_args := xargs)
@@ -2629,7 +2666,8 @@ theorem flat_reals_spec {κ : _root_.Address → KKey} :
       cases hr0; cases hm0
       obtain ⟨e', rest', h1, he', hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hes ld
       injection h1 with h1e h1r; subst h1e h1r
-      have ⟨_, _, _, _, htup, -, -, -, -⟩ := he'
+      have hcopy := he'
+      obtain ⟨_, _, _, _, htup, -, -, -, -⟩ := hcopy
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
       have hf : e.aux = false := auxVal_eq_zero.mp htup.2.1.symm
       have hrec := ih evrec hrest
@@ -2639,7 +2677,8 @@ theorem flat_reals_spec {κ : _root_.Address → KKey} :
     | .Cons_other (x_is_aux := xaux) (ld12 := ld) (hne137 := hne) (ev146 := evrec) .. =>
       obtain ⟨e', rest', h1, he', hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hes ld
       injection h1 with h1e h1r; subst h1e h1r
-      have ⟨_, _, _, _, htup, -, -, -, -⟩ := he'
+      have hcopy := he'
+      obtain ⟨_, _, _, _, htup, -, -, -, -⟩ := hcopy
       injection htup with hl0; injection hl0 with _ hl1; injection hl1 with haux _
       have ht' : e.aux = true := by
         cases h : e.aux
@@ -3206,7 +3245,8 @@ theorem aux_already_in_spec {κ : _root_.Address → KKey} (hinj : Function.Inje
         (hc267 := hc) .. =>
       obtain ⟨e', rest', h1, he', hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hacc ld
       injection h1 with h1e h1r; subst h1e h1r
-      have ⟨_, _, _, _, htup, -, -, -, -⟩ := he'
+      have hcopy := he'
+      obtain ⟨_, _, _, _, htup, -, -, -, -⟩ := hcopy
       injection htup with hl; injection hl with _ hl; injection hl with h2 _
       have hf : e.aux = false := by
         cases h : e.aux
@@ -3547,7 +3587,7 @@ private theorem first_recr_parent_block_spec {rootCalls : List (Call F)} {t : Ix
         have hka : keyAddr t (Core.keyOf t (ixAddr pa)) = some (ixAddr pa) :=
           addrOf_ofStore (E₀ := E₀) hwf (ixAddr pa)
         exact ⟨pba, cprim, msp,
-          by simp [firstRecrParentBlock, hloaded, hd_at, hfn, hka, hinfo, hpba],
+          by simp only [firstRecrParentBlock, hloaded, hd_at, hfn, hka, hinfo, hpba],
           rpba, hpba.symm ▸ hSblk, hpba.symm ▸ hcprim, hmsp⟩
     | .Cons_Recr_Rec_other (v63 := vp) (m64 := m1) (cs74 := cs1) (m102 := m2) (p109 := pci1)
         (cs115 := cs2) (x_ty := xty) (x_np := xnp) (x_ni := xni) (x_nmot := xnmot)
@@ -3594,7 +3634,7 @@ private theorem first_recr_parent_block_spec {rootCalls : List (Call F)} {t : Ix
           addrOf_ofStore (E₀ := E₀) hwf (ixAddr pa)
         have ext := ext1.trans (evci1.heap_extends.trans (evpar.heap_extends.trans evci2.heap_extends))
         exact ⟨fba, cbF, msF,
-          by simp [firstRecrParentBlock, hloaded, hd_at, hfn, hka, hinfo],
+          by simp only [firstRecrParentBlock, hloaded, hd_at, hfn, hka, hinfo],
           Bytes.repAddressRef_heapMono₂ addrTy ext rfba, hSfb, hfbE, hfbMuts⟩
     | .Cons_Recr_other (v63 := vp) (m64 := m1) (cs74 := cs1) (m102 := m2) (p109 := pci1)
         (cs115 := cs2) (ld12 := ld) (ev76 := evpa) (ev117 := evci1) (ld111 := ldci1)
@@ -3615,7 +3655,7 @@ private theorem first_recr_parent_block_spec {rootCalls : List (Call F)} {t : Ix
         have hmc_eq : mc = .recr rc := Option.some.inj (hmc'.symm.trans hm_at)
         subst hmc_eq
         have hma_eq : ixAddr ma = memberAddr (ixAddr rba) pos (.recr rc) := hma
-        obtain ⟨-, -, -, -, -, hshape, -⟩ := recrLoad_ofStore ht hwf hS hH hbd hRsub hcl hlv
+        obtain ⟨_, _, _, _, _, hshape, -⟩ := recrLoad_ofStore ht hwf hS hH hbd hRsub hcl hlv
           (hsub' fun c hc' => by rw [hc]; simp [hc']) hSrb hcrbE hmuts hm_at hma_eq rma
           evci1 ldci1
         exact (hneR _ rfl hshape).elim
@@ -3808,8 +3848,8 @@ private theorem aux_from_recrs_walk_ex_spec {rootCalls : List (Call F)}
         have ext03 := ext02.trans ext23
         obtain ⟨res, hres, hrep_res, hresS⟩ := ih (pos + 1) acc
           (sub fun c hc' => by rw [hc]; simp [hc']) (by simp at hlen; omega) hidx'
-          (repList_heapMono₂ _ (fun _ _ _ h => h) ext03 hall)
-          (repList_heapMono₂ _ (fun _ _ _ h => h) ext03 hrest)
+          (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext03 hall)
+          (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext03 hrest)
           (Bytes.repAddressRef_heapMono₂ addrTy ext03 rrba)
           (Bytes.repAddressRef_heapMono₂ addrTy ext03 rpba)
           (flatList_mono ext03 hacc) haccS evrec
@@ -3817,8 +3857,9 @@ private theorem aux_from_recrs_walk_ex_spec {rootCalls : List (Call F)}
           addrOf_ofStore (E₀ := E₀) hwf (ixAddr pa)
         refine ⟨res, ?_, hrep_res, hresS⟩
         rcases hcase with hnone | ⟨info, hinfo, hblk⟩
-        · simp [buildFlatAuxStep, hloaded, hd_at, hfn, hka, hnone, hres]
-        · simp [buildFlatAuxStep, hloaded, hd_at, hfn, hka, hinfo, hblk, hres]
+        · simp only [buildFlatAuxStep, hloaded, hd_at, hfn, hka, hnone, hres]
+        · simp only [buildFlatAuxStep, hloaded, hd_at, hfn, hka, hinfo, hblk, beq_self_eq_true,
+            ↓reduceIte, hres]
     | .Cons_Recr_other_bind_other_bind_bind_n1 (x_rest := xrest) (v63 := vp) (m64 := m1)
         (cs74 := cs1) (v101 := vci) (m102 := m2) (p109 := pci) (cs115 := cs2)
         (m559 := m3) (cs561 := cs3) (x_parent_addr := xpa) (x_pnp := xpnp) (v718 := vsp)
@@ -3907,7 +3948,7 @@ private theorem aux_from_recrs_walk_ex_spec {rootCalls : List (Call F)}
         have hd_eq2 : d'' = d := Option.some.inj (hd_at''.symm.trans hd_at)
         subst d''
         have hfn_eq := hfn'.symm.trans hfn
-        injection hfn_eq with _ hus_eq; subst hus_eq
+        injection hfn_eq with _ hus_eq; subst us'
         have ext05 := ext02.trans (ext2p.trans (extp3.trans (evsp.heap_extends.trans evus.heap_extends)))
         have hin := aux_already_in_spec hinj acc evin
           (RomBound.bounded_mono hbd (sub fun c hc' => by rw [hc]; simp [hc']))
@@ -3924,17 +3965,20 @@ private theorem aux_from_recrs_walk_ex_spec {rootCalls : List (Call F)}
         have ext06 := ext05.trans evin.heap_extends
         obtain ⟨res, hres, hrep_res, hresS⟩ := ih (pos + 1) acc
           (sub fun c hc' => by rw [hc]; simp [hc']) (by simp at hlen; omega) hidx'
-          (repList_heapMono₂ _ (fun _ _ _ h => h) ext06 hall)
-          (repList_heapMono₂ _ (fun _ _ _ h => h) ext06 hrest)
+          (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext06 hall)
+          (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext06 hrest)
           (Bytes.repAddressRef_heapMono₂ addrTy ext06 rrba)
           (Bytes.repAddressRef_heapMono₂ addrTy ext06 rpba)
           (flatList_mono ext06 hacc) haccS evrec
         have hka : keyAddr t (Core.keyOf t (ixAddr pa)) = some (ixAddr pa) :=
           addrOf_ofStore (E₀ := E₀) hwf (ixAddr pa)
-        exact ⟨res,
-          by simp [buildFlatAuxStep, hloaded, hd_at, hfn, hka, hinfo,
-            beq_eq_false_iff_ne.mpr hne_blk, sp, hcond, hres],
-          hrep_res, hresS⟩
+        refine ⟨res, ?_, hrep_res, hresS⟩
+        simp only [buildFlatAuxStep, hloaded, hd_at, hfn, hka, hinfo,
+          beq_eq_false_iff_ne.mpr hne_blk, Bool.false_eq_true, ↓reduceIte]
+        change buildFlatAuxStep t E₀ (ixAddr rba) crb rs (ixAddr pba) (pos + 1) rest
+          (if auxEntryIn acc (ixAddr pa) sp us = true then acc
+            else acc ++ [⟨ixAddr pa, true, sp, us⟩]) = some res
+        simp only [hcond, Bool.false_eq_true, ↓reduceIte, hres]
     | .Cons_Recr_other_bind_other_bind_bind_other (x_rest := xrest) (v63 := vp) (m64 := m1)
         (cs74 := cs1) (v101 := vci) (m102 := m2) (p109 := pci) (cs115 := cs2)
         (m559 := m3) (cs561 := cs3) (x_parent_addr := xpa) (x_pnp := xpnp) (v718 := vsp)
@@ -4023,7 +4067,7 @@ private theorem aux_from_recrs_walk_ex_spec {rootCalls : List (Call F)}
         have hd_eq2 : d'' = d := Option.some.inj (hd_at''.symm.trans hd_at)
         subst d''
         have hfn_eq := hfn'.symm.trans hfn
-        injection hfn_eq with _ hus_eq; subst hus_eq
+        injection hfn_eq with _ hus_eq; subst us'
         have ext35 := evsp.heap_extends.trans evus.heap_extends
         have ext05 := ext02.trans (ext2p.trans (extp3.trans ext35))
         have hin := aux_already_in_spec hinj acc evin
@@ -4056,16 +4100,19 @@ private theorem aux_from_recrs_walk_ex_spec {rootCalls : List (Call F)}
         have ext07 := ext06.trans evsn.heap_extends
         obtain ⟨res, hres, hrep_res, hresS⟩ := ih (pos + 1) (acc ++ [⟨ixAddr pa, true, sp, us⟩])
           (sub fun c hc' => by rw [hc]; simp [hc']) (by simp at hlen; omega) hidx'
-          (repList_heapMono₂ _ (fun _ _ _ h => h) ext07 hall)
-          (repList_heapMono₂ _ (fun _ _ _ h => h) ext07 hrest)
+          (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext07 hall)
+          (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext07 hrest)
           (Bytes.repAddressRef_heapMono₂ addrTy ext07 rrba)
           (Bytes.repAddressRef_heapMono₂ addrTy ext07 rpba) hsn hacc'S evrec
         have hka : keyAddr t (Core.keyOf t (ixAddr pa)) = some (ixAddr pa) :=
           addrOf_ofStore (E₀ := E₀) hwf (ixAddr pa)
-        exact ⟨res,
-          by simp [buildFlatAuxStep, hloaded, hd_at, hfn, hka, hinfo,
-            beq_eq_false_iff_ne.mpr hne_blk, sp, hcond, hres],
-          hrep_res, hresS⟩
+        refine ⟨res, ?_, hrep_res, hresS⟩
+        simp only [buildFlatAuxStep, hloaded, hd_at, hfn, hka, hinfo,
+          beq_eq_false_iff_ne.mpr hne_blk, Bool.false_eq_true, ↓reduceIte]
+        change buildFlatAuxStep t E₀ (ixAddr rba) crb rs (ixAddr pba) (pos + 1) rest
+          (if auxEntryIn acc (ixAddr pa) sp us = true then acc
+            else acc ++ [⟨ixAddr pa, true, sp, us⟩]) = some res
+        simp only [hcond, Bool.false_eq_true, ↓reduceIte, hres]
     | .Cons_other (x_m := xm) (x_rest := xrest) (cs1029 := cs1) (v1038 := vpos1) (ld12 := ld)
         (hne1022 := hne) (op1094 := op1) (ev1031 := evrec) (hc1096 := hc) .. =>
       obtain ⟨m', rest', h1, hm', hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hcur ld
