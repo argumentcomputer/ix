@@ -1,5 +1,5 @@
 import IxVMRefinement.Core.CallHeaps
-import IxVMRefinement.Core.S0
+import IxVMRefinement.Core.Rep
 import IxVMRefinement.Obs.KernelCheck13
 import IxVMRefinement.Obs.KernelModeled0
 import IxVMRefinement.Obs.KernelModeled1

@@ -643,22 +643,20 @@ theorem familyCall_record_block {calls : List (Call F)} {bAddr : _root_.Address}
           exact ev15.heap_extends
         | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
       have e784 : Heap.Extends h _ :=
-        e0.trans (ev126.heap_extends.trans (ev148.heap_extends.trans
-          (ev194.heap_extends.trans (ev_ord.heap_extends.trans (ev231.heap_extends.trans
-            (ev266.heap_extends.trans (ev309.heap_extends.trans (ev344.heap_extends.trans
-              (ev403.heap_extends.trans (ev435.heap_extends.trans (ev465.heap_extends.trans
-                (ev513.heap_extends.trans (ev601.heap_extends.trans (ev634.heap_extends.trans
-                  (ev664.heap_extends.trans (ev686.heap_extends.trans (ev716.heap_extends.trans
-                    (ev759.heap_extends.trans (ev817.heap_extends.trans
-                      ev796.heap_extends))))))))))))))))))))
+        e0.trans <| ev126.heap_extends.trans <| ev148.heap_extends.trans <|
+          ev194.heap_extends.trans <| ev_ord.heap_extends.trans <| ev231.heap_extends.trans <|
+          ev266.heap_extends.trans <| ev309.heap_extends.trans <| ev344.heap_extends.trans <|
+          ev403.heap_extends.trans <| ev435.heap_extends.trans <| ev465.heap_extends.trans <|
+          ev513.heap_extends.trans <| ev601.heap_extends.trans <| ev634.heap_extends.trans <|
+          ev664.heap_extends.trans <| ev686.heap_extends.trans <| ev716.heap_extends.trans <|
+          ev759.heap_extends.trans <| ev817.heap_extends.trans <| ev796.heap_extends
       have e_len_cr : Heap.Extends _ _ :=
-        ev874.heap_extends.trans (ev896.heap_extends.trans (ev960.heap_extends.trans
-          (ev939.heap_extends.trans (ev1011.heap_extends.trans (ev990.heap_extends.trans
-            (ev_mv1.heap_extends.trans (ev_cat.heap_extends.trans (ev_mv2.heap_extends.trans
-              (ev_mv3.heap_extends.trans (ev1203.heap_extends.trans (ev_flat.heap_extends.trans
-                (ev1246.heap_extends.trans (ev_flen.heap_extends.trans (ev_z1.heap_extends.trans
-                  (ev_z2.heap_extends.trans (ev_vg.heap_extends.trans
-                    ev1305.heap_extends)))))))))))))))))
+        ev874.heap_extends.trans <| ev896.heap_extends.trans <| ev960.heap_extends.trans <|
+          ev939.heap_extends.trans <| ev1011.heap_extends.trans <| ev990.heap_extends.trans <|
+          ev_mv1.heap_extends.trans <| ev_cat.heap_extends.trans <| ev_mv2.heap_extends.trans <|
+          ev_mv3.heap_extends.trans <| ev1203.heap_extends.trans <| ev_flat.heap_extends.trans <|
+          ev1246.heap_extends.trans <| ev_flen.heap_extends.trans <| ev_z1.heap_extends.trans <|
+          ev_z2.heap_extends.trans <| ev_vg.heap_extends.trans <| ev1305.heap_extends
       have hb784 := Bytes.repAddressRef_heapMono₂ addrTy e784 hb
       match Obs.«KernelModeled::family_recs».obs ev852 with
       | .Muts (cs12 := cs12) (ev14 := ev14) (hc165 := hc165) .. =>
