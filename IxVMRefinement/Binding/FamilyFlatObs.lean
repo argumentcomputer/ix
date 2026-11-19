@@ -210,7 +210,7 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
         obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
         rw [cell₂] at hs₂; cases hs₂
         injection hweq with hty ha; subst ha
-        obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+        obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
         obtain ⟨ea₂, henc, hf₂⟩ := represents_construct_inv hrep₂
         injection henc with _ _ hea; subst hea
         cases hf₂ with
@@ -227,9 +227,9 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
         obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
         rw [cell₂] at hs₂; cases hs₂
         injection hweq with hty ha; subst ha
-        obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+        obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
         obtain ⟨_, henc, _⟩ := represents_construct_inv hrep₂
-        cases henc
+        simp at henc
   | bvarFree _ _ _ hd => omega
   | @sort _ addr₁ _ _ cell₁ _ =>
     intro h₂ k₂ E₂ p₂ w r₁ r₂ rep₂
@@ -247,9 +247,9 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
       obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
       rw [cell₂] at hs₂; cases hs₂
       injection hweq with hty ha; subst ha
-      obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+      obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
       obtain ⟨_, henc, _⟩ := represents_construct_inv hrep₂
-      cases henc
+      simp at henc
   | @const _ addr₁ _ _ _ _ _ cell₁ _ _ =>
     intro h₂ k₂ E₂ p₂ w r₁ r₂ rep₂
     obtain ⟨s₁, a₁, enc₁, hs₁, hmem₁, hrep₁, rfl⟩ := represents_ptr_inv' r₁
@@ -266,9 +266,9 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
       obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
       rw [cell₂] at hs₂; cases hs₂
       injection hweq with hty ha; subst ha
-      obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+      obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
       obtain ⟨_, henc, _⟩ := represents_construct_inv hrep₂
-      cases henc
+      simp at henc
   | @app _ addr₁ fp₁ ap₁ Ef₁ Ea₁ cell₁ rf₁ ra₁ ihf iha =>
     intro h₂ k₂ E₂ p₂ w r₁ r₂ rep₂
     obtain ⟨s₁, a₁, enc₁, hs₁, hmem₁, hrep₁, rfl⟩ := represents_ptr_inv' r₁
@@ -284,7 +284,7 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
           obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
           rw [cell₂] at hs₂; cases hs₂
           injection hweq with hty ha; subst ha
-          obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+          obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
           obtain ⟨ea₂, henc, hf₂⟩ := represents_construct_inv hrep₂
           injection henc with _ _ hea; subst hea
           cases hf₂ with
@@ -302,9 +302,9 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
           obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
           rw [cell₂] at hs₂; cases hs₂
           injection hweq with hty ha; subst ha
-          obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+          obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
           obtain ⟨_, henc, _⟩ := represents_construct_inv hrep₂
-          cases henc
+          simp at henc
   | @lam _ addr₁ tp₁ bp₁ lp₁ T₁ B₁ ℓ₁ cell₁ rt₁ rb₁ _ iht ihb =>
     intro h₂ k₂ E₂ p₂ w r₁ r₂ rep₂
     obtain ⟨s₁, a₁, enc₁, hs₁, hmem₁, hrep₁, rfl⟩ := represents_ptr_inv' r₁
@@ -322,7 +322,7 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
             obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
             rw [cell₂] at hs₂; cases hs₂
             injection hweq with hty ha; subst ha
-            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
             obtain ⟨ea₂, henc, hf₂⟩ := represents_construct_inv hrep₂
             injection henc with _ _ hea; subst hea
             cases hf₂ with
@@ -342,9 +342,9 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
             obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
             rw [cell₂] at hs₂; cases hs₂
             injection hweq with hty ha; subst ha
-            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
             obtain ⟨_, henc, _⟩ := represents_construct_inv hrep₂
-            cases henc
+            simp at henc
   | @forallE _ addr₁ tp₁ bp₁ lp₁ T₁ B₁ ℓ₁ cell₁ rt₁ rb₁ _ iht ihb =>
     intro h₂ k₂ E₂ p₂ w r₁ r₂ rep₂
     obtain ⟨s₁, a₁, enc₁, hs₁, hmem₁, hrep₁, rfl⟩ := represents_ptr_inv' r₁
@@ -362,7 +362,7 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
             obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
             rw [cell₂] at hs₂; cases hs₂
             injection hweq with hty ha; subst ha
-            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
             obtain ⟨ea₂, henc, hf₂⟩ := represents_construct_inv hrep₂
             injection henc with _ _ hea; subst hea
             cases hf₂ with
@@ -382,9 +382,9 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
             obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
             rw [cell₂] at hs₂; cases hs₂
             injection hweq with hty ha; subst ha
-            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
             obtain ⟨_, henc, _⟩ := represents_construct_inv hrep₂
-            cases henc
+            simp at henc
   | @letE _ addr₁ tp₁ vp₁ bp₁ T₁ V₁ B₁ cell₁ _ rv₁ rb₁ _ ihv ihb =>
     intro h₂ k₂ E₂ p₂ w r₁ r₂ rep₂
     obtain ⟨s₁, a₁, enc₁, hs₁, hmem₁, hrep₁, rfl⟩ := represents_ptr_inv' r₁
@@ -402,7 +402,7 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
             obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
             rw [cell₂] at hs₂; cases hs₂
             injection hweq with hty ha; subst ha
-            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
             obtain ⟨ea₂, henc, hf₂⟩ := represents_construct_inv hrep₂
             injection henc with _ _ hea; subst hea
             cases hf₂ with
@@ -424,9 +424,9 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
             obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
             rw [cell₂] at hs₂; cases hs₂
             injection hweq with hty ha; subst ha
-            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
             obtain ⟨_, henc, _⟩ := represents_construct_inv hrep₂
-            cases henc
+            simp at henc
   | @litNat _ addr₁ _ _ cell₁ _ _ =>
     intro h₂ k₂ E₂ p₂ w r₁ r₂ rep₂
     obtain ⟨s₁, a₁, enc₁, hs₁, hmem₁, hrep₁, rfl⟩ := represents_ptr_inv' r₁
@@ -442,9 +442,9 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
       obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
       rw [cell₂] at hs₂; cases hs₂
       injection hweq with hty ha; subst ha
-      obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+      obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
       obtain ⟨_, henc, _⟩ := represents_construct_inv hrep₂
-      cases henc
+      simp at henc
   | @litStr _ addr₁ _ _ _ cell₁ _ _ =>
     intro h₂ k₂ E₂ p₂ w r₁ r₂ rep₂
     obtain ⟨s₁, a₁, enc₁, hs₁, hmem₁, hrep₁, rfl⟩ := represents_ptr_inv' r₁
@@ -460,9 +460,9 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
       obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
       rw [cell₂] at hs₂; cases hs₂
       injection hweq with hty ha; subst ha
-      obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+      obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
       obtain ⟨_, henc, _⟩ := represents_construct_inv hrep₂
-      cases henc
+      simp at henc
   | @proj _ addr₁ _ ep₁ _ _ E₁' _ _ cell₁ _ re₁ ihe =>
     intro h₂ k₂ E₂ p₂ w r₁ r₂ rep₂
     obtain ⟨s₁, a₁, enc₁, hs₁, hmem₁, hrep₁, rfl⟩ := represents_ptr_inv' r₁
@@ -480,7 +480,7 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
             obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
             rw [cell₂] at hs₂; cases hs₂
             injection hweq with hty ha; subst ha
-            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
             obtain ⟨ea₂, henc, hf₂⟩ := represents_construct_inv hrep₂
             injection henc with _ _ hea; subst hea
             cases hf₂ with
@@ -500,9 +500,9 @@ theorem shapeOf_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_
             obtain ⟨s₂, a₂, enc₂, hs₂, hmem₂, hrep₂, hweq⟩ := represents_ptr_inv' r₂
             rw [cell₂] at hs₂; cases hs₂
             injection hweq with hty ha; subst ha
-            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty
+            obtain rfl : enc₂ = _ := hvalid _ hmem₂ _ hmem₁ rfl hty.symm
             obtain ⟨_, henc, _⟩ := represents_construct_inv hrep₂
-            cases henc
+            simp at henc
 
 /-- A valid ROM address determines `exprSize` for any `TmOExact` term it represents. -/
 theorem exprSize_eq_of_represents {rom : ROM F} (hvalid : rom.Valid) {κ : _root_.Address → KKey}
