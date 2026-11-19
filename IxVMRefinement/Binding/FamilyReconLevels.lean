@@ -1831,7 +1831,7 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
             have ext_go : Heap.Extends m1 _ :=
               ext1_21.trans (evrmp.heap_extends.trans (evgci.heap_extends.trans evrlen.heap_extends))
             have hgo := check_rules_go_levelsOk (t := t) (E₀ := E₀) hbd hnl32 rc.rules.toList 0
-              (fun cl (hcl : cl ∈ cs_w) => by
+              (fun cl hcl => by
                 have h1 : cl ∈ cs_ru := mem_of_eq hc_ru (by call_mem)
                 exact hsub cl (mem_of_eq hcs (by call_mem)))
               (raw_rules.mono ext_go (fun _ hm => hm)) evgo
