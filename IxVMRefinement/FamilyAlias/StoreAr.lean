@@ -144,7 +144,8 @@ theorem renLen_of_aliasEnv {env : Env .anon} {h : KKey → KKey} (hA : AliasEnv 
   obtain rfl := Option.some.inj hk
   refine ⟨ci', hft, ?_⟩
   have hq := hlt.length_eq
-  simpa [List.length_range] using hq
+  rw [List.length_range] at hq
+  exact hq
 
 /-- **Every block name stored has its model key stored at as many level parameters.** -/
 def ModelLen (env : Env .anon) (bn : List KKey) : Prop :=
