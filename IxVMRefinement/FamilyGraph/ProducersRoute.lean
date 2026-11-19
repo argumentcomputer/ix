@@ -33,7 +33,7 @@ namespace IxVM.Refinement.Typing
 
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
-open IxVM.Refinement.Core
+open IxVM.Refinement.Core hiding keyOf
 open IxVM.Refinement.Obs
 open IxVM.Consistency
 open IxVM.Refinement.Binding
@@ -63,7 +63,7 @@ def FamCallsModeled (calls : List (Call F)) : Prop :=
 /-- Top-level `KernelClaim::verify_claim` derivations satisfy `FamCallsModeled`. -/
 theorem FamCallsModeled.of_verifyClaim {d : Digest} {value : SourceValue F} {heap : Heap F}
     {calls : List (Call F)}
-    (ev : ObsFn Obs.W Claim.verifyClaim [Claim.digestValue d] [] value heap calls) :
+    (ev : ObsFn Obs.W IxVM.Refinement.verifyClaim [IxVM.Refinement.digestValue d] [] value heap calls) :
     FamCallsModeled calls :=
   fun _ _ _ _ _ hcl hb =>
     obsFn_check_family_modeled (by decide) (by decide) ev hcl hb
@@ -86,7 +86,7 @@ private theorem canonicalHashCoverage_of_step {K : FamRunCtx} {seeds : List _roo
 
 /-- A single observed non-zero `KernelModeled::block_is_modeled` call on `B` in a step store
 determines `Route.blockRoute E B = some true` and hence `ModeledRouteAt K.calls B`. -/
-theorem modeledRouteAt_of_obs {K : FamRunCtx} {seeds : List _root_.Address}
+theorem modeledRouteAt_of_block_is_modeled {K : FamRunCtx} {seeds : List _root_.Address}
     {rank : _root_.Address → Nat} {R E : Ixon.Env} {B : _root_.Address}
     {bp r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {b : Bytes.Address}
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
@@ -128,7 +128,7 @@ theorem FamRunCtx.modeledRouteAt_of_famCheck {K : FamRunCtx} {seeds : List _root
   obtain ⟨cs, h, h', rc, xb, xrb, r, -, ⟨b, hb, hbB⟩, -, -, hmem, -⟩ := hfc
   obtain ⟨r_mod, m_mod, m_mod', cs_mod, ev_mod, hr_mod, hb_mod, hsub_mod⟩ :=
     hfamMod rc xb xrb h b hmem hb
-  exact modeledRouteAt_of_obs hW hctx ev_mod hr_mod hsub_mod hb_mod hbB
+  exact modeledRouteAt_of_block_is_modeled hW hctx ev_mod hr_mod hsub_mod hb_mod hbB
 
 /-! ## `BatchGives.routed` and `BatchGives.listedNotScope` -/
 
@@ -246,8 +246,8 @@ theorem FamRunCtx.recArm_of {K : FamRunCtx} {seeds : List _root_.Address}
     rprj_check_const_rec_other hW.runStore hW.hashedStored hrc_pre ⟨a', ha', rfl⟩
       hrec_m0 rfl ev_ld hld ev_chk hsub_ld hsub_chk
   have hroute : ModeledRouteAt K.calls ib :=
-    modeledRouteAt_of_obs hW hctx ev_bm hbm_ne0 (fun cl hcl => hsub_chk cl (hsub_bm cl hcl))
-      hb_ib hb_ib_eq
+    modeledRouteAt_of_block_is_modeled hW hctx ev_bm hbm_ne0
+      (fun cl hcl => hsub_chk cl (hsub_bm cl hcl)) hb_ib hb_ib_eq
   -- Extract `K.Top ib` and `IndBlock K.E₀ ib` via `Core.iprjAddr ib 0` from `check_family_carriers`
   obtain ⟨cib', ca', ms_ib', rs', hC⟩ := FamRunCtx.check_family_carriers hW ⟨cs_fam, hfc⟩
   have hca_eq : ca' = ca := Option.some.inj (hC.recRec.record.symm.trans hca)
@@ -600,7 +600,7 @@ private theorem familyKey_of_motiveCarrierAt {t : Ix.Kernel.RoleTable} (ht : t.c
           | all d1 b1 =>
             rw [hnd1] at hdom hconv₂
             have hem_eq : d1 = em := Option.some.inj hdom
-            subst hem_eq
+            subst d1
             simp only [Ix.Kernel.Reader.convExpr] at hconv₂
             obtain ⟨mE, hmE, h1⟩ := except_bind_eq_ok hconv₂
             obtain ⟨bE, -, h2⟩ := except_bind_eq_ok h1
@@ -785,7 +785,7 @@ theorem FamRunCtx.fresh_of {K : FamRunCtx} {seeds : List _root_.Address}
     · exfalso
       rcases hstand with ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ <;> rw [hC.recRec.muts] at h <;> cases h
     · have hrs_eq : ms' = rs := Ixon.ConstantInfo.muts.inj (hmuts'.symm.trans hC.recRec.muts)
-      subst hrs_eq
+      subst ms'
       have hm_in : m ∈ rs.toList := by rw [← Array.getElem?_toList] at hk'; exact List.mem_of_getElem? hk'
       obtain ⟨rc_k, rfl⟩ := hC.recRec.recrs m hm_in
       rcases hx_or with rfl | ⟨_, _, hbad, -⟩
@@ -896,12 +896,12 @@ theorem FamRunCtx.batchGives_of_run {K : FamRunCtx} {seeds : List _root_.Address
     BatchGives K :=
   { recArm := FamRunCtx.recArm_of hW hctx
     routed := FamRunCtx.routed_of hW hctx hfamMod
-    inLogic := FamRunCtx.inLogic_of hW
-    blockOf := FamRunCtx.blockOf_of hW
+    inLogic := fun _ _ h _ hc => FamRunCtx.inLogic_of hW h hc
+    blockOf := fun _ _ _ _ _ h1 h2 hrb hx => FamRunCtx.blockOf_of hW h1 h2 hrb hx
     fresh := FamRunCtx.fresh_of hW hG hagree hctx hEnvWF hWhole
-    familyRefs := FamRunCtx.familyRefs_of hW
-    adviceRefs := FamRunCtx.adviceRefs_of hW
-    contWitness := FamRunCtx.contWitness_of hW
+    familyRefs := fun _ _ _ hS _ hu => FamRunCtx.familyRefs_of hW hS hu
+    adviceRefs := fun _ _ _ _ hS hown _ _ hk _ hu => FamRunCtx.adviceRefs_of hW hS hown hk hu
+    contWitness := fun _ _ _ _ hS hwit hncov => FamRunCtx.contWitness_of hW hS hwit hncov
     recUsesBlock := FamRunCtx.recUsesBlock_of hW
     listedNotScope := FamRunCtx.listedNotScope_of hW hctx hfamMod }
 
