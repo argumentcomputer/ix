@@ -3,6 +3,7 @@ import IxVMRefinement.Binding.Defs
 import IxVMRefinement.FamilyAlias.Target
 import IxVMRefinement.Binding.FamilyFlat
 import IxVMRefinement.Binding.FamilyRecon
+import IxVMRefinement.Binding.StoreLevelsDef
 import IxVMRefinement.Assembly.AdviceListed
 import IxVMRefinement.Obs.KernelModeled1
 import IxVMRefinement.L1.Stream
@@ -352,6 +353,9 @@ structure FamilyAdmits (ρ : BRun) (t : Ix.Kernel.RoleTable) (g : Nat) (R R' : I
     ¬ (∃ rs : Array Ixon.MutConst, c.info = .muts rs ∧ 0 < rs.size ∧
       ∀ m ∈ rs.toList, ∃ r, m = Ixon.MutConst.recr r) →
     ρ.checked a (valLimit g) ∨ ∃ B, famOf B = some a ∧ New R R' B
+  /-- Blob-independent level-parameter well-scopedness and inductive parameter coherence on the
+  group's store `R'`. -/
+  levelsParams : StoreLevelsParams t R'
 
 /-- **The family record of a new block is held by the group's store, with its member
 projections**: from `famNew` and the store's closure under block members. -/

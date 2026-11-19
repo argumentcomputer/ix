@@ -1,5 +1,6 @@
 import IxVMRefinement.Binding.FoldFamily
 import IxVMRefinement.Binding.RunPredicate
+import IxVMRefinement.Binding.StoreLevelsBasis
 
 /-! # The family form at the six basis groups
 
@@ -256,7 +257,8 @@ theorem recordsStored_basis {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
 
 /-- **The empty family map is stored** at a store none of whose blocks routes as modeled. -/
 theorem storedFamilies_basis {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
-    {env : Ix.Kernel.Env .anon} (hroute : ∀ B, blockRoute R B ≠ some true) :
+    {env : Ix.Kernel.Env .anon} (hroute : ∀ B, blockRoute R B ≠ some true)
+    (hlp : StoreLevelsParams t R) :
     StoredFamilies t R env (fun _ => none) where
   selected := fun B cb hB hr hst => absurd hr (hroute B)
   family := fun B rb h => nomatch h
@@ -265,6 +267,7 @@ theorem storedFamilies_basis {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
   flat := storedFamiliesFlat_none
   form := storedFamiliesForm_none
   recs := fun _ _ _ _ h => nomatch h
+  levelsParams := hlp
 
 /-! ## The basis hypothesis -/
 
@@ -282,7 +285,7 @@ theorem basisOverW_of_run (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
   have hb' : ∀ a, basisStore.blobs.get? a = (Rs 6).blobs.get? a := fun a => (hb a).symm
   refine ⟨basisEnv, bndOver_storeCongr hc' hb' (bndOver_basis_at L ht hpre hall),
     walkedStored_basis ht hpre hc', recordsStored_basis ht hpre hc', fun _ => none,
-    storedFamilies_basis fun B => ?_⟩
+    storedFamilies_basis (fun B => ?_) ((storeLevelsParams_basis t).of_storeCongr hc')⟩
   rw [blockRoute_storeCongr hc' B]
   exact blockRoute_basisStore_ne_true B
 

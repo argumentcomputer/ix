@@ -108,6 +108,9 @@ structure StoredFamilies (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (env : Ix.Kern
   header-count facts of `KernelModeled::check_recs`. -/
   recs : ∀ B rb cb crb, famOf B = some rb → recordOf R B = some cb → recordOf R rb = some crb →
     StoredFamilyRecs t R env B cb rb crb
+  /-- Blob-independent level-parameter well-scopedness and inductive parameter coherence over the
+  witness's store `R`. -/
+  levelsParams : StoreLevelsParams t R
 
 /-! ## The flattened families across stores -/
 

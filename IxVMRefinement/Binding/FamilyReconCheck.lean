@@ -5493,6 +5493,9 @@ theorem remainingFamilyClauses_of_run {calls : List (Call F)} {bAddr : _root_.Ad
       have ers : rs' = rs := Ixon.ConstantInfo.muts.inj (hF.record.muts.symm.trans hrs)
       subst ms' rs'
       exact ⟨off, hB.1, hlv⟩
+    levelsParams := fun g hg6 hg77 =>
+      storeLevelsParams_of_groupStore hC hbd hb hbr hax hpin hcheck hroots hstep hval hvalAll hws
+        (Nat.le_succ_of_le hg6) (Nat.succ_le_of_lt hg77)
   }
 
 /-- **Closed `RemainingStoreClausesOfRunNC`**: discharges the remaining family clauses for any

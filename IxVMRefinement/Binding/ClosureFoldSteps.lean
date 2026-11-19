@@ -463,13 +463,29 @@ theorem closureFold_start
       exact (hC.fams.recs B rb cb' crb' h₀ hF.block.record hF.record.record).mono
         (fun a c hac => recordOf_closureStore_of_R hC.admits hac)
         (closureStore_spec hC.admits).le₁.2 (fun h => h)
-    · refine ⟨fun ms' rs' k rc _ hrs' hk => ?_⟩
-      exfalso
-      obtain ⟨cb', crb', ms, rs, hcb', hcrb', -, -, hnB, -, -⟩ := fam_new hC h₁
+    · exfalso
+      obtain ⟨cb', crb', ms', rs', hcb', hcrb', -, hrs', hnB, -, -⟩ := fam_new hC h₁
       have e : crb' = crb := rec_eq hcrb' hcrb
       subst e
-      have hx : ConstAddrOf rb crb' (memberAddr rb k (.recr rc)) :=
-        Or.inr ⟨rs', k, .recr rc, hrs', hk, Or.inl rfl⟩
+      obtain ⟨cbF, msF, crbF, rsF, flatF, hFF⟩ := hC.checks.family B rb h₁
+      obtain ⟨cb0, ms0, hcb0, hms0, hpos0⟩ := hC.run.famNonempty B rb h₁
+      have ecbF : cbF = cb0 := rec_eq hFF.block.record hcb0
+      subst ecbF
+      have emsF : msF = ms0 := Ixon.ConstantInfo.muts.inj (hFF.block.muts.symm.trans hms0)
+      subst emsF
+      have ecrbF : crbF = crb' := rec_eq hFF.record.record (rec₂₀ hC.admits (rec₁₂ hcrb'))
+      subst ecrbF
+      have hflat0 : flatF[0]? = some (memberAddr B 0 (msF[0]'hpos0)) :=
+        hFF.originals 0 _ (Array.getElem?_eq_getElem hpos0)
+      have hrs_pos : 0 < rsF.size := by
+        rw [← hFF.covers]
+        exact (List.getElem?_eq_some_iff.mp hflat0).1
+      obtain ⟨rc0, hrc0⟩ := hFF.record.recrs (rsF[0]'hrs_pos)
+        (Array.mem_toList_iff.mpr (Array.getElem_mem hrs_pos))
+      have hget0 : rsF[0]? = some (.recr rc0) := by
+        rw [Array.getElem?_eq_getElem hrs_pos, hrc0]
+      have hx : ConstAddrOf rb crb' (memberAddr rb 0 (.recr rc0)) :=
+        Or.inr ⟨rsF, 0, .recr rc0, hFF.record.muts, hget0, Or.inl rfl⟩
       exact owned_not_stored hC htwf ⟨hnB, fam_unclaimed hC h₁, _, cb', hcb',
         Or.inr ⟨rb, crb', h₁, hcrb', hx⟩⟩ ⟨cb', hcb', Or.inr ⟨rb, crb', h₁, hcrb', hx⟩⟩ (hall _ hx)
 

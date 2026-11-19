@@ -573,6 +573,8 @@ structure RemainingFamilyClauses (calls : List (Call F)) (bAddr : _root_.Address
       ∀ (ind₀ : Ixon.Inductive) (k : Nat) (rc : Ixon.Recursor),
         ms[0]? = some (.indc ind₀) → rs[k]? = some (.recr rc) →
         rc.lvls.toNat = ind₀.lvls.toNat + off
+  levelsParams : ∀ g, 6 ≤ g → g < 77 →
+    StoreLevelsParams t (groupStore t E₀ (runPayload calls bAddr t) (g + 1))
 
 section Families
 
@@ -1156,7 +1158,8 @@ theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRows
         checked := fun a c hn hc hu htw => by
           rcases groupStore_checked hC hb hax hP hg6 hw a c hn hc hu with h | h
           · exact Or.inl h
-          · exact hpayChk a c h hn hc hu htw }
+          · exact hpayChk a c h hn hc hu htw
+        levelsParams := hR.levelsParams g hg6 hg }
 
 end Families
 
