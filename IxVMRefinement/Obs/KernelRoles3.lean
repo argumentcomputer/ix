@@ -2021,11 +2021,73 @@ theorem «KernelRoles::anchor_walked».obs {x_r : SourceValue F} {h h' : Heap F}
                                 exact «KernelRoles::anchor_walked».Path.other hne18 hne26 hne34 hne42 hne50 hne58 hne66 hne74 hne82 hne90 hne98 hne106 hne114 hne122 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
                               · exact (matchPattern_wildcard_none nm124).elim
 
+/-- The `let`-bound match of `KernelRoles::validate_standard_axiom` at `[1, 1, 1, 1, 1, 1, 1, 1, 0]`: one constructor per combination of selected arms. -/
+inductive «KernelRoles::validate_standard_axiom».Seg_xvdsixll (e0_sharing e1_refs e2_c e3_nlvls e4_ty e5_u e6_rc e7_tbl e8_r e9_ci : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
+    (calls : List (Call F)) : Prop where
+  | Nil
+      (ld_bjblvupj : loadValue h e0_sharing = .ok (.construct Names.«Lists::Node<&Ixon::Expr>» "Nil" []))
+      (he_kkahzqhw : r = (.tuple []))
+      (he_hvdubghk : h' = h)
+      (hc_dmcrmynr : calls = [])
+  | Cons
+      (w_iubooaha : SourceValue F) (w_fpusufdu : SourceValue F)
+      (ld_bjblvupj : loadValue h e0_sharing = .ok (.construct Names.«Lists::Node<&Ixon::Expr>» "Cons" [w_iubooaha, w_fpusufdu]))
+      (heq_htcsbwbd : ((.field 0) : SourceValue F) = (.field 1))
+      (he_aofetxnm : r = (.tuple []))
+      (he_bedrhmge : h' = h)
+      (hc_melmuvrg : calls = [])
+
+/-- **Every observed derivation of the `let`-bound match of `KernelRoles::validate_standard_axiom` at `[1, 1, 1, 1, 1, 1, 1, 1, 0]` takes one of its paths.** -/
+theorem «KernelRoles::validate_standard_axiom».seg_xvdsixll {e0_sharing e1_refs e2_c e3_nlvls e4_ty e5_u e6_rc e7_tbl e8_r e9_ci : SourceValue F} {h h' : Heap F} {r : SourceValue F}
+    {calls : List (Call F)}
+    (d0 : ObsExpr W [] [("sharing", e0_sharing), ("refs", e1_refs), ("c", e2_c), ("nlvls", e3_nlvls), ("ty", e4_ty), ("u", e5_u), ("rc", e6_rc), ("tbl", e7_tbl), ("r", e8_r), ("ci", e9_ci)] (Expr.sub IxVM.KernelRoles.validate_standard_axiom.body [1, 1, 1, 1, 1, 1, 1, 1, 0]) h r h' calls) :
+    «KernelRoles::validate_standard_axiom».Seg_xvdsixll e0_sharing e1_refs e2_c e3_nlvls e4_ty e5_u e6_rc e7_tbl e8_r e9_ci h r h' calls := by
+  simp only [Expr.sub, Expr.childAt, Expr.children, IxVM.KernelRoles.validate_standard_axiom, List.map_cons, List.map_nil] at d0
+  obtain ⟨v337, m338, bs339, body340, c341, c342, d343, sel344, d345, rfl⟩ := d0.matchValue_inv
+  obtain ⟨p346, d347, ld_bjblvupj⟩ := d343.load_inv
+  obtain ⟨l349, rfl, rfl⟩ := d347.var_inv
+  simp at l349
+  subst l349
+  rcases selectArm_cons_inv sel344 with ⟨mt350, rfl⟩ | ⟨nm351, sel352⟩
+  · obtain ⟨vs353, hv354, -, ml355⟩ := matchPattern_construct_inv mt350
+    rw [Names.n16338221799578455114] at hv354
+    subst hv354
+    obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml355
+    obtain ⟨vs356, a357, rfl⟩ := d345.tuple_inv
+    obtain ⟨rfl, rfl, rfl⟩ := a357.nil_inv
+    exact «KernelRoles::validate_standard_axiom».Seg_xvdsixll.Nil ld_bjblvupj rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+  · have hne361 := matchPattern_construct_none (by trivial) nm351
+    simp only [Names.n16338221799578455114] at hne361
+    rcases selectArm_cons_inv sel352 with ⟨mt362, rfl⟩ | ⟨nm363, sel364⟩
+    · obtain ⟨vs365, hv366, -, ml367⟩ := matchPattern_construct_inv mt362
+      rw [Names.n16338221799578455114] at hv366
+      subst hv366
+      obtain ⟨w_iubooaha, vs370, b371, b372, rfl, mt373, ml374, rfl⟩ := matchListWith_cons_inv ml367
+      obtain rfl := matchPattern_wildcard_inv mt373
+      obtain ⟨w_fpusufdu, vs375, b376, b377, rfl, mt378, ml379, rfl⟩ := matchListWith_cons_inv ml374
+      obtain rfl := matchPattern_wildcard_inv mt378
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml379
+      obtain ⟨v380, m381, bs382, c383, c384, d385, mt386, d387, rfl⟩ := d345.letValue_inv
+      obtain ⟨vs388, a389, ap390⟩ := d385.builtin_inv
+      obtain ⟨v391, vs393, m394, c395, c396, rfl, d397, a398, rfl⟩ := a389.cons_inv
+      obtain ⟨rfl, rfl, rfl⟩ := d397.literal_inv
+      obtain ⟨v392, vs399, m400, c401, c402, rfl, d403, a404, rfl⟩ := a398.cons_inv
+      obtain ⟨rfl, rfl, rfl⟩ := d403.literal_inv
+      obtain ⟨rfl, rfl, rfl⟩ := a404.nil_inv
+      obtain ⟨heq_htcsbwbd, rfl⟩ := Builtin.assertEq_inv ap390
+      obtain rfl := matchPattern_wildcard_inv mt386
+      obtain ⟨vs406, a407, rfl⟩ := d387.tuple_inv
+      obtain ⟨rfl, rfl, rfl⟩ := a407.nil_inv
+      exact «KernelRoles::validate_standard_axiom».Seg_xvdsixll.Cons _ _ ld_bjblvupj heq_htcsbwbd rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne411 := matchPattern_construct_none (by trivial) nm363
+      simp only [Names.n16338221799578455114] at hne411
+      exact (selectArm_nil_inv sel364).elim
+
 /-- The evaluation paths of `KernelRoles::validate_standard_axiom`: one constructor per combination of selected arms. -/
 inductive «KernelRoles::validate_standard_axiom».Path (x_rc x_tbl x_r x_ci : SourceValue F) (h : Heap F) (r : SourceValue F) (h' : Heap F)
     (calls : List (Call F)) : Prop where
   | run
-      (x_nlvls : SourceValue F) (x_ty : SourceValue F) (x_u : SourceValue F) (v59 : SourceValue F) (m60 : Heap F) (cs70 : List (Call F)) (v96 : SourceValue F) (m97 : Heap F) (cs107 : List (Call F)) (m128 : Heap F) (v140 : SourceValue F) (m141 : Heap F) (cs151 : List (Call F)) (v155 : SourceValue F) (m164 : Heap F) (cs172 : List (Call F)) (m192 : Heap F) (cs202 : List (Call F)) (v205 : SourceValue F) (m207 : Heap F) (cs215 : List (Call F)) (w250 : SourceValue F) (w251 : SourceValue F) (x_refs : SourceValue F) (w252 : SourceValue F) (w253 : SourceValue F) (v279 : SourceValue F) (m280 : Heap F) (cs290 : List (Call F)) (v294 : SourceValue F) (m304 : Heap F) (cs312 : List (Call F)) (cs341 : List (Call F)) (v346 : SourceValue F) (m363 : Heap F) (cs371 : List (Call F))
+      (x_nlvls : SourceValue F) (x_ty : SourceValue F) (x_u : SourceValue F) (v59 : SourceValue F) (m60 : Heap F) (cs70 : List (Call F)) (v96 : SourceValue F) (m97 : Heap F) (cs107 : List (Call F)) (m128 : Heap F) (v140 : SourceValue F) (m141 : Heap F) (cs151 : List (Call F)) (v155 : SourceValue F) (m164 : Heap F) (cs172 : List (Call F)) (m192 : Heap F) (cs202 : List (Call F)) (v205 : SourceValue F) (m207 : Heap F) (cs215 : List (Call F)) (w_gdqihjma : SourceValue F) (x_sharing : SourceValue F) (x_refs : SourceValue F) (w_lipreyyy : SourceValue F) (w_yyfbzqhe : SourceValue F) (v279 : SourceValue F) (m280 : Heap F) (cs290 : List (Call F)) (v294 : SourceValue F) (m304 : Heap F) (cs312 : List (Call F)) (v_lvsxlpfs : SourceValue F) (m_abygsahs : Heap F) (cs_zqnliqxl : List (Call F)) (cs341 : List (Call F)) (v346 : SourceValue F) (m363 : Heap F) (cs371 : List (Call F))
       (hv15 : x_ci = (.construct "KernelTypes::KConstantInfo" "Axiom" [x_nlvls, x_ty, x_u]))
       (heq58 : (x_u : SourceValue F) = (.field 0))
       (ev72 : ObsFn W "KernelCheck::validate_expr_well_scoped" [x_ty, (.field 0), x_nlvls] h v59 m60 cs70)
@@ -2034,12 +2096,13 @@ inductive «KernelRoles::validate_standard_axiom».Path (x_rc x_tbl x_r x_ci : S
       (ev174 : ObsFn W "KernelRoleSpec::role_type" [x_tbl, x_r] m97 v155 m164 cs172)
       (ev153 : ObsFn W "KernelRoles::assert_type_pinned" [x_ty, v155] m164 v140 m141 cs151)
       (ev217 : ObsFn W "KernelRoles::role_bound_addr" [x_tbl, x_r] m141 v205 m207 cs215)
-      (ev204 : ObsFn W "Ingress::load_verified_constant" [v205] m207 (.construct "Ixon::Constant" "Mk" [w250, w251, x_refs, w252, w253]) m192 cs202)
+      (ev204 : ObsFn W "Ingress::load_verified_constant" [v205] m207 (.construct "Ixon::Constant" "Mk" [w_gdqihjma, x_sharing, x_refs, w_lipreyyy, w_yyfbzqhe]) m192 cs202)
       (ev314 : ObsFn W "KernelRoles::role_bound_addr" [x_tbl, x_r] m192 v294 m304 cs312)
-      (ev292 : ObsFn W "KernelClaim::assert_safe_record_refs" [x_rc, v294, (.construct "Ixon::Constant" "Mk" [w250, w251, x_refs, w252, w253])] m304 v279 m280 cs290)
-      (ev373 : ObsFn W "KernelClaim::const_idxs_of" [(.construct "Ixon::Constant" "Mk" [w250, w251, x_refs, w252, w253])] m280 v346 m363 cs371)
+      (ev292 : ObsFn W "KernelClaim::assert_safe_record_refs" [x_rc, v294, (.construct "Ixon::Constant" "Mk" [w_gdqihjma, x_sharing, x_refs, w_lipreyyy, w_yyfbzqhe])] m304 v279 m280 cs290)
+      (sg_betjktew : «KernelRoles::validate_standard_axiom».Seg_xvdsixll x_sharing x_refs (.construct "Ixon::Constant" "Mk" [w_gdqihjma, x_sharing, x_refs, w_lipreyyy, w_yyfbzqhe]) x_nlvls x_ty x_u x_rc x_tbl x_r x_ci m280 v_lvsxlpfs m_abygsahs cs_zqnliqxl)
+      (ev373 : ObsFn W "KernelClaim::const_idxs_of" [(.construct "Ixon::Constant" "Mk" [w_gdqihjma, x_sharing, x_refs, w_lipreyyy, w_yyfbzqhe])] m_abygsahs v346 m363 cs371)
       (ev343 : ObsFn W "KernelClaim::walk_refs_transitive" [x_rc, x_refs, v346, (.field 0)] m363 r h' cs341)
-      (hc388 : calls = ((⟨"KernelCheck::validate_expr_well_scoped", [x_ty, (.field 0), x_nlvls], h⟩ : Call F) :: (cs70 ++ ((⟨"KernelInfer::k_ensure_sort", [x_rc, x_ty, (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m60).length)], m128⟩ : Call F) :: (cs107 ++ ((⟨"KernelRoleSpec::role_type", [x_tbl, x_r], m97⟩ : Call F) :: (cs172 ++ ((⟨"KernelRoles::assert_type_pinned", [x_ty, v155], m164⟩ : Call F) :: (cs151 ++ ((⟨"KernelRoles::role_bound_addr", [x_tbl, x_r], m141⟩ : Call F) :: (cs215 ++ ((⟨"Ingress::load_verified_constant", [v205], m207⟩ : Call F) :: (cs202 ++ ((⟨"KernelRoles::role_bound_addr", [x_tbl, x_r], m192⟩ : Call F) :: (cs312 ++ ((⟨"KernelClaim::assert_safe_record_refs", [x_rc, v294, (.construct "Ixon::Constant" "Mk" [w250, w251, x_refs, w252, w253])], m304⟩ : Call F) :: (cs290 ++ ((⟨"KernelClaim::const_idxs_of", [(.construct "Ixon::Constant" "Mk" [w250, w251, x_refs, w252, w253])], m280⟩ : Call F) :: (cs371 ++ ((⟨"KernelClaim::walk_refs_transitive", [x_rc, x_refs, v346, (.field 0)], m363⟩ : Call F) :: cs341))))))))))))))))))))
+      (hc388 : calls = ((⟨"KernelCheck::validate_expr_well_scoped", [x_ty, (.field 0), x_nlvls], h⟩ : Call F) :: (cs70 ++ ((⟨"KernelInfer::k_ensure_sort", [x_rc, x_ty, (.ptr (.enum Names.«Lists::Node<&KernelTypes::KExprNode>») (m60).length)], m128⟩ : Call F) :: (cs107 ++ ((⟨"KernelRoleSpec::role_type", [x_tbl, x_r], m97⟩ : Call F) :: (cs172 ++ ((⟨"KernelRoles::assert_type_pinned", [x_ty, v155], m164⟩ : Call F) :: (cs151 ++ ((⟨"KernelRoles::role_bound_addr", [x_tbl, x_r], m141⟩ : Call F) :: (cs215 ++ ((⟨"Ingress::load_verified_constant", [v205], m207⟩ : Call F) :: (cs202 ++ ((⟨"KernelRoles::role_bound_addr", [x_tbl, x_r], m192⟩ : Call F) :: (cs312 ++ ((⟨"KernelClaim::assert_safe_record_refs", [x_rc, v294, (.construct "Ixon::Constant" "Mk" [w_gdqihjma, x_sharing, x_refs, w_lipreyyy, w_yyfbzqhe])], m304⟩ : Call F) :: (cs290 ++ (cs_zqnliqxl ++ ((⟨"KernelClaim::const_idxs_of", [(.construct "Ixon::Constant" "Mk" [w_gdqihjma, x_sharing, x_refs, w_lipreyyy, w_yyfbzqhe])], m_abygsahs⟩ : Call F) :: (cs371 ++ ((⟨"KernelClaim::walk_refs_transitive", [x_rc, x_refs, v346, (.field 0)], m363⟩ : Call F) :: cs341)))))))))))))))))))))
 
 /-- **Every observed derivation of `KernelRoles::validate_standard_axiom` takes one of its paths.** -/
 theorem «KernelRoles::validate_standard_axiom».obs {x_rc x_tbl x_r x_ci : SourceValue F} {h h' : Heap F} {r : SourceValue F}
@@ -2153,70 +2216,74 @@ theorem «KernelRoles::validate_standard_axiom».obs {x_rc x_tbl x_r x_ci : Sour
     · obtain ⟨vs247, hv248, -, ml249⟩ := matchPattern_construct_inv mt244
       rw [Names.n1557030883061810801] at hv248
       subst hv248
-      obtain ⟨w250, vs254, b255, b256, rfl, mt257, ml258, rfl⟩ := matchListWith_cons_inv ml249
-      obtain rfl := matchPattern_wildcard_inv mt257
-      obtain ⟨w251, vs259, b260, b261, rfl, mt262, ml263, rfl⟩ := matchListWith_cons_inv ml258
-      obtain rfl := matchPattern_wildcard_inv mt262
-      obtain ⟨x_refs, vs264, b265, b266, rfl, mt267, ml268, rfl⟩ := matchListWith_cons_inv ml263
-      obtain rfl := matchPattern_bind_inv mt267
-      obtain ⟨w252, vs269, b270, b271, rfl, mt272, ml273, rfl⟩ := matchListWith_cons_inv ml268
-      obtain rfl := matchPattern_wildcard_inv mt272
-      obtain ⟨w253, vs274, b275, b276, rfl, mt277, ml278, rfl⟩ := matchListWith_cons_inv ml273
-      obtain rfl := matchPattern_wildcard_inv mt277
-      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml278
-      obtain ⟨v279, m280, bs281, c282, c283, d284, mt285, d286, rfl⟩ := d242.letValue_inv
-      obtain ⟨vs287, m288, c289, cs290, a291, ev292, rfl⟩ := d284.call_inv
+      obtain ⟨w_gdqihjma, vs253, b254, b255, rfl, mt256, ml257, rfl⟩ := matchListWith_cons_inv ml249
+      obtain rfl := matchPattern_wildcard_inv mt256
+      obtain ⟨x_sharing, vs258, b259, b260, rfl, mt261, ml262, rfl⟩ := matchListWith_cons_inv ml257
+      obtain rfl := matchPattern_bind_inv mt261
+      obtain ⟨x_refs, vs263, b264, b265, rfl, mt266, ml267, rfl⟩ := matchListWith_cons_inv ml262
+      obtain rfl := matchPattern_bind_inv mt266
+      obtain ⟨w_lipreyyy, vs268, b269, b270, rfl, mt271, ml272, rfl⟩ := matchListWith_cons_inv ml267
+      obtain rfl := matchPattern_wildcard_inv mt271
+      obtain ⟨w_yyfbzqhe, vs273, b274, b275, rfl, mt276, ml277, rfl⟩ := matchListWith_cons_inv ml272
+      obtain rfl := matchPattern_wildcard_inv mt276
+      obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml277
+      obtain ⟨v279, m280, bs280, c281, c282, d283, mt284, d285, rfl⟩ := d242.letValue_inv
+      obtain ⟨vs286, m287, c288, cs290, a290, ev292, rfl⟩ := d283.call_inv
       rw [instanceName_plain_some] at ev292
-      obtain ⟨v293, vs296, m297, c298, c299, rfl, d300, a301, rfl⟩ := a291.cons_inv
-      obtain ⟨l302, rfl, rfl⟩ := d300.var_inv
-      simp at l302
-      subst l302
-      obtain ⟨v294, vs303, m304, c305, c306, rfl, d307, a308, rfl⟩ := a301.cons_inv
-      obtain ⟨vs309, m310, c311, cs312, a313, ev314, rfl⟩ := d307.call_inv
+      obtain ⟨v292, vs295, m296, c297, c298, rfl, d299, a300, rfl⟩ := a290.cons_inv
+      obtain ⟨l301, rfl, rfl⟩ := d299.var_inv
+      simp at l301
+      subst l301
+      obtain ⟨v294, vs302, m304, c304, c305, rfl, d306, a307, rfl⟩ := a300.cons_inv
+      obtain ⟨vs308, m309, c310, cs312, a312, ev314, rfl⟩ := d306.call_inv
       rw [instanceName_plain_some] at ev314
-      obtain ⟨v315, vs317, m318, c319, c320, rfl, d321, a322, rfl⟩ := a313.cons_inv
-      obtain ⟨l323, rfl, rfl⟩ := d321.var_inv
-      simp at l323
-      subst l323
-      obtain ⟨v316, vs324, m325, c326, c327, rfl, d328, a329, rfl⟩ := a322.cons_inv
-      obtain ⟨l330, rfl, rfl⟩ := d328.var_inv
-      simp at l330
-      subst l330
-      obtain ⟨rfl, rfl, rfl⟩ := a329.nil_inv
-      obtain ⟨v295, vs331, m332, c333, c334, rfl, d335, a336, rfl⟩ := a308.cons_inv
-      obtain ⟨l337, rfl, rfl⟩ := d335.var_inv
-      simp at l337
-      subst l337
-      obtain ⟨rfl, rfl, rfl⟩ := a336.nil_inv
-      obtain rfl := matchPattern_wildcard_inv mt285
-      obtain ⟨vs338, m339, c340, cs341, a342, ev343, rfl⟩ := d286.call_inv
+      obtain ⟨v314, vs316, m317, c318, c319, rfl, d320, a321, rfl⟩ := a312.cons_inv
+      obtain ⟨l322, rfl, rfl⟩ := d320.var_inv
+      simp at l322
+      subst l322
+      obtain ⟨v315, vs323, m324, c325, c326, rfl, d327, a328, rfl⟩ := a321.cons_inv
+      obtain ⟨l329, rfl, rfl⟩ := d327.var_inv
+      simp at l329
+      subst l329
+      obtain ⟨rfl, rfl, rfl⟩ := a328.nil_inv
+      obtain ⟨v_294, vs330, m331, c332, c333, rfl, d334, a335, rfl⟩ := a307.cons_inv
+      obtain ⟨l336, rfl, rfl⟩ := d334.var_inv
+      simp at l336
+      subst l336
+      obtain ⟨rfl, rfl, rfl⟩ := a335.nil_inv
+      obtain rfl := matchPattern_wildcard_inv mt284
+      obtain ⟨v_lvsxlpfs, m_abygsahs, bs414, cs_zqnliqxl, c416, d417, mt418, d419, rfl⟩ := d285.letValue_inv
+      have sg_betjktew := «KernelRoles::validate_standard_axiom».seg_xvdsixll d417
+      clear d417
+      obtain rfl := matchPattern_wildcard_inv mt418
+      obtain ⟨vs421, m422, c423, cs341, a425, ev343, rfl⟩ := d419.call_inv
       rw [instanceName_plain_some] at ev343
-      obtain ⟨v344, vs348, m349, c350, c351, rfl, d352, a353, rfl⟩ := a342.cons_inv
-      obtain ⟨l354, rfl, rfl⟩ := d352.var_inv
-      simp at l354
-      subst l354
-      obtain ⟨v345, vs355, m356, c357, c358, rfl, d359, a360, rfl⟩ := a353.cons_inv
-      obtain ⟨l361, rfl, rfl⟩ := d359.var_inv
-      simp at l361
-      subst l361
-      obtain ⟨v346, vs362, m363, c364, c365, rfl, d366, a367, rfl⟩ := a360.cons_inv
-      obtain ⟨vs368, m369, c370, cs371, a372, ev373, rfl⟩ := d366.call_inv
+      obtain ⟨v427, vs431, m432, c433, c434, rfl, d435, a436, rfl⟩ := a425.cons_inv
+      obtain ⟨l437, rfl, rfl⟩ := d435.var_inv
+      simp at l437
+      subst l437
+      obtain ⟨v428, vs438, m439, c440, c441, rfl, d442, a443, rfl⟩ := a436.cons_inv
+      obtain ⟨l444, rfl, rfl⟩ := d442.var_inv
+      simp at l444
+      subst l444
+      obtain ⟨v346, vs445, m363, c447, c448, rfl, d449, a450, rfl⟩ := a443.cons_inv
+      obtain ⟨vs451, m452, c453, cs371, a455, ev373, rfl⟩ := d449.call_inv
       rw [instanceName_plain_some] at ev373
-      obtain ⟨v374, vs375, m376, c377, c378, rfl, d379, a380, rfl⟩ := a372.cons_inv
-      obtain ⟨l381, rfl, rfl⟩ := d379.var_inv
-      simp at l381
-      subst l381
-      obtain ⟨rfl, rfl, rfl⟩ := a380.nil_inv
-      obtain ⟨v347, vs382, m383, c384, c385, rfl, d386, a387, rfl⟩ := a367.cons_inv
-      obtain ⟨rfl, rfl, rfl⟩ := d386.literal_inv
-      obtain ⟨rfl, rfl, rfl⟩ := a387.nil_inv
-      try simp only [Value.type, List.map_cons, List.map_nil] at hv15 heq58 ev72 hm136 ev109 ev174 ev153 ev217 ev204 ev314 ev292 ev373 ev343 ⊢
-      exact «KernelRoles::validate_standard_axiom».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 heq58 ev72 hm136 ev109 ev174 ev153 ev217 ev204 ev314 ev292 ev373 ev343 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-    · have hne389 := matchPattern_construct_none (by trivial) nm245
-      simp only [Names.n1557030883061810801] at hne389
+      obtain ⟨v457, vs458, m459, c460, c461, rfl, d462, a463, rfl⟩ := a455.cons_inv
+      obtain ⟨l464, rfl, rfl⟩ := d462.var_inv
+      simp at l464
+      subst l464
+      obtain ⟨rfl, rfl, rfl⟩ := a463.nil_inv
+      obtain ⟨v430, vs465, m466, c467, c468, rfl, d469, a470, rfl⟩ := a450.cons_inv
+      obtain ⟨rfl, rfl, rfl⟩ := d469.literal_inv
+      obtain ⟨rfl, rfl, rfl⟩ := a470.nil_inv
+      try simp only [Value.type, List.map_cons, List.map_nil] at hv15 heq58 ev72 hm136 ev109 ev174 ev153 ev217 ev204 ev314 ev292 sg_betjktew ev373 ev343 ⊢
+      exact «KernelRoles::validate_standard_axiom».Path.run _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hv15 heq58 ev72 hm136 ev109 ev174 ev153 ev217 ev204 ev314 ev292 sg_betjktew ev373 ev343 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+    · have hne472 := matchPattern_construct_none (by trivial) nm245
+      simp only [Names.n1557030883061810801] at hne472
       exact (selectArm_nil_inv sel246).elim
-  · have hne390 := matchPattern_construct_none (by trivial) nm12
-    simp only [Names.n11677430323439928978] at hne390
+  · have hne473 := matchPattern_construct_none (by trivial) nm12
+    simp only [Names.n11677430323439928978] at hne473
     exact (selectArm_nil_inv sel13).elim
 
 /-- The evaluation paths of `KernelRoles::validate_inert_axiom`: one constructor per combination of selected arms. -/

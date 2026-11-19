@@ -1530,7 +1530,8 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
                 (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465)
                 (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
                 (ev686 := ev686) (ev716 := ev716) (ev759 := ev759) (ev817 := ev817)
-                (ev796 := ev796) (ev852 := ev852) (ev_ursqbimm := evNoRole) (ev874 := ev874)
+                (ev796 := ev796) (ev852 := ev852) (ev_ursqbimm := evNoRole)
+                (ev_srfmazjk := evNoTypeRole) (ev874 := ev874)
                 (ev896 := ev896) (ev960 := ev960) (ev939 := ev939) (ev1011 := ev1011)
                 (ev990 := ev990) (ev_edyzsqzv := evMV1) (ev_gkddqxhv := evCat)
                 (ev_ittpynob := evMV2) (ev_biaifgpd := evMV3) (ev1203 := ev1203)
@@ -1598,6 +1599,7 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
                   refine step ev796 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
                   refine step ev852 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
                   refine step evNoRole (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
+                  refine step evNoTypeRole (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
                   refine stepSym ev874 Obs.Names.«Lists::length<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
                   refine step ev896 (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
                   refine stepSym ev960 Obs.Names.«Lists::concat<&[Field; 32]>».symbol (by simp) (by decide) (by decide) (by decide) hcl hle hsub fun hcl hle hsub => ?_
