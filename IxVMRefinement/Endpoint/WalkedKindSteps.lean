@@ -42,17 +42,18 @@ and is imported by the composed statement.
   registry reads at the parent that heads the record's major premise (`recLateOut_of_walk`: a
   family with a telescope former or one whose former only head-reduces to a telescope), and the
   parent itself, which the circuit's route reads as a stored former of a native block
-  (`recParent_of_arm_tied`). **The case of a recursor with no native parent is empty because the
-  circuit refuses it today**: the `Rec` arm of `check_const` asserts that the recursor's family
-  block is not modeled, and `check_recursor_member` asserts the same of the block of the major
-  premise's parent, so no accepted run checks a recursor of a mutual or nested family. Three
-  lemmas read the first assertion (`Typing.check_const_rec_route`, `Typing.check_const_rec_arm`,
-  `Claim.TopWalkCore.recFamilyNative`: each closes the `Rec_other` path of `check_const` by it)
-  and two read the second (`Typing.native_rec_route_calls`, `Typing.native_rec_member_full`: the
-  member check has one path, with the route's answer `0`). When the source stops refusing those
-  recursors, these five lemmas stop building at exactly those paths, the parent of
-  `recParent_of_arm_tied` is no longer always native, and the recursor of a mutual or nested
-  family is a case of its own, for the family's step. -/
+  (`recParent_of_arm_tied`). **The case of a standalone recursor with no native parent is
+  empty**: when the recursor's family block is modeled, the `Rec` arm of `check_const` runs
+  `check_family` at the recursor's own record, which refuses at a standalone record (the record
+  is its own block, `family_recs` gives one recursor and `check_recs` asks for at least two;
+  `Claim.familyCheckRefused_of_recr`), and `check_recursor_member` asserts that the block of the
+  major premise's parent is not modeled. Three lemmas take that refusal as a premise, which the
+  arm facts carry (`Typing.check_const_rec_route`, `Typing.check_const_rec_arm`,
+  `Claim.TopWalkCore.recFamilyNative`: each closes the `Rec_other` path of `check_const` by it),
+  and two read the second assertion (`Typing.native_rec_route_calls`,
+  `Typing.native_rec_member_full`: the member check has one path, with the route's answer `0`).
+  A recursor of a mutual or nested family is checked through its family record, by the family's
+  step, not by this one. -/
 
 universe u
 
@@ -237,7 +238,8 @@ limit and at the opened head trace, from one fact: at a record whose address the
 environment does not store, a native parent that heads the major premise is at no reserved
 basis name (`freshNotBasis`). The check's output at the parent's registered family and the
 parent itself are read off the walk (`unitStep_recLate_walked`). The parent is always native
-because the circuit refuses a recursor of a modeled family (module docstring). -/
+because the circuit's family check refuses a modeled family at a standalone record (module
+docstring). -/
 theorem standaloneRecursor_of_freshNotBasis
     (freshNotBasis :
       WalkedUnit.{u} (fun _ _ _ _ c => ∃ rc : Ixon.Recursor, c.info = .recr rc)

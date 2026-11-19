@@ -16,6 +16,8 @@ import IxVMRefinement.FamilyGraph.ProducersInner
 import IxVMRefinement.Binding.OpCertObs
 import IxVMRefinement.FamilyAlias.ClosureFamilyStep
 import IxVMRefinement.FamilyAlias.FamilyCall
+import IxVMRefinement.Binding.CertProjFreeRun
+import IxVMRefinement.Binding.ShapeIffNonemptyPins
 import IxVMRefinement.FamilyGraph.ProducersStoredFam
 
 /-! # The composed statement from its open obligations
@@ -98,8 +100,10 @@ Proved inside, with no hypothesis left:
   its prelude pin (`Binding.loadedTableAdmits`, `Binding.loadedTablePinsPrelude`), that the
   table binds every role, the observed validation of every role of every group, and the run's
   store;
-* the role unit of a standard axiom at each group of a run, in the family form
-  (`Binding.standardAxiomRoleUnitW_closed`, from the axiom's observed validation,
+* the stored shapes of every group with no role unit (`Binding.groupWithoutRoleUnit_bindingRun`),
+  the role unit of a well-founded operation (`Binding.operationRoleUnitW_of_projFree` from
+  `Binding.certProjFree_bindingRun`), and the role unit of a standard axiom at each group of a run,
+  in the family form (`Binding.standardAxiomRoleUnitW_closed`, from the axiom's observed validation,
   `Binding.axiomValidationFacts`).
 
 Left as hypotheses, at the binding claim layer's run predicate `Binding.BindingRun` (the run
@@ -109,15 +113,12 @@ group's family checks, so the invariant at the basis groups, the two admission c
 families are its projections):
 
 * binding: the part of the claim's export that remains, what is left of the clauses of the
-  stores of a run and of its family checks (`RemainingStoreClausesOfRun`); and at each group of
-  a run the closure's two remaining steps (a block with its family record, a twin), the stored
-  shapes where the group has no role unit, and that no certificate of a well-founded operation
-  projects the operation (from which the role unit of an operation in the family form is
-  proved);
+  stores of a run and of its family checks (`RemainingStoreClausesOfRun`), and at each group of
+  a run the closure's remaining step (a twin);
 * typing: what an accepted run's family records, advice, twins and the records a family check
   checks are owed at the run's choices (`FamilyGraphInnerOwed`, from which `FamilyGraphRow` and
-  the inner checks at the same choices are proved); the step of a top-walked block with its
-  family record (`FamilyBlockRow`) and the step of a twin (`FamilyTwinRow`).
+  the inner checks at the same choices are proved); what one accepted family check gives
+  (`FamilyAlias.FamilyCallRow`, serving both halves) and the step of a twin (`FamilyTwinRow`).
 
 The typing half takes nothing from the binding half but the table witness at `OverWFam L`, so
 no further hypothesis joins the two.
@@ -321,7 +322,7 @@ theorem circuitComposed_of_partsFam
 are proved passed in. The binding claim layer's run predicate is `Binding.BindingRun`, by the
 run's calls, and the run's family checks of a group are `Binding.ClosureFam`.
 
-The first four hypotheses are the binding half's. One is the part of the claim's export that
+The first two hypotheses are the binding half's. One is the part of the claim's export that
 remains (`Binding.bindingClaimExport_of_table_and_stores`; the claim's decode is proved,
 `Claim.verify_claim_decode_binding_spec`, and so are the other two parts: that the table a
 binding run loads is the admitted table of bytes the run hashed, `Binding.loadedTableAdmits`,
@@ -340,7 +341,7 @@ is an inert axiom's, each is one a step needs stored, and a one-inductive block'
 no literal function's). The invariant at the six basis groups with its family form is
 proved (`Binding.basisOverW_bindingRun`); the two admission chains and the families of each
 group are projections of the run predicate (`admitsChain_bindingRun`,
-`admitsReadsChain_bindingRun`, `BindingRun.families`). The other three are, for every bounded run
+`admitsReadsChain_bindingRun`, `BindingRun.families`). The other is, for every bounded run
 and each group from 6 to 76 of it:
 * one of the closure's three steps, which give the closure in the family form
   (`Binding.groupClosureFamily_of_steps`): `closureTwinSteps`, the step of a new second family
@@ -356,22 +357,21 @@ and each group from 6 to 76 of it:
   (`FamilyAlias.closureFamilySteps_of_checkRow`: the step taken once at that store and the
   group's validation limit, the fold's clause kept with the same registry at every record store
   for the closure's store, the block's references from the run's facts
-  `Binding.ClosureRunFacts.famNotInert`, `.famNeedOk`);
-* the stored shapes where the group has no role unit;
-* `certProjFree`: no certificate of a well-founded operation projects the operation: for an
-  operation bound at `a` and a certificate in its evidence whose record in the run's store is a
-  standalone definition, the call of `KernelSubst::subst_const` on a conversion of the
-  certificate's value meets no projection whose structure is at `a` (`ProjIn` at the call's
-  output heap); a shared expression the value does not reach is not constrained
-  (`Binding.CertProjFree`). Producer open: `KernelSubst::subst_const`'s projection arm refusing a
-  projection whose structure address is the address of the operation it replaces, through
-  `Binding.certProjFree_of_subst`. From it the role unit of an operation in the family
-  form is proved (`Binding.operationRoleUnitW_of_projFree`, `Binding.RoleUnitStepOverW`: handed
-  the closure's store, the walked records stored there and the stored family map, it keeps
-  both), through the operations' certificate facts (`Binding.opCertFacts_of_projFree`).
+  `Binding.ClosureRunFacts.famNotInert`, `.famNeedOk`).
 
-The role unit of a standard axiom is proved in that form (`Binding.standardAxiomRoleUnitW_closed`,
-from the axiom's observed validation, `Binding.axiomValidationFacts`).
+The stored shapes where a group has no role unit are proved for every group
+(`Binding.groupWithoutRoleUnit_bindingRun`, joining the validated `Iff` and `Nonempty` member pins
+in groups 16 and 17 to `Binding.groupWithoutRoleUnit_of_iffNonempty`). The role unit of an
+operation is proved in the family form
+(`Binding.operationRoleUnitW_of_projFree`, `Binding.RoleUnitStepOverW`: handed the closure's
+store, the walked records stored there and the stored family map, it keeps both), through the
+operations' certificate facts (`Binding.opCertFacts_of_projFree`), from
+`Binding.certProjFree_bindingRun`: no certificate of a well-founded operation projects the
+operation (`Binding.CertProjFree`), since `KernelSubst::subst_const`'s projection arm refuses a
+projection whose structure is the operation it replaces (`Binding.subst_const_proj_ne`, through
+`Binding.certProjFree_of_subst`). The role unit of a standard axiom is proved in that form
+(`Binding.standardAxiomRoleUnitW_closed`, from the axiom's observed validation,
+`Binding.axiomValidationFacts`).
 
 The last three hypotheses are the typing half's; the second of them, `familyCall`, also gives the
 binding half's closure step of a new block with its family record (above). Before them, `Pref`
@@ -449,9 +449,6 @@ theorem circuitComposed_residual
     (groupStores : ∀ calls, RemainingStoreClausesOfRun calls)
     (closureTwinSteps :
       ∀ calls, AtGroups (BindingRun calls) (ClosureTwinSteps.{u} FormerOpenTraceAt calls))
-    (groupWithoutRoleUnit :
-      ∀ calls, AtGroups (BindingRun calls) (RoleFreeShapes.{u} FormerOpenTraceAt))
-    (certProjFree : ∀ calls, Binding.CertProjFree calls)
     (Pref : RunPref)
     (familyGraph : FamilyGraphInnerOwedFam.{u} Pref)
     (familyCall : FamilyAlias.FamilyCallRow.{u} FormerOpenTraceAt)
@@ -465,7 +462,8 @@ theorem circuitComposed_residual
     (groupClosureFamily_of_steps Binding.closureUnitSteps_bindingRun
       (FamilyAlias.closureFamilySteps_of_checkRow
         (FamilyAlias.closureFamilyCheck_of_call familyCall)) closureTwinSteps)
-    groupWithoutRoleUnit (Binding.operationRoleUnitW_of_projFree.{u} certProjFree)
+    Binding.groupWithoutRoleUnit_bindingRun.{u}
+    (Binding.operationRoleUnitW_of_projFree.{u} Binding.certProjFree_bindingRun)
     Binding.standardAxiomRoleUnitW_closed
     (familyGraphRowInnerFamT_of_owed familyGraph) storedFormAt_recon
     (innerStepsChecked_of_kinds
