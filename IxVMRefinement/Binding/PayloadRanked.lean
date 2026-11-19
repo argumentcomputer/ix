@@ -287,7 +287,7 @@ theorem new_famRec_pathPos_block (hC : CollisionFreeRun calls E₀)
     ((groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mp hm0R').2
   exact PathPos.tail (PathPos.single (Or.inl hused))
     (Or.inr ⟨memberProjection B 0 ms[0], hm0E, memberProjection_isProj B 0 ms[0],
-      ownerOf_memberProjection (memberAddr B 0 ms[0]) B 0 ms[0]⟩)
+      (ownerOf_memberProjection (memberAddr B 0 ms[0]) B 0 ms[0]).symm⟩)
 
 end Helpers
 
@@ -423,7 +423,7 @@ section RankProof
 variable {calls : List (Call F)} {bAddr : _root_.Address} {t : Ix.Kernel.RoleTable}
   {E₀ : Ixon.Env} {g : Nat} {recs : List (Claim.TopRec calls bAddr t (some (valLimit g)))}
 
-private theorem tier1M_le {n m k : Nat} {x : _root_.Address}
+private theorem tier1M_le {m k : Nat} {x : _root_.Address}
     (h : StoredCand calls bAddr t E₀ g x (m, k)) : tier1M calls bAddr t E₀ g x ≤ m := by
   classical
   have hex : ∃ m', ∃ k', StoredCand calls bAddr t E₀ g x (m', k') := ⟨m, k, h⟩
@@ -443,6 +443,7 @@ private theorem tier1K_le {x : _root_.Address} {k : Nat}
 private theorem tier1_spec {x : _root_.Address} (h : StoredAnchored calls bAddr t E₀ g x) :
     StoredCand calls bAddr t E₀ g x (tier1M calls bAddr t E₀ g x, tier1K calls bAddr t E₀ g x) := by
   classical
+  unfold StoredAnchored at h
   have hm : ∃ k, StoredCand calls bAddr t E₀ g x (tier1M calls bAddr t E₀ g x, k) := by
     unfold tier1M
     rw [dite_eq_left h]
@@ -589,7 +590,7 @@ private theorem potLt_of_tier1_bound {v : Pot} {m k m' k' d' : Nat}
     (hlt : m < m' ∨ (m = m' ∧ k < k')) :
     PotLt v (1, m', k', d') := by
   rcases hv with rfl | ⟨h1, h2 | ⟨h2, h3⟩⟩
-  · exact Or.inl (by decide)
+  · exact Or.inl Nat.zero_lt_one
   · rcases hlt with hlt | ⟨rfl, _⟩
     · exact Or.inr ⟨h1, Or.inl (Nat.lt_trans h2 hlt)⟩
     · exact Or.inr ⟨h1, Or.inl h2⟩
@@ -602,7 +603,7 @@ private theorem potLt_of_tier1_bound_bump {v : Pot} {m k m' k' d' : Nat}
     (hlt : m < m' ∨ (m = m' ∧ k < k')) :
     PotLt v.bump (1, m', k', d') := by
   rcases hv with rfl | ⟨h1, h2 | ⟨h2, h3⟩⟩
-  · exact Or.inl (by decide)
+  · exact Or.inl Nat.zero_lt_one
   · rcases hlt with hlt | ⟨rfl, _⟩
     · exact Or.inr ⟨h1, Or.inl (Nat.lt_trans h2 hlt)⟩
     · exact Or.inr ⟨h1, Or.inl h2⟩
@@ -857,9 +858,10 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
         · exact absurd hs hst
       have hlt := hpathPos_lt B blk hgrB hpos hnewBlk
       -- `x` is a `New` `IsProj` whose owner `blk` is non-projection by `projMember`.
+      obtain ⟨-, -, -, haddX, -⟩ := new_groupStore hb hg6 hnewX
       obtain ⟨cblk, hcblk', hca⟩ := groupStore_projMember hC hb hax hP hg6 hw x cx hnewX
         ((groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mpr
-          ⟨storedBelow_of_adds hg6 (new_groupStore hb hg6 hnewX).2.2.2.1, hcx⟩) hp
+          ⟨storedBelow_of_adds hg6 haddX, hcx⟩) hp
       have hblkE' : recordOf E₀ blk = some cblk := by
         rw [← hown]; exact ((groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mp hcblk').2
       have hnpBlk : ¬ IsProj cblk := by
@@ -1197,7 +1199,7 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
             exact Or.inl (by omega)
           · exact PotLt.trans
               (hstored_wit_lt B a cs advAs x hsf (hU.outsClassified x hW) hnewX)
-              (Or.inr ⟨rfl, Or.inl (by omega)⟩)
+              (Or.inr ⟨rfl, Or.inl (by dsimp only; omega)⟩)
       · by_cases h2 : NewRecAnch calls bAddr t E₀ g a
         · -- Tier ≥ 2 `NewRecAnch`: `pot0 a = (2 + walkRank recs B, 1, 0, 2)`.
           obtain ⟨B, cs, advAs, hnf⟩ := h2
@@ -1332,9 +1334,10 @@ theorem payloadRanked_of_run (hC : CollisionFreeRun calls E₀)
                     rcases hnew_or_stored_of_held' blk hown' with hn | hs
                     · exact hn
                     · exact absurd hs hstBlk
+                  obtain ⟨-, -, -, haddX, -⟩ := new_groupStore hb hg6 hnewX
                   obtain ⟨cblk, hcblk', hca'⟩ := groupStore_projMember hC hb hax hP hg6 hw x c₁ hnewX
                     ((groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mpr
-                      ⟨storedBelow_of_adds hg6 (new_groupStore hb hg6 hnewX).2.2.2.1, hc₁⟩) hp₁
+                      ⟨storedBelow_of_adds hg6 haddX, hc₁⟩) hp₁
                   have hblkE : recordOf E₀ blk = some cblk := by
                     rw [← hown₁]; exact ((groupStore_recordOf hb (Nat.le_succ_of_le hg6)).mp hcblk').2
                   have hnpBlk : ¬ IsProj cblk := by
