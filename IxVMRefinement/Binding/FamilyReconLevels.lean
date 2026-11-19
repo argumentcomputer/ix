@@ -43,10 +43,25 @@ open IxVM.Refinement.Binding.FamilyFlat
 open IxVM.Refinement.Typing.FamilyAlias (FamilyCallAtLim)
 open IxVM (F)
 
-set_option maxHeartbeats 4000000
+set_option maxHeartbeats 2400000
 set_option maxRecDepth 200000
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
+
+private theorem mem_of_eq {α : Type*} {x : α} {l₁ l₂ : List α} (heq : l₁ = l₂) (h : x ∈ l₂) :
+    x ∈ l₁ :=
+  heq ▸ h
+
+local syntax "call_mem" : tactic
+local macro_rules
+  | `(tactic| call_mem) =>
+    `(tactic| repeat first
+      | assumption
+      | exact List.mem_cons_self
+      | exact List.mem_append_left _ (by assumption)
+      | exact List.mem_append_left _ List.mem_cons_self
+      | apply List.mem_cons_of_mem
+      | apply List.mem_append_right)
 
 /-! ## Inductive parameter coherence predicate -/
 
@@ -767,7 +782,7 @@ private theorem check_inductive_shape_ctors_levelsOk {calls : List (Call F)}
         (ev331 := evval) (hm395 := hm3a) (ev368 := evs) (ev412 := evsaf) (ev442 := evpa)
         (ev488 := evret) (ev558 := evfu) (ev604 := evpf) (sg723 := sg1) (ev737 := evprj)
         (op862 := op1) (ev767 := evrec) (hc864 := hcs) .. =>
-      have sub1 : ∀ cl ∈ cs1, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
+      have sub1 : ∀ cl ∈ cs1, cl ∈ calls := fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem))
       obtain ⟨ext1, -, -, blkBytes, cb', ms', ind', ct', blobs, v', hhB, haB, hdeB, -, hms',
         hind', hct', -, hld', hraw_ct⟩ :=
         L1.get_ci_cprj_spec (RomBound.bounded_mono hbd sub1) rba evc
@@ -798,7 +813,7 @@ private theorem check_inductive_shape_ctors_levelsOk {calls : List (Call F)}
           E_rd.allLevelParamsDefined (List.range ct'.lvls.toNat) = true := by
         rw [hnl_nat]
         exact validate_reader_levels hbd hnl32 raw_cty evaeq.heap_extends evval
-          (hsub _ (by rw [hcs]; simp))
+          (hsub _ (mem_of_eq hcs (by call_mem)))
       obtain rfl := binop_add_one_nat op1
       have ext_sg : Heap.Extends m5b m6 := by
         cases sg1 with
@@ -858,7 +873,7 @@ private theorem check_modeled_ctors_levelsOk {calls : List (Call F)}
         (ev49 := evc) (ld43 := ldc) (ev154 := evaeq) (heq261 := hnl_eq) (heq289 := hnp_eq)
         (ev331 := evval) (hm395 := hm3a) (ev368 := evs) (ev412 := evsaf) (ev442 := evret)
         (ev512 := evprj) (ev561 := evri) (op669 := op1) (ev590 := evrec) (hc671 := hcs) .. =>
-      have sub1 : ∀ cl ∈ cs1, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
+      have sub1 : ∀ cl ∈ cs1, cl ∈ calls := fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem))
       obtain ⟨ext1, -, -, blkBytes, cb', ms', ind', ct', blobs, v', hhB, haB, hdeB, -, hms',
         hind', hct', -, hld', hraw_ct⟩ :=
         L1.get_ci_cprj_spec (RomBound.bounded_mono hbd sub1) rba evc
@@ -889,7 +904,7 @@ private theorem check_modeled_ctors_levelsOk {calls : List (Call F)}
           E_rd.allLevelParamsDefined (List.range ct'.lvls.toNat) = true := by
         rw [hnl_nat]
         exact validate_reader_levels hbd hnl32 raw_cty evaeq.heap_extends evval
-          (hsub _ (by rw [hcs]; simp))
+          (hsub _ (mem_of_eq hcs (by call_mem)))
       obtain rfl := binop_add_one_nat op1
       have ext3a : Heap.Extends m3 m3a := by rw [hm3a]; exact Heap.Extends.snoc _ _
       have ext06 : Heap.Extends h m6 :=
@@ -1010,7 +1025,7 @@ private theorem peer_agree_walk_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       injection hcons with h1 h2; subst h1 h2
       obtain rfl := binop_add_one_nat op1
       have htail := ih (pos + 1) (by simp only [List.length_cons] at hlen; omega) hidx'
-        (fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])) hrest rba evrec
+        (fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem))) hrest rba evrec
       intro i ind hi
       cases i with
       | zero =>
@@ -1031,7 +1046,7 @@ private theorem peer_agree_walk_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       subst hv0
       have hpos_eq : pos = selfIdx := binop_sub_eq_zero_nat (by omega) (by omega) opsub
       have htail := ih (pos + 1) (by simp only [List.length_cons] at hlen; omega) hidx'
-        (fun cl hcl => hsub cl (by rw [hcs]; simp [hcl]))
+        (fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem)))
         (RepLinkedList.mono L1.repMutConst_heapMono₂ evz.heap_extends hrest)
         (Bytes.repAddressRef_heapMono₂ addrTy evz.heap_extends rba) evrec
       intro i ind hi
@@ -1074,7 +1089,7 @@ private theorem peer_agree_walk_spec {calls : List (Call F)} {E₀ : Ixon.Env}
         evz.heap_extends.trans (ext2.trans (evpa.heap_extends.trans (ext3a.trans
           (evrs1.heap_extends.trans (ext4a.trans (evrs2.heap_extends.trans evle.heap_extends))))))
       have htail := ih (pos + 1) (by simp only [List.length_cons] at hlen; omega) hidx'
-        (fun cl hcl => hsub cl (by rw [hcs]; simp [hcl]))
+        (fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem)))
         (RepLinkedList.mono L1.repMutConst_heapMono₂ ext06 hrest)
         (Bytes.repAddressRef_heapMono₂ addrTy ext06 rba) evrec
       intro i ind hi
@@ -1183,7 +1198,7 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
         (blockSelf t b ms)).read ind.typ = .ok E_rd →
         E_rd.allLevelParamsDefined (List.range ind.lvls.toNat) = true :=
       validate_reader_levels hbd hnl32 raw_ty ev14.heap_extends evval
-        (hsub_chk _ (by rw [hc]; simp))
+        (hsub_chk _ (mem_of_eq hc (by call_mem)))
     have ext2a : Heap.Extends m2 m2a := by rw [hm2a]; exact Heap.Extends.snoc _ _
     have ext2b : Heap.Extends m2a m2b := by rw [hm2b]; exact Heap.Extends.snoc _ _
     have ext3a : Heap.Extends m3 m3a := by rw [hm3a]; exact Heap.Extends.snoc _ _
@@ -1211,7 +1226,9 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
         have hres := check_inductive_shape_ctors_levelsOk hS hbd
           (by rwa [hba_b_eq]) hms hk hk56 hnc56 hnl32 hnp56
           ind.ctors.size 0 (by omega)
-          (fun cl hcl => hsub_chk cl (by rw [hc]; simp [hc_sh, hcl]))
+          (fun cl hcl => by
+            have h1 := mem_of_eq hc_sh (by call_mem)
+            exact hsub_chk cl (mem_of_eq hc (by call_mem)))
           (Bytes.repAddressRef_heapMono₂ addrTy (ext07.trans ext7_s3) rba_b) evct'
         intro j ct hj
         simpa [hba_b_eq] using hres j ct (Nat.zero_le j) hj
@@ -1236,7 +1253,9 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
         injection hl2 with _ hl2; injection hl2 with _ hl2; injection hl2 with _ hl2
         injection hl2 with h7' _; subst h7'
         have sub_lvc : ∀ cl ∈ cs_lvc, cl ∈ calls :=
-          fun cl hcl => hsub_chk cl (by rw [hc]; simp [hc_pa, hcl])
+          fun cl hcl => by
+            have h1 := mem_of_eq hc_pa (by call_mem)
+            exact hsub_chk cl (mem_of_eq hc (by call_mem))
         obtain ⟨-, bytes', c'', -, hh', ha', hde', -, -, -, -, -, -, cRep⟩ :=
           L1.load_verified_constant_decode_bounded
             (Bytes.repAddressRef_heapMono₂ addrTy (ext08.trans evaeq.heap_extends) rba_b) evlvc
@@ -1256,7 +1275,9 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
         injection hl2 with h7' hl2; injection hl2 with h8' _
         subst h2' h3' h4' h7' h8'
         have sub_lvc : ∀ cl ∈ cs_lvc, cl ∈ calls :=
-          fun cl hcl => hsub_chk cl (by rw [hc]; simp [hc_pa, hcl])
+          fun cl hcl => by
+            have h1 := mem_of_eq hc_pa (by call_mem)
+            exact hsub_chk cl (mem_of_eq hc (by call_mem))
         obtain ⟨cb'', ms'', hbl, hrepM⟩ := Claim.load_block_head
           (Bytes.repAddressRef_heapMono₂ addrTy (ext08.trans evaeq.heap_extends) rba_b) evlvc
         have hrec_eq := (hbl.mono sub_lvc).record hS (by rwa [hba_b_eq])
@@ -1272,7 +1293,9 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
         have hwalk := peer_agree_walk_spec hS hbd (by rwa [hba_b_eq]) hms hk56 hnp56
           (fun ind' h' => by rw [hk] at h'; injection h' with hm; injection hm with hi; subst hi; rfl)
           hms_lt56 ms.toList 0 (by simp) (fun i m hi => by simpa [Array.getElem?_toList] using hi)
-          (fun cl hcl => hsub_chk cl (by rw [hc]; simp [hc_pa, hcl])) hrepM
+          (fun cl hcl => by
+            have h1 := mem_of_eq hc_pa (by call_mem)
+            exact hsub_chk cl (mem_of_eq hc (by call_mem))) hrepM
           (Bytes.repAddressRef_heapMono₂ addrTy
             (ext08.trans (evaeq.heap_extends.trans evlvc.heap_extends)) rba_b) evw'
         intro i₂ ind₂ hi₂
@@ -1298,7 +1321,7 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
         (blockSelf t b ms)).read ind.typ = .ok E_rd →
         E_rd.allLevelParamsDefined (List.range ind.lvls.toNat) = true :=
       validate_reader_levels hbd hnl32 raw_ty ev14.heap_extends evval
-        (hsub_chk _ (by rw [hc]; simp))
+        (hsub_chk _ (mem_of_eq hc (by call_mem)))
     have ext2a : Heap.Extends m2 m2a := by rw [hm2a]; exact Heap.Extends.snoc _ _
     have ext2b : Heap.Extends m2a m2b := by rw [hm2b]; exact Heap.Extends.snoc _ _
     have ext3a : Heap.Extends m3 m3a := by rw [hm3a]; exact Heap.Extends.snoc _ _
@@ -1323,7 +1346,7 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
       have hres := check_modeled_ctors_levelsOk hS hbd
         (by rwa [hba_b_eq]) hms hk hk56 hnc56 hnl32 hnp56
         ind.ctors.size 0 (by omega)
-        (fun cl hcl => hsub_chk cl (by rw [hc]; simp [hcl]))
+        (fun cl hcl => hsub_chk cl (mem_of_eq hc (by call_mem)))
         (Bytes.repAddressRef_heapMono₂ addrTy ext0_11 rba_b) evct'
       intro j ct hj
       simpa [hba_b_eq] using hres j ct (Nat.zero_le j) hj
@@ -1352,7 +1375,10 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
                   (evf7.heap_extends.trans (evf8.heap_extends.trans (evf9.heap_extends.trans
                     (evf10.heap_extends.trans evf11.heap_extends)))))))))))))
           have sub_lvc : ∀ cl ∈ cs_lvc, cl ∈ calls :=
-            fun cl hcl => hsub_chk cl (by rw [hc]; simp [hc_mb, hc_cf, hcl])
+            fun cl hcl => by
+              have h1 := mem_of_eq hc_cf (by call_mem)
+              have h2 := mem_of_eq hc_mb (by call_mem)
+              exact hsub_chk cl (mem_of_eq hc (by call_mem))
           obtain ⟨cb'', ms'', hbl, hrepM⟩ := Claim.load_block_head
             (Bytes.repAddressRef_heapMono₂ addrTy ext_to_lvc rba_b) evlvc
           obtain ⟨rfl, -⟩ := (hbl.mono sub_lvc).record hS (by rwa [hba_b_eq])
@@ -1723,7 +1749,7 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
         (ev904 := evrules) (ev1016 := evrec) (hc1137 := hcs) .. =>
       obtain ⟨a', rest', hcons, ra, hrest⟩ := Core.RepList.cons_of_load hrep ld
       injection hcons with h1 h2; subst h1 h2
-      have sub1 : ∀ cl ∈ cs1, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
+      have sub1 : ∀ cl ∈ cs1, cl ∈ calls := fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem))
       obtain ⟨ext1, rawBytes, cp, blobs, hh_p, ha_p, hde_p, -, -, -, hrawRes⟩ :=
         L1.get_ci_spec (RomBound.bounded_mono hbd sub1) ra evci
       obtain ⟨m0, hm0, hpos56, ha0, hh0⟩ := hat 0 a rfl
@@ -1751,7 +1777,7 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
         have h1 := hat (i + 1) a' (by simpa using hi)
         rwa [show pos + (i + 1) = (pos + 1) + i by omega] at h1
       have htail := ih (pos + 1) (by simp only [List.length_cons] at hlen; omega) hhat'
-        (fun cl hcl => hsub cl (by rw [hcs]; simp [hcl]))
+        (fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem)))
         (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) hsub_all hrest) evrec
       intro i rc hrc hi_lt
       cases i with
@@ -1787,7 +1813,7 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
         injection hl with h6 _
         subst h1 h2 h6
         have hty_ok := validate_reader_levels hbd hnl32 raw_ty ext1_6 evval
-          (hsub _ (by rw [hcs]; simp))
+          (hsub _ (mem_of_eq hcs (by call_mem)))
         have hrules_ok : ∀ j ru E_rd, rc.rules[j]? = some ru →
             (exprReader t (fun x => E₀.blobs.get? x) crb id
                 (blockSelf t (ixAddr rb_b) rs)).read ru.rhs = .ok E_rd →
@@ -1798,7 +1824,9 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
             have ext_go : Heap.Extends m1 _ :=
               ext1_21.trans (evrmp.heap_extends.trans (evgci.heap_extends.trans evrlen.heap_extends))
             have hgo := check_rules_go_levelsOk hbd hnl32 rc.rules.toList 0
-              (fun cl hcl => hsub cl (by rw [hcs]; simp [hc_ru, hcl]))
+              (fun cl hcl => by
+                have h1 := mem_of_eq hc_ru (by call_mem)
+                exact hsub cl (mem_of_eq hcs (by call_mem)))
               (raw_rules.mono ext_go (fun _ hm => hm)) evgo
             intro j ru E_rd hj hread
             exact hgo ru (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hj)) E_rd hread
@@ -1859,10 +1887,10 @@ theorem check_family_recr_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleTa
         f19.heap_extends.trans f20.heap_extends
     obtain ⟨as, has, hlen, hmem⟩ := family_recs_muts_list hS
       (Bytes.repAddressRef_heapMono₂ addrTy ext_to_fr hrb) evfr
-      (fun cl hcl => hsub cl (by rw [hc]; simp [hcl])) hcrb hrs
+      (fun cl hcl => hsub cl (mem_of_eq hc (by call_mem))) hcrb hrs
     have hcr := check_recs_levelsOk hS hbd hcrb hrs as 0 (by omega)
       (fun i a hi => by simpa using hmem i a hi)
-      (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))
+      (fun cl hcl => hsub cl (mem_of_eq hc (by call_mem)))
       (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext_fr_to_cr has) evcr
     intro k rc hk
     have hk_lt : k < as.length := by
@@ -1964,7 +1992,7 @@ theorem memberCheckedLimAt_recr_levelsOk {calls : List (Call F)} {bAddr : _root_
     injection hl with h6 _
     subst h1 h2 h6
     have hty_ok := validate_reader_levels hbd hnl32 raw_ty e1.heap_extends evval
-      (hsub_chk _ (by rw [hc]; simp))
+      (hsub_chk _ (mem_of_eq hc (by call_mem)))
     have ext_nil : Heap.Extends m_val m_nil := by rw [hmnil]; exact Heap.Extends.snoc _ _
     have ext0_crm : Heap.Extends m_chk m_crm :=
       e1.heap_extends.trans (evval.heap_extends.trans (ext_nil.trans (e3.heap_extends.trans
@@ -1984,7 +2012,9 @@ theorem memberCheckedLimAt_recr_levelsOk {calls : List (Call F)} {bAddr : _root_
           (f4.heap_extends.trans (f5.heap_extends.trans (f6.heap_extends.trans
             (f7.heap_extends.trans f8.heap_extends)))))))
       have hws := check_rec_rules_wellscoped_levelsOk hbd hnl32 rc_m.rules.toList 0
-        (fun cl hcl => hsub_chk cl (by rw [hc]; simp [hc_crm, hcl]))
+        (fun cl hcl => by
+          have h1 := mem_of_eq hc_crm (by call_mem)
+          exact hsub_chk cl (mem_of_eq hc (by call_mem)))
         (raw_rules.mono ext_ws (fun _ hm => hm)) evws
       exact ⟨hnl32, hty_ok, fun j ru E_rd hj hread =>
         hws ru (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hj)) E_rd hread⟩
@@ -2005,7 +2035,7 @@ theorem memberCheckedLimAt_recr_levelsOk {calls : List (Call F)} {bAddr : _root_
           (e7.heap_extends.trans e8.heap_extends)))))))
     have hcf := check_family_recr_levelsOk hS hbd (by rwa [hba_b_eq]) hms
       (Bytes.repAddressRef_heapMono₂ addrTy ext0_cf rba_b) evcf
-      (fun cl hcl => hsub_chk cl (by rw [hc]; simp [hcl])) k rc_m hk
+      (fun cl hcl => hsub_chk cl (mem_of_eq hc (by call_mem))) k rc_m hk
     simpa [hba_b_eq] using hcf
 
 /-- **Any safe record checked by `UnitCheckedAt`** satisfies `UnitLevelsAndParamsOk`. -/
