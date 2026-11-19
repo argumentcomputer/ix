@@ -2756,7 +2756,8 @@ theorem familyCallExact_of_call {calls : List (Call F)} {bAddr : _root_.Address}
       (ev344 := evWs) (ev403 := evAsb) (ev435 := evCrr) (ev465 := evAdv)
       (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
       (ev686 := ev686) (ev716 := ev716) (ev759 := ev759) (ev817 := ev817)
-      (ev796 := ev796) (ev852 := ev852) (ev_ursqbimm := evNoRole) (ev874 := ev874)
+      (ev796 := ev796) (ev852 := ev852) (ev_ursqbimm := evNoRole) (ev_srfmazjk := evNoType)
+      (ev874 := ev874)
       (ev896 := ev896) (ev960 := ev960) (ev939 := ev939) (ev1011 := ev1011)
       (ev990 := ev990) (ev_edyzsqzv := evM1) (ev_gkddqxhv := evCat)
       (ev_ittpynob := evM2) (ev_biaifgpd := evM3) (ev1203 := ev1203)
@@ -2788,7 +2789,8 @@ theorem familyCallExact_of_call {calls : List (Call F)} {bAddr : _root_.Address}
         ev601.heap_extends.trans <| ev634.heap_extends.trans <| ev664.heap_extends.trans <|
         ev686.heap_extends.trans <| ev716.heap_extends.trans <| ev759.heap_extends.trans <|
         ev817.heap_extends.trans <| ev796.heap_extends.trans <| ev852.heap_extends.trans <|
-        evNoRole.heap_extends.trans <| ev874.heap_extends.trans <| ev896.heap_extends.trans <|
+        evNoRole.heap_extends.trans <| evNoType.heap_extends.trans <|
+        ev874.heap_extends.trans <| ev896.heap_extends.trans <|
         ev960.heap_extends.trans <| ev939.heap_extends.trans <| ev1011.heap_extends.trans <|
         ev990.heap_extends.trans <| evM1.heap_extends.trans <| evCat.heap_extends.trans <|
         evM2.heap_extends.trans <| evM3.heap_extends.trans <| ev1203.heap_extends.trans <|

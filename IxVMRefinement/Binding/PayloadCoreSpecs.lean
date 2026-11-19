@@ -496,7 +496,8 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
       (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465) (ev513 := ev513)
       (ev601 := ev601) (ev634 := ev634) (ev664 := ev664) (ev686 := ev686) (ev716 := ev716)
       (ev759 := ev759) (ev817 := ev817) (ev796 := ev796) (ev852 := ev852)
-      (ev_ursqbimm := ev_norole) (ev874 := ev874) (ev896 := ev896) (ev960 := ev960)
+      (ev_ursqbimm := ev_norole) (ev_srfmazjk := ev_notype) (ev874 := ev874) (ev896 := ev896)
+      (ev960 := ev960)
       (ev939 := ev939) (ev1011 := ev1011) (ev990 := ev990) (ev_edyzsqzv := ev_mv1)
       (ev_gkddqxhv := ev_cat) (ev_ittpynob := ev_mv2) (ev_biaifgpd := ev_mv3)
       (ev1203 := ev1203) (ev_cwwgzxtj := ev_flat) (ev1246 := ev1246)
@@ -520,6 +521,7 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
         ev796.heap_extends
     have ext_1191 : Heap.Extends h _ :=
       ext_784.trans <| ev852.heap_extends.trans <| ev_norole.heap_extends.trans <|
+        ev_notype.heap_extends.trans <|
         ev874.heap_extends.trans <| ev896.heap_extends.trans <| ev960.heap_extends.trans <|
         ev939.heap_extends.trans <| ev1011.heap_extends.trans <| ev990.heap_extends.trans <|
         ev_mv1.heap_extends.trans <| ev_cat.heap_extends.trans <| ev_mv2.heap_extends.trans <|
@@ -539,7 +541,7 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
     subst hasNil
     obtain ⟨hv861, -⟩ := Decl.addrList_length_spec
       (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy)
-        ev_norole.heap_extends hasR) ev874
+        (ev_norole.heap_extends.trans ev_notype.heap_extends) hasR) ev874
     simp only [List.length_nil, Nat.cast_zero] at hv861
     subst hv861
     -- `rc_validates_group` answers `1`, so `v_tabgyphp = 1`, hence `y_xxqgtlpp = .field 0`
@@ -1843,6 +1845,7 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
           (cs511 := cs511) (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
           (cs684 := cs684) (ev686 := ev686) (ev716 := ev716) (ev759 := ev759) (ev817 := ev817)
           (ev796 := ev796) (cs850 := cs850) (ev852 := ev852) (ev_ursqbimm := evr)
+          (ev_srfmazjk := evt)
           (ev874 := ev874) (ev896 := ev896) (ev960 := ev960) (ev939 := ev939) (ev1011 := ev1011)
           (ev990 := ev990) (ev_edyzsqzv := evm1) (ev_gkddqxhv := evcc) (ev_ittpynob := evm2)
           (ev_biaifgpd := evm3) (ev1203 := ev1203) (ev_cwwgzxtj := evfl) (ev1246 := ev1246)
@@ -1910,7 +1913,8 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
               rw [LoadedReads.memberAddr_eq_projAddr]
               exact h0
             have e840_1293 : Heap.Extends _ _ :=
-              evr.heap_extends.trans <| ev874.heap_extends.trans <| ev896.heap_extends.trans <|
+              evr.heap_extends.trans <| evt.heap_extends.trans <| ev874.heap_extends.trans <|
+                ev896.heap_extends.trans <|
                 ev960.heap_extends.trans <| ev939.heap_extends.trans <| ev1011.heap_extends.trans <|
                 ev990.heap_extends.trans <| evm1.heap_extends.trans <| evcc.heap_extends.trans <|
                 evm2.heap_extends.trans <| evm3.heap_extends.trans <| ev1203.heap_extends.trans <|
