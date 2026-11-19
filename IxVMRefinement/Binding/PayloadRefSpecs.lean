@@ -786,15 +786,14 @@ theorem check_witness_spec {calls : List (Call F)} {bAddr : _root_.Address}
       (cs412 := csCr) (ev414 := evCr) (ev_yqkzbtyw := evCov)
       (he440 := hr) (he441 := hh) (hc442 := hcs) .. =>
     obtain ⟨n, bytes2, -, hnEq, hs2, hm316⟩ := get_count_spec hs evCnt
-    subst hnEq
+    subst hnEq hm316
     have hsubW : ∀ cl ∈ csW, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     have hsubCr : ∀ cl ∈ csCr, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     obtain ⟨b_ib, bytes3, hbIb, hs3, hpos⟩ :=
-      walk_from_block_spec hC.runStore hC.hashedStored (by rw [hm316]; exact hblk) hs2 evW hsubW
-    have extW : Heap.Extends h _ := by rw [← hm316]; exact evW.heap_extends
-    have extTail : Heap.Extends _ h' := by
-      rw [hh]; exact evCr.heap_extends.trans evCov.heap_extends
-    exact ⟨⟨bytes3, by rw [hr]; exact L1.Stream.mono extTail hs3⟩,
+      walk_from_block_spec hC.runStore hC.hashedStored hblk hs2 evW hsubW
+    have extW := evW.heap_extends
+    have extTail := evCr.heap_extends.trans evCov.heap_extends
+    exact ⟨⟨bytes3, by rw [hr, hh]; exact L1.Stream.mono extTail hs3⟩,
       Or.inr (Or.inr (Or.inl ⟨hk2, Core.ixAddr b_ib, hpos, _, _, _, _, _, _, csCr,
         hrc.mono extW,
         ⟨b_x, Bytes.repAddressRef_heapMono₂ Core.addrTy extW hx, rfl⟩,
@@ -1838,7 +1837,7 @@ theorem family_refs_ok_spec {calls : List (Call F)} {bAddr : _root_.Address}
     have hrepRb2 := Claim.RepConstant.mono extB hrepRb
     obtain ⟨extI1, hidxsRb⟩ := Claim.const_idxs_of_spec hrepRb2 evIdxsRb
     obtain ⟨extI2, hidxsB⟩ := Claim.const_idxs_of_spec (Claim.RepConstant.mono extI1 hrepB) evIdxsB
-    obtain ⟨_, _, rpRb, _, _, hmkRb, _, _, hrefsRb, _, _⟩ := hrepRb2
+    obtain ⟨_, _, rpRb, _, _, hmkRb, _, _, hrefsRb, _, _⟩ := id hrepRb2
     injection hmkRb with _ _ haRb; simp only [List.cons.injEq] at haRb
     obtain ⟨-, -, rfl, -⟩ := haRb
     obtain ⟨_, _, rpB, _, _, hmkB, -, -, hrefsB, -, -⟩ := hrepB
@@ -2028,7 +2027,7 @@ theorem check_advice_record_spec {calls : List (Call F)} {bAddr : _root_.Address
     have hasmall := refs_small_of_decoded hsz hdeE
     have hcaLog := hlog ca hca
     have ext2 : Heap.Extends h m2 := evOrd.heap_extends.trans extLd
-    obtain ⟨infoVal, _, rp, _, _, hmk, hinfoRep, _, hrefsRep, _, _⟩ := hrepC
+    obtain ⟨infoVal, _, rp, _, _, hmk, hinfoRep, _, hrefsRep, _, _⟩ := id hrepC
     injection hmk with _ _ hargs; simp only [List.cons.injEq] at hargs
     obtain ⟨rfl, -, rfl, -⟩ := hargs
     -- Extract `Heap.Extends m2 m945` and kind classification from `sg`
@@ -2107,7 +2106,7 @@ theorem check_advice_record_spec {calls : List (Call F)} {bAddr : _root_.Address
             L1.load_verified_constant_decode_bounded haOrd evLd
           have eca' : ca' = ca := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hca)
             (Core.hashed_mono hsub12 hhL1) hblL1 hdeEL1
-          subst eca'
+          subst ca'
           obtain ⟨iv', _, _, _, _, hmk', hinfoL1, -, -, -, -⟩ := cRepL1
           injection hmk' with _ _ hargs'; simp only [List.cons.injEq] at hargs'
           obtain ⟨rfl, -⟩ := hargs'
@@ -2560,7 +2559,7 @@ private theorem container_refs_check_spec {calls : List (Call F)} {bAddr : _root
     have hrepOwn24 := Claim.RepConstant.mono ext24 hrepOwn
     obtain ⟨extI1, hidxsOwn⟩ := Claim.const_idxs_of_spec hrepOwn24 evIdxsOwn
     obtain ⟨extI2, hidxsIb⟩ := Claim.const_idxs_of_spec (Claim.RepConstant.mono extI1 hrepIb) evIdxsIb
-    obtain ⟨_, _, rpOwn, _, _, hmkOwn, _, _, hrefsOwn, _, _⟩ := hrepOwn24
+    obtain ⟨_, _, rpOwn, _, _, hmkOwn, _, _, hrefsOwn, _, _⟩ := id hrepOwn24
     rw [hvOwn] at hmkOwn
     injection hmkOwn with _ _ haOwn; simp only [List.cons.injEq] at haOwn
     obtain ⟨-, -, rfl, -⟩ := haOwn
