@@ -1316,7 +1316,7 @@ private theorem build_rec_type_heap_shape {rootCalls : List (Call F)}
         (hm935 := hm_app) (hm957 := hm_bv0) (hm979 := hm_majf)
         (ev1020 := evw1) (ev1058 := evw2) (ev1096 := evw3) (ev1126 := evw4)
         (hc1151 := hcf) .. =>
-      subst hm_nil hm_bv hm_bv0 hm_app hm_majf
+      subst hm_nil hm_bv0 hm_app hm_majf
       obtain ⟨rfl, hm2⟩ := flat_length_spec evlen1 hes0
       subst hm2
       obtain ⟨dsP, hlenP, hdsP⟩ := collect_n_doms_whnf_rawList nP (by omega) evcd
@@ -1403,6 +1403,7 @@ private theorem build_rec_type_heap_shape {rootCalls : List (Call F)}
       have hidx_eq : nP + es.length + tot + nI + 1 - 1 - (nP + selfPos) =
           es.length + tot + nI - selfPos := by omega
       rw [hidx_eq] at hm_bv
+      subst hm_bv
       -- conclusion HeapAppBVar
       have hab0 : HeapAppBVar _ (.ptr (.enum kexprEnum) _)
           (((es.length + tot + nI - selfPos : Nat) : F)) :=
@@ -2210,8 +2211,8 @@ private theorem block_ctor_addrs_hashed_spec {t : Ix.Kernel.RoleTable}
           simp only [List.getElem?_cons_zero, Option.some.injEq, Ixon.MutConst.indc.injEq] at hi
           subst ind0
           have hnc_lt := hcsz (.indc ind) List.mem_cons_self ind rfl
-          have hh := member_ctor_addrs_hashed_spec (t := t) (by omega) hnc_lt
-            ind.ctors.size 0 (by omega)
+          have hh := member_ctor_addrs_hashed_spec (t := t) (pos := pos) (n := ind.ctors.size)
+            (by omega) hnc_lt ind.ctors.size 0 (by omega)
             (Bytes.repAddressRef_heapMono₂ addrTy evlen.heap_extends rb)
             (by simpa using evmca) j (Nat.zero_le _) hj
           simpa [Nat.add_zero] using Core.hashed_mono (fun cl hcl => mem_of_eq hc (by call_mem)) hh
@@ -3076,12 +3077,12 @@ private theorem flat_find_pos_kind_addr {κ : _root_.Address → KKey} {target :
       injection h1 with _ h1r; subst h1r
       have ext1 : Heap.Extends m93 m156 := by
         cases sg1 with
-        | n0 _ _ hh _ => rw [hh]; exact Heap.Extends.refl _
-        | other _ _ _ _ hh _ => rw [hh]; exact Heap.Extends.refl _
+        | n0 _ _ hh _ => rw [hh]
+        | other _ _ _ _ hh _ => rw [hh]
       have ext2 : Heap.Extends m156 m209 := by
         cases sg2 with
         | n1 _ _ _ _ _ _ ev_sp ev_us _ _ => exact ev_sp.heap_extends.trans ev_us.heap_extends
-        | other _ _ hh _ => rw [hh]; exact Heap.Extends.refl _
+        | other _ _ hh _ => rw [hh]
       have ext_all := ev105.heap_extends.trans (ext1.trans ext2)
       obtain rfl := binop_add_one_nat op1
       obtain ⟨i, e₁, hi, ha₁, hxsp⟩ := ih (pos + 1)
@@ -3521,12 +3522,12 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
               xrules, xkf, xruns, blkPtr, .field (k : F)])
             xr vp_ci xr_pa (.field (off : F)) (.field (bnl : F)) xform m478 vsou myr csjq →
           Heap.Extends m346 myr := by
-        intro _ _ _ _ _ _ _ _ _ _ _ _ _ sg2 sg3
-        have e2 : Heap.Extends _ _ := by
+        intro _ _ _ _ _ _ m346 _ m478 _ _ myr _ sg2 sg3
+        have e2 : Heap.Extends m346 m478 := by
           cases sg2 with
           | n1 _ _ ev446 _ => exact ev446.heap_extends
           | other _ _ hm _ => rw [hm]; exact Heap.Extends.snoc _ _
-        have e3 : Heap.Extends _ _ := by
+        have e3 : Heap.Extends m478 myr := by
           cases sg3 with
           | n1 _ _ evj _ => exact evj.heap_extends
           | other _ _ hm _ => rw [hm]; exact Heap.Extends.snoc _ _
@@ -4190,7 +4191,7 @@ private theorem check_recs_pass2 {calls : List (Call F)} {bAddr : _root_.Address
       rw [st.ek_addr]; exact st.pInfo_at
     obtain ⟨cs_brt, hsub_brt, ev_brt⟩ := st.ev_brt
     obtain ⟨Rty, tot', -, -, hev_Rty, hRty_tm, hRty_in⟩ :=
-      build_rec_type_spec ht hwf hS hH hbd hRagree hcl hlv hM hoff hnp_lt st.pInfo_ni_lt rfl
+      build_rec_type_spec ht hwf hS hH hbd hRagree hcl hlv hM hoff hnp_lt (st.ni_eq ▸ st.ni_lt) rfl
         he0_get (hflat_eq ▸ st.flat_k) hprim0 hself_pos (hflat_eq ▸ st.fop_eq)
         (by rw [st.fop_len, hflat_eq]) st.fop_lt hsub_brt st.helim_brt
         (hflat_eq ▸ st.hflat_brt) st.hfop_brt hall_ok ev_brt
@@ -4249,10 +4250,10 @@ private theorem check_recs_pass2 {calls : List (Call F)} {bAddr : _root_.Address
         · intro h0; rw [hr_f] at h0; exact absurd (Value.field.inj h0) one_ne_zero
         · intro _; exact ext_P1 (hfinv.2.2.1 hv_f) hQ1
         · intro h2; rw [hr_f] at h2; exact absurd (Value.field.inj h2) (by decide)
-      | n1_other_n1 _ _ _ _ evk hne_f evw hr_f _ hc_f =>
+      | n1_other_n1 _ _ _ cs_w evk hne_f evw hr_f _ hc_f =>
         have hEq : Rty = st.ty := kexpr_struct_eq_oexact hRty_tm st.hty_brt_out evk
         have hQ1 : ExprLvEq st.ty Rty := hEq ▸ ExprLvEq.refl st.ty
-        have hsub_w : ∀ cl ∈ _, cl ∈ calls := fun cl hcl' => hsub_f cl (mem_of_eq hc_f (by call_mem))
+        have hsub_w : ∀ cl ∈ cs_w, cl ∈ calls := fun cl hcl' => hsub_f cl (mem_of_eq hc_f (by call_mem))
         have hQ2 : WrapConsObs (wrapAt t E₀) (WrapperObserved calls t) Rty st.ty :=
           wrap_rel_one_wrapConsObs ht hwf hS hH hbd hRagree hcl hlv hsub_w
             (hRty_tm.mono evk.heap_extends) (st.hty_brt_out.mono evk.heap_extends) hRty_in evw
@@ -4270,9 +4271,9 @@ private theorem check_recs_pass2 {calls : List (Call F)} {bAddr : _root_.Address
         · intro h0; rw [hr_f] at h0; exact absurd (Value.field.inj h0) one_ne_zero
         · intro _; exact ext_P1 (hfinv.2.1 heq_f).1 hQ1
         · intro h2; rw [hr_f] at h2; exact absurd (Value.field.inj h2) (by decide)
-      | other _ _ _ _ _ _ _ _ _ _ _ _ _ evk _ evrg heq_rg evw heq_w op_sub eviz heq_iz hr_f _ hc_f =>
+      | other _ _ _ _ _ _ _ _ cs_w _ _ _ _ evk _ evrg heq_rg evw heq_w op_sub eviz heq_iz hr_f _ hc_f =>
         subst heq_rg heq_w heq_iz
-        have hsub_w : ∀ cl ∈ _, cl ∈ calls := fun cl hcl' => hsub_f cl (mem_of_eq hc_f (by call_mem))
+        have hsub_w : ∀ cl ∈ cs_w, cl ∈ calls := fun cl hcl' => hsub_f cl (mem_of_eq hc_f (by call_mem))
         have hweq := wrap_rel_one_oexact ht hwf hS hH hbd hRagree hcl hlv hsub_w
           (hRty_tm.mono (evk.heap_extends.trans evrg.heap_extends))
           (st.hty_brt_out.mono (evk.heap_extends.trans evrg.heap_extends)) hRty_in evw
@@ -4415,6 +4416,11 @@ private theorem check_recs_pass3 {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
       obtain ⟨peers, hpeers_rep, hpeers_map⟩ := build_peer_recs_spec ht hwf hS hH hbd hRagree
         hcl hlv hsub_pr (st.rba_addr.symm ▸ hSrb) (st.rba_addr.symm ▸ hRec.record) hRec.muts
         (st.rba_addr.symm ▸ hRF) hPD (hflat_eq ▸ st.hflat_bfb) st.rrba_bfb ev_pr
+      have htot_eq : st.tot = tot := flatTotalCtors_det (hflat_eq ▸ st.flat_tot) htot_flat
+      have htot_lt : tot < 2 ^ 39 := htot_eq ▸ st.tot_lt
+      have hnmot_eq := st.nmot_eq
+      have hnmin_eq := st.nmin_eq
+      have hrnp_eq := st.rnp_eq
       obtain ⟨cs_cbp, hsub_cbp, ev_cbp⟩ := st.ev_cbp
       obtain ⟨cbk, hcbk_eq, hcbk_lt, hxcb_eq⟩ := ctors_before_pos_spec ht hwf hS hH hbd hRagree
         hcl hlv flat pos 0 tot (Nat.zero_le _) (by omega) (by omega) htot_flat hsub_cbp
@@ -4425,10 +4431,9 @@ private theorem check_recs_pass3 {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
       have hcbk_succ := ctorsBefore_succ_add (ReconView.ofStore t E₀) flat pos cbk st.ek st.pInfo
         (hflat_eq ▸ st.flat_k) (st.ek_addr.symm ▸ st.pInfo_at) hcbk_eq
       have hcbk_le : cbk + st.pInfo.nctors ≤ rc.minors.toNat := by
-        have htot_eq := flatTotalCtors_det (hflat_eq ▸ st.flat_tot) htot_flat
         rw [st.nmin_eq, htot_eq]
         exact ctorsBefore_le_flatTotalCtors (ReconView.ofStore t E₀) flat (pos + 1) _ _
-          hcbk_succ htot_flat
+          htot_flat hcbk_succ
       have hpeers_len : peers.length = st.fop.length := by
         have h1 : (peers.map ixAddr).length = (recAddrs rb rs).length :=
           congrArg List.length (by rwa [st.rba_addr] at hpeers_map)
@@ -4437,7 +4442,9 @@ private theorem check_recs_pass3 {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
       obtain ⟨cs_pop, hsub_pop, ev_pop⟩ := st.ev_pop
       rw [hxcb_eq] at ev_pop
       obtain ⟨bodies, hev_bodies, hbodies_rep⟩ :=
-        populate_rules_spec ht hwf hS hH hbd hRagree hcl hlv hM st.pInfo_nctors_lt st.pInfo_idx_lt
+        populate_rules_spec ht hwf hS hH hbd hRagree hcl hlv hM
+          (nP := np) (nMot := rc.motives.toNat) (nMin := rc.minors.toNat)
+          st.pInfo_nctors_lt st.pInfo_idx_lt
           hnp_lt (by omega) (by omega) hcbk_le (by rw [st.fop_len, hflat_eq])
           (by rw [st.fop_len, st.flat_len]; omega) hpeers_len st.fop_lt
           (st.pba_addr.symm ▸ st.pInfo_blk_held) st.pInfo.nctors 0 (by omega)
@@ -4632,7 +4639,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       obtain ⟨ind₀, hind₀⟩ := hall_indc msB[0] (Array.mem_toList_iff.mpr (Array.getElem_mem hmsB_ne))
       rw [hind₀] at h0; exact ⟨ind₀, h0⟩
     -- block_nparams_spec
-    obtain ⟨np, hnp_v, hnp_lt, hnp_all⟩ := block_nparams_spec
+    obtain ⟨np, hnp_lt, hnp_v, hnp_all⟩ := block_nparams_spec
       (RepLinkedList.mono L1.repMutConst_heapMono₂
         (ev_mlen.heap_extends.trans ev_icnt.heap_extends) hrep_msB) ev_bnp
     subst hnp_v
