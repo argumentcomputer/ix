@@ -310,7 +310,7 @@ theorem check_carriers_familyKey {t : Ix.Kernel.RoleTable} {rc : Ixon.Recursor}
       have hbeq := (Lib.address_eq_spec evEq hrac ha0_m78).1
       have hac_eq : ac = a0 := by
         by_contra hne
-        rw [if_neg hne] at hbeq
+        rw [ite_eq_right_iff.mpr fun hc => absurd hc hne] at hbeq
         exact absurd (Value.field.inj hbeq) one_ne_zero
       subst hac_eq
       have hhead : headKey Rlast = some (Core.keyOf t (iprjAddr B 0)) := by
@@ -637,13 +637,13 @@ private theorem noLooseIn_instantiate1_ge {a : KExpr} (ha : a.looseBVarsBounded 
     ∀ (e : KExpr) (c k t : Nat), c + k ≤ t → Decl.noLooseIn c k e = true →
       Decl.noLooseIn c k (e.instantiate1 a t) = true
   | .bvar i, c, k, t, hle, hno => by
-    simp only [Decl.noLooseIn, Bool.or_eq_true, decide_eq_true_eq] at hno
+    simp only [Decl.noLooseIn, decide_eq_true_eq] at hno
     simp only [Expr.instantiate1]
     split
     · exact noLooseIn_of_lbb0 a c k ha
     · split
-      · simp only [Decl.noLooseIn, Bool.or_eq_true, decide_eq_true_eq]; exact Or.inr (by omega)
-      · simp only [Decl.noLooseIn, Bool.or_eq_true, decide_eq_true_eq]; exact hno
+      · simp only [Decl.noLooseIn, decide_eq_true_eq]; exact Or.inr (by omega)
+      · simp only [Decl.noLooseIn, decide_eq_true_eq]; exact hno
   | .fvar _ _, _, _, _, _, _ | .sort _, _, _, _, _, _ | .const _ _, _, _, _, _, _
   | .lit _, _, _, _, _, _ => rfl
   | .app f x, c, k, t, hle, hno => by
@@ -673,7 +673,7 @@ private theorem fvarLeaves_instantiate1_of_noLooseIn (a : KExpr) :
     simp only [Decl.noLooseIn, decide_eq_true_eq] at hno
     simp only [Expr.instantiate1]
     have hne : i ≠ c + k := by omega
-    rw [if_neg hne]
+    rw [ite_eq_right_iff.mpr fun hc => absurd hc hne]
     split
     · exact ⟨by simp [Expr.fvarLeaves], by simp only [Decl.noLooseIn, decide_eq_true_eq]; exact Or.inr (by omega)⟩
     · exact ⟨rfl, by simp only [Decl.noLooseIn, decide_eq_true_eq]; exact Or.inl (by omega)⟩
@@ -842,15 +842,16 @@ private theorem addrIn_peel_n_foralls {h : Heap F} :
             | none => rw [hget] at ld; cases ld
             | some v =>
               rw [hget] at ld
-              have hv : v = .construct kexprEnum "Forall" [w42, xb, w43] := by
-                split at ld <;> simp at ld; exact ld.symm
-              subst hv
-              have hty : ty = .enum kexprEnum := by
-                split at ld
-                · next h => exact h
-                · simp at ld
-              subst hty
-              exact .forallBody hget (hsub a ha)
+              dsimp only at ld
+              split at ld
+              · next hty =>
+                have hv : v = .construct kexprEnum "Forall" [w42, xb, w43] :=
+                  (Except.ok.inj ld).symm
+                subst hv
+                have hty' : ty = .enum kexprEnum := hty.symm
+                subst hty'
+                exact .forallBody hget (hsub a ha)
+              · cases ld
           | field _ | tuple _ | construct _ _ _ => simp [loadValue] at ld)
   intro e n r h' cs ev
   exact hmain _ _ _ _ _ _ ev rfl e n rfl
@@ -1115,24 +1116,32 @@ private theorem addrIn_expr_lower_closed :
       · intro hfn e s c hargs hc
         subst hfn hargs
         match Obs.«KernelSubst::expr_lower_walk».obs ev with
-        | .BVar (he29 := hr) (hm28 := hh) .. =>
+        | .BVar (v33 := v33) (he29 := hr) (hm28 := hh) .. =>
           subst hr hh
-          exact ⟨.atom (by simp [kexprEnum]) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
-            fun a ha => (Binding.addrIn_none (by simp [kexprEnum]) (by decide) ha).elim⟩
-        | .Srt (he67 := hr) (hm66 := hh) .. =>
+          have hcell : (h ++ [.construct kexprEnum "BVar" [v33]])[h.length]? =
+              some (.construct kexprEnum "BVar" [v33]) := by simp
+          exact ⟨.atom hcell (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
+            fun a ha => (Binding.addrIn_none hcell (by decide) ha).elim⟩
+        | .Srt (x_l := xl) (he67 := hr) (hm66 := hh) .. =>
           subst hr hh
-          exact ⟨.atom (by simp [kexprEnum]) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
-            fun a ha => (Binding.addrIn_none (by simp [kexprEnum]) (by decide) ha).elim⟩
-        | .Lit (he549 := hr) (hm548 := hh) .. =>
+          have hcell : (h ++ [.construct kexprEnum "Srt" [xl]])[h.length]? =
+              some (.construct kexprEnum "Srt" [xl]) := by simp
+          exact ⟨.atom hcell (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
+            fun a ha => (Binding.addrIn_none hcell (by decide) ha).elim⟩
+        | .Lit (x_lit := xlit) (he549 := hr) (hm548 := hh) .. =>
           subst hr hh
-          exact ⟨.atom (by simp [kexprEnum]) (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
-            fun a ha => (Binding.addrIn_none (by simp [kexprEnum]) (by decide) ha).elim⟩
+          have hcell : (h ++ [.construct kexprEnum "Lit" [xlit]])[h.length]? =
+              some (.construct kexprEnum "Lit" [xlit]) := by simp
+          exact ⟨.atom hcell (by decide) (by decide) (by decide) (by decide) (by decide) (by decide),
+            fun a ha => (Binding.addrIn_none hcell (by decide) ha).elim⟩
         | .Const (x_idx := x_idx) (x_lvls := x_lvls) (ld12 := ld) (he101 := hr) (hm100 := hh) .. =>
           subst hr hh
           obtain ⟨idx, i, v, rfl, hget, hp, hv⟩ := hc.load_const ld
           have ext := Heap.Extends.snoc h (.construct kexprEnum "Const" [x_idx, x_lvls])
-          refine ⟨.const (by simp [kexprEnum]) hp (ext.getElem?_eq hv), fun a ha => ?_⟩
-          exact .const hget (repAddr_back_of_cell ext hp hv (Binding.addrIn_const_inv (by simp [kexprEnum]) ha))
+          have hcell : (h ++ [.construct kexprEnum "Const" [x_idx, x_lvls]])[h.length]? =
+              some (.construct kexprEnum "Const" [x_idx, x_lvls]) := by simp
+          refine ⟨.const hcell hp (ext.getElem?_eq hv), fun a ha => ?_⟩
+          exact .const hget (repAddr_back_of_cell ext hp hv (Binding.addrIn_const_inv hcell ha))
         | .App (x_f := xf) (x_a := xa) (v147 := vf) (v148 := va) (m150 := m1) (cs158 := cs1)
             (m186 := m2) (cs194 := cs2) (ld12 := ld) (he143 := hr) (hm142 := hh)
             (ev160 := ev1) (ev196 := ev2) (hc221 := hc221) .. =>
@@ -1146,8 +1155,10 @@ private theorem addrIn_expr_lower_closed :
           obtain ⟨hcva, hsuba⟩ := (ih _ _ _ _ _ _ hlt2 ev2).1 rfl xa s c rfl (hca.mono ev1.heap_extends)
           have extS := Heap.Extends.snoc m2 (.construct kexprEnum "App" [vf, va])
           have ext1S := ev2.heap_extends.trans extS
-          refine ⟨.app (by simp [kexprEnum]) (hcvf.mono ext1S) (hcva.mono extS), fun a ha => ?_⟩
-          rcases Binding.addrIn_app_inv (by simp [kexprEnum]) ha with hf | harg
+          have hcell : (m2 ++ [.construct kexprEnum "App" [vf, va]])[m2.length]? =
+              some (.construct kexprEnum "App" [vf, va]) := by simp
+          refine ⟨.app hcell (hcvf.mono ext1S) (hcva.mono extS), fun a ha => ?_⟩
+          rcases Binding.addrIn_app_inv hcell ha with hf | harg
           · exact .appFn hget (hsubf a (hcvf.addrIn_back ext1S a hf))
           · exact .appArg hget (hca.addrIn_back ev1.heap_extends a (hsuba a (hcva.addrIn_back extS a harg)))
         | .Lam (x_ty := xt) (x_body := xb) (x_bl := xbl) (v252 := vt) (v253 := vb) (m256 := m1)
@@ -1163,8 +1174,10 @@ private theorem addrIn_expr_lower_closed :
           obtain ⟨hcvb, hsubb⟩ := (ih _ _ _ _ _ _ hlt2 ev2).1 rfl xb s c1 rfl (hcb.mono ev1.heap_extends)
           have extS := Heap.Extends.snoc m2 (.construct kexprEnum "Lam" [vt, vb, xbl])
           have ext1S := ev2.heap_extends.trans extS
-          refine ⟨.lam (by simp [kexprEnum]) (hcvt.mono ext1S) (hcvb.mono extS), fun a ha => ?_⟩
-          rcases Binding.addrIn_lam_inv (by simp [kexprEnum]) ha with ht | hb
+          have hcell : (m2 ++ [.construct kexprEnum "Lam" [vt, vb, xbl]])[m2.length]? =
+              some (.construct kexprEnum "Lam" [vt, vb, xbl]) := by simp
+          refine ⟨.lam hcell (hcvt.mono ext1S) (hcvb.mono extS), fun a ha => ?_⟩
+          rcases Binding.addrIn_lam_inv hcell ha with ht | hb
           · exact .lamTy hget (hsubt a (hcvt.addrIn_back ext1S a ht))
           · exact .lamBody hget (hcb.addrIn_back ev1.heap_extends a (hsubb a (hcvb.addrIn_back extS a hb)))
         | .Forall (x_ty := xt) (x_body := xb) (x_bl := xbl) (v373 := vt) (v374 := vb) (m377 := m1)
@@ -1180,8 +1193,10 @@ private theorem addrIn_expr_lower_closed :
           obtain ⟨hcvb, hsubb⟩ := (ih _ _ _ _ _ _ hlt2 ev2).1 rfl xb s c1 rfl (hcb.mono ev1.heap_extends)
           have extS := Heap.Extends.snoc m2 (.construct kexprEnum "Forall" [vt, vb, xbl])
           have ext1S := ev2.heap_extends.trans extS
-          refine ⟨.forallE (by simp [kexprEnum]) (hcvt.mono ext1S) (hcvb.mono extS), fun a ha => ?_⟩
-          rcases Binding.addrIn_forall_inv (by simp [kexprEnum]) ha with ht | hb
+          have hcell : (m2 ++ [.construct kexprEnum "Forall" [vt, vb, xbl]])[m2.length]? =
+              some (.construct kexprEnum "Forall" [vt, vb, xbl]) := by simp
+          refine ⟨.forallE hcell (hcvt.mono ext1S) (hcvb.mono extS), fun a ha => ?_⟩
+          rcases Binding.addrIn_forall_inv hcell ha with ht | hb
           · exact .forallTy hget (hsubt a (hcvt.addrIn_back ext1S a ht))
           · exact .forallBody hget (hcb.addrIn_back ev1.heap_extends a (hsubb a (hcvb.addrIn_back extS a hb)))
         | .Let (x_ty := xt) (x_val := xv) (x_body := xb) (cs489 := cs1) (ld12 := ld)
@@ -1202,8 +1217,10 @@ private theorem addrIn_expr_lower_closed :
           obtain ⟨hcve, hsube⟩ := (ih _ _ _ _ _ _ hlt ev1).1 rfl xe s c rfl hce
           have extS := Heap.Extends.snoc m1 (.construct kexprEnum "Proj" [xti, .field f, ve])
           have extAll := ev1.heap_extends.trans extS
-          refine ⟨.proj (by simp [kexprEnum]) hp (extAll.getElem?_eq hv) (hcve.mono extS), fun a ha => ?_⟩
-          rcases Binding.addrIn_proj_inv (by simp [kexprEnum]) ha with hra | he
+          have hcell : (m1 ++ [.construct kexprEnum "Proj" [xti, .field f, ve]])[m1.length]? =
+              some (.construct kexprEnum "Proj" [xti, .field f, ve]) := by simp
+          refine ⟨.proj hcell hp (extAll.getElem?_eq hv) (hcve.mono extS), fun a ha => ?_⟩
+          rcases Binding.addrIn_proj_inv hcell ha with hra | he
           · exact .projHead hget (repAddr_back_of_cell extAll hp hv hra)
           · exact .projArg hget (hsube a (hcve.addrIn_back extS a he))
       · intro hfn xt xv xb s c hargs hct hcv hcb
@@ -1226,8 +1243,10 @@ private theorem addrIn_expr_lower_closed :
           have extS := Heap.Extends.snoc m3 (.construct kexprEnum "Let" [vt, vv, vb])
           have ext2S := ev3.heap_extends.trans extS
           have ext1S := ev2.heap_extends.trans ext2S
-          refine ⟨.letE (by simp [kexprEnum]) (hcvt.mono ext1S) (hcvv.mono ext2S) (hcvb.mono extS), fun a ha => ?_⟩
-          rcases Binding.addrIn_let_inv (by simp [kexprEnum]) ha with ht | hv | hb
+          have hcell : (m3 ++ [.construct kexprEnum "Let" [vt, vv, vb]])[m3.length]? =
+              some (.construct kexprEnum "Let" [vt, vv, vb]) := by simp
+          refine ⟨.letE hcell (hcvt.mono ext1S) (hcvv.mono ext2S) (hcvb.mono extS), fun a ha => ?_⟩
+          rcases Binding.addrIn_let_inv hcell ha with ht | hv | hb
           · exact Or.inl (hsubt a (hcvt.addrIn_back ext1S a ht))
           · exact Or.inr (Or.inl (hcv.addrIn_back ev1.heap_extends a (hsubv a (hcvv.addrIn_back ext2S a hv))))
           · exact Or.inr (Or.inr (hcb.addrIn_back ext12 a (hsubb a (hcvb.addrIn_back extS a hb))))
@@ -1401,8 +1420,8 @@ theorem addrIn_rec_major_pins {κ : _root_.Address → KKey} {Γ : Nat → KExpr
       exact hsubPeel a (.forallTy hget1 ha))
     have ext_77_297 := evCi.heap_extends.trans (evLen.heap_extends.trans
       (evDrop.heap_extends.trans evIdx.heap_extends))
-    have hxs297 := RepLinkedList.mono (R := fun h (_ : SourceValue F) p =>
-        KExprClosed h p ∧ ∀ a, AddrIn h p a → AddrIn h ty_ptr a)
+    have hxs297 := RepLinkedList.mono (R := fun h1 (_ : SourceValue F) p =>
+        KExprClosed h1 p ∧ ∀ a, AddrIn h1 p a → AddrIn h ty_ptr a)
       (fun _ _ _ p ext r => hmono (p := p) ext r) ext_77_297 hxs
     have hxinpf : ∃ inp : F, xinp = .field inp := by
       cases xinp with
@@ -1688,10 +1707,8 @@ theorem pinsP_leavesFixed {t : Ix.Kernel.RoleTable} {calls : List (Call F)}
     Decl.spec_params_ptr_eq_one hpd_P2 hpdm C.evParamEq.obs
   simp only [List.append_nil] at hdoms_rev_eq
   -- Connect `renameAll g (posOf ps tyA)` to `(posOf ps tyA).renameConsts g`.
-  have hg_out : ∀ k', srcKeys.contains k' = false → g k' = k' := by
-    intro k' hk'
-    have hnot : k' ∉ srcKeys := by simpa using hk'
-    exact aliasMap_out_of_zip (ks := srcKeys) (ds := dstKeys) (by simp [srcKeys, dstKeys, hlenSD]) hnot
+  have hg_out : ∀ k', srcKeys.contains k' = false → g k' = k' := fun k' hk' =>
+    aliasMap_out_of_zip (ks := srcKeys) (ds := dstKeys) hk'
   have hrenAll_eq : Decl.renameAll g (Core.posOf ps tyA) = (Core.posOf ps tyA).renameConsts g := by
     refine Decl.renameAll_eq_renameConsts_of_noProjIn hg_out ?_
     unfold Core.posOf; rw [noProjIn_instantiateLevelParams]; exact hnp_ty
@@ -1737,7 +1754,7 @@ theorem pinsP_leavesFixed {t : Ix.Kernel.RoleTable} {calls : List (Call F)}
       unfold Core.posOf
       exact (Decl.instantiateLevelParams_renameConsts ps (Core.posLevels ps) g d).symm
     rw [hcomm] at hpos_eq
-    exact Decl.posOf_inj hperm hpos_eq.symm
+    exact Decl.posOf_inj hperm hpos_eq
   -- Step 2: `rec_major_pins` + `lower_pins` proves `noLooseIn 0 (nMot + nMin) p = true` for `p ∈ pins`.
   have hrp_eq : C.rp = .field ((nP + nMot + nMin : Nat) : F) := by
     have hop1 : evalBinOp .add (.field (nP : F)) (.field (nMot : F)) = .ok C.xNpN := by
@@ -1774,7 +1791,8 @@ theorem pinsP_leavesFixed {t : Ix.Kernel.RoleTable} {calls : List (Call F)}
     Decl.lower_pins_spec (bounded_sub C.evLowerPins.sub hbd) (by rw [hnm_val]; omega) evLP' hpins_rep
   -- Relate `pins` (from `majorShape`) to `(AsP.take inpF.val).map (Expr.lowerBVars nI 0)`.
   unfold majorShape at hmaj
-  rw [if_pos (by omega), show nP + nMot + nMin + nI - (nP + nMot + nMin) = nI by omega] at hmaj
+  rw [ite_eq_left_iff.mpr (fun hn => absurd (by omega) hn),
+    show nP + nMot + nMin + nI - (nP + nMot + nMin) = nI by omega] at hmaj
   cases hsm : tyA.stripPis (nP + nMot + nMin + nI) with
   | none => simp [hsm] at hmaj
   | some q =>
@@ -1836,18 +1854,21 @@ theorem pinsP_leavesFixed {t : Ix.Kernel.RoleTable} {calls : List (Call F)}
           cases hop1 : openPisAtFvars nP tyA 0 with
           | none => simp [hop1] at hsplit
           | some q1 =>
+            rcases q1 with ⟨fvs1, r1⟩
             rw [hop1] at hsplit
             dsimp only at hsplit
-            cases hop2 : openPisAtFvars (nMot + nMin) q1.2 (0 + nP) with
+            cases hop2 : openPisAtFvars (nMot + nMin) r1 (0 + nP) with
             | none => simp [hop2] at hsplit
             | some q2 =>
+              rcases q2 with ⟨fvs2, r2⟩
               rw [hop2] at hsplit
               simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsplit
               obtain ⟨hfvs_eq, -⟩ := hsplit
-              have hlen1 : q1.1.length = nP := Decl.openPisAtFvars_len nP hop1
-              have htake_np : fvsP.take nP = q1.1 := by
-                rw [← hfvs_eq, List.take_left' hlen1]
+              have hlen1 : fvs1.length = nP := Decl.openPisAtFvars_len nP hop1
+              have htake_np : fvsP.take nP = fvs1 := by
+                rw [hfvs_eq, List.take_left' hlen1]
               obtain ⟨hno_p, hfv_p⟩ := hnoLoose_orig p hp
+              rw [show nP + nMot + nMin = nP + (nMot + nMin) by omega]
               refine leavesFixed_instSpine_of_noLooseIn (np := nP) (k := nMot + nMin)
                 (by omega) ?_ hfv_p hno_p
               intro fv hfv
@@ -1904,7 +1925,7 @@ theorem get_ci_induct_record {calls : List (Call F)} {E₀ : Ixon.Env}
       rw [hinfo] at hraw; obtain ⟨v, hldv, _, _, _, _, hv, _, _⟩ := hraw
       have he := Except.ok.inj (hld.symm.trans hldv); rw [hv] at he
       unfold L1.defnValShape at he
-      cases d.kind <;> simp at he
+      cases d.kind <;> (dsimp only at he; injection he with _ ht _; exact absurd ht (by decide))
     | axio ax =>
       rw [hinfo] at hraw; obtain ⟨v, hldv, _, _, hv, _⟩ := hraw
       have he := Except.ok.inj (hld.symm.trans hldv); rw [hv] at he
@@ -1922,7 +1943,7 @@ theorem get_ci_induct_record {calls : List (Call F)} {E₀ : Ixon.Env}
       obtain ⟨_, _, _, _, d, v, _, _, _, _, _, _, hldv, _, _, _, _, hv, _, _⟩ := hraw
       have he := Except.ok.inj (hld.symm.trans hldv); rw [hv] at he
       unfold L1.defnValShape at he
-      cases d.kind <;> simp at he
+      cases d.kind <;> (dsimp only at he; injection he with _ ht _; exact absurd ht (by decide))
     | cPrj p =>
       rw [hinfo] at hraw
       obtain ⟨_, _, _, _, _, _, _, v, _, _, _, _, _, _, _, hldv, _, _, _, _, _, _, _, _, _, _, hv, _⟩ := hraw
@@ -1930,7 +1951,7 @@ theorem get_ci_induct_record {calls : List (Call F)} {E₀ : Ixon.Env}
       injection he with _ ht _; exact absurd ht (by decide)
     | rPrj p =>
       rw [hinfo] at hraw
-      obtain ⟨_, _, _, _, _, _, v, _, _, _, _, _, _, hldv, _, _, _, _, _, _, _, _, _, _, _, _, hv, _, _⟩ := hraw
+      obtain ⟨_, _, _, _, _, _, v, _, _, _, _, _, hldv, _, _, _, _, _, _, _, _, _, _, _, _, hv, _, _⟩ := hraw
       have he := Except.ok.inj (hld.symm.trans hldv); rw [hv] at he
       injection he with _ ht _; exact absurd ht (by decide)
     | muts ms => rw [hinfo] at hraw; exact hraw.elim
@@ -1958,7 +1979,7 @@ theorem get_ci_induct_record {calls : List (Call F)} {E₀ : Ixon.Env}
       injection hvc with _ _ hargs; injection hargs with hiv _; subst hiv
       rw [← hcm1, hinfo] at hciRep
       obtain ⟨_, hvc2, _⟩ := hciRep
-      injection hvc2 with _ htag _; exact hne htag.symm
+      injection hvc2 with _ htag _; exact hne htag
     match Obs.«Ingress::get_ci».obs ev with
     | .Defn_n0 (cs12 := cs12) (ev14 := ev14) (hc302 := hc) .. =>
       exact (hcontra (fun cl hcl => hsub cl (by rw [hc]; simp [hcl])) ev14 (by decide)).elim
@@ -2094,7 +2115,7 @@ private theorem check_iota_rule_scope_call
   subst h1eq h2eq h3eq
   rw [hc_sc, hc4_1, hc4_2, hc4_3, hc4_nil] at sc4_l
   have hcall := sc4_l.append_right.cons_head
-  exact ⟨fun _ => True, fun _ => True, m3, h_sc, v_sc, cs_sc, ev_plen.heap_extends, hcall, ev_sc⟩
+  exact ⟨fun _ => True, fun _ => True, h1, h_sc, v_sc, cs_sc, ev_plen.heap_extends, hcall, ev_sc⟩
 
 /-- Callback supplying block-constructor data (`nonrecsBlk`, `nonrecsTys`) for rules whose major
 premise lies in the current block `B`. -/
@@ -2262,7 +2283,7 @@ private theorem src_mem_famAddr {E₀ : Ixon.Env} {B rb : _root_.Address} {cb cr
       simp only [List.length_mapIdx, Array.length_toList] at hi
       simp only [List.getElem_mapIdx] at heq
       refine ⟨ms, i, ms[i], hB.muts, Array.getElem?_eq_getElem hi, Or.inl ?_⟩
-      rw [← heq, LoadedReads.memberAddr_eq_projAddr]
+      rw [← heq, LoadedReads.memberAddr_eq_projAddr]; rfl
     · left; right
       have hgo : ∀ (l : List Ixon.MutConst) (p : Nat), x ∈ ctorAddrsFrom B l p →
           ∃ i ind j, l[i]? = some (.indc ind) ∧ j < ind.ctors.size ∧ x = cprjAddr B (p + i) j := by
@@ -2290,7 +2311,30 @@ private theorem src_mem_famAddr {E₀ : Ixon.Env} {B rb : _root_.Address} {cb cr
     simp only [List.length_mapIdx, Array.length_toList] at hi
     simp only [List.getElem_mapIdx] at heq
     refine ⟨rs, i, rs[i], hR.muts, Array.getElem?_eq_getElem hi, Or.inl ?_⟩
-    rw [← heq, LoadedReads.memberAddr_eq_projAddr]
+    rw [← heq, LoadedReads.memberAddr_eq_projAddr]; rfl
+
+private theorem repList_map_pred {en : String} {α : Type}
+    {R S : Heap F → α → SourceValue F → Prop} {h : Heap F} {xs : List α} {p : SourceValue F}
+    (f : ∀ a v, R h a v → S h a v) (hr : RepList en R h xs p) : RepList en S h xs p := by
+  induction hr with
+  | nil c => exact .nil c
+  | cons c hx _ ih => exact .cons c (f _ _ hx) ih
+
+private theorem blockRecurAddrs_eq_mapIdx (B : _root_.Address) (ms : List Ixon.MutConst) :
+    L1.blockRecurAddrs B ms =
+      ms.mapIdx fun i m => projAddr (Specs.Callees.memberProjInfo B i m) := by
+  unfold L1.blockRecurAddrs
+  have hgo : ∀ (l : List Ixon.MutConst) (p : Nat),
+      l.mapIdx (fun i m => memberAddr B (p + i) m) =
+        l.mapIdx (fun i m => projAddr (Specs.Callees.memberProjInfo B (p + i) m)) := by
+    intro l; induction l with
+    | nil => intro _; rfl
+    | cons m rest ih' =>
+      intro p; simp only [List.mapIdx_cons, Nat.add_zero]
+      congr 1
+      · exact LoadedReads.memberAddr_eq_projAddr B p m
+      · simpa [Nat.add_assoc, Nat.add_comm 1] using ih' (p + 1)
+  simpa using hgo ms 0
 
 private theorem usedRef_stored_or_src_lists {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {lim : Option Nat}
@@ -2622,50 +2666,29 @@ theorem rulesTrace_walk
             rcases L1.RawConvExpr.addrIn_used hraw_rhs a ha_h with ⟨i, hi_used, hi_ref⟩ | hrec_mem
             · have hu : UsedRef E₀ rb (ixAddr a) := by
                 refine ⟨crb, i, hR.record, ?_, by rw [← Array.getElem?_toList]; exact hi_ref⟩
-                have hmem_rs : Ixon.MutConst.recr rc ∈ rs.toList :=
-                  List.mem_of_getElem? (by rw [Array.getElem?_toList]; exact hrk)
                 unfold usedRefIdxs; rw [hR.muts]
-                exact List.mem_append_right _ (List.mem_flatMap.mpr
-                  ⟨.recr rc, hmem_rs, List.mem_append_right _
-                    (List.mem_flatMap.mpr ⟨ru, hrus_sub ru List.mem_cons_self, hi_used⟩)⟩)
+                rcases hi_used with hi_e | ⟨s_sh, hs_sh, hi_s⟩
+                · have hmem_rs : Ixon.MutConst.recr rc ∈ rs.toList :=
+                    List.mem_of_getElem? (by rw [Array.getElem?_toList]; exact hrk)
+                  exact List.mem_append_right _ (List.mem_flatMap.mpr
+                    ⟨.recr rc, hmem_rs, List.mem_append_right _
+                      (List.mem_flatMap.mpr ⟨ru, hrus_sub ru List.mem_cons_self, hi_e⟩)⟩)
+                · exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨s_sh, hs_sh, hi_s⟩)
               exact hused_rb _ hu
             · right
               have hmem_recAs : ixAddr a ∈ recAs.map ixAddr := by
-                rw [hrecs]
-                have hrec_eq : L1.blockRecurAddrs rb rs.toList =
-                    rs.toList.mapIdx fun i m => projAddr (Specs.Callees.memberProjInfo rb i m) := by
-                  unfold L1.blockRecurAddrs
-                  have hgo : ∀ (l : List Ixon.MutConst) (p : Nat),
-                      l.mapIdx (fun i m => LoadedReads.memberAddr rb (p + i) m) =
-                        l.mapIdx (fun i m => projAddr (Specs.Callees.memberProjInfo rb (p + i) m)) := by
-                    intro l; induction l with
-                    | nil => intro _; rfl
-                    | cons m rest ih' =>
-                      intro p; simp only [List.mapIdx_cons, Nat.add_zero]
-                      congr 1
-                      · exact LoadedReads.memberAddr_eq_projAddr
-                      · simpa [Nat.add_assoc, Nat.add_comm 1] using ih' (p + 1)
-                  simpa using hgo rs.toList 0
-                rwa [← hrec_eq]
+                rw [hrecs, ← blockRecurAddrs_eq_mapIdx]; exact hrec_mem
               simp only [srcAs, List.map_append, List.mem_append]
               exact Or.inr hmem_recAs
           have hpins_m155 : RepList kexprListEnum
               (fun h P p => Decl.TmExact (Core.keyOf t) 0 zeroGhost h rP P p ∧
                 ∀ a, AddrIn h p a →
                   (∃ ci, env.find? (Core.keyOf t (ixAddr a)) = some ci) ∨ ixAddr a ∈ srcAs.map ixAddr)
-              m155 (pins.map (Core.posOf ps)) pins_ptr := by
-            have hpins_u155 : RepList kexprListEnum
-                (fun h P p => Decl.TmExact (Core.keyOf t) 0 zeroGhost h rP P p ∧
-                  ∀ a, AddrIn h p a → UsedRef E₀ rb (ixAddr a))
-                m155 (pins.map (Core.posOf ps)) pins_ptr :=
-              RepLinkedList.mono (fun _ _ _ _ ext ⟨ht', hu'⟩ =>
+              m155 (pins.map (Core.posOf ps)) pins_ptr :=
+            repList_map_pred (fun _ _ ⟨ht', hu'⟩ => ⟨ht', fun a ha => hused_rb _ (hu' a ha)⟩)
+              (RepLinkedList.mono (fun _ _ _ _ ext ⟨ht', hu'⟩ =>
                 ⟨ht'.mono ext, fun a ha => hu' a (Binding.TmExact.addrIn_back ht' ext a ha)⟩)
-                ext_h_m155 hpins
-            generalize hpl : pins.map (Core.posOf ps) = pl at hpins_u155
-            clear hpl hpins
-            induction hpins_u155 with
-            | nil c => exact .nil c
-            | cons c hx _ ih' => exact .cons c ⟨hx.1, fun a ha => hused_rb _ (hx.2 a ha)⟩ ih'
+                ext_h_m155 hpins)
           -- Build `hcty_of_find` by splitting `Bm = B` vs `Bm ≠ B`.
           have hcty_of_find : ∀ ci_gc, env.find? (g rl₀.ctor) = some ci_gc →
               ∃ cvj : ConstantVal .anon,
@@ -2758,35 +2781,22 @@ theorem rulesTrace_walk
                 rcases L1.RawConvExpr.addrIn_used rtyC a ha with ⟨i_r, hi_u, hi_ref⟩ | hrec_mem
                 · have huB : UsedRef E₀ B (ixAddr a) := by
                     refine ⟨cb, i_r, hB.record, ?_, by rw [← Array.getElem?_toList]; exact hi_ref⟩
-                    have hmem_ms : Ixon.MutConst.indc indM ∈ ms.toList :=
-                      List.mem_of_getElem? (by rw [Array.getElem?_toList]; exact hmsM)
-                    have hmem_ct : indM.ctors[j] ∈ indM.ctors.toList :=
-                      Array.mem_toList_iff.mpr (Array.getElem_mem hj_lt_ctors)
                     unfold usedRefIdxs; rw [hB.muts]
-                    exact List.mem_append_right _ (List.mem_flatMap.mpr
-                      ⟨.indc indM, hmem_ms, List.mem_append_right _
-                        (List.mem_flatMap.mpr ⟨indM.ctors[j], hmem_ct, hi_u⟩)⟩)
+                    rcases hi_u with hi_e | ⟨s_sh, hs_sh, hi_s⟩
+                    · have hmem_ms : Ixon.MutConst.indc indM ∈ ms.toList :=
+                        List.mem_of_getElem? (by rw [Array.getElem?_toList]; exact hmsM)
+                      have hmem_ct : indM.ctors[j] ∈ indM.ctors.toList :=
+                        Array.mem_toList_iff.mpr (Array.getElem_mem hj_lt_ctors)
+                      exact List.mem_append_right _ (List.mem_flatMap.mpr
+                        ⟨.indc indM, hmem_ms, List.mem_append_right _
+                          (List.mem_flatMap.mpr ⟨indM.ctors[j], hmem_ct, hi_e⟩)⟩)
+                    · exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨s_sh, hs_sh, hi_s⟩)
                   rcases hSE.blockRefs (ixAddr a) huB with hst | hnd
                   · left; exact Option.isSome_iff_exists.mp hst
                   · exact usedRef_stored_or_src_lists hB hR htypes hctors hrecs hSE (Or.inl huB) (Or.inr hnd)
                 · right
                   have hmem_typeAs : ixAddr a ∈ typeAs.map ixAddr := by
-                    rw [htypes]
-                    have hrec_eq : L1.blockRecurAddrs B ms.toList =
-                        ms.toList.mapIdx fun i m => projAddr (Specs.Callees.memberProjInfo B i m) := by
-                      unfold L1.blockRecurAddrs
-                      have hgo : ∀ (l : List Ixon.MutConst) (p : Nat),
-                          l.mapIdx (fun i m => LoadedReads.memberAddr B (p + i) m) =
-                            l.mapIdx (fun i m => projAddr (Specs.Callees.memberProjInfo B (p + i) m)) := by
-                        intro l; induction l with
-                        | nil => intro _; rfl
-                        | cons m rest ih' =>
-                          intro p; simp only [List.mapIdx_cons, Nat.add_zero]
-                          congr 1
-                          · exact LoadedReads.memberAddr_eq_projAddr
-                          · simpa [Nat.add_assoc, Nat.add_comm 1] using ih' (p + 1)
-                      simpa using hgo ms.toList 0
-                    rwa [← hrec_eq]
+                    rw [htypes, ← blockRecurAddrs_eq_mapIdx]; exact hrec_mem
                   simp only [srcAs, List.map_append, List.mem_append]
                   exact Or.inl (Or.inl hmem_typeAs)
               let cvj : ConstantVal .anon :=
@@ -2816,7 +2826,7 @@ theorem rulesTrace_walk
                 exact hnot_src (List.mem_map.mpr ⟨b, hb, hax⟩)
               have hg_fix : g rl₀.ctor = rl₀.ctor :=
                 aliasMap_out_of_zip (ks := srcKeys) (ds := dstKeys)
-                  (by simp [dstKeys, hlenSD]) hnot_srcK
+                  (List.contains_eq_false_iff_not_mem.mpr hnot_srcK)
               rw [hg_fix] at hfind_gc
               have hfind_a : env.find? (Core.keyOf t (ixAddr a_cprj)) = some ci_gc := by
                 rwa [← hrl_ctor]
@@ -3124,7 +3134,7 @@ theorem famRecCompanion_of_data
     subst hnP_eq
     -- Unfold `majorShape` and `Expr.recRulePlain`
     unfold majorShape at hmaj'
-    rw [if_pos (by omega)] at hmaj'
+    rw [ite_eq_left_iff.mpr fun hn => absurd (by omega) hn] at hmaj'
     cases hsm : D.tyA.stripPis mI with
     | none => simp [hsm] at hmaj'
     | some q =>
@@ -3445,7 +3455,7 @@ theorem recMember_of_cons
     have hop2 : evalBinOp .add (.field ((rc.params.toNat : F) + (rc.motives.toNat : F)))
         (.field (rc.minors.toNat : F)) = .ok C.rp := by
       rw [← hx, ← hnmin_eq]; exact C.opRp
-    rw [SubstAux.add_ok hop2]; push_cast; rfl
+    rw [SubstAux.add_ok hop2]; simp only [rP, Nat.cast_add]
   -- 2. Read `rc.typ` under `id` (`tyP`), scope via `C.evScope`, `familyKey` via `C.evCarriers`,
   --    `majorKey` via `C.evParent`.
   have hself0 : ∀ i x, ([] : List _root_.Address)[i]? = some x →
@@ -3542,7 +3552,8 @@ theorem recMember_of_cons
         subst hhR
         injection hrR with hl; injection hl with hi1 _; subst hi1
         rw [hrp_eq, hni_eq] at opMi
-        have hv16 : v16 = .field ((mI : Nat) : F) := by rw [SubstAux.add_ok opMi]; push_cast; rfl
+        have hv16 : v16 = .field ((mI : Nat) : F) := by
+          rw [SubstAux.add_ok opMi]; simp only [mI, Nat.cast_add]
         rw [hv16] at evP
         have hmi_val : ZMod.val (mI : F) = mI := SubstAux.val_natCast (by omega)
         obtain ⟨hhP, _, _, _, hstripP, hbodyP⟩ :=
@@ -3616,7 +3627,7 @@ theorem recMember_of_cons
     obtain ⟨ty₀, hread₀⟩ := LoadedReads.exprReader_read_ok ht
       (param := Ix.Kernel.Reader.recParam ps) rty hself0 hblob
     obtain ⟨hty₀_lbb, hty₀_def⟩ :=
-      Typing.read_recParam_scoped hperm hread₀ hreadP htyP_lbb htyP_def
+      Typing.read_recParam_scoped hperm hread₀ hreadP htyP_lbb (by rwa [hps_len])
     -- Canonical annotation `tyA` of `ty₀` at root `mutsRootOffset rs.toList k`
     have hself_nil : ∀ i x m k', ([] : List _root_.Address)[i]? = some x →
         blockSelf t rb rs i = some m → m = .ok k' → k' = Core.keyOf t x := fun _ _ _ _ hx => by
@@ -3633,11 +3644,11 @@ theorem recMember_of_cons
       ext_67_838.trans (evRmp.heap_extends.trans evGetInd.heap_extends)
     obtain ⟨hv144_eq, hmLen_eq⟩ := rules_length_eq
       (hrlsTrace.mono ext_67_mInd (fun _ hm => hm)) evRlen
-    subst hmLen_eq
+    subst mLen
     have hrules_len_lt : rc.rules.size < 72057594037927936 := by
       have htoRep : ∀ {j' : Nat} {root' : F} {l : List Ixon.RecursorRule} {q : SourceValue F},
           L1.RulesTraceRep crb.refs.toList (L1.blockRecurAddrs rb rs.toList) crb.univs.toList
-            crb.sharing.toList blobs C.m838 j' root' l q →
+            crb.sharing.toList blobs tree C.m838 j' root' l q →
           RepList krrListEnum (fun _ _ _ => True) C.m838 l q := by
         intro j' root' l q htr
         induction htr with
@@ -3651,7 +3662,7 @@ theorem recMember_of_cons
     have hcntRules : rc.rules.size = indM.ctors.size := by
       rw [Array.length_toList] at hv144_eq
       exact nat_eq_of_field_eq_u56_r hrules_len_lt hindM_nc_lt
-        (Value.field.inj (hv144_eq.symm.trans (heqInct.symm.trans hx_inct_eq)))
+        (Value.field.inj (hv144_eq.symm.trans (heqInct.trans hx_inct_eq)))
     -- 6. Run `Decl.rec_major_pins_spec_wide` on `evRmp` to get `pinsA` and `majorShape`!
     have hrp_val : ZMod.val (rP : F) = rP := SubstAux.val_natCast (by omega)
     have hni_val : ZMod.val (rc.indices.toNat : F) = rc.indices.toNat := SubstAux.val_natCast (by omega)
@@ -3667,7 +3678,7 @@ theorem recMember_of_cons
     injection htupRmp with hl; injection hl with h1 hl; injection hl with h2 hl; injection hl with h3 _
     subst h1 h2 h3
     have haInd2_eq : aInd2 = aIndM := addr_det haInd2 haIndM_rmp
-    subst haInd2_eq
+    subst aInd2
     -- Match `ZMod.val inpF = indM.params.toNat` from `evRmp'`'s `get_ci [x_iaddr]` and `Lists::length`
     have hinp_eq : ZMod.val inpF = indM.params.toNat := by
       match Obs.«KernelModeled::rec_major_pins».obs evRmp' with
@@ -3679,8 +3690,8 @@ theorem recMember_of_cons
         subst hhE
         injection hrE with hl; injection hl with hxi _; subst hxi
         rw [SubstAux.add_ok opMi] at eP
-        have hmi_v : ZMod.val ((rP : F) + (rc.indices.toNat : F)) = rP + rc.indices.toNat :=
-          SubstAux.val_add (by omega)
+        have hmi_v : ZMod.val ((rP : F) + (rc.indices.toNat : F)) = rP + rc.indices.toNat := by
+          rw [← Nat.cast_add]; exact SubstAux.val_natCast (by omega)
         obtain ⟨bs0, rem0, hstrip0, hrem0, rfl⟩ :=
           Decl.peel_n_foralls_exact (rP + rc.indices.toNat) hmi_v eP ((htm_tyA 0 zeroGhost).mono ext_67_838)
         rw [Nat.zero_add] at hrem0
@@ -3745,23 +3756,23 @@ theorem recMember_of_cons
         exact SubstAux.val_natCast (by omega)
     -- 7. Transfer `majorShape` from `Core.posOf ps tyA` to `tyA`, and establish `hlvls_def`, `hpins_ok`,
     --    `husedIndM`, `hpins_used`, `hty_used`.
-    have hstripA_ex : ∃ bsA domA bodyA, tyA.stripPis mI = some (bsA, .forallE domA bodyA mMajPos) ∧
+    have hstripA_ex : ∃ bsA domA bodyA mA, tyA.stripPis mI = some (bsA, .forallE domA bodyA mA) ∧
         domPos = Core.posOf ps domA := by
       rw [hrp_val, hni_val] at hstripPos
       unfold Core.posOf at hstripPos
       rw [stripPis_instantiateLevelParams] at hstripPos
-      cases hst : tyA.stripPis mI with
-      | none => simp [hst] at hstripPos
+      cases hst : tyA.stripPis (rP + rc.indices.toNat) with
+      | none => rw [hst] at hstripPos; cases hstripPos
       | some q =>
         rw [hst] at hstripPos
         rcases q with ⟨bsA, remA⟩
         simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hstripPos
         cases remA with
         | forallE dA bA mA =>
-          injection hstripPos.2 with hd hb hm; subst hm
-          exact ⟨bsA, dA, bA, rfl, hd.symm⟩
+          injection hstripPos.2 with hd _ _
+          exact ⟨bsA, dA, bA, mA, hst, hd.symm⟩
         | _ => cases hstripPos.2
-    obtain ⟨bsA, domA, bodyA, hstripA, hdomPos_eq⟩ := hstripA_ex
+    obtain ⟨bsA, domA, bodyA, mA, hstripA, hdomPos_eq⟩ := hstripA_ex
     have hfnA_ex : ∃ lvlsA, domA.getAppFn = .const (Core.keyOf t (ixAddr aIndM)) lvlsA ∧
         lvlsPos = lvlsA.map (Level.subst ps (Core.posLevels ps)) := by
       rw [hdomPos_eq] at hfnPos
@@ -3784,7 +3795,10 @@ theorem recMember_of_cons
       exact lowerBVars_instantiateLevelParams _ _ _ _ a
     have hmajA : majorShape tyA mI rP indM.params.toNat = some (lvlsA, pinsA) := by
       unfold majorShape
-      rw [if_pos (by omega), show mI - rP = rc.indices.toNat by omega, hstripA, hfnA]
+      rw [ite_eq_left_iff.mpr (fun hn => absurd (by omega) hn),
+        show mI - rP = rc.indices.toNat by omega, hstripA]
+      dsimp only
+      rw [hfnA]
       dsimp only
       have hlen_dom : domA.getAppArgs.length = indM.params.toNat + rc.indices.toNat := by
         have h1 : AsPos.length = domA.getAppArgs.length := by rw [hAsPos_map, List.length_map]
@@ -3810,15 +3824,15 @@ theorem recMember_of_cons
           rw [List.map_drop, ← hAsPos_map, ← hinp_eq, hdropPos, hni_val, List.map_map]
           rfl
         exact (List.map_injective_iff.mpr fun _ _ h => Decl.posOf_inj hperm h) hpos_eq
-      rw [if_pos ⟨hlen_dom, htake_dom, hdrop_dom⟩]
+      rw [ite_eq_left_iff.mpr fun hn => absurd ⟨hlen_dom, htake_dom, hdrop_dom⟩ hn]
     have hlvls_def : lvlsA.all (Level.allParamsDefined ps) = true := by
       have hrem_def := allLevelParamsDefined_stripPis mI htyA_def hstripA
       simp only [Expr.allLevelParamsDefined, Bool.and_eq_true] at hrem_def
       have hfn_def := allLevelParamsDefined_getAppFn domA hrem_def.1.1
       rw [hfnA] at hfn_def
       exact hfn_def
-    have htyA_lbb : tyA.looseBVarsBounded 0 = true :=
-      Decl.annotates_looseBVarsBounded hann_ty hty₀_lbb
+    have htyA_lbb : tyA.looseBVarsBounded 0 = true := by
+      rw [Decl.annotates_looseBVarsBounded hann_ty 0]; exact hty₀_lbb
     have hpins_ok : pinsA.all (fun p => !p.hasFvar && p.looseBVarsBounded rP &&
         p.allLevelParamsDefined ps) = true := by
       refine List.all_eq_true.mpr fun p hp => ?_
@@ -3850,11 +3864,13 @@ theorem recMember_of_cons
       intro a ha
       rcases L1.RawConvExpr.addrIn_used rty a ha with ⟨i_r, hi_u, hi_ref⟩ | hnil
       · refine ⟨crb, i_r, hR.record, ?_, by rw [← Array.getElem?_toList]; exact hi_ref⟩
-        have hmem_rs : Ixon.MutConst.recr rc ∈ rs.toList :=
-          List.mem_of_getElem? (by rw [Array.getElem?_toList]; exact hrk)
         unfold usedRefIdxs; rw [hR.muts]
-        exact List.mem_append_right _ (List.mem_flatMap.mpr
-          ⟨.recr rc, hmem_rs, List.mem_append_left _ hi_u⟩)
+        rcases hi_u with hi_e | ⟨s_sh, hs_sh, hi_s⟩
+        · have hmem_rs : Ixon.MutConst.recr rc ∈ rs.toList :=
+            List.mem_of_getElem? (by rw [Array.getElem?_toList]; exact hrk)
+          exact List.mem_append_right _ (List.mem_flatMap.mpr
+            ⟨.recr rc, hmem_rs, List.mem_append_left _ hi_e⟩)
+        · exact List.mem_append_left _ (List.mem_flatMap.mpr ⟨s_sh, hs_sh, hi_s⟩)
       · cases hnil
     have husedIndM : UsedRef E₀ rb (ixAddr aIndM) := by
       have hki : KeyIn (Core.keyOf t (ixAddr aIndM)) (Core.posOf ps tyA) := by
@@ -3865,7 +3881,7 @@ theorem recMember_of_cons
           | const k ls => intro h; injection h with hk _; rw [hk]; exact .const
           | app f a ihf _ => intro h; exact .appL (ihf h)
           | _ => intro h; cases h
-        exact keyIn_stripPis mI hstripPos (.forallL (hfn_ki domPos hfnPos))
+        exact keyIn_stripPis (Core.keyOf t (ixAddr aIndM)) mI hstripPos (.forallL (hfn_ki domPos hfnPos))
       obtain ⟨a', ha', hk'⟩ := addrIn_of_keyIn_tmExact (htm_tyA 0 zeroGhost) hki
       have heq : ixAddr a' = ixAddr aIndM := Core.keyOf_inj htwf hk'
       rw [← heq]; exact hty_used_67 a' ha'
@@ -3876,18 +3892,14 @@ theorem recMember_of_cons
         (fun h P p => Decl.TmExact (Core.keyOf t) 0 zeroGhost h rP P p ∧
           ∀ a, AddrIn h p a → UsedRef E₀ rb (ixAddr a)) mInd
         (pinsA.map (Core.posOf ps)) x_pins := by
+      have hsub_u : ∀ a, AddrIn mRmp C.ty a → UsedRef E₀ rb (ixAddr a) := fun a ha =>
+        hty_used_67 a (Binding.TmExact.addrIn_back (htm_tyA 0 zeroGhost)
+          (ext_67_838.trans evRmp.heap_extends) a ha)
       have hrmp_used : RepList kexprListEnum
           (fun h P p => Decl.TmExact (Core.keyOf t) 0 zeroGhost h rP P p ∧
             ∀ a, AddrIn h p a → UsedRef E₀ rb (ixAddr a)) mRmp
-          (pinsA.map (Core.posOf ps)) x_pins := by
-        have hsub_u : ∀ a, AddrIn mRmp C.ty a → UsedRef E₀ rb (ixAddr a) := fun a ha =>
-          hty_used_67 a (Binding.TmExact.addrIn_back (htm_tyA 0 zeroGhost)
-            (ext_67_838.trans evRmp.heap_extends) a ha)
-        generalize hpl : pinsA.map (Core.posOf ps) = pl at hpins_addr
-        clear hpl hpins_rmp
-        induction hpins_addr with
-        | nil c => exact .nil c
-        | cons c hx _ ih' => exact .cons c ⟨hx.1, fun a ha => hsub_u a (hx.2 a ha)⟩ ih'
+          (pinsA.map (Core.posOf ps)) x_pins :=
+        repList_map_pred (fun _ _ ⟨ht', ha'⟩ => ⟨ht', fun a ha => hsub_u a (ha' a ha)⟩) hpins_addr
       exact RepLinkedList.mono (fun _ _ _ _ ext ⟨ht', hu'⟩ =>
         ⟨ht'.mono ext, fun a ha => hu' a (Binding.TmExact.addrIn_back ht' ext a ha)⟩)
         evGetInd.heap_extends hrmp_used
@@ -4084,7 +4096,9 @@ theorem checkRecs_walk
           obtain ⟨rc, hrc_eq⟩ := hR.recrs rs[k0] (Array.mem_toList_iff.mpr (Array.getElem_mem hk0_lt))
           have hrk : rs[k0]? = some (.recr rc) := by rwa [hrc_eq] at hm0_get
           have ha0 : ixAddr aRec = rprjAddr rb k0 := by
-            simpa [List.getElem_cons_zero] using ha_eq 0 (by simp)
+            have h0 := ha_eq 0 (by simp)
+            simp only [List.getElem_cons_zero, Nat.add_zero] at h0
+            exact h0
           have hg0 := hg_eq 0 (by simp)
           simp only [Nat.add_zero, List.getElem_cons_zero] at hg0
           obtain ⟨⟨D0⟩, remBytes, hstr_mid⟩ :=
@@ -4101,10 +4115,21 @@ theorem checkRecs_walk
             rw [← hk1_eq]; exact C.evNext.obs
           have ext_h_892 : Heap.Extends h C.m892 := C.ext_h_m838.trans C.evRules.extends
           have hsub_next : CallSub C.evNext.cs calls := fun cl hcl => hsub cl (C.evNext.sub cl hcl)
+          have hha_rest : ∀ idx (hi : idx < restRecs.length),
+              ixAddr restRecs[idx] = rprjAddr rb (k0 + 1 + idx) := fun idx hi => by
+            have h1 := ha_eq (idx + 1) (by simp; omega)
+            simp only [List.getElem_cons_succ] at h1
+            rwa [show k0 + (idx + 1) = k0 + 1 + idx by omega] at h1
+          have hhg_rest : ∀ idx (hi : idx < restRecs.length),
+              aliasMap (((typeAs ++ ctorAs ++ recAs).map fun b => Core.keyOf t (ixAddr b)).zip
+                (dstAs.map fun b => Core.keyOf t (ixAddr b))) (Core.keyOf t (rprjAddr rb (k0 + 1 + idx))) =
+                Core.keyOf t (ixAddr (restMods[idx]'(by simp at hlen; omega))) := fun idx hi => by
+            have h1 := hg_eq (idx + 1) (by simp; omega)
+            simp only [List.getElem_cons_succ] at h1
+            rwa [show k0 + (idx + 1) = k0 + 1 + idx by omega] at h1
           obtain ⟨recsBlkR, recsTysR, rhsssR, thmsR, hl1, hl2, hl3, hl4, hgetR⟩ :=
             ih (k0 + 1) restMods (by simp at hsum; omega) (by simp at hlen; omega)
-              (fun idx hi => by simpa [Nat.add_assoc, Nat.add_comm 1 idx] using ha_eq (idx + 1) (by simp; omega))
-              (fun idx hi => by simpa [Nat.add_assoc, Nat.add_comm 1 idx] using hg_eq (idx + 1) (by simp; omega))
+              hha_rest hhg_rest
               (fun b hb => hsubDst b (List.mem_cons_of_mem _ hb)) hitems_rest hsub_next
               (RCRep.mono ext_h_892 hrc)
               (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_h_892 htys)
@@ -4121,10 +4146,27 @@ theorem checkRecs_walk
           | succ idx' =>
             have hi' : idx' < restRecs.length := by simp at hi; omega
             obtain ⟨rc', D', hrk', hb', ht', hrh', hth'⟩ := hgetR idx' hi'
-            have hadd : k0 + 1 + idx' = k0 + (idx' + 1) := by omega
-            refine ⟨rc', hadd ▸ D', hadd ▸ hrk', hb', ?_, ?_, ?_⟩
-            · cases hadd; exact ht'
-            · cases hadd; exact hrh'
-            · cases hadd; exact hth'
+            have hcast : ∀ {k1 k2 : Nat}, k1 = k2 →
+                ∀ (D1 : RecMemberData.{u} calls bAddr t E₀ lim csFam B rb cb crb ms rs advAs
+                    (typeAs ++ ctorAs ++ recAs) dstAs recAs nonrecsBlk nonrecsTys
+                    k1 rc' restRecs[idx'] (restMods[idx']'(by simp at hlen; omega))),
+                  rs[k1]? = some (.recr rc') →
+                  recsBlkR[idx']? = some D1.recInfo →
+                  recsTysR[idx']? = some D1.tyA →
+                  rhsssR[idx']? = some D1.rhss →
+                  thmsR[idx']? = some D1.thms →
+                  ∃ (D2 : RecMemberData.{u} calls bAddr t E₀ lim csFam B rb cb crb ms rs advAs
+                      (typeAs ++ ctorAs ++ recAs) dstAs recAs nonrecsBlk nonrecsTys
+                      k2 rc' restRecs[idx'] (restMods[idx']'(by simp at hlen; omega))),
+                    rs[k2]? = some (.recr rc') ∧
+                    recsBlkR[idx']? = some D2.recInfo ∧
+                    recsTysR[idx']? = some D2.tyA ∧
+                    rhsssR[idx']? = some D2.rhss ∧
+                    thmsR[idx']? = some D2.thms := by
+              rintro k1 _ rfl D1 h1 h2 h3 h4 h5
+              exact ⟨D1, h1, h2, h3, h4, h5⟩
+            obtain ⟨D2, hrk2, hb2, ht2, hrh2, hth2⟩ :=
+              hcast (show k0 + 1 + idx' = k0 + (idx' + 1) by omega) D' hrk' hb' ht' hrh' hth'
+            exact ⟨rc', D2, hrk2, hb2, ht2, hrh2, hth2⟩
 
 end IxVM.Refinement.Typing.FamilyAlias
