@@ -220,17 +220,17 @@ theorem walkedRef_needOk (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoade
         have hctab : ctab.addressOf? r = some x := by
           rw [← addressOf_basis hpin hbas]; exact had
         unfold quotRowOk at hok
-        rw [hctab] at hok
+        simp only [hctab] at hok
         cases hbr : basisStore.consts.get? x with
         | none =>
           have hn : recordOf basisStore x = none := by unfold recordOf; rw [hbr]
-          rw [hn] at hok; cases hok
+          simp only [hn] at hok; cases hok
         | some lc =>
           have hE : recordOf E₀ x = some lc.val := by
             unfold recordOf; rw [hb x lc hbr]
           have hrecB : recordOf basisStore x = some lc.val := by
             unfold recordOf; rw [hbr]
-          rw [hrecB] at hok
+          simp only [hrecB] at hok
           cases hci : lc.val.info with
           | quot q =>
             refine ⟨lc.val, hE, fun ⟨ms, hms⟩ => by rw [hci] at hms; cases hms,
@@ -240,7 +240,7 @@ theorem walkedRef_needOk (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoade
             cases Option.some.inj hcb
             simp only [InLogic, hci]
           | axio ax =>
-            rw [hci] at hok
+            simp only [hci] at hok
             have hsafe : ax.isUnsafe = false := by
               cases hu' : ax.isUnsafe <;> simp [hu'] at hok ⊢
             refine ⟨lc.val, hE, fun ⟨ms, hms⟩ => by rw [hci] at hms; cases hms,
@@ -250,7 +250,7 @@ theorem walkedRef_needOk (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoade
             cases Option.some.inj hcb
             simp only [InLogic, hci, hsafe]
           | defn _ | recr _ | muts _ | dPrj _ | iPrj _ | cPrj _ | rPrj _ =>
-            rw [hci] at hok; cases hok
+            simp only [hci] at hok; cases hok
     · exact walkedRole_needOk hC hval hroots
         (Or.inl (op_walksBound ((specKind_two_iff r).mp hk2))) had
   · have hcov : ¬ Claim.CoveredAt t (some (valLimit g)) x := AlreadyStoredRole.not_covered hst
