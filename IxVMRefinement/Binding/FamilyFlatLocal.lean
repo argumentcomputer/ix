@@ -1640,10 +1640,12 @@ theorem BlockElim.grow {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env}
   obtain ⟨t0, rest, nl, np, ni, ty, lvl, hm, hi, hs, ho⟩ := h
   obtain ⟨cb, arr, hcb, hci, hms⟩ := membersAt_inv hm
   refine ⟨t0, rest, nl, np, ni, ty, lvl, ?_, ?_, ?_, ho⟩
-  · rw [← hms]; exact membersAt_of (hle B cb hcb) hci
-  · exact indTypeAt_mono (fun y c _ hc => hle y c hc) (fun _ _ _ _ => trivial) hblob trivial hi
+  · rw [hms]; exact membersAt_of (hle B cb hcb) hci
+  · exact indTypeAt_mono (Ok := fun _ => True) (fun y c _ hc => hle y c hc)
+      (fun _ _ _ _ => trivial) hblob trivial hi
   · exact hs.mono (fun a x hx =>
-      defnValAt_mono (fun y c _ hc => hle y c hc) (fun _ _ _ _ => trivial) hblob trivial hx)
+      defnValAt_mono (Ok := fun _ => True) (fun y c _ hc => hle y c hc)
+        (fun _ _ _ _ => trivial) hblob trivial hx)
 
 theorem BlockElim.of_closed_sub {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env}
     (checked : t.check = .ok ()) (hwf : t.wf = true)
@@ -1785,9 +1787,9 @@ private theorem loadedAt_agree {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env}
     (h₂ : loadedAt t (fun x => E'.blobs.get? x) src self nl root e = some v₂) : v₁ = v₂ := by
   let blobU : _root_.Address → Option ByteArray := fun y => (E.blobs.get? y).or (E'.blobs.get? y)
   have hb1 : ∀ y b, E.blobs.get? y = some b → blobU y = some b := fun y b h => by
-    simp [blobU, h]
+    dsimp only [blobU]; rw [h]; rfl
   have hb2 : ∀ y b, E'.blobs.get? y = some b → blobU y = some b := fun y b h => by
-    simp only [blobU]
+    dsimp only [blobU]
     cases h0 : E.blobs.get? y with
     | none => simpa [h0] using h
     | some b0 => rw [hB y b0 b h0 h]; rfl
@@ -1808,7 +1810,7 @@ theorem BlockElim.unique {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env}
   subst hcb
   have harr : arr₁ = arr₂ := Ixon.ConstantInfo.muts.inj (hci₁.symm.trans hci₂)
   subst harr
-  have hlist : t0₁ :: r₁ = t0₂ :: r₂ := hms₁.symm.trans hms₂
+  have hlist : t0₁ :: r₁ = t0₂ :: r₂ := hms₁.trans hms₂.symm
   injection hlist with ht0 _
   subst ht0
   have hind : (nl₁, ty₁, np₁, ni₁) = (nl₂, ty₂, np₂, ni₂) := by

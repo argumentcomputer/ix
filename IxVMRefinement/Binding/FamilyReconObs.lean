@@ -199,10 +199,8 @@ private theorem exprInstLevelsWalk_liftLooseBVars (us : List KLevel) :
     ∀ (e : KExpr) (n c : Nat),
       exprInstLevelsWalk us (e.liftLooseBVars n c) =
         (exprInstLevelsWalk us e).liftLooseBVars n c
-  | .bvar i, n, c => by simp only [Ix.Kernel.Expr.liftLooseBVars]; split <;> rfl
-  | .fvar _ ty, n, c => by
-    simp only [Ix.Kernel.Expr.liftLooseBVars, exprInstLevelsWalk,
-      exprInstLevelsWalk_liftLooseBVars us ty n c]
+  | .bvar i, n, c => by simp only [Ix.Kernel.Expr.liftLooseBVars, exprInstLevelsWalk]; split <;> rfl
+  | .fvar _ _, _, _ => rfl
   | .sort _, _, _ | .const _ _, _, _ | .lit _, _, _ => rfl
   | .app f a, n, c => by
     simp only [Ix.Kernel.Expr.liftLooseBVars, exprInstLevelsWalk,
@@ -290,14 +288,14 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
         match Obs.«KernelLevels::expr_inst_levels».obs ev with
         | .Nil (ld12 := ld) (he21 := hr) (he22 := he) .. =>
           subst hr he
-          have hus' : RepList klevelListEnum RepKLevel h us pus := by rwa [klevelListEnum_eq]
+          have hus' : RepList klevelListEnum RepKLevel _ us pus := by rwa [klevelListEnum_eq]
           obtain rfl := IxVM.Refinement.Core.RepList.nil_of_load hus' ld
           exact hE
         | .other (ld12 := ld) (hne24 := hne24) (ev33 := e1) (hc50 := hc) .. =>
           subst hc
           have hne : us ≠ [] := by
             rintro rfl
-            have hus' : RepList klevelListEnum RepKLevel h [] pus := by rwa [klevelListEnum_eq]
+            have hus' : RepList klevelListEnum RepKLevel _ [] pus := by rwa [klevelListEnum_eq]
             cases hus' with
             | nil cell =>
               rw [Lib.load_enum_cell cell] at ld
@@ -333,7 +331,7 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
             (hc238 := hc) .. =>
           subst hc hr hm
           obtain ⟨Ef, Ea, rfl, hf, ha⟩ := hE.app_of_load ld
-          have sf := (ih _ _ _ _ _ _ (by simp; omega) e1
+          have sf := (ih _ _ _ _ _ _ (by simp) e1
             (sub fun c hc' => by simp [hc'])).1 rfl _ _ Γ k Ef us rfl hf hus
           have sa := (ih _ _ _ _ _ _ (by simp; omega) e2
             (sub fun c hc' => by simp [hc'])).1 rfl _ _ Γ k Ea us rfl
@@ -345,7 +343,7 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
             (ev339 := e3) (hc356 := hc) .. =>
           subst hc hr hm
           obtain ⟨T, B, ℓ, rfl, ht, hb, hl⟩ := hE.lam_of_load ld
-          have st := (ih _ _ _ _ _ _ (by simp; omega) e1
+          have st := (ih _ _ _ _ _ _ (by simp) e1
             (sub fun c hc' => by simp [hc'])).1 rfl _ _ Γ k T us rfl ht hus
           have sb := (ih _ _ _ _ _ _ (by simp; omega) e2
             (sub fun c hc' => by simp [hc'])).1 rfl _ _ Γ (k + 1) B us rfl
@@ -365,7 +363,7 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
             (ev457 := e3) (hc474 := hc) .. =>
           subst hc hr hm
           obtain ⟨T, B, ℓ, rfl, ht, hb, hl⟩ := hE.forallE_of_load ld
-          have st := (ih _ _ _ _ _ _ (by simp; omega) e1
+          have st := (ih _ _ _ _ _ _ (by simp) e1
             (sub fun c hc' => by simp [hc'])).1 rfl _ _ Γ k T us rfl ht hus
           have sb := (ih _ _ _ _ _ _ (by simp; omega) e2
             (sub fun c hc' => by simp [hc'])).1 rfl _ _ Γ (k + 1) B us rfl
@@ -385,7 +383,7 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
             (ev575 := e3) (hc592 := hc) .. =>
           subst hc hr hm
           obtain ⟨T, V, B, rfl, ht, hv, hb⟩ := hE.letE_of_load ld
-          have st := (ih _ _ _ _ _ _ (by simp; omega) e1
+          have st := (ih _ _ _ _ _ _ (by simp) e1
             (sub fun c hc' => by simp [hc'])).1 rfl _ _ Γ k T us rfl ht hus
           have sv := (ih _ _ _ _ _ _ (by simp; omega) e2
             (sub fun c hc' => by simp [hc'])).1 rfl _ _ Γ k V us rfl
@@ -414,7 +412,7 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
           obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := hE.proj_of_load ld
           have : Resolved _ := ⟨hE.toTm.proj_key_ne⟩
           have : ProjPermitted _ _ := hE.toTm.proj_permitted ld ra
-          have se := (ih _ _ _ _ _ _ (by simp; omega) e1
+          have se := (ih _ _ _ _ _ _ (by simp) e1
             (sub fun c hc' => by simp [hc'])).1 rfl _ _ Γ k Es us rfl hes hus
           rw [exprInstLevels_of_ne_nil hne] at se
           have ext' : Heap.Extends _ _ := Heap.Extends.snoc _ _
