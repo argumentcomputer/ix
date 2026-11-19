@@ -189,7 +189,7 @@ private theorem convExpr_allLevelParamsDefined {ecx : Ix.Kernel.Reader.ECx .anon
   | .var i, E_rd, _, h => by
     simp only [Ix.Kernel.Reader.convExpr, pure, Except.pure, Except.ok.injEq] at h
     subst h
-    simp [Ix.Kernel.Expr.mkBvar, Ix.Kernel.Expr.allLevelParamsDefined]
+    rw [Ix.Kernel.Expr.mkBvar_eq]; rfl
   | .sort i, E_rd, hok, h => by
     simp only [Ix.Kernel.Reader.convExpr, bind, Except.bind] at h
     cases hl : ecx.level i with
@@ -293,9 +293,9 @@ private theorem convExpr_allLevelParamsDefined {ecx : Ix.Kernel.Reader.ECx .anon
         simp only [pure, Except.pure, Except.ok.injEq] at h
         subst h
         simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true,
-          Ix.Kernel.BinderMeta.leanNever, Ix.Kernel.PropWhen.paramsDefined, Bool.and_true]
-        exact ⟨convExpr_allLevelParamsDefined hunivs htbl t et hok.1 ht,
-          convExpr_allLevelParamsDefined hunivs htbl b eb hok.2 hb⟩
+          Ix.Kernel.BinderMeta.leanNever, Ix.Kernel.PropWhen.paramsDefined]
+        exact ⟨⟨convExpr_allLevelParamsDefined hunivs htbl t et hok.1 ht,
+          convExpr_allLevelParamsDefined hunivs htbl b eb hok.2 hb⟩, rfl⟩
   | .all t b, E_rd, hok, h => by
     simp only [exprUnivsLtGo, Bool.and_eq_true] at hok
     simp only [Ix.Kernel.Reader.convExpr, bind, Except.bind] at h
@@ -310,9 +310,9 @@ private theorem convExpr_allLevelParamsDefined {ecx : Ix.Kernel.Reader.ECx .anon
         simp only [pure, Except.pure, Except.ok.injEq] at h
         subst h
         simp only [Ix.Kernel.Expr.allLevelParamsDefined, Bool.and_eq_true,
-          Ix.Kernel.BinderMeta.leanNever, Ix.Kernel.PropWhen.paramsDefined, Bool.and_true]
-        exact ⟨convExpr_allLevelParamsDefined hunivs htbl t et hok.1 ht,
-          convExpr_allLevelParamsDefined hunivs htbl b eb hok.2 hb⟩
+          Ix.Kernel.BinderMeta.leanNever, Ix.Kernel.PropWhen.paramsDefined]
+        exact ⟨⟨convExpr_allLevelParamsDefined hunivs htbl t et hok.1 ht,
+          convExpr_allLevelParamsDefined hunivs htbl b eb hok.2 hb⟩, rfl⟩
   | .letE _ _ t v b, E_rd, hok, h => by
     simp only [exprUnivsLtGo, Bool.and_eq_true] at hok
     simp only [Ix.Kernel.Reader.convExpr, bind, Except.bind] at h
@@ -487,13 +487,16 @@ private theorem unitLevelsAndParamsOk_of_basis {t : Ix.Kernel.RoleTable} {E₀ :
   have hpr := basisRow_constIndParamsOk hb
   refine ⟨?_, ?_, ?_, ?_⟩
   · intro d hci hdk
-    simp only [constLevelsOkBool, hci, hdk, beq_self_eq_true, ↓reduceIte, Bool.and_eq_true,
-      decide_eq_true_eq] at hlv
+    simp only [constLevelsOkBool, hci, hdk] at hlv
+    change (decide (d.lvls.toNat < 4294967296) && exprUnivsOk c d.lvls.toNat d.value) = true at hlv
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hlv
     exact ⟨hlv.1, fun E_rd hr => exprUnivsOk_sound hlv.2 hr⟩
   · intro ms i d hci hi hdk
     simp only [constLevelsOkBool, hci, List.all_eq_true] at hlv
     have hm := hlv (.defn d) (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hi))
-    simp only [hdk, beq_self_eq_true, ↓reduceIte, Bool.and_eq_true, decide_eq_true_eq] at hm
+    simp only [hdk] at hm
+    change (decide (d.lvls.toNat < 4294967296) && exprUnivsOk c d.lvls.toNat d.value) = true at hm
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hm
     exact ⟨hm.1, fun E_rd hr => exprUnivsOk_sound hm.2 hr⟩
   · intro ms i ind hci hi
     simp only [constLevelsOkBool, hci, List.all_eq_true] at hlv
@@ -505,7 +508,6 @@ private theorem unitLevelsAndParamsOk_of_basis {t : Ix.Kernel.RoleTable} {E₀ :
     · intro j ct hj
       have hct := hml.2 ct (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hj))
       have hctp := hmp.1 ct (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hj))
-      simp only [Bool.and_eq_true, decide_eq_true_eq] at hct
       exact ⟨hct.1, fun E_rd hr => exprUnivsOk_sound hct.2 hr, beq_iff_eq.mp hctp⟩
     · intro i₂ ind₂ hi₂
       have hp2 := hmp.2 (.indc ind₂) (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hi₂))
@@ -787,9 +789,9 @@ private theorem check_inductive_shape_ctors_levelsOk {calls : List (Call F)}
         hind', hct', -, hld', hraw_ct⟩ :=
         L1.get_ci_cprj_spec (RomBound.bounded_mono hbd sub1) rba evc
       have hcb_eq : cb' = cb := record_eq_of_hashed_l hS sub1 hcb hhB haB hdeB
-      subst hcb_eq
+      rcases hcb_eq with rfl
       have hms_eq : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hms)
-      subst hms_eq
+      rcases hms_eq with rfl
       rw [L1.val_cast_u56_ing hk56, Array.getElem?_toList, hk] at hind'
       injection hind' with hi_mc; injection hi_mc with hi_eq; subst hi_eq
       rw [L1.val_cast_u56_ing (by omega : c < 72057594037927936), Array.getElem?_toList] at hct'
@@ -818,7 +820,7 @@ private theorem check_inductive_shape_ctors_levelsOk {calls : List (Call F)}
       have ext_sg : Heap.Extends m5b m6 := by
         cases sg1 with
         | n0 _ _ evp _ => exact evp.heap_extends
-        | other _ _ hh _ => rw [hh]; exact Heap.Extends.refl _
+        | other _ _ hh _ => rw [hh]
       have ext3a : Heap.Extends m3 m3a := by rw [hm3a]; exact Heap.Extends.snoc _ _
       have ext07 : Heap.Extends h m7 :=
         ext1.trans (evaeq.heap_extends.trans (evval.heap_extends.trans (ext3a.trans
@@ -831,7 +833,7 @@ private theorem check_inductive_shape_ctors_levelsOk {calls : List (Call F)}
         have hct_eq : ct' = ct := Option.some.inj (hct'.symm.trans hj)
         subst hct_eq
         exact ⟨hcnl32, hval_c, hnp_u64⟩
-      · exact ih (c + 1) (by omega) (fun cl hcl => hsub cl (by rw [hcs]; simp [hcl]))
+      · exact ih (c + 1) (by omega) (fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem)))
           (Bytes.repAddressRef_heapMono₂ addrTy ext07 rba) evrec j ct (by omega) hj
 
 private theorem check_modeled_ctors_levelsOk {calls : List (Call F)}
@@ -878,9 +880,9 @@ private theorem check_modeled_ctors_levelsOk {calls : List (Call F)}
         hind', hct', -, hld', hraw_ct⟩ :=
         L1.get_ci_cprj_spec (RomBound.bounded_mono hbd sub1) rba evc
       have hcb_eq : cb' = cb := record_eq_of_hashed_l hS sub1 hcb hhB haB hdeB
-      subst hcb_eq
+      rcases hcb_eq with rfl
       have hms_eq : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hms)
-      subst hms_eq
+      rcases hms_eq with rfl
       rw [L1.val_cast_u56_ing hk56, Array.getElem?_toList, hk] at hind'
       injection hind' with hi_mc; injection hi_mc with hi_eq; subst hi_eq
       rw [L1.val_cast_u56_ing (by omega : c < 72057594037927936), Array.getElem?_toList] at hct'
@@ -917,7 +919,7 @@ private theorem check_modeled_ctors_levelsOk {calls : List (Call F)}
         have hct_eq : ct' = ct := Option.some.inj (hct'.symm.trans hj)
         subst hct_eq
         exact ⟨hcnl32, hval_c, hnp_u64⟩
-      · exact ih (c + 1) (by omega) (fun cl hcl => hsub cl (by rw [hcs]; simp [hcl]))
+      · exact ih (c + 1) (by omega) (fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem)))
           (Bytes.repAddressRef_heapMono₂ addrTy ext06 rba) evrec j ct (by omega) hj
 
 /-! ### Mutual block peer parameter agreement (`block_nparams`, `check_block_peer_param_agreement`) -/
@@ -955,8 +957,8 @@ private theorem nparams_agree_spec {np : Nat} (hnp56 : np < 72057594037927936) :
         rcases List.mem_cons.mp hmem with hhead | hmem
         · injection hhead with hi; subst hi; exact hEq0
         · exact htail ind hmem
-      | defn d => obtain ⟨_, hmv, -⟩ := hm'; cases hmv
-      | recr r => obtain ⟨_, hmv, -⟩ := hm'; cases hmv
+      | defn d => obtain ⟨_, hmv, -⟩ := hm'; simp at hmv
+      | recr r => obtain ⟨_, hmv, -⟩ := hm'; simp at hmv
 
 /-- **`KernelModeled::block_nparams`** proves all inductive members of the block share their
 parameter count (and returns it). -/
@@ -985,8 +987,8 @@ theorem block_nparams_spec {ms : List Ixon.MutConst} {xm r : SourceValue F}
       rcases List.mem_cons.mp hmem with hhead | hmem
       · injection hhead with hi; subst hi; rfl
       · exact htail ind hmem
-    | defn d => obtain ⟨_, hmv, -⟩ := hm0; cases hmv
-    | recr r => obtain ⟨_, hmv, -⟩ := hm0; cases hmv
+    | defn d => obtain ⟨_, hmv, -⟩ := hm0; simp at hmv
+    | recr r => obtain ⟨_, hmv, -⟩ := hm0; simp at hmv
 
 private theorem peer_agree_walk_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     {ba : Bytes.Address} {cb : Ixon.Constant} {ms : Array Ixon.MutConst}
@@ -1101,8 +1103,8 @@ private theorem peer_agree_walk_spec {calls : List (Call F)} {E₀ : Ixon.Env}
       | succ i' => exact htail i' ind (by simpa using hi)
     | .Cons_Indc_other_other (m65 := m1) (m193 := m2) (p200 := p2) (cs206 := cs2)
         (ld12 := ld) (ev77 := evz) (ev208 := evip) (ld202 := ldip) (hne609 := hneI)
-        (hc676 := hcs) .. =>
-      have sub2 : ∀ cl ∈ cs2, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
+        (hc691 := hcs) .. =>
+      have sub2 : ∀ cl ∈ cs2, cl ∈ calls := fun cl hcl => hsub cl (mem_of_eq hcs (by call_mem))
       obtain ⟨-, -, -, -, -, -, -, v', -, -, -, -, -, -, -, hld', hraw_i⟩ :=
         L1.get_ci_iprj_spec (RomBound.bounded_mono hbd sub2)
           (Bytes.repAddressRef_heapMono₂ addrTy evz.heap_extends rba) evip
@@ -1206,7 +1208,7 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
       ev14.heap_extends.trans (evval.heap_extends.trans (ext2a.trans (ext2b.trans
         (evmb.heap_extends.trans (ext3a.trans (evs.heap_extends.trans (evsaf.heap_extends.trans
           (evmk.heap_extends.trans evbm.heap_extends))))))))
-    have hctors_ok : ∀ j ct, ind.ctors[j]? = some ct →
+    have hctors_ok : ∀ (j : Nat) (ct : Ixon.Constructor), ind.ctors[j]? = some ct →
         ct.lvls.toNat < 4294967296 ∧
         (∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id
             (blockSelf t b ms)).read ct.typ = .ok E_rd →
@@ -1332,7 +1334,7 @@ theorem memberCheckedLimAt_ind_levelsOk {calls : List (Call F)} {bAddr : _root_.
           (evmk.heap_extends.trans (evbm.heap_extends.trans (evri.heap_extends.trans
             (evhl.heap_extends.trans (evft.heap_extends.trans
               (ext10a.trans evrs.heap_extends)))))))))))))
-    have hctors_ok : ∀ j ct, ind.ctors[j]? = some ct →
+    have hctors_ok : ∀ (j : Nat) (ct : Ixon.Constructor), ind.ctors[j]? = some ct →
         ct.lvls.toNat < 4294967296 ∧
         (∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id
             (blockSelf t b ms)).read ct.typ = .ok E_rd →
@@ -1515,7 +1517,7 @@ private theorem check_rules_go_levelsOk {calls : List (Call F)} {t : Ix.Kernel.R
     match Obs.«KernelModeled::check_rules_go».obs ev with
     | .Nil (ld12 := ld) .. =>
       rw [Core.loadValue_enum_cell cell] at ld
-      injection ld with hv; injection hv with _ hc _; cases hc
+      injection ld with hv; injection hv with _ hc _; simp at hc
     | .Cons (x_rest := xrest) (m42 := m1) (m117 := m2) (m155 := m3) (m77 := m4)
         (x_rhs := xrhs) (cs290 := cs_io) (cs432 := cs_rec)
         (ld12 := ld) (ev54 := evga) (ev129 := evprj) (ev171 := evci) (ev292 := evio)
@@ -1533,9 +1535,12 @@ private theorem check_rules_go_levelsOk {calls : List (Call F)} {t : Ix.Kernel.R
         check_iota_rule_validate_rhs evio
       have hcall_sc : (⟨"KernelCheck::validate_expr_well_scoped",
           [rhsPtr, .field 0, .field (nl : F)], h_plen⟩ : Call F) ∈ calls :=
-        hsub _ (by rw [hc]; simp [hcall_io])
-      have hru_ok := validate_reader_levels hbd hnl32 raw_rhs (ext03.trans ext_io) ev_sc hcall_sc
-      have htail := ih (j + 1) (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))
+        hsub _ (mem_of_eq hc (by call_mem))
+      have hru_ok : ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) crb id
+          (blockSelf t rb rs)).read ru.rhs = .ok E_rd →
+          E_rd.allLevelParamsDefined (List.range nl) = true :=
+        validate_reader_levels hbd hnl32 raw_rhs (ext03.trans ext_io) ev_sc hcall_sc
+      have htail := ih (j + 1) (fun cl hcl => hsub cl (mem_of_eq hc (by call_mem)))
         (hrest.mono (ext03.trans evio.heap_extends) (fun _ hm => hm)) evrec
       intro ru' hmem
       rcases List.mem_cons.mp hmem with rfl | hmem
@@ -1591,12 +1596,12 @@ private theorem build_recur_addrs_walk_hashed_spec {ms : List Ixon.MutConst} {b 
         have h0 := hsuf 0 m rfl
         rw [Nat.add_zero, hget_mc] at h0
         exact Option.some.inj h0
-      subst hmc_eq
+      rcases hmc_eq with rfl
       obtain rfl := binop_add_one_nat op143
       obtain ⟨ext2, as_tl, has_tl, hlen_tl, htl⟩ :=
-        ih (by omega) (hms.mono L1.mutShape_heapMono₂ ext1)
+        ih (by omega) (hms.mono (fun _ _ _ _ _ h => h) ext1)
           (Bytes.repAddressRef_heapMono₂ addrTy ext1 hb)
-          (hrest.mono L1.mutShape_heapMono₂ ext1)
+          (hrest.mono (fun _ _ _ _ _ h => h) ext1)
           (fun j m' hj => by
             have hstep := hsuf (j + 1) m' hj
             rwa [show k + 1 + j = k + (j + 1) by omega])
@@ -1615,15 +1620,15 @@ private theorem build_recur_addrs_walk_hashed_spec {ms : List Ixon.MutConst} {b 
       cases i with
       | zero =>
         simp only [List.getElem?_cons_zero, Option.some.injEq] at hi; subst hi
-        exact ⟨m, rfl, by omega, by simpa using ha₀_eq,
-          Core.hashed_mono (fun cl hcl => by rw [hc145]; simp [hcl]) (by simpa using hh₀)⟩
+        exact ⟨mc, rfl, by omega, by simpa using ha₀_eq,
+          Core.hashed_mono (fun cl hcl => mem_of_eq hc145 (by call_mem)) (by simpa using hh₀)⟩
       | succ i' =>
         obtain ⟨m', hm', hk', ha', hh'⟩ := htl i' a (by simpa using hi)
         rw [show k + 1 + i' = k + (i' + 1) by omega] at hk' ha' hh'
         exact ⟨m', by simpa using hm', hk', ha',
-          Core.hashed_mono (fun cl hcl => by rw [hc145]; simp [hcl]) hh'⟩
+          Core.hashed_mono (fun cl hcl => mem_of_eq hc145 (by call_mem)) hh'⟩
 
-private theorem build_recur_addrs_hashed_spec {ms : List Ixon.MutConst} {b : Bytes.Address}
+theorem build_recur_addrs_hashed_spec {ms : List Ixon.MutConst} {b : Bytes.Address}
     {x_members x_block_addr r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hms : Core.Specs.Callees.MembersRep h ms x_members)
     (hb : Bytes.RepAddressRef addrTy h b x_block_addr)
@@ -1649,9 +1654,9 @@ private theorem build_recur_addrs_hashed_spec {ms : List Ixon.MutConst} {b : Byt
     refine ⟨ext, as, has, hlen, fun i a hi => ?_⟩
     obtain ⟨m, hm, hi56, ha, hh⟩ := hmem i a hi
     simp only [Nat.zero_add] at hi56 ha hh
-    exact ⟨m, hm, hi56, ha, Core.hashed_mono (fun cl hcl => by rw [hc38]; simp [hcl]) hh⟩
+    exact ⟨m, hm, hi56, ha, Core.hashed_mono (fun cl hcl => mem_of_eq hc38 (by call_mem)) hh⟩
 
-private theorem family_recs_muts_list {calls : List (Call F)} {E₀ : Ixon.Env}
+theorem family_recs_muts_list {calls : List (Call F)} {E₀ : Ixon.Env}
     (hS : LoadedReads.RunStore calls E₀) {b : Bytes.Address} {x_rb v : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)} (hb : Bytes.RepAddressRef addrTy h b x_rb)
     (ev : ObsFn W "KernelModeled::family_recs" [x_rb] h v h' cs)
@@ -1668,8 +1673,8 @@ private theorem family_recs_muts_list {calls : List (Call F)} {E₀ : Ixon.Env}
   match Obs.«KernelModeled::family_recs».obs ev with
   | .Muts (m2 := m2) (m123 := m123) (cs12 := cs12) (cs146 := cs146) (ev14 := ev14)
       (ev113 := ev113) (ev133 := ev133) (ev148 := ev148) (hc165 := hc) .. =>
-    have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
-    have hsub146 : ∀ cl ∈ cs146, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
+    have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (mem_of_eq hc (by call_mem))
+    have hsub146 : ∀ cl ∈ cs146, cl ∈ calls := fun cl hcl => hsub cl (mem_of_eq hc (by call_mem))
     obtain ⟨cb, ms, hbl, hrep⟩ := Claim.load_block_head hb ev14
     obtain ⟨rfl, -⟩ := (hbl.mono hsub12).record hS hrec
     obtain ⟨-, -, -, -, -, hbl_muts⟩ := hbl
@@ -1685,16 +1690,16 @@ private theorem family_recs_muts_list {calls : List (Call F)} {E₀ : Ixon.Env}
     obtain ⟨m, hm, hi56, ha, hh⟩ := hmem i a hi
     exact ⟨m, by rwa [Array.getElem?_toList] at hm, hi56, ha, Core.hashed_mono hsub146 hh⟩
   | .Recr (cs12 := cs12) (ev14 := ev14) (hc209 := hc) .. =>
-    have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
+    have hsub12 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (mem_of_eq hc (by call_mem))
     obtain ⟨-, bytes, c, -, hh, ha, hexact, -, -, -, -, -, -, cRep⟩ :=
       L1.load_verified_constant_decode_bounded hb ev14
     have hc_eq : c = crb := record_eq_of_hashed_l hS hsub12 hrec hh ha hexact
     subst c
-    obtain ⟨infoVal, -, -, -, -, hceq, hinfoRep, -, -, -, -⟩ := cRep
+    obtain ⟨infoVal, _, _, _, _, hceq, hinfoRep, -, -, -, -⟩ := cRep
     injection hceq with _ _ hcl; injection hcl with hi _
     rw [hrs] at hinfoRep
     obtain ⟨mp, hmp, -⟩ := hinfoRep
-    rw [← hi] at hmp; cases hmp
+    rw [← hi] at hmp; simp at hmp
 
 private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ : Ixon.Env} {rb_b : Bytes.Address} {crb : Ixon.Constant} {rs : Array Ixon.MutConst}
@@ -1812,8 +1817,11 @@ private theorem check_recs_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleT
         injection hl with _ hl; injection hl with _ hl; injection hl with _ hl
         injection hl with h6 _
         subst h1 h2 h6
-        have hty_ok := validate_reader_levels hbd hnl32 raw_ty ext1_6 evval
-          (hsub _ (mem_of_eq hcs (by call_mem)))
+        have hty_ok : ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) crb id
+            (blockSelf t (ixAddr rb_b) rs)).read rc.typ = .ok E_rd →
+            E_rd.allLevelParamsDefined (List.range rc.lvls.toNat) = true :=
+          validate_reader_levels hbd hnl32 raw_ty ext1_6 evval
+            (hsub _ (mem_of_eq hcs (by call_mem)))
         have hrules_ok : ∀ j ru E_rd, rc.rules[j]? = some ru →
             (exprReader t (fun x => E₀.blobs.get? x) crb id
                 (blockSelf t (ixAddr rb_b) rs)).read ru.rhs = .ok E_rd →
@@ -1888,7 +1896,7 @@ theorem check_family_recr_levelsOk {calls : List (Call F)} {t : Ix.Kernel.RoleTa
     obtain ⟨as, has, hlen, hmem⟩ := family_recs_muts_list hS
       (Bytes.repAddressRef_heapMono₂ addrTy ext_to_fr hrb) evfr
       (fun cl hcl => hsub cl (mem_of_eq hc (by call_mem))) hcrb hrs
-    have hcr := check_recs_levelsOk hS hbd hcrb hrs as 0 (by omega)
+    have hcr := check_recs_levelsOk (t := t) hS hbd hcrb hrs as 0 (by omega)
       (fun i a hi => by simpa using hmem i a hi)
       (fun cl hcl => hsub cl (mem_of_eq hc (by call_mem)))
       (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext_fr_to_cr has) evcr
@@ -1920,7 +1928,7 @@ private theorem check_rec_rules_wellscoped_levelsOk {calls : List (Call F)}
     match Obs.«KernelCheck::check_rec_rules_wellscoped».obs ev with
     | .Nil (ld12 := ld) .. =>
       rw [Core.loadValue_enum_cell cell] at ld
-      injection ld with hv; injection hv with _ hc _; cases hc
+      injection ld with hv; injection hv with _ hc _; simp at hc
     | .Cons (x_rest := xrest) (x_rhs := xrhs) (ld12 := ld) (ev87 := evval) (ev116 := evrec)
         (hc141 := hc) .. =>
       rw [Core.loadValue_enum_cell cell] at ld
@@ -1930,9 +1938,12 @@ private theorem check_rec_rules_wellscoped_levelsOk {calls : List (Call F)}
       rw [hv_ru] at h1
       injection h1 with _ _ hrl; injection hrl with _ hrl
       injection hrl with _ hrl; injection hrl with hrhs _; subst hrhs
-      have hru_ok := validate_reader_levels hbd hnl32 raw_rhs (Heap.Extends.refl _) evval
-        (hsub _ (by rw [hc]; simp))
-      have htail := ih (j + 1) (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))
+      have hru_ok : ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) crb id
+          (blockSelf t rb rs)).read ru.rhs = .ok E_rd →
+          E_rd.allLevelParamsDefined (List.range nl) = true :=
+        validate_reader_levels hbd hnl32 raw_rhs (Heap.Extends.refl _) evval
+          (hsub _ (mem_of_eq hc (by call_mem)))
+      have htail := ih (j + 1) (fun cl hcl => hsub cl (mem_of_eq hc (by call_mem)))
         (hrest.mono evval.heap_extends (fun _ hm => hm)) evrec
       intro ru' hmem
       rcases List.mem_cons.mp hmem with rfl | hmem
@@ -1991,8 +2002,11 @@ theorem memberCheckedLimAt_recr_levelsOk {calls : List (Call F)} {bAddr : _root_
     injection hl with _ hl; injection hl with _ hl; injection hl with _ hl
     injection hl with h6 _
     subst h1 h2 h6
-    have hty_ok := validate_reader_levels hbd hnl32 raw_ty e1.heap_extends evval
-      (hsub_chk _ (mem_of_eq hc (by call_mem)))
+    have hty_ok : ∀ E_rd, (exprReader t (fun x => E₀.blobs.get? x) cb id
+        (blockSelf t b ms)).read rc_m.typ = .ok E_rd →
+        E_rd.allLevelParamsDefined (List.range rc_m.lvls.toNat) = true :=
+      validate_reader_levels hbd hnl32 raw_ty e1.heap_extends evval
+        (hsub_chk _ (mem_of_eq hc (by call_mem)))
     have ext_nil : Heap.Extends m_val m_nil := by rw [hmnil]; exact Heap.Extends.snoc _ _
     have ext0_crm : Heap.Extends m_chk m_crm :=
       e1.heap_extends.trans (evval.heap_extends.trans (ext_nil.trans (e3.heap_extends.trans
@@ -2131,12 +2145,12 @@ private theorem groupStore_units_levelsAndParamsOk {calls : List (Call F)} {bAdd
       have hE : recordOf E₀ a = some c :=
         ((groupStore_recordOf hb (Nat.le_succ_of_le hg6')).mp hc).2
       have hlogic : InLogic c :=
-        logic_of_rootsSafe hC hb hP hval hroots (6 + d) hg6' hg77' a c hnew hE
+        logic_of_rootsSafe hC hb hP hval hroots (6 + d) hg6' hg77' a c hnew hc
       by_cases hdm : (∃ d, c.info = .defn d) ∨ (∃ ms, c.info = .muts ms)
-      · have hnp : ¬ IsProj c := by
+      · have hnp : ¬ Typing.IsProj c := by
           rcases hdm with ⟨d, hd⟩ | ⟨ms, hms⟩
-          · intro hp; unfold IsProj at hp; rw [hd] at hp; exact hp
-          · exact proj_not_block · ⟨ms, hms⟩
+          · intro hp; unfold Typing.IsProj at hp; rw [hd] at hp; exact hp
+          · exact fun hp => Typing.proj_not_block hp ⟨ms, hms⟩
         have hna : ∀ ax, c.info ≠ .axio ax := by
           intro ax hax'
           rcases hdm with ⟨d, hd⟩ | ⟨ms, hms⟩
@@ -2162,10 +2176,10 @@ private theorem groupStore_units_levelsAndParamsOk {calls : List (Call F)} {bAdd
               familyCall_isTwinShape hC.runStore hC.hashedStored hvl hfc
             have hce : c' = c := Option.some.inj (hc'.symm.trans hE)
             subst hce
-            obtain ⟨h_cf, h'_cf, xrc_cf, xb_cf, xrb_cf, r_cf, cs_cf, -, -, ⟨rb_b, hrb_b, hrb_eq⟩,
+            obtain ⟨h_cf, h'_cf, xrc_cf, xb_cf, xrb_cf, r_cf, -, -, ⟨rb_b, hrb_b, hrb_eq⟩,
               ev_cf, -, hsub_cf⟩ := hfc
             subst hrb_eq
-            have hrecs := check_family_recr_levelsOk hC.runStore hbd hE hrs hrb_b ev_cf hsub_cf
+            have hrecs := check_family_recr_levelsOk (t := t) hC.runStore hbd hE hrs hrb_b ev_cf hsub_cf
             refine ⟨?_, ?_, ?_, ?_⟩
             · intro d' hd'; rw [hrs] at hd'; cases hd'
             · intro ms i d' hms hi _

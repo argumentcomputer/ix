@@ -392,12 +392,75 @@ private theorem defnMember_self_key {t : Ix.Kernel.RoleTable} {B : _root_.Addres
   · exact LoadedReads.blockSelf_key t B ms i x m k hx hs hm
   · simp at hx
 
+private theorem held_of_agree {E₀ R : Ixon.Env}
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    {a : _root_.Address} {c : Ixon.Constant} (hSa : Held R a) (hcE : recordOf E₀ a = some c) :
+    recordOf R a = some c := by
+  obtain ⟨c', hc'⟩ := Option.isSome_iff_exists.mp hSa
+  have := hRagree a c' c hc' hcE
+  subst this
+  exact hc'
+
+private theorem get_ci_dprj_block_stored {rootCalls cs : List (Call F)} {E₀ : Ixon.Env}
+    (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
+    (hsub : ∀ c ∈ cs, c ∈ rootCalls)
+    {a : Bytes.Address} {xa p : SourceValue F} {h m : Heap F}
+    {c cb : Ixon.Constant} {prj : Ixon.DefnProj} {blkBytes : ByteArray}
+    (ra : Bytes.RepAddressRef addrTy h a xa) (ev : ObsFn W "Ingress::get_ci" [xa] h p m cs)
+    (hcE : recordOf E₀ (ixAddr a) = some c) (hci : c.info = .dPrj prj)
+    (hhB : Hashed cs blkBytes) (haB : Address.blake3Pure blkBytes = prj.block)
+    (hexB : Ixon.deConstantExact blkBytes = .ok cb) :
+    recordOf E₀ prj.block = some cb := by
+  obtain ⟨_, c0, _, hh0, ha0, hex0, -, hhead⟩ := Claim.get_ci_head ra ev
+  have hc0 : c0 = c := record_eq_of_hashed hS hsub hcE hh0 ha0 hex0
+  subst hc0
+  obtain ⟨cb', _, _, hbl, -⟩ := hhead.dPrj prj.idx prj.block hci
+  have hcbE' : recordOf E₀ prj.block = some cb' := ((hbl.mono hsub).stored hH).1
+  have hcbEq : cb = cb' := record_eq_of_hashed hS hsub hcbE' hhB haB hexB
+  rwa [hcbEq]
+
+private theorem get_ci_iprj_block_stored {rootCalls cs : List (Call F)} {E₀ : Ixon.Env}
+    (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
+    (hsub : ∀ c ∈ cs, c ∈ rootCalls)
+    {a : Bytes.Address} {xa p : SourceValue F} {h m : Heap F}
+    {c cb : Ixon.Constant} {prj : Ixon.InductiveProj} {blkBytes : ByteArray}
+    (ra : Bytes.RepAddressRef addrTy h a xa) (ev : ObsFn W "Ingress::get_ci" [xa] h p m cs)
+    (hcE : recordOf E₀ (ixAddr a) = some c) (hci : c.info = .iPrj prj)
+    (hhB : Hashed cs blkBytes) (haB : Address.blake3Pure blkBytes = prj.block)
+    (hexB : Ixon.deConstantExact blkBytes = .ok cb) :
+    recordOf E₀ prj.block = some cb := by
+  obtain ⟨_, c0, _, hh0, ha0, hex0, -, hhead⟩ := Claim.get_ci_head ra ev
+  have hc0 : c0 = c := record_eq_of_hashed hS hsub hcE hh0 ha0 hex0
+  subst hc0
+  obtain ⟨cb', _, _, hbl, -⟩ := hhead.iPrj prj.idx prj.block hci
+  have hcbE' : recordOf E₀ prj.block = some cb' := ((hbl.mono hsub).stored hH).1
+  have hcbEq : cb = cb' := record_eq_of_hashed hS hsub hcbE' hhB haB hexB
+  rwa [hcbEq]
+
+private theorem get_ci_cprj_block_stored {rootCalls cs : List (Call F)} {E₀ : Ixon.Env}
+    (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
+    (hsub : ∀ c ∈ cs, c ∈ rootCalls)
+    {a : Bytes.Address} {xa p : SourceValue F} {h m : Heap F}
+    {c cb : Ixon.Constant} {prj : Ixon.ConstructorProj} {blkBytes : ByteArray}
+    (ra : Bytes.RepAddressRef addrTy h a xa) (ev : ObsFn W "Ingress::get_ci" [xa] h p m cs)
+    (hcE : recordOf E₀ (ixAddr a) = some c) (hci : c.info = .cPrj prj)
+    (hhB : Hashed cs blkBytes) (haB : Address.blake3Pure blkBytes = prj.block)
+    (hexB : Ixon.deConstantExact blkBytes = .ok cb) :
+    recordOf E₀ prj.block = some cb := by
+  obtain ⟨_, c0, _, hh0, ha0, hex0, -, hhead⟩ := Claim.get_ci_head ra ev
+  have hc0 : c0 = c := record_eq_of_hashed hS hsub hcE hh0 ha0 hex0
+  subst hc0
+  obtain ⟨cb', _, _, hbl, -⟩ := hhead.cPrj prj.idx prj.cidx prj.block hci
+  have hcbE' : recordOf E₀ prj.block = some cb' := ((hbl.mono hsub).stored hH).1
+  have hcbEq : cb = cb' := record_eq_of_hashed hS hsub hcbE' hhB haB hexB
+  rwa [hcbEq]
+
 private theorem held_owner_of_proj {E₀ R : Ixon.Env}
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
     (hcl : UsedClosed R) {a : _root_.Address} {c : Ixon.Constant}
     (hSa : Held R a) (hcE : recordOf E₀ a = some c) :
     Held R (Ix.Cert.ownerOf a c) :=
-  (hcl.1 a c (held_of_sub hRsub hSa hcE)).1
+  (hcl.1 a c (held_of_agree hRagree hSa hcE)).1
 
 private theorem defnValShape_ne_induct {d : Ixon.Definition} {tp vp hp : SourceValue F}
     {vs : List (SourceValue F)} :
@@ -500,7 +563,8 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     (ht : t.check = .ok ()) (hwf : t.wf = true)
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hbd : Bounded rootCalls)
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R)
     (hlv : StoreLevelsOk t E₀ (Held R))
     {xa p ci : SourceValue F} {h m : Heap F} {cs : List (Call F)} {a : Bytes.Address}
     (hsub : ∀ c ∈ cs, c ∈ rootCalls) (hSa : Held R (ixAddr a))
@@ -542,7 +606,7 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
         simp only [hcE, hci, hdk, hloaded]
         rfl
       have hvalIn : AddrIn (Held R) (Core.keyOf t) val := by
-        have hcR := held_of_sub hRsub hSa hcE
+        have hcR := held_of_agree hRagree hSa hcE
         refine addrIn_of_rkeysAt (E₀ := E₀) hwf ?_
         refine keys_held_of_loaded ht hwf hcl hcR ?_ (fun j hj => ?_) hloaded
         · intro j k hs
@@ -565,12 +629,11 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       hnl, tp, vp, hp, planT, planV, hv, rty, rval, hpT, hpV, hlT, hlV⟩ := htr
     rw [hld] at ldci; injection ldci with hv_eq; subst hv_eq; subst hv
     have hpb : Held R prj.block := by
-      have h1 := held_owner_of_proj hRsub hcl hSa hcE
+      have h1 := held_owner_of_proj hRagree hcl hSa hcE
       simpa only [Ix.Cert.ownerOf, hci] using h1
-    obtain ⟨cbR, hcbR⟩ := Option.isSome_iff_exists.mp hpb
-    have hcbE : recordOf E₀ prj.block = some cbR := hRsub prj.block cbR hcbR
-    have hcbEq : cb = cbR := record_eq_of_hashed hS hsub hcbE hhB haB hexB
-    subst hcbEq
+    have hcbE : recordOf E₀ prj.block = some cb :=
+      get_ci_dprj_block_stored hS hH hsub ra ev hcE hci hhB haB hexB
+    have hcbR : recordOf R prj.block = some cb := held_of_agree hRagree hpb hcbE
     have hms' : ms[prj.idx.toNat]? = some (.defn d) := by
       rw [← Array.getElem?_toList]; exact hms
     refine ⟨fun xnl xty xval xsf xh hshape => ?_, fun hne => ?_⟩
@@ -643,11 +706,12 @@ theorem defnAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
     (ht : t.check = .ok ()) (hwf : t.wf = true)
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hbd : Bounded rootCalls)
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R)
     (hlv : StoreLevelsOk t E₀ (Held R)) :
     DefnAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) := by
   intro xa p ci h m cs a hsub hSa ra ev ldci
-  obtain ⟨hyes, hno⟩ := defnLoad_ofStore ht hwf hS hH hbd hRsub hcl hlv hsub hSa ra ev ldci
+  obtain ⟨hyes, hno⟩ := defnLoad_ofStore ht hwf hS hH hbd hRagree hcl hlv hsub hSa ra ev ldci
   have hka : keyAddr t (Core.keyOf t (ixAddr a)) = some (ixAddr a) := keyAddr_keyOf hwf (ixAddr a)
   refine ⟨fun xnl xty xval xsf xh hshape => ?_, fun hne us => ?_⟩
   · obtain ⟨nl, val, h1, h2, h3, h4, hdefnAt, -⟩ := hyes xnl xty xval xsf xh hshape
@@ -662,7 +726,8 @@ theorem indAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     (ht : t.check = .ok ()) (hwf : t.wf = true)
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hbd : Bounded rootCalls)
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R)
     (hlv : StoreLevelsOk t E₀ (Held R)) :
     IndAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) := by
   intro xa p ci h m cs a hsub hSa ra ev ldci
@@ -685,12 +750,11 @@ theorem indAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     have hty_eq : tyPtr' = tyPtr := hcit_eq.2.2.2.1.symm
     subst hty_eq
     have hpb : Held R prj.block := by
-      have h1 := held_owner_of_proj hRsub hcl hSa hcE
+      have h1 := held_owner_of_proj hRagree hcl hSa hcE
       simpa only [Ix.Cert.ownerOf, hci] using h1
-    obtain ⟨cbR, hcbR⟩ := Option.isSome_iff_exists.mp hpb
-    have hcbE : recordOf E₀ prj.block = some cbR := hRsub prj.block cbR hcbR
-    have hcbEq : cb = cbR := record_eq_of_hashed hS hsub hcbE hhB haB hexB
-    subst hcbEq
+    have hcbE : recordOf E₀ prj.block = some cb :=
+      get_ci_iprj_block_stored hS hH hsub ra ev hcE hci hhB haB hexB
+    have hcbR : recordOf R prj.block = some cb := held_of_agree hRagree hpb hcbE
     have hms' : ms[prj.idx.toNat]? = some (.indc ind) := by
       rw [← Array.getElem?_toList]; exact hms
     refine ⟨fun xnl xty xnp xni xnc xrec xblk xidx hshape => ?_, fun hne => ?_⟩
@@ -765,7 +829,8 @@ theorem ctorOfAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTab
     {E₀ R : Ixon.Env}
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hbd : Bounded rootCalls)
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R) :
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R) :
     CtorOfAnswers rootCalls (Held R) (ReconView.ofStore t E₀) := by
   intro xa p ci h m cs a hsub hSa ra ev ldci
   have hbd_cs : Bounded cs := RomBound.bounded_mono hbd hsub
@@ -778,12 +843,10 @@ theorem ctorOfAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTab
       hnl, hcidx, hnp, hnf, hidx, tyPtr, blkPtr, ba, hba, rba, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     have hpb : Held R prj.block := by
-      have h1 := held_owner_of_proj hRsub hcl hSa hcE
+      have h1 := held_owner_of_proj hRagree hcl hSa hcE
       simpa only [Ix.Cert.ownerOf, hci] using h1
-    obtain ⟨cbR, hcbR⟩ := Option.isSome_iff_exists.mp hpb
-    have hcbE : recordOf E₀ prj.block = some cbR := hRsub prj.block cbR hcbR
-    have hcbEq : cb = cbR := record_eq_of_hashed hS hsub hcbE hhB haB hexB
-    subst hcbEq
+    have hcbE : recordOf E₀ prj.block = some cb :=
+      get_ci_cprj_block_stored hS hH hsub ra ev hcE hci hhB haB hexB
     have hms' : ms[prj.idx.toNat]? = some (.indc ind) := by
       rw [← Array.getElem?_toList]; exact hms
     have hct' : ind.ctors[prj.cidx.toNat]? = some ct := by
@@ -876,7 +939,8 @@ on the inductive's block address when `Held R (ixAddr a)`. -/
 theorem indInfo_of_get_ci {rootCalls : List (Call F)} {E₀ R : Ixon.Env}
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hbd : Bounded rootCalls)
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R)
     {xa p ci : SourceValue F} {h m : Heap F} {cs : List (Call F)} {a : Bytes.Address}
     (hsub : ∀ c ∈ cs, c ∈ rootCalls) (hSa : Held R (ixAddr a))
     (ra : Bytes.RepAddressRef addrTy h a xa)
@@ -905,12 +969,10 @@ theorem indInfo_of_get_ci {rootCalls : List (Call F)} {E₀ R : Ixon.Env}
       hnl, hnp, hni, hnc, hidx, tyPtr, blkPtr, ba, hba, rba, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     have hpb : Held R prj.block := by
-      have h1 := held_owner_of_proj hRsub hcl hSa hcE
+      have h1 := held_owner_of_proj hRagree hcl hSa hcE
       simpa only [Ix.Cert.ownerOf, hci] using h1
-    obtain ⟨cbR, hcbR⟩ := Option.isSome_iff_exists.mp hpb
-    have hcbE : recordOf E₀ prj.block = some cbR := hRsub prj.block cbR hcbR
-    have hcbEq : cb = cbR := record_eq_of_hashed hS hsub hcbE hhB haB hexB
-    subst hcbEq
+    have hcbE : recordOf E₀ prj.block = some cb :=
+      get_ci_iprj_block_stored hS hH hsub ra ev hcE hci hhB haB hexB
     have hms' : ms[prj.idx.toNat]? = some (.indc ind) := by
       rw [← Array.getElem?_toList]; exact hms
     refine ⟨fun xnl xty xnp xni xnc xrec xblk xidx hshape => ?_, fun hne => (hne _ rfl rfl).elim⟩
@@ -970,8 +1032,10 @@ theorem indInfo_of_get_ci {rootCalls : List (Call F)} {E₀ R : Ixon.Env}
 theorem ctorLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     {E₀ R : Ixon.Env}
     (ht : t.check = .ok ()) (hwf : t.wf = true)
-    (hS : LoadedReads.RunStore rootCalls E₀) (hbd : Bounded rootCalls)
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R)
+    (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
+    (hbd : Bounded rootCalls)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R)
     (hlv : StoreLevelsOk t E₀ (Held R))
     {ba : Bytes.Address} {xblk p ci : SourceValue F} {i j : Nat}
     {h m : Heap F} {cs : List (Call F)}
@@ -1004,10 +1068,12 @@ theorem ctorLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
   simp only [kciEnum, Value.construct.injEq, List.cons.injEq] at hcit_eq
   have hty_eq : tyPtr' = tyPtr := hcit_eq.2.2.2.1.symm
   rcases hty_eq.symm with rfl
-  obtain ⟨cbR, hcbR⟩ := Option.isSome_iff_exists.mp hSb
-  have hcbE : recordOf E₀ (ixAddr ba) = some cbR := hRsub (ixAddr ba) cbR hcbR
-  have hcbEq : cb = cbR := record_eq_of_hashed hS hsub hcbE hhB haB hexB
+  obtain ⟨cb', -, -, hbl, -⟩ := Claim.get_ci_cprj_head rba ev
+  have hcbE' : recordOf E₀ (ixAddr ba) = some cb' := ((hbl.mono hsub).stored hH).1
+  have hcbEq : cb = cb' := record_eq_of_hashed hS hsub hcbE' hhB haB hexB
   subst hcbEq
+  have hcbE : recordOf E₀ (ixAddr ba) = some cb := hcbE'
+  have hcbR : recordOf R (ixAddr ba) = some cb := held_of_agree hRagree hSb hcbE
   have hms' : ms[i]? = some (.indc ind) := by rw [← Array.getElem?_toList]; exact hms
   have hct' : ind.ctors[j]? = some ct := by rw [← Array.getElem?_toList]; exact hct
   obtain ⟨hnl', hdef⟩ := hlv.ctorTy (ixAddr ba) cb ms i ind j ct hSb hcbE hcb hms' hct'
@@ -1119,7 +1185,8 @@ theorem recrLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     (ht : t.check = .ok ()) (hwf : t.wf = true)
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hbd : Bounded rootCalls)
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R)
     (hlv : StoreLevelsOk t E₀ (Held R))
     {a : Bytes.Address} {xa p ci : SourceValue F} {h m : Heap F} {cs : List (Call F)}
     {rb : _root_.Address} {crb : Ixon.Constant} {rs : Array Ixon.MutConst} {k : Nat}
@@ -1148,12 +1215,11 @@ theorem recrLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
   have hbd_cs : Bounded cs := RomBound.bounded_mono hbd hsub
   obtain ⟨rawBytes, c, hh, ha, hex, -, hblk⟩ := L1.get_ci_block_trace_spec hbd_cs ra ev
   have hcE : recordOf E₀ (ixAddr a) = some c := get_ci_record_eq hS hH hsub ra ev hh ha hex
-  have hcrbR : recordOf R rb = some crb := held_of_sub hRsub hSrb hcrbE
+  have hcrbR : recordOf R rb = some crb := held_of_agree hRagree hSrb hcrbE
   have hprojR : recordOf R (memberAddr rb k (.recr r)) = some (memberProjection rb k (.recr r)) :=
     (hcl.2 rb crb rs hcrbR hmuts k (.recr r) hk).1
-  have hprojE : recordOf E₀ (ixAddr a) = some (memberProjection rb k (.recr r)) := by
-    rw [ha_addr]; exact hRsub _ _ hprojR
-  have hcEq : c = memberProjection rb k (.recr r) := Option.some.inj (hcE.symm.trans hprojE)
+  rw [← ha_addr] at hprojR
+  have hcEq : c = memberProjection rb k (.recr r) := (hRagree _ _ _ hprojR hcE).symm
   subst hcEq
   simp only [L1.GetCIBlockTraceResult, memberProjection] at hblk
   obtain ⟨hk56, blkBytes, cb, ms, rc, blobs, tree, v, hhB, haB, hexB, hcb, hms, hhp, built, hld,
@@ -1203,6 +1269,70 @@ theorem recrLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     (fun i ru hi => by rw [Nat.zero_add, ← Array.getElem?_toList]; exact hi) hrls'
   exact ⟨ty, tyPtr, rulesPtr, blkPtr, ba, rfl, hnl', hnp, hni, hnm, hnmi, hk56,
     hloadedT, htmT, htyIn, hba, rba, hrulesRep⟩
+
+/-- Companion to `recrLoad_ofStore`: exposes the raw `L1.RawConvExpr` witness for the loaded
+recursor type `r.typ` at the same `tyPtr`. -/
+theorem recrLoad_rawConvExpr {rootCalls : List (Call F)} {E₀ R : Ixon.Env}
+    (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
+    (hbd : Bounded rootCalls)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R)
+    {a : Bytes.Address} {xa p ci xnl tyPtr xnp xni xnm xnmi xrules xk xu xblk xidx : SourceValue F}
+    {h m : Heap F} {cs : List (Call F)}
+    {rb : _root_.Address} {crb : Ixon.Constant} {rs : Array Ixon.MutConst} {k : Nat}
+    {r : Ixon.Recursor}
+    (hsub : ∀ c ∈ cs, c ∈ rootCalls) (hSrb : Held R rb) (hcrbE : recordOf E₀ rb = some crb)
+    (hmuts : crb.info = .muts rs) (hk : rs[k]? = some (.recr r))
+    (ha_addr : ixAddr a = memberAddr rb k (.recr r))
+    (ra : Bytes.RepAddressRef addrTy h a xa)
+    (ev : ObsFn W "Ingress::get_ci" [xa] h p m cs) (ldci : loadValue m p = .ok ci)
+    (hci : ci = .construct kciEnum "Rec"
+      [xnl, tyPtr, xnp, xni, xnm, xnmi, xrules, xk, xu, xblk, xidx]) :
+    ∃ blobs, L1.RawConvExpr crb.refs.toList [] crb.univs.toList crb.sharing.toList
+      blobs m 4294967295 r.typ tyPtr := by
+  have hbd_cs : Bounded cs := RomBound.bounded_mono hbd hsub
+  obtain ⟨rawBytes, c, hh, ha, hex, -, hblk⟩ := L1.get_ci_block_trace_spec hbd_cs ra ev
+  have hcE : recordOf E₀ (ixAddr a) = some c := get_ci_record_eq hS hH hsub ra ev hh ha hex
+  have hcrbR : recordOf R rb = some crb := held_of_agree hRagree hSrb hcrbE
+  have hprojR : recordOf R (memberAddr rb k (.recr r)) = some (memberProjection rb k (.recr r)) :=
+    (hcl.2 rb crb rs hcrbR hmuts k (.recr r) hk).1
+  rw [← ha_addr] at hprojR
+  have hcEq : c = memberProjection rb k (.recr r) := (hRagree _ _ _ hprojR hcE).symm
+  subst hcEq
+  simp only [L1.GetCIBlockTraceResult, memberProjection] at hblk
+  obtain ⟨-, blkBytes, cb, ms, rc, blobs, tree, v, hhB, haB, hexB, hcb, hms, -, -, hld, hrecr⟩ :=
+    hblk
+  rw [hld] at ldci; injection ldci with hv; subst hv
+  have hcbEq : cb = crb := record_eq_of_hashed hS hsub hcrbE hhB haB hexB
+  rcases hcbEq with rfl
+  have hmsEq : ms = rs := Ixon.ConstantInfo.muts.inj (hcb.symm.trans hmuts)
+  rcases hmsEq with rfl
+  have hk_lt : k < UInt64.size := by
+    have hsz : k < ms.size := (Array.getElem?_eq_some_iff.mp hk).1
+    have hblk_lt : blkBytes.size < 2 ^ 39 := by
+      obtain ⟨c0, hc0, -, inp, hargs, hrep⟩ := hhB
+      have hlt := RomBound.bounded_length_lt hbd_cs hc0 (by rw [hargs]; simp) hrep
+      change blkBytes.data.toList.length < 2 ^ 39 at hlt
+      have hbl : blkBytes.size = blkBytes.data.toList.length := by
+        simp only [ByteArray.size, Array.length_toList]
+      omega
+    have := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound blkBytes cb hexB
+    have := Claim.muts_size_le hmuts
+    have h64 : UInt64.size = 18446744073709551616 := rfl
+    omega
+  have hk_u64 : k.toUInt64.toNat = k := by
+    change (UInt64.ofNat k).toNat = k
+    rw [UInt64.toNat_ofNat']
+    exact Nat.mod_eq_of_lt hk_lt
+  rw [hk_u64] at hms hrecr
+  have hms' : ms[k]? = some (.recr rc) := by rw [← Array.getElem?_toList]; exact hms
+  have hrcEq : rc = r := Ixon.MutConst.recr.inj (Option.some.inj (hms'.symm.trans hk))
+  rcases hrcEq with rfl
+  obtain ⟨-, -, -, -, -, -, tyPtr', -, -, -, -, -, -, hv_eq, rty, -, -, -⟩ := hrecr
+  rw [hv_eq] at hci
+  simp only [kciEnum, Value.construct.injEq, List.cons.injEq] at hci
+  rcases hci.2.2.2.1 with rfl
+  exact ⟨blobs, rty⟩
 
 private theorem mapIdx_ext {α β : Type} {f g : Nat → α → β} :
     ∀ (l : List α), (∀ i x, f i x = g i x) → l.mapIdx f = l.mapIdx g
@@ -1299,7 +1429,8 @@ theorem guard_definition_value_spec {rootCalls : List (Call F)} {t : Ix.Kernel.R
     (ht : t.check = .ok ()) (hwf : t.wf = true)
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hbd : Bounded rootCalls)
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R)
     (hlv : StoreLevelsOk t E₀ (Held R))
     {a : Bytes.Address} {us : List KLevel} {xa xus r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
@@ -1316,7 +1447,7 @@ theorem guard_definition_value_spec {rootCalls : List (Call F)} {t : Ix.Kernel.R
       (m71 := m2) (cs79 := cs2) (cs101 := cs3) (ev17 := evg) (ld11 := ldci) (ev81 := evl)
       (heq97 := hlen_eq) (ev103 := evi) (hc120 := hc) .. =>
     have hsub1 : ∀ c ∈ cs1, c ∈ rootCalls := fun c hm => hsub c (by rw [hc]; simp [hm])
-    obtain ⟨hyes, -⟩ := defnLoad_ofStore ht hwf hS hH hbd hRsub hcl hlv hsub1 hSa ra evg ldci
+    obtain ⟨hyes, -⟩ := defnLoad_ofStore ht hwf hS hH hbd hRagree hcl hlv hsub1 hSa ra evg ldci
     obtain ⟨nl, val, rfl, hnl, hval, hvalIn, -, hdv⟩ := hyes _ _ _ _ _ rfl
     have rus1 := rus.mono evg.heap_extends
     have hus_lt : us.length < 2 ^ 39 :=
@@ -1335,7 +1466,8 @@ theorem guard_head_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     (ht : t.check = .ok ()) (hwf : t.wf = true)
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hbd : Bounded rootCalls)
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R)
     (hlv : StoreLevelsOk t E₀ (Held R)) :
     ∀ (N : Nat) {E : KExpr} {p budget r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       cs.length < N →
@@ -1372,7 +1504,7 @@ theorem guard_head_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       obtain ⟨a, us, rfl, ra, rus⟩ := TmOExact.const_of_load hE ld
       have hSa : Held R (ixAddr a) := hEin (ixAddr a) rfl
       obtain ⟨nl, val, hdv, hlen_us, hval, hvalIn⟩ :=
-        guard_definition_value_spec ht hwf hS hH hbd hRsub hcl hlv
+        guard_definition_value_spec ht hwf hS hH hbd hRagree hcl hlv
           (rsub fun c hc' => by rw [hc]; simp [hc']) hSa ra rus evdv
       obtain ⟨E', hgh, hE', hE'in⟩ := ih
         (by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega)
@@ -1412,7 +1544,8 @@ theorem get_result_sort_level_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
     (ht : t.check = .ok ()) (hwf : t.wf = true)
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hbd : Bounded rootCalls)
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R)
     (hlv : StoreLevelsOk t E₀ (Held R)) :
     ∀ (n : Nat) {E : KExpr} {xrc xty xtys r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       n < 18446744069414584321 →
@@ -1429,7 +1562,7 @@ theorem get_result_sort_level_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
     | .n0 (v1 := vw) (m2 := m1) (cs12 := cs1) (x_l := xl) (ev14 := evh) (ld55 := lds)
         (he69 := hr) (he70 := hh) (hc71 := hc) .. =>
       subst hr hh
-      obtain ⟨W0, hgh, hW, -⟩ := guard_head_spec ht hwf hS hH hbd hRsub hcl hlv
+      obtain ⟨W0, hgh, hW, -⟩ := guard_head_spec ht hwf hS hH hbd hRagree hcl hlv
         (cs1.length + 1) (Nat.lt_succ_self _)
         (fun c hc' => hsub c (by rw [hc]; simp [hc'])) hE hEin evh
       obtain ⟨lvl, rfl, rl⟩ := TmOExact.sort_of_load hW lds
@@ -1445,7 +1578,7 @@ theorem get_result_sort_level_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
         (op149 := op) (hm160 := hm2) (ev117 := evrec) (hc180 := hc) .. =>
       subst hm2
       obtain rfl := evalBinOp_sub_succ n op
-      obtain ⟨W0, hgh, hW, hWin⟩ := guard_head_spec ht hwf hS hH hbd hRsub hcl hlv
+      obtain ⟨W0, hgh, hW, hWin⟩ := guard_head_spec ht hwf hS hH hbd hRagree hcl hlv
         (cs1.length + 1) (Nat.lt_succ_self _)
         (fun c hc' => hsub c (by rw [hc]; simp [hc'])) hE hEin evh
       obtain ⟨D, B, ℓ, rfl, -, hB, -⟩ := TmOExact.forallE_of_load hW ldf
@@ -1462,7 +1595,8 @@ theorem block_elim_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     (ht : t.check = .ok ()) (hwf : t.wf = true)
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hbd : Bounded rootCalls)
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R)
     (hlv : StoreLevelsOk t E₀ (Held R))
     {B : _root_.Address} {addrs : List Bytes.Address}
     {xrc xta r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
@@ -1474,7 +1608,9 @@ theorem block_elim_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     ∃ (bnl off : Nat),
       r = .tuple [.field (bnl : F), .field (off : F)] ∧
       bnl < 4294967296 ∧ (off = 0 ∨ off = 1) ∧
-      BlockElim t E₀ B off := by
+      BlockElim t E₀ B off ∧
+      (∀ t0' rest', addrs = t0' :: rest' →
+        ∃ d, indDataAt t E₀ (ixAddr t0') = some (some d) ∧ bnl = d.nl) := by
   match Obs.«KernelModeled::block_elim».obs ev with
   | .run (x_t0 := xt0) (x_rest := xrest) (m27 := m1) (p35 := p1) (cs41 := cs1)
       (x_nl := xnl) (x_ty := xty) (x_np := xnp) (x_ni := xni) (v102 := vlvl) (m103 := m2)
@@ -1485,13 +1621,13 @@ theorem block_elim_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     subst hm1b hr hh
     obtain ⟨t0, rest, rfl, rt0, -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hta ldt
     have hSt0 : Held R (ixAddr t0) := hheld t0 List.mem_cons_self
-    obtain ⟨hyes, -⟩ := indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+    obtain ⟨hyes, -⟩ := indAnswers_ofStore ht hwf hS hH hbd hRagree hcl hlv
       (fun c hc' => hsub c (by rw [hc]; simp [hc'])) hSt0 rt0 evg ldci
     obtain ⟨d, ba, hindAt, hnl, hnp, hni, -, -, rfl, hty, htyIn, -, rfl, rfl, -, -, -, -⟩ :=
       hyes _ _ _ _ _ _ _ _ rfl
     obtain rfl := binop_add_nat op
     have ext1 : Heap.Extends m1 (m1 ++ [.construct kexprListEnum "Nil" []]) := Heap.Extends.snoc _ _
-    obtain ⟨lvl, hrs, rl⟩ := get_result_sort_level_spec ht hwf hS hH hbd hRsub hcl hlv
+    obtain ⟨lvl, hrs, rl⟩ := get_result_sort_level_spec ht hwf hS hH hbd hRagree hcl hlv
       (d.np + d.ni) (by omega)
       (fun c hc' => hsub c (by rw [hc]; simp [hc'])) (hty.mono ext1) htyIn evrs
     obtain ⟨hoff, -⟩ := IxVM.Refinement.Levels.levelIsNotZero_step evnz vlvl rfl lvl
@@ -1506,12 +1642,16 @@ theorem block_elim_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       rw [hd_eq]
       unfold indTypeAt
       simp only [hcE, hci, hcbE, hcbi, hm, hld]
-    refine ⟨d.nl, if lvl.isNeverZero then 1 else 0, ?_, hnl, ?_, ?_⟩
+    refine ⟨d.nl, if lvl.isNeverZero then 1 else 0, ?_, hnl, ?_, ?_, ?_⟩
     · rw [hoff]
       cases lvl.isNeverZero <;> simp
     · cases lvl.isNeverZero <;> simp
     · exact ⟨ixAddr t0, rest.map ixAddr, d.nl, d.np, d.ni, d.ty, lvl,
         by simpa using hmemAt, hindTy, hrs, rfl⟩
+    · intro t0' rest' heq
+      injection heq with ht0' _
+      subst ht0'
+      exact ⟨d, hindAt, rfl⟩
 
 end IxVM.Refinement.Binding.FamilyRecon
 

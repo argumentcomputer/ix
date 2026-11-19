@@ -227,9 +227,9 @@ theorem WrapConsEqObs.toWrapConsObs {W : KKey → Option (Option Nat)} {ObsW : K
     {g d : KExpr} (h : WrapConsEqObs W ObsW g d) : WrapConsObs W ObsW g d := by
   induction h with
   | bvar i => exact .bvar i
-  | fvar _ t => exact .fvar (Core.exprLvEq_refl t)
+  | fvar _ t => exact .fvar (Core.ExprLvEq.refl t)
   | sort u => exact .sort (fun _ => rfl)
-  | const _ us => exact .const (Core.lvEqList_refl us)
+  | const _ us => exact .const (Core.LvEqList.refl us)
   | lit l => exact .lit l
   | app _ _ ihf iha => exact .app ihf iha
   | lam hpw hcs _ _ ihd ihb => exact .lam hpw hcs ihd ihb
@@ -285,24 +285,22 @@ private theorem getAppFn_mkAppN_of_nonApp {hd : KExpr}
       | nil => intro _; rfl
       | cons x xs ih => intro e; simpa [Ix.Kernel.Expr.mkAppN, Ix.Kernel.Expr.getAppFn] using ih (.app e x)
     rw [hrec as (.app hd a)]
-    simpa [Ix.Kernel.Expr.getAppFn] using getAppFn_mkAppN_of_nonApp hna []
+    simp [Ix.Kernel.Expr.getAppFn, getAppFn_mkAppN_of_nonApp hna []]
 
 private theorem getAppArgs_mkAppN_of_nonApp {hd : KExpr}
     (hna : ∀ f a, hd ≠ .app f a) :
     ∀ (args : List KExpr), (Ix.Kernel.Expr.mkAppN hd args).getAppArgs = args := by
-  have hgo : ∀ (l acc : List KExpr) (e : KExpr),
-      Ix.Kernel.Expr.getAppArgsAux (Ix.Kernel.Expr.mkAppN e l) acc =
-        Ix.Kernel.Expr.getAppArgsAux e (l ++ acc) := by
+  have hgo : ∀ (l : List KExpr) (e : KExpr),
+      (Ix.Kernel.Expr.mkAppN e l).getAppArgs = e.getAppArgs ++ l := by
     intro l
     induction l with
-    | nil => intro _ _; rfl
+    | nil => intro e; simp [Ix.Kernel.Expr.mkAppN]
     | cons x xs ih =>
-      intro acc e
-      simp only [Ix.Kernel.Expr.mkAppN, ih (acc := acc) (.app e x),
-        Ix.Kernel.Expr.getAppArgsAux, List.cons_append]
+      intro e
+      simp only [Ix.Kernel.Expr.mkAppN, ih (.app e x), Ix.Kernel.Expr.getAppArgs,
+        List.append_assoc, List.singleton_append]
   intro args
-  unfold Ix.Kernel.Expr.getAppArgs
-  rw [hgo args [] hd, List.append_nil]
+  rw [hgo args hd]
   cases hd with
   | app f a => exact absurd rfl (hna f a)
   | bvar _ | fvar _ _ | sort _ | const _ _ | lit _ | lam _ _ _ | forallE _ _ _
@@ -310,18 +308,18 @@ private theorem getAppArgs_mkAppN_of_nonApp {hd : KExpr}
 
 private theorem mkAppN_getAppFn_getAppArgs (e : KExpr) :
     Ix.Kernel.Expr.mkAppN e.getAppFn e.getAppArgs = e := by
-  have hgo : ∀ (e : KExpr) (acc : List KExpr),
-      Ix.Kernel.Expr.mkAppN e.getAppFn (Ix.Kernel.Expr.getAppArgsAux e acc) =
-        Ix.Kernel.Expr.mkAppN e acc := by
-    intro e
-    induction e with
-    | app f a ihf _ =>
-      intro acc
-      simpa [Ix.Kernel.Expr.getAppFn, Ix.Kernel.Expr.getAppArgsAux, Ix.Kernel.Expr.mkAppN] using
-        ihf (a :: acc)
-    | bvar _ | fvar _ _ | sort _ | const _ _ | lit _ | lam _ _ _ | forallE _ _ _
-    | letE _ _ _ _ | proj _ _ _ => intro _; rfl
-  simpa [Ix.Kernel.Expr.getAppArgs] using hgo e []
+  have hmk_append : ∀ (l₁ l₂ : List KExpr) (f : KExpr),
+      Ix.Kernel.Expr.mkAppN f (l₁ ++ l₂) = Ix.Kernel.Expr.mkAppN (Ix.Kernel.Expr.mkAppN f l₁) l₂ := by
+    intro l₁
+    induction l₁ with
+    | nil => intro _ _; rfl
+    | cons x xs ih => intro l₂ f; exact ih l₂ (.app f x)
+  induction e with
+  | app f a ihf _ =>
+    simp only [Ix.Kernel.Expr.getAppFn, Ix.Kernel.Expr.getAppArgs, hmk_append, ihf,
+      Ix.Kernel.Expr.mkAppN]
+  | bvar _ | fvar _ _ | sort _ | const _ _ | lit _ | lam _ _ _ | forallE _ _ _
+  | letE _ _ _ _ | proj _ _ _ => rfl
 
 private theorem mkAppN_liftLooseBVars_w (amount cutoff : Nat) :
     ∀ (args : List KExpr) (f : KExpr),
@@ -369,7 +367,7 @@ private theorem consumeAt_some_some_inv {W : KKey → Option (Option Nat)} {t a 
         · rw [ite_eq_left hk] at hc
           obtain rfl := Option.some.inj hc
           subst hk
-          exact ⟨w, us, rest, hfn, hl, hw⟩
+          exact ⟨w, us, rest, hfn, rfl, hw⟩
         · rw [ite_eq_right hk] at hc; cases hc
 
 theorem ConsumesObs.liftLooseBVars {W : KKey → Option (Option Nat)} {ObsW : KKey → Nat → Prop}
@@ -646,8 +644,9 @@ private theorem addrIn_of_instantiate1Lift_val {S : _root_.Address → Prop} {κ
     · exact addrIn_of_instantiate1Lift_val V d h1 ht
     · exact addrIn_of_instantiate1Lift_val V d h2 hv
     · exact addrIn_of_instantiate1Lift_val V (d + 1) h3 hbb
-  | .proj _ _ e, d, hb, ⟨_, he⟩ =>
-    addrIn_of_instantiate1Lift_val V d hb he
+  | .proj _ _ e, d, hb, ⟨_, he⟩ => by
+    simp only [hasBVarAt] at hb
+    exact addrIn_of_instantiate1Lift_val V d hb he
 
 /-! ### Shape preservation lemmas on `WrapConsEqObs` and `wrapAt` on inductives -/
 
@@ -718,8 +717,7 @@ theorem WrapConsEqObs.getAppFn_const_eq {W : KKey → Option (Option Nat)} {ObsW
     simp only [Ix.Kernel.Expr.getAppFn] at hfn ⊢
     obtain ⟨h1, h2⟩ := ihf hfn
     refine ⟨h1, ?_⟩
-    rw [Ix.Kernel.Expr.getAppArgs_app, Ix.Kernel.Expr.getAppArgs_app]
-    simp [h2]
+    simp only [Ix.Kernel.Expr.getAppArgs, List.length_append, List.length_singleton, h2]
   | bvar _ | fvar _ _ | sort _ | lit _ | lam _ _ _ _ | forallE _ _ _ _ | letE _ _ _ | proj _ =>
     simp [Ix.Kernel.Expr.getAppFn] at hfn
 
@@ -736,18 +734,18 @@ theorem WrapConsEqObs.getAppFn_bvar_eq {W : KKey → Option (Option Nat)} {ObsW 
     simp only [Ix.Kernel.Expr.getAppFn] at hfn ⊢
     obtain ⟨h1, h2⟩ := ihf hfn
     refine ⟨h1, ?_⟩
-    rw [Ix.Kernel.Expr.getAppArgs_app, Ix.Kernel.Expr.getAppArgs_app]
-    simp [h2]
+    simp only [Ix.Kernel.Expr.getAppArgs, List.length_append, List.length_singleton, h2]
   | fvar _ _ | sort _ | const _ _ | lit _ | lam _ _ _ _ | forallE _ _ _ _ | letE _ _ _ | proj _ =>
     simp [Ix.Kernel.Expr.getAppFn] at hfn
 
 /-- An inductive projection address is never a definition, so `wrapAt` returns `some none`. -/
 theorem wrapAt_ind_none {t : Ix.Kernel.RoleTable} {E : Ixon.Env} (hwf : t.wf = true)
-    {a : _root_.Address} {c : Ixon.Constant} {p : Ixon.InductProj}
+    {a : _root_.Address} {c : Ixon.Constant} {p : Ixon.InductiveProj}
     (hc : recordOf E a = some c) (hi : c.info = .iPrj p) :
     wrapAt t E (Core.keyOf t a) = some none := by
   unfold wrapAt
-  rw [keyAddr_keyOf hwf a]
+  have hk : keyAddr t (Core.keyOf t a) = some a := keyAddr_keyOf hwf a
+  rw [hk]
   unfold defnAt
   rw [hc, hi]
 
@@ -762,7 +760,7 @@ theorem wrapAt_of_indDataAt_some {t : Ix.Kernel.RoleTable} {E : Ixon.Env} (hwf :
     rw [hc] at hind
     cases hi : c.info with
     | iPrj p => exact wrapAt_ind_none hwf hc hi
-    | _ => rw [hi] at hind; cases hind
+    | _ => simp only [hi] at hind; cases hind
 
 /-! ## `KernelCheck::lam_first_arity` and `KernelCheck::consume_wrapper` on `TmOExact` -/
 
@@ -883,7 +881,8 @@ theorem consume_wrapper_one_oexact {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
     (ht : t.check = .ok ()) (hwf : t.wf = true)
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hbd : Bounded rootCalls)
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R)
     (hlv : StoreLevelsOk t E₀ (Held R))
     {E : KExpr} {xt xa : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hsub : ∀ cl ∈ cs, cl ∈ rootCalls)
@@ -946,7 +945,7 @@ theorem consume_wrapper_one_oexact {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
     have hSwa : Held R (ixAddr wa) := hconst_in (ixAddr wa) rfl
     have hA_in : AddrIn (Held R) (Core.keyOf t) A := hargs_in A List.mem_cons_self
     have sub_ci : ∀ cl ∈ cs110, cl ∈ rootCalls := fun cl hcl' => hsub cl (by rw [hc]; call_mem)
-    obtain ⟨hyes, -⟩ := defnLoad_ofStore ht hwf hS hH hbd hRsub hcl hlv sub_ci hSwa rwa ev112 ld106
+    obtain ⟨hyes, -⟩ := defnLoad_ofStore ht hwf hS hH hbd hRagree hcl hlv sub_ci hSwa rwa ev112 ld106
     obtain ⟨nl, V, -, -, hV, -, hdefnAt, -⟩ := hyes w127 w128 xv w129 w130 rfl
     have hcl_la : (⟨"KernelCheck::lam_first_arity", [xv, .field 0], m96⟩ : Call F) ∈ rootCalls :=
       hsub _ (by rw [hc]; call_mem)
@@ -957,13 +956,15 @@ theorem consume_wrapper_one_oexact {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
       simpa using RomBound.bounded_descent_lt hbd hcl_la List.mem_cons_self hdesc
     obtain ⟨k_out, steps, hxk, hk_steps, hdesc_v, hlam_V, hm157⟩ :=
       lam_first_arity_go_oexact _ _ _ _ _ _ ev170 rfl 0 V xv xk rfl rfl hbnd_la hV
-    subst hxk hm157
+    subst hxk
+    subst m157
     have hk_lt : k_out < 549755813888 := by
       have := hbnd_la steps hdesc_v; omega
     have ext_ci : Heap.Extends m2 m96 := ev112.heap_extends
     have hrest_m96 := tmOExactList_mono ext_ci hrest_m2
     obtain ⟨hx222, hm224⟩ := kexpr_length_spec ev235 hrest_m96
-    subst hx222 hm224
+    subst hx222
+    subst m224
     have hrest_lt : rest.length < 2 ^ 39 :=
       repList_length_lt_wrap hbd hsub ev235 (by rw [hc]; call_mem) (by simp) hrest_m96
     have hy214 : y214 = .field ((rest.length + 1 : Nat) : F) := Decl.evalBinOp_add_one rest.length op229
@@ -1001,7 +1002,8 @@ private theorem wrap_rel_family_oexact {rootCalls : List (Call F)} {t : Ix.Kerne
     (ht : t.check = .ok ()) (hwf : t.wf = true)
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hbd : Bounded rootCalls)
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R)
     (hlv : StoreLevelsOk t E₀ (Held R)) :
     ∀ (fname : String) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
       (h' : Heap F) (cs : List (Call F)),
@@ -1165,13 +1167,13 @@ private theorem wrap_rel_family_oexact {rootCalls : List (Call F)} {t : Ix.Kerne
             Except.ok.injEq, Value.field.injEq] at op669
           have hag_eq : ag = ad := by
             by_contra hne
-            rw [if_neg hne] at op669
+            rw [ite_eq_right hne] at op669
             simp at op669
           subst hag_eq
           have hig_eq : ig = id_ := by
             by_contra hne
             have hsub0 : ig - id_ ≠ 0 := sub_ne_zero.mpr hne
-            rw [if_neg hsub0] at op669
+            rw [ite_eq_right hsub0] at op669
             simp at op669
           subst hig_eq
           have he := (ih _ _ _ _ _ _ (by rw [hc]; simp only [List.length_cons, List.length_append]; omega)
@@ -1204,7 +1206,7 @@ private theorem wrap_rel_family_oexact {rootCalls : List (Call F)} {t : Ix.Kerne
           have e1 := ev1.heap_extends
           have e2 := ev2.heap_extends
           obtain ⟨A, w, n, hcons, hhd, hwrap, hobs, hA, hAin⟩ :=
-            consume_wrapper_one_oexact ht hwf hS hH hbd hRsub hcl hlv
+            consume_wrapper_one_oexact ht hwf hS hH hbd hRagree hcl hlv
               (fun cl hcl' => hsub cl (by rw [hc]; call_mem)) (hT.mono e1) hTin ev2
           obtain ⟨C, hcs, hCT2⟩ :=
             (ih _ _ _ _ _ _ (by rw [hc]; simp only [List.length_cons, List.length_append]; omega)
@@ -1215,7 +1217,7 @@ private theorem wrap_rel_family_oexact {rootCalls : List (Call F)} {t : Ix.Kerne
             (ev121 := ev1) (ev153 := ev2) (hc170 := hc) .. =>
           have e1 := ev1.heap_extends
           obtain ⟨A, w, n, hcons, hhd, hwrap, hobs, hA, hAin⟩ :=
-            consume_wrapper_one_oexact ht hwf hS hH hbd hRsub hcl hlv
+            consume_wrapper_one_oexact ht hwf hS hH hbd hRagree hcl hlv
               (fun cl hcl' => hsub cl (by rw [hc]; call_mem)) hT hTin ev1
           obtain ⟨C, hcs, hCT2⟩ :=
             (ih _ _ _ _ _ _ (by rw [hc]; simp only [List.length_cons, List.length_append]; omega)
@@ -1240,7 +1242,7 @@ private theorem wrap_rel_family_oexact {rootCalls : List (Call F)} {t : Ix.Kerne
           have hpw : (bmeta ℓ).pw = (bmeta ℓ2).pw := by
             unfold bmeta
             by_contra hne
-            rw [if_neg hne] at hpw_f
+            rw [ite_eq_right hne] at hpw_f
             exact absurd (Value.field.inj hpw_f) one_ne_zero
           have e1 := ev15.heap_extends
           have e2 := ev50.heap_extends
@@ -1262,7 +1264,8 @@ theorem wrap_rel_one_oexact {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
     (ht : t.check = .ok ()) (hwf : t.wf = true)
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hbd : Bounded rootCalls)
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R)
     (hlv : StoreLevelsOk t E₀ (Held R))
     {xsm xg xd : SourceValue F} {G D : KExpr} {h h' : Heap F} {cs : List (Call F)}
     (hsub : ∀ cl ∈ cs, cl ∈ rootCalls)
@@ -1270,7 +1273,7 @@ theorem wrap_rel_one_oexact {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
     (hGin : AddrIn (Held R) (Core.keyOf t) G)
     (ev : ObsFn W "KernelCheck::wrap_rel" [xsm, xg, xd] h (.field 1) h' cs) :
     WrapConsEqObs (wrapAt t E₀) (WrapperObserved rootCalls t) G D :=
-  (wrap_rel_family_oexact ht hwf hS hH hbd hRsub hcl hlv _ _ _ _ _ _ ev rfl hsub).1
+  (wrap_rel_family_oexact ht hwf hS hH hbd hRagree hcl hlv _ _ _ _ _ _ ev rfl hsub).1
     rfl xsm xg xd G D rfl hG hD hGin
 
 /-- Weakened to `WrapConsObs` (semantic level equality at leaves). -/
@@ -1279,7 +1282,8 @@ theorem wrap_rel_one_wrapConsObs {rootCalls : List (Call F)} {t : Ix.Kernel.Role
     (ht : t.check = .ok ()) (hwf : t.wf = true)
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hbd : Bounded rootCalls)
-    (hRsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R)
+    (hRagree : ∀ y c c', recordOf R y = some c → recordOf E₀ y = some c' → c = c')
+    (hcl : UsedClosed R)
     (hlv : StoreLevelsOk t E₀ (Held R))
     {xsm xg xd : SourceValue F} {G D : KExpr} {h h' : Heap F} {cs : List (Call F)}
     (hsub : ∀ cl ∈ cs, cl ∈ rootCalls)
@@ -1287,7 +1291,7 @@ theorem wrap_rel_one_wrapConsObs {rootCalls : List (Call F)} {t : Ix.Kernel.Role
     (hGin : AddrIn (Held R) (Core.keyOf t) G)
     (ev : ObsFn W "KernelCheck::wrap_rel" [xsm, xg, xd] h (.field 1) h' cs) :
     WrapConsObs (wrapAt t E₀) (WrapperObserved rootCalls t) G D :=
-  (wrap_rel_one_oexact ht hwf hS hH hbd hRsub hcl hlv hsub hG hD hGin ev).toWrapConsObs
+  (wrap_rel_one_oexact ht hwf hS hH hbd hRagree hcl hlv hsub hG hD hGin ev).toWrapConsObs
 
 /-- **`ConsumesObs` converts to IxC's `WrapDom`** whenever every observed wrapper has matching
 `wrapperArity find?`. -/
@@ -1384,7 +1388,7 @@ theorem rule_lam_doms_spec {κ : _root_.Address → KKey} {elim : KLevel} {xelim
       have hpw : (bmeta ll).pw = elim.zeronessOf := by
         unfold bmeta
         by_contra hne
-        rw [if_neg hne] at hpw_f
+        rw [ite_eq_right hne] at hpw_f
         exact absurd (Value.field.inj hpw_f) one_ne_zero
       have e1 := ev81.heap_extends
       obtain ⟨dp, bp, lp, rfl, hdp, hbp, -⟩ := TmOExact.forallE_of_load (hP.mono e1) ld116
@@ -1395,7 +1399,7 @@ theorem rule_lam_doms_spec {κ : _root_.Address → KKey} {elim : KLevel} {xelim
       rw [hv196] at ev193
       obtain ⟨R, hlam, hR⟩ := ih (by omega)
         (hbl.mono (e1.trans e2)) (hbp.mono e2) (helim.mono (e1.trans e2)) ev193
-      exact ⟨R, .succ hpw (Core.exprLvEq_refl dl) hlam, hR⟩
+      exact ⟨R, .succ hpw (Core.ExprLvEq.refl dl) hlam, hR⟩
 
 /-- **`KernelCheck::compare_rules` on `RecRulesRep` and canonical body list** certifies
 `RuleFollows` for every rule in `rus`, matching `MemberRecon`'s rule clause. -/
@@ -1489,7 +1493,7 @@ theorem compare_rules_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
         obtain ⟨hm424, peeled, hpeel_eq, hpeeled_tm⟩ :=
           peel_n_foralls_tmOExact (nP + nMot + (minorOff + pos)) hpeel_lt ev439
             (hty.mono (e_150.trans e_378))
-        subst hm424
+        subst m424
         obtain ⟨mdom, mrest, ml, rfl, hmdom_tm, -, -⟩ := TmOExact.forallE_of_load hpeeled_tm ld433
         rw [hv359] at op531
         have hmo_le : minorOff + pos ≤ nMin := by simp at hmin; omega
@@ -1525,7 +1529,7 @@ theorem compare_rules_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
           simp only [List.getElem?_cons_zero, Option.some.injEq] at hi
           subst hi
           refine ⟨rhs, cb, by simpa using hloaded, rfl, afterPre, mdom, mrest, sb, bmeta ml,
-            hlams1, hpeel_eq, hlams2, hsb_cb ▸ Core.exprLvEq_refl cb⟩
+            hlams1, hpeel_eq, hlams2, hsb_cb ▸ Core.ExprLvEq.refl cb⟩
         | succ i =>
           simp only [List.getElem?_cons_succ] at hi
           obtain ⟨rhs', cb', hld', hcb', hrf'⟩ := hrest_res i ru' hi
@@ -1555,7 +1559,7 @@ theorem flat_find_pos_spec {κ : _root_.Address → KKey} {target : Bytes.Addres
     match Obs.«KernelCheck::flat_find_pos».obs ev with
     | .Nil (he24 := hr) (he37 := hh) .. =>
       subst hr hh
-      exact ⟨rfl, Or.inr ⟨fun _ hm => nomatch hm, rfl⟩⟩
+      exact ⟨rfl, Or.inr ⟨(fun _ hm => nomatch hm), rfl⟩⟩
     | .Cons_n1 (ld12 := ld12) .. | .Cons_other (ld12 := ld12) .. =>
       obtain ⟨_, _, hne, _, _⟩ := Core.RepList.cons_of_load hflat ld12
       cases hne
@@ -1576,7 +1580,7 @@ theorem flat_find_pos_spec {κ : _root_.Address → KKey} {target : Bytes.Addres
       subst hm93
       have ha_t : a = target := by
         by_contra hne
-        rw [if_neg hne] at hva
+        rw [ite_eq_right hne] at hva
         exact absurd (Value.field.inj hva) one_ne_zero
       subst ha_t
       exact ⟨rfl, Or.inl ⟨0, e, rfl, ha_eq.symm, by simp⟩⟩
@@ -1592,12 +1596,12 @@ theorem flat_find_pos_spec {κ : _root_.Address → KKey} {target : Bytes.Addres
       subst hm93
       have ha_ne : a ≠ target := by
         intro heq_a
-        rw [if_pos heq_a] at hva
-        exact hne147 hva.symm
+        rw [ite_eq_left heq_a] at hva
+        exact hne147 hva
       have he_ne : e.addr ≠ ixAddr target := by
         intro heq_e
         rw [← ha_eq] at heq_e
-        exact ha_ne (Core.ixAddr_inj heq_e)
+        exact ha_ne (ixAddr_inj heq_e)
       have hv159 : v159 = .field (((pos + 1 : Nat) : F)) := Decl.evalBinOp_add_one pos op187
       rw [hv159] at ev156
       obtain ⟨hh', hres⟩ := ih (pos + 1) hrest_rep rtarget ev156
@@ -1632,7 +1636,7 @@ theorem flat_find_pos_kind_spec {κ : _root_.Address → KKey} (hinj : Function.
           (wantAux = true → e.params = wantSp ∧ e.levels = wantUs))) ∧
         r = .tuple [.field 0, .field 0]) := by
   have eval_match :
-      ∀ {e : FlatEntry} {xma xis xsp xou xm xrest xfl v92 v155 v208 : SourceValue F}
+      ∀ {e : FlatEntry} {pos : Nat} {xma xis xsp xou xm xrest xfl v92 v155 v208 : SourceValue F}
         {h0 m93 m156 m209 : Heap F} {cs103 cs158 cs211 : List (Call F)} {a : Bytes.Address},
         Bounded cs211 →
         Bytes.RepAddressRef addrTy h0 a xma → ixAddr a = e.addr →
@@ -1655,13 +1659,13 @@ theorem flat_find_pos_kind_spec {κ : _root_.Address → KKey} (hinj : Function.
           (b2 = true ↔ e.aux = wantAux) ∧
           (b3 = true ↔ (wantAux = true → e.params = wantSp ∧ e.levels = wantUs)) ∧
           Heap.Extends h0 m209 := by
-    intro e xma xis xsp xou xm xrest xfl v92 v155 v208 h0 m93 m156 m209 cs103 cs158 cs211 a
+    intro e pos xma xis xsp xou xm xrest xfl v92 v155 v208 h0 m93 m156 m209 cs103 cs158 cs211 a
       hbd211 ra ha hxis hsp hou rtarget hwsp hwus ev105 sg1 sg2
     obtain ⟨hv92, hm93⟩ := Lib.address_eq_spec ev105 ra rtarget
-    subst hm93
+    subst m93
     have hb1 : (decide (a = target) = true) ↔ e.addr = ixAddr target := by
       simp only [decide_eq_true_eq]
-      exact ⟨fun h => by rw [← ha, h], fun h => Core.ixAddr_inj (ha.trans h)⟩
+      exact ⟨fun h => by rw [← ha, h], fun h => ixAddr_inj (ha.trans h)⟩
     have hv92' : v92 = .field (if decide (a = target) then 1 else 0) := by
       rw [hv92]; by_cases h : a = target <;> simp [h]
     have hsg1 : ∃ b2 : Bool, v155 = .field (if b2 then 1 else 0) ∧
@@ -1684,7 +1688,7 @@ theorem flat_find_pos_kind_spec {κ : _root_.Address → KKey} (hinj : Function.
         cases wantAux <;> simp [auxVal, evalBinOp, bind, Except.bind, pure, Except.pure] at op138 <;>
           exact hne148 (by rw [← op138]; simp)
     obtain ⟨b2, hv155', hb2, hm156⟩ := hsg1
-    subst hm156
+    subst m156
     have hsg2 : ∃ b3 : Bool, v208 = .field (if b3 then 1 else 0) ∧
         (b3 = true ↔ (wantAux = true → e.params = wantSp ∧ e.levels = wantUs)) ∧
         Heap.Extends h0 m209 := by
@@ -1726,7 +1730,7 @@ theorem flat_find_pos_kind_spec {κ : _root_.Address → KKey} (hinj : Function.
     match Obs.«KernelCheck::flat_find_pos_kind».obs ev with
     | .Nil (he24 := hr) .. =>
       subst hr
-      exact Or.inr ⟨fun _ hm => nomatch hm, rfl⟩
+      exact Or.inr ⟨(fun _ hm => nomatch hm), rfl⟩
     | .Cons_n1 (ld12 := ld12) .. | .Cons_other (ld12 := ld12) .. =>
       obtain ⟨_, _, hne, _, _⟩ := Core.RepList.cons_of_load hflat ld12
       cases hne
@@ -1812,42 +1816,27 @@ theorem flat_find_pos_kind_spec {κ : _root_.Address → KKey} (hinj : Function.
 
 /-! ## `L1.RawConvExpr` + `TmOExact` → `FamilyOf.majorHeadAt` and `FamilyOf.motiveCarrierAt` -/
 
-private theorem unshare_nonshare_wrap (c : Ixon.Constant) :
-    ∀ (n : Nat) {e : Ixon.Expr}, (∀ i, e ≠ .share i) → FamilyOf.unshare c n e = e
-  | 0, _, _ => rfl
-  | _ + 1, .share i, h => absurd rfl (h i)
-  | _ + 1, .var _, _ | _ + 1, .sort _, _ | _ + 1, .ref _ _, _ | _ + 1, .recur _ _, _
-  | _ + 1, .str _, _ | _ + 1, .nat _, _ | _ + 1, .prj _ _ _, _ | _ + 1, .app _ _, _
-  | _ + 1, .lam _ _, _ | _ + 1, .all _ _, _ | _ + 1, .letE _ _ _ _ _, _ => rfl
-
 private theorem unshare_ge_wrap (c : Ixon.Constant) {recurAddrs : List _root_.Address}
-    {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {bound : Nat} {e : Ixon.Expr}
-    {kp : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp) :
-    ∀ n, min bound c.sharing.size + 1 ≤ n →
+    {blobs : List (_root_.Address × ByteArray)} {h : Heap F} :
+    ∀ (n : Nat) {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F},
+      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
+      min bound c.sharing.size + 1 ≤ n →
       ∃ b', L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b'
           (FamilyOf.unshare c n e) kp ∧
-        ∀ i, FamilyOf.unshare c n e ≠ .share i := by
-  induction raw with
-  | @share bound idx s kp hlt hs _ ih =>
-    intro n hn
-    cases n with
-    | zero => omega
-    | succ m =>
-      have hidx_sz : idx.toNat < c.sharing.size := by
-        simpa [Array.getElem?_eq_some_iff] using (List.getElem?_eq_some_iff.mp hs).1
-      have hidx_arr : c.sharing[idx.toNat]? = some s := by
-        simpa [Array.getElem?_toList] using hs
-      simp only [FamilyOf.unshare, hidx_arr]
-      exact ih m (by omega)
-  | var _ _ | sort _ _ _ _ | ref _ _ _ _ _ _ _ | recur _ _ _ _ _ _ _ | prj _ _ _ _ _ _ _
-  | str _ _ _ _ _ _ | nat _ _ _ _ _ _ _ _ | app _ _ _ | lam _ _ _ _ | all _ _ _ _
-  | letE _ _ _ _ =>
-    rename_i bound _
-    intro n _
-    have hns : ∀ i, _ ≠ Ixon.Expr.share i := by intro i he; cases he
-    rw [unshare_nonshare_wrap c n hns]
-    exact ⟨bound, by assumption, hns⟩
+        ∀ i, FamilyOf.unshare c n e ≠ .share i
+  | 0, _, _, _, _, hn => by omega
+  | n + 1, bound, e, kp, raw, hn => by
+    cases e with
+    | share idx =>
+      cases raw with
+      | share hlt hs raw' =>
+        have hidx_arr : c.sharing[idx.toNat]? = some _ := by
+          simpa [Array.getElem?_toList] using hs
+        simp only [FamilyOf.unshare, hidx_arr]
+        exact unshare_ge_wrap c n raw' (by omega)
+    | var _ | sort _ | ref _ _ | recur _ _ | str _ | nat _ | prj _ _ _
+    | app _ _ | lam _ _ | all _ _ | letE _ _ _ _ _ =>
+      exact ⟨bound, raw, fun _ he => by cases he⟩
 
 private theorem rawConvExpr_node_wrap {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {bound : Nat} {e : Ixon.Expr}
@@ -1856,9 +1845,9 @@ private theorem rawConvExpr_node_wrap {c : Ixon.Constant} {recurAddrs : List _ro
     ∃ b', L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b'
         (FamilyOf.node c e) kp ∧
       ∀ i, FamilyOf.node c e ≠ .share i :=
-  unshare_ge_wrap c raw (c.sharing.size + 1) (by omega)
+  unshare_ge_wrap c (c.sharing.size + 1) raw (by omega)
 
-private theorem rawConvExpr_forall_inv_wrap {c : Ixon.Constant} {recurAddrs : List _root_.Address}
+theorem rawConvExpr_forall_inv_wrap {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {bound : Nat} {e : Ixon.Expr}
     {kp dp bp lp : SourceValue F}
     (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
@@ -1880,7 +1869,7 @@ private theorem rawConvExpr_forall_inv_wrap {c : Ixon.Constant} {recurAddrs : Li
   | app _ _ cell | lam _ _ _ cell | letE _ _ _ cell =>
     exact False.elim (Core.load_cell_ne cell ld (by decide))
 
-private theorem rawConvExpr_not_forall_of_nonForall {c : Ixon.Constant}
+theorem rawConvExpr_not_forall_of_nonForall {c : Ixon.Constant}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F} {v : SourceValue F}
     (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
@@ -1891,14 +1880,14 @@ private theorem rawConvExpr_not_forall_of_nonForall {c : Ixon.Constant}
   generalize he' : FamilyOf.node c e = e' at raw' hns
   cases raw' with
   | all _ _ _ cell =>
-    have hv := Except.ok.inj ((Core.load_enum_cell cell).symm.trans ld)
+    have hv := Except.ok.inj ((Core.loadValue_enum_cell cell).symm.trans ld)
     exact False.elim (hne _ _ _ hv.symm)
   | share _ _ _ => exact (hns _ rfl).elim
   | var _ _ | sort _ _ _ _ | ref _ _ _ _ _ _ _ | recur _ _ _ _ _ _ _ | prj _ _ _ _ _ _ _
   | str _ _ _ _ _ _ | nat _ _ _ _ _ _ _ _ | app _ _ _ | lam _ _ _ _ | letE _ _ _ _ =>
     intro _ _ hbad; cases hbad
 
-private theorem rawConvExpr_app_inv_wrap {c : Ixon.Constant} {recurAddrs : List _root_.Address}
+theorem rawConvExpr_app_inv_wrap {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {bound : Nat} {e : Ixon.Expr}
     {kp fp ap : SourceValue F}
     (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
@@ -1920,7 +1909,7 @@ private theorem rawConvExpr_app_inv_wrap {c : Ixon.Constant} {recurAddrs : List 
   | lam _ _ _ cell | all _ _ _ cell | letE _ _ _ cell =>
     exact False.elim (Core.load_cell_ne cell ld (by decide))
 
-private theorem rawConvExpr_const_inv_any_wrap {c : Ixon.Constant}
+theorem rawConvExpr_const_inv_any_wrap {c : Ixon.Constant}
     {recurAddrs : List _root_.Address} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp xa xus : SourceValue F}
     (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
@@ -2060,13 +2049,14 @@ theorem collect_spine_heapAppConst :
           have ext := ev88.heap_extends
           exact ⟨xa, xus, da, loadValue_mono ext ldc,
             Bytes.repAddressRef_heapMono₂ addrTy ext ra, ha⟩
-      | .other (ld12 := ld12) (hne140 := hne140) (he122 := he122) (he139 := he139) .. =>
-        injection he122 with hxs; injection hxs with hxh _
-        subst hxh he139
+      | .other (ld12 := ld12) (hne107 := hne107) (he115 := he115) (hm132 := hm132)
+          (he136 := he136) .. =>
+        injection he115 with hxs; injection hxs with hxh _
+        subst hxh he136 hm132
         cases hac with
         | app ld _ =>
           have hv := Except.ok.inj (ld.symm.trans ld12)
-          exact False.elim (hne140 [_, _] rfl hv.symm)
+          exact False.elim (hne107 [_, _] rfl hv.symm)
         | const ld ra =>
           have ext := Heap.Extends.snoc h (.construct kexprListEnum "Nil" [])
           exact ⟨_, _, _, loadValue_mono ext ld,
@@ -2077,7 +2067,7 @@ projection (`c.info = .iPrj _`) in `E₀`. -/
 theorem consume_wrapper_not_one_of_iprj {rootCalls : List (Call F)} {E₀ : Ixon.Env}
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hbd : Bounded rootCalls)
-    {a : _root_.Address} {c : Ixon.Constant} {p : Ixon.InductProj}
+    {a : _root_.Address} {c : Ixon.Constant} {p : Ixon.InductiveProj}
     (hcE : recordOf E₀ a = some c) (hi : c.info = .iPrj p)
     {xg xa : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hsub : ∀ cl ∈ cs, cl ∈ rootCalls)
@@ -2091,15 +2081,15 @@ theorem consume_wrapper_not_one_of_iprj {rootCalls : List (Call F)} {E₀ : Ixon
   | .other (he371 := he) .. =>
     injection he with hxs; injection hxs with h01 _
     exact absurd (Value.field.inj h01) one_ne_zero
-  | .Const_Cons_Defn_n1_bind_n0 (x_w := xw) (ev14 := ev14) (ld47 := ld47) (ev112 := ev112)
-      (ld106 := ld106) (hc267 := hc) .. =>
+  | .Const_Cons_Defn_n1_bind_n0 (x_w := xw) (cs110 := cs110) (ev14 := ev14) (ld47 := ld47)
+      (ev112 := ev112) (ld106 := ld106) (hc267 := hc) .. =>
     obtain ⟨xa', xus', da, ldc, ra, ha_eq⟩ :=
       collect_spine_heapAppConst _ _ _ _ _ _ ev14 rfl _ _ _ _ rfl rfl hac
     have hv := Except.ok.inj (ldc.symm.trans ld47)
     simp only [Value.construct.injEq, List.cons.injEq, true_and, and_true] at hv
     obtain ⟨rfl, rfl⟩ := hv
-    have sub_ci : ∀ cl ∈ _, cl ∈ rootCalls := fun cl hcl' => hsub cl (by rw [hc]; call_mem)
-    have hbd_ci : Bounded _ := RomBound.bounded_mono hbd sub_ci
+    have sub_ci : ∀ cl ∈ cs110, cl ∈ rootCalls := fun cl hcl' => hsub cl (by rw [hc]; call_mem)
+    have hbd_ci : Bounded cs110 := RomBound.bounded_mono hbd sub_ci
     obtain ⟨-, rawBytes, c', blobs', hh', ha', hex', -, -, -, hrawRes⟩ :=
       L1.get_ci_spec hbd_ci ra ev112
     have hc_eq : c' = c :=
@@ -2130,9 +2120,9 @@ theorem consume_wrapper_not_one_of_forall {xg dp bp lp xa : SourceValue F}
     | .App (ld12 := ld12) .. =>
       have hv := Except.ok.inj (ld.symm.trans ld12)
       simp [kexprEnum] at hv
-    | .other (he122 := he122) (he139 := he139) .. =>
-      injection he122 with hxs; injection hxs with hxh _
-      subst hxh he139
+    | .other (he115 := he115) (hm132 := hm132) (he136 := he136) .. =>
+      injection he115 with hxs; injection hxs with hxh _
+      subst hxh he136 hm132
       have ld' := loadValue_mono (Heap.Extends.snoc h (.construct kexprListEnum "Nil" [])) ld
       have hv := Except.ok.inj (ld'.symm.trans ld47)
       simp [kexprEnum] at hv
@@ -2177,13 +2167,11 @@ theorem heapEqOrWrap_forall_step {rootCalls : List (Call F)} {h : Heap F}
     | .Lam_other (ld12 := ld12) .. | .Let_Let_n1_n1 (ld12 := ld12) ..
     | .Let_Let_n1_other (ld12 := ld12) .. | .Let_Let_other (ld12 := ld12) ..
     | .Let_other (ld12 := ld12) .. | .Lit_Lit (ld12 := ld12) ..
-    | .Lit_other (ld12 := ld12) .. | .Proj_Proj_n1 (ld12 := ld12) ..
+    | .Lit_other (ld12 := ld12) .. | .Proj_Proj_n1_n0 (ld12 := ld12) ..
+    | .Proj_Proj_n1_other (ld12 := ld12) ..
     | .Proj_Proj_other (ld12 := ld12) .. | .Proj_other (ld12 := ld12) .. =>
       have hv := Except.ok.inj (ld.symm.trans ld12)
       simp [kexprEnum] at hv
-    | .other (ld12 := ld12) (hne627 := hne) .. =>
-      have hv := Except.ok.inj (ld.symm.trans ld12)
-      exact False.elim (hne [_, _, _] rfl hv.symm)
   · match Obs.«KernelCheck::wrap_rel».obs ev with
     | .other_other_Forall_Forall (x_t := xt) (x_b := xb) (x_m := xm)
         (x_t2 := xt2) (x_b2 := xb2) (x_m2 := xm2) (cs538 := csb)
@@ -2224,6 +2212,34 @@ theorem heapEqOrWrap_forall_step {rootCalls : List (Call F)} {h : Heap F}
       have hv := Except.ok.inj (ld.symm.trans ld242)
       exact False.elim (hne [_, _, _] rfl hv.symm)
 
+private theorem kexpr_struct_eq_not_forall {h h' : Heap F} {cs : List (Call F)}
+    {xg xd v : SourceValue F}
+    (ev : ObsFn W "KernelCheck::kexpr_struct_eq" [xg, xd] h (.field 1) h' cs)
+    (ld : loadValue h xg = .ok v)
+    (hne : ∀ d b l, v ≠ .construct kexprEnum "Forall" [d, b, l]) :
+    ∃ v2, loadValue h xd = .ok v2 ∧ ∀ d b l, v2 ≠ .construct kexprEnum "Forall" [d, b, l] := by
+  match Obs.«KernelCheck::kexpr_struct_eq».obs ev with
+  | .BVar_BVar_n0 (ld36 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
+  | .Srt_Srt (ld112 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
+  | .Const_Const_n1 (ld183 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
+  | .App_App_n1 (ld301 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
+  | .Lam_Lam (ld424 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
+  | .Let_Let_n1_n1 (ld660 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
+  | .Lit_Lit (ld820 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
+  | .Proj_Proj_n1_n0 (ld896 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
+  | .Forall_Forall (ld12 := ld12) .. =>
+    have hv := Except.ok.inj (ld.symm.trans ld12)
+    exact False.elim (hne _ _ _ hv)
+  | .BVar_BVar_other (he79 := he) .. | .BVar_other (he86 := he) ..
+  | .Srt_other (he152 := he) .. | .Const_Const_other (he263 := he) ..
+  | .Const_other (he270 := he) .. | .App_App_other (he381 := he) ..
+  | .App_other (he388 := he) .. | .Lam_other (he506 := he) ..
+  | .Forall_other (he624 := he) .. | .Let_Let_n1_other (he780 := he) ..
+  | .Let_Let_other (he787 := he) .. | .Let_other (he794 := he) ..
+  | .Lit_other (he860 := he) .. | .Proj_Proj_n1_other (he1004 := he) ..
+  | .Proj_Proj_other (he1011 := he) .. | .Proj_other (he1018 := he) .. =>
+    exact absurd (Value.field.inj he) one_ne_zero
+
 /-- A non-`"Forall"` pointer related by `HeapEqOrWrap` stays non-`"Forall"` on the right. -/
 theorem heapEqOrWrap_not_forall {rootCalls : List (Call F)} {h : Heap F}
     {xg xd v : SourceValue F}
@@ -2232,27 +2248,7 @@ theorem heapEqOrWrap_not_forall {rootCalls : List (Call F)} {h : Heap F}
     (hne : ∀ d b l, v ≠ .construct kexprEnum "Forall" [d, b, l]) :
     ∃ v2, loadValue h xd = .ok v2 ∧ ∀ d b l, v2 ≠ .construct kexprEnum "Forall" [d, b, l] := by
   rcases hrel with ⟨h', cs, _, ev⟩ | ⟨xsm, h', cs, _, ev⟩
-  · match Obs.«KernelCheck::kexpr_struct_eq».obs ev with
-    | .BVar_BVar_n0 (ld36 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
-    | .Srt_Srt (ld112 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
-    | .Const_Const_n1 (ld183 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
-    | .App_App_n1 (ld301 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
-    | .Lam_Lam (ld424 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
-    | .Let_Let_n1_n1 (ld660 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
-    | .Lit_Lit (ld820 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
-    | .Proj_Proj_n1 (ld896 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
-    | .Forall_Forall (ld12 := ld12) .. =>
-      have hv := Except.ok.inj (ld.symm.trans ld12)
-      exact False.elim (hne _ _ _ hv)
-    | .BVar_BVar_other (he79 := he) .. | .BVar_other (he86 := he) ..
-    | .Srt_other (he152 := he) .. | .Const_Const_other (he263 := he) ..
-    | .Const_other (he270 := he) .. | .App_App_other (he381 := he) ..
-    | .App_other (he388 := he) .. | .Lam_other (he506 := he) ..
-    | .Forall_other (he624 := he) .. | .Let_Let_n1_other (he782 := he) ..
-    | .Let_Let_other (he789 := he) .. | .Let_other (he796 := he) ..
-    | .Lit_other (he860 := he) .. | .Proj_Proj_other (he1004 := he) ..
-    | .Proj_other (he1011 := he) .. | .other (he1018 := he) .. =>
-      exact absurd (Value.field.inj he) one_ne_zero
+  · exact kexpr_struct_eq_not_forall ev ld hne
   · match Obs.«KernelCheck::wrap_rel».obs ev with
     | .Let_Let_n1_n1 (ld46 := ld2) .. => exact ⟨_, ld2, by intro _ _ _ he; simp [kexprEnum] at he⟩
     | .other_other_App_App_n1 (ld271 := ld2) .. =>
@@ -2264,8 +2260,8 @@ theorem heapEqOrWrap_not_forall {rootCalls : List (Call F)} {h : Heap F}
     | .other_other_Forall_Forall (ld242 := ld242) .. =>
       have hv := Except.ok.inj (ld.symm.trans ld242)
       exact False.elim (hne _ _ _ hv)
-    | .other_other_other (ev765 := evk) (hc782 := hc) .. =>
-      exact heapEqOrWrap_not_forall (Or.inl ⟨h', _, fun _ _ => by trivial, evk⟩) ld hne
+    | .other_other_other (ev765 := evk) .. =>
+      exact kexpr_struct_eq_not_forall evk ld hne
     | .Let_Let_n1_other (he166 := he) .. | .Let_Let_other (he173 := he) ..
     | .Let_other (he180 := he) .. | .other_Let (he224 := he) ..
     | .other_other_App_App_other (he351 := he) .. | .other_other_App_other (he358 := he) ..
@@ -2300,7 +2296,7 @@ theorem heapForalls_rawConvExpr_peel {rootCalls : List (Call F)}
       obtain ⟨dp2, bp2, lp2, _, h_b, _, ext_b, ld2, -, hrel_b⟩ := heapEqOrWrap_forall_step hrel ld
       obtain ⟨b', ed, eb, hnd, -, raw_b⟩ := rawConvExpr_forall_inv_wrap raw ld2
       obtain ⟨yd, h_out, b'', e', ext_out, hpeel, raw_y, hrel_y⟩ :=
-        ih (hf'.mono ext_b) hrel_b (raw_b.mono ext_b)
+        ih (hf'.mono ext_b) hrel_b (raw_b.mono ext_b (fun _ hp => hp))
       refine ⟨yd, h_out, b'', e', ext_b.trans ext_out, ?_, raw_y, hrel_y⟩
       simp only [FamilyOf.peel, hnd]
       exact hpeel
@@ -2336,14 +2332,14 @@ theorem heapAppConst_rawConvExpr_refHeadAt {rootCalls : List (Call F)}
         · obtain ⟨hva, -⟩ := Lib.address_eq_spec ev215 ra rb
           have hd_eq : da = db := by
             by_contra hne
-            rw [if_neg hne] at hva
+            rw [ite_eq_right hne] at hva
             exact absurd (Value.field.inj hva) one_ne_zero
           subst hd_eq hdb
           exact ⟨0, by simp [FamilyOf.refHeadAt, FamilyOf.spineHead, hnd, href]⟩
         · obtain ⟨hva, -⟩ := Lib.address_eq_spec ev215 ra rb
           have hd_eq : da = db := by
             by_contra hne
-            rw [if_neg hne] at hva
+            rw [ite_eq_right hne] at hva
             exact absurd (Value.field.inj hva) one_ne_zero
           subst hd_eq hdb
           exact absurd (List.mem_of_getElem? hrec) hnot_rec
@@ -2358,13 +2354,10 @@ theorem heapAppConst_rawConvExpr_refHeadAt {rootCalls : List (Call F)}
       | .Let_Let_n1_n1 (ld12 := ld12) .. | .Let_Let_n1_other (ld12 := ld12) ..
       | .Let_Let_other (ld12 := ld12) .. | .Let_other (ld12 := ld12) ..
       | .Lit_Lit (ld12 := ld12) .. | .Lit_other (ld12 := ld12) ..
-      | .Proj_Proj_n1 (ld12 := ld12) .. | .Proj_Proj_other (ld12 := ld12) ..
-      | .Proj_other (ld12 := ld12) .. =>
+      | .Proj_Proj_n1_n0 (ld12 := ld12) .. | .Proj_Proj_n1_other (ld12 := ld12) ..
+      | .Proj_Proj_other (ld12 := ld12) .. | .Proj_other (ld12 := ld12) .. =>
         have hv := Except.ok.inj (ld.symm.trans ld12)
         simp [kexprEnum] at hv
-      | .other (ld12 := ld12) (hne273 := hne) .. =>
-        have hv := Except.ok.inj (ld.symm.trans ld12)
-        exact False.elim (hne [_, _] rfl hv.symm)
     rcases hrel with ⟨h', cs, _, ev⟩ | ⟨xsm, h', cs, _, ev⟩
     · exact hkeq ev
     · match Obs.«KernelCheck::wrap_rel».obs ev with
@@ -2409,12 +2402,9 @@ theorem heapAppConst_rawConvExpr_refHeadAt {rootCalls : List (Call F)}
       | .Let_Let_n1_n1 (ld12 := ld12) .. | .Let_Let_n1_other (ld12 := ld12) ..
       | .Let_Let_other (ld12 := ld12) .. | .Let_other (ld12 := ld12) ..
       | .Lit_Lit (ld12 := ld12) .. | .Lit_other (ld12 := ld12) ..
-      | .Proj_Proj_n1 (ld12 := ld12) .. | .Proj_Proj_other (ld12 := ld12) ..
-      | .Proj_other (ld12 := ld12) .. =>
+      | .Proj_Proj_n1_n0 (ld12 := ld12) .. | .Proj_Proj_n1_other (ld12 := ld12) ..
+      | .Proj_Proj_other (ld12 := ld12) .. | .Proj_other (ld12 := ld12) .. =>
         have hv := Except.ok.inj (ld.symm.trans ld12); simp [kexprEnum] at hv
-      | .other (ld12 := ld12) (hne391 := hne) .. =>
-        have hv := Except.ok.inj (ld.symm.trans ld12)
-        exact False.elim (hne [_, _] rfl hv.symm)
     · match Obs.«KernelCheck::wrap_rel».obs ev with
       | .other_other_App_App_n1 (x_f := xf) (x_f2 := xf2) (ld242 := ld242) (ld271 := ld271)
           (ev303 := evf) (hc346 := hc) .. =>
@@ -2447,7 +2437,7 @@ theorem heapAppConst_rawConvExpr_refHeadAt_dom {rootCalls : List (Call F)} {E₀
     (hbd : Bounded rootCalls)
     {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)}
-    {a : _root_.Address} {ca : Ixon.Constant} {p : Ixon.InductProj}
+    {a : _root_.Address} {ca : Ixon.Constant} {p : Ixon.InductiveProj}
     (hcE : recordOf E₀ a = some ca) (hi : ca.info = .iPrj p) (hnot_rec : a ∉ recurAddrs)
     {bound : Nat} {h : Heap F} {e : Ixon.Expr} {xg xd : SourceValue F}
     (hac : HeapAppConst h xg a) (hrel : HeapDomRel rootCalls h xg xd)
@@ -2473,7 +2463,8 @@ theorem heapAppConst_rawConvExpr_refHeadAt_dom {rootCalls : List (Call F)} {E₀
     | .other_other_other (ev121 := ev1) (ev_sarmpwvb := ev2) (hc176 := hc) .. =>
       have ext1 := ev1.heap_extends
       exact heapAppConst_rawConvExpr_refHeadAt hnot_rec (hac.mono ext1)
-        (Or.inr ⟨xsm, h', _, fun cl hcl' => hsub cl (by rw [hc]; call_mem), ev2⟩) (raw.mono ext1)
+        (Or.inr ⟨xsm, h', _, fun cl hcl' => hsub cl (by rw [hc]; call_mem), ev2⟩)
+        (raw.mono ext1 (fun _ hp => hp))
 
 /-- Transfer `HeapMotiveCarrier` + `HeapDomRel` directly into `FamilyOf.lastDom` + `refHeadAt` on
 a `RawConvExpr` right side when `a` is an `.iPrj` in `E₀` and `a ∉ recurAddrs`. -/
@@ -2482,14 +2473,14 @@ theorem heapMotiveCarrier_rawConvExpr_lastDom {rootCalls : List (Call F)} {E₀ 
     (hbd : Bounded rootCalls)
     {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)}
-    {a : _root_.Address} {ca : Ixon.Constant} {p : Ixon.InductProj}
-    (hcE : recordOf E₀ a = some ca) (hi : ca.info = .iPrj p) (hnot_rec : a ∉ recurAddrs) :
-    ∀ {bound : Nat} {h : Heap F} {e : Ixon.Expr} {xg xd : SourceValue F},
-      HeapMotiveCarrier h xg a →
-      HeapDomRel rootCalls h xg xd →
-      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e xd →
-      ∃ ed n_dom n_ref, FamilyOf.lastDom c n_dom e = some ed ∧
-        FamilyOf.refHeadAt c n_ref ed = some a := by
+    {a : _root_.Address} {ca : Ixon.Constant} {p : Ixon.InductiveProj}
+    (hcE : recordOf E₀ a = some ca) (hi : ca.info = .iPrj p) (hnot_rec : a ∉ recurAddrs)
+    {bound : Nat} {h : Heap F} {e : Ixon.Expr} {xg xd : SourceValue F}
+    (hm : HeapMotiveCarrier h xg a)
+    (hdom : HeapDomRel rootCalls h xg xd)
+    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e xd) :
+    ∃ ed n_dom n_ref, FamilyOf.lastDom c n_dom e = some ed ∧
+      FamilyOf.refHeadAt c n_ref ed = some a := by
   have to_eq : ∀ {h : Heap F} {xg xd dp bp lp : SourceValue F},
       loadValue h xg = .ok (.construct kexprEnum "Forall" [dp, bp, lp]) →
       HeapDomRel rootCalls h xg xd →
@@ -2512,37 +2503,49 @@ theorem heapMotiveCarrier_rawConvExpr_lastDom {rootCalls : List (Call F)} {E₀ 
       | .other_other_other (ev121 := ev1) (ev_sarmpwvb := ev2) (hc176 := hc) .. =>
         exact ⟨_, ev1.heap_extends,
           Or.inr ⟨xsm, h', _, fun cl hcl' => hsub cl (by rw [hc]; call_mem), ev2⟩⟩
-  intro bound h e xg xd hm
-  induction hm generalizing bound e xd with
-  | last ld ldb hne hac =>
-    intro hdom raw
-    obtain ⟨h1, ext1, heq1⟩ := to_eq ld hdom
-    obtain ⟨dp2, bp2, lp2, h_d, h_b, ext_d, ext_b, ld2, hrel_d, hrel_b⟩ :=
-      heapEqOrWrap_forall_step heq1 (loadValue_mono ext1 ld)
-    obtain ⟨b', ed, eb, hnd, raw_d, raw_b⟩ := rawConvExpr_forall_inv_wrap (raw.mono ext1) ld2
-    obtain ⟨v2, ldb2, hne2⟩ :=
-      heapEqOrWrap_not_forall hrel_b (loadValue_mono (ext1.trans ext_b) ldb) hne
-    have hnb := rawConvExpr_not_forall_of_nonForall (raw_b.mono ext_b) ldb2 hne2
-    obtain ⟨n_ref, href⟩ := heapAppConst_rawConvExpr_refHeadAt_dom hS hH hbd hcE hi hnot_rec
-      (hac.mono (ext1.trans ext_d)) hrel_d (raw_d.mono ext_d)
-    refine ⟨ed, 1, n_ref, ?_, href⟩
-    simp only [FamilyOf.lastDom, hnd]
-    cases hnb' : FamilyOf.node c eb with
-    | all _ _ => exact absurd hnb' (hnb _ _)
-    | _ => rfl
-  | step ld ldb _ ih =>
-    intro hdom raw
-    obtain ⟨h1, ext1, heq1⟩ := to_eq ld hdom
-    obtain ⟨dp2, bp2, lp2, _, h_b, _, ext_b, ld2, -, hrel_b⟩ :=
-      heapEqOrWrap_forall_step heq1 (loadValue_mono ext1 ld)
-    obtain ⟨b', ed, eb, hnd, -, raw_b⟩ := rawConvExpr_forall_inv_wrap (raw.mono ext1) ld2
-    obtain ⟨dp3, bp3, lp3, _, _, _, _, ld3, -, -⟩ :=
-      heapEqOrWrap_forall_step hrel_b (loadValue_mono (ext1.trans ext_b) ldb)
-    obtain ⟨b'', ed', eb', hnd_b, -, -⟩ := rawConvExpr_forall_inv_wrap (raw_b.mono ext_b) ld3
-    obtain ⟨ed_out, n_dom, n_ref, hld, href⟩ := ih (Or.inl hrel_b) (raw_b.mono ext_b)
-    refine ⟨ed_out, n_dom + 1, n_ref, ?_, href⟩
-    simp only [FamilyOf.lastDom, hnd, hnd_b]
-    exact hld
+  have hgo : ∀ {xg : SourceValue F}, HeapMotiveCarrier h xg a →
+      ∀ {h' : Heap F} {bound : Nat} {e : Ixon.Expr} {xd : SourceValue F},
+        Heap.Extends h h' →
+        HeapDomRel rootCalls h' xg xd →
+        L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h' bound e xd →
+        ∃ ed n_dom n_ref, FamilyOf.lastDom c n_dom e = some ed ∧
+          FamilyOf.refHeadAt c n_ref ed = some a := by
+    intro xg hm
+    induction hm with
+    | last ld ldb hne hac =>
+      intro h' bound e xd ext0 hdom raw
+      obtain ⟨h1, ext1, heq1⟩ := to_eq (loadValue_mono ext0 ld) hdom
+      obtain ⟨dp2, bp2, lp2, h_d, h_b, ext_d, ext_b, ld2, hrel_d, hrel_b⟩ :=
+        heapEqOrWrap_forall_step heq1 (loadValue_mono (ext0.trans ext1) ld)
+      obtain ⟨b', ed, eb, hnd, raw_d, raw_b⟩ :=
+        rawConvExpr_forall_inv_wrap (raw.mono ext1 (fun _ hp => hp)) ld2
+      obtain ⟨v2, ldb2, hne2⟩ :=
+        heapEqOrWrap_not_forall hrel_b (loadValue_mono ((ext0.trans ext1).trans ext_b) ldb) hne
+      have hnb := rawConvExpr_not_forall_of_nonForall (raw_b.mono ext_b (fun _ hp => hp)) ldb2 hne2
+      obtain ⟨n_ref, href⟩ := heapAppConst_rawConvExpr_refHeadAt_dom hS hH hbd hcE hi hnot_rec
+        (hac.mono ((ext0.trans ext1).trans ext_d)) hrel_d (raw_d.mono ext_d (fun _ hp => hp))
+      refine ⟨ed, 1, n_ref, ?_, href⟩
+      simp only [FamilyOf.lastDom, hnd]
+      cases hnb' : FamilyOf.node c eb with
+      | all _ _ => exact absurd hnb' (hnb _ _)
+      | _ => rfl
+    | step ld ldb _ ih =>
+      intro h' bound e xd ext0 hdom raw
+      obtain ⟨h1, ext1, heq1⟩ := to_eq (loadValue_mono ext0 ld) hdom
+      obtain ⟨dp2, bp2, lp2, _, h_b, _, ext_b, ld2, -, hrel_b⟩ :=
+        heapEqOrWrap_forall_step heq1 (loadValue_mono (ext0.trans ext1) ld)
+      obtain ⟨b', ed, eb, hnd, -, raw_b⟩ :=
+        rawConvExpr_forall_inv_wrap (raw.mono ext1 (fun _ hp => hp)) ld2
+      obtain ⟨dp3, bp3, lp3, _, _, _, _, ld3, -, -⟩ :=
+        heapEqOrWrap_forall_step hrel_b (loadValue_mono ((ext0.trans ext1).trans ext_b) ldb)
+      obtain ⟨b'', ed', eb', hnd_b, -, -⟩ :=
+        rawConvExpr_forall_inv_wrap (raw_b.mono ext_b (fun _ hp => hp)) ld3
+      obtain ⟨ed_out, n_dom, n_ref, hld, href⟩ :=
+        ih ((ext0.trans ext1).trans ext_b) (Or.inl hrel_b) (raw_b.mono ext_b (fun _ hp => hp))
+      refine ⟨ed_out, n_dom + 1, n_ref, ?_, href⟩
+      simp only [FamilyOf.lastDom, hnd, hnd_b]
+      exact hld
+  exact hgo hm (Heap.Extends.refl h) hdom raw
 
 /-- End-to-end `HeapForalls` + `HeapMotiveCarrier` + `HeapEqOrWrap` + `RawConvExpr` →
 `∃ fuel, FamilyOf.motiveCarrierAt crb rc j fuel = some a`. -/
@@ -2551,7 +2554,7 @@ theorem heapEqOrWrap_motiveCarrierAt {rootCalls : List (Call F)} {E₀ : Ixon.En
     (hbd : Bounded rootCalls)
     {crb : Ixon.Constant} {rc : Ixon.Recursor} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {j : Nat}
-    {a : _root_.Address} {ca : Ixon.Constant} {p : Ixon.InductProj}
+    {a : _root_.Address} {ca : Ixon.Constant} {p : Ixon.InductiveProj}
     {xg q dp bp lp xd : SourceValue F}
     (hcE : recordOf E₀ a = some ca) (hi : ca.info = .iPrj p) (hnot_rec : a ∉ recurAddrs)
     (hf : HeapForalls h (rc.params.toNat + j) xg q)
@@ -2568,12 +2571,12 @@ theorem heapEqOrWrap_motiveCarrierAt {rootCalls : List (Call F)} {E₀ : Ixon.En
   obtain ⟨b'', ed, eb, hnd, raw_d, -⟩ := rawConvExpr_forall_inv_wrap raw_y ld2
   obtain ⟨ed_out, n_dom, n_ref, hlast, href⟩ :=
     heapMotiveCarrier_rawConvExpr_lastDom hS hH hbd hcE hi hnot_rec
-      (hm.mono (ext_out.trans ext_d)) hrel_d (raw_d.mono ext_d)
+      (hm.mono (ext_out.trans ext_d)) hrel_d (raw_d.mono ext_d (fun _ hp => hp))
   refine ⟨max n_dom n_ref, ?_⟩
   unfold FamilyOf.motiveCarrierAt
   simp only [Bind.bind, Option.bind, hpeel, FamilyOf.domOf, hnd]
-  rw [FamilyOf.lastDom_mono crb ed n_dom (max n_dom n_ref) (Nat.le_max_left _ _) hlast]
-  exact FamilyOf.refHeadAt_mono (Nat.le_max_right _ _) href
+  rw [FamilyOf.lastDom_mono crb ed_out n_dom (max n_dom n_ref) ed hlast (Nat.le_max_left _ _)]
+  exact FamilyOf.refHeadAt_mono href (Nat.le_max_right _ _)
 
 /-- End-to-end `HeapForalls` + `HeapAppConst` + `HeapEqOrWrap` + `RawConvExpr` →
 `∃ fuel, FamilyOf.majorHeadAt crb rc fuel = some a`. -/
@@ -2582,7 +2585,7 @@ theorem heapEqOrWrap_majorHeadAt {rootCalls : List (Call F)} {E₀ : Ixon.Env}
     (hbd : Bounded rootCalls)
     {crb : Ixon.Constant} {rc : Ixon.Recursor} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F}
-    {a : _root_.Address} {ca : Ixon.Constant} {p : Ixon.InductProj}
+    {a : _root_.Address} {ca : Ixon.Constant} {p : Ixon.InductiveProj}
     {xg q dp bp lp xd : SourceValue F}
     (hcE : recordOf E₀ a = some ca) (hi : ca.info = .iPrj p) (hnot_rec : a ∉ recurAddrs)
     (hf : HeapForalls h (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat)
@@ -2600,7 +2603,7 @@ theorem heapEqOrWrap_majorHeadAt {rootCalls : List (Call F)} {E₀ : Ixon.Env}
   obtain ⟨b'', ed, eb, hnd, raw_d, -⟩ := rawConvExpr_forall_inv_wrap raw_y ld2
   obtain ⟨fuel, href⟩ :=
     heapAppConst_rawConvExpr_refHeadAt_dom hS hH hbd hcE hi hnot_rec
-      (hac.mono (ext_out.trans ext_d)) hrel_d (raw_d.mono ext_d)
+      (hac.mono (ext_out.trans ext_d)) hrel_d (raw_d.mono ext_d (fun _ hp => hp))
   refine ⟨fuel, ?_⟩
   unfold FamilyOf.majorHeadAt
   simp only [Bind.bind, Option.bind, hpeel, FamilyOf.domOf, hnd]
