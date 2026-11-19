@@ -135,7 +135,7 @@ theorem pathStep_walkRank_lt {calls : List (Call F)} {bAddr : _root_.Address}
       cases hs
     obtain ⟨ca, i, hca, hi, hb⟩ := hu
     exact ⟨GroupReach.ref ha ⟨ca, i, hca, hi, hb⟩ hnot,
-      walkRank_used_lt hH hw hl hca hi hb hnot.not_covered⟩
+      walkRank_used_lt hH hw hl hca hi hb (AlreadyStoredRole.not_covered hnot)⟩
   · exact ⟨GroupReach.owner ha hca hpr, walkRank_owner_lt hH hw hl hca hpr⟩
 
 /-- **A non-empty dependency path from a `GroupReach g` node to an unstored node stays in
@@ -200,7 +200,8 @@ private theorem zmod_val_sub_one {x : F} (hne : x ≠ 0) :
     by_contra h0
     have hv : ZMod.val x = 0 := by omega
     exact hne (by simpa [hv] using (ZMod.natCast_zmod_val x).symm)
-  have hlt := Nat.lt_of_le_of_lt (Nat.sub_le _ _) (ZMod.val_lt x)
+  have hlt : ZMod.val x - 1 < U32.Goldilocks.modulus :=
+    Nat.lt_of_le_of_lt (Nat.sub_le (ZMod.val x) 1) (ZMod.val_lt x)
   have heq : ((ZMod.val x - 1 : Nat) : F) = x - 1 := by
     rw [Nat.cast_sub hpos, Nat.cast_one, ZMod.natCast_zmod_val]
   rw [← heq]
@@ -357,7 +358,7 @@ theorem walk_path_spec {calls : List (Call F)} {E₀ : Ixon.Env}
           obtain ⟨-, hpr, b_own, hownRep, hownEq⟩ :=
             projection_block_claim_spec (a := Core.ixAddr b_cur) hrepC evPb
           exact ⟨b_own, hownRep, evPb.heap_extends,
-            Or.inr ⟨c_cur, hrec, hpr, hownEq.symm⟩⟩
+            Or.inr ⟨c_cur, hrec, hpr, hownEq⟩⟩
         | .other (x_refs := x_refs) (hne126 := hne0) (hv144 := hvC)
             (ev213 := evIdxs) (op235 := op1) (ev199 := evHas) (heq243 := h1)
             (op272 := op2) (ev249 := evLk) .. =>
@@ -383,8 +384,8 @@ theorem walk_path_spec {calls : List (Call F)} {E₀ : Ixon.Env}
           injection hmk with _ _ hargs
           simp only [List.cons.injEq] at hargs
           obtain ⟨-, -, rfl, -⟩ := hargs
-          have hrefsRep1 :=
-            RepLinkedList.mono Claim.repAddrElem_heapMono₂ (by rw [hmHas]; exact extIdxs) hrefsRep
+          rw [hmHas] at evLk
+          have hrefsRep1 := RepLinkedList.mono Claim.repAddrElem_heapMono₂ extIdxs hrefsRep
           have evLk' : ObsFn Obs.W
               (Instance.mk "Lists::lookup" [.ptr (.array .field 32)]).symbol
               [x_refs, .field ((st - 1 : Nat) : F)] _ v276 m277 _ := by
@@ -489,11 +490,7 @@ private theorem serConstant_iprj_size_lt (i : UInt64) (b : Bytes.Address) :
       tag4Bytes Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_IPRJ ++
         (tag0Bytes i ++ (Core.ixAddr b).hash) ++
         tag0Bytes 0 ++ ByteArray.empty ++ tag0Bytes 0 ++ ByteArray.empty ++
-        tag0Bytes 0 ++ ByteArray.empty ++ bindersBytes #[] := by
-    first
-      | rfl
-      | (simp only [nonrecursiveConstantBytes, nonrecursiveInfoBytes, inductiveProjBytes,
-          listBytes, Array.toList_empty]; rfl)
+        tag0Bytes 0 ++ ByteArray.empty ++ bindersBytes #[] := rfl
   rw [hser, hbytes]
   have h1 := tag0Bytes_size_le9' i
   have ht4 : (Ixon.Verify.Codec.tag4Bytes Ixon.Constant.FLAG Ixon.ConstantInfo.CONST_IPRJ).size = 1 := by
@@ -563,8 +560,8 @@ theorem compute_iprj_addr_raw {t : Ix.Kernel.RoleTable} {i : F} {bp r : SourceVa
   have hnat : Blake3.Pure.NativeInput (Ixon.serConstant c_proj).data.toList := by
     show (Ixon.serConstant c_proj).data.toList.length < 2 ^ 64
     have hsz := serConstant_iprj_size_lt (ZMod.val i).toUInt64 b
-    have hlen : (Ixon.serConstant c_proj).data.toList.length = (Ixon.serConstant c_proj).size := by
-      simp [ByteArray.size]
+    have hlen : (Ixon.serConstant c_proj).data.toList.length = (Ixon.serConstant c_proj).size :=
+      Array.length_toList
     omega
   have hd_eq : d = Blake3.Pure.digest (Ixon.serConstant c_proj).data.toList :=
     Aiur.Library.Blake3.hash_model_spec _ hnat
@@ -574,7 +571,7 @@ theorem compute_iprj_addr_raw {t : Ix.Kernel.RoleTable} {i : F} {bp r : SourceVa
     simp only [Array.toArray_toList] at h1
     exact h1.symm
   have hhash : Hashed cs (Ixon.serConstant c_proj) :=
-    ⟨_, by rw [hc185]; simp, rfl, v135, rfl, hstream⟩
+    ⟨(⟨"Blake3::hash", [v135], m136⟩ : Call F), by rw [hc185]; simp, rfl, v135, rfl, hstream⟩
   refine ⟨d, c_proj, rfl, ha, hix, hhash, ?_⟩
   have hwf := L1.projConstant_wireWF_iPrj (ZMod.val i).toUInt64 b
   simpa [c_proj] using hwf
@@ -650,8 +647,8 @@ theorem projection_addr_ctor_raw {t : Ix.Kernel.RoleTable} {i j : F} {bp r : Sou
   have hnat : Blake3.Pure.NativeInput (Ixon.serConstant c_proj).data.toList := by
     show (Ixon.serConstant c_proj).data.toList.length < 2 ^ 64
     have hsz := Claim.serConstant_cprj_size_lt (ZMod.val i).toUInt64 (ZMod.val j).toUInt64 b
-    have hlen : (Ixon.serConstant c_proj).data.toList.length = (Ixon.serConstant c_proj).size := by
-      simp [ByteArray.size]
+    have hlen : (Ixon.serConstant c_proj).data.toList.length = (Ixon.serConstant c_proj).size :=
+      Array.length_toList
     omega
   have hd_eq : d = Blake3.Pure.digest (Ixon.serConstant c_proj).data.toList :=
     Aiur.Library.Blake3.hash_model_spec _ hnat
@@ -661,7 +658,7 @@ theorem projection_addr_ctor_raw {t : Ix.Kernel.RoleTable} {i j : F} {bp r : Sou
     simp only [Array.toArray_toList] at h1
     exact h1.symm
   have hhash : Hashed cs (Ixon.serConstant c_proj) :=
-    ⟨_, by rw [hc215]; simp, rfl, v165, rfl, hstream⟩
+    ⟨(⟨"Blake3::hash", [v165], m166⟩ : Call F), by rw [hc215]; simp, rfl, v165, rfl, hstream⟩
   refine ⟨d, c_proj, rfl, ha, hix, hhash, ?_⟩
   have hwf := L1.projConstant_wireWF_cPrj (ZMod.val i).toUInt64 (ZMod.val j).toUInt64 b
   simpa [c_proj] using hwf
@@ -750,14 +747,14 @@ theorem check_witness_spec {calls : List (Call F)} {bAddr : _root_.Address}
       (cs_pzteoqvs := csNb) (ev_scicdnpr := evNb) (cs_hblzykfb := csCi) (ev_krpcbbcl := evCi)
       (ev_mvspkqrl := evCov) (he307 := hr) (he308 := hh) (hc309 := hcs) .. =>
     obtain ⟨n, bytes2, -, hnEq, hs2, hm173⟩ := get_count_spec hs evCnt
-    subst hnEq
+    subst hnEq hm173
     have hsubW : ∀ cl ∈ csW, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     have hsubPm : ∀ cl ∈ csPm, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     have hsubNb : ∀ cl ∈ csNb, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     have hsubCi : ∀ cl ∈ csCi, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     obtain ⟨b_stop, bytes3, hbStop, hs3, hpos⟩ :=
-      walk_from_block_spec hC.runStore hC.hashedStored (by rw [hm173]; exact hblk) hs2 evW hsubW
-    have hxW := Bytes.repAddressRef_heapMono₂ Core.addrTy (by rw [← hm173]; exact evW.heap_extends) hx
+      walk_from_block_spec hC.runStore hC.hashedStored hblk hs2 evW hsubW
+    have hxW := Bytes.repAddressRef_heapMono₂ Core.addrTy evW.heap_extends hx
     obtain ⟨heqV, hmEq⟩ := Lib.address_eq_spec evEq hbStop hxW
     have eb : b_stop = b_x := by
       by_cases hne : b_stop = b_x
@@ -1016,7 +1013,7 @@ theorem check_witnesses_spec {calls : List (Call F)} {bAddr : _root_.Address}
           · exact Or.inr (Or.inl h1)
           · subst hk2
             exact Or.inr (Or.inr (Or.inl (DirectContWitness.head hne evAddr evByte evOrd evU8
-              evWit rfl evRec ⟨b_x, hbx157, rfl⟩ rfl hm hh hcs)))
+              evWit rfl evRec ⟨b, hbx157, rfl⟩ rfl hm hh hcs)))
           · exact Or.inr (Or.inr (Or.inr h3))
         · rcases hrestDc b hb' with h0 | h1 | h2 | h3
           · exact Or.inl h0
@@ -1108,19 +1105,19 @@ theorem DirectContWitness.extract {calls : List (Call F)} {bAddr : _root_.Addres
     | .n0 (hv14 := h0) .. => exact absurd (Value.field.inj h0) (by decide)
     | .n1 (hv171 := h1) .. => exact absurd (Value.field.inj h1) (by decide)
     | .n3 (hv447 := h3) .. => exact absurd (Value.field.inj h3) (by decide)
-    | .n2 (ev328 := evCnt) (cs_gfiphqsh := csW) (ev_dpuowbtw := evW)
+    | .n2 (m_gmdkwlsb := mCr) (ev328 := evCnt) (cs_gfiphqsh := csW) (ev_dpuowbtw := evW)
         (cs412 := csCr) (ev414 := evCr) (ev_yqkzbtyw := evCov)
         (he440 := hrW) (he441 := hhW) (hc442 := hcsW) .. =>
       obtain ⟨_, bytes2, -, hnEq, hs2', hm316⟩ :=
         get_count_spec (L1.Stream.mono ext82_157 hs3_82) evCnt
-      subst hnEq
+      subst hnEq hm316
       have hsubW : ∀ cl ∈ csW, cl ∈ calls := fun cl hcl => hsub127 cl (by rw [hcsW]; simp [hcl])
       have hsubCr : ∀ cl ∈ csCr, cl ∈ calls := fun cl hcl => hsub127 cl (by rw [hcsW]; simp [hcl])
       obtain ⟨b_ib, bytes3, hbIb, hs3', hpos⟩ :=
         walk_from_block_spec hC.runStore hC.hashedStored
-          (by rw [hm316]; exact Bytes.repAddressRef_heapMono₂ Core.addrTy ext157 hblk)
+          (Bytes.repAddressRef_heapMono₂ Core.addrTy ext157 hblk)
           hs2' evW hsubW
-      have extW : Heap.Extends m157 _ := by rw [← hm316]; exact evW.heap_extends
+      have extW : Heap.Extends m157 mCr := evW.heap_extends
       have hcrCall : ContainerRecIn cs (Core.ixAddr b_x) := by
         refine ⟨_, _, _, _, ?_,
           ⟨b_x, Bytes.repAddressRef_heapMono₂ Core.addrTy extW hbx157, rfl⟩⟩
@@ -1211,9 +1208,28 @@ theorem adviceListedIn_toAdviceIn {calls : List (Call F)} {bAddr : _root_.Addres
   obtain ⟨m, m', xadv, wset, v, cs_adv, -, hadv, ev_adv, hsub_adv⟩ := w.walk_nil
   obtain ⟨b, hb, rfl⟩ := ha
   obtain ⟨-, hadvIn, -⟩ :=
-    Assembly.check_advice_records_walk advAs (fun _ => False) hadv .nil ev_adv
+    Decl.check_advice_records_walk advAs (fun _ => False) hadv .nil ev_adv
   obtain ⟨rc₁, xa, aset, wset₁, m₁, hmemCall, hxa⟩ := hadvIn b hb
   exact ⟨rc₁, xa, aset, wset₁, m₁, hsub_adv _ hmemCall, hxa⟩
+
+private theorem directContWitness_toContainerRecIn {rc xb : SourceValue F} {x : _root_.Address}
+    {x_s x_n x_out x_s' : SourceValue F} {h h' : Heap F} {cs_ws : List (Call F)}
+    (hdw : DirectContWitness rc xb x x_s x_n x_out x_s' h h' cs_ws) :
+    ContainerRecIn cs_ws x := by
+  induction hdw with
+  | head _ _ _ _ _ evWit _ _ hx _ _ _ hcs =>
+    match Obs.«KernelModeled::check_witness».obs evWit with
+    | .n0 (hv14 := h0) .. => exact absurd (Value.field.inj h0) (by decide)
+    | .n1 (hv171 := h1) .. => exact absurd (Value.field.inj h1) (by decide)
+    | .n3 (hv447 := h3) .. => exact absurd (Value.field.inj h3) (by decide)
+    | .n2 (m_gmdkwlsb := mCr) (x_iblock := x_iblock) (ev328 := evCnt) (ev_dpuowbtw := evW)
+        (hc442 := hcsW) .. =>
+      refine ⟨rc, _, x_iblock, mCr, ?_,
+        Core.S0.addr_mono (evCnt.heap_extends.trans evW.heap_extends) hx⟩
+      rw [hcs, hcsW]; simp
+  | tail _ _ _ _ _ _ _ _ _ _ _ _ hcs ih =>
+    obtain ⟨rc₁, xa₁, ib₁, h₁, hmem₁, hxa₁⟩ := ih
+    exact ⟨rc₁, xa₁, ib₁, h₁, by rw [hcs]; simp [hmem₁], hxa₁⟩
 
 /-- **Every directly witnessed container recursor of a family check has `ContainerRecIn cs x`.** -/
 theorem directContOwn_toContainerRecIn {calls : List (Call F)} {bAddr : _root_.Address}
@@ -1222,26 +1238,10 @@ theorem directContOwn_toContainerRecIn {calls : List (Call F)} {bAddr : _root_.A
     (hdc : DirectContOwn calls bAddr t B rb lim cs advAs x) :
     ContainerRecIn cs x := by
   obtain ⟨h, h', rc, xb, xrb, r, _, _, _, _, g, _, _⟩ := hdc
-  obtain ⟨_, _, _, _, _, _, _, _, _, nw, _, _, _, _, cs_ws, _, _, _,
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, cs_ws, _, _, _,
     _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
     sub_ws, _, _, _, _, hcont⟩ := g
-  have hdw := hcont x rfl
-  have hcr : ContainerRecIn cs_ws x := by
-    generalize hnw : (Value.field (nw : F) : SourceValue F) = xn at hdw
-    induction hdw with
-    | head _ _ _ _ _ evWit _ _ hx _ _ _ hcs =>
-      match Obs.«KernelModeled::check_witness».obs evWit with
-      | .n0 (hv14 := h0) .. => exact absurd (Value.field.inj h0) (by decide)
-      | .n1 (hv171 := h1) .. => exact absurd (Value.field.inj h1) (by decide)
-      | .n3 (hv447 := h3) .. => exact absurd (Value.field.inj h3) (by decide)
-      | .n2 (ev328 := evCnt) (ev_dpuowbtw := evW) (hc442 := hcsW) .. =>
-        refine ⟨_, _, _, _, ?_,
-          Core.S0.addr_mono (evCnt.heap_extends.trans evW.heap_extends) hx⟩
-        rw [hcs, hcsW]; simp
-    | tail _ _ _ _ _ _ _ _ _ _ _ _ hcs ih =>
-      obtain ⟨rc₁, xa₁, ib₁, h₁, hmem₁, hxa₁⟩ := ih rfl
-      exact ⟨rc₁, xa₁, ib₁, h₁, by rw [hcs]; simp [hmem₁], hxa₁⟩
-  obtain ⟨rc₁, xa₁, ib₁, h₁, hmem₁, hxa₁⟩ := hcr
+  obtain ⟨rc₁, xa₁, ib₁, h₁, hmem₁, hxa₁⟩ := directContWitness_toContainerRecIn (hcont x rfl)
   exact ⟨rc₁, xa₁, ib₁, h₁, sub_ws _ hmem₁, hxa₁⟩
 
 /-! ## Reference-guard helpers -/
@@ -1299,11 +1299,11 @@ theorem used_ref_has_spec {E₀ : Ixon.Env} {ib r : _root_.Address} {c_ib : Ixon
           rfl
         exact ⟨c_ib, i, hcib, hmemUsed, hget⟩
       | .other (he102 := h0) .. => exact absurd (Value.field.inj h0) one_ne_zero
-    | .Cons_other (ld12 := ld) (sg113 := sg) (op172 := opAdd) (ev140 := evRec) .. =>
+    | .Cons_other (m106 := m106) (ld12 := ld) (sg113 := sg) (op172 := opAdd) (ev140 := evRec) .. =>
       obtain ⟨q', rest', he, -, hrest⟩ := Lib.rep_cons_of_load hrefs ld
       injection he with _ hrest'
       subst hrest'
-      have extSg : Heap.Extends h _ := by
+      have extSg : Heap.Extends h m106 := by
         match sg with
         | .n1 (ev54 := e1) (ev80 := e2) .. => exact e1.heap_extends.trans e2.heap_extends
         | .other (ev54 := e1) (he103 := hh) .. => rw [hh]; exact e1.heap_extends
@@ -1623,7 +1623,7 @@ private theorem family_refs_go_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     have hiBound : i < 72057594037927936 := by omega
     match Obs.«KernelModeled::family_refs_go».obs ev with
     | .Nil (ld12 := ld) .. => exact absurd (Lib.rep_nil_of_load hrefs ld) (by simp)
-    | .Cons (m385 := m385) (cs387 := csSg) (cs396 := csRec)
+    | .Cons (x_r := x_r) (m385 := m385) (cs387 := csSg) (cs396 := csRec)
         (ld12 := ld) (sg392 := sg) (op_gskedpnl := opAdd) (ev398 := evRec) (hc463 := hcs) .. =>
       obtain ⟨a', rest', he, haAddr, hrestRep⟩ := Lib.rep_cons_of_load hrefs ld
       injection he with ha' hrest'
@@ -1844,7 +1844,7 @@ theorem family_refs_ok_spec {calls : List (Call F)} {bAddr : _root_.Address}
     have hrepRb2 := Claim.RepConstant.mono extB hrepRb
     obtain ⟨extI1, hidxsRb⟩ := Claim.const_idxs_of_spec hrepRb2 evIdxsRb
     obtain ⟨extI2, hidxsB⟩ := Claim.const_idxs_of_spec (Claim.RepConstant.mono extI1 hrepB) evIdxsB
-    obtain ⟨_, _, rpRb, _, _, hmkRb, -, -, hrefsRb, -, -⟩ := hrepRb2
+    have ⟨_, _, rpRb, _, _, hmkRb, -, -, hrefsRb, -, -⟩ := hrepRb2
     injection hmkRb with _ _ haRb; simp only [List.cons.injEq] at haRb
     obtain ⟨-, -, rfl, -⟩ := haRb
     obtain ⟨_, _, rpB, _, _, hmkB, -, -, hrefsB, -, -⟩ := hrepB
@@ -2016,7 +2016,7 @@ theorem check_advice_record_spec {calls : List (Call F)} {bAddr : _root_.Address
       ab, ha, rfl, ev, hsub⟩ hca
   match Obs.«KernelModeled::check_advice_record».obs ev with
   | .run (m_judpcwze := m_ord) (m2 := m2) (cs12 := cs12) (x_info := x_info)
-      (x_refs := x_refs) (cs947 := csSg) (cs_dkogjupv := csRefs) (cs_zlhtmzlz := csSafe)
+      (x_refs := x_refs) (m945 := m945) (cs947 := csSg) (cs_dkogjupv := csRefs) (cs_zlhtmzlz := csSafe)
       (ev_yqjbwijz := evOrd) (ev14 := evLd) (sg952 := sg)
       (ev_lawbyzgo := evIdxs1) (ev_bilbznow := evRefs) (ev_ozxzdina := evIdxs2)
       (ev_tnqzszcy := evSafe) (hc1011 := hcs) .. =>
@@ -2034,11 +2034,11 @@ theorem check_advice_record_spec {calls : List (Call F)} {bAddr : _root_.Address
     have hasmall := refs_small_of_decoded hsz hdeE
     have hcaLog := hlog ca hca
     have ext2 : Heap.Extends h m2 := evOrd.heap_extends.trans extLd
-    obtain ⟨infoVal, _, rp, _, _, hmk, hinfoRep, -, hrefsRep, -, -⟩ := hrepC
+    have ⟨infoVal, _, rp, _, _, hmk, hinfoRep, -, hrefsRep, -, -⟩ := hrepC
     injection hmk with _ _ hargs; simp only [List.cons.injEq] at hargs
     obtain ⟨rfl, -, rfl, -⟩ := hargs
     -- Extract `Heap.Extends m2 m945` and kind classification from `sg`
-    have hkindSpec : Heap.Extends m2 _ ∧
+    have hkindSpec : Heap.Extends m2 m945 ∧
         ((∃ d, ca.info = .defn d ∧ Claim.CheckedLimAt calls bAddr t (Core.ixAddr ab) lim) ∨
           (∃ rc, ca.info = .recr rc ∧ Claim.CheckedLimAt calls bAddr t (Core.ixAddr ab) lim) ∨
           (∃ ms, ca.info = .muts ms ∧
@@ -2353,7 +2353,7 @@ private theorem container_refs_ok_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     have hiBound : i < 72057594037927936 := by omega
     match Obs.«KernelModeled::container_refs_ok».obs ev with
     | .Nil (ld12 := ld) .. => exact absurd (Lib.rep_nil_of_load hrefs ld) (by simp)
-    | .Cons (m385 := m385) (cs387 := csSg) (cs396 := csRec)
+    | .Cons (x_r := x_r) (m385 := m385) (cs387 := csSg) (cs396 := csRec)
         (ld12 := ld) (sg392 := sg) (op_gskedpnl := opAdd) (ev398 := evRec) (hc463 := hcs) .. =>
       obtain ⟨r0', rest', he, hr0Addr, hrestRep⟩ := Lib.rep_cons_of_load hrefs ld
       injection he with hr0' hrest'
@@ -2368,12 +2368,8 @@ private theorem container_refs_ok_spec {calls : List (Call F)} {E₀ : Ixon.Env}
         obtain ⟨br, hbr, rfl⟩ := hr0Addr
         obtain ⟨bs, hbs, rfl⟩ := hself
         have ebs : br = bs := by
-          have h1 : br.toList = bs.toList := by
-            have := congrArg (fun a : _root_.Address => a.hash.data.toList) heq
-            simpa [Core.ixAddr] using this
-          exact Vector.ext fun idx hidx => by
-            have := congrArg (fun l => l[idx]?) h1
-            simpa [Vector.getElem?_toList, hidx] using this
+          have := congrArg (fun a : _root_.Address => a.hash.data.toList) heq
+          simpa [Core.ixAddr] using this
         subst ebs
         obtain ⟨hrEq, -⟩ := Lib.address_eq_spec evEq
           (Bytes.repAddressRef_heapMono₂ Core.addrTy ext43 hbr)
@@ -2569,7 +2565,7 @@ private theorem container_refs_check_spec {calls : List (Call F)} {bAddr : _root
     have hrepOwn24 := Claim.RepConstant.mono ext24 hrepOwn
     obtain ⟨extI1, hidxsOwn⟩ := Claim.const_idxs_of_spec hrepOwn24 evIdxsOwn
     obtain ⟨extI2, hidxsIb⟩ := Claim.const_idxs_of_spec (Claim.RepConstant.mono extI1 hrepIb) evIdxsIb
-    obtain ⟨_, _, rpOwn, _, _, hmkOwn, -, -, hrefsOwn, -, -⟩ := hrepOwn24
+    have ⟨_, _, rpOwn, _, _, hmkOwn, -, -, hrefsOwn, -, -⟩ := hrepOwn24
     rw [hvOwn] at hmkOwn
     injection hmkOwn with _ _ haOwn; simp only [List.cons.injEq] at haOwn
     obtain ⟨-, -, rfl, -⟩ := haOwn
