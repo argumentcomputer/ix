@@ -5185,16 +5185,16 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       have hty_eq : ty_a = ty_1 := Option.some.inj (hty_a.symm.trans hty_1); subst hty_eq
       have hd_eq : d_a = d_1 := Option.some.inj (hd_a.symm.trans hd_1); subst hd_eq
       have hpa_eq : paddr_a = ixAddr pa_1 := by
-        rw [List.getElem?_eq_getElem hk_lt, ← hflat_k_eq] at hfk_1
+        rw [List.getElem?_eq_getElem hk_lt, hflat_k_eq] at hfk_1
         exact Option.some.inj hfk_1
       subst hpa_eq
       have hd_eq_p : d = pInfo_1 := by
-        rw [← hflat_k_eq] at hd
+        rw [hflat_k_eq] at hd
         exact Option.some.inj (Option.some.inj (hd.symm.trans hpInfo_1))
       subst hd_eq_p
       obtain ⟨hinfo_1, -⟩ := indInfoAt_of_indDataAt hpInfo_1
       have hinfo_eq := Option.some.inj (Option.some.inj (hinfo_a.symm.trans hinfo_1)); subst hinfo_eq
-      rw [← hflat_k_eq]
+      rw [hflat_k_eq]
       simp only [List.length_map, List.length_take]
       exact Nat.le_min.mpr ⟨Nat.le_refl _, hpnp_le_1⟩
     · intro c cty cnp hctor
@@ -5204,11 +5204,12 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       | none => rw [hct] at hctor; cases hctor
       | some ct =>
         rw [hct] at hctor
-        cases hld : loadedAt t (fun x => E₀.blobs[x]?) cb_e (blockSelf t p_e.block ms_e)
+        cases hld : loadedAt t (fun x => E₀.blobs.get? x) cb_e (blockSelf t p_e.block ms_e)
             ct.lvls.toNat (mutsRoot ms_e p_e.idx.toNat + 1 + ((c : Nat) : F)) ct.typ with
-        | none => simp [hld] at hctor
+        | none => rw [hld] at hctor; cases hctor
         | some cty' =>
-          simp only [hld, Option.map_some, Option.some.injEq, Prod.mk.injEq] at hctor
+          rw [hld] at hctor
+          simp only [Option.some.injEq, Prod.mk.injEq] at hctor
           have hR'e : recordOf R' e.addr = some ca_e := by
             obtain ⟨c', hc'⟩ := Option.isSome_iff_exists.mp (hflat_ind_all e he).1
             have := hR'agree _ _ _ hc' hca_e; subst this; exact hc'
