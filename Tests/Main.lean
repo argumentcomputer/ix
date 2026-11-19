@@ -19,6 +19,7 @@ import Tests.Ix.Compile.KernelReportTests
 import Tests.Ix.Compile.LeanReportTests
 import Tests.Ix.Compile.GroundRefusal
 import Tests.Ix.Compile.SelectedClosure
+import Tests.Ix.CollectDependencies
 import Tests.Ix.Compile.ClosureWhole
 import Tests.Ix.Compile.CheckerSupport
 import Tests.Ix.Compile.ClosureBinding
@@ -169,6 +170,8 @@ def registry : List Entry := [
   -- selected closures (`collectSelectedDeps`): whole logical units, a
   -- matcher's unit, mutual siblings, checker support from `Role.deps`
   .suite "compiler-selected-closure" .primary Tests.Ix.Compile.SelectedClosure.suite,
+  -- the raw dependency collector (`Lean.collectDependenciesMany`) lists a mutual family once
+  .suite "collect-dependencies" .primary Tests.Ix.CollectDependencies.suite,
   -- the formal IxVM program holds no address literal but its specification digest
   .suite "prim-addrs" .primary Tests.Ix.Kernel.PrimAddrs.suite,
   -- every IO byte the IxVM and multi-stark programs read is range-checked
@@ -330,7 +333,10 @@ def registry : List Entry := [
   -- IxVM against Lean's kernel on a compiled corpus, and an adversarial mutator over
   -- real inductive blocks and recursor records (circuit verdict).
   .env "ixvm-differential" (.manual "a compiled corpus through IxVM and Lean's kernel; IX_DIFF_MODULES, IX_DIFF_LIMIT") Tests.Ix.IxVM.Differential.run,
-  .env "ixvm-differential-shards" (.manual "a sharded corpus: an ix check report against Lean's kernel, rejected shards bisected; IX_DIFF_IXE, IX_DIFF_IXES, IX_DIFF_REPORT, IX_DIFF_OUT") Tests.Ix.IxVM.Differential.runShards,
+  .env "ixvm-differential-shards" (.manual "a sharded corpus: an ix check report against Lean's kernel, failing parts run again by halving; IX_DIFF_IXE, IX_DIFF_IXES, IX_DIFF_REPORT, IX_DIFF_OUT") Tests.Ix.IxVM.Differential.runShards,
+  -- The sharded differential's attribution on a hand-made report: an isolated rejection,
+  -- an interaction set and inconclusive parts stay distinct.
+  .runner "ixvm-differential-attribution" .primary Tests.Ix.IxVM.Differential.runAttribution,
   .env "ixvm-mutator" (.manual "mutated blocks and recursors; IX_MUT_MODULES, IX_MUT_BUDGET, IX_MUT_SEED") Tests.Ix.IxVM.Mutator.run,
   -- Declaration-checker measurements: declaration costs, a Std shard, the
   -- inductive census and the in-process modeller's records. Not a gate.

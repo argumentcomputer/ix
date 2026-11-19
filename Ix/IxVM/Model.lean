@@ -898,6 +898,8 @@ Blocks whose reading or encoding fails (a decline or a rejection of the reader,
 an unsafe block) get no model, and IxVM rejects them. -/
 def generateReport (env : Ixon.Env) (tweak : Declaration .anon → Declaration .anon := id) :
     Except String (Ixon.Env × Report) := do
+  -- rebuild all five derived maps from empty maps so stale advice cannot outlive an edit
+  let env := env.clearModels
   -- an environment whose binding or prelude does not read gets no model (its claims
   -- are decided without one: a modeled block in them is refused)
   let fallback := ({ withEmptyPayloads env with modelsAttached := true }, ({} : Report))

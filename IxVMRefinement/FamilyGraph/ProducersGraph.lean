@@ -630,7 +630,8 @@ theorem familyCall_record_block {calls : List (Call F)} {bAddr : _root_.Address}
         (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465) (ev513 := ev513)
         (ev601 := ev601) (ev634 := ev634) (ev664 := ev664) (ev686 := ev686) (ev716 := ev716)
         (ev759 := ev759) (ev817 := ev817) (ev796 := ev796) (v839 := v839) (m840 := m840)
-        (ev852 := ev852) (ev_ursqbimm := ev_norole) (ev874 := ev874) (ev896 := ev896)
+        (ev852 := ev852) (ev_ursqbimm := ev_norole) (ev_srfmazjk := ev_notyperole)
+        (ev874 := ev874) (ev896 := ev896)
         (ev960 := ev960) (ev939 := ev939) (ev1011 := ev1011) (ev990 := ev990)
         (ev_edyzsqzv := ev_mv1) (ev_gkddqxhv := ev_cat) (ev_ittpynob := ev_mv2)
         (ev_biaifgpd := ev_mv3) (ev1203 := ev1203) (ev_cwwgzxtj := ev_flat) (ev1246 := ev1246)
@@ -677,7 +678,7 @@ theorem familyCall_record_block {calls : List (Call F)} {bAddr : _root_.Address}
           exact Lib.rep_store_cons (Bytes.repAddressRef_heapMono₂ addrTy) hb'
             (Lib.rep_store_nil m2)
         have hb_len := RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy)
-          ev_norole.heap_extends hb840
+          (ev_norole.heap_extends.trans ev_notyperole.heap_extends) hb840
         obtain ⟨hn, -⟩ := Decl.addrList_length_spec hb_len ev874
         subst hn
         obtain ⟨_, _, _, evlt⟩ := check_recs_head_lt

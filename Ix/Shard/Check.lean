@@ -43,6 +43,16 @@ def cutBlocks (blocks : Array Address) (p : Nat) : Array (Array Address) :=
   (Array.range p).map fun i =>
     blocks.extract (blocks.size * i / p) (blocks.size * (i + 1) / p)
 
+/-- `blocks`, whose owned constants are `owned`, cut into `p` parts (`cutBlocks`), each
+    with its owned constants: `partitionOwned` divides `owned` among the parts without a
+    pass over the environment. For a part of a shard whose owned constants
+    `ownedConstsPer` computed, these are the constants `ownedConstsForBlocks` gives the
+    part, in the same order. -/
+def cutOwned (ixonEnv : Ixon.Env) (blocks owned : Array Address) (p : Nat) :
+    Array (Array Address × Array Address) :=
+  let parts := cutBlocks blocks p
+  parts.zip (partitionOwned ixonEnv owned parts)
+
 /-- Measured-peaks blob for the manifest emit: one 8-byte LE value per
     shard, in shard order. -/
 def peaksBlob (peaks : Array Nat) : ByteArray :=

@@ -113,6 +113,140 @@ def withoutModels (env : Ixon.Env) : Ixon.Env :=
   { env with models := {}, modelRecords := {}, modelHints := {}, modelBlobs := {},
              modelDeps := {}, modelsAttached := true }
 
+private def hintEq : Lean.ReducibilityHints → Lean.ReducibilityHints → Bool
+  | .opaque, .opaque => true
+  | .abbrev, .abbrev => true
+  | .regular a, .regular b => a == b
+  | _, _ => false
+
+private def modelsCleared (env : Ixon.Env) : Bool :=
+  !env.modelsAttached && env.models.isEmpty && env.modelRecords.isEmpty &&
+    env.modelHints.isEmpty && env.modelBlobs.isEmpty && env.modelDeps.isEmpty
+
+private def sameDerivedModels (label : String) (a b : Ixon.Env) : IO Bool := do
+  let mut ok := true
+  unless a.modelsAttached == b.modelsAttached do
+    IO.eprintln s!"[ixvm-model-advice] {label}: modelsAttached differs ({a.modelsAttached} vs {b.modelsAttached})"
+    ok := false
+  let sameMap {α : Type} (name : String) (m1 m2 : Std.HashMap Address α) (eq : α → α → Bool) : IO Bool := do
+    if m1.size != m2.size then
+      IO.eprintln s!"[ixvm-model-advice] {label}: {name} size differs ({m1.size} vs {m2.size})"
+      return false
+    for (k, v1) in m1 do
+      match m2[k]? with
+      | some v2 =>
+        unless eq v1 v2 do
+          IO.eprintln s!"[ixvm-model-advice] {label}: {name}[{k}] differs"
+          return false
+      | none =>
+        IO.eprintln s!"[ixvm-model-advice] {label}: {name} missing key {k}"
+        return false
+    return true
+  if !(← sameMap "models" a.models b.models (fun x y => x.data == y.data)) then ok := false
+  if !(← sameMap "modelDeps" a.modelDeps b.modelDeps (· == ·)) then ok := false
+  if !(← sameMap "modelRecords" a.modelRecords b.modelRecords (· == ·)) then ok := false
+  if !(← sameMap "modelHints" a.modelHints b.modelHints hintEq) then ok := false
+  if !(← sameMap "modelBlobs" a.modelBlobs b.modelBlobs (fun x y => x.data == y.data)) then ok := false
+  return ok
+
+/-- **Stale model advice invalidation.** Mutating a generation input (`withRoleTable`,
+`storeBlob`, `storeConst`) clears all five derived maps together and marks the cache
+unattached; rebuilding from an incrementally updated environment yields the same
+payloads, dependency lists and auxiliary model maps as a fresh environment with the
+same binding, constants, hints and blobs, while explicit test overrides
+(`withoutModels`) stay intact. -/
+def cacheInvalidation (env : Ixon.Env) : IO Bool := do
+  let mut ok := true
+  -- 1. Explicit test override (`withoutModels`) stays intact across `attach`.
+  let bare ← IO.ofExcept (IxVM.Model.attach (withoutModels env))
+  unless bare.modelsAttached && bare.models.isEmpty && bare.modelRecords.isEmpty &&
+      bare.modelHints.isEmpty && bare.modelBlobs.isEmpty && bare.modelDeps.isEmpty do
+    IO.eprintln "[ixvm-model-advice] cache invalidation: withoutModels override was overwritten"
+    ok := false
+  -- 2. `withRoleTable` clears all five derived maps even when no support record is added.
+  let defaultBytes ← IO.ofExcept Ix.Kernel.Reader.defaultTableBytes
+  let badRole ← IO.ofExcept (withRoleTable env (ByteArray.mk #[0xff]))
+  unless modelsCleared badRole do
+    IO.eprintln "[ixvm-model-advice] cache invalidation: withRoleTable did not clear all five derived maps"
+    ok := false
+  let badAttached ← IO.ofExcept (IxVM.Model.attach badRole)
+  let badFresh ← IO.ofExcept (IxVM.Model.attach badRole.clearModels)
+  if !(← sameDerivedModels "withRoleTable invalid binding" badAttached badFresh) then ok := false
+  unless badAttached.models.toList.all (fun (_, p) => p.isEmpty) &&
+      badAttached.modelRecords.isEmpty && badAttached.modelDeps.isEmpty do
+    IO.eprintln "[ixvm-model-advice] cache invalidation: invalid role binding kept non-empty advice"
+    ok := false
+  let restored ← IO.ofExcept (withRoleTable badAttached defaultBytes)
+  unless modelsCleared restored && restored.consts.size == badAttached.consts.size do
+    IO.eprintln "[ixvm-model-advice] cache invalidation: withRoleTable with all support records present did not clear cache"
+    ok := false
+  let restoredAttached ← IO.ofExcept (IxVM.Model.attach restored)
+  let restoredFresh ← IO.ofExcept (IxVM.Model.attach restored.clearModels)
+  if !(← sameDerivedModels "withRoleTable restored binding" restoredAttached restoredFresh) then ok := false
+  unless restoredAttached.models.toList.any (fun (_, p) => p.size > 0) do
+    IO.eprintln "[ixvm-model-advice] cache invalidation: restored binding produced no non-empty payloads"
+    ok := false
+  -- 3. `storeBlob` clears all five derived maps and matches a fresh environment.
+  let extraBlob := match env.modelBlobs.toList.head? with
+    | some (_, b) => b
+    | none => ByteArray.mk #[0x42, 0x24, 0x01]
+  let (envBlob, blobAddr) := env.storeBlob extraBlob
+  unless modelsCleared envBlob do
+    IO.eprintln "[ixvm-model-advice] cache invalidation: storeBlob did not clear all five derived maps"
+    ok := false
+  let blobAttached ← IO.ofExcept (IxVM.Model.attach envBlob)
+  let blobFresh ← IO.ofExcept (IxVM.Model.attach envBlob.clearModels)
+  if !(← sameDerivedModels "storeBlob incremental vs fresh" blobAttached blobFresh) then ok := false
+  if blobAttached.modelBlobs.contains blobAddr then
+    IO.eprintln "[ixvm-model-advice] cache invalidation: stored blob stayed in modelBlobs"
+    ok := false
+  -- 4. Incremental `storeConst` (missing recursor family -> added back) matches a fresh env.
+  let evenA ← lookupAddr env `IxVMInd.Even
+  let some evenB := (env.getConst? evenA).bind IxVM.Model.projectionBlock?
+    | throw (IO.userError "[ixvm-model-advice] IxVMInd.Even is not a block projection")
+  let evenRecA ← lookupAddr env `IxVMInd.Even.rec
+  let evenRecB := ((env.getConst? evenRecA).bind IxVM.Model.projectionBlock?).getD evenRecA
+  let some evenRecC := env.getConst? evenRecB
+    | throw (IO.userError "[ixvm-model-advice] IxVMInd.Even recursor family record missing")
+  let withoutRec : Ixon.Env := { env.clearModels with consts := env.consts.erase evenRecB }
+  let partialAttached ← IO.ofExcept (IxVM.Model.attach withoutRec)
+  unless (partialAttached.models[evenB]?.map (·.isEmpty)) == some true &&
+      !partialAttached.modelDeps.contains evenB do
+    IO.eprintln "[ixvm-model-advice] cache invalidation: expected empty payload without recursor family"
+    ok := false
+  let withRec := partialAttached.storeConst evenRecB evenRecC
+  unless modelsCleared withRec do
+    IO.eprintln "[ixvm-model-advice] cache invalidation: storeConst did not clear all five derived maps"
+    ok := false
+  let incAttached ← IO.ofExcept (IxVM.Model.attach withRec)
+  let freshAttached ← IO.ofExcept (IxVM.Model.attach withRec.clearModels)
+  if !(← sameDerivedModels "storeConst incremental vs fresh" incAttached freshAttached) then ok := false
+  if !(← sameDerivedModels "storeConst incremental vs initial" incAttached env) then ok := false
+  unless (incAttached.models[evenB]?.map (!·.isEmpty)) == some true &&
+      incAttached.modelDeps.contains evenB do
+    IO.eprintln "[ixvm-model-advice] cache invalidation: incremental env missing Even payload/deps"
+    ok := false
+  -- 5. `generateReport` rebuilds from empty maps even if a caller only resets `modelsAttached`.
+  let staleAddr := Address.blake3 "stale-model-advice-entry".toUTF8
+  let staleConst : Ixon.Constant := ⟨.axio ⟨false, 0, .sort 0⟩, #[], #[], #[.zero], #[]⟩
+  let polluted : Ixon.Env := { env with
+    models := env.models.insert staleAddr (ByteArray.mk #[1, 2, 3]),
+    modelRecords := env.modelRecords.insert staleAddr staleConst,
+    modelHints := env.modelHints.insert staleAddr .abbrev,
+    modelBlobs := env.modelBlobs.insert staleAddr (ByteArray.mk #[4, 5]),
+    modelDeps := env.modelDeps.insert staleAddr #[staleAddr],
+    modelsAttached := false }
+  let rebuilt ← IO.ofExcept (IxVM.Model.attach polluted)
+  if !(← sameDerivedModels "generateReport rebuild from polluted maps" rebuilt env) then ok := false
+  let pollutedFallback : Ixon.Env := { polluted with
+    roleBinding := some { address := Address.blake3 (ByteArray.mk #[0xff]), bytes := ByteArray.mk #[0xff] } }
+  let fallbackRebuilt ← IO.ofExcept (IxVM.Model.attach pollutedFallback)
+  let fallbackFresh ← IO.ofExcept (IxVM.Model.attach pollutedFallback.clearModels)
+  if !(← sameDerivedModels "generateReport fallback from polluted maps" fallbackRebuilt fallbackFresh) then ok := false
+  if ok then
+    IO.println "[ixvm-model-advice] cache invalidation: incremental updates match fresh environments across all five derived maps"
+  return ok
+
 /-- The claims over `env` and over `env` without its models agree, byte for byte. -/
 def digestUnchanged (env : Ixon.Env) (names : List Lean.Name) : IO Bool := do
   let bare := withoutModels env
@@ -395,6 +529,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     return 1
   let env ← loadSharedIxonEnv names.toArray lenv
   let digestOk ← digestUnchanged env names
+  let cacheOk ← cacheInvalidation env
   let tagEnv ← loadSharedIxonEnv (tagNames ++ univNames) lenv
   let tagsOk ← tagsCoincide tagEnv
   let univsOk ← univTables tagEnv
@@ -476,7 +611,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     Case.ofClaim s!"{if accept then "accept" else "refuse"} {n}" fixEnv (.check ctx target none) {} accept
   let cases := cases ++ nestedVerdicts.map fun (n, accept) => verdictCase n accept
   let rc ← runCases "ixvm-model-advice" cases.toArray
-  return if digestOk && differ && quotOk && tagsOk && univsOk && adviceOk && rc == 0 then 0 else 1
+  return if digestOk && cacheOk && differ && quotOk && tagsOk && univsOk && adviceOk && rc == 0 then 0 else 1
 
 /-- The environment of an `.ixe` file under the default role table, without models. -/
 def loadIxe (path : String) : IO Ixon.Env := do

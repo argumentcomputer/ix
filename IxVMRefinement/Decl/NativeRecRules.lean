@@ -154,7 +154,7 @@ private theorem find_peer_rec_seg1_heap_extends
     subst hh
     exact ev1.heap_extends.trans (ev2.heap_extends.trans ev3.heap_extends)
   | .Rec_Induct_n1_other (ev216 := ev1) (ev273 := ev2) (ev367 := ev3) (ev432 := ev4)
-      (ev_csmixmzg := ev5) (ev_zxqvbypw := ev6) (ev_vyjmrjll := ev7) .. =>
+      (ev_ixrbdajz := ev5) (ev_zxqvbypw := ev6) (ev_vyjmrjll := ev7) .. =>
     exact ev1.heap_extends.trans (ev2.heap_extends.trans (ev3.heap_extends.trans
       (ev4.heap_extends.trans (ev5.heap_extends.trans (ev6.heap_extends.trans
         ev7.heap_extends)))))
@@ -165,7 +165,7 @@ private theorem find_peer_rec_seg1_heap_extends
     subst hh
     exact ev1.heap_extends.trans (ev2.heap_extends.trans ev3.heap_extends)
   | .Rec_other_n1_other (ev216 := ev1) (ev273 := ev2) (ev528 := ev3) (ev593 := ev4)
-      (ev_hgtaewrk := ev5) (ev_svabrqkr := ev6) (ev_qskuhyzy := ev7) .. =>
+      (ev_isvacogw := ev5) (ev_svabrqkr := ev6) (ev_qskuhyzy := ev7) .. =>
     exact ev1.heap_extends.trans (ev2.heap_extends.trans (ev3.heap_extends.trans
       (ev4.heap_extends.trans (ev5.heap_extends.trans (ev6.heap_extends.trans
         ev7.heap_extends)))))

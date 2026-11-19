@@ -124,9 +124,11 @@ end Ixon.Authenticated.Audit
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
 -- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
 -- csimp and all ruling counts are unchanged.
+-- Normalized recursor analysis and the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`)
+-- move the closure from 7108 compiled functions and 28 ruled csimps to 7155 and 29.
 /-- info: runtime closure of [Ixon.Authenticated.checkBytes,
  Ixon.Authenticated.checkBytesProjection,
- Address.admissionHash]: 7108 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
+ Address.admissionHash]: 7155 compiled functions; inherited externs 117, implemented_by 1, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith Ixon.Authenticated.Audit.operations #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 
@@ -293,7 +295,9 @@ and the prelude-copy check (`State.keepsPrelude` in `readStream`) from 6060, lik
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
 -- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
 -- csimp and all ruling counts are unchanged.
-/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 7190 compiled functions; inherited externs 117, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 28 -/
+-- Normalized recursor analysis and the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`)
+-- move the tiered closure from 7190 compiled functions and 28 ruled csimps to 7237 and 29.
+/-- info: runtime closure of [Ixon.Authenticated.checkBytesTiered]: 7237 compiled functions; inherited externs 117, implemented_by 0, unsafe 26, csimp 7; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ixon.Authenticated.checkBytesTiered] #[`Init, `Std] Ixon.Authenticated.Audit.rulings
 

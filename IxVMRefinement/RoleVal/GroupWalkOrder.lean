@@ -183,10 +183,11 @@ theorem validate_role_axiom_refs_ordered {t : Ix.Kernel.RoleTable} {bAddr : _roo
         (ev100.heap_extends.trans ev124.heap_extends)))
     match Obs.«KernelRoles::validate_standard_axiom».obs ev290 with
     | .run (m60 := b60) (m128 := b128) (m141 := b141) (m207 := b207) (m192 := b192)
-        (m280 := b280) (m363 := b363) (cs202 := cs_ld) (cs341 := cs_w) (x_refs := x_refs)
-        (v346 := v_idx) (ev72 := e72) (hm136 := hm) (ev109 := e109) (ev174 := e174)
-        (ev153 := e153) (ev217 := e217) (ev204 := e204) (ev314 := e314) (ev292 := e292)
-        (ev373 := e373) (ev343 := e343) (hc388 := hca) .. =>
+        (m280 := b280) (m_abygsahs := m_sh) (m363 := b363) (cs202 := cs_ld) (cs341 := cs_w)
+        (x_refs := x_refs) (v346 := v_idx) (ev72 := e72) (hm136 := hm) (ev109 := e109)
+        (ev174 := e174) (ev153 := e153) (ev217 := e217) (ev204 := e204) (ev314 := e314)
+        (ev292 := e292) (sg_betjktew := sg_sh) (ev373 := e373) (ev343 := e343)
+        (hc388 := hca) .. =>
       have ext_snoc : Heap.Extends b60 b128 := by
         rw [hm]
         exact Heap.Extends.snoc b60 _
@@ -202,6 +203,11 @@ theorem validate_role_axiom_refs_ordered {t : Ix.Kernel.RoleTable} {bAddr : _roo
       obtain ⟨ext_ld, rawBytes, c, hsz, hh_load, hblk, hde, hdeExact, hrep, _⟩ :=
         Claim.load_verified_constant_de ha' e204
       have ext_b : Heap.Extends b192 b280 := e314.heap_extends.trans e292.heap_extends
+      have hm_sh : m_sh = b280 := by
+        match sg_sh with
+        | .Nil (he_hvdubghk := hh) .. => exact hh
+        | .Cons (heq_htcsbwbd := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
+      subst hm_sh
       obtain ⟨ext_idx, hidxs⟩ := Claim.const_idxs_of_spec (hrep.mono ext_b) e373
       have hrefs_rep :
           RepList Obs.Names.«Lists::Node<&[Field; 32]>» Claim.RepAddrElem b363 c.refs.toList

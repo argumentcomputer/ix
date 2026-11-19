@@ -23,7 +23,14 @@ program to reject a claim that needs the block:
 * the payload of another block, a payload naming a claimed definition as the
   recursor family, no payload, a payload naming a record the store lacks;
 * an oversized payload (an advice count far beyond its bytes);
-* an unsafe copy of Tree's container recursor as one more container-recursor witness.
+* an unsafe copy of Tree's container recursor as one more container-recursor witness;
+* under a binding whose `Nat.add` record also names `Even`, so that the validation of
+  `Nat.add`'s group (limit 8) checks Even's family: the record bound to `Nat.mul`, an operation
+  of a later group, as the first advice record (the operation order at a payload record; the same
+  binding with the advice unchanged is accepted and exercises `KernelRoles::assert_in_order`);
+* under a binding whose `propext` record carries an unused `sharing` entry naming `Even`, with
+  `Nat.mod` (a later operation at limit 33) prepended to Even's advice and with Even's advice
+  unchanged (refused by the empty-sharing check on standard axioms).
 
 With the unmodified advice the same claims on the block's types are accepted
 (`ixvm-model-advice`). A claim on the family's recursor is refused at the recursor
@@ -97,6 +104,83 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     #[(badThmA, badThm)]
   let otherBlock := variant evenB advT.layout.ser
   let definitionFamily := variant evenB { pE with recBlock := natAdd }.ser
+  -- a binding whose `Nat.add` (group 8, validated at limit 8) is the default record with its
+  -- value `v` replaced by `(fun (_ : Nat → Prop) => v) Even` (definitionally `v`, so its
+  -- equations hold): the validation's walk of `Nat.add` reaches `Even`, whose family is checked
+  -- there with its payload; with `Nat.mul`'s record (group 10, an operation not yet in force) as
+  -- the payload's first advice record, the order assertion at the advice address must refuse it
+  -- (`KernelRoles::assert_in_order`); with the payload unchanged, the same binding is accepted
+  -- (control). The record's binder section is recomputed (`withRecordSections`).
+  let table ← IO.ofExcept Ix.Kernel.Reader.defaultTable
+  let roleAt (r : Ix.Kernel.Role) : IO Address := match table.bound.find? (·.1 == r) with
+    | some (_, a) => pure a
+    | none => throw (IO.userError s!"role {repr r} is not bound")
+  let addA ← roleAt .natAdd
+  let mulA ← roleAt .natMul
+  let some addC := env.getConst? addA | throw (IO.userError "the record bound to Nat.add is not stored")
+  let natA ← roleAt .nat
+  let .defn addD := addC.info | throw (IO.userError "the record bound to Nat.add is no definition")
+  let (refs1, natIdx) := match addC.refs.findIdx? (· == natA) with
+    | some j => (addC.refs, j.toUInt64)
+    | none => (addC.refs.push natA, addC.refs.size.toUInt64)
+  let evenIdx := refs1.size.toUInt64
+  let propIdx := addC.univs.size.toUInt64
+  let wrapped : Ixon.Expr :=
+    .app (.lam (.all (.ref natIdx #[]) (.sort propIdx)) addD.value) (.ref evenIdx #[])
+  let addX : Ixon.Constant := { addC with
+    info := .defn { addD with value := wrapped }, refs := refs1.push even,
+    univs := addC.univs.push .zero, binders := #[] }
+  let addXA := Address.blake3 (Ixon.serConstant addX)
+  let tableX : Ix.Kernel.RoleTable :=
+    { table with bound := table.bound.map fun (r, b) => (r, if r == .natAdd then addXA else b) }
+  IO.ofExcept tableX.check
+  let hinted := match env.anonHints[addA]? with
+    | some h => { env with anonHints := env.anonHints.insert addXA h }
+    | none => env
+  let withHonestModels (dst : Ixon.Env) : Ixon.Env :=
+    { dst with models := env.models, modelRecords := env.modelRecords,
+               modelHints := env.modelHints, modelBlobs := env.modelBlobs,
+               modelDeps := env.modelDeps, modelsAttached := true }
+  let envX := withHonestModels (← IO.ofExcept (withRoleTable (hinted.storeConst addXA addX) tableX.toBytes))
+  let some bindingX := envX.roleBinding | throw (IO.userError "the rebound environment has no binding")
+  let spec ← IO.ofExcept Ix.SpecDigest.specDigest
+  let envLater := { envX with
+    models := envX.models.insert evenB { pE with advice := #[mulA] ++ pE.advice }.ser }
+  -- a binding whose `propext` record carries an unused sharing entry referencing `Even`
+  -- (tested both with `Nat.mod` as a later-operation advice entry at limit 33 and with
+  -- Even's honest advice unchanged): refused because standard axioms carry empty sharing
+  let propA ← roleAt .propext
+  let modA ← roleAt .natMod
+  let some propC := env.getConst? propA | throw (IO.userError "the record bound to propext is not stored")
+  let propJunk : Ixon.Constant := { propC with
+    sharing := propC.sharing.push (.ref propC.refs.size.toUInt64 #[]),
+    refs := propC.refs.push even }
+  let propJunkA := Address.blake3 (Ixon.serConstant propJunk)
+  let tableP : Ix.Kernel.RoleTable :=
+    { table with bound := table.bound.map fun (r, b) => (r, if r == .propext then propJunkA else b) }
+  IO.ofExcept tableP.check
+  let envP := withHonestModels (← IO.ofExcept (withRoleTable (env.storeConst propJunkA propJunk) tableP.toBytes))
+  let some bindingP := envP.roleBinding | throw (IO.userError "the propext-rebound environment has no binding")
+  let envPropJunk := { envP with
+    models := envP.models.insert evenB { pE with advice := #[modA] ++ pE.advice }.ser }
+  let orderCases : Array Builder := #[
+    fun _ => Case.ofClaim
+      "advice must-reject: Nat.add's record reaches Even, whose advice lists Nat.mul's record (a later operation)"
+      envLater (.binding spec bindingX.address) (accept := false)
+      (rejectsWith := some "an operation is reached before its group is validated"),
+    fun _ => do
+      let c ← Case.ofClaim
+        "advice must-reject control: Nat.add's record reaches Even, with Even's advice unchanged"
+        envX (.binding spec bindingX.address)
+      return { c with exercises := some "KernelRoles::assert_in_order" },
+    fun _ => Case.ofClaim
+      "advice must-reject: propext carries a junk sharing entry naming Even, whose advice lists Nat.mod"
+      envPropJunk (.binding spec bindingP.address) (accept := false)
+      (rejectsWith := some "a bound standard axiom carries sharing entries"),
+    fun _ => Case.ofClaim
+      "advice must-reject: propext carries a junk sharing entry naming Even (honest advice)"
+      envP (.binding spec bindingP.address) (accept := false)
+      (rejectsWith := some "a bound standard axiom carries sharing entries")]
   -- Tree's payload with one more kind-2 witness: an unsafe copy of its container recursor (a
   -- standalone recursor record), on the same path to the container's block; refused for the flag
   -- (`check_container_rec`), as the native route's recursor check does not read it
@@ -111,7 +195,7 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
   let withUnsafeRec := variant treeB
     { pT with witnesses := pT.witnesses.push (unsafeRecA, 2, recSteps, recExtra) }.ser
     #[(unsafeRecA, unsafeRec)]
-  let cases : Array Builder := #[
+  let cases : Array Builder := orderCases ++ #[
     caseOn "an unsafe container recursor as a witness" withUnsafeRec tree
       (some "an unsafe container recursor"),
     caseOn "a type's slot holds a constructor's model" (variant evenB
