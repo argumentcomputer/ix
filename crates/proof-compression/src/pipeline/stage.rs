@@ -17,14 +17,16 @@ use crate::fri::{self, VerifierKey};
 use crate::kzg::{
   KzgCommitment, KzgConfig, Scalar, Srs, TranscriptKind, VerifierParams,
 };
+use multi_stark::lookup::LookupValues;
 use multi_stark::plonkish::{Assignment, Circuit};
 use multi_stark::prover::Proof;
-use multi_stark::system::{System, SystemWitness};
+use multi_stark::system::{System, SystemWitness, compute_lookup_values_range};
 #[cfg(test)]
 use multi_stark::traits::Algebra;
 use multi_stark::traits::{Field, TwoAdicField};
 use multi_stark::types::{GoldilocksBlake3Config, Val};
 use p3_field::PrimeField64;
+use p3_matrix::Matrix;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 
@@ -101,24 +103,73 @@ impl Prepared<Val> {
       self.assignment.public_values().len(),
     )?;
     let claims = statement.claims(self.assignment.public_values())?;
-    let trace_span = tracing::info_span!("compression/trace").entered();
     let definitions = lowering::fri_definitions(&compiled);
     validate_config(&config, &definitions)?;
-    let traces = compiled.traces(&self.assignment)?;
-    drop(trace_span);
+    let (system, key) = tracing::info_span!("compression/setup")
+      .in_scope(|| System::new_without_preprocessed(config, definitions));
+    let traces = tracing::info_span!("compression/trace")
+      .in_scope(|| compiled.traces(&self.assignment))?;
+    let empty_lookups: Vec<_> = (0..traces.len())
+      .map(|_| LookupValues::builder(0, &[]).finish())
+      .collect();
+    let mut stage_1 = tracing::info_span!("compression/stage1").in_scope(|| {
+      system.prove_stage_1(SystemWitness { traces, lookups: empty_lookups })
+    });
+    // `traces` has been consumed by stage-1 commitment and `definitions` was
+    // consumed during setup without retaining preprocessed clones. Materialize
+    // lookup messages one active circuit at a time so neither all traces nor
+    // all preprocessed matrices coexist with the lookup buffers.
+    let lookups_started = std::time::Instant::now();
+    let shards = compiled.trace_shards(&self.assignment)?;
+    stage_1.lookups = stage_1
+      .active_indices
+      .iter()
+      .enumerate()
+      .map(|(active_pos, &ci)| -> Result<_> {
+        let circuit = &system.circuits[ci];
+        if circuit.graph.lookups.is_empty() {
+          return Ok(
+            LookupValues::builder(
+              1usize << stage_1.log_degrees[active_pos],
+              &[],
+            )
+            .finish(),
+          );
+        }
+        let trace = shards.trace(ci)?;
+        let preprocessed = (circuit.preprocessed_width > 0)
+          .then(|| {
+            compiled
+              .circuit_input(ci)
+              .and_then(|input| input.preprocessed)
+              .ok_or("missing compiled preprocessed matrix")
+          })
+          .transpose()?;
+        if let Some(pp) = &preprocessed {
+          assert_eq!(
+            trace.height(),
+            pp.height(),
+            "circuit {ci}: main trace height must equal preprocessed trace height"
+          );
+        }
+        Ok(compute_lookup_values_range(
+          &circuit.graph,
+          &trace,
+          preprocessed.as_ref(),
+          0..trace.height(),
+        ))
+      })
+      .collect::<Result<Vec<_>>>()?;
+    tracing::info!(
+      circuits = stage_1.lookups.len(),
+      seconds = lookups_started.elapsed().as_secs_f64(),
+      "Lookup expressions materialized"
+    );
     drop(compiled);
     drop(self.assignment);
-    let (mut system, key) = tracing::info_span!("compression/setup")
-      .in_scope(|| System::new(config, definitions));
     let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
-    let witness = SystemWitness::from_stage_1(traces, &system);
-    // Lookup messages now own everything needed from the fixed evaluations.
-    // Quotients/openings use PCS data; the returned verifier needs neither.
-    for circuit in &mut system.circuits {
-      circuit.preprocessed = None;
-    }
     let proof = tracing::info_span!("compression/prove")
-      .in_scope(|| system.prove_multiple_claims(&key, &refs, witness));
+      .in_scope(|| system.prove_committed(&key, &refs, stage_1));
     drop(key);
     tracing::info_span!("compression/verify")
       .in_scope(|| system.verify_multiple_claims(&refs, &proof))

@@ -113,10 +113,11 @@ impl Rom {
     &self,
     record: &Execution<B>,
     index: usize,
+    min_height: Option<usize>,
   ) -> Result<RowMajorMatrix<Val>, String> {
     let bucket = record.memory.indices_for_width(self.widths[index]);
     let width = self.widths[index] + 3;
-    let mut trace = empty_trace(bucket.len(), width)?;
+    let mut trace = empty_trace(bucket.len(), width, min_height)?;
     for (&index, row) in bucket.iter().zip(trace.values.chunks_mut(width)) {
       let cell = record.memory.get(index).unwrap();
       row[0] = Val::from_u64(cell.multiplicity);
@@ -133,11 +134,23 @@ impl Rom {
 fn empty_trace(
   rows: usize,
   width: usize,
+  min_height: Option<usize>,
 ) -> Result<RowMajorMatrix<Val>, String> {
-  let height = if rows == 0 {
+  let natural = if rows == 0 {
     0
   } else {
     rows.checked_next_power_of_two().ok_or("ROM height overflow")?
+  };
+  let height = match min_height {
+    Some(target) => {
+      if natural > target {
+        return Err(format!(
+          "ROM trace height {natural} exceeds normalized height {target}"
+        ));
+      }
+      target
+    },
+    None => natural,
   };
   let values =
     Val::zero_vec(height.checked_mul(width).ok_or("ROM size overflow")?);

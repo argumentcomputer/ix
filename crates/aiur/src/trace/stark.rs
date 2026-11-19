@@ -528,6 +528,20 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     Ok(self.witness_from_main(traces))
   }
 
+  /// Build a stage-one witness with empty lookup buffers when only the
+  /// stage-one commitment header is needed (for example, round one of a
+  /// regenerated batch where `Stage1` is dropped immediately after hashing its
+  /// header).
+  fn header_only_witness_from_main(
+    &self,
+    traces: Vec<RowMajorMatrix<Val>>,
+  ) -> SystemWitness<Val> {
+    let lookups = (0..traces.len())
+      .map(|_| multi_stark::lookup::LookupValues::builder(0, &[]).finish())
+      .collect();
+    SystemWitness { traces, lookups }
+  }
+
   /// CUDA's graph evaluator derives lookup messages from committed rows.
   /// Shape-only buffers deliberately fail closed if a CPU fallback tries to
   /// consume them. Full host buffers remain the default for fallback support.
@@ -705,7 +719,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       traces.push(table.witness(table_counts));
     }
     for i in 0..self.rom.circuit_count() {
-      traces.push(self.rom.witness(record, i)?);
+      traces.push(self.rom.witness(record, i, None)?);
     }
     Ok(traces)
   }

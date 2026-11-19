@@ -202,6 +202,58 @@ fn sliced_lookup_writer_matches_graph_and_retained_proof() {
       .unwrap();
     assert_eq!(proof.to_bytes().unwrap(), reference.to_bytes().unwrap());
   }
+  // Multi-shard regenerated proving skips round-one lookup materialization and
+  // drains completed source traces progressively; it must still be bit-identical
+  // to retained multi-shard proving.
+  let retained_multi = backend
+    .prove_batch_stage_1("root", &[3], &[9], traces.clone(), 2, Retention::Retain)
+    .unwrap();
+  let regenerated_multi = backend
+    .prove_batch_stage_1(
+      "root",
+      &[3],
+      &[9],
+      traces.clone(),
+      2,
+      Retention::Regenerate,
+    )
+    .unwrap();
+  assert_eq!(
+    regenerated_multi.to_bytes().unwrap(),
+    retained_multi.to_bytes().unwrap()
+  );
+  // Pre-sized normalized trace generation must produce the exact same proof as
+  // generating at natural heights and resizing afterward.
+  let rows = backend.execution_rows(&record);
+  let log_heights = backend.normalized_log_heights(&rows, 2).unwrap();
+  let (norm_claim, norm_proof) = backend
+    .prove_normalized("root", &[3], &[9], record.clone(), &log_heights)
+    .unwrap();
+  let mut resized = backend.generate_stage_1(&record, "root", &[3]).unwrap();
+  for (trace, &log) in resized.iter_mut().zip(&log_heights) {
+    trace.values.resize(trace.width * (1usize << log), Val::ZERO);
+  }
+  let rom_base = backend.members.len() + backend.tables.len();
+  let mut norm_messages = Vec::new();
+  for (i, &width) in backend.rom.widths.iter().enumerate() {
+    norm_messages.push(multi_stark::batch::BatchMessage::pull(
+      [MEMSEG, width as u64, 0].map(Val::from_u64).to_vec(),
+    ));
+    norm_messages.push(multi_stark::batch::BatchMessage::push(
+      [MEMSEG, width as u64, rows[rom_base + i] as u64]
+        .map(Val::from_u64)
+        .to_vec(),
+    ));
+  }
+  let ref_norm = backend.system.prove_batch(
+    &backend.key,
+    vec![multi_stark::batch::ShardInput {
+      claims: vec![norm_claim],
+      witness: SystemWitness::from_stage_1(resized, &backend.system),
+    }],
+    norm_messages,
+  );
+  assert_eq!(norm_proof.to_bytes().unwrap(), ref_norm.to_bytes().unwrap());
 }
 
 #[test]

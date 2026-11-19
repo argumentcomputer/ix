@@ -282,6 +282,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
         Some((entry, args)),
         &[],
         &RangeCounts::default(),
+        None,
       )
     }
   }
@@ -301,6 +302,29 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           Some((entry, args)),
           &[],
           &RangeCounts::default(),
+          None,
+        )?
+        .traces,
+    )
+  }
+
+  /// Populate stage-one traces directly at pre-padded normalized heights so
+  /// callers do not allocate at natural height and resize afterward.
+  pub(super) fn generate_stage_1_with_heights(
+    &self,
+    record: &Execution<B>,
+    entry: &str,
+    args: &[B::Element],
+    min_heights: &[usize],
+  ) -> Result<Vec<RowMajorMatrix<Val>>, String> {
+    Ok(
+      self
+        .generate_with::<false>(
+          record,
+          Some((entry, args)),
+          &[],
+          &RangeCounts::default(),
+          Some(min_heights),
         )?
         .traces,
     )
@@ -314,7 +338,13 @@ impl<B: WitnessField> Backend<'_, '_, B> {
   ) -> Result<Vec<RowMajorMatrix<Val>>, String> {
     Ok(
       self
-        .generate_with::<false>(record, None, &[], &RangeCounts::default())?
+        .generate_with::<false>(
+          record,
+          None,
+          &[],
+          &RangeCounts::default(),
+          None,
+        )?
         .traces,
     )
   }
@@ -328,6 +358,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     root: Option<(&str, &[B::Element])>,
     device: &[Option<usize>],
     device_ranges: &RangeCounts,
+    min_heights: Option<&[usize]>,
   ) -> Result<SystemWitness<Val>, String> {
     #[cfg(feature = "trace-profile")]
     let mut profile = super::profile::Phases::new();
@@ -350,14 +381,15 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     let generate = |ci: usize| {
       #[cfg(feature = "trace-profile")]
       let start = std::time::Instant::now();
+      let min_height = min_heights.map(|heights| heights[ci]);
       let result =
         if device.get(ci).copied().flatten().is_some() || fixed.contains(&ci) {
           let (trace, lookups) = empty(ci);
           Ok((trace, lookups, RangeCounts::default()))
         } else if ci < functions {
-          self.function_witness::<LOOKUPS>(ci, record)
+          self.function_witness::<LOOKUPS>(ci, record, min_height)
         } else {
-          let trace = self.rom.witness(record, ci - fixed.end)?;
+          let trace = self.rom.witness(record, ci - fixed.end, min_height)?;
           let lookups = if LOOKUPS {
             self.auxiliary_lookups(ci, &trace)
           } else {
@@ -423,6 +455,7 @@ impl<B: WitnessField> Backend<'_, '_, B> {
     &self,
     ci: usize,
     record: &Execution<B>,
+    min_height: Option<usize>,
   ) -> Result<(RowMajorMatrix<Val>, LookupValues<Val>, RangeCounts), String> {
     let mut rows = vec![];
     for &function in &self.members[ci] {
@@ -431,10 +464,21 @@ impl<B: WitnessField> Backend<'_, '_, B> {
           .map(|query| (function, query)),
       );
     }
-    let height = if rows.is_empty() {
+    let natural_height = if rows.is_empty() {
       0
     } else {
       rows.len().checked_next_power_of_two().ok_or("trace height overflow")?
+    };
+    let height = match min_height {
+      Some(target) => {
+        if natural_height > target {
+          return Err(format!(
+            "circuit {ci} trace height {natural_height} exceeds normalized height {target}"
+          ));
+        }
+        target
+      },
+      None => natural_height,
     };
     let width = self.system.circuits[ci].main_width;
     let mut values =
