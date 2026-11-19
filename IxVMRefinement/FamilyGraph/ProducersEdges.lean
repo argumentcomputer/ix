@@ -247,7 +247,7 @@ below it**: the record itself where no block claims it, else the block that clai
 record (non-empty, having that address) uses a constant address of (`recUsesBlock`). -/
 theorem owner_of_constAddr
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {D' x : _root_.Address} {cD' : Ixon.Constant} (hT : K.Top D')
     (hc : recordOf K.E₀ D' = some cD') (hx : ConstAddrOf D' cD' x) :
     ∃ D, K.Top D ∧ Unclaimed K.fam D ∧ FamOwns K.E₀ K.fam D x ∧
@@ -281,7 +281,7 @@ below it**: a standalone record itself (or its claimer), a projection record's b
 claimer). -/
 theorem owner_of_top
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {x : _root_.Address} (hT : K.Top x) (hok : NeedOk K.E₀ x) :
     ∃ D, K.Top D ∧ Unclaimed K.fam D ∧ FamOwns K.E₀ K.fam D x ∧
       (D = x ∨ Relation.TransGen (WStep K) D x) := by
@@ -301,7 +301,7 @@ theorem owner_of_top
 /-- A top-walked reference below `B` is owned below `B`. -/
 theorem owned_of_top_below
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {x B : _root_.Address} (hT : K.Top x) (hok : NeedOk K.E₀ x)
     (hxB : Relation.TransGen (WStep K) x B) :
     ∃ D, K.Top D ∧ Unclaimed K.fam D ∧ FamOwns K.E₀ K.fam D x ∧
@@ -315,7 +315,7 @@ theorem owned_of_top_below
 /-- A constant address of a top-walked record below `B` is owned below `B`. -/
 theorem owned_of_block_below
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     {D' x B : _root_.Address} {cD' : Ixon.Constant} (hT : K.Top D')
     (hc : recordOf K.E₀ D' = some cD') (hx : ConstAddrOf D' cD' x)
     (hDB : Relation.TransGen (WStep K) D' B) :
@@ -332,7 +332,7 @@ reference of the block, a type or constructor of a block one of its used referen
 from, a witness of a kind other than 2. -/
 theorem below_owned
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K) {R : Ixon.Env}
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K) {R : Ixon.Env}
     (hshape : TableShape.{u} K.t (fun _ => True) R K.envT)
     {B x : _root_.Address} (hTB : K.Top B) (hok : NeedOk K.E₀ x)
     (h : UsedRef K.E₀ B x ∨ K.ProjOfRef B x ∨ K.WitBase B x) :
@@ -371,7 +371,7 @@ whose family check is among the scope check's calls, so that block is the family
 block it eliminates (below the scope's block), or a twin of it. -/
 theorem cont_owned
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hB : BatchGives K) {B rb : _root_.Address} {cs : List (Call F)} {x : _root_.Address}
+    (hB : FamilyCheckFacts K) {B rb : _root_.Address} {cs : List (Call F)} {x : _root_.Address}
     (hS : K.ScopeAt B rb cs) (hwit : K.ContWitness cs B x) :
     StoredAt K.t K.envT x ∨ Covered K.t x ∨
       (∃ D, K.Top D ∧ Unclaimed K.fam D ∧ FamOwns K.E₀ K.fam D x ∧
@@ -435,7 +435,7 @@ address of the scope's block, owned below the block, or owned by a local record 
 check. -/
 theorem scope_owned
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K) {R : Ixon.Env}
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K) {R : Ixon.Env}
     (hshape : TableShape.{u} K.t (fun _ => True) R K.envT)
     {B rb : _root_.Address} {cs : List (Call F)} {x : _root_.Address}
     (hS : K.ScopeAt B rb cs) (hu : UsedRef K.E₀ rb x) (hok : NeedOk K.E₀ x) :
@@ -549,7 +549,7 @@ block before it); any other inner record through its first scope check (least bl
 least position), by `adviceRefs` or `contWitness`. -/
 theorem innerClosed_of
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K) {R : Ixon.Env}
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K) {R : Ixon.Env}
     (hshape : TableShape.{u} K.t (fun _ => True) R K.envT)
     {a x : _root_.Address} (hI : K.Inner a) (hu : UsedRef K.E₀ a x) (hok : NeedOk K.E₀ x) :
     StoredAt K.t K.envT x ∨ Covered K.t x ∨
@@ -681,7 +681,7 @@ uses is owned below its block (`scope_owned`); what an inner record uses is owne
 (`innerClosed_of`). -/
 theorem rankEdges_of
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K) {R : Ixon.Env}
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K) {R : Ixon.Env}
     (hshape : TableShape.{u} K.t (fun _ => True) R K.envT)
     (hacyc : ∀ z, ¬ Relation.TransGen (FamEdge K rank) z z) :
     RankEdges K (FamEdge K rank) where

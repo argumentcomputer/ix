@@ -53,7 +53,7 @@ import Tests.Ix.IxVM.CircuitVerdict
 import Tests.Ix.IxVM.ClaimSafety
 import Tests.Ix.IxVM.SafeReferences
 import Tests.Ix.IxVM.RecursorParentRoute
-import Tests.Ix.IxVM.GuardBatch
+import Tests.Ix.IxVM.ShapeGuards
 import Tests.Ix.IxVM.RecGen
 import Tests.Ix.IxVM.GuardCorpus
 import Tests.Ix.IxVM.AliasFormers
@@ -64,7 +64,7 @@ import Tests.Ix.IxVM.BinderAnnotators
 import Tests.Ix.IxVM.ModelAdvice
 import Tests.Ix.IxVM.FieldReduction
 import Tests.Ix.IxVM.MustReject
-import Tests.Ix.IxVM.BatchMustReject
+import Tests.Ix.IxVM.DeclCheckMustReject
 import Tests.Ix.IxVM.AdviceMustReject
 import Tests.Ix.IxVM.QuotAdviceMustReject
 import Tests.Ix.IxVM.IndVariations
@@ -277,7 +277,7 @@ def registry : List Entry := [
   -- Must-reject gates: hand-built inputs the program has to refuse, each with the controls
   -- that show it reaches the check it targets.
   .env "ixvm-must-reject" (.manual "hand-built must-reject fixtures and their controls, checked against Lean's kernel") Tests.Ix.IxVM.MustReject.run,
-  .env "ixvm-batch-must-reject" (.manual "the declaration checker's must-reject cases and their controls") Tests.Ix.IxVM.BatchMustReject.run,
+  .env "ixvm-decl-check-must-reject" (.manual "the declaration checker's must-reject cases and their controls") Tests.Ix.IxVM.DeclCheckMustReject.run,
   .env "ixvm-advice-must-reject" (.manual "corrupted model advice for a mutual and a nested block") Tests.Ix.IxVM.AdviceMustReject.run,
   .env "ixvm-quot-advice-must-reject" (.manual "model advice whose basis references leave the quotient roles") Tests.Ix.IxVM.QuotAdviceMustReject.run,
   .env "ixvm-ind-variations" (.manual "inductive variations through Lean, the certified kernel and IxVM; IX_IV_ONLY") Tests.Ix.IxVM.IndVariations.run,
@@ -310,7 +310,7 @@ def registry : List Entry := [
   .runner "ixvm-recursor-parent-route" (.ci .ixvm) Tests.Ix.IxVM.RecursorParentRoute.run,
   -- The declaration checker's shape guards: one kind of member per inductive block, no later
   -- use of a recursive field, a recursor header free of `let`.
-  .env "ixvm-guard-batch" (.ci .ixvm) Tests.Ix.IxVM.GuardBatch.run,
+  .env "ixvm-shape-guards" (.ci .ixvm) Tests.Ix.IxVM.ShapeGuards.run,
   .env "ixvm-recgen" (.manual "IX_RECGEN_IXE and IX_RECGEN_OUT: native recursor corpus controls") Tests.Ix.IxVM.RecGen.run,
   .env "ixvm-guard-corpus" (.manual "IX_RECGEN_IXE and IX_RECGEN_OUT: declaration controls; optional IX_GUARD_CORPUS_ADDRESS_FILE") Tests.Ix.IxVM.GuardCorpus.run,
   .runner "ixvm-claim-safety-corpus" (.manual "walk closure of what stays owned on a compiled corpus; IX_SAFETY_IXE, IX_SAFETY_IXES") Tests.Ix.IxVM.ClaimSafety.corpus,
@@ -452,7 +452,7 @@ def required : List (String × String) := [
   ("ixvm-pw-hints", "ci:ixvm"),
   ("ixvm-claim-safety", "ci:ixvm"),
   ("ixvm-recursor-parent-route", "ci:ixvm"),
-  ("ixvm-guard-batch", "ci:ixvm"),
+  ("ixvm-shape-guards", "ci:ixvm"),
   ("binding-proof-cli", "ci:compiler-closures"),
   ("canon-closure-aux", "ci:compiler-closures"),
   ("compile-closure-whole", "ci:compiler-closures"),

@@ -29,7 +29,7 @@ checks it (`KernelClaim::run_claim`).
 ## The semantics
 
 The backend headline's Generic form
-(`Aiur.Optimized.Physical.Prepared.native_heap_sound_observed`, Track A)
+(`Aiur.Optimized.Physical.Prepared.native_heap_sound_observed`)
 concludes `Generic.SourceSemantics.ObsFn source.world`: the source semantics
 of a checked source's world, from the empty heap, with its calls recorded. A `hint` there
 (IO reads included: `ixvm.io.info`, `ixvm.io.read`, `ixvm.io.claim`, …)
@@ -71,8 +71,7 @@ the derivation itself hashed.
 
 ## The levels
 
-* `SourceSound P`: every observed `verify_claim` derivation gives `P`. The
-  obligation Phases 3 and 4 discharge.
+* `SourceSound P`: every observed `verify_claim` derivation gives `P`.
 * `CircuitSound P` (the main circuit statement): from the circuit compiled
   from the prepared source, over the certified depth pass and a valid ROM of
   at most `2^39` entries, rows the grouped, activated memo checker accepts
@@ -80,12 +79,11 @@ the derivation itself hashed.
   derivation whose calls the trace's memory carries (`CallsInROM`), so the
   escape's byte string is read off the trace; it gives `P`. No acyclicity is
   assumed. Proved from `SourceSound P` (`circuitSound_of_sourceSound`),
-  through Track A's memo-checker soundness and observed headline.
+  through memo-checker soundness and the observed backend headline.
 * `CircuitSoundAssuming P`: the same over circuits without the depth pass,
   with the named acyclicity hypothesis `AcyclicDerivation` in place of the
   memo checker. Proved from `SourceSound P` through the observed headline
-  (`observedHeadline`, the Phase 2 obligation `ObservedHeadline`, now
-  proved).
+  (`observedHeadline`).
 -/
 
 
@@ -237,7 +235,7 @@ grouped, activated memo checker accepts for a root outside the depth pass's
 names that erases to that message: some observed derivation of
 `verify_claim(d)`, whose calls the trace's memory carries (`CallsInROM`), gives
 `P` of its calls. No acyclicity is assumed: the depth words make every accepted
-memo graph acyclic (Track A, `Depth.plan_checkMemo_sound`).
+memo graph acyclic (`Depth.plan_checkMemo_sound`).
 
 Both bounds come from the verifiers' batch row bound (`MAX_BATCH_ROWS = 2^39`,
 summed over every shard and every active circuit, the memory circuits
@@ -320,8 +318,7 @@ def VerifyClaimCircuitSoundInAssuming : Prop :=
 /-- **The observed headline, assuming acyclicity**, for every checked source:
 the Generic headline `grouped_activated_native_heap_sound`, concluding an
 *observed* derivation whose calls the trace's memory carries, beside the
-result's representation. Phase 2 named it as the backend obligation; Track A
-proved it (`observedHeadline`). -/
+result's representation (proved in `observedHeadline`). -/
 def ObservedHeadline : Prop :=
   ∀ {F : Type} [Field F] [DecidableEq F] {id : String → Except String Nat}
     {s : Aiur.Generic.Source F} {entries : List String}
@@ -343,7 +340,7 @@ def ObservedHeadline : Prop :=
           Aiur.Represents (compiled.traceROM rom) heap value result ∧
           Aiur.Generic.SourceSemantics.CallsInROM (compiled.traceROM rom) calls
 
-/-- **The observed headline holds**: Track A's
+/-- **The observed headline holds**:
 `Physical.Prepared.grouped_activated_native_heap_sound_observed`. -/
 theorem observedHeadline : ObservedHeadline := by
   intro F _ _ id s entries specialized compiled physical plan activated name entry rom valid args
@@ -351,8 +348,8 @@ theorem observedHeadline : ObservedHeadline := by
   exact physical.grouped_activated_native_heap_sound_observed compiled plan activated entry valid
     signed derived arguments decoded
 
-/-- **The circuit statement follows from the source statement** through Track
-A's generic-level observed headline over the depth pass
+/-- **The circuit statement follows from the source statement** through the
+generic-level observed headline over the depth pass
 (`Physical.Prepared.depth_grouped_activated_native_heap_sound_goldilocks_observed`:
 memo-checker soundness, `Depth.plan_checkMemo_sound`, with Goldilocks'
 characteristic for 24-bit words). -/

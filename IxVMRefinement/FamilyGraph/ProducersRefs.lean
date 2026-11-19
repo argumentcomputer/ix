@@ -24,7 +24,7 @@ import IxVMRefinement.Obs.RBTreeMap0
 
 /-! # Reference closure and container witness obligations from `check_family`
 
-Proves the three reference-closure obligations of `BatchGives` (`familyRefs`, `adviceRefs`, and
+Proves the three reference-closure obligations of `FamilyCheckFacts` (`familyRefs`, `adviceRefs`, and
 `contWitness`), together with `rec_family_block` determinism/used-reference facts and
 `rprj_check_const_rec_other` (reused for the recursor-block arm):
 
@@ -1647,7 +1647,7 @@ private theorem check_witnesses_spec_ext {K : FamRunCtx}
         · exact Or.inr ⟨h_w, xx_w, s_w, (ext_pre.trans ext_cw).trans ext_w, hblk_w, hx_w,
             by rw [hc]; simp [hcl_w], hcx⟩
 
-/-! ## `BatchGives.familyRefs` -/
+/-! ## `FamilyCheckFacts.familyRefs` -/
 
 private theorem family_refs_go_spec {K : FamRunCtx}
     (hS : LoadedReads.RunStore K.calls K.E₀)
@@ -1864,7 +1864,7 @@ private theorem family_refs_go_spec {K : FamRunCtx}
         simp only [List.getElem?_cons_succ] at hget
         exact hrest_ok k' q₀ hget (by simpa [Nat.add_assoc, Nat.add_comm 1 k'] using hmem)
 
-/-- **Discharges `BatchGives.familyRefs`**: every used reference of a scope check's family record
+/-- **Discharges `FamilyCheckFacts.familyRefs`**: every used reference of a scope check's family record
 is a reference of its block's closure (`BlockRef`), or a witness of the check (`WitBase` or
 `ContWitness`). -/
 theorem FamRunCtx.familyRefs_of {K : FamRunCtx} {seeds : List _root_.Address}
@@ -1990,7 +1990,7 @@ theorem FamRunCtx.familyRefs_of {K : FamRunCtx} {seeds : List _root_.Address}
           · exact Or.inr (Or.inr ⟨h_w, rc, xb, xx_w, s_w, hrc_ws.mono ext_w, hblk_w, hx_w,
               by rw [hc_fam]; simp [hcl_w]⟩)
 
-/-! ## `BatchGives.adviceRefs` -/
+/-! ## `FamilyCheckFacts.adviceRefs` -/
 
 private theorem projection_of_advice_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
     {S : List _root_.Address} {rb : Bytes.Address} {x_r x_aset r : SourceValue F}
@@ -2391,7 +2391,7 @@ private theorem check_advice_records_prefix_spec {calls : List (Call F)} {E₀ :
         rw [hlist_eq, hlen_eq] at hrec
         exact hrec x hu
 
-/-- **Discharges `BatchGives.adviceRefs`**: every used reference of the `k`-th advice record of a
+/-- **Discharges `FamilyCheckFacts.adviceRefs`**: every used reference of the `k`-th advice record of a
 scope check's own list is an earlier listed non-projection record, a constant address of an earlier
 listed record, or a witness of the check. -/
 theorem FamRunCtx.adviceRefs_of {K : FamRunCtx} {seeds : List _root_.Address}
@@ -2434,7 +2434,7 @@ theorem FamRunCtx.adviceRefs_of {K : FamRunCtx} {seeds : List _root_.Address}
     · exact Or.inr (Or.inr (Or.inr ⟨h_w, rc, xb, xx_w, s_w, hrc_ws.mono ext_w, hblk_w, hx_w,
         sub_ws _ hcl_w⟩))
 
-/-! ## `rec_family_block`, `check_const` on recursor projections, and `BatchGives.contWitness` -/
+/-! ## `rec_family_block`, `check_const` on recursor projections, and `FamilyCheckFacts.contWitness` -/
 
 /-- Unconditional raw recursor representation from `Ingress::get_ci` on a standalone `.recr` or
 `.rPrj` record. -/
@@ -3048,7 +3048,7 @@ private theorem peel_n_foralls_raw_any {c : Ixon.Constant} {recurAddrs : List _r
 /-- **`KernelCheck::check_const` on any recursor projection record `.rPrj ⟨idx, a⟩` takes the
 modeled `Rec_other` arm**: `a` is a `RecBlock`, `block_is_modeled` answers non-zero on its family
 inductive block `ib`, `check_family [rc, ib, a]` runs inside `check_const`, and `a` uses `t0`
-(an `.iPrj` of `ib`). Reused by both `BatchGives.contWitness` and `BatchGives.recArm`. -/
+(an `.iPrj` of `ib`). Reused by both `FamilyCheckFacts.contWitness` and `FamilyCheckFacts.recArm`. -/
 theorem rprj_check_const_rec_other {calls cs₁ cs₂ : List (Call F)} {E₀ : Ixon.Env}
     {t : Ix.Kernel.RoleTable} {bAddr x a : _root_.Address} {lim : Option Nat}
     {cx : Ixon.Constant} {idx : UInt64}
@@ -3550,7 +3550,7 @@ private theorem container_recs_refs_standalone_refs_spec {K : FamRunCtx}
           (hwset.mono ev_ld.heap_extends) ev_rest
           (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))
 
-/-- **Discharges `BatchGives.contWitness`**: every container witness of a scope check bound to no
+/-- **Discharges `FamilyCheckFacts.contWitness`**: every container witness of a scope check bound to no
 walked role eliminates a non-empty inductive block `ib` reached from `B` by a dependency path, has
 its `check_container_rec` among the check's calls, closes standalone references against `ib` and
 non-kind-2 witnesses, and otherwise belongs to a recursor block whose family check with `ib` is

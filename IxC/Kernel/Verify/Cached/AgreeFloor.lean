@@ -7,36 +7,25 @@ import all Init.LetFun
 public section
 
 /-!
-# The trusted↔P agreement floor (task #172, batch B7; restated at the
-twin's retirement, 2026-09-06)
+# The trusted↔verified agreement floor
 
-The *cheap floor* of census part 4 §3: whenever the cached driver
-(`IxC/Kernel/Cached/ParsedC.lean`) at the trusted config and at the
-verified config both **accept** a stream, the two installed
-environments carry the same constants, in the same order, with the same
-install skeletons — and in particular the same names and the same
-count.
+Whenever the cached driver (`IxC/Kernel/Cached/ParsedC.lean`) at the
+trusted mode and at the verified mode both **accept** a stream, the two
+installed environments carry the same constants, in the same order, with
+the same install skeletons — and in particular the same names and the
+same count.
 
-**What the retirement did to the statement.**  Until 2026-09-06 the
-trusted lane was a separate driver (`checkDeclsT`,
-`IxC/Kernel/Cached/ParsedT.lean`) over a hand-written cert-skipping core,
-and the floor had to prove the skeleton spec for *both* drivers, stage
-by stage — the second half of this file was a clause-by-clause
-duplicate of the first.  Now there is one driver, `checkDecls
-mode`, and the floor is the skeleton spec proved **once, for every
-`mode : CheckMode`** (`checkDecls_skels`); the agreement of
-two modes is its two instances glued by `Eq.trans`.  That is strictly
-stronger than the frozen B7 statement: the old theorem is the new one
-at `μP := .verified`, `μT := .trusted`, and the new one covers any two
-modes (task #185: "any two configs" until the configuration record
-retired).  The certification-only work the trusted mode omits
-(`mode.verifiedChecks`, group A, and `mode.certs`) is invisible to the
-skeleton by construction — the spec forgets everything a core computes
-— which is exactly why the proof is mode-generic without a case
-split.
+Because there is one driver, `checkDecls mode`, the agreement floor is
+the skeleton spec proved **once, for every `mode : CheckMode`**
+(`checkDecls_skels`); the agreement of any two modes is its two instances
+glued by `Eq.trans` (in particular at `μP := .verified`, `μT := .trusted`).
+The certification-only work the trusted mode omits (`mode.verifiedChecks`
+and `mode.certs`) is invisible to the skeleton by construction — the spec
+forgets everything a core computes — which is why the proof is
+mode-generic without a case split.
 
 Nothing here reasons about the cores.  The floor's whole content is
-that the fold is *the same fold* at every config, and the only work is
+that the fold is *the same fold* at every mode, and the only work is
 that this is not quite true on the nose: the inductive-block clause
 installs constants under **environment-dependent guards**
 (`installProjFnStep*`'s model lookup).  So the induction runs on
@@ -45,20 +34,15 @@ nothing a core computes — and the names corollary falls out.
 
 Two facts close the remaining branches without core reasoning:
 
-* the direct simple-structure clause (task #175 W4c, the priority
-  route) installs under guards that are the block's own (the
-  projection bodies' scoping, task #175 S1) or freshness checks, and
-  its dispatch
-  (`structPartsF?`) reads the index only through name lookups
-  (`structNonRecF_skel`), so it runs on the skeleton too;
+* the direct simple-structure clause (the priority route) installs under
+  guards that are the block's own (the projection bodies' scoping) or
+  freshness checks, and its dispatch (`structPartsF?`) reads the index
+  only through name lookups (`structNonRecF_skel`), so it runs on the
+  skeleton too;
 * at `.axiomDecl` the push-or-not decision is a function of the header
   name alone — the `sorryAx` record installs nothing in
-  both drivers, and `stdAxiomOkF` is `false` off `propext`/`choice`, so
+  both modes, and `stdAxiomOkF` is `false` off `propext`/`choice`, so
   every other accepted axiom installs exactly one `.axiomInfo`.
-
-See DESIGN.md, "TASK #172 — BATCH B7: THE AGREEMENT FLOOR — STATEMENT
-FREEZE" for the frozen statements and the scope (accept verdicts only;
-T2c untouched).
 -/
 
 namespace Ix.Kernel.Cached

@@ -32,19 +32,19 @@ def generic : Array Lean.Name :=
 
 end Ixon.Authenticated.Audit
 
--- Step 5a (typed keys) moved the count from 5839 by the generic entries' change
--- (`IxC/Kernel/Audit/Roots.lean`); step 5b's `LetMeta` from 5630, by the let
--- contract's equality, hash and `Repr`; step 5b's walk change from 5657, by the
+-- Typed keys moved the count from 5839 by the generic entries' change
+-- (`IxC/Kernel/Audit/Roots.lean`); `LetMeta` from 5630, by the let
+-- contract's equality, hash and `Repr`; the arity-reduced walk change from 5657, by the
 -- sources of the arity-reduced `f._redArg` the walk reaches (no extern, `unsafe`,
--- `csimp` or `partial` constant among them); step 5b's mode index from 5752, by
+-- `csimp` or `partial` constant among them); the mode index from 5752, by
 -- the generic entries' change; its address keys from 5764 and 115 inherited
 -- externs, by the generic entries' change; the per-step memo reset, shared
 -- binder metadata, fixed-width TagN fast paths, and task-parallel phase B
 -- from 5727 and 117 inherited externs, by the generic
--- entries' change (`IxC/Kernel/Audit/Roots.lean`); step 6's structured errors
+-- entries' change (`IxC/Kernel/Audit/Roots.lean`); structured errors
 -- from 5745 and 119 inherited externs, by the generic entries' change; the
 -- validation of the four install anchors from 5963, by the generic entries' change;
--- step 6b's display annotations from 5974, by the generic entries' change (8
+-- display annotations from 5974, by the generic entries' change (8
 -- more, one more ruled csimp), and its failure display from 5982 (30 more, one
 -- more ruled csimp); the reader's conversion to Lean `module`s from 6012, by the
 -- generic entries' change (29 more, the block-order entry's); the block
@@ -243,7 +243,7 @@ fun binding maxProjections limits records blobs hint =>
 The tiered entry's closure is frozen apart, so the entries' above is
 unchanged: the generic tiered entries' (`Ix.Kernel.Audit.tierOperations`)
 and the same one assumed substitution: 5878 and 10 more, the Rust BLAKE3
-backend's three externs among them (ruled assumed 4). Step 6b's display
+backend's three externs among them (ruled assumed 4). Display
 annotations moved it from 5888 by the generic tiered entries' change (8 more,
 one more ruled csimp), and its failure display from 5896, likewise (33 more,
 one more ruled csimp). The reader's conversion to Lean `module`s moved it from 5929,

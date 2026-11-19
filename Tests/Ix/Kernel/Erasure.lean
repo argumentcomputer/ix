@@ -91,7 +91,7 @@ def table : DisplayTable .meta :=
 #guard spellWith table (.id (address 203)) == "#cbcbcbcbcbcb"
 #guard spellWith table (.role .natAdd) == "Nat.add"
 
-/-! ## Named terms (step 6b)
+/-! ## Named terms
 
 `.meta` (and `.source`) binders carry Lean's names in a subsingleton
 (`BinderMeta.display`): the named declarations below are *equal* to their

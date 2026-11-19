@@ -1,5 +1,5 @@
 import Tests.Ix.IxVM
-import Tests.Ix.IxVM.GuardBatchDefs
+import Tests.Ix.IxVM.ShapeGuardsDefs
 import IxC.Kernel.Admission
 import IxC.Kernel.Cached.Installed
 import Ix.Address.Pure
@@ -30,7 +30,7 @@ writes. Each has cases that must now be refused and cases that must stay accepte
   `ixvm-claim-safety`). A `let` the family carries into its recursor, in a parameter's or
   a field's domain, is in both and is accepted.
 
-`IX_GUARD_BATCH_BEFORE`, when set, expects the verdicts of a program without the guards:
+`IX_SHAPE_GUARDS_BEFORE`, when set, expects the verdicts of a program without the guards:
 each refused shape was accepted, or refused by a later check, which the case names. It
 shows that every refusal here is the guard's own. Set to `lets`, it expects the verdicts of
 a program with the first three guards and without the fourth; set to `shape`, of one with the
@@ -41,7 +41,7 @@ recursors; set to `declared`, of one that also refuses those recursors but check
 types on their declared shape only. Unset, it expects the program that checks a family at its
 types again, keeps the stored type's telescope, and refuses the family's recursors. -/
 
-namespace Tests.Ix.IxVM.GuardBatch
+namespace Tests.Ix.IxVM.ShapeGuards
 
 open Ix.Kernel Ix.Kernel.Reader Tests.Ix.IxVM IxVM.ClaimHarness
 
@@ -61,7 +61,7 @@ private def laterUseMessage : String :=
 
 /-! ## Compiled fixtures -/
 
-private def defs (n : String) : Lean.Name := `Tests.Ix.IxVM.GuardBatchDefs ++ n.toName
+private def defs (n : String) : Lean.Name := `Tests.Ix.IxVM.ShapeGuardsDefs ++ n.toName
 
 private partial def exprHasLet : Ixon.Expr → Bool
   | .letE _ _ _ _ _ => true
@@ -434,7 +434,7 @@ private def familyCases (shape recursors : Bool) (env : Ixon.Env) : Array Builde
 
 def run (leanEnv : Lean.Environment) : IO UInt32 := do
   -- the program under test: every guard (unset), or one of the earlier states
-  let before ← IO.getEnv "IX_GUARD_BATCH_BEFORE"
+  let before ← IO.getEnv "IX_SHAPE_GUARDS_BEFORE"
   -- guards, the fourth guard, a family's types on their declared shape only, the stored
   -- type's telescope, a family's recursors refused
   let (guards, lets, shape, telescope, recursors) : Bool × Bool × Bool × Bool × Bool :=
@@ -448,7 +448,7 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     | some _ => (false, false, false, false, false)
   let missing := compiledNames.filter (!leanEnv.constants.contains ·)
   unless missing.isEmpty do
-    IO.eprintln s!"[ixvm-guard-batch] not in the environment: {missing}"
+    IO.eprintln s!"[ixvm-shape-guards] not in the environment: {missing}"
     return 1
   let env ← loadSharedIxonEnv compiledNames.toArray leanEnv
   let built : Array Builder := #[
@@ -462,7 +462,7 @@ def run (leanEnv : Lean.Environment) : IO UInt32 := do
     fun _ => parameterLetCase lets false, fun _ => parameterLetCase lets true,
     fun _ => declaredFormerCase shape telescope false,
     fun _ => declaredFormerCase shape telescope true]
-  runCases "ixvm-guard-batch" (compiledCases guards env ++ familyCases shape recursors env ++ built)
+  runCases "ixvm-shape-guards" (compiledCases guards env ++ familyCases shape recursors env ++ built)
     (jobs := 4)
 
-end Tests.Ix.IxVM.GuardBatch
+end Tests.Ix.IxVM.ShapeGuards

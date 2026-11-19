@@ -32,14 +32,13 @@ import edges:
      an Ixon-mode input key carries (`addressData`). Ix's boundary (`Ixon`,
      `Audit`, `Ingress`, `Egress`, `Ref`, `Search`) imports the kernel,
      never the other way round.
-  6. THE ANSWERS FENCE (M7 Q1): `IxC.Kernel.Tier.Answer`, the typing tier's
+  6. THE ANSWERS FENCE: `IxC.Kernel.Tier.Answer`, the typing tier's
      answer view (δ and ι on tier constants), is imported by no module
      under `IxC/Kernel/` (its boundary part included), `Ix/Cert/`,
      `Ix/CompileCert/` or `IxC/Resource/`, and by no `Ix.LeanIngress` module,
      with one exception, `Ix.Typing` (`answersAllowed`): the artifact typing's
      uncertified part checks unsafe and assumption-axiom records
-     transparently, as Lean and `Ix.Tc` do (owner, step 10d: no divergence
-     from `Ix.Tc`); its certified part never reads the view. A self-test
+     transparently, as Lean does; its certified part never reads the view. A self-test
      plants an import from a certified module and from a mode-checker module
      beside the exception, and requires the scan to find both.
   7. THE MODE FENCE: the resource-mode library (`IxC.Resource`, uncertified
@@ -239,7 +238,7 @@ def chainTo (par : Parents) (m t : String) : String := Id.run do
     ch := ch.push cur
   return " <- ".intercalate ch.toList
 
-/-! ## The answers fence (M7 Q1)
+/-! ## The answers fence
 
 `IxC.Kernel.Tier.Answer` builds the typing tier's **answer view**, where tier
 definitions unfold and a tier block's recursors fire: what a question
@@ -257,11 +256,11 @@ def answersModule : String := "IxC.Kernel.Tier.Answer"
 def answersFenced : List String :=
   ["IxC/Kernel", "Ix/Cert", "Ix/CompileCert", "Ix/LeanIngress", "IxC/Resource"]
 
-/-- **The one exception** (owner, step 10d: no divergence from `Ix.Tc`):
+/-- **The one exception**:
 `Ix.Typing`, the typing of a compiled artifact, whose uncertified part (unsafe
 inductives, assumption axioms and the records that depend on them) is
 checked transparently, with δ on tier definitions and ι on unsafe
-recursors, as Lean and `Ix.Tc` check it. Its certified part
+recursors, as Lean checks it. Its certified part
 (`Ix.Kernel.Admission.checkBytesTiered`) never reads the view, and no mode
 checker module may import it. -/
 def answersAllowed : List String := ["Ix.Typing"]

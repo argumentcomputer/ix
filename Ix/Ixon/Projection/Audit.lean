@@ -77,23 +77,23 @@ the certified byte admission
 (`Ix.Kernel.Admission.Audit`), with the same ruled constructs and the same
 codec: projection records are written with Ixon v4's TagN writer
 (`Ixon.putTagN`, `tagNHeader`, `tagNEnd1..6`) and read with its reader
-(`getTagN`, `getTagNWide`, `getTagN0Values`). Step 5a (typed keys) moved the
-count from 5687 by the entry's change (`IxC/Kernel/Audit/Roots.lean`); step 5b's
-`LetMeta` from 5478, by the let contract's equality, hash and `Repr`; step 5b's
-walk change from 5505, by the sources of the arity-reduced `f._redArg` the walk
-reaches (no extern, `unsafe`, `csimp` or `partial` constant among them); step
-5b's mode index from 5598, by the entry's change; its address keys from 5610
+(`getTagN`, `getTagNWide`, `getTagN0Values`). Typed keys moved the
+count from 5687 by the entry's change (`IxC/Kernel/Audit/Roots.lean`);
+`LetMeta` from 5478, by the let contract's equality, hash and `Repr`; the
+arity-reduced walk change from 5505, by the sources of the arity-reduced `f._redArg` the walk
+reaches (no extern, `unsafe`, `csimp` or `partial` constant among them); the
+mode index from 5598, by the entry's change; its address keys from 5610
 and 111 inherited externs, by the entry's change; the per-step memo reset,
 shared binder metadata, fixed-width TagN fast paths, and task-parallel phase B
 from 5574 and 113 inherited externs, by the entry's
 change (`IxC/Kernel/Audit/Roots.lean`: the memo state reset, the shared
 binder metadata, the codec's TagN twins with their two ruled csimps, which
 the projection writer and reader also call, and phase B on tasks with
-`Init`'s `Task.spawn` and `Task.get`). Step 6's structured errors moved it from 5592 and 115
+`Init`'s `Task.spawn` and `Task.get`). Structured errors moved it from 5592 and 115
 inherited externs, by the entry's change (`IxC/Kernel/Audit/Roots.lean`: the
 fold no longer spells keys or prints terms, and a fixed message is a one-part
 list, two more closed objects per message site); the validation of the four
-install anchors from 5810, by the entry's change; step 6b's display annotations from
+install anchors from 5810, by the entry's change; display annotations from
 5821, by the entry's change (8 more, one more ruled csimp), and its failure display
 from 5829 (30 more, one more ruled csimp); the reader's conversion to Lean `module`s from
 5859, by the entry's change (28 more: the module's own specialisations,

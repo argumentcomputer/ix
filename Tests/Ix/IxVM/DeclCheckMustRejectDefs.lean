@@ -1,10 +1,10 @@
 /-! # Lean sources of the declaration checker's must-reject cases
 
-Ordinary Lean declarations, checked by Lean's kernel, that `ixvm-batch-must-reject`
-(`Tests.Ix.IxVM.BatchMustReject`) reads from the test binary's environment and compiles
+Ordinary Lean declarations, checked by Lean's kernel, that `ixvm-decl-check-must-reject`
+(`Tests.Ix.IxVM.DeclCheckMustReject`) reads from the test binary's environment and compiles
 with Ix's compiler. -/
 
-namespace BatchMR
+namespace DeclCheckMR
 
 /-- A type former that erases its first argument. -/
 def K (_ b : Type) : Type := b
@@ -51,4 +51,4 @@ inductive FI : Two → MySort where
 inductive F0 : MySort where
   | mk : F0
 
-end BatchMR
+end DeclCheckMR

@@ -27,12 +27,7 @@ Completes the modeled-inductive slice (`L5-M`) and joins it with `L5-V` (`Value.
    - `ci_lvls_type_spec`, `member_val_spec`, `members_val_spec` (matching every block member's
      signature against its advice `Defn` model via `ExactGetCI` + `rename_exact` +
      `kexpr_struct_eq_one`),
-4. **`NativeIndStep`**, the native-inductive seam.
-
-Parked (`Parked/IxVMRefinement/Decl/Modeled.lean`, outside every library): `check_recs_spec`, the
-end-to-end `ModeledBlockWitness` assembly (`modeledBlockWitness_of_check_family`,
-`modeledIndDecl_step`) and the legacy top-level theorems `decl_step_S₀`, `l5_decls_S₀`, `l5_S₀`,
-which rest on the parked refinement of the rule loops. -/
+4. **`NativeIndStep`**, the native-inductive seam. -/
 
 namespace IxVM.Refinement.Decl
 

@@ -49,7 +49,8 @@ model is witness data. Two properties are tested here:
 
 The must-reject cases for advice (wrong member models, wrong iota statements,
 axioms, self-reference, another block's payload, missing payloads, oversized
-counts) are fixtures of the local-only branch `jcb/ixvmc-dc-mustreject`.
+counts) are covered by `Tests.Ix.IxVM.AdviceMustReject` and
+`Tests.Ix.IxVM.QuotAdviceMustReject`.
 
 `ixvm-model-report` (manual) prints, for an `.ixe` file (`IX_MODEL_IXE`), what
 the modeller and the encoder produce per mutual or nested block: the advice's

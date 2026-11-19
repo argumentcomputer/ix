@@ -39,7 +39,7 @@ run-level bounds or collision-freedom beyond `TopWalkCore`:
 * `FamRunCtx.check_family_carriers`: bundles the block/record facts, first-type projection hash,
   role-freeness, motive-0 carrier, and member-0 safety of any `FamCheck B rb`;
 * `FamRunCtx.inLogic_of` and `FamRunCtx.blockOf_of`: discharge the `inLogic` and `blockOf`
-  obligations of `BatchGives`.
+  obligations of `FamilyCheckFacts`.
 -/
 
 set_option maxHeartbeats 8000000
@@ -1786,9 +1786,9 @@ theorem FamRunCtx.check_family_carriers {K : FamRunCtx} {seeds : List _root_.Add
     have hget0 : rs[0]? = some (.recr rc₀) := by rw [Array.getElem?_eq_getElem hpos, hrc₀]
     exact (hmem_both 0 rc₀ hget0).2
 
-/-! ## Discharging `BatchGives.inLogic` and `BatchGives.blockOf` -/
+/-! ## Discharging `FamilyCheckFacts.inLogic` and `FamilyCheckFacts.blockOf` -/
 
-/-- **`BatchGives.inLogic`**: the block a twin is a second family record of is in Lean's logic. -/
+/-- **`FamilyCheckFacts.inLogic`**: the block a twin is a second family record of is in Lean's logic. -/
 theorem FamRunCtx.inLogic_of {K : FamRunCtx} {seeds : List _root_.Address}
     {rank : _root_.Address → Nat}
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
@@ -1825,7 +1825,7 @@ theorem FamRunCtx.inLogic_of {K : FamRunCtx} {seeds : List _root_.Address}
     ((hW.runStore.recordOf_eq_recordAt _).symm.trans hcb) hcar.blockMuts
     ⟨.indc ind₀, hmem0, Or.inl hsafe0⟩
 
-/-- **`BatchGives.blockOf`**: a family record with a constant address is the family record of
+/-- **`FamilyCheckFacts.blockOf`**: a family record with a constant address is the family record of
 at most one block. -/
 theorem FamRunCtx.blockOf_of {K : FamRunCtx} {seeds : List _root_.Address}
     {rank : _root_.Address → Nat}

@@ -27,7 +27,7 @@ from the map:
 * `FamRunCtx.twinBlock_stored`, `FamRunCtx.twin_routed`, `StoredTwinReads`,
   `storedTwinBlock_of_reads`: that block fact from the selector (a twin's block with no family
   record has its constant addresses stored), the run's facts (every twin's block routed as
-  modeled and in Lean's logic: `BatchGives.routed`, `BatchGives.inLogic`), the agreement, and two
+  modeled and in Lean's logic: `FamilyCheckFacts.routed`, `FamilyCheckFacts.inLogic`), the agreement, and two
   reads of the witness (`StoredTwinReads`: its store holds the block and routes it as modeled);
 * `recordsFor_basisStore`, `storedTwinReads_of_walk`: those two reads at a walk with a step
   store, whose route the run's dispatch answers and which holds the run's records, the
@@ -295,8 +295,8 @@ theorem FamRunCtx.twinOf_route {K : FamRunCtx} {rb' B : _root_.Address} (h : K.T
   h.2.2.2.2.2.2.1
 
 /-- **Every twin's block is routed as modeled**: a top-walked twin's by `FamRunCtx.TwinOf`, a
-nested twin's by `check_const`'s `Rec` arm (`BatchGives.routed`). -/
-theorem FamRunCtx.twin_routed {K : FamRunCtx} (hB : BatchGives K) {rb' B : _root_.Address}
+nested twin's by `check_const`'s `Rec` arm (`FamilyCheckFacts.routed`). -/
+theorem FamRunCtx.twin_routed {K : FamRunCtx} (hB : FamilyCheckFacts K) {rb' B : _root_.Address}
     (h : K.twin rb' = some B) : ModeledRouteAt K.calls B := by
   rcases FamRunCtx.twin_some h with ht | hn
   · exact FamRunCtx.twinOf_route ht
@@ -316,7 +316,7 @@ theorem FamRunCtx.twin_canonical {K : FamRunCtx} {B rb rb' : _root_.Address}
 /-- **What the stored twins' block fact reads of the witness**, of the block of a twin with no
 family record. Proved at a walk with a step store (`storedTwinReads_of_walk`). That the run
 routes the block as modeled and that it is in Lean's logic are the run's
-(`FamRunCtx.twin_routed`, `BatchGives.inLogic`). -/
+(`FamRunCtx.twin_routed`, `FamilyCheckFacts.inLogic`). -/
 structure StoredTwinReads (K : FamRunCtx) (R : Ixon.Env) : Prop where
   /-- The witness's store holds the block: the address of the block's first member is stored by
   the witness's environment (`FamRunCtx.twinBlock_stored`), whose constant there is no pin and
@@ -333,7 +333,7 @@ structure StoredTwinReads (K : FamRunCtx) (R : Ixon.Env) : Prop where
 /-- **The block of every stored twin is a stored modeled block of the witness's store**, from
 the run's facts, the reads and the agreement of the two stores: the witness's record of the
 block is the run's, whose constant addresses are stored (`FamRunCtx.twinBlock_stored`). -/
-theorem storedTwinBlock_of_reads {K : FamRunCtx} {R : Ixon.Env} (hB : BatchGives K)
+theorem storedTwinBlock_of_reads {K : FamRunCtx} {R : Ixon.Env} (hB : FamilyCheckFacts K)
     (hagree : RecordsAgree K.E₀ R)
     (hr : StoredTwinReads K R) : StoredTwinBlock K.t R K.envT K.fam K.twin := by
   intro rb' B htw hnone
@@ -394,7 +394,7 @@ record store for the witness's store that holds the run's records and that the r
 theorem storedTwinReads_of_walk {K : FamRunCtx} {seeds : List _root_.Address}
     {rank : _root_.Address → Nat} {R E : Ixon.Env}
     (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank)
-    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : BatchGives K)
+    (hG : TopGraph K.t K.E₀ seeds K.Top rank) (hB : FamilyCheckFacts K)
     (hagree : RecordsAgree K.E₀ R) (hctx : StepCtx.{u} K.calls K.t R K.envT K.E₀ E) :
     StoredTwinReads K R := by
   have hshape := hctx.shape
@@ -504,11 +504,11 @@ def AtWalkFam (Pref : RunPref)
       P ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ R famOf rank
 
 /-- **What the graph row and the inner records are owed at the witness with its stored
-families**, at the twin preference `Pref`: only the run's facts the graph reads (`BatchGives`).
+families**, at the twin preference `Pref`: only the run's facts the graph reads (`FamilyCheckFacts`).
 Both `InnerOwed` (`innerOwed_of_walk`) and the stored twins' field (`storedTwinField_of_block` via
 `storedTwinReads_of_walk`) are proved unconditionally at the walk. -/
 def FamilyGraphInnerOwedFam (Pref : RunPref) : Prop :=
-  AtWalkFam.{u} Pref fun K _ _ _ => BatchGives K
+  AtWalkFam.{u} Pref fun K _ _ _ => FamilyCheckFacts K
 
 /-- **The graph row with the inner records at the witness with its stored families, from what
 they are owed**: as `familyGraphRowInner_of_owed`, the stored twins' field from the map. -/
@@ -528,7 +528,7 @@ theorem familyGraphRowInnerFam_of_owed {Pref : RunPref} (h : FamilyGraphInnerOwe
       (rankEdges_of hW hG hB hshape (FamRunCtx.famEdge_acyclic hW hG hB))⟩
   obtain ⟨hFR, -⟩ :=
     familyRun_of ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ hB hW
-      (noBatchFields_of _ hW) hR
+      (containerKindFact_of _ hW) hR
       (storedTwinField_of_block hSF (storedTwinBlock_of_reads hB hagree hreads))
   have hWalk' : Claim.TopWalk calls t seeds E₀ lim Top rank' :=
     topWalk_of_edges ⟨bAddr, hW, hG⟩ hR.closed hR.owner
@@ -580,7 +580,7 @@ theorem familyGraphRowInnerFamT_of_owed {Pref : RunPref} (h : FamilyGraphInnerOw
   have hblock := storedTwinBlock_of_reads hB hagree hreads
   obtain ⟨hFR, -⟩ :=
     familyRun_of ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ hB hW
-      (noBatchFields_of _ hW) hR (storedTwinField_of_block hSF hblock)
+      (containerKindFact_of _ hW) hR (storedTwinField_of_block hSF hblock)
   have hWalk' : Claim.TopWalk calls t seeds E₀ lim Top rank' :=
     topWalk_of_edges ⟨bAddr, hW, hG⟩ hR.closed hR.owner
   exact ⟨rank', _, _, _, _, bAddr, hWalk', hFR, innerChecked_of_gives hWalk' hFR

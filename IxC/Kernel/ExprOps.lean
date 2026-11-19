@@ -1238,15 +1238,12 @@ decreasing_by all_goals first
 hereditarily through annotations (the `Bool` mirror of the
 verification-side `WScoped`).
 
-Not on any per-memo-op path (task #43): the executed knot's cache
+Not on any per-memo-op path: the executed knot's cache
 operations run unguarded, justified by the proven call discipline
-(`IxC/Kernel/Verify/Cached/DiscC*.lean`; the memoized knot's own
-discipline, `IxC/Kernel/Verify/Disc.lean`, went with that knot at task
-#221).  Remaining executable call sites are the
+(`IxC/Kernel/Verify/Cached/DiscC*.lean`).  Remaining executable call sites are the
 scope guards on checker-fabricated terms in `IxC/Kernel/Core.lean`
-(the stuck-major rescues in `majorToCtor`; the projection
-eliminations went with task #175 wiring W5), each O(small
-fabricated term) once per fabrication.  TODO(cleanup, task #26):
+(the stuck-major rescues in `majorToCtor`), each O(small
+fabricated term) once per fabrication.  TODO(cleanup):
 interning should cache the fvar range per node, making those O(1). -/
 def wscopedB : (d : Nat) → Expr md → Bool
   | d, .fvar idx ty => idx < d && wscopedB idx ty

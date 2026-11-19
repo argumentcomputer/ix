@@ -684,17 +684,14 @@ theorem whnfCoreBodyC_sim (hμ : mode.verifiedChecks = true) (ih : SSimC mode en
   exact SimC.wr (whnfCoreLoopC_sim hμ ih henv whnfCoreLoopFuel hs hden hw)
     (fun v F hF => whnfCoreLoop_sound_body d ex v whnfCoreLoopFuel F hF)
 
-/-! ## The named concrete core's simulation (task #172, batch B2; the
-R letter retired 2026-09-05)
+/-! ## The named concrete core's simulation
 
-**THE MEASUREMENT the batch was dispatched for.**  The walks above are
-generic in `mode` (under `hμ : mode.verifiedChecks = true`, task
-#185), so one proof serves every instantiation; the capstone is the
-instance at `.verified`, where `hμ` is `rfl`.  The per-core letter is
+The walks above are generic in `mode` (under `hμ : mode.verifiedChecks = true`),
+so one proof serves every instantiation; the capstone is the
+instance at `.verified`, where `hμ` is `rfl`.  The per-core lemma is
 therefore `exact` with no conversion step and no restated lemma: the
-tower **INSTANTIATES**, and per concrete core the whnfCore family
-costs **one proof line** (a term application) and **zero** new proof
-steps.
+tower instantiates, and per concrete core the `whnfCore` family
+costs one proof line (a term application) and zero new proof steps.
 
 `whnfCoreBodyRC_sim` was this letter's R twin.  It retired with its
 subject when the R core went (2026-09-05): `whnfCoreBodyRC` and `cfgR`

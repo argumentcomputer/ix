@@ -512,8 +512,7 @@ structure EnvFacts (c : Ctx) : Prop where
   head is the inductive at the constructor's level parameters, its first `nP` arguments are
   the recursor's leading bound variables (the canonical shape `Expr.recRulePlain` tests), and
   its remaining arguments are the index binders' (the trailing `mI - rP` bound variables, which
-  `Red.iota` compares against the major's indices). The index part is not yet a store lemma
-  (lane K-N to prove it at the store level, as `recRulePlain_shapeT` gives the parameter part). -/
+  `Red.iota` compares against the major's indices). -/
   recPlain : ∀ k cv mI rP rls rl cvj nP nF, c.env.find? k = some (.recInfo cv mI rP rls) →
     rl ∈ rls → rl.fire = .plain → c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
     ∃ D T, piDomAt mI cv.type = some D ∧

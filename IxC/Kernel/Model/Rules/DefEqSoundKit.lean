@@ -1,8 +1,8 @@
 module
 
--- lane S-red's kit is the SHARED one: `DenoteMetaSpine`'s list algebra,
--- `hoist_spine`, `frame_spine`, `denoteMeta_mkAppN(_inv)`, the
--- `PiChain` guard and the tower entry's reading live there
+-- `RedSoundKit` holds the shared spine helpers: `DenoteMetaSpine`'s list
+-- algebra, `hoist_spine`, `frame_spine`, `denoteMeta_mkAppN(_inv)`, the
+-- `PiChain` guard and the tower entry's reading live there.
 public import IxC.Kernel.Model.Rules.RedSoundKit
 import IxC.Kernel.Model.CtxOkKit
 import IxC.Kernel.Model.Annot.BitLemmas
@@ -12,12 +12,11 @@ import IxC.Kernel.Model.IOLicense
 import IxC.Kernel.Model.Annot.BitClosed
 import IxC.Kernel.Verify.InstLevels
 import IxC.Kernel.Verify.PinnedShapes
-/- `Ix.Kernel.PropWhen` seals its representation on purpose (the
-`Std.HashMap` pattern, task #194): the datum's module is `public` but
+/- `Ix.Kernel.PropWhen` seals its representation on purpose (following the
+`Std.HashMap` pattern): the datum's module is `public` but
 not `@[expose]`d, so the `cases`-then-`rfl` steps of the squash-regime
 facts below cannot see the reduct.  `import all` restores that view
-HERE only — the transplant of `Model/Steps/IrrelFast.lean`, which
-carries the same escape for the same reason. -/
+HERE only. -/
 import all IxC.Kernel.PropWhen
 import IxC.Kernel.Semantics.Hoist
 import IxC.Kernel.Model.Annot.BitLevels
@@ -25,16 +24,13 @@ import IxC.Kernel.Model.Annot.BitLevels
 public section
 
 /-!
-# The definitional-equality soundness kit (task #305, lane S-defeq)
+# The definitional-equality soundness kit
 
 The plumbing the per-rule lemmas of `Model/Rules/DefEqSound.lean`
 share: the frame/grading splitters at each node shape, the two `Nat`
-constant readings, and `projAV`'s congruence.  Everything here is a
-TRANSPLANT of an argument that lived in `Model/Steps/*` until the task
-#305 closing deleted that tier (`DefEq.lean`'s `hoist_*` and
-`denoteMeta_nat*Const`, `ProjAVKit.lean`'s `projAV` family) — restated
-at the rules tier's `Frame`/`Graded` vocabulary, so that no
-`Model/Rules` module is stated over runs.
+constant readings, and `projAV`'s congruence — stated at the rules
+tier's `Frame`/`Graded` vocabulary, so that no `Model/Rules` module
+is stated over runs.
 -/
 
 namespace Ix.Kernel.Model.Rules

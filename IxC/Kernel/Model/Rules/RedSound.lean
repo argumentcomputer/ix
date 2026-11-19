@@ -9,17 +9,14 @@ import IxC.Kernel.Model.Annot.BitClosed
 public section
 
 /-!
-# The soundness of the reduction rules (task #305, lanes S-red / S-iota)
+# The soundness of the reduction rules
 
 One lemma per constructor of `Red`: the motives of its derivation
 premises (the induction hypotheses) and its side conditions give the
 motive of its conclusion.  The master induction (`Sound.lean`) is the
-only place that mentions derivations; these lemmas are pure semantics,
-mined from the `Model/Steps/*` rows each docstring names — the tier
-they cite was deleted at the task #305 closing.
+only place that mentions derivations; these lemmas are pure semantics.
 
-Lane S-red owns this file; `iota` and the three rescues are in
-`IotaSound.lean` (lane S-iota).
+`iota` and the three rescues are in `IotaSound.lean`.
 -/
 
 namespace Ix.Kernel.Model.Rules

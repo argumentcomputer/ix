@@ -6,7 +6,7 @@ public import Lean.Data.Name
 
 @[expose] public section
 
-/-! # Printing terms with Lean's names (IxC step 6b, display only)
+/-! # Printing terms with Lean's names (display only)
 
 `.meta` and `.source` terms carry each binder's Lean name and binder info, and
 a failure the terms it is about and the binders it was thrown under

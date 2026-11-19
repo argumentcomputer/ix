@@ -28,14 +28,8 @@ so the clone's constant `peelFuel` and the arena's node count are both
 instances, and no proof below reads a property of the fuel value.  The
 documented deviation costs nothing here.
 
-**The annotation half (batch 11).**  It had been blocked: the clone
-(commit `796360e1`) predated the task #161 P5 write repair, so its
-`annotateBindersOutI` threaded the leaf's `pw?` unchanged and its
-`annotatePisLeafI` always inferred the leaf's sort — an *older
-program* than the frozen comparand, for which the transposed statements
-would have been false, resp. unsimulable.  Batch 10 re-synced the
-clone's annotation block with `CoreI` clause by clause (the CoreI/CoreC
-diff over that block is now the type renames only), and batch 11 ports
+**The annotation half.**  The clone's annotation block matches `CoreI`
+clause by clause (up to the type renames), and this file ports
 the walks: `annotateBindersOutC_sim`, `annotPwPiC_sim`/`annotPwLamC_sim`,
 `annotatePisPwC_sim`/`annotateLamsPwC_sim`, the two leaf walks, the two
 fuelled loops and the two annotation tail compositions.  Two further

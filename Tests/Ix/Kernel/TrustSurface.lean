@@ -12,7 +12,7 @@ It scans the checker and the theory under `IxC/Kernel/`
 (`Tests.Ix.Kernel.KernelLayout`, whose table `topLevel` must classify every
 file under `IxC/Kernel/`) for compiler escapes, and the root library's files
 that substitute code in the certified entries' execution (`rootSources`),
-and its display modules (`displaySources`, step 6b: the one display-only
+and its display modules (`displaySources`: the one display-only
 read).
 Ix's boundary (`Ixon`,
 `Audit`, `Ingress`, `Egress`, `Ref`, `Search`) is fenced by Ix's Lean audits
@@ -29,7 +29,7 @@ whose compiled behaviour was swapped by `@[implemented_by]`, read off a
 `@[computed_field]` word, or decided by `native_decide`. An escape is a
 TCB entry, admissible only where someone has written down why.
 
-THE BLANKING IS A LEXER, NOT A REGEX (upstream task #224). `codeOnly`
+THE BLANKING IS A LEXER, NOT A REGEX. `codeOnly`
 is a one-pass state machine covering line comments, nested block
 comments, string literals with every escape including the string gap
 (`\` NEWLINE), single-line `{…}` interpolations (left as code), raw
@@ -100,8 +100,8 @@ list fails just as loudly as one in a bare file.
       the justification.
 
   Ix/KernelDisplay/Peek.lean    unsafe, unsafeCast
-      DISPLAY ONLY; OUTSIDE THE CERTIFIED CLOSURE; `.meta` NEVER DECIDES
-      (step 6b, owner 2026-10-15). A binder's or a let's Lean name, and a
+      DISPLAY ONLY; OUTSIDE THE CERTIFIED CLOSURE; `.meta` NEVER DECIDES.
+      A binder's or a let's Lean name, and a
       failure's terms and binders, are display annotations held in a
       `Squash`, a subsingleton, so no statement, equation or decision of the
       checker sees them; the same property hides their value from safe code.
@@ -163,7 +163,7 @@ def allow : List (String × List String) := [
 code: the admission hash, which the authenticated entries run. -/
 def rootSources : Array String := #["Ix/Address/Admission.lean"]
 
-/-- The root library's display modules (step 6b): the renderer, the `.meta`
+/-- The root library's display modules: the renderer, the `.meta`
 name pass, the Source names and the one display-only read. -/
 def displaySources : Array String :=
   #["Ix/KernelDisplay/MetaNames.lean", "Ix/KernelDisplay/Peek.lean",
@@ -553,7 +553,7 @@ def run (args : List String) : IO UInt32 := do
     IO.println "    Each of these is a TCB entry invisible to `#print axioms`."
     IO.println "    Remove it, or add it to the allowlist in Tests/Ix/Kernel/TrustSurface.lean WITH"
     IO.println "    the justification -- the header is the trusted-surface"
-    IO.println "    census a reviewer reads."
+    IO.println "    audit census."
     return 1
   -- entries for files not ported yet are not stale
   let mut stale : Array (String × String) := #[]

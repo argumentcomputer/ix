@@ -1,7 +1,7 @@
 module
 
--- lane S-red's kit is the SHARED one: `DenoteMetaSpine`'s list algebra,
--- `denoteMeta_mkAppN(_inv)`, `frame_spine`, `hoist_spine`,
+-- `RedSoundKit` holds the shared spine helpers: `DenoteMetaSpine`'s list
+-- algebra, `denoteMeta_mkAppN(_inv)`, `frame_spine`, `hoist_spine`,
 -- `mkAppN_of_fitA`, `PiChain`/`peelPis_of_piChain` and the tower
 -- entry's reading live there, not here.
 public import IxC.Kernel.Model.Rules.Inputs
@@ -16,18 +16,15 @@ import IxC.Kernel.Semantics.DenoteClosed
 public section
 
 /-!
-# The ι lane's transplanted kit (task #305, lane S-iota)
+# The ι-reduction soundness kit
 
 The spine, frame and fit lemmas the ι rule and the three stuck-major
-rescues need, restated over `Model/Annot/BitLemmas.lean`'s
-`DenoteMetaSpine` and proved here rather than imported: every row this
-lane mines is TRANSPLANTED from the `Model/Steps/*` file the docstring
-cites — the argument, not the import — and that tier is gone since the
-task #305 closing.
+rescues need, stated over `Model/Annot/BitLemmas.lean`'s
+`DenoteMetaSpine`.
 
 Provenance, row by row (the original is the docstring's citation):
 
-* the `DenoteMetaSpine` residue this lane alone uses
+* the `DenoteMetaSpine` residue used here alone
   (`exists_of_all`); the rest of the spine API is
   `Model/Annot/BitLemmas.lean`'s, shared;
 * `interp_mkAppN_congrK` — `Model/Steps/Stuck.lean:146`;
@@ -408,9 +405,7 @@ theorem teleFitPA_residualK {acval : Key md → (LevelParam → Nat) → AnnotTe
 /-! ## The reverse opening, read
 
 `denoteMeta_openRev_base` and `denoteMeta_openRev`
-(`Model/Steps/IotaKit.lean:66`, `:103`), transplanted — the ONE copy
-since the task #305 closing, which is why `Model/IndOpenRev.lean` and
-`Model/IndBottomNested.lean` read them from here: the `.nested`
+(used by `Model/IndOpenRev.lean` and `Model/IndBottomNested.lean`): the `.nested`
 fire's comparands are stored pins instantiated at the recursor's
 parameter prefix, and this is what turns the law's OPEN reading at
 depth `rP` into the instantiated comparand's reading at the ambient

@@ -8,13 +8,13 @@ import IxVMRefinement.Obs.KernelModeled2
 
 The walked check of a member of a safe mutual or nested block takes `check_const`'s modeled
 `Induct` arm, which ends with `KernelModeled::check_modeled_block(rc, block)`: the block's payload
-is read, its first address names the family record `rb`, and `check_family(rc, block, rb)` runs
-(circuit stage 2, item 12). This module reads that call off the walk:
+is read, its first address names the family record `rb`, and `check_family(rc, block, rb)` runs.
+This module reads that call off the walk:
 
 * `read_payload_stream`: the payload `read_payload` returns is a byte stream;
 * `check_modeled_block_family`: `check_modeled_block` runs `check_family` on the address the
   payload begins with, a call of the run;
-* `familyCall_of_member` (Target 0 of the full route): the walk's check of member `k` of a
+* `familyCall_of_member`: the walk's check of member `k` of a
   modeled block at the group limit `n` ran `check_family [rc, B, rb]` under a role context at
   `n`, with its calls in the run (`FamilyCallAt`).
 

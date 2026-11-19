@@ -2,7 +2,7 @@ import Lean
 
 /-! # Shapes at the edge of the declaration checker's guards (fixtures)
 
-Ordinary, kernel-checked Lean declarations for `Tests.Ix.IxVM.GuardBatch`.
+Ordinary, kernel-checked Lean declarations for `Tests.Ix.IxVM.ShapeGuards`.
 
 * **Accepted**: a `let` in a constructor field's domain (`FieldLet`) and in a parameter's
   domain (`ParamLet`), which the recursor carries into a minor premise's domain and a
@@ -17,7 +17,7 @@ Ordinary, kernel-checked Lean declarations for `Tests.Ix.IxVM.GuardBatch`.
   through `Lean.Syntax`): accepted as declared, with no model; the nested family's projection
   and its recursor are declined. -/
 
-namespace Tests.Ix.IxVM.GuardBatchDefs
+namespace Tests.Ix.IxVM.ShapeGuardsDefs
 
 /-- A `let` in a field's domain. -/
 structure FieldLet where
@@ -65,4 +65,4 @@ inductive UsedLater where
   | leaf : UsedLater
   | node : (t : UsedLater) → Erase UsedLater t → UsedLater
 
-end Tests.Ix.IxVM.GuardBatchDefs
+end Tests.Ix.IxVM.ShapeGuardsDefs

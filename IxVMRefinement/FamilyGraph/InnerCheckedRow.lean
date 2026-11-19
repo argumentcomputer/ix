@@ -4,8 +4,7 @@ import IxVMRefinement.FamilyGraph.InnerChecked
 /-! # Row `innerChecked` from what the family checks check
 
 `InnerCheckedRow` asks, of the records a family check checks (`FamilyChecksAt.innerCall`), four
-facts. Two are read off the observations of functions the circuit batch does not change, or that
-are proved already:
+facts. Two are read directly off the observations of the advice and container-recursor checks:
 
 * `checked`: an advice record declaring one constant (`Decl.adviceRecord_checked`), an advice
   block (`Decl.adviceBlock_checked`: every member through `check_muts_all`), a container's
@@ -14,7 +13,7 @@ are proved already:
   (`Decl.adviceBlock_checked`); a container's recursor is no block
   (`Decl.containerRec_checked`).
 
-The others are what the batch's assertions in the family check give of an inner record's used
+The others are what the family check's assertions give of an inner record's used
 references (`InnerRefsChecked`, a premise): no inert reference, a covered or `NeedOk` reference
 (`assert_inner_refs_safe`: `assert_safe_used_refs` and `assert_not_block_ref`, in
 `check_advice_record` and `container_refs_check`), none of the record's own constant addresses
@@ -31,9 +30,9 @@ open Aiur.Generic.SourceSemantics (Call)
 open IxVM (F)
 open FamilyAlias (FamilyCallAtLim)
 
-/-- **What the batch's assertions in a family check give of the used references of a record it
-checks** (premise; producer: the batch's `assert_inner_refs_safe` in `check_advice_record` and
-`container_refs_check`, the batch's "an advice record is no witnessed reference" in
+/-- **What the family check's assertions give of the used references of a record it
+checks** (premise; producer: `assert_inner_refs_safe` in `check_advice_record` and
+`container_refs_check`, the "an advice record is no witnessed reference" check in
 `check_advice_record`, and "a container recursor's witnessed reference is no recursor" in
 `container_refs_ok`): no inert reference, a covered or `NeedOk` reference, none of the record's
 own constant addresses. -/
@@ -130,7 +129,7 @@ theorem adviceBlockShape_holds : AdviceBlockShape := by
   obtain ⟨h, h', rc, xa, seen, wset, r, cs₁, hrc, ⟨ab, hab, rfl⟩, ev, hsub₁⟩ := hadv
   exact Decl.adviceBlock_shape (lim := lim) hS hab ev (fun cl h => hcs cl (hsub₁ cl h)) hc hms h0
 
-/-- **Row `innerChecked`**, from what the batch's assertions give of the inner records' used
+/-- **Row `innerChecked`**, from what the family check's assertions give of the inner records' used
 references alone. -/
 theorem innerCheckedRow_of_refs (refs : InnerRefsChecked) : InnerCheckedRow :=
   innerCheckedRow_of refs adviceBlockShape_holds
