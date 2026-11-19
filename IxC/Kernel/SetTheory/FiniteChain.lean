@@ -151,35 +151,42 @@ theorem ext {x y : VSet.{u}} (h : ∀ z, Mem z x ↔ Mem z y) : x = y := by
   refine Quotient.inductionOn₂ x y (fun a b hab => ?_) h
   exact Quotient.sound (PSet.Equiv.of_mem fun z => hab (mk z))
 
+/-- Chosen pre-set representative of a `VSet.{u}` (via `Classical.choice`). -/
+noncomputable def rep (x : VSet.{u}) : PSet.{u} :=
+  Classical.choose (Quotient.exists_rep x)
+
+theorem mk_rep (x : VSet.{u}) : mk (rep x) = x :=
+  Classical.choose_spec (Quotient.exists_rep x)
+
 /-- Construct a `VSet.{u}` from any `Type u`-indexed family of sets. -/
 noncomputable def ofFam (α : Type u) (f : α → VSet.{u}) : VSet.{u} :=
-  mk (.mk α fun a => Quotient.out (f a))
+  mk (.mk α fun a => rep (f a))
 
 theorem mem_ofFam {α : Type u} {f : α → VSet.{u}} {z : VSet.{u}} :
     Mem z (ofFam α f) ↔ ∃ a : α, z = f a := by
   refine Quotient.inductionOn z fun x => ?_
-  change (∃ a : α, PSet.Equiv x (Quotient.out (f a))) ↔ ∃ a : α, mk x = f a
+  change (∃ a : α, PSet.Equiv x (rep (f a))) ↔ ∃ a : α, mk x = f a
   constructor
   · rintro ⟨a, ha⟩
-    exact ⟨a, (Quotient.sound ha).trans (Quotient.out_eq (f a))⟩
+    exact ⟨a, (Quotient.sound ha).trans (mk_rep (f a))⟩
   · rintro ⟨a, ha⟩
-    exact ⟨a, Quotient.exact (ha.trans (Quotient.out_eq (f a)).symm)⟩
+    exact ⟨a, Quotient.exact (ha.trans (mk_rep (f a)).symm)⟩
 
 /-- Chosen `Type u` indexing type of a set's elements. -/
 noncomputable def Idx (x : VSet.{u}) : Type u :=
-  (Quotient.out x).Idx
+  (rep x).Idx
 
 /-- Chosen enumeration of a set's elements over `x.Idx`. -/
 noncomputable def elem (x : VSet.{u}) : x.Idx → VSet.{u} :=
-  fun i => mk ((Quotient.out x).Func i)
+  fun i => mk ((rep x).Func i)
 
 theorem mem_iff_exists_elem {z x : VSet.{u}} :
     Mem z x ↔ ∃ i : x.Idx, z = x.elem i := by
-  have hx : mk (Quotient.out x) = x := Quotient.out_eq x
+  have hx : mk (rep x) = x := mk_rep x
   rw [← hx]
   refine Quotient.inductionOn z fun w => ?_
-  change PSet.Mem w (Quotient.out x) ↔ ∃ i : (Quotient.out x).Idx, mk w = mk ((Quotient.out x).Func i)
-  cases h : Quotient.out x with
+  change PSet.Mem w (rep x) ↔ ∃ i : (rep x).Idx, mk w = mk ((rep x).Func i)
+  cases h : rep x with
   | mk α A =>
     change (∃ a : α, PSet.Equiv w (A a)) ↔ ∃ a : α, mk w = mk (A a)
     exact ⟨fun ⟨a, ha⟩ => ⟨a, Quotient.sound ha⟩, fun ⟨a, ha⟩ => ⟨a, Quotient.exact ha⟩⟩
@@ -299,10 +306,11 @@ private theorem acc_mk : ∀ x : PSet.{u}, Acc Mem (mk x)
     refine Quotient.inductionOn y (fun z hz => ?_) hy
     obtain ⟨a, ha⟩ := hz
     have heq : mk z = mk (A a) := Quotient.sound ha
+    change Acc Mem (mk z)
     rw [heq]
     exact acc_mk (A a)
 
-theorem mem_wf : WellFounded (Mem (u := u)) :=
+theorem mem_wf : WellFounded Mem.{u} :=
   ⟨fun x => Quotient.inductionOn x acc_mk⟩
 
 /-- Regularity (foundation) in `VSet.{u}`. -/
@@ -382,13 +390,14 @@ private theorem csb {α : Type v} {β : Type w} {f : α → β} {g : β → α}
       rw [← hgx, ← hgy, hxy]
   · intro b
     by_cases hgb : CSBReach f g (g b)
-    · cases hgb with
-      | base hno => exact absurd rfl (hno b)
+    · generalize hgb_eq : g b = y at hgb
+      cases hgb with
+      | base hno => exact absurd hgb_eq (hno b)
       | @step x hx =>
         refine ⟨x, ?_⟩
         dsimp only [h]
         rw [dif_pos hx]
-        exact hg _ _ (by assumption)
+        exact hg _ _ hgb_eq.symm
     · refine ⟨g b, ?_⟩
       dsimp only [h]
       rw [dif_neg hgb]
@@ -607,7 +616,8 @@ theorem left_le_ordMax (α β : VOrd.{u}) :
     · rw [hm] at h; exact not_mem_self α.1 h
     · rw [hm] at h
       have hsub : Mem β.1 (ordMax α β).1 := by
-        rw [← hm]; exact mem_binUnion.mpr (Or.inl h)
+        show Mem β.1 (binUnion α.1 β.1)
+        exact mem_binUnion.mpr (Or.inl h)
       rw [hm] at hsub
       exact not_mem_self β.1 hsub
 
@@ -620,7 +630,8 @@ theorem right_le_ordMax (α β : VOrd.{u}) :
     rcases ordMax_eq_left_or_right α β with hm | hm
     · rw [hm] at h
       have hsub : Mem α.1 (ordMax α β).1 := by
-        rw [← hm]; exact mem_binUnion.mpr (Or.inr h)
+        show Mem α.1 (binUnion α.1 β.1)
+        exact mem_binUnion.mpr (Or.inr h)
       rw [hm] at hsub
       exact not_mem_self α.1 hsub
     · rw [hm] at h; exact not_mem_self β.1 h
@@ -628,7 +639,7 @@ theorem right_le_ordMax (α β : VOrd.{u}) :
 /-- Order relation on `VOrd.{u}`. -/
 def VOrd.Lt (α β : VOrd.{u}) : Prop := Mem α.1 β.1
 
-theorem vord_wf : WellFounded (VOrd.Lt (u := u)) :=
+theorem vord_wf : WellFounded VOrd.Lt.{u} :=
   InvImage.wf Subtype.val mem_wf
 
 /-- Burali-Forti: no `VSet.{u}` contains every von Neumann ordinal of `VSet.{u}`. -/
@@ -648,10 +659,10 @@ theorem buraliForti : ¬ ∃ x : VSet.{u}, ∀ α : VOrd.{u}, Mem α.1 x := by
 /-! ### Rank, von Neumann stages, well-ordering of sets, and Gödel pairing -/
 
 /-- Von Neumann rank of a pre-set. -/
-private noncomputable def prank : PSet.{u} → VOrd.{u}
+noncomputable def prank : PSet.{u} → VOrd.{u}
   | .mk _ A => ordSup fun a => ordSucc (prank (A a))
 
-private theorem prank_congr : ∀ {x y : PSet.{u}}, PSet.Equiv x y → prank x = prank y
+theorem prank_congr : ∀ {x y : PSet.{u}}, PSet.Equiv x y → prank x = prank y
   | .mk _ A, .mk _ B, ⟨h1, h2⟩ => by
     apply Subtype.ext
     refine ext fun z => ?_
@@ -677,6 +688,7 @@ theorem vrank_lt_of_mem {y x : VSet.{u}} (hy : Mem y x) :
   | mk β B =>
     obtain ⟨i, hi⟩ := hab
     have hEq : prank a = prank (B i) := prank_congr hi
+    unfold vrank
     change Mem (prank a).1 (ordSup fun j => ordSucc (prank (B j))).1
     rw [hEq]
     exact subset_ordSup (fun j => ordSucc (prank (B j))) i (self_mem_ordSucc _)
@@ -729,6 +741,7 @@ theorem mem_vonNeumann_succ_vrank (x : VSet.{u}) :
       · exact hlt
     exact vonNeumann_mono hsub (ih y hy)
 
+open Classical in
 /-- Transfinite enumeration of a set `A : VSet.{u}` by von Neumann ordinals. -/
 private noncomputable def enumSet (A : VSet.{u}) : VOrd.{u} → Option VSet.{u} :=
   vord_wf.fix fun α rec =>
@@ -736,6 +749,7 @@ private noncomputable def enumSet (A : VSet.{u}) : VOrd.{u} → Option VSet.{u} 
       some (Classical.choose h)
     else none
 
+open Classical in
 private theorem enumSet_eq (A : VSet.{u}) (α : VOrd.{u}) :
     enumSet A α =
       if h : ∃ x, Mem x A ∧ ∀ β : VOrd.{u}, Mem β.1 α.1 → enumSet A β ≠ some x then
@@ -782,7 +796,7 @@ private theorem exists_inj_to_vord (A : VSet.{u}) :
     classical
     let inv : VSet.{u} → VSet.{u} := fun y =>
       if h : ∃ α : VOrd.{u}, enumSet A α = some y then (Classical.choose h).1 else empty
-    apply buraliForti (u := u)
+    apply buraliForti.{u}
     refine ⟨image inv A, fun α => ?_⟩
     obtain ⟨y, hyA, hαy⟩ := hall α
     refine mem_image.mpr ⟨y, hyA, ?_⟩
@@ -807,7 +821,7 @@ private def PairLt (p q : VOrd.{u} × VOrd.{u}) : Prop :=
   (ordMax p.1 p.2 = ordMax q.1 q.2 ∧
     (Mem p.1.1 q.1.1 ∨ (p.1 = q.1 ∧ Mem p.2.1 q.2.1)))
 
-private theorem pairLt_wf : WellFounded (PairLt (u := u)) := by
+private theorem pairLt_wf : WellFounded PairLt.{u} := by
   constructor
   intro ⟨a, b⟩
   -- Triple nested well-founded induction on `(ordMax a b, a, b)`.
@@ -977,9 +991,9 @@ private noncomputable def enumUnbounded (P : VSet.{u} → Prop) (hns : ¬ SmallP
       obtain ⟨β, hβ, hrec⟩ := hexβ
       obtain ⟨i, hi⟩ := mem_iff_exists_elem.mp hβ
       refine ⟨i, ?_⟩
-      have hβeq : (⟨α.1.elem i, isOrd_mem α.2 (elem_mem α.1 i)⟩ : VOrd.{u}) = β :=
-        Subtype.ext hi.symm
-      simpa [hβeq] using hrec
+      have hβeq : β = ⟨α.1.elem i, isOrd_mem α.2 (elem_mem α.1 i)⟩ := Subtype.ext hi
+      subst hβeq
+      exact hrec
     ⟨Classical.choose hex, (Classical.choose_spec hex).1⟩
 
 private theorem enumUnbounded_inj (P : VSet.{u} → Prop) (hns : ¬ SmallPred P) :
@@ -987,8 +1001,29 @@ private theorem enumUnbounded_inj (P : VSet.{u} → Prop) (hns : ¬ SmallPred P)
   have hneq : ∀ α β : VOrd.{u}, Mem β.1 α.1 →
       (enumUnbounded P hns β).1 ≠ (enumUnbounded P hns α).1 := by
     intro α β hlt
-    conv_rhs => rw [enumUnbounded, vord_wf.fix_eq]
-    exact (Classical.choose_spec _).2 β hlt
+    have hex : ∃ x, P x ∧ ∀ (γ : VOrd.{u}), Mem γ.1 α.1 → (enumUnbounded P hns γ).1 ≠ x := by
+      apply Classical.byContradiction
+      intro hno
+      apply hns
+      refine ⟨α.1.Idx,
+        fun i => (enumUnbounded P hns ⟨α.1.elem i, isOrd_mem α.2 (elem_mem α.1 i)⟩).1, ?_⟩
+      intro x hx
+      have hhit : ¬ ∀ (γ : VOrd.{u}), Mem γ.1 α.1 → (enumUnbounded P hns γ).1 ≠ x :=
+        fun hall => hno ⟨x, hx, hall⟩
+      have hexγ : ∃ (γ : VOrd.{u}), Mem γ.1 α.1 ∧ (enumUnbounded P hns γ).1 = x := by
+        apply Classical.byContradiction
+        intro hne
+        exact hhit fun γ hγ heq => hne ⟨γ, hγ, heq⟩
+      obtain ⟨γ, hγ, hrec⟩ := hexγ
+      obtain ⟨i, hi⟩ := mem_iff_exists_elem.mp hγ
+      refine ⟨i, ?_⟩
+      have hγeq : γ = ⟨α.1.elem i, isOrd_mem α.2 (elem_mem α.1 i)⟩ := Subtype.ext hi
+      subst hγeq
+      exact hrec
+    have hstep : enumUnbounded P hns α = ⟨Classical.choose hex, (Classical.choose_spec hex).1⟩ :=
+      vord_wf.fix_eq _ α
+    rw [hstep]
+    exact (Classical.choose_spec hex).2 β hlt
   intro α β heq
   rcases isOrd_trichotomy α.2 β.2 with hlt | h | hgt
   · exact absurd (congrArg Subtype.val heq) (hneq β α hlt)
@@ -996,7 +1031,7 @@ private theorem enumUnbounded_inj (P : VSet.{u} → Prop) (hns : ¬ SmallPred P)
   · exact absurd (congrArg Subtype.val heq.symm) (hneq α β hgt)
 
 /-- **`VSet.univSet.{u}` is a Grothendieck universe (`Ix.Kernel.IsTGUniverse`) inside `VSet.{u + 1}`.** -/
-theorem isTGUniverse_univSet : IsTGUniverse (Mem (u := u + 1)) univSet.{u} := by
+theorem isTGUniverse_univSet : IsTGUniverse Mem.{u + 1} univSet.{u} := by
   refine ⟨?_, ?_, ?_, ?_⟩
   · -- Clause 1: transitivity
     intro y z hy hz
@@ -1049,7 +1084,7 @@ theorem isTGUniverse_univSet : IsTGUniverse (Mem (u := u + 1)) univSet.{u} := by
         obtain ⟨⟨a, hpa⟩, rfl⟩ := mem_ofFam.mp hw₀
         exact hpa
     · left
-      obtain ⟨toOrd, htoOrd⟩ := exists_vset_inj_vord (u := u)
+      obtain ⟨toOrd, htoOrd⟩ := exists_vset_inj_vord.{u}
       let fSub : {x : VSet.{u} // P x} → VSet.{u} := Subtype.val
       let gSub : VSet.{u} → {x : VSet.{u} // P x} := fun x => enumUnbounded P hsm (toOrd x)
       have hfSub : ∀ a b : {x : VSet.{u} // P x}, fSub a = fSub b → a = b :=
@@ -1101,7 +1136,7 @@ theorem isTGUniverse_univSet : IsTGUniverse (Mem (u := u + 1)) univSet.{u} := by
 /-- **`VSet.lift` preserves Grothendieck universes**: if `U` is a Grothendieck
 universe in `VSet.{u}`, then `lift U` is a Grothendieck universe in `VSet.{u + 1}`. -/
 theorem isTGUniverse_lift {U : VSet.{u}} (hU : IsTGUniverse Mem U) :
-    IsTGUniverse (Mem (u := u + 1)) (lift U) := by
+    IsTGUniverse Mem.{u + 1} (lift U) := by
   refine ⟨?_, ?_, ?_, ?_⟩
   · -- Clause 1: transitivity
     intro y z hy hz
@@ -1283,26 +1318,26 @@ noncomputable def finiteSetTheoryStep {n : Nat}
 
 /-- Unconditional 0-universe model of ZF⁻ in `VSet.{u}`. -/
 noncomputable def finiteSetTheory0 : FiniteSetTheory 0 VSet.{u} :=
-  finiteSetTheoryOfChain Fin.elim0 (fun _ h => absurd h (Nat.not_lt_zero _)) Fin.elim0
+  finiteSetTheoryOfChain Fin.elim0 (fun _ h => absurd h (Nat.not_lt_zero _)) (fun i => Fin.elim0 i)
 
 /-- Unconditional 1-universe Grothendieck model in `VSet.{u + 1}`. -/
 noncomputable def finiteSetTheory1 : FiniteSetTheory 1 VSet.{u + 1} :=
-  finiteSetTheoryStep Fin.elim0 (fun _ h => absurd h (Nat.not_lt_zero _)) Fin.elim0
+  finiteSetTheoryStep Fin.elim0 (fun _ h => absurd h (Nat.not_lt_zero _)) (fun i => Fin.elim0 i)
 
 /-- Unconditional 2-universe Grothendieck chain (`U₀ ∈ U₁`) in `VSet.{u + 2}`. -/
 noncomputable def finiteSetTheory2 : FiniteSetTheory 2 VSet.{u + 2} :=
-  let c1 := liftChain (u := u) Fin.elim0 (fun _ h => absurd h (Nat.not_lt_zero _)) Fin.elim0
+  let c1 := liftChain.{u} Fin.elim0 (fun _ h => absurd h (Nat.not_lt_zero _)) (fun i => Fin.elim0 i)
   finiteSetTheoryStep c1.1 c1.2.1 c1.2.2
 
 /-- Unconditional 3-universe Grothendieck chain (`U₀ ∈ U₁ ∈ U₂`) in `VSet.{u + 3}`. -/
 noncomputable def finiteSetTheory3 : FiniteSetTheory 3 VSet.{u + 3} :=
-  let c1 := liftChain (u := u) Fin.elim0 (fun _ h => absurd h (Nat.not_lt_zero _)) Fin.elim0
+  let c1 := liftChain.{u} Fin.elim0 (fun _ h => absurd h (Nat.not_lt_zero _)) (fun i => Fin.elim0 i)
   let c2 := liftChain c1.1 c1.2.1 c1.2.2
   finiteSetTheoryStep c2.1 c2.2.1 c2.2.2
 
 /-- Unconditional 4-universe Grothendieck chain (`U₀ ∈ U₁ ∈ U₂ ∈ U₃`) in `VSet.{u + 4}`. -/
 noncomputable def finiteSetTheory4 : FiniteSetTheory 4 VSet.{u + 4} :=
-  let c1 := liftChain (u := u) Fin.elim0 (fun _ h => absurd h (Nat.not_lt_zero _)) Fin.elim0
+  let c1 := liftChain.{u} Fin.elim0 (fun _ h => absurd h (Nat.not_lt_zero _)) (fun i => Fin.elim0 i)
   let c2 := liftChain c1.1 c1.2.1 c1.2.2
   let c3 := liftChain c2.1 c2.2.1 c2.2.2
   finiteSetTheoryStep c3.1 c3.2.1 c3.2.2
@@ -1317,6 +1352,7 @@ def OmegaUniverses : Prop :=
   ∃ U : Nat → VSet.{u},
     (∀ n : Nat, Mem (U n) (U (n + 1))) ∧ (∀ n : Nat, IsTGUniverse Mem (U n))
 
+set_option warn.classDefReducibility false in
 /-- Assemble a full `Ix.Kernel.SetTheory VSet.{u}` instance from any explicit ω-chain
 of Grothendieck universes in `VSet.{u}`. -/
 noncomputable def setTheoryOfChain (U : Nat → VSet.{u})
@@ -1338,6 +1374,7 @@ noncomputable def setTheoryOfChain (U : Nat → VSet.{u})
   univChain_mem := hmem
   univChain_tg := htg
 
+set_option warn.classDefReducibility false in
 /-- Concrete `Ix.Kernel.SetTheory VSet.{u}` instance under `VSet.OmegaUniverses.{u}`. -/
 noncomputable def setTheoryOfOmegaUniverses (h : OmegaUniverses.{u}) :
     SetTheory VSet.{u} :=
