@@ -540,12 +540,12 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
     refine ⟨fun ms' rs' k rc hms' hrs' hk => ?_⟩
     have ems : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hB.muts)
     have ers : rs' = rs := Ixon.ConstantInfo.muts.inj (hrs'.symm.trans hRB.muts)
-    subst ems ers
+    subst ms' rs'
     have hT := hTys ms rs hB.muts hRB.muts
     have hku : k < UInt64.size := Nat.lt_trans (Array.getElem?_eq_some_iff.mp hk).1 hT.rsBound
     have hk_toNat : k.toUInt64.toNat = k := by
-      show (UInt64.ofNat k).toNat = k
-      rw [UInt64.toNat_ofNat]
+      change (UInt64.ofNat k).toNat = k
+      rw [UInt64.toNat_ofNat']
       exact Nat.mod_eq_of_lt hku
     have hx_rb : ConstAddrOf rb crb (memberAddr rb k (.recr rc)) :=
       Or.inr ⟨rs, k, .recr rc, hRB.muts, hk, Or.inl rfl⟩
@@ -622,7 +622,11 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
     obtain ⟨idx, hidx⟩ := List.getElem?_of_mem hrec_mem
     obtain ⟨⟨tyA, htyA⟩, ⟨rhss, hrhss⟩⟩ := tys_of_rec hFacts hidx
     obtain ⟨rules', hf', -, -⟩ := hR idx cv mI rP rules₀ tyA rhss hidx htyA hrhss
-    rw [hcv_name] at hf'
+    have hf_k : (⟨(new ++ as) ++ env.consts⟩ : Ix.Kernel.Env .anon).find?
+        (keyOf t (memberAddr rb k (.recr rc))) =
+        some (.recInfo ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules') := by
+      rw [← hcv_name]
+      exact hf'
     have hTML : TwinFamily.TwinMemberLoaded crb rs ⟨k.toUInt64, rb⟩ rc cv.levelParams cv.type
         rules₀ ⟨cv.name, cv.levelParams, tyA⟩ rules' := by
       have hRR₀' : RecReads t (recordOf ρ.E₀) (fun x => ρ.E₀.blobs.get? x) crb (blockSelf t rb rs)
@@ -632,7 +636,7 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
       have hf'' : (⟨(new ++ as) ++ env.consts⟩ : Ix.Kernel.Env .anon).find?
           (keyOf t (memberAddr rb (⟨k.toUInt64, rb⟩ : Ixon.RecursorProj).idx.toNat (.recr rc))) =
           some (.recInfo ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules') := by
-        simpa [hk_toNat] using hf'
+        simpa [hk_toNat] using hf_k
       exact hcanonM.recLoaded ⟨k.toUInt64, rb⟩ rc cv mI rP rules₀
         ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules' rfl (by simpa [hk_toNat] using hk) hRR₀' hf''
     have hmeta := hT.recMeta idx cv mI rP rules₀ tyA rhss hidx htyA hrhss ⟨k.toUInt64, rb⟩ rc rfl
@@ -642,18 +646,18 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
       hpi, hfn, hni⟩, hconcl⟩ := hmeta
     obtain ⟨crb', i_u, hcrb'_u, hi_u, hx_u⟩ := husedM
     have ecrb'_u : crb' = crb := Option.some.inj (hcrb'_u.symm.trans hcrb₀)
-    subst ecrb'_u
+    subst crb'
     obtain ⟨Pm₁, hPm₁⟩ := Option.isSome_iff_exists.mp ((hC.closed.1 rb crb hcrb).2 i_u hi_u _ hx_u)
     have ePm : Pm₁ = memberProjection Bm im (.indc indm) :=
       Option.some.inj ((Binding.recordOf_of_loaded hloaded hPm₁).symm.trans hPm₀)
-    subst ePm
+    subst Pm₁
     have hownM : Ix.Cert.ownerOf (memberAddr Bm im (.indc indm))
         (memberProjection Bm im (.indc indm)) = Bm := rfl
     obtain ⟨cbm₁, hcbm₁⟩ := Option.isSome_iff_exists.mp (hownM ▸ (hC.closed.1 _ _ hPm₁).1)
     have ecbm : cbm₁ = cbm :=
       Option.some.inj ((Binding.recordOf_of_loaded hloaded hcbm₁).symm.trans hBm₀)
-    subst ecbm
-    exact ⟨cv, mI, rP, rules₀, ⟨cv.name, cv.levelParams, tyA⟩, rules', hku, hRR₁, hf', rfl, rfl,
+    subst cbm₁
+    exact ⟨cv, mI, rP, rules₀, ⟨cv.name, cv.levelParams, tyA⟩, rules', hku, hRR₁, hf_k, rfl, rfl,
       hTML, hns, hnp, hmot,
       ⟨Bm, im, cbm, msm, indm, D, lvls, himu, hPm₁, hcbm₁, hmsm, him, hpi, hfn, hni⟩, hconcl⟩
   refine ⟨new ++ as, Reg, hndNA, ?_, ?_, ?_, ?_, ?_, hstoredRecs, ?_⟩
