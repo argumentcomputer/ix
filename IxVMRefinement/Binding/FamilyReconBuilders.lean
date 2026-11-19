@@ -2288,7 +2288,6 @@ theorem build_minor_at_depth_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Rol
       (helim.mono (ext_0_18.trans (ovih.heap_extends.trans evw1.heap_extends)))
     refine ⟨_, (hev_peel.and hev_wfc).mono fun f ⟨hpf, hwfcf⟩ => ?_, hw2, ?_⟩
     · simp only [minorAt, hpf, hwfcf]
-      dsimp only
       rw [show ihDoms rm (liftIndices pfNorm (nMot + prevMinors)) fop motiveBase pfDoms.length
           (nrp + nMot + prevMinors) elim 0 ri = some ihs from hihs]
       rfl
@@ -3756,7 +3755,7 @@ theorem build_rule_rhs_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
       (fieldList_mono ext09 hfop) (hrlvls.mono ext09) (helim.mono ext09) evih'
     refine ⟨B, (hev_peel.and hev_wfc).mono fun f ⟨hpf, hwfcf⟩ => ?_, hBtm⟩
     simp only [ruleBody, hraw_peel, hpf, hwfcf, hnf_eq]
-    rw [if_pos rfl]
+    rw [ite_eq_left rfl]
     exact hB
 
 /-- **`KernelCheck::populate_rules`** refines `ruleBodies (ReconView.ofStore t E₀)` at
