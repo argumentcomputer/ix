@@ -264,6 +264,7 @@ theorem storedFamilies_basis {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
   installed := fun B rb crb h => nomatch h
   flat := storedFamiliesFlat_none
   form := storedFamiliesForm_none
+  recs := fun _ _ _ _ h => nomatch h
 
 /-! ## The basis hypothesis -/
 

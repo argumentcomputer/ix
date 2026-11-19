@@ -66,7 +66,9 @@ theorem closure_finish
     (hnames : ∀ ci ∈ new, (∃ x, FamOwns R₁ famOf A x ∧ ci.name = keyOf t x) ∨
       ∃ k s, ci.name = .aux k s)
     (hinst : ∀ rb crb, famOf A = some rb → recordOf R₁ rb = some crb →
-      FamilyInstalled t ⟨new ++ s.consts⟩ rb crb) :
+      FamilyInstalled t ⟨new ++ s.consts⟩ rb crb)
+    (hrecs : ∀ cb rb crb, famOf A = some rb → recordOf R₁ A = some cb → recordOf R₁ rb = some crb →
+      StoredFamilyRecs t R₁ ⟨new ++ s.consts⟩ A cb rb crb) :
     ∃ s', ClosureFoldInv.{u} L t g R₁ env famOf₀ famOf s' ∧
       (∀ ci ∈ s.consts, ci ∈ s'.consts) ∧
       (∀ x, FamOwns R₁ famOf A x → StoredAt t s' x) ∧
@@ -145,7 +147,43 @@ theorem closure_finish
             subst e
             exact hA0 hfa
       exact familyInstalled_mono hext hnd' (hI.famInst B0 rb0 crb0 hor hcrb0 hall_s)
-  refine ⟨⟨new ++ s.consts⟩, ⟨hnd', ⟨Reg', hcl⟩, hprov, hops', hfamInst⟩, hext, ?_, ?_, hframe⟩
+  have hfamRecs : ∀ B rb cb crb, (famOf₀ B = some rb ∨ famOf B = some rb) →
+      recordOf R₁ B = some cb → recordOf R₁ rb = some crb →
+      (∀ x, ConstAddrOf rb crb x → StoredAt t ⟨new ++ s.consts⟩ x) →
+      StoredFamilyRecs t R₁ ⟨new ++ s.consts⟩ B cb rb crb := by
+    intro B0 rb0 cb0 crb0 hor hcb0 hcrb0 hall
+    by_cases hA0 : famOf A = some rb0
+    · have hB0A : B0 = A := by
+        rcases hor with h₀ | h₁
+        · exfalso
+          obtain ⟨cb, ms, crb', rs, flat, hF⟩ := hC.fams.family B0 rb0 h₀
+          obtain ⟨cb', crb'', ms', rs', _, _, _, _, _, hnrb, _⟩ := fam_new hC hA0
+          have hR := hF.record.record
+          rw [hnrb.2] at hR
+          cases hR
+        · exact fam_inj hC h₁ hA0
+      subst hB0A
+      exact hrecs cb0 rb0 crb0 hA0 hcb0 hcrb0
+    · have hall_s : ∀ x, ConstAddrOf rb0 crb0 x → StoredAt t s x := by
+        intro x hx
+        rcases hframe x (hall x hx) with h | hown
+        · exact h
+        · exfalso
+          obtain ⟨c, hc, hxc | ⟨rb, crb, hfa, hcrb, hxr⟩⟩ := hown
+          · have e : rb0 = A := constAddr_same hC.closed hcrb0 hc hx hxc
+            subst e
+            rcases hor with h₀ | h₁
+            · obtain ⟨cb, ms, crb', rs, flat, hF⟩ := hC.fams.family B0 rb0 h₀
+              have hR := hF.record.record
+              rw [hA.1.2] at hR
+              cases hR
+            · exact hA.2.1 B0 h₁
+          · have e : rb0 = rb := constAddr_same hC.closed hcrb0 hcrb hx hxr
+            subst e
+            exact hA0 hfa
+      exact (hI.famRecs B0 rb0 cb0 crb0 hor hcb0 hcrb0 hall_s).mono_env hext hnd'
+  refine ⟨⟨new ++ s.consts⟩, ⟨hnd', ⟨Reg', hcl⟩, hprov, hops', hfamInst, hfamRecs⟩, hext, ?_, ?_,
+    hframe⟩
   · intro x hx
     obtain ⟨ci, hci, hname, -⟩ := hreads₁ x hx
     exact ⟨ci, List.mem_append_left _ hci, hname⟩
@@ -251,7 +289,7 @@ theorem closureFold_steps
         · exact Or.inl (find_isSome_of_storedAt hs)
         · exact Or.inr (Or.inl ((hown x).mp ho))
       · exact Or.inr (Or.inr hok)
-    obtain ⟨new, Reg', hnd, hfresh, hcl, hops, hreads, hinst, hnames⟩ :=
+    obtain ⟨new, Reg', hnd, hfresh, hcl, hops, hreads, hinst, hrecs, hnames⟩ :=
       step s Reg (fun ci h => h) hI.nodup hReg hrefsF hadvA hadvU
         (fun x hx => find_none_of_not_storedAt (hfr' x ((hown x).mpr hx)))
     exact closure_finish hC htwf hI hA new Reg' hnd hfresh hcl hops
@@ -265,6 +303,15 @@ theorem closureFold_steps
         have e2 : crb = crb' := rec_eq hcrb hcrb'
         subst e2
         exact hinst)
+      (fun cb' rb' crb' hfa' hcb' hcrb' => by
+        rw [hfa] at hfa'
+        have e1 : rb = rb' := Option.some.inj hfa'
+        subst e1
+        have e2 : cb = cb' := rec_eq hcb hcb'
+        subst e2
+        have e3 : crb = crb' := rec_eq hcrb hcrb'
+        subst e3
+        exact hrecs)
   | none =>
     have hown : ∀ x, FamOwns R₁ famOf A x ↔ ConstAddrOf A c x := famOwns_none hfa hc
     have hrefs' : ∀ x, UsedRef ρ.E₀ A x →
@@ -313,6 +360,9 @@ theorem closureFold_steps
       (fun rb crb hfa' => by
         rw [hfa] at hfa'
         cases hfa')
+      (fun cb rb crb hfa' => by
+        rw [hfa] at hfa'
+        cases hfa')
 
 /-- **A record store for the closure's store is one for `R`.** -/
 theorem recordsFor_R_of_closureStore (hadm : Admits ρ t g R R') {E : Ixon.Env}
@@ -327,7 +377,8 @@ theorem closureFold_start
   obtain ⟨Reg, hR⟩ := hC.bnd.clause
   refine ⟨hC.bnd.shape.reading.nodup,
     ⟨Reg, fun E hE lim hc hl => hR E (recordsFor_R_of_closureStore hC.admits hE) lim hc hl⟩,
-    fun ci hci => ?_, fun _ _ => rfl, fun B rb crb hor hcrb hall => ?_⟩
+    fun ci hci => ?_, fun _ _ => rfl, fun B rb crb hor hcrb hall => ?_,
+    fun B rb cb crb hor hcb hcrb hall => ?_⟩
   · rcases hC.bnd.shape.reading.provenance ci hci with h | h | ⟨a, h⟩
     · exact Or.inl h
     · exact Or.inr (Or.inl h)
@@ -345,6 +396,25 @@ theorem closureFold_start
       subst e
       exact owned_not_stored hC htwf ⟨hnB, fam_unclaimed hC h₁, x, cb, hcb,
         Or.inr ⟨rb, crb', h₁, hcrb', hx⟩⟩ ⟨cb, hcb, Or.inr ⟨rb, crb', h₁, hcrb', hx⟩⟩ (hall x hx)
+  · rcases hor with h₀ | h₁
+    · obtain ⟨cb', ms, crb', rs, flat, hF⟩ := hC.fams.family B rb h₀
+      have e1 : cb' = cb :=
+        rec_eq (recordOf_closureStore_of_R hC.admits hF.block.record) hcb
+      have e2 : crb' = crb :=
+        rec_eq (recordOf_closureStore_of_R hC.admits hF.record.record) hcrb
+      subst e1 e2
+      exact (hC.fams.recs B rb cb' crb' h₀ hF.block.record hF.record.record).mono
+        (fun a c hac => recordOf_closureStore_of_R hC.admits hac)
+        (closureStore_spec hC.admits).le₁.2 (fun h => h)
+    · refine ⟨fun ms' rs' k rc _ hrs' hk => ?_⟩
+      exfalso
+      obtain ⟨cb', crb', ms, rs, hcb', hcrb', -, -, hnB, -, -⟩ := fam_new hC h₁
+      have e : crb' = crb := rec_eq hcrb' hcrb
+      subst e
+      have hx : ConstAddrOf rb crb' (memberAddr rb k (.recr rc)) :=
+        Or.inr ⟨rs', k, .recr rc, hrs', hk, Or.inl rfl⟩
+      exact owned_not_stored hC htwf ⟨hnB, fam_unclaimed hC h₁, _, cb', hcb',
+        Or.inr ⟨rb, crb', h₁, hcrb', hx⟩⟩ ⟨cb', hcb', Or.inr ⟨rb, crb', h₁, hcrb', hx⟩⟩ (hall _ hx)
 
 /-- **The closure fold's result** (module docstring). -/
 theorem closureFold_run
