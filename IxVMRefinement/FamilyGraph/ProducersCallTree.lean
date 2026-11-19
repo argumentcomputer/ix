@@ -1804,21 +1804,61 @@ private theorem inReadPayloadClosed_ne_get_address {s : String} (h : inReadPaylo
   rw [hf] at h
   cases h
 
+private theorem callsWithin_constantExpr (p : String → Bool) (c : Constant F) :
+    callsWithin p (constantExpr c) = true := by
+  match c with
+  | .field _ => simp only [constantExpr, callsWithin]
+  | .ptr _ a => exact Empty.elim a
+  | .tuple xs =>
+    simp only [constantExpr, callsWithin]
+    exact go xs
+  | .construct n c xs =>
+    simp only [constantExpr, callsWithin]
+    exact go xs
+where
+  go : (xs : List (Constant F)) → callsWithinList p (xs.map constantExpr) = true
+    | [] => rfl
+    | x :: xs => by
+      simp only [List.map_cons, callsWithinList, Bool.and_eq_true]
+      exact ⟨callsWithin_constantExpr p x, go xs⟩
+
+private theorem instanceName_ofSymbol_name {types : Types} {name : String}
+    {typeArgs : Option (List Ty)} (hnd : plainBytes name = true) {key : Instance}
+    (hof : Instance.ofSymbol (instanceName types name typeArgs) = .ok key) :
+    key.name = name := by
+  have hsym := Instance.ofSymbol_symbol
+    ⟨name, (typeArgs.getD []).map (Ty.subst types)⟩
+    (fun _ => head_ne_dollar_of_plainBytes hnd)
+  change Instance.ofSymbol
+    (Instance.symbol ⟨name, (typeArgs.getD []).map (Ty.subst types)⟩) = .ok key at hof
+  rw [hsym] at hof
+  injection hof with hkey
+  subst hkey
+  rfl
+
 private theorem prepare_readPayloadClosed {fnName : String} {args : List (SourceValue F)}
     {types : Types} {locals : Environment F Nat} {expr : Expr F}
     (prepared : Obs.W.prepare fnName args = .ok (types, locals, expr))
     (hin : ∀ key, Instance.ofSymbol fnName = .ok key → inReadPayloadClosed key.name = true) :
     callsWithin inReadPayloadClosed expr = true ∧ noDollarCall expr = true := by
   simp only [Obs.W, Source.world, sourceWorld] at prepared
-  cases hsf : IxVM.program.sourceFunction? fnName with
-  | none => simp [hsf] at prepared
+  cases hsf : IxVM.source.program.sourceFunction? fnName with
+  | none =>
+    rw [hsf] at prepared
+    cases hlk : lookupMap IxVM.source.tables fnName args with
+    | error e => simp [hlk, Functor.map, Except.map] at prepared
+    | ok c =>
+      simp only [hlk, Functor.map, Except.map, Except.ok.injEq, Prod.mk.injEq] at prepared
+      obtain ⟨_, _, rfl⟩ := prepared
+      exact ⟨callsWithin_constantExpr _ c, noDollarCall_constantExpr c⟩
   | some sf =>
     rw [hsf] at prepared
     simp only [SourceFunction.prepare] at prepared
     split at prepared
     · simp only [Except.ok.injEq, Prod.mk.injEq] at prepared
       obtain ⟨_, _, hbody⟩ := prepared
-      obtain ⟨key, f, types', hof, hf, hfn, _, hsf_eq⟩ := sourceFunction?_fn_detail hsf
+      have hsf' : IxVM.program.sourceFunction? fnName = some sf := hsf
+      obtain ⟨key, f, types', hof, hf, hfn, _, hsf_eq⟩ := sourceFunction?_fn_detail hsf'
       have hclosed := List.all_eq_true.mp ixvm_readPayloadClosed f hf
       have hnd := List.all_eq_true.mp ixvm_noDollarCalls f hf
       have hinf : inReadPayloadClosed f.name = true := hfn ▸ hin key hof
@@ -1878,12 +1918,7 @@ private theorem obsFn_readPayloadClosed_no_get_address {fnName : String}
     · rcases List.mem_cons.mp h2 with rfl | h3
       · exact instanceName_ne_of_ne (by decide) (inReadPayloadClosed_ne_get_address hcw.1)
       · refine ih2 (fun key hof => ?_) cl h3
-        have hsym := Instance.ofSymbol_symbol
-          ⟨_, _⟩ (fun _ => head_ne_dollar_of_plainBytes hnd.1)
-        change Instance.ofSymbol (Instance.symbol ⟨_, _⟩) = .ok key at hof
-        rw [hsym] at hof
-        injection hof with hkey
-        subst hkey
+        rw [instanceName_ofSymbol_name hnd.1 hof]
         exact hcw.1
   | matchValue _ selected _ ih1 ih2 hcw hnd cl hm =>
     simp only [callsWithin, Bool.and_eq_true] at hcw
