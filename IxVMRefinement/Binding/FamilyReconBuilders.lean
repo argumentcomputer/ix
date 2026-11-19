@@ -225,7 +225,7 @@ private theorem peelAll_length_le_count_aux {rom : ROM F} {κ : _root_.Address �
         · simp only [loadValue, hget, hty_ne, ↓reduceIte, pure, Except.pure, bind, Except.bind,
             Except.ok.injEq] at ld
           obtain ⟨w1, w2, hst⟩ : ∃ w1 w2, stored = .construct kexprEnum "Forall" [w1, xbody, w2] :=
-            ⟨_, _, ld.symm⟩
+            ⟨_, _, ld⟩
           obtain ⟨s, addr, enc, hs, hmem_r, hrep_c, rfl⟩ := represents_ptr_inv_b hrep
           rw [hget] at hs; cases hs
           rw [hst] at hrep_c
@@ -316,19 +316,21 @@ theorem walk_fields_classify_doms_len {κ : _root_.Address → KKey} {E : KExpr}
       (ld12 := ld) (ev49 := evw) (ev87 := evrecf)
       (hm132 := hm3) (hm163 := hm4) (hm194 := hm5) (hm253 := hm6) (hm284 := hm7)
       (ev309 := evnext) (hc398 := hc) .. =>
-    subst hm3 hm4 hm5 hm6 hm7
     obtain ⟨D, B, ℓ, rfl, -, hB, -⟩ := TmOExact.forallE_of_load hE ld
     have ext12 := evw.heap_extends.trans evrecf.heap_extends
-    have ext3 : Heap.Extends m2 (m2 ++ [.construct kexprListEnum "Cons" [xdom, xdoms]]) :=
-      Heap.Extends.snoc _ _
-    have ext37 : Heap.Extends (m2 ++ [.construct kexprListEnum "Cons" [xdom, xdoms]]) m7 :=
-      (Heap.Extends.snoc _ _).trans ((Heap.Extends.snoc _ _).trans
-        ((Heap.Extends.snoc _ _).trans (Heap.Extends.snoc _ _)))
+    have ext3 : Heap.Extends m2 m3 := by rw [hm3]; exact Heap.Extends.snoc _ _
+    have ext4 : Heap.Extends m3 m4 := by rw [hm4]; exact Heap.Extends.snoc _ _
+    have ext5 : Heap.Extends m4 m5 := by rw [hm5]; exact Heap.Extends.snoc _ _
+    have ext6 : Heap.Extends m5 m6 := by rw [hm6]; exact Heap.Extends.snoc _ _
+    have ext7 : Heap.Extends m6 m7 := by rw [hm7]; exact Heap.Extends.snoc _ _
+    have ext37 : Heap.Extends m3 m7 := ext4.trans (ext5.trans (ext6.trans ext7))
     have hdoms' : RepList kexprListEnum (fun _ (_ : Unit) _ => True) m7 (() :: acc)
         (.ptr (.enum kexprListEnum) m2.length) :=
       repList_heapMono₂ kexprListEnum (fun _ _ _ _ _ t => t) ext37
-        (Lib.rep_store_cons (fun _ _ _ _ _ t => t) trivial
-          (repList_heapMono₂ kexprListEnum (fun _ _ _ _ _ t => t) ext12 hdoms))
+        (by
+          rw [hm3]
+          exact Lib.rep_store_cons (fun _ _ _ _ _ t => t) trivial
+            (repList_heapMono₂ kexprListEnum (fun _ _ _ _ _ t => t) ext12 hdoms))
     have hlt : cs3.length < cs.length := by
       rw [hc]; simp only [List.length_cons, List.length_append]; omega
     obtain ⟨xds, xri, xrm, xret, xns, ds, hr, hlen, hrep⟩ :=
@@ -341,18 +343,19 @@ theorem walk_fields_classify_doms_len {κ : _root_.Address → KKey} {E : KExpr}
       (ld12 := ld) (ev49 := evw) (ev87 := evrecf)
       (hm132 := hm3) (hm163 := hm4) (hm194 := hm5)
       (ev407 := evnext) (hc496 := hc) .. =>
-    subst hm3 hm4 hm5
     obtain ⟨D, B, ℓ, rfl, -, hB, -⟩ := TmOExact.forallE_of_load hE ld
     have ext12 := evw.heap_extends.trans evrecf.heap_extends
-    have ext3 : Heap.Extends m2 (m2 ++ [.construct kexprListEnum "Cons" [xdom, xdoms]]) :=
-      Heap.Extends.snoc _ _
-    have ext35 : Heap.Extends (m2 ++ [.construct kexprListEnum "Cons" [xdom, xdoms]]) m5 :=
-      (Heap.Extends.snoc _ _).trans (Heap.Extends.snoc _ _)
+    have ext3 : Heap.Extends m2 m3 := by rw [hm3]; exact Heap.Extends.snoc _ _
+    have ext4 : Heap.Extends m3 m4 := by rw [hm4]; exact Heap.Extends.snoc _ _
+    have ext5 : Heap.Extends m4 m5 := by rw [hm5]; exact Heap.Extends.snoc _ _
+    have ext35 : Heap.Extends m3 m5 := ext4.trans ext5
     have hdoms' : RepList kexprListEnum (fun _ (_ : Unit) _ => True) m5 (() :: acc)
         (.ptr (.enum kexprListEnum) m2.length) :=
       repList_heapMono₂ kexprListEnum (fun _ _ _ _ _ t => t) ext35
-        (Lib.rep_store_cons (fun _ _ _ _ _ t => t) trivial
-          (repList_heapMono₂ kexprListEnum (fun _ _ _ _ _ t => t) ext12 hdoms))
+        (by
+          rw [hm3]
+          exact Lib.rep_store_cons (fun _ _ _ _ _ t => t) trivial
+            (repList_heapMono₂ kexprListEnum (fun _ _ _ _ _ t => t) ext12 hdoms))
     have hlt : cs3.length < cs.length := by
       rw [hc]; simp only [List.length_cons, List.length_append]; omega
     obtain ⟨xds, xri, xrm, xret, xns, ds, hr, hlen, hrep⟩ :=
@@ -2284,7 +2287,11 @@ theorem build_minor_at_depth_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Rol
       (tmOExactList_mono ext_6_20 (by simpa [liftIndices] using hdomsL))
       (helim.mono (ext_0_18.trans (ovih.heap_extends.trans evw1.heap_extends)))
     refine ⟨_, (hev_peel.and hev_wfc).mono fun f ⟨hpf, hwfcf⟩ => ?_, hw2, ?_⟩
-    · simp only [minorAt, hpf, hwfcf, hihs]
+    · simp only [minorAt, hpf, hwfcf]
+      dsimp only
+      rw [show ihDoms rm (liftIndices pfNorm (nMot + prevMinors)) fop motiveBase pfDoms.length
+          (nrp + nMot + prevMinors) elim 0 ri = some ihs from hihs]
+      rfl
     · refine addrIn_wrapForalls (addrIn_liftIndices hpfdIn)
         (addrIn_wrapForalls hihsIn ⟨addrIn_appSpine trivial hretIdxIn,
           addrIn_fieldBVars (addrIn_ctorAppParams (fun x hx => by
@@ -3748,7 +3755,9 @@ theorem build_rule_rhs_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
       (repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy) ext09 hpeers)
       (fieldList_mono ext09 hfop) (hrlvls.mono ext09) (helim.mono ext09) evih'
     refine ⟨B, (hev_peel.and hev_wfc).mono fun f ⟨hpf, hwfcf⟩ => ?_, hBtm⟩
-    simp only [ruleBody, hraw_peel, hpf, hwfcf, hnf_eq, ↓reduceIte, hB]
+    simp only [ruleBody, hraw_peel, hpf, hwfcf, hnf_eq]
+    rw [if_pos rfl]
+    exact hB
 
 /-- **`KernelCheck::populate_rules`** refines `ruleBodies (ReconView.ofStore t E₀)` at
 `Eventually` on `TmOExact`. -/
