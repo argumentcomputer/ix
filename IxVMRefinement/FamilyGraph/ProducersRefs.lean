@@ -60,17 +60,6 @@ set_option linter.unnecessarySeqFocus false
 
 /-! ## Pure-read pullback and role / coverage specifications -/
 
-private theorem repAddressRef_pullback {h₁ h₂ : Heap F} {b : Bytes.Address} {x v : SourceValue F}
-    (hb : Bytes.RepAddressRef Core.addrTy h₂ b x) (ext : Heap.Extends h₁ h₂)
-    (hld : loadValue h₁ x = .ok v) : Bytes.RepAddressRef Core.addrTy h₁ b x := by
-  obtain ⟨addr, rfl, hcell⟩ := hb
-  have h1 : h₁[addr]? = some v := by
-    simpa only [loadValue] using hld
-  have h2 : h₂[addr]? = some v := ext.getElem?_eq h1
-  have hv : v = Bytes.addressValue b := Option.some.inj (h2.symm.trans hcell)
-  subst hv
-  exact ⟨addr, rfl, h1⟩
-
 private theorem canon_addr_cmp_spec_ext {h₁ h₁' h₂ : Heap F} {x y r : SourceValue F}
     {cs : List (Call F)} {a ak : Bytes.Address}
     (hk : Bytes.RepAddressRef Core.addrTy h₁ a x)
@@ -80,7 +69,7 @@ private theorem canon_addr_cmp_spec_ext {h₁ h₁' h₂ : Heap F} {x y r : Sour
     r = .field (Claim.cmpNat (Claim.addrRank a) (Claim.addrRank ak) : F) ∧ h₁' = h₁ := by
   have hk_node₁ : Bytes.RepAddressRef Core.addrTy h₁ ak y := by
     match Obs.«RBTreeMap::canon_addr_cmp».obs ev with
-    | .run (ld23 := ld23) .. => exact repAddressRef_pullback hk_node ext ld23
+    | .run (ld23 := ld23) .. => exact repAddressRef_pullback ext ld23 hk_node
   exact Claim.canon_addr_cmp_spec hk hk_node₁ ev
 
 private theorem cmp_branch_lt_ext {x_key x_k v_cmp : SourceValue F} {h₁ m1 m2 h₂ : Heap F}
@@ -240,7 +229,7 @@ private theorem role_ctx_table_lim_spec_ext {t : Ix.Kernel.RoleTable} {bAddr : _
       have hl' := ext.loadValue_eq ld12
       rw [hl] at hl'
       simp at hl'
-    | .Assumed (ld12 := ld12) (he63 := he) (he64 := hh) .. =>
+    | .Assumed (ld12 := ld12) (he60 := he) (he61 := hh) .. =>
       have hl' := ext.loadValue_eq ld12
       rw [hl] at hl'
       injection hl' with hv
@@ -274,7 +263,7 @@ private theorem addr_index_lookup_ext {t : Ix.Kernel.RoleTable} {bAddr a : _root
       [x_a, v51, .field 0] m61 v36 m37 cs47) :
     m61 = h₁ ∧ m37 = h₁ ∧
       ((v36 = .field 0 ∧ ∀ ro, t.addressOf? ro ≠ some a) ∨
-        ∃ ro : Ix.Kernel.Role, v36 = .field (Claim.roleNum ro + 1) ∧ t.addressOf? ro = some a) := by
+        ∃ ro : Ix.Kernel.Role, v36 = .field (RolesAux.roleNum ro + 1) ∧ t.addressOf? ro = some a) := by
   obtain ⟨ab, hab, hix⟩ := ha
   obtain ⟨rfl, ⟨es, hbst, hie, hmem⟩⟩ := role_addr_index_full_spec_ext htbl ext ev71
   rw [← Obs.Names.«RBTreeMap::rbtree_map_lookup_or_default<Field>».symbol] at ev49
@@ -292,7 +281,7 @@ private theorem addr_index_lookup_ext {t : Ix.Kernel.RoleTable} {bAddr a : _root
     intro ro hof
     have hm_bound := Claim.mem_bound_of_addressOf_eq_some hof
     obtain ⟨b0, hix0, hb0⟩ := hmem ro a hm_bound
-    have hb_eq : b0 = ab := Core.ixAddr_injective (hix0.trans hix.symm)
+    have hb_eq : b0 = ab := Claim.ixAddr_injective (hix0.trans hix.symm)
     subst hb_eq
     exact hno _ hb0
 
@@ -304,7 +293,7 @@ private theorem role_index_of_lim_spec_ext {t : Ix.Kernel.RoleTable} {bAddr a : 
     (ev : ObsFn Obs.W "KernelRoles::role_index_of" [x_rc, x_a] h₁ r h₁' calls) :
     h₁' = h₁ ∧
       ((r = .field 0 ∧ ∀ ro, t.addressOf? ro ≠ some a) ∨
-        ∃ ro : Ix.Kernel.Role, r = .field (Claim.roleNum ro + 1) ∧ t.addressOf? ro = some a) := by
+        ∃ ro : Ix.Kernel.Role, r = .field (RolesAux.roleNum ro + 1) ∧ t.addressOf? ro = some a) := by
   obtain ⟨_, v8, m18, _, v29, m31, _, ev41, ev28, ev6, -⟩ :=
     Obs.«KernelRoles::role_index_of».obs ev
   obtain ⟨rfl, htbl⟩ := role_ctx_table_lim_spec_ext hrc ext ev41
@@ -318,7 +307,7 @@ private theorem role_of_ne_zero_lim_ext {t : Ix.Kernel.RoleTable} {bAddr a : _ro
     (ha : S0.addr h₁ x_a a)
     (ev : ObsFn Obs.W "KernelRoles::role_of" [x_rc, x_a] h₁ r h₁' calls)
     (hne : r ≠ .field 0) :
-    ∃ ro : Ix.Kernel.Role, r = .field (Claim.roleNum ro + 1) ∧ t.addressOf? ro = some a := by
+    ∃ ro : Ix.Kernel.Role, r = .field (RolesAux.roleNum ro + 1) ∧ t.addressOf? ro = some a := by
   obtain ⟨tbl, htbl, ⟨n, -, -, hl⟩ | ⟨-, hl⟩⟩ := hrc.cases
   · match Obs.«KernelRoles::role_of».obs ev with
     | .Mk_n0 (he100 := hr) .. => exact absurd hr hne
@@ -368,12 +357,12 @@ private theorem admission_of_walks (ro : Ix.Kernel.Role) :
 
 private theorem role_admission_checks_iff {ro : Ix.Kernel.Role} {r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
-    (ev : ObsFn Obs.W "KernelRoles::role_admission_checks" [.field (Claim.roleNum ro)] h r h' calls) :
+    (ev : ObsFn Obs.W "KernelRoles::role_admission_checks" [.field (RolesAux.roleNum ro)] h r h' calls) :
     h' = h ∧ (r = .field 0 ∨ r = .field 1) ∧ (r = .field 1 ↔ walkedRole ro = true) := by
   obtain ⟨hh, hdisj⟩ := Claim.role_admission_checks_walks ev
   refine ⟨hh, hdisj.imp id And.left, ⟨fun h1 => ?_, fun hw => ?_⟩⟩
   · rcases hdisj with h0 | ⟨-, hw⟩
-    · exact absurd (h0.symm.trans h1) zero_ne_one
+    · exact absurd (Value.field.inj (h0.symm.trans h1)) zero_ne_one
     · exact hw
   · rcases hdisj with h0 | ⟨h1, -⟩
     · exfalso
@@ -383,8 +372,8 @@ private theorem role_admission_checks_iff {ro : Ix.Kernel.Role} {r : SourceValue
       | .n0_n0 (he55 := he) .. | .n0_n1 (he63 := he) .. | .n0_n2 (he71 := he) ..
       | .n2 (he86 := he) .. | .n5 (he94 := he) .. =>
         exact absurd (Value.field.inj (h0.symm.trans he)) zero_ne_one
-      | .n0_other (ev15 := ev15) (ev42 := ev42) (hne57 := hne0) (hne65 := hne1)
-          (hne73 := hne2) .. =>
+      | .n0_other (ev15 := ev15) (ev42 := ev42) (hne58 := hne0) (hne66 := hne1)
+          (hne74 := hne2) .. =>
         obtain ⟨hk, rfl⟩ := RoleVal.role_spec_kind_spec ev15
         obtain ⟨hm, rfl⟩ := Claim.role_member_kind_full ev42
         have hk0 : ((RoleVal.roleSpecKindNat ro : Nat) : F) = 0 := (Value.field.inj hk).symm
@@ -395,7 +384,7 @@ private theorem role_admission_checks_iff {ro : Ix.Kernel.Role} {r : SourceValue
           · exact hne2 (hm.trans (congrArg Value.field h))
         · exact absurd (hk0.symm.trans hk2) (by decide)
         · exact absurd (hk0.symm.trans hk5) (by decide)
-      | .other (ev15 := ev15) (hne80 := hne0) (hne88 := hne2) (hne96 := hne5) .. =>
+      | .other (ev15 := ev15) (hne81 := hne0) (hne89 := hne2) (hne97 := hne5) .. =>
         obtain ⟨hk, rfl⟩ := RoleVal.role_spec_kind_spec ev15
         rcases hadm with ⟨hk0, -⟩ | hk2 | hk5
         · exact hne0 (hk.trans (congrArg Value.field hk0))
@@ -416,7 +405,7 @@ private theorem addr_covered_spec_ext {t : Ix.Kernel.RoleTable} {bAddr a : _root
     obtain ⟨hm, hres⟩ := role_index_of_lim_spec_ext hrc ext ha ev_ri
     subst hm
     rcases hres with ⟨-, hnone⟩ | ⟨ro, hro, -⟩
-    · refine ⟨hh, Or.inl hr, ⟨fun h1 => absurd (hr.symm.trans h1) (by decide), ?_⟩⟩
+    · refine ⟨hh, Or.inl hr, ⟨fun h1 => absurd (Value.field.inj (hr.symm.trans h1)) zero_ne_one, ?_⟩⟩
       rintro ⟨ro, hof, -⟩
       exact (hnone ro hof).elim
     · exact absurd (Value.field.inj hro).symm (RolesAux.roleNum_add_one_ne_zero ro)
@@ -451,28 +440,28 @@ private theorem assert_covered_past_spec_ext {t : Ix.Kernel.RoleTable} {bAddr a 
 
 set_option maxRecDepth 100000 in
 private theorem basis_role_of_num (ro : Ix.Kernel.Role) :
-    (Claim.roleNum ro = 0 ∨ Claim.roleNum ro = 1 ∨ Claim.roleNum ro = 2 ∨
-      Claim.roleNum ro = 3 ∨ Claim.roleNum ro = 8 ∨ Claim.roleNum ro = 9 ∨
-      Claim.roleNum ro = 10 ∨ Claim.roleNum ro = 11 ∨ Claim.roleNum ro = 12 ∨
-      Claim.roleNum ro = 13 ∨ Claim.roleNum ro = 32 ∨ Claim.roleNum ro = 33 ∨
-      Claim.roleNum ro = 34 ∨ Claim.roleNum ro = 35 ∨ Claim.roleNum ro = 36) →
+    (RolesAux.roleNum ro = 0 ∨ RolesAux.roleNum ro = 1 ∨ RolesAux.roleNum ro = 2 ∨
+      RolesAux.roleNum ro = 3 ∨ RolesAux.roleNum ro = 8 ∨ RolesAux.roleNum ro = 9 ∨
+      RolesAux.roleNum ro = 10 ∨ RolesAux.roleNum ro = 11 ∨ RolesAux.roleNum ro = 12 ∨
+      RolesAux.roleNum ro = 13 ∨ RolesAux.roleNum ro = 32 ∨ RolesAux.roleNum ro = 33 ∨
+      RolesAux.roleNum ro = 34 ∨ RolesAux.roleNum ro = 35 ∨ RolesAux.roleNum ro = 36) →
     ro ∈ basisRoles := by
   cases ro <;> decide
 
 private theorem basis_role_allowed_spec {ro : Ix.Kernel.Role} {h h' : Heap F}
     {calls : List (Call F)}
-    (ev : ObsFn Obs.W "KernelModeled::basis_role_allowed" [.field (Claim.roleNum ro)] h (.field 1)
+    (ev : ObsFn Obs.W "KernelModeled::basis_role_allowed" [.field (RolesAux.roleNum ro)] h (.field 1)
       h' calls) :
     h' = h ∧ ro ∈ basisRoles := by
   match Obs.«KernelModeled::basis_role_allowed».obs ev with
   | .n0 (hv14 := hv) (he16 := hh) .. =>
-    exact ⟨hh, basis_role_of_num ro (Or.inl (Value.field.inj hv))⟩
+    exact ⟨hh, basis_role_of_num ro (by simp [Value.field.inj hv])⟩
   | .n1 (hv22 := hv) (he24 := hh) .. =>
-    exact ⟨hh, basis_role_of_num ro (Or.inr (Or.inl (Value.field.inj hv)))⟩
+    exact ⟨hh, basis_role_of_num ro (by simp [Value.field.inj hv])⟩
   | .n2 (hv30 := hv) (he32 := hh) .. =>
-    exact ⟨hh, basis_role_of_num ro (Or.inr (Or.inr (Or.inl (Value.field.inj hv))))⟩
+    exact ⟨hh, basis_role_of_num ro (by simp [Value.field.inj hv])⟩
   | .n3 (hv38 := hv) (he40 := hh) .. =>
-    exact ⟨hh, basis_role_of_num ro (Or.inr (Or.inr (Or.inr (Or.inl (Value.field.inj hv)))))⟩
+    exact ⟨hh, basis_role_of_num ro (by simp [Value.field.inj hv])⟩
   | .n8 (hv46 := hv) (he48 := hh) .. =>
     exact ⟨hh, basis_role_of_num ro (by simp [Value.field.inj hv])⟩
   | .n9 (hv54 := hv) (he56 := hh) .. =>
@@ -595,7 +584,7 @@ private theorem compute_iprj_addr_hashed {b : Bytes.Address} {x_blk x_idx r : So
   have hinfo : Core.Specs.Callees.ProjInfoRep m159 info
       (.construct "Ixon::ConstantInfo" "IPrj"
         [.construct "Ixon::InductiveProj" "Mk" [v1, x_blk]]) :=
-    ⟨v1, x_blk, b, rfl, Deserialize.repU64_heapMono₂ e15 hrep_u64,
+    ⟨v1, x_blk, b, rfl, repU64_heapMono₂ e15 hrep_u64,
       Bytes.repAddressRef_heapMono₂ Core.addrTy e15 hb, rfl⟩
   have hcv : Core.Specs.Callees.ProjConstRep m159 info
       (.construct "Ixon::Constant" "Mk"
@@ -674,8 +663,8 @@ private theorem projection_addr_ctor_hashed {b : Bytes.Address}
   have hinfo : Core.Specs.Callees.ProjInfoRep m189 info
       (.construct "Ixon::ConstantInfo" "CPrj"
         [.construct "Ixon::ConstructorProj" "Mk" [v1, v23, x_blk]]) :=
-    ⟨v1, v23, x_blk, b, rfl, Deserialize.repU64_heapMono₂ e15 hrep_i,
-      Deserialize.repU64_heapMono₂ e15 hrep_c,
+    ⟨v1, v23, x_blk, b, rfl, repU64_heapMono₂ e15 hrep_i,
+      repU64_heapMono₂ e15 hrep_c,
       Bytes.repAddressRef_heapMono₂ Core.addrTy e15 hb, rfl⟩
   have hcv : Core.Specs.Callees.ProjConstRep m189 info
       (.construct "Ixon::Constant" "Mk"
@@ -710,14 +699,17 @@ end ProjHash
 private theorem refs_size_lt_local {bytes : ByteArray} {c : Ixon.Constant}
     (hlen : bytes.size < 4294967296) (he : Ixon.deConstantExact bytes = .ok c) :
     c.refs.size < 72057594037927936 := by
-  have hsz := L1.refs_size_le_bytes_size (Ixon.Verify.deConstant_of_deConstantExact he)
+  have hres := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound bytes c he
+  have hrefs : c.refs.size ≤ c.resourceSize := by
+    dsimp [Ixon.Constant.resourceSize]
+    omega
   omega
 
 private theorem repConstant_refs_eq_local {h : Heap F} {c : Ixon.Constant}
     {x_info x_sh x_refs x_un x_bd : SourceValue F}
     (hrep : Claim.RepConstant h c (.construct "Ixon::Constant" "Mk"
       [x_info, x_sh, x_refs, x_un, x_bd])) :
-    RepList Core.addrListEnum (L1.RepIxonAddressRef) h c.refs.toList x_refs := by
+    RepList Core.addrListEnum Claim.RepAddrElem h c.refs.toList x_refs := by
   obtain ⟨_, _, refsPtr, _, _, hv, -, -, hrf, -, -⟩ := hrep
   injection hv with _ _ hargs
   simp only [List.cons.injEq, and_true] at hargs
@@ -726,13 +718,13 @@ private theorem repConstant_refs_eq_local {h : Heap F} {c : Ixon.Constant}
 
 private theorem repIxonAddrList_to_core {h : Heap F} {xs : List _root_.Address}
     {x_refs : SourceValue F}
-    (hr : RepList Core.addrListEnum L1.RepIxonAddressRef h xs x_refs) :
+    (hr : RepList Core.addrListEnum Claim.RepAddrElem h xs x_refs) :
     ∃ bs : List Bytes.Address, bs.map Core.ixAddr = xs ∧
       RepList Core.addrListEnum (Bytes.RepAddressRef Core.addrTy) h bs x_refs := by
   induction hr with
   | nil hld => exact ⟨[], rfl, .nil hld⟩
   | cons hx _ hld ih =>
-    obtain ⟨b, rfl, hb⟩ := L1.repIxonAddressRef_to_core_ing hx
+    obtain ⟨b, hb, rfl⟩ := hx
     obtain ⟨bs, rfl, hbs⟩ := ih
     exact ⟨b :: bs, rfl, .cons hb hbs hld⟩
 
@@ -748,34 +740,58 @@ private theorem projection_block_spec {h h' : Heap F} {c : Ixon.Constant} {x_c r
     injection hv with _ _ hargs
     simp only [List.cons.injEq] at hargs
     rw [hargs.1] at hinfo
-    obtain ⟨p, hp, -, hblk⟩ := L1.repConstantInfo_iPrj_inv hinfo
-    obtain ⟨b, hb_eq, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk
-    subst hr
-    exact ⟨hh, Or.inr (Or.inl ⟨p, hp⟩), b, hb_rep, by rw [hb_eq]; simp [Ix.Cert.ownerOf, hp]⟩
+    cases hc : c.info with
+    | iPrj p =>
+      rw [hc] at hinfo
+      obtain ⟨pv, hpv, blkPtr, hmk, b, hb_rep, hb_eq⟩ := hinfo
+      injection hpv with _ _ hpa; simp only [List.cons.injEq] at hpa
+      rw [← hpa] at hmk; injection hmk with _ _ hpa2; simp only [List.cons.injEq] at hpa2
+      rw [← hpa2.2] at hb_rep; subst hr
+      exact ⟨hh, Or.inr (Or.inl ⟨p, hc⟩), b, hb_rep, by rw [hb_eq]; simp [Ix.Cert.ownerOf, hc]⟩
+    | defn _ | recr _ | axio _ | quot _ | cPrj _ | rPrj _ | dPrj _ | muts _ =>
+      rw [hc] at hinfo; obtain ⟨_, hbad, -⟩ := hinfo; simp at hbad
   | .CPrj (hv15 := hv) (he145 := hr) (he146 := hh) .. =>
     injection hv with _ _ hargs
     simp only [List.cons.injEq] at hargs
     rw [hargs.1] at hinfo
-    obtain ⟨p, hp, -, -, hblk⟩ := L1.repConstantInfo_cPrj_inv hinfo
-    obtain ⟨b, hb_eq, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk
-    subst hr
-    exact ⟨hh, Or.inr (Or.inr (Or.inl ⟨p, hp⟩)), b, hb_rep, by rw [hb_eq]; simp [Ix.Cert.ownerOf, hp]⟩
+    cases hc : c.info with
+    | cPrj p =>
+      rw [hc] at hinfo
+      obtain ⟨pv, hpv, blkPtr, hmk, b, hb_rep, hb_eq⟩ := hinfo
+      injection hpv with _ _ hpa; simp only [List.cons.injEq] at hpa
+      rw [← hpa] at hmk; injection hmk with _ _ hpa2; simp only [List.cons.injEq] at hpa2
+      rw [← hpa2.2.2] at hb_rep; subst hr
+      exact ⟨hh, Or.inr (Or.inr (Or.inl ⟨p, hc⟩)), b, hb_rep, by rw [hb_eq]; simp [Ix.Cert.ownerOf, hc]⟩
+    | defn _ | recr _ | axio _ | quot _ | iPrj _ | rPrj _ | dPrj _ | muts _ =>
+      rw [hc] at hinfo; obtain ⟨_, hbad, -⟩ := hinfo; simp at hbad
   | .RPrj (hv15 := hv) (he189 := hr) (he190 := hh) .. =>
     injection hv with _ _ hargs
     simp only [List.cons.injEq] at hargs
     rw [hargs.1] at hinfo
-    obtain ⟨p, hp, -, hblk⟩ := L1.repConstantInfo_rPrj_inv hinfo
-    obtain ⟨b, hb_eq, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk
-    subst hr
-    exact ⟨hh, Or.inr (Or.inr (Or.inr ⟨p, hp⟩)), b, hb_rep, by rw [hb_eq]; simp [Ix.Cert.ownerOf, hp]⟩
+    cases hc : c.info with
+    | rPrj p =>
+      rw [hc] at hinfo
+      obtain ⟨pv, hpv, blkPtr, hmk, b, hb_rep, hb_eq⟩ := hinfo
+      injection hpv with _ _ hpa; simp only [List.cons.injEq] at hpa
+      rw [← hpa] at hmk; injection hmk with _ _ hpa2; simp only [List.cons.injEq] at hpa2
+      rw [← hpa2.2] at hb_rep; subst hr
+      exact ⟨hh, Or.inr (Or.inr (Or.inr ⟨p, hc⟩)), b, hb_rep, by rw [hb_eq]; simp [Ix.Cert.ownerOf, hc]⟩
+    | defn _ | recr _ | axio _ | quot _ | iPrj _ | cPrj _ | dPrj _ | muts _ =>
+      rw [hc] at hinfo; obtain ⟨_, hbad, -⟩ := hinfo; simp at hbad
   | .DPrj (hv15 := hv) (he233 := hr) (he234 := hh) .. =>
     injection hv with _ _ hargs
     simp only [List.cons.injEq] at hargs
     rw [hargs.1] at hinfo
-    obtain ⟨p, hp, -, hblk⟩ := L1.repConstantInfo_dPrj_inv hinfo
-    obtain ⟨b, hb_eq, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk
-    subst hr
-    exact ⟨hh, Or.inl ⟨p, hp⟩, b, hb_rep, by rw [hb_eq]; simp [Ix.Cert.ownerOf, hp]⟩
+    cases hc : c.info with
+    | dPrj p =>
+      rw [hc] at hinfo
+      obtain ⟨pv, hpv, blkPtr, hmk, b, hb_rep, hb_eq⟩ := hinfo
+      injection hpv with _ _ hpa; simp only [List.cons.injEq] at hpa
+      rw [← hpa] at hmk; injection hmk with _ _ hpa2; simp only [List.cons.injEq] at hpa2
+      rw [← hpa2.2] at hb_rep; subst hr
+      exact ⟨hh, Or.inl ⟨p, hc⟩, b, hb_rep, by rw [hb_eq]; simp [Ix.Cert.ownerOf, hc]⟩
+    | defn _ | recr _ | axio _ | quot _ | iPrj _ | cPrj _ | rPrj _ | muts _ =>
+      rw [hc] at hinfo; obtain ⟨_, hbad, -⟩ := hinfo; simp at hbad
 
 private theorem used_ref_has_aux {idxs : List Nat} {rb : Bytes.Address} :
     ∀ {refs : List Bytes.Address} {i : Nat} {x_refs x_used x_r r : SourceValue F}
@@ -789,7 +805,7 @@ private theorem used_ref_has_aux {idxs : List Nat} {rb : Bytes.Address} :
   | [], i, x_refs, x_used, x_r, r, h, h', cs, hbound, hrefs, hused, hrb, ev => by
     match Obs.«KernelModeled::used_ref_has».obs ev with
     | .Nil (he20 := hr) (he21 := hh) .. =>
-      exact ⟨hh, fun h1 => absurd (hr.symm.trans h1) (by decide)⟩
+      exact ⟨hh, fun h1 => absurd (Value.field.inj (hr.symm.trans h1)) zero_ne_one⟩
     | .Cons_n1 (ld12 := ld) .. | .Cons_other (ld12 := ld) .. =>
       obtain ⟨_, _, hbad, -⟩ := Lib.rep_cons_of_load hrefs ld
       cases hbad
@@ -866,10 +882,10 @@ private theorem is_projection_of_spec {calls cs : List (Call F)} {E₀ : Ixon.En
             ∃ cb, recordOf E₀ (Core.ixAddr bb) = some cb ∧
               ConstAddrOf (Core.ixAddr bb) cb (Core.ixAddr rb)) := by
     intro m2 m_ci m_pb cs12 cs_ci cs_pb cs_eq x_c v_ci v_pb hsub12 hsub_ci ev14 ev_ci ev_pb ev_eq
-    obtain ⟨ext1, rawBytes, cr, hlen, hh, haddr, hexact, hrep_cr, -⟩ :=
+    obtain ⟨ext1, rawBytes, cr, hlen, hh, haddr, -, hexact, hrep_cr, -⟩ :=
       Claim.load_verified_constant_de ⟨rb, hr, rfl⟩ ev14
     have hrec_cr : recordOf E₀ (Core.ixAddr rb) = some cr :=
-      recordOf_of_hashed hcov (Claim.hashed_mono hsub12 hh) hlen (by rw [haddr]; exact hexact)
+      Claim.recordOf_of_hashed hcov (Claim.hashed_mono hsub12 hh) hlen (by rw [haddr]; exact hexact)
     have ext_ci := ev_ci.heap_extends
     obtain ⟨hpb_h, hproj, b_own, hown_rep, hown_eq⟩ :=
       projection_block_spec (Core.ixAddr rb) (hrep_cr.mono ext_ci) ev_pb
@@ -877,7 +893,7 @@ private theorem is_projection_of_spec {calls cs : List (Call F)} {E₀ : Ixon.En
     obtain ⟨heq_r, heq_h⟩ :=
       Lib.address_eq_spec ev_eq hown_rep
         (Bytes.repAddressRef_heapMono₂ Core.addrTy (ext1.trans ext_ci) hblk)
-    refine ⟨(ext1.trans ext_ci).trans (by rw [heq_h]; exact Heap.Extends.refl _), fun h1 => ?_⟩
+    refine ⟨heq_h ▸ ext1.trans ext_ci, fun h1 => ?_⟩
     have hown_bb : b_own = bb := by
       by_cases h : b_own = bb
       · exact h
@@ -909,7 +925,7 @@ private theorem is_projection_of_spec {calls cs : List (Call F)} {E₀ : Ixon.En
       (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))
       ev14 ev_ci ev_pb ev_eq
   | .other (ev14 := ev14) (he228 := hr0) (he229 := hh) .. =>
-    exact ⟨hh ▸ ev14.heap_extends, fun h1 => absurd (hr0.symm.trans h1) (by decide)⟩
+    exact ⟨hh ▸ ev14.heap_extends, fun h1 => absurd (Value.field.inj (hr0.symm.trans h1)) zero_ne_one⟩
 
 private theorem ref_projects_from_aux {calls : List (Call F)} {E₀ : Ixon.Env}
     {t : Ix.Kernel.RoleTable} {bAddr A : _root_.Address} {lim : Option Nat}
@@ -939,7 +955,7 @@ private theorem ref_projects_from_aux {calls : List (Call F)} {E₀ : Ixon.Env}
       hbound, halign, hrc, ext_end, hr, hblk, hrefs, hused, ev, hsub => by
     match Obs.«KernelModeled::ref_projects_from».obs ev with
     | .Nil (he20 := hr0) (he21 := hh) .. =>
-      exact ⟨hh ▸ Heap.Extends.refl _, fun h1 => absurd (hr0.symm.trans h1) (by decide)⟩
+      exact ⟨hh ▸ Heap.Extends.refl _, fun h1 => absurd (Value.field.inj (hr0.symm.trans h1)) zero_ne_one⟩
     | .Cons_n1 (ld12 := ld) .. | .Cons_other (ld12 := ld) .. =>
       obtain ⟨_, _, hbad, -⟩ := Lib.rep_cons_of_load hrefs ld
       cases hbad
@@ -961,12 +977,12 @@ private theorem ref_projects_from_aux {calls : List (Call F)} {E₀ : Ixon.Env}
       match sg with
       | .other (ev54 := ev54) (he102 := hv0) (he103 := hh) .. =>
         obtain ⟨hm41, -⟩ := Claim.g_list_has_spec (S0.usedRefIdxs cA) hi hused ev54
-        exact ⟨hh ▸ hm41 ▸ Heap.Extends.refl _, fun h1 => absurd (hv0.symm.trans h1) (by decide)⟩
+        exact ⟨hh ▸ hm41 ▸ Heap.Extends.refl _, fun h1 => absurd (Value.field.inj (hv0.symm.trans h1)) zero_ne_one⟩
       | .n1_other (ev54 := ev54) (ev_crsszbsn := ev_ip) (he_wiyazqbs := hv0)
           (he_rviofgqu := hh) .. =>
         obtain ⟨hm41, -⟩ := Claim.g_list_has_spec (S0.usedRefIdxs cA) hi hused ev54
         subst hm41
-        exact ⟨hh ▸ ev_ip.heap_extends, fun h1 => absurd (hv0.symm.trans h1) (by decide)⟩
+        exact ⟨hh ▸ ev_ip.heap_extends, fun h1 => absurd (Value.field.inj (hv0.symm.trans h1)) zero_ne_one⟩
       | .n1_n1 (cs_mxfetwtb := cs_ip) (ev54 := ev54) (ev_crsszbsn := ev_ip)
           (ev_etesurje := ev_cq) (ev_syhqofqg := ev_cr)
           (op_ztslruok := op1) (op_bcpdefgr := op2) (op_iqlapcsn := op3) (hc_rfthzkdb := hcs) .. =>
@@ -992,11 +1008,11 @@ private theorem ref_projects_from_aux {calls : List (Call F)} {E₀ : Ixon.Env}
         · have hq1 := hiff_q.mpr hcov_q
           rcases hbin_r with hr0 | hr1
           · exfalso
-            rw [hq1, hr0] at op1 op2 op3
+            rw [hr0] at op1
             simp only [evalBinOp, sub_zero, Except.ok.injEq] at op1
-            subst op1
+            rw [hq1, ← op1] at op2
             simp only [evalBinOp, mul_one, Except.ok.injEq] at op2
-            subst op2
+            rw [← op2] at op3
             simp only [evalBinOp, sub_self, Except.ok.injEq] at op3
             exact absurd (Value.field.inj (op3.symm.trans h1)) zero_ne_one
           · exact hiff_r.mp hr1
@@ -1061,10 +1077,10 @@ private theorem projection_of_ref_block_spec {K : FamRunCtx} {calls cs : List (C
       Heap.Extends h₁ h₁' ∧ (r = .field 1 → K.ProjOfRef A (Core.ixAddr rb)) := by
     intro m2 m_ci m_pb cs12 cs_ci cs_pb cs_rpf x_c v_ci v_pb hsub12 hsub_ci hsub_rpf
       ev14 ev_ci ev_pb ev_rpf
-    obtain ⟨ext1, rawBytes, cr, hlen_r, hh, haddr, hexact, hrep_cr, -⟩ :=
+    obtain ⟨ext1, rawBytes, cr, hlen_r, hh, haddr, -, hexact, hrep_cr, -⟩ :=
       Claim.load_verified_constant_de ⟨rb, hr, rfl⟩ ev14
     have hrec_cr : recordOf K.E₀ (Core.ixAddr rb) = some cr :=
-      recordOf_of_hashed hcov (Claim.hashed_mono hsub12 hh) hlen_r (by rw [haddr]; exact hexact)
+      Claim.recordOf_of_hashed hcov (Claim.hashed_mono hsub12 hh) hlen_r (by rw [haddr]; exact hexact)
     have ext_ci := ev_ci.heap_extends
     obtain ⟨hpb_h, hproj, b_own, hown_rep, hown_eq⟩ :=
       projection_block_spec (Core.ixAddr rb) (hrep_cr.mono ext_ci) ev_pb
@@ -1103,7 +1119,7 @@ private theorem projection_of_ref_block_spec {K : FamRunCtx} {calls cs : List (C
       (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))
       ev14 ev_ci ev_pb ev_rpf
   | .other (ev14 := ev14) (he209 := hr0) (he210 := hh) .. =>
-    exact ⟨hh ▸ ev14.heap_extends, fun h1 => absurd (hr0.symm.trans h1) (by decide)⟩
+    exact ⟨hh ▸ ev14.heap_extends, fun h1 => absurd (Value.field.inj (hr0.symm.trans h1)) zero_ne_one⟩
 
 /-! ## Dependency paths and witness verification -/
 
@@ -1127,21 +1143,23 @@ private theorem field_or_bool_spec {a b c x y : SourceValue F}
     (op3 : evalBinOp .sub x y = .ok c) :
     (c = .field 0 ∨ c = .field 1) ∧ (c = .field 0 → a = .field 0 ∧ b = .field 0) := by
   rcases ha with rfl | rfl <;> rcases hb with rfl | rfl
-  · simp only [evalBinOp, add_zero, mul_zero, sub_zero, Except.ok.injEq] at op1 op2 op3
-    subst op1 op2 op3
-    exact ⟨Or.inl rfl, fun _ => ⟨rfl, rfl⟩⟩
-  · simp only [evalBinOp, zero_add, zero_mul, sub_zero, Except.ok.injEq] at op1 op2 op3
-    subst op1 op2 op3
-    exact ⟨Or.inr rfl, fun h => absurd (Value.field.inj h) one_ne_zero⟩
-  · simp only [evalBinOp, add_zero, mul_zero, sub_zero, Except.ok.injEq] at op1 op2 op3
-    subst op1 op2 op3
-    exact ⟨Or.inr rfl, fun h => absurd (Value.field.inj h) one_ne_zero⟩
-  · simp only [evalBinOp, mul_one, Except.ok.injEq] at op1 op2 op3
-    subst op1 op2
+  · simp only [evalBinOp, add_zero, mul_zero, Except.ok.injEq] at op1 op2
+    rw [← op1, ← op2] at op3
+    simp only [evalBinOp, sub_zero, Except.ok.injEq] at op3
+    exact ⟨Or.inl op3.symm, fun _ => ⟨rfl, rfl⟩⟩
+  · simp only [evalBinOp, zero_add, zero_mul, Except.ok.injEq] at op1 op2
+    rw [← op1, ← op2] at op3
+    simp only [evalBinOp, sub_zero, Except.ok.injEq] at op3
+    exact ⟨Or.inr op3.symm, fun h => absurd (Value.field.inj (op3.trans h)) one_ne_zero⟩
+  · simp only [evalBinOp, add_zero, mul_zero, Except.ok.injEq] at op1 op2
+    rw [← op1, ← op2] at op3
+    simp only [evalBinOp, sub_zero, Except.ok.injEq] at op3
+    exact ⟨Or.inr op3.symm, fun h => absurd (Value.field.inj (op3.trans h)) one_ne_zero⟩
+  · simp only [evalBinOp, mul_one, Except.ok.injEq] at op1 op2
+    rw [← op1, ← op2] at op3
     have h1 : ((1 : F) + 1) - 1 = (1 : F) := by ring
-    simp only [h1, Except.ok.injEq] at op3
-    subst op3
-    exact ⟨Or.inr rfl, fun h => absurd (Value.field.inj h) one_ne_zero⟩
+    simp only [evalBinOp, h1, Except.ok.injEq] at op3
+    exact ⟨Or.inr op3.symm, fun h => absurd (Value.field.inj (op3.trans h)) one_ne_zero⟩
 
 private theorem walk_path_spec_ext {K : FamRunCtx}
     (hS : LoadedReads.RunStore K.calls K.E₀)
@@ -1173,8 +1191,9 @@ private theorem walk_path_spec_ext {K : FamRunCtx}
       injection hr with hpair
       simp only [List.cons.injEq, and_true] at hpair
       obtain ⟨rfl, rfl, rfl⟩ := hpair
-      obtain ⟨hm, hbin_c, hiff_c⟩ := addr_covered_spec_ext hrc (hh ▸ ext_end) hcur ev_cov
-      subst hh hm
+      subst hh
+      obtain ⟨hm, hbin_c, hiff_c⟩ := addr_covered_spec_ext hrc ext_end hcur ev_cov
+      subst hm
       obtain ⟨hbin_out, hzero⟩ := field_or_bool_spec hpb hbin_c op1 op2 op3
       refine ⟨Heap.Extends.refl _, fun bs_in hst => ⟨bs_in, hst⟩, hbin_out, cur, hcur, fun h0 => ?_⟩
       obtain ⟨hp0, hc0⟩ := hzero h0
@@ -1189,8 +1208,9 @@ private theorem walk_path_spec_ext {K : FamRunCtx}
       injection hr with hpair
       simp only [List.cons.injEq, and_true] at hpair
       obtain ⟨rfl, rfl, rfl⟩ := hpair
-      obtain ⟨hm, hbin_c, hiff_c⟩ := addr_covered_spec_ext hrc (hh ▸ ext_end) hcur ev_cov
-      subst hh hm
+      subst hh
+      obtain ⟨hm, hbin_c, hiff_c⟩ := addr_covered_spec_ext hrc ext_end hcur ev_cov
+      subst hm
       obtain ⟨hbin_out, hzero⟩ := field_or_bool_spec hpb hbin_c op1 op2 op3
       refine ⟨Heap.Extends.refl _, fun bs_in hst => ⟨bs_in, hst⟩, hbin_out, cur, hcur, fun h0 => ?_⟩
       obtain ⟨hp0, hc0⟩ := hzero h0
@@ -1205,11 +1225,11 @@ private theorem walk_path_spec_ext {K : FamRunCtx}
         simp only [List.length_cons, List.length_append] at hlen
         omega
       have ext1 := ev53.heap_extends
-      obtain ⟨ext2, rawBytes, c_cur, hlen_cur, hh_cur, haddr_cur, hexact_cur, hrep_cur, -⟩ :=
+      obtain ⟨ext2, rawBytes, c_cur, hlen_cur, hh_cur, haddr_cur, -, hexact_cur, hrep_cur, -⟩ :=
         Claim.load_verified_constant_de (S0.addr_mono ext1 hcur) ev88
       have hsub86 : ∀ cl ∈ cs86, cl ∈ K.calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
       have hrec_cur : recordOf K.E₀ cur = some c_cur :=
-        recordOf_of_hashed hcov (Claim.hashed_mono hsub86 hh_cur) hlen_cur
+        Claim.recordOf_of_hashed hcov (Claim.hashed_mono hsub86 hh_cur) hlen_cur
           (by rw [haddr_cur]; exact hexact_cur)
       have hstep : Heap.Extends _ _ ∧ ∃ next : _root_.Address, S0.addr _ _ next ∧
           (UsedRef K.E₀ cur next ∨
@@ -1353,34 +1373,37 @@ private theorem check_witness_spec_ext {K : FamRunCtx}
         (x_kind = .field 2 ∧
           ∃ cx, recordOf K.E₀ x = some cx ∧ ((∃ rcr, cx.info = .recr rcr) ∨ ∃ p, cx.info = .rPrj p))) := by
   match Obs.«KernelModeled::check_witness».obs ev with
-  | .n0 (ev28 := ev_ro) (ev69 := ev_iz) (heq84 := hiz0) (op124 := op)
+  | .n0 (v15 := v15) (ev28 := ev_ro) (ev69 := ev_iz) (heq84 := hiz0) (op124 := op)
       (ev109 := ev_bra) (heq132 := hbra1) (ev146 := ev_rct) (he164 := hr) (he165 := hh) .. =>
+    subst hh hr
     have ext_ro := ev_ro.heap_extends
     obtain ⟨hiz_eq, hm59⟩ := Lib.is_zero_spec ev_iz
     subst hm59
-    have hne0 : _ ≠ Value.field 0 := by
+    have hne0 : v15 ≠ Value.field 0 := by
       intro h0
       rw [h0] at hiz_eq
       simp at hiz_eq
       exact absurd (Value.field.inj (hiz0.symm.trans hiz_eq)) zero_ne_one
-    have ext_pre : Heap.Extends h h_end := (hh ▸ ev_ro.heap_extends.trans (ev_bra.heap_extends.trans ev_rct.heap_extends)).trans ext_end
+    have ext_pre : Heap.Extends h h_end :=
+      (ev_ro.heap_extends.trans (ev_bra.heap_extends.trans ev_rct.heap_extends)).trans ext_end
     obtain ⟨ro, hro_eq, hof⟩ := role_of_ne_zero_lim_ext hrc ext_pre hx ev_ro hne0
     rw [hro_eq] at op
     simp only [evalBinOp, add_sub_cancel_right, Except.ok.injEq] at op
     subst op
     rw [hbra1] at ev_bra
     obtain ⟨hm99, hro_mem⟩ := basis_role_allowed_spec ev_bra
-    subst hm99 hr hh
+    subst hm99
     have ext_all := ext_ro.trans ev_rct.heap_extends
     exact ⟨ext_all, ⟨bs_in, L1.Stream.mono ext_all hst⟩, Or.inl (Or.inl ⟨ro, hro_mem, hof⟩)⟩
   | .n1 (cs_jruoheya := cs_wfb) (ev185 := ev_gc) (ev_lbttumfo := ev_wfb)
       (ev282 := ev_eq) (heq305 := heq1) (ev_kzxwtasl := ev_pm) (ev_scicdnpr := ev_nb)
       (ev_krpcbbcl := ev_ci) (ev_mvspkqrl := ev_acp) (he307 := hr) (he308 := hh)
       (hc309 := hc) .. =>
+    subst hh hr
     obtain ⟨bs2, hs2⟩ := get_count_stream hst ev_gc
     have ext_after_wfb : Heap.Extends _ h_end :=
       (ev_eq.heap_extends.trans (ev_pm.heap_extends.trans (ev_nb.heap_extends.trans
-        (ev_ci.heap_extends.trans ev_acp.heap_extends)))).trans (hh ▸ ext_end)
+        (ev_ci.heap_extends.trans ev_acp.heap_extends)))).trans ext_end
     obtain ⟨ext_wfb, hs_out, stop, hstop, hdep⟩ :=
       walk_from_block_spec_ext hS hcov hrc ext_after_wfb (S0.addr_mono ev_gc.heap_extends hblk)
         ev_wfb (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))
@@ -1397,9 +1420,9 @@ private theorem check_witness_spec_ext {K : FamRunCtx}
     subst hbs
     have ext_mid := ev_pm.heap_extends.trans (ev_nb.heap_extends.trans ev_ci.heap_extends)
     obtain ⟨hm_acp, hpass_or_cov⟩ :=
-      assert_covered_past_spec_ext hrc (hh ▸ ext_end)
+      assert_covered_past_spec_ext hrc ext_end
         ⟨b_stop, Bytes.repAddressRef_heapMono₂ Core.addrTy ext_mid hb_x, rfl⟩ ev_acp
-    subst hh hm_acp hr
+    subst hm_acp
     have ext_all := ev_gc.heap_extends.trans (ext_wfb.trans ext_mid)
     refine ⟨ext_all, ⟨bs3, L1.Stream.mono ext_mid hs3⟩, Or.inl ?_⟩
     rcases hpass_or_cov with h0 | hcov_x
@@ -1407,9 +1430,10 @@ private theorem check_witness_spec_ext {K : FamRunCtx}
     · exact Or.inr (Or.inl hcov_x)
   | .n2 (hv314 := hk2) (ev328 := ev_gc) (ev_dpuowbtw := ev_wfb) (ev414 := ev_ccr)
       (ev_yqkzbtyw := ev_acp) (he440 := hr) (he441 := hh) (hc442 := hc) .. =>
+    subst hh hr
     obtain ⟨bs2, hs2⟩ := get_count_stream hst ev_gc
     have ext_after_wfb : Heap.Extends _ h_end :=
-      (ev_ccr.heap_extends.trans ev_acp.heap_extends).trans (hh ▸ ext_end)
+      (ev_ccr.heap_extends.trans ev_acp.heap_extends).trans ext_end
     obtain ⟨ext_wfb, hs_out, -, -, -⟩ :=
       walk_from_block_spec_ext hS hcov hrc ext_after_wfb (S0.addr_mono ev_gc.heap_extends hblk)
         ev_wfb (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))
@@ -1425,10 +1449,9 @@ private theorem check_witness_spec_ext {K : FamRunCtx}
           hsub cl (by rw [hc]; simp [hccr, hcl])
         obtain ⟨rawBytes, cx, hlen_x, hh_x, haddr_x, hexact_x, -, -⟩ := Claim.get_ci_head hab ev_ci
         have hcx : recordOf K.E₀ (Core.ixAddr ab) = some cx :=
-          recordOf_of_hashed hcov (Claim.hashed_mono hsub_ci hh_x) hlen_x
+          Claim.recordOf_of_hashed hcov (Claim.hashed_mono hsub_ci hh_x) hlen_x
             (by rw [haddr_x]; exact hexact_x)
         exact ⟨cx, hcx, get_ci_loads_rec_is_recr_or_rPrj hS hab ev_ci hsub_ci hld hcx⟩
-    subst hh hr
     have ext_all := ev_gc.heap_extends.trans (ext_wfb.trans (ev_ccr.heap_extends.trans ev_acp.heap_extends))
     exact ⟨ext_all, ⟨bs3, L1.Stream.mono (ev_ccr.heap_extends.trans ev_acp.heap_extends) hs3⟩,
       Or.inr ⟨hk2, hrec_kind⟩⟩
@@ -1436,6 +1459,7 @@ private theorem check_witness_spec_ext {K : FamRunCtx}
       (ev461 := ev_gc1) (ev_ndaajwbz := ev_wfb) (ev547 := ev_gc2) (ev582 := ev_gc3)
       (sg692 := sg) (ev717 := ev_eq) (heq740 := heq1) (ev_gwtfngxo := ev_ci)
       (ev_xxjagmga := ev_acp) (he742 := hr) (he743 := hh) (hc744 := hc) .. =>
+    subst hh hr
     obtain ⟨bs2, hs2⟩ := get_count_stream hst ev_gc1
     have ext_sg : Heap.Extends _ _ := by
       match sg with
@@ -1444,7 +1468,7 @@ private theorem check_witness_spec_ext {K : FamRunCtx}
     have ext_after_wfb : Heap.Extends _ h_end :=
       (ev_gc2.heap_extends.trans (ev_gc3.heap_extends.trans (ext_sg.trans
         (ev_eq.heap_extends.trans (ev_ci.heap_extends.trans ev_acp.heap_extends))))).trans
-        (hh ▸ ext_end)
+        ext_end
     obtain ⟨ext_wfb, hs_out, ib, hib, hdep⟩ :=
       walk_from_block_spec_ext hS hcov hrc ext_after_wfb (S0.addr_mono ev_gc1.heap_extends hblk)
         ev_wfb (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))
@@ -1483,7 +1507,7 @@ private theorem check_witness_spec_ext {K : FamRunCtx}
     have hsub_ci : ∀ cl ∈ cs_ci, cl ∈ K.calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
     obtain ⟨rawBytes, cx, hlen_x, hh_x, haddr_x, hexact_x, -, -⟩ := Claim.get_ci_head hb_x ev_ci
     have hrec_cx : recordOf K.E₀ (Core.ixAddr a_p) = some cx :=
-      recordOf_of_hashed hcov (Claim.hashed_mono hsub_ci hh_x) hlen_x
+      Claim.recordOf_of_hashed hcov (Claim.hashed_mono hsub_ci hh_x) hlen_x
         (by rw [haddr_x]; exact hexact_x)
     have hraw_eq : rawBytes = Ixon.serConstant ⟨info, #[], #[], #[], #[]⟩ :=
       hS.hashed_inj (Claim.hashed_mono hsub_ci hh_x) hhash_p (haddr_x.trans hap_eq)
@@ -1506,9 +1530,9 @@ private theorem check_witness_spec_ext {K : FamRunCtx}
     obtain ⟨cib, hcib, hca⟩ := Claim.proj_member_of_load hS hcov hb_x ev_ci hsub_ci hrec_cx hpr_cx
     rw [hown_cx] at hcib hca
     obtain ⟨hm_acp, hpass_or_cov⟩ :=
-      assert_covered_past_spec_ext hrc (hh ▸ ext_end)
+      assert_covered_past_spec_ext hrc ext_end
         ⟨a_p, Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ci.heap_extends hb_x, rfl⟩ ev_acp
-    subst hh hm_acp hr
+    subst hm_acp
     have ext_all := ext_to_eq.trans ev_ci.heap_extends
     refine ⟨ext_all, ⟨bs5, L1.Stream.mono (ext_sg.trans ev_ci.heap_extends) hs5⟩, Or.inl ?_⟩
     rcases hpass_or_cov with h0 | hcov_x
@@ -1561,7 +1585,7 @@ private theorem check_witnesses_spec_ext {K : FamRunCtx}
       obtain ⟨rfl, rfl⟩ := hpair
       subst hh hm
       exact ⟨Heap.Extends.snoc h _, [], Lib.rep_store_nil h, fun _ hw => by cases hw⟩
-    | .other (cs127 := cs127) (cs194 := cs194) (ev59 := ev_ga) (ev94 := ev_rb)
+    | .other (m184 := m184) (cs127 := cs127) (cs194 := cs194) (ev59 := ev_ga) (ev94 := ev_rb)
         (ev_updedcyj := ev_ord) (ev167 := ev_u8) (ev129 := ev_cw) (ev196 := ev_rest)
         (he254 := hr) (hm264 := hm) (he291 := hh) (hc292 := hc) .. =>
       have hlen' : cs194.length ≤ m := by
@@ -1582,7 +1606,7 @@ private theorem check_witnesses_spec_ext {K : FamRunCtx}
       obtain ⟨-, hm157⟩ := Lib.u8_to_field_spec ev_u8
       subst hm157
       have ext_pre := ext_ga.trans ev_ord.heap_extends
-      have ext_snoc : Heap.Extends _ _ := by rw [hm]; exact Heap.Extends.snoc _ _
+      have ext_snoc : Heap.Extends m184 h' := by rw [hm]; exact Heap.Extends.snoc m184 _
       obtain ⟨ext_cw, ⟨bs4, hs4⟩, hcw_res⟩ :=
         check_witness_spec_ext hS hcov hrc
           ((ev_rest.heap_extends.trans ext_snoc).trans ext_end)
@@ -1656,28 +1680,28 @@ private theorem family_refs_go_spec {K : FamRunCtx}
     have hi : i < 72057594037927936 := by simp at hbound; omega
     match Obs.«KernelModeled::family_refs_go».obs ev with
     | .Nil (ld12 := ld) .. => cases Lib.rep_nil_of_load hrefs ld
-    | .Cons (ld12 := ld) (sg392 := sg) (op_gskedpnl := op) (ev398 := ev_rest) (hc463 := hc) .. =>
+    | .Cons (x_r := x_q) (m385 := m385) (ld12 := ld) (sg392 := sg) (op_gskedpnl := op) (ev398 := ev_rest) (hc463 := hc) .. =>
       obtain ⟨q', rest', heq, hq, hrest⟩ := Lib.rep_cons_of_load hrefs ld
       injection heq with h1 h2; subst h1 h2
       obtain ⟨b_B, hb_B, hix_B⟩ := hblk
-      have hseg : Heap.Extends h _ ∧
+      have hseg : Heap.Extends h m385 ∧
           (i ∈ idxs → K.BlockRef B (Core.ixAddr q) ∨ Core.ixAddr q ∈ Wset) := by
         have hproj_same : ∀ {m86 m_ld m_ci m_pb m_eq : Heap F}
-            {cs_ld cs_ci : List (Call F)} {x_c v_ci v_pb : SourceValue F},
+            {cs_ld cs_ci cs_pb cs_eq : List (Call F)} {x_c v_ci v_pb : SourceValue F},
             Heap.Extends h m86 →
             (∀ cl ∈ cs_ld, cl ∈ K.calls) → (∀ cl ∈ cs_ci, cl ∈ K.calls) →
-            ObsFn Obs.W "Ingress::load_verified_constant" [_] m86 x_c m_ld cs_ld →
-            ObsFn Obs.W "Ingress::get_ci" [_] m_ld v_ci m_ci cs_ci →
-            ObsFn Obs.W "KernelModeled::projection_block" [x_c] m_ci v_pb m_pb _ →
-            ObsFn Obs.W "Bytes::address_eq" [v_pb, x_blk] m_pb (.field 1) m_eq _ →
+            ObsFn Obs.W "Ingress::load_verified_constant" [x_q] m86 x_c m_ld cs_ld →
+            ObsFn Obs.W "Ingress::get_ci" [x_q] m_ld v_ci m_ci cs_ci →
+            ObsFn Obs.W "KernelModeled::projection_block" [x_c] m_ci v_pb m_pb cs_pb →
+            ObsFn Obs.W "Bytes::address_eq" [v_pb, x_blk] m_pb (.field 1) m_eq cs_eq →
             Heap.Extends h m_eq ∧ K.BlockRef B (Core.ixAddr q) := by
-          intro m86 m_ld m_ci m_pb m_eq cs_ld cs_ci x_c v_ci v_pb ext86 hsub_ld hsub_ci
+          intro m86 m_ld m_ci m_pb m_eq cs_ld cs_ci cs_pb cs_eq x_c v_ci v_pb ext86 hsub_ld hsub_ci
             ev_ld ev_ci ev_pb ev_eq
           have hq86 := Bytes.repAddressRef_heapMono₂ Core.addrTy ext86 hq
-          obtain ⟨ext_ld, rawBytes, cr, hlen_r, hh_r, haddr_r, hexact_r, hrep_cr, -⟩ :=
+          obtain ⟨ext_ld, rawBytes, cr, hlen_r, hh_r, haddr_r, -, hexact_r, hrep_cr, -⟩ :=
             Claim.load_verified_constant_de ⟨q, hq86, rfl⟩ ev_ld
           have hrec_cr : recordOf K.E₀ (Core.ixAddr q) = some cr :=
-            recordOf_of_hashed hcov (Claim.hashed_mono hsub_ld hh_r) hlen_r
+            Claim.recordOf_of_hashed hcov (Claim.hashed_mono hsub_ld hh_r) hlen_r
               (by rw [haddr_r]; exact hexact_r)
           have ext_ci := ev_ci.heap_extends
           obtain ⟨hpb_h, hproj, b_own, hown_rep, hown_eq⟩ :=
@@ -1858,7 +1882,7 @@ theorem FamRunCtx.familyRefs_of {K : FamRunCtx} {seeds : List _root_.Address}
       (ev_rqpeovbn := ev_iz1) (ev_xrhmaojz := ev_iz2) (ev_whimdwjd := ev_val)
       (ev1305 := ev_fro) (hc1474 := hc_fam) .. =>
     have ext0 := check_family_seg1_extends sg112
-    obtain ⟨-, -, hst_rp⟩ := read_payload_stream ev126
+    obtain ⟨-, _, hst_rp⟩ := read_payload_stream ev126
     obtain ⟨_, _, _, _, -, hr_ga, -, hs1, -, -⟩ := Decl.get_address_spec hst_rp ev148
     injection hr_ga with hp_ga; injection hp_ga with _ h_s1; injection h_s1 with h_s1'
     subst h_s1'
@@ -1896,16 +1920,16 @@ theorem FamRunCtx.familyRefs_of {K : FamRunCtx} {seeds : List _root_.Address}
     | .run (cs12 := cs_rb) (cs34 := cs_B) (cs_ijcbjcgc := cs_go)
         (ev14 := ev_rb) (ev36 := ev_B) (ev_ycrqbsja := ev_idx_rb)
         (ev_nhomjxfq := ev_idx_B) (ev_kfwmaaqi := ev_go) (hc222 := hc_fro) .. =>
-      obtain ⟨ext_rb, raw_rb, crb, hlen_rb, hh_rb, haddr_rb, hexact_rb, hrep_rb, -⟩ :=
+      obtain ⟨ext_rb, raw_rb, crb, hlen_rb, hh_rb, haddr_rb, -, hexact_rb, hrep_rb, -⟩ :=
         Claim.load_verified_constant_de (S0.addr_mono ext_to_fro hxrb) ev_rb
       have hrec_rb : recordOf K.E₀ rb = some crb :=
-        recordOf_of_hashed hW.hashedStored
+        Claim.recordOf_of_hashed hW.hashedStored
           (Claim.hashed_mono (fun cl hcl => hsub_fam cl (by rw [hc_fam]; simp [hc_fro, hcl])) hh_rb)
           hlen_rb (by rw [haddr_rb]; exact hexact_rb)
-      obtain ⟨ext_B, raw_B, cB, hlen_B, hh_B, haddr_B, hexact_B, hrep_B, -⟩ :=
+      obtain ⟨ext_B, raw_B, cB, hlen_B, hh_B, haddr_B, -, hexact_B, hrep_B, -⟩ :=
         Claim.load_verified_constant_de (S0.addr_mono (ext_to_fro.trans ext_rb) hxb) ev_B
       have hrec_B : recordOf K.E₀ B = some cB :=
-        recordOf_of_hashed hW.hashedStored
+        Claim.recordOf_of_hashed hW.hashedStored
           (Claim.hashed_mono (fun cl hcl => hsub_fam cl (by rw [hc_fam]; simp [hc_fro, hcl])) hh_B)
           hlen_B (by rw [haddr_B]; exact hexact_B)
       obtain ⟨ext_i1, hused_rb⟩ := Claim.const_idxs_of_spec (hrep_rb.mono ext_B) ev_idx_rb
@@ -1974,22 +1998,22 @@ private theorem projection_of_advice_spec {calls cs : List (Call F)} {E₀ : Ixo
       (r = .field 1 →
         ∃ blk cblk, blk ∈ S ∧ recordOf E₀ blk = some cblk ∧
           ConstAddrOf blk cblk (Core.ixAddr rb)) := by
-  have handleProj : ∀ {m2 m_ci m_pb : Heap F} {cs12 cs_ci : List (Call F)}
+  have handleProj : ∀ {m2 m_ci m_pb : Heap F} {cs12 cs_ci cs_pb cs_mem : List (Call F)}
       {x_c v_ci v_pb : SourceValue F},
       (∀ cl ∈ cs12, cl ∈ calls) → (∀ cl ∈ cs_ci, cl ∈ calls) →
       ObsFn Obs.W "Ingress::load_verified_constant" [x_r] h x_c m2 cs12 →
       ObsFn Obs.W "Ingress::get_ci" [x_r] m2 v_ci m_ci cs_ci →
-      ObsFn Obs.W "KernelModeled::projection_block" [x_c] m_ci v_pb m_pb _ →
-      ObsFn Obs.W "KernelClaim::addr_set_member" [v_pb, x_aset] m_pb r h' _ →
+      ObsFn Obs.W "KernelModeled::projection_block" [x_c] m_ci v_pb m_pb cs_pb →
+      ObsFn Obs.W "KernelClaim::addr_set_member" [v_pb, x_aset] m_pb r h' cs_mem →
       Heap.Extends h h' ∧
         (r = .field 1 →
           ∃ blk cblk, blk ∈ S ∧ recordOf E₀ blk = some cblk ∧
             ConstAddrOf blk cblk (Core.ixAddr rb)) := by
-    intro m2 m_ci m_pb cs12 cs_ci x_c v_ci v_pb hsub12 hsub_ci ev14 ev_ci ev_pb ev_mem
-    obtain ⟨ext1, rawBytes, cr, hlen, hh, haddr, hexact, hrep_cr, -⟩ :=
+    intro m2 m_ci m_pb cs12 cs_ci cs_pb cs_mem x_c v_ci v_pb hsub12 hsub_ci ev14 ev_ci ev_pb ev_mem
+    obtain ⟨ext1, rawBytes, cr, hlen, hh, haddr, -, hexact, hrep_cr, -⟩ :=
       Claim.load_verified_constant_de ⟨rb, hr, rfl⟩ ev14
     have hrec_cr : recordOf E₀ (Core.ixAddr rb) = some cr :=
-      recordOf_of_hashed hcov (Claim.hashed_mono hsub12 hh) hlen (by rw [haddr]; exact hexact)
+      Claim.recordOf_of_hashed hcov (Claim.hashed_mono hsub12 hh) hlen (by rw [haddr]; exact hexact)
     have ext_ci := ev_ci.heap_extends
     obtain ⟨hpb_h, hproj, b_own, hown_rep, hown_eq⟩ :=
       projection_block_spec (Core.ixAddr rb) (hrep_cr.mono ext_ci) ev_pb
@@ -2016,7 +2040,7 @@ private theorem projection_of_advice_spec {calls cs : List (Call F)} {E₀ : Ixo
       (fun cl hcl => hsub cl (by rw [hc]; simp [hcl]))
       ev14 ev_ci ev_pb ev_mem
   | .other (ev14 := ev14) (he179 := hr0) (he180 := hh) .. =>
-    exact ⟨hh ▸ ev14.heap_extends, fun h1 => absurd (hr0.symm.trans h1) (by decide)⟩
+    exact ⟨hh ▸ ev14.heap_extends, fun h1 => absurd (Value.field.inj (hr0.symm.trans h1)) zero_ne_one⟩
 
 private theorem advice_refs_ok_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     {S Wset : List _root_.Address} {idxs : List Nat}
@@ -2049,10 +2073,10 @@ private theorem advice_refs_ok_spec {calls : List (Call F)} {E₀ : Ixon.Env}
     have hi : i < 72057594037927936 := by simp at hbound; omega
     match Obs.«KernelModeled::advice_refs_ok».obs ev with
     | .Nil (ld12 := ld) .. => cases Lib.rep_nil_of_load hrefs ld
-    | .Cons (ld12 := ld) (sg298 := sg) (op337 := op) (ev304 := ev_rest) (hc353 := hc) .. =>
+    | .Cons (m291 := m291) (ld12 := ld) (sg298 := sg) (op337 := op) (ev304 := ev_rest) (hc353 := hc) .. =>
       obtain ⟨q', rest', heq, hq, hrest⟩ := Lib.rep_cons_of_load hrefs ld
       injection heq with h1 h2; subst h1 h2
-      have hseg : Heap.Extends h _ ∧
+      have hseg : Heap.Extends h m291 ∧
           (i ∈ idxs → Core.ixAddr q ∈ S ∨ Core.ixAddr q ∈ Wset ∨
             ∃ blk cblk, blk ∈ S ∧ recordOf E₀ blk = some cblk ∧
               ConstAddrOf blk cblk (Core.ixAddr q)) := by
@@ -2122,19 +2146,19 @@ private theorem check_advice_record_spec {calls cs : List (Call F)} {E₀ : Ixon
         x ∈ S ∨ x ∈ Wset ∨
           ∃ blk cblk, blk ∈ S ∧ recordOf E₀ blk = some cblk ∧ ConstAddrOf blk cblk x := by
   match Obs.«KernelModeled::check_advice_record».obs ev with
-  | .run (cs12 := cs12) (cs947 := cs947) (cs_dkogjupv := cs_aro)
+  | .run (m2 := m2) (m945 := m945) (cs12 := cs12) (cs947 := cs947) (cs_dkogjupv := cs_aro)
       (ev_yqjbwijz := ev_ord) (ev14 := ev14) (sg952 := sg) (ev_lawbyzgo := ev_idx)
       (ev_bilbznow := ev_aro) (ev_ozxzdina := ev_idx2) (ev_tnqzszcy := ev_safe)
       (hc1011 := hc) .. =>
     have ext0 := ev_ord.heap_extends
     have ha0 := Bytes.repAddressRef_heapMono₂ Core.addrTy ext0 ha
-    obtain ⟨ext1, rawBytes, ca, hlen_a, hh_a, haddr_a, hexact_a, hrep_a, -⟩ :=
+    obtain ⟨ext1, rawBytes, ca, hlen_a, hh_a, haddr_a, -, hexact_a, hrep_a, -⟩ :=
       Claim.load_verified_constant_de ⟨ab, ha0, rfl⟩ ev14
     have hrec_a : recordOf E₀ (Core.ixAddr ab) = some ca :=
-      recordOf_of_hashed hcov
+      Claim.recordOf_of_hashed hcov
         (Claim.hashed_mono (fun cl hcl => hsub cl (by rw [hc]; simp [hcl])) hh_a)
         hlen_a (by rw [haddr_a]; exact hexact_a)
-    have hseg : Heap.Extends _ _ ∧
+    have hseg : Heap.Extends m2 m945 ∧
         ((∀ c, recordOf E₀ (Core.ixAddr ab) = some c → ¬ IsProj c) ∨
           ∃ blk cblk, blk ∈ S ∧ recordOf E₀ blk = some cblk ∧
             ConstAddrOf blk cblk (Core.ixAddr ab)) := by
@@ -2147,29 +2171,40 @@ private theorem check_advice_record_spec {calls cs : List (Call F)} {E₀ : Ixon
       injection hmk with _ _ hargs
       simp only [List.cons.injEq] at hargs
       have hinfo_eq := hargs.1
+      have hnoProj_of_tag : ∀ tag args,
+          infoVal = .construct "Ixon::ConstantInfo" tag args →
+          tag ≠ "DPrj" → tag ≠ "IPrj" → tag ≠ "CPrj" → tag ≠ "RPrj" →
+          ¬ IsProj ca := by
+        intro tag args hv h1 h2 h3 h4 hp
+        rw [hv] at hinfo_rep
+        rcases hp with ⟨p, h⟩ | ⟨p, h⟩ | ⟨p, h⟩ | ⟨p, h⟩
+        · rw [h] at hinfo_rep; obtain ⟨_, he, -⟩ := hinfo_rep
+          exact h1 (Value.construct.inj he).2.1
+        · rw [h] at hinfo_rep; obtain ⟨_, he, -⟩ := hinfo_rep
+          exact h2 (Value.construct.inj he).2.1
+        · rw [h] at hinfo_rep; obtain ⟨_, he, -⟩ := hinfo_rep
+          exact h3 (Value.construct.inj he).2.1
+        · rw [h] at hinfo_rep; obtain ⟨_, he, -⟩ := hinfo_rep
+          exact h4 (Value.construct.inj he).2.1
       match sg with
       | .Defn_Definition_Safe (hv81 := hv) (ev210 := ev_rc) .. =>
-        rw [hinfo_eq, hv] at hinfo_rep
-        obtain ⟨d, hd, -⟩ := L1.repConstantInfo_defn_inv hinfo_rep
-        exact ⟨ev_rc.heap_extends, Or.inl (hnotProj (by rintro (⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩) <;> rw [hd] at h <;> cases h))⟩
+        exact ⟨ev_rc.heap_extends, Or.inl (hnotProj (hnoProj_of_tag _ _ (hinfo_eq.trans hv)
+          (by decide) (by decide) (by decide) (by decide)))⟩
       | .Defn_Definition_other (heq258 := h01) .. => exact absurd (Value.field.inj h01) zero_ne_one
       | .Defn_Theorem (hv81 := hv) (ev321 := ev_rc) .. =>
-        rw [hinfo_eq, hv] at hinfo_rep
-        obtain ⟨d, hd, -⟩ := L1.repConstantInfo_defn_inv hinfo_rep
-        exact ⟨ev_rc.heap_extends, Or.inl (hnotProj (by rintro (⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩) <;> rw [hd] at h <;> cases h))⟩
+        exact ⟨ev_rc.heap_extends, Or.inl (hnotProj (hnoProj_of_tag _ _ (hinfo_eq.trans hv)
+          (by decide) (by decide) (by decide) (by decide)))⟩
       | .Defn_Opaque (heq372 := h01) .. => exact absurd (Value.field.inj h01) zero_ne_one
       | .Recr (hv403 := hv) (ev553 := e1) (ev540 := e2) (ev574 := e3) .. =>
-        rw [hinfo_eq, hv] at hinfo_rep
-        obtain ⟨rcr, hrcr, -⟩ := L1.repConstantInfo_recr_inv hinfo_rep
         exact ⟨e1.heap_extends.trans (e2.heap_extends.trans e3.heap_extends),
-          Or.inl (hnotProj (by rintro (⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩) <;> rw [hrcr] at h <;> cases h))⟩
+          Or.inl (hnotProj (hnoProj_of_tag _ _ (hinfo_eq.trans hv)
+            (by decide) (by decide) (by decide) (by decide)))⟩
       | .Muts (hv598 := hv) (ev629 := e1) (ev649 := e2) (ev683 := e3) (ev723 := e4)
           (ev744 := e5) .. =>
-        rw [hinfo_eq, hv] at hinfo_rep
-        obtain ⟨ms, hms, -⟩ := L1.repConstantInfo_muts_inv hinfo_rep
         exact ⟨e1.heap_extends.trans (e2.heap_extends.trans (e3.heap_extends.trans
           (e4.heap_extends.trans e5.heap_extends))),
-          Or.inl (hnotProj (by rintro (⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩ | ⟨_, h⟩) <;> rw [hms] at h <;> cases h))⟩
+          Or.inl (hnotProj (hnoProj_of_tag _ _ (hinfo_eq.trans hv)
+            (by decide) (by decide) (by decide) (by decide)))⟩
       | .IPrj (cs_sopfkvlz := cs_ci) (ev836 := ev_pb) (ev822 := ev_mem) (heq858 := h1)
           (ev_gjbqzffr := ev_ci) (he862 := hh) (hc863 := hcs) .. =>
         obtain ⟨hm_pb, hproj, b_own, hown_rep, hown_eq⟩ :=
@@ -2282,12 +2317,12 @@ private theorem check_advice_records_prefix_spec {calls : List (Call F)} {E₀ :
           · exact Or.inl ⟨j, b', by omega, hget_app, rfl, hnp⟩
           · have hget_app' : (pre ++ a :: rest')[j']? = some b'' := by
               rw [List.getElem?_append_left (Nat.lt_trans hj' hj)]; exact hb''
-            exact Or.inr (Or.inl ⟨j', b'', by omega, hget_app', hc'', hca''⟩)
+            exact Or.inr (Or.inl ⟨j', b'', c'', by omega, hget_app', hc'', hca''⟩)
         · exact Or.inr (Or.inr hx_W)
         · obtain ⟨j, hj, b', hb', rfl⟩ := (hS_iff blk).mp hblk_S
           have hget_app : (pre ++ a :: rest')[j]? = some b' := by
             rw [List.getElem?_append_left hj]; exact hb'
-          exact Or.inr (Or.inl ⟨j, b', by omega, hget_app, hcblk, hca⟩)
+          exact Or.inr (Or.inl ⟨j, b', cblk, by omega, hget_app, hcblk, hca⟩)
       | succ k' =>
         simp only [List.getElem?_cons_succ] at hk
         rw [← Obs.Names.«RBTreeMap::rbtree_map_insert<Field>».symbol] at ev_ins
@@ -2415,7 +2450,7 @@ theorem get_ci_of_rec_raw_uncond {calls cs : List (Call F)} {E₀ : Ixon.Env}
   have match_wrong : ∀ {cs12 : List (Call F)} {m2 : Heap F} {x_c : SourceValue F},
       (∀ cl ∈ cs12, cl ∈ calls) →
       ObsFn Obs.W "Ingress::load_verified_constant" [x_r] h x_c m2 cs12 →
-      ∃ c', c' = c ∧ Claim.RepConstant m2 c' x_c := by
+      ∃ c', c' = c ∧ L1.RepConstant m2 c' x_c := by
     intro cs12 m2 x_c hsub12 ev14
     obtain ⟨-, _, c', -, hh, haddr, hexact, -, -, -, -, -, -, cRep⟩ :=
       L1.load_verified_constant_decode_bounded hab ev14
@@ -2624,7 +2659,7 @@ private theorem get_ci_loads_induct_is_iprj {calls cs : List (Call F)} {E₀ : I
       recordOf E₀ blk = some cb ∧ cb.info = .muts ms ∧ ms[idx.toNat]? = some (.indc ind) := by
   obtain ⟨rawBytes, c, hlen, hh, haddr, hexact, -, hhead⟩ := Claim.get_ci_head hab ev
   have hc : recordOf E₀ (Core.ixAddr ab) = some c :=
-    recordOf_of_hashed hcov (Claim.hashed_mono hsub hh) hlen (by rw [haddr]; exact hexact)
+    Claim.recordOf_of_hashed hcov (Claim.hashed_mono hsub hh) hlen (by rw [haddr]; exact hexact)
   cases hinfo : c.info with
   | iPrj p =>
     obtain ⟨idx, blk⟩ := p
@@ -2635,7 +2670,7 @@ private theorem get_ci_loads_induct_is_iprj {calls cs : List (Call F)} {E₀ : I
     have hx_eq : x_blk' = x_blk := hargs.2.2.2.2.2.2.1
     subst hx_eq
     obtain ⟨hcb, hms⟩ := (hbl.mono hsub).stored hcov
-    exact ⟨c, idx, blk, b_blk, cb, ms, ind, hc, rfl, hb_rep, hb_eq, hcb, hms,
+    exact ⟨c, idx, blk, b_blk, cb, ms, ind, hc, hinfo, hb_rep, hb_eq, hcb, hms,
       by rw [← Array.getElem?_toList]; exact hmem⟩
   | muts ms => exact (hhead.notMuts ms hinfo).elim
   | axio ax =>
@@ -2646,12 +2681,12 @@ private theorem get_ci_loads_induct_is_iprj {calls cs : List (Call F)} {E₀ : I
     exact absurd (Value.construct.inj (Except.ok.inj (hl.symm.trans hld))).2.1 (by decide)
   | cPrj p =>
     obtain ⟨idx, cidx, blk⟩ := p
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hl, -⟩ :=
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hl, -, -⟩ :=
       hhead.cPrj idx cidx blk hinfo
     exact absurd (Value.construct.inj (Except.ok.inj (hl.symm.trans hld))).2.1 (by decide)
   | rPrj p =>
     obtain ⟨idx, blk⟩ := p
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hl, -⟩ :=
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hl, -, -⟩ :=
       hhead.rPrj idx blk hinfo
     exact absurd (Value.construct.inj (Except.ok.inj (hl.symm.trans hld))).2.1 (by decide)
   | recr rc =>
@@ -2756,7 +2791,7 @@ theorem rec_family_block_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
     have hsub266 : ∀ cl ∈ cs266, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
     obtain ⟨rawX, cx, hlenX, hhX, haddrX, hexactX, -, -⟩ := Claim.get_ci_head hab ev_ci
     have hcx : recordOf E₀ (Core.ixAddr ab) = some cx :=
-      recordOf_of_hashed hcov (Claim.hashed_mono hsub16 hhX) hlenX
+      Claim.recordOf_of_hashed hcov (Claim.hashed_mono hsub16 hhX) hlenX
         (by rw [haddrX]; exact hexactX)
     have hrec_raw := get_ci_of_rec_raw_uncond hS hcov hab ev_ci hsub16 ld_rec hcx
     -- Factor out the common motive-0 carrier extraction given `L1.RawRecrValRep`
@@ -2965,7 +3000,7 @@ private theorem is_muts_block_of_muts {calls cs : List (Call F)} {E₀ : Ixon.En
     exact ⟨hh ▸ ev14.heap_extends, hr⟩
   | .other (cs12 := cs12) (ev14 := ev14) (hne93 := hne) (hc99 := hcs) .. =>
     exfalso
-    obtain ⟨-, _, c', -, hh, haddr, hexact, hrep, -⟩ := Claim.load_verified_constant_de ha ev14
+    obtain ⟨-, _, c', -, hh, haddr, -, hexact, hrep, -⟩ := Claim.load_verified_constant_de ha ev14
     have hcc : c' = c :=
       hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
         (Claim.hashed_mono (fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])) hh) haddr hexact
@@ -3260,11 +3295,11 @@ private theorem container_refs_ok_spec {K : FamRunCtx}
     have hi : i < 72057594037927936 := by simp at hbound; omega
     match Obs.«KernelModeled::container_refs_ok».obs ev with
     | .Nil (ld12 := ld) .. => cases Lib.rep_nil_of_load hrefs ld
-    | .Cons (ld12 := ld) (sg392 := sg) (op_gskedpnl := op) (ev398 := ev_rest) (hc463 := hc) .. =>
+    | .Cons (m385 := m385) (ld12 := ld) (sg392 := sg) (op_gskedpnl := op) (ev398 := ev_rest) (hc463 := hc) .. =>
       obtain ⟨q', rest', heq, hq, hrest⟩ := Lib.rep_cons_of_load hrefs ld
       injection heq with h1 h2; subst h1 h2
       obtain ⟨b_ib, hb_ib, hix_ib⟩ := hiblk
-      have hseg : Heap.Extends h _ ∧
+      have hseg : Heap.Extends h m385 ∧
           (i ∈ idxs → K.BlockRef ib (Core.ixAddr q) ∨
             (Core.ixAddr q ∈ Wset ∧
               ∃ cq, recordOf K.E₀ (Core.ixAddr q) = some cq ∧
@@ -3320,10 +3355,10 @@ private theorem container_refs_ok_spec {K : FamRunCtx}
           obtain ⟨hmem_w, hm_mem⟩ := Claim.addr_set_member_set_spec
             (Bytes.repAddressRef_heapMono₂ Core.addrTy ext_pre hq) (hwset.mono ext_pre) ev_mem
           subst hm_mem
-          obtain ⟨ext_ld, rawQ, cq, hlenQ, hhQ, haddrQ, hexactQ, hrepQ, -⟩ :=
+          obtain ⟨ext_ld, rawQ, cq, hlenQ, hhQ, haddrQ, -, hexactQ, hrepQ, -⟩ :=
             Claim.load_verified_constant_de ⟨q, Bytes.repAddressRef_heapMono₂ Core.addrTy ext_pre hq, rfl⟩ ev_ld
           have hrec_q : recordOf K.E₀ (Core.ixAddr q) = some cq :=
-            recordOf_of_hashed hcov
+            Claim.recordOf_of_hashed hcov
               (Claim.hashed_mono (fun cl hcl => hsub cl (by rw [hc]; simp [hcs, hcl])) hhQ)
               hlenQ (by rw [haddrQ]; exact hexactQ)
           obtain ⟨infoVal, _, _, _, _, hmk, hiRep, -, -, -, -⟩ := hrepQ
@@ -3396,7 +3431,7 @@ private theorem container_recs_refs_standalone_refs_spec {K : FamRunCtx}
       injection heq with h1 h2; subst h1 h2
       rcases List.mem_cons.mp hmem with rfl | hmemRest
       · -- Head is `xx`: unpack `ev_crc : container_refs_check`!
-        obtain ⟨ext_ld, rawX, cx', hlenX, hhX, haddrX, hexactX, hrepX, -⟩ :=
+        obtain ⟨ext_ld, rawX, cx', hlenX, hhX, haddrX, -, hexactX, hrepX, -⟩ :=
           Claim.load_verified_constant_de hx ev_ld
         have hcc : cx' = cx :=
           hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hcx)
@@ -3409,10 +3444,10 @@ private theorem container_recs_refs_standalone_refs_spec {K : FamRunCtx}
           have hib_addr : S0.addr _ _ ib :=
             hib_det (S0.addr_mono ext_ld hx) ev_rfb
               (fun cl hcl => hsub cl (by rw [hc]; simp [hc_crc, hcl]))
-          obtain ⟨ext_ib, rawIb, cib, hlenIb, hhIb, haddrIb, hexactIb, hrepIb, -⟩ :=
+          obtain ⟨ext_ib, rawIb, cib, hlenIb, hhIb, haddrIb, -, hexactIb, hrepIb, -⟩ :=
             Claim.load_verified_constant_de hib_addr ev_ib
           have hrec_ib : recordOf K.E₀ ib = some cib :=
-            recordOf_of_hashed hcov
+            Claim.recordOf_of_hashed hcov
               (Claim.hashed_mono (fun cl hcl => hsub cl (by rw [hc]; simp [hc_crc, hcl])) hhIb)
               hlenIb (by rw [haddrIb]; exact hexactIb)
           have ext_to_ix := ev_rfb.heap_extends.trans ext_ib
@@ -3462,7 +3497,7 @@ private theorem container_recs_refs_standalone_refs_spec {K : FamRunCtx}
       injection heq with h1 h2; subst h1 h2
       rcases List.mem_cons.mp hmem with rfl | hmemRest
       · exfalso
-        obtain ⟨-, _, cx', -, hhX, haddrX, hexactX, hrepX, -⟩ :=
+        obtain ⟨-, _, cx', -, hhX, haddrX, -, hexactX, hrepX, -⟩ :=
           Claim.load_verified_constant_de hx ev_ld
         have hcc : cx' = cx :=
           hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hcx)
@@ -3485,7 +3520,7 @@ private theorem container_recs_refs_standalone_refs_spec {K : FamRunCtx}
       injection heq with h1 h2; subst h1 h2
       rcases List.mem_cons.mp hmem with rfl | hmemRest
       · exfalso
-        obtain ⟨-, _, cx', -, hhX, haddrX, hexactX, hrepX, -⟩ :=
+        obtain ⟨-, _, cx', -, hhX, haddrX, -, hexactX, hrepX, -⟩ :=
           Claim.load_verified_constant_de hx ev_ld
         have hcc : cx' = cx :=
           hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hcx)
@@ -3532,12 +3567,12 @@ theorem FamRunCtx.contWitness_of {K : FamRunCtx} {seeds : List _root_.Address}
       match Obs.«KernelModeled::read_payload».obs ev_rp with
       | .Nil (ld11 := ld) .. | .other (ld11 := ld) .. => exact ⟨_, ld⟩
     obtain ⟨v_rp0, hld_rp0⟩ := hld_rp
-    exact ⟨b_B, repAddressRef_pullback hb_B ext_ws_w (ext_rp_ws.loadValue_eq hld_rp0), hix_B⟩
+    exact ⟨b_B, repAddressRef_pullback ext_ws_w (ext_rp_ws.loadValue_eq hld_rp0) hb_B, hix_B⟩
   -- Build `L1.Stream m_ws bs4 x_s4` from `ev_rp` + `ev_pre_ws`!
   have hs4_ws : ∃ bs4 : List UInt8, L1.Stream m_ws bs4 x_s4 := by
     obtain ⟨x_rb', x_s1', m_ga, cs_ga, x_na', x_s2', m_gc1, cs_gc1, m_gc1', x_adv', x_s3',
       m_gas, cs_gas, cs_gc2, ev_ga, ext_ga, ev_gc1, ev_gas, ev_gc2⟩ := ev_pre_ws
-    obtain ⟨-, -, hst_rp⟩ := read_payload_stream ev_rp
+    obtain ⟨-, _, hst_rp⟩ := read_payload_stream ev_rp
     obtain ⟨_, _, _, _, -, hr_ga, -, hs1, -, -⟩ := Decl.get_address_spec hst_rp ev_ga
     injection hr_ga with hp_ga; injection hp_ga with _ hs1_eq; injection hs1_eq with hs1_eq'
     subst hs1_eq'
