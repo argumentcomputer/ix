@@ -215,8 +215,8 @@ theorem familyStepsFamFull_closed {L : Ix.Kernel.Env .anon → NativeFam .anon �
     (calls : List (Call F)) (hfamMod : FamCallsModeled calls) :
     FamilyStepsFamFull.{u} L calls (Claim.TopWalk calls) := by
   intro t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree hstore hEnvWF hWhole
-  obtain ⟨rank, fam, twin, adv, Inner, bAddr, hWalk, hFR, hIC, -, hblock, -⟩ :=
-    familyGraphRowInnerFamT_closed (fun _ _ _ _ _ _ _ => True) hfamMod
+  obtain ⟨rank, fam, twin, adv, Inner, bAddr, hWalk, hFR, hIC, -, hblock, htwin_canon⟩ :=
+    familyGraphRowInnerFamT_closed (fun _ _ t E₀ _ B r => RFormS t E₀ B r) hfamMod
       t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree hstore hEnvWF hWhole
   exact ⟨rank, fam, twin, adv, Inner, hWalk, hFR.graph,
     topUnitSteps_family standaloneDefinition standaloneTheoremOrOpaque standaloneRecursor
@@ -224,7 +224,8 @@ theorem familyStepsFamFull_closed {L : Ix.Kernel.Env .anon → NativeFam .anon �
     innerSteps calls t seeds E₀ lim Top rank hWalk R envT fam twin adv Inner bAddr hFR hIC,
     fun E => familyBlock calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR,
     fun E hctx A c B rb crb hW hc hlog htw hrb hcrb =>
-      TwinFamily.familyTwinStep_graph_of_row familyTwin hWalk hFR hctx hW hc hlog htw hrb hcrb,
+      TwinFamily.familyTwinStep_graph_of_row familyTwin hWalk hFR hctx hW hc hlog htw hrb hcrb
+        (htwin_canon B rb A hrb htw).1 (htwin_canon B rb A hrb htw).2,
     TwinFamily.storedTwinSteps_of (TwinFamily.storedTwinStepFam_of_row familyTwin) hWalk hFR
       ⟨famOf, hSF, hSF.flat, storedForm t R envT famOf hshape hSF⟩ hblock⟩
 

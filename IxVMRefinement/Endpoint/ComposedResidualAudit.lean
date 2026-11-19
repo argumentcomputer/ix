@@ -11,11 +11,10 @@ takes the kinds of a top-walked unit in, and of `CheckedUnitFact` and `CheckedUn
 form of a kind's step for every checked unit) and the axioms it reaches. A change to any of them
 fails the build.
 
-How to read it. The explicit arguments are the open obligations, except `Pref`, a parameter
-(the twin preference, a relation, not a proposition): the first two are the
-binding half's, the others the typing half's (`familyCall` serves both halves): the typing fold's
-rows over the family graph (what the run's family graph and the records its family checks check are
-owed, what one accepted family check gives, and the step of a twin). The binding half's run
+How to read it. The explicit arguments are the open obligations: the first two are the
+binding half's, the last two the typing half's (`familyCall` serves both halves): what one
+accepted family check gives, and the step of a twin. The family graph, inner checks, and canonical
+twin selection are proved unconditionally (`Typing.familyGraphRowInnerFamT_closed`). The binding half's run
 predicate is `IxVM.Refinement.Binding.BindingRun`. The first argument is the part of the binding
 claim's export that remains: the stores of a run and the family clauses of its family checks (the
 loaded table's admission and its prelude pin are theorems, `Binding.loadedTableAdmits` and
@@ -39,7 +38,7 @@ The proof is complete when the theorem has no explicit argument.
 What this module does not print. A definition that a hypothesis reads
 (`RemainingStoreClausesOfRun`, `BindingRun`, `AtGroups`,
 `ClosureTwinSteps`,
-`FamilyGraphInnerOwedFam`, `FamilyAlias.FamilyCallRow`, `FamilyRecon.RFormS`,
+`FamilyAlias.FamilyCallRow`, `FamilyRecon.RFormS`,
 `FamilyTwinRowFam`, `FoldExtra`, `UnitStep` and the others) appears by name only: its own
 module holds it. The public statement and what it reads are printed in
 `Ix.IxVM.ConsistencyAudit` and `Ix.IxVM.ConsistencyModelAudit`. The module is outside any
@@ -56,7 +55,6 @@ info: IxVM.Refinement.Endpoint.circuitComposed_residual.{u}
     ∀ (calls : List (Aiur.Generic.SourceSemantics.Call IxVM.F)),
       IxVM.Refinement.Binding.AtGroups (IxVM.Refinement.Binding.BindingRun calls)
         (IxVM.Refinement.Binding.ClosureTwinSteps IxVM.Refinement.Typing.FormerOpenTraceAt calls))
-  (Pref : IxVM.Refinement.Typing.RunPref) (familyGraph : IxVM.Refinement.Typing.FamilyGraphInnerOwedFam Pref)
   (familyCall : IxVM.Refinement.Typing.FamilyAlias.FamilyCallRow IxVM.Refinement.Typing.FormerOpenTraceAt)
   (familyTwin :
     IxVM.Refinement.Typing.TwinFamily.FamilyTwinRowFam IxVM.Refinement.Binding.FamilyRecon.RFormS
