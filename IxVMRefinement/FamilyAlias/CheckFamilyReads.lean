@@ -62,7 +62,7 @@ private theorem callSub_refl (xs : List (Call F)) : CallSub xs xs := fun _ h => 
 
 private theorem callSub_of_eq {xs calls : List (Call F)} (h : calls = xs) : CallSub xs calls := by
   subst h
-  exact callSub_refl xs
+  exact callSub_refl calls
 
 private theorem callSub_append_left {xs ys sup : List (Call F)} (h : CallSub (xs ++ ys) sup) :
     CallSub xs sup :=
@@ -322,45 +322,45 @@ theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : L
     let ⟨sRefs, hr⟩ := peel_call hr eRefs
     let sChk := peel_last hr eChk
     exact
-      ⟨{ sg112 := sg
+      ⟨{ vSeg := _, m105 := _, cs107 := _, sg112 := sg
          subSeg := hSubSeg
-         evReadPayload := s126
-         evGetRb := s148
-         evRbEq := s194
-         evInOrder := sOrd
-         evCountAdv := s231
-         evGetAdv := s266
-         evCountWit := s309
-         evCheckWit := s344
-         evWset := s403
-         evContRefs := s435
-         evCheckAdv := s465
-         evLoadBlk := s513
-         evLenMem := s601
-         evIndcCnt := s634
-         evNParams := s664
-         evTypes := s686
-         evTypeMods := s716
-         evCtors := s759
-         evLenCtors := s817
-         evCtorMods := s796
-         evRecs := s852
-         evNoRole := sNoRole
-         evLenRecs := s874
-         evRecMods := s896
-         evSrcTail := s960
-         evSrc := s939
-         evDstTail := s1011
-         evDst := s990
-         evTysVal := sTysV
-         evLater := sLater
-         evCtorsVal := sCtorsV
-         evRecsVal := sRecsV
-         evBlockElim := sElim
-         extAfterElim := sFlat.extends.trans (sNest.extends.trans (sLenF.extends.trans
+         payload := _, m114 := _, evReadPayload := s126
+         xRb := _, s1 := _, m136 := _, evGetRb := s148
+         m184 := _, evRbEq := s194
+         vOrd := _, mOrd := _, evInOrder := sOrd
+         nAdv := _, s2 := _, m219 := _, evCountAdv := s231
+         advList := _, s3 := _, m254 := _, evGetAdv := s266
+         nWit := _, s4 := _, m297 := _, evCountWit := s309
+         outside := _, s5 := _, m332 := _, evCheckWit := s344
+         wset := _, m391 := _, evWset := s403
+         vCont := _, m423 := _, evContRefs := s435
+         aset := _, m453 := _, evCheckAdv := s465
+         members := _, wSh := _, wRf := _, wUn := _, wBd := _, m501 := _, evLoadBlk := s513
+         nInd := _, m589 := _, evLenMem := s601
+         m624 := _, evIndcCnt := s634
+         np := _, m652 := _, evNParams := s664
+         tys := _, m674 := _, evTypes := s686
+         tyM := _, s6 := _, m704 := _, evTypeMods := s716
+         ctors := _, m747 := _, evCtors := s759
+         nCtors := _, m807 := _, evLenCtors := s817
+         ctorM := _, s7 := _, m784 := _, evCtorMods := s796
+         recs := _, m840 := _, evRecs := s852
+         vNoRole := _, mNoRole := _, evNoRole := sNoRole
+         nRecs := _, m862 := _, evLenRecs := s874
+         recM := _, s8 := _, m884 := _, evRecMods := s896
+         ctorRec := _, m950 := _, evSrcTail := s960
+         src := _, m927 := _, evSrc := s939
+         ctorRecM := _, m1001 := _, evDstTail := s1011
+         dst := _, m978 := _, evDst := s990
+         vTysVal := _, mTysVal := _, evTysVal := sTysV
+         later := _, mLater := _, evLater := sLater
+         vCtorsVal := _, mCtorsVal := _, evCtorsVal := sCtorsV
+         vRecsVal := _, mRecsVal := _, evRecsVal := sRecsV
+         bnl := _, uo := _, m1191 := _, evBlockElim := sElim
+         mRefs := _, extAfterElim := sFlat.extends.trans (sNest.extends.trans (sLenF.extends.trans
            (sZ1.extends.trans (sZ2.extends.trans sValG.extends))))
-         evRefsOk := sRefs
-         evCheckRecs := sChk
+         vRefs := _, m1293 := _, evRefsOk := sRefs
+         s9 := _, evCheckRecs := sChk
          ldS9Nil := lS9 }⟩
 
 /-! ## `members_val` and `member_val` -/
@@ -448,14 +448,14 @@ theorem memberVal_chain {m md src dst aset later r : SourceValue F} {h h' : Heap
     let ⟨s226, hr⟩ := peel_call hr e226
     let s212 := peel_last hr e212
     exact
-      ⟨{ evInAset := s25
-         evGetM := s78
+      ⟨{ m15 := _, evInAset := s25
+         p := _, ci := _, m65 := _, evGetM := s78
          ldM := l72
-         evLvlsTy := s62
-         evNoMent := sMent
-         evGetMd := s117
+         nl := _, ty := _, m50 := _, evLvlsTy := s62
+         mMent := _, evNoMent := sMent
+         pm := _, mty := _, w1 := _, w2 := _, w3 := _, m101 := _, evGetMd := s117
          ldMd := l111
-         evRen := s226
+         ren := _, m216 := _, evRen := s226
          evEq := s212 }⟩
 
 /-! ## `family_refs_ok` and `assert_inner_refs_safe` -/
@@ -496,9 +496,9 @@ theorem familyRefsOk_chain {rc rb b wset r : SourceValue F} {h h' : Heap F}
     let ⟨sIdx, hr⟩ := peel_call hr eIdx
     let sIn := peel_last hr eIn
     exact
-      ⟨{ evLoadRb := s14
-         extToIdxs := s36.extends.trans (sI1.extends.trans (sI2.extends.trans sGo.extends))
-         evIdxs := sIdx
+      ⟨{ w1 := _, w2 := _, refs := _, w3 := _, w4 := _, m2 := _, evLoadRb := s14
+         mGo := _, extToIdxs := s36.extends.trans (sI1.extends.trans (sI2.extends.trans sGo.extends))
+         used := _, mIdxs := _, evIdxs := sIdx
          evInner := sIn }⟩
 
 /-- **Heap-chained decomposition of `KernelModeled::assert_inner_refs_safe`.** -/
@@ -702,35 +702,35 @@ theorem checkRecs_step {rc tys recs models src dst aset s n k np uo bnl fam form
     let ⟨sRules, hr⟩ := peel_call hr eRules
     let sNext := peel_last hr eNext
     exact Or.inr
-      ⟨{ ldRecs := l12
+      ⟨{ x := _, rest := _, rm := _, mrest := _, ldRecs := l12
          ldModels := l51
-         evGetRec := s82
-         ldRec := l76
-         ext473 := s298.extends.trans (s359.extends.trans (s345.extends.trans
+         p := _, m67 := _, evGetRec := s82
+         nl := _, ty := _, ni := _, nmin := _, rules := _, blk := _, idx := _, ldRec := l76
+         m473 := _, ext473 := s298.extends.trans (s359.extends.trans (s345.extends.trans
            (s403.extends.trans s485.extends)))
-         evScope := s523
-         evNoMent := s571
-         hNil1 := hNil1
-         evPeel1 := sP1
-         evRen := sRen
-         hNil2 := hNil2
-         evPeel2 := sP2
-         evParamEq := sEq
-         opNpN := opA
+         vScope := _, m511 := _, evScope := s523
+         m561 := _, evNoMent := s571
+         mNil1 := _, hNil1 := hNil1
+         wPeel1 := _, pd := _, mP1 := _, evPeel1 := sP1
+         ren := _, mRen := _, evRen := sRen
+         mNil2 := _, hNil2 := hNil2
+         wPeel2 := _, pdm := _, mP2 := _, evPeel2 := sP2
+         mEq := _, evParamEq := sEq
+         xNpN := _, rp := _, opNpN := opA
          opRp := opB
-         evPins := sPins
-         opNmotNmin := opC
-         evLowerPins := sLP
-         hNilSort := hNilS
-         evSort := sSort
-         ext669 := sSaf1.extends.trans sSaf2.extends
-         evParent := sPar
-         evGetParent := sGetP
+         wP1 := _, wP2 := _, pins := _, mPins := _, evPins := sPins
+         nmotNmin := _, opNmotNmin := opC
+         vLower := _, mLP := _, evLowerPins := sLP
+         mNilSort := _, hNilSort := hNilS
+         vSort := _, m596 := _, evSort := sSort
+         m669 := _, ext669 := sSaf1.extends.trans sSaf2.extends
+         parAddr := _, m698 := _, evParent := sPar
+         parPtr := _, parCi := _, mPar := _, evGetParent := sGetP
          ldParent := lPar
-         evCanon := sCan
-         evHeaderLets := sHL
-         evRules := sRules
-         opKNext := opK
+         form' := _, mCan := _, evCanon := sCan
+         vHL := _, m838 := _, evHeaderLets := sHL
+         s' := _, m892 := _, evRules := sRules
+         k' := _, opKNext := opK
          evNext := sNext }⟩
 
 end IxVM.Refinement.Typing.FamilyAlias

@@ -322,7 +322,8 @@ theorem denoteMeta_of_exprLvEq {acval : KKey → (LevelParam → Nat) → AnnotT
     {e₁ e₂ : KExpr} (h : ExprLvEq e₁ e₂) (d : Nat) :
     denoteMeta acval env φ d e₁ = denoteMeta acval env φ d e₂ := by
   cases h with
-  | bvar | fvar | lit => rfl
+  | bvar | lit => rfl
+  | fvar _ => simp [denoteMeta_fvar]
   | sort hu => simp only [denoteMeta, hu φ]
   | @const n us vs hus =>
     simp only [denoteMeta]
@@ -333,17 +334,17 @@ theorem denoteMeta_of_exprLvEq {acval : KKey → (LevelParam → Nat) → AnnotT
       rw [lvEqList_length_eq hus, substFn_congr_lvEqList φ ci.toConstantVal.levelParams hus]
   | app hf ha =>
     simp only [denoteMeta_app, denoteMeta_of_exprLvEq hf d, denoteMeta_of_exprLvEq ha d]
-  | @lam t₁ t₂ b₁ b₂ _ _ ht hb =>
+  | @lam t₁ t₂ b₁ b₂ _ ht hb =>
     simp only [denoteMeta_lam, denoteMeta_of_exprLvEq ht d]
     have hinst : ExprLvEq (b₁.instantiate1 (.fvar d t₁)) (b₂.instantiate1 (.fvar d t₂)) := by
-      have hs := (ExprLvEq.fvar (d := d) ht).shift hb 0
+      have hs := (ExprLvEq.fvar (i := d) ht).shift hb 0
       rwa [instShift_eq_instantiate1 (V := .fvar d t₁) rfl 0 b₁,
            instShift_eq_instantiate1 (V := .fvar d t₂) rfl 0 b₂] at hs
     rw [denoteMeta_of_exprLvEq hinst (d + 1)]
-  | @forallE t₁ t₂ b₁ b₂ _ _ ht hb =>
+  | @forallE t₁ t₂ b₁ b₂ _ ht hb =>
     simp only [denoteMeta_forallE, denoteMeta_of_exprLvEq ht d]
     have hinst : ExprLvEq (b₁.instantiate1 (.fvar d t₁)) (b₂.instantiate1 (.fvar d t₂)) := by
-      have hs := (ExprLvEq.fvar (d := d) ht).shift hb 0
+      have hs := (ExprLvEq.fvar (i := d) ht).shift hb 0
       rwa [instShift_eq_instantiate1 (V := .fvar d t₁) rfl 0 b₁,
            instShift_eq_instantiate1 (V := .fvar d t₂) rfl 0 b₂] at hs
     rw [denoteMeta_of_exprLvEq hinst (d + 1)]
@@ -410,8 +411,8 @@ theorem renameOkPos_of_aliasEnv {V : Type u} [Ix.Kernel.SetTheory V] {μ : Check
       have hlenQ : ci'.toConstantVal.levelParams.length = lps.length := by
         simpa [List.length_range] using hlt.length_eq
       refine ⟨ci', hft, hlenQ, fun φ us hus => ?_⟩
-      dsimp only [ConstantInfo.toConstantVal] at hus ⊢
-      rw [hac, substFn_comp_of_perm hperm hlt hus φ]
+      rw [hac]
+      exact congrArg (m.base2.acval (h n)) (substFn_comp_of_perm hperm hlt hus φ).symm
   · by_cases hn : h n = n
     · rw [hn]
       exact hf
