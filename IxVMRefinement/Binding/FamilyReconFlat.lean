@@ -295,7 +295,7 @@ theorem flat_find_matching_spec {κ : _root_.Address → KKey} (hinj : Function.
           rw [ite_eq_right h, beq_eq_false_iff_ne.mpr hne]; rfl
       rw [haddr_eq] at hv1; subst hv1
       have hseg : v2 = .field (if (!e.aux || (specPrefix e.params args liftBy && e.levels == us))
-          then 1 else 0) ∧ Heap.Extends h m2 := by
+          then 1 else 0) ∧ Heap.Extends m1 m2 := by
         cases sg with
         | n0 hv0 hr2 hh2 _ =>
           have haux : e.aux = false := auxVal_eq_zero.mp hv0
@@ -389,8 +389,7 @@ theorem is_rec_field_peel_spec {κ : _root_.Address → KKey} (hinj : Function.I
     have hfm := flat_find_matching_spec hinj hlift es 0 evfm'
       (sub fun c hc' => by rw [hc]; simp [hc'])
       (flatList_mono evsp.heap_extends hes) rca rus hargs
-    unfold isRecField
-    rw [hpeel, hfn_eq, hA]
+    simp only [isRecField, hpeel, hfn_eq, hA (ixAddr ca)]
     simpa using hfm
   | .other_other (v1 := v) (m73 := m1) (cs_jssmsurq := cs1) (x_head := xhd) (x_args := xargs)
       (v111 := vh) (ld12 := ld) (hne68 := hnf) (hne_ttotnwna := hnl) (ev_ygzmqkmf := evsp)
@@ -490,28 +489,29 @@ theorem walk_fields_classify_spec {κ : _root_.Address → KKey} (hinj : Functio
       subst hmem
       have ext2 := evrecf.heap_extends
       have ext12 := ext1.trans ext2
-      have ext3 : Heap.Extends m2 (m2 ++ [.construct kexprListEnum "Cons" [xdom, xdoms]]) :=
-        Heap.Extends.snoc _ _
-      have ext4 : Heap.Extends _ (_ ++ [.construct kexprListEnum "Cons" [vnd, xnorm]]) :=
-        Heap.Extends.snoc _ _
-      have ext5 : Heap.Extends _ (_ ++ [.construct kexprListEnum "Cons" [xdom, xtys]]) :=
-        Heap.Extends.snoc _ _
-      have ext6 : Heap.Extends _ (_ ++ [.construct fieldListEnum "Cons" [.field (fidx : F), xrec]]) :=
-        Heap.Extends.snoc _ _
-      have ext7 : Heap.Extends _ (_ ++ [.construct fieldListEnum "Cons" [.field (m : F), xrecmem]]) :=
-        Heap.Extends.snoc _ _
-      have hdoms' : RepList kexprListEnum (TmOExact κ) _ (D :: domsAcc) _ :=
+      let h3 := m2 ++ [.construct kexprListEnum "Cons" [xdom, xdoms]]
+      let h4 := h3 ++ [.construct kexprListEnum "Cons" [vnd, xnorm]]
+      let h5 := h4 ++ [.construct kexprListEnum "Cons" [xdom, xtys]]
+      let h6 := h5 ++ [.construct fieldListEnum "Cons" [.field (fidx : F), xrec]]
+      let h7 := h6 ++ [.construct fieldListEnum "Cons" [.field (m : F), xrecmem]]
+      have ext3 : Heap.Extends m2 h3 := Heap.Extends.snoc _ _
+      have ext4 : Heap.Extends h3 h4 := Heap.Extends.snoc _ _
+      have ext5 : Heap.Extends h4 h5 := Heap.Extends.snoc _ _
+      have ext6 : Heap.Extends h5 h6 := Heap.Extends.snoc _ _
+      have ext7 : Heap.Extends h6 h7 := Heap.Extends.snoc _ _
+      have hdoms' : RepList kexprListEnum (TmOExact κ) h3 (D :: domsAcc) _ :=
         Lib.rep_store_cons tmOExact_heapMono₂ (hD1.mono ext12) (tmOExactList_mono ext12 hdoms)
-      have hnorm' : RepList kexprListEnum (TmOExact κ) _ (nd :: normAcc) _ :=
+      have hnorm' : RepList kexprListEnum (TmOExact κ) h4 (nd :: normAcc) _ :=
         Lib.rep_store_cons tmOExact_heapMono₂ (hnd.mono (ext2.trans ext3))
           (tmOExactList_mono (ext12.trans ext3) hnorm)
-      have hrec' : RepList fieldListEnum RepNatField _ (fidx :: recAcc) _ :=
+      have hrec' : RepList fieldListEnum RepNatField h6 (fidx :: recAcc) _ :=
         Lib.rep_store_cons repNatField_heapMono₂ rfl
           (fieldList_mono (ext12.trans (ext3.trans (ext4.trans ext5))) hrec)
-      have hrecmem' : RepList fieldListEnum RepNatField _ (m :: recMemAcc) _ :=
+      have hrecmem' : RepList fieldListEnum RepNatField h7 (m :: recMemAcc) _ :=
         Lib.rep_store_cons repNatField_heapMono₂ rfl
           (fieldList_mono (ext12.trans (ext3.trans (ext4.trans (ext5.trans ext6)))) hrecmem)
-      have extAll := ext12.trans (ext3.trans (ext4.trans (ext5.trans (ext6.trans ext7))))
+      have extAll : Heap.Extends h h7 :=
+        ext12.trans (ext3.trans (ext4.trans (ext5.trans (ext6.trans ext7))))
       obtain rfl := binop_add_one_nat opf1
       have hlt : cs3.length < cs.length := by
         rw [hc]; simp only [List.length_cons, List.length_append]; omega
@@ -546,18 +546,18 @@ theorem walk_fields_classify_spec {κ : _root_.Address → KKey} (hinj : Functio
     | none =>
       have ext2 := evrecf.heap_extends
       have ext12 := ext1.trans ext2
-      have ext3 : Heap.Extends m2 (m2 ++ [.construct kexprListEnum "Cons" [xdom, xdoms]]) :=
-        Heap.Extends.snoc _ _
-      have ext4 : Heap.Extends _ (_ ++ [.construct kexprListEnum "Cons" [vnd, xnorm]]) :=
-        Heap.Extends.snoc _ _
-      have ext5 : Heap.Extends _ (_ ++ [.construct kexprListEnum "Cons" [xdom, xtys]]) :=
-        Heap.Extends.snoc _ _
-      have hdoms' : RepList kexprListEnum (TmOExact κ) _ (D :: domsAcc) _ :=
+      let h3 := m2 ++ [.construct kexprListEnum "Cons" [xdom, xdoms]]
+      let h4 := h3 ++ [.construct kexprListEnum "Cons" [vnd, xnorm]]
+      let h5 := h4 ++ [.construct kexprListEnum "Cons" [xdom, xtys]]
+      have ext3 : Heap.Extends m2 h3 := Heap.Extends.snoc _ _
+      have ext4 : Heap.Extends h3 h4 := Heap.Extends.snoc _ _
+      have ext5 : Heap.Extends h4 h5 := Heap.Extends.snoc _ _
+      have hdoms' : RepList kexprListEnum (TmOExact κ) h3 (D :: domsAcc) _ :=
         Lib.rep_store_cons tmOExact_heapMono₂ (hD1.mono ext12) (tmOExactList_mono ext12 hdoms)
-      have hnorm' : RepList kexprListEnum (TmOExact κ) _ (nd :: normAcc) _ :=
+      have hnorm' : RepList kexprListEnum (TmOExact κ) h4 (nd :: normAcc) _ :=
         Lib.rep_store_cons tmOExact_heapMono₂ (hnd.mono (ext2.trans ext3))
           (tmOExactList_mono (ext12.trans ext3) hnorm)
-      have extAll := ext12.trans (ext3.trans (ext4.trans ext5))
+      have extAll : Heap.Extends h h5 := ext12.trans (ext3.trans (ext4.trans ext5))
       obtain rfl := binop_add_one_nat opf1
       have hlt : cs3.length < cs.length := by
         rw [hc]; simp only [List.length_cons, List.length_append]; omega
