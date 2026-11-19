@@ -398,7 +398,7 @@ variable {κ : _root_.Address → KKey}
 /-- **`KernelCheck::list_lift_indices(doms, shift, i)`** lifts the `j`-th term by `shift` at the
 cutoff `i + j`; from `i = 0` it is `liftIndices`. -/
 theorem list_lift_indices_spec {shift : Nat} (hs : shift < 4611686018427387904) :
-    ∀ (Ds : List KExpr) (i : Nat), i + Ds.length < 4294967296 →
+    ∀ (Ds : List KExpr) (i : Nat), i + Ds.length < 4611686018427387904 →
       ∀ {xds r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
       ObsFn Obs.W "KernelCheck::list_lift_indices" [xds, .field (shift : F), .field (i : F)] h r h'
         cs → IxVM.Consistency.Bounded cs → RepList kexprListEnum (TmOExact κ) h Ds xds →
