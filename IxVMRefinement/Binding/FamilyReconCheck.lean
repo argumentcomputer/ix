@@ -1405,9 +1405,11 @@ private theorem build_rec_type_heap_shape {rootCalls : List (Call F)}
       rw [hidx_eq] at hm_bv
       subst hm_bv
       -- conclusion HeapAppBVar
-      have hab0 : HeapAppBVar _ (.ptr (.enum kexprEnum) _)
+      have hab0 : HeapAppBVar (m_mi ++ [Value.construct kexprEnum "BVar"
+            [.field ((es.length + tot + nI - selfPos : Nat) : F)]])
+          (.ptr (.enum kexprEnum) m_mi.length)
           (((es.length + tot + nI - selfPos : Nat) : F)) :=
-        .bvar (loadValue_store_snoc _ _)
+        .bvar (loadValue_store_snoc m_mi _)
       have hab1 : HeapAppBVar _ vconcl0
           (((es.length + tot + nI - selfPos : Nat) : F)) :=
         apply_indices_in_conclusion_heapAppBVar nI (by omega) nI 0 (by omega) hab0 (by simpa using evaic)
@@ -3658,7 +3660,7 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
         ev_rlvls.heap_extends.trans (ev_bfb.heap_extends.trans ext_bfb_cin)
       have ext_ci_cin : Heap.Extends m_ci m_c_in :=
         ext_ci_rlvls.trans (ev_bfb.heap_extends.trans ext_bfb_cin)
-      have hsub_cap' : ∀ {cs'}, (∀ cl ∈ cs', cl ∈ cs_c_in) → ∀ cl ∈ cs', cl ∈ calls :=
+      have hsub_cap' : ∀ {cs' : List (Call F)}, (∀ cl ∈ cs', cl ∈ cs_c_in) → ∀ cl ∈ cs', cl ∈ calls :=
         fun hs cl hcl' => hsub_cap cl (hs cl hcl')
       -- flat_length = rs.size (from ev_flen + heq_nmot2)
       have ext_brt_f : Heap.Extends m_brt_out m_f := by
@@ -3673,9 +3675,13 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
       obtain ⟨hv_nmot, hm224⟩ := flat_length_spec ev_flen
         (flatList_mono (ext_bfb_cin.trans ext_cin_f) hflat_bfb)
       subst hm224
-      have hflat_lt : flat.length < 2 ^ 39 :=
-        RomBound.bounded_length_lt hbd (hsub_cap' (fun cl hcl' => mem_of_eq hc_cap (by call_mem)) _ List.mem_cons_self)
-          List.mem_cons_self (flatList_mono (ext_bfb_cin.trans ext_cin_f) hflat_bfb)
+      have hflat_lt : flat.length < 2 ^ 39 := by
+        have hmem_len :
+            (⟨Obs.Names.«Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>»,
+              [v_flat], m_f⟩ : Call F) ∈ calls :=
+          hsub_cap _ (mem_of_eq hc_cap (by call_mem))
+        exact RomBound.bounded_length_lt hbd hmem_len List.mem_cons_self
+          (flatList_mono (ext_bfb_cin.trans ext_cin_f) hflat_bfb)
       rw [hv_nmot] at heq_nmot2
       have hflat_len : flat.length = rs.size := by
         have h1 := congrArg ZMod.val (Value.field.inj heq_nmot2)
@@ -3723,22 +3729,22 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
       -- HeapEqOrWrap from sg_f (at m_eq extending m_brt_out)
       have hrel_cty : ∃ m_eq, Heap.Extends m_brt_out m_eq ∧ HeapEqOrWrap calls m_eq x_cty xty := by
         cases sg_f with
-        | n1_n1 _ _ evk _ _ _ hcs =>
+        | n1_n1 _ cs_k evk _ _ _ hcs =>
           exact ⟨m_brt_out, Heap.Extends.refl _,
-            Or.inl ⟨_, _, hsub_cap' (fun cl hcl' => mem_of_eq hc_cap (by
+            Or.inl ⟨_, cs_k, hsub_cap' (fun cl (hcl' : cl ∈ cs_k) => mem_of_eq hc_cap (by
               have : cl ∈ cs_f := mem_of_eq hcs (by call_mem); call_mem)), evk⟩⟩
-        | n1_other_n1 _ _ _ _ evk _ _ _ _ hcs =>
+        | n1_other_n1 _ cs_k _ _ evk _ _ _ _ hcs =>
           exact ⟨m_brt_out, Heap.Extends.refl _,
-            Or.inl ⟨_, _, hsub_cap' (fun cl hcl' => mem_of_eq hc_cap (by
+            Or.inl ⟨_, cs_k, hsub_cap' (fun cl (hcl' : cl ∈ cs_k) => mem_of_eq hc_cap (by
               have : cl ∈ cs_f := mem_of_eq hcs (by call_mem); call_mem)), evk⟩⟩
-        | n1_other_other _ _ _ _ _ evk _ _ _ _ _ _ hcs =>
+        | n1_other_other _ cs_k _ _ _ evk _ _ _ _ _ _ hcs =>
           exact ⟨m_brt_out, Heap.Extends.refl _,
-            Or.inl ⟨_, _, hsub_cap' (fun cl hcl' => mem_of_eq hc_cap (by
+            Or.inl ⟨_, cs_k, hsub_cap' (fun cl (hcl' : cl ∈ cs_k) => mem_of_eq hc_cap (by
               have : cl ∈ cs_f := mem_of_eq hcs (by call_mem); call_mem)), evk⟩⟩
-        | other _ _ _ _ _ _ _ _ _ _ _ _ _ evk _ evrg _ evw heqw _ _ _ _ _ hcs =>
+        | other _ _ _ _ _ _ _ _ cs_w _ _ _ _ evk _ evrg _ evw heqw _ _ _ _ _ hcs =>
           subst heqw
           exact ⟨_, evk.heap_extends.trans evrg.heap_extends,
-            Or.inr ⟨_, _, _, hsub_cap' (fun cl hcl' => mem_of_eq hc_cap (by
+            Or.inr ⟨_, _, cs_w, hsub_cap' (fun cl (hcl' : cl ∈ cs_w) => mem_of_eq hc_cap (by
               have : cl ∈ cs_f := mem_of_eq hcs (by call_mem); call_mem)), evw⟩⟩
       obtain ⟨m_eq, ext_brt_eq, hrel_eq⟩ := hrel_cty
       -- check_rec_motive_spec + heapForalls_eq_count + heapAppBVar_eq_of_heapEqOrWrap => lenP = np, lenI = pni, sp = k!
@@ -4277,7 +4283,7 @@ private theorem check_recs_pass2 {calls : List (Call F)} {bAddr : _root_.Address
         have hweq := wrap_rel_one_oexact ht hwf hS hH hbd hRagree hcl hlv hsub_w
           (hRty_tm.mono (evk.heap_extends.trans evrg.heap_extends))
           (st.hty_brt_out.mono (evk.heap_extends.trans evrg.heap_extends)) hRty_in evw
-        have hQ2 := hweq.toWrapRel_obs
+        have hQ2 := hweq.toWrapConsObs
         have hne1 : xform ≠ .field 1 := by
           intro h1; subst h1
           simp only [evalBinOp, sub_self, Except.ok.injEq] at op_sub
@@ -4465,7 +4471,9 @@ private theorem check_recs_pass3 {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
         have h1 := compare_rules_len_le st.pInfo_nctors_lt rc.rules.toList bodies 0 (by omega)
           st.hrules_pop hbodies_rep (by simpa using ev_cmp)
         simpa using h1
-      have hcmp := compare_rules_spec hbd (by omega) rc.rules.toList bodies 0
+      have hcmp := compare_rules_spec
+        (nP := np) (nMot := rc.motives.toNat) (nMin := rc.minors.toNat) (minorOff := cbk)
+        hbd (by omega) rc.rules.toList bodies 0
         (by omega) (by omega) hsub_cmp st.hrules_pop hbodies_rep st.hty_pop st.helim_pop
         (by simpa using ev_cmp)
       refine ⟨st.ty, bodies, cbk, st.loaded_ty, ?_, hcbk_eq, ?_⟩
@@ -4473,7 +4481,8 @@ private theorem check_recs_pass3 {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
         unfold ruleBodiesAt
         simp only [hflat_eq ▸ st.flat_k, st.ek_addr.symm ▸ st.pInfo_at, hflat_eq ▸ st.fop_eq, hcbk_eq]
         rw [st.rnp_eq]
-        rw [st.pba_addr, st.rba_addr ▸ hpeers_map] at hf
+        have hpm : peers.map ixAddr = recAddrs rb rs := by rwa [st.rba_addr] at hpeers_map
+        rw [st.pba_addr, hpm] at hf
         exact hf
       · intro c ru hru
         have hruL : rc.rules.toList[c]? = some ru := by rw [Array.getElem?_toList]; exact hru
@@ -4654,7 +4663,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       intro i m hm
       have hi_lt : i < as_t.length := by rw [has_t_len, Array.length_toList]; exact (Array.getElem?_eq_some_iff.mp hm).1
       obtain ⟨m', hm', -, ha_i, hh_i⟩ := has_t_mem i as_t[i] (List.getElem?_eq_getElem hi_lt)
-      rw [Array.getElem?_toList] at hm
+      rw [← Array.getElem?_toList] at hm
       have hm_eq : m' = m := Option.some.inj (hm'.symm.trans hm); subst hm_eq
       obtain ⟨ind, rfl⟩ := hall_indc m (List.mem_of_getElem? hm)
       exact stored_of_hashed_iprj hH (Core.hashed_mono (sub fun cl hcl' => mem_of_eq hc (by call_mem)) hh_i)
@@ -4674,7 +4683,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       have hh := block_ctor_addrs_hashed_spec (t := t) msB.toList 0 (by simpa using by omega) hct_sz
         (RepLinkedList.mono L1.repMutConst_heapMono₂ (ext_501_652.trans ext_652_704) hrep_msB)
         (Bytes.repAddressRef_heapMono₂ addrTy (ext_h_453.trans (ev_blk.heap_extends.trans (ext_501_652.trans ext_652_704))) hbB)
-        (by simpa using ev_bca) i ind j (by rwa [Array.getElem?_toList] at hi) hj
+        (by simpa using ev_bca) i ind j (by rw [Array.getElem?_toList]; exact hi) hj
       simpa using stored_of_hashed_cprj hH (Core.hashed_mono (sub fun cl hcl' => mem_of_eq hc (by call_mem)) hh)
     have hBlock : FamBlockRecord E₀ (ixAddr bB) cb msB :=
       ⟨hcbE, hmsB, hall_indc, hBLogic cb hcbE, hB_members, hB_ctors⟩
@@ -4688,7 +4697,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       obtain ⟨m, hm, -, ha, -⟩ := has_r_mem i a hi
       obtain ⟨rc, rfl⟩ := hRec.recrs m (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hm))
       exact ⟨rc, hm, by rw [LoadedReads.memberAddr_eq_projAddr]; exact ha⟩
-    have ev_rlen' : ObsFn W (Instance.mk "Lists::length" [.array .field 32]).symbol [x_recs] m_qv
+    have ev_rlen' : ObsFn W (Instance.mk "Lists::length" [(.array .field 32).ptr]).symbol [x_recs] m_qv
         v_nrecs m862 cs872 := by
       rw [Obs.Names.«Lists::length<&[Field; 32]>».symbol]; exact ev_rlen
     have has_r_qv := repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
@@ -4696,17 +4705,18 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
     obtain ⟨hv_nrecs, -⟩ := Lib.Lists.length_spec ev_rlen' (by rw [Obs.Names.«Lists::Node<&[Field; 32]>».symbol]; exact has_r_qv)
     rw [has_r_len] at hv_nrecs; subst hv_nrecs
     have hrs_lt : rs.size < 2 ^ 39 := by
-      have := RomBound.bounded_length_lt hbd (sub (fun cl hcl' => mem_of_eq hc (by call_mem)) _ List.mem_cons_self)
-        List.mem_cons_self has_r_qv
+      have hmem_len : (⟨Obs.Names.«Lists::length<&[Field; 32]>», [x_recs], m_qv⟩ : Call F) ∈ calls :=
+        hsub_cf _ (mem_of_eq hc (by call_mem))
+      have := RomBound.bounded_length_lt hbd hmem_len List.mem_cons_self has_r_qv
       rwa [has_r_len] at this
     -- block_elim_spec => bnl, off, BlockElim
     have has_t_map : as_t.map ixAddr = indcAddrs (ixAddr bB) 0 msB.toList := by
-      rw [← blockRecurAddrs_eq_indcAddrs_of_all_indc (ixAddr bB) 0 msB.toList hall_indc,
-        ← L1.blockRecurAddrs_eq_mapIdx]
+      rw [← blockRecurAddrs_eq_indcAddrs_of_all_indc (ixAddr bB) 0 msB.toList hall_indc]
+      simp only [Nat.zero_add]
       apply List.ext_getElem
-      · simp [has_t_len, L1.blockRecurAddrs_eq_mapIdx]
+      · simp [has_t_len]
       · intro i h1 h2
-        simp only [List.getElem_map, L1.blockRecurAddrs_eq_mapIdx, List.getElem_mapIdx]
+        simp only [List.getElem_map, List.getElem_mapIdx]
         have hi_t : i < as_t.length := by simpa using h1
         obtain ⟨m, hm, -, ha, -⟩ := has_t_mem i as_t[i] (List.getElem?_eq_getElem hi_t)
         have hm_eq : m = msB.toList[i]'(by simpa [has_t_len] using hi_t) := by
@@ -4721,7 +4731,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       have hcbR' : recordOf R' (ixAddr bB) = some cb := by
         obtain ⟨c', hc'⟩ := Option.isSome_iff_exists.mp hR'B
         have := hR'agree _ _ _ hc' hcbE; subst this; exact hc'
-      have hm' : msB[i]? = some m := by rwa [Array.getElem?_toList]
+      have hm' : msB[i]? = some m := by rwa [Array.getElem?_toList] at hm
       have hprojR' := (hcl'.2 (ixAddr bB) cb msB hcbR' hmsB i m hm').1
       rw [← LoadedReads.memberAddr_eq_projAddr] at ha_i
       rw [ha_i]; exact Option.isSome_iff_exists.mpr ⟨_, hprojR'⟩
@@ -4744,9 +4754,13 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
     -- flat.length = rs.size (from complete + empty_ok - complete*empty_ok = 1 and rs.size ≠ 0)
     obtain ⟨hv_flen, -⟩ := flat_length_spec ev_flen (flatList_mono ev_cna.heap_extends hflat_rep)
     subst hv_flen
-    have hflat_lt : flat.length < 2 ^ 39 :=
-      RomBound.bounded_length_lt hbd (sub (fun cl hcl' => mem_of_eq hc (by call_mem)) _ List.mem_cons_self)
-        List.mem_cons_self (flatList_mono ev_cna.heap_extends hflat_rep)
+    have hflat_lt : flat.length < 2 ^ 39 := by
+      have hmem_len :
+          (⟨Obs.Names.«Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>»,
+            [v_flat], m1234⟩ : Call F) ∈ calls :=
+        hsub_cf _ (mem_of_eq hc (by call_mem))
+      exact RomBound.bounded_length_lt hbd hmem_len List.mem_cons_self
+        (flatList_mono ev_cna.heap_extends hflat_rep)
     have hflat_len : flat.length = rs.size := by
       obtain ⟨hz_nr, -⟩ := Lib.is_zero_spec ev_znr
       have hrs_neF : (rs.size : F) ≠ 0 := by
