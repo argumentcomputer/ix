@@ -32,12 +32,11 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Consistency
 open IxVM.Refinement.Core (W KExpr KLevel KKey bmeta kexprEnum kexprListEnum klevelListEnum
-  kciEnum krrEnum krrListEnum addrTy ixAddr Resolved)
+  kciEnum krrEnum krrListEnum addrTy addrListEnum ixAddr Resolved)
 open IxVM.Refinement.Decl (TmExact RawTmExact)
 open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList)
 open IxVM.Refinement.Binding.FamilyFlat
-open IxVM.Refinement.Binding (StepStore)
-open IxVM.Refinement.Typing (RecordsFor)
+open IxVM.Refinement.Typing (RecordsFor StepStore)
 open IxVM (F)
 
 set_option maxHeartbeats 3200000
@@ -69,19 +68,23 @@ structure StoreLevelsOk (t : Ix.Kernel.RoleTable) (E : Ixon.Env)
     ∀ E_rd, (exprReader t (fun x => E.blobs.get? x) cb id
         (blockSelf t p.block ms)).read ind.typ = .ok E_rd →
       E_rd.allLevelParamsDefined (List.range ind.lvls.toNat) = true
-  ctorTy : ∀ b cb ms i ind j ct, S b → recordOf E b = some cb → cb.info = .muts ms →
+  ctorTy : ∀ (b : _root_.Address) (cb : Ixon.Constant) (ms : Array Ixon.MutConst)
+      (i : Nat) (ind : Ixon.Inductive) (j : Nat) (ct : Ixon.Constructor),
+    S b → recordOf E b = some cb → cb.info = .muts ms →
     ms[i]? = some (.indc ind) → ind.ctors[j]? = some ct →
     ct.lvls.toNat < 4294967296 ∧
     ∀ E_rd, (exprReader t (fun x => E.blobs.get? x) cb id
         (blockSelf t b ms)).read ct.typ = .ok E_rd →
       E_rd.allLevelParamsDefined (List.range ct.lvls.toNat) = true
-  recr : ∀ rb crb rs k r, S rb → recordOf E rb = some crb → crb.info = .muts rs →
+  recr : ∀ (rb : _root_.Address) (crb : Ixon.Constant) (rs : Array Ixon.MutConst)
+      (k : Nat) (r : Ixon.Recursor),
+    S rb → recordOf E rb = some crb → crb.info = .muts rs →
     rs[k]? = some (.recr r) →
     r.lvls.toNat < 4294967296 ∧
     (∀ E_rd, (exprReader t (fun x => E.blobs.get? x) crb id
         (blockSelf t rb rs)).read r.typ = .ok E_rd →
       E_rd.allLevelParamsDefined (List.range r.lvls.toNat) = true) ∧
-    (∀ j ru E_rd, r.rules[j]? = some ru →
+    (∀ (j : Nat) (ru : Ixon.RecursorRule) E_rd, r.rules[j]? = some ru →
       (exprReader t (fun x => E.blobs.get? x) crb id
         (blockSelf t rb rs)).read ru.rhs = .ok E_rd →
       E_rd.allLevelParamsDefined (List.range r.lvls.toNat) = true)
@@ -126,9 +129,9 @@ theorem posOf_range_eq (n : Nat) : ∀ E : KExpr, Core.posOf (List.range n) E = 
       apply Ix.Kernel.PropWhen.eq_of_holds
       intro φ
       rw [Ix.Kernel.Level.holds_substPW]
-      have hφ : (fun p => Ix.Kernel.Level.eval φ
-          (Ix.Kernel.Level.subst (List.range n) (Core.posLevels (List.range n)) (.param p))) = φ := by
+      have hφ : Ix.Kernel.Level.substFn φ (List.range n) (Core.posLevels (List.range n)) = φ := by
         funext p
+        unfold Ix.Kernel.Level.substFn
         rw [level_subst_posLevels_range n (.param p)]
         rfl
       rw [hφ]
@@ -144,9 +147,9 @@ theorem posOf_range_eq (n : Nat) : ∀ E : KExpr, Core.posOf (List.range n) E = 
       apply Ix.Kernel.PropWhen.eq_of_holds
       intro φ
       rw [Ix.Kernel.Level.holds_substPW]
-      have hφ : (fun p => Ix.Kernel.Level.eval φ
-          (Ix.Kernel.Level.subst (List.range n) (Core.posLevels (List.range n)) (.param p))) = φ := by
+      have hφ : Ix.Kernel.Level.substFn φ (List.range n) (Core.posLevels (List.range n)) = φ := by
         funext p
+        unfold Ix.Kernel.Level.substFn
         rw [level_subst_posLevels_range n (.param p)]
         rfl
       rw [hφ]
@@ -215,28 +218,29 @@ theorem addrIn_of_rkeysAt {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env} {S : _root
     (hwf : t.wf = true) :
     ∀ {E : KExpr}, RKeysAt (ReconView.ofStore t E₀) S E → AddrIn S (Core.keyOf t) E
   | .bvar _, _ | .sort _, _ | .lit _, _ => trivial
-  | .fvar _ _, _ => trivial
-  | .const k _, hk => fun a ha => by
+  | .fvar _ t1, hk =>
+    addrIn_of_rkeysAt hwf (E := t1) (fun k hm => hk k (.fvarTy hm))
+  | .const k us, hk => fun a ha => by
     subst ha
-    exact hk (Core.keyOf t a) (by simp [keyIn]) a (keyAddr_keyOf hwf a)
+    exact hk (Core.keyOf t a) (.const us) a (keyAddr_keyOf hwf a)
   | .app f a, hk =>
-    ⟨addrIn_of_rkeysAt hwf (E := f) (fun k hm => hk k (Or.inl hm)),
-      addrIn_of_rkeysAt hwf (E := a) (fun k hm => hk k (Or.inr hm))⟩
+    ⟨addrIn_of_rkeysAt hwf (E := f) (fun k hm => hk k (.appFn hm)),
+      addrIn_of_rkeysAt hwf (E := a) (fun k hm => hk k (.appArg hm))⟩
   | .lam t1 b _, hk =>
-    ⟨addrIn_of_rkeysAt hwf (E := t1) (fun k hm => hk k (Or.inl hm)),
-      addrIn_of_rkeysAt hwf (E := b) (fun k hm => hk k (Or.inr hm))⟩
+    ⟨addrIn_of_rkeysAt hwf (E := t1) (fun k hm => hk k (.lamTy hm)),
+      addrIn_of_rkeysAt hwf (E := b) (fun k hm => hk k (.lamBody hm))⟩
   | .forallE t1 b _, hk =>
-    ⟨addrIn_of_rkeysAt hwf (E := t1) (fun k hm => hk k (Or.inl hm)),
-      addrIn_of_rkeysAt hwf (E := b) (fun k hm => hk k (Or.inr hm))⟩
+    ⟨addrIn_of_rkeysAt hwf (E := t1) (fun k hm => hk k (.allTy hm)),
+      addrIn_of_rkeysAt hwf (E := b) (fun k hm => hk k (.allBody hm))⟩
   | .letE t1 v b _, hk =>
-    ⟨addrIn_of_rkeysAt hwf (E := t1) (fun k hm => hk k (Or.inl hm)),
-      addrIn_of_rkeysAt hwf (E := v) (fun k hm => hk k (Or.inr (Or.inl hm))),
-      addrIn_of_rkeysAt hwf (E := b) (fun k hm => hk k (Or.inr (Or.inr hm)))⟩
-  | .proj k _ e, hk =>
+    ⟨addrIn_of_rkeysAt hwf (E := t1) (fun k hm => hk k (.letTy hm)),
+      addrIn_of_rkeysAt hwf (E := v) (fun k hm => hk k (.letVal hm)),
+      addrIn_of_rkeysAt hwf (E := b) (fun k hm => hk k (.letBody hm))⟩
+  | .proj k i e, hk =>
     ⟨fun a ha => by
         subst ha
-        exact hk (Core.keyOf t a) (Or.inl rfl) a (keyAddr_keyOf hwf a),
-      addrIn_of_rkeysAt hwf (E := e) (fun k' hm => hk k' (Or.inr hm))⟩
+        exact hk (Core.keyOf t a) (.proj i e) a (keyAddr_keyOf hwf a),
+      addrIn_of_rkeysAt hwf (E := e) (fun k' hm => hk k' (.projBody hm))⟩
 
 theorem addrIn_instantiateLevelParams {S : _root_.Address → Prop} {κ : _root_.Address → KKey}
     (ps : List Ix.Kernel.LevelParam) (us : List KLevel) :
@@ -285,16 +289,14 @@ theorem rawConvExpr_to_tmOExact_loadedAt {t : Ix.Kernel.RoleTable} (ht : t.check
   obtain ⟨E_rd, hread⟩ := LoadedReads.exprReader_read_ok ht raw hself_ok hblob
   have hdefE := hdef E_rd hread
   obtain ⟨k, hlbb⟩ := exists_looseBVarsBounded E_rd
-  have hread_rp : (Ix.Kernel.Reader.MemberReader.mk' (LoadedReads.readCtx t blob) src
+  have hread_rp : (Ix.Kernel.Reader.MemberReader.mk' (readCtx t blob) src
       (Ix.Kernel.Reader.recParam (List.range nl)) self).read e = .ok E_rd := by
     rw [Assembly.recParam_range]
     exact hread
-  obtain ⟨hecx, htbl⟩ := L1.memberReader_mk'_eq (LoadedReads.readCtx t blob) src
+  obtain ⟨hecx, htbl⟩ := L1.memberReader_mk'_eq (readCtx t blob) src
     (Ix.Kernel.Reader.recParam (List.range nl)) self
   unfold Ix.Kernel.Reader.MemberReader.read at hread_rp
   rw [hecx, htbl, ← List.take_length (l := src.sharing.toList)] at hread_rp
-  haveI : ∀ a : _root_.Address, Resolved (Core.keyOf t a) := fun a =>
-    ⟨IxVM.Refinement.Core.keyOf_ne_unresolved t a⟩
   obtain ⟨E', -, htm, htrace⟩ := raw.toTmExactTrace (κ := Core.keyOf t) (ps := List.range nl)
     (by simp) (by simpa using hnl) rfl (by simp)
     (LoadedReads.readCtx_keyAt_inv ht blob) hself_key hblob
@@ -366,7 +368,7 @@ private theorem soloSelf_key {t : Ix.Kernel.RoleTable} {a : _root_.Address} {d :
       simp only [List.getElem?_cons_zero, Option.some.injEq] at hx
       subst hx
       simp only [soloSelf, Option.some.injEq] at hs
-      subst hs
+      rw [← hs] at hm
       exact (Except.ok.inj hm).symm
     | succ _ => simp at hx
   · simp at hx
@@ -448,7 +450,7 @@ private theorem defnValAt_of_defnAt {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
   cases hrec : recordOf E₀ a with
   | none => rw [hrec] at hd; simp at hd
   | some c =>
-    rw [hrec] at hd ⊢; simp only at hd ⊢
+    rw [hrec] at hd; simp only at hd ⊢
     cases hci : c.info with
     | defn d =>
       simp only [hci] at hd ⊢
@@ -467,7 +469,7 @@ private theorem defnValAt_of_defnAt {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
       cases hcb : recordOf E₀ prj.block with
       | none => simp [hcb] at hd
       | some cb =>
-        rw [hcb] at hd ⊢; simp only at hd ⊢
+        rw [hcb] at hd; simp only at hd ⊢
         cases hcbi : cb.info with
         | muts ms =>
           simp only [hcbi] at hd ⊢
@@ -624,14 +626,13 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       fun _ => by simp [defnAt, hcE, hci]⟩
   | rPrj prj =>
     simp only [L1.GetCIRawResult, hci] at hrawRes
-    obtain ⟨_, _, _, _, _, _, v, -, -, -, -, -, -, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl,
+    obtain ⟨-, _, _, _, _, v, -, -, -, -, -, -, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl,
       -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [defnAt, hcE, hci]⟩
   | muts ms =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
-    exact hrawRes.elim
+    simp [L1.GetCIRawResult, hci] at hrawRes
 
 /-- **`DefnAnswers` for `ReconView.ofStore t E₀`** over a used-closed sub-store `R` with
 `StoreLevelsOk t E₀ (Held R)`. -/
@@ -649,8 +650,7 @@ theorem defnAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
   refine ⟨fun xnl xty xval xsf xh hshape => ?_, fun hne us => ?_⟩
   · obtain ⟨nl, val, h1, h2, h3, h4, hdefnAt, -⟩ := hyes xnl xty xval xsf xh hshape
     refine ⟨nl, val, h1, h2, h3, h4, fun us => ?_⟩
-    simp only [ReconView.ofStore, unfoldAt, hka, hdefnAt]
-    split <;> rfl
+    simp [ReconView.ofStore, unfoldAt, hka, hdefnAt]
   · simp [ReconView.ofStore, unfoldAt, hka, hno hne]
 
 /-- **`IndAnswers` for `ReconView.ofStore t E₀`** over a used-closed sub-store `R` with
@@ -749,14 +749,13 @@ theorem indAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       fun _ => by simp [ReconView.ofStore, indDataAt, hcE, hci]⟩
   | rPrj prj =>
     simp only [L1.GetCIRawResult, hci] at hrawRes
-    obtain ⟨_, _, _, _, _, _, v, -, -, -, -, -, -, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl,
+    obtain ⟨-, _, _, _, _, v, -, -, -, -, -, -, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl,
       -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [ReconView.ofStore, indDataAt, hcE, hci]⟩
   | muts ms =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
-    exact hrawRes.elim
+    simp [L1.GetCIRawResult, hci] at hrawRes
 
 /-- **`CtorOfAnswers` for `ReconView.ofStore t E₀`** over a used-closed sub-store `R`. -/
 theorem ctorOfAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
@@ -835,14 +834,13 @@ theorem ctorOfAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTab
       fun _ => by simp [ReconView.ofStore, ctorOfAt, hcE, hci]⟩
   | rPrj prj =>
     simp only [L1.GetCIRawResult, hci] at hrawRes
-    obtain ⟨_, _, _, _, _, _, v, -, -, -, -, -, -, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl,
+    obtain ⟨-, _, _, _, _, v, -, -, -, -, -, -, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl,
       -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [ReconView.ofStore, ctorOfAt, hcE, hci]⟩
   | muts ms =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
-    exact hrawRes.elim
+    simp [L1.GetCIRawResult, hci] at hrawRes
 
 /-- **`ModeledAnswers` for `ReconView.ofStore t E₀`** over a used-closed sub-store `R` backed by
 a record store `Ec` (`RecordsFor R Ec` and `StepStore rootCalls t E₀ Ec`). -/
@@ -957,14 +955,13 @@ theorem indInfo_of_get_ci {rootCalls : List (Call F)} {E₀ R : Ixon.Env}
       fun _ => by simp [indInfoAt, hcE, hci]⟩
   | rPrj prj =>
     simp only [L1.GetCIRawResult, hci] at hrawRes
-    obtain ⟨_, _, _, _, _, _, v, -, -, -, -, -, -, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl,
+    obtain ⟨-, _, _, _, _, v, -, -, -, -, -, -, hld, -, -, -, -, -, -, _, _, _, _, -, -, rfl,
       -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [indInfoAt, hcE, hci]⟩
   | muts ms =>
-    simp only [L1.GetCIRawResult, hci] at hrawRes
-    exact hrawRes.elim
+    simp [L1.GetCIRawResult, hci] at hrawRes
 
 /-- **`Ingress::get_ci_cprj` matches `ctorAt` and `ctorTypeAt`** on `TmOExact` and `AddrIn (Held R)`. -/
 theorem ctorLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
@@ -1075,7 +1072,7 @@ private theorem rulesTraceRep_to_recRulesRep {t : Ix.Kernel.RoleTable}
     (hk : rs[k]? = some (.recr r)) (hnl : r.lvls.toNat < 4294967296)
     (hblob : ∀ x bs, (x, bs) ∈ blobs → E₀.blobs.get? x = some bs)
     (built : L1.BinderTreeBuilt (L1.binderLeavesData crb.binders.toList) tree)
-    (hdef : ∀ j ru E_rd, r.rules[j]? = some ru →
+    (hdef : ∀ (j : Nat) (ru : Ixon.RecursorRule) E_rd, r.rules[j]? = some ru →
       (exprReader t (fun x => E₀.blobs.get? x) crb id (blockSelf t rb rs)).read ru.rhs =
         .ok E_rd →
       E_rd.allLevelParamsDefined (List.range r.lvls.toNat) = true) :
@@ -1163,12 +1160,12 @@ theorem recrLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     hrecr⟩ := hblk
   rw [hld] at ldci; injection ldci with hv; subst hv
   have hcbEq : cb = crb := record_eq_of_hashed hS hsub hcrbE hhB haB hexB
-  subst hcbEq
+  rcases hcbEq with rfl
   have hmsEq : ms = rs := Ixon.ConstantInfo.muts.inj (hcb.symm.trans hmuts)
-  subst hmsEq
+  rcases hmsEq with rfl
   have hk_lt : k < UInt64.size := by
-    have hsz : k < rs.size := (Array.getElem?_eq_some_iff.mp hk).1
-    have := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound blkBytes crb hexB
+    have hsz : k < ms.size := (Array.getElem?_eq_some_iff.mp hk).1
+    have := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound blkBytes cb hexB
     have := Claim.muts_size_le hmuts
     omega
   have hk_u64 : k.toUInt64.toNat = k := by
@@ -1176,12 +1173,12 @@ theorem recrLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     rw [UInt64.toNat_ofNat']
     exact Nat.mod_eq_of_lt hk_lt
   rw [hk_u64] at hms hrecr hk56
-  have hms' : rs[k]? = some (.recr rc) := by rw [← Array.getElem?_toList]; exact hms
+  have hms' : ms[k]? = some (.recr rc) := by rw [← Array.getElem?_toList]; exact hms
   have hrcEq : rc = r := Ixon.MutConst.recr.inj (Option.some.inj (hms'.symm.trans hk))
-  subst hrcEq
+  rcases hrcEq with rfl
   obtain ⟨hnl, hnp, hni, hnm, hnmi, -, tyPtr, rulesPtr, blkPtr, ba, planT, hba, rba, rfl,
     rty, hpT, hlT, hrls⟩ := hrecr
-  obtain ⟨hnl', hdefT, hdefR⟩ := hlv.recr rb crb rs k r hSrb hcrbE hmuts hk
+  obtain ⟨hnl', hdefT, hdefR⟩ := hlv.recr rb cb ms k rc hSrb hcrbE hmuts hk
   obtain ⟨ty, hloadedT, htmT⟩ := rawConvExpr_to_tmOExact_loadedAt ht hnl'
     (fun _ _ hx => by simp at hx) (fun _ _ _ _ hx => by simp at hx)
     (blobs_of_hashedPairs hS hsub hhp) rty built hpT hlT hdefT
@@ -1189,8 +1186,8 @@ theorem recrLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     addrIn_of_rkeysAt (E₀ := E₀) hwf
       (keys_held_of_loaded ht hwf hcl hcrbR (blockSelf_held hcl hcrbR hmuts)
         (fun l hl => mem_used_of_member hmuts hk l (List.mem_append_left _ hl)) hloadedT)
-  have hrls' : L1.RulesTraceRep crb.refs.toList (L1.blockRecurAddrs rb rs.toList) crb.univs.toList
-      crb.sharing.toList blobs tree m 0 (mutsRoot rs k + 1 + ((0 : Nat) : F)) r.rules.toList
+  have hrls' : L1.RulesTraceRep cb.refs.toList (L1.blockRecurAddrs rb ms.toList) cb.univs.toList
+      cb.sharing.toList blobs tree m 0 (mutsRoot ms k + 1 + ((0 : Nat) : F)) rc.rules.toList
       rulesPtr := by
     simpa [mutsRoot] using hrls
   have hrulesRep := rulesTraceRep_to_recRulesRep ht hwf hcl hcrbR hmuts hk hnl'
@@ -1198,6 +1195,14 @@ theorem recrLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     (fun i ru hi => by rw [Nat.zero_add, ← Array.getElem?_toList]; exact hi) hrls'
   exact ⟨ty, tyPtr, rulesPtr, blkPtr, ba, rfl, hnl', hnp, hni, hnm, hnmi, hk56,
     hloadedT, htmT, htyIn, hba, rba, hrulesRep⟩
+
+private theorem mapIdx_ext {α β : Type} {f g : Nat → α → β} :
+    ∀ (l : List α), (∀ i x, f i x = g i x) → l.mapIdx f = l.mapIdx g
+  | [], _ => rfl
+  | x :: xs, h => by
+    simp only [List.mapIdx_cons, h 0 x]
+    congr 1
+    exact mapIdx_ext xs (fun i y => h (i + 1) y)
 
 /-- On an all-inductive block (`muts_indc_count = length`), `L1.blockRecurAddrs B ms.toList` equals
 `indcAddrs B 0 ms.toList`. -/
@@ -1215,9 +1220,7 @@ theorem blockRecurAddrs_eq_indcAddrs_of_all_indc (B : _root_.Address) :
     have ih := blockRecurAddrs_eq_indcAddrs_of_all_indc B (i + 1) ms
       (fun x hx => hall x (List.mem_cons_of_mem _ hx))
     rw [← ih]
-    refine List.mapIdx_congr ?_
-    intro j x _
-    rw [show i + (j + 1) = i + 1 + j by omega]
+    exact mapIdx_ext ms (fun j x => by rw [show i + (j + 1) = i + 1 + j by omega])
 
 theorem membersAt_eq_blockRecurAddrs {E₀ : Ixon.Env} {B : _root_.Address} {cb : Ixon.Constant}
     {ms : Array Ixon.MutConst}
@@ -1226,7 +1229,9 @@ theorem membersAt_eq_blockRecurAddrs {E₀ : Ixon.Env} {B : _root_.Address} {cb 
     membersAt E₀ B = some (L1.blockRecurAddrs B ms.toList) := by
   simp only [membersAt, hB, hmuts, L1.blockRecurAddrs_eq_mapIdx]
   congr 1
-  exact (blockRecurAddrs_eq_indcAddrs_of_all_indc B 0 ms.toList hall).symm
+  have h := blockRecurAddrs_eq_indcAddrs_of_all_indc B 0 ms.toList hall
+  simp only [Nat.zero_add] at h
+  exact h.symm
 
 /-! ## `KernelGuard::expr_inst_raw`, `definition_value`, `head`, `get_result_sort_level`, `block_elim` -/
 
@@ -1387,9 +1392,11 @@ theorem guard_head_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       have hinst := expr_inst1_tmOExact
         (RomBound.bounded_mono hbd (rsub fun c hc' => by rw [hc]; simp [hc']))
         hB hV evi
-      exact ih
+      have hinstIn := addrIn_instantiate1Lift hEin.2.1 hEin.2.2
+      obtain ⟨E', hgh2, hE', hE'in⟩ := ih
         (by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega)
-        (rsub fun c hc' => by rw [hc]; simp [hc']) hinst hEin ev2
+        (rsub fun c hc' => by rw [hc]; simp [hc']) hinst hinstIn ev2
+      exact ⟨E', .letE hgh2, hE', hE'in⟩
 
 /-- **`KernelCheck::get_result_sort_level`** refines `ResultSort (defnValAt t E₀) (keyAddr t)` on
 `TmOExact` and `AddrIn (Held R)`. -/
@@ -1455,7 +1462,7 @@ theorem block_elim_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     (hsub : ∀ c ∈ cs, c ∈ rootCalls)
     (hmemAt : membersAt E₀ B = some (addrs.map ixAddr))
     (hheld : ∀ a ∈ addrs, Held R (ixAddr a))
-    (hta : RepList L1.addressListEnum (fun h a p => Bytes.RepAddressRef addrTy h a p) h addrs xta)
+    (hta : RepList addrListEnum (fun h a p => Bytes.RepAddressRef addrTy h a p) h addrs xta)
     (ev : ObsFn W "KernelModeled::block_elim" [xrc, xta] h r h' cs) :
     ∃ (bnl off : Nat),
       r = .tuple [.field (bnl : F), .field (off : F)] ∧
@@ -1469,9 +1476,7 @@ theorem block_elim_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       (op147 := op) (hm159 := hm1b) (ev115 := evrs) (ev176 := evp) (he213 := hr)
       (ev232 := evnz) (he241 := hh) (hc242 := hc) .. =>
     subst hm1b hr hh
-    have ldt' : loadValue h xta = .ok (.construct L1.addressListEnum "Cons" [xt0, xrest]) := by
-      rwa [L1.addressListEnum_eq]
-    obtain ⟨t0, rest, rfl, rt0, -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hta ldt'
+    obtain ⟨t0, rest, rfl, rt0, -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hta ldt
     have hSt0 : Held R (ixAddr t0) := hheld t0 List.mem_cons_self
     have hI := indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
     obtain ⟨hyes, -⟩ := hI (fun c hc' => hsub c (by rw [hc]; simp [hc'])) hSt0 rt0 evg ldci
