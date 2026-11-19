@@ -168,7 +168,8 @@ end WhnfAux
 /-- `KernelWhnf::whnf_struct_core_const`: at a recursor of the right level count, ι
 (`try_iota`, the major's inductive from `rec_to_parent_addr`) continued by `whnf_struct_core`;
 any other head is stuck. -/
-theorem whnf_struct_core_const_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_struct_core_const_step (c : ScopedCtx) (hc : ScopedCoreBase c)
+    {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_struct_core_const" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_struct_core_const c args h r h' calls := by
@@ -221,7 +222,9 @@ theorem whnf_struct_core_const_step (c : ScopedCtx) {args : List (SourceValue F)
     obtain ⟨E, hE, hred⟩ := ih.get (.whnf .try_iota) (by lt_calls) ev142 rc x_rec_ty lvls sp _ _
       _ _ x_rules types hd v154 rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) d Γ
       (types_mono ext htypes) _ us _ w33 cv mI rP rls a' As
-      ⟨⟨hfind, w34, w35, w36, hci.mono e1⟩, ⟨ls, hls.mono ext, hEq⟩⟩ hlenus ha' hmaj
+      ⟨⟨hfind, ⟨w34, w35, w36, hci.mono e1⟩,
+        recHead_of_getCI hc (good.sub fun x hx => by simp [hx]) (by resolve_key) ha ev18 ld12 hfind⟩,
+        ⟨ls, hls.mono ext, hEq⟩⟩ hlenus ha' hmaj
       (Tm.mono ext hH) (tml_mono ext hAs) 1 x_reduced rfl (.inl rfl)
     have ext' := ext.trans (ObsFn.heap_extends ev142)
     obtain ⟨E', hE', hred'⟩ := ih.get (.whnf .whnf_struct_core) (by lt_calls) ev307 rc x_reduced
@@ -251,7 +254,8 @@ theorem whnf_struct_core_const_step (c : ScopedCtx) {args : List (SourceValue F)
 where the whole application is closed), then by the loaded constant: a definition's projection
 shortcut; quotient ι; the recursor dispatch; each continued by `whnf_nd` (the K reduct by
 `whnf`); any other head is stuck. -/
-theorem whnf_nd_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
+theorem whnf_nd_const_head_step (c : ScopedCtx) (hc : ScopedCoreBase c)
+    {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelWhnf::whnf_nd_const_head" args h r h' calls) (ih : IH c calls) :
     Specs.Whnf.whnf_nd_const_head c args h r h' calls := by
@@ -335,7 +339,10 @@ theorem whnf_nd_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h
     obtain ⟨E, hE, hred⟩ := ih.get (.whnf .red_rec) (by lt_calls) ev824 rc _ _ lvls hd sp _ _ _ _ _
       _ types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) d Γ
       (types_mono ext htypes) _ us cv mI rP rls As
-      ⟨⟨hfind, _, _, _, hci⟩, LvListRep.mono ext hus⟩ (Tm.mono ext hH) (tml_mono ext hAs) 1
+      ⟨⟨hfind, ⟨_, _, _, hci⟩,
+        recHead_of_getCI hc (good.sub fun x hx => by simp [hx]) (by resolve_key)
+          (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha) ev397 ld391 hfind⟩,
+        LvListRep.mono ext hus⟩ (Tm.mono ext hH) (tml_mono ext hAs) 1
       x_reduced rfl (.inl rfl)
     have ext' := ext.trans (ObsFn.heap_extends ev824)
     obtain ⟨E', hE', hred'⟩ := ih.get (.whnf .whnf_nd) (by lt_calls) ev952 rc x_reduced types rfl
@@ -356,7 +363,10 @@ theorem whnf_nd_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h
     exact ih.get (.whnf .red_rec) (by lt_calls) ev824 rc _ _ lvls hd sp _ _ _ _ _
       _ types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) d Γ
       (types_mono ext htypes) _ us cv mI rP rls As
-      ⟨⟨hfind, _, _, _, hci⟩, LvListRep.mono ext hus⟩ (Tm.mono ext hH) (tml_mono ext hAs) 2
+      ⟨⟨hfind, ⟨_, _, _, hci⟩,
+        recHead_of_getCI hc (good.sub fun x hx => by simp [hx]) (by resolve_key)
+          (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha) ev397 ld391 hfind⟩,
+        LvListRep.mono ext hus⟩ (Tm.mono ext hH) (tml_mono ext hAs) 2
       _ rfl (.inr (.inl rfl))
   case other_Rec_n3_bind m2 cs12 x_fam x__op v288 m289 cs291 m382 p389 cs395 x_rnl x_rec_ty
       x_nparams x_nindices x_nmotives x_nminors x_rules x_k_flag w752 w753 w754 m811 cs822
@@ -373,7 +383,10 @@ theorem whnf_nd_const_head_step (c : ScopedCtx) {args : List (SourceValue F)} {h
     obtain ⟨E, hE, hred⟩ := ih.get (.whnf .red_rec) (by lt_calls) ev824 rc _ _ lvls hd sp _ _ _ _ _
       _ types rfl (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) d Γ
       (types_mono ext htypes) _ us cv mI rP rls As
-      ⟨⟨hfind, _, _, _, hci⟩, LvListRep.mono ext hus⟩ (Tm.mono ext hH) (tml_mono ext hAs) 3
+      ⟨⟨hfind, ⟨_, _, _, hci⟩,
+        recHead_of_getCI hc (good.sub fun x hx => by simp [hx]) (by resolve_key)
+          (Bytes.repAddressRef_heapMono₂ addrTy ext0 ha) ev397 ld391 hfind⟩,
+        LvListRep.mono ext hus⟩ (Tm.mono ext hH) (tml_mono ext hAs) 3
       x_k_reduct rfl (.inr (.inr rfl))
     have ext' := ext.trans (ObsFn.heap_extends ev824)
     obtain ⟨E', hE', hred'⟩ := ih.get (.whnf .whnf) (by lt_calls) ev1023 rc x_k_reduct types rfl

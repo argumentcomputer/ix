@@ -34,7 +34,7 @@ theorem indDataAt_mono
     (hA : ∀ y c, Ok y → recordOf E y = some c → recordOf E' y = some c)
     (hOwn : ∀ y c, Ok y → recordOf E y = some c → Ok (Ix.Cert.ownerOf y c))
     (hblob : ∀ y b, E.blobs.get? y = some b → E'.blobs.get? y = some b)
-    {a : _root_.Address} (ha : Ok a) {x : IndData} (h : indDataAt t E a = some x) :
+    {a : _root_.Address} (ha : Ok a) {x : Option IndData} (h : indDataAt t E a = some x) :
     indDataAt t E' a = some x := by
   unfold indDataAt at h ⊢
   cases hc : recordOf E a with
@@ -75,7 +75,7 @@ theorem indDataAt_mono
         | defn _ => simp [hm] at h
         | recr _ => simp [hm] at h
     | _ => simp [hcbi] at h
-  | _ => simp [hci] at h
+  | _ => simp only [hci] at h ⊢; exact h
 
 theorem ctorAt_mono
     (hA : ∀ y c, Ok y → recordOf E y = some c → recordOf E' y = some c)
@@ -230,7 +230,7 @@ section Inv
 
 variable {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
 
-theorem indDataAt_inv {a : _root_.Address} {i : IndData} (h : indDataAt t E a = some i) :
+theorem indDataAt_inv {a : _root_.Address} {i : IndData} (h : indDataAt t E a = some (some i)) :
     ∃ c p cb ms ind, recordOf E a = some c ∧ c.info = .iPrj p ∧ recordOf E p.block = some cb ∧
       cb.info = .muts ms ∧ ms[p.idx.toNat]? = some (.indc ind) ∧
       loadedAt t (fun y => E.blobs.get? y) cb (blockSelf t p.block ms) ind.lvls.toNat
@@ -376,7 +376,7 @@ theorem defnAt_inv {a : _root_.Address} {n : Nat} {v : KExpr}
 theorem unfoldAt_inv {k : KKey} {us : List KLevel} {v : KExpr}
     (h : unfoldAt t E k us = some (some v)) :
     ∃ a n w, keyAddr t k = some a ∧ defnAt t E a = some (some (n, w)) ∧
-      v = w.instantiateLevelParams (List.range n) us := by
+      v = exprInstLevels us w := by
   unfold unfoldAt at h
   cases hk : keyAddr t k with
   | none => simp [hk] at h
@@ -520,14 +520,14 @@ theorem reconOfStore_closedOn_sub {E₀ R : Ixon.Env} (checked : t.check = .ok (
     (hcl : UsedClosed R) : (ReconView.ofStore t E₀).ClosedOn (Held R) where
   indBlk a i ha h := by
     obtain ⟨c, p, cb, ms, ind, hc, hci, hcb, hcbi, hm, hr, hblk⟩ :=
-      indDataAt_inv (h : indDataAt t E₀ a = some i)
+      indDataAt_inv (h : indDataAt t E₀ a = some (some i))
     have h1 := (hcl.1 a c (held_of_sub hsub ha hc)).1
     simp only [Ix.Cert.ownerOf, hci] at h1
     rw [hblk]
     exact h1
   indTy a i ha h := by
     obtain ⟨c, p, cb, ms, ind, hc, hci, hcb, hcbi, hm, hr, hblk⟩ :=
-      indDataAt_inv (h : indDataAt t E₀ a = some i)
+      indDataAt_inv (h : indDataAt t E₀ a = some (some i))
     have hpb : Held R p.block := by
       have h1 := (hcl.1 a c (held_of_sub hsub ha hc)).1
       simp only [Ix.Cert.ownerOf, hci] at h1
@@ -551,7 +551,7 @@ theorem reconOfStore_closedOn_sub {E₀ R : Ixon.Env} (checked : t.check = .ok (
     obtain ⟨c, hc, hdef⟩ := defnAt_inv hd
     have hcR := held_of_sub hsub ha hc
     intro k' hk' a' ha'
-    have hk'' := keyIn_instantiateLevelParams w hk'
+    have hk'' := keyIn_exprInstLevels w hk'
     rcases hdef with ⟨d, hci, hr⟩ | ⟨p, cb, ms, d, hci, hcb, hcbi, hm, hr⟩
     · refine keys_held_of_loaded checked hwf hcl hcR ?_ (fun j hj => ?_) hr k' hk'' a' ha'
       · intro j k hs
@@ -612,7 +612,7 @@ theorem RFormS.of_sub {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env}
     RFormS t R B rb := by
   obtain ⟨crb, rs, es, off, fuel, hrb₀, hrs, hRF, hBD, hM⟩ := h
   have hE : ∀ e ∈ es, REntryAt (ReconView.ofStore t E₀) (Held R) e := by
-    obtain ⟨n, hn⟩ := hBD
+    obtain ⟨_, n, hn⟩ := hBD
     intro e he
     have hx := derivedFlatAt_entryAt (ofStore_closedOn_sub checked hwf hsub hcl) hB hn e he
     exact ⟨hx.addr, hx.params⟩

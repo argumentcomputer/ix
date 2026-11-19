@@ -124,10 +124,12 @@ structure MemberFacts (env : Env .anon) (g : KKey → KKey) (ci : ConstantInfo .
   closed : ci.toConstantVal.type.hasFvar = false
   bounded : ci.toConstantVal.type.looseBVarsBounded 0 = true
   annotated : IxVM.Consistency.Annotates tyA ci.toConstantVal.type
+  levels : tyA.allLevelParamsDefined ci.toConstantVal.levelParams = true
   model : ∃ (cvm : ConstantVal .anon) (mval : KExpr) (hint : ReducibilityHint),
     env.find? (g ci.name) = some (.defnInfo cvm mval hint) ∧
-    cvm.levelParams = List.range ci.toConstantVal.levelParams.length ∧
-    cvm.type = posOf ci.toConstantVal.levelParams (tyA.renameConsts g)
+    cvm.levelParams.Perm (List.range ci.toConstantVal.levelParams.length) ∧
+    ExprLvEq (posOf ci.toConstantVal.levelParams (tyA.renameConsts g))
+      (posOf cvm.levelParams cvm.type)
   modelTyped : ∃ stype u, posRulesJ.infer env 0 (tyA.renameConsts g) stype ∧
     posRulesJ.sort env 0 stype u
 
@@ -281,11 +283,13 @@ def RuleFacts (env : Env .anon) (g : KKey → KKey) (blk : List (ConstantInfo .a
     pins.all (fun p => !p.hasFvar && p.looseBVarsBounded rP && p.allLevelParamsDefined lps)
       = true ∧
     Expr.ctorTeleOk cvj.type (cnP + cnF) = true ∧
-    ∃ (cvt : ConstantVal .anon) (vt : KExpr),
+    ∃ (cvt : ConstantVal .anon) (vt tty₀ : KExpr),
       env.find? thm = some (.thmInfo cvt vt) ∧
-      cvt.levelParams = List.range lps.length ∧
+      cvt.levelParams.Perm (List.range lps.length) ∧
+      tty₀.allLevelParamsDefined (List.range lps.length) = true ∧
+      ExprLvEq tty₀ (posOf cvt.levelParams cvt.type) ∧
       StatementFacts env g recKey lps tyA mI rP r.ctor rhsA cvj cnP cnF lvls pins
-        (invPosOf lps cvt.type)
+        (invPosOf lps tty₀)
 
 /-- The rules of one recursor against their theorems, in order. -/
 def RulesFacts (env : Env .anon) (g : KKey → KKey) (blk : List (ConstantInfo .anon))

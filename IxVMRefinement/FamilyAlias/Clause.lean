@@ -47,18 +47,19 @@ theorem envModelN_installAliasPos {V : Type u} [Ix.Kernel.SetTheory V] {E : Env 
     (hfresh : E.find? (auxKey n d) = none)
     (hnpt : ∀ T, auxKey n d ≠ Ix.Kernel.projTableName T)
     (hsrc : E.find? tgt = some ci)
-    (hlps : ci.toConstantVal.levelParams = List.range lps.length)
+    (hlps : ci.toConstantVal.levelParams.Perm (List.range lps.length))
     (htf : ty.hasFvar = false)
     (htp : ty.allLevelParamsDefined lps = true)
     (htr : ty.constsResolve E = true)
     (htb : ty.looseBVarsBounded 0 = true)
     (hA : AliasEnv E h)
-    (hty : posOf lps (ty.renameConsts h) = ci.toConstantVal.type) :
+    (hty : ExprLvEq (posOf lps (ty.renameConsts h))
+      (posOf ci.toConstantVal.levelParams ci.toConstantVal.type)) :
     EnvModelN V .verified
       ⟨.defnInfo ⟨auxKey n d, lps, ty⟩ (.const tgt (lps.map .param)) .abbrev :: E.consts⟩ R :=
   EnvModelN.step V hE (fun mp _ hEE => by
     obtain ⟨mp', -, hext, hEE', -⟩ := installAliasPos mp hEE hperm hfresh hnpt hsrc hlps htf htp
-      htr htb (fun ψ => aliasType_reads mp.base2 (renameOkPos_of_aliasEnv mp hA) hperm hty ψ)
+      htr htb (fun ψ => aliasType_reads mp.base2 (renameOkPos_of_aliasEnv mp hA) hperm hlps hty ψ)
     exact ⟨hEE', mp', hext⟩)
 
 /-- IxC's fold invariant with a registry across an alias group. -/

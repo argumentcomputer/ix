@@ -562,7 +562,10 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
       (famModeled_at hB hRB (fun x hx d hd => hE.2.1 x d (hheld x hx d hd))
         (modeledAt_of_blockRoute (hrouteE E hE)))
       hCE hg hroots hreads hd
-      (recCompanionFacts_of_tys hFacts hndNA hnameNA hN hR hSrec (hComp E hE))
+      (recCompanionFacts_of_tys hB hRB (Binding.recordOf_of_recordsFor hE hcrb)
+        (fun i m hm => hEof E hE _ (Or.inr (Or.inr ⟨rs, i, m, hRB.muts, hm, Or.inl rfl⟩)) _
+          (hRB.members i m hm))
+        hreads (hTys ms rs hB.muts hRB.muts) hFacts hndNA hnameNA hN hR hSrec (hComp E hE))
       hLC.newLoads
   · -- no constant at an operation's key
     intro ci hci

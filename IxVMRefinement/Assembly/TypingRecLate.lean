@@ -254,11 +254,12 @@ theorem CoreCompanions.cons_rec {c : Core.Ctx} (h : Decl.CoreCompanions c)
         · exact hplain rl cvj nP nF hrl hfire hc
         · exact h.recPlain k cv' mI' rP' rls' rl cvj nP nF hf' hrl hfire (hctor_old hc)
       ruleCtorHead := by
-        intro k cv' mI' rP' rls' rl cvj nP nF T us hf hrl hc hdom
+        intro k cv' mI' rP' rls' hf
         rcases hsplit hf with ⟨rfl, rfl, rfl, rfl⟩ | hf'
-        · exact hhead rl cvj nP nF T us hrl hc hdom
-        · exact h.ruleCtorHead k cv' mI' rP' rls' rl cvj nP nF T us hf' hrl (hctor_old hc)
-            hdom }
+        · exact Or.inl (fun rl cvj nP nF T us hrl hc hdom => hhead rl cvj nP nF T us hrl hc hdom)
+        · exact (h.ruleCtorHead k cv' mI' rP' rls' hf').imp
+            (fun hh rl cvj nP nF T us hrl hc hdom => hh rl cvj nP nF T us hrl (hctor_old hc) hdom)
+            id }
 
 /-! ## The recursor's own companion facts -/
 

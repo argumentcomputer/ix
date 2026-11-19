@@ -1761,11 +1761,7 @@ structure FoldEnvCompanions (c : Ctx) : Prop where
       D.getAppFn = .const T (cvj.levelParams.map .param) ∧
       D.getAppArgs.take nP = (List.range nP).map (fun i => .bvar (mI - 1 - i)) ∧
       D.getAppArgs.drop nP = (List.range (mI - rP)).map fun i => .bvar (mI - rP - 1 - i)
-  ruleCtorHead : ∀ k cv mI rP rls rl cvj nP nF T us,
-    c.env.find? k = some (.recInfo cv mI rP rls) → rl ∈ rls →
-    c.env.find? rl.ctor = some (.ctorInfo cvj nP nF) →
-    (piDomAt mI cv.type).map (·.getAppFn) = some (.const T us) →
-    ∃ tus, (Expr.piResult cvj.type).getAppFn = .const T tus
+  ruleCtorHead : RuleCtorHeadFact c.E c.env
   etaType : ∀ (T kc : KKey) (cvT cvc : ConstantVal .anon)
       (caps : IndCaps .anon) (nP nF : Nat),
     c.env.find? T = some (.indInfo cvT caps) → caps.eta = true → caps.etaCtor = some kc →
@@ -1798,6 +1794,9 @@ theorem FoldStoreInv.toEnvFacts {c : Ctx} (hS : FoldStoreInv c.env) (htwf : c.t.
   etaType := hR.etaType
   recEta := hS.recEta
   etaSort := hS.etaSort
+  etaCtorHead := fun T kc cvT caps nP nF hT heta hctor cvc hkc => by
+    obtain ⟨_, _, _, _, cbs, hstrip⟩ := (hS.etaShape T cvT caps hT heta).2 kc cvc nP nF hctor hkc
+    exact ⟨_, Ix.Kernel.Model.family_of_residual hstrip⟩
   recArity := hS.recArity
   ruleCtorArity := hS.ruleCtorArity
   tableCtorArity := hS.tableCtorArity

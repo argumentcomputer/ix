@@ -168,20 +168,16 @@ structure FamRecCompanion (E : Ixon.Env) (t : Ix.Kernel.RoleTable) (env : Ix.Ker
       D.getAppFn = .const T (cvj.levelParams.map .param) ∧
       D.getAppArgs.take nP = (List.range nP).map (fun i => .bvar (mI - 1 - i)) ∧
       D.getAppArgs.drop nP = (List.range (mI - rP)).map fun i => .bvar (mI - rP - 1 - i)
-  head : ∀ (rl : RecRule .anon) (cvj : ConstantVal .anon) (nP nF : Nat)
-    (T : Ix.Kernel.Key .anon) (us : List Core.KLevel), rl ∈ rules₀ →
-    Decl.FamilyAlias.RuleCtor env blk tys rl.ctor cvj nP nF →
-    (Core.piDomAt mI tyA).map (·.getAppFn) = some (.const T us) →
-    ∃ tus, (Ix.Kernel.Expr.piResult cvj.type).getAppFn = .const T tus
 
 /-- **The companion facts of every recursor of the family, at its position**: the recursor at
-position `k` of the recursors, with its selected type `tys[n + k]` (`FamRecCompanion`). -/
+position `k` of the recursors, with its selected type `tys[n + k]` (`FamRecCompanion`), and
+unroled (`assert_no_role`). -/
 def FamRecsCompanion (E : Ixon.Env) (t : Ix.Kernel.RoleTable) (env : Ix.Kernel.Env .anon)
     (blk : List (ConstantInfo .anon)) (tys : List KExpr) : Prop :=
   ∀ (k : Nat) (cv : ConstantVal .anon) (mI rP : Nat) (rules₀ : List (RecRule .anon))
     (tyA : KExpr), (recsOf blk)[k]? = some (.recInfo cv mI rP rules₀) →
     tys[(nonrecsOf blk).length + k]? = some tyA →
-    FamRecCompanion E t env blk tys tyA mI rP rules₀
+    FamRecCompanion E t env blk tys tyA mI rP rules₀ ∧ ∀ r, cv.name ≠ .role r
 
 /-! ## The selected forms of a block with its family record -/
 

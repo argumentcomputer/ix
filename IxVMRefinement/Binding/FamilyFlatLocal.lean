@@ -334,6 +334,43 @@ theorem keyIn_instantiateLevelParams {ks : List Ix.Kernel.LevelParam} {us : List
     | proj => exact .proj _ _
     | projBody h => exact .projBody (ih h)
 
+/-- A key of a term after `exprInstLevelsWalk` is a key of the term. -/
+theorem keyIn_exprInstLevelsWalk {us : List Ix.Kernel.Level} :
+    ∀ (e : Ix.Kernel.Expr .anon), KeyIn k (exprInstLevelsWalk us e) → KeyIn k e := by
+  intro e
+  induction e with
+  | bvar i => intro h; simp only [exprInstLevelsWalk] at h; cases h
+  | fvar i ty ih => intro h; simp only [exprInstLevelsWalk] at h; cases h with | fvarTy h => exact .fvarTy (ih h)
+  | sort u => intro h; simp only [exprInstLevelsWalk] at h; cases h
+  | const n vs => intro h; simp only [exprInstLevelsWalk] at h; cases h with | const => exact .const _
+  | app f x ihf ihx =>
+    intro h; simp only [exprInstLevelsWalk] at h
+    cases h with | appFn h => exact .appFn (ihf h) | appArg h => exact .appArg (ihx h)
+  | lam t b m iht ihb =>
+    intro h; simp only [exprInstLevelsWalk] at h
+    cases h with | lamTy h => exact .lamTy (iht h) | lamBody h => exact .lamBody (ihb h)
+  | forallE t b m iht ihb =>
+    intro h; simp only [exprInstLevelsWalk] at h
+    cases h with | allTy h => exact .allTy (iht h) | allBody h => exact .allBody (ihb h)
+  | letE t v b l iht ihv ihb =>
+    intro h; simp only [exprInstLevelsWalk] at h
+    cases h with
+    | letTy h => exact .letTy (iht h)
+    | letVal h => exact .letVal (ihv h)
+    | letBody h => exact .letBody (ihb h)
+  | lit l => intro h; simp only [exprInstLevelsWalk] at h; cases h
+  | proj s i x ih =>
+    intro h; simp only [exprInstLevelsWalk] at h
+    cases h with | proj => exact .proj _ _ | projBody h => exact .projBody (ih h)
+
+/-- A key of a term after `exprInstLevels` is a key of the term. -/
+theorem keyIn_exprInstLevels {us : List Ix.Kernel.Level} (e : Ix.Kernel.Expr .anon)
+    (h : KeyIn k (exprInstLevels us e)) : KeyIn k e := by
+  unfold exprInstLevels at h
+  split at h
+  · exact h
+  · exact keyIn_exprInstLevelsWalk e h
+
 /-- A key of an argument of a spine is a key of the spine. -/
 theorem keyIn_of_mem_getAppArgs {x : Ix.Kernel.Expr .anon} :
     ∀ (e : Ix.Kernel.Expr .anon), x ∈ Ix.Kernel.Expr.getAppArgs e → KeyIn k x → KeyIn k e := by
@@ -878,14 +915,14 @@ theorem ctorScan_leOn (hV : V.LeOn S V') (hC : V.ClosedOn S) (B : _root_.Address
   | none => simp [hc] at h
   | some cty =>
     simp only [hc, hV.ctorType i.blk i.idx c cty hblk hc] at h ⊢
-    cases hb : ctorBody aux i.np sp (cty.instantiateLevelParams (List.range us.length) us) with
+    cases hb : ctorBody aux i.np sp (exprInstLevels us cty) with
     | none => simp [hb] at h
     | some body =>
       simp only [hb] at h ⊢
       have hKb : KeysAt V S body := by
         intro k hk a ha
         rcases keyIn_of_ctorBody hb hk with h1 | ⟨s, hs, h2⟩
-        · exact hC.ctorType i.blk i.idx c cty hblk hc k (keyIn_instantiateLevelParams _ h1) a ha
+        · exact hC.ctorType i.blk i.idx c cty hblk hc k (keyIn_exprInstLevels _ h1) a ha
         · exact hsp s hs k h2 a ha
       exact occScanF_leOn hV hC B _ body 0 acc r hKb hacc h
 
@@ -1421,6 +1458,544 @@ theorem ofStore_closedOn_sub {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env}
     rw [e]
     exact hz
 
+/-! ## The block's elimination offset across stores -/
+
+private theorem blockSelf_held_local {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
+    (hcl : UsedClosed R) {b : _root_.Address} {cb : Ixon.Constant} {ms : Array Ixon.MutConst}
+    (hcb : recordOf R b = some cb) (hci : cb.info = .muts ms) :
+    ∀ (j : Nat) (k : Ix.Kernel.Key .anon),
+      blockSelf t b ms j = some (Except.ok k) → ∃ z, Held R z ∧ k = keyOf t z := by
+  intro j k hs
+  unfold blockSelf at hs
+  cases hmj : ms[j]? with
+  | none => rw [hmj] at hs; cases hs
+  | some mj =>
+    rw [hmj] at hs
+    cases Except.ok.inj (Option.some.inj hs)
+    exact ⟨_, Option.isSome_iff_exists.mpr ⟨_, (hcl.2 b cb ms hcb hci j mj hmj).1⟩, rfl⟩
+
+private theorem keys_held_of_loaded_local {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
+    (checked : t.check = .ok ()) (hwf : t.wf = true) (hcl : UsedClosed R)
+    {src : Ixon.Constant} {y0 : _root_.Address} (hsrc : recordOf R y0 = some src)
+    {self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon))}
+    (hself : ∀ (j : Nat) (k : Ix.Kernel.Key .anon), self j = some (Except.ok k) →
+      ∃ z, Held R z ∧ k = keyOf t z)
+    {e : Ixon.Expr} (he : ∀ j ∈ exprRefIdxs e, j ∈ usedRefIdxs src)
+    {blob : _root_.Address → Option ByteArray} {nl : Nat} {root : IxVM.F}
+    {v : Ix.Kernel.Expr .anon} (h : loadedAt t blob src self nl root e = some v) :
+    ∀ k, KeyIn k v → ∀ a, keyAddr t k = some a → Held R a := by
+  intro k hk a ha
+  obtain ⟨e₀, hr₀, hk₀⟩ := keyIn_of_loadedAt h hk
+  obtain ⟨z, hz, rfl⟩ := read_keys checked (P := fun k => ∃ z, Held R z ∧ k = keyOf t z)
+    (fun j hj y hy => ⟨y, (hcl.1 y0 src hsrc).2 j hj y hy, rfl⟩) hself he hr₀ k hk₀
+  have eq := Option.some.inj (ha.symm.trans (keyAddr_keyOf hwf z))
+  rw [eq]
+  exact hz
+
+theorem indTypeAt_mono {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env} {Ok : _root_.Address → Prop}
+    (hA : ∀ y c, Ok y → recordOf E y = some c → recordOf E' y = some c)
+    (hOwn : ∀ y c, Ok y → recordOf E y = some c → Ok (Ix.Cert.ownerOf y c))
+    (hblob : ∀ y b, E.blobs.get? y = some b → E'.blobs.get? y = some b)
+    {a : _root_.Address} (ha : Ok a) {x : Nat × Ix.Kernel.Expr .anon × Nat × Nat}
+    (h : indTypeAt t E a = some x) : indTypeAt t E' a = some x := by
+  unfold indTypeAt at h ⊢
+  cases hc : recordOf E a with
+  | none => simp [hc] at h
+  | some c =>
+    rw [hc] at h; rw [hA a c ha hc]; simp only at h ⊢
+    cases hci : c.info with
+    | iPrj p =>
+      simp only [hci] at h ⊢
+      have hpb : Ok p.block := by
+        have h1 := hOwn a c ha hc; simp only [Ix.Cert.ownerOf, hci] at h1; exact h1
+      cases hcb : recordOf E p.block with
+      | none => simp [hcb] at h
+      | some cb =>
+        rw [hcb] at h; rw [hA _ cb hpb hcb]; simp only at h ⊢
+        cases hcbi : cb.info with
+        | muts ms =>
+          simp only [hcbi] at h ⊢
+          cases hm : ms[p.idx.toNat]? with
+          | none => simp [hm] at h
+          | some m =>
+            cases m with
+            | indc ind =>
+              simp only [hm] at h ⊢
+              cases hr : loadedAt t (fun y => E.blobs.get? y) cb (blockSelf t p.block ms)
+                  ind.lvls.toNat (mutsRoot ms p.idx.toNat) ind.typ with
+              | none => rw [hr] at h; simp at h
+              | some ty =>
+                rw [loadedAt_mono hblob hr]; rw [hr] at h; exact h
+            | _ => simp [hm] at h
+        | _ => simp [hcbi] at h
+    | _ => simp [hci] at h
+
+theorem defnValAt_mono {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env} {Ok : _root_.Address → Prop}
+    (hA : ∀ y c, Ok y → recordOf E y = some c → recordOf E' y = some c)
+    (hOwn : ∀ y c, Ok y → recordOf E y = some c → Ok (Ix.Cert.ownerOf y c))
+    (hblob : ∀ y b, E.blobs.get? y = some b → E'.blobs.get? y = some b)
+    {a : _root_.Address} (ha : Ok a) {x : Nat × Ix.Kernel.Expr .anon}
+    (h : defnValAt t E a = some x) : defnValAt t E' a = some x := by
+  unfold defnValAt at h ⊢
+  cases hc : recordOf E a with
+  | none => simp [hc] at h
+  | some c =>
+    rw [hc] at h; rw [hA a c ha hc]; simp only at h ⊢
+    cases hci : c.info with
+    | defn d =>
+      simp only [hci] at h ⊢
+      cases hk : d.kind with
+      | defn =>
+        simp only [hk] at h ⊢
+        cases hr : loadedAt t (fun y => E.blobs.get? y) c (soloSelf t a) d.lvls.toNat 1
+            d.value with
+        | none => rw [hr] at h; simp at h
+        | some v => rw [loadedAt_mono hblob hr]; rw [hr] at h; exact h
+      | _ => simp [hk] at h
+    | dPrj p =>
+      simp only [hci] at h ⊢
+      have hpb : Ok p.block := by
+        have h1 := hOwn a c ha hc; simp only [Ix.Cert.ownerOf, hci] at h1; exact h1
+      cases hcb : recordOf E p.block with
+      | none => simp [hcb] at h
+      | some cb =>
+        rw [hcb] at h; rw [hA _ cb hpb hcb]; simp only at h ⊢
+        cases hcbi : cb.info with
+        | muts ms =>
+          simp only [hcbi] at h ⊢
+          cases hm : ms[p.idx.toNat]? with
+          | none => simp [hm] at h
+          | some m =>
+            cases m with
+            | defn d =>
+              simp only [hm] at h ⊢
+              cases hk : d.kind with
+              | defn =>
+                simp only [hk] at h ⊢
+                cases hr : loadedAt t (fun y => E.blobs.get? y) cb (blockSelf t p.block ms)
+                    d.lvls.toNat (mutsRoot ms p.idx.toNat + 1) d.value with
+                | none => rw [hr] at h; simp at h
+                | some v => rw [loadedAt_mono hblob hr]; rw [hr] at h; exact h
+              | _ => simp [hk] at h
+            | _ => simp [hm] at h
+        | _ => simp [hcbi] at h
+    | _ => simp [hci] at h
+
+theorem GuardHead.leOn {d₁ d₂ : _root_.Address → Option (Nat × Ix.Kernel.Expr .anon)}
+    {ka : Ix.Kernel.Key .anon → Option _root_.Address} {S : _root_.Address → Prop}
+    (hd : ∀ a x, S a → d₁ a = some x → d₂ a = some x)
+    (hC : ∀ a nl v, S a → d₁ a = some (nl, v) →
+      ∀ k, KeyIn k v → ∀ a', ka k = some a' → S a')
+    {e r : Ix.Kernel.Expr .anon}
+    (hK : ∀ k, KeyIn k e → ∀ a, ka k = some a → S a)
+    (h : GuardHead d₁ ka e r) :
+    GuardHead d₂ ka e r ∧ ∀ k, KeyIn k r → ∀ a, ka k = some a → S a := by
+  induction h with
+  | sort l => exact ⟨.sort l, hK⟩
+  | forallE d b m => exact ⟨.forallE d b m, hK⟩
+  | lam d b m => exact ⟨.lam d b m, hK⟩
+  | @const k us a nl v r hka hdv hlen _ ih =>
+    have ha : S a := hK k (.const us) a hka
+    have hKv : ∀ k', KeyIn k' (v.instantiateLevelParams (List.range us.length) us) →
+        ∀ a', ka k' = some a' → S a' :=
+      fun k' hk' a' ha' => hC a nl v ha hdv k' (keyIn_instantiateLevelParams v hk') a' ha'
+    obtain ⟨hr, hKr⟩ := ih hKv
+    exact ⟨.const hka (hd a (nl, v) ha hdv) hlen hr, hKr⟩
+  | @app f a d b m r _ _ ihf ihb =>
+    obtain ⟨hf', hKf⟩ := ihf (fun k hk => hK k (.appFn hk))
+    have hKb : ∀ k, KeyIn k (b.instantiate1Lift a 0) → ∀ a', ka k = some a' → S a' := by
+      intro k hk a' ha'
+      rcases keyIn_instantiate1Lift a b 0 hk with hk1 | hk2
+      · exact hKf k (.lamBody hk1) a' ha'
+      · exact hK k (.appArg hk2) a' ha'
+    obtain ⟨hb', hKr⟩ := ihb hKb
+    exact ⟨.app hf' hb', hKr⟩
+  | @letE ty v b m r _ ih =>
+    have hKb : ∀ k, KeyIn k (b.instantiate1Lift v 0) → ∀ a', ka k = some a' → S a' := by
+      intro k hk a' ha'
+      rcases keyIn_instantiate1Lift v b 0 hk with hk1 | hk2
+      · exact hK k (.letBody hk1) a' ha'
+      · exact hK k (.letVal hk2) a' ha'
+    obtain ⟨hb', hKr⟩ := ih hKb
+    exact ⟨.letE hb', hKr⟩
+
+theorem ResultSort.leOn {d₁ d₂ : _root_.Address → Option (Nat × Ix.Kernel.Expr .anon)}
+    {ka : Ix.Kernel.Key .anon → Option _root_.Address} {S : _root_.Address → Prop}
+    (hd : ∀ a x, S a → d₁ a = some x → d₂ a = some x)
+    (hC : ∀ a nl v, S a → d₁ a = some (nl, v) →
+      ∀ k, KeyIn k v → ∀ a', ka k = some a' → S a')
+    {n : Nat} {e : Ix.Kernel.Expr .anon} {l : Ix.Kernel.Level}
+    (hK : ∀ k, KeyIn k e → ∀ a, ka k = some a → S a)
+    (h : ResultSort d₁ ka n e l) : ResultSort d₂ ka n e l := by
+  induction h with
+  | zero hg => exact .zero (hg.leOn hd hC hK).1
+  | succ hg _ ih =>
+    obtain ⟨hg', hKg⟩ := hg.leOn hd hC hK
+    exact .succ hg' (ih (fun k hk => hKg k (.allBody hk)))
+
+theorem BlockElim.grow {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env}
+    (hle : ∀ y c, recordOf E y = some c → recordOf E' y = some c)
+    (hblob : ∀ y b, E.blobs.get? y = some b → E'.blobs.get? y = some b)
+    {B : _root_.Address} {off : Nat} (h : BlockElim t E B off) : BlockElim t E' B off := by
+  obtain ⟨t0, rest, nl, np, ni, ty, lvl, hm, hi, hs, ho⟩ := h
+  obtain ⟨cb, arr, hcb, hci, hms⟩ := membersAt_inv hm
+  refine ⟨t0, rest, nl, np, ni, ty, lvl, ?_, ?_, ?_, ho⟩
+  · rw [hms]; exact membersAt_of (hle B cb hcb) hci
+  · exact indTypeAt_mono (Ok := fun _ => True) (fun y c _ hc => hle y c hc)
+      (fun _ _ _ _ => trivial) hblob trivial hi
+  · exact hs.mono (fun a x hx =>
+      defnValAt_mono (Ok := fun _ => True) (fun y c _ hc => hle y c hc)
+        (fun _ _ _ _ => trivial) hblob trivial hx)
+
+theorem BlockElim.of_closed_sub {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env}
+    (checked : t.check = .ok ()) (hwf : t.wf = true)
+    (hsub : ∀ y c, recordOf R y = some c → recordOf E₀ y = some c) (hcl : UsedClosed R)
+    (hblob : ∀ y b, E₀.blobs.get? y = some b → R.blobs.get? y = some b)
+    {B : _root_.Address} (hB : Held R B) {off : Nat} (h : BlockElim t E₀ B off) :
+    BlockElim t R B off := by
+  obtain ⟨t0, rest, nl, np, ni, ty, lvl, hm, hi, hs, ho⟩ := h
+  have hA : ∀ y c, Held R y → recordOf E₀ y = some c → recordOf R y = some c :=
+    fun y c hy hc => (recordOf_eq_of_held hsub hy).trans hc
+  have hOwn : ∀ y c, Held R y → recordOf E₀ y = some c → Held R (Ix.Cert.ownerOf y c) :=
+    fun y c hy hc => (hcl.1 y c (hA y c hy hc)).1
+  have hmR : membersAt R B = some (t0 :: rest) :=
+    (ofStore_leOn_sub (t := t) hsub hcl hblob).members B (t0 :: rest) hB hm
+  have ht0 : Held R t0 :=
+    (ofStore_closedOn_sub checked hwf hsub hcl).members B (t0 :: rest) hB hm t0 List.mem_cons_self
+  have hiR : indTypeAt t R t0 = some (nl, ty, np, ni) :=
+    indTypeAt_mono hA hOwn hblob ht0 hi
+  have hKty : ∀ k, KeyIn k ty → ∀ a, keyAddr t k = some a → Held R a := by
+    unfold indTypeAt at hiR
+    cases hc : recordOf R t0 with
+    | none => simp [hc] at hiR
+    | some c =>
+      rw [hc] at hiR; simp only at hiR
+      cases hci : c.info with
+      | iPrj p =>
+        simp only [hci] at hiR
+        cases hcb : recordOf R p.block with
+        | none => simp [hcb] at hiR
+        | some cb =>
+          rw [hcb] at hiR; simp only at hiR
+          cases hcbi : cb.info with
+          | muts ms =>
+            simp only [hcbi] at hiR
+            cases hmi : ms[p.idx.toNat]? with
+            | none => simp [hmi] at hiR
+            | some m =>
+              cases m with
+              | indc ind =>
+                simp only [hmi] at hiR
+                cases hr : loadedAt t (fun x => R.blobs.get? x) cb (blockSelf t p.block ms)
+                    ind.lvls.toNat (mutsRoot ms p.idx.toNat) ind.typ with
+                | none => rw [hr] at hiR; simp at hiR
+                | some ty' =>
+                  rw [hr] at hiR
+                  have heq := Option.some.inj hiR
+                  injection heq with _ heq2
+                  injection heq2 with hty _
+                  subst hty
+                  have hmem : Ixon.MutConst.indc ind ∈ ms.toList :=
+                    List.mem_of_getElem? (by rw [Array.getElem?_toList]; exact hmi)
+                  exact keys_held_of_loaded_local checked hwf hcl hcb
+                    (blockSelf_held_local hcl hcb hcbi)
+                    (fun j hj => by
+                      simp only [usedRefIdxs, hcbi]
+                      exact List.mem_append_right _ (List.mem_flatMap.mpr
+                        ⟨.indc ind, hmem, List.mem_append_left _ hj⟩)) hr
+              | _ => simp [hmi] at hiR
+          | _ => simp [hcbi] at hiR
+      | _ => simp [hci] at hiR
+  have hCd : ∀ a nl' v, Held R a → defnValAt t E₀ a = some (nl', v) →
+      ∀ k, KeyIn k v → ∀ a', keyAddr t k = some a' → Held R a' := by
+    intro a nl' v ha hdv
+    have hdvR : defnValAt t R a = some (nl', v) := defnValAt_mono hA hOwn hblob ha hdv
+    unfold defnValAt at hdvR
+    cases hc : recordOf R a with
+    | none => simp [hc] at hdvR
+    | some c =>
+      rw [hc] at hdvR; simp only at hdvR
+      cases hci : c.info with
+      | defn d =>
+        simp only [hci] at hdvR
+        cases hk : d.kind with
+        | defn =>
+          simp only [hk] at hdvR
+          cases hr : loadedAt t (fun x => R.blobs.get? x) c (soloSelf t a) d.lvls.toNat 1
+              d.value with
+          | none => rw [hr] at hdvR; simp at hdvR
+          | some v' =>
+            rw [hr] at hdvR
+            have heq := Option.some.inj hdvR
+            injection heq with _ hv'
+            subst hv'
+            refine keys_held_of_loaded_local checked hwf hcl hc ?_ (fun j hj => ?_) hr
+            · intro j k hs
+              unfold soloSelf at hs
+              split at hs
+              · cases Except.ok.inj (Option.some.inj hs); exact ⟨a, ha, rfl⟩
+              · cases hs
+            · simp only [usedRefIdxs, hci]
+              exact List.mem_append_right _ (List.mem_append_right _ hj)
+        | _ => simp [hk] at hdvR
+      | dPrj p =>
+        simp only [hci] at hdvR
+        cases hcb : recordOf R p.block with
+        | none => simp [hcb] at hdvR
+        | some cb =>
+          rw [hcb] at hdvR; simp only at hdvR
+          cases hcbi : cb.info with
+          | muts ms =>
+            simp only [hcbi] at hdvR
+            cases hmi : ms[p.idx.toNat]? with
+            | none => simp [hmi] at hdvR
+            | some m =>
+              cases m with
+              | defn d =>
+                simp only [hmi] at hdvR
+                cases hk : d.kind with
+                | defn =>
+                  simp only [hk] at hdvR
+                  cases hr : loadedAt t (fun x => R.blobs.get? x) cb (blockSelf t p.block ms)
+                      d.lvls.toNat (mutsRoot ms p.idx.toNat + 1) d.value with
+                  | none => rw [hr] at hdvR; simp at hdvR
+                  | some v' =>
+                    rw [hr] at hdvR
+                    have heq := Option.some.inj hdvR
+                    injection heq with _ hv'
+                    subst hv'
+                    have hmem : Ixon.MutConst.defn d ∈ ms.toList :=
+                      List.mem_of_getElem? (by rw [Array.getElem?_toList]; exact hmi)
+                    exact keys_held_of_loaded_local checked hwf hcl hcb
+                      (blockSelf_held_local hcl hcb hcbi)
+                      (fun j hj => by
+                        simp only [usedRefIdxs, hcbi]
+                        exact List.mem_append_right _ (List.mem_flatMap.mpr
+                          ⟨.defn d, hmem, List.mem_append_right _ hj⟩)) hr
+                | _ => simp [hk] at hdvR
+              | _ => simp [hmi] at hdvR
+          | _ => simp [hcbi] at hdvR
+      | _ => simp [hci] at hdvR
+  exact ⟨t0, rest, nl, np, ni, ty, lvl, hmR, hiR,
+    hs.leOn (fun a x ha hx => defnValAt_mono hA hOwn hblob ha hx) hCd hKty, ho⟩
+
+private theorem loadedAt_agree {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env}
+    (hB : ∀ y b b', E.blobs.get? y = some b → E'.blobs.get? y = some b' → b = b')
+    {src : Ixon.Constant} {self : Nat → Option (Ix.Kernel.Reader.ReadM (Ix.Kernel.Key .anon))}
+    {nl : Nat} {root : IxVM.F} {e : Ixon.Expr} {v₁ v₂ : Ix.Kernel.Expr .anon}
+    (h₁ : loadedAt t (fun x => E.blobs.get? x) src self nl root e = some v₁)
+    (h₂ : loadedAt t (fun x => E'.blobs.get? x) src self nl root e = some v₂) : v₁ = v₂ := by
+  let blobU : _root_.Address → Option ByteArray := fun y => (E.blobs.get? y).or (E'.blobs.get? y)
+  have hb1 : ∀ y b, E.blobs.get? y = some b → blobU y = some b := fun y b h => by
+    dsimp only [blobU]; rw [h]; rfl
+  have hb2 : ∀ y b, E'.blobs.get? y = some b → blobU y = some b := fun y b h => by
+    dsimp only [blobU]
+    cases h0 : E.blobs.get? y with
+    | none => simpa [h0] using h
+    | some b0 => rw [hB y b0 b h0 h]; rfl
+  exact Option.some.inj ((loadedAt_mono hb1 h₁).symm.trans (loadedAt_mono hb2 h₂))
+
+/-- Two stores whose records and blobs agree where both answer compute the same elimination
+offset for a block. -/
+theorem BlockElim.unique {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env}
+    (hR : ∀ y c c', recordOf E y = some c → recordOf E' y = some c' → c = c')
+    (hB : ∀ y b b', E.blobs.get? y = some b → E'.blobs.get? y = some b' → b = b')
+    {B : _root_.Address} {off₁ off₂ : Nat}
+    (h₁ : BlockElim t E B off₁) (h₂ : BlockElim t E' B off₂) : off₁ = off₂ := by
+  obtain ⟨t0₁, r₁, nl₁, np₁, ni₁, ty₁, lvl₁, hm₁, hi₁, hs₁, ho₁⟩ := h₁
+  obtain ⟨t0₂, r₂, nl₂, np₂, ni₂, ty₂, lvl₂, hm₂, hi₂, hs₂, ho₂⟩ := h₂
+  obtain ⟨cb₁, arr₁, hcb₁, hci₁, hms₁⟩ := membersAt_inv hm₁
+  obtain ⟨cb₂, arr₂, hcb₂, hci₂, hms₂⟩ := membersAt_inv hm₂
+  have hcb : cb₁ = cb₂ := hR B cb₁ cb₂ hcb₁ hcb₂
+  subst hcb
+  have harr : arr₁ = arr₂ := Ixon.ConstantInfo.muts.inj (hci₁.symm.trans hci₂)
+  subst harr
+  have hlist : t0₁ :: r₁ = t0₂ :: r₂ := hms₁.trans hms₂.symm
+  injection hlist with ht0 _
+  subst ht0
+  have hind : (nl₁, ty₁, np₁, ni₁) = (nl₂, ty₂, np₂, ni₂) := by
+    unfold indTypeAt at hi₁ hi₂
+    cases hc₁ : recordOf E t0₁ with
+    | none => simp [hc₁] at hi₁
+    | some c₁ =>
+      cases hc₂ : recordOf E' t0₁ with
+      | none => simp [hc₂] at hi₂
+      | some c₂ =>
+        rw [hc₁] at hi₁; rw [hc₂] at hi₂
+        have hc : c₁ = c₂ := hR t0₁ c₁ c₂ hc₁ hc₂
+        subst hc; simp only at hi₁ hi₂
+        cases hci : c₁.info with
+        | iPrj p =>
+          simp only [hci] at hi₁ hi₂
+          cases hpb₁ : recordOf E p.block with
+          | none => simp [hpb₁] at hi₁
+          | some pb₁ =>
+            cases hpb₂ : recordOf E' p.block with
+            | none => simp [hpb₂] at hi₂
+            | some pb₂ =>
+              rw [hpb₁] at hi₁; rw [hpb₂] at hi₂
+              have hpb : pb₁ = pb₂ := hR p.block pb₁ pb₂ hpb₁ hpb₂
+              subst hpb; simp only at hi₁ hi₂
+              cases hpbi : pb₁.info with
+              | muts ms =>
+                simp only [hpbi] at hi₁ hi₂
+                cases hmi : ms[p.idx.toNat]? with
+                | none => simp [hmi] at hi₁
+                | some m =>
+                  cases m with
+                  | indc ind =>
+                    simp only [hmi] at hi₁ hi₂
+                    cases hr₁ : loadedAt t (fun x => E.blobs.get? x) pb₁ (blockSelf t p.block ms)
+                        ind.lvls.toNat (mutsRoot ms p.idx.toNat) ind.typ with
+                    | none => rw [hr₁] at hi₁; simp at hi₁
+                    | some v₁ =>
+                      cases hr₂ : loadedAt t (fun x => E'.blobs.get? x) pb₁ (blockSelf t p.block ms)
+                          ind.lvls.toNat (mutsRoot ms p.idx.toNat) ind.typ with
+                      | none => rw [hr₂] at hi₂; simp at hi₂
+                      | some v₂ =>
+                        rw [hr₁] at hi₁; rw [hr₂] at hi₂
+                        have hv := loadedAt_agree hB hr₁ hr₂
+                        subst hv
+                        exact Option.some.inj (hi₁.symm.trans hi₂)
+                  | _ => simp [hmi] at hi₁
+              | _ => simp [hpbi] at hi₁
+        | _ => simp [hci] at hi₁
+  cases hind
+  have hdAgree : ∀ a x₁ x₂, defnValAt t E a = some x₁ → defnValAt t E' a = some x₂ → x₁ = x₂ := by
+    intro a x₁ x₂ hd₁ hd₂
+    unfold defnValAt at hd₁ hd₂
+    cases hc₁ : recordOf E a with
+    | none => simp [hc₁] at hd₁
+    | some c₁ =>
+      cases hc₂ : recordOf E' a with
+      | none => simp [hc₂] at hd₂
+      | some c₂ =>
+        rw [hc₁] at hd₁; rw [hc₂] at hd₂
+        have hc : c₁ = c₂ := hR a c₁ c₂ hc₁ hc₂
+        subst hc; simp only at hd₁ hd₂
+        cases hci : c₁.info with
+        | defn d =>
+          simp only [hci] at hd₁ hd₂
+          cases hk : d.kind with
+          | defn =>
+            simp only [hk] at hd₁ hd₂
+            cases hr₁ : loadedAt t (fun x => E.blobs.get? x) c₁ (soloSelf t a) d.lvls.toNat 1
+                d.value with
+            | none => rw [hr₁] at hd₁; simp at hd₁
+            | some v₁ =>
+              cases hr₂ : loadedAt t (fun x => E'.blobs.get? x) c₁ (soloSelf t a) d.lvls.toNat 1
+                  d.value with
+              | none => rw [hr₂] at hd₂; simp at hd₂
+              | some v₂ =>
+                rw [hr₁] at hd₁; rw [hr₂] at hd₂
+                have hv := loadedAt_agree hB hr₁ hr₂
+                subst hv
+                exact Option.some.inj (hd₁.symm.trans hd₂)
+          | _ => simp [hk] at hd₁
+        | dPrj p =>
+          simp only [hci] at hd₁ hd₂
+          cases hpb₁ : recordOf E p.block with
+          | none => simp [hpb₁] at hd₁
+          | some pb₁ =>
+            cases hpb₂ : recordOf E' p.block with
+            | none => simp [hpb₂] at hd₂
+            | some pb₂ =>
+              rw [hpb₁] at hd₁; rw [hpb₂] at hd₂
+              have hpb : pb₁ = pb₂ := hR p.block pb₁ pb₂ hpb₁ hpb₂
+              subst hpb; simp only at hd₁ hd₂
+              cases hpbi : pb₁.info with
+              | muts ms =>
+                simp only [hpbi] at hd₁ hd₂
+                cases hmi : ms[p.idx.toNat]? with
+                | none => simp [hmi] at hd₁
+                | some m =>
+                  cases m with
+                  | defn d =>
+                    simp only [hmi] at hd₁ hd₂
+                    cases hk : d.kind with
+                    | defn =>
+                      simp only [hk] at hd₁ hd₂
+                      cases hr₁ : loadedAt t (fun x => E.blobs.get? x) pb₁
+                          (blockSelf t p.block ms) d.lvls.toNat (mutsRoot ms p.idx.toNat + 1)
+                          d.value with
+                      | none => rw [hr₁] at hd₁; simp at hd₁
+                      | some v₁ =>
+                        cases hr₂ : loadedAt t (fun x => E'.blobs.get? x) pb₁
+                            (blockSelf t p.block ms) d.lvls.toNat (mutsRoot ms p.idx.toNat + 1)
+                            d.value with
+                        | none => rw [hr₂] at hd₂; simp at hd₂
+                        | some v₂ =>
+                          rw [hr₁] at hd₁; rw [hr₂] at hd₂
+                          have hv := loadedAt_agree hB hr₁ hr₂
+                          subst hv
+                          exact Option.some.inj (hd₁.symm.trans hd₂)
+                    | _ => simp [hk] at hd₁
+                  | _ => simp [hmi] at hd₁
+              | _ => simp [hpbi] at hd₁
+        | _ => simp [hci] at hd₁
+  have hlvl := hs₁.unique hdAgree hs₂
+  rw [ho₁, ho₂, hlvl]
+
+/-- Two stores whose records and blobs agree where both answer have agreeing `FlatView`s. -/
+theorem ofStore_agree {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env}
+    (hR : ∀ y c c', recordOf E y = some c → recordOf E' y = some c' → c = c')
+    (hB : ∀ y b b', E.blobs.get? y = some b → E'.blobs.get? y = some b' → b = b') :
+    FlatView.Agree (FlatView.ofStore t E) (FlatView.ofStore t E') where
+  ci a x y hx hy := by
+    cases x with
+    | none =>
+      obtain ⟨c₁, hc₁, hn₁⟩ := indInfoAt_none_inv (hx : indInfoAt E a = some none)
+      cases y with
+      | none => rfl
+      | some i₂ =>
+        obtain ⟨c₂, p₂, _, _, _, hc₂, hci₂, _, _, _, _⟩ := indInfoAt_inv (hy : indInfoAt E' a = some (some i₂))
+        exact absurd (hR a c₁ c₂ hc₁ hc₂ ▸ hci₂) (hn₁ p₂)
+    | some i₁ =>
+      obtain ⟨c₁, p₁, cb₁, ms₁, ind₁, hc₁, hci₁, hcb₁, hcbi₁, hm₁, rfl⟩ :=
+        indInfoAt_inv (hx : indInfoAt E a = some (some i₁))
+      cases y with
+      | none =>
+        obtain ⟨c₂, hc₂, hn₂⟩ := indInfoAt_none_inv (hy : indInfoAt E' a = some none)
+        exact absurd ((hR a c₁ c₂ hc₁ hc₂).symm ▸ hci₁) (hn₂ p₁)
+      | some i₂ =>
+        obtain ⟨c₂, p₂, cb₂, ms₂, ind₂, hc₂, hci₂, hcb₂, hcbi₂, hm₂, rfl⟩ :=
+          indInfoAt_inv (hy : indInfoAt E' a = some (some i₂))
+        have hc := hR a c₁ c₂ hc₁ hc₂; subst hc
+        have hp : p₁ = p₂ := Ixon.ConstantInfo.iPrj.inj (hci₁.symm.trans hci₂); subst hp
+        have hcb := hR p₁.block cb₁ cb₂ hcb₁ hcb₂; subst hcb
+        have hms : ms₁ = ms₂ := Ixon.ConstantInfo.muts.inj (hcbi₁.symm.trans hcbi₂); subst hms
+        have hind : ind₁ = ind₂ := Ixon.MutConst.indc.inj (Option.some.inj (hm₁.symm.trans hm₂))
+        subst hind; rfl
+  ctorType b i c x y hx hy := by
+    obtain ⟨cb₁, ms₁, ind₁, ct₁, hcb₁, hcbi₁, hm₁, hct₁, hr₁⟩ :=
+      ctorTypeAt_inv (hx : ctorTypeAt t E b i c = some x)
+    obtain ⟨cb₂, ms₂, ind₂, ct₂, hcb₂, hcbi₂, hm₂, hct₂, hr₂⟩ :=
+      ctorTypeAt_inv (hy : ctorTypeAt t E' b i c = some y)
+    have hcb := hR b cb₁ cb₂ hcb₁ hcb₂; subst hcb
+    have hms : ms₁ = ms₂ := Ixon.ConstantInfo.muts.inj (hcbi₁.symm.trans hcbi₂); subst hms
+    have hind : ind₁ = ind₂ := Ixon.MutConst.indc.inj (Option.some.inj (hm₁.symm.trans hm₂))
+    subst hind
+    have hct : ct₁ = ct₂ := Option.some.inj (hct₁.symm.trans hct₂); subst hct
+    exact loadedAt_agree hB hr₁ hr₂
+  members b x y hx hy := by
+    obtain ⟨cb₁, arr₁, hcb₁, hci₁, rfl⟩ := membersAt_inv (hx : membersAt E b = some x)
+    obtain ⟨cb₂, arr₂, hcb₂, hci₂, rfl⟩ := membersAt_inv (hy : membersAt E' b = some y)
+    have hcb := hR b cb₁ cb₂ hcb₁ hcb₂; subst hcb
+    have harr : arr₁ = arr₂ := Ixon.ConstantInfo.muts.inj (hci₁.symm.trans hci₂); subst harr; rfl
+  addr k x y hx hy := Option.some.inj (hx.symm.trans hy)
+
+/-- **Two stores whose records and blobs agree where both answer derive the same elimination
+offset AND the same flattened family from one block.** -/
+theorem blockDerivedFlat_off_unique {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env}
+    (hR : ∀ y c c', recordOf E y = some c → recordOf E' y = some c' → c = c')
+    (hB : ∀ y b b', E.blobs.get? y = some b → E'.blobs.get? y = some b' → b = b')
+    {B : _root_.Address} {off off' : Nat} {es es' : List FlatEntry}
+    (h : BlockDerivedFlat t E B off es) (h' : BlockDerivedFlat t E' B off' es') :
+    off = off' ∧ es = es' := by
+  have hoff : off = off' := h.1.unique hR hB h'.1
+  subst hoff
+  exact ⟨rfl, blockDerivedFlat_unique (ofStore_agree hR hB) h h'⟩
+
 /-- **The flattened family derived over a used-closed sub-store of `E₀` that holds the block and
 `E₀`'s blobs is the one derived over `E₀`.** -/
 theorem blockDerivedFlat_of_closed_sub {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env}
@@ -1429,9 +2004,10 @@ theorem blockDerivedFlat_of_closed_sub {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.
     (hblob : ∀ y b, E₀.blobs.get? y = some b → R.blobs.get? y = some b)
     {B : _root_.Address} (hB : (recordOf R B).isSome = true) {off : Nat} {es : List FlatEntry}
     (h : BlockDerivedFlat t E₀ B off es) : BlockDerivedFlat t R B off es := by
-  obtain ⟨n, hn⟩ := h
-  exact ⟨n, derivedFlatAt_leOn (ofStore_leOn_sub hsub hcl hblob)
-    (ofStore_closedOn_sub checked hwf hsub hcl) hB hn⟩
+  obtain ⟨helim, n, hn⟩ := h
+  exact ⟨helim.of_closed_sub checked hwf hsub hcl hblob hB, n,
+    derivedFlatAt_leOn (ofStore_leOn_sub hsub hcl hblob)
+      (ofStore_closedOn_sub checked hwf hsub hcl) hB hn⟩
 
 /-- **The flattened family derived over a store is the one derived over a store that holds its
 records and blobs.** -/
@@ -1440,8 +2016,8 @@ theorem blockDerivedFlat_grow {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env}
     (hblob : ∀ y b, E.blobs.get? y = some b → E'.blobs.get? y = some b)
     {B : _root_.Address} {off : Nat} {es : List FlatEntry}
     (h : BlockDerivedFlat t E B off es) : BlockDerivedFlat t E' B off es := by
-  obtain ⟨n, hn⟩ := h
-  exact ⟨n, derivedFlatAt_le (ofStore_le hle hblob) hn⟩
+  obtain ⟨helim, n, hn⟩ := h
+  exact ⟨helim.grow hle hblob, n, derivedFlatAt_le (ofStore_le hle hblob) hn⟩
 
 /-- **The record's entries read the same over a store that holds the first's blobs**: the reading
 is over the record's own tables and the blobs. -/

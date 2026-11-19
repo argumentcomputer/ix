@@ -64,9 +64,9 @@ set_option linter.unusedVariables false
 
 /-- `get_ci` at an inductive type's address of the store: through its projection record, the
 member of its block, its type in the canonical reading over the block's tables at the member's
-root (`loadedAt`). -/
+root (`loadedAt`). `none` where the load fails; `some none` at a constant of another kind. -/
 noncomputable def indDataAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) :
-    Option IndData :=
+    Option (Option IndData) :=
   match recordOf E a with
   | none => none
   | some c =>
@@ -83,11 +83,11 @@ noncomputable def indDataAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_
                 ind.lvls.toNat (mutsRoot ms p.idx.toNat) ind.typ with
             | none => none
             | some ty =>
-              some ⟨ind.lvls.toNat, ty, ind.params.toNat, ind.indices.toNat, ind.ctors.size,
-                p.block, p.idx.toNat⟩
+              some (some ⟨ind.lvls.toNat, ty, ind.params.toNat, ind.indices.toNat, ind.ctors.size,
+                p.block, p.idx.toNat⟩)
           | _ => none
         | _ => none
-    | _ => none
+    | _ => some none
 
 /-- `get_ci_cprj blk i c`: constructor `c` of member `i` of the block at `b`, its type in the
 canonical reading over the block's tables at the constructor's root, and its parameter count. -/
@@ -158,7 +158,7 @@ noncomputable def unfoldAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (k : KKey)
     | none => none
     | some none => some none
     | some (some (n, v)) =>
-      if us.length = n then some (some (v.instantiateLevelParams (List.range n) us))
+      if us.length = n then some (some (exprInstLevels us v))
       else some none
 
 /-- `get_ci` at a constant address of the store, its constructor arm (`convert_constructor`):
