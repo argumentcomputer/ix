@@ -1,5 +1,6 @@
 import IxVMRefinement.TwinFamily.WrapBridge
 import IxVMRefinement.TwinFamily.Reload
+import IxVMRefinement.Lib.Lists
 import IxVMRefinement.FamilyAlias.CallLists
 import IxVMRefinement.FamilyAlias.CallRekey
 import IxVMRefinement.FamilyGraph.ProducersInnerRefs
@@ -2148,6 +2149,7 @@ private theorem rec_major_pins_ni_eq {calls : List (Call F)} {t : Ix.Kernel.Role
     injection hf3 with _ hf4
     injection hf4 with hini_eq _
     rw [← hini_eq] at heq_ini
+    have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
     have hval := congrArg ZMod.val (Value.field.inj heq_ini)
     rw [ZMod.val_natCast_of_lt (by omega)] at hval
     exact hval.symm
@@ -2442,13 +2444,13 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
           (hRS.recordOf_eq_recordAt A).symm.trans hA.record
         have hcb_a_eq : cb_a = c :=
           hRS.record_eq hrec0_A (Core.hashed_mono hsub80 hh_blk) ha_blk hex_blk
-        subst hcb_a_eq
+        subst cb_a
         have hrs_a_eq : rs_a = rs' := Ixon.ConstantInfo.muts.inj (hcb_a.symm.trans hA.muts)
-        subst hrs_a_eq
+        subst rs_a
         rw [hk64, Array.getElem?_toList] at hrs_a
         have hrc_a_eq : rc_a = rc :=
           Ixon.MutConst.recr.inj (Option.some.inj (hrs_a.symm.trans hmem_k))
-        subst hrc_a_eq
+        subst rc_a
         rw [hk64] at htr_a
         obtain ⟨hlvls_lt, hp56, hi56, hm56, hmi56, -, tyPtr, rulesPtr, blkPtr, b_a, planT,
           hb_a_eq, hb_a_rep, hv_a, rty, hplanT, hlevelsT, hrules_tr⟩ := htr_a
@@ -3145,14 +3147,17 @@ theorem familyCall_extract_members {calls : List (Call F)} {bAddr : _root_.Addre
         cases hget : rs'.toList[i]? with
         | none => rfl
         | some m =>
-          cases m <;> simp [Core.projAddr, Core.Specs.Callees.memberProjInfo, memberAddr]
+          cases m <;> rfl
       have hrecAs_len : recAs.length = rs'.size := by
         have := congrArg List.length hrecAs_map
         simpa [Array.length_toList] using this
       -- 5. `ev874 : Lists::length [v839]` gives `v861 = .field rs'.size`
       have hrec_qvd := repList_heapMono₂ Core.addrListEnum (Bytes.repAddressRef_heapMono₂ Core.addrTy)
         ext_840_qvd hrec_m840
-      obtain ⟨hv861_eq, -⟩ := Lib.length_spec ev874 hrec_qvd
+      have hv861_eq : v861 = .field (recAs.length : F) :=
+        (Lib.length_spec (t := .ptr (.array .field 32))
+          (by rwa [Obs.Names.«Lists::length<&[Field; 32]>».symbol])
+          (by rwa [Obs.Names.«Lists::Node<&[Field; 32]>».symbol])).1
       rw [hrecAs_len] at hv861_eq
       subst hv861_eq
       -- 6. `ev1203 : block_elim [x_rc, v673]` gives `x_bnl = .field ind₀.lvls`, `x_uoff = .field off`, `off ∈ {0, 1}`
@@ -3370,8 +3375,9 @@ theorem familyCall_usedRef_ind0 {calls : List (Call F)} {bAddr : _root_.Address}
           rw [hidx0, Array.getElem?_toList] at hrs0
           have hrc0_eq : rc0' = rc0 :=
             Ixon.MutConst.recr.inj (Option.some.inj (hrs0.symm.trans hmem0))
-          subst hrc0_eq
-          obtain ⟨hlvls0, hp56_0, -, -, -, -, tyPtr0, -, -, -, plan0, -, -, hv0, rty0, -, hlev0, -⟩ := htr0
+          subst rc0'
+          obtain ⟨hlvls0, hp56_0, -, -, -, -, tyPtr0, rulesPtr0, blkPtr0, b_a0, plan0, -, -, hv0,
+            rty0, -, hlev0, -⟩ := htr0
           rw [hv0] at hld0; rw [hld0] at ld76
           injection ld76 with hv0_eq; injection hv0_eq with _ _ hf0
           simp only [List.cons.injEq, and_true] at hf0
