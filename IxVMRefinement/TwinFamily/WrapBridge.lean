@@ -1674,7 +1674,10 @@ theorem ruleBodiesAt_renameConsts_of_recTypeAt {V : ReconView} {f : KKey → KKe
                           exact hpc
                         unfold minorAt at hma
                         dsimp only at hma
-                        rw [hpc_eq, hfc] at hma
+                        rw [hpc_eq] at hma
+                        dsimp only at hma
+                        rw [hfc] at hma
+                        dsimp only at hma
                         cases hih : ihDoms rm (liftIndices norm (es.length + (prev' + c))) fop nP
                             fds.length (nP + es.length + (prev' + c)) (elimLevel off) 0 ri with
                         | none => simp [hih] at hma
