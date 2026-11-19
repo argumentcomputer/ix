@@ -2,6 +2,7 @@ import MultiStark.Program
 import MultiStark.FunctionGroups
 import MultiStark.Modules.AiurExec
 import MultiStark.Modules.AiurExecBlock
+import MultiStark.Modules.AiurExecTrain
 import Aiur.Artifact
 import Aiur.Trace.Export
 
@@ -24,18 +25,26 @@ def aiurExecSource : Modules.Program Nat := aiurExecSourceWith Source.aiurExec
 /-- The aggregator for `Fixed::train_block` claims. -/
 def aiurExecBlockSource : Modules.Program Nat := aiurExecSourceWith Source.aiurExecBlock
 
+/-- The aggregator for `FixedTree::train_tree` claims, the whole run in one execution. -/
+def aiurExecTrainSource : Modules.Program Nat := aiurExecSourceWith Source.aiurExecTrain
+
 #aiur_check libraries.append aiurExecSource
 #aiur_check libraries.append aiurExecBlockSource
+#aiur_check libraries.append aiurExecTrainSource
 
 def aiurExecProgram : Modules.Program F := withLibraries aiurExecSource
 
 def aiurExecBlockProgram : Modules.Program F := withLibraries aiurExecBlockSource
+
+def aiurExecTrainProgram : Modules.Program F := withLibraries aiurExecTrainSource
 
 def aiurExecEntry : String := "AiurExec::aiur_exec"
 
 def aiurExecDigest : String := aiur_eval% hexDigest (reprStr aiurExecProgram)
 
 def aiurExecBlockDigest : String := aiur_eval% hexDigest (reprStr aiurExecBlockProgram)
+
+def aiurExecTrainDigest : String := aiur_eval% hexDigest (reprStr aiurExecTrainProgram)
 
 /-- The verifier's function groups, restricted to functions the program has, plus one group
 for this module's own functions. -/
