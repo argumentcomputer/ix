@@ -481,18 +481,19 @@ theorem recCompanionFacts_of_tys {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env} {
           rw [ecb] at hrs'' hRR
           have ers' : rs'' = rs := Ixon.ConstantInfo.muts.inj (hrs''.symm.trans hrb.muts)
           rw [ers'] at hmem' hRR
+          have hk' : cv.name = keyOf t (memberAddr rb i (.recr r)) := hk
           have hRRc : RecReads t (recordOf E₀) (fun y => E₀.blobs.get? y) crb (blockSelf t rb rs)
               cv.name rc' (.recInfo cv mIS rPS rules₀) := by
-            rw [hk]
+            rw [hk']
             exact hRR
           have hCrec := hT.recr j cv mIS rPS rules₀ tyA rhss hj hty hrh ⟨i.toUInt64, rb⟩ rc' rfl
-            hmem' (hk.trans (congrArg (keyOf t) hxa)) hRRc
+            hmem' (hk'.trans (congrArg (keyOf t) hxa)) hRRc
           have hid : keyOf t (memberAddr rb i (.recr r)) = .id (memberAddr rb i (.recr r)) :=
-            TwinFamily.keyOf_eq_id_of_noRole (fun ro hro => hnoRole ro (hk.trans hro))
+            TwinFamily.keyOf_eq_id_of_noRole (fun ro hro => hnoRole ro (hk'.trans hro))
           obtain ⟨lc0, hlc0, hd0⟩ := TwinFamily.recordOf_unpack (hEmem i (.recr r) hm')
           obtain ⟨lcb, hlcb, hdb⟩ := TwinFamily.recordOf_unpack hErb
           exact ⟨memberAddr rb i (.recr r), lc0, lcb, memberProjection rb i (.recr r), crb,
-            ⟨i.toUInt64, rb⟩, rs, rc', hk.trans hid, hlc0, hd0, rfl, hlcb, hdb, hrb.muts,
+            ⟨i.toUInt64, rb⟩, rs, rc', hk'.trans hid, hlc0, hd0, rfl, hlcb, hdb, hrb.muts,
             hmem', hCrec.notK⟩
     | _ => exact absurd hrec Bool.false_ne_true
 
