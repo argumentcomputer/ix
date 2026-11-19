@@ -514,8 +514,8 @@ private theorem obsFn_strictSubCall {ts : List String}
     rcases List.mem_append.mp hm with h1 | h2
     · exact strictSubCall_mono_left (ih1 hno.2 hnd.2 h1)
     · rcases List.mem_cons.mp h2 with heq | h3
-      · have hne := instanceName_not_mem_targets hplain hno.1 cl.name hclTarget
-        exact (hne (congrArg Call.name heq.symm)).elim
+      · exact (instanceName_not_mem_targets hplain hno.1 cl.name hclTarget
+          (congrArg Call.name heq.symm)).elim
       · exact ⟨_, _, _, _, _, _, callee, h3,
           by simp; omega,
           fun x hx => List.mem_append_right _ (List.mem_cons_of_mem _ hx),
@@ -648,7 +648,7 @@ private theorem sourceFunction?_fn_detail {p : Program F} {name : String} {sf : 
         unfold Program.findFunction? at h2
         have hmem : f ∈ p.functions := List.mem_of_find?_eq_some h2
         have hbeq := List.find?_some h2
-        exact ⟨key, f, types, h1, hmem, beq_iff_eq.mp hbeq, h3, h.symm⟩
+        exact ⟨key, f, types, rfl, hmem, beq_iff_eq.mp hbeq, h3, h.symm⟩
 
 /-- Re-tag an `ObsFn` whose underlying program function has plain name `target` and a known
 monomorphic lookup theorem `hlk` into `ObsFn Obs.W target args ...`, also determining `args.length`. -/
@@ -1282,7 +1282,7 @@ private theorem check_witnesses_descend_aux (n : Nat) :
     match Obs.«KernelModeled::check_witnesses».obs ev with
     | .n0 (hc41 := hc) .. =>
       rw [hc] at hcl; simp at hcl
-    | .other (x_x := x_x) (x_rest := x_rest) (ev59 := ev59) (ev94 := ev94)
+    | .other (x_x := x_x) (x_rest := x_rest) (cs194 := cs194) (ev59 := ev59) (ev94 := ev94)
         (ev_updedcyj := evOrd) (ev167 := ev167) (ev129 := ev129) (ev196 := ev196)
         (he254 := he254) (hm264 := hm264) (he291 := he291) (hc292 := hc) .. =>
       have mkSub : ∀ {fn' args' h₁ r₁ h₁' cs'},
@@ -1345,7 +1345,7 @@ private theorem check_witnesses_descend_aux (n : Nat) :
             (fun x hx => hsub x (List.mem_cons_of_mem _ (List.mem_append_left _ hx)))
         · rcases List.mem_cons.mp hrest with heq | hcs194
           · have hnm := congrArg Call.name heq; simp [cl] at hnm
-          · have hlt194 : _ < cs_ws.length := by simp at hle; omega
+          · have hlt194 : cs194.length < cs_ws.length := by simp at hle; omega
             rcases ih (by omega) ev196 hcs194 with
               ⟨hrc, hxb, vw, mw, csw, elems, evw, hsubw, hext1, hext2, hrepRest, hmemEl⟩ | hsc
             · subst hrc hxb
