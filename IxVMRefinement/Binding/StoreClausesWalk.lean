@@ -374,8 +374,8 @@ theorem GroupReach.listed (hH : LoadedReads.HashedRecordsStored calls E₀) {g :
     (h : GroupReach t E₀ g a) : ∃ r ∈ recs, r.addr = a := by
   induction h with
   | root hr hwk had => exact hw.roots _ hr hwk _ had
-  | axiomRef hr hs had hu hnc => exact hw.axiomRefs _ hr hs _ had _ hu hnc
-  | @ref a x _ hu hnc ih =>
+  | axiomRef hr hs had hu hns => exact hw.axiomRefs _ hr hs _ had _ hu (AlreadyStoredRole.not_covered hns)
+  | @ref a x _ hu hns ih =>
     obtain ⟨r, hr, hra⟩ := ih
     obtain ⟨c, i, hc, hi, hx⟩ := hu
     have hrec := topRec_recordOf hH r
@@ -386,7 +386,7 @@ theorem GroupReach.listed (hH : LoadedReads.HashedRecordsStored calls E₀) {g :
       (by rw [Assembly.usedRefIdxs_eq]; exact hi) x hx
     rcases hrest with ⟨-, r', hr', e, -⟩ | hcov
     · exact ⟨r', hr', e⟩
-    · exact absurd hcov hnc
+    · exact absurd hcov (AlreadyStoredRole.not_covered hns)
   | @owner a c _ hc hp ih =>
     obtain ⟨r, hr, hra⟩ := ih
     have hrec := topRec_recordOf hH r
@@ -396,7 +396,8 @@ theorem GroupReach.listed (hH : LoadedReads.HashedRecordsStored calls E₀) {g :
     obtain ⟨r', hr', e, -⟩ := (hw.closed r hr).1 hp
     rw [hra] at e
     exact ⟨r', hr', e⟩
-  | evidenceRef hr hm hthm hu hne hnc => exact hw.evidenceRefs _ hr _ _ _ hm hthm hu hne hnc
+  | evidenceRef hr hm hthm hu hne hns =>
+    exact hw.evidenceRefs _ hr _ _ _ hm hthm hu hne (AlreadyStoredRole.not_covered hns)
 
 /-! ## The rank -/
 
@@ -498,9 +499,9 @@ theorem walkRank_owner_lt (hH : LoadedReads.HashedRecordsStored calls E₀) {g :
 
 /-! ## What a group adds, record by record -/
 
-/-- **The bound record of a walked role of a group below 6 is a basis row.** -/
+/-- **The bound record of every role of a group below 6 is a basis row.** -/
 def BasisRolesStored (t : Ix.Kernel.RoleTable) : Prop :=
-  ∀ r, Ix.SpecDigest.groupOf r < 6 → walkedRole r = true → ∀ a, t.addressOf? r = some a →
+  ∀ r, Ix.SpecDigest.groupOf r < 6 → ∀ a, t.addressOf? r = some a →
     (basisStore.consts.get? a).isSome = true
 
 /-- **The record the table binds a standard axiom to is a safe axiom record of the run.** -/
@@ -639,19 +640,62 @@ theorem groupAdds_cases (hC : CollisionFreeRun calls E₀) (hax : AxiomRolesDecl
   · obtain ⟨c, ax, hc, hinfo, hsafe⟩ := hax ro hs a had
     exact Or.inr (Or.inr (Or.inl ⟨ro, hro, hs, had, c, ax, hc, hinfo, hsafe⟩))
 
+set_option maxRecDepth 100000 in
+/-- Every walked anchor belongs to a group from 6 on (decided). -/
+private theorem anchorWalked_group_ge_six (r : Ix.Kernel.Role) :
+    RoleVal.anchorWalked r = true → 6 ≤ Ix.SpecDigest.groupOf r := by
+  rw [RoleVal.anchorWalked_iff]
+  cases r <;> decide
+
+set_option maxRecDepth 100000 in
+/-- Every standard axiom belongs to a group from 6 on (decided). -/
+private theorem standardAxioms_group_ge_six :
+    ∀ r ∈ standardAxioms, 6 ≤ Ix.SpecDigest.groupOf r := by
+  decide +kernel
+
+set_option maxRecDepth 100000 in
+/-- Every quotient role belongs to a group below 6 (decided). -/
+private theorem isQuotRole_group_lt_six (r : Ix.Kernel.Role) :
+    RoleVal.isQuotRole r = true → Ix.SpecDigest.groupOf r < 6 := by
+  cases r <;> decide
+
+set_option maxRecDepth 100000 in
+/-- Every operation has its bound record walked and belongs to a group from 6 on (decided). -/
+private theorem specKind_two_walks_and_ge_six (r : Ix.Kernel.Role) :
+    RoleVal.roleSpecKindNat r = 2 →
+      RoleVal.roleWalksBound r = true ∧ 6 ≤ Ix.SpecDigest.groupOf r := by
+  cases r <;> decide
+
+/-- **Every role-bound address in `AlreadyStoredRole` is held by the store before the group**:
+covered walked roles, walked anchors, standard axioms and quotient roles below `valLimit g`, and
+operations of groups below `g` were each placed in `basisStore` or added by their own group. -/
+theorem storedBelow_of_alreadyStored (hbr : BasisRolesStored t) {g : Nat} {x : _root_.Address}
+    (hst : AlreadyStoredRole t g x) : StoredBelow t E₀ Pay g x := by
+  rcases hst with ⟨r, had, hw, hlt⟩ | ⟨r, had, hlt, hkind⟩ | ⟨r, had, hk2, hlt⟩
+  · have hlt' : Ix.SpecDigest.groupOf r < g :=
+      Nat.lt_of_lt_of_le (hlt (valLimit g) rfl) (valLimit_le g)
+    by_cases h6 : Ix.SpecDigest.groupOf r < 6
+    · exact Or.inl (hbr r h6 x had)
+    · have hwb : RoleVal.roleWalksBound r = true := by
+        rw [← Claim.walkedRole_eq_roleWalksBound]
+        exact hw
+      exact Or.inr ⟨Ix.SpecDigest.groupOf r, Nat.le_of_not_lt h6, hlt',
+        GroupAdds.reach (GroupReach.root (role_mem_roleGroup r) (Or.inl hwb) had)⟩
+  · have hlt' : Ix.SpecDigest.groupOf r < g := Nat.lt_of_lt_of_le hlt (valLimit_le g)
+    rcases hkind with hwk | hs | hq
+    · exact Or.inr ⟨Ix.SpecDigest.groupOf r, anchorWalked_group_ge_six r hwk, hlt',
+        GroupAdds.reach (GroupReach.root (role_mem_roleGroup r) (Or.inr hwk) had)⟩
+    · exact Or.inr ⟨Ix.SpecDigest.groupOf r, standardAxioms_group_ge_six r hs, hlt',
+        GroupAdds.stdAxiom (role_mem_roleGroup r) hs had⟩
+    · exact Or.inl (hbr r (isQuotRole_group_lt_six r hq) x had)
+  · obtain ⟨hwb, h6⟩ := specKind_two_walks_and_ge_six r hk2
+    exact Or.inr ⟨Ix.SpecDigest.groupOf r, h6, hlt,
+      GroupAdds.reach (GroupReach.root (role_mem_roleGroup r) (Or.inl hwb) had)⟩
+
 /-- **A covered reference is held by the store before the group.** -/
 theorem storedBelow_of_covered (hbr : BasisRolesStored t) {g : Nat} {x : _root_.Address}
-    (hcov : Claim.CoveredAt t (some (valLimit g)) x) : StoredBelow t E₀ Pay g x := by
-  obtain ⟨r, had, hw, hlt⟩ := hcov
-  have hlt' : Ix.SpecDigest.groupOf r < g :=
-    Nat.lt_of_lt_of_le (hlt (valLimit g) rfl) (valLimit_le g)
-  by_cases h6 : Ix.SpecDigest.groupOf r < 6
-  · exact Or.inl (hbr r h6 hw x had)
-  · have hwb : RoleVal.roleWalksBound r = true := by
-      rw [← Claim.walkedRole_eq_roleWalksBound]
-      exact hw
-    exact Or.inr ⟨Ix.SpecDigest.groupOf r, Nat.le_of_not_lt h6, hlt',
-      GroupAdds.reach (GroupReach.root (role_mem_roleGroup r) (Or.inl hwb) had)⟩
+    (hcov : Claim.CoveredAt t (some (valLimit g)) x) : StoredBelow t E₀ Pay g x :=
+  storedBelow_of_alreadyStored hbr (AlreadyStoredRole.of_covered hcov)
 
 /-- **A stored address holds a record of the run.** -/
 theorem storedBelow_record (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoaded E₀)
@@ -776,25 +820,26 @@ theorem groupStore_rankUsed (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLo
   obtain ⟨c, i, hc, hi, hx⟩ := hused
   have hE : recordOf E₀ a = some c := ((groupStore_recordOf hb h6).mp hc).2
   have huE : UsedRef E₀ a x := ⟨c, i, hE, hi, hx⟩
-  by_cases hcov : Claim.CoveredAt t (some (valLimit g)) x
+  by_cases hst : AlreadyStoredRole t g x
   · right
-    have hs : StoredBelow t E₀ Pay g x := storedBelow_of_covered hbr hcov
+    have hs : StoredBelow t E₀ Pay g x := storedBelow_of_alreadyStored hbr hst
     obtain ⟨cx, hcx⟩ := storedBelow_record hC hb hax hP hws hs
     rw [(groupStore_recordOf hb hg).mpr ⟨hs, hcx⟩]
     rfl
-  · have hreach : GroupReach t E₀ g x ∧ walkRank recs x < walkRank recs a := by
+  · have hcov := AlreadyStoredRole.not_covered hst
+    have hreach : GroupReach t E₀ g x ∧ walkRank recs x < walkRank recs a := by
       rcases groupAdds_cases hC hax hw hadd with ⟨hra, hl⟩ |
           ⟨r, hr, -, -, p, hp, -, -, hrefs, -⟩ | ⟨ro, hro, hs, had, -⟩ | hpay
       rotate_right
       · exact (hpay.false_of_empty hnp).elim
-      · exact ⟨GroupReach.ref hra huE hcov,
+      · exact ⟨GroupReach.ref hra huE hst,
           walkRank_used_lt hC.hashedStored hw hl hE hi hx hcov⟩
       · exfalso
         have e : p = c := Option.some.inj (hp.symm.trans hE)
         rw [e] at hrefs
         rw [hrefs] at hx
         simp at hx
-      · have hrx : GroupReach t E₀ g x := GroupReach.axiomRef hro hs had huE hcov
+      · have hrx : GroupReach t E₀ g x := GroupReach.axiomRef hro hs had huE hst
         refine ⟨hrx, ?_⟩
         by_cases hl : ∃ r ∈ recs, r.addr = a
         · exact walkRank_used_lt hC.hashedStored hw hl hE hi hx hcov
@@ -922,21 +967,21 @@ theorem groupStore_used_held (hC : CollisionFreeRun calls E₀) (hb : BasisRowsL
     obtain ⟨cy, hcy⟩ := storedBelow_record hC hb hax hP hws hy
     rw [(groupStore_recordOf hb h6).mpr ⟨hy, hcy⟩]
     rfl
-  by_cases hcov : Claim.CoveredAt t (some (valLimit g)) x
-  · exact hheld x (storedBelow_succ (storedBelow_of_covered hbr hcov))
+  by_cases hst : AlreadyStoredRole t g x
+  · exact hheld x (storedBelow_succ (storedBelow_of_alreadyStored hbr hst))
   · apply hheld x
     apply storedBelow_of_adds hg
     rcases groupAdds_cases hC hax hw hadd with ⟨hra, -⟩ |
         ⟨r, hr, -, -, p, hp, -, -, hrefs, -⟩ | ⟨ro, hro, hs, had, -⟩ | hpay
-    · exact GroupAdds.reach (GroupReach.ref hra huE hcov)
+    · exact GroupAdds.reach (GroupReach.ref hra huE hst)
     · exfalso
       have e : p = c := Option.some.inj (hp.symm.trans hE)
       rw [e] at hrefs
       rw [hrefs] at hx
       simp at hx
-    · exact GroupAdds.reach (GroupReach.axiomRef hro hs had huE hcov)
+    · exact GroupAdds.reach (GroupReach.axiomRef hro hs had huE hst)
     · rcases payAdds_cases hP hpay with ⟨hra, -⟩ | ⟨-, -, -, -, -, p, hp, -, -, hrefs, -⟩
-      · exact GroupAdds.payReach (PayReach.ref hra huE hcov)
+      · exact GroupAdds.payReach (PayReach.ref hra huE hst)
       · exfalso
         have e : p = c := Option.some.inj (hp.symm.trans hE)
         rw [e] at hrefs
@@ -1074,12 +1119,12 @@ theorem groupStore_evidenceRefs (hC : CollisionFreeRun calls E₀) (hb : BasisRo
       t.addressOf? r ≠ some x → (recordOf (groupStore t E₀ Pay (g + 1)) x).isSome = true := by
   intro r hr arr thm x hm hthm hu hne
   have h6 : 6 ≤ g + 1 := Nat.le_succ_of_le hg
-  by_cases hcov : Claim.CoveredAt t (some (valLimit g)) x
-  · have hs : StoredBelow t E₀ Pay g x := storedBelow_of_covered hbr hcov
+  by_cases hst : AlreadyStoredRole t g x
+  · have hs : StoredBelow t E₀ Pay g x := storedBelow_of_alreadyStored hbr hst
     obtain ⟨cx, hcx⟩ := storedBelow_record hC hb hax hP hws hs
     rw [(groupStore_recordOf hb h6).mpr ⟨storedBelow_succ hs, hcx⟩]
     rfl
-  · have hrx : GroupReach t E₀ g x := GroupReach.evidenceRef hr hm hthm hu hne hcov
+  · have hrx : GroupReach t E₀ g x := GroupReach.evidenceRef hr hm hthm hu hne hst
     obtain ⟨y, hy, hya⟩ := hrx.listed hC.hashedStored hw
     have hcx : recordOf E₀ x = some y.c := by
       rw [← hya]
