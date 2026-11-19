@@ -50,8 +50,8 @@ universe u v w
 
 /-- Aczel's pre-sets at universe `u`: well-founded trees whose branching types
 live in `Type u`. -/
-inductive PSet.{u} : Type (u + 1)
-  | mk (α : Type u) (A : α → PSet.{u}) : PSet.{u}
+inductive PSet : Type (u + 1)
+  | mk (α : Type u) (A : α → PSet) : PSet
 
 namespace PSet
 
@@ -134,7 +134,7 @@ theorem Equiv.lift_iff : ∀ {x y : PSet.{u}}, Equiv x y ↔ Equiv x.lift y.lift
 end PSet
 
 /-- Pure-Lean ZF⁻ sets at universe `u`: `PSet.{u}` modulo bisimulation. -/
-def VSet.{u} : Type (u + 1) := Quotient PSet.setoid.{u}
+def VSet : Type (u + 1) := Quotient PSet.setoid.{u}
 
 namespace VSet
 
@@ -405,7 +405,7 @@ def IsOrd (x : VSet.{u}) : Prop :=
   IsTrans x ∧ ∀ y z, Mem y x → Mem z x → Mem y z ∨ y = z ∨ Mem z y
 
 /-- Von Neumann ordinals in `VSet.{u}`. -/
-abbrev VOrd.{u} := {x : VSet.{u} // IsOrd x}
+abbrev VOrd := {x : VSet.{u} // IsOrd x}
 
 /-- Every member of a von Neumann ordinal is a von Neumann ordinal. -/
 theorem isOrd_mem {α β : VSet.{u}} (hα : IsOrd α) (hβ : Mem β α) : IsOrd β := by
@@ -946,7 +946,7 @@ theorem mem_lift_exists {w : VSet.{u + 1}} {y : VSet.{u}} (h : Mem w (lift y)) :
     exact ⟨mk (B i), Quotient.sound hi, ⟨i, PSet.Equiv.refl _⟩⟩
 
 /-- The set of all lifted `VSet.{u}` sets, living inside `VSet.{u + 1}`. -/
-noncomputable def univSet.{u} : VSet.{u + 1} :=
+noncomputable def univSet : VSet.{u + 1} :=
   ofFam.{u + 1} VSet.{u} lift
 
 theorem mem_univSet {w : VSet.{u + 1}} :
@@ -1313,7 +1313,7 @@ noncomputable def finiteSetTheory4 : FiniteSetTheory 4 VSet.{u + 4} :=
 the exact set-theoretic hypothesis equivalent to Carneiro's `OmegaInaccessibles`
 (cf. `Models/SetTheory/IxSetTheoryModel/Carneiro.lean`), stated directly over
 pure-Lean `VSet.{u}` without Mathlib. -/
-def OmegaUniverses.{u} : Prop :=
+def OmegaUniverses : Prop :=
   ∃ U : Nat → VSet.{u},
     (∀ n : Nat, Mem (U n) (U (n + 1))) ∧ (∀ n : Nat, IsTGUniverse Mem (U n))
 
