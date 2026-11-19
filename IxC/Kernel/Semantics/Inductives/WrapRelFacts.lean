@@ -1244,7 +1244,7 @@ theorem SymWrapT.exists_join {d₁ d₂ : Expr md} (h : SymWrapT find? d₁ d₂
       simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv1 hfv2 ⊢
       exact ⟨hft hfv1.1 (hfa (hs.of (P := fun e => e.hasFvar = false) hfvP hfv1.1) hfv2.1), hfb hfv1.2 hfv2.2⟩
     · intro f hr1 hr2
-      simp only [Expr.renameConsts, Expr.lam.injEq] at hr1 hr2 ⊢
+      simp only [Expr.renameConsts, Expr.lam.injEq, and_true] at hr1 hr2 ⊢
       exact ⟨hrt f hr1.1 (hra f (hs.of (P := fun e => e.renameConsts f = e) (hrenP f) hr1.1) hr2.1), hrb f hr1.2 hr2.2⟩
   | @lamR t t' a b b' m m' hpw hs _ _ ihw ihb =>
     intro h1 h2
@@ -1257,7 +1257,7 @@ theorem SymWrapT.exists_join {d₁ d₂ : Expr md} (h : SymWrapT find? d₁ d₂
       simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv1 hfv2 ⊢
       exact ⟨hft hfv2.1 (hfa hfv1.1 (hs.of (P := fun e => e.hasFvar = false) hfvP hfv2.1)), hfb hfv1.2 hfv2.2⟩
     · intro f hr1 hr2
-      simp only [Expr.renameConsts, Expr.lam.injEq] at hr1 hr2 ⊢
+      simp only [Expr.renameConsts, Expr.lam.injEq, and_true] at hr1 hr2 ⊢
       exact ⟨hrt f hr2.1 (hra f hr1.1 (hs.of (P := fun e => e.renameConsts f = e) (hrenP f) hr2.1)), hrb f hr1.2 hr2.2⟩
   | @forallEL t a t' b b' m m' hpw hs _ _ ihw ihb =>
     intro h1 h2
@@ -1271,7 +1271,7 @@ theorem SymWrapT.exists_join {d₁ d₂ : Expr md} (h : SymWrapT find? d₁ d₂
       simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv1 hfv2 ⊢
       exact ⟨hft hfv1.1 (hfa (hs.of (P := fun e => e.hasFvar = false) hfvP hfv1.1) hfv2.1), hfb hfv1.2 hfv2.2⟩
     · intro f hr1 hr2
-      simp only [Expr.renameConsts, Expr.forallE.injEq] at hr1 hr2 ⊢
+      simp only [Expr.renameConsts, Expr.forallE.injEq, and_true] at hr1 hr2 ⊢
       exact ⟨hrt f hr1.1 (hra f (hs.of (P := fun e => e.renameConsts f = e) (hrenP f) hr1.1) hr2.1), hrb f hr1.2 hr2.2⟩
   | @forallER t t' a b b' m m' hpw hs _ _ ihw ihb =>
     intro h1 h2
@@ -1285,14 +1285,14 @@ theorem SymWrapT.exists_join {d₁ d₂ : Expr md} (h : SymWrapT find? d₁ d₂
       simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv1 hfv2 ⊢
       exact ⟨hft hfv2.1 (hfa hfv1.1 (hs.of (P := fun e => e.hasFvar = false) hfvP hfv2.1)), hfb hfv1.2 hfv2.2⟩
     · intro f hr1 hr2
-      simp only [Expr.renameConsts, Expr.forallE.injEq] at hr1 hr2 ⊢
+      simp only [Expr.renameConsts, Expr.forallE.injEq, and_true] at hr1 hr2 ⊢
       exact ⟨hrt f hr2.1 (hra f hr1.1 (hs.of (P := fun e => e.renameConsts f = e) (hrenP f) hr2.1)), hrb f hr1.2 hr2.2⟩
   | proj _ ih =>
     intro h1 h2
     obtain ⟨ge, hge1, hge2, hfe, hre⟩ := ih h1 h2
     refine ⟨.proj _ _ ge, .proj hge1, .proj hge2, hfe, fun f hr1 hr2 => ?_⟩
     simp only [Expr.renameConsts, Expr.proj.injEq, true_and] at hr1 hr2 ⊢
-    exact ⟨hr1.1, hre f hr1.2 hr2.2⟩
+    exact hre f hr1 hr2
 
 /-- Strip `n` leading λ-binders, returning the body. -/
 def stripLams : Nat → Expr md → Option (Expr md)
@@ -1403,6 +1403,7 @@ theorem liftLooseBVars_succ_instantiate1 (v : Expr md) (s : Nat) :
     · rw [if_pos hjc, if_pos hjc]
       simp only [Expr.instantiate1]
       rw [if_neg (by omega : ¬ j + (s + 1) = c + s), if_pos (by omega : j + (s + 1) > c + s)]
+      congr 1
     · rw [if_neg hjc, if_neg hjc]
       simp only [Expr.instantiate1]
       rw [if_neg (by omega : ¬ j = c + s), if_neg (by omega : ¬ j > c + s)]
