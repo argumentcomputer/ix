@@ -1219,7 +1219,8 @@ private theorem walk_path_spec_ext {K : FamRunCtx}
       have hnc : ¬ Covered K.t cur := fun hc =>
         absurd (Value.field.inj (hc0.symm.trans (hiff_c.mpr hc))) zero_ne_one
       exact ⟨hp0, hnc, hnc, Or.inl ⟨hn0, rfl⟩⟩
-    | .other (cs86 := cs86) (cs288 := cs288) (hne36 := hne0) (ev53 := ev53) (ev88 := ev88)
+    | .other (m76 := m76) (v276 := v276) (m277 := m277) (cs86 := cs86) (cs288 := cs288)
+        (hne36 := hne0) (ev53 := ev53) (ev88 := ev88)
         (sg284 := sg) (ev_kkbmepwt := ev_cov) (op_uybassap := op1) (op_riujyiic := op2)
         (op_xgjbnmqg := op3) (ev290 := ev290) (hc323 := hc) .. =>
       have hlen' : cs288.length ≤ m := by
@@ -1232,7 +1233,7 @@ private theorem walk_path_spec_ext {K : FamRunCtx}
       have hsub86 : ∀ cl ∈ cs86, cl ∈ K.calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
       have hrec_cur : recordOf K.E₀ cur = some c_cur :=
         haddr_cur ▸ Claim.recordOf_of_hashed hcov (Claim.hashed_mono hsub86 hh_cur) hlen_cur hexact_cur
-      have hstep : Heap.Extends _ _ ∧ ∃ next : _root_.Address, S0.addr _ _ next ∧
+      have hstep : Heap.Extends m76 m277 ∧ ∃ next : _root_.Address, S0.addr m277 v276 next ∧
           (UsedRef K.E₀ cur next ∨
             ∃ c, recordOf K.E₀ cur = some c ∧ IsProj c ∧ next = Ix.Cert.ownerOf cur c) := by
         match sg with
@@ -1455,13 +1456,13 @@ private theorem check_witness_spec_ext {K : FamRunCtx}
     have ext_all := ev_gc.heap_extends.trans (ext_wfb.trans (ev_ccr.heap_extends.trans ev_acp.heap_extends))
     exact ⟨ext_all, ⟨bs3, L1.Stream.mono (ev_ccr.heap_extends.trans ev_acp.heap_extends) hs3⟩,
       Or.inr ⟨hk2, hrec_kind⟩⟩
-  | .n3 (cs_frlxnmjz := cs_wfb) (cs687 := cs_sg) (cs_gufnlnhk := cs_ci)
+  | .n3 (m570 := m570) (m685 := m685) (cs_frlxnmjz := cs_wfb) (cs687 := cs_sg) (cs_gufnlnhk := cs_ci)
       (ev461 := ev_gc1) (ev_ndaajwbz := ev_wfb) (ev547 := ev_gc2) (ev582 := ev_gc3)
       (sg692 := sg) (ev717 := ev_eq) (heq740 := heq1) (ev_gwtfngxo := ev_ci)
       (ev_xxjagmga := ev_acp) (he742 := hr) (he743 := hh) (hc744 := hc) .. =>
     subst hh hr
     obtain ⟨bs2, hs2⟩ := get_count_stream hst ev_gc1
-    have ext_sg : Heap.Extends _ _ := by
+    have ext_sg : Heap.Extends m570 m685 := by
       match sg with
       | .n0 (ev623 := e) .. => exact e.heap_extends
       | .other (ev650 := e) .. => exact e.heap_extends
@@ -1630,7 +1631,7 @@ private theorem check_witnesses_spec_ext {K : FamRunCtx}
       · rcases hcw_res with hwb | ⟨hk2, cx, hcx, hkind⟩
         · exact Or.inl hwb
         · refine Or.inr ⟨_, _, _, ext_pre, S0.addr_mono ext_pre hblk,
-            ⟨a_x, Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ord.heap_extends ha_rep, rfl⟩,
+            ⟨w, Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ord.heap_extends ha_rep, rfl⟩,
             ?_, cx, hcx, hkind⟩
           rw [hc, ← hk2]
           simp
@@ -1733,7 +1734,7 @@ private theorem family_refs_go_spec {K : FamRunCtx}
           have hget_c : cB.refs[k]? = some (Core.ixAddr q) := by
             rw [← Array.getElem?_toList, ← himap, List.getElem?_map, hk_get]; rfl
           exact ⟨hh ▸ hm86 ▸ Heap.Extends.refl _,
-            fun _ => Or.inl (Or.inl ⟨cB, k, hB, by rw [← Assembly.usedRefIdxs_eq]; exact hk_mem, hget_c⟩)⟩
+            fun _ => Or.inl (Or.inl ⟨cB, k, hB, by rw [← Assembly.usedRefIdxs_eq]; simpa using hk_mem, hget_c⟩)⟩
         | .n1_other_IPrj_n1 (cs_zdnxjwry := cs_ld) (cs_qbnwdknq := cs_ci)
             (ev56 := ev56) (ev99 := ev99) (ev_xluoudzn := ev_ld) (ev_qgckrtca := ev_ci)
             (ev_vtyrtvpa := ev_pb) (ev_tnredfpp := ev_eq) (he_bzceqiro := hh)
