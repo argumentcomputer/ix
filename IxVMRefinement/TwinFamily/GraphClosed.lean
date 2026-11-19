@@ -931,7 +931,7 @@ theorem graphStoreClosed_of_envWF
             -- Recover `d.kind = .defn` from `defnAt`
             have hdkind : d.kind = .defn := by
               unfold defnAt at hd
-              rw [hc, hci] at hd
+              simp only [hc, hci] at hd
               cases hdk : d.kind <;> simp [hdk] at hd
               rfl
             rw [hdkind] at hshape_d
@@ -966,10 +966,10 @@ theorem graphStoreClosed_of_envWF
             subst msR
             have hdR_eq : dR = d :=
               Ixon.MutConst.defn.inj (Option.some.inj (hmR.symm.trans hm))
-            subst hdR_eq
+            subst dR
             have hdkind : d.kind = .defn := by
               unfold defnAt at hd
-              rw [hc, hci, hcb, hcbi, hm] at hd
+              simp only [hc, hci, hcb, hcbi, hm] at hd
               cases hdk : d.kind <;> simp [hdk] at hd
               rfl
             rw [hdkind] at hshape_d
@@ -1056,7 +1056,7 @@ theorem graphStoreClosed_of_envWF
       rw [Nat.zero_add] at ha ⊢
       rcases hb with hst_b | ⟨cb', ms', hcb', hcbi', hbs⟩ | hbas_b | ⟨hTb, hrkb⟩ |
           ⟨b', cb', ms', i', m', hTb', _, hcb', hcbi', hm'', rfl⟩
-      · obtain ⟨-, -, hbas | hkept⟩ := storedAt_provenance hctx.shape ht htwf hst_b
+      · obtain ⟨_, _, hbas | hkept⟩ := storedAt_provenance hctx.shape ht htwf hst_b
         · exact Or.inr (Or.inr (Or.inl (hF_basis.members b _ hbas h _ ha)))
         · obtain ⟨-, -, ⟨cR, hcR, hread⟩, -⟩ := hkept
           have hceq := hRE₀_eq b cR cb hcR hcb
