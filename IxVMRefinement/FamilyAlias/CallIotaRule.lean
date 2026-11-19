@@ -2095,8 +2095,8 @@ theorem check_iota_rule_facts
       intro x hx
       obtain ⟨idx, hidx_lt, rfl⟩ := List.getElem_of_mem hx
       have hsh := hfvsP_shape idx hidx_lt
-      simp only [Function.comp_apply, hsh, Expr.renameConsts, Core.posOf,
-        Expr.instantiateLevelParams, Expr.fvarTypeD]
+      conv_lhs => rw [Function.comp_apply, Function.comp_apply, hsh]
+      rfl
     have hmap_ty2 : ((xFvsP.map (·.renameConsts g)).map (Core.posOf lps)).map Expr.fvarTypeD =
         ((xFvsP.map Expr.fvarTypeD).map (·.renameConsts g)).map (Core.posOf lps) := by
       rw [List.map_map, List.map_map, List.map_map, List.map_map]
@@ -2104,8 +2104,8 @@ theorem check_iota_rule_facts
       intro x hx
       obtain ⟨idx, hidx_lt, rfl⟩ := List.getElem_of_mem hx
       have hsh := hxFvsP_shape idx hidx_lt
-      simp only [Function.comp_apply, hsh, Expr.renameConsts, Core.posOf,
-        Expr.instantiateLevelParams, Expr.fvarTypeD]
+      conv_lhs => rw [Function.comp_apply, Function.comp_apply, hsh]
+      rfl
     rw [hmap_ty1] at hraw_lt1
     rw [hmap_ty2] at hraw_lt2
     have hraw_both := Decl.rawDefEqList_append hraw_lt1 hraw_lt2
@@ -2162,7 +2162,9 @@ theorem check_iota_rule_facts
   refine ⟨fvs, tbody, hopen_t, hisEq, htargs_len, hlhs_fn, hlargs_len, hlargs_pre, hmajor_eq,
     cdoms, cres, rdoms, lrest, fvsP, crest2, cdomsP, crestP, xFvsP, ldoms,
     hinst_c, hcres_len, hinst_r, hopen_p, hinst_p, hopen_cf, hldoms_len,
-    hleaves fvsP crest2 hopen_p,
+    (fun p hp => by
+      obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+      exact hleaves fvsP crest2 hopen_p q hq),
     ldomsL, lrest2, hinst_lam, hpins_typed, ?_⟩
   exact ⟨hde_idx, hde_dom, hde_pre, hde_lam, hde_rhs,
     ⟨Decl.invPosOf lps tl_pos, Decl.posRulesJ_infer_of_pos hlps_perm htl_inf,
