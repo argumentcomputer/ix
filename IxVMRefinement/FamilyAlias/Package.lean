@@ -1,5 +1,6 @@
 import IxVMRefinement.Decl.ModeledAux
 import IxVMRefinement.Core.Det
+import IxVMRefinement.Core.Open
 import IxC.Kernel.Model.IndRenJudge
 
 /-! # A judgement package for model aliases with positionally reindexed valuations
@@ -162,18 +163,19 @@ theorem ctxOk_renameConsts_pos {V : Type u} [Ix.Kernel.SetTheory V] {env : Env .
 /-- `Level.substFn` at a distinct parameter list evaluates at the parameter's position. -/
 theorem substFn_getElem {φ : LevelParam → Nat} :
     ∀ {ks : List LevelParam} {vs : List KLevel},
-      ks.Nodup → ks.length = vs.length → ∀ (i : Nat) (hi : i < ks.length),
-      Level.substFn φ ks vs ks[i] = Level.eval φ (vs[i]'(by omega))
+      ks.Nodup → (hlen : ks.length = vs.length) → ∀ (i : Nat) (hi : i < ks.length),
+      Level.substFn φ ks vs ks[i] = Level.eval φ (vs[i]'(hlen ▸ hi))
   | [], _, _, _, _, hi => absurd hi (Nat.not_lt_zero _)
   | _ :: _, [], _, hlen, _, _ => nomatch hlen
   | k :: ks, v :: vs, hnd, hlen, 0, _ => by
     simp [Level.substFn]
   | k :: ks, v :: vs, hnd, hlen, i + 1, hi => by
     obtain ⟨hnot, hnd'⟩ := List.nodup_cons.mp hnd
-    have hne : ks[i]'(by simp at hi; omega) ≠ k :=
-      fun heq => hnot (heq ▸ List.getElem_mem (by simp at hi; omega))
-    simp only [List.getElem_cons_succ, Level.substFn, if_neg hne]
-    exact substFn_getElem hnd' (Nat.succ.inj hlen) i (by simp at hi; omega)
+    have hi' : i < ks.length := by simpa using hi
+    have hne : k ≠ ks[i]'hi' :=
+      fun heq => hnot (heq ▸ List.getElem_mem hi')
+    simp only [List.getElem_cons_succ, Level.substFn, ite_eq_right hne]
+    exact substFn_getElem hnd' (Nat.succ.inj hlen) i hi'
 
 /-- `Level.substFn` leaves any parameter outside the parameter list unchanged. -/
 theorem substFn_not_mem {φ : LevelParam → Nat} :
@@ -182,8 +184,8 @@ theorem substFn_not_mem {φ : LevelParam → Nat} :
   | [], _, _, _ => rfl
   | _ :: _, [], _, _ => rfl
   | k :: ks, _ :: vs, p, hp => by
-    have hne : p ≠ k := fun h => hp (h ▸ List.mem_cons_self)
-    simp only [Level.substFn, if_neg hne]
+    have hne : k ≠ p := fun h => hp (h ▸ List.mem_cons_self)
+    simp only [Level.substFn, ite_eq_right hne]
     exact substFn_not_mem (fun hm => hp (List.mem_cons_of_mem _ hm))
 
 /-- `Level.substFn` preserves pointwise level equivalence of its level arguments. -/
@@ -221,9 +223,9 @@ theorem substFn_posVal_of_perm {lps q : List LevelParam}
   funext p
   by_cases hp : p ∈ q
   · obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hp
-    have h1 := substFn_getElem (φ := posVal lps ψ) hndQ
-      (by simp) i hi
-    have h2 := substFn_getElem (φ := ψ) hndQ (by simp [hlenQ]) i hi
+    have h1 := substFn_getElem (φ := posVal lps ψ) (vs := (List.range q.length).map .param)
+      hndQ (by simp) i hi
+    have h2 := substFn_getElem (φ := ψ) (vs := lps.map .param) hndQ (by simp [hlenQ]) i hi
     rw [h1, h2]
     have hiL : i < lps.length := hlenQ ▸ hi
     simp only [List.getElem_map, List.getElem_range, Level.eval]
@@ -247,8 +249,9 @@ theorem substFn_comp_of_perm {lps q : List LevelParam} {us : List KLevel}
   funext p
   by_cases hp : p ∈ q
   · obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hp
-    have h1 := substFn_getElem (φ := Level.substFn φ lps us) hndQ (by simp [hlenQ]) i hi
-    have h2 := substFn_getElem (φ := φ) hndQ (by omega) i hi
+    have h1 := substFn_getElem (φ := Level.substFn φ lps us) (vs := lps.map .param)
+      hndQ (by simp [hlenQ]) i hi
+    have h2 := substFn_getElem (φ := φ) (vs := us) hndQ (by omega) i hi
     rw [h1, h2]
     have hiL : i < lps.length := hlenQ ▸ hi
     simp only [List.getElem_map, Level.eval]
@@ -267,7 +270,8 @@ theorem substFn_lps_congr {lps q : List LevelParam}
   have hndQ : q.Nodup := hpermQ.nodup_iff.mpr List.nodup_range
   intro p hp
   obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hp
-  rw [substFn_getElem hndQ (by simp [hlenQ]) i hi, substFn_getElem hndQ (by simp [hlenQ]) i hi]
+  rw [substFn_getElem (vs := lps.map .param) hndQ (by simp [hlenQ]) i hi,
+      substFn_getElem (vs := lps.map .param) hndQ (by simp [hlenQ]) i hi]
   simp only [List.getElem_map, Level.eval]
   exact h _ (List.getElem_mem (hlenQ ▸ hi))
 
@@ -314,36 +318,39 @@ theorem exprLvEq_constsResolve (env : Env .anon) {e₁ e₂ : KExpr} (h : ExprLv
 
 /-- Level-equivalent expressions have the same denotation. -/
 theorem denoteMeta_of_exprLvEq {acval : KKey → (LevelParam → Nat) → AnnotTerm}
-    {env : Env .anon} {φ : LevelParam → Nat} :
-    ∀ {e₁ e₂ : KExpr}, ExprLvEq e₁ e₂ → ∀ d : Nat,
-      denoteMeta acval env φ d e₁ = denoteMeta acval env φ d e₂
-  | .bvar _, .bvar _, .bvar, _ => rfl
-  | .fvar _ _, .fvar _ _, .fvar _, _ => rfl
-  | .sort u, .sort v, .sort hu, _ => by simp only [denoteMeta, hu φ]
-  | .const n us, .const _ vs, .const hus, _ => by
+    {env : Env .anon} {φ : LevelParam → Nat}
+    {e₁ e₂ : KExpr} (h : ExprLvEq e₁ e₂) (d : Nat) :
+    denoteMeta acval env φ d e₁ = denoteMeta acval env φ d e₂ := by
+  cases h with
+  | bvar | fvar | lit => rfl
+  | sort hu => simp only [denoteMeta, hu φ]
+  | @const n us vs hus =>
     simp only [denoteMeta]
     cases env.find? n with
     | none => rfl
     | some ci =>
       dsimp only
       rw [lvEqList_length_eq hus, substFn_congr_lvEqList φ ci.toConstantVal.levelParams hus]
-  | .app f₁ a₁, .app f₂ a₂, .app hf ha, d => by
+  | app hf ha =>
     simp only [denoteMeta_app, denoteMeta_of_exprLvEq hf d, denoteMeta_of_exprLvEq ha d]
-  | .lam t₁ b₁ m, .lam t₂ b₂ _, .lam ht hb, d => by
+  | @lam t₁ t₂ b₁ b₂ _ _ ht hb =>
     simp only [denoteMeta_lam, denoteMeta_of_exprLvEq ht d]
-    have hinst : ExprLvEq (b₁.instantiate1 (.fvar d t₁)) (b₂.instantiate1 (.fvar d t₂)) :=
-      (ExprLvEq.fvar ht).shift hb 0
+    have hinst : ExprLvEq (b₁.instantiate1 (.fvar d t₁)) (b₂.instantiate1 (.fvar d t₂)) := by
+      have hs := (ExprLvEq.fvar (d := d) ht).shift hb 0
+      rwa [instShift_eq_instantiate1 (V := .fvar d t₁) rfl 0 b₁,
+           instShift_eq_instantiate1 (V := .fvar d t₂) rfl 0 b₂] at hs
     rw [denoteMeta_of_exprLvEq hinst (d + 1)]
-  | .forallE t₁ b₁ m, .forallE t₂ b₂ _, .forallE ht hb, d => by
+  | @forallE t₁ t₂ b₁ b₂ _ _ ht hb =>
     simp only [denoteMeta_forallE, denoteMeta_of_exprLvEq ht d]
-    have hinst : ExprLvEq (b₁.instantiate1 (.fvar d t₁)) (b₂.instantiate1 (.fvar d t₂)) :=
-      (ExprLvEq.fvar ht).shift hb 0
+    have hinst : ExprLvEq (b₁.instantiate1 (.fvar d t₁)) (b₂.instantiate1 (.fvar d t₂)) := by
+      have hs := (ExprLvEq.fvar (d := d) ht).shift hb 0
+      rwa [instShift_eq_instantiate1 (V := .fvar d t₁) rfl 0 b₁,
+           instShift_eq_instantiate1 (V := .fvar d t₂) rfl 0 b₂] at hs
     rw [denoteMeta_of_exprLvEq hinst (d + 1)]
-  | .letE _ _ _ _, .letE _ _ _ _, .letE _ _ _, _ => rfl
-  | .lit _, .lit _, .lit, _ => rfl
-  | .proj _ _ e₁, .proj _ _ e₂, .proj he, d => by
+  | letE _ _ _ => rw [denoteMeta, denoteMeta]
+  | proj he =>
     simp only [denoteMeta_proj, denoteMeta_of_exprLvEq he d]
-  termination_by e₁ _ _ _ => e₁.sizeB
+  termination_by e₁.sizeB
   decreasing_by
     all_goals
       simp [Expr.sizeB]
@@ -403,8 +410,8 @@ theorem renameOkPos_of_aliasEnv {V : Type u} [Ix.Kernel.SetTheory V] {μ : Check
       have hlenQ : ci'.toConstantVal.levelParams.length = lps.length := by
         simpa [List.length_range] using hlt.length_eq
       refine ⟨ci', hft, hlenQ, fun φ us hus => ?_⟩
-      have hus' : us.length = lps.length := hus
-      rw [hac, substFn_comp_of_perm hperm hlt hus' φ]
+      dsimp only [ConstantInfo.toConstantVal] at hus ⊢
+      rw [hac, substFn_comp_of_perm hperm hlt hus φ]
   · by_cases hn : h n = n
     · rw [hn]
       exact hf

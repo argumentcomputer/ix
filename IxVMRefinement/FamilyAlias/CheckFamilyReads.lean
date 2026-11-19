@@ -60,6 +60,10 @@ def SubCall.mono {calls₁ calls₂ : List (Call F)} {f : String} {args : List (
 
 private theorem callSub_refl (xs : List (Call F)) : CallSub xs xs := fun _ h => h
 
+private theorem callSub_of_eq {xs calls : List (Call F)} (h : calls = xs) : CallSub xs calls := by
+  subst h
+  exact callSub_refl xs
+
 private theorem callSub_append_left {xs ys sup : List (Call F)} (h : CallSub (xs ++ ys) sup) :
     CallSub xs sup :=
   fun cl hcl => h cl (List.mem_append_left ys hcl)
@@ -273,7 +277,7 @@ theorem checkFamily_chain {rc b rb r : SourceValue F} {h h' : Heap F} {calls : L
       (ev_mitevvsv := eLenF) (ev_rqpeovbn := eZ1) (ev_xrhmaojz := eZ2) (ev_whimdwjd := eValG)
       (ev1305 := eRefs) (ev1343 := eChk) (ld1465 := lS9) (he1473 := hEqH) (hc1474 := hc) .. =>
     subst q217 q650 hEqH
-    have h0 : CallSub _ calls := by rw [← hc]; exact callSub_refl calls
+    have h0 := callSub_of_eq hc
     have hSubSeg := callSub_append_left h0
     have hr := callSub_append_right h0
     let ⟨s126, hr⟩ := peel_call hr e126
@@ -389,7 +393,7 @@ theorem membersVal_step {members models src dst aset later r : SourceValue F} {h
   match Obs.«KernelModeled::members_val».obs ev with
   | .Nil (ld12 := l12) (he23 := hEq) .. => exact Or.inl ⟨l12, hEq⟩
   | .Cons (ld12 := l12) (ld52 := l52) (ev80 := e80) (ev126 := e126) (hc167 := hc) .. =>
-    have h0 : CallSub _ calls := by rw [← hc]; exact callSub_refl calls
+    have h0 := callSub_of_eq hc
     let ⟨sM, hr⟩ := peel_call h0 e80
     let sRest := peel_last hr e126
     exact Or.inr ⟨⟨_, _, _, _, _, _, l12, l52, sM, sRest⟩⟩
@@ -435,7 +439,7 @@ theorem memberVal_chain {m md src dst aset later r : SourceValue F} {h h' : Heap
       (heq187 := qNl) (ev226 := e226) (ev212 := e212) (heq264 := q264) (he268 := hEq)
       (hc269 := hc) .. =>
     subst q48 qMent qNl q264 hEq
-    have h0 : CallSub _ calls := by rw [← hc]; exact callSub_refl calls
+    have h0 := callSub_of_eq hc
     let ⟨s25, hr⟩ := peel_call h0 e25
     let ⟨s78, hr⟩ := peel_call hr e78
     let ⟨s62, hr⟩ := peel_call hr e62
@@ -483,7 +487,7 @@ theorem familyRefsOk_chain {rc rb b wset r : SourceValue F} {h h' : Heap F}
   match Obs.«KernelModeled::family_refs_ok».obs ev with
   | .run (ev14 := e14) (ev36 := e36) (ev_ycrqbsja := eI1) (ev_nhomjxfq := eI2)
       (ev_kfwmaaqi := eGo) (ev_ozxzdina := eIdx) (ev_tnqzszcy := eIn) (hc222 := hc) .. =>
-    have h0 : CallSub _ calls := by rw [← hc]; exact callSub_refl calls
+    have h0 := callSub_of_eq hc
     let ⟨s14, hr⟩ := peel_call h0 e14
     let ⟨s36, hr⟩ := peel_call hr e36
     let ⟨sI1, hr⟩ := peel_call hr eI1
@@ -519,7 +523,7 @@ theorem assertInnerRefsSafe_chain {rc refs used r : SourceValue F} {h h' : Heap 
     Nonempty (AssertInnerRefsSafeChain rc refs used r h h' calls) := by
   match Obs.«KernelModeled::assert_inner_refs_safe».obs ev with
   | .run (ev_mxwoukvn := eS) (ev_hemnmxwe := eB) (ev_xsejfvgw := eO) (hc_sgljalbe := hc) .. =>
-    have h0 : CallSub _ calls := by rw [← hc]; exact callSub_refl calls
+    have h0 := callSub_of_eq hc
     let ⟨sS, hr⟩ := peel_call h0 eS
     let ⟨sB, hr⟩ := peel_call hr eB
     let sO := peel_last hr eO
@@ -673,7 +677,7 @@ theorem checkRecs_step {rc tys recs models src dst aset s n k np uo bnl fam form
     subst hA
     have hB : xRp2 = xRp := Except.ok.inj (opB2.symm.trans opB)
     subst hB
-    have h0 : CallSub _ calls := by rw [← hc]; exact callSub_refl calls
+    have h0 := callSub_of_eq hc
     let ⟨s82, hr⟩ := peel_call h0 e82
     let ⟨s298, hr⟩ := peel_call hr e298
     let ⟨s359, hr⟩ := peel_call hr e359
