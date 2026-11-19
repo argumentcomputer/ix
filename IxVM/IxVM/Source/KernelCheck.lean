@@ -1652,6 +1652,9 @@ def peel_motive_params_subst := aiur_fn⟦
               let body_substed = KernelSubst::expr_inst1(body, p, 0);
               peel_motive_params_subst(body_substed, n - 1, n_rec_params,
                 is_aux, spec_params, j + 1) } ,
+            KernelTypes::KExprNode::Let(_, v, b) => {
+              peel_motive_params_subst(KernelSubst::expr_inst1(b, v, 0), n, n_rec_params,
+                is_aux, spec_params, j) } ,
           } } ,
       }
     }
@@ -2987,7 +2990,7 @@ def apply_ihs_full := aiur_fn⟦
               let with_minors = build_minor_apps(with_motives, n_minors,
                 ((inner_depth - 1) - n_params) - n_motives, 0);
 
-              match KernelTypes::collect_spine(inner_body) {
+              match collect_spine_zeta(inner_body) {
                 (_dh, dargs) => {
                   let idx_args = Lists::drop(dargs, target_n_params);
                   let with_idx = apply_spine_expr(with_minors, idx_args);
@@ -3017,7 +3020,7 @@ def build_rule_rhs := aiur_fn⟦
                             flat_own_params: Lists::List<Field>,
                             is_aux: Field, spec_params: Lists::List<KernelTypes::KExpr>, elim: KernelTypes::KLevel) -> KernelTypes::KExpr {
       let ctor_ty_inst = KernelLevels::expr_inst_levels(ctor_ty, occurrence_us);
-      let after_params_raw = peel_n_foralls(ctor_ty_inst, n_own_params);
+      let after_params_raw = peel_n_foralls_zeta(ctor_ty_inst, n_own_params);
       let n_fields = count_foralls_body(after_params_raw, 0);
       let body_depth = ((n_params + n_motives) + n_minors) + n_fields;
 
@@ -3269,6 +3272,8 @@ def count_foralls_body := aiur_fn⟦
   fn count_foralls_body(ty: KernelTypes::KExpr, acc: Field) -> Field {
       match (*(ty)) {
         KernelTypes::KExprNode::Forall(_, body, _) => {  count_foralls_body(body, acc + 1) } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          count_foralls_body(KernelSubst::expr_inst1(b, v, 0), acc) } ,
         _ => {  acc } ,
       }
     }
@@ -3335,7 +3340,7 @@ def build_minor_at_depth := aiur_fn⟦
           let n_ihs = Lists::length(rec_indices);
           let n_binders = n_fields + n_ihs;
           let depth_now = minor_saved + n_binders;
-          match KernelTypes::collect_spine(ret_ty) {
+          match collect_spine_zeta(ret_ty) {
             (_ret_head, ret_args) => {
               let ret_indices = Lists::drop(ret_args, n_own_params);
               let ret_indices_lifted = list_lift_each(ret_indices, n_ihs, 0);
@@ -3378,6 +3383,8 @@ def peel_leading_foralls_acc := aiur_fn⟦
       match (*(ty)) {
         KernelTypes::KExprNode::Forall(dom, body, _) => {
           peel_leading_foralls_acc(body, (&(Lists::Node::Cons(dom, acc)))) } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          peel_leading_foralls_acc(KernelSubst::expr_inst1(b, v, 0), acc) } ,
         _ => {  (acc, ty) } ,
       }
     }
@@ -3419,7 +3426,7 @@ def build_ih_doms := aiur_fn⟦
               let motive_bvar = (inner_depth - 1) - (motive_base + mem_idx);
               let field_bvar = (inner_depth - 1) - (minor_saved + field_idx);
 
-              match KernelTypes::collect_spine(inner_body) {
+              match collect_spine_zeta(inner_body) {
                 (_h, dom_args) => {
                   let idx_args = Lists::drop(dom_args, target_n_params);
                   let motive_ref = (&(KernelTypes::KExprNode::BVar(motive_bvar)));
@@ -3524,7 +3531,7 @@ def recon_whnf_spine := aiur_fn⟦
           recon_whnf_spine(rc, KernelSubst::expr_inst1(body, val, 0), spine) } ,
         KernelTypes::KExprNode::Proj(s, i, inner) => {
           let iw = recon_whnf(rc, inner);
-          match KernelWhnf::red_proj(rc, s, i, iw, (&(Lists::Node::Nil))) {
+          match KernelWhnf::red_proj_zeta(s, i, iw) {
             (1, field) => {  recon_whnf_spine(rc, field, spine) } ,
             _ => {  KernelWhnf::apply_spine((&(KernelTypes::KExprNode::Proj(s, i, iw))), spine) } ,
           } } ,
@@ -3559,8 +3566,10 @@ def is_rec_field_peel := aiur_fn⟦
       match (*(ty)) {
         KernelTypes::KExprNode::Forall(_, body, _) => {
           is_rec_field_peel(body, flat, spec_lift_by) } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          is_rec_field_peel(KernelSubst::expr_inst1(b, v, 0), flat, spec_lift_by) } ,
         _ => {
-          match KernelTypes::collect_spine(ty) {
+          match collect_spine_zeta(ty) {
             (head, args) => {
               match (*(head)) {
                 KernelTypes::KExprNode::Const(caddr, us) => {
@@ -3651,6 +3660,9 @@ def walk_fields_classify := aiur_fn⟦
               walk_fields_classify(rc, body, flat, new_doms, rec_acc,
                 rec_mem_acc, new_norm, fidx + 1, spec_lift_by, types2) } ,
           } } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          walk_fields_classify(rc, KernelSubst::expr_inst1(b, v, 0), flat, doms_acc,
+            rec_acc, rec_mem_acc, norm_acc, fidx, spec_lift_by, types) } ,
         _ => {  (Lists::reverse(doms_acc), Lists::reverse(rec_acc),
                 Lists::reverse(rec_mem_acc), ty, Lists::reverse(norm_acc)) } ,
       }
@@ -4102,6 +4114,36 @@ def check_const := aiur_fn⟦
               assert_eq!(rec_uns, 0, "an unsafe recursor of a mutual or nested block");
               KernelModeled::check_family(rc, family, rec_block) } ,
           } } ,
+      }
+    }
+⟧
+
+  -- Reconstruction-only ζ-transparent helpers, leaving global `peel_n_foralls` and
+  -- `KernelTypes::collect_spine` unchanged for header, native, and statement-mirrored walks.
+
+def peel_n_foralls_zeta := aiur_fn⟦
+  fn peel_n_foralls_zeta(e: KernelTypes::KExpr, n: Field) -> KernelTypes::KExpr {
+      match n {
+        0 => {  e } ,
+        _ => {
+          match (*(e)) {
+            KernelTypes::KExprNode::Forall(_, body, _) => {  peel_n_foralls_zeta(body, n - 1) } ,
+            KernelTypes::KExprNode::Let(_, v, b) => {
+              peel_n_foralls_zeta(KernelSubst::expr_inst1(b, v, 0), n) } ,
+          } } ,
+      }
+    }
+⟧
+
+def collect_spine_zeta := aiur_fn⟦
+  fn collect_spine_zeta(e: KernelTypes::KExpr) -> (KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>) {
+      match (*(e)) {
+        KernelTypes::KExprNode::App(f, a) => {
+          let (head, args) = collect_spine_zeta(f);
+          (head, Lists::snoc(args, a)) } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          collect_spine_zeta(KernelSubst::expr_inst1(b, v, 0)) } ,
+        _ => {  (e, (&(Lists::Node::Nil))) } ,
       }
     }
 ⟧
