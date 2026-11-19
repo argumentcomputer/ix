@@ -324,9 +324,9 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
           have : Resolved _ := ⟨hE.toTm.const_key_ne⟩
           obtain ⟨-, rls', ext⟩ :=
             IxVM.Refinement.Levels.levelListInst_obs e1 (sub fun c hc' => by simp [hc']) rls hus
-          have ext' : Heap.Extends _ _ := Heap.Extends.snoc _ _
-          exact .const (by simp) (Bytes.repAddressRef_heapMono₂ addrTy (ext.trans ext') ra)
-            (rls'.mono ext')
+          exact .const (by simp)
+            (Bytes.repAddressRef_heapMono₂ addrTy (ext.trans (Heap.Extends.snoc _ _)) ra)
+            (rls'.mono (Heap.Extends.snoc _ _))
         | .App (ld12 := ld) (he176 := hr) (hm175 := hm) (ev193 := e1) (ev221 := e2)
             (hc238 := hc) .. =>
           subst hc hr hm
@@ -337,8 +337,8 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
             (sub fun c hc' => by simp [hc'])).1 rfl _ _ Γ k Ea us rfl
             (ha.mono e1.heap_extends) (hus.mono e1.heap_extends)
           rw [exprInstLevels_of_ne_nil hne] at sf sa
-          have ext' : Heap.Extends _ _ := Heap.Extends.snoc _ _
-          exact .app (by simp) ((sf.mono e2.heap_extends).mono ext') (sa.mono ext')
+          exact .app (by simp) ((sf.mono e2.heap_extends).mono (Heap.Extends.snoc _ _))
+            (sa.mono (Heap.Extends.snoc _ _))
         | .Lam (ld12 := ld) (he265 := hr) (hm264 := hm) (ev283 := e1) (ev311 := e2)
             (ev339 := e3) (hc356 := hc) .. =>
           subst hc hr hm
@@ -352,13 +352,13 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
           have ext12 := e1.heap_extends.trans e2.heap_extends
           obtain ⟨-, rl', -⟩ := IxVM.Refinement.Levels.levelInstParams_obs e3
             (sub fun c hc' => by simp [hc']) (hl.mono ext12) (hus.mono ext12)
-          have ext' : Heap.Extends _ _ := Heap.Extends.snoc _ _
           show TmExact κ 0 Γ _ k (.lam (exprInstLevelsWalk us T) (exprInstLevelsWalk us B)
             { bmeta ℓ with pw := Ix.Kernel.Level.substPW (List.range us.length) us (bmeta ℓ).pw }) _
           rw [IxVM.Refinement.Core.SubstAux.bmeta_subst (LvEqList.refl us)]
           exact .lam (by simp)
-            ((st.mono (e2.heap_extends.trans e3.heap_extends)).mono ext')
-            ((sb.mono e3.heap_extends).mono ext') (rl'.mono ext')
+            ((st.mono (e2.heap_extends.trans e3.heap_extends)).mono (Heap.Extends.snoc _ _))
+            ((sb.mono e3.heap_extends).mono (Heap.Extends.snoc _ _))
+            (rl'.mono (Heap.Extends.snoc _ _))
         | .Forall (ld12 := ld) (he383 := hr) (hm382 := hm) (ev401 := e1) (ev429 := e2)
             (ev457 := e3) (hc474 := hc) .. =>
           subst hc hr hm
@@ -372,13 +372,13 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
           have ext12 := e1.heap_extends.trans e2.heap_extends
           obtain ⟨-, rl', -⟩ := IxVM.Refinement.Levels.levelInstParams_obs e3
             (sub fun c hc' => by simp [hc']) (hl.mono ext12) (hus.mono ext12)
-          have ext' : Heap.Extends _ _ := Heap.Extends.snoc _ _
           show TmExact κ 0 Γ _ k (.forallE (exprInstLevelsWalk us T) (exprInstLevelsWalk us B)
             { bmeta ℓ with pw := Ix.Kernel.Level.substPW (List.range us.length) us (bmeta ℓ).pw }) _
           rw [IxVM.Refinement.Core.SubstAux.bmeta_subst (LvEqList.refl us)]
           exact .forallE (by simp)
-            ((st.mono (e2.heap_extends.trans e3.heap_extends)).mono ext')
-            ((sb.mono e3.heap_extends).mono ext') (rl'.mono ext')
+            ((st.mono (e2.heap_extends.trans e3.heap_extends)).mono (Heap.Extends.snoc _ _))
+            ((sb.mono e3.heap_extends).mono (Heap.Extends.snoc _ _))
+            (rl'.mono (Heap.Extends.snoc _ _))
         | .Let (ld12 := ld) (he501 := hr) (hm500 := hm) (ev519 := e1) (ev547 := e2)
             (ev575 := e3) (hc592 := hc) .. =>
           subst hc hr hm
@@ -393,20 +393,21 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
             (sub fun c hc' => by simp [hc'])).1 rfl _ _ Γ (k + 1) B us rfl
             (hb.mono ext12) (hus.mono ext12)
           rw [exprInstLevels_of_ne_nil hne] at st sv sb
-          have ext' : Heap.Extends _ _ := Heap.Extends.snoc _ _
           rw [show exprInstLevelsWalk us (IxVM.Refinement.Core.instShift V 0 B) =
               IxVM.Refinement.Core.instShift (exprInstLevelsWalk us V) 0
                 (exprInstLevelsWalk us B) from exprInstLevelsWalk_instantiate1Lift us V B 0]
           exact .letE (by simp)
-            (((st.mono e2.heap_extends).mono e3.heap_extends).mono ext')
-            ((sv.mono e3.heap_extends).mono ext') (sb.mono ext')
+            (((st.mono e2.heap_extends).mono e3.heap_extends).mono (Heap.Extends.snoc _ _))
+            ((sv.mono e3.heap_extends).mono (Heap.Extends.snoc _ _))
+            (sb.mono (Heap.Extends.snoc _ _))
         | .Lit (ld12 := ld) (he609 := hr) (hm608 := hm) .. =>
           subst hr hm
-          have ext' : Heap.Extends _ _ := Heap.Extends.snoc _ _
           rcases hE.toTm.lit_of_load ld with ⟨_, limbs, rfl, rl, hc, rfl⟩ |
             ⟨_, bs, s, rfl, rb, hs, rfl⟩
-          · exact .litNat (by simp) (repList_heapMono₂ _ repU64_heapMono₂ ext' rl) hc
-          · exact .litStr (by simp) (Bytes.repByteStream_heapMono₂ _ ext' rb) hs
+          · exact .litNat (by simp)
+              (repList_heapMono₂ _ repU64_heapMono₂ (Heap.Extends.snoc _ _) rl) hc
+          · exact .litStr (by simp)
+              (Bytes.repByteStream_heapMono₂ _ (Heap.Extends.snoc _ _) rb) hs
         | .Proj (ld12 := ld) (he648 := hr) (hm647 := hm) (ev680 := e1) (hc697 := hc) .. =>
           subst hc hr hm
           obtain ⟨a, i, Es, rfl, rfl, ra, hes⟩ := hE.proj_of_load ld
@@ -415,9 +416,9 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
           have se := (ih _ _ _ _ _ _ (by simp) e1
             (sub fun c hc' => by simp [hc'])).1 rfl _ _ Γ k Es us rfl hes hus
           rw [exprInstLevels_of_ne_nil hne] at se
-          have ext' : Heap.Extends _ _ := Heap.Extends.snoc _ _
           exact .proj (by simp)
-            (Bytes.repAddressRef_heapMono₂ addrTy (e1.heap_extends.trans ext') ra) (se.mono ext'))
+            (Bytes.repAddressRef_heapMono₂ addrTy (e1.heap_extends.trans (Heap.Extends.snoc _ _)) ra)
+            (se.mono (Heap.Extends.snoc _ _)))
 
 /-- **`KernelLevels::expr_inst_levels(e, us)`** on an exact term at opening depth `0` produces
 `exprInstLevels us E` with exact syntactic universe levels. -/
