@@ -206,11 +206,11 @@ private theorem quot_refs_ok_spec {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addr
     intro i idxs rc rp used r h h' cs hb hrc hr hi ev
     match Obs.«KernelClaim::quot_refs_ok».obs ev with
     | .Nil (ld_bolbylmd := ld) .. => cases Lib.rep_nil_of_load hr ld
-    | .Cons (ld_bolbylmd := ld) (sg_dugcmplc := seg) (op_gskedpnl := op) (ev_rajcapyd := evr) .. =>
+    | .Cons (m_yvuflqli := mSeg) (ld_bolbylmd := ld) (sg_dugcmplc := seg) (op_gskedpnl := op) (ev_rajcapyd := evr) .. =>
       obtain ⟨_, _, he, ha, hrest⟩ := Lib.rep_cons_of_load hr ld
       injection he with he1 he2
       subst he1 he2
-      have hseg : Heap.Extends h _ ∧ (i ∈ idxs →
+      have hseg : Heap.Extends h mSeg ∧ (i ∈ idxs →
           Typing.Covered t a ∨ ∃ ro, quotRole ro = true ∧ t.addressOf? ro = some a) := by
         match seg with
         | .other (ev_zomhduxa := evg) (hne_arfngzyc := hn) (he_xtnzeqqi := hh) .. =>
@@ -258,8 +258,10 @@ theorem QuotRecordRefsIn.spec {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   | .other (m_jrmullwx := mSeg) (x_info := x_info) (x_refs := x_refs) (ev_lhvvlvzx := evq)
       (hv_cdpymqwc := hv) (sg_qqmcdzij := seg) (heq_zxortwso := h1)
       (ev_lfynsjgt := evIdx) (ev_oucfbbyu := evLoop) .. =>
-    obtain ⟨rfl, -⟩ := addr_quot_bound_lim_spec hrc ha evq
-    obtain ⟨infoVal, _, rfPtr, _, _, hcp_eq, hinfo, _, hrf, _, _⟩ := hcp
+    obtain ⟨hmQ, -⟩ := addr_quot_bound_lim_spec hrc ha evq
+    rw [hmQ] at seg evIdx evLoop
+    have hcp' := hcp
+    obtain ⟨infoVal, _, rfPtr, _, _, hcp_eq, hinfo, _, hrf, _, _⟩ := hcp'
     have heq := hcp_eq.symm.trans hv
     simp only [Value.construct.injEq, List.cons.injEq, and_true, true_and] at heq
     rcases heq with ⟨hinfo_eq, _, hrf_eq, _, _⟩
@@ -279,7 +281,8 @@ theorem QuotRecordRefsIn.spec {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
         all_goals (obtain ⟨_, hv', _⟩ := hinfo; simp at hv')
       | .other (he_ccliwrit := h0) .. =>
         exact absurd (Value.field.inj (h0.symm.trans h1)) zero_ne_one
-    obtain ⟨hs, rfl⟩ := hstand
+    obtain ⟨hs, hmSeg⟩ := hstand
+    rw [hmSeg] at evIdx evLoop
     obtain ⟨extIdx, hidx⟩ := const_idxs_of_spec hcp evIdx
     have hloop := quot_refs_ok_spec c.refs.toList 0
       (by simpa only [Nat.zero_add, Array.length_toList] using hrefs)
