@@ -2,9 +2,13 @@
 use std::{
   borrow::Cow,
   fs::File,
-  io::{Read, Seek, SeekFrom},
+  io::{BufWriter, Read, Seek, SeekFrom, Write},
   ops::Range,
-  sync::{Arc, Mutex},
+  path::{Path, PathBuf},
+  sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
+  },
 };
 
 use super::curve::Fr;
@@ -13,6 +17,65 @@ use ark_serialize::{CanonicalDeserialize, SerializationError};
 use p3_maybe_rayon::prelude::*;
 
 const CHUNK: usize = 1 << 16;
+
+/// An open coefficient file. Temporary spill files unlink themselves on
+/// creation (Unix) or remove their path on drop (other targets).
+pub(super) struct DiskFile {
+  file: File,
+  remove_on_drop: Option<PathBuf>,
+}
+
+impl DiskFile {
+  pub(super) fn persistent(file: File) -> Self {
+    Self { file, remove_on_drop: None }
+  }
+
+  pub(super) fn temporary(dir: &Path) -> std::io::Result<Self> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    std::fs::create_dir_all(dir)?;
+    for _ in 0..64 {
+      let id = NEXT.fetch_add(1, Ordering::Relaxed);
+      let path =
+        dir.join(format!(".kzg-spill-{}-{id}.bin", std::process::id()));
+      match File::options()
+        .create_new(true)
+        .read(true)
+        .write(true)
+        .open(&path)
+      {
+        Ok(file) => {
+          #[cfg(unix)]
+          {
+            let _ = std::fs::remove_file(&path);
+            return Ok(Self { file, remove_on_drop: None });
+          }
+          #[cfg(not(unix))]
+          {
+            return Ok(Self { file, remove_on_drop: Some(path) });
+          }
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {},
+        Err(error) => return Err(error),
+      }
+    }
+    Err(std::io::Error::new(
+      std::io::ErrorKind::AlreadyExists,
+      "failed to create unique KZG spill file",
+    ))
+  }
+
+  pub(super) fn file_mut(&mut self) -> &mut File {
+    &mut self.file
+  }
+}
+
+impl Drop for DiskFile {
+  fn drop(&mut self) {
+    if let Some(path) = self.remove_on_drop.take() {
+      let _ = std::fs::remove_file(path);
+    }
+  }
+}
 
 pub(super) enum Column {
   /// A constant polynomial, still bound to its full trace domain.
@@ -25,7 +88,7 @@ pub(super) enum Column {
     range: Range<usize>,
   },
   Disk {
-    file: Arc<Mutex<File>>,
+    file: Arc<Mutex<DiskFile>>,
     offset: u64,
     len: usize,
     digest: blake3::Hash,
@@ -97,7 +160,7 @@ impl Column {
 
   pub(super) fn index(
     reader: &mut (impl Read + Seek),
-    file: Arc<Mutex<File>>,
+    file: Arc<Mutex<DiskFile>>,
     len: usize,
   ) -> Result<Self, SerializationError> {
     let offset = reader.stream_position()?;
@@ -116,12 +179,76 @@ impl Column {
 
   /// Construct a disk-backed column from an already-written and hashed span.
   pub(super) fn from_disk(
-    file: Arc<Mutex<File>>,
+    file: Arc<Mutex<DiskFile>>,
     offset: u64,
     len: usize,
     digest: blake3::Hash,
   ) -> Self {
     Self::Disk { file, offset, len, digest }
+  }
+
+  /// Write non-constant coefficients to `file` at `*offset`, hashing them on
+  /// the fly, and return a disk-backed [`Column`]. Constant polynomials stay
+  /// compact in memory without touching disk.
+  pub(super) fn spill_to_disk(
+    file: &Arc<Mutex<DiskFile>>,
+    offset: &mut u64,
+    coeffs: &[Fr],
+  ) -> std::io::Result<Self> {
+    if coeffs.iter().skip(1).all(Zero::is_zero) {
+      return Ok(Self::Constant {
+        value: coeffs.first().copied().unwrap_or_default(),
+        len: coeffs.len(),
+      });
+    }
+    struct HashingWriter<'a, W> {
+      inner: &'a mut W,
+      hasher: blake3::Hasher,
+    }
+    impl<W: Write> Write for HashingWriter<'_, W> {
+      fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let n = self.inner.write(buf)?;
+        if n >= 128 << 10 {
+          self.hasher.update_rayon(&buf[..n]);
+        } else {
+          self.hasher.update(&buf[..n]);
+        }
+        Ok(n)
+      }
+      fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+      }
+    }
+
+    let start = *offset;
+    let byte_len = u64::try_from(coeffs.len())
+      .ok()
+      .and_then(|n| n.checked_mul(32))
+      .ok_or_else(|| {
+        std::io::Error::new(
+          std::io::ErrorKind::InvalidInput,
+          "spilled column byte length overflow",
+        )
+      })?;
+    let mut guard = file.lock().map_err(|_error| {
+      std::io::Error::other("spilled column file lock poisoned")
+    })?;
+    guard.file_mut().seek(SeekFrom::Start(start))?;
+    let mut buffered = BufWriter::with_capacity(1 << 20, guard.file_mut());
+    let mut hashing =
+      HashingWriter { inner: &mut buffered, hasher: blake3::Hasher::new() };
+    super::encoding::write_fields(&mut hashing, coeffs, |v| *v)?;
+    let digest = hashing.hasher.finalize();
+    buffered.flush()?;
+    drop(buffered);
+    drop(guard);
+    *offset = start.checked_add(byte_len).ok_or_else(|| {
+      std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        "spilled column file offset overflow",
+      )
+    })?;
+    Ok(Self::Disk { file: Arc::clone(file), offset: start, len: coeffs.len(), digest })
   }
 
   /// Check the bytes on every access; changing/truncating a checkpoint fails
@@ -140,8 +267,9 @@ impl Column {
       },
       Self::Resident { values, range } => visit(0, &values[range.clone()]),
       Self::Disk { file, offset, len, digest } => {
-        let mut file =
+        let mut guard =
           file.lock().map_err(|_error| SerializationError::InvalidData)?;
+        let file = guard.file_mut();
         file.seek(SeekFrom::Start(*offset))?;
         let mut bytes = vec![0u8; CHUNK.min(*len) * 32];
         let mut values = vec![Fr::default(); CHUNK.min(*len)];

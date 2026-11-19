@@ -105,9 +105,17 @@ impl Committed {
         let witness = witness.map_or_else(|| generate_witness(i), Ok)?;
         let started = Instant::now();
         let (_, data) = tracing::info_span!(parent: &parent, "compression/main_commit", circuit = i)
-          .in_scope(|| config.pcs().commit(vec![(
-            config.pcs().natural_domain_for_degree(dimensions[i].0), witness,
-          )]));
+          .in_scope(|| -> Result<_> {
+            let domain =
+              config.pcs().natural_domain_for_degree(dimensions[i].0);
+            #[cfg(not(feature = "cuda"))]
+            if let Some(spill_dir) = config.spill_dir() {
+              return Ok(
+                config.pcs().commit_matrix_spilled(domain, witness, spill_dir)?,
+              );
+            }
+            Ok(config.pcs().commit(vec![(domain, witness)]))
+          })?;
         main.push(data);
         tracing::info!(
           circuit = i,
@@ -773,6 +781,59 @@ mod tests {
           vec![(&reopened, points)],
           &mut crate::kzg::KzgTranscript::default()
         )
+      );
+    }
+    Ok(())
+  }
+
+  #[test]
+  fn disk_spilled_stage1_stage2_and_quotient_preserve_proof_bytes_and_cleanup()
+  -> Result<()> {
+    let mut builder = CircuitBuilder::new();
+    let table =
+      builder.fixed_table("small", vec![vec![Scalar::ONE], vec![Scalar::TWO]]);
+    let input = builder.public_input("input");
+    for _ in 0..50 {
+      builder.lookup(table, &[input]);
+    }
+    let square = builder.mul(input, input);
+    builder.expose_public(square);
+    let compiled = builder
+      .finish()
+      .lower_to_multi_stark_sharded(Scalar::ONE, 32)?
+      .merge_table_traces(32)?;
+    let mut witness = compiled.witness();
+    witness.set(input, Scalar::TWO)?;
+    let assignment = witness.generate()?;
+    let claims = compiled.claims(assignment.public_values())?;
+    let refs = claims.iter().map(Vec::as_slice).collect::<Vec<_>>();
+    let srs = Arc::new(Srs::unsafe_dev_setup(64, b"disk-spill-prover"));
+    let traces = compiled.trace_shards(&assignment)?;
+    let scratch = crate::test_support::TempDir::new("kzg-disk-spill");
+    let spill_dir = scratch.join("spill");
+    let prep_dir = scratch.join("preprocessing");
+    for kind in [TranscriptKind::Blake3, TranscriptKind::Keccak256] {
+      let resident = KzgConfig::new(srs.clone(), 2)
+        .with_transcript(kind)
+        .with_streaming_lookups()
+        .with_streaming_quotient();
+      let expected =
+        Committed::prepare(resident.clone(), &traces, None, 0)?.prove(&claims)?;
+      let spilled = resident.with_disk_spill(&spill_dir);
+      let actual = Committed::prepare(spilled, &traces, Some(&prep_dir), 0)?
+        .prove(&claims)?;
+      assert_eq!(actual.bytes, expected.bytes);
+      expected
+        .system
+        .verify_multiple_claims(&refs, &actual.proof)
+        .map_err(|error| format!("resident verification: {error:?}"))?;
+    }
+    // Every temporary spill file must be cleaned up once the proof finishes.
+    if spill_dir.exists() {
+      assert!(
+        fs::read_dir(&spill_dir)?.next().is_none(),
+        "temporary spill files remained in {}",
+        spill_dir.display()
       );
     }
     Ok(())

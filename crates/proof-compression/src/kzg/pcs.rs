@@ -45,7 +45,7 @@ use multi_stark::traits::Transcript;
 use multi_stark::traits::TwoAdicField;
 use multi_stark::traits::VerifyRounds;
 
-use super::coefficients::Column;
+use super::coefficients::{Column, DiskFile};
 #[cfg(feature = "cuda")]
 use super::cuda;
 use super::domain::Radix2Coset;
@@ -338,10 +338,10 @@ impl KzgProverData {
       io::{BufReader, Read},
       sync::Mutex,
     };
-    let file = Arc::new(Mutex::new(File::open(path)?));
+    let file = Arc::new(Mutex::new(DiskFile::persistent(File::open(path)?)));
     let mut guard =
       file.lock().map_err(|_error| SerializationError::InvalidData)?;
-    let mut reader = BufReader::with_capacity(1 << 20, &mut *guard);
+    let mut reader = BufReader::with_capacity(1 << 20, guard.file_mut());
     let mut magic = [0; 8];
     reader.read_exact(&mut magic)?;
     if &magic != CHECKPOINT_MAGIC {
@@ -1033,7 +1033,9 @@ impl KzgPcs {
     let needs_file =
       columns.iter().any(|column| matches!(column, StreamedColumn::Disk { .. }));
     let file = if needs_file {
-      Some(Arc::new(std::sync::Mutex::new(std::fs::File::open(path)?)))
+      Some(Arc::new(std::sync::Mutex::new(DiskFile::persistent(
+        std::fs::File::open(path)?,
+      ))))
     } else {
       None
     };
@@ -1053,6 +1055,152 @@ impl KzgPcs {
       commitment,
       matrices: vec![CommittedMatrix::new(domain, columns)],
     })
+  }
+
+  /// Stream-commit `matrix` one column at a time on CPU and spill non-constant
+  /// coefficient columns to a temporary disk file in `spill_dir`.
+  pub(crate) fn commit_matrix_spilled(
+    &self,
+    domain: Radix2Coset,
+    matrix: RowMajorMatrix<Scalar>,
+    spill_dir: &std::path::Path,
+  ) -> std::io::Result<(KzgCommitment, KzgProverData)> {
+    assert_eq!(matrix.height(), domain.size(), "matrix height != domain size");
+    let width = matrix.width();
+    let height = domain.size();
+    let ark = Self::ark_domain(domain);
+    let mut commits = Vec::with_capacity(width);
+    let mut columns = Vec::with_capacity(width);
+    let mut spill_file: Option<Arc<std::sync::Mutex<DiskFile>>> = None;
+    let mut spill_offset = 0u64;
+
+    let mut spill_column = |coeffs: &[Fr]| -> std::io::Result<Column> {
+      if coeffs.iter().skip(1).all(Zero::is_zero) {
+        return Ok(Column::Constant {
+          value: coeffs.first().copied().unwrap_or_default(),
+          len: coeffs.len(),
+        });
+      }
+      let file = match &spill_file {
+        Some(file) => file,
+        None => {
+          let created =
+            Arc::new(std::sync::Mutex::new(DiskFile::temporary(spill_dir)?));
+          spill_file.insert(created)
+        },
+      };
+      Column::spill_to_disk(file, &mut spill_offset, coeffs)
+    };
+
+    if width == 1 {
+      let first = matrix.values[0].0;
+      if matrix.values.par_iter().all(|v| v.0 == first) {
+        drop(matrix);
+        let col = Column::Constant { value: first, len: height };
+        commits.push(self.commit_column(&col));
+        columns.push(col);
+      } else {
+        let mut coeffs: Vec<Fr> =
+          matrix.values.into_iter().map(|v| v.0).collect();
+        ark.ifft_in_place(&mut coeffs);
+        commits.push(self.msm(&coeffs));
+        columns.push(spill_column(&coeffs)?);
+      }
+    } else {
+      for column in 0..width {
+        let first = matrix.values[column].0;
+        let is_constant = (1..height)
+          .into_par_iter()
+          .all(|row| matrix.values[row * width + column].0 == first);
+        if is_constant {
+          let col = Column::Constant { value: first, len: height };
+          commits.push(self.commit_column(&col));
+          columns.push(col);
+        } else {
+          let mut coeffs = generate_buffer(height, |row| {
+            matrix.values[row * width + column].0
+          });
+          ark.ifft_in_place(&mut coeffs);
+          commits.push(self.msm(&coeffs));
+          columns.push(spill_column(&coeffs)?);
+        }
+      }
+      drop(matrix);
+    }
+
+    let commitment = KzgCommitment(vec![G1Projective::normalize_batch(&commits)]);
+    let data = KzgProverData {
+      commitment: commitment.clone(),
+      matrices: vec![CommittedMatrix::new(domain, columns)],
+    };
+    Ok((commitment, data))
+  }
+
+  /// Interpolate, slice, commit and spill a quotient polynomial to a temporary
+  /// disk file in `spill_dir`, dropping the resident coefficients immediately.
+  pub(crate) fn commit_quotient_spilled(
+    &self,
+    quotient_domain: Radix2Coset,
+    evaluations: RowMajorMatrix<Scalar>,
+    quotient_degree: usize,
+    spill_dir: &std::path::Path,
+  ) -> std::io::Result<(KzgCommitment, KzgProverData)> {
+    let big = quotient_domain.size();
+    debug_assert_eq!(big % quotient_degree, 0);
+    let n = big / quotient_degree;
+    let coefficient_columns =
+      Self::interpolate_columns(quotient_domain, evaluations).columns;
+    let mut spill_file: Option<Arc<std::sync::Mutex<DiskFile>>> = None;
+    let mut spill_offset = 0u64;
+    let mut commits = Vec::with_capacity(quotient_degree * coefficient_columns.len());
+    let mut columns = Vec::with_capacity(quotient_degree * coefficient_columns.len());
+    for k in 0..quotient_degree {
+      let range = k * n..(k + 1) * n;
+      for c in &coefficient_columns {
+        let sliced = c.slice(range.clone());
+        match &sliced {
+          Column::Constant { .. } => {
+            commits.push(self.commit_column(&sliced));
+            columns.push(sliced);
+          },
+          Column::Resident { values, range } => {
+            let coeffs = &values[range.clone()];
+            commits.push(self.msm(coeffs));
+            if coeffs.iter().skip(1).all(Zero::is_zero) {
+              columns.push(Column::Constant {
+                value: coeffs.first().copied().unwrap_or_default(),
+                len: coeffs.len(),
+              });
+            } else {
+              let file = match &spill_file {
+                Some(file) => file,
+                None => {
+                  let created = Arc::new(std::sync::Mutex::new(
+                    DiskFile::temporary(spill_dir)?,
+                  ));
+                  spill_file.insert(created)
+                },
+              };
+              columns.push(Column::spill_to_disk(file, &mut spill_offset, coeffs)?);
+            }
+          },
+          Column::Disk { .. } => {
+            unreachable!("quotient slicing precedes spilling")
+          },
+        }
+      }
+    }
+    drop(coefficient_columns);
+    let commitment = KzgCommitment(vec![G1Projective::normalize_batch(&commits)]);
+    let matrix = CommittedMatrix::new(
+      Radix2Coset {
+        log_size: p3_util::log2_strict_usize(n),
+        shift: multi_stark::traits::Algebra::<Scalar>::ONE,
+      },
+      columns,
+    );
+    let data = KzgProverData { commitment: commitment.clone(), matrices: vec![matrix] };
+    Ok((commitment, data))
   }
 
   /// Interpolate each column of `matrix` over `domain`.

@@ -266,9 +266,14 @@ impl Prepared<Scalar> {
     if height > srs.max_len() {
       return Err("compression trace exceeds the SRS range".into());
     }
-    let config = KzgConfig::with_max_trace_len(srs, height, 2)
+    let mut config = KzgConfig::with_max_trace_len(srs, height, 2)
       .with_streaming_lookups()
       .with_streaming_quotient();
+    if let Some(spill_dir) =
+      KzgConfig::resolve_disk_spill_dir(&std::env::temp_dir())?
+    {
+      config = config.with_disk_spill(spill_dir);
+    }
     prove_lowered(
       lowering::Lowered { compiled, assignment: self.assignment },
       config,

@@ -320,7 +320,13 @@ impl CompressConfig {
     }
     let prefetch_gib = match std::env::var("IX_KZG_PREFETCH_GIB") {
       Ok(value) => value.parse::<usize>()?,
-      Err(std::env::VarError::NotPresent) => 32,
+      Err(std::env::VarError::NotPresent) => {
+        if cfg!(feature = "cuda") {
+          32
+        } else {
+          0
+        }
+      },
       Err(error) => return Err(error.into()),
     };
     Ok(Self {
@@ -368,6 +374,7 @@ impl CompressConfig {
     }
     let _ = isolate_stages_from_env()?;
     let _ = requested_stage_from_env()?;
+    let _ = crate::kzg::KzgConfig::resolve_disk_spill_dir(Path::new("."))?;
     Ok(())
   }
 }

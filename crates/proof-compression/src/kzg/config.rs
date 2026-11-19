@@ -2,6 +2,7 @@
 //! scalar field (its own challenge field, `D = 1`), a selected transcript,
 //! monomial KZG commitments.
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ark_serialize::CanonicalSerialize;
@@ -28,6 +29,7 @@ pub struct KzgConfig {
   max_log_degree: usize,
   stream_lookups: bool,
   stream_quotient: bool,
+  spill_dir: Option<PathBuf>,
 }
 
 impl KzgConfig {
@@ -77,6 +79,7 @@ impl KzgConfig {
       max_log_degree,
       stream_lookups: false,
       stream_quotient: false,
+      spill_dir: None,
     }
   }
 
@@ -131,6 +134,45 @@ impl KzgConfig {
   pub fn with_streaming_quotient(mut self) -> Self {
     self.stream_quotient = true;
     self
+  }
+
+  /// Spill committed stage-1, stage-2 and quotient polynomial coefficients to
+  /// temporary disk-backed columns under `dir` on CPU. Has no effect on CUDA
+  /// builds, where coefficients stay host-resident for device transfers.
+  pub fn with_disk_spill(mut self, dir: impl Into<PathBuf>) -> Self {
+    self.spill_dir = Some(dir.into());
+    self
+  }
+
+  pub fn spill_dir(&self) -> Option<&Path> {
+    self.spill_dir.as_deref()
+  }
+
+  /// Resolve the CPU disk-spill directory from `IX_KZG_DISK_SPILL` (default
+  /// enabled on CPU, disabled on CUDA) and `IX_KZG_SPILL_DIR` (default `dir`).
+  pub(crate) fn resolve_disk_spill_dir(
+    default_dir: &Path,
+  ) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    let enabled = match std::env::var("IX_KZG_DISK_SPILL") {
+      Ok(value) => match value.as_str() {
+        "1" | "true" | "yes" => true,
+        "0" | "false" | "no" => false,
+        other => {
+          return Err(
+            format!("IX_KZG_DISK_SPILL must be 0 or 1, not {other:?}").into(),
+          );
+        },
+      },
+      Err(std::env::VarError::NotPresent) => !cfg!(feature = "cuda"),
+      Err(error) => return Err(error.into()),
+    };
+    if !enabled || cfg!(feature = "cuda") {
+      return Ok(None);
+    }
+    Ok(Some(
+      std::env::var_os("IX_KZG_SPILL_DIR")
+        .map_or_else(|| default_dir.to_path_buf(), PathBuf::from),
+    ))
   }
 
   /// One circuit's lookup trace, constructed on the host from committed
@@ -211,6 +253,16 @@ impl KzgConfig {
     drop(fixed);
     let trace =
       p3_matrix::dense::RowMajorMatrix::new(trace, input.circuit.stage_2_width);
+    #[cfg(not(feature = "cuda"))]
+    let (_, data) = if let Some(spill_dir) = &self.spill_dir {
+      self
+        .pcs
+        .commit_matrix_spilled(domain, trace, spill_dir)
+        .expect("spilling lookup polynomial to disk")
+    } else {
+      self.pcs.commit(vec![(domain, trace)])
+    };
+    #[cfg(feature = "cuda")]
     let (_, data) = self.pcs.commit(vec![(domain, trace)]);
     tracing::info!(
       circuit = i,
@@ -284,6 +336,25 @@ impl KzgConfig {
         "KZG quotient coset evaluated"
       );
     }
+    #[cfg(not(feature = "cuda"))]
+    let (_, data) = if let Some(spill_dir) = &self.spill_dir {
+      self
+        .pcs
+        .commit_quotient_spilled(
+          input.quotient_domain,
+          p3_matrix::dense::RowMajorMatrix::new_col(values),
+          ratio,
+          spill_dir,
+        )
+        .expect("spilling quotient polynomial to disk")
+    } else {
+      self.pcs.commit_quotient(vec![(
+        input.quotient_domain,
+        p3_matrix::dense::RowMajorMatrix::new_col(values),
+        ratio,
+      )])
+    };
+    #[cfg(feature = "cuda")]
     let (_, data) = self.pcs.commit_quotient(vec![(
       input.quotient_domain,
       p3_matrix::dense::RowMajorMatrix::new_col(values),

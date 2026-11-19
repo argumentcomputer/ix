@@ -164,11 +164,29 @@ fn streamed_chunks_preserve_global_rows_and_quotient_cosets() {
   let streamed = system.prove_multiple_claims(
     &key,
     &[],
-    SystemWitness::from_stage_1(traces, &system),
+    SystemWitness::from_stage_1(traces.clone(), &system),
   );
   let codec = FixedProofCodec::new(&system, &dense.log_degrees).unwrap();
   assert_eq!(codec.encode(&streamed).unwrap(), codec.encode(&dense).unwrap());
   system.verify_multiple_claims(&[], &streamed).unwrap();
+
+  let spill_dir = std::env::temp_dir().join(format!(
+    "ix-kzg-streaming-spill-chunks-{}",
+    std::process::id()
+  ));
+  let _ = std::fs::remove_dir_all(&spill_dir);
+  system.config = system.config.with_disk_spill(&spill_dir);
+  let spilled = system.prove_multiple_claims(
+    &key,
+    &[],
+    SystemWitness::from_stage_1(traces, &system),
+  );
+  assert_eq!(codec.encode(&spilled).unwrap(), codec.encode(&dense).unwrap());
+  system.verify_multiple_claims(&[], &spilled).unwrap();
+  if spill_dir.exists() {
+    assert!(std::fs::read_dir(&spill_dir).unwrap().next().is_none());
+    let _ = std::fs::remove_dir_all(&spill_dir);
+  }
 }
 
 #[test]
@@ -219,9 +237,27 @@ fn fixed_column_passes_preserve_weights_wide_constraints_and_lookup_carry() {
   let streamed = system.prove_multiple_claims(
     &key,
     &[],
-    SystemWitness::from_stage_1(traces, &system),
+    SystemWitness::from_stage_1(traces.clone(), &system),
   );
   let codec = FixedProofCodec::new(&system, &dense.log_degrees).unwrap();
   assert_eq!(codec.encode(&streamed).unwrap(), codec.encode(&dense).unwrap());
   system.verify_multiple_claims(&[], &streamed).unwrap();
+
+  let spill_dir = std::env::temp_dir().join(format!(
+    "ix-kzg-streaming-spill-passes-{}",
+    std::process::id()
+  ));
+  let _ = std::fs::remove_dir_all(&spill_dir);
+  system.config = system.config.with_disk_spill(&spill_dir);
+  let spilled = system.prove_multiple_claims(
+    &key,
+    &[],
+    SystemWitness::from_stage_1(traces, &system),
+  );
+  assert_eq!(codec.encode(&spilled).unwrap(), codec.encode(&dense).unwrap());
+  system.verify_multiple_claims(&[], &spilled).unwrap();
+  if spill_dir.exists() {
+    assert!(std::fs::read_dir(&spill_dir).unwrap().next().is_none());
+    let _ = std::fs::remove_dir_all(&spill_dir);
+  }
 }
