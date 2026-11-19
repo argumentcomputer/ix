@@ -1133,9 +1133,10 @@ theorem TwinRuleJ.to_twinPos {env envSelf : Ix.Kernel.Env .anon} {f : KKey → K
     rhsG, hw1, hw2, hgen⟩ := h
   refine ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17,
     rhsG, hw1, hw2, ?_⟩
-  rcases hgen with rfl | ⟨g1, g2, g3, g4, rty, hinf⟩
+  rcases hgen with rfl | ⟨g1, g2, g3, g4, rty, hinf⟩ | hmatch
   · exact Or.inl rfl
-  · exact Or.inr ⟨g1, g2, g3, g4, rty, rulesJ_infer_to_twinPos hinf⟩
+  · exact Or.inr (Or.inl ⟨g1, g2, g3, g4, rty, rulesJ_infer_to_twinPos hinf⟩)
+  · exact Or.inr (Or.inr hmatch)
 
 private theorem forall₂_imp {α β : Type} {R S : α → β → Prop}
     (himp : ∀ {a b}, R a b → S a b) :
@@ -1160,9 +1161,10 @@ theorem DeclRecTwinRunJ.to_twinPos {env env₂ : Ix.Kernel.Env .anon}
   obtain ⟨hcv, hlf, hfkC, hlps, hmod, ⟨tyG, htw1, htw2, htgen⟩, hlenW, hrules⟩ := hall w hw
   refine ⟨ConstantValCheckJ.to_twinPos hcv, hlf, hfkC, hlps, hmod, ⟨tyG, htw1, htw2, ?_⟩,
     hlenW, semForall₂_imp (fun hh => TwinRuleJ.to_twinPos hh) hrules⟩
-  rcases htgen with rfl | ⟨t1, t2, t3, t4, sty, hinf⟩
+  rcases htgen with rfl | ⟨t1, t2, t3, t4, sty, hinf⟩ | hsym
   · exact Or.inl rfl
-  · exact Or.inr ⟨t1, t2, t3, t4, sty, rulesJ_infer_to_twinPos hinf⟩
+  · exact Or.inr (Or.inl ⟨t1, t2, t3, t4, sty, rulesJ_infer_to_twinPos hinf⟩)
+  · exact Or.inr (Or.inr hsym)
 
 /-- Staging `twinModels ws` extends `env` (`EnvExt`). -/
 theorem envExt_twinModels {env : Ix.Kernel.Env .anon} {ws : List (TwinRecPart .anon)}
@@ -2040,7 +2042,8 @@ theorem twinRuleJ_of_checkedOut {J : Judgements .anon} {env envSelf : Ix.Kernel.
     hout.rhs_lvls, hout.rhs_res, hlf,
     hout.ctor_eq, hout.nfields_eq, hout.ctorParams_eq, hout.fire_eq,
     hout.k_eq, hout.paramsBlind_eq, hout.eta_eq,
-    hout.plain_shape, hout.nested_shape, hout.rhs_gen⟩
+    hout.plain_shape, hout.nested_shape,
+    let ⟨g, hw1, hw2, hg⟩ := hout.rhs_gen; ⟨g, hw1, hw2, hg.imp id Or.inl⟩⟩
 
 private theorem forall₂_zip_twinRuleJ {J : Judgements .anon} {env envSelf : Ix.Kernel.Env .anon}
     {f : KKey → KKey} {w : TwinRecPart .anon}
@@ -2385,7 +2388,8 @@ theorem twinRec_step_pos (hCore : IxVM.Consistency.Core S₀)
         hcv_pos hlf_ty hlf_rls hm.canon_stored hm.lps_eq rfl hnm
         (hrc.mono e_mid) (S0.addr_mono e_mid hadr) hkey (hci.mono e_mid)
         e1 e2 e3 ev_fam ev_mod ev_sub hg_fam hg_mod hg_sub
-      refine ⟨hcv_pos, hlf_ty, hm.canon_stored, hm.lps_eq, ?_, hout.ty_gen, hlen_eq,
+      refine ⟨hcv_pos, hlf_ty, hm.canon_stored, hm.lps_eq, ?_,
+        (let ⟨g, hw1, hw2, hg⟩ := hout.ty_gen; ⟨g, hw1, hw2, hg.imp id Or.inl⟩), hlen_eq,
         forall₂_zip_twinRuleJ (fun _ _ _ ha => ha) hrs_stored hm.rules_closed hlf_rls
           hout.rules_out⟩
       have hm_none : (d.toPart env).model? = none := hout.model_none
@@ -2400,7 +2404,8 @@ theorem twinRec_step_pos (hCore : IxVM.Consistency.Core S₀)
         hcv_pos hlf_ty hlf_rls hm.canon_stored hm.lps_eq rfl hk_zero huns_zero hv_mod
         (hrc.mono e_mid) (S0.addr_mono e_mid hadr) hkey (hci.mono e_mid)
         e1 e2 e3 ev_fam ev_mod ev_sub hg_fam hg_mod hg_sub
-      refine ⟨hcv_pos, hlf_ty, hm.canon_stored, hm.lps_eq, ?_, hout.ty_gen, hlen_eq,
+      refine ⟨hcv_pos, hlf_ty, hm.canon_stored, hm.lps_eq, ?_,
+        (let ⟨g, hw1, hw2, hg⟩ := hout.ty_gen; ⟨g, hw1, hw2, hg.imp id Or.inl⟩), hlen_eq,
         forall₂_zip_twinRuleJ (fun _ _ _ ha => ha) hrs_stored hm.rules_closed hlf_rls
           hout.rules_out⟩
       obtain ⟨⟨cvm, mval, hint⟩, hm_some⟩ := Option.isSome_iff_exists.mp hout.model_some
@@ -2532,7 +2537,8 @@ theorem twinRec_step_rulesJ (hCore : IxVM.Consistency.Core S₀)
         hcv_r hlf_ty hlf_rls hm.canon_stored hm.lps_eq rfl hnm
         (hrc.mono e_mid) (S0.addr_mono e_mid hadr) hkey (hci.mono e_mid)
         e1 e2 e3 ev_fam ev_mod ev_sub hg_fam hg_mod hg_sub
-      refine ⟨hcv_r, hlf_ty, hm.canon_stored, hm.lps_eq, ?_, hout.ty_gen, hlen_eq,
+      refine ⟨hcv_r, hlf_ty, hm.canon_stored, hm.lps_eq, ?_,
+        (let ⟨g, hw1, hw2, hg⟩ := hout.ty_gen; ⟨g, hw1, hw2, hg.imp id Or.inl⟩), hlen_eq,
         forall₂_zip_twinRuleJ (fun _ _ _ ha => ha) hrs_stored hm.rules_closed hlf_rls
           hout.rules_out⟩
       have hm_none : (d.toPart env).model? = none := hout.model_none
@@ -2547,7 +2553,8 @@ theorem twinRec_step_rulesJ (hCore : IxVM.Consistency.Core S₀)
         hcv_r hlf_ty hlf_rls hm.canon_stored hm.lps_eq rfl hk_zero huns_zero hv_mod
         (hrc.mono e_mid) (S0.addr_mono e_mid hadr) hkey (hci.mono e_mid)
         e1 e2 e3 ev_fam ev_mod ev_sub hg_fam hg_mod hg_sub
-      refine ⟨hcv_r, hlf_ty, hm.canon_stored, hm.lps_eq, ?_, hout.ty_gen, hlen_eq,
+      refine ⟨hcv_r, hlf_ty, hm.canon_stored, hm.lps_eq, ?_,
+        (let ⟨g, hw1, hw2, hg⟩ := hout.ty_gen; ⟨g, hw1, hw2, hg.imp id Or.inl⟩), hlen_eq,
         forall₂_zip_twinRuleJ (fun _ _ _ ha => ha) hrs_stored hm.rules_closed hlf_rls
           hout.rules_out⟩
       obtain ⟨⟨cvm, mval, hint⟩, hm_some⟩ := Option.isSome_iff_exists.mp hout.model_some

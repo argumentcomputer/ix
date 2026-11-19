@@ -48,7 +48,7 @@ open IxVM.Refinement.Decl (twinPosRulesJ)
 open IxVM.Refinement.Typing.FamilyAlias (FamilyCallAtLim)
 open Ix.Kernel (ConstantInfo ConstantVal RecRule LevelParam)
 open Ix.Kernel.Semantics (DeclRecTwinRunJ TwinRecPart twinModels twinRecs twinProv TwinRuleJ
-  ConstantValCheckJ Forall₂ Judgements WrapRel)
+  ConstantValCheckJ Forall₂ Judgements WrapRel SymWrapT TwinRuleMatch)
 open Ix.Kernel.Model (HasModel)
 
 set_option linter.unusedVariables false
@@ -146,7 +146,7 @@ theorem twinRuleJ_of_front {J : Judgements .anon} {env envSelf : Ix.Kernel.Env .
     {f : KKey → KKey} {recName : KKey} {lps : List LevelParam} {cvW' : ConstantVal .anon}
     {mI rP : Nat} {rW rW' rC : RecRule .anon}
     (h : TwinRuleFront J env envSelf f recName lps cvW' mI rP rW rW' rC)
-    (hg : TwinRuleGen J env f lps rC rW') :
+    (hg : TwinRuleGen J env f lps cvW' rC rW') :
     TwinRuleJ J env envSelf f recName lps cvW' mI rP rW rW' rC := by
   obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17⟩ := h
   obtain ⟨g, hg1, hg2, hg3⟩ := hg
@@ -177,20 +177,29 @@ def TwinAbove (J : Judgements .anon) (env : Ix.Kernel.Env .anon) (f : KKey → K
     (w : TwinRecPart .anon) : Prop :=
   WrapRel env.find? w.cvW'.type w.cvC.type ∧
     List.Forall₂ (fun (rW' rC : RecRule .anon) =>
-      TwinRuleGen J env f w.cvC.levelParams rC rW') w.rulesW' w.rulesC
+      TwinRuleGen J env f w.cvC.levelParams w.cvW' rC rW') w.rulesW' w.rulesC
+
+/-- **Symmetric wrapper comparison**: the canonical and twin types are symmetrically wrapper-related
+(`SymWrapT`) under a common `WrapRel` ancestor, and each checked rule satisfies `TwinRuleMatch`
+against the twin's checked type and the canonical rule under a common `WrapRel` ancestor. -/
+def SymAbove (env : Ix.Kernel.Env .anon) (f : KKey → KKey) (w : TwinRecPart .anon) : Prop :=
+  (∃ tyG : KExpr, WrapRel env.find? tyG w.cvC.type ∧ WrapRel env.find? tyG w.cvW'.type ∧
+    SymWrapT env.find? w.cvC.type w.cvW'.type) ∧
+  List.Forall₂ (fun (rW' rC : RecRule .anon) =>
+    ∃ rhsG : KExpr, WrapRel env.find? rhsG rC.rhs ∧
+      WrapRel env.find? (rhsG.renameConsts f) rW'.rhs ∧
+      TwinRuleMatch env.find? f w.cvW'.type rC.rhs rW'.rhs) w.rulesW' w.rulesC
 
 /-- **A twin's member against its canonical member**, as the circuit's two family checks of the
-block give them (each record's member compared with the block's reconstruction on its own, as
-the reconstruction or its full consumption): the major-premise domain of the twin's checked type
-has the canonical type's head, and its arguments where those are bound variables (the circuit
-never consumes the major premise's domain); and the canonical member is above the twin's, or the
-twin's above the canonical one. -/
+block give them: the major-premise domain of the twin's checked type has the canonical type's
+head, and its arguments where those are bound variables; and the canonical and twin members are
+related by `CanonAbove`, `TwinAbove`, or `SymAbove`. -/
 structure TwinMemberCmp (J : Judgements .anon) (env : Ix.Kernel.Env .anon) (f : KKey → KKey)
     (w : TwinRecPart .anon) : Prop where
   major : ∃ DW DC, Core.piDomAt w.mI w.cvW'.type = some DW ∧
     Core.piDomAt w.mI w.cvC.type = some DC ∧ DW.getAppFn = DC.getAppFn ∧
     ((∀ a ∈ DC.getAppArgs, ∃ i, a = .bvar i) → DW.getAppArgs = DC.getAppArgs)
-  form : CanonAbove env f w ∨ TwinAbove J env f w
+  form : CanonAbove env f w ∨ TwinAbove J env f w ∨ SymAbove env f w
 
 /-- **What the circuit side hands for a twin record**, over the parts `ws` of the record and a
 peer renaming `f` (taken as `Decl.twinPeerRename ws`, which sends each canonical recursor to its
@@ -265,15 +274,17 @@ theorem twinTarget_of_facts {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {lim : Opti
   -- canonical member
   have hgen : ∀ w ∈ ws, TwinTypeGen twinPosRulesJ env w.cvC w.cvW' ∧
       List.Forall₂ (fun (rW' rC : RecRule .anon) =>
-        TwinRuleGen twinPosRulesJ env (Decl.twinPeerRename ws) w.cvC.levelParams rC rW')
+        TwinRuleGen twinPosRulesJ env (Decl.twinPeerRename ws) w.cvC.levelParams w.cvW' rC rW')
         w.rulesW' w.rulesC := by
     intro w hw
     obtain ⟨x, -, -, hcmp⟩ := hF.canonAt w hw
-    rcases hcmp.form with ⟨hty, hrl⟩ | ⟨hty, hrl⟩
+    rcases hcmp.form with ⟨hty, hrl⟩ | ⟨hty, hrl⟩ | ⟨⟨tyG, hWC, hWW', hSym⟩, hrl⟩
     · exact ⟨twinTypeGen_of_canonical_above hty,
         lforall₂_imp (fun rW' rC h => twinRuleGen_of_canonical_above h) hrl⟩
     · exact ⟨twinTypeGen_of_twin_above (Decl.judgeFrames_twinPosRulesJ env) (hF.front w hw)
         (hF.lvls w hw) hty, hrl⟩
+    · exact ⟨twinTypeGen_of_symWrapT hWC hWW' hSym,
+        lforall₂_imp (fun rW' rC ⟨rhsG, hRC, hRW, hm⟩ => twinRuleGen_of_match hRC hRW hm) hrl⟩
   have hfind : ∀ ci ∈ twinRecs ws ++ twinModels ws,
       (⟨twinRecs ws ++ (twinModels ws ++ env.consts)⟩ : Ix.Kernel.Env .anon).find? ci.name =
         some ci := by

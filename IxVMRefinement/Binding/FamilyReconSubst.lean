@@ -1296,7 +1296,8 @@ private theorem closeDummies_openDummies (shift : Nat) :
 produces `E.liftLooseBVars shift cut` at local depth `k + shift`. -/
 theorem expr_lift_local_exact {κ : _root_.Address → KKey} {Γ₀ : Nat → KExpr}
     {k shift cut : Nat} {E : KExpr} {pe r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
-    (hcut_le : cut ≤ k) (hshift_lt : shift < 4611686018427387904) (hcut_lt : cut < 4294967296)
+    (hcut_le : cut ≤ k) (hshift_lt : shift < 4611686018427387904)
+    (hcut_lt : cut < 4611686018427387904)
     (hbnd : IxVM.Consistency.Bounded cs) (hE : TmExact κ 0 Γ₀ h k E pe)
     (ev : ObsFn Obs.W "KernelSubst::expr_lift" [pe, .field (shift : F), .field (cut : F)] h r h'
       cs) :
@@ -1324,7 +1325,7 @@ theorem expr_lift_local_exact {κ : _root_.Address → KKey} {Γ₀ : Nat → KE
 /-- **`KernelSubst::expr_lift(e, shift, cut)`** on `TmOExact` is `liftLooseBVars shift cut`. -/
 theorem expr_lift_tmOExact {κ : _root_.Address → KKey} {E : KExpr} {pe r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)} {shift cut : Nat}
-    (hshift : shift < 4611686018427387904) (hcut : cut < 4294967296)
+    (hshift : shift < 4611686018427387904) (hcut : cut < 4611686018427387904)
     (hbnd : IxVM.Consistency.Bounded cs) (hE : TmOExact κ h E pe)
     (ev : ObsFn Obs.W "KernelSubst::expr_lift" [pe, .field (shift : F), .field (cut : F)] h r h'
       cs) :
