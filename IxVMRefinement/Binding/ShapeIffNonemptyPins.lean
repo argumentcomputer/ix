@@ -113,7 +113,7 @@ private theorem recordOf_up {R R' : Ixon.Env}
   | some lc => rw [hg] at hc; rw [h x lc hg]; exact hc
 
 private theorem block_eq {calls : List (Call F)} {E : Ixon.Env} (hS : LoadedReads.RunStore calls E)
-    {cs_ld : List (Call F)} {E_ld : Ixon.Env} (hload : LoadedReads.LoadedBy cs_ld E_ld)
+    {cs_ld : List (Call F)} {E_ld : Ixon.Env} (hload : IxVM.Consistency.LoadedBy cs_ld E_ld)
     (hsub : ∀ cl ∈ cs_ld, cl ∈ calls) {B : _root_.Address} {lcB : Ixon.LazyConstant}
     {cb' cb : Ixon.Constant} (hgetB : E_ld.consts.get? B = some lcB)
     (hexB : Ixon.deConstantExact lcB.rawBytes = .ok cb')
@@ -131,12 +131,12 @@ private theorem nat_of_fieldCast_eq {a b : Nat}
 
 private theorem defnValShape_tag {d : Ixon.Definition} {tyPtr valPtr hint : SourceValue F} :
     ∃ tag fs, L1.defnValShape d tyPtr valPtr hint = .construct kciEnum tag fs ∧
-      (tag = "Defn" ∨ tag = "Thm" ∨ tag = "Opaq") := by
+      (tag = "Defn" ∨ tag = "Opaque" ∨ tag = "Thm") := by
   unfold L1.defnValShape
-  cases d.kind
-  · exact ⟨"Defn", _, rfl, Or.inl rfl⟩
-  · exact ⟨"Thm", _, rfl, Or.inr (Or.inl rfl)⟩
-  · exact ⟨"Opaq", _, rfl, Or.inr (Or.inr rfl)⟩
+  cases d.kind with
+  | defn => exact ⟨"Defn", _, rfl, Or.inl rfl⟩
+  | opaq => exact ⟨"Opaque", _, rfl, Or.inr (Or.inl rfl)⟩
+  | thm => exact ⟨"Thm", _, rfl, Or.inr (Or.inr rfl)⟩
 
 /-- A raw converted `KConstantInfo` value's tag restricts the decoded record's `ConstantInfo`
 constructor. -/
@@ -147,50 +147,77 @@ private theorem rawCIRep_info_of_tag {E_ld : Ixon.Env} {h : Heap F} {a : _root_.
     (tag = "Ctor" → ∃ p, c.info = .cPrj p) ∧
     (tag = "Rec" → (∃ rc, c.info = .recr rc) ∨ (∃ p, c.info = .rPrj p)) := by
   unfold L1.RawCIRep at hraw
-  cases hi : c.info <;> rw [hi] at hraw
-  · obtain ⟨_, -, -, _, _, _, hv, -⟩ := hraw
-    obtain ⟨t', _, hd, hts⟩ := defnValShape_tag
+  cases hi : c.info with
+  | defn d =>
+    rw [hi] at hraw
+    obtain ⟨_, -, -, _, _, _, hv, -⟩ := hraw
+    obtain ⟨_, _, hd, hts⟩ := defnValShape_tag
     rw [hd] at hv
     have ht := (Value.construct.inj hv).2.1
     rcases hts with rfl | rfl | rfl <;>
-      exact ⟨fun h => by cases ht.symm.trans h, fun h => by cases ht.symm.trans h,
-        fun h => by cases ht.symm.trans h⟩
-  · obtain ⟨_, -, -, _, hv, -⟩ := hraw
+      exact ⟨fun h => absurd (ht.symm.trans h) (by decide),
+        fun h => absurd (ht.symm.trans h) (by decide),
+        fun h => absurd (ht.symm.trans h) (by decide)⟩
+  | axio ax =>
+    rw [hi] at hraw
+    obtain ⟨_, -, -, _, hv, -⟩ := hraw
     have ht := (Value.construct.inj hv).2.1
-    exact ⟨fun h => by cases ht.symm.trans h, fun h => by cases ht.symm.trans h,
-      fun h => by cases ht.symm.trans h⟩
-  · obtain ⟨_, -, -, _, hv, -⟩ := hraw
+    exact ⟨fun h => absurd (ht.symm.trans h) (by decide),
+      fun h => absurd (ht.symm.trans h) (by decide),
+      fun h => absurd (ht.symm.trans h) (by decide)⟩
+  | quot q =>
+    rw [hi] at hraw
+    obtain ⟨_, -, -, _, hv, -⟩ := hraw
     have ht := (Value.construct.inj hv).2.1
-    exact ⟨fun h => by cases ht.symm.trans h, fun h => by cases ht.symm.trans h,
-      fun h => by cases ht.symm.trans h⟩
-  · rename_i rc
-    obtain ⟨_, -, -, -, -, -, -, -, _, _, _, _, -, -, hv, -⟩ := hraw
+    exact ⟨fun h => absurd (ht.symm.trans h) (by decide),
+      fun h => absurd (ht.symm.trans h) (by decide),
+      fun h => absurd (ht.symm.trans h) (by decide)⟩
+  | recr rc =>
+    rw [hi] at hraw
+    obtain ⟨_, -, raw⟩ := hraw
+    obtain ⟨-, -, -, -, -, -, _, _, _, _, -, -, hv, -⟩ := raw
     have ht := (Value.construct.inj hv).2.1
-    exact ⟨fun h => by cases ht.symm.trans h, fun h => by cases ht.symm.trans h,
+    exact ⟨fun h => absurd (ht.symm.trans h) (by decide),
+      fun h => absurd (ht.symm.trans h) (by decide),
       fun _ => Or.inl ⟨rc, rfl⟩⟩
-  · obtain ⟨-, _, _, _, _, _, -, -, -, -, -, -, -, -, -, _, _, _, hv, -⟩ := hraw
-    obtain ⟨t', _, hd, hts⟩ := defnValShape_tag
+  | dPrj p =>
+    rw [hi] at hraw
+    obtain ⟨-, _, _, _, _, _, -, -, -, -, -, -, -, -, raw⟩ := hraw
+    obtain ⟨-, _, _, _, hv, -⟩ := raw
+    obtain ⟨_, _, hd, hts⟩ := defnValShape_tag
     rw [hd] at hv
     have ht := (Value.construct.inj hv).2.1
     rcases hts with rfl | rfl | rfl <;>
-      exact ⟨fun h => by cases ht.symm.trans h, fun h => by cases ht.symm.trans h,
-        fun h => by cases ht.symm.trans h⟩
-  · rename_i p
-    obtain ⟨-, _, _, _, _, _, -, -, -, -, -, -, -, -, -, -, -, -, -, _, _, _, -, -, hv, -⟩ := hraw
+      exact ⟨fun h => absurd (ht.symm.trans h) (by decide),
+        fun h => absurd (ht.symm.trans h) (by decide),
+        fun h => absurd (ht.symm.trans h) (by decide)⟩
+  | iPrj p =>
+    rw [hi] at hraw
+    obtain ⟨-, _, _, _, _, _, -, -, -, -, -, -, -, -, raw⟩ := hraw
+    obtain ⟨-, -, -, -, -, _, _, _, -, -, hv, -⟩ := raw
     have ht := (Value.construct.inj hv).2.1
-    exact ⟨fun _ => ⟨p, rfl⟩, fun h => by cases ht.symm.trans h, fun h => by cases ht.symm.trans h⟩
-  · rename_i p
-    obtain ⟨-, -, _, _, _, _, _, _, -, -, -, -, -, -, -, -, -, -, -, -, -, -, _, _, _, -, -,
-      hv, -⟩ := hraw
+    exact ⟨fun _ => ⟨p, rfl⟩,
+      fun h => absurd (ht.symm.trans h) (by decide),
+      fun h => absurd (ht.symm.trans h) (by decide)⟩
+  | cPrj p =>
+    rw [hi] at hraw
+    obtain ⟨-, -, _, _, _, _, _, _, -, -, -, -, -, -, -, -, -, raw⟩ := hraw
+    obtain ⟨-, -, -, -, -, _, _, _, -, -, hv, -⟩ := raw
     have ht := (Value.construct.inj hv).2.1
-    exact ⟨fun h => by cases ht.symm.trans h, fun _ => ⟨p, rfl⟩, fun h => by cases ht.symm.trans h⟩
-  · rename_i p
-    obtain ⟨-, _, _, _, _, _, -, -, -, -, -, -, -, -, -, -, -, -, -, -, _, _, _, _, -, -,
-      hv, -⟩ := hraw
+    exact ⟨fun h => absurd (ht.symm.trans h) (by decide),
+      fun _ => ⟨p, rfl⟩,
+      fun h => absurd (ht.symm.trans h) (by decide)⟩
+  | rPrj p =>
+    rw [hi] at hraw
+    obtain ⟨-, _, _, _, _, _, -, -, -, -, -, -, -, -, raw⟩ := hraw
+    obtain ⟨-, -, -, -, -, -, _, _, _, _, -, -, hv, -⟩ := raw
     have ht := (Value.construct.inj hv).2.1
-    exact ⟨fun h => by cases ht.symm.trans h, fun h => by cases ht.symm.trans h,
+    exact ⟨fun h => absurd (ht.symm.trans h) (by decide),
+      fun h => absurd (ht.symm.trans h) (by decide),
       fun _ => Or.inr ⟨p, rfl⟩⟩
-  · exact False.elim hraw
+  | muts _ =>
+    rw [hi] at hraw
+    exact False.elim hraw
 
 /-! ## Common load, validation, and type-pin extraction -/
 
@@ -259,7 +286,7 @@ private theorem stdMember_loaded {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
       IxVM.Consistency.ReadsRecord t (IxVM.Consistency.recordOf ρ.E₀)
         (fun x => ρ.E₀.blobs.get? x) a c ci₀ c.info ∧
       IxVM.Consistency.StoredAs ci ci₀ ∧
-      LoadedReads.LoadedBy loadCalls E_ld ∧
+      IxVM.Consistency.LoadedBy loadCalls E_ld ∧
       (∀ cl ∈ loadCalls, cl ∈ calls) ∧
       L1.RawCIRep E_ld loaded a c vci ∧
       vci = .construct kciEnum tag (.field (n : F) :: tyPtr :: rest) ∧
@@ -306,7 +333,7 @@ private theorem stdMember_loaded {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
     exact hcE
   obtain ⟨-, -, v, hld_v, hraw⟩ :=
     LoadedReads.loadedL1_record hrun.runStore hsubL hhash hblake hL1 hrecA
-  obtain rfl : v = vci := Except.ok.inj (hld_v.symm.trans hld)
+  obtain rfl : vci = v := (Except.ok.inj (hld_v.symm.trans hld)).symm
   exact ⟨ixAddr b, c, ci, ci₀, E_ld, loaded, beforeMember, h', cs, loadCalls, memberCalls,
     x_rc, x_tbl, addr, vci, tyPtr, res, tag, rest,
     ha, hf, hcE, hrr, hst, hloaded, hsubL, hraw, hvci_eq,
@@ -338,14 +365,14 @@ theorem stdInduct_stored {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {ρ :
   unfold L1.RawCIRep at hraw
   rw [hp] at hraw hrr
   dsimp only [IxVM.Consistency.ReadsRecord] at hrr
-  obtain ⟨-, lcB, cb', ms', ind', blobs, hgetB, -, -, hexB, -, hcb', hms', hbl, rawInd⟩ := hraw
-  obtain ⟨cb, ms, ind, ⟨hB, hmuts, hm, -, -, -⟩, hindReads⟩ := hrr
+  obtain ⟨-, lcB, cb, ms, ind, blobs, hgetB, -, -, hexB, -, hcb', hms', hbl, rawInd⟩ := hraw
+  obtain ⟨cb', ms', ind', ⟨hB, hmuts, hm, -, -, -⟩, hindReads⟩ := hrr
   obtain rfl := block_eq hrun.runStore hloaded hsubL hgetB hexB hB
-  obtain rfl : ms' = ms := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hmuts)
-  have hm' : ms'[p.idx.toNat]? = some (.indc ind') := by
+  obtain rfl : ms = ms' := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hmuts)
+  have hm' : ms[p.idx.toNat]? = some (.indc ind) := by
     rw [← Array.getElem?_toList]
     exact hms'
-  obtain rfl : ind' = ind := Ixon.MutConst.indc.inj (Option.some.inj (hm'.symm.trans hm))
+  obtain rfl : ind = ind' := Ixon.MutConst.indc.inj (Option.some.inj (hm'.symm.trans hm))
   obtain ⟨hlvls, -, -, -, -, tyPtr', _, _, -, -, hv_raw, rawTy⟩ := rawInd
   have hv_eq := hv_raw.symm.trans hvci_eq
   have hfs := (Value.construct.inj hv_eq).2.2
@@ -401,19 +428,19 @@ theorem stdCtor_stored {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {ρ : B
   unfold L1.RawCIRep at hraw
   rw [hp] at hraw hrr
   dsimp only [IxVM.Consistency.ReadsRecord] at hrr
-  obtain ⟨-, -, lcB, cb', ms', ind', ct', blobs, hgetB, -, -, hexB, -, hcb', hms', hct', hbl,
+  obtain ⟨-, -, lcB, cb, ms, ind, ct, blobs, hgetB, -, -, hexB, -, hcb', hms', hct', hbl,
     rawCtor⟩ := hraw
-  obtain ⟨cb, ms, ind, ct, hB, hmuts, hm, hct, -, -, -, -, hctorReads⟩ := hrr
+  obtain ⟨cb', ms', ind', ct', hB, hmuts, hm, hct, -, -, -, -, hctorReads⟩ := hrr
   obtain rfl := block_eq hrun.runStore hloaded hsubL hgetB hexB hB
-  obtain rfl : ms' = ms := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hmuts)
-  have hm' : ms'[p.idx.toNat]? = some (.indc ind') := by
+  obtain rfl : ms = ms' := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hmuts)
+  have hm' : ms[p.idx.toNat]? = some (.indc ind) := by
     rw [← Array.getElem?_toList]
     exact hms'
-  obtain rfl : ind' = ind := Ixon.MutConst.indc.inj (Option.some.inj (hm'.symm.trans hm))
-  have hct'' : ind'.ctors[p.cidx.toNat]? = some ct' := by
+  obtain rfl : ind = ind' := Ixon.MutConst.indc.inj (Option.some.inj (hm'.symm.trans hm))
+  have hct'' : ind.ctors[p.cidx.toNat]? = some ct := by
     rw [← Array.getElem?_toList]
     exact hct'
-  obtain rfl : ct' = ct := Option.some.inj (hct''.symm.trans hct)
+  obtain rfl : ct = ct' := Option.some.inj (hct''.symm.trans hct)
   obtain ⟨hlvls, -, hp56, hf56, -, tyPtr', _, _, -, -, hv_raw, rawTy⟩ := rawCtor
   have hv_eq := hv_raw.symm.trans hvci_eq
   have hfs := (Value.construct.inj hv_eq).2.2
@@ -488,14 +515,14 @@ theorem stdRec_stored {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {ρ : BR
     · unfold L1.RawCIRep at hraw
       rw [hinfo] at hraw hrr
       dsimp only [IxVM.Consistency.ReadsRecord] at hrr
-      obtain ⟨-, lcB, cb', ms', rc', blobs, hgetB, -, -, hexB, -, hcb', hms', hbl, rawRec⟩ := hraw
-      obtain ⟨cb, ms, rc, ⟨hB, hmuts, hm, -, -, -⟩, hrecReads⟩ := hrr
+      obtain ⟨-, lcB, cb, ms, rc, blobs, hgetB, -, -, hexB, -, hcb', hms', hbl, rawRec⟩ := hraw
+      obtain ⟨cb', ms', rc', ⟨hB, hmuts, hm, -, -, -⟩, hrecReads⟩ := hrr
       obtain rfl := block_eq hrun.runStore hloaded hsubL hgetB hexB hB
-      obtain rfl : ms' = ms := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hmuts)
-      have hm' : ms'[p.idx.toNat]? = some (.recr rc') := by
+      obtain rfl : ms = ms' := Ixon.ConstantInfo.muts.inj (hcb'.symm.trans hmuts)
+      have hm' : ms[p.idx.toNat]? = some (.recr rc) := by
         rw [← Array.getElem?_toList]
         exact hms'
-      obtain rfl : rc' = rc := Ixon.MutConst.recr.inj (Option.some.inj (hm'.symm.trans hm))
+      obtain rfl : rc = rc' := Ixon.MutConst.recr.inj (Option.some.inj (hm'.symm.trans hm))
       exact ⟨cb, IxVM.Consistency.blockSelf t p.block ms, L1.blockRecurAddrs p.block ms.toList,
         blobs, p.block, p.idx.toNat, rc,
         hrun.runStore.blob_of_table hloaded hsubL hbl, rawRec, hrecReads⟩
@@ -503,7 +530,7 @@ theorem stdRec_stored {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {ρ : BR
   obtain ⟨cv, rules, hci_eq, hcv_name, tyP, kF, B, i, ind, ty,
     hreadP, hfam, horigin, hcv_lps, hreadTy, hannCv⟩ :=
     validateMember_storedRecCounts pin mpath rawRec hrecReads hst
-  obtain ⟨hlvls, -, -, -, -, -, tyPtr', -, -, -, -, -, hv_raw, rawTy, -⟩ := rawRec
+  obtain ⟨hlvls, -, -, -, -, -, tyPtr', _, _, _, -, -, hv_raw, rawTy, -⟩ := rawRec
   have hv_eq := hv_raw.symm.trans hvci_eq
   have hfs := (Value.construct.inj hv_eq).2.2
   simp only [List.cons.injEq] at hfs
