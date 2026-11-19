@@ -733,8 +733,10 @@ def aliasGroupCheck (env : Env .anon) :
       subst hv
       subst hh
       exact AliasGroup.cons ih.down hperm.down (Option.isNone_iff_eq_none.mp hfr.down)
-        (auxKey_ne_projTableName hd.down) src.2 hlps.down htf.down htp.down htr.down htb.down
-        hty.down (ite_eq_left rfl) (fun x hx => ite_eq_right hx)⟩
+        (auxKey_ne_projTableName hd.down) src.2 (hlps.down ▸ List.Perm.refl _)
+        htf.down htp.down htr.down htb.down
+        (by rw [hlps.down, posOf_range, hty.down]; exact ExprLvEq.refl _)
+        (ite_eq_left rfl) (fun x hx => ite_eq_right hx)⟩
   | _, _ => .error "alias group: the table and the aliases do not correspond"
 
 /-- **A successful check is an alias group.** -/

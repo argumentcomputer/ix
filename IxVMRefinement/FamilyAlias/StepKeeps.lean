@@ -156,7 +156,7 @@ theorem coreCompanions_append_recs {c : Core.Ctx} (h : Decl.CoreCompanions c)
         · exact h.recPlain k cv mI rP rls rl cvj nP nF hf' hrl hfire (oldRuleCtor hf' hrl hc)
       ruleCtorHead := by
         intro k cv mI rP rls hf
-        have hkn : cv.name = k := (Core.find?_mem_name hf).2
+        have hkn : cv.name = k := Ix.Kernel.Semantics.Env.find?_name hf
         rcases find?_append_cases new hf with hm | hf'
         · exact Or.inr (hkn ▸ (hrec cv mI rP rls hm).noK)
         · exact (h.ruleCtorHead k cv mI rP rls hf').imp
