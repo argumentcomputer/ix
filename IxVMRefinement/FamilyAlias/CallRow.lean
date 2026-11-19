@@ -859,7 +859,7 @@ theorem familyCall_checked_of_chain
     · simp only [nonrecsBlk]
       rw [List.getElem?_append_right (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
       simp only [ctorBlk, List.getElem?_map, getElem?_finRange_eq p.isLt, Option.map_some,
-        Option.some.injEq, him_eq, hj_eq, hct_eq]
+        him_eq, hj_eq, hct_eq]
     · simp only [nonrecsTys]
       rw [List.getElem?_append_right (by omega),
         show indBlk.length + p.val - indTys.length = p.val by omega]
