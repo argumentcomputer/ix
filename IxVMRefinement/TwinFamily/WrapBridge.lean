@@ -1718,7 +1718,7 @@ theorem ruleBodiesAt_renameConsts_of_recTypeAt {V : ReconView} {f : KKey → KKe
                                   ((peelAll (dom.liftLooseBVars (es.length + (prev' + c)) fi)).2.getAppArgs).drop
                                     ((fop[(rm[0 + j]?).getD 0]?).getD 0) := by
                                 rw [hp2, getAppArgs_liftLooseBVars, ← List.map_drop]
-                                exact List.mem_map.mpr ⟨a, ha_mem, rfl⟩
+                                exact List.mem_map.mpr ⟨a, by simpa only [Nat.zero_add] using ha_mem, rfl⟩
                               have := hpeel2 _ hmem_l
                               rwa [mentionsConst_liftLooseBVars] at this
                           exact ⟨fun d hd => renameConsts_eq_self_of_not_mentions d
