@@ -14,7 +14,7 @@ use crate::{
 };
 use multi_stark::{
   expr::Expr,
-  lookup::{Lookup, logup_constraint_count, logup_max_degree, stage2_width},
+  lookup::Lookup,
   p3_field::{PrimeCharacteristicRing, PrimeField64},
   p3_matrix::{Matrix, dense::RowMajorMatrix},
   system::{CircuitInputs, ProverKey, System, SystemWitness},
@@ -29,6 +29,7 @@ pub mod batch;
 #[cfg(feature = "cuda")]
 mod gpu;
 mod grouping;
+mod lookup_groups;
 pub mod planning;
 #[cfg(feature = "trace-profile")]
 mod profile;
@@ -395,28 +396,11 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       device,
     );
     let (mut system, key) = System::new(config, inputs);
-    // Group messages only if the existing quotient degree suffices. This
-    // reduces stage 2 without making its FFTs or the quotient FFT larger.
+    // Tune lookup group sizes against the FFT cost model within the blowup
+    // budget before exposing the system, compiling lookup plans, or exporting keys.
+    let blowup = 1usize << parameters.log_blowup;
     for circuit in &mut system.circuits {
-      let quotient = circuit.quotient_degree();
-      for group in (2..=multi_stark::lookup::MAX_LOOKUP_GROUP
-        .min(circuit.num_lookups))
-        .rev()
-      {
-        let max_degree = circuit
-          .graph
-          .max_constraint_degree
-          .max(logup_max_degree(&circuit.graph, group))
-          as usize;
-        if (max_degree.max(2) - 1).next_power_of_two() <= quotient {
-          circuit.lookup_group_size = group;
-          circuit.stage_2_width = stage2_width(circuit.num_lookups, group, 2);
-          circuit.constraint_count = circuit.graph.zeros.len()
-            + logup_constraint_count(circuit.num_lookups, group, 2);
-          circuit.max_constraint_degree = max_degree;
-          break;
-        }
-      }
+      lookup_groups::retune(circuit, blowup, 2);
     }
     let lookup_plans = system
       .circuits
