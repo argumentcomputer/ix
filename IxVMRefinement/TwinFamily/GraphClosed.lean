@@ -341,7 +341,7 @@ private theorem basisRole_storedAt {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
   exact storedAt_of_role htwf ha (hshape.pins kind ci hci)
     (Ix.Kernel.Semantics.Env.find?_name hfind)
 
-private theorem recordAt_E_of_basisStore {R E : Ixon.Env} (hRF : RecordsFor R E)
+theorem recordAt_E_of_basisStore {R E : Ixon.Env} (hRF : RecordsFor R E)
     {a : _root_.Address} {c : Ixon.Constant} (h : recordOf StoreInhabit.basisStore a = some c) :
     Ix.Cert.recordAt E a = some c := by
   have hmem := StoreInhabit.store_record_inv h
@@ -633,7 +633,7 @@ private theorem graphPredSet_of_top_block_loaded {t : Ix.Kernel.RoleTable} {R : 
   have eq : a = z := Option.some.inj (ha.symm.trans (keyAddr_keyOf htwf z))
   rwa [eq]
 
-private theorem storedAt_provenance {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
+theorem storedAt_provenance {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
     {envT : Ix.Kernel.Env .anon} (hshape : TableShape.{u} t (fun _ => True) R envT)
     (ht : t.check = .ok ()) (htwf : t.wf = true) {a : _root_.Address} (hst : StoredAt t envT a) :
     ∃ ci, envT.find? (keyOf t a) = some ci ∧

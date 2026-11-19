@@ -321,15 +321,43 @@ private theorem overUnitStepTwin_of_parts {t : Ix.Kernel.RoleTable}
 
 /-! ## `ClosureTwinSteps` producer -/
 
-/-- **The binding closure's twin step at every group `6 ≤ g < 77` of every binding run**,
-discharging `Binding.ClosureTwinSteps` from `TwinCallFlat`, `TwinCallRecon`, and
-`StoredRecLvlsOk`. -/
-theorem closureTwinSteps_of_premises
-    (hFlat : TwinCallFlat) (hRecon : TwinCallRecon)
-    (hStoredLvls : StoredRecLvlsOk) :
-    ∀ calls, AtGroups (BindingRun calls) (ClosureTwinSteps.{u} FormerOpenTraceAt calls) := by
-  intro calls t ρ Rs hrun hall ht g hg6 hg R R' R₁ env₀ famOf₀ famOf adv cont bAddr A c
-    hC hnA hc₁ htw hfamA huncA
+/-- **Per-context binding closure twin step**, parameterized by per-call flattened-family and
+reconstruction facts over records held in `R₁`. -/
+theorem closureTwinSteps_at
+    (hStoredLvls : StoredRecLvlsOk)
+    {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {ρ : BRun} {Rs : Nat → Ixon.Env}
+    (hrun : BindingRun calls t ρ Rs) (hall : AllBound t) (ht : t.check = .ok ())
+    {g : Nat} (hg6 : 6 ≤ g) (hg : g < 77)
+    {R R' R₁ : Ixon.Env} {env₀ : Ix.Kernel.Env .anon}
+    {famOf₀ famOf : _root_.Address → Option _root_.Address}
+    {adv cont : _root_.Address → _root_.Address → Prop} {bAddr A : _root_.Address}
+    {c : Ixon.Constant}
+    (hC : ClosureCtx.{u} FormerOpenTraceAt calls ρ t g R R' R₁ env₀ famOf₀ famOf adv cont bAddr)
+    (hnA : Binding.New R R₁ A) (hc₁ : recordOf R₁ A = some c) (htw : IsTwinShape c)
+    (hfamA : famOf A = none) (huncA : ∀ B, famOf B ≠ some A)
+    (hFlatAt : ∀ (B r : _root_.Address) (cr : Ixon.Constant)
+        (rs : Array Ixon.MutConst) (cs : List (Call F)),
+      Binding.FamilyFlat.Held R₁ B → Binding.FamilyFlat.Held R₁ r →
+      FamRecRecord ρ.E₀ r cr rs → rs.size ≠ 0 →
+      (∀ cb, recordOf ρ.E₀ B = some cb → InLogic cb) →
+      FamilyCallAtLim calls bAddr t B r (some (Binding.valLimit g)) cs →
+      ∃ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (es : List FlatEntry) (off : Nat),
+        FamilyOfBlock ρ.E₀ B cb ms r cr rs (es.map FlatEntry.addr) ∧
+        RecordFlat t ρ.E₀ r cr rs es ∧ BlockDerivedFlat t ρ.E₀ B off es ∧
+        ∀ (ind₀ : Ixon.Inductive) (k : Nat) (rc : Ixon.Recursor),
+          ms[0]? = some (.indc ind₀) → rs[k]? = some (.recr rc) →
+          rc.lvls.toNat = ind₀.lvls.toNat + off)
+    (hReconAt : ∀ (B r : _root_.Address) (cb cr : Ixon.Constant)
+        (ms rs : Array Ixon.MutConst) (cs : List (Call F)),
+      Binding.FamilyFlat.Held R₁ B → Binding.FamilyFlat.Held R₁ r →
+      FamBlockRecord ρ.E₀ B cb ms → FamRecRecord ρ.E₀ r cr rs → rs.size ≠ 0 →
+      FamilyCallAtLim calls bAddr t B r (some (Binding.valLimit g)) cs →
+      RFormS t ρ.E₀ B r ∨ RecordWrapConsObs calls t ρ.E₀ B r) :
+    ∃ (B rb : _root_.Address) (crb : Ixon.Constant), recordOf R₁ rb = some crb ∧
+      (famOf₀ B = some rb ∨ (famOf B = some rb ∧ ρ.rank g B < ρ.rank g A)) ∧
+      ∀ envT : Ix.Kernel.Env .anon, (∀ ci ∈ env₀.consts, ci ∈ envT.consts) →
+        (envT.consts.map (·.name)).Nodup → (∀ x, ConstAddrOf A c x → ¬ StoredAt t envT x) →
+        OverUnitStepTwin.{u} FormerOpenTraceAt t (· < g) R₁ envT ρ.E₀ A c rb crb := by
   have htwf : t.wf = true := by
     unfold Ix.Kernel.RoleTable.wf
     rw [ht]
@@ -482,9 +510,10 @@ theorem closureTwinSteps_of_premises
       have e : cb' = cb₀ := Option.some.inj (hcb'.symm.trans hcb₀)
       rw [e]; exact hFOB_R.block.logic
     -- Flattened family & recon for `A` over `ρ.E₀`
+    have hR₁B : Binding.FamilyFlat.Held R₁ B := Option.isSome_iff_exists.mpr ⟨cb₀, hcb₁⟩
+    have hR₁A : Binding.FamilyFlat.Held R₁ A := Option.isSome_iff_exists.mpr ⟨c, hc₁⟩
     obtain ⟨cb_A, ms_A, es_A, off_A, hFOB_A, hRF_A, hBD_A, hlvls_A⟩ :=
-      hFlat calls bAddr t ρ.E₀ B A c rs' (some (Binding.valLimit g)) cs_A ht hrun.bounded hRS hH
-        hA hszA hlogicB hcall_A
+      hFlatAt B A c rs' cs_A hR₁B hR₁A hA hszA hlogicB hcall_A
     have ecb_A : cb_A = cb₀ := Option.some.inj (hFOB_A.block.record.symm.trans hcb₀)
     subst cb_A
     have ems_A : ms_A = ms₀ := Ixon.ConstantInfo.muts.inj (hFOB_A.block.muts.symm.trans hms₀)
@@ -508,8 +537,7 @@ theorem closureTwinSteps_of_premises
     have eind0 : ind₀' = ind₀ := Ixon.MutConst.indc.inj (Option.some.inj (hms0'.symm.trans hms0))
     subst ind₀'
     -- Unpack `fuel` on `ρ.E₀` for `rb` (`RFormS`) and `A` (`RFormS ∨ RecordWrapConsObs`)
-    have hrec_A := hRecon calls bAddr t ρ.E₀ B A cb₀ c ms₀ rs' (some (Binding.valLimit g)) cs_A
-      ht hrun.bounded hRS hH hFOB_A.block hA hszA hcall_A
+    have hrec_A := hReconAt B A cb₀ c ms₀ rs' cs_A hR₁B hR₁A hFOB_A.block hA hszA hcall_A
     have hMR_pair : ∃ fuel : Nat,
         (∀ k rc, rs[k]? = some (.recr rc) →
           MemberRecon Core.ExprLvEq t ρ.E₀ rb crb rs es off fuel k rc) ∧
@@ -671,9 +699,11 @@ theorem closureTwinSteps_of_premises
       have hlt0 : 0 < (es.map FlatEntry.addr).length := (List.getElem?_eq_some_iff.mp hflat0).1
       rw [List.length_map] at hlt0
       omega
+    have hR₁B : Binding.FamilyFlat.Held R₁ B := Option.isSome_iff_exists.mpr ⟨cb₀, hcb₁⟩
+    have hR₁rb : Binding.FamilyFlat.Held R₁ rb := Option.isSome_iff_exists.mpr ⟨crb, hcrb₁⟩
+    have hR₁A : Binding.FamilyFlat.Held R₁ A := Option.isSome_iff_exists.mpr ⟨c, hc₁⟩
     obtain ⟨cb_rb2, ms_rb2, es_rb2, off_rb2, hFOB_rb2, _, hBD_rb2, hlvls_rb2⟩ :=
-      hFlat calls bAddr t ρ.E₀ B rb crb rs (some (Binding.valLimit g)) cs_rb ht hrun.bounded hRS hH
-        hFOB_rb.record hsz_rb hlogicB hcall_rb
+      hFlatAt B rb crb rs cs_rb hR₁B hR₁rb hFOB_rb.record hsz_rb hlogicB hcall_rb
     have ecb_rb2 : cb_rb2 = cb₀ := Option.some.inj (hFOB_rb2.block.record.symm.trans hcb₀)
     subst cb_rb2
     have ems_rb2 : ms_rb2 = ms₀ := Ixon.ConstantInfo.muts.inj (hFOB_rb2.block.muts.symm.trans hms₀)
@@ -683,8 +713,7 @@ theorem closureTwinSteps_of_premises
       (fun _ _ _ h1 h2 => Option.some.inj (h1.symm.trans h2)) hBD_rb2 hBD_rb
     subst off_rb2 es_rb2
     obtain ⟨cb_A, ms_A, es_A, off_A, hFOB_A, hRF_A, hBD_A, hlvls_A⟩ :=
-      hFlat calls bAddr t ρ.E₀ B A c rs' (some (Binding.valLimit g)) cs_A ht hrun.bounded hRS hH
-        hA hszA hlogicB hcall_A
+      hFlatAt B A c rs' cs_A hR₁B hR₁A hA hszA hlogicB hcall_A
     have ecb_A : cb_A = cb₀ := Option.some.inj (hFOB_A.block.record.symm.trans hcb₀)
     subst cb_A
     have ems_A : ms_A = ms₀ := Ixon.ConstantInfo.muts.inj (hFOB_A.block.muts.symm.trans hms₀)
@@ -710,8 +739,7 @@ theorem closureTwinSteps_of_premises
       Ixon.MutConst.indc.inj (Option.some.inj (hms0_A.symm.trans hms0))
     subst ind₀_A
     -- Unpack `fuel` on `ρ.E₀` for `rb` (`RFormS`) and `A` (`RFormS ∨ RecordWrapConsObs`)
-    have hrec_A := hRecon calls bAddr t ρ.E₀ B A cb₀ c ms₀ rs' (some (Binding.valLimit g)) cs_A
-      ht hrun.bounded hRS hH hFOB_A.block hA hszA hcall_A
+    have hrec_A := hReconAt B A cb₀ c ms₀ rs' cs_A hR₁B hR₁A hFOB_A.block hA hszA hcall_A
     have hMR_pair : ∃ fuel : Nat,
         (∀ k rc, rs[k]? = some (.recr rc) →
           MemberRecon Core.ExprLvEq t ρ.E₀ rb crb rs es off fuel k rc) ∧
@@ -798,5 +826,22 @@ theorem closureTwinSteps_of_premises
       hFOB_rb.record.muts hFOB_rb.record.members hFOB_rb.record.recrs hA hszA hrs_len hes_len_A
       hRF_rb hRF_A mkC hextract_A (fun k rc hr => hlvls_A ind₀ k rc hms0 hr) hMR_A_all hpair_all
       husedA hfresh hkeyA
+
+/-- **The binding closure's twin step at every group `6 ≤ g < 77` of every binding run**,
+discharging `Binding.ClosureTwinSteps` from `TwinCallFlat`, `TwinCallRecon`, and
+`StoredRecLvlsOk`. -/
+theorem closureTwinSteps_of_premises
+    (hFlat : TwinCallFlat) (hRecon : TwinCallRecon)
+    (hStoredLvls : StoredRecLvlsOk) :
+    ∀ calls, AtGroups (BindingRun calls) (ClosureTwinSteps.{u} FormerOpenTraceAt calls) :=
+  fun calls t ρ Rs hrun hall ht g hg6 hg R R' R₁ env₀ famOf₀ famOf adv cont bAddr A c
+    hC hnA hc₁ htw hfamA huncA =>
+    closureTwinSteps_at hStoredLvls hrun hall ht hg6 hg hC hnA hc₁ htw hfamA huncA
+      (fun B r cr rs cs _ _ hrec hsz hlogB hcall =>
+        hFlat calls bAddr t ρ.E₀ B r cr rs (some (Binding.valLimit g)) cs ht hrun.bounded
+          hrun.runStore hrun.hashedStored hrec hsz hlogB hcall)
+      (fun B r cb cr ms rs cs _ _ hB hrec hsz hcall =>
+        hRecon calls bAddr t ρ.E₀ B r cb cr ms rs (some (Binding.valLimit g)) cs ht hrun.bounded
+          hrun.runStore hrun.hashedStored hB hrec hsz hcall)
 
 end IxVM.Refinement.Typing.TwinFamily
