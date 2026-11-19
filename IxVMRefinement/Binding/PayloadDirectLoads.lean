@@ -556,7 +556,7 @@ private theorem familyCall_recs_obs {B rb : _root_.Address} {lim : Option Nat}
       (ev266 := ev266) (ev309 := ev309) (ev344 := ev344) (ev403 := ev403) (ev435 := ev435)
       (ev465 := ev465) (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
       (ev686 := ev686) (ev716 := ev716) (ev759 := ev759) (ev817 := ev817) (ev796 := ev796)
-      (ev852 := ev852) (ev_ursqbimm := evr) (ev874 := ev874) (ev896 := ev896) (ev960 := ev960)
+      (ev852 := ev852) (ev_ursqbimm := evr) (ev_srfmazjk := evt) (ev874 := ev874) (ev896 := ev896) (ev960 := ev960)
       (ev939 := ev939) (ev1011 := ev1011) (ev990 := ev990) (ev_edyzsqzv := evm1)
       (ev_gkddqxhv := evcc) (ev_ittpynob := evm2) (ev_biaifgpd := evm3) (ev1203 := ev1203)
       (ev_cwwgzxtj := evfl) (ev1246 := ev1246) (ev_mitevvsv := evln) (ev_rqpeovbn := evz1)
@@ -592,6 +592,7 @@ private theorem familyCall_recs_obs {B rb : _root_.Address} {lim : Option Nat}
       exact ev796.heap_extends
     have e1293 : Heap.Extends m840 m1293 := by
       refine evr.heap_extends.trans ?_
+      refine evt.heap_extends.trans ?_
       refine ev874.heap_extends.trans ?_
       refine ev896.heap_extends.trans ?_
       refine ev960.heap_extends.trans ?_
