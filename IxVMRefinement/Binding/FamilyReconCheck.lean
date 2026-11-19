@@ -1430,7 +1430,7 @@ private theorem build_rec_type_heap_shape {rootCalls : List (Call F)}
         loadValue_store_snoc m_app _
       -- chain 4 wrap_foralls
       have ext_dsI : Heap.Extends m_li m_majf :=
-        (Heap.Extends.snoc m_li _).trans (evms.heap_extends.trans
+        ext_mc.trans (evms.heap_extends.trans
           (evmi.heap_extends.trans ext_maj2_f))
       obtain ⟨hf1, -⟩ := wrap_foralls_heapForalls dsI
         (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext_dsI hdsI) evw1
@@ -3723,7 +3723,7 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
               have hm1 : cl ∈ cs269 := mem_of_eq hc_m (by call_mem)
               call_mem))
             (flatList_mono (ext_bfb_cin.trans ext_cin_f) hflat_bfb) hflat_indData evmw
-      have htot_eq' : tot' = tot := flatTotalCtors_det htot'_eq htot_eq; subst htot_eq'
+      have htot_eq' : tot' = tot := flatTotalCtors_det htot'_eq htot_eq; subst tot'
       obtain ⟨dsMin, hlenMin0, hdsMin⟩ := repUnitList_to_rawKExprList hmins_u
       have hlenMin : dsMin.length = tot := by simpa using hlenMin0
       obtain ⟨hv_nmin, hm_cbp_eq⟩ := rawKExprList_length_spec ev_mlen hdsMin
@@ -3805,7 +3805,7 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
       -- Assemble heap extensions for Pass 2 & Pass 3
       have ext_brt_out_cbp : Heap.Extends m_brt_out m_cbp_in :=
         ext_brt_f.trans ev_mins.heap_extends
-      have ext_cin_cbp_out : Heap.Extends m_c_in m_cbp_out :=
+      have ext_cin_cbp_out : Heap.Extends m_brt_in m_cbp_out :=
         ev_brt.heap_extends.trans (ext_brt_out_cbp.trans ev_cbp.heap_extends)
       have ext_ci_pop : Heap.Extends m_ci m_pop :=
         ext_ci_cin.trans (ext_cin_cbp_out.trans ev_pop.heap_extends)
@@ -3828,8 +3828,10 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
         pInfo_at := hpInfo_at, pInfo_nctors_lt := hpnct_lt, pInfo_idx_lt := hpidx_lt,
         pInfo_blk_held := hpInfo_blk_held, loaded_ty := hloaded_ty,
         major_dom := hd, major_fn := hfn,
-        prim_frp := hfrp, prim_held := hSprim, prim_rec := hcprim, prim_muts := hmsp,
-        orig_eq := horig, aux_eq := haux, filt_eq := hfilt, os_props := hos_props,
+        prim_frp := by rw [← hrba_addr, ← hpba_addr]; exact hfrp,
+        prim_held := hSprim, prim_rec := hcprim, prim_muts := hmsp,
+        orig_eq := horig, aux_eq := by rw [← hrba_addr]; exact haux,
+        filt_eq := hfilt, os_props := hos_props,
         flat_held_ind := fun e he => ⟨(hflat_held e he).1, (hflat_indData e he).2, (hflat_held e he).2⟩,
         flat_tot := htot_eq, flat_k := hsp_get, ek_addr := ha_s,
         fop_eq := hfop_eq, fop_len := hfop_len, fop_lt := hfop_lt,
@@ -3839,14 +3841,14 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
         raw_ty := hraw_ty.mono (ext_ci_335.trans ext_335_391) (fun _ hp => hp),
         ev_carriers := ⟨_, _, _, ev_car⟩,
         ty_body := ty_body, ty_peel_body := hty_peel_body, ty_body_nf := hty_body_nf,
-        m_brt_in := m_c_in, m_brt_out := m_brt_out,
+        m_brt_in := m_brt_in, m_brt_out := m_brt_out,
         x_elim := v_elim, x_flat := v_flat, x_fop := v_fop, x_cty := x_cty,
         x_pty := x_pty, x_pnl := x_pnl, x_rules := xrules, x_rba := blkPtr, x_pba := x_pba,
         x_r := xr, x_rlvls := v_rlvls, x_peers := v_peers, x_occ_us := x_occ, x_sp := x_sp_p,
-        x_cbk := x_cbk, x_can := x_can, x_form2 := xf2,
+        x_cbk := x_cbk, x_can := x_can, x_form2 := xform2,
         rba_b := rba_b, pba_b := pba_b, rba_addr := hrba_addr, pba_addr := hpba_addr,
         m_elim := m_elim, m_rlvls := m_rlvls, m_bfb := m_bfb, m_peers := m_peers,
-        m_cbp_in := m_cbp_in, m_cbp_out := m_cbp_out, m_pop := m_pop, m_cmp := m_cmp,
+        m_cbp_in := m_cbp_in, m_cbp_out := m_cbp_out, m_pop := m_pop, m_cmp := m_can,
         m_next := m_next, x_s_next := xs_next,
         ext_h_next := ext_h_next,
         ext_h_brt_out := ev_ci.heap_extends.trans (ext_ci_cin.trans ev_brt.heap_extends),
@@ -3855,7 +3857,7 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
         hflat_brt := flatList_mono ext_bfb_cin hflat_bfb,
         hfop_brt := repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext_fop_cin hfop_fop,
         hty_brt_out := htm_ty.mono (ext_ci_cin.trans ev_brt.heap_extends),
-        hrules_pop := recRulesRep_mono ext_ci_pop hrules_ci,
+        hrules_pop := RecRulesRep.mono ext_ci_pop hrules_ci,
         hty_pop := htm_ty.mono ext_ci_pop,
         helim_pop := helim.mono ext_elim_pop,
         hflat_bfb := hflat_bfb,
@@ -3873,7 +3875,7 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
         ev_peers := ⟨cs_peers, hsub_peers, ev_peers⟩,
         ev_brt := ⟨cs_brt, hsub_cap' (fun cl hcl' => mem_of_eq hc_cap (by call_mem)),
           by rwa [hrnp_eq] at ev_brt'⟩,
-        sg_form := ⟨m_f, cs_f, hsub_cap' (fun cl hcl' => mem_of_eq hc_cap (by call_mem)),
+        sg_form := ⟨m224, cs_f, hsub_cap' (fun cl hcl' => mem_of_eq hc_cap (by call_mem)),
           by simpa only [hrnp_eq, hx_nct_eq, hx_pidx_eq, hx_pni_eq] using sg_f⟩,
         ev_cbp := ⟨cs_cbp, hsub_cap' (fun cl hcl' => mem_of_eq hc_cap (by call_mem)), ev_cbp⟩,
         ev_pop := ⟨cs_pop, hsub_cap' (fun cl hcl' => mem_of_eq hc_cap (by call_mem)),
@@ -4485,13 +4487,15 @@ private theorem check_recs_pass3 {calls : List (Call F)} {t : Ix.Kernel.RoleTabl
       refine ⟨st.ty, bodies, cbk, st.loaded_ty, ?_, hcbk_eq, ?_⟩
       · refine hev_bodies.mono fun f hf => ?_
         unfold ruleBodiesAt
-        simp only [hflat_eq ▸ st.flat_k, st.ek_addr.symm ▸ st.pInfo_at, hflat_eq ▸ st.fop_eq, hcbk_eq]
+        simp only [ReconView.ofStore, hflat_eq ▸ st.flat_k, st.ek_addr.symm ▸ st.pInfo_at,
+          hflat_eq ▸ st.fop_eq, hcbk_eq]
         rw [st.rnp_eq]
         have hpm : peers.map ixAddr = recAddrs rb rs := by rwa [st.rba_addr] at hpeers_map
         rw [st.pba_addr, hpm] at hf
         exact hf
       · intro c ru hru
         have hruL : rc.rules.toList[c]? = some ru := by rw [Array.getElem?_toList]; exact hru
+        rw [st.rnp_eq]
         simpa [Nat.zero_add] using hcmp c ru hruL
     · obtain ⟨cs_n, hsub_n, ev_n⟩ := st.ev_next
       exact ih (pos + 1) (by simp at hlen; omega)
@@ -4542,7 +4546,7 @@ private structure CheckFamilyUnpack (calls : List (Call F)) (bAddr : _root_.Addr
   hflat_len : flat.length = rs.size
   hbnl_lt : bnl < 4294967296
   hoff : off ≤ 1
-  hBlockElim : BlockElim (ReconView.ofStore t E₀) B off
+  hBlockElim : BlockElim t E₀ B off
   hbnl_d0 : ∀ a0 rest, as_t = a0 :: rest →
     ∃ d0, indDataAt t E₀ (ixAddr a0) = some (some d0) ∧ bnl = d0.nlvls
   has_t_len : as_t.length = msB.toList.length
@@ -4551,14 +4555,14 @@ private structure CheckFamilyUnpack (calls : List (Call F)) (bAddr : _root_.Addr
   has_r_len : as_r.length = rs.size
   has_r_recr : ∀ i a, as_r[i]? = some a →
     ∃ r, rs[i]? = some (.recr r) ∧ ixAddr a = memberAddr rb i (.recr r)
-  hfrp_cf : familyRecPrimary E₀ rb = some prim
+  hfrp_cf : firstRecrParentBlock t E₀ rb cr rs B 0 rs.toList = some prim
   hSprim : Held R' prim
   hcprim : recordOf E₀ prim = some cprim
   hmsp : cprim.info = .muts msp
-  horig_cf : flatOriginals (FlatView.ofStore t E₀) prim = some os
+  horig_cf : originals (FlatView.ofStore t E₀) off (indcAddrs prim 0 msp.toList) = some os
   haux_cf : buildFlatAuxStep t E₀ rb cr rs prim 0 rs.toList os = some flat
   hfilt_cf : flat.filter (fun e => !e.aux) = os
-  hos_props : ∀ e ∈ os, e.aux = false ∧ e.params = [] ∧ e.levels = [] ∧
+  hos_props : ∀ e ∈ os, e.aux = false ∧ e.params = [] ∧ Held R' e.addr ∧
     ∃ idx ind, msp[idx]? = some (.indc ind) ∧ e.addr = memberAddr prim idx (.indc ind)
   hflat_held : ∀ e ∈ flat, Held R' e.addr ∧ ∀ p ∈ e.params, AddrIn (Held R') (Core.keyOf t) p
   m_flat : Heap F
@@ -4584,7 +4588,7 @@ private structure CheckFamilyUnpack (calls : List (Call F)) (bAddr : _root_.Addr
   r_cr : SourceValue F
   cs_cr : List (Call F)
   hsub_cr : ∀ cl ∈ cs_cr, cl ∈ calls
-  hrc_cr : Claim.RepRunCtxLim t m_cr bAddr lim xrc_cr
+  hrc_cr : Claim.RCLimRep t bAddr lim m_cr xrc_cr
   has_t_cr : RepList addrListEnum (Bytes.RepAddressRef addrTy) m_cr as_t x_ta
   has_r_cr : RepList addrListEnum (Bytes.RepAddressRef addrTy) m_cr as_r x_recs
   ev_cr : ObsFn W "KernelModeled::check_recs"
@@ -4604,7 +4608,7 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
     (hlv' : StoreLevelsOk t E₀ (Held R'))
     (hRec : FamRecRecord E₀ rb cr rs) (hrs_ne : rs.size ≠ 0)
     (hBLogic : ∀ cb, recordOf E₀ B = some cb → InLogic cb)
-    (hrc : Claim.RepRunCtxLim t h bAddr lim xrc)
+    (hrc : Claim.RCLimRep t bAddr lim h xrc)
     (hbB : Bytes.RepAddressRef addrTy h bB xb) (hBb : ixAddr bB = B)
     (hbR : Bytes.RepAddressRef addrTy h bR xrb) (hRb : ixAddr bR = rb)
     (ev_cf : ObsFn W "KernelModeled::check_family" [xrc, xb, xrb] h r_cf h' cs)
@@ -4765,7 +4769,7 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
       have hi_lt : i < as_t.length := by rw [has_t_len, Array.length_toList]; exact (Array.getElem?_eq_some_iff.mp hm).1
       obtain ⟨m', hm', -, ha_i, hh_i⟩ := has_t_mem i as_t[i] (List.getElem?_eq_getElem hi_lt)
       rw [← Array.getElem?_toList] at hm
-      have hm_eq : m' = m := Option.some.inj (hm'.symm.trans hm); subst hm_eq
+      have hm_eq : m' = m := Option.some.inj (hm'.symm.trans hm); subst m'
       obtain ⟨ind, rfl⟩ := hall_indc m (List.mem_of_getElem? hm)
       exact stored_of_hashed_iprj hH (Core.hashed_mono hsub684 hh_i)
     -- block_ctor_addrs_hashed_spec => FamBlockRecord.ctors in E₀
@@ -4800,7 +4804,7 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
       obtain ⟨m, hm, -, ha, -⟩ := has_r_mem i a hi
       obtain ⟨rc, rfl⟩ := hRec.recrs m (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hm))
       exact ⟨rc, hm, by rw [LoadedReads.memberAddr_eq_projAddr]; exact ha⟩
-    have ev_rlen' : ObsFn W (Instance.mk "Lists::length" [(.array .field 32).ptr]).symbol [x_recs] m_qv
+    have ev_rlen' : ObsFn W (Instance.mk "Lists::length" [(Generic.Ty.field.array 32).ptr]).symbol [x_recs] m_qv
         v_nrecs m862 cs872 := by
       rw [Obs.Names.«Lists::length<&[Field; 32]>».symbol]; exact ev_rlen
     have has_r_qv := repList_heapMono₂ addrListEnum (Bytes.repAddressRef_heapMono₂ addrTy)
@@ -4821,8 +4825,8 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
         simp only [List.getElem_map, List.getElem_mapIdx]
         have hi_t : i < as_t.length := by simpa only [List.length_map] using h1
         obtain ⟨m, hm, -, ha, -⟩ := has_t_mem i as_t[i] (List.getElem?_eq_getElem hi_t)
-        have hm_eq : m = msB.toList[i]'(by simpa only [has_t_len] using hi_t) := by
-          rw [List.getElem?_eq_getElem] at hm; exact Option.some.inj hm
+        have hm_eq : m = msB.toList[i]'(by rw [← has_t_len]; exact hi_t) := by
+          rw [List.getElem?_eq_getElem] at hm; exact (Option.some.inj hm).symm
         rw [← hm_eq]; exact ha
     have hmemAt_B : membersAt E₀ (ixAddr bB) = some (as_t.map ixAddr) := by
       rw [has_t_map]; unfold membersAt; simp only [hcbE, hmsB]
@@ -4865,7 +4869,9 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
         intro h0
         have := congrArg ZMod.val h0
         rw [fval_natCast (by omega)] at this; exact hrs_ne this
-      rw [ite_eq_right hrs_neF] at hz_nr; subst hz_nr
+      have hrs_neV : (Value.field (rs.size : F)) ≠ .field 0 :=
+        fun h => hrs_neF (Value.field.inj h)
+      rw [if_neg hrs_neV] at hz_nr; subst hz_nr
       cases v_vg with
       | field fvg =>
         simp only [evalBinOp, Except.ok.injEq] at op_1mvg
@@ -4883,7 +4889,8 @@ private theorem check_family_unpack {calls : List (Call F)} {bAddr : _root_.Addr
           | field fv =>
             by_cases hfv : fv = 0
             · subst hfv; rfl
-            · rw [ite_eq_right hfv] at heq_or; exact absurd (Value.field.inj heq_or) zero_ne_one
+            · rw [if_neg (fun h => hfv (Value.field.inj h))] at heq_or
+              exact absurd (Value.field.inj heq_or) zero_ne_one
           | ptr _ _ | tuple _ | construct _ _ _ => simp [evalBinOp] at op_sub
         rw [hsub0] at op_sub
         have hfeq := evalBinOp_sub_eq_zero_field op_sub
@@ -4948,7 +4955,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
         (RecordWrapConsObs calls t E₀ B rb ∧ ∀ n, lim = some n → n < 77 → False)) := by
   obtain ⟨h, h', xrc, xb, xrb, r_cf, hrc, ⟨bB, hbB, hBb⟩, ⟨bR, hbR, hRb⟩, ev_cf, -, hsub_cf⟩ := hfc
   -- 1. Extend R with rb + its projections
-  have hrec_lv := check_family_recr_levelsOk (t := t) hS hbd (hRb ▸ hRec.record) (hRb ▸ hRec.muts) hbR ev_cf hsub_cf
+  have hrec_lv := check_family_recr_levelsOk (t := t) hS hbd (hRb ▸ hRec.record) hRec.muts hbR ev_cf hsub_cf
   obtain ⟨R', hcl', hRmono, hR'agree, -, hR'rb, hR'held_iff, hlv', hpar'⟩ :=
     addRecBlockStore hcl hRagree hlv hpar hRec hrecRefs (by rwa [hRb] at hrec_lv)
   have hR'B : Held R' B := by
@@ -4990,7 +4997,7 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
   obtain ⟨r₀, hrs0, ha0_addr⟩ := has_r_recr 0 a0 (by rw [has_r_cons]; rfl)
   have hfrp_B := check_recs_head_prim_eq ht hwf hS hH hbd hR'agree hcl' hlv' hBlock hRec hR'rb
     hrs_lt hnp_lt hoff hbnl_lt hms0 ht0_addr hrs0 ha0_addr
-    (has_t_cons ▸ has_t_cr) (has_r_cons ▸ has_r_cr) hsub_cr ev_cr
+    (has_t_cons ▸ has_t_cr) (has_r_cons ▸ has_r_cr) hsub_cr ev_cr0
   have hprim_eq : prim = ixAddr bB := Option.some.inj (hfrp_cf.symm.trans (hfrp_B (ixAddr bB)))
   subst hprim_eq
   have hcprim_eq : cprim = cb := Option.some.inj (hcprim.symm.trans hcbE); subst hcprim_eq
