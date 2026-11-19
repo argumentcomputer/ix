@@ -1414,7 +1414,7 @@ private theorem rulesRep_det_ce {c : Core.Ctx} {h : Heap F} {ps₁ ps₂ : List 
     have := Core.cell_eq cell₁ cell₂; simp at this
   | _, _, _, _, .cons cell₁ _ _, .nil cell₂ => by
     have := Core.cell_eq cell₁ cell₂; simp at this
-  | _, _, _, _, .cons cell₁ ⟨rhs₁, hv₁, hlt₁, htm₁⟩ rs₁,
+  | _, _, _, _, r₁ :: _, r₂ :: _, .cons cell₁ ⟨rhs₁, hv₁, hlt₁, htm₁⟩ rs₁,
       .cons cell₂ ⟨rhs₂, hv₂, hlt₂, htm₂⟩ rs₂ => by
     have hce := Core.cell_eq cell₁ cell₂
     simp only [Value.construct.injEq, List.cons.injEq, and_true, true_and] at hce
@@ -1425,7 +1425,7 @@ private theorem rulesRep_det_ce {c : Core.Ctx} {h : Heap F} {ps₁ ps₂ : List 
     injection hargs2 with hnf hargs3
     injection hargs3 with hrhs _
     subst hrhs
-    have hnf_nat : _ = _ := by
+    have hnf_nat : r₁.nfields = r₂.nfields := by
       have h1 := congrArg ZMod.val (Value.field.inj hnf)
       have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
       rw [ZMod.val_natCast_of_lt (by omega), ZMod.val_natCast_of_lt (by omega)] at h1
@@ -1509,6 +1509,7 @@ private theorem check_rules_go_nfields {calls : List (Call F)} {t : Ix.Kernel.Ro
           Core.CoreGood.ofRaw (hgood_all.sub hsub169) (fun _ _ => trivial)
         obtain ⟨ci, hfind_ci, pv, hpv_ld, hci_rep⟩ :=
           hinv.loads.getCI v116 p163 m117 m155 cs169 bC ev171 trivial hneC hg169 hbC_rep
+        change env.find? _ = some ci at hfind_ci
         rw [hκC, hfind'] at hfind_ci
         injection hfind_ci with hci_eq
         subst hci_eq
@@ -2908,7 +2909,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
               have hrec_maj' : recordOf E₀ (Core.ixAddr a_maj) = some c_maj := by
                 rwa [← ha_maj_eq]
               have heq_c' : c' = c_maj := Option.some.inj (hc'.symm.trans hrec_maj')
-              subst heq_c'
+              subst c'
               have hown_eq : Ix.Cert.ownerOf (Core.ixAddr a_maj) c_maj = p_maj.block := by
                 simp [Ix.Cert.ownerOf, hp_maj]
               rw [hown_eq] at hown
@@ -2920,7 +2921,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
               rwa [← ha_maj_eq]
             refine ⟨Core.ixAddr a_maj, c_maj, p_maj, cbM, msM, rfl, hrec_maj', hp_maj, rfl, rfl,
               hrec_cbM, hcbM, ?_, ?_, ?_, hcbM_logic⟩
-            · rwa [← Array.getElem?_toList] at hmsM
+            · simpa [Array.getElem?_toList] using hmsM
             · exact hcan.1
             · rw [← ha_maj_eq, ← haddr_M]; exact hcan.2
           -- Build `RecReads` and `Reads`
@@ -2935,7 +2936,9 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
               htyP, hfamKey_tyP, hindKey_F, hmajKey_tyP, hindKey_M, rfl, hty₀_read,
               hrules_size_eq, hrules_rr, rfl⟩
           have hreads : Reads t E₀ (Core.rprjAddr A k) ci₀ := by
-            refine ⟨memberProjection A k (.recr rc), by simpa [memberAddr] using hA.members k (.recr rc) hmem_k, ?_⟩
+            refine ⟨memberProjection A k (.recr rc),
+              by simpa [memberAddr, memberProjection, Core.rprjAddr, Core.projAddr] using
+                hA.members k (.recr rc) hmem_k, ?_⟩
             refine ⟨c, rs', rc, ⟨hA.record, hA.muts, ?_, ?_, ?_, hA.logic⟩, ?_⟩
             · simpa [hk64] using hmem_k
             · simp [memberProjection, hk64]
@@ -2990,7 +2993,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
               have hq_rec : rs'[q]? = some (.recr rcq) := by rwa [hrcq] at hq_mem
               have hbq : (recAs.map Core.ixAddr)[q]? = some (Core.rprjAddr A q) := by
                 rw [hrecAs_map, List.getElem?_mapIdx, Array.getElem?_toList, hq_rec]
-                simp [memberAddr]
+                simp [memberAddr, memberProjection, Core.rprjAddr, Core.projAddr]
               rw [List.getElem?_map] at hbq
               cases hget : recAs[q]? with
               | none => rw [hget] at hbq; cases hbq
@@ -3004,8 +3007,14 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             exact h0
           -- `motiveConcl` from `ev403 : check_rec_motive`
           have hv405_eq : v405 = .field ((mI + 1 : Nat) : F) := by
-            simp only [evalBinOp, Except.ok.injEq] at op451 op443 op435 op427
-            rw [← op427, ← op435, ← op443, ← op451]
+            simp only [evalBinOp, Except.ok.injEq] at op451
+            rw [← op451] at op443
+            simp only [evalBinOp, Except.ok.injEq] at op443
+            rw [← op443] at op435
+            simp only [evalBinOp, Except.ok.injEq] at op435
+            rw [← op435] at op427
+            simp only [evalBinOp, Except.ok.injEq] at op427
+            rw [← op427]
             simp only [mI, Nat.cast_add, Nat.cast_one]
           have hv406_eq : v406 = .field ((rc.params.toNat + k : Nat) : F) := by
             simp only [evalBinOp, Except.ok.injEq] at op469
@@ -3018,8 +3027,11 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
               ((htm_ty' 0 (fun _ => .sort .zero)).mono ext_m67_m335) ev403
           -- `majorPins` from `ev_uoy : rec_major_pins` + `ev_akr : lower_pins`
           have hv_czb_eq : v_czb = .field (rP : F) := by
-            simp only [evalBinOp, Except.ok.injEq] at op_ein op_smk
-            rw [← op_smk, ← op_ein]; simp only [rP, Nat.cast_add]
+            simp only [evalBinOp, Except.ok.injEq] at op_ein
+            rw [← op_ein] at op_smk
+            simp only [evalBinOp, Except.ok.injEq] at op_smk
+            rw [← op_smk]
+            simp only [rP, Nat.cast_add]
           have hv_lyw_eq : v_lyw = .field ((rc.motives.toNat + rc.minors.toNat : Nat) : F) := by
             simp only [evalBinOp, Except.ok.injEq] at op_dyn
             rw [← op_dyn, Nat.cast_add]
@@ -3044,7 +3056,8 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             ZMod.val_natCast_of_lt (by omega)
           have hlyw_val : ZMod.val ((rc.motives.toNat + rc.minors.toNat : Nat) : F) =
               rc.motives.toNat + rc.minors.toNat := ZMod.val_natCast_of_lt (by omega)
-          rw [hrp_val, hni_val] at hstrip_p hdrop_p hno_ni hpins_rep hlen_p
+          rw [hrp_val] at hpins_rep
+          rw [hni_val] at hstrip_p hdrop_p hno_ni hpins_rep hlen_p
           have hrp_split : rP = rc.params.toNat + ZMod.val ((rc.motives.toNat + rc.minors.toNat : Nat) : F) := by
             rw [hlyw_val]; simp only [rP]; omega
           rw [hrp_split] at hpins_rep
@@ -3090,16 +3103,22 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
               · obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hst
                 exact ⟨ci, by rwa [LoadedReads.keyOf_eq]⟩
               · exfalso
-                obtain ⟨q, mq, hmq, ha_eq⟩ := hca
-                have hbq : (recAs.map Core.ixAddr)[q]? = some (Core.ixAddr a) := by
-                  rw [hrecAs_map, List.getElem?_mapIdx, Array.getElem?_toList, hmq]
-                  simp [ha_eq]
-                rw [List.getElem?_map] at hbq
-                cases hget : recAs[q]? with
-                | none => rw [hget] at hbq; cases hbq
-                | some b =>
-                  rw [hget] at hbq
-                  exact hcells_no_self a hin b (List.mem_of_getElem? hget) (Option.some.inj hbq)
+                rcases hca with ⟨-, hs⟩ | ⟨ms_q, q, mq, hms_q, hmq, hxm⟩
+                · exact standalone_not_block hs ⟨rs', hA.muts⟩
+                have hrs_q : rs' = ms_q := Ixon.ConstantInfo.muts.inj (hA.muts.symm.trans hms_q)
+                subst hrs_q
+                obtain ⟨rcq, rfl⟩ := hA.recrs mq (List.mem_of_getElem? (by rwa [Array.getElem?_toList]))
+                rcases hxm with ha_eq | ⟨ind_q, _, hind_q, -, -⟩
+                · have hbq : (recAs.map Core.ixAddr)[q]? = some (Core.ixAddr a) := by
+                    rw [hrecAs_map, List.getElem?_mapIdx, Array.getElem?_toList, hmq]
+                    simp [ha_eq]
+                  rw [List.getElem?_map] at hbq
+                  cases hget : recAs[q]? with
+                  | none => rw [hget] at hbq; cases hbq
+                  | some b =>
+                    rw [hget] at hbq
+                    exact hcells_no_self a hin b (List.mem_of_getElem? hget) (Option.some.inj hbq)
+                · cases hind_q
             have htm_stored : Decl.TmCExact (Core.Ctx.stored ⟨E, env, t, lim⟩).κ m67
                 (Core.posOf ps ty') tyPtr :=
               fun k' Γ => FamilyAlias.tmExact_stored_of_cells (htm_ty' k' Γ) hcells_stored
@@ -3196,6 +3215,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
                 Core.CoreGood.ofRaw ((hSS.good env lim).sub hsub80) (fun _ _ => trivial)
               obtain ⟨ci_e, hfind_e, pv_e, hpv_e, hci_e⟩ :=
                 hinv.loads.getCI x_r p76 h m67 cs80 a_k ev82 trivial hnek hg80 ha_k_rep
+              change env.find? _ = some ci_e at hfind_e
               rw [hκk, hfind'] at hfind_e
               injection hfind_e with hci_eq
               subst hci_eq
