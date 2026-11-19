@@ -821,11 +821,12 @@ theorem WrapT.refl (find? : Key md → Option (ConstantInfo md)) :
   | .letE .., h => by simp [letFree] at h
   | .proj _ _ e, h => .proj (WrapT.refl find? e h)
 
-theorem WrapT.mkAppN : ∀ {args args' : List (Expr md)} {f f' : Expr md},
-    WrapT find? f f' → Forall₂ (WrapT find?) args args' →
-      WrapT find? (Expr.mkAppN f args) (Expr.mkAppN f' args')
-  | [], [], _, _, hf, .nil => hf
-  | _ :: _, _ :: _, _, _, hf, .cons ha has => WrapT.mkAppN (.app hf ha) has
+theorem WrapT.mkAppN {args args' : List (Expr md)} {f f' : Expr md}
+    (hf : WrapT find? f f') (h : Forall₂ (WrapT find?) args args') :
+      WrapT find? (Expr.mkAppN f args) (Expr.mkAppN f' args') := by
+  induction h generalizing f f' with
+  | nil => exact hf
+  | cons ha _ ih => exact ih (.app hf ha)
 
 theorem WrapT.mkAppN_inv : ∀ (args : List (Expr md)) {f t : Expr md},
     WrapT find? (Expr.mkAppN f args) t →
@@ -1235,62 +1236,62 @@ theorem SymWrapT.exists_join {d₁ d₂ : Expr md} (h : SymWrapT find? d₁ d₂
   | @lamL t a t' b b' m m' hpw hs _ _ ihw ihb =>
     intro h1 h2
     simp only [letFree, Bool.and_eq_true] at h1 h2
-    obtain ⟨ga, hga1, hga2, hfa, hra⟩ := ihw (hs.of hlfP h1.1) h2.1
+    obtain ⟨ga, hga1, hga2, hfa, hra⟩ := ihw (hs.of (P := fun e => letFree e = true) hlfP h1.1) h2.1
     obtain ⟨gt, hgt_t, hcs_gt, hft, hrt⟩ := liftConsumeStar hs hga1 h1.1
     obtain ⟨gb, hgb1, hgb2, hfb, hrb⟩ := ihb h1.2 h2.2
     refine ⟨.lam gt gb m, .lam rfl (.refl gt) hgt_t hgb1, .lam hpw hcs_gt hga2 hgb2, ?_, ?_⟩
     · intro hfv1 hfv2
       simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv1 hfv2 ⊢
-      exact ⟨hft hfv1.1 (hfa (hs.of hfvP hfv1.1) hfv2.1), hfb hfv1.2 hfv2.2⟩
+      exact ⟨hft hfv1.1 (hfa (hs.of (P := fun e => e.hasFvar = false) hfvP hfv1.1) hfv2.1), hfb hfv1.2 hfv2.2⟩
     · intro f hr1 hr2
       simp only [Expr.renameConsts, Expr.lam.injEq] at hr1 hr2 ⊢
-      exact ⟨hrt f hr1.1 (hra f (hs.of (hP := hrenP f) hr1.1) hr2.1), hrb f hr1.2 hr2.2⟩
+      exact ⟨hrt f hr1.1 (hra f (hs.of (P := fun e => e.renameConsts f = e) (hrenP f) hr1.1) hr2.1), hrb f hr1.2 hr2.2⟩
   | @lamR t t' a b b' m m' hpw hs _ _ ihw ihb =>
     intro h1 h2
     simp only [letFree, Bool.and_eq_true] at h1 h2
-    obtain ⟨ga, hga1, hga2, hfa, hra⟩ := ihw h1.1 (hs.of hlfP h2.1)
+    obtain ⟨ga, hga1, hga2, hfa, hra⟩ := ihw h1.1 (hs.of (P := fun e => letFree e = true) hlfP h2.1)
     obtain ⟨gt, hgt_t', hcs_gt, hft, hrt⟩ := liftConsumeStar hs hga2 h2.1
     obtain ⟨gb, hgb1, hgb2, hfb, hrb⟩ := ihb h1.2 h2.2
     refine ⟨.lam gt gb m, .lam rfl hcs_gt hga1 hgb1, .lam hpw (.refl gt) hgt_t' hgb2, ?_, ?_⟩
     · intro hfv1 hfv2
       simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv1 hfv2 ⊢
-      exact ⟨hft hfv2.1 (hfa hfv1.1 (hs.of hfvP hfv2.1)), hfb hfv1.2 hfv2.2⟩
+      exact ⟨hft hfv2.1 (hfa hfv1.1 (hs.of (P := fun e => e.hasFvar = false) hfvP hfv2.1)), hfb hfv1.2 hfv2.2⟩
     · intro f hr1 hr2
       simp only [Expr.renameConsts, Expr.lam.injEq] at hr1 hr2 ⊢
-      exact ⟨hrt f hr2.1 (hra f hr1.1 (hs.of (hP := hrenP f) hr2.1)), hrb f hr1.2 hr2.2⟩
+      exact ⟨hrt f hr2.1 (hra f hr1.1 (hs.of (P := fun e => e.renameConsts f = e) (hrenP f) hr2.1)), hrb f hr1.2 hr2.2⟩
   | @forallEL t a t' b b' m m' hpw hs _ _ ihw ihb =>
     intro h1 h2
     simp only [letFree, Bool.and_eq_true] at h1 h2
-    obtain ⟨ga, hga1, hga2, hfa, hra⟩ := ihw (hs.of hlfP h1.1) h2.1
+    obtain ⟨ga, hga1, hga2, hfa, hra⟩ := ihw (hs.of (P := fun e => letFree e = true) hlfP h1.1) h2.1
     obtain ⟨gt, hgt_t, hcs_gt, hft, hrt⟩ := liftConsumeStar hs hga1 h1.1
     obtain ⟨gb, hgb1, hgb2, hfb, hrb⟩ := ihb h1.2 h2.2
     refine ⟨.forallE gt gb m, .forallE rfl (.refl gt) hgt_t hgb1,
       .forallE hpw hcs_gt hga2 hgb2, ?_, ?_⟩
     · intro hfv1 hfv2
       simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv1 hfv2 ⊢
-      exact ⟨hft hfv1.1 (hfa (hs.of hfvP hfv1.1) hfv2.1), hfb hfv1.2 hfv2.2⟩
+      exact ⟨hft hfv1.1 (hfa (hs.of (P := fun e => e.hasFvar = false) hfvP hfv1.1) hfv2.1), hfb hfv1.2 hfv2.2⟩
     · intro f hr1 hr2
       simp only [Expr.renameConsts, Expr.forallE.injEq] at hr1 hr2 ⊢
-      exact ⟨hrt f hr1.1 (hra f (hs.of (hP := hrenP f) hr1.1) hr2.1), hrb f hr1.2 hr2.2⟩
+      exact ⟨hrt f hr1.1 (hra f (hs.of (P := fun e => e.renameConsts f = e) (hrenP f) hr1.1) hr2.1), hrb f hr1.2 hr2.2⟩
   | @forallER t t' a b b' m m' hpw hs _ _ ihw ihb =>
     intro h1 h2
     simp only [letFree, Bool.and_eq_true] at h1 h2
-    obtain ⟨ga, hga1, hga2, hfa, hra⟩ := ihw h1.1 (hs.of hlfP h2.1)
+    obtain ⟨ga, hga1, hga2, hfa, hra⟩ := ihw h1.1 (hs.of (P := fun e => letFree e = true) hlfP h2.1)
     obtain ⟨gt, hgt_t', hcs_gt, hft, hrt⟩ := liftConsumeStar hs hga2 h2.1
     obtain ⟨gb, hgb1, hgb2, hfb, hrb⟩ := ihb h1.2 h2.2
     refine ⟨.forallE gt gb m, .forallE rfl hcs_gt hga1 hgb1,
       .forallE hpw (.refl gt) hgt_t' hgb2, ?_, ?_⟩
     · intro hfv1 hfv2
       simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfv1 hfv2 ⊢
-      exact ⟨hft hfv2.1 (hfa hfv1.1 (hs.of hfvP hfv2.1)), hfb hfv1.2 hfv2.2⟩
+      exact ⟨hft hfv2.1 (hfa hfv1.1 (hs.of (P := fun e => e.hasFvar = false) hfvP hfv2.1)), hfb hfv1.2 hfv2.2⟩
     · intro f hr1 hr2
       simp only [Expr.renameConsts, Expr.forallE.injEq] at hr1 hr2 ⊢
-      exact ⟨hrt f hr2.1 (hra f hr1.1 (hs.of (hP := hrenP f) hr2.1)), hrb f hr1.2 hr2.2⟩
+      exact ⟨hrt f hr2.1 (hra f hr1.1 (hs.of (P := fun e => e.renameConsts f = e) (hrenP f) hr2.1)), hrb f hr1.2 hr2.2⟩
   | proj _ ih =>
     intro h1 h2
     obtain ⟨ge, hge1, hge2, hfe, hre⟩ := ih h1 h2
     refine ⟨.proj _ _ ge, .proj hge1, .proj hge2, hfe, fun f hr1 hr2 => ?_⟩
-    simp only [Expr.renameConsts, Expr.proj.injEq] at hr1 hr2 ⊢
+    simp only [Expr.renameConsts, Expr.proj.injEq, true_and] at hr1 hr2 ⊢
     exact ⟨hr1.1, hre f hr1.2 hr2.2⟩
 
 /-- Strip `n` leading λ-binders, returning the body. -/
@@ -1402,13 +1403,12 @@ theorem liftLooseBVars_succ_instantiate1 (v : Expr md) (s : Nat) :
     · rw [if_pos hjc, if_pos hjc]
       simp only [Expr.instantiate1]
       rw [if_neg (by omega : ¬ j + (s + 1) = c + s), if_pos (by omega : j + (s + 1) > c + s)]
-      congr 1; omega
     · rw [if_neg hjc, if_neg hjc]
       simp only [Expr.instantiate1]
       rw [if_neg (by omega : ¬ j = c + s), if_neg (by omega : ¬ j > c + s)]
   | .fvar _ _, _ | .sort _, _ | .const _ _, _ | .lit _, _ => rfl
   | .app f a, c => by
-    simp [Expr.liftLooseBVars, Expr.instantiate1,
+    simp [Expr.liftLooseBVars,
       liftLooseBVars_succ_instantiate1 v s f c, liftLooseBVars_succ_instantiate1 v s a c]
   | .lam t b _, c => by
     simp only [Expr.liftLooseBVars, Expr.instantiate1, liftLooseBVars_succ_instantiate1 v s t c]
@@ -1503,6 +1503,22 @@ inductive LamDomsFix (f : Key md → Key md) : Nat → Expr md → Expr md → P
       LamDomsFix f n bC bW →
       LamDomsFix f (n + 1) (.lam dC bC mC) (.lam dW bW mW)
 
+private theorem hasFvar_renameConsts (f : Key md → Key md) :
+    ∀ (e : Expr md), e.hasFvar = false → (e.renameConsts f).hasFvar = false
+  | .bvar _, _ | .sort _, _ | .const _ _, _ | .lit _, _ => rfl
+  | .fvar _ _, h => by simp [Expr.hasFvar] at h
+  | .app a b, h => by
+    simp only [Expr.hasFvar, Bool.or_eq_false_iff] at h
+    simp [Expr.renameConsts, Expr.hasFvar, hasFvar_renameConsts f a h.1, hasFvar_renameConsts f b h.2]
+  | .lam t b _, h | .forallE t b _, h => by
+    simp only [Expr.hasFvar, Bool.or_eq_false_iff] at h
+    simp [Expr.renameConsts, Expr.hasFvar, hasFvar_renameConsts f t h.1, hasFvar_renameConsts f b h.2]
+  | .letE t v b _, h => by
+    simp only [Expr.hasFvar, Bool.or_eq_false_iff] at h
+    simp [Expr.renameConsts, Expr.hasFvar, hasFvar_renameConsts f t h.1.1,
+      hasFvar_renameConsts f v h.1.2, hasFvar_renameConsts f b h.2]
+  | .proj _ _ e, h => hasFvar_renameConsts f e h
+
 /-- Build a common `WrapRel` ancestor `rhsG` for a pair of `let`-free rules related by `SymWrapT`
 whose first `n` λ-domains are fixed by `f` and whose bodies match under `WrapT (fun _ => none)`. -/
 theorem SymWrapT.exists_join_prefix {f : Key md → Key md} :
@@ -1519,22 +1535,8 @@ theorem SymWrapT.exists_join_prefix {f : Key md → Key md} :
   | 0, lC, lW, sbC, sbW, _, hC, hW, hsb, _, hfvC, _, _, _ => by
     simp only [stripLams, Option.some.injEq] at hC hW
     subst hC hW
-    have hfvRen : (lC.renameConsts f).hasFvar = false := by
-      clear hsb
-      induction lC with
-      | bvar _ | sort _ | const _ _ | lit _ => rfl
-      | fvar _ _ => simp [Expr.hasFvar] at hfvC
-      | app a b iha ihb =>
-        simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfvC
-        simp [Expr.renameConsts, Expr.hasFvar, iha hfvC.1, ihb hfvC.2]
-      | lam t b _ iht ihb | forallE t b _ iht ihb =>
-        simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfvC
-        simp [Expr.renameConsts, Expr.hasFvar, iht hfvC.1, ihb hfvC.2]
-      | letE t v b _ iht ihv ihb =>
-        simp only [Expr.hasFvar, Bool.or_eq_false_iff] at hfvC
-        simp [Expr.renameConsts, Expr.hasFvar, iht hfvC.1.1, ihv hfvC.1.2, ihb hfvC.2]
-      | proj _ _ e ihe => exact ihe hfvC
-    exact ⟨lC, WrapRel.refl find? lC, (hsb.mono_empty (find? := find?)).toWrapRel hfvRen⟩
+    exact ⟨lC, WrapRel.refl find? lC,
+      (hsb.mono_empty (find? := find?)).toWrapRel (hasFvar_renameConsts f lC hfvC)⟩
   | n + 1, _, _, sbC, sbW, hSym, hC, hW, hsb, hfix, hfvC, hfvW, hlfC, hlfW => by
     cases hfix with
     | @succ _ dC bC dW bW mC mW hdC_fix hdW_fix hfix' =>
@@ -1553,28 +1555,30 @@ theorem SymWrapT.exists_join_prefix {f : Key md → Key md} :
       simp only [Expr.renameConsts, hdC_fix] at hSym
       cases hSym with
       | lamL hpw hs hd hb =>
-        obtain ⟨ga, hga1, hga2, hfa, hra⟩ := hd.exists_join (hs.of hlfP hlfC.1) hlfW.1
+        obtain ⟨ga, hga1, hga2, hfa, hra⟩ :=
+          hd.exists_join (hs.of (P := fun e => letFree e = true) hlfP hlfC.1) hlfW.1
         obtain ⟨gt, hgt_t, hcs_gt, hft, hrt⟩ := liftConsumeStar hs hga1 hlfC.1
         have hgt_fv : gt.hasFvar = false :=
-          hft hfvC.1 (hfa (hs.of hfvP hfvC.1) hfvW.1)
+          hft hfvC.1 (hfa (hs.of (P := fun e => e.hasFvar = false) hfvP hfvC.1) hfvW.1)
         have hgt_fix : gt.renameConsts f = gt :=
-          hrt f hdC_fix (hra f (hs.of hrenP hdC_fix) hdW_fix)
+          hrt f hdC_fix (hra f (hs.of (P := fun e => e.renameConsts f = e) hrenP hdC_fix) hdW_fix)
         obtain ⟨gB, hgBC, hgBW⟩ :=
           SymWrapT.exists_join_prefix n hb hC hW hsb hfix' hfvC.2 hfvW.2 hlfC.2 hlfW.2
         refine ⟨.lam gt gB mC, .lam rfl (.keep (hgt_t.toWrapRel hgt_fv)) hgBC, ?_⟩
         simp only [Expr.renameConsts, hgt_fix]
-        exact .lam hpw (hcs_gt.toWrapDom (hga2.toWrapRel (hfa (hs.of hfvP hfvC.1) hfvW.1))) hgBW
+        exact .lam hpw (hcs_gt.toWrapDom (hga2.toWrapRel (hfa (hs.of (P := fun e => e.hasFvar = false) hfvP hfvC.1) hfvW.1))) hgBW
       | lamR hpw hs hd hb =>
-        obtain ⟨ga, hga1, hga2, hfa, hra⟩ := hd.exists_join hlfC.1 (hs.of hlfP hlfW.1)
+        obtain ⟨ga, hga1, hga2, hfa, hra⟩ :=
+          hd.exists_join hlfC.1 (hs.of (P := fun e => letFree e = true) hlfP hlfW.1)
         obtain ⟨gt, hgt_t', hcs_gt, hft, hrt⟩ := liftConsumeStar hs hga2 hlfW.1
         have hgt_fv : gt.hasFvar = false :=
-          hft hfvW.1 (hfa hfvC.1 (hs.of hfvP hfvW.1))
+          hft hfvW.1 (hfa hfvC.1 (hs.of (P := fun e => e.hasFvar = false) hfvP hfvW.1))
         have hgt_fix : gt.renameConsts f = gt :=
-          hrt f hdW_fix (hra f hdC_fix (hs.of hrenP hdW_fix))
+          hrt f hdW_fix (hra f hdC_fix (hs.of (P := fun e => e.renameConsts f = e) hrenP hdW_fix))
         obtain ⟨gB, hgBC, hgBW⟩ :=
           SymWrapT.exists_join_prefix n hb hC hW hsb hfix' hfvC.2 hfvW.2 hlfC.2 hlfW.2
         refine ⟨.lam gt gB mC,
-          .lam rfl (hcs_gt.toWrapDom (hga1.toWrapRel (hfa hfvC.1 (hs.of hfvP hfvW.1)))) hgBC, ?_⟩
+          .lam rfl (hcs_gt.toWrapDom (hga1.toWrapRel (hfa hfvC.1 (hs.of (P := fun e => e.hasFvar = false) hfvP hfvW.1)))) hgBC, ?_⟩
         simp only [Expr.renameConsts, hgt_fix]
         exact .lam hpw (.keep (hgt_t'.toWrapRel hgt_fv)) hgBW
 
