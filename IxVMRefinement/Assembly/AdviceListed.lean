@@ -87,11 +87,13 @@ theorem FamilyOwnAdvice.walk {x_rc x_block x_rec_block : SourceValue F} {h : Hea
     ∃ (m m' : Heap F) (xadv seen wset v : SourceValue F) (cs₁ : List (Call F)),
       Heap.Extends h m ∧ RepList addrListEnum (Bytes.RepAddressRef addrTy) m advAs xadv ∧
       ObsFn Obs.W "KernelModeled::check_advice_records" [x_rc, xadv, seen, wset] m v m' cs₁ ∧
-      ∀ cl ∈ cs₁, cl ∈ calls :=
-  ⟨w.m_adv, w.m_adv', w.x_advice, .construct Names.«RBTreeMap::RBTreeMap<Field>» "Nil" [],
-    w.wset, w.v_adv, w.cs_adv,
-    w.ext_h_ws.trans (w.ev_ws.heap_extends.trans (w.ev_asb.heap_extends.trans w.ext_asb_adv)),
-    w.advRep, w.ev_adv, w.sub_adv⟩
+      ∀ cl ∈ cs₁, cl ∈ calls := by
+  obtain ⟨_, _, _, _, _, _, _, _, ev_ws, wset, _, _, ev_asb, m_adv, m_adv', x_advice, v_adv, cs_adv,
+    ev_adv, ext_h_ws, ext_asb_adv, advRep, _, _, sub_adv⟩ := w
+  exact ⟨m_adv, m_adv', x_advice, .construct Names.«RBTreeMap::RBTreeMap<Field>» "Nil" [],
+    wset, v_adv, cs_adv,
+    ext_h_ws.trans (ev_ws.heap_extends.trans (ev_asb.heap_extends.trans ext_asb_adv)),
+    advRep, ev_adv, sub_adv⟩
 
 /-- **An advice record listed by a family check itself**: an address of the family check's own
 advice list. -/

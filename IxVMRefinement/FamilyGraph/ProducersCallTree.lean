@@ -1414,11 +1414,17 @@ theorem EnclosingFamilyWitness.mono {cs₁ cs₂ : List (Call F)}
     {rc xb xx kind s : SourceValue F} {h_w : Heap F}
     (hsub : ∀ cl ∈ cs₁, cl ∈ cs₂)
     (e : EnclosingFamilyWitness cs₁ rc xb xx kind s h_w) :
-    EnclosingFamilyWitness cs₂ rc xb xx kind s h_w :=
-  { e with
-    sub_ws := fun cl h => hsub cl (e.sub_ws cl h)
-    sub_asb := fun cl h => hsub cl (e.sub_asb cl h)
-    sub_cr := fun cl h => hsub cl (e.sub_cr cl h) }
+    EnclosingFamilyWitness cs₂ rc xb xx kind s h_w := by
+  rcases e with ⟨m_rp, v_rp, m_rp', cs_rp, ev_rp, m_ws, x_s4, x_nw, x_outside, x_s5, m_ws', cs_ws,
+    ev_ws, wset, m_asb, cs_asb, ev_asb, v_cr, m_cr, cs_cr, ev_cr, v_w, m_w, cs_w, ev_w,
+    ext_rp_ws, ext_ws_w, ext_w_ws', sub_ws, sub_asb, sub_cr, sub_w, elems, outsideRep, memOutside⟩
+  exact ⟨m_rp, v_rp, m_rp', cs_rp, ev_rp, m_ws, x_s4, x_nw, x_outside, x_s5, m_ws', cs_ws,
+    ev_ws, wset, m_asb, cs_asb, ev_asb, v_cr, m_cr, cs_cr, ev_cr, v_w, m_w, cs_w, ev_w,
+    ext_rp_ws, ext_ws_w, ext_w_ws',
+    fun cl h => hsub cl (sub_ws cl h),
+    fun cl h => hsub cl (sub_asb cl h),
+    fun cl h => hsub cl (sub_cr cl h),
+    sub_w, elems, outsideRep, memOutside⟩
 
 private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
     ∀ {fn : String} {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F}
