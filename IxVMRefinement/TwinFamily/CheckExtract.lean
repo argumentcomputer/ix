@@ -2520,16 +2520,16 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
         have hfamKey_R : familyKey rc R' = some (Core.keyOf t (Core.ixAddr t0)) :=
           check_carriers_rawTm_familyKey hp56 (hraw0.toRawTm.mono ext_m67_m391) htype_m391 ev485
         have hfamKey_tyP : familyKey rc tyP = some (keyOf t (Core.iprjAddr B 0)) := by
-          rw [familyKey_eq_of_rawShape hshape_ty, hfamKey_R, ht0_addr, Core.keyOf_eq]
+          rw [familyKey_eq_of_rawShape hshape_ty, hfamKey_R, ht0_addr, LoadedReads.keyOf_eq]
         -- `IndKeyAt` for `B` member 0 (`ind₀`)
-        have hind0_proj : recordOf E₀ (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind₀)) := by
-          simpa [memberAddr] using hB.members 0 (.indc ind₀) hms0
+        have hind0_proj : recordOf E₀ (Core.iprjAddr B 0) = some (memberProjection B 0 (.indc ind₀)) :=
+          hB.members 0 (.indc ind₀) hms0
         have hindKey_F : IndKeyAt t (recordOf E₀) (keyOf t (Core.iprjAddr B 0)) B 0 ind₀ :=
           ⟨Core.iprjAddr B 0, memberProjection B 0 (.indc ind₀), ⟨(0 : Nat).toUInt64, B⟩, cb, ms,
             rfl, hind0_proj, rfl, rfl, rfl,
-            ⟨hB.record, hB.muts, hms0, rfl, by simp [memberAddr], hB.logic⟩⟩
+            ⟨hB.record, hB.muts, hms0, rfl, rfl, hB.logic⟩⟩
         -- 2. `majorKey rc tyP = some (keyOf t (Core.ixAddr a_maj))` from `ev710 : rec_to_parent_addr`
-        obtain ⟨rbs_m, Rd_m, Rb_m, mR_m, a_maj, us_m, ha_maj_rep, hstrip_m, hhead_m⟩ :=
+        obtain ⟨rbs_m, Rd_m, Rb_m, mR_m, a_maj, us_m, hstrip_m, hhead_m, ha_maj_rep⟩ :=
           rec_to_parent_addr_rawTm_addr (hraw0.toRawTm.mono ext_m67_m669) ev710
         have hsum_mI : ZMod.val ((rc.params.toNat : F) + (rc.motives.toNat : F) +
             (rc.minors.toNat : F) + (rc.indices.toNat : F)) =
@@ -2542,7 +2542,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
           rw [hstrip_m]
           simp only [Option.bind_some, hhead_m]
         have hmajKey_tyP : majorKey rc tyP = some (keyOf t (Core.ixAddr a_maj)) := by
-          rw [majorKey_eq_of_rawShape hshape_ty, hmajKey_R, Core.keyOf_eq]
+          rw [majorKey_eq_of_rawShape hshape_ty, hmajKey_R, LoadedReads.keyOf_eq]
         -- 3. `ev_uou : Ingress::get_ci [v697]` and `ev904 : check_rules` give `IndKeyAt` for `a_maj`,
         --    rule out `check_recursor_canonical_at.other`, and give `rc.lvls = ind₀.lvls + off` & `rc.rules.size = indM.ctors.size`
         have hsub_uou : ∀ cl ∈ cs_vke, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
@@ -2605,7 +2605,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             majorKey_of_annotates hmajKey_tyP hann_pos |>.trans hmajKey_tyP.symm
           have hkey_maj_eq : Core.keyOf t (Core.ixAddr a_ind_r) = Core.keyOf t (Core.ixAddr a_maj) := by
             have h1 := hmaj_pos.symm.trans (hmaj_ann.trans hmajKey_tyP)
-            exact Option.some.inj (by simpa [Core.keyOf_eq] using h1)
+            exact Option.some.inj (by simpa [LoadedReads.keyOf_eq] using h1)
           have ha_maj_eq : Core.ixAddr a_ind_r = Core.ixAddr a_maj :=
             Assembly.keyOf_injective ht hkey_maj_eq
           -- Unpack `ev_cr_ci : Ingress::get_ci [x_iaddr]` via `get_ci_induct_at`
@@ -2826,7 +2826,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             have h0 := Decl.expr_mentions_addrs_zero_spec hT
               ((htm_ty' 0 (fun _ => .sort .zero)).mono ext_m67_m511) hfam_m511
               (by rwa [heq594] at ev571)
-            rw [mentionsConst_posOf, Core.keyOf_eq] at h0
+            rw [mentionsConst_posOf, LoadedReads.keyOf_eq] at h0
             exact h0
           -- `motiveConcl` from `ev403 : check_rec_motive`
           have hv405_eq : v405 = .field ((mI + 1 : Nat) : F) := by
@@ -2888,7 +2888,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
                 Binding.FamilyFlat.hasBVarIn 0
                   (rc.motives.toNat + rc.minors.toNat + rc.indices.toNat) P = false) := by
             refine ⟨Core.ixAddr a_ind_p, ZMod.val inp_p, bs_p, dom_p, body_p, mmaj_p, lvls_p, As_p,
-              hstrip_p, by rwa [Core.keyOf_eq] at hfn_p, hargs_p, hlen_p, hdrop_p, fun P hP => ?_⟩
+              hstrip_p, by rwa [LoadedReads.keyOf_eq] at hfn_p, hargs_p, hlen_p, hdrop_p, fun P hP => ?_⟩
             have h1 := hno_ni P hP
             have h2 := hno_mm (P.lowerBVars rc.indices.toNat 0) (List.mem_map.mpr ⟨P, hP, rfl⟩)
             rw [hlyw_val] at h2
@@ -2914,7 +2914,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
               obtain ⟨i, hi, href⟩ := usedRef_of_rawConvExpr_rmember hA.record hA.muts hmem_k rty hin
               rcases hused i hi (Core.ixAddr a) href with hst | hca
               · obtain ⟨ci, hci⟩ := Option.isSome_iff_exists.mp hst
-                exact ⟨ci, by rwa [Core.keyOf_eq]⟩
+                exact ⟨ci, by rwa [LoadedReads.keyOf_eq]⟩
               · exfalso
                 obtain ⟨q, mq, hmq, ha_eq⟩ := hca
                 have hbq : (recAs.map Core.ixAddr)[q]? = some (Core.ixAddr a) := by
@@ -3155,7 +3155,7 @@ theorem familyCall_extract_members {calls : List (Call F)} {bAddr : _root_.Addre
       have hrec_qvd := repList_heapMono₂ Core.addrListEnum (Bytes.repAddressRef_heapMono₂ Core.addrTy)
         ext_840_qvd hrec_m840
       have hv861_eq : v861 = .field (recAs.length : F) :=
-        (Lib.length_spec (t := .ptr (.array .field 32))
+        (IxVM.Refinement.Lib.length_spec (t := .ptr (.array .field 32))
           (by rwa [Obs.Names.«Lists::length<&[Field; 32]>».symbol])
           (by rwa [Obs.Names.«Lists::Node<&[Field; 32]>».symbol])).1
       rw [hrecAs_len] at hv861_eq
@@ -3181,7 +3181,7 @@ theorem familyCall_extract_members {calls : List (Call F)} {bAddr : _root_.Addre
           L1.get_ci_block_trace_spec (hgood_in.sub hsub_be41).2 ht0_rep ev_be43
         have hind0_proj : recordOf E₀ (Core.ixAddr t0) = some (memberProjection (Core.ixAddr bB) 0 (.indc ind₀)) := by
           rw [ht0_addr]
-          simpa [memberAddr] using hB.members 0 (.indc ind₀) hms0
+          exact hB.members 0 (.indc ind₀) hms0
         have hc0_eq : c0 = memberProjection (Core.ixAddr bB) 0 (.indc ind₀) :=
           hRS.record_eq ((hRS.recordOf_eq_recordAt _).symm.trans hind0_proj)
             (Core.hashed_mono hsub_be41 hh0) haddr0 hex0
@@ -3190,19 +3190,20 @@ theorem familyCall_extract_members {calls : List (Call F)} {bAddr : _root_.Addre
         have hinfo0 : (memberProjection (Core.ixAddr bB) 0 (.indc ind₀)).info =
             .iPrj ⟨(0 : Nat).toUInt64, Core.ixAddr bB⟩ := rfl
         rw [hinfo0] at hres0
-        obtain ⟨-, blk0, cb0, ms0, ind0', -, -, -, v0, hhB0, haB0, hexB0, hcb0, hms0', -, -, -,
+        obtain ⟨-, blk0, cb0, ms0, ind0', blobs0, tree0, plan0, v0, hhB0, haB0, hexB0, hcb0, hms0', -, -, -,
           hld0, hraw0, -⟩ := hres0
         have hcb0_eq : cb0 = cb :=
           hRS.record_eq ((hRS.recordOf_eq_recordAt _).symm.trans hB.record)
             (Core.hashed_mono hsub_be41 hhB0) haB0 hexB0
-        subst hcb0_eq
+        subst cb0
         have hms0_eq : ms0 = ms := Ixon.ConstantInfo.muts.inj (hcb0.symm.trans hB.muts)
-        subst hms0_eq
-        rw [← Array.getElem?_toList] at hms0'
+        subst ms0
+        have hidx0 : ({ idx := (0 : Nat).toUInt64, block := Core.ixAddr bB } : Ixon.InductiveProj).idx.toNat = 0 := rfl
+        rw [hidx0, Array.getElem?_toList] at hms0'
         have hind0_eq : ind0' = ind₀ :=
           Ixon.MutConst.indc.inj (Option.some.inj (hms0'.symm.trans hms0))
-        subst hind0_eq
-        obtain ⟨hind0_lvls, -, -, -, -, _, _, _, -, -, hv0, -⟩ := hraw0
+        subst ind0'
+        obtain ⟨hind0_lvls, -, -, -, -, tyPtr0, blkPtr0, b0, -, -, hv0, -⟩ := hraw0
         rw [hv0] at hld0
         rw [hld0] at ld_be37
         injection ld_be37 with hv0_eq
@@ -3417,13 +3418,11 @@ theorem familyCall_usedRef_ind0 {calls : List (Call F)} {bAddr : _root_.Address}
           have hfk0 := check_carriers_rawTm_familyKey hp56_0 (hraw0.toRawTm.mono ext_m67_m391)
             htype_m391 ev485
           unfold familyKey binderDom at hfk0
-          cases hs : R0.stripPis rc0.params.toNat with
-          | none => simp [hs] at hfk0
-          | some p =>
-            cases hp2 : p.2 with
+          rcases hs : R0.stripPis rc0.params.toNat with _ | ⟨bs, body⟩
+          · simp [hs] at hfk0
+          · cases body with
             | forallE mot _ _ =>
-              rw [hs, hp2] at hfk0
-              simp only [Option.bind_some] at hfk0
+              simp only [hs, Option.bind_some] at hfk0
               cases hl : lastBinderDom mot with
               | none => simp [hl] at hfk0
               | some dom =>
@@ -3436,7 +3435,7 @@ theorem familyCall_usedRef_ind0 {calls : List (Call F)} {bAddr : _root_.Address}
                   have hk_eq : k = Core.keyOf t (Core.ixAddr t0) := Option.some.inj hfk0
                   subst hk_eq
                   obtain ⟨_, p_rem, hrem, hin_rem⟩ :=
-                    addrIn_of_rawTm_stripPis rc0.params.toNat hraw0.toRawTm (by rw [hs, hp2])
+                    addrIn_of_rawTm_stripPis rc0.params.toNat hraw0.toRawTm hs
                   cases hrem with
                   | forallE cell_m ht_m _ _ =>
                     obtain ⟨_, _, p_dom, hdom, hin_dom⟩ := addrIn_of_rawTm_lastBinderDom ht_m hl
@@ -3451,6 +3450,6 @@ theorem familyCall_usedRef_ind0 {calls : List (Call F)} {bAddr : _root_.Address}
                   rw [hfn] at hfk0; cases hfk0
             | bvar _ | fvar _ _ | sort _ | const _ _ | app _ _ | lam _ _ _
             | letE _ _ _ _ | lit _ | proj _ _ _ =>
-              rw [hs, hp2] at hfk0; cases hfk0
+              simp [hs] at hfk0
 
 end IxVM.Refinement.Typing.TwinFamily
