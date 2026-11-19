@@ -484,33 +484,31 @@ private theorem obsFn_strictSubCall {ts : List String}
     (motive_5 := fun _ _ exprs _ _ _ _ calls _ =>
       hasCallInList ts exprs = false → noDollarCallList exprs = true → cl ∈ calls →
       StrictSubCall ts cl calls) with
-  | block _ ih => exact ih
-  | blockExit _ ih => exact ih
-  | literal => intro _ _ hm; simp at hm
-  | var _ => intro _ _ hm; simp at hm
-  | global _ interpreted _ ih =>
-    intro _ _ hm
+  | block _ ih hno hnd hm => exact ih hno hnd hm
+  | blockExit _ ih hno hnd hm => exact ih hno hnd hm
+  | literal _ _ hm => simp at hm
+  | var _ _ _ hm => simp at hm
+  | global _ interpreted _ ih _ _ hm =>
     exact ih (hasCallIn_toExpr ts _ interpreted) (noDollarCall_toExpr _ interpreted) hm
-  | tuple _ ih | array _ ih | «repeat» _ ih | index _ _ ih | slice _ _ ih
-  | builtin _ _ ih | update _ _ ih | record _ ih | member _ _ ih
-  | construct _ ih | constructAs _ ih | project _ _ ih | store _ ih
-  | load _ _ ih | hint _ _ ih | neg _ _ ih => exact ih
-  | letValue _ _ _ ih1 ih2 =>
-    intro hno hnd hm
+  | tuple _ ih hno hnd hm | array _ ih hno hnd hm | «repeat» _ ih hno hnd hm
+  | index _ _ ih hno hnd hm | slice _ _ ih hno hnd hm | builtin _ _ ih hno hnd hm
+  | update _ _ ih hno hnd hm | record _ ih hno hnd hm | member _ _ ih hno hnd hm
+  | construct _ ih hno hnd hm | constructAs _ ih hno hnd hm | project _ _ ih hno hnd hm
+  | store _ ih hno hnd hm | load _ _ ih hno hnd hm | hint _ _ ih hno hnd hm
+  | neg _ _ ih hno hnd hm => exact ih hno hnd hm
+  | letValue _ _ _ ih1 ih2 hno hnd hm =>
     simp only [hasCallIn, Bool.or_eq_false_iff] at hno
     simp only [noDollarCall, Bool.and_eq_true] at hnd
     rcases List.mem_append.mp hm with h1 | h2
     · exact strictSubCall_mono_left (ih1 hno.1 hnd.1 h1)
     · exact strictSubCall_mono_right (ih2 hno.2 hnd.2 h2)
-  | binary _ _ _ ih1 ih2 =>
-    intro hno hnd hm
+  | binary _ _ _ ih1 ih2 hno hnd hm =>
     simp only [hasCallIn, Bool.or_eq_false_iff] at hno
     simp only [noDollarCall, Bool.and_eq_true] at hnd
     rcases List.mem_append.mp hm with h1 | h2
     · exact strictSubCall_mono_left (ih1 hno.1 hnd.1 h1)
     · exact strictSubCall_mono_right (ih2 hno.2 hnd.2 h2)
-  | call _ callee ih1 _ =>
-    intro hno hnd hm
+  | call _ callee ih1 _ hno hnd hm =>
     simp only [hasCallIn, Bool.or_eq_false_iff] at hno
     simp only [noDollarCall, Bool.and_eq_true] at hnd
     rcases List.mem_append.mp hm with h1 | h2
@@ -523,8 +521,7 @@ private theorem obsFn_strictSubCall {ts : List String}
           fun x hx => List.mem_append_right _ (List.mem_cons_of_mem _ hx),
           instanceName_not_mem_targets hplain hno.1,
           instanceName_ofSymbol_not_mem_targets hno.1 hnd.1⟩
-  | matchValue _ selected _ ih1 ih2 =>
-    intro hno hnd hm
+  | matchValue _ selected _ ih1 ih2 hno hnd hm =>
     simp only [hasCallIn, Bool.or_eq_false_iff] at hno
     simp only [noDollarCall, Bool.and_eq_true] at hnd
     rcases List.mem_append.mp hm with h1 | h2
@@ -532,9 +529,8 @@ private theorem obsFn_strictSubCall {ts : List String}
     · obtain ⟨p, hp⟩ := selectArm_body_mem selected
       exact strictSubCall_mono_right
         (ih2 (hasCallIn_arms_mem hno.2 hp) (noDollarCall_arms_mem hnd.2 hp) h2)
-  | nil => intro _ _ hm; simp at hm
-  | cons _ _ ih1 ih2 =>
-    intro hno hnd hm
+  | nil _ _ hm => simp at hm
+  | cons _ _ ih1 ih2 hno hnd hm =>
     simp only [hasCallInList, Bool.or_eq_false_iff] at hno
     simp only [noDollarCallList, Bool.and_eq_true] at hnd
     rcases List.mem_append.mp hm with h1 | h2
@@ -546,50 +542,44 @@ private theorem obsFn_strictSubCall {ts : List String}
   | returned prepared _ ih =>
     intro hp hm
     exact ih (hp _ _ _ prepared).1 (hp _ _ _ prepared).2 hm
-  | exit _ ih | exitPayload _ ih | fromBlock _ _ ih
-  | fromTuple _ ih | fromArray _ ih | fromRepeat _ ih | fromIndex _ ih
-  | fromSlice _ ih | fromBuiltin _ ih | fromUpdate _ ih | fromRecord _ ih
-  | fromMember _ ih | fromConstruct _ ih | fromConstructAs _ ih | fromProject _ ih
-  | fromStore _ ih | fromLoad _ ih | fromHint _ ih | fromNeg _ ih => exact ih
-  | fromGlobal _ interpreted _ ih =>
-    intro _ _ hm
+  | exit _ ih hno hnd hm | exitPayload _ ih hno hnd hm | fromBlock _ _ ih hno hnd hm
+  | fromTuple _ ih hno hnd hm | fromArray _ ih hno hnd hm | fromRepeat _ ih hno hnd hm
+  | fromIndex _ ih hno hnd hm | fromSlice _ ih hno hnd hm | fromBuiltin _ ih hno hnd hm
+  | fromUpdate _ ih hno hnd hm | fromRecord _ ih hno hnd hm | fromMember _ ih hno hnd hm
+  | fromConstruct _ ih hno hnd hm | fromConstructAs _ ih hno hnd hm
+  | fromProject _ ih hno hnd hm | fromStore _ ih hno hnd hm | fromLoad _ ih hno hnd hm
+  | fromHint _ ih hno hnd hm | fromNeg _ ih hno hnd hm => exact ih hno hnd hm
+  | fromGlobal _ interpreted _ ih _ _ hm =>
     exact ih (hasCallIn_toExpr ts _ interpreted) (noDollarCall_toExpr _ interpreted) hm
-  | fromLetValue _ ih =>
-    intro hno hnd hm
+  | fromLetValue _ ih hno hnd hm =>
     simp only [hasCallIn, Bool.or_eq_false_iff] at hno
     simp only [noDollarCall, Bool.and_eq_true] at hnd
     exact ih hno.1 hnd.1 hm
-  | letBody _ _ _ ih1 ih2 =>
-    intro hno hnd hm
+  | letBody _ _ _ ih1 ih2 hno hnd hm =>
     simp only [hasCallIn, Bool.or_eq_false_iff] at hno
     simp only [noDollarCall, Bool.and_eq_true] at hnd
     rcases List.mem_append.mp hm with h1 | h2
     · exact strictSubCall_mono_left (ih1 hno.1 hnd.1 h1)
     · exact strictSubCall_mono_right (ih2 hno.2 hnd.2 h2)
-  | binaryLeft _ ih =>
-    intro hno hnd hm
+  | binaryLeft _ ih hno hnd hm =>
     simp only [hasCallIn, Bool.or_eq_false_iff] at hno
     simp only [noDollarCall, Bool.and_eq_true] at hnd
     exact ih hno.1 hnd.1 hm
-  | binaryRight _ _ ih1 ih2 =>
-    intro hno hnd hm
+  | binaryRight _ _ ih1 ih2 hno hnd hm =>
     simp only [hasCallIn, Bool.or_eq_false_iff] at hno
     simp only [noDollarCall, Bool.and_eq_true] at hnd
     rcases List.mem_append.mp hm with h1 | h2
     · exact strictSubCall_mono_left (ih1 hno.1 hnd.1 h1)
     · exact strictSubCall_mono_right (ih2 hno.2 hnd.2 h2)
-  | fromCall _ ih =>
-    intro hno hnd hm
+  | fromCall _ ih hno hnd hm =>
     simp only [hasCallIn, Bool.or_eq_false_iff] at hno
     simp only [noDollarCall, Bool.and_eq_true] at hnd
     exact ih hno.2 hnd.2 hm
-  | fromMatchValue _ ih =>
-    intro hno hnd hm
+  | fromMatchValue _ ih hno hnd hm =>
     simp only [hasCallIn, Bool.or_eq_false_iff] at hno
     simp only [noDollarCall, Bool.and_eq_true] at hnd
     exact ih hno.1 hnd.1 hm
-  | matchBody _ selected _ ih1 ih2 =>
-    intro hno hnd hm
+  | matchBody _ selected _ ih1 ih2 hno hnd hm =>
     simp only [hasCallIn, Bool.or_eq_false_iff] at hno
     simp only [noDollarCall, Bool.and_eq_true] at hnd
     rcases List.mem_append.mp hm with h1 | h2
@@ -597,13 +587,11 @@ private theorem obsFn_strictSubCall {ts : List String}
     · obtain ⟨p, hp⟩ := selectArm_body_mem selected
       exact strictSubCall_mono_right
         (ih2 (hasCallIn_arms_mem hno.2 hp) (noDollarCall_arms_mem hnd.2 hp) h2)
-  | head _ ih =>
-    intro hno hnd hm
+  | head _ ih hno hnd hm =>
     simp only [hasCallInList, Bool.or_eq_false_iff] at hno
     simp only [noDollarCallList, Bool.and_eq_true] at hnd
     exact ih hno.1 hnd.1 hm
-  | tail _ _ ih1 ih2 =>
-    intro hno hnd hm
+  | tail _ _ ih1 ih2 hno hnd hm =>
     simp only [hasCallInList, Bool.or_eq_false_iff] at hno
     simp only [noDollarCallList, Bool.and_eq_true] at hnd
     rcases List.mem_append.mp hm with h1 | h2
@@ -660,7 +648,7 @@ private theorem sourceFunction?_fn_detail {p : Program F} {name : String} {sf : 
         unfold Program.findFunction? at h2
         have hmem : f ∈ p.functions := List.mem_of_find?_eq_some h2
         have hbeq := List.find?_some h2
-        exact ⟨key, f, types, rfl, hmem, beq_iff_eq.mp hbeq, rfl, h.symm⟩
+        exact ⟨key, f, types, h1, hmem, beq_iff_eq.mp hbeq, h3, h.symm⟩
 
 /-- Re-tag an `ObsFn` whose underlying program function has plain name `target` and a known
 monomorphic lookup theorem `hlk` into `ObsFn Obs.W target args ...`, also determining `args.length`. -/
@@ -697,12 +685,14 @@ private theorem obsFn_retag_mono {fnName target : String} {sf sfT : SourceFuncti
     obtain ⟨_, hts⟩ := arguments_nil_left harg
     subst hts
     have hsf_eq_sfT : sf = sfT := hsf_eq.trans hlk'
+    have hsfS : IxVM.source.program.sourceFunction? fnName = some sf := hsf
+    have hlkS : IxVM.source.program.sourceFunction? target = some sfT := hlk
     have hprepEq : Obs.W.prepare fnName args = Obs.W.prepare target args := by
-      simp only [Obs.W, Source.world, sourceWorld, hsf, hlk, hsf_eq_sfT]
+      simp only [Obs.W, Source.world, sourceWorld, hsfS, hlkS, hsf_eq_sfT]
     have hlen : ∀ {t l b}, Obs.W.prepare target args = .ok (t, l, b) →
         args.length = sfT.params.length := by
       intro t l b hp
-      simp only [Obs.W, Source.world, sourceWorld, hlk, SourceFunction.prepare] at hp
+      simp only [Obs.W, Source.world, sourceWorld, hlkS, SourceFunction.prepare] at hp
       split at hp
       · rename_i hcond
         have := congrArg List.length hcond.1
@@ -875,9 +865,10 @@ private theorem obsFn_check_family_modeled_aux (n : Nat) :
     have hclIn : cl.name ∈ ts := List.mem_cons_self
     cases hsf : IxVM.program.sourceFunction? fnName with
     | none =>
+      have hsfS : IxVM.source.program.sourceFunction? fnName = none := hsf
       have hsub := obsFn_strictSubCall hplainTs hclIn ev (by
         intro types locals expr hprep
-        simp only [Obs.W, Source.world, sourceWorld, hsf, bind, Except.bind] at hprep
+        simp only [Obs.W, Source.world, sourceWorld, hsfS, bind, Except.bind] at hprep
         cases hlk : lookupMap IxVM.source.tables fnName args with
         | error e => rw [hlk] at hprep; cases hprep
         | ok c =>
@@ -1346,11 +1337,9 @@ private theorem check_witnesses_descend_aux (n : Nat) :
         have hext1 : Heap.Extends h_ws _ :=
           ev59.heap_extends.trans (ev94.heap_extends.trans
             (evOrd.heap_extends.trans ev167.heap_extends))
-        have hext2 : Heap.Extends _ _ :=
-          ev196.heap_extends.trans (Heap.Extends.snoc _ _)
         exact Or.inl ⟨rfl, rfl, _, _, _, xx :: elems, ev129,
           fun x hx => hsub x (List.mem_cons_of_mem _ (List.mem_append_left _ hx)),
-          hext1, hext2, hrepCons, List.mem_cons_self⟩
+          hext1, ev196.heap_extends.trans (Heap.Extends.snoc _ _), hrepCons, List.mem_cons_self⟩
       · rcases List.mem_append.mp hmem with hcs127 | hrest
         · exact mkSub ev129 (by decide) (by decide) hcs127 (by simp at hle; omega)
             (fun x hx => hsub x (List.mem_cons_of_mem _ (List.mem_append_left _ hx)))
@@ -1451,9 +1440,10 @@ private theorem obsFn_check_witness_enclosing_aux (n : Nat) :
     have hclIn : cl.name ∈ ts := List.mem_cons_self
     cases hsf : IxVM.program.sourceFunction? fnName with
     | none =>
+      have hsfS : IxVM.source.program.sourceFunction? fnName = none := hsf
       have hsub := obsFn_strictSubCall hplainTs hclIn ev (by
         intro types locals expr hprep
-        simp only [Obs.W, Source.world, sourceWorld, hsf, bind, Except.bind] at hprep
+        simp only [Obs.W, Source.world, sourceWorld, hsfS, bind, Except.bind] at hprep
         cases hlk : lookupMap IxVM.source.tables fnName args with
         | error e => rw [hlk] at hprep; cases hprep
         | ok c =>
