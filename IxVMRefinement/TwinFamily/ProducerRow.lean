@@ -422,7 +422,7 @@ private theorem constsResolve_envSelf {env : Ix.Kernel.Env .anon}
   have h := constsResolve_renameConsts_map (f := id)
     (fun k hk => find_isSome_append (find_isSome_append hk (twinModels ws)) (twinProv ws))
     (fun k hk => find_isSome_append (find_isSome_append hk (twinModels ws)) (twinProv ws)) e he
-  rwa [renameConsts_eq_self_of_not_mentions e (fun _ hne => (hne rfl).elim)] at h
+  rwa [renameConsts_eq_self_of_not_mentions (f := id) e (fun _ hne => (hne rfl).elim)] at h
 
 private theorem canonRules_k_false {src : Ixon.Constant} {ps : List LevelParam} {cParams : Nat} :
     ∀ {root : F} {rus : List Ixon.RecursorRule} {rules₀ rls : List (RecRule .anon)},
@@ -1307,6 +1307,7 @@ structure CanonMemberAt (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E_rec
   hty_rel : ExprLvEq ty_ld R ∨
     (WrapConsObs (wrapAt t E_rec) (WrapperObserved calls t) R ty_ld ∧
       letFree ty_ld = true ∧
+      (∀ rC ∈ rulesC, letFree rC.rhs = true) ∧
       ctorsBefore (ReconView.ofStore t E_rec) es es.length = some rc.minors.toNat ∧
       ∀ (dC : KExpr) (n : Nat), binderDomAfter mI ty_ld = some dC →
         dC.getAppArgs.length = n + rc.indices.toNat →
@@ -2261,6 +2262,22 @@ theorem canonMemberAt_of_extracted {calls : List (Call F)} {t : Ix.Kernel.RoleTa
         unfold Core.posOf
         rw [letFree_instantiateLevelParams]
         exact mC.hty'_letFree
+      have hlf_rulesC : ∀ rC ∈ rulesC, letFree rC.rhs = true := by
+        intro rC hrC
+        obtain ⟨c, hget⟩ := List.mem_iff_getElem?.mp hrC
+        have hc_lt : c < mC.rls.length := by
+          have := (List.getElem?_eq_some_iff.mp hget).1
+          rw [hrules_lv_env.length_eq] at this; exact this
+        obtain ⟨rl_c, hrl_c⟩ : ∃ rl, mC.rls[c]? = some rl :=
+          ⟨mC.rls[c]'hc_lt, List.getElem?_eq_getElem hc_lt⟩
+        have hlv_c := (forall₂_getElem? hrules_lv_env c rC rl_c hget hrl_c).2
+        have hlf_pos : letFree (Core.posOf cvC.levelParams rC.rhs) = true := by
+          rw [letFree_of_exprLvEq hlv_c]
+          unfold Core.posOf
+          rw [letFree_instantiateLevelParams]
+          exact mC.hrls_letFree rl_c (List.mem_of_getElem? hrl_c)
+        unfold Core.posOf at hlf_pos
+        rwa [letFree_instantiateLevelParams] at hlf_pos
       exact
         ⟨{ rc := mC.rc
            hmem := mC.hmem
@@ -2293,7 +2310,7 @@ theorem canonMemberAt_of_extracted {calls : List (Call F)} {t : Ix.Kernel.RoleTa
            hcbk := hcbk
            hrules_len := hrls_len_eq
            hrules_rec := hrules_rec
-           hty_rel := Or.inr ⟨hrel, hlf_ty_ld, htot, hpins_ty_ld ty_ld hty_ld⟩
+           hty_rel := Or.inr ⟨hrel, hlf_ty_ld, hlf_rulesC, htot, hpins_ty_ld ty_ld hty_ld⟩
            hni_eq := hni_eq_mC }⟩
   | axiomInfo _ | defnInfo _ _ _ | thmInfo _ _
   | indInfo _ _ | ctorInfo _ _ _ | projInfo _ =>
@@ -2384,7 +2401,7 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
           t E_rec A cA rs' es off fuel k mA.rc ∧
         ∃ S : _root_.Address → Prop,
           (ReconView.ofStore t E_rec).ClosedOn S ∧
-          (∀ ek, es[k]? = some ek → Binding.FamilyRecon.REntryAt (ReconView.ofStore t E_rec) S ek) ∧
+          (∀ e ∈ es, Binding.FamilyRecon.REntryAt (ReconView.ofStore t E_rec) S e) ∧
           (∀ j rc, rs[j]? = some (.recr rc) → ¬ S (memberAddr rb j (.recr rc)))))
     (husedA : ∀ i ∈ usedRefIdxs cA, ∀ x, cA.refs.toList[i]? = some x →
       (env.find? (keyOf t x)).isSome = true ∨ ConstAddrOf A cA x)
@@ -2429,9 +2446,12 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
       ((WrapRel env.find? d.cvC.type d.cvW'.type ∧
           List.Forall₂ (fun (rW' rC : RecRule .anon) => WrapRel env.find? (rC.rhs.renameConsts f) rW'.rhs)
             d.rulesW' d.rulesC) ∨
-        (SymWrapT env.find? d.cvC.type d.cvW'.type ∧
+        ((∃ tyG : KExpr, WrapRel env.find? tyG d.cvC.type ∧ WrapRel env.find? tyG d.cvW'.type ∧
+            SymWrapT env.find? d.cvC.type d.cvW'.type) ∧
           List.Forall₂ (fun (rW' rC : RecRule .anon) =>
-            TwinRuleMatch env.find? f d.cvW'.type rC.rhs rW'.rhs) d.rulesW' d.rulesC)) ∧
+            ∃ rhsG : KExpr, WrapRel env.find? rhsG rC.rhs ∧
+              WrapRel env.find? (rhsG.renameConsts f) rW'.rhs ∧
+              TwinRuleMatch env.find? f d.cvW'.type rC.rhs rW'.rhs) d.rulesW' d.rulesC)) ∧
       Forall₂ (fun (p : RecRule .anon × RecRule .anon) rC =>
         TwinRuleFront twinPosRulesJ env ⟨twinProv ws ++ (twinModels ws ++ env.consts)⟩ f d.cvW.name
           d.cvC.levelParams d.cvW' d.mI d.rP p.1 p.2 rC) (d.rulesW.zip d.rulesW') d.rulesC) ∧
@@ -2755,11 +2775,15 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
     unfold Core.posOf
     rw [letFree_instantiateLevelParams]
     exact mA.hty'_letFree
-  -- `WrapRel env.find? cM.ty_ld tyW_ld` or `(SymWrapT env.find? cM.ty_ld tyW_ld ∧ ctorsBefore total)`
+  -- `WrapRel env.find? cM.ty_ld tyW_ld` or `SymWrapT` + `letFree` + constructor bound + no moved keys in `tyW_ld`
   have hty_rel_pos :
       WrapRel env.find? cM.ty_ld tyW_ld ∨
       (SymWrapT env.find? cM.ty_ld tyW_ld ∧
-        ctorsBefore (ReconView.ofStore t E_rec) es es.length = some cM.rc.minors.toNat) := by
+        letFree cM.cvC.type = true ∧
+        (∀ rC ∈ cM.rulesC, letFree rC.rhs = true) ∧
+        ctorsBefore (ReconView.ofStore t E_rec) es es.length = some cM.rc.minors.toNat ∧
+        (∀ j rc, rs[j]? = some (.recr rc) →
+          tyW_ld.mentionsConst (keyOf t (memberAddr rb j (.recr rc))) = false)) := by
     have hcr_cvC : cM.cvC.type.constsResolve env = true :=
       (hinv.store.store.wf _ (Ix.Kernel.Semantics.Env.find?_mem cM.hfind)).2.2.1
     have hcr_tyC : cM.ty_ld.constsResolve env = true := by
@@ -2772,7 +2796,7 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
       unfold Core.posOf
       rw [constsResolve_instantiateLevelParams]
       exact hmA_ty'_cr
-    rcases hpair with hC_lv | ⟨hMA_obs, -⟩
+    rcases hpair with hC_lv | ⟨hMA_obs, S, hS_cl, hS_ent, hS_excl⟩
     · left
       rcases htyW_rel with hW_lv | hW_obs
       · exact Binding.FamilyRecon.exprLvEq_wrapRel env.find? (hC_lv.trans hW_lv.symm)
@@ -2785,8 +2809,8 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
       have htyW2_eq : tyW2 = tyW_ld := Option.some.inj (htyW2.symm.trans htyW_ld)
       have hRW2_eq : RW2 = cM.R := by
         rw [hparams_eq] at hRW2; exact Option.some.inj (hRW2.symm.trans cM.hR)
-      subst htyW2_eq hRW2_eq
-      rcases cM.hty_rel with hC_lv | ⟨hC_obs, hlf_tyC, htot_C, -⟩
+      subst tyW2 RW2
+      rcases cM.hty_rel with hC_lv | ⟨hC_obs, hlf_tyC, hlf_rulesC, htot_C, -⟩
       · left
         have hcr_R : cM.R.constsResolve env = true := by
           rw [← constsResolve_of_exprLvEq hC_lv]; exact hcr_tyC
@@ -2794,9 +2818,29 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
           (fun w n hres hobs => wrapperArity_of_observed hSS hinv hres hobs) hcr_R
         exact wrapRel_congr_exprLvEq_left hC_lv hwr
       · right
+        have hlf_cvC : letFree cM.cvC.type = true := by
+          have h1 := hlf_tyC
+          rw [← cM.hty_pos] at h1
+          unfold Core.posOf at h1
+          rwa [letFree_instantiateLevelParams] at h1
+        have hnoSelf_W : ∀ (j : Nat) (rc : Ixon.Recursor), rs[j]? = some (.recr rc) →
+            tyW_ld.mentionsConst (keyOf t (memberAddr rb j (.recr rc))) = false := by
+          intro j rc hj
+          have hj_lt : j < rs.size := by
+            by_contra hge
+            rw [Array.getElem?_eq_none (Nat.le_of_not_lt hge)] at hj; cases hj
+          have htyC_q : cM.ty_ld.mentionsConst (keyOf t (memberAddr rb j (.recr rc))) = false := by
+            rw [memberAddr_recr_eq, ← cM.hty_pos, mentionsConst_posOf]
+            exact cM.hnoSelf j hj_lt
+          have hR_q : cM.R.mentionsConst (keyOf t (memberAddr rb j (.recr rc))) = false :=
+            recTypeAt_not_mentions (V := ReconView.ofStore t E_rec) hS_cl
+              (fun x => Binding.FamilyFlat.keyAddr_keyOf htwf x) hS_ent cM.hR
+              (Binding.FamilyFlat.keyAddr_keyOf htwf _) (hS_excl j rc hj) hC_obs htyC_q
+          exact hW_obs2.mentionsConst_false hR_q
         exact ⟨WrapConsObs.toSymWrapT
           (fun w n hres hobs => wrapperArity_of_observed hSS hinv hres hobs)
-          hC_obs hW_obs2 hcr_tyC hcr_tyW hlf_tyC hlf_tyW_ld, htot_C⟩
+          hC_obs hW_obs2 hcr_tyC hcr_tyW hlf_tyC hlf_tyW_ld,
+          hlf_cvC, hlf_rulesC, htot_C, hnoSelf_W⟩
   -- Major-premise syntactic equality (`dW_pos` vs `dC_pos` and `DW` vs `DC`)
   have hbdR : binderDomAfter depthR cM.R = some domR := by
     unfold binderDomAfter; rw [hpeelR]
@@ -2876,7 +2920,7 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
         have := hno P hP
         rwa [hshift_eq] at this
       have hnoC : ∀ P ∈ dC_pos.getAppArgs.take ek.params.length, hasBVarIn 0 shift P = false := by
-        rcases cM.hty_rel with hC_lv | ⟨-, -, -, hpinsC⟩
+        rcases cM.hty_rel with hC_lv | ⟨-, -, -, -, hpinsC⟩
         · have hd_lv : ExprLvEq domR dC_pos := by
             obtain ⟨dR', hR', hd⟩ := exprLvEq_binderDomAfter hC_lv hbdC_rf
             have heq : dR' = domR := Option.some.inj (hR'.symm.trans (by rwa [hdepth_mIC, cM.hmI_def] at hbdR))
@@ -3007,7 +3051,7 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
           rw [memberAddr_recr_eq, ← mentionsConst_of_exprLvEq hC_lv, ← cM.hty_pos, mentionsConst_posOf]
           exact hno
         · refine ruleBodiesAt_renameConsts_of_closed (V := ReconView.ofStore t E_rec)
-            hS_cl hpeers (fun q hfq => ?_) hS_ent cM.hbodies
+            hS_cl hpeers (fun q hfq => ?_) (fun ek hek => hS_ent ek (List.mem_of_getElem? hek)) cM.hbodies
           obtain ⟨j, rcj, hj, rfl⟩ := hmove q hfq
           exact ⟨memberAddr rb j (.recr rcj), Binding.FamilyFlat.keyAddr_keyOf htwf _,
             hS_excl j rcj hj⟩
@@ -3017,7 +3061,7 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
         (exprReader t (fun x => E₀.blobs.get? x) cA (Ix.Kernel.Reader.recParam mA.ps)
           (blockSelf t A rs')).read ru.rhs = .ok rl₀.rhs) mA.rc.rules.toList mA.rules₀ :=
       List.Forall₂.imp (fun _ _ h => h.2.1) mA.hrules_read
-    -- Per-rule comparison (`WrapRel` on `Or.inl`, `TwinRuleMatch` on `Or.inr`)
+    -- Per-rule comparison (`WrapRel` on `Or.inl`, common-ancestor `TwinRuleMatch` on `Or.inr`)
     have hrule_rel_at : ∀ (c : Nat) (ruA ruC : Ixon.RecursorRule) (rW rlA rC rW' : RecRule .anon),
         mA.rc.rules[c]? = some ruA → cM.rc.rules[c]? = some ruC →
         mA.rules₀[c]? = some rW → mA.rls[c]? = some rlA →
@@ -3025,14 +3069,20 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
         (∀ hwrap_ty_pos : WrapRel env.find? cM.ty_ld tyW_ld,
           WrapRel env.find? (rC.rhs.renameConsts f) rW'.rhs) ∧
         (∀ (hsym_ty_pos : SymWrapT env.find? cM.ty_ld tyW_ld)
-           (htot_C : ctorsBefore (ReconView.ofStore t E_rec) es es.length = some cM.rc.minors.toNat),
-          TwinRuleMatch env.find? f mA.ty' rC.rhs rW'.rhs) := by
+           (hlf_rulesC : ∀ r ∈ cM.rulesC, letFree r.rhs = true)
+           (htot_C : ctorsBefore (ReconView.ofStore t E_rec) es es.length = some cM.rc.minors.toNat)
+           (hnoSelf_W : ∀ j rc, rs[j]? = some (.recr rc) →
+             tyW_ld.mentionsConst (keyOf t (memberAddr rb j (.recr rc))) = false),
+          ∃ rhsG : KExpr,
+            WrapRel env.find? rhsG rC.rhs ∧
+            WrapRel env.find? (rhsG.renameConsts f) rW'.rhs ∧
+            TwinRuleMatch env.find? f mA.ty' rC.rhs rW'.rhs) := by
       intro c ruA ruC rW rlA rC rW' hruA hruC hrW hrlA hrC hrW'
       have hrW'_rhs : rW'.rhs = rlA.rhs := by
         dsimp only [rulesW'] at hrW'
         rw [List.getElem?_map, list_getElem?_zip, hrlA, hrC] at hrW'
         have := Option.some.inj hrW'; subst this; rfl
-      obtain ⟨-, -, -, hnf_eq, -, -⟩ := hrule_match c ruA ruC rW rlA rC hruA hruC hrW hrlA hrC
+      obtain ⟨-, -, -, hnf_eq, -, hann_c⟩ := hrule_match c ruA ruC rW rlA rC hruA hruC hrW hrlA hrC
       obtain ⟨rhsC_ld, cbC, -, hrhsC_lv, hcbC, hrfC⟩ := cM.hrules_rec c ruC rC hruC hrC
       obtain ⟨rhsW_ld, cbW, hrhsW_ld, hcbW, hrfW⟩ := hrulesW_mr c ruA hruA
       have hruAL : mA.rc.rules.toList[c]? = some ruA := by rwa [Array.getElem?_toList]
@@ -3063,7 +3113,11 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
           rw [← renameConsts_instantiateLevelParams]
           exact wrapRel_congr_exprLvEq_left (exprLvEq_renameConsts f hrhsC_lv) hwr_ld
         exact wrapRel_of_posOf_perm hperm_C hwr_pos
-      · intro hsym_ty_pos htot_C
+      · intro hsym_ty_pos hlf_rulesC htot_C hnoSelf_W
+        have htyW_fix : tyW_ld.renameConsts f = tyW_ld := by
+          refine renameConsts_eq_self_of_not_mentions tyW_ld fun q hfq => ?_
+          obtain ⟨j, rcj, hj, rfl⟩ := hmove q hfq
+          exact hnoSelf_W j rcj hj
         have hc_lt_self : c < self.nctors := by
           have h1 := (Array.getElem?_eq_some_iff.mp hruC).1
           have h2 := hcM_rules_info.1
@@ -3071,14 +3125,20 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
         have hmin_lt : cM.cbk + c < cM.rc.minors.toNat :=
           ctorsBefore_add_lt_total es k cM.cbk cM.rc.minors.toNat ek self c hek hself
             cM.hcbk htot_C hc_lt_self
-        exact twinRuleMatch_of_ruleFollows hperm_C hsym_ty_pos htyC_fix
+        have hwf_rC_c :=
+          (hinv.store.store.wf _ (Ix.Kernel.Semantics.Env.find?_mem cM.hfind)).2.2.2.2.2.1 _ _ _ _ rfl
+            rC (List.mem_of_getElem? hrC)
+        have hread_c_fv := (forall₂_getElem? mA.hrules_read c ruA rW hruAL hrW).2.2.2.2
+        exact twinRuleMatch_with_join_of_ruleFollows hperm_C hsym_ty_pos htyC_fix htyW_fix
           (by rw [← hlps_eq]; exact htyW_eq) hrhsC_lv
           (by rw [hrW'_rhs, ← hlps_eq]; exact hrhsW_eq)
+          hwf_rC_c.1 (by rw [hrW'_rhs]; exact Decl.annotates_hasFvar_false hann_c hread_c_fv)
+          (hlf_rulesC rC (List.mem_of_getElem? hrC))
           (by rw [hrW'_rhs]; exact mA.hrls_letFree rlA (List.mem_of_getElem? hrlA))
           hmin_lt hrfC hrfW (by rw [hcb_eq]; exact ExprLvEq.refl _)
     constructor
-    · -- `(WrapRel ∧ Forall₂ WrapRel) ∨ (SymWrapT ∧ Forall₂ TwinRuleMatch)`
-      rcases hty_rel_pos with hwrap_ty_pos | ⟨hsym_ty_pos, htot_C⟩
+    · -- `(WrapRel ∧ Forall₂ WrapRel) ∨ SymAbove`
+      rcases hty_rel_pos with hwrap_ty_pos | ⟨hsym_ty_pos, hlf_cvC, hlf_rulesC, htot_C, hnoSelf_W⟩
       · left
         refine ⟨wrapRel_of_posOf_perm hperm_C (by rw [cM.hty_pos, ← hlps_eq, htyW_eq]; exact hwrap_ty_pos),
           list_forall₂_of_getElem hrulesW'_len fun c rW' rC hrW' hrC => ?_⟩
@@ -3094,7 +3154,13 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
           ⟨mA.rls[c]'(by omega), List.getElem?_eq_getElem (by omega)⟩
         exact (hrule_rel_at c ruA ruC rW rlA rC rW' hruA hruC hrW hrlA hrC hrW').1 hwrap_ty_pos
       · right
-        refine ⟨symWrapT_of_posOf_perm hperm_C (by rw [cM.hty_pos, ← hlps_eq, htyW_eq]; exact hsym_ty_pos),
+        have hsym_ty : SymWrapT env.find? cM.cvC.type mA.ty' :=
+          symWrapT_of_posOf_perm hperm_C (by rw [cM.hty_pos, ← hlps_eq, htyW_eq]; exact hsym_ty_pos)
+        obtain ⟨tyG, hG1, hG2, hGfv, -⟩ := hsym_ty.exists_join hlf_cvC mA.hty'_letFree
+        have htyG_fv : tyG.hasFvar = false :=
+          hGfv (hinv.store.store.wf _ (Ix.Kernel.Semantics.Env.find?_mem cM.hfind)).1
+            (Decl.annotates_hasFvar_false mA.hvalStored.2.2 mA.hty_fv)
+        refine ⟨⟨tyG, hG1.toWrapRel htyG_fv, hG2.toWrapRel htyG_fv, hsym_ty⟩,
           list_forall₂_of_getElem hrulesW'_len fun c rW' rC hrW' hrC => ?_⟩
         have hc_lt : c < mA.rc.rules.size := by
           have := (List.getElem?_eq_some_iff.mp hrC).1; dsimp only at this; omega
@@ -3106,7 +3172,8 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
           ⟨mA.rules₀[c]'(by omega), List.getElem?_eq_getElem (by omega)⟩
         obtain ⟨rlA, hrlA⟩ : ∃ r, mA.rls[c]? = some r :=
           ⟨mA.rls[c]'(by omega), List.getElem?_eq_getElem (by omega)⟩
-        exact (hrule_rel_at c ruA ruC rW rlA rC rW' hruA hruC hrW hrlA hrC hrW').2 hsym_ty_pos htot_C
+        exact (hrule_rel_at c ruA ruC rW rlA rC rW' hruA hruC hrW hrlA hrC hrW').2
+          hsym_ty_pos hlf_rulesC htot_C hnoSelf_W
     · -- `Forall₂ TwinRuleFront (mA.rules₀.zip rulesW') cM.rulesC`
       refine forall₂_of_list_forall₂ (list_forall₂_of_getElem
         (by change (mA.rules₀.zip rulesW').length = cM.rulesC.length; rw [List.length_zip]; omega)
@@ -3181,14 +3248,14 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
             ?_, ?_, mA.hrls_letFree rlA (List.mem_of_getElem? hrlA),
             rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_, ?_⟩
           · -- #6: `allLevelParamsDefined`
-            rcases hty_rel_pos with hwrap_ty_pos | ⟨hsym_ty_pos, htot_C⟩
+            rcases hty_rel_pos with hwrap_ty_pos | ⟨hsym_ty_pos, -, hlf_rulesC, htot_C, hnoSelf_W⟩
             · have hwr_c := hrel_c.1 hwrap_ty_pos
               rw [hrW'_eq] at hwr_c
               exact Typing.wrapRelSem_annot_allLevelParamsDefined
                 (wrapRel_to_wrapRelSem hwr_c)
                 (by rw [allLevelParamsDefined_renameConsts]; exact hwf_rC.2.1)
                 hann (by rw [← hlps_eq]; exact hread_c.2.2.2.1)
-            · have hmatch_c := hrel_c.2 hsym_ty_pos htot_C
+            · obtain ⟨-, -, -, hmatch_c⟩ := hrel_c.2 hsym_ty_pos hlf_rulesC htot_C hnoSelf_W
               rw [hrW'_eq] at hmatch_c
               exact allLevelParamsDefined_of_twinRuleMatch hmatch_c
                 (Decl.annotates_hasFvar_false hann hread_c.2.2.2.2)
@@ -3200,14 +3267,14 @@ private theorem twinParts_member_data {calls : List (Call F)} {t : Ix.Kernel.Rol
                 ⟨twinProv ws ++ (twinModels ws ++ env.consts)⟩ = true := by
               rw [hf_eq]
               exact constsResolve_renameConsts_envSelf hws_name hwf_rC.2.2.1
-            rcases hty_rel_pos with hwrap_ty_pos | ⟨hsym_ty_pos, htot_C⟩
+            rcases hty_rel_pos with hwrap_ty_pos | ⟨hsym_ty_pos, -, hlf_rulesC, htot_C, hnoSelf_W⟩
             · have hwr_c := hrel_c.1 hwrap_ty_pos
               rw [hrW'_eq] at hwr_c
               exact constsResolve_of_wrapRel hwr_c
                 (by rw [hasFvar_renameConsts]; exact hwf_rC.1)
                 (mA.hrls_letFree rlA (List.mem_of_getElem? hrlA))
                 hcr_ren
-            · have hmatch_c := hrel_c.2 hsym_ty_pos htot_C
+            · obtain ⟨-, -, -, hmatch_c⟩ := hrel_c.2 hsym_ty_pos hlf_rulesC htot_C hnoSelf_W
               rw [hrW'_eq] at hmatch_c
               exact constsResolve_of_twinRuleMatch hmatch_c
                 (Decl.annotates_hasFvar_false hann hread_c.2.2.2.2)
@@ -3414,9 +3481,12 @@ theorem twinParts_of_canon_extracted {calls : List (Call F)} {t : Ix.Kernel.Role
         ((WrapRel env.find? d.cvC.type d.cvW'.type ∧
             List.Forall₂ (fun (rW' rC : RecRule .anon) => WrapRel env.find? (rC.rhs.renameConsts f') rW'.rhs)
               d.rulesW' d.rulesC) ∨
-          (SymWrapT env.find? d.cvC.type d.cvW'.type ∧
+          ((∃ tyG : KExpr, WrapRel env.find? tyG d.cvC.type ∧ WrapRel env.find? tyG d.cvW'.type ∧
+              SymWrapT env.find? d.cvC.type d.cvW'.type) ∧
             List.Forall₂ (fun (rW' rC : RecRule .anon) =>
-              TwinRuleMatch env.find? f' d.cvW'.type rC.rhs rW'.rhs) d.rulesW' d.rulesC)) ∧
+              ∃ rhsG : KExpr, WrapRel env.find? rhsG rC.rhs ∧
+                WrapRel env.find? (rhsG.renameConsts f') rW'.rhs ∧
+                TwinRuleMatch env.find? f' d.cvW'.type rC.rhs rW'.rhs) d.rulesW' d.rulesC)) ∧
         Forall₂ (fun (p : RecRule .anon × RecRule .anon) rC =>
           TwinRuleFront twinPosRulesJ env ⟨twinProv ws' ++ (twinModels ws' ++ env.consts)⟩ f' d.cvW.name
             d.cvC.levelParams d.cvW' d.mI d.rP p.1 p.2 rC) (d.rulesW.zip d.rulesW') d.rulesC) ∧
@@ -3430,12 +3500,11 @@ theorem twinParts_of_canon_extracted {calls : List (Call F)} {t : Ix.Kernel.Role
             t E_rec A cA rs' es off fuel i.val (mA_of i).rc ∧
           ∃ S : _root_.Address → Prop,
             (ReconView.ofStore t E_rec).ClosedOn S ∧
-            (∀ ek, es[i.val]? = some ek → Binding.FamilyRecon.REntryAt (ReconView.ofStore t E_rec) S ek) ∧
+            (∀ e ∈ es, Binding.FamilyRecon.REntryAt (ReconView.ofStore t E_rec) S e) ∧
             (∀ j rc, rs[j]? = some (.recr rc) → ¬ S (memberAddr rb j (.recr rc)))) := by
       rcases hpair_all with h | ⟨hobs, S, hS_cl, hS_ent, hS_excl⟩
       · exact Or.inl (h i.val i.isLt)
-      · exact Or.inr ⟨hobs i.val (mA_of i).rc (mA_of i).hmem, S, hS_cl,
-          fun ek hek => hS_ent ek (List.mem_of_getElem? hek), hS_excl⟩
+      · exact Or.inr ⟨hobs i.val (mA_of i).rc (mA_of i).hmem, S, hS_cl, hS_ent, hS_excl⟩
     exact twinParts_member_data ht hSS hinv hE₀_rec hE₀_blob hrb_muts hA hrs_len hes_len i.isLt
       hRecFlatC hRecFlatA (hcanon i.val i.isLt) (mA_of i)
       (hlvls_A i.val (mA_of i).rc (mA_of i).hmem)

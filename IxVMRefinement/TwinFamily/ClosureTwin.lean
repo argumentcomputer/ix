@@ -191,8 +191,9 @@ private theorem overUnitStepTwin_of_parts {t : Ix.Kernel.RoleTable}
         lforall₂_imp (fun rW' rC h => twinRuleGen_of_canonical_above h) hrl⟩
     · exact ⟨twinTypeGen_of_twin_above (Decl.judgeFrames_twinPosRulesJ env) (hF.front w hw)
         (hF.lvls w hw) hty, hrl⟩
-    · exact ⟨twinTypeGen_of_symWrapT hty,
-        lforall₂_imp (fun rW' rC h => twinRuleGen_of_match h) hrl⟩
+    · obtain ⟨tyG, hWC, hWW', hSym⟩ := hty
+      exact ⟨twinTypeGen_of_symWrapT hWC hWW' hSym,
+        lforall₂_imp (fun rW' rC ⟨_, hRC, hRW, hm⟩ => twinRuleGen_of_match hRC hRW hm) hrl⟩
   have hfind : ∀ ci ∈ twinRecs ws ++ twinModels ws,
       (⟨twinRecs ws ++ (twinModels ws ++ env.consts)⟩ : Ix.Kernel.Env .anon).find? ci.name =
         some ci := by

@@ -49,7 +49,7 @@ open IxVM.Refinement.Binding.FamilyRecon (ReconView IndData CtorData wrapAt appH
   flatOwnParams elimLevel RKeysAt REntryAt binderOf whnfTele hnf)
 open Ix.Kernel (ConstantInfo ConstantVal RecRule Level LevelParam Expr)
 open Ix.Kernel.Semantics (WrapRel WrapDom WrapT SymWrapT ConsumeStar LamDomAlong TwinRuleMatch
-  stripLams consumeWrapper wrapperArity lamFirstArity letFree)
+  LamDomsFix stripLams consumeWrapper wrapperArity lamFirstArity letFree)
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
@@ -3320,5 +3320,894 @@ theorem constsResolve_of_twinRuleMatch {find? : KKey → Option (ConstantInfo .a
       rw [constsResolve_liftLooseBVars_wb]; exact hcr_peel.1
     have hcr_afterW := constsResolve_of_lamDomAlong hLam2 hfv_afterW hcr_mdomL hcr_sbW
     exact constsResolve_of_lamDomAlong hLam1 hfvW' hty_cr hcr_afterW
+
+/-! ### Absence of moved constants in `recTypeAt` and common-ancestor `TwinRuleMatch` -/
+
+private theorem mkAppN_mentionsConst_wb (k : KKey) :
+    ∀ (args : List KExpr) (f : KExpr),
+      (Expr.mkAppN f args).mentionsConst k = false →
+      f.mentionsConst k = false ∧ ∀ a ∈ args, a.mentionsConst k = false
+  | [], _, h => ⟨h, fun _ hm => nomatch hm⟩
+  | a :: as, f, h => by
+    obtain ⟨hfa, has⟩ := mkAppN_mentionsConst_wb k as (.app f a) h
+    simp only [Expr.mentionsConst, Bool.or_eq_false_iff] at hfa
+    exact ⟨hfa.1, fun x hx => (List.mem_cons.mp hx).elim (fun hx => hx ▸ hfa.2) (has x)⟩
+
+private theorem ConsumesObs.mentionsConst_false {W : KKey → Option (Option Nat)}
+    {ObsW : KKey → Nat → Prop} {k : KKey} {t c : KExpr} (h : ConsumesObs W ObsW t c) :
+    t.mentionsConst k = false → c.mentionsConst k = false := by
+  induction h with
+  | refl => exact id
+  | @step _ a _ w _ hc hd hw _ _ ih =>
+    intro ht
+    obtain ⟨us, rest, rfl, -⟩ := consumeAt_inv_wb hc hd hw
+    exact ih ((mkAppN_mentionsConst_wb k (a :: rest) (.const w us) ht).2 a List.mem_cons_self)
+
+/-- Observed wrapper consumption never introduces new constant references. -/
+theorem WrapConsObs.mentionsConst_false {W : KKey → Option (Option Nat)}
+    {ObsW : KKey → Nat → Prop} {k : KKey} {g d : KExpr} (h : WrapConsObs W ObsW g d) :
+    g.mentionsConst k = false → d.mentionsConst k = false := by
+  induction h with
+  | bvar | sort | const | lit => exact id
+  | fvar ht => intro hg; exact (mentionsConst_of_exprLvEq ht).symm.trans hg
+  | app _ _ ihf iha =>
+    intro hg
+    simp only [Expr.mentionsConst, Bool.or_eq_false_iff] at hg ⊢
+    exact ⟨ihf hg.1, iha hg.2⟩
+  | lam _ hcs _ _ ihd ihb | forallE _ hcs _ _ ihd ihb =>
+    intro hg
+    simp only [Expr.mentionsConst, Bool.or_eq_false_iff] at hg ⊢
+    exact ⟨ihd (hcs.mentionsConst_false hg.1), ihb hg.2⟩
+  | letE _ _ _ iht ihv ihb =>
+    intro hg
+    simp only [Expr.mentionsConst, Bool.or_eq_false_iff] at hg ⊢
+    exact ⟨⟨iht hg.1.1, ihv hg.1.2⟩, ihb hg.2⟩
+  | proj _ ihe =>
+    intro hg
+    simp only [Expr.mentionsConst, Bool.or_eq_false_iff] at hg ⊢
+    exact ⟨hg.1, ihe hg.2⟩
+
+private theorem not_mentions_of_rKeysAt_wb {V : ReconView} {S : _root_.Address → Prop}
+    {q : KKey} {a : _root_.Address} (ha : V.addr q = some a) (hnotS : ¬ S a)
+    {e : KExpr} (hK : RKeysAt V S e) : e.mentionsConst q = false := by
+  have hmc_keyIn : ∀ (x : KExpr), x.mentionsConst q = true → KeyIn q x := by
+    intro x
+    induction x with
+    | bvar _ | sort _ | lit _ => intro hm; simp [Expr.mentionsConst] at hm
+    | fvar _ t ih => intro hm; simp [Expr.mentionsConst] at hm; exact .fvarTy (ih hm)
+    | const n us =>
+      intro hm; simp only [Expr.mentionsConst, beq_iff_eq] at hm; subst hm; exact .const us
+    | app g b ihf iha =>
+      intro hm; simp only [Expr.mentionsConst, Bool.or_eq_true] at hm
+      exact hm.elim (fun h1 => .appFn (ihf h1)) (fun h2 => .appArg (iha h2))
+    | lam t b _ iht ihb =>
+      intro hm; simp only [Expr.mentionsConst, Bool.or_eq_true] at hm
+      exact hm.elim (fun h1 => .lamTy (iht h1)) (fun h2 => .lamBody (ihb h2))
+    | forallE t b _ iht ihb =>
+      intro hm; simp only [Expr.mentionsConst, Bool.or_eq_true] at hm
+      exact hm.elim (fun h1 => .allTy (iht h1)) (fun h2 => .allBody (ihb h2))
+    | letE t v b _ iht ihv ihb =>
+      intro hm; simp only [Expr.mentionsConst, Bool.or_eq_true] at hm
+      rcases hm with (h1 | h2) | h3
+      · exact .letTy (iht h1)
+      · exact .letVal (ihv h2)
+      · exact .letBody (ihb h3)
+    | proj s i x ih =>
+      intro hm; simp only [Expr.mentionsConst, Bool.or_eq_true, beq_iff_eq] at hm
+      rcases hm with rfl | h2
+      · exact .proj i x
+      · exact .projBody (ih h2)
+  cases hm : e.mentionsConst q with
+  | false => rfl
+  | true => exact (hnotS (hK q (hmc_keyIn e hm) a ha)).elim
+
+private theorem mentionsConst_wrapForalls_of_wb {k : KKey} {body : KExpr} {doms : List KExpr}
+    {elim : KLevel} (hb : body.mentionsConst k = false)
+    (hd : ∀ d ∈ doms, d.mentionsConst k = false) :
+    (wrapForalls body doms elim).mentionsConst k = false := by
+  induction doms with
+  | nil => exact hb
+  | cons d ds ih =>
+    simp only [wrapForalls, List.foldr_cons, Expr.mentionsConst, Bool.or_eq_false_iff]
+    exact ⟨hd d List.mem_cons_self, ih fun x hx => hd x (List.mem_cons_of_mem _ hx)⟩
+
+private theorem mentionsConst_appSpine_of_wb {k : KKey} {hd : KExpr} {args : List KExpr}
+    (hh : hd.mentionsConst k = false) (ha : ∀ a ∈ args, a.mentionsConst k = false) :
+    (appSpine hd args).mentionsConst k = false := by
+  induction args generalizing hd with
+  | nil => exact hh
+  | cons a as ih =>
+    simp only [appSpine, List.foldl_cons]
+    exact ih (by simp [Expr.mentionsConst, hh, ha a List.mem_cons_self])
+      (fun x hx => ha x (List.mem_cons_of_mem _ hx))
+
+private theorem rk_appSpine_wb {V : ReconView} {S : _root_.Address → Prop} :
+    ∀ (args : List KExpr) (hd : KExpr), RKeysAt V S hd → (∀ a ∈ args, RKeysAt V S a) →
+      RKeysAt V S (appSpine hd args)
+  | [], _, hh, _ => hh
+  | a :: as, hd, hh, ha =>
+    rk_appSpine_wb as (.app hd a) (fun k hk => by
+      cases hk with
+      | appFn h => exact hh k h
+      | appArg h => exact ha a List.mem_cons_self k h)
+      (fun x hx => ha x (List.mem_cons_of_mem _ hx))
+
+private theorem rk_wrapForalls_wb {V : ReconView} {S : _root_.Address → Prop} {elim : KLevel} :
+    ∀ (doms : List KExpr) (body : KExpr), RKeysAt V S body → (∀ d ∈ doms, RKeysAt V S d) →
+      RKeysAt V S (wrapForalls body doms elim)
+  | [], _, hb, _ => hb
+  | d :: ds, body, hb, hd => fun k hk => by
+    cases hk with
+    | allTy h => exact hd d List.mem_cons_self k h
+    | allBody h => exact rk_wrapForalls_wb ds body hb (fun x hx => hd x (List.mem_cons_of_mem _ hx)) k h
+
+private theorem rk_liftIndices_wb {V : ReconView} {S : _root_.Address → Prop}
+    {doms : List KExpr} {shift : Nat} (h : ∀ d ∈ doms, RKeysAt V S d) :
+    ∀ d ∈ liftIndices doms shift, RKeysAt V S d := by
+  intro d hd
+  unfold liftIndices at hd
+  obtain ⟨⟨d₀, i₀⟩, hmem, rfl⟩ := List.mem_map.mp hd
+  exact Binding.FamilyRecon.rk_lift _ _ (h d₀ (mem_of_mem_zipIdx_wb hmem))
+
+private theorem rk_const_key_wb {V : ReconView} {S : _root_.Address → Prop}
+    (haddr_key : ∀ x, V.addr (V.key x) = some x) {a : _root_.Address} (hS : S a)
+    (us : List KLevel) : RKeysAt V S (.const (V.key a) us) := by
+  intro k hk b hb
+  cases hk
+  have heq : a = b := Option.some.inj ((haddr_key a).symm.trans hb)
+  subst heq; exact hS
+
+private theorem collectDoms_keys_wb {V : ReconView} {S : _root_.Address → Prop}
+    (hC : V.ClosedOn S) {fuel : Nat} :
+    ∀ (n : Nat) (ty : KExpr) (doms : List KExpr) (rest : KExpr),
+      RKeysAt V S ty → Binding.FamilyRecon.collectDoms V fuel n ty = some (doms, rest) →
+      (∀ d ∈ doms, RKeysAt V S d) ∧ RKeysAt V S rest
+  | 0, _, _, _, hK, h => by
+    simp only [Binding.FamilyRecon.collectDoms, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact ⟨(fun _ hm => nomatch hm), hK⟩
+  | n + 1, ty, doms, rest, hK, h => by
+    simp only [Binding.FamilyRecon.collectDoms] at h
+    cases hb : binderOf V fuel ty with
+    | none => simp [hb] at h
+    | some ob =>
+      obtain ⟨-, hkb⟩ := Binding.FamilyRecon.binderOf_leOn (ReconView.LeOn.refl V S) hC
+        (Nat.le_refl _) ty ob hK hb
+      cases ob with
+      | none =>
+        simp only [hb, Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨(fun _ hm => nomatch hm), hK⟩
+      | some p =>
+        obtain ⟨d, b, m⟩ := p
+        simp only [hb] at h
+        cases hc : Binding.FamilyRecon.collectDoms V fuel n b with
+        | none => simp [hc] at h
+        | some q =>
+          obtain ⟨ds, r'⟩ := q
+          simp only [hc, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨rfl, rfl⟩ := h
+          obtain ⟨hkd, hkb'⟩ := hkb d b m rfl
+          obtain ⟨hds, hr⟩ := collectDoms_keys_wb hC n b ds r' hkb' hc
+          exact ⟨fun x hx => (List.mem_cons.mp hx).elim (fun h => h ▸ hkd) (hds x), hr⟩
+
+private theorem motiveType_keys_wb {V : ReconView} {S : _root_.Address → Prop}
+    (hC : V.ClosedOn S) (haddr_key : ∀ x, V.addr (V.key x) = some x) {fuel : Nat}
+    {memberAddr : _root_.Address} {indTy : KExpr} {nOwn nIdx : Nat} {us : List KLevel}
+    {elim : KLevel} {nrp : Nat} {aux : Bool} {sp : List KExpr} {mt : KExpr}
+    (hS : S memberAddr) (hTy : RKeysAt V S indTy) (hsp : ∀ p ∈ sp, RKeysAt V S p)
+    (h : Binding.FamilyRecon.motiveType V fuel memberAddr indTy nOwn nIdx us elim nrp aux sp = some mt) :
+    RKeysAt V S mt := by
+  unfold Binding.FamilyRecon.motiveType at h
+  cases hpm : Binding.FamilyRecon.peelMotiveParams nrp aux sp nOwn 0
+      (Binding.FamilyFlat.exprInstLevels us indTy) with
+  | none => simp [hpm] at h
+  | some after =>
+    simp only [hpm] at h
+    cases hcd : Binding.FamilyRecon.collectDoms V fuel nIdx after with
+    | none => simp [hcd] at h
+    | some q =>
+      obtain ⟨idxDoms, rest⟩ := q
+      simp only [hcd, Option.some.injEq] at h
+      subst h
+      have hafter := Binding.FamilyRecon.peelMotiveParams_keys hsp nOwn 0 _ after
+        (Binding.FamilyRecon.rk_exprInstLevels us hTy) hpm
+      have hidx := (collectDoms_keys_wb hC nIdx after idxDoms rest hafter hcd).1
+      have hhead : RKeysAt V S (.const (V.key memberAddr) us) :=
+        rk_const_key_wb haddr_key hS us
+      have hwith : RKeysAt V S (if aux then Binding.FamilyRecon.specParamsLifted (.const (V.key memberAddr) us) sp nIdx
+          else Binding.FamilyRecon.majorParams (.const (V.key memberAddr) us) nrp nIdx) := by
+        cases aux with
+        | true =>
+          exact rk_appSpine_wb _ _ hhead fun x hx => by
+            obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hx
+            exact Binding.FamilyRecon.rk_lift _ _ (hsp s hs)
+        | false =>
+          exact rk_appSpine_wb _ _ hhead fun x hx => by
+            obtain ⟨i, -, rfl⟩ := List.mem_map.mp hx
+            exact Binding.FamilyRecon.rk_bvar _
+      have hmaj : RKeysAt V S (appBVarsDown _ nIdx) :=
+        rk_appSpine_wb _ _ hwith fun x hx => by
+          obtain ⟨i, -, rfl⟩ := List.mem_map.mp hx
+          exact Binding.FamilyRecon.rk_bvar _
+      refine rk_wrapForalls_wb idxDoms _ (fun k hk => ?_) hidx
+      cases hk with
+      | allTy h1 => exact hmaj k h1
+      | allBody h2 => cases h2
+
+private theorem allMotives_keys_wb {V : ReconView} {S : _root_.Address → Prop}
+    (hC : V.ClosedOn S) (haddr_key : ∀ x, V.addr (V.key x) = some x)
+    {fuel : Nat} {elim : KLevel} {nrp : Nat} :
+    ∀ (es : List FlatEntry) (j : Nat) (ms : List KExpr),
+      (∀ e ∈ es, REntryAt V S e) →
+      Binding.FamilyRecon.allMotives V fuel elim nrp es j = some ms →
+      ∀ m ∈ ms, RKeysAt V S m
+  | [], _, _, _, h => by
+    simp only [Binding.FamilyRecon.allMotives, Option.some.injEq] at h
+    subst h; exact fun _ hm => nomatch hm
+  | e :: rest, j, ms, hent, h => by
+    simp only [Binding.FamilyRecon.allMotives] at h
+    cases hi : V.ind e.addr with
+    | none => simp [hi] at h
+    | some oi =>
+      cases oi with
+      | none => simp [hi] at h
+      | some i =>
+        simp only [hi] at h
+        cases hmt : Binding.FamilyRecon.motiveType V fuel e.addr i.ty i.np i.ni e.levels elim nrp
+            e.aux e.params with
+        | none => simp [hmt] at h
+        | some mt =>
+          simp only [hmt] at h
+          cases hr : Binding.FamilyRecon.allMotives V fuel elim nrp rest (j + 1) with
+          | none => simp [hr] at h
+          | some ms' =>
+            simp only [hr, Option.map_some, Option.some.injEq] at h
+            subst h
+            have he := hent e List.mem_cons_self
+            have hmtK := motiveType_keys_wb hC haddr_key he.addr
+              (hC.indTy e.addr i he.addr hi) he.params hmt
+            have hrestK := allMotives_keys_wb hC haddr_key rest (j + 1) ms'
+              (fun x hx => hent x (List.mem_cons_of_mem _ hx)) hr
+            intro m hm
+            rcases List.mem_cons.mp hm with rfl | hm'
+            · exact Binding.FamilyRecon.rk_lift _ _ hmtK
+            · exact hrestK m hm'
+
+private theorem fieldsClassify_all_keys_wb {V : ReconView} {S : _root_.Address → Prop}
+    (hC : V.ClosedOn S) {fuel : Nat} {es : List FlatEntry} {liftBy : Nat} :
+    ∀ (ty : KExpr) (fidx : Nat) (fds : List KExpr) (ri rm : List Nat) (ret : KExpr)
+      (norm : List KExpr),
+      RKeysAt V S ty → fieldsClassify V fuel es liftBy fidx ty = some (fds, ri, rm, ret, norm) →
+      (∀ d ∈ fds, RKeysAt V S d) ∧ RKeysAt V S ret ∧ (∀ nd ∈ norm, RKeysAt V S nd) := by
+  intro ty
+  induction ty with
+  | forallE d b m _ ihb =>
+    intro fidx fds ri rm ret norm hK h
+    simp only [fieldsClassify] at h
+    cases hw : whnfTele V fuel fuel d with
+    | none => simp [hw] at h
+    | some nd0 =>
+      simp only [hw] at h
+      cases hrest : fieldsClassify V fuel es liftBy (fidx + 1) b with
+      | none => simp [hrest] at h
+      | some res =>
+        obtain ⟨fds', ri', rm', ret', norm'⟩ := res
+        simp only [hrest] at h
+        have hdK : RKeysAt V S d := fun k hk => hK k (.allTy hk)
+        have hnd0 : RKeysAt V S nd0 := whnfTele_keys hC fuel d nd0 hdK hw
+        obtain ⟨hfds', hret', hnorm'⟩ :=
+          ihb (fidx + 1) fds' ri' rm' ret' norm' (fun k hk => hK k (.allBody hk)) hrest
+        cases hrf : Binding.FamilyRecon.isRecField V es (liftBy + fidx) nd0 with
+        | some _ =>
+          rw [hrf] at h
+          simp only [Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨rfl, -, -, rfl, rfl⟩ := h
+          exact ⟨fun x hx => (List.mem_cons.mp hx).elim (fun h => h ▸ hdK) (hfds' x),
+            hret', fun x hx => (List.mem_cons.mp hx).elim (fun h => h ▸ hnd0) (hnorm' x)⟩
+        | none =>
+          rw [hrf] at h
+          simp only [Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨rfl, -, -, rfl, rfl⟩ := h
+          exact ⟨fun x hx => (List.mem_cons.mp hx).elim (fun h => h ▸ hdK) (hfds' x),
+            hret', fun x hx => (List.mem_cons.mp hx).elim (fun h => h ▸ hnd0) (hnorm' x)⟩
+  | bvar _ | fvar _ _ | sort _ | const _ _ | app _ _ | lam _ _ _ | letE _ _ _ _ | lit _
+  | proj _ _ _ =>
+    intro _ _ _ _ _ _ hK h
+    simp only [fieldsClassify, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, -, -, rfl, rfl⟩ := h
+    exact ⟨(fun _ hm => nomatch hm), hK, (fun _ hm => nomatch hm)⟩
+
+private theorem ihDoms_keys_wb {V : ReconView} {S : _root_.Address → Prop}
+    {rm : List Nat} {norm : List KExpr} {fop : List Nat}
+    {motiveBase nFields minorSaved : Nat} {elim : KLevel}
+    (hnorm : ∀ nd ∈ norm, RKeysAt V S nd) :
+    ∀ (j : Nat) (ri : List Nat) (ihs : List KExpr),
+      ihDoms rm norm fop motiveBase nFields minorSaved elim j ri = some ihs →
+      ∀ d ∈ ihs, RKeysAt V S d
+  | _, [], _, h => by
+    simp only [ihDoms, Option.some.injEq] at h
+    subst h; exact fun _ hm => nomatch hm
+  | j, fi :: rest, ihs, h => by
+    simp only [ihDoms] at h
+    cases hd0 : norm[fi]? with
+    | none => simp [hd0] at h
+    | some dom =>
+      simp only [hd0] at h
+      cases hrest : ihDoms rm norm fop motiveBase nFields minorSaved elim (j + 1) rest with
+      | none => simp [hrest] at h
+      | some ihRest =>
+        simp only [hrest, Option.map_some, Option.some.injEq] at h
+        subst h
+        have hdomL : RKeysAt V S (dom.liftLooseBVars (nFields - fi + j) 0) :=
+          Binding.FamilyRecon.rk_lift _ _ (hnorm dom (List.mem_of_getElem? hd0))
+        obtain ⟨hfds, hinner⟩ := rKeysAt_peelAll _ hdomL
+        have hwith : ∀ idx : Nat, RKeysAt V S (appSpine (.bvar idx)
+            ((peelAll (dom.liftLooseBVars (nFields - fi + j) 0)).2.getAppArgs.drop
+              ((fop[(rm[j]?).getD 0]?).getD 0))) := fun idx =>
+          rk_appSpine_wb _ _ (Binding.FamilyRecon.rk_bvar idx) fun a ha =>
+            rKeysAt_getAppArgs _ hinner a (List.mem_of_mem_drop ha)
+        have hfapp : ∀ idx : Nat, RKeysAt V S (appBVarsDown (.bvar idx)
+            (peelAll (dom.liftLooseBVars (nFields - fi + j) 0)).1.length) := fun idx =>
+          rk_appSpine_wb _ _ (Binding.FamilyRecon.rk_bvar idx) fun a ha => by
+            obtain ⟨i, -, rfl⟩ := List.mem_map.mp ha
+            exact Binding.FamilyRecon.rk_bvar _
+        have htail := ihDoms_keys_wb hnorm (j + 1) rest ihRest hrest
+        intro d hd
+        rcases List.mem_cons.mp hd with rfl | hd'
+        · refine rk_wrapForalls_wb _ _ (fun k hk => ?_) hfds
+          cases hk with
+          | appFn h1 => exact hwith _ k h1
+          | appArg h2 => exact hfapp _ k h2
+        · exact htail d hd'
+
+private theorem getAppFn_appSpine_wb (hd : KExpr) (args : List KExpr) :
+    (appSpine hd args).getAppFn = hd.getAppFn := by
+  induction args generalizing hd with
+  | nil => rfl
+  | cons a as ih => exact ih (.app hd a)
+
+private theorem appHead_minor_none_wb {i : Nat} (withIdx ctorApp : KExpr)
+    (ih pfDoms : List KExpr) (elim : KLevel) (hbvar : withIdx.getAppFn = .bvar i) :
+    appHead (wrapForalls (wrapForalls (.app withIdx ctorApp) ih elim) pfDoms elim) = none := by
+  cases pfDoms with
+  | cons _ _ => rfl
+  | nil =>
+    cases ih with
+    | cons _ _ => rfl
+    | nil =>
+      unfold appHead
+      simp only [wrapForalls, List.foldr_nil, Expr.getAppFn, hbvar]
+
+private theorem wrapConsObs_wrapForalls_inv_wb {W : KKey → Option (Option Nat)}
+    {ObsW : KKey → Nat → Prop} {dl : KLevel} :
+    ∀ (doms : List KExpr) {body e' : KExpr},
+      WrapConsObs W ObsW (wrapForalls body doms dl) e' →
+      ∃ (doms' : List KExpr) (body' : KExpr),
+        List.Forall₂ (fun d d' => ∃ c, ConsumesObs W ObsW d c ∧ WrapConsObs W ObsW c d') doms doms' ∧
+        WrapConsObs W ObsW body body' ∧
+        (∀ q, e'.mentionsConst q = false →
+          (∀ d' ∈ doms', d'.mentionsConst q = false) ∧ body'.mentionsConst q = false)
+  | [], _, _, hw => ⟨[], _, .nil, hw, fun _ hq => ⟨(fun _ hm => nomatch hm), hq⟩⟩
+  | d :: ds, body, e', hw => by
+    cases hw with
+    | @forallE _ c _ d' b' _ _ _ hcs hd hb =>
+      obtain ⟨ds', body', hF2, hbody', hmc⟩ := wrapConsObs_wrapForalls_inv_wb ds hb
+      refine ⟨d' :: ds', body', .cons ⟨c, hcs, hd⟩ hF2, hbody', fun q hq => ?_⟩
+      simp only [Expr.mentionsConst, Bool.or_eq_false_iff] at hq
+      obtain ⟨hds'q, hbq⟩ := hmc q hq.2
+      exact ⟨fun x hx => (List.mem_cons.mp hx).elim (fun h => h ▸ hq.1) (hds'q x), hbq⟩
+
+private theorem wrapConsObs_appSpine_inv_wb {W : KKey → Option (Option Nat)}
+    {ObsW : KKey → Nat → Prop} :
+    ∀ (args : List KExpr) {h e' : KExpr},
+      WrapConsObs W ObsW (appSpine h args) e' →
+      ∃ h', WrapConsObs W ObsW h h' ∧ ∀ q, e'.mentionsConst q = false → h'.mentionsConst q = false
+  | [], _, _, hw => ⟨_, hw, fun _ hq => hq⟩
+  | a :: as, h, e', hw => by
+    obtain ⟨ha', hwa', hmc⟩ := wrapConsObs_appSpine_inv_wb as (h := .app h a) hw
+    cases hwa' with
+    | app hfh _ =>
+      exact ⟨_, hfh, fun q hq => by
+        have h1 := hmc q hq
+        simp only [Expr.mentionsConst, Bool.or_eq_false_iff] at h1
+        exact h1.1⟩
+
+private theorem forall₂_mem_left_wb {α β : Type} {R : α → β → Prop} :
+    ∀ {l₁ : List α} {l₂ : List β}, List.Forall₂ R l₁ l₂ →
+      ∀ a ∈ l₁, ∃ b ∈ l₂, R a b
+  | _, _, .nil, _, h => nomatch h
+  | _, _, .cons hr ht, a, ha => by
+    rcases List.mem_cons.mp ha with rfl | ha'
+    · exact ⟨_, List.mem_cons_self, hr⟩
+    · obtain ⟨b, hb, hrb⟩ := forall₂_mem_left_wb ht a ha'
+      exact ⟨b, List.mem_cons_of_mem _ hb, hrb⟩
+
+private theorem wrapConsObs_ctorApp_const_ne_wb {W : KKey → Option (Option Nat)}
+    {ObsW : KKey → Nat → Prop} {ck q : KKey} {us : List KLevel}
+    {nrp depthNow nFields nb : Nat} {aux : Bool} {sp : List KExpr} {e' : KExpr}
+    (hw : WrapConsObs W ObsW
+      (fieldBVars (Binding.FamilyRecon.ctorAppParams (.const ck us) nrp depthNow aux sp) nFields nb) e')
+    (hmc : e'.mentionsConst q = false) : (ck == q) = false := by
+  obtain ⟨h1, hw1, hmc1⟩ := wrapConsObs_appSpine_inv_wb _ hw
+  have h1q : h1.mentionsConst q = false := hmc1 q hmc
+  cases aux with
+  | false =>
+    obtain ⟨h2, hw2, hmc2⟩ := wrapConsObs_appSpine_inv_wb _ hw1
+    cases hw2 with
+    | const _ => exact hmc2 q h1q
+  | true =>
+    obtain ⟨h2, hw2, hmc2⟩ := wrapConsObs_appSpine_inv_wb _ hw1
+    cases hw2 with
+    | const _ => exact hmc2 q h1q
+
+private theorem mentionsConst_ctorApp_false_wb {V : ReconView} {S : _root_.Address → Prop}
+    {ck q : KKey} {a : _root_.Address} {us : List KLevel}
+    {nrp depthNow nFields nb : Nat} {aux : Bool} {sp : List KExpr}
+    (ha : V.addr q = some a) (hnotS : ¬ S a) (hsp : ∀ p ∈ sp, RKeysAt V S p)
+    (hne : (ck == q) = false) :
+    (fieldBVars (Binding.FamilyRecon.ctorAppParams (.const ck us) nrp depthNow aux sp) nFields nb).mentionsConst q =
+      false := by
+  refine mentionsConst_appSpine_of_wb ?_ (fun x hx => by
+    obtain ⟨i, -, rfl⟩ := List.mem_map.mp hx; rfl)
+  cases aux with
+  | false =>
+    exact mentionsConst_appSpine_of_wb hne (fun x hx => by
+      obtain ⟨i, -, rfl⟩ := List.mem_map.mp hx; rfl)
+  | true =>
+    exact mentionsConst_appSpine_of_wb hne (fun x hx => by
+      obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hx
+      exact not_mentions_of_rKeysAt_wb ha hnotS (Binding.FamilyRecon.rk_lift _ _ (hsp s hs)))
+
+private theorem minorAt_not_mentions_wb {V : ReconView} {S : _root_.Address → Prop}
+    {W : KKey → Option (Option Nat)} {ObsW : KKey → Nat → Prop}
+    {fuel : Nat} {es : List FlatEntry} {fop : List Nat} {ck q : KKey} {a : _root_.Address}
+    {cty m c m' : KExpr} {nOwn nrp nMot prevMinors motiveBase selfMemIdx : Nat}
+    {aux : Bool} {sp : List KExpr} {us : List KLevel} {elim : KLevel}
+    (hC : V.ClosedOn S) (ha : V.addr q = some a) (hnotS : ¬ S a)
+    (hcty : RKeysAt V S cty) (hsp : ∀ p ∈ sp, RKeysAt V S p)
+    (hm : minorAt V fuel es fop ck cty nOwn aux sp us nrp nMot prevMinors motiveBase selfMemIdx elim = some m)
+    (hcs : ConsumesObs W ObsW m c) (hobs : WrapConsObs W ObsW c m')
+    (hm'_q : m'.mentionsConst q = false) :
+    m.mentionsConst q = false := by
+  unfold minorAt at hm
+  dsimp only at hm
+  cases hpc : peelCtorParams V fuel nrp 0 aux sp nOwn 0 (Binding.FamilyFlat.exprInstLevels us cty) with
+  | none => rw [hpc] at hm; cases hm
+  | some after =>
+    rw [hpc] at hm; dsimp only at hm
+    cases hfc : fieldsClassify V fuel es 0 0 after with
+    | none => rw [hfc] at hm; cases hm
+    | some res =>
+      obtain ⟨pfDoms, ri, rm, pfRet, pfNorm⟩ := res
+      rw [hfc] at hm; dsimp only at hm
+      cases hih : ihDoms rm (liftIndices pfNorm (nMot + prevMinors)) fop motiveBase pfDoms.length
+          (nrp + nMot + prevMinors) elim 0 ri with
+      | none => rw [hih] at hm; cases hm
+      | some ih =>
+        rw [hih] at hm
+        simp only [Option.some.injEq] at hm
+        have hnoHead : appHead m = none := by
+          rw [← hm]
+          exact appHead_minor_none_wb _ _ _ _ _ (getAppFn_appSpine_wb _ _)
+        cases hcs with
+        | step _ hhd _ _ _ => rw [hnoHead] at hhd; cases hhd
+        | refl =>
+          subst hm
+          obtain ⟨_, body1', -, hobs1, hmc1⟩ := wrapConsObs_wrapForalls_inv_wb _ hobs
+          have hb1q := (hmc1 q hm'_q).2
+          obtain ⟨_, body2', -, hobs2, hmc2⟩ := wrapConsObs_wrapForalls_inv_wb _ hobs1
+          have hb2q := (hmc2 q hb1q).2
+          cases hobs2 with
+          | app _ hctor_obs =>
+            simp only [Expr.mentionsConst, Bool.or_eq_false_iff] at hb2q
+            have hck_ne : (ck == q) = false :=
+              wrapConsObs_ctorApp_const_ne_wb hctor_obs hb2q.2
+            have hafter := (Binding.FamilyRecon.peelCtorParams_leOn (ReconView.LeOn.refl V S) hC
+              (Nat.le_refl _) hsp nOwn 0 _ after (Binding.FamilyRecon.rk_exprInstLevels us hcty) hpc).2
+            obtain ⟨hpfDomsK, hpfRetK, hpfNormK⟩ :=
+              fieldsClassify_all_keys_wb hC after 0 pfDoms ri rm pfRet pfNorm hafter hfc
+            have hihK := ihDoms_keys_wb (rk_liftIndices_wb hpfNormK) 0 ri ih hih
+            have hwithK : ∀ idx : Nat, RKeysAt V S (appSpine (.bvar idx)
+                (((pfRet.liftLooseBVars (nMot + prevMinors) pfDoms.length).getAppArgs.drop nOwn).map
+                  fun e => e.liftLooseBVars ri.length 0)) := fun idx =>
+              rk_appSpine_wb _ _ (Binding.FamilyRecon.rk_bvar idx) fun x hx => by
+                obtain ⟨e, he, rfl⟩ := List.mem_map.mp hx
+                exact Binding.FamilyRecon.rk_lift _ _
+                  (rKeysAt_getAppArgs _ (Binding.FamilyRecon.rk_lift _ _ hpfRetK) e (List.mem_of_mem_drop he))
+            refine mentionsConst_wrapForalls_of_wb ?_
+              (fun d hd => not_mentions_of_rKeysAt_wb ha hnotS (rk_liftIndices_wb hpfDomsK d hd))
+            refine mentionsConst_wrapForalls_of_wb ?_
+              (fun d hd => not_mentions_of_rKeysAt_wb ha hnotS (hihK d hd))
+            simp only [Expr.mentionsConst, Bool.or_eq_false_iff]
+            exact ⟨not_mentions_of_rKeysAt_wb ha hnotS (hwithK _),
+              mentionsConst_ctorApp_false_wb ha hnotS hsp hck_ne⟩
+
+private theorem minorDoms_not_mentions_wb {V : ReconView} {S : _root_.Address → Prop}
+    {W : KKey → Option (Option Nat)} {ObsW : KKey → Nat → Prop}
+    {fuel : Nat} {es : List FlatEntry} {fop : List Nat} {q : KKey} {a : _root_.Address}
+    {aux : Bool} {sp : List KExpr} {us : List KLevel}
+    {nrp nMot motiveBase selfMemIdx : Nat} {blk : _root_.Address} {idx : Nat} {elim : KLevel}
+    (hC : V.ClosedOn S) (ha : V.addr q = some a) (hnotS : ¬ S a)
+    (hblk : S blk) (hsp : ∀ p ∈ sp, RKeysAt V S p) :
+    ∀ (cs : List Nat) (prev : Nat) (ms : List KExpr),
+      minorDoms V fuel es fop aux sp us nrp nMot motiveBase selfMemIdx blk idx elim prev cs = some ms →
+      (∀ m ∈ ms, ∃ c m', ConsumesObs W ObsW m c ∧ WrapConsObs W ObsW c m' ∧ m'.mentionsConst q = false) →
+      ∀ m ∈ ms, m.mentionsConst q = false
+  | [], _, _, h, _ => by
+    simp only [minorDoms, Option.some.injEq] at h
+    subst h; exact fun _ hm => nomatch hm
+  | ci :: rest, prev, ms, h, hobs => by
+    simp only [minorDoms] at h
+    cases hvc : V.ctor blk idx ci with
+    | none => simp [hvc] at h
+    | some p =>
+      obtain ⟨cty, np⟩ := p
+      simp only [hvc] at h
+      cases hma : minorAt V fuel es fop (V.key (V.ctorAddr blk idx ci)) cty np aux sp us nrp nMot
+          prev motiveBase selfMemIdx elim with
+      | none => simp [hma] at h
+      | some m0 =>
+        simp only [hma] at h
+        cases hr : minorDoms V fuel es fop aux sp us nrp nMot motiveBase selfMemIdx blk idx elim
+            (prev + 1) rest with
+        | none => simp [hr] at h
+        | some ms' =>
+          simp only [hr, Option.map_some, Option.some.injEq] at h
+          subst h
+          obtain ⟨c0, m0', hcs0, hobs0, hq0⟩ := hobs m0 List.mem_cons_self
+          have hm0 := minorAt_not_mentions_wb hC ha hnotS (hC.ctorTy blk idx ci cty np hblk hvc)
+            hsp hma hcs0 hobs0 hq0
+          have htail := minorDoms_not_mentions_wb hC ha hnotS hblk hsp rest (prev + 1) ms' hr
+            (fun m hm => hobs m (List.mem_cons_of_mem _ hm))
+          intro m hm
+          rcases List.mem_cons.mp hm with rfl | hm'
+          · exact hm0
+          · exact htail m hm'
+
+private theorem allMinors_not_mentions_wb {V : ReconView} {S : _root_.Address → Prop}
+    {W : KKey → Option (Option Nat)} {ObsW : KKey → Nat → Prop}
+    {fuel : Nat} {fullEs : List FlatEntry} {fop : List Nat} {q : KKey} {a : _root_.Address}
+    {nrp nMot motiveBase : Nat} {elim : KLevel}
+    (hC : V.ClosedOn S) (ha : V.addr q = some a) (hnotS : ¬ S a) :
+    ∀ (es : List FlatEntry) (prev pos : Nat) (minDoms : List KExpr),
+      (∀ e ∈ es, REntryAt V S e) →
+      allMinors V fuel fullEs fop nrp nMot motiveBase elim es prev pos = some minDoms →
+      (∀ m ∈ minDoms, ∃ c m', ConsumesObs W ObsW m c ∧ WrapConsObs W ObsW c m' ∧ m'.mentionsConst q = false) →
+      ∀ m ∈ minDoms, m.mentionsConst q = false
+  | [], _, _, _, _, h, _ => by
+    simp only [allMinors, Option.some.injEq] at h
+    subst h; exact fun _ hm => nomatch hm
+  | e :: rest, prev, pos, minDoms, hent, h, hobs => by
+    simp only [allMinors] at h
+    cases hi : V.ind e.addr with
+    | none => simp [hi] at h
+    | some oi =>
+      cases oi with
+      | none => simp [hi] at h
+      | some i =>
+        simp only [hi] at h
+        cases hmd : minorDoms V fuel fullEs fop e.aux e.params e.levels nrp nMot motiveBase pos
+            i.blk i.idx elim prev (List.range i.nctors) with
+        | none => simp [hmd] at h
+        | some ms =>
+          simp only [hmd] at h
+          cases hr : allMinors V fuel fullEs fop nrp nMot motiveBase elim rest (prev + ms.length)
+              (pos + 1) with
+          | none => simp [hr] at h
+          | some restMs =>
+            simp only [hr, Option.map_some, Option.some.injEq] at h
+            subst h
+            have he := hent e List.mem_cons_self
+            have hms := minorDoms_not_mentions_wb hC ha hnotS (hC.indBlk e.addr i he.addr hi)
+              he.params (List.range i.nctors) prev ms hmd
+              (fun m hm => hobs m (List.mem_append_left _ hm))
+            have hrest := allMinors_not_mentions_wb hC ha hnotS rest (prev + ms.length) (pos + 1)
+              restMs (fun x hx => hent x (List.mem_cons_of_mem _ hx)) hr
+              (fun m hm => hobs m (List.mem_append_right _ hm))
+            intro m hm
+            rcases List.mem_append.mp hm with h1 | h2
+            · exact hms m h1
+            · exact hrest m h2
+
+/-- **Absence of outside-`S` constants in `recTypeAt`**: if `V` is closed on `S`, every flattened
+entry lies in `S`, `q` names an address outside `S`, and some observed wrapper consumption `ty` of
+`R` does not mention `q`, then `R` itself does not mention `q` (including constructor heads in
+minor premises, which are preserved into `ty`). -/
+theorem recTypeAt_not_mentions {V : ReconView} {S : _root_.Address → Prop}
+    {W : KKey → Option (Option Nat)} {ObsW : KKey → Nat → Prop}
+    {fuel : Nat} {es : List FlatEntry} {off nP k : Nat} {R ty : KExpr}
+    {q : KKey} {a : _root_.Address}
+    (hC : V.ClosedOn S)
+    (haddr_key : ∀ x, V.addr (V.key x) = some x)
+    (hent : ∀ e ∈ es, REntryAt V S e)
+    (hR : recTypeAt V fuel es off nP k = some R)
+    (ha : V.addr q = some a) (hnotS : ¬ S a)
+    (hobs : WrapConsObs W ObsW R ty) (hty : ty.mentionsConst q = false) :
+    R.mentionsConst q = false := by
+  unfold recTypeAt at hR
+  cases he0 : es[0]? with
+  | none => simp [he0] at hR
+  | some e0 =>
+    cases hek : es[k]? with
+    | none => simp [he0, hek] at hR
+    | some ek =>
+      simp only [he0, hek] at hR
+      cases hprim : V.ind e0.addr with
+      | none => simp [hprim] at hR
+      | some o0 =>
+        cases o0 with
+        | none => simp [hprim] at hR
+        | some prim =>
+          cases hself : V.ind ek.addr with
+          | none => simp [hprim, hself] at hR
+          | some ok =>
+            cases ok with
+            | none => simp [hprim, hself] at hR
+            | some self =>
+              simp only [hprim, hself] at hR
+              cases hcd : Binding.FamilyRecon.collectDoms V fuel nP
+                  (Binding.FamilyFlat.exprInstLevels
+                    ((List.range prim.nl).map fun i => Level.param (off + i)) prim.ty) with
+              | none => simp [hcd] at hR
+              | some pDoms =>
+                obtain ⟨paramDoms, _⟩ := pDoms
+                simp only [hcd] at hR
+                cases hmot : Binding.FamilyRecon.allMotives V fuel (elimLevel off) nP es 0 with
+                | none => simp [hmot] at hR
+                | some motDoms =>
+                  cases hfop : flatOwnParams V es with
+                  | none => simp [hmot, hfop] at hR
+                  | some fop =>
+                    simp only [hmot, hfop] at hR
+                    cases hmin : allMinors V fuel es fop nP es.length nP (elimLevel off) es 0 0 with
+                    | none => simp [hmin] at hR
+                    | some minDoms =>
+                      simp only [hmin] at hR
+                      cases hpm : Binding.FamilyRecon.peelMotiveParams nP ek.aux ek.params self.np 0
+                          (Binding.FamilyFlat.exprInstLevels ek.levels self.ty) with
+                      | none => simp [hpm] at hR
+                      | some selfAfter =>
+                        simp only [hpm] at hR
+                        cases hidx : Binding.FamilyRecon.collectDoms V fuel self.ni selfAfter with
+                        | none => simp [hidx] at hR
+                        | some idxPair =>
+                          obtain ⟨idxRaw, _⟩ := idxPair
+                          simp only [hidx, Option.some.injEq] at hR
+                          subst hR
+                          have he0S := hent e0 (List.mem_of_getElem? he0)
+                          have hekS := hent ek (List.mem_of_getElem? hek)
+                          -- Peel `paramDoms`, `motDoms`, `minDoms` from `hobs`
+                          obtain ⟨_, b1', -, hobs1, hmc1⟩ := wrapConsObs_wrapForalls_inv_wb paramDoms hobs
+                          have hb1q := (hmc1 q hty).2
+                          obtain ⟨_, b2', -, hobs2, hmc2⟩ := wrapConsObs_wrapForalls_inv_wb motDoms hobs1
+                          have hb2q := (hmc2 q hb1q).2
+                          obtain ⟨minDoms', _, hF2_min, -, hmc3⟩ := wrapConsObs_wrapForalls_inv_wb minDoms hobs2
+                          have hmin'_q := (hmc3 q hb2q).1
+                          have hmin_obs : ∀ m ∈ minDoms, ∃ c m',
+                              ConsumesObs W ObsW m c ∧ WrapConsObs W ObsW c m' ∧
+                              m'.mentionsConst q = false := by
+                            intro m hm
+                            obtain ⟨m', hm', c, hcs, hcm⟩ := forall₂_mem_left_wb hF2_min m hm
+                            exact ⟨c, m', hcs, hcm, hmin'_q m' hm'⟩
+                          have hmin_q := allMinors_not_mentions_wb hC ha hnotS es 0 0 minDoms hent hmin hmin_obs
+                          have hparamK := (collectDoms_keys_wb hC nP _ paramDoms _
+                            (Binding.FamilyRecon.rk_exprInstLevels _ (hC.indTy e0.addr prim he0S.addr hprim)) hcd).1
+                          have hmotK := allMotives_keys_wb hC haddr_key es 0 motDoms hent hmot
+                          have hselfAfterK := Binding.FamilyRecon.peelMotiveParams_keys hekS.params self.np 0 _
+                            selfAfter (Binding.FamilyRecon.rk_exprInstLevels _ (hC.indTy ek.addr self hekS.addr hself)) hpm
+                          have hidxK := (collectDoms_keys_wb hC self.ni selfAfter idxRaw _ hselfAfterK hidx).1
+                          have hheadK : RKeysAt V S (.const (V.key ek.addr) ek.levels) :=
+                            rk_const_key_wb haddr_key hekS.addr ek.levels
+                          have hwithK : RKeysAt V S (if ek.aux then
+                              Binding.FamilyRecon.specParamsLifted (.const (V.key ek.addr) ek.levels) ek.params
+                                (es.length + minDoms.length + self.ni)
+                            else appBVarsDec (.const (V.key ek.addr) ek.levels) nP
+                              (nP + es.length + minDoms.length + self.ni - 1)) := by
+                            cases ek.aux with
+                            | true =>
+                              exact rk_appSpine_wb _ _ hheadK fun x hx => by
+                                obtain ⟨s, hs, rfl⟩ := List.mem_map.mp hx
+                                exact Binding.FamilyRecon.rk_lift _ _ (hekS.params s hs)
+                            | false =>
+                              exact rk_appSpine_wb _ _ hheadK fun x hx => by
+                                obtain ⟨i, -, rfl⟩ := List.mem_map.mp hx
+                                exact Binding.FamilyRecon.rk_bvar _
+                          have hmajK : RKeysAt V S (appBVarsDown _ self.ni) :=
+                            rk_appSpine_wb _ _ hwithK fun x hx => by
+                              obtain ⟨i, -, rfl⟩ := List.mem_map.mp hx
+                              exact Binding.FamilyRecon.rk_bvar _
+                          refine mentionsConst_wrapForalls_of_wb ?_
+                            (fun d hd => not_mentions_of_rKeysAt_wb ha hnotS (hparamK d hd))
+                          refine mentionsConst_wrapForalls_of_wb ?_
+                            (fun d hd => not_mentions_of_rKeysAt_wb ha hnotS (hmotK d hd))
+                          refine mentionsConst_wrapForalls_of_wb ?_ hmin_q
+                          refine mentionsConst_wrapForalls_of_wb ?_
+                            (fun d hd => not_mentions_of_rKeysAt_wb ha hnotS (rk_liftIndices_wb hidxK d hd))
+                          simp only [Expr.mentionsConst, Bool.or_eq_false_iff]
+                          exact ⟨not_mentions_of_rKeysAt_wb ha hnotS hmajK,
+                            mentionsConst_appSpine_of_wb rfl (fun x hx => by
+                              obtain ⟨i, -, rfl⟩ := List.mem_map.mp hx; rfl), trivial⟩
+
+private theorem renameConsts_fix_of_exprLvEq_wb {f : KKey → KKey} {a b : KExpr}
+    (h : ExprLvEq a b) : b.renameConsts f = b → a.renameConsts f = a := by
+  induction h with
+  | bvar | sort | lit => intro _; rfl
+  | fvar _ ih =>
+    intro hb
+    simp only [Expr.renameConsts] at hb ⊢
+    injection hb with _ htb
+    congr 1; exact ih htb
+  | const =>
+    intro hb
+    simp only [Expr.renameConsts] at hb ⊢
+    injection hb with hn _
+    congr 1
+  | app _ _ ihf iha =>
+    intro hb
+    simp only [Expr.renameConsts] at hb ⊢
+    injection hb with hf ha
+    congr 1
+    · exact ihf hf
+    · exact iha ha
+  | lam _ _ iht ihb =>
+    intro hb
+    simp only [Expr.renameConsts] at hb ⊢
+    injection hb with ht hb' _
+    congr 1
+    · exact iht ht
+    · exact ihb hb'
+  | forallE _ _ iht ihb =>
+    intro hb
+    simp only [Expr.renameConsts] at hb ⊢
+    injection hb with ht hb' _
+    congr 1
+    · exact iht ht
+    · exact ihb hb'
+  | letE _ _ _ iht ihv ihb =>
+    intro hb
+    simp only [Expr.renameConsts] at hb ⊢
+    injection hb with ht hv hb' _
+    congr 1
+    · exact iht ht
+    · exact ihv hv
+    · exact ihb hb'
+  | proj _ ih =>
+    intro hb
+    simp only [Expr.renameConsts] at hb ⊢
+    injection hb with _ _ he
+    congr 1; exact ih he
+
+private theorem lamDomsFix_add_wb {f : KKey → KKey} :
+    ∀ {m n : Nat} {lC lW rC rW : KExpr},
+      LamDomsFix f m lC lW →
+      stripLams m lC = some rC → stripLams m lW = some rW →
+      LamDomsFix f n rC rW →
+      LamDomsFix f (m + n) lC lW
+  | 0, _, _, _, _, _, .zero, hC, hW, h2 => by
+    simp only [stripLams, Option.some.injEq] at hC hW
+    subst hC hW; simpa using h2
+  | m + 1, n, _, _, _, _, .succ hdC hdW h1, hC, hW, h2 => by
+    rw [show m + 1 + n = (m + n) + 1 by omega]
+    exact .succ hdC hdW (lamDomsFix_add_wb h1 hC hW h2)
+
+private theorem lamDomsFix_of_lamsAlong_wb {f : KKey → KKey} {elim : KLevel} :
+    ∀ {n : Nat} {lC lW pC pW rC rW : KExpr},
+      LamsAlong elim n lC pC rC → LamsAlong elim n lW pW rW →
+      pC.renameConsts f = pC → pW.renameConsts f = pW →
+      LamDomsFix f n lC lW
+  | 0, _, _, _, _, _, _, .zero, .zero, _, _ => .zero
+  | _ + 1, _, _, _, _, _, _, .succ _ hdC hC, .succ _ hdW hW, hpC, hpW => by
+    simp only [Expr.renameConsts] at hpC hpW
+    injection hpC with hdpC hbpC _
+    injection hpW with hdpW hbpW _
+    exact .succ (renameConsts_fix_of_exprLvEq_wb hdC hdpC) (renameConsts_fix_of_exprLvEq_wb hdW hdpW)
+      (lamDomsFix_of_lamsAlong_wb hC hW hbpC hbpW)
+
+private theorem lamDomsFix_congr_left_wb {f : KKey → KKey} :
+    ∀ {n : Nat} {lC₁ lC₂ lW : KExpr},
+      ExprLvEq lC₁ lC₂ → LamDomsFix f n lC₂ lW → LamDomsFix f n lC₁ lW
+  | 0, _, _, _, _, .zero => .zero
+  | _ + 1, _, _, _, hlv, .succ hdC hdW hrest => by
+    cases hlv with
+    | lam hdt hdb =>
+      exact .succ (renameConsts_fix_of_exprLvEq_wb hdt hdC) hdW (lamDomsFix_congr_left_wb hdb hrest)
+
+private theorem lamDomsFix_instantiateLevelParams_wb {f : KKey → KKey}
+    (ps : List LevelParam) (us : List KLevel) :
+    ∀ {n : Nat} {lC lW : KExpr},
+      LamDomsFix f n lC lW →
+      LamDomsFix f n (lC.instantiateLevelParams ps us) (lW.instantiateLevelParams ps us)
+  | 0, _, _, .zero => .zero
+  | _ + 1, _, _, .succ hdC hdW hrest =>
+    .succ
+      (by rw [renameConsts_instantiateLevelParams, hdC])
+      (by rw [renameConsts_instantiateLevelParams, hdW])
+      (lamDomsFix_instantiateLevelParams_wb ps us hrest)
+
+/-- **Build `TwinRuleMatch` together with a common `WrapRel` ancestor `rhsG`** at level parameters
+`ps` from `SymWrapT` on loaded types and `RuleFollows` on both canonical and twin rules. -/
+theorem twinRuleMatch_with_join_of_ruleFollows {find? : KKey → Option (ConstantInfo .anon)}
+    {f : KKey → KKey} {ps : List LevelParam} (hperm : ps.Perm (List.range ps.length))
+    {tyC_ld tyW_ld tyW' rC_rhs rhsC_ld rW'_rhs rhsW_ld cbC cbW : KExpr}
+    {nP nMot nMin minor nf : Nat} {elim : KLevel}
+    (hty_sym : SymWrapT find? tyC_ld tyW_ld)
+    (htyC_fix : tyC_ld.renameConsts f = tyC_ld)
+    (htyW_fix : tyW_ld.renameConsts f = tyW_ld)
+    (htyW_eq : Core.posOf ps tyW' = tyW_ld)
+    (hrhsC_lv : ExprLvEq (Core.posOf ps rC_rhs) rhsC_ld)
+    (hrhsW_eq : Core.posOf ps rW'_rhs = rhsW_ld)
+    (hfvC : rC_rhs.hasFvar = false) (hfvW : rW'_rhs.hasFvar = false)
+    (hlfC : letFree rC_rhs = true) (hlfW : letFree rW'_rhs = true)
+    (hmin_lt : minor < nMin)
+    (hC : RuleFollows tyC_ld nP nMot nMin minor nf elim rhsC_ld cbC)
+    (hW : RuleFollows tyW_ld nP nMot nMin minor nf elim rhsW_ld cbW)
+    (hcb : ExprLvEq (cbC.renameConsts f) cbW) :
+    ∃ rhsG : KExpr,
+      WrapRel find? rhsG rC_rhs ∧
+      WrapRel find? (rhsG.renameConsts f) rW'_rhs ∧
+      TwinRuleMatch find? f tyW' rC_rhs rW'_rhs := by
+  have hMatch : TwinRuleMatch find? f tyW' rC_rhs rW'_rhs :=
+    twinRuleMatch_of_ruleFollows hperm hty_sym htyC_fix htyW_eq hrhsC_lv hrhsW_eq hlfW hmin_lt hC hW hcb
+  obtain ⟨afterC, mdomC, restC, sbC_ld, mmC, hlam1C, hpeelC, hlam2C, hsbC⟩ := hC
+  obtain ⟨afterW, mdomW, restW, sbW_ld, mmW, hlam1W, hpeelW, hlam2W, hsbW⟩ := hW
+  have hlfW_ld : letFree rhsW_ld = true := by
+    rw [← hrhsW_eq]; unfold Core.posOf; rw [letFree_instantiateLevelParams_wb]; exact hlfW
+  have hmdomC_fix : mdomC.renameConsts f = mdomC := by
+    have h := peelForalls_renameConsts f (nP + nMot + minor) hpeelC
+    rw [htyC_fix] at h
+    have h1 := Option.some.inj (h.symm.trans hpeelC)
+    injection h1
+  have hmdomW_fix : mdomW.renameConsts f = mdomW := by
+    have h := peelForalls_renameConsts f (nP + nMot + minor) hpeelW
+    rw [htyW_fix] at h
+    have h1 := Option.some.inj (h.symm.trans hpeelW)
+    injection h1
+  have hfix_ld : LamDomsFix f (nP + nMot + nMin + nf) rhsC_ld rhsW_ld :=
+    lamDomsFix_add_wb
+      (lamDomsFix_of_lamsAlong_wb hlam1C hlam1W htyC_fix htyW_fix)
+      (lamsAlong_to_stripLams hlam1C) (lamsAlong_to_stripLams hlam1W)
+      (lamDomsFix_of_lamsAlong_wb hlam2C hlam2W
+        (by rw [renameConsts_liftLooseBVars_wb, hmdomC_fix])
+        (by rw [renameConsts_liftLooseBVars_wb, hmdomW_fix]))
+  have hfix_pos : LamDomsFix f (nP + nMot + nMin + nf) (Core.posOf ps rC_rhs) (Core.posOf ps rW'_rhs) := by
+    rw [hrhsW_eq]
+    exact lamDomsFix_congr_left_wb hrhsC_lv hfix_ld
+  have hfix : LamDomsFix f (nP + nMot + nMin + nf) rC_rhs rW'_rhs := by
+    have h := lamDomsFix_instantiateLevelParams_wb (List.range ps.length) (ps.map .param) hfix_pos
+    rwa [Decl.posOf_perm_inv hperm rC_rhs, Decl.posOf_perm_inv hperm rW'_rhs] at h
+  have hSC_ld : stripLams (nP + nMot + nMin + nf) rhsC_ld = some sbC_ld := by
+    rw [Ix.Kernel.Semantics.stripLams_add, lamsAlong_to_stripLams hlam1C]
+    exact lamsAlong_to_stripLams hlam2C
+  have hSW_ld : stripLams (nP + nMot + nMin + nf) rhsW_ld = some sbW_ld := by
+    rw [Ix.Kernel.Semantics.stripLams_add, lamsAlong_to_stripLams hlam1W]
+    exact lamsAlong_to_stripLams hlam2W
+  obtain ⟨sbC_pos, hSC_pos, hsbC_pos_lv⟩ := stripLams_of_exprLvEq _ hrhsC_lv hSC_ld
+  have hsb_pos_lv : ExprLvEq (sbC_pos.renameConsts f) sbW_ld :=
+    ((exprLvEq_renameConsts f (hsbC_pos_lv.trans hsbC)).trans hcb).trans hsbW.symm
+  have hlf_sbW : letFree sbW_ld = true := lamsAlong_letFree hlam2W (lamsAlong_letFree hlam1W hlfW_ld)
+  have hlf_sbC_pos : letFree (sbC_pos.renameConsts f) = true := by
+    rw [letFree_of_exprLvEq hsb_pos_lv]; exact hlf_sbW
+  have hBase_pos : WrapT (fun _ : KKey => (none : Option (ConstantInfo .anon)))
+      (sbC_pos.renameConsts f) sbW_ld :=
+    exprLvEq_to_wrapT_empty hsb_pos_lv hlf_sbC_pos
+  let inst : KExpr → KExpr := Expr.instantiateLevelParams (List.range ps.length) (ps.map .param)
+  have hSC_base : stripLams (nP + nMot + nMin + nf) rC_rhs = some (inst sbC_pos) := by
+    have h := stripLams_instantiateLevelParams (List.range ps.length) (ps.map .param) _ hSC_pos
+    rwa [Decl.posOf_perm_inv hperm rC_rhs] at h
+  have hSW_pos : stripLams (nP + nMot + nMin + nf) (Core.posOf ps rW'_rhs) = some sbW_ld := by
+    rwa [hrhsW_eq]
+  have hSW_base : stripLams (nP + nMot + nMin + nf) rW'_rhs = some (inst sbW_ld) := by
+    have h := stripLams_instantiateLevelParams (List.range ps.length) (ps.map .param) _ hSW_pos
+    rwa [Decl.posOf_perm_inv hperm rW'_rhs] at h
+  have hBase : WrapT (fun _ : KKey => (none : Option (ConstantInfo .anon)))
+      ((inst sbC_pos).renameConsts f) (inst sbW_ld) := by
+    have h := wrapT_empty_instantiateLevelParams (List.range ps.length) (ps.map .param) hBase_pos
+    rw [← renameConsts_instantiateLevelParams] at h
+    exact h
+  obtain ⟨rhsG, hGC, hGW⟩ :=
+    SymWrapT.exists_join_prefix (nP + nMot + nMin + nf) hMatch.1 hSC_base hSW_base hBase hfix
+      hfvC hfvW hlfC hlfW
+  exact ⟨rhsG, hGC, hGW, hMatch⟩
 
 end IxVM.Refinement.Typing.TwinFamily
