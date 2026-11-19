@@ -8,10 +8,15 @@ import IxVMRefinement.Obs.KernelCheck11
 (and `hnf V`), derived from elementary single-call store-read predicates:
 
 * `AddrOf κ V`: `V.addr (κ a) = some a`.
-* `DefnAnswers κ V`: `Ingress::get_ci` matches `V.unfold` on `Defn` vs non-`Defn`.
-* `IndAnswers κ V`: `Ingress::get_ci` matches `V.ind` on `Induct` vs non-`Induct`.
-* `CtorOfAnswers V`: `Ingress::get_ci` matches `V.ctorOf` on `Ctor` vs non-`Ctor`.
-* `ModeledAnswers V`: `KernelModeled::block_is_modeled` matches `V.modeled`.
+* `DefnAnswers calls κ V`: `Ingress::get_ci` matches `V.unfold` on `Defn` vs non-`Defn`.
+* `IndAnswers calls κ V`: `Ingress::get_ci` matches `V.ind` on `Induct` vs non-`Induct`.
+* `CtorOfAnswers calls V`: `Ingress::get_ci` matches `V.ctorOf` on `Ctor` vs non-`Ctor`.
+* `ModeledAnswers calls V`: `KernelModeled::block_is_modeled` matches `V.modeled`.
+
+The four load predicates answer for the calls of a run `calls`: they ask the answer only of an
+observation whose calls are among `calls` (and, for `DefnAnswers` and `IndAnswers`, which is itself
+one of `calls`), since a run determines only the loads among its own calls. Each specification
+below takes its own calls among `calls` and hands that to its sub-calls, as it does `Bounded`.
 
 From these five single-call predicates, this module proves:
 * `apply_spine_spec` (`KernelWhnf::apply_spine` is `mkAppN`, preserving `NotLet`),
@@ -167,11 +172,14 @@ termination_by cs.length
 def AddrOf (κ : _root_.Address → KKey) (V : ReconView) : Prop :=
   ∀ a : _root_.Address, V.addr (κ a) = some a
 
-/-- **`Ingress::get_ci` matches `V.unfold` on `Defn` vs non-`Defn`.** -/
-def DefnAnswers (κ : _root_.Address → KKey) (V : ReconView) : Prop :=
+/-- **`Ingress::get_ci` matches `V.unfold` on `Defn` vs non-`Defn`**, for a load that is one of
+the calls `calls` and whose own calls are among them. -/
+def DefnAnswers (calls : List (Call F)) (κ : _root_.Address → KKey) (V : ReconView) : Prop :=
   ∀ {xa p ci : SourceValue F} {h m : Heap F} {cs : List (Call F)} {a : Bytes.Address},
     Bytes.RepAddressRef addrTy h a xa →
-    ObsFn W "Ingress::get_ci" [xa] h p m cs → loadValue m p = .ok ci →
+    ObsFn W "Ingress::get_ci" [xa] h p m cs →
+    (⟨"Ingress::get_ci", [xa], h⟩ : Call F) ∈ calls → (∀ c ∈ cs, c ∈ calls) →
+    loadValue m p = .ok ci →
     (∀ xnl xty xval xsf xh,
       ci = .construct "KernelTypes::KConstantInfo" "Defn" [xnl, xty, xval, xsf, xh] →
       ∃ (nl : Nat) (val : KExpr),
@@ -182,18 +190,22 @@ def DefnAnswers (κ : _root_.Address → KKey) (V : ReconView) : Prop :=
         ci ≠ .construct "KernelTypes::KConstantInfo" "Defn" vs) →
       ∀ us, V.unfold (κ (ixAddr a)) us = some none)
 
-/-- **`Ingress::get_ci` matches `V.ind` on `Induct` vs non-`Induct`.** -/
-def IndAnswers (κ : _root_.Address → KKey) (V : ReconView) : Prop :=
+/-- **`Ingress::get_ci` matches `V.ind` on `Induct` vs non-`Induct`**, for a load that is one of
+the calls `calls` and whose own calls are among them, with the bounds a load gives: the level
+count below `2^32`, the other counts and the position below `2^56`. -/
+def IndAnswers (calls : List (Call F)) (κ : _root_.Address → KKey) (V : ReconView) : Prop :=
   ∀ {xa p ci : SourceValue F} {h m : Heap F} {cs : List (Call F)} {a : Bytes.Address},
     Bytes.RepAddressRef addrTy h a xa →
-    ObsFn W "Ingress::get_ci" [xa] h p m cs → loadValue m p = .ok ci →
+    ObsFn W "Ingress::get_ci" [xa] h p m cs →
+    (⟨"Ingress::get_ci", [xa], h⟩ : Call F) ∈ calls → (∀ c ∈ cs, c ∈ calls) →
+    loadValue m p = .ok ci →
     (∀ xnl xty xnp xni xnc xrec xblk xidx,
       ci = .construct "KernelTypes::KConstantInfo" "Induct"
         [xnl, xty, xnp, xni, xnc, xrec, xblk, xidx] →
       ∃ (d : IndData) (ba : Bytes.Address),
         V.ind (ixAddr a) = some (some d) ∧
-        d.nl < 4294967296 ∧ d.np < 4294967296 ∧ d.ni < 4294967296 ∧
-        d.nctors < 4294967296 ∧ d.idx < 4294967296 ∧
+        d.nl < 4294967296 ∧ d.np < 72057594037927936 ∧ d.ni < 72057594037927936 ∧
+        d.nctors < 72057594037927936 ∧ d.idx < 72057594037927936 ∧
         xnl = .field (d.nl : F) ∧ TmOExact κ m d.ty xty ∧
         xnp = .field (d.np : F) ∧ xni = .field (d.ni : F) ∧ xnc = .field (d.nctors : F) ∧
         ixAddr ba = d.blk ∧ Bytes.RepAddressRef addrTy m ba xblk ∧ xidx = .field (d.idx : F)) ∧
@@ -201,28 +213,33 @@ def IndAnswers (κ : _root_.Address → KKey) (V : ReconView) : Prop :=
         ci ≠ .construct "KernelTypes::KConstantInfo" "Induct" vs) →
       V.ind (ixAddr a) = some none)
 
-/-- **`Ingress::get_ci` matches `V.ctorOf` on `Ctor` vs non-`Ctor`.** -/
-def CtorOfAnswers (V : ReconView) : Prop :=
+/-- **`Ingress::get_ci` matches `V.ctorOf` on `Ctor` vs non-`Ctor`**, for a load whose calls are
+among the calls `calls`, with the bounds a load gives: the level count below `2^32`, the position
+and the counts below `2^56`. -/
+def CtorOfAnswers (calls : List (Call F)) (V : ReconView) : Prop :=
   ∀ {xa p ci : SourceValue F} {h m : Heap F} {cs : List (Call F)} {a : Bytes.Address},
     Bytes.RepAddressRef addrTy h a xa →
-    ObsFn W "Ingress::get_ci" [xa] h p m cs → loadValue m p = .ok ci →
+    ObsFn W "Ingress::get_ci" [xa] h p m cs → (∀ c ∈ cs, c ∈ calls) →
+    loadValue m p = .ok ci →
     (∀ xnl xty xblk xind xcidx xnp xnf xuns,
       ci = .construct "KernelTypes::KConstantInfo" "Ctor"
         [xnl, xty, xblk, xind, xcidx, xnp, xnf, xuns] →
       ∃ (d : CtorData) (ba : Bytes.Address),
         V.ctorOf (ixAddr a) = some (some d) ∧
-        d.nl < 4294967296 ∧ d.ind < 4294967296 ∧ d.np < 4294967296 ∧ d.nf < 4294967296 ∧
+        d.nl < 4294967296 ∧ d.ind < 72057594037927936 ∧ d.np < 72057594037927936 ∧
+        d.nf < 72057594037927936 ∧
         xnl = .field (d.nl : F) ∧ ixAddr ba = d.blk ∧ Bytes.RepAddressRef addrTy m ba xblk ∧
         xind = .field (d.ind : F) ∧ xnp = .field (d.np : F) ∧ xnf = .field (d.nf : F)) ∧
     ((∀ vs : List (SourceValue F), vs.length = 8 →
         ci ≠ .construct "KernelTypes::KConstantInfo" "Ctor" vs) →
       V.ctorOf (ixAddr a) = some none)
 
-/-- **`KernelModeled::block_is_modeled` matches `V.modeled`.** -/
-def ModeledAnswers (V : ReconView) : Prop :=
+/-- **`KernelModeled::block_is_modeled` matches `V.modeled`**, for a dispatch whose calls are
+among the calls `calls`. -/
+def ModeledAnswers (calls : List (Call F)) (V : ReconView) : Prop :=
   ∀ {xblk r : SourceValue F} {h m : Heap F} {cs : List (Call F)} {ba : Bytes.Address},
     Bytes.RepAddressRef addrTy h ba xblk →
-    ObsFn W "KernelModeled::block_is_modeled" [xblk] h r m cs →
+    ObsFn W "KernelModeled::block_is_modeled" [xblk] h r m cs → (∀ c ∈ cs, c ∈ calls) →
     ∃ b : Bool, V.modeled (ixAddr ba) = some b ∧ r = .field (if b then 1 else 0)
 
 /-! ## `red_unfold` and `red_proj_zeta` from elementary store reads -/
@@ -248,17 +265,18 @@ private theorem klevel_length {us : List KLevel} {l r : SourceValue F} {h h' : H
       exact hl)
 
 /-- **`KernelWhnf::red_unfold`** after `Ingress::get_ci` refines `V.unfold` on `TmOExact`. -/
-theorem red_unfold_spec {V : ReconView} (hD : DefnAnswers κ V)
+theorem red_unfold_spec {V : ReconView} {calls : List (Call F)} (hD : DefnAnswers calls κ V)
     {xa xl p ci v : SourceValue F} {h m m' : Heap F} {cs₁ cs₂ : List (Call F)}
     {a : Bytes.Address} {us : List KLevel}
     (ra : Bytes.RepAddressRef addrTy h a xa) (rus : RepKLevelList m us xl)
     (evg : ObsFn W "Ingress::get_ci" [xa] h p m cs₁) (ldci : loadValue m p = .ok ci)
     (evu : ObsFn W "KernelWhnf::red_unfold" [ci, xl] m v m' cs₂)
-    (bd : IxVM.Consistency.Bounded cs₂) :
+    (bd : IxVM.Consistency.Bounded cs₂)
+    (hself : (⟨"Ingress::get_ci", [xa], h⟩ : Call F) ∈ calls) (hsub : ∀ c ∈ cs₁, c ∈ calls) :
     (∀ xb, v = .tuple [.field 1, xb] →
       ∃ b, V.unfold (κ (ixAddr a)) us = some (some b) ∧ TmOExact κ m' b xb) ∧
     ((∀ xb, v ≠ .tuple [.field 1, xb]) → V.unfold (κ (ixAddr a)) us = some none) := by
-  obtain ⟨hyes, hno⟩ := hD ra evg ldci
+  obtain ⟨hyes, hno⟩ := hD ra evg hself hsub ldci
   match Obs.«KernelWhnf::red_unfold».obs evu with
   | .Defn_n0 (x_nl := xnl) (x_value := xval) (x54 := xlen) (m56 := m1) (cs65 := csl)
       (v84 := vres) (m93 := m2) (cs101 := csi) (hv15 := hci) (ev67 := evl)
@@ -339,11 +357,11 @@ private theorem red_proj_gate_eval
     {cd : CtorData} {sd : IndData} {ba_c ba_s : Bytes.Address}
     {cus : List KLevel} {args : List KExpr} {i : F}
     (hcb : ixAddr ba_c = cd.blk) (hsb : ixAddr ba_s = sd.blk)
-    (hcd_nl : cd.nl < 4294967296) (hcd_ind : cd.ind < 4294967296)
-    (hcd_np : cd.np < 4294967296) (hcd_nf : cd.nf < 4294967296)
-    (hsd_nl : sd.nl < 4294967296) (hsd_np : sd.np < 4294967296)
-    (hsd_ni : sd.ni < 4294967296) (hsd_nc : sd.nctors < 4294967296)
-    (hsd_idx : sd.idx < 4294967296)
+    (hcd_nl : cd.nl < 4294967296) (hcd_ind : cd.ind < 72057594037927936)
+    (hcd_np : cd.np < 72057594037927936) (hcd_nf : cd.nf < 72057594037927936)
+    (hsd_nl : sd.nl < 4294967296) (hsd_np : sd.np < 72057594037927936)
+    (hsd_ni : sd.ni < 72057594037927936) (hsd_nc : sd.nctors < 72057594037927936)
+    (hsd_idx : sd.idx < 72057594037927936)
     {h m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 : Heap F}
     {xcblk xsblk xargs xclvls : SourceValue F}
     {v_eq v_sub1 y_z1 x_m1 v_sub2 y_z2 v_g1 y_z3 v_sub3 y_z4 x_m2 v_sub4 y_z5 v_g2
@@ -425,12 +443,13 @@ private theorem red_proj_gate_eval
 
 /-- **`KernelWhnf::red_proj_zeta`** refines `projStep V` exactly on `TmOExact` from the four
 single-call store predicates (without `ProjAnswers`). -/
-theorem red_proj_zeta_spec {V : ReconView}
-    (hA : AddrOf κ V) (hI : IndAnswers κ V) (hC : CtorOfAnswers V) (hM : ModeledAnswers V)
+theorem red_proj_zeta_spec {V : ReconView} {calls : List (Call F)}
+    (hA : AddrOf κ V) (hI : IndAnswers calls κ V) (hC : CtorOfAnswers calls V)
+    (hM : ModeledAnswers calls V)
     {xs xw v : SourceValue F} {i : F} {h m' : Heap F} {cs : List (Call F)}
     {a : Bytes.Address} {W0 : KExpr}
     (ra : Bytes.RepAddressRef addrTy h a xs) (hW : TmOExact κ h W0 xw)
-    (bd : IxVM.Consistency.Bounded cs)
+    (bd : IxVM.Consistency.Bounded cs) (hroot : ∀ c ∈ cs, c ∈ calls)
     (ev : ObsFn W "KernelWhnf::red_proj_zeta" [xs, .field i, xw] h v m' cs) :
     (∀ xf, v = .tuple [.field 1, xf] →
       ∃ y, projStep V (κ (ixAddr a)) (ZMod.val i) W0 = some (some y) ∧ TmOExact κ m' y xf) ∧
@@ -461,7 +480,7 @@ theorem red_proj_zeta_spec {V : ReconView}
     obtain ⟨hfn, -, -⟩ := collect_spine_zeta_spec hW
       (sub fun c hc' => by rw [hc]; simp [hc']) evsp
     obtain ⟨ca, cus, hfn_eq, rca, -⟩ := TmOExact.const_of_load hfn ldh
-    have hct_none := (hC rca evg1 ld1).2 hneCt
+    have hct_none := (hC rca evg1 (fun c hc' => hroot c (by rw [hc]; simp [hc'])) ld1).2 hneCt
     refine ⟨fun xf hxf => ?_, fun _ => ?_⟩
     · injection hxf with hp; injection hp with h0 _
       exact absurd (Value.field.inj h0) (by decide)
@@ -476,9 +495,11 @@ theorem red_proj_zeta_spec {V : ReconView}
     obtain ⟨hfn, -, -⟩ := collect_spine_zeta_spec hW
       (sub fun c hc' => by rw [hc]; simp [hc']) evsp
     obtain ⟨ca, cus, hfn_eq, rca, -⟩ := TmOExact.const_of_load hfn ldh
-    obtain ⟨cd, _, hcd, -⟩ := (hC rca evg1 ld1).1 _ _ _ _ _ _ _ _ rfl
+    obtain ⟨cd, _, hcd, -⟩ :=
+      (hC rca evg1 (fun c hc' => hroot c (by rw [hc]; simp [hc'])) ld1).1 _ _ _ _ _ _ _ _ rfl
     have ra2 := Bytes.repAddressRef_heapMono₂ addrTy (evsp.heap_extends.trans evg1.heap_extends) ra
-    have hind_none := (hI ra2 evg2 ld2).2 hneI
+    have hind_none := (hI ra2 evg2 (hroot _ (by rw [hc]; simp))
+      (fun c hc' => hroot c (by rw [hc]; simp [hc'])) ld2).2 hneI
     refine ⟨fun xf hxf => ?_, fun _ => ?_⟩
     · injection hxf with hp; injection hp with h0 _
       exact absurd (Value.field.inj h0) (by decide)
@@ -503,11 +524,12 @@ theorem red_proj_zeta_spec {V : ReconView}
       (sub fun c hc' => by rw [hc]; simp [hc']) evsp
     obtain ⟨ca, cus, hfn_eq, rca, rcl⟩ := TmOExact.const_of_load hfn ldh
     obtain ⟨cd, bac, hcd, hcd_nl, hcd_ind, hcd_np, hcd_nf, rfl, hcb, r_cblk, rfl, rfl, rfl⟩ :=
-      (hC rca evg1 ld1).1 _ _ _ _ _ _ _ _ rfl
+      (hC rca evg1 (fun c hc' => hroot c (by rw [hc]; simp [hc'])) ld1).1 _ _ _ _ _ _ _ _ rfl
     have ext12 := evsp.heap_extends.trans evg1.heap_extends
     obtain ⟨sd, bas, hsd, hsd_nl, hsd_np, hsd_ni, hsd_nc, hsd_idx, rfl, -, rfl, rfl, rfl, hsb,
         r_sblk, rfl⟩ :=
-      (hI (Bytes.repAddressRef_heapMono₂ addrTy ext12 ra) evg2 ld2).1 _ _ _ _ _ _ _ _ rfl
+      (hI (Bytes.repAddressRef_heapMono₂ addrTy ext12 ra) evg2 (hroot _ (by rw [hc]; simp))
+        (fun c hc' => hroot c (by rw [hc]; simp [hc'])) ld2).1 _ _ _ _ _ _ _ _ rfl
     have ext_g12 := evg1.heap_extends.trans evg2.heap_extends
     have hargs3 := tmOExactList_mono ext_g12 hargs
     have hcl3 := rcl.mono ext_g12
@@ -554,11 +576,12 @@ theorem red_proj_zeta_spec {V : ReconView}
       (sub fun c hc' => by rw [hc]; simp [hc']) evsp
     obtain ⟨ca, cus, hfn_eq, rca, rcl⟩ := TmOExact.const_of_load hfn ldh
     obtain ⟨cd, bac, hcd, hcd_nl, hcd_ind, hcd_np, hcd_nf, rfl, hcb, r_cblk, rfl, rfl, rfl⟩ :=
-      (hC rca evg1 ld1).1 _ _ _ _ _ _ _ _ rfl
+      (hC rca evg1 (fun c hc' => hroot c (by rw [hc]; simp [hc'])) ld1).1 _ _ _ _ _ _ _ _ rfl
     have ext12 := evsp.heap_extends.trans evg1.heap_extends
     obtain ⟨sd, bas, hsd, hsd_nl, hsd_np, hsd_ni, hsd_nc, hsd_idx, rfl, -, rfl, rfl, rfl, hsb,
         r_sblk, rfl⟩ :=
-      (hI (Bytes.repAddressRef_heapMono₂ addrTy ext12 ra) evg2 ld2).1 _ _ _ _ _ _ _ _ rfl
+      (hI (Bytes.repAddressRef_heapMono₂ addrTy ext12 ra) evg2 (hroot _ (by rw [hc]; simp))
+        (fun c hc' => hroot c (by rw [hc]; simp [hc'])) ld2).1 _ _ _ _ _ _ _ _ rfl
     have ext_g12 := evg1.heap_extends.trans evg2.heap_extends
     have hargs3 := tmOExactList_mono ext_g12 hargs
     have hcl3 := rcl.mono ext_g12
@@ -582,7 +605,7 @@ theorem red_proj_zeta_spec {V : ReconView}
       cases hg : projGate cd sd cus W0.getAppArgs i.val
       · rw [hg] at hgate; exact absurd (Value.field.inj hgate) (by decide)
       · rfl
-    obtain ⟨bm, hbm, hbm_r⟩ := hM r_sblk evmod
+    obtain ⟨bm, hbm, hbm_r⟩ := hM r_sblk evmod (fun c hc' => hroot c (by rw [hc]; simp [hc']))
     rw [hsb] at hbm
     have hbt : bm = true := by
       cases bm
@@ -614,11 +637,12 @@ theorem red_proj_zeta_spec {V : ReconView}
       (sub fun c hc' => by rw [hc]; simp [hc']) evsp
     obtain ⟨ca, cus, hfn_eq, rca, rcl⟩ := TmOExact.const_of_load hfn ldh
     obtain ⟨cd, bac, hcd, hcd_nl, hcd_ind, hcd_np, hcd_nf, rfl, hcb, r_cblk, rfl, rfl, rfl⟩ :=
-      (hC rca evg1 ld1).1 _ _ _ _ _ _ _ _ rfl
+      (hC rca evg1 (fun c hc' => hroot c (by rw [hc]; simp [hc'])) ld1).1 _ _ _ _ _ _ _ _ rfl
     have ext12 := evsp.heap_extends.trans evg1.heap_extends
     obtain ⟨sd, bas, hsd, hsd_nl, hsd_np, hsd_ni, hsd_nc, hsd_idx, rfl, hsty, rfl, rfl, rfl, hsb,
         r_sblk, rfl⟩ :=
-      (hI (Bytes.repAddressRef_heapMono₂ addrTy ext12 ra) evg2 ld2).1 _ _ _ _ _ _ _ _ rfl
+      (hI (Bytes.repAddressRef_heapMono₂ addrTy ext12 ra) evg2 (hroot _ (by rw [hc]; simp))
+        (fun c hc' => hroot c (by rw [hc]; simp [hc'])) ld2).1 _ _ _ _ _ _ _ _ rfl
     have ext_g12 := evg1.heap_extends.trans evg2.heap_extends
     have hargs3 := tmOExactList_mono ext_g12 hargs
     have hcl3 := rcl.mono ext_g12
@@ -642,7 +666,7 @@ theorem red_proj_zeta_spec {V : ReconView}
       cases hg : projGate cd sd cus W0.getAppArgs i.val
       · rw [hg] at hgate; exact absurd (Value.field.inj hgate) (by decide)
       · rfl
-    obtain ⟨bm, hbm, hbm_r⟩ := hM r_sblk evmod
+    obtain ⟨bm, hbm, hbm_r⟩ := hM r_sblk evmod (fun c hc' => hroot c (by rw [hc]; simp [hc']))
     rw [hsb] at hbm
     have hbf : bm = false := by
       cases bm
@@ -681,11 +705,12 @@ theorem red_proj_zeta_spec {V : ReconView}
       (sub fun c hc' => by rw [hc]; simp [hc']) evsp
     obtain ⟨ca, cus, hfn_eq, rca, rcl⟩ := TmOExact.const_of_load hfn ldh
     obtain ⟨cd, bac, hcd, hcd_nl, hcd_ind, hcd_np, hcd_nf, rfl, hcb, r_cblk, rfl, rfl, rfl⟩ :=
-      (hC rca evg1 ld1).1 _ _ _ _ _ _ _ _ rfl
+      (hC rca evg1 (fun c hc' => hroot c (by rw [hc]; simp [hc'])) ld1).1 _ _ _ _ _ _ _ _ rfl
     have ext12 := evsp.heap_extends.trans evg1.heap_extends
     obtain ⟨sd, bas, hsd, hsd_nl, hsd_np, hsd_ni, hsd_nc, hsd_idx, rfl, hsty, rfl, rfl, rfl, hsb,
         r_sblk, rfl⟩ :=
-      (hI (Bytes.repAddressRef_heapMono₂ addrTy ext12 ra) evg2 ld2).1 _ _ _ _ _ _ _ _ rfl
+      (hI (Bytes.repAddressRef_heapMono₂ addrTy ext12 ra) evg2 (hroot _ (by rw [hc]; simp))
+        (fun c hc' => hroot c (by rw [hc]; simp [hc'])) ld2).1 _ _ _ _ _ _ _ _ rfl
     have ext_g12 := evg1.heap_extends.trans evg2.heap_extends
     have hargs3 := tmOExactList_mono ext_g12 hargs
     have hcl3 := rcl.mono ext_g12
@@ -709,7 +734,7 @@ theorem red_proj_zeta_spec {V : ReconView}
       cases hg : projGate cd sd cus W0.getAppArgs i.val
       · rw [hg] at hgate; exact absurd (Value.field.inj hgate) (by decide)
       · rfl
-    obtain ⟨bm, hbm, hbm_r⟩ := hM r_sblk evmod
+    obtain ⟨bm, hbm, hbm_r⟩ := hM r_sblk evmod (fun c hc' => hroot c (by rw [hc]; simp [hc']))
     rw [hsb] at hbm
     have hbf : bm = false := by
       cases bm
@@ -802,22 +827,24 @@ private theorem hnfSpine_stuck_exact {V : ReconView} {d : Nat} {Γ : Nat → KEx
 
 /-- **`KernelCheck::recon_whnf_spine(rc, head, spine)` is `hnfSpine V`** on `TmOExact`, with
 `NotLet` on the output, from the five single-call store predicates. -/
-theorem recon_whnf_spine_spec {V : ReconView}
-    (hA : AddrOf κ V) (hD : DefnAnswers κ V) (hI : IndAnswers κ V)
-    (hC : CtorOfAnswers V) (hM : ModeledAnswers V) :
+theorem recon_whnf_spine_spec {V : ReconView} {calls : List (Call F)}
+    (hA : AddrOf κ V) (hD : DefnAnswers calls κ V) (hI : IndAnswers calls κ V)
+    (hC : CtorOfAnswers calls V) (hM : ModeledAnswers calls V) :
     ∀ (N : Nat) {xrc xe xsp r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {E : KExpr}
       {Sp : List KExpr}, cs.length < N →
       ObsFn W "KernelCheck::recon_whnf_spine" [xrc, xe, xsp] h r h' cs →
-      IxVM.Consistency.Bounded cs → TmOExact κ h E xe →
+      IxVM.Consistency.Bounded cs → (∀ c ∈ cs, c ∈ calls) → TmOExact κ h E xe →
       RepList kexprListEnum (TmOExact κ) h Sp xsp →
       Heap.Extends h h' ∧ ∃ E', HnfTo V E Sp E' ∧ TmOExact κ h' E' r ∧ NotLet h' r := by
   intro N
   induction N with
   | zero => intro _ _ _ _ _ _ _ _ _ hlen; exact absurd hlen (Nat.not_lt_zero _)
   | succ N ih =>
-    intro xrc xe xsp r h h' cs E Sp hlen ev hbnd hE hS
+    intro xrc xe xsp r h h' cs E Sp hlen ev hbnd hroot hE hS
     have sub : ∀ {cs' : List (Call F)}, (∀ c ∈ cs', c ∈ cs) → IxVM.Consistency.Bounded cs' :=
       fun hs => RomBound.bounded_mono hbnd hs
+    have rsub : ∀ {cs' : List (Call F)}, (∀ c ∈ cs', c ∈ cs) → ∀ c ∈ cs', c ∈ calls :=
+      fun hs c hm => hroot c (hs c hm)
     have hext : Heap.Extends h h' := ObsFn.heap_extends ev
     obtain ⟨kE, rE⟩ := hE
     match Obs.«KernelCheck::recon_whnf_spine».obsx ev with
@@ -829,7 +856,8 @@ theorem recon_whnf_spine_spec {V : ReconView}
         Heap.Extends.snoc _ _
       have hS' := Lib.rep_store_cons tmOExact_heapMono₂ (TmOExact.ofTmExact ra) hS
       obtain ⟨-, E', hto, hr, hnl⟩ := ih (by rw [hc] at hlen; simp at hlen; omega) ev1
-        (sub fun c hc' => by rw [hc]; simp [hc']) ((TmOExact.ofTmExact rf).mono ext) hS'
+        (sub fun c hc' => by rw [hc]; simp [hc']) (rsub fun c hc' => by rw [hc]; simp [hc'])
+        ((TmOExact.ofTmExact rf).mono ext) hS'
       exact ⟨hext, E', HnfTo.step (fun _ => rfl) hto, hr, hnl⟩
     | .Lam_Cons (x_body := xbody) (x_a := xa) (x_rest := xrest) (cs_qmvpbbie := cs2)
         (v_ggmnfawe := v1) (m_ptxuxmew := m1) (cs_xiwgvbym := cs1)
@@ -840,7 +868,8 @@ theorem recon_whnf_spine_spec {V : ReconView}
       have hinst := expr_inst1_tmOExact (sub fun c hc' => by rw [hc]; simp [hc'])
         (TmOExact.ofTmExact rB) hA1 evi
       obtain ⟨-, E', hto, hr, hnl⟩ := ih (by rw [hc] at hlen; simp at hlen; omega) ev1
-        (sub fun c hc' => by rw [hc]; simp [hc']) hinst (tmOExactList_mono evi.heap_extends hAs)
+        (sub fun c hc' => by rw [hc]; simp [hc']) (rsub fun c hc' => by rw [hc]; simp [hc'])
+        hinst (tmOExactList_mono evi.heap_extends hAs)
       exact ⟨hext, E', HnfTo.step (fun _ => rfl) hto, hr, hnl⟩
     | .Lam_Nil (ld_bolbylmd := ld) (ld_mgdxvnfg := lds) (he_qcfircfw := hr)
         (he_mnrwwkgr := hh) .. =>
@@ -855,11 +884,13 @@ theorem recon_whnf_spine_spec {V : ReconView}
         (ld_kabykbto := ldci) (ev_cijhqsqa := evu) (ev_vyxbtslj := ev1) (hc_vqjdujfq := hc) .. =>
       obtain ⟨a, us, rfl, ra, rus⟩ := rE.const_of_load ld
       obtain ⟨hyes, -⟩ := red_unfold_spec hD ra (rus.mono evg.heap_extends) evg ldci evu
-        (sub fun c hc' => by rw [hc]; simp [hc'])
+        (sub fun c hc' => by rw [hc]; simp [hc']) (hroot _ (by rw [hc]; simp))
+        (rsub fun c hc' => by rw [hc]; simp [hc'])
       obtain ⟨b, hub, hb⟩ := hyes xbody rfl
       have ext := evg.heap_extends.trans evu.heap_extends
       obtain ⟨-, E', hto, hr, hnl⟩ := ih (by rw [hc] at hlen; simp at hlen; omega) ev1
-        (sub fun c hc' => by rw [hc]; simp [hc']) hb (tmOExactList_mono ext hS)
+        (sub fun c hc' => by rw [hc]; simp [hc']) (rsub fun c hc' => by rw [hc]; simp [hc'])
+        hb (tmOExactList_mono ext hS)
       exact ⟨hext, E', HnfTo.step (fun _ => by simp [hnfSpine, hub]) hto, hr, hnl⟩
     | .Const_other (x_addr := xaddr) (x_lvls := xlvls) (v_jknrfqpi := vu) (m_tdzaboly := m2)
         (cs_rziuyuaw := cs2) (v_iqukuotq := vci) (m_zxxyeiga := m1) (p_lnqccfus := pci)
@@ -868,7 +899,8 @@ theorem recon_whnf_spine_spec {V : ReconView}
         (hnt_wbosofze := hnt) .. =>
       obtain ⟨a, us, rfl, ra, rus⟩ := rE.const_of_load ld
       obtain ⟨-, hno⟩ := red_unfold_spec hD ra (rus.mono evg.heap_extends) evg ldci evu
-        (sub fun c hc' => by rw [hc]; simp [hc'])
+        (sub fun c hc' => by rw [hc]; simp [hc']) (hroot _ (by rw [hc]; simp))
+        (rsub fun c hc' => by rw [hc]; simp [hc'])
       have hun := hno hnt
       have ext := evg.heap_extends.trans evu.heap_extends
       have hnl0 : NotLet h xe := ⟨_, ld, fun _ _ h => by injection h with _ hc; exact absurd hc (by decide)⟩
@@ -882,7 +914,8 @@ theorem recon_whnf_spine_spec {V : ReconView}
       have hinst := expr_inst1_tmOExact (sub fun c hc' => by rw [hc]; simp [hc'])
         (TmOExact.ofTmExact rB) (TmOExact.ofTmExact rV) evi
       obtain ⟨-, E', hto, hr, hnl⟩ := ih (by rw [hc] at hlen; simp at hlen; omega) ev1
-        (sub fun c hc' => by rw [hc]; simp [hc']) hinst (tmOExactList_mono evi.heap_extends hS)
+        (sub fun c hc' => by rw [hc]; simp [hc']) (rsub fun c hc' => by rw [hc]; simp [hc'])
+        hinst (tmOExactList_mono evi.heap_extends hS)
       exact ⟨hext, E', hto, hr, hnl⟩
     | .Proj_n1_bind (x_s := xs) (x_i := xi) (x_inner := xinner) (v_wckthhnn := vw)
         (m_aztoikcu := ma) (cs_vldecewa := csw) (m_xiabcmuc := mx) (cs_dqottkop := csp)
@@ -894,16 +927,18 @@ theorem recon_whnf_spine_spec {V : ReconView}
       have extd : Heap.Extends h (h ++ [.construct kexprListEnum "Nil" []]) := Heap.Extends.snoc _ _
       obtain ⟨extw, W0, htoW, hW, -⟩ := ih
         (by rw [hc, hcw] at hlen; simp at hlen; omega) evs
-        (sub fun c hc' => by rw [hc, hcw]; simp [hc']) ((TmOExact.ofTmExact rEs).mono extd)
+        (sub fun c hc' => by rw [hc, hcw]; simp [hc'])
+        (rsub fun c hc' => by rw [hc, hcw]; simp [hc']) ((TmOExact.ofTmExact rEs).mono extd)
         (Lib.rep_store_nil h)
       have exta := extd.trans extw
       obtain ⟨hyes, -⟩ := red_proj_zeta_spec hA hI hC hM
         (Bytes.repAddressRef_heapMono₂ addrTy exta ra) hW
-        (sub fun c hc' => by rw [hc]; simp [hc']) evp
+        (sub fun c hc' => by rw [hc]; simp [hc']) (rsub fun c hc' => by rw [hc]; simp [hc']) evp
       obtain ⟨y, hy, hyr⟩ := hyes xfield rfl
       have extx := exta.trans evp.heap_extends
       obtain ⟨-, E', hto, hr, hnl⟩ := ih (by rw [hc] at hlen; simp at hlen; omega) ev1
-        (sub fun c hc' => by rw [hc]; simp [hc']) hyr (tmOExactList_mono extx hS)
+        (sub fun c hc' => by rw [hc]; simp [hc']) (rsub fun c hc' => by rw [hc]; simp [hc'])
+        hyr (tmOExactList_mono extx hS)
       obtain ⟨n1, hn1⟩ := htoW
       obtain ⟨n2, hn2⟩ := hto
       refine ⟨hext, E', ⟨max n1 n2 + 1, fun n hle => ?_⟩, hr, hnl⟩
@@ -924,12 +959,13 @@ theorem recon_whnf_spine_spec {V : ReconView}
       have extd : Heap.Extends h (h ++ [.construct kexprListEnum "Nil" []]) := Heap.Extends.snoc _ _
       obtain ⟨extw, W0, htoW, hW, -⟩ := ih
         (by rw [hc, hcw] at hlen; simp at hlen; omega) evs
-        (sub fun c hc' => by rw [hc, hcw]; simp [hc']) ((TmOExact.ofTmExact rEs).mono extd)
+        (sub fun c hc' => by rw [hc, hcw]; simp [hc'])
+        (rsub fun c hc' => by rw [hc, hcw]; simp [hc']) ((TmOExact.ofTmExact rEs).mono extd)
         (Lib.rep_store_nil h)
       have exta := extd.trans extw
       obtain ⟨-, hno⟩ := red_proj_zeta_spec hA hI hC hM
         (Bytes.repAddressRef_heapMono₂ addrTy exta ra) hW
-        (sub fun c hc' => by rw [hc]; simp [hc']) evp
+        (sub fun c hc' => by rw [hc]; simp [hc']) (rsub fun c hc' => by rw [hc]; simp [hc']) evp
       have hps := hno hnt
       have extx := evp.heap_extends
       have extc : Heap.Extends mx
@@ -960,18 +996,20 @@ theorem recon_whnf_spine_spec {V : ReconView}
         hnfSpine_stuck_exact rE ld hne_app hne_lam hne_const hne_let hne_proj Sp n, hr, hnl⟩
 
 /-- **`KernelCheck::recon_whnf(rc, e)` is `hnf V`** on `TmOExact`, yielding `NotLet`. -/
-theorem recon_whnf_spec {V : ReconView}
-    (hA : AddrOf κ V) (hD : DefnAnswers κ V) (hI : IndAnswers κ V)
-    (hC : CtorOfAnswers V) (hM : ModeledAnswers V)
+theorem recon_whnf_spec {V : ReconView} {calls : List (Call F)}
+    (hA : AddrOf κ V) (hD : DefnAnswers calls κ V) (hI : IndAnswers calls κ V)
+    (hC : CtorOfAnswers calls V) (hM : ModeledAnswers calls V)
     {xrc xe r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {E : KExpr}
     (ev : ObsFn W "KernelCheck::recon_whnf" [xrc, xe] h r h' cs)
-    (hbnd : IxVM.Consistency.Bounded cs) (hE : TmOExact κ h E xe) :
+    (hbnd : IxVM.Consistency.Bounded cs) (hroot : ∀ c ∈ cs, c ∈ calls)
+    (hE : TmOExact κ h E xe) :
     Heap.Extends h h' ∧ ∃ E', HnfTo V E [] E' ∧ TmOExact κ h' E' r ∧ NotLet h' r := by
   obtain ⟨cs1, m, hm, ev1, hc⟩ := Obs.«KernelCheck::recon_whnf».obs ev
   subst hm
   have ext : Heap.Extends h (h ++ [.construct kexprListEnum "Nil" []]) := Heap.Extends.snoc _ _
   obtain ⟨ext', hr⟩ := recon_whnf_spine_spec hA hD hI hC hM (cs1.length + 1) (Nat.lt_succ_self _)
-    ev1 (RomBound.bounded_mono hbnd fun c hc' => by rw [hc]; simp [hc']) (hE.mono ext)
+    ev1 (RomBound.bounded_mono hbnd fun c hc' => by rw [hc]; simp [hc'])
+    (fun c hc' => hroot c (by rw [hc]; simp [hc'])) (hE.mono ext)
     (Lib.rep_store_nil h)
   exact ⟨ext.trans ext', hr⟩
 
