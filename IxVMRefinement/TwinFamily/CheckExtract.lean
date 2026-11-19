@@ -7,6 +7,7 @@ import IxVMRefinement.FamilyAlias.CallRekey
 import IxVMRefinement.FamilyGraph.ProducersInnerRefs
 import IxVMRefinement.Assembly.TypingRecLateMajorKey
 import IxVMRefinement.Decl.FamilyMentions
+import IxVMRefinement.Decl.Modeled
 import IxVMRefinement.Decl.ModeledRules
 import IxVMRefinement.Decl.ModeledTele
 import IxVMRefinement.Decl.NativeCommon
@@ -2634,7 +2635,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
               rw [← ha_maj_eq]
               exact (hRS.recordOf_eq_recordAt _).symm.trans hrec_M
             exact hRS.record_eq hrec0_M (Core.hashed_mono hsub_uou hh_U) haddr_U hex_U
-          subst hc_u_eq
+          subst c_u
           unfold L1.GetCIBlockTraceResult at hres_U
           rw [hp_maj] at hres_U
           obtain ⟨-, _, _, _, _, _, _, _, vU, -, -, -, -, -, -, -, -, hldU, hrawU, -⟩ := hres_U
@@ -2681,8 +2682,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
           -- Build `ty₀` under `ps`
           obtain ⟨ty₀, hty₀_read⟩ := LoadedReads.exprReader_read_ok (t := t)
             (blob := fun x => E₀.blobs.get? x) ht (param := Ix.Kernel.Reader.recParam ps)
-            (self := blockSelf t A rs') rty
-            (fun i x hx => ⟨_, _, LoadedReads.blockSelf_key t A rs' i x hx, rfl⟩) hblob_a
+            (self := blockSelf t A rs') rty (fun _ _ hx => by simp at hx) hblob_a
           have hty₀_pos : Core.posOf ps ty₀ = tyP :=
             Except.ok.inj ((exprReader_posOf hps_perm hty₀_read).symm.trans htyP)
           have hty₀_lbb : ty₀.looseBVarsBounded 0 = true := by
@@ -2704,7 +2704,10 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
               ev_cr_go hsub_cr177 ru hru rhsP hrhsP
           obtain ⟨rules₀, hrules_rr, hrules_rd⟩ := rulesTrace_build_reads (Bm := p_maj.block)
             (im := p_maj.idx.toNat) ht
-            (fun i x hx => ⟨_, _, LoadedReads.blockSelf_key t A rs' i x hx, rfl⟩)
+            (fun i x hx => by
+              obtain ⟨m₀, hm₀, -⟩ := LoadedReads.blockRecurAddrs_get hx
+              exact ⟨.ok (keyOf t (memberAddr A i m₀)), keyOf t (memberAddr A i m₀),
+                by simp [blockSelf, hm₀], rfl⟩)
             hblob_a hps_perm hrules_tr hrules_sc
           -- Build `IndKeyAt` for `a_maj` (`p_maj.block`, `p_maj.idx.toNat`, `indM`)
           have ha_maj_used : UsedRef E₀ A (Core.ixAddr a_maj) := by
@@ -2712,9 +2715,9 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
               (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat)
               hraw0.toRawTm hstrip_m
             cases hrem with
-            | forallE cell ht _ _ =>
+            | forallE cell ht_dom _ _ =>
               obtain ⟨b', hb', hin_b'⟩ :=
-                addrIn_of_rawTm_const_head ht hhead_m (fun b hb => Assembly.keyOf_injective ht hb)
+                addrIn_of_rawTm_const_head ht_dom hhead_m (fun b hb => Assembly.keyOf_injective ht hb)
               obtain ⟨i, hi, href⟩ := usedRef_of_rawConvExpr_rmember hA.record hA.muts hmem_k rty
                 (hin_rem b' (.forallTy cell hin_b'))
               rw [hb'] at href
@@ -3153,26 +3156,25 @@ theorem familyCall_extract_members {calls : List (Call F)} {bAddr : _root_.Addre
           keyOf t (Core.rprjAddr (Core.ixAddr bA) j) ≠ .role ro := by
         intro j hj ro
         have hj' : j < recAs.length := by omega
-        obtain ⟨a_j, ha_j⟩ := List.getElem?_eq_some_iff.mpr ⟨hj', rfl⟩
-        have hmem_aj : a_j ∈ recAs := List.mem_of_getElem? ha_j
+        have ha_j : recAs[j]? = some recAs[j] := List.getElem?_eq_getElem hj'
+        have hmem_aj : recAs[j] ∈ recAs := List.mem_of_getElem? ha_j
         have hmap_j := congrArg (fun l => l[j]?) hrecAs_map
         rw [List.getElem?_map, ha_j, Option.map_some, List.getElem?_mapIdx] at hmap_j
         have hrs_j : ∃ rc_j, rs'.toList[j]? = some (.recr rc_j) := by
-          obtain ⟨m_j, hm_j⟩ := List.getElem?_eq_some_iff.mpr ⟨by simpa [Array.length_toList] using hj, rfl⟩
-          obtain ⟨rc_j, rfl⟩ := hA.recrs m_j (List.mem_of_getElem? hm_j)
-          exact ⟨rc_j, hm_j⟩
+          have hj_l : j < rs'.toList.length := by simpa [Array.length_toList] using hj
+          have hm_j : rs'.toList[j]? = some rs'.toList[j] := List.getElem?_eq_getElem hj_l
+          obtain ⟨rc_j, hrc_j_eq⟩ := hA.recrs rs'.toList[j] (List.mem_of_getElem? hm_j)
+          exact ⟨rc_j, by rwa [hrc_j_eq] at hm_j⟩
         obtain ⟨rc_j, hrc_j⟩ := hrs_j
         rw [hrc_j, Option.map_some] at hmap_j
-        have ha_eq : Core.ixAddr a_j = Core.rprjAddr (Core.ixAddr bA) j := Option.some.inj hmap_j
+        have ha_eq : Core.ixAddr recAs[j] = Core.rprjAddr (Core.ixAddr bA) j := Option.some.inj hmap_j
         rw [← LoadedReads.keyOf_eq, ← ha_eq]
-        exact hnoRole_recAs a_j hmem_aj ro
+        exact hnoRole_recAs recAs[j] hmem_aj ro
       -- 5. `ev874 : Lists::length [v839]` gives `v861 = .field rs'.size`
       have hrec_qvd := repList_heapMono₂ Core.addrListEnum (Bytes.repAddressRef_heapMono₂ Core.addrTy)
         ext_840_qvd hrec_m840
       have hv861_eq : v861 = .field (recAs.length : F) :=
-        (Lib.Lists.length_spec (t := .ptr (.array .field 32))
-          (by rwa [Obs.Names.«Lists::length<&[Field; 32]>».symbol])
-          (by rwa [Obs.Names.«Lists::Node<&[Field; 32]>».symbol])).1
+        (Decl.addrList_length_spec hrec_qvd ev874).1
       rw [hrecAs_len] at hv861_eq
       subst hv861_eq
       -- 6. `ev1203 : block_elim [x_rc, v673]` gives `x_bnl = .field ind₀.lvls`, `x_uoff = .field off`, `off ∈ {0, 1}`
@@ -3241,7 +3243,7 @@ theorem familyCall_extract_members {calls : List (Call F)} {bAddr : _root_.Addre
         refine ⟨ind₀, hms0, fun k hk => ?_⟩
         exact check_recs_extract ht hRS hH hShape hRF hSS_in hLim hB hA hc_res hms0 hind0_params
           hind0_lvls hoff hrefs_ok hrc_1293 rfl ht0_addr htype_1293 hrec_1293 hrecAs_map
-          hrecAs_len hnoRole_all (k := 0) (by simp) Heap.Extends.refl hrec_1293
+          hrecAs_len hnoRole_all (k := 0) (by simp) (Heap.Extends.refl _) hrec_1293
           (by simpa only [Nat.cast_zero] using ev1343) hsub1341 k (Nat.zero_le k) hk
 
 /-- **An accepted `KernelModeled::check_family` call on `(B, A)` with non-empty `A` witnesses
