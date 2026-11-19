@@ -1244,6 +1244,7 @@ private theorem walk_path_spec_ext {K : FamRunCtx}
           exact ⟨Heap.Extends.refl _, Ix.Cert.ownerOf cur c_cur, ⟨b_own, hown_rep, hown_eq⟩,
             Or.inr ⟨c_cur, hrec_cur, hproj, rfl⟩⟩
         | .other (x_refs := x_refs) (v200 := v200) (v201 := v201) (m189 := m189) (m203 := m203)
+            (cs197 := cs197) (cs247 := cs247)
             (hv144 := hmk) (ev213 := ev_idxs) (op235 := op_s1) (ev199 := ev_has)
             (heq243 := hhas1) (op272 := op_s2) (ev249 := ev_lk) .. =>
           obtain ⟨ext_i, hidxs⟩ := Claim.const_idxs_of_spec hrep_cur ev_idxs
@@ -1260,7 +1261,7 @@ private theorem walk_path_spec_ext {K : FamRunCtx}
               have hlt_f : f.val < 72057594037927936 := by
                 -- From `ev_lk : Lists::lookup`, `f.val < refBs.length = c_cur.refs.size < 2^56`
                 have ev_lk' : ObsFn Obs.W (Instance.mk "Lists::lookup" [.ptr (.array .field 32)]).symbol
-                    [x_refs, .field f] m189 v276 m277 _ := by
+                    [x_refs, .field f] m189 v276 m277 cs247 := by
                   rw [Obs.Names.«Lists::lookup<&[Field; 32]>».symbol]
                   simpa [hv201] using ev_lk
                 have hhref := RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy)
@@ -1274,20 +1275,20 @@ private theorem walk_path_spec_ext {K : FamRunCtx}
                 have hsz_lt := refs_size_lt_local hlen_cur hexact_cur
                 omega
               have ev_has' : ObsFn Obs.W "KernelClaim::g_list_has"
-                  [v200, .field ((f.val : Nat) : F)] m203 (.field 1) m189 _ := by
-                simpa [hv201, ZMod.natCast_zmod_val f] using ev_has
+                  [v200, .field ((f.val : Nat) : F)] m203 (.field 1) m189 cs197 := by
+                simpa [hv201, ZMod.natCast_zmod_val f, hhas1] using ev_has
               obtain ⟨-, hiff⟩ := Claim.g_list_has_spec (S0.usedRefIdxs c_cur) hlt_f hidxs ev_has'
               exact ⟨f.val, by rw [ZMod.natCast_zmod_val f], hiff.mp rfl, hlt_f⟩
             | tuple _ | construct _ _ _ | ptr _ _ =>
-              cases x_st <;> simp [evalBinOp] at op_s1
+              cases x_st <;> simp [evalBinOp, hv201] at op_s1
           obtain ⟨k, hk_eq, hk_mem, hk_lt⟩ := hex_idx
           have ev_has' : ObsFn Obs.W "KernelClaim::g_list_has"
-              [v200, .field (k : F)] m203 (.field 1) m189 _ := by
-            rwa [← hk_eq]
+              [v200, .field (k : F)] m203 (.field 1) m189 cs197 := by
+            simpa [hk_eq, hhas1] using ev_has
           obtain ⟨hm189, -⟩ := Claim.g_list_has_spec (S0.usedRefIdxs c_cur) hk_lt hidxs ev_has'
           subst hm189
           have ev_lk' : ObsFn Obs.W (Instance.mk "Lists::lookup" [.ptr (.array .field 32)]).symbol
-              [x_refs, .field (k : F)] m203 v276 m277 _ := by
+              [x_refs, .field (k : F)] m203 v276 m277 cs247 := by
             rw [Obs.Names.«Lists::lookup<&[Field; 32]>».symbol]
             rwa [← hk_eq]
           obtain ⟨⟨b_next, hget_b, hb_rep⟩, hm_lk⟩ :=
