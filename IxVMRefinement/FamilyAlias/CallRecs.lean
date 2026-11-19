@@ -844,14 +844,15 @@ private theorem addrIn_peel_n_foralls {h : Heap F} :
               rw [hget] at ld
               dsimp only at ld
               split at ld
+              · cases ld
               · next hty =>
                 have hv : v = .construct kexprEnum "Forall" [w42, xb, w43] :=
                   (Except.ok.inj ld).symm
                 subst hv
-                have hty' : ty = .enum kexprEnum := hty.symm
+                have hty' : ty = .enum kexprEnum := by
+                  simp only [not_not] at hty; exact hty
                 subst hty'
                 exact .forallBody hget (hsub a ha)
-              · cases ld
           | field _ | tuple _ | construct _ _ _ => simp [loadValue] at ld)
   intro e n r h' cs ev
   exact hmain _ _ _ _ _ _ ev rfl e n rfl
@@ -1412,7 +1413,8 @@ theorem addrIn_rec_major_pins {κ : _root_.Address → KKey} {Γ : Nat → KExpr
     subst hp
     have hcty : KExprClosed h ty_ptr := KExprClosed.of_tmExact hE
     obtain ⟨hm2, hsubPeel⟩ := addrIn_peel_n_foralls evPeel
-    subst hm2
+    have hm2' := hm2.symm
+    subst hm2'
     have hcv1 := kExprClosed_peel_n_foralls evPeel hcty
     obtain ⟨_, hptr1, hget1, hcdom, _⟩ := hcv1.load_forall ldFa
     obtain ⟨xs, hxs⟩ := addrIn_collect_spine evSp hcdom (fun a ha => by
@@ -1856,26 +1858,21 @@ theorem pinsP_leavesFixed {t : Ix.Kernel.RoleTable} {calls : List (Call F)}
           | some q1 =>
             rcases q1 with ⟨fvs1, r1⟩
             rw [hop1] at hsplit
-            dsimp only at hsplit
-            cases hop2 : openPisAtFvars (nMot + nMin) r1 (0 + nP) with
-            | none => simp [hop2] at hsplit
-            | some q2 =>
-              rcases q2 with ⟨fvs2, r2⟩
-              rw [hop2] at hsplit
-              simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hsplit
-              obtain ⟨hfvs_eq, -⟩ := hsplit
-              have hlen1 : fvs1.length = nP := Decl.openPisAtFvars_len nP hop1
-              have htake_np : fvsP.take nP = fvs1 := by
-                rw [hfvs_eq, List.take_left' hlen1]
-              obtain ⟨hno_p, hfv_p⟩ := hnoLoose_orig p hp
-              rw [show nP + nMot + nMin = nP + (nMot + nMin) by omega]
-              refine leavesFixed_instSpine_of_noLooseIn (np := nP) (k := nMot + nMin)
-                (by omega) ?_ hfv_p hno_p
-              intro fv hfv
-              rw [htake_np] at hfv
-              obtain ⟨j, T, rfl⟩ := openPisAtFvars_mem_isFvar nP hop1 fv hfv
-              exact ⟨rfl, leavesFixed_of_renameConsts_eq
-                (openPisAtFvars_fixed_of_doms_fixed nP tyA 0 hstrip0 hdoms_fixed hop1 _ hfv)⟩
+            simp only [Option.bind_some, Option.map_eq_some_iff, Prod.mk.injEq,
+              Nat.zero_add] at hsplit
+            obtain ⟨⟨fvs2, r2⟩, -, hfvs_eq, -⟩ := hsplit
+            have hlen1 : fvs1.length = nP := Decl.openPisAtFvars_len nP hop1
+            have htake_np : fvsP.take nP = fvs1 := by
+              rw [← hfvs_eq, List.take_left' hlen1]
+            obtain ⟨hno_p, hfv_p⟩ := hnoLoose_orig p hp
+            rw [show nP + nMot + nMin = nP + (nMot + nMin) by omega]
+            refine leavesFixed_instSpine_of_noLooseIn (np := nP) (k := nMot + nMin)
+              (by omega) ?_ hfv_p hno_p
+            intro fv hfv
+            rw [htake_np] at hfv
+            obtain ⟨j, T, rfl⟩ := openPisAtFvars_mem_isFvar nP hop1 fv hfv
+            exact ⟨rfl, leavesFixed_of_renameConsts_eq
+              (openPisAtFvars_fixed_of_doms_fixed nP tyA 0 hstrip0 hdoms_fixed hop1 _ hfv)⟩
         · simp at hmaj
       | _ => simp [hfnM] at hmaj
     | _ => simp at hmaj
@@ -1925,7 +1922,7 @@ theorem get_ci_induct_record {calls : List (Call F)} {E₀ : Ixon.Env}
       rw [hinfo] at hraw; obtain ⟨v, hldv, _, _, _, _, hv, _, _⟩ := hraw
       have he := Except.ok.inj (hld.symm.trans hldv); rw [hv] at he
       unfold L1.defnValShape at he
-      cases d.kind <;> (dsimp only at he; injection he with _ ht _; exact absurd ht (by decide))
+      cases d.kind <;> (injection he with _ ht _; exact absurd ht (by decide))
     | axio ax =>
       rw [hinfo] at hraw; obtain ⟨v, hldv, _, _, hv, _⟩ := hraw
       have he := Except.ok.inj (hld.symm.trans hldv); rw [hv] at he
@@ -1943,7 +1940,7 @@ theorem get_ci_induct_record {calls : List (Call F)} {E₀ : Ixon.Env}
       obtain ⟨_, _, _, _, d, v, _, _, _, _, _, _, hldv, _, _, _, _, hv, _, _⟩ := hraw
       have he := Except.ok.inj (hld.symm.trans hldv); rw [hv] at he
       unfold L1.defnValShape at he
-      cases d.kind <;> (dsimp only at he; injection he with _ ht _; exact absurd ht (by decide))
+      cases d.kind <;> (injection he with _ ht _; exact absurd ht (by decide))
     | cPrj p =>
       rw [hinfo] at hraw
       obtain ⟨_, _, _, _, _, _, _, v, _, _, _, _, _, _, _, hldv, _, _, _, _, _, _, _, _, _, _, hv, _⟩ := hraw
@@ -2115,7 +2112,7 @@ private theorem check_iota_rule_scope_call
   subst h1eq h2eq h3eq
   rw [hc_sc, hc4_1, hc4_2, hc4_3, hc4_nil] at sc4_l
   have hcall := sc4_l.append_right.cons_head
-  exact ⟨fun _ => True, fun _ => True, h1, h_sc, v_sc, cs_sc, ev_plen.heap_extends, hcall, ev_sc⟩
+  exact ⟨fun _ => True, fun _ => True, _, h_sc, v_sc, cs_sc, ev_plen.heap_extends, hcall, ev_sc⟩
 
 /-- Callback supplying block-constructor data (`nonrecsBlk`, `nonrecsTys`) for rules whose major
 premise lies in the current block `B`. -/
@@ -2325,15 +2322,17 @@ private theorem blockRecurAddrs_eq_mapIdx (B : _root_.Address) (ms : List Ixon.M
       ms.mapIdx fun i m => projAddr (Specs.Callees.memberProjInfo B i m) := by
   unfold L1.blockRecurAddrs
   have hgo : ∀ (l : List Ixon.MutConst) (p : Nat),
-      l.mapIdx (fun i m => memberAddr B (p + i) m) =
-        l.mapIdx (fun i m => projAddr (Specs.Callees.memberProjInfo B (p + i) m)) := by
+      L1.blockRecurAddrsAux B p l =
+        l.mapIdx fun i m => projAddr (Specs.Callees.memberProjInfo B (p + i) m) := by
     intro l; induction l with
     | nil => intro _; rfl
     | cons m rest ih' =>
-      intro p; simp only [List.mapIdx_cons, Nat.add_zero]
+      intro p
+      simp only [L1.blockRecurAddrsAux, List.mapIdx_cons, Nat.add_zero]
       congr 1
       · exact LoadedReads.memberAddr_eq_projAddr B p m
-      · simpa [Nat.add_assoc, Nat.add_comm 1] using ih' (p + 1)
+      · have h2 := ih' (p + 1)
+        simpa [Nat.add_assoc, Nat.add_comm 1] using h2
   simpa using hgo ms 0
 
 private theorem usedRef_stored_or_src_lists {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
@@ -2701,8 +2700,11 @@ theorem rulesTrace_walk
             intro ci_gc hfind_gc
             by_cases hBmB : Bm = B
             · -- Case 1: constructor of this block `B`
-              subst Bm
-              have hcb_eq : cbM = cb := Option.some.inj (hrecBM.symm.trans hB.record)
+              have hrecBM' : recordOf E₀ B = some cbM := hBmB ▸ hrecBM
+              have hrec_cprj' : recordOf E₀ (cprjAddr B im j) =
+                  some ⟨.cPrj ⟨im.toUInt64, j.toUInt64, B⟩, #[], #[], #[], #[]⟩ := hBmB ▸ hrec_cprj
+              have ha_cprj_eq' : ixAddr a_cprj = cprjAddr B im j := hBmB ▸ ha_cprj_eq
+              have hcb_eq : cbM = cb := Option.some.inj (hrecBM'.symm.trans hB.record)
               subst cbM
               have hms_eq : msM = ms := Ixon.ConstantInfo.muts.inj (hmutsM.symm.trans hB.muts)
               subst msM
@@ -2716,7 +2718,7 @@ theorem rulesTrace_walk
                 L1.get_ci_block_trace_spec (bounded_sub hsub_ci hbd) ha_cprj_m117 ev_ci
               have hrecAtC : Ix.Cert.recordAt E₀ (ixAddr a_cprj) =
                   some ⟨.cPrj ⟨im.toUInt64, j.toUInt64, B⟩, #[], #[], #[], #[]⟩ := by
-                rw [← hS.recordOf_eq_recordAt, ha_cprj_eq]; exact hrec_cprj
+                rw [← hS.recordOf_eq_recordAt, ha_cprj_eq']; exact hrec_cprj'
               have hcC_eq : cC = ⟨.cPrj ⟨im.toUInt64, j.toUInt64, B⟩, #[], #[], #[], #[]⟩ :=
                 hS.record_eq hrecAtC (Core.hashed_mono hsub_ci hhC) hbaC hexC
               subst hcC_eq
@@ -2740,7 +2742,8 @@ theorem rulesTrace_walk
               rw [hj_toNat, Array.getElem?_toList, hct_get] at hct'
               have hct'_eq : ct' = indM.ctors[j] := (Option.some.inj hct').symm
               subst ct'
-              rw [him_toNat, hj_toNat] at hplanC hrawC
+              rw [him_toNat, hj_toNat] at hplanC
+              rw [him_toNat] at hrawC
               obtain ⟨hct_lvls_lt, hct_np_lt, hct_nf_lt, _, _, tyPtrC, _, _, _, _, hvC_eq, rtyC⟩ := hrawC
               have hvC_ld := Except.ok.inj (ld_ci.symm.trans hldvC)
               rw [hvC_eq] at hvC_ld
@@ -2802,7 +2805,7 @@ theorem rulesTrace_walk
               let cvj : ConstantVal .anon :=
                 ⟨Core.keyOf t (cprjAddr B im j), List.range indM.ctors[j].lvls.toNat, tyAC⟩
               have hrc_eq : rl₀.ctor = Core.keyOf t (cprjAddr B im j) := by
-                simp [rl₀, LoadedReads.ctorAddr_eq_cprjAddr]
+                simp [rl₀, hBmB, LoadedReads.ctorAddr_eq_cprjAddr]
               refine ⟨cvj, ?_, ?_, hA_defC, hnpC, ?_⟩
               · right
                 refine ⟨pos, ⟨Core.keyOf t (cprjAddr B im j), List.range indM.ctors[j].lvls.toNat, ty₀C⟩,
@@ -2825,29 +2828,46 @@ theorem rulesTrace_walk
                   simpa [rl₀, LoadedReads.ctorAddr_eq_cprjAddr] using hkeq
                 exact hnot_src (List.mem_map.mpr ⟨b, hb, hax⟩)
               have hg_fix : g rl₀.ctor = rl₀.ctor :=
-                aliasMap_out_of_zip (ks := srcKeys) (ds := dstKeys)
-                  (List.contains_eq_false_iff_not_mem.mpr hnot_srcK)
+                aliasMap_out_of_zip (ks := srcKeys) (ds := dstKeys) (by
+                  cases hc : srcKeys.contains rl₀.ctor with
+                  | false => rfl
+                  | true => exact absurd (by simpa using hc) hnot_srcK)
               rw [hg_fix] at hfind_gc
               have hfind_a : env.find? (Core.keyOf t (ixAddr a_cprj)) = some ci_gc := by
                 rwa [← hrl_ctor]
               let sc : ScopedCtx := Core.Ctx.stored ⟨E, env, t, lim⟩
+              have hκa : sc.κ (ixAddr a_cprj) = Core.keyOf t (ixAddr a_cprj) :=
+                Ctx.stored_key_of_find (c := ⟨E, env, t, lim⟩) hfind_a
+              have hne_a : sc.κ (ixAddr a_cprj) ≠ unresolvedKey := by
+                rw [hκa]; exact Resolved.ne
               have hgood_ci : Core.Good ⟨E, env, t, lim⟩ cs169 :=
                 (hSE.store.good env lim).sub hsub_ci
-              have hciPtr : CIPtrRep sc.κ m155 p163 ci_gc :=
-                hSE.prefixInv.scopedCoreFacts.2.getCI (CoreGood.unrestricted hgood_ci)
-                  ha_cprj_m117 hfind_a ev_ci
-              obtain ⟨v_ci, hld_ci', hciRep⟩ := hciPtr
-              have hv_eq := Except.ok.inj (hld_ci'.symm.trans ld_ci)
-              subst hv_eq
+              obtain ⟨ci2, hfind2, v_ci, hld_ci', hciRep⟩ :=
+                hSE.prefixInv.loads.getCI v_cprj p163 m117 m155 cs169 a_cprj ev_ci trivial hne_a
+                  (CoreGood.ofRaw hgood_ci (fun _ _ => trivial)) ha_cprj_m117
+              rw [hκa] at hfind2
+              have hci2_eq : ci2 = ci_gc := Option.some.inj (hfind2.symm.trans hfind_a)
+              subst hci2_eq
+              have hv_eq : v_ci = .construct kciEnum "Ctor"
+                  [w186, x_cty, w187, w188, w189, x_cnp, x_cnf, w190] :=
+                Except.ok.inj (hld_ci'.symm.trans ld_ci)
               cases hciRep with
-              | ctor hlvls_c hnp_c hnf_c htm_c _ _ _ =>
-                have hcnp_eq' : ci_gc.toConstantVal = _ := rfl
-                -- Extract `cnP'` and `cnF'` from `CIRep.ctor`
-                have hnp_match : _ = indM.params.toNat :=
-                  nat_eq_of_field_eq_u56_r hnp_c hcnp_lt (Value.field.inj heq_cnp)
-                have hnf_match : _ = ru.fields.toNat :=
-                  nat_eq_of_field_eq_u56_r hnf_c hru_nf (Value.field.inj heq_rnf.symm)
-                rename_i cvj cnP' cnF'
+              | @ctor _ _ _ _ _ _ _ _ cvj cnP' cnF' hv_c hnp_eq_c hnf_eq_c hcounts_c _ =>
+                injection hv_eq with _ _ hargs_c
+                injection hargs_c with _ hargs_c
+                injection hargs_c with hcty_eq hargs_c
+                injection hargs_c with _ hargs_c
+                injection hargs_c with _ hargs_c
+                injection hargs_c with _ hargs_c
+                injection hargs_c with hcnp_eq hargs_c
+                injection hargs_c with hcnf_eq _
+                subst hcty_eq
+                have hnp_match : cnP' = indM.params.toNat :=
+                  nat_eq_of_field_eq_u56_r hcounts_c.1 hcnp_lt
+                    (Value.field.inj (hnp_eq_c.symm.trans (hcnp_eq.trans heq_cnp)))
+                have hnf_match : cnF' = ru.fields.toNat :=
+                  nat_eq_of_field_eq_u56_r hcounts_c.2 hru_nf
+                    (Value.field.inj (hnf_eq_c.symm.trans (hcnf_eq.trans heq_rnf.symm)))
                 subst hnp_match hnf_match
                 have hcwf := hSE.prefixInv.store.1.consts _ (Ix.Kernel.Env.find?_mem hfind_gc)
                 have hdef_c : cvj.type.allLevelParamsDefined cvj.levelParams = true := hcwf.2.1
@@ -2858,10 +2878,18 @@ theorem rulesTrace_walk
                     exact hSE.fresh (ixAddr b) (src_mem_famAddr hB hR htypes hctors hrecs
                       (List.mem_map.mpr ⟨b, hb, rfl⟩)))
                 exact ⟨cvj, Or.inl hfind_gc, rfl, hdef_c, hnp_c,
-                  tm_famKey_of_stored ht hSE.prefixInv.tableWf htm_c⟩
+                  tm_famKey_of_stored ht hSE.prefixInv.tableWf (hv_c.2.2.2 0 zeroGhost)⟩
+              | axio _ | opaq _ | defn _ _ | thm _ _ | quot _ _ | induct _ _ _
+              | recr _ _ _ _ _ _ _ _ _ _ _ =>
+                injection hv_eq with _ ht _; exact absurd ht (by decide)
           -- Invoke `CallIotaRule.check_iota_rule_facts`!
           have hrm_stored : ∃ ci, env.find? (Core.keyOf t (ixAddr a_rm)) = some ci :=
             hmodels a_rm hrm_in_dst
+          have inv' : Decl.CheckIotaRuleInvR rcV rm (.field (ps.length : F)) ty_r (.field (rP : F))
+              (.field ((mI - rP : Nat) : F)) x_rhs v_cprj x_cty
+              (.field (indM.params.toNat : F)) (.field (ru.fields.toNat : F))
+              ilvls pins_ptr x_t src dst aset m155 cs290 := by
+            rw [← heq_cnp, heq_rnf]; exact inv
           exact check_iota_rule_facts ht hbd hS hH hSE hlenSD hadvHyp hdefSrc hmodels
             (by rw [hps_len]; exact hlvls_lt) hperm hrp_le hmi_lt hcnp_lt hru_nf rfl
             hrhs₀_lbb hrhs₀_nofvar hann_rhs hmaj hlvls_def hpins_ok hnp_ty hleaves
@@ -2874,7 +2902,7 @@ theorem rulesTrace_walk
             (AddrMapAll.mono (fun _ _ _ _ _ x => x) ext_h_m155 haset)
             (hty_rep.mono ext_h_m155) hty_cells_m155
             (htm_rhs.mono ext_h_m155) hrhs_cells_m155
-            hcty_of_find (hilvls.mono ext_h_m155) hpins_m155 inv
+            hcty_of_find (hilvls.mono ext_h_m155) hpins_m155 inv'
 
 /-! ## Per-recursor data and the `check_recs` walk -/
 
@@ -3545,7 +3573,7 @@ theorem recMember_of_cons
         Bytes.RepAddressRef addrTy mRmp aIndM x_iaddr ∧
         majorKey rc tyP = some (Core.keyOf t (ixAddr aIndM)) := by
       match Obs.«KernelModeled::rec_major_pins».obs evRmp with
-      | .run (v16 := v16) (x_dom := xdom) (x_h := xh) (x_args := xargs)
+      | .run (v16 := v16) (x_dom := xdom) (m77 := m77) (x_h := xh) (x_args := xargs)
           (op37 := opMi) (ev14 := evP) (ld51 := ldFa) (ev89 := evSp) (ld122 := ldC)
           (ev157 := evCi1) (ev270 := evL1) (ev324 := evD1) (ev309 := evA1)
           (he359 := hrR) (ev399 := evT1) (ev385 := evLo1) (he423 := hhR) .. =>
@@ -3564,7 +3592,7 @@ theorem recMember_of_cons
           Decl.collect_spine_rawTm_spec hRt evSp
         injection htupSp with h1; injection h1 with hhd _; subst hhd
         have hconst : ∃ a us, Rh = .const (Core.keyOf t (ixAddr a)) us ∧
-            Bytes.RepAddressRef addrTy _ a x_iaddr := by
+            Bytes.RepAddressRef addrTy m77 a x_iaddr := by
           cases hRh with
           | const cell ra _ _ =>
             obtain ⟨-, hxs⟩ := load_cell cell ldC; injection hxs with hcx _; subst hcx
@@ -3703,15 +3731,14 @@ theorem recMember_of_cons
           rw [hrp_val, hni_val] at hstripPos
           have h := Option.some.inj (hstrip0.symm.trans hstripPos)
           exact (Expr.forallE.inj (Prod.mk.inj h).2).1
-        subst hstrip_eq
         have hAs0_eq : As0 = AsPos := by
-          rw [← hargsPos, hdom0_eq, Decl.getAppArgs_mkAppN]
-        subst hAs0_eq
+          rw [← hargsPos, ← hstrip_eq, hdom0_eq, Decl.getAppArgs_mkAppN]
+          simp [Expr.getAppArgs]
         have hfn0 : dom0.getAppFn = .const (Core.keyOf t (ixAddr aInd0)) lvls0 := by
           rw [hdom0_eq, Decl.getAppFn_mkAppN]; rfl
         have haInd0_eq : ixAddr aInd0 = ixAddr aIndM := by
-          have hk := hfn0.symm.trans hfnPos
-          injection hk with hk _; exact Core.keyOf_inj htwf hk
+          have hk := hfn0.symm.trans (hstrip_eq ▸ hfnPos)
+          exact Core.keyOf_inj htwf (Expr.const.inj hk).1
         -- `eCi` loads `aInd0` (same record `cmM` as `aIndM`), so `xinp = .field (indM.params.toNat : F)`
         have hsub155 : CallSub cs155 calls := fun cl hcl => hsub_rmp cl (by rw [hcE]; simp [hcl])
         obtain ⟨-, _, cI, _, hhI, hbaI, hexI, -, -, -, hrawI⟩ :=
@@ -3742,10 +3769,11 @@ theorem recMember_of_cons
             [x_args] m141 v257 _ _ := by
           rw [Obs.Names.«Lists::length<&KernelTypes::KExprNode>».symbol]; exact eL
         have hAs141 : RepList (Instance.mk "Lists::Node" [(.ptr (.named "KernelTypes::KExprNode" []))]).symbol
-            (fun h E p => Decl.TmExact (Core.keyOf t) 0 zeroGhost h (rP + rc.indices.toNat) E p) m141 AsPos x_args := by
+            (fun h E p => Decl.TmExact (Core.keyOf t) 0 zeroGhost h (rP + rc.indices.toNat) E p) m141 As0 x_args := by
           rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]
           exact RepLinkedList.mono (fun _ _ _ _ ext x => x.mono ext) eCi.heap_extends hAs0
-        have hv257 := (Lib.Lists.length_spec eL' hAs141).1
+        have hv257 : v257 = .field (AsPos.length : F) := by
+          rw [← hAs0_eq]; exact (Lib.Lists.length_spec eL' hAs141).1
         rw [hxinp_eq] at opA
         have hv258 := SubstAux.add_ok opA
         rw [hv257, hv258] at heqL
