@@ -211,7 +211,7 @@ theorem basisPinHit_eq_none_of_fresh {t : Ix.Kernel.RoleTable} {G : Nat → Prop
     rw [Option.filter_eq_some_iff] at h
     obtain ⟨hfind, -⟩ := h
     have hname_eq : (k.decls : List (ConstantInfo .anon)).map (·.name) = blk.map (·.name) :=
-      beq_iff_eq.mp (List.find?_some hfind)
+      beq_iff_eq.mp (by simpa using List.find?_some hfind)
     obtain ⟨ci0, hci0⟩ := basisKind_declsA_nonempty k
     have hmem_env : ci0 ∈ env.consts := hext ci0 (hshape.pins k ci0 hci0)
     have hsome : (env.find? ci0.name).isSome = true := find?_isSome_of_mem hmem_env
@@ -347,7 +347,7 @@ theorem cidx_eq_of_modeled_checked {calls : List (Call F)} {bAddr : _root_.Addre
   have hvv₂ : v₂ = .construct Core.kciEnum "Ctor" [st.nl, st.ty, st.parent, st.member, st.slot,
       st.numParams, st.numFields, st.unsafeFlag] :=
     Except.ok.inj (hldv₂.symm.trans st.tag)
-  obtain ⟨-, hccidx, -, -, -, -, -, -, -, -, hvC, -⟩ := hraw₂
+  obtain ⟨-, hccidx, -, -, -, _, _, _, -, -, hvC, -⟩ := hraw₂
   rw [hvC] at hvv₂
   injection hvv₂ with _ _ hargs
   injection hargs with _ hargs; injection hargs with _ hargs
@@ -356,6 +356,32 @@ theorem cidx_eq_of_modeled_checked {calls : List (Call F)} {bAddr : _root_.Addre
   exact Decl.nat_eq_of_field_eq_bounded (by omega) (by omega) (hsl.trans st.slotChecked)
 
 /-! ## Indexing helpers for `ctorSlotsFrom`, `MembersFacts`, `RecsFacts`, `nonrecsOf`/`recsOf` -/
+
+private theorem getElem?_finRange_eq {n k : Nat} (hk : k < n) :
+    (List.finRange n)[k]? = some ⟨k, hk⟩ := by
+  rw [List.getElem?_eq_getElem (by simp; exact hk), List.getElem_finRange]
+
+private theorem addrMapAll_imp {e : String} {P Q : Heap F → Bytes.Address → SourceValue F → Prop}
+    (himp : ∀ h k v, P h k v → Q h k v) {h : Heap F} {p : SourceValue F}
+    (hm : AddrMapAll e P h p) : AddrMapAll e Q h p := by
+  induction hm with
+  | nil => exact .nil
+  | node hc hk hv _ _ ihl ihr => exact .node hc hk (himp _ _ _ hv) ihl ihr
+
+private theorem repList_det {α : Type} {e n c : String} {R : Heap F → α → SourceValue F → Prop}
+    (hdet : ∀ h a₁ a₂ p, R h a₁ p → R h a₂ p → a₁ = a₂) {h : Heap F} :
+    ∀ {l₁ l₂ : List α} {p : SourceValue F},
+      RepLinkedList e n c R h l₁ p → RepLinkedList e n c R h l₂ p → l₁ = l₂
+  | [], [], _, _, _ => rfl
+  | [], _ :: _, _, .nil c1, .cons c2 _ _ => by
+    have hv := cell_eq c1 c2; simp at hv
+  | _ :: _, [], _, .cons c1 _ _, .nil c2 => by
+    have hv := cell_eq c1 c2; simp at hv
+  | _ :: _, _ :: _, _, .cons c1 r1 t1, .cons c2 r2 t2 => by
+    have hv := cell_eq c1 c2
+    simp only [Value.construct.injEq, List.cons.injEq, and_true, true_and] at hv
+    obtain ⟨rfl, rfl⟩ := hv
+    exact congrArg₂ List.cons (hdet _ _ _ _ r1 r2) (repList_det hdet t1 t2)
 
 private theorem ctorSlotsFrom_mem_of_getElem? :
     ∀ (ms : List Ixon.MutConst) (p i : Nat) (ind : Ixon.Inductive) (j : Nat) (ct : Ixon.Constructor),
@@ -533,13 +559,13 @@ theorem familyCall_checked_of_chain
   have hrc423 : Claim.RCLimRep t bAddr lim C.m423 rc := hrc.mono ext_h_423
   obtain ⟨haset453_raw, -⟩ :=
     check_advice_records_checked advAs (fun _ => False) hrc423 hadv423
-      (AddrMapAll.nil C.m423) C.evCheckAdv.obs
+      AddrMapAll.nil C.evCheckAdv.obs
       (fun cl hcl => hsub cl (C.evCheckAdv.sub cl hcl))
   have haset453 : AddrMapAll addrMapEnum
       (fun _ b _ => AdvChecked calls bAddr t lim csFam advAs b) C.m453 C.aset :=
-    AddrMapAll.mono
-      (fun _ _ _ _ _ h => (h.resolve_left id).mono C.evCheckAdv.sub (fun _ hx => hx))
-      (Heap.Extends.refl _) haset453_raw
+    addrMapAll_imp
+      (fun _ _ _ h => (h.resolve_left id).mono C.evCheckAdv.sub (fun _ hx => hx))
+      haset453_raw
   have haset978 : AddrMapAll addrMapEnum
       (fun _ b _ => AdvChecked calls bAddr t lim csFam advAs b) C.m978 C.aset :=
     AddrMapAll.mono (fun _ _ _ _ _ hx => hx) C.ext_m453_m978 haset453
@@ -624,7 +650,7 @@ theorem familyCall_checked_of_chain
             (C.evDstTail.extends.trans C.evDst.extends))))))
       have heq_recAs : recAs' = recAs := by
         have hrA978 := RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) ext_840_978 hrA'
-        exact RepLinkedList.det (fun _ _ _ _ r1 r2 => addr_det r1 r2) hrA978 T.recsRep
+        exact repList_det (fun _ _ _ _ r1 r2 => addr_det r1 r2) hrA978 T.recsRep
       subst heq_recAs
       exact hrA'
     exact assert_no_role_spec recAs (hrc.mono ext_h_840) hrA840 C.evNoRole.obs
@@ -714,9 +740,9 @@ theorem familyCall_checked_of_chain
   let indOf (i : Fin ms.size) : Ixon.Inductive := (hIndAt i).choose
   have hms_indOf (i : Fin ms.size) : ms[i.val]? = some (.indc (indOf i)) := (hIndAt i).choose_spec
   have htypeAs_i : ∀ (i : Fin ms.size),
-      ixAddr (typeAs[i.val]'(hlen_types ▸ i.isLt)) = iprjAddr B i.val := fun i => by
-    have hget : (typeAs.map ixAddr)[i.val]? = some (ixAddr (typeAs[i.val]'(hlen_types ▸ i.isLt))) := by
-      rw [List.getElem?_map, List.getElem?_eq_getElem (hlen_types ▸ i.isLt)]; rfl
+      ixAddr (typeAs[i.val]'(by omega)) = iprjAddr B i.val := fun i => by
+    have hget : (typeAs.map ixAddr)[i.val]? = some (ixAddr (typeAs[i.val]'(by omega))) := by
+      rw [List.getElem?_map, List.getElem?_eq_getElem (by omega)]; rfl
     rw [T.types, List.getElem?_mapIdx, Array.getElem?_toList, hms_indOf i] at hget
     simp only [Option.map_some, Option.some.injEq] at hget
     rw [← hget, ← LoadedReads.memberAddr_eq_projAddr, LoadedReads.memberAddr_indc]
@@ -725,9 +751,9 @@ theorem familyCall_checked_of_chain
         Core.keyOf t (ixAddr (typeMs[i.val]'(by rw [T.typeModels, hlen_types]; exact i.isLt))) := fun i => by
     have hlt_src : i.val < srcAs.length := by simp only [srcAs, List.length_append]; omega
     have h1 := hg_at i.val hlt_src
-    have hs_eq : srcAs[i.val]'hlt_src = typeAs[i.val]'(hlen_types ▸ i.isLt) := by
-      simp only [srcAs, List.append_assoc, List.getElem_append_left (hlen_types ▸ i.isLt)]
-    have hd_eq : dstAs[i.val]'(hlenSD ▸ hlt_src) =
+    have hs_eq : srcAs[i.val]'hlt_src = typeAs[i.val]'(by omega) := by
+      simp only [srcAs, List.append_assoc, List.getElem_append_left (show i.val < typeAs.length by omega)]
+    have hd_eq : dstAs[i.val]'(by omega) =
         typeMs[i.val]'(by rw [T.typeModels, hlen_types]; exact i.isLt) := by
       simp only [dstAs, List.append_assoc,
         List.getElem_append_left (show i.val < typeMs.length by rw [T.typeModels, hlen_types]; exact i.isLt)]
@@ -738,7 +764,7 @@ theorem familyCall_checked_of_chain
         (typeMs[i.val]'(by rw [T.typeModels, hlen_types]; exact i.isLt)) :=
     Classical.choice (indMember_of_item ht hbd hS hB hlenSD
       (Nat.lt_trans i.isLt hms_u64) (hms_indOf i) (htypeAs_i i) (hgt_i i)
-      (Classical.choice (hTysItems i.val (hlen_types ▸ i.isLt))))
+      (Classical.choice (hTysItems i.val (by omega))))
   let indBlk : List (ConstantInfo .anon) :=
     (List.finRange ms.size).map fun i =>
       .indInfo ⟨Core.keyOf t (iprjAddr B i.val), List.range (indOf i).lvls.toNat, (indData i).ty₀⟩ {}
@@ -752,10 +778,10 @@ theorem familyCall_checked_of_chain
     rw [← hk, Array.getElem?_toList] at hmk
     exact ⟨hmk, hct⟩
   have hctorAs_p : ∀ (p : Fin slots.length),
-      ixAddr (ctorAs[p.val]'(hlen_ctors ▸ p.isLt)) =
+      ixAddr (ctorAs[p.val]'(by omega)) =
         cprjAddr B slots[p.val].1 slots[p.val].2.2.1 := fun p => by
-    have hget : (ctorAs.map ixAddr)[p.val]? = some (ixAddr (ctorAs[p.val]'(hlen_ctors ▸ p.isLt))) := by
-      rw [List.getElem?_map, List.getElem?_eq_getElem (hlen_ctors ▸ p.isLt)]; rfl
+    have hget : (ctorAs.map ixAddr)[p.val]? = some (ixAddr (ctorAs[p.val]'(by omega))) := by
+      rw [List.getElem?_map, List.getElem?_eq_getElem (by omega)]; rfl
     rw [hctors_slots, List.getElem?_map, List.getElem?_eq_getElem p.isLt] at hget
     exact (Option.some.inj hget).symm
   have hgc_p : ∀ (p : Fin slots.length),
@@ -764,12 +790,12 @@ theorem familyCall_checked_of_chain
     have hpos_lt : typeAs.length + p.val < srcAs.length := by
       simp only [srcAs, List.length_append]; omega
     have h1 := hg_at (typeAs.length + p.val) hpos_lt
-    have hs_eq : srcAs[typeAs.length + p.val]'hpos_lt = ctorAs[p.val]'(hlen_ctors ▸ p.isLt) := by
+    have hs_eq : srcAs[typeAs.length + p.val]'hpos_lt = ctorAs[p.val]'(by omega) := by
       simp only [srcAs, List.append_assoc,
         List.getElem_append_right (Nat.le_add_right typeAs.length p.val),
         Nat.add_sub_cancel_left,
-        List.getElem_append_left (hlen_ctors ▸ p.isLt)]
-    have hd_eq : dstAs[typeAs.length + p.val]'(hlenSD ▸ hpos_lt) =
+        List.getElem_append_left (show p.val < ctorAs.length by omega)]
+    have hd_eq : dstAs[typeAs.length + p.val]'(by omega) =
         ctorMs[p.val]'(by rw [T.ctorModels, hlen_ctors]; exact p.isLt) := by
       have htm : typeMs.length = typeAs.length := T.typeModels
       simp only [dstAs, List.append_assoc,
@@ -788,7 +814,7 @@ theorem familyCall_checked_of_chain
         (hct_u64 slots[p.val].2.1
           (List.mem_of_getElem? (by rw [Array.getElem?_toList]; exact (hslot_ok p).1))))
       (hslot_ok p).1 (hslot_ok p).2 (hctorAs_p p) (hgc_p p)
-      (Classical.choice (hCtorsItems p.val (hlen_ctors ▸ p.isLt))))
+      (Classical.choice (hCtorsItems p.val (by omega))))
   let ctorBlk : List (ConstantInfo .anon) :=
     (List.finRange slots.length).map fun p =>
       .ctorInfo ⟨Core.keyOf t (cprjAddr B slots[p.val].1 slots[p.val].2.2.1),
@@ -829,11 +855,11 @@ theorem familyCall_checked_of_chain
       by rw [← him_eq, ← hj_eq, ← hct_eq]; exact (ctorData p).hcanon,
       by rw [← hct_eq]; exact (ctorData p).hA_def, ?_⟩
     · rw [List.getElem?_append_right (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
-      simp only [ctorBlk, List.getElem?_map, List.getElem?_finRange hp_lt, Option.map_some,
+      simp only [ctorBlk, List.getElem?_map, getElem?_finRange_eq hp_lt, Option.map_some,
         Option.some.injEq, him_eq, hj_eq, hct_eq]
     · rw [List.getElem?_append_right (by omega),
         show indBlk.length + p.val - indTys.length = p.val by omega]
-      simp only [ctorTys, List.getElem?_map, List.getElem?_finRange hp_lt, Option.map_some]
+      simp only [ctorTys, List.getElem?_map, getElem?_finRange_eq hp_lt, Option.map_some]
     · intro L' adv' E' env' hSE' hadvH' hdefSrc'
       have haMd_adv : adv' (ixAddr (ctorMs[p.val]'(by rw [T.ctorModels, hlen_ctors]; exact p.isLt))) :=
         adv_of_advChecked (ctorData p).hitem.hAdv (ctorData p).hitem.hrecM
@@ -841,15 +867,14 @@ theorem familyCall_checked_of_chain
       obtain ⟨hnp, hmf⟩ := (ctorData p).hfacts hSE' haMd_adv hdefSrc'
       refine ⟨hnp, fun ci_gc hfind_gc => ?_⟩
       obtain ⟨cvm, mval, hint, hfind_m, hperm_m, -⟩ := hmf.model
-      have hg_same : g (Core.keyOf t (cprjAddr B im j)) =
-          Core.keyOf t (ixAddr (ctorMs[p.val]'(by rw [T.ctorModels, hlen_ctors]; exact p.isLt))) := by
-        rw [← him_eq, ← hj_eq]; exact hgc_p p
       have hfind_m' : env'.find? (g (Core.keyOf t (cprjAddr B im j))) =
           some (.defnInfo cvm mval hint) := by
-        simpa [g, srcKeys, dstKeys, him_eq, hj_eq] using hfind_m
+        simpa [g, srcKeys, dstKeys, him_eq, hj_eq, ConstantInfo.name] using hfind_m
       have hci_eq : ci_gc = .defnInfo cvm mval hint :=
         Option.some.inj (hfind_gc.symm.trans hfind_m')
-      rw [hci_eq, ConstantInfo.toConstantVal, hperm_m.length_eq, List.length_range, hct_eq]
+      have hlen_p := hperm_m.length_eq
+      simp only [ConstantInfo.toConstantVal, List.length_range] at hlen_p
+      rw [hci_eq, ConstantInfo.toConstantVal, hlen_p, hct_eq]
   -- 9. `block_elim_spec` and `checkRecs_walk`
   have ext_978_recsV : Heap.Extends C.m978 C.mRecsVal :=
     ext_978_ctorsV.trans C.evRecsVal.extends
@@ -879,18 +904,18 @@ theorem familyCall_checked_of_chain
       simp only [srcAs, List.length_append]; omega
     have h1 := hg_at ((typeAs.length + ctorAs.length) + idx) hpos_lt
     have hs_eq : srcAs[(typeAs.length + ctorAs.length) + idx]'hpos_lt = recAs[idx]'hi := by
-      simp only [srcAs, List.getElem_append_right
-        (show (typeAs ++ ctorAs).length ≤ (typeAs.length + ctorAs.length) + idx by
-          simp only [List.length_append]; omega),
-        show (typeAs.length + ctorAs.length) + idx - (typeAs ++ ctorAs).length = idx by
-          simp only [List.length_append]; omega]
-    have hd_eq : dstAs[(typeAs.length + ctorAs.length) + idx]'(hlenSD ▸ hpos_lt) =
+      have hle : (typeAs ++ ctorAs).length ≤ (typeAs.length + ctorAs.length) + idx := by
+        simp only [List.length_append]; omega
+      have hsub : (typeAs.length + ctorAs.length) + idx - (typeAs ++ ctorAs).length = idx := by
+        simp only [List.length_append]; omega
+      simp only [srcAs, List.getElem_append_right hle, hsub]
+    have hd_eq : dstAs[(typeAs.length + ctorAs.length) + idx]'(by omega) =
         recMs[idx]'(by rw [T.recModels]; exact hi) := by
       have hlen_tc : (typeMs ++ ctorMs).length = typeAs.length + ctorAs.length := by
         simp only [List.length_append, T.typeModels, T.ctorModels]
-      simp only [dstAs, List.getElem_append_right
-        (show (typeMs ++ ctorMs).length ≤ (typeAs.length + ctorAs.length) + idx by omega),
-        show (typeAs.length + ctorAs.length) + idx - (typeMs ++ ctorMs).length = idx by omega]
+      have hle : (typeMs ++ ctorMs).length ≤ (typeAs.length + ctorAs.length) + idx := by omega
+      have hsub : (typeAs.length + ctorAs.length) + idx - (typeMs ++ ctorMs).length = idx := by omega
+      simp only [dstAs, List.getElem_append_right hle, hsub]
     rw [hs_eq, hrecAs_k idx hi, hd_eq] at h1
     exact h1
   have hrecMs_sub : ∀ b ∈ recMs, b ∈ dstAs := fun b hb => by
@@ -899,7 +924,7 @@ theorem familyCall_checked_of_chain
       [rc, C.tys, C.recs, C.recM, C.src, C.dst, C.aset, C.s8, C.nRecs, .field ((0 : Nat) : F),
         C.np, C.uo, C.bnl, C.recs, .field 0] C.m1293 C.s9 h' C.evCheckRecs.cs := by
     rw [Nat.cast_zero]; exact C.evCheckRecs.obs
-  obtain ⟨recsBlk, recsTys, rhsss, thmsList, hlen_rB, hlen_rT, hlen_rh, hlen_th, hRecAt⟩ :=
+  obtain ⟨recsBlk, recsTys, rhsss, thmsList, hlen_rB, hlen_rT, hlen_rh, hlen_th, hRecAt0⟩ :=
     checkRecs_walk ht hbd hS hH hB hR T.types T.ctors T.recs hlenSD hlenNR hctorLookup hrecRefs
       htypeAs_cons ha0_eq hms0 hind0_lvls_lt hrs_u64 hbnl_eq huo
       0 recAs recMs (by omega) T.recModels.symm hrecAs_k hgr_k hrecMs_sub hrecItems_f2
@@ -912,6 +937,30 @@ theorem familyCall_checked_of_chain
       (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) C.ext_m978_m1293 hdstRep978)
       (AddrMapAll.mono (fun _ _ _ _ _ hx => hx) C.ext_m978_m1293 haset978)
       (hs8_978.mono C.ext_m978_m1293) evCheckRecs'
+  have hRecAt : ∀ idx (hi : idx < recAs.length),
+      ∃ (rc : Ixon.Recursor)
+        (D : RecMemberData.{u} calls bAddr t E₀ lim csFam B rb cb crb ms rs advAs
+          srcAs dstAs recAs nonrecsBlk nonrecsTys idx rc recAs[idx]
+          (recMs[idx]'(by rw [T.recModels]; exact hi))),
+        rs[idx]? = some (.recr rc) ∧
+        recsBlk[idx]? = some D.recInfo ∧
+        recsTys[idx]? = some D.tyA ∧
+        rhsss[idx]? = some D.rhss ∧
+        thmsList[idx]? = some D.thms := by
+    intro idx hi
+    obtain ⟨rc, D0, hrk, hb, ht', hrh, hth⟩ := hRecAt0 idx hi
+    have hcast : ∀ {k1 k2 : Nat}, k1 = k2 →
+        ∀ {nb nt} (D1 : RecMemberData.{u} calls bAddr t E₀ lim csFam B rb cb crb ms rs advAs
+            srcAs dstAs recAs nb nt k1 rc recAs[idx] (recMs[idx]'(by rw [T.recModels]; exact hi))),
+          rs[k1]? = some (.recr rc) → recsBlk[idx]? = some D1.recInfo →
+          recsTys[idx]? = some D1.tyA → rhsss[idx]? = some D1.rhss → thmsList[idx]? = some D1.thms →
+          ∃ (D2 : RecMemberData.{u} calls bAddr t E₀ lim csFam B rb cb crb ms rs advAs
+              srcAs dstAs recAs nb nt k2 rc recAs[idx] (recMs[idx]'(by rw [T.recModels]; exact hi))),
+            rs[k2]? = some (.recr rc) ∧ recsBlk[idx]? = some D2.recInfo ∧
+            recsTys[idx]? = some D2.tyA ∧ rhsss[idx]? = some D2.rhss ∧ thmsList[idx]? = some D2.thms := by
+      rintro k1 _ rfl nb nt D1 h1 h2 h3 h4 h5; exact ⟨D1, h1, h2, h3, h4, h5⟩
+    obtain ⟨D, h1, h2, h3, h4, h5⟩ := hcast (Nat.zero_add idx) D0 hrk hb ht' hrh hth
+    exact ⟨rc, D, h1, h2, h3, h4, h5⟩
   -- 10. Assemble `blk`, `advM`, `tys`, `rhsss` and their structural identities
   let blk : List (ConstantInfo .anon) := nonrecsBlk ++ recsBlk
   let tys : List KExpr := nonrecsTys ++ recsTys
@@ -934,7 +983,9 @@ theorem familyCall_checked_of_chain
     have hget : recsBlk[idx]'(by omega) = D_i.recInfo :=
       Option.some.inj ((List.getElem?_eq_getElem (by omega)).symm.trans hb_i)
     simp only [List.getElem_map, hget, RecMemberData.recInfo, ConstantInfo.name]
-    rw [hrecAs_k idx hi, Nat.zero_add]
+    have ha := hrecAs_k idx hi
+    rw [Nat.zero_add] at ha
+    rw [ha]
   have hblk_names : blk.map (·.name) = srcKeys := by
     simp only [blk, nonrecsBlk, srcKeys, srcAs, List.map_append,
       hindBlk_names, hctorBlk_names, hrecsBlk_names]
@@ -963,12 +1014,13 @@ theorem familyCall_checked_of_chain
       have hkt_lt : k < nonrecsBlk.length := (List.getElem?_eq_some_iff.mp hk).1
       rcases Nat.lt_or_ge k indBlk.length with hlt | hge
       · rw [List.getElem?_append_left hlt] at hk
-        rw [List.getElem?_append_left (by omega)] at htyA
+        rw [List.getElem?_append_left (by simp only [nonrecsTys, List.length_append]; omega),
+          List.getElem?_append_left (by omega)] at htyA
         have hk_ms : k < ms.size := by omega
         let kf : Fin ms.size := ⟨k, hk_ms⟩
-        simp only [indBlk, List.getElem?_map, List.getElem?_finRange hk_ms, Option.map_some,
+        simp only [indBlk, List.getElem?_map, getElem?_finRange_eq hk_ms, Option.map_some,
           Option.some.injEq] at hk
-        simp only [indTys, List.getElem?_map, List.getElem?_finRange hk_ms, Option.map_some,
+        simp only [indTys, List.getElem?_map, getElem?_finRange_eq hk_ms, Option.map_some,
           Option.some.injEq] at htyA
         subst hk; subst htyA
         have haddr_eq : iprjAddr B k = iprjAddr B i := Core.keyOf_inj htwf hname
@@ -996,7 +1048,7 @@ theorem familyCall_checked_of_chain
         have hp_lt : k - indBlk.length < slots.length := by
           have := (List.getElem?_eq_some_iff.mp hk).1; omega
         let pf : Fin slots.length := ⟨k - indBlk.length, hp_lt⟩
-        simp only [ctorBlk, List.getElem?_map, List.getElem?_finRange hp_lt, Option.map_some,
+        simp only [ctorBlk, List.getElem?_map, getElem?_finRange_eq hp_lt, Option.map_some,
           Option.some.injEq] at hk
         subst hk
         have haddr_eq : cprjAddr B slots[pf.val].1 slots[pf.val].2.2.1 = iprjAddr B i :=
@@ -1017,7 +1069,7 @@ theorem familyCall_checked_of_chain
       · rw [List.getElem?_append_left hlt] at hk
         have hk_ms : k < ms.size := by omega
         let kf : Fin ms.size := ⟨k, hk_ms⟩
-        simp only [indBlk, List.getElem?_map, List.getElem?_finRange hk_ms, Option.map_some,
+        simp only [indBlk, List.getElem?_map, getElem?_finRange_eq hk_ms, Option.map_some,
           Option.some.injEq] at hk
         subst hk
         have haddr_eq : iprjAddr B k = cprjAddr B i j := Core.keyOf_inj htwf hname
@@ -1035,11 +1087,11 @@ theorem familyCall_checked_of_chain
         let pf : Fin slots.length := ⟨k - indBlk.length, hp_lt⟩
         rw [List.getElem?_append_left (by simp only [nonrecsTys, List.length_append]; omega)] at htyA
         rw [List.getElem?_append_right (by omega)] at htyA
-        have hsub_eq : k - indTys.length = pf.val := by simp [pf]; omega
+        have hsub_eq : k - indTys.length = k - indBlk.length := by omega
         rw [hsub_eq] at htyA
-        simp only [ctorBlk, List.getElem?_map, List.getElem?_finRange hp_lt, Option.map_some,
+        simp only [ctorBlk, List.getElem?_map, getElem?_finRange_eq hp_lt, Option.map_some,
           Option.some.injEq] at hk
-        simp only [ctorTys, List.getElem?_map, List.getElem?_finRange hp_lt, Option.map_some,
+        simp only [ctorTys, List.getElem?_map, getElem?_finRange_eq hp_lt, Option.map_some,
           Option.some.injEq] at htyA
         subst hk; subst htyA
         have haddr_eq : cprjAddr B slots[pf.val].1 slots[pf.val].2.2.1 = cprjAddr B i j :=
@@ -1084,7 +1136,6 @@ theorem familyCall_checked_of_chain
       have hk_lt : k < recAs.length := by
         have := (List.getElem?_eq_some_iff.mp hk).1; omega
       obtain ⟨rc_k, D_k, hrk, hb_k, ht_k, hrh_k, -⟩ := hRecAt k hk_lt
-      simp only [Nat.zero_add] at hrk D_k hb_k ht_k hrh_k
       have hinfo_k : ConstantInfo.recInfo cv mI rP rules₀ = D_k.recInfo :=
         Option.some.inj (hk.symm.trans hb_k)
       unfold RecMemberData.recInfo at hinfo_k
@@ -1107,7 +1158,7 @@ theorem familyCall_checked_of_chain
       simp only [memberProjection, Ixon.ConstantInfo.rPrj.injEq,
         Ixon.RecursorProj.mk.injEq] at hp_eq
       have hk_eq_p : p.idx.toNat = k := by
-        have hk_u64 : k < UInt64.size := Nat.lt_trans (hlen_recs ▸ hk_lt) hrs_u64
+        have hk_u64 : k < UInt64.size := Nat.lt_trans (by omega) hrs_u64
         have hp_u64 : p.idx.toNat < UInt64.size := p.idx.toNat_lt_size
         rw [← toNat_toUInt64_lt_cr hk_u64, ← toNat_toUInt64_lt_cr hp_u64, hp_eq.1]
       have hrc_eq : rc = rc_k := by
@@ -1131,7 +1182,6 @@ theorem familyCall_checked_of_chain
     have hk_lt : k < recAs.length := by
       have := (List.getElem?_eq_some_iff.mp hk).1; omega
     obtain ⟨rc_k, D_k, -, hb_k, ht_k, -, -⟩ := hRecAt k hk_lt
-    simp only [Nat.zero_add] at D_k hb_k ht_k
     have hinfo_k : ConstantInfo.recInfo cv mI rP rules₀ = D_k.recInfo :=
       Option.some.inj (hk.symm.trans hb_k)
     unfold RecMemberData.recInfo at hinfo_k
@@ -1196,8 +1246,8 @@ theorem familyCall_checked_of_chain
     rw [hb_eq] at hgk
     rw [hgk]
     rcases Nat.lt_or_ge pos typeAs.length with h1 | h1
-    · let pf : Fin ms.size := ⟨pos, hlen_types ▸ h1⟩
-      have hd_eq : dstAs[pos]'(hlenSD ▸ hpos_lt) =
+    · let pf : Fin ms.size := ⟨pos, by omega⟩
+      have hd_eq : dstAs[pos]'(by omega) =
           typeMs[pos]'(by rw [T.typeModels]; exact h1) := by
         simp only [dstAs, List.append_assoc,
           List.getElem_append_left (show pos < typeMs.length by rw [T.typeModels]; exact h1)]
@@ -1209,7 +1259,7 @@ theorem familyCall_checked_of_chain
     · rcases Nat.lt_or_ge pos (typeAs.length + ctorAs.length) with h2 | h2
       · have hp_lt : pos - typeAs.length < slots.length := by omega
         let pf : Fin slots.length := ⟨pos - typeAs.length, hp_lt⟩
-        have hd_eq : dstAs[pos]'(hlenSD ▸ hpos_lt) =
+        have hd_eq : dstAs[pos]'(by omega) =
             ctorMs[pf.val]'(by rw [T.ctorModels, hlen_ctors]; exact hp_lt) := by
           have htm : typeMs.length = typeAs.length := T.typeModels
           simp only [dstAs, List.append_assoc,
@@ -1224,13 +1274,13 @@ theorem familyCall_checked_of_chain
         exact ⟨cvm, mval, hint, hfind⟩
       · have hr_lt : pos - (typeAs.length + ctorAs.length) < recAs.length := by
           simp only [srcAs, List.length_append] at hpos_lt; omega
-        have hd_eq : dstAs[pos]'(hlenSD ▸ hpos_lt) =
+        have hd_eq : dstAs[pos]'(by omega) =
             recMs[pos - (typeAs.length + ctorAs.length)]'(by rw [T.recModels]; exact hr_lt) := by
           have hlen_tc : (typeMs ++ ctorMs).length = typeAs.length + ctorAs.length := by
             simp only [List.length_append, T.typeModels, T.ctorModels]
-          simp only [dstAs,
-            List.getElem_append_right (show (typeMs ++ ctorMs).length ≤ pos by omega)]
-          congr 1; omega
+          have hle : (typeMs ++ ctorMs).length ≤ pos := by omega
+          have hsub : pos - (typeMs ++ ctorMs).length = pos - (typeAs.length + ctorAs.length) := by omega
+          simp only [dstAs, List.getElem_append_right hle, hsub]
         rw [hd_eq]
         let itemR := Classical.choice (hRecsItems (pos - (typeAs.length + ctorAs.length)) hr_lt)
         have hadvM := adv_of_advChecked itemR.hAdv itemR.hrecM itemR.hcaM hadvCase
@@ -1242,7 +1292,7 @@ theorem familyCall_checked_of_chain
     have hpos_lt : pos < dstAs.length := (List.getElem?_eq_some_iff.mp hpos).1
     have hb_eq : dstAs[pos]'hpos_lt = b :=
       Option.some.inj ((List.getElem?_eq_getElem hpos_lt).symm.trans hpos)
-    have hpos_s : pos < srcAs.length := hlenSD ▸ hpos_lt
+    have hpos_s : pos < srcAs.length := by omega
     have hgk := hg_at pos hpos_s
     rw [hb_eq] at hgk
     obtain ⟨cvm, mval, hint, hfind⟩ :=
@@ -1346,7 +1396,6 @@ theorem familyCall_checked_of_chain
         have hi : idx < recAs.length := by
           have := (List.getElem?_eq_some_iff.mp hidx).1; omega
         obtain ⟨rc_i, D_i, hrk, hb_i, -, -, -⟩ := hRecAt idx hi
-        simp only [Nat.zero_add] at hrk D_i hb_i
         have hci_eq : ci = D_i.recInfo := Option.some.inj (hidx.symm.trans hb_i)
         subst hci_eq
         have hlogM : InLogic D_i.cbM := by
@@ -1416,7 +1465,6 @@ theorem familyCall_checked_of_chain
       · refine membersFacts_of_getElem recsBlk recsTys (by omega) fun idx hi => ?_
         have hi_r : idx < recAs.length := by omega
         obtain ⟨rc_i, D_i, -, hb_i, ht_i, -, -⟩ := hRecAt idx hi_r
-        simp only [Nat.zero_add] at D_i hb_i ht_i
         have hbi_eq : recsBlk[idx]'hi = D_i.recInfo :=
           Option.some.inj ((List.getElem?_eq_getElem hi).symm.trans hb_i)
         have hti_eq : recsTys[idx]'(by omega) = D_i.tyA :=
@@ -1435,7 +1483,6 @@ theorem familyCall_checked_of_chain
         (by omega) (by omega) (by omega) fun idx hi => ?_
       have hi_r : idx < recAs.length := by omega
       obtain ⟨rc_i, D_i, -, hb_i, ht_i, hrh_i, hth_i⟩ := hRecAt idx hi_r
-      simp only [Nat.zero_add] at D_i hb_i ht_i hrh_i hth_i
       have hbi_eq : recsBlk[idx]'hi = D_i.recInfo :=
         Option.some.inj ((List.getElem?_eq_getElem hi).symm.trans hb_i)
       have hti_eq : recsTys[idx]'(by omega) = D_i.tyA :=
@@ -1454,7 +1501,6 @@ theorem familyCall_checked_of_chain
     have hk_lt : k < recAs.length := by
       have := (List.getElem?_eq_some_iff.mp hk).1; omega
     obtain ⟨rc_k, D_k, -, hb_k, ht_k, -, -⟩ := hRecAt k hk_lt
-    simp only [Nat.zero_add] at D_k hb_k ht_k
     have hinfo_k : ConstantInfo.recInfo cv mI rP rules₀ = D_k.recInfo :=
       Option.some.inj (hk.symm.trans hb_k)
     unfold RecMemberData.recInfo at hinfo_k
@@ -1566,7 +1612,7 @@ theorem closureFamilyCheck_of_run {L : Ix.Kernel.Env .anon → NativeFam .anon �
     have ext_h_453 : Heap.Extends h C.m453 := (Decl.check_family_seg1_inv C.sg112).trans C.ext_m105_m453
     obtain ⟨cb', ms', hbl, -⟩ :=
       Claim.load_block_head (Bytes.repAddressRef_heapMono₂ addrTy ext_h_453 hbB_rep) C.evLoadBlk.obs
-    have hB' : FamBlockRecord ρ.E₀ (ixAddr bB) cb ms := by rwa [hbB_eq]
+    have hB' : FamBlockRecord ρ.E₀ (ixAddr bB) cb ms := by rw [hbB_eq]; exact hFB.block
     obtain ⟨hrec', -⟩ := (hbl.mono (fun cl hcl => hsub cl (C.evLoadBlk.sub cl hcl))).stored hH
     have e : cb = cb' := Option.some.inj (hB'.record.symm.trans hrec')
     subst e
@@ -1644,6 +1690,7 @@ theorem familyBlockCheckRow_of_advEq {L : Ix.Kernel.Env .anon → NativeFam .ano
     hTop hc hlog hkind hfam hrb
   obtain ⟨ms, hB⟩ := famBlockRecord_of_run hTW hrun hTop hc hlog hfam
   have hneed := Claim.TopWalk.need hTW hTop hc hkind hlog
+  have hmod : ModeledAt E A := famModeledAt_of_run hTW hrun hctx hTop hc hfam
   obtain ⟨bAddr, hW, -⟩ := hTW
   have hinert : InertClause t c := hW.inertClause hTop hc
   have hS : LoadedReads.RunStore calls E₀ := hW.runStore
@@ -1657,7 +1704,6 @@ theorem familyBlockCheckRow_of_advEq {L : Ix.Kernel.Env .anon → NativeFam .ano
     exact Core.RoleClosure.check_ok_of_wf hwf
   have htwf : t.wf = true := by unfold Ix.Kernel.RoleTable.wf; rw [ht]; rfl
   have hbd : Bounded calls := (hctx.good Ix.Kernel.Env.empty lim).2
-  have hmod : ModeledAt E A := famModeledAt_of_run hTW hrun hctx hTop hc hfam
   have hms_lt8 : ms.size < 8589934592 := by
     obtain ⟨bB, hbB_rep, hbB_eq⟩ := hxb
     have ext_h_453 : Heap.Extends h C.m453 := (Decl.check_family_seg1_inv C.sg112).trans C.ext_m105_m453
