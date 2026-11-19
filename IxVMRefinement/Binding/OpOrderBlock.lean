@@ -90,7 +90,8 @@ private theorem sub_one_roleNum_scan {ro : Ix.Kernel.Role} {v : SourceValue F}
 
 private theorem mul_one_of_bool_fields {a b : F}
     (ha : a = 0 ∨ a = 1) (hb : b = 0 ∨ b = 1)
-    (hmul : evalBinOp .mul (.field a) (.field b) = .ok (.field 1)) :
+    (hmul : evalBinOp .mul (.field a : SourceValue F) (.field b : SourceValue F) =
+      .ok (.field 1 : SourceValue F)) :
     a = 1 ∧ b = 1 := by
   simp only [evalBinOp, Except.ok.injEq, Value.field.injEq] at hmul
   rcases ha with rfl | rfl
@@ -115,7 +116,7 @@ theorem op_order_scan_step_ext (t : Ix.Kernel.RoleTable) (bAddr : _root_.Address
   | .n0 (m2 := m2) (cs68 := cs68) (ev36 := ev36) (ev14 := ev14) (ev70 := ev70) (hc103 := hc) .. =>
     obtain ⟨rfl, rfl, hlk⟩ := Claim.addr_index_lookup htbl_h ha ev36 ev14
     rcases hlk with ⟨-, hnone⟩ | ⟨ro, hbad, -⟩
-    · refine Or.inr ⟨fun ro had => (hnone ro had).elim, r, h, h', cs68, Heap.Extends.refl _,
+    · refine Or.inr ⟨fun ro had => (hnone ro had).elim, r, _, h', cs68, Heap.Extends.refl _,
         ev70, fun cl hm => by rw [hc]; simp [hm], ?_⟩
       rw [hc]; simp only [List.length_cons, List.length_append]; omega
     · exact (RolesAux.roleNum_add_one_ne_zero ro (Value.field.inj hbad).symm).elim
@@ -141,7 +142,7 @@ theorem op_order_scan_step_ext (t : Ix.Kernel.RoleTable) (bAddr : _root_.Address
         right
         have hneeds_h := repList_heapMono₂ _ Claim.repBoundedIdx_heapMono₂ hext hneeds
         have ev221' : ObsFn Obs.W "KernelClaim::g_list_has"
-            [x_needs, .field ((ro.idx : Nat) : F)] h _ _ cs219 := ev221
+            [x_needs, .field ((ro.idx : Nat) : F)] _ _ _ cs219 := ev221
         obtain ⟨-, hhas⟩ := Claim.g_list_has_spec (needs.map (·.idx)) (role_idx_lt_bound ro)
           hneeds_h ev221'
         obtain ⟨ro', hmem', hidx⟩ := List.mem_map.mp (hhas.mp heq1)
@@ -171,9 +172,9 @@ theorem op_order_scan_step_ext (t : Ix.Kernel.RoleTable) (bAddr : _root_.Address
           rw [haw1]; decide
         left
         refine ⟨ro, hof, Or.inr ⟨by omega, hlt, fun ⟨_, hf⟩ => by rw [haw] at hf; cases hf⟩⟩
-  | .other_n1_other (ev36 := ev36) (ev14 := ev14) (hne104 := hne) (op123 := op123)
-      (ev152 := ev152) (ev138 := ev138) (ev182 := ev182) (ev_trfxbwiw := evAw)
-      (ev_oksdtpbz := evr) (hc_cpeakbbh := hc) .. =>
+  | .other_n1_other (cs_inseifvo := cs_rec) (ev36 := ev36) (ev14 := ev14) (hne104 := hne)
+      (op123 := op123) (ev152 := ev152) (ev138 := ev138) (ev182 := ev182)
+      (ev_trfxbwiw := evAw) (ev_oksdtpbz := evr) (hc_cpeakbbh := hc) .. =>
     obtain ⟨rfl, rfl, hlk⟩ := Claim.addr_index_lookup htbl_h ha ev36 ev14
     rcases hlk with ⟨rfl, -⟩ | ⟨ro, rfl, hof⟩
     · exact (hne rfl).elim
@@ -184,7 +185,7 @@ theorem op_order_scan_step_ext (t : Ix.Kernel.RoleTable) (bAddr : _root_.Address
       obtain ⟨-, rfl⟩ := RoleVal.anchor_walked_full evAw
       have hk1 : RoleVal.roleSpecKindNat ro = 1 := roleSpecKind_cast_inj (by decide)
         (Value.field.inj hsk.symm)
-      refine Or.inr ⟨fun ro' had' h2 => ?_, r, h, h', _, Heap.Extends.refl _, evr,
+      refine Or.inr ⟨fun ro' had' h2 => ?_, r, _, h', cs_rec, Heap.Extends.refl _, evr,
         fun cl hm => by rw [hc]; simp [hm], ?_⟩
       · have e : ro' = ro := addressOf_role_inj hwf had' hof
         rw [e, hk1] at h2; cases h2
@@ -208,8 +209,8 @@ theorem op_order_scan_step_ext (t : Ix.Kernel.RoleTable) (bAddr : _root_.Address
         hne1 (by rw [hsk, h1]; rfl)
       left
       exact ⟨ro, hof, Or.inr ⟨hnk2, hlt, fun ⟨h1, _⟩ => hnk1 h1⟩⟩
-  | .other_other_other (ev36 := ev36) (ev14 := ev14) (hne104 := hne) (op123 := op123)
-      (ev152 := ev152) (ev138 := ev138) (ev182 := ev182) (hne280 := hne2)
+  | .other_other_other (cs310 := cs_rec) (ev36 := ev36) (ev14 := ev14) (hne104 := hne)
+      (op123 := op123) (ev152 := ev152) (ev138 := ev138) (ev182 := ev182) (hne280 := hne2)
       (ev312 := evr) (hc345 := hc) .. =>
     obtain ⟨rfl, rfl, hlk⟩ := Claim.addr_index_lookup htbl_h ha ev36 ev14
     rcases hlk with ⟨rfl, -⟩ | ⟨ro, rfl, hof⟩
@@ -220,7 +221,7 @@ theorem op_order_scan_step_ext (t : Ix.Kernel.RoleTable) (bAddr : _root_.Address
       obtain ⟨hsk, rfl⟩ := RoleVal.role_spec_kind_spec ev182
       have hnk2 : RoleVal.roleSpecKindNat ro ≠ 2 := fun h2 =>
         hne2 (by rw [hsk, h2]; rfl)
-      refine Or.inr ⟨fun ro' had' h2 => ?_, r, h, h', _, Heap.Extends.refl _, evr,
+      refine Or.inr ⟨fun ro' had' h2 => ?_, r, _, h', cs_rec, Heap.Extends.refl _, evr,
         fun cl hm => by rw [hc]; simp [hm], ?_⟩
       · have e : ro' = ro := addressOf_role_inj hwf had' hof
         exact hnk2 (e ▸ h2)
@@ -380,7 +381,7 @@ private theorem scan_ext_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : 
               have : cs118.length < cs410.length := by rw [hc153]; simp
               omega
             obtain ⟨entered₁, hcl, hmem⟩ := scanAt hlt (hbase.trans ext1) hblk_addr ev120
-            refine ⟨ev120.heap_extends, fun ms hms => by rw [hc_i] at hms; cases hms,
+            refine ⟨ev120.heap_extends, (fun ms hms => by rw [hc_i] at hms; cases hms),
               entered₁, hcl.mono (fun cl hcl' => by rw [hc153]; simp [hcl']), ?_⟩
             rw [hown]
             rcases hmem with h | h
@@ -402,7 +403,7 @@ private theorem scan_ext_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : 
               have : cs203.length < cs410.length := by rw [hc238]; simp
               omega
             obtain ⟨entered₁, hcl, hmem⟩ := scanAt hlt (hbase.trans ext1) hblk_addr ev205
-            refine ⟨ev205.heap_extends, fun ms hms => by rw [hc_i] at hms; cases hms,
+            refine ⟨ev205.heap_extends, (fun ms hms => by rw [hc_i] at hms; cases hms),
               entered₁, hcl.mono (fun cl hcl' => by rw [hc238]; simp [hcl']), ?_⟩
             rw [hown]
             rcases hmem with h | h
@@ -424,7 +425,7 @@ private theorem scan_ext_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : 
               have : cs282.length < cs410.length := by rw [hc317]; simp
               omega
             obtain ⟨entered₁, hcl, hmem⟩ := scanAt hlt (hbase.trans ext1) hblk_addr ev284
-            refine ⟨ev284.heap_extends, fun ms hms => by rw [hc_i] at hms; cases hms,
+            refine ⟨ev284.heap_extends, (fun ms hms => by rw [hc_i] at hms; cases hms),
               entered₁, hcl.mono (fun cl hcl' => by rw [hc317]; simp [hcl']), ?_⟩
             rw [hown]
             rcases hmem with h | h
@@ -446,7 +447,7 @@ private theorem scan_ext_fuel_aux {x_tbl x_lim x_needs : SourceValue F} {h₀ : 
               have : cs361.length < cs410.length := by rw [hc396]; simp
               omega
             obtain ⟨entered₁, hcl, hmem⟩ := scanAt hlt (hbase.trans ext1) hblk_addr ev363
-            refine ⟨ev363.heap_extends, fun ms hms => by rw [hc_i] at hms; cases hms,
+            refine ⟨ev363.heap_extends, (fun ms hms => by rw [hc_i] at hms; cases hms),
               entered₁, hcl.mono (fun cl hcl' => by rw [hc396]; simp [hcl']), ?_⟩
             rw [hown]
             rcases hmem with h | h
@@ -1091,13 +1092,10 @@ private theorem validate_op_equations_scan {t : Ix.Kernel.RoleTable} {bAddr : _r
             have seam := op_order_scan_step_ext t bAddr n
               (RoleVal.groupNeededRoles (Ix.SpecDigest.groupOf ro)) x_tbl needsVal needsHeap
               hn (htbl.mono extToNeeds) hneeds
-            have scanRun' : ObsFn Obs.W "KernelRoles::op_order_scan_except"
-                [x_tbl, .field (n : F), needsVal, refsPtr, _, .field ((0 : Nat) : F), x_a]
-                needsHeap _ _ scanCalls := by
-              rw [Nat.cast_zero]; exact scanRun
+            rw [← Nat.cast_zero (R := F)] at scanRun
             obtain ⟨entered, hcl, hscan⟩ :=
               op_order_scan_except_ext_spec seam c.refs.toList (Heap.Extends.refl _) hbound
-                hrefs_needs hidxs_needs (S0.addr_mono extToNeeds ha) scanRun'
+                hrefs_needs hidxs_needs (S0.addr_mono extToNeeds ha) scanRun
             have hsub_raw : ∀ cl ∈ rawCalls, cl ∈ cs1051 := fun cl hm => by rw [segCalls]; simp [hm]
             have hsub_sc : ∀ cl ∈ scanCalls, cl ∈ cs1051 := fun cl hm => by rw [segCalls]; simp [hm]
             refine ⟨ext_seg_all, fun thm he => ?_⟩
@@ -1210,7 +1208,7 @@ theorem validate_role_wf_op_scans {calls : List (Call F)} {bAddr : _root_.Addres
       refine ⟨⟨a, entered₀, had, hmem₀, hcl₀⟩, ?_⟩
       have htbl_sg2 : TableRep c₀.t m_sg2 x_tbl := (htbl_162.mono ext_sg2).toTableRep
       obtain ⟨es, hlist_m192, hes⟩ :=
-        RoleVal.role_evidence_step (ScopedCtx.unrestricted c₀) ev204 x_tbl ro rfl htbl_sg2
+        Core.role_evidence_step (ScopedCtx.unrestricted c₀) ev204 x_tbl ro rfl htbl_sg2
       obtain ⟨rfl, rfl⟩ := evList_length_scan ev245 hlist_m192
       obtain ⟨rfl, k, hk0, hk10, rfl⟩ := RoleVal.op_equation_count_pos h2 ev265
       obtain ⟨arr₀, hmem_ev₀, harr_eq⟩ := nonempty_evidence_scan hk0 hk10 hes heq274
@@ -1280,7 +1278,7 @@ private theorem scanStopsAt_opEarlier {t : Ix.Kernel.RoleTable} (hwf : t.wf = tr
     {g : Nat} (hg33 : 33 ≤ g) {y : _root_.Address}
     (h : RoleVal.ScanStopsAt t 33 (RoleVal.groupNeededRoles g) y) : OpEarlier t g y := by
   intro ro had hop
-  rcases h.operation hwf had ((specKind_two_iff ro).mpr hop) (addressOf_role_inj hwf) with hlt | hmem
+  rcases h.operation hwf had ((specKind_two_iff ro).mpr hop) (fun _ _ => addressOf_role_inj hwf) with hlt | hmem
   · omega
   · exact RoleVal.groupNeeds_groupOf_lt hmem
 
@@ -1304,7 +1302,7 @@ private theorem scanStopsAt_alreadyStored_or_inert {t : Ix.Kernel.RoleTable}
   · rcases RoleVal.inForce_block_cases ro hlt with hwb | haw | hq | hk3 | hk4 | hunw
     · exfalso
       apply hns; left
-      refine ⟨ro, had, (Claim.walkedRole_eq_roleWalksBound ro).mpr hwb, fun n hn => ?_⟩
+      refine ⟨ro, had, by rw [Claim.walkedRole_eq_roleWalksBound]; exact hwb, fun n hn => ?_⟩
       cases Option.some.inj hn
       rwa [hlim]
     · exfalso
@@ -1379,7 +1377,7 @@ theorem groupReach_in_scan_wf {calls : List (Call F)} {bAddr : _root_.Address}
     have hrec : recordOf E₀ a = some c := by
       rw [← hbl]
       exact Claim.recordOf_hashed hC.runStore hC.hashedStored hh hsz hde hdeE
-    obtain ⟨c', i, hc', hi, hy⟩ := hu
+    have ⟨c', i, hc', hi, hy⟩ := hu
     have ec : c' = c := Option.some.inj (hc'.symm.trans hrec)
     subst ec
     obtain ⟨hlt, hye⟩ := Array.getElem?_eq_some_iff.mp hy
@@ -1415,7 +1413,7 @@ theorem groupReach_in_scan_wf {calls : List (Call F)} {bAddr : _root_.Address}
       rw [← hbl]
       exact Claim.recordOf_hashed hC.runStore hC.hashedStored hh hsz
         (L1.deConstant_of_deConstantExact hdeE) hdeE
-    obtain ⟨c', i, hc', hi, hy⟩ := hu
+    have ⟨c', i, hc', hi, hy⟩ := hu
     have ec : c' = c := Option.some.inj (hc'.symm.trans hrec)
     subst ec
     obtain ⟨hlt, hye⟩ := Array.getElem?_eq_some_iff.mp hy
@@ -1495,7 +1493,7 @@ theorem payReach_empty_wf {calls : List (Call F)} {bAddr : _root_.Address}
   induction hx with
   | @payload B a hB hpay =>
     obtain ⟨hmod, rb, cs, hfc, -⟩ := hpay
-    obtain ⟨cb, ms, hcb, hms, -⟩ := familyCall_block_nonempty hC.runStore hfc
+    obtain ⟨cb, ms, hcb, hms, -⟩ := familyCall_block_nonempty hC.runStore hC.hashedStored hfc
     obtain ⟨ent, hmem, hcl⟩ := groupReach_in_scan_wf hC hg33 hg40 hvalAll hw hB
     obtain ⟨raw, c, hsz, hh, hbl, hde, hdeE, hnm, -, -⟩ := hcl B hmem
     have hrec : recordOf E₀ B = some c := by
