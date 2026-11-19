@@ -483,6 +483,12 @@ private theorem run_check_transitive_lim_ordered_aux {t : Ix.Kernel.RoleTable}
           .construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41], v548, cs559,
           hrc.mono (ext1.trans ext_seg), S0.addr_mono (ext1.trans ext_seg) ha,
           hrep.mono ext_seg, ev561, fun cl hcl => by rw [hc636]; simp [hcl]⟩
+        hquot := ⟨m549, m_quot, x_rc, x_addr,
+          .construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41], v_quot, cs_quot,
+          hrc.mono (ext1.trans (ext_seg.trans ev561.heap_extends)),
+          S0.addr_mono (ext1.trans (ext_seg.trans ev561.heap_extends)) ha,
+          hrep.mono (ext_seg.trans ev561.heap_extends), ev_quot,
+          fun cl hcl => by rw [hc636]; simp [hcl]⟩
       }
       let recs_tail := recs_blk ++ recs_r.map (TopRec.mono hsub_r)
       refine ⟨ext1.trans (ext_seg.trans (ext_guard.trans (ext_idx.trans ext_walk))),

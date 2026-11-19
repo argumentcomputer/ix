@@ -256,9 +256,9 @@ theorem owner_of_constAddr
   · obtain ⟨B'', hB''⟩ := hcl
     obtain ⟨⟨hTB, -, ⟨cb, ms, hcb, hms, hpos, hall⟩, -⟩, hFC, -⟩ := FamRunCtx.fam_some hB''
     have hU : Unclaimed K.fam B'' := fun B₃ h₃ => by
-      obtain ⟨crb, rs, hF⟩ := hB.record B₃ B'' (FamRunCtx.fam_some h₃).2.1
+      obtain ⟨crb, rs, hF⟩ := FamRunCtx.record_of hW B₃ B'' (FamRunCtx.fam_some h₃).2.1
       exact hF.not_indBlock ⟨cb, ms, hcb, hms, hpos, hall⟩
-    obtain ⟨crb, rs, hF⟩ := hB.record B'' D' hFC
+    obtain ⟨crb, rs, hF⟩ := FamRunCtx.record_of hW B'' D' hFC
     have e : crb = cD' := Option.some.inj (hF.record.symm.trans hc)
     rw [← e] at hx
     obtain ⟨cb', y, hcb', hy, hcy, huy⟩ := hB.recUsesBlock B'' D' _
@@ -395,7 +395,7 @@ theorem cont_owned
       · exact Or.inr ⟨hT, ⟨cx, x, hcx, hxx⟩, Or.inl ⟨B, rb, cs, hS,
           Or.inr ⟨hwit, ⟨cx, x, hcx, hxx, hst⟩, hcov, cx, hcx, hs⟩⟩⟩
     · intro B' h
-      obtain ⟨crb, rs, hF⟩ := hB.record B' x (FamRunCtx.fam_some h).2.1
+      obtain ⟨crb, rs, hF⟩ := FamRunCtx.record_of hW B' x (FamRunCtx.fam_some h).2.1
       have e : crb = cx := Option.some.inj (hF.record.symm.trans hcx)
       have hm : cx.info = .muts rs := by
         rw [← e]
@@ -410,7 +410,7 @@ theorem cont_owned
       rw [e] at hB₂
       obtain ⟨cib, ms, hcib, hms, hpos, hall⟩ := hIB
       refine Or.inl ⟨ib, hTi, fun B₃ h₃ => ?_, ⟨cib, hcib, Or.inr ⟨a, ca, hB₂, hca, hxa⟩⟩, hiB⟩
-      obtain ⟨crb, rs, hF⟩ := hB.record B₃ ib (FamRunCtx.fam_some h₃).2.1
+      obtain ⟨crb, rs, hF⟩ := FamRunCtx.record_of hW B₃ ib (FamRunCtx.fam_some h₃).2.1
       exact hF.not_indBlock ⟨cib, ms, hcib, hms, hpos, hall⟩
     · -- an unclaimed record: a twin of the eliminated block, top-walked or nested
       have hU : Unclaimed K.fam a := fun B₂ h => hcl ⟨B₂, h⟩
@@ -571,7 +571,7 @@ theorem innerClosed_of
     · obtain ⟨cb, ms, hcb, hms, hpos, hall⟩ := hIB'
       refine Or.inr (Or.inr (Or.inr ⟨B', Or.inl hTB', fun B₃ h₃ => ?_,
         ⟨cB, hcB, Or.inl hxB⟩, .single hE⟩))
-      obtain ⟨crb, rs, hF⟩ := hB.record B₃ B' (FamRunCtx.fam_some h₃).2.1
+      obtain ⟨crb, rs, hF⟩ := FamRunCtx.record_of hW B₃ B' (FamRunCtx.fam_some h₃).2.1
       exact hF.not_indBlock ⟨cb, ms, hcb, hms, hpos, hall⟩
     · exact Or.inr (Or.inr (Or.inr ⟨D, Or.inl hTD, hU, hown, .tail (walk_transGen hD) hE⟩))
     · exact Or.inr (Or.inr (Or.inr ⟨D, hw, hU, hown, .tail (.single (.loc hS hl)) hE⟩))
@@ -644,12 +644,12 @@ theorem innerClosed_of
         exact viaEarlier _ (j + 1)
           (Or.inl ⟨advAs, j, b', hown, hb', rfl, rfl, cx, _, hcx, hxx⟩) (by omega)
           (FamRunCtx.walked_of_listed hS hown hb' ⟨cx, _, hcx, hxx⟩)
-          (hB.listedUnclaimed B rb cs advAs j b' hS hown hb' ⟨cx, _, hcx, hxx⟩)
+          (FamRunCtx.listedUnclaimed_of hW hS hown hb' ⟨cx, _, hcx, hxx⟩)
           ⟨cx, hcx, Or.inl hxx⟩
       · exact viaEarlier _ (j + 1)
           (Or.inl ⟨advAs, j, b', hown, hb', rfl, rfl, c', x, hc', hx'⟩) (by omega)
           (FamRunCtx.walked_of_listed hS hown hb' ⟨c', x, hc', hx'⟩)
-          (hB.listedUnclaimed B rb cs advAs j b' hS hown hb' ⟨c', x, hc', hx'⟩)
+          (FamRunCtx.listedUnclaimed_of hW hS hown hb' ⟨c', x, hc', hx'⟩)
           ⟨c', hc', Or.inl hx'⟩
       · exact viaOwner B (Or.inl rfl)
           (below_owned hW hG hB hshape hS.2.1 hok (Or.inr (Or.inr hwb)))
@@ -702,7 +702,7 @@ theorem rankEdges_of
     obtain ⟨rb, hrb, ⟨b, hb, hba⟩, ca, x, hca, hx⟩ := h
     obtain ⟨k, hk⟩ := List.mem_iff_getElem?.mp hb
     exact .loc (FamRunCtx.scope_of_fam hrb) (Or.inl ⟨K.ownList B rb, k, b,
-      FamRunCtx.ownList_spec (hB.ownWalk B rb (FamRunCtx.fam_some hrb).2.1), hk, hba, rfl,
+      FamRunCtx.ownWalk_of (FamRunCtx.fam_some hrb).2.1, hk, hba, rfl,
       ca, x, hca, hx⟩)
   twinAfter := fun rb' B rb h _ => .twinRec h
   famClosed := fun B rb x h hu hok => by

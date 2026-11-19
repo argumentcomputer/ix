@@ -66,7 +66,8 @@ theorem TopWalkCore.restrictReach
     checked := fun a ha => hW.checked a (hW.reach_subset ha)
     refsNotInert := fun a x ha hu => hW.refsNotInert a x (hW.reach_subset ha) hu
     refsNotBlock := fun a x ha hu hn => hW.refsNotBlock a x (hW.reach_subset ha) hu hn
-    safeRefs := fun a x ha hs hu hn => hW.safeRefs a x (hW.reach_subset ha) hs hu hn }
+    safeRefs := fun a x ha hs hu hn => hW.safeRefs a x (hW.reach_subset ha) hs hu hn
+    quotBound := fun x ro c hx hqr hof hc => hW.quotBound x ro c (hW.reach_subset hx) hqr hof hc }
   · intro a x ha hu
     by_cases hc : Typing.Covered t x
     · exact Or.inr hc
