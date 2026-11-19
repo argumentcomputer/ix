@@ -405,7 +405,7 @@ private theorem get_ci_dprj_block_stored {rootCalls cs : List (Call F)} {E₀ : 
     (hS : LoadedReads.RunStore rootCalls E₀) (hH : LoadedReads.HashedRecordsStored rootCalls E₀)
     (hsub : ∀ c ∈ cs, c ∈ rootCalls)
     {a : Bytes.Address} {xa p : SourceValue F} {h m : Heap F}
-    {c cb : Ixon.Constant} {prj : Ixon.DefnProj} {blkBytes : ByteArray}
+    {c cb : Ixon.Constant} {prj : Ixon.DefinitionProj} {blkBytes : ByteArray}
     (ra : Bytes.RepAddressRef addrTy h a xa) (ev : ObsFn W "Ingress::get_ci" [xa] h p m cs)
     (hcE : recordOf E₀ (ixAddr a) = some c) (hci : c.info = .dPrj prj)
     (hhB : Hashed cs blkBytes) (haB : Address.blake3Pure blkBytes = prj.block)
@@ -1068,7 +1068,7 @@ theorem ctorLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
   simp only [kciEnum, Value.construct.injEq, List.cons.injEq] at hcit_eq
   have hty_eq : tyPtr' = tyPtr := hcit_eq.2.2.2.1.symm
   rcases hty_eq.symm with rfl
-  obtain ⟨cb', -, -, hbl, -⟩ := Claim.get_ci_cprj_head rba ev
+  obtain ⟨cb', _, _, hbl, -⟩ := Claim.get_ci_cprj_head rba ev
   have hcbE' : recordOf E₀ (ixAddr ba) = some cb' := ((hbl.mono hsub).stored hH).1
   have hcbEq : cb = cb' := record_eq_of_hashed hS hsub hcbE' hhB haB hexB
   subst hcbEq
@@ -1328,7 +1328,7 @@ theorem recrLoad_rawConvExpr {rootCalls : List (Call F)} {E₀ R : Ixon.Env}
   have hms' : ms[k]? = some (.recr rc) := by rw [← Array.getElem?_toList]; exact hms
   have hrcEq : rc = r := Ixon.MutConst.recr.inj (Option.some.inj (hms'.symm.trans hk))
   rcases hrcEq with rfl
-  obtain ⟨-, -, -, -, -, -, tyPtr', -, -, -, -, -, -, hv_eq, rty, -, -, -⟩ := hrecr
+  obtain ⟨-, -, -, -, -, -, tyPtr', _, _, _, _, -, -, hv_eq, rty, -, -, -⟩ := hrecr
   rw [hv_eq] at hci
   simp only [kciEnum, Value.construct.injEq, List.cons.injEq] at hci
   rcases hci.2.2.2.1 with rfl
