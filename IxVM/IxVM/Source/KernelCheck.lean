@@ -1263,7 +1263,7 @@ def aux_already_in := aiur_fn⟦
                 1 => {
                   match Bytes::address_eq(addr, target_addr) {
                     1 => {
-                      match spec_params_ptr_eq(sp, target_sp) * level_list_struct_eq(ou, target_us) {
+                      match spec_params_zeta_eq(sp, target_sp) * level_list_struct_eq(ou, target_us) {
                         1 => {  1 } ,
                         _ => {  aux_already_in(rest, target_addr, target_sp, target_us) } ,
                       } } ,
@@ -1596,7 +1596,7 @@ def flat_find_pos_kind := aiur_fn⟦
               };
               -- an auxiliary entry: the whole occurrence identity, levels included
               let sp_eq = match want_aux {
-                1 => {  spec_params_ptr_eq(sp, want_sp) * level_list_struct_eq(ou, want_us) } ,
+                1 => {  spec_params_zeta_eq(sp, want_sp) * level_list_struct_eq(ou, want_us) } ,
                 _ => {  1 } ,
               };
               match (addr_match * kind_eq) * sp_eq {
@@ -1652,6 +1652,9 @@ def peel_motive_params_subst := aiur_fn⟦
               let body_substed = KernelSubst::expr_inst1(body, p, 0);
               peel_motive_params_subst(body_substed, n - 1, n_rec_params,
                 is_aux, spec_params, j + 1) } ,
+            KernelTypes::KExprNode::Let(_, v, b) => {
+              peel_motive_params_subst(KernelSubst::expr_inst1(b, v, 0), n, n_rec_params,
+                is_aux, spec_params, j) } ,
           } } ,
       }
     }
@@ -2987,7 +2990,7 @@ def apply_ihs_full := aiur_fn⟦
               let with_minors = build_minor_apps(with_motives, n_minors,
                 ((inner_depth - 1) - n_params) - n_motives, 0);
 
-              match KernelTypes::collect_spine(inner_body) {
+              match collect_spine_zeta(inner_body) {
                 (_dh, dargs) => {
                   let idx_args = Lists::drop(dargs, target_n_params);
                   let with_idx = apply_spine_expr(with_minors, idx_args);
@@ -3017,7 +3020,7 @@ def build_rule_rhs := aiur_fn⟦
                             flat_own_params: Lists::List<Field>,
                             is_aux: Field, spec_params: Lists::List<KernelTypes::KExpr>, elim: KernelTypes::KLevel) -> KernelTypes::KExpr {
       let ctor_ty_inst = KernelLevels::expr_inst_levels(ctor_ty, occurrence_us);
-      let after_params_raw = peel_n_foralls(ctor_ty_inst, n_own_params);
+      let after_params_raw = peel_n_foralls_zeta(ctor_ty_inst, n_own_params);
       let n_fields = count_foralls_body(after_params_raw, 0);
       let body_depth = ((n_params + n_motives) + n_minors) + n_fields;
 
@@ -3115,7 +3118,7 @@ def find_peer_rec_spec_walk := aiur_fn⟦
                         _ => {
                           let rec_sp = extract_aux_spec_params(ty, np,
                             nmot, nmin, ni, pnp);
-                          spec_params_ptr_eq(rec_sp, target_sp) *
+                          spec_params_zeta_eq(rec_sp, target_sp) *
                             level_list_struct_eq(extract_aux_occ_us(rec_ci), target_us) } ,
                       } } ,
                     _ => {  0 } ,
@@ -3269,6 +3272,8 @@ def count_foralls_body := aiur_fn⟦
   fn count_foralls_body(ty: KernelTypes::KExpr, acc: Field) -> Field {
       match (*(ty)) {
         KernelTypes::KExprNode::Forall(_, body, _) => {  count_foralls_body(body, acc + 1) } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          count_foralls_body(KernelSubst::expr_inst1(b, v, 0), acc) } ,
         _ => {  acc } ,
       }
     }
@@ -3335,7 +3340,7 @@ def build_minor_at_depth := aiur_fn⟦
           let n_ihs = Lists::length(rec_indices);
           let n_binders = n_fields + n_ihs;
           let depth_now = minor_saved + n_binders;
-          match KernelTypes::collect_spine(ret_ty) {
+          match collect_spine_zeta(ret_ty) {
             (_ret_head, ret_args) => {
               let ret_indices = Lists::drop(ret_args, n_own_params);
               let ret_indices_lifted = list_lift_each(ret_indices, n_ihs, 0);
@@ -3378,6 +3383,8 @@ def peel_leading_foralls_acc := aiur_fn⟦
       match (*(ty)) {
         KernelTypes::KExprNode::Forall(dom, body, _) => {
           peel_leading_foralls_acc(body, (&(Lists::Node::Cons(dom, acc)))) } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          peel_leading_foralls_acc(KernelSubst::expr_inst1(b, v, 0), acc) } ,
         _ => {  (acc, ty) } ,
       }
     }
@@ -3419,7 +3426,7 @@ def build_ih_doms := aiur_fn⟦
               let motive_bvar = (inner_depth - 1) - (motive_base + mem_idx);
               let field_bvar = (inner_depth - 1) - (minor_saved + field_idx);
 
-              match KernelTypes::collect_spine(inner_body) {
+              match collect_spine_zeta(inner_body) {
                 (_h, dom_args) => {
                   let idx_args = Lists::drop(dom_args, target_n_params);
                   let motive_ref = (&(KernelTypes::KExprNode::BVar(motive_bvar)));
@@ -3524,7 +3531,7 @@ def recon_whnf_spine := aiur_fn⟦
           recon_whnf_spine(rc, KernelSubst::expr_inst1(body, val, 0), spine) } ,
         KernelTypes::KExprNode::Proj(s, i, inner) => {
           let iw = recon_whnf(rc, inner);
-          match KernelWhnf::red_proj(rc, s, i, iw, (&(Lists::Node::Nil))) {
+          match KernelWhnf::red_proj_zeta(s, i, iw) {
             (1, field) => {  recon_whnf_spine(rc, field, spine) } ,
             _ => {  KernelWhnf::apply_spine((&(KernelTypes::KExprNode::Proj(s, i, iw))), spine) } ,
           } } ,
@@ -3559,8 +3566,10 @@ def is_rec_field_peel := aiur_fn⟦
       match (*(ty)) {
         KernelTypes::KExprNode::Forall(_, body, _) => {
           is_rec_field_peel(body, flat, spec_lift_by) } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          is_rec_field_peel(KernelSubst::expr_inst1(b, v, 0), flat, spec_lift_by) } ,
         _ => {
-          match KernelTypes::collect_spine(ty) {
+          match collect_spine_zeta(ty) {
             (head, args) => {
               match (*(head)) {
                 KernelTypes::KExprNode::Const(caddr, us) => {
@@ -3610,7 +3619,7 @@ def spec_params_dom_prefix_match := aiur_fn⟦
             Lists::Node::Nil => {  0 } ,
             Lists::Node::Cons(a, ar) => {
               let s_lifted = KernelSubst::expr_lift(s, lift_by, 0);
-              match kexpr_struct_eq(s_lifted, a) {
+              match kexpr_zeta_struct_eq(s_lifted, a) {
                 1 => {  spec_params_dom_prefix_match(sr, ar, lift_by) } ,
                 _ => {  0 } ,
               } } ,
@@ -3651,6 +3660,9 @@ def walk_fields_classify := aiur_fn⟦
               walk_fields_classify(rc, body, flat, new_doms, rec_acc,
                 rec_mem_acc, new_norm, fidx + 1, spec_lift_by, types2) } ,
           } } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          walk_fields_classify(rc, KernelSubst::expr_inst1(b, v, 0), flat, doms_acc,
+            rec_acc, rec_mem_acc, norm_acc, fidx, spec_lift_by, types) } ,
         _ => {  (Lists::reverse(doms_acc), Lists::reverse(rec_acc),
                 Lists::reverse(rec_mem_acc), ty, Lists::reverse(norm_acc)) } ,
       }
@@ -4101,6 +4113,153 @@ def check_const := aiur_fn⟦
               assert_eq!(k_flag, 0, "a recursor of a mutual or nested block declares K");
               assert_eq!(rec_uns, 0, "an unsafe recursor of a mutual or nested block");
               KernelModeled::check_family(rc, family, rec_block) } ,
+          } } ,
+      }
+    }
+⟧
+
+  -- Reconstruction-only ζ-transparent helpers, leaving global `peel_n_foralls` and
+  -- `KernelTypes::collect_spine` unchanged for header, native, and statement-mirrored walks.
+
+def peel_n_foralls_zeta := aiur_fn⟦
+  fn peel_n_foralls_zeta(e: KernelTypes::KExpr, n: Field) -> KernelTypes::KExpr {
+      match n {
+        0 => {  e } ,
+        _ => {
+          match (*(e)) {
+            KernelTypes::KExprNode::Forall(_, body, _) => {  peel_n_foralls_zeta(body, n - 1) } ,
+            KernelTypes::KExprNode::Let(_, v, b) => {
+              peel_n_foralls_zeta(KernelSubst::expr_inst1(b, v, 0), n) } ,
+          } } ,
+      }
+    }
+⟧
+
+def collect_spine_zeta := aiur_fn⟦
+  fn collect_spine_zeta(e: KernelTypes::KExpr) -> (KernelTypes::KExpr, Lists::List<KernelTypes::KExpr>) {
+      match (*(e)) {
+        KernelTypes::KExprNode::App(f, a) => {
+          let (head, args) = collect_spine_zeta(f);
+          (head, Lists::snoc(args, a)) } ,
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          collect_spine_zeta(KernelSubst::expr_inst1(b, v, 0)) } ,
+        _ => {  (e, (&(Lists::Node::Nil))) } ,
+      }
+    }
+⟧
+
+  -- Structural equality modulo ζ-reduction of `let` bindings, used exclusively for
+  -- specialized-parameter comparison on the reconstruction and nested-occurrence paths
+  -- (`spec_params_dom_prefix_match`, `spec_params_zeta_eq`). Global `kexpr_struct_eq`
+  -- and `spec_params_ptr_eq` remain untouched.
+
+def zeta_head := aiur_fn⟦
+  fn zeta_head(e: KernelTypes::KExpr) -> KernelTypes::KExpr {
+      match (*(e)) {
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          zeta_head(KernelSubst::expr_inst1(b, v, 0)) } ,
+        _ => {  e } ,
+      }
+    }
+⟧
+
+def kexpr_zeta_binder_eq := aiur_fn⟦
+  fn kexpr_zeta_binder_eq(ta: KernelTypes::KExpr, ba: KernelTypes::KExpr, la: KernelTypes::KLevel,
+                          tb: KernelTypes::KExpr, bb: KernelTypes::KExpr, lb: KernelTypes::KLevel) -> Field {
+      match KernelLevels::pw_eq(la, lb) {
+        1 => {
+          match kexpr_zeta_struct_eq(ta, tb) {
+            1 => {  kexpr_zeta_struct_eq(ba, bb) } ,
+            _ => {  0 } ,
+          } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+def kexpr_zeta_struct_eq := aiur_fn⟦
+  fn kexpr_zeta_struct_eq(a: KernelTypes::KExpr, b: KernelTypes::KExpr) -> Field {
+      let a0 = zeta_head(a);
+      let b0 = zeta_head(b);
+      match (*(a0)) {
+        KernelTypes::KExprNode::BVar(ia) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::BVar(ib) => {
+              match ia - ib { 0 => {  1 } , _ => {  0 } , } } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Srt(la) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::Srt(lb) => {  KernelLevels::level_struct_eq(la, lb) } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Const(ca, lsa) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::Const(cb, lsb) => {
+              match Bytes::address_eq(ca, cb) {
+                1 => {  level_list_struct_eq(lsa, lsb) } ,
+                _ => {  0 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::App(fa, aa) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::App(fb, ab) => {
+              match kexpr_zeta_struct_eq(fa, fb) {
+                1 => {  kexpr_zeta_struct_eq(aa, ab) } ,
+                _ => {  0 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Lam(ta, ba, la) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::Lam(tb, bb, lb) => {  kexpr_zeta_binder_eq(ta, ba, la, tb, bb, lb) } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Forall(da, xa, la) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::Forall(db, xb, lb) => {  kexpr_zeta_binder_eq(da, xa, la, db, xb, lb) } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Let(_, _, _) => {  0 } ,
+        KernelTypes::KExprNode::Lit(la) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::Lit(lb) => {  KernelLevels::literal_eq(la, lb) } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Proj(sa, fa2, ea) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::Proj(sb, fb2, eb) => {
+              match Bytes::address_eq(sa, sb) {
+                1 => {
+                  match fa2 - fb2 {
+                    0 => {  kexpr_zeta_struct_eq(ea, eb) } ,
+                    _ => {  0 } ,
+                  } } ,
+                _ => {  0 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
+def spec_params_zeta_eq := aiur_fn⟦
+  fn spec_params_zeta_eq(a: Lists::List<KernelTypes::KExpr>, b: Lists::List<KernelTypes::KExpr>) -> Field {
+      match (*(a)) {
+        Lists::Node::Nil => {
+          match (*(b)) {
+            Lists::Node::Nil => {  1 } ,
+            _ => {  0 } ,
+          } } ,
+        Lists::Node::Cons(x, xr) => {
+          match (*(b)) {
+            Lists::Node::Nil => {  0 } ,
+            Lists::Node::Cons(y, yr) => {
+              match kexpr_zeta_struct_eq(x, y) {
+                1 => {  spec_params_zeta_eq(xr, yr) } ,
+                _ => {  0 } ,
+              } } ,
           } } ,
       }
     }

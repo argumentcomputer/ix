@@ -114,6 +114,11 @@ abbrev «KernelRoles::role_map_lookup_or_default<&[Field; 32]>» : String := "${
 
 theorem «KernelRoles::role_map_lookup_or_default<&[Field; 32]>».symbol : (Instance.mk "KernelRoles::role_map_lookup_or_default" [(.ptr (.array .field 32))]).symbol = «KernelRoles::role_map_lookup_or_default<&[Field; 32]>» := by decide +kernel
 
+/-- The instance `Lists::Node<&Ixon::Expr>`. -/
+abbrev «Lists::Node<&Ixon::Expr>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"Ixon::Expr\"}}}}]}"
+
+theorem «Lists::Node<&Ixon::Expr>».symbol : (Instance.mk "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]).symbol = «Lists::Node<&Ixon::Expr>» := by decide +kernel
+
 /-- The instance `KernelRoles::role_map_lookup_or_default<&Lists::Node<KernelRoles::RoleEvidence>>`. -/
 abbrev «KernelRoles::role_map_lookup_or_default<&Lists::Node<KernelRoles::RoleEvidence>>» : String := "${\"name\":\"KernelRoles::role_map_lookup_or_default\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[{\"named\":{\"args\":[],\"name\":\"KernelRoles::RoleEvidence\"}}],\"name\":\"Lists::Node\"}}}}]}"
 
@@ -153,11 +158,6 @@ theorem «Lists::snoc<&KernelTypes::KLevelNode>».symbol : (Instance.mk "Lists::
 abbrev «Lists::concat<Field>» : String := "${\"name\":\"Lists::concat\",\"types\":[\"field\"]}"
 
 theorem «Lists::concat<Field>».symbol : (Instance.mk "Lists::concat" [.field]).symbol = «Lists::concat<Field>» := by decide +kernel
-
-/-- The instance `Lists::Node<&Ixon::Expr>`. -/
-abbrev «Lists::Node<&Ixon::Expr>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"ptr\":{\"target\":{\"named\":{\"args\":[],\"name\":\"Ixon::Expr\"}}}}]}"
-
-theorem «Lists::Node<&Ixon::Expr>».symbol : (Instance.mk "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]).symbol = «Lists::Node<&Ixon::Expr>» := by decide +kernel
 
 /-- The instance `Lists::Node<Ixon::RecursorRule>`. -/
 abbrev «Lists::Node<Ixon::RecursorRule>» : String := "${\"name\":\"Lists::Node\",\"types\":[{\"named\":{\"args\":[],\"name\":\"Ixon::RecursorRule\"}}]}"
@@ -1003,6 +1003,8 @@ theorem n10542310255196159881 : constructorName [] (.named "Ixon::DefinitionProj
 
 theorem n15678857527114626228 : constructorName [] (.named "Ixon::QuotKind" []) = "Ixon::QuotKind" := by decide +kernel
 
+theorem n16338221799578455114 : constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) = Names.«Lists::Node<&Ixon::Expr>» := by decide +kernel
+
 theorem n14371562910276389931 : instanceName [] "KernelRoles::role_map_lookup_or_default" (some [(.ptr (.named "Lists::Node" [(.named "KernelRoles::RoleEvidence" [])]))]) = Names.«KernelRoles::role_map_lookup_or_default<&Lists::Node<KernelRoles::RoleEvidence>>» := by decide +kernel
 
 theorem n1430519675229757493 : constructorName [] (.named "Ixon::DefinitionSafety" []) = "Ixon::DefinitionSafety" := by decide +kernel
@@ -1032,8 +1034,6 @@ theorem n17264845653887200752 : instanceName [] "Lists::snoc" (some [(.ptr (.nam
 theorem n11871363439673646749 : constructorName [] (.named "Ixon::Expr" []) = "Ixon::Expr" := by decide +kernel
 
 theorem n3632407994155229761 : instanceName [] "Lists::concat" (some [.field]) = Names.«Lists::concat<Field>» := by decide +kernel
-
-theorem n16338221799578455114 : constructorName [] (.named "Lists::Node" [(.ptr (.named "Ixon::Expr" []))]) = Names.«Lists::Node<&Ixon::Expr>» := by decide +kernel
 
 theorem n2057903310009274417 : constructorName [] (.named "Lists::Node" [(.named "Ixon::RecursorRule" [])]) = Names.«Lists::Node<Ixon::RecursorRule>» := by decide +kernel
 

@@ -61,14 +61,14 @@ theorem check_family_standalone_refused {calls cs : List (Call F)} {E₀ : Ixon.
     (hc : IxVM.Consistency.recordOf E₀ (ixAddr ab) = some c) (hinfo : c.info = .recr rcr) :
     False := by
   match Obs.«KernelModeled::check_family».obs ev with
-  | .run (m105 := m105) (m784 := m784) (m840 := m840) (m_pjcdckev := mR) (m1293 := m1293)
+  | .run (m105 := m105) (m784 := m784) (m840 := m840) (m_qvdvjtit := mR) (m1293 := m1293)
       (v839 := v839) (v861 := v861) (m862 := m862) (cs850 := cs850) (cs872 := cs872)
       (sg112 := sg112)
       (ev126 := ev126) (ev148 := ev148) (ev194 := ev194) (ev_yqjbwijz := evo) (ev231 := ev231)
       (ev266 := ev266) (ev309 := ev309) (ev344 := ev344) (ev403 := ev403) (ev435 := ev435)
       (ev465 := ev465) (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
       (ev686 := ev686) (ev716 := ev716) (ev759 := ev759) (ev817 := ev817) (ev796 := ev796)
-      (ev852 := ev852) (ev_ursqbimm := evr) (ev874 := ev874) (ev896 := ev896) (ev960 := ev960)
+      (ev852 := ev852) (ev_ursqbimm := evr) (ev_srfmazjk := evt) (ev874 := ev874) (ev896 := ev896) (ev960 := ev960)
       (ev939 := ev939) (ev1011 := ev1011) (ev990 := ev990) (ev_edyzsqzv := evm1)
       (ev_gkddqxhv := evcc) (ev_ittpynob := evm2) (ev_biaifgpd := evm3) (ev1203 := ev1203)
       (ev_cwwgzxtj := evfl) (ev1246 := ev1246) (ev_mitevvsv := evln) (ev_rqpeovbn := evz1)
@@ -133,7 +133,7 @@ theorem check_family_standalone_refused {calls cs : List (Call F)} {E₀ : Ixon.
         exact Lib.rep_store_cons (Bytes.repAddressRef_heapMono₂ addrTy) hb'
           (Lib.rep_store_nil m2)
     -- its length is one
-    have eR : Heap.Extends m840 mR := evr.heap_extends
+    have eR : Heap.Extends m840 mR := evr.heap_extends.trans evt.heap_extends
     have ev874' : ObsFn Obs.W (Instance.mk "Lists::length" [.ptr (.array .field 32)]).symbol
         [v839] mR v861 m862 cs872 := by
       rw [Obs.Names.«Lists::length<&[Field; 32]>».symbol]; exact ev874

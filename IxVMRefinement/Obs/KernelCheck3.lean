@@ -1130,25 +1130,25 @@ inductive «KernelCheck::aux_already_in».Path (x_flat x_target_addr x_target_sp
       (he21 : h' = h)
       (hc22 : calls = [])
   | Cons_n1_n1_n1
-      (x_rest : SourceValue F) (x_addr : SourceValue F) (x_sp : SourceValue F) (x_ou : SourceValue F) (m91 : Heap F) (cs102 : List (Call F)) (m126 : Heap F) (x_hvzpwdpn : SourceValue F) (y_wuoeosgs : SourceValue F) (m_pytapsis : Heap F) (cs_dvjvjuyg : List (Call F)) (cs_adnwwsmw : List (Call F))
+      (x_rest : SourceValue F) (x_addr : SourceValue F) (x_sp : SourceValue F) (x_ou : SourceValue F) (m91 : Heap F) (cs102 : List (Call F)) (m126 : Heap F) (x_hvzpwdpn : SourceValue F) (y_wuoeosgs : SourceValue F) (m_pytapsis : Heap F) (cs_xlvwvsal : List (Call F)) (cs_adnwwsmw : List (Call F))
       (ld12 : loadValue h x_flat = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Cons" [(.tuple [x_addr, (.field 1), x_sp, x_ou]), x_rest]))
       (ev104 : ObsFn W "Bytes::address_eq" [x_addr, x_target_addr] h (.field 1) m91 cs102)
-      (ev_yhgkfgjg : ObsFn W "KernelCheck::spec_params_ptr_eq" [x_sp, x_target_sp] m91 x_hvzpwdpn m_pytapsis cs_dvjvjuyg)
+      (ev_bdqzbgud : ObsFn W "KernelCheck::spec_params_zeta_eq" [x_sp, x_target_sp] m91 x_hvzpwdpn m_pytapsis cs_xlvwvsal)
       (ev_purmzcuq : ObsFn W "KernelCheck::level_list_struct_eq" [x_ou, x_target_us] m_pytapsis y_wuoeosgs m126 cs_adnwwsmw)
       (op_irtiosum : evalBinOp .mul (x_hvzpwdpn : SourceValue F) (y_wuoeosgs : SourceValue F) = .ok (.field 1))
       (he160 : r = (.field 1))
       (he161 : h' = m126)
-      (hc162 : calls = ((⟨"Bytes::address_eq", [x_addr, x_target_addr], h⟩ : Call F) :: (cs102 ++ ((⟨"KernelCheck::spec_params_ptr_eq", [x_sp, x_target_sp], m91⟩ : Call F) :: (cs_dvjvjuyg ++ ((⟨"KernelCheck::level_list_struct_eq", [x_ou, x_target_us], m_pytapsis⟩ : Call F) :: cs_adnwwsmw))))))
+      (hc162 : calls = ((⟨"Bytes::address_eq", [x_addr, x_target_addr], h⟩ : Call F) :: (cs102 ++ ((⟨"KernelCheck::spec_params_zeta_eq", [x_sp, x_target_sp], m91⟩ : Call F) :: (cs_xlvwvsal ++ ((⟨"KernelCheck::level_list_struct_eq", [x_ou, x_target_us], m_pytapsis⟩ : Call F) :: cs_adnwwsmw))))))
   | Cons_n1_n1_other
-      (x_rest : SourceValue F) (x_addr : SourceValue F) (x_sp : SourceValue F) (x_ou : SourceValue F) (m91 : Heap F) (cs102 : List (Call F)) (v125 : SourceValue F) (m126 : Heap F) (x_hvzpwdpn : SourceValue F) (y_wuoeosgs : SourceValue F) (m_pytapsis : Heap F) (cs_dvjvjuyg : List (Call F)) (cs_adnwwsmw : List (Call F)) (cs170 : List (Call F))
+      (x_rest : SourceValue F) (x_addr : SourceValue F) (x_sp : SourceValue F) (x_ou : SourceValue F) (m91 : Heap F) (cs102 : List (Call F)) (v125 : SourceValue F) (m126 : Heap F) (x_hvzpwdpn : SourceValue F) (y_wuoeosgs : SourceValue F) (m_pytapsis : Heap F) (cs_xlvwvsal : List (Call F)) (cs_adnwwsmw : List (Call F)) (cs170 : List (Call F))
       (ld12 : loadValue h x_flat = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Cons" [(.tuple [x_addr, (.field 1), x_sp, x_ou]), x_rest]))
       (ev104 : ObsFn W "Bytes::address_eq" [x_addr, x_target_addr] h (.field 1) m91 cs102)
-      (ev_yhgkfgjg : ObsFn W "KernelCheck::spec_params_ptr_eq" [x_sp, x_target_sp] m91 x_hvzpwdpn m_pytapsis cs_dvjvjuyg)
+      (ev_bdqzbgud : ObsFn W "KernelCheck::spec_params_zeta_eq" [x_sp, x_target_sp] m91 x_hvzpwdpn m_pytapsis cs_xlvwvsal)
       (ev_purmzcuq : ObsFn W "KernelCheck::level_list_struct_eq" [x_ou, x_target_us] m_pytapsis y_wuoeosgs m126 cs_adnwwsmw)
       (op_irtiosum : evalBinOp .mul (x_hvzpwdpn : SourceValue F) (y_wuoeosgs : SourceValue F) = .ok v125)
       (hne163 : (v125 : SourceValue F) ≠ (.field 1))
       (ev172 : ObsFn W "KernelCheck::aux_already_in" [x_rest, x_target_addr, x_target_sp, x_target_us] m126 r h' cs170)
-      (hc197 : calls = ((⟨"Bytes::address_eq", [x_addr, x_target_addr], h⟩ : Call F) :: (cs102 ++ ((⟨"KernelCheck::spec_params_ptr_eq", [x_sp, x_target_sp], m91⟩ : Call F) :: (cs_dvjvjuyg ++ ((⟨"KernelCheck::level_list_struct_eq", [x_ou, x_target_us], m_pytapsis⟩ : Call F) :: (cs_adnwwsmw ++ ((⟨"KernelCheck::aux_already_in", [x_rest, x_target_addr, x_target_sp, x_target_us], m126⟩ : Call F) :: cs170))))))))
+      (hc197 : calls = ((⟨"Bytes::address_eq", [x_addr, x_target_addr], h⟩ : Call F) :: (cs102 ++ ((⟨"KernelCheck::spec_params_zeta_eq", [x_sp, x_target_sp], m91⟩ : Call F) :: (cs_xlvwvsal ++ ((⟨"KernelCheck::level_list_struct_eq", [x_ou, x_target_us], m_pytapsis⟩ : Call F) :: (cs_adnwwsmw ++ ((⟨"KernelCheck::aux_already_in", [x_rest, x_target_addr, x_target_sp, x_target_us], m126⟩ : Call F) :: cs170))))))))
   | Cons_n1_other
       (x_rest : SourceValue F) (x_addr : SourceValue F) (x_sp : SourceValue F) (x_ou : SourceValue F) (v90 : SourceValue F) (m91 : Heap F) (cs102 : List (Call F)) (cs205 : List (Call F))
       (ld12 : loadValue h x_flat = .ok (.construct Names.«Lists::Node<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>» "Cons" [(.tuple [x_addr, (.field 1), x_sp, x_ou]), x_rest]))
@@ -1233,8 +1233,8 @@ theorem «KernelCheck::aux_already_in».obs {x_flat x_target_addr x_target_sp x_
             subst hv124
             obtain ⟨v125, m126, bs127, body128, c129, c130, d131, sel132, d133, rfl⟩ := d98.matchValue_inv
             obtain ⟨x_hvzpwdpn, y_wuoeosgs, m_pytapsis, c137, c138, d139, d140, op_irtiosum, rfl⟩ := d131.binary_inv
-            obtain ⟨vs142, m143, c144, cs_dvjvjuyg, a146, ev_yhgkfgjg, rfl⟩ := d139.call_inv
-            rw [instanceName_plain_some] at ev_yhgkfgjg
+            obtain ⟨vs142, m143, c144, cs_xlvwvsal, a146, ev_bdqzbgud, rfl⟩ := d139.call_inv
+            rw [instanceName_plain_some] at ev_bdqzbgud
             obtain ⟨v148, vs150, m151, c152, c153, rfl, d154, a155, rfl⟩ := a146.cons_inv
             obtain ⟨l156, rfl, rfl⟩ := d154.var_inv
             simp at l156
@@ -1259,7 +1259,7 @@ theorem «KernelCheck::aux_already_in».obs {x_flat x_target_addr x_target_sp x_
             · obtain ⟨hv189, rfl⟩ := MatchesConst.some_inv (MatchesConst.literal 1) mt186
               subst hv189
               obtain ⟨rfl, rfl, rfl⟩ := d133.literal_inv
-              exact «KernelCheck::aux_already_in».Path.Cons_n1_n1_n1 _ _ _ _ _ _ _ _ _ _ _ _ ld12 ev104 ev_yhgkfgjg ev_purmzcuq op_irtiosum rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+              exact «KernelCheck::aux_already_in».Path.Cons_n1_n1_n1 _ _ _ _ _ _ _ _ _ _ _ _ ld12 ev104 ev_bdqzbgud ev_purmzcuq op_irtiosum rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
             · have hne163 := MatchesConst.none_inv (MatchesConst.literal 1) nm187
               rcases selectArm_cons_inv sel188 with ⟨mt194, rfl⟩ | ⟨nm195, sel196⟩
               · obtain rfl := matchPattern_wildcard_inv mt194
@@ -1282,7 +1282,7 @@ theorem «KernelCheck::aux_already_in».obs {x_flat x_target_addr x_target_sp x_
                 simp at l234
                 subst l234
                 obtain ⟨rfl, rfl, rfl⟩ := a233.nil_inv
-                exact «KernelCheck::aux_already_in».Path.Cons_n1_n1_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 ev104 ev_yhgkfgjg ev_purmzcuq op_irtiosum hne163 ev172 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+                exact «KernelCheck::aux_already_in».Path.Cons_n1_n1_other _ _ _ _ _ _ _ _ _ _ _ _ _ _ ld12 ev104 ev_bdqzbgud ev_purmzcuq op_irtiosum hne163 ev172 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
               · exact (matchPattern_wildcard_none nm195).elim
           · have hne198 := MatchesConst.none_inv (MatchesConst.literal 1) nm122
             rcases selectArm_cons_inv sel123 with ⟨mt237, rfl⟩ | ⟨nm238, sel239⟩
