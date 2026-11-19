@@ -1847,7 +1847,7 @@ theorem check_iota_rule_facts
     rw [List.getElem?_map, List.getElem?_range hm_rP, Option.map_some,
       List.getElem?_eq_getElem hm] at h1
     exact Option.some.inj h1
-  obtain ⟨-, remA1_inst, hinst_tty_rp, htty_rp_dt1, -⟩ :=
+  obtain ⟨_, remA1_inst, hinst_tty_rp, htty_rp_dt1, _⟩ :=
     Decl.peel_n_foralls_inst_exact htake_fvs_len htake_fvs_Γ inv.ev_tty_rp
       ((htty_rep 0 Γ_t).mono ext_tci_dt1)
   rw [← htake_fvs_len, hrp_val, Nat.zero_add] at htty_rp_dt1
@@ -1864,7 +1864,7 @@ theorem check_iota_rule_facts
       (hctx_rep.mono (ext_open_dt1.trans inv.ev_tty_rp.heap_extends))
   have hctx_rp_rep := hctx_rp_ttyrp.mono inv.ev_ctx_rp.heap_extends
   rw [show depth - ZMod.val (cnF : F) = rP by rw [hcnf_val]; omega] at hctx_rp_rep
-  have hsc_t_rp : Decl.GhostScoped Γ_t rP := fun i hi => hsc_t i (by omega)
+  have hsc_t_rp : GhostScoped Γ_t rP := fun i hi => hsc_t i (by omega)
   have ext_crest_dt1 := ext_crest_in.trans (inv.ev_cres.heap_extends.trans
     (inv.ev_csp.heap_extends.trans (ext_csp_idxr.trans
       (ext_idxl_deidx.trans (inv.ev_ty_m.heap_extends.trans
@@ -1872,12 +1872,12 @@ theorem check_iota_rule_facts
   have ext_h_dt1 := ext_tci.trans ext_tci_dt1
   have ext_dt1_ctxrp := inv.ev_tty_rp.heap_extends.trans inv.ev_ctx_rp.heap_extends
   have htty_rp_ex := htty_rp_dt1.mono ext_dt1_ctxrp
-  obtain ⟨fvs2_pos, -, doms2_pos, -, hop_dt2_pos, hinst_dt2_pos, hraw_dom⟩ :=
+  obtain ⟨fvs2_pos, _, doms2_pos, _, hop_dt2_pos, hinst_dt2_pos, hraw_dom⟩ :=
     Decl.defeq_tele_scoped_spec (c := sc) cnF (d := rP) (depth := depth)
       hcnf_val (by omega) (hrc.mono (ext_h_dt1.trans ext_dt1_ctxrp))
       hctx_rp_rep hsc_t_rp hef hlf (hgoodOf inv.sub_dt2) inv.ev_dt2
       htty_rp_ex (hcrest_tm.mono (ext_crest_dt1.trans ext_dt1_ctxrp))
-  obtain ⟨fvs2', -, hop_dt2', hfvs2_pos, -⟩ := Decl.openPisAtFvars_of_posOf hop_dt2_pos
+  obtain ⟨fvs2', _, hop_dt2', hfvs2_pos, _⟩ := Decl.openPisAtFvars_of_posOf hop_dt2_pos
   subst hfvs2_pos
   rw [hop_dt2_expected] at hop_dt2'; injection hop_dt2' with hp
   obtain ⟨hfvs2_eq, -⟩ := Prod.mk.inj hp; subst hfvs2_eq
@@ -2053,21 +2053,21 @@ theorem check_iota_rule_facts
   -- Construct `xFvsP, ldoms` (`openPisAtFvars cnF crestP rP`) and `ldoms.getAppArgs.length = cnP + nI`
   have hpP_len : pinsP.length + cnF = cnP + cnF := by simp [pinsP, hpins_len]
   rw [← hpP_len] at hstrip_inst
-  obtain ⟨-, crestP', bs_cp, cbody_cp, hinst_p', hstrip_cp, hfn_cp, hlen_cp⟩ :=
+  obtain ⟨_, crestP', bs_cp, cbody_cp, hinst_p', hstrip_cp, hfn_cp, hlen_cp⟩ :=
     Decl.instPisAt_constHead _ _ (cnP + nI) pinsP cnF cty_inst
       hstrip_inst hfn_inst hcbody_inst_len
   rw [hinst_p] at hinst_p'; injection hinst_p' with hp; injection hp with _ hcp; subst hcp
-  obtain ⟨xFvsP, ldoms, hopen_cf, -, hldoms_len⟩ :=
+  obtain ⟨xFvsP, ldoms, hopen_cf, _, hldoms_len⟩ :=
     Decl.openPisAtFvars_constHead _ _ (cnP + nI) cnF crestP rP hstrip_cp hfn_cp hlen_cp
   -- `defeq_lam_tele` #2 (`ev_lt2`)
   have ext_crestp_lt1 := ext_crestp_nil.trans inv.ev_lt1.heap_extends
   have ext_h_lt1 := ext_h_lt1_in.trans inv.ev_lt1.heap_extends
-  obtain ⟨-, -, -, pfvs2_pos, remP2_pos, ldoms2_pos, remL2_pos,
-      -, hop_lt2_pos, hinst_lt2_pos, -, -, -, -, -, hraw_lt2⟩ :=
+  obtain ⟨_, _, _, pfvs2_pos, remP2_pos, ldoms2_pos, remL2_pos,
+      _, hop_lt2_pos, hinst_lt2_pos, _, _, _, _, _, hraw_lt2⟩ :=
     Decl.defeq_lam_tele_scoped_spec (c := sc) cnF (d := rP) (depth := depth)
       hcnf_val (by omega) (hrc.mono ext_h_lt1) hlctx_rep hsc_l hef hlf
       (hgoodOf inv.sub_lt2) inv.ev_lt2 hremL1_tm (hcrestPm_tm.mono ext_crestp_lt1)
-  obtain ⟨xFvsP_m, ldoms_m, hop_lt2_m, hxFvsPm_pos, -⟩ := Decl.openPisAtFvars_of_posOf hop_lt2_pos
+  obtain ⟨xFvsP_m, ldoms_m, hop_lt2_m, hxFvsPm_pos, _⟩ := Decl.openPisAtFvars_of_posOf hop_lt2_pos
   subst hxFvsPm_pos
   have hopen_cfm : openPisAtFvars cnF crestP_m rP =
       some (xFvsP.map (·.renameConsts g), ldoms.renameConsts g) := by
