@@ -661,7 +661,7 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
             (evM.heap_extends.trans evL.heap_extends) hxs⟩
     obtain ⟨xs, hlen, hltB, hxs⟩ := hflatLen
     have hxs' : RepList (Instance.mk "Lists::Node" [flatEntryTy]).symbol
-        (fun (_ : Unit) (_ : Heap F) (_ : SourceValue F) => True) m1234 xs v_flat := by
+        (fun (_ : Heap F) (_ : Unit) (_ : SourceValue F) => True) m1234 xs v_flat := by
       rw [flatListEnum_eq]
       exact RepLinkedList.mono (fun _ _ _ _ _ _ => trivial) ev1246.heap_extends hxs
     have evLen' : ObsFn Obs.W (Instance.mk "Lists::length" [flatEntryTy]).symbol
@@ -1122,35 +1122,35 @@ private theorem ixonUnshare_rawConv {refs : List _root_.Address} {univs : List I
       · exact Or.inr ⟨_, List.mem_of_getElem? hsh, h1⟩
       · exact Or.inr h2
   | var hidx cell =>
-    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), (fun _ h => by cases h),
       fun _ hi => Or.inl hi, L1.RawConvExpr.var hidx cell⟩
   | sort huIdx hu rl cell =>
-    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), (fun _ h => by cases h),
       fun _ hi => Or.inl hi, L1.RawConvExpr.sort huIdx hu rl cell⟩
   | ref hrIdx href hd ra hls rls cell =>
-    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), (fun _ h => by cases h),
       fun _ hi => Or.inl hi, L1.RawConvExpr.ref hrIdx href hd ra hls rls cell⟩
   | recur _ hrec _ _ _ _ _ => simp at hrec
   | prj htIdx hfIdx href hd ra rin cell =>
-    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), (fun _ h => by cases h),
       fun _ hi => Or.inl hi, L1.RawConvExpr.prj htIdx hfIdx href hd ra rin cell⟩
   | str hbIdx href hmem rbs hs cell =>
-    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), (fun _ h => by cases h),
       fun _ hi => Or.inl hi, L1.RawConvExpr.str hbIdx href hmem rbs hs cell⟩
   | nat hbIdx href hmem hcanon rlimbs hlast hval cell =>
-    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), (fun _ h => by cases h),
       fun _ hi => Or.inl hi, L1.RawConvExpr.nat hbIdx href hmem hcanon rlimbs hlast hval cell⟩
   | app rf ra cell =>
-    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), (fun _ h => by cases h),
       fun _ hi => Or.inl hi, L1.RawConvExpr.app rf ra cell⟩
   | lam rl rt rb cell =>
-    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), (fun _ h => by cases h),
       fun _ hi => Or.inl hi, L1.RawConvExpr.lam rl rt rb cell⟩
   | all rl rt rb cell =>
-    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), (fun _ h => by cases h),
       fun _ hi => Or.inl hi, L1.RawConvExpr.all rl rt rb cell⟩
   | letE rt rv rb cell =>
-    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), fun _ h => by cases h,
+    exact ⟨_, _, ixonUnshare_nonshare (fun _ h => by cases h), (fun _ h => by cases h),
       fun _ hi => Or.inl hi, L1.RawConvExpr.letE rt rv rb cell⟩
 
 private theorem rawConv_forall_of_load {refs : List _root_.Address} {univs : List Ixon.Univ}
@@ -1885,6 +1885,7 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
         | nil => simp at htypeMap
         | cons tA0 tArest =>
           have htA0_eq : Core.ixAddr tA0 = memberAddr (Core.ixAddr bb) 0 m0 := by
+            simp only [List.map_cons, List.mapIdx_cons] at htypeMap
             have h0 := (List.cons.inj htypeMap).1
             rw [LoadedReads.memberAddr_eq_projAddr]
             exact h0
@@ -1901,6 +1902,7 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
           | nil => simp at hrecMap
           | cons rA0 rArest =>
             have hrA0_eq : Core.ixAddr rA0 = memberAddr (Core.ixAddr brb) 0 (.recr rc0) := by
+              simp only [List.map_cons, List.mapIdx_cons] at hrecMap
               have h0 := (List.cons.inj hrecMap).1
               rw [LoadedReads.memberAddr_eq_projAddr]
               exact h0
@@ -1960,13 +1962,14 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
               have ers' : rs' = rs := Ixon.ConstantInfo.muts.inj (hcrb'm.symm.trans hrs)
               subst ers'
               have erc0' : rc0' = rc0 := by
-                rw [Array.getElem?_toList, hrc0_get] at hmemR'
+                simp only [UInt64.toNat_zero] at hmemR'
+                rw [hrc0_get] at hmemR'
                 exact Ixon.MutConst.recr.inj (Option.some.inj hmemR')
               subst erc0'
               rw [hldR] at ldRec
               injection ldRec with hvR
               subst hvR
-              obtain ⟨-, hp, -, -, -, -, tyPtr, -, -, -, -, -, hv_eq, hty, -⟩ := hrrR
+              obtain ⟨_, hp, _, _, _, _, tyPtr, _, _, _, _, _, hv_eq, hty, _⟩ := hrrR
               injection hv_eq with _ _ hargsR
               simp only [List.cons.injEq] at hargsR
               obtain ⟨-, rfl, rfl, -⟩ := hargsR
