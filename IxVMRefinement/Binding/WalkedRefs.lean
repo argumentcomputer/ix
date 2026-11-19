@@ -221,21 +221,21 @@ theorem walkedRef_needOk (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoade
           rw [← addressOf_basis hpin hbas]; exact had
         unfold quotRowOk at hok
         simp only [hctab] at hok
-        cases hbr : basisStore.consts.get? x with
+        cases hrecB : recordOf basisStore x with
         | none =>
-          have hn : recordOf basisStore x = none := by unfold recordOf; rw [hbr]
-          simp only [hn] at hok; cases hok
-        | some lc =>
-          have hE : recordOf E₀ x = some lc.val := by
-            unfold recordOf; rw [hb x lc hbr]
-          have hrecB : recordOf basisStore x = some lc.val := by
-            unfold recordOf; rw [hbr]
+          simp only [hrecB] at hok; cases hok
+        | some c =>
+          have hE : recordOf E₀ x = some c := by
+            unfold recordOf at hrecB ⊢
+            cases hbr : basisStore.consts.get? x with
+            | none => rw [hbr] at hrecB; cases hrecB
+            | some lc => rw [hbr] at hrecB; rw [hb x lc hbr]; exact hrecB
           simp only [hrecB] at hok
-          cases hci : lc.val.info with
+          cases hci : c.info with
           | quot q =>
-            refine ⟨lc.val, hE, fun ⟨ms, hms⟩ => by rw [hci] at hms; cases hms,
+            refine ⟨c, hE, fun ⟨ms, hms⟩ => by rw [hci] at hms; cases hms,
               by simp only [InLogic, hci], fun cb hcb => ?_⟩
-            have hown : Ix.Cert.ownerOf x lc.val = x := by simp [Ix.Cert.ownerOf, hci]
+            have hown : Ix.Cert.ownerOf x c = x := by simp [Ix.Cert.ownerOf, hci]
             rw [hown, hE] at hcb
             cases Option.some.inj hcb
             simp only [InLogic, hci]
@@ -243,9 +243,9 @@ theorem walkedRef_needOk (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoade
             simp only [hci] at hok
             have hsafe : ax.isUnsafe = false := by
               cases hu' : ax.isUnsafe <;> simp [hu'] at hok ⊢
-            refine ⟨lc.val, hE, fun ⟨ms, hms⟩ => by rw [hci] at hms; cases hms,
+            refine ⟨c, hE, fun ⟨ms, hms⟩ => by rw [hci] at hms; cases hms,
               by simp only [InLogic, hci, hsafe], fun cb hcb => ?_⟩
-            have hown : Ix.Cert.ownerOf x lc.val = x := by simp [Ix.Cert.ownerOf, hci]
+            have hown : Ix.Cert.ownerOf x c = x := by simp [Ix.Cert.ownerOf, hci]
             rw [hown, hE] at hcb
             cases Option.some.inj hcb
             simp only [InLogic, hci, hsafe]
