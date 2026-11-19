@@ -961,7 +961,7 @@ theorem topWalk_of_edges {calls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨bAddr, hW, hG⟩ := h
   exact ⟨bAddr, ⟨hW.topLim, hW.table, hW.runStore, hW.hashedStored, hW.seedsTop, hW.record,
     hclosed, howner, hW.seedLogic, hW.seedNotInert, hW.checked, hW.refsNotInert, hW.refsNotBlock,
-    hW.safeRefs⟩, ⟨hG.seedsTop, hG.record, hclosed, howner, hG.members, hG.projMember,
+    hW.safeRefs, hW.quotBound⟩, ⟨hG.seedsTop, hG.record, hclosed, howner, hG.members, hG.projMember,
     hG.standing, hG.seedLogic⟩⟩
 
 /-- **The ranking**: at every walk and witness, a rank of the family graph at the choices

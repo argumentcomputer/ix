@@ -503,6 +503,12 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
           .construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41], v708, cs719,
           hrc.mono (ext1.trans ext_seg), S0.addr_mono (ext1.trans ext_seg) ha,
           hrep.mono ext_seg, ev721, fun cl hcl => by rw [hc796]; simp [hcl]⟩
+        hquot := ⟨m709, m_quot, x_rc, x_addr,
+          .construct "Ixon::Constant" "Mk" [x_info, w39, x_refs, w40, w41], v_quot, cs_quot,
+          hrc.mono (ext1.trans (ext_seg.trans ev721.heap_extends)),
+          S0.addr_mono (ext1.trans (ext_seg.trans ev721.heap_extends)) ha,
+          hrep.mono (ext_seg.trans ev721.heap_extends), ev_quot,
+          fun cl hcl => by rw [hc796]; simp [hcl]⟩
       }
       let recs_tail := recs_blk ++ recs_r.map (TopRec.mono hsub_r)
       refine .inr ⟨ext1.trans (ext_seg.trans (ext_guard.trans (ext_idx.trans ext_walk))),
