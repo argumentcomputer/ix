@@ -1414,7 +1414,7 @@ private theorem rulesRep_det_ce {c : Core.Ctx} {h : Heap F} {ps₁ ps₂ : List 
     have := Core.cell_eq cell₁ cell₂; simp at this
   | _, _, _, _, .cons cell₁ _ _, .nil cell₂ => by
     have := Core.cell_eq cell₁ cell₂; simp at this
-  | _, _, _, _, r₁ :: _, r₂ :: _, .cons cell₁ ⟨rhs₁, hv₁, hlt₁, htm₁⟩ rs₁,
+  | _, _, r₁ :: _, r₂ :: _, .cons cell₁ ⟨rhs₁, hv₁, hlt₁, htm₁⟩ rs₁,
       .cons cell₂ ⟨rhs₂, hv₂, hlt₂, htm₂⟩ rs₂ => by
     have hce := Core.cell_eq cell₁ cell₂
     simp only [Value.construct.injEq, List.cons.injEq, and_true, true_and] at hce
@@ -1515,14 +1515,24 @@ private theorem check_rules_go_nfields {calls : List (Call F)} {t : Ix.Kernel.Ro
         subst hci_eq
         rw [hpv_ld] at ld165
         injection ld165 with hv_eq
-        subst hv_eq
+        rw [← hv_eq] at hci_rep
+        generalize hvg : Value.construct "KernelTypes::KConstantInfo" "Ctor" _ = vg at hci_rep
         cases hci_rep with
         | ctor _ _ hcnf_eq hcnts _ =>
-          rw [hcnf_eq] at heq286
+          injection hvg with _ _ hvf
+          injection hvf with _ hvf2
+          injection hvf2 with _ hvf3
+          injection hvf3 with _ hvf4
+          injection hvf4 with _ hvf5
+          injection hvf5 with _ hvf6
+          injection hvf6 with hcnf_eq' _
+          rw [← hcnf_eq', hcnf_eq] at heq286
           have h1 := congrArg ZMod.val (Value.field.inj heq286)
           have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
           rw [ZMod.val_natCast_of_lt (by omega), ZMod.val_natCast_of_lt (by omega)] at h1
           exact h1
+        | axio _ | opaq _ | defn _ _ | thm _ _ | quot _ _ | induct _ _ _ | recr _ _ _ _ _ _ _ _ _ _ _ =>
+          cases hvg
       | succ c' =>
         simp only [List.getElem?_cons_succ] at hget
         have hv451 : v451 = .field ((j + 1 : Nat) : F) := by
@@ -2493,7 +2503,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
           .field (off : F), .field (ind₀.lvls.toNat : F), x_fam, x_form] h r h' cs →
       (∀ cl ∈ cs, cl ∈ calls) →
       ∀ j, k ≤ j → j < rs'.size →
-        Nonempty (ExtractedTwinMember calls t E₀ lim B A cb c ms rs' ind₀ j) := by
+        Nonempty (ExtractedTwinMember.{u} calls t E₀ lim B A cb c ms rs' ind₀ j) := by
   intro k remAs
   induction remAs generalizing k with
   | nil =>
@@ -3056,7 +3066,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             ZMod.val_natCast_of_lt (by omega)
           have hlyw_val : ZMod.val ((rc.motives.toNat + rc.minors.toNat : Nat) : F) =
               rc.motives.toNat + rc.minors.toNat := ZMod.val_natCast_of_lt (by omega)
-          rw [hrp_val] at hpins_rep
+          rw [hrp_val] at hstrip_p hpins_rep
           rw [hni_val] at hstrip_p hdrop_p hno_ni hpins_rep hlen_p
           have hrp_split : rP = rc.params.toNat + ZMod.val ((rc.motives.toNat + rc.minors.toNat : Nat) : F) := by
             rw [hlyw_val]; simp only [rP]; omega
@@ -3136,15 +3146,18 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             have hsub606 : ∀ cl ∈ cs606, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
             have hsf := hinv.scopedCoreFacts
             exact (Decl.constantValCheckJ_of_scoped_mapped (c := Core.Ctx.stored ⟨E, env, t, lim⟩)
+              (cv := ⟨keyOf t (Core.rprjAddr A k), ps, ty₀⟩)
+              (cv' := ⟨keyOf t (Core.rprjAddr A k), ps, ty'⟩)
               judgementsMap_rulesJ_twinPos
               ⟨rfl, rfl, hannTy'⟩ hval_m473 hty₀_lbb hty₀_fv hfresh hkey.1
-              (Decl.nat_keyOf_isProjFnShape_false t _) hinv.store.toStoreInv
+              (Decl.nat_keyOf_isProjFnShape_false t _) hinv.store.store
               (posSortLiftFor_twinPos hps_perm) ev523
               (ext_m67_m511.trans (ev571.heap_extends.trans (ext_m561_m_oaj.trans
                 (ev_up.heap_extends.trans (ev_sv.heap_extends.trans (ext_m_shk_m_rax.trans
                   (ev_oq.heap_extends.trans (ev_ee.heap_extends.trans
                     (ev_uoy.heap_extends.trans (ev_akr.heap_extends.trans ext_m_akk_m627))))))))))
-              hrc_m627 hty_nil hsf.1 hsf.2 ((hSS.good env lim).sub hsub606) ev608).1
+              hrc_m627 hty_nil hsf.1 hsf.2
+              (Core.CoreGood.ofRaw ((hSS.good env lim).sub hsub606) (fun _ _ => trivial)) ev608).1
           exact ⟨{
             rc := rc
             hmem := hmem_k
@@ -3214,7 +3227,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
               have hg80 : Core.CoreGood cctx.stored cs80 :=
                 Core.CoreGood.ofRaw ((hSS.good env lim).sub hsub80) (fun _ _ => trivial)
               obtain ⟨ci_e, hfind_e, pv_e, hpv_e, hci_e⟩ :=
-                hinv.loads.getCI x_r p76 h m67 cs80 a_k ev82 trivial hnek hg80 ha_k_rep
+                hinv.loads.getCI x_r p74 h m67 cs80 a_k ev82 trivial hnek hg80 ha_k_rep
               change env.find? _ = some ci_e at hfind_e
               rw [hκk, hfind'] at hfind_e
               injection hfind_e with hci_eq
@@ -3303,7 +3316,7 @@ theorem familyCall_extract_members {calls : List (Call F)} {bAddr : _root_.Addre
     (hB : FamBlockRecord E₀ B cb ms) (hA : FamRecRecord E₀ A c rs')
     (hcall : FamilyCallAtLim calls bAddr t B A lim cs) :
     ∃ (ind₀ : Ixon.Inductive), ms[0]? = some (.indc ind₀) ∧
-      ∀ k < rs'.size, Nonempty (ExtractedTwinMember calls t E₀ lim B A cb c ms rs' ind₀ k) := by
+      ∀ k < rs'.size, Nonempty (ExtractedTwinMember.{u} calls t E₀ lim B A cb c ms rs' ind₀ k) := by
   have hrefs_ok := recRefs_of_familyCall hRS hH hA.record hcall
   obtain ⟨h, h', x_rc, x_block, x_rec_block, r, hrc_lim, hxB, hxA, ev_fam, -, hsub_fam⟩ := hcall
   obtain ⟨bB, hB_rep, hB_ix⟩ := hxB
