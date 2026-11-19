@@ -386,8 +386,8 @@ def IndAnswers (rootCalls : List (Call F)) (S : _root_.Address → Prop)
         [xnl, xty, xnp, xni, xnc, xrec, xblk, xidx] →
       ∃ (d : IndData) (ba : Bytes.Address),
         V.ind (ixAddr a) = some (some d) ∧
-        d.nl < 4294967296 ∧ d.np < 4294967296 ∧ d.ni < 4294967296 ∧
-        d.nctors < 4294967296 ∧ d.idx < 4294967296 ∧
+        d.nl < 4294967296 ∧ d.np < 72057594037927936 ∧ d.ni < 72057594037927936 ∧
+        d.nctors < 72057594037927936 ∧ d.idx < 72057594037927936 ∧
         xnl = .field (d.nl : F) ∧ TmOExact κ m d.ty xty ∧ AddrIn S κ d.ty ∧ S d.blk ∧
         xnp = .field (d.np : F) ∧ xni = .field (d.ni : F) ∧ xnc = .field (d.nctors : F) ∧
         ixAddr ba = d.blk ∧ Bytes.RepAddressRef addrTy m ba xblk ∧ xidx = .field (d.idx : F)) ∧
@@ -408,7 +408,8 @@ def CtorOfAnswers (rootCalls : List (Call F)) (S : _root_.Address → Prop) (V :
         [xnl, xty, xblk, xind, xcidx, xnp, xnf, xuns] →
       ∃ (d : CtorData) (ba : Bytes.Address),
         V.ctorOf (ixAddr a) = some (some d) ∧
-        d.nl < 4294967296 ∧ d.ind < 4294967296 ∧ d.np < 4294967296 ∧ d.nf < 4294967296 ∧
+        d.nl < 4294967296 ∧ d.ind < 72057594037927936 ∧ d.np < 72057594037927936 ∧
+        d.nf < 72057594037927936 ∧
         xnl = .field (d.nl : F) ∧ ixAddr ba = d.blk ∧ Bytes.RepAddressRef addrTy m ba xblk ∧
         xind = .field (d.ind : F) ∧ xnp = .field (d.np : F) ∧ xnf = .field (d.nf : F)) ∧
     ((∀ vs : List (SourceValue F), vs.length = 8 →
@@ -542,11 +543,11 @@ private theorem red_proj_gate_eval
     {cd : CtorData} {sd : IndData} {ba_c ba_s : Bytes.Address}
     {cus : List KLevel} {args : List KExpr} {i : F}
     (hcb : ixAddr ba_c = cd.blk) (hsb : ixAddr ba_s = sd.blk)
-    (hcd_nl : cd.nl < 4294967296) (hcd_ind : cd.ind < 4294967296)
-    (hcd_np : cd.np < 4294967296) (hcd_nf : cd.nf < 4294967296)
-    (hsd_nl : sd.nl < 4294967296) (hsd_np : sd.np < 4294967296)
-    (hsd_ni : sd.ni < 4294967296) (hsd_nc : sd.nctors < 4294967296)
-    (hsd_idx : sd.idx < 4294967296)
+    (hcd_nl : cd.nl < 4294967296) (hcd_ind : cd.ind < 72057594037927936)
+    (hcd_np : cd.np < 72057594037927936) (hcd_nf : cd.nf < 72057594037927936)
+    (hsd_nl : sd.nl < 4294967296) (hsd_np : sd.np < 72057594037927936)
+    (hsd_ni : sd.ni < 72057594037927936) (hsd_nc : sd.nctors < 72057594037927936)
+    (hsd_idx : sd.idx < 72057594037927936)
     {h m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 : Heap F}
     {xcblk xsblk xargs xclvls : SourceValue F}
     {v_eq v_sub1 y_z1 x_m1 v_sub2 y_z2 v_g1 y_z3 v_sub3 y_z4 x_m2 v_sub4 y_z5 v_g2
