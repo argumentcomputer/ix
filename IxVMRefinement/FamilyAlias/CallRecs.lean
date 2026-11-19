@@ -850,7 +850,7 @@ private theorem addrIn_peel_n_foralls {h : Heap F} :
                   Except.ok.inj ld
                 subst hv
                 have hty' : ty = .enum kexprEnum := by
-                  simp only [not_not] at hty; exact hty.symm
+                  simp only [not_not, Value.type] at hty; exact hty.symm
                 subst hty'
                 exact .forallBody hget (hsub a ha)
           | field _ | tuple _ | construct _ _ _ => simp [loadValue] at ld)
@@ -1435,9 +1435,11 @@ theorem addrIn_rec_major_pins {κ : _root_.Address → KKey} {Γ : Nat → KExpr
         [xargs, .field inp] m297 v386 m389 cs397 := by
       rw [Obs.Names.«Lists::take<&KernelTypes::KExprNode>».symbol]; exact evTake
     have hxs297' : RepList (Instance.mk "Lists::Node" [(.ptr (.named "KernelTypes::KExprNode" []))]).symbol
-        (fun h _ p => KExprClosed h p ∧ ∀ a, AddrIn h p a → AddrIn h ty_ptr a) m297 xs xargs := by
+        (fun h1 _ p => KExprClosed h1 p ∧ ∀ a, AddrIn h1 p a → AddrIn h ty_ptr a) m297 xs xargs := by
       rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol]; exact hxs297
-    have htake := (Lib.Lists.take_spec (fun _ _ _ _ ext r => hmono ext r) evTake' hxs297').2
+    have htake := (Lib.Lists.take_spec
+      (R := fun h1 _ p => KExprClosed h1 p ∧ ∀ a, AddrIn h1 p a → AddrIn h ty_ptr a)
+      (fun _ _ _ _ ext r => hmono ext r) evTake' hxs297').2
     rw [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at htake
     obtain ⟨ys, hys⟩ := addrIn_lower_pins (xs.take inp.val) evLow htake
     have hzip := repList_zip_pred hPs hys
@@ -1865,6 +1867,7 @@ theorem pinsP_leavesFixed {t : Ix.Kernel.RoleTable} {calls : List (Call F)}
             | some q2 =>
               rcases q2 with ⟨fvs2, r2⟩
               rw [hop2] at hsplit
+              dsimp only at hsplit
               simp only [Option.some.injEq, Prod.mk.injEq] at hsplit
               have hfvs_eq : fvs1 ++ fvs2 = fvsP := hsplit.1
               have hlen1 : fvs1.length = nP := Decl.openPisAtFvars_len nP hop1
@@ -1928,7 +1931,7 @@ theorem get_ci_induct_record {calls : List (Call F)} {E₀ : Ixon.Env}
       rw [hinfo] at hraw; obtain ⟨v, hldv, _, _, _, _, hv, _, _⟩ := hraw
       have he := Except.ok.inj (hld.symm.trans hldv); rw [hv] at he
       unfold L1.defnValShape at he
-      cases d.kind <;> (dsimp only at he; injection he with _ ht _; exact absurd ht (by decide))
+      cases hdk : d.kind <;> simp [hdk] at he
     | axio ax =>
       rw [hinfo] at hraw; obtain ⟨v, hldv, _, _, hv, _⟩ := hraw
       have he := Except.ok.inj (hld.symm.trans hldv); rw [hv] at he
@@ -1946,7 +1949,7 @@ theorem get_ci_induct_record {calls : List (Call F)} {E₀ : Ixon.Env}
       obtain ⟨_, _, _, _, d, v, _, _, _, _, _, _, hldv, _, _, _, _, hv, _, _⟩ := hraw
       have he := Except.ok.inj (hld.symm.trans hldv); rw [hv] at he
       unfold L1.defnValShape at he
-      cases d.kind <;> (dsimp only at he; injection he with _ ht _; exact absurd ht (by decide))
+      cases hdk : d.kind <;> simp [hdk] at he
     | cPrj p =>
       rw [hinfo] at hraw
       obtain ⟨_, _, _, _, _, _, _, v, _, _, _, _, _, _, _, hldv, _, _, _, _, _, _, _, _, _, _, hv, _⟩ := hraw
@@ -2330,7 +2333,6 @@ private theorem blockRecurAddrs_eq_mapIdx (B : _root_.Address) (ms : List Ixon.M
     | cons m rest ih' =>
       intro p
       simp only [L1.blockRecurAddrsAux, List.mapIdx_cons, Nat.add_zero]
-      rw [LoadedReads.memberAddr_eq_projAddr]
       congr 1
       have h2 := ih' (p + 1)
       simpa [Nat.add_assoc, Nat.add_comm 1] using h2
@@ -2868,7 +2870,7 @@ theorem rulesTrace_walk
                   nat_eq_of_field_eq_u56_r hcounts_c.2 hru_nf
                     (Value.field.inj (hnf_eq_c.symm.trans (hcnf_eq.trans heq_rnf.symm)))
                 subst hnp_match hnf_match
-                have hcwf := hSE.prefixInv.store.wf _ (List.mem_of_find?_eq_some hfind_gc)
+                have hcwf := hSE.prefixInv.store.store.wf _ (List.mem_of_find?_eq_some hfind_gc)
                 have hdef_c : cvj.type.allLevelParamsDefined cvj.levelParams = true := hcwf.2.1
                 have hres_c : cvj.type.constsResolve env = true := hcwf.2.2.1
                 have hnp_c : Decl.NoProjIn srcKeys cvj.type = true :=
@@ -3713,7 +3715,7 @@ theorem recMember_of_cons
           (x_args := x_args) (x_inp := xinp) (v257 := v257) (v258 := v258)
           (m260 := m260) (cs268 := cs268)
           (op37 := opMi) (ev14 := eP) (ld51 := ldFa) (ev89 := eS) (ld122 := ldC)
-          (ev157 := eCi) (ld151 := ldI) (ev270 := eL)
+          (ev157 := eCi) (ld151 := ldI) (heq245 := heqIni) (ev270 := eL)
           (op292 := opA) (heq295 := heqL) (he359 := hrE) (he423 := hhE) (hc424 := hcE) .. =>
         subst hhE
         injection hrE with hl; injection hl with hxi _; subst hxi
@@ -3774,7 +3776,7 @@ theorem recMember_of_cons
           exact RepLinkedList.mono (fun _ _ _ _ ext x => x.mono ext) eCi.heap_extends hAs0
         have hv257 : v257 = .field (AsPos.length : F) := by
           rw [← hAs0_eq]; exact (Lib.Lists.length_spec eL' hAs141).1
-        rw [hxinp_eq] at opA
+        rw [hxinp_eq, heqIni] at opA
         have hv258 := SubstAux.add_ok opA
         rw [hv257, hv258] at heqL
         have hfeq : inpF + (rc.indices.toNat : F) = (indM.params.toNat : F) + (rc.indices.toNat : F) :=
@@ -3965,8 +3967,9 @@ theorem recMember_of_cons
       have hj_lt : j < rules₀.length := (List.getElem?_eq_some_iff.mp hj).1
       have hget_z : (rc.rules.toList.zipIdx 0)[j]? = some (rc.rules.toList[j]'(by rw [Array.length_toList, ← hrules_len]; exact hj_lt), j) := by
         rw [List.getElem?_zipIdx, List.getElem?_eq_getElem (by rw [Array.length_toList, ← hrules_len]; exact hj_lt)]
-        rfl
-      have hrel := (List.forall₂_iff_getElem.mp hrr_rules).2 j (by omega) hj_lt
+        simp
+      have hrel := (List.forall₂_iff_get.mp hrr_rules).2 j (by omega) hj_lt
+      simp only [List.get_eq_getElem] at hrel
       have hrl_eq : rules₀[j] = rl := Option.some.inj ((List.getElem?_eq_getElem hj_lt).symm.trans hj)
       rw [hrl_eq] at hrel
       obtain ⟨_, _, hmk⟩ := hrel
