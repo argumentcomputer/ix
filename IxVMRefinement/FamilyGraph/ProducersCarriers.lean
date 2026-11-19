@@ -330,7 +330,7 @@ private theorem get_ci_of_rPrj_raw {calls cs : List (Call F)} {E₀ : Ixon.Env}
     subst hp_val
     subst hx_idx
     obtain ⟨hidx56, hv898, hm907⟩ :=
-      Lib.u64_to_field_spec (L1.Deserialize.repU64_u64Value _ k.toUInt64) ev917
+      Lib.u64_to_field_spec (Deserialize.repU64_u64Value _ k.toUInt64) ev917
     subst hv898 hm907
     obtain ⟨b_blk, hb_eq, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk_ix
     obtain ⟨-, -, blkBytes, cb, ms, rc', blobs, v',
@@ -876,7 +876,7 @@ private theorem get_ci_is_unsafe_bool {ab : Bytes.Address} {x_addr ptr ci r : So
     obtain ⟨p, -, hx_idx, hblk_ix⟩ := L1.repConstantInfo_iPrj_inv hinfo
     subst hx_idx
     obtain ⟨-, hv722, hm731⟩ :=
-      Lib.u64_to_field_spec (L1.Deserialize.repU64_u64Value _ p.idx) ev741
+      Lib.u64_to_field_spec (Deserialize.repU64_u64Value _ p.idx) ev741
     subst hv722 hm731
     obtain ⟨b_blk, -, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk_ix
     obtain ⟨_, _, ind, -, -, _, _, _, _, hld'⟩ := Claim.get_ci_iprj_head hb_rep ev720
@@ -892,10 +892,10 @@ private theorem get_ci_is_unsafe_bool {ab : Bytes.Address} {x_addr ptr ci r : So
     obtain ⟨p, -, hx_idx, hx_cidx, hblk_ix⟩ := L1.repConstantInfo_cPrj_inv hinfo
     subst hx_idx hx_cidx
     obtain ⟨-, hv802, hm812⟩ :=
-      Lib.u64_to_field_spec (L1.Deserialize.repU64_u64Value _ p.idx) ev822
+      Lib.u64_to_field_spec (Deserialize.repU64_u64Value _ p.idx) ev822
     subst hv802 hm812
     obtain ⟨-, hv803, hm832⟩ :=
-      Lib.u64_to_field_spec (L1.Deserialize.repU64_u64Value _ p.cidx) ev842
+      Lib.u64_to_field_spec (Deserialize.repU64_u64Value _ p.cidx) ev842
     subst hv803 hm832
     obtain ⟨b_blk, -, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk_ix
     obtain ⟨_, _, _, -, -, -, ct, -, _, _, _, _, _, hld'⟩ := Claim.get_ci_cprj_head hb_rep ev800
@@ -912,7 +912,7 @@ private theorem get_ci_is_unsafe_bool {ab : Bytes.Address} {x_addr ptr ci r : So
     obtain ⟨p, -, hx_idx, hblk_ix⟩ := L1.repConstantInfo_rPrj_inv hinfo
     subst hx_idx
     obtain ⟨-, hv898, hm907⟩ :=
-      Lib.u64_to_field_spec (L1.Deserialize.repU64_u64Value _ p.idx) ev917
+      Lib.u64_to_field_spec (Deserialize.repU64_u64Value _ p.idx) ev917
     subst hv898 hm907
     obtain ⟨b_blk, -, hb_rep⟩ := L1.repIxonAddressRef_to_core_ing hblk_ix
     obtain ⟨_, _, rc, -, -, _, _, _, _, _, _, _, _, hld'⟩ := Claim.get_ci_rprj_head hb_rep ev896
@@ -1230,9 +1230,8 @@ private theorem safe_refs_only_const_ind0_safe {calls cs : List (Call F)} {E₀ 
     have hind_eq : ind' = ind₀ := by
       change ms.toList[0]? = some (.indc ind') at hmem'
       exact Ixon.MutConst.indc.inj (Option.some.inj (hmem'.symm.trans hm0L))
-    subst hind_eq
-    have hv63 : _ = .construct "KernelTypes::KConstantInfo" "Induct" _ :=
-      Except.ok.inj (hld.symm.trans hldv)
+    subst ind'
+    have hv63 := Except.ok.inj (hld.symm.trans hldv)
     rw [hv63] at ev_u
     have hy0 : _ = L1.repBoolField ind₀.isUnsafe := by
       match Obs.«KernelCheck::is_unsafe_ci».obs ev_u with
@@ -1311,9 +1310,9 @@ private theorem build_recur_addrs_walk_hashed {ms : List Ixon.MutConst} {b : Byt
     · obtain ⟨m', rest', he, _, hrest⟩ := Lib.rep_cons_of_load hcur ld12
       injection he with hm_eq hrest_eq
       subst m' rest'
-      obtain ⟨ext1, -, -, mc, -, hget_mc, -, -, hhash⟩ :=
+      obtain ⟨ext1, hk_lt, -, mc, -, hget_mc, -, -, hhash⟩ :=
         L1.projection_addr_hashed_spec hms hb ev68
-      rw [val_cast_le_u56 hk] at hget_mc hhash
+      rw [val_cast_le_u56 hk] at hk_lt hget_mc hhash
       have hmc_eq : mc = m := by
         have h0 := hsuf 0 m rfl
         rw [Nat.add_zero, hget_mc] at h0
@@ -1455,9 +1454,9 @@ structure FamCheckCarriers (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E�
   hashedIPrj0 : ∀ ind₀, ms[0]? = some (Ixon.MutConst.indc ind₀) →
     Hashed calls (Ixon.serConstant
       ⟨Core.Specs.Callees.memberProjInfo B 0 (.indc ind₀), #[], #[], #[], #[]⟩)
-  noRole : ∀ k (m : Ixon.MutConst), rs[k]? = some m →
+  noRole : ∀ (k : Nat) (m : Ixon.MutConst), rs[k]? = some m →
     ∀ ro, t.addressOf? ro ≠ some (memberAddr rb k m)
-  carrier : ∀ k (rc : Ixon.Recursor), rs[k]? = some (Ixon.MutConst.recr rc) →
+  carrier : ∀ (k : Nat) (rc : Ixon.Recursor), rs[k]? = some (Ixon.MutConst.recr rc) →
     ∃ n, Binding.FamilyOf.motiveCarrierAt crb rc 0 n = some (Core.iprjAddr B 0)
   ind0Safe : 0 < rs.size → ∀ ind₀, ms[0]? = some (Ixon.MutConst.indc ind₀) → ind₀.isUnsafe = false
 
