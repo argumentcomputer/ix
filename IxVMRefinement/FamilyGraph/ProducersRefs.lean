@@ -2495,11 +2495,8 @@ theorem get_ci_of_rec_raw_uncond {calls cs : List (Call F)} {E₀ : Ixon.Env}
       obtain ⟨ext3, htbl⟩ :=
         L1.binder_table_spec (hbd.mono Deserialize.repBinderBlock_heapMono₂ ext2) hbd32 ev1056
       have ext23 := ext2.trans ext3
-      have ev987' : ObsFn Obs.W "Convert::convert_recursor"
-          [_, x_r, .field ((0 : Nat) : F), _, _, _, _, _, .field 0] _ _ _ _ := by
-        simpa using ev987
       obtain ⟨ext4, blobs, -, hraw⟩ :=
-        L1.convert_recursor_spec
+        L1.convert_recursor_spec (recIdx := 0)
           (hrc_rep.mono ext23)
           ((L1.core_to_repIxonAddressRef hab).mono (ext1.trans ext23))
           (by decide)
@@ -2507,9 +2504,9 @@ theorem get_ci_of_rec_raw_uncond {calls cs : List (Call F)} {E₀ : Ixon.Env}
           (hrf.mono L1.repIxonAddressRef_heapMono₂ ext23)
           (hrecs.mono L1.repIxonAddressRef_heapMono₂ ext3)
           (hun.mono Deserialize.repUnivPtr_heapMono₂ ext23)
-          htbl ev987'
+          htbl (by simpa using ev987)
       rw [he981, hm980] at hld
-      have hv_eq : _ = v := Except.ok.inj ((Claim.loadValue_snoc_self _ _).symm.trans hld)
+      have hv_eq := Except.ok.inj ((Claim.loadValue_snoc_self _ _).symm.trans hld)
       subst hv_eq
       rw [hm980]
       exact ⟨blobs, hraw.mono (Heap.Extends.snoc _ _) (fun _ hm => hm)⟩
