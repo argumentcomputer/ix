@@ -45,8 +45,9 @@ namespace IxVM.Refinement.Binding.FamilyRecon
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Consistency
-open IxVM.Refinement.Core (W KExpr KLevel KKey kexprEnum klvlEnum kciEnum krrEnum kexprListEnum
-  klvlListEnum krrListEnum addrTy addrListEnum ixAddr)
+open IxVM.Refinement.Core (W KExpr KLevel KKey ExprLvEq LvEq LvEqList bmeta
+  kexprEnum kexprListEnum kciEnum krrEnum krrListEnum addrTy addrListEnum ixAddr)
+open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList klevelEnum klevelListEnum)
 open IxVM.Refinement.Binding
 open IxVM.Refinement.Binding.FamilyFlat
 open IxVM.Refinement.Binding.FamilyOf
@@ -196,10 +197,13 @@ private theorem foldl_insertFromEnv_get? (E₀ : Ixon.Env) :
     rw [foldl_insertFromEnv_get? E₀ rest (m.insert a lc) y
       (fun x hx => hall x (List.mem_cons_of_mem _ hx))]
     by_cases hyr : y ∈ rest
-    · simp [hyr]
+    · simp only [hyr, ↓reduceIte, List.mem_cons_of_mem _ hyr]
     · by_cases hya : y = a
-      · subst hya; simp [hyr, hlc, hm_get?_insert_self]
-      · simp [hyr, hya, hm_get?_insert_ne m (Ne.symm hya)]
+      · subst hya
+        simp only [hyr, ↓reduceIte, List.mem_cons_self]
+        rw [hm_get?_insert_self, hlc]
+      · simp only [hyr, ↓reduceIte, List.mem_cons, hya, or_self]
+        exact hm_get?_insert_ne m (Ne.symm hya) lc
 
 private theorem insertFromEnv_recordOf {E₀ R : Ixon.Env} {addrs : List _root_.Address}
     (hall : ∀ a ∈ addrs, (E₀.consts.get? a).isSome = true) (y : _root_.Address) :
@@ -241,32 +245,29 @@ theorem addRecBlockStore {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env}
       (∀ y, Held R' y ↔ Held R y ∨ y = r ∨ ∃ k m, rs[k]? = some m ∧ y = memberAddr r k m) ∧
       StoreLevelsOk t E₀ (Held R') ∧
       StoreIndParamsOk E₀ (Held R') := by
-  let addrs : List _root_.Address := r :: rs.toList.zipIdx.map (fun p => memberAddr r p.2 p.1)
+  let addrs : List _root_.Address :=
+    r :: (List.range rs.size).filterMap (fun k => rs[k]?.map (memberAddr r k))
   have hmem_addrs : ∀ a, a ∈ addrs ↔
       a = r ∨ ∃ k m, rs[k]? = some m ∧ a = memberAddr r k m := by
     intro a
-    simp only [addrs, List.mem_cons, List.mem_map, List.mem_zipIdx, Prod.exists]
+    simp only [addrs, List.mem_cons, List.mem_filterMap, List.mem_range, Option.map_eq_some_iff]
     constructor
-    · rintro (rfl | ⟨m, k, ⟨hlt, hget⟩, rfl⟩)
+    · rintro (rfl | ⟨k, _, m, hk, rfl⟩)
       · exact Or.inl rfl
-      · refine Or.inr ⟨k, m, ?_, rfl⟩
-        rw [← Array.getElem?_toList, List.getElem?_eq_getElem hlt, hget]
+      · exact Or.inr ⟨k, m, hk, rfl⟩
     · rintro (rfl | ⟨k, m, hk, rfl⟩)
       · exact Or.inl rfl
-      · right
-        have hlt : k < rs.toList.length := by
-          simpa using (Array.getElem?_eq_some_iff.mp hk).1
-        refine ⟨m, k, ⟨hlt, ?_⟩, rfl⟩
-        have h1 : rs.toList[k]? = some m := by simpa [Array.getElem?_toList] using hk
-        rw [List.getElem?_eq_getElem hlt] at h1
-        exact Option.some.inj h1
+      · exact Or.inr ⟨k, (Array.getElem?_eq_some_iff.mp hk).1, m, hk, rfl⟩
   have hall_E₀ : ∀ a ∈ addrs, (E₀.consts.get? a).isSome = true := by
     intro a ha
+    have hrec_some : ∀ {x c}, recordOf E₀ x = some c → (E₀.consts.get? x).isSome = true := by
+      intro x c hx
+      cases hget : E₀.consts.get? x with
+      | none => simp [recordOf, hget] at hx
+      | some lc => simp
     rcases (hmem_addrs a).mp ha with rfl | ⟨k, m, hk, rfl⟩
-    · obtain ⟨lc, hlc, -⟩ := recordOf_some hrec.record
-      simp [hlc]
-    · obtain ⟨lc, hlc, -⟩ := recordOf_some (hrec.members k m hk)
-      simp [hlc]
+    · exact hrec_some hrec.record
+    · exact hrec_some (hrec.members k m hk)
   let R' := insertFromEnv E₀ addrs R
   have hR'_eq : ∀ y, recordOf R' y = if y ∈ addrs then recordOf E₀ y else recordOf R y :=
     insertFromEnv_recordOf hall_E₀
@@ -327,7 +328,7 @@ theorem addRecBlockStore {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env}
       split at ha
       · rename_i ha_in
         rcases (hmem_addrs a).mp ha_in with rfl | ⟨k, m, hk, rfl⟩
-        · have heq := Option.some.inj (ha.symm.trans hrec.record); subst heq
+        · have heq := Option.some.inj (ha.symm.trans hrec.record); subst c
           refine ⟨?_, fun i hi y hy => ?_⟩
           · simp only [Ix.Cert.ownerOf, hrec.muts]
             exact Option.isSome_iff_exists.mpr ⟨cr, hR'_r⟩
@@ -336,7 +337,7 @@ theorem addRecBlockStore {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env}
             · exact hheld_mono y hRy
             · exact Option.isSome_iff_exists.mpr ⟨cr, hR'_r⟩
             · exact Option.isSome_iff_exists.mpr ⟨_, hR'_proj k' m' hk'⟩
-        · have heq := Option.some.inj (ha.symm.trans (hrec.members k m hk)); subst heq
+        · have heq := Option.some.inj (ha.symm.trans (hrec.members k m hk)); subst c
           obtain ⟨rc, rfl⟩ := hrec.recrs m (Array.mem_toList_iff.mpr (Array.mem_of_getElem? hk))
           refine ⟨?_, fun i hi y hy => ?_⟩
           · simp only [Ix.Cert.ownerOf, memberProjection]
@@ -702,7 +703,7 @@ private theorem expr_lift_heapMotiveCarrierSrt :
 private theorem apply_spec_params_lifted_heapAppConst {a : _root_.Address} :
     ∀ {sps : List (SourceValue F)} {xhd xsps xd r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
-      Core.RepList kexprListEnum (fun _ v p => v = p) h sps xsps →
+      RepList kexprListEnum (fun _ v p => v = p) h sps xsps →
       HeapAppConst h xhd a →
       ObsFn W "KernelCheck::apply_spec_params_lifted" [xhd, xsps, xd] h r h' cs →
       HeapAppConst h' r a := by
@@ -713,20 +714,20 @@ private theorem apply_spec_params_lifted_heapAppConst {a : _root_.Address} :
     match Obs.«KernelCheck::apply_spec_params_lifted».obs ev with
     | .Nil (he21 := hr) (he22 := hh) .. => subst hr hh; exact hac
     | .Cons (ld12 := ld) .. =>
-      obtain ⟨_, _, hne, -, -⟩ := Core.RepList.cons_of_load hsps ld
+      obtain ⟨_, _, hne, -, -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hsps ld
       cases hne
   | cons sp rest ih =>
     intro xhd xsps xd r h h' cs hsps hac ev
     match Obs.«KernelCheck::apply_spec_params_lifted».obs ev with
-    | .Nil (ld12 := ld) .. => cases Core.RepList.nil_of_load hsps ld
+    | .Nil (ld12 := ld) .. => cases IxVM.Refinement.Core.RepList.nil_of_load hsps ld
     | .Cons (x_rest := xrest) (ev54 := evl) (hm96 := hm2) (ev83 := evrec) (ld12 := ld) .. =>
       subst hm2
-      obtain ⟨_, _, heq, -, hrest⟩ := Core.RepList.cons_of_load hsps ld
+      obtain ⟨_, _, heq, -, hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hsps ld
       injection heq with _ hr; subst hr
       have ext12 := evl.heap_extends.trans (Heap.Extends.snoc _ _)
       have hac1 : HeapAppConst _ (.ptr (.enum kexprEnum) _) a :=
         .app (loadValue_store_snoc _ _) (hac.mono ext12)
-      exact ih (Core.repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext12 hrest) hac1 evrec
+      exact ih (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext12 hrest) hac1 evrec
 
 private theorem build_apply_bvars_decreasing_heapAppConst {a : _root_.Address} (n : Nat)
     (hn : n < 9223372036854775808) :
@@ -854,9 +855,9 @@ private theorem apply_indices_in_conclusion_heapAppBVar {idx : F} (n : Nat)
 
 private theorem repList_to_rawKExprList {κ : _root_.Address → KKey} {h : Heap F} :
     ∀ {xs : List KExpr} {p : SourceValue F},
-      Core.RepList kexprListEnum (TmOExact κ) h xs p →
+      RepList kexprListEnum (TmOExact κ) h xs p →
       ∃ ds : List (SourceValue F), ds.length = xs.length ∧
-        Core.RepList kexprListEnum (fun _ v q => v = q) h ds p
+        RepList kexprListEnum (fun _ v q => v = q) h ds p
   | [], p, hr => by
     cases hr with
     | nil hld => exact ⟨[], rfl, .nil hld⟩
@@ -872,7 +873,7 @@ private theorem collect_n_doms_whnf_rawList :
         ObsFn W "KernelCheck::collect_n_doms_whnf"
           [xrc, xty, .field (n : F), xtypes] h (.tuple [xdoms, xafter]) h' cs →
         ∃ ds : List (SourceValue F), ds.length ≤ n ∧
-          Core.RepList kexprListEnum (fun _ v q => v = q) h' ds xdoms := by
+          RepList kexprListEnum (fun _ v q => v = q) h' ds xdoms := by
   intro n
   induction n with
   | zero =>
@@ -922,7 +923,7 @@ private theorem collect_index_doms_rawList :
         ObsFn W "KernelCheck::collect_index_doms"
           [xrc, xty, .field (n : F), xtypes] h r h' cs →
         ∃ ds : List (SourceValue F), ds.length ≤ n ∧
-          Core.RepList kexprListEnum (fun _ v q => v = q) h' ds r := by
+          RepList kexprListEnum (fun _ v q => v = q) h' ds r := by
   intro n
   induction n with
   | zero =>
@@ -965,10 +966,10 @@ private theorem collect_index_doms_rawList :
 private theorem list_lift_indices_rawList :
     ∀ (ds : List (SourceValue F)) {xdoms xsh xi r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
-      Core.RepList kexprListEnum (fun _ v q => v = q) h ds xdoms →
+      RepList kexprListEnum (fun _ v q => v = q) h ds xdoms →
       ObsFn W "KernelCheck::list_lift_indices" [xdoms, xsh, xi] h r h' cs →
       ∃ ds' : List (SourceValue F), ds'.length = ds.length ∧
-        Core.RepList kexprListEnum (fun _ v q => v = q) h' ds' r := by
+        RepList kexprListEnum (fun _ v q => v = q) h' ds' r := by
   intro ds
   induction ds with
   | nil =>
@@ -977,25 +978,25 @@ private theorem list_lift_indices_rawList :
     | .Nil (he24 := hr) (hm23 := hm) .. =>
       subst hr hm; exact ⟨[], rfl, Lib.rep_store_nil h⟩
     | .Cons (ld12 := ld) .. =>
-      obtain ⟨_, _, hne, -, -⟩ := Core.RepList.cons_of_load hds ld
+      obtain ⟨_, _, hne, -, -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hds ld
       cases hne
   | cons d rest ih =>
     intro xdoms xsh xi r h h' cs hds ev
     match Obs.«KernelCheck::list_lift_indices».obs ev with
-    | .Nil (ld12 := ld) .. => cases Core.RepList.nil_of_load hds ld
+    | .Nil (ld12 := ld) .. => cases IxVM.Refinement.Core.RepList.nil_of_load hds ld
     | .Cons (x_rest := xrest) (v54 := vd') (ld12 := ld) (he50 := hr) (hm49 := hm)
         (ev67 := evl) (ev103 := evrec) .. =>
       subst hr hm
-      obtain ⟨_, _, heq, -, hrest⟩ := Core.RepList.cons_of_load hds ld
+      obtain ⟨_, _, heq, -, hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hds ld
       injection heq with _ hr; subst hr
       obtain ⟨ds', hlen, hds'⟩ := ih
-        (Core.repList_heapMono₂ _ (fun _ _ _ _ _ h => h) evl.heap_extends hrest) evrec
+        (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) evl.heap_extends hrest) evrec
       exact ⟨vd' :: ds', by simp [hlen], Lib.rep_store_cons (fun _ _ _ _ _ h => h) rfl hds'⟩
 
 private theorem wrap_foralls_heapForalls :
     ∀ (ds : List (SourceValue F)) {xbody xdoms xdl r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
-      Core.RepList kexprListEnum (fun _ v q => v = q) h ds xdoms →
+      RepList kexprListEnum (fun _ v q => v = q) h ds xdoms →
       ObsFn W "KernelCheck::wrap_foralls" [xbody, xdoms, xdl] h r h' cs →
       HeapForalls h' ds.length r xbody ∧
       ∀ (j : Nat) (d : SourceValue F), ds[j]? = some d →
@@ -1009,16 +1010,16 @@ private theorem wrap_foralls_heapForalls :
     | .Nil (he21 := hr) (he22 := hh) .. =>
       subst hr hh; exact ⟨.zero xbody, fun _ _ h => by simp at h⟩
     | .Cons (ld12 := ld) .. =>
-      obtain ⟨_, _, hne, -, -⟩ := Core.RepList.cons_of_load hds ld
+      obtain ⟨_, _, hne, -, -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hds ld
       cases hne
   | cons d rest ih =>
     intro xbody xdoms xdl r h h' cs hds ev
     match Obs.«KernelCheck::wrap_foralls».obs ev with
-    | .Nil (ld12 := ld) .. => cases Core.RepList.nil_of_load hds ld
+    | .Nil (ld12 := ld) .. => cases IxVM.Refinement.Core.RepList.nil_of_load hds ld
     | .Cons (x_dom := xd) (x_rest := xrest) (v50 := v50) (ld12 := ld) (he45 := hr)
         (hm44 := hm) (ev70 := evrec) .. =>
       subst hr hm
-      obtain ⟨_, _, heq, hd_eq, hrest⟩ := Core.RepList.cons_of_load hds ld
+      obtain ⟨_, _, heq, hd_eq, hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hds ld
       injection heq with h1 h2; subst h1 h2; subst hd_eq
       obtain ⟨hf, hdoms⟩ := ih hrest evrec
       have hcell : loadValue _ (.ptr (.enum kexprEnum) _) =
@@ -1037,7 +1038,7 @@ private theorem wrap_foralls_heapForalls :
 private theorem wrap_foralls_heapMotiveCarrierSrt {a : _root_.Address} :
     ∀ (ds : List (SourceValue F)) {xbody xdoms xdl r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
-      Core.RepList kexprListEnum (fun _ v q => v = q) h ds xdoms →
+      RepList kexprListEnum (fun _ v q => v = q) h ds xdoms →
       HeapMotiveCarrierSrt h xbody a →
       ObsFn W "KernelCheck::wrap_foralls" [xbody, xdoms, xdl] h r h' cs →
       HeapMotiveCarrierSrt h' r a := by
@@ -1048,16 +1049,16 @@ private theorem wrap_foralls_heapMotiveCarrierSrt {a : _root_.Address} :
     match Obs.«KernelCheck::wrap_foralls».obs ev with
     | .Nil (he21 := hr) (he22 := hh) .. => subst hr hh; exact hm
     | .Cons (ld12 := ld) .. =>
-      obtain ⟨_, _, hne, -, -⟩ := Core.RepList.cons_of_load hds ld
+      obtain ⟨_, _, hne, -, -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hds ld
       cases hne
   | cons d rest ih =>
     intro xbody xdoms xdl r h h' cs hds hm ev
     match Obs.«KernelCheck::wrap_foralls».obs ev with
-    | .Nil (ld12 := ld) .. => cases Core.RepList.nil_of_load hds ld
+    | .Nil (ld12 := ld) .. => cases IxVM.Refinement.Core.RepList.nil_of_load hds ld
     | .Cons (x_dom := xd) (x_rest := xrest) (v50 := v50) (ld12 := ld) (he45 := hr)
         (hm44 := hm_eq) (ev70 := evrec) .. =>
       subst hr hm_eq
-      obtain ⟨_, _, heq, -, hrest⟩ := Core.RepList.cons_of_load hds ld
+      obtain ⟨_, _, heq, -, hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hds ld
       injection heq with _ h2; subst h2
       have hm' := ih hrest hm evrec
       have hbf : ∃ d' b' l', loadValue _ v50 = .ok (.construct kexprEnum "Forall" [d', b', l']) := by
@@ -1073,7 +1074,7 @@ private theorem build_motive_type_flat_heapShape {κ : _root_.Address → KKey}
     {xrc xa xity xown xus xelim xsps xpt r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hnP : nP < 9223372036854775808) (hnI : nI < 9223372036854775808)
     (ra : Bytes.RepAddressRef addrTy h da xa)
-    (hsps : Core.RepList kexprListEnum (TmOExact κ) h sps xsps)
+    (hsps : RepList kexprListEnum (TmOExact κ) h sps xsps)
     (ev : ObsFn W "KernelCheck::build_motive_type_flat"
       [xrc, xa, xity, xown, .field (nI : F), xus, xelim, .field (nP : F),
         auxVal isAux, xsps, xpt] h r h' cs) :
@@ -1095,7 +1096,7 @@ private theorem build_motive_type_flat_heapShape {κ : _root_.Address → KKey}
       | .other (ev62 := evsp) .. =>
         obtain ⟨rawSp, -, hrawSp⟩ := repList_to_rawKExprList hsps
         exact apply_spec_params_lifted_heapAppConst
-          (Core.repList_heapMono₂ _ (fun _ _ _ _ _ h => h)
+          (repList_heapMono₂ _ (fun _ _ _ _ _ h => h)
             (ext03.trans (Heap.Extends.snoc _ _)) hrawSp) hac0 evsp
     have hac5 : HeapAppConst _ _ (ixAddr da) :=
       build_major_indices_heapAppConst nI hnI nI 0 (by omega) hac4 (by simpa using ev5)
@@ -1111,7 +1112,7 @@ private theorem build_motive_type_flat_heapShape {κ : _root_.Address → KKey}
     have ext3_f := (Heap.Extends.snoc _ _).trans (ev4.heap_extends.trans
       (ev5.heap_extends.trans ext5_f))
     exact wrap_foralls_heapMotiveCarrierSrt dsI
-      (Core.repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext3_f hdsI) hm0 ev6
+      (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext3_f hdsI) hm0 ev6
 
 private theorem build_all_motives_walk_heapShape {rootCalls : List (Call F)}
     {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env}
@@ -1125,13 +1126,13 @@ private theorem build_all_motives_walk_heapShape {rootCalls : List (Call F)}
     ∀ (es : List FlatEntry) (j : Nat) {xflat r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
       (∀ cl ∈ cs, cl ∈ rootCalls) →
-      Core.RepList flatListEnum (FlatEntryRepExact (Core.keyOf t)) h es xflat →
+      RepList flatListEnum (FlatEntryRepExact (Core.keyOf t)) h es xflat →
       (∀ e ∈ es, Held R e.addr ∧ ∃ info, indDataAt t E₀ e.addr = some (some info)) →
       ObsFn W "KernelCheck::build_all_motives_walk"
         [xrc, xflat, xelim, .field (nP : F), .field (j : F), xpt] h r h' cs →
       ∃ ds : List (SourceValue F),
         ds.length = es.length ∧
-        Core.RepList kexprListEnum (fun _ v q => v = q) h' ds r ∧
+        RepList kexprListEnum (fun _ v q => v = q) h' ds r ∧
         ∀ (i : Nat) (d : SourceValue F) (e : FlatEntry),
           ds[i]? = some d → es[i]? = some e → HeapMotiveCarrierSrt h' d e.addr := by
   have hIA : IndAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
@@ -1145,15 +1146,15 @@ private theorem build_all_motives_walk_heapShape {rootCalls : List (Call F)}
       subst hr hm
       exact ⟨[], rfl, Lib.rep_store_nil h, fun _ _ _ h1 _ => by simp at h1⟩
     | .Cons_Induct (ld12 := ld) .. | .Cons_other (ld12 := ld) .. =>
-      obtain ⟨_, _, hne, -, -⟩ := Core.RepList.cons_of_load hes ld
+      obtain ⟨_, _, hne, -, -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hes ld
       cases hne
   | cons e rest ih =>
     intro j xflat r h h' cs hsub hes hall ev
     match Obs.«KernelCheck::build_all_motives_walk».obs ev with
-    | .Nil (ld12 := ld) .. => cases Core.RepList.nil_of_load hes ld
+    | .Nil (ld12 := ld) .. => cases IxVM.Refinement.Core.RepList.nil_of_load hes ld
     | .Cons_other (x_member_addr := xa) (v82 := vci) (p90 := pci) (cs96 := cs1)
         (ld12 := ld) (ev98 := evci) (ld92 := ldci) (hne393 := hne) (hc451 := hc) .. =>
-      obtain ⟨_, _, heq, he_rep, -⟩ := Core.RepList.cons_of_load hes ld
+      obtain ⟨_, _, heq, he_rep, -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hes ld
       injection heq with h1 _; subst h1
       obtain ⟨_, _, _, da, htup, rda, hda, -, -⟩ := he_rep
       injection htup with hl; injection hl with h1 _; subst h1
@@ -1171,7 +1172,7 @@ private theorem build_all_motives_walk_heapShape {rootCalls : List (Call F)}
         (ev181 := evmot) (ev283 := evlift) (he311 := hr) (hm310 := hm) (op383 := op1)
         (ev335 := evrec) (hc392 := hc) .. =>
       subst hr hm
-      obtain ⟨_, _, heq, he_rep, hrest⟩ := Core.RepList.cons_of_load hes ld
+      obtain ⟨_, _, heq, he_rep, hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hes ld
       injection heq with h1 h2; subst h1 h2
       obtain ⟨_, _, _, da, htup, rda, hda, hsp_rep, -⟩ := he_rep
       injection htup with hl
@@ -1211,7 +1212,7 @@ private theorem build_all_motives_walk_heapShape {rootCalls : List (Call F)}
 private theorem rawKExprList_length_spec {ds : List (SourceValue F)} {l r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
     (ev : ObsFn W Obs.Names.«Lists::length<&KernelTypes::KExprNode>» [l] h r h' cs)
-    (hl : Core.RepList kexprListEnum (fun _ v q => v = q) h ds l) :
+    (hl : RepList kexprListEnum (fun _ v q => v = q) h ds l) :
     r = .field (ds.length : F) ∧ h' = h :=
   Lib.Lists.length_spec (t := .ptr (.named "KernelTypes::KExprNode" []))
     (R := fun _ v q => v = q)
@@ -1220,9 +1221,9 @@ private theorem rawKExprList_length_spec {ds : List (SourceValue F)} {l r : Sour
 
 private theorem repUnitList_to_rawKExprList {h : Heap F} :
     ∀ {xs : List Unit} {p : SourceValue F},
-      Core.RepList kexprListEnum (fun _ (_ : Unit) _ => True) h xs p →
+      RepList kexprListEnum (fun _ (_ : Unit) _ => True) h xs p →
       ∃ ds : List (SourceValue F), ds.length = xs.length ∧
-        Core.RepList kexprListEnum (fun _ v q => v = q) h ds p
+        RepList kexprListEnum (fun _ v q => v = q) h ds p
   | [], p, hr => by
     cases hr with
     | nil hld => exact ⟨[], rfl, .nil hld⟩
@@ -1249,7 +1250,7 @@ private theorem build_rec_type_heap_shape {rootCalls : List (Call F)}
     (hes_lt : es.length < 72057594037927936)
     (hself_lt : selfPos < es.length) (hek : es[selfPos]? = some ek)
     (hsub : ∀ cl ∈ cs, cl ∈ rootCalls)
-    (hes : Core.RepList flatListEnum (FlatEntryRepExact (Core.keyOf t)) h es xflat)
+    (hes : RepList flatListEnum (FlatEntryRepExact (Core.keyOf t)) h es xflat)
     (hall : ∀ e ∈ es, Held R e.addr ∧ ∃ info, indDataAt t E₀ e.addr = some (some info))
     (ev : ObsFn W "KernelCheck::build_rec_type"
       [xrc, xity, xindnl, .field (nP : F), .field (nI : F),
@@ -1319,7 +1320,7 @@ private theorem build_rec_type_heap_shape {rootCalls : List (Call F)}
       -- motives
       obtain ⟨dsMot, hlenMot, hdsMot, hmot_shape⟩ :
           ∃ dsMot : List (SourceValue F), dsMot.length = es.length ∧
-            Core.RepList kexprListEnum (fun _ v q => v = q) _ dsMot vmots ∧
+            RepList kexprListEnum (fun _ v q => v = q) _ dsMot vmots ∧
             ∀ (j : Nat) (d : SourceValue F) (ej : FlatEntry),
               dsMot[j]? = some d → es[j]? = some ej → HeapMotiveCarrierSrt _ d ej.addr := by
         match Obs.«KernelCheck::build_all_motives».obs evmots with
@@ -1332,7 +1333,7 @@ private theorem build_rec_type_heap_shape {rootCalls : List (Call F)}
       -- minors via `build_all_minors_walk_rawLen`
       obtain ⟨tot, htot, hdsMin_u⟩ :
           ∃ tot : Nat, flatTotalCtors (ReconView.ofStore t E₀) es = some tot ∧
-            Core.RepList kexprListEnum (fun _ (_ : Unit) _ => True) _ (List.replicate tot ()) vmins := by
+            RepList kexprListEnum (fun _ (_ : Unit) _ => True) _ (List.replicate tot ()) vmins := by
         match Obs.«KernelCheck::build_all_minors».obs evmins with
         | .run (ev6 := evmw) (hc85 := hc_min) .. =>
           exact build_all_minors_walk_rawLen ht hwf hS hH hbd hRagree hcl hlv es
@@ -1376,7 +1377,7 @@ private theorem build_rec_type_heap_shape {rootCalls : List (Call F)}
         | .n1 (ev20 := evsp) .. =>
           obtain ⟨rawSp, -, hrawSp⟩ := repList_to_rawKExprList hsp_rep
           exact apply_spec_params_lifted_heapAppConst
-            (Core.repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext_maj0 hrawSp) hac0 evsp
+            (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext_maj0 hrawSp) hac0 evsp
         | .other (ev55 := evdec) .. =>
           exact build_apply_bvars_decreasing_heapAppConst nP (by omega) nP 0 (by omega)
             hac0 (by simpa using evdec)
@@ -1415,18 +1416,18 @@ private theorem build_rec_type_heap_shape {rootCalls : List (Call F)}
       have ext_dsI := (Heap.Extends.snoc _ _).trans (evms.heap_extends.trans
         (evmi.heap_extends.trans ext_maj2_f))
       obtain ⟨hf1, -⟩ := wrap_foralls_heapForalls dsI
-        (Core.repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext_dsI hdsI) evw1
+        (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext_dsI hdsI) evw1
       have ext_dsMin := evsci.heap_extends.trans (evinst2.heap_extends.trans
         (evpeel.heap_extends.trans (evrev.heap_extends.trans (evcid.heap_extends.trans
           (evli.heap_extends.trans (ext_dsI.trans evw1.heap_extends))))))
       obtain ⟨hf2, -⟩ := wrap_foralls_heapForalls dsMin
-        (Core.repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext_dsMin hdsMin) evw2
+        (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext_dsMin hdsMin) evw2
       have ext_dsMot := evmins.heap_extends.trans (ext_dsMin.trans evw2.heap_extends)
       obtain ⟨hf3, hdoms3⟩ := wrap_foralls_heapForalls dsMot
-        (Core.repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext_dsMot hdsMot) evw3
+        (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext_dsMot hdsMot) evw3
       have ext_dsP := evmots.heap_extends.trans (ext_dsMot.trans evw3.heap_extends)
       obtain ⟨hf4, -⟩ := wrap_foralls_heapForalls dsP
-        (Core.repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext_dsP hdsP) evw4
+        (repList_heapMono₂ _ (fun _ _ _ _ _ h => h) ext_dsP hdsP) evw4
       have ext_w1_end := evw2.heap_extends.trans (evw3.heap_extends.trans evw4.heap_extends)
       have ext_w2_end := evw3.heap_extends.trans evw4.heap_extends
       have ext_w3_end := evw4.heap_extends
@@ -1535,21 +1536,21 @@ private theorem collect_spine_head_valid :
       (h' : Heap F) (cs : List (Call F)),
       ObsFn W fname args h r h' cs → fname = "KernelTypes::collect_spine" →
       ∀ xe xhd xargs, args = [xe] → r = .tuple [xhd, xargs] →
-        ∃ v, loadValue h xhd = .ok v ∧ ∀ f a, v ≠ .construct kexprEnum "App" [f, a] := by
-  intro fname args h r h' cs ev
-  induction ev using ObsFn.induct with
-  | call hfn hsub _ _ _ =>
-    intro hnm xe xhd xargs hargs hr
-    subst hnm hargs hr
-    have ev' : ObsFn W "KernelTypes::collect_spine" [xe] _ (.tuple [xhd, xargs]) _ _ :=
-      ObsFn.call hfn hsub (by assumption) (by assumption) (by assumption)
-    match Obs.«KernelTypes::collect_spine».obs ev' with
-    | .App (x_f := xf) (x_head := xhd') (x_args := xargs') (ev43 := evrec) (he69 := hr0) .. =>
-      injection hr0 with hl; injection hl with h1 _; subst h1
-      exact (by assumption) _ _ _ _ _ _ evrec rfl xf xhd xargs' rfl rfl
-    | .other (v1 := v1) (ld12 := ld) (hne107 := hne) (he115 := hr0) .. =>
-      injection hr0 with hl; injection hl with h1 _; subst h1
-      exact ⟨v1, ld, fun f a he => hne [f, a] rfl he⟩
+        ∃ v, loadValue h xhd = .ok v ∧ ∀ f a, v ≠ .construct kexprEnum "App" [f, a] :=
+  ObsFn.strong_induction (world := W)
+    (fun fname args h r h' cs => fname = "KernelTypes::collect_spine" →
+      ∀ xe xhd xargs, args = [xe] → r = .tuple [xhd, xargs] →
+        ∃ v, loadValue h xhd = .ok v ∧ ∀ f a, v ≠ .construct kexprEnum "App" [f, a])
+    (fun fname args h r h' cs ev ih hnm xe xhd xargs hargs hr => by
+      subst hnm hargs hr
+      match Obs.«KernelTypes::collect_spine».obs ev with
+      | .App (x_f := xf) (x_head := xhd') (x_args := xargs') (ev43 := evrec) (he69 := hr0)
+          (hc106 := hc) .. =>
+        injection hr0 with hl; injection hl with h1 _; subst h1
+        exact ih _ _ _ _ _ _ (by rw [hc]; simp) evrec rfl xf xhd xargs' rfl rfl
+      | .other (v1 := v1) (ld12 := ld) (hne107 := hne) (he115 := hr0) .. =>
+        injection hr0 with hl; injection hl with h1 _; subst h1
+        exact ⟨v1, ld, fun f a he => hne [f, a] rfl he⟩)
 
 private theorem collect_spine_heapAppBVar :
     ∀ (fname : String) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
@@ -1557,34 +1558,35 @@ private theorem collect_spine_heapAppBVar :
       ObsFn W fname args h r h' cs → fname = "KernelTypes::collect_spine" →
       ∀ xe xhd xargs idx, args = [xe] → r = .tuple [xhd, xargs] →
         loadValue h' xhd = .ok (.construct kexprEnum "BVar" [.field idx]) →
-        HeapAppBVar h xe idx := by
-  intro fname args h r h' cs ev
-  induction ev using ObsFn.induct with
-  | call hfn hsub _ _ _ =>
-    intro hnm xe xhd xargs idx hargs hr ldb
-    subst hnm hargs hr
-    have ev' : ObsFn W "KernelTypes::collect_spine" [xe] _ (.tuple [xhd, xargs]) _ _ :=
-      ObsFn.call hfn hsub (by assumption) (by assumption) (by assumption)
-    match Obs.«KernelTypes::collect_spine».obs ev' with
-    | .App (x_f := xf) (x_head := xhd') (x_args := xargs') (ld12 := ld)
-        (ev43 := evrec) (he69 := hr0) (ev88 := evsn) (he105 := hh0) .. =>
-      subst hh0
-      injection hr0 with hl; injection hl with h1 _; subst h1
-      obtain ⟨v, ldv, -⟩ := collect_spine_head_valid _ _ _ _ _ _ evrec rfl xf xhd xargs' rfl rfl
-      have hld_m := loadValue_mono (evrec.heap_extends.trans evsn.heap_extends) ldv
-      rw [hld_m] at ldb; injection ldb with hv; subst hv
-      exact .app ld ((by assumption) _ _ _ _ _ _ evrec rfl xf xhd xargs' rfl rfl
-        (loadValue_mono evrec.heap_extends ldv))
-    | .other (v1 := v1) (ld12 := ld) (he115 := hr0) (hm132 := hm) (he136 := hh0) .. =>
-      subst hm hh0
-      injection hr0 with hl; injection hl with h1 _; subst h1
-      have hld_m := loadValue_mono (Heap.Extends.snoc _ _) ld
-      rw [hld_m] at ldb; injection ldb with hv; subst hv
-      exact .bvar ld
+        HeapAppBVar h xe idx :=
+  ObsFn.strong_induction (world := W)
+    (fun fname args h r h' cs => fname = "KernelTypes::collect_spine" →
+      ∀ xe xhd xargs idx, args = [xe] → r = .tuple [xhd, xargs] →
+        loadValue h' xhd = .ok (.construct kexprEnum "BVar" [.field idx]) →
+        HeapAppBVar h xe idx)
+    (fun fname args h r h' cs ev ih hnm xe xhd xargs idx hargs hr ldb => by
+      subst hnm hargs hr
+      match Obs.«KernelTypes::collect_spine».obs ev with
+      | .App (x_f := xf) (x_head := xhd') (x_args := xargs') (ld12 := ld)
+          (ev43 := evrec) (he69 := hr0) (ev88 := evsn) (he105 := hh0) (hc106 := hc) .. =>
+        subst hh0
+        injection hr0 with hl; injection hl with h1 _; subst h1
+        obtain ⟨v, ldv, -⟩ := collect_spine_head_valid _ _ _ _ _ _ evrec rfl xf xhd xargs' rfl rfl
+        have hld_m := loadValue_mono (evrec.heap_extends.trans evsn.heap_extends) ldv
+        rw [hld_m] at ldb; injection ldb with hv; subst hv
+        exact .app ld (ih _ _ _ _ _ _ (by rw [hc]; simp) evrec rfl xf xhd xargs' idx rfl rfl
+          (loadValue_mono evrec.heap_extends ldv))
+      | .other (v1 := v1) (ld12 := ld) (he115 := hr0) (hm132 := hm) (he136 := hh0) .. =>
+        subst hm hh0
+        injection hr0 with hl; injection hl with h1 _; subst h1
+        have hld_m := loadValue_mono (Heap.Extends.snoc _ _) ld
+        rw [hld_m] at ldb; injection ldb with hv; subst hv
+        exact .bvar ld)
 
 private theorem evalBinOp_sub_eq_zero_field {a b : F}
-    (op : evalBinOp .sub (.field a) (.field b) = .ok (.field 0)) : a = b := by
-  simp only [evalBinOp, Except.ok.injEq, Value.field.injEq] at op
+    (op : evalBinOp .sub (.field a : SourceValue F) (.field b) = .ok (.field 0)) : a = b := by
+  simp only [evalBinOp, bind, Except.bind, pure, Except.pure, Option.some.injEq,
+    Except.ok.injEq, Value.field.injEq] at op
   exact sub_eq_zero.mp op
 
 private theorem heapAppBVar_eq_of_heapEqOrWrap {rootCalls : List (Call F)} {idx₁ idx₂ : F} :
@@ -1735,7 +1737,7 @@ private theorem last_binder_dom_rawConvExpr {c : Ixon.Constant}
         | all d' b' => exact (hnf d' b' hnb).elim
         | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | app _ _ | lam _ _
         | letE _ _ _ _ _ | share _ => rfl
-      | .Forall (x_d := xd) (x_b := xb) (ld12 := ld1) (ld47 := ld2) (ev78 := evrec) (hc86 := hc) .. =>
+      | .Forall (x_d := xd) (x_b := xb) (ld12 := ld1) (ld47 := ld2) (ev78 := evrec) (hc87 := hc) .. =>
         obtain ⟨hh', hih⟩ := ih _ _ _ _ _ _ (by rw [hc]; simp) evrec rfl xb rfl
         refine ⟨hh', fun {bound e} raw => ?_⟩
         obtain ⟨b', ed, eb, hnd, -, raw_b⟩ := rawConvExpr_forall_inv_wrap raw ld1
@@ -1818,7 +1820,7 @@ private theorem check_carriers_motive0 {crb : Ixon.Constant} {rc : Ixon.Recursor
     {h h' : Heap F} {cs : List (Call F)}
     (hnp : rc.params.toNat < 9223372036854775808)
     (hnot_rec : ixAddr t0 ∉ recurAddrs)
-    (hta : Core.RepList addrListEnum (Bytes.RepAddressRef addrTy) h (t0 :: trest) xta)
+    (hta : RepList addrListEnum (Bytes.RepAddressRef addrTy) h (t0 :: trest) xta)
     (raw : L1.RawConvExpr crb.refs.toList recurAddrs crb.univs.toList crb.sharing.toList
       blobs h 4294967295 rc.typ xty)
     (ev : ObsFn W "KernelModeled::check_carriers"
@@ -1829,11 +1831,11 @@ private theorem check_carriers_motive0 {crb : Ixon.Constant} {rc : Ixon.Recursor
     obtain ⟨hm10, hfp⟩ := peel_n_foralls_heapForalls rc.params.toNat hnp evp
     subst hm10
     match Obs.«KernelModeled::check_carriers_go».obs evgo with
-    | .Nil (ld12 := ld) .. => cases Core.RepList.nil_of_load hta ld
+    | .Nil (ld12 := ld) .. => cases IxVM.Refinement.Core.RepList.nil_of_load hta ld
     | .Cons (x_t := xt) (x_mdom := xmdom) (v91 := v91) (m93 := m93) (m78 := m78)
         (x_head := xhd) (x_c := xc) (ld12 := ldt) (ld53 := ldall) (ev103 := evlbd)
         (ev90 := evsp) (ld137 := ldc) (ev180 := eveq) (heq203 := heq1) .. =>
-      obtain ⟨_, _, heq_t, rt0, -⟩ := Core.RepList.cons_of_load hta ldt
+      obtain ⟨_, _, heq_t, rt0, -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hta ldt
       injection heq_t with h1 _; subst h1
       obtain ⟨b1, e1, hpeel, raw1⟩ := rawConvExpr_peel_of_heapForalls rc.params.toNat hfp raw
       obtain ⟨b2, ed, eb, hnd, raw_d, -⟩ := rawConvExpr_forall_inv_wrap raw1 ldall
@@ -2004,7 +2006,7 @@ private theorem compare_rules_len_le {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     | .Cons_Nil (heq100 := heq100) (ev125 := evlt) (heq148 := hv1) (ev165 := evci)
         (ld302 := ld302) .. =>
       have hlt := step_lt heq100 evlt hv1
-      have hnil := Core.RepList.nil_of_load
+      have hnil := IxVM.Refinement.Core.RepList.nil_of_load
         (tmOExactList_mono (evlt.heap_extends.trans evci.heap_extends) hcbs) ld302
       subst hnil; simp at hsum; omega
     | .Cons_Cons (ld12 := ld12) (heq100 := heq100) (ev125 := evlt) (heq148 := hv1)
@@ -2017,7 +2019,7 @@ private theorem compare_rules_len_le {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
         injection hxs with _ hxs; injection hxs with hrest_eq _; subst hrest_eq
         have ext_ci := evlt.heap_extends.trans evci.heap_extends
         obtain ⟨cb, crest, rfl, -, hcrest⟩ :=
-          Core.RepList.cons_of_load (tmOExactList_mono ext_ci hcbs) ld302
+          IxVM.Refinement.Core.RepList.cons_of_load (tmOExactList_mono ext_ci hcbs) ld302
         obtain rfl := binop_add_one_nat op1
         have ext_rest : Heap.Extends _ _ :=
           ev390.heap_extends.trans <| ev439.heap_extends.trans <|
@@ -2160,10 +2162,10 @@ private theorem block_ctor_addrs_hashed_spec {t : Ix.Kernel.RoleTable}
   | cons m rest ih =>
     intro pos hpos hcsz xmem xblk r h h' cs hrep rb ev i ind j hi hj
     match Obs.«KernelModeled::block_ctor_addrs».obs ev with
-    | .Nil (ld12 := ld) .. => cases Core.RepList.nil_of_load hrep ld
+    | .Nil (ld12 := ld) .. => cases IxVM.Refinement.Core.RepList.nil_of_load hrep ld
     | .Cons (x_ctors := xct) (v140 := vlen) (ld12 := ld) (ev167 := evlen)
         (ev137 := evmca) (op224 := op1) (ev193 := evrec) (hc226 := hc) .. =>
-      obtain ⟨m', rest', hlist, hmrep, hrest_rep⟩ := Core.RepList.cons_of_load hrep ld
+      obtain ⟨m', rest', hlist, hmrep, hrest_rep⟩ := IxVM.Refinement.Core.RepList.cons_of_load hrep ld
       injection hlist with h1 h2; subst h1 h2
       cases m with
       | defn _ | recr _ =>
@@ -2956,10 +2958,10 @@ private theorem flat_entries_indDataAt_of_build_flat_own_params {rootCalls : Lis
   | cons e rest ih =>
     intro xflat r h h' cs hsub hes hall ev
     match Obs.«KernelCheck::build_flat_own_params».obs ev with
-    | .Nil (ld12 := ld) .. => cases Core.RepList.nil_of_load hes ld
+    | .Nil (ld12 := ld) .. => cases IxVM.Refinement.Core.RepList.nil_of_load hes ld
     | .Cons_other (x_addr := xa) (ld12 := ld) (ev82 := evci) (ld76 := ldci)
         (hne143 := hne) (hc192 := hc) .. =>
-      obtain ⟨e', _, h1, he', -⟩ := Core.RepList.cons_of_load hes ld
+      obtain ⟨e', _, h1, he', -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hes ld
       injection h1 with h1e _; subst h1e
       obtain ⟨_, _, _, ae, htup, rae, hae, -, -⟩ := he'
       injection htup with hl; injection hl with hxa _; subst hxa
@@ -2969,7 +2971,7 @@ private theorem flat_entries_indDataAt_of_build_flat_own_params {rootCalls : Lis
       exact (indInfoAt_ne_indDataAt_none hinfo (hOther hne)).elim
     | .Cons_Induct (x_addr := xa) (x_rest := xrest) (ld12 := ld) (ev82 := evci)
         (ld76 := ldci) (ev152 := evrec) (hc184 := hc) .. =>
-      obtain ⟨e', rest', h1, he', hrest⟩ := Core.RepList.cons_of_load hes ld
+      obtain ⟨e', rest', h1, he', hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hes ld
       injection h1 with h1e h1r; subst h1e h1r
       obtain ⟨_, _, _, ae, htup, rae, hae, -, -⟩ := he'
       injection htup with hl; injection hl with hxa _; subst hxa
@@ -3007,16 +3009,16 @@ private theorem flat_find_pos_kind_addr {κ : _root_.Address → KKey} {target :
       injection hr with hl; injection hl with h1 _
       exact absurd (Value.field.inj h1) one_ne_zero
     | .Cons_n1 (ld12 := ld) .. | .Cons_other (ld12 := ld) .. =>
-      obtain ⟨_, _, hne, -, -⟩ := Core.RepList.cons_of_load hflat ld
+      obtain ⟨_, _, hne, -, -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hflat ld
       cases hne
   | cons e rest ih =>
     intro pos xflat xsp h h' cs hflat rtarget ev
     match Obs.«KernelCheck::flat_find_pos_kind».obs ev with
-    | .Nil (ld12 := ld) .. => cases Core.RepList.nil_of_load hflat ld
+    | .Nil (ld12 := ld) .. => cases IxVM.Refinement.Core.RepList.nil_of_load hflat ld
     | .Cons_n1 (x_member_addr := xma) (v92 := v92) (v155 := v155) (v208 := v208) (x226 := x226)
         (ld12 := ld) (ev105 := ev105) (op241 := op241) (op233 := op233) (he253 := hr) .. =>
       injection hr with hl; injection hl with _ hl; injection hl with hxsp _
-      obtain ⟨e', rest', h1, he', -⟩ := Core.RepList.cons_of_load hflat ld
+      obtain ⟨e', rest', h1, he', -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hflat ld
       injection h1 with h1e _; subst h1e
       obtain ⟨xa, _, _, a, htup, ra, ha_eq, -, -⟩ := he'
       injection htup with hts; injection hts with hxma _; subst hxma
@@ -3040,7 +3042,7 @@ private theorem flat_find_pos_kind_addr {κ : _root_.Address → KKey} {target :
     | .Cons_other (x_rest := xrest) (m93 := m93) (m156 := m156) (m209 := m209)
         (ld12 := ld) (ev105 := ev105) (sg163 := sg1) (sg216 := sg2)
         (op312 := op1) (ev280 := evrec) .. =>
-      obtain ⟨e', rest', h1, -, hrest⟩ := Core.RepList.cons_of_load hflat ld
+      obtain ⟨e', rest', h1, -, hrest⟩ := IxVM.Refinement.Core.RepList.cons_of_load hflat ld
       injection h1 with _ h1r; subst h1r
       have ext1 : Heap.Extends m93 m156 := by
         cases sg1 with
@@ -3281,7 +3283,7 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
   have sub : ∀ {cs' : List (Call F)}, (∀ cl ∈ cs', cl ∈ cs) → ∀ cl ∈ cs', cl ∈ calls :=
     fun hs cl hcl' => hsub cl (hs cl hcl')
   match Obs.«KernelModeled::check_recs».obs ev with
-  | .Nil (ld12 := ld) .. => cases Core.RepList.nil_of_load hrecs ld
+  | .Nil (ld12 := ld) .. => cases IxVM.Refinement.Core.RepList.nil_of_load hrecs ld
   | .Cons (x_r := xr) (x_rest := xrest) (x_rm := xrm) (x_mrest := xmrest)
       (m67 := m_ci) (p74 := p_ci) (cs80 := cs_ci)
       (x_nl := xnl) (x_ty := xty) (x_rnp := xrnp) (x_ni := xni) (x_nmot := xnmot)
@@ -3315,7 +3317,7 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
       (ev681 := ev681) (ev710 := ev_pa) (ev_uoummlhs := ev_pci) (ld_memczquv := ld_pci)
       (ev_tjosvhyt := ev_can) (ev850 := ev850) (ev904 := ev904)
       (op1107 := op_k1) (ev1016 := ev_next) (hc1137 := hc_cr) .. =>
-    obtain ⟨a_k', rest', hlist, ra_k, hrest_rep⟩ := Core.RepList.cons_of_load hrecs ld_recs
+    obtain ⟨a_k', rest', hlist, ra_k, hrest_rep⟩ := IxVM.Refinement.Core.RepList.cons_of_load hrecs ld_recs
     injection hlist with h1 h2; subst h1 h2
     -- Heap extensions along check_recs body
     have ext_ci_335 : Heap.Extends m_ci m335 :=
@@ -3453,7 +3455,7 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
             rw [fval_natCast (by omega)] at this; exact this
           subst hoff1 he184 hm183
           refine ⟨Heap.Extends.snoc _ _, ?_⟩
-          exact ⟨.construct klvlEnum "Param" [.field 0], loadValue_store_snoc _ _,
+          exact ⟨.construct klevelEnum "Param" [.field 0], loadValue_store_snoc _ _,
             by simp [elimLevel]; exact ⟨rfl, by decide⟩⟩
         | other hne196 he204 hm203 _ =>
           have hoff0 : off = 0 := by
@@ -3462,7 +3464,7 @@ private theorem check_recs_step_unpack {calls : List (Call F)} {t : Ix.Kernel.Ro
             · subst h1; exact (hne196 rfl).elim
           subst hoff0 he204 hm203
           refine ⟨Heap.Extends.snoc _ _, ?_⟩
-          exact ⟨.construct klvlEnum "Zero" [], loadValue_store_snoc _ _,
+          exact ⟨.construct klevelEnum "Zero" [], loadValue_store_snoc _ _,
             by simp [elimLevel]⟩
       have extract_seg23 : ∀ {v345 v323 v285 v247 v218 v209 m346 v477 m478 cs480 vsou myr csjq},
           Obs.«KernelCheck::check_recursor_canonical_at».Seg2 v345 v323 v285 v247 v218 v209
