@@ -103,9 +103,19 @@ def HasPis : Nat → KExpr → Prop
 
 /-! ## Entry, rebase, fast path -/
 
+/-- `expr_eq_fast(a, b)`: **answer `1` is `DefEq`** at every opening depth and ghost context at
+which both terms are represented. Context- and credit-free structural equality up to level
+equivalence (`DefEq.sort`, `DefEq.const`) and binder-level zeroness (`DefEq.lam`, `DefEq.forallE`
+opened under the left domain). -/
+def expr_eq_fast : SpecFn := fun c args h r _ calls =>
+  ∀ a b, args = [a, b] → CoreGood c calls →
+    ∀ d Γ A B, c.tm d Γ h A a → c.tm d Γ h B b →
+      r ≠ .field 0 → Ix.Kernel.Rules.DefEq c.env d A B
+
 /-- `k_is_def_eq(rc, a, b, types)`: **answer `1` is `DefEq`** (`DeClaim`). The statement's `Core`
-conjunct. Closed inputs (`expr_lbr = 0` on both sides) run `k_is_def_eq_core` under the empty
-context list, a segment of every ghost context; the others run `k_def_eq_rebase`. -/
+conjunct. Equal sub-DAGs short-circuit via `expr_eq_fast`; closed inputs (`expr_lbr = 0` on both
+sides) run `k_is_def_eq_ordered` under the empty context list, a segment of every ghost context;
+the others run `k_def_eq_rebase`. -/
 def k_is_def_eq : SpecFn := fun c args h r _ calls => DeClaim c args h r calls
 
 /-- `k_def_eq_rebase(rc, a, b, types, base)`: **answer `1` is `DefEq` at the caller's depth.**
@@ -119,9 +129,6 @@ def k_def_eq_rebase : SpecFn := fun c args h r _ calls =>
   ∀ rc a b types base, args = [rc, a, b, types, base] → CoreGood c calls → c.rc h rc →
     ∀ d Γ, c.types Γ h d types → ∀ A B, c.tm d Γ h A a → c.tm d Γ h B b →
       r ≠ .field 0 → Ix.Kernel.Rules.DefEq c.env d A B
-
-/-- `k_is_def_eq_core(rc, a, b, types)`: answer `1` is `DefEq` (`DeClaim`). -/
-def k_is_def_eq_core : SpecFn := fun c args h r _ calls => DeClaim c args h r calls
 
 /-- `k_is_def_eq_ordered(rc, a, b, types)`: the same-head spine fast path, then the slow tiers;
 answer `1` is `DefEq` (`DeClaim`). -/
@@ -544,8 +551,8 @@ def try_unfold_head : SpecFn := fun c args h r h' calls =>
 /-- The functions of the family. -/
 inductive Fn where
   | compare_struct_fields | compute_iprj_addr | de_args | de_binder | de_proj | de_rescue_tier
-  | delta_rank | delta_unfold | family_params | head_addr | is_defn_or_thm | is_nat_zero
-  | is_prop_type | is_unit_like_type | k_def_eq_rebase | k_is_def_eq | k_is_def_eq_core
+  | delta_rank | delta_unfold | expr_eq_fast | family_params | head_addr | is_defn_or_thm | is_nat_zero
+  | is_prop_type | is_unit_like_type | k_def_eq_rebase | k_is_def_eq
   | k_is_def_eq_ordered | k_is_def_eq_slow | k_is_def_eq_slow2 | k_is_def_eq_slow_nd
   | k_is_def_eq_slow_nd_after_core | k_is_def_eq_struct | k_is_def_eq_struct_bounded
   | k_is_def_eq_struct_go | k_is_def_eq_struct_safe | k_is_def_eq_struct_spend
@@ -569,6 +576,7 @@ def Fn.name : Fn → String
   | .de_rescue_tier => "KernelDefEq::de_rescue_tier"
   | .delta_rank => "KernelDefEq::delta_rank"
   | .delta_unfold => "KernelDefEq::delta_unfold"
+  | .expr_eq_fast => "KernelDefEq::expr_eq_fast"
   | .family_params => "KernelDefEq::family_params"
   | .head_addr => "KernelDefEq::head_addr"
   | .is_defn_or_thm => "KernelDefEq::is_defn_or_thm"
@@ -577,7 +585,6 @@ def Fn.name : Fn → String
   | .is_unit_like_type => "KernelDefEq::is_unit_like_type"
   | .k_def_eq_rebase => "KernelDefEq::k_def_eq_rebase"
   | .k_is_def_eq => "KernelDefEq::k_is_def_eq"
-  | .k_is_def_eq_core => "KernelDefEq::k_is_def_eq_core"
   | .k_is_def_eq_ordered => "KernelDefEq::k_is_def_eq_ordered"
   | .k_is_def_eq_slow => "KernelDefEq::k_is_def_eq_slow"
   | .k_is_def_eq_slow2 => "KernelDefEq::k_is_def_eq_slow2"
@@ -627,6 +634,7 @@ def Fn.spec : Fn → SpecFn
   | .de_rescue_tier => Specs.DefEq.de_rescue_tier
   | .delta_rank => Specs.DefEq.delta_rank
   | .delta_unfold => Specs.DefEq.delta_unfold
+  | .expr_eq_fast => Specs.DefEq.expr_eq_fast
   | .family_params => Specs.DefEq.family_params
   | .head_addr => Specs.DefEq.head_addr
   | .is_defn_or_thm => Specs.DefEq.is_defn_or_thm
@@ -635,7 +643,6 @@ def Fn.spec : Fn → SpecFn
   | .is_unit_like_type => Specs.DefEq.is_unit_like_type
   | .k_def_eq_rebase => Specs.DefEq.k_def_eq_rebase
   | .k_is_def_eq => Specs.DefEq.k_is_def_eq
-  | .k_is_def_eq_core => Specs.DefEq.k_is_def_eq_core
   | .k_is_def_eq_ordered => Specs.DefEq.k_is_def_eq_ordered
   | .k_is_def_eq_slow => Specs.DefEq.k_is_def_eq_slow
   | .k_is_def_eq_slow2 => Specs.DefEq.k_is_def_eq_slow2

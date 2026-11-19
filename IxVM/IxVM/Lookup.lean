@@ -743,9 +743,9 @@ def functionKeys : List Nat := [
     16059533983723385903497022945455182599854052254890308075016976092636664478704486,
     67213430969910047300784526195644709337982822493592708591470016839483228430624237166389984,
     202650572278365507741167118107714333744366806066506463879031068,
+    809577679036733902508387035861403021991109796201350441702068,
     3068185298969714000070326287381718148943162603345078214171,
     11987217355486162858372307423900777497529145591454833095767518583733,
-    3080604233473765114268802207882167584849316789636636763226041148230952,
     51755788452934940642894726100311580613368050705612001858212204580712053146727,
     51645434415861076073838524860165280550239594297340369719033730935,
     715659205688921008350142265315664928200996435075,
@@ -6091,24 +6091,24 @@ theorem KernelDefEq.level_list_eq.lookup : program.sourceFunction? "KernelDefEq:
     (List.getElem_mem (l := functions) (n := 728) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
+theorem KernelDefEq.expr_eq_fast.lookup : program.sourceFunction? "KernelDefEq::expr_eq_fast" =
+    some { types := [], params := KernelDefEq.expr_eq_fast.params.map fun (n, t) => (n, (t.subst []).toCore),
+           body := KernelDefEq.expr_eq_fast.body } :=
+  Program.sourceFunction?_of_mem (f := KernelDefEq.expr_eq_fast) functionNames_nodup
+    (List.getElem_mem (l := functions) (n := 729) (by decide +kernel))
+    (head_ne_of_bytes (by decide +kernel)) rfl
+
 theorem KernelDefEq.k_is_def_eq.lookup : program.sourceFunction? "KernelDefEq::k_is_def_eq" =
     some { types := [], params := KernelDefEq.k_is_def_eq.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelDefEq.k_is_def_eq.body } :=
   Program.sourceFunction?_of_mem (f := KernelDefEq.k_is_def_eq) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 729) (by decide +kernel))
+    (List.getElem_mem (l := functions) (n := 730) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 
 theorem KernelDefEq.k_def_eq_rebase.lookup : program.sourceFunction? "KernelDefEq::k_def_eq_rebase" =
     some { types := [], params := KernelDefEq.k_def_eq_rebase.params.map fun (n, t) => (n, (t.subst []).toCore),
            body := KernelDefEq.k_def_eq_rebase.body } :=
   Program.sourceFunction?_of_mem (f := KernelDefEq.k_def_eq_rebase) functionNames_nodup
-    (List.getElem_mem (l := functions) (n := 730) (by decide +kernel))
-    (head_ne_of_bytes (by decide +kernel)) rfl
-
-theorem KernelDefEq.k_is_def_eq_core.lookup : program.sourceFunction? "KernelDefEq::k_is_def_eq_core" =
-    some { types := [], params := KernelDefEq.k_is_def_eq_core.params.map fun (n, t) => (n, (t.subst []).toCore),
-           body := KernelDefEq.k_is_def_eq_core.body } :=
-  Program.sourceFunction?_of_mem (f := KernelDefEq.k_is_def_eq_core) functionNames_nodup
     (List.getElem_mem (l := functions) (n := 731) (by decide +kernel))
     (head_ne_of_bytes (by decide +kernel)) rfl
 

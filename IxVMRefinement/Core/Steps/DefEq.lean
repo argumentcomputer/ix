@@ -35,18 +35,6 @@ theorem field_ne_zero_of_eq_one {r : SourceValue F} (h : r = .field 1) : r ≠ .
 
 /-! ## The ordered tiers' entry -/
 
-/-- `KernelDefEq::k_is_def_eq_core` is `k_is_def_eq_ordered`. -/
-theorem k_is_def_eq_core_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
-    {r : SourceValue F} {calls : List (Call F)}
-    (ev : ObsFn W "KernelDefEq::k_is_def_eq_core" args h r h' calls) (ih : IH c calls) :
-    Specs.DefEq.k_is_def_eq_core c args h r h' calls := by
-  intro rc a b types hargs good
-  subst hargs
-  obtain ⟨cs4, ev6, hc39⟩ := Obs.«KernelDefEq::k_is_def_eq_core».obs ev
-  subst hc39
-  exact ih.get (.defEq .k_is_def_eq_ordered) (by lt_calls) ev6 rc a b types rfl
-    (good.sub fun x hx => by simp [hx])
-
 /-- `KernelDefEq::k_is_def_eq_ordered`: spine congruence, then the slow tiers. -/
 theorem k_is_def_eq_ordered_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
@@ -191,30 +179,37 @@ theorem try_def_eq_app_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' 
 
 /-! ## The entry -/
 
-/-- `KernelDefEq::k_is_def_eq`: closed sides are compared under the empty context list (a
-segment of the same ghost context); otherwise under the rebased context (`k_def_eq_rebase`). -/
+/-- `KernelDefEq::k_is_def_eq`: equal sub-DAGs short-circuit via `expr_eq_fast`; closed sides are
+compared under the empty context list (a segment of the same ghost context); otherwise under the
+rebased context (`k_def_eq_rebase`). -/
 theorem k_is_def_eq_step (c : ScopedCtx) {args : List (SourceValue F)} {h h' : Heap F}
     {r : SourceValue F} {calls : List (Call F)}
     (ev : ObsFn W "KernelDefEq::k_is_def_eq" args h r h' calls) (ih : IH c calls) :
     Specs.DefEq.k_is_def_eq c args h r h' calls := by
   intro rc a b types hargs good hrc d Γ htypes A B hA hB hr
   subst hargs
-  rcases Obs.«KernelDefEq::k_is_def_eq».obs ev with
-    ⟨m2, cs12, v15, v16, m18, cs26, m38, cs46, cs74, m103, ev28, ev48, ev14, hm111, ev76, hc115⟩ |
-    ⟨v1, m2, cs12, v15, v16, m18, cs26, m38, cs46, cs123, ev28, ev48, ev14, hne116, ev125, hc166⟩
-  · subst hc115 hm111
-    have ext : Heap.Extends h m2 := (ObsFn.heap_extends ev28).trans
-      ((ObsFn.heap_extends ev48).trans (ObsFn.heap_extends ev14))
+  cases Obs.«KernelDefEq::k_is_def_eq».obs ev
+  case n1 m_fast cs_fast ev_fast _ _ hc =>
+    subst hc
+    exact ih.get (.defEq .expr_eq_fast) (by lt_calls) ev_fast a b rfl
+      (good.sub fun x hx => by simp [hx]) d Γ A B hA hB field_one_ne_zero
+  case other_n0 _ m_fast cs_fast m2 cs12 _ _ _ cs26 _ cs46 cs74 _ ev_fast _ ev28 ev48 ev14 hm111
+      ev76 hc115 =>
+    subst hc115 hm111
+    have ext : Heap.Extends h m2 := (ObsFn.heap_extends ev_fast).trans
+      ((ObsFn.heap_extends ev28).trans ((ObsFn.heap_extends ev48).trans (ObsFn.heap_extends ev14)))
     have ext' : Heap.Extends h (m2 ++ [.construct kexprListEnum "Nil" []]) :=
       ext.trans (Heap.Extends.snoc _ _)
     have hnil : c.types Γ (m2 ++ [.construct kexprListEnum "Nil" []]) d
         (.ptr (.enum kexprListEnum) m2.length) := ⟨.nil (by simp), htypes.2⟩
-    exact ih.get (.defEq .k_is_def_eq_core) (by lt_calls) ev76 rc a b _ rfl
+    exact ih.get (.defEq .k_is_def_eq_ordered) (by lt_calls) ev76 rc a b _ rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono ext' hrc) d Γ hnil A B (Tm.mono ext' hA)
       (Tm.mono ext' hB) hr
-  · subst hc166
-    have ext : Heap.Extends h m2 := (ObsFn.heap_extends ev28).trans
-      ((ObsFn.heap_extends ev48).trans (ObsFn.heap_extends ev14))
+  case other_other _ m_fast cs_fast v1 m2 cs12 _ _ _ cs26 _ cs46 cs123 ev_fast _ ev28 ev48 ev14
+      _ ev125 hc166 =>
+    subst hc166
+    have ext : Heap.Extends h m2 := (ObsFn.heap_extends ev_fast).trans
+      ((ObsFn.heap_extends ev28).trans ((ObsFn.heap_extends ev48).trans (ObsFn.heap_extends ev14)))
     exact ih.get (.defEq .k_def_eq_rebase) (by lt_calls) ev125 rc a b types v1 rfl
       (good.sub fun x hx => by simp [hx]) (RCRep.mono ext hrc) d Γ (types_mono ext htypes) A B
       (Tm.mono ext hA) (Tm.mono ext hB) hr

@@ -31,13 +31,98 @@ def level_list_eq := aiur_fn⟦
     }
 ⟧
 
+def expr_eq_fast := aiur_fn⟦
+  fn expr_eq_fast(a: KernelTypes::KExpr, b: KernelTypes::KExpr) -> Field {
+      match (*(a)) {
+        KernelTypes::KExprNode::BVar(i) => {
+          match (*(b)) {
+            KernelTypes::KExprNode::BVar(j) => {
+              match i - j { 0 => {  1 } , _ => {  0 } , } } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Srt(la) => {
+          match (*(b)) {
+            KernelTypes::KExprNode::Srt(lb) => {  KernelLevels::level_equal(la, lb) } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Const(addr_a, lvls_a) => {
+          match (*(b)) {
+            KernelTypes::KExprNode::Const(addr_b, lvls_b) => {
+              match Bytes::address_eq(addr_a, addr_b) {
+                1 => {  level_list_eq(lvls_a, lvls_b) } ,
+                _ => {  0 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::App(fa, xa) => {
+          match (*(b)) {
+            KernelTypes::KExprNode::App(fb, xb) => {
+              match expr_eq_fast(fa, fb) {
+                1 => {  expr_eq_fast(xa, xb) } ,
+                _ => {  0 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Lam(ta, ba, la) => {
+          match (*(b)) {
+            KernelTypes::KExprNode::Lam(tb, bb, lb) => {
+              match KernelLevels::pw_eq(la, lb) {
+                1 => {
+                  match expr_eq_fast(ta, tb) {
+                    1 => {  expr_eq_fast(ba, bb) } ,
+                    _ => {  0 } ,
+                  } } ,
+                _ => {  0 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Forall(ta, ba, la) => {
+          match (*(b)) {
+            KernelTypes::KExprNode::Forall(tb, bb, lb) => {
+              match KernelLevels::pw_eq(la, lb) {
+                1 => {
+                  match expr_eq_fast(ta, tb) {
+                    1 => {  expr_eq_fast(ba, bb) } ,
+                    _ => {  0 } ,
+                  } } ,
+                _ => {  0 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Lit(la) => {
+          match (*(b)) {
+            KernelTypes::KExprNode::Lit(lb) => {  KernelLevels::literal_eq(la, lb) } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Proj(struct_a, fidx_a, ea) => {
+          match (*(b)) {
+            KernelTypes::KExprNode::Proj(struct_b, fidx_b, eb) => {
+              match Bytes::address_eq(struct_a, struct_b) {
+                1 => {
+                  match fidx_a - fidx_b {
+                    0 => {  expr_eq_fast(ea, eb) } ,
+                    _ => {  0 } ,
+                  } } ,
+                _ => {  0 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
 def k_is_def_eq := aiur_fn⟦
   fn k_is_def_eq(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
-      let base = KernelSubst::lbr_max(KernelSubst::expr_lbr(a), KernelSubst::expr_lbr(b));
+      match expr_eq_fast(a, b) {
+        1 => {  1 } ,
+        _ => {
+          let base = KernelSubst::lbr_max(KernelSubst::expr_lbr(a), KernelSubst::expr_lbr(b));
           match base {
-            0 => {  k_is_def_eq_core(rc, a, b, (&(Lists::Node::Nil))) } ,
+            0 => {  k_is_def_eq_ordered(rc, a, b, (&(Lists::Node::Nil))) } ,
             _ => {  k_def_eq_rebase(rc, a, b, types, base) } ,
-          }
+          } } ,
+      }
     }
 ⟧
 
@@ -48,23 +133,14 @@ def k_def_eq_rebase := aiur_fn⟦
       let g = KernelSubst::lbr_min(KernelSubst::lbr_min(KernelSubst::expr_glb(a, 0), KernelSubst::expr_glb(b, 0)),
                       Lists::length(types));
       match g {
-        0 => {  k_is_def_eq_core(rc, a, b, KernelSubst::ctx_trim(types, base)) } ,
+        0 => {  k_is_def_eq_ordered(rc, a, b, KernelSubst::ctx_trim(types, base)) } ,
         _ => {
-          k_is_def_eq_core(rc, KernelSubst::expr_lower(a, g, 0), KernelSubst::expr_lower(b, g, 0),
+          k_is_def_eq_ordered(rc, KernelSubst::expr_lower(a, g, 0), KernelSubst::expr_lower(b, g, 0),
             KernelSubst::ctx_trim(Lists::drop(types, g), base - g)) } ,
       }
     }
 ⟧
 
-
-  -- Port divergence: definitional equality runs the ordered tiers, without main's
-  -- optional pointer shortcuts (`k_is_def_eq_ordered`).
-
-def k_is_def_eq_core := aiur_fn⟦
-  fn k_is_def_eq_core(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
-      k_is_def_eq_ordered(rc, a, b, types)
-    }
-⟧
 
 def k_is_def_eq_ordered := aiur_fn⟦
   fn k_is_def_eq_ordered(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>) -> Field {
@@ -367,12 +443,9 @@ def slow2_after_delta := aiur_fn⟦
   fn slow2_after_delta(rc: KernelRoles::RoleCtx, orig_a: KernelTypes::KExpr, orig_b: KernelTypes::KExpr,
                               fa: KernelTypes::KExpr, fb: KernelTypes::KExpr,
                               types: Lists::List<KernelTypes::KExpr>) -> Field {
-      match k_is_def_eq_struct_bounded(rc, fa, fb, 8, types) {
-        (1, _) => {  1 } ,
-        _ => {  match k_is_def_eq_structure_tree(rc, fa, fb, types) {
-          1 => {  1 } ,
-          _ => {  slow2_eager_fallback(rc, orig_a, orig_b, types) } ,
-        } } ,
+      match k_is_def_eq_structure_tree(rc, fa, fb, types) {
+        1 => {  1 } ,
+        _ => {  slow2_eager_fallback(rc, orig_a, orig_b, types) } ,
       }
     }
 ⟧
@@ -434,87 +507,94 @@ def k_is_def_eq_structure_tree_app := aiur_fn⟦
 def k_is_def_eq_struct_bounded := aiur_fn⟦
   fn k_is_def_eq_struct_bounded(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, credit: Field,
                                        types: Lists::List<KernelTypes::KExpr>) -> (Field, Field) {
-      match (*(a)) {
-            KernelTypes::KExprNode::BVar(i) => {
-              match (*(b)) {
-                KernelTypes::KExprNode::BVar(j) => {
-                  match i - j { 0 => {  (1, credit) } , _ => {  (0, credit) } , } } ,
-                _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
-              } } ,
-            KernelTypes::KExprNode::Srt(la) => {
-              match (*(b)) {
-                KernelTypes::KExprNode::Srt(lb) => {  (KernelLevels::level_equal(la, lb), credit) } ,
-                _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
-              } } ,
-            KernelTypes::KExprNode::Const(addr_a, lvls_a) => {
-              match (*(b)) {
-                KernelTypes::KExprNode::Const(addr_b, lvls_b) => {
-                  match Bytes::address_eq(addr_a, addr_b) {
-                    1 => {  (level_list_eq(lvls_a, lvls_b), credit) } ,
+      match expr_eq_fast(a, b) {
+        1 => {  (1, credit) } ,
+        _ => {
+          match credit {
+            0 => {  (0, 0) } ,
+            _ => {
+              match (*(a)) {
+                KernelTypes::KExprNode::BVar(_) => {
+                  match (*(b)) {
+                    KernelTypes::KExprNode::BVar(_) => {  (0, credit) } ,
                     _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
                   } } ,
-                _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
-              } } ,
-            KernelTypes::KExprNode::App(fa, xa) => {
-              match (*(b)) {
-                KernelTypes::KExprNode::App(fb, xb) => {
-                  match k_is_def_eq_struct_bounded(rc, fa, fb, credit, types) {
-                    (1, rest) => {
-                      k_is_def_eq_struct_bounded(rc, xa, xb, rest, types) } ,
-                    (_, rest) => {  (0, rest) } ,
+                KernelTypes::KExprNode::Srt(_) => {
+                  match (*(b)) {
+                    KernelTypes::KExprNode::Srt(_) => {  (0, credit) } ,
+                    _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
                   } } ,
-                _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
-              } } ,
-            KernelTypes::KExprNode::Lam(ta, ba, la) => {
-              match (*(b)) {
-                KernelTypes::KExprNode::Lam(tb, bb, lb) => {
-                  match KernelLevels::pw_eq(la, lb) {
-                    1 => {
-                      match k_is_def_eq_struct_bounded(rc, ta, tb, credit, types) {
+                KernelTypes::KExprNode::Const(addr_a, _) => {
+                  match (*(b)) {
+                    KernelTypes::KExprNode::Const(addr_b, _) => {
+                      match Bytes::address_eq(addr_a, addr_b) {
+                        1 => {  (0, credit) } ,
+                        _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
+                      } } ,
+                    _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
+                  } } ,
+                KernelTypes::KExprNode::App(fa, xa) => {
+                  match (*(b)) {
+                    KernelTypes::KExprNode::App(fb, xb) => {
+                      match k_is_def_eq_struct_bounded(rc, fa, fb, credit, types) {
                         (1, rest) => {
-                          let types2 = (&(Lists::Node::Cons(ta, types)));
-                          k_is_def_eq_struct_bounded(rc, ba, bb, rest, types2) } ,
+                          k_is_def_eq_struct_bounded(rc, xa, xb, rest, types) } ,
                         (_, rest) => {  (0, rest) } ,
                       } } ,
-                    _ => {  (0, credit) } ,
+                    _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
                   } } ,
-                _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
-              } } ,
-            KernelTypes::KExprNode::Forall(ta, ba, la) => {
-              match (*(b)) {
-                KernelTypes::KExprNode::Forall(tb, bb, lb) => {
-                  match KernelLevels::pw_eq(la, lb) {
-                    1 => {
-                      match k_is_def_eq_struct_bounded(rc, ta, tb, credit, types) {
-                        (1, rest) => {
-                          let types2 = (&(Lists::Node::Cons(ta, types)));
-                          k_is_def_eq_struct_bounded(rc, ba, bb, rest, types2) } ,
-                        (_, rest) => {  (0, rest) } ,
-                      } } ,
-                    _ => {  (0, credit) } ,
-                  } } ,
-                _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
-              } } ,
-            KernelTypes::KExprNode::Lit(la) => {
-              match (*(b)) {
-                KernelTypes::KExprNode::Lit(lb) => {  (KernelLevels::literal_eq(la, lb), credit) } ,
-                _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
-              } } ,
-            KernelTypes::KExprNode::Proj(struct_a, fidx_a, ea) => {
-              match (*(b)) {
-                KernelTypes::KExprNode::Proj(struct_b, fidx_b, eb) => {
-                  match Bytes::address_eq(struct_a, struct_b) {
-                    1 => {
-                      match fidx_a - fidx_b {
-                        0 => {  k_is_def_eq_struct_bounded(rc, ea, eb, credit, types) } ,
+                KernelTypes::KExprNode::Lam(ta, ba, la) => {
+                  match (*(b)) {
+                    KernelTypes::KExprNode::Lam(tb, bb, lb) => {
+                      match KernelLevels::pw_eq(la, lb) {
+                        1 => {
+                          match k_is_def_eq_struct_bounded(rc, ta, tb, credit, types) {
+                            (1, rest) => {
+                              let types2 = (&(Lists::Node::Cons(ta, types)));
+                              k_is_def_eq_struct_bounded(rc, ba, bb, rest, types2) } ,
+                            (_, rest) => {  (0, rest) } ,
+                          } } ,
                         _ => {  (0, credit) } ,
                       } } ,
                     _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
                   } } ,
+                KernelTypes::KExprNode::Forall(ta, ba, la) => {
+                  match (*(b)) {
+                    KernelTypes::KExprNode::Forall(tb, bb, lb) => {
+                      match KernelLevels::pw_eq(la, lb) {
+                        1 => {
+                          match k_is_def_eq_struct_bounded(rc, ta, tb, credit, types) {
+                            (1, rest) => {
+                              let types2 = (&(Lists::Node::Cons(ta, types)));
+                              k_is_def_eq_struct_bounded(rc, ba, bb, rest, types2) } ,
+                            (_, rest) => {  (0, rest) } ,
+                          } } ,
+                        _ => {  (0, credit) } ,
+                      } } ,
+                    _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
+                  } } ,
+                KernelTypes::KExprNode::Lit(_) => {
+                  match (*(b)) {
+                    KernelTypes::KExprNode::Lit(_) => {  (0, credit) } ,
+                    _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
+                  } } ,
+                KernelTypes::KExprNode::Proj(struct_a, fidx_a, ea) => {
+                  match (*(b)) {
+                    KernelTypes::KExprNode::Proj(struct_b, fidx_b, eb) => {
+                      match Bytes::address_eq(struct_a, struct_b) {
+                        1 => {
+                          match fidx_a - fidx_b {
+                            0 => {  k_is_def_eq_struct_bounded(rc, ea, eb, credit, types) } ,
+                            _ => {  (0, credit) } ,
+                          } } ,
+                        _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
+                      } } ,
+                    _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
+                  } } ,
                 _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
               } } ,
-            _ => {  k_is_def_eq_struct_spend(rc, a, b, credit, types) } ,
-          }
+          } } ,
+      }
     }
 ⟧
 

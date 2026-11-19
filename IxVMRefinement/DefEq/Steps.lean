@@ -36,6 +36,7 @@ theorem defEq_step (c : ScopedCtx) (hc : ScopedCoreBase c) :
   | .de_rescue_tier, _, _, _, _, _, ev, ih => de_rescue_tier_step c ev ih
   | .delta_rank, _, _, _, _, _, ev, ih => delta_rank_step c ev ih
   | .delta_unfold, _, _, _, _, _, ev, ih => delta_unfold_step c hc ev ih
+  | .expr_eq_fast, _, _, _, _, _, ev, ih => expr_eq_fast_step c ev ih
   | .family_params, _, _, _, _, _, ev, ih => family_params_step c ev ih
   | .head_addr, _, _, _, _, _, ev, ih => head_addr_step c ev ih
   | .is_defn_or_thm, _, _, _, _, _, ev, ih => is_defn_or_thm_step c ev ih
@@ -44,7 +45,6 @@ theorem defEq_step (c : ScopedCtx) (hc : ScopedCoreBase c) :
   | .is_unit_like_type, _, _, _, _, _, ev, ih => is_unit_like_type_step c hc ev ih
   | .k_def_eq_rebase, _, _, _, _, _, ev, ih => k_def_eq_rebase_step c hc ev ih
   | .k_is_def_eq, _, _, _, _, _, ev, ih => k_is_def_eq_step c ev ih
-  | .k_is_def_eq_core, _, _, _, _, _, ev, ih => k_is_def_eq_core_step c ev ih
   | .k_is_def_eq_ordered, _, _, _, _, _, ev, ih => k_is_def_eq_ordered_step c ev ih
   | .k_is_def_eq_slow, _, _, _, _, _, ev, ih => k_is_def_eq_slow_step c ev ih
   | .k_is_def_eq_slow2, _, _, _, _, _, ev, ih => k_is_def_eq_slow2_step c ev ih
