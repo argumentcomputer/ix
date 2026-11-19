@@ -2,7 +2,7 @@
 //! execution/witness generation only; the original tables certify every result.
 use crate::bytecode::{CheckedProgram, Instruction, Layout, Program};
 use crate::field::{FieldBackend, PrimeField};
-use crate::host::{self, MapBinder, MapCalls};
+use crate::host::{self, BoundMap, DirectMapKind, MapBinder, MapCalls};
 use crate::table::TableIndex;
 use std::{collections::HashMap, fmt, sync::Arc};
 
@@ -18,6 +18,7 @@ struct Override<F> {
   outputs: usize,
   function: Arc<MapFunction<F>>,
   bind_registers: Option<Arc<MapBinder<F>>>,
+  direct: Option<DirectMapKind>,
 }
 
 /// Names, flat arities, and row numbering are checked once when preparing an
@@ -57,6 +58,7 @@ impl<F> MapOverrides<F> {
         outputs,
         function: Arc::new(function),
         bind_registers: None,
+        direct: None,
       },
     );
     Ok(())
@@ -73,6 +75,39 @@ impl<F> MapOverrides<F> {
     + Send
     + Sync
     + 'static,
+  ) -> Result<(), String>
+  where
+    F: Copy + Send + Sync + 'static,
+  {
+    self.insert_fixed_inner(name, function, None)
+  }
+
+  pub(crate) fn insert_direct_fixed<
+    const INPUTS: usize,
+    const OUTPUTS: usize,
+  >(
+    &mut self,
+    name: impl Into<String>,
+    direct: DirectMapKind,
+    function: impl Fn([F; INPUTS]) -> Result<(usize, [F; OUTPUTS]), String>
+    + Send
+    + Sync
+    + 'static,
+  ) -> Result<(), String>
+  where
+    F: Copy + Send + Sync + 'static,
+  {
+    self.insert_fixed_inner(name, function, Some(direct))
+  }
+
+  fn insert_fixed_inner<const INPUTS: usize, const OUTPUTS: usize>(
+    &mut self,
+    name: impl Into<String>,
+    function: impl Fn([F; INPUTS]) -> Result<(usize, [F; OUTPUTS]), String>
+    + Send
+    + Sync
+    + 'static,
+    direct: Option<DirectMapKind>,
   ) -> Result<(), String>
   where
     F: Copy + Send + Sync + 'static,
@@ -95,6 +130,7 @@ impl<F> MapOverrides<F> {
           Ok(row)
         }),
         bind_registers: Some(bind_registers),
+        direct,
       },
     );
     Ok(())
@@ -116,13 +152,13 @@ impl<F> MapOverrides<F> {
             };
             let id = function.checked_sub(checked.program.functions.len())?;
             let map = checked.program.maps.get(id)?;
-            let binder =
-              self.entries.get(&map.name)?.bind_registers.as_ref()?;
-            binder(
-              args,
-              dest,
-              host::output_check(&checked.outputs[*function], checked.field),
-            )
+            let entry = self.entries.get(&map.name)?;
+            let binder = entry.bind_registers.as_ref()?;
+            let check =
+              host::output_check(&checked.outputs[*function], checked.field);
+            let direct = check.is_none().then_some(entry.direct).flatten();
+            let dynamic = binder(args, dest, check)?;
+            Some(BoundMap { direct, dynamic })
           })
           .collect()
       })

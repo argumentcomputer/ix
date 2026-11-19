@@ -1,7 +1,10 @@
 //! Advice for `Aiur.Library.U32`. All answers are raw fields; the source library
 //! constrains them before constructing opaque bytes or words. No Goldilocks
 //! arithmetic is needed here.
-use crate::{bytecode::Type, field::FieldBackend, hints::HintChannels};
+use crate::{
+  bytecode::Type, field::FieldBackend, hints::HintChannels,
+  host::DirectHintKind,
+};
 
 pub const MIN_MODULUS: u64 = 3 * (1_u64 << 32);
 
@@ -18,17 +21,19 @@ pub fn register<B: FieldBackend>(
     ));
   }
   let bytes = Type::Tuple { items: vec![Type::Field; 4] };
-  channels.insert_fixed::<1, 4>(
+  channels.insert_direct_fixed::<1, 4>(
     "u32.bytes",
     Type::Field,
     bytes.clone(),
+    DirectHintKind::U32Bytes,
     #[inline(always)]
     move |input| Ok(bytes_of(field.to_u64(input[0]) as u32, field)),
   )?;
-  channels.insert_fixed::<2, 4>(
+  channels.insert_direct_fixed::<2, 4>(
     "u32.sub",
     Type::Tuple { items: vec![Type::Field; 2] },
     bytes.clone(),
+    DirectHintKind::U32Sub,
     #[inline(always)]
     move |input| {
       Ok(bytes_of(
@@ -38,13 +43,26 @@ pub fn register<B: FieldBackend>(
       ))
     },
   )?;
-  register_sum::<8, _>(channels, field, "u32.add", &bytes)?;
-  register_sum::<12, _>(channels, field, "u32.add3", &bytes)?;
+  register_sum::<8, _>(
+    channels,
+    field,
+    "u32.add",
+    &bytes,
+    DirectHintKind::U32Add,
+  )?;
+  register_sum::<12, _>(
+    channels,
+    field,
+    "u32.add3",
+    &bytes,
+    DirectHintKind::U32Add3,
+  )?;
   let pair = Type::Tuple { items: vec![Type::Field; 2] };
-  channels.insert_fixed::<2, 12>(
+  channels.insert_direct_fixed::<2, 12>(
     "u32.lt",
     pair,
     Type::Tuple { items: vec![bytes; 3] },
+    DirectHintKind::U32Lt,
     #[inline(always)]
     move |input| {
       let (a, b) =
@@ -66,11 +84,13 @@ fn register_sum<const INPUTS: usize, B: FieldBackend>(
   field: B,
   name: &str,
   bytes: &Type,
+  direct: DirectHintKind,
 ) -> Result<(), String> {
-  channels.insert_fixed::<INPUTS, 4>(
+  channels.insert_direct_fixed::<INPUTS, 4>(
     name,
     Type::Tuple { items: vec![bytes.clone(); INPUTS / 4] },
     bytes.clone(),
+    direct,
     #[inline(always)]
     move |input| {
       let mut sum = 0u32;

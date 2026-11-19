@@ -7,7 +7,40 @@ type Validator<F> = dyn Fn(&[F]) -> Result<(), String> + Send + Sync;
 pub(crate) type OutputCheck<F> = Option<Arc<Validator<F>>>;
 pub(crate) type RegisterMap<F> =
   dyn Fn(&mut [F], &mut [u64]) -> Result<(), String> + Send + Sync;
-pub(crate) type MapCalls<F> = Vec<Option<Arc<RegisterMap<F>>>>;
+
+#[derive(Clone, Copy)]
+pub(crate) enum DirectMapKind {
+  FromField,
+  RangePair,
+  RawXor,
+  RawAnd,
+  RawOr,
+  RawLt,
+  RawAdd,
+  RawSub,
+  RawMul,
+  RawXorSplit4,
+  RawXorSplit7,
+  RawSumByte,
+  RawBitDecomp,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum DirectHintKind {
+  U32Bytes,
+  U32Sub,
+  U32Add,
+  U32Add3,
+  U32Lt,
+  BytesLe,
+}
+
+pub(crate) struct BoundMap<F> {
+  pub(crate) direct: Option<DirectMapKind>,
+  pub(crate) dynamic: Arc<RegisterMap<F>>,
+}
+
+pub(crate) type MapCalls<F> = Vec<Option<BoundMap<F>>>;
 pub(crate) type RegisterHint<F> =
   dyn Fn(&mut [F]) -> Result<(), String> + Send + Sync;
 pub(crate) type MapBinder<F> = dyn Fn(&[usize], &[usize], OutputCheck<F>) -> Option<Arc<RegisterMap<F>>>
