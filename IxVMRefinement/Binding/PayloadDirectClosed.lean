@@ -86,8 +86,8 @@ private theorem get_ci_rec_not_defn (hS : LoadedReads.RunStore calls E₀)
       L1.load_verified_constant_decode_bounded hab ev14
     have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
       (Core.hashed_mono hsub12 hh) haddr hexact
-    subst hcc
-    obtain ⟨infoVal, -, -, -, -, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
+    subst c'
+    obtain ⟨infoVal, _, _, _, _, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
     have hinfo_eq := (List.cons.inj (Value.construct.inj hc_eq).2.2).1
     rw [hinfo] at hinfoRep
     obtain ⟨dv, hv, -⟩ := hinfoRep
@@ -129,8 +129,8 @@ theorem adviceCheck_projMember (hS : LoadedReads.RunStore calls E₀)
         (Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ord.heap_extends hab) ev14
     have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
       (Core.hashed_mono hsub12 hh) haddr hexact
-    subst hcc
-    obtain ⟨infoVal, -, -, -, -, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
+    subst c'
+    obtain ⟨infoVal, _, _, _, _, hc_eq, hinfoRep, -, -, -, -⟩ := cRep
     have hinfo_eq : x_info = infoVal := (List.cons.inj (Value.construct.inj hc_eq).2.2).1
     rw [← hinfo_eq] at hinfoRep
     match sg952 with
@@ -183,7 +183,7 @@ theorem containerRecIn_logic (hS : LoadedReads.RunStore calls E₀) {B rb : _roo
     obtain ⟨raw, c', -, hh, hba, hde, -, hhead⟩ := Claim.get_ci_head hab' ev_ci
     have hcc : c' = c := hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc)
       (Core.hashed_mono hsub_ci hh) hba hde
-    subst hcc
+    subst c'
     cases hinfo : c.info with
     | recr rcr =>
       obtain ⟨nl', ty', np', ni', nm', nmin', rules', k', x_a, hldv⟩ := hhead.recr rcr hinfo
