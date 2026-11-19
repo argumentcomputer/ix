@@ -100,7 +100,7 @@ theorem walkReachedBy_path {g : Nat} {a b : _root_.Address} (h : WalkReachedBy t
   induction hp with
   | refl => exact h
   | tail hp' hs ih =>
-    exact walkReachedBy_step (ih (fun y hy => hnot y hy)) hs (hnot _ (PathReach.tail hp' hs))
+    exact walkReachedBy_step ih hs (hnot _ (PathReach.tail hp' hs))
 
 /-- **A used-closed sub-store of `E₀` is closed under dependency paths**: every record reachable
 by `PathReach` from a stored record is also stored. -/
@@ -114,12 +114,10 @@ theorem pathReach_stored_of_usedClosed {R : Ixon.Env}
     obtain ⟨cx, hcx⟩ := Option.isSome_iff_exists.mp ih
     have hcxE := hsub x cx hcx
     rcases hs with ⟨cx', i, hcx', hi, hy⟩ | ⟨cx', hcx', _, rfl⟩
-    · have e : cx' = cx := Option.some.inj (hcx'.symm.trans hcxE)
-      subst e
-      exact (hcl.1 x cx hcx).2 i hi y hy
-    · have e : cx' = cx := Option.some.inj (hcx'.symm.trans hcxE)
-      subst e
-      exact (hcl.1 x cx hcx).1
+    · cases Option.some.inj (hcx'.symm.trans hcxE)
+      exact (hcl.1 x cx' hcx).2 i hi y hy
+    · cases Option.some.inj (hcx'.symm.trans hcxE)
+      exact (hcl.1 x cx' hcx).1
 
 /-- **Stored-closure completeness for `AlreadyStoredRole`**: every record reachable along a
 dependency path from an `AlreadyStoredRole t g x` address is already held in
