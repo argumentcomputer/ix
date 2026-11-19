@@ -156,8 +156,8 @@ theorem closure_finish
     · have hB0A : B0 = A := by
         rcases hor with h₀ | h₁
         · exfalso
-          obtain ⟨-, -, -, -, -, hF⟩ := hC.fams.family B0 rb0 h₀
-          obtain ⟨-, -, -, -, -, -, -, -, -, hnrb, -⟩ := fam_new hC hA0
+          obtain ⟨cb, ms, crb', rs, flat, hF⟩ := hC.fams.family B0 rb0 h₀
+          obtain ⟨cb', crb'', ms', rs', _, _, _, _, _, hnrb, _⟩ := fam_new hC hA0
           have hR := hF.record.record
           rw [hnrb.2] at hR
           cases hR

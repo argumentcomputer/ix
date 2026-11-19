@@ -448,10 +448,8 @@ theorem block_nparams_spec {h h' : Heap F} {ms : Array Ixon.MutConst}
     injection hargs2 with _ hargs2
     injection hargs2 with _ hargs2
     injection hargs2 with hparams_eq _
-    have hru : Deserialize.RepU64 h ind₀.params x_params := by
-      rw [hparams_eq]
-      exact Deserialize.repU64_u64Value h ind₀.params
-    obtain ⟨hlt, hval, -⟩ := Lib.u64_to_field_spec hru ev115
+    rw [hparams_eq] at ev115
+    obtain ⟨hlt, hval, -⟩ := Lib.u64_to_field_spec (Deserialize.repU64_u64Value h ind₀.params) ev115
     rw [hr]
     exact ⟨hlt, hval⟩
 
