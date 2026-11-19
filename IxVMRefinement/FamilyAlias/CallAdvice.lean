@@ -388,11 +388,11 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
       exact Claim.recordOf_hashed hS hH (Core.hashed_mono hsubLd hh) hsz hde hex
     -- `get_ci` loads the same record `c`
     obtain ⟨-, bytes2, c2, blobs2, hh2, hb2, hex2, _, _, _, hraw⟩ :=
-      L1.get_ci_spec (hbound.sub hsub_ci) ha ev_ci
+      L1.get_ci_spec (RomBound.bounded_mono hbound hsub_ci) ha ev_ci
     have hrecAt : Ix.Cert.recordAt E₀ (ixAddr a) = some c :=
       (hS.recordOf_eq_recordAt (ixAddr a)).symm.trans hrec
     have hc2 : c2 = c := hS.record_eq hrecAt (Core.hashed_mono hsub_ci hh2) hb2 hex2
-    subst hc2
+    subst c2
     -- Identify `infoVal` from `hcp`
     obtain ⟨infoVal, _, _, _, _, hv_c, hinfoRep, -⟩ := hcp
     injection hv_c with _ _ hargs_c
@@ -637,7 +637,7 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
           hsub_chk _ (by rw [hc520]; simp)
         have hsub_es : ∀ cl ∈ cs383, cl ∈ calls := fun cl hcl => hsub_chk cl (by rw [hc520]; simp [hcl])
         obtain ⟨_, hty_lbb, hty_def⟩ :=
-          Assembly.validate_expr_well_scoped_spec (cx := LoadedReads.readCtx t (fun x => E₀.blobs.get? x))
+          Assembly.validate_expr_well_scoped_spec (cx := readCtx t (fun x => E₀.blobs.get? x))
             (self := soloSelf t (ixAddr a)) hbound hnlvls rty1 (Heap.Extends.refl m_chk) hty ev311
             hcl_v1
         have ext_m_404 : Heap.Extends m_chk m404 :=
@@ -666,7 +666,7 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
           hsub_chk _ (by rw [hc819]; simp)
         have hsub_es : ∀ cl ∈ cs628, cl ∈ calls := fun cl hcl => hsub_chk cl (by rw [hc819]; simp [hcl])
         obtain ⟨_, hty_lbb, hty_def⟩ :=
-          Assembly.validate_expr_well_scoped_spec (cx := LoadedReads.readCtx t (fun x => E₀.blobs.get? x))
+          Assembly.validate_expr_well_scoped_spec (cx := readCtx t (fun x => E₀.blobs.get? x))
             (self := soloSelf t (ixAddr a)) hbound hnlvls rty1 (Heap.Extends.refl m_chk) hty ev556
             hcl_v1
         have ext_m_649 : Heap.Extends m_chk m649 :=
@@ -676,12 +676,12 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
   obtain ⟨hty_lbb, hty_def, m_ws, m_pre, m_es, m_es', v_ws, v_sort, cs_ws, cs_es,
     ev_ws, ext_chk_es, hm_es, ev_es, hsub_es⟩ := hchk_res
   -- Canonical exact annotation at `ev_ld`
-  have hagree1 : L1.BlobReadAgreement (LoadedReads.readCtx t (fun x => E₀.blobs.get? x)).blob blobs1 :=
+  have hagree1 : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs1 :=
     L1.BlobReadAgreement.of_mem hblob1
   obtain ⟨ty', hcT1, -, htm1⟩ :=
     LoadedReads.annotation_canon_exact (recurAddrs := []) ht hnlvls
       (fun _ _ _ _ hx => by simp at hx) hagree1 rty1 built1 hpT1 hlT1 hty hty_lbb hty_def
-  rw [Core.posOf_range] at htm1
+  rw [Decl.posOf_range] at htm1
   have hty'_def : ty'.allLevelParamsDefined (List.range d.lvls.toNat) = true :=
     Decl.validate_expr_well_scoped_spec hnlvls (htm1 0 (fun _ => .sort .zero)) ev_ws
   -- Second `get_ci` (`ev_ci`): same canonical annotation `ty'`!
@@ -699,14 +699,14 @@ theorem advice_checked_type {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ke
   rw [hrecur] at htr2
   obtain ⟨-, tyPtr2, valPtr2, hint2, planT2, planV2, hv2_eq, rty2, -, hpT2, -, hlT2, -⟩ := htr2
   subst hv2_eq
-  have hagree2 : L1.BlobReadAgreement (LoadedReads.readCtx t (fun x => E₀.blobs.get? x)).blob blobs2 :=
+  have hagree2 : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs2 :=
     L1.BlobReadAgreement.of_mem hblob2
   obtain ⟨ty'', hcT2, -, htm2⟩ :=
     LoadedReads.annotation_canon_exact (recurAddrs := []) ht hnlvls
       (fun _ _ _ _ hx => by simp at hx) hagree2 rty2 built2 hpT2 hlT2 hty hty_lbb hty_def
   have hty_eq : ty'' = ty' := Option.some.inj (hcT2.symm.trans hcT1)
   subst hty_eq
-  rw [Core.posOf_range] at htm2
+  rw [Decl.posOf_range] at htm2
   -- Match `nl` and `mty` with `.field d.lvls.toNat` and `tyPtr2`
   have hnm : nl = .field (d.lvls.toNat : F) ∧ mty = tyPtr2 := by
     rcases hld with ⟨w1, w2, w3, hld2⟩ | ⟨w1, hld2⟩
@@ -849,6 +849,9 @@ theorem advice_stored_defn_facts {L : Ix.Kernel.Env .anon → NativeFam .anon �
         exact ⟨cvm, mval, hint, hfind2, hperm_n, hlvEq, htm2_ex, stype, u, hinf, hred⟩
       · rw [hv1eq] at hv1'
         injection hv1' with _ htag _; exact absurd htag (by decide)
+    | quot .. =>
+      rcases W.hv₁ with ⟨_, _, _, hv1eq⟩ | ⟨_, hv1eq⟩ <;>
+        (rw [hv1eq] at hv1'; injection hv1' with _ htag _; exact absurd htag (by decide))
   | _ => simp [kciEnum] at hv2
 
 /-- **Stored iota-theorem facts at any `FamilyStepEnv`**: combines `AdviceTypeWitness` with
