@@ -2,6 +2,7 @@ import IxVMRefinement.TwinFamily.WrapBridge
 import IxVMRefinement.TwinFamily.Reload
 import IxVMRefinement.Lib.Lists
 import IxVMRefinement.FamilyAlias.CallLists
+import IxVMRefinement.FamilyAlias.CallRecRefs
 import IxVMRefinement.FamilyAlias.CallRekey
 import IxVMRefinement.FamilyGraph.ProducersInnerRefs
 import IxVMRefinement.Assembly.TypingRecLateMajorKey
@@ -2216,6 +2217,7 @@ structure ExtractedTwinMember (calls : List (Call F)) (t : Ix.Kernel.RoleTable) 
   hruleStored : List.Forall₂ RuleStored rls rules₀
   hrls_letFree : ∀ rl ∈ rls, letFree rl.rhs = true
   hnoSelf : ∀ j < rs'.size, ty'.mentionsConst (keyOf t (Core.rprjAddr A j)) = false
+  hnoRole : ∀ ro : Ix.Kernel.Role, keyOf t (Core.rprjAddr A k) ≠ .role ro
   hmotiveConcl : ∃ bs concl,
     (Core.posOf ps ty').stripPis
       (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat + 1) =
@@ -2299,7 +2301,9 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
     (hfam_rep : RepList Core.addrListEnum (Bytes.RepAddressRef Core.addrTy) h₀ recAs x_fam)
     (hrecAs_map : recAs.map Core.ixAddr =
       rs'.toList.mapIdx (fun i m => memberAddr A i m))
-    (hrecAs_len : recAs.length = rs'.size) :
+    (hrecAs_len : recAs.length = rs'.size)
+    (hnoRole_all : ∀ j < rs'.size, ∀ ro : Ix.Kernel.Role,
+      keyOf t (Core.rprjAddr A j) ≠ .role ro) :
     ∀ {k : Nat} {remAs : List Bytes.Address} {x_recs x_models x_s x_form r : SourceValue F}
       {h h' : Heap F} {cs : List (Call F)},
       remAs = recAs.drop k →
@@ -2504,7 +2508,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             (blockSelf t A rs')).read rc.typ = .ok tyP := by
           rw [Assembly.recParam_range]; exact htyP
         -- Raw syntax `R'` and positional canonical annotation `E_pos` of `rc.typ`
-        obtain ⟨R', E_pos, -, hraw_ty, -, hrawTr_ty⟩ := rty.toRawTmCExactTrace (κ := Core.keyOf t)
+        obtain ⟨R', E_pos, hann_pos, hraw_ty, -, hrawTr_ty⟩ := rty.toRawTmCExactTrace (κ := Core.keyOf t)
           (ps := List.range rc.lvls.toNat) (by simp) (by simpa using hlvls_lt)
           (LoadedReads.readCtx_keyAt_inv ht _) (fun i x m k hx => by simp at hx) hblob_a
           hrd_tyP htyP_lbb htyP_def
@@ -2556,8 +2560,10 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             (ev157 := ev_cr_len) (heq173 := heq_cr_len) (ev179 := ev_cr_go) (hc315 := hcs_cr) .. =>
           -- `v909 = rc.params + rc.motives + rc.minors`
           have hv909_eq : v909 = .field ((rc.params.toNat + rc.motives.toNat + rc.minors.toNat : Nat) : F) := by
-            simp only [evalBinOp, Except.ok.injEq] at op965 op957
-            rw [← op957, ← op965, Nat.cast_add, Nat.cast_add]
+            simp only [evalBinOp, Except.ok.injEq] at op965
+            rw [← op965] at op957
+            simp only [evalBinOp, Except.ok.injEq] at op957
+            rw [← op957, Nat.cast_add, Nat.cast_add]
           rw [hv909_eq] at ev_cr_pins
           have hrp_lt : ZMod.val ((rc.params.toNat + rc.motives.toNat + rc.minors.toNat : Nat) : F) <
               288230376151711744 := by
@@ -2585,18 +2591,6 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
                 rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat := by
               rw [ZMod.val_natCast_of_lt (by omega), ZMod.val_natCast_of_lt (by omega)]
             rwa [h1] at hstrip_r
-          -- Relate `E_pos` to `tyP` via `Annotates`
-          obtain ⟨E_pos2, hann_pos, htm_pos, happly_pos⟩ := rty.toTmCExactTrace (κ := Core.keyOf t)
-            (ps := List.range rc.lvls.toNat) (by simp) (by simpa using hlvls_lt)
-            (LoadedReads.readCtx_keyAt_inv ht _) (fun i x m k hx => by simp at hx) hblob_a
-            hrd_tyP htyP_lbb htyP_def
-          -- Actually `E_pos = E_pos2` because both are represented by `TmExact` at `tyPtr`!
-          have hEpos_eq : E_pos = E_pos2 := by
-            have h1 := hraw0.toTmExact
-            have h2 := htm_pos 0 (fun _ => .sort .zero)
-            simp only [Decl.posOf_range] at h2
-            exact Decl.tmExact_det h1 h2
-          subst hEpos_eq
           have hmaj_pos : majorKey rc E_pos = some (Core.keyOf t (Core.ixAddr a_ind_r)) := by
             unfold majorKey binderDom headKey
             rw [hstrip_r']
@@ -2643,7 +2637,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
           subst hc_u_eq
           unfold L1.GetCIBlockTraceResult at hres_U
           rw [hp_maj] at hres_U
-          obtain ⟨-, -, -, -, -, -, -, -, vU, -, -, -, -, -, -, -, -, hldU, hrawU, -⟩ := hres_U
+          obtain ⟨-, _, _, _, _, _, _, _, vU, -, -, -, -, -, -, -, -, hldU, hrawU, -⟩ := hres_U
           obtain ⟨-, -, -, -, -, _, _, _, -, -, hvU, -⟩ := hrawU
           rw [hvU] at hldU
           rw [hldU] at ld_mem
@@ -2992,6 +2986,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             hruleStored := hruleStored
             hrls_letFree := hrls_letFree
             hnoSelf := hnoSelf
+            hnoRole := hnoRole_all k hk_lt
             hmotiveConcl := hmotiveConcl
             hmajorPins := hmajorPins
             hfrontDoor := hfrontDoor
@@ -3151,11 +3146,31 @@ theorem familyCall_extract_members {calls : List (Call F)} {bAddr : _root_.Addre
       have hrecAs_len : recAs.length = rs'.size := by
         have := congrArg List.length hrecAs_map
         simpa [Array.length_toList] using this
+      -- 4b. `e22 : assert_no_role [x_rc, v839]` gives `∀ j < rs'.size, ∀ ro, keyOf t (rprjAddr A j) ≠ .role ro`
+      have hnoRole_recAs :=
+        FamilyAlias.assert_no_role_spec recAs (hrc_lim.mono ext_h_840) hrec_m840 e22
+      have hnoRole_all : ∀ j < rs'.size, ∀ ro : Ix.Kernel.Role,
+          keyOf t (Core.rprjAddr (Core.ixAddr bA) j) ≠ .role ro := by
+        intro j hj ro
+        have hj' : j < recAs.length := by omega
+        obtain ⟨a_j, ha_j⟩ := List.getElem?_eq_some_iff.mpr ⟨hj', rfl⟩
+        have hmem_aj : a_j ∈ recAs := List.mem_of_getElem? ha_j
+        have hmap_j := congrArg (fun l => l[j]?) hrecAs_map
+        rw [List.getElem?_map, ha_j, Option.map_some, List.getElem?_mapIdx] at hmap_j
+        have hrs_j : ∃ rc_j, rs'.toList[j]? = some (.recr rc_j) := by
+          obtain ⟨m_j, hm_j⟩ := List.getElem?_eq_some_iff.mpr ⟨by simpa [Array.length_toList] using hj, rfl⟩
+          obtain ⟨rc_j, rfl⟩ := hA.recrs m_j (List.mem_of_getElem? hm_j)
+          exact ⟨rc_j, hm_j⟩
+        obtain ⟨rc_j, hrc_j⟩ := hrs_j
+        rw [hrc_j, Option.map_some] at hmap_j
+        have ha_eq : Core.ixAddr a_j = Core.rprjAddr (Core.ixAddr bA) j := Option.some.inj hmap_j
+        rw [← LoadedReads.keyOf_eq, ← ha_eq]
+        exact hnoRole_recAs a_j hmem_aj ro
       -- 5. `ev874 : Lists::length [v839]` gives `v861 = .field rs'.size`
       have hrec_qvd := repList_heapMono₂ Core.addrListEnum (Bytes.repAddressRef_heapMono₂ Core.addrTy)
         ext_840_qvd hrec_m840
       have hv861_eq : v861 = .field (recAs.length : F) :=
-        (IxVM.Refinement.Lib.length_spec (t := .ptr (.array .field 32))
+        (Lib.Lists.length_spec (t := .ptr (.array .field 32))
           (by rwa [Obs.Names.«Lists::length<&[Field; 32]>».symbol])
           (by rwa [Obs.Names.«Lists::Node<&[Field; 32]>».symbol])).1
       rw [hrecAs_len] at hv861_eq
@@ -3171,6 +3186,11 @@ theorem familyCall_extract_members {calls : List (Call F)} {bAddr : _root_.Addre
         injection he_be213 with hbe_list
         injection hbe_list with hbnl_eq hbe_list2
         injection hbe_list2 with huoff_eq _
+        obtain ⟨off, hoff, hv212_eq⟩ : ∃ off : Nat, (off = 0 ∨ off = 1) ∧ v212 = .field (off : F) := by
+          rcases level_is_not_zero_bit ev_be232 with h | h
+          · exact ⟨0, Or.inl rfl, by simpa using h⟩
+          · exact ⟨1, Or.inr rfl, by simpa using h⟩
+        rw [hv212_eq] at huoff_eq
         subst hbnl_eq huoff_eq
         obtain ⟨t0', _, ht0_cons, ht0_rep, -⟩ := Lib.rep_cons_of_load htype_luk ld_be11
         injection ht0_cons with ht0_eq _; subst ht0_eq
@@ -3210,11 +3230,6 @@ theorem familyCall_extract_members {calls : List (Call F)} {bAddr : _root_.Addre
         injection hv0_eq with _ _ h0_fields
         injection h0_fields with hxnl0_eq _
         subst hxnl0_eq
-        obtain ⟨off, hoff, hv212_eq⟩ : ∃ off : Nat, (off = 0 ∨ off = 1) ∧ v212 = .field (off : F) := by
-          rcases level_is_not_zero_bit ev_be232 with h | h
-          · exact ⟨0, Or.inl rfl, by simpa using h⟩
-          · exact ⟨1, Or.inr rfl, by simpa using h⟩
-        subst hv212_eq
         -- 7. Invoke `check_recs_extract` at `k = 0`!
         have hsub1341 : ∀ cl ∈ cs1341, cl ∈ calls :=
           fun cl hcl => hsub_fam cl (by rw [hcs]; simp [hcl])
@@ -3226,7 +3241,7 @@ theorem familyCall_extract_members {calls : List (Call F)} {bAddr : _root_.Addre
         refine ⟨ind₀, hms0, fun k hk => ?_⟩
         exact check_recs_extract ht hRS hH hShape hRF hSS_in hLim hB hA hc_res hms0 hind0_params
           hind0_lvls hoff hrefs_ok hrc_1293 rfl ht0_addr htype_1293 hrec_1293 hrecAs_map
-          hrecAs_len (k := 0) (by simp) Heap.Extends.refl hrec_1293
+          hrecAs_len hnoRole_all (k := 0) (by simp) Heap.Extends.refl hrec_1293
           (by simpa only [Nat.cast_zero] using ev1343) hsub1341 k (Nat.zero_le k) hk
 
 /-- **An accepted `KernelModeled::check_family` call on `(B, A)` with non-empty `A` witnesses
