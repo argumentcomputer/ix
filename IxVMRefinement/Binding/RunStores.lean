@@ -104,6 +104,28 @@ theorem recordOf_restrict {R E : Ixon.Env} {a : _root_.Address} {P : Prop}
 
 /-! ## What a group's admission reaches and adds -/
 
+/-- **A role-bound address already stored before group `g`**: a covered walked role
+(`Claim.CoveredAt`), a walked anchor, standard axiom or quotient role in force at `valLimit g`,
+or an operation of an earlier group (`groupOf r < g`). Stopping `GroupReach` and `PayReach`
+here preserves the store `groupStore t E₀ Pay (g + 1)` verbatim (each disjunct is already in
+`groupStore t E₀ Pay g`, which is `UsedClosed`) and aligns `GroupReach` with `op_order_scan`'s
+stops in the well-founded block. -/
+def AlreadyStoredRole (t : Ix.Kernel.RoleTable) (g : Nat) (x : _root_.Address) : Prop :=
+  Claim.CoveredAt t (some (valLimit g)) x ∨
+  (∃ r : Ix.Kernel.Role, t.addressOf? r = some x ∧
+    Ix.SpecDigest.groupOf r < valLimit g ∧
+    (RoleVal.anchorWalked r = true ∨ r ∈ standardAxioms ∨ RoleVal.isQuotRole r = true)) ∨
+  (∃ r : Ix.Kernel.Role, t.addressOf? r = some x ∧
+    RoleVal.roleSpecKindNat r = 2 ∧ Ix.SpecDigest.groupOf r < g)
+
+theorem AlreadyStoredRole.of_covered {t : Ix.Kernel.RoleTable} {g : Nat} {x : _root_.Address}
+    (h : Claim.CoveredAt t (some (valLimit g)) x) : AlreadyStoredRole t g x :=
+  Or.inl h
+
+theorem AlreadyStoredRole.not_covered {t : Ix.Kernel.RoleTable} {g : Nat} {x : _root_.Address}
+    (h : ¬ AlreadyStoredRole t g x) : ¬ Claim.CoveredAt t (some (valLimit g)) x :=
+  fun hc => h (Or.inl hc)
+
 /-- **An address the admission of group `g` reaches** over the run's records `E₀` (module
 docstring). -/
 inductive GroupReach (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (g : Nat) :
@@ -113,15 +135,15 @@ inductive GroupReach (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (g : Nat) :
       t.addressOf? r = some a → GroupReach t E₀ g a
   | axiomRef {r : Ix.Kernel.Role} {a x : _root_.Address} : r ∈ roleGroup g →
       r ∈ standardAxioms → t.addressOf? r = some a → UsedRef E₀ a x →
-      ¬ Claim.CoveredAt t (some (valLimit g)) x → GroupReach t E₀ g x
+      ¬ AlreadyStoredRole t g x → GroupReach t E₀ g x
   | ref {a x : _root_.Address} : GroupReach t E₀ g a → UsedRef E₀ a x →
-      ¬ Claim.CoveredAt t (some (valLimit g)) x → GroupReach t E₀ g x
+      ¬ AlreadyStoredRole t g x → GroupReach t E₀ g x
   | owner {a : _root_.Address} {c : Ixon.Constant} : GroupReach t E₀ g a →
       recordOf E₀ a = some c → IsProj c → GroupReach t E₀ g (Ix.Cert.ownerOf a c)
   | evidenceRef {r : Ix.Kernel.Role} {arr : Array (Ix.Kernel.Evidence _root_.Address)}
       {thm x : _root_.Address} : r ∈ roleGroup g → (r, arr) ∈ t.evidence.toList →
       Ix.Kernel.Evidence.proof thm ∈ arr.toList → UsedRef E₀ thm x → t.addressOf? r ≠ some x →
-      ¬ Claim.CoveredAt t (some (valLimit g)) x → GroupReach t E₀ g x
+      ¬ AlreadyStoredRole t g x → GroupReach t E₀ g x
 
 /-- **The payload of the groups' family checks**: `Pay g B a` says that the family check of the
 block at `B` under the role context of group `g`'s validation names `a` (its family record, an
@@ -134,15 +156,15 @@ abbrev noPayload : PayloadRel := fun _ _ _ => False
 
 /-- **An address the admission of group `g` reaches through its payload**: an address the family
 check of a block the group reaches names (`payload`; `payloadOf` for a block reached so), and
-from such an address, as the walk goes, a used reference that is not covered and the block of a
-projection record. Together with `GroupReach` it is the group's reach with the payload. -/
+from such an address, as the walk goes, a used reference that is not already stored and the block
+of a projection record. Together with `GroupReach` it is the group's reach with the payload. -/
 inductive PayReach (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (Pay : PayloadRel) (g : Nat) :
     _root_.Address → Prop where
   | payload {B a : _root_.Address} : GroupReach t E₀ g B → Pay g B a → PayReach t E₀ Pay g a
   | payloadOf {B a : _root_.Address} : PayReach t E₀ Pay g B → Pay g B a →
       PayReach t E₀ Pay g a
   | ref {a x : _root_.Address} : PayReach t E₀ Pay g a → UsedRef E₀ a x →
-      ¬ Claim.CoveredAt t (some (valLimit g)) x → PayReach t E₀ Pay g x
+      ¬ AlreadyStoredRole t g x → PayReach t E₀ Pay g x
   | owner {a : _root_.Address} {c : Ixon.Constant} : PayReach t E₀ Pay g a →
       recordOf E₀ a = some c → IsProj c → PayReach t E₀ Pay g (Ix.Cert.ownerOf a c)
 
