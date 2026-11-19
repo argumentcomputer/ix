@@ -1373,12 +1373,10 @@ private theorem flat_originals_walk_spec {rootCalls : List (Call F)} {t : Ix.Ker
             hma_eq, tmOExactList_mono evrec.heap_extends hnil_e, hlvls.mono ext_m4_m6⟩
         refine ⟨⟨memberAddr (ixAddr ba) pos (.indc ind), false, [],
             (List.range ind.lvls.toNat).map fun j => .param (off + j)⟩ :: os, ?_, ?_, ?_, ?_⟩
-        · simp only [indcAddrs, originals, hos]
-          change (match indInfoAt E₀ (memberAddr (ixAddr ba) pos (.indc ind)) with
-            | some (some i) => some (⟨memberAddr (ixAddr ba) pos (.indc ind), false, [],
-                (List.range i.nl).map fun j => .param (off + j)⟩ :: os)
-            | _ => none) = _
-          rw [hinfo_at]
+        · simp only [indcAddrs, originals]
+          rw [show (FlatView.ofStore t E₀).ci (memberAddr (ixAddr ba) pos (.indc ind)) =
+            some (some ⟨ind.lvls.toNat, ind.params.toNat, ind.ctors.size, ixAddr ba, pos⟩) from hinfo_at,
+            hos]
         · exact Lib.rep_store_cons flatEntryRepExact_heapMono₂ hentry hrep_os
         · simp [indcAddrs, haddrs]
         · intro e he
