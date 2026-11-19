@@ -27,7 +27,10 @@ program to reject a claim that needs the block:
 * under a binding whose `Nat.add` record also names `Even`, so that the validation of
   `Nat.add`'s group (limit 8) checks Even's family: the record bound to `Nat.mul`, an operation
   of a later group, as the first advice record (the operation order at a payload record; the same
-  binding with the advice unchanged is accepted).
+  binding with the advice unchanged is accepted and exercises `KernelRoles::assert_in_order`);
+* under a binding whose `propext` record carries an unused `sharing` entry naming `Even`, with
+  `Nat.mod` (a later operation at limit 33) prepended to Even's advice and with Even's advice
+  unchanged (refused by the empty-sharing check on standard axioms).
 
 With the unmodified advice the same claims on the block's types are accepted
 (`ixvm-model-advice`). A claim on the family's recursor is refused at the recursor
@@ -135,17 +138,49 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
     | some h => { env with anonHints := env.anonHints.insert addXA h }
     | none => env
   let envX ← IO.ofExcept (withRoleTable (hinted.storeConst addXA addX) tableX.toBytes)
+  let envX := { envX with modelsAttached := true }
   let some bindingX := envX.roleBinding | throw (IO.userError "the rebound environment has no binding")
   let spec ← IO.ofExcept Ix.SpecDigest.specDigest
-  let envLater := { envX with models := envX.models.insert evenB { pE with advice := #[mulA] ++ pE.advice }.ser }
+  let envLater := { envX with
+    models := envX.models.insert evenB { pE with advice := #[mulA] ++ pE.advice }.ser,
+    modelsAttached := true }
+  -- a binding whose `propext` record carries an unused sharing entry referencing `Even`
+  -- (tested both with `Nat.mod` as a later-operation advice entry at limit 33 and with
+  -- Even's honest advice unchanged): refused because standard axioms carry empty sharing
+  let propA ← roleAt .propext
+  let modA ← roleAt .natMod
+  let some propC := env.getConst? propA | throw (IO.userError "the record bound to propext is not stored")
+  let propJunk : Ixon.Constant := { propC with
+    sharing := propC.sharing.push (.ref propC.refs.size.toUInt64 #[]),
+    refs := propC.refs.push even }
+  let propJunkA := Address.blake3 (Ixon.serConstant propJunk)
+  let tableP : Ix.Kernel.RoleTable :=
+    { table with bound := table.bound.map fun (r, b) => (r, if r == .propext then propJunkA else b) }
+  IO.ofExcept tableP.check
+  let envP ← IO.ofExcept (withRoleTable (env.storeConst propJunkA propJunk) tableP.toBytes)
+  let envP := { envP with modelsAttached := true }
+  let some bindingP := envP.roleBinding | throw (IO.userError "the propext-rebound environment has no binding")
+  let envPropJunk := { envP with
+    models := envP.models.insert evenB { pE with advice := #[modA] ++ pE.advice }.ser,
+    modelsAttached := true }
   let orderCases : Array Builder := #[
     fun _ => Case.ofClaim
       "advice must-reject: Nat.add's record reaches Even, whose advice lists Nat.mul's record (a later operation)"
       envLater (.binding spec bindingX.address) (accept := false)
       (rejectsWith := some "an operation is reached before its group is validated"),
+    fun _ => do
+      let c ← Case.ofClaim
+        "advice must-reject control: Nat.add's record reaches Even, with Even's advice unchanged"
+        envX (.binding spec bindingX.address)
+      return { c with exercises := some "KernelRoles::assert_in_order" },
     fun _ => Case.ofClaim
-      "advice must-reject control: Nat.add's record reaches Even, with Even's advice unchanged"
-      envX (.binding spec bindingX.address)]
+      "advice must-reject: propext carries a junk sharing entry naming Even, whose advice lists Nat.mod"
+      envPropJunk (.binding spec bindingP.address) (accept := false)
+      (rejectsWith := some "a bound standard axiom carries sharing entries"),
+    fun _ => Case.ofClaim
+      "advice must-reject: propext carries a junk sharing entry naming Even (honest advice)"
+      envP (.binding spec bindingP.address) (accept := false)
+      (rejectsWith := some "a bound standard axiom carries sharing entries")]
   -- Tree's payload with one more kind-2 witness: an unsafe copy of its container recursor (a
   -- standalone recursor record), on the same path to the container's block; refused for the flag
   -- (`check_container_rec`), as the native route's recursor check does not read it
