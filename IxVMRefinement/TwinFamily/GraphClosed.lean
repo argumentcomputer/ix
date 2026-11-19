@@ -1058,7 +1058,7 @@ theorem graphStoreClosed_of_envWF
           ⟨b', cb', ms', i', m', hTb', _, hcb', hcbi', hm'', rfl⟩
       · obtain ⟨_, _, hbas | hkept⟩ := storedAt_provenance hctx.shape ht htwf hst_b
         · exact Or.inr (Or.inr (Or.inl (hF_basis.members b _ hbas h _ ha)))
-        · obtain ⟨-, -, ⟨cR, hcR, hread⟩, -⟩ := hkept
+        · obtain ⟨-, ci₀, ⟨cR, hcR, hread⟩, -⟩ := hkept
           have hceq := hRE₀_eq b cR cb hcR hcb
           subst cR; rw [hcbi] at hread; exact False.elim hread
       · have hcb_eq : cb' = cb := Option.some.inj (hcb'.symm.trans hcb)
