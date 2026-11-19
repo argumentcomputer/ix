@@ -107,36 +107,20 @@ impl Prepared<Val> {
     validate_config(&config, &definitions)?;
     let (system, key) = tracing::info_span!("compression/setup")
       .in_scope(|| System::new_without_preprocessed(config, definitions));
-    let traces = tracing::info_span!("compression/trace")
-      .in_scope(|| compiled.traces(&self.assignment))?;
-    let empty_lookups: Vec<_> = (0..traces.len())
-      .map(|_| LookupValues::builder(0, &[]).finish())
-      .collect();
-    let mut stage_1 = tracing::info_span!("compression/stage1").in_scope(|| {
-      system.prove_stage_1(SystemWitness { traces, lookups: empty_lookups })
-    });
-    // `traces` has been consumed by stage-1 commitment and `definitions` was
-    // consumed during setup without retaining preprocessed clones. Materialize
-    // lookup messages one active circuit at a time so neither all traces nor
-    // all preprocessed matrices coexist with the lookup buffers.
-    let lookups_started = std::time::Instant::now();
+    // Materialize each circuit's trace and lookup messages one at a time so
+    // preprocessed matrices are never cloned across all circuits and frontend
+    // state (`compiled` and `assignment`) is dropped before stage-1 LDEs.
+    let trace_span = tracing::info_span!("compression/trace").entered();
+    let count = system.circuits.len();
     let shards = compiled.trace_shards(&self.assignment)?;
-    stage_1.lookups = stage_1
-      .active_indices
-      .iter()
-      .enumerate()
-      .map(|(active_pos, &ci)| -> Result<_> {
-        let circuit = &system.circuits[ci];
-        if circuit.graph.lookups.is_empty() {
-          return Ok(
-            LookupValues::builder(
-              1usize << stage_1.log_degrees[active_pos],
-              &[],
-            )
-            .finish(),
-          );
-        }
-        let trace = shards.trace(ci)?;
+    let mut traces = Vec::with_capacity(count);
+    let mut lookups = Vec::with_capacity(count);
+    for ci in 0..count {
+      let trace = shards.trace(ci)?;
+      let circuit = &system.circuits[ci];
+      let lookup = if trace.height() == 0 || circuit.graph.lookups.is_empty() {
+        LookupValues::builder(trace.height(), &[]).finish()
+      } else {
         let preprocessed = (circuit.preprocessed_width > 0)
           .then(|| {
             compiled
@@ -152,24 +136,23 @@ impl Prepared<Val> {
             "circuit {ci}: main trace height must equal preprocessed trace height"
           );
         }
-        Ok(compute_lookup_values_range(
+        compute_lookup_values_range(
           &circuit.graph,
           &trace,
           preprocessed.as_ref(),
           0..trace.height(),
-        ))
-      })
-      .collect::<Result<Vec<_>>>()?;
-    tracing::info!(
-      circuits = stage_1.lookups.len(),
-      seconds = lookups_started.elapsed().as_secs_f64(),
-      "Lookup expressions materialized"
-    );
+        )
+      };
+      traces.push(trace);
+      lookups.push(lookup);
+    }
+    drop(trace_span);
     drop(compiled);
     drop(self.assignment);
     let refs: Vec<_> = claims.iter().map(Vec::as_slice).collect();
+    let witness = SystemWitness { traces, lookups };
     let proof = tracing::info_span!("compression/prove")
-      .in_scope(|| system.prove_committed(&key, &refs, stage_1));
+      .in_scope(|| system.prove_multiple_claims(&key, &refs, witness));
     drop(key);
     tracing::info_span!("compression/verify")
       .in_scope(|| system.verify_multiple_claims(&refs, &proof))

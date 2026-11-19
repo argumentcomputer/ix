@@ -620,6 +620,23 @@ fn fixed_partition(
     )?;
     return Ok((circuit, data));
   }
+  #[cfg(not(feature = "cuda"))]
+  if let Some(spill_dir) = config.spill_dir() {
+    let mut definition = compiled
+      .kzg_circuit_input(
+        index,
+        config.pcs().verifier_params().max_trace_len(),
+        config.max_quotient_degree(),
+      )?
+      .ok_or("missing compiled fixed trace")?;
+    let circuit = compile_fixed_circuit(config, &definition)?;
+    let preprocessed =
+      definition.preprocessed.take().ok_or("missing fixed columns")?;
+    let domain = config.pcs().natural_domain_for_degree(preprocessed.height());
+    let (_, data) =
+      config.pcs().commit_matrix_spilled(domain, preprocessed, spill_dir)?;
+    return Ok((circuit, data));
+  }
   let definition = compiled
     .kzg_circuit_input(
       index,
