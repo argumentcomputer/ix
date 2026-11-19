@@ -42,6 +42,10 @@ symbol that no library defines, so a binary that links them fails. -/
 -- Both `Ix.Cert.compile` (which drives `Ix.Compile.compileEnv` / `compileEnvFold`) and
 -- `Ix.Compile.ReadyCompile.reportIO` (the parallel ready-queue driver used by
 -- `Ix.CompileM.compileCertifiedPrepared`) are audited here.
+-- Binder-data annotation runs inside compilation through `IxC.Kernel` expressions,
+-- keys, levels, and names, adding their computed-field constructors/overrides and
+-- `Ix.Kernel.Expr.{instantiate1Lift,liftLooseBVars}` csimp replacements to the
+-- unruled list (all admitted by `Ix.Kernel.Audit.runtimeRulings` in the checks below).
 /-- error: project-level execution replacements reached from [Ix.Cert.compile]:
 [Address.admissionHash,
  Ix.groundExpr,
@@ -60,7 +64,37 @@ symbol that no library defines, so a binary that links them fails. -/
  Ix.Name.toStringAux,
  Ixon.RawEnv.addNameComponentsWithBlobs,
  _private.Ix.Environment.0.Address.mutsName.go,
- _private.Ix.Environment.0.Ix.Expr.hashSyntax] -/
+ _private.Ix.Environment.0.Ix.Expr.hashSyntax,
+ Ix.Kernel.Expr.app,
+ Ix.Kernel.Expr.bvar,
+ Ix.Kernel.Expr.const,
+ Ix.Kernel.Expr.forallE,
+ Ix.Kernel.Expr.fvar,
+ Ix.Kernel.Expr.instantiate1Lift,
+ Ix.Kernel.Expr.lam,
+ Ix.Kernel.Expr.letE,
+ Ix.Kernel.Expr.liftLooseBVars,
+ Ix.Kernel.Expr.lit,
+ Ix.Kernel.Expr.proj,
+ Ix.Kernel.Expr.sort,
+ Ix.Kernel.Key.id,
+ Ix.Kernel.Level.hashData,
+ Ix.Kernel.Name.hashData,
+ Ix.Kernel.Name.num,
+ Ix.Kernel.Expr.app._override,
+ Ix.Kernel.Expr.bvar._override,
+ Ix.Kernel.Expr.const._override,
+ Ix.Kernel.Expr.forallE._override,
+ Ix.Kernel.Expr.fvar._override,
+ Ix.Kernel.Expr.lam._override,
+ Ix.Kernel.Expr.letE._override,
+ Ix.Kernel.Expr.lit._override,
+ Ix.Kernel.Expr.proj._override,
+ Ix.Kernel.Expr.sort._override,
+ Ix.Kernel.Key.id._override,
+ Ix.Kernel.Level.hashData._override,
+ Ix.Kernel.Name.hashData._override,
+ Ix.Kernel.Name.num._override] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { csimpModules := #[`Ix] }
 
@@ -82,7 +116,37 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Cert.compile] #[`Init, `Std] { c
  Ix.Name.toStringAux,
  Ixon.RawEnv.addNameComponentsWithBlobs,
  _private.Ix.Environment.0.Address.mutsName.go,
- _private.Ix.Environment.0.Ix.Expr.hashSyntax] -/
+ _private.Ix.Environment.0.Ix.Expr.hashSyntax,
+ Ix.Kernel.Expr.app,
+ Ix.Kernel.Expr.bvar,
+ Ix.Kernel.Expr.const,
+ Ix.Kernel.Expr.forallE,
+ Ix.Kernel.Expr.fvar,
+ Ix.Kernel.Expr.instantiate1Lift,
+ Ix.Kernel.Expr.lam,
+ Ix.Kernel.Expr.letE,
+ Ix.Kernel.Expr.liftLooseBVars,
+ Ix.Kernel.Expr.lit,
+ Ix.Kernel.Expr.proj,
+ Ix.Kernel.Expr.sort,
+ Ix.Kernel.Key.id,
+ Ix.Kernel.Level.hashData,
+ Ix.Kernel.Name.hashData,
+ Ix.Kernel.Name.num,
+ Ix.Kernel.Expr.app._override,
+ Ix.Kernel.Expr.bvar._override,
+ Ix.Kernel.Expr.const._override,
+ Ix.Kernel.Expr.forallE._override,
+ Ix.Kernel.Expr.fvar._override,
+ Ix.Kernel.Expr.lam._override,
+ Ix.Kernel.Expr.letE._override,
+ Ix.Kernel.Expr.lit._override,
+ Ix.Kernel.Expr.proj._override,
+ Ix.Kernel.Expr.sort._override,
+ Ix.Kernel.Key.id._override,
+ Ix.Kernel.Level.hashData._override,
+ Ix.Kernel.Name.hashData._override,
+ Ix.Kernel.Name.num._override] -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.Compile.ReadyCompile.reportIO] #[`Init, `Std] { csimpModules := #[`Ix] }
 

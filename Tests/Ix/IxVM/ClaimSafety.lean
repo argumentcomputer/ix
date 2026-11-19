@@ -1,6 +1,7 @@
 import Ix.Meta
 import Ix.Check
 import Ix.Shard.Environment
+import Ix.Shard.Check
 import Ix.IxVM.ClaimHarness
 import Tests.Ix.IxVM.Harness
 
@@ -41,7 +42,10 @@ program: `Ixon.Env.outsideLogicAt` agrees with Lean's own flags on every
 fixture, the shard owner and the claim builder leave out the refused seeds and
 the inert axioms with the constants that use one (`inertUsers`), and every
 walk edge from a constant in Lean's logic lands on one (so the owned sets
-stay closed). `corpus` checks the last on a compiled corpus.
+stay closed). `corpus` checks the last on a compiled corpus. The parts of a split
+manifest own, with owned sets computed once per manifest and divided among the parts,
+what a pass over the environment gives their blocks, with the same claims
+(`splitOwnership`).
 -/
 
 namespace Tests.Ix.IxVM.ClaimSafety
@@ -249,6 +253,49 @@ def logicEdgeViolations (env : Ixon.Env) : Array (Address × Address) × Nat := 
         if outside e ce then bad := bad.push (a, e)
   return (bad, count)
 
+/-- The check-schedule blocks of `env`: every record that is its own block's owner. -/
+def ownerBlocks (env : Ixon.Env) : Array Address :=
+  env.consts.fold (init := #[]) fun acc a lc =>
+    match lc.get? with
+    | some c => if c.ownerAt a == a then acc.push a else acc
+    | none => acc
+
+/-- A manifest of `blocks` in three shards, each cut as the split loop of `ix check` and
+`ix prove` cuts a part that does not fit (`Ix.Shard.Check.cutOwned`): into three parts,
+then each part in halves, four levels deep. The shards' owned constants come from one pass
+over the environment (`Ix.Shard.ownedConstsPer`, as both manifest routes take them) and a
+part's are divided from its parent's. Every shard and part must own exactly the constants
+`Ix.Shard.ownedConstsForBlocks` computes for its blocks from the environment, in the same
+order, and its claim must be the one `Ix.Shard.shardClaimDigest` reconstructs for its
+blocks. Returns the number of shards and parts compared and of those that hold a block
+outside Lean's logic. -/
+def splitOwnership (env : Ixon.Env) (blocks : Array Address) : Except String (Nat × Nat) := do
+  let shards := Ix.Shard.Check.cutBlocks blocks 3
+  let owners := Ix.Shard.ownedConstsPer env shards
+  let mut pending : Array (Array Address × Array Address × Nat) :=
+    shards.zipIdx.map fun (shard, k) => (shard, owners[k]!, 0)
+  let mut compared := 0
+  let mut withAside := 0
+  while !pending.isEmpty do
+    let (part, owned, depth) := pending.back!
+    pending := pending.pop
+    let reference := Ix.Shard.ownedConstsForBlocks env part
+    unless owned == reference do
+      throw s!"a part of {part.size} block(s) from {part[0]!} at depth {depth}: \
+        {owned.size} owned constants divided from its parent, {reference.size} computed"
+    unless owned.isEmpty do
+      let (claim, _) ← shardCheckEnvClaimTrees env owned true
+      let digest ← Ix.Shard.shardClaimDigest env part true
+      unless Address.blake3 (Ix.Claim.ser claim) == digest do
+        throw s!"a part of {part.size} block(s) from {part[0]!} at depth {depth}: its claim \
+          is not the one reconstructed for its blocks"
+    compared := compared + 1
+    if part.any env.outsideLogicAt then withAside := withAside + 1
+    if part.size > 1 && depth < 4 then
+      for (sub, subOwned) in Ix.Shard.Check.cutOwned env part owned (if depth == 0 then 3 else 2) do
+        pending := pending.push (sub, subOwned, depth + 1)
+  return (compared, withAside)
+
 /-- The host side: the predicate against Lean's flags, the owner, the claim
 builder, `ix check`'s refusal and the closure of what stays owned. -/
 def hostChecks (leanEnv : Lean.Environment) (env : Ixon.Env)
@@ -268,10 +315,7 @@ def hostChecks (leanEnv : Lean.Environment) (env : Ixon.Env)
       throw s!"ix check would refuse {n} ({label})"
   -- one shard owning every block: the refused seeds are owned by nobody, the
   -- accepted ones are owned
-  let blocks : Array Address := env.consts.fold (init := #[]) fun acc a lc =>
-    match lc.get? with
-    | some c => if c.ownerAt a == a then acc.push a else acc
-    | none => acc
+  let blocks := ownerBlocks env
   let owned := (Ix.Shard.ownedConstsPer env #[blocks])[0]!
   for (label, n) in refused do
     if owned.contains (← addrOf n) then throw s!"the shard owner kept {n} ({label})"
@@ -330,6 +374,18 @@ def run : IO UInt32 := do
   | .ok () => IO.println "[ixvm-claim-safety] host checks passed"
   | .error e =>
     IO.eprintln s!"[ixvm-claim-safety] host check failed: {e}"
+    return 1
+  match splitOwnership env (ownerBlocks env) with
+  | .ok (compared, withAside) =>
+    IO.println s!"[ixvm-claim-safety] split manifest: {compared} shards and parts own what \
+      the environment gives their blocks, with the same claims; {withAside} hold a block \
+      outside Lean's logic"
+    -- the parts have to reach the blocks the owner sets aside
+    if withAside == 0 then
+      IO.eprintln "[ixvm-claim-safety] no part of the split manifest holds a block outside Lean's logic"
+      return 1
+  | .error e =>
+    IO.eprintln s!"[ixvm-claim-safety] split manifest: {e}"
     return 1
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
   let check (label : String) (a : Address) (accept : Bool) : Builder := fun _ =>

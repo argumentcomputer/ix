@@ -137,13 +137,15 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
   let hinted := match env.anonHints[addA]? with
     | some h => { env with anonHints := env.anonHints.insert addXA h }
     | none => env
-  let envX ← IO.ofExcept (withRoleTable (hinted.storeConst addXA addX) tableX.toBytes)
-  let envX := { envX with modelsAttached := true }
+  let withHonestModels (dst : Ixon.Env) : Ixon.Env :=
+    { dst with models := env.models, modelRecords := env.modelRecords,
+               modelHints := env.modelHints, modelBlobs := env.modelBlobs,
+               modelDeps := env.modelDeps, modelsAttached := true }
+  let envX := withHonestModels (← IO.ofExcept (withRoleTable (hinted.storeConst addXA addX) tableX.toBytes))
   let some bindingX := envX.roleBinding | throw (IO.userError "the rebound environment has no binding")
   let spec ← IO.ofExcept Ix.SpecDigest.specDigest
   let envLater := { envX with
-    models := envX.models.insert evenB { pE with advice := #[mulA] ++ pE.advice }.ser,
-    modelsAttached := true }
+    models := envX.models.insert evenB { pE with advice := #[mulA] ++ pE.advice }.ser }
   -- a binding whose `propext` record carries an unused sharing entry referencing `Even`
   -- (tested both with `Nat.mod` as a later-operation advice entry at limit 33 and with
   -- Even's honest advice unchanged): refused because standard axioms carry empty sharing
@@ -157,12 +159,10 @@ def run (lenv : Lean.Environment) : IO UInt32 := do
   let tableP : Ix.Kernel.RoleTable :=
     { table with bound := table.bound.map fun (r, b) => (r, if r == .propext then propJunkA else b) }
   IO.ofExcept tableP.check
-  let envP ← IO.ofExcept (withRoleTable (env.storeConst propJunkA propJunk) tableP.toBytes)
-  let envP := { envP with modelsAttached := true }
+  let envP := withHonestModels (← IO.ofExcept (withRoleTable (env.storeConst propJunkA propJunk) tableP.toBytes))
   let some bindingP := envP.roleBinding | throw (IO.userError "the propext-rebound environment has no binding")
   let envPropJunk := { envP with
-    models := envP.models.insert evenB { pE with advice := #[modA] ++ pE.advice }.ser,
-    modelsAttached := true }
+    models := envP.models.insert evenB { pE with advice := #[modA] ++ pE.advice }.ser }
   let orderCases : Array Builder := #[
     fun _ => Case.ofClaim
       "advice must-reject: Nat.add's record reaches Even, whose advice lists Nat.mul's record (a later operation)"
