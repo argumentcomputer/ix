@@ -249,8 +249,9 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
       exact hmem
     -- `env_walk_all`
     · intro x_rc x_addr r addr h h' calls hfuel hrc ha ev
-      obtain ⟨m2, cs12, x_info, w39, x_refs, w40, w41, v699, m700, cs702, v708, m709, cs719, cs749, v754, m771,
-        cs779, ev14, sg707, ev721, ev781, ev751, hc796⟩ := Obs.«KernelClaim::env_walk_all».obs ev
+      obtain ⟨m2, cs12, x_info, w39, x_refs, w40, w41, v699, m700, cs702, v708, m709, cs719, v_quot,
+        m_quot, cs_quot, cs749, v754, m771, cs779, ev14, sg707, ev721, ev_quot, ev781, ev751, hc796⟩ :=
+        Obs.«KernelClaim::env_walk_all».obs ev
       obtain ⟨ext1, rawBytes, c, hsz, hh_load, hblk, hde, hdeExact, hrep, _⟩ :=
         load_verified_constant_de ha ev14
       have hseg : V.HashedCollision extra calls ∨
@@ -462,7 +463,7 @@ private theorem env_walk_lim_fuel_aux {V : View} {extra : List ByteArray}
             [], by simp [TopRecsClosed], by simp, fun hp => absurd hp hnp⟩
       rcases hseg with hcoll | ⟨ext_seg, hchk_self, recs_blk, hcl_blk, hdep_blk, hown_blk⟩
       · exact .inl hcoll
-      have ext_guard : Heap.Extends m700 m709 := ev721.heap_extends
+      have ext_guard : Heap.Extends m700 m_quot := ev721.heap_extends.trans ev_quot.heap_extends
       obtain ⟨ext_idx, hidxs⟩ := const_idxs_of_spec (hrep.mono (ext_seg.trans ext_guard)) ev781
       have hrefs_rep :
           RepList Obs.Names.«Lists::Node<&[Field; 32]>» RepAddrElem m771 c.refs.toList x_refs := by

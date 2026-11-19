@@ -27,9 +27,10 @@ form and the validator it runs under: a typing claim that validates its binding
   definition of `False`, `True.intro` and `Lean.trustCompiler` at axioms of that type: the
   binding claim is accepted, and a theorem of `False` by the axiom is refused under both
   validators.
-* **A covered role at a recursor of a mutual family.** `Iff.rec`'s role bound at the recursor:
-  a typing claim that assumes the binding does not walk the recursor, and is accepted; the
-  binding claim for the table is refused, and so is the typing claim that validates it.
+* **A role at a recursor of a mutual family.** `Iff.rec`'s role bound at the recursor: the
+  family check refuses the typing claim whether it assumes the binding or validates it, and
+  the binding claim for the table is refused; under the default table the typing claim is
+  accepted.
 * **Inert declarations.** Two blocks that are not strictly positive, each with a model of unit
   types and an empty recursor family: accepted as declarations, and refused at a projection.
 * **A pinned basis record as the seed.** `Nat.rec` and `Nat` are accepted. -/
@@ -302,13 +303,15 @@ private def coveredRecursor (env : Ixon.Env) (which : Nat) (assumed : Bool) : Ex
   let some target := env.getAddr? (Ix.Name.fromLeanName (defs "taIota")) | throw "taIota is not compiled"
   match which with
   | 0 =>
+    -- the family check runs at the recursor, which the default table binds to no role
     typing "a reduction through a mutual family's recursor, the default table" env target assumed
-      false (some modeledRecursorRefusal)
+      true
   | 1 =>
     let env ← bound env (rebind table [(.iffRec, x)])
-    -- assumed, the covered recursor is not walked; validated, it is
+    -- the family check refuses a family whose recursor is bound to a role, whether or not the
+    -- binding is validated
     typing "a reduction through a mutual family's recursor bound at Iff.rec's role" env target
-      assumed assumed
+      assumed false (some "a modeled recursor is bound to a role")
   | _ =>
     let env ← bound env (rebind table [(.iffRec, x)])
     bindingClaim "Iff.rec's role at a mutual family's recursor" env false

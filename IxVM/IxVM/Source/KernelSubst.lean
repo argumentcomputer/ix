@@ -511,7 +511,9 @@ def expr_inst_many_let := aiur_fn⟦
 
   -- `e` with every `Const(a, Nil)` replaced by `v`, at every position: binder domains, `let`
   -- types and values, projection arguments. `v` is closed, so it is shared under binders as it
-  -- is. An occurrence of `a` with universe levels is refused: no cell naming `a` remains.
+  -- is. An occurrence of `a` with universe levels is refused, and so is a projection whose
+  -- structure is `a` (a projection's structure is an inductive; `a` is an operation, a
+  -- definition): no cell naming `a` remains.
 
 def subst_const := aiur_fn⟦
   fn subst_const(e: KernelTypes::KExpr, a: Bytes::AddressRef, v: KernelTypes::KExpr) -> KernelTypes::KExpr {
@@ -537,6 +539,7 @@ def subst_const := aiur_fn⟦
           (&(KernelTypes::KExprNode::Let(subst_const(t, a, v), subst_const(x, a, v),
                                           subst_const(b, a, v)))) } ,
         KernelTypes::KExprNode::Proj(s, i, x) => {
+          assert_eq!(Bytes::address_eq(s, a), 0, "an operation's certificate projects through the operation");
           (&(KernelTypes::KExprNode::Proj(s, i, subst_const(x, a, v)))) } ,
         _ => {  e } ,
       }

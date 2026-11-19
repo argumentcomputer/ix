@@ -1888,16 +1888,16 @@ private theorem wrap_rel_family {c : Ctx} (hlf : LoadFacts c) :
       ObsFn W fname args h r h' cs → r = .field 1 → Good c cs →
       ((fname = "KernelCheck::wrap_rel" →
         ∀ (d : Nat) (Γ : Nat → KExpr) (G D : KExpr) (xg xd : SourceValue F),
-          args = [xg, xd] → Tm c.κ d Γ h 0 G xg → Tm c.κ d Γ h 0 D xd →
+          args = [.field 0, xg, xd] → Tm c.κ d Γ h 0 G xg → Tm c.κ d Γ h 0 D xd →
           WrapTSem c.env.find? G D) ∧
        (fname = "KernelCheck::wrap_dom" →
         ∀ (d : Nat) (Γ : Nat → KExpr) (T T2 : KExpr) (xt xt2 : SourceValue F),
-          args = [xt, xt2] → Tm c.κ d Γ h 0 T xt → Tm c.κ d Γ h 0 T2 xt2 →
+          args = [.field 0, xt, xt2] → Tm c.κ d Γ h 0 T xt → Tm c.κ d Γ h 0 T2 xt2 →
           ∃ A : KExpr, ConsumeStar c.env.find? T A ∧ WrapTSem c.env.find? A T2) ∧
        (fname = "KernelCheck::wrap_binder" →
         ∀ (d : Nat) (Γ : Nat → KExpr) (T B T2 B2 : KExpr) (ℓ ℓ2 : KLevel)
           (xt xb xm xt2 xb2 xm2 : SourceValue F),
-          args = [xt, xb, xm, xt2, xb2, xm2] →
+          args = [.field 0, xt, xb, xm, xt2, xb2, xm2] →
           Tm c.κ d Γ h 0 T xt → Tm c.κ d Γ h 1 B xb → RepKLevel h ℓ xm →
           Tm c.κ d Γ h 0 T2 xt2 → Tm c.κ d Γ h 1 B2 xb2 → RepKLevel h ℓ2 xm2 →
           (bmeta ℓ).pw = (bmeta ℓ2).pw ∧
@@ -1907,16 +1907,16 @@ private theorem wrap_rel_family {c : Ctx} (hlf : LoadFacts c) :
     (fun fname args h r h' cs => r = .field 1 → Good c cs →
       ((fname = "KernelCheck::wrap_rel" →
         ∀ (d : Nat) (Γ : Nat → KExpr) (G D : KExpr) (xg xd : SourceValue F),
-          args = [xg, xd] → Tm c.κ d Γ h 0 G xg → Tm c.κ d Γ h 0 D xd →
+          args = [.field 0, xg, xd] → Tm c.κ d Γ h 0 G xg → Tm c.κ d Γ h 0 D xd →
           WrapTSem c.env.find? G D) ∧
        (fname = "KernelCheck::wrap_dom" →
         ∀ (d : Nat) (Γ : Nat → KExpr) (T T2 : KExpr) (xt xt2 : SourceValue F),
-          args = [xt, xt2] → Tm c.κ d Γ h 0 T xt → Tm c.κ d Γ h 0 T2 xt2 →
+          args = [.field 0, xt, xt2] → Tm c.κ d Γ h 0 T xt → Tm c.κ d Γ h 0 T2 xt2 →
           ∃ A : KExpr, ConsumeStar c.env.find? T A ∧ WrapTSem c.env.find? A T2) ∧
        (fname = "KernelCheck::wrap_binder" →
         ∀ (d : Nat) (Γ : Nat → KExpr) (T B T2 B2 : KExpr) (ℓ ℓ2 : KLevel)
           (xt xb xm xt2 xb2 xm2 : SourceValue F),
-          args = [xt, xb, xm, xt2, xb2, xm2] →
+          args = [.field 0, xt, xb, xm, xt2, xb2, xm2] →
           Tm c.κ d Γ h 0 T xt → Tm c.κ d Γ h 1 B xb → RepKLevel h ℓ xm →
           Tm c.κ d Γ h 0 T2 xt2 → Tm c.κ d Γ h 1 B2 xb2 → RepKLevel h ℓ2 xm2 →
           (bmeta ℓ).pw = (bmeta ℓ2).pw ∧
@@ -2053,22 +2053,25 @@ private theorem wrap_rel_family {c : Ctx} (hlf : LoadFacts c) :
           exact (kexpr_struct_eq_tm_one hG hD ev715).toWrapTSem c.env.find?
       · subst hfn hargs
         match Obs.«KernelCheck::wrap_dom».obsx ev with
-        | .other_other_other (he174 := he) .. =>
+        | .other_n0_other_other (he_vjzsmrqa := he) .. =>
           exact absurd (Value.field.inj he) one_ne_zero
+        | .other_other_n1_bind (hne_trdykyhf := hsm) .. | .other_other_other (hne_trdykyhf := hsm) .. =>
+          exact absurd rfl hsm
         | .Let (cs41 := cs41) (ev43 := ev43) (hc60 := hc60) .. =>
           -- a domain that is a `let` is compared whole
           subst hc60
           have hw := (ih _ _ _ _ _ _ (by rec_lt_calls) ev43 rfl
             (hgood.sub fun z hz => by simp [hz])).1 rfl d Γ T T2 xt xt2 rfl hT hT2
           exact ⟨T, .refl T, hw⟩
-        | .other_n1 (cs77 := cs103) (ev79 := ev105) (hc102 := hc128) .. =>
+        | .other_n0_n1 (cs_inoibkuh := cs103) (ev_teknbelh := ev105) (hc_mhrqvtgu := hc128) .. =>
           subst hc128
           have hw := (ih _ _ _ _ _ _ (by rec_lt_calls) ev105 rfl
             (hgood.sub fun z hz => by simp [hz])).1 rfl d Γ T T2 xt xt2 rfl hT hT2
           exact ⟨T, .refl T, hw⟩
-        | .other_other_n1_bind (m66 := m92) (cs77 := cs103) (m108 := m134)
-            (cs119 := cs145) (x_a := xa) (cs151 := cs177)
-            (ev79 := ev105) (ev121 := ev147) (ev153 := ev179) (hc170 := hc196) .. =>
+        | .other_n0_other_n1_bind (m_fwvfxwkq := m92) (cs_inoibkuh := cs103) (m_iludgrvx := m134)
+            (cs_szysaksf := cs145) (x_a := xa) (cs_bhijnlkz := cs177)
+            (ev_teknbelh := ev105) (ev_tyrbnlfr := ev147) (ev_jqflmfnr := ev179)
+            (hc_uuoaavue := hc196) .. =>
           subst hc196
           have e1 := ev105.heap_extends
           have e2 := ev147.heap_extends
@@ -2114,7 +2117,7 @@ theorem wrap_rel_spec {c : Ctx} {Γ : Nat → KExpr} {G D : KExpr} {xg xd : Sour
     {h h' : Heap F} {cs : List (Call F)}
     (hlf : LoadFacts c) (hgood : Good c cs)
     (hG : Tm c.κ 0 Γ h 0 G xg) (hD : Tm c.κ 0 Γ h 0 D xd)
-    (ev : ObsFn W "KernelCheck::wrap_rel" [xg, xd] h (.field 1) h' cs) :
+    (ev : ObsFn W "KernelCheck::wrap_rel" [.field 0, xg, xd] h (.field 1) h' cs) :
     WrapRelSem c.env.find? G D :=
   ((wrap_rel_family hlf _ _ _ _ _ _ ev rfl hgood).1 rfl 0 Γ G D xg xd rfl hG hD).toWrapRelSem
     (hasFvar_false_of_fvarIdxLt_zero (tm_fvarIdxLt hG))

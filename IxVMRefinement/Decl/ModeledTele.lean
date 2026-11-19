@@ -2568,7 +2568,8 @@ theorem openLamsAtFvars_split :
   | n1 + 1, n2, .letE _ _ _ _, _ | n1 + 1, n2, .lit _, _ | n1 + 1, n2, .proj _ _ _, _ => by
     rw [show n1 + 1 + n2 = (n1 + n2) + 1 by omega]; rfl
 
-/-- VM `defeq_lam_tele` walk judgment: opens `rP + cnF` `λ`-binders of `rhsA` in `rhsA`'s own
+/-- The `λ`-side walk judgment (the circuit's `defeq_lam_tele` now opens the Π-side telescope:
+`defeq_lam_tele_spec`): opens `rP + cnF` `λ`-binders of `rhsA` in `rhsA`'s own
 domain context `lfvs`, instantiates the recursor's `rP` prefix domains and the constructor's `cnF`
 field domains at `lfvs`, and equates `lfvs.map Expr.fvarTypeD` against `pdoms1 ++ pdoms2`. -/
 def LamTeleWalkJ (J : Judgements .anon) (envSelf : Ix.Kernel.Env .anon)
@@ -3698,23 +3699,23 @@ theorem defeq_lam_tele_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
       ObsFn W "KernelModeled::defeq_lam_tele" [rc, l, p, .field n, ctx] h r h' cs →
       Tm c.κ d Γ h 0 El l →
       Tm c.κ d Γ h 0 Ep p →
-      ∃ r_l r_ctx Γ' lfvs remL domsP remP,
+      ∃ r_l r_ctx Γ' pfvs remP ldoms remL,
         r = .tuple [r_l, r_ctx] ∧
-        openLamsAtFvars m El d = some (lfvs, remL) ∧
-        Expr.instPisAt lfvs Ep = some (domsP, remP) ∧
+        Ix.Kernel.openPisAtFvars m Ep d = some (pfvs, remP) ∧
+        Expr.instLamsAt pfvs El = some (ldoms, remL) ∧
         (∀ j < d, Γ' j = Γ j) ∧
-        (∀ k (hk : k < lfvs.length), Γ' (d + k) = lfvs[k].fvarTypeD) ∧
+        (∀ k (hk : k < pfvs.length), Γ' (d + k) = pfvs[k].fvarTypeD) ∧
         Tm c.κ (d + m) Γ' h' 0 remL r_l ∧
         TypesRep c.κ Γ' h' (d + m) r_ctx ∧
         GhostScoped Γ' (d + m) ∧
-        RawDefEqList c.env depth (lfvs.map Expr.fvarTypeD) domsP := by
+        RawDefEqList c.env depth ldoms (pfvs.map Expr.fvarTypeD) := by
   induction m with
   | zero =>
     intro Γ d depth El Ep rc l p ctx r n h h' cs hm _ _ hty hsc _ _ _ ev hEl _
     match Obs.«KernelModeled::defeq_lam_tele».obs ev with
     | .n0 (he19 := hr) (he34 := hh) .. =>
       subst hr hh
-      exact ⟨l, ctx, Γ, [], El, [], Ep, rfl, rfl, rfl, fun _ _ => rfl,
+      exact ⟨l, ctx, Γ, [], Ep, [], El, rfl, rfl, rfl, fun _ _ => rfl,
         fun _ hk => absurd hk (Nat.not_lt_zero _), by simpa using hEl, by simpa using hty,
         by simpa using hsc, trivial⟩
     | .other (hne36 := hne) .. =>
@@ -3735,37 +3736,37 @@ theorem defeq_lam_tele_spec (hCore : IxVM.Consistency.Core S₀) {c : Ctx}
         (hgood.sub tele_sub_calls) ev_de hTl hTp
       have hde_d := defEq_lift_to (depth := depth) hsc_env (by omega) hsc hTl hTp hde
       have e_de := ev_de.heap_extends
-      have ext_cons := Heap.Extends.snoc m124 (.construct kexprListEnum "Cons" [xdl, ctx])
+      have ext_cons := Heap.Extends.snoc m124 (.construct kexprListEnum "Cons" [xdp, ctx])
       have e_all := e_de.trans ext_cons
-      let Γ₁ := Ghost.extend Γ d Tl
+      let Γ₁ := Ghost.extend Γ d Tp
       have hBl_open : Tm c.κ (d + 1) Γ₁
-          (m124 ++ [.construct kexprListEnum "Cons" [xdl, ctx]]) 0
-          (Bl.instantiate1 (.fvar d Tl)) xbl :=
-        (hBl.mono e_all).open_body (Ghost.extend_at Γ d Tl) (Ghost.extend_below Γ d Tl)
+          (m124 ++ [.construct kexprListEnum "Cons" [xdp, ctx]]) 0
+          (Bl.instantiate1 (.fvar d Tp)) xbl :=
+        (hBl.mono e_all).open_body (Ghost.extend_at Γ d Tp) (Ghost.extend_below Γ d Tp)
       have hBp_open : Tm c.κ (d + 1) Γ₁
-          (m124 ++ [.construct kexprListEnum "Cons" [xdl, ctx]]) 0
-          (Bp.instantiate1 (.fvar d Tl)) xbp :=
-        (hBp.mono e_all).open_body (Ghost.extend_at Γ d Tl) (Ghost.extend_below Γ d Tl)
-      have hty₁ := typesRep_snoc_extend (hty.mono e_de) (hTl.mono e_de)
-      have hsc₁ := hsc.extend (Tm.wscopedB hsc hTl)
-      obtain ⟨r_l, r_ctx, Γ', lfvs, remL, domsP, remP, hr_eq, hop, hinst, hΓ_lo, hΓ_hi,
+          (m124 ++ [.construct kexprListEnum "Cons" [xdp, ctx]]) 0
+          (Bp.instantiate1 (.fvar d Tp)) xbp :=
+        (hBp.mono e_all).open_body (Ghost.extend_at Γ d Tp) (Ghost.extend_below Γ d Tp)
+      have hty₁ := typesRep_snoc_extend (hty.mono e_de) (hTp.mono e_de)
+      have hsc₁ := hsc.extend (Tm.wscopedB hsc hTp)
+      obtain ⟨r_l, r_ctx, Γ', pfvs, remP, ldoms, remL, hr_eq, hop, hinst, hΓ_lo, hΓ_hi,
           hremL, hty', hsc', hlist⟩ :=
         ih (Γ := Γ₁) (d := d + 1) (depth := depth) (n := n - 1) (by omega) (by omega)
           (hrc.mono e_all) hty₁ hsc₁ hef hlf (hgood.sub fun _ hx => by simp [hx])
           ev_rec hBl_open hBp_open
       rw [show d + 1 + m = d + (m + 1) by omega] at hremL hty' hsc'
-      refine ⟨r_l, r_ctx, Γ', .fvar d Tl :: lfvs, remL, Tp :: domsP, remP, hr_eq,
-        by simp [openLamsAtFvars, hop],
-        by simp [Expr.instPisAt, hinst],
-        fun j hj => (hΓ_lo j (by omega)).trans (Ghost.extend_below Γ d Tl j hj),
+      refine ⟨r_l, r_ctx, Γ', .fvar d Tp :: pfvs, remP, Tl :: ldoms, remL, hr_eq,
+        by simp [Ix.Kernel.openPisAtFvars, hop],
+        by simp [Expr.instLamsAt, hinst],
+        fun j hj => (hΓ_lo j (by omega)).trans (Ghost.extend_below Γ d Tp j hj),
         ?_, hremL, hty', hsc', ⟨hde_d, hlist⟩⟩
       intro k hk
       cases k with
       | zero =>
         simp only [Nat.add_zero, List.getElem_cons_zero, Expr.fvarTypeD]
-        exact (hΓ_lo d (by omega)).trans (Ghost.extend_at Γ d Tl)
+        exact (hΓ_lo d (by omega)).trans (Ghost.extend_at Γ d Tp)
       | succ k' =>
-        have hk' : k' < lfvs.length := by simp at hk; omega
+        have hk' : k' < pfvs.length := by simp at hk; omega
         simpa [Nat.add_assoc, Nat.add_comm 1 k'] using hΓ_hi k' hk'
 
 end IxVM.Refinement.Decl

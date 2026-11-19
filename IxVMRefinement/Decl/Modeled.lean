@@ -863,7 +863,7 @@ via `ModelExtStep` and installs `a` as a `.defnInfo` in `c_next.env`. -/
 def AdviceStepOracle (calls : List (Call F)) (blockNames : List KKey)
     (rc wset : SourceValue F) : Prop :=
   ∀ (c_cur : Ctx) (seenSet : Bytes.Address → Prop) (a : Bytes.Address)
-    (x_a x_seen v89 : SourceValue F) (h₀ m55 m90 : Heap F) (cs63 cs100 : List (Call F)),
+    (x_a x_seen v89 : SourceValue F) (h₀ m55s m55 m90 : Heap F) (cs63 cs63w cs100 : List (Call F)),
     DeclStoreInv c_cur.env →
     AuxRootSynced c_cur.env →
     (∀ k ∈ blockNames, c_cur.env.find? k = none) →
@@ -871,9 +871,11 @@ def AdviceStepOracle (calls : List (Call F)) (blockNames : List KKey)
     EnvFacts c_cur → LoadFacts c_cur → ExactGetCI c_cur → Good c_cur calls →
     Bytes.RepAddressRef addrTy h₀ a x_a →
     AddrMapAll addrMapEnum (fun _ k _ => seenSet k) h₀ x_seen →
-    ObsFn W "KernelClaim::addr_set_member" [x_a, x_seen] h₀ (.field 0) m55 cs63 →
+    ObsFn W "KernelClaim::addr_set_member" [x_a, x_seen] h₀ (.field 0) m55s cs63 →
+    ObsFn W "KernelClaim::addr_set_member" [x_a, wset] m55s (.field 0) m55 cs63w →
     ObsFn W "KernelModeled::check_advice_record" [rc, x_a, x_seen, wset] m55 v89 m90 cs100 →
     (∀ x ∈ cs63, x ∈ calls) →
+    (∀ x ∈ cs63w, x ∈ calls) →
     (∀ x ∈ cs100, x ∈ calls) →
     ∃ c_next : Ctx,
       c_next.E = c_cur.E ∧ c_next.t = c_cur.t ∧ c_next.lim = c_cur.lim ∧
@@ -914,8 +916,8 @@ theorem check_advice_records_spec {calls : List (Call F)} {blockNames : List KKe
         Heap.Extends h h'
   | [], seenSet, c_cur, x_advice, x_seen, r, h, h', cs,
       hS, hAux, hfr, hdefs, _, hef, hlf, hex, hg, hadv_rep, hseen, ev, _ => by
-    cases Obs.«KernelModeled::check_advice_records».obs ev with
-    | Nil _ he21 he22 _ =>
+    match Obs.«KernelModeled::check_advice_records».obs ev with
+    | .Nil (he21 := he21) (he22 := he22) .. =>
       rw [he21, he22]
       refine ⟨c_cur, rfl, rfl, rfl, ModelExtStep.refl c_cur.env, hS, hAux, hfr,
         hef, hlf, hex, hg, ?_, ?_, Heap.Extends.refl h⟩
@@ -924,31 +926,36 @@ theorem check_advice_records_spec {calls : List (Call F)} {blockNames : List KKe
         rcases hb with hs | hmem
         · exact hdefs b hs
         · exact nomatch hmem
-    | Cons _ _ _ _ _ _ _ _ _ _ _ _ ld12 _ _ _ _ _ _ =>
+    | .Cons (ld12 := ld12) .. =>
       obtain ⟨_, _, he, _, _⟩ := Lib.rep_cons_of_load hadv_rep ld12
       cases he
   | a :: rest, seenSet, c_cur, x_advice, x_seen, r, h, h', cs,
       hS, hAux, hfr, hdefs, hrc, hef, hlf, hex, hg, hadv_rep, hseen, ev, hsub => by
-    cases Obs.«KernelModeled::check_advice_records».obs ev with
-    | Nil ld12 _ _ _ =>
+    match Obs.«KernelModeled::check_advice_records».obs ev with
+    | .Nil (ld12 := ld12) .. =>
       cases Lib.rep_nil_of_load hadv_rep ld12
-    | Cons x_a x_rest v52 m55 cs63 v89 m90 cs100 cs138 v143 m160 cs168
-        ld12 ev65 heq88 ev102 ev170 ev140 hc201 =>
-      subst heq88 hc201
+    | .Cons (x_a := x_a) (m_cnmrgvie := m55s) (cs_jxqtckhn := cs63) (cs_eiizeeve := cs63w)
+        (m_aiikskik := m55) (v89 := v89) (m90 := m90) (cs100 := cs100) (v143 := v143)
+        (m160 := m160) (ld12 := ld12) (ev_mfihupbr := ev65) (heq_sefkntmx := heq88)
+        (ev_xzbngsxs := ev65w) (heq_xyxoxrbw := heq88w) (ev102 := ev102) (ev170 := ev170)
+        (ev140 := ev140) (hc201 := hc201) .. =>
+      subst heq88 heq88w hc201
       obtain ⟨a', rest', heq_cons, ha_rep, hrest_rep⟩ := Lib.rep_cons_of_load hadv_rep ld12
       injection heq_cons with ha_eq hrest_eq
       subst ha_eq hrest_eq
       obtain ⟨c_next, hE_eq, ht_eq, hlim_eq, hstep1, hfr1, hef1, hlf1, hex1, hg1,
           cvm_a, mval_a, hint_a, hdef_a⟩ :=
-        horacle c_cur seenSet a x_a x_seen v89 h m55 m90 cs63 cs100
-          hS hAux hfr hrc hef hlf hex hg ha_rep hseen ev65 ev102
+        horacle c_cur seenSet a x_a x_seen v89 h m55s m55 m90 cs63 cs63w cs100
+          hS hAux hfr hrc hef hlf hex hg ha_rep hseen ev65 ev65w ev102
+          (fun x hx => hsub x (by simp [hx]))
           (fun x hx => hsub x (by simp [hx]))
           (fun x hx => hsub x (by simp [hx]))
       have hS1 : DeclStoreInv c_next.env := hstep1.storeStep hS
       have hAux1 : AuxRootSynced c_next.env := hstep1.auxStep hAux
       have hκ_eq : c_next.κ = c_cur.κ := by simp [Ctx.κ, ht_eq]
       have ext_90 : Heap.Extends h m90 :=
-        (ObsFn.heap_extends ev65).trans (ObsFn.heap_extends ev102)
+        (ObsFn.heap_extends ev65).trans ((ObsFn.heap_extends ev65w).trans
+          (ObsFn.heap_extends ev102))
       have ext_160 : Heap.Extends m90 m160 := ObsFn.heap_extends ev170
       have ext_h_160 : Heap.Extends h m160 := ext_90.trans ext_160
       have hseen1 : AddrMapAll addrMapEnum (fun _ b _ => seenSet b ∨ b = a) m160 v143 :=
@@ -1028,7 +1035,7 @@ theorem member_val_spec (hroles : RolesSpec) {c_adv : Ctx}
     {blockNames : List KKey} {f_id : KKey → KKey} {advSet : Bytes.Address → Prop}
     (hf_out : ∀ k, blockNames.contains k = false → f_id k = k)
     {a_m a_md : Bytes.Address} {ci_m : ConstantInfo .anon}
-    {x_member x_model x_src x_dst x_aset r : SourceValue F}
+    {x_member x_model x_src x_dst x_aset x_later r : SourceValue F}
     {h h' : Heap F} {calls : List (Call F)}
     (hg_adv : Good c_adv calls)
     (hm_rep : Bytes.RepAddressRef addrTy h a_m x_member)
@@ -1044,7 +1051,7 @@ theorem member_val_spec (hroles : RolesSpec) {c_adv : Ctx}
       ObsFn W "Ingress::get_ci" [x_member] h₁ p_ci h₂ cs_ci →
       CIPtrRepExact c_adv.κ h₂ p_ci ci_m)
     (ev : ObsFn W "KernelModeled::member_val"
-      [x_member, x_model, x_src, x_dst, x_aset] h r h' calls) :
+      [x_member, x_model, x_src, x_dst, x_aset, x_later] h r h' calls) :
     advSet a_md ∧
     ci_m.toConstantVal.levelParams.Perm (List.range ci_m.toConstantVal.levelParams.length) ∧
     (∃ cvm_f mval_f hint_f,
@@ -1054,9 +1061,9 @@ theorem member_val_spec (hroles : RolesSpec) {c_adv : Ctx}
         (posOf ci_m.toConstantVal.levelParams ci_m.toConstantVal.type).renameConsts f_id) ∧
     Heap.Extends h h' := by
   cases Obs.«KernelModeled::member_val».obs ev with
-  | run v12 m15 cs23 m50 cs60 v63 m65 p70 cs76 x_nl x_ty m101 p109 cs115
+  | run v12 m15 cs23 m50 cs60 v63 m65 p70 cs76 x_nl x_ty vL mL csL m101 p109 cs115
       x_nlm x_mty w132 w133 w134 v199 m202 cs210 v213 m216 cs224
-      ev25 heq48 ev78 ld72 ev62 ev117 ld111 heq187 ev226 ev212 heq264 _ he268 hc269 =>
+      ev25 heq48 ev78 ld72 ev62 evL _ ev117 ld111 heq187 ev226 ev212 heq264 _ he268 hc269 =>
     subst heq48 heq264 he268 hc269
     have hadv_md : advSet a_md :=
       addr_set_member_one hroles hwf hmd_rep haset ev25
@@ -1067,10 +1074,12 @@ theorem member_val_spec (hroles : RolesSpec) {c_adv : Ctx}
     obtain ⟨v_m, hld_m, hci_m⟩ := hptr_m
     rw [ld72] at hld_m; injection hld_m with hv_m; subst hv_m
     obtain ⟨hval_m, hm50_eq⟩ := ci_lvls_type_spec hci_m ev62
-    rw [hm50_eq] at ev117
+    rw [hm50_eq] at evL
     obtain ⟨hnl_m, hlps_lt_m, hperm_m, hty_m_rep⟩ := hval_m
     have e78 := ObsFn.heap_extends ev78
     have e_h_65 : Heap.Extends h m65 := e25.trans e78
+    have eL : Heap.Extends m65 mL := ObsFn.heap_extends evL
+    have e_h_L : Heap.Extends h mL := e_h_65.trans eL
     have hnot_rq : ∀ tag xs, (tag = "Rec" ∨ tag = "Quot") →
         loadValue m101 p109 ≠ .ok (.construct kciEnum tag xs) := by
       intro tag xs htag hld_bad
@@ -1079,9 +1088,9 @@ theorem member_val_spec (hroles : RolesSpec) {c_adv : Ctx}
       injection hcon with _ htag_eq _
       rcases htag with rfl | rfl <;> exact absurd htag_eq (by decide)
     obtain ⟨ci_md, hfind_md, hnr_md, _, hptr_md⟩ :=
-      hexact_adv a_md x_model p109 m65 m101 cs115 ev117
+      hexact_adv a_md x_model p109 mL m101 cs115 ev117
         (hg_adv.sub fun x hx => by simp [hx])
-        (Bytes.repAddressRef_heapMono₂ addrTy e_h_65 hmd_rep) hnot_rq
+        (Bytes.repAddressRef_heapMono₂ addrTy e_h_L hmd_rep) hnot_rq
     obtain ⟨v_md, hld_md, hci_md⟩ := hptr_md
     rw [ld111] at hld_md; injection hld_md with hv_md
     cases hci_md with
@@ -1111,7 +1120,7 @@ theorem member_val_spec (hroles : RolesSpec) {c_adv : Ctx}
         exact posOf_range cvm_f.levelParams.length cvm_f.type
       rw [hpos_md] at hty_md_rep
       have e117 := ObsFn.heap_extends ev117
-      have e_h_101 : Heap.Extends h m101 := e_h_65.trans e117
+      have e_h_101 : Heap.Extends h m101 := e_h_L.trans e117
       have hren_101 : RenameMap c_adv.κ c_adv.κ f_id m101 x_src x_dst := by
         obtain ⟨sAs, dAs, hs, hd, hl, hm⟩ := hren
         exact ⟨sAs, dAs,
@@ -1119,7 +1128,7 @@ theorem member_val_spec (hroles : RolesSpec) {c_adv : Ctx}
           RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ addrTy) e_h_101 hd, hl, hm⟩
       have hren_tm : TmExact c_adv.κ 0 zg m216 0
           (renameAll f_id (posOf ci_m.toConstantVal.levelParams ci_m.toConstantVal.type)) v213 :=
-        rename_exact ev226 ((hty_m_rep 0 zg).mono e117) hren_101
+        rename_exact ev226 ((hty_m_rep 0 zg).mono (eL.trans e117)) hren_101
       have e226 := ObsFn.heap_extends ev226
       have hstruct_eq :
           renameAll f_id (posOf ci_m.toConstantVal.levelParams ci_m.toConstantVal.type) =
@@ -1149,7 +1158,7 @@ member addresses, model addresses, and member `ConstantInfo`s. -/
 theorem members_val_spec (hroles : RolesSpec) {c_adv : Ctx}
     (hwf : c_adv.t.wf = true) (hexact_adv : ExactGetCI c_adv)
     {blockNames : List KKey} {f_id : KKey → KKey} {advSet : Bytes.Address → Prop}
-    (hf_out : ∀ k, blockNames.contains k = false → f_id k = k) :
+    (hf_out : ∀ k, blockNames.contains k = false → f_id k = k) {x_later : SourceValue F} :
     ∀ (memAs mdAs : List Bytes.Address) (cis : List (ConstantInfo .anon))
       {x_members x_models x_src x_dst x_aset r : SourceValue F}
       {h h' : Heap F} {calls : List (Call F)},
@@ -1170,7 +1179,7 @@ theorem members_val_spec (hroles : RolesSpec) {c_adv : Ctx}
       AddrMapAll addrMapEnum (fun _ k _ => advSet k) h x_aset →
       RenameMap c_adv.κ c_adv.κ f_id h x_src x_dst →
       ObsFn W "KernelModeled::members_val"
-        [x_members, x_models, x_src, x_dst, x_aset] h r h' calls →
+        [x_members, x_models, x_src, x_dst, x_aset, x_later] h r h' calls →
       (∀ ci ∈ cis,
         ci.toConstantVal.levelParams.Perm (List.range ci.toConstantVal.levelParams.length) ∧
         ∃ cvm_f mval_f hint_f,

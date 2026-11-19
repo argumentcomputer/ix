@@ -296,7 +296,7 @@ private def familyOf (env0 : Ixon.Env) (first : Lean.Name) :
   let some block := (env.getConst? ty).bind IxVM.Model.projectionBlock?
     | throw (IO.userError s!"{first} is not a member of a block")
   let some (_, adv) := rep.advice.find? (·.1 == block)
-    | throw (IO.userError s!"the block of {first} has no model advice")
+    | throw (IO.userError s!"the block of {first} has no model advice: {match rep.blocks.find? (·.1 == block) with | some (_, .error e) => e | _ => "no entry"}")
   let mut owned : Array Address := #[block]
   for (a, lc) in env.consts do
     if let some c := lc.get? then
@@ -458,8 +458,8 @@ def runInner (leanEnv : Lean.Environment) : IO UInt32 := do
 
 /-- Payload edits of the `List`-nested tree's advice, each one more advice entry or witnessed
 reference than the accepted payload: the record at the role of `sorryAx` as a basis-role
-witness; the same record as an advice record; a dependency path that ends at a block record. The
-first two must be rejected; the third is expected to be accepted (a path is only followed). -/
+witness; the same record as an advice record; a dependency path that ends at a block record. All
+three must be rejected: a witness's stop is read, and a block record is no reference. -/
 def runProbe (leanEnv : Lean.Environment) : IO UInt32 := do
   let first := recordDefs "T"
   let env0 ← loadSharedIxonEnv #[first, first.str "rec", first.str "rec_1"] leanEnv
@@ -498,13 +498,158 @@ def runProbe (leanEnv : Lean.Environment) : IO UInt32 := do
       (some "a reference to a role outside the basis"),
     probe "inert-axiom-as-advice" { p with advice := p.advice.push sorryA }.ser false none,
     probe "path-witness-ending-at-a-block"
-      { p with witnesses := p.witnesses.push (listB, 1, [j + 1, 0], []) }.ser true none]
+      { p with witnesses := p.witnesses.push (listB, 1, [j + 1, 0], []) }.ser false
+      (some "a reference names a block record")]
+
+/-! ## Family records that must be refused -/
+
+private def betaDom (d : Lean.Expr) : Lean.Expr :=
+  Lean.mkApp (.lam `x (Lean.mkConst ``PUnit [Lean.Level.one]) (d.liftLooseBVars 0 1) .default)
+    (Lean.mkConst ``PUnit.unit [Lean.Level.one])
+
+private partial def editBinderAt (target : Nat) (g : Lean.Expr → Lean.Expr) :
+    Nat → Lean.Expr → Lean.Expr
+  | i, .forallE n d b bi =>
+    .forallE n (if i == target then g d else d)
+      (if i < target then editBinderAt target g (i + 1) b else b) bi
+  | i, .lam n d b bi =>
+    .lam n (if i == target then g d else d)
+      (if i < target then editBinderAt target g (i + 1) b else b) bi
+  | _, e => e
+
+/-- The recursor with the first field of its first minor premise at a β-redex domain, in its
+type, in its rules' λ-prefix and at that field of the constructor's rule. (The same redex as a
+whole minor premise's domain cannot be built: the in-process modeller declines the record, so
+it has no advice.) -/
+private def betaFieldRecursor (rv : Lean.RecursorVal) : Lean.RecursorVal :=
+  let target := rv.numParams + rv.numMotives
+  let inMinor (d : Lean.Expr) : Lean.Expr := editBinderAt 0 betaDom 0 d
+  let ctor? : Option Lean.Name := Id.run do
+    let mut ty := rv.type
+    for _ in [0:target] do
+      if let .forallE _ _ b _ := ty then ty := b
+    match ty with
+    | .forallE _ d _ _ => return resultCtor d
+    | _ => return none
+  { rv with
+    type := editBinderAt target inMinor 0 rv.type
+    rules := rv.rules.map fun r =>
+      let rhs := editBinderAt target inMinor 0 r.rhs
+      { r with rhs := if some r.ctor == ctor? && r.nfields > 0 then
+          editBinderAt (target + rv.numMinors) betaDom 0 rhs else rhs } }
+
+/-- Reorder the first `pre` binders of a telescope: the new binder `j` is the old `perm[j]`. -/
+private def permuteTele (lam : Bool) (pre : Nat) (perm : Array Nat) (tag : Nat)
+    (e : Lean.Expr) : Lean.Expr := Id.run do
+  let mut fvars : Array Lean.Expr := #[]
+  let mut decls : Array (Lean.Name × Lean.Expr × Lean.BinderInfo) := #[]
+  let mut cur := e
+  for i in [0:pre] do
+    match cur with
+    | .forallE n d b bi =>
+      decls := decls.push (n, d.instantiateRev fvars, bi)
+      fvars := fvars.push (Lean.mkFVar ⟨Lean.Name.mkNum (Lean.Name.mkNum `_perm tag) i⟩)
+      cur := b
+    | .lam n d b bi =>
+      decls := decls.push (n, d.instantiateRev fvars, bi)
+      fvars := fvars.push (Lean.mkFVar ⟨Lean.Name.mkNum (Lean.Name.mkNum `_perm tag) i⟩)
+      cur := b
+    | _ => pure ()
+  let body := cur.instantiateRev fvars
+  let newFvars := perm.map fun i => fvars[i]!
+  let mut out := body.abstract newFvars
+  for jj in [0:pre] do
+    let j := pre - 1 - jj
+    let (n, ty, bi) := decls[perm[j]!]!
+    let ty' := ty.abstractRange j newFvars
+    out := if lam then .lam n ty' out bi else .forallE n ty' out bi
+  return out
+
+/-- Reorder the first `pre` arguments of every application of a family recursor, and rename it. -/
+private partial def permutePeers (recs : List (Lean.Name × Lean.Name)) (pre : Nat)
+    (perm : Array Nat) (e : Lean.Expr) : Lean.Expr :=
+  let args := e.getAppArgs.map (permutePeers recs pre perm)
+  match e.getAppFn with
+  | .const n ls =>
+    match recs.find? (·.1 == n) with
+    | some (_, n') =>
+      if args.size ≥ pre then
+        Lean.mkAppN (.const n' ls) ((perm.map fun i => args[i]!) ++ args.extract pre args.size)
+      else Lean.mkAppN (.const n' ls) args
+    | none => Lean.mkAppN (.const n ls) args
+  | .lam n d b bi =>
+    Lean.mkAppN (.lam n (permutePeers recs pre perm d) (permutePeers recs pre perm b) bi) args
+  | .forallE n d b bi =>
+    Lean.mkAppN (.forallE n (permutePeers recs pre perm d) (permutePeers recs pre perm b) bi) args
+  | fn => Lean.mkAppN fn args
+
+/-- A family claim built from the closure of `names` with its recursors passed through `edit`. -/
+private def editedCase (leanEnv : Lean.Environment) (label : String) (first : Lean.Name)
+    (names : Array Lean.Name)
+    (edit : Lean.Name × Lean.ConstantInfo → Lean.Name × Lean.ConstantInfo) (accept : Bool)
+    (why : Option String) : IO (Option Builder) := do
+  try
+    let (env0, _) ← compileWith leanEnv names edit
+    let (env, block, rb, owned, nAdv) ← familyOf env0 first
+    IO.println s!"[ixvm-family-graph-records] {label}: block {block}, recursor family {rb}, \
+      {nAdv} advice records"
+    return some fun _ => do
+      let (_, witness) ← buildShardCheckEnvWitness env owned (assumeBinding := true)
+      return { label, accept, rejectsWith := why,
+               exercises := if accept then some "KernelModeled::check_family" else none, witness }
+  catch e =>
+    IO.println s!"[ixvm-family-graph-records] {label}: NOT BUILT: {e}"
+    return none
+
+/-- A family record with a β-redex at a field's domain and a family record with its auxiliary
+members permuted, each with its control. Each edited record is given the modeller's advice for
+it, so that the family check itself refuses it. -/
+def runMustReject (leanEnv : Lean.Environment) : IO UInt32 := do
+  let bt := graphDefs "BT"
+  let btRecs := [bt.str "rec", bt.str "rec_1"]
+  let pt := graphDefs "PT"
+  let ptRecs := [pt.str "rec", pt.str "rec_1", pt.str "rec_2"]
+  let betaFieldEdit : Lean.Name × Lean.ConstantInfo → Lean.Name × Lean.ConstantInfo := fun (n, ci) =>
+    match ci with
+    | .recInfo rv => if btRecs.contains n then (n, .recInfo (betaFieldRecursor rv)) else (n, ci)
+    | _ => (n, ci)
+  -- `PT`: motives `PT`, `List PT`, `Option PT`; minors `node`, `nil`, `cons`, `none`, `some`
+  let perm : Array Nat := #[0, 2, 1, 3, 6, 7, 4, 5]
+  let swap : List (Lean.Name × Lean.Name) :=
+    [(pt.str "rec", pt.str "rec"), (pt.str "rec_1", pt.str "rec_2"), (pt.str "rec_2", pt.str "rec_1")]
+  let permEdit : Lean.Name × Lean.ConstantInfo → Lean.Name × Lean.ConstantInfo := fun (n, ci) =>
+    match ci, swap.find? (·.1 == n) with
+    | .recInfo rv, some (_, n') =>
+      (n', .recInfo { rv with
+        name := n'
+        type := permuteTele false 8 perm 0 rv.type
+        rules := rv.rules.map fun r =>
+          { r with rhs := permuteTele true 8 perm 1 (permutePeers swap 8 perm r.rhs) } })
+    | _, _ => (n, ci)
+  let built ← [
+    ("control: the nested tree's family record", bt, #[bt] ++ btRecs.toArray, (id : _ → _), true,
+      (none : Option String)),
+    ("a family record with a minor premise's field domain as a β-redex", bt,
+      #[bt] ++ btRecs.toArray, betaFieldEdit, false,
+      some "neither the canonical reconstruction nor its full consumption"),
+    ("control: the two-container tree's family record", pt, #[pt] ++ ptRecs.toArray, id, true,
+      none),
+    ("a family record with its auxiliary members permuted", pt, #[pt] ++ ptRecs.toArray,
+      permEdit, false,
+      some "its auxiliary members are not the constructors' nested occurrences")].mapM
+    fun (label, first, names, edit, accept, why) =>
+      editedCase leanEnv label first names edit accept why
+  let cases := (built.filterMap id).toArray
+  let rc ← runCases "ixvm-family-graph-records" cases (jobs := 2)
+  return if rc == 0 && cases.size == built.length then 0 else 1
 
 /-- The two nested families; with `IX_FAMILY_TWIN` set, the second recursor record; with
-`IX_FAMILY_INNER` set, the checks two family checks run on their advice. -/
+`IX_FAMILY_INNER` set, the checks two family checks run on their advice; with
+`IX_FAMILY_MUST_REJECT` set, the family records that must be refused. -/
 def run (leanEnv : Lean.Environment) : IO UInt32 := do
   if (← IO.getEnv "IX_FAMILY_TWIN").isSome then return (← runTwin leanEnv)
   if (← IO.getEnv "IX_FAMILY_INNER").isSome then return (← runInner leanEnv)
+  if (← IO.getEnv "IX_FAMILY_MUST_REJECT").isSome then return (← runMustReject leanEnv)
   if (← IO.getEnv "IX_FAMILY_PROBE").isSome then return (← runProbe leanEnv)
   let names := families.foldl (fun acc f => acc ++ f.2.2.1) #[]
   let missing := names.filter (!leanEnv.constants.contains ·)

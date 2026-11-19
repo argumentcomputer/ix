@@ -71,8 +71,9 @@ the store `E` at the limit `lim`: the calls are good for `E`, which holds the ru
 valid table's environment is below it; its names are distinct; it satisfies the prefix invariant
 and the fold's extra clause; the block's references are no inert axiom's; what the two records and
 the advice `adv` use is stored, or is one of the two records' constant addresses, or is no
-reference a step needs; each advice record's constant addresses are stored; and none of the two
-records' constant addresses is. -/
+reference a step needs; each advice record's constant addresses are stored; none of the two
+records' constant addresses is; a reference covered at the limit is stored; and a reference the
+block uses is stored or is one a step needs. -/
 structure FamilyStepEnv (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
     (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (lim : Option Nat)
     (B : _root_.Address) (cb : Ixon.Constant) (rb : _root_.Address) (crb : Ixon.Constant)
@@ -91,6 +92,12 @@ structure FamilyStepEnv (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
   advRefs : ∀ a, adv a → ∀ x, UsedRef E₀ a x →
     (env.find? (keyOf t x)).isSome = true ∨ FamAddr B cb rb crb x ∨ ¬ NeedOk E₀ x
   fresh : ∀ x, FamAddr B cb rb crb x → env.find? (keyOf t x) = none
+  /-- A reference covered at the limit (its role walked, its group below the limit) is stored:
+  the table's environment below `env` keeps it. -/
+  covered : ∀ x, Claim.CoveredAt t lim x → (env.find? (keyOf t x)).isSome = true
+  /-- A reference the block uses is stored or is one a step needs stored: the walk of the block
+  reads the safety of each used reference it does not cover. -/
+  blockRefs : ∀ x, UsedRef E₀ B x → (env.find? (keyOf t x)).isSome = true ∨ NeedOk E₀ x
 
 /-- **What one accepted family check gives** (module docstring): the check of the block `cb` at
 `B` (members `ms`) with the family record `crb` at `rb` (members `rs`), under a role context at
@@ -203,6 +210,7 @@ theorem familyBlockCheckRow_of_call {L : Ix.Kernel.Env .anon → NativeFam .anon
   intro calls t seeds E₀ lim Top rank hTW R envT E fam twin adv Inner hrun hctx A c rb crb rs
     hTop hc hlog hkind hfam hrb
   obtain ⟨ms, hB⟩ := famBlockRecord_of_run hTW hrun hTop hc hlog hfam
+  have hneed := Claim.TopWalk.need hTW hTop hc hkind hlog
   obtain ⟨bAddr, hW, -⟩ := hTW
   have hinert : InertClause t c := hW.inertClause hTop hc
   have hS : LoadedReads.RunStore calls E₀ := hW.runStore
@@ -221,7 +229,22 @@ theorem familyBlockCheckRow_of_call {L : Ix.Kernel.Env .anon → NativeFam .anon
       refs := hrefs
       advStored := hadv1
       advRefs := hadv2
-      fresh := hfresh }
+      fresh := hfresh
+      covered := fun x hx => by
+        obtain ⟨ci, hci, hname⟩ :=
+          coveredAt_stored hctx.shape hinv.tableWf (fun _ _ => trivial) hx
+        exact find_isSome_of_storedAt ⟨ci, hextT ci hci, hname⟩
+      blockRefs := fun x hu => by
+        by_cases hcov : Covered t x
+        · obtain ⟨ci, hci, hname⟩ := covered_stored hctx.shape hinv.tableWf hcov
+          exact Or.inl (find_isSome_of_storedAt ⟨ci, hextT ci hci, hname⟩)
+        · obtain ⟨c', i, hc', hi, hx⟩ := hu
+          have e : c' = c := Option.some.inj (hc'.symm.trans hc)
+          rw [e] at hi hx
+          have hx' : c.refs.toList[i]? = some x := by
+            rw [Array.getElem?_toList]
+            exact hx
+          exact Or.inr (hneed i hi x hx' (hinert i hi x hx') hcov) }
   refine ⟨blk, advM, tys, rhsss, hF.reads E env hSE, hF.checkFacts E env hSE, ?_⟩
   unfold SelectedForms
   refine ⟨fun ms' rs' hms' hrs' => ?_, ?_⟩
@@ -257,6 +280,8 @@ theorem closureFamilyCheck_of_call {L : Ix.Kernel.Env .anon → NativeFam .anon 
   subst cb'
   have e2 : crb' = crb := Option.some.inj (hFB.record.record.symm.trans hcrb₀)
   subst crb'
+  have hcb' : recordOf R' B = some cb := Binding.recordOf_of_loaded hC.store.le₂.1 hcb
+  have hnB' : Binding.New R R' B := ⟨by rw [hcb']; rfl, hnB.2⟩
   obtain ⟨blk, advM, tys, rhsss, hF⟩ := hcall calls bAddr t ρ.E₀ B rb cb crb ms rs
     (some (Binding.valLimit g)) cs (adv B) hS hrun.hashedStored hFB.block hFB.record hcall'
     hroute (Or.inl hadvIn)
@@ -272,7 +297,12 @@ theorem closureFamilyCheck_of_call {L : Ix.Kernel.Env .anon → NativeFam .anon 
       refs := hrefs
       advStored := hadv1
       advRefs := hadv2
-      fresh := hfresh }
+      fresh := hfresh
+      covered := fun x hx => by
+        obtain ⟨ci, hci, hname⟩ := coveredAt_stored hC.bnd.shape hinv.tableWf
+          (fun r hr => Nat.lt_of_lt_of_le (hr _ rfl) (Binding.valLimit_le g)) hx
+        exact find_isSome_of_storedAt ⟨ci, hext ci (hextT ci hci), hname⟩
+      blockRefs := fun x hu => Or.inr (hC.run.famNeedOk B rb x hfam hnB' hu) }
   refine ⟨blk, advM, tys, rhsss, hF.reads Ec env hSE, hF.checkFacts Ec env hSE,
     fun ms' rs' hms' hrs' => ?_, fun E hE => ?_⟩
   · have e3 : ms' = ms := Ixon.ConstantInfo.muts.inj (hms'.symm.trans hFB.block.muts)

@@ -2489,12 +2489,14 @@ inductive «KernelSubst::subst_const».Path (x_e x_a x_v : SourceValue F) (h : H
       (ev588 : ObsFn W "KernelSubst::subst_const" [x_b, x_a, x_v] m542 v504 m578 cs586)
       (hc613 : calls = ((⟨"KernelSubst::subst_const", [x_t, x_a, x_v], h⟩ : Call F) :: (cs514 ++ ((⟨"KernelSubst::subst_const", [x_x, x_a, x_v], m506⟩ : Call F) :: (cs550 ++ ((⟨"KernelSubst::subst_const", [x_b, x_a, x_v], m542⟩ : Call F) :: cs586))))))
   | Proj
-      (x_s : SourceValue F) (x_i : SourceValue F) (x_x : SourceValue F) (v646 : SourceValue F) (m662 : Heap F) (cs670 : List (Call F))
+      (x_s : SourceValue F) (x_i : SourceValue F) (x_x : SourceValue F) (v_eyzpgtuk : SourceValue F) (m_gkdwytlp : Heap F) (cs_gomygell : List (Call F)) (v646 : SourceValue F) (m662 : Heap F) (cs670 : List (Call F))
       (ld12 : loadValue h x_e = .ok (.construct "KernelTypes::KExprNode" "Proj" [x_s, x_i, x_x]))
+      (ev_fcagpdzw : ObsFn W "Bytes::address_eq" [x_s, x_a] h v_eyzpgtuk m_gkdwytlp cs_gomygell)
+      (heq_fqyhtvgf : (v_eyzpgtuk : SourceValue F) = (.field 0))
       (he640 : r = (.ptr (.enum "KernelTypes::KExprNode") (m662).length))
       (hm639 : h' = (m662 ++ [(.construct "KernelTypes::KExprNode" "Proj" [x_s, x_i, v646])]))
-      (ev672 : ObsFn W "KernelSubst::subst_const" [x_x, x_a, x_v] h v646 m662 cs670)
-      (hc697 : calls = ((⟨"KernelSubst::subst_const", [x_x, x_a, x_v], h⟩ : Call F) :: cs670))
+      (ev672 : ObsFn W "KernelSubst::subst_const" [x_x, x_a, x_v] m_gkdwytlp v646 m662 cs670)
+      (hc697 : calls = ((⟨"Bytes::address_eq", [x_s, x_a], h⟩ : Call F) :: (cs_gomygell ++ ((⟨"KernelSubst::subst_const", [x_x, x_a, x_v], m_gkdwytlp⟩ : Call F) :: cs670))))
   | other
       (v1 : SourceValue F)
       (ld12 : loadValue h x_e = .ok v1)
@@ -2836,45 +2838,64 @@ theorem «KernelSubst::subst_const».obs {x_e x_a x_v : SourceValue F} {h h' : H
               obtain ⟨x_x, vs631, b632, b633, rfl, mt634, ml635, rfl⟩ := matchListWith_cons_inv ml630
               obtain rfl := matchPattern_bind_inv mt634
               obtain ⟨rfl, rfl⟩ := matchListWith_nil_inv ml635
-              obtain ⟨v636, m637, d638, rfl, hm639⟩ := d9.store_inv
-              obtain ⟨vs641, a642, hres643⟩ := d638.construct_inv
-              rw [instanceName_plain_some] at hres643
-              subst hres643
-              obtain ⟨v644, vs647, m648, c649, c650, rfl, d651, a652, rfl⟩ := a642.cons_inv
-              obtain ⟨l653, rfl, rfl⟩ := d651.var_inv
-              simp at l653
-              subst l653
-              obtain ⟨v645, vs654, m655, c656, c657, rfl, d658, a659, rfl⟩ := a652.cons_inv
-              obtain ⟨l660, rfl, rfl⟩ := d658.var_inv
-              simp at l660
-              subst l660
-              obtain ⟨v646, vs661, m662, c663, c664, rfl, d665, a666, rfl⟩ := a659.cons_inv
-              obtain ⟨vs667, m668, c669, cs670, a671, ev672, rfl⟩ := d665.call_inv
+              obtain ⟨v636, m637, bs638, c639, c640, d641, mt642, d643, rfl⟩ := d9.letValue_inv
+              obtain ⟨vs644, a645, ap646⟩ := d641.builtin_inv
+              obtain ⟨v_eyzpgtuk, vs649, m_gkdwytlp, c651, c652, rfl, d653, a654, rfl⟩ := a645.cons_inv
+              obtain ⟨vs655, m656, c657, cs_gomygell, a659, ev_fcagpdzw, rfl⟩ := d653.call_inv
+              rw [instanceName_plain_some] at ev_fcagpdzw
+              obtain ⟨v661, vs663, m664, c665, c666, rfl, d667, a668, rfl⟩ := a659.cons_inv
+              obtain ⟨l669, rfl, rfl⟩ := d667.var_inv
+              simp at l669
+              subst l669
+              obtain ⟨v662, vs670, m671, c672, c673, rfl, d674, a675, rfl⟩ := a668.cons_inv
+              obtain ⟨l676, rfl, rfl⟩ := d674.var_inv
+              simp at l676
+              subst l676
+              obtain ⟨rfl, rfl, rfl⟩ := a675.nil_inv
+              obtain ⟨v648, vs677, m678, c679, c680, rfl, d681, a682, rfl⟩ := a654.cons_inv
+              obtain ⟨rfl, rfl, rfl⟩ := d681.literal_inv
+              obtain ⟨rfl, rfl, rfl⟩ := a682.nil_inv
+              obtain ⟨heq_fqyhtvgf, rfl⟩ := Builtin.assertEq_inv ap646
+              obtain rfl := matchPattern_wildcard_inv mt642
+              obtain ⟨v684, m685, d686, rfl, hm639⟩ := d643.store_inv
+              obtain ⟨vs689, a690, hres691⟩ := d686.construct_inv
+              rw [instanceName_plain_some] at hres691
+              subst hres691
+              obtain ⟨v692, vs695, m696, c697, c698, rfl, d699, a700, rfl⟩ := a690.cons_inv
+              obtain ⟨l701, rfl, rfl⟩ := d699.var_inv
+              simp at l701
+              subst l701
+              obtain ⟨v693, vs702, m703, c704, c705, rfl, d706, a707, rfl⟩ := a700.cons_inv
+              obtain ⟨l708, rfl, rfl⟩ := d706.var_inv
+              simp at l708
+              subst l708
+              obtain ⟨v646, vs709, m662, c711, c712, rfl, d713, a714, rfl⟩ := a707.cons_inv
+              obtain ⟨vs715, m716, c717, cs670, a719, ev672, rfl⟩ := d713.call_inv
               rw [instanceName_plain_some] at ev672
-              obtain ⟨v673, vs676, m677, c678, c679, rfl, d680, a681, rfl⟩ := a671.cons_inv
-              obtain ⟨l682, rfl, rfl⟩ := d680.var_inv
-              simp at l682
-              subst l682
-              obtain ⟨v674, vs683, m684, c685, c686, rfl, d687, a688, rfl⟩ := a681.cons_inv
-              obtain ⟨l689, rfl, rfl⟩ := d687.var_inv
-              simp at l689
-              subst l689
-              obtain ⟨v675, vs690, m691, c692, c693, rfl, d694, a695, rfl⟩ := a688.cons_inv
-              obtain ⟨l696, rfl, rfl⟩ := d694.var_inv
-              simp at l696
-              subst l696
-              obtain ⟨rfl, rfl, rfl⟩ := a695.nil_inv
-              obtain ⟨rfl, rfl, rfl⟩ := a666.nil_inv
-              try simp only [Value.type, List.map_cons, List.map_nil] at ld12 hne146 hne246 hne359 hne472 hne614 hm639 ev672 ⊢
-              exact «KernelSubst::subst_const».Path.Proj _ _ _ _ _ _ ld12 rfl hm639 ev672 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
+              obtain ⟨v721, vs724, m725, c726, c727, rfl, d728, a729, rfl⟩ := a719.cons_inv
+              obtain ⟨l730, rfl, rfl⟩ := d728.var_inv
+              simp at l730
+              subst l730
+              obtain ⟨v722, vs731, m732, c733, c734, rfl, d735, a736, rfl⟩ := a729.cons_inv
+              obtain ⟨l737, rfl, rfl⟩ := d735.var_inv
+              simp at l737
+              subst l737
+              obtain ⟨v723, vs738, m739, c740, c741, rfl, d742, a743, rfl⟩ := a736.cons_inv
+              obtain ⟨l744, rfl, rfl⟩ := d742.var_inv
+              simp at l744
+              subst l744
+              obtain ⟨rfl, rfl, rfl⟩ := a743.nil_inv
+              obtain ⟨rfl, rfl, rfl⟩ := a714.nil_inv
+              try simp only [Value.type, List.map_cons, List.map_nil] at ld12 hne146 hne246 hne359 hne472 hne614 ev_fcagpdzw heq_fqyhtvgf hm639 ev672 ⊢
+              exact «KernelSubst::subst_const».Path.Proj _ _ _ _ _ _ _ _ _ ld12 ev_fcagpdzw heq_fqyhtvgf rfl hm639 ev672 (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
             · have hne698 := matchPattern_construct_none (by trivial) nm616
               simp only [Names.n14861064886094815840] at hne698
-              rcases selectArm_cons_inv sel617 with ⟨mt699, rfl⟩ | ⟨nm700, sel701⟩
-              · obtain rfl := matchPattern_wildcard_inv mt699
-                obtain ⟨l702, rfl, rfl⟩ := d9.var_inv
-                simp at l702
-                subst l702
+              rcases selectArm_cons_inv sel617 with ⟨mt747, rfl⟩ | ⟨nm748, sel749⟩
+              · obtain rfl := matchPattern_wildcard_inv mt747
+                obtain ⟨l750, rfl, rfl⟩ := d9.var_inv
+                simp at l750
+                subst l750
                 exact «KernelSubst::subst_const».Path.other _ ld12 hne146 hne246 hne359 hne472 hne614 hne698 rfl rfl (by first | rfl | simp only [List.append_assoc, List.cons_append, List.nil_append, List.append_nil, instanceName_plain_none, instanceName_plain_some])
-              · exact (matchPattern_wildcard_none nm700).elim
+              · exact (matchPattern_wildcard_none nm748).elim
 
 end IxVM.Refinement.Obs

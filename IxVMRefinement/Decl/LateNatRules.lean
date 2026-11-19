@@ -1277,10 +1277,10 @@ theorem natI_check_rules_spec {c : Ctx} {κ : _root_.Address → KKey}
         (w141 := w141) (w142 := w142) (w143 := w143) (w144 := w144)
         (w145 := w145) (w146 := w146) (x_c_nf := x_c_nf) (w147 := w147)
         (v227 := v227) (m230 := m230) (cs238 := cs_wrap)
-        (v241 := v241) (m244 := m244) (cs252 := cs_rhs)
+        (v_yqkrjnfn := v241) (m_dtvbfoeu := m244) (cs_fxmvzdtz := cs_rhs)
         (cs384 := cs_rec) (v401 := v401)
         (ld12 := ld0) (ev113 := ev_cprj) (ld107 := ld_ctor) (heq215 := heq_nf)
-        (ev254 := ev_rhs) (ev240 := ev_wrap) (heq380 := heq_w1)
+        (ev_nryuxiev := ev_rhs) (ev240 := ev_wrap) (heq380 := heq_w1)
         (op513 := op_j1) (ev386 := ev_rec) (hc515 := hc) .. =>
       subst hc heq_w1
       cases hrules with
