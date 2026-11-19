@@ -408,7 +408,8 @@ theorem familyCall_block_indc_nonempty {calls : List (Call F)} {bAddr : _root_.A
       (msB.toList.filter Core.Specs.Callees.isIndc).length = msB.size := by
   obtain ⟨h, h', rc, xb, xrb, r, -, ⟨bB, hbB, rfl⟩, -, ev, -, hsub⟩ := hfc
   match Obs.«KernelModeled::check_family».obs ev with
-  | .run (m105 := m105) (m501 := m501) (v588 := v588) (m589 := m589) (m624 := m624)
+  | .run (m105 := m105) (m501 := m501) (x_members := x_members) (v588 := v588) (m589 := m589)
+      (cs599 := cs599) (m624 := m624)
       (cs511 := cs511) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
       (ev_yqjbwijz := evo) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309) (ev344 := ev344)
       (ev403 := ev403) (ev435 := ev435) (ev465 := ev465) (ev513 := ev513) (ev601 := ev601)
@@ -432,7 +433,8 @@ theorem familyCall_block_indc_nonempty {calls : List (Call F)} {bAddr : _root_.A
     have hrep1 := RepLinkedList.mono L1.repMutConst_heapMono₂ ev601.heap_extends hrep
     have hlenV : v588 = Value.field (msB.toList.length : F) := by
       have evLen' : ObsFn Obs.W
-          (Instance.mk "Lists::length" [.named "Ixon::MutConst" []]).symbol [_] _ _ _ _ := by
+          (Instance.mk "Lists::length" [.named "Ixon::MutConst" []]).symbol [x_members] m501
+          v588 m589 cs599 := by
         rw [Obs.Names.«Lists::length<Ixon::MutConst>».symbol]
         exact ev601
       exact (Lib.Lists.length_spec evLen' hrep).1
@@ -481,7 +483,9 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
   obtain ⟨cb, msB, hcb, hmsB, hposB, hfilt⟩ := familyCall_block_indc_nonempty hS hH hfc
   obtain ⟨h, h', rc, xb, xrb, r, hrc, ⟨bB, hbB, rfl⟩, ⟨bR, hbR, rfl⟩, ev, -, hsub⟩ := hfc
   match Obs.«KernelModeled::check_family».obs ev with
-  | .run (m105 := m105) (cs850 := cs850) (cs_pblrtsmj := cs_flat) (v_arypxepi := v_arypxepi)
+  | .run (m105 := m105) (cs850 := cs850) (m1191 := m1191) (x_univ_offset := x_uo)
+      (v_qwfkpklj := v_flat) (m_ialrkdmk := m_flat) (cs_pblrtsmj := cs_flat)
+      (v_arypxepi := v_arypxepi)
       (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
       (ev_yqjbwijz := ev_ord) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
       (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465) (ev513 := ev513)
@@ -559,9 +563,9 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
     have hbR_f := Bytes.repAddressRef_heapMono₂ Core.addrTy ext_1191 hbR
     have hbB_f := Bytes.repAddressRef_heapMono₂ Core.addrTy ext_1191 hbB
     have hflatLen : ∃ xs : List Unit, xs.length = msB.size ∧ msB.size < 8589934592 ∧
-        RepList flatListEnum (fun _ _ _ => True) _ xs _ := by
+        RepList flatListEnum (fun _ _ _ => True) m_flat xs v_flat := by
       have hloadEmpty : ∀ {x_m w1 w2 w3 w4 : SourceValue F} {m0 m1 : Heap F} {csL : List (Call F)},
-          Heap.Extends _ m0 →
+          Heap.Extends m1191 m0 →
           ObsFn Obs.W "Ingress::load_verified_constant" [xrb] m0
             (.construct "Ixon::Constant" "Mk"
               [.construct "Ixon::ConstantInfo" "Muts" [x_m], w1, w2, w3, w4]) m1 csL →
@@ -576,8 +580,8 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
         subst ers
         rwa [hrsNil] at hrep
       have hflatOrig : ∀ {m0 m1 : Heap F} {vO : SourceValue F} {csO : List (Call F)},
-          Heap.Extends _ m0 →
-          ObsFn Obs.W "KernelCheck::build_flat_originals" [xb, _] m0 vO m1 csO →
+          Heap.Extends m1191 m0 →
+          ObsFn Obs.W "KernelCheck::build_flat_originals" [xb, x_uo] m0 vO m1 csO →
           (∀ cl ∈ csO, cl ∈ calls) →
           ∃ xs : List Unit, xs.length = msB.size ∧ msB.size < 8589934592 ∧
             RepList flatListEnum (fun _ _ _ => True) m1 xs vO := by
@@ -597,7 +601,7 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
           obtain ⟨msPtr, hxm, -, -⟩ := Decl.load_block_info hS hbBO evL hsubL hcb hmsB
           exact absurd hxm (hne [msPtr] rfl)
       have hprim : ∀ {m0 m1 : Heap F} {vP : SourceValue F} {csP : List (Call F)},
-          Heap.Extends _ m0 →
+          Heap.Extends m1191 m0 →
           ObsFn Obs.W "KernelCheck::primary_parent_block_of" [xrb, xb] m0 vP m1 csP →
           (∀ cl ∈ csP, cl ∈ calls) → vP = xb := by
         intro m0 m1 vP csP extP evP hsubP
@@ -1108,42 +1112,50 @@ private theorem ixonUnshare_rawConv {refs : List _root_.Address} {univs : List I
       · exact Or.inr ⟨_, List.mem_of_getElem? hsh, h1⟩
       · exact Or.inr h2
   | var hidx cell =>
-    refine ⟨_, _, ?_, fun _ h => nomatch h, fun _ hi => Or.inl hi, L1.RawConvExpr.var hidx cell⟩
-    simp [ixonUnshare]
+    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi, L1.RawConvExpr.var hidx cell⟩
+    · simp [ixonUnshare]
+    · intro _ h; cases h
   | sort huIdx hu rl cell =>
-    refine ⟨_, _, ?_, fun _ h => nomatch h, fun _ hi => Or.inl hi,
-      L1.RawConvExpr.sort huIdx hu rl cell⟩
-    simp [ixonUnshare]
+    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi, L1.RawConvExpr.sort huIdx hu rl cell⟩
+    · simp [ixonUnshare]
+    · intro _ h; cases h
   | ref hrIdx href hd ra hls rls cell =>
-    refine ⟨_, _, ?_, fun _ h => nomatch h, fun _ hi => Or.inl hi,
+    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi,
       L1.RawConvExpr.ref hrIdx href hd ra hls rls cell⟩
-    simp [ixonUnshare]
+    · simp [ixonUnshare]
+    · intro _ h; cases h
   | recur _ hrec _ _ _ _ _ => simp at hrec
   | prj htIdx hfIdx href hd ra rin cell =>
-    refine ⟨_, _, ?_, fun _ h => nomatch h, fun _ hi => Or.inl hi,
+    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi,
       L1.RawConvExpr.prj htIdx hfIdx href hd ra rin cell⟩
-    simp [ixonUnshare]
+    · simp [ixonUnshare]
+    · intro _ h; cases h
   | str hbIdx href hmem rbs hs cell =>
-    refine ⟨_, _, ?_, fun _ h => nomatch h, fun _ hi => Or.inl hi,
+    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi,
       L1.RawConvExpr.str hbIdx href hmem rbs hs cell⟩
-    simp [ixonUnshare]
+    · simp [ixonUnshare]
+    · intro _ h; cases h
   | nat hbIdx href hmem hcanon rlimbs hlast hval cell =>
-    refine ⟨_, _, ?_, fun _ h => nomatch h, fun _ hi => Or.inl hi,
+    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi,
       L1.RawConvExpr.nat hbIdx href hmem hcanon rlimbs hlast hval cell⟩
-    simp [ixonUnshare]
+    · simp [ixonUnshare]
+    · intro _ h; cases h
   | app rf ra cell =>
-    refine ⟨_, _, ?_, fun _ h => nomatch h, fun _ hi => Or.inl hi, L1.RawConvExpr.app rf ra cell⟩
-    simp [ixonUnshare]
+    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi, L1.RawConvExpr.app rf ra cell⟩
+    · simp [ixonUnshare]
+    · intro _ h; cases h
   | lam rl rt rb cell =>
-    refine ⟨_, _, ?_, fun _ h => nomatch h, fun _ hi => Or.inl hi, L1.RawConvExpr.lam rl rt rb cell⟩
-    simp [ixonUnshare]
+    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi, L1.RawConvExpr.lam rl rt rb cell⟩
+    · simp [ixonUnshare]
+    · intro _ h; cases h
   | all rl rt rb cell =>
-    refine ⟨_, _, ?_, fun _ h => nomatch h, fun _ hi => Or.inl hi, L1.RawConvExpr.all rl rt rb cell⟩
-    simp [ixonUnshare]
+    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi, L1.RawConvExpr.all rl rt rb cell⟩
+    · simp [ixonUnshare]
+    · intro _ h; cases h
   | letE rt rv rb cell =>
-    refine ⟨_, _, ?_, fun _ h => nomatch h, fun _ hi => Or.inl hi,
-      L1.RawConvExpr.letE rt rv rb cell⟩
-    simp [ixonUnshare]
+    refine ⟨_, _, ?_, ?_, fun _ hi => Or.inl hi, L1.RawConvExpr.letE rt rv rb cell⟩
+    · simp [ixonUnshare]
+    · intro _ h; cases h
 
 private theorem rawConv_forall_of_load {refs : List _root_.Address} {univs : List Ixon.Univ}
     {sharing : List Ixon.Expr} {blobs : List (_root_.Address × ByteArray)} {h : Heap F}
@@ -1561,12 +1573,12 @@ theorem rec_family_block_head_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
             rwa [er])
           hdeI hdeEI
       cases hinfo0 : c0.info with
-      | defn _ =>
+      | defn d =>
         simp only [L1.GetCIRawResult, hinfo0] at hresI
         obtain ⟨v, hld, hrrI⟩ := hresI
         rw [hld] at ldInd; injection ldInd with hv; subst hv
         obtain ⟨_, _, _, _, hv_eq0, -⟩ := hrrI
-        simp [L1.defnValShape] at hv_eq0
+        cases d.kind <;> simp [L1.defnValShape] at hv_eq0
       | axio _ =>
         simp only [L1.GetCIRawResult, hinfo0] at hresI
         obtain ⟨v, hld, hrrI⟩ := hresI
@@ -1584,17 +1596,17 @@ theorem rec_family_block_head_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
         obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, hv_eq0, -⟩ := hrrI; simp at hv_eq0
       | dPrj _ =>
         simp only [L1.GetCIRawResult, hinfo0] at hresI
-        obtain ⟨-, -, -, -, -, -, v, -, -, -, -, -, -, hld, hrrI⟩ := hresI
+        obtain ⟨_, _, cb0, ms0, d, v, _, _, _, _, _, _, hld, hrrI⟩ := hresI
         rw [hld] at ldInd; injection ldInd with hv; subst hv
         obtain ⟨_, _, _, _, hv_eq0, -⟩ := hrrI
-        simp [L1.defnValShape] at hv_eq0
+        cases d.kind <;> simp [L1.defnValShape] at hv_eq0
       | iPrj ip =>
         simp only [L1.GetCIRawResult, hinfo0] at hresI
-        obtain ⟨-, -, -, -, -, v, -, -, -, -, -, -, hld, hrrI⟩ := hresI
+        obtain ⟨_, _, cb0, ms0, ind0, v, _, _, _, _, _, _, hld, hrrI⟩ := hresI
         rw [hld] at ldInd
         injection ldInd with hv
         subst hv
-        obtain ⟨-, -, -, -, -, tyPtrI, blkPtrI, bF, hbF_eq, hbF_rep, hv_eq0, -⟩ := hrrI
+        obtain ⟨_, _, _, _, _, tyPtrI, blkPtrI, bF, hbF_eq, hbF_rep, hv_eq0, _⟩ := hrrI
         injection hv_eq0 with _ _ hargs0
         simp only [List.cons.injEq] at hargs0
         obtain ⟨-, -, -, -, -, -, rfl, -⟩ := hargs0
@@ -1604,24 +1616,23 @@ theorem rec_family_block_head_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
           rIdx, hrefArr, hfun⟩
       | cPrj _ =>
         simp only [L1.GetCIRawResult, hinfo0] at hresI
-        obtain ⟨-, -, -, -, -, -, -, v, -, -, -, -, -, -, -, hld, hrrI⟩ := hresI
+        obtain ⟨_, _, _, cb0, ms0, ind0, ct0, v, _, _, _, _, _, _, _, hld, hrrI⟩ := hresI
         rw [hld] at ldInd; injection ldInd with hv; subst hv
-        obtain ⟨_, _, _, _, _, _, _, _, _, _, hv_eq0, -⟩ := hrrI; simp at hv_eq0
+        obtain ⟨_, _, _, _, _, _, _, _, _, _, hv_eq0, _⟩ := hrrI; simp at hv_eq0
       | rPrj _ =>
         simp only [L1.GetCIRawResult, hinfo0] at hresI
-        obtain ⟨-, -, -, -, -, v, -, -, -, -, -, -, hld, hrrI⟩ := hresI
+        obtain ⟨_, _, cb0, ms0, rc0, v, _, _, _, _, _, _, hld, hrrI⟩ := hresI
         rw [hld] at ldInd; injection ldInd with hv; subst hv
-        obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, hv_eq0, -⟩ := hrrI; simp at hv_eq0
+        obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, hv_eq0, _⟩ := hrrI; simp at hv_eq0
       | muts _ =>
         simp only [L1.GetCIRawResult, hinfo0] at hresI
-        exact hresI.elim
     cases hinfo : cx.info with
-    | defn _ =>
+    | defn d =>
       simp only [L1.GetCIRawResult, hinfo] at hres
       obtain ⟨v, hld, hrr⟩ := hres
       rw [hld] at ldRec; injection ldRec with hv; subst hv
       obtain ⟨_, _, _, _, hv_eq, -⟩ := hrr
-      simp [L1.defnValShape] at hv_eq
+      cases d.kind <;> simp [L1.defnValShape] at hv_eq
     | axio _ =>
       simp only [L1.GetCIRawResult, hinfo] at hres
       obtain ⟨v, hld, hrr⟩ := hres
@@ -1641,23 +1652,23 @@ theorem rec_family_block_head_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
         hrr
     | dPrj _ =>
       simp only [L1.GetCIRawResult, hinfo] at hres
-      obtain ⟨-, -, -, -, -, -, v, -, -, -, -, -, -, hld, hrr⟩ := hres
+      obtain ⟨_, _, cb0, ms0, d, v, _, _, _, _, _, _, hld, hrr⟩ := hres
       rw [hld] at ldRec; injection ldRec with hv; subst hv
       obtain ⟨_, _, _, _, hv_eq, -⟩ := hrr
-      simp [L1.defnValShape] at hv_eq
+      cases d.kind <;> simp [L1.defnValShape] at hv_eq
     | iPrj _ =>
       simp only [L1.GetCIRawResult, hinfo] at hres
-      obtain ⟨-, -, -, -, -, v, -, -, -, -, -, -, hld, hrr⟩ := hres
+      obtain ⟨_, _, cb0, ms0, ind0, v, _, _, _, _, _, _, hld, hrr⟩ := hres
       rw [hld] at ldRec; injection ldRec with hv; subst hv
-      obtain ⟨_, _, _, _, _, _, _, _, _, _, hv_eq, -⟩ := hrr; simp at hv_eq
+      obtain ⟨_, _, _, _, _, _, _, _, _, _, hv_eq, _⟩ := hrr; simp at hv_eq
     | cPrj _ =>
       simp only [L1.GetCIRawResult, hinfo] at hres
-      obtain ⟨-, -, -, -, -, -, -, v, -, -, -, -, -, -, -, hld, hrr⟩ := hres
+      obtain ⟨_, _, _, cb0, ms0, ind0, ct0, v, _, _, _, _, _, _, _, hld, hrr⟩ := hres
       rw [hld] at ldRec; injection ldRec with hv; subst hv
-      obtain ⟨_, _, _, _, _, _, _, _, _, _, hv_eq, -⟩ := hrr; simp at hv_eq
+      obtain ⟨_, _, _, _, _, _, _, _, _, _, hv_eq, _⟩ := hrr; simp at hv_eq
     | rPrj rp =>
       simp only [L1.GetCIRawResult, hinfo] at hres
-      obtain ⟨-, blkBytes, cb, ms, rc, v, hhb, hblk, hdeEb, hdeb, hcbm, hmem, hld, hrr⟩ := hres
+      obtain ⟨_, blkBytes, cb, ms, rc, v, hhb, hblk, hdeEb, hdeb, hcbm, hmem, hld, hrr⟩ := hres
       have hrecB : recordOf E₀ rp.block = some cb := by
         obtain ⟨rawX, cx', -, hhX, hbaX, hdeX, -, hheadX⟩ := Claim.get_ci_head hab evCi
         have ecX := hC.runStore.record_eq ((hC.runStore.recordOf_eq_recordAt _).symm.trans hrecX)
@@ -1678,7 +1689,6 @@ theorem rec_family_block_head_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
         hrr
     | muts _ =>
       simp only [L1.GetCIRawResult, hinfo] at hres
-      exact hres.elim
 
 /-- **`KernelModeled::rec_family_block` is deterministic on `E₀`**: two observed calls on the same
 recursor address return the same inductive family block address. -/
@@ -1828,7 +1838,7 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
         rw [← Array.getElem?_toList, hrl]; rfl
       obtain ⟨h, h', rc, xb, xrb, r, -, ⟨bb, hbb, rfl⟩, ⟨brb, hbrb, rfl⟩, ev, -, hsub⟩ := hfc
       match Obs.«KernelModeled::check_family».obs ev with
-      | .run (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
+      | .run (m105 := m105) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
           (ev_yqjbwijz := evo) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
           (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465)
           (cs511 := cs511) (ev513 := ev513) (ev601 := ev601) (ev634 := ev634) (ev664 := ev664)
@@ -1839,7 +1849,7 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
           (ev_biaifgpd := evm3) (ev1203 := ev1203) (ev_cwwgzxtj := evfl) (ev1246 := ev1246)
           (ev_mitevvsv := evln) (ev_rqpeovbn := evz1) (ev_xrhmaojz := evz2) (ev_whimdwjd := evvg)
           (ev1305 := ev1305) (cs1341 := cs1341) (ev1343 := ev1343) (hc1474 := hc) .. =>
-        have e0 : Heap.Extends h _ := by
+        have e0 : Heap.Extends h m105 := by
           match sg112 with
           | .Nil (ev15 := ev15) (he33 := he33) .. => rw [he33]; exact ev15.heap_extends
           | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
