@@ -1141,6 +1141,7 @@ def check_family := aiur_fn⟦
               let (ctor_models, s7) = get_addrs(s6, Lists::length(ctor_addrs));
               let rec_addrs = family_recs(rec_block);
               assert_no_role(rc, rec_addrs);
+              assert_no_role(rc, type_addrs);
               let n_recs = Lists::length(rec_addrs);
               let (rec_models, s8) = get_addrs(s7, n_recs);
               let src = Lists::concat(type_addrs, Lists::concat(ctor_addrs, rec_addrs));
