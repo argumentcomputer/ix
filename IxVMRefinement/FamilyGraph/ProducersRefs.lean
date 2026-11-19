@@ -1264,9 +1264,12 @@ private theorem walk_path_spec_ext {K : FamRunCtx}
                     [x_refs, .field f] m189 v276 m277 cs247 := by
                   rw [Obs.Names.«Lists::lookup<&[Field; 32]>».symbol]
                   simpa [hv201] using ev_lk
-                have hhref := RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy)
-                  (ext_i.trans ev_has.heap_extends) hrefCore
-                obtain ⟨⟨_, hget, -⟩, -⟩ := Lib.lookup_spec ev_lk' hhref
+                have hhref : RepList (Instance.mk "Lists::Node" [.ptr (.array .field 32)]).symbol
+                    (Bytes.RepAddressRef Core.addrTy) m189 refBs x_refs := by
+                  rw [Obs.Names.«Lists::Node<&[Field; 32]>».symbol]
+                  exact RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy)
+                    (ext_i.trans ev_has.heap_extends) hrefCore
+                obtain ⟨⟨_, hget, -⟩, -⟩ := Lib.Lists.lookup_spec ev_lk' hhref
                 have hlt_len := (List.getElem?_eq_some_iff.mp hget).1
                 have hlen_eq : refBs.length = c_cur.refs.size := by
                   have := congrArg List.length hrefMap
@@ -1288,12 +1291,14 @@ private theorem walk_path_spec_ext {K : FamRunCtx}
           obtain ⟨hm189, -⟩ := Claim.g_list_has_spec (S0.usedRefIdxs c_cur) hk_lt hidxs ev_has'
           subst hm189
           have ev_lk' : ObsFn Obs.W (Instance.mk "Lists::lookup" [.ptr (.array .field 32)]).symbol
-              [x_refs, .field (k : F)] m203 v276 m277 cs247 := by
+              [x_refs, .field (k : F)] m189 v276 m277 cs247 := by
             rw [Obs.Names.«Lists::lookup<&[Field; 32]>».symbol]
             rwa [← hk_eq]
-          obtain ⟨⟨b_next, hget_b, hb_rep⟩, hm_lk⟩ :=
-            Lib.lookup_spec ev_lk'
-              (RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy) ext_i hrefCore)
+          have hhref' : RepList (Instance.mk "Lists::Node" [.ptr (.array .field 32)]).symbol
+              (Bytes.RepAddressRef Core.addrTy) m189 refBs x_refs := by
+            rw [Obs.Names.«Lists::Node<&[Field; 32]>».symbol]
+            exact RepLinkedList.mono (Bytes.repAddressRef_heapMono₂ Core.addrTy) ext_i hrefCore
+          obtain ⟨⟨b_next, hget_b, hb_rep⟩, hm_lk⟩ := Lib.Lists.lookup_spec ev_lk' hhref'
           subst hm_lk
           have hval_k : ((k : F)).val = k := val_cast_lt_u56 hk_lt
           rw [hval_k] at hget_b
