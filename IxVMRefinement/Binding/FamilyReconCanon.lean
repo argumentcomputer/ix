@@ -523,7 +523,7 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨-, rawBytes', c', blobs', hh', ha', hex', -, -, -, hrawRes⟩ :=
     L1.get_ci_spec hbd_cs ra ev
   have hc_eq : c' = c := record_eq_of_hashed hS hsub hcE hh' ha' hex'
-  subst hc_eq
+  rcases hc_eq.symm with rfl
   cases hci : c.info with
   | defn d =>
     simp only [L1.GetCITraceResult, hci] at htr
@@ -670,7 +670,7 @@ theorem indAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨-, rawBytes', c', blobs', hh', ha', hex', -, -, -, hrawRes⟩ :=
     L1.get_ci_spec hbd_cs ra ev
   have hc_eq : c' = c := record_eq_of_hashed hS hsub hcE hh' ha' hex'
-  subst hc_eq
+  rcases hc_eq.symm with rfl
   cases hci : c.info with
   | iPrj prj =>
     simp only [L1.GetCIBlockTraceResult, hci] at hblk
@@ -853,8 +853,8 @@ theorem modeledAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTa
   intro xblk r h m cs ba hsub hSba rba ev
   have g := (hst.good Ix.Kernel.Env.empty none).sub hsub
   have hag := Route.block_is_modeled_agrees (E := Ec) g.1 g.2 rba ev
-  have hcov : L1.CanonicalHashCoverage Ec cs :=
-    L1.CanonicalHashCoverage.mono hsub (Binding.stepStore_canonicalHashCoverage hS hH hst)
+  have hcov : L1.CanonicalHashCoverage Ec cs := fun bytes val hh hsz hx =>
+    (Binding.stepStore_canonicalHashCoverage hS hH hst) bytes val (Core.hashed_mono hsub hh) hsz hx
   obtain ⟨b, hbEc⟩ := hag.known hcov
   have hr_eq := hag.value b hbEc
   obtain ⟨cbR, hcbR⟩ := Option.isSome_iff_exists.mp hSba
@@ -1000,7 +1000,7 @@ theorem ctorLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
   obtain ⟨_, tyPtr', _, hcit_eq, hlevels⟩ := hcit
   simp only [kciEnum, Value.construct.injEq, List.cons.injEq] at hcit_eq
   have hty_eq : tyPtr' = tyPtr := hcit_eq.2.2.2.1.symm
-  subst hty_eq
+  rcases hty_eq.symm with rfl
   obtain ⟨cbR, hcbR⟩ := Option.isSome_iff_exists.mp hSb
   have hcbE : recordOf E₀ (ixAddr ba) = some cbR := hRsub (ixAddr ba) cbR hcbR
   have hcbEq : cb = cbR := record_eq_of_hashed hS hsub hcbE hhB haB hexB
@@ -1101,14 +1101,11 @@ private theorem rulesTraceRep_to_recRulesRep {t : Ix.Kernel.RoleTable}
           (keys_held_of_loaded ht hwf hcl hcrbR (blockSelf_held hcl hcrbR hmuts)
             (fun l hl => mem_used_of_member hmuts hk l
               (List.mem_append_right _ (List.mem_flatMap.mpr ⟨ru, hru_mem, hl⟩))) hloaded)
-      have hrest' : L1.RulesTraceRep crb.refs.toList (L1.blockRecurAddrs rb rs.toList)
-          crb.univs.toList crb.sharing.toList blobs tree h (j + 1)
-          (mutsRoot rs k + 1 + (((j + 1 : Nat) : F))) rus _ := by
-        have hcast : mutsRoot rs k + 1 + ((j : Nat) : F) + 1 =
-            mutsRoot rs k + 1 + (((j + 1 : Nat) : F)) := by
-          push_cast; ring
-        rwa [hcast] at rest
-      refine .cons cell ⟨rhs, _, rfl, hf, hloaded, htm, hrhsIn⟩ (ih (fun i ru' hi => ?_) hrest')
+      have hcast : mutsRoot rs k + 1 + ((j : Nat) : F) + 1 =
+          mutsRoot rs k + 1 + (((j + 1 : Nat) : F)) := by
+        push_cast; ring
+      rw [hcast] at rest
+      refine .cons cell ⟨rhs, _, rfl, hf, hloaded, htm, hrhsIn⟩ (ih (fun i ru' hi => ?_) rest)
       have h1 := hidx (i + 1) ru' (by simpa using hi)
       rwa [show j + (i + 1) = (j + 1) + i by omega] at h1
 
@@ -1165,6 +1162,10 @@ theorem recrLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
   rcases hmsEq with rfl
   have hk_lt : k < UInt64.size := by
     have hsz : k < ms.size := (Array.getElem?_eq_some_iff.mp hk).1
+    have hblk_lt : blkBytes.size < 2 ^ 39 := by
+      obtain ⟨c0, hc0, -, inp, hargs, hrep⟩ := hhB
+      have hlt := RomBound.bounded_length_lt hbd_cs hc0 (by rw [hargs]; simp) hrep
+      simpa [ByteArray.size] using hlt
     have := Ixon.Verify.ConstantBounds.deConstantExact_resource_bound blkBytes cb hexB
     have := Claim.muts_size_le hmuts
     omega
@@ -1220,7 +1221,8 @@ theorem blockRecurAddrs_eq_indcAddrs_of_all_indc (B : _root_.Address) :
     have ih := blockRecurAddrs_eq_indcAddrs_of_all_indc B (i + 1) ms
       (fun x hx => hall x (List.mem_cons_of_mem _ hx))
     rw [← ih]
-    exact mapIdx_ext ms (fun j x => by rw [show i + (j + 1) = i + 1 + j by omega])
+    exact mapIdx_ext ms (fun j x => by
+      rw [show i + (j + 1) = i + 1 + j by omega, LoadedReads.memberAddr_eq_projAddr])
 
 theorem membersAt_eq_blockRecurAddrs {E₀ : Ixon.Env} {B : _root_.Address} {cb : Ixon.Constant}
     {ms : Array Ixon.MutConst}
