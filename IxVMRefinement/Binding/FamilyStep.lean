@@ -59,6 +59,7 @@ structure StoredFamilyRecs (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (env : Ix.Ke
         (keyOf t (memberAddr rb k (.recr rc))) rc (.recInfo cv mI rP rules₀) ∧
       env.find? (keyOf t (memberAddr rb k (.recr rc))) = some (.recInfo cv' mI rP rules') ∧
       cv'.name = cv.name ∧ cv'.levelParams = cv.levelParams ∧
+      StoredAs (.recInfo cv' mI rP rules') (.recInfo cv mI rP rules₀) ∧
       TwinMemberLoaded crb rs ⟨k.toUInt64, rb⟩ rc cv.levelParams cv.type rules₀ cv' rules' ∧
       (∀ (j : Nat) (rc_j : Ixon.Recursor), rs[j]? = some (.recr rc_j) →
         cv'.type.mentionsConst (keyOf t (memberAddr rb j (.recr rc_j))) = false) ∧
@@ -85,11 +86,11 @@ theorem StoredFamilyRecs.mono {t : Ix.Kernel.RoleTable} {R₁ R' : Ixon.Env}
       env₁.find? k = some ci → env'.find? k = some ci)
     (h : StoredFamilyRecs t R₁ env₁ B cb rb crb) : StoredFamilyRecs t R' env' B cb rb crb where
   member := fun ms rs k rc hms hrs hk => by
-    obtain ⟨cv, mI, rP, rules₀, cv', rules', hku, hRR, hf, hnm, hlp, hTML, hns, hnp, hmot,
+    obtain ⟨cv, mI, rP, rules₀, cv', rules', hku, hRR, hf, hnm, hlp, hSA, hTML, hns, hnp, hmot,
       ⟨Bm, im, cbm, msm, indm, D, lvls, himu, hPm, hBm, hmsm, him, hpi, hfn, hni⟩, hconcl⟩ :=
       h.member ms rs k rc hms hrs hk
     exact ⟨cv, mI, rP, rules₀, cv', rules', hku, ReaderReads.recReads_mono hle hblob hRR,
-      hfind hf, hnm, hlp, hTML, hns, hnp, hmot,
+      hfind hf, hnm, hlp, hSA, hTML, hns, hnp, hmot,
       ⟨Bm, im, cbm, msm, indm, D, lvls, himu, hle _ _ hPm, hle _ _ hBm, hmsm, him, hpi, hfn, hni⟩,
       hconcl⟩
 
@@ -114,7 +115,7 @@ theorem StoredFamilyRecs.recLoaded {t : Ix.Kernel.RoleTable} (ht : t.check = .ok
     (hf : env.find? (keyOf t (memberAddr rb p.idx.toNat (.recr rc))) =
       some (.recInfo cv' mI' rP' rules')) :
     TwinMemberLoaded crb rs p rc cv.levelParams cv.type rules₀ cv' rules' := by
-  obtain ⟨cv₁, mI₁, rP₁, rules₁, cv'₁, rules'₁, -, hRR₁, hf₁, -, -, hTML, -⟩ :=
+  obtain ⟨cv₁, mI₁, rP₁, rules₁, cv'₁, rules'₁, -, hRR₁, hf₁, -, -, -, hTML, -⟩ :=
     h.member ms rs p.idx.toNat rc hms hrs hm
   have hroles : (t.bound.toList.map (·.1)).Nodup := (Ix.Kernel.RoleTable.check_nodup ht).1
   have eci := RecReads.same hroles hRR₁ hRR
@@ -143,7 +144,7 @@ theorem StoredFamilyRecs.recNoSelf {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
     (hf : env.find? (keyOf t (memberAddr rb k (.recr rc_k))) =
       some (.recInfo cv' mI' rP' rules')) :
     cv'.type.mentionsConst (keyOf t (memberAddr rb j (.recr rc_j))) = false := by
-  obtain ⟨_, _, _, _, cv'₁, _, -, -, hf₁, -, -, -, hns, -⟩ := h.member ms rs k rc_k hms hrs hk
+  obtain ⟨_, _, _, _, cv'₁, _, -, -, hf₁, -, -, -, -, hns, -⟩ := h.member ms rs k rc_k hms hrs hk
   have ef := Option.some.inj (hf₁.symm.trans hf)
   injection ef with hcv' _ _ _
   rw [← hcv']
@@ -179,7 +180,7 @@ def OverUnitStepFamily (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
 
 /-- **The step of a second family record of a block, over the fold's clause** (module
 docstring): `OverUnitStep` of the record at `A`, handed in addition the family record `rb` of its
-block installed. -/
+block installed and storing its readings in `E₀`. -/
 def OverUnitStepTwin (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
     (t : Ix.Kernel.RoleTable) (G : Nat → Prop) (R : Ixon.Env) (envT : Ix.Kernel.Env .anon)
     (E₀ : Ixon.Env) (A : _root_.Address) (c : Ixon.Constant) (rb : _root_.Address)
@@ -191,6 +192,8 @@ def OverUnitStepTwin (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop)
     (∀ x, UsedRef E₀ A x →
       (env.find? (keyOf t x)).isSome = true ∨ ConstAddrOf A c x ∨ ¬ NeedOk E₀ x) →
     FamilyInstalled t env rb crb →
+    (∀ x, ConstAddrOf rb crb x →
+      ∃ ci ci₀, env.find? (keyOf t x) = some ci ∧ Reads t E₀ x ci₀ ∧ StoredAs ci ci₀) →
     (∀ x, ConstAddrOf A c x → env.find? (keyOf t x) = none) →
     ∃ (new : List (Ix.Kernel.ConstantInfo .anon)) (Reg' : NativeFam .anon → Prop),
       (new.map (·.name)).Nodup ∧ (∀ ci ∈ new, env.find? ci.name = none) ∧

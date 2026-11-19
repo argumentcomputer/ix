@@ -627,6 +627,10 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
         some (.recInfo ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules') := by
       rw [← hcv_name]
       exact hf'
+    obtain ⟨cSA, hcSA, hSA'⟩ := hst₂ _ hci₀
+    have ecSA : cSA = .recInfo ⟨cv.name, cv.levelParams, tyA⟩ mI rP rules' :=
+      Option.some.inj (hcSA.symm.trans hf')
+    rw [ecSA] at hSA'
     have hTML : TwinFamily.TwinMemberLoaded crb rs ⟨k.toUInt64, rb⟩ rc cv.levelParams cv.type
         rules₀ ⟨cv.name, cv.levelParams, tyA⟩ rules' := by
       have hRR₀' : RecReads t (recordOf ρ.E₀) (fun x => ρ.E₀.blobs.get? x) crb (blockSelf t rb rs)
@@ -658,7 +662,7 @@ theorem closureFamilySteps_of_check {L : Ix.Kernel.Env .anon → NativeFam .anon
       Option.some.inj ((Binding.recordOf_of_loaded hloaded hcbm₁).symm.trans hBm₀)
     subst cbm₁
     exact ⟨cv, mI, rP, rules₀, ⟨cv.name, cv.levelParams, tyA⟩, rules', hku, hRR₁, hf_k, rfl, rfl,
-      hTML, hns, hnp, hmot,
+      hSA', hTML, hns, hnp, hmot,
       ⟨Bm, im, cbm, msm, indm, D, lvls, himu, hPm₁, hcbm₁, hmsm, him, hpi, hfn, hni⟩, hconcl⟩
   refine ⟨new ++ as, Reg, hndNA, ?_, ?_, ?_, ?_, ?_, hstoredRecs, ?_⟩
   · -- fresh in the prefix

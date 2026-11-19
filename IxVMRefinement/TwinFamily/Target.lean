@@ -121,6 +121,8 @@ def TwinStepTarget (RForm : RecordFormPred) : Prop :=
     (∀ x, UsedRef E₀ rb' x →
       (env.find? (keyOf t x)).isSome = true ∨ ConstAddrOf rb' crb' x ∨ ¬ NeedOk E₀ x) →
     FamilyInstalled t env rb crb →
+    (∀ x, ConstAddrOf rb crb x →
+      ∃ ci ci₀, env.find? (keyOf t x) = some ci ∧ Reads t E₀ x ci₀ ∧ StoredAs ci ci₀) →
     (∀ x, ConstAddrOf rb' crb' x → env.find? (keyOf t x) = none) →
     (∀ x, ConstAddrOf rb' crb' x → Decl.KeyFree (keyOf t x)) →
     ∃ (blk : List (ConstantInfo .anon)) (env₂ : Ix.Kernel.Env .anon),
@@ -205,11 +207,13 @@ def FamilyRecsModeled (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env)
   ∀ (B rb x : _root_.Address) (crb : Ixon.Constant),
     fam B = some rb → recordOf E₀ rb = some crb → ConstAddrOf rb crb x →
     (env.find? (keyOf t x)).isSome = true →
-    (∃ cv mI rP rules, env.find? (keyOf t x) = some (.recInfo cv mI rP rules)) ∧
+    (∃ cv mI rP rules, env.find? (keyOf t x) = some (.recInfo cv mI rP rules) ∧
+      ∃ ci₀, Reads t E₀ x ci₀ ∧ StoredAs (.recInfo cv mI rP rules) ci₀) ∧
       HasModel env (keyOf t x)
 
 /-- The clause is kept by a step that keeps every stored constant and stores, at a constant
-address of a claimed family record, only a recursor with a model companion. -/
+address of a claimed family record, only a recursor that stores its reading with a model
+companion. -/
 theorem FamilyRecsModeled.step {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     {fam : _root_.Address → Option _root_.Address} {env env₂ : Ix.Kernel.Env .anon}
     (h : FamilyRecsModeled t E₀ fam env)
@@ -218,16 +222,18 @@ theorem FamilyRecsModeled.step {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     (hnew : ∀ (B rb x : _root_.Address) (crb : Ixon.Constant),
       fam B = some rb → recordOf E₀ rb = some crb → ConstAddrOf rb crb x →
       (env₂.find? (keyOf t x)).isSome = true → env.find? (keyOf t x) = none →
-      (∃ cv mI rP rules, env₂.find? (keyOf t x) = some (.recInfo cv mI rP rules)) ∧
+      (∃ cv mI rP rules, env₂.find? (keyOf t x) = some (.recInfo cv mI rP rules) ∧
+        ∃ ci₀, Reads t E₀ x ci₀ ∧ StoredAs (.recInfo cv mI rP rules) ci₀) ∧
         HasModel env₂ (keyOf t x)) :
     FamilyRecsModeled t E₀ fam env₂ := by
   intro B rb x crb hrb hcrb hx hs
   cases hold : env.find? (keyOf t x) with
   | none => exact hnew B rb x crb hrb hcrb hx hs hold
   | some c =>
-    obtain ⟨⟨cv, mI, rP, rules, hf⟩, hm⟩ := h B rb x crb hrb hcrb hx (by rw [hold]; rfl)
+    obtain ⟨⟨cv, mI, rP, rules, hf, ci₀, hrd, hst⟩, hm⟩ :=
+      h B rb x crb hrb hcrb hx (by rw [hold]; rfl)
     rw [hold] at hf
-    refine ⟨⟨cv, mI, rP, rules, ?_⟩, hm.mono hfind⟩
+    refine ⟨⟨cv, mI, rP, rules, ?_, ci₀, hrd, hst⟩, hm.mono hfind⟩
     rw [← hf]
     exact hfind hold
 
@@ -249,8 +255,23 @@ theorem familyInstalled_of_clause {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
     {B rb : _root_.Address} {crb : Ixon.Constant} (h : FamilyRecsModeled t E₀ fam env)
     (hrb : fam B = some rb) (hcrb : recordOf E₀ rb = some crb)
     (hstored : ∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true) :
-    FamilyInstalled t env rb crb :=
-  fun x hx => h B rb x crb hrb hcrb hx (hstored x hx)
+    FamilyInstalled t env rb crb := by
+  intro x hx
+  obtain ⟨⟨cv, mI, rP, rules, hf, -⟩, hm⟩ := h B rb x crb hrb hcrb hx (hstored x hx)
+  exact ⟨⟨cv, mI, rP, rules, hf⟩, hm⟩
+
+/-- **With the clause, each stored constant address of a claimed family record stores its
+reading in `E₀`.** -/
+theorem familyRecsStored_of_clause {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
+    {fam : _root_.Address → Option _root_.Address} {env : Ix.Kernel.Env .anon}
+    {B rb : _root_.Address} {crb : Ixon.Constant} (h : FamilyRecsModeled t E₀ fam env)
+    (hrb : fam B = some rb) (hcrb : recordOf E₀ rb = some crb)
+    (hstored : ∀ x, ConstAddrOf rb crb x → (env.find? (keyOf t x)).isSome = true) :
+    ∀ x, ConstAddrOf rb crb x →
+      ∃ ci ci₀, env.find? (keyOf t x) = some ci ∧ Reads t E₀ x ci₀ ∧ StoredAs ci ci₀ := by
+  intro x hx
+  obtain ⟨⟨cv, mI, rP, rules, hf, ci₀, hrd, hst⟩, -⟩ := h B rb x crb hrb hcrb hx (hstored x hx)
+  exact ⟨.recInfo cv mI rP rules, ci₀, hf, hrd, hst⟩
 
 /-! ## The generated terms of IxC's twin record -/
 
