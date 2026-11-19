@@ -46,12 +46,12 @@ set_option linter.unusedSimpArgs false
 
 /-! ## Section 1: Generic list wrappers, ROM `peelAll` bound, and `fieldsClassify` bounds -/
 
-private def fieldTyG : Generic.Ty := .field
+private abbrev fieldTyG : Generic.Ty := .field
 
-private def addrTyG : Generic.Ty :=
+private abbrev addrTyG : Generic.Ty :=
   .ptr (.array .field 32)
 
-private def kexprTyG : Generic.Ty :=
+private abbrev kexprTyG : Generic.Ty :=
   .ptr (.named "KernelTypes::KExprNode" [])
 
 theorem kexpr_drop_spec {R : Heap F → KExpr → SourceValue F → Prop} {xs : List KExpr}
@@ -75,6 +75,18 @@ theorem kexpr_reverse_spec {R : Heap F → KExpr → SourceValue F → Prop} (hR
   change RepList Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» R h xs l at hl
   rw [← Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hl
   have hr := Lib.Lists.reverse_spec (t := kexprTyG) hR ev hl
+  rwa [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hr
+
+theorem kexpr_unit_reverse_spec {xs : List Unit} {l r : SourceValue F}
+    {h h' : Heap F} {cs : List (Call F)}
+    (ev : ObsFn W Obs.Names.«Lists::reverse<&KernelTypes::KExprNode>» [l] h r h' cs)
+    (hl : RepList kexprListEnum (fun _ (_ : Unit) _ => True) h xs l) :
+    RepList kexprListEnum (fun _ (_ : Unit) _ => True) h' xs.reverse r := by
+  rw [← Obs.Names.«Lists::reverse<&KernelTypes::KExprNode>».symbol] at ev
+  change RepList Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» _ h xs l at hl
+  rw [← Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hl
+  have hr := Lib.Lists.reverse_spec (t := kexprTyG) (R := fun _ (_ : Unit) _ => True)
+    (fun _ _ _ _ _ t => t) ev hl
   rwa [Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol] at hr
 
 theorem kexpr_concat_spec {R : Heap F → KExpr → SourceValue F → Prop} (hR : HeapMono₂ R)
@@ -179,48 +191,64 @@ private theorem represents_construct_inv_b {rom : ROM F} {h : Heap F} {en tag : 
   | tuple _ => cases hv
   | ptr _ _ _ => cases hv
 
-private theorem peelAll_length_le_aux {rom : ROM F} {κ : _root_.Address → KKey}
+private theorem peelAll_length_le_count_aux {rom : ROM F} {κ : _root_.Address → KKey}
+    {rootCalls : List (Call F)}
     (hvalid : rom.Valid) (hbound : ROMAddressesAtMost rom (2 ^ 39))
-    {h : Heap F} {k : Nat} {E : KExpr} {xe : SourceValue F}
-    (rep : Decl.TmExact κ 0 (fun _ => .sort .zero) h k E xe) :
-    ∀ (seen : List (F × Nat)) (w : Value F),
-      Represents rom h xe w →
-      (seen.map Prod.fst).Nodup →
-      (∀ p ∈ seen, ∃ v, (p.1, v) ∈ rom.entries) →
-      (∀ p ∈ seen, ∀ (h_x : Heap F) (E_x : KExpr) (px : SourceValue F),
-        Represents rom h_x px (.ptr (.enum kexprEnum) p.1) →
-        TmOExact κ h_x E_x px → exprSize E_x = p.2) →
-      (∀ p ∈ seen, exprSize E < p.2) →
-      (peelAll E).1.length + seen.length ≤ 2 ^ 39 := by
-  induction rep with
-  | @forallE k loc D B dl pt pb pl cell rD rB rl ihD ihB =>
-    intro seen w hrep hnodup hrom hsz hlt
-    obtain ⟨s, addr, enc, hs, hmem, hrep_c, rfl⟩ := represents_ptr_inv_b hrep
-    rw [cell] at hs; cases hs
-    obtain ⟨ws, henc, hws⟩ := represents_construct_inv_b hrep_c
-    have hty_enc : enc.type = .enum kexprEnum := by rw [henc]; simp [Value.type]
-    rw [hty_enc] at hrep
-    cases hws with
-    | cons _ hws1 =>
-      cases hws1 with
-      | cons hrepB _ =>
+    (hcar : ∀ c ∈ rootCalls, ∀ v ∈ c.args, ∃ w, Represents rom c.heap v w)
+    {E : KExpr} {xty xacc r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
+    (ev : ObsFn W "KernelCheck::count_foralls_body" [xty, xacc] h r h' cs)
+    (hmem : (⟨"KernelCheck::count_foralls_body", [xty, xacc], h⟩ : Call F) ∈ rootCalls)
+    (hsub : ∀ c ∈ cs, c ∈ rootCalls)
+    (hE : TmOExact κ h E xty)
+    (seen : List (F × Nat))
+    (hnodup : (seen.map Prod.fst).Nodup)
+    (hrom : ∀ p ∈ seen, ∃ v, (p.1, v) ∈ rom.entries)
+    (hsz : ∀ p ∈ seen, ∀ (h_x : Heap F) (E_x : KExpr) (px : SourceValue F),
+      Represents rom h_x px (.ptr (.enum kexprEnum) p.1) →
+      TmOExact κ h_x E_x px → exprSize E_x = p.2)
+    (hlt : ∀ p ∈ seen, exprSize E < p.2) :
+    (peelAll E).1.length + seen.length ≤ 2 ^ 39 := by
+  have hbd_cs : Bounded cs := ⟨rom, hvalid, hbound, fun c hc => hcar c (hsub c hc)⟩
+  match Obs.«KernelCheck::count_foralls_body».obs ev with
+  | .Forall (x_body := xbody) (cs40 := cs1) (v44 := v1) (ld12 := ld)
+      (ev42 := e1) (hc67 := hc) .. =>
+    obtain ⟨D, B, ℓ, rfl, -, hB, -⟩ := TmOExact.forallE_of_load hE ld
+    obtain ⟨w, hrep⟩ := hcar _ hmem xty (by simp)
+    cases xty with
+    | ptr ty loc =>
+      simp only [loadValue] at ld
+      cases hget : h[loc]? with
+      | none => rw [hget] at ld; cases ld
+      | some stored =>
+        rw [hget] at ld
+        obtain ⟨w1, w2, hst⟩ : ∃ w1 w2, stored = .construct kexprEnum "Forall" [w1, xbody, w2] :=
+          ⟨_, _, (Except.ok.inj ld).symm⟩
+        obtain ⟨s, addr, enc, hs, hmem_r, hrep_c, rfl⟩ := represents_ptr_inv_b hrep
+        rw [hget] at hs; cases hs
+        rw [hst] at hrep_c
+        obtain ⟨ws, henc, -⟩ := represents_construct_inv_b hrep_c
+        have hty_enc : enc.type = .enum kexprEnum := by rw [henc]; simp [Value.type]
+        rw [hty_enc] at hrep
         have hnotmem : addr ∉ seen.map Prod.fst := by
           intro hin
           obtain ⟨p, hp, hpeq⟩ := List.mem_map.mp hin
-          have heq := hsz p hp h (.forallE D B (bmeta dl)) (.ptr (.enum kexprEnum) loc)
-            (by rw [hpeq]; exact hrep) ⟨k, .forallE cell rD rB rl⟩
+          have heq := hsz p hp h (.forallE D B (bmeta ℓ)) (.ptr ty loc)
+            (by rw [hpeq]; exact hrep) hE
           have := hlt p hp
           omega
-        have hltB : exprSize B < exprSize (.forallE D B (bmeta dl)) := by simp [exprSize]; omega
-        have hrec := ihB ((addr, exprSize (.forallE D B (bmeta dl))) :: seen) _ hrepB
+        have hltB : exprSize B < exprSize (.forallE D B (bmeta ℓ)) := by simp [exprSize]; omega
+        have hlt_cs : cs1.length < cs.length := by rw [hc]; simp
+        have hrec := peelAll_length_le_count_aux hvalid hbound hcar e1
+          (hsub _ (by rw [hc]; simp)) (fun c hc' => hsub c (by rw [hc]; simp [hc']))
+          hB ((addr, exprSize (.forallE D B (bmeta ℓ))) :: seen)
           (by simp [List.nodup_cons, hnotmem, hnodup])
           (fun p hp => by
             rcases List.mem_cons.mp hp with rfl | hp
-            · exact ⟨enc, hmem⟩
+            · exact ⟨enc, hmem_r⟩
             · exact hrom p hp)
           (fun p hp h_x E_x px hrx hEx => by
             rcases List.mem_cons.mp hp with rfl | hp
-            · exact exprSize_eq_of_represents hvalid hEx hrx hrep ⟨k, .forallE cell rD rB rl⟩
+            · exact exprSize_eq_of_represents hvalid hEx hrx hrep hE
             · exact hsz p hp h_x E_x px hrx hEx)
           (fun p hp => by
             rcases List.mem_cons.mp hp with rfl | hp
@@ -228,30 +256,163 @@ private theorem peelAll_length_le_aux {rom : ROM F} {κ : _root_.Address → KKe
             · exact Nat.lt_trans hltB (hlt p hp))
         simp only [peelAll, List.length_cons] at hrec ⊢
         omega
-  | bvarFree _ _ _ hd => omega
-  | _ =>
-    intro seen w _ hnodup hrom _ _
+    | _ => simp [loadValue] at ld
+  | .Let (x_v := xv) (x_b := xb) (v_qjjhbakm := v') (m_fhppzpwh := m')
+      (cs_yqrxeseo := cs1) (cs_fsonrmiw := cs2) (ld12 := ld) (ev_gemvpjgn := e1)
+      (ev_krdhokor := e2) (hc_qubwlzze := hc) .. =>
+    obtain ⟨T, V, B, rfl, -, hv, hb⟩ := TmOExact.letE_of_load hE ld
+    have b1 : Bounded cs1 := RomBound.bounded_mono hbd_cs (fun c hc' => by rw [hc]; simp [hc'])
+    have hv' := expr_inst1_tmOExact b1 hb hv e1
+    have hlt_cs : cs2.length < cs.length := by
+      rw [hc]; simp only [List.length_cons, List.length_append]; omega
+    exact peelAll_length_le_count_aux hvalid hbound hcar e2
+      (hsub _ (by rw [hc]; simp)) (fun c hc' => hsub c (by rw [hc]; simp [hc']))
+      hv' seen hnodup hrom hsz hlt
+  | .other (ld12 := ld) (hne68 := hnf) (hne_ttotnwna := hnl) .. =>
+    have hp := peelAll_of_not_forall_not_let hE ld hnf hnl
+    rw [hp]
     have hle := RomBound.length_le_of_nodup hbound hnodup (fun a ha => by
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp ha
       exact hrom p hp)
-    simp only [peelAll, List.length_nil, Nat.zero_add]
     simpa using hle
+termination_by cs.length
 
-/-- Every `TmOExact` term appearing as an argument of a call inside a `Bounded` trace has at most
+/-- Every `TmOExact` term passed to `count_foralls_body` inside a `Bounded` trace has at most
 `2 ^ 39` leading `Forall` binders. -/
-theorem peelAll_length_le_of_obs {κ : _root_.Address → KKey} {E : KExpr} {xe : SourceValue F}
-    {nm : String} {args : List (SourceValue F)} {h h' : Heap F} {r : SourceValue F}
-    {cs cs' rootCalls : List (Call F)}
-    (hbd : Bounded rootCalls) (hsub : ∀ c ∈ cs, c ∈ rootCalls)
-    (_ev : ObsFn W nm args h r h' cs')
-    (hmem : (⟨nm, args, h⟩ : Call F) ∈ cs) (hxe : xe ∈ args)
-    (hE : TmOExact κ h E xe) : (peelAll E).1.length ≤ 2 ^ 39 := by
+theorem peelAll_length_le_of_count_foralls {κ : _root_.Address → KKey} {E : KExpr}
+    {xty xacc r : SourceValue F} {h h' : Heap F} {cs cs_outer rootCalls : List (Call F)}
+    (hbd : Bounded rootCalls) (hsub_o : ∀ c ∈ cs_outer, c ∈ rootCalls)
+    (ev : ObsFn W "KernelCheck::count_foralls_body" [xty, xacc] h r h' cs)
+    (hmem : (⟨"KernelCheck::count_foralls_body", [xty, xacc], h⟩ : Call F) ∈ cs_outer)
+    (hsub : ∀ c ∈ cs, c ∈ rootCalls)
+    (hE : TmOExact κ h E xty) : (peelAll E).1.length ≤ 2 ^ 39 := by
   obtain ⟨rom, hvalid, hbound, hcar⟩ := hbd
-  obtain ⟨w, hw⟩ := hcar ⟨nm, args, h⟩ (hsub _ hmem) xe hxe
-  obtain ⟨k, rep⟩ := hE
-  have h1 := peelAll_length_le_aux hvalid hbound rep [] w hw
+  have h1 := peelAll_length_le_count_aux hvalid hbound hcar ev (hsub_o _ hmem) hsub hE []
     List.nodup_nil (fun _ hm => nomatch hm) (fun _ hm => nomatch hm) (fun _ hm => nomatch hm)
   simpa using h1
+
+/-- **`walk_fields_classify`** always produces a domain list whose length equals
+`acc.length + (peelAll E).1.length` (no arithmetic bound needed). -/
+theorem walk_fields_classify_doms_len {κ : _root_.Address → KKey} {E : KExpr}
+    {acc : List Unit}
+    {xrc xty xflat xdoms xrec xrecmem xnorm xfidx xlb xtys r : SourceValue F}
+    {h h' : Heap F} {cs : List (Call F)}
+    (ev : ObsFn W "KernelCheck::walk_fields_classify"
+      [xrc, xty, xflat, xdoms, xrec, xrecmem, xnorm, xfidx, xlb, xtys] h r h' cs)
+    (hbnd : Bounded cs) (hE : TmOExact κ h E xty)
+    (hdoms : RepList kexprListEnum (fun _ (_ : Unit) _ => True) h acc xdoms) :
+    ∃ xds xri xrm xret xns (ds : List Unit),
+      r = .tuple [xds, xri, xrm, xret, xns] ∧
+      ds.length = acc.length + (peelAll E).1.length ∧
+      RepList kexprListEnum (fun _ (_ : Unit) _ => True) h' ds xds := by
+  have sub : ∀ {cs' : List (Call F)}, (∀ c ∈ cs', c ∈ cs) → Bounded cs' :=
+    fun hs => RomBound.bounded_mono hbnd hs
+  match Obs.«KernelCheck::walk_fields_classify».obs ev with
+  | .Forall_n1 (x_dom := xdom) (x_body := xbody) (m37 := m1) (m75 := m2)
+      (m122 := m3) (m153 := m4) (m184 := m5) (m243 := m6) (m274 := m7) (cs307 := cs3)
+      (ld12 := ld) (ev49 := evw) (ev87 := evrecf)
+      (hm132 := hm3) (hm163 := hm4) (hm194 := hm5) (hm253 := hm6) (hm284 := hm7)
+      (ev309 := evnext) (hc398 := hc) .. =>
+    subst hm3 hm4 hm5 hm6 hm7
+    obtain ⟨D, B, ℓ, rfl, -, hB, -⟩ := TmOExact.forallE_of_load hE ld
+    have ext12 := evw.heap_extends.trans evrecf.heap_extends
+    have ext3 : Heap.Extends m2 (m2 ++ [.construct kexprListEnum "Cons" [xdom, xdoms]]) :=
+      Heap.Extends.snoc _ _
+    have ext37 : Heap.Extends (m2 ++ [.construct kexprListEnum "Cons" [xdom, xdoms]]) m7 :=
+      (Heap.Extends.snoc _ _).trans ((Heap.Extends.snoc _ _).trans
+        ((Heap.Extends.snoc _ _).trans (Heap.Extends.snoc _ _)))
+    have hdoms' : RepList kexprListEnum (fun _ (_ : Unit) _ => True) m7 (() :: acc)
+        (.ptr (.enum kexprListEnum) m2.length) :=
+      repList_heapMono₂ kexprListEnum (fun _ _ _ _ _ t => t) ext37
+        (Lib.rep_store_cons (fun _ _ _ _ _ t => t) trivial
+          (repList_heapMono₂ kexprListEnum (fun _ _ _ _ _ t => t) ext12 hdoms))
+    have hlt : cs3.length < cs.length := by
+      rw [hc]; simp only [List.length_cons, List.length_append]; omega
+    obtain ⟨xds, xri, xrm, xret, xns, ds, hr, hlen, hrep⟩ :=
+      walk_fields_classify_doms_len evnext (sub fun c hc' => by rw [hc]; simp [hc'])
+        (hB.mono (ext12.trans (ext3.trans ext37))) hdoms'
+    refine ⟨xds, xri, xrm, xret, xns, ds, hr, ?_, hrep⟩
+    simp only [peelAll, List.length_cons] at hlen ⊢; omega
+  | .Forall_other (x_dom := xdom) (x_body := xbody) (m37 := m1) (m75 := m2)
+      (m122 := m3) (m153 := m4) (m184 := m5) (cs405 := cs3)
+      (ld12 := ld) (ev49 := evw) (ev87 := evrecf)
+      (hm132 := hm3) (hm163 := hm4) (hm194 := hm5)
+      (ev407 := evnext) (hc496 := hc) .. =>
+    subst hm3 hm4 hm5
+    obtain ⟨D, B, ℓ, rfl, -, hB, -⟩ := TmOExact.forallE_of_load hE ld
+    have ext12 := evw.heap_extends.trans evrecf.heap_extends
+    have ext3 : Heap.Extends m2 (m2 ++ [.construct kexprListEnum "Cons" [xdom, xdoms]]) :=
+      Heap.Extends.snoc _ _
+    have ext35 : Heap.Extends (m2 ++ [.construct kexprListEnum "Cons" [xdom, xdoms]]) m5 :=
+      (Heap.Extends.snoc _ _).trans (Heap.Extends.snoc _ _)
+    have hdoms' : RepList kexprListEnum (fun _ (_ : Unit) _ => True) m5 (() :: acc)
+        (.ptr (.enum kexprListEnum) m2.length) :=
+      repList_heapMono₂ kexprListEnum (fun _ _ _ _ _ t => t) ext35
+        (Lib.rep_store_cons (fun _ _ _ _ _ t => t) trivial
+          (repList_heapMono₂ kexprListEnum (fun _ _ _ _ _ t => t) ext12 hdoms))
+    have hlt : cs3.length < cs.length := by
+      rw [hc]; simp only [List.length_cons, List.length_append]; omega
+    obtain ⟨xds, xri, xrm, xret, xns, ds, hr, hlen, hrep⟩ :=
+      walk_fields_classify_doms_len evnext (sub fun c hc' => by rw [hc]; simp [hc'])
+        (hB.mono (ext12.trans (ext3.trans ext35))) hdoms'
+    refine ⟨xds, xri, xrm, xret, xns, ds, hr, ?_, hrep⟩
+    simp only [peelAll, List.length_cons] at hlen ⊢; omega
+  | .Let (cs_wgevuyab := cs2) (ld12 := ld)
+      (ev_gfkycmwo := e1) (ev_wojvmxdy := e2) (hc_qubwlzze := hc) .. =>
+    obtain ⟨T, V0, B, rfl, -, hv, hb⟩ := TmOExact.letE_of_load hE ld
+    have hv' := expr_inst1_tmOExact (sub fun c hc' => by rw [hc]; simp [hc']) hb hv e1
+    have hlt : cs2.length < cs.length := by
+      rw [hc]; simp only [List.length_cons, List.length_append]; omega
+    exact walk_fields_classify_doms_len e2 (sub fun c hc' => by rw [hc]; simp [hc']) hv'
+      (repList_heapMono₂ kexprListEnum (fun _ _ _ _ _ t => t) e1.heap_extends hdoms)
+  | .other (v503 := xds) (v504 := xri) (v505 := xrm) (v507 := xns)
+      (ld12 := ld) (hne497 := hnf) (hne_ttotnwna := hnl) (he508 := hr)
+      (ev520 := evr1) (ev540 := evr2) (ev560 := evr3) (ev587 := evr4) (he596 := hh) .. =>
+    subst hr hh
+    have hp := peelAll_of_not_forall_not_let hE ld hnf hnl
+    have hrev := kexpr_unit_reverse_spec evr1 hdoms
+    have ext := evr2.heap_extends.trans (evr3.heap_extends.trans evr4.heap_extends)
+    refine ⟨xds, xri, xrm, xty, xns, acc.reverse, rfl, by simp [hp],
+      repList_heapMono₂ kexprListEnum (fun _ _ _ _ _ t => t) ext hrev⟩
+termination_by cs.length
+
+theorem addrIn_substParamFor {S : _root_.Address → Prop} {κ : _root_.Address → KKey}
+    {j nrp : Nat} {aux : Bool} {sp : List KExpr} (hsp : ∀ e ∈ sp, AddrIn S κ e) :
+    AddrIn S κ (substParamFor j nrp aux sp) := by
+  unfold substParamFor
+  cases aux
+  · trivial
+  · cases h : sp[j]? with
+    | none => trivial
+    | some s => exact hsp s (List.mem_of_getElem? h)
+
+theorem addrIn_peelMotiveParams {S : _root_.Address → Prop} {κ : _root_.Address → KKey}
+    {nrp : Nat} {aux : Bool} {sp : List KExpr} (hsp : ∀ e ∈ sp, AddrIn S κ e) :
+    ∀ (n j : Nat) (E E' : KExpr),
+      peelMotiveParams nrp aux sp n j E = some E' → AddrIn S κ E → AddrIn S κ E' := by
+  intro n
+  induction n with
+  | zero =>
+    intro j E E' h hE
+    simp only [peelMotiveParams, Option.some.injEq] at h
+    exact h ▸ hE
+  | succ n ih =>
+    intro j E E' h hE
+    simp only [peelMotiveParams] at h
+    cases E with
+    | forallE d b m =>
+      simp only [isForall] at h
+      exact ih (j + 1) _ E' h (addrIn_instantiate1Lift (addrIn_substParamFor hsp) hE.2)
+    | _ => simp [isForall] at h
+
+/-- **Parameter-count coherence for a `FlatEntry`**: original members have at most `nrp`
+parameters, auxiliary members supply at least their own inductive's parameters in `e.params`, and
+every constructor of the member agrees with its inductive's parameter count. -/
+def FlatEntryParamsOk (V : ReconView) (nrp : Nat) (e : FlatEntry) : Prop :=
+  ∀ d, V.ind e.addr = some (some d) →
+    (e.aux = false → d.np ≤ nrp) ∧
+    (e.aux = true → d.np ≤ e.params.length) ∧
+    (∀ c cty cnp, V.ctor d.blk d.idx c = some (cty, cnp) → cnp = d.np)
 
 /-- Pure length and index bounds on `fieldsClassify`: `ns.length = ds.length`, `rm.length = ri.length`,
 every recorded field index lies in `[fidx, fidx + ds.length)`, and every recorded member index is
@@ -331,7 +492,8 @@ theorem build_rec_lvls_list_spec (total : Nat) (ht : total < 4294967296) :
       cases hr0; cases hm0
       have hdrop : (List.range total).drop i = [] := List.drop_eq_nil_of_le (by rw [List.length_range]; omega)
       rw [hdrop, List.map_nil]
-      simpa [klevelListEnum] using (RepKLevelList.allocNil h).1
+      have hrep := (RepKLevelList.allocNil h).1
+      rwa [KernelLevels.klevelList_names] at hrep
     | .other (op17 := op) (hne33 := hne) .. =>
       have : i = total := by omega
       subst this
@@ -356,7 +518,8 @@ theorem build_rec_lvls_list_spec (total : Nat) (ht : total < 4294967296) :
         Heap.Extends.snoc _ _
       have hp : RepKLevel m2 (.param i) (.ptr (.enum klevelEnum) h.length) :=
         (RepKLevel.param (by omega) (by simp)).mono evrec.heap_extends
-      simpa [klevelListEnum] using (RepKLevelList.allocCons hp hrec).1
+      have hrep := (RepKLevelList.allocCons hp hrec).1
+      rwa [KernelLevels.klevelList_names] at hrep
 
 /-- **`KernelCheck::list_lift_each`** lifts every element of a `TmOExact` list by `shift` at
 cutoff `cut`, preserving `AddrIn S κ`. -/
@@ -1100,7 +1263,7 @@ theorem find_peer_rec_spec_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.
   intro cur
   induction cur with
   | nil =>
-    intro pos _ _ _ _ _ _ _ _ _ _ _ hlen hle _ _ _ _ _ _ _ _ _ _
+    intro pos _ _ _ _ _ _ _ _ _ _ _ _ hlen hle _ _ _ _ _ _ _ _ _ _
     have hlt : targetIdx < rs.size := by
       have := (List.getElem?_eq_some_iff.mp htarget).1; rw [← hRF.1]; exact this
     have hlen' : pos = rs.size := by simpa using hlen
@@ -1442,7 +1605,7 @@ theorem find_peer_rec_spec_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.
           have hinfo_eq := Option.some.inj (Option.some.inj hinfo')
           subst info'
           subst hnpEq
-          have ext_par_m := evci2.heap_extends
+          have ext_par_m := evci2.heap_extends.trans evaeq.heap_extends
           have ext_2_m := evpar.heap_extends.trans ext_par_m
           obtain ⟨d2, hd2, -, hrep_sp, -⟩ := extract_aux_spec_params_spec
             (by omega) hnp56 ext_par_m hmaj
@@ -1775,7 +1938,8 @@ theorem build_ih_doms_spec {S : _root_.Address → Prop} {κ : _root_.Address �
       have hb1 : TmOExact κ m9 (.bvar (innerDepth - 1 - (motiveBase + memIdx)))
           (.ptr (.enum kexprEnum) m7.length) := by
         rw [hm_b1]; exact tmOExact_bvar_cell (by omega)
-      have hwithIdx := apply_spine_expr_spec evapp1 hb1 (tmOExactList_mono ext_m7_m9 hidxArgs)
+      have hwithIdx := apply_spine_expr_spec (inner.getAppArgs.drop tnp) evapp1 hb1
+        (tmOExactList_mono ext_m7_m9 hidxArgs)
       have ext_m10_m11 : Heap.Extends m10 m11 := by rw [hm_b2]; exact Heap.Extends.snoc _ _
       have hb2 : TmOExact κ m11 (.bvar (innerDepth - 1 - (minorSaved + fieldIdx)))
           (.ptr (.enum kexprEnum) m10.length) := by
@@ -1885,6 +2049,7 @@ theorem build_minor_at_depth_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Rol
     {h h' : Heap F} {cs : List (Call F)}
     (hsub : ∀ c ∈ cs, c ∈ rootCalls)
     (hnOwn : nOwn < 72057594037927936) (hnrp : nrp < 72057594037927936)
+    (hnp_ok : ∀ i, i < nOwn → ¬ (aux = true ∧ i < sp.length) → i < nrp)
     (hnMot : nMot = es.length) (hprev : prevMinors < 2 ^ 39)
     (hmBase : motiveBase = nrp) (hself : selfMemIdx < nMot)
     (hfop_len : fop.length = es.length) (hfop56 : ∀ n ∈ fop, n < 72057594037927936)
@@ -1957,10 +2122,14 @@ theorem build_minor_at_depth_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Rol
     have evpeel' : ObsFn W "KernelCheck::peel_ctor_params_subst"
         [xrc, vctyI, .field (nOwn : F), .field (nrp : F), .field ((0 : Nat) : F),
           auxVal aux, xsp, .field ((0 : Nat) : F), vptypes] m2 vafter m3 cs3 := by simpa using evpeel
+    have hsp_lt : sp.length < 2 ^ 39 :=
+      repList_length_lt_obs hbd hsub evpeel' (by rw [hc]; simp) (by simp)
+        (tmOExactList_mono ext02 hsp)
     obtain ⟨ext23, after, hafter, hafterIn, hev_peel⟩ :=
-      peel_ctor_params_subst_spec hA hD hI hC hM (by omega) (by omega) nOwn 0 (by omega)
+      peel_ctor_params_subst_spec hA hD hI hC hM (by omega) (by decide) (by omega) hspIn
+        nOwn 0 (by omega) (fun i _ hi hni => hnp_ok i (by omega) hni)
         evpeel' (bnd fun c hc' => by rw [hc]; simp [hc']) (sub fun c hc' => by rw [hc]; simp [hc'])
-        (hctyI.mono evrpc.heap_extends) hctyIIn (tmOExactList_mono ext02 hsp) hspIn
+        (hctyI.mono evrpc.heap_extends) hctyIIn (tmOExactList_mono ext02 hsp)
     have ext3a : Heap.Extends m3 m3a := by rw [hm3a]; exact Heap.Extends.snoc _ _
     have ext3b : Heap.Extends m3a m3b := by rw [hm3b]; exact Heap.Extends.snoc _ _
     have ext3c : Heap.Extends m3b m3c := by rw [hm3c]; exact Heap.Extends.snoc _ _
@@ -1979,13 +2148,23 @@ theorem build_minor_at_depth_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Rol
     have hnil4 : RepList kexprListEnum (TmOExact (Core.keyOf t)) m3d []
         (.ptr (.enum kexprListEnum) m3c.length) := by
       rw [hm3d]; exact Lib.rep_store_nil m3c
-    have hpeel_len : (peelAll after).1.length ≤ 2 ^ 39 :=
-      peelAll_length_le_of_obs hbd hsub evwfc (by rw [hc]; simp) (by simp) (hafter.mono ext3_d)
+    have hnil1U : RepList kexprListEnum (fun _ (_ : Unit) _ => True) m3d []
+        (.ptr (.enum kexprListEnum) m3.length) :=
+      repList_heapMono₂ kexprListEnum (fun _ _ _ _ _ t => t) (ext3b.trans (ext3c.trans ext3d))
+        (by rw [hm3a]; exact Lib.rep_store_nil m3)
     have evwfc' : ObsFn W "KernelCheck::walk_fields_classify"
         [xrc, vafter, xflat, .ptr (.enum kexprListEnum) m3.length,
           .ptr (.enum fieldListEnum) m3a.length, .ptr (.enum fieldListEnum) m3b.length,
           .ptr (.enum kexprListEnum) m3c.length, .field 0, .field ((0 : Nat) : F), vptypes]
         m3d (.tuple [xpfd, xri, xrm, xret, xnorm]) m4 cs4 := by simpa using evwfc
+    have hpeel_len : (peelAll after).1.length < 2 ^ 39 := by
+      obtain ⟨_, _, _, _, _, dsU, htupU, hlenU, hrepU⟩ :=
+        walk_fields_classify_doms_len evwfc' (bnd fun c hc' => by rw [hc]; simp [hc'])
+          (hafter.mono ext3_d) hnil1U
+      simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupU
+      obtain ⟨rfl, -, -, -, -⟩ := htupU
+      have hltU := repList_length_lt_obs hbd hsub evlen1 (by rw [hc]; simp) (by simp) hrepU
+      simpa using hlenU ▸ hltU
     obtain ⟨ext_3d_4, _, _, _, _, _, pfDoms, pfNorm, ri, rm, pfRet, htup,
         hpfd, hri, hrm, hret, hnorm, hpfdIn, hretIn, hnormIn, hev_wfc⟩ :=
       walk_fields_classify_nil_spec hinj hA hD hI hC hM (by omega) evwfc'
@@ -2043,7 +2222,10 @@ theorem build_minor_at_depth_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Rol
     have hbmot : TmOExact (Core.keyOf t) m13
         (.bvar (depthNow - 1 - (motiveBase + selfMemIdx))) (.ptr (.enum kexprEnum) m12.length) := by
       rw [hm13]; exact tmOExact_bvar_cell (by omega)
-    have hwithIdx := apply_spine_expr_spec evapp1 hbmot (tmOExactList_mono ext_12_13 hretIdx)
+    have hwithIdx := apply_spine_expr_spec
+      (((pfRet.liftLooseBVars (nMot + prevMinors) pfDoms.length).getAppArgs.drop nOwn).map
+        (Ix.Kernel.Expr.liftLooseBVars ri.length 0))
+      evapp1 hbmot (tmOExactList_mono ext_12_13 hretIdx)
     have ext_0_4 := ext0_3d.trans ext_3d_4
     have ext_4_14 := ext48.trans (evsp.heap_extends.trans (evle.heap_extends.trans
       (ext_12_13.trans evapp1.heap_extends)))
@@ -2237,7 +2419,9 @@ theorem build_minor_doms_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTab
     (hidx : idx < 72057594037927936) (hnc : numCtors < 72057594037927936)
     (hfop_len : fop.length = es.length) (hfop56 : ∀ n ∈ fop, n < 72057594037927936)
     (hSblk : Held R (ixAddr ba))
-    (hctorsHeld : ∀ c, c < numCtors → Held R (IxVM.Consistency.ctorAddr (ixAddr ba) idx c)) :
+    (hctorsHeld : ∀ c, c < numCtors → Held R (IxVM.Consistency.ctorAddr (ixAddr ba) idx c))
+    (hcnp_ok : ∀ c cty cnp, (ReconView.ofStore t E₀).ctor (ixAddr ba) idx c = some (cty, cnp) →
+      ∀ i, i < cnp → ¬ (aux = true ∧ i < sp.length) → i < nrp) :
     ∀ (rem prev c : Nat), c + rem = numCtors → prev + rem < 2 ^ 39 →
       ∀ {r : SourceValue F} {h h' : Heap F} {cs : List (Call F)},
         (∀ cl ∈ cs, cl ∈ rootCalls) →
@@ -2299,7 +2483,8 @@ theorem build_minor_doms_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTab
       have ext02 := evct.heap_extends.trans evca.heap_extends
       have hSca : Held R (ixAddr ca) := hca_eq.symm ▸ hctorsHeld c (by omega)
       obtain ⟨M, hevM, hM_tm, hMIn⟩ := build_minor_at_depth_spec ht hwf hS hH hbd hRsub hcl hlv hM
-        (sub fun cl hcl' => by rw [hcs]; simp [hcl']) hnp56 hnrp hnMot (by omega) hmBase hself
+        (sub fun cl hcl' => by rw [hcs]; simp [hcl']) hnp56 hnrp
+        (hcnp_ok c cty np hctorAt) hnMot (by omega) hmBase hself
         hfop_len hfop56 hSca rca (hcty.mono evca.heap_extends) hctyIn
         (tmOExactList_mono ext02 hsp) hspIn (hus.mono ext02) (flatList_mono ext02 hes)
         (fieldList_mono ext02 hfop) (helim.mono ext02) evmin
@@ -2398,7 +2583,8 @@ theorem build_all_minors_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
       RepList flatListEnum (FlatEntryRepExact (Core.keyOf t)) h fullEs xfull →
       RepList fieldListEnum RepNatField h fop xfop →
       RepKLevel h elim xelim →
-      (∀ e ∈ es, Held R e.addr ∧ ∀ p ∈ e.params, AddrIn (Held R) (Core.keyOf t) p) →
+      (∀ e ∈ es, Held R e.addr ∧ (∀ p ∈ e.params, AddrIn (Held R) (Core.keyOf t) p) ∧
+        FlatEntryParamsOk (ReconView.ofStore t E₀) nrp e) →
       ObsFn W "KernelCheck::build_all_minors_walk"
         [xrc, xflat, xfull, xfop, .field (nrp : F), .field (nMot : F), .field (motiveBase : F),
           .field (prev : F), .field (pos : F), xelim] h r h' cs →
@@ -2464,7 +2650,7 @@ theorem build_all_minors_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
             obtain ⟨xa', xsp', xus', ae, htup, rae, hae, hsp, hus⟩ := he'
             simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
             obtain ⟨rfl, rfl, rfl, rfl⟩ := htup
-            obtain ⟨hSe, hspIn⟩ := hesS e (List.mem_cons_self ..)
+            obtain ⟨hSe, hspIn, heP⟩ := hesS e (List.mem_cons_self ..)
             have hSe' : Held R (ixAddr ae) := hae ▸ hSe
             obtain ⟨hInd, -⟩ := hIA
               (sub fun cl hcl' => by rw [hcs]; simp [hcl']) hSe' rae evci ldci
@@ -2477,6 +2663,9 @@ theorem build_all_minors_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
             subst hncEq hidxEq
             obtain ⟨hSblk, hctorsH⟩ := ctors_held_of_indDataAt hRsub hcl hSe' hia
             rw [← hba] at hSblk hctorsH
+            have hia_e : (ReconView.ofStore t E₀).ind e.addr = some (some info0) := by
+              change indDataAt t E₀ e.addr = some (some info0); rwa [← hae]
+            obtain ⟨hP_orig, hP_aux, hP_ctor⟩ := heP info0 hia_e
             have evmd' : ObsFn W "KernelCheck::build_minor_doms"
                 [xrc, xa, auxVal e.aux, xsp, xus, xfull, xfop, .field (nrp : F),
                   .field (nMot : F), .field (motiveBase : F), .field (pos : F), xblk,
@@ -2485,7 +2674,13 @@ theorem build_all_minors_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
             obtain ⟨ms1, hms1_len, hev1, hrep1, hms1In⟩ := build_minor_doms_spec
               ht hwf hS hH hbd hRsub hcl hlv hM hnrp hnMot hmBase
               (by rw [hnMot]; simp only [List.length_cons] at hposlen; omega) hidx56 hnc56 hfop_len hfop56
-              hSblk hctorsH info0.nctors prev 0 (by omega) (by omega)
+              hSblk hctorsH (fun c cty cnp hct i hi_lt hni => by
+                rw [← hba] at hP_ctor
+                have hcnp_eq := hP_ctor c cty cnp hct
+                cases hax : e.aux
+                · have := hP_orig hax; omega
+                · have := hP_aux hax; exfalso; exact hni ⟨hax, by omega⟩)
+              info0.nctors prev 0 (by omega) (by omega)
               (sub fun cl hcl' => by rw [hcs]; simp [hcl'])
               (tmOExactList_mono evci.heap_extends hsp) hspIn (hus.mono evci.heap_extends)
               (flatList_mono evci.heap_extends hfull) (fieldList_mono evci.heap_extends hfop)
@@ -2505,7 +2700,9 @@ theorem build_all_minors_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
               (tmOExactList_mono evrec.heap_extends hrep1) hrep2
             refine ⟨ms1 ++ ms2, by simp [hms1_len, hms2_len],
               (hev1.and hev2).mono fun f ⟨hf1, hf2⟩ => ?_, hcat, ?_⟩
-            · simp only [allMinors, ReconView.ofStore, ← hae, hia, ← hba, hf1, hf2, Option.map_some]
+            · simp only [allMinors]
+              rw [hia_e]; dsimp only
+              rw [← hba, hf1, hf2]; rfl
             · intro m hm
               rcases List.mem_append.mp hm with h1 | h2
               · exact hms1In m h1
@@ -2530,7 +2727,8 @@ theorem build_all_minors_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTab
     (hes : RepList flatListEnum (FlatEntryRepExact (Core.keyOf t)) h es xflat)
     (hfop : RepList fieldListEnum RepNatField h fop xfop)
     (helim : RepKLevel h elim xelim)
-    (hesS : ∀ e ∈ es, Held R e.addr ∧ ∀ p ∈ e.params, AddrIn (Held R) (Core.keyOf t) p)
+    (hesS : ∀ e ∈ es, Held R e.addr ∧ (∀ p ∈ e.params, AddrIn (Held R) (Core.keyOf t) p) ∧
+      FlatEntryParamsOk (ReconView.ofStore t E₀) nrp e)
     (ev : ObsFn W "KernelCheck::build_all_minors"
       [xrc, xflat, xfop, .field (nrp : F), .field (nMot : F), .field (motiveBase : F), xelim]
       h r h' cs) :
@@ -2564,6 +2762,7 @@ theorem build_motive_type_flat_spec {rootCalls : List (Call F)} {t : Ix.Kernel.R
     {xrc xma xty xus xelim xsp xptypes r : SourceValue F} {h h' : Heap F} {cs : List (Call F)}
     (hnOwn : nOwn < 72057594037927936) (hnIdx : nIdx < 72057594037927936)
     (hnrp : nrp < 72057594037927936)
+    (hnp_ok : ∀ i, i < nOwn → ¬ (aux = true ∧ i < sp.length) → i < nrp)
     (hsub : ∀ cl ∈ cs, cl ∈ rootCalls)
     (hSma : Held R (ixAddr ma))
     (rma : Bytes.RepAddressRef addrTy h ma xma)
@@ -2604,9 +2803,15 @@ theorem build_motive_type_flat_spec {rootCalls : List (Call F)} {t : Ix.Kernel.R
     have evpeel' : ObsFn W "KernelCheck::peel_motive_params_subst"
         [vtyI, .field (nOwn : F), .field (nrp : F), auxVal aux, xsp, .field ((0 : Nat) : F)]
         m1 vafter m2 cs2 := by simpa using evpeel
-    obtain ⟨after, hpeel_eq, hafter, hafterIn⟩ := peel_motive_params_subst_spec (by omega)
-      nOwn 0 (by omega) evpeel' (bnd fun c hc' => by rw [hc]; simp [hc']) htyI htyIIn
-      (tmOExactList_mono evinst.heap_extends hsp) hspIn
+    have hsp_lt : sp.length < 2 ^ 39 :=
+      repList_length_lt_obs hbd hsub evpeel' (by rw [hc]; simp) (by simp)
+        (tmOExactList_mono evinst.heap_extends hsp)
+    obtain ⟨after, hpeel_eq, hafter⟩ := peel_motive_params_subst_spec (by omega) (by omega)
+      nOwn 0 (by omega) (fun i _ hi hni => hnp_ok i (by omega) hni)
+      evpeel' (bnd fun c hc' => by rw [hc]; simp [hc']) htyI
+      (tmOExactList_mono evinst.heap_extends hsp)
+    have hafterIn : AddrIn (Held R) (Core.keyOf t) after :=
+      addrIn_peelMotiveParams hspIn nOwn 0 _ _ hpeel_eq htyIIn
     obtain ⟨ext23, idxDoms, hidxD, hidxIn, hev_idx⟩ := collect_index_doms_spec hA hD hI hC hM nIdx
       (by omega) evidx (bnd fun c hc' => by rw [hc]; simp [hc'])
       (sub fun c hc' => by rw [hc]; simp [hc']) hafter hafterIn
@@ -2647,7 +2852,7 @@ theorem build_motive_type_flat_spec {rootCalls : List (Call F)} {t : Ix.Kernel.R
     have hres := wrap_foralls_spec evwrap hbody (tmOExactList_mono ext3_10 hidxD)
       (hnever.mono ext9_10)
     refine ⟨_, hev_idx.mono fun f hf => ?_, hres, ?_⟩
-    · simp only [motiveType, ReconView.ofStore, hpeel_eq]
+    · simp only [motiveType, hpeel_eq]
       cases hcd : collectDoms (ReconView.ofStore t E₀) f nIdx after with
       | none => simp [hcd] at hf
       | some p =>
@@ -2678,7 +2883,8 @@ theorem build_all_motives_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.R
       RepList flatListEnum (FlatEntryRepExact (Core.keyOf t)) h es xflat →
       RepKLevel h elim xelim →
       (∀ e ∈ es, Held R e.addr ∧ (∃ info, indDataAt t E₀ e.addr = some (some info)) ∧
-        ∀ p ∈ e.params, AddrIn (Held R) (Core.keyOf t) p) →
+        (∀ p ∈ e.params, AddrIn (Held R) (Core.keyOf t) p) ∧
+        FlatEntryParamsOk (ReconView.ofStore t E₀) nrp e) →
       ObsFn W "KernelCheck::build_all_motives_walk"
         [xrc, xflat, xelim, .field (nrp : F), .field (j : F), xptypes] h r h' cs →
       ∃ ms : List KExpr,
@@ -2732,15 +2938,22 @@ theorem build_all_motives_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.R
       obtain ⟨xa', xsp', xus', ae, htup, rae, hae, hsp, hus⟩ := he'
       simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htup
       obtain ⟨rfl, rfl, rfl, rfl⟩ := htup
-      obtain ⟨hSe, -, hspIn⟩ := hall e (List.mem_cons_self ..)
+      obtain ⟨hSe, -, hspIn, heP⟩ := hall e (List.mem_cons_self ..)
       have hSe' : Held R (ixAddr ae) := hae ▸ hSe
       obtain ⟨hInd, -⟩ := hIA
         (sub fun cl hcl' => by rw [hcs]; simp [hcl']) hSe' rae evci ldci
       obtain ⟨info, _, hia, -, hnp56, hni56, -, -, -, hty_tm, htyIn, -, hnpEq, hniEq, -⟩ :=
         hInd _ _ _ _ _ _ _ _ rfl
       subst hnpEq hniEq
+      have hia_e : (ReconView.ofStore t E₀).ind e.addr = some (some info) := by
+        change indDataAt t E₀ e.addr = some (some info); rwa [← hae]
+      obtain ⟨hP_orig, hP_aux, -⟩ := heP info hia_e
       obtain ⟨mt, hev_mt, hmt, hmtIn⟩ := build_motive_type_flat_spec ht hwf hS hH hbd hRsub hcl hlv hM
-        hnp56 hni56 hnrp (sub fun cl hcl' => by rw [hcs]; simp [hcl']) hSe'
+        hnp56 hni56 hnrp (fun i hi_lt hni => by
+          cases hax : e.aux
+          · have := hP_orig hax; omega
+          · have := hP_aux hax; exfalso; exact hni ⟨hax, by omega⟩)
+        (sub fun cl hcl' => by rw [hcs]; simp [hcl']) hSe'
         (Bytes.repAddressRef_heapMono₂ addrTy evci.heap_extends rae) hty_tm htyIn
         (hus.mono evci.heap_extends) (helim.mono evci.heap_extends)
         (tmOExactList_mono evci.heap_extends hsp) hspIn evmt
@@ -2784,7 +2997,8 @@ theorem build_all_motives_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTa
     (hes : RepList flatListEnum (FlatEntryRepExact (Core.keyOf t)) h es xflat)
     (helim : RepKLevel h elim xelim)
     (hall : ∀ e ∈ es, Held R e.addr ∧ (∃ info, indDataAt t E₀ e.addr = some (some info)) ∧
-      ∀ p ∈ e.params, AddrIn (Held R) (Core.keyOf t) p)
+      (∀ p ∈ e.params, AddrIn (Held R) (Core.keyOf t) p) ∧
+      FlatEntryParamsOk (ReconView.ofStore t E₀) nrp e)
     (ev : ObsFn W "KernelCheck::build_all_motives"
       [xrc, xflat, xelim, .field (nrp : F)] h r h' cs) :
     ∃ ms : List KExpr,
@@ -2827,7 +3041,8 @@ theorem build_rec_type_from_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Role
     (hes : RepList flatListEnum (FlatEntryRepExact (Core.keyOf t)) h es xflat)
     (hfop : RepList fieldListEnum RepNatField h fop xfop)
     (hall : ∀ e ∈ es, Held R e.addr ∧ (∃ info, indDataAt t E₀ e.addr = some (some info)) ∧
-      ∀ p ∈ e.params, AddrIn (Held R) (Core.keyOf t) p)
+      (∀ p ∈ e.params, AddrIn (Held R) (Core.keyOf t) p) ∧
+      FlatEntryParamsOk (ReconView.ofStore t E₀) nP e)
     (ev : ObsFn W "KernelCheck::build_rec_type_from"
       [xrc, xpty, .field (prim.nl : F), xity, xindnl, .field (nP : F), .field (nI : F),
         xelim, .field (off : F), xflat, xfop, .field (k : F)] h r h' cs) :
@@ -2914,7 +3129,7 @@ theorem build_rec_type_from_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Role
       hRsub hcl hlv hM hnP rfl rfl hfop_len hfop56 htot_lt htot
       (sub fun c hc' => by rw [hc]; simp [hc'])
       (flatList_mono ext05 hes) (fieldList_mono ext05 hfop) (helim.mono ext05)
-      (fun e he => ⟨(hall e he).1, (hall e he).2.2⟩) evmins
+      (fun e he => ⟨(hall e he).1, (hall e he).2.2.1, (hall e he).2.2.2⟩) evmins
     obtain ⟨rfl, hm7⟩ := kexpr_length_spec evlenM hminD
     subst m7
     have ext06 := ext05.trans evmins.heap_extends
@@ -2926,25 +3141,37 @@ theorem build_rec_type_from_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Role
     obtain ⟨xsa', xssp', xsus', sa, htupS, rsa, hsa, hssp, hsus⟩ := hself_rep
     simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupS
     obtain ⟨rfl, rfl, rfl, rfl⟩ := htupS
-    obtain ⟨hSek, -, hsspIn⟩ := hall ek (List.mem_of_getElem? hek)
+    obtain ⟨hSek, -, hsspIn, hekP⟩ := hall ek (List.mem_of_getElem? hek)
     have hSek' : Held R (ixAddr sa) := hsa ▸ hSek
     obtain ⟨hInd, -⟩ := hI
       (sub fun c hc' => by rw [hc]; simp [hc']) hSek' rsa evci ldci
     obtain ⟨self', _, hself', -, hsnp56, -, -, -, -, hsty_tm, hstyIn, -, hsnpEq, -⟩ :=
       hInd _ _ _ _ _ _ _ _ rfl
+    have hself_ind_e : (ReconView.ofStore t E₀).ind ek.addr = some (some self) := hself_ind
     rw [← hsa] at hself_ind
     have hself_eq := Option.some.inj (Option.some.inj (hself'.symm.trans hself_ind))
     subst self'
     subst hsnpEq
+    obtain ⟨hP_orig, hP_aux, -⟩ := hekP self hself_ind_e
     have hstyI := expr_inst_levels_tmOExact (bnd fun c hc' => by rw [hc]; simp [hc'])
       hsty_tm (hsus.mono evci.heap_extends) evinst2
     have evpeel' : ObsFn W "KernelCheck::peel_motive_params_subst"
         [vstyI, .field (self.np : F), .field (nP : F), auxVal ek.aux, xssp, .field ((0 : Nat) : F)]
         m10 vsafter m11 cs11 := by simpa using evpeel
     have ext6_10 := evci.heap_extends.trans evinst2.heap_extends
-    obtain ⟨selfAfter, hpeel_eq, hselfAfter, hselfAfterIn⟩ := peel_motive_params_subst_spec
-      (by omega) self.np 0 (by omega) evpeel' (bnd fun c hc' => by rw [hc]; simp [hc'])
-      hstyI (addrIn_exprInstLevels hstyIn) (tmOExactList_mono ext6_10 hssp) hsspIn
+    have hssp_lt : ek.params.length < 2 ^ 39 :=
+      repList_length_lt_obs hbd hsub evpeel' (by rw [hc]; simp) (by simp)
+        (tmOExactList_mono ext6_10 hssp)
+    obtain ⟨selfAfter, hpeel_eq, hselfAfter⟩ := peel_motive_params_subst_spec
+      (by omega) (by omega) self.np 0 (by omega)
+      (fun i _ hi hni => by
+        cases hax : ek.aux
+        · have := hP_orig hax; omega
+        · have := hP_aux hax; exfalso; exact hni ⟨hax, by omega⟩)
+      evpeel' (bnd fun c hc' => by rw [hc]; simp [hc'])
+      hstyI (tmOExactList_mono ext6_10 hssp)
+    have hselfAfterIn : AddrIn (Held R) (Core.keyOf t) selfAfter :=
+      addrIn_peelMotiveParams hsspIn self.np 0 _ _ hpeel_eq (addrIn_exprInstLevels hstyIn)
     obtain ⟨ext12_13, idxRaw, hidxRaw, -, hev_idx⟩ := collect_index_doms_spec hA hD hI hC hM nI
       (by omega) evcolI (bnd fun c hc' => by rw [hc]; simp [hc'])
       (sub fun c hc' => by rw [hc]; simp [hc'])
@@ -3031,8 +3258,11 @@ theorem build_rec_type_from_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Role
     refine ⟨_, tot, htot, htot_lt,
       ((hev_pdoms.and hev_mots).and (hev_mins.and hev_idx)).mono fun f ⟨⟨hfp, hfm⟩, ⟨hfmin, hfi⟩⟩ => ?_,
       hw4⟩
-    simp only [recTypeAt, ReconView.ofStore, he0, hek, hprim_ind, hself_ind, hfp, hfm, hfop_eq,
-      hfmin, hpeel_eq, hni_eq, hsa]
+    simp only [recTypeAt, he0, hek, hfop_eq]
+    rw [show (ReconView.ofStore t E₀).ind e0.addr = some (some prim) from hprim_ind,
+      hself_ind_e]
+    dsimp only
+    rw [hfp, hfm, hfmin, hpeel_eq, hni_eq, hsa]
     cases hcd : collectDoms (ReconView.ofStore t E₀) f nI selfAfter with
     | none => simp [hcd] at hfi
     | some p =>
@@ -3064,7 +3294,8 @@ theorem build_rec_type_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
     (hes : RepList flatListEnum (FlatEntryRepExact (Core.keyOf t)) h es xflat)
     (hfop : RepList fieldListEnum RepNatField h fop xfop)
     (hall : ∀ e ∈ es, Held R e.addr ∧ (∃ info, indDataAt t E₀ e.addr = some (some info)) ∧
-      ∀ p ∈ e.params, AddrIn (Held R) (Core.keyOf t) p)
+      (∀ p ∈ e.params, AddrIn (Held R) (Core.keyOf t) p) ∧
+      FlatEntryParamsOk (ReconView.ofStore t E₀) nP e)
     (ev : ObsFn W "KernelCheck::build_rec_type"
       [xrc, xity, xindnl, .field (nP : F), .field (nI : F),
         xelim, .field (off : F), xflat, xfop, .field (k : F)] h r h' cs) :
@@ -3278,7 +3509,8 @@ theorem apply_ihs_full_spec {t : Ix.Kernel.RoleTable} {E₀ : Ixon.Env}
       obtain ⟨-, hidxArgs, hm15⟩ := kexpr_drop_spec evdrop hdargs
       subst m15
       rw [fval_natCast (by omega)] at hidxArgs
-      have hwithIdx := apply_spine_expr_spec evapp1 (hwmin.mono evsp.heap_extends) hidxArgs
+      have hwithIdx := apply_spine_expr_spec (inner.getAppArgs.drop tnp) evapp1
+        (hwmin.mono evsp.heap_extends) hidxArgs
       obtain rfl := binop_sub_one_nat (by omega) op_f1
       obtain rfl := binop_sub_nat (by omega) op_f2
       obtain rfl := binop_add_nat op_f3
@@ -3400,24 +3632,31 @@ theorem build_rule_rhs_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
     obtain ⟨raw, hraw_peel, hraw⟩ := peel_n_foralls_zeta_spec nOwn (by omega) hctyI
       (bnd fun c hc' => by rw [hc]; simp [hc']) evpz
     have hraw_len : (peelAll raw).1.length ≤ 2 ^ 39 :=
-      peelAll_length_le_of_obs hbd hsub evcnt (by rw [hc]; simp) (by simp) hraw
+      peelAll_length_le_of_count_foralls hbd hsub evcnt (by rw [hc]; simp)
+        (sub fun c hc' => by rw [hc]; simp [hc']) hraw
     have evcnt' : ObsFn W "KernelCheck::count_foralls_body" [vraw, .field ((0 : Nat) : F)]
         m2 vnf m3 cs3 := by simpa using evcnt
-    obtain ⟨rfl, rfl⟩ := count_foralls_body_spec (by omega) evcnt' hraw
+    have hvnf_eq := count_foralls_body_spec evcnt' (bnd fun c hc' => by rw [hc]; simp [hc']) hraw
+    subst hvnf_eq
     simp only [Nat.zero_add] at op_t3 heqnf evfb evih hc
     set nFields := (peelAll raw).1.length
     obtain rfl := binop_add_nat op_t1
     obtain rfl := binop_add_nat op_t2
     obtain rfl := binop_add_nat op_t3
-    have ext04 := evinst.heap_extends.trans (evpz.heap_extends.trans evrpc.heap_extends)
+    have ext04 := evinst.heap_extends.trans (evpz.heap_extends.trans
+      (evcnt.heap_extends.trans evrpc.heap_extends))
     have evpeel' : ObsFn W "KernelCheck::peel_ctor_params_subst"
         [xrc, vctyI, .field (nOwn : F), .field (nOwn : F), .field ((0 : Nat) : F),
           auxVal aux, xsp, .field ((0 : Nat) : F), vptypes] m4 vafter m5 cs5 := by simpa using evpeel
+    have hsp_lt : sp.length < 2 ^ 39 :=
+      repList_length_lt_obs hbd hsub evpeel' (by rw [hc]; simp) (by simp)
+        (tmOExactList_mono ext04 hsp)
     obtain ⟨ext45, after, hafter, hafterIn, hev_peel⟩ :=
-      peel_ctor_params_subst_spec hA hD hI hC hM (by omega) (by omega) nOwn 0 (by omega)
+      peel_ctor_params_subst_spec hA hD hI hC hM (by omega) (by decide) (by omega) hspIn
+        nOwn 0 (by omega) (fun i _ hi _ => by omega)
         evpeel' (bnd fun c hc' => by rw [hc]; simp [hc']) (sub fun c hc' => by rw [hc]; simp [hc'])
-        (hctyI.mono (evpz.heap_extends.trans evrpc.heap_extends)) (addrIn_exprInstLevels hctyIn)
-        (tmOExactList_mono ext04 hsp) hspIn
+        (hctyI.mono (evpz.heap_extends.trans (evcnt.heap_extends.trans evrpc.heap_extends)))
+        (addrIn_exprInstLevels hctyIn) (tmOExactList_mono ext04 hsp)
     have ext5a : Heap.Extends m5 m5a := by rw [hm5a]; exact Heap.Extends.snoc _ _
     have ext5b : Heap.Extends m5a m5b := by rw [hm5b]; exact Heap.Extends.snoc _ _
     have ext5c : Heap.Extends m5b m5c := by rw [hm5c]; exact Heap.Extends.snoc _ _
@@ -3436,13 +3675,23 @@ theorem build_rule_rhs_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
     have hnil4 : RepList kexprListEnum (TmOExact (Core.keyOf t)) m5d []
         (.ptr (.enum kexprListEnum) m5c.length) := by
       rw [hm5d]; exact Lib.rep_store_nil m5c
-    have hafter_len : (peelAll after).1.length ≤ 2 ^ 39 :=
-      peelAll_length_le_of_obs hbd hsub evwfc (by rw [hc]; simp) (by simp) (hafter.mono ext5_d)
+    have hnil1U : RepList kexprListEnum (fun _ (_ : Unit) _ => True) m5d []
+        (.ptr (.enum kexprListEnum) m5.length) :=
+      repList_heapMono₂ kexprListEnum (fun _ _ _ _ _ t => t) (ext5b.trans (ext5c.trans ext5d))
+        (by rw [hm5a]; exact Lib.rep_store_nil m5)
     have evwfc' : ObsFn W "KernelCheck::walk_fields_classify"
         [xrc, vafter, xflat, .ptr (.enum kexprListEnum) m5.length,
           .ptr (.enum fieldListEnum) m5a.length, .ptr (.enum fieldListEnum) m5b.length,
           .ptr (.enum kexprListEnum) m5c.length, .field 0, .field ((0 : Nat) : F), vptypes]
         m5d (.tuple [xfds, xri, xrm, xret, xnorm]) m6 cs6 := by simpa using evwfc
+    have hafter_len : (peelAll after).1.length < 2 ^ 39 := by
+      obtain ⟨_, _, _, _, _, dsU, htupU, hlenU, hrepU⟩ :=
+        walk_fields_classify_doms_len evwfc' (bnd fun c hc' => by rw [hc]; simp [hc'])
+          (hafter.mono ext5_d) hnil1U
+      simp only [Value.tuple.injEq, List.cons.injEq, and_true] at htupU
+      obtain ⟨rfl, -, -, -, -⟩ := htupU
+      have hltU := repList_length_lt_obs hbd hsub evlen (by rw [hc]; simp) (by simp) hrepU
+      simpa using hlenU ▸ hltU
     obtain ⟨ext_5d_6, _, _, _, _, _, fds, norm, ri, rm, ret, htup,
         hfds, hri, hrm, -, hnorm, -, -, -, hev_wfc⟩ :=
       walk_fields_classify_nil_spec hinj hA hD hI hC hM (by omega) evwfc'
