@@ -288,14 +288,14 @@ private theorem expr_inst_levels_exact_aux (κ : _root_.Address → KKey) :
         match Obs.«KernelLevels::expr_inst_levels».obs ev with
         | .Nil (ld12 := ld) (he21 := hr) (he22 := he) .. =>
           subst hr he
-          have hus' : RepList klevelListEnum RepKLevel _ us pus := by rwa [klevelListEnum_eq]
+          have hus' : RepList klevelListEnum RepKLevel h' us pus := by rwa [klevelListEnum_eq]
           obtain rfl := IxVM.Refinement.Core.RepList.nil_of_load hus' ld
           exact hE
         | .other (ld12 := ld) (hne24 := hne24) (ev33 := e1) (hc50 := hc) .. =>
           subst hc
           have hne : us ≠ [] := by
             rintro rfl
-            have hus' : RepList klevelListEnum RepKLevel _ [] pus := by rwa [klevelListEnum_eq]
+            have hus' : RepList klevelListEnum RepKLevel h [] pus := by rwa [klevelListEnum_eq]
             cases hus' with
             | nil cell =>
               rw [Lib.load_enum_cell cell] at ld

@@ -12,6 +12,7 @@ import IxVMRefinement.Obs.KernelCheck14
 This module refines the zeta-transparent helpers of `KernelCheck` directly on `TmOExact` (without
 `CoreGood` or any no-let premise):
 
+* `TmOExact.*_of_load`: node inversion lemmas for `TmOExact`.
 * `NotLet`: a heap pointer whose cell is not a `KExprNode::Let`.
 * `zeta_head_spec`: `KernelCheck::zeta_head` preserves `TmOExact` and yields `NotLet`.
 * `peel_n_foralls_zeta_spec`: `KernelCheck::peel_n_foralls_zeta` computes `peelForalls` exactly,
@@ -71,6 +72,78 @@ theorem evalBinOp_sub_field {a b : F} {v : SourceValue F}
   injection op with hv
   exact hv.symm
 
+/-! ## `TmOExact` node inversion helpers -/
+
+theorem TmOExact.bvar_of_load {κ : _root_.Address → KKey} {h : Heap F} {E : KExpr}
+    {p xi : SourceValue F} (hp : TmOExact κ h E p)
+    (ld : loadValue h p = .ok (.construct kexprEnum "BVar" [xi])) :
+    ∃ i : F, xi = .field i ∧ ZMod.val i < 9223372036854775808 ∧ E = .bvar (ZMod.val i) := by
+  obtain ⟨k, rep⟩ := hp
+  obtain ⟨i, rfl, hsm, hcase⟩ := rep.bvar_of_load ld
+  rcases hcase with ⟨_, rfl⟩ | ⟨_, hd, _⟩
+  · exact ⟨i, rfl, hsm, rfl⟩
+  · omega
+
+theorem TmOExact.sort_of_load {κ : _root_.Address → KKey} {h : Heap F} {E : KExpr}
+    {p xl : SourceValue F} (hp : TmOExact κ h E p)
+    (ld : loadValue h p = .ok (.construct kexprEnum "Srt" [xl])) :
+    ∃ l : KLevel, E = .sort l ∧ RepKLevel h l xl := by
+  obtain ⟨k, rep⟩ := hp
+  exact rep.sort_of_load ld
+
+theorem TmOExact.const_of_load {κ : _root_.Address → KKey} {h : Heap F} {E : KExpr}
+    {p xa xls : SourceValue F} (hp : TmOExact κ h E p)
+    (ld : loadValue h p = .ok (.construct kexprEnum "Const" [xa, xls])) :
+    ∃ (a : Bytes.Address) (ls : List KLevel),
+      E = .const (κ (ixAddr a)) ls ∧ Bytes.RepAddressRef addrTy h a xa ∧ RepKLevelList h ls xls := by
+  obtain ⟨k, rep⟩ := hp
+  exact rep.const_of_load ld
+
+theorem TmOExact.app_of_load {κ : _root_.Address → KKey} {h : Heap F} {E : KExpr}
+    {p xf xa : SourceValue F} (hp : TmOExact κ h E p)
+    (ld : loadValue h p = .ok (.construct kexprEnum "App" [xf, xa])) :
+    ∃ Ef Ea, E = .app Ef Ea ∧ TmOExact κ h Ef xf ∧ TmOExact κ h Ea xa := by
+  obtain ⟨k, rep⟩ := hp
+  obtain ⟨Ef, Ea, rfl, hf, ha⟩ := rep.app_of_load ld
+  exact ⟨Ef, Ea, rfl, ⟨k, hf⟩, ⟨k, ha⟩⟩
+
+theorem TmOExact.lam_of_load {κ : _root_.Address → KKey} {h : Heap F} {E : KExpr}
+    {p xt xb xl : SourceValue F} (hp : TmOExact κ h E p)
+    (ld : loadValue h p = .ok (.construct kexprEnum "Lam" [xt, xb, xl])) :
+    ∃ T B ℓ, E = .lam T B (bmeta ℓ) ∧ TmOExact κ h T xt ∧ TmOExact κ h B xb ∧
+      RepKLevel h ℓ xl := by
+  obtain ⟨k, rep⟩ := hp
+  obtain ⟨T, B, ℓ, rfl, ht, hb, hl⟩ := rep.lam_of_load ld
+  exact ⟨T, B, ℓ, rfl, ⟨k, ht⟩, ⟨k + 1, hb⟩, hl⟩
+
+theorem TmOExact.forallE_of_load {κ : _root_.Address → KKey} {h : Heap F} {E : KExpr}
+    {p xt xb xl : SourceValue F} (hp : TmOExact κ h E p)
+    (ld : loadValue h p = .ok (.construct kexprEnum "Forall" [xt, xb, xl])) :
+    ∃ T B ℓ, E = .forallE T B (bmeta ℓ) ∧ TmOExact κ h T xt ∧ TmOExact κ h B xb ∧
+      RepKLevel h ℓ xl := by
+  obtain ⟨k, rep⟩ := hp
+  obtain ⟨T, B, ℓ, rfl, ht, hb, hl⟩ := rep.forallE_of_load ld
+  exact ⟨T, B, ℓ, rfl, ⟨k, ht⟩, ⟨k + 1, hb⟩, hl⟩
+
+theorem TmOExact.letE_of_load {κ : _root_.Address → KKey} {h : Heap F} {E : KExpr}
+    {p xt xv xb : SourceValue F} (hp : TmOExact κ h E p)
+    (ld : loadValue h p = .ok (.construct kexprEnum "Let" [xt, xv, xb])) :
+    ∃ T V B, E = B.instantiate1Lift V 0 ∧ TmOExact κ h T xt ∧ TmOExact κ h V xv ∧
+      TmOExact κ h B xb := by
+  obtain ⟨k, rep⟩ := hp
+  obtain ⟨T, V, B, rfl, ht, hv, hb⟩ := rep.letE_of_load ld
+  exact ⟨T, V, B, rfl, ⟨k, ht⟩, ⟨k, hv⟩, ⟨k + 1, hb⟩⟩
+
+theorem TmOExact.proj_of_load {κ : _root_.Address → KKey} {h : Heap F} {E : KExpr}
+    {p xa xi xe : SourceValue F} (hp : TmOExact κ h E p)
+    (ld : loadValue h p = .ok (.construct kexprEnum "Proj" [xa, xi, xe])) :
+    ∃ (a : Bytes.Address) (i : F) (Es : KExpr),
+      xi = .field i ∧ E = .proj (κ (ixAddr a)) (ZMod.val i) Es ∧
+      Bytes.RepAddressRef addrTy h a xa ∧ TmOExact κ h Es xe := by
+  obtain ⟨k, rep⟩ := hp
+  obtain ⟨a, i, Es, rfl, rfl, ra, he⟩ := rep.proj_of_load ld
+  exact ⟨a, i, Es, rfl, rfl, ra, ⟨k, he⟩⟩
+
 /-! ## `NotLet` predicate and `TmOExact` inversion on `NotLet` cells -/
 
 /-- A heap pointer whose loaded node is not `KExprNode::Let`. -/
@@ -98,13 +171,13 @@ theorem NotLet.ne_let {h : Heap F} {p t v b : SourceValue F} (hn : NotLet h p)
   exact hne [t, v, b] rfl hval.symm
 
 /-- On a `NotLet` cell, a non-`App` node cannot represent `.app _ _`. -/
-theorem not_app_of_notLet {κ : _root_.Address → KKey} {h : Heap F} {k : Nat}
+theorem not_app_of_notLet {κ : _root_.Address → KKey} {h : Heap F}
     {E : KExpr} {p v : SourceValue F}
-    (hp : TmOExact κ h k E p) (ld : loadValue h p = .ok v)
+    (hp : TmOExact κ h E p) (ld : loadValue h p = .ok v)
     (hneApp : ∀ vs : List (SourceValue F), vs.length = 2 → v ≠ .construct kexprEnum "App" vs)
     (hneLet : ∀ vs : List (SourceValue F), vs.length = 3 → v ≠ .construct kexprEnum "Let" vs) :
     E.getAppFn = E ∧ E.getAppArgs = [] := by
-  have ht := hp ghost0
+  obtain ⟨k, ht⟩ := hp
   cases ht with
   | bvarLocal .. => exact ⟨rfl, rfl⟩
   | bvarFree _ _ _ hd => omega
@@ -130,11 +203,11 @@ theorem not_app_of_notLet {κ : _root_.Address → KKey} {h : Heap F} {k : Nat}
 
 /-- **`KernelCheck::zeta_head`** reduces leading `Let` nodes to a `NotLet` pointer representing the
 exact same `KExpr`. -/
-theorem zeta_head_spec {κ : _root_.Address → KKey} {h h' : Heap F} {k : Nat}
+theorem zeta_head_spec {κ : _root_.Address → KKey} {h h' : Heap F}
     {E : KExpr} {p r : SourceValue F} {cs : List (Call F)}
-    (hp : TmOExact κ h k E p) (bd : IxVM.Consistency.Bounded cs)
+    (hp : TmOExact κ h E p) (bd : IxVM.Consistency.Bounded cs)
     (ev : ObsFn W "KernelCheck::zeta_head" [p] h r h' cs) :
-    TmOExact κ h' k E r ∧ NotLet h' r := by
+    TmOExact κ h' E r ∧ NotLet h' r := by
   have sub : ∀ {cs' : List (Call F)}, (∀ c ∈ cs', c ∈ cs) → IxVM.Consistency.Bounded cs' :=
     fun hs => RomBound.bounded_mono bd hs
   match Obs.«KernelCheck::zeta_head».obs ev with
@@ -142,8 +215,8 @@ theorem zeta_head_spec {κ : _root_.Address → KKey} {h h' : Heap F} {k : Nat}
       (cs_oidztzzr := cs2) (ld_bolbylmd := ld) (ev_gemvpjgn := e1) (ev_gdcezqsl := e2)
       (hc_qubwlzze := hc) .. =>
     obtain ⟨T, V, B, rfl, -, hv, hb⟩ := TmOExact.letE_of_load hp ld
-    have hv' : TmOExact κ m' k (B.instantiate1Lift V 0) v' :=
-      expr_inst1_tmOExact hb hv (sub fun c hc' => by rw [hc]; simp [hc']) e1
+    have hv' : TmOExact κ m' (B.instantiate1Lift V 0) v' :=
+      expr_inst1_tmOExact (sub fun c hc' => by rw [hc]; simp [hc']) hb hv e1
     have hlt : cs2.length < cs.length := by
       rw [hc]; simp only [List.length_cons, List.length_append]; omega
     exact zeta_head_spec hv' (sub fun c hc' => by rw [hc]; simp [hc']) e2
@@ -156,11 +229,11 @@ termination_by cs.length
 /-- **`KernelCheck::peel_n_foralls_zeta`** peels `n` leading `Forall` binders through any
 intervening `Let` nodes, matching `peelForalls n E` exactly. -/
 theorem peel_n_foralls_zeta_spec {κ : _root_.Address → KKey} :
-    ∀ (n : Nat) {h h' : Heap F} {k : Nat} {E : KExpr} {p r : SourceValue F} {cs : List (Call F)},
-      n < 18446744069414584321 → TmOExact κ h k E p → IxVM.Consistency.Bounded cs →
+    ∀ (n : Nat) {h h' : Heap F} {E : KExpr} {p r : SourceValue F} {cs : List (Call F)},
+      n < 18446744069414584321 → TmOExact κ h E p → IxVM.Consistency.Bounded cs →
       ObsFn W "KernelCheck::peel_n_foralls_zeta" [p, .field (n : F)] h r h' cs →
-      ∃ B, peelForalls n E = some B ∧ TmOExact κ h' (k + n) B r := by
-  intro n h h' k E p r cs hn hp bd ev
+      ∃ B, peelForalls n E = some B ∧ TmOExact κ h' B r := by
+  intro n h h' E p r cs hn hp bd ev
   have sub : ∀ {cs' : List (Call F)}, (∀ c ∈ cs', c ∈ cs) → IxVM.Consistency.Bounded cs' :=
     fun hs => RomBound.bounded_mono bd hs
   cases n with
@@ -168,7 +241,7 @@ theorem peel_n_foralls_zeta_spec {κ : _root_.Address → KKey} :
     match Obs.«KernelCheck::peel_n_foralls_zeta».obs ev with
     | .n0 (he_whiproaa := hr) (he_bzwoglyf := hh) .. =>
       subst hr hh
-      exact ⟨E, rfl, by simpa using hp⟩
+      exact ⟨E, rfl, hp⟩
     | .other_Forall (hne_xjnibfzs := hne) .. | .other_Let (hne_xjnibfzs := hne) .. =>
       exact (hne (by simp)).elim
   | succ n =>
@@ -181,21 +254,19 @@ theorem peel_n_foralls_zeta_spec {κ : _root_.Address → KKey} :
       have hvn := evalBinOp_sub_succ n op
       subst hvn
       have hlt : cs1.length < cs.length := by rw [hc]; simp
-      obtain ⟨B', hpeel, hB'⟩ := peel_n_foralls_zeta_spec n (by omega) hb
+      exact peel_n_foralls_zeta_spec n (by omega) hb
         (sub fun c hc' => by rw [hc]; simp [hc']) e1
-      refine ⟨B', hpeel, ?_⟩
-      simpa only [Nat.add_assoc, Nat.add_comm 1 n] using hB'
     | .other_Let (x_v := xv) (x_b := xb) (v_qsxgsldq := v') (m_vopdadin := m')
         (cs_cuwzkjio := cs1) (cs_webebuuu := cs2) (ld_hdultwxn := ld)
         (ev_mtsqvowg := e1) (ev_vgbqehni := e2) (hc_thparjte := hc) .. =>
       obtain ⟨T, V, B, rfl, -, hv, hb⟩ := TmOExact.letE_of_load hp ld
-      have hv' : TmOExact κ m' k (B.instantiate1Lift V 0) v' :=
-        expr_inst1_tmOExact hb hv (sub fun c hc' => by rw [hc]; simp [hc']) e1
+      have hv' : TmOExact κ m' (B.instantiate1Lift V 0) v' :=
+        expr_inst1_tmOExact (sub fun c hc' => by rw [hc]; simp [hc']) hb hv e1
       have hlt : cs2.length < cs.length := by
         rw [hc]; simp only [List.length_cons, List.length_append]; omega
       exact peel_n_foralls_zeta_spec (n + 1) hn hv'
         (sub fun c hc' => by rw [hc]; simp [hc']) e2
-termination_by _ _ _ _ _ _ _ cs => cs.length
+termination_by _ _ _ _ _ _ cs => cs.length
 
 private theorem kexprList_names :
     kexprListEnum = (Instance.mk "Lists::Node" [.ref (.enum kexprEnum)]).symbol := by
@@ -208,12 +279,12 @@ private theorem kexprSnoc_names :
 
 /-- **`KernelCheck::collect_spine_zeta`** splits an expression into `(E.getAppFn, E.getAppArgs)`
 through any intervening `Let` nodes, leaving a `NotLet` head. -/
-theorem collect_spine_zeta_spec {κ : _root_.Address → KKey} {h h' : Heap F} {k : Nat}
+theorem collect_spine_zeta_spec {κ : _root_.Address → KKey} {h h' : Heap F}
     {E : KExpr} {p hd args : SourceValue F} {cs : List (Call F)}
-    (hp : TmOExact κ h k E p) (bd : IxVM.Consistency.Bounded cs)
+    (hp : TmOExact κ h E p) (bd : IxVM.Consistency.Bounded cs)
     (ev : ObsFn W "KernelCheck::collect_spine_zeta" [p] h (.tuple [hd, args]) h' cs) :
-    TmOExact κ h' k E.getAppFn hd ∧ NotLet h' hd ∧
-      RepList kexprListEnum (TmOExact κ · k) h' E.getAppArgs args := by
+    TmOExact κ h' E.getAppFn hd ∧ NotLet h' hd ∧
+      RepList kexprListEnum (TmOExact κ) h' E.getAppArgs args := by
   have sub : ∀ {cs' : List (Call F)}, (∀ c ∈ cs', c ∈ cs) → IxVM.Consistency.Bounded cs' :=
     fun hs => RomBound.bounded_mono bd hs
   match Obs.«KernelCheck::collect_spine_zeta».obs ev with
@@ -231,10 +302,11 @@ theorem collect_spine_zeta_spec {κ : _root_.Address → KKey} {h h' : Heap F} {
     obtain ⟨hfn, hnl, hlist⟩ := collect_spine_zeta_spec hf
       (sub fun c hc' => by rw [hc]; simp [hc']) e1
     have hlist' : RepList (Instance.mk "Lists::Node" [.ref (.enum kexprEnum)]).symbol
-        (TmOExact κ · k) m1 Ef.getAppArgs xargs := by
+        (TmOExact κ) m1 Ef.getAppArgs xargs := by
       rwa [← kexprList_names]
     rw [kexprSnoc_names] at e2
-    have hsnoc := Lib.Lists.snoc_spec (tmOExact_heapMono₂ κ k) e2 hlist' (ha.mono e1.heap_extends)
+    have hsnoc := Lib.Lists.snoc_spec (tmOExact_heapMono₂ (κ := κ)) e2 hlist'
+      (ha.mono e1.heap_extends)
     rw [← kexprList_names] at hsnoc
     have hgetFn : (Expr.app Ef Ea).getAppFn = Ef.getAppFn := rfl
     have hgetArgs : (Expr.app Ef Ea).getAppArgs = Ef.getAppArgs ++ [Ea] := by
@@ -245,8 +317,8 @@ theorem collect_spine_zeta_spec {κ : _root_.Address → KKey} {h h' : Heap F} {
       (cs_yqrxeseo := cs1) (cs_vizhzyfr := cs2) (ld_bolbylmd := ld)
       (ev_gemvpjgn := e1) (ev_tmtbszvp := e2) (hc_qubwlzze := hc) .. =>
     obtain ⟨T, V, B, rfl, -, hv, hb⟩ := TmOExact.letE_of_load hp ld
-    have hv' : TmOExact κ m' k (B.instantiate1Lift V 0) v' :=
-      expr_inst1_tmOExact hb hv (sub fun c hc' => by rw [hc]; simp [hc']) e1
+    have hv' : TmOExact κ m' (B.instantiate1Lift V 0) v' :=
+      expr_inst1_tmOExact (sub fun c hc' => by rw [hc]; simp [hc']) hb hv e1
     have hlt : cs2.length < cs.length := by
       rw [hc]; simp only [List.length_cons, List.length_append]; omega
     exact collect_spine_zeta_spec hv' (sub fun c hc' => by rw [hc]; simp [hc']) e2
@@ -259,12 +331,13 @@ theorem collect_spine_zeta_spec {κ : _root_.Address → KKey} {h h' : Heap F} {
     subst hhd hargs hh hm1
     obtain ⟨hfn, hargs⟩ := not_app_of_notLet hp ld hneApp hneLet
     rw [hfn, hargs]
-    have ext : Heap.Extends h (h ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []]) :=
+    have ext : Heap.Extends h
+        (h ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []]) :=
       Heap.Extends.snoc _ _
-    have hnil : RepList kexprListEnum (TmOExact κ · k)
+    have hnil : RepList kexprListEnum (TmOExact κ)
         (h ++ [.construct Obs.Names.«Lists::Node<&KernelTypes::KExprNode>» "Nil" []]) []
-        (.ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») h.length) := by
-      exact .nil (by simp)
+        (.ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KExprNode>») h.length) :=
+      .nil (by simp)
     exact ⟨hp.mono ext, NotLet.mono ext ⟨v, ld, hneLet⟩, hnil⟩
 termination_by cs.length
 
@@ -551,95 +624,99 @@ termination_by cs.length
 
 /-! ## Exact bidirectional structural equality (`kexpr_zeta_struct_eq`, `spec_params_zeta_eq`) -/
 
-private theorem tmOExact_not_eq_of_ne_tag {κ : _root_.Address → KKey} {h : Heap F} {k : Nat}
-    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h k E p) (hnl : NotLet h p)
-    (ld : loadValue h p = .ok v) :
-    (∀ vs : List (SourceValue F), vs.length = 1 → v ≠ .construct kexprEnum "BVar" vs) →
-      ∀ i, E ≠ .bvar i := by
-  intro hne i hE
-  have ht := hp ghost0
+private theorem tmOExact_not_bvar {κ : _root_.Address → KKey} {h : Heap F}
+    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
+    (ld : loadValue h p = .ok v)
+    (hne : ∀ vs : List (SourceValue F), vs.length = 1 → v ≠ .construct kexprEnum "BVar" vs) :
+    ∀ i, E ≠ .bvar i := by
+  intro i hE
+  obtain ⟨k, ht⟩ := hp
   cases ht with
   | bvarLocal cell _ _ =>
-    have hld := Lib.load_enum_cell cell
-    rw [ld] at hld; injection hld with hv
-    exact hne _ rfl hv
+    have hld := Lib.load_enum_cell cell; rw [ld] at hld; injection hld with hv; exact hne _ rfl hv
   | bvarFree _ _ _ hd => omega
   | letE cell _ _ _ => exact hnl.ne_let (Lib.load_enum_cell cell)
   | sort .. | const .. | app .. | lam .. | forallE .. | litNat .. | litStr .. | proj .. =>
     cases hE
 
-private theorem tmOExact_not_sort {κ : _root_.Address → KKey} {h : Heap F} {k : Nat}
-    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h k E p) (hnl : NotLet h p)
+private theorem tmOExact_not_sort {κ : _root_.Address → KKey} {h : Heap F}
+    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
     (ld : loadValue h p = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 1 → v ≠ .construct kexprEnum "Srt" vs) :
     ∀ l, E ≠ .sort l := by
   intro l hE
-  cases hp ghost0 with
+  obtain ⟨k, ht⟩ := hp
+  cases ht with
   | sort cell _ =>
     have hld := Lib.load_enum_cell cell; rw [ld] at hld; injection hld with hv; exact hne _ rfl hv
   | letE cell _ _ _ => exact hnl.ne_let (Lib.load_enum_cell cell)
   | bvarFree _ _ _ hd => omega
   | _ => cases hE
 
-private theorem tmOExact_not_const {κ : _root_.Address → KKey} {h : Heap F} {k : Nat}
-    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h k E p) (hnl : NotLet h p)
+private theorem tmOExact_not_const {κ : _root_.Address → KKey} {h : Heap F}
+    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
     (ld : loadValue h p = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 2 → v ≠ .construct kexprEnum "Const" vs) :
     ∀ c ls, E ≠ .const c ls := by
   intro c ls hE
-  cases hp ghost0 with
+  obtain ⟨k, ht⟩ := hp
+  cases ht with
   | const cell _ _ =>
     have hld := Lib.load_enum_cell cell; rw [ld] at hld; injection hld with hv; exact hne _ rfl hv
   | letE cell _ _ _ => exact hnl.ne_let (Lib.load_enum_cell cell)
   | bvarFree _ _ _ hd => omega
   | _ => cases hE
 
-private theorem tmOExact_not_app {κ : _root_.Address → KKey} {h : Heap F} {k : Nat}
-    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h k E p) (hnl : NotLet h p)
+private theorem tmOExact_not_app {κ : _root_.Address → KKey} {h : Heap F}
+    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
     (ld : loadValue h p = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 2 → v ≠ .construct kexprEnum "App" vs) :
     ∀ f a, E ≠ .app f a := by
   intro f a hE
-  cases hp ghost0 with
+  obtain ⟨k, ht⟩ := hp
+  cases ht with
   | app cell _ _ =>
     have hld := Lib.load_enum_cell cell; rw [ld] at hld; injection hld with hv; exact hne _ rfl hv
   | letE cell _ _ _ => exact hnl.ne_let (Lib.load_enum_cell cell)
   | bvarFree _ _ _ hd => omega
   | _ => cases hE
 
-private theorem tmOExact_not_lam {κ : _root_.Address → KKey} {h : Heap F} {k : Nat}
-    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h k E p) (hnl : NotLet h p)
+private theorem tmOExact_not_lam {κ : _root_.Address → KKey} {h : Heap F}
+    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
     (ld : loadValue h p = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 3 → v ≠ .construct kexprEnum "Lam" vs) :
     ∀ t b m, E ≠ .lam t b m := by
   intro t b m hE
-  cases hp ghost0 with
+  obtain ⟨k, ht⟩ := hp
+  cases ht with
   | lam cell _ _ _ =>
     have hld := Lib.load_enum_cell cell; rw [ld] at hld; injection hld with hv; exact hne _ rfl hv
   | letE cell _ _ _ => exact hnl.ne_let (Lib.load_enum_cell cell)
   | bvarFree _ _ _ hd => omega
   | _ => cases hE
 
-private theorem tmOExact_not_forall {κ : _root_.Address → KKey} {h : Heap F} {k : Nat}
-    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h k E p) (hnl : NotLet h p)
+private theorem tmOExact_not_forall {κ : _root_.Address → KKey} {h : Heap F}
+    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
     (ld : loadValue h p = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 3 → v ≠ .construct kexprEnum "Forall" vs) :
     ∀ t b m, E ≠ .forallE t b m := by
   intro t b m hE
-  cases hp ghost0 with
+  obtain ⟨k, ht⟩ := hp
+  cases ht with
   | forallE cell _ _ _ =>
     have hld := Lib.load_enum_cell cell; rw [ld] at hld; injection hld with hv; exact hne _ rfl hv
   | letE cell _ _ _ => exact hnl.ne_let (Lib.load_enum_cell cell)
   | bvarFree _ _ _ hd => omega
   | _ => cases hE
 
-private theorem tmOExact_not_lit {κ : _root_.Address → KKey} {h : Heap F} {k : Nat}
-    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h k E p) (hnl : NotLet h p)
+private theorem tmOExact_not_lit {κ : _root_.Address → KKey} {h : Heap F}
+    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
     (ld : loadValue h p = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 1 → v ≠ .construct kexprEnum "Lit" vs) :
     ∀ l, E ≠ .lit l := by
   intro l hE
-  cases hp ghost0 with
+  obtain ⟨k, ht⟩ := hp
+  cases ht with
   | litNat cell _ _ =>
     have hld := Lib.load_enum_cell cell; rw [ld] at hld; injection hld with hv; exact hne _ rfl hv
   | litStr cell _ _ =>
@@ -648,28 +725,30 @@ private theorem tmOExact_not_lit {κ : _root_.Address → KKey} {h : Heap F} {k 
   | bvarFree _ _ _ hd => omega
   | _ => cases hE
 
-private theorem tmOExact_not_proj {κ : _root_.Address → KKey} {h : Heap F} {k : Nat}
-    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h k E p) (hnl : NotLet h p)
+private theorem tmOExact_not_proj {κ : _root_.Address → KKey} {h : Heap F}
+    {E : KExpr} {p v : SourceValue F} (hp : TmOExact κ h E p) (hnl : NotLet h p)
     (ld : loadValue h p = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 3 → v ≠ .construct kexprEnum "Proj" vs) :
     ∀ s i e, E ≠ .proj s i e := by
   intro s i e hE
-  cases hp ghost0 with
+  obtain ⟨k, ht⟩ := hp
+  cases ht with
   | proj cell _ _ =>
     have hld := Lib.load_enum_cell cell; rw [ld] at hld; injection hld with hv; exact hne _ rfl hv
   | letE cell _ _ _ => exact hnl.ne_let (Lib.load_enum_cell cell)
   | bvarFree _ _ _ hd => omega
   | _ => cases hE
 
-private theorem tmOExact_lit_rep {κ : _root_.Address → KKey} {h : Heap F} {k : Nat}
-    {E : KExpr} {p xl : SourceValue F} (hp : TmOExact κ h k E p)
+private theorem tmOExact_lit_rep {κ : _root_.Address → KKey} {h : Heap F}
+    {E : KExpr} {p xl : SourceValue F} (hp : TmOExact κ h E p)
     (ld : loadValue h p = .ok (.construct kexprEnum "Lit" [xl])) :
     ∃ (ldat : IxVM.Refinement.Core.Specs.Levels.LitData),
       IxVM.Refinement.Core.Specs.Levels.LitRep h ldat xl ∧
       ((∃ limbs, ldat = .nat limbs ∧ IxVM.Refinement.Core.NatAux.Canon limbs ∧
           E = .lit (.natVal (limbsVal limbs))) ∨
        (∃ bs s, ldat = .str bs ∧ StrBytes s bs ∧ E = .lit (.strVal s))) := by
-  rcases (hp ghost0).toTm.lit_of_load ld with
+  obtain ⟨k, ht⟩ := hp
+  rcases ht.toTm.lit_of_load ld with
     ⟨lp, limbs, hxl, rl, hc, rfl⟩ | ⟨bp, bs, s, hxl, rb, hs, rfl⟩
   · exact ⟨.nat limbs, ⟨lp, hxl, rl⟩, .inl ⟨limbs, rfl, hc, rfl⟩⟩
   · exact ⟨.str bs, ⟨bp, hxl, rb⟩, .inr ⟨bs, s, rfl, hs, rfl⟩⟩
@@ -679,32 +758,32 @@ private theorem zeta_struct_eq_bundle {κ : _root_.Address → KKey} (hinj : Fun
       (h' : Heap F) (cs : List (Call F)),
       ObsFn W fn args h r h' cs → IxVM.Consistency.Bounded cs →
       (fn = "KernelCheck::kexpr_zeta_struct_eq" →
-        ∀ (p₁ p₂ : SourceValue F) (k : Nat) (E₁ E₂ : KExpr),
-          args = [p₁, p₂] → TmOExact κ h k E₁ p₁ → TmOExact κ h k E₂ p₂ →
+        ∀ (p₁ p₂ : SourceValue F) (E₁ E₂ : KExpr),
+          args = [p₁, p₂] → TmOExact κ h E₁ p₁ → TmOExact κ h E₂ p₂ →
           r = .field (if E₁ = E₂ then 1 else 0)) ∧
       (fn = "KernelCheck::kexpr_zeta_binder_eq" →
-        ∀ (ta ba la tb bb lb : SourceValue F) (k : Nat) (Ta Ba Tb Bb : KExpr) (ℓa ℓb : KLevel),
+        ∀ (ta ba la tb bb lb : SourceValue F) (Ta Ba Tb Bb : KExpr) (ℓa ℓb : KLevel),
           args = [ta, ba, la, tb, bb, lb] →
-          TmOExact κ h k Ta ta → TmOExact κ h (k + 1) Ba ba → RepKLevel h ℓa la →
-          TmOExact κ h k Tb tb → TmOExact κ h (k + 1) Bb bb → RepKLevel h ℓb lb →
+          TmOExact κ h Ta ta → TmOExact κ h Ba ba → RepKLevel h ℓa la →
+          TmOExact κ h Tb tb → TmOExact κ h Bb bb → RepKLevel h ℓb lb →
           r = .field (if bmeta ℓa = bmeta ℓb ∧ Ta = Tb ∧ Ba = Bb then 1 else 0)) := by
   refine ObsFn.strong_induction (W := W)
     (P := fun fn args h r h' cs => IxVM.Consistency.Bounded cs →
       (fn = "KernelCheck::kexpr_zeta_struct_eq" →
-        ∀ (p₁ p₂ : SourceValue F) (k : Nat) (E₁ E₂ : KExpr),
-          args = [p₁, p₂] → TmOExact κ h k E₁ p₁ → TmOExact κ h k E₂ p₂ →
+        ∀ (p₁ p₂ : SourceValue F) (E₁ E₂ : KExpr),
+          args = [p₁, p₂] → TmOExact κ h E₁ p₁ → TmOExact κ h E₂ p₂ →
           r = .field (if E₁ = E₂ then 1 else 0)) ∧
       (fn = "KernelCheck::kexpr_zeta_binder_eq" →
-        ∀ (ta ba la tb bb lb : SourceValue F) (k : Nat) (Ta Ba Tb Bb : KExpr) (ℓa ℓb : KLevel),
+        ∀ (ta ba la tb bb lb : SourceValue F) (Ta Ba Tb Bb : KExpr) (ℓa ℓb : KLevel),
           args = [ta, ba, la, tb, bb, lb] →
-          TmOExact κ h k Ta ta → TmOExact κ h (k + 1) Ba ba → RepKLevel h ℓa la →
-          TmOExact κ h k Tb tb → TmOExact κ h (k + 1) Bb bb → RepKLevel h ℓb lb →
+          TmOExact κ h Ta ta → TmOExact κ h Ba ba → RepKLevel h ℓa la →
+          TmOExact κ h Tb tb → TmOExact κ h Bb bb → RepKLevel h ℓb lb →
           r = .field (if bmeta ℓa = bmeta ℓb ∧ Ta = Tb ∧ Ba = Bb then 1 else 0)))
     (fun fn args h r h' cs ev ih bd => by
       have sub : ∀ {cs' : List (Call F)}, (∀ c ∈ cs', c ∈ cs) → IxVM.Consistency.Bounded cs' :=
         fun hs => RomBound.bounded_mono bd hs
-      refine ⟨fun hfn p₁ p₂ k E₁ E₂ hargs h₁ h₂ => ?_,
-        fun hfn ta ba la tb bb lb k Ta Ba Tb Bb ℓa ℓb hargs hTa hBa hℓa hTb hBb hℓb => ?_⟩
+      refine ⟨fun hfn p₁ p₂ E₁ E₂ hargs h₁ h₂ => ?_,
+        fun hfn ta ba la tb bb lb Ta Ba Tb Bb ℓa ℓb hargs hTa hBa hℓa hTb hBb hℓb => ?_⟩
       · subst hfn hargs
         match Obs.«KernelCheck::kexpr_zeta_struct_eq».obs ev with
         | .BVar_BVar_n0 (v_yahvaeuc := va) (m_rasepwbe := m1) (cs_gjslryle := cs1)
@@ -743,7 +822,7 @@ private theorem zeta_struct_eq_bundle {κ : _root_.Address → KKey} (hinj : Fun
           obtain ⟨hvb, hnlb⟩ := zeta_head_spec (h₂.mono e1.heap_extends)
             (sub fun c hc' => by rw [hc]; simp [hc']) e2
           obtain ⟨ia, rfl, -, rfl⟩ := TmOExact.bvar_of_load (hva.mono e2.heap_extends) ld1
-          rw [ite_eq_right (fun h => tmOExact_not_eq_of_ne_tag hvb hnlb ld2 hne ia.val h.symm)]
+          rw [ite_eq_right (fun h => tmOExact_not_bvar hvb hnlb ld2 hne ia.val h.symm)]
         | .Srt_Srt (v_yahvaeuc := va) (m_rasepwbe := m1) (cs_gjslryle := cs1)
             (v_yhvxairr := vb) (m_awietpfd := m2) (cs_bokxvske := cs2)
             (x_la := xla) (x_lb := xlb) (ev_dkmtahfq := e1) (ev_yasdpozq := e2)
@@ -822,13 +901,13 @@ private theorem zeta_struct_eq_bundle {κ : _root_.Address → KKey} (hinj : Fun
           obtain ⟨Ef₁, Ea₁, rfl, hf₁, ha₁⟩ := TmOExact.app_of_load (hva.mono e2.heap_extends) ld1
           obtain ⟨Ef₂, Ea₂, rfl, hf₂, ha₂⟩ := TmOExact.app_of_load hvb ld2
           have hfeq := (ih _ _ _ _ _ _ (by rw [hc]; simp; omega) e3
-            (sub fun c hc' => by rw [hc]; simp [hc'])).1 rfl xfa xfb k Ef₁ Ef₂ rfl hf₁ hf₂
+            (sub fun c hc' => by rw [hc]; simp [hc'])).1 rfl xfa xfb Ef₁ Ef₂ rfl hf₁ hf₂
           have hf : Ef₁ = Ef₂ := by
             by_contra hne; rw [ite_eq_right hne] at hfeq
             exact absurd (Value.field.inj hfeq) (by decide)
           subst hf
           have haeq := (ih _ _ _ _ _ _ (by rw [hc]; simp; omega) e4
-            (sub fun c hc' => by rw [hc]; simp [hc'])).1 rfl xaa xab k Ea₁ Ea₂ rfl
+            (sub fun c hc' => by rw [hc]; simp [hc'])).1 rfl xaa xab Ea₁ Ea₂ rfl
             (ha₁.mono e3.heap_extends) (ha₂.mono e3.heap_extends)
           rw [haeq]; simp
         | .App_App_other (v_yahvaeuc := va) (m_rasepwbe := m1) (cs_gjslryle := cs1)
@@ -843,7 +922,7 @@ private theorem zeta_struct_eq_bundle {κ : _root_.Address → KKey} (hinj : Fun
           obtain ⟨Ef₁, Ea₁, rfl, hf₁, -⟩ := TmOExact.app_of_load (hva.mono e2.heap_extends) ld1
           obtain ⟨Ef₂, Ea₂, rfl, hf₂, -⟩ := TmOExact.app_of_load hvb ld2
           have hfeq := (ih _ _ _ _ _ _ (by rw [hc]; simp; omega) e3
-            (sub fun c hc' => by rw [hc]; simp [hc'])).1 rfl xfa xfb k Ef₁ Ef₂ rfl hf₁ hf₂
+            (sub fun c hc' => by rw [hc]; simp [hc'])).1 rfl xfa xfb Ef₁ Ef₂ rfl hf₁ hf₂
           have hf : Ef₁ ≠ Ef₂ := fun h => by subst h; rw [ite_eq_left rfl] at hfeq; exact hne hfeq
           rw [ite_eq_right (fun h => hf (Expr.app.inj h).1)]
         | .App_other (v_yahvaeuc := va) (m_rasepwbe := m1) (cs_gjslryle := cs1)
@@ -867,7 +946,7 @@ private theorem zeta_struct_eq_bundle {κ : _root_.Address → KKey} (hinj : Fun
           obtain ⟨Ta, Ba, ℓa, rfl, hta, hba, hla⟩ := TmOExact.lam_of_load (hva.mono e2.heap_extends) ld1
           obtain ⟨Tb, Bb, ℓb, rfl, htb, hbb, hlb⟩ := TmOExact.lam_of_load hvb ld2
           have hbeq := (ih _ _ _ _ _ _ (by rw [hc]; simp; omega) e3
-            (sub fun c hc' => by rw [hc]; simp [hc'])).2 rfl xta xba xla xtb xbb xlb k
+            (sub fun c hc' => by rw [hc]; simp [hc'])).2 rfl xta xba xla xtb xbb xlb
             Ta Ba Tb Bb ℓa ℓb rfl hta hba hla htb hbb hlb
           rw [hbeq]
           congr 1
@@ -896,7 +975,7 @@ private theorem zeta_struct_eq_bundle {κ : _root_.Address → KKey} (hinj : Fun
             TmOExact.forallE_of_load (hva.mono e2.heap_extends) ld1
           obtain ⟨Tb, Bb, ℓb, rfl, htb, hbb, hlb⟩ := TmOExact.forallE_of_load hvb ld2
           have hbeq := (ih _ _ _ _ _ _ (by rw [hc]; simp; omega) e3
-            (sub fun c hc' => by rw [hc]; simp [hc'])).2 rfl xda xxa xla xdb xxb xlb k
+            (sub fun c hc' => by rw [hc]; simp [hc'])).2 rfl xda xxa xla xdb xxb xlb
             Ta Ba Tb Bb ℓa ℓb rfl hta hba hla htb hbb hlb
           rw [hbeq]
           congr 1
@@ -980,7 +1059,7 @@ private theorem zeta_struct_eq_bundle {κ : _root_.Address → KKey} (hinj : Fun
           have hi : ia = ib := sub_eq_zero.mp (Value.field.inj (evalBinOp_sub_field op).symm)
           subst hi
           have heeq := (ih _ _ _ _ _ _ (by rw [hc]; simp; omega) e4
-            (sub fun c hc' => by rw [hc]; simp [hc'])).1 rfl xea xeb k Ea Eb rfl hea heb
+            (sub fun c hc' => by rw [hc]; simp [hc'])).1 rfl xea xeb Ea Eb rfl hea heb
           rw [heeq]; simp
         | .Proj_Proj_n1_other (v_yahvaeuc := va) (m_rasepwbe := m1) (cs_gjslryle := cs1)
             (v_yhvxairr := vb) (m_awietpfd := m2) (cs_bokxvske := cs2)
@@ -1033,7 +1112,7 @@ private theorem zeta_struct_eq_bundle {κ : _root_.Address → KKey} (hinj : Fun
             by_contra hne; rw [ite_eq_right hne] at hpw
             exact absurd (Value.field.inj hpw) (by decide)
           have hteq := (ih _ _ _ _ _ _ (by rw [hc]; simp; omega) e2
-            (sub fun c hc' => by rw [hc]; simp [hc'])).1 rfl ta tb k Ta Tb rfl
+            (sub fun c hc' => by rw [hc]; simp [hc'])).1 rfl ta tb Ta Tb rfl
             (hTa.mono e1.heap_extends) (hTb.mono e1.heap_extends)
           have ht : Ta = Tb := by
             by_contra hne; rw [ite_eq_right hne] at hteq
@@ -1041,7 +1120,7 @@ private theorem zeta_struct_eq_bundle {κ : _root_.Address → KKey} (hinj : Fun
           subst ht
           have ext12 := e1.heap_extends.trans e2.heap_extends
           have hbeq := (ih _ _ _ _ _ _ (by rw [hc]; simp; omega) e3
-            (sub fun c hc' => by rw [hc]; simp [hc'])).1 rfl ba bb (k + 1) Ba Bb rfl
+            (sub fun c hc' => by rw [hc]; simp [hc'])).1 rfl ba bb Ba Bb rfl
             (hBa.mono ext12) (hBb.mono ext12)
           rw [hbeq]
           simp [hm]
@@ -1049,7 +1128,7 @@ private theorem zeta_struct_eq_bundle {κ : _root_.Address → KKey} (hinj : Fun
             (he_flopnzhy := hr) (hc_lfsktsxj := hc) .. =>
           subst hr
           have hteq := (ih _ _ _ _ _ _ (by rw [hc]; simp; omega) e2
-            (sub fun c hc' => by rw [hc]; simp [hc'])).1 rfl ta tb k Ta Tb rfl
+            (sub fun c hc' => by rw [hc]; simp [hc'])).1 rfl ta tb Ta Tb rfl
             (hTa.mono e1.heap_extends) (hTb.mono e1.heap_extends)
           have ht : Ta ≠ Tb := fun h => by subst h; rw [ite_eq_left rfl] at hteq; exact hne hteq
           rw [ite_eq_right (fun h => ht h.2.1)]
@@ -1065,20 +1144,20 @@ private theorem zeta_struct_eq_bundle {κ : _root_.Address → KKey} (hinj : Fun
 /-- **`KernelCheck::kexpr_zeta_struct_eq`** decides syntactic equality of two exact `KExpr`s
 bidirectionally whenever `κ` is injective. -/
 theorem kexpr_zeta_struct_eq_exact {κ : _root_.Address → KKey} (hinj : Function.Injective κ)
-    {h h' : Heap F} {k : Nat} {E₁ E₂ : KExpr} {p₁ p₂ r : SourceValue F} {cs : List (Call F)}
-    (h₁ : TmOExact κ h k E₁ p₁) (h₂ : TmOExact κ h k E₂ p₂)
+    {h h' : Heap F} {E₁ E₂ : KExpr} {p₁ p₂ r : SourceValue F} {cs : List (Call F)}
+    (h₁ : TmOExact κ h E₁ p₁) (h₂ : TmOExact κ h E₂ p₂)
     (bd : IxVM.Consistency.Bounded cs)
     (ev : ObsFn W "KernelCheck::kexpr_zeta_struct_eq" [p₁, p₂] h r h' cs) :
     r = .field (if E₁ = E₂ then 1 else 0) :=
-  (zeta_struct_eq_bundle hinj _ _ _ _ _ _ ev bd).1 rfl p₁ p₂ k E₁ E₂ rfl h₁ h₂
+  (zeta_struct_eq_bundle hinj _ _ _ _ _ _ ev bd).1 rfl p₁ p₂ E₁ E₂ rfl h₁ h₂
 
 /-- **`KernelCheck::spec_params_zeta_eq`** decides list equality of two exact `KExpr` lists
 bidirectionally whenever `κ` is injective. -/
 theorem spec_params_zeta_eq_exact {κ : _root_.Address → KKey} (hinj : Function.Injective κ)
-    {h h' : Heap F} {k : Nat} {xs ys : List KExpr} {px py r : SourceValue F}
+    {h h' : Heap F} {xs ys : List KExpr} {px py r : SourceValue F}
     {cs : List (Call F)}
-    (hx : RepList kexprListEnum (TmOExact κ · k) h xs px)
-    (hy : RepList kexprListEnum (TmOExact κ · k) h ys py)
+    (hx : RepList kexprListEnum (TmOExact κ) h xs px)
+    (hy : RepList kexprListEnum (TmOExact κ) h ys py)
     (bd : IxVM.Consistency.Bounded cs)
     (ev : ObsFn W "KernelCheck::spec_params_zeta_eq" [px, py] h r h' cs) :
     r = .field (if xs = ys then 1 else 0) := by
@@ -1120,8 +1199,8 @@ theorem spec_params_zeta_eq_exact {κ : _root_.Address → KKey} (hinj : Functio
     have hlt : cs2.length < cs.length := by
       rw [hc]; simp only [List.length_cons, List.length_append]; omega
     have hrest := spec_params_zeta_eq_exact hinj
-      (repList_heapMono₂ _ (tmOExact_heapMono₂ κ k) e1.heap_extends hxs)
-      (repList_heapMono₂ _ (tmOExact_heapMono₂ κ k) e1.heap_extends hys)
+      (tmOExactList_mono e1.heap_extends hxs)
+      (tmOExactList_mono e1.heap_extends hys)
       (sub fun c hc' => by rw [hc]; simp [hc']) e2
     rw [hrest]; simp
   | .Cons_Cons_other (x_x := xx) (x_xr := xxr) (x_y := xy) (x_yr := xyr)
