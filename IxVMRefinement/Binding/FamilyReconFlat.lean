@@ -19,8 +19,7 @@ namespace IxVM.Refinement.Binding.FamilyRecon
 open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM.Refinement.Binding.FamilyFlat (FlatEntry)
-open IxVM.Refinement.Core (W KExpr KLevel KKey kexprEnum kexprListEnum addrTy ixAddr
-  RepList repList_heapMono₂)
+open IxVM.Refinement.Core (W KExpr KLevel KKey kexprEnum kexprListEnum addrTy ixAddr)
 open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList)
 open IxVM (F)
 

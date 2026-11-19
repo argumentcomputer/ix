@@ -1,4 +1,5 @@
 import IxVMRefinement.Binding.FamilyReconSubst
+import IxVMRefinement.Levels.Spec
 import IxVMRefinement.Nat.Levels
 import IxVMRefinement.Nat.Basic
 import IxVMRefinement.Nat.Utf8
@@ -29,8 +30,7 @@ open Aiur Aiur.Generic Aiur.Generic.SourceSemantics
 open Aiur.Library Aiur.Library.List
 open IxVM (F)
 open IxVM.Refinement.Core (W KExpr KLevel KKey bmeta kexprEnum klitEnum kexprListEnum
-  limbListEnum byteListEnum addrTy ixAddr RepU64 RepList repList_heapMono₂ repU64_heapMono₂
-  limbsVal StrBytes)
+  limbListEnum byteListEnum addrTy ixAddr limbsVal StrBytes)
 open IxVM.Refinement.Core.LevelsAux
 open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList glistCmp_refines)
 open IxVM.Refinement.Decl (TmExact TmCExact)
@@ -45,8 +45,13 @@ set_option linter.unusedSimpArgs false
 
 theorem ixAddr_inj : Function.Injective ixAddr := by
   intro a b h
-  have h1 : a.toArray = b.toArray := congrArg ByteArray.data (congrArg Address.hash h)
-  exact List.toArray_inj.mp h1
+  cases a with
+  | mk arr1 h1 =>
+    cases b with
+    | mk arr2 h2 =>
+      have harr : arr1 = arr2 := congrArg ByteArray.data (congrArg Address.hash h)
+      subst harr
+      rfl
 
 theorem evalBinOp_sub_succ (n : Nat) {v : SourceValue F}
     (op : evalBinOp .sub (.field ((n + 1 : Nat) : F)) (.field (1 : F)) = .ok v) :
@@ -409,10 +414,10 @@ theorem klimbs_eq_exact {h h' : Heap F} {la lb : List UInt64} {pa pb r : SourceV
     ⟨x_la, x_ra, ld12, ld77, he85, he86, hc87⟩ |
     ⟨x_la, x_ra, x_lb, x_rb, m106, cs116, cs152, ld12, ld77, ev118, ev154, hc171⟩ |
     ⟨x_la, x_ra, x_lb, x_rb, m106, cs116, ld12, ld77, ev118, he177, he178, hc179⟩
-  · obtain rfl := RepList.nil_of_load ha ld12
-    obtain rfl := RepList.nil_of_load hb ld31
+  · obtain rfl := Core.RepList.nil_of_load ha ld12
+    obtain rfl := Core.RepList.nil_of_load hb ld31
     exact ⟨by rw [he39, ite_eq_left rfl], he40⟩
-  · obtain rfl := RepList.nil_of_load ha ld12
+  · obtain rfl := Core.RepList.nil_of_load ha ld12
     refine ⟨?_, he47⟩
     rw [he46]
     cases lb with
@@ -422,11 +427,11 @@ theorem klimbs_eq_exact {h h' : Heap F} {la lb : List UInt64} {pa pb r : SourceV
       injection hl with hv
       exact absurd hv (hne42 [] rfl)
     | cons _ _ => simp
-  · obtain ⟨x, xs, rfl, -, -⟩ := RepList.cons_of_load ha ld12
-    obtain rfl := RepList.nil_of_load hb ld77
+  · obtain ⟨x, xs, rfl, -, -⟩ := Core.RepList.cons_of_load ha ld12
+    obtain rfl := Core.RepList.nil_of_load hb ld77
     exact ⟨by rw [he85]; simp, he86⟩
-  · obtain ⟨x, xs, rfl, hx, hxs⟩ := RepList.cons_of_load ha ld12
-    obtain ⟨y, ys, rfl, hy, hys⟩ := RepList.cons_of_load hb ld77
+  · obtain ⟨x, xs, rfl, hx, hxs⟩ := Core.RepList.cons_of_load ha ld12
+    obtain ⟨y, ys, rfl, hy, hys⟩ := Core.RepList.cons_of_load hb ld77
     obtain ⟨heq, rfl⟩ := Lib.u64_eq_spec hx hy ev118
     have hxy : x = y := by
       by_contra hne
@@ -437,8 +442,8 @@ theorem klimbs_eq_exact {h h' : Heap F} {la lb : List UInt64} {pa pb r : SourceV
       rw [hc171]; simp only [List.length_cons, List.length_append]; omega
     obtain ⟨hr, hh⟩ := klimbs_eq_exact hxs hys ev154
     exact ⟨by rw [hr]; simp, hh⟩
-  · obtain ⟨x, xs, rfl, hx, -⟩ := RepList.cons_of_load ha ld12
-    obtain ⟨y, ys, rfl, hy, -⟩ := RepList.cons_of_load hb ld77
+  · obtain ⟨x, xs, rfl, hx, -⟩ := Core.RepList.cons_of_load ha ld12
+    obtain ⟨y, ys, rfl, hy, -⟩ := Core.RepList.cons_of_load hb ld77
     obtain ⟨heq, rfl⟩ := Lib.u64_eq_spec hx hy ev118
     have hxy : x ≠ y := by
       intro e; subst e
@@ -461,10 +466,10 @@ theorem bytestream_eq_exact {h h' : Heap F} {xs ys : List UInt8} {pa pb r : Sour
       ev141, op121, ev159, hc176⟩ |
     ⟨x_ba, x_ra, x_bb, x_rb, v105, m106, x114, y115, m116, cs125, cs139, ld12, ld77, ev127, ev141,
       op121, hne177, he181, he182, hc183⟩
-  · obtain rfl := RepList.nil_of_load ha ld12
-    obtain rfl := RepList.nil_of_load hb ld31
+  · obtain rfl := Core.RepList.nil_of_load ha ld12
+    obtain rfl := Core.RepList.nil_of_load hb ld31
     exact ⟨by rw [he39, ite_eq_left rfl], he40⟩
-  · obtain rfl := RepList.nil_of_load ha ld12
+  · obtain rfl := Core.RepList.nil_of_load ha ld12
     refine ⟨?_, he47⟩
     rw [he46]
     cases ys with
@@ -474,11 +479,11 @@ theorem bytestream_eq_exact {h h' : Heap F} {xs ys : List UInt8} {pa pb r : Sour
       injection hl with hv
       exact absurd hv (hne42 [] rfl)
     | cons _ _ => simp
-  · obtain ⟨x, xs', rfl, -, -⟩ := RepList.cons_of_load ha ld12
-    obtain rfl := RepList.nil_of_load hb ld77
+  · obtain ⟨x, xs', rfl, -, -⟩ := Core.RepList.cons_of_load ha ld12
+    obtain rfl := Core.RepList.nil_of_load hb ld77
     exact ⟨by rw [he85]; simp, he86⟩
-  · obtain ⟨x, xs', rfl, hx, hxs⟩ := RepList.cons_of_load ha ld12
-    obtain ⟨y, ys', rfl, hy, hys⟩ := RepList.cons_of_load hb ld77
+  · obtain ⟨x, xs', rfl, hx, hxs⟩ := Core.RepList.cons_of_load ha ld12
+    obtain ⟨y, ys', rfl, hy, hys⟩ := Core.RepList.cons_of_load hb ld77
     obtain ⟨e1, rfl⟩ := Lib.u8_to_field_spec ev127
     obtain ⟨e2, rfl⟩ := Lib.u8_to_field_spec ev141
     have hx' : x114 = .field (x.toNat : F) := e1.trans hx
@@ -490,8 +495,8 @@ theorem bytestream_eq_exact {h h' : Heap F} {xs ys : List UInt8} {pa pb r : Sour
       rw [hc176]; simp only [List.length_cons, List.length_append]; omega
     obtain ⟨hr, hh⟩ := bytestream_eq_exact hxs hys ev159
     exact ⟨by rw [hr]; simp, hh⟩
-  · obtain ⟨x, xs', rfl, hx, -⟩ := RepList.cons_of_load ha ld12
-    obtain ⟨y, ys', rfl, hy, -⟩ := RepList.cons_of_load hb ld77
+  · obtain ⟨x, xs', rfl, hx, -⟩ := Core.RepList.cons_of_load ha ld12
+    obtain ⟨y, ys', rfl, hy, -⟩ := Core.RepList.cons_of_load hb ld77
     obtain ⟨e1, rfl⟩ := Lib.u8_to_field_spec ev127
     obtain ⟨e2, rfl⟩ := Lib.u8_to_field_spec ev141
     have hx' : x114 = .field (x.toNat : F) := e1.trans hx
@@ -1165,12 +1170,12 @@ theorem spec_params_zeta_eq_exact {κ : _root_.Address → KKey} (hinj : Functio
     fun hs => RomBound.bounded_mono bd hs
   match Obs.«KernelCheck::spec_params_zeta_eq».obs ev with
   | .Nil_Nil (ld_bolbylmd := ld1) (ld_vplaigqg := ld2) (he_ptgtdktu := hr) .. =>
-    obtain rfl := RepList.nil_of_load hx ld1
-    obtain rfl := RepList.nil_of_load hy ld2
+    obtain rfl := Core.RepList.nil_of_load hx ld1
+    obtain rfl := Core.RepList.nil_of_load hy ld2
     rw [hr, ite_eq_left rfl]
   | .Nil_other (v_lekjiumn := v) (ld_bolbylmd := ld1) (ld_vplaigqg := ld2)
       (hne_akcscckh := hne) (he_kmfczmgt := hr) .. =>
-    obtain rfl := RepList.nil_of_load hx ld1
+    obtain rfl := Core.RepList.nil_of_load hx ld1
     rw [hr]
     cases ys with
     | nil =>
@@ -1182,14 +1187,14 @@ theorem spec_params_zeta_eq_exact {κ : _root_.Address → KKey} (hinj : Functio
         exact absurd hv (hne [] rfl)
     | cons _ _ => simp
   | .Cons_Nil (ld_bolbylmd := ld1) (ld_txwzgqvr := ld2) (he_jkiddynw := hr) .. =>
-    obtain ⟨_, _, rfl, -, -⟩ := RepList.cons_of_load hx ld1
-    obtain rfl := RepList.nil_of_load hy ld2
+    obtain ⟨_, _, rfl, -, -⟩ := Core.RepList.cons_of_load hx ld1
+    obtain rfl := Core.RepList.nil_of_load hy ld2
     rw [hr]; simp
   | .Cons_Cons_n1 (x_x := xx) (x_xr := xxr) (x_y := xy) (x_yr := xyr)
       (cs_noorzezv := cs1) (cs_ixmjjldq := cs2) (ld_bolbylmd := ld1) (ld_txwzgqvr := ld2)
       (ev_vzplvuse := e1) (ev_kzuapeok := e2) (hc_givorsyo := hc) .. =>
-    obtain ⟨x, xs', rfl, hx1, hxs⟩ := RepList.cons_of_load hx ld1
-    obtain ⟨y, ys', rfl, hy1, hys⟩ := RepList.cons_of_load hy ld2
+    obtain ⟨x, xs', rfl, hx1, hxs⟩ := Core.RepList.cons_of_load hx ld1
+    obtain ⟨y, ys', rfl, hy1, hys⟩ := Core.RepList.cons_of_load hy ld2
     have hxyeq := kexpr_zeta_struct_eq_exact hinj hx1 hy1
       (sub fun c hc' => by rw [hc]; simp [hc']) e1
     have hxy : x = y := by
@@ -1206,8 +1211,8 @@ theorem spec_params_zeta_eq_exact {κ : _root_.Address → KKey} (hinj : Functio
   | .Cons_Cons_other (x_x := xx) (x_xr := xxr) (x_y := xy) (x_yr := xyr)
       (cs_noorzezv := cs1) (ld_bolbylmd := ld1) (ld_txwzgqvr := ld2)
       (ev_vzplvuse := e1) (hne_gadltmfj := hne) (he_bjqpniqr := hr) (hc_ixgblxxm := hc) .. =>
-    obtain ⟨x, xs', rfl, hx1, -⟩ := RepList.cons_of_load hx ld1
-    obtain ⟨y, ys', rfl, hy1, -⟩ := RepList.cons_of_load hy ld2
+    obtain ⟨x, xs', rfl, hx1, -⟩ := Core.RepList.cons_of_load hx ld1
+    obtain ⟨y, ys', rfl, hy1, -⟩ := Core.RepList.cons_of_load hy ld2
     have hxyeq := kexpr_zeta_struct_eq_exact hinj hx1 hy1
       (sub fun c hc' => by rw [hc]; simp [hc']) e1
     have hxy : x ≠ y := fun h => by subst h; rw [ite_eq_left rfl] at hxyeq; exact hne hxyeq
