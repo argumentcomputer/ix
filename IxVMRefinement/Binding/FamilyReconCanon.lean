@@ -1497,7 +1497,8 @@ theorem block_elim_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
         simp only [hcE, hci, hcbE, hcbi, hm, hld, Option.some.injEq] at hindAt
         exact hindAt.symm
       rw [hd_eq]
-      simp [indTypeAt, hcE, hci, hcbE, hcbi, hm, hld]
+      unfold indTypeAt
+      simp only [hcE, hci, hcbE, hcbi, hm, hld]
     refine ⟨d.nl, if lvl.isNeverZero then 1 else 0, ?_, hnl, ?_, ?_⟩
     · rw [hoff]
       cases lvl.isNeverZero <;> simp
