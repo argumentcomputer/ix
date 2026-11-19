@@ -64,7 +64,7 @@ theorem evalBinOp_sub_succ (n : Nat) {v : SourceValue F}
   push_cast
   ring
 
-theorem succ_field_ne_zero (n : Nat) (hn : n < 18446744069414584320) :
+theorem field_succ_ne_zero (n : Nat) (hn : n < 18446744069414584320) :
     (.field ((n + 1 : Nat) : F) : SourceValue F) ≠ .field 0 := by
   intro h
   injection h with h
@@ -259,7 +259,7 @@ theorem peel_n_foralls_zeta_spec {κ : _root_.Address → KKey} :
   | succ n =>
     match Obs.«KernelCheck::peel_n_foralls_zeta».obs ev with
     | .n0 (hv_fdljvuxp := hv) .. =>
-      exact (succ_field_ne_zero n (by omega) hv).elim
+      exact (field_succ_ne_zero n (by omega) hv).elim
     | .other_Forall (x_body := xb) (v_fpjmyxdi := vn) (cs_eadgpktx := cs1)
         (ld_hdultwxn := ld) (op_czjgbwao := op) (ev_imkwftmt := e1) (hc_ydqmxojp := hc) .. =>
       obtain ⟨D, B, ℓ, rfl, -, hb, -⟩ := TmOExact.forallE_of_load hp ld
