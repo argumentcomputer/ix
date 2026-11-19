@@ -1,4 +1,5 @@
 import IxVMRefinement.TwinFamily.StoredTwin
+import IxVMRefinement.FamilyGraph.ProducersGraph
 
 /-! # The twin row restated with its stored case at the witness's selected family record
 
@@ -30,8 +31,9 @@ set_option linter.unusedVariables false
 
 /-- **The twin row, with its stored case at the witness's selected family record**: the step of
 a second family record `A` of a block `B`, handed the block's family record: the graph's
-(`fam B = some rb`), or, for a block with no family record in the graph, the record the witness
-selects for it (`StoredTwinCanon`), with every selected record in the form `RFormS`. -/
+(`fam B = some rb`, non-empty recursor block and preferred in `RFormS` whenever `A` is), or, for a
+block with no family record in the graph, the record the witness selects for it (`StoredTwinCanon`),
+with every selected record in the form `RFormS`. -/
 def FamilyTwinRowFam (RFormS : StoredFormPred)
     (L : Ix.Kernel.Env .anon → NativeFam .anon → Prop) : Prop :=
   ∀ (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (seeds : List _root_.Address)
@@ -45,7 +47,8 @@ def FamilyTwinRowFam (RFormS : StoredFormPred)
       ∀ famOf : _root_.Address → Option _root_.Address, StoredFamiliesRForm RFormS t R famOf →
       ∀ (A : _root_.Address) (c : Ixon.Constant) (B rb : _root_.Address) (crb : Ixon.Constant),
         Walked Top Inner A → recordOf E₀ A = some c → InLogic c → twin A = some B →
-        ((fam B = some rb ∧ recordOf E₀ rb = some crb) ∨
+        ((fam B = some rb ∧ recordOf E₀ rb = some crb ∧
+            RecBlock E₀ rb ∧ (RFormS t E₀ B A → RFormS t E₀ B rb)) ∨
           (fam B = none ∧ StoredTwinCanon t R envT famOf B rb crb)) →
         UnitStepTwin.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
           t envT E₀ E lim A c rb crb
@@ -67,7 +70,7 @@ theorem familyTwinRowFam_of {L : Ix.Kernel.Env .anon → NativeFam .anon → Pro
     FamilyTwinRowFam.{u} RFormS L := by
   intro calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx famOf hRF A c B
     rb crb hW hc hlog htw hcase
-  rcases hcase with ⟨hfam, hcrb⟩ | ⟨hnone, hcanon⟩
+  rcases hcase with ⟨hfam, hcrb, -, -⟩ | ⟨hnone, hcanon⟩
   · exact familyTwinStep_graph hL hseam hWalk hFR
       (hform calls t seeds E₀ lim Top rank hWalk envT fam twin adv Inner hFR) hctx hW hc htw hfam
       hcrb
@@ -102,10 +105,12 @@ theorem familyTwinStep_graph_of_row {L : Ix.Kernel.Env .anon → NativeFam .anon
     (hctx : StepCtx.{u} calls t R envT E₀ E)
     {A : _root_.Address} {c : Ixon.Constant} {B rb : _root_.Address} {crb : Ixon.Constant}
     (hW : Walked Top Inner A) (hc : recordOf E₀ A = some c) (hlog : InLogic c)
-    (htw : twin A = some B) (hfam : fam B = some rb) (hcrb : recordOf E₀ rb = some crb) :
+    (htw : twin A = some B) (hfam : fam B = some rb) (hcrb : recordOf E₀ rb = some crb)
+    (hrec : RecBlock E₀ rb) (hpref : RFormS t E₀ B A → RFormS t E₀ B rb) :
     UnitStepTwin.{u} (fun env => FoldExtra.{u} L t E env ∧ FamilyRecsModeled t E₀ fam env)
       t envT E₀ E lim A c rb crb :=
   h calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx (fun _ => none)
-    (storedFamiliesRForm_none RFormS) A c B rb crb hW hc hlog htw (Or.inl ⟨hfam, hcrb⟩)
+    (storedFamiliesRForm_none RFormS) A c B rb crb hW hc hlog htw
+    (Or.inl ⟨hfam, hcrb, hrec, hpref⟩)
 
 end IxVM.Refinement.Typing.TwinFamily

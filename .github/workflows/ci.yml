@@ -84,11 +84,28 @@ jobs:
       # The refinement proofs and the path lemmas `lake exe ixvm/ixvm-proof-gen`
       # writes are their own library (not a default target, and skipped by
       # lint's build-all): check that the generated files are current, then
-      # build the library.
+      # build the library. The build checks the exact axioms of the endpoint
+      # theorem (IxVMRefinement/Endpoint/ComposedResidualAudit.lean), which
+      # bound only what the endpoint reaches. The module check then bounds every
+      # safe declaration of every refinement module, and of the consistency
+      # statement and kernel model modules they import, by propext,
+      # Classical.choice and Quot.sound (#guard_module_axioms_under,
+      # IxC/Kernel/Audit/Axioms.lean), helpers no endpoint reaches yet included.
+      # The generated path lemmas under Obs/ are checked as the modules above
+      # import them.
       - name: Check the IxVM refinement proofs
         run: |
           lake exe ixvm/ixvm-proof-gen --check
           lake build --wfail IxVMRefinement
+          tmp=$(mktemp -d)
+          {
+            echo "import IxC.Kernel.Audit.Axioms"
+            find IxVMRefinement -name '*.lean' -not -path 'IxVMRefinement/Obs/*' | sort |
+              sed -e 's/\.lean$//' -e 's#/#.#g' -e 's/^/import /'
+            echo "#guard_module_axioms_under IxVMRefinement Ix.IxVM.Consistency IxC.Kernel.Model IxC.Kernel.Semantics"
+          } > "$tmp/RefinementAxioms.lean"
+          lake env lean -DwarningAsError=true "$tmp/RefinementAxioms.lean"
+          rm -rf "$tmp"
       - name: Check new IxVM execution and proof fixture
         if: github.event_name != 'push'
         run: |

@@ -387,15 +387,16 @@ private def inertMutual (which : Nat) (assumed : Bool) : Except String Case := d
   let bytes := payload (addr emptyFamily) #[uA, addr mkA, addr mkB]
     #[(punit, 0, [], []), (unit, 0, [], []), (falseA, 1, [1], [])]
     #[uA, uA] #[addr mkA, addr mkB]
-  let env := withModel env b bytes
-    #[(uA, u), (addr mkA, mkA), (addr mkB, mkB), (addr emptyFamily, emptyFamily)]
+  let modelRecs := #[(uA, u), (addr mkA, mkA), (addr mkB, mkB), (addr emptyFamily, emptyFamily)]
   match which with
-  | 0 => typing "a mutual pair with a negative occurrence, modeled by unit types" env a assumed true
+  | 0 =>
+    let env := withModel env b bytes modelRecs
+    typing "a mutual pair with a negative occurrence, modeled by unit types" env a assumed true
   | _ =>
     let (env, p) := put env ⟨.defn ⟨.defn, .safe, {}, 0, .all (.ref 0 #[]) (.ref 1 #[]),
         .lam (.ref 0 #[]) (.prj 0 0 (.var 0))⟩, #[], #[a, bb], #[],
       #[⟨false, 0, 0, #[.never {}]⟩, ⟨false, 1, 0, #[.never {}]⟩]⟩
-    let env := { env with modelsAttached := true }
+    let env := withModel env b bytes modelRecs
     typing "a projection at the mutual pair with a negative occurrence" env p assumed false
       (some modeledProjection)
 
@@ -438,17 +439,20 @@ private def inertIndexed (which : Nat) (assumed : Bool) : Except String Case := 
   let bytes := payload (addr emptyFamily) #[uA, addr mk]
     #[(punit, 0, [], []), (unit, 0, [], []), (nat, 0, [], []), (i, 1, [1], []), (falseA, 1, [3], [])]
     #[uA] #[addr mk]
-  let env := withModel env b bytes #[(uA, u), (addr mk, mk), (addr emptyFamily, emptyFamily)]
+  let modelRecs := #[(uA, u), (addr mk, mk), (addr emptyFamily, emptyFamily)]
   match which with
-  | 0 => typing "an indexed family I : Type → Type with one constructor at Nat" env i assumed true
+  | 0 =>
+    let env := withModel env b bytes modelRecs
+    typing "an indexed family I : Type → Type with one constructor at Nat" env i assumed true
   | 1 =>
+    let env := withModel env b bytes modelRecs
     typing "a type with a negative occurrence, nested in an index, modeled by a unit type" env bad
       assumed true
   | _ =>
     let (env, p) := put env ⟨.defn ⟨.defn, .safe, {}, 0, .all (.ref 0 #[]) (.ref 1 #[]),
         .lam (.ref 0 #[]) (.app (.prj 0 1 (.var 0)) (.var 0))⟩, #[], #[bad, falseA], #[],
       #[⟨false, 0, 0, #[.zero {}]⟩, ⟨false, 1, 0, #[.zero {}]⟩]⟩
-    let env := { env with modelsAttached := true }
+    let env := withModel env b bytes modelRecs
     typing "a projection at the type with a negative occurrence nested in an index" env p assumed
       false (some modeledProjection)
 

@@ -81,7 +81,7 @@ def defaultTableSupport : Except String (Array (Address × Ixon.Constant) ×
 def withRoleTable (env : Ixon.Env) (bytes : ByteArray) : Except String Ixon.Env := do
   let (records, blobs, hints) ← defaultTableSupport
   let table? := Ix.Kernel.RoleTable.ofBytes bytes
-  let mut env := { env with roleBinding := some { address := Address.blake3 bytes, bytes } }
+  let mut env := { env.clearModels with roleBinding := some { address := Address.blake3 bytes, bytes } }
   let wrapper (info : Ixon.ConstantInfo) : Address × Ixon.Constant :=
     let c : Ixon.Constant := ⟨info, #[], #[], #[], #[]⟩
     (Address.blake3 (Ixon.ser c), c)
@@ -402,18 +402,17 @@ def closureFrom (env : Ixon.Env) (target : Address)
     (#[target] ++ Ix.primAddrSet.toArray.filter env.consts.contains
       ++ bindingRoots env assumeBinding ++ Ix.ClaimContext.userAxioms env)
 
-/-- Serializes `claim`, seeds its bytes at `key = blake3(claim)`, and
-    populates the IOBuffer with the `closureFrom` byte scope of every
-    address the claim variant names (plus any caller-supplied
-    `AssumptionTree`s under their merkle roots). -/
-def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
-    (trees : Std.HashMap Address Ix.AssumptionTree := {}) :
-    Except String ClaimWitness := do
-  let env ← withDefaultRoleBinding env
-  let claimBytes := Ix.Claim.ser claim
-  let digestKey := packedDigestKey (Address.blake3 claimBytes)
-  let mut ioBuffer : Aiur.IOBuffer := seedBinding env default
-  ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
+/-- Seed on channel 1 every assumption tree a run of `claim` reads
+    (`KernelClaim::load_assumption_tree`), each under its root, in this order: a
+    `checkEnv` claim's owned tree or a `contains` claim's tree; the axioms tree of a
+    typing claim's context, which `KernelRoles::load_role_ctx` reads; the claim's
+    assumption tree. Each comes from `trees`; the axioms tree, when `trees` lacks it, is
+    the environment's own (`Ix.ClaimContext.userAxiomTree` of `env`, which must be bound)
+    when its root is the context's. `buildClaimWitness` and the distributed route of
+    `ix prove` (`Ix.Cli.FormalAiur.distributedStreams`) seed a claim's trees here. -/
+def seedClaimTrees (env : Ixon.Env) (claim : Ix.Claim)
+    (trees : Std.HashMap Address Ix.AssumptionTree) (ioBuffer : Aiur.IOBuffer) :
+    Except String Aiur.IOBuffer := do
   let seedAsm asm buf := match asm with
     | some r => seedTreeAt r trees buf
     | none => .ok buf
@@ -431,26 +430,36 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
         else .error s!"no assumption tree supplied for axioms root {axRoot}"
       | none => .error s!"no assumption tree supplied for axioms root {axRoot}"
   match claim with
-  | .check ctx addr asm =>
+  | .check ctx _ asm | .eval ctx _ _ asm => seedAsm asm (← seedAxioms ctx ioBuffer)
+  | .checkEnv ctx root asm => seedAsm asm (← seedAxioms ctx (← seedTreeAt root trees ioBuffer))
+  | .contains tree _ => seedTreeAt tree trees ioBuffer
+  | .reveal .. | .catalog .. | .binding .. => pure ioBuffer
+
+/-- Serializes `claim`, seeds its bytes at `key = blake3(claim)`, and
+    populates the IOBuffer with the `closureFrom` byte scope of every
+    address the claim variant names, then the assumption trees its run reads
+    (`seedClaimTrees`, from the caller-supplied `trees`). -/
+def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
+    (trees : Std.HashMap Address Ix.AssumptionTree := {}) :
+    Except String ClaimWitness := do
+  let env ← withDefaultRoleBinding env
+  let claimBytes := Ix.Claim.ser claim
+  let digestKey := packedDigestKey (Address.blake3 claimBytes)
+  let mut ioBuffer : Aiur.IOBuffer := seedBinding env default
+  ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
+  match claim with
+  | .check ctx addr _ =>
     ioBuffer := addEntries env (closureFrom env addr ctx.bindingAssumed).contains ioBuffer
-    ioBuffer ← seedAxioms ctx ioBuffer
-    ioBuffer ← seedAsm asm ioBuffer
-  | .eval ctx input output asm =>
+  | .eval _ input output _ =>
     let inputClosure := closureFrom env input
     let outputClosure := closureFrom env output
     ioBuffer := addEntries env
       (fun a => inputClosure.contains a || outputClosure.contains a) ioBuffer
-    ioBuffer ← seedAxioms ctx ioBuffer
-    ioBuffer ← seedAsm asm ioBuffer
-  | .checkEnv ctx root asm =>
+  | .checkEnv .. =>
     ioBuffer := addEntries env (fun _ => true) ioBuffer
-    ioBuffer ← seedTreeAt root trees ioBuffer
-    ioBuffer ← seedAxioms ctx ioBuffer
-    ioBuffer ← seedAsm asm ioBuffer
   | .reveal comm _info _binders =>
     ioBuffer := addEntries env (closureFrom env comm).contains ioBuffer
-  | .contains tree _target =>
-    ioBuffer ← seedTreeAt tree trees ioBuffer
+  | .contains .. => pure ()
   | .binding _ bound =>
     unless env.roleBinding.map (·.address) == some bound do
       throw s!"the environment's role binding is not {bound}"
@@ -459,6 +468,7 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   | .catalog .. =>
     throw "catalog claims have no single-run witness; they are formed by \
 aggregating their members' check-env claims"
+  ioBuffer ← seedClaimTrees env claim trees ioBuffer
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }
 

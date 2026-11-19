@@ -1370,9 +1370,15 @@ structure Env where
 
 namespace Env
 
+/-- Clear the derived prover-side model advice maps and attachment flag so
+    the next `IxVM.Model.attach` rebuilds from the current environment. -/
+def clearModels (env : Env) : Env :=
+  { env with models := {}, modelRecords := {}, modelHints := {}, modelBlobs := {},
+             modelDeps := {}, modelsAttached := false }
+
 /-- Store a constant at the given address. Caches the materialized value. -/
 def storeConst (env : Env) (addr : Address) (const : Constant) : Env :=
-  { env with consts := env.consts.insert addr (LazyConstant.ofConstant const), modelsAttached := false }
+  { env.clearModels with consts := env.consts.insert addr (LazyConstant.ofConstant const) }
 
 /-- Get a constant by address, materializing on demand. -/
 def getConst? (env : Env) (addr : Address) : Option Constant :=
@@ -1403,7 +1409,7 @@ def getName? (env : Env) (addr : Address) : Option Ix.Name :=
 /-- Store a blob and return its content address. -/
 def storeBlob (env : Env) (bytes : ByteArray) : Env × Address :=
   let addr := Address.admissionHash bytes
-  ({ env with blobs := env.blobs.insert addr bytes }, addr)
+  ({ env.clearModels with blobs := env.blobs.insert addr bytes }, addr)
 
 /-- Get a blob by address. -/
 def getBlob? (env : Env) (addr : Address) : Option ByteArray :=
