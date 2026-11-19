@@ -1263,7 +1263,7 @@ def aux_already_in := aiur_fn⟦
                 1 => {
                   match Bytes::address_eq(addr, target_addr) {
                     1 => {
-                      match spec_params_ptr_eq(sp, target_sp) * level_list_struct_eq(ou, target_us) {
+                      match spec_params_zeta_eq(sp, target_sp) * level_list_struct_eq(ou, target_us) {
                         1 => {  1 } ,
                         _ => {  aux_already_in(rest, target_addr, target_sp, target_us) } ,
                       } } ,
@@ -1596,7 +1596,7 @@ def flat_find_pos_kind := aiur_fn⟦
               };
               -- an auxiliary entry: the whole occurrence identity, levels included
               let sp_eq = match want_aux {
-                1 => {  spec_params_ptr_eq(sp, want_sp) * level_list_struct_eq(ou, want_us) } ,
+                1 => {  spec_params_zeta_eq(sp, want_sp) * level_list_struct_eq(ou, want_us) } ,
                 _ => {  1 } ,
               };
               match (addr_match * kind_eq) * sp_eq {
@@ -3118,7 +3118,7 @@ def find_peer_rec_spec_walk := aiur_fn⟦
                         _ => {
                           let rec_sp = extract_aux_spec_params(ty, np,
                             nmot, nmin, ni, pnp);
-                          spec_params_ptr_eq(rec_sp, target_sp) *
+                          spec_params_zeta_eq(rec_sp, target_sp) *
                             level_list_struct_eq(extract_aux_occ_us(rec_ci), target_us) } ,
                       } } ,
                     _ => {  0 } ,
@@ -3619,7 +3619,7 @@ def spec_params_dom_prefix_match := aiur_fn⟦
             Lists::Node::Nil => {  0 } ,
             Lists::Node::Cons(a, ar) => {
               let s_lifted = KernelSubst::expr_lift(s, lift_by, 0);
-              match kexpr_struct_eq(s_lifted, a) {
+              match kexpr_zeta_struct_eq(s_lifted, a) {
                 1 => {  spec_params_dom_prefix_match(sr, ar, lift_by) } ,
                 _ => {  0 } ,
               } } ,
@@ -4144,6 +4144,123 @@ def collect_spine_zeta := aiur_fn⟦
         KernelTypes::KExprNode::Let(_, v, b) => {
           collect_spine_zeta(KernelSubst::expr_inst1(b, v, 0)) } ,
         _ => {  (e, (&(Lists::Node::Nil))) } ,
+      }
+    }
+⟧
+
+  -- Structural equality modulo ζ-reduction of `let` bindings, used exclusively for
+  -- specialized-parameter comparison on the reconstruction and nested-occurrence paths
+  -- (`spec_params_dom_prefix_match`, `spec_params_zeta_eq`). Global `kexpr_struct_eq`
+  -- and `spec_params_ptr_eq` remain untouched.
+
+def zeta_head := aiur_fn⟦
+  fn zeta_head(e: KernelTypes::KExpr) -> KernelTypes::KExpr {
+      match (*(e)) {
+        KernelTypes::KExprNode::Let(_, v, b) => {
+          zeta_head(KernelSubst::expr_inst1(b, v, 0)) } ,
+        _ => {  e } ,
+      }
+    }
+⟧
+
+def kexpr_zeta_binder_eq := aiur_fn⟦
+  fn kexpr_zeta_binder_eq(ta: KernelTypes::KExpr, ba: KernelTypes::KExpr, la: KernelTypes::KLevel,
+                          tb: KernelTypes::KExpr, bb: KernelTypes::KExpr, lb: KernelTypes::KLevel) -> Field {
+      match KernelLevels::pw_eq(la, lb) {
+        1 => {
+          match kexpr_zeta_struct_eq(ta, tb) {
+            1 => {  kexpr_zeta_struct_eq(ba, bb) } ,
+            _ => {  0 } ,
+          } } ,
+        _ => {  0 } ,
+      }
+    }
+⟧
+
+def kexpr_zeta_struct_eq := aiur_fn⟦
+  fn kexpr_zeta_struct_eq(a: KernelTypes::KExpr, b: KernelTypes::KExpr) -> Field {
+      let a0 = zeta_head(a);
+      let b0 = zeta_head(b);
+      match (*(a0)) {
+        KernelTypes::KExprNode::BVar(ia) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::BVar(ib) => {
+              match ia - ib { 0 => {  1 } , _ => {  0 } , } } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Srt(la) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::Srt(lb) => {  KernelLevels::level_struct_eq(la, lb) } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Const(ca, lsa) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::Const(cb, lsb) => {
+              match Bytes::address_eq(ca, cb) {
+                1 => {  level_list_struct_eq(lsa, lsb) } ,
+                _ => {  0 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::App(fa, aa) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::App(fb, ab) => {
+              match kexpr_zeta_struct_eq(fa, fb) {
+                1 => {  kexpr_zeta_struct_eq(aa, ab) } ,
+                _ => {  0 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Lam(ta, ba, la) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::Lam(tb, bb, lb) => {  kexpr_zeta_binder_eq(ta, ba, la, tb, bb, lb) } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Forall(da, xa, la) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::Forall(db, xb, lb) => {  kexpr_zeta_binder_eq(da, xa, la, db, xb, lb) } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Let(_, _, _) => {  0 } ,
+        KernelTypes::KExprNode::Lit(la) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::Lit(lb) => {  KernelLevels::literal_eq(la, lb) } ,
+            _ => {  0 } ,
+          } } ,
+        KernelTypes::KExprNode::Proj(sa, fa2, ea) => {
+          match (*(b0)) {
+            KernelTypes::KExprNode::Proj(sb, fb2, eb) => {
+              match Bytes::address_eq(sa, sb) {
+                1 => {
+                  match fa2 - fb2 {
+                    0 => {  kexpr_zeta_struct_eq(ea, eb) } ,
+                    _ => {  0 } ,
+                  } } ,
+                _ => {  0 } ,
+              } } ,
+            _ => {  0 } ,
+          } } ,
+      }
+    }
+⟧
+
+def spec_params_zeta_eq := aiur_fn⟦
+  fn spec_params_zeta_eq(a: Lists::List<KernelTypes::KExpr>, b: Lists::List<KernelTypes::KExpr>) -> Field {
+      match (*(a)) {
+        Lists::Node::Nil => {
+          match (*(b)) {
+            Lists::Node::Nil => {  1 } ,
+            _ => {  0 } ,
+          } } ,
+        Lists::Node::Cons(x, xr) => {
+          match (*(b)) {
+            Lists::Node::Nil => {  0 } ,
+            Lists::Node::Cons(y, yr) => {
+              match kexpr_zeta_struct_eq(x, y) {
+                1 => {  spec_params_zeta_eq(xr, yr) } ,
+                _ => {  0 } ,
+              } } ,
+          } } ,
       }
     }
 ⟧

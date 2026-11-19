@@ -1435,7 +1435,7 @@ def aux_entry_in := aiur_fn⟦
             (a, is_aux, s, u) => {
               match is_aux * Bytes::address_eq(a, addr) {
                 1 => {
-                  match KernelCheck::spec_params_ptr_eq(s, sp) * KernelCheck::level_list_struct_eq(u, us) {
+                  match KernelCheck::spec_params_zeta_eq(s, sp) * KernelCheck::level_list_struct_eq(u, us) {
                     1 => {  1 } ,
                     _ => {  aux_entry_in(rest, addr, sp, us) } ,
                   } } ,
@@ -1483,7 +1483,7 @@ def aux_all_in := aiur_fn⟦
                         _ => {  0 } ,
                       };
                       let same = ((Bytes::address_eq(a, a2) * same_kind) *
-                        KernelCheck::spec_params_ptr_eq(s, s2)) *
+                        KernelCheck::spec_params_zeta_eq(s, s2)) *
                         KernelCheck::level_list_struct_eq(u, u2);
                       match same {
                         1 => {  aux_all_in(rest, rest2) } ,
