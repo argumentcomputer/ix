@@ -12,7 +12,7 @@ interfaces isolated in `TwinFamily.ProducerRow`:
 * `TwinCallFlat`: positional flattened family (`FamilyOfBlock`, `RecordFlat`, `BlockDerivedFlat`,
   and recursor level-count agreement with the elimination offset) from an accepted `check_family`
   call;
-* `TwinCallRecon`: reconstruction or observed full-consumption form (`RFormS ∨ RecordFullConsObs`)
+* `TwinCallRecon`: reconstruction or observed wrapper-consumption form (`RFormS ∨ RecordWrapConsObs`)
   from an accepted `check_family` call;
 * `StoredRecLvlsOk`: level-count agreement of a stored family recursor with its block's elimination
   offset.
@@ -182,15 +182,17 @@ private theorem overUnitStepTwin_of_parts {t : Ix.Kernel.RoleTable}
     exact ⟨cvm, mval, hint, hf, hmodel w hw cvm mval hint hf⟩
   have hgen : ∀ w ∈ ws, TwinTypeGen twinPosRulesJ env w.cvC w.cvW' ∧
       List.Forall₂ (fun (rW' rC : RecRule .anon) =>
-        TwinRuleGen twinPosRulesJ env (Decl.twinPeerRename ws) w.cvC.levelParams rC rW')
+        TwinRuleGen twinPosRulesJ env (Decl.twinPeerRename ws) w.cvC.levelParams w.cvW' rC rW')
         w.rulesW' w.rulesC := by
     intro w hw
     obtain ⟨-, -, -, hcmp⟩ := hF.canonAt w hw
-    rcases hcmp.form with ⟨hty, hrl⟩ | ⟨hty, hrl⟩
+    rcases hcmp.form with ⟨hty, hrl⟩ | ⟨hty, hrl⟩ | ⟨hty, hrl⟩
     · exact ⟨twinTypeGen_of_canonical_above hty,
         lforall₂_imp (fun rW' rC h => twinRuleGen_of_canonical_above h) hrl⟩
     · exact ⟨twinTypeGen_of_twin_above (Decl.judgeFrames_twinPosRulesJ env) (hF.front w hw)
         (hF.lvls w hw) hty, hrl⟩
+    · exact ⟨twinTypeGen_of_symWrapT hty,
+        lforall₂_imp (fun rW' rC h => twinRuleGen_of_match h) hrl⟩
   have hfind : ∀ ci ∈ twinRecs ws ++ twinModels ws,
       (⟨twinRecs ws ++ (twinModels ws ++ env.consts)⟩ : Ix.Kernel.Env .anon).find? ci.name =
         some ci := by
@@ -504,7 +506,7 @@ theorem closureTwinSteps_of_premises
       hRc_R hst (Binding.limWithin_below t g) hFOB_A.block hA hcall_A
     have eind0 : ind₀' = ind₀ := Ixon.MutConst.indc.inj (Option.some.inj (hms0'.symm.trans hms0))
     subst ind₀'
-    -- Unpack `fuel` on `ρ.E₀` for `rb` (`RFormS`) and `A` (`RFormS ∨ RecordFullConsObs`)
+    -- Unpack `fuel` on `ρ.E₀` for `rb` (`RFormS`) and `A` (`RFormS ∨ RecordWrapConsObs`)
     have hrec_A := hRecon calls bAddr t ρ.E₀ B A cb₀ c ms₀ rs' (some (Binding.valLimit g)) cs_A
       ht hrun.bounded hRS hH hFOB_A.block hA hszA hcall_A
     have hMR_pair : ∃ fuel : Nat,
@@ -512,7 +514,7 @@ theorem closureTwinSteps_of_premises
           MemberRecon Core.ExprLvEq t ρ.E₀ rb crb rs es off fuel k rc) ∧
         (∀ k rc, rs'[k]? = some (.recr rc) →
           MemberRecon Core.ExprLvEq t ρ.E₀ A c rs' es off fuel k rc ∨
-          MemberRecon (fun ty R => FullConsObs (Binding.FamilyRecon.wrapAt t ρ.E₀)
+          MemberRecon (fun ty R => WrapConsObs (Binding.FamilyRecon.wrapAt t ρ.E₀)
             (WrapperObserved calls t) R ty) t ρ.E₀ A c rs' es off fuel k rc) := by
       obtain ⟨crb', rs_r, es_r, off_r, f_rb, hrb', hrs_r, -, hBD_r, hM_rb⟩ := hRForm_rb_E₀
       have ecrb' : crb' = crb := Option.some.inj (hrb'.symm.trans hcrb₀)
@@ -547,7 +549,7 @@ theorem closureTwinSteps_of_premises
         subst offA' esA'
         exact ⟨max f_rb f_A,
           fun k rc hr => Binding.FamilyRecon.MemberRecon.fuel_mono (Nat.le_max_left _ _) (hM_rb k rc hr),
-          fun k rc hr => Or.inr (Binding.FamilyRecon.MemberRecon.fuel_mono (Nat.le_max_right _ _) (hM_A k rc hr))⟩
+          fun k rc hr => Or.inr (Binding.FamilyRecon.MemberRecon.fuel_mono (Nat.le_max_right _ _) (hM_A k rc hr).2)⟩
     obtain ⟨fuel, hM_rb_E₀, hMR_A_all⟩ := hMR_pair
     refine ⟨B, rb, crb, hcrb₁, Or.inl hfam₀, fun envT hextT hndT hfrT => ?_⟩
     have hkeyA : ∀ x, ConstAddrOf A c x → Decl.KeyFree (keyOf t x) :=
@@ -576,7 +578,7 @@ theorem closureTwinSteps_of_premises
     have hpair_all :
         (∀ k (hk : k < rs'.size), Core.ExprLvEq (mkC k hk).ty_ld (mkC k hk).R) ∨
         ((∀ k rc, rs'[k]? = some (.recr rc) →
-            MemberRecon (fun ty R => FullConsObs (Binding.FamilyRecon.wrapAt t ρ.E₀)
+            MemberRecon (fun ty R => WrapConsObs (Binding.FamilyRecon.wrapAt t ρ.E₀)
               (WrapperObserved calls t) R ty) t ρ.E₀ A c rs' es off fuel k rc) ∧
           ∃ S : _root_.Address → Prop,
             (ReconView.ofStore t ρ.E₀).ClosedOn S ∧
@@ -706,7 +708,7 @@ theorem closureTwinSteps_of_premises
     have eind0_A : ind₀_A = ind₀ :=
       Ixon.MutConst.indc.inj (Option.some.inj (hms0_A.symm.trans hms0))
     subst ind₀_A
-    -- Unpack `fuel` on `ρ.E₀` for `rb` (`RFormS`) and `A` (`RFormS ∨ RecordFullConsObs`)
+    -- Unpack `fuel` on `ρ.E₀` for `rb` (`RFormS`) and `A` (`RFormS ∨ RecordWrapConsObs`)
     have hrec_A := hRecon calls bAddr t ρ.E₀ B A cb₀ c ms₀ rs' (some (Binding.valLimit g)) cs_A
       ht hrun.bounded hRS hH hFOB_A.block hA hszA hcall_A
     have hMR_pair : ∃ fuel : Nat,
@@ -714,7 +716,7 @@ theorem closureTwinSteps_of_premises
           MemberRecon Core.ExprLvEq t ρ.E₀ rb crb rs es off fuel k rc) ∧
         (∀ k rc, rs'[k]? = some (.recr rc) →
           MemberRecon Core.ExprLvEq t ρ.E₀ A c rs' es off fuel k rc ∨
-          MemberRecon (fun ty R => FullConsObs (Binding.FamilyRecon.wrapAt t ρ.E₀)
+          MemberRecon (fun ty R => WrapConsObs (Binding.FamilyRecon.wrapAt t ρ.E₀)
             (WrapperObserved calls t) R ty) t ρ.E₀ A c rs' es off fuel k rc) := by
       obtain ⟨crb', rs_r, es_r, off_r, f_rb, hrb', hrs_r, -, hBD_r, hM_rb⟩ := hRForm_rb
       have ecrb' : crb' = crb := Option.some.inj (hrb'.symm.trans hcrb₀)
@@ -749,7 +751,7 @@ theorem closureTwinSteps_of_premises
         subst offA' esA'
         exact ⟨max f_rb f_A,
           fun k rc hr => Binding.FamilyRecon.MemberRecon.fuel_mono (Nat.le_max_left _ _) (hM_rb k rc hr),
-          fun k rc hr => Or.inr (Binding.FamilyRecon.MemberRecon.fuel_mono (Nat.le_max_right _ _) (hM_A k rc hr))⟩
+          fun k rc hr => Or.inr (Binding.FamilyRecon.MemberRecon.fuel_mono (Nat.le_max_right _ _) (hM_A k rc hr).2)⟩
     obtain ⟨fuel, hM_rb_E₀, hMR_A_all⟩ := hMR_pair
     refine ⟨B, rb, crb, hcrb₁, Or.inr ⟨hfamB, hrank⟩, fun envT hextT hndT hfrT => ?_⟩
     have hkeyA : ∀ x, ConstAddrOf A c x → Decl.KeyFree (keyOf t x) :=
@@ -778,7 +780,7 @@ theorem closureTwinSteps_of_premises
     have hpair_all :
         (∀ k (hk : k < rs'.size), Core.ExprLvEq (mkC k hk).ty_ld (mkC k hk).R) ∨
         ((∀ k rc, rs'[k]? = some (.recr rc) →
-            MemberRecon (fun ty R => FullConsObs (Binding.FamilyRecon.wrapAt t ρ.E₀)
+            MemberRecon (fun ty R => WrapConsObs (Binding.FamilyRecon.wrapAt t ρ.E₀)
               (WrapperObserved calls t) R ty) t ρ.E₀ A c rs' es off fuel k rc) ∧
           ∃ S : _root_.Address → Prop,
             (ReconView.ofStore t ρ.E₀).ClosedOn S ∧
