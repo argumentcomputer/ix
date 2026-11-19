@@ -2939,7 +2939,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             refine ⟨c, rs', rc, ⟨hA.record, hA.muts, ?_, ?_, ?_, hA.logic⟩, ?_⟩
             · simpa [hk64] using hmem_k
             · simp [memberProjection, hk64]
-            · simp [memberProjection, Core.rprjAddr, Core.projAddr, hk64]
+            · simp [memberAddr, memberProjection, Core.rprjAddr, Core.projAddr, hk64]
             · simpa [hk64] using hrecReads
           -- Canonical annotations `ty'` and `rls` via `LoadedReads.recr_value_canon`
           have hagree_a : L1.BlobReadAgreement (readCtx t (fun x => E₀.blobs.get? x)).blob blobs_a :=
@@ -2963,14 +2963,13 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
             hty₀_read hty₀_lbb hty₀_def
           have hcanonTy_e : LoadedReads.canonAnn c ps (mutsRoot rs' k) rc.typ ty₀ = some ty'_e := by
             unfold LoadedReads.canonAnn mutsRoot
-            have htree_eq := L1.binderTree_unique hbuilt_a (LoadedReads.canonTree_built c.binders.toList)
-            rw [← htree_eq, hplanT]
+            rw [LoadedReads.canonTree_eq hbuilt_a, hplanT]
             simp only [Option.bind_some]
             have hap := happly_ty'_e planT hlevelsT []
             simp only [List.append_nil] at hap
             rw [hap]; rfl
           have hty'_eq : ty'_e = ty' := Option.some.inj (hcanonTy_e.symm.trans hcanonTy)
-          subst hty'_eq
+          subst ty'_e
           have htm_ty' : Decl.TmCExact (Core.keyOf t) m67 (Core.posOf ps ty') tyPtr := htm_ty'_e
           have hty'_letFree : letFree ty' = true := letFree_of_canonAnn hcanonTy
           have hrls_letFree : ∀ rl ∈ rls, letFree rl.rhs = true :=
