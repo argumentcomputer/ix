@@ -5201,15 +5201,14 @@ private theorem check_family_core {calls : List (Call F)} {bAddr : _root_.Addres
       unfold ReconView.ofStore ctorAt at hctor
       simp only [hd_blk, hd_idx, hcb_e, hms_e, hm_e] at hctor
       cases hct : ind_e.ctors[c]? with
-      | none => rw [hct] at hctor; cases hctor
+      | none => simp only [hct] at hctor; cases hctor
       | some ct =>
-        rw [hct] at hctor
+        simp only [hct] at hctor
         cases hld : loadedAt t (fun x => E₀.blobs.get? x) cb_e (blockSelf t p_e.block ms_e)
             ct.lvls.toNat (mutsRoot ms_e p_e.idx.toNat + 1 + ((c : Nat) : F)) ct.typ with
-        | none => rw [hld] at hctor; cases hctor
+        | none => simp only [hld] at hctor; cases hctor
         | some cty' =>
-          rw [hld] at hctor
-          simp only [Option.some.injEq, Prod.mk.injEq] at hctor
+          simp only [hld, Option.some.injEq, Prod.mk.injEq] at hctor
           have hR'e : recordOf R' e.addr = some ca_e := by
             obtain ⟨c', hc'⟩ := Option.isSome_iff_exists.mp (hflat_ind_all e he).1
             have := hR'agree _ _ _ hc' hca_e; subst this; exact hc'
