@@ -431,13 +431,196 @@ def derivedFlatAt (V : FlatView) (B : _root_.Address) (off n : Nat) :
     | none => none
     | some os => nestedWalk V B n 0 os
 
+/-! ## The block's elimination offset (`block_elim` / `KernelGuard::head`) -/
+
+/-- `get_ci` at an inductive type's address: its level count, type (in the canonical reading),
+parameter count, and index count. -/
+noncomputable def indTypeAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) :
+    Option (Nat × Ix.Kernel.Expr .anon × Nat × Nat) :=
+  match recordOf E a with
+  | none => none
+  | some c =>
+    match c.info with
+    | .iPrj p =>
+      match recordOf E p.block with
+      | none => none
+      | some cb =>
+        match cb.info with
+        | .muts ms =>
+          match ms[p.idx.toNat]? with
+          | some (.indc ind) =>
+            match loadedAt t (fun x => E.blobs.get? x) cb (blockSelf t p.block ms)
+                ind.lvls.toNat (mutsRoot ms p.idx.toNat) ind.typ with
+            | none => none
+            | some ty => some (ind.lvls.toNat, ty, ind.params.toNat, ind.indices.toNat)
+          | _ => none
+        | _ => none
+    | _ => none
+
+/-- `KernelGuard::definition_value`'s store lookup: a transparent definition's level count and
+body in the canonical reading (standalone record or block member). -/
+noncomputable def defnValAt (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (a : _root_.Address) :
+    Option (Nat × Ix.Kernel.Expr .anon) :=
+  match recordOf E a with
+  | none => none
+  | some c =>
+    match c.info with
+    | .defn d =>
+      match d.kind with
+      | .defn =>
+        (loadedAt t (fun x => E.blobs.get? x) c (soloSelf t a) d.lvls.toNat 1 d.value).map
+          fun v => (d.lvls.toNat, v)
+      | _ => none
+    | .dPrj p =>
+      match recordOf E p.block with
+      | none => none
+      | some cb =>
+        match cb.info with
+        | .muts ms =>
+          match ms[p.idx.toNat]? with
+          | some (.defn d) =>
+            match d.kind with
+            | .defn =>
+              (loadedAt t (fun x => E.blobs.get? x) cb (blockSelf t p.block ms) d.lvls.toNat
+                (mutsRoot ms p.idx.toNat + 1) d.value).map fun v => (d.lvls.toNat, v)
+            | _ => none
+          | _ => none
+        | _ => none
+    | _ => none
+
+/-- Deterministic head trace mirroring `KernelGuard::head` over a definition lookup and key
+resolution: stops at `sort`, `forallE`, `lam`; unfolds transparent definitions via raw level
+instantiation; β-reduces applications and ζ-reduces `let` bindings via `instantiate1Lift`. -/
+inductive GuardHead (defVal : _root_.Address → Option (Nat × Ix.Kernel.Expr .anon))
+    (ka : Ix.Kernel.Key .anon → Option _root_.Address) :
+    Ix.Kernel.Expr .anon → Ix.Kernel.Expr .anon → Prop
+  | sort (l : Ix.Kernel.Level) : GuardHead defVal ka (.sort l) (.sort l)
+  | forallE (d b : Ix.Kernel.Expr .anon) (m : Ix.Kernel.BinderMeta) :
+      GuardHead defVal ka (.forallE d b m) (.forallE d b m)
+  | lam (d b : Ix.Kernel.Expr .anon) (m : Ix.Kernel.BinderMeta) :
+      GuardHead defVal ka (.lam d b m) (.lam d b m)
+  | const {k : Ix.Kernel.Key .anon} {us : List Ix.Kernel.Level} {a : _root_.Address}
+      {nl : Nat} {v r : Ix.Kernel.Expr .anon} :
+      ka k = some a →
+      defVal a = some (nl, v) →
+      us.length = nl →
+      GuardHead defVal ka (v.instantiateLevelParams (List.range us.length) us) r →
+      GuardHead defVal ka (.const k us) r
+  | app {f a d b r : Ix.Kernel.Expr .anon} {m : Ix.Kernel.BinderMeta} :
+      GuardHead defVal ka f (.lam d b m) →
+      GuardHead defVal ka (b.instantiate1Lift a 0) r →
+      GuardHead defVal ka (.app f a) r
+  | letE {ty v b r : Ix.Kernel.Expr .anon} {m : Ix.Kernel.LetMeta} :
+      GuardHead defVal ka (b.instantiate1Lift v 0) r →
+      GuardHead defVal ka (.letE ty v b m) r
+
+/-- Result-sort extraction mirroring `KernelCheck::get_result_sort_level`: peels `n` binders via
+`GuardHead` and reads the terminal `sort` level. -/
+inductive ResultSort (defVal : _root_.Address → Option (Nat × Ix.Kernel.Expr .anon))
+    (ka : Ix.Kernel.Key .anon → Option _root_.Address) :
+    Nat → Ix.Kernel.Expr .anon → Ix.Kernel.Level → Prop
+  | zero {e : Ix.Kernel.Expr .anon} {l : Ix.Kernel.Level} :
+      GuardHead defVal ka e (.sort l) → ResultSort defVal ka 0 e l
+  | succ {n : Nat} {e d b : Ix.Kernel.Expr .anon} {m : Ix.Kernel.BinderMeta}
+      {l : Ix.Kernel.Level} :
+      GuardHead defVal ka e (.forallE d b m) →
+      ResultSort defVal ka n b l →
+      ResultSort defVal ka (n + 1) e l
+
+/-- **The block's elimination offset computed by `KernelModeled::block_elim`**: reads the block's
+first inductive member, extracts its result universe via `ResultSort` (independent of any role
+context or kernel environment), and sets `off = 1` iff that universe is never zero. -/
+def BlockElim (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B : _root_.Address) (off : Nat) : Prop :=
+  ∃ (t0 : _root_.Address) (rest : List _root_.Address) (nl np ni : Nat)
+    (ty : Ix.Kernel.Expr .anon) (lvl : Ix.Kernel.Level),
+    membersAt E B = some (t0 :: rest) ∧
+    indTypeAt t E t0 = some (nl, ty, np, ni) ∧
+    ResultSort (defnValAt t E) (keyAddr t) (np + ni) ty lvl ∧
+    off = if lvl.isNeverZero then 1 else 0
+
+theorem GuardHead.mono {d₁ d₂ : _root_.Address → Option (Nat × Ix.Kernel.Expr .anon)}
+    {ka : Ix.Kernel.Key .anon → Option _root_.Address}
+    (hd : ∀ a x, d₁ a = some x → d₂ a = some x)
+    {e r : Ix.Kernel.Expr .anon} (h : GuardHead d₁ ka e r) : GuardHead d₂ ka e r := by
+  induction h with
+  | sort l => exact .sort l
+  | forallE d b m => exact .forallE d b m
+  | lam d b m => exact .lam d b m
+  | const hka hdv hlen _ ih => exact .const hka (hd _ _ hdv) hlen ih
+  | app _ _ ihf ihb => exact .app ihf ihb
+  | letE _ ih => exact .letE ih
+
+theorem GuardHead.unique {d₁ d₂ : _root_.Address → Option (Nat × Ix.Kernel.Expr .anon)}
+    {ka : Ix.Kernel.Key .anon → Option _root_.Address}
+    (hd : ∀ a x₁ x₂, d₁ a = some x₁ → d₂ a = some x₂ → x₁ = x₂)
+    {e r₁ r₂ : Ix.Kernel.Expr .anon}
+    (h₁ : GuardHead d₁ ka e r₁) (h₂ : GuardHead d₂ ka e r₂) : r₁ = r₂ := by
+  induction h₁ generalizing r₂ with
+  | sort l => cases h₂; rfl
+  | forallE d b m => cases h₂; rfl
+  | lam d b m => cases h₂; rfl
+  | const hka hdv _ _ ih =>
+    cases h₂ with
+    | const hka' hdv' _ h₂' =>
+      have ha : _ = _ := Option.some.inj (hka.symm.trans hka')
+      subst ha
+      have hv : _ = _ := hd _ _ _ hdv hdv'
+      injection hv with _ hv
+      subst hv
+      exact ih h₂'
+  | app _ _ ihf ihb =>
+    cases h₂ with
+    | app hf' hb' =>
+      obtain ⟨rfl, rfl, rfl⟩ := Ix.Kernel.Expr.lam.inj (ihf hf')
+      exact ihb hb'
+  | letE _ ih =>
+    cases h₂ with
+    | letE h₂' => exact ih h₂'
+
+theorem ResultSort.mono {d₁ d₂ : _root_.Address → Option (Nat × Ix.Kernel.Expr .anon)}
+    {ka : Ix.Kernel.Key .anon → Option _root_.Address}
+    (hd : ∀ a x, d₁ a = some x → d₂ a = some x)
+    {n : Nat} {e : Ix.Kernel.Expr .anon} {l : Ix.Kernel.Level}
+    (h : ResultSort d₁ ka n e l) : ResultSort d₂ ka n e l := by
+  induction h with
+  | zero hg => exact .zero (hg.mono hd)
+  | succ hg _ ih => exact .succ (hg.mono hd) ih
+
+theorem ResultSort.unique {d₁ d₂ : _root_.Address → Option (Nat × Ix.Kernel.Expr .anon)}
+    {ka : Ix.Kernel.Key .anon → Option _root_.Address}
+    (hd : ∀ a x₁ x₂, d₁ a = some x₁ → d₂ a = some x₂ → x₁ = x₂)
+    {n : Nat} {e : Ix.Kernel.Expr .anon} {l₁ l₂ : Ix.Kernel.Level}
+    (h₁ : ResultSort d₁ ka n e l₁) (h₂ : ResultSort d₂ ka n e l₂) : l₁ = l₂ := by
+  induction h₁ generalizing l₂ with
+  | zero hg =>
+    cases h₂ with
+    | zero hg' => exact Ix.Kernel.Expr.sort.inj (hg.unique hd hg')
+  | succ hg _ ih =>
+    cases h₂ with
+    | succ hg' hs' =>
+      obtain ⟨rfl, rfl, rfl⟩ := Ix.Kernel.Expr.forallE.inj (hg.unique hd hg')
+      exact ih hs'
+
+/-- On a fixed store, `BlockElim` determines the elimination offset uniquely. -/
+theorem BlockElim.unique_same {t : Ix.Kernel.RoleTable} {E : Ixon.Env} {B : _root_.Address}
+    {off₁ off₂ : Nat} (h₁ : BlockElim t E B off₁) (h₂ : BlockElim t E B off₂) : off₁ = off₂ := by
+  obtain ⟨t0₁, r₁, nl₁, np₁, ni₁, ty₁, lvl₁, hm₁, hi₁, hs₁, ho₁⟩ := h₁
+  obtain ⟨t0₂, r₂, nl₂, np₂, ni₂, ty₂, lvl₂, hm₂, hi₂, hs₂, ho₂⟩ := h₂
+  have hmem := Option.some.inj (hm₁.symm.trans hm₂)
+  injection hmem with ht0 _
+  subst ht0
+  have hind := Option.some.inj (hi₁.symm.trans hi₂)
+  cases hind
+  have hlvl := hs₁.unique (fun _ _ _ h1 h2 => Option.some.inj (h1.symm.trans h2)) hs₂
+  rw [ho₁, ho₂, hlvl]
+
 /-- **`es` is the flattened family derived from the block `B` in the store `E`** (the changed
 `aux_all_in` in `check_nested_aux` asserts that a family record's entries are these, in order;
 the constructor types in the canonical reading, `ctorTypeAt`),
-at the block's elimination offset `off` (`block_elim`, a function of the block). -/
+at the block's elimination offset `off` pinned by `BlockElim` (`KernelModeled::block_elim`). -/
 def BlockDerivedFlat (t : Ix.Kernel.RoleTable) (E : Ixon.Env) (B : _root_.Address) (off : Nat)
     (es : List FlatEntry) : Prop :=
-  ∃ n, derivedFlatAt (FlatView.ofStore t E) B off n = some es
+  BlockElim t E B off ∧ ∃ n, derivedFlatAt (FlatView.ofStore t E) B off n = some es
 
 /-! ## One derivation -/
 
@@ -854,8 +1037,8 @@ theorem blockDerivedFlat_unique {t : Ix.Kernel.RoleTable} {E E' : Ixon.Env} {B :
     {off : Nat} {es es' : List FlatEntry}
     (hA : FlatView.Agree (FlatView.ofStore t E) (FlatView.ofStore t E'))
     (h : BlockDerivedFlat t E B off es) (h' : BlockDerivedFlat t E' B off es') : es = es' := by
-  obtain ⟨n, hn⟩ := h
-  obtain ⟨n', hn'⟩ := h'
+  obtain ⟨_, n, hn⟩ := h
+  obtain ⟨_, n', hn'⟩ := h'
   exact derivedFlatAt_agree hA hn hn'
 
 end IxVM.Refinement.Binding.FamilyFlat

@@ -612,7 +612,7 @@ theorem RFormS.of_sub {t : Ix.Kernel.RoleTable} {E₀ R : Ixon.Env}
     RFormS t R B rb := by
   obtain ⟨crb, rs, es, off, fuel, hrb₀, hrs, hRF, hBD, hM⟩ := h
   have hE : ∀ e ∈ es, REntryAt (ReconView.ofStore t E₀) (Held R) e := by
-    obtain ⟨n, hn⟩ := hBD
+    obtain ⟨_, n, hn⟩ := hBD
     intro e he
     have hx := derivedFlatAt_entryAt (ofStore_closedOn_sub checked hwf hsub hcl) hB hn e he
     exact ⟨hx.addr, hx.params⟩
