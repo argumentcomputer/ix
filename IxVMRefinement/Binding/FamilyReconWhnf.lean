@@ -216,7 +216,7 @@ theorem addrIn_liftLooseBVars {S : _root_.Address → Prop} (n : Nat) :
     ∀ {E : KExpr} {c : Nat}, AddrIn S κ E → AddrIn S κ (E.liftLooseBVars n c)
   | .bvar _, _, _ => by simp only [Ix.Kernel.Expr.liftLooseBVars]; split <;> trivial
   | .sort _, _, _ | .lit _, _, _ => trivial
-  | .fvar _ t, c, h => addrIn_liftLooseBVars n (E := t) (c := c) h
+  | .fvar _ _, _, h => h
   | .const _ _, _, h => h
   | .app f a, c, ⟨hf, ha⟩ =>
     ⟨addrIn_liftLooseBVars n (E := f) (c := c) hf, addrIn_liftLooseBVars n (E := a) (c := c) ha⟩
@@ -236,7 +236,7 @@ theorem addrIn_lowerBVars {S : _root_.Address → Prop} (n : Nat) :
     ∀ {E : KExpr} {c : Nat}, AddrIn S κ E → AddrIn S κ (E.lowerBVars n c)
   | .bvar _, _, _ => by simp only [Ix.Kernel.Expr.lowerBVars]; split <;> trivial
   | .sort _, _, _ | .lit _, _, _ => trivial
-  | .fvar _ t, c, h => addrIn_lowerBVars n (E := t) (c := c) h
+  | .fvar _ _, _, h => h
   | .const _ _, _, h => h
   | .app f a, c, ⟨hf, ha⟩ =>
     ⟨addrIn_lowerBVars n (E := f) (c := c) hf, addrIn_lowerBVars n (E := a) (c := c) ha⟩
@@ -257,7 +257,7 @@ theorem addrIn_instantiate1Lift {S : _root_.Address → Prop} {V : KExpr} (hV : 
     · exact addrIn_liftLooseBVars d (E := V) (c := 0) hV
     · split <;> trivial
   | .sort _, _, _ | .lit _, _, _ => trivial
-  | .fvar _ t, d, h => addrIn_instantiate1Lift hV (B := t) (d := d) h
+  | .fvar _ _, _, h => h
   | .const _ _, _, h => h
   | .app f a, d, ⟨hf, ha⟩ =>
     ⟨addrIn_instantiate1Lift hV (B := f) (d := d) hf,
@@ -317,7 +317,7 @@ theorem addrIn_peelAll {S : _root_.Address → Prop} :
     · exact hd
     · exact hds D hmem
   | .bvar _, h | .fvar _ _, h | .sort _, h | .const _ _, h | .app _ _, h | .lam _ _ _, h
-  | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h => ⟨fun _ hm => nomatch hm, h⟩
+  | .letE _ _ _ _, h | .lit _, h | .proj _ _ _, h => ⟨(fun _ hm => nomatch hm), h⟩
 
 theorem addrIn_wrapForalls {S : _root_.Address → Prop} {body : KExpr} {dl : KLevel} :
     ∀ {doms : List KExpr}, (∀ D ∈ doms, AddrIn S κ D) → AddrIn S κ body →
