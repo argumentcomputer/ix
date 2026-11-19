@@ -99,7 +99,7 @@ theorem modeledRouteAt_of_block_is_modeled {K : FamRunCtx} {seeds : List _root_.
   have g₁ : Core.Good ⟨E, Ix.Kernel.Env.empty, K.t, none⟩ cs :=
     (hctx.toStepStore.good Ix.Kernel.Env.empty none).sub hsub
   have hag₁ := Route.block_is_modeled_agrees (E := E) g₁.1 g₁.2 hb ev
-  obtain ⟨v, hv⟩ := hag₁.known (Assembly.canonicalHashCoverage_sub hsub hcanon)
+  obtain ⟨v, hv⟩ := hag₁.known (canonicalHashCoverage_sub hsub hcanon)
   have hrv := hag₁.value v hv
   have hv_true : v = true := by
     cases v with
