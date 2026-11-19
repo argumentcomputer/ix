@@ -410,7 +410,7 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
         injection hdv with _ _ hdvargs
         injection hdvargs with hdv'
         subst hdv'
-        obtain ⟨kVal, sVal, -, -, -, hdv2, hkindRep, hsafRep, _⟩ := hdefRep
+        obtain ⟨kVal, sVal, _, _, _, hdv2, hkindRep, hsafRep, _⟩ := hdefRep
         injection hdv2 with _ _ hargs2
         simp only [List.cons.injEq] at hargs2
         have hdk : d.kind = .defn := by
@@ -446,7 +446,7 @@ theorem advice_defn_record {calls : List (Call F)} {E₀ : Ixon.Env} {t : Ix.Ker
         injection hdv with _ _ hdvargs
         injection hdvargs with hdv'
         subst hdv'
-        obtain ⟨kVal, sVal, -, -, -, hdv2, hkindRep, _⟩ := hdefRep
+        obtain ⟨kVal, sVal, _, _, _, hdv2, hkindRep, _⟩ := hdefRep
         injection hdv2 with _ _ hargs2
         simp only [List.cons.injEq] at hargs2
         have hdk : d.kind = .thm := by
