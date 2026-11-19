@@ -599,8 +599,8 @@ theorem defnLoad_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     exact ⟨fun _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [defnAt, hcE, hci]⟩
   | quot q =>
-    simp only [L1.GetCITraceResult, hci] at htr
-    obtain ⟨_, _, v, -, -, hld, -, tp, rfl, -⟩ := htr
+    simp only [L1.GetCIRawResult, hci] at hrawRes
+    obtain ⟨v, hld, -, tp, rfl, -⟩ := hrawRes
     rw [hld] at ldci; injection ldci with hv; subst hv
     exact ⟨fun _ _ _ _ _ h => by simp [kciEnum] at h,
       fun _ => by simp [defnAt, hcE, hci]⟩
@@ -701,7 +701,8 @@ theorem indAnswers_ofStore {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       have hindAt : indDataAt t E₀ (ixAddr a) =
           some (some ⟨ind.lvls.toNat, ty, ind.params.toNat, ind.indices.toNat, ind.ctors.size,
             prj.block, prj.idx.toNat⟩) := by
-        simp [indDataAt, hcE, hci, hcbE, hcb, hms', hloaded]
+        unfold indDataAt
+        simp only [hcE, hci, hcbE, hcb, hms', mutsRoot, hloaded]
       have htyIn : AddrIn (Held R) (Core.keyOf t) ty :=
         addrIn_of_rkeysAt (E₀ := E₀) hwf
           (keys_held_of_loaded ht hwf hcl hcbR (blockSelf_held hcl hcbR hcb)
