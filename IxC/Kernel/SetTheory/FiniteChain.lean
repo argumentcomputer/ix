@@ -182,11 +182,12 @@ noncomputable def elem (x : VSet.{u}) : x.Idx → VSet.{u} :=
 
 theorem mem_iff_exists_elem {z x : VSet.{u}} :
     Mem z x ↔ ∃ i : x.Idx, z = x.elem i := by
-  have hx : mk (rep x) = x := mk_rep x
-  rw [← hx]
   refine Quotient.inductionOn z fun w => ?_
+  change Mem (mk w) x ↔ ∃ i : x.Idx, mk w = x.elem i
+  have h1 : Mem (mk w) x ↔ Mem (mk w) (mk (rep x)) := by rw [mk_rep x]
+  rw [h1]
   change PSet.Mem w (rep x) ↔ ∃ i : (rep x).Idx, mk w = mk ((rep x).Func i)
-  cases h : rep x with
+  cases rep x with
   | mk α A =>
     change (∃ a : α, PSet.Equiv w (A a)) ↔ ∃ a : α, mk w = mk (A a)
     exact ⟨fun ⟨a, ha⟩ => ⟨a, Quotient.sound ha⟩, fun ⟨a, ha⟩ => ⟨a, Quotient.exact ha⟩⟩
@@ -886,7 +887,6 @@ private noncomputable def gpair : VOrd.{u} × VOrd.{u} → VOrd.{u} :=
 
 private theorem gpair_lt_of_pairLt {p q : VOrd.{u} × VOrd.{u}} (h : PairLt p q) :
     Mem (gpair p).1 (gpair q).1 := by
-  rw [gpair, pairLt_wf.fix_eq]
   obtain ⟨h1, h2⟩ := pairLt_components_lt h
   obtain ⟨i, hi⟩ := mem_iff_exists_elem.mp h1
   obtain ⟨j, hj⟩ := mem_iff_exists_elem.mp h2
@@ -896,11 +896,16 @@ private theorem gpair_lt_of_pairLt {p q : VOrd.{u} × VOrd.{u}} (h : PairLt p q)
      ⟨M.1.elem ij.2, isOrd_mem M.2 (elem_mem M.1 ij.2)⟩)
   have hpeq : toPair (i, j) = p := Prod.ext (Subtype.ext hi.symm) (Subtype.ext hj.symm)
   have hlt : PairLt (toPair (i, j)) q := hpeq.symm ▸ h
+  have hstep : gpair q =
+      ordSup fun (r : {ij : M.1.Idx × M.1.Idx // PairLt (toPair ij) q}) =>
+        ordSucc (gpair (toPair r.1)) :=
+    pairLt_wf.fix_eq _ q
+  rw [hstep]
   have hmem := subset_ordSup
     (fun (r : {ij : M.1.Idx × M.1.Idx // PairLt (toPair ij) q}) =>
       ordSucc (gpair (toPair r.1)))
     ⟨(i, j), hlt⟩ (self_mem_ordSucc (gpair (toPair (i, j))))
-  simpa [hpeq] using hmem
+  rwa [hpeq] at hmem
 
 private theorem gpair_inj {p q : VOrd.{u} × VOrd.{u}} (h : gpair p = gpair q) : p = q := by
   rcases pairLt_trichotomy p q with hlt | heq | hgt

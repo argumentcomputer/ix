@@ -301,15 +301,15 @@ theorem no_model_of_alias_False {md : Ix.Kernel.Mode} (V : Type u) [SetTheory V]
 
 /-- Concrete witness environment containing `False` and an axiom `t : False`. -/
 def badEnvFalse : Ix.Kernel.Env .anon :=
-  let tKey : Ix.Kernel.Key .anon := .id (Address.blake3Pure (ByteArray.mk #[1]))
+  let tKey : Ix.Kernel.Key .anon := .id ⟨ByteArray.mk #[1]⟩
   ⟨[.axiomInfo ⟨tKey, [], .const Ix.Kernel.falseName []⟩,
     .indInfo ⟨Ix.Kernel.falseName, [], .sort .zero⟩ {}]⟩
 
 /-- Concrete witness environment containing `False`, `def P : Prop := False`,
 and `axiom t : P`. -/
 def badEnvAliasFalse : Ix.Kernel.Env .anon :=
-  let pKey : Ix.Kernel.Key .anon := .id (Address.blake3Pure (ByteArray.mk #[2]))
-  let tKey : Ix.Kernel.Key .anon := .id (Address.blake3Pure (ByteArray.mk #[3]))
+  let pKey : Ix.Kernel.Key .anon := .id ⟨ByteArray.mk #[2]⟩
+  let tKey : Ix.Kernel.Key .anon := .id ⟨ByteArray.mk #[3]⟩
   ⟨[.axiomInfo ⟨tKey, [], .const pKey []⟩,
     .defnInfo ⟨pKey, [], .sort .zero⟩ (.const Ix.Kernel.falseName []) .abbrev,
     .indInfo ⟨Ix.Kernel.falseName, [], .sort .zero⟩ {}]⟩
@@ -324,9 +324,9 @@ theorem badEnvFalse_no_model (V : Type u) [SetTheory V] :
 has no model in any `SetTheory V`. -/
 theorem badEnvAliasFalse_no_model (V : Type u) [SetTheory V] :
     IsEmpty (Ix.Kernel.Model V badEnvAliasFalse) := by
-  let pKey : Ix.Kernel.Key .anon := .id (Address.blake3Pure (ByteArray.mk #[2]))
-  have hne : (Address.blake3Pure (ByteArray.mk #[3]) == Address.blake3Pure (ByteArray.mk #[2])) = false := by
-    decide +kernel
+  let pKey : Ix.Kernel.Key .anon := .id ⟨ByteArray.mk #[2]⟩
+  have hne : (({ hash := ByteArray.mk #[3] } : Address) == { hash := ByteArray.mk #[2] }) = false := by
+    decide
   have hfindP : badEnvAliasFalse.find? pKey =
       some (.defnInfo ⟨pKey, [], .sort .zero⟩ (.const Ix.Kernel.falseName []) .abbrev) := by
     simp [badEnvAliasFalse, pKey, Ix.Kernel.Env.find?, Ix.Kernel.ConstantInfo.name, hne]
@@ -479,7 +479,8 @@ theorem noCollision_agrees_with_view {V : View} {extra : List ByteArray}
       cases hVe : V.env.consts.get? x with
       | none => rw [hVe] at h2; cases h2
       | some lc₂ =>
-        rw [hE] at h1; rw [hVe] at h2
+        simp only [hE, Option.bind_some] at h1
+        simp only [hVe, Option.bind_some] at h2
         have hHash1 := hLoad.1 x lc₁ hE
         have hHash2 := hV.1 x lc₂ hVe
         have hPre : V.Preimage (Address.blake3Pure lc₂.rawBytes) lc₂.rawBytes :=
@@ -619,6 +620,8 @@ theorem compileCorrect_circuitComposed_bridge
 end IxVM.Refinement.Endpoint
 
 /-! ## 4. Kernel axiom guards on all exported theorems -/
+
+#guard_module_axioms IxC.Kernel.SetTheory.FiniteChain
 
 #guard_kernel_axioms Ix.Kernel.VSet.isTGUniverse_univSet [propext, Classical.choice, Quot.sound]
 #guard_kernel_axioms Ix.Kernel.VSet.isTGUniverse_lift [propext, Classical.choice, Quot.sound]
