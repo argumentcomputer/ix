@@ -1478,8 +1478,8 @@ theorem block_elim_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
     subst hm1b hr hh
     obtain ⟨t0, rest, rfl, rt0, -⟩ := IxVM.Refinement.Core.RepList.cons_of_load hta ldt
     have hSt0 : Held R (ixAddr t0) := hheld t0 List.mem_cons_self
-    have hI := indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
-    obtain ⟨hyes, -⟩ := hI (fun c hc' => hsub c (by rw [hc]; simp [hc'])) hSt0 rt0 evg ldci
+    obtain ⟨hyes, -⟩ := indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+      (fun c hc' => hsub c (by rw [hc]; simp [hc'])) hSt0 rt0 evg ldci
     obtain ⟨d, ba, hindAt, hnl, hnp, hni, -, -, rfl, hty, htyIn, -, rfl, rfl, -, -, -, -⟩ :=
       hyes _ _ _ _ _ _ _ _ rfl
     obtain rfl := binop_add_nat op
