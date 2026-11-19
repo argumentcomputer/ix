@@ -214,7 +214,7 @@ private theorem repConstant_refs_eq {h : Heap F} {c : Ixon.Constant}
   obtain ⟨_, _, rp, _, _, heq, -, -, hrf, -, -⟩ := hcRep
   simp only [Value.construct.injEq, List.cons.injEq, and_true, true_and] at heq
   rcases heq with ⟨_, _, hrp, _, _⟩
-  rw [hrp] at hrf
+  subst hrp
   exact hrf
 
 private theorem assert_inner_refs_of_const {calls : List (Call F)} {E₀ : Ixon.Env}
@@ -241,7 +241,7 @@ private theorem assert_inner_refs_of_const {calls : List (Call F)} {E₀ : Ixon.
     (hrc.mono extIdx) hrp hidx ev_safe hsub_safe
   obtain ⟨c', i, hc', hi, hget⟩ := hu
   have heq : c' = c := Option.some.inj (hc'.symm.trans hc)
-  subst heq
+  subst c'
   have hi' : i ∈ S0.usedRefIdxs c := by
     rw [Assembly.usedRefIdxs_eq]
     exact hi
@@ -291,7 +291,7 @@ theorem check_advice_record_inner_refs_safe {calls cs : List (Call F)} {E₀ : I
   | .run (cs12 := cs12) (cs_zlhtmzlz := csSafe) (ev_yqjbwijz := ev_ord) (ev14 := ev14)
       (sg952 := sg952) (ev_lawbyzgo := ev_idx1) (ev_bilbznow := ev_adv)
       (ev_ozxzdina := ev_idx2) (ev_tnqzszcy := ev_safe) (hc1011 := hcalls) .. =>
-    obtain ⟨c, i, hc, -, -⟩ := hu
+    have ⟨c, i, hc, -, -⟩ := hu
     have hsub12 : ∀ cl ∈ cs12, cl ∈ calls :=
       fun cl hcl => hsub cl (by rw [hcalls]; simp [hcl])
     have hsubSafe : ∀ cl ∈ csSafe, cl ∈ calls :=
@@ -371,13 +371,16 @@ theorem get_ci_loads_rec_is_recr_or_rPrj {calls cs : List (Call F)} {E₀ : Ixon
       have hv : v336 = .construct "KernelTypes::KConstantInfo" "Rec" args := Except.ok.inj hld
       subst hv
       exact convert_definition_not_rec_inner evc
-    | .Axio (ev14 := ev14) (hc515 := hcs) .. | .Quot (ev14 := ev14) (hc606 := hcs) ..
-    | .DPrj (ev14 := ev14) (hc675 := hcs) .. | .IPrj (ev14 := ev14) (hc750 := hcs) ..
-    | .CPrj (ev14 := ev14) (hc851 := hcs) .. | .RPrj (ev14 := ev14) (hc926 := hcs) ..
-    | .Recr (ev14 := ev14) (hc1071 := hcs) .. =>
+    | .Axio (cs12 := cs12) (ev14 := ev14) (hc515 := hcs) ..
+    | .Quot (cs12 := cs12) (ev14 := ev14) (hc606 := hcs) ..
+    | .DPrj (cs12 := cs12) (ev14 := ev14) (hc675 := hcs) ..
+    | .IPrj (cs12 := cs12) (ev14 := ev14) (hc750 := hcs) ..
+    | .CPrj (cs12 := cs12) (ev14 := ev14) (hc851 := hcs) ..
+    | .RPrj (cs12 := cs12) (ev14 := ev14) (hc926 := hcs) ..
+    | .Recr (cs12 := cs12) (ev14 := ev14) (hc1071 := hcs) .. =>
       obtain ⟨-, raw1, c1, -, hh1, hba1, -, hde1, cRep1, -⟩ :=
         Claim.load_verified_constant_de ⟨ab, hab, rfl⟩ ev14
-      have hsub1 : ∀ cl ∈ _, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
+      have hsub1 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       have hc1 : c1 = c :=
         hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc) (Claim.hashed_mono hsub1 hh1)
           hba1 hde1
@@ -390,20 +393,24 @@ theorem get_ci_loads_rec_is_recr_or_rPrj {calls cs : List (Call F)} {E₀ : Ixon
   | dPrj p =>
     exfalso
     match Obs.«Ingress::get_ci».obs ev with
-    | .DPrj (ev666 := evdp) .. =>
+    | .DPrj (ev650 := evdp) .. =>
       match Obs.«Ingress::get_ci_dprj».obs evdp with
-      | .run (v154 := v154) (m155 := m155) (he158 := he) (hm157 := hm) (ev164 := evc) .. =>
-        rw [he, hm, Claim.loadValue_snoc_self m155 v154] at hld
-        have hv : v154 = .construct "KernelTypes::KConstantInfo" "Rec" args := Except.ok.inj hld
+      | .run (v226 := v226) (m227 := m227) (he230 := he) (hm229 := hm) (ev236 := evc) .. =>
+        rw [he, hm, Claim.loadValue_snoc_self m227 v226] at hld
+        have hv : v226 = .construct "KernelTypes::KConstantInfo" "Rec" args := Except.ok.inj hld
         subst hv
         exact convert_definition_not_rec_inner evc
-    | .Defn_n0 (ev14 := ev14) (hc302 := hcs) .. | .Defn_other (ev14 := ev14) (hc423 := hcs) ..
-    | .Axio (ev14 := ev14) (hc515 := hcs) .. | .Quot (ev14 := ev14) (hc606 := hcs) ..
-    | .IPrj (ev14 := ev14) (hc750 := hcs) .. | .CPrj (ev14 := ev14) (hc851 := hcs) ..
-    | .RPrj (ev14 := ev14) (hc926 := hcs) .. | .Recr (ev14 := ev14) (hc1071 := hcs) .. =>
+    | .Defn_n0 (cs12 := cs12) (ev14 := ev14) (hc302 := hcs) ..
+    | .Defn_other (cs12 := cs12) (ev14 := ev14) (hc423 := hcs) ..
+    | .Axio (cs12 := cs12) (ev14 := ev14) (hc515 := hcs) ..
+    | .Quot (cs12 := cs12) (ev14 := ev14) (hc606 := hcs) ..
+    | .IPrj (cs12 := cs12) (ev14 := ev14) (hc750 := hcs) ..
+    | .CPrj (cs12 := cs12) (ev14 := ev14) (hc851 := hcs) ..
+    | .RPrj (cs12 := cs12) (ev14 := ev14) (hc926 := hcs) ..
+    | .Recr (cs12 := cs12) (ev14 := ev14) (hc1071 := hcs) .. =>
       obtain ⟨-, raw1, c1, -, hh1, hba1, -, hde1, cRep1, -⟩ :=
         Claim.load_verified_constant_de ⟨ab, hab, rfl⟩ ev14
-      have hsub1 : ∀ cl ∈ _, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
+      have hsub1 : ∀ cl ∈ cs12, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
       have hc1 : c1 = c :=
         hS.record_eq ((hS.recordOf_eq_recordAt _).symm.trans hc) (Claim.hashed_mono hsub1 hh1)
           hba1 hde1
