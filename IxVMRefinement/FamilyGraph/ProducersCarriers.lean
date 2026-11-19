@@ -857,7 +857,7 @@ private theorem get_ci_is_unsafe_bool {ab : Bytes.Address} {x_addr ptr ci r : So
       have hu := hav.symm.trans hx
       injection hu with _ _ hargs
       injection hargs with hflag _
-      rw [he, hm, Claim.loadValue_snoc_self m _, hcv, hflag] at hld
+      rw [he, hm, Claim.loadValue_snoc_self m _, hcv, ← hflag] at hld
       exact is_unsafe_ci_of_bool_field (b := ax.isUnsafe) ev_u
         (Or.inl ⟨_, _, (Except.ok.inj hld).symm⟩)
   | .Quot (m529 := m) (he532 := he) (hm531 := hm) (ev538 := conv) .. =>
@@ -933,7 +933,7 @@ private theorem get_ci_is_unsafe_bool {ab : Bytes.Address} {x_addr ptr ci r : So
       injection hu with _ _ hargs
       injection hargs with _ hargs
       injection hargs with hflag _
-      rw [he, hm, Claim.loadValue_snoc_self m _, hcv, hflag] at hld
+      rw [he, hm, Claim.loadValue_snoc_self m _, hcv, ← hflag] at hld
       exact is_unsafe_ci_of_bool_field (b := rc.isUnsafe) ev_u
         (Or.inr (Or.inr (Or.inr (Or.inr ⟨_, _, _, _, _, _, _, _, _, _,
           (Except.ok.inj hld).symm⟩))))
@@ -1225,7 +1225,7 @@ private theorem safe_refs_only_const_ind0_safe {calls cs : List (Call F)} {E₀ 
     have hms_eq : ms' = ms := by
       have e1 : cb.info = .muts ms' := by rw [← hcb_eq]; exact hbl.info
       exact Ixon.ConstantInfo.muts.inj (e1.symm.trans hBmuts)
-    subst hms_eq
+    subst ms'
     have hm0L : ms.toList[0]? = some (.indc ind₀) := by rw [Array.getElem?_toList]; exact hind0
     have hind_eq : ind' = ind₀ := by
       change ms.toList[0]? = some (.indc ind') at hmem'
@@ -1301,7 +1301,7 @@ private theorem build_recur_addrs_walk_hashed {ms : List Ixon.MutConst} {b : Byt
         h r h' cs →
       ∀ j m', cur[j]? = some m' → Hashed cs (Ixon.serConstant
         ⟨Core.Specs.Callees.memberProjInfo (Core.ixAddr b) (k + j) m', #[], #[], #[], #[]⟩)
-  | [], _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hj => by simp at hj
+  | [], _, _, _, _, _, _, _, _, _, _, _, _, _, _ => by intro _ _ hj; simp at hj
   | m :: rest, k, x_all, x_blk, x_cur, r, h, h', cs, hk, hms, hb, hcur, hsuf, ev => by
     rcases Obs.«Ingress::build_recur_addrs_walk».obs ev with
       ⟨ld12, _, _, _⟩ |
@@ -1384,7 +1384,7 @@ private theorem check_recs_member_checks :
           (∀ cl ∈ cs80, cl ∈ cs) ∧
           (∀ cl ∈ cs483, cl ∈ cs) ∧
           (∀ cl ∈ cs650, cl ∈ cs)
-  | [], _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ha => nomatch ha
+  | [], _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ => by intro _ ha; nomatch ha
   | a :: rest, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, h, _, cs, hrep, ev => by
     match Obs.«KernelModeled::check_recs».obs ev with
     | .Nil (ld12 := ld) .. => cases Lib.rep_nil_of_load hrep ld
@@ -1451,15 +1451,15 @@ structure FamCheckCarriers (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (E�
   blockRec : recordOf E₀ B = some cb
   blockMuts : cb.info = .muts ms
   recRec : FamRecRecord E₀ rb crb rs
-  ind0 : ∃ ind₀, ms[0]? = some (.indc ind₀)
-  hashedIPrj0 : ∀ ind₀, ms[0]? = some (.indc ind₀) →
+  ind0 : ∃ ind₀, ms[0]? = some (Ixon.MutConst.indc ind₀)
+  hashedIPrj0 : ∀ ind₀, ms[0]? = some (Ixon.MutConst.indc ind₀) →
     Hashed calls (Ixon.serConstant
       ⟨Core.Specs.Callees.memberProjInfo B 0 (.indc ind₀), #[], #[], #[], #[]⟩)
   noRole : ∀ k (m : Ixon.MutConst), rs[k]? = some m →
     ∀ ro, t.addressOf? ro ≠ some (memberAddr rb k m)
-  carrier : ∀ k (rc : Ixon.Recursor), rs[k]? = some (.recr rc) →
+  carrier : ∀ k (rc : Ixon.Recursor), rs[k]? = some (Ixon.MutConst.recr rc) →
     ∃ n, Binding.FamilyOf.motiveCarrierAt crb rc 0 n = some (Core.iprjAddr B 0)
-  ind0Safe : 0 < rs.size → ∀ ind₀, ms[0]? = some (.indc ind₀) → ind₀.isUnsafe = false
+  ind0Safe : 0 < rs.size → ∀ ind₀, ms[0]? = some (Ixon.MutConst.indc ind₀) → ind₀.isUnsafe = false
 
 private theorem check_family_seg1_extends {e0 e1 e2 r : SourceValue F} {h h' : Heap F}
     {cs : List (Call F)} (sg : Obs.«KernelModeled::check_family».Seg1 e0 e1 e2 h r h' cs) :
