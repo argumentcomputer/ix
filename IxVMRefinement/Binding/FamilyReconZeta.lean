@@ -281,13 +281,13 @@ theorem peel_n_foralls_zeta_spec {κ : _root_.Address → KKey} :
 termination_by _ _ _ _ _ _ cs => cs.length
 
 private theorem kexprList_names :
-    kexprListEnum = (Instance.mk "Lists::Node" [.ptr (.named "KernelTypes::KExprNode" [])]).symbol := by
-  decide
+    kexprListEnum = (Instance.mk "Lists::Node" [.ptr (.named "KernelTypes::KExprNode" [])]).symbol :=
+  Obs.Names.«Lists::Node<&KernelTypes::KExprNode>».symbol.symm
 
 private theorem kexprSnoc_names :
     Obs.Names.«Lists::snoc<&KernelTypes::KExprNode>» =
-      (Instance.mk "Lists::snoc" [.ptr (.named "KernelTypes::KExprNode" [])]).symbol := by
-  decide
+      (Instance.mk "Lists::snoc" [.ptr (.named "KernelTypes::KExprNode" [])]).symbol :=
+  Obs.Names.«Lists::snoc<&KernelTypes::KExprNode>».symbol.symm
 
 /-- **`KernelCheck::collect_spine_zeta`** splits an expression into `(E.getAppFn, E.getAppArgs)`
 through any intervening `Let` nodes, leaving a `NotLet` head. -/
