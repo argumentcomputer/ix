@@ -401,11 +401,12 @@ theorem KExprSub.trans {h : Heap F} {p q r : SourceValue F}
   | forallBody ld _ ih => exact .forallBody ld (ih h2)
   | appFn ld _ ih => exact .appFn ld (ih h2)
 
-private theorem rawConvExpr_unshare {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)}
+private theorem rawConvExpr_unshare {c : Ixon.Constant} {recurAddrs : List _root_.Address}
+    {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F} :
-    L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e kp →
+    L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
     ∀ k, (bound ≤ k ∨ c.sharing.size ≤ k) →
-      ∃ b', L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h b'
+      ∃ b', L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b'
         (Binding.FamilyOf.unshare c k e) kp ∧
         (∀ i, Binding.FamilyOf.unshare c k e ≠ .share i)
   | .share (idx := idx) (s := s) hidx hsh rs, k, hk => by
@@ -422,21 +423,23 @@ private theorem rawConvExpr_unshare {c : Ixon.Constant} {blobs : List (_root_.Ad
   | r@(.app ..), k, _ | r@(.lam ..), k, _ | r@(.all ..), k, _ | r@(.letE ..), k, _ => by
     cases k <;> exact ⟨_, r, fun _ h => by cases h⟩
 
-private theorem rawConvExpr_node {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)}
+private theorem rawConvExpr_node {c : Ixon.Constant} {recurAddrs : List _root_.Address}
+    {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e kp) :
-    ∃ b', L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h b'
+    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp) :
+    ∃ b', L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b'
       (Binding.FamilyOf.node c e) kp ∧
       (∀ i, Binding.FamilyOf.node c e ≠ .share i) :=
   rawConvExpr_unshare raw (c.sharing.size + 1) (Or.inr (Nat.le_succ _))
 
-theorem rawConvExpr_forall_inv {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)}
+theorem rawConvExpr_forall_inv {c : Ixon.Constant} {recurAddrs : List _root_.Address}
+    {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp d b bi : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e kp)
+    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
     (ld : loadValue h kp = .ok (.construct "KernelTypes::KExprNode" "Forall" [d, b, bi])) :
     ∃ b' ed eb, Binding.FamilyOf.node c e = .all ed eb ∧
-      L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h b' ed d ∧
-      L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h b' eb b := by
+      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ed d ∧
+      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' eb b := by
   obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
   generalize he' : Binding.FamilyOf.node c e = e' at raw' hns
   cases raw' with
@@ -451,10 +454,10 @@ theorem rawConvExpr_forall_inv {c : Ixon.Constant} {blobs : List (_root_.Address
   | app _ _ cell | lam _ _ _ cell | letE _ _ _ cell =>
     exact (Core.load_cell_ne cell ld (by decide)).elim
 
-private theorem rawConvExpr_not_forall_inv {c : Ixon.Constant}
+private theorem rawConvExpr_not_forall_inv {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} {h : Heap F} {bound : Nat}
     {e : Ixon.Expr} {kp v : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e kp)
+    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
     (ld : loadValue h kp = .ok v)
     (hne : ∀ vs : List (SourceValue F), vs.length = 3 →
       v ≠ .construct "KernelTypes::KExprNode" "Forall" vs) :
@@ -471,13 +474,14 @@ private theorem rawConvExpr_not_forall_inv {c : Ixon.Constant}
   | app _ _ _ | lam _ _ _ _ | letE _ _ _ _ =>
     intro _ _ he; cases he
 
-private theorem rawConvExpr_app_inv {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)}
+private theorem rawConvExpr_app_inv {c : Ixon.Constant} {recurAddrs : List _root_.Address}
+    {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp f a : SourceValue F}
-    (raw : L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e kp)
+    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
     (ld : loadValue h kp = .ok (.construct "KernelTypes::KExprNode" "App" [f, a])) :
     ∃ b' ef ea, Binding.FamilyOf.node c e = .app ef ea ∧
-      L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h b' ef f ∧
-      L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h b' ea a := by
+      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ef f ∧
+      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ea a := by
   obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
   generalize he' : Binding.FamilyOf.node c e = e' at raw' hns
   cases raw' with
@@ -492,6 +496,35 @@ private theorem rawConvExpr_app_inv {c : Ixon.Constant} {blobs : List (_root_.Ad
   | lam _ _ _ cell | all _ _ _ cell | letE _ _ _ cell =>
     exact (Core.load_cell_ne cell ld (by decide)).elim
 
+theorem rawConvExpr_const_inv_any {c : Ixon.Constant} {recurAddrs : List _root_.Address}
+    {blobs : List (_root_.Address × ByteArray)}
+    {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp x_c w : SourceValue F}
+    (raw : L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp)
+    (ld : loadValue h kp = .ok (.construct "KernelTypes::KExprNode" "Const" [x_c, w])) :
+    (∃ rIdx uIdxs a d, Binding.FamilyOf.node c e = .ref rIdx uIdxs ∧
+      c.refs[rIdx.toNat]? = some a ∧ Core.ixAddr d = a ∧
+      Bytes.RepAddressRef Core.addrTy h d x_c) ∨
+    (∃ recIdx uIdxs a d, Binding.FamilyOf.node c e = .recur recIdx uIdxs ∧
+      recurAddrs[recIdx.toNat]? = some a ∧ Core.ixAddr d = a ∧
+      Bytes.RepAddressRef Core.addrTy h d x_c) := by
+  obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
+  generalize he' : Binding.FamilyOf.node c e = e' at raw' hns
+  cases raw' with
+  | ref _ href hd ra _ _ cell =>
+    have hxs := (Core.load_cell cell ld).2
+    simp only [List.cons.injEq, and_true] at hxs
+    obtain ⟨rfl, rfl⟩ := hxs
+    exact Or.inl ⟨_, _, _, _, rfl, by simpa only [Array.getElem?_toList] using href, hd, ra⟩
+  | recur _ hrec hd ra _ _ cell =>
+    have hxs := (Core.load_cell cell ld).2
+    simp only [List.cons.injEq, and_true] at hxs
+    obtain ⟨rfl, rfl⟩ := hxs
+    exact Or.inr ⟨_, _, _, _, rfl, hrec, hd, ra⟩
+  | share _ _ _ => exact (hns _ rfl).elim
+  | var _ cell | sort _ _ _ cell | prj _ _ _ _ _ _ cell | str _ _ _ _ _ cell
+  | nat _ _ _ _ _ _ _ cell | app _ _ cell | lam _ _ _ cell | all _ _ _ cell | letE _ _ _ cell =>
+    exact (Core.load_cell_ne cell ld (by decide)).elim
+
 theorem rawConvExpr_const_inv {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)}
     {h : Heap F} {bound : Nat} {e : Ixon.Expr} {kp x_c w : SourceValue F}
     (raw : L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e kp)
@@ -500,29 +533,20 @@ theorem rawConvExpr_const_inv {c : Ixon.Constant} {blobs : List (_root_.Address 
       c.refs[rIdx.toNat]? = some a ∧
       Core.ixAddr d = a ∧
       Bytes.RepAddressRef Core.addrTy h d x_c := by
-  obtain ⟨b', raw', hns⟩ := rawConvExpr_node raw
-  generalize he' : Binding.FamilyOf.node c e = e' at raw' hns
-  cases raw' with
-  | ref _ href hd ra _ _ cell =>
-    have hxs := (Core.load_cell cell ld).2
-    simp only [List.cons.injEq, and_true] at hxs
-    obtain ⟨rfl, rfl⟩ := hxs
-    exact ⟨_, _, _, _, rfl, by simpa only [Array.getElem?_toList] using href, hd, ra⟩
-  | recur _ hrec _ _ _ _ _ => simp at hrec
-  | share _ _ _ => exact (hns _ rfl).elim
-  | var _ cell | sort _ _ _ cell | prj _ _ _ _ _ _ cell | str _ _ _ _ _ cell
-  | nat _ _ _ _ _ _ _ cell | app _ _ cell | lam _ _ _ cell | all _ _ _ cell | letE _ _ _ cell =>
-    exact (Core.load_cell_ne cell ld (by decide)).elim
+  rcases rawConvExpr_const_inv_any raw ld with h1 | ⟨_, _, _, _, -, hrec, -⟩
+  · exact h1
+  · simp at hrec
 
-theorem peel_n_foralls_raw {c : Ixon.Constant} {blobs : List (_root_.Address × ByteArray)} :
+theorem peel_n_foralls_raw {c : Ixon.Constant} {recurAddrs : List _root_.Address}
+    {blobs : List (_root_.Address × ByteArray)} :
     ∀ (n : Nat) {bound : Nat} {e : Ixon.Expr} {kp r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
       n < 72057594037927936 →
-      L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e kp →
+      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
       ObsFn Obs.W "KernelCheck::peel_n_foralls" [kp, .field (n : F)] h r h' cs →
       h' = h ∧ KExprSub h kp r ∧
         ∃ b' e', Binding.FamilyOf.peel c n e = some e' ∧
-          L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h b' e' r
+          L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' e' r
   | 0, bound, e, kp, r, h, h', cs, _, raw, ev => by
     match Obs.«KernelCheck::peel_n_foralls».obs ev with
     | .n0 (he16 := hr) (he17 := hh) .. =>
@@ -551,16 +575,16 @@ theorem peel_n_foralls_raw {c : Ixon.Constant} {blobs : List (_root_.Address × 
       simp only [Binding.FamilyOf.peel, hnd]
       exact hpeel
 
-theorem last_binder_dom_raw_aux {c : Ixon.Constant}
+theorem last_binder_dom_raw_aux {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} :
     ∀ (m : Nat) {bound : Nat} {e : Ixon.Expr} {kp r : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
       cs.length ≤ m →
-      L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e kp →
+      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
       ObsFn Obs.W "KernelModeled::last_binder_dom" [kp] h r h' cs →
       h' = h ∧ KExprSub h kp r ∧
         ∃ n b' ed, Binding.FamilyOf.lastDom c n e = some ed ∧
-          L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h b' ed r
+          L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h b' ed r
   | 0, bound, e, kp, r, h, h', cs, hlen, raw, ev => by
     match Obs.«KernelModeled::last_binder_dom».obs ev with
     | .Forall (hc87 := hc) .. => simp [hc] at hlen
@@ -603,16 +627,16 @@ theorem last_binder_dom_raw_aux {c : Ixon.Constant}
         · rfl
       exact ⟨rfl, .forallDom ld12 (.refl _), 1, b₁, ed, hld, raw_d⟩
 
-theorem collect_spine_raw_aux {c : Ixon.Constant}
+theorem collect_spine_raw_aux {c : Ixon.Constant} {recurAddrs : List _root_.Address}
     {blobs : List (_root_.Address × ByteArray)} :
     ∀ (m : Nat) {bound : Nat} {e : Ixon.Expr} {kp hd sp : SourceValue F} {h h' : Heap F}
       {cs : List (Call F)},
       cs.length ≤ m →
-      L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h bound e kp →
+      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bound e kp →
       ObsFn Obs.W "KernelTypes::collect_spine" [kp] h (.tuple [hd, sp]) h' cs →
       Heap.Extends h h' ∧ KExprSub h kp hd ∧
         ∃ n b',
-          L1.RawConvExpr c.refs.toList [] c.univs.toList c.sharing.toList blobs h' b'
+          L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h' b'
             (Binding.FamilyOf.spineHead c n e) hd ∧
           (∀ i, Binding.FamilyOf.spineHead c n e ≠ .share i)
   | 0, bound, e, kp, hd, sp, h, h', cs, hlen, raw, ev => by

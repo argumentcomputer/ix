@@ -2762,6 +2762,16 @@ private theorem get_ci_loads_induct_is_iprj {calls cs : List (Call F)} {E₀ : I
 motive-0 carrier `t0`, and proves both that `t0` is a motive-0 carrier of the recursor record
 (giving `UsedRef` for `.rPrj` blocks and determinism across calls!) and that `ib` has an `.indc`
 member. -/
+private def motiveCarrierWithRecur (c : Ixon.Constant) (recurAddrs : List _root_.Address)
+    (rc : Ixon.Recursor) (n : Nat) : Option _root_.Address := do
+  let e ← Binding.FamilyOf.peel c rc.params.toNat rc.typ
+  let m ← Binding.FamilyOf.domOf c e
+  let d ← Binding.FamilyOf.lastDom c n m
+  match Binding.FamilyOf.spineHead c n d with
+  | .ref rIdx _ => c.refs[rIdx.toNat]?
+  | .recur recIdx _ => recurAddrs[recIdx.toNat]?
+  | _ => none
+
 theorem rec_family_block_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
     {x : _root_.Address} {x_rec r : SourceValue F} {h h' : Heap F}
     (hS : LoadedReads.RunStore calls E₀)
@@ -2781,7 +2791,9 @@ theorem rec_family_block_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
         ((∃ rc n, cx.info = .recr rc ∧ Binding.FamilyOf.motiveCarrierAt cx rc 0 n = some t0) ∨
           (∃ idx a ca rs rc n, cx.info = .rPrj ⟨idx, a⟩ ∧ recordOf E₀ a = some ca ∧
             ca.info = .muts rs ∧ rs[idx.toNat]? = some (.recr rc) ∧
-            Binding.FamilyOf.motiveCarrierAt ca rc 0 n = some t0 ∧ UsedRef E₀ a t0)) := by
+            motiveCarrierWithRecur ca (L1.blockRecurAddrs a rs.toList) rc n = some t0 ∧
+            (UsedRef E₀ a t0 ∨
+              ∃ recIdx, (L1.blockRecurAddrs a rs.toList)[recIdx.toNat]? = some t0))) := by
   obtain ⟨ab, hab, rfl⟩ := hx
   match Obs.«KernelModeled::rec_family_block».obs ev with
   | .run (m2 := m2) (m186 := m186) (w33 := w33) (x_ty := x_ty) (x_np := x_np)
@@ -2806,7 +2818,9 @@ theorem rec_family_block_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
           (.construct "KernelTypes::KConstantInfo" "Rec"
             [w33, x_ty, x_np, w34, w35, w36, w37, w38, w39, w40, w41]) →
         ∃ (n : Nat) (t0_b : Bytes.Address),
-          Binding.FamilyOf.motiveCarrierAt cHost rc 0 n = some (Core.ixAddr t0_b) ∧
+          motiveCarrierWithRecur cHost recurAddrs rc n = some (Core.ixAddr t0_b) ∧
+          (Binding.FamilyOf.motiveCarrierAt cHost rc 0 n = some (Core.ixAddr t0_b) ∨
+            ∃ rIdx, recurAddrs[rIdx.toNat]? = some (Core.ixAddr t0_b)) ∧
           Bytes.RepAddressRef Core.addrTy m186 t0_b x_t0 := by
       intro cHost recurAddrs rc blkAddr recIdx blobs hraw
       obtain ⟨-, hnp56, -, -, -, -, tyPtr, rulesPtr, blkPtr, _, -, -, hv_eq, rawTy, -⟩ := hraw
@@ -2815,17 +2829,12 @@ theorem rec_family_block_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
       obtain ⟨_, rfl, rfl, _⟩ := hargs
       obtain ⟨hm98, -, b1, e1, hpeel, raw1⟩ := peel_n_foralls_raw rc.params.toNat hnp56 rawTy ev_peel
       subst hm98
-      obtain ⟨b2, em, -, hnd1, raw_m, -⟩ := rawConvExpr_forall_inv raw1 ld_for
+      obtain ⟨b2, em, _, hnd1, raw_m, -⟩ := rawConvExpr_forall_inv raw1 ld_for
       obtain ⟨hm164, -, n1, b3, ed, hldom, raw_d⟩ :=
         last_binder_dom_raw_aux cs174.length (Nat.le_refl _) raw_m ev_ldom
       subst hm164
       obtain ⟨ext_sp, -, n2, b4, raw_hd, hns_hd⟩ :=
         collect_spine_raw_aux cs196.length (Nat.le_refl _) raw_d ev_sp
-      obtain ⟨rIdx, uIdxs, t0, t0_b, hnd_hd, href_t0, hix_t0, ht0_rep⟩ :=
-        rawConvExpr_const_inv raw_hd ld_const
-      rw [node_of_not_share hns_hd] at hnd_hd
-      -- Match fuel `n := max n1 n2`? Even cleaner: `lastDom` and `spineHead` are monotone in fuel!
-      -- Prove fuel monotonicity for `lastDom` and `spineHead` right here.
       have hldom_mono : ∀ k₁ k₂ e d, k₁ ≤ k₂ →
           Binding.FamilyOf.lastDom cHost k₁ e = some d →
           Binding.FamilyOf.lastDom cHost k₂ e = some d := by
@@ -2874,41 +2883,100 @@ theorem rec_family_block_spec {calls cs : List (Call F)} {E₀ : Ixon.Env}
             rw [hnd] at hne ⊢
             exact ih k₂' f (by omega) hne
           | sort _ | var _ | ref _ _ | recur _ _ | prj _ _ _ | str _ | nat _ | lam _ _
-          | all _ _ | letE _ _ _ _ _ | share _ =>
-            rw [hnd]
+          | all _ _ | letE _ _ _ _ _ | share _ => rfl
       let nf := max n1 n2
       have hldom_nf := hldom_mono n1 nf em ed (Nat.le_max_left _ _) hldom
-      have hsp_nf : Binding.FamilyOf.spineHead cHost nf ed = .ref rIdx uIdxs := by
-        rw [hsp_mono n2 nf ed (Nat.le_max_right _ _) (by rw [hnd_hd]; intro _ _ h; cases h), hnd_hd]
-      have hmot : Binding.FamilyOf.motiveCarrierAt cHost rc 0 nf = some (Core.ixAddr t0_b) := by
-        unfold Binding.FamilyOf.motiveCarrierAt
-        rw [Nat.add_zero, hpeel]
-        simp only [bind, Option.bind, Binding.FamilyOf.domOf, hnd1, hldom_nf,
-          Binding.FamilyOf.refHeadAt, hsp_nf, ← hix_t0]
-        exact href_t0
-      exact ⟨nf, t0_b, hmot, ht0_rep⟩
+      rcases rawConvExpr_const_inv_any raw_hd ld_const with
+        ⟨rIdx, uIdxs, t0, t0_b, hnd_hd, href_t0, hix_t0, ht0_rep⟩ |
+        ⟨rIdx, uIdxs, t0, t0_b, hnd_hd, hrec_t0, hix_t0, ht0_rep⟩
+      · rw [node_of_not_share hns_hd] at hnd_hd
+        have hsp_nf : Binding.FamilyOf.spineHead cHost nf ed = .ref rIdx uIdxs := by
+          rw [hsp_mono n2 nf ed (Nat.le_max_right _ _) (by rw [hnd_hd]; intro _ _ h; cases h), hnd_hd]
+        have hmot : Binding.FamilyOf.motiveCarrierAt cHost rc 0 nf = some (Core.ixAddr t0_b) := by
+          unfold Binding.FamilyOf.motiveCarrierAt
+          rw [Nat.add_zero, hpeel]
+          simp only [bind, Option.bind, Binding.FamilyOf.domOf, hnd1, hldom_nf,
+            Binding.FamilyOf.refHeadAt, hsp_nf, ← hix_t0]
+          exact href_t0
+        have hmot_r : motiveCarrierWithRecur cHost recurAddrs rc nf = some (Core.ixAddr t0_b) := by
+          unfold motiveCarrierWithRecur
+          rw [hpeel]
+          simp only [bind, Option.bind, Binding.FamilyOf.domOf, hnd1, hldom_nf, hsp_nf, ← hix_t0]
+          exact href_t0
+        exact ⟨nf, t0_b, hmot_r, Or.inl hmot, ht0_rep⟩
+      · rw [node_of_not_share hns_hd] at hnd_hd
+        have hsp_nf : Binding.FamilyOf.spineHead cHost nf ed = .recur rIdx uIdxs := by
+          rw [hsp_mono n2 nf ed (Nat.le_max_right _ _) (by rw [hnd_hd]; intro _ _ h; cases h), hnd_hd]
+        have hmot_r : motiveCarrierWithRecur cHost recurAddrs rc nf = some (Core.ixAddr t0_b) := by
+          unfold motiveCarrierWithRecur
+          rw [hpeel]
+          simp only [bind, Option.bind, Binding.FamilyOf.domOf, hnd1, hldom_nf, hsp_nf, ← hix_t0]
+          exact hrec_t0
+        exact ⟨nf, t0_b, hmot_r, Or.inr ⟨rIdx, hix_t0.symm ▸ hrec_t0⟩, ht0_rep⟩
     rcases get_ci_loads_rec_is_recr_or_rPrj hS hab ev_ci hsub16 ld_rec hcx with
       ⟨rc, hrc⟩ | ⟨⟨idx, a⟩, hrprj⟩
     · obtain ⟨blobs, hraw⟩ := hrec_raw.1 rc hrc
-      obtain ⟨nf, t0_b, hmot, ht0_rep⟩ := extract_carrier hraw
+      obtain ⟨nf, t0_b, -, hmot_or, ht0_rep⟩ := extract_carrier hraw
       obtain ⟨ct0, j, blk, ib_b, cib, ms, ind, hct0, hct0_info, hib_rep, hib_eq, hcib, hms, hmj⟩ :=
         get_ci_loads_induct_is_iprj hS hcov ht0_rep ev_ci_t0 hsub266 ld_ind
       subst hr hh hib_eq
+      have hmot : Binding.FamilyOf.motiveCarrierAt cx rc 0 nf = some (Core.ixAddr t0_b) := by
+        rcases hmot_or with h | ⟨rIdx, hrIdx⟩
+        · exact h
+        · exfalso
+          have hmem : Core.ixAddr t0_b ∈ [Core.ixAddr ab] := List.mem_of_getElem? hrIdx
+          simp only [List.mem_singleton] at hmem
+          rw [hmem] at hct0
+          have heq := Option.some.inj (hct0.symm.trans hcx)
+          rw [heq, hrc] at hct0_info; cases hct0_info
       exact ⟨ev_ci.heap_extends.trans (ev_peel.heap_extends.trans (ev_ldom.heap_extends.trans
         (ev_sp.heap_extends.trans ev_ci_t0.heap_extends))),
         cx, ib_b, cib, ms, j, ind, Core.ixAddr t0_b, ct0, hcx, hib_rep, hcib, hms, hmj,
         hct0, hct0_info, Or.inl ⟨rc, nf, hrc, hmot⟩⟩
     · obtain ⟨ca, rs, rc, blobs, hca, hca_muts, hca_k, hraw⟩ := hrec_raw.2 idx a hrprj
-      obtain ⟨nf, t0_b, hmot, ht0_rep⟩ := extract_carrier hraw
+      obtain ⟨nf, t0_b, hmot_r, hmot_or, ht0_rep⟩ := extract_carrier hraw
       obtain ⟨ct0, j, blk, ib_b, cib, ms, ind, hct0, hct0_info, hib_rep, hib_eq, hcib, hms, hmj⟩ :=
         get_ci_loads_induct_is_iprj hS hcov ht0_rep ev_ci_t0 hsub266 ld_ind
       subst hr hh hib_eq
-      have hu_t0 : UsedRef E₀ a (Core.ixAddr t0_b) :=
-        motiveCarrierAt_usedRef hca hca_muts hca_k hmot
+      have hu_or : UsedRef E₀ a (Core.ixAddr t0_b) ∨
+          ∃ recIdx, (L1.blockRecurAddrs a rs.toList)[recIdx.toNat]? = some (Core.ixAddr t0_b) := by
+        rcases hmot_or with hmot | hrec
+        · exact Or.inl (motiveCarrierAt_usedRef hca hca_muts hca_k hmot)
+        · exact Or.inr hrec
       exact ⟨ev_ci.heap_extends.trans (ev_peel.heap_extends.trans (ev_ldom.heap_extends.trans
         (ev_sp.heap_extends.trans ev_ci_t0.heap_extends))),
         cx, ib_b, cib, ms, j, ind, Core.ixAddr t0_b, ct0, hcx, hib_rep, hcib, hms, hmj,
-        hct0, hct0_info, Or.inr ⟨idx, a, ca, rs, rc, nf, hrprj, hca, hca_muts, hca_k, hmot, hu_t0⟩⟩
+        hct0, hct0_info, Or.inr ⟨idx, a, ca, rs, rc, nf, hrprj, hca, hca_muts, hca_k, hmot_r, hu_or⟩⟩
+
+private theorem motiveCarrierWithRecur_unique (c : Ixon.Constant) (recurAddrs : List _root_.Address)
+    (rc : Ixon.Recursor) (n₁ n₂ : Nat) {a₁ a₂ : _root_.Address}
+    (h1 : motiveCarrierWithRecur c recurAddrs rc n₁ = some a₁)
+    (h2 : motiveCarrierWithRecur c recurAddrs rc n₂ = some a₂) : a₁ = a₂ := by
+  unfold motiveCarrierWithRecur at h1 h2
+  cases hp : Binding.FamilyOf.peel c rc.params.toNat rc.typ with
+  | none => rw [hp] at h1; simp at h1
+  | some e =>
+    rw [hp] at h1 h2; dsimp only [bind, Option.bind] at h1 h2
+    cases hd : Binding.FamilyOf.domOf c e with
+    | none => rw [hd] at h1; simp at h1
+    | some m =>
+      rw [hd] at h1 h2; dsimp only [bind, Option.bind] at h1 h2
+      cases hl1 : Binding.FamilyOf.lastDom c n₁ m with
+      | none => rw [hl1] at h1; simp at h1
+      | some d₁ =>
+        cases hl2 : Binding.FamilyOf.lastDom c n₂ m with
+        | none => rw [hl2] at h2; simp at h2
+        | some d₂ =>
+          have hd_eq : d₁ = d₂ := lastDom_unique c n₁ n₂ hl1 hl2
+          subst hd_eq
+          rw [hl1] at h1; rw [hl2] at h2; dsimp only [bind, Option.bind] at h1 h2
+          have hna1 : ∀ f a, Binding.FamilyOf.spineHead c n₁ d₁ ≠ .app f a := by
+            intro f a he; rw [he] at h1; cases h1
+          have hna2 : ∀ f a, Binding.FamilyOf.spineHead c n₂ d₁ ≠ .app f a := by
+            intro f a he; rw [he] at h2; cases h2
+          have hsp_eq := spineHead_unique c n₁ n₂ hna1 hna2
+          rw [hsp_eq] at h1
+          exact Option.some.inj (h1.symm.trans h2)
 
 private theorem motiveCarrierAt_unique (c : Ixon.Constant) (rc : Ixon.Recursor) (i n₁ n₂ : Nat)
     {a₁ a₂ : _root_.Address}
@@ -2977,7 +3045,7 @@ theorem rec_family_block_det {calls cs₁ cs₂ : List (Call F)} {E₀ : Ixon.En
         subst rs₂
         have hrc_eq : rc₁ = rc₂ := Ixon.MutConst.recr.inj (Option.some.inj (hmk₁.symm.trans hmk₂))
         subst rc₂
-        exact motiveCarrierAt_unique ca₁ rc₁ 0 n₁ n₂ hmot₁ hmot₂
+        exact motiveCarrierWithRecur_unique ca₁ (L1.blockRecurAddrs a₁ rs₁.toList) rc₁ n₁ n₂ hmot₁ hmot₂
   subst t0₂
   have hct_eq : ct0₁ = ct0₂ := Option.some.inj (hct0₁.symm.trans hct0₂)
   subst ct0₂
@@ -3018,29 +3086,28 @@ private theorem is_muts_block_of_muts {calls cs : List (Call F)} {E₀ : Ixon.En
     rw [← hargs.1] at hmv
     exact hne [mv] rfl hmv
 
-private theorem peel_n_foralls_raw_any {refs recurAddrs : List _root_.Address}
-    {univs : List Ixon.Univ} {sharing : List Ixon.Expr} :
+private theorem peel_n_foralls_raw_any {c : Ixon.Constant} {recurAddrs : List _root_.Address} :
     ∀ (m : Nat) {blobs : List (_root_.Address × ByteArray)} {bnd : Nat} {e : Ixon.Expr}
       {h h' : Heap F} {x_e x_n r : SourceValue F} {cs : List (Call F)},
       cs.length ≤ m →
-      L1.RawConvExpr refs recurAddrs univs sharing blobs h bnd e x_e →
+      L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bnd e x_e →
       ObsFn Obs.W "KernelCheck::peel_n_foralls" [x_e, x_n] h r h' cs →
-      h' = h ∧ ∃ blobs' bnd' e', L1.RawConvExpr refs recurAddrs univs sharing blobs' h bnd' e' r
+      h' = h ∧ ∃ bnd' e', L1.RawConvExpr c.refs.toList recurAddrs c.univs.toList c.sharing.toList blobs h bnd' e' r
   | 0, blobs, bnd, e, h, h', x_e, x_n, r, cs, hlen, hraw, ev => by
     match Obs.«KernelCheck::peel_n_foralls».obs ev with
     | .n0 (he16 := hr) (he17 := hh) .. =>
       subst hr hh
-      exact ⟨rfl, blobs, bnd, e, hraw⟩
+      exact ⟨rfl, bnd, e, hraw⟩
     | .other (hc89 := hc) .. => simp [hc] at hlen
   | m + 1, blobs, bnd, e, h, h', x_e, x_n, r, cs, hlen, hraw, ev => by
     match Obs.«KernelCheck::peel_n_foralls».obs ev with
     | .n0 (he16 := hr) (he17 := hh) .. =>
       subst hr hh
-      exact ⟨rfl, blobs, bnd, e, hraw⟩
+      exact ⟨rfl, bnd, e, hraw⟩
     | .other (cs62 := cs62) (ld34 := hld) (ev64 := ev_rec) (hc89 := hc) .. =>
       have hlen' : cs62.length ≤ m := by
         rw [hc] at hlen; simp only [List.length_cons] at hlen; omega
-      obtain ⟨blobs1, _, body, -, -, rawBody⟩ := rawConvExpr_forall_inv hraw hld
+      obtain ⟨_, _, _, -, -, rawBody⟩ := rawConvExpr_forall_inv hraw hld
       exact peel_n_foralls_raw_any m hlen' rawBody ev_rec
 
 /-- **`KernelCheck::check_const` on any recursor projection record `.rPrj ⟨idx, a⟩` takes the
@@ -3067,7 +3134,9 @@ theorem rprj_check_const_rec_other {calls cs₁ cs₂ : List (Call F)} {E₀ : I
         (m_bm m_bm' : Heap F) (xb_bm v_bm : SourceValue F) (cs_bm : List (Call F)),
         recordOf E₀ a = some ca ∧ ConstAddrOf a ca x ∧
         recordOf E₀ ib = some cib ∧ cib.info = .muts ms_ib ∧ ms_ib[j.toNat]? = some (.indc ind) ∧
-        recordOf E₀ t0 = some ct0 ∧ ct0.info = .iPrj ⟨j, ib⟩ ∧ UsedRef E₀ a t0 ∧
+        recordOf E₀ t0 = some ct0 ∧ ct0.info = .iPrj ⟨j, ib⟩ ∧
+        (UsedRef E₀ a t0 ∨
+          ∃ rs, ca.info = .muts rs ∧ ∃ recIdx, (L1.blockRecurAddrs a rs.toList)[recIdx.toNat]? = some t0) ∧
         (∃ m_rfb m_rfb' r_rfb cs_rfb, S0.addr m_rfb xx x ∧ S0.addr m_rfb' r_rfb ib ∧
           ObsFn Obs.W "KernelModeled::rec_family_block" [xx] m_rfb r_rfb m_rfb' cs_rfb ∧
           ∀ cl ∈ cs_rfb, cl ∈ cs₂) ∧
@@ -3152,19 +3221,20 @@ theorem rprj_check_const_rec_other {calls cs₁ cs₂ : List (Call F)} {E₀ : I
         simp only [List.cons.injEq, and_true] at hargs_r
         have hty_eq : tyPtr = _ := hargs_r.2.1.symm.trans hargs'.2.1
         rw [hty_eq] at rawTy
-        have rawTy_crm := L1.rawConvExpr_heapMono ext_to_crm rawTy
+        have rawTy_crm := rawTy.mono ext_to_crm (fun _ hm => hm)
         match Obs.«KernelCheck::rec_to_parent_addr».obs ev_r2p with
         | .run (cs48 := cs48) (cs115 := cs115) (ev50 := ev_peel) (ld78 := ld_for)
             (ev117 := ev_sp) (ld154 := ld_const) (he174 := hr_r2p) (he175 := hh_r2p) .. =>
-          obtain ⟨hm38, _, _, _, raw1⟩ :=
+          obtain ⟨hm38, _, _, raw1⟩ :=
             peel_n_foralls_raw_any cs48.length (Nat.le_refl _) rawTy_crm ev_peel
           subst hm38
           obtain ⟨_, _, _, -, rawMaj, -⟩ := rawConvExpr_forall_inv raw1 ld_for
           obtain ⟨-, -, _, _, rawHd, -⟩ :=
             collect_spine_raw_aux cs115.length (Nat.le_refl _) rawMaj ev_sp
-          obtain ⟨_, _, _, t0_b, -, -, -, ht0_rep⟩ := rawConvExpr_const_inv rawHd ld_const
-          subst hr_r2p hh_r2p
-          exact ⟨t0_b, ht0_rep⟩
+          rcases rawConvExpr_const_inv_any rawHd ld_const with
+            ⟨_, _, _, t0_b, -, -, -, ht0_rep⟩ | ⟨_, _, _, t0_b, -, -, -, ht0_rep⟩
+          · subst hr_r2p hh_r2p; exact ⟨t0_b, ht0_rep⟩
+          · subst hr_r2p hh_r2p; exact ⟨t0_b, ht0_rep⟩
       obtain ⟨b72, hb72⟩ := hv72_addr
       obtain ⟨-, j_p, blk_p, b_p, cp, msp, indp, -, -, hbp_rep, hbp_eq, hcp, hmsp, hmj⟩ :=
         get_ci_loads_induct_is_iprj hS hcov hb72 ev_ci_p
@@ -3196,7 +3266,7 @@ theorem rprj_check_const_rec_other {calls cs₁ cs₂ : List (Call F)} {E₀ : I
           simp only [evalBinOp, sub_zero, Except.ok.injEq] at op_sub
           subst op_sub
           simp only [evalBinOp, mul_one, Except.ok.injEq] at op_mul2
-          exact absurd (Value.field.inj (op_mul2.symm.trans h0)) one_ne_zero
+          exact absurd (Value.field.inj (op_mul2.trans h0)) one_ne_zero
       subst hba_bp
       rw [hba_eq] at hcp
       have hcp_eq : cp = ca := Option.some.inj (hcp.symm.trans hca)
@@ -3238,11 +3308,17 @@ theorem rprj_check_const_rec_other {calls cs₁ cs₂ : List (Call F)} {E₀ : I
         ev_rfb (fun cl hcl => hsub₂ cl (by rw [hc]; simp [hcl]))
     have hcx₂_eq : cx₂ = cx := Option.some.inj (hcx₂.symm.trans hcx)
     subst cx₂
-    have hu_t0 : UsedRef E₀ a t0 := by
-      rcases hk_rfb with ⟨_, _, hbad, -⟩ | ⟨_, a', _, _, _, _, hrprj', -, -, -, -, hu⟩
+    have hu_t0 : UsedRef E₀ a t0 ∨
+        ∃ rs', ca.info = .muts rs' ∧ ∃ recIdx, (L1.blockRecurAddrs a rs'.toList)[recIdx.toNat]? = some t0 := by
+      rcases hk_rfb with ⟨_, _, hbad, -⟩ | ⟨_, a', ca', rs', _, _, hrprj', hca', hmuts', -, -, hu⟩
       · rw [hrprj] at hbad; cases hbad
       · have hp := Ixon.ConstantInfo.rPrj.inj (hrprj.symm.trans hrprj')
-        injection hp with _ ha_eq; subst ha_eq; exact hu
+        injection hp with _ ha_eq; subst ha_eq
+        have hce : ca' = ca := Option.some.inj (hca'.symm.trans hca)
+        subst ca'
+        rcases hu with h1 | h2
+        · exact Or.inl h1
+        · exact Or.inr ⟨rs', hmuts', h2⟩
     have ext_to_bm := ext_to_rfb.trans ext_rfb
     have ext_to_cf := ext_to_bm.trans ev_bm.heap_extends
     have hfc : FamilyCallAtLim calls bAddr t (Core.ixAddr ib_b) a lim cs_fam :=
