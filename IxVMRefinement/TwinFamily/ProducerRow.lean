@@ -3707,8 +3707,10 @@ private theorem unitStepTwin_of_concl_rbS {X : Ix.Kernel.Env .anon → Prop}
     · obtain ⟨ci', -, hk, -⟩ := hmods ci hmo
       exact Or.inr ⟨ci'.name, .model, hk⟩
 
-private theorem familyTwin_step_core
-    (hFlat : TwinCallFlat) (hRecon : TwinCallRecon) (hStoredLvls : StoredRecLvlsOk)
+/-- **Core twin step on both the graph arm and the stored arm**, parameterized by per-call
+flattened-family and reconstruction facts for `A` and (on the graph arm) `rb`. -/
+theorem familyTwin_step_core
+    (hStoredLvls : StoredRecLvlsOk)
     {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {seeds : List _root_.Address}
     {E₀ : Ixon.Env} {lim : Option Nat} {Top : _root_.Address → Prop}
     {rank : _root_.Address → Nat} (hWalk : Claim.TopWalk calls t seeds E₀ lim Top rank)
@@ -3725,6 +3727,24 @@ private theorem familyTwin_step_core
     (hcase : (fam B = some rb ∧ recordOf E₀ rb = some crb ∧
         RecBlock E₀ rb ∧ (RFormS t E₀ B A → RFormS t E₀ B rb)) ∨
       (fam B = none ∧ StoredTwinCanon t R envT famOf B rb crb))
+    (hFlatAt : ∀ (bAddr r : _root_.Address) (cr : Ixon.Constant)
+        (rs : Array Ixon.MutConst) (cs : List (Call F)),
+      (r = A ∨ fam B = some r) →
+      FamRecRecord E₀ r cr rs → rs.size ≠ 0 →
+      (∀ cb, recordOf E₀ B = some cb → InLogic cb) →
+      FamilyCallAtLim calls bAddr t B r lim cs →
+      ∃ (cb : Ixon.Constant) (ms : Array Ixon.MutConst) (es : List FlatEntry) (off : Nat),
+        FamilyOfBlock E₀ B cb ms r cr rs (es.map FlatEntry.addr) ∧
+        RecordFlat t E₀ r cr rs es ∧ BlockDerivedFlat t E₀ B off es ∧
+        ∀ (ind₀ : Ixon.Inductive) (k : Nat) (rc : Ixon.Recursor),
+          ms[0]? = some (.indc ind₀) → rs[k]? = some (.recr rc) →
+          rc.lvls.toNat = ind₀.lvls.toNat + off)
+    (hReconAt : ∀ (bAddr r : _root_.Address) (cb cr : Ixon.Constant)
+        (ms rs : Array Ixon.MutConst) (cs : List (Call F)),
+      (r = A ∨ fam B = some r) →
+      FamBlockRecord E₀ B cb ms → FamRecRecord E₀ r cr rs → rs.size ≠ 0 →
+      FamilyCallAtLim calls bAddr t B r lim cs →
+      RFormS t E₀ B r ∨ RecordWrapConsObs calls t E₀ B r)
     (hClosed_at : ∀ rs, fam B = some rb → FamRecRecord E₀ rb crb rs →
       ∃ S : _root_.Address → Prop,
         (ReconView.ofStore t E₀).ClosedOn S ∧
@@ -3780,9 +3800,9 @@ private theorem familyTwin_step_core
       rw [e]; exact hlogB'
     -- Flattened family for `rb` and `A`
     obtain ⟨cb_rb, ms_rb, es, off, hFOB_rb, hRF_rb, hBD_rb, hlvls_rb⟩ :=
-      hFlat calls bAddr t E₀ B rb crb rs lim cs_rb ht hb hRS hH hrb hsz_rb hlogicB hcall_rb
+      hFlatAt bAddr rb crb rs cs_rb (Or.inr hfam) hrb hsz_rb hlogicB hcall_rb
     obtain ⟨cb_A, ms_A, es_A, off_A, hFOB_A, hRF_A, hBD_A, hlvls_A⟩ :=
-      hFlat calls bAddr t E₀ B A c rs' lim cs_A ht hb hRS hH hA hszA hlogicB hcall_A
+      hFlatAt bAddr A c rs' cs_A (Or.inl rfl) hA hszA hlogicB hcall_A
     have hcb_rb_eq : cb_rb = cb := Option.some.inj (hFOB_rb.block.record.symm.trans hcb)
     subst cb_rb
     have hms_rb_eq : ms_rb = ms := Ixon.ConstantInfo.muts.inj (hFOB_rb.block.muts.symm.trans hms)
@@ -3809,10 +3829,8 @@ private theorem familyTwin_step_core
       Ixon.MutConst.indc.inj (Option.some.inj (hms0'.symm.trans hms0))
     subst ind₀'
     -- Reconstruction form for `rb` and `A`
-    have hrec_form_rb := hRecon calls bAddr t E₀ B rb cb crb ms rs lim cs_rb ht hb hRS hH hB hrb
-      hsz_rb hcall_rb
-    have hrec_form_A := hRecon calls bAddr t E₀ B A cb c ms rs' lim cs_A ht hb hRS hH hB hA
-      hszA hcall_A
+    have hrec_form_rb := hReconAt bAddr rb cb crb ms rs cs_rb (Or.inr hfam) hB hrb hsz_rb hcall_rb
+    have hrec_form_A := hReconAt bAddr A cb c ms rs' cs_A (Or.inl rfl) hB hA hszA hcall_A
     have hrefs_ok_A := recRefs_of_familyCall hRS hH hc hcall_A
     -- Align `fuel` across `rb` and `A`
     have hMR_pair : ∃ fuel : Nat,
@@ -3972,7 +3990,7 @@ private theorem familyTwin_step_core
     obtain ⟨cs_A, hcall_A⟩ := hC.twinCall A B htw
     -- Flattened family for `A` over `E₀`, unified with `es, off` from `R` via `E`
     obtain ⟨cb_A, ms_A, es_A, off_A, hFOB_A, hRF_A, hBD_A, hlvls_A⟩ :=
-      hFlat calls bAddr t E₀ B A c rs' lim cs_A ht hb hRS hH hA hszA hlogicB hcall_A
+      hFlatAt bAddr A c rs' cs_A (Or.inl rfl) hA hszA hlogicB hcall_A
     have hcb_A_eq : cb_A = cb := Option.some.inj
       ((hE₀_rec B cb_A hFOB_A.block.record).symm.trans (hR_rec B cb hFOB_R.block.record))
     subst cb_A
@@ -3998,8 +4016,8 @@ private theorem familyTwin_step_core
     have hBD_E : BlockDerivedFlat t E B off es :=
       Binding.FamilyFlat.blockDerivedFlat_grow hR_rec hR_blob hBD_R
     have hrec_form_A_E : RFormS t E B A ∨ RecordWrapConsObs calls t E B A := by
-      rcases hRecon calls bAddr t E₀ B A cb c ms rs' lim cs_A ht hb hRS hH hFOB_A.block hA hszA
-          hcall_A with h | h
+      rcases hReconAt bAddr A cb c ms rs' cs_A (Or.inl rfl) hFOB_A.block hA hszA hcall_A with
+        h | h
       · exact Or.inl (h.grow hE₀_rec hE₀_blob)
       · exact Or.inr (recordWrapConsObs_grow hE₀_rec hE₀_blob h)
     have hcrb_E : recordOf E rb = some crb := hR_rec rb crb hFOB_R.record.record
@@ -4103,12 +4121,19 @@ private theorem familyTwin_step_core
 theorem familyTwin_of_premises
     (hFlat : TwinCallFlat) (hRecon : TwinCallRecon)
     (hStoredLvls : StoredRecLvlsOk) (hClosed : GraphStoreClosed.{u}) :
-    FamilyTwinRowFam.{u} RFormS FormerOpenTraceAt :=
-  fun calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx famOf hRF
-    A c B rb crb hW hc hlog htw hcase =>
-    familyTwin_step_core hFlat hRecon hStoredLvls hWalk hFR hctx hRF hW hc hlog htw hcase
-      (fun rs hfam hrb => hClosed calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner
-        hFR hctx B rb crb rs hfam hrb)
+    FamilyTwinRowFam.{u} RFormS FormerOpenTraceAt := by
+  intro calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx famOf hRF
+    A c B rb crb hW hc hlog htw hcase
+  have ⟨_, hWc, _⟩ := hWalk
+  exact familyTwin_step_core hStoredLvls hWalk hFR hctx hRF hW hc hlog htw hcase
+    (fun bAddr r cr rs cs _ hrec hsz hlogB hcall =>
+      hFlat calls bAddr t E₀ B r cr rs lim cs hWc.check_ok (hctx.good envT lim).2
+        hWc.runStore hWc.hashedStored hrec hsz hlogB hcall)
+    (fun bAddr r cb cr ms rs cs _ hB hrec hsz hcall =>
+      hRecon calls bAddr t E₀ B r cb cr ms rs lim cs hWc.check_ok (hctx.good envT lim).2
+        hWc.runStore hWc.hashedStored hB hrec hsz hcall)
+    (fun rs hfam hrb => hClosed calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner
+      hFR hctx B rb crb rs hfam hrb)
 
 /-- **`FamilyTwinRowFam` with witness well-formedness (`EnvWF envT`) and block-wholeness
 (`BoundaryFacts.whole`) threaded**, matching the hypotheses in scope in `FamilyStepsFamFull`. -/
@@ -4141,11 +4166,18 @@ def FamilyTwinRowFamWF (RFormS : Binding.StoredFormPred)
 `StoredRecLvlsOk`** (discharging `GraphStoreClosed` via `graphStoreClosed_of_envWF`). -/
 theorem familyTwinWF_of_premises
     (hFlat : TwinCallFlat) (hRecon : TwinCallRecon) (hStoredLvls : StoredRecLvlsOk) :
-    FamilyTwinRowFamWF.{u} RFormS FormerOpenTraceAt :=
-  fun calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx hEnvWF hWhole
-    famOf hRF A c B rb crb hW hc hlog htw hcase =>
-    familyTwin_step_core hFlat hRecon hStoredLvls hWalk hFR hctx hRF hW hc hlog htw hcase
-      (fun _ hfam hrb => graphStoreClosed_of_envWF hWalk hFR hctx hEnvWF hWhole hfam hrb)
+    FamilyTwinRowFamWF.{u} RFormS FormerOpenTraceAt := by
+  intro calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR hctx hEnvWF hWhole
+    famOf hRF A c B rb crb hW hc hlog htw hcase
+  have ⟨_, hWc, _⟩ := hWalk
+  exact familyTwin_step_core hStoredLvls hWalk hFR hctx hRF hW hc hlog htw hcase
+    (fun bAddr r cr rs cs _ hrec hsz hlogB hcall =>
+      hFlat calls bAddr t E₀ B r cr rs lim cs hWc.check_ok (hctx.good envT lim).2
+        hWc.runStore hWc.hashedStored hrec hsz hlogB hcall)
+    (fun bAddr r cb cr ms rs cs _ hB hrec hsz hcall =>
+      hRecon calls bAddr t E₀ B r cb cr ms rs lim cs hWc.check_ok (hctx.good envT lim).2
+        hWc.runStore hWc.hashedStored hB hrec hsz hcall)
+    (fun _ hfam hrb => graphStoreClosed_of_envWF hWalk hFR hctx hEnvWF hWhole hfam hrb)
 
 end IxVM.Refinement.Typing.TwinFamily
 

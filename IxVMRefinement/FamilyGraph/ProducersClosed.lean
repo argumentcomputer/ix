@@ -1,5 +1,6 @@
 import IxVMRefinement.FamilyGraph.ProducersRoute
 import IxVMRefinement.FamilyGraph.ProducersStoredFam
+import IxVMRefinement.TwinFamily.CallReconBridge
 
 /-! # Unconditional discharge of the family-graph obligation
 
@@ -14,10 +15,12 @@ hypothesis:
 * `familyGraphRowInnerFamT_closed`: produces the full graph, inner checks, family checks, stored
   twin blocks, and canonical twin selection at any walk with `FamCallsModeled`, `EnvWF`, and
   `BoundaryFacts.whole` via `FamRunCtx.batchGives_of_run`;
-* `familyStepsFamFull_closed`: builds `FamilyStepsFamFull` for `Claim.TopWalk calls` with no
-  `familyGraph` premise;
-* `circuitComposed_of_partsFamInnerWT_closed`: the composed public statement
-  `IxVM.Consistency.CircuitComposed` with `familyGraph` and `Pref` eliminated. -/
+* `familyStepsFamFull_closed`, `familySteps_closedWF`: builds `FamilyStepsFamFull` for
+  `Claim.TopWalk calls` with no `familyGraph` premise (taking `FamilyTwinRowFam` or
+  `FamilyTwinRowFamClosed`);
+* `circuitComposed_of_partsFamInnerWT_closed`, `circuitComposed_of_partsFamInnerWT_closedWF`: the
+  composed public statement `IxVM.Consistency.CircuitComposed` with `familyGraph` and `Pref`
+  eliminated. -/
 
 universe u
 
@@ -289,6 +292,112 @@ theorem circuitComposed_of_partsFamInnerWT_closed
       exact hW.topLim)
     (fun _ _ _ _ _ _ h => Claim.TopWalk.graph h)
     (familyStepsFamFull_closed storedForm innerSteps familyBlock familyTwin
+      standaloneDefinition standaloneTheoremOrOpaque standaloneRecursor definitionBlock
+      nativeBlockTelescope nativeBlockAlias nativeBlockOtherTelescope callsA
+      (FamCallsModeled.of_verifyClaim evA))
+
+/-- **The typing half's premise at the witness with its stored families, taking
+`FamilyTwinRowFamClosed` and passing `InnerChecked`, `EnvWF`, `WitnessWhole`, and
+`StoredFamilies.levelsParams` already in scope.** -/
+theorem familySteps_closedWF {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    {RFormS : StoredFormPred}
+    (storedForm : StoredFormAt.{u} RFormS)
+    (innerSteps : InnerStepsChecked.{u} L) (familyBlock : FamilyBlockRow.{u} L)
+    (familyTwin : TwinFamily.FamilyTwinRowFamClosed.{u} RFormS L)
+    (standaloneDefinition : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind = .defn)
+    (standaloneTheoremOrOpaque : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind ≠ .defn)
+    (standaloneRecursor : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ rc : Ixon.Recursor, c.info = .recr rc)
+    (definitionBlock : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ ms : Array Ixon.MutConst, c.info = .muts ms ∧ DefnBlock ms)
+    (nativeBlockTelescope : WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
+      ∃ ind : Ixon.Inductive,
+        BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerAtTele t E₀ B cb ind)
+    (nativeBlockAlias : WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
+      ∃ ind : Ixon.Inductive,
+        BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerAtAlias t E₀ B cb ind)
+    (nativeBlockOtherTelescope : WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
+      ∃ ind : Ixon.Inductive,
+        BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerTeleOther t E₀ B cb ind)
+    (calls : List (Call F)) (hfamMod : FamCallsModeled calls) :
+    FamilyStepsFamFull.{u} L calls (Claim.TopWalk calls) := by
+  intro t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree hstore hEnvWF hWhole
+  obtain ⟨rank, fam, twin, adv, Inner, bAddr, hWalk, hFR, hIC, -, hblock, htwin_canon⟩ :=
+    familyGraphRowInnerFamT_closed (fun _ _ t E₀ _ B r => RFormS t E₀ B r) hfamMod
+      t seeds E₀ lim Top rank₀ hWalk₀ R envT hshape famOf hSF hagree hstore hEnvWF hWhole
+  exact ⟨rank, fam, twin, adv, Inner, hWalk, hFR.graph,
+    topUnitSteps_family standaloneDefinition standaloneTheoremOrOpaque standaloneRecursor
+      definitionBlock nativeBlockTelescope nativeBlockAlias nativeBlockOtherTelescope hWalk hFR,
+    innerSteps calls t seeds E₀ lim Top rank hWalk R envT fam twin adv Inner bAddr hFR hIC,
+    fun E => familyBlock calls t seeds E₀ lim Top rank hWalk R envT E fam twin adv Inner hFR,
+    fun E hctx A c B rb crb hW hc hlog htw hrb hcrb =>
+      TwinFamily.familyTwinStep_graph_of_closed familyTwin hWalk hFR hIC hctx hEnvWF hWhole
+        hSF.levelsParams hW hc hlog htw hrb hcrb
+        (htwin_canon B rb A hrb htw).1 (htwin_canon B rb A hrb htw).2,
+    TwinFamily.storedTwinSteps_of_closed familyTwin hWalk hFR hIC hEnvWF hWhole hSF.levelsParams
+      ⟨famOf, hSF, hSF.flat, storedForm t R envT famOf hshape hSF⟩ hblock⟩
+
+/-- **The public statement `IxVM.Consistency.CircuitComposed` taking `FamilyTwinRowFamClosed`.** -/
+theorem circuitComposed_of_partsFamInnerWT_closedWF
+    {L : Ix.Kernel.Env .anon → NativeFam .anon → Prop}
+    {Run : List (Call F) → Ix.Kernel.RoleTable → BRun → (Nat → Ixon.Env) → Prop}
+    {Fam : List (Call F) → BRun → Ix.Kernel.RoleTable → Nat → Ixon.Env → Ixon.Env →
+      (_root_.Address → Option _root_.Address) → (_root_.Address → _root_.Address → Prop) →
+      (_root_.Address → _root_.Address → Prop) → Prop}
+    {RFormS : StoredFormPred}
+    (bindingClaimExport :
+      SourceSoundBounded fun calls d => BindingClaimExportObs (Run calls) calls d)
+    (basisGroups : ∀ calls, BasisOverW.{u} L (Run calls))
+    (groupAdmissions : ∀ calls, AdmitsChain (Run calls))
+    (groupAdmissionReads : ∀ calls, AdmitsReadsChain (Run calls))
+    (groupFamilies : ∀ calls, FamiliesChain (Run calls) (Fam calls))
+    (groupClosure : ∀ calls, AtGroups (Run calls) fun ρ t g =>
+      ClosureStepOverFamilyW.{u} L ρ t g (Fam calls ρ t g))
+    (groupWithoutRoleUnit : ∀ calls, AtGroups (Run calls) (RoleFreeShapes.{u} L))
+    (operationRoleUnit :
+      ∀ calls, AtGroups (Run calls) (RoleUnitStepOverW.{u} (· ∈ RoleOps.opRoles) L))
+    (standardAxiomRoleUnit :
+      ∀ calls, AtGroups (Run calls) (RoleUnitStepOverW.{u} (· ∈ standardAxioms) L))
+    (storedForm : StoredFormAt.{u} RFormS)
+    (innerSteps : InnerStepsChecked.{u} L) (familyBlock : FamilyBlockRow.{u} L)
+    (familyTwin : TwinFamily.FamilyTwinRowFamClosed.{u} RFormS L)
+    (standaloneDefinition : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind = .defn)
+    (standaloneTheoremOrOpaque : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ d : Ixon.Definition, c.info = .defn d ∧ d.kind ≠ .defn)
+    (standaloneRecursor : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ rc : Ixon.Recursor, c.info = .recr rc)
+    (definitionBlock : WalkedUnitStep.{u} (FoldExtra.{u} L) fun _ _ _ _ c =>
+      ∃ ms : Array Ixon.MutConst, c.info = .muts ms ∧ DefnBlock ms)
+    (nativeBlockTelescope : WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
+      ∃ ind : Ixon.Inductive,
+        BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerAtTele t E₀ B cb ind)
+    (nativeBlockAlias : WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
+      ∃ ind : Ixon.Inductive,
+        BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerAtAlias t E₀ B cb ind)
+    (nativeBlockOtherTelescope : WalkedUnitStep.{u} (FoldExtra.{u} L) fun calls t E₀ B cb =>
+      ∃ ind : Ixon.Inductive,
+        BlockUnitRecord E₀ B cb ind ∧ NativeRouteAt calls B ∧ FormerTeleOther t E₀ B cb ind) :
+    CircuitComposed.{u} := by
+  unfold CircuitComposed
+  refine circuitSound_of_bounded l0 ?_
+  intro dB valueB heapB callsB evB hbB
+  show CircuitSound fun callsA dA => ComposedSpec.{u} callsA callsB dA dB
+  refine circuitSound_of_bounded l0 ?_
+  intro dA valueA heapA callsA evA hbA
+  show ComposedSpec.{u} callsA callsB dA dB
+  exact composed_skeleton_over_familyWFamFull (bindingClaimExport dB valueB heapB callsB evB hbB)
+    (basisGroups callsB) (groupAdmissions callsB) (groupAdmissionReads callsB)
+    (groupFamilies callsB) (groupClosure callsB) (groupWithoutRoleUnit callsB)
+    (operationRoleUnit callsB) (standardAxiomRoleUnit callsB) hbA
+    (Claim.claimPhase_typing evA)
+    (fun _ _ _ _ _ _ h => by
+      obtain ⟨_, hW, _⟩ := h
+      exact hW.topLim)
+    (fun _ _ _ _ _ _ h => Claim.TopWalk.graph h)
+    (familySteps_closedWF storedForm innerSteps familyBlock familyTwin
       standaloneDefinition standaloneTheoremOrOpaque standaloneRecursor definitionBlock
       nativeBlockTelescope nativeBlockAlias nativeBlockOtherTelescope callsA
       (FamCallsModeled.of_verifyClaim evA))
