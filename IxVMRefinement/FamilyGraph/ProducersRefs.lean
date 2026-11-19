@@ -500,7 +500,7 @@ private theorem tag0Bytes_size_le9 (v : UInt64) : (tag0Bytes v).size ≤ 9 := by
   repeat' split
   all_goals omega
 
-private theorem serConstant_iprj_size_lt (i : UInt64) (b : Bytes.Address) :
+theorem serConstant_iprj_size_lt (i : UInt64) (b : Bytes.Address) :
     (Ixon.serConstant ⟨.iPrj ⟨i, Core.ixAddr b⟩, #[], #[], #[], #[]⟩).size < 4294967296 := by
   have hb : AddressWireWF (Core.ixAddr b) := by
     show (Core.ixAddr b).hash.size = 32
