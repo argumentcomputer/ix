@@ -3267,7 +3267,8 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
                   have hi_e : _ = (rc.indices.toNat : F) := Value.field.inj hni_e.symm
                   have hm_e : _ = (rc.motives.toNat : F) := Value.field.inj hnm_e.symm
                   have hmi_e : _ = (rc.minors.toNat : F) := Value.field.inj hnmi_e.symm
-                  rw [hp_e, hi_e, hm_e, hmi_e] at hrP_e hmI_e
+                  rw [hp_e, hm_e, hmi_e] at hrP_e
+                  rw [hp_e, hi_e, hm_e, hmi_e] at hmI_e
                   have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
                   have hrP_eq : rP' = rc.params.toNat + rc.motives.toNat + rc.minors.toNat := by
                     have h1 := congrArg ZMod.val hrP_e
