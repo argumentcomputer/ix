@@ -1525,14 +1525,14 @@ private theorem check_rules_go_nfields {calls : List (Call F)} {t : Ix.Kernel.Ro
           injection hvf3 with _ hvf4
           injection hvf4 with _ hvf5
           injection hvf5 with _ hvf6
-          injection hvf6 with hcnf_eq' _
-          rw [← hcnf_eq', hcnf_eq] at heq286
+          injection hvf6 with _ hvf7
+          injection hvf7 with hcnf_eq' _
+          rw [hcnf_eq', hcnf_eq] at heq286
           have h1 := congrArg ZMod.val (Value.field.inj heq286)
           have hmod : Aiur.Library.U32.Goldilocks.modulus = 18446744069414584321 := rfl
           rw [ZMod.val_natCast_of_lt (by omega), ZMod.val_natCast_of_lt (by omega)] at h1
           exact h1
-        | axio _ | opaq _ | defn _ _ | thm _ _ | quot _ _ | induct _ _ _ | recr _ _ _ _ _ _ _ _ _ _ _ =>
-          cases hvg
+        | quot _ _ => exact absurd (Value.construct.inj hvg).2.1 (by decide)
       | succ c' =>
         simp only [List.getElem?_cons_succ] at hget
         have hv451 : v451 = .field ((j + 1 : Nat) : F) := by
@@ -3234,8 +3234,7 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
               subst hci_eq
               rw [hld_a] at hpv_e
               injection hpv_e with hv_e_eq
-              rw [← hv_e_eq, hv_a] at hci_e
-              rw [hv_a] at hci_canon
+              rw [← hv_e_eq] at hci_e
               generalize hve_g : Value.construct Core.kciEnum "Rec" _ = ve_g at hci_e
               cases hci_e with
               | recr hv_e hnp_e hni_e hnm_e hnmi_e hrP_e hmI_e hcnts_e hrules_e _ _ =>
@@ -3284,10 +3283,8 @@ private theorem check_recs_extract {calls : List (Call F)} {bAddr : _root_.Addre
                     Core.Tm.det ((hv_e.2.2.2 0 (fun _ => .sort .zero)).rekey_mono (stored_rekey_ce cctx))
                       (hv_c.2.2.2 0 (fun _ => .sort .zero))
                   exact ⟨hmI_eq, hrP_eq, hlv_eq, hty_eq, rulesRep_det_ce hrules_e hrules_c⟩
-                | axio _ | opaq _ | defn _ _ | thm _ _ | quot _ _ | induct _ _ _ | ctor _ _ _ _ _ =>
-                  cases hvc_g
-              | axio _ | opaq _ | defn _ _ | thm _ _ | quot _ _ | induct _ _ _ | ctor _ _ _ _ _ =>
-                cases hve_g
+                | quot _ _ => exact absurd (Value.construct.inj hvc_g).2.1 (by decide)
+              | quot _ _ => exact absurd (Value.construct.inj hve_g).2.1 (by decide)
           }⟩
       · have hnext_k : v1026 = .field ((k + 1 : Nat) : F) := by
           simp only [evalBinOp, Except.ok.injEq] at op1107
