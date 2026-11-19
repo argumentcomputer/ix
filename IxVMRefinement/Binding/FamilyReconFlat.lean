@@ -429,10 +429,13 @@ private theorem reverse_field_spec {ns : List Nat}
   rwa [Obs.Names.«Lists::Node<Field>».symbol] at hrev
 
 /-- **`KernelCheck::walk_fields_classify`** with accumulators refines `fieldsClassify V f es
-liftBy fidx E` at every large enough fuel, on `TmOExact` (stepping through any `Let` nodes). -/
-theorem walk_fields_classify_spec {κ : _root_.Address → KKey} (hinj : Function.Injective κ)
-    {V : ReconView} (hA : AddrOf κ V) (hD : DefnAnswers κ V) (hI : IndAnswers κ V)
-    (hC : CtorOfAnswers V) (hM : ModeledAnswers V)
+liftBy fidx E` at every large enough fuel, on `TmOExact` (stepping through any `Let` nodes),
+preserving `AddrIn S κ`. -/
+theorem walk_fields_classify_spec {rootCalls : List (Call F)} {S : _root_.Address → Prop}
+    {κ : _root_.Address → KKey} (hinj : Function.Injective κ)
+    {V : ReconView} (hA : AddrOf κ V) (hD : DefnAnswers rootCalls S κ V)
+    (hI : IndAnswers rootCalls S κ V) (hC : CtorOfAnswers rootCalls S V)
+    (hM : ModeledAnswers rootCalls S V)
     {es : List FlatEntry} {liftBy : Nat} :
     ∀ {E : KExpr} {fidx : Nat}
       {domsAcc normAcc : List KExpr} {recAcc recMemAcc : List Nat}
@@ -442,8 +445,8 @@ theorem walk_fields_classify_spec {κ : _root_.Address → KKey} (hinj : Functio
       ObsFn W "KernelCheck::walk_fields_classify"
         [xrc, xty, xflat, xdoms, xrec, xrecmem, xnorm, .field (fidx : F),
           .field (liftBy : F), xtys] h r h' cs →
-      IxVM.Consistency.Bounded cs →
-      TmOExact κ h E xty →
+      IxVM.Consistency.Bounded cs → (∀ c ∈ cs, c ∈ rootCalls) →
+      TmOExact κ h E xty → AddrIn S κ E →
       RepList flatListEnum (FlatEntryRepExact κ) h es xflat →
       RepList kexprListEnum (TmOExact κ) h domsAcc xdoms →
       RepList fieldListEnum RepNatField h recAcc xrec →
@@ -458,11 +461,14 @@ theorem walk_fields_classify_spec {κ : _root_.Address → KKey} (hinj : Functio
         RepList fieldListEnum RepNatField h' (recMemAcc.reverse ++ rm) xrm ∧
         TmOExact κ h' ret xret ∧
         RepList kexprListEnum (TmOExact κ) h' (normAcc.reverse ++ ns) xns ∧
+        (∀ D ∈ ds, AddrIn S κ D) ∧ AddrIn S κ ret ∧ (∀ N ∈ ns, AddrIn S κ N) ∧
         Eventually fun f => fieldsClassify V f es liftBy fidx E = some (ds, ri, rm, ret, ns) := by
   intro E fidx domsAcc normAcc recAcc recMemAcc xrc xty xflat xdoms xrec xrecmem xnorm xtys r
-    h h' cs hbound ev hbnd hE hes hdoms hrec hrecmem hnorm
+    h h' cs hbound ev hbnd hsub hE hEin hes hdoms hrec hrecmem hnorm
   have sub : ∀ {cs' : List (Call F)}, (∀ c ∈ cs', c ∈ cs) → IxVM.Consistency.Bounded cs' :=
     fun hs => RomBound.bounded_mono hbnd hs
+  have rsub : ∀ {cs' : List (Call F)}, (∀ c ∈ cs', c ∈ cs) → ∀ c ∈ cs', c ∈ rootCalls :=
+    fun hs c hc => hsub c (hs c hc)
   have hext : Heap.Extends h h' := ObsFn.heap_extends ev
   match Obs.«KernelCheck::walk_fields_classify».obsx ev with
   | .Forall_n1_bind (x_dom := xdom) (x_body := xbody) (v36 := vnd) (m37 := m1) (cs47 := cs1)
@@ -473,8 +479,9 @@ theorem walk_fields_classify_spec {κ : _root_.Address → KKey} (hinj : Functio
       (ev309 := evnext) (hc398 := hc) .. =>
     subst hm3 hm4 hm5 hm6 hm7
     obtain ⟨D, B, ℓ, rfl, hD1, hB, -⟩ := TmOExact.forallE_of_load hE ld
-    obtain ⟨ext1, nd, ⟨aw, haw⟩, hnd⟩ := whnf_tele_spec hA hD hI hC hM (cs1.length + 1)
-      (Nat.lt_succ_self _) evw (sub fun c hc' => by rw [hc]; simp [hc']) hD1
+    obtain ⟨ext1, nd, ⟨aw, haw⟩, hnd, hndIn⟩ := whnf_tele_spec hA hD hI hC hM (cs1.length + 1)
+      (Nat.lt_succ_self _) evw (sub fun c hc' => by rw [hc]; simp [hc'])
+      (rsub fun c hc' => by rw [hc]; simp [hc']) hD1 hEin.1
     obtain rfl := binop_add_nat oplb
     have hrf := is_rec_field_peel_spec hinj hA (by simp [peelAll] at hbound; omega) evrecf
       (sub fun c hc' => by rw [hc]; simp [hc']) hnd (flatList_mono ext1 hes)
@@ -515,16 +522,21 @@ theorem walk_fields_classify_spec {κ : _root_.Address → KKey} (hinj : Functio
       obtain rfl := binop_add_one_nat opf1
       have hlt : cs3.length < cs.length := by
         rw [hc]; simp only [List.length_cons, List.length_append]; omega
-      obtain ⟨-, xds, xri, xrm, xret, xns, ds, ns, ri, rm, ret, hr, h1, h2, h3, h4, h5, ⟨ab, hab⟩⟩ :=
+      obtain ⟨-, xds, xri, xrm, xret, xns, ds, ns, ri, rm, ret, hr, h1, h2, h3, h4, h5,
+          hdsIn, hretIn, hnsIn, ⟨ab, hab⟩⟩ :=
         walk_fields_classify_spec hinj hA hD hI hC hM
           (by simp only [peelAll, List.length_cons] at hbound; omega)
           evnext (sub fun c hc' => by rw [hc]; simp [hc'])
-          (hB.mono extAll) (flatList_mono extAll hes)
+          (rsub fun c hc' => by rw [hc]; simp [hc'])
+          (hB.mono extAll) hEin.2 (flatList_mono extAll hes)
           (tmOExactList_mono (ext4.trans (ext5.trans (ext6.trans ext7))) hdoms')
           (fieldList_mono ext7 hrec') hrecmem'
           (tmOExactList_mono (ext5.trans (ext6.trans ext7)) hnorm')
       refine ⟨hext, xds, xri, xrm, xret, xns, D :: ds, nd :: ns, fidx :: ri, m :: rm, ret, hr,
         by simpa using h1, by simpa using h2, by simpa using h3, h4, by simpa using h5,
+        (fun X hX => by rcases List.mem_cons.mp hX with rfl | hm; exact hEin.1; exact hdsIn X hm),
+        hretIn,
+        (fun X hX => by rcases List.mem_cons.mp hX with rfl | hm; exact hndIn; exact hnsIn X hm),
         ⟨max aw ab, fun f hf => ?_⟩⟩
       simp only [fieldsClassify, haw f f (by omega) (by omega), hab f (by omega), hrf_eq]
   | .Forall_other (x_dom := xdom) (x_body := xbody) (v36 := vnd) (m37 := m1) (cs47 := cs1)
@@ -534,8 +546,9 @@ theorem walk_fields_classify_spec {κ : _root_.Address → KKey} (hinj : Functio
       (hc496 := hc) (hnt0 := hnt) .. =>
     subst hm3 hm4 hm5
     obtain ⟨D, B, ℓ, rfl, hD1, hB, -⟩ := TmOExact.forallE_of_load hE ld
-    obtain ⟨ext1, nd, ⟨aw, haw⟩, hnd⟩ := whnf_tele_spec hA hD hI hC hM (cs1.length + 1)
-      (Nat.lt_succ_self _) evw (sub fun c hc' => by rw [hc]; simp [hc']) hD1
+    obtain ⟨ext1, nd, ⟨aw, haw⟩, hnd, hndIn⟩ := whnf_tele_spec hA hD hI hC hM (cs1.length + 1)
+      (Nat.lt_succ_self _) evw (sub fun c hc' => by rw [hc]; simp [hc'])
+      (rsub fun c hc' => by rw [hc]; simp [hc']) hD1 hEin.1
     obtain rfl := binop_add_nat oplb
     have hrf := is_rec_field_peel_spec hinj hA (by simp [peelAll] at hbound; omega) evrecf
       (sub fun c hc' => by rw [hc]; simp [hc']) hnd (flatList_mono ext1 hes)
@@ -561,16 +574,21 @@ theorem walk_fields_classify_spec {κ : _root_.Address → KKey} (hinj : Functio
       obtain rfl := binop_add_one_nat opf1
       have hlt : cs3.length < cs.length := by
         rw [hc]; simp only [List.length_cons, List.length_append]; omega
-      obtain ⟨-, xds, xri, xrm, xret, xns, ds, ns, ri, rm, ret, hr, h1, h2, h3, h4, h5, ⟨ab, hab⟩⟩ :=
+      obtain ⟨-, xds, xri, xrm, xret, xns, ds, ns, ri, rm, ret, hr, h1, h2, h3, h4, h5,
+          hdsIn, hretIn, hnsIn, ⟨ab, hab⟩⟩ :=
         walk_fields_classify_spec hinj hA hD hI hC hM
           (by simp only [peelAll, List.length_cons] at hbound; omega)
           evnext (sub fun c hc' => by rw [hc]; simp [hc'])
-          (hB.mono extAll) (flatList_mono extAll hes)
+          (rsub fun c hc' => by rw [hc]; simp [hc'])
+          (hB.mono extAll) hEin.2 (flatList_mono extAll hes)
           (tmOExactList_mono (ext4.trans ext5) hdoms')
           (fieldList_mono extAll hrec) (fieldList_mono extAll hrecmem)
           (tmOExactList_mono ext5 hnorm')
       refine ⟨hext, xds, xri, xrm, xret, xns, D :: ds, nd :: ns, ri, rm, ret, hr,
         by simpa using h1, h2, h3, h4, by simpa using h5,
+        (fun X hX => by rcases List.mem_cons.mp hX with rfl | hm; exact hEin.1; exact hdsIn X hm),
+        hretIn,
+        (fun X hX => by rcases List.mem_cons.mp hX with rfl | hm; exact hndIn; exact hnsIn X hm),
         ⟨max aw ab, fun f hf => ?_⟩⟩
       simp only [fieldsClassify, haw f f (by omega) (by omega), hab f (by omega), hrf_eq]
   | .Let (x_v := xv) (x_b := xb) (v_rjvjoyoq := v') (m_jfbjeidy := m')
@@ -582,7 +600,8 @@ theorem walk_fields_classify_spec {κ : _root_.Address → KKey} (hinj : Functio
     have hlt : cs2.length < cs.length := by
       rw [hc]; simp only [List.length_cons, List.length_append]; omega
     obtain ⟨-, res⟩ := walk_fields_classify_spec hinj hA hD hI hC hM hbound e2
-      (sub fun c hc' => by rw [hc]; simp [hc']) hv'
+      (sub fun c hc' => by rw [hc]; simp [hc'])
+      (rsub fun c hc' => by rw [hc]; simp [hc']) hv' hEin
       (flatList_mono ext1 hes) (tmOExactList_mono ext1 hdoms)
       (fieldList_mono ext1 hrec) (fieldList_mono ext1 hrecmem) (tmOExactList_mono ext1 hnorm)
     exact ⟨hext, res⟩
@@ -609,21 +628,24 @@ theorem walk_fields_classify_spec {κ : _root_.Address → KKey} (hinj : Functio
       by simpa using fieldList_mono evr4.heap_extends hrm,
       hE.mono (ext123.trans evr4.heap_extends),
       by simpa using hns,
+      (fun _ hm => nomatch hm), hEin, (fun _ hm => nomatch hm),
       Eventually.always hfc⟩
 termination_by _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ cs => cs.length
 
 /-- **`KernelCheck::walk_fields_classify`** starting from empty accumulators and `fidx = 0`. -/
-theorem walk_fields_classify_nil_spec {κ : _root_.Address → KKey} (hinj : Function.Injective κ)
-    {V : ReconView} (hA : AddrOf κ V) (hD : DefnAnswers κ V) (hI : IndAnswers κ V)
-    (hC : CtorOfAnswers V) (hM : ModeledAnswers V)
+theorem walk_fields_classify_nil_spec {rootCalls : List (Call F)} {S : _root_.Address → Prop}
+    {κ : _root_.Address → KKey} (hinj : Function.Injective κ)
+    {V : ReconView} (hA : AddrOf κ V) (hD : DefnAnswers rootCalls S κ V)
+    (hI : IndAnswers rootCalls S κ V) (hC : CtorOfAnswers rootCalls S V)
+    (hM : ModeledAnswers rootCalls S V)
     {es : List FlatEntry} {liftBy : Nat} {E : KExpr}
     {xrc xty xflat xdoms xrec xrecmem xnorm xtys r : SourceValue F}
     {h h' : Heap F} {cs : List (Call F)}
     (hbound : liftBy + (peelAll E).1.length < 4611686018427387904)
     (ev : ObsFn W "KernelCheck::walk_fields_classify"
       [xrc, xty, xflat, xdoms, xrec, xrecmem, xnorm, .field 0, .field (liftBy : F), xtys] h r h' cs)
-    (hbnd : IxVM.Consistency.Bounded cs)
-    (hE : TmOExact κ h E xty)
+    (hbnd : IxVM.Consistency.Bounded cs) (hsub : ∀ c ∈ cs, c ∈ rootCalls)
+    (hE : TmOExact κ h E xty) (hEin : AddrIn S κ E)
     (hes : RepList flatListEnum (FlatEntryRepExact κ) h es xflat)
     (hdoms : RepList kexprListEnum (TmOExact κ) h [] xdoms)
     (hrec : RepList fieldListEnum RepNatField h [] xrec)
@@ -638,11 +660,12 @@ theorem walk_fields_classify_nil_spec {κ : _root_.Address → KKey} (hinj : Fun
       RepList fieldListEnum RepNatField h' rm xrm ∧
       TmOExact κ h' ret xret ∧
       RepList kexprListEnum (TmOExact κ) h' ns xns ∧
+      (∀ D ∈ ds, AddrIn S κ D) ∧ AddrIn S κ ret ∧ (∀ N ∈ ns, AddrIn S κ N) ∧
       Eventually fun f => fieldsClassify V f es liftBy 0 E = some (ds, ri, rm, ret, ns) := by
   have ev' : ObsFn W "KernelCheck::walk_fields_classify"
       [xrc, xty, xflat, xdoms, xrec, xrecmem, xnorm, .field ((0 : Nat) : F),
         .field (liftBy : F), xtys] h r h' cs := by simpa using ev
-  simpa using walk_fields_classify_spec hinj hA hD hI hC hM (by omega) ev' hbnd hE hes hdoms hrec
-    hrecmem hnorm
+  simpa using walk_fields_classify_spec hinj hA hD hI hC hM (by omega) ev' hbnd hsub hE hEin hes
+    hdoms hrec hrecmem hnorm
 
 end IxVM.Refinement.Binding.FamilyRecon
