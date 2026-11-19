@@ -2,6 +2,7 @@ import IxVMRefinement.Assembly.TypingRecParent
 import IxVMRefinement.Assembly.RecursorSyntax
 import IxVMRefinement.Assembly.ProjSafe
 import IxVMRefinement.StatementRel.LoadedReadsCanonRec
+import IxVMRefinement.Claim.FamilyRefusedStandalone
 
 /-! # The parent family read at a recursor record, from the check of the record
 
@@ -45,8 +46,9 @@ open Ix.Kernel (ConstantInfo ConstantVal)
 
 /-- **The `Rec` arm of `check_const`**: the type's scope is validated at a heap after the
 check's, and `check_recursor_member` runs on the same value at a later heap, its calls among the
-check's. The other kinds' arms do not match a `Rec` value; the arm of a modeled block asserts
-the block is native, which it is not. -/
+check's. The other kinds' arms do not match a `Rec` value; the modeled route runs
+`KernelModeled::check_family` at the value's block field, which `hfr` refuses (at a standalone
+recursor record, `Claim.familyCheckRefused_of_recr`). -/
 theorem check_const_rec_route
     {rc levels type parameters indices motives minors rules k unsafeFlag block position addr
       result : SourceValue F}
@@ -54,7 +56,8 @@ theorem check_const_rec_route
     (observed : ObsFn Obs.W "KernelCheck::check_const"
       [rc, .construct "KernelTypes::KConstantInfo" "Rec"
         [levels, type, parameters, indices, motives, minors, rules, k, unsafeFlag, block,
-          position], addr] h result h' calls) :
+          position], addr] h result h' calls)
+    (hfr : Claim.FamilyCheckRefused rc block h calls) :
     ∃ (scopeBefore scopeAfter memberHeap : Heap F) (scopeResult : SourceValue F)
       (scopeCalls memberCalls : List (Call F)),
       Heap.Extends h scopeBefore ∧
@@ -85,8 +88,20 @@ theorem check_const_rec_route
   | .Ctor_other_other (hv1989 := shape) .. =>
     injection shape with _ tag _
     exact absurd tag (by decide)
-  | .Rec_other (heq3021 := native) (hne3094 := modeled) .. =>
-    exact absurd native modeled
+  | .Rec_other (m2789 := m2789) (m2857 := m2857) (ev14 := ev14) (hv2727 := shape)
+      (ev2801 := ev2801) (hm2865 := hm2865) (ev2838 := ev2838) (ev2882 := ev2882)
+      (ev2912 := ev2912) (ev2942 := ev2942) (ev2964 := ev2964) (ev2986 := ev2986)
+      (ev3157 := evf) (hc3182 := hcs) .. =>
+    -- the modeled route runs the family check at the value's block field, which is refused
+    injection shape with _ _ entries
+    simp only [List.cons.injEq] at entries
+    obtain ⟨-, -, -, -, -, -, -, -, -, hblock, -⟩ := entries
+    subst hblock
+    have enil : Heap.Extends m2789 m2857 := by rw [hm2865]; exact Heap.Extends.snoc m2789 _
+    exact (hfr _ _ _ _ _ (ev14.heap_extends.trans (ev2801.heap_extends.trans (enil.trans
+      (ev2838.heap_extends.trans (ev2882.heap_extends.trans (ev2912.heap_extends.trans
+      (ev2942.heap_extends.trans (ev2964.heap_extends.trans ev2986.heap_extends))))))))
+      (fun cl hcl => by rw [hcs]; simp [hcl]) evf).elim
   | .Rec_n0 (m2 := scopeBefore) (m2789 := scopeAfter) (m2857 := sortBefore)
       (m2826 := sortAfter) (m2870 := safeAfter) (m2900 := rulesAfter) (m2930 := kindsAfter)
       (m2952 := familyAfter) (m2974 := memberHeap)
@@ -182,7 +197,8 @@ def NativeRecArm (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel
       [rc, .construct "KernelTypes::KConstantInfo" "Rec"
         [levels, type, parameters, indices, motives, minors, rules, k, unsafeFlag, block, position],
         ap] m_chk r_chk h'_chk cs_chk ∧
-    (∀ cl ∈ cs_chk, cl ∈ calls)
+    (∀ cl ∈ cs_chk, cl ∈ calls) ∧
+    Claim.FamilyCheckRefused rc block m_chk cs_chk
 
 /-- **The check of the record took the recursor arm, at the limit `lim`**: `NativeRecArm` with
 the role context read as the core reads it (`Core.RCRep`), at a validating limit `some n` or
@@ -203,7 +219,8 @@ def RecArmRun (calls : List (Call F)) (t : Ix.Kernel.RoleTable) (A : _root_.Addr
       [rc, .construct "KernelTypes::KConstantInfo" "Rec"
         [levels, type, parameters, indices, motives, minors, rules, k, unsafeFlag, block, position],
         ap] m_chk r_chk h'_chk cs_chk ∧
-    (∀ cl ∈ cs_chk, cl ∈ calls)
+    (∀ cl ∈ cs_chk, cl ∈ calls) ∧
+    Claim.FamilyCheckRefused rc block m_chk cs_chk
 
 /-- The arm of a validating run is the arm at its limit. -/
 theorem NativeRecArm.run {calls : List (Call F)} {bAddr : _root_.Address}
@@ -211,10 +228,10 @@ theorem NativeRecArm.run {calls : List (Call F)} {bAddr : _root_.Address}
     (h : NativeRecArm calls bAddr t A n) : RecArmRun calls t A (some n) := by
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, hrc_pre, hrc_m, ha_pre, ha_m, ev_ld,
-    hsub_ld, hld, ev_chk, hsub_chk⟩ := h
+    hsub_ld, hld, ev_chk, hsub_chk, hfr⟩ := h
   exact ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, hrc_pre.toRCRep, hrc_m.toRCRep,
-    ha_pre, ha_m, ev_ld, hsub_ld, hld, ev_chk, hsub_chk⟩
+    ha_pre, ha_m, ev_ld, hsub_ld, hld, ev_chk, hsub_chk, hfr⟩
 
 /-- **The head of the major premise's domain is no basis name**, record-scoped: in every
 annotation of the record's type as read (positional level parameters, over the run's blobs),
@@ -276,7 +293,7 @@ theorem recParent_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     usedRefsStored_of_cover (hcover env ⟨hstep.ext, hstep.refs, hstep.fresh⟩) hinert
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, -, -, ha_pre, -, ev_ld, hsub_ld,
-    hld, ev_chk, hsub_chk⟩ := hnat
+    hld, ev_chk, hsub_chk, hfr⟩ := hnat
   obtain ⟨a', ha'_ref, haA⟩ := ha_pre
   subst haA
   -- the load of the record, traced
@@ -309,7 +326,7 @@ theorem recParent_of_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀
     (blob := fun x => E₀.blobs.get? x) ht (param := id) (self := soloSelf t (Core.ixAddr a'))
     rty (fun i x hx => by simp at hx) hblob
   obtain ⟨sB, sA, mH, sR, sCs, mCs, hextS, evS, hmemS, hextM, evM, hsubM⟩ :=
-    check_const_rec_route ev_chk
+    check_const_rec_route ev_chk hfr
   obtain ⟨-, hlbb, hdef⟩ := Assembly.validate_expr_well_scoped_spec
     (cx := readCtx t (fun x => E₀.blobs.get? x)) (self := soloSelf t (Core.ixAddr a'))
     hbound hlvls rty hextS htyP evS (hsub_chk _ hmemS)

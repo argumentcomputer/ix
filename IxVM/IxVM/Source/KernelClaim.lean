@@ -238,6 +238,7 @@ def run_check_transitive := aiur_fn⟦
             _ => {  run_check(rc, addr) } ,
           };
           assert_safe_record_refs(rc, addr, c);
+          assert_quot_record_refs(rc, addr, c);
           walk_refs_transitive(rc, refs, const_idxs_of(c), 0) } ,
       }
     }
@@ -425,6 +426,7 @@ def env_walk := aiur_fn⟦
                 _ => {  run_check(rc, addr) } ,
               };
               assert_safe_record_refs_under(rc, addr, c, asm);
+              assert_quot_record_refs(rc, addr, c);
               env_walk_refs(rc, refs, const_idxs_of(c), 0, owned, asm, next_strict) } ,
           } } ,
       }
@@ -647,6 +649,49 @@ def assert_safe_record_refs := aiur_fn⟦
     }
 ⟧
 
+  -- A record bound to a role of the quotient package is a quotient constant or an axiom
+  -- (`Quot.sound`), and every reference it uses is covered (bound to a walked role) or bound
+  -- to a quotient role. Quotient roles are not walked, so the top-level walk enters such a
+  -- record, and what it uses must stay among the prelude's roles.
+
+def assert_quot_record_refs := aiur_fn⟦
+  fn assert_quot_record_refs(rc: KernelRoles::RoleCtx, addr: Bytes::AddressRef, c: Ixon::Constant) -> () {
+      match KernelRoles::addr_quot_bound(rc, addr) {
+        0 => {  () } ,
+        _ => {
+          match c {
+            Ixon::Constant::Mk(info, _, refs, _, _) => {
+              let kind_ok = match info {
+                Ixon::ConstantInfo::Quot(_) => {  1 } ,
+                Ixon::ConstantInfo::Axio(_) => {  1 } ,
+                _ => {  0 } ,
+              };
+              assert_eq!(kind_ok, 1,
+                "a quotient role is bound to a record that is no quotient constant or axiom");
+              quot_refs_ok(rc, refs, const_idxs_of(c), 0) } ,
+          } } ,
+      }
+    }
+⟧
+
+def quot_refs_ok := aiur_fn⟦
+  fn quot_refs_ok(rc: KernelRoles::RoleCtx, refs: Lists::List<Bytes::AddressRef>,
+                  used: Lists::List<Field>, i: Field) -> () {
+      match (*(refs)) {
+        Lists::Node::Nil => {  () } ,
+        Lists::Node::Cons(r, rest) => {
+          match g_list_has(used, i) {
+            1 => {
+              assert_eq!(KernelRoles::addr_walked_role(rc, r) + KernelRoles::addr_quot_bound(rc, r), 1,
+                "a quotient-bound record uses a reference neither covered nor bound to a quotient role");
+              () } ,
+            _ => {  () } ,
+          };
+          quot_refs_ok(rc, rest, used, i + 1) } ,
+      }
+    }
+⟧
+
   -- An operation certificate is checked as logical evidence after substituting the
   -- operation's value. Its traversed dependencies are safe independently of record flags;
   -- the operation itself is excluded exactly as in the certificate's reference walk.
@@ -829,6 +874,7 @@ def env_walk_all := aiur_fn⟦
             _ => {  run_check(rc, addr) } ,
           };
           assert_safe_record_refs(rc, addr, c);
+          assert_quot_record_refs(rc, addr, c);
           env_walk_refs_all(rc, refs, const_idxs_of(c), 0) } ,
       }
     }

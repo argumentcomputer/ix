@@ -15,8 +15,10 @@ recursor record `A` (`c.info = .recr rc`):
   load decoded.
 * `TopWalkCore.recFamilyNative`: the family block. The `Rec` arm of `check_const` computes the
   block of the recursor's family (`KernelModeled::rec_family_block`: the block of the inductive
-  heading the carrier of the first motive) and asserts that `KernelModeled::block_is_modeled`
-  answers `0` on it (a recursor of a mutual or nested family is refused). The walk gives that
+  heading the carrier of the first motive) and takes the native route when
+  `KernelModeled::block_is_modeled` answers `0` on it; its modeled route runs the family check at
+  the record itself, which fails at a standalone recursor record
+  (`familyCheckRefused_of_recr`, carried by the arm). The walk gives that
   observation (`RecFamilyNativeObs`, one instance of what `Typing.NativeRouteAt` quantifies
   over, and `Typing.NativeAt` at a step's context through `NativeObsAt.nativeAt`), the block in
   the run store, the inductive projection record that names it, and that the block has exactly
@@ -445,7 +447,8 @@ def RecArmLimAt (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.
       [rc, .construct "KernelTypes::KConstantInfo" "Rec"
         [levels, type, parameters, indices, motives, minors, rules, k, unsafeFlag, block, position],
         ap] m_chk r_chk h'_chk cs_chk ∧
-    (∀ cl ∈ cs_chk, cl ∈ calls)
+    (∀ cl ∈ cs_chk, cl ∈ calls) ∧
+    FamilyCheckRefused rc block m_chk cs_chk
 
 section Walk
 
@@ -480,7 +483,8 @@ theorem TopWalkCore.recArm {lim : Option Nat}
   subst hvv
   exact ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, k, unsafeFlag, block, position, cs_load, cs_chk, hrc_pre, hrc_m,
-    ⟨ab, hab, hA⟩, ha_m, ev_ld, hsub_ld, hv, ev_chk, hsub_chk⟩
+    ⟨ab, hab, hA⟩, ha_m, ev_ld, hsub_ld, hv, ev_chk, hsub_chk,
+    familyCheckRefused_of_recr hW.runStore hc hinfo ⟨ab, hab, hA⟩ ev_ld hsub_ld hv hsub_chk⟩
 
 /-- **`NativeRecArm` from the walk** at a validating run: the recursor step's evidence at the
 record (`CheckedLimAt … (some n)` is `CheckedAtFullAt … n`). -/
@@ -491,10 +495,10 @@ theorem TopWalkCore.nativeRecArm {n : Nat}
     Typing.NativeRecArm calls bAddr t A n := by
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, k, unsafeFlag, block, position, cs_load, cs_chk, hrc_pre, hrc_m, ha_pre, ha_m,
-    ev_ld, hsub_ld, hld, ev_chk, hsub_chk⟩ := hW.recArm hT hc hinfo
+    ev_ld, hsub_ld, hld, ev_chk, hsub_chk, hfr⟩ := hW.recArm hT hc hinfo
   exact ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, k, unsafeFlag, block, position, cs_load, cs_chk, hrc_pre, hrc_m, ha_pre, ha_m,
-    ev_ld, hsub_ld, hld, ev_chk, hsub_chk⟩
+    ev_ld, hsub_ld, hld, ev_chk, hsub_chk, hfr⟩
 
 /-- **A8: the family block of a top-walked recursor record is a block of one inductive that the
 check found native**, at every limit. The `Rec` arm of `check_const` computed the family block
@@ -514,7 +518,7 @@ theorem TopWalkCore.recFamilyNative {lim : Option Nat}
         ∃ ind, ms.toList[ip.idx.toNat]? = some (.indc ind) := by
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, k, unsafeFlag, block, position, cs_load, cs_chk, -, -, -, ha_m,
-    -, -, -, ev_chk, hsub_chk⟩ := hW.recArm hT hc hinfo
+    -, -, -, ev_chk, hsub_chk, hfr⟩ := hW.recArm hT hc hinfo
   match Obs.«KernelCheck::check_const».obs ev_chk with
   | .Axiom_n1 (hv37 := shape) ..
   | .Axiom_other_n0 (hv37 := shape) ..
@@ -532,8 +536,20 @@ theorem TopWalkCore.recFamilyNative {lim : Option Nat}
   | .Ctor_other_other (hv1989 := shape) .. =>
     injection shape with _ tag _
     exact absurd tag (by decide)
-  | .Rec_other (heq3021 := native) (hne3094 := modeled) .. =>
-    exact absurd native modeled
+  | .Rec_other (m2789 := m2789) (m2857 := m2857) (ev14 := ev14) (hv2727 := shape)
+      (ev2801 := ev2801) (hm2865 := hm2865) (ev2838 := ev2838) (ev2882 := ev2882)
+      (ev2912 := ev2912) (ev2942 := ev2942) (ev2964 := ev2964) (ev2986 := ev2986)
+      (ev3157 := evf) (hc3182 := hcs) .. =>
+    -- the modeled route runs the family check at the value's block field, which is refused
+    injection shape with _ _ entries
+    simp only [List.cons.injEq] at entries
+    obtain ⟨-, -, -, -, -, -, -, -, -, hblock, -⟩ := entries
+    subst hblock
+    have enil : Heap.Extends m2789 m2857 := by rw [hm2865]; exact Heap.Extends.snoc m2789 _
+    exact (hfr _ _ _ _ _ (ev14.heap_extends.trans (ev2801.heap_extends.trans (enil.trans
+      (ev2838.heap_extends.trans (ev2882.heap_extends.trans (ev2912.heap_extends.trans
+      (ev2942.heap_extends.trans (ev2964.heap_extends.trans ev2986.heap_extends))))))))
+      (fun cl hcl => by rw [hcs]; simp [hcl]) evf).elim
   | .Rec_n0 (m2 := scopeBefore) (m2789 := scopeAfter) (m2857 := sortBefore)
       (m2826 := sortAfter) (m2870 := safeAfter) (m2900 := rulesAfter) (m2930 := kindsAfter)
       (v2951 := fb) (cs2962 := famCalls) (cs2984 := modCalls)

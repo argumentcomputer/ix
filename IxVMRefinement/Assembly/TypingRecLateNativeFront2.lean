@@ -420,7 +420,7 @@ theorem rec_front_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E 
     usedRefsStored_of_cover (hcover env ⟨hstep.ext, hstep.refs, hstep.fresh⟩) hinert
   obtain ⟨h_pre, m_chk, h'_chk, rcv, ap, ptr, r_chk, levels, type, parameters, indices, motives,
     minors, rules, kf, uns, block, position, cs_load, cs_chk, -, hrcM, ha_pre, -, ev_ld, hsub_ld,
-    hld, ev_chk, hsub_chk⟩ := hnat
+    hld, ev_chk, hsub_chk, hfr⟩ := hnat
   obtain ⟨rawB, cB, hszB, hhB, hbaB, hexB⟩ := get_ci_bytes_bound ha_pre ev_ld
   have hcB : cB = c := hS.record_eq hrec₀ (Core.hashed_mono hsub_ld hhB) hbaB hexB
   subst cB
@@ -454,7 +454,7 @@ theorem rec_front_arm {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E 
     (blob := fun x => E₀.blobs.get? x) ht (param := id) (self := soloSelf t (Core.ixAddr a'))
     rty (fun i x hx => by simp at hx) hblob
   obtain ⟨-, sB, sA, sortAfter, mH, sR, sortR, sCs, sortCs, mCs, hextS, evS, hmemS, evSort,
-    -, hsubSort, hextSM, evM, hsubM⟩ := check_const_rec_arm ev_chk
+    -, hsubSort, hextSM, evM, hsubM⟩ := check_const_rec_arm ev_chk hfr
   obtain ⟨-, hlbb, hdef⟩ := Assembly.validate_expr_well_scoped_spec
     (cx := readCtx t (fun x => E₀.blobs.get? x)) (self := soloSelf t (Core.ixAddr a'))
     hbound hlvls rty hextS htyP evS (hsub_chk _ hmemS)

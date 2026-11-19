@@ -288,9 +288,9 @@ theorem familyCall_block_nonempty (hS : LoadedReads.RunStore calls E₀)
   match Obs.«KernelModeled::check_family».obs ev with
   | .run (m105 := m105) (m501 := m501) (m589 := m589) (m624 := m624) (x_members := x_members)
       (cs511 := cs511) (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
-      (ev231 := ev231) (ev266 := ev266) (ev309 := ev309) (ev344 := ev344) (ev403 := ev403)
-      (ev435 := ev435) (ev465 := ev465) (ev513 := ev513) (ev601 := ev601) (ev634 := ev634)
-      (ev664 := ev664) (hc1474 := hc) .. =>
+      (ev_yqjbwijz := evo) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309) (ev344 := ev344)
+      (ev403 := ev403) (ev435 := ev435) (ev465 := ev465) (ev513 := ev513) (ev601 := ev601)
+      (ev634 := ev634) (ev664 := ev664) (hc1474 := hc) .. =>
     have e0 : Heap.Extends h m105 := by
       match sg112 with
       | .Nil (ev15 := ev15) (he33 := he33) .. =>
@@ -298,9 +298,9 @@ theorem familyCall_block_nonempty (hS : LoadedReads.RunStore calls E₀)
         exact ev15.heap_extends
       | .Node (heq97 := heq) .. => exact absurd (Value.field.inj heq) zero_ne_one
     have e453 := e0.trans (ev126.heap_extends.trans (ev148.heap_extends.trans
-      (ev194.heap_extends.trans (ev231.heap_extends.trans (ev266.heap_extends.trans
-      (ev309.heap_extends.trans (ev344.heap_extends.trans (ev403.heap_extends.trans
-      (ev435.heap_extends.trans ev465.heap_extends)))))))))
+      (ev194.heap_extends.trans (evo.heap_extends.trans (ev231.heap_extends.trans
+      (ev266.heap_extends.trans (ev309.heap_extends.trans (ev344.heap_extends.trans
+      (ev403.heap_extends.trans (ev435.heap_extends.trans ev465.heap_extends))))))))))
     have hsub511 : ∀ cl ∈ cs511, cl ∈ calls := fun cl hcl => hsub cl (by rw [hc]; simp [hcl])
     obtain ⟨-, bytes, c, hsz, hh, haddr, hex, hde, -, -, -, -, -, cRep⟩ :=
       L1.load_verified_constant_decode_bounded

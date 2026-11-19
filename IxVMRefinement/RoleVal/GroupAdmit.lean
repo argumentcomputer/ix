@@ -1845,46 +1845,46 @@ theorem validate_role_walks {t : Ix.Kernel.RoleTable} {g : Nat} {ro : Ix.Kernel.
     have ha_m111 : S0.addr m111 v1 a := S0.addr_mono ext_m111 ha_m2
     refine ⟨a, had, hci, fun hw => ?_, fun he => ?_⟩
     · have hsub_mem : ∀ cl ∈ cs140, cl ∈ calls := fun cl hm => by rw [hc183]; simp [hm]
-      cases Obs.«KernelRoles::validate_member».obs ev142 with
-      | n0 _ m2' _ _ m24' _ _ _ m40' _ m60' _ m88' _ _ _ _ _ _ _ _ _ _ m198' _ cs221'
-          ev14' ev50' ev70' ev36' ev101' _ ev208' _ ev223' hc240' =>
+      match Obs.«KernelRoles::validate_member».obs ev142 with
+      | .n0 (m198 := m198') (cs221 := cs221') (ev14 := ev14') (ev_wwewoqqa := evT')
+          (ev_boirmbwn := evN') (ev_wpzdvuuy := evS') (ev50 := ev50') (ev70 := ev70')
+          (ev36 := ev36') (ev101 := ev101') (ev208 := ev208') (ev223 := ev223')
+          (hc240 := hc240') .. =>
         have ext_w : Heap.Extends m111 m198' :=
-          ev14'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
-            (ev36'.heap_extends.trans (ev101'.heap_extends.trans ev208'.heap_extends))))
+          ev14'.heap_extends.trans (evT'.heap_extends.trans (evN'.heap_extends.trans
+            (evS'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
+              (ev36'.heap_extends.trans (ev101'.heap_extends.trans ev208'.heap_extends)))))))
         exact RunCheckIn.mono hsub_mem ⟨m198', h', x_rc, v1, r, cs221', hrc_m111.mono ext_w,
           S0.addr_mono ext_w ha_m111, ev223', by rw [hc240']; simp,
           fun cl hm => by rw [hc240']; simp [hm]⟩
-      | n1 _ m2' _ _ m24' _ _ _ m40' _ m60' _ m88' _ _ _ _ _ _ _ _ _ m307' _ _ _ _ _
-          m360' _ _ _ m379' _ _ _ _ _ _ _ _ _ _ m472' _ cs623'
-          ev14' ev50' ev70' ev36' ev101' _ ev319' ev389' ev376' _ ev482' _ _ _ _ _ ev625' hc642' =>
+      | .n1 (m472 := m472') (cs623 := cs623') (ev14 := ev14') (ev_wwewoqqa := evT')
+          (ev_boirmbwn := evN') (ev_wpzdvuuy := evS') (ev50 := ev50') (ev70 := ev70')
+          (ev36 := ev36') (ev101 := ev101') (ev319 := ev319') (ev389 := ev389')
+          (ev376 := ev376') (ev482 := ev482') (ev625 := ev625') (hc642 := hc642') .. =>
         have ext_w : Heap.Extends m111 m472' :=
-          ev14'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
-            (ev36'.heap_extends.trans (ev101'.heap_extends.trans (ev319'.heap_extends.trans
-              (ev389'.heap_extends.trans (ev376'.heap_extends.trans ev482'.heap_extends)))))))
+          ev14'.heap_extends.trans (evT'.heap_extends.trans (evN'.heap_extends.trans
+            (evS'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
+              (ev36'.heap_extends.trans (ev101'.heap_extends.trans (ev319'.heap_extends.trans
+                (ev389'.heap_extends.trans (ev376'.heap_extends.trans
+                  ev482'.heap_extends))))))))))
         exact RunCheckIn.mono hsub_mem ⟨m472', h', x_rc, v1, r, cs623', hrc_m111.mono ext_w,
           S0.addr_mono ext_w ha_m111, ev625', by rw [hc642']; simp,
           fun cl hm => by rw [hc642']; simp [hm]⟩
-      | n2 _ m2' _ _ m24' _ _ _ m40' _ m60' _ m88' _ _ _ _ _ _ _ _ _ _ _ _ cs735'
-          ev14' ev50' ev70' ev36' ev101' _ ev737' hc754' =>
-        have ext_w : Heap.Extends m111 m88' :=
-          ev14'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
-            (ev36'.heap_extends.trans ev101'.heap_extends)))
-        exact RunCheckIn.mono hsub_mem ⟨m88', h', x_rc, v1, r, cs735', hrc_m111.mono ext_w,
+      | .n2 (m88 := m88') (m_jareqtgy := mR') (cs735 := cs735') (ev14 := ev14')
+          (ev_wwewoqqa := evT') (ev_boirmbwn := evN') (ev_wpzdvuuy := evS') (ev50 := ev50')
+          (ev70 := ev70') (ev36 := ev36') (ev101 := ev101') (sg_ejvytjpf := sgR')
+          (ev737 := ev737') (hc754 := hc754') .. =>
+        have hR : mR' = m88' := by cases sgR' <;> assumption
+        subst hR
+        have ext_w : Heap.Extends m111 mR' :=
+          ev14'.heap_extends.trans (evT'.heap_extends.trans (evN'.heap_extends.trans
+            (evS'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
+              (ev36'.heap_extends.trans ev101'.heap_extends))))))
+        exact RunCheckIn.mono hsub_mem ⟨mR', h', x_rc, v1, r, cs735', hrc_m111.mono ext_w,
           S0.addr_mono ext_w ha_m111, ev737', by rw [hc754']; simp,
           fun cl hm => by rw [hc754']; simp [hm]⟩
-      | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev101' _ _ _ _ _ _ _ _ =>
-        obtain ⟨_, hmk⟩ := role_member_kind_lt3_of_walks hsk hw ev101'
-        rcases hmk with hmk | hmk | hmk <;> exact absurd (Value.field.inj hmk) (by decide)
-      | n4 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev101' _ _ =>
-        obtain ⟨_, hmk⟩ := role_member_kind_lt3_of_walks hsk hw ev101'
-        rcases hmk with hmk | hmk | hmk <;> exact absurd (Value.field.inj hmk) (by decide)
-      | n5 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev101' _ _ =>
-        obtain ⟨_, hmk⟩ := role_member_kind_lt3_of_walks hsk hw ev101'
-        rcases hmk with hmk | hmk | hmk <;> exact absurd (Value.field.inj hmk) (by decide)
-      | n6 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev101' _ _ =>
-        obtain ⟨_, hmk⟩ := role_member_kind_lt3_of_walks hsk hw ev101'
-        rcases hmk with hmk | hmk | hmk <;> exact absurd (Value.field.inj hmk) (by decide)
-      | n7 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev101' _ _ =>
+      | .n3 (ev101 := ev101') .. | .n4 (ev101 := ev101') .. | .n5 (ev101 := ev101') ..
+      | .n6 (ev101 := ev101') .. | .n7 (ev101 := ev101') .. =>
         obtain ⟨_, hmk⟩ := role_member_kind_lt3_of_walks hsk hw ev101'
         rcases hmk with hmk | hmk | hmk <;> exact absurd (Value.field.inj hmk) (by decide)
     · rcases roleSpecKind_of_roleHasEquations he with h2 | h5 <;> omega
@@ -2057,12 +2057,15 @@ theorem validate_role_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
         intro arr _ hm _
         have hreq := evidence_roleHasEquations_of_wf hwf hm
         rcases roleSpecKind_of_roleHasEquations hreq with h2 | h5 <;> omega
-      cases Obs.«KernelRoles::validate_member».obs ev142 with
-      | n0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ m198' _ cs221'
-          ev14' ev50' ev70' ev36' ev101' _ ev208' _ ev223' hc240' =>
+      match Obs.«KernelRoles::validate_member».obs ev142 with
+      | .n0 (m198 := m198') (cs221 := cs221') (ev14 := ev14') (ev_wwewoqqa := evT')
+          (ev_boirmbwn := evN') (ev_wpzdvuuy := evS') (ev50 := ev50') (ev70 := ev70')
+          (ev36 := ev36') (ev101 := ev101') (ev208 := ev208') (ev223 := ev223')
+          (hc240 := hc240') .. =>
         have ext_w : Heap.Extends m111 m198' :=
-          ev14'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
-            (ev36'.heap_extends.trans (ev101'.heap_extends.trans ev208'.heap_extends))))
+          ev14'.heap_extends.trans (evT'.heap_extends.trans (evN'.heap_extends.trans
+            (evS'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
+              (ev36'.heap_extends.trans (ev101'.heap_extends.trans ev208'.heap_extends)))))))
         obtain ⟨_, recs_a, hmem_a, hcl_a, _⟩ :=
           Claim.run_check_transitive_spec (hrc_m111.mono ext_w) (S0.addr_mono ext_w ha_m111) ev223'
         have hsub : ∀ cl ∈ cs221', cl ∈ calls := fun cl hm => by
@@ -2073,13 +2076,16 @@ theorem validate_role_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
         rw [had] at had'; injection had' with ha_eq; subst ha_eq
         rw [Claim.map_addr_walkedRec_mono]
         exact hmem_a
-      | n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-          _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ m472' _ cs623'
-          ev14' ev50' ev70' ev36' ev101' _ ev319' ev389' ev376' _ ev482' _ _ _ _ _ ev625' hc642' =>
+      | .n1 (m472 := m472') (cs623 := cs623') (ev14 := ev14') (ev_wwewoqqa := evT')
+          (ev_boirmbwn := evN') (ev_wpzdvuuy := evS') (ev50 := ev50') (ev70 := ev70')
+          (ev36 := ev36') (ev101 := ev101') (ev319 := ev319') (ev389 := ev389')
+          (ev376 := ev376') (ev482 := ev482') (ev625 := ev625') (hc642 := hc642') .. =>
         have ext_w : Heap.Extends m111 m472' :=
-          ev14'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
-            (ev36'.heap_extends.trans (ev101'.heap_extends.trans (ev319'.heap_extends.trans
-              (ev389'.heap_extends.trans (ev376'.heap_extends.trans ev482'.heap_extends)))))))
+          ev14'.heap_extends.trans (evT'.heap_extends.trans (evN'.heap_extends.trans
+            (evS'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
+              (ev36'.heap_extends.trans (ev101'.heap_extends.trans (ev319'.heap_extends.trans
+                (ev389'.heap_extends.trans (ev376'.heap_extends.trans
+                  ev482'.heap_extends))))))))))
         obtain ⟨_, recs_a, hmem_a, hcl_a, _⟩ :=
           Claim.run_check_transitive_spec (hrc_m111.mono ext_w) (S0.addr_mono ext_w ha_m111) ev625'
         have hsub : ∀ cl ∈ cs623', cl ∈ calls := fun cl hm => by
@@ -2090,11 +2096,16 @@ theorem validate_role_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
         rw [had] at had'; injection had' with ha_eq; subst ha_eq
         rw [Claim.map_addr_walkedRec_mono]
         exact hmem_a
-      | n2 _ _ _ _ _ _ _ _ _ _ _ _ m88' _ _ _ _ _ _ _ _ _ _ _ _ cs735'
-          ev14' ev50' ev70' ev36' ev101' _ ev737' hc754' =>
-        have ext_w : Heap.Extends m111 m88' :=
-          ev14'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
-            (ev36'.heap_extends.trans ev101'.heap_extends)))
+      | .n2 (m88 := m88') (m_jareqtgy := mR') (cs735 := cs735') (ev14 := ev14')
+          (ev_wwewoqqa := evT') (ev_boirmbwn := evN') (ev_wpzdvuuy := evS') (ev50 := ev50')
+          (ev70 := ev70') (ev36 := ev36') (ev101 := ev101') (sg_ejvytjpf := sgR')
+          (ev737 := ev737') (hc754 := hc754') .. =>
+        have hR : mR' = m88' := by cases sgR' <;> assumption
+        subst hR
+        have ext_w : Heap.Extends m111 mR' :=
+          ev14'.heap_extends.trans (evT'.heap_extends.trans (evN'.heap_extends.trans
+            (evS'.heap_extends.trans (ev50'.heap_extends.trans (ev70'.heap_extends.trans
+              (ev36'.heap_extends.trans ev101'.heap_extends))))))
         obtain ⟨_, recs_a, hmem_a, hcl_a, _⟩ :=
           Claim.run_check_transitive_spec (hrc_m111.mono ext_w) (S0.addr_mono ext_w ha_m111) ev737'
         have hsub : ∀ cl ∈ cs735', cl ∈ calls := fun cl hm => by
@@ -2105,19 +2116,8 @@ theorem validate_role_full_walks {t : Ix.Kernel.RoleTable} {bAddr : _root_.Addre
         rw [had] at had'; injection had' with ha_eq; subst ha_eq
         rw [Claim.map_addr_walkedRec_mono]
         exact hmem_a
-      | n3 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev101' _ _ _ _ _ _ _ _ =>
-        obtain ⟨_, hmk⟩ := role_member_kind_lt3_of_walks hsk hw ev101'
-        rcases hmk with hmk | hmk | hmk <;> exact absurd (Value.field.inj hmk) (by decide)
-      | n4 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev101' _ _ =>
-        obtain ⟨_, hmk⟩ := role_member_kind_lt3_of_walks hsk hw ev101'
-        rcases hmk with hmk | hmk | hmk <;> exact absurd (Value.field.inj hmk) (by decide)
-      | n5 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev101' _ _ =>
-        obtain ⟨_, hmk⟩ := role_member_kind_lt3_of_walks hsk hw ev101'
-        rcases hmk with hmk | hmk | hmk <;> exact absurd (Value.field.inj hmk) (by decide)
-      | n6 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev101' _ _ =>
-        obtain ⟨_, hmk⟩ := role_member_kind_lt3_of_walks hsk hw ev101'
-        rcases hmk with hmk | hmk | hmk <;> exact absurd (Value.field.inj hmk) (by decide)
-      | n7 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev101' _ _ =>
+      | .n3 (ev101 := ev101') .. | .n4 (ev101 := ev101') .. | .n5 (ev101 := ev101') ..
+      | .n6 (ev101 := ev101') .. | .n7 (ev101 := ev101') .. =>
         obtain ⟨_, hmk⟩ := role_member_kind_lt3_of_walks hsk hw ev101'
         rcases hmk with hmk | hmk | hmk <;> exact absurd (Value.field.inj hmk) (by decide)
     | n1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ ev124 _ _ =>
