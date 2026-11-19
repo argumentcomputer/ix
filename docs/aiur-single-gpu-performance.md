@@ -497,6 +497,11 @@ the full controller/acceptance measurement.
 
 ## 7. Preparation candidate
 
+This implementation is on branch `perf/aiur-single-gpu` (`5184ad11c`). The
+merged branch has an equivalent of its parallel depth-range counting but not
+of validating a prepared record once; that remains open in
+[§10 of the aggregate prover plan](aggregate-prover-perf-plan.md).
+
 The working implementation binds each `PreparedRecord` to a private identity
 of the backend that validated it. Repeated witness supplies check that identity
 and their local dimensions instead of rescanning the immutable record's depth

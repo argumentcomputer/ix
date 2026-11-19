@@ -376,6 +376,7 @@ tag match.
 | Index pre-sizing from the record model | not started (−2.6% with a sizes file) | Execution throughput, peak RSS | Per-table hint from per-function row shares |
 | GPU hint channels: `ixvm.io.read`, `stark.io.read*` | done (Init stall 1.65 → 1.45 s) | Stall (all claims) | Host versus GPU fill tests; Init root unchanged |
 | Sparse hints (`ixvm.io.tag`/`info`/`claim`), `<ROM:3>` admission | not started | Remaining ~1.5 s fill per claim | Per-circuit host fill report |
+| Validate a prepared record once per backend (§10) | not started; measured −15.6% proof generation on an older base | Proving host preparation | Init root unchanged; Init end to end against 362 s |
 | Next Mathlib proving run | after the above | All | Wall against 2:00:45; stall, idle, peak RSS |
 
 The per-shard record, the index and the hint channels all touch the executor or
@@ -863,3 +864,36 @@ variable and also ran the counting allocator.
     strides whose power-of-two chunk already fits a class within ~2%.
   - The budget should treat about 4% of held record bytes as uncharged,
     down from 20%.
+
+## 10. Validate a prepared record once (todo)
+
+Every witness supply still calls `validate_record_shape`
+(`crates/aiur/src/trace/stark/streaming.rs`, `timed_witness`), which reads
+every recorded depth of every table (`crates/aiur/src/trace.rs`). The record
+is immutable after preparation and `prepare_host_parts` has already run the
+full `validate_record` over it, so each supply repeats a whole-record scan.
+An Init claim makes 43 supplies per proof.
+
+Commit `5184ad11c` on `perf/aiur-single-gpu` removed this scan: a prepared
+record carries the identity of the backend that validated it, and a supply
+checks that identity and its own dimensions instead. On base `4e27c5fcd` it
+cut the summed per-supply validation from 9.05 s to almost nothing and
+median Init-claim proof generation from 49.3 s to 41.6 s (−15.6%), with
+identical proof bytes ([single-GPU plan §§7–8](aiur-single-gpu-performance.md)).
+The same commit's parallel depth-range counting already has an equivalent
+here (`depth_ranges`); only the validate-once half is missing.
+
+The gain on this branch is unmeasured. Depths are now u32 columns, and
+population overlaps proving, so the scan may cost less or sit partly off the
+critical path; merged Init reports 2.8 s of witness stall in total.
+
+- **Change:** keep the per-table shape checks on a supply of a prepared
+  record and skip the per-row depth loop; reject a preparation made by
+  another backend or plan. Port the commit's regression tests (another
+  backend's preparation rejected, reuse after the owner moves, out-of-field
+  depths rejected).
+- **Gate:** Init root unchanged and Init end to end against 362 s. Keep it
+  only if the gain clears 5%.
+- **Optional:** the commit's `profile_proof` example and
+  `PreparationTimings` (about 500 lines) time a single proof's preparation
+  phases; port them only if this or later preparation work needs them.
