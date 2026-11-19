@@ -1585,7 +1585,8 @@ private theorem check_witnesses_spec_ext {K : FamRunCtx}
       obtain ⟨rfl, rfl⟩ := hpair
       subst hh hm
       exact ⟨Heap.Extends.snoc h _, [], Lib.rep_store_nil h, fun _ hw => by cases hw⟩
-    | .other (m184 := m184) (cs127 := cs127) (cs194 := cs194) (ev59 := ev_ga) (ev94 := ev_rb)
+    | .other (x_x := x_x) (x_s3 := x_s3) (m157 := m157) (m184 := m184) (cs127 := cs127)
+        (cs194 := cs194) (ev59 := ev_ga) (ev94 := ev_rb)
         (ev_updedcyj := ev_ord) (ev167 := ev_u8) (ev129 := ev_cw) (ev196 := ev_rest)
         (he254 := hr) (hm264 := hm) (he291 := hh) (hc292 := hc) .. =>
       have hlen' : cs194.length ≤ m := by
@@ -1630,7 +1631,7 @@ private theorem check_witnesses_spec_ext {K : FamRunCtx}
       rcases List.mem_cons.mp hw with rfl | hw_rest
       · rcases hcw_res with hwb | ⟨hk2, cx, hcx, hkind⟩
         · exact Or.inl hwb
-        · refine Or.inr ⟨_, _, _, ext_pre, S0.addr_mono ext_pre hblk,
+        · refine Or.inr ⟨m157, x_x, x_s3, ext_pre, S0.addr_mono ext_pre hblk,
             ⟨w, Bytes.repAddressRef_heapMono₂ Core.addrTy ev_ord.heap_extends ha_rep, rfl⟩,
             ?_, cx, hcx, hkind⟩
           rw [hc, ← hk2]
