@@ -799,33 +799,35 @@ theorem check_witness_spec {calls : List (Call F)} {bAddr : _root_.Address}
         ⟨b_x, Bytes.repAddressRef_heapMono₂ Core.addrTy extW hx, rfl⟩,
         ⟨b_ib, hbIb, rfl⟩,
         evCr, hsubCr⟩))⟩
-  | .n3 (m_mxierpbv := mW) (v684 := v684) (m685 := m685) (hv447 := hk3) (ev461 := evCnt)
-      (cs_frlxnmjz := csW) (ev_ndaajwbz := evW)
+  | .n3 (x_iblock := x_iblock) (m570 := m570) (v684 := v684) (m685 := m685) (hv447 := hk3)
+      (ev461 := evCnt) (cs_frlxnmjz := csW) (ev_ndaajwbz := evW)
       (ev547 := evIdx) (ev582 := evC1) (cs687 := csSg) (sg692 := sg)
       (ev717 := evEq) (heq740 := heq1) (cs_gufnlnhk := csCi) (ev_gwtfngxo := evCi)
       (ev_xxjagmga := evCov) (he742 := hr) (he743 := hh) (hc744 := hcs) .. =>
     obtain ⟨n, bytes2, -, hnEq, hs2, hm449⟩ := get_count_spec hs evCnt
-    subst hnEq hm449
+    subst hnEq
     have hsubW : ∀ cl ∈ csW, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     have hsubSg : ∀ cl ∈ csSg, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     have hsubCi : ∀ cl ∈ csCi, cl ∈ calls := fun cl hcl => hsub cl (by rw [hcs]; simp [hcl])
     obtain ⟨b_ib, bytes3, hbIb, hs3, hpos⟩ :=
-      walk_from_block_spec hC.runStore hC.hashedStored hblk hs2 evW hsubW
+      walk_from_block_spec hC.runStore hC.hashedStored (by rw [hm449]; exact hblk) hs2 evW hsubW
     obtain ⟨idx, bytes4, -, hidxEq, hs4, hm535⟩ := get_count_spec hs3 evIdx
-    subst hidxEq hm535
+    subst hidxEq
     obtain ⟨c1, bytes5, -, hc1Eq, hs5, hm570⟩ := get_count_spec hs4 evC1
-    subst hc1Eq hm570
+    subst hc1Eq
+    have hbIb570 : Bytes.RepAddressRef Core.addrTy m570 b_ib x_iblock := by
+      rw [hm570, hm535]; exact hbIb
     have hprojHash : ∃ (a_out : Bytes.Address) (c_proj : Ixon.Constant),
         IsProj c_proj ∧ Ix.Cert.ownerOf (Core.ixAddr a_out) c_proj = Core.ixAddr b_ib ∧
         usedRefIdxs c_proj = [] ∧
         Bytes.RepAddressRef Core.addrTy m685 a_out v684 ∧
         Core.ixAddr a_out = Address.blake3Pure (Ixon.serConstant c_proj) ∧
         Hashed calls (Ixon.serConstant c_proj) ∧
-        c_proj.wireWF ∧ Heap.Extends mW m685 := by
+        c_proj.wireWF ∧ Heap.Extends m570 m685 := by
       match sg with
       | .n0 (cs621 := csP) (ev623 := evP) (hc640 := hcsP) .. =>
         obtain ⟨a_out, c_proj, rfl, haOut, hixOut, hhashP, hwfP⟩ :=
-          compute_iprj_addr_raw (t := t) hbIb evP
+          compute_iprj_addr_raw (t := t) hbIb570 evP
         have hsubP : ∀ cl ∈ csP, cl ∈ calls := fun cl hcl => hsubSg cl (by rw [hcsP]; simp [hcl])
         exact ⟨a_out, _, Or.inr (Or.inl ⟨_, rfl⟩), rfl, rfl, haOut, hixOut,
           Core.hashed_mono hsubP hhashP, hwfP, evP.heap_extends⟩
@@ -833,12 +835,14 @@ theorem check_witness_spec {calls : List (Call F)} {bAddr : _root_.Address}
         simp only [evalBinOp, Except.ok.injEq] at opSub
         subst opSub
         obtain ⟨a_out, c_proj, rfl, haOut, hixOut, hhashP, hwfP⟩ :=
-          projection_addr_ctor_raw (t := t) hbIb evP
+          projection_addr_ctor_raw (t := t) hbIb570 evP
         have hsubP : ∀ cl ∈ csP, cl ∈ calls := fun cl hcl => hsubSg cl (by rw [hcsP]; simp [hcl])
         exact ⟨a_out, _, Or.inr (Or.inr (Or.inl ⟨_, rfl⟩)), rfl, rfl, haOut, hixOut,
           Core.hashed_mono hsubP hhashP, hwfP, evP.heap_extends⟩
     obtain ⟨a_out, c_proj, hpr, hownEq, husedNil, haOut, hixOut, hhashP, hwfP, extSg⟩ := hprojHash
-    have hx685 := Bytes.repAddressRef_heapMono₂ Core.addrTy (evW.heap_extends.trans extSg) hx
+    have ext570 : Heap.Extends h m570 := by
+      rw [hm570, hm535, ← hm449]; exact evW.heap_extends
+    have hx685 := Bytes.repAddressRef_heapMono₂ Core.addrTy (ext570.trans extSg) hx
     obtain ⟨heqV, hmEq⟩ := Lib.address_eq_spec evEq haOut hx685
     have ea : a_out = b_x := by
       by_cases hne : a_out = b_x
@@ -2120,6 +2124,8 @@ theorem check_advice_record_spec {calls : List (Call F)} {bAddr : _root_.Address
           obtain ⟨hindV, hmIc⟩ := Core.ModeledAux.muts_indc_count_spec
             (Decl.membersRep_of_repMutConstList hmsList) evIc
           rw [← Obs.Names.«Lists::length<Ixon::MutConst>».symbol, hmIc] at evLen
+          change RepList Obs.Names.«Lists::Node<Ixon::MutConst>» L1.RepMutConst m2 ms.toList
+            x_members at hmsList
           rw [← Obs.Names.«Lists::Node<Ixon::MutConst>».symbol] at hmsList
           obtain ⟨hlenV, -⟩ := Lib.Lists.length_spec evLen hmsList
           have hfeq : ((ms.toList.filter Core.Specs.Callees.isIndc).length : F) =
