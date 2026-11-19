@@ -35,9 +35,8 @@ open IxVM (F)
 open IxVM.Consistency
 open IxVM.Refinement.Binding.FamilyFlat
 open IxVM.Refinement.Core (W KExpr KLevel KKey bmeta kexprEnum kexprListEnum kciEnum
-  addrTy addrListEnum ixAddr ixAddr_inj)
-open IxVM.Refinement.Levels (RepKLevel RepKLevelList klevelEnum klevelListEnum)
-open IxVM.Refinement.Obs (ObsFn)
+  addrTy addrListEnum ixAddr)
+open IxVM.Refinement.KernelLevels (RepKLevel RepKLevelList klevelEnum klevelListEnum)
 
 set_option maxHeartbeats 2400000
 set_option maxRecDepth 100000
@@ -49,18 +48,10 @@ set_option linter.unusedSimpArgs false
 private def fieldTyG : Generic.Ty := .field
 
 private def addrTyG : Generic.Ty :=
-  .ptr (.tuple (List.replicate 32 .field))
+  .ptr (.array .field 32)
 
 private def kexprTyG : Generic.Ty :=
-  .ptr (.enum "KernelTypes::KExprNode")
-
-private def flatEntryTyG : Generic.Ty :=
-  .tuple [
-    .ptr (.tuple (List.replicate 32 .field)),
-    .field,
-    .ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KExprNode>»),
-    .ptr (.enum Obs.Names.«Lists::Node<&KernelTypes::KLevelNode>»)
-  ]
+  .ptr (.named "KernelTypes::KExprNode" [])
 
 theorem kexpr_drop_spec {R : Heap F → KExpr → SourceValue F → Prop} {xs : List KExpr}
     {l r : SourceValue F} {n : F} {h h' : Heap F} {cs : List (Call F)}
@@ -524,7 +515,8 @@ theorem build_flat_own_params_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
         fop.length = es.length ∧
         (∀ n ∈ fop, n < 72057594037927936) ∧
         RepList fieldListEnum RepNatField h' fop r := by
-  have hIA := indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+  have hIA : IndAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
+    indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
   intro es
   induction es with
   | nil =>
@@ -551,7 +543,7 @@ theorem build_flat_own_params_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
       injection htup with hl; injection hl with hxa _; subst hxa
       obtain ⟨hSe, info0, hinfo0⟩ := hall e (List.mem_cons_self ..)
       rw [← hae] at hSe hinfo0
-      obtain ⟨hInd, hOther⟩ := hIA xa pci vci h m1 cs1 ae
+      obtain ⟨hInd, hOther⟩ := hIA
         (fun c hc' => hsub c (by rw [hc]; simp [hc'])) hSe rae evci ldci
       have hsg : ∃ info, indDataAt t E₀ (ixAddr ae) = some (some info) ∧
           info.np < 72057594037927936 ∧ vnp = .field (info.np : F) ∧ m2 = m1 := by
@@ -639,7 +631,8 @@ theorem ctors_before_pos_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTab
       ∃ cb : Nat,
         ctorsBefore (ReconView.ofStore t E₀) es (target - cur) = some cb ∧
         cb ≤ tot ∧ r = .field (cb : F) := by
-  have hIA := indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+  have hIA : IndAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
+    indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
   intro es
   induction es with
   | nil =>
@@ -688,7 +681,7 @@ theorem ctors_before_pos_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTab
             obtain ⟨_, _, _, ae, htup, rae, hae, -, -⟩ := he'
             injection htup with hl; injection hl with hxa _; subst hxa
             have hSe : Held R (ixAddr ae) := hae ▸ hheld e (List.mem_cons_self ..)
-            obtain ⟨hInd, hOther⟩ := hIA xa pci vci h m1 cs1 ae
+            obtain ⟨hInd, hOther⟩ := hIA
               (fun c hc' => hsub c (by rw [hc]; simp [hc'])) hSe rae evci ldci
             have hsg : vnc = .field (info0.nctors : F) ∧ m2 = m1 := by
               cases sg with
@@ -756,7 +749,7 @@ theorem RecordFlatAux.toRecordFlat {t : Ix.Kernel.RoleTable} {E : Ixon.Env}
 entry `i < j` can match entry `j` on `(addr)` (for non-auxiliaries) or `(addr, params, levels)`
 (for auxiliaries, where every earlier matching address is also auxiliary). -/
 def FlatPeerDistinct (es : List FlatEntry) : Prop :=
-  ∀ i j ei ej, i < j → es[i]? = some ei → es[j]? = some ej →
+  ∀ (i j : Nat) (ei ej : FlatEntry), i < j → es[i]? = some ei → es[j]? = some ej →
     if ej.aux then
       ei.addr ≠ ej.addr ∨ (ei.aux = true ∧ (ei.params ≠ ej.params ∨ ei.levels ≠ ej.levels))
     else
@@ -873,76 +866,91 @@ private theorem buildFlatAuxStep_peerDistinct {t : Ix.Kernel.RoleTable} {E₀ : 
     | defn _ | indc _ => exact ih (pos + 1) acc res h hnonaux hpd
     | recr rc =>
       unfold buildFlatAuxStep at h
-      split at h
-      · cases h
-      · split at h
-        · cases h
-        · split at h
-          · split at h
-            · cases h
-            · split at h
-              · cases h
-              · exact ih (pos + 1) acc res h hnonaux hpd
-              · rename_i ty _ d _ k us _ paddr _ info hinfo
-                split at h
-                · exact ih (pos + 1) acc res h hnonaux hpd
-                · rename_i hblk_ne
-                  have hne_prim : info.blk ≠ prim := by
-                    intro heq; exact hblk_ne (by simp [heq])
-                  dsimp only at h
-                  split at h
-                  · exact ih (pos + 1) acc res h hnonaux hpd
-                  · rename_i hnot_in
+      cases hty : loadedAt t (fun x => E₀.blobs.get? x) crb (blockSelf t rb rs) rc.lvls.toNat
+          (mutsRoot rs pos) rc.typ with
+      | none => simp [hty] at h
+      | some ty =>
+        simp only [hty] at h
+        cases hd : binderDomAfter
+            (rc.params.toNat + rc.motives.toNat + rc.minors.toNat + rc.indices.toNat) ty with
+        | none => simp [hd] at h
+        | some d =>
+          simp only [hd] at h
+          cases hfn : d.getAppFn with
+          | const k us =>
+            simp only [hfn] at h
+            cases hka : keyAddr t k with
+            | none => simp [hka] at h
+            | some paddr =>
+              simp only [hka] at h
+              cases hinfo : indInfoAt E₀ paddr with
+              | none => simp [hinfo] at h
+              | some opt =>
+                cases opt with
+                | none =>
+                  simp only [hinfo] at h
+                  exact ih (pos + 1) acc res h hnonaux hpd
+                | some info =>
+                  simp only [hinfo] at h
+                  by_cases hblk : info.blk == prim
+                  · simp only [hblk, ↓reduceIte] at h
+                    exact ih (pos + 1) acc res h hnonaux hpd
+                  · simp only [hblk, Bool.false_eq_true, ↓reduceIte] at h
+                    have hne_prim : info.blk ≠ prim := fun heq => hblk (by simp [heq])
                     set sp := (d.getAppArgs.take info.np).map
                       (Ix.Kernel.Expr.lowerBVars (rc.motives.toNat + rc.minors.toNat + rc.indices.toNat) 0)
-                    let newE : FlatEntry := ⟨paddr, true, sp, us⟩
-                    have hnonaux' : ∀ e ∈ acc ++ [newE], e.aux = false →
-                        ∃ info', indInfoAt E₀ e.addr = some (some info') ∧ info'.blk = prim := by
-                      intro e he hf
-                      simp only [List.mem_append, List.mem_singleton] at he
-                      rcases he with hm | rfl
-                      · exact hnonaux e hm hf
-                      · cases hf
-                    have hpd' : FlatPeerDistinct (acc ++ [newE]) := by
-                      intro i j ei ej hij hi hj
-                      by_cases hj_lt : j < acc.length
-                      · rw [List.getElem?_append_left (by omega)] at hi
-                        rw [List.getElem?_append_left hj_lt] at hj
-                        exact hpd i j ei ej hij hi hj
-                      · have hj_eq : j = acc.length := by
-                          have := (List.getElem?_eq_some_iff.mp hj).1
-                          simp only [List.length_append, List.length_singleton] at this
-                          omega
-                        subst hj_eq
-                        rw [List.getElem?_append_right (Nat.le_refl _), Nat.sub_self,
-                          List.getElem?_cons_zero, Option.some.injEq] at hj
-                        subst hj
-                        rw [List.getElem?_append_left hij] at hi
-                        have hei_mem : ei ∈ acc := List.mem_of_getElem? hi
-                        simp only [newE, ↓reduceIte]
-                        cases haux_i : ei.aux with
-                        | false =>
-                          left
-                          intro had_eq
-                          obtain ⟨info_i, hinfo_i, hblk_i⟩ := hnonaux ei hei_mem haux_i
-                          rw [had_eq, hinfo] at hinfo_i
-                          injection hinfo_i with h1; injection h1 with h2
-                          rw [h2] at hblk_i
-                          exact hne_prim hblk_i
-                        | true =>
-                          by_cases had_eq : ei.addr = paddr
-                          · right
-                            refine ⟨rfl, ?_⟩
-                            by_cases hsp_eq : ei.params = sp
-                            · right; intro hus_eq
-                              have hany : auxEntryIn acc paddr sp us = true :=
-                                List.any_eq_true.mpr ⟨ei, hei_mem, by
-                                  simp [haux_i, had_eq, hsp_eq, hus_eq]⟩
-                              exact hnot_in hany
-                            · exact .inl hsp_eq
-                          · exact .inl had_eq
-                    exact ih (pos + 1) (acc ++ [newE]) res h hnonaux' hpd'
-          · cases h
+                    by_cases hin : auxEntryIn acc paddr sp us
+                    · simp only [hin, ↓reduceIte] at h
+                      exact ih (pos + 1) acc res h hnonaux hpd
+                    · simp only [hin, Bool.false_eq_true, ↓reduceIte] at h
+                      let newE : FlatEntry := ⟨paddr, true, sp, us⟩
+                      have hnonaux' : ∀ e ∈ acc ++ [newE], e.aux = false →
+                          ∃ info', indInfoAt E₀ e.addr = some (some info') ∧ info'.blk = prim := by
+                        intro e he hf
+                        simp only [List.mem_append, List.mem_singleton] at he
+                        rcases he with hm | rfl
+                        · exact hnonaux e hm hf
+                        · cases hf
+                      have hpd' : FlatPeerDistinct (acc ++ [newE]) := by
+                        intro i j ei ej hij hi hj
+                        by_cases hj_lt : j < acc.length
+                        · rw [List.getElem?_append_left (by omega)] at hi
+                          rw [List.getElem?_append_left hj_lt] at hj
+                          exact hpd i j ei ej hij hi hj
+                        · have hj_eq : j = acc.length := by
+                            have := (List.getElem?_eq_some_iff.mp hj).1
+                            simp only [List.length_append, List.length_singleton] at this
+                            omega
+                          subst hj_eq
+                          rw [List.getElem?_append_right (Nat.le_refl _), Nat.sub_self,
+                            List.getElem?_cons_zero, Option.some.injEq] at hj
+                          subst hj
+                          rw [List.getElem?_append_left hij] at hi
+                          have hei_mem : ei ∈ acc := List.mem_of_getElem? hi
+                          simp only [newE, ↓reduceIte]
+                          cases haux_i : ei.aux with
+                          | false =>
+                            left
+                            intro had_eq
+                            obtain ⟨info_i, hinfo_i, hblk_i⟩ := hnonaux ei hei_mem haux_i
+                            rw [had_eq, hinfo] at hinfo_i
+                            injection hinfo_i with h1; injection h1 with h2
+                            rw [h2] at hblk_i
+                            exact hne_prim hblk_i
+                          | true =>
+                            by_cases had_eq : ei.addr = paddr
+                            · right
+                              refine ⟨rfl, ?_⟩
+                              by_cases hsp_eq : ei.params = sp
+                              · right; intro hus_eq
+                                have hany : auxEntryIn acc paddr sp us = true :=
+                                  List.any_eq_true.mpr ⟨ei, hei_mem, by
+                                    simp [haux_i, had_eq, hsp_eq, hus_eq]⟩
+                                exact hin hany
+                              · exact .inl hsp_eq
+                            · exact .inl had_eq
+                      exact ih (pos + 1) (acc ++ [newE]) res h hnonaux' hpd'
+          | _ => simp [hfn] at h
 
 /-- Under `UsedClosed R`, any flattened list `flat` built by `originals` + `buildFlatAuxStep`
 satisfies `FlatPeerDistinct flat` (with zero collision hypothesis). -/
@@ -1835,11 +1843,15 @@ theorem build_minor_at_depth_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Rol
   have bnd : ∀ {cs' : List (Call F)}, (∀ c ∈ cs', c ∈ cs) → Bounded cs' :=
     fun hs => RomBound.bounded_mono hbd (sub hs)
   have hinj : Function.Injective (Core.keyOf t) := fun _ _ he => Core.keyOf_inj hwf he
-  have hA := addrOf_ofStore (E₀ := E₀) hwf
-  have hD := defnAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
-  have hI := indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
-  have hC := ctorOfAnswers_ofStore hS hH hbd hRsub hcl
-  have hM := modeledAnswers_ofStore hS hbd
+  have hA : AddrOf (Core.keyOf t) (ReconView.ofStore t E₀) := addrOf_ofStore (E₀ := E₀) hwf
+  have hD : DefnAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
+    defnAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+  have hI : IndAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
+    indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+  have hC : CtorOfAnswers rootCalls (Held R) (ReconView.ofStore t E₀) :=
+    ctorOfAnswers_ofStore hS hH hbd hRsub hcl
+  have hM : ModeledAnswers rootCalls (Held R) (ReconView.ofStore t E₀) :=
+    modeledAnswers_ofStore hS hbd
   match Obs.«KernelCheck::build_minor_at_depth».obs ev with
   | .run (v1 := vctyI) (m2 := m1) (cs12 := cs1) (v31 := vminSaved) (x39 := x39) (v58 := vbelow)
       (v76 := vptypes) (m77 := m2) (cs87 := cs2) (v114 := vafter) (m115 := m3) (cs125 := cs3)
@@ -2075,7 +2087,8 @@ theorem build_all_minors_walk_rawLen {rootCalls : List (Call F)} {t : Ix.Kernel.
       ∃ tot : Nat,
         flatTotalCtors (ReconView.ofStore t E₀) es = some tot ∧
         RepList kexprListEnum (fun _ (_ : Unit) _ => True) h' (List.replicate tot ()) r := by
-  have hIA := indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+  have hIA : IndAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
+    indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
   intro es
   induction es with
   | nil =>
@@ -2099,7 +2112,7 @@ theorem build_all_minors_walk_rawLen {rootCalls : List (Call F)} {t : Ix.Kernel.
       injection htup with hl; injection hl with hxa _; subst hxa
       obtain ⟨hSe, _, hinfo0⟩ := hall e (List.mem_cons_self ..)
       rw [← hae] at hSe hinfo0
-      obtain ⟨-, hOther⟩ := hIA xa pci vci h m1 cs1 ae
+      obtain ⟨-, hOther⟩ := hIA
         (fun c hc' => hsub c (by rw [hc]; simp [hc'])) hSe rae evci ldci
       have hnone := hOther hne
       change indDataAt t E₀ (ixAddr ae) = some none at hnone
@@ -2114,7 +2127,7 @@ theorem build_all_minors_walk_rawLen {rootCalls : List (Call F)} {t : Ix.Kernel.
       injection htup with hl; injection hl with hxa _; subst hxa
       obtain ⟨hSe, -, -⟩ := hall e (List.mem_cons_self ..)
       rw [← hae] at hSe
-      obtain ⟨hInd, -⟩ := hIA xa pci _ h m1 cs1 ae
+      obtain ⟨hInd, -⟩ := hIA
         (fun c hc' => hsub c (by rw [hc]; simp [hc'])) hSe rae evci ldci
       obtain ⟨info, hia, -, -, -, hnc56, -, -, -, -, -, hncEq, -, -, -⟩ :=
         hInd _ _ _ _ _ _ _ _ rfl
@@ -2316,7 +2329,8 @@ theorem build_all_minors_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
           elim es prev pos = some ms) ∧
         RepList kexprListEnum (TmOExact (Core.keyOf t)) h' ms r ∧
         (∀ m ∈ ms, AddrIn (Held R) (Core.keyOf t) m) := by
-  have hIA := indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+  have hIA : IndAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
+    indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
   intro es
   induction es with
   | nil =>
@@ -2353,7 +2367,7 @@ theorem build_all_minors_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
             obtain ⟨_, _, _, ae, htup, rae, hae, -, -⟩ := he'
             injection htup with hl; injection hl with hxa _; subst hxa
             have hSe : Held R (ixAddr ae) := hae ▸ (hesS e (List.mem_cons_self ..)).1
-            obtain ⟨-, hOther⟩ := hIA xa pci vci h m1 cs1 ae
+            obtain ⟨-, hOther⟩ := hIA
               (sub fun cl hcl' => by rw [hcs]; simp [hcl']) hSe rae evci ldci
             have hnone := hOther hne
             change indDataAt t E₀ (ixAddr ae) = some none at hnone
@@ -2373,7 +2387,7 @@ theorem build_all_minors_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Ro
             obtain ⟨rfl, rfl, rfl, rfl⟩ := htup
             obtain ⟨hSe, hspIn⟩ := hesS e (List.mem_cons_self ..)
             have hSe' : Held R (ixAddr ae) := hae ▸ hSe
-            obtain ⟨hInd, -⟩ := hIA xa' pci _ h m1 cs1 ae
+            obtain ⟨hInd, -⟩ := hIA
               (sub fun cl hcl' => by rw [hcs]; simp [hcl']) hSe' rae evci ldci
             obtain ⟨info, hia, -, -, -, hnc56, hidx56, -, -, -, -, hncEq, ba, hba, rba, hidxEq⟩ :=
               hInd _ _ _ _ _ _ _ _ rfl
@@ -2488,11 +2502,15 @@ theorem build_motive_type_flat_spec {rootCalls : List (Call F)} {t : Ix.Kernel.R
     fun hs cl hcl' => hsub cl (hs cl hcl')
   have bnd : ∀ {cs' : List (Call F)}, (∀ cl ∈ cs', cl ∈ cs) → Bounded cs' :=
     fun hs => RomBound.bounded_mono hbd (sub hs)
-  have hA := addrOf_ofStore (E₀ := E₀) hwf
-  have hD := defnAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
-  have hI := indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
-  have hC := ctorOfAnswers_ofStore hS hH hbd hRsub hcl
-  have hM := modeledAnswers_ofStore hS hbd
+  have hA : AddrOf (Core.keyOf t) (ReconView.ofStore t E₀) := addrOf_ofStore (E₀ := E₀) hwf
+  have hD : DefnAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
+    defnAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+  have hI : IndAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
+    indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+  have hC : CtorOfAnswers rootCalls (Held R) (ReconView.ofStore t E₀) :=
+    ctorOfAnswers_ofStore hS hH hbd hRsub hcl
+  have hM : ModeledAnswers rootCalls (Held R) (ReconView.ofStore t E₀) :=
+    modeledAnswers_ofStore hS hbd
   match Obs.«KernelCheck::build_motive_type_flat».obs ev with
   | .run (v1 := vtyI) (m2 := m1) (cs12 := cs1) (v31 := vafter) (m32 := m2) (cs42 := cs2)
       (v92 := vidxD) (m93 := m3) (cs103 := cs3) (m139 := m4) (v169 := vargs) (m170 := m5)
@@ -2587,7 +2605,8 @@ theorem build_all_motives_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.R
         Eventually (fun f => allMotives (ReconView.ofStore t E₀) f elim nrp es j = some ms) ∧
         RepList kexprListEnum (TmOExact (Core.keyOf t)) h' ms r ∧
         (∀ m ∈ ms, AddrIn (Held R) (Core.keyOf t) m) := by
-  have hIA := indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+  have hIA : IndAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
+    indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
   intro es
   induction es with
   | nil =>
@@ -2615,7 +2634,7 @@ theorem build_all_motives_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.R
       injection htup with hl; injection hl with hxa _; subst hxa
       obtain ⟨hSe, ⟨_, hinfo0⟩, -⟩ := hall e (List.mem_cons_self ..)
       rw [← hae] at hSe hinfo0
-      obtain ⟨-, hOther⟩ := hIA xa pci vci h m1 cs1 ae
+      obtain ⟨-, hOther⟩ := hIA
         (sub fun cl hcl' => by rw [hcs]; simp [hcl']) hSe rae evci ldci
       have hnone := hOther hne
       change indDataAt t E₀ (ixAddr ae) = some none at hnone
@@ -2635,7 +2654,7 @@ theorem build_all_motives_walk_spec {rootCalls : List (Call F)} {t : Ix.Kernel.R
       obtain ⟨rfl, rfl, rfl, rfl⟩ := htup
       obtain ⟨hSe, -, hspIn⟩ := hall e (List.mem_cons_self ..)
       have hSe' : Held R (ixAddr ae) := hae ▸ hSe
-      obtain ⟨hInd, -⟩ := hIA xa' pci _ h m1 cs1 ae
+      obtain ⟨hInd, -⟩ := hIA
         (sub fun cl hcl' => by rw [hcs]; simp [hcl']) hSe' rae evci ldci
       obtain ⟨info, hia, -, hnp56, hni56, -, -, -, hty_tm, htyIn, hnpEq, hniEq, -⟩ :=
         hInd _ _ _ _ _ _ _ _ rfl
@@ -2733,11 +2752,15 @@ theorem build_rec_type_from_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Role
     fun hs cl hcl' => hsub cl (hs cl hcl')
   have bnd : ∀ {cs' : List (Call F)}, (∀ cl ∈ cs', cl ∈ cs) → Bounded cs' :=
     fun hs => RomBound.bounded_mono hbd (sub hs)
-  have hA := addrOf_ofStore (E₀ := E₀) hwf
-  have hD := defnAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
-  have hI := indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
-  have hC := ctorOfAnswers_ofStore hS hH hbd hRsub hcl
-  have hM := modeledAnswers_ofStore hS hbd
+  have hA : AddrOf (Core.keyOf t) (ReconView.ofStore t E₀) := addrOf_ofStore (E₀ := E₀) hwf
+  have hD : DefnAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
+    defnAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+  have hI : IndAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
+    indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+  have hC : CtorOfAnswers rootCalls (Held R) (ReconView.ofStore t E₀) :=
+    ctorOfAnswers_ofStore hS hH hbd hRsub hcl
+  have hM : ModeledAnswers rootCalls (Held R) (ReconView.ofStore t E₀) :=
+    modeledAnswers_ofStore hS hbd
   have hk_lt : k < es.length := (List.getElem?_eq_some_iff.mp hek).1
   match Obs.«KernelCheck::build_rec_type_from».obs ev with
   | .run (v1 := vnMot) (m2 := m1) (cs12 := cs1) (v32 := vpUs) (m33 := m2) (cs43 := cs2)
@@ -2816,7 +2839,7 @@ theorem build_rec_type_from_spec {rootCalls : List (Call F)} {t : Ix.Kernel.Role
     obtain ⟨rfl, rfl, rfl, rfl⟩ := htupS
     obtain ⟨hSek, -, hsspIn⟩ := hall ek (List.mem_of_getElem? hek)
     have hSek' : Held R (ixAddr sa) := hsa ▸ hSek
-    obtain ⟨hInd, -⟩ := hI xsa' pci _ m6 m9 cs9 sa
+    obtain ⟨hInd, -⟩ := hI
       (sub fun c hc' => by rw [hc]; simp [hc']) hSek' rsa evci ldci
     obtain ⟨self', hself', -, hsnp56, -, -, -, -, hsty_tm, hstyIn, hsnpEq, -⟩ :=
       hInd _ _ _ _ _ _ _ _ rfl
@@ -2961,7 +2984,8 @@ theorem build_rec_type_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
       TmOExact (Core.keyOf t) h' Rty r := by
   have sub : ∀ {cs' : List (Call F)}, (∀ cl ∈ cs', cl ∈ cs) → ∀ cl ∈ cs', cl ∈ rootCalls :=
     fun hs cl hcl' => hsub cl (hs cl hcl')
-  have hI := indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+  have hI : IndAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
+    indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
   match Obs.«KernelCheck::build_rec_type».obs ev with
   | .other (m2 := m1) (x_prim_addr := xpa) (v57 := vci) (m58 := m2) (p66 := pci) (cs72 := cs2)
       (ev15 := evfma) (ev74 := evci) (ld68 := ldci) (hne238 := hne) (hc344 := hc) .. =>
@@ -2972,7 +2996,7 @@ theorem build_rec_type_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
     obtain ⟨_, _, _, pa, htup, rpa, hpa, -, -⟩ := hrep0
     injection htup with hl; injection hl with h1 _; subst h1
     have hSe0 : Held R (ixAddr pa) := hpa ▸ (hall e0 (List.mem_of_getElem? he0)).1
-    obtain ⟨-, hOther⟩ := hI xpa pci vci h m2 cs2 pa
+    obtain ⟨-, hOther⟩ := hI
       (sub fun c hc' => by rw [hc]; simp [hc']) hSe0 rpa evci ldci
     have hnone := hOther hne
     change indDataAt t E₀ (ixAddr pa) = some none at hnone
@@ -2987,7 +3011,7 @@ theorem build_rec_type_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
     obtain ⟨_, _, _, pa, htup, rpa, hpa, -, -⟩ := hrep0
     injection htup with hl; injection hl with h1 _; subst h1
     have hSe0 : Held R (ixAddr pa) := hpa ▸ (hall e0 (List.mem_of_getElem? he0)).1
-    obtain ⟨hInd, -⟩ := hI xpa pci _ h m2 cs2 pa
+    obtain ⟨hInd, -⟩ := hI
       (sub fun c hc' => by rw [hc]; simp [hc']) hSe0 rpa evci ldci
     obtain ⟨prim', hprim', hnl32, -, -, -, -, hnlEq, hpty, hptyIn, -⟩ := hInd _ _ _ _ _ _ _ _ rfl
     rw [← hpa] at hprim_ind
@@ -3237,11 +3261,15 @@ theorem build_rule_rhs_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable
   have bnd : ∀ {cs' : List (Call F)}, (∀ cl ∈ cs', cl ∈ cs) → Bounded cs' :=
     fun hs => RomBound.bounded_mono hbd (sub hs)
   have hinj : Function.Injective (Core.keyOf t) := fun _ _ he => Core.keyOf_inj hwf he
-  have hA := addrOf_ofStore (E₀ := E₀) hwf
-  have hD := defnAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
-  have hI := indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
-  have hC := ctorOfAnswers_ofStore hS hH hbd hRsub hcl
-  have hM := modeledAnswers_ofStore hS hbd
+  have hA : AddrOf (Core.keyOf t) (ReconView.ofStore t E₀) := addrOf_ofStore (E₀ := E₀) hwf
+  have hD : DefnAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
+    defnAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+  have hI : IndAnswers rootCalls (Held R) (Core.keyOf t) (ReconView.ofStore t E₀) :=
+    indAnswers_ofStore ht hwf hS hH hbd hRsub hcl hlv
+  have hC : CtorOfAnswers rootCalls (Held R) (ReconView.ofStore t E₀) :=
+    ctorOfAnswers_ofStore hS hH hbd hRsub hcl
+  have hM : ModeledAnswers rootCalls (Held R) (ReconView.ofStore t E₀) :=
+    modeledAnswers_ofStore hS hbd
   match Obs.«KernelCheck::build_rule_rhs».obs ev with
   | .run (v1 := vctyI) (m2 := m1) (cs12 := cs1) (v31 := vraw) (m32 := m2) (cs_mdzbjznf := cs2)
       (v61 := vnf) (m62 := m3) (cs72 := cs3) (v90 := vtot) (x98 := x98) (x106 := x106)
