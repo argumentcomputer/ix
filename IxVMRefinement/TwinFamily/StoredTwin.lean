@@ -71,6 +71,41 @@ structure StoredTwinCanon (t : Ix.Kernel.RoleTable) (R : Ixon.Env) (envT : Ix.Ke
       BlockDerivedFlat t R B off es
   stored : ∀ x, ConstAddrOf rb crb x → StoredAt t envT x
   installed : FamilyInstalled t envT rb crb
+  recs : ∀ cb, recordOf R B = some cb → Binding.StoredFamilyRecs t R envT B cb rb crb
+
+/-- **Canonical loaded form of each stored recursor member** (`TwinMemberLoaded`), projected
+from `StoredTwinCanon`. -/
+theorem StoredTwinCanon.recLoaded {t : Ix.Kernel.RoleTable} (ht : t.check = .ok ())
+    {R : Ixon.Env} {envT : Ix.Kernel.Env .anon}
+    {famOf : _root_.Address → Option _root_.Address} {B rb : _root_.Address}
+    {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
+    (h : StoredTwinCanon t R envT famOf B rb crb)
+    (hcb : recordOf R B = some cb) (hms : cb.info = .muts ms) (hrs : crb.info = .muts rs)
+    (p : Ixon.RecursorProj) (rc : Ixon.Recursor) (cv : Ix.Kernel.ConstantVal .anon)
+    (mI rP : Nat) (rules₀ : List (Ix.Kernel.RecRule .anon)) (cv' : Ix.Kernel.ConstantVal .anon)
+    (mI' rP' : Nat) (rules' : List (Ix.Kernel.RecRule .anon))
+    (hp : p.block = rb) (hm : rs[p.idx.toNat]? = some (.recr rc))
+    (hRR : RecReads t (recordOf R) (fun x => R.blobs.get? x) crb (blockSelf t rb rs)
+      (keyOf t (memberAddr rb p.idx.toNat (.recr rc))) rc (.recInfo cv mI rP rules₀))
+    (hf : envT.find? (keyOf t (memberAddr rb p.idx.toNat (.recr rc))) =
+      some (.recInfo cv' mI' rP' rules')) :
+    TwinMemberLoaded crb rs p rc cv.levelParams cv.type rules₀ cv' rules' :=
+  (h.recs cb hcb).recLoaded ht hms hrs p rc cv mI rP rules₀ cv' mI' rP' rules' hp hm hRR hf
+
+/-- **No stored recursor type mentions any recursor key of the family record**, projected from
+`StoredTwinCanon`. -/
+theorem StoredTwinCanon.recNoSelf {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
+    {envT : Ix.Kernel.Env .anon} {famOf : _root_.Address → Option _root_.Address}
+    {B rb : _root_.Address} {cb crb : Ixon.Constant} {ms rs : Array Ixon.MutConst}
+    (h : StoredTwinCanon t R envT famOf B rb crb)
+    (hcb : recordOf R B = some cb) (hms : cb.info = .muts ms) (hrs : crb.info = .muts rs)
+    {k j : Nat} {rc_k rc_j : Ixon.Recursor} {cv' : Ix.Kernel.ConstantVal .anon}
+    {mI' rP' : Nat} {rules' : List (Ix.Kernel.RecRule .anon)}
+    (hk : rs[k]? = some (.recr rc_k)) (hj : rs[j]? = some (.recr rc_j))
+    (hf : envT.find? (keyOf t (memberAddr rb k (.recr rc_k))) =
+      some (.recInfo cv' mI' rP' rules')) :
+    cv'.type.mentionsConst (keyOf t (memberAddr rb j (.recr rc_j))) = false :=
+  (h.recs cb hcb).recNoSelf hms hrs hk hj hf
 
 /-- **The witness's choice at a selected record.** -/
 theorem storedTwinCanon_of_selected {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
@@ -83,7 +118,8 @@ theorem storedTwinCanon_of_selected {t : Ix.Kernel.RoleTable} {R : Ixon.Env}
   have e : crb' = crb := Option.some.inj (hf.record.record.symm.trans hcrb)
   rw [e] at hf hrf
   obtain ⟨hst, hinst⟩ := h.installed B rb crb hsel hcrb
-  exact ⟨hsel, ⟨cb, ms, rs, es, off, hf, hrf, hbd⟩, hst, hinst⟩
+  exact ⟨hsel, ⟨cb, ms, rs, es, off, hf, hrf, hbd⟩, hst, hinst,
+    fun cb' hcb' => h.recs B rb cb' crb hsel hcb' hcrb⟩
 
 /-- **The witness's choice at a stored modeled block** (the first import of the typing half,
 `Binding.storedFamily_of_clause`). -/
@@ -160,6 +196,7 @@ def TwinSeamStored (RFormS : StoredFormPred) : Prop :=
     (∀ x, UsedRef E₀ rb' x →
       (env.find? (keyOf t x)).isSome = true ∨ ConstAddrOf rb' crb' x ∨ ¬ NeedOk E₀ x) →
     FamilyInstalled t env rb crb →
+    Binding.StoredFamilyRecs t R env B cb rb crb →
     (∀ x, ConstAddrOf rb' crb' x → env.find? (keyOf t x) = none) →
     (∀ x, ConstAddrOf rb' crb' x → Decl.KeyFree (keyOf t x)) →
     ∃ ds : List Decl.TwinMemberData,
@@ -384,12 +421,14 @@ theorem storedTwinStepFam_of {L : Ix.Kernel.Env .anon → NativeFam .anon → Pr
       exact hx0
     exact hns _ hx0 (hcanon.stored _ hx1)
   have hinst : FamilyInstalled t env rb crb := familyInstalled_of_ext hext hnd hcanon.installed
+  have hrecs : Binding.StoredFamilyRecs t R env B cb rb crb :=
+    (hcanon.recs cb hfam.block.record).mono_env hext hnd
   have hkey : ∀ x, ConstAddrOf A c x → Decl.KeyFree (keyOf t x) :=
     fun x hx => keyFree_of_not_stored hctx.shape ht (hns x hx)
   exact twinTargetConcl_of_parts ht hctx.toStepStore hA hsz hinv hX.1.1.2 hinst hfresh
     (hseam calls bAddr t E₀ E R envT env B rb A cb crb c ms rs rs' flat lim cs ht hWc.runStore
-      hctx hext hnd hfam (hRF B rb hcanon.selected) hflatA hsz hne hcall hinv href hinst hfresh
-      hkey)
+      hctx hext hnd hfam (hRF B rb hcanon.selected) hflatA hsz hne hcall hinv href hinst hrecs
+      hfresh hkey)
 
 /-! ## What the composition consumes -/
 

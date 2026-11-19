@@ -1,5 +1,6 @@
 import IxVMRefinement.FamilyAlias.CallStreams
 import IxVMRefinement.Obs.KernelModeled2
+import IxVMRefinement.Obs.KernelModeled4
 import IxVMRefinement.Assembly.FamilyArm
 
 /-! # The tables `check_family` renames over
@@ -421,6 +422,39 @@ theorem family_tables {calls : List (Call F)} {E₀ : Ixon.Env}
       typeModels := hT
       ctorModels := hC
       recModels := hR' }, rfl, bR, hs8.mono X884⟩
+
+/-- **`KernelModeled::block_nparams`** reads the parameter count of the block's first inductive
+member as a field element below `2^56`. -/
+theorem block_nparams_spec {h h' : Heap F} {ms : Array Ixon.MutConst}
+    {x_members r : SourceValue F} {cs : List (Call F)}
+    (hrep : RepList (Instance.mk "Lists::Node" [.named "Ixon::MutConst" []]).symbol
+      L1.RepMutConst h ms.toList x_members)
+    (ev : ObsFn W "KernelModeled::block_nparams" [x_members] h r h' cs) :
+    ∀ ind₀, ms[0]? = some (.indc ind₀) →
+      ind₀.params.toNat < 72057594037927936 ∧ r = .field (ind₀.params.toNat : F) := by
+  match Obs.«KernelModeled::block_nparams».obs ev with
+  | .run (x_params := x_params) (v102 := v102) (ld12 := ld12) (ev115 := ev115) (he173 := hr) .. =>
+    obtain ⟨m0, rest, hms_cons, hm0_rep, -⟩ := Lib.rep_cons_of_load hrep ld12
+    intro ind₀ h0
+    have hm0_eq : m0 = .indc ind₀ := by
+      have h0' : ms.toList[0]? = some (.indc ind₀) := by rw [Array.getElem?_toList]; exact h0
+      rw [hms_cons] at h0'
+      exact Option.some.inj h0'
+    subst hm0_eq
+    obtain ⟨iv, hiv_eq, typPtr, ctorsPtr, hind_eq, -, -⟩ := hm0_rep
+    injection hiv_eq with _ _ hargs1
+    injection hargs1 with hiv _
+    rw [hind_eq] at hiv
+    injection hiv with _ _ hargs2
+    injection hargs2 with _ hargs2
+    injection hargs2 with _ hargs2
+    injection hargs2 with hparams_eq _
+    have hru : Deserialize.RepU64 h ind₀.params x_params := by
+      rw [← hparams_eq]
+      exact Deserialize.repU64_u64Value h ind₀.params
+    obtain ⟨hlt, hval, -⟩ := Lib.u64_to_field_spec hru ev115
+    rw [hr]
+    exact ⟨hlt, hval⟩
 
 /-- **The tables of an observed family check** (`family_tables` at the check's unfolding), at a
 heap that extends the check's. The calls of the check are among the run's; the check's own calls

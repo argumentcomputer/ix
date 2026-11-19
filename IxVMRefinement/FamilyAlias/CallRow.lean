@@ -931,9 +931,37 @@ theorem familyCall_checked_of_chain
       [rc, C.tys, C.recs, C.recM, C.src, C.dst, C.aset, C.s8, C.nRecs, .field ((0 : Nat) : F),
         C.np, C.uo, C.bnl, C.recs, .field 0] C.m1293 C.s9 h' C.evCheckRecs.cs := by
     rw [Nat.cast_zero]; exact C.evCheckRecs.obs
+  -- Header-count equations (`block_nparams` and `nRecs = rs.size`) for `check_recs`
+  have hnp_ind0 : ∀ ind₀, ms[0]? = some (.indc ind₀) →
+      ind₀.params.toNat < 72057594037927936 ∧ C.np = .field (ind₀.params.toNat : F) := by
+    obtain ⟨cb', ms', hbl, hrepM⟩ := Claim.load_block_head hbB453 C.evLoadBlk.obs
+    obtain ⟨hrec', hmuts'⟩ := (hbl.mono (fun cl hcl => hsub cl (C.evLoadBlk.sub cl hcl))).stored hH
+    have e1 : cb = cb' := Option.some.inj (hB'.record.symm.trans hrec')
+    subst e1
+    have e2 : ms = ms' := Ixon.ConstantInfo.muts.inj (hB'.muts.symm.trans hmuts')
+    subst e2
+    have hrepM' : RepList (Instance.mk "Lists::Node" [.named "Ixon::MutConst" []]).symbol
+        L1.RepMutConst C.m624 ms.toList C.members := by
+      rw [Obs.Names.«Lists::Node<Ixon::MutConst>».symbol]
+      exact RepLinkedList.mono (fun _ _ _ _ ext r => r.mono ext)
+        (C.evLenMem.extends.trans C.evIndcCnt.extends) hrepM
+    exact block_nparams_spec hrepM' C.evNParams.obs
+  have hn_rs : rs.size < 72057594037927936 ∧ C.nRecs = .field (rs.size : F) := by
+    have hrs_lt : rs.size < 8589934592 := by
+      have ext_453_784 : Heap.Extends C.m453 C.m784 :=
+        C.evLoadBlk.extends.trans (C.evLenMem.extends.trans (C.evIndcCnt.extends.trans
+          (C.evNParams.extends.trans (C.evTypes.extends.trans (C.evTypeMods.extends.trans
+            (C.evCtors.extends.trans (C.evLenCtors.extends.trans C.evCtorMods.extends)))))))
+      exact family_recs_bound hS hH
+        (Bytes.repAddressRef_heapMono₂ addrTy ext_453_784 hbR453) C.evRecs.obs
+        (fun cl hcl => hsub cl (C.evRecs.sub cl hcl)) hR'
+    have hlen_r : recAs.length = rs.size := by
+      have e := congrArg List.length T.recs
+      simpa only [List.length_map, List.length_mapIdx, Array.length_toList] using e
+    exact ⟨by omega, by rw [← hlen_r]; exact hnRecs_eq⟩
   obtain ⟨recsBlk, recsTys, rhsss, thmsList, hlen_rB, hlen_rT, hlen_rh, hlen_th, hRecAt0⟩ :=
     checkRecs_walk ht hbd hS hH hB hR T.types T.ctors T.recs hlenSD hlenNR hctorLookup hrecRefs
-      htypeAs_cons ha0_eq hms0 hind0_lvls_lt hrs_u64 hbnl_eq huo
+      htypeAs_cons ha0_eq hms0 hind0_lvls_lt hrs_u64 hbnl_eq huo hnp_ind0 hn_rs
       0 recAs recMs (by omega) T.recModels.symm hrecAs_k hgr_k hrecMs_sub hrecItems_f2
       (fun cl hcl => hsub cl (C.evCheckRecs.sub cl hcl))
       (rcRep_of_rcLimRep (hrc.mono ext_h_1293))
@@ -1015,7 +1043,7 @@ theorem familyCall_checked_of_chain
   obtain ⟨hnonrecs_eq, hrecs_eq⟩ := nonrecsOf_append_recs hnonrecs_kind hrecs_kind
   -- 11. `FamilyTysCanon` (store-free)
   have hcanon : FamilyTysCanon t E₀ B cb ms rb crb rs blk tys rhsss := by
-    refine ⟨?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, hrs_u64, ?_⟩
     · -- `.ind`
       intro k ci tyA hk htyA i ind ty₀ hi_u64 hmi hname hread
       rw [hnonrecs_eq] at hk
@@ -1185,6 +1213,61 @@ theorem familyCall_checked_of_chain
           notK := D_k.hnotK
           ty := by rw [hk_eq_p]; exact D_k.hcanon_ty
           rules := by rw [hk_eq_p]; exact D_k.hcanon_rules }
+    · -- `.recMeta`
+      intro k cv mI rP rules₀ tyA rhss hk htyA hrhss p rc hpb hrp hname _
+      rw [hrecs_eq] at hk
+      rw [hnonrecs_eq] at htyA
+      have hk_lt : k < recAs.length := by
+        have := (List.getElem?_eq_some_iff.mp hk).1; omega
+      obtain ⟨rc_k, D_k, hrk, hb_k, ht_k, hrh_k, -⟩ := hRecAt k hk_lt
+      have hinfo_k : ConstantInfo.recInfo cv mI rP rules₀ = D_k.recInfo :=
+        Option.some.inj (hk.symm.trans hb_k)
+      unfold RecMemberData.recInfo at hinfo_k
+      injection hinfo_k with hcv_eq hmI_eq hrP_eq hrules_eq
+      subst hcv_eq; subst hmI_eq; subst hrP_eq; subst hrules_eq
+      rw [List.getElem?_append_right (by omega),
+        show nonrecsBlk.length + k - nonrecsTys.length = k by omega] at htyA
+      have htyA_eq : tyA = D_k.tyA := Option.some.inj (htyA.symm.trans ht_k)
+      have hrhss_eq : rhss = D_k.rhss := Option.some.inj (hrhss.symm.trans hrh_k)
+      subst htyA_eq; subst hrhss_eq
+      have haddr_eq : rprjAddr rb k = memberAddr rb p.idx.toNat (.recr rc) :=
+        Core.keyOf_inj htwf hname
+      have hrec_k : recordOf E₀ (rprjAddr rb k) = some (memberProjection rb k (.recr rc_k)) := by
+        rw [← LoadedReads.memberAddr_recr]; exact hR.members k (.recr rc_k) hrk
+      have hrec_p : recordOf E₀ (memberAddr rb p.idx.toNat (.recr rc)) =
+          some (memberProjection rb p.idx.toNat (.recr rc)) :=
+        hR.members p.idx.toNat (.recr rc) hrp
+      rw [haddr_eq] at hrec_k
+      have hp_eq := congrArg Ixon.Constant.info (Option.some.inj (hrec_k.symm.trans hrec_p))
+      simp only [memberProjection, Ixon.ConstantInfo.rPrj.injEq,
+        Ixon.RecursorProj.mk.injEq] at hp_eq
+      have hk_eq_p : p.idx.toNat = k := by
+        have hk_u64 : k < UInt64.size := Nat.lt_trans (by omega) hrs_u64
+        have hp_u64 : p.idx.toNat < UInt64.size := p.idx.toNat_lt_size
+        rw [← toNat_toUInt64_lt_cr hk_u64, ← toNat_toUInt64_lt_cr hp_u64, hp_eq.1]
+      have hrc_eq : rc = rc_k := by
+        rw [hk_eq_p] at hrp
+        exact Ixon.MutConst.recr.inj (Option.some.inj (hrp.symm.trans hrk))
+      subst hrc_eq
+      obtain ⟨DM, lvlsM, -, hpiM, hfnM, -⟩ := D_k.hhead
+      refine ⟨fun j rc_j hj => ?_, D_k.hnp_eq_ind0, D_k.hmot_eq_rs,
+        ⟨D_k.ipM.block, D_k.ipM.idx.toNat, D_k.cbM, D_k.msM, D_k.indM, DM, lvlsM,
+          D_k.ipM.idx.toNat_lt_size, by rw [← D_k.haIndM_can]; exact D_k.husedIndM,
+          by rw [← D_k.haIndM_can, ← D_k.hcmM_can]; exact D_k.hrecM,
+          D_k.hrecBM, D_k.hmutsM, D_k.hmsM, hpiM, by rw [← D_k.haIndM_can]; exact hfnM,
+          D_k.hni_eq_indM⟩,
+        D_k.hconcl⟩
+      have hj_lt : j < recAs.length := by
+        have h1 := (Array.getElem?_eq_some_iff.mp hj).1
+        have hlen_r : recAs.length = rs.size := by
+          have e := congrArg List.length T.recs
+          simpa only [List.length_map, List.length_mapIdx, Array.length_toList] using e
+        omega
+      have hment_j := D_k.hment recAs[j] (List.getElem_mem hj_lt)
+      have ha_j := hrecAs_k j hj_lt
+      rw [Nat.zero_add, ← LoadedReads.memberAddr_recr (rc := rc_j)] at ha_j
+      rw [ha_j] at hment_j
+      exact hment_j
   -- 12. `MajorRefs`
   have hmajorRefs : MajorRefs t E₀ rb blk tys := by
     intro k cv mI rP rules₀ tyA p us hk htyA _ hhd

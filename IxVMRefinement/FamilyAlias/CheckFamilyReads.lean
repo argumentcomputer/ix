@@ -566,7 +566,21 @@ structure CheckRecsCons (rc tys recs models src dst aset s n k np uo bnl fam for
   idx : SourceValue F
   ldRec : loadValue m67 p = .ok (.construct "KernelTypes::KConstantInfo" "Rec"
     [nl, ty, np, ni, n, nmin, rules, .field 0, .field 0, blk, idx])
+  m335 : Heap F
+  ext335 : Heap.Extends m67 m335
+  xMotiveNpN : SourceValue F
+  xMotiveRp : SourceValue F
+  xMotiveMi : SourceValue F
+  vMotiveDepth : SourceValue F
+  vMotivePos : SourceValue F
+  opMotiveNpN : evalBinOp .add np n = .ok xMotiveNpN
+  opMotiveRp : evalBinOp .add xMotiveNpN nmin = .ok xMotiveRp
+  opMotiveMi : evalBinOp .add xMotiveRp ni = .ok xMotiveMi
+  opMotiveDepth : evalBinOp .add xMotiveMi (.field 1) = .ok vMotiveDepth
+  vMotive : SourceValue F
   m391 : Heap F
+  evMotive : SubCall calls "KernelModeled::check_rec_motive"
+    [ty, vMotiveDepth, vMotivePos] m335 vMotive m391
   ext391 : Heap.Extends m67 m391
   vCarriers : SourceValue F
   m473 : Heap F
@@ -680,7 +694,8 @@ theorem checkRecs_step {rc tys recs models src dst aset s n k np uo bnl fam form
   | .Cons (x_yytxvchu := xNpN) (v_czbmphqy := xRp) (x950 := xNpN2) (v909 := xRp2)
       (ld12 := l12) (ld51 := l51) (ev82 := e82) (ld76 := l76) (heq190 := qk)
       (heq217 := qu) (heq245 := qnp) (heq273 := qnmot) (ev298 := e298) (ev359 := e359)
-      (ev345 := e345) (ev403 := e403) (ev485 := e485) (ev523 := e523) (ev571 := e571)
+      (ev345 := e345) (op451 := opM1) (op443 := opM2) (op435 := opM3) (op427 := opM4)
+      (ev403 := e403) (ev485 := e485) (ev523 := e523) (ev571 := e571)
       (heq594 := qM) (hm_odcsfbbr := hNil1) (ev_uprevpxl := eP1) (ev_svgicqcr := eRen)
       (hm_owdmgqhw := hNil2) (ev_oqkxxxxs := eP2) (ev_eejlfykm := eEq) (heq_wxopjlsu := qEq)
       (op_eindxttr := opA) (op_smkbhtsz := opB) (ev_uoyvrvop := ePins) (op_dynlujbu := opC)
@@ -722,7 +737,11 @@ theorem checkRecs_step {rc tys recs models src dst aset s n k np uo bnl fam form
          ldModels := l51
          p := _, m67 := _, evGetRec := s82
          nl := _, ty := _, ni := _, nmin := _, rules := _, blk := _, idx := _, ldRec := l76
-         m391 := _, ext391 := s298.extends.trans (s359.extends.trans (s345.extends.trans
+         m335 := _, ext335 := s298.extends.trans (s359.extends.trans s345.extends)
+         xMotiveNpN := _, xMotiveRp := _, xMotiveMi := _, vMotiveDepth := _, vMotivePos := _
+         opMotiveNpN := opM1, opMotiveRp := opM2, opMotiveMi := opM3, opMotiveDepth := opM4
+         vMotive := _, m391 := _, evMotive := s403
+         ext391 := s298.extends.trans (s359.extends.trans (s345.extends.trans
            s403.extends))
          vCarriers := _, m473 := _, evCarriers := s485
          vScope := _, m511 := _, evScope := s523
