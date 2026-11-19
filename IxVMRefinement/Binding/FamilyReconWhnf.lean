@@ -77,7 +77,7 @@ theorem apply_spine_spec (Sp : List KExpr) :
           (tmExact_depth_le (r₂.mono ext) _ (Nat.le_max_right _ _))⟩
       have hnlApp : NotLet (h ++ [.construct "KernelTypes::KExprNode" "App" [xh, x_a]])
           (.ptr (.enum "KernelTypes::KExprNode") h.length) :=
-        notLet_of_cell (tag := "App") (by simp) (by decide)
+        notLet_of_cell (tag := "App") (args := [xh, x_a]) (by simp) (by decide)
       obtain ⟨ext', hr, hnlr⟩ := ih ev' happ hnlApp (tmOExactList_mono ext hzs')
       exact ⟨ext.trans ext', hr, hnlr⟩
 
@@ -465,7 +465,7 @@ theorem red_proj_zeta_spec {V : ReconView}
     refine ⟨fun xf hxf => ?_, fun _ => ?_⟩
     · injection hxf with hp; injection hp with h0 _
       exact absurd (Value.field.inj h0) (by decide)
-    · simp only [projStep, hfn_eq, hA, hct_none]
+    · simp only [projStep, hfn_eq, hA (ixAddr ca), hct_none]
   | .Const_Ctor_other (m_ojfleyqm := m1) (cs_mtergxtu := cs1) (x_head := xhd) (x_args := xargs)
       (x_caddr := xca) (x_clvls := xcl) (m_tdzaboly := m2) (p_fvrbdqgt := pci1)
       (cs_tkdqmhev := cs2) (v_alxmatcq := vci2) (m_rzlfecwb := m3) (p_murouqmk := pci2)
@@ -482,7 +482,7 @@ theorem red_proj_zeta_spec {V : ReconView}
     refine ⟨fun xf hxf => ?_, fun _ => ?_⟩
     · injection hxf with hp; injection hp with h0 _
       exact absurd (Value.field.inj h0) (by decide)
-    · simp only [projStep, hfn_eq, hA, hcd, hA, hind_none]
+    · simp only [projStep, hfn_eq, hA (ixAddr ca), hcd, hA (ixAddr a), hind_none]
   | .Const_Ctor_Induct_other (m_ojfleyqm := m1) (cs_mtergxtu := cs1) (x_head := xhd)
       (x_args := xargs) (x_caddr := xca) (x_clvls := xcl) (m_tdzaboly := m2) (p_fvrbdqgt := pci1)
       (cs_tkdqmhev := cs2) (x_cnl := xcnl) (x_cblock := xcblk) (x_cind := xcind)
@@ -533,7 +533,7 @@ theorem red_proj_zeta_spec {V : ReconView}
     refine ⟨fun xf hxf => ?_, fun _ => ?_⟩
     · injection hxf with hp; injection hp with h0 _
       exact absurd (Value.field.inj h0) (by decide)
-    · unfold projStep; rw [hfn_eq, hA, hcd, hA, hsd, hgf]; rfl
+    · simp only [projStep, hfn_eq, hA (ixAddr ca), hcd, hA (ixAddr a), hsd, hgf, Bool.false_eq_true, ↓reduceIte]
   | .Const_Ctor_Induct_n1_other (m_ojfleyqm := m1) (cs_mtergxtu := cs1) (x_head := xhd)
       (x_args := xargs) (x_caddr := xca) (x_clvls := xcl) (m_tdzaboly := m2) (p_fvrbdqgt := pci1)
       (cs_tkdqmhev := cs2) (x_cnl := xcnl) (x_cblock := xcblk) (x_cind := xcind)
@@ -592,7 +592,7 @@ theorem red_proj_zeta_spec {V : ReconView}
     refine ⟨fun xf hxf => ?_, fun _ => ?_⟩
     · injection hxf with hp; injection hp with h0 _
       exact absurd (Value.field.inj h0) (by decide)
-    · simp only [projStep, hfn_eq, hA, hcd, hA, hsd, hgt, ↓reduceIte, hbm]
+    · simp only [projStep, hfn_eq, hA (ixAddr ca), hcd, hA (ixAddr a), hsd, hgt, ↓reduceIte, hbm]
   | .Const_Ctor_Induct_n1_n0_other (m_ojfleyqm := m1) (cs_mtergxtu := cs1) (x_head := xhd)
       (x_args := xargs) (x_caddr := xca) (x_clvls := xcl) (m_tdzaboly := m2) (p_fvrbdqgt := pci1)
       (cs_tkdqmhev := cs2) (x_cnl := xcnl) (x_cblock := xcblk) (x_cind := xcind)
@@ -658,7 +658,7 @@ theorem red_proj_zeta_spec {V : ReconView}
     refine ⟨fun xf hxf => ?_, fun _ => ?_⟩
     · injection hxf with hp; injection hp with h0 _
       exact absurd (Value.field.inj h0) (by decide)
-    · simp only [projStep, hfn_eq, hA, hcd, hA, hsd, hgt, ↓reduceIte, hbm, htf]
+    · simp only [projStep, hfn_eq, hA (ixAddr ca), hcd, hA (ixAddr a), hsd, hgt, ↓reduceIte, hbm, htf, Bool.false_eq_true]
   | .Const_Ctor_Induct_n1_n0_n1 (m_ojfleyqm := m1) (cs_mtergxtu := cs1) (x_head := xhd)
       (x_args := xargs) (x_caddr := xca) (x_clvls := xcl) (m_tdzaboly := m2) (p_fvrbdqgt := pci1)
       (cs_tkdqmhev := cs2) (x_cnl := xcnl) (x_cblock := xcblk) (x_cind := xcind)
@@ -733,7 +733,7 @@ theorem red_proj_zeta_spec {V : ReconView}
     obtain ⟨⟨y, hy, hyr⟩, rfl⟩ := kexpr_lookup evlk hargs_lk
     rw [fval_natCast (by omega)] at hy
     refine ⟨y, ?_, hyr⟩
-    simp only [projStep, hfn_eq, hA, hcd, hA, hsd, hgt, ↓reduceIte, hbm, htt, hy]
+    simp only [projStep, hfn_eq, hA (ixAddr ca), hcd, hA (ixAddr a), hsd, hgt, ↓reduceIte, hbm, htt, hy]
 
 /-! ## Fuel and head normalization -/
 
@@ -944,7 +944,7 @@ theorem recon_whnf_spine_spec {V : ReconView}
           (rW.mono (extx.trans extc))⟩
       have hnlP : NotLet (mx ++ [.construct "KernelTypes::KExprNode" "Proj" [xs, .field i, vw]])
           (.ptr (.enum "KernelTypes::KExprNode") mx.length) :=
-        notLet_of_cell (tag := "Proj") (by simp) (by decide)
+        notLet_of_cell (tag := "Proj") (args := [xs, .field i, vw]) (by simp) (by decide)
       obtain ⟨-, hr, hnl⟩ := apply_spine_spec Sp eva hnode hnlP
         (tmOExactList_mono ((exta.trans extx).trans extc) hS)
       obtain ⟨n1, hn1⟩ := htoW
