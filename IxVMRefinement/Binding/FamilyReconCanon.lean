@@ -1381,7 +1381,7 @@ theorem guard_head_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       have hinst := expr_inst1_tmOExact
         (RomBound.bounded_mono hbd (rsub fun c hc' => by rw [hc]; simp [hc']))
         hB (hEa.mono evf.heap_extends) evi
-      have hinstIn := addrIn_instantiate1Lift hEin.2 hf'In.2
+      have hinstIn := addrIn_instantiate1Lift (d := 0) hEin.2 hf'In.2
       obtain ⟨E', hgh2, hE', hE'in⟩ := ih
         (by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega)
         (rsub fun c hc' => by rw [hc]; simp [hc']) hinst hinstIn ev2
@@ -1392,11 +1392,9 @@ theorem guard_head_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       have hinst := expr_inst1_tmOExact
         (RomBound.bounded_mono hbd (rsub fun c hc' => by rw [hc]; simp [hc']))
         hB hV evi
-      have hinstIn := addrIn_instantiate1Lift hEin.2.1 hEin.2.2
-      obtain ⟨E', hgh2, hE', hE'in⟩ := ih
+      exact ih
         (by rw [hc] at hlen; simp only [List.length_cons, List.length_append] at hlen; omega)
-        (rsub fun c hc' => by rw [hc]; simp [hc']) hinst hinstIn ev2
-      exact ⟨E', .letE hgh2, hE', hE'in⟩
+        (rsub fun c hc' => by rw [hc]; simp [hc']) hinst hEin ev2
 
 /-- **`KernelCheck::get_result_sort_level`** refines `ResultSort (defnValAt t E₀) (keyAddr t)` on
 `TmOExact` and `AddrIn (Held R)`. -/
@@ -1493,7 +1491,7 @@ theorem block_elim_spec {rootCalls : List (Call F)} {t : Ix.Kernel.RoleTable}
       obtain ⟨c, p, cb, ms, ind, hcE, hci, hcbE, hcbi, hm, hld, -⟩ := indDataAt_inv hindAt
       have hd_eq : d = ⟨ind.lvls.toNat, d.ty, ind.params.toNat, ind.indices.toNat,
           ind.ctors.size, p.block, p.idx.toNat⟩ := by
-        unfold indDataAt at hindAt
+        unfold ReconView.ofStore indDataAt at hindAt
         simp only [hcE, hci, hcbE, hcbi, hm, hld, Option.some.injEq] at hindAt
         exact hindAt.symm
       rw [hd_eq]
