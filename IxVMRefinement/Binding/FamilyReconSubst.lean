@@ -626,7 +626,7 @@ private theorem subst_exact_bundle (κ : _root_.Address → KKey) :
         obtain ⟨b, hb, b1, -, b3, -, -⟩ := sl d Γ (ZMod.val c) E hE.toTm
         rw [hb] at hy; injection hy with hy; subst hy
         rw [SubstAux.val_natCast (SubstAux.lt_mod_of_le_idx b1)] at hge
-        have hI : IdxLt h (ZMod.val c - s₁) e :=
+        have hI : IdxLt h' (ZMod.val c - s₁) r :=
           SubstAux.idxAll_mono (SubstAux.idxAll_and b3 hn)
             (fun n i hi => by obtain ⟨h1, h2⟩ := hi; omega)
         exact tmExact_of_idxLt hE (by omega) hI (d - s₂) Γ (ZMod.val c - s₁) (Nat.le_refl _)
@@ -1537,7 +1537,7 @@ theorem hasBVarIn_false_of_noIdx_tmExact {κ : _root_.Address → KKey} {Γ : Na
 `NoIdx h lo hi pe` and `hasBVarIn lo hi E = false`, with no heap allocation. -/
 theorem has_bvar_in_range_zero_tmOExact {κ : _root_.Address → KKey} {E : KExpr}
     {pe : SourceValue F} {lo hi : Nat} {h h' : Heap F} {cs : List (Call F)}
-    (hlo : lo < 9223372036854775808) (hhi : hi < 9223372036854775808)
+    (hlo : lo < 4611686018427387904) (hhi : hi < 4611686018427387904)
     (hbnd : IxVM.Consistency.Bounded cs) (hE : TmOExact κ h E pe)
     (ev : ObsFn Obs.W "KernelSubst::has_bvar_in_range"
       [pe, .field (lo : F), .field (hi : F)] h (.field 0) h' cs) :
@@ -1792,8 +1792,9 @@ theorem expr_lower_local_exact {κ : _root_.Address → KKey} {Γ₀ : Nat → K
     ZMod.val_natCast_of_lt (Nat.lt_trans hshift_lt (by decide))
   have hval_c : ZMod.val (cut : F) = cut :=
     ZMod.val_natCast_of_lt (Nat.lt_trans hcut_lt (by decide))
-  have hlow := expr_lower_exact hbnd (s₁ := 0) (s₂ := shift) (by rw [hval_s]; omega)
-    (Nat.zero_le _) (by omega) ev (by rwa [hval_c]) (by rw [hval_c, Nat.sub_zero]; exact hn)
+  have hlow := expr_lower_exact (d := shift + m) (Γ := fun _ => .sort .zero) hbnd
+    (s₁ := 0) (s₂ := shift) (by rw [hval_s]; omega) (Nat.zero_le _) (by omega) ev
+    (by rwa [hval_c]) (by rw [hval_c, Nat.sub_zero]; exact hn)
   rw [hval_c, Nat.sub_zero, show shift + m - shift = m by omega] at hlow
   have hcl : TmExact κ 0 (fun _ => .sort .zero) h' (cut + m)
       (closeDummies m 0 cut (openDummies (shift + m) 0 cut E)) r :=
