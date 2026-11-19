@@ -110,13 +110,14 @@ structure TwinMemberLoaded (cb : Ixon.Constant) (ms : Array Ixon.MutConst)
     (∀ rl rl', rls = [rl] → rulesW' = [rl'] → rl.k = true →
       rl'.k = true ∧ rl'.ctorParams = rl.ctorParams)
 
-/-- **What the circuit side owes for the reload of a twin record**, over its parts `ws`: the
-references the second record `c` at `A` uses are stored at the environment the step is handed;
-and each part's member, at its reading, is loaded as the part's checked recursor
-(`TwinMemberLoaded`). -/
+/-- **What the circuit side owes for the reload of a twin record**, over its parts `ws`: each
+reference the second record `c` at `A` uses is stored at the environment the step is handed or is
+a constant address of `c` itself; and each part's member, at its reading, is loaded as the part's
+checked recursor (`TwinMemberLoaded`). -/
 structure TwinLoadFacts (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (env : Ix.Kernel.Env .anon)
     (A : _root_.Address) (c : Ixon.Constant) (ws : List (TwinRecPart .anon)) : Prop where
-  usedStored : Decl.UsedRefsStored t env c
+  usedStored : ∀ i ∈ Ix.Kernel.Reader.usedRefIdxs c, ∀ x, c.refs[i]? = some x →
+    (env.find? (keyOf t x)).isSome = true ∨ ConstAddrOf A c x
   loaded : ∀ w ∈ ws, ∀ (ms : Array Ixon.MutConst) (p : Ixon.RecursorProj) (rc : Ixon.Recursor),
     c.info = .muts ms → p.block = A → ms[p.idx.toNat]? = some (.recr rc) →
     w.cvW.name = keyOf t (memberAddr A p.idx.toNat (.recr rc)) →
@@ -126,15 +127,19 @@ structure TwinLoadFacts (t : Ix.Kernel.RoleTable) (E₀ : Ixon.Env) (env : Ix.Ke
 
 /-! ## The reload -/
 
-/-- **Each checked twin recursor reloads as itself** after the step, at any environment `env₂`
-that finds what the handed environment finds and stores each member of the block: from the
-second record's reading, its parts' front doors, and what the circuit side owes
-(`TwinLoadFacts`). -/
-theorem twinMember_reloads {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
+/-- **Each checked twin recursor reloads as itself** at any store `E` that holds the record `c` at
+`A`, its member projections and the run's blobs, and at any environment `env₂` that finds what the
+handed environment finds and stores each member of the block. -/
+theorem twinMember_reloads_at {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
     {env env₂ : Ix.Kernel.Env .anon} {A : _root_.Address} {c : Ixon.Constant}
     {rs' : Array Ixon.MutConst} {blk : List (ConstantInfo .anon)}
     {ws : List (TwinRecPart .anon)}
-    (ht : t.check = .ok ()) (hSS : StepStore calls t E₀ E) (hA : FamRecRecord E₀ A c rs')
+    (ht : t.check = .ok ())
+    (hblob : ∀ y b, E₀.blobs.get? y = some b → E.blobs.get? y = some b)
+    (hrecE : recordOf E A = some c)
+    (hmemE : ∀ i m, rs'[i]? = some m →
+      recordOf E (memberAddr A i m) = some (memberProjection A i m))
+    (hA : FamRecRecord E₀ A c rs')
     (hreads : TwinDeclReads t E₀ A c blk)
     (hblock : blk = ws.map (fun w => .recInfo w.cvW w.mI w.rP w.rulesW))
     (hfront : ∀ w ∈ ws, ConstantValCheckJ twinPosRulesJ env w.cvW w.cvW')
@@ -199,13 +204,17 @@ theorem twinMember_reloads {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
       rc.rules.toList rules :=
     lforall₂_mono (fun ru rl₀ h => ⟨h.1.1,
       ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
-        (blob' := fun y => E.blobs.get? y) hSS.runBlob h.1.2,
+        (blob' := fun y => E.blobs.get? y) hblob h.1.2,
       h.2.1, h.2.2⟩) (lforall₂_and_mem hrules₁ hML.rulesScoped)
   -- what the second record uses, and the block, stored after the step
   have hused : Decl.UsedRefsStored t env₂ c := by
     intro k hk y hy
-    obtain ⟨ci, hci'⟩ := hL.usedStored k hk y hy
-    exact Option.isSome_iff_exists.mp (hext _ (by simp [hci']))
+    rcases hL.usedStored k hk y hy with hst | hca
+    · exact Option.isSome_iff_exists.mp (hext _ hst)
+    · obtain ⟨ci, hci', hn⟩ := hreads.2.2 y hca
+      have hs := hstored₂ ci hci'
+      rw [hn] at hs
+      exact Option.isSome_iff_exists.mp hs
   have hblkS : LoadedReads.BlockStored t env₂ A ms' := by
     intro y hy
     obtain ⟨j, hj⟩ := List.mem_iff_getElem?.mp hy
@@ -217,10 +226,10 @@ theorem twinMember_reloads {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
     exact Option.isSome_iff_exists.mp hs
   -- the canonical constant reloads, and so does the checked recursor
   have hrel := LoadedReads.reloadsAs_rprj (E' := E) (env := env₂) (p := ⟨i.toUInt64, A⟩) ht
-    (hSS.held hP) rfl (hSS.held hA.record) hcbm hmem hML.lvls
+    (hmemE i _ hm) rfl hrecE hcbm hmem hML.lvls
     (by rw [hps]; exact Decl.recLps_perm_range _ _)
     (ReaderReads.exprReader_mono (blob := fun y => E₀.blobs.get? y)
-      (blob' := fun y => E.blobs.get? y) hSS.runBlob hty) hML.tyBounded hML.tyLevels hrulesE
+      (blob' := fun y => E.blobs.get? y) hblob hty) hML.tyBounded hML.tyLevels hrulesE
     hML.kOne
     hused hblkS hcn
   have hfin := reloadsAs_recr_rules hrel (fun k => rfl) hagree hK
@@ -232,5 +241,24 @@ theorem twinMember_reloads {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E�
       _ = _ := by rw [e1, e2]
   rw [hcv', hmI, hrP]
   exact hfin
+
+/-- **Each checked twin recursor reloads as itself** after the step, at any environment `env₂`
+that finds what the handed environment finds and stores each member of the block: from the
+second record's reading, its parts' front doors, and what the circuit side owes
+(`TwinLoadFacts`). -/
+theorem twinMember_reloads {calls : List (Call F)} {t : Ix.Kernel.RoleTable} {E₀ E : Ixon.Env}
+    {env env₂ : Ix.Kernel.Env .anon} {A : _root_.Address} {c : Ixon.Constant}
+    {rs' : Array Ixon.MutConst} {blk : List (ConstantInfo .anon)}
+    {ws : List (TwinRecPart .anon)}
+    (ht : t.check = .ok ()) (hSS : StepStore calls t E₀ E) (hA : FamRecRecord E₀ A c rs')
+    (hreads : TwinDeclReads t E₀ A c blk)
+    (hblock : blk = ws.map (fun w => .recInfo w.cvW w.mI w.rP w.rulesW))
+    (hfront : ∀ w ∈ ws, ConstantValCheckJ twinPosRulesJ env w.cvW w.cvW')
+    (hL : TwinLoadFacts t E₀ env A c ws)
+    (hext : ∀ k, (env.find? k).isSome = true → (env₂.find? k).isSome = true)
+    (hstored₂ : ∀ ci ∈ blk, (env₂.find? ci.name).isSome = true) :
+    ∀ w ∈ ws, Decl.ReloadsAs E t env₂ (.recInfo w.cvW' w.mI w.rP w.rulesW') :=
+  twinMember_reloads_at ht hSS.runBlob (hSS.held hA.record)
+    (fun i m hm => hSS.held (hA.members i m hm)) hA hreads hblock hfront hL hext hstored₂
 
 end IxVM.Refinement.Typing.TwinFamily
