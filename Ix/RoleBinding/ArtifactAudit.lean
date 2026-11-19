@@ -67,9 +67,9 @@ replace only their entry/preparation wrappers. No runtime ruling changes. -/
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
 -- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
--- Normalized recursor analysis and the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`)
--- add 47 compiled functions and one ruled csimp (28 to 29).
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 7041 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
+-- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
+-- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.check]: 7042 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`Init, `Std] rulings
 
@@ -83,9 +83,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.check] #[`I
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
 -- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
--- Normalized recursor analysis and the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`)
--- add 47 compiled functions and one ruled csimp (28 to 29).
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 7175 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
+-- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
+-- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTiered]: 7176 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered] #[`Init, `Std] rulings
 
@@ -99,9 +99,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTiered
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
 -- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
--- Normalized recursor analysis and the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`)
--- add 47 compiled functions and one ruled csimp (28 to 29).
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 7041 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
+-- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
+-- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkAt]: 7042 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[`Init, `Std] rulings
 
@@ -115,9 +115,9 @@ run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkAt] #[
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
 -- add 24 compiled functions to each closure (`IxC/Kernel/Audit/Roots.lean`). Externs,
 -- implemented_by, unsafe, csimp and all ruling counts are unchanged.
--- Normalized recursor analysis and the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`)
--- add 47 compiled functions and one ruled csimp (28 to 29).
-/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 7175 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
+-- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
+-- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
+/-- info: runtime closure of [Ix.RoleBinding.Artifact.checkTieredAt]: 7176 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd Ix.Kernel.Audit.checkRuntimeWith #[``Ix.RoleBinding.Artifact.checkTieredAt] #[`Init, `Std] rulings
 
@@ -141,10 +141,10 @@ ruling are those of `check` and `checkTiered`. Their kernel entries (`Admission.
 -- Indexing and lowering twin recursor records (`RecIndex.twins`, `readRecursor`, `lowerTwin`)
 -- add 24 compiled functions (`IxC/Kernel/Audit/Roots.lean`). Externs, implemented_by, unsafe,
 -- csimp and all ruling counts are unchanged.
--- Normalized recursor analysis and the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`)
--- add 47 compiled functions and one ruled csimp (28 to 29).
+-- Normalized recursor analysis, the proved csimp replacement (`IxC/Kernel/Audit/Roots.lean`),
+-- and `Ixon.Env.clearModels` add 48 compiled functions and one ruled csimp (28 to 29).
 /-- info: runtime closure of [Ix.RoleBinding.Artifact.checkConditional,
- Ix.RoleBinding.Artifact.checkTieredConditional]: 7236 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
+ Ix.RoleBinding.Artifact.checkTieredConditional]: 7237 compiled functions; inherited externs 116, implemented_by 0, unsafe 26, csimp 8; ruled assumed 4, computed_field 21, csimp 29 -/
 #guard_msgs (whitespace := lax) in
 run_cmd do
   Ix.Kernel.Audit.checkRuntimeWith
