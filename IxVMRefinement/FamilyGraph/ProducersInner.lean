@@ -1,5 +1,6 @@
 import IxVMRefinement.FamilyGraph.InnerCheckedOwed
 import IxVMRefinement.FamilyGraph.ProducersAcyclic
+import IxVMRefinement.FamilyGraph.ProducersInnerRefs
 import IxVMRefinement.FamilyGraph.CompositionFam
 import IxVMRefinement.Claim.RefSafetyExcept
 import IxVMRefinement.Obs.KernelModeled2
@@ -132,7 +133,7 @@ theorem FamilyOwnAdvice.walk_nil {x_rc x_block x_rec_block : SourceValue F} {h :
       ObsFn Obs.W "KernelModeled::check_advice_records"
         [x_rc, xadv, .construct addrMapEnum "Nil" [], wset] m v m' cs₁ ∧
       ∀ cl ∈ cs₁, cl ∈ calls := by
-  obtain ⟨_, _, _, _, _, _, _, _, ev_ws, wset, _, _, ev_asb, m_adv, m_adv', x_advice, v_adv,
+  obtain ⟨_, _, _, _, _, _, _, _, _, ev_ws, wset, _, _, ev_asb, m_adv, m_adv', x_advice, v_adv,
     cs_adv, ev_adv, ext_h_ws, ext_asb_adv, advRep, _, _, sub_adv⟩ := w
   exact ⟨m_adv, m_adv', x_advice, wset, v_adv, cs_adv,
     ext_h_ws.trans (ev_ws.heap_extends.trans (ev_asb.heap_extends.trans ext_asb_adv)),
@@ -380,7 +381,7 @@ end Own
 /-! ## What is owed of the inner records at the choices -/
 
 /-- **What is owed of the records a family check checks, at the graph producer's choices**
-(premise; each field names its source). -/
+(proved from `FamRunCtx.inner_ref_safe` at every top-level walk). -/
 structure InnerOwed (K : FamRunCtx) : Prop where
   /-- `assert_inner_refs_safe` in `check_advice_record` and `container_refs_check`: its
   `assert_safe_used_refs` runs `assert_ref_allowed` at every used reference of an inner record. -/
@@ -389,6 +390,14 @@ structure InnerOwed (K : FamRunCtx) : Prop where
   not unsafe) and `assert_used_not_block` with `assert_not_block_ref`. -/
   needOk : ∀ a x, K.Inner a → K.twin a = none → UsedRef K.E₀ a x →
     Covered K.t x ∨ NeedOk K.E₀ x
+
+/-- **`InnerOwed` holds at every top-level walk** (`FamRunCtx.inner_ref_safe`). -/
+theorem innerOwed_of_walk {K : FamRunCtx} {seeds : List _root_.Address}
+    {rank : _root_.Address → Nat}
+    (hW : Claim.TopWalkCore K.calls K.bAddr K.t seeds K.E₀ K.lim K.Top rank) :
+    InnerOwed K :=
+  ⟨fun _ _ hIa htw hu => (FamRunCtx.inner_ref_safe hW hIa htw hu).1,
+    fun _ _ hIa htw hu => (FamRunCtx.inner_ref_safe hW hIa htw hu).2⟩
 
 section Gives
 
@@ -431,28 +440,26 @@ theorem familyGraphRow_of_inner (h : FamilyGraphRowInner.{u}) : FamilyGraphRow.{
   exact ⟨rank', fam, twin, adv, Inner, hW', hFR⟩
 
 /-- **What the graph row and the records its family checks check are owed**, at the twin
-preference `Pref`: at every walk and witness, the run's facts the graph reads (`BatchGives`), the
-stored twins' field (`StoredTwinField`), and the inner records' facts (`InnerOwed`), at the run's
-choices. -/
+preference `Pref`: at every walk and witness, the run's facts the graph reads (`BatchGives`) and
+the stored twins' field (`StoredTwinField`), at the run's choices (`InnerOwed` is proved by
+`innerOwed_of_walk`). -/
 def FamilyGraphInnerOwed (Pref : RunPref) : Prop :=
-  AtWalk.{u} Pref fun K _ => BatchGives K ∧ StoredTwinField K ∧ InnerOwed K
+  AtWalk.{u} Pref fun K _ => BatchGives K ∧ StoredTwinField K
 
 /-- `FamilyGraphInnerOwed` gives `FamilyGraphOwed`. -/
 theorem familyGraphOwed_of_inner {Pref : RunPref} (h : FamilyGraphInnerOwed.{u} Pref) :
     FamilyGraphOwed.{u} Pref :=
-  fun calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape =>
-    ⟨(h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape).1,
-      (h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape).2.1⟩
+  h
 
 /-- **The graph row with the inner records, from what they are owed**: the ranking and
 `FamilyRun` at the choices (as `familyGraphRowPref_of_batch`), and `InnerChecked` at the same
-choices from `InnerGives` (`innerGives_of_owed`, `innerChecked_of_gives`) at the binding of the
-run's family checks, the walk's. -/
+choices from `InnerGives` (`innerGives_of_owed`, `innerOwed_of_walk`, `innerChecked_of_gives`) at
+the binding of the run's family checks, the walk's. -/
 theorem familyGraphRowInner_of_owed {Pref : RunPref} (h : FamilyGraphInnerOwed.{u} Pref) :
     FamilyGraphRowInner.{u} := by
   intro calls t seeds E₀ lim Top rank hWalk R envT hshape
   obtain ⟨bAddr, hW, hG⟩ := hWalk
-  obtain ⟨hB, hST, hIO⟩ := h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape
+  obtain ⟨hB, hST⟩ := h calls bAddr t seeds E₀ lim Top rank hW hG R envT hshape
   obtain ⟨rank', hR⟩ : ∃ rank',
       FamilyRanked ⟨calls, bAddr, t, E₀, lim, Top, envT, Pref calls bAddr t E₀ lim⟩ rank' :=
     ⟨_, familyRanked_of_edges hW
@@ -463,7 +470,7 @@ theorem familyGraphRowInner_of_owed {Pref : RunPref} (h : FamilyGraphInnerOwed.{
   have hWalk' : Claim.TopWalk calls t seeds E₀ lim Top rank' :=
     topWalk_of_edges ⟨bAddr, hW, hG⟩ hR.closed hR.owner
   exact ⟨rank', _, _, _, _, hWalk', hFR, bAddr, innerChecked_of_gives hWalk' hFR
-    (FamRunCtx.checks_of _ hB) (innerGives_of_owed hW hG hB hshape hIO)⟩
+    (FamRunCtx.checks_of _ hB) (innerGives_of_owed hW hG hB hshape (innerOwed_of_walk hW))⟩
 
 /-! ## The composition -/
 
