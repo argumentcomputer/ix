@@ -490,6 +490,7 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
   | .run (m105 := m105) (cs850 := cs850) (m1191 := m1191) (x_univ_offset := x_uo)
       (v_qwfkpklj := v_flat) (m_ialrkdmk := m_flat) (cs_pblrtsmj := cs_flat)
       (m1234 := m1234) (v_arypxepi := v_arypxepi)
+      (m_soowcubw := m_soowcubw) (y_xxqgtlpp := y_xxqgtlpp) (cs_owchsduj := cs_owchsduj)
       (sg112 := sg112) (ev126 := ev126) (ev148 := ev148) (ev194 := ev194)
       (ev_yqjbwijz := ev_ord) (ev231 := ev231) (ev266 := ev266) (ev309 := ev309)
       (ev344 := ev344) (ev403 := ev403) (ev435 := ev435) (ev465 := ev465) (ev513 := ev513)
@@ -665,7 +666,7 @@ theorem familyCall_isTwinShape {calls : List (Call F)} {bAddr : _root_.Address}
       rw [flatListEnum_eq]
       exact RepLinkedList.mono (fun _ _ _ _ _ _ => trivial) ev1246.heap_extends hxs
     have evLen' : ObsFn Obs.W (Instance.mk "Lists::length" [flatEntryTy]).symbol
-        [_] _ _ _ _ := by
+        [v_flat] m1234 y_xxqgtlpp m_soowcubw cs_owchsduj := by
       rw [Obs.Names.«Lists::length<(&[Field; 32], Field, &Lists::Node<&KernelTypes::KExprNode>, &Lists::Node<&KernelTypes::KLevelNode>)>».symbol]
       exact ev_flen
     obtain ⟨hflen, -⟩ := Lib.Lists.length_spec evLen' hxs'
@@ -1963,7 +1964,7 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
               subst ers'
               have erc0' : rc0' = rc0 := by
                 simp only [UInt64.toNat_zero] at hmemR'
-                rw [hrc0_get] at hmemR'
+                rw [Array.getElem?_toList, hrc0_get] at hmemR'
                 exact Ixon.MutConst.recr.inj (Option.some.inj hmemR')
               subst erc0'
               rw [hldR] at ldRec
@@ -1996,12 +1997,12 @@ theorem familyCall_motive0_spec {calls cs : List (Call F)} {bAddr : _root_.Addre
                     motive0_carrier_rawConv hp hty391 evPeel ldM evDom evSp ldHd
                   have hta78 := Bytes.repAddressRef_heapMono₂ Core.addrTy
                     (evDom.heap_extends.trans evSp.heap_extends) htaRep
-                  have hteq := Bytes.address_eq_spec ra0 hta78 evEq
+                  obtain ⟨hteq, -⟩ := Lib.address_eq_spec evEq ra0 hta78
                   have ed0 : d0 = tA0 := by
                     by_cases hdeq : d0 = tA0
                     · exact hdeq
                     · simp [hdeq] at hteq
-                      exact absurd (hteq.1.symm.trans heq1) zero_ne_one
+                      exact absurd (Value.field.inj (hteq.symm.trans heq1)) zero_ne_one
                   subst ed0
                   have ha0 : a0 = memberAddr (Core.ixAddr bb) 0 (ms[0]'hBpos) := by
                     rw [← hd0, htA0_eq, hm0_eq]
