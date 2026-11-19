@@ -1492,7 +1492,8 @@ theorem payReach_empty_wf {calls : List (Call F)} {bAddr : _root_.Address}
   intro x hx
   induction hx with
   | @payload B a hB hpay =>
-    obtain ⟨hmod, rb, cs, hfc, -⟩ := hpay
+    obtain ⟨hmod, rb, cs, advAs, hex, -⟩ := hpay
+    have hfc := hex.toCall
     obtain ⟨cb, ms, hcb, hms, -⟩ := familyCall_block_nonempty hC.runStore hC.hashedStored hfc
     obtain ⟨ent, hmem, hcl⟩ := groupReach_in_scan_wf hC hg33 hg40 hvalAll hw hB
     obtain ⟨raw, c, hsz, hh, hbl, hde, hdeE, hnm, -, -⟩ := hcl B hmem

@@ -18,6 +18,7 @@ import IxVMRefinement.Binding.PayloadDirectLoads
 import IxVMRefinement.Binding.PayloadDirectClosed
 import IxVMRefinement.Binding.RunFactsLiterals
 import IxVMRefinement.Binding.WalkedRefs
+import IxVMRefinement.Binding.PayloadRefSpecs
 
 /-! # The family checks of a binding run, group by group
 
@@ -61,12 +62,15 @@ open IxVM.Refinement.StoreInhabit (basisStore)
 
 /-- **The payload of a run's family checks** (module docstring): restricted to blocks routed as
 modeled (`ModeledRouteAt`), so `op_order_scan_refs` (which asserts `block_is_modeled = 0`)
-directly excludes any payload in the well-founded block. -/
+directly excludes any payload in the well-founded block. Each check contributes its own family
+record, its own advice records (`AdviceListedIn`), and its directly witnessed container recursors
+(`DirectContOwn`). -/
 def runPayload (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable) :
     PayloadRel := fun g B a =>
   ModeledRouteAt calls B ∧
-  ∃ rb cs, FamilyCallAtLim calls bAddr t B rb (some (valLimit g)) cs ∧
-    (a = rb ∨ AdviceIn cs a ∨ ContainerRecIn cs a)
+  ∃ rb cs advAs, FamilyCallExact calls bAddr t B rb (some (valLimit g)) cs advAs ∧
+    (a = rb ∨ AdviceListedIn advAs a ∨
+      DirectContOwn calls bAddr t B rb (some (valLimit g)) cs advAs a)
 
 /-- **A family check of the block at `B` with the record at `rb` at group `g`'s limit.** -/
 def FamCallAt (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
@@ -87,12 +91,14 @@ noncomputable def runFamOf (calls : List (Call F)) (bAddr : _root_.Address)
 /-- **The advice of a block's family checks at group `g`.** -/
 def runAdv (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
     (g : Nat) (B a : _root_.Address) : Prop :=
-  ∃ rb cs, FamilyCallAtLim calls bAddr t B rb (some (valLimit g)) cs ∧ AdviceIn cs a
+  ∃ rb cs advAs, FamilyCallExact calls bAddr t B rb (some (valLimit g)) cs advAs ∧
+    AdviceListedIn advAs a
 
 /-- **The container recursors of a block's family checks at group `g`.** -/
 def runCont (calls : List (Call F)) (bAddr : _root_.Address) (t : Ix.Kernel.RoleTable)
     (g : Nat) (B x : _root_.Address) : Prop :=
-  ∃ rb cs, FamilyCallAtLim calls bAddr t B rb (some (valLimit g)) cs ∧ ContainerRecIn cs x
+  ∃ rb cs advAs, FamilyCallExact calls bAddr t B rb (some (valLimit g)) cs advAs ∧
+    DirectContOwn calls bAddr t B rb (some (valLimit g)) cs advAs x
 
 /-- **An advice record of a family check of a block group `g` reaches**, at the group's limit
 (listed by the check or by an advice walk nested in its calls). -/
@@ -122,10 +128,10 @@ theorem payDirect_cases {calls : List (Call F)} {bAddr : _root_.Address}
     (h : PayDirect t E₀ (runPayload calls bAddr t) g a) :
     PayAdviceAt calls bAddr t E₀ g a ∨ PayContainerAt calls bAddr t E₀ g a ∨
       PayRecordAt calls bAddr t E₀ g a := by
-  obtain ⟨B, hB, -, rb, cs, hfc, rfl | ha | ha⟩ := h
-  · exact Or.inr (Or.inr ⟨B, cs, hB, hfc⟩)
-  · exact Or.inl ⟨B, rb, cs, hB, hfc, ha⟩
-  · exact Or.inr (Or.inl ⟨B, rb, cs, hB, hfc, ha⟩)
+  obtain ⟨B, hB, -, rb, cs, advAs, hex, rfl | ha | ha⟩ := h
+  · exact Or.inr (Or.inr ⟨B, cs, hB, hex.toCall⟩)
+  · exact Or.inl ⟨B, rb, cs, hB, hex.toCall, adviceListedIn_toAdviceIn hex.toOwn ha⟩
+  · exact Or.inr (Or.inl ⟨B, rb, cs, hB, hex.toCall, directContOwn_toContainerRecIn ha⟩)
 
 /-- **What is left of the payload's facts at the addresses the run's family checks name
 directly** (`PayDirect`). Both fields are proved of every collision-free run
@@ -237,19 +243,23 @@ theorem runFamOf_spec {g : Nat} {B rb : _root_.Address}
 theorem runFamOf_payload {g : Nat} {B rb : _root_.Address}
     (h : runFamOf calls bAddr t E₀ g B = some rb) : runPayload calls bAddr t g B rb := by
   obtain ⟨-, hmod, cs, hcs⟩ := runFamOf_spec h
-  exact ⟨hmod, rb, cs, hcs, Or.inl rfl⟩
+  obtain ⟨advAs, hex⟩ := familyCallExact_of_call hcs
+  exact ⟨hmod, rb, cs, advAs, hex, Or.inl rfl⟩
 
 /-- **`GroupFamilyChecks.famCall` of the run's selection.** -/
 theorem runFamOf_famCall {g : Nat} :
     ∀ B rb, runFamOf calls bAddr t E₀ g B = some rb →
       New (groupStore t E₀ (runPayload calls bAddr t) g)
           (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) B ∧ ModeledRouteAt calls B ∧
-      ∃ cs, FamilyCallAtLim calls bAddr t B rb (some (valLimit g)) cs ∧
-        (∀ a, AdviceIn cs a → runAdv calls bAddr t g B a) ∧
-        (∀ x, ContainerRecIn cs x → runCont calls bAddr t g B x) := by
+      ∃ cs advAs, FamilyCallOwn calls bAddr t B rb (some (valLimit g)) cs advAs ∧
+        (∀ a, AdviceListedIn advAs a → runAdv calls bAddr t g B a) ∧
+        (∀ x, DirectContOwn calls bAddr t B rb (some (valLimit g)) cs advAs x →
+          runCont calls bAddr t g B x) := by
   intro B rb h
   obtain ⟨hn, hm, cs, hcs⟩ := runFamOf_spec h
-  exact ⟨hn, hm, cs, hcs, fun a ha => ⟨rb, cs, hcs, ha⟩, fun x hx => ⟨rb, cs, hcs, hx⟩⟩
+  obtain ⟨advAs, hex⟩ := familyCallExact_of_call hcs
+  exact ⟨hn, hm, cs, advAs, hex.toOwn, fun a ha => ⟨rb, cs, advAs, hex, ha⟩,
+    fun x hx => ⟨rb, cs, advAs, hex, hx⟩⟩
 
 /-- **`GroupFamilyChecks.modeled` of every run**: the check of a member of a new block of
 inductive types in Lean's logic on the modeled route, at the group's limit, ran the family check
@@ -732,10 +742,10 @@ theorem advNotUnit_of_run (hC : CollisionFreeRun calls E₀) (hb : BasisRowsLoad
     ∀ B rb a, runFamOf calls bAddr t E₀ g B = some rb → runAdv calls bAddr t g B a →
       ¬ (RoleUnitAt t g a ∧ New (groupStore t E₀ (runPayload calls bAddr t) g)
         (groupStore t E₀ (runPayload calls bAddr t) (g + 1)) a) := by
-  rintro B rb a hfam ⟨rb', cs, hcs, hin⟩ ⟨⟨r, hr, had, hk⟩, hnew⟩
+  rintro B rb a hfam ⟨rb', cs, advAs, hex, hin⟩ ⟨⟨r, hr, had, hk⟩, hnew⟩
   have hmod := (runFamOf_spec hfam).2.1
   have hreach := runPayload_reach hC hb hax hR hg6 hg hw hfam
-    ⟨hmod, rb', cs, hcs, Or.inr (Or.inl hin)⟩
+    ⟨hmod, rb', cs, advAs, hex, Or.inr (Or.inl hin)⟩
   rcases hk with hop | hs
   · have h1 := hpay a hreach r had hop
     rw [groupOf_of_mem_roleGroup hr] at h1
@@ -1179,15 +1189,15 @@ theorem families_of_remaining (hC : CollisionFreeRun calls E₀) (hb : BasisRows
       { famNew := fun B rb h hB => ⟨famNew_of_run hC hb hax hR hg6 hg hw hclg h,
           hrank.fam B rb h hB⟩
         advice := fun B rb a h hB ha => by
-          obtain ⟨rb', cs, hcs, hin⟩ := ha
+          obtain ⟨rb', cs, advAs, hex, hin⟩ := ha
           exact ⟨runPayload_held hC hb hax hR hg6 hg hw h
-              ⟨(runFamOf_spec h).2.1, rb', cs, hcs, Or.inr (Or.inl hin)⟩,
-            fun hn => hrank.advice B rb a h hB ⟨rb', cs, hcs, hin⟩ hn⟩
+              ⟨(runFamOf_spec h).2.1, rb', cs, advAs, hex, Or.inr (Or.inl hin)⟩,
+            fun hn => hrank.advice B rb a h hB ⟨rb', cs, advAs, hex, hin⟩ hn⟩
         container := fun B rb x h hB hx => by
-          obtain ⟨rb', cs, hcs, hin⟩ := hx
+          obtain ⟨rb', cs, advAs, hex, hin⟩ := hx
           exact ⟨runPayload_held hC hb hax hR hg6 hg hw h
-              ⟨(runFamOf_spec h).2.1, rb', cs, hcs, Or.inr (Or.inr hin)⟩,
-            fun hn => hrank.container B rb x h hB ⟨rb', cs, hcs, hin⟩ hn⟩
+              ⟨(runFamOf_spec h).2.1, rb', cs, advAs, hex, Or.inr (Or.inr hin)⟩,
+            fun hn => hrank.container B rb x h hB ⟨rb', cs, advAs, hex, hin⟩ hn⟩
         checked := fun a c hn hc hu htw => by
           rcases groupStore_checked hC hb hax (hR.payload hC) hg6 hw a c hn hc hu with h | h
           · exact Or.inl h

@@ -274,7 +274,7 @@ theorem closureFamilyCheck_of_call {L : Ix.Kernel.Env .anon → NativeFam .anon 
     fun a lr h => hC.admits.loaded a lr (hC.store.le₂.1 a lr h)
   have hcb₀ : recordOf ρ.E₀ B = some cb := Binding.recordOf_of_loaded hloaded hcb
   have hcrb₀ : recordOf ρ.E₀ rb = some crb := Binding.recordOf_of_loaded hloaded hcrb
-  obtain ⟨-, hroute, cs, hcall', hadvIn, -⟩ := hC.checks.famCall B rb hfam
+  obtain ⟨-, hroute, cs, advAs, hown, hadvIn, -⟩ := hC.checks.famCall B rb hfam
   obtain ⟨cb', ms, crb', rs, flat, hFB⟩ := hC.checks.family B rb hfam
   have e1 : cb' = cb := Option.some.inj (hFB.block.record.symm.trans hcb₀)
   subst cb'
@@ -283,8 +283,8 @@ theorem closureFamilyCheck_of_call {L : Ix.Kernel.Env .anon → NativeFam .anon 
   have hcb' : recordOf R' B = some cb := Binding.recordOf_of_loaded hC.store.le₂.1 hcb
   have hnB' : Binding.New R R' B := ⟨by rw [hcb']; rfl, hnB.2⟩
   obtain ⟨blk, advM, tys, rhsss, hF⟩ := hcall calls bAddr t ρ.E₀ B rb cb crb ms rs
-    (some (Binding.valLimit g)) cs (adv B) hS hrun.hashedStored hFB.block hFB.record hcall'
-    hroute (Or.inl hadvIn)
+    (some (Binding.valLimit g)) cs (adv B) hS hrun.hashedStored hFB.block hFB.record hown.toCall
+    hroute (Or.inr ⟨advAs, hown, fun a ha => Or.inl (hadvIn a ha)⟩)
   refine ⟨fun Ec hRc hst env hext hnd hinv hX hinert hrefs hadv1 hadv2 hfresh => ?_, hF.recRefs⟩
   have hSE : FamilyStepEnv.{u} L calls t ρ.E₀ (some (Binding.valLimit g)) B cb rb crb (adv B)
       Ec env :=
