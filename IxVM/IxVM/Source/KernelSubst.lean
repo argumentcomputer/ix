@@ -244,6 +244,70 @@ def expr_glb_let := aiur_fn⟦
     }
 ⟧
 
+  -- `expr_glb` with the search confined to cutoffs below 16: an open subterm reached at
+  -- cutoff 16 answers 0, as if it used the variable at the cutoff. Called at cutoff 0,
+  -- the answer is therefore either `expr_glb`'s or 0 (a minimum that meets a 0 is 0),
+  -- and 0 is always a sound gap to rebase by. A node gets at most 17 rows (one per
+  -- cutoff 0..16), where `expr_glb` gets one per enclosing binder of every subject it
+  -- is searched from, which on deep proof terms is most of the execution.
+
+def expr_glb_shallow := aiur_fn⟦
+  fn expr_glb_shallow(e: KernelTypes::KExpr, c: Field) -> Field {
+      match UInt32::less_than_fields(expr_lbr(e), c + 1) {
+        1 => {  4294967295 } ,
+        _ => {
+          match UInt32::less_than_fields(c, 16) {
+            0 => {  0 } ,
+            _ => {  expr_glb_shallow_walk(e, c) } ,
+          } } ,
+      }
+    }
+⟧
+
+def expr_glb_shallow_walk := aiur_fn⟦
+  inline fn expr_glb_shallow_walk(e: KernelTypes::KExpr, c: Field) -> Field {
+      match (*(e)) {
+        KernelTypes::KExprNode::BVar(i) => {
+          match UInt32::less_than_fields(i, c) {
+            1 => {  4294967295 } ,
+            0 => {  i - c } ,
+          } } ,
+        KernelTypes::KExprNode::Srt(_) => {  4294967295 } ,
+        KernelTypes::KExprNode::Const(_, _) => {  4294967295 } ,
+        KernelTypes::KExprNode::Lit(_) => {  4294967295 } ,
+        KernelTypes::KExprNode::App(f, a) => {  match expr_glb_shallow(a, c) {
+          0 => {  0 } ,
+          n => {  lbr_min(n, expr_glb_shallow(f, c)) } ,
+        } } ,
+        KernelTypes::KExprNode::Lam(ty, body) => {  expr_glb_shallow_binder(ty, body, c) } ,
+        KernelTypes::KExprNode::Forall(ty, body) => {  expr_glb_shallow_binder(ty, body, c) } ,
+        KernelTypes::KExprNode::Let(ty, val, body) => {  expr_glb_shallow_let(ty, val, body, c) } ,
+        KernelTypes::KExprNode::Proj(_, _, e1) => {  expr_glb_shallow(e1, c) } ,
+      }
+    }
+⟧
+
+def expr_glb_shallow_binder := aiur_fn⟦
+  fn expr_glb_shallow_binder(ty: KernelTypes::KExpr, body: KernelTypes::KExpr, c: Field) -> Field {
+      match expr_glb_shallow(ty, c) {
+        0 => {  0 } ,
+        n => {  lbr_min(n, expr_glb_shallow(body, c + 1)) } ,
+      }
+    }
+⟧
+
+def expr_glb_shallow_let := aiur_fn⟦
+  fn expr_glb_shallow_let(ty: KernelTypes::KExpr, val: KernelTypes::KExpr, body: KernelTypes::KExpr, c: Field) -> Field {
+      match expr_glb_shallow(ty, c) {
+        0 => {  0 } ,
+        n => {  match expr_glb_shallow(val, c) {
+          0 => {  0 } ,
+          m => {  lbr_min(lbr_min(n, m), expr_glb_shallow(body, c + 1)) } ,
+        } } ,
+      }
+    }
+⟧
+
 def expr_lift := aiur_fn⟦
   fn expr_lift(e: KernelTypes::KExpr, shift: Field, cutoff: Field) -> KernelTypes::KExpr {
       match shift {
