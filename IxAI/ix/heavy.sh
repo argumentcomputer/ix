@@ -32,8 +32,12 @@ done
 busy() {
   # Other heavy processes, excluding this script's own process tree and its callers.
   local others
-  others=$(ps -eo pid,ppid,args | awk -v self=$$ -v anc="$ancestors" \
-      '$1 != self && $2 != self && index(anc, " " $1 " ") == 0' \
+  # Shells and other wrappers are not work: a script that retries a light job has the build's
+  # words on its command line for as long as it waits.
+  others=$(ps -eo pid,ppid,comm,args | awk -v self=$$ -v anc="$ancestors" \
+      '$1 != self && $2 != self && index(anc, " " $1 " ") == 0 &&
+       $3 !~ /^(bash|sh|dash|zsh|timeout|time|sleep|flock|tee|env|systemd-run|python3?|awk|sed|tail|cat)$/ {
+         $3 = ""; print }' \
     | grep -E '(/|\s)(lake build|lean |cargo build|rustc |nvcc|ix (prove|compress|aggregate)|lane (prove|prove-session|verify|submit|check|merge))' \
     | grep -v -E 'grep|heavy\.sh|light\.sh' \
     | awk '$3 != "flock" && $3 !~ /\/flock$/' \

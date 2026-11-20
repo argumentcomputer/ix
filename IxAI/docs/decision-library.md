@@ -443,33 +443,145 @@ seeds):
 - Compare against the policy on the same invoices: the policy's precision among the invoices
   the gate would pay, rather than over all its own payments.
 
-### The deployed model (seed 201)
+### The v2 deployed model (seed 201, superseded)
 
-`recipe` (gain 627, learning rate 8, 8 hidden units, 100 epochs: 3,200 SGD steps, 179
-parameters) behind v2's thresholds. `#guard recipe.train task.spec == deployed` re-runs training
-at every build of the test library and checks it bit for bit. Same seed, same weights.
+Seed 201's selected recipe (gain 627, learning rate 8, 8 hidden units, 100 epochs) behind v2's
+thresholds (`pay` 224, `hold` 128, `reject` 257): card 877 correct against the policy's 857, 718
+decided with 636 right, 438 `pay`s of which 34 wrong. It escalated the new-vendor, portal,
+bank-change profile (`pay` at 183, below 224). Replaced by the protocol v3 model below.
 
-**Gate** (`gate` in `Invoice.lean`; a `#guard` checks it equals `gateFromValidation deployed` on
-seed 201's validation set): floor 128; `pay` 224; `hold` 128; `reject` 257. Proved for every
-weight setting:
+## Protocol v3: a binomial test on cumulative answers
 
-- `pay_needs_confidence`: `pay` only at confidence at least 224;
-- `never_rejects`: the gate never returns `reject` (`run_never`, as 257 > 256);
-- `low_confidence_defers`: below 128 the verdict is `defer`.
+The last round. v2 was safe but not useful, because a fixed margin judged on thin bins turned
+sampling noise into deferral. v3 changes **only the threshold rule and the validation set size**.
+Training streams, the grid, training and the selection rule are as in v1 and v2. Written before
+any v3 run.
 
-**Card** (`card_certified`, `decide +kernel`): model 877, policy 857, Brier sum 68,104/256 (0.26
-per example), 718 decided with 636 right, 438 `pay`s of which 34 wrong (7.8%; the policy's: 66
-of 612, 10.8%).
+**Validation set:** 4,096 examples from `Rng.seeded (s + 2000003)` (`validationSetN`), used both
+for selection and for thresholds. Its first 1,024 examples are v1's validation set, because the
+generator draws examples in sequence.
+
+**The test.** For a set of `n` answers of which `r` are right and a comparison precision
+`p₀ = a/(a + b)`, the test passes when the exact binomial upper tail
+`P(X ≥ r | n, p₀) = Σ_{k=r}^{n} C(n,k)·aᵏ·bⁿ⁻ᵏ / (a + b)ⁿ` is at most 1/20, computed in integers as
+`20 · binomTailNum n r a b ≤ (a + b)ⁿ` (`binomTest`). This is a one-sided test at the 95% level
+of "precision is at most `p₀`". It passes exactly when the one-sided 95% Clopper–Pearson lower
+bound on the precision is at least `p₀`, because the tail grows with `p₀`.
+
+**The rule** (`thresholdCumulative`). Edges: 128, 160, 192, 224. For option `o` and edge `e`, let
+`S(e)` be the validation answers whose most probable option is `o` with confidence at least `e`
+(cumulative, not a bin). An edge is **tested** when `S(e)` holds at least 50 answers; a tested
+edge **passes** when `binomTest` passes on `S(e)`. `need o` is the lowest tested edge that passes
+and above which every tested edge also passes. Answers above an untested edge are still counted
+in every lower edge's `S`. If no edge qualifies, `need o` is 257 and the gate never returns `o`
+(`run_never`). The floor stays 128.
+
+**Comparison precisions.**
+- `pay`: `p₀` is the written policy's own `pay` precision on the same 4,096 validation examples,
+  `R/P` with `a = R`, `b = P − R`. This is the quantity the safety criterion compares against
+  (the policy's wrong payments over its own payments). The policy's precision on only the
+  invoices the gate would pay is a different quantity and is not used, because the criterion
+  does not measure it.
+- `hold`: `p₀ = 80%` (`a = 4, b = 1`). `reject`: `p₀ = 90%` (`a = 9, b = 1`).
+
+**Checking the bound.** `binomTailNum` is checked by `#guard` against exact values computed
+independently (Python's `math.comb`, for example `binomTailNum 20 15 1 1 = 21700`, the count
+behind `P(X ≥ 15) = 21700/2²⁰` for a fair coin), and one value is proved by `decide +kernel`.
+
+**Seeds:** 301 to 308, fixed in advance and never run before. Held-out set (1,024 examples)
+scored once per seed. v1's and v2's thresholds on the same models are reported beside v3's for
+attribution.
+
+**Success criteria, fixed in advance** (v2's, plus non-vacuity):
+- **Safety:** the gated model's wrong-payment fraction is at most the policy's on at least 7 of
+  8 seeds, and lower pooled over the 8 seeds.
+- **Usefulness:** at least 512 of 1,024 decided on average, and at least half as many payments
+  as the policy on average.
+- **Non-vacuity:** the gate pays at least one invoice on at least 7 of 8 seeds.
+- All three must hold.
+
+**Deployed:** seed 301's selected model with its v3 thresholds. Whatever the result, this is the
+last round.
+
+## Protocol v3 results
+
+Run once on seeds 301–308 (about 90 s per seed in the interpreter, in three `ix/light.sh`
+jobs). Before the full run, the sweep script was smoke-tested on seed 999 (one recipe, 20
+epochs), which is not a reported seed. `need` is `pay / hold`; `reject` was 257 on every seed.
+
+| Seed | Selected: gain, lr, hidden, epochs | `need` | Model | Policy | Ceiling | Decided | Right among decided | Deferred | Model's `pay`s / wrong | Policy's `pay`s / wrong |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 301 | 627, 8, 8, 80 | 257 / 128 | 901 | 881 | 913 | 337 | 302 | 687 | 0 / 0 | 629 / 63 (10.0%) |
+| 302 | 256, 8, 8, 60 | 257 / 128 | 886 | 884 | 911 | 346 | 301 | 678 | 0 / 0 | 603 / 51 (8.5%) |
+| 303 | 627, 8, 8, 100 | 257 / 128 | 907 | 911 | 920 | 313 | 279 | 711 | 0 / 0 | 646 / 51 (7.9%) |
+| 304 | 627, 8, 16, 120 | 257 / 128 | 903 | 901 | 925 | 324 | 288 | 700 | 0 / 0 | 614 / 45 (7.3%) |
+| 305 | 627, 8, 16, 40 | 257 / 128 | 896 | 880 | 910 | 292 | 255 | 732 | 0 / 0 | 666 / 62 (9.3%) |
+| 306 | 627, 8, 16, 120 | 224 / 128 | 918 | 895 | 925 | 788 | 725 | 236 | 445 / 34 (7.6%) | 609 / 58 (9.5%) |
+| 307 | 256, 8, 16, 100 | 257 / 128 | 922 | 893 | 930 | 337 | 307 | 687 | 0 / 0 | 630 / 50 (7.9%) |
+| 308 | 256, 8, 16, 20 | 224 / 128 | 896 | 880 | 904 | 623 | 552 | 401 | 290 / 34 (11.7%) | 634 / 72 (11.4%) |
+| Mean | | | 903.6 | 890.6 | 917.3 | 420.0 | 376.1 | 604.0 | 91.9 / 8.5 | 628.9 / 56.5 |
+
+On the same models, v2's thresholds paid on 4 of 8 seeds and v1's on all 8 (v1: 5,100 payments,
+515 wrong, 10.1%).
+
+**Criteria.**
+- **Safety: not met.** Per seed, the model's wrong-payment fraction is at most the policy's on 7
+  of 8, but 6 of those pay nothing. Seed 308 passed the validation test at 224 and then paid
+  wrongly 11.7% of the time on held-out data, against the policy's 11.4%. Pooled, the model's
+  payments are 9.3% wrong (68 of 735) against the policy's 9.0% (452 of 5,031): not lower.
+- **Usefulness: not met.** 420 decided on average (512 required); 91.9 payments against the 314
+  required.
+- **Non-vacuity: not met.** The gate pays on 2 of 8 seeds (7 required).
+
+**v3 fails on all three criteria, and this was the last round.** Accuracy of the most probable
+option, which the rule does not touch, is 903.6 against the policy's 890.6 and the ceiling's
+917.3, at least the policy's on 7 of 8 seeds.
+
+**Where the limit is: the model, inside the narrow room the label noise leaves.** Under this
+generator the safest set of invoices a rule on the visible fields can pay, those without changed
+bank details and without a hold condition, has a `pay` label about 92.9% of the time (fraud 1/32,
+then 1/16 noise), against about 91% for the written policy's payments: 1.5 to 2 points of
+headroom, and no profile is safer. That headroom is enough for the rule. An oracle gate that pays
+exactly that set passes v3's validation test on 7 of 8 seeds (all but 301), and on the held-out
+sets it pays 514 invoices per seed with 7.6% wrong (314 of 4,112) against the policy's 9.0%, safer
+on all 8 seeds: it would meet every criterion. The trained models do not find that set. Their
+most confident `pay` answers were no more precise than the policy's on validation (seed 301: 91.3%
+at confidence 224 or more against the policy's 91.6%), and the deployed model is more confident
+about paying a new vendor that changed bank details through the portal (247/256, fraudulent one
+time in four) than about a routine invoice (246/256). The models learn the majority rule (pay
+unless a hold condition) and do not rank the 1/32, 2/32 and 8/32 fraud risks among payable
+invoices, which is the distinction safe paying needs. The rule is not the binding limit and the
+label noise does not make the goal unreachable; the model, as trained here (squared error on
+one-hot labels, at most 16 hidden units, 512 examples, no cost on wrong payments), is.
+
+
+### The deployed model (seed 301)
+
+`recipe` (gain 627, learning rate 8, 8 hidden units, 80 epochs: 2,560 SGD steps, 179
+parameters) behind v3's thresholds. `#guard recipe.train task.spec == deployed` re-runs training
+at every build of the test library and checks it bit for bit.
+
+**Gate** (`gate` in `Invoice.lean`; a `#guard` checks it equals `gateCumulative deployed` on seed
+301's 4,096 validation examples): floor 128; `pay` 257; `hold` 128; `reject` 257. On validation,
+the model's `pay` answers at confidence 224 or more were right 1,721 times in 1,886 (91.3%), below
+the written policy's 2,340 of 2,554 (91.6%), so no edge passes. Proved for every weight setting:
+
+- `never_pays` and `never_rejects` (`run_never`, as 257 > 256);
+- `pay_needs_confidence`, `low_confidence_defers`;
+- `handle_never_pays`: the service pays no invoice.
+
+**Card** (`card_certified`, `decide +kernel`): model 901, policy 881, Brier sum 57,559/256, 337
+decided (all `hold`) with 302 right, no payments.
 
 **Decisions**, each `by decide +kernel`:
 
-- `routine_pays`: established vendor, portal, amount level 2, purchase order: `pay` at 229/256.
-- `largeWithoutPO_escalates`: the same at amount level 6 without a purchase order: `hold` at 123,
-  below the floor, so `defer`.
-- `newVendorEmailBankChange_escalates`: the riskiest visible profile; the model answers `pay`,
-  but only at 130, and the verdict is `defer`.
+- `routine_escalates`: the model answers `pay` at 246; the verdict is `defer`.
+- `largeWithoutPO_holds`: `hold` at 199.
+- `newVendorEmailBankChange_escalates`: the riskiest visible profile; the model answers `pay` at
+  216; the verdict is `defer`.
 - `newVendorPortalBankChange_escalates`: the written policy rejects; the model answers `pay` at
-  183, below 224, and the verdict is `defer`. Under v1 the same kind of profile was paid.
+  **247**, more confidently than for the routine invoice (246), although under the generator this
+  profile is fraudulent one time in four; the verdict is `defer`.
 
 **Application** (`InvoiceApp.lean`). `handle` rejects an unapproved vendor and holds a total above
 its purchase order in ordinary code, then calls `decision.run` on the invoice's profile and acts:
@@ -489,12 +601,13 @@ def handle (d : Decision Profile Disposition) (inv : Invoice) : Outcome :=
 
 theorem handle_paid (m : Model) (inv : Invoice) (h : handle ⟨m, gate⟩ inv = .paid) :
     inv.vendorApproved = true ∧ inv.overPO = false ∧
-      224 ≤ (judge m inv.profile : Judgment Disposition).confidence
+      gate.need .pay ≤ (judge m inv.profile : Judgment Disposition).confidence
 ```
 
-The test file exercises it with a model that says `pay` at full confidence for everything: it
-pays an in-order invoice and still holds one over its purchase order and rejects an unapproved
-vendor.
+With the deployed gate `handle_never_pays` follows: no invoice is paid, whatever the weights.
+The test file exercises `handle` with a model that says `pay` at full confidence for everything,
+behind a gate that allows `pay` from 128: it pays an in-order invoice and still holds one over
+its purchase order and rejects an unapproved vendor.
 
 **What the gate does not say.** Confidence is the model's own number. An untrained model can be
 fully confident: under `probabilitiesNonneg`, one positive output and the rest negative give
@@ -508,7 +621,7 @@ only.
 | Statement | Mechanism in this project | State here |
 |---|---|---|
 | Gate theorems, every weight setting | ordinary Lean proofs; an Ix `Check` claim each, as `deployedPublishSound` (5.2–5.6 s each in `README.md`) | proved in Lean |
-| `handle_paid`, `never_rejects`, every weight setting | same | proved in Lean |
+| `handle_paid`, `handle_never_pays`, `never_pays`, `never_rejects`, every weight setting | same | proved in Lean |
 | `trainingClaim : recipe.train task.spec = deployed` | an Ix `Eval` claim, or a chain of per-step claims joined by `train_eq_of_chain` (`IxAICore/Chain.lean`) | checked by `#guard` at build; not certified |
 | `card_certified` | an Ix `Eval` claim, as the triage card | proved by `decide +kernel` |
 | Decisions on concrete inputs | an Ix `Eval` or `Check` claim each, as the triage decision receipts | proved by `decide +kernel` |
@@ -759,7 +872,11 @@ be built. Tests: `IxAIDecide/LaneGateTest.lean`, constant models only.
   rule (90% precision averaged over all `pay` answers) paid wrongly 10.4% and 10.1% of the time
   on two sets of seeds, against the policy's 8.9% and 9.1%. v2's (policy precision plus one point
   in every bin) is safer (7.5%) but decides only 500 of 1,024 invoices on average and pays none on
-  3 of 8 seeds. The changes listed under "Protocol v2 results" are the next attempt.
+  3 of 8 seeds. v3's (an exact one-sided binomial test on cumulative answers against the
+  policy's precision, 4,096 validation examples) fails safety, usefulness and non-vacuity: the
+  gate pays on 2 of 8 seeds, and those payments are not safer pooled. An oracle paying exactly
+  the safest visible profiles meets every criterion, so the limit is the model's ranking of
+  payable invoices by risk (see "Protocol v3 results").
 - **The model trails the ceiling by about 12 of 1,024** on average; dead hidden units, the noisy
   Brier targets and 512 training examples are the likely causes (see "Protocol results").
 - **Confidence is monotone but not calibrated**: underconfident by 7–12 points in the middle,
@@ -804,13 +921,15 @@ Taking other examples from Jev's map, what this library lacks for each:
 ## Build and tests
 
 `ix/light.sh .toolchain/bin/lake build IxAIDecide IxAIDecideTest` (2026-11-20, after protocol
-v2): all 18 jobs succeeded. `InvoiceDeployed` took 39 s (the kernel-checked card),
-`IxAIDecideTest` 13 s on a loaded machine (8.8 s unloaded; it re-runs the deployed recipe's
-3,200-step training), every other module under 0.7 s. The tests cover: encodings and widths,
-the dataset's label counts, the two baselines on seeds 2026 and 201, `recipe.train task.spec ==
-deployed`, checkpoints equal to the shorter recipes, the gate equal to `gateFromValidation` on
-validation, the kernel-checked two-step core training and the same run through the `@[csimp]`
-fast path, the gate on a constant `pay` model, on every held-out example for three weight
-settings (nothing below 128, never `reject`), a stricter gate changing no decision, a cascade,
-and the service on concrete invoices, including the new-vendor, portal, bank-change invoice
-escalated at 183.
+v3): all 18 jobs succeeded (the Lane gate prototype is not imported and is checked on its own). `InvoiceDeployed` took 32 s (the kernel-checked card),
+`IxAIDecideTest` 8.5 s (it re-runs the deployed recipe's 2,560-step training), every other
+module under 0.6 s. The tests cover: encodings and widths; `binomTailNum` against independently
+computed exact tails, and one tail proved by `decide +kernel`; the dataset's label counts; the
+two baselines on seeds 2026 and 301; the 4,096-example validation set extending the 1,024-example
+one; `recipe.train task.spec == deployed`; checkpoints equal to the shorter recipes; the gate
+equal to `gateCumulative` on validation; the kernel-checked two-step core training and the same
+run through the `@[csimp]` fast path; `handle` with a constant `pay` model behind an open gate
+and behind the deployed one; every held-out example for three weight settings (nothing below
+128, never `pay`, never `reject`); a stricter gate changing no decision; a cascade; and the
+service on concrete invoices, including the new-vendor, portal, bank-change invoice escalated at
+247.

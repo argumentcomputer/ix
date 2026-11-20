@@ -191,6 +191,63 @@ def rulePrecision {ι ω : Type} [DecidableEq ω] (rule : ι → ω) (o : ω) (x
 def policyPayTarget (rp : Nat × Nat) (right count : Nat) : Bool :=
   decide ((100 * rp.1 + rp.2) * count ≤ 100 * rp.2 * right)
 
+/-! ## A binomial test on cumulative answers -/
+
+/-- `Σ_{k=r}^{n} C(n,k) · aᵏ · bⁿ⁻ᵏ`: with `p = a/(a + b)`, the upper tail `P(X ≥ r)` of a
+binomial `(n, p)` is this over `(a + b)ⁿ`. `C(n,k)` is carried as `C(n,k+1) = C(n,k)·(n−k)/(k+1)`,
+an exact division, and `bⁿ⁻ᵏ` as `bⁿ / bᵏ`, also exact when `b > 0`. -/
+def binomTailNum (n r a b : Nat) : Nat :=
+  if b = 0 then (if r ≤ n then a ^ n else 0) else
+  let bn := b ^ n
+  ((List.range (n + 1)).foldl (fun (acc : Nat × Nat × Nat × Nat) k =>
+      let (c, ak, bk, sum) := acc
+      let sum := if r ≤ k then sum + c * ak * (bn / bk) else sum
+      (c * (n - k) / (k + 1), ak * a, bk * b, sum)) (1, 1, 1, 0)).2.2.2
+
+/-- The one-sided test at the 95% level that `r` right of `n` shows a precision above
+`a/(a + b)`: the binomial upper tail `P(X ≥ r)` at `a/(a + b)` is at most `1/20`. Passing it is
+equivalent to the one-sided 95% Clopper–Pearson lower bound being at least `a/(a + b)`. -/
+def binomTest (n r a b : Nat) : Bool := decide (20 * binomTailNum n r a b ≤ (a + b) ^ n)
+
+/-- Validation answers of option `o` with confidence at least `e`: how many, and how many right. -/
+def cumCounts {ω : Type} [DecidableEq ω] (js : List (Judgment ω × ω)) (o : ω) (e : Int) :
+    Nat × Nat :=
+  let sel := js.filter fun (j, _) => j.option == o && decide (e ≤ j.confidence)
+  (sel.length, (sel.filter fun (_, l) => l == o).length)
+
+/-- The edges a cumulative threshold rule tests. -/
+def cumulativeEdges : List Int := [128, 160, 192, 224]
+
+/-- The lowest edge whose cumulative answers (at least `minCount`) pass `binomTest` against
+`a/(a + b)`, and above which every edge with at least `minCount` cumulative answers passes too;
+`257`, above every probability, if there is none. -/
+def thresholdCumulative {ω : Type} [DecidableEq ω] (js : List (Judgment ω × ω)) (o : ω)
+    (a b minCount : Nat) : Int :=
+  let status := cumulativeEdges.map fun e =>
+    let (n, r) := cumCounts js o e
+    (e, decide (minCount ≤ n), binomTest n r a b)
+  let qualifies := fun (i : Nat) =>
+    let (_, tested, passes) := getD status i (257, false, false)
+    tested && passes && (status.drop (i + 1)).all fun (_, t, p) => !t || p
+  match (List.range status.length).find? qualifies with
+  | some i => (getD status i (257, false, false)).1
+  | none => 257
+
+/-- `n` validation examples from the validation stream (`seed + 2000003`). The first `testSize`
+of them are `validationSet`. -/
+def validationSetN {σ : Type} (c : Config) (s : Spec σ) (n : Nat) : List σ :=
+  (s.sampleN n (Rng.seeded (c.seed + 2000003))).1
+
+/-- `candidates`, scored on `valSize` validation examples. -/
+def candidatesN {ι ω : Type} [Encode ι] [Finite ω] [Inhabited ω] [DecidableEq ω]
+    [Inhabited (Labelled ι ω)] (t : Task ι ω) (recipes : List Recipe) (every valSize : Nat) :
+    List Candidate :=
+  recipes.flatMap fun r =>
+    let val := validationSetN r.config t.spec valSize
+    (r.checkpoints t.spec every).map fun (e, m) =>
+      let (k, b) := validationScore m val
+      ⟨{ r with config := { r.config with epochs := e } }, m, k, b⟩
+
 /-! ## Calibration -/
 
 /-- One confidence bin of a model's answers on a labelled set. -/

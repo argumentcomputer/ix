@@ -14,7 +14,7 @@ and acts on the gate's verdict:
 
 `handle_paid` is the property the business cares about, proved for every model: an invoice is
 paid only if its vendor is approved, it is within its purchase order, and the model's confidence
-in `pay` was at least 224/256, the threshold set on validation.
+in `pay` reached the gate's `pay` threshold (`gate.need .pay`, set on validation).
 -/
 
 namespace IxAIDecide.Invoice
@@ -77,10 +77,10 @@ def handle (d : Decision Profile Disposition) (inv : Invoice) : Outcome :=
       .escalated j.option j.confidence
 
 /-- For every model behind `gate`: a paid invoice has an approved vendor, is within its purchase
-order, and was judged `pay` with confidence at least 224/256. -/
+order, and was judged `pay` with confidence at least `gate.need .pay`. -/
 theorem handle_paid (m : Model) (inv : Invoice) (h : handle ⟨m, gate⟩ inv = .paid) :
     inv.vendorApproved = true ∧ inv.overPO = false ∧
-      224 ≤ (judge m inv.profile : Judgment Disposition).confidence := by
+      gate.need .pay ≤ (judge m inv.profile : Judgment Disposition).confidence := by
   unfold handle at h
   by_cases ha : inv.vendorApproved = true
   · by_cases ho : inv.overPO = true
@@ -92,6 +92,14 @@ theorem handle_paid (m : Model) (inv : Invoice) (h : handle ⟨m, gate⟩ inv = 
         exact pay_needs_confidence m inv.profile hr
       all_goals cases h
   · simp [ha] at h
+
+/-- With the deployed gate, whose `pay` threshold is 257, no invoice is paid, for any weights. -/
+theorem handle_never_pays (m : Model) (inv : Invoice) : handle ⟨m, gate⟩ inv ≠ .paid := by
+  intro h
+  have := (handle_paid m inv h).2.2
+  have := judge_confidence_le (ω := Disposition) m inv.profile
+  have hp : gate.need .pay = 257 := rfl
+  omega
 
 /-- The deployed service. -/
 def service (inv : Invoice) : Outcome := handle decision inv

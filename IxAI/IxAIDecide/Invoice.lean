@@ -140,10 +140,10 @@ def config : Config :=
   { seed := 2026, hidden := 8, lrRaw := 8, epochs := 80, batch := 16, trainSize := 512,
     testSize := 1024 }
 
-/-- The recipe the protocol selected for seed 201 on validation: fan-in initialization with gain
-627/256, learning rate 8/256, 8 hidden units, 100 epochs (3,200 SGD steps). -/
+/-- The recipe the protocol selected for seed 301 on validation: fan-in initialization with gain
+627/256, learning rate 8/256, 8 hidden units, 80 epochs (2,560 SGD steps). -/
 def recipe : Recipe :=
-  ⟨{ config with seed := 201, hidden := 8, lrRaw := 8, epochs := 100 }, 627⟩
+  ⟨{ config with seed := 301, hidden := 8, lrRaw := 8, epochs := 80 }, 627⟩
 
 /-- Protocol v2's gate for weights `m` from validation examples `val`
 (`docs/decision-library.md`): each option's threshold is the lowest bin edge from which every
@@ -162,14 +162,32 @@ def gateFromValidation (m : Model) (val : List (Labelled Profile Disposition)) :
       | .hold => hold
       | .reject => rej }
 
-/-- `gateFromValidation` for the deployed weights on seed 201's validation set (checked in
-`IxAIDecideTest`): `pay` from 224/256, `hold` from the floor, 128/256, and `reject` at no
-threshold, so 257: the gate never rejects (`run_never`). Below the floor, and for a `pay`
-answer below 224, the case goes to a person. -/
+/-- Protocol v3's gate for weights `m` from validation examples `val`
+(`docs/decision-library.md`): each option's threshold is the lowest edge whose cumulative
+answers, and those of every higher edge with at least 50, pass the one-sided 95% binomial test
+(`binomTest`) against a comparison precision. For `pay` that is the written policy's own `pay`
+precision on `val`; `hold` 80%; `reject` 90%. The floor is 128. -/
+def gateCumulative (m : Model) (val : List (Labelled Profile Disposition)) : Gate Disposition :=
+  let js := judgments m val
+  let (right, paid) := rulePrecision writtenPolicy .pay val
+  let pay := thresholdCumulative js .pay right (paid - right) 50
+  let hold := thresholdCumulative js .hold 4 1 50
+  let rej := thresholdCumulative js .reject 9 1 50
+  { floor := 128
+    need := fun
+      | .pay => pay
+      | .hold => hold
+      | .reject => rej }
+
+/-- `gateCumulative` for the deployed weights on seed 301's 4,096 validation examples (checked in
+`IxAIDecideTest`): `hold` from the floor, 128/256; `pay` and `reject` at no threshold, so 257. No
+cumulative set of the model's `pay` answers is significantly more precise than the written
+policy's payments, so the gate never pays and never rejects (`run_never`): it holds, or sends the
+case to a person. -/
 def gate : Gate Disposition :=
   { floor := 128
     need := fun
-      | .pay => 224
+      | .pay => 257
       | .hold => 128
       | .reject => 257 }
 

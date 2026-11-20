@@ -43,6 +43,7 @@ same_dir_lake() {
   return 1
 }
 queue="$(dirname "$log")/heavy.queue"
+heavy_lock="${HEAVY_LOCK:-/home/sam/repos/ix.aiur-compression-active/target/heavy.lock}"
 # True when the next heavy job to start was queued by a heavy.sh that waits for light jobs (its
 # ticket, named by its creation time in nanoseconds, is older than the current heavy.sh) and no
 # heavy job is running.
@@ -51,12 +52,15 @@ old_heavy_about_to_start() {
   for t in $(ls "$queue" 2>/dev/null | sort); do
     if kill -0 "${t##*.}" 2>/dev/null; then head=$t; break; fi
   done
-  [ -n "$head" ] || return 1
-  [ "${head%%.*}" -lt "$(stat -c %Y "$here/heavy.sh")000000000" ] || return 1
   # The last start or end line says whether a heavy job is running now.
   case "$(tac "$log" 2>/dev/null | grep -m1 -E '^[0-9:]+ (start|end) ')" in
     *" start "*) return 1 ;;
   esac
+  # A job that holds the heavy lock without having started is waiting, under the lock, for the
+  # same quiet moment, whatever its place in the queue.
+  flock -n "$heavy_lock" true 2>/dev/null || return 0
+  [ -n "$head" ] || return 1
+  [ "${head%%.*}" -lt "$(stat -c %Y "$here/heavy.sh")000000000" ] || return 1
   return 0
 }
 stand_aside() {

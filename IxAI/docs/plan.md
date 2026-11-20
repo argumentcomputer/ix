@@ -177,35 +177,40 @@ Done:
   was judged `pay` at the gate's threshold or more.
   Training follows a protocol fixed before its runs (`Protocol.lean`): fan-in-scaled
   initialization, a validation stream, selection among 48 checkpoints per seed on validation
-  only, seeds fixed in advance, the held-out set scored once. Two threshold rules were each
-  fixed before their runs; neither makes the gate both safer than the written policy and
-  useful. Results on 1,024 held-out invoices per seed:
-  - Accuracy of the model's top answer: 902.3 on seeds 101 to 108 and 905.1 on seeds 201 to
-    208, against the written policy's 889.1 and 885.5 and the 914.1 and 916.0 of the best rule
-    on the visible fields; at least the policy's on 15 of 16 seeds. The first version, tuned on
-    one seed's own held-out score, had lost to the policy on average (878 against 891).
+  only, seeds fixed in advance, the held-out set scored once. Three threshold rules were each
+  fixed before their runs, on fresh seeds each time; none makes the gated model both safer
+  than the written policy and useful. Results on 1,024 held-out invoices per seed:
+  - Accuracy of the model's top answer, which no rule changes: 902.3, 905.1 and 903.6 on the
+    three seed sets, against the written policy's 889.1, 885.5 and 890.6 and the 914.1, 916.0
+    and 917.3 of the best rule on the visible fields.
   - Rule v1 (90% precision averaged over all `pay` answers; seeds 101 to 108): the gate pays
-    wrongly 10.4% of the time against the policy's 8.9%; the target is met at the floor because
-    most `pay` answers are routine. Reproduced on the fresh seeds (10.1% against 9.1%).
-  - Rule v2 (the policy's own validation precision plus one point, in every confidence bin;
-    same models, seeds 201 to 208): safety met (wrong payments at most the policy's on 7 of 8
-    seeds, 7.5% pooled against 9.1%), usefulness not met (500 of 1,024 decided on average,
-    under the 512 fixed in advance, and nothing paid on 3 seeds). A target at the label-noise
-    ceiling (a perfect `pay` answer is right about 93% of the time), judged on bins of a few
-    dozen answers, turns sampling noise into deferral.
-  - `reject` never qualifies under either rule, which is right under the generator (the
-    riskiest visible profile is fraudulent at most 3/4 of the time); `never_rejects` proves it
-    for every weight setting.
-  - Confidence rises with accuracy in every bin but is not calibrated.
-  The deployed model is seed 201's under rule v2 (179 parameters, 3,200 steps; pay needs
-  224/256): its card (877 correct against the policy's 857; 718 decided, 636 right; 438
-  payments, 34 wrong) and four decisions are proved by `decide +kernel`, including that the
-  new-vendor, portal, bank-change invoice which rule v1 paid now goes to a person
-  (`newVendorPortalBankChange_escalates`); its training is re-run bit for bit at every test
-  build (`#guard`, evaluation, not a kernel proof). `Fast.lean` gives `@[csimp]` array versions
-  of the core's shuffle and schedule, proved equal: the schedule from 2.3 s to 0.06 s in the
-  interpreter. Written down, not run: rule v3 (cumulative answers above each edge, a one-sided
-  binomial lower bound against the policy's precision, a 4,096-example validation set).
+    wrongly 10.4% of the time against the policy's 8.9%.
+  - Rule v2 (the policy's validation precision plus one point in every confidence bin; seeds
+    201 to 208): safer (7.5% against 9.1%) but decides 500 of 1,024 on average and pays nothing
+    on 3 seeds.
+  - Rule v3 (an exact one-sided 95% binomial test on cumulative answers against the policy's
+    precision, in integer arithmetic in `Protocol.lean`; 4,096 validation examples; seeds 301
+    to 308): pays on 2 of 8 seeds, and those payments are 9.3% wrong against the policy's 9.0%.
+    It fails safety, usefulness and the requirement to pay on at least 7 seeds.
+  - Where the limit is: an oracle gate that pays exactly the safest visible profiles passes
+    v3's test on 7 of 8 seeds and pays 514 invoices per seed with 7.6% wrong, safer than the
+    policy on all 8. So the rule and the label noise leave room (1.5 to 2 points); the trained
+    models do not use it. Their most confident `pay` answers are no more precise than the
+    policy's, and the deployed model is more confident paying a new vendor that changed bank
+    details through the portal (247/256) than a routine invoice (246/256): it learned "pay
+    unless a hold condition applies" and does not rank payable invoices by fraud risk. The
+    training objective (squared error on one-hot labels, no cost on a wrong payment, 512
+    examples, at most 16 hidden units) is the binding limit, and it lives in the core.
+  - `reject` never qualifies under any rule, which is right under the generator;
+    `never_rejects` proves it for every weight setting.
+  The deployed model is seed 301's under rule v3 (179 parameters, 2,560 steps): its gate never
+  pays and never rejects (`never_pays`, `never_rejects`), so it holds or sends to a person; its
+  card (901 correct against the policy's 881; 337 decided, all `hold`, 302 right) and four
+  decisions are proved by `decide +kernel`, and its training is re-run bit for bit at every
+  test build (`#guard`, evaluation, not a kernel proof). `Fast.lean` gives `@[csimp]` array
+  versions of the core's shuffle and schedule, proved equal. No further threshold rounds: the
+  next step is the objective (a cost on wrong payments, or probability targets, with more
+  data), which is a change to the certified core and its circuit.
   Not general enough in the core: `card` and `Model.ask` clamp probabilities, the triage gate
   has one threshold; the Aiur circuit, refinement proofs and code generators are tied to
   `Triage.spec`, so this model's training is not certified by either route yet.
@@ -560,9 +565,15 @@ In progress:
   8 minutes. In hand, in this order of expected effect: the shape of the generated proofs
   (their inversion scripts were tuned for compile cost, never for checking cost); the kernel's
   substitution cost (`kernel-subst`, merged into `cert` with regenerated pins, `9a54ac3a5`,
-  IxVM artifact `1b348b95…`; shard 0 is being proved on the GPU under it and under
-  `exp-noinferrebase` with the standalone binaries, `kernel-subst/bin/prove0.sh`); the rebase
-  experiments. The cost
+  IxVM artifact `1b348b95…`); the rebase experiments. Shard 0 proved on the one GPU with the
+  standalone binaries (`kernel-subst/bin/prove0.sh`, 2026-11-20; light jobs ran beside it):
+
+  | Kernel | Shard 0 proved in | of which execution | Peak memory |
+  |---|---|---|---|
+  | certified (`0cbcb681…`) | 30:26 | about 14:19 | 123 GiB |
+  | `kernel-subst` (committed) | 16:27 | 9:35 | 74 GiB |
+  | `exp-noinferrebase` (experiment) | 5:42 | 3:16 | 46 GiB |
+ The cost
   is paid once per program and toolchain, not per training run: a run is joined to an existing
   environment root in 22 seconds.
 - A second combined certificate with the deployed model's card and gate decisions in the
