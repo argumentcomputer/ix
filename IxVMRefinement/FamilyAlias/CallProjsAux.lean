@@ -15,6 +15,7 @@ import IxVMRefinement.Decl.ModeledTele
 import IxVMRefinement.Decl.ModeledRules
 import IxVMRefinement.Levels.Spec
 import IxVMRefinement.Levels.Smart
+import IxVMRefinement.Core.SpineChain
 import IxVMRefinement.Lib.Lists
 import IxVMRefinement.Lib.Words
 import IxVMRefinement.StatementRel.ClosedFacts
@@ -401,44 +402,36 @@ theorem peel_n_lams_collect_tm {κ : _root_.Address → KKey} {Γ : Nat → KExp
   peel_n_lams_collect_tm_go (ZMod.val d) rfl (by simp) hd ev hE
 
 /-- `KernelTypes::collect_spine` on `Tm` at any `(d, k)`. -/
-theorem collect_spine_tm {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr} :
-    ∀ {e r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {k : Nat} {E : KExpr},
-      ObsFn Obs.W "KernelTypes::collect_spine" [e] h r h' cs →
-      Tm κ d Γ h k E e →
-      ∃ hd sp H As, r = .tuple [hd, sp] ∧ Tm κ d Γ h' k H hd ∧
-        RepList kexprListEnum (fun h A p => Tm κ d Γ h k A p) h' As sp ∧
-        E = Expr.mkAppN H As := by
-  have hmain : ∀ (fname : String) (args : List (SourceValue F)) (h : Heap F) (r : SourceValue F)
-      (h' : Heap F) (cs : List (Call F)),
-      ObsFn Obs.W fname args h r h' cs → fname = "KernelTypes::collect_spine" →
-      ∀ (e : SourceValue F) (k : Nat) (E : KExpr), args = [e] → Tm κ d Γ h k E e →
-        ∃ hd sp H As, r = .tuple [hd, sp] ∧ Tm κ d Γ h' k H hd ∧
-          RepList kexprListEnum (fun h A p => Tm κ d Γ h k A p) h' As sp ∧
-          E = Expr.mkAppN H As :=
-    ObsFn.strong_induction (world := Obs.W)
-      (fun fname args h r h' cs => fname = "KernelTypes::collect_spine" →
-        ∀ (e : SourceValue F) (k : Nat) (E : KExpr), args = [e] → Tm κ d Γ h k E e →
-          ∃ hd sp H As, r = .tuple [hd, sp] ∧ Tm κ d Γ h' k H hd ∧
-            RepList kexprListEnum (fun h A p => Tm κ d Γ h k A p) h' As sp ∧
-            E = Expr.mkAppN H As)
-      (fun fname args h r h' cs ev ih hfn e k E hargs hE => by
-        subst hfn hargs
-        match Obs.«KernelTypes::collect_spine».obs ev with
-        | .App (cs41 := cs1) (ld12 := ld) (ev43 := e1) (he69 := hr) (ev88 := e2)
-            (he105 := he) (hc106 := hc) .. =>
-          have hlt : cs1.length < cs.length := by rw [hc]; simp only [List.length_cons, List.length_append]; omega
-          subst hr he
-          obtain ⟨Ef, Ea, rfl, hf, ha⟩ := hE.app_of_load ld
-          obtain ⟨hd, sp, H, As, htup, hH, hAs, rfl⟩ := ih _ _ _ _ _ _ hlt e1 rfl _ k Ef rfl hf
-          injection htup with hl; injection hl with h1 hl; injection hl with h2; subst h1 h2
-          exact ⟨_, _, H, As ++ [Ea], rfl, hH.mono e2.heap_extends,
-            kexprList_snoc_spec (fun _ _ _ _ ext r => r.mono ext) e2 hAs (ha.mono e1.heap_extends),
-            (SubstAux.mkAppN_snoc As H Ea).symm⟩
-        | .other (he115 := hr) (hm132 := hm) (he136 := he) .. =>
-          subst hr hm he
-          exact ⟨e, _, E, [], rfl, hE.mono (Heap.Extends.snoc _ _), .nil (by simp), rfl⟩)
-  intro e r h h' cs k E ev hE
-  exact hmain _ _ _ _ _ _ ev rfl e k E rfl hE
+theorem collect_spine_tm {κ : _root_.Address → KKey} {d : Nat} {Γ : Nat → KExpr}
+    {e r : SourceValue F} {h h' : Heap F} {cs : List (Call F)} {k : Nat} {E : KExpr}
+    (ev : ObsFn Obs.W "KernelTypes::collect_spine" [e] h r h' cs)
+    (hE : Tm κ d Γ h k E e) :
+    ∃ hd sp H As, r = .tuple [hd, sp] ∧ Tm κ d Γ h' k H hd ∧
+      RepList kexprListEnum (fun h A p => Tm κ d Γ h k A p) h' As sp ∧
+      E = Expr.mkAppN H As := by
+  obtain ⟨hd, sp, ps, rfl, hch, -, hrep⟩ := Core.collect_spine_chain ev
+  have hch' := hch.mono ev.heap_extends
+  have haux :
+      ∀ {xe xhd' : SourceValue F} {ps : List (SourceValue F)},
+        Core.SpineChain h' xe xhd' ps →
+        ∀ {X : KExpr}, Tm κ d Γ h' k X xe →
+          ∃ (H : KExpr) (As : List KExpr),
+            Tm κ d Γ h' k H xhd' ∧
+            List.Forall₂ (fun A p => Tm κ d Γ h' k A p) As ps ∧
+            X = Expr.mkAppN H As := by
+    intro xe xhd' ps sc
+    induction sc with
+    | head _ _ =>
+      intro X hX
+      exact ⟨X, [], hX, .nil, rfl⟩
+    | app ld _ ih =>
+      intro X hX
+      obtain ⟨Ef, Ea, rfl, hf, ha⟩ := hX.app_of_load ld
+      obtain ⟨H, As, hH, hAs, rfl⟩ := ih hf
+      exact ⟨H, As ++ [Ea], hH, Core.forall₂_append hAs (.cons ha .nil),
+        (SubstAux.mkAppN_snoc As H Ea).symm⟩
+  obtain ⟨H, As, hH, hAs, hEq⟩ := haux hch' (hE.mono ev.heap_extends)
+  exact ⟨hd, sp, H, As, rfl, hH, Core.repList_of_eq_forall₂ hrep hAs, hEq⟩
 
 /-- `KernelModeled::bvars_desc` at `(d = 0, k)`: produces `.bvar (top - 1), ..., .bvar (top - cnt)`. -/
 private theorem bvars_desc_tm_go (rem : Nat) :
