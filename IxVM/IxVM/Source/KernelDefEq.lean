@@ -49,8 +49,13 @@ def k_def_eq_rebase := aiur_fn⟦
   fn k_def_eq_rebase(rc: KernelRoles::RoleCtx, a: KernelTypes::KExpr, b: KernelTypes::KExpr, types: Lists::List<KernelTypes::KExpr>,
                            base: Field) -> Field {
 
-      let g = KernelSubst::lbr_min(KernelSubst::lbr_min(KernelSubst::expr_glb(a, 0), KernelSubst::expr_glb(b, 0)),
-                      Lists::length(types));
+      -- A zero gap on `a` decides `g`, so `b` is searched only when `a` leaves one.
+      let g = match KernelSubst::expr_glb(a, 0) {
+        0 => {  0 } ,
+        ga => {
+          KernelSubst::lbr_min(KernelSubst::lbr_min(ga, KernelSubst::expr_glb(b, 0)),
+                               Lists::length(types)) } ,
+      };
       match g {
         0 => {  k_is_def_eq_core(rc, a, b, KernelSubst::ctx_trim(types, base)) } ,
         _ => {
