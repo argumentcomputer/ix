@@ -244,11 +244,11 @@ def expr_glb_let := aiur_fn⟦
     }
 ⟧
 
-  -- `expr_glb` with the search confined to cutoffs below 16: an open subterm reached at
-  -- cutoff 16 answers 0, as if it used the variable at the cutoff. Called at cutoff 0,
+  -- `expr_glb` with the search confined to cutoffs below 32: an open subterm reached at
+  -- cutoff 32 answers 0, as if it used the variable at the cutoff. Called at cutoff 0,
   -- the answer is therefore either `expr_glb`'s or 0 (a minimum that meets a 0 is 0),
-  -- and 0 is always a sound gap to rebase by. A node gets at most 17 rows (one per
-  -- cutoff 0..16), where `expr_glb` gets one per enclosing binder of every subject it
+  -- and 0 is always a sound gap to rebase by. A node gets at most 33 rows (one per
+  -- cutoff 0..32), where `expr_glb` gets one per enclosing binder of every subject it
   -- is searched from, which on deep proof terms is most of the execution.
 
 def expr_glb_shallow := aiur_fn⟦
@@ -256,7 +256,7 @@ def expr_glb_shallow := aiur_fn⟦
       match UInt32::less_than_fields(expr_lbr(e), c + 1) {
         1 => {  4294967295 } ,
         _ => {
-          match UInt32::less_than_fields(c, 16) {
+          match UInt32::less_than_fields(c, 32) {
             0 => {  0 } ,
             _ => {  expr_glb_shallow_walk(e, c) } ,
           } } ,
