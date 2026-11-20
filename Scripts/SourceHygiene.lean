@@ -14,14 +14,28 @@ def retiredNames : List String :=
    "compileMutConstClass", "Ix.Tc.PrimAddrs", "Ix.Tc.primAddrSet", "Ix.Tc.reservedMarkerName",
    "compileEnvStreamed", "compileEnvWithRust", "compileLeanWithRust", "checkRsCmd", "validateRsCmd",
    "crates/kernel/", "crates/compile/", "check-rs", "ix_compile::", "rs_compile_env",
-   "resourcePostStep"]
+   "resourcePostStep",
+   "Ix.Sharing.Exact.Phase3", "Exact/Phase3.lean", "S4Bench", "ixvm-s4-",
+   "Ix.IxVM.Consistency.L0", "Consistency/L0.lean",
+   "IxVMRefinement.L1", "IxVMRefinement/L1", "IxVM.Refinement.L1",
+   "ClaimsL1L6", "Assembly.L7", "Assembly/L7.lean", "Claim.Phase", "Claim/Phase.lean",
+   "LoadedL1", "WalkedL6", "consistent_of_decls_l7", "l7_of_declsStrong",
+   "Core.S0.", "Core.S₀",
+   "IxVM.Consistency.L0", "IxVM.Consistency.L1", "IxVM.Consistency.L2", "IxVM.Consistency.L3",
+   "IxVM.Consistency.L4", "IxVM.Consistency.L5", "IxVM.Consistency.L6", "IxVM.Consistency.L7",
+   "c08a-", "c08b-", "c08c-", "c08d-", "c08e-", "g06a-", "g06b-", "g06c-", "g06d-",
+   "g08-imax", "d10-forged", "i11b-", "h08-retired", "i05a-", "i05b-"]
 
 def privatePlans : List String := ["IXC-PLAN", "PRIMITIVES-DESIGN"]
 
 def bannedSubstrings : List String :=
   ["ALPHA-COLLAPSE", "LOCALITY", "TRUST-CLOSURE", "AUX-CERT", "AuxGen",
    "SurgAlias", "HANDOFF-", "ix-certified-v3", "coordinator decision",
-   "owner decision"]
+   "owner decision",
+   "task #175", "Task #175", "task #217", "Task #217", "#206-S1",
+   "audit follow-up", "divergence audit",
+   "audit's S1", "audit's S2", "audit's D3", "audit's D4", "audit's D13", "audit's E2",
+   "Stage 5:", "W4c", "Wave B"]
 
 def hasQueueLabel (text : String) : Bool :=
   (text.splitOn "CQ").tail.any fun suffix =>
@@ -82,12 +96,25 @@ def selfCheck : IO Unit := do
       "Mirror crates/kernel/src/inductive.rs", "crates/compile/src/compile.rs", "ix check-rs --anon",
       "ix_compile::decompile", "[rs_compile_env]", "Ix.CompileM.resourcePostStep",
       "sourceClasses members", "compileEquivalentMutConsts sources", "open LSpec Ix.Tc",
-      "open LSpec _root_.Ix.Tc", "open _root_.Ix.Tc.PrimAddrs"] do
+      "open LSpec _root_.Ix.Tc", "open _root_.Ix.Tc.PrimAddrs",
+      "import Ix.Sharing.Exact.Phase3", "Tests.Ix.IxVM.S4Bench", "ixvm-s4-bench",
+      "import Ix.IxVM.Consistency.L0", "import IxVMRefinement.L1.Records",
+      "namespace IxVM.Refinement.L1", "IxVMRefinement.Assembly.ClaimsL1L6",
+      "IxVMRefinement.Assembly.L7", "IxVMRefinement.Claim.Phase",
+      "LoadedL1", "WalkedL6", "consistent_of_decls_l7", "Core.S0.addr", "Core.S₀",
+      "IxVM.Consistency.L5", "c08a-dead-let", "g08-imax-distL",
+      "task #175 S1", "Task #217", "audit follow-up #206-S1",
+      "the divergence audit's S2", "the audit's S1", "Stage 5: cache", "W4c", "Wave B"] do
     if (violations bad).isEmpty then throw <| IO.userError s!"scanner missed control: {bad}"
   for good in ["S3 object storage", "R1 and R2 are relations", "2026-10-28", "CQRS architecture",
       "sourceMembers members", "compileMutConstMembers sources", "fae62ca5", "#guard !allowedData `Ix.Tc",
       "open LSpec _root_.Ix", "open _root_.Ix.CompileM", "crates/ixon/src/shard.rs",
-      "ix check-lean --anon", "crates/common/src/prim_addrs.rs"] do
+      "ix check-lean --anon", "crates/common/src/prim_addrs.rs",
+      "import Ix.Sharing.Exact.EvalUpFast", "Tests.Ix.IxVM.InductiveDeclBench", "ixvm-ind-decl-bench",
+      "import Ix.IxVM.Consistency.CircuitToSource", "import IxVMRefinement.Ingress.Records",
+      "IxVMRefinement.Assembly.LayerSeams", "IxVMRefinement.Assembly.ClaimedModelAssembly",
+      "IxVMRefinement.Claim.ClaimSeam", "Core.BaseSeams.addr", "Core.baseSeams",
+      "Stage1", "Stage2", "Stage3"] do
     unless (violations good).isEmpty do throw <| IO.userError s!"scanner rejected ordinary text: {good}"
 
 def sourceFile (path : System.FilePath) : Bool :=
