@@ -79,6 +79,7 @@ import Tests.Ix.IxVM.AliasBlock
 import Tests.Ix.IxVM.ValueRecords
 import Tests.Ix.IxVM.TelescopeBlock
 import Tests.Ix.IxVM.RoleMemberCensus
+import Tests.Ix.IxVM.SyntheticRegressions
 import Tests.Ix.Kernel.ReaderCoverage
 import Tests.Ix.IOIngress
 import Tests.Ix.Kernel.ReaderRoundtrip
@@ -311,6 +312,10 @@ def registry : List Entry := [
   -- The declaration checker's shape guards: one kind of member per inductive block, no later
   -- use of a recursive field, a recursor header free of `let`.
   .env "ixvm-shape-guards" (.ci .ixvm) Tests.Ix.IxVM.ShapeGuards.run,
+  -- Corpus-driven and synthetic 3-way IxVM / IxC regressions: modeled extract closure,
+  -- Lean 4.34 native_decide inert classification, dead-let universe bounds, multi-container
+  -- and mutual AST modeled families, semantic imax, and adversarial boundary controls.
+  .env "ixvm-synthetic-regressions" (.ci .ixvm) Tests.Ix.IxVM.SyntheticRegressions.run,
   .env "ixvm-recgen" (.manual "IX_RECGEN_IXE and IX_RECGEN_OUT: native recursor corpus controls") Tests.Ix.IxVM.RecGen.run,
   .env "ixvm-guard-corpus" (.manual "IX_RECGEN_IXE and IX_RECGEN_OUT: declaration controls; optional IX_GUARD_CORPUS_ADDRESS_FILE") Tests.Ix.IxVM.GuardCorpus.run,
   .runner "ixvm-claim-safety-corpus" (.manual "walk closure of what stays owned on a compiled corpus; IX_SAFETY_IXE, IX_SAFETY_IXES") Tests.Ix.IxVM.ClaimSafety.corpus,
@@ -453,6 +458,7 @@ def required : List (String × String) := [
   ("ixvm-claim-safety", "ci:ixvm"),
   ("ixvm-recursor-parent-route", "ci:ixvm"),
   ("ixvm-shape-guards", "ci:ixvm"),
+  ("ixvm-synthetic-regressions", "ci:ixvm"),
   ("binding-proof-cli", "ci:compiler-closures"),
   ("canon-closure-aux", "ci:compiler-closures"),
   ("compile-closure-whole", "ci:compiler-closures"),
