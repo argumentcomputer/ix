@@ -7,6 +7,7 @@
 //! ```text
 //! aiur_exec_check AX.ixa PROGRAM.ixa ROOT_DIR SPEC_ARGS EXPECTED_OUTPUT COUNT [STEPS]
 //! aiur_exec_check AX.ixa PROGRAM.ixa ROOT_DIR SPEC_ARGS EXPECTED_OUTPUT 1 STEPS --tree MODELS
+//! aiur_exec_check --keys AX.ixa PROGRAM.ixa STEPS [--tree]
 //! ```
 //!
 //! - `ROOT_DIR`: `root-vk.bin` and `root-claims.bin`, the key and claims a
@@ -29,6 +30,9 @@
 //!
 //! Every key is recomputed from its program: the aggregator's must be the
 //! certificate's root key, and the identity blob must name the program's.
+//! Both recompiled keys are printed (`key: aggregator|program BLAKE3 entry
+//! N`) before any file of `ROOT_DIR` is read, so a caller can derive the
+//! certificate's statement from them and the specification alone.
 use aiur::{
   artifact::{ExecutionPackage, Package},
   field::FieldBackend,
@@ -113,8 +117,44 @@ fn batch_key(program: aiur::Program, trace: aiur::trace::TraceArtifact, arity: u
   Ok((backend.verifying_key_bytes()?, claim[1].as_canonical_u64(), claim.len()))
 }
 
+/// `--keys AX.ixa PROGRAM.ixa STEPS [--tree]`: only recompile both keys and print them, for a
+/// caller that derives the certificate's statement itself and reads no file of the prover.
+fn keys_only(a: &[String]) -> R<()> {
+  let (ax, program, steps, tree) = match a {
+    [ax, program, steps] => (ax, program, steps, false),
+    [ax, program, steps, flag] if flag == "--tree" => (ax, program, steps, true),
+    _ => return Err("usage: aiur_exec_check --keys AX.ixa PROGRAM.ixa STEPS [--tree]".into()),
+  };
+  let steps: usize = steps.parse()?;
+  if steps == 0 {
+    return Err("STEPS must be positive".into());
+  }
+  let (ax_pkg, _) = Package::load(ax.as_ref())?;
+  let (ax_prog, ax_trace) = ax_pkg.traced()?;
+  let (ax_key, ax_index, _) = batch_key(ax_prog, ax_trace, 16, 0)?;
+  println!("key: aggregator {} entry {ax_index}", blake3::Hash::from(h(&ax_key)).to_hex());
+  let (step_pkg, _) = ExecutionPackage::load(program.as_ref())?;
+  let (step_prog, step_trace) = step_pkg.package.traced()?;
+  let (step_key, step_index, claim_len) = if tree {
+    batch_key(step_prog, step_trace, MODEL + 1, 32 + MODEL)?
+  } else {
+    batch_key(step_prog, step_trace, MODEL + steps * (XS + TS) + 1, MODEL)?
+  };
+  println!("key: program {} entry {step_index}", blake3::Hash::from(h(&step_key)).to_hex());
+  let expected = if tree { 2 + MODEL + 1 + 32 + MODEL } else { 2 + 2 * MODEL + steps * (XS + TS) + 1 };
+  if claim_len != expected {
+    return Err(format!("REJECT: the program's claim has {claim_len} words, not {expected}").into());
+  }
+  println!("ok: the program's claim has the {expected} words of its shape");
+  println!("ACCEPT: keys recompiled");
+  Ok(())
+}
+
 fn main() -> R<()> {
   let a: Vec<String> = std::env::args().collect();
+  if a.get(1).map(String::as_str) == Some("--keys") {
+    return keys_only(&a[2..]);
+  }
   let (a, tree_models) = match a.iter().position(|x| x == "--tree") {
     Some(i) if i + 2 == a.len() => (a[..i].to_vec(), Some(a[i + 1].clone())),
     Some(_) => return Err("--tree MODELS must come last".into()),
@@ -143,6 +183,7 @@ fn main() -> R<()> {
   let (ax_pkg, _) = Package::load(ax.as_ref())?;
   let (ax_prog, ax_trace) = ax_pkg.traced()?;
   let (ax_key, ax_index, _) = batch_key(ax_prog, ax_trace, 16, 0)?;
+  println!("key: aggregator {} entry {ax_index}", blake3::Hash::from(h(&ax_key)).to_hex());
   let root_key = fs::read(root.join("root-vk.bin"))?;
   check(ax_key == root_key, "the certificate's root key is the aggregator's, recompiled")?;
 
@@ -153,6 +194,7 @@ fn main() -> R<()> {
   } else {
     batch_key(step_prog, step_trace, MODEL + xs_words + ts_words + 1, MODEL)?
   };
+  println!("key: program {} entry {step_index}", blake3::Hash::from(h(&step_key)).to_hex());
   if tree {
     check(count == 1 && step_claim_len == 2 + MODEL + 1 + 32 + MODEL,
       &format!("one execution; the program's claim is model and the rate, root and model"))?;
