@@ -19,8 +19,7 @@ at `nP = 0 ∧ bnl = 0`, or `.unpackGraph spec [n, fidx + 1]` at `nP > 0 ∨ bnl
 * `declIndRenJ_acval`: exposes `BlockAcvalInstalled` from `DeclIndRenRunJ`;
 * `stripPisZetaSort_eq_of_openSortTrace`: equates a `StripPisZetaSort` / `stripPis` result
   level with a registered native family's `resSort` via `FormerOpenTraceAt`;
-* positional level-parameter transport (`origVal`, `ψ_rec`), `defeq_forallE_inv`, and
-  `Infer.lam_inv`;
+* positional level-parameter transport (`origVal`, `ψ_rec`) and `Infer.lam_inv`;
 * `eqRefl_interp_pt`, `aux_fibre_disjoint`, and `auxRec_not_reserved`. -/
 
 universe u
@@ -576,91 +575,6 @@ theorem Infer.lam_inv {env : Env .anon} {g : Ix.Kernel.Rules.Grade} {d : Nat}
       t = .forallE ty (bt.abstract1 d) mb := by
   cases h with
   | lam _ _ hbt _ _ _ _ => exact ⟨_, hbt, rfl⟩
-
-/-- Pure syntactic inversion of `Rules.DefEq` on two `∀`-types: domains are `DefEq`, opened bodies
-are `DefEq` (for some fvar type annotation), and `PropWhen` annotations agree — even when the
-codomain is in `Prop`. -/
-theorem defeq_forallE_inv {env : Env .anon} :
-    ∀ {d : Nat} {a b : KExpr},
-      Ix.Kernel.Rules.DefEq env d a b →
-      ∀ {ty₁ body₁ ty₂ body₂ : KExpr} {m₁ m₂ : BinderMeta},
-        a = .forallE ty₁ body₁ m₁ → b = .forallE ty₂ body₂ m₂ →
-        Ix.Kernel.Rules.DefEq env d ty₁ ty₂ ∧
-        (∃ fty, Ix.Kernel.Rules.DefEq env (d + 1)
-          (body₁.instantiate1 (.fvar d fty)) (body₂.instantiate1 (.fvar d fty))) ∧
-        m₁.pw = m₂.pw
-  | _, _, _, .refl, ty₁, _, _, _, _, _, ha, hb => by
-    rw [ha] at hb
-    injection hb with ht hbd hm
-    subst ht; subst hbd; subst hm
-    exact ⟨.refl, ⟨ty₁, .refl⟩, rfl⟩
-  | _, _, _, .symm hde, _, _, _, _, _, _, ha, hb => by
-    obtain ⟨hty, ⟨fty, hbd⟩, hm⟩ := defeq_forallE_inv hde hb ha
-    exact ⟨.symm hty, ⟨fty, .symm hbd⟩, hm.symm⟩
-  | _, _, _, .redL hred hde, _, _, _, _, _, _, ha, hb => by
-    subst ha
-    have heq := Ix.Kernel.Rules.Red.rigid hred rfl
-    exact defeq_forallE_inv hde heq hb
-  | _, _, _, .forallE hty hbd hm, _, _, _, _, _, _, ha, hb => by
-    injection ha with h1 h2 h3; subst h1; subst h2; subst h3
-    injection hb with h4 h5 h6; subst h4; subst h5; subst h6
-    exact ⟨hty, ⟨_, hbd⟩, hm⟩
-  | _, _, _, .sort _, _, _, _, _, _, _, ha, _ => nomatch ha
-  | _, _, _, .fvar, _, _, _, _, _, _, ha, _ => nomatch ha
-  | _, _, _, .const _, _, _, _, _, _, _, ha, _ => nomatch ha
-  | _, _, _, .natZero, _, _, _, _, _, _, ha, _ => nomatch ha
-  | _, _, _, .natSucc _, _, _, _, _, _, _, ha, _ => nomatch ha
-  | _, _, _, .lam _ _ _, _, _, _, _, _, _, ha, _ => nomatch ha
-  | _, _, _, .app _ _, _, _, _, _, _, _, ha, _ => nomatch ha
-  | _, _, _, .proj _, _, _, _, _, _, _, ha, _ => nomatch ha
-  | _, _, _, .eta _ _ _ _ _, _, _, _, _, _, _, ha, _ => nomatch ha
-  | _, _, _, .natOffset _ _ hoa _ _, _, _, _, _, _, _, ha, _ => by
-    subst ha; simp [Ix.Kernel.Rules.natOffsetOf] at hoa
-  | _, _, _, .proofFast hpa _, _, _, _, _, _, _, ha, _ => by
-    subst ha
-    simp [Ix.Kernel.isProofFast, Ix.Kernel.proofPW, Ix.Kernel.headProofPW, Expr.getAppFn] at hpa
-  | _, _, _, .proofIrrel hta htta hr hu _ _ _ _, _, _, _, _, _, _, ha, _ => by
-    subst ha
-    obtain ⟨w, rfl⟩ := Ix.Kernel.Rules.Infer.sort_of_sortOrPi hta rfl
-    have htt := Ix.Kernel.Rules.Infer.sort_inv htta
-    subst htt
-    have hreq := Ix.Kernel.Rules.Red.sort_eq hr
-    subst hreq
-    have h0 := hu (fun _ => 0)
-    simp [Level.eval] at h0
-  | _, _, _, .proofIrrelTy hta htta hr hu _ _, _, _, _, _, _, _, ha, _ => by
-    subst ha
-    obtain ⟨w, rfl⟩ := Ix.Kernel.Rules.Infer.sort_of_sortOrPi hta rfl
-    have htt := Ix.Kernel.Rules.Infer.sort_inv htta
-    subst htt
-    have hreq := Ix.Kernel.Rules.Red.sort_eq hr
-    subst hreq
-    have h0 := hu (fun _ => 0)
-    simp [Level.eval] at h0
-  | _, _, _, .unitLike hta hr hu _ _ _, _, _, _, _, _, _, ha, _ => by
-    subst ha
-    obtain ⟨w, rfl⟩ := Ix.Kernel.Rules.Infer.sort_of_sortOrPi hta rfl
-    have hreq := Ix.Kernel.Rules.Red.rigid hr rfl
-    subst hreq
-    simp [Ix.Kernel.isUnitLikeTy] at hu
-  | _, _, _, .unitLikeTy hta hr hhead _ _ _ _ _ _ _, _, _, _, _, _, _, ha, _ => by
-    subst ha
-    obtain ⟨w, rfl⟩ := Ix.Kernel.Rules.Infer.sort_of_sortOrPi hta rfl
-    have hreq := Ix.Kernel.Rules.Red.rigid hr rfl
-    subst hreq
-    simp [Expr.getAppFn] at hhead
-  | _, _, _, .structEta _ _ hhead .., _, _, _, _, _, _, ha, _ => by
-    subst ha
-    simp [Expr.getAppFn] at hhead
-  | _, _, _, .structEtaTy hhead .., _, _, _, _, _, _, _, hb => by
-    subst hb
-    simp [Expr.getAppFn] at hhead
-  | _, _, _, .structUnit hta hr hhead .., _, _, _, _, _, _, ha, _ => by
-    subst ha
-    obtain ⟨w, rfl⟩ := Ix.Kernel.Rules.Infer.sort_of_sortOrPi hta rfl
-    have hreq := Ix.Kernel.Rules.Red.rigid hr rfl
-    subst hreq
-    simp [Expr.getAppFn] at hhead
 
 /-! ## Section 5: `Eq.refl` interpretation and `aux` fibre disjointness -/
 
