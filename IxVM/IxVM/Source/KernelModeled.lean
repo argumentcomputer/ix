@@ -2535,7 +2535,8 @@ def rec_rule_ih_args := aiur_fn⟦
   fn rec_rule_ih_args(rule: KernelTypes::KRecRule, np: Field, anc: Field, k: Field)
         -> (Field, Lists::List<KernelTypes::KExpr>) {
       match rule {
-        KernelTypes::KRecRule::Mk(_, rnf, rrhs) => {
+        KernelTypes::KRecRule::Mk(rcidx, rnf, rrhs) => {
+          assert_eq!(rcidx, k, "modeled projection: aux rec rule ctor index");
           let total = ((np + 1) + anc) + rnf;
           let (rbody, rpeeled, _) = KernelCheck::peel_n_lams_collect(rrhs, total, 0, (&(Lists::Node::Nil)));
           assert_eq!(rpeeled, total, "modeled projection: aux rec rule lambda arity");
@@ -2545,6 +2546,9 @@ def rec_rule_ih_args := aiur_fn⟦
               assert_eq!(hbv, ((rnf + anc) - 1) - k, "modeled projection: aux rec rule minor head");
               assert_eq!(UInt32::less_than_fields(rnf, Lists::length(rargs) + 1), 1,
                 "modeled projection: aux rec rule arity");
+              assert_eq!(KernelCheck::spec_params_ptr_eq(
+                Lists::take(rargs, rnf), bvars_desc(rnf, rnf)), 1,
+                "modeled projection: aux rec rule fields");
               (rnf, Lists::drop(rargs, rnf)) } ,
           } } ,
       }
@@ -2552,47 +2556,60 @@ def rec_rule_ih_args := aiur_fn⟦
 ⟧
 
 def check_unpack_rebuild_args := aiur_fn⟦
-  fn check_unpack_rebuild_args(fargs: Lists::List<KernelTypes::KExpr>, l: Field,
+  fn check_unpack_rebuild_args(fargs: Lists::List<KernelTypes::KExpr>,
+                               kftele: KernelTypes::KExpr, l: Field,
                                rnf: Field, n_ih: Field,
                                ih_args: Lists::List<KernelTypes::KExpr>,
+                               aux_addr: Bytes::AddressRef,
                                aux_rec_addr: Bytes::AddressRef, np: Field, bnl: Field,
                                anc: Field) -> () {
       match (*(fargs)) {
         Lists::Node::Nil => {  () } ,
         Lists::Node::Cons(arg, rest) => {
-          match (*(arg)) {
-            KernelTypes::KExprNode::BVar(bv) => {
-              match bv - (((n_ih + rnf) - 1) - l) {
-                0 => {  () } ,
-                _ => {
-                  assert_eq!(UInt32::less_than_fields(bv, n_ih), 1,
-                    "modeled projection: unpack rebuild argument out of range");
-                  let pos = (n_ih - 1) - bv;
-                  let ih_expr = Lists::lookup(ih_args, pos);
-                  let (ih_h, ih_sargs) = KernelTypes::collect_spine(ih_expr);
-                  match (*(ih_h)) {
-                    KernelTypes::KExprNode::Const(ih_rec, ih_lvls) => {
-                      assert_eq!(Bytes::address_eq(ih_rec, aux_rec_addr), 1,
-                        "modeled projection: unpack IH head is not aux.rec");
-                      assert_eq!(KernelCheck::level_list_struct_eq(
-                        ih_lvls, KernelCheck::build_param_lvls_range(0, bnl + 1, 0)), 1,
-                        "modeled projection: unpack IH levels");
-                      assert_eq!(Lists::length(ih_sargs), ((np + 1) + anc) + 2,
-                        "modeled projection: unpack IH arity");
-                      assert_eq!(KernelCheck::spec_params_ptr_eq(
-                        Lists::take(ih_sargs, (np + 1) + anc),
-                        bvars_desc(((np + 1) + anc) + rnf, (np + 1) + anc)), 1,
-                        "modeled projection: unpack IH prefix args");
-                      let ih_major = Lists::lookup(ih_sargs, ((np + 1) + anc) + 1);
-                      match (*(ih_major)) {
-                        KernelTypes::KExprNode::BVar(mbv) => {
-                          assert_eq!(mbv, (rnf - 1) - l,
-                            "modeled projection: unpack IH field mismatch");
+          match (*(kftele)) {
+            KernelTypes::KExprNode::Forall(kfdom, kfrest, _) => {
+              match (*(arg)) {
+                KernelTypes::KExprNode::BVar(bv) => {
+                  match bv - (((n_ih + rnf) - 1) - l) {
+                    0 => {  () } ,
+                    _ => {
+                      assert_eq!(UInt32::less_than_fields(bv, n_ih), 1,
+                        "modeled projection: unpack rebuild argument out of range");
+                      let pos = (n_ih - 1) - bv;
+                      let ih_expr = Lists::lookup(ih_args, pos);
+                      let (ih_h, ih_sargs) = KernelTypes::collect_spine(ih_expr);
+                      match (*(ih_h)) {
+                        KernelTypes::KExprNode::Const(ih_rec, ih_lvls) => {
+                          assert_eq!(Bytes::address_eq(ih_rec, aux_rec_addr), 1,
+                            "modeled projection: unpack IH head is not aux.rec");
+                          assert_eq!(KernelCheck::level_list_struct_eq(
+                            ih_lvls, KernelCheck::build_param_lvls_range(0, bnl + 1, 0)), 1,
+                            "modeled projection: unpack IH levels");
+                          assert_eq!(Lists::length(ih_sargs), ((np + 1) + anc) + 2,
+                            "modeled projection: unpack IH arity");
+                          assert_eq!(KernelCheck::spec_params_ptr_eq(
+                            Lists::take(ih_sargs, (np + 1) + anc),
+                            bvars_desc(((np + 1) + anc) + rnf, (np + 1) + anc)), 1,
+                            "modeled projection: unpack IH prefix args");
+                          let ih_major = Lists::lookup(ih_sargs, ((np + 1) + anc) + 1);
+                          match (*(ih_major)) {
+                            KernelTypes::KExprNode::BVar(mbv) => {
+                              assert_eq!(mbv, (rnf - 1) - l,
+                                "modeled projection: unpack IH field mismatch");
+                              () } ,
+                          } } ,
+                      };
+                      let (kfh, _) = KernelTypes::collect_spine(kfdom);
+                      match (*(kfh)) {
+                        KernelTypes::KExprNode::Const(kfh_addr, _) => {
+                          assert_eq!(Bytes::address_eq(kfh_addr, aux_addr), 1,
+                            "modeled projection: unpack recursive field head mismatch");
                           () } ,
                       } } ,
-                  } } ,
-              };
-              check_unpack_rebuild_args(rest, l + 1, rnf, n_ih, ih_args, aux_rec_addr, np, bnl, anc) } ,
+                  };
+                  check_unpack_rebuild_args(
+                    rest, kfrest, l + 1, rnf, n_ih, ih_args, aux_addr, aux_rec_addr, np, bnl, anc) } ,
+              } } ,
           } } ,
       }
     }
@@ -2601,7 +2618,8 @@ def check_unpack_rebuild_args := aiur_fn⟦
 def check_unpack_minors := aiur_fn⟦
   fn check_unpack_minors(minors: Lists::List<KernelTypes::KExpr>,
                          arules: Lists::List<KernelTypes::KRecRule>,
-                         aux_blk: Bytes::AddressRef, aux_rec_addr: Bytes::AddressRef,
+                         aux_blk: Bytes::AddressRef, aux_addr: Bytes::AddressRef,
+                         aux_rec_addr: Bytes::AddressRef,
                          np: Field, bnl: Field, anc: Field, k: Field) -> () {
       match (*(minors)) {
         Lists::Node::Nil => {
@@ -2650,20 +2668,25 @@ def check_unpack_minors := aiur_fn⟦
                           assert_eq!(inp_k, cnp_k, "modeled projection: unpack container ind params");
                           assert_eq!(type_sort_fixed_zeta(ity_k, inp_k + ini_k, mc_lvls), 1,
                             "modeled projection: unpack container sort is not fixed");
-                          check_unpack_rebuild_args(
-                            Lists::drop(margs_k, cnp_k), 0, rnf_k, n_ih_k, ih_args,
-                            aux_rec_addr, np, bnl, anc) } ,
+                          match (*(Ingress::get_ci_cprj(aux_blk, 0, k))) {
+                            KernelTypes::KConstantInfo::Ctor(_, kty, _, _, _, _, _, _) => {
+                              let kftele = KernelCheck::peel_n_foralls(kty, np);
+                              check_unpack_rebuild_args(
+                                Lists::drop(margs_k, cnp_k), kftele, 0, rnf_k, n_ih_k, ih_args,
+                                aux_addr, aux_rec_addr, np, bnl, anc) } ,
+                          } } ,
                       } } ,
                   } } ,
               } } ,
           };
-          check_unpack_minors(mrest, rrest, aux_blk, aux_rec_addr, np, bnl, anc, k + 1) } ,
+          check_unpack_minors(mrest, rrest, aux_blk, aux_addr, aux_rec_addr, np, bnl, anc, k + 1) } ,
       }
     }
 ⟧
 
 def check_proj_nested_minor := aiur_fn⟦
   fn check_proj_nested_minor(mbody: KernelTypes::KExpr, aux_blk: Bytes::AddressRef,
+                             aux_addr: Bytes::AddressRef,
                              aux_rec_addr: Bytes::AddressRef,
                              arules: Lists::List<KernelTypes::KRecRule>,
                              np: Field, bnl: Field, anc: Field, cnf: Field, n_ih_j: Field,
@@ -2739,8 +2762,8 @@ def check_proj_nested_minor := aiur_fn⟦
                                 Lists::take(uar_args, np), bvars_desc(np, np)), 1,
                                 "modeled projection: unpackAll recursor params");
                               check_unpack_minors(
-                                Lists::drop(uar_args, np + 1), arules, aux_blk, aux_rec_addr,
-                                np, bnl, anc, 0) } ,
+                                Lists::drop(uar_args, np + 1), arules, aux_blk, aux_addr,
+                                aux_rec_addr, np, bnl, anc, 0) } ,
                           } } ,
                       } } ,
                   } } ,
@@ -2812,7 +2835,7 @@ def check_proj_pure := aiur_fn⟦
                           let j_idx = find_aux_ctor_for_tag(
                             aux_blk, anc, 0, np, bnl, aux_addr, tag_blk, tag_cidx, cnf, 0, 0);
                           check_proj_pure_body(
-                            pval, aux_blk, anc, tag_c_addr, np, bnl, cnf, fidx, j_idx, aset) } ,
+                            pval, aux_blk, aux_addr, anc, tag_c_addr, np, bnl, cnf, fidx, j_idx, aset) } ,
                       } } ,
                   } } ,
               } } ,
@@ -2823,9 +2846,11 @@ def check_proj_pure := aiur_fn⟦
 
 def check_proj_pure_rec := aiur_fn⟦
   fn check_proj_pure_rec(phead_addr: Bytes::AddressRef, pargs: Lists::List<KernelTypes::KExpr>,
-                         arnl: Field, arnp: Field, arni: Field, arnmot: Field, arnmin: Field,
+                         arnl: Field, arty: KernelTypes::KExpr, arnp: Field, arni: Field,
+                         arnmot: Field, arnmin: Field,
                          arules: Lists::List<KernelTypes::KRecRule>,
-                         aux_blk: Bytes::AddressRef, anc: Field, tag_c_addr: Bytes::AddressRef,
+                         aux_blk: Bytes::AddressRef, aux_addr: Bytes::AddressRef,
+                         anc: Field, tag_c_addr: Bytes::AddressRef,
                          np: Field, bnl: Field, cnf: Field, fidx: Field, j_idx: Field,
                          aset: RBTreeMap::RBTreeMap<Field>) -> () {
       let param_lvls = KernelCheck::build_param_lvls_range(0, bnl, 0);
@@ -2836,6 +2861,29 @@ def check_proj_pure_rec := aiur_fn⟦
       assert_eq!(arni, 1, "modeled projection: aux rec index count");
       assert_eq!(arnmot, 1, "modeled projection: aux rec motive count");
       assert_eq!(arnmin, anc, "modeled projection: aux rec minor count");
+      let maj_pi = KernelCheck::peel_n_foralls(arty, ((np + 1) + anc) + 1);
+      match (*(maj_pi)) {
+        KernelTypes::KExprNode::Forall(maj_dom, _, _) => {
+          let (maj_h, maj_args) = KernelTypes::collect_spine(maj_dom);
+          match (*(maj_h)) {
+            KernelTypes::KExprNode::Const(maj_addr, maj_lvls) => {
+              assert_eq!(Bytes::address_eq(maj_addr, aux_addr), 1,
+                "modeled projection: aux rec major head mismatch");
+              assert_eq!(KernelCheck::level_list_struct_eq(
+                maj_lvls, KernelCheck::build_param_lvls_range(1, bnl, 0)), 1,
+                "modeled projection: aux rec major levels");
+              assert_eq!(Lists::length(maj_args), np + 1,
+                "modeled projection: aux rec major arity");
+              assert_eq!(KernelCheck::spec_params_ptr_eq(
+                Lists::take(maj_args, np), bvars_desc(((np + 1) + anc) + 1, np)), 1,
+                "modeled projection: aux rec major params");
+              match (*(Lists::lookup(maj_args, np))) {
+                KernelTypes::KExprNode::BVar(mbv) => {
+                  assert_eq!(mbv, 0, "modeled projection: aux rec major index");
+                  () } ,
+              } } ,
+          } } ,
+      };
       assert_eq!(Lists::length(pargs), ((np + 1) + anc) + 2,
         "modeled projection: aux rec arity");
       assert_eq!(KernelCheck::spec_params_ptr_eq(
@@ -2860,14 +2908,15 @@ def check_proj_pure_rec := aiur_fn⟦
         minor_j, cnf + n_ih_j, 0, (&(Lists::Node::Nil)));
       assert_eq!(mpeeled, cnf + n_ih_j, "modeled projection: minor lambda arity");
       check_proj_nested_minor(
-        mbody, aux_blk, phead_addr, arules, np, bnl, anc, cnf, n_ih_j, fidx, aset)
+        mbody, aux_blk, aux_addr, phead_addr, arules, np, bnl, anc, cnf, n_ih_j, fidx, aset)
     }
 ⟧
 
 def check_proj_pure_defn := aiur_fn⟦
   fn check_proj_pure_defn(phead_addr: Bytes::AddressRef, pargs: Lists::List<KernelTypes::KExpr>,
                           rnl: Field, rval: KernelTypes::KExpr,
-                          aux_blk: Bytes::AddressRef, anc: Field, tag_c_addr: Bytes::AddressRef,
+                          aux_blk: Bytes::AddressRef, aux_addr: Bytes::AddressRef,
+                          anc: Field, tag_c_addr: Bytes::AddressRef,
                           np: Field, bnl: Field, cnf: Field, fidx: Field, j_idx: Field,
                           aset: RBTreeMap::RBTreeMap<Field>) -> () {
       assert_eq!(KernelClaim::addr_set_member(phead_addr, aset), 1,
@@ -2897,12 +2946,35 @@ def check_proj_pure_defn := aiur_fn⟦
             ar_lvls, KernelCheck::build_param_lvls_range(0, bnl + 1, 0)), 1,
             "modeled projection: mutual aux rec levels");
           match (*(Ingress::get_ci(aux_rec_addr))) {
-            KernelTypes::KConstantInfo::Rec(arnl, _, arnp, arni, arnmot, arnmin, arules, _, _, _, _) => {
+            KernelTypes::KConstantInfo::Rec(arnl, arty, arnp, arni, arnmot, arnmin, arules, _, _, _, _) => {
               assert_eq!(arnl, bnl + 1, "modeled projection: mutual aux rec level count");
               assert_eq!(arnp, np, "modeled projection: mutual aux rec param count");
               assert_eq!(arni, 1, "modeled projection: mutual aux rec index count");
               assert_eq!(arnmot, 1, "modeled projection: mutual aux rec motive count");
               assert_eq!(arnmin, anc, "modeled projection: mutual aux rec minor count");
+              let maj_pi = KernelCheck::peel_n_foralls(arty, ((np + 1) + anc) + 1);
+              match (*(maj_pi)) {
+                KernelTypes::KExprNode::Forall(maj_dom, _, _) => {
+                  let (maj_h, maj_args) = KernelTypes::collect_spine(maj_dom);
+                  match (*(maj_h)) {
+                    KernelTypes::KExprNode::Const(maj_addr, maj_lvls) => {
+                      assert_eq!(Bytes::address_eq(maj_addr, aux_addr), 1,
+                        "modeled projection: mutual aux rec major head mismatch");
+                      assert_eq!(KernelCheck::level_list_struct_eq(
+                        maj_lvls, KernelCheck::build_param_lvls_range(1, bnl, 0)), 1,
+                        "modeled projection: mutual aux rec major levels");
+                      assert_eq!(Lists::length(maj_args), np + 1,
+                        "modeled projection: mutual aux rec major arity");
+                      assert_eq!(KernelCheck::spec_params_ptr_eq(
+                        Lists::take(maj_args, np), bvars_desc(((np + 1) + anc) + 1, np)), 1,
+                        "modeled projection: mutual aux rec major params");
+                      match (*(Lists::lookup(maj_args, np))) {
+                        KernelTypes::KExprNode::BVar(mbv) => {
+                          assert_eq!(mbv, 0, "modeled projection: mutual aux rec major index");
+                          () } ,
+                      } } ,
+                  } } ,
+              };
               assert_eq!(Lists::length(rargs), ((np + 1) + anc) + 2,
                 "modeled projection: mutual aux rec arity");
               assert_eq!(KernelCheck::spec_params_ptr_eq(
@@ -2931,14 +3003,15 @@ def check_proj_pure_defn := aiur_fn⟦
                 minor_j, cnf + n_ih_j, 0, (&(Lists::Node::Nil)));
               assert_eq!(mpeeled, cnf + n_ih_j, "modeled projection: mutual minor lambda arity");
               check_proj_nested_minor(
-                mbody, aux_blk, aux_rec_addr, arules, np, bnl, anc, cnf, n_ih_j, fidx, aset) } ,
+                mbody, aux_blk, aux_addr, aux_rec_addr, arules, np, bnl, anc, cnf, n_ih_j, fidx, aset) } ,
           } } ,
       }
     }
 ⟧
 
 def check_proj_pure_body := aiur_fn⟦
-  fn check_proj_pure_body(pval: KernelTypes::KExpr, aux_blk: Bytes::AddressRef, anc: Field,
+  fn check_proj_pure_body(pval: KernelTypes::KExpr, aux_blk: Bytes::AddressRef,
+                          aux_addr: Bytes::AddressRef, anc: Field,
                           tag_c_addr: Bytes::AddressRef, np: Field, bnl: Field, cnf: Field,
                           fidx: Field, j_idx: Field, aset: RBTreeMap::RBTreeMap<Field>) -> () {
       let param_lvls = KernelCheck::build_param_lvls_range(0, bnl, 0);
@@ -2951,12 +3024,12 @@ def check_proj_pure_body := aiur_fn⟦
           assert_eq!(KernelCheck::level_list_struct_eq(Lists::drop(phead_lvls, 1), param_lvls), 1,
             "modeled projection: head levels mismatch");
           match (*(Ingress::get_ci(phead_addr))) {
-            KernelTypes::KConstantInfo::Rec(arnl, _, arnp, arni, arnmot, arnmin, arules, _, _, _, _) => {
-              check_proj_pure_rec(phead_addr, pargs, arnl, arnp, arni, arnmot, arnmin, arules,
-                                  aux_blk, anc, tag_c_addr, np, bnl, cnf, fidx, j_idx, aset) } ,
+            KernelTypes::KConstantInfo::Rec(arnl, arty, arnp, arni, arnmot, arnmin, arules, _, _, _, _) => {
+              check_proj_pure_rec(phead_addr, pargs, arnl, arty, arnp, arni, arnmot, arnmin, arules,
+                                  aux_blk, aux_addr, anc, tag_c_addr, np, bnl, cnf, fidx, j_idx, aset) } ,
             KernelTypes::KConstantInfo::Defn(rnl, _, rval, _, _) => {
               check_proj_pure_defn(phead_addr, pargs, rnl, rval,
-                                   aux_blk, anc, tag_c_addr, np, bnl, cnf, fidx, j_idx, aset) } ,
+                                   aux_blk, aux_addr, anc, tag_c_addr, np, bnl, cnf, fidx, j_idx, aset) } ,
           } } ,
       }
     }
