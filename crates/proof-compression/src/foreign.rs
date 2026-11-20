@@ -539,6 +539,7 @@ impl GoldilocksCircuit {
         checked[value.index()] = true;
       }
     }
+    drop(table_bounds);
     {
       for (hash_input, hash_output) in source.blake3_calls() {
         for value in hash_input.iter().chain(hash_output) {
@@ -585,6 +586,7 @@ impl GoldilocksCircuit {
       }
       record_chunk(b, &mut chunks);
     }
+    drop(checked);
     let tables: Vec<_> = source
       .tables()
       .iter()
@@ -639,6 +641,7 @@ impl GoldilocksCircuit {
       constrain_gate(b, range_table, gate, &wires, &bounds, integer);
       record_chunk(b, &mut chunks);
     }
+    drop(bounds);
     for value in source.public_values() {
       b.expose_public(wires[value.index()]);
     }

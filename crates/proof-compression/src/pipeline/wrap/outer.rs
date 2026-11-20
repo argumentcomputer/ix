@@ -424,7 +424,10 @@ fn prove(
   fs::write(out.join("SECURITY.txt"), setup.security_description())?;
   let setup_id = setup.identity(height, 2)?;
   let config_started = Instant::now();
-  let config = proving_config(setup, height)?;
+  let mut config = proving_config(setup, height)?;
+  if let Some(spill_dir) = KzgConfig::resolve_disk_spill_dir(&out)? {
+    config = config.with_disk_spill(spill_dir);
+  }
   let srs_config_load_seconds = config_started.elapsed().as_secs_f64();
   eprintln!("Outer KZG parameters ready: {:?}", start.elapsed());
   let fixed = cache.fixed_directory(dir)?;

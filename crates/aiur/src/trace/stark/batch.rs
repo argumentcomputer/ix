@@ -324,7 +324,14 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
       let traces = supply(shard)?;
       let (active, degrees) = self.trace_shape(&traces)?;
       self.check_shape(&active, &degrees)?;
-      let stage = self.system.prove_stage_1(self.witness_from_main(traces));
+      // Round one of a regenerated batch only extracts the commitment header
+      // and drops `Stage1`, so materializing lookup rows would be wasted work.
+      let witness = if retain {
+        self.witness_from_main(traces)
+      } else {
+        self.header_only_witness_from_main(traces)
+      };
+      let stage = self.system.prove_stage_1(witness);
       let claims = if shard == 0 { vec![claim.as_slice()] } else { vec![] };
       headers.push(stage.header(&claims));
       retained.push(if retain { Some(stage) } else { None });
@@ -430,21 +437,32 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
         }
       }
     }
-    let source = &*source;
-    let slice = |(i, taken): (usize, Option<RowMajorMatrix<Val>>)| {
-      taken.unwrap_or_else(|| {
-        let (trace, circuit) = (&source[i], &self.system.circuits[i]);
-        if circuit.preprocessed_height != 0 && shard != 0 {
-          RowMajorMatrix::new(Val::zero_vec(fixed_cells[i]), trace.width)
-        } else {
-          Self::slice_matrix(trace, circuit, shard, begin, max_rows)
-        }
-      })
+    let sliced = {
+      let source = &*source;
+      let slice = |(i, taken): (usize, Option<RowMajorMatrix<Val>>)| {
+        taken.unwrap_or_else(|| {
+          let (trace, circuit) = (&source[i], &self.system.circuits[i]);
+          if circuit.preprocessed_height != 0 && shard != 0 {
+            RowMajorMatrix::new(Val::zero_vec(fixed_cells[i]), trace.width)
+          } else {
+            Self::slice_matrix(trace, circuit, shard, begin, max_rows)
+          }
+        })
+      };
+      #[cfg(feature = "parallel")]
+      let sliced = taken.into_par_iter().enumerate().map(slice).collect();
+      #[cfg(not(feature = "parallel"))]
+      let sliced = taken.into_iter().enumerate().map(slice).collect();
+      sliced
     };
-    #[cfg(feature = "parallel")]
-    let sliced = taken.into_par_iter().enumerate().map(slice).collect();
-    #[cfg(not(feature = "parallel"))]
-    let sliced = taken.into_iter().enumerate().map(slice).collect();
+    if last {
+      let end = begin.saturating_add(max_rows);
+      for (trace, circuit) in source.iter_mut().zip(&self.system.circuits) {
+        if circuit.preprocessed_height == 0 && end >= trace.height() {
+          trace.values = Vec::new();
+        }
+      }
+    }
     sliced
   }
 
@@ -522,6 +540,7 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
           Some((entry, args)),
           &heights,
           device.ranges(),
+          None,
         )?
         .traces;
       return Ok(StageOne { traces, device: Some(Arc::new(device)) });
@@ -616,6 +635,13 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
         #[cfg(feature = "cuda")]
         if let Some(device) = &device {
           return self.device_witness(sliced, device, shard, max_rows);
+        }
+        // Round one of a regenerated batch only hashes the stage-1 commitment
+        // header and immediately drops `Stage1`, so skip lookup materialization.
+        if !last {
+          return PreparedWitness::from(
+            self.header_only_witness_from_main(sliced),
+          );
         }
         PreparedWitness::from(self.witness_from_main(sliced))
       },
@@ -812,23 +838,15 @@ impl<'p, 'a, B: WitnessField> Backend<'p, 'a, B> {
     let active = vec![true; log_heights.len()];
     self.check_shape(&active, log_heights)?;
     let claim = self.claim(entry, args, output)?;
-    let mut traces = self.generate_stage_1(&record, entry, args)?;
+    let target_heights: Vec<usize> =
+      log_heights.iter().map(|&log| 1usize << log).collect();
+    let traces = self.generate_stage_1_with_heights(
+      &record,
+      entry,
+      args,
+      &target_heights,
+    )?;
     drop(record);
-    for (index, (trace, &log)) in traces.iter_mut().zip(log_heights).enumerate()
-    {
-      let target_height = 1usize << log;
-      if trace.height() > target_height {
-        return Err(format!(
-          "circuit {index} trace height {} exceeds normalized height {target_height}",
-          trace.height()
-        ));
-      }
-      let target_values = trace
-        .width
-        .checked_mul(target_height)
-        .ok_or_else(|| format!("circuit {index} padded trace size overflow"))?;
-      trace.values.resize(target_values, Val::ZERO);
-    }
     let rom_base = self.members.len() + self.tables.len();
     let mut messages = Vec::with_capacity(self.rom.widths.len() * 2);
     for (i, &width) in self.rom.widths.iter().enumerate() {

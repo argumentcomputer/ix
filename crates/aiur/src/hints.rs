@@ -2,7 +2,7 @@
 //! resolves channel names once; execution calls the bound closure at each site.
 use crate::bytecode::{CheckedProgram, Instruction, Layout, Program, Type};
 use crate::field::{FieldBackend, PrimeField};
-use crate::host::{self, HintBinder, RegisterHint};
+use crate::host::{self, DirectHintKind, HintBinder, RegisterHint};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -33,6 +33,7 @@ struct Channel<F> {
   output_type: Type,
   function: Arc<HintFunction<F>>,
   fixed: Option<(usize, usize, Arc<HintBinder<F>>)>,
+  direct: Option<DirectHintKind>,
 }
 
 /// Host-defined code providers. Names are resolved only by `prepare_hint_channels`.
@@ -68,6 +69,7 @@ impl<F> HintChannels<F> {
         output_type,
         function: Arc::new(function),
         fixed: None,
+        direct: None,
       },
     );
     Ok(())
@@ -90,6 +92,43 @@ impl<F> HintChannels<F> {
   where
     F: Copy + Send + Sync + 'static,
   {
+    self.insert_fixed_inner(name, key_type, output_type, function, None)
+  }
+
+  pub(crate) fn insert_direct_fixed<
+    const INPUTS: usize,
+    const OUTPUTS: usize,
+  >(
+    &mut self,
+    name: impl Into<String>,
+    key_type: Type,
+    output_type: Type,
+    direct: DirectHintKind,
+    function: impl Fn([F; INPUTS]) -> Result<[F; OUTPUTS], String>
+    + Send
+    + Sync
+    + 'static,
+  ) -> Result<(), String>
+  where
+    F: Copy + Send + Sync + 'static,
+  {
+    self.insert_fixed_inner(name, key_type, output_type, function, Some(direct))
+  }
+
+  fn insert_fixed_inner<const INPUTS: usize, const OUTPUTS: usize>(
+    &mut self,
+    name: impl Into<String>,
+    key_type: Type,
+    output_type: Type,
+    function: impl Fn([F; INPUTS]) -> Result<[F; OUTPUTS], String>
+    + Send
+    + Sync
+    + 'static,
+    direct: Option<DirectHintKind>,
+  ) -> Result<(), String>
+  where
+    F: Copy + Send + Sync + 'static,
+  {
     let name = name.into();
     if self.channels.contains_key(&name) {
       return Err(format!("duplicate hint channel {name:?}"));
@@ -107,6 +146,7 @@ impl<F> HintChannels<F> {
           Ok(())
         }),
         fixed: Some((INPUTS, OUTPUTS, binder)),
+        direct,
       },
     );
     Ok(())
@@ -118,6 +158,7 @@ pub(crate) struct HintSite<F = u64> {
   // Data answers have already passed validation; code answers have not.
   pub(crate) output_layout: Option<Layout>,
   pub(crate) registers: Option<Arc<RegisterHint<F>>>,
+  pub(crate) direct: Option<DirectHintKind>,
 }
 
 impl<F: Copy> HintSite<F> {
@@ -158,7 +199,7 @@ pub struct PreparedHints<'a, B: FieldBackend = PrimeField> {
   pub(crate) program: &'a CheckedProgram<B>,
   pub(crate) bindings: Arc<BoundHints<B::Element>>,
   pub(crate) maps: Vec<Arc<crate::maps::PreparedMap<B>>>,
-  pub(crate) dispatch: Vec<Vec<crate::execute::dispatch::Dispatch<B::Element>>>,
+  pub(crate) dispatch: crate::execute::dispatch::DispatchProgram<B::Element>,
 }
 
 impl<B: FieldBackend> PreparedHints<'_, B> {
@@ -237,6 +278,8 @@ impl<B: FieldBackend> CheckedProgram<B> {
                 ));
               }
               let layout = r#type.layout(&self.program.enums, &mut vec![])?;
+              let check = host::output_check(&layout, self.field);
+              let direct_ok = check.is_none();
               let registers =
                 provider.fixed.as_ref().and_then(|(_, _, binder)| {
                   let Instruction::Hint { key, dest, .. } =
@@ -244,12 +287,15 @@ impl<B: FieldBackend> CheckedProgram<B> {
                   else {
                     return None;
                   };
-                  binder(key, dest, host::output_check(&layout, self.field))
+                  binder(key, dest, check)
                 });
+              let direct =
+                (direct_ok && registers.is_some()).then_some(provider.direct).flatten();
               HintSite {
                 function: provider.function.clone(),
                 output_layout: Some(layout),
                 registers,
+                direct,
               }
             } else if let Some(rows) =
               data.get(&(channel.clone(), key_type.clone()))
@@ -268,12 +314,14 @@ impl<B: FieldBackend> CheckedProgram<B> {
                 }),
                 output_layout: None,
                 registers: None,
+                direct: None,
               }
             } else {
               HintSite {
                 function: Arc::new(|_, _| Err("missing hint provider".into())),
                 output_layout: None,
                 registers: None,
+                direct: None,
               }
             };
             Ok(Some(site))

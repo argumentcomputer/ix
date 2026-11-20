@@ -160,15 +160,15 @@ impl<B: FieldBackend> QueryTable<B> {
       self.static_map.is_none(),
       "static maps use their prepared row index"
     );
-    let hash = hash_words(args);
     if let [key] = args
       && self.input_width == 1
       && let Ok(key) = usize::try_from(self.field.to_u64(*key))
       && let Some(&row) = self.dense_index.get(key)
       && row != usize::MAX
     {
-      return (hash, Some(row));
+      return (0, Some(row));
     }
+    let hash = hash_words(args);
     (hash, self.index.find(hash, |&row| self.input(row) == args).copied())
   }
 
