@@ -40,9 +40,10 @@ The run that counts is made with no other job on the machine.
 | Environment aggregation | 8:56 | leaves and aggregation in one prover run under `kernel-subst`: **32:52** (was 107:56); with the path lemmas in the fused shape: **15:33** | |
 | Training: 30 block proofs | 0:23 | | |
 | Training: aggregation | 4:18 | | |
+| Training: two wraps of the tree's top (the run root the join consumes) | 0:29 | | |
 | Join | 0:22 | | |
 | Compression to PLONK | 3:18 | | |
-| **Total** | **116:17** | **23:54** on paper: 15:33 measured for the environment (`kernel-subst`, fused lemmas, one run), the other stages as in M1; not yet one timed run, and without the card | **under 30:00** |
+| **Total** | **116:46** | **24:23** on paper: 15:33 measured for the environment (`kernel-subst`, fused lemmas, one run), the other stages as in M1; not yet one timed run, and without the card | **under 30:00** |
 
 `kernel-subst` on the five shards, executed (accepted, 2026-11-20): queries 1.10, 1.76, 0.70,
 0.23, 0.27 billion (certified: 2.18, 3.03, 1.23, 0.37, 0.42); FFT cost 1.04e13, 1.68e13,
@@ -108,9 +109,38 @@ include the card and decisions; their kernel cost in the environment is not meas
 |---|---|---|---|
 | G1 | Committed kernel validated and adopted | all 5 shards accepted; Ix's kernel tests pass apart from pinned costs; leaf-proof total measured | all 5 shards accepted (4.07 billion queries for 7.2); Ix's test tier: 14 of 17 suites pass, including the exploit suite (bad declarations still rejected), circuit verdicts and claim safety; the three failures are 149 pinned FFT costs (lower now) in `ixvm-eval` and `ixvm-kernel-checks`, and two generated mirror files that need regenerating (`ixvm-source`); **met**: environment proved in one run in 32:52 |
 | G2 | Generated lemmas in the cheaper shape | IxVM queries of the three worst lemmas measured against today's; environment regenerated with statements unchanged; leaf-proof total measured | measured under `kernel-subst` (own cost = closure minus statement-only floor): `transpose20x16` 528.6 → 107.6 million queries (4.9×), `deltas` 592.3 → 123.7 million (4.8×), `step` 34.9 → 22.1 million (1.6×); the string-lookup risk does not show; statements identical by text (103 declarations) and by elaborated type (307 constants); estimate for the environment about −45%; **met**: the regenerated environment builds (8:06), compiles (70 s) and is proved in one run in 15:33 for 32:52; the rewritten files and `Core/Fused.lean` are in the source tree and on the branch |
-| G3 | Rebase cost removed without losing what it was added for | the variant passes a workload of the shape the rebase was added for, the 80 Mathlib claims and all 5 shards; leaf-proof total measured | no rebase in inference (`exp-noinferrebase`): all 5 shards accepted, 2.57 billion queries (0.52, 0.54, 0.69, 0.41, 0.41; the two library shards are 50 to 75% worse than `kernel-subst`), Mathlib +5.4%. Bounded search (`infer-rebase-shallow`): shard 0 at 386 million queries and FFT 3.33e12 (better than no rebase), Mathlib 882.5 million (+0.8%), all 80 accepted; shards 1 to 4 not run. Upstream's constant `Simps.addProjections._unsafe_rec` is not in our Mathlib snapshot, so it tests nothing here; another witness is needed |
-| G4 | Card and decisions in the environment | their leaf cost measured; `aiur_join_check` confirms the model constant is the run's final model | cost measured under `kernel-subst` (`measure_deployed.sh`): the environment with `IxAICombined.Deployed` compiles (36,835 constants, 79 s); own cost of the card 183 million queries (1:23 on its own), of one gate decision 3 million, of the model's range lemma 1.7 million: about 0.2 billion in all, a few percent of the environment. The checker's comparison of the model constant with the run's output is not written yet |
+| G3 | Rebase cost removed without losing what it was added for | no workload worse than `kernel-subst` in queries or FFT cost (all 5 shards, the 80 Mathlib claims, dot20), the heavy shards near the bounded variant's figures; Ix's test tier; leaf-proof total measured | no rebase in inference (`exp-noinferrebase`): all 5 shards accepted, 2.57 billion queries (0.52, 0.54, 0.69, 0.41, 0.41; the two library shards are 50 to 75% worse than `kernel-subst`), Mathlib +5.4%. Bounded search (`infer-rebase-shallow`): all 5 shards of the M1 environment accepted, 1.92 billion queries (0.39, 0.50, 0.48, 0.26, 0.30) for `kernel-subst`'s 4.07, FFT cost 1.55e13 for 3.76e13; the two library shards cost 8 to 12% more queries and the same FFT; Mathlib 882.5 million (+0.8%), all 80 accepted. Not adopted as it is (owner, 2026-11-20): the library shards must not get worse. The size of the regression: on the two library shards 8 to 12% more queries, equal FFT cost, 4 and 14 s more execution; on the 80 Mathlib claims +0.8% rows (median +0.5%, two claims worse by more than 2%, 339 s for 337 s). In hand, simplest first: the variant has one constant, the cutoff 16; variants with 32 and 64 keep the rebase for deeper subjects and are measured on shards 0, 3, 4 and the Mathlib claims. In reserve, not built: an exact variant that finds the gap from a per-node summary of the low loose indices instead of a walk. Upstream's constant `Simps.addProjections._unsafe_rec` is not in our Mathlib snapshot, so it tests nothing here; another witness is needed |
+| G4 | Card and decisions in the environment | their leaf cost measured; `aiur_join_check` confirms the model constant is the run's final model | cost measured under `kernel-subst` (`measure_deployed.sh`): the environment with `IxAICombined.Deployed` compiles (36,835 constants, 79 s); own cost of the card 183 million queries (1:23 on its own), of one gate decision 3 million, of the model's range lemma 1.7 million: about 0.2 billion in all, a few percent of the environment. The environment for the timed run (fused lemmas plus `IxAICombined.Deployed`) is built, compiled and cut: 36,915 constants, 175 MB, root `ff52b081…`, 3 shards (`env/g5.ixe`, `g5.ixes`). The checker's comparison of the model constant with the run's output is not written yet |
 | G5 | The timed run | one quiet end-to-end run under 30:00, `ixai-verify combined` reports `PROVED`, certificate and timings recorded | |
+
+**The timed run's harness (2026-11-20).** `ix/combined/train_run.sh` proves the training side
+from its 30 packages (rehearsed: block proofs 23.2 s, tree 263.0 s against the recorded 23 and
+258; wraps pending). `ix/combined/timed_run.sh NAME` runs every stage as one gated job under
+one clock (train, env, export, join, check, compress), with `.truthmines/QUIET` keeping the
+light lane out, and writes `cert/NAME/timeline.tsv`. A gated job's own calls to `heavy.sh` pass
+straight through (`HEAVY_HELD`).
+
+**Resumed 22:39.** Queued again: the bounded variant at cutoff 32 on the Mathlib claims and
+shards 1 and 2 (G3), the training rehearsal's remaining stages, the checker's comparison of the
+model constant with the run's output (G4), and, at normal priority, the verifier's test suites
+and the six GPU runs.
+
+**Paused (2026-11-20, 22:21 to 22:39, at the owner's request: the machine was in use elsewhere).**
+`.truthmines/PAUSED` stops both job lanes; the queue was emptied, and what to queue again is in
+`.truthmines/requeue-after-pause.txt`. State at the pause: cutoff 32 of the bounded variant
+measured on three shards (0: 414 million queries, FFT 3.61e12; 3: 226 million, 1.80e12; 4: 260
+million, 2.16e12; all below `kernel-subst`'s 1,101, 232 and 274 million), its Mathlib sample
+not run; Ix's test tier on the bounded variant 14 of 17, the same three failures as the
+committed kernel; `ix/combined/train_run.sh` written (block proofs reproduce in 23.2 s, the
+tree stage fixed but not re-run). The training side is 5:10, not 4:41: the run root the join
+consumes is the tree's top after two wraps (29 s), which the budget above had left out.
+
+**Order (owner's direction, 2026-11-20).** G3 is closed before any further end-to-end run:
+aggregation of the training proofs, the join and compression are fixed costs that a run would
+repeat without telling anything new. So: the bounded variant validated to the committed
+kernel's bar (all five shards, Ix's test tier, a workload of the rebase's shape), adopted into
+`cert`, then the environment with the fused lemmas and the card proved under it in one run;
+only then the timed run.
 
 If G1 to G3 together leave the total above 30 minutes, the next levers, in order: fewer and
 larger training blocks (aggregation 4:18), then the aggregation tree's shape. Not: more hardware.
@@ -742,6 +772,22 @@ In progress:
   (`review2-premises/job.sh after1`, about an hour) is held until the goal's jobs are done.
   Tested but not proved: the bitset against the list reachability, `topBy` prefixes, the
   marked pool union, the new `step` against the old.
+- Second external review, verification pipeline (2026-11-20; parked, code in the working
+  directory, builds, new `#guard`s pass, **the two test suites have not run on it**: their job
+  was removed from the queue at the pause). `Env.resolve` memoizes each sharing entry and still
+  charges every occurrence against the expansion budget, so a term is accepted or refused as
+  before and a 2^62-node term is refused at once. The Ixon reader keeps records as slices of
+  the file and still authenticates every record on reading (lazy authentication would change
+  verdicts: a test flips a byte no claim dereferences). `tagN`, `Term.spine` and `encWords` no
+  longer copy or recompute, each guarded against its previous definition. The package check's
+  claims go to one `ix verify` process (7.3 s to 4.6 s for the 8 proofs); a proof not accepted
+  there is checked in a process of its own, so verdicts are unchanged. Measured and left
+  alone: `verifyBatch`'s 1,200 files (15 ms against 1.9 s), the 34 KB key copy. Not done: the
+  reward submission (18.2 s, about 7 s of it three `ixw addr-of` calls; combining them needs a
+  change to the pinned toolchain). Before figures: package check 15.1 s warm (38.1 s cold),
+  combined check 7.7 s, reading the 245 MB environment 2.15 s. To finish: the after
+  measurements and `ix/verify-tests.sh` (48) and `ix/reward-tests.sh` (16) on the changed code;
+  if either fails, restore `.truthmines/snapshots/2026-11-20-before-review2-verify/`.
 - Second external review, the rest (2026-11-20): in hand, split by subsystem. Premise
   selection at Mathlib scale and the typed benchmarks (`IxAIData`, `IxAIBench`); the GPU
   trainer (`gpu/cuda/step.cu`); the verification pipeline and reward path (`IxAIVerify`,

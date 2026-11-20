@@ -40,7 +40,7 @@ ixvm="$ix/artifacts/ixvm-$ixvm_digest.ixa"
 aggr_digest=$(awk '$1 == "aggregation" { print $2 }' "$pins")
 aggr="$ix/artifacts/aggregate-$aggr_digest.ixa"
 block="$project/.truthmines/aiur/aiurexec-block"
-run_root="$project/.truthmines/combined/run-root"
+run_root="${RUN_ROOT:-$project/.truthmines/combined/run-root}"
 spec="$project/.truthmines/combined/spec"
 store="${IXAI_HOME:-$project/.truthmines}/.ix/store"
 cap="${STEP_CAP:-2400}"
@@ -105,9 +105,11 @@ case "$stage" in
     "$tools/aiur_join" root "$ixvm" "$ixvm_digest" "$aggr" "$aggr_digest" "$work/join" "$work/root" > "$work/root.log" 2>&1 || exit 1
     log "joined in $(elapsed join): $(tail -1 "$work/root.log")" ;;
   check)
+    # CHECK_FLAGS adds options of aiur_join_check, e.g. `--model-constant NAME`.
+    # shellcheck disable=SC2086
     "$tools/aiur_join_check" "$ixvm" "$ixvm_digest" "$aggr" "$aggr_digest" "$env" "$(rooted)" "$work/root" \
       "$block/aiur-exec.ixa" "$block/packages/block-000.ixa" "$run_root" "$spec/args.txt" "$spec/output.txt" \
-      30 20 "$theorem" "$binding" > "$work/check.log" 2>&1
+      30 20 "$theorem" "$binding" ${CHECK_FLAGS:-} > "$work/check.log" 2>&1
     status=$?
     tail -3 "$work/check.log"
     log "check exit $status"

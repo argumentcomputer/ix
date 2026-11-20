@@ -15,6 +15,12 @@ log="$(dirname "$here")/.truthmines/heavy.log"
 lock="${HEAVY_LOCK:-/home/sam/repos/ix.aiur-compression-active/target/heavy.lock}"
 max_load="${MAX_LOAD:-8}"
 mkdir -p "$(dirname "$log")"
+# A command started by this script runs with HEAVY_HELD set. A heavy.sh call inside it is already
+# under the gate: it runs at once, since waiting for the lock would be waiting for its own job.
+if [ -n "${HEAVY_HELD:-}" ]; then
+  echo "$(date +%T) nested: $what" >> "$log"
+  exec "$@"
+fi
 # Inside a PID-namespace sandbox `ps` sees only the sandbox's own processes, and the machine
 # would look free when it is not. Refuse rather than guess.
 if [ "$(ps -e --no-headers | wc -l)" -lt 50 ]; then
@@ -75,7 +81,10 @@ oldest() {
 # lock would start next whatever arrived meanwhile, and a job with a higher priority could not
 # pass it. (The running job need not look busy: not every heavy command matches the patterns.)
 exec 9>"$lock"
-until oldest && ! reason=$(busy) && flock -n 9; do
+# While .truthmines/PAUSED exists the machine is in use elsewhere: no job starts.
+paused() { [ -e "$(dirname "$log")/PAUSED" ]; }
+until ! paused && oldest && ! reason=$(busy) && flock -n 9; do
+  if paused; then echo "$(date +%T) waiting (paused by the owner): $what" >> "$log"; sleep 60; continue; fi
   if ! oldest; then reason="queued behind an earlier heavy job"
   elif [ -z "${reason:-}" ]; then reason="the heavy lock is held"; fi
   echo "$(date +%T) waiting ($reason): $what" >> "$log"; reason=""; sleep 15
@@ -87,6 +96,6 @@ echo "$(date +%T) start (load $(cut -d' ' -f1 /proc/loadavg), $(free -g | awk 'N
 rm -f "$ticket"
 # A failing command must still reach the end line: waiters key on it.
 status=0
-"$@" || status=$?
+HEAVY_HELD=1 "$@" || status=$?
 echo "$(date +%T) end ($status): $what" >> "$log"
 exit $status

@@ -72,6 +72,16 @@ old_heavy_about_to_start && stand_aside
 short_of_memory() {
   [ "$(awk '/^MemAvailable:/ { print int($2 / 1048576) }' /proc/meminfo)" -lt "$min_free" ]
 }
+# While .truthmines/QUIET exists a timed run has the machine to itself: nothing light starts.
+if [ -e "$(dirname "$log")/QUIET" ]; then
+  echo "light.sh: a timed run has the machine to itself; nothing was run. Retry in five minutes: $what" >&2
+  exit 75
+fi
+# While .truthmines/PAUSED exists the machine is in use elsewhere: nothing starts.
+if [ -e "$(dirname "$log")/PAUSED" ]; then
+  echo "light.sh: paused by the owner (.truthmines/PAUSED); nothing was run. Do not retry until told: $what" >&2
+  exit 75
+fi
 exec 8>"$lock"
 flock 8
 while same_dir_lake || short_of_memory; do
