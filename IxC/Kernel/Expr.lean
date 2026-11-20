@@ -60,7 +60,7 @@ deriving DecidableEq, Repr, Inhabited
 `Level` — `lsimpC`, `eqvC` — probe with this). -/
 instance : Hashable Level := ⟨Level.hashData⟩
 
-/-- Level equality in the official kernel's shape (task #176 P2):
+/-- Level equality in the official kernel's shape:
 the cached **hash** and the **pointer** before the structural walk —
 `level.cpp:125` is `kind` → `hash` → `is_eqp` → structural.  The
 implementation of `Level.beq`; `Level.beqPtr_eq` proves both guards
@@ -173,7 +173,7 @@ structure BinderMeta where
 
 instance : Inhabited BinderMeta := ⟨{ pw := .never }⟩
 
-/-! ### Shared binder metadata (PERF P14)
+/-! ### Shared binder metadata
 
 A `BinderMeta` is an object of its own, so building one per binder — in the
 reader, in the annotation pass, at each level instantiation — allocates one
@@ -209,7 +209,7 @@ holds because both results are `c`. -/
     (k : USize → { m : BinderMeta // m = c }) : { m : BinderMeta // m = c } :=
   withPtrAddr a k (fun u₁ u₂ => Subtype.ext ((k u₁).2.trans (k u₂).2.symm))
 
-/-- The run-time `shareAlways` (PERF P14, step 6b): the shared `leanAlways` for
+/-- The run-time `shareAlways`: the shared `leanAlways` for
 a binder whose display is the shared anonymous object, and a copy
 otherwise, so that a binder with a name keeps it. The display test reads the
 annotation's address, never its value: each branch is the same binder (the

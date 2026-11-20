@@ -2,9 +2,9 @@ import Ix.Cert.Statement
 import Ix.CompileCert.Loop
 import Ix.Cert.LowerDistinct
 
-/-! # Each record's and each group's lowering (S1's units,: reader and ingress)
+/-! # Each record's and each group's lowering (reader and ingress units)
 
-The S1 union is stated over units: one record's lowering, the modeller's
+The agreement theorem is stated over units: one record's lowering, the modeller's
 generated records then the record's own declaration, or a definition block's
 declarations. IxC's decided units check closes each run of generated records
 with an ungenerated declaration whose bases cover the run's

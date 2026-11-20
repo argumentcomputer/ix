@@ -12,7 +12,7 @@ import IxC.Kernel.Inductives.StructParts
 public section
 
 /-!
-# The direct structure's annotated Π-bits are exact (task #175 W4c, P3 module 1)
+# The direct structure's annotated Π-bits are exact
 
 The tower leaves' folds need the annotated Π-types' codomain bits
 *exactly*: the type former's parameter binders carry a nonzero bit

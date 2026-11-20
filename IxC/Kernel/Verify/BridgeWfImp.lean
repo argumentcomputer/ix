@@ -2319,7 +2319,7 @@ theorem stripPis_WScoped {d : Nat} :
       · exact hrest b hb
 
 /-- The projection table, `wfOpsM mode` run to pure run (the stage is
-ops-free, task #175 S1). -/
+ops-free). -/
 theorem checkStructProjTable_wfimp {T C : Key md} {lps : List LevelParam}
     {nP nF : Nat} {rs : Level} {guards : List Level} {off : Nat} {cvCa : ConstantVal md}
     {env v : Env md} {F : Nat}

@@ -468,7 +468,7 @@ def checkPendingList (fe : FEnv md) : List (PendingCheck md) → Except (CheckEr
     | .ok _ => checkPendingList fe rest
     | .error e => .error (e, pc.pos)
 
-/-! ## Phase B on tasks (PERF P2)
+/-! ## Phase B on tasks (parallel validation)
 
 Phase B's records are independent of one another: each is checked against
 the installed index's prefix view from a fresh memo state (`GroupChecked`).

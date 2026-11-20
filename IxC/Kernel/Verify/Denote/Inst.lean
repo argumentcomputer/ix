@@ -47,8 +47,7 @@ open Ix.Kernel.Term
 
 variable {cval : TConstVal md} {env : Env md} {φ : LevelParam → Nat}
 
-/-- `projNV` commutes with instantiation (no binders; task #175
-wiring W3). -/
+/-- `projNV` commutes with instantiation (no binders). -/
 theorem inst_projNV :
     ∀ (i : Nat) (v x : Term) (k : Nat),
       (projNV i v).inst x k = projNV i (v.inst x k)

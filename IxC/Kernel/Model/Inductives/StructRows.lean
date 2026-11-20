@@ -6,7 +6,7 @@ import IxC.Kernel.Model.Tiers
 public section
 
 /-!
-# The direct structure's stage runs, as rows (task #175 W4c, P3 module 3, part 2)
+# The direct structure's stage runs, as rows
 
 The claims a P carrier answers at one fuel and assignment
 (`ClaimsAt`), the three row shapes the direct install reads off them

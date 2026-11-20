@@ -359,14 +359,14 @@ def indDeclSkelsModeled (block : List (ConstantInfo md)) (sk : List (InstallSkel
     else base
   | _, _ => base
 
-/-! ### The direct simple-structure clause (task #175 W4c)
+/-! ### The direct simple-structure clause
 
 The priority gate `structPartsF?` reads the block (`structPartsCore?`,
 pure) and the index only through `constsResolveF` on the raw
 constructor domains — skeleton-level lookups — so the dispatch is a
 function of the skeleton; the direct install's own install decisions
 are the projection bodies' scoping (`structProjBodies`, a function of
-the annotated constructor type; task #175 S1) plus freshness checks.
+the annotated constructor type) plus freshness checks.
 Nothing a core computes enters. -/
 
 /-- `Expr.constsResolve` at the skeleton level (lookups through
@@ -417,7 +417,7 @@ theorem constsResolveF_skel {fe : FEnv md} {sk : List (InstallSkel md)}
   | proj s _ e ihe =>
     simp only [Expr.constsResolveF, constsResolveSk, h.isSome', ihe]
 
-/-! ### The direct sum clause (task #175 sum-types)
+/-! ### The direct sum clause
 
 The second gate reads the index exactly as the first does — `constsResolveF`
 on the raw constructor domains — and its install decisions are the block's
@@ -708,7 +708,7 @@ theorem checkIndRecsS_skels (mode : CheckMode) (blockNames : List (Key md))
         (Yields.foldlM_rel (R := SkelIs) hstep checked fe₂ sk h)
         fun fe' hfe' => ?_
       rw [foldl_recMemberSkels]
-      simp only [foldl_cons_map] at hfe' 
+      simp only [foldl_cons_map] at hfe'
       simp only [show checked.map provSkel = recs.map recMemberSkel from hq] at hfe'
       exact hfe'
     · exact Yields.ofThrowBind
@@ -734,7 +734,7 @@ theorem installProjFnStepS_skels (mode : CheckMode) {fe : FEnv md}
     exact checkProjFnS_skels mode h T ctorName lps nP nF i
   · exact Yields.pure h
 
-/-! ## The direct simple-structure install's skeleton (task #175 W4c)
+/-! ## The direct simple-structure install's skeleton
 
 Every stage's install decision is the block's own or a freshness
 check; the stored constants' names are the block's (`checkConstantValF`
@@ -794,8 +794,8 @@ theorem checkIndDeclSF_skels (mode : CheckMode) {fe : FEnv md}
         split
         case isFalse => exact Yields.ofThrowBind
         case isTrue =>
-          -- the projection phase runs on structure-like blocks only
-          -- (task #175 SigmaHom): a decision of the block's own
+          -- the projection phase runs on structure-like blocks only:
+          -- a decision of the block's own
           -- constructor type, so the skeleton spec computes it
           by_cases hsl : ctorTargetsFam cvC.type cvT.name cvT.levelParams
               nP nF = true
@@ -813,7 +813,7 @@ theorem checkIndDeclSF_skels (mode : CheckMode) {fe : FEnv md}
         exact absurd hC (hne cvT capsT cvC nP nF hI)
       case h_2 => exact indBase_skels mode _ _ h _ _
 
-/-! ## The direct sum install's skeleton (task #175 sum-types, indexed)
+/-! ## The direct sum install's skeleton
 
 Same shape as the structure route's, with the constructor stage run
 over a list: the stored constructors' names and field counts are the

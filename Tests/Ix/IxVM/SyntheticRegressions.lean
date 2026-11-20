@@ -227,7 +227,7 @@ private def nativeDecideCases (leanEnv : Lean.Environment) : IO (Array Builder) 
       (.check ctx ndDownA none) {} false
       (some "an axiom that is not one of Lean's standard axioms")]
 
-/-! ## 3. Dead-`let` out-of-range universe parameters (`C08a–e`, IxC + IxVM) -/
+/-! ## 3. Dead-`let` out-of-range universe parameters (IxC + IxVM) -/
 
 private def deadLetUnivCases (leanEnv : Lean.Environment) : IO (Array Builder) := do
   let env ← loadSharedIxonEnv #[``Nat, ``Nat.zero, ``True, ``True.intro] leanEnv
@@ -239,45 +239,45 @@ private def deadLetUnivCases (leanEnv : Lean.Environment) : IO (Array Builder) :
   let univsOob : Array Ixon.Univ := #[.var 99, .succ (.var 99)]
   let univsOobInd : Array Ixon.Univ := #[.var 99, .succ (.var 99), .succ .zero]
 
-  -- C08a: `lvls = 0` definition value with dead `let` mentioning `Param 99`
-  let (env, c08aA) := storeNamed env `SynReg.Raw.c08aDefnVal
+  -- `lvls = 0` definition value with dead `let` mentioning `Param 99`
+  let (env, deadLetDefnValA) := storeNamed env `SynReg.Raw.deadLetDefnVal
     ⟨.defn ⟨.defn, .safe, {}, 0, .ref 0 #[], deadVal 1⟩, #[], #[natA, zeroA], univsOob, #[]⟩
-  -- C08c: `lvls = 0` theorem value with dead `let` mentioning `Param 99`
-  let (env, c08cA) := storeNamed env `SynReg.Raw.c08cThmVal
+  -- `lvls = 0` theorem value with dead `let` mentioning `Param 99`
+  let (env, deadLetThmValA) := storeNamed env `SynReg.Raw.deadLetThmVal
     ⟨.defn ⟨.thm, .safe, {}, 0, .ref 0 #[], deadVal 1⟩, #[], #[trueA, introA], univsOob, #[]⟩
-  -- C08d: `lvls = 0` definition type with dead `let` mentioning `Param 99`
-  let (env, c08dA) := storeNamed env `SynReg.Raw.c08dDefnType
+  -- `lvls = 0` definition type with dead `let` mentioning `Param 99`
+  let (env, deadLetDefnTypeA) := storeNamed env `SynReg.Raw.deadLetDefnType
     ⟨.defn ⟨.defn, .safe, {}, 0, deadVal 0, .ref 1 #[]⟩, #[], #[natA, zeroA], univsOob, #[]⟩
-  -- C08e: `lvls = 0` opaque value with dead `let` mentioning `Param 99`
-  let (env, c08eA) := storeNamed env `SynReg.Raw.c08eOpaqueVal
+  -- `lvls = 0` opaque value with dead `let` mentioning `Param 99`
+  let (env, deadLetOpaqueValA) := storeNamed env `SynReg.Raw.deadLetOpaqueVal
     ⟨.defn ⟨.opaq, .safe, {}, 0, .ref 0 #[], deadVal 1⟩, #[], #[natA, zeroA], univsOob, #[]⟩
-  -- C08b: `lvls = 0` inductive constructor with dead `let` mentioning `Param 99`
+  -- `lvls = 0` inductive constructor with dead `let` mentioning `Param 99`
   let ctorOob : E := .leanLet false (.sort 1) (.sort 0) (.recur 0 #[])
-  let (env, c08bBlockA) := storeNamed env `SynReg.Raw.c08bIndBlock
+  let (env, deadLetIndBlockA) := storeNamed env `SynReg.Raw.deadLetIndBlock
     ⟨.muts #[.indc ⟨false, 0, 0, 0, .sort 2,
       #[⟨false, 0, 0, 0, 0, .inherited, ctorOob⟩]⟩], #[], #[], univsOobInd, #[]⟩
-  let (env, c08bA) := storeNamed env `SynReg.Raw.c08bInd
-    ⟨.iPrj ⟨0, c08bBlockA⟩, #[], #[], #[], #[]⟩
-  let (env, _) := storeNamed env `SynReg.Raw.c08bInd.mk
-    ⟨.cPrj ⟨0, 0, c08bBlockA⟩, #[], #[], #[], #[]⟩
+  let (env, deadLetIndA) := storeNamed env `SynReg.Raw.deadLetInd
+    ⟨.iPrj ⟨0, deadLetIndBlockA⟩, #[], #[], #[], #[]⟩
+  let (env, _) := storeNamed env `SynReg.Raw.deadLetInd.mk
+    ⟨.cPrj ⟨0, 0, deadLetIndBlockA⟩, #[], #[], #[], #[]⟩
 
   -- Verify IxC rejects ALL 5!
   let verdicts ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts env
-  checkIxcOutcome verdicts `SynReg.Raw.c08aDefnVal false (some "undeclared universe parameter")
-  checkIxcOutcome verdicts `SynReg.Raw.c08cThmVal false (some "undeclared universe parameter")
-  checkIxcOutcome verdicts `SynReg.Raw.c08dDefnType false (some "undeclared universe parameter")
-  checkIxcOutcome verdicts `SynReg.Raw.c08eOpaqueVal false (some "undeclared universe parameter")
-  checkIxcOutcome verdicts `SynReg.Raw.c08bInd false
+  checkIxcOutcome verdicts `SynReg.Raw.deadLetDefnVal false (some "undeclared universe parameter")
+  checkIxcOutcome verdicts `SynReg.Raw.deadLetThmVal false (some "undeclared universe parameter")
+  checkIxcOutcome verdicts `SynReg.Raw.deadLetDefnType false (some "undeclared universe parameter")
+  checkIxcOutcome verdicts `SynReg.Raw.deadLetOpaqueVal false (some "undeclared universe parameter")
+  checkIxcOutcome verdicts `SynReg.Raw.deadLetInd false
   IO.println "[ixvm-synthetic-regressions] IxC rejected all 5 dead-let OOB universe param probes"
 
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
   let msg := some "universe param index out of range"
   return #[
-    fun _ => Case.ofClaim "c08a-dead-let-oob-lvl-defn-val" env (.check ctx c08aA none) {} false msg,
-    fun _ => Case.ofClaim "c08b-dead-let-oob-lvl-ind-ctor" env (.check ctx c08bA none) {} false msg,
-    fun _ => Case.ofClaim "c08c-dead-let-oob-lvl-thm-val" env (.check ctx c08cA none) {} false msg,
-    fun _ => Case.ofClaim "c08d-dead-let-oob-lvl-defn-type" env (.check ctx c08dA none) {} false msg,
-    fun _ => Case.ofClaim "c08e-dead-let-oob-lvl-opaque-val" env (.check ctx c08eA none) {} false msg]
+    fun _ => Case.ofClaim "dead-let-oob-lvl-defn-val" env (.check ctx deadLetDefnValA none) {} false msg,
+    fun _ => Case.ofClaim "dead-let-oob-lvl-ind-ctor" env (.check ctx deadLetIndA none) {} false msg,
+    fun _ => Case.ofClaim "dead-let-oob-lvl-thm-val" env (.check ctx deadLetThmValA none) {} false msg,
+    fun _ => Case.ofClaim "dead-let-oob-lvl-defn-type" env (.check ctx deadLetDefnTypeA none) {} false msg,
+    fun _ => Case.ofClaim "dead-let-oob-lvl-opaque-val" env (.check ctx deadLetOpaqueValA none) {} false msg]
 
 /-! ## 4. Large multi-container/mutual AST & synthetic positive 3-way regressions -/
 
@@ -348,19 +348,19 @@ private def imaxCases (leanEnv : Lean.Environment) : IO (Array Builder) := do
   let v : Ixon.Univ := .var 1
   let w : Ixon.Univ := .var 2
   let specs : Array (String × Lean.Name × UInt64 × Ixon.Univ × Ixon.Univ × Bool) := #[
-    ("g08-imax-distL", `SynReg.Raw.imaxDistL, 3,
+    ("imax-distL", `SynReg.Raw.imaxDistL, 3,
       .imax (.max u v) w, .max (.imax u w) (.imax v w), true),
-    ("g08-imax-distR", `SynReg.Raw.imaxDistR, 3,
+    ("imax-distR", `SynReg.Raw.imaxDistR, 3,
       .imax u (.max v w), .max (.imax u v) (.imax u w), true),
-    ("g08-imax-chain", `SynReg.Raw.imaxChain, 3,
+    ("imax-chain", `SynReg.Raw.imaxChain, 3,
       .imax u (.imax v w), .max (.imax u w) (.imax v w), true),
-    ("g08-max-imax-sym", `SynReg.Raw.maxImaxSym, 2,
+    ("max-imax-sym", `SynReg.Raw.maxImaxSym, 2,
       .max (.imax u v) (.imax v u), .max u v, true),
-    ("g08-imax-absorb", `SynReg.Raw.imaxAbsorb, 1,
+    ("imax-absorb", `SynReg.Raw.imaxAbsorb, 1,
       .imax u (.imax (.succ u) u), .imax (.succ u) u, true),
-    ("g08-bad-imax-succ", `SynReg.Raw.badImaxSucc, 1,
+    ("bad-imax-succ", `SynReg.Raw.badImaxSucc, 1,
       .imax (.succ u) u, .succ u, false),
-    ("g08-bad-imax-max", `SynReg.Raw.badImaxMax, 2,
+    ("bad-imax-max", `SynReg.Raw.badImaxMax, 2,
       .imax u v, .max u v, false)]
   let mut env := env
   let mut addrs : Array (String × Lean.Name × Address × Bool) := #[]
@@ -392,7 +392,7 @@ private def adversarialCases (leanEnv : Lean.Environment) : IO (Array Builder) :
   let trueA ← lookupAddr env ``True
   let introA ← lookupAddr env ``True.intro
 
-  -- D10: Forged large eliminator (`lvls = 1`, `Sort u` motive) on 2-ctor `Prop` inductive `TwoProp`.
+  -- Forged large eliminator (`lvls = 1`, `Sort u` motive) on 2-ctor `Prop` inductive `TwoProp`.
   let motiveDom : E := .leanAll (.ref 0 #[]) (.sort 0)
   let minorLDom : E := .app (.var 0) (.ref 1 #[])
   let minorRDom : E := .app (.var 1) (.ref 2 #[])
@@ -403,17 +403,17 @@ private def adversarialCases (leanEnv : Lean.Environment) : IO (Array Builder) :
   let forgedLargeRec : Ixon.Constant :=
     ⟨.recr ⟨false, false, 1, 0, 0, 1, 2, recTy, #[mkRule 1, mkRule 0]⟩,
       #[], #[twoA, twoLA, twoRA], #[.var 0], #[]⟩
-  let (env, d10A) ← storeNamedAnnot env `SynReg.Raw.d10ForgedLargeRec forgedLargeRec
+  let (env, forgedLargeRecA) ← storeNamedAnnot env `SynReg.Raw.forgedLargeRec forgedLargeRec
   -- Verify IxC also rejects the forged large eliminator before adding invalid blobs.
-  let d10Verdicts ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts env
-  checkIxcOutcome d10Verdicts `SynReg.Raw.d10ForgedLargeRec false
+  let forgedLargeVerdicts ← Tests.Ix.Kernel.SourceIngressCompare.ixonVerdicts env
+  checkIxcOutcome forgedLargeVerdicts `SynReg.Raw.forgedLargeRec false
 
-  -- G06a–d: Invalid UTF-8 string blobs.
+  -- Invalid UTF-8 string blobs.
   let badUtf8Specs : Array (String × ByteArray) := #[
-    ("g06a-utf8-overlong", ByteArray.mk #[0xC0, 0xAF]),
-    ("g06b-utf8-surrogate", ByteArray.mk #[0xED, 0xA0, 0x80]),
-    ("g06c-utf8-above-max", ByteArray.mk #[0xF4, 0x90, 0x80, 0x80]),
-    ("g06d-utf8-truncated", ByteArray.mk #[0xE2, 0x82])]
+    ("utf8-overlong", ByteArray.mk #[0xC0, 0xAF]),
+    ("utf8-surrogate", ByteArray.mk #[0xED, 0xA0, 0x80]),
+    ("utf8-above-max", ByteArray.mk #[0xF4, 0x90, 0x80, 0x80]),
+    ("utf8-truncated", ByteArray.mk #[0xE2, 0x82])]
   let mut env := env
   let mut blobCases : Array (String × Address × Option String) := #[]
   for (label, bs) in badUtf8Specs do
@@ -423,42 +423,42 @@ private def adversarialCases (leanEnv : Lean.Environment) : IO (Array Builder) :
     env := env2
     blobCases := blobCases.push (label, dA, none)
 
-  -- I05a/b: Non-canonical Nat literal blobs (trailing zero and empty).
+  -- Non-canonical Nat literal blobs (trailing zero and empty).
   let (env1, trailBlobA) := storeBlobAt env (ByteArray.mk #[0x01, 0x00])
-  let (env2, i05aA) := storeNamed env1 `SynReg.Raw.i05aTrailingZero
+  let (env2, trailingZeroNatA) := storeNamed env1 `SynReg.Raw.noncanonNatTrailingZero
     ⟨.defn ⟨.defn, .safe, {}, 0, .ref 0 #[], .nat 1⟩, #[], #[natA, trailBlobA], #[], #[]⟩
   env := env2
-  blobCases := blobCases.push ("i05a-noncanon-nat-trailing0", i05aA,
+  blobCases := blobCases.push ("noncanon-nat-trailing0", trailingZeroNatA,
     some "a blob with a trailing zero byte")
 
   let (env1, emptyBlobA) := storeBlobAt env ByteArray.empty
-  let (env2, i05bA) := storeNamed env1 `SynReg.Raw.i05bEmptyNat
+  let (env2, emptyNatA) := storeNamed env1 `SynReg.Raw.noncanonNatEmpty
     ⟨.defn ⟨.defn, .safe, {}, 0, .ref 0 #[], .nat 1⟩, #[], #[natA, emptyBlobA], #[], #[]⟩
   env := env2
-  blobCases := blobCases.push ("i05b-noncanon-nat-empty", i05bA,
+  blobCases := blobCases.push ("noncanon-nat-empty", emptyNatA,
     some "an empty blob")
 
-  -- I11b: Safe defn whose unused `sharing` entry references an unsafe defn.
-  let (env1, unsafA) := storeNamed env `SynReg.Raw.i11bUnsafeLeaf
+  -- Safe defn whose unused `sharing` entry references an unsafe defn.
+  let (env1, unsafA) := storeNamed env `SynReg.Raw.unsafeLeaf
     ⟨.defn ⟨.defn, .unsaf, {}, 0, .ref 0 #[], .ref 1 #[]⟩, #[], #[trueA, introA], #[], #[]⟩
-  let (env2, i11bA) := storeNamed env1 `SynReg.Raw.i11bUnusedSharingUnsafe
+  let (env2, unusedSharingUnsafeA) := storeNamed env1 `SynReg.Raw.unusedSharingUnsafe
     ⟨.defn ⟨.defn, .safe, {}, 0, .ref 0 #[], .ref 1 #[]⟩,
       #[.ref 2 #[]], #[natA, zeroA, unsafA], #[], #[]⟩
   env := env2
 
   let ctx ← IO.ofExcept (Ix.ClaimContext.ofEnv env true)
   let mut out : Array Builder := #[
-    fun _ => Case.ofClaim "d10-forged-large-elim-on-2ctor-prop" env (.check ctx d10A none) {} false
+    fun _ => Case.ofClaim "forged-large-elim-on-2ctor-prop" env (.check ctx forgedLargeRecA none) {} false
       (some "recursor universe-parameter count is not its block's plus the elimination parameter"),
-    fun _ => Case.ofClaim "i11b-unused-sharing-unsafe-ref" env (.check ctx i11bA none) {} false
+    fun _ => Case.ofClaim "unused-sharing-unsafe-ref" env (.check ctx unusedSharingUnsafeA none) {} false
       (some "safe walked source references an unsafe or partial record"),
-    -- H08: Retired `resource-v1` claim variant 9 (`TagN4(0xE, 9) = [0xE8, 0x01]`, format 4, val 2).
+    -- Retired `resource-v1` claim variant 9 (`TagN4(0xE, 9) = [0xE8, 0x01]`, format 4, val 2).
     fun _ =>
       let rawClaim := ByteArray.mk #[0xE8, 0x01, 0x04, 0x02]
       let key := packedDigestKey (Address.blake3 rawClaim)
       let io := (default : Aiur.IOBuffer).extend 0 key (rawClaim.data.map .ofUInt8)
       return {
-        label := "h08-retired-resource-v1-claim"
+        label := "retired-resource-v1-claim"
         accept := false
         rejectsWith := some "resource-v1 is not implemented by IxVM"
         witness := { funcName := `verify_claim, input := key, inputIOBuffer := io } }]

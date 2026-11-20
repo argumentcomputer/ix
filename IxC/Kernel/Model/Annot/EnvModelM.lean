@@ -82,10 +82,10 @@ structure EnvModelM (μ : CheckMode) (env : Env md) where
   type_wellDenotedV : ∀ c ∈ env.consts, ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
     denoteMeta base2.acval env ψ 0 c.toConstantVal.type = some ta →
     ∀ ρ : Nat → V, WellDenotedV V ρ ta
-  /-- stored constants inhabit their types' readings (task #175 S1:
-  a projection table's constant type is the closed dummy `Sort 1`
-  and its leaf is `Sort 0`, so the row holds of tables too — the
-  W4c-era `isTowerEntry` guard is gone; that a table is not a term is
+  /-- stored constants inhabit their types' readings (a projection
+  table's constant type is the closed dummy `Sort 1`
+  and its leaf is `Sort 0`, so the row holds of tables too — that a
+  table is not a term is enforced by
   `inferTypeCore`'s own rejection of a `.const` naming one) -/
   mem_type : ∀ c ∈ env.consts,
     ∀ (ψ : LevelParam → Nat) (ta : AnnotTerm),
@@ -127,7 +127,7 @@ structure EnvModelM (μ : CheckMode) (env : Env md) where
   `RulesInputs.rec_rules`) -/
   rec_rules : ∀ φ : LevelParam → Nat, RecRules base2 φ
   /-- the stored tower-backed projection entries' typing and iota
-  laws (task #175 wiring W5; an *environment law* for the same reason
+  laws (an *environment law* for the same reason
   `rec_rules` is — a direct structure's entries are fixed by its
   install and by nothing else, so the supplier is the direct install
   step.  Consumed by the `.proj` rows' tower branches) -/

@@ -6,7 +6,7 @@ public import IxC.Kernel.Verify.ProjSlots
 public section
 
 /-!
-# `denoteMeta` across a tower-entry cons (task #175 wiring, W4c S6)
+# `denoteMeta` across a tower-entry cons
 
 `denoteMeta_envExtend_mono` refutes a table head outright: its `hproj`
 premise says the extension adds no entry at all, because a `.proj T i`
@@ -157,7 +157,7 @@ theorem denoteMeta_envExtend_mono_at {env₀ env : Env md}
       | strVal s => exact absurd rfl (hstr s)
 
 /-- A table cons adds exactly its own structure's slots: any lookup
-new at the extension is the head's (task #175 S1). -/
+new at the extension is the head's. -/
 theorem findProj?_cons_tower {env : Env md} {tbl₀ : Ix.Kernel.ProjTable md} :
     ∀ (sn : Key md) (j : Nat) (entry : Ix.Kernel.ProjEntry md),
       env.findProj? sn j = none →

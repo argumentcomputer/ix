@@ -127,7 +127,7 @@ prelude's, whose every constant is bound to a role (`Mode.addressId?`).
   the datum) and the default modes: the reader does not read the record's
   binder-data section, where its binders' modes are, and drops a `let`'s mode
   from its header. Kernel terms carry no modes. Every binder shares one
-  metadata object (`BinderMeta.leanNever`, PERF P14).
+  metadata object (`BinderMeta.leanNever`).
 * Definitions get the kernel's height rule `regular (1 + max height)` unless
   the host supplies a hint (the environment check supplies the compiler's own).
 -/

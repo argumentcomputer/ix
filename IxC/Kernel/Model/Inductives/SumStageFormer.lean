@@ -5,7 +5,7 @@ import IxC.Kernel.Verify.Inductives.SumWF
 public section
 
 /-!
-# The sum former's cons (task #175 sum-types, indexed)
+# The sum former's cons
 
 `stageSumFormer`: the P step at the sum's type former, for a given
 list of field chains `Fss` (one per constructor, scoped at the

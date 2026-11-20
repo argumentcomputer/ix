@@ -5,7 +5,7 @@ public import IxC.Kernel.Model.Inductives.NativeJudge
 public section
 
 /-!
-# The direct structure's two parameter frames, identified (task #175 W4c, P3 module 3, part 4)
+# The direct structure's two parameter frames, identified
 
 The type former's parameter telescope and the constructor's are opened
 at their own variables (`checkStructCtor`), and `checkStructDomsAt`

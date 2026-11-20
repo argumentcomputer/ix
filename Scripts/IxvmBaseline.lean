@@ -30,7 +30,7 @@ def usage : String :=
   "Commands:\n" ++
   "  run OUT [RECORDED]                      Build, export, run pinned/bench/corpus suites,\n" ++
   "                                          write OUT/baseline.ixb (and OUT/diff.txt if RECORDED).\n" ++
-  "                                          Honors BENCH=0 (skip ixvm-s4-bench) and CORPUS=1.\n" ++
+  "                                          Honors BENCH=0 (skip ixvm-ind-decl-bench) and CORPUS=1.\n" ++
   "  extract OUTDIR LOG [LOG ...] [--out F]  Extract costs from *.stats.json sidecars and logs.\n" ++
   "                                          Writes binary .ixb to F (or stdout if --out omitted).\n" ++
   "  diff OLD NEW [--top N]                  Compare two baselines (.ixb or legacy .json).\n" ++
@@ -475,7 +475,7 @@ private def short (name : String) (n : Nat := 90) : String :=
 def suiteOf (label : String) : String :=
   let prefixes := [
     "eval ", "check ", "binding ", "shard ", "corpus ",
-    "s4 decl ", "s4 decl-ind ", "s4 decl-rec ", "s4 check ", "s4 std ", "s4 model "
+    "ind-decl decl ", "ind-decl decl-ind ", "ind-decl decl-rec ", "ind-decl check ", "ind-decl std ", "ind-decl model "
   ]
   match prefixes.find? (label.startsWith ·) with
   | some p => p.trimAscii.toString
@@ -719,13 +719,13 @@ def runSuite (outDir : FilePath) (recorded? : Option FilePath) : IO UInt32 := do
   let mut logs : Array FilePath := #[out / "pins.log"]
 
   let benchEnabled := (← IO.getEnv "BENCH").getD "1" == "1"
-  let hasS4Bench ← do
+  let hasIndDeclBench ← do
     if ← (FilePath.mk "Tests/Main.lean").pathExists then
-      pure (hasSubstr (← IO.FS.readFile "Tests/Main.lean") "\"ixvm-s4-bench\"")
+      pure (hasSubstr (← IO.FS.readFile "Tests/Main.lean") "\"ixvm-ind-decl-bench\"")
     else pure false
-  if benchEnabled && hasS4Bench then
+  if benchEnabled && hasIndDeclBench then
     let t1 ← IO.monoMsNow
-    let rcBench ← runLogged "lake" #["test", "--wfail", "--", "ixvm-s4-bench"]
+    let rcBench ← runLogged "lake" #["test", "--wfail", "--", "ixvm-ind-decl-bench"]
       runEnv (out / "bench.log")
     let secsBench := ((← IO.monoMsNow) - t1) / 1000
     let fftBench ← countPrefixedLines (out / "bench.log") "FFT "

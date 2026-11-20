@@ -5,7 +5,7 @@ public import IxC.Kernel.Inductives.StructParts
 @[expose] public section
 
 /-!
-# The block's shape record and its readers (task #175, kept for the one route)
+# The block's shape record and its readers
 
 `InductiveShape` is the shape every block on the fixpoint route is
 read into (`nativeShape?`, `IxC/Kernel/Inductives/NativeParts.lean`,
@@ -34,7 +34,7 @@ numeral tag (the constructor's index) and the constructor's tower;
 the recursor cases on the tag.  Installation is the direct route's
 (`IxC/Kernel/Inductives/SumInstall.lean`): the reference checks alone,
 no `_model` artifact consumed, the recursor generated and compared
-(task #175 S2 — `structRecTyI`/`structRecRhs`).
+(`structRecTyI`/`structRecRhs`).
 
 The checks mirror the reference kernels' inductive-declaration checks
 restricted to this class (lean4lean `Lean4Lean/Inductive/Add.lean`,
@@ -83,7 +83,7 @@ structure InductiveShape (md : Mode) where
   ctors : List (ConstantVal md × Nat)
   /-- parameter count -/
   nP : Nat
-  /-- index count (task #175 indexed; `0` at a plain sum) -/
+  /-- index count (`0` at a plain sum) -/
   nIdx : Nat
   /-- the recursor -/
   cvR : ConstantVal md

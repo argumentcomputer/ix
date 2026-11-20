@@ -1144,7 +1144,7 @@ import closure of `model_exists`, the eight frontend modules the reader
 calls and `Verify/Cached/StreamThm.lean`, from
 `https://github.com/leanprover/con-leche.git` at
 `ae0c0c4e4ce6a0081648aff03fe9c39d002c4526`; seven of them (the files
-upstream task #323 changed) at `3ca9e2fe749a51cba4c6e3527aeecba074c29316`.
+modified by the subsequent upstream update) at `3ca9e2fe749a51cba4c6e3527aeecba074c29316`.
 The axiom pin `Tests/Ix/Kernel/Axioms.lean` is derived from upstream's
 `tests/ConLecheTests/Axioms.lean`. Upstream's
 `ConLeche/Kernel/NatOpPins.lean` is not included: Ix validates the bound

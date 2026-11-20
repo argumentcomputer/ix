@@ -42,7 +42,7 @@ import Tests.Ix.IxVM.Exploits
 import Tests.Ix.IxVM.DefinitionDependencies
 import Tests.Ix.IxVM.BindingAnchors
 import Tests.Ix.IxVM.BindingFrontier
-import Tests.Ix.IxVM.S4Bench
+import Tests.Ix.IxVM.InductiveDeclBench
 import Tests.Ix.IxVM.TagN
 import Tests.Ix.IxVM.Codec
 import Tests.Ix.IxVM.UserAxioms
@@ -295,9 +295,9 @@ def registry : List Entry := [
   .runner "ixvm-differential-attribution" .primary Tests.Ix.IxVM.Differential.runAttribution,
   -- Declaration-checker measurements: declaration costs, a Std shard, the
   -- inductive census and the in-process modeller's records. Not a gate.
-  .env "ixvm-s4-bench" (.manual "declaration-checker cost measurements; needs IX_TEST_OUTPUT_DIR") Tests.Ix.IxVM.S4Bench.bench,
-  .env "ixvm-s4-census" (.manual "inductive census and modeller records") Tests.Ix.IxVM.S4Bench.census,
-  .env "ixvm-s4-model" (.manual "the modeled-route prototype; needs IX_TEST_OUTPUT_DIR") Tests.Ix.IxVM.S4Bench.modelProbe,
+  .env "ixvm-ind-decl-bench" (.manual "declaration-checker cost measurements; needs IX_TEST_OUTPUT_DIR") Tests.Ix.IxVM.InductiveDeclBench.bench,
+  .env "ixvm-ind-decl-census" (.manual "inductive census and modeller records") Tests.Ix.IxVM.InductiveDeclBench.census,
+  .env "ixvm-ind-decl-model" (.manual "the modeled-route prototype; needs IX_TEST_OUTPUT_DIR") Tests.Ix.IxVM.InductiveDeclBench.modelProbe,
   -- `ix prove-binding`, shard proofs that assume the binding, and their
   -- composition with the binding proof file and refusals without it, through
   -- the `ix` binary (`aggregate-binding-reuse` without its two aggregates).

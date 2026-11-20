@@ -164,7 +164,7 @@ theorem declStep_preserves (hμ : μ.verifiedChecks = true) {F : Nat} {env env�
   -- η-closure premised on `declIndS memberKeyS mp.base`; S5's ind unit
   -- (`SetBase/IndBlockR.lean`) proves it from `DeclIndRun` alone, so the
   -- fold consults no install obligation for its η half at all.
-  -- task #175 wiring W5: the η half is FLAG-AGNOSTIC — the `.indDecl`
+  -- the η half is FLAG-AGNOSTIC — the `.indDecl`
   -- dispatch's own case split (`declIndRunDispatchEtaClosed`)
   refine ⟨?_, Ix.Kernel.Semantics.declEtaStepRun
     (fun h' => Ix.Kernel.Semantics.declIndRunDispatchEtaClosed hE h') hE hrun⟩

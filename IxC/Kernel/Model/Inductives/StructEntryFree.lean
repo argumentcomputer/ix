@@ -4,7 +4,7 @@ public import IxC.Kernel.Model.Inductives.StructEntryKit2
 public section
 
 /-!
-# Unused fields are invariant (task #175 W4c, P3 module 7, part 10)
+# Unused fields are invariant
 
 The official `infer_proj` guard joins only the earlier fields *a
 later field uses* (`structUsedLater`: the field's variable occurs in

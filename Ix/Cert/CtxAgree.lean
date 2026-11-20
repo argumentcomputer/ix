@@ -13,7 +13,7 @@ Source's (`Ix.LeanIngress.lowerAllCollapsed`) and the Ixon reader's
 renaming `f` injective there (`InModel.CtxAgree`), a good block's generation
 and its renaming's give renamed records, or both fail. This file is the other
 half: the contexts the two streams build do agree, so a mutual or nested block's
-generated records agree on the two sides (S1's `UnitsAgree` for those units).
+generated records agree on the two sides (`UnitsAgree` for those units).
 
 * **The block** (`blockRecOf`): the modeller's block `lowerInductive` builds
   from a block as read, renamed with it (`blockRecOf_mapKeys`, through

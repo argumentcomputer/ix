@@ -244,9 +244,9 @@ theorem checkStructDomsAtF_eq (ops : (CheckerOps md) m) (env : Env md)
     simp only [checkStructDomsAtF, checkStructDomsAt, mkFEnv_env,
       checkStructDomsAtF_eq ops env off fvs doms j]
 
-/-! ### The direct sum path (task #175 sum-types, indexed) -/
+/-! ### The direct sum path -/
 
-/-- `checkStructFieldSortsIF` (task #175 indexed) at `mkFEnv`. -/
+/-- `checkStructFieldSortsIF` at `mkFEnv`. -/
 theorem checkStructFieldSortsIF_eq (ops : (CheckerOps md) m) (env : Env md)
     (isProp large : Bool) (s : Level) (nP : Nat) (fvs idxArgs : List (Expr md)) :
     ∀ (j : Nat),
@@ -257,7 +257,7 @@ theorem checkStructFieldSortsIF_eq (ops : (CheckerOps md) m) (env : Env md)
     simp only [checkStructFieldSortsIF, checkStructFieldSortsI, mkFEnv_env,
       checkStructFieldSortsIF_eq ops env isProp large s nP fvs idxArgs j]
 
-/-- `checkStructFieldSortsIFA` (task #175 indexed) at `List.toArray`. -/
+/-- `checkStructFieldSortsIFA` at `List.toArray`. -/
 theorem checkStructFieldSortsIFA_eq (ops : (CheckerOps md) m) (fe : FEnv md)
     (isProp large : Bool) (s : Level) (nP : Nat) (fvs idxArgs : List (Expr md)) :
     ∀ j, checkStructFieldSortsIFA ops fe isProp large s nP fvs.toArray idxArgs j
@@ -329,8 +329,7 @@ executing monad, in `IxC/Kernel/Verify/Cached/BridgeCSDecl.lean`; the
 theorem push_mkFEnv (env : Env md) (ci : ConstantInfo md) :
     (mkFEnv env).push ci = mkFEnv ⟨ci :: env.consts⟩ := rfl
 
-/-- The direct sum's constructor conses through the index (task #175
-sum-types): the pushed index of the consed environment *is* `mkFEnv`
+/-- The direct sum's constructor conses through the index: the pushed index of the consed environment *is* `mkFEnv`
 of it. -/
 theorem consSumCtorsF_mkFEnv (nP : Nat) :
     ∀ (cs : List (ConstantVal md × Nat)) (env : Env md),

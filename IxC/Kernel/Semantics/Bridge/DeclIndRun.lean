@@ -525,7 +525,7 @@ at the single inductive member), `hall`/`hbshape`/`hTnres`/`hinvR` (the
 recursor group's and projection phase's carrier inputs) and the
 `indRecsCoreR` swap all existed to feed a `∀ φ` row somewhere below.
 
-(Task #175 tower-flag: the elimination-template install is gone, and
+(the elimination-template install is gone, and
 with it the run record's last conjunct.) -/
 theorem declIndRun_of
     {μ : CheckMode} {F : Nat} {env env₂ : Env md}
@@ -564,7 +564,7 @@ theorem declIndRun_of
   split at h
   case isFalse => exact nomatch h
   next hprojFresh =>
-  -- the projection phase: structure-like blocks only (task #175 SigmaHom)
+  -- the projection phase: structure-like blocks only
   by_cases hsl : ctorTargetsFam cvC.type cvT.name cvT.levelParams nP nF = true
   case neg =>
     rw [if_neg hsl] at h

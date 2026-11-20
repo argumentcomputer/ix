@@ -16,7 +16,7 @@ import all Ix.Sharing.Exact.AreaBlockEq
 import all Ix.Sharing.Exact.AreaSearchEq
 import all Ix.Sharing.Exact.Reexpand
 import all Ix.Sharing.Exact.Search
-import all Ix.Sharing.Exact.Phase3
+import all Ix.Sharing.Exact.EvalUpFast
 import all Ix.Sharing.Exact.TieredFast
 
 @[expose] public section

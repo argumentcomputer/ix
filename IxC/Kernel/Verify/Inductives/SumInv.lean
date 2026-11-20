@@ -6,8 +6,7 @@ import IxC.Kernel.Inductives.SumInstall
 public section
 
 /-!
-# The direct sum install's stage runs, inverted (task #175 sum-types,
-indexed)
+# The direct sum install's stage runs, inverted
 
 Each stage of `checkSum` inverted to the facts the semantic
 modules consume: the type former's run, every constructor's run at the
@@ -16,7 +15,7 @@ generated recursor's comparison and every generated rule's run
 (`checkSumRules_inv`), and the recogniser's pins
 (`sumParts?_inv`).  Shape walks only, as `StructInv.lean`.
 
-Task #175 indexed: every stage carries the index count `nIdx`, the
+For indexed families, every stage carries the index count `nIdx`, the
 constructor's residual is the family at the parameters followed by
 `nIdx` index expressions (`structCtorResidOk`, inverted by
 `residual_shape` below), and the field-sort walk is
@@ -41,7 +40,7 @@ local macro_rules
         | (exfalso; exact sThrow_ne_ok
             (by simpa [bind, Except.bind] using ‹_›)))
 
-/-! ## The residual test, inverted (task #175 indexed) -/
+/-! ## The residual test, inverted -/
 
 /-- The head/arity/parameter-prefix test that `structCtorResidOk` and
 the opened-residual guard perform, read back as a spine: the residual
@@ -114,7 +113,7 @@ theorem checkSumInd_shape {env envI : Env md} {p p' : InductiveShape md}
 
 /-! ## Stage 2: one constructor -/
 
-/-- `checkStructFieldSortsI`, inverted (task #175 indexed): the sorts
+/-- `checkStructFieldSortsI`, inverted: the sorts
 are returned in field order, one per field, each the `ensureSort` of
 the field annotation's inferred type at the field's own frame, under
 the official universe bound (`isProp = false`) or — at a large

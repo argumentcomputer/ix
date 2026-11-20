@@ -78,7 +78,7 @@ def charListAV (nilA consA ofNatA za sa : AnnotTerm) :
       (charListAV nilA consA ofNatA za sa cs)
 
 /-- The uniform projection spellings erase onto each other:
-`projAV`'s image is `projNV` (task #175 wiring W3). -/
+`projAV`'s image is `projNV`. -/
 theorem erase_projAV : ∀ (i : Nat) (ea : AnnotTerm),
     (projAV i ea).erase = Ix.Kernel.Verify.projNV i ea.erase
   | 0, _ => rfl
@@ -125,7 +125,7 @@ def denoteAnnot (mode : CheckMode) (acval : Key md → (LevelParam → Nat) → 
     none
   | d, .proj sn i e => do
     let ea ← denoteAnnot mode acval env φ fuel d e
-    -- the entry-kind branch (task #175 wiring W3), clause-parallel
+    -- the entry-kind branch, clause-parallel
     -- with `denote` and `denoteMeta`
     match env.findProj? sn i with
     | some entry => some (projAV (i + entry.off) ea)

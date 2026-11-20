@@ -10,7 +10,7 @@ import IxC.Kernel.Verify.Denote.IndFrame
 public section
 
 /-!
-# The direct structure's opened frames (task #175 W4c, P3 module 3)
+# The direct structure's opened frames
 
 The direct install's stage checks run **at opened frames**: each
 binder-domain comparison (`checkStructDomsAt`), each field's sort

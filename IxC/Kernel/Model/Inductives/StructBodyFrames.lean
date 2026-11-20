@@ -13,7 +13,7 @@ import IxC.Kernel.Model.Inductives.StructIntro
 public section
 
 /-!
-# The projection body's frame (task #175 S1)
+# The projection body's frame
 
 The table stores, per field, a **body** `F_i[p⃗ ↦ bvars, f_j ↦ .proj T
 j (bvar 0)]` (`structProjBodies`), and the tower law (A) reads it

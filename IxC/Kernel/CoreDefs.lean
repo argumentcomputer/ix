@@ -712,8 +712,8 @@ def Expr.isBoolTrue : Expr md → Bool
 
 /-- The pairs official's `quick_is_def_eq` decides by itself
 (`type_checker.cpp:770-793`): two sorts, two literals, two `∀`s, two
-`λ`s.  On such a pair `is_def_eq_core` never reaches proof irrelevance
-— the divergence audit's D4 — so `defeqStep`'s hoisted `propIrrel` is
+`λ`s.  On such a pair `is_def_eq_core` never reaches proof irrelevance,
+so `defeqStep`'s hoisted `propIrrel` is
 additionally gated on `!quickPair`; the arms themselves are the
 structural ones further down (values are `whnfCore`-inert, so nothing
 else happens in between). -/
@@ -814,7 +814,7 @@ def natOpResult (c : Key md) (a b : Nat) : Option (Expr md) :=
   else if c = natSubName then some (.lit (.natVal (a - b)))
   else if c = natMulName then some (.lit (.natVal (a * b)))
   else if c = natPowName then
-    -- the divergence audit's S2: official `reduce_pow` refuses exponents
+    -- official `reduce_pow` refuses exponents
     -- above `ReducePowMaxExp = 1 << 24` (`type_checker.cpp:616-627`) and
     -- lets `Nat.pow` unfold instead — the blow-up protection, mirrored
     if b > 16777216 then none else some (.lit (.natVal (a ^ b)))
@@ -960,9 +960,8 @@ def piResidual : Expr md → List (Expr md) → Option (Expr md)
   | _, _ :: _ => none
 
 /-- Are all `nF` projection slots of `T` table entries — i.e. does
-`T`'s projection table exist and cover them?  (Task #175 tower-flag:
-a stored table always carries bodies, so "the entry exists" is the
-whole test.) -/
+`T`'s projection table exist and cover them?  Every stored table
+carries bodies, so existence of the entry is the whole test. -/
 def towerSlotsAll (env : Env md) (T : Key md) (nF : Nat) : Bool :=
   (List.range nF).all fun j => (env.findProj? T j).isSome
 
@@ -976,8 +975,8 @@ def recSlotsAll (env : Env md) (T : Key md) (nF : Nat) : Bool :=
     | some (.recInfo _ _ _ _) => true
     | _ => false
 
-/-- The fabricated projections of a structure-eta spine (task #175
-W4c): `.proj T j b` nodes when every slot has a table entry (the
+/-- The fabricated projections of a structure-eta spine: `.proj T j b`
+nodes when every slot has a table entry (the
 direct install's structures — the node is what the table types and
 reduces), else the modeled path's projection-function applications. -/
 def etaProjs (env : Env md) (T : Key md) (us : List Level) (targs : List (Expr md))
@@ -1011,27 +1010,26 @@ def etaFabArgs (T : Key md) (ust : List Level) (targs : List (Expr md))
   targs ++ (List.range nF).map fun j =>
     Expr.mkAppN (.const (projFnName T j) ust) (targs ++ [major])
 
-/-- `etaFabArgs` at the entry kind (task #175 W4c): the projections
+/-- `etaFabArgs` at the entry kind: the projections
 are `etaProjs`' — `.proj` nodes at an all-tower slot family, the
 modeled spelling otherwise. -/
 def etaFabArgsE (env : Env md) (T : Key md) (ust : List Level)
     (targs : List (Expr md)) (major : Expr md) (nF : Nat) : List (Expr md) :=
   targs ++ etaProjs env T ust targs major nF
 
-/-- **The tower-fire guard** (task #175 W4c/O4, restated at W6):
+/-- **The tower-fire guard**:
 `whnfCore` fires the structural rule `proj_i (ctor p⃗ x⃗) ↦ x_i` at a
 tower-backed entry under exactly the guard the tower infer branch
 types the node with — at a `Prop`-declared structure the field's guard
 level must be a proposition at this instantiation; at every other
 family the rule fires unconditionally.
 
-Until W6 the guard was "the structure's sort is provably nonzero at
-this instantiation", which is *not* what the official kernel does
-(`reduce_proj` reduces every constructor redex) and rejects the
+Requiring the structure's sort to be provably nonzero at every
+instantiation would diverge from the official kernel (`reduce_proj`
+reduces every constructor redex) and would reject the
 modelled basis's own `PSigma'.fst_mk` (`PSigma'.fst (PSigma'.mk a b) ≡ a`
 at symbolic `u v`, where `max u v` is neither provably zero nor
-nonzero) once the pinned pair — whose entries were ungated — is
-retired.  The model licence: at a squash instance (the structure's
+nonzero).  The model licence: at a squash instance (the structure's
 sort is `0` at the valuation) the constructor application reads as
 the point, and so does the selected field — for a non-`Prop`-declared
 family every field's sort is bounded by the structure's (the O5 bound
@@ -1234,8 +1232,8 @@ def recFireComparands (rl : RecRule md) (lps : List LevelParam)
     (cvjLps.map fun p => Level.subst lps us (.param p),
      args.take rl.ctorParams)
 
-/-- **The type of a `.proj` node at a tower-backed entry** (task #175
-S1): the stored body `F_i[p⃗ ↦ bvars, f_j ↦ .proj T j (bvar 0)]`,
+/-- **The type of a `.proj` node at a tower-backed entry**: the stored
+body `F_i[p⃗ ↦ bvars, f_j ↦ .proj T j (bvar 0)]`,
 level-instantiated at the subject type's levels, with the subject
 type's arguments and the subject substituted for its `numParams + 1`
 loose variables in ONE traversal (`instantiateList`: `bvar 0` is the

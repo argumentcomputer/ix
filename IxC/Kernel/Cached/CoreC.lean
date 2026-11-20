@@ -360,8 +360,7 @@ def projAppsFnI (T : Key md) (us' : List Level) (targs : List (Expr md))
     let rs ← projAppsFnI T us' targs b rest
     pure (r :: rs)
 
-/-- The `.proj T i b` spine (the tower spelling, task #175
-W4c). -/
+/-- The `.proj T i b` spine (the tower spelling). -/
 def projNodesI (T : Key md) (b : Expr md) : List Nat → (CheckCM md) (List (Expr md))
   | [] => pure []
   | i :: rest => do
@@ -429,8 +428,8 @@ def structEtaCertWithI (r : CoreFnsI md) (fe : FEnv md) (depth : Nat)
                 -- per-slot ones are certificate families (official's
                 -- `try_eta_struct_core` runs neither); off at `.trusted`
                 if ← certAtI mode (iotaCertsI r fe depth false tyT targs) then do
-                  -- the per-slot certificates are the projection-function
-                  -- kind's; a tabled family has none (task #175 S1)
+                  -- the per-slot certificates are for the projection-function
+                  -- kind only; a tabled family has none
                   if ← certAtI mode
                       (if fe.towerSlotsAllF Tn caps.etaFields then pure true
                       else structEtaProjCertsI r fe depth T Tn us'
@@ -1364,16 +1363,15 @@ def inferBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM m
           let targs ← pure (Expr.getAppArgsC te)
           if T = sn ∧ targs.length = entry.numParams ∧
               us.length = entry.levelParams.length then do
-            -- the official `infer_proj` restriction (task #175
-            -- W4c/O4), as in the spec body
+            -- the official `infer_proj` restriction, as in the spec body
             if Level.isEquiv entry.structSort .zero == some true then
               unless Level.isEquiv
                   (Level.subst entry.levelParams us entry.fieldSort) .zero
                   == some true do
                 throw (.invalid
                   "projection from a propositional structure must be a proposition")
-            -- the body at the arguments and the subject, as in the
-            -- spec body (task #175 S1) — through the memoized,
+            -- instantiate the stored body at the arguments and the
+            -- subject, as in the spec body — through the memoized,
             -- sharing-preserving `Expr` instantiations
             -- (`ProjEntry.typeAtI`; the spec's `typeAt` is a tree walk
             -- that copied the subject and the parameters — the affine
@@ -1385,7 +1383,7 @@ def inferBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckCM m
     | .letE _ _ _ _ =>
       -- unreachable by construction, as in the spec body (task #241):
       -- the official `infer_let` triple lives in `annotateBodyI`'s own
-      -- `.letE` clause, which returns the ζ reduct (task #217)
+      -- `.letE` clause, which returns the ζ reduct
       throw (.internal "inferType: `let` in an annotated expression")
     | .bvar _ =>
       throw (.notImplemented "inferType beyond the supported fragment")
@@ -1644,7 +1642,7 @@ domain, binder info. -/
 abbrev AnnotBinderEntry (md : Mode) := Expr md × BinderMeta
 
 /-- The cached twin of `annotBinderMeta`, writing through
-`BinderMeta.withPw` (a shared object where one exists, PERF P14;
+`BinderMeta.withPw` (reusing a shared object where one exists;
 `annotBinderMetaI_eq`). -/
 def annotBinderMetaI (pw? : Option PropWhen) (mb : BinderMeta) : BinderMeta :=
   match pw? with
@@ -1836,8 +1834,8 @@ def annotateBodyI (r : CoreFnsI md) (fe : FEnv md) : Nat → Expr md → (CheckC
       -- official `infer_let` check order (see the spec body): the
       -- annotation is a type, the value's inferred type matches it,
       -- then the body with the value transparent (zeta at annotate;
-      -- `inst1M` keeps the substitution sharing-preserving).  Task #217
-      -- (audit follow-up #206-S1) put the triple back: the pass returns
+      -- `inst1M` keeps the substitution sharing-preserving). The
+      -- official `infer_let` triple runs here because this pass returns
       -- the ζ reduct, so `inferBodyI`'s `.letE` arm never sees the node
       -- — task #241 made that arm a positive `.internal` error.
       let ty' ← r.annotate depth ty

@@ -84,8 +84,7 @@ theorem installBasisFoldF_pushC :
     refine bindC_congr fun e => ?_
     rw [pure_bind, installBasisFoldF_pushC l e]
 
-/-! ### The direct simple-structure path's extending stages (task #175
-W4c: the cached run bridge restored) -/
+/-! ### The direct simple-structure path's extending stages (the cached run bridge restored) -/
 
 /-- The former's telescope stage through the index (task #195): the
 whnf loop reads the index's environment, the re-check is the indexed
@@ -101,8 +100,7 @@ theorem checkSumTeleF_pushC (ops : (CheckerOps md) (CheckCM md)) (env : Env md)
     obtain ⟨bs, body⟩ := q
     cases body <;> simp only [checkConstantValF_eq, mkFEnv_env]
 
-/-- The direct sum's type-former stage through the index (task #175
-sum-types). -/
+/-- The direct sum's type-former stage through the index. -/
 theorem checkSumIndF_pushC (ops : (CheckerOps md) (CheckCM md)) (env : Env md)
     (p : InductiveShape md) (capsOf : InductiveShape md → IndCaps md) :
     checkSumIndF ops (mkFEnv env) p capsOf
@@ -112,7 +110,7 @@ theorem checkSumIndF_pushC (ops : (CheckerOps md) (CheckCM md)) (env : Env md)
   simp only [checkConstantValF_eq, checkSumTeleF_pushC, push_mkFEnv, bind_assoc,
     pure_bind, ite_bindC, throwC_bind_eq] <;> rfl
 
-/-- The projection table through the index (task #175 S1). -/
+/-- The projection table through the index. -/
 theorem checkStructProjTableF_pushC (T C : Key md) (lps : List LevelParam)
     (nP nF : Nat) (rs : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal md)
     (env : Env md) :
@@ -125,12 +123,10 @@ theorem checkStructProjTableF_pushC (T C : Key md) (lps : List LevelParam)
 
 /-! ## `checkModeled` and the final bridge -/
 
-/-! ## The direct simple-structure install (task #82; the cached run
-bridge restored at task #175 W4c, the direct install being the only
+/-! ## The direct simple-structure install (the direct install is the only
 projection route) -/
 
-/-- The projection-table stage of the cached driver, run-level (task
-#175 S1): operation-free, the state is unchanged, the environment is
+/-- The projection-table stage of the cached driver, run-level: operation-free, the state is unchanged, the environment is
 the pure stage's. -/
 theorem checkStructProjTableS_run {T C : Key md} {lps : List LevelParam} {nP nF : Nat}
     {rs : Level} {guards : List Level} {off : Nat} {cvCa : ConstantVal md}

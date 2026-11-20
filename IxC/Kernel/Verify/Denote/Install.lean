@@ -774,8 +774,7 @@ structure Installs (env : Env md) (cval cval' : TConstVal md)
     (c₀ : ConstantInfo md) : Prop where
   /-- The installed name is not already stored. -/
   fresh : env.find? c₀.name = none
-  /-- The installed constant is not a projection table (task #175
-  wiring W3; the table installs get their own transports). -/
+  /-- The installed constant is not a projection table (the table installs get their own transports). -/
   ntc : ∀ e', c₀ ≠ .projInfo e'
   /-- The valuation changes only at the installed name. -/
   ag : ∀ n, n ≠ c₀.name → cval n = cval' n
@@ -896,7 +895,7 @@ theorem BasisPinnedTT.cons {env : Env md} {cval cval' : TConstVal md}
     exact (h n ci hf hres).2 t ψ hp
 
 /-- The projection-table discipline survives an install.  A head that
-is a table supplies its own head data (task #175 wiring W5); the
+is a table supplies its own head data; the
 stored tables' head data survives by freshness. -/
 theorem ProjOkT.cons {env : Env md} {c₀ : ConstantInfo md} (h : ProjOkT env)
     (hfresh : env.find? c₀.name = none)

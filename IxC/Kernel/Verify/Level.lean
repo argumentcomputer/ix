@@ -188,7 +188,7 @@ theorem leq_sound {l r : Level} (h : leq l r = some true) :
   rw [eval_simplify, eval_simplify] at this
   omega
 
-/-- **Conformance, task #176 P2 (restrictions-are-findings).**  The
+/-- **Conformance note.**  The
 `l == r` disjunct `isEquiv` gained — official's
 `is_equivalent(lhs, rhs) = lhs == rhs || normalize lhs == normalize rhs`
 (`level.cpp:518`) — is *redundant*: `isEquiv` is equal to the

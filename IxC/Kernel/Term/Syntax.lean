@@ -35,8 +35,8 @@ Differences from `Ix.Kernel.Expr`, each deliberate:
   constants at all.
 * **There is no `letE`.**  No stored expression carries a `let`: the
   annotation pass runs the official `infer_let` triple and returns the
-  ζ *reduct* (task #217), and every kernel arm that used to accept a
-  `letE` node downstream of it is a positive error (task #241).  So the
+  ζ *reduct*, and every kernel arm that used to accept a
+  `letE` node downstream of it is a positive error.  So the
   denotation's `letE` clause is `none`, the former is gone, and the
   substitution metatheory stays as small as it was — see
   `IxC/Kernel/Verify/Denote.lean`'s "There is no `let` in the term
@@ -44,8 +44,8 @@ Differences from `Ix.Kernel.Expr`, each deliberate:
 * **`fst`/`snd` are formers, and their type arguments live in the
   premise.**  A projection on a *modeled* structure never reaches this
   layer: the checker accepts no `.proj` node without a native table
-  entry (task #175 wiring W5 — the annotation-time rewrites into
-  eliminations are gone).  A projection on the **pinned pair** or on a
+  entry (there are no annotation-time rewrites into
+  eliminations).  A projection on the **pinned pair** or on a
   direct structure's tower entry does: `ProjEntry.native` nodes are
   first-class by design and survive into stored terms — carrying the
   structure's name and the field index, and *not* the pair's type

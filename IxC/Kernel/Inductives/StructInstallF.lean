@@ -70,7 +70,7 @@ structure StructWalkers (md : Mode) where
 def StructWalkers.plain : StructWalkers md :=
   ⟨fun fe e => e.constsResolveF fe, structProjBodies⟩
 
-/-- `checkStructProjTable` through the index (task #175 S1). -/
+/-- `checkStructProjTable` through the index. -/
 def checkStructProjTableF (w : StructWalkers md) (T C : Key md) (lps : List LevelParam) (nP nF : Nat)
     (resSort : Level) (guards : List Level) (off : Nat) (cvCa : ConstantVal md) (fe : FEnv md) :
     m (FEnv md) := do

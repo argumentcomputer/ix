@@ -6,7 +6,7 @@ import IxC.Kernel.Verify.FastOps
 public section
 
 /-!
-# The direct recogniser and the projection slots, inverted (task #175 W4c, P3 module 7, part 7)
+# The direct recogniser and the projection slots, inverted
 
 V-free facts the direct install's assembly reads off the kernel's
 recogniser and slot decision:
@@ -16,7 +16,7 @@ recogniser and slot decision:
   the block's level parameters (plus the large eliminator's fresh one),
   the constructor carries the former's;
 * `structProjGuards_getD`: the coarse guard's spelling at a slot.
-  (Task #175 S1: the per-slot run and the slot-prefix lemmas went with
+  (the per-slot run and the slot-prefix lemmas went with
   the per-field entries — the table stage is one cons,
   `checkStructProjTable_inv`.)
 -/

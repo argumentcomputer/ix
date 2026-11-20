@@ -36,7 +36,7 @@ import all Ix.Sharing.Exact.Dag
 import all Ix.Sharing.Exact.Basic
 import all Ix.Sharing.Exact.Reexpand
 import all Ix.Sharing.Exact.Search
-import all Ix.Sharing.Exact.Phase3
+import all Ix.Sharing.Exact.EvalUpFast
 import Ix.Sharing.Exact.AreaSearchEq
 
 public section

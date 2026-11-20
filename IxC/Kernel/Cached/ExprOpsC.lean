@@ -758,7 +758,7 @@ def abstractRangeC (e : @& (Expr md)) (d k : Nat) (c : Nat := 0) : Expr md :=
 
 /-- A binder's metadata under a level substitution,
 `{ m with pw := Level.substPW ks us m.pw }` (`BinderMeta.substPWC_eq`),
-without a new object where none is needed (PERF P14): `m` itself when its
+without allocating a new object where none is needed: `m` itself when its
 datum has no parameter (`Level.substPW_eq_self`), `BinderMeta.withPw`
 otherwise. -/
 @[inline] def _root_.Ix.Kernel.BinderMeta.substPWC (ks : List LevelParam) (us : List Level)

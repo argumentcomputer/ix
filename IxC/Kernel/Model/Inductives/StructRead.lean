@@ -7,7 +7,7 @@ import IxC.Kernel.Verify.EnvWF
 public section
 
 /-!
-# The direct structure's readings (task #175 W4c, P3 module 2)
+# The direct structure's readings
 
 The P install of a direct structure reads its four stored types (the
 former's, the constructor's, the recursor's, each entry's) at the

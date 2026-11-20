@@ -1,7 +1,7 @@
 import IxSharingVerify.UniformTies
 
 /-!
-# Stage 4: the search tables
+# The search tables of the uniform optimizer
 
 Count-indexed tables of `(Δ, set)` entries: what `add`, `best`, `trim`,
 `conv` and folds of `add` keep and produce.

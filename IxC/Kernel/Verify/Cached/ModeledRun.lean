@@ -72,8 +72,8 @@ theorem checkIndDeclSF_run (hμ : mode.verifiedChecks = true) {env : Env md} (he
       rw [if_neg hguard] at h
       exact absurd h throwC_bind_ok
     rw [if_pos hguard] at h
-    -- the projection phase: structure-like blocks only (task #175
-    -- SigmaHom); off the shape the phase is the identity
+    -- the projection phase: structure-like blocks only;
+    -- off the shape the phase is the identity
     by_cases hsl : ctorTargetsFam cvC.type cvT.name cvT.levelParams nP nF
         = true
     case neg =>

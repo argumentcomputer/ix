@@ -46,7 +46,7 @@
   * `Exact.Search`     width-state search for the global minimum (test oracle),
                        and the table materialization the construction uses
                        (`materializeTable_eq_fast`, whose fast body walks
-                       `Exact.Phase3`)
+                       `Exact.EvalUpFast`)
   * `Exact.UniformSearch` graph facts, classes, components and the
                        per-component exact search of the uniform optimizer
                        (`SCtx.phiE_eq_fast`)
@@ -55,7 +55,7 @@
   * `Exact.Tiered`     the canonical tiered construction (TagN layout)
 
   Fast twins (the csimp theorem; the specification it replaces):
-  * `Exact.Phase3`     re-evaluation after one dictionary change by a walk up
+  * `Exact.EvalUpFast` re-evaluation after one dictionary change by a walk up
                        the parent lists (proved equal to `evalUp`; used by
                        the fast `materializeTable`)
   * `Exact.Reexpand`   re-expansion without hashing whole nodes

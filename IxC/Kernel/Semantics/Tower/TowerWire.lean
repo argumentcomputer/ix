@@ -6,7 +6,7 @@ public import IxC.Kernel.Semantics.DenoteClosed
 @[expose] public section
 
 /-!
-# The direct-structure leaves' syntactic battery (task #175 wiring, W4)
+# The direct-structure leaves' syntactic battery
 
 The wiring checklist's item 1: the `hAclosed` row of an install-step
 leaf is `AnnotTerm.liftN 1 (leaf) k = leaf`, and by

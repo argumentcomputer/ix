@@ -1,7 +1,7 @@
 import IxSharingVerify.UniformRevisible
 
 /-!
-# Stage 4: the tie order of sets
+# The tie order of sets in the uniform optimizer
 
 `setPrec` on strictly increasing sets: `a` precedes `b` exactly when the
 smallest term of their symmetric difference is in `b`. It is a strict total

@@ -22,7 +22,7 @@ classification, re-checked on the annotated types after the stage
 pre-block environment, or exactly the family at the parameters).
 The recursor stage generates the type with the inductive-hypothesis
 binders (`structRecTyR`), compares it with the stream's by one closed
-`isDefEq` (task #175 S2), and generates the rules (`structRecRhsR`);
+`isDefEq`, and generates the rules (`structRecRhsR`);
 the rules mention the recursor itself, so they are scope-checked at
 the environment holding its constant and NOT inferred — the official
 kernel infers no rule either; the P tier grades the generated form

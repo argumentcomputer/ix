@@ -12,8 +12,7 @@ public import IxC.Kernel.Semantics.Inductives.DeclNativeJ
 public section
 
 /-!
-# The direct sum's constructor data and frames (task #175 sum-types,
-indexed)
+# The direct sum's constructor data and frames
 
 `CtorDataI`: `CtorData` at an indexed family — the constructor's type
 reads to the Π-tower over its field data ending in the family at the

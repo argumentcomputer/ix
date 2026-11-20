@@ -333,7 +333,7 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env md}
           (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))).mp hf) hcap
           hres φ' us hus
       exact ⟨TVa, by rw [← hde]; exact hTVa, hokT, hlaw⟩
-  · -- `tower_ok` (task #175 wiring W5): a table entry, a former and a
+  · -- `tower_ok`: a table entry, a former and a
     -- constructor are never recursors, so every lookup the law reads
     -- is unchanged by the swap, and the readings are `hde`
     intro φ T i entry hf
@@ -352,7 +352,7 @@ theorem EnvModelM.swapP {μ : CheckMode} {env₀ env₃ : Env md}
     · obtain ⟨⟨Ta, hTa, hA⟩, ⟨TCa, hTCa, hB⟩⟩ := hlaw us hus
       exact ⟨⟨Ta, by rw [← hde]; exact hTa, hA⟩,
         ⟨TCa, by rw [← hde]; exact hTCa, hB⟩⟩
-    · -- (C) the η law (task #175 W4c): the former's lookup is unchanged
+    · -- (C) the η law: the former's lookup is unchanged
       -- by the swap, and the reading is `hde`
       intro cvT' capsT' hfT' us hus
       obtain ⟨TVa, hTVa, hok, hlaw'⟩ := hetaL cvT' capsT' ((hsame _ _

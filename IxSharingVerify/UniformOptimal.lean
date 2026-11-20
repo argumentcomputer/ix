@@ -1,7 +1,7 @@
 import IxSharingVerify.UniformSearch
 
 /-!
-# Stage 4: the component cost and its decompositions
+# The component cost and its decompositions
 
 The semantic cost `compCost` of a component (its roots, its certain-stored
 entries and the entries of a member set), its relation to the uniform length

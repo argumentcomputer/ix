@@ -306,8 +306,8 @@ theorem recRuleBits_head {find? : Key md → Option (ConstantInfo md)}
       recRuleEtaOf find? recName (recRuleBits find? recName rl).ctor = true) :=
   ⟨fun h => h, fun h => h⟩
 
-/-- **A table entry's syntactic head data** (task #175 wiring
-W5): the facts the direct install establishes syntactically for every
+/-- **A table entry's syntactic head data**:
+the facts the direct install establishes syntactically for every
 entry of the table it stores, and which the readings' consumers need
 with no environment record beyond `ProjOkT` — the former and the
 constructor are unreserved names (the recogniser's own guards, so a
@@ -317,9 +317,9 @@ constructor as a constructor at the entry's own arities and level
 parameters; the former's type is `∀ (params), Sort structSort` and the
 constructor's is `∀ (params) (fields), T.{lps} params` (the structure at
 its own level parameters and parameters, no index), so the table's
-structure sort and constructor are the stored structure's.  (Task #175
-S1: the entry carries a *body*, not a type; the bodies' scoping is
-`EnvWF`'s table clause.) -/
+structure sort and constructor are the stored structure's.  The entry
+carries a *body*, not a type; the bodies' scoping is
+`EnvWF`'s table clause. -/
 @[expose] def TowerHead (env : Env md) (entry : ProjEntry md) : Prop :=
   reservedBasisNames.contains entry.structName = false ∧
   reservedBasisNames.contains entry.ctor = false ∧
@@ -364,10 +364,8 @@ at each of its fields, the syntactic head data (`TowerHead`).
 **Purely syntactic, so it transposes verbatim** — it mentions no
 values, no interpretation and no derivations.  Relocated here (task
 #148, T1) from `IxC/Kernel/TTVerify/EnvTT.lean`, so that both verification
-lanes can import it.  Until task #175 W6 a first conjunct pinned every
-native non-tower entry to one of the two `PSigma'` pair entries; the
-pin is retired with the pinned pair, and task #175 tower-flag retired
-the table-kind flag itself — the modeled route installs no table, so
+lanes can import it.  The modeled route installs no table, so
+every stored projection table is a direct-install table and
 the discipline is uniform over every stored one. -/
 @[expose] def ProjOkT (env : Env md) : Prop :=
   ∀ n tbl, env.find? n = some (.projInfo tbl) →

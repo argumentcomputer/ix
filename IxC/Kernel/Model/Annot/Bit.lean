@@ -184,7 +184,7 @@ checker runs, no fuel, no mode.  See the module docstring for the
     none
   | d, .proj sn i e => do
     let ea ← denoteMeta acval env φ d e
-    -- the entry-kind branch (task #175 wiring W3): a tower-backed
+    -- the entry-kind branch: a tower-backed
     -- entry reads field `i` by the uniform iterated spelling
     -- (`projAV`, whose `WellDenoted`/substitution batteries are the
     -- introduction machinery's); the pair/absent side is the pre-W3

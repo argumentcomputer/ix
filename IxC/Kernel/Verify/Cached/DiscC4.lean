@@ -2053,7 +2053,7 @@ theorem inferBodyC_sim (ih : SSimC mode env f) (henv : EnvWF env)
           Expr.getAppArgsC_spec te
         rw [htargs.length]
         split
-        · -- task #175 S1: the body at the spine and the subject —
+        · -- the body at the spine and the subject —
           -- `Expr = Expr` (the identity world), so the two results
           -- coincide once `RelCL` rewrites the spine
           rename_i hcond
@@ -2065,7 +2065,7 @@ theorem inferBodyC_sim (ih : SSimC mode env f) (henv : EnvWF env)
               projEntry_typeAt_WScoped henv hfp us
               hcond.2.1
               (fun a ha => hwte.getAppArgs a ha) hwpe⟩
-          -- the Prop guard (task #175 W4c) runs no walk of its own
+          -- the Prop guard runs no walk of its own
           split
           · split
             · exact hres
@@ -2369,7 +2369,7 @@ theorem inferBodyIOC_sim (hμ : mode.verifiedChecks = true) (hgb : mode.betaGate
           Expr.getAppArgsC_spec te
         rw [htargs.length]
         split
-        · -- task #175 S1: the body at the spine and the subject, as in
+        · -- the body at the spine and the subject, as in
           -- `inferBodyC_sim`
           rename_i hcond
           rw [htargs]
@@ -2380,7 +2380,7 @@ theorem inferBodyIOC_sim (hμ : mode.verifiedChecks = true) (hgb : mode.betaGate
               projEntry_typeAt_WScoped henv hfp us
               hcond.2.1
               (fun a ha => hwte.getAppArgs a ha) hwpe⟩
-          -- the Prop guard (task #175 W4c) runs no walk of its own
+          -- the Prop guard runs no walk of its own
           split
           · split
             · exact hres

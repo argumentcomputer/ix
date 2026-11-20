@@ -16,7 +16,7 @@ exactly as `Empty.rec` does (the official kernel lets a
 zero-constructor `Prop` eliminate large).
 
 **Why a pin, when the direct sum route installs any zero-constructor
-inductive natively (task #175, `n ≠ 1`)?**  So that the consistency
+inductive natively (`n ≠ 1`)?**  So that the consistency
 corollary about `False` — `no_proof_of_False_pure`, the statement the
 project exists to make — carries no hypothesis about how the stream
 declared `False`.  A pinned name cannot be redeclared (the frontend

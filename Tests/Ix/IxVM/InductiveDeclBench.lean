@@ -16,18 +16,18 @@ sizeable `Std` shard for the performance baseline, and a census of the
 environment's mutual and nested inductive blocks with the certified kernel's
 in-process modeller (`IxC/Kernel/Frontend/InModel`) run on chosen blocks.
 
-* `ixvm-s4-bench` runs claims through `ixvm-proof test` with statistics and
+* `ixvm-ind-decl-bench` runs claims through `ixvm-proof test` with statistics and
   prints `FFT <label>: <cost> (expected none)` lines in the harness's format.
   It needs `IX_TEST_OUTPUT_DIR`, keeps every case file and sidecar there
-  (`s4/`), and sets `IXVM_FUNCTION_STATS` so the host also writes per-function
+  (`ind-decl/`), and sets `IXVM_FUNCTION_STATS` so the host also writes per-function
   rows (`<sidecar>.functions.json`).
-* `ixvm-s4-census` lists the inductive blocks of the test binary's
+* `ixvm-ind-decl-census` lists the inductive blocks of the test binary's
   environment by kind and module root, and runs the Source-mode ingress
   (`Ix.LeanIngress.leanIngress`, which calls the modeller for every mutual or
   nested block) on the closures of the chosen blocks, printing each generated
   record with its size. -/
 
-namespace Tests.Ix.IxVM.S4Bench
+namespace Tests.Ix.IxVM.InductiveDeclBench
 
 open IxVM.ClaimHarness Tests.Ix.IxVM
 
@@ -47,7 +47,7 @@ def runStats (suite : String) (cases : Array (Unit → Except String Case)) (job
   let host ← programHost
   let some out ← IO.getEnv "IX_TEST_OUTPUT_DIR"
     | throw (IO.userError s!"[{suite}] set IX_TEST_OUTPUT_DIR")
-  let dir := System.FilePath.mk out / "s4"
+  let dir := System.FilePath.mk out / "ind-decl"
   IO.FS.createDirAll dir
   let mut tasks : Array (String × System.FilePath × Task (Except IO.Error IO.Process.Output)) := #[]
   let mut failed := 0
@@ -158,12 +158,12 @@ def stdShard (env : Lean.Environment) (base : Lean.Name) (pre : List String) :
           ownedGroups := ownedGroups.insert k
   let mut owned : Array Address := #[]
   for k in ownedGroups.toArray do owned := owned ++ groups.getD k #[]
-  IO.println s!"[ixvm-s4-bench] Std shard {".".intercalate pre} of {base}: {owned.size} owned of \
+  IO.println s!"[ixvm-ind-decl-bench] Std shard {".".intercalate pre} of {base}: {owned.size} owned of \
     {ixonEnv.consts.size} in the closure"
   return fun _ => do
     if owned.isEmpty then throw s!"the Std shard {pre} selected nothing"
     let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned
-    return { label := s!"s4 std shard {".".intercalate pre} of {base} ({owned.size} owned)",
+    return { label := s!"ind-decl std shard {".".intercalate pre} of {base} ({owned.size} owned)",
              accept := true, witness }
 
 /-- A module shard: every constant declared in a module whose name begins
@@ -186,18 +186,18 @@ def moduleShard (env : Lean.Environment) (pre : Lean.Name) : IO (Unit → Except
   for (a, lc) in ixonEnv.consts do
     if let some c := lc.get? then
       if keys.contains (groupOf a c.info) then owned := owned.push a
-  IO.println s!"[ixvm-s4-bench] module shard {pre}: {sorted.size} declarations, {owned.size} owned of \
+  IO.println s!"[ixvm-ind-decl-bench] module shard {pre}: {sorted.size} declarations, {owned.size} owned of \
     {ixonEnv.consts.size} in the closure"
   return fun _ => do
     if owned.isEmpty then throw s!"the module shard {pre} selected nothing"
     let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned
-    return { label := s!"s4 std module shard {pre} ({owned.size} owned)", accept := true, witness }
+    return { label := s!"ind-decl std module shard {pre} ({owned.size} owned)", accept := true, witness }
 
 def bench (env : Lean.Environment) : IO UInt32 := do
   let present := targets.filter fun (label, ns, r) =>
     let missing := (r :: ns).map nameOfString |>.filter (!env.constants.contains ·)
     if missing.isEmpty then true else
-      dbgTrace s!"[ixvm-s4-bench] skipped {label}: not in the environment: {missing}" fun _ => false
+      dbgTrace s!"[ixvm-ind-decl-bench] skipped {label}: not in the environment: {missing}" fun _ => false
   let names := present.flatMap (fun (_, ns, r) => r :: ns) |>.map nameOfString
   let ixonEnv ← loadSharedIxonEnv names.toArray env
   let mut cases : Array (Unit → Except String Case) := #[]
@@ -206,7 +206,7 @@ def bench (env : Lean.Environment) : IO UInt32 := do
     cases := cases.push fun _ => do
       let owned ← declOwned ixonEnv ns
       let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned (assumeBinding := true)
-      return { label := s!"s4 decl {label} ({owned.size} owned)", accept := true, witness }
+      return { label := s!"ind-decl decl {label} ({owned.size} owned)", accept := true, witness }
     -- the same declarations split: the inductive block alone, then the
     -- recursor block alone (the other assumed)
     let (recs, inds) := ns.partition isRecName
@@ -215,20 +215,20 @@ def bench (env : Lean.Environment) : IO UInt32 := do
         cases := cases.push fun _ => do
           let owned ← declOwned ixonEnv sel
           let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned (assumeBinding := true)
-          return { label := s!"s4 decl-{part} {label} ({owned.size} owned)", accept := true, witness }
+          return { label := s!"ind-decl decl-{part} {label} ({owned.size} owned)", accept := true, witness }
     cases := cases.push fun _ => do
       let some target := ixonEnv.getAddr? (Ix.Name.fromLeanName (nameOfString r))
         | throw s!"{r} is not in the Ixon environment"
       let ctx ← Ix.ClaimContext.ofEnv ixonEnv true
-      Case.ofClaim s!"s4 check {r} (closure)" ixonEnv (.check ctx target none)
+      Case.ofClaim s!"ind-decl check {r} (closure)" ixonEnv (.check ctx target none)
   let base := nameOfString "Std.HashMap.getElem?_insert_self"
   for pre in [["Std", "DHashMap", "Internal", "AssocList"], ["Std"]] do
     try cases := cases.push (← stdShard env base pre)
-    catch e => IO.eprintln s!"[ixvm-s4-bench] Std shard {pre}: {e}"
+    catch e => IO.eprintln s!"[ixvm-ind-decl-bench] Std shard {pre}: {e}"
   for pre in [`Std.Data.HashMap, `Std.Data.DHashMap] do
     try cases := cases.push (← moduleShard env pre)
-    catch e => IO.eprintln s!"[ixvm-s4-bench] module shard {pre}: {e}"
-  runStats "ixvm-s4-bench" cases
+    catch e => IO.eprintln s!"[ixvm-ind-decl-bench] module shard {pre}: {e}"
+  runStats "ixvm-ind-decl-bench" cases
 
 /-! ## The census -/
 
@@ -329,7 +329,7 @@ def census (env : Lean.Environment) : IO UInt32 := do
       for d in ours do IO.println s!"MODEL {t}: {declLine d}"
     catch e =>
       failed := failed + 1
-      IO.eprintln s!"[ixvm-s4-census] {t}: {e}"
+      IO.eprintln s!"[ixvm-ind-decl-census] {t}: {e}"
   return if failed == 0 then 0 else 1
 
 /-! ## Prototype: IxVM checks the modeller's records
@@ -440,7 +440,7 @@ def modelProbe (env : Lean.Environment) : IO UInt32 := do
       groups := groups.push (t, names)
     catch ex =>
       failed := failed + 1
-      IO.eprintln s!"[ixvm-s4-model] {t}: {ex}"
+      IO.eprintln s!"[ixvm-ind-decl-model] {t}: {ex}"
   if groups.isEmpty then return 1
   let all := groups.toList.flatMap (·.2)
   let ixonEnv ← loadSharedIxonEnv all.toArray lenv
@@ -449,8 +449,8 @@ def modelProbe (env : Lean.Environment) : IO UInt32 := do
     cases := cases.push fun _ => do
       let owned ← declOwned ixonEnv names
       let (_, witness) ← buildShardCheckEnvWitness ixonEnv owned (assumeBinding := true)
-      return { label := s!"s4 model {t} ({owned.size} owned)", accept := true, witness }
-  let rc ← runStats "ixvm-s4-model" cases
+      return { label := s!"ind-decl model {t} ({owned.size} owned)", accept := true, witness }
+  let rc ← runStats "ixvm-ind-decl-model" cases
   return if failed == 0 then rc else 1
 
-end Tests.Ix.IxVM.S4Bench
+end Tests.Ix.IxVM.InductiveDeclBench

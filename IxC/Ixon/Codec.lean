@@ -259,7 +259,7 @@ def getTagN (f : Nat) : GetM TagN := do
   else
     getTagNWide f flag (p - 2 ^ (8 - f - 1) - 2 ^ (8 - f - 2))
 
-/-! ### TagN at a fixed flag width (PERF P3)
+/-! ### TagN at a fixed flag width
 
 `getTagN` and `putTagN` take the flag width `f` as a run-time argument, so
 every integer they read or write evaluates the header shift `2 ^ (8 - f)` and

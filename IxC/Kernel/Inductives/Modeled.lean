@@ -690,7 +690,7 @@ family's constructor targets the family at exactly its parameters,
 `T p⃗` — the same conjunct `checkStructCtor` pins on the direct route —
 while an indexed family's targets `T p⃗ i⃗`.
 
-Task #175 SigmaHom (2026-09-06): the modeller also emits
+The modeller also emits
 `T._model.proj_i` artifacts for an *indexed* one-constructor family
 (its indexed-fibre projection tranche; `CategoryTheory.Sigma.SigmaHom`
 in Mathlib), and consuming them as projection functions declined at
@@ -714,9 +714,8 @@ def ctorTargetsFam (ctorTy : Expr md) (T : Key md) (lps : List LevelParam)
 
 /-- One projection-function install step (skipped where the model's
 projection artifact is absent — a family with such fields simply gets
-no table, and a `.proj` on it declines at its own site; task #175
-tower-flag retired the inert elimination-template table that used to
-record the family).  The whole fold is skipped for a block that is not
+no table, and a `.proj` on it declines at its own site; no inert
+elimination-template table is installed).  The whole fold is skipped for a block that is not
 structure-like (`ctorTargetsFam`). -/
 def installProjFnStep (ops : (CheckerOps md) m) (T ctorName : Key md)
     (lps : List LevelParam) (nP nF : Nat) (e : Env md) (i : Nat) : m (Env md) :=
@@ -825,8 +824,8 @@ def checkModeled (ops : (CheckerOps md) m) (env : Env md) (block : List (Constan
     unless (List.range nF).all
         (fun j => (env₃.find? (projFnName cvT.name j)).isNone) do
       throw (.invalid "projection name family taken")
-    -- the projection functions: structure-like blocks only (task #175
-    -- SigmaHom; an indexed family's model projections are ignored)
+    -- the projection functions: structure-like blocks only
+    -- (an indexed family's model projections are ignored)
     if ctorTargetsFam cvC.type cvT.name cvT.levelParams nP nF then
       (List.range nF).foldlM
         (installProjFnStep mode ops cvT.name cvC.name cvT.levelParams nP nF)

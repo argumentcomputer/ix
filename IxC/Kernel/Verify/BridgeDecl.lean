@@ -597,7 +597,7 @@ theorem checkStructProjTable_datF (T C : Key md) (lps : List LevelParam)
   simp only [FueledM.atF_bind, FueledM.atF_pure, FueledM.atF_throw,
     FueledM.atF_ite, unwrapOr_atF]
 
-/-! ### The direct sum route (task #175 sum-types) -/
+/-! ### The direct sum route -/
 
 theorem fueledOpsM_whnf_atF (env : Env md) (d : Nat) (a : Expr md) (F : Nat) :
     ((fueledOpsM mode).whnf env d a).val F = (fueledOps mode F).whnf env d a := by rfl
@@ -646,7 +646,7 @@ theorem checkSumInd_datF (env : Env md) (p : InductiveShape md)
   simp only [FueledM.atF_bind, FueledM.atF_pure, FueledM.atF_throw,
     FueledM.atF_ite, unwrapOr_atF, checkConstantVal_datF, checkSumTele_datF]
 
-/-- `checkStructFieldSortsI` (task #175 indexed) at fuel `F`. -/
+/-- `checkStructFieldSortsI` at fuel `F`. -/
 theorem checkStructFieldSortsI_datF (env : Env md) (isProp large : Bool)
     (s : Level) (nP : Nat) (fvs idxArgs : List (Expr md)) (F : Nat) :
     ∀ j : Nat,

@@ -394,7 +394,7 @@ projection installs are carried
 unchanged — they are stored-data guards and checker verdicts
 throughout.
 
-(Task #175 tower-flag: the elimination-template pass is gone — the
+(the elimination-template pass is gone — the
 modeled route installs no projection table at all.) -/
 def DeclIndRun (μ : CheckMode) (F : Nat) (env : Env md)
     (block : List (ConstantInfo md)) (env₂ : Env md) : Prop :=

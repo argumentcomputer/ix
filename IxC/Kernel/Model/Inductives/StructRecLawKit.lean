@@ -4,7 +4,7 @@ public import IxC.Kernel.Model.Inductives.StructRecLam
 public section
 
 /-!
-# The recursor rule's kit (task #175 W4c, P3 module 6, part 16)
+# The recursor rule's kit
 
 Syntactic and semantic pieces of the recursor rule's law: the
 `checkDefEqList` pins indexed, the rule's λ-peel residual as the
@@ -27,7 +27,7 @@ universe w
 
 variable {V : Type w} [SetTheory V] {μ : CheckMode} {env : Env md} {φ : LevelParam → Nat}
 
-/-! ## The frame values (from the retired `StructRecLawFitsP`, task #175 S2) -/
+/-! ## The frame values (from the retired `StructRecLawFitsP`) -/
 
 /-! ## Fits as spines -/
 

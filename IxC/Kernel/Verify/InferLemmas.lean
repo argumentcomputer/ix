@@ -462,10 +462,10 @@ theorem Expr.WScoped.getAppFn {d : Nat} :
     exact ihf hfa.1
   | _ => intro h; exact h
 
-/-- The let-rule of `inferTypeCore` is **unreachable** (task #241): the
+/-- The let-rule of `inferTypeCore` is **unreachable**: the
 arm is a positive `.internal` error, not the official `infer_let`
-triple, which lives in `annotateBody` and returns the ζ reduct
-(task #217).  So an accepting inference run never meets a `letE` node,
+triple, which lives in `annotateBody` and returns the ζ reduct.
+So an accepting inference run never meets a `letE` node,
 and every `letE` case downstream is vacuous. -/
 theorem inferTypeCore_letE_inv {env : Env md} {fuel d : Nat}
     {ty v b t : Expr md}
@@ -755,7 +755,7 @@ theorem projCertAtFueled_verified {env : Env md} {fuel d : Nat} {lic : Bool} {c 
   simp only [projCertAtFueled, projCertAt, hv, ↓reduceIte] at h
   exact h
 
-/-- Inversion for a successful projection certification (task #175 W6):
+/-- Inversion for a successful projection certification:
 the head is a stored constructor and the spine is certified against
 its type at the redex's levels (`iotaCerts`). -/
 theorem projCert_inv {env : Env md} {fuel d : Nat} {lic : Bool} {c : Key md}
@@ -2063,7 +2063,7 @@ theorem structEtaCertWith_inv {env : Env md} {fuel d : Nat} {a b wtb : Expr md}
       wtb.getAppArgs.length = caps.etaParams ∧
       us'.length = cvT.levelParams.length ∧
       cvc.levelParams = cvT.levelParams ∧
-      -- the slot discipline (task #175 W4c): one entry kind
+      -- the slot discipline: one entry kind
       (towerSlotsAll env T caps.etaFields ||
         recSlotsAll env T caps.etaFields) = true ∧
       Level.isEquivList us us' = some true ∧
@@ -2071,7 +2071,7 @@ theorem structEtaCertWith_inv {env : Env md} {fuel d : Nat} {a b wtb : Expr md}
         (cvT.type.instantiateLevelParams cvT.levelParams us')
         wtb.getAppArgs = .ok true ∧
       -- the per-slot certificates run at a projection-function family
-      -- only (task #175 S1)
+      -- only
       (towerSlotsAll env T caps.etaFields = false →
         structEtaProjCertsFueled mode env fuel d T us' wtb.getAppArgs b
           cvT.levelParams (List.range caps.etaFields) = .ok true) ∧
@@ -2177,7 +2177,7 @@ theorem structEtaCertWith_inv {env : Env md} {fuel d : Nat} {a b wtb : Expr md}
   | false => simp [pure, Except.pure] at h
   | true => ?_
   simp only [↓reduceIte] at h
-  -- the per-slot certificates: skipped at a tower family (task #175 S1)
+  -- the per-slot certificates: skipped at a tower family
   have hpcOf : ∀ r₂, (if towerSlotsAll env T caps.etaFields = true then
         (Except.ok true : Except (CheckError md) Bool)
       else structEtaProjCertsFueled mode env fuel d T us' wtb.getAppArgs b
@@ -2437,16 +2437,16 @@ theorem inferTypeCore_proj_inv {env : Env md} {fuel d : Nat} {sn : Key md} {i : 
       env.findProj? T i = some entry ∧
       te.getAppArgs.length = entry.numParams ∧
       us.length = entry.levelParams.length ∧
-      -- the official `infer_proj` restriction (task #175 W4c/O4): at a
+      -- the official `infer_proj` restriction: at a
       -- `Prop`-declared structure the entry's guard level instantiates
       -- to `Prop`
       ((Level.isEquiv entry.structSort .zero == some true) = true →
         (Level.isEquiv (Level.subst entry.levelParams us entry.fieldSort) .zero
           == some true) = true) ∧
-      -- task #175 S1: the returned type is the entry's body at the
+      -- the returned type is the entry's body at the
       -- spine and the subject (`ProjEntry.typeAt`)
       (t = entry.typeAt us te.getAppArgs e ∧
-       -- task #175 wiring W5: the node's struct name is the head's
+       -- the node's struct name is the head's
        T = sn) := by
   rw [inferTypeCore_succ] at h
   simp only [inferBody, pure, Except.pure, Bind.bind, Except.bind] at h
@@ -2485,7 +2485,7 @@ theorem inferTypeCore_proj_inv {env : Env md} {fuel d : Nat} {sn : Key md} {i : 
   case isFalse => exact nomatch h
   case isTrue hcond =>
     obtain ⟨hsn, hlen, hus⟩ := hcond
-    -- the Prop guard (task #175 W4c/O4), then the residual walk's
+    -- the Prop guard, then the residual walk's
     -- result
     have hg : (Level.isEquiv entry.structSort .zero == some true) = true →
         (Level.isEquiv (Level.subst entry.levelParams us entry.fieldSort) .zero
@@ -2509,7 +2509,7 @@ theorem inferTypeCore_proj_inv {env : Env md} {fuel d : Nat} {sn : Key md} {i : 
     exact ⟨tpe, te, T, us, entry, rfl, hw, hfn, hfp, hlen, hus,
       hg, h'.symm, hsn⟩
 
-/-! ## The tower-entry helpers (task #175 wiring W2c)
+/-! ## The tower-entry helpers
 
 Shared by the inversion's consumers: the stored entry type is a stored
 constant's closed type, and `instPisAt` preserves scoping.
@@ -2517,7 +2517,7 @@ constant's closed type, and `instPisAt` preserves scoping.
 can reach it.) -/
 
 /-- A stored constant's type has no fvars (`ConstWF`), after any level
-instantiation — the projection certificate's telescope (task #175 W6). -/
+instantiation — the projection certificate's telescope. -/
 theorem const_ty_hasFvar {env : Env md} (henv : EnvWF env) {n : Key md}
     {ci : ConstantInfo md} (hf : env.find? n = some ci) (us : List Level) :
     (ci.toConstantVal.type.instantiateLevelParams ci.toConstantVal.levelParams
@@ -2527,7 +2527,7 @@ theorem const_ty_hasFvar {env : Env md} (henv : EnvWF env) {n : Key md}
   exact hwf.1
 
 /-- A stored projection entry's body is well-formed (`EnvWF`'s table
-clause at the view, task #175 S1): fvar-free, level-defined,
+clause at the view): fvar-free, level-defined,
 resolving, scoped at the parameters and the subject. -/
 theorem projEntry_body_wf {env : Env md} (henv : EnvWF env) {T : Key md}
     {i : Nat} {entry : ProjEntry md} (hf : env.findProj? T i = some entry) :
@@ -2562,8 +2562,8 @@ theorem projEntry_body_looseBVars {env : Env md} (henv : EnvWF env) {T : Key md}
   rw [Expr.looseBVarsBounded_instantiateLevelParams]
   exact (projEntry_body_wf henv hf).2.2.2
 
-/-- **The projection's type is the instantiation spine of the body**
-(task #175 S1): `ProjEntry.typeAt`'s single `instantiateList` is the
+/-- **The projection's type is the instantiation spine of the body**:
+`ProjEntry.typeAt`'s single `instantiateList` is the
 telescope instantiation `instSpine` along the arguments and the
 subject, outermost first. -/
 theorem ProjEntry.typeAt_eq_instSpine (entry : ProjEntry md) (us : List Level)

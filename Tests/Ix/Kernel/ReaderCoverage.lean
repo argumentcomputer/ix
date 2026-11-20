@@ -1,5 +1,5 @@
 import Tests.Ix.IxVM
-import Tests.Ix.IxVM.S4Bench
+import Tests.Ix.IxVM.InductiveDeclBench
 import Ix.RoleBinding.Artifact
 
 /-! # The trusted reader on the closures IxVM accepts
@@ -13,7 +13,7 @@ of the logical fragment:
 
 * the closures of every `ixvm-kernel-checks` constant (the 151 pins' check
   claims), compiled together as that suite compiles them;
-* `ixvm-s4-bench`'s declarations (plain, mutual and nested blocks, among them
+* `ixvm-ind-decl-bench`'s declarations (plain, mutual and nested blocks, among them
   `Lean.Syntax` and `Lean.Meta.Grind.Arith.Linear.RingIneqCnstr`), its `Std`
   shards and its module shards (`Std.Data.HashMap`, `Std.Data.DHashMap`).
 
@@ -120,8 +120,8 @@ def run (env : Lean.Environment) : IO UInt32 := do
   let pins := (Tests.Ix.IxVM.kernelCheckEntries ++ Tests.Ix.IxVM.validatingCheckEntries).map
     (nameOfString ∘ Prod.fst)
   groups := groups.push ("ixvm-kernel-checks closures", pins.toArray)
-  let bench := Tests.Ix.IxVM.S4Bench.targets.flatMap (fun (_, ns, r) => r :: ns) |>.map nameOfString
-  groups := groups.push ("ixvm-s4-bench declarations", bench.toArray)
+  let bench := Tests.Ix.IxVM.InductiveDeclBench.targets.flatMap (fun (_, ns, r) => r :: ns) |>.map nameOfString
+  groups := groups.push ("ixvm-ind-decl-bench declarations", bench.toArray)
   groups := groups.push ("closure of Std.HashMap.getElem?_insert_self",
     #[nameOfString "Std.HashMap.getElem?_insert_self"])
   for pre in [`Std.Data.HashMap, `Std.Data.DHashMap] do

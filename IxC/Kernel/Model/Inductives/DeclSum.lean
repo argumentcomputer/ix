@@ -6,7 +6,7 @@ import IxC.Kernel.Verify.Inductives.SumWF
 public section
 
 /-!
-# The direct sum's install, assembled (task #175 sum-types, indexed)
+# The direct sum's install, assembled
 
 `declSumP`: the P carrier survives the direct sum install's run
 (`DeclSumRun`).  The stages: the former (twice — first with the

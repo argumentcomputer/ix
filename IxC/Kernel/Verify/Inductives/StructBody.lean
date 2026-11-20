@@ -7,7 +7,7 @@ import IxC.Kernel.Verify.Cached.Erase
 public section
 
 /-!
-# The projection bodies, opened (task #175 S1)
+# The projection bodies, opened
 
 The direct install's table stores `bodies[i] = F_i[p⃗ ↦ bvars, f_j ↦
 .proj T j (bvar 0)]` (`structProjBodies`, the domain of field `i` of
@@ -358,7 +358,7 @@ theorem structProjArgs_instSeq (T : Key md) (nP i : Nat) :
     rfl
 
 /-- **The body, opened at the variables, is the variable peel's
-domain** (task #175 S1): instantiating body `i` at the parameter and
+domain**: instantiating body `i` at the parameter and
 subject variables (the reading's opening of `projTele`) is the head
 domain of the constructor telescope instantiated at the variables and
 the subject's earlier projections — the fvar-side peel the readings

@@ -5,7 +5,7 @@ public import IxC.Kernel.Semantics.Tower.TowerMk
 @[expose] public section
 
 /-!
-# The recursor leaf (task #175, stage 3d)
+# The recursor leaf
 
 `structRecAV ℓ ds nF = mkLamsC ℓ ds (recBodyAV nF)` — the constant-bit
 λ-tower (bit `ℓ`, the elimination level: the body's type is
@@ -252,7 +252,7 @@ def RecBase (ℓ w : Nat) (ρp : Nat → V) (Fs : List AnnotTerm)
     (dM dm dt : Nat × Nat × AnnotTerm) : Prop :=
   FieldsOkB w ρp Fs ∧
   -- the large eliminator of a propositional structure has every field
-  -- propositional (task #175 W4c/O4, `checkStructFieldSorts`); the
+  -- propositional (`checkStructFieldSorts`); the
   -- small one at squash needs no bound (the minor is the point)
   (w = 0 → ℓ ≠ 0 → FieldsBound 0 ρp Fs) ∧
   WellDenoted V ρp dM.2.2 ∧

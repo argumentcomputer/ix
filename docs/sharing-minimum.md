@@ -1061,7 +1061,7 @@ dropping it would cost 35,783 bytes on Mathlib (1,395 constants) and 6,891 bytes
 constants) and is held in reserve.
 
 **Fast implementations.** The specifications are the proved reference. Fast twins
-(`Exact.Phase3`, `Exact.Reexpand`, `Exact.UniformSearchLocal`, `Exact.TierFast`,
+(`Exact.EvalUpFast`, `Exact.Reexpand`, `Exact.UniformSearchLocal`, `Exact.TierFast`,
 `Exact.PinnedDeps`, `Exact.PinnedFast`, `Exact.KnapsackFast`, `Exact.TieredFast`; the module map
 of `Ix/Sharing/Exact.lean`) are attached to the specifications by unconditional `@[csimp]`
 equalities, which are audit roots; `IxSharingVerify/Audit/CompiledCode.lean` fails the build if

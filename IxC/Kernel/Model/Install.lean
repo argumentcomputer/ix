@@ -115,7 +115,7 @@ theorem denoteMeta_cons_fresh_mono {acval : Key md → (LevelParam → Nat) → 
     (Ix.Kernel.Verify.findProj?_cons_of_base_none hntc) d e hcb
     (by rw [denoteMeta_acvalWith_fresh hfresh]; exact h)
 
-/-- **The P cons crossing at any head** (task #175 W4c, module 4): a
+/-- **The P cons crossing at any head**: a
 prefix reading of a subject the head's slot does not mention
 (`ConsCrossAt`) survives the cons — the fresh crossing at a non-table
 head, the table-slot refinement (`denoteMeta_envExtend_mono_at`) at a
@@ -190,11 +190,10 @@ structure ConsHead (env : Env md) (c₀ : ConstantInfo md)
     ∀ (ψ : LevelParam → Nat) (t : Term),
       pinnedStructT c₀.name ψ = some t → (A ψ).erase = t
   /-- a head table's slots are mentioned by no stored piece, so
-  the store's readings survive the cons (task #175 W4c, module 4;
-  vacuous at every other head — `ConsCrossEnv.ofNtc`) -/
+  the store's readings survive the cons (vacuous at every other head — `ConsCrossEnv.ofNtc`) -/
   projTower : ConsCrossEnv env c₀
   /-- a head table carries its head data, at every field, at the
-  extension (task #175 S1) -/
+  extension -/
   projTowerHead : ∀ tbl, c₀ = .projInfo tbl →
     ∀ i, i < tbl.numFields → Ix.Kernel.TowerHead ⟨c₀ :: env.consts⟩ (tbl.entry i)
   /-- a head recursor's rules' constructors are stored and its two

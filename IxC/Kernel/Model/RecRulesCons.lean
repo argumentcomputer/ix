@@ -280,7 +280,7 @@ theorem recRules_cons_rec (mp : EnvModelM V μ env)
       (by rw [Ix.Kernel.Env.find?_cons, if_neg (fun hh => hnN hh.symm)] at hf
           exact hf) hmem hfire
 
-/-! ## The tower projection law across a fresh cons (task #175 wiring, W5)
+/-! ## The tower projection law across a fresh cons
 
 `TowerOk` (`Annot/EnvModelM.lean`) is keyed on the stored tower-backed
 entries; a cons that is not itself a tower entry adds none, and every
@@ -322,7 +322,7 @@ theorem towerEntryLaw_cons_prefix (mp : EnvModelM V μ env)
   · rw [Ix.Kernel.Env.find?_cons_of_isSome hfresh (by rw [hfC]; rfl)]; exact hfC
   · obtain ⟨⟨Ta, hTa, hA⟩, ⟨TCa, hTCa, hB⟩⟩ := hlaw us hus
     refine ⟨⟨Ta, ?_, ?_⟩, ⟨TCa, ?_, ?_⟩⟩
-    · -- the body telescope's reading crosses (task #175 S1): the
+    · -- the body telescope's reading crosses: the
       -- table is a prefix lookup, its bodies resolve (`EnvWF`) and
       -- mention none of the head's slots
       rw [hac]
@@ -338,7 +338,7 @@ theorem towerEntryLaw_cons_prefix (mp : EnvModelM V μ env)
     · intro hg ρ vs x rest hlen hokT hokx hmem hpeel
       rw [hac, acvalWith_ne hnT] at hokT hmem
       exact hA hg ρ vs x rest hlen hokT hokx hmem hpeel
-    · -- the constructor type's reading crosses (task #175 W6): a
+    · -- the constructor type's reading crosses: a
       -- prefix lookup's closed type
       rw [hac]
       exact denoteMeta_cons_mono hfresh
@@ -348,7 +348,7 @@ theorem towerEntryLaw_cons_prefix (mp : EnvModelM V μ env)
     · intro hg ρ ys rest hlen hok hfit
       rw [hac, acvalWith_ne hnC] at hok ⊢
       exact hB hg ρ ys rest hlen hok hfit
-  · -- (C) the η law crosses (task #175 W4c): the former's lookup is a
+  · -- (C) the η law crosses: the former's lookup is a
     -- prefix lookup, its type reading is closed, the leaves are prefix
     -- leaves
     intro cvT' capsT' hfT' us hus
@@ -387,8 +387,7 @@ theorem towerOk_cons_fresh (mp : EnvModelM V μ env)
     · exact Ix.Kernel.Env.findProj?_of_table hf3 hi
   exact towerEntryLaw_cons_prefix mp hfresh hcross m₂ hac φ hfP
 
-/-- **`TowerOk` at a table cons** (task #175 W4c, module 4;
-S1: one table per structure): the prefix entries' laws cross, and the
+/-- **`TowerOk` at a table cons** (one table per structure): the prefix entries' laws cross, and the
 head's laws — one per field — are the install's own. -/
 theorem towerOk_cons_tower (mp : EnvModelM V μ env)
     {tbl₀ : ProjTable md} {A : (LevelParam → Nat) → AnnotTerm}

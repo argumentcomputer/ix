@@ -6,15 +6,14 @@ public import IxC.Kernel.Verify.Inductives.SumInv
 public section
 
 /-!
-# The direct sum install: environment well-formedness (task #175
-sum-types, indexed)
+# The direct sum install: environment well-formedness
 
 `EnvWF` for the environments `checkSum` walks through, read off
 the stages' own guards (as `StructWF.lean` for the structure route):
 the former's cons, the constructors' conses (`consSumCtors`, each a
 checked constant), the recursor's cons with its rules (each rule's
 right-hand side scoped by `checkSumRules`, never `.nested`).
-Task #175 indexed: the recursor's cons is generic over its major index
+For indexed families, the recursor's cons is generic over its major index
 and rule prefix (`p.majorIdx`/`p.rulePrefix` at the install).
 -/
 

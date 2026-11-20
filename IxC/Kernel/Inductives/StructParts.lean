@@ -29,8 +29,8 @@ official `src/kernel/inductive/inductive.cpp`; nanoda
   binders ending in a `Sort` — `checkInductiveTypes` (`Add.lean:60-116`,
   nanoda `check_inductive_spec_0th`, `inductive.rs:375`); *index-free* means the
   telescope ends there.
-* the result level may be anything (task #175 W4c/O4, the user's
-  ruling that every supported `.proj` is served directly): a provably
+* the result level may be anything (every supported `.proj` is served
+  directly): a provably
   `Prop` result (`isProp`) selects the squash-regime install — the
   official kernel's `Prop` escape hatch on the field-universe bound
   (`Add.lean:225`), projection entries only for the `Prop`-prefix of
@@ -63,13 +63,12 @@ official `src/kernel/inductive/inductive.cpp`; nanoda
 
 The per-field universe bound (`Add.lean:225-228`,
 nanoda `check_ctor`, `inductive.rs:809`) needs inference, and the
-recursor is **generated** here (`structRecTy`/`structRecRhs`, task
-#175 S2) and compared against the stream's by one closed `isDefEq`;
+recursor is **generated** here (`structRecTy`/`structRecRhs`) and compared against the stream's by one closed `isDefEq`;
 both live in the monadic `checkStruct`
 (`IxC/Kernel/Inductives/StructInstall.lean`).
 
 The direct path installs **native tower-backed projection entries**
-(`checkStructProj`, task #175 wiring): `.proj T i` nodes are typed by
+(`checkStructProj`): `.proj T i` nodes are typed by
 the entry's stored type and reduced by the structural rule, and the
 model reads them by the uniform tower projection.  The capability
 record (`structCaps`) claims structure eta (the tower's own law),
@@ -98,7 +97,7 @@ to the field variables. -/
 def structRuleBody (nF : Nat) : Expr md :=
   Expr.mkAppN (.bvar nF) ((List.range nF).map fun j => Expr.bvar (nF - 1 - j))
 
-/-! ## The generated recursor (task #175 S2: fabricate-and-compare)
+/-! ## The generated recursor (fabricate-and-compare)
 
 The reference kernels *generate* the recursor from the block
 (lean4lean `Inductive/Add.lean:326-483`, official
@@ -166,7 +165,7 @@ def Expr.pisToLamsPw (pw : PropWhen) : Nat → Expr md → Expr md → Option (E
     (pisToLamsPw pw k rest b).map fun r => .lam ty r { pw }
   | _ + 1, _, _ => none
 
-/-! ## The generated recursor at an indexed family (task #175 indexed)
+/-! ## The generated recursor at an indexed family
 
 A non-recursive family `T : ∀ p⃗ ı⃗, Sort w` with constructors
 `C_k : ∀ p⃗ f⃗, T p⃗ e⃗_k` (the index expressions `e⃗_k` arbitrary terms
@@ -229,13 +228,13 @@ structure StructParts (md : Mode) where
   resSort : Level
   /-- the single rule's right-hand side (as exported) -/
   rhs : Expr md
-  /-- **large eliminator** (task #175 W4c/O4): the recursor carries a
+  /-- **large eliminator**: the recursor carries a
   fresh elimination level parameter in front and its motive lands in
   `Sort elim`; `false` is the small eliminator (`motive : T p⃗ → Prop`,
   the recursor's level parameters are the block's own) that Lean
   generates for a propositional structure with a non-`Prop` field. -/
   large : Bool
-  /-- **propositional result** (task #175 W4c/O4): the result sort is
+  /-- **propositional result**: the result sort is
   provably `Prop` (`Level.isEquiv resSort .zero`).  Selects the
   squash-regime install: no field-universe bound (the official
   kernel's `Prop` escape hatch), entries only for the `Prop`-prefix of
@@ -253,8 +252,7 @@ type former's by `isDefEq` (`Add.lean:220-222`) and build the
 recursor's telescope from `whnf`-peeled domains (`Add.lean:79-95`), so
 a syntactic pin would wrongly reject; `checkStructCtor` pins the
 parameter domains definitionally over the opened telescopes, and the
-recursor is generated and compared as a whole (`checkStructRec`, task
-#175 S2). -/
+recursor is generated and compared as a whole (`checkStructRec`). -/
 def structShape (T C : Key md) (lps : List LevelParam) (elim : LevelParam) (large : Bool)
     (nP nF : Nat) (tty cty rty : Expr md) : Bool :=
   match tty.stripPis nP, cty.stripPis (nP + nF), rty.stripPis (nP + 3) with
@@ -264,7 +262,7 @@ def structShape (T C : Key md) (lps : List LevelParam) (elim : LevelParam) (larg
     (match rbs[nP]? with
      | some (.forallE mmaj (.sort s') _, _) =>
        -- the motive's codomain: `Sort elim` for the large eliminator,
-       -- `Prop` for the small one (task #175 W4c/O4)
+       -- `Prop` for the small one
        (if large then s' == .param elim else s' == .zero) &&
          mmaj == structFam T lps nP 0
      | _ => false) &&
@@ -304,7 +302,7 @@ def structPartsCore? (block : List (ConstantInfo md)) : Option (StructParts md) 
         let isProp := Level.isEquiv s .zero == some true
         -- the large eliminator: a fresh elimination level parameter in
         -- front of the block's own; else the small eliminator at the
-        -- block's own level parameters (task #175 W4c/O4)
+        -- block's own level parameters
         let large? : Option LevelParam :=
           match cvR.levelParams with
           | elim :: relps =>
@@ -337,7 +335,7 @@ def structProjPs (nP : Nat) : List (Expr md) :=
   (List.range nP).map fun k => Expr.bvar (nP - k)
 
 /-- The `j`-th earlier-field substitute in a **tower entry's**
-generated type (task #175 wiring): the first-class node `t.j`
+generated type: the first-class node `t.j`
 (`.proj T j` of the subject), at `structProjArg`'s frame (subject
 `t = bvar 0`).  No `projFnName` chain — each field's entry stands
 alone, which is what makes O4's per-field entry branch real. -/
@@ -640,7 +638,7 @@ def structUsedLater (cty : Expr md) (nP j : Nat) : Bool :=
   | some (_, rest) => rest.hasLooseBVarB 0
   | none => false
 
-/-- **The projection guard levels** (task #175 W4c/O4): for field `i`,
+/-- **The projection guard levels**: for field `i`,
 its own sort joined with the sorts of the earlier fields that a later
 field uses — the level a `.proj T i` use on a `Prop`-declared
 structure must instantiate to `Prop` (the official `infer_proj`
@@ -745,7 +743,7 @@ def structProjGuardsFast (cty : Expr md) (nP nF : Nat) (sorts : List Level) :
   intro j hj x
   rw [hused j (Nat.lt_trans (List.mem_range.mp hj) (List.mem_range.mp hi))]
 
-/-- **The projection bodies of a recognised block** (task #175 S1),
+/-- **The projection bodies of a recognised block**,
 one walk of the constructor telescope: after the parameters are
 replaced by the loose variables `structProjPs nP` (parameter `k` at
 `bvar (nP - k)`, the subject reserved at `bvar 0`), the fields are

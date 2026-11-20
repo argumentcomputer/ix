@@ -5,7 +5,7 @@ import IxC.Kernel.Model.Inductives.StructIntro
 public section
 
 /-!
-# The projection entry's kit, continued (task #175 W4c, P3 module 7, part 3)
+# The projection entry's kit, continued
 
 * the grading is a congruence below a variable bound
   (`WellDenotedV_congr_below`, `interp_congr_below`'s twin for the two

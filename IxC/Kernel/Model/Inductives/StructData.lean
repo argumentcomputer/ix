@@ -10,7 +10,7 @@ public import IxC.Kernel.Semantics.Inductives.DeclNativeJ
 public section
 
 /-!
-# The direct block's stage data (task #175 W4c, P3 module 6, part 1)
+# The direct block's stage data
 
 The readings the leaves are built over, packaged per stored constant:
 `FormerData` (the type former's Π-peel, its bits, gradings, bounds

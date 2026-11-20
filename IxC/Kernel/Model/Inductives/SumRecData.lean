@@ -6,7 +6,7 @@ import IxC.Kernel.Model.Inductives.StructStageCtor
 public section
 
 /-!
-# The sum recursor's data (task #175 sum-types, indexed)
+# The sum recursor's data
 
 `SumRecData`: the generated sum recursor type's reading, peeled — the
 `RecData` of the single-constructor route with `n` minor entries, the

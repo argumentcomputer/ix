@@ -124,8 +124,7 @@ theorem strLitT_closed (hcl : ∀ n ψ, Term.Closed (cval n ψ))
   · exact ⟨hcl _ _, hcl _ _⟩
   · exact ⟨hcl _ _, hcl _ _⟩
 
-/-- `projNV` commutes with lifting (it introduces no binders; task
-#175 wiring W3). -/
+/-- `projNV` commutes with lifting (it introduces no binders). -/
 theorem liftN_projNV (n : Nat) :
     ∀ (i : Nat) (v : Term) (k : Nat),
       (projNV i v).liftN n k = projNV i (v.liftN n k)

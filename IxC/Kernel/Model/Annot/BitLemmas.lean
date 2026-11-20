@@ -249,7 +249,7 @@ inductive DenoteMetaSpine (acval : Key md → (LevelParam → Nat) → AnnotTerm
 
 /-- A member of a read spine reads (`DenoteMetaSpine`'s membership form —
 the shape the projection clause's `getD` selection needs).  Relocated
-from the retired `Steps/ProjPinsP.lean` (task #175 W6). -/
+from the retired `Steps/ProjPinsP.lean`. -/
 theorem DenoteMetaSpine.mem {acval : Key md → (LevelParam → Nat) → AnnotTerm} {d : Nat}
     {as : List (Expr md)} {vs : List AnnotTerm}
     (h : DenoteMetaSpine acval env φ d as vs) :

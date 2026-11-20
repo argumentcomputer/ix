@@ -5,7 +5,7 @@ public import IxC.Kernel.Verify.Inductives.StructPartsInv
 public section
 
 /-!
-# The projection table's cons (task #175 S1)
+# The projection table's cons
 
 `stageTable`: the P step at the direct install's last stage — the
 structure's projection **table**, one constant holding every field's

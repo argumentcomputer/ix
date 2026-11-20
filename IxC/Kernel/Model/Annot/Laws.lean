@@ -497,10 +497,10 @@ every deviation). -/
     ∀ rl ∈ rules, RecRule.fire rl ≠ .inert →
       RecRuleLaw m φ n cv mI rP rl
 
-/-! ## The tower projection law (task #175 wiring, W5)
+/-! ## The tower projection law
 
 A projection-table entry (the direct-structure install's native
-entries — task #175 tower-flag: the only ones) is typed by the checker
+entries) is typed by the checker
 generically — the stored `ty` peeled along the parameters and the
 subject (`inferBody`'s tower branch) — and reduced by the structural
 rule `proj_i (ctor p⃗ x⃗) ↦ x_i`; the reading is the uniform
@@ -512,7 +512,7 @@ family lands in the peeled entry type's reading, graded) and the
 selected field's reading).  Both are **environment laws** in the sense
 of `caps_ok`/`rec_rules` — fixed by the direct install and by nothing
 else — so they are a field of `EnvModelM`, established at the install
-(`Model/StructInstallP`, W4c) and transported across every other cons
+(`Model/StructInstallP`) and transported across every other cons
 (`towerOk_cons_fresh`, `Model/RecRulesCons.lean`).
 
 **Why the typing law is stated over a syntactic peel** (`peelPis`)
@@ -548,8 +548,8 @@ theorem TeleFitPA.peelPis {V : Type w} [SetTheory V] {ρ : Nat → V} :
   | nil => rfl
   | cons _ _ ih => exact ih
 
-/-- **The structural-η law of a tower-backed family** (task #175 W4c;
-`EtaLaw`'s twin at the tower kind, keyed on the entry): a member of
+/-- **The structural-η law of a tower-backed family**
+(`EtaLaw`'s twin at the tower kind, keyed on the entry): a member of
 the family instance is the constructor at the parameters and the tower
 readings (`projS`) of its own projections — the value-level content of
 the η certificate's `.proj T j b` fabrication (`etaProjs`).  Keyed on
@@ -576,7 +576,7 @@ an all-tower family. -/
             (interp V ρ
               (m.acval entry.ctor (Level.substFn φ entry.levelParams us)))
 
-/-- **The `Prop` guard at a use's valuation** (task #175 W4c/O4): if
+/-- **The `Prop` guard at a use's valuation**: if
 the structure is a proposition there, so is the field's guard level.
 The typing and iota laws of a tower entry hold under it — a data
 field of a `Prop`-declared structure has no projection law (its value
@@ -644,13 +644,13 @@ theorem towerGuardAt_of_sem {entry : ProjEntry md} {us : List Level}
 
 /-- **One tower-backed entry's projection law** (see the section
 docstring): the entry's stored data agrees with the stored former and
-constructor (whose η capability is the entry's at a non-`Prop` family
-— task #175 W4c/O4), the O5 bound, and at every level instantiation
+constructor (whose η capability is the entry's at a non-`Prop` family),
+the O5 bound, and at every level instantiation
 the typing law and the iota law hold under the `Prop` guard at the
 entry's own body reading and the constructor's, and the family's
 structural-η law holds (clause (C), `TowerEtaLaw`).
 
-Task #175 S1: the entry stores a *body* scoped at the parameters and
+The entry stores a *body* scoped at the parameters and
 the subject, not a type; the typing law is stated over the reading
 of `projTele (nP + 1) body` — the body under `nP + 1` dummy binders
 (`IxC/Kernel/Verify/ProjTele.lean`) — whose `instPisAt` peel along the
@@ -720,11 +720,11 @@ dummy binders carry the reading only; the law never reads them. -/
         interp V ρ (projAV (i + entry.off) (AnnotTerm.mkAppN
             (m.acval entry.ctor (Level.substFn φ entry.levelParams us)) ys))
           = interp V ρ (ys.getD (entry.numParams + i) default)))) ∧
-    -- (C) the structural-η law (task #175 W4c)
+    -- (C) the structural-η law
     TowerEtaLaw m φ T entry
 
 /-- **The tower projection law, keyed on every stored entry**
-(`RecRules`'s sibling).  Task #175 tower-flag: every stored table is
+(`RecRules`'s sibling).  Every stored table is
 a real one, so the law is uniform — no flag premise. -/
 @[expose] def TowerOk {V : Type w} [SetTheory V] {env : Env md}
     (m : EnvModel V env) (φ : LevelParam → Nat) : Prop :=

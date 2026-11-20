@@ -20,10 +20,10 @@
 -/
 module
 
-public import Ix.Sharing.Exact.Phase3
+public import Ix.Sharing.Exact.EvalUpFast
 import all Ix.Sharing.Exact.Basic
 import all Ix.Sharing.Exact.Dag
-import all Ix.Sharing.Exact.Phase3
+import all Ix.Sharing.Exact.EvalUpFast
 
 public section
 

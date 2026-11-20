@@ -6,7 +6,7 @@ public import IxC.Kernel.Model.Inductives.NativeJudge
 public section
 
 /-!
-# A sum constructor's cons (task #175 sum-types, indexed)
+# A sum constructor's cons
 
 `stageSumCtor`: the P step at constructor `j`'s cons — onto the
 environment holding the former and the earlier constructors — with

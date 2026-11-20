@@ -496,7 +496,7 @@ theorem harvestDefnJ {J : Judgements md}
       (c₀ := .defnInfo ⟨cv.name, cv.levelParams, type'⟩ value' hint)
       (A := A) hfresh (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))
       (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) _ rfl φ
-  · -- `tower_ok` (task #175 wiring W5): a value-kind cons is never a
+  · -- `tower_ok`: a value-kind cons is never a
     -- tower entry
     exact fun φ => towerOk_cons_fresh mp
       (c₀ := .defnInfo ⟨cv.name, cv.levelParams, type'⟩ value' hint)
@@ -771,7 +771,7 @@ theorem harvestThmJ {J : Judgements md}
       (c₀ := .thmInfo ⟨cv.name, cv.levelParams, type'⟩ (J.thmValue value value'))
       (A := A) hfresh (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))
       (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) _ rfl φ
-  · -- `tower_ok` (task #175 wiring W5): a value-kind cons is never a
+  · -- `tower_ok`: a value-kind cons is never a
     -- tower entry
     exact fun φ => towerOk_cons_fresh mp
       (c₀ := .thmInfo ⟨cv.name, cv.levelParams, type'⟩ (J.thmValue value value'))
@@ -967,7 +967,7 @@ theorem harvestAxiomJ {J : Judgements md}
       (c₀ := .axiomInfo ⟨cv.name, cv.levelParams, type'⟩)
       (A := A) hfresh (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))
       (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) _ rfl φ
-  · -- `tower_ok` (task #175 wiring W5): a value-kind cons is never a
+  · -- `tower_ok`: a value-kind cons is never a
     -- tower entry
     exact fun φ => towerOk_cons_fresh mp
       (c₀ := .axiomInfo ⟨cv.name, cv.levelParams, type'⟩)
@@ -1235,7 +1235,7 @@ theorem harvestOpaqueJ {J : Judgements md}
       (c₀ := .axiomInfo ⟨cv.name, cv.levelParams, type'⟩)
       (A := A) hfresh (fun _ h => ConstantInfo.noConfusion rfl (heq_of_eq h))
       (fun _ _ _ _ h => ConstantInfo.noConfusion rfl (heq_of_eq h)) _ rfl φ
-  · -- `tower_ok` (task #175 wiring W5): a value-kind cons is never a
+  · -- `tower_ok`: a value-kind cons is never a
     -- tower entry
     exact fun φ => towerOk_cons_fresh mp
       (c₀ := .axiomInfo ⟨cv.name, cv.levelParams, type'⟩)

@@ -6,8 +6,7 @@ import IxC.Kernel.Semantics.Inductives.DeclStructEta
 @[expose] public section
 
 /-!
-# The direct sum declaration keeps the η-families closed (task #175
-sum-types, indexed)
+# The direct sum declaration keeps the η-families closed
 
 Every store the direct sum install performs is a fresh cons
 (`checkConstantVal`'s duplicate guard for the former and the recursor;

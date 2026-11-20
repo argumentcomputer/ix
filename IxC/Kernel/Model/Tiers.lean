@@ -166,7 +166,7 @@ at the leaf's stored annotation; that asymmetry is what made
 
 `inferBody`'s `letE` arm is a positive `.internal` error (task #241) —
 the official `infer_let` triple lives in `annotateBody`, which returns
-the ζ *reduct* (task #217), so inference only ever sees let-free
+the ζ *reduct*, so inference only ever sees let-free
 expressions; `inferTypeCore_letE_inv` turns the run hypothesis into
 `False`.
 

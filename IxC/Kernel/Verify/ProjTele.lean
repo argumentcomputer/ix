@@ -12,7 +12,7 @@ import all IxC.Kernel.PropWhen
 public section
 
 /-!
-# The dummy Π-telescope over a projection body (task #175 S1)
+# The dummy Π-telescope over a projection body
 
 The projection table stores, per field, a **body**
 `F_i[p⃗ ↦ bvars, f_j ↦ .proj T j (bvar 0)]` scoped at `nP + 1`, and a
@@ -110,7 +110,7 @@ theorem projTele_stripPis : ∀ (k : Nat) (body : Expr md),
   | k + 1, body => by
     simp [projTele, Expr.stripPis, projTele_stripPis k body, List.replicate_succ]
 
-/-- **The projection's type is the telescope's peel** (task #175 S1):
+/-- **The projection's type is the telescope's peel**:
 `ProjEntry.typeAt`'s single `instantiateList` is `instPisAt` of the
 telescope over the level-instantiated body along the subject type's
 arguments and the subject. -/

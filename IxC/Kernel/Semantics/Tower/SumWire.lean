@@ -6,7 +6,7 @@ import IxC.Kernel.Semantics.Tower.TowerWire
 @[expose] public section
 
 /-!
-# The sum leaves' syntactic battery (task #175 sum-types, indexed)
+# The sum leaves' syntactic battery
 
 The `hAclosed` rows of the three sum leaves: bound-variable bounds of
 their erasures, one structural walk per spelled former, as

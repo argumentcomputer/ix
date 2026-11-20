@@ -168,7 +168,7 @@ exactly as the `.const` clause values it on that form.  Transpose of
       (cval natSuccName (Level.substFn φ [] []))
       s.toList)
 
-/-- The tower projection's `Term` spelling (task #175 wiring W3):
+/-- The tower projection's `Term` spelling:
 `.fst ∘ .snd^i` — the erase image of the P reading's `projAV`
 (`SetBase/TowerLeaf.lean`), interpreting to `projS i` on the tuple
 tier's carriers.  Depends only on the index. -/
@@ -215,7 +215,7 @@ the `.proj` clause. -/
     none
   | d, .proj sn i e =>
     -- the transpose of `interpExpr`'s clause, the pair side's index
-    -- decoded by `projPair?`; a tower-backed entry (task #175 wiring W3)
+    -- decoded by `projPair?`; a tower-backed entry
     -- reads field `i` by the uniform iterated spelling instead — the
     -- entry key consumed at the reading, never carried in the syntax
     match denote cval env φ d e with

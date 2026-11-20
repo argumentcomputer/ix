@@ -1342,16 +1342,16 @@ def renameConsts (f : Key md → Key md) : Expr md → Expr md
   | .letE ty v body lmeta =>
     .letE (renameConsts f ty) (renameConsts f v) (renameConsts f body) lmeta
   | .lit l => .lit l
-  -- Task #175 wiring W5: a `.proj` node's struct name is NOT renamed.
+  -- A `.proj` node's struct name is NOT renamed.
   -- The renaming exists for the modeled-block contract (a public
-  -- block's types against its `_model` artifacts, compared with `==`
-  -- since task #205, and the fire comparands); a block's own projections can never be
+  -- block's types against its `_model` artifacts, compared with `==`,
+  -- and the fire comparands); a block's own projections can never be
   -- spelled inside its types (their entries do not exist when the
   -- types are annotated), and a `.proj` on any *other* structure names
   -- it the same on both sides — so the rename never had a matching
   -- case here.  Fixing the name keeps the entry-kind readings
   -- (`denote`/`denoteMeta`, which consult the table at the struct name)
-  -- rename-invariant by construction (DESIGN, "W5 opening seam").
+  -- rename-invariant by construction.
   | .proj s i e => .proj s i (renameConsts f e)
 
 /-! ### `renameConsts`, memoized (task #215)
@@ -1695,10 +1695,8 @@ claims the *codomain*'s prop-ness, which is not the λ's claim (the sort
 of the body's *type*), so carrying it over would be a wrong annotation.
 The result is emitted at the parse placeholder `.never` and **every
 consumer must run the annotate pass over it before storing or using
-it** — audited: `CheckerS.checkProjRule` and `CheckerBase`'s projection
-rule builder feed `ops.annotate` (DESIGN.md, task #161,
-manufacture-site audit row 9; the third consumer, `annotateProjRec`,
-went with task #175 wiring W5). -/
+it** — both `CheckerS.checkProjRule` and `CheckerBase`'s projection
+rule builder feed `ops.annotate`. -/
 def pisToLams : Nat → Expr md → Expr md → Option (Expr md)
   | 0, _, body => some body
   | k + 1, .forallE ty rest _, body =>
